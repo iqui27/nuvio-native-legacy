@@ -405,6 +405,7 @@
   { "Temporada %d", "Season %d" },
   { "Tentar de novo", "Try again" },
   { "Ter", "Tue" },
+  { "Termina às %s", "Ends at %s" },
   { "Terror", "Horror" },
   { "Tipo", "Type" },
   { "Tipo de conteúdo", "Content type" },

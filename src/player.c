@@ -1529,7 +1529,11 @@ void player_desenhar(Uint32 agora) {
         struct tm lf; char h2[8];
         localtime_r(&t2, &lf);
         strftime(h2, sizeof h2, "%H:%M", &lf);
-        snprintf(fim, sizeof fim, "Termina \xc3\xa0" "s %s", h2); }
+        // i18n NO FORMATO: frase montada nao casa com chave. Escapou da
+        // primeira varredura do issue #12 porque o "a" com crase esta escrito
+        // como \xc3\xa0 e o literal esta partido em dois — a busca por palavra
+        // acentuada nao encontrava nenhum dos dois pedacos.
+        snprintf(fim, sizeof fim, i18n("Termina \xc3\xa0" "s %s"), h2); }
       TxtLinha lh = txt_linha(TXT_PG_RELOGIO, hora, 255, 255, 255, 255);
       TxtLinha lf = txt_linha(TXT_PG_FIM, fim, 255, 255, 255, 255);
       txt_desenhar_alpha(lh, NV_TELA_W - PLR_PAD_X - lh.w, yRel, a * 0.96f);
