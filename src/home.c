@@ -1147,8 +1147,12 @@ static void sincronizarFileiras(void) {
       // Ajustes RELIGAR uma fileira desligada: desligada, ela nao existe mais
       // nem aqui nem em cat_fileira(), e sem a lista de conhecidas desligar
       // seria irreversivel pela TV.
+      // Addon vazio: quem sabe o nome dele e a descoberta, que registra a mesma
+      // chave com ele (o primeiro a saber preenche). Daqui saem o TIPO do
+      // catalogo e a CONTAGEM, que so existem depois de a fileira ser montada.
       if (strcmp(fileiras[q].chave, "last_session"))
-        fil_registrar(fileiras[q].chave, fileiras[q].titulo);
+        fil_registrar(fileiras[q].chave, fileiras[q].titulo,
+                      "", fileiras[q].catTipo, fileiras[q].n);
       ch[q] = fileiras[q].chave;
     }
     fil_gravar_registro();
