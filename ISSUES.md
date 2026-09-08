@@ -32,14 +32,28 @@ depois das duas primeiras tentativas, entao uma URL morta custa **um pedido por
 minuto** enquanto o card estiver na tela, e uma falha de rede se recupera
 sozinha.
 
-**Nao descartado, e nao consertavel aqui:** arte em **WebP** nao decodifica no
-Tizen. `src/webp.c` decodifica por `dlopen` da libwebp do aparelho, e nao existe
-`dlopen` em WebAssembly; o `-sSDL2_IMAGE_FORMATS` do build so tem png e jpg
-porque o Emscripten nao tem port de libwebp (ver `tools/tizen.sh`). Os selos que
-vinham em webp sao convertidos para png no empacotamento
-(`tools/tizen-art.sh`), mas **arte baixada da rede em webp continua sem
-decodificar**. Se o relato persistir com esta correcao, e aqui que se olha — e a
-saida seria decodificar pelo proprio navegador (canvas), nao por biblioteca C.
+**Feito no v1.0.15 — era WebP mesmo.** A foto do log de uma QN90A fechou:
+`[tex] decode falhou (Unsupported image format) tam=14312 magica=52494646`, e
+`52494646` e `RIFF`. Eu tinha descartado a hipotese antes testando so o
+Metahub, que devolve JPEG independente do `Accept`, e generalizei errado.
+
+`src/webp.c` so sabia `dlopen` da libwebp do aparelho, e nao existe `dlopen` em
+WebAssembly — no Tizen ele devolvia NULL calado desde sempre. O Emscripten
+tambem nao tem port de libwebp, entao `-sSDL2_IMAGE_FORMATS` segue com png e
+jpg (`tools/tizen.sh`), e os selos do pacote seguem convertidos para png por
+`tools/tizen-art.sh`.
+
+A saida foi a que ja estava anotada aqui: **decodificar pelo proprio
+navegador**. O fio de decode passa os bytes ao fio principal, que dispara
+`createImageBitmap` e volta ao laco de quadro; o resultado atravessa um canvas
+2D, vira RGBA e um `Atomics.notify` acorda o fio de decode, que dormia num
+futex. Futex e nao asyncify (unwinding dentro de Worker de pthread, centenas de
+vezes por sessao); fio principal e nao worker (worker nao tem `document`).
+
+Como conferir na TV: painel de log (vermelho) e procurar
+`[webp] navegador decodificou o primeiro: LxA`. Regressao em
+`tests/webp-tizen.sh`, que precisa de navegador — Node nao tem
+`createImageBitmap`.
 
 ---
 
@@ -394,7 +408,7 @@ Abrir uma colecao mostra **nada**: nem cartaz, nem card.
 
 Mesma cadeia do #10. No Tizen a pasta vem da conta, entao a capa e a
 `coverImageUrl` crua do CDN em vez da arte curada do pacote — e se essa URL for
-**webp**, ela nao decodifica neste alvo (ver a nota em #1). O `col_definir_json`
+**webp**, ela ja decodifica desde o v1.0.15 (ver a nota em #1). O `col_definir_json`
 ja preserva a arte do pacote para as pastas que existem nos dois lados; no
 Tizen nao existe lado do pacote, porque o `collections.json` nao vai no `.wgt`.
 
