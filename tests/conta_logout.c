@@ -74,6 +74,11 @@ int main(void) {
   confere("perfil.txt apagado",            !existe("perfil.txt"), "");
   confere("progresso.txt apagado",         !existe("progresso.txt"), "");
   confere("dono da conta esquecido",       perfis_dono()[0] == 0, "");
+  // O cache do catalogo guarda a home montada da conta que saiu, e dentro
+  // dele a `base` de cada fileira — que no Xperience leva um JWT no caminho.
+  // Sair da conta tem de tirar o arquivo do aparelho, nao so recusa-lo na
+  // proxima leitura.
+  confere("cache do catalogo apagado",     !existe("catalogo-rede.bin"), "");
 
   // O ciclo seguinte NAO pode reaplicar o que ficou na caixa do fio.
   sync_passo(2000);

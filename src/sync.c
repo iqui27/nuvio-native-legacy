@@ -666,6 +666,15 @@ void sync_esquecer_usuario(void) {
   // A ordem importa pouco, mas o CONJUNTO nao: cada linha aqui corresponde a
   // uma coisa que sobrevivia ao logout.
   catordem_esquecer();
+  // O CACHE DO CATALOGO TAMBEM. Ele guarda o catalogo montado da conta que
+  // saiu — watchlist, continuar assistindo, feed de amigos com nome e avatar —
+  // e, pior, a `base` de cada fileira, que no Xperience carrega um JWT dentro
+  // do caminho (catalogo.h:236). Sem esta linha, a proxima abertura mostrava a
+  // home de quem saiu ate a rede substituir, com a credencial dele em disco.
+  //
+  // O cache tambem se recusa sozinho por nao bater o usuario no cabecalho, mas
+  // recusar so serve a quem ABRE; apagar e o que tira o arquivo do aparelho.
+  cat_apagar_cache();
   free(catHomeBlob);
   catHomeBlob = NULL;
   temCatHomeBlob = 0;
