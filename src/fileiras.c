@@ -263,6 +263,48 @@ void fil_ciclar_tam(int i) {
   pthread_mutex_unlock(&trava);
 }
 
+// A LISTA DE AJUSTES SEGUE A HOME ATE A PRIMEIRA REORDENACAO.
+//
+// `linhas[]` nascia na ordem de REGISTRO, que e a ordem em que cada fileira
+// apareceu pela primeira vez — nao a ordem em que a home a desenha. Enquanto
+// ninguem reordena isso nao aparece, porque fil_unir devolve a identidade. Mas
+// no PRIMEIRO fil_mover `ordemLocal` vira 1 e `linhas[]` passa a mandar de uma
+// vez: a home inteira salta da ordem da descoberta para a ordem de registro.
+//
+// Na TV o efeito e o do relato — "mexo na reordenacao e ele caga, joga pra
+// baixo o do topo": as fileiras fixas ("Continuar assistindo", "Amigos
+// assistindo") sao registradas por home.c DEPOIS das de catalogo, entao no
+// primeiro movimento elas desabavam para o fim da home.
+//
+// Com isto a lista de Ajustes ja mostra a ordem real da home, e o primeiro
+// movimento move UMA fileira em vez de reembaralhar todas.
+//
+// NAO GRAVA E NAO MEXE EM `revisao`: e chamada do fio de desenho a cada
+// remontagem, e bumpar a revisao aqui faria a home se remontar para sempre.
+// Nada se perde por nao gravar — enquanto ordemLocal e 0 esta ordem e
+// recalculada da home a cada arranque.
+void fil_espelhar_ordem(const char *const *chaves, int n) {
+  static Linha novo[FIL_MAX];
+  char usado[FIL_MAX];
+  int i, k = 0;
+  if (!chaves || n < 1) return;
+  pthread_mutex_lock(&trava);
+  garantir();
+  if (!ordemLocal && nLinhas > 0) {
+    memset(usado, 0, sizeof usado);
+    for (i = 0; i < n && k < FIL_MAX; i++) {
+      int p = chaves[i] ? achar(chaves[i]) : -1;
+      if (p >= 0 && !usado[p]) { novo[k++] = linhas[p]; usado[p] = 1; }
+    }
+    for (i = 0; i < nLinhas && k < FIL_MAX; i++)
+      if (!usado[i]) novo[k++] = linhas[i];
+    // So troca se a conta bater: uma lista curta aqui apagaria fileiras
+    // conhecidas, e e por elas que Ajustes religa o que foi desligado.
+    if (k == nLinhas) memcpy(linhas, novo, sizeof(Linha) * (size_t)k);
+  }
+  pthread_mutex_unlock(&trava);
+}
+
 int fil_mover(int i, int direcao) {
   int j = i + (direcao > 0 ? 1 : -1);
   pthread_mutex_lock(&trava);

@@ -204,6 +204,12 @@ static char linhaEp[220];          // "T1, E1 · <sinopse curta>", montada na ab
 
 static const CatItem *item(void) { return cat_item(idx); }
 static int epT, epE, pedFontes, erroFonte, pedProxT, pedProxE;
+// Diagnostico da janela do cartao de proximo episodio. Zerados a cada episodio
+// por player_definir_episodio: um `static int` dentro da funcao registraria a
+// PRIMEIRA reproducao da sessao e ficaria mudo em todas as outras — que e
+// justamente quando o relato acontece.
+static int credAvisado, credFimAvisado;
+static double credAvisadoEm;
 static int introIdx=-1, introT=-1, introE=-1;
 static int retomadaAplicada, retomarPct;
 int player_indice(void) { return idx; }
@@ -248,6 +254,7 @@ void player_definir_episodio(int t, int e) {
   }
   if(idx!=introIdx||epT!=introT||epE!=introE){
     introIdx=idx;introT=epT;introE=epE;intro_pedir(c->imdb,epT,epE);
+    credAvisado=credFimAvisado=0;credAvisadoEm=0;
   }
 }
 
@@ -736,29 +743,59 @@ static int temUltimoBotao(void) {
 // antes". Um marcador que dispara com meia hora de episodio pela frente nao e
 // credito, e obedece-lo cegamente tira o dono do episodio que ele esta vendo.
 //
-// SANIDADE PROPORCIONAL, e nao um numero fixo de minutos: credito ocupa uma
-// fatia da duracao, nao uma quantidade absoluta. Aceito o marcador enquanto
-// restar no maximo 20% do episodio — para 50 min sao os 10 min finais, que
-// cobre com folga ate as series com "cenas do proximo capitulo" longas. Fora
-// disso o marcador e descartado e vale so a regra dos 2 minutos finais, que
-// nao depende de dado de ninguem.
-#define PLR_CRED_FRACAO 0.20
+// SANIDADE PROPORCIONAL COM TETO, e nao so uma fracao.
+//
+// A primeira versao desta guarda aceitava o marcador com ate 20% do episodio
+// pela frente, e 20% de 50 min sao DEZ MINUTOS — o relato depois dela continuou
+// sendo "ainda aparece antes do final", e com razao: dez minutos antes do fim
+// nao e credito por nenhuma medida. A fracao sozinha erra no episodio longo.
+//
+// Agora: no maximo 10% do episodio, no maximo 5 minutos, e nunca menos que os
+// 2 minutos da regra de baixo (senao a guarda seria mais apertada que o
+// fallback e o marcador nunca valeria nada).
+//     22 min -> 132 s     50 min -> 300 s     80 min -> 300 s
+#define PLR_CRED_FRACAO 0.10
+#define PLR_CRED_TETO_S 300.0
+#define PLR_CRED_PISO_S 120.0
+
+static double credJanela(void) {
+  double j = duracaoSeg * PLR_CRED_FRACAO;
+  if (j > PLR_CRED_TETO_S) j = PLR_CRED_TETO_S;
+  if (j < PLR_CRED_PISO_S) j = PLR_CRED_PISO_S;
+  return j;
+}
 
 static int ofertaProximo(void) {
   const CatEp *p=player_proximo_episodio();double fim;int tipo;
   if(!p||duracaoSeg<=1)return 0;
   if(intro_ativo(posSeg,&fim,&tipo)&&tipo==INTRO_CREDITOS) {
-    double resta = duracaoSeg - posSeg;
-    if (resta <= duracaoSeg * PLR_CRED_FRACAO) return 1;
-    // Uma vez por marcador recusado, e nao por quadro.
-    { static int avisado; static double avisadoEm;
-      if (!avisado || avisadoEm != fim) {
-        avisado = 1; avisadoEm = fim;
-        printf("[posplay] marcador de creditos recusado: %.0fs restantes de %.0fs\n",
-               resta, (double)duracaoSeg);
+    double resta = duracaoSeg - posSeg, janela = credJanela();
+    // UMA LINHA POR MARCADOR, e nao por quadro: `fim` identifica o trecho.
+    // Os dois lados sao registrados de proposito. So o recusado aparecia no
+    // log, e por isso "ainda aparece antes do final" nao tinha como ser
+    // medido — nao dava para saber se quem abriu o cartao foi o marcador
+    // aceito ou a regra dos 2 minutos com uma duracao errada.
+    { if (!credAvisado || credAvisadoEm != fim) {
+        credAvisado = 1; credAvisadoEm = fim;
+        printf("[posplay] creditos %s: restam %.0fs de %.0fs (janela %.0fs)\n",
+               resta <= janela ? "aceito" : "RECUSADO", resta,
+               (double)duracaoSeg, janela);
+        fflush(stdout);
       } }
+    if (resta <= janela) return 1;
   }
-  return duracaoSeg-posSeg<=120.0f;
+  // FALLBACK sem dado de ninguem. Se a duracao estiver errada, e ELE quem abre
+  // o cartao cedo — por isso a linha abaixo diz de onde veio.
+  if (duracaoSeg - posSeg <= PLR_CRED_PISO_S) {
+    if (!credFimAvisado) {
+      credFimAvisado = 1;
+      printf("[posplay] 2 min finais: pos %.0fs de %.0fs\n",
+             (double)posSeg, (double)duracaoSeg);
+      fflush(stdout);
+    }
+    return 1;
+  }
+  return 0;
 }
 
 // Toda tecla acorda os controles, inclusive a que ja executou alguma acao: no

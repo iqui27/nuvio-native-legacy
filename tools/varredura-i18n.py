@@ -124,6 +124,9 @@ NAO_E_TELA = ("printf", "fprintf", "puts", "fputs", "perror", "marco",
               "curl_", "SDL_Log", "addons_buscar", "cat_indice_por",
               "idioma_registrar", "assert", "EM_ASM", "MAIN_THREAD")
 
+RE_DESENHO = re.compile(
+    r"(?<![A-Za-z0-9_])(" + "|".join(DESENHO) + r")\s*\(")
+
 RE_NAO_E_TELA = re.compile(
     r"(?<![A-Za-z0-9_])(" + "|".join(re.escape(f) for f in NAO_E_TELA) + r")")
 
@@ -145,6 +148,8 @@ IGNORAR = {
     "abrir", "buscar",              # nomes de operacao do bridge JS (video_tizen.c)
     "fontes", "legenda", "mais", "nao", "poster",  # chaves internas, nao rotulo
     "crédit", "crédito",            # palavra procurada no capitulo do MKV
+    # Nome proprio e sigla: iguais nos dois idiomas.
+    "IMDb", "Trakt", "YouTube", "PIN", "AI-powered",
     # Nao sao tela: cabecalho do arquivo de preferencias e duas linhas de log
     # que a heuristica de portugues nao tem como distinguir das frases.
     "# Fileiras da Home, escolha DESTE aparelho. Nunca e enviada para\n"
@@ -189,12 +194,27 @@ def varrer():
             ini = i
             bruto, i = literais_colados(txt, i)
             s = decodificar(bruto)
-            if not eh_frase(s) or not PT.search(s):
+            if not eh_frase(s):
                 continue
             if ("gl_FragColor" in s or "uniform " in s or "varying " in s
                     or "void main()" in s):
                 continue                      # codigo de shader (gfx.c)
             ctx = contexto(txt, ini)
+            # DUAS CAMADAS, e a diferenca entre elas ja custou uma regressao
+            # nesta ferramenta.
+            #
+            # Literal entregue DIRETO a uma funcao de desenho e interface por
+            # definicao: nao ha o que heuristicar, ou esta na tabela ou esta em
+            # IGNORAR. Foi ao exigir "cara de portugues" tambem aqui que
+            # "↑ Voltar aos filtros · Voltar: menu" (biblioteca.c) — que a
+            # primeira versao pegava — voltou a passar batido.
+            #
+            # Fora do desenho (snprintf para um buffer que sera desenhado) nao
+            # da para saber pelo contexto se e tela ou log, e ai sim vale a
+            # heuristica de portugues.
+            direto = RE_DESENHO.search(ctx) is not None
+            if not direto and not PT.search(s):
+                continue
             # POR NOME INTEIRO, e nao por substring: "printf" casa dentro de
             # "snprintf", e foi assim que "A seguir" (posplay.c) — uma das
             # telas da foto do #12 — passou batido nesta propria ferramenta.

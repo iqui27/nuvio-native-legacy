@@ -893,6 +893,10 @@ static void sincronizarFileiras(void) {
       ch[q] = fileiras[q].chave;
     }
     fil_gravar_registro();
+    // A lista de Ajustes passa a espelhar ESTA ordem enquanto ninguem tiver
+    // reordenado. Sem isto o primeiro movimento em Ajustes reembaralhava a home
+    // inteira em vez de mover uma fileira — ver fil_espelhar_ordem.
+    fil_espelhar_ordem(ch, destino);
     // "Retomar agora" e contexto do player, nao fileira de catalogo: fica presa
     // no topo, fora da ordem e fora do liga/desliga. Ela aparece por causa de
     // uma sessao interrompida e desaparece sozinha; deixar a pessoa mover ou

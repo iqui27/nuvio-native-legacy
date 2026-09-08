@@ -291,6 +291,25 @@ void ctx_atualizar(float dt, Uint32 agora) {
             cat_definir_na_lista(atual, intencao);
           } else {
             cat_historico_definir_id(ci->imdb, ci->tipo, intencao);
+            // MARCAR COMO ASSISTIDO APAGA A POSICAO DE RETOMADA.
+            //
+            // cat_historico_definir_id so escreve numa tabela lateral de
+            // historico, e a fileira "Continuar assistindo" nao le dela: ela
+            // le progresso/restanteMin/temporada/episodio do proprio item. Sem
+            // isto o card continuava ali com a barra cheia depois de o titulo
+            // ter sido marcado como visto — o "removo do watch e o card nao
+            // sai" do relato.
+            //
+            // E o MESMO par que "Tirar de Continuar assistindo" faz logo
+            // abaixo, e pelo mesmo motivo: quem terminou nao tem o que
+            // retomar. So na direcao "assistido"; desmarcar nao inventa uma
+            // posicao que ninguem gravou.
+            if (intencao) {
+              char chave[192];
+              prog_chave(chave, sizeof chave, ci->imdb, ci->temporada, ci->episodio);
+              prog_remover(chave);
+              cat_zerar_progresso(atual);
+            }
           }
         }
         espelhoAplicado = 1;
@@ -397,16 +416,25 @@ void ctx_desenhar(Uint32 agora) {
     // Mesma linguagem das pilulas: o focado INVERTE (fundo claro, texto
     // escuro), em vez de anel branco sobre preenchimento claro.
     float lum = anim_mistura(0.176f, 0.961f, f);
-    // A COR DO TEXTO ANDA COM O FUNDO, e nao num degrau.
+    // A COR DO TEXTO VIRA COM O FUNDO — MAS EM DEGRAU, e nao interpolada.
     //
-    // O fundo da pilula e animado (escuro -> claro conforme `f`), mas o texto
-    // trocava de claro para escuro DE UMA VEZ, no instante em que `foco`
-    // mudava. Nos ~200 ms em que a mola ainda estava correndo isso dava texto
-    // escuro sobre fundo escuro na linha que ganhou o foco — e claro sobre
-    // claro na que perdeu. Nos dois casos o texto SOME, que e o "quando
-    // seguro o botao ele apaga o texto" do relato: segurar e justamente
-    // ficar olhando para a linha durante a animacao.
-    int cor = (int)(240.0f + (17.0f - 240.0f) * f + 0.5f);
+    // O defeito original: o fundo da pilula e animado (escuro -> claro conforme
+    // `f`), e o texto trocava de claro para escuro no instante em que `foco`
+    // mudava. Nos ~200 ms da mola isso dava texto escuro sobre fundo escuro na
+    // linha que ganhou o foco, e claro sobre claro na que perdeu. Nos dois
+    // casos o texto some — o "quando seguro o botao ele apaga o texto".
+    //
+    // A PRIMEIRA CORRECAO INTERPOLOU A COR, E FOI PIOR. A cor faz parte da
+    // CHAVE DO CACHE de linhas (text.c:563), entao uma cor por quadro criava
+    // uma entrada, uma rasterizacao TTF e uma textura GL por quadro. Estourado
+    // o orcamento de rasterizacao por quadro, linhaFamilia devolve linha vazia
+    // — e a linha simplesmente NAO E DESENHADA. Na foto do dono a opcao em
+    // foco saiu fantasma e a de baixo saiu em branco.
+    //
+    // Duas chaves por rotulo, e o degrau cai em f=0,5, onde o fundo esta em
+    // 0,57 de luminancia: ali as duas cores sao legiveis, entao a troca nao
+    // tem instante ruim.
+    int cor = f >= 0.5f ? 17 : 240;
     gfx_cor(r, 14.0f / CTX_LINHA, lum, lum, lum, a);
     { TxtLinha t = txt_linha(TXT_PLR_CORPO, ops[i].rot, cor, cor, cor, 255);
       txt_desenhar_alpha(t, r.x + 44.0f,

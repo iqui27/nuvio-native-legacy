@@ -101,6 +101,10 @@ void fil_ciclar_tipo(int i);
 void fil_ciclar_tam(int i);
 // Troca a linha com a vizinha e devolve o novo indice dela (o mesmo, se nao deu
 // para mover). E o gesto de "pegar e mover" da tela de reordenar.
+// Alinha a lista de Ajustes com a ordem que a home desenha, ENQUANTO a pessoa
+// nunca tiver reordenado. Depois do primeiro fil_mover nao faz nada: dali em
+// diante quem manda e a escolha dela. Ver a nota longa em fileiras.c.
+void fil_espelhar_ordem(const char *const *chaves, int n);
 int  fil_mover(int i, int direcao);
 
 // --- consulta por chave (descoberta.c e home.c) ------------------------------
