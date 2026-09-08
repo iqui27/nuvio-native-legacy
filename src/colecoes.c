@@ -29,11 +29,48 @@ const ColFolder *col_folder(int i) {
 int col_grupo(const char *name,int *indices,int max) {
   int n=0;for(int i=0;i<count&&n<max;i++) if(!strcasecmp(name,folders[i].group)) indices[n++]=i;return n;
 }
+// RESOLVE A BASE ANTES DE COMPARAR, e isso e o conserto de verdade do #18.
+//
+// Era o unico leitor de `folders[]` que NAO passava por col_folder(), e por
+// isso o unico que via a fonte crua. Uma fonte da CONTA chega com `addonId` e
+// SEM URL (ver lerColecaoWeb), e a URL so existe depois que alguem le o
+// manifesto daquele addon. A sequencia esta medida na C9 e anotada em
+// descoberta.c (geracaoPedida): desc_iniciar() em 0,9 s, o sync aplica o que
+// veio da conta em ~2 s, e os manifestos so sao lidos em ~7 s — colecoes e
+// addons chegam no MESMO bloco de sync_passo, entao a colecao e sempre guardada
+// antes de qualquer manifesto ter sido lido. Ou seja: no instante em que
+// col_definir_json guarda a fonte, addons_base_por_id ainda devolve "" — a
+// fonte fica com base VAZIA e esta funcao nunca casava com a base real que a
+// descoberta lhe passa.
+//
+// Resultado: o catalogo que esta dentro de uma colecao nao era reconhecido como
+// tal e virava fileira solta na home, exatamente o que o relator do #18 continua
+// vendo depois do v1.0.11. O conserto daquela versao (pular o catalogo que ja
+// aparece numa pasta) estava certo e simplesmente nunca disparava para quem tem
+// colecao da CONTA — que no Tizen e o unico caminho possivel, porque o
+// collections.json nao vai no .wgt (ver #10). No aparelho de quem consertou as
+// pastas vinham do pacote, com `base` escrita no arquivo, e por isso funcionava.
+//
+// O unico caminho que resolvia a base era col_folder(), chamado do DESENHO da
+// home — uma corrida contra o fio da descoberta, o que explica "as vezes".
+//
+// CUSTO, medido e nao suposto (tests/colcusto.c no Mac M-series, -O1, 32 pastas
+// x 8 fontes = 256 fontes, 1.000.000 de chamadas no PIOR caso, em que nada casa
+// e as duas varreduras vao ate o fim): 2048 e 2053 ms antes, 2101 e 2116 ms
+// depois. Sao ~53 ns a mais por chamada, 2,6%, para 256 fontes — resolverBases
+// vira um teste de `base[0]` por fonte e nao chama addons_base_por_id nenhuma
+// vez depois que a base entrou. A montagem chama isto uma vez por catalogo
+// declarado: com os 605 do Xperience sao ~32 us a mais no ciclo inteiro.
 const ColFolder *col_por_catalogo(const char *base,const char *type,const char *id) {
-  for(int i=0;i<count;i++) for(int s=0;s<folders[i].nSources;s++) {
-    const ColSource *v=&folders[i].sources[s];
-    if(!strcmp(v->base,base)&&!strcmp(v->type,type)&&!strcmp(v->catId,id)) return &folders[i];
-  }return NULL;
+  // Base vazia nao pergunta nada: sem esta guarda uma consulta sem URL casava
+  // com QUALQUER fonte cuja base ainda estivesse vazia — um falso positivo que
+  // esconderia a fileira errada.
+  if(!base||!base[0]||!type||!id) return NULL;
+  for(int i=0;i<count;i++) { resolverBases(&folders[i]);
+    for(int s=0;s<folders[i].nSources;s++) {
+      const ColSource *v=&folders[i].sources[s];
+      if(!strcmp(v->base,base)&&!strcmp(v->type,type)&&!strcmp(v->catId,id)) return &folders[i];
+    } }return NULL;
 }
 /* Arte editorial: JPEG primeiro, PNG depois.
  *
