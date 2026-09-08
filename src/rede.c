@@ -1,5 +1,6 @@
 #include "rede.h"
 #include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -324,6 +325,75 @@ static size_t receber(void *dados, size_t tam, size_t qtd, void *u) {
 // sem depender de ninguem chamar nada primeiro.
 static pthread_mutex_t abrirTrava = PTHREAD_MUTEX_INITIALIZER;
 
+// ---------------------------------------------------------------- OPENSSL 1.0
+//
+// O OpenSSL 1.0 NAO E SEGURO ENTRE FIOS SOZINHO, e este app o usa de uma duzia
+// deles. Quem usa a biblioteca precisa instalar dois calos — uma funcao de
+// trava e uma de identidade de fio — e a documentacao da libcurl diz isso com
+// todas as letras. Este app nunca instalou.
+//
+// MEDIDO NA C9, e o rastro nao deixa duvida:
+//   sk_is_sorted <- lh_delete <- RAND_poll <- ERR_remove_thread_state
+//     <- libcurl (curl_easy_cleanup) <- rede_baixar_interno2
+//   SIGSEGV, SEGV_MAPERR
+// ERR_remove_thread_state percorre uma tabela hash GLOBAL do OpenSSL para
+// limpar o estado de erro do fio, e a libcurl a chama em todo curl_easy_cleanup.
+// Com varios fios fechando handles ao mesmo tempo, a tabela e corrompida.
+//
+// APARECE QUANDO HA MUITO HTTPS AO MESMO TEMPO, e por isso passou tanto tempo
+// escondido: com o cache de catalogo quente o arranque faz poucas conexoes. Foi
+// preciso arrancar SEM cache — todos os catalogos, o Trakt, as colecoes e as
+// artes de uma vez — para o app morrer em segundos.
+//
+// A partir do OpenSSL 1.1 a biblioteca se tranca sozinha e CRYPTO_num_locks nem
+// existe: por isso a ausencia do simbolo nao e erro, e so significa "nao
+// precisa". Mesma coisa no Mac, onde a libcurl usa outra pilha de TLS.
+static pthread_mutex_t *sslTravas;
+static int nSslTravas;
+
+static void sslTravar(int modo, int n, const char *arq, int linha) {
+  (void)arq; (void)linha;
+  if (!sslTravas || n < 0 || n >= nSslTravas) return;
+  if (modo & 1)  pthread_mutex_lock(&sslTravas[n]);   /* 1 = CRYPTO_LOCK */
+  else           pthread_mutex_unlock(&sslTravas[n]);
+}
+
+static unsigned long sslIdDoFio(void) {
+  // O id precisa ser unico por fio e cabe num unsigned long. pthread_self e um
+  // ponteiro nas plataformas deste app; o cast e a receita que a propria
+  // documentacao do OpenSSL usa.
+  return (unsigned long)(uintptr_t)pthread_self();
+}
+
+// Chamada com abrirTrava tomada, uma vez so.
+static void prepararOpenSSL(void) {
+  void *hc;
+  int (*numLocks)(void);
+  void (*setLocking)(void (*)(int, int, const char *, int));
+  void (*setId)(unsigned long (*)(void));
+  int i;
+  static const char *nomes[] = { "libcrypto.so.1.0.0", "libcrypto.so.1.0.2",
+                                 "libcrypto.so.10", "libcrypto.so.1",
+                                 "libcrypto.so", NULL };
+  if (sslTravas) return;
+  hc = NULL;
+  for (i = 0; nomes[i] && !hc; i++) hc = dlopen(nomes[i], RTLD_NOW);
+  if (!hc) return;   // sem libcrypto separada: nada a fazer
+  *(void **)(&numLocks)   = dlsym(hc, "CRYPTO_num_locks");
+  *(void **)(&setLocking) = dlsym(hc, "CRYPTO_set_locking_callback");
+  *(void **)(&setId)      = dlsym(hc, "CRYPTO_set_id_callback");
+  if (!numLocks || !setLocking) return;   // 1.1+: ela se tranca sozinha
+  nSslTravas = numLocks();
+  if (nSslTravas < 1) return;
+  sslTravas = (pthread_mutex_t *)malloc(sizeof(pthread_mutex_t) * (size_t)nSslTravas);
+  if (!sslTravas) { nSslTravas = 0; return; }
+  for (i = 0; i < nSslTravas; i++) pthread_mutex_init(&sslTravas[i], NULL);
+  setLocking(sslTravar);
+  if (setId) setId(sslIdDoFio);
+  printf("[rede] OpenSSL 1.0 travado para %d regioes\n", nSslTravas);
+  fflush(stdout);
+}
+
 static int abrir(void) {
   void *h;
   int r;
@@ -354,6 +424,9 @@ static int abrir(void) {
     return 0;
   }
   if (curl_global) curl_global(3 /* CURL_GLOBAL_DEFAULT */);
+  // DEPOIS do global_init e ANTES de soltar a trava: a partir daqui qualquer fio
+  // pode entrar em curl_easy_perform, e e la que o OpenSSL comeca a ser usado.
+  prepararOpenSSL();
   pronto = 1;
   pthread_mutex_unlock(&abrirTrava);
   return 1;
