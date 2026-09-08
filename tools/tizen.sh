@@ -84,6 +84,11 @@ ARTE=$(bash tools/tizen-art.sh)
 # libwebp, e pedir "webp" quebra o build do proprio SDL_image ("webp/decode.h
 # file not found"). Os 41 selos webp sao convertidos para png por tizen-art.sh.
 #
+# ARTE DE REDE EM WEBP nao passa por tizen-art.sh — vem do addon em tempo de
+# execucao, e um addon de posters manda webp. Quem le esse caso e src/webp.c,
+# que no alvo Emscripten devolve o arquivo ao proprio navegador
+# (createImageBitmap) em vez de procurar uma libwebp que nao existe em WASM.
+#
 # E NAO PONHA COMENTARIO DENTRO DA LISTA DE ARGUMENTOS abaixo: um `#` no meio de
 # uma linha continuada por `\` encerra o comando ali. O shell entao executa o
 # resto como comando solto ("-sSDL2_IMAGE_FORMATS=[...]: comando nao encontrado"),
