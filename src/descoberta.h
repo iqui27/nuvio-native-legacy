@@ -36,6 +36,11 @@ void desc_repetir(void);
 // up like before").
 int desc_catalogos_fora(void);
 
+// Reordena e filtra as fileiras JA MONTADAS, sem tocar na rede. Para mudanca de
+// ordem, de colecao ou de limite — ver a nota longa em descoberta.c. Chamar do
+// fio principal.
+void desc_remontar_fileiras(void);
+
 // Le a chave do TMDB (art/tmdb.txt). Sem ela o elenco fica so com nomes, sem
 // foto nem personagem.
 void desc_tmdb(const char *dirArte);

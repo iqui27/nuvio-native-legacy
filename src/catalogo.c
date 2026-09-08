@@ -661,6 +661,21 @@ void cat_definir(const CatItem *lista, int qtd) {
   cat_definir_tudo(lista, qtd, NULL, 0);
 }
 
+void cat_republicar_fileiras(const CatFileira *novasFils, int nNovas) {
+  int k, q, v = 0;
+  if (!novasFils || nNovas < 1 || n < 1) return;
+  q = nNovas > CAT_FIL_MAX ? CAT_FIL_MAX : nNovas;
+  nFils = 0;                 // ver a nota em catalogo.h: zera antes de mexer
+  for (k = 0; k < q; k++) {
+    CatFileira f = novasFils[k];
+    if (f.ini < 0 || f.ini >= n) continue;
+    if (f.ini + f.n > n) f.n = n - f.ini;
+    if (f.n < 1) continue;
+    fils[v++] = f;
+  }
+  nFils = v;
+}
+
 void cat_definir_tudo(const CatItem *lista, int qtd,
                       const CatFileira *novasFils, int nNovas) {
   if (!lista || qtd < 1) return;

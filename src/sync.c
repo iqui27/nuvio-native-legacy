@@ -464,7 +464,14 @@ void sync_passo(unsigned agoraMs) {
   // Uma credencial que muda o CONTEUDO do catalogo obriga a remontar. Vale
   // para o Trakt (fileiras proprias) e para os addons (sao a fonte dos
   // catalogos). A chave do TMDB e do mdblist so enriquecem o que ja esta la.
-  { int remontar = 0;
+  // DOIS SINAIS, e nao um. `remontar` juntava quatro causas com custos muito
+  // diferentes: addons e Trakt mudam O QUE BUSCAR e exigem um ciclo de rede
+  // novo; ordem de catalogos e colecoes mudam so QUAIS FILEIRAS EXISTEM e em que
+  // sequencia — nenhum item muda. Disparar desc_repetir() por causa das duas
+  // ultimas refazia Trakt e todos os manifestos por nada, e como o ciclo novo
+  // publica um conjunto diferente do anterior, a home carregava um catalogo,
+  // trocava por outro e so entao assentava na ordem final.
+  { int remontar = 0, soFileiras = 0;
   if (temAddonsRem) { addons_definir_lista(addonsRem, nAddonsRem); temAddonsRem = 0; remontar = 1; }
   // Vinculo feito NESTA TV ganha do que a conta manda: o servidor nao aceita o
   // push de "trakt" (400 22023), entao a linha da conta pode ser um token
@@ -486,17 +493,20 @@ void sync_passo(unsigned agoraMs) {
       // `hide_catalog_underline` e lido e NAO aplicado: nao ha sublinhado de
       // catalogo desenhado neste app. Ler ja evita confundir "a conta nao
       // mandou" com "a conta mandou false" quando a fileira ganhar rotulo.
-      remontar = 1;
+      soFileiras = 1;
     }
     free(catHomeBlob);
     catHomeBlob = NULL;
     temCatHomeBlob = 0;
   }
   if (temColBlob && colBlob) {
-    if (col_definir_json(colBlob) > 0) remontar = 1;
+    if (col_definir_json(colBlob) > 0) soFileiras = 1;
     free(colBlob); colBlob = NULL; temColBlob = 0;
   }
-  if (remontar) desc_repetir(); }
+  // Rede so quando muda o que buscar. Quando as duas coisas mudam no mesmo
+  // ciclo, o ciclo de rede ja remonta as fileiras no fim — nao ha o que somar.
+  if (remontar) desc_repetir();
+  else if (soFileiras) desc_remontar_fileiras(); }
   if (temAjustesBlob && ajustesBlob) {
     ajustes_aplicar_blob(ajustesBlob);
     free(ajustesBlob);

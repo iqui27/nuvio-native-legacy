@@ -254,6 +254,21 @@ const CatFileira *cat_fileira(int r);   // NULL fora da faixa
 // Troca itens E fileiras de uma vez. Tem de ser uma chamada so: com duas, o fio
 // do desenho pega um quadro com as fileiras novas apontando para os itens
 // velhos, e a janela (ini,n) cai fora do vetor.
+// TROCA SO A LISTA DE FILEIRAS, mantendo os itens onde estao.
+//
+// As fileiras sao janelas (ini,n) no vetor de itens, entao reordena-las, filtrar
+// algumas ou mudar o limite NAO exige tocar nos itens — e portanto nao exige
+// buscar nada de novo na rede. Existe para separar "rebuscar" de "remontar":
+// mudanca de ordem, de colecao ou do limite e so remontagem, e disparar um ciclo
+// inteiro de descoberta por causa dela era o que fazia a home carregar um
+// catalogo, trocar por outro e so entao assentar na ordem certa.
+//
+// Mesma disciplina de cat_definir_tudo para nao precisar de trava: zera a
+// contagem primeiro (o desenho ve zero fileiras por um quadro), preenche, e so
+// entao sobe a contagem. Os itens nao se movem, entao as janelas continuam
+// validas o tempo todo.
+void cat_republicar_fileiras(const CatFileira *fils, int nNovas);
+
 void cat_definir_tudo(const CatItem *lista, int qtd,
                       const CatFileira *fils, int nFils);
 

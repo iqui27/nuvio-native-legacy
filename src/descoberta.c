@@ -778,15 +778,20 @@ static void lerPrefs(void) {
 // So conta quando a colecao esta VISIVEL como fileira. Uma pasta cujo grupo foi
 // desligado nao pode engolir o catalogo dela junto — senao desligar a colecao
 // faria o conteudo sumir de vez, em vez de voltar a aparecer solto.
-static int dentroDeColecaoVisivel(const Decl *d) {
+static int dentroDeColecaoVisivelBase(const char *base, const char *tipo,
+                                      const char *id) {
   const ColFolder *f;
   char chaveGrupo[96];
-  if (!d->base) return 0;
-  f = col_por_catalogo(d->base, d->tipo, d->id);
+  if (!base || !base[0]) return 0;
+  f = col_por_catalogo(base, tipo, id);
   if (!f) return 0;
   col_chave_grupo(f->group, chaveGrupo, sizeof chaveGrupo);
   if (fil_oculta(chaveGrupo) || catordem_oculta(chaveGrupo, chaveGrupo)) return 0;
   return 1;
+}
+
+static int dentroDeColecaoVisivel(const Decl *d) {
+  return dentroDeColecaoVisivelBase(d->base, d->tipo, d->id);
 }
 
 static int desligada(const Decl *d) {
@@ -1588,6 +1593,72 @@ void desc_iniciar(void) {
 // fileiras do Trakt so aparecem no proximo arranque. Foi o relato "ativa o
 // trakt e nao atualiza".
 int desc_catalogos_fora(void) { return catalogosFora; }
+
+// REMONTA AS FILEIRAS SEM TOCAR NA REDE.
+//
+// Mudanca de ORDEM (da conta ou daqui), de COLECAO ou do LIMITE nao muda um
+// unico item: muda quais fileiras existem e em que sequencia. Ate agora tudo
+// isso passava por desc_repetir(), que refaz o ciclo INTEIRO — Trakt, manifestos
+// e todos os catalogos de novo. O custo nao era so tempo: como o segundo ciclo
+// publica um conjunto de fileiras diferente do primeiro, a home carregava um
+// catalogo, trocava por outro e so entao assentava na ordem final. E o que o
+// dono descreveu, e o conserto do issue #18 ia deixar isso MAIS visivel, porque
+// a partir dele os dois ciclos diferem ainda mais (no primeiro as colecoes ainda
+// nao chegaram, entao os catalogos delas viram fileira solta; no segundo, nao).
+//
+// Aqui a lista de fileiras da ultima montagem e reordenada e filtrada em
+// memoria, e republicada por cat_republicar_fileiras. Sem HTTP, sem fio novo.
+//
+// AS FILEIRAS SINTETIZADAS FICAM ONDE ESTAO. "Continuar assistindo" e "Amigos
+// assistindo" nao tem `base` — elas nao sao catalogo de addon e nao participam
+// da ordem, senao a uniao as jogaria para o fim como chaves desconhecidas.
+void desc_remontar_fileiras(void) {
+  static CatFileira saidaFil[CAT_FIL_MAX];
+  const char *chaves[CAT_FIL_MAX];
+  int idxCat[CAT_FIL_MAX], ordem[CAT_FIL_MAX], antes[CAT_FIL_MAX];
+  int i, k, q, nCat = 0, nOut = 0, teto;
+  if (nFileirasMontadas < 1) return;
+
+  // 1. as fixas primeiro, na ordem em que ja estavam.
+  for (i = 0; i < nFileirasMontadas && nOut < CAT_FIL_MAX; i++)
+    if (!filsMontadas[i].base[0]) saidaFil[nOut++] = filsMontadas[i];
+
+  // 2. as de catalogo, filtradas pelas mesmas regras de desligada().
+  for (i = 0; i < nFileirasMontadas; i++) {
+    const CatFileira *f = &filsMontadas[i];
+    if (!f->base[0]) continue;
+    if (fil_oculta(f->chave) || catordem_oculta(f->chave, f->chave)) continue;
+    if (dentroDeColecaoVisivelBase(f->base, f->tipo, f->catId)) continue;
+    if (nCat < CAT_FIL_MAX) { chaves[nCat] = f->chave; idxCat[nCat] = i; nCat++; }
+  }
+  for (k = 0; k < nCat; k++) ordem[k] = k;
+  if (catordem_tem_ordem() && nCat > 0) {
+    memcpy(antes, ordem, sizeof(int) * (size_t)nCat);
+    q = catordem_unir(chaves, nCat, ordem, CAT_FIL_MAX);
+    for (k = 0; k < q; k++) ordem[k] = antes[ordem[k]];
+    nCat = q;
+  }
+  if (fil_tem_ordem() && nCat > 0) {
+    const char *c2[CAT_FIL_MAX];
+    for (k = 0; k < nCat; k++) c2[k] = filsMontadas[idxCat[ordem[k]]].chave;
+    memcpy(antes, ordem, sizeof(int) * (size_t)nCat);
+    q = fil_unir(c2, nCat, ordem, CAT_FIL_MAX);
+    for (k = 0; k < q; k++) ordem[k] = antes[ordem[k]];
+    nCat = q;
+  }
+
+  teto = fil_limite();
+  if (teto < 1 || teto > CAT_FIL_MAX) teto = CAT_FIL_MAX;
+  for (k = 0; k < nCat && nOut < teto && nOut < CAT_FIL_MAX; k++)
+    saidaFil[nOut++] = filsMontadas[idxCat[ordem[k]]];
+
+  printf("[desc] fileiras remontadas sem rede: %d de %d\n",
+         nOut, nFileirasMontadas);
+  fflush(stdout);
+  nFileirasMontadas = nOut;
+  memcpy(filsMontadas, saidaFil, sizeof(CatFileira) * (size_t)nOut);
+  cat_republicar_fileiras(saidaFil, nOut);
+}
 
 void desc_repetir(void) {
   geracaoPedida++;
