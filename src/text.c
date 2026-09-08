@@ -95,7 +95,21 @@ static Entrada cache[MAX_LINHAS];
 // um ou dois quadros depois, o que ninguem ve; o tranco, todo mundo ve.
 // 2 e nao 4: com 4 o pior quadro media 6 ms so de texto, e o objetivo aqui e
 // que NENHUMA parte sozinha coma mais que um terco do quadro.
-#define TXT_POR_QUADRO 2
+// QUATRO, e o numero e MEDIDO e nao escolhido.
+//
+// Eram dois, e o teto existe por um motivo real: rasterizar custa, e uma tela
+// nova pede dezenas de linhas ineditas de uma vez. Mas com dois, ABRIR UM MODAL
+// deixava a maior parte do texto em branco por varios quadros — as linhas vao
+// entrando de duas em duas e, num aparelho mais lento, isso se le como "o texto
+// some". Foi o relato do dono no Tizen, e a mesma coisa que a foto do modal de
+// opcoes mostrou com uma linha vazia.
+//
+// MEDIDO na LG OLED65C9 antes de mexer: "texto 2.5ms em 2 linhas", pior quadro
+// 23,6 ms, 0 janks. Quatro linhas custam ~5 ms no quadro em que a tela abre, e
+// SO nesse — em regime a telemetria diz "texto 0.0ms em 0 linhas". O contador
+// de janks e quem decide se este numero pode subir mais; se ele sair de zero
+// abrindo tela, o certo e voltar a tres, nao ignorar.
+#define TXT_POR_QUADRO 4
 static int rastNesteQuadro;
 static unsigned long quadroTxt = 1;
 
