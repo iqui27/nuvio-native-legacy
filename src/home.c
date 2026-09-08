@@ -83,13 +83,24 @@ static char pst[MAX_ARTE][512];   int nPst = 0;   // posters 2:3
 // RESERVA, e so isso: e o que a home mostra enquanto a rede nao respondeu, ou
 // quando nao respondeu nenhuma. As fileiras de verdade vem de cat_fileira(),
 // montadas em descoberta.c a partir dos catalogos que os addons declaram.
+// SEM "Continuar assistindo" AQUI, e a ausencia e o conserto.
+//
+// Esta tabela e a reserva mostrada enquanto a rede nao respondeu, e ela aponta
+// para as primeiras posicoes do catalogo DO PACOTE. Chamar essas posicoes de
+// "Continuar assistindo" dizia ao usuario que aqueles eram OS TITULOS DELE pela
+// metade — quando sao os quarenta titulos de demonstracao de quem empacotou. No
+// primeiro arranque, antes de a conta responder, a home abria com o "continue
+// assistindo" de um estranho. E o issue #19.
+//
+// As outras tres continuam: "Popular" e "Em alta" sao uma vitrine e nao afirmam
+// pertencer a ninguem. A fileira de continuar so nasce de progresso de verdade
+// — progresso.c, a conta ou o Trakt — em montarContinuar (descoberta.c).
 static Fileira fileiras[MAX_FIL] = {
-  { "Continuar assistindo", FILEIRA_CONTINUE, 8, 0  },
-  { "Popular - Filme",      FILEIRA_NORMAL,   8, 8  },
-  { "Popular - S\xc3\xa9rie", FILEIRA_NORMAL, 8, 16 },
-  { "Em alta",              FILEIRA_NORMAL,   8, 24 },
+  { "Popular - Filme",      FILEIRA_NORMAL,   8, 0  },
+  { "Popular - S\xc3\xa9rie", FILEIRA_NORMAL, 8, 8  },
+  { "Em alta",              FILEIRA_NORMAL,   8, 16 },
 };
-static int nFileiras = 4;
+static int nFileiras = 3;
 static int retomarIndice = -1;
 static char retomarId[64];
 static unsigned retomarRev, retomarAplicada;

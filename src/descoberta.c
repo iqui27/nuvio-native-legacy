@@ -3,6 +3,7 @@
 #include "ajustes.h"
 #include "catordem.h"
 #include "fileiras.h"
+#include "colecoes.h"
 #include "marco.h"
 #include <SDL2/SDL.h>
 #include "catalogo.h"
@@ -763,8 +764,34 @@ static void lerPrefs(void) {
 // A conferencia e contra DUAS chaves, como no web: quem desliga pela tela de
 // ajustes grava a chave de desativar (que carrega a URL base e o nome), e quem
 // desliga pela ordenacao grava a chave curta.
+// O catalogo JA APARECE DENTRO DE UMA PASTA DE COLECAO?
+//
+// Um addon como o Xperience declara centenas de catalogos, e as colecoes da
+// conta agrupam justamente esses mesmos catalogos em pastas. Sem esta pergunta a
+// home montava as DUAS coisas: a pasta (uma fileira de atalhos) e, soltos, os
+// catalogos que estao dentro dela. O relato descreve exatamente isso — "em vez
+// de manter cada colecao como uma fileira, o Nuvio cria fileiras extras para os
+// conteudos de dentro" — e o efeito colateral e pior que a duplicata: com teto
+// de 16 fileiras, as repetidas consomem as vagas e empurram para fora as
+// colecoes que ainda nao entraram. Issue #18.
+//
+// So conta quando a colecao esta VISIVEL como fileira. Uma pasta cujo grupo foi
+// desligado nao pode engolir o catalogo dela junto — senao desligar a colecao
+// faria o conteudo sumir de vez, em vez de voltar a aparecer solto.
+static int dentroDeColecaoVisivel(const Decl *d) {
+  const ColFolder *f;
+  char chaveGrupo[96];
+  if (!d->base) return 0;
+  f = col_por_catalogo(d->base, d->tipo, d->id);
+  if (!f) return 0;
+  col_chave_grupo(f->group, chaveGrupo, sizeof chaveGrupo);
+  if (fil_oculta(chaveGrupo) || catordem_oculta(chaveGrupo, chaveGrupo)) return 0;
+  return 1;
+}
+
 static int desligada(const Decl *d) {
   int i;
+  if (dentroDeColecaoVisivel(d)) return 1;
   // A escolha feita NA TV (Ajustes -> Fileiras da Home) vem primeiro. Ela e
   // local de proposito e nunca sobe para a conta — a trava esta no topo de
   // catordem.h e repetida em fileiras.h. Sem esta precedencia, desligar uma

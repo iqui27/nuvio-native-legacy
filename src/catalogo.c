@@ -278,10 +278,23 @@ int cat_carregar(const char *dirArte) {
       q = campo(q, c6, sizeof c6);
       campo(q, c7, sizeof c7);
       itens[i].nota = atoi(c1);
-      itens[i].progresso = atoi(c4);
+      // PROGRESSO E MINUTOS RESTANTES NAO ENTRAM, e as colunas ficam para nao
+      // invalidar o arquivo de quem ainda o gera.
+      //
+      // extra.txt e um retrato do acervo de QUEM EMPACOTOU, e a quarta coluna e
+      // o quanto ELE assistiu de cada titulo. Num pacote distribuido isso vira
+      // barra de progresso em filme que a pessoa nunca abriu — e, junto com a
+      // fileira de reserva da home, "Continuar assistindo" cheio de titulo de
+      // estranho no primeiro arranque. E o issue #19, e e a mesma classe do
+      // art/collections.json que saiu do .ipk: dado do empacotador exibido como
+      // se fosse do usuario.
+      //
+      // O progresso de verdade chega logo abaixo, de progresso.c, e depois da
+      // conta e do Trakt pelo sync. Temporada e episodio ficam: sao metadados do
+      // titulo (qual episodio o pacote descreve), nao consumo de ninguem.
+      (void)c4; (void)c7;
       itens[i].temporada = atoi(c5);
       itens[i].episodio  = atoi(c6);
-      itens[i].restanteMin = atoi(c7);
       if (c2[0]) snprintf(itens[i].provLogo, sizeof itens[i].provLogo, "%s/%s", dirArte, c2);
       snprintf(itens[i].provNome, sizeof itens[i].provNome, "%s", c3);
     }

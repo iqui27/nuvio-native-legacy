@@ -73,6 +73,10 @@
 static HomeItem item;
 static int  aberto = 0, saindo = 0;
 static int  idx = 0;                 // titulo atual dentro do acervo
+// A IDENTIDADE do titulo aberto, e uma copia dele. Ver revalidarIdx.
+static char idxImdb[24];
+static CatItem idxCopia;
+static int  idxTemCopia;
 static float t = 0.0f;               // 0 = card na home, 1 = tela cheia
 // Dois estados, nao tres: o hero (nivel 0) e a pagina rolada (nivel 1). O
 // nivel intermediario "cartao vira tela cheia" so fazia sentido enquanto havia
@@ -462,6 +466,13 @@ void detail_abrir(const HomeItem *it) {
   t = 0.0f; pg = 0.0f; scrollY = 0.0f; abaInfo = 0; pessoaAberta = 0;
   relFoco = 0; pedAbrir = -1; ratTemp = 0;
   idx = it->indice;
+  // Guarda identidade e copia ANTES de qualquer republicacao. Ver revalidarIdx.
+  { const CatItem *ci0 = cat_item(idx);
+    idxImdb[0] = 0; idxTemCopia = 0;
+    if (ci0) {
+      snprintf(idxImdb, sizeof idxImdb, "%s", ci0->imdb);
+      idxCopia = *ci0; idxTemCopia = 1;
+    } }
   // Nota do Trakt, comentarios e relacionados. Pedido na ABERTURA e nao no
   // desenho: as abas so aparecem depois que o dado chega, e pedir no desenho
   // faria a barra de abas surgir com o titulo ja na tela.
@@ -1114,8 +1125,45 @@ static void sincronizarColunas(void) {
                 ? foco.nColunas[foco.fileira] - 1 : 0;
 }
 
+// O INDICE NAO E ESTAVEL, E ESTA TELA VIVE MINUTOS.
+//
+// `idx` e uma posicao no vetor do catalogo, e cat_definir_tudo TROCA O BLOCO
+// INTEIRO (tres pontos em descoberta.c). Toda republicacao com esta tela aberta
+// fazia o indice apontar para quem passou a ocupar aquela posicao — e o
+// resultado era a pagina de titulo trocando sozinha para outro filme.
+//
+// MEDIDO NO RELATO, e as tres partes dele batem com esta causa: "pisca" e a
+// troca do bloco; "abre um titulo diferente" e o novo ocupante; "primeiro abre
+// algo de Continuar assistindo" porque aqueles itens ocupam as PRIMEIRAS
+// posicoes do catalogo, entao um titulo aberto de la tem indice 0..7, que e
+// justamente a faixa que a republicacao reescreve primeiro. E "depois de alguns
+// minutos parado" e o sync periodico, que roda a cada cinco.
+//
+// O player nao sofria disso porque o sync nao roda com ele aberto — pensaram
+// nele e nao nesta tela. Issue #16.
+//
+// A identidade estavel e o imdb. Quando o titulo some do catalogo (o catalogo
+// novo pode nao trazer a fileira de onde ele veio), a copia guardada na abertura
+// volta por cat_acrescentar: melhor reinseri-lo do que deixar a tela mostrando
+// outra obra.
+static void revalidarIdx(void) {
+  const CatItem *ci;
+  int novo;
+  if (!idxImdb[0]) return;
+  ci = cat_item(idx);
+  if (ci && !strcmp(ci->imdb, idxImdb)) return;      // caso comum: nada mudou
+  novo = cat_indice_por_imdb(idxImdb);
+  if (novo < 0 && idxTemCopia) novo = cat_acrescentar(&idxCopia);
+  if (novo < 0) return;                              // sem para onde ir: fica
+  printf("[detail] catalogo remontou: %s saiu de %d para %d\n",
+         idxImdb, idx, novo);
+  fflush(stdout);
+  idx = novo;
+}
+
 void detail_atualizar(float dt, Uint32 agora) {
   if (!aberto) return;
+  revalidarIdx();
   sincronizarColunas();
   // Solta o pedido de episodios que ficou guardado por ter chegado com outro
   // carregamento em voo.
