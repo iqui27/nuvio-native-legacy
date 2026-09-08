@@ -6,6 +6,7 @@
 #include "addons.h"
 #include "debrid.h"
 #include "colecoes.h"
+#include "contalib.h"
 #include "trakt.h"
 #include "traktauth.h"
 #include "catalogo.h"
@@ -53,9 +54,10 @@ static char tmdbKey[120], mdbKey[120];
 static int  temTmdb, temMdb;
 
 
-// Contagens do que foi puxado mas o app ainda nao consome. Elas existem para o
-// resumo poder dizer a verdade em vez de "sincronizado" sem qualificar.
-static int cVistos, cBiblio, cSalvos, cColecoes, temAjustesPerfil, temCatHome;
+// Contagens do ultimo ciclo, para o resumo da tela de ajustes poder dizer a
+// verdade em vez de "sincronizado" sem qualificar. Vistos e biblioteca deixaram
+// de ser SO contagem — ver a nota grande na secao "so leitura".
+static int cVistos, cBiblio, cColecoes, temAjustesPerfil, temCatHome;
 
 // Blob de ajustes do perfil, cru, esperando ser aplicado no fio principal.
 // `aplicarAjustes` comeca ligado: no arranque nao ha mudanca local para
@@ -78,6 +80,13 @@ static char *catHomeBlob;
 static int   temCatHomeBlob;
 static char *colBlob;        // sync_pull_collections, lido por colecoes.c no fio principal
 static int   temColBlob;
+// sync_pull_library e sync_pull_watched_items, crus, lidos por contalib.c no
+// fio principal. Guardar o corpo em vez de contar e o conserto deste issue: as
+// duas respostas eram liberadas depois de contadas.
+static char *bibBlob;
+static int   temBibBlob;
+static char *vistosBlob;
+static int   temVistosBlob;
 
 // ---------------------------------------------------------------- utilitarios
 
@@ -225,14 +234,22 @@ static void puxarCredenciais(void) {
 
 // ---------------------------------------------------------------- so leitura
 
-// Conta os itens de uma RPC que devolve array. Estas superficies sao puxadas
-// mas ainda nao consumidas: o app nativo nao tem tela propria para elas, e
-// EMPURRAR sem ter a tela mandaria lista vazia — que apaga o dado nos outros
-// aparelhos da pessoa. Contar e dizer no resumo e o comportamento honesto ate
-// a tela existir.
-// RPC que o servidor nao tem NAO e perguntada de novo. MEDIDO:
-// `sync_pull_saved_library` nao existe neste servidor, e sem esta lista o app
-// gastaria uma viagem por ciclo, para sempre, contra um 404 que nunca muda.
+// ESTAS SUPERFICIES ERAM CONTADAS E JOGADAS FORA, e era o defeito relatado.
+//
+// O que estava escrito aqui antes — "o app nativo nao tem tela propria para
+// elas" — era verdade para os SALVOS e para os VISTOS quando este arquivo
+// nasceu, e deixou de ser: a tela de Biblioteca existe (src/biblioteca.c) e o
+// historico de "assistido" existe (cat_historico_definir_id). O codigo nao
+// acompanhou. O efeito medido pelo relator (@Haylefal, webOS 4) foi uma
+// Biblioteca vazia com o selo "LOCAL" numa conta que tinha itens: a resposta
+// chegava, virava um numero no resumo dos ajustes e o corpo era liberado.
+//
+// Continua valendo o outro lado da regra: o app PUXA e nao EMPURRA nenhuma
+// destas. Empurrar uma lista que este app nao edita mandaria lista vazia, e
+// lista vazia apaga o dado nos outros aparelhos da pessoa (secao 1.6, regra 2).
+//
+// RPC que o servidor nao tem NAO e perguntada de novo — uma viagem por ciclo,
+// para sempre, contra um erro que nunca muda.
 #define SY_AUSENTES 8
 static const char *ausentes[SY_AUSENTES];
 static int nAusentes;
@@ -244,7 +261,19 @@ static int jaAusente(const char *funcao) {
   return 0;
 }
 
-static int contarRpc(const char *funcao, const char *corpo) {
+// Puxa uma RPC de array, CONTA as linhas e GUARDA o corpo em *destino, para o
+// fio principal interpretar. Devolve a contagem, ou -1 quando nao houve
+// resposta util (e ai *destino fica como estava).
+//
+// Substituiu um `contarRpc` que so devolvia o numero. As colecoes ja mostravam
+// por que ele nao servia: para ficar com o corpo, elas chamavam a MESMA RPC
+// DUAS VEZES por ciclo — uma para contar, outra para guardar. O ciclo tinha
+// oito requisicoes e uma delas era uma copia exata da anterior.
+//
+// O corpo NAO e interpretado aqui. Este e o fio de rede; mexer no catalogo, nas
+// colecoes ou nas fileiras daqui e mexer num vetor que o desenho esta lendo no
+// mesmo instante — a mesma razao pela qual os addons esperam sync_passo.
+static int puxarBlob(const char *funcao, const char *corpo, char **destino) {
   char *r;
   int st = 0, k = 0;
   const char *p;
@@ -254,12 +283,15 @@ static int contarRpc(const char *funcao, const char *corpo) {
     if (r && nuvem_erro_ausente(r)) {
       printf("[sync] %s nao existe neste servidor\n", funcao);
       if (nAusentes < SY_AUSENTES) ausentes[nAusentes++] = funcao;
+    } else if (st) {
+      printf("[sync] %s: HTTP %d\n", funcao, st);
     }
     free(r);
     return -1;
   }
   for (p = js_raiz_array(r); p; p = js_prox(js_fim(p))) k++;
-  free(r);
+  if (destino) { free(*destino); *destino = r; }
+  else free(r);
   return k;
 }
 
@@ -344,22 +376,43 @@ static void puxarSoLeitura(void) {
   int perfil = perfis_ativo();
 
   snprintf(corpo, sizeof corpo, "{\"p_profile_id\":%d}", perfil);
-  cBiblio   = contarRpc("sync_pull_library", corpo);
-  cColecoes = contarRpc("sync_pull_collections", corpo);
-  if (cColecoes > 0 && !jaAusente("sync_pull_collections")) {
-    int st = 0; char *r = sessao_rpc("sync_pull_collections", corpo, &st);
-    if (ok2xx(r, st)) { free(colBlob); colBlob = r; temColBlob = 1; } else free(r);
-  }
+  cColecoes = puxarBlob("sync_pull_collections", corpo, &colBlob);
+  if (cColecoes > 0) temColBlob = 1;
+
+  // A BIBLIOTECA E PAGINADA, e o codigo antigo nao mandava a pagina.
+  //
+  // LIDO no app web (NuvioWeb-0.3.38-beta,
+  // js/core/profile/savedLibrarySyncService.js:7): o servico que ele chama de
+  // "saved library" usa a RPC `sync_pull_library` com
+  // { p_profile_id, p_limit, p_offset } e soma paginas de 500 ate uma vir
+  // incompleta.
+  //
+  // A CHAMADA MORTA QUE SAIU DAQUI: havia um segundo pedido a
+  // `sync_pull_saved_library`, com estes mesmos parametros. Essa funcao nao
+  // existe — nem neste servidor (PGRST202, medido e registrado na secao 1.4 do
+  // PLANO-CONTA-SYNC.md, linha 114) nem em lugar nenhum: o proprio web,
+  // no arquivo acima, chama `sync_pull_library`. A tabela da secao 1.4 lista
+  // "Biblioteca" e "Biblioteca salva" como duas superficies; sao a MESMA, e o
+  // codigo antigo tinha as duas metades trocadas — chamava `sync_pull_library`
+  // sem os parametros de pagina e `sync_pull_saved_library` com eles.
+  //
+  // Uma pagina so, do tamanho do teto que o app guarda (CONTALIB_MAX). Pedir
+  // mais do que cabe seria baixar para descartar; o contalib avisa no log
+  // quando a conta tem mais itens do que o teto.
+  snprintf(corpo, sizeof corpo,
+           "{\"p_profile_id\":%d,\"p_limit\":%d,\"p_offset\":0}",
+           perfil, CONTALIB_MAX);
+  cBiblio = puxarBlob("sync_pull_library", corpo, &bibBlob);
+  if (cBiblio >= 0) temBibBlob = 1;
 
   // MEDIDO: `p_page` comeca em 1. Com 0 o servidor responde 400 "OFFSET must
   // not be negative" — a conta dele e (p_page - 1) * p_page_size.
+  // 900 e o tamanho de pagina do web (WATCHED_ITEMS_PAGE_SIZE), nao um numero
+  // escolhido aqui.
   snprintf(corpo, sizeof corpo,
-           "{\"p_profile_id\":%d,\"p_page\":1,\"p_page_size\":200}", perfil);
-  cVistos = contarRpc("sync_pull_watched_items", corpo);
-
-  snprintf(corpo, sizeof corpo,
-           "{\"p_profile_id\":%d,\"p_limit\":200,\"p_offset\":0}", perfil);
-  cSalvos = contarRpc("sync_pull_saved_library", corpo);
+           "{\"p_profile_id\":%d,\"p_page\":1,\"p_page_size\":900}", perfil);
+  cVistos = puxarBlob("sync_pull_watched_items", corpo, &vistosBlob);
+  if (cVistos >= 0) temVistosBlob = 1;
 
   snprintf(corpo, sizeof corpo,
            "{\"p_profile_id\":%d,\"p_platform\":\"tv\"}", perfil);
@@ -456,6 +509,16 @@ void sync_passo(unsigned agoraMs) {
       temAddonsRem = 0;
     }
   }
+  // TAMBEM ANTES DA PORTEIRA, e por um motivo diferente do dos addons: a
+  // descoberta republica o catalogo inteiro varias vezes por ciclo
+  // (cat_definir_tudo), e cada republicacao apaga os itens que a conta
+  // acrescentou. Sem esta linha a Biblioteca da conta funcionava do fim do sync
+  // ate o fim da descoberta e depois esvaziava sozinha — um defeito
+  // intermitente e mudo, que e o pior tipo que esta area produz.
+  //
+  // Custo no caso comum: uma comparacao de inteiro (cat_n) e um strcmp de 16
+  // bytes. Nada e refeito enquanto o catalogo for o mesmo.
+  contalib_reconciliar();
   if (!fioVivo || !fioPronto) return;
   fioVivo = 0;
   fioPronto = 0;
@@ -507,6 +570,45 @@ void sync_passo(unsigned agoraMs) {
   if (temColBlob && colBlob) {
     if (col_definir_json(colBlob) > 0) soFileiras = 1;
     free(colBlob); colBlob = NULL; temColBlob = 0;
+  }
+  // A BIBLIOTECA DA CONTA. Ler e aplicar sao passos separados de proposito:
+  // contalib_ler_biblioteca pode RECUSAR a resposta (lista remota vazia com
+  // lista guardada — secao 1.6, regra 1), e nesse caso o que ja esta no
+  // catalogo continua onde esta.
+  //
+  // NAO liga `remontar` nem `soFileiras`: os itens da conta entram no fim do
+  // vetor de itens e nao criam nem reordenam fileira nenhuma. Pedir uma
+  // remontagem aqui custaria o ciclo de rede inteiro por nada, a cada cinco
+  // minutos — foi o erro que a ordem de catalogos ja cometeu neste arquivo.
+  //
+  // O QUE ISTO AINDA NAO FAZ, escrito para nao virar surpresa: tirar um titulo
+  // pelo "+" do detalhe fala com o TRAKT (app.c), nao com a conta. A linha
+  // continua em `sync_pull_library` e volta no ciclo seguinte. Fechar isso
+  // exige `sync_push_library`, que este app nao tem — e nao pode ganhar de
+  // qualquer jeito: um push da lista LOCAL antes de o primeiro pull chegar
+  // mandaria lista curta e apagaria itens nos outros aparelhos da pessoa
+  // (secao 1.6, regra 2). O caminho certo e um push de DELECAO por chave, como
+  // o `sync_delete_watched_items` faz com os vistos.
+  if (temBibBlob && bibBlob) {
+    if (contalib_ler_biblioteca(bibBlob) > 0) contalib_aplicar_catalogo();
+    free(bibBlob); bibBlob = NULL; temBibBlob = 0;
+  }
+  // OS VISTOS DA CONTA, e so quando o Trakt NAO esta no ar.
+  //
+  // E o que o web faz: `shouldUseSupabaseWatchProgressSync` em
+  // js/core/profile/watchedItemsSyncService.js pula esta sincronizacao inteira
+  // quando ha provedor (Trakt ou Simkl) escolhido. O motivo aqui e concreto: o
+  // historico do Trakt e escrito pelo proprio app quando a pessoa marca algo na
+  // TV (trakt.c, cat_historico_definir_id depois do 2xx), e uma linha antiga da
+  // conta aplicada por cima desfaria essa marca no ciclo seguinte — a pessoa
+  // desmarcaria um titulo e ele voltaria marcado sozinho.
+  //
+  // Sem Trakt, esta e a UNICA fonte de "assistido" que o app tem, e ate agora
+  // ela nao existia: era a mesma queixa do issue por outro angulo.
+  if (temVistosBlob && vistosBlob) {
+    if (contalib_ler_vistos(vistosBlob) > 0 && !trakt_ativo())
+      contalib_aplicar_vistos();
+    free(vistosBlob); vistosBlob = NULL; temVistosBlob = 0;
   }
   // Rede so quando muda o que buscar. Quando as duas coisas mudam no mesmo
   // ciclo, o ciclo de rede ja remonta as fileiras no fim — nao ha o que somar.
@@ -567,6 +669,17 @@ void sync_esquecer_usuario(void) {
   free(catHomeBlob);
   catHomeBlob = NULL;
   temCatHomeBlob = 0;
+  // A biblioteca e os vistos da conta anterior. Numa TV de sala isto nao e
+  // detalhe: sem esta linha, a proxima pessoa a entrar veria a lista de filmes
+  // salvos de quem saiu na tela de Biblioteca dela.
+  contalib_esquecer();
+  free(bibBlob);    bibBlob = NULL;    temBibBlob = 0;
+  free(vistosBlob); vistosBlob = NULL; temVistosBlob = 0;
+  // colBlob estava de fora desta lista desde que foi criado, ao lado de um
+  // catHomeBlob que ja era liberado. Um ciclo que terminou logo antes do logout
+  // deixava as colecoes da conta anterior esperando o proximo sync_passo, que
+  // as aplicaria na sessao seguinte.
+  free(colBlob);    colBlob = NULL;    temColBlob = 0;
   addons_esquecer();
   debrid_esquecer();
   trakt_esquecer();
@@ -581,7 +694,7 @@ void sync_esquecer_usuario(void) {
   traktTok[0] = 0; temTraktRem = 0;
   memset(tmdbKey, 0, sizeof tmdbKey); temTmdb = 0;
   memset(mdbKey, 0, sizeof mdbKey);   temMdb = 0;
-  cVistos = cBiblio = cSalvos = cColecoes = 0;
+  cVistos = cBiblio = cColecoes = 0;
   temAjustesPerfil = temCatHome = 0;
   estado = SYNC_PARADO;
   ultimoOk = 0;
