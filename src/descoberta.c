@@ -1369,8 +1369,13 @@ static void *montar(void *u) {
       // que hoje nao entra: se ela listasse apenas as fileiras pedidas, o limite
       // viraria uma jaula e nada de fora dele poderia ser escolhido. O teto do
       // registro e o FIL_MAX de fileiras.h, nao o das fileiras desenhadas.
+      // O NOME DO ADDON E O TIPO VAO JUNTO: e aqui, e so aqui, que eles sao
+      // conhecidos — a tela de Ajustes precisa deles para dizer de onde a
+      // fileira vem. `-1` em itens porque nesta altura nenhum catalogo foi
+      // pedido ainda; quem sabe a contagem e home.c.
       for (k = 0; k < nOrdem && k < FIL_MAX; k++)
-        fil_registrar(decls[ordem[k]].chave, decls[ordem[k]].titulo);
+        fil_registrar(decls[ordem[k]].chave, decls[ordem[k]].titulo,
+                      decls[ordem[k]].nomeAddon, decls[ordem[k]].tipo, -1);
       fil_gravar_registro();
 
       // TETO DE FILEIRAS: o numero escolhido em Ajustes (7 de fabrica),

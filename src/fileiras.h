@@ -63,6 +63,35 @@ const char *fil_tipo_rotulo(int t);
 const char *fil_tam_rotulo(int t);
 float       fil_tam_escala(int t);
 
+// DE ONDE A FILEIRA VEIO. Sem isto a tela de Ajustes lista quinze nomes soltos
+// e nao ha como saber que "A24" e um grupo de colecoes, que "Popular" e um
+// catalogo do Cinemeta e que "Entre amigos" nao vem de addon nenhum — foi
+// exatamente o relato ("mostre o que e lista e o que e catalogo").
+//
+// SAI DA CHAVE, e nao de um campo novo no arquivo. As tres origens ja estao
+// codificadas nela e sempre estiveram: as fileiras que o proprio app monta tem
+// chave SINTETICA (fixa, escrita em home.c), um grupo de colecoes tem o prefixo
+// `collection_` que col_chave_grupo escreve, e todo o resto e homeCatalogKey de
+// um catalogo declarado por addon. Derivar em vez de guardar significa que o
+// fileirasui.txt de quem ja usa o app continua valendo byte a byte — e que a
+// classificacao nao pode ficar velha.
+typedef enum {
+  FIL_ORIGEM_APP = 0,   // Continuar assistindo, Entre amigos, Retomar agora
+  FIL_ORIGEM_COLECAO,   // grupo de colecoes (chave collection_<id>)
+  FIL_ORIGEM_CATALOGO,  // catalogo declarado por um addon
+  FIL_ORIGEM_N
+} FilOrigem;
+
+// Pura: so olha a chave. Chave vazia conta como FIL_ORIGEM_APP, que e o mesmo
+// tratamento conservador que formaFixa ja dava.
+int         fil_origem_de(const char *chave);
+const char *fil_origem_rotulo(int origem);   // "Do app" | "Coleção" | "Catálogo"
+// Nome do arquivo em art/icones para o selo desta origem. Sao icones REAIS
+// (SVG do app web rasterizado), nao forma desenhada a mao — ver gfx_icone.
+const char *fil_origem_icone(int origem);
+// Frase que explica a origem na area de ajuda, ja em portugues.
+const char *fil_origem_ajuda(int origem);
+
 // --- limite ------------------------------------------------------------------
 int  fil_limite(void);
 void fil_definir_limite(int n);
@@ -74,7 +103,23 @@ void fil_definir_limite(int n);
 // Ajustes precisa mostrar TAMBEM as fileiras desligadas: sem o registro,
 // desligar uma seria irreversivel pela TV, ja que ela deixa de aparecer em
 // cat_fileira().
-void fil_registrar(const char *chave, const char *titulo);
+//
+// `addon` e o NOME do addon que declara o catalogo ("Xperience"); `conteudo` e
+// o "movie"/"series" do catalogo; `itens` e quantos titulos a fileira tem AGORA
+// (-1 quando quem registra ainda nao sabe — a descoberta registra os candidatos
+// antes de pedir qualquer um deles). Os tres sao vazios/-1 para o que nao e
+// catalogo, e os tres podem chegar de dois registradores diferentes: quem
+// souber primeiro preenche.
+//
+// ESTES TRES NAO VAO PARA O ARQUIVO, de proposito, e sao duas razoes:
+//   1. O formato de fileirasui.txt e posicional por tabulacao com o titulo no
+//      fim; acrescentar campos faria o arquivo de quem ja usa o app ser
+//      DESCARTADO linha a linha (ver carregar), perdendo ordem e liga/desliga.
+//   2. `itens` muda a cada ciclo de sync. Gravar aqui reescreveria o arquivo e
+//      bumparia `revisao` por nada — o mesmo defeito que o nome piscando ja
+//      causou. Por isso nenhum dos tres marca `registroSujo`.
+void fil_registrar(const char *chave, const char *titulo,
+                   const char *addon, const char *conteudo, int itens);
 
 // Grava o que fil_registrar acumulou, se houver. Chamar UMA VEZ no fim da
 // varredura que registra: registrar 64 chaves novas com gravacao a cada uma sao
@@ -89,6 +134,14 @@ const char *fil_titulo(int i);
 int         fil_linha_oculta(int i);
 int         fil_linha_tipo(int i);
 int         fil_linha_tam(int i);
+// Origem desta linha, e o que a acompanha. `fil_linha_addon` devolve "" quando
+// nenhum registrador soube dizer (addon que sumiu da conta, fileira lida so do
+// arquivo); `fil_linha_conteudo` devolve "Filmes"/"Séries"/""; `fil_linha_itens`
+// devolve -1 quando a fileira ainda nao foi montada nesta sessao.
+int         fil_linha_origem(int i);
+const char *fil_linha_addon(int i);
+const char *fil_linha_conteudo(int i);
+int         fil_linha_itens(int i);
 // 0 quando a forma do card NAO e escolha desta fileira: "Continuar assistindo"
 // tira a forma de `continueWatchingCardStyle`, o feed dos amigos precisa do
 // card com autoria e um grupo de colecao desenha atalhos, nao titulos. Oferecer

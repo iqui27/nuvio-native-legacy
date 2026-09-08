@@ -98,7 +98,12 @@ int   cat_n_episodios(int i)               { (void)i; return 0; }
 void  fil_gravar_registro(void)            { }
 int   fil_limite(void)                     { return limiteFileiras; }
 int   fil_oculta(const char *c)            { (void)c; return 0; }
-void  fil_registrar(const char *c, const char *t) { (void)c; (void)t; }
+// A assinatura ganhou addon/tipo/contagem quando a folha de fileiras passou a
+// dizer de onde cada fileira vem. Este teste nao tem opiniao sobre nada disso.
+void  fil_registrar(const char *c, const char *t, const char *a,
+                    const char *tp, int itens) {
+  (void)c; (void)t; (void)a; (void)tp; (void)itens;
+}
 int   fil_tem_ordem(void)                  { return 0; }
 int   fil_unir(const char *const *c, int n, int *s, int m) {
   int i; (void)c; for (i = 0; i < n && i < m; i++) s[i] = i; return i;

@@ -39,6 +39,8 @@
 #define AJ_LINHA_GAP      8.0f
 #define AJ_SEC_GAP       46.0f    // fim de uma secao ao cabecalho da proxima
 #define AJ_SEC_CABEC     44.0f    // altura reservada ao cabecalho da secao
+// Cabecalho de SUBSECAO: um rotulo pequeno no meio da secao. Ver SUBSECOES.
+#define AJ_SUB_CABEC     42.0f
 // Nao e constante: acompanha a rail, como todo o resto do conteudo. Com a
 // barra recolhida a lista tambem comeca em 104 — deixar 248 cravado aqui fazia
 // a tela de Ajustes ser a unica desalinhada das outras.
@@ -52,10 +54,16 @@
 // ja comeca em 248, e empurrar a lista para a direita sem encolher deixaria o
 // painel de ajuda com menos de 240 px — ele desaparece abaixo disso e a tela
 // perde a unica explicacao que tem.
+// 240 e nao 196, e 84 de altura e nao 58: com DOZE categorias a coluna estava
+// cheia e os rotulos cortavam ("Continuar assistindo" saia "Continue…"), o que
+// e o pior lugar possivel para um corte — e o nome da categoria que diz onde a
+// pessoa esta. Com SEIS (ver SECOES) sobra altura de sobra, entao a linha ganha
+// o ICONE da categoria a esquerda e o nome inteiro cabe.
 #define AJ_IDX_X        ajustes_conteudo_x()
-#define AJ_IDX_W        196.0f
+#define AJ_IDX_W        240.0f
 #define AJ_IDX_GAP       24.0f
-#define AJ_IDX_H         58.0f
+#define AJ_IDX_H         84.0f
+#define AJ_IDX_ICONE     34.0f    // lado do icone dentro da linha da categoria
 #define AJ_LISTA_X      (AJ_IDX_X + AJ_IDX_W + AJ_IDX_GAP)
 #define AJ_LISTA_W      900.0f
 #define AJ_PAD           34.0f    // borda da linha ao texto
@@ -305,22 +313,81 @@ typedef char conferi_uma_chave_por_opcao[
 
 // Onde cada secao comeca e quantas opcoes ela tem. Secao e um agrupamento
 // visual, nao um nivel de navegacao: cima/baixo atravessa os cabecalhos sem
-// parar neles, como no aparelho. Os titulos sao os do app web.
-static const struct { const char *titulo; int ini, n; } SECOES[] = {
-  { "Reprodução",                     AJ_QUALIDADE,           6 },
-  { "Layout da Home",                 AJ_LANDSCAPE,           2 },
-  { "Fileiras da Home",               AJ_FIL_LIMITE,          2 },
-  { "Conteúdo da Home",               AJ_RAIL,               12 },
-  { "Continuar assistindo",           AJ_CW_LIGADO,           8 },
-  { "Página de Detalhes",             AJ_DET_BLUR_NAO_VISTOS, 4 },
-  { "Foco no Pôster",                 AJ_EXPANDIR,            3 },
-  { "Efeito de Profundidade",         AJ_PROF,                9 },
-  { "Tamanho dos itens",              AJ_LARGURA_DP,          2 },
-  { "Interface",                      AJ_IDIOMA,              2 },
-  { "Conta",                          AJ_PERFIL_ATIVO,        6 },
-  { "Sobre",                          AJ_VERSAO_I,            2 },
+// parar neles, como no aparelho.
+//
+// ERAM DOZE, e o relato foi "tem muito menu e submenu, nao ta agrupado". Doze
+// categorias para 58 opcoes nao e agrupamento: e uma segunda lista para
+// atravessar antes de chegar na primeira. Cinco delas falavam da MESMA coisa
+// com nomes diferentes — "Layout da Home", "Fileiras da Home" e "Conteudo da
+// Home" sao a home; "Foco no Poster", "Efeito de Profundidade" e "Tamanho dos
+// itens" sao o cartaz. Aqui elas viram SEIS categorias, e o que se perdeu de
+// granularidade voltou como SUBSECOES (abaixo), que rotulam o bloco sem exigir
+// mais um nivel de navegacao.
+//
+// AS FAIXAS SAO CONTIGUAS NO ENUM, e tinham de ser: o desenho e a rolagem
+// percorrem a lista em ordem de enum. Nenhuma opcao mudou de lugar e NENHUMA
+// CHAVE mudou — trocar a chave faria o ajuste de quem ja usa o app voltar ao
+// padrao (ver CHAVE). So o agrupamento mudou.
+//
+// `icone` e o basename em art/icones. Sao os SVG do app web ja rasterizados,
+// nunca forma desenhada a mao (ver gfx_icone).
+// `curto` e o nome na COLUNA de categorias, que tem 240 px: "Continuar
+// assistindo" nao cabe la em corpo legivel do sofa, e cortar justamente o nome
+// da categoria e o pior corte possivel. `titulo` continua sendo o nome inteiro,
+// usado no cabecalho da lista, na linha de contexto e na area de ajuda.
+static const struct {
+  const char *titulo, *curto, *icone;
+  int ini, n;
+} SECOES[] = {
+  { "Reprodução",           "Reprodução", "play",         AJ_QUALIDADE,            6 },
+  { "Home",                 "Home",       "menu_home",    AJ_LANDSCAPE,           16 },
+  { "Continuar assistindo", "Retomar",    "avancar",      AJ_CW_LIGADO,            8 },
+  { "Página de detalhes",   "Detalhes",   "episodios",    AJ_DET_BLUR_NAO_VISTOS,  4 },
+  { "Pôsteres e cards",     "Cartazes",   "aspecto",      AJ_EXPANDIR,            14 },
+  { "Interface e conta",    "Conta",      "menu_profile", AJ_IDIOMA,              10 },
 };
 #define AJ_N_SECOES (int)(sizeof SECOES / sizeof *SECOES)
+
+// O QUE A CATEGORIA CONTEM, em uma frase. Aparece na area de ajuda quando o
+// foco esta na coluna de categorias: sem ela, escolher categoria e adivinhar
+// pelo titulo, e "Pôsteres e cards" nao diz que o efeito de profundidade mora
+// ali dentro.
+static const char *SECAO_AJUDA[AJ_N_SECOES] = {
+  "Qualidade da imagem, formatos de áudio e os idiomas preferidos de legenda e áudio.",
+  "Tudo o que a tela inicial mostra: quais fileiras aparecem, em que ordem, a barra lateral e o destaque do topo.",
+  "A fileira de retomada: de onde ela vem, que card usa e como ordena o que você deixou pela metade.",
+  "A tela de um filme ou série: spoilers dos episódios, botão de trailer e de onde vêm os dados.",
+  "A aparência dos cartazes em toda a interface: foco, profundidade, largura e arredondamento.",
+  "Idioma da interface, animações, sua conta, addons, serviços conectados e informações do app.",
+};
+
+// SUBSECAO: rotula um bloco DENTRO da categoria. Existe porque juntar doze
+// categorias em seis deixaria a Home com dezesseis linhas seguidas sem nenhuma
+// divisao — trocar "muito menu" por "muita lista" nao e conserto.
+//
+// Nao e um nivel de navegacao: cima/baixo atravessa o rotulo como atravessa o
+// cabecalho da secao. `op` e a PRIMEIRA opcao do bloco. A primeira opcao de uma
+// SECAO nunca entra aqui: ela ja e rotulada pelo cabecalho da secao, e os dois
+// juntos seriam a mesma informacao duas vezes.
+static const struct { int op; const char *titulo; } SUBSECOES[] = {
+  { AJ_FIL_LIMITE,   "Fileiras da Home" },
+  { AJ_RAIL,         "Barra lateral e destaque" },
+  { AJ_ROTULOS,      "O que aparece em cada cartaz" },
+  { AJ_PROF,         "Efeito de profundidade" },
+  { AJ_LARGURA_DP,   "Tamanho do cartaz" },
+  { AJ_PERFIL_ATIVO, "Sua conta" },
+  { AJ_VERSAO_I,     "Sobre este app" },
+};
+#define AJ_N_SUBSECOES (int)(sizeof SUBSECOES / sizeof *SUBSECOES)
+
+static const char *subsecaoDe(int op) {
+  int i;
+  for (i = 0; i < AJ_N_SUBSECOES; i++)
+    if (SUBSECOES[i].op == op) return SUBSECOES[i].titulo;
+  return NULL;
+}
+// Altura extra que o rotulo de subsecao reserva antes da linha `op`.
+static float alturaSub(int op) { return subsecaoDe(op) ? AJ_SUB_CABEC : 0.0f; }
 
 // Valor de cada opcao. Para OP_ESCOLHA e o indice; para OP_NUMERO e o proprio
 // numero. Os padroes sao os DEFAULTS de layoutPreferences.js, com UMA excecao
@@ -738,7 +805,31 @@ int ajustes_aplicar_blob(const char *json) {
   return mudou;
 }
 
+// AS SECOES TEM DE LADRILHAR O ENUM INTEIRO, sem buraco e sem sobreposicao.
+// Nao da para exigir isso do compilador (seria somar `n` a mao num
+// _Static_assert, ou seja, uma terceira copia dos mesmos numeros para
+// dessincronizar), entao a conferencia e no arranque e GRITA no log.
+//
+// O que o erro custaria sem ela: uma opcao fora de toda secao simplesmente NAO
+// E DESENHADA — o laco de desenho percorre as secoes, nao o enum — e ainda
+// assim continua respondendo a cima/baixo, porque a navegacao percorre o enum.
+// O sintoma na TV seria o foco sumir num vao invisivel da lista.
+static void conferirSecoes(void) {
+  int s, esperado = 0;
+  for (s = 0; s < AJ_N_SECOES; s++) {
+    if (SECOES[s].ini != esperado)
+      printf("[ajustes] SECOES[%d] \"%s\" comeca em %d, esperado %d\n",
+             s, SECOES[s].titulo, SECOES[s].ini, esperado);
+    esperado = SECOES[s].ini + SECOES[s].n;
+  }
+  if (esperado != AJ_N)
+    printf("[ajustes] SECOES cobre %d de %d opcoes: %d linha(s) nao seriam "
+           "desenhadas\n", esperado, (int)AJ_N, (int)AJ_N - esperado);
+  fflush(stdout);
+}
+
 int ajustes_iniciar(void) {
+  conferirSecoes();
   focoOp = 0; scrollY = 0.0f; sair = 0;
   focoIndice = 0;
   filAberta = 0; filFoco = 0; filCampo = 0; filPegou = 0; filTopo = 0;
@@ -850,6 +941,18 @@ static int secaoAtual(void) {
   return AJ_N_SECOES - 1;
 }
 
+// UMA FRASE POR OPCAO, sem excecao.
+//
+// O relato foi "tem pouca informacao". Ele nao era impressao: das 58 linhas,
+// quinze tinham frase propria e as OUTRAS QUARENTA E TRES caiam num texto
+// generico ("Use as setas laterais para escolher") que nao diz o que a opcao
+// faz — ou seja, a area de ajuda ocupava um terco da tela para nao informar
+// nada em tres de cada quatro linhas. O `default` continua existindo como rede
+// de seguranca para opcao nova, mas nenhuma opcao de hoje cai nele.
+//
+// A frase responde "o que isto E". O que MUDA na pratica vai em efeitoOpcao,
+// separado de proposito: as duas perguntas sao diferentes e juntas viram um
+// paragrafo que ninguem le do sofa.
 static const char *ajudaOpcao(int op) {
   if (inativa(op)) {
     if (op == AJ_RAIL) return "Desative a barra lateral moderna para escolher entre recolhida e fixa.";
@@ -863,31 +966,135 @@ static const char *ajudaOpcao(int op) {
     return "Ative Efeito de profundidade para personalizar este detalhe.";
   }
   switch (op) {
-    case AJ_CW_FONTE: return "De onde vem a fileira de retomada. Ambas usa a conta e completa com o Trakt.";
+    // --- Reproducao
     case AJ_QUALIDADE: return "Define a preferência de resolução. A disponibilidade depende das fontes do addon.";
     case AJ_DV: case AJ_ATMOS: return "Preferência para fontes compatíveis. O formato disponível também depende do arquivo e da TV.";
-    case AJ_HERO_CATALOGOS: return "Quantidade de catálogos incluídos no destaque. Esta linha é apenas informativa.";
-    case AJ_CW_FURTHEST: return "Escolhe o próximo episódio a partir do mais avançado marcado como assistido.";
-    case AJ_CW_BLUR_PROX: case AJ_DET_BLUR_NAO_VISTOS: return "Oculta detalhes da miniatura para evitar spoilers de episódios ainda não assistidos.";
-    case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";
-    case AJ_ESPACO: return "Uso atual de memória pelo cache de imagens, não espaço ocupado no armazenamento da TV.";
-    case AJ_VERSAO_I: return "Versão do aplicativo. Esta informação não pode ser alterada.";
+    case AJ_LEG_LINGUA: return "Idioma procurado primeiro na lista de legendas de cada título. \"Da conta\" segue o que está no seu perfil.";
+    case AJ_AUD_LINGUA: return "Faixa de áudio escolhida quando o arquivo tem mais de uma. Se o idioma não existir no arquivo, o player usa a primeira.";
+    case AJ_PAUSA_OVERLAY: return "Ao pausar, sobe uma ficha com a sinopse e os dados do que você está vendo.";
+
+    // --- Home
+    case AJ_LANDSCAPE: return "Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.";
+    case AJ_HERO_CHEIO: return "O destaque do topo ocupa a tela inteira atrás das fileiras, em vez de ficar num bloco.";
     case AJ_FIL_LIMITE: return "Quantas fileiras a Home monta. Menos fileiras também significam menos catálogos pedidos pela rede, e não fileiras invisíveis.";
-    case AJ_FIL_ORDEM: return "Abre a lista de fileiras para reordenar, ligar, desligar e escolher o card de cada uma. A escolha vale só nesta TV.";
+    case AJ_FIL_ORDEM: return "Abre a lista de fileiras para reordenar, ligar, desligar e escolher o card de cada uma. É lá que dá para ver de onde cada fileira vem.";
+    case AJ_RAIL: return "A barra de navegação da esquerda fica sempre aberta, ou recolhida até você ir até ela.";
+    case AJ_RAIL_MODERNA: return "Troca a barra lateral pela versão nova, com ícones maiores. Ela ignora a escolha entre recolhida e fixa.";
+    case AJ_RAIL_BLUR: return "Desfoca a arte atrás da barra lateral moderna em vez de usar um fundo sólido.";
+    case AJ_HERO: return "O bloco grande no topo da Home, com a arte e o nome de um título em destaque.";
+    case AJ_HERO_CATALOGOS: return "Quantidade de catálogos incluídos no destaque. Esta linha é apenas informativa.";
+    case AJ_DESCOBRIR: return "Onde fica a tela Descobrir: junto da Busca, como item próprio na barra lateral, ou em lugar nenhum.";
+    case AJ_ROTULOS: return "Escreve o nome do título abaixo do cartaz. A maior parte da arte já traz o nome impresso.";
+    case AJ_NOME_ADDON: return "Acrescenta o nome do addon ao título da fileira, para separar dois catálogos com o mesmo nome.";
+    case AJ_SUFIXO_TIPO: return "Acrescenta \"Filme\" ou \"Série\" ao título da fileira, para separar as duas versões do mesmo catálogo.";
+    case AJ_OCULTAR_NLANC: return "Esconde das fileiras o que ainda não estreou. Título sem fonte nenhuma ocupa lugar e não abre.";
+    case AJ_NOTAS_HOME: return "Mostra a nota do IMDb no canto dos cartazes da Home.";
+    case AJ_GRAD_CLASSICO: return "Volta ao degradê antigo sob o cartaz em foco, no lugar do realce atual.";
+
+    // --- Continuar assistindo
+    case AJ_CW_LIGADO: return "A fileira de retomada, com o que você deixou pela metade e o próximo episódio das séries que acompanha.";
+    case AJ_CW_FONTE: return "De onde vem a fileira de retomada. \"Ambas\" usa a conta Nuvio e completa com o Trakt.";
+    case AJ_CW_ESTILO: return "A forma do card da retomada: quadrado com a arte, deitado largo, ou o cartaz em pé.";
+    case AJ_CW_THUMB: return "Usa a imagem do próprio episódio no card, em vez da arte da série.";
+    case AJ_CW_BLUR_PROX: case AJ_DET_BLUR_NAO_VISTOS: return "Oculta detalhes da miniatura para evitar spoilers de episódios ainda não assistidos.";
+    case AJ_CW_FURTHEST: return "Escolhe o próximo episódio a partir do mais avançado marcado como assistido.";
+    case AJ_CW_NAO_EXIBIDOS: return "Mostra na retomada o próximo episódio mesmo antes de ele ir ao ar.";
+    case AJ_CW_ORDEM: return "Como a retomada se ordena: pelo mais recente, no estilo dos streamings, ou com os episódios futuros num bloco separado.";
+
+    // --- Pagina de detalhe
+    case AJ_DET_TRAILER: return "Mostra o botão de trailer na tela do título, quando existe um trailer conhecido.";
+    case AJ_DET_META_EXT: return "Prefere a ficha do addon de metadados à do Cinemeta. Útil quando o seu addon tem sinopse e elenco melhores.";
+    case AJ_DET_DATA_CHEIA: return "Escreve a data de estreia por extenso em vez de só o ano.";
+
+    // --- Posteres e cards
+    case AJ_EXPANDIR: return "O cartaz em foco cresce e abre a arte deitada atrás dele depois de um instante parado.";
+    case AJ_EXPANDIR_ATRASO: return "Quanto tempo o foco precisa ficar parado antes de o cartaz expandir.";
+    case AJ_NAV_RAPIDA: return "Andar de lado numa fileira não espera a animação terminar. Serve para controle que repete rápido.";
+    case AJ_PROF: return "Dá relevo aos cartazes: borda iluminada e um reflexo que acompanha o foco.";
+    case AJ_PROF_BORDA: return "Quanto a borda do cartaz em foco acende.";
+    case AJ_PROF_BRILHO: return "Quanto o reflexo passa por cima da arte do cartaz em foco.";
+    case AJ_PROF_COBERTURA: return "Que parte da volta do cartaz a borda iluminada percorre.";
+    case AJ_PROF_POSTERS: case AJ_PROF_CW: case AJ_PROF_EPS:
+    case AJ_PROF_ELENCO: case AJ_PROF_TRAILERS:
+      return "Onde o relevo é aplicado. Desligar em alguns lugares alivia o desenho sem perder o efeito onde ele importa.";
     case AJ_LARGURA_DP: return "Ajusta a largura dos pôsteres nas fileiras que usam o tamanho personalizável.";
     case AJ_RAIO_DP: return "Controla o arredondamento dos cantos dos pôsteres.";
+
+    // --- Interface e conta
+    case AJ_IDIOMA: return "Idioma de toda a interface. Não muda o idioma das legendas nem do áudio.";
+    case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";
+    case AJ_PERFIL_ATIVO: return "Perfil em uso nesta TV. Trocar de perfil é feito na tela de perfis, ao abrir o app.";
+    case AJ_SYNC: return "Estado da última troca de dados com a sua conta: addons, progresso, coleções e preferências.";
+    case AJ_ADDONS: return "Abre a lista de addons da sua conta, para ligar e desligar cada um nesta TV.";
+    case AJ_TRAKT: return "Conecta a sua conta do Trakt para marcar o que assistiu e usar a sua lista.";
+    case AJ_SIMKL: return "Conecta a sua conta do Simkl, uma alternativa ao Trakt para acompanhar séries.";
+    case AJ_SAIR: return "Sai da conta nesta TV e apaga daqui a sessão, os addons e o progresso guardados.";
+    case AJ_ESPACO: return "Uso atual de memória pelo cache de imagens, não espaço ocupado no armazenamento da TV.";
+    case AJ_VERSAO_I: return "Versão do aplicativo. Esta informação não pode ser alterada.";
     default: return "Use as setas laterais para escolher. A preferência é aplicada ao alterar o valor.";
   }
 }
 
+// O QUE MUDA NA PRATICA quando esta opcao muda. NULL quando nao ha nada
+// honesto a dizer — inventar uma consequencia para cada linha encheria a tela
+// de texto e ensinaria a pessoa a nao ler nenhum.
+//
+// So entram as consequencias que a pessoa NAO adivinha olhando a linha: custo
+// de rede, escopo (esta TV x a conta), e dependencia entre opcoes.
+static const char *efeitoOpcao(int op) {
+  if (inativa(op)) return NULL;
+  switch (op) {
+    case AJ_FIL_LIMITE:
+      return "Vale só nesta TV. Cada fileira a mais é um pedido a mais pela rede quando a Home monta.";
+    case AJ_FIL_ORDEM:
+      return "Vale só nesta TV: não altera a Home dos seus outros aparelhos.";
+    case AJ_CW_FONTE:
+      return "Vale só nesta TV. Ao mudar, a fileira é remontada na hora.";
+    case AJ_IDIOMA:
+      return "Ao mudar, as fileiras são remontadas para os títulos saírem no idioma novo.";
+    case AJ_LEG_LINGUA:
+      return "Se um título já estiver aberto, a busca de legendas é refeita um instante depois.";
+    case AJ_PROF:
+      return "É o ajuste mais caro desta tela para a TV desenhar. Desligue se a rolagem engasgar.";
+    case AJ_SAIR:
+      return "Não pede confirmação: OK sai na hora. Para voltar é preciso entrar de novo pelo QR.";
+    case AJ_ADDONS: case AJ_TRAKT: case AJ_SIMKL:
+      return "OK abre. As setas laterais não fazem nada nesta linha.";
+    default: return NULL;
+  }
+}
+
+// txt_bloco QUEBRA POR ESPACO E SO POR ESPACO: um "\n" no meio do texto nao
+// quebra linha nenhuma — ele chega na fonte como caractere e sai desenhado como
+// um retangulo vazio, com as linhas coladas numa so. Os tres blocos de dica
+// desta tela e os dois da folha de fileiras estavam assim, e na captura de
+// 1080p liam "↑ ↓ Navegar▯← → Alterar valor▯Voltar Ir para as categorias".
+//
+// Aqui cada dica e uma string propria e uma linha propria. Nao e conserto do
+// txt_bloco de proposito: ele e de text.c, que esta com outro dono agora — a
+// falha esta anotada no relatorio para quem cuidar daquele arquivo.
+static void desenhaDicas(const char *const *linhas, int n, float x, float y,
+                         float larg, int r, int g, int b) {
+  int i;
+  for (i = 0; i < n; i++) {
+    TxtLinha l = txt_linha_corta(TXT_CAPTION, linhas[i], r, g, b, 255, larg);
+    txt_desenhar(l, x, y);
+    y += 34.0f;
+  }
+}
+
 // Deslocamento vertical do topo da lista ate a linha `op`, contando os
-// cabecalhos das secoes que vieram antes.
+// cabecalhos das secoes E das subsecoes que vieram antes. Tem de casar
+// exatamente com o laco de desenho em ajustes_desenhar: duas contas do mesmo
+// layout sao duas chances de discordar, e quando discordam a rolagem para na
+// linha errada.
 static float yDaOpcao(int op) {
   float y = 0.0f;
   for (int s = 0; s < AJ_N_SECOES; s++) {
     y += (s ? AJ_SEC_GAP : 0.0f) + AJ_SEC_CABEC;
     for (int k = 0; k < SECOES[s].n; k++) {
       int o = SECOES[s].ini + k;
+      y += alturaSub(o);
       if (o == op) return y;
       y += AJ_LINHA_H + AJ_LINHA_GAP;
     }
@@ -1100,8 +1307,9 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   }
   // Rola o minimo para a linha focada caber, e leva junto o cabecalho da secao
   // quando a linha e a primeira dela — sem isso, entrar numa secao mostra a
-  // opcao sem dizer a que grupo ela pertence.
-  float topo = yDaOpcao(focoOp);
+  // opcao sem dizer a que grupo ela pertence. Vale igual para a subsecao: um
+  // bloco que comeca fora da tela vira uma lista sem titulo.
+  float topo = yDaOpcao(focoOp) - alturaSub(focoOp);
   for (int s = 0; s < AJ_N_SECOES; s++)
     if (SECOES[s].ini == focoOp) { topo -= AJ_SEC_CABEC; break; }
   float base = yDaOpcao(focoOp) + AJ_LINHA_H;
@@ -1290,22 +1498,29 @@ static void desenhaVinculo(const char *servico, const char *codigo,
 static void desenhaIndice(void) {
   int sec = secaoAtual();
   float y = AJ_TOPO;
-  float raio = 12.0f / AJ_IDX_H;
+  float raio = 14.0f / AJ_IDX_H;
   int s;
   for (s = 0; s < AJ_N_SECOES; s++) {
     GfxRect r = { AJ_IDX_X, y, AJ_IDX_W, AJ_IDX_H };
     int atual = (s == sec);
-    int c = atual ? 240 : 172;
+    int c = atual ? 240 : 168;
+    float ci = atual ? 0.94f : 0.62f;
+    GfxRect ic = { AJ_IDX_X + 18.0f, y + (AJ_IDX_H - AJ_IDX_ICONE) * 0.5f,
+                   AJ_IDX_ICONE, AJ_IDX_ICONE };
+    float tx = ic.x + AJ_IDX_ICONE + 14.0f;
     TxtLinha t;
     gfx_cor(r, raio, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
-            atual ? (focoIndice ? 1.0f : 0.60f) : 0.28f);
+            atual ? (focoIndice ? 1.0f : 0.60f) : 0.26f);
     if (atual && focoIndice)
       gfx_rect(r, 0, GFX_ANEL, 0, NV_ANEL_FOCO / AJ_IDX_H, 0, raio,
                0.96f, 0.96f, 0.97f, 1.0f);
-    t = txt_linha_corta(TXT_CAPTION, SECOES[s].titulo, c, c, c, 255,
-                        AJ_IDX_W - 28.0f);
-    txt_desenhar(t, AJ_IDX_X + 14.0f, y + (AJ_IDX_H - t.h) * 0.5f);
-    y += AJ_IDX_H + 4.0f;
+    // O ICONE E A ANCORA da varredura de olho: a 3 m o nome da categoria e
+    // texto pequeno, e o simbolo e o que se reconhece antes de ler.
+    gfx_icone(ic, SECOES[s].icone, ci, ci, ci, 1.0f);
+    t = txt_linha_corta(TXT_CALLOUT, SECOES[s].curto, c, c, c, 255,
+                        AJ_IDX_X + AJ_IDX_W - 16.0f - tx);
+    txt_desenhar(t, tx, y + (AJ_IDX_H - t.h) * 0.5f);
+    y += AJ_IDX_H + 6.0f;
   }
 }
 
@@ -1315,7 +1530,12 @@ static void desenhaIndice(void) {
 #define AJ_FIL_Y        80.0f
 #define AJ_FIL_LINHA    64.0f
 #define AJ_FIL_LGAP      6.0f
-#define AJ_FIL_VIS       8      // linhas desenhadas por vez
+// SETE, e nao oito. A oitava linha terminava em y+746 e a ficha da fileira em
+// foco comeca em y+684 — na captura de revisao o texto da ficha saiu ESCRITO
+// POR CIMA da ultima fileira. Com a ficha respondendo "de qual addon veio,
+// filme ou serie, quantos titulos", uma linha a menos custa menos do que a
+// ficha valia.
+#define AJ_FIL_VIS       7      // linhas desenhadas por vez
 
 // As quatro colunas, em x relativo ao cartao. A primeira e a ALCA DE MOVER: e
 // nela que OK pega e solta a fileira.
@@ -1345,7 +1565,7 @@ static void desenhaFileiras(void) {
   int n = fil_n(), lim = fil_limite();
   int ligadas[FIL_MAX];
   int i, vistas = 0;
-  float cx = cartao.x, y;
+  float cx = cartao.x, y, filCabecY;
   TxtLinha l;
   char buf[120];
 
@@ -1354,18 +1574,32 @@ static void desenhaFileiras(void) {
   gfx_cor(tela, 0.0f, 0.0f, 0.0f, 0.0f, 0.92f);
   gfx_cor(cartao, 0.03f, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
 
-  l = txt_linha(TXT_TITULO2, "Fileiras da Home", 255, 255, 255, 255);
-  txt_desenhar(l, cx + 40.0f, cartao.y + 34.0f);
-  // FRASE MONTADA: i18n nas PARTES, porque a string final nunca casa com uma
-  // chave da tabela (ver idioma.h).
-  snprintf(buf, sizeof buf, i18n("As %d primeiras ligadas aparecem na Home"), lim);
-  l = txt_linha(TXT_CAPTION, buf, 176, 179, 188, 255);
-  txt_desenhar(l, cx + 40.0f, cartao.y + 34.0f + 46.0f);
-  // A escolha e local, e a tela DIZ isso. Sem esta linha a pessoa espera que a
-  // ordem apareça no celular dela, e ela nunca vai.
-  l = txt_linha(TXT_MINI, "Vale só nesta TV · não altera a Home dos outros aparelhos",
-                150, 153, 162, 255);
-  txt_desenhar(l, cx + 40.0f, cartao.y + 34.0f + 78.0f);
+  // EMPILHADO PELA ALTURA MEDIDA, e nao por deslocamentos fixos de 46 e 78.
+  // Com numero cravado o titulo em TXT_TITULO2 caia POR CIMA do subtitulo — a
+  // captura de revisao mostrou "Home rows" e "The first 7 enabled..." na mesma
+  // faixa de pixels. A altura de uma linha depende do estilo, da escala e do
+  // idioma; so txt_linha sabe qual e.
+  { float hy = cartao.y + 30.0f;
+    l = txt_linha(TXT_TITULO2, "Fileiras da Home", 255, 255, 255, 255);
+    txt_desenhar(l, cx + 40.0f, hy);
+    hy += l.h + 8.0f;
+    // FRASE MONTADA: i18n no FORMATO, porque a string final nunca casa com uma
+    // chave da tabela (ver idioma.h).
+    snprintf(buf, sizeof buf, i18n("As %d primeiras ligadas aparecem na Home"), lim);
+    l = txt_linha(TXT_CAPTION, buf, 176, 179, 188, 255);
+    txt_desenhar(l, cx + 40.0f, hy);
+    hy += l.h + 6.0f;
+    // A escolha e local, e a tela DIZ isso. Sem esta linha a pessoa espera que a
+    // ordem apareça no celular dela, e ela nunca vai.
+    l = txt_linha(TXT_MINI, "Vale só nesta TV · não altera a Home dos outros aparelhos",
+                  150, 153, 162, 255);
+    txt_desenhar(l, cx + 40.0f, hy);
+    // O CABECALHO DAS COLUNAS DESCE COM O BLOCO, pelo mesmo motivo: cravado em
+    // y+148 ele ficava POR BAIXO desta terceira linha assim que o titulo
+    // crescia — visivel na captura como "Row" atravessado pela nota. O piso
+    // preserva o espacamento de quando o bloco e curto.
+    filCabecY = hy + l.h + 16.0f;
+    if (filCabecY < cartao.y + 148.0f) filCabecY = cartao.y + 148.0f; }
 
   if (n < 1) {
     // ESTADO VAZIO com texto, e nao um cartao em branco: "titulo e nada abaixo"
@@ -1400,10 +1634,10 @@ static void desenhaFileiras(void) {
   // Cabecalho das colunas.
   for (i = 0; i < AJ_FIL_CAMPOS; i++) {
     l = txt_linha(TXT_MINI, AJ_FIL_COL[i].cabec, 148, 151, 160, 255);
-    txt_desenhar(l, cx + AJ_FIL_COL[i].x, cartao.y + 148.0f);
+    txt_desenhar(l, cx + AJ_FIL_COL[i].x, filCabecY);
   }
 
-  y = cartao.y + 186.0f;
+  y = filCabecY + 34.0f;
   for (i = filTopo; i < n && i < filTopo + AJ_FIL_VIS; i++) {
     GfxRect linha = { cx + 24.0f, y, AJ_FIL_W - 48.0f, AJ_FIL_LINHA };
     float raio = 12.0f / AJ_FIL_LINHA;
@@ -1428,6 +1662,20 @@ static void desenhaFileiras(void) {
 
     { float tx = cx + AJ_FIL_COL[0].x;
       float tw = AJ_FIL_COL[0].w;
+      // SELO DE ORIGEM ANTES DO NOME. Sem ele a folha e uma lista de quinze
+      // nomes soltos e nao ha como saber que "A24" e um grupo de colecoes,
+      // "Popular" um catalogo do Cinemeta e "Entre amigos" uma fileira que o
+      // app monta sozinho — o relato foi literalmente "mostre o que e lista e
+      // o que e catalogo".
+      //
+      // ICONE E NAO SO COR: a 3 m a diferenca entre dois cinzas nao existe, e
+      // uma parte das TVs do relato esta em ingles com a interface em
+      // portugues (issue #12) — a forma sobrevive aos dois problemas.
+      { int orig = fil_linha_origem(i);
+        GfxRect ic = { tx, y + (AJ_FIL_LINHA - 26.0f) * 0.5f, 26.0f, 26.0f };
+        float ia = aTexto * (oculta ? 0.6f : 0.9f);
+        gfx_icone(ic, fil_origem_icone(orig), 0.78f, 0.80f, 0.85f, ia);
+        tx += 38.0f; tw -= 38.0f; }
       if (filPegou && foco) {
         // Marca de "na mao". Sem ela, a linha pega e a linha em foco tem a
         // mesma cara e cima/baixo parecem ter deixado de navegar.
@@ -1466,7 +1714,35 @@ static void desenhaFileiras(void) {
   // barra fica com 6 px e nao diz onde a pessoa esta.
   snprintf(buf, sizeof buf, i18n("%d de %d"), filFoco + 1, n);
   l = txt_linha(TXT_CAPTION, buf, 156, 159, 168, 255);
-  txt_desenhar(l, cx + AJ_FIL_W - 40.0f - l.w, cartao.y + 148.0f);
+  txt_desenhar(l, cx + AJ_FIL_W - 40.0f - l.w, filCabecY);
+
+  // A FICHA DA FILEIRA EM FOCO. O selo da linha diz a CLASSE em duas palavras;
+  // aqui vai o que decide de verdade se ela fica ou sai: de qual addon veio,
+  // se e de filme ou de serie, e quantos titulos ela tem AGORA.
+  //
+  // A contagem so existe depois que a Home montou nesta sessao (fil_linha_itens
+  // devolve -1 antes disso) — e omitida em vez de aparecer como "0 titulos",
+  // que seria mentira sobre uma fileira que talvez esteja cheia.
+  if (n > 0 && filFoco >= 0 && filFoco < n) {
+    int orig = fil_linha_origem(filFoco);
+    const char *addon = fil_linha_addon(filFoco);
+    const char *cont  = fil_linha_conteudo(filFoco);
+    int itens = fil_linha_itens(filFoco);
+    char ficha[220];
+    int k = snprintf(ficha, sizeof ficha, "%s", i18n(fil_origem_rotulo(orig)));
+    if (addon && addon[0])
+      k += snprintf(ficha + k, sizeof ficha - (size_t)k, "  ·  %s", addon);
+    if (cont && cont[0])
+      k += snprintf(ficha + k, sizeof ficha - (size_t)k, "  ·  %s", i18n(cont));
+    if (itens >= 0)
+      snprintf(ficha + k, sizeof ficha - (size_t)k,
+               itens == 1 ? i18n("  ·  %d título") : i18n("  ·  %d títulos"), itens);
+    l = txt_linha_corta(TXT_CALLOUT, ficha, 232, 234, 241, 255, AJ_FIL_W - 80.0f);
+    txt_desenhar(l, cx + 40.0f, cartao.y + AJ_FIL_H - 232.0f);
+    l = txt_linha_corta(TXT_MINI, fil_origem_ajuda(orig),
+                        170, 173, 182, 255, AJ_FIL_W - 80.0f);
+    txt_desenhar(l, cx + 40.0f, cartao.y + AJ_FIL_H - 200.0f);
+  }
 
   // A INSTRUCAO, escrita na tela. O gesto de pegar e mover nao se descobre
   // sozinho num D-pad, e ele muda quando o item esta na mao.
@@ -1508,40 +1784,65 @@ void ajustes_desenhar(Uint32 agora) {
   txt_desenhar(tit, AJ_IDX_X, NV_MARGEM_Y);
 
   int sec = secaoAtual();
-  char pos[80];
+  char pos[120];
   snprintf(pos, sizeof pos, i18n("%s  ·  %d de %d"), i18n(SECOES[sec].titulo),
            focoOp - SECOES[sec].ini + 1, SECOES[sec].n);
-  TxtLinha contexto = txt_linha(TXT_CAPTION, pos, 178, 180, 186, 255);
-  txt_desenhar(contexto, AJ_IDX_X, NV_MARGEM_Y + tit.h + 10.0f);
+  // AO LADO DO TITULO, e nao abaixo dele. Abaixo, esta linha caia exatamente
+  // sobre o topo da primeira categoria — texto por cima de texto, visivel na
+  // captura de 1080p. Alinhada pela base do titulo ela fica no espaco vazio a
+  // direita, que era o unico lugar desperdicado do cabecalho.
+  { TxtLinha contexto = txt_linha(TXT_CAPTION, pos, 178, 180, 186, 255);
+    txt_desenhar(contexto, AJ_IDX_X + tit.w + 28.0f,
+                 NV_MARGEM_Y + tit.h - contexto.h - 12.0f); }
 
   desenhaIndice();
 
   float hx = AJ_LISTA_X + AJ_LISTA_W + 52.0f;
   float hw = NV_TELA_W - NV_MARGEM_X - hx;
   if (hw > 240.0f) {
-    TxtLinha tipo = txt_linha(TXT_CAPTION, focoIndice ? "Seções"
-                        : inativa(focoOp) ? "Opção indisponível"
-                        : soLeitura(focoOp) ? "Informação" : "Personalizar", 168, 171, 180, 255);
-    txt_desenhar(tipo, hx, AJ_TOPO + AJ_SEC_CABEC);
-    float hy = AJ_TOPO + AJ_SEC_CABEC + tipo.h + 22.0f;
+    // O ICONE DA CATEGORIA, grande, abre o painel. Ele nao e enfeite: e a mesma
+    // marca da coluna da esquerda, e e o que liga "onde estou" a "o que estou
+    // lendo" sem obrigar a ler dois titulos.
+    GfxRect gi = { hx, AJ_TOPO + 4.0f, 56.0f, 56.0f };
+    float hy;
+    gfx_icone(gi, SECOES[sec].icone, 0.88f, 0.89f, 0.93f, 1.0f);
+    { TxtLinha tipo = txt_linha(TXT_CAPTION, focoIndice ? "Categoria"
+                          : inativa(focoOp) ? "Indisponível agora"
+                          : soLeitura(focoOp) ? "Informação"
+                          : OPCOES[focoOp].tipo == OP_ACAO ? "Abre uma tela"
+                          : "Personalizar", 168, 171, 180, 255);
+      txt_desenhar(tipo, gi.x + gi.w + 16.0f, gi.y + (gi.h - tipo.h) * 0.5f); }
+    hy = gi.y + gi.h + 22.0f;
     hy += txt_bloco(TXT_HEADLINE,
                    focoIndice ? SECOES[sec].titulo : OPCOES[focoOp].rotulo,
                    237, 238, 242, hx, hy, hw, 40, 1, 3);
-    hy += 22.0f;
+    hy += 18.0f;
     hy += txt_bloco(TXT_CAPTION,
-                   focoIndice ? "Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha."
-                              : ajudaOpcao(focoOp),
-                   183, 186, 194, hx, hy, hw, 32, 1, 7);
-    hy += 42.0f;
+                   focoIndice ? SECAO_AJUDA[sec] : ajudaOpcao(focoOp),
+                   183, 186, 194, hx, hy, hw, 32, 1, 8);
+    // O QUE MUDA NA PRATICA. A frase de ajuda diz o que a opcao E; esta diz o
+    // que acontece quando ela muda, que e a pergunta de quem esta com o
+    // controle na mao. Vazia quando nao ha nada honesto a dizer.
+    { const char *ef = efeitoOpcao(focoOp);
+      if (!focoIndice && ef) {
+        hy += 16.0f;
+        hy += txt_bloco(TXT_CAPTION, ef, 150, 176, 150, hx, hy, hw, 32, 1, 4);
+      } }
+    hy += 34.0f;
     // O RODAPE DE AJUDA DIZ O QUE FUNCIONA NO CONTROLE, e nao o que funciona no
-    // teclado do Mac. O texto anterior anunciava PgUp/PgDn, teclas que nenhum
-    // controle de TV tem.
-    txt_bloco(TXT_CAPTION,
-              focoIndice ? "↑ ↓  Escolher categoria\nOK ou →  Entrar na categoria\nVoltar  Sair dos ajustes"
-              : OPCOES[focoOp].tipo == OP_ACAO
-                         ? "↑ ↓  Navegar\nOK  Abrir\nVoltar  Ir para as categorias"
-                         : "↑ ↓  Navegar\n← →  Alterar valor\nVoltar  Ir para as categorias",
-              155, 159, 169, hx, hy, hw, 34, 1, 4);
+    // teclado do Mac. Uma linha por dica, desenhada a mao: ver desenhaDicas.
+    { const char *dIdx[] = { "↑ ↓   Escolher categoria",
+                             "OK ou →   Entrar na categoria",
+                             "Voltar   Sair dos ajustes" };
+      const char *dAcao[] = { "↑ ↓   Navegar",
+                              "OK   Abrir",
+                              "Voltar   Ir para as categorias" };
+      const char *dVal[] = { "↑ ↓   Navegar",
+                             "← →   Alterar o valor",
+                             "Voltar   Ir para as categorias" };
+      const char *const *d = focoIndice ? dIdx
+                           : OPCOES[focoOp].tipo == OP_ACAO ? dAcao : dVal;
+      desenhaDicas(d, 3, hx, hy, hw, 155, 159, 169); }
   }
 
   gfx_recorte(AJ_LISTA_X - NV_ANEL_FOCO, AJ_TOPO,
@@ -1549,15 +1850,34 @@ void ajustes_desenhar(Uint32 agora) {
   float y = AJ_TOPO - scrollY;
   for (int s = 0; s < AJ_N_SECOES; s++) {
     if (s) y += AJ_SEC_GAP;
-    // Cabecalho da secao em corpo pequeno e cinza: ele rotula o grupo, nao
-    // compete com os rotulos das opcoes.
+    // Cabecalho da secao: agora e o titulo GRANDE do grupo, e nao mais um
+    // rotulo cinza do tamanho de legenda. Com seis categorias no lugar de doze,
+    // cada uma cobre mais linhas e o cabecalho e o unico marco de onde um grupo
+    // comeca — em corpo de legenda ele passava despercebido do sofa.
     float aC = anim_clamp((y - (AJ_TOPO - 70.0f)) / 60.0f, 0.0f, 1.0f);
-    TxtLinha ts = txt_linha(TXT_CAPTION, SECOES[s].titulo, 150, 152, 160, 255);
+    TxtLinha ts = txt_linha(TXT_HEADLINE, SECOES[s].titulo, 226, 228, 236, 255);
     if (aC > 0.005f && y < AJ_BASE)
-      txt_desenhar_alpha(ts, AJ_LISTA_X + AJ_PAD, y + AJ_SEC_CABEC - ts.h - 10.0f, aC);
+      txt_desenhar_alpha(ts, AJ_LISTA_X + AJ_PAD, y + AJ_SEC_CABEC - ts.h - 6.0f, aC);
     y += AJ_SEC_CABEC;
     for (int k = 0; k < SECOES[s].n; k++) {
       int op = SECOES[s].ini + k;
+      const char *sub = subsecaoDe(op);
+      if (sub) {
+        // Rotulo do bloco mais um fio: sem o fio, um rotulo cinza no meio de
+        // linhas escuras se le como mais uma linha desligada.
+        float aS = anim_clamp((y - (AJ_TOPO - 70.0f)) / 60.0f, 0.0f, 1.0f);
+        if (aS > 0.005f && y < AJ_BASE) {
+          TxtLinha tsub = txt_linha(TXT_CAPTION, sub, 156, 159, 168, 255);
+          GfxRect fio = { AJ_LISTA_X + AJ_PAD + tsub.w + 18.0f,
+                          y + AJ_SUB_CABEC - 18.0f,
+                          AJ_LISTA_W - AJ_PAD * 2.0f - tsub.w - 18.0f, 1.0f };
+          txt_desenhar_alpha(tsub, AJ_LISTA_X + AJ_PAD,
+                             y + AJ_SUB_CABEC - tsub.h - 8.0f, aS);
+          if (fio.w > 20.0f)
+            gfx_cor(fio, 0.5f, 0.60f, 0.62f, 0.68f, 0.20f * aS);
+        }
+        y += AJ_SUB_CABEC;
+      }
       desenhaLinha(op, y, animFoco[op]);
       y += AJ_LINHA_H + AJ_LINHA_GAP;
     }

@@ -766,9 +766,20 @@ float txt_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,
   while (*p && (maxLinhas <= 0 || nLinhas < maxLinhas)) {
     // pega a proxima palavra
     const char *ini = p;
-    while (*p && *p != ' ') p++;
+    int quebra;
+    while (*p && *p != ' ' && *p != '\n') p++;
     size_t np = (size_t)(p - ini);
-    while (*p == ' ') p++;
+    // QUEBRA DURA NO \n, e isto e conserto de defeito visto em foto.
+    //
+    // Este laco separava palavras SO por espaco. Um \n no meio do texto virava
+    // parte da "palavra", chegava inteiro ao TTF_RenderUTF8_Blended e saia como
+    // .notdef — o quadradinho. Quem escreveu o rodape de ajuda dos Ajustes
+    // ("Navegar\nOK Abrir\nVoltar Ir para as categorias") via tres linhas no
+    // codigo e uma linha corrida com dois quadrados na TV. O relator do issue
+    // #12 fotografou exatamente isso e eu li a foto como texto sem traducao,
+    // que era outra coisa: sao dois defeitos na mesma tela.
+    quebra = (*p == '\n');
+    while (*p == ' ' || *p == '\n') { if (*p == '\n') quebra = 1; p++; }
 
     char tentativa[512];
     size_t nl = strlen(linha);
@@ -788,6 +799,17 @@ float txt_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,
       memcpy(linha, ini, np); linha[np] = 0;
     } else {
       memcpy(linha, tentativa, nl + np + 1);
+    }
+    // Fecha a linha AQUI quando o TEXTO pediu, em vez de esperar a largura
+    // acabar. `linha` pode estar vazia (dois \n seguidos): ai a linha em branco
+    // e desenhada de proposito — e o vao que quem escreveu o texto pediu.
+    if (quebra && (maxLinhas <= 0 || nLinhas < maxLinhas)) {
+      if (linha[0]) {
+        TxtLinha l = txt_linha(estilo, linha, r, g, b, 255);
+        txt_desenhar_alpha(l, x, y + usado, alpha);
+      }
+      usado += leading; nLinhas++;
+      linha[0] = 0;
     }
   }
   if (linha[0] && (maxLinhas <= 0 || nLinhas < maxLinhas)) {
@@ -813,9 +835,20 @@ float txt_bloco_dir(TxtEstilo estilo, const char *s, int r, int g, int b,
   const char *p = s;
   while (*p && (maxLinhas <= 0 || nLinhas < maxLinhas)) {
     const char *ini = p;
-    while (*p && *p != ' ') p++;
+    int quebra;
+    while (*p && *p != ' ' && *p != '\n') p++;
     size_t np = (size_t)(p - ini);
-    while (*p == ' ') p++;
+    // QUEBRA DURA NO \n, e isto e conserto de defeito visto em foto.
+    //
+    // Este laco separava palavras SO por espaco. Um \n no meio do texto virava
+    // parte da "palavra", chegava inteiro ao TTF_RenderUTF8_Blended e saia como
+    // .notdef — o quadradinho. Quem escreveu o rodape de ajuda dos Ajustes
+    // ("Navegar\nOK Abrir\nVoltar Ir para as categorias") via tres linhas no
+    // codigo e uma linha corrida com dois quadrados na TV. O relator do issue
+    // #12 fotografou exatamente isso e eu li a foto como texto sem traducao,
+    // que era outra coisa: sao dois defeitos na mesma tela.
+    quebra = (*p == '\n');
+    while (*p == ' ' || *p == '\n') { if (*p == '\n') quebra = 1; p++; }
 
     char tentativa[512];
     size_t nl = strlen(linha);
@@ -834,6 +867,17 @@ float txt_bloco_dir(TxtEstilo estilo, const char *s, int r, int g, int b,
       memcpy(linha, ini, np); linha[np] = 0;
     } else {
       memcpy(linha, tentativa, nl + np + 1);
+    }
+    // Fecha a linha AQUI quando o TEXTO pediu, em vez de esperar a largura
+    // acabar. `linha` pode estar vazia (dois \n seguidos): ai a linha em branco
+    // e desenhada de proposito — e o vao que quem escreveu o texto pediu.
+    if (quebra && (maxLinhas <= 0 || nLinhas < maxLinhas)) {
+      if (linha[0]) {
+        TxtLinha l = txt_linha(estilo, linha, r, g, b, 255);
+        if (xDir >= 0.0f) txt_desenhar_alpha(l, xDir - l.w, y + usado, alpha);
+      }
+      usado += leading; nLinhas++;
+      linha[0] = 0;
     }
   }
   if (linha[0] && (maxLinhas <= 0 || nLinhas < maxLinhas)) {
