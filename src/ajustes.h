@@ -67,6 +67,9 @@ int   ajustes_descobrir_na_busca(void); // searchDiscoverEnabled (derivado)
 int   ajustes_cw_ligado(void);          // continueWatchingEnabled
 int   ajustes_cw_estilo(void);          // 0 card, 1 largo (wide), 2 poster
 int   ajustes_cw_thumb_episodio(void);  // useEpisodeThumbnailsInCw
+// 0 = as duas fontes (conta primeiro, Trakt completando), 1 = so a conta
+// Nuvio, 2 = so o Trakt. Local: o app oficial nao tem esta escolha.
+int   ajustes_cw_fonte(void);
 int   ajustes_cw_desfocar_proximo(void);// blurContinueWatchingNextUp
 int   ajustes_cw_do_episodio_mais_alto(void); // nextUpFromFurthestEpisode
 int   ajustes_cw_mostrar_nao_exibidos(void);  // showUnairedNextUp

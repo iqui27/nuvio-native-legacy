@@ -150,6 +150,16 @@ static void montar(void) {
     ops[nOps].rot = "Tirar de Continuar assistindo";
     ops[nOps].acao = OP_TIRAR_CONTINUAR; nOps++;
   }
+  // O FOCO TEM DE CABER NA LISTA QUE ACABOU DE SER MONTADA.
+  //
+  // montar() roda de novo a cada confirmacao, e a lista ENCOLHE em casos
+  // reais: marcar como assistido apaga a posicao de retomada, e com isso
+  // "Tirar de Continuar assistindo" deixa de existir. Se o foco estava nela,
+  // `foco` passa a apontar para fora — e ai o desenho nao pinta linha nenhuma
+  // ali (o laco vai ate nOps) e aplicar() sai cedo em `foco >= nOps`. Na TV
+  // isso e exatamente "ele pula e nao faz nada".
+  if (foco >= nOps) foco = nOps > 0 ? nOps - 1 : 0;
+  if (foco < 0) foco = 0;
 }
 
 void ctx_abrir(int indice) {
@@ -180,8 +190,17 @@ static void aplicar(void) {
   int acao;
   if (!ci || foco < 0 || foco >= nOps) return;
   acao = ops[foco].acao;
-  if (acao != OP_DETALHES && operacao != CTX_OP_NENHUMA &&
-      estadoOperacao != CTX_FALHA) return;
+  // SO A ESPERA BLOQUEIA, e nao "ja houve uma operacao".
+  //
+  // A guarda antiga era `operacao != CTX_OP_NENHUMA && estado != FALHA`, e
+  // como `operacao` nunca volta a NENHUMA enquanto o modal esta aberto, a
+  // PRIMEIRA acao confirmada trancava todas as outras: depois de adicionar a
+  // biblioteca, "Desmarcar como assistido" no mesmo modal simplesmente nao
+  // fazia nada. Era preciso fechar e reabrir, e ninguem adivinha isso.
+  //
+  // Enquanto a requisicao esta no ar continua valendo esperar: duas escritas
+  // simultaneas na mesma superficie e que nao podem acontecer.
+  if (acao != OP_DETALHES && estadoOperacao == CTX_PENDENTE) return;
   switch (acao) {
     case OP_DETALHES: pedDetalhes = idx; break;
     case OP_LISTA:
@@ -246,14 +265,12 @@ void ctx_evento(const SDL_Event *e) {
       e->key.keysym.scancode == NV_SCANCODE_BACK) { aberto = 0; return; }
   // Enquanto a requisicao esta no ar, OK nao repete a escrita. O foco continua
   // sendo o do modal e Voltar sempre pode cancelar a espera visual.
-  if (operacao != CTX_OP_NENHUMA) {
-    if (estadoOperacao == CTX_PENDENTE) return;
-    if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
-      if (estadoOperacao == CTX_FALHA) aplicar();
-      else aberto = 0;
-    }
-    if (k != SDLK_UP && k != SDLK_DOWN) return;
-  }
+  //
+  // DEPOIS que ela termina, o OK volta a ser OK. Antes ele virava "fechar" —
+  // o modal ficava com os botoes na tela, respondendo ao foco, e o unico
+  // efeito de aperta-los era sumir. Somado a guarda de aplicar() logo acima,
+  // era a metade visivel do "nao faz nada" no botao de desmarcar.
+  if (operacao != CTX_OP_NENHUMA && estadoOperacao == CTX_PENDENTE) return;
   if (k == SDLK_UP)   { if (foco > 0) foco--; return; }
   if (k == SDLK_DOWN) { if (foco + 1 < nOps) foco++; return; }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) { aplicar(); return; }

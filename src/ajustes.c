@@ -33,7 +33,7 @@
 
 // Versao do app: mesma string do appinfo.json empacotado. Fica aqui porque a
 // tela nao tem como ler o manifesto em tempo de execucao no aparelho.
-#define AJ_VERSAO       "1.0.19"
+#define AJ_VERSAO       "1.0.20"
 
 #define AJ_LINHA_H       88.0f
 #define AJ_LINHA_GAP      8.0f
@@ -80,7 +80,7 @@ typedef enum {
   AJ_DESCOBRIR, AJ_ROTULOS, AJ_NOME_ADDON, AJ_SUFIXO_TIPO,
   AJ_OCULTAR_NLANC, AJ_NOTAS_HOME, AJ_GRAD_CLASSICO,
   // Continuar assistindo
-  AJ_CW_LIGADO, AJ_CW_ESTILO, AJ_CW_THUMB, AJ_CW_BLUR_PROX,
+  AJ_CW_LIGADO, AJ_CW_FONTE, AJ_CW_ESTILO, AJ_CW_THUMB, AJ_CW_BLUR_PROX,
   AJ_CW_FURTHEST, AJ_CW_NAO_EXIBIDOS, AJ_CW_ORDEM,
   // Pagina de detalhe
   AJ_DET_BLUR_NAO_VISTOS, AJ_DET_TRAILER, AJ_DET_META_EXT, AJ_DET_DATA_CHEIA,
@@ -109,6 +109,12 @@ static const char *V_RAIL[]      = { "Recolhida", "Fixa" };
 // `continueWatchingCardStyle`, validado em layoutPreferences.js contra
 // exatamente estes tres valores.
 static const char *V_CW[]        = { "Card", "Largo", "P\xc3\xb4ster" };
+// FONTE do "Continuar assistindo". As duas ja existem e ja sao fundidas em
+// montarContinuar (descoberta.c); isto so escolhe quais entram.
+//   Ambas  = conta primeiro, Trakt preenchendo o que falta (o de sempre)
+//   Conta  = so o progresso da conta Nuvio (syncprog.c)
+//   Trakt  = so o /sync/playback do Trakt
+static const char *V_CW_FONTE[]  = { "Ambas", "Conta Nuvio", "Trakt" };
 // `continueWatchingSortMode`, normalizado em normalizeContinueWatchingSortMode.
 static const char *V_CW_ORDEM[]  = { "Padrão", "Estilo streaming", "Separar futuros" };
 // `discoverLocation`, validado contra estes tres.
@@ -194,6 +200,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Gradiente de foco clássico", V_LIGA, 2),   // classicFocusGradientEnabled
 
   ESC("Mostrar \"Continuar assistindo\"", V_LIGA, 2), // continueWatchingEnabled
+  ESC("Fonte do \"Continuar assistindo\"", V_CW_FONTE, 3),   // local, ver V_CW_FONTE
   ESC("Estilo do \"Continuar assistindo\"", V_CW, 3), // continueWatchingCardStyle
   ESC("Miniatura do episódio",      V_LIGA, 2),   // useEpisodeThumbnailsInCw
   ESC("Desfocar próximo episódio",  V_LIGA, 2),   // blurContinueWatchingNextUp
@@ -255,7 +262,12 @@ static const char *CHAVE[] = {
   "discoverLocation", "posterLabelsEnabled", "catalogAddonNameEnabled",
   "catalogTypeSuffixEnabled", "hideUnreleasedContent",
   "homeImdbRatingsVisibility", "classicFocusGradientEnabled",
-  "continueWatchingEnabled", "continueWatchingCardStyle",
+  "continueWatchingEnabled",
+  // LOCAL, e nao do web: o app oficial nao tem esta escolha, entao nao ha
+  // campo dela no blob da conta. Chave propria para nao colidir com um nome
+  // que o servidor possa criar depois.
+  "cwFonteLocal",
+  "continueWatchingCardStyle",
   "useEpisodeThumbnailsInCw", "blurContinueWatchingNextUp",
   "nextUpFromFurthestEpisode", "showUnairedNextUp", "continueWatchingSortMode",
   "blurUnwatchedEpisodes", "detailPageTrailerButtonEnabled",
@@ -290,7 +302,7 @@ static const struct { const char *titulo; int ini, n; } SECOES[] = {
   { "Layout da Home",                 AJ_LANDSCAPE,           2 },
   { "Fileiras da Home",               AJ_FIL_LIMITE,          2 },
   { "Conteúdo da Home",               AJ_RAIL,               12 },
-  { "Continuar assistindo",           AJ_CW_LIGADO,           7 },
+  { "Continuar assistindo",           AJ_CW_LIGADO,           8 },
   { "Página de Detalhes",             AJ_DET_BLUR_NAO_VISTOS, 4 },
   { "Foco no Pôster",                 AJ_EXPANDIR,            3 },
   { "Efeito de Profundidade",         AJ_PROF,                9 },
@@ -343,6 +355,7 @@ static int valor[AJ_N] = {
   1,                /* gradiente de foco classico: desligado */
 
   0,                /* continuar assistindo: ligado */
+  0,                /* fonte do continuar: ambas (o comportamento de sempre) */
   0,                /* estilo: card */
   0,                /* miniatura do episodio: ligada */
   1,                /* desfocar proximo: desligado */
@@ -447,6 +460,7 @@ int ajustes_descobrir_na_busca(void)  { return valor[AJ_DESCOBRIR] == 0; }
 
 int ajustes_cw_ligado(void)           { return lig(AJ_CW_LIGADO); }
 int ajustes_cw_estilo(void)           { return valor[AJ_CW_ESTILO]; }
+int ajustes_cw_fonte(void)            { return valor[AJ_CW_FONTE]; }
 int ajustes_cw_thumb_episodio(void)   { return lig(AJ_CW_THUMB); }
 int ajustes_cw_desfocar_proximo(void) { return lig(AJ_CW_BLUR_PROX); }
 int ajustes_cw_do_episodio_mais_alto(void) { return lig(AJ_CW_FURTHEST); }
@@ -531,6 +545,7 @@ static const char *const *literaisDe(int op) {
   switch (op) {
     case AJ_DESCOBRIR:  return W_DESCOBRIR;
     case AJ_NOTAS_HOME: return W_NOTAS;
+    case AJ_CW_FONTE:   return W_CW;
     case AJ_CW_ESTILO:  return W_CW;
     case AJ_CW_ORDEM:   return W_CW_ORDEM;
     default:            return NULL;
@@ -799,6 +814,7 @@ static int inativa(int op) {
     case AJ_RAIL:         return ajustes_rail_moderna();
     case AJ_RAIL_BLUR:    return !ajustes_rail_moderna();
     case AJ_HERO_CATALOGOS: return !ajustes_hero_ligado();
+    case AJ_CW_FONTE:
     case AJ_CW_ESTILO: case AJ_CW_THUMB: case AJ_CW_FURTHEST:
     case AJ_CW_NAO_EXIBIDOS: case AJ_CW_ORDEM:
       return !ajustes_cw_ligado();
@@ -830,7 +846,7 @@ static const char *ajudaOpcao(int op) {
     if (op == AJ_RAIL) return "Desative a barra lateral moderna para escolher entre recolhida e fixa.";
     if (op == AJ_RAIL_BLUR) return "Ative a barra lateral moderna para usar o desfoque.";
     if (op == AJ_HERO_CATALOGOS) return "Ative Mostrar destaque para exibir os catálogos no topo da Home.";
-    if (op >= AJ_CW_ESTILO && op <= AJ_CW_ORDEM)
+    if (op >= AJ_CW_FONTE && op <= AJ_CW_ORDEM)
       return op == AJ_CW_BLUR_PROX && ajustes_cw_ligado()
         ? "Ative Miniatura do episódio para desfocar a imagem do próximo episódio."
         : "Ative Continuar assistindo para ajustar os cards de retomada.";
@@ -838,6 +854,7 @@ static const char *ajudaOpcao(int op) {
     return "Ative Efeito de profundidade para personalizar este detalhe.";
   }
   switch (op) {
+    case AJ_CW_FONTE: return "De onde vem a fileira de retomada. Ambas usa a conta e completa com o Trakt.";
     case AJ_QUALIDADE: return "Define a preferência de resolução. A disponibilidade depende das fontes do addon.";
     case AJ_DV: case AJ_ATMOS: return "Preferência para fontes compatíveis. O formato disponível também depende do arquivo e da TV.";
     case AJ_HERO_CATALOGOS: return "Quantidade de catálogos incluídos no destaque. Esta linha é apenas informativa.";
@@ -1048,6 +1065,13 @@ void ajustes_evento(const SDL_Event *e) {
       // O rotulo de tipo e os generos das fileiras sao montados na entrada do
       // catalogo, ja no idioma da interface; trocar o idioma remonta.
       if (focoOp == AJ_IDIOMA) desc_repetir();
+      // A FONTE DO CONTINUAR tambem remonta, e por um motivo diferente do
+      // idioma: quem monta aquela fileira e montarContinuar (descoberta.c), e
+      // o conteudo dela nao e refeito por desc_remontar_fileiras — essa so
+      // reordena e filtra FILEIRAS, nao os itens de uma. Sem o ciclo, trocar a
+      // fonte so teria efeito no proximo sync, e para quem apertou parece que
+      // o ajuste nao faz nada.
+      if (focoOp == AJ_CW_FONTE) desc_repetir();
     }
     gravar();   // grava a cada mudanca: nao ha botao de "salvar" nesta tela
   }

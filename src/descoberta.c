@@ -1094,8 +1094,15 @@ static int montarContinuar(CatItem *saida, int max) {
   static Cand juntos[CONT_MAX * 2];
   int nT, nL, nJ = 0, i, j, w, fora = 0, repetidos = 0;
 
+  // FONTE ESCOLHIDA EM AJUSTES. 0 = as duas, 1 = so a conta Nuvio, 2 = so o
+  // Trakt. As duas sempre existiram e sempre foram fundidas aqui; o ajuste so
+  // decide quais entram. Existe porque quem usa a conta Nuvio e tambem tem
+  // Trakt ligado via um outro cliente via o "Continuar" do outro aparelho
+  // aparecer aqui sem ter pedido.
+  int fonte = ajustes_cw_fonte();
+
   if (max > CONT_MAX) max = CONT_MAX;
-  nT = trakt_continuar(doTrakt, CONT_MAX);
+  nT = fonte == 1 ? 0 : trakt_continuar(doTrakt, CONT_MAX);
   // Os limites AGORA valem para as duas fontes. Sem isto, o /sync/playback
   // devolve o que qualquer cliente Trakt pausou uma vez — inclusive titulos em
   // 0% e titulos praticamente terminados, que e o "nunca assisti isso" do
@@ -1106,7 +1113,7 @@ static int montarContinuar(CatItem *saida, int max) {
     w++;
   }
   nT = w;
-  nL = continuarLocal(daConta, CONT_MAX);
+  nL = fonte == 2 ? 0 : continuarLocal(daConta, CONT_MAX);
 
   // A CONTA ENTRA PRIMEIRO porque ela e a fonte DATADA (lastWatchedMs, que o
   // syncprog ja reconciliou entre celular e TV). O item do Trakt que fala da

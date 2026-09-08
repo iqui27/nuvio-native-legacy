@@ -63,6 +63,23 @@ int main(void) {
   assert(!ctx_aberto() && ctx_pediu_detalhes() == 0);
   puts("ok  repeticao automatica nao escolhe");
 
+  // 4. A ULTIMA OPCAO RESPONDE. "No LG ele nao seleciona, ele pula e nao faz
+  //    nada" — "Tirar de Continuar assistindo" e a ultima da lista, e e ela
+  //    que some quando montar() encolhe. Aqui o foco desce ate ela e o OK tem
+  //    de agir: a posicao de retomada some e o modal fecha.
+  { CatItem c2 = *cat_item(0);
+    c2.progresso = 42; c2.restanteMin = 51;
+    cat_definir(&c2, 1); }
+  ctx_abrir(0);
+  tecla(SDL_KEYUP, SDLK_RETURN, 0);
+  tecla(SDL_KEYDOWN, SDLK_DOWN, 0);
+  tecla(SDL_KEYDOWN, SDLK_DOWN, 0);
+  tecla(SDL_KEYDOWN, SDLK_DOWN, 0);   // Ver detalhes -> biblioteca -> assistido -> retomada
+  tecla(SDL_KEYDOWN, SDLK_RETURN, 0);
+  assert(!ctx_aberto());
+  assert(cat_item(0)->progresso == 0);
+  puts("ok  a ultima opcao do modal responde ao OK");
+
   puts("hold: tudo ok");
   return 0;
 }
