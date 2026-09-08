@@ -22,6 +22,7 @@
 #include "extras.h"
 #include "diretor.h"
 #include "descoberta.h"
+#include "dados.h"
 #include <strings.h>
 // Declarado a mao em vez de incluir detail.h: aquele header inclui ESTE (por
 // causa do HomeItem), e o ciclo so nao explode por causa das guardas. Uma
@@ -495,6 +496,248 @@ static TipoFileira tipoDaEscolha(int t) {
   }
 }
 
+// --- ONDE A PESSOA ESTAVA NA HOME -------------------------------------------
+//
+// Dois defeitos com a MESMA causa, e por isso um codigo so.
+//
+// 1. FECHAR O APP PERDIA TUDO. O catalogo ja tinha cache em disco, entao a home
+//    reabria com as mesmas fileiras — e o foco no primeiro card da primeira.
+//    Quem estava na oitava fileira, na coluna 11, refazia o caminho inteiro com
+//    o D-pad a cada abertura. Nada de posicao era gravado: uma varredura por
+//    persistencia de foco ou rolagem em src/ nao achava nada.
+//
+// 2. `colunaLembrada[]` MORRIA A CADA REPUBLICACAO. focus_iniciar faz
+//    `memset(f, 0, sizeof *f)`, e a remontagem so devolvia `fileira` e
+//    `coluna`. Depois de qualquer republicacao — catalogo da rede chegando
+//    (sao ~16 nos primeiros segundos), mudanca em Ajustes, fim de reproducao —
+//    descer e subir de fileira caia na coluna 0 em vez da coluna lembrada. E
+//    exatamente o defeito que o comentario no topo de focus.h diz que a
+//    estrutura existe para evitar.
+//
+// A CHAVE, NUNCA O INDICE. `colunaLembrada[]` e `scrollX[]` sao indexados por
+// INDICE de fileira, e o indice nao sobrevive a nada: a ordem sai de
+// art/fileiras.txt e de Ajustes, uma fileira nova entra no meio, o limite corta
+// o fim. Guardar por indice devolveria a coluna 11 de "Continuar assistindo"
+// para dentro de "Oscars 2026". Toda linha aqui e casada por chave.
+#define HOME_POS_ARQ    "home-pos.txt"
+#define HOME_POS_VERSAO "v1"
+
+// REPOUSO ANTES DE GRAVAR, e nao gravacao por quadro.
+//
+// Andando pela fileira com o D-pad segurado a tecla repete a cada ~150 ms;
+// gravar a cada movimento seria uma escrita de arquivo por card atravessado, e
+// no alvo Tizen cada escrita ainda paga a trava do sistema de arquivos (ver a
+// nota longa em dados.c) no fio do desenho. Com 1,2 s de repouso, atravessar
+// uma fileira inteira grava UMA vez, no fim.
+//
+// Por que 1,2 s e nao menos: dados.c ja agrupa as escritas do usuario numa
+// descarga a cada 700 ms (NV_DESC_MIN_MS). Um repouso mais curto que isso so
+// enfileiraria escritas que a camada de baixo ia juntar de qualquer jeito.
+// Acima de 700 ms cada gravacao nossa tende a virar uma descarga propria — e
+// esperar mais um pouco e de graca, porque a mola horizontal de scrollX ja
+// assentou e o que vai para o disco e o valor final, nao um quadro do meio.
+#define NV_POS_REPOUSO_MS 1200
+
+// Uma fileira, do jeito que a posicao a conhece. `scrollX` em INTEIRO de
+// proposito: sub-pixel de rolagem nao e informacao, e o arquivo e texto.
+typedef struct { char chave[192]; int coluna; int scrollX; } HomePos;
+
+// INSTANTANEO VIVO: tirado no comeco de sincronizarFileiras, devolvido no fim.
+// E o que conserta o defeito 2. static e nao pilha pelo mesmo motivo do
+// `arranjo` la embaixo: sao ~6,5 KB e a funcao ja carrega dois vetores desse
+// porte. So o fio do desenho toca nisto.
+static HomePos posViva[MAX_FIL];
+static int     nPosViva;
+static char    posVivaFoco[192];
+static int     posVivaCol;
+
+// INSTANTANEO DO DISCO: lido uma vez em home_iniciar e consumido UMA vez, na
+// primeira remontagem cujo conjunto de fileiras bater com o gravado. Enquanto
+// pendente ele nao pode ser sobrescrito — no arranque a descoberta publica
+// fileira a fileira, e uma home de duas fileiras gravada por cima apagaria a
+// posicao de ontem antes de ela ter chance de ser aplicada.
+static HomePos posDisco[MAX_FIL];
+static int     nPosDisco;
+static char    posDiscoFoco[192];
+static int     posDiscoCol;
+static int     posDiscoPendente;
+
+// Detector de repouso. Guardado em INDICE porque e so para saber se algo
+// mexeu desde o quadro anterior; o que vai para o disco e sempre por chave.
+static int    posUltFil = 0, posUltCol = 0;
+static Uint32 posMexeuEm;
+static int    posSujo;
+
+static const HomePos *posAchar(const HomePos *t, int n, const char *chave) {
+  int i;
+  if (!chave || !chave[0]) return NULL;
+  for (i = 0; i < n; i++) if (!strcmp(t[i].chave, chave)) return &t[i];
+  return NULL;
+}
+
+// "Retomar agora" FICA DE FORA de tudo isto. Ela nao vem do catalogo: nasce de
+// uma sessao interrompida nesta execucao (retomarIndice e static, nao e
+// gravado) e some sozinha. Inclui-la no conjunto gravado faria o casamento
+// falhar sempre que a pessoa fechasse o app logo depois de assistir a algo —
+// justo a vez em que reabrir no mesmo lugar mais importa.
+static int posIgnora(const char *chave) {
+  return !chave[0] || !strcmp(chave, "last_session");
+}
+
+static void posCapturar(void) {
+  int r;
+  nPosViva = 0;
+  posVivaFoco[0] = 0;
+  posVivaCol = 0;
+  for (r = 0; r < nFileiras && nPosViva < MAX_FIL; r++) {
+    HomePos *p;
+    if (posIgnora(fileiras[r].chave)) continue;
+    p = &posViva[nPosViva++];
+    snprintf(p->chave, sizeof p->chave, "%s", fileiras[r].chave);
+    // A coluna do foco e a MAIS NOVA das duas: colunaLembrada[r] so e escrita
+    // quando o foco SAI da fileira r, entao para a fileira em foco ela esta
+    // atrasada de uma travessia inteira.
+    p->coluna  = (r == foco.fileira) ? foco.coluna : foco.colunaLembrada[r];
+    p->scrollX = (int)(scrollX[r] + 0.5f);
+  }
+  if (foco.fileira >= 0 && foco.fileira < nFileiras
+      && !posIgnora(fileiras[foco.fileira].chave)) {
+    snprintf(posVivaFoco, sizeof posVivaFoco, "%s", fileiras[foco.fileira].chave);
+    posVivaCol = foco.coluna;
+  }
+}
+
+// Devolve o indice que ficou com o foco, ou -1 se a chave gravada nao esta na
+// tela — e nesse caso NADA e movido: o foco fica onde focus_iniciar o deixou,
+// em (0,0). Posicionar num vizinho por aproximacao seria pior que nao
+// restaurar: a pessoa acharia que voltou ao lugar certo.
+static int posAplicarTabela(const HomePos *t, int n,
+                            const char *chFoco, int colFoco) {
+  int r, achou = -1;
+  for (r = 0; r < nFileiras; r++) {
+    const HomePos *p = posAchar(t, n, fileiras[r].chave);
+    int c;
+    if (!p) continue;
+    c = p->coluna;
+    // A fileira pode ter encolhido entre uma publicacao e outra, ou entre
+    // ontem e hoje.
+    if (c >= foco.nColunas[r]) c = foco.nColunas[r] - 1;
+    if (c < 0) c = 0;
+    foco.colunaLembrada[r] = c;
+    scrollX[r] = (float)p->scrollX;
+  }
+  if (chFoco && chFoco[0])
+    for (r = 0; r < nFileiras; r++)
+      if (!strcmp(fileiras[r].chave, chFoco)) { achou = r; break; }
+  if (achou >= 0) {
+    int c = colFoco;
+    if (c >= foco.nColunas[achou]) c = foco.nColunas[achou] - 1;
+    if (c < 0) c = 0;
+    foco.fileira = achou;
+    foco.coluna  = c;
+    foco.colunaLembrada[achou] = c;
+  }
+  return achou;
+}
+
+// O CONJUNTO TEM DE BATER, e nao so a chave do foco.
+//
+// Casar so a chave do foco bastaria para nunca pousar na fileira errada, mas
+// nao para a restauracao fazer sentido: no arranque a home passa por ~16
+// estados intermediarios, e o primeiro deles em que a chave gravada aparece
+// pode ter duas fileiras. Restaurar ali coloca o foco na fileira certa de uma
+// home que ainda vai mudar de forma embaixo dele. Exigir o conjunto inteiro faz
+// a restauracao acontecer uma vez so, na home montada — e, quando as fileiras
+// de hoje nao sao as de ontem, nao acontecer, em silencio, ficando em (0,0).
+static int posConjuntoBate(const HomePos *t, int n) {
+  int r, vivas = 0;
+  if (n < 1) return 0;
+  for (r = 0; r < nFileiras; r++) {
+    // Fileira sem chave e a tabela de RESERVA, de antes de o catalogo chegar:
+    // ali nao ha home nenhuma com que casar.
+    if (!fileiras[r].chave[0]) return 0;
+    if (posIgnora(fileiras[r].chave)) continue;
+    if (!posAchar(t, n, fileiras[r].chave)) return 0;
+    vivas++;
+  }
+  return vivas == n;
+}
+
+static void posGravar(void) {
+  // static: ~7,5 KB, e esta funcao roda no fio do desenho.
+  static char buf[MAX_FIL * 232 + 64];
+  int k, r;
+  // Enquanto a leitura do disco nao foi consumida nem descartada, quem manda e
+  // o disco. Sem esta guarda a home pela metade do arranque grava por cima da
+  // posicao de ontem antes de ela chegar a ser aplicada.
+  if (posDiscoPendente) return;
+  posCapturar();
+  // HOME SEM FILEIRA NENHUMA NAO APAGA A DE ONTEM. Acontece de verdade: se
+  // home_iniciar desiste (nenhum backdrop) o app ainda passa por home_encerrar,
+  // e sem esta linha o arquivo sairia daqui vazio, trocando a posicao guardada
+  // por nada. Nao gravar deixa a de ontem valendo, que e sempre o melhor
+  // desfecho quando nao ha o que dizer.
+  if (nPosViva < 1) return;
+  k = snprintf(buf, sizeof buf, "%s\n", HOME_POS_VERSAO);
+  // A CHAVE VAI POR ULTIMO na linha, e o resto da linha E a chave. Chave de
+  // catalogo de addon e texto de terceiro e pode ter espaco; com a chave no
+  // meio, um espaco quebraria a leitura em silencio.
+  if (posVivaFoco[0] && k < (int)sizeof buf - 232)
+    k += snprintf(buf + k, sizeof buf - (unsigned)k, "f %d %s\n",
+                  posVivaCol, posVivaFoco);
+  for (r = 0; r < nPosViva && k < (int)sizeof buf - 232; r++) {
+    // Uma quebra de linha na chave viraria duas linhas no arquivo. Nao ha como
+    // isso acontecer hoje, e e barato garantir que continue assim.
+    if (strchr(posViva[r].chave, '\n')) continue;
+    k += snprintf(buf + k, sizeof buf - (unsigned)k, "r %d %d %s\n",
+                  posViva[r].coluna, posViva[r].scrollX, posViva[r].chave);
+  }
+  // NADA DE CREDENCIAL AQUI: so chave de fileira, coluna e rolagem. A `base` da
+  // fileira e uma URL de addon com JWT no caminho (ver catalogo.h) e nunca
+  // entra neste arquivo.
+  dados_gravar(HOME_POS_ARQ, buf);
+}
+
+static void posLer(void) {
+  char *txt, *l;
+  nPosDisco = 0;
+  posDiscoFoco[0] = 0;
+  posDiscoCol = 0;
+  posDiscoPendente = 0;
+  txt = dados_ler(HOME_POS_ARQ);
+  if (!txt) return;
+  // Versao na primeira linha: um arquivo de outro formato e simplesmente
+  // ignorado, e a home abre em (0,0) como antes de tudo isto existir.
+  if (strncmp(txt, HOME_POS_VERSAO "\n", sizeof HOME_POS_VERSAO)) {
+    free(txt);
+    return;
+  }
+  for (l = strchr(txt, '\n'); l; ) {
+    char *fim;
+    int c, sx, off;
+    l++;
+    fim = strchr(l, '\n');
+    if (fim) *fim = 0;
+    off = 0;
+    if (l[0] == 'f' && l[1] == ' '
+        && sscanf(l + 2, "%d %n", &c, &off) == 1 && off > 0 && l[2 + off]) {
+      posDiscoCol = c < 0 ? 0 : c;
+      snprintf(posDiscoFoco, sizeof posDiscoFoco, "%s", l + 2 + off);
+    } else if (l[0] == 'r' && l[1] == ' ' && nPosDisco < MAX_FIL
+        && sscanf(l + 2, "%d %d %n", &c, &sx, &off) == 2 && off > 0 && l[2 + off]) {
+      HomePos *p = &posDisco[nPosDisco];
+      p->coluna  = c  < 0 ? 0 : c;
+      p->scrollX = sx < 0 ? 0 : sx;
+      snprintf(p->chave, sizeof p->chave, "%s", l + 2 + off);
+      if (!posIgnora(p->chave)) nPosDisco++;
+    }
+    if (!fim) break;
+    l = fim;
+  }
+  free(txt);
+  posDiscoPendente = nPosDisco > 0;
+}
+
 int home_iniciar(const char *dirArte) {
   extras_carregar(dirArte);
   col_carregar(dirArte);
@@ -515,6 +758,14 @@ int home_iniciar(const char *dirArte) {
   for (int i = 0; i < nFileiras; i++)
     cols[i] = fileiras[i].n + (fileiras[i].verTudo ? 1 : 0);
   focus_iniciar(&foco, nFileiras, cols);
+  // A posicao de ontem so pode ser APLICADA quando as fileiras de verdade
+  // existirem. Aqui `fileiras[]` ainda e a tabela de reserva, que nem chave
+  // tem; a leitura fica pendente e sincronizarFileiras a consome na primeira
+  // montagem cujo conjunto bata com o gravado.
+  posLer();
+  posUltFil = foco.fileira;
+  posUltCol = foco.coluna;
+  posSujo = 0;
   heroTrocaEm = SDL_GetTicks() + NV_HERO_INTERVALO_MS;
   printf("home: %d backdrops, %d posters, %d fileiras\n", nBd, nPst, nFileiras);
   return 1;
@@ -625,6 +876,7 @@ void home_evento(const SDL_Event *e) {
       foco.fileira = 0;
       foco.coluna = 0;
       foco.colunaLembrada[0] = 0;
+      posDiscoPendente = 0;
       sairPerguntadoEm = 0;
       return;
     }
@@ -641,6 +893,15 @@ void home_evento(const SDL_Event *e) {
   // segundo. Toda a decisao — abrir, "Ver tudo" ou menu do cartaz — mora no
   // KEYUP acima, que e o unico ponto que conhece a DURACAO.
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) return;
+  // A PESSOA MEXEU NO D-PAD: a posicao de ontem deixa de estar pendente.
+  //
+  // Ela nao e aplicada com a home pela metade (posConjuntoBate exige o conjunto
+  // inteiro), e sem esta linha, numa home cujas fileiras mudaram desde ontem, o
+  // conjunto nunca bateria — a leitura ficaria pendente para sempre e posGravar
+  // sairia cedo em toda chamada, congelando o arquivo no estado de ontem. Quem
+  // navega assume a posicao; o disco passa a seguir esta sessao.
+  if (k == SDLK_RIGHT || k == SDLK_LEFT || k == SDLK_DOWN || k == SDLK_UP)
+    posDiscoPendente = 0;
   if (k == SDLK_RIGHT) {
     // O `&&` aqui era um curto-circuito com efeito colateral: escrito como
     // `if (fileira == 0 && !focus_mover(...))`, o focus_mover so era chamado
@@ -697,22 +958,20 @@ static void sincronizarFileiras(void) {
     revisao = (revisao ^ (unsigned)cf->ini) * 16777619u;
     revisao = (revisao ^ (unsigned)cf->n) * 16777619u;
   }
-  // Guardado ANTES do laco abaixo, que sobrescreve fileiras[]: depois dele nao
-  // ha mais como saber em que fileira o foco estava.
-  char chaveFoco[192];
-  int colFoco = foco.coluna;
-  chaveFoco[0] = 0;
-  if (foco.fileira >= 0 && foco.fileira < nFileiras)
-    snprintf(chaveFoco, sizeof chaveFoco, "%s", fileiras[foco.fileira].chave);
   if (nCat < 1 || (nCat == filsAplicadas && assin == prefsAplicadas
       && revisao == ultimaRevisao && retomarAplicada == retomarRev)) return;
   // Guardar o estado por chave: inserir o hub não deve transferir a rolagem
   // horizontal de uma fileira para outra.
+  //
+  // TIRADO ANTES do laco abaixo, que sobrescreve fileiras[]: depois dele nao ha
+  // mais como saber em que fileira o foco estava. posCapturar leva a chave do
+  // foco, a coluna, o `colunaLembrada[]` INTEIRO e os scrollX — antes daqui
+  // saiam so a chave do foco, a coluna e os scrollX, e era a ausencia do
+  // colunaLembrada que fazia a memoria de coluna morrer a cada republicacao.
+  posCapturar();
   Fileira antigas[MAX_FIL];
-  float antigosX[MAX_FIL];
   int nAntigas = nFileiras;
   memcpy(antigas, fileiras, sizeof antigas);
-  memcpy(antigosX, scrollX, sizeof antigosX);
   int temDestaque = 0;
   for (r = 0; r < nCat && destino < MAX_FIL - 1; r++) {
     const CatFileira *cf = cat_fileira(r);
@@ -930,7 +1189,7 @@ static void sincronizarFileiras(void) {
           fileiras[r].n=fileiras[r].stackN<10?fileiras[r].stackN:10;
           fileiras[r].stackN=0;fileiras[r].verTudo=1;
         }
-        scrollX[r] = antigosX[a]; break;
+        break;
       }
   expFileira = expColuna = -1; expAbre = 0.0f;
   if (nFileiras < 1) return;
@@ -945,19 +1204,27 @@ static void sincronizarFileiras(void) {
     // A fileira e reencontrada pela CHAVE do catalogo, nao pelo indice: uma
     // fileira nova pode entrar no meio (a ordem vem de art/fileiras.txt), e o
     // indice antigo passaria a apontar para outra coisa.
-    int achou = -1;
     for (k = 0; k < nFileiras; k++)
       cols[k] = fileiras[k].n + (fileiras[k].verTudo ? 1 : 0);
     focus_iniciar(&foco, nFileiras, cols);
-    if (chaveFoco[0])
-      for (k = 0; k < nFileiras; k++)
-        if (!strcmp(fileiras[k].chave, chaveFoco)) { achou = k; break; }
-    if (achou >= 0) {
-      foco.fileira = achou;
-      // A fileira pode ter encolhido entre uma publicacao e outra.
-      foco.coluna = colFoco < foco.nColunas[achou] ? colFoco
-                  : (foco.nColunas[achou] > 0 ? foco.nColunas[achou] - 1 : 0);
+    posAplicarTabela(posViva, nPosViva, posVivaFoco, posVivaCol);
+    // E SO AGORA a posicao de ontem pode entrar: com as fileiras montadas e o
+    // conjunto delas igual ao que foi gravado. Vem DEPOIS da tabela viva de
+    // proposito — se as duas valem, a desta sessao e a mais nova.
+    if (posDiscoPendente && posConjuntoBate(posDisco, nPosDisco)) {
+      posDiscoPendente = 0;
+      posAplicarTabela(posDisco, nPosDisco, posDiscoFoco, posDiscoCol);
+      // O que esta na tela passa a ser exatamente o que esta no disco: nao ha
+      // o que gravar, e o repouso nao deve disparar por causa da restauracao.
+      posSujo = 0;
     }
+    // O INDICE do foco muda entre remontagens mesmo com a posicao intacta (uma
+    // fileira nova entrou acima). Reacertar o detector aqui evita que cada uma
+    // das ~16 publicacoes do arranque reinicie o relogio de repouso e adie a
+    // gravacao para sempre. `posSujo` NAO e limpo: se havia uma gravacao
+    // pendente antes da remontagem, ela continua devida.
+    posUltFil = foco.fileira;
+    posUltCol = foco.coluna;
   }
   // Diz TAMBEM o limite e quantas vinham do catalogo. Com um numero so, uma
   // home de 5 fileiras nao distinguia "o limite e 5" de "so 5 catalogos
@@ -1130,6 +1397,27 @@ void home_atualizar(float dt, Uint32 agora) {
   }
   scrollY = anim_mola2_reduzida(&velY, scrollY, alvoY, dt,
                                 NV_MOLA2_SCROLL, motionReduzido);
+
+  // GRAVAR A POSICAO — em repouso, nunca por quadro. Ver NV_POS_REPOUSO_MS.
+  //
+  // O gatilho e o foco, e so ele: `scrollX` da fileira focada e derivado de
+  // foco.coluna logo acima (a mola persegue um alvo calculado a partir dela) e
+  // o das outras nem se mexe, entao vigiar o foco cobre as duas coisas — e
+  // esperar o repouso garante que o valor gravado e o da mola JA ASSENTADA, e
+  // nao um quadro do meio da animacao.
+  //
+  // `scrollY` fica de fora do arquivo por ser derivado tambem: o alvo logo
+  // acima e a soma das alturas das fileiras ANTES de foco.fileira, recalculado
+  // a cada quadro. Gravado, ele seria um valor a mais para discordar do foco.
+  if (foco.fileira != posUltFil || foco.coluna != posUltCol) {
+    posUltFil = foco.fileira;
+    posUltCol = foco.coluna;
+    posMexeuEm = agora;
+    posSujo = 1;
+  } else if (posSujo && agora - posMexeuEm >= NV_POS_REPOUSO_MS) {
+    posSujo = 0;
+    posGravar();
+  }
 }
 
 // ---------- Hero do layout moderno legacy ----------------------------------
@@ -2191,7 +2479,11 @@ void home_desenhar(Uint32 agora) {
   gfx_sem_recorte();
 }
 
-void home_encerrar(void) {}
+// Rede de seguranca, nao o gatilho principal. Numa TV o app raramente sai por
+// aqui: a tecla Home do controle mata o processo e este caminho nao roda. Por
+// isso a gravacao de verdade e a de repouso, em home_atualizar; esta so pega o
+// caso em que a pessoa moveu o foco e saiu antes de completar o repouso.
+void home_encerrar(void) { posGravar(); }
 void home_registrar_retorno(int indice, double posSeg, double durSeg) {
   int novo = -1;
   if (indice >= 0 && durSeg > 1.0) {
