@@ -2,6 +2,7 @@
 #include "catalogo.h"
 #include "episodios.h"
 #include "player.h"
+#include "ajustes.h"
 #include "faixas.h"
 #include "gfx.h"
 #include "text.h"
@@ -82,7 +83,20 @@ static void testar(void) {
   assert(stream_n()==40 && stream_automatico()==37 && stream_item(40)==NULL);
   stream_definir_lista(NULL,0);assert(stream_n()==0 && stream_automatico()==-1);
   n=stream_extrair("{\"streams\":[{\"infoHash\":\"abc\"},{\"externalUrl\":\"https://example.invalid\"},{\"url\":\"https://example.invalid/a.mp4\",\"title\":\"4K [DV] Atmos\"}]}","Fixture",&v);
-  assert(n==1 && v[0].mp4 && v[0].dolbyVision && v[0].altura==2160);free(v);
+  // TRES, E NAO UMA. Esta asserção dizia `n==1`, de quando fonte sem URL era
+  // lixo a descartar. O suporte a debrid mudou o contrato e a linha ficou para
+  // tras: infoHash puro E uma fonte valida — a URL nasce depois, em
+  // stream_definir_lista (streams.c:146), e stream_parse.c:40 registra o
+  // porque ("como o AIOStreams manda"). externalUrl tambem entra, como URL.
+  //
+  // O que este caso realmente prova, e por isso ele existe, e que as flags
+  // saem do campo "title" quando nao ha "name" nem "description" — e o unico
+  // lugar onde muitos addons poem a qualidade.
+  assert(n==3);
+  assert(!v[0].url[0] && !strcmp(v[0].infoHash,"abc"));      // torrent puro
+  assert(!strcmp(v[1].url,"https://example.invalid"));       // externalUrl vira url
+  assert(v[2].mp4 && v[2].dolbyVision && v[2].altura==2160); // flags do "title"
+  free(v);
   char longa[4500];memset(longa,'a',sizeof longa);memcpy(longa,"https://example.invalid/",24);longa[4090]=0;
   snprintf(json,sizeof json,"{\"streams\":[{\"url\":\"%s\",\"name\":\"DV/HDR 4K MP4\"}]}",longa);
   n=stream_extrair(json,"Fixture",&v);assert(n==1 && strlen(v[0].url)==4090 && v[0].dolbyVision);free(v);
@@ -100,7 +114,16 @@ static void testar(void) {
   assert(episodios_escolheu(&t,&e) && t==2 && e==5);
   assert(!episodios_escolheu(&t,&e));
   player_abrir(0,NULL);player_definir_episodio(2,4);
-  assert(strstr(player_linha_episodio(),"T2E4") && strstr(player_linha_episodio(),"Episódio 24"));
+  // A ABREVIACAO SEGUE O IDIOMA: T de Temporada em portugues, S de Season em
+  // ingles. Foi o conserto do issue #12 — a frase e montada com snprintf, e o
+  // i18n passou a envolver o FORMATO, entao "T%dE%d" tem par na tabela.
+  //
+  // Esta linha exigia "T2E4" fixo, e por isso dependia do IDIOMA DA MAQUINA:
+  // ajustes.c le o ajustes.txt de verdade, e nesta bancada ele esta em ingles
+  // (ingles=1), entao o rotulo saia "S2E4" e o teste morria aqui. Perguntar ao
+  // proprio ajustes tira a maquina da conta.
+  assert(strstr(player_linha_episodio(), ajustes_idioma_ingles() ? "S2E4" : "T2E4"));
+  assert(strstr(player_linha_episodio(),"Episódio 24"));
   assert(player_proximo_episodio()&&player_proximo_episodio()->temporada==2&&player_proximo_episodio()->episodio==5);
   teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RETURN);
   assert(player_pediu_faixas()==2); /* Play, proporção, legendas: sem saltos. */

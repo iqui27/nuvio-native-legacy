@@ -284,6 +284,15 @@ static const char *CHAVE[] = {
   "-perfil", "-sync", "-addons", "-trakt", "-simkl", "-sair",
   "-versao", "-espaco",
 };
+// QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
+// valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
+// parcial em silencio — CHAVE nao tem nenhuma protecao. Inserir uma opcao no
+// meio do enum e esquecer UMA das listas desloca todas as seguintes: a chave de
+// um ajuste passa a gravar o valor de outro, e o arquivo de quem ja usava o app
+// volta trocado. Barato de conferir, caro de descobrir.
+_Static_assert(sizeof CHAVE / sizeof *CHAVE == AJ_N,
+               "CHAVE fora de sincronia com o enum AJ_*");
+
 
 // O compilador CONFERE que ha uma chave por opcao. Sem isto, acrescentar uma
 // opcao no enum e esquecer a chave deixa as ultimas entradas em NULL e

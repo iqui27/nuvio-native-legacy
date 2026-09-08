@@ -7,11 +7,25 @@
 // perfis.c. Aqui nao ha disco nem conta: dublês vazios bastam.
 char *dados_ler(const char *nome) { (void)nome; return NULL; }
 int   dados_gravar(const char *nome, const char *c) { (void)nome; (void)c; return 1; }
+// NULL de proposito: fileiras.c sai cedo em carregar() e a lista nasce vazia,
+// que e o estado de quem nunca abriu o app. O teste de layout nao tem opiniao
+// sobre escolha local de fileiras.
+char *dados_caminho(char *dst, unsigned tam, const char *nome) {
+  (void)dst; (void)tam; (void)nome; return NULL;
+}
 int   dados_apagar(const char *nome) { (void)nome; return 1; }
 int   perfis_ativo(void) { return 1; }
 const char *addons_base_por_id(const char *id) { (void)id; return ""; }
 
 int main(void) {
+  // O TETO DE FILEIRAS NO MAXIMO, porque este teste e sobre COMPOSICAO e FOCO.
+  //
+  // O limite (7 de fabrica) nasceu depois deste arquivo e cortava a montagem
+  // em sete, derrubando quase toda asserção daqui — que fala de fileira 9, 10,
+  // de nenhum catalogo perdido, e de descer o foco ate o fim. Declarar o teto
+  // aqui deixa explicito que ele nao e o assunto; o caso que o exercita esta
+  // no fim do arquivo.
+  fil_definir_limite(FIL_LIMITE_MAX);
   assert(MAX_FIL <= FOCUS_MAX_FILEIRAS);
   assert(perfilCatalogo("Oscars 2026 - Filme") == FILEIRA_COLECAO);
   assert(perfilCatalogo("NETFLIX - Série") == FILEIRA_SERVICO);
@@ -38,6 +52,20 @@ int main(void) {
   snprintf(fils[15].titulo, sizeof fils[15].titulo, "Oscar - Filme");
   cat_definir_tudo(itensTeste, 48, fils, 16);
   sincronizarFileiras();
+  // A INTENCAO ORIGINAL, mantida de proposito: 16 catalogos entram, mais
+  // "Amigos assistindo" e o destaque, e NENHUM catalogo se perde (o laco logo
+  // abaixo cobra isso).
+  //
+  // ESTA ASSERCAO FALHA HOJE, e a falha e informacao, nao ruido. O teto de
+  // fileiras (FIL_LIMITE_MAX, 16) conta as fileiras INSERIDAS junto com as de
+  // catalogo, entao a composicao de 18 vagas e cortada em 16 e dois catalogos
+  // somem. E exatamente a contabilidade que o relator do issue #18 descreve:
+  // "they still take up the 16-row limit and push other collections".
+  //
+  // NAO AJUSTE O NUMERO PARA FICAR VERDE. Trocar 17 por 16 aqui gravaria como
+  // correto o comportamento que o #18 questiona, e o laco de "nenhum catalogo
+  // removido" teria de ser afrouxado junto — que e a asserção que da valor ao
+  // arquivo. Quando o #18 for decidido, esta linha vira a prova da decisao.
   assert(nFileiras == 17);
   assert(foco.nFileiras == 17);
   assert(fileiras[1].tipo == FILEIRA_SOCIAL && fileiras[1].ini == -1 && fileiras[1].n == 1);

@@ -122,7 +122,8 @@ NAO_E_TELA = ("printf", "fprintf", "puts", "fputs", "perror", "marco",
               "getenv", "setenv", "fopen", "unlink", "remove", "rename",
               "mkdir", "system", "dlopen", "dlsym", "js_", "jsw_", "rede_",
               "curl_", "SDL_Log", "addons_buscar", "cat_indice_por",
-              "idioma_registrar", "assert", "EM_ASM", "MAIN_THREAD")
+              "idioma_registrar", "assert", "_Static_assert",
+              "EM_ASM", "MAIN_THREAD")
 
 RE_DESENHO = re.compile(
     r"(?<![A-Za-z0-9_])(" + "|".join(DESENHO) + r")\s*\(")
