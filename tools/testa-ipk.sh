@@ -20,7 +20,7 @@ set -e
 cd "$(dirname "$0")/.."
 ARES="../NuvioWeb-0.3.38-beta/node_modules/.bin/ares-package"
 ARQ_DE_PESSOA="trakt.txt addons.txt tmdb.txt mdblist.txt ajustes.txt
-               progresso.txt nuvem.txt sessao.txt perfil.txt cliente.txt"
+               progresso.txt nuvem.txt sessao.txt perfil.txt cliente.txt home-pos.txt"
 PALCO=$(mktemp -d)
 trap 'rm -rf "$PALCO"' EXIT
 cp -R deploy/app "$PALCO/app"
