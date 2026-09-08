@@ -56,6 +56,12 @@ char *rede_postar(const char *url, int segundos, const char *const *cabecalhos,
 // O corpo do erro tambem volta: o PostgREST explica no corpo qual funcao ou
 // tabela nao existe, e essa string e o que distingue "servidor antigo" de
 // "parametro errado".
+// DELETE com corpo de resposta (que costuma ser vazio: 204). Devolve NULL so em
+// falha de TRANSPORTE; um 4xx volta com corpo e o status em `*status`, como em
+// rede_postar_st. Existe porque o Trakt remove um item da barra de retomada por
+// DELETE /sync/playback/:id e responde 404 ao mesmo caminho em POST.
+char *rede_apagar(const char *url, int segundos, const char *const *cabecalhos,
+                  int *status);
 char *rede_postar_st(const char *url, int segundos, const char *const *cabecalhos,
                      const char *corpo, int *status);
 

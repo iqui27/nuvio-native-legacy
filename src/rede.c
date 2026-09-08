@@ -211,6 +211,20 @@ char *rede_postar(const char *url, int segundos, const char *const *cab,
   return rede_postar_st(url, segundos, cab, corpo, NULL);
 }
 
+// APAGAR e um verbo de verdade aqui, e nao um POST com corpo vazio: o Trakt
+// remove um item da barra de retomada por DELETE /sync/playback/:id, e responde
+// 404 a um POST na mesma URL. Ver trakt_playback_remover.
+char *rede_apagar(const char *url, int segundos, const char *const *cab,
+                  int *status) {
+  char *r;
+  (void)segundos;
+  r = pedir("DELETE", url, cab, NULL, NULL, NULL, status);
+  // 204 sem corpo e a resposta NORMAL de um DELETE aceito. Devolver NULL ali
+  // faria o chamador ler sucesso como falha de transporte.
+  if (!r && status && *status > 0) return strdup("");
+  return r;
+}
+
 char *rede_postar_st(const char *url, int segundos, const char *const *cab,
                      const char *corpo, int *status) {
   int temCt = 0, k;
@@ -268,6 +282,9 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
 #define INFO_URL_FINAL    1048577
 #define OPT_POSTFIELDS      10015
 #define OPT_POST               47
+// CURLOPT_CUSTOMREQUEST. Numerico como os outros: esta camada abre a libcurl
+// por dlopen e nunca inclui curl.h, entao as constantes sao transcritas.
+#define OPT_CUSTOMREQUEST   10036
 // CURLINFO_RESPONSE_CODE = CURLINFO_LONG (0x200000) + 2.
 #define INFO_RESPONSE_CODE   2097154
 
@@ -580,6 +597,42 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
 char *rede_postar(const char *url, int segundos, const char *const *cab,
                   const char *corpo) {
   return rede_postar_st(url, segundos, cab, corpo, NULL);
+}
+
+// APAGAR pelo CUSTOMREQUEST, e nao por OPT_POST: o Trakt so remove um item da
+// barra de retomada por DELETE /sync/playback/:id. Ver trakt_playback_remover.
+char *rede_apagar(const char *url, int segundos, const char *const *cab,
+                  int *status) {
+  Balde b = { NULL, 0 };
+  void *c, *lista = NULL;
+  int r;
+  if (status) *status = 0;
+  if (!url || !*url || !abrir()) return NULL;
+  c = curl_init();
+  if (!c) return NULL;
+  curl_setopt(c, OPT_URL, url);
+  curl_setopt(c, OPT_WRITEFUNCTION, receber);
+  curl_setopt(c, OPT_WRITEDATA, &b);
+  curl_setopt(c, OPT_TIMEOUT, (long)(segundos > 0 ? segundos : 20));
+  curl_setopt(c, OPT_NOSIGNAL, (long)1);
+  curl_setopt(c, OPT_SSL_VERIFYPEER, (long)0);
+  curl_setopt(c, OPT_SSL_VERIFYHOST, (long)0);
+  curl_setopt(c, OPT_USERAGENT, "Nuvio/1.0 (webOS)");
+  curl_setopt(c, OPT_CUSTOMREQUEST, "DELETE");
+  if (slist_append) {
+    int k;
+    for (k = 0; cab && cab[k]; k++) lista = slist_append(lista, cab[k]);
+    if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
+  }
+  r = curl_perform(c);
+  if (status && curl_getinfo) { long h = 0; curl_getinfo(c, INFO_RESPONSE_CODE, &h); *status = (int)h; }
+  if (lista && slist_free) slist_free(lista);
+  curl_cleanup(c);
+  if (r != 0) { free(b.p); return NULL; }
+  // 204 sem corpo e a resposta NORMAL de um DELETE aceito: devolver NULL ali
+  // faria o chamador ler sucesso como falha de transporte.
+  if (!b.p) return strdup("");
+  return b.p;
 }
 
 char *rede_postar_st(const char *url, int segundos, const char *const *cab,

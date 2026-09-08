@@ -218,6 +218,56 @@ int trakt_enfeitar_lote(CatItem *saida, int n) {
   return n;
 }
 
+// OS IDS DOS REGISTROS DE PLAYBACK da ultima leitura, para poder APAGAR.
+// Preenchida em trakt_continuar; consumida por trakt_playback_remover. Cabe a
+// mesma quantidade que a fileira mostra com folga.
+#define TK_PLAY_MAX 64
+static struct { char chave[28]; long long id; } play[TK_PLAY_MAX];
+static int nPlay;
+
+// Remove o item da barra de retomada do Trakt. `imdb` e a chave COMPOSTA, do
+// mesmo jeito que trakt_continuar a montou ("tt123:2:8" em serie, "tt123" em
+// filme) — que e exatamente o que CatItem.imdb carrega num item da fileira.
+//
+// Devolve 0 quando nao ha o que apagar: Trakt desligado, ou id desconhecido
+// porque a fileira veio do progresso da CONTA e nao do Trakt. Nao e erro; o
+// chamador tem a sua propria remocao a fazer de qualquer jeito.
+int trakt_playback_remover(const char *imdb) {
+  const char *cab[4];
+  char aut[200], chaveCab[140], url[96];
+  char *r;
+  int i, st = 0, ok;
+  long long id = 0;
+  if (!ligado || !imdb || !imdb[0]) return 0;
+  for (i = 0; i < nPlay; i++)
+    if (!strcmp(play[i].chave, imdb)) { id = play[i].id; break; }
+  if (!id) {
+    printf("[trakt] playback: sem id para %s (nao veio do Trakt)\n", imdb);
+    fflush(stdout);
+    return 0;
+  }
+  snprintf(aut, sizeof aut, "Authorization: Bearer %s", token);
+  snprintf(chaveCab, sizeof chaveCab, "trakt-api-key: %s", cliente);
+  cab[0] = aut;
+  cab[1] = "trakt-api-version: 2";
+  cab[2] = chaveCab;
+  cab[3] = NULL;
+  snprintf(url, sizeof url, "https://api.trakt.tv/sync/playback/%lld", id);
+  r = rede_apagar(url, 20, cab, &st);
+  ok = st >= 200 && st < 300;
+  free(r);
+  printf("[trakt] playback remover %s (id %lld) -> %s (HTTP %d)\n",
+         imdb, id, ok ? "ok" : "falhou", st);
+  fflush(stdout);
+  // SO ESQUECE O ID SE O SERVIDOR ACEITOU. Apagar a linha da tabela num 5xx
+  // faria a segunda tentativa dizer "sem id" e a pessoa nunca mais conseguiria
+  // remover aquele item sem reabrir o app.
+  if (ok)
+    for (i = 0; i < nPlay; i++)
+      if (!strcmp(play[i].chave, imdb)) { play[i].chave[0] = 0; break; }
+  return ok;
+}
+
 // A barra de retomada vem de /sync/playback e nao informa se o titulo foi
 // marcado como assistido. Consultamos o historico real uma vez no mesmo ciclo
 // de descoberta para que a modal nao trate progresso alto como prova de visto.
@@ -269,6 +319,7 @@ int trakt_continuar(CatItem *saida, int max) {
   cab[1] = "trakt-api-version: 2";
   cab[2] = chave;
   cab[3] = NULL;
+  nPlay = 0;
   corpo = rede_baixar_com("https://api.trakt.tv/sync/playback?extended=full", 25, cab);
   if (!corpo) { printf("[trakt] sem resposta\n"); return 0; }
   // O corpo e um array na raiz; js_array procura por chave, entao anda-se a mao.
@@ -314,6 +365,29 @@ int trakt_continuar(CatItem *saida, int max) {
       } else {
         snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
         snprintf(d->tipo, sizeof d->tipo, "movie");
+      }
+      // O ID DO REGISTRO DE PLAYBACK, guardado aqui e em lugar nenhum mais.
+      //
+      // O Trakt remove um item da barra de retomada por DELETE
+      // /sync/playback/<id>, e esse <id> e do REGISTRO — nao do titulo, nao do
+      // IMDb. Sem guarda-lo na leitura nao ha como apaga-lo depois, e era essa
+      // a metade que faltava do issue #22: "seleciono remover, o prompt some e
+      // nada e removido". O local era apagado; o do Trakt voltava no ciclo
+      // seguinte.
+      //
+      // TABELA LATERAL, e nao um campo em CatItem: sizeof(CatItem) faz parte do
+      // cabecalho do cache em disco (catalogo.c), e crescer a struct invalida
+      // todo cache de Home ja gravado.
+      //
+      // O "id" do topo do objeto e o do registro; os blocos aninhados trazem
+      // "ids" (plural), que nao casa com a busca por "id".
+      if (nPlay < TK_PLAY_MAX) {
+        double pid = js_num(p, f, "id", 0.0);
+        if (pid > 0.0) {
+          snprintf(play[nPlay].chave, sizeof play[nPlay].chave, "%s", d->imdb);
+          play[nPlay].id = (long long)pid;
+          nPlay++;
+        }
       }
       // Enfeitar fica para DEPOIS do laco, em paralelo. Aqui o item ja esta
       // montado: so falta a arte e a sinopse, que vem da rede.
@@ -828,13 +902,27 @@ static void *enviarHistorico(void *u) {
 
 int trakt_assistido_tipo(const char *imdb, const char *tipo, int marcar) {
   const char *dp;
+  // TODA RECUSA FALA. As duas saidas daqui eram MUDAS, e o relato do dono foi
+  // exatamente "clico e nao aparece nada no log" — sem uma linha nao ha como
+  // separar "o Trakt esta desligado" de "ja ha um pedido no ar" de "o pedido
+  // saiu e o servidor recusou". Silencio nao se diagnostica.
   if (!ligado || !imdb || imdb[0] != 't') {
+    printf("[trakt] historico recusado: %s (id=%s)\n",
+           !ligado ? "Trakt desligado" : "id invalido", imdb ? imdb : "(nulo)");
+    fflush(stdout);
     estadoEscrever(&historicoEstado, TK_OP_FALHA);
     return 0;
   }
   pthread_mutex_lock(&travaHistorico);
   if (fioHistVivo) {
     pthread_mutex_unlock(&travaHistorico);
+    // ESTA E A SAIDA QUE MAIS ENGANA: o pedido anterior ainda esta no ar (ate
+    // 20 s de timeout), a funcao devolve 0 e o modal mostra falha sem que nada
+    // tenha sido tentado. Agora ela DIZ, e escreve o estado — sem isso o modal
+    // ficava com a mesma cara de "nao fez nada" que uma recusa do servidor.
+    printf("[trakt] historico ocupado: ja ha um pedido no ar, %s ignorado\n", imdb);
+    fflush(stdout);
+    estadoEscrever(&historicoEstado, TK_OP_FALHA);
     return 0;
   }
   // "tt123:2:5" (episodio) vira "tt123": o historico e do TITULO.

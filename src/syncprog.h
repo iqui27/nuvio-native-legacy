@@ -33,6 +33,9 @@ int  syncprog_aplicar(int *casaram);
 int  syncprog_puxadas(void);
 
 // Esvazia a caixa sem aplicar (logout).
+// Apaga uma entrada de progresso NA CONTA (sync_delete_watch_progress), pela
+// chave de prog_chave. Ver a nota longa em syncprog.c.
+int  syncprog_remover(const char *chave);
 void syncprog_esquecer(void);
 
 #endif

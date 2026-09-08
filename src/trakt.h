@@ -48,6 +48,10 @@ int  trakt_enfeitar_lote(CatItem *saida, int n);
 
 // Preenche ate `max` itens do "continue assistindo", ja com arte resolvida.
 // BLOQUEIA — chamar do fio de descoberta. Devolve quantos preencheu.
+// Remove um item da barra de retomada do Trakt (DELETE /sync/playback/<id>).
+// `imdb` e a chave COMPOSTA que trakt_continuar montou. Devolve 0 quando nao ha
+// id conhecido — o item veio do progresso da conta, nao do Trakt.
+int trakt_playback_remover(const char *imdb);
 int  trakt_continuar(CatItem *saida, int max);
 
 // Atividade recente dos AMIGOS do dono. Usa o feed social oficial do Trakt

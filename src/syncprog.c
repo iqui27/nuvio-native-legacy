@@ -152,6 +152,36 @@ int syncprog_empurrar(void) {
   return k;
 }
 
+// APAGA UMA ENTRADA DE PROGRESSO NA CONTA. A outra metade do issue #22: sem
+// isto, tirar um item de "Continuar assistindo" apagava o registro local e a
+// entrada da conta o trazia de volta no ciclo seguinte, exatamente como a do
+// Trakt fazia.
+//
+// `p_keys` e a chave de progresso (prog_chave), a mesma que o push manda em
+// `progress_key` — e nao o content_id. Mandar o id apagaria todos os episodios
+// da serie.
+int syncprog_remover(const char *chave) {
+  Jsw w;
+  char *r;
+  int st = 0, ok;
+  if (!chave || !chave[0]) return 0;
+  jsw_iniciar(&w);
+  jsw_obj_ini(&w);
+  jsw_chave(&w, "p_keys");
+  jsw_arr_ini(&w);
+  jsw_str(&w, chave);
+  jsw_arr_fim(&w);
+  jsw_obj_fim(&w);
+  r = sessao_rpc("sync_delete_watch_progress", jsw_texto_final(&w), &st);
+  jsw_livre(&w);
+  ok = ok2xx(r, st);
+  free(r);
+  printf("[sync] progresso removido da conta: %s -> %s (HTTP %d)\n",
+         chave, ok ? "ok" : "falhou", st);
+  fflush(stdout);
+  return ok;
+}
+
 int syncprog_aplicar(int *casaram) {
   int i, aceitos = 0, noCatalogo = 0;
   for (i = 0; i < nCaixa; i++) {

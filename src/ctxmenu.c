@@ -1,6 +1,7 @@
 #include "ctxmenu.h"
 #include "catalogo.h"
 #include "descoberta.h"
+#include "syncprog.h"
 #include "trakt.h"
 #include "extras.h"
 #include "gfx.h"
@@ -234,6 +235,19 @@ static void aplicar(void) {
       char chave[192];
       prog_chave(chave, sizeof chave, ci->imdb, ci->temporada, ci->episodio);
       prog_remover(chave);
+      // AS TRES FONTES, e nao so a local — issue #22.
+      //
+      // A fileira de retomada e a fusao de tres coisas: o registro local, o
+      // /sync/playback do Trakt e o progresso da conta Nuvio. Apagar so a
+      // local fazia a entrada voltar no ciclo seguinte, vinda de qualquer uma
+      // das outras duas: "seleciono remover, o prompt some e nada e removido...
+      // nao consigo remover".
+      //
+      // Nenhuma das duas remotas e obrigatoria: quem nao tem Trakt nao tem id
+      // de playback, quem nao tem conta nao tem RPC. As duas dizem no log o que
+      // fizeram, e a local acontece de qualquer jeito.
+      trakt_playback_remover(ci->imdb);
+      syncprog_remover(chave);
       // Efeito local e imediato: sem zerar o campo, o card so sairia da fileira
       // na proxima remontagem do catalogo, e para quem apertou parece que nada
       // aconteceu.
@@ -325,6 +339,11 @@ void ctx_atualizar(float dt, Uint32 agora) {
               char chave[192];
               prog_chave(chave, sizeof chave, ci->imdb, ci->temporada, ci->episodio);
               prog_remover(chave);
+              // As mesmas tres fontes de "Tirar de Continuar assistindo": quem
+              // marcou como visto tambem nao quer o card de retomada de volta
+              // no proximo ciclo.
+              trakt_playback_remover(ci->imdb);
+              syncprog_remover(chave);
               cat_zerar_progresso(atual);
             }
           }
