@@ -1,4 +1,5 @@
 #include "simklauth.h"
+#include "idioma.h"
 #include "nuvem.h"
 #include "dados.h"
 #include "rede.h"
@@ -91,7 +92,7 @@ static void *fioPedir(void *u) {
     if (expira > 30.0 && expira < 3600.0) limiteMs = (unsigned)(expira * 1000.0);
   }
   if (!userCode[0]) {
-    snprintf(erro, sizeof erro, "nao consegui pedir o codigo ao Simkl (HTTP %d)", st);
+    snprintf(erro, sizeof erro, i18n("nao consegui pedir o codigo ao Simkl (HTTP %d)"), st);
     estado = SMK_ERRO;
   } else {
     if (!url[0]) snprintf(url, sizeof url, "https://simkl.com/pin");
@@ -124,7 +125,7 @@ static void *fioPoll(void *u) {
       estado = SMK_ERRO;
     }
   } else if (st) {
-    snprintf(erro, sizeof erro, "falha ao consultar o Simkl (HTTP %d)", st);
+    snprintf(erro, sizeof erro, i18n("falha ao consultar o Simkl (HTTP %d)"), st);
     estado = SMK_ERRO;
   }
   free(r);

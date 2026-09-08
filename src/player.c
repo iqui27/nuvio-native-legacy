@@ -729,10 +729,35 @@ static int temUltimoBotao(void) {
   return epT > 0 || extras_n_relacionados() > 0;
 }
 
+// A JANELA DO CARTAO DE PROXIMO EPISODIO.
+//
+// O marcador de creditos vem de fora (intro.c, dados de terceiro) e as vezes
+// esta simplesmente errado: o relato foi "teve alguns que apareceram bem
+// antes". Um marcador que dispara com meia hora de episodio pela frente nao e
+// credito, e obedece-lo cegamente tira o dono do episodio que ele esta vendo.
+//
+// SANIDADE PROPORCIONAL, e nao um numero fixo de minutos: credito ocupa uma
+// fatia da duracao, nao uma quantidade absoluta. Aceito o marcador enquanto
+// restar no maximo 20% do episodio — para 50 min sao os 10 min finais, que
+// cobre com folga ate as series com "cenas do proximo capitulo" longas. Fora
+// disso o marcador e descartado e vale so a regra dos 2 minutos finais, que
+// nao depende de dado de ninguem.
+#define PLR_CRED_FRACAO 0.20
+
 static int ofertaProximo(void) {
   const CatEp *p=player_proximo_episodio();double fim;int tipo;
   if(!p||duracaoSeg<=1)return 0;
-  if(intro_ativo(posSeg,&fim,&tipo)&&tipo==INTRO_CREDITOS)return 1;
+  if(intro_ativo(posSeg,&fim,&tipo)&&tipo==INTRO_CREDITOS) {
+    double resta = duracaoSeg - posSeg;
+    if (resta <= duracaoSeg * PLR_CRED_FRACAO) return 1;
+    // Uma vez por marcador recusado, e nao por quadro.
+    { static int avisado; static double avisadoEm;
+      if (!avisado || avisadoEm != fim) {
+        avisado = 1; avisadoEm = fim;
+        printf("[posplay] marcador de creditos recusado: %.0fs restantes de %.0fs\n",
+               resta, (double)duracaoSeg);
+      } }
+  }
   return duracaoSeg-posSeg<=120.0f;
 }
 

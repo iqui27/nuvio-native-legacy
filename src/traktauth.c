@@ -1,4 +1,5 @@
 #include "traktauth.h"
+#include "idioma.h"
 #include "nuvem.h"
 #include "dados.h"
 #include "rede.h"
@@ -180,7 +181,7 @@ static void *fioPedir(void *u) {
   }
   if (!deviceCode[0] || !userCode[0]) {
     if (st == 429) snprintf(erro, sizeof erro, "o Trakt pediu para esperar; tente daqui a pouco");
-    else snprintf(erro, sizeof erro, "nao consegui pedir o codigo ao Trakt (HTTP %d)", st);
+    else snprintf(erro, sizeof erro, i18n("nao consegui pedir o codigo ao Trakt (HTTP %d)"), st);
     estado = TRA_ERRO;
   } else {
     if (!url[0]) snprintf(url, sizeof url, "https://trakt.tv/activate");
@@ -247,7 +248,7 @@ static void *fioPoll(void *u) {
     esquecerFluxo();
     estado = TRA_ERRO;
   } else if (st) {
-    snprintf(erro, sizeof erro, "falha ao trocar o codigo (HTTP %d)", st);
+    snprintf(erro, sizeof erro, i18n("falha ao trocar o codigo (HTTP %d)"), st);
     estado = TRA_ERRO;
   }
   free(r);

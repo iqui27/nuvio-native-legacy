@@ -1,4 +1,5 @@
 #include "sessao.h"
+#include "idioma.h"
 #include "nuvem.h"
 #include "dados.h"
 #include "js.h"
@@ -307,7 +308,7 @@ static void *fioPedir(void *u) {
     msg[0] = 0;
     if (resp) js_texto(resp, resp + strlen(resp), "message", msg, sizeof msg);
     if (msg[0]) snprintf(erro, sizeof erro, "o servidor recusou: %s", msg);
-    else        snprintf(erro, sizeof erro, "nao consegui pedir o codigo (HTTP %d)", st);
+    else        snprintf(erro, sizeof erro, i18n("nao consegui pedir o codigo (HTTP %d)"), st);
     estado = SES_ERRO;
   } else {
     if (!urlLogin[0])
@@ -360,7 +361,7 @@ static void *fioPoll(void *u) {
       codigo[0] = 0;
       printf("[sessao] logado como %s\n", sub[0] ? sub : "(sem sub)");
     } else {
-      snprintf(erro, sizeof erro, "troca de codigo recusada (HTTP %d)", st);
+      snprintf(erro, sizeof erro, i18n("troca de codigo recusada (HTTP %d)"), st);
       estado = SES_ERRO;
     }
     free(resp);

@@ -1,5 +1,6 @@
 #include "ctxmenu.h"
 #include "catalogo.h"
+#include "descoberta.h"
 #include "trakt.h"
 #include "extras.h"
 #include "gfx.h"
@@ -293,6 +294,17 @@ void ctx_atualizar(float dt, Uint32 agora) {
           }
         }
         espelhoAplicado = 1;
+        // A HOME TEM DE MUDAR NA HORA.
+        //
+        // cat_historico_definir_id so mexe na tabela lateral de historico, e
+        // nenhuma fileira le dela: quem monta as fileiras e a descoberta, a
+        // partir do que o Trakt respondeu. Sem este pedido a mudanca so
+        // aparecia no ciclo seguinte — o "tiro de assistido e a home nao da
+        // refresh, tenho que sair e voltar" do relato.
+        //
+        // desc_remontar_fileiras remonta SEM REDE, a partir do que ja esta em
+        // memoria; e a mesma porta que a mudanca de limite de fileiras usa.
+        desc_remontar_fileiras();
         montar();
       }
     }
@@ -385,7 +397,16 @@ void ctx_desenhar(Uint32 agora) {
     // Mesma linguagem das pilulas: o focado INVERTE (fundo claro, texto
     // escuro), em vez de anel branco sobre preenchimento claro.
     float lum = anim_mistura(0.176f, 0.961f, f);
-    int cor = i == foco ? 17 : 240;
+    // A COR DO TEXTO ANDA COM O FUNDO, e nao num degrau.
+    //
+    // O fundo da pilula e animado (escuro -> claro conforme `f`), mas o texto
+    // trocava de claro para escuro DE UMA VEZ, no instante em que `foco`
+    // mudava. Nos ~200 ms em que a mola ainda estava correndo isso dava texto
+    // escuro sobre fundo escuro na linha que ganhou o foco — e claro sobre
+    // claro na que perdeu. Nos dois casos o texto SOME, que e o "quando
+    // seguro o botao ele apaga o texto" do relato: segurar e justamente
+    // ficar olhando para a linha durante a animacao.
+    int cor = (int)(240.0f + (17.0f - 240.0f) * f + 0.5f);
     gfx_cor(r, 14.0f / CTX_LINHA, lum, lum, lum, a);
     { TxtLinha t = txt_linha(TXT_PLR_CORPO, ops[i].rot, cor, cor, cor, 255);
       txt_desenhar_alpha(t, r.x + 44.0f,

@@ -151,6 +151,10 @@ static float scrollY = 0.0f;
 static float velX[MAX_FIL];
 static float velY = 0.0f;
 static int sair = 0, pedidoAbrir = 0, pedidoMenu = 0;
+// VOLTAR NA HOME PEDE CONFIRMACAO. Ver home_evento; o aviso e desenhado em
+// home_desenhar enquanto a janela esta aberta.
+#define HOME_SAIR_MS 3000
+static Uint32 sairPerguntadoEm;
 static Uint32 okDesde = 0;
 static int okPressionando = 0;
 static int okLongDisparado = 0;
@@ -602,7 +606,35 @@ void home_evento(const SDL_Event *e) {
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE) return;
   if (k == SDLK_q) { sair = 1; return; }
 #else
-  if (k == SDLK_ESCAPE || k == SDLK_AC_BACK) { sair = 1; return; }
+  if (k == SDLK_ESCAPE || k == SDLK_AC_BACK) {
+    // UM TOQUE NAO FECHA O APLICATIVO.
+    //
+    // O relato: "na home, se apertar voltar, na LG ele fecha o aplicativo e no
+    // Tizen ele trava". Fechava mesmo — era `sair = 1` direto, no primeiro
+    // toque, sem aviso nenhum. Numa TV o Voltar e a tecla mais usada para
+    // desfazer, e perder a sessao inteira por um toque a mais e o pior
+    // desfecho possivel de um gesto de correcao.
+    //
+    // DOIS DEGRAUS, que e o que as outras telas do aparelho fazem:
+    //   1. Fora do canto superior esquerdo, Voltar SOBE ate ele. E o gesto de
+    //      "voltar um nivel" que o dono ja espera, e cobre o caso mais comum
+    //      (estava no meio da home e queria voltar ao topo).
+    //   2. Ja no canto, o primeiro Voltar so PERGUNTA, por 3 s. So o segundo
+    //      dentro da janela sai.
+    if (foco.fileira > 0 || foco.coluna > 0) {
+      foco.fileira = 0;
+      foco.coluna = 0;
+      foco.colunaLembrada[0] = 0;
+      sairPerguntadoEm = 0;
+      return;
+    }
+    if (!sairPerguntadoEm || SDL_GetTicks() - sairPerguntadoEm > HOME_SAIR_MS) {
+      sairPerguntadoEm = SDL_GetTicks();
+      return;
+    }
+    sair = 1;
+    return;
+  }
 #endif
   // O OK NAO AGE MAIS NO KEYDOWN. Abrir o titulo ali tornava o "segurar"
   // impossivel: quando a tecla subia, o detalhe ja estava aberto ha meio
@@ -2138,6 +2170,18 @@ void home_desenhar(Uint32 agora) {
                                150, 152, 160, 255);
         txt_desenhar_alpha(c, ajustes_conteudo_x(), y + l.h + 6.0f, 0.92f); }
     } }
+
+  // PERGUNTA DE SAIDA. Fica por cima de tudo e some sozinha em 3 s; o segundo
+  // Voltar dentro da janela e que fecha (ver home_evento).
+  if (sairPerguntadoEm && SDL_GetTicks() - sairPerguntadoEm <= HOME_SAIR_MS) {
+    TxtLinha t = txt_linha(TXT_CAPTION,
+                           "Aperte Voltar de novo para sair do aplicativo",
+                           232, 234, 240, 255);
+    GfxRect caixa = { (NV_TELA_W - t.w - 56.0f) * 0.5f, NV_TELA_H - 118.0f,
+                      t.w + 56.0f, t.h + 28.0f };
+    gfx_cor(caixa, 14.0f / caixa.h, 0.10f, 0.10f, 0.12f, 0.96f);
+    txt_desenhar_alpha(t, caixa.x + 28.0f, caixa.y + 14.0f, 0.98f);
+  }
 
   gfx_opacidade_grupo=1;
   gfx_sem_recorte();

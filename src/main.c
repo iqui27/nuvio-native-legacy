@@ -769,5 +769,19 @@ int main(int argc, char **argv) {
   IMG_Quit();
   SDL_Quit();
   printf("fim\n");
+#ifdef __EMSCRIPTEN__
+  // SAIR DE VERDADE NO TIZEN. Aqui o laco de quadro acabou e o main devolve,
+  // mas com EXIT_RUNTIME=0 a pagina CONTINUA no ar — com o canvas parado no
+  // ultimo quadro e nada respondendo. Do sofa isso e indistinguivel de um
+  // travamento, e era literalmente o relato: "no Tizen, Voltar na home trava;
+  // na LG fecha o aplicativo".
+  //
+  // O .wgt fecha pela API do proprio Tizen. Fora dela (Chrome de bancada) o
+  // objeto nao existe, e o catch deixa a pagina como estava — que la e o
+  // comportamento util.
+  EM_ASM({
+    try { tizen.application.getCurrentApplication().exit(); } catch (e) {}
+  });
+#endif
   return 0;
 }
