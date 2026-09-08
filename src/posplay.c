@@ -11,6 +11,7 @@
 #include "detail.h"
 #include "descoberta.h"
 #include "video.h"
+#include "player.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -55,6 +56,24 @@ static int    proxT, proxE;          // proximo episodio, quando ha
 static char   proxNome[120];
 
 int posplay_visivel(void) { return visivel; }
+
+// SAIR DA TELA PRESERVANDO A ESCOLHA, e a diferenca com posplay_fechar e o
+// issue #14 inteiro.
+//
+// posplay_fechar zera pedT/pedE/pedTitulo, e isso e certo no caso dele: o
+// player abriu outro titulo e o pedido do anterior nao vale mais. Mas os
+// tratadores de tecla ARMAVAM o pedido e chamavam posplay_fechar na linha
+// seguinte, que apagava o pedido recem-armado. posplay_pediu_episodio nunca
+// devolvia nada, e o OK do cartao de proximo episodio NUNCA funcionou, em
+// nenhuma plataforma. A correcao de id do v1.0.10 (app.c, o `strcspn` no
+// `ci->imdb` composto) fica a jusante deste portao: codigo certo que nunca
+// rodava, o que explica o relato de que "o fix do 1.0.10 nao resolveu".
+//
+// `dispensado` vem junto e nao e detalhe. Sem ele a condicao de aparecer
+// (janelaSerie) continua verdadeira e o painel volta no quadro seguinte —
+// no video do relato o cartao nem sequer some depois do OK, que era este
+// segundo defeito somado ao primeiro.
+static void esconder(void) { visivel = 0; fecharEm = 0; foco = 0; dispensado = 1; }
 
 void posplay_fechar(void) {
   visivel = 0; fecharEm = 0; foco = 0;
@@ -161,8 +180,22 @@ void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
     if (serie) {
       int t = 0, e = 0;
       const CatItem *ci = cat_item(idx);
-      // Qual episodio esta tocando: o que o proprio item guarda.
-      if (ci) { t = ci->temporada; e = ci->episodio; }
+      // QUAL EPISODIO ESTA TOCANDO: pergunta ao PLAYER, e nao ao item do
+      // catalogo.
+      //
+      // MEDIDO NA TV, e so por isso encontrado: tocando Silo T2E8, o painel
+      // ofereceu T2E7 e o log confirmou ("automatico (verificado): Silo S02
+      // E07"). O item ainda apontava para T2E6 — foi por ele que a serie
+      // entrou, pela fileira "Continuar assistindo" — e nada o move quando a
+      // reproducao comeca pelo botao da pagina de titulo. "O proximo de E6" e
+      // E7, e era literalmente isso que o codigo pedia.
+      //
+      // epT/epE do player sao a unica fonte que acompanha a reproducao de
+      // verdade: player_definir_episodio os escreve em todo caminho que abre
+      // um episodio. O item continua valendo de reserva para o caso de o
+      // player nao ter episodio nenhum (idx trocado, dado incompleto).
+      player_episodio_atual(&t, &e);
+      if (!(t > 0 && e > 0) && ci) { t = ci->temporada; e = ci->episodio; }
       if (t > 0 && e > 0 && acharProximo(idx, t, e)) {
         fecharEm = 0;            // a contagem entra so nos segundos finais
         visivel = 1;
@@ -175,10 +208,34 @@ void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
     }
   }
 
+  // CONTAGEM FINAL, os 5 s que posplay.h documenta
+  // (POST_PLAY_RECOMMENDATION_FINAL_COUNTDOWN_SECONDS do web). O cabecalho
+  // "A seguir em %d s", a constante PP_CONTAGEM_S e o bloco logo abaixo que
+  // consome `fecharEm` estavam aqui desde o primeiro commit deste arquivo;
+  // faltava a unica linha que ARMA o relogio. O painel ficava em "A seguir"
+  // para sempre e nada tocava sozinho — no video do issue #14 e o que se ve.
+  //
+  // DEPOIS do bloco que abre o painel, e nao antes: no quadro em que o painel
+  // sobe, `visivel` so vira 1 ali em cima. Armar antes deixaria o primeiro
+  // quadro de fora, e se ele ja for o dos segundos finais o relogio nunca
+  // arma — foi assim que este teste falhou da primeira vez.
+  //
+  // Conta o que RESTA de verdade, e nao 5 s a partir de agora: os creditos
+  // comecam muito antes do fim em algumas series, e um relogio fixo
+  // dispararia no meio deles.
+  if (visivel && serie && !fecharEm) {
+    double resta = durSeg - posSeg;
+    if (resta <= (double)PP_CONTAGEM_S) {
+      if (resta < 0.0) resta = 0.0;
+      fecharEm = agora + (Uint32)(resta * 1000.0);
+      if (!fecharEm) fecharEm = 1;   // 0 quer dizer "sem contagem"
+    }
+  }
+
   // A contagem so vale para o proximo episodio.
   if (visivel && fecharEm && agora >= fecharEm) {
     pedT = proxT; pedE = proxE;
-    posplay_fechar();
+    esconder();
   }
 }
 
@@ -189,24 +246,23 @@ int posplay_evento(const SDL_Event *e) {
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
       e->key.keysym.scancode == NV_SCANCODE_BACK) {
     // Dispensar CANCELA a contagem e deixa o video terminar em paz. E GRUDA:
-    // fechar sem marcar fazia o painel voltar no quadro seguinte.
-    dispensado = 1;
-    posplay_fechar();
-    dispensado = 1;              // posplay_fechar zera; aqui a marca e o ponto
+    // fechar sem marcar fazia o painel voltar no quadro seguinte. E esconder,
+    // e nao posplay_fechar, justamente porque a marca tem de sobreviver — o
+    // par "fechar; marcar de novo" que estava aqui era o mesmo tropeco que
+    // apagava o pedido do OK logo abaixo.
+    esconder();
     return 1;
   }
   // BAIXO tira o painel do caminho E devolve os controles. Pedido do dono: com
   // o painel no ar ele quer poder descer para a barra de tempo sem perder a
   // reproducao. Voltar apenas dispensa; BAIXO dispensa e mostra o player.
   if (k == SDLK_DOWN) {
-    dispensado = 1;
-    posplay_fechar();
-    dispensado = 1;
+    esconder();
     return 2;
   }
   if (serie) {
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
-      pedT = proxT; pedE = proxE; posplay_fechar(); return 1;
+      pedT = proxT; pedE = proxE; esconder(); return 1;
     }
     return 0;
   }
@@ -217,13 +273,13 @@ int posplay_evento(const SDL_Event *e) {
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
       const char *id = extras_relacionado_imdb(foco);
       int alvo = id[0] ? cat_indice_por_imdb(id) : -1;
-      if (alvo >= 0) { pedTitulo = alvo; posplay_fechar(); }
+      if (alvo >= 0) { pedTitulo = alvo; esconder(); }
       // NAO ESTA NO CATALOGO LOCAL, que e o caso NORMAL: o relacionado vem do
       // Trakt e o catalogo tem os titulos das fileiras da home. Antes o OK
       // simplesmente nao fazia nada — o "nao da pra clicar" do relatorio.
       // desc_pedir_titulo e o mesmo caminho que a pagina de titulo ja usa
       // (detail.c:938) para abrir um relacionado que ainda nao temos.
-      else if (id[0]) { desc_pedir_titulo(id); posplay_fechar(); }
+      else if (id[0]) { desc_pedir_titulo(id); esconder(); }
       return 1;
     } }
   return 0;

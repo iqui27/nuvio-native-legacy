@@ -937,7 +937,10 @@ void home_atualizar(float dt, Uint32 agora) {
 
   const int motionReduzido = ajustes_animacoes_reduzidas();
   if (okPressionando && foco_pode_pressao_longa())
-    okHold = anim_clamp((agora - okDesde) / NV_HOLD_FEEDBACK_MS, 0.0f, 1.0f);
+    // O MESMO NV_HOLD_MS do resto do app: a barra que enche na tela E o
+    // gatilho, entao ela nao pode correr num relogio proprio. Aqui havia um
+    // NV_HOLD_FEEDBACK_MS de 110 ms, e era ele quem abria o menu.
+    okHold = anim_clamp((agora - okDesde) / (float)NV_HOLD_MS, 0.0f, 1.0f);
   else if (!okPressionando)
     okHold = 0.0f;
   if (okPressionando && okHold >= 1.0f && !okLongDisparado) {

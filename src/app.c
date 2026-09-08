@@ -696,31 +696,39 @@ void app_atualizar(float dt, Uint32 agora) {
   // o titulo relacionado sai do player e abre o detalhe, que e onde o dono
   // escolhe se quer mesmo assistir.
   { int t = 0, e = 0;
-    if (posplay_pediu_episodio(&t, &e)) {
-      const CatItem *ci = cat_item(player_indice());
-      if (ci && ci->imdb[0]) {
-        char alvo[48];
-        // CORTA NO ':' ANTES DE COMPOR, como os outros tres pontos que montam
-        // um id de episodio fazem (idDoAlvo e alvoPlayer aqui, e player.c).
-        //
-        // `ci->imdb` NEM SEMPRE e "tt123": um item que entrou pela fileira
-        // "Continuar assistindo" ja vem composto — trakt.c e continuarLocal
-        // gravam "tt123:1:2" no proprio campo. Sem o corte, o id pedido ao addon
-        // virava "tt123:1:2:1:3", que nao existe: a busca voltava vazia, nenhuma
-        // fonte era escolhida e o proximo episodio simplesmente nao comecava,
-        // com o painel ja fechado. E o issue #14, e ele so aparece quando a
-        // serie foi aberta por Continuar assistindo — que e justamente o caminho
-        // comum de quem esta maratonando.
-        snprintf(alvo, sizeof alvo, "%.*s:%d:%d",
-                 (int)strcspn(ci->imdb, ":"), ci->imdb, t, e);
-        // O item passa a apontar para o episodio NOVO: e dele que sai o
-        // rotulo do player e o alvo do proximo pos-reproducao. Antes era
-        // cat_salvar_progresso_ep(..., 0.0, 0.0, t, e), que a guarda de
-        // duracao devolvia sem fazer nada.
-        cat_apontar_episodio(player_indice(), t, e);
-        addons_buscar(alvo, "series");
-        aguardandoFonte = 1;
-      }
+    if (aguardandoFonte != 2 && posplay_pediu_episodio(&t, &e) && player_aberto()) {
+      // O MESMO CAMINHO do botao de proximo episodio do player, logo acima, e
+      // nao um atalho proprio.
+      //
+      // Este bloco tinha um caminho curto (compor o id na mao e chamar
+      // addons_buscar) que NUNCA rodou: posplay_evento zerava o pedido ao
+      // fechar o painel, e so a correcao em posplay.c abriu este portao. Ao
+      // abrir, tres coisas que o atalho nao fazia passaram a importar:
+      //
+      //   - player_encerrar SALVA o progresso do episodio que acabou. Sem ele,
+      //     maratonar nunca marcava nada como visto.
+      //   - player_definir_episodio atualiza epT/epE, o rotulo da barra e os
+      //     marcos de introducao. Sem ele o player seguia se dizendo no
+      //     episodio anterior, e o proximo player_encerrar gravaria o
+      //     progresso do episodio NOVO por cima do ANTIGO.
+      //   - buscarParaPlayer pede LEGENDA tambem, e compoe o id por alvoPlayer
+      //     (que ja corta no ':' — era o que o atalho reimplementava a mao).
+      int titulo = player_indice();
+      player_encerrar();
+      player_abrir(titulo, NULL);
+      player_definir_episodio(t, e);
+      // DEPOIS de player_definir_episodio, e a ordem e o conserto de um bug
+      // que so existe nesta ordem invertida: definir_episodio retoma a posicao
+      // quando o episodio pedido E o que o item aponta. Apontar antes faria o
+      // episodio NOVO herdar o progresso do que acabou — quem apertasse OK aos
+      // 85% comecaria o seguinte aos 85%.
+      //
+      // Apontar, porem, tem de acontecer: e de ci->temporada/ci->episodio que
+      // o proximo pos-reproducao descobre qual episodio oferecer.
+      cat_apontar_episodio(titulo, t, e);
+      marco("posplay: proximo episodio");
+      buscarParaPlayer();
+      aguardandoFonte = 1;
     } }
   { int i = posplay_pediu_titulo();
     if (i >= 0) {

@@ -86,9 +86,19 @@
 #define NV_SCANCODE_BACK 482
 #define NV_SCANCODE_BLUE 489 // SDL_webOS.h: SDL_WEBOS_SCANCODE_BLUE
 // Quanto tempo o OK precisa ficar pressionado para valer como pressao longa.
-// 500ms e o limiar classico: mais curto dispara sem querer, mais longo parece
-// que o botao nao respondeu.
-#define NV_HOLD_MS       500
+//
+// 700 ms, e nao os 500 de antes. O relato foi "seguro e ele acaba clicando
+// duas vezes": num controle de TV o OK afunda com forca e a soltura demora,
+// entao um toque comum passava facil dos 500 e virava pressao longa. 700 e o
+// limiar do Android TV, e a diferenca se sente.
+//
+// NAO HAVIA UM LIMIAR SO. A home usava NV_HOLD_FEEDBACK_MS, um valor separado
+// de 110 ms cujo nome dizia "feedback" mas que era o GATILHO
+// (`okHold >= 1.0f`) — ou seja, a home abria o menu do cartaz em 110 ms,
+// enquanto o mesmo gesto na pagina de titulo esperava 500. Um decimo de
+// segundo e menos que um toque normal, e era essa a "rapidez" do relato. O
+// valor foi apagado: uma medida, um lugar.
+#define NV_HOLD_MS       700
 // fatia da fileira vizinha que fica visivel acima/abaixo da fileira em foco
 #define NV_ESPIA_VIZINHA 0.10f
 
@@ -404,7 +414,6 @@
 // encostam na safe area direita.
 #define NV_HOME_SAFE_RIGHT    NV_LEGACY_CONTENT_RIGHT
 #define NV_HOME_TEXT_GUTTER   24.0f
-#define NV_HOLD_FEEDBACK_MS   110.0f
 
 // FOCO EM SUPERFICIE (pilula, item de menu, chip): fundo ESCURO com texto
 // branco — nao o contrario.

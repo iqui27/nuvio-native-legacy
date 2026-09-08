@@ -38,6 +38,18 @@ static int   operacao, intencao, estadoOperacao;
 static int   espelhoAplicado;
 static char  operacaoImdb[16];
 static volatile int holdAtivo, holdCancelado, holdPronto;
+// O OK QUE ABRIU O MODAL AINDA ESTA AFUNDADO.
+//
+// O menu do cartaz abre NO LIMIAR, com o dedo ainda no botao (home.c dispara
+// em home_atualizar, nao no KEYUP) — e isso e de proposito: esperar a soltura
+// faria a barra encher na tela sem nada acontecer. O preco e que a repeticao
+// automatica do controle continua mandando KEYDOWN de OK, e o modal recem-
+// aberto os tratava como escolha: "quando abre o modal e eu ainda estou
+// segurando, ele ja clica sozinho".
+//
+// Enquanto esta marca vale, OK nao escolhe nada aqui. Ela cai no primeiro
+// KEYUP de OK — ou seja, exige um toque NOVO, que e o que o dono espera.
+static volatile int esperandoSoltura;
 static Uint32 holdDesde;
 
 static int teclaOk(SDL_Keycode k) {
@@ -67,6 +79,7 @@ static int observarHold(void *u, SDL_Event *e) {
     if (holdAtivo && !holdCancelado && SDL_GetTicks() - holdDesde >= NV_HOLD_MS)
       holdPronto = 1;
     holdAtivo = 0;
+    esperandoSoltura = 0;
   }
   return 0;
 }
@@ -148,6 +161,7 @@ void ctx_abrir(int indice) {
   // A longa ja consumiu o gesto na home. Limpar a sentinela aqui evita que o
   // KEYUP seguinte seja reaproveitado como uma selecao dentro da modal.
   holdPronto = 0;
+  esperandoSoltura = 1;   // o OK que abriu ainda esta afundado; ver a nota acima
   idx = indice; foco = 0; aberto = 1; pedDetalhes = -1;
   operacao = CTX_OP_NENHUMA; intencao = 0; estadoOperacao = 0;
   espelhoAplicado = 0;
@@ -214,8 +228,19 @@ static void aplicar(void) {
 void ctx_evento(const SDL_Event *e) {
   int k;
   if (!aberto) return;
+  // A SOLTURA VEM POR AQUI TAMBEM, e nao so pelo SDL_AddEventWatch de
+  // observarHold: com o modal aberto, app.c entrega o evento a esta funcao e
+  // nao ha garantia de que o watch tenha visto o mesmo KEYUP (as teclas
+  // injetadas de /tmp/nuvio-key, por exemplo, nao passam pela fila do SDL).
+  // Sem esta linha a marca nunca cairia por esse caminho e o modal ficaria
+  // surdo ao OK.
+  if (e->type == SDL_KEYUP && teclaOk(e->key.keysym.sym)) esperandoSoltura = 0;
   if (e->type != SDL_KEYDOWN) return;
   k = e->key.keysym.sym;
+  // Repeticao automatica NUNCA e uma segunda escolha: quem quer clicar duas
+  // vezes solta e aperta de novo.
+  if (e->key.repeat && teclaOk(k)) return;
+  if (esperandoSoltura && teclaOk(k)) return;
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
       e->key.keysym.scancode == NV_SCANCODE_BACK) { aberto = 0; return; }
   // Enquanto a requisicao esta no ar, OK nao repete a escrita. O foco continua
