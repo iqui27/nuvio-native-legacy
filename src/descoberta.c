@@ -544,6 +544,9 @@ static volatile unsigned geracaoPedida;
 static unsigned geracaoLida;
 // Ver desc_catalogos_fora em descoberta.h.
 static int catalogosFora;
+// Quantos catalogos NAO DESLIGADOS o teto impediu de pedir na ultima montagem,
+// sem o clamp de catalogosFora. Ver o uso em desc_remontar_fileiras.
+static int catalogosNaoPedidos;
 static pthread_t fio, fioEp;
 static int epItem = -1, epTemp, fioEpVivo;
 
@@ -1515,7 +1518,12 @@ static void *montar(void *u) {
         for (k = cursor; k < nOrdem; k++)
           if (!desligada(&decls[ordem[k]])) sobraram++;
         if (cabem < 0) cabem = 0;
-        catalogosFora = sobraram < cabem ? sobraram : cabem; }
+        catalogosFora = sobraram < cabem ? sobraram : cabem;
+        // A CONTAGEM CRUA TAMBEM SERVE, e para outra pergunta. `catalogosFora`
+        // e clamped por `cabem` e vira 0 quando o limite ja esta no maximo —
+        // certo para o convite da home, inutil para saber se houve catalogo que
+        // o teto impediu de PEDIR. Quem precisa disso e desc_remontar_fileiras.
+        catalogosNaoPedidos = sobraram; }
       nFileirasMontadas = nFil;
       memcpy(filsMontadas, fil, sizeof(CatFileira) * (size_t)nFil);
       // UMA LINHA QUE RESPONDE "o que falhou no arranque". As quatro contagens
@@ -1623,7 +1631,7 @@ void desc_remontar_fileiras(void) {
   static CatFileira saidaFil[CAT_FIL_MAX];
   const char *chaves[CAT_FIL_MAX];
   int idxCat[CAT_FIL_MAX], ordem[CAT_FIL_MAX], antes[CAT_FIL_MAX];
-  int i, k, q, nCat = 0, nOut = 0, teto;
+  int i, k, q, nCat = 0, nOut = 0, teto, engolidas = 0;
   if (nFileirasMontadas < 1) return;
 
   // 1. as fixas primeiro, na ordem em que ja estavam.
@@ -1635,7 +1643,7 @@ void desc_remontar_fileiras(void) {
     const CatFileira *f = &filsMontadas[i];
     if (!f->base[0]) continue;
     if (fil_oculta(f->chave) || catordem_oculta(f->chave, f->chave)) continue;
-    if (dentroDeColecaoVisivelBase(f->base, f->tipo, f->catId)) continue;
+    if (dentroDeColecaoVisivelBase(f->base, f->tipo, f->catId)) { engolidas++; continue; }
     if (nCat < CAT_FIL_MAX) { chaves[nCat] = f->chave; idxCat[nCat] = i; nCat++; }
   }
   for (k = 0; k < nCat; k++) ordem[k] = k;
@@ -1659,12 +1667,39 @@ void desc_remontar_fileiras(void) {
   for (k = 0; k < nCat && nOut < teto && nOut < CAT_FIL_MAX; k++)
     saidaFil[nOut++] = filsMontadas[idxCat[ordem[k]]];
 
-  printf("[desc] fileiras remontadas sem rede: %d de %d\n",
-         nOut, nFileirasMontadas);
+  printf("[desc] fileiras remontadas sem rede: %d de %d%s\n",
+         nOut, nFileirasMontadas,
+         engolidas ? " (algumas engolidas por colecao)" : "");
   fflush(stdout);
   nFileirasMontadas = nOut;
   memcpy(filsMontadas, saidaFil, sizeof(CatFileira) * (size_t)nOut);
   cat_republicar_fileiras(saidaFil, nOut);
+
+  // A VAGA QUE A COLECAO LIBEROU TEM DE SER PREENCHIDA, e so a rede tem com que.
+  //
+  // A segunda metade do #18 e esta: "they still take up the 16-row limit and
+  // push other collections". Na montagem o filtro roda ANTES de virar tarefa,
+  // entao catalogo dentro de colecao nao gasta vaga nenhuma — conferido em
+  // tests/colfileiras.sh. Mas quando as colecoes chegam DEPOIS de a montagem ter
+  // acabado (sync lento, ou colecao criada no app web com a TV ligada), o teto
+  // ja foi gasto: aqui as fileiras engolidas saem e a home fica com MENOS
+  // fileiras que o limite, com os catalogos que o teto tinha cortado perdidos
+  // para sempre — eles nunca foram baixados, nao ha o que reordenar.
+  //
+  // Por isso a republicacao vem primeiro (a tela melhora na hora, sem esperar a
+  // rede) e o ciclo so e pedido quando as duas condicoes valem: alguma fileira
+  // saiu por colecao E havia catalogo que o teto impediu de pedir. Nao ha laco:
+  // o ciclo novo ja monta com as colecoes carregadas, entao a proxima passagem
+  // por aqui nao engole mais nada. Zerar a contagem torna isso explicito em vez
+  // de depender do valor que a montagem seguinte vai escrever.
+  if (engolidas && catalogosNaoPedidos > 0) {
+    printf("[desc] %d fileira(s) sairam por estarem dentro de colecao e %d "
+           "catalogo(s) ficaram fora do teto: pedindo ciclo para preencher\n",
+           engolidas, catalogosNaoPedidos);
+    fflush(stdout);
+    catalogosNaoPedidos = 0;
+    desc_repetir();
+  }
 }
 
 void desc_repetir(void) {
