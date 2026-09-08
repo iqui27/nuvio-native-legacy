@@ -1,6 +1,12 @@
 #include "catalogo.h"
 #include "descoberta.h"
 #include "progresso.h"
+// O cache em disco depende destes tres: dados.h diz ONDE se pode gravar,
+// sessao.h e perfis.h dizem DE QUEM e o que esta gravado. Ver a nota longa
+// sobre caminhoCache mais abaixo.
+#include "dados.h"
+#include "sessao.h"
+#include "perfis.h"
 #include <stdio.h>
 
 static int mesmoTitulo(const char *a, const char *b);
@@ -357,15 +363,139 @@ int cat_carregar(const char *dirArte) {
 // e o sizeof que protege de verdade, porque acrescentar um campo na struct
 // muda o layout sem que ninguem se lembre de subir a versao a mao.
 #define CACHE_MAGIA  0x4E56434Bu   /* "NVCK" */
-#define CACHE_VERSAO 1
+// VERSAO 2: o cabecalho passou a carregar a identidade do dono. Subir a versao
+// nao e formalidade — um arquivo da versao 1 lido com esta struct daria um
+// usuario de lixo e um perfil de lixo, e a comparacao abaixo o recusaria por
+// acaso em vez de por regra.
+#define CACHE_VERSAO 2
 
 typedef struct {
   unsigned magia, versao, tamItem, tamFileira;
   int nItens, nFileiras;
+  // DE QUEM E ESTE CACHE. Ver a nota de cat_apagar_cache em catalogo.h: sem
+  // estes dois campos, a primeira abertura depois de trocar de conta ou de
+  // perfil mostrava a home da ANTERIOR — watchlist, continuar assistindo e o
+  // feed de amigos com nome e avatar — ate a rede substituir. E nao e so
+  // estetico: cada CatFileira leva `base[600]`, campo desse tamanho porque o
+  // Xperience embute um JWT no CAMINHO (ver catalogo.h). O arquivo carrega
+  // credencial de addon do usuario anterior.
+  char usuario[64];   // `sub` do JWT; "" quando deslogado
+  int  perfil;        // perfis_ativo()
 } CacheCab;
 
+// Quem esta logado AGORA. Chamada nas duas pontas — gravar e ler — e por isso o
+// arquivo so e aceito por quem o escreveu.
+//
+// `sub` e nao o token: o access_token ROTACIONA na renovacao, e chavear por ele
+// faria a mesma pessoa perder o cache toda vez que a sessao se renovasse.
+static void identidadeAtual(char *usr, size_t tam, int *perfil) {
+  const char *u = sessao_usuario();
+  snprintf(usr, tam, "%s", u ? u : "");
+  *perfil = perfis_ativo();
+}
+
+// Ultima pasta em que o cache foi procurado ou gravado. Existe so para
+// cat_apagar_cache, que e chamada do logout e nao tem `dirArte` nenhum na mao.
+//
+// Sem trava, e de proposito: dados_dir() nao muda depois de dados_iniciar,
+// entao o fio da descoberta reescreve aqui sempre os MESMOS bytes que o fio
+// principal ja escreveu no arranque. Uma trava protegeria uma escrita que nao
+// muda nada — e o unico caso em que o valor difere, dados_dir() vazia, e o
+// aparelho onde nada e gravavel e portanto nao ha cache nenhum em disputa.
+static char dirCache[512];
+
+// A PASTA GRAVAVEL GANHA DE `dirArte`, E A ESCOLHA MORA AQUI E NAO NOS
+// CHAMADORES.
+//
+// `dirArte` e o PACOTE. No alvo Tizen ele e /app/art, que vem de
+// --preload-file (tools/tizen.sh) e portanto e MEMFS: RAM, apagada a cada
+// recarga. Gravar la NAO FALHA — o fopen devolve um FILE*, o fwrite escreve, o
+// rename funciona, e nada disso sobrevive a fechar o app. O efeito medido e que
+// no Tizen este cache nunca existiu na pratica: toda abertura refazia os ~30
+// pedidos e esperava os 14,5 s que a nota de catalogo.h registra.
+//
+// O app ja resolveu isto uma vez para o cache de ARTE — src/main.c aponta
+// tex_cache_dir para dados_dir()/cache pelo mesmo motivo e com a mesma nota.
+//
+// Aqui a regra fica DENTRO do modulo, e nao nos chamadores, porque o leitor
+// (home.c) e o escritor (descoberta.c) sao arquivos diferentes: corrigindo num
+// so, os dois passariam a discordar sobre onde o arquivo esta, que e pior que o
+// defeito. Assim as duas pontas mudam juntas por construcao.
+//
+// ORDEM DE ARRANQUE, que e o que faz isto funcionar: dados_iniciar roda em
+// main.c ANTES de app_iniciar, e e app_iniciar quem chama home_iniciar e
+// portanto cat_ler_cache. dados_dir() ja e valido na leitura.
+//
+// `dados_dir()` pode ser "" quando nenhum candidato aceitou escrita (ver
+// src/dados.h) — nesse caso volta-se ao comportamento de sempre.
 static void caminhoCache(const char *dirArte, char *dst, size_t tam) {
-  snprintf(dst, tam, "%s/catalogo-rede.bin", dirArte ? dirArte : ".");
+  const char *d = dados_dir();
+  if (!d || !*d) d = (dirArte && *dirArte) ? dirArte
+                                           : (dirCache[0] ? dirCache : ".");
+  if (d != dirCache) snprintf(dirCache, sizeof dirCache, "%s", d);
+  snprintf(dst, tam, "%s/catalogo-rede.bin", d);
+}
+
+// GRAVAR BINARIO POR FORA DE dados_gravar, DE PROPOSITO E COM AS CONTAS FEITAS.
+//
+// dados_gravar mede o conteudo com strlen (ver src/dados.h) e portanto para no
+// primeiro zero — inutil para um despejo de struct. Mas ela nao e so um fwrite:
+// ela tambem toma a trava do sistema de arquivos e marca a descarga. Quem grava
+// por fora fica devendo as duas, e as duas importam justamente no alvo para
+// onde este arquivo esta se mudando:
+//
+//   TRAVA — cat_gravar_cache roda no FIO DA DESCOBERTA. No WASM o sistema de
+//   arquivos e uma estrutura JavaScript compartilhada entre os workers e NAO e
+//   segura entre fios; o sintoma medido em dados.c de ignorar isso foi o app
+//   inteiro CONGELAR, sem erro nenhum, com o fio de sync escrevendo enquanto o
+//   laco principal descarregava. Despejar 1,7 MB de catalogo e esse cenario.
+//
+//   DESCARGA — no Emscripten o fclose so mexe no IDBFS em RAM. Quem leva o
+//   arquivo ao IndexedDB e dados_sincronizar(), no laco principal, e ela so faz
+//   algo quando alguem marcou sujo. Sem dados_marcar_sujo aqui, trocar de pasta
+//   nao resolveria nada: o cache continuaria morrendo ao fechar, so que numa
+//   pasta diferente.
+//
+// Estas tres funcoes publicas de dados.h nao tinham NENHUM chamador ate agora
+// (tex_cache.c grava sem elas); as travas internas equivalentes ja rodam dentro
+// de dados_gravar e de dados_sincronizar, entao o mecanismo esta vivo — o que
+// faltava era alguem de fora usa-lo.
+//
+// SUJO PESADO (0) e nao leve (1), ao contrario do cache de imagens: este
+// arquivo e escrito UMA vez por sessao, quando o catalogo completo chega
+// (~14,5 s depois de abrir), e nao a cada quadro. O atraso do leve e de 15 s —
+// o bastante para o dono fechar o app logo depois de a home assentar e perder
+// exatamente o que este cache existe para guardar. Uma descarga a mais por
+// sessao e o preco, e ela ainda pega carona na proxima escrita do sync.
+//
+// Fora do Emscripten as tres sao no-op dentro de dados.c; mante-las fora do
+// build nativo evita arrastar dados.c para testes que so querem o catalogo.
+#ifdef __EMSCRIPTEN__
+#define CACHE_FS_TRAVAR()   dados_fs_travar()
+#define CACHE_FS_LIBERAR()  dados_fs_liberar()
+#define CACHE_MARCAR_SUJO() dados_marcar_sujo(0)
+#else
+#define CACHE_FS_TRAVAR()   ((void)0)
+#define CACHE_FS_LIBERAR()  ((void)0)
+#define CACHE_MARCAR_SUJO() ((void)0)
+#endif
+
+int cat_apagar_cache(void) {
+  char caminho[600];
+  int foi;
+  caminhoCache(NULL, caminho, sizeof caminho);
+  CACHE_FS_TRAVAR();
+  foi = (remove(caminho) == 0);
+  CACHE_FS_LIBERAR();
+  // A REMOCAO TAMBEM PRECISA SER DESCARREGADA. No Tizen apagar so do IDBFS em
+  // RAM deixa o arquivo intacto no IndexedDB, e ele volta inteiro na proxima
+  // abertura — um logout que nao apagou nada, com a aparencia de ter apagado.
+  if (foi) {
+    CACHE_MARCAR_SUJO();
+    printf("[cat] cache do catalogo apagado\n");
+    fflush(stdout);
+  }
+  return foi;
 }
 
 // Chamado pela descoberta quando o catalogo COMPLETO da rede substitui o do
@@ -381,27 +511,39 @@ int cat_gravar_cache(const char *dirArte) {
   // Grava num temporario e renomeia: quem le na proxima abertura nunca pega
   // arquivo pela metade se o app for fechado no meio da escrita.
   snprintf(tmp, sizeof tmp, "%s.tmp", caminho);
-  f = fopen(tmp, "wb");
-  if (!f) return 0;
+  // Zerar o cabecalho INTEIRO antes de preencher: `usuario` tem 64 bytes e o
+  // `sub` usa 36. Sem isto o resto seria lixo de pilha, e o arquivo deixaria de
+  // ser identico para o mesmo estado — o que torna qualquer conferencia byte a
+  // byte impossivel e vaza pedaco de pilha para o disco.
+  memset(&c, 0, sizeof c);
   c.magia = CACHE_MAGIA; c.versao = CACHE_VERSAO;
   c.tamItem = (unsigned)sizeof(CatItem);
   c.tamFileira = (unsigned)sizeof(CatFileira);
   c.nItens = n; c.nFileiras = nFils;
+  identidadeAtual(c.usuario, sizeof c.usuario, &c.perfil);
+  CACHE_FS_TRAVAR();
+  f = fopen(tmp, "wb");
+  if (!f) { CACHE_FS_LIBERAR(); return 0; }
   if (fwrite(&c, sizeof c, 1, f) != 1 ||
       fwrite(itens, sizeof(CatItem), (size_t)n, f) != (size_t)n ||
       (nFils > 0 &&
        fwrite(fils, sizeof(CatFileira), (size_t)nFils, f) != (size_t)nFils)) {
-    fclose(f); remove(tmp); return 0;
+    fclose(f); remove(tmp); CACHE_FS_LIBERAR(); return 0;
   }
   fclose(f);
-  if (rename(tmp, caminho) != 0) { remove(tmp); return 0; }
-  printf("[cat] cache gravado: %d titulos, %d fileiras\n", n, nFils);
+  if (rename(tmp, caminho) != 0) { remove(tmp); CACHE_FS_LIBERAR(); return 0; }
+  CACHE_FS_LIBERAR();
+  CACHE_MARCAR_SUJO();
+  printf("[cat] cache gravado em %s: %d titulos, %d fileiras\n",
+         caminho, n, nFils);
   fflush(stdout);
   return 1;
 }
 
 int cat_ler_cache(const char *dirArte) {
   char caminho[600];
+  char usuario[64];
+  int perfil = 0;
   CacheCab c;
   FILE *f;
   CatItem *novo;
@@ -419,6 +561,28 @@ int cat_ler_cache(const char *dirArte) {
     fclose(f);
     printf("[cat] cache descartado (formato de outra build)\n");
     remove(caminho);
+    return 0;
+  }
+  // CACHE DE OUTRA PESSOA E RECUSADO E APAGADO, nao apenas ignorado.
+  //
+  // Ignorar deixaria o arquivo em disco, e ele leva os catalogos da conta
+  // anterior com a `base` de cada fileira — que no Xperience carrega um JWT
+  // dentro do proprio caminho. Um cache que sobra e credencial que sobra.
+  //
+  // Apagar aqui e a rede de seguranca, nao a porta da frente: o logout deve
+  // chamar cat_apagar_cache (ver catalogo.h). Esta verificacao tambem cobre o
+  // caso que o logout nao ve — trocar de PERFIL dentro da mesma conta, que nao
+  // passa por sync_esquecer_usuario.
+  c.usuario[sizeof c.usuario - 1] = 0;
+  identidadeAtual(usuario, sizeof usuario, &perfil);
+  if (strcmp(c.usuario, usuario) != 0 || c.perfil != perfil) {
+    fclose(f);
+    printf("[cat] cache descartado (era de outro usuario/perfil)\n");
+    fflush(stdout);
+    CACHE_FS_TRAVAR();
+    remove(caminho);
+    CACHE_FS_LIBERAR();
+    CACHE_MARCAR_SUJO();
     return 0;
   }
   novo = malloc(sizeof(CatItem) * (size_t)c.nItens);

@@ -116,7 +116,24 @@ ARQ_DE_PESSOA="trakt.txt addons.txt tmdb.txt mdblist.txt ajustes.txt
 # locais (col_definir_json reaproveita arte apenas do que tem `local`), e as
 # chaves dela sao os ids das colecoes DO DONO — para outra conta ela nunca
 # casaria.
-ACERVO_DE_PESSOA="collections.json catalogo-rede.bin"
+#
+# catalogo-rede.bin CONTINUA NA LISTA, e agora tambem o .tmp dele.
+#
+# O cache do catalogo passou a ser gravado em dados_dir() e nao mais na pasta da
+# arte (ver a nota em caminhoCache, src/catalogo.c), o que em quase todo
+# aparelho ja o tira daqui sozinho. "Quase" nao serve para uma conferencia de
+# credencial: dados_iniciar tem `dirArte` como ULTIMO candidato, entao num
+# aparelho onde nenhuma outra pasta aceita escrita o arquivo volta a nascer
+# exatamente aqui. Alem disso qualquer .ipk montado de uma copia antiga do
+# deploy/ ainda tem o arquivo velho no lugar velho.
+#
+# O .tmp e novo na lista e nao e zelo excessivo: cat_gravar_cache escreve num
+# temporario e renomeia, e uma escrita interrompida deixa um
+# catalogo-rede.bin.tmp com as fileiras — e portanto com a `base` de cada
+# catalogo, que no Xperience leva um JWT dentro do CAMINHO. A conferencia casa
+# nome exato ("art/$f$"), entao o .tmp precisava do proprio item; foi assim que
+# collections.json escapou uma vez.
+ACERVO_DE_PESSOA="collections.json catalogo-rede.bin catalogo-rede.bin.tmp"
 DIR_DE_PESSOA="collections"
 
 if [ "$1" = "--ipk" ]; then
