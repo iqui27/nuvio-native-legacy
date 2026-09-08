@@ -31,6 +31,7 @@
 //   2. A rolagem move o MINIMO para a linha focada caber. Alinhar a linha focada
 //      ao topo empurra o cabecalho para fora da tela na primeira descida.
 #include "biblioteca.h"
+#include "contalib.h"
 #include "trakt.h"
 #include "gfx.h"
 #include "text.h"
@@ -57,7 +58,10 @@
 // retina entrega o dobro; o esmaecimento nao depende do drawable.
 #define BIB_FADE       90.0f
 
-// "Salvos" e a lista do proprio aparelho; "Nuvem" e o que veio do Trakt.
+// "Salvos" = QUERO VER, e ele tem DUAS fontes que caem na mesma marca
+// (CatItem.naLista): a watchlist do Trakt, posta ali pela descoberta, e a
+// biblioteca da CONTA (sync_pull_library), posta ali por contalib.c.
+// "Coleção" = TENHO, e so o Trakt tem.
 enum { MODO_SALVOS, MODO_NUVEM, BIB_N_MODOS };
 static const char *ROT_MODO[BIB_N_MODOS] = { "Salvos", "Coleção" };
 
@@ -358,6 +362,28 @@ static void desenhaPicker(int p, float f) {
                      r.y + (r.h - seta.h) * 0.5f, 0.85f);
 }
 
+// O selo de origem e desenhado em CAIXA ALTA (letter-spacing 4, como no web).
+// "TRAKT" e "LOCAL" ja sao caixa alta em qualquer idioma; "Conta" nao.
+//
+// POR QUE NAO ESCREVER "CONTA" DIRETO. A chave da tabela de traducao e o
+// portugues como ele se escreve, e "Conta" ja esta la (idioma_tab.h -> a
+// "Account"). Um literal "CONTA" seria uma SEGUNDA chave para a mesma palavra,
+// que alguem teria de lembrar de traduzir de novo — e tools/varredura-i18n.py
+// acusa exatamente isso. Traduz primeiro, levanta a caixa depois.
+//
+// A subida e so de a..z: as duas traducoes de hoje sao ASCII, e uma letra
+// acentuada que nao subir fica minuscula em vez de virar outra letra — que e o
+// que aconteceria mexendo em bytes de UTF-8 um a um.
+static const char *seloCaixaAlta(const char *chave) {
+  static char buf[32];
+  const char *s = i18n(chave);
+  size_t k = 0;
+  for (; s[k] && k + 1 < sizeof buf; k++)
+    buf[k] = (s[k] >= 'a' && s[k] <= 'z') ? (char)(s[k] - 'a' + 'A') : s[k];
+  buf[k] = 0;
+  return buf;
+}
+
 // Estado vazio: 46/500 branco e 28/400 rgb(179,179,179), centrado na largura
 // util. Uma grade em branco parece tela quebrada.
 static void desenhaVazio(void) {
@@ -405,7 +431,27 @@ void biblioteca_desenhar(Uint32 agora) {
   // elenco de demonstracao: informacao inventada com cara de dado.
   //
   // Sem credencial do Trakt a biblioteca e local, e o selo diz isso.
-  { const char *fonte = trakt_ativo() ? "TRAKT" : "LOCAL";
+  //
+  // AGORA ELE E POR MODO, e nao um selo so para a tela inteira. Os dois modos
+  // tem fontes diferentes: "Salvos" pode vir da CONTA (sync_pull_library, via
+  // contalib.c) e "Coleção" so existe no Trakt. Um selo unico acabava dizendo
+  // "LOCAL" sobre uma lista que veio da conta — que foi exatamente o relato
+  // ("Top right of library says 'Local'").
+  //
+  // "LOCAL" tambem cobre "a conta ainda nao respondeu". Nao ha estado
+  // intermediario desenhado de proposito: o selo diz de onde veio o que ESTA na
+  // tela, e enquanto a conta nao respondeu o que esta na tela e local.
+  //
+  // COM CONTA E TRAKT AO MESMO TEMPO, "Salvos" e uma MISTURA das duas listas e
+  // nenhum rotulo unico e completo. O web nao tem esse caso (la a fonte e um
+  // seletor, `sourceMode`, e a lista e uma so), entao a ordem dele
+  // (libraryController.getSourceLabel) nao ajuda a decidir. Fica a conta na
+  // frente: e ela que responde a pergunta que o selo existe para responder —
+  // "isto acompanha meus outros aparelhos?".
+  { const char *fonte = modo == MODO_NUVEM
+        ? (trakt_ativo() ? "TRAKT" : "LOCAL")
+        : (contalib_tem_conta() ? seloCaixaAlta("Conta")
+                                : trakt_ativo() ? "TRAKT" : "LOCAL");
     float wSelo = txt_tracking(TXT_CALLOUT, fonte, 128, 128, 128,
                                -1.0f, 0.0f, 0.0f, 4.0f);
     txt_tracking(TXT_CALLOUT, fonte, 128, 128, 128,

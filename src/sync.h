@@ -17,8 +17,16 @@
 // linha aparece sozinha assim que o app web a escrever; ate la o vinculo Trakt
 // deste app continua saindo de art/trakt.txt, que NAO pode ir no pacote.
 //   SO PUXA (o app le, mas nao tem edicao local para empurrar):
-//     perfis, vistos, biblioteca, salvos, colecoes, ajustes do perfil,
-//     catalogos da home.
+//     perfis, vistos, biblioteca, colecoes, ajustes do perfil, catalogos da
+//     home.
+//
+// "SO PUXA" NAO QUER DIZER "SO CONTA". Era o que acontecia com a biblioteca e
+// com os vistos: as duas RPC eram chamadas, as linhas contadas para o resumo e
+// o corpo liberado. O relato do @Haylefal (webOS 4) — "Library is empty and not
+// carrying over from other instances", com o selo "Local" no canto — era isso.
+// Hoje as duas passam por contalib.c e chegam ao catalogo. A lista de "salvos"
+// saiu desta enumeracao porque ela nunca foi uma superficie separada: e a mesma
+// biblioteca (ver a nota em contalib.h).
 //
 // Isto NAO e preguica, e a regra de seguranca numero 2 da secao 1.6 do plano.
 // Empurrar uma superficie que o app nao edita significaria mandar uma lista
