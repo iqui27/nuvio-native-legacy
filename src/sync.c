@@ -452,9 +452,8 @@ void sync_passo(unsigned agoraMs) {
   if (addonsCedo) {
     addonsCedo = 0;
     if (temAddonsRem) {
-      addons_definir_lista(addonsRem, nAddonsRem);
+      if (addons_definir_lista(addonsRem, nAddonsRem)) desc_repetir();
       temAddonsRem = 0;
-      desc_repetir();
     }
   }
   if (!fioVivo || !fioPronto) return;
@@ -472,7 +471,13 @@ void sync_passo(unsigned agoraMs) {
   // publica um conjunto diferente do anterior, a home carregava um catalogo,
   // trocava por outro e so entao assentava na ordem final.
   { int remontar = 0, soFileiras = 0;
-  if (temAddonsRem) { addons_definir_lista(addonsRem, nAddonsRem); temAddonsRem = 0; remontar = 1; }
+  // SO REMONTA QUANDO A LISTA MUDOU DE VERDADE. Ligar `remontar` porque a
+  // resposta chegou fazia um ciclo de descoberta completo a cada cinco minutos
+  // com a lista identica — ver listaIgual em addons.c.
+  if (temAddonsRem) {
+    if (addons_definir_lista(addonsRem, nAddonsRem)) remontar = 1;
+    temAddonsRem = 0;
+  }
   // Vinculo feito NESTA TV ganha do que a conta manda: o servidor nao aceita o
   // push de "trakt" (400 22023), entao a linha da conta pode ser um token
   // antigo e vencido — aplica-lo por cima do novo devolvia 401 em tudo logo

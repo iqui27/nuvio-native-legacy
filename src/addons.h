@@ -26,6 +26,9 @@ int  addons_carregar(const char *dirArte);
 // removeu todos os addons". Trocar por vazio deixaria a pessoa sem fonte
 // nenhuma e sem entender por que.
 typedef struct { char nome[64]; char url[600]; int ativo; } AddonRemoto;
+// Devolve 1 quando a lista MUDOU e foi aplicada; 0 quando nada mudou, quando
+// veio vazia, ou quando nada nela era utilizavel. Quem chama usa isso para
+// decidir se vale remontar o catalogo — e nao para saber quantos addons ha.
 int  addons_definir_lista(const AddonRemoto *lista, int n);
 
 // Lista atual, para o sync poder empurrar de volta o que este aparelho tem.

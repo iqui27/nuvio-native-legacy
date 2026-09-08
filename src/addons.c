@@ -94,6 +94,38 @@ int addons_carregar(const char *dirArte) {
   return nAddon;
 }
 
+// A base normalizada de uma entrada da conta, do mesmo jeito que o laco abaixo
+// normaliza. Existe para poder COMPARAR sem duplicar a regra.
+static void baseNormalizada(const char *url, char *dst, size_t tam) {
+  size_t k;
+  snprintf(dst, tam, "%s", url);
+  k = strlen(dst);
+  if (k > 14 && !strcmp(dst + k - 14, "/manifest.json")) dst[k - 14] = 0;
+  else while (k && dst[k - 1] == '/') dst[--k] = 0;
+}
+
+// A lista que chegou e IGUAL a que ja esta valendo?
+//
+// Sem esta pergunta, `remontar` era ligado a cada ciclo de sync so porque a
+// resposta chegou — e a resposta chega a cada cinco minutos, identica. O
+// resultado era um ciclo de descoberta completo (Trakt, todos os manifestos,
+// todos os catalogos) a cada cinco minutos, para sempre, e a home reassentando
+// junto. Tambem e ele que republica o catalogo por baixo de quem esta parado
+// numa pagina de titulo.
+static int listaIgual(const AddonRemoto *nova, int n) {
+  int i, k = 0;
+  for (i = 0; i < n && k < ADD_MAX; i++) {
+    char base[600];
+    if (!nova[i].url[0]) continue;
+    baseNormalizada(nova[i].url, base, sizeof base);
+    if (k >= nAddon) return 0;
+    if (strcmp(addon[k].base, base)) return 0;
+    if (addon[k].ativo != (nova[i].ativo ? 1 : 0)) return 0;
+    k++;
+  }
+  return k == nAddon;
+}
+
 int addons_definir_lista(const AddonRemoto *nova, int n) {
   int i, aceitos = 0;
   if (!nova || n <= 0) {
@@ -103,6 +135,11 @@ int addons_definir_lista(const AddonRemoto *nova, int n) {
     printf("[addons] lista da conta veio vazia; mantendo a local (%d)\n", nAddon);
     return 0;
   }
+  // NADA MUDOU: nao substitui e diz que nao mudou. Substituir seria pior do que
+  // inutil — o laco abaixo zera `sondado` e o `id` do manifesto, entao reaplicar
+  // uma lista identica jogaria fora o que a sonda aprendeu e faria as colecoes
+  // da conta perderem a URL dos addons ate a proxima leitura.
+  if (listaIgual(nova, n)) return 0;
   for (i = 0; i < n && aceitos < ADD_MAX; i++) {
     size_t k;
     // Addon DESLIGADO tambem entra: ele aparece na lista e pode ser religado
@@ -146,7 +183,7 @@ int addons_definir_lista(const AddonRemoto *nova, int n) {
   }
   nAddon = aceitos;
   printf("[addons] %d vindos da conta\n", nAddon);
-  return nAddon;
+  return 1;
 }
 
 int addons_exportar(AddonRemoto *saida, int max) {
