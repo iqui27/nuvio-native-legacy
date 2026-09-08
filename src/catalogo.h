@@ -137,10 +137,39 @@ int  cat_carregar(const char *dirArte);
 // que teria de ser mantido em sincronia com a struct a cada campo novo. O
 // cabecalho guarda `sizeof(CatItem)` e uma versao: se a struct mudar, o arquivo
 // e RECUSADO em vez de lido torto. Ler lixo aqui seria pior que nao ter cache.
+//
+// ONDE O ARQUIVO MORA. `dirArte` continua no parametro por compatibilidade com
+// os chamadores, mas e o ULTIMO recurso: as duas funcoes preferem dados_dir(),
+// a pasta gravavel descoberta no arranque. No alvo Tizen `dirArte` e /app/art,
+// que vem de --preload-file e portanto e MEMFS — RAM apagada a cada recarga —,
+// e la o cache NUNCA sobreviveu a fechar o app: toda abertura refazia os ~30
+// pedidos e os 14,5 s medidos acima. A escolha fica dentro de catalogo.c, e nao
+// nos chamadores, porque quem le (home.c) e quem grava (descoberta.c) sao
+// arquivos diferentes e tem de concordar. Ver a nota longa em caminhoCache.
 int  cat_gravar_cache(const char *dirArte);
 // Devolve 1 se carregou. Chamar DEPOIS de cat_carregar: ele substitui o
 // catalogo do pacote quando o cache existe e e valido.
 int  cat_ler_cache(const char *dirArte);
+
+// APAGA O CACHE DO CATALOGO. 1 se havia arquivo e ele saiu.
+//
+// TEM DE SER CHAMADA NO LOGOUT, em sync_esquecer_usuario, junto das outras onze
+// coisas que ja sao esquecidas ali. Sem isso, a primeira abertura depois de
+// trocar de conta mostra a home da conta ANTERIOR — watchlist, continuar
+// assistindo, feed de amigos com nome e avatar — ate a rede substituir.
+//
+// E o dano nao para no estetico: cada CatFileira grava `base[600]`, campo desse
+// tamanho porque o Xperience embute um JWT no CAMINHO do addon (ver a nota do
+// campo). Um cache que sobrevive ao logout e credencial do usuario anterior
+// deixada em disco, do mesmo tipo que fez collections.json ser excluido do
+// pacote em tools/arm.sh.
+//
+// O cabecalho tambem grava a identidade (o `sub` do JWT e o perfil ativo) e
+// cat_ler_cache RECUSA E APAGA o que nao bater — mas isso e a rede de
+// seguranca, nao a porta da frente: enquanto o arquivo estiver la, ele estara
+// la. A verificacao cobre um caso que o logout nao ve, a troca de PERFIL dentro
+// da mesma conta, que nao passa por sync_esquecer_usuario.
+int  cat_apagar_cache(void);
 // 1 enquanto o que esta na tela veio do CACHE, e nao da rede desta sessao.
 //
 // A descoberta publica cada fileira assim que ela chega, o que e certo numa

@@ -12,7 +12,14 @@
 #                                            e pendencia conhecida do .ipk da LG.
 #   cache/          18 MB                 -> poster baixado da rede, descartavel
 #                                            por construcao; o tex_cache rebaixa.
-#   catalogo-rede.bin 1,7 MB              -> retrato do catalogo pessoal.
+#   catalogo-rede.bin 1,7 MB              -> retrato do catalogo pessoal. Cada
+#                                            fileira leva a `base` do addon, e
+#                                            no Xperience o JWT viaja DENTRO do
+#                                            caminho: e credencial, com extensao
+#                                            que nao parece. Hoje ele nasce em
+#                                            dados_dir() (/nuvio, IDBFS) e nao
+#                                            mais aqui, mas uma copia antiga do
+#                                            deploy/ ainda o tem no lugar velho.
 #   *.txt                                 -> CREDENCIAL DE PESSOA (trakt, tmdb,
 #                                            mdblist) e ajustes. Nunca.
 #
@@ -70,9 +77,15 @@ fi
 # CONFERE QUE NADA DE PESSOA ENTROU. Nao e paranoia: o .ipk ja saiu uma vez com
 # art/trakt.txt dentro, entregando o token do dono a quem instalasse. A checagem
 # vale mais que a intencao de quem editar este script depois.
-if find "$DESTINO" -name '*.txt' -o -name '*.bin' | grep -q .; then
+#
+# *.tmp entrou na varredura junto com *.bin: cat_gravar_cache escreve num
+# temporario e so entao renomeia, e uma escrita interrompida deixa para tras um
+# catalogo-rede.bin.tmp que ja tem as fileiras dentro — mesma credencial, outra
+# extensao. "Outra extensao" e exatamente como collections.json passou pela
+# lista de .txt do .ipk uma vez.
+if find "$DESTINO" \( -name '*.txt' -o -name '*.bin' -o -name '*.tmp' \) | grep -q .; then
   echo "tizen-art.sh: ARQUIVO DE CREDENCIAL OU CATALOGO no estagio — abortado" >&2
-  find "$DESTINO" -name '*.txt' -o -name '*.bin' >&2
+  find "$DESTINO" \( -name '*.txt' -o -name '*.bin' -o -name '*.tmp' \) >&2
   exit 1
 fi
 if [ -d "$DESTINO/collections" ] || [ -d "$DESTINO/cache" ]; then
