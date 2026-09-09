@@ -33,6 +33,9 @@
 #include "busca.h"
 #include "biblioteca.h"
 #include "perfil.h"
+#include "salvos.h"
+#include "salvospainel.h"
+#include "salvosintro.h"
 #include "social.h"
 #include "ajustes.h"
 #include "player.h"
@@ -220,6 +223,10 @@ int app_iniciar(const char *dirArte) {
     printf("[app] sem arte no pacote: a home so aparece depois do primeiro sync\n");
   menu_iniciar();
   perfil_iniciar();
+  // ANTES do primeiro sync e da primeira descoberta: salvos_aplicar_catalogo
+  // marca `naLista` no catalogo do cache, entao o painel e a Biblioteca ja
+  // abrem certos no primeiro quadro. Ler depois faria a lista local piscar.
+  salvos_iniciar();
   // Sem conta, o app abre no login. Com sessao gravada ele nem passa por ela —
   // pedir o codigo de novo a cada arranque seria o mesmo que nao ter gravado.
   if (sessao_logada()) {
@@ -271,7 +278,15 @@ void app_evento(const SDL_Event *e) {
   if (tela == TELA_LOGIN)          { login_evento(e);     return; }
   if (tela == TELA_ESCOLHA_PERFIL) { perfilsel_evento(e); return; }
 
-  // ALTERNA O PAINEL DE PERFIL, COM REPOUSO — e o repouso e o conserto.
+  // ALTERNA O PAINEL DE SALVOS, COM REPOUSO — e o repouso e o conserto.
+  //
+  // A TECLA AZUL MUDOU DE DONO. Ate esta versao ela abria o painel "Sua
+  // atividade" (perfil_abrir_lateral), um resumo de minutos assistidos. Agora
+  // abre "Salvos". A troca foi pedida assim: o atalho mais rapido do controle
+  // deve responder "o que eu guardei para ver?", que leva a uma acao, e nao
+  // "quantos minutos assisti?", que e relatorio — e relatorio ganhou tela
+  // inteira (MENU_PERFIL abre TELA_PERFIL direto). Quem apertava a AZUL por
+  // habito e avisado uma vez pelo explicador de salvosintro.c.
   //
   // `!e->key.repeat` sozinho nao segura uma tecla SEGURADA num controle de TV.
   // A bandeira `repeat` do SDL vale para a repeticao que o PROPRIO SDL gera a
@@ -291,10 +306,15 @@ void app_evento(const SDL_Event *e) {
     Uint32 agoraTecla = SDL_GetTicks();
     if (agoraTecla - ultimoToque < 400) return;   // repeticao do firmware
     ultimoToque = agoraTecla;
-    if(perfil_aberto() && perfil_lateral())perfil_fechar();
-    else {perfil_abrir_lateral();pedirPerfil();}
+    if(spainel_aberto())spainel_fechar();
+    else spainel_abrir();
     return;
   }
+
+  // O EXPLICADOR DE PRIMEIRA VEZ E O MAIS ALTO de todos, depois do login. Ele
+  // aparece uma unica vez e faz uma pergunta; qualquer coisa respondendo por
+  // baixo dele moveria o foco de uma tela que a pessoa nem esta vendo.
+  if (sintro_aberto()) { sintro_evento(e); return; }
 
   // A folha de fontes fica acima de tudo: ela e uma pergunta, e enquanto ela
   // esta em pe nada mais deve responder ao D-pad.
@@ -303,7 +323,7 @@ void app_evento(const SDL_Event *e) {
   if (stream_folha_aberta()) { stream_folha_evento(e); return; }
   if (player_aberto()) { player_evento(e); return; }
   if (detail_aberto()) { detail_evento(e); return; }
-  if (perfil_aberto() && perfil_lateral()) { perfil_evento(e); return; }
+  if (spainel_aberto()) { spainel_evento(e); return; }
   if (menu_aberto())   { menu_evento(e);   return; }
   // "Ver tudo" fica ENTRE a home e o detalhe: ela cobre a home e o detalhe
   // cobre ela. Por isso vem depois do detalhe e antes do roteamento por tela.
@@ -505,12 +525,28 @@ void app_atualizar(float dt, Uint32 agora) {
   //
   // Chamar em todo quadro nao custa: a decisao acontece uma vez e o modulo a
   // guarda — a leitura do arquivo de bandeira nao se repete.
-  if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto())
+  if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto()) {
     registro_aviso_primeira_vez();
+    // Mesmo lugar e mesma razao: o explicador de "Salvos" fala de uma tecla do
+    // controle, e ensinar tecla enquanto a pessoa enquadra um QR no celular nao
+    // ensina nada. Ele tambem espera o cartao do log sair — dois cartoes de
+    // primeira vez ao mesmo tempo seria um em cima do outro.
+    if (!registro_aberto()) sintro_primeira_vez();
+  }
 
   // E o ciclo automatico — nunca com o player aberto: rajada de HTTP no meio
   // do video disputa CPU e rede com o decodificador.
   if (!player_aberto()) sync_periodico((unsigned)agora);
+
+  // A LISTA LOCAL TEM DE SOBREVIVER A REPUBLICACAO DO CATALOGO.
+  //
+  // cat_definir_tudo apaga `naLista` de todo item, e a descoberta o chama
+  // varias vezes por ciclo. Sem esta linha o titulo salvo aparecia por alguns
+  // segundos e sumia sozinho — exatamente o defeito que contalib_reconciliar ja
+  // tinha resolvido para a biblioteca da conta (a chamada dele vive em sync.c,
+  // no fim do ciclo; esta precisa ser por quadro porque a lista local tambem
+  // muda por acao do dono, e nao so quando o sync termina).
+  salvos_reconciliar();
 
   // Durante a verificacao nao substituir a lista que os workers consultam.
   if (aguardandoFonte != 2) addons_estado();
@@ -526,8 +562,20 @@ void app_atualizar(float dt, Uint32 agora) {
                                "Perfil indisponível. O último resumo continua seguro, se houver.");
     atomic_store_explicit(&perfilCarga, 0, memory_order_release);
   }
-  if ((tela == TELA_PERFIL || perfil_lateral()) && perfil_pediu_atualizar()) pedirPerfil();
-  if (perfil_pediu_completo()) trocarTela(TELA_PERFIL);
+  if (tela == TELA_PERFIL && perfil_pediu_atualizar()) pedirPerfil();
+  // Titulo escolhido no painel de Salvos. Ele entrega o IMDb e nao um indice:
+  // a lista dele inclui titulos que NAO estao no catalogo (vieram do arquivo
+  // local, ver salvospainel.c), e um indice para esses nao existe. Sem item no
+  // catalogo, pede o titulo a descoberta — o mesmo caminho que perfil.c e
+  // social.c ja usam para um id que so eles conhecem.
+  if (!detail_aberto() && !player_aberto()) {
+    const char *alvo = spainel_pediu_abrir();
+    if (alvo && alvo[0]) {
+      int k = cat_indice_por_imdb(alvo);
+      if (k >= 0) abrirPorIndice(k); else desc_pedir_titulo(alvo);
+    }
+  }
+
   if (tela==TELA_HOME) {
     CatItem pessoa;
     if(home_pediu_pessoa_social(&pessoa)) {
@@ -575,7 +623,12 @@ void app_atualizar(float dt, Uint32 agora) {
     switch (menu_destino()) {
       case MENU_BUSCAR:     trocarTela(TELA_BUSCA);      break;
       case MENU_BIBLIOTECA: trocarTela(TELA_BIBLIOTECA); break;
-      case MENU_PERFIL:     perfil_abrir_lateral(); pedirPerfil(); break;
+      // DIRETO PARA A TELA, e nao mais para o painel lateral. O item do menu
+      // se chama "Perfil e Stats" e abria um resumo de tres botoes por cima da
+      // home — para ver as estatisticas de verdade era preciso descer ate "Ver
+      // perfil completo" e apertar OK, dois passos para chegar onde o rotulo ja
+      // prometia. trocarTela(TELA_PERFIL) ja chama perfil_abrir + pedirPerfil.
+      case MENU_PERFIL:     trocarTela(TELA_PERFIL);     break;
       case MENU_AJUSTES:    trocarTela(TELA_AJUSTES);    break;
       default:              trocarTela(TELA_HOME);       break;
     }
@@ -668,9 +721,24 @@ void app_atualizar(float dt, Uint32 agora) {
       // sem ele o botao adicionava de novo um titulo que ja estava la.
       int i = detail_indice();
       const CatItem *c = cat_item(i);
+      // A INTENCAO E CAPTURADA ANTES DE QUALQUER ESCRITA, e as tres escritas
+      // usam o MESMO valor. Antes cada linha relia `c->naLista`, e a segunda
+      // ja lia o campo que a primeira tinha mudado — o "+" mandava ao Trakt o
+      // oposto do que gravava no espelho local sempre que a ordem mudasse. E a
+      // mesma disciplina que ctxmenu.c ja aplica (e que o teste de contrato
+      // cobra la).
+      int entrar = c ? !c->naLista : 0;
       biblioteca_alternar_lista(i);
-      if (c && c->imdb[0]) trakt_watchlist(c->imdb, !c->naLista);
-      if (c) cat_definir_na_lista(i, !c->naLista);
+      // LOCAL SEMPRE, e primeiro. E o unico destino que sobrevive ao
+      // fechamento do app sem depender de conta nenhuma; ver salvos.h. Sem
+      // isto, quem nao tem Trakt vinculado apertava "+" e nao guardava nada.
+      if (c) salvos_definir(c, entrar);
+      // O TRAKT SO SE A PESSOA PEDIU. A escolha vem do explicador de primeira
+      // vez e continua em Ajustes › Interface e conta ("Onde o + salva"). O
+      // padrao e ligado, entao para quem ja usava o app nada muda.
+      if (c && c->imdb[0] && ajustes_salvos_no_trakt())
+        trakt_watchlist(c->imdb, entrar);
+      if (c) cat_definir_na_lista(i, entrar);
     }
     if (detail_pediu_fontes())     stream_folha_abrir();
   }
@@ -855,6 +923,8 @@ void app_atualizar(float dt, Uint32 agora) {
     default:              home_atualizar(dt, agora);       break;
   }
   perfil_atualizar(dt, agora);
+  spainel_atualizar(dt, agora);
+  sintro_atualizar(dt, agora);
   if(tela==TELA_SOCIAL) social_atualizar(dt, agora);
   if(tela==TELA_ADDONS) addonsui_atualizar(dt, agora);
 }
@@ -942,7 +1012,9 @@ static void desenharTelas(Uint32 agora) {
     // significa "nao pinte a faixa", no de fora significava "nao exista".
     if (menu_visivel() && !detail_aberto())
       menu_desenhar(agora);
-    if(perfil_lateral() && !detail_aberto()) perfil_desenhar(agora);
+    // Depois do menu: as duas camadas de "Salvos" escurecem a tela inteira e
+    // tem de ficar por cima de tudo que a home desenhou, inclusive da rail.
+    if (spainel_visivel() && !detail_aberto()) spainel_desenhar(agora);
   }
   player_desenhar(agora);
   episodios_desenhar();
@@ -965,6 +1037,10 @@ void app_desenhar(Uint32 agora) {
   // painel esta em pe — que e o comportamento desejado para quem parou o app
   // para LER o log.
   if (!registro_aberto()) desenharTelas(agora);
+  // O explicador fica ACIMA de qualquer tela (menos do painel de log, que e
+  // ferramenta de diagnostico): ele e a primeira coisa que a pessoa ve depois
+  // desta atualizacao, e nada pode aparecer por cima dele.
+  if (!registro_aberto()) sintro_desenhar(agora);
   registro_desenhar();
 }
 

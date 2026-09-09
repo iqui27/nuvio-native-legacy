@@ -7,6 +7,7 @@
 #include "debrid.h"
 #include "colecoes.h"
 #include "contalib.h"
+#include "salvos.h"
 #include "trakt.h"
 #include "traktauth.h"
 #include "catalogo.h"
@@ -714,6 +715,11 @@ void sync_esquecer_usuario(void) {
   // detalhe: sem esta linha, a proxima pessoa a entrar veria a lista de filmes
   // salvos de quem saiu na tela de Biblioteca dela.
   contalib_esquecer();
+  // A LISTA LOCAL DE SALVOS, pelo mesmo motivo da linha acima e com um agravante:
+  // ela nao depende de conta nenhuma para existir, entao sem esta chamada ela
+  // sobreviveria ao logout em disco e a proxima pessoa abriria o painel da tecla
+  // AZUL com os filmes de quem saiu.
+  salvos_esquecer();
   free(bibBlob);    bibBlob = NULL;    temBibBlob = 0;
   free(vistosBlob); vistosBlob = NULL; temVistosBlob = 0;
   // colBlob estava de fora desta lista desde que foi criado, ao lado de um
