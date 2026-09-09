@@ -128,6 +128,10 @@ NAO_E_TELA = ("printf", "fprintf", "puts", "fputs", "perror", "marco",
 RE_DESENHO = re.compile(
     r"(?<![A-Za-z0-9_])(" + "|".join(DESENHO) + r")\s*\(")
 
+# i18n( logo antes do literal. O autor JA DISSE que aquilo e tela — nao ha o que
+# heuristicar depois disso.
+RE_I18N = re.compile(r"(?<![A-Za-z0-9_])i18n\s*\(\s*$")
+
 RE_NAO_E_TELA = re.compile(
     r"(?<![A-Za-z0-9_])(" + "|".join(re.escape(f) for f in NAO_E_TELA) + r")")
 
@@ -213,7 +217,17 @@ def varrer():
             # Fora do desenho (snprintf para um buffer que sera desenhado) nao
             # da para saber pelo contexto se e tela ou log, e ai sim vale a
             # heuristica de portugues.
-            direto = RE_DESENHO.search(ctx) is not None
+            #
+            # TERCEIRA PORTA, e ela existe por um caso medido: um literal
+            # dentro de i18n() que NAO vai direto a uma funcao de desenho
+            # (tipicamente `snprintf(buf, tam, "%s", i18n("..."))`) so era
+            # conferido se a heuristica de portugues gostasse dele. Ela nao
+            # gostou de "Setas: mover  ·  OK: entrar" — sem marcador de PT
+            # obvio — e a chave saiu da tela em portugues no ingles inteiro.
+            # Escrever i18n( E a declaracao de que aquilo e interface; depois
+            # dela, adivinhar o idioma so serve para errar.
+            direto = (RE_DESENHO.search(ctx) is not None
+                      or RE_I18N.search(ctx) is not None)
             if not direto and not PT.search(s):
                 continue
             # POR NOME INTEIRO, e nao por substring: "printf" casa dentro de
