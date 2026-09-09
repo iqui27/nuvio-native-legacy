@@ -1,30 +1,42 @@
 # nuvio-native-legacy
 
-A streaming app for LG webOS 4.x written in C99 against SDL2 and GLES2, instead
-of JavaScript in the TV's browser. Built and measured on a 2019 OLED65C9
+A streaming app for LG webOS written in C99 against SDL2 and GLES2, instead of
+JavaScript in the TV's browser. Built and measured on a 2019 OLED65C9
 (webOS 4.10): **60.0 fps, 0 janks** on the home screen, worst frame 18-19 ms.
+It also builds for Samsung Tizen, as WebAssembly inside a `.wgt`.
 
-Video plays through the TV's own pipeline — LS2 to `com.webos.media` plus
-libAcbAPI — on a hardware plane behind the GL surface, not in a browser.
+Video plays through the TV's own pipeline — LS2 to `com.webos.media` — on a
+hardware plane behind the GL surface, not in a browser. On webOS 4 the plane is
+held by `libAcbAPI`; LG removed that library in webOS 5, so newer sets use SDL's
+exported-window API instead.
 
 **[Download the .ipk](https://github.com/iqui27/nuvio-native-legacy/releases/latest)**
 · [Install guide](INSTALL.md)
 
 ## Which build fits your TV
 
-| | webOS 3 | webOS 4.x | webOS 5+ |
-|---|---|---|---|
-| **This one** (native C/SDL2) | no | **yes** | no — see below |
-| [Web fork](https://github.com/iqui27/NuvioTVSmart-legacy-webos) (JavaScript) | preview builds | yes | yes, run on webOS 5 |
+| | webOS 3 | webOS 4.x | webOS 5+ | Samsung Tizen |
+|---|---|---|---|---|
+| **This one** (native C/SDL2) | no | **yes**, measured | **reported working** | yes, as a `.wgt` |
+| [Web fork](https://github.com/iqui27/NuvioTVSmart-legacy-webos) (JavaScript) | preview builds | yes | yes | — |
 
-This build's video path goes through `libAcbAPI`, which LG removed in webOS 5.
-On a newer set the app starts, the UI runs, and nothing plays. For those TVs the
+**This table used to say webOS 5+ did not work, and that was wrong.** The video
+path once depended on `libAcbAPI`, which LG removed in webOS 5; since then the
+app falls back to SDL's exported-window API and plays fine without it. Nobody
+updated the table, so it told people the opposite of the truth for a while.
+Corrected after a report from a 2024 LG B4 where playback works
+([#26](https://github.com/iqui27/nuvio-native-legacy/issues/26)).
+
+The honest status per row: webOS 4 is **measured** here on a C9. webOS 5+ is
+**reported** by users, not verified by us — there is no such set on this bench.
+One piece of that path is optional: if the TV does not expose the source-crop
+call, video plays but the zoom/aspect modes do nothing. The app says which case
+it is in, in its log.
+
+webOS 3 is not targeted at all. For those TVs the
 [web fork](https://github.com/iqui27/NuvioTVSmart-legacy-webos) is the one to
-use — it is plain JavaScript with no such dependency. Its
-[webOS 4 release](https://github.com/iqui27/NuvioTVSmart-legacy-webos/releases/tag/webos-port-1.0.5)
-is tuned for Chromium 53 and low RAM, which is also why it tends to be lighter
-than a current build on newer hardware, and it carries preview builds for
-webOS 3 (C8, B7) that this native port does not target at all.
+use — plain JavaScript, tuned for Chromium 53 and low RAM, and it carries
+preview builds for webOS 3 (C8, B7).
 
 Both are unofficial and not affiliated with NuvioMedia.
 
@@ -45,8 +57,11 @@ measured. If it does not, expect the UI to run and video to be a black screen.
 [INSTALL.md](INSTALL.md) explains the reasoning and what evidence there is.
 Reports from non-rooted TVs are welcome.
 
-The package is **175 MB**, most of it prebaked artwork that still needs
-stripping — whoever installs it sees the packager's catalogue before signing in.
+The `.ipk` is **~47 MB**, most of it bundled artwork so the home screen has
+something to show before you sign in. It used to be 175 MB and to carry the
+packager's own catalogue and addon keys; the packaging script now excludes every
+personal file and verifies the exclusion after building, deleting the package if
+one appears.
 
 ## Building
 
@@ -54,7 +69,13 @@ stripping — whoever installs it sees the packager's catalogue before signing i
 bash tools/mac.sh              # build and run on macOS (UI only, no video)
 bash tools/arm.sh              # cross-compile in Docker, deploy over ssh
 bash tools/arm.sh --ipk        # also produce the .ipk
+bash tools/tizen.sh            # build the Samsung target (WebAssembly)
+bash tools/tizen-wgt.sh        # package it as an unsigned .wgt
 ```
+
+The `.wgt` ships unsigned: installing it needs your own Samsung certificate,
+created in Tizen Studio against your TV's DUID. `tools/tizen-wgt.sh` prints the
+steps when it finishes.
 
 Server URLs and client ids are **not in the source**. They travel from a
 `local.properties` file to the compiler command line through `tools/env.sh`; the
