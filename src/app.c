@@ -118,6 +118,13 @@ static void *escolherFonte(void *u) {
 
 static Tela tela = TELA_HOME;
 static int sair = 0;
+// perfis_ativo() no instante em que a tela de escolha abriu. So serve para uma
+// pergunta: a pessoa TROCOU de perfil, ou confirmou o mesmo? Agora que a tela
+// aparece a cada arranque, confirmar o mesmo perfil e o caso comum — e recarga
+// (invalidar o Trakt, reaplicar ajustes, um ciclo de sync inteiro de ~8
+// requisicoes) num perfil que nao mudou seria pagar o preco da troca em toda
+// abertura do app.
+static int perfilAntes = 1;
 
 // O detalhe precisa do retangulo REAL de onde o card saiu para o voo comecar
 // dali. Cada tela que abre um titulo entrega o seu; quando nenhuma entrega
@@ -220,6 +227,24 @@ int app_iniciar(const char *dirArte) {
     // Com sessao gravada o ciclo comeca no arranque: e ele que traz os addons
     // e o Trakt da pessoa, sem os quais a home mostra so o que veio no pacote.
     sync_iniciar();
+    // A ESCOLHA DE PERFIL ABRE AQUI, e nao daqui a alguns segundos.
+    //
+    // Ela ja aparecia em conta com mais de um perfil, mas so quando o sync
+    // respondia: a home aparecia primeiro e era COBERTA depois — o pior dos
+    // dois mundos, porque a pessoa via a lista de outro perfil por um instante.
+    // Com o cache de perfis lido em perfis_carregar_ativo() a pergunta ja pode
+    // ser feita no primeiro quadro.
+    //
+    // Isto NAO custa nada ao arranque medido: home_iniciar() ali em cima ja
+    // montou a home do cache ("catalogo do cache na tela", 844 ms na TV) antes
+    // desta linha, e o laco de atualizacao continua alimentando a home por tras
+    // da tela de escolha. A tela e uma CAMADA na frente de uma home pronta, nao
+    // uma etapa antes dela.
+    if (perfis_precisa_escolher()) {
+      tela = TELA_ESCOLHA_PERFIL;
+      perfilAntes = perfis_ativo();
+      perfilsel_iniciar();
+    }
   } else {
     tela = TELA_LOGIN;
     login_iniciar();
@@ -369,6 +394,7 @@ void app_atualizar(float dt, Uint32 agora) {
       sync_reaplicar_ajustes();
       sync_iniciar();
       tela = TELA_ESCOLHA_PERFIL;
+      perfilAntes = perfis_ativo();
       perfilsel_iniciar();
       menu_definir_destino(MENU_INICIO);
     }
@@ -395,21 +421,40 @@ void app_atualizar(float dt, Uint32 agora) {
 
   if (tela == TELA_ESCOLHA_PERFIL) {
     sync_passo((unsigned)agora);
+    // A HOME CONTINUA SE MONTANDO POR TRAS DA PERGUNTA.
+    //
+    // home_atualizar() comeca com sincronizarFileiras(), que e quem transforma
+    // o catalogo em fileiras. Sem esta linha, o catalogo que chega do cache e
+    // da rede enquanto a tela de escolha esta em pe ficaria parado, e a home so
+    // comecaria a montar DEPOIS da escolha — a pergunta cobraria do arranque os
+    // segundos que o cache de 844 ms existe para economizar. Custa uma
+    // atualizacao sem desenho: a tela de escolha e opaca e a home nao e pintada
+    // aqui (ver desenharTelas).
+    home_atualizar(dt, agora);
     perfilsel_atualizar(dt, agora);
     if (perfilsel_pediu_repetir()) { sync_iniciar(); return; }
     if (perfilsel_quer_sair()) {
-      // Sem uma escolha confirmada, voltar nao pode escolher o perfil 1 por
-      // acidente. A tela continua visivel e aguarda uma escolha explicita.
-      if (!perfis_precisa_escolher()) { tela = TELA_HOME; menu_definir_destino(MENU_INICIO); }
+      // Voltar = "segue com quem ja estava". So vale quando ha uma escolha
+      // gravada e ela nao esta atras de um PIN — senao o Voltar entraria no
+      // perfil 1 por acidente, ou seria a chave da fechadura.
+      if (perfis_pode_dispensar()) {
+        perfis_manter_ativo();
+        tela = TELA_HOME;
+        menu_definir_destino(MENU_INICIO);
+      }
       return;
     }
     if (perfilsel_concluido()) {
       // O perfil mudou o destino do sync: rodar de novo traz os addons e o
-      // progresso DESTE perfil, e nao os do perfil 1 que o primeiro ciclo
-      // pegou por falta de escolha.
-      invalidarPerfil();
-      sync_reaplicar_ajustes();
-      sync_iniciar();
+      // progresso DESTE perfil, e nao os do perfil anterior que o primeiro
+      // ciclo pegou. So quando MUDOU: confirmar o mesmo perfil e o caso comum
+      // agora que a tela abre a cada arranque, e recarregar tudo ali seria
+      // cobrar o preco de uma troca em toda abertura do app.
+      if (perfis_ativo() != perfilAntes) {
+        invalidarPerfil();
+        sync_reaplicar_ajustes();
+        sync_iniciar();
+      }
       tela = TELA_HOME;
     }
     return;
@@ -419,13 +464,18 @@ void app_atualizar(float dt, Uint32 agora) {
   // terminado ele nao faz nada.
   sync_passo((unsigned)agora);
 
-  // Conta com mais de um perfil e nenhum escolhido NESTA instalacao: perguntar.
-  // Isto vale tambem para quem abriu o app com sessao ja gravada — o caminho
-  // comum depois do primeiro dia. Sem isto o app assumia o perfil 1 para
-  // sempre, e `perfis_precisa_escolher()` era codigo morto.
+  // A REDE DESCOBRIU PERFIS QUE O CACHE NAO TINHA: perguntar mesmo assim.
+  //
+  // app_iniciar ja faz esta pergunta com o cache em disco, e e por ali que ela
+  // passa em toda abertura depois da primeira. Esta segunda porta cobre o caso
+  // que o cache nao cobre: a PRIMEIRA vez que a conta e usada neste aparelho
+  // (ou a primeira depois de um "sair"), quando quem descobre que existem dois
+  // perfis e o sync, segundos depois. Sem ela o app assumiria o perfil 1 para
+  // sempre nessa primeira sessao.
   if (tela == TELA_HOME && !player_aberto() && !detail_aberto() &&
       perfis_precisa_escolher()) {
     tela = TELA_ESCOLHA_PERFIL;
+    perfilAntes = perfis_ativo();
     perfilsel_iniciar();
     return;
   }
@@ -500,6 +550,7 @@ void app_atualizar(float dt, Uint32 agora) {
   if (menu_pediu_trocar()) {
     invalidarPerfil();
     tela = TELA_ESCOLHA_PERFIL;
+    perfilAntes = perfis_ativo();
     perfilsel_iniciar();
     return;
   }

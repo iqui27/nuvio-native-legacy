@@ -9,12 +9,27 @@
 #include <string.h>
 
 #define ARQ_ATIVO "perfil.txt"
+#define ARQ_LISTA "perfis.txt"
 
 static ContaPerfil lista[CONTA_PERFIL_MAX];
 static int n;
 static char dono[64];
 static int ativo = 1;
-static int escolhido;      // 1 depois que o usuario decidiu nesta instalacao
+// ESCOLHIDO E DE SESSAO, GRAVADO E DE DISCO — e a diferenca entre as duas e a
+// mudanca de comportamento inteira desta tela.
+//
+// Antes so existia `escolhido`, e perfis_carregar_ativo() o ligava ao ler
+// perfil.txt: a tela aparecia UMA VEZ POR INSTALACAO e nunca mais. Numa TV de
+// sala isso significa que quem liga o aparelho herda em silencio o perfil de
+// quem o desligou — e como `p_profile_id` vai em quase toda RPC, o app passa a
+// ESCREVER progresso no perfil da outra pessoa sem nunca ter perguntado.
+//
+// Agora `escolhido` zera a cada arranque (a pergunta vale uma vez por sessao) e
+// `gravado` guarda que existe uma resposta de ontem — que e o que permite ao
+// Voltar dispensar a tela sem escolher nada, e o que faz o cursor nascer no
+// perfil certo.
+static int escolhido;      // 1 depois que o usuario decidiu NESTA sessao
+static int gravado;        // 1 quando perfil.txt existia no arranque
 
 static void lerDono(void) {
   char *r;
@@ -39,6 +54,90 @@ static void lerDono(void) {
     // compartilhada os dois sao a mesma coisa.
     snprintf(dono, sizeof dono, "%s", sessao_usuario());
     printf("[perfis] get_sync_owner nao respondeu; usando o sub do token\n");
+  }
+}
+
+// --- CACHE EM DISCO DA LISTA -------------------------------------------------
+//
+// Uma linha por perfil, campos separados por TAB:
+//
+//   indice \t temPin \t primario \t usaAddons \t corHex \t nome \t avatar \t fundo
+//
+// Formato de linha e nao JSON de proposito: e o mesmo estilo de perfil.txt e
+// progresso.txt, nao precisa do leitor de JSON no caminho do arranque, e um
+// arquivo truncado pela metade custa UMA linha, nao o arquivo inteiro.
+//
+// O TAB e o separador porque nenhum dos campos pode conte-lo: a gravacao troca
+// tab e quebra de linha por espaco antes de escrever. Sem isso um nome de
+// perfil com um tab dentro deslocaria todos os campos seguintes.
+static void limpo(char *dst, size_t tam, const char *src) {
+  size_t i = 0;
+  if (!tam) return;
+  for (; src && src[i] && i + 1 < tam; i++)
+    dst[i] = (src[i] == '\t' || src[i] == '\n' || src[i] == '\r') ? ' ' : src[i];
+  dst[i] = 0;
+}
+
+static void gravarCache(void) {
+  // 8 perfis x (2 URLs de 300 + nome + cor + quatro numeros) cabe com folga.
+  char buf[8192];
+  size_t p = 0;
+  int i;
+  if (n <= 0) return;
+  for (i = 0; i < n && p < sizeof buf; i++) {
+    char nome[64], av[300], fu[300], cor[10];
+    limpo(nome, sizeof nome, lista[i].nome);
+    limpo(av, sizeof av, lista[i].avatarUrl);
+    limpo(fu, sizeof fu, lista[i].fundoUrl);
+    limpo(cor, sizeof cor, lista[i].corHex);
+    p += (size_t)snprintf(buf + p, sizeof buf - p, "%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\n",
+                          lista[i].indice, lista[i].temPin, lista[i].primario,
+                          lista[i].usaAddonsDoPrimario, cor, nome, av, fu);
+  }
+  if (p >= sizeof buf) return;   // nao gravar um arquivo truncado
+  dados_gravar(ARQ_LISTA, buf);
+}
+
+// Le um campo ate o proximo TAB ou fim de linha e avanca `*p`.
+static void campo(const char **p, char *dst, size_t tam) {
+  const char *s = *p;
+  size_t i = 0;
+  while (*s && *s != '\t' && *s != '\n') {
+    if (i + 1 < tam) dst[i++] = *s;
+    s++;
+  }
+  if (tam) dst[i] = 0;
+  if (*s == '\t') s++;
+  *p = s;
+}
+
+static void lerCache(void) {
+  char *b = dados_ler(ARQ_LISTA);
+  const char *p;
+  int novos = 0;
+  if (!b) return;
+  memset(lista, 0, sizeof lista);
+  for (p = b; *p && novos < CONTA_PERFIL_MAX; ) {
+    char num[16];
+    ContaPerfil *d = &lista[novos];
+    campo(&p, num, sizeof num); d->indice = atoi(num);
+    campo(&p, num, sizeof num); d->temPin = atoi(num);
+    campo(&p, num, sizeof num); d->primario = atoi(num);
+    campo(&p, num, sizeof num); d->usaAddonsDoPrimario = atoi(num);
+    campo(&p, d->corHex, sizeof d->corHex);
+    campo(&p, d->nome, sizeof d->nome);
+    campo(&p, d->avatarUrl, sizeof d->avatarUrl);
+    campo(&p, d->fundoUrl, sizeof d->fundoUrl);
+    while (*p == '\n' || *p == '\r') p++;
+    // Linha sem indice e lixo (arquivo de outra versao, escrita interrompida):
+    // pular uma linha e melhor que desistir do arquivo inteiro.
+    if (d->indice > 0) novos++;
+    else memset(d, 0, sizeof *d);
+  }
+  free(b);
+  if (novos > 0) {
+    n = novos;
+    printf("[perfis] %d perfil(is) do cache: a tela de escolha ja pode abrir\n", n);
   }
 }
 
@@ -71,6 +170,8 @@ int perfis_puxar(void) {
       if (!js_texto(p, f, "name", tmp[novos].nome, sizeof tmp[novos].nome))
         snprintf(tmp[novos].nome, sizeof tmp[novos].nome, "Perfil %d", (int)idx);
       js_texto(p, f, "avatar_url", tmp[novos].avatarUrl, sizeof tmp[novos].avatarUrl);
+      js_texto(p, f, "profile_background_url", tmp[novos].fundoUrl,
+               sizeof tmp[novos].fundoUrl);
       if (!js_texto(p, f, "avatar_color_hex", tmp[novos].corHex, sizeof tmp[novos].corHex))
         snprintf(tmp[novos].corHex, sizeof tmp[novos].corHex, "#1E88E5");
       { char b[16];
@@ -108,6 +209,7 @@ int perfis_puxar(void) {
   }
   free(r);
 
+  gravarCache();
   printf("[perfis] %d perfil(is), dono=%s, ativo=%d\n", n, dono, ativo);
   return n;
 }
@@ -138,10 +240,14 @@ int perfis_ativo_addons(void) {
 
 void perfis_carregar_ativo(void) {
   char *b = dados_ler(ARQ_ATIVO);
-  if (!b) return;
-  { int v = atoi(b);
-    if (v > 0) { ativo = v; escolhido = 1; } }
-  free(b);
+  if (b) {
+    int v = atoi(b);
+    // `gravado`, e NAO `escolhido`: ler o arquivo prova que alguem escolheu
+    // ontem, nao que quem esta na frente da TV agora e a mesma pessoa.
+    if (v > 0) { ativo = v; gravado = 1; }
+    free(b);
+  }
+  lerCache();
 }
 
 void perfis_definir_ativo(int indice) {
@@ -149,13 +255,44 @@ void perfis_definir_ativo(int indice) {
   if (indice <= 0) return;
   ativo = indice;
   escolhido = 1;
+  gravado = 1;
   snprintf(linha, sizeof linha, "%d\n", indice);
   dados_gravar(ARQ_ATIVO, linha);
   printf("[perfis] perfil ativo: %d\n", indice);
 }
 
+void perfis_manter_ativo(void) { escolhido = 1; }
+
+int perfis_sem_escolha(void) {
+  if (n <= 0) return 1;
+  if (n == 1) return !lista[0].temPin;
+  return 0;
+}
+
 int perfis_precisa_escolher(void) {
-  return n > 1 && !escolhido;
+  return !escolhido && !perfis_sem_escolha();
+}
+
+int perfis_pode_dispensar(void) {
+  const ContaPerfil *p;
+  if (escolhido) return 1;
+  if (!gravado) return 0;
+  p = perfis_item_ativo();
+  // Sem o perfil na lista nao da para saber se ele esta travado; recusar e a
+  // resposta segura. Com ele, o Voltar so vale quando nao ha PIN — senao a
+  // tecla de voltar seria a chave da fechadura.
+  return p && !p->temPin;
+}
+
+int perfis_indice_sugerido(void) {
+  int i;
+  for (i = 0; i < n; i++) if (lista[i].indice == ativo) return i;
+  return 0;
+}
+
+PerfilAcao perfis_acao(int i) {
+  if (i < 0 || i >= n) return PERFIL_ACAO_NADA;
+  return lista[i].temPin ? PERFIL_ACAO_PIN : PERFIL_ACAO_ENTRAR;
 }
 
 int perfis_verificar_pin(int indice, const char *pin) {
@@ -169,9 +306,13 @@ int perfis_verificar_pin(int indice, const char *pin) {
   jsw_obj_fim(&w);
   r = sessao_rpc("verify_profile_pin", jsw_texto_final(&w), &st);
   jsw_livre(&w);
+  // TRES respostas e nao duas. "Nao consegui perguntar" nao e "voce errou": com
+  // dois valores, uma TV sem rede acusava a pessoa de errar o PIN que ela
+  // digitou certo — e a tela ate tinha o aviso de conexao, so que inalcancavel.
+  if (!r || st < 200 || st >= 300) { free(r); return -1; }
   // A RPC devolve um booleano; aceitar so o HTTP 200 deixaria passar um PIN
   // errado, que responde 200 com `false`.
-  if (r && st >= 200 && st < 300) ok = (strstr(r, "true") != NULL);
+  ok = (strstr(r, "true") != NULL);
   free(r);
   return ok;
 }
@@ -182,6 +323,11 @@ void perfis_esquecer(void) {
   dono[0] = 0;
   ativo = 1;
   escolhido = 0;
+  gravado = 0;
   dados_apagar(ARQ_ATIVO);
+  // O cache da LISTA sai junto. Ele guarda os nomes das pessoas da conta
+  // anterior e as URLs dos avatares delas — deixa-lo no aparelho faria a tela
+  // de escolha da proxima conta abrir mostrando a familia da conta passada.
+  dados_apagar(ARQ_LISTA);
   printf("[perfis] perfis esquecidos (saiu da conta)\n");
 }
