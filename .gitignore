@@ -39,3 +39,7 @@ build/
 *.heic
 *.jpeg
 .DS_Store
+
+# Artefato do interpretador, gerado toda vez que a varredura roda.
+__pycache__/
+*.pyc
