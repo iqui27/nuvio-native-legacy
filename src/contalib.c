@@ -1,4 +1,5 @@
 #include "contalib.h"
+#include "vistoep.h"
 #include "catalogo.h"
 #include "js.h"
 #include <stdio.h>
@@ -307,14 +308,24 @@ void contalib_reconciliar(void) {
 }
 
 int contalib_aplicar_vistos(void) {
-  int i, k = 0;
+  int i, k = 0, ke = 0;
   for (i = 0; i < nVistos; i++) {
-    if (vistos[i].temporada > 0 || vistos[i].episodio > 0) continue;
     if (!vistos[i].id[0]) continue;
+    // LINHA DE EPISODIO VAI PARA O MAPA DE EPISODIOS, e nao para o historico
+    // de titulo. `season` e `episode` sempre vieram nesta resposta
+    // (PLANO-CONTA-SYNC.md secao 1.5) e eram lidos e descartados aqui: o
+    // `continue` abaixo pulava a linha inteira. E por isso que o app nunca
+    // soube quais episodios a pessoa viu, so quais SERIES.
+    if (vistos[i].temporada > 0 || vistos[i].episodio > 0) {
+      vistoep_definir(vistos[i].id, vistos[i].temporada, vistos[i].episodio, 1);
+      ke++;
+      continue;
+    }
     cat_historico_definir_id(vistos[i].id, vistos[i].tipo, 1);
     k++;
   }
   if (k) printf("[contalib] %d titulos marcados como vistos pela conta\n", k);
+  if (ke) printf("[contalib] %d episodios vistos vindos da conta\n", ke);
   return k;
 }
 

@@ -12,7 +12,9 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 # O catalogo entra como dubl dentro de tests/contalib.c — linkar catalogo.c
 # arrastaria descoberta, trakt e progresso junto, e um teste que precisa do app
 # inteiro para provar um parser deixa de ser rodado.
-cc "${flags[@]}" src/contalib.c src/js.c tests/contalib.c \
+# src/vistoep.c ENTRA porque contalib passou a mandar a linha de episodio para
+# o mapa de episodios vistos, em vez de descarta-la.
+cc "${flags[@]}" src/contalib.c src/js.c src/vistoep.c tests/contalib.c \
   -Isrc -o /tmp/nuvio-contalib-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
 /tmp/nuvio-contalib-tests

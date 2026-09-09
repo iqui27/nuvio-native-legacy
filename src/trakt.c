@@ -1,4 +1,5 @@
 #include "trakt.h"
+#include "vistoep.h"
 #include "idioma.h"
 #include "rede.h"
 #include "js.h"
@@ -397,6 +398,19 @@ int trakt_continuar(CatItem *saida, int max) {
   }
   free(corpo);
   carregarHistoricoReal(cab);
+  // O MAPA COMPLETO DE EPISODIOS VISTOS, e nao as ultimas reproducoes.
+  //
+  // carregarHistoricoReal le /sync/history?limit=100, que responde "o que foi
+  // visto recentemente" e PULA episodio de proposito. Para saber se um episodio
+  // especifico esta visto e preciso /sync/watched/shows, que devolve o conjunto
+  // inteiro por temporada — e e o unico jeito de a lista de episodios dizer a
+  // verdade sobre cada linha.
+  //
+  // Uma chamada por ciclo, no mesmo fio e com os mesmos cabecalhos. Nao ha
+  // paginacao: a resposta e o estado completo.
+  { char *w = rede_baixar_com("https://api.trakt.tv/sync/watched/shows", 25, cab);
+    if (w) { vistoep_ler_trakt(w); free(w); }
+    else printf("[trakt] sem resposta em /sync/watched/shows\n"); }
 
   n = trakt_enfeitar_lote(saida, n);
 

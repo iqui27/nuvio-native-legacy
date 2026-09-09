@@ -1,0 +1,146 @@
+#include "vistoep.h"
+#include "js.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+// TETO. Uma pessoa que acompanha 100 series com 50 episodios cada tem 5000
+// entradas; a 24 bytes sao 120 KB, que cabem com folga ate no heap FIXO de
+// 256 MiB do alvo Tizen (tools/tizen.sh). O teto existe para uma resposta
+// absurda nao virar consumo sem limite, e nao porque 8000 seja um numero
+// especial. Estourado, o mapa PARA DE CRESCER e diz no log — o que ja entrou
+// continua valendo, porque meio mapa e melhor que nenhum.
+#define VE_MAX 8000
+
+typedef struct { char id[16]; short temp, ep; unsigned char visto; } Marca;
+static Marca *mapa;
+static int n, cap, avisouTeto;
+
+// So o id do titulo. "tt123:2:8" e "tt123" tem de casar: o primeiro e o formato
+// que CatItem.imdb carrega num item de "Continuar assistindo", e quem chama
+// daqui nem sempre sabe qual dos dois tem na mao.
+static void base(const char *origem, char *dst, size_t tam) {
+  size_t k = 0;
+  if (!dst || !tam) return;
+  dst[0] = 0;
+  if (!origem) return;
+  while (origem[k] && origem[k] != ':' && k + 1 < tam) { dst[k] = origem[k]; k++; }
+  dst[k] = 0;
+}
+
+static int achar(const char *id, int t, int e) {
+  int i;
+  for (i = 0; i < n; i++)
+    if (mapa[i].temp == t && mapa[i].ep == e && !strcmp(mapa[i].id, id)) return i;
+  return -1;
+}
+
+void vistoep_definir(const char *imdb, int temporada, int episodio, int visto) {
+  char id[16];
+  int i;
+  base(imdb, id, sizeof id);
+  if (!id[0] || temporada < 0 || episodio < 1) return;
+  i = achar(id, temporada, episodio);
+  if (i >= 0) { mapa[i].visto = visto ? 1 : 0; return; }
+  if (n >= VE_MAX) {
+    if (!avisouTeto) {
+      avisouTeto = 1;
+      printf("[vistoep] teto de %d episodios; o mapa para de crescer\n", VE_MAX);
+      fflush(stdout);
+    }
+    return;
+  }
+  if (n == cap) {
+    int novo = cap ? cap * 2 : 256;
+    Marca *m;
+    if (novo > VE_MAX) novo = VE_MAX;
+    m = (Marca *)realloc(mapa, (size_t)novo * sizeof *m);
+    if (!m) return;
+    mapa = m; cap = novo;
+  }
+  memset(&mapa[n], 0, sizeof mapa[n]);
+  snprintf(mapa[n].id, sizeof mapa[n].id, "%s", id);
+  mapa[n].temp = (short)temporada;
+  mapa[n].ep = (short)episodio;
+  mapa[n].visto = visto ? 1 : 0;
+  n++;
+}
+
+int vistoep_estado(const char *imdb, int temporada, int episodio) {
+  char id[16];
+  int i;
+  base(imdb, id, sizeof id);
+  if (!id[0]) return -1;
+  i = achar(id, temporada, episodio);
+  return i < 0 ? -1 : (int)mapa[i].visto;
+}
+
+int vistoep_contar(const char *imdb) {
+  char id[16];
+  int i, k = 0;
+  base(imdb, id, sizeof id);
+  if (!id[0]) return 0;
+  for (i = 0; i < n; i++) if (mapa[i].visto && !strcmp(mapa[i].id, id)) k++;
+  return k;
+}
+
+int vistoep_conhecido(const char *imdb) {
+  char id[16];
+  int i;
+  base(imdb, id, sizeof id);
+  if (!id[0]) return 0;
+  for (i = 0; i < n; i++) if (!strcmp(mapa[i].id, id)) return 1;
+  return 0;
+}
+
+int vistoep_n(void) { return n; }
+
+void vistoep_esquecer(void) {
+  free(mapa); mapa = NULL; n = 0; cap = 0; avisouTeto = 0;
+}
+
+// ------------------------------------------------------------------- Trakt
+
+// /sync/watched/shows: array de { plays, last_watched_at,
+//   show: { ids: { imdb } }, seasons: [ { number, episodes: [ { number } ] } ] }
+//
+// SO O QUE ESTA LA E VISTO, e o que nao esta nao e "nao visto": a resposta e o
+// conjunto do que foi assistido, e a ausencia de um episodio pode ser tanto
+// "nao viu" quanto "o Trakt nao conhece". Por isso este leitor so escreve 1, e
+// vistoep_estado devolve -1 para o resto — a diferenca entre 0 e -1 e o que
+// impede a tela de afirmar "nao assistido" sobre algo que ela nao sabe.
+int vistoep_ler_trakt(const char *json) {
+  const char *p;
+  int total = 0;
+  if (!json) return -1;
+  p = js_raiz_array(json);
+  if (!p) return -1;
+  for (; p; p = js_prox(js_fim(p))) {
+    const char *fim = js_fim(p), *sh, *temps;
+    char imdb[24] = "";
+    if (!fim) break;
+    sh = strstr(p, "\"show\"");
+    if (!sh || sh >= fim) continue;
+    { const char *fs = js_fim(strchr(sh, '{'));
+      js_texto(sh, fs, "imdb", imdb, sizeof imdb); }
+    if (!imdb[0]) continue;
+    temps = js_array(p, fim, "seasons");
+    for (; temps && *temps == '{'; temps = js_prox(js_fim(temps))) {
+      const char *ft = js_fim(temps), *eps;
+      int nt = (int)js_num(temps, ft, "number", -1.0);
+      if (nt < 0 || !ft) break;
+      eps = js_array(temps, ft, "episodes");
+      for (; eps && *eps == '{'; eps = js_prox(js_fim(eps))) {
+        const char *fe = js_fim(eps);
+        int ne = (int)js_num(eps, fe, "number", -1.0);
+        if (!fe) break;
+        if (ne >= 1) { vistoep_definir(imdb, nt, ne, 1); total++; }
+        if (fe >= ft) break;
+      }
+      if (ft >= fim) break;
+    }
+  }
+  printf("[vistoep] Trakt: %d episodios vistos em %d no mapa\n", total, n);
+  fflush(stdout);
+  return total;
+}
