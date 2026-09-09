@@ -1565,6 +1565,32 @@ static void *montar(void *u) {
     cat_cache_substituido();
     marco("catalogo da rede publicado");
     printf("[desc] catalogo montado com %d titulos\n", n);
+
+    // A ULTIMA PALAVRA SOBRE AS COLECOES E AQUI. Issue #18, terceira tentativa,
+    // e desta vez o problema nao era a REGRA e sim QUANDO ela roda.
+    //
+    // dentroDeColecaoVisivelBase — quem decide que um catalogo pertence a uma
+    // colecao e nao merece fileira propria — so existe dentro de
+    // desc_remontar_fileiras(), e quem chamava essa funcao era so o sync, no
+    // instante em que as colecoes da conta chegam. MEDIDO nesta LG: as colecoes
+    // chegam por volta de 2 s e os manifestos dos addons so aos 13 s. Uma fonte
+    // de colecao da conta vem com addonId e SEM URL, e a URL so sai do
+    // manifesto — entao, aos 2 s, nenhuma fonte casa com nada e o engolimento
+    // roda no unico momento em que nao pode dar certo. Depois disso ninguem
+    // chamava de novo, e os catalogos da colecao ficavam soltos na home para
+    // sempre. Por isso o conserto do v1.0.21 (resolver a base antes de comparar)
+    // estava certo e nunca disparava, e por isso o relator via o mesmo defeito
+    // com Xperience E com Ultra Max: nao e do addon, e da ordem de chegada.
+    //
+    // Aqui os manifestos JA foram lidos (marco "manifestos lidos" vem antes
+    // deste, sempre), entao as bases resolvem. A chamada e em memoria — sem
+    // HTTP e sem fio novo, ver a nota da propria funcao — e acontece uma vez
+    // por ciclo de descoberta, nao num laco.
+    //
+    // ANTES de cat_gravar_cache de proposito: assim o cache guarda as fileiras
+    // JA agrupadas e a proxima abertura nasce certa, em vez de repetir a
+    // separacao ate a rede responder de novo.
+    if (col_n() > 0) desc_remontar_fileiras();
     // Grava so o resultado COMPLETO, nao as publicacoes parciais: um cache
     // com tres fileiras faria a proxima abertura nascer pela metade e so
     // completar quando a rede respondesse — exatamente o que o cache existe
@@ -1651,6 +1677,29 @@ void desc_remontar_fileiras(void) {
     if (dentroDeColecaoVisivelBase(f->base, f->tipo, f->catId)) { engolidas++; continue; }
     if (nCat < CAT_FIL_MAX) { chaves[nCat] = f->chave; idxCat[nCat] = i; nCat++; }
   }
+  // SEMPRE, e nao so quando engoliu: a linha existe para o caso em que ela
+  // deveria ter engolido e nao engoliu, que e o #18. Com "colecoes=0" o
+  // relator nao tem colecao; com "colecoes>0 sem-base>0" as colecoes chegaram
+  // mas o manifesto do addon ainda nao, e por isso nenhuma casa; com
+  // "sem-base=0 engolidas=0" o casamento falhou por outro motivo e o problema
+  // e a comparacao, nao a ordem de chegada.
+  printf("[col] fileiras de catalogo=%d engolidas=%d | colecoes=%d "
+         "fontes-sem-base=%d\n", nCat, engolidas, col_n(), col_fontes_sem_base());
+  // COM engolidas=0 E colecoes>0, o que falta e ver os DOIS lados da
+  // comparacao. A base vai REDIGIDA por rede_url_publica: a do Xperience leva
+  // um JWT dentro do caminho, e este log e lido e colado em relato de defeito.
+  if (!engolidas && col_n() > 0) {
+    char seg[120];
+    int i2;
+    for (i2 = 0; i2 < nCat && i2 < 8; i2++) {
+      const CatFileira *f2 = &filsMontadas[idxCat[i2]];
+      printf("[col]   fileira: base=%s tipo=%s id=%s\n",
+             rede_url_publica(f2->base, seg, sizeof seg), f2->tipo, f2->catId);
+    }
+    col_despejar_fontes(6);
+  }
+  fflush(stdout);
+
   for (k = 0; k < nCat; k++) ordem[k] = k;
   if (catordem_tem_ordem() && nCat > 0) {
     memcpy(antes, ordem, sizeof(int) * (size_t)nCat);

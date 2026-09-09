@@ -1,4 +1,5 @@
 #include "colecoes.h"
+#include "rede.h"
 #include "js.h"
 #include "addons.h"
 #include <stdio.h>
@@ -61,6 +62,37 @@ int col_grupo(const char *name,int *indices,int max) {
 // vira um teste de `base[0]` por fonte e nao chama addons_base_por_id nenhuma
 // vez depois que a base entrou. A montagem chama isto uma vez por catalogo
 // declarado: com os 605 do Xperience sao ~32 us a mais no ciclo inteiro.
+// QUANTAS FONTES DE COLECAO AINDA NAO TEM BASE. Enquanto a base e "", a fonte
+// nao casa com nada e o catalogo dela vira fileira solta (#18). A base so
+// aparece depois que o manifesto do addon e lido — na LG, 14 s depois do
+// arranque. Este numero e o que separa "a colecao nao chegou" de "a colecao
+// chegou mas ainda nao da para reconhece-la", que produzem o MESMO sintoma.
+int col_fontes_sem_base(void) {
+  int i, s, n = 0;
+  for (i = 0; i < count; i++) {
+    resolverBases(&folders[i]);
+    for (s = 0; s < folders[i].nSources; s++)
+      if (!folders[i].sources[s].base[0]) n++;
+  }
+  return n;
+}
+
+// O OUTRO LADO DA COMPARACAO. Base REDIGIDA: a fonte do Xperience carrega um
+// JWT no caminho e este log vai para relato de defeito.
+void col_despejar_fontes(int max) {
+  char seg[120];
+  int i, s2, n = 0;
+  for (i = 0; i < count && n < max; i++) {
+    resolverBases(&folders[i]);
+    for (s2 = 0; s2 < folders[i].nSources && n < max; s2++, n++) {
+      const ColSource *v = &folders[i].sources[s2];
+      printf("[col]   fonte[%s/%s]: base=%s tipo=%s id=%s\n",
+             folders[i].group, folders[i].title,
+             rede_url_publica(v->base, seg, sizeof seg), v->type, v->catId);
+    }
+  }
+}
+
 const ColFolder *col_por_catalogo(const char *base,const char *type,const char *id) {
   // Base vazia nao pergunta nada: sem esta guarda uma consulta sem URL casava
   // com QUALQUER fonte cuja base ainda estivesse vazia — um falso positivo que

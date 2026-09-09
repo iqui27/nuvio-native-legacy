@@ -28,5 +28,10 @@ int col_n(void);
 const ColFolder *col_folder(int i);
 int col_grupo(const char *nome, int *indices, int max);
 const ColFolder *col_por_catalogo(const char *base, const char *type, const char *id);
+// Fontes de colecao ainda sem base resolvida. Ver a nota em colecoes.c: zero
+// significa que toda colecao ja pode engolir o catalogo dela.
+int col_fontes_sem_base(void);
+// Despeja ate `max` fontes com a base REDIGIDA, para comparar os dois lados.
+void col_despejar_fontes(int max);
 void col_cor(const ColFolder *f, float *r, float *g, float *b);
 #endif
