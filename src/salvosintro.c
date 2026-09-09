@@ -48,8 +48,8 @@
 // 26 = y+104). Na captura da TV os descendentes da segunda linha encostavam no
 // limite. A opcao de uma linha nao mostrava o problema — e por isso ele passou.
 #define SI_OPCAO_H   112.0f
-#define SI_MINI_W    100.0f
-#define SI_MINI_H    150.0f
+#define SI_MINI_W     84.0f
+#define SI_MINI_H    126.0f
 #define SI_N_MINI      6
 #define SI_ABRIR_MS  260.0f
 #define SI_FECHAR_MS 150.0f
@@ -157,6 +157,41 @@ void sintro_atualizar(float dt, Uint32 agora) {
 // Tres retangulos e um disco custam quatro desenhos de area pequena. A conta
 // importa: gfx.c registra que DUAS camadas de tela cheia ja derrubavam esta
 // Mali-G71 para ~40 fps, e este cartao ja paga um veu de tela cheia.
+// O BOTAO, DESENHADO, ao lado da frase que o nomeia.
+//
+// So o nome nao basta numa TV: "o botao AZUL" e uma cor que a pessoa procura
+// entre quatro, e "CANAL +" e um rocker que nem todo mundo associa a palavra.
+// O desenho responde antes da leitura — e e o que o dono pediu ao perguntar
+// pela imagem do aviso.
+//
+// Duas formas, porque os dois botoes NAO se parecem: na LG e uma tecla REDONDA
+// e colorida na fileira de cores; na Samsung e a metade de cima de um rocker
+// retangular. Desenhar um circulo azul para quem tem um One Remote seria
+// mandar a pessoa procurar o que nao existe no controle dela.
+static void desenhaTeclaAtalho(float x, float y, float lado, float a) {
+#ifdef __EMSCRIPTEN__
+  // Rocker de canal: retangulo alto, com o "+" em cima e "CH" embaixo — que e
+  // a leitura de cima para baixo do proprio botao.
+  GfxRect k = { x, y, lado * 0.78f, lado };
+  gfx_cor(k, 0.30f, 0.22f, 0.23f, 0.26f, a);
+  gfx_cor((GfxRect){ k.x + 3.0f, k.y + 3.0f, k.w - 6.0f, k.h * 0.5f - 3.0f },
+          0.26f, 0.32f, 0.33f, 0.37f, a);
+  { TxtLinha t = txt_linha(TXT_CAPTION2, "+", 240, 242, 248, 255);
+    txt_desenhar_alpha(t, k.x + (k.w - (float)t.w) * 0.5f,
+                       k.y + k.h * 0.25f - (float)t.h * 0.5f, a); }
+  { TxtLinha t = txt_linha(TXT_CAPTION2, "CH", 186, 190, 200, 255);
+    txt_desenhar_alpha(t, k.x + (k.w - (float)t.w) * 0.5f,
+                       k.y + k.h * 0.72f - (float)t.h * 0.5f, a); }
+#else
+  // Tecla colorida da LG: disco azul com um anel escuro em volta, que e o que
+  // a destaca da fileira quando o controle esta na mao.
+  GfxRect anel = { x, y, lado, lado };
+  GfxRect disco = { x + 4.0f, y + 4.0f, lado - 8.0f, lado - 8.0f };
+  gfx_cor(anel, 0.5f, 0.16f, 0.17f, 0.20f, a);
+  gfx_cor(disco, 0.5f, 0.16f, 0.44f, 0.87f, a);
+#endif
+}
+
 static void desenhaFigura(float cx, float y, float a) {
   static const float lum[3] = { 0.15f, 0.20f, 0.27f };
   int i;
@@ -166,13 +201,13 @@ static void desenhaFigura(float cx, float y, float a) {
   // o "+" aparecia solto no ar, sem relacao visivel com a pilha, e o conjunto
   // inteiro puxava para a direita.
   for (i = 0; i < 3; i++) {
-    float w = 92.0f, h = 132.0f + (float)i * 7.0f;
-    GfxRect c = { cx - 135.0f + (float)i * 74.0f, y + (float)(2 - i) * 7.0f, w, h };
+    float w = 86.0f, h = 124.0f + (float)i * 6.0f;
+    GfxRect c = { cx - 126.0f + (float)i * 69.0f, y + (float)(2 - i) * 6.0f, w, h };
     gfx_cor(c, 0.09f, lum[i], lum[i] + 0.004f, lum[i] + 0.014f, a);
   }
-  { GfxRect d = { cx + 67.0f, y + 90.0f, 68.0f, 68.0f };
+  { GfxRect d = { cx + 60.0f, y + 84.0f, 66.0f, 66.0f };
     gfx_cor(d, 0.5f, 0.95f, 0.96f, 0.98f, a);
-    gfx_icone((GfxRect){ d.x + 19.0f, d.y + 19.0f, 30.0f, 30.0f },
+    gfx_icone((GfxRect){ d.x + 18.0f, d.y + 18.0f, 30.0f, 30.0f },
               "mais", 0.07f, 0.07f, 0.09f, a); }
 }
 
@@ -220,13 +255,13 @@ void sintro_desenhar(Uint32 agora) {
 
   y = SI_Y + 152.0f;
   desenhaFigura(SI_X + dx + SI_W * 0.5f, y, a);
-  y += 176.0f;
+  y += 160.0f;
 
   y += txt_bloco(TXT_CAPTION,
         "+ põe um título na sua lista para você achar de novo sem procurar. "
         "Ele não marca nada como assistido.",
         196, 200, 210, x, y, SI_INT, 30.0f, a * 0.95f, 3);
-  y += 30.0f;
+  y += 24.0f;
 
   // QUAL TECLA REABRE A LISTA — e ela NAO E A MESMA nos dois aparelhos.
   //
@@ -240,21 +275,38 @@ void sintro_desenhar(Uint32 agora) {
   //
   // Escolha em tempo de COMPILACAO porque cada build serve um alvo so — decidir
   // em execucao exigiria perguntar ao aparelho algo que ele nao sabe responder.
-  y += txt_bloco(TXT_CAPTION,
+  // O botao a ESQUERDA e o texto recuado ao lado dele: os dois formam uma
+  // linha so, e o olho pega o desenho antes de ler a frase.
+  //
+  // A FRASE E CURTA DE PROPOSITO. Recuada em `rec` para abrir lugar ao desenho,
+  // ela perde 62 px de largura; com a redacao longa ("do controle abre sua
+  // lista a qualquer momento") passava a quebrar em duas linhas e empurrava
+  // TUDO 30 px para baixo — na captura da TV a dica do rodape caiu em cima da
+  // pilula do Trakt e a linha dos Ajustes saiu cortada pela borda do cartao.
+  { const float lado = 46.0f, rec = 62.0f;
+    float alturaTexto;
+    desenhaTeclaAtalho(x, y - 2.0f, lado, a);
+    alturaTexto = txt_bloco(TXT_CAPTION,
 #ifdef __EMSCRIPTEN__
-        "Depois, o botão CANAL + do controle abre sua lista a qualquer momento.",
+          "Depois, o botão CANAL + abre sua lista quando quiser.",
 #else
-        "Depois, o botão AZUL do controle abre sua lista a qualquer momento.",
+          "Depois, o botão AZUL abre sua lista quando quiser.",
 #endif
-        196, 200, 210, x, y, SI_INT, 30.0f, a * 0.95f, 2);
-  y += 30.0f;
+          196, 200, 210, x + rec, y, SI_INT - rec, 30.0f, a * 0.95f, 2);
+    // QUEM MANDA E O MAIOR DOS DOIS. `y` e coordenada absoluta, entao a conta e
+    // sobre a ALTURA que esta linha ocupa — o botao tem `lado`, o texto tem o
+    // que txt_bloco devolveu. Comparar `y` com 46 (foi o meu primeiro reflexo)
+    // testa a posicao na tela, nao a altura, e deixaria o bloco seguinte subir
+    // por cima do desenho.
+    y += alturaTexto > lado ? alturaTexto : lado; }
+  y += 24.0f;
 
   // O bloco de cartazes SO EXISTE se houver cartaz. Ver juntarMinis.
   if (nMinis > 0) {
     float px = x, passo = (SI_INT - SI_MINI_W) / (float)(SI_N_MINI - 1);
     { TxtLinha t = txt_linha(TXT_CAPTION2, "Já na sua lista", 150, 154, 165, 255);
       txt_desenhar_alpha(t, x, y, a * 0.9f); }
-    y += 34.0f;
+    y += 30.0f;
     for (i = 0; i < nMinis; i++) {
       GfxRect r = { px, y, SI_MINI_W, SI_MINI_H };
       GLuint tex = tex_obter(minis[i]);
@@ -268,7 +320,7 @@ void sintro_desenhar(Uint32 agora) {
       }
       px += passo;
     }
-    y += SI_MINI_H + 34.0f;
+    y += SI_MINI_H + 30.0f;
   }
 
   { TxtLinha t = txt_linha(TXT_CAPTION2, "Onde o + deve salvar?", 150, 154, 165, 255);
@@ -283,12 +335,11 @@ void sintro_desenhar(Uint32 agora) {
   desenhaOpcao(x, y, animFoco[1], ajustes_salvos_no_trakt(),
                "Watchlist do Trakt",
                "Aparece também nos apps e no site que leem essa conta.", a);
-  y += SI_OPCAO_H + 26.0f;
 
   { TxtLinha t = txt_linha_corta(TXT_CAPTION,
         "Você pode mudar isso depois em Ajustes › Interface e conta.",
         144, 148, 158, 255, SI_INT);
-    txt_desenhar_alpha(t, x, y, a * 0.85f); }
+    txt_desenhar_alpha(t, x, SI_Y + SI_H - 84.0f, a * 0.85f); }
   { TxtLinha t = txt_linha(TXT_CAPTION2, "↑ ↓ Escolher   ·   OK Confirmar",
                            132, 136, 146, 255);
     txt_desenhar_alpha(t, x, SI_Y + SI_H - 52.0f, a * 0.8f); }
