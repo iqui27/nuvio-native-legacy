@@ -89,6 +89,51 @@ int main(void) {
   assert(vistoep_ler_progresso(NULL, PROG) == -1);
   puts("ok  corpo invalido devolve -1 sem escrever nada");
 
+  // --- OS TRES GESTOS DA TELA, que sao o mesmo lote em tamanhos diferentes ---
+  vistoep_esquecer();
+  vistoep_ler_progresso("tt14688458", PROG);
+  { VistoPar lote[32];
+    int k;
+
+    // ATE AQUI. A ordem e (temporada, numero) NESTA ordem: parar no T2E1 leva
+    // a temporada 1 inteira mais o primeiro da 2 — e nao "todo episodio de
+    // numero <= 1", que pegaria o T1E1 e deixaria o T1E4 para tras.
+    k = vistoep_ate_aqui("tt14688458", 2, 1, lote, 32);
+    assert(k == 5);
+    { int i, achouT1E4 = 0, achouT2E2 = 0;
+      for (i = 0; i < k; i++) {
+        if (lote[i].temporada == 1 && lote[i].episodio == 4) achouT1E4 = 1;
+        if (lote[i].temporada == 2 && lote[i].episodio == 2) achouT2E2 = 1;
+      }
+      assert(achouT1E4);    // temporada anterior inteira entra
+      assert(!achouT2E2); } // o que vem depois na mesma temporada, nao
+    puts("ok  \"ate aqui\" respeita (temporada, numero) e nao so o numero");
+
+    // TEMPORADA INTEIRA.
+    k = vistoep_temporada("tt14688458", 1, lote, 32);
+    assert(k == 4);
+    k = vistoep_temporada("tt14688458", 2, lote, 32);
+    assert(k == 2);
+    k = vistoep_temporada("tt14688458", 9, lote, 32);
+    assert(k == 0);
+    puts("ok  a temporada inteira, e temporada inexistente devolve zero");
+
+    // O LOTE SO CONTA QUEM MUDOU. Marcar o que ja estava visto devolve 0, e e
+    // isso que impede a tela de mandar um POST ao Trakt para nada.
+    k = vistoep_temporada("tt14688458", 1, lote, 32);
+    assert(vistoep_marcar_lote("tt14688458", lote, k, 1) == 1);  // so o T1E3
+    assert(vistoep_marcar_lote("tt14688458", lote, k, 1) == 0);
+    assert(vistoep_contar("tt14688458") == 5);
+    assert(vistoep_marcar_lote("tt14688458", lote, k, 0) == 4);
+    assert(vistoep_contar("tt14688458") == 1);
+    puts("ok  o lote conta so quem mudou de estado");
+
+    // Teto respeitado, sem escrever fora.
+    k = vistoep_ate_aqui("tt14688458", 2, 2, lote, 3);
+    assert(k == 3);
+    puts("ok  o teto do vetor e respeitado");
+  }
+
   puts("vistoep: tudo ok");
   return 0;
 }

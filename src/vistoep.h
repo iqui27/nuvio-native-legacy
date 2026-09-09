@@ -48,6 +48,26 @@ int  vistoep_conhecido(const char *imdb);
 // nao so 1. Devolve quantos episodios entraram, ou -1 em corpo invalido.
 int  vistoep_ler_progresso(const char *imdb, const char *json);
 
+// Um episodio, para os lotes. Os tres gestos que a tela oferece — este
+// episodio, ate aqui, a temporada inteira — sao o MESMO lote com tamanhos
+// diferentes, e por isso ha uma funcao so em vez de tres.
+typedef struct { short temporada, episodio; } VistoPar;
+
+// Marca um lote de uma vez, LOCALMENTE. Quem fala com o servidor e o chamador:
+// o efeito local tem de ser imediato (a lista redesenha no mesmo quadro) e a
+// rede leva segundos. Devolve quantos mudaram de estado de fato.
+int  vistoep_marcar_lote(const char *imdb, const VistoPar *pares, int n, int visto);
+
+// Monta o lote "ate aqui": todo episodio do mapa DESTA serie em posicao menor
+// ou igual a (temporada, episodio), em ordem. Devolve quantos couberam em
+// `saida`; `max` limita. Sai do MAPA e nao do catalogo porque e o mapa que sabe
+// quais episodios existem para o Trakt — um episodio que o catalogo tem e o
+// Trakt nao conhece nao pode ser marcado la.
+int  vistoep_ate_aqui(const char *imdb, int temporada, int episodio,
+                      VistoPar *saida, int max);
+// O mesmo para uma temporada inteira.
+int  vistoep_temporada(const char *imdb, int temporada, VistoPar *saida, int max);
+
 int  vistoep_n(void);          // total de episodios no mapa, para log e teste
 void vistoep_esquecer(void);   // logout
 

@@ -9,6 +9,7 @@
 // CREDENCIAIS ficam em art/trakt.txt ("token<TAB>clientId"), arquivo do dono:
 // tratar como segredo, nao versionar. Sem o arquivo o modulo simplesmente nao
 // faz nada e a fileira cai no que veio no pacote.
+#include "vistoep.h"
 #ifndef NV_TRAKT_H
 #define NV_TRAKT_H
 #include "catalogo.h"
@@ -56,6 +57,10 @@ int trakt_playback_remover(const char *imdb);
 // vistoep.h. Devolve quantos entraram. Sob demanda, uma requisicao por serie —
 // ver a nota longa em trakt.c sobre por que /sync/watched/shows nao serve.
 int trakt_progresso_serie(const char *imdb);
+// Marca (visto=1) ou desmarca (0) um lote de episodios, numa requisicao so.
+// SINCRONO: quem chamar do fio de desenho tem de mandar para um fio proprio.
+int trakt_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd,
+                           int visto);
 int  trakt_continuar(CatItem *saida, int max);
 
 // Atividade recente dos AMIGOS do dono. Usa o feed social oficial do Trakt

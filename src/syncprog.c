@@ -1,4 +1,5 @@
 #include "syncprog.h"
+#include "vistoep.h"
 #include "progresso.h"
 #include "catalogo.h"
 #include "sessao.h"
@@ -178,6 +179,57 @@ int syncprog_remover(const char *chave) {
   free(r);
   printf("[sync] progresso removido da conta: %s -> %s (HTTP %d)\n",
          chave, ok ? "ok" : "falhou", st);
+  fflush(stdout);
+  return ok;
+}
+
+// MARCA OU DESMARCA UM LOTE DE EPISODIOS NA CONTA.
+//
+// A outra metade do gesto: o Trakt e opcional, a conta Nuvio nem sempre, e quem
+// usa so a conta tambem tem de conseguir marcar um episodio. Uma RPC para o
+// lote inteiro, do mesmo jeito que o Trakt.
+//
+// AS DUAS FORMAS SAO DIFERENTES, e e o contrato quem manda (PLANO-CONTA-SYNC
+// secao 1.5): o push leva ITENS completos ({content_id, content_type, season,
+// episode, watched_at}) e o delete leva CHAVES ({content_id, season, episode}).
+// Mandar a forma do push no delete apagaria nada em silencio.
+int syncep_empurrar(const char *imdb, const char *tipo,
+                    const VistoPar *pares, int qtd, int visto) {
+  Jsw w;
+  char *r, id[24];
+  int i, st = 0, ok;
+  long long agora;
+  if (!imdb || !imdb[0] || !pares || qtd < 1) return 0;
+  for (i = 0; imdb[i] && imdb[i] != ':' && i < (int)sizeof id - 1; i++) id[i] = imdb[i];
+  id[i] = 0;
+  if (!id[0]) return 0;
+  agora = prog_agora_ms();
+
+  jsw_iniciar(&w);
+  jsw_obj_ini(&w);
+  jsw_chave(&w, visto ? "p_items" : "p_keys");
+  jsw_arr_ini(&w);
+  for (i = 0; i < qtd; i++) {
+    jsw_obj_ini(&w);
+    jsw_cs(&w, "content_id", id);
+    if (visto) {
+      jsw_cs(&w, "content_type", tipo && tipo[0] ? tipo : "series");
+      jsw_ci(&w, "watched_at", agora);
+    }
+    jsw_ci(&w, "season", pares[i].temporada);
+    jsw_ci(&w, "episode", pares[i].episodio);
+    jsw_obj_fim(&w);
+  }
+  jsw_arr_fim(&w);
+  jsw_obj_fim(&w);
+
+  r = sessao_rpc(visto ? "sync_push_watched_items" : "sync_delete_watched_items",
+                 jsw_texto_final(&w), &st);
+  jsw_livre(&w);
+  ok = ok2xx(r, st);
+  free(r);
+  printf("[sync] %s %d episodios de %s na conta -> %s (HTTP %d)\n",
+         visto ? "marcar" : "desmarcar", qtd, id, ok ? "ok" : "falhou", st);
   fflush(stdout);
   return ok;
 }

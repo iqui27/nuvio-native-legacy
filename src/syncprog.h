@@ -9,6 +9,7 @@
 //   season/episode (null em filme), position/duration em MS,
 //   last_watched em ms, progress_key "tt123_s4e9" | "tt123".
 // Era aqui que este app divergia (PLANO-PROGRESSO.md 1.1, 1.2, 1.7).
+#include "vistoep.h"
 #ifndef NV_SYNCPROG_H
 #define NV_SYNCPROG_H
 
@@ -36,6 +37,11 @@ int  syncprog_puxadas(void);
 // Apaga uma entrada de progresso NA CONTA (sync_delete_watch_progress), pela
 // chave de prog_chave. Ver a nota longa em syncprog.c.
 int  syncprog_remover(const char *chave);
+// Marca (visto=1) ou desmarca (0) um lote de episodios NA CONTA, numa RPC so.
+// Push leva itens completos, delete leva chaves — formas diferentes, ver a nota
+// em syncprog.c. SINCRONO, como o resto deste modulo.
+int  syncep_empurrar(const char *imdb, const char *tipo,
+                     const VistoPar *pares, int qtd, int visto);
 void syncprog_esquecer(void);
 
 #endif

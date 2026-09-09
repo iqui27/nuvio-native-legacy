@@ -93,6 +93,57 @@ int vistoep_conhecido(const char *imdb) {
   return 0;
 }
 
+int vistoep_marcar_lote(const char *imdb, const VistoPar *pares, int qtd, int visto) {
+  int i, mudou = 0;
+  if (!pares) return 0;
+  for (i = 0; i < qtd; i++) {
+    if (vistoep_estado(imdb, pares[i].temporada, pares[i].episodio) == (visto ? 1 : 0))
+      continue;
+    vistoep_definir(imdb, pares[i].temporada, pares[i].episodio, visto);
+    mudou++;
+  }
+  return mudou;
+}
+
+// ORDEM DE EPISODIO E (temporada, numero), nesta ordem — nao o numero sozinho.
+// A temporada 0 dos especiais fica ANTES da 1, que e onde o Trakt tambem a
+// coloca; marcar "ate aqui" no episodio 3 da temporada 2 nao pode arrastar a
+// temporada 3 so porque o numero dela e menor.
+static int antesOuIgual(int t, int e, int tAlvo, int eAlvo) {
+  if (t != tAlvo) return t < tAlvo;
+  return e <= eAlvo;
+}
+
+int vistoep_ate_aqui(const char *imdb, int temporada, int episodio,
+                     VistoPar *saida, int max) {
+  char id[16];
+  int i, k = 0;
+  base(imdb, id, sizeof id);
+  if (!id[0] || !saida) return 0;
+  for (i = 0; i < n && k < max; i++) {
+    if (strcmp(mapa[i].id, id)) continue;
+    if (!antesOuIgual(mapa[i].temp, mapa[i].ep, temporada, episodio)) continue;
+    saida[k].temporada = mapa[i].temp;
+    saida[k].episodio = mapa[i].ep;
+    k++;
+  }
+  return k;
+}
+
+int vistoep_temporada(const char *imdb, int temporada, VistoPar *saida, int max) {
+  char id[16];
+  int i, k = 0;
+  base(imdb, id, sizeof id);
+  if (!id[0] || !saida) return 0;
+  for (i = 0; i < n && k < max; i++) {
+    if (mapa[i].temp != temporada || strcmp(mapa[i].id, id)) continue;
+    saida[k].temporada = mapa[i].temp;
+    saida[k].episodio = mapa[i].ep;
+    k++;
+  }
+  return k;
+}
+
 int vistoep_n(void) { return n; }
 
 void vistoep_esquecer(void) {

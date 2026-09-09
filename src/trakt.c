@@ -1,5 +1,6 @@
 #include "trakt.h"
 #include "vistoep.h"
+#include "jsw.h"
 #include "idioma.h"
 #include "rede.h"
 #include "js.h"
@@ -266,6 +267,86 @@ int trakt_playback_remover(const char *imdb) {
   if (ok)
     for (i = 0; i < nPlay; i++)
       if (!strcmp(play[i].chave, imdb)) { play[i].chave[0] = 0; break; }
+  return ok;
+}
+
+// MARCA OU DESMARCA UM LOTE DE EPISODIOS NO TRAKT.
+//
+// Um POST, nao um por episodio: /sync/history e /sync/history/remove aceitam
+// shows[{ids:{imdb}, seasons:[{number, episodes:[{number}]}]}], e e essa forma
+// que torna "ate aqui" e "a temporada inteira" uma requisicao so. Marcar 20
+// episodios um a um seriam 20 viagens e 20 chances de terminar pela metade.
+//
+// SINCRONO, no fio de quem chamou. A tela ja aplicou o efeito local antes de
+// chegar aqui (vistoep_marcar_lote), entao o que se espera aqui e a
+// confirmacao, nao o desenho. Quem chamar do fio de desenho tem de mandar para
+// um fio proprio — hoje o unico chamador vem de episodios.c por app.c.
+//
+// O lote chega ORDENADO por temporada, mas nao se assume isso: o laco agrupa
+// procurando cada temporada uma vez, que para os poucos episodios de um gesto
+// custa menos que ordenar.
+int trakt_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd,
+                           int visto) {
+  const char *cab[4];
+  char aut[200], chaveCab[140], id[24], url[64];
+  Jsw w;
+  char *r;
+  int i, j, st = 0, ok;
+  char feita[64];
+  if (!ligado || !imdb || imdb[0] != 't' || !pares || qtd < 1) return 0;
+  if (qtd > (int)sizeof feita) qtd = (int)sizeof feita;
+  for (i = 0; imdb[i] && imdb[i] != ':' && i < (int)sizeof id - 1; i++) id[i] = imdb[i];
+  id[i] = 0;
+  if (!id[0]) return 0;
+  memset(feita, 0, sizeof feita);
+
+  jsw_iniciar(&w);
+  jsw_obj_ini(&w);
+  jsw_chave(&w, "shows");
+  jsw_arr_ini(&w);
+  jsw_obj_ini(&w);
+  jsw_chave(&w, "ids");
+  jsw_obj_ini(&w);
+  jsw_cs(&w, "imdb", id);
+  jsw_obj_fim(&w);
+  jsw_chave(&w, "seasons");
+  jsw_arr_ini(&w);
+  for (i = 0; i < qtd; i++) {
+    if (feita[i]) continue;
+    jsw_obj_ini(&w);
+    jsw_ci(&w, "number", pares[i].temporada);
+    jsw_chave(&w, "episodes");
+    jsw_arr_ini(&w);
+    for (j = i; j < qtd; j++) {
+      if (feita[j] || pares[j].temporada != pares[i].temporada) continue;
+      feita[j] = 1;
+      jsw_obj_ini(&w);
+      jsw_ci(&w, "number", pares[j].episodio);
+      jsw_obj_fim(&w);
+    }
+    jsw_arr_fim(&w);
+    jsw_obj_fim(&w);
+  }
+  jsw_arr_fim(&w);
+  jsw_obj_fim(&w);
+  jsw_arr_fim(&w);
+  jsw_obj_fim(&w);
+
+  snprintf(aut, sizeof aut, "Authorization: Bearer %s", token);
+  snprintf(chaveCab, sizeof chaveCab, "trakt-api-key: %s", cliente);
+  cab[0] = aut;
+  cab[1] = "trakt-api-version: 2";
+  cab[2] = chaveCab;
+  cab[3] = NULL;
+  snprintf(url, sizeof url, "https://api.trakt.tv/sync/history%s",
+           visto ? "" : "/remove");
+  r = rede_postar_st(url, 20, cab, jsw_texto_final(&w), &st);
+  jsw_livre(&w);
+  ok = st >= 200 && st < 300;
+  free(r);
+  printf("[trakt] %s %d episodios de %s -> %s (HTTP %d)\n",
+         visto ? "marcar" : "desmarcar", qtd, id, ok ? "ok" : "falhou", st);
+  fflush(stdout);
   return ok;
 }
 
