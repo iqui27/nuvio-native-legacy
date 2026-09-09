@@ -150,6 +150,9 @@ static float scrollY = 0.0f;
 // Velocidades das molas de 2a ordem do deslize. Ficam ao lado da posicao
 // porque anim_mola2() precisa das duas. Ver anim.h.
 static float velX[MAX_FIL];
+// Fileiras que o limite cortou na ultima montagem — colecoes incluidas. Ver o
+// comentario no corte, em remontar().
+static int   cortadasPeloLimite;
 static float velY = 0.0f;
 static int sair = 0, pedidoAbrir = 0, pedidoMenu = 0;
 // VOLTAR NA HOME PEDE CONFIRMACAO. Ver home_evento; o aviso e desenhado em
@@ -1192,6 +1195,20 @@ static void sincronizarFileiras(void) {
       if (fil_oculta(f->chave)) continue;
       arranjo[w++] = *f;
     }
+    // QUANTAS FILEIRAS ESTE CORTE ENGOLIU. O aviso do fim da home contava so
+    // `desc_catalogos_fora()` — catalogos que a DESCOBERTA nao chegou a pedir.
+    // O corte daqui e outro: ele acontece depois, sobre a lista ja montada, e
+    // pega tambem as fileiras de COLECAO, que nao passam pela descoberta.
+    //
+    // E o relato do rawldon (#30): ligar o Trakt fez colecoes sumirem da home.
+    // Nao sumiram — foram empurradas para fora do limite pelas fileiras que o
+    // Trakt trouxe, e como elas nao sao catalogo, o aviso que existe desde o
+    // #11 nao dizia nada. Silencio, que e exatamente o defeito que aquele aviso
+    // foi criado para nao deixar acontecer.
+    //
+    // Fileira que a pessoa DESLIGOU nao conta: ela ja saiu no laco acima, e
+    // anunciar como "cabe mais uma" o que ela mandou embora seria ruido.
+    cortadasPeloLimite = (w > lim) ? w - lim : 0;
     if (w > lim) w = lim;
     memcpy(fileiras, arranjo, sizeof(Fileira) * (size_t)w);
     destino = w;
@@ -2541,7 +2558,7 @@ void home_desenhar(Uint32 agora) {
   //
   // O texto diz O CAMINHO e nao so o fato. "Ha mais catalogos" sem dizer onde
   // mudar seria informar e nao resolver.
-  { int fora = desc_catalogos_fora();
+  { int fora = desc_catalogos_fora() + cortadasPeloLimite;
     if (fora > 0 && nFileiras > 0) {
       char aviso[160];
       snprintf(aviso, sizeof aviso,

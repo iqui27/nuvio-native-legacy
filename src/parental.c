@@ -67,10 +67,26 @@ static const char *dominante(const char *ini, const char *fim) {
   return rotuloNivel(melhor);
 }
 
+// O FIO ATENDE O ULTIMO PEDIDO, e nao so o primeiro.
+//
+// Era: `parental_pedir` guardava o id novo em `idPedido` e, se ja houvesse um
+// fio no ar, VOLTAVA SEM FAZER NADA. O fio no ar estava buscando o id ANTIGO e,
+// no fim, so publica se `id == idPedido` — que agora nao bate mais. Ou seja: o
+// pedido novo era registrado e nunca atendido, e o resultado do antigo era
+// descartado. Ninguem retentava.
+//
+// Na tela isso e o relato do rawldon (#31): "sometimes the badges appear
+// correctly, but most of the time they are missing". Abrir um titulo enquanto
+// a consulta do anterior ainda estava em voo — que e o caso comum, porque a
+// consulta leva ate 8 s — deixava aquele titulo sem selo para sempre.
+//
+// O conserto e o mesmo padrao de desc_episodios/desc_episodios_pendente: em vez
+// de desistir, o fio olha de novo antes de morrer e recomeca se o alvo mudou.
 static void *buscar(void *arg) {
   char url[160], id[16];
   char *corpo;
   (void)arg;
+  for (;;) {
   pthread_mutex_lock(&trava);
   snprintf(id, sizeof id, "%s", idEmCurso);
   pthread_mutex_unlock(&trava);
@@ -110,10 +126,18 @@ static void *buscar(void *arg) {
     pthread_mutex_unlock(&trava);
     printf("[parental] %s -> %d linhas\n", id, n); fflush(stdout);
   }
+  // O ALVO MUDOU ENQUANTO EU BUSCAVA? Entao ha um pedido pendente que ninguem
+  // mais vai atender: `parental_pedir` nao cria fio quando ja existe um.
   pthread_mutex_lock(&trava);
+  if (strcmp(idPedido, id)) {
+    snprintf(idEmCurso, sizeof idEmCurso, "%s", idPedido);
+    pthread_mutex_unlock(&trava);
+    continue;
+  }
   fioVivo = 0;
   pthread_mutex_unlock(&trava);
   return NULL;
+  }
 }
 
 void parental_pedir(const char *imdb) {

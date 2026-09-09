@@ -150,6 +150,9 @@
 // ler quatro linhas curtas sem virar mobilia — depois disso ela nao volta nesta
 // reproducao.
 #define PG_SEG_TOTAL       7.0f
+// Depois disto o aviso nao entra mais: e um aviso do comeco do filme, e a
+// resposta pode chegar tarde. Ver a nota no desenho.
+#define PG_LIMITE_SEG     45.0f
 #define PG_SEG_SAIDA       0.8f
 #define PG_LISTA_PADX     20.0f
 #define PG_LINHA_H        36.0f
@@ -191,6 +194,8 @@ static int trechoPulavel(double *fim);
 // outra ha a busca de fonte, que pode levar segundos). Zero enquanto nao houve.
 // A guia parental se apoia nisto para aparecer UMA vez, no comeco, e sumir.
 static Uint32 inicioImagem = 0;
+// Quando os selos do guia parental entraram na tela. Ver a nota no desenho.
+static Uint32 pgDesde;
 // AS DUAS VARIAVEIS DE MIDIA. Todo o resto do arquivo le so daqui — quando o
 // video real entrar, sao elas que passam a ser preenchidas pelo decodificador.
 static int   comVideo = 0;
@@ -628,6 +633,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   scrubbing = 0; scrubPassos = 0; scrubTocava = 0;
   encolhe = 1.0f; encolheAlvo = 0.0f; encolheT = 0.0f; encolheEm = 0;
   posplay_fechar();   // titulo novo, painel do anterior nao vale mais
+  pgDesde = 0;
   // Guia parental do titulo: pedido AQUI e nao no desenho, para que a resposta
   // ja tenha chegado quando os controles aparecerem pela primeira vez.
   { const CatItem *ci = cat_item(idx);
@@ -1654,8 +1660,26 @@ void player_desenhar(Uint32 agora) {
   // disso nao volta nesta reproducao.
   {
     int np = parental_n();
+    // A JANELA COMECA QUANDO A RESPOSTA CHEGA, e nao no primeiro quadro.
+    //
+    // Era `tg < PG_SEG_TOTAL`, com tg contado do primeiro quadro: sete
+    // segundos. A consulta a api.tiffara.com tem timeout de OITO. Numa rede
+    // comum ela chega depois de a janela ter fechado, e os selos nunca
+    // aparecem — sem erro, sem nada na tela. E a metade lenta do relato do
+    // rawldon (#31): "sometimes the badges appear correctly, but most of the
+    // time they are missing". A outra metade era o pedido descartado quando
+    // outro estava em voo (ver parental.c).
+    //
+    // O teto de PG_LIMITE_SEG segura a intencao original: isto e um aviso do
+    // COMECO do filme. Se a resposta demorar mais do que isso, quem esta
+    // assistindo ja passou do ponto em que um aviso faz sentido, e ele nao
+    // entra mais.
     float tg = inicioImagem ? (float)(agora - inicioImagem) / 1000.0f : -1.0f;
-    if (np > 0 && tg >= 0.0f && tg < PG_SEG_TOTAL) {
+    if (np > 0 && tg >= 0.0f && !pgDesde && tg < PG_LIMITE_SEG) pgDesde = agora;
+    if (np < 1) pgDesde = 0;
+    if (np > 0 && pgDesde &&
+        (float)(agora - pgDesde) / 1000.0f < PG_SEG_TOTAL) {
+      tg = (float)(agora - pgDesde) / 1000.0f;
       float saida = anim_clamp((PG_SEG_TOTAL - tg) / PG_SEG_SAIDA, 0.0f, 1.0f);
       float lin = PG_LINHA_H, gap = PG_LINHA_GAP;
       float alt = np * lin + (np - 1) * gap;
