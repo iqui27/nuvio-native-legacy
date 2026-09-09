@@ -228,6 +228,27 @@ void sintro_desenhar(Uint32 agora) {
         196, 200, 210, x, y, SI_INT, 30.0f, a * 0.95f, 3);
   y += 30.0f;
 
+  // QUAL TECLA REABRE A LISTA — e ela NAO E A MESMA nos dois aparelhos.
+  //
+  // Sem esta linha o explicador ensinava a guardar e nao a encontrar: a pessoa
+  // salvava e ficava sem saber como ver o que salvou. Foi o dono quem notou.
+  //
+  // Na LG e a AZUL, que e um botao de verdade no controle. No Tizen nao pode
+  // ser: os One Remote novos nao tem fileira de cores e chegar na azul exige
+  // abrir a barra de cores pelo botao de numeros. La e CANAL +, que e fisico em
+  // todo controle Samsung (ver tools/tizen-shell.html).
+  //
+  // Escolha em tempo de COMPILACAO porque cada build serve um alvo so — decidir
+  // em execucao exigiria perguntar ao aparelho algo que ele nao sabe responder.
+  y += txt_bloco(TXT_CAPTION,
+#ifdef __EMSCRIPTEN__
+        "Depois, o botão CANAL + do controle abre sua lista a qualquer momento.",
+#else
+        "Depois, o botão AZUL do controle abre sua lista a qualquer momento.",
+#endif
+        196, 200, 210, x, y, SI_INT, 30.0f, a * 0.95f, 2);
+  y += 30.0f;
+
   // O bloco de cartazes SO EXISTE se houver cartaz. Ver juntarMinis.
   if (nMinis > 0) {
     float px = x, passo = (SI_INT - SI_MINI_W) / (float)(SI_N_MINI - 1);

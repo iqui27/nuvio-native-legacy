@@ -177,6 +177,8 @@
   { "De onde vem a fileira de retomada. \"Ambas\" usa a conta Nuvio e completa com o Trakt.", "Where the resume row comes from. \"Both\" uses the Nuvio account and fills in from Trakt." },
   { "De onde vem a fileira de retomada. Ambas usa a conta e completa com o Trakt.", "Where the resume row comes from. Both uses the account and fills in from Trakt." },
   { "Define a preferência de resolução. A disponibilidade depende das fontes do addon.", "Sets the resolution preference. Availability depends on the add-on's sources." },
+  { "Depois, o botão AZUL do controle abre sua lista a qualquer momento.", "The BLUE button on your remote opens your list any time after that." },
+  { "Depois, o botão CANAL + do controle abre sua lista a qualquer momento.", "The CHANNEL + button on your remote opens your list any time after that." },
   { "Desative a barra lateral moderna para escolher entre recolhida e fixa.", "Turn off the modern sidebar to choose between collapsed and pinned." },
   { "Descubra o que seus amigos estão vendo.\nUma nova recomendação pode começar aqui.", "See what your friends are watching.\nYour next pick could start here." },
   { "Desfoca a arte atrás da barra lateral moderna em vez de usar um fundo sólido.", "Blurs the artwork behind the modern sidebar instead of using a solid background." },
