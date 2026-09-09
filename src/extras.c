@@ -1,4 +1,5 @@
 #include "extras.h"
+#include "vistoep.h"
 #include "trakt.h"
 #include "rede.h"
 #include "js.h"
@@ -229,7 +230,12 @@ static void *buscar(void *arg) {
       while (p) {
         const char *f = js_fim(p);
         int t = (int)js_num(p, f, "number", -1.0);
-        if (t >= 0 && t < EX_VIS_T) {
+        // O TETO DA MATRIZ NAO PODE PODAR O MAPA. Este `if` era
+        // `t >= 0 && t < EX_VIS_T` e envolvia o laco inteiro: uma serie com
+        // 21 temporadas perdia a 21 em silencio. A matriz [20][40] continua
+        // limitada — ela e um vetor fixo —, mas vistoep guarda por chave e nao
+        // tem por que herdar o limite dela.
+        if (t >= 0) {
           const char *q = js_array(p, f, "episodes");
           while (q) {
             const char *qf = js_fim(q);
@@ -242,12 +248,26 @@ static void *buscar(void *arg) {
             if (c && c < qf) { const char *v = c + 12;
                                while (*v == ' ' || *v == ':') v++;
                                visto = (*v == 't'); }
-            if (visto && en > 0 && en < EX_VIS_E) novo[t][en] = 1;
+            if (visto && t < EX_VIS_T && en > 0 && en < EX_VIS_E) novo[t][en] = 1;
+            // O MAPA SEM TETO recebe o episodio inteiro, visto ou nao. A matriz
+            // acima so guarda o "sim" e nao distingue "nao viu" de "nao sei";
+            // vistoep distingue, e e nisso que as acoes de marcar em lote se
+            // apoiam. A matriz continua porque extras_ep_visto tem chamador no
+            // desenho, e trocar as duas coisas no mesmo passo seria demais.
+            if (en > 0) vistoep_definir(id, t, en, visto);
             q = js_prox(qf);
           }
         }
         p = js_prox(f);
       }
+      // UMA LINHA, e ela existe porque silencio nao se diagnostica. Este e o
+      // unico ponto que enche o mapa de episodios vistos; sem o log, "a marca
+      // nao aparece na lista" nao distingue resposta vazia de parser errado de
+      // teto estourado. Foi exatamente essa duvida que custou tres deploys no
+      // dia em que o mapa nasceu.
+      printf("[vistoep] %s: %d episodios no mapa (%d vistos)\n",
+             id, vistoep_conhecido(id) ? vistoep_n() : 0, vistoep_contar(id));
+      fflush(stdout);
       int pt = 0, pe = 0;
       const char *prox = strstr(corpo, "\"next_episode\"");
       if (prox && (prox = strchr(prox, ':'))) {

@@ -53,10 +53,6 @@ int  trakt_enfeitar_lote(CatItem *saida, int n);
 // `imdb` e a chave COMPOSTA que trakt_continuar montou. Devolve 0 quando nao ha
 // id conhecido — o item veio do progresso da conta, nao do Trakt.
 int trakt_playback_remover(const char *imdb);
-// Busca quais episodios DESTA serie estao vistos e alimenta o mapa de
-// vistoep.h. Devolve quantos entraram. Sob demanda, uma requisicao por serie —
-// ver a nota longa em trakt.c sobre por que /sync/watched/shows nao serve.
-int trakt_progresso_serie(const char *imdb);
 // Marca (visto=1) ou desmarca (0) um lote de episodios, numa requisicao so.
 // SINCRONO: quem chamar do fio de desenho tem de mandar para um fio proprio.
 int trakt_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd,
