@@ -231,6 +231,27 @@
     }
   } catch (e) {}
 
+  // O QUE ESTE CONTROLE TEM DE VERDADE, dito pela propria TV.
+  //
+  // Registrar uma tecla nao prova que ela EXISTE no controle da pessoa. Os
+  // controles Samsung novos (One Remote) nao tem fileira de cores: chegar na
+  // azul exige abrir a barra de cores pelo botao de numeros, e ninguem faz isso
+  // para um atalho. Escolher a tecla substituta no chute custa uma versao
+  // inteira; getSupportedKeys() responde de graca, e a linha sai no painel de
+  // log — entao quem relatar um defeito ja manda junto o que o aparelho dele
+  // aceita.
+  //
+  // So os NOMES, uma linha, no arranque. Nao muda comportamento nenhum.
+  try {
+    if (window.tizen && tizen.tvinputdevice &&
+        tizen.tvinputdevice.getSupportedKeys) {
+      var ks = tizen.tvinputdevice.getSupportedKeys() || [];
+      var nomes = [];
+      for (var i = 0; i < ks.length; i++) nomes.push(ks[i].name);
+      console.log("[tecla] a TV aceita " + ks.length + ": " + nomes.join(" "));
+    }
+  } catch (e) {}
+
   // MEDIDOR DE WORKERS. Existe porque a TV travou DE VEZ — nem a tecla
   // vermelha respondia, e o listener dela e JS no fio principal. Isso nao e
   // aborto (aborto aparece como erro no painel): e o FIO PRINCIPAL BLOQUEADO.
