@@ -66,8 +66,13 @@ typedef enum {
   // Use SO com arte de uma cor. Logo colorido (o dourado, o vermelho) vai por
   // GFX_CARD, senao vira mancha chapada.
   GFX_MARCA = 16,
-  // GFX_VEU_BAIXO — degrade PURAMENTE VERTICAL, transparente em cima e escuro
+  // GFX_VEU_BAIXO — degrade PURAMENTE VERTICAL, transparente em cima e opaco
   // na base. E o par do GFX_VEU_TOPO.
+  //
+  // A COR DA BASE E A QUE VOCE PASSA (uCor.rgb). Para escurecer, passe 0,0,0.
+  // Para APAGAR uma arte contra o fundo da pagina, passe a cor do fundo e
+  // alfa 1: convergir para preto onde a pagina e #0D0D0D deixa uma emenda reta
+  // na altura em que a arte acaba.
   //
   // O player usava GFX_VEU aqui, que escurece a base E A ESQUERDA. Aquele veu
   // foi feito para o hero da home, onde o texto fica no canto inferior

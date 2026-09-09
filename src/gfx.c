@@ -383,11 +383,18 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "}\n",
 
   // GFX_VEU_BAIXO — vertical puro, transparente em cima. Ver a nota em gfx.h.
+  //
+  // A COR VEM DE uCor.rgb e nao e mais preto cravado. Preto cravado obriga quem
+  // usa o veu para APAGAR uma arte contra o fundo da pagina a deixar uma
+  // emenda: o veu converge para (0,0,0), o fundo e #0D0D0D, e onde a arte
+  // termina fica um degrau reto de ponta a ponta da tela. Foi o que a captura
+  // da escolha de perfil mostrou. Os tres chamadores anteriores ja passavam
+  // 0,0,0, entao para eles nada muda.
   "void main(){\n"
   "  float t = clamp(vUv.y, 0.0, 1.0);\n"
   "  float g = t * t * (3.0 - 2.0 * t);\n"
   "  g = g * g;\n"
-  "  gl_FragColor = vec4(0.0, 0.0, 0.0, g * uCor.a);\n"
+  "  gl_FragColor = vec4(uCor.rgb, g * uCor.a);\n"
   "}\n",
   // GFX_SOCIAL: broad off-centre light, quiet left side for copy.
   "void main(){\n"
