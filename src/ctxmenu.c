@@ -11,6 +11,7 @@
 #include "anim.h"
 #include "ajustes.h"
 #include "progresso.h"
+#include "salvos.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -116,12 +117,15 @@ static void montar(void) {
   // Sem IMDb nao ha endpoint remoto suportado para esta acao. Nao oferecer
   // um botao que so aparentaria funcionar e inventaria estado local.
   if (ci->imdb[0]) {
+    // O MESMO VERBO DO PAINEL E DO BOTAO "+". Estava "Adicionar à biblioteca",
+    // e "Biblioteca" e o nome de uma TELA — a pessoa lia o rotulo, ia ate a
+    // tela Biblioteca e nao encontrava relacao com o "+" que tinha apertado no
+    // detalhe. Agora as tres portas da mesma acao (o "+", esta linha e o painel
+    // da tecla AZUL) usam a palavra "salvar", e todas escrevem no mesmo lugar.
     if (estadoOperacao == CTX_PENDENTE && operacao == CTX_OP_LISTA)
-      ops[nOps].rot = intencao ? "Adicionando à biblioteca..."
-                               : "Removendo da biblioteca...";
+      ops[nOps].rot = intencao ? "Salvando..." : "Removendo dos Salvos...";
     else
-      ops[nOps].rot = ci->naLista ? "Remover da biblioteca"
-                                  : "Adicionar à biblioteca";
+      ops[nOps].rot = ci->naLista ? "Remover dos Salvos" : "Salvar";
     ops[nOps].acao = OP_LISTA; nOps++;
   }
   // O web so oferece "assistido" em filme e serie — nao em canal nem evento,
@@ -212,8 +216,24 @@ static void aplicar(void) {
       operacao = CTX_OP_LISTA;
       espelhoAplicado = 0;
       estadoOperacao = CTX_PENDENTE;
-      if (!trakt_watchlist_tipo(ci->imdb, ci->tipo, intencao))
-        estadoOperacao = CTX_FALHA;
+      // LOCAL PRIMEIRO E SEMPRE. E sincrono e nao pode falhar por rede, entao
+      // acontece fora do jogo de estados abaixo; ver salvos.h para por que ele
+      // e o unico destino que sobrevive ao fechamento do app.
+      salvos_definir(ci, intencao);
+      if (ajustes_salvos_no_trakt()) {
+        if (!trakt_watchlist_tipo(ci->imdb, ci->tipo, intencao))
+          estadoOperacao = CTX_FALHA;
+      } else {
+        // SEM TRAKT NAO HA O QUE ESPERAR, e deixar CTX_PENDENTE aqui seria um
+        // modal travado para sempre: ctx_atualizar so sai da espera consultando
+        // trakt_operacao_estado, e nenhuma operacao foi aberta la. A escrita
+        // local ja terminou, entao o estado correto e "confirmada" — e e ele
+        // que faz o espelho (cat_definir_na_lista) rodar no proximo quadro.
+        estadoOperacao = CTX_CONFIRMADA;
+        espelhoAplicado = 1;
+        cat_definir_na_lista(atual, intencao);
+        desc_remontar_fileiras();
+      }
       montar();
       break;
     case OP_ASSISTIDO:

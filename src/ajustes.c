@@ -102,7 +102,7 @@ typedef enum {
   // Interface
   AJ_IDIOMA, AJ_ANIM,
   // Conta
-  AJ_PERFIL_ATIVO, AJ_SYNC, AJ_ADDONS, AJ_TRAKT, AJ_SIMKL, AJ_SAIR,
+  AJ_PERFIL_ATIVO, AJ_SYNC, AJ_ADDONS, AJ_SALVOS_DEST, AJ_TRAKT, AJ_SIMKL, AJ_SAIR,
   // Sobre
   AJ_VERSAO_I, AJ_ESPACO,
   AJ_N
@@ -130,6 +130,18 @@ static const char *V_DESCOBRIR[] = { "Mostrar na Busca", "Na barra lateral", "De
 // `homeImdbRatingsVisibility` — normalizeHomeImdbRatingsVisibility so aceita
 // SHOW_ALL e HIDE_ALL.
 static const char *V_NOTAS[]     = { "Mostrar", "Ocultar" };
+// ONDE O "+" ESCREVE ALEM DA LISTA LOCAL.
+//
+// A lista local (salvos.c) e escrita SEMPRE, nos dois valores, e isso nao e
+// esquecimento: antes dela o "+" nao guardava nada em disco, entao quem nao
+// tinha Trakt vinculado perdia tudo no primeiro ciclo de descoberta. Ver a nota
+// de abertura de salvos.h. O que esta escolha decide e se o "+" TAMBEM publica
+// na watchlist do Trakt.
+//
+// Padrao "Watchlist do Trakt" = o comportamento que o app ja tinha. Trocar o
+// padrao para a lista local faria o "+" de quem usa Trakt parar de publicar la
+// depois de uma atualizacao, sem ninguem ter pedido.
+static const char *V_SALVOS[]    = { "Lista do Nuvio", "Watchlist do Trakt" };
 // Preenchido em rotulosDeIdioma(), no arranque: os nomes saem de linguas.c em
 // vez de serem uma segunda lista escrita a mao aqui. LING_MAX_OPC e folga: se
 // linguas.c crescer, o excedente simplesmente nao aparece — melhor que ler
@@ -244,6 +256,7 @@ static const Opcao OPCOES[AJ_N] = {
   LER("Perfil"),
   LER("Sincronização"),
   ACAO("Addons"),
+  ESC("Onde o + salva",             V_SALVOS, 2),
   ACAO("Trakt"),
   ACAO("Simkl"),
   ACAO("Sair da conta"),
@@ -289,7 +302,10 @@ static const char *CHAVE[] = {
   "posterCardWidthDp", "posterCardCornerRadiusDp",
   "idioma", "animacoes",
   // Conta: sao linhas locais, nao vem nem vao para o perfil na nuvem.
-  "-perfil", "-sync", "-addons", "-trakt", "-simkl", "-sair",
+    // LOCAL como cwFonteLocal, e por isso SEM o "-": o app oficial nao tem esta
+  // escolha, entao nao ha campo dela no blob da conta — mas ela precisa
+  // sobreviver ao fechamento, e gravar() pula toda chave iniciada por "-".
+  "-perfil", "-sync", "-addons", "salvosDestino", "-trakt", "-simkl", "-sair",
   "-versao", "-espaco",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
@@ -344,7 +360,7 @@ static const struct {
   { "Continuar assistindo", "Retomar",    "avancar",      AJ_CW_LIGADO,            8 },
   { "Página de detalhes",   "Detalhes",   "episodios",    AJ_DET_BLUR_NAO_VISTOS,  4 },
   { "Pôsteres e cards",     "Cartazes",   "aspecto",      AJ_EXPANDIR,            14 },
-  { "Interface e conta",    "Conta",      "menu_profile", AJ_IDIOMA,              10 },
+  { "Interface e conta",    "Conta",      "menu_profile", AJ_IDIOMA,              11 },
 };
 #define AJ_N_SECOES (int)(sizeof SECOES / sizeof *SECOES)
 
@@ -397,6 +413,9 @@ static float alturaSub(int op) { return subsecaoDe(op) ? AJ_SUB_CABEC : 0.0f; }
 // Definidas mais abaixo, junto do desenho das linhas; declaradas aqui porque a
 // leitura do arquivo e o tratamento de tecla vem antes no arquivo.
 static int  nValores(int op);
+// Definida junto da leitura do arquivo, bem abaixo; declarada aqui porque o
+// setter de "onde o + salva" grava na hora e vem antes dela.
+static void gravar(void);
 static void aplicarIdioma(int op);
 // Segundos restantes antes de refazer a busca de legendas. Declarada aqui, e
 // nao junto de aplicarIdioma, porque ajustes_atualizar a le e vem ANTES dela no
@@ -462,6 +481,18 @@ static int valor[AJ_N] = {
   // pior do que ler em ingles sem ter escolhido. Quem prefere portugues troca
   // em Ajustes -> Interface, e a escolha fica gravada.
   1, 0,             /* idioma, animacoes */
+  // O COMENTARIO ANTIGO AQUI ESTAVA ERRADO, e o erro so nao machucou por sorte.
+  // Ele dizia `0, 0, /* versao, espaco */` logo depois do idioma, mas esta
+  // lista e POSICIONAL: entre AJ_ANIM e AJ_VERSAO_I existem SETE opcoes de
+  // conta (perfil, sync, addons, onde o + salva, trakt, simkl, sair). Aqueles
+  // dois zeros caiam em AJ_PERFIL_ATIVO e AJ_SYNC, nao em versao e espaco — e
+  // versao e espaco ficavam com o zero da inicializacao parcial, que por acaso
+  // e o valor certo para uma linha de leitura. A primeira opcao com padrao
+  // DIFERENTE de zero nesta faixa (a de agora) teria caido no lugar errado.
+  // Explicitados um a um, e nao contados de cabeca.
+  0, 0, 0,          /* perfil, sincronizacao, addons: linhas de leitura/acao */
+  1,                /* onde o + salva: watchlist do Trakt (ver V_SALVOS) */
+  0, 0, 0,          /* trakt, simkl, sair: acoes */
   0, 0,             /* versao, espaco */
 };
 
@@ -528,6 +559,16 @@ int ajustes_ocultar_nao_lancados(void){ return lig(AJ_OCULTAR_NLANC); }
 // quando a chave EXISTE la: ausente nao e `false`, e "mantem o que esta na TV".
 void ajustes_definir_ocultar_nao_lancados(int ligado) {
   valor[AJ_OCULTAR_NLANC] = ligado ? 0 : 1;
+}
+// 1 = o "+" tambem publica na watchlist do Trakt. A lista LOCAL e escrita nos
+// dois casos; ver a nota de V_SALVOS e a de abertura de salvos.h.
+int ajustes_salvos_no_trakt(void)     { return valor[AJ_SALVOS_DEST] == 1; }
+// Setter para o explicador de primeira vez (salvosintro.c), que faz esta
+// pergunta antes de a pessoa chegar em Ajustes. Grava na hora: quem respondeu e
+// desligou a TV nao deve ser perguntado de novo.
+void ajustes_definir_salvos_no_trakt(int noTrakt) {
+  valor[AJ_SALVOS_DEST] = noTrakt ? 1 : 0;
+  gravar();
 }
 int ajustes_data_completa(void)       { return lig(AJ_DET_DATA_CHEIA); }
 int ajustes_notas_home(void)          { return valor[AJ_NOTAS_HOME] == 0; }
@@ -1058,6 +1099,8 @@ static const char *efeitoOpcao(int op) {
       return "É o ajuste mais caro desta tela para a TV desenhar. Desligue se a rolagem engasgar.";
     case AJ_SAIR:
       return "Não pede confirmação: OK sai na hora. Para voltar é preciso entrar de novo pelo QR.";
+    case AJ_SALVOS_DEST:
+      return "A lista desta TV recebe o título nos dois casos. Isto decide se ele também vai para o Trakt.";
     case AJ_ADDONS: case AJ_TRAKT: case AJ_SIMKL:
       return "OK abre. As setas laterais não fazem nada nesta linha.";
     default: return NULL;

@@ -14,7 +14,13 @@ cc -Wall -Wextra -Werror -fsyntax-only \
 # valor tem de chegar ao espelho local quando a resposta confirmar.
 linha_intencao=$(rg -n 'intencao = !ci->naLista;' src/ctxmenu.c | cut -d: -f1)
 linha_post=$(rg -n 'trakt_watchlist_tipo\(ci->imdb, ci->tipo, intencao\)' src/ctxmenu.c | cut -d: -f1)
-linha_espelho=$(rg -n 'cat_definir_na_lista\(atual, intencao\)' src/ctxmenu.c | cut -d: -f1)
+# AGORA HA DOIS ESPELHOS, e por isso o `head -1`. Com "Onde o + salva" na
+# Lista do Nuvio nao existe POST para esperar: a escrita local ja terminou, o
+# estado vai direto para CONFIRMADA e o espelho e aplicado ali mesmo. O outro
+# espelho continua sendo o da resposta 2xx do Trakt, em ctx_atualizar. O que o
+# teste cobra e a ORDEM — intencao capturada antes do POST, espelho depois —, e
+# ela vale para os dois; o primeiro e o mais restritivo dos dois.
+linha_espelho=$(rg -n 'cat_definir_na_lista\(atual, intencao\)' src/ctxmenu.c | cut -d: -f1 | head -1)
 [ "$linha_intencao" -lt "$linha_post" ]
 [ "$linha_post" -lt "$linha_espelho" ]
 
