@@ -43,7 +43,11 @@
 #define SI_H        1032.0f
 #define SI_PAD        44.0f
 #define SI_INT      (SI_W - SI_PAD * 2.0f)
-#define SI_OPCAO_H   104.0f
+// 112 e nao 104: com 104 a descricao de DUAS linhas terminava exatamente na
+// borda inferior da pilula (titulo em y+14, descricao em y+52, duas linhas de
+// 26 = y+104). Na captura da TV os descendentes da segunda linha encostavam no
+// limite. A opcao de uma linha nao mostrava o problema — e por isso ele passou.
+#define SI_OPCAO_H   112.0f
 #define SI_MINI_W    100.0f
 #define SI_MINI_H    150.0f
 #define SI_N_MINI      6
@@ -55,7 +59,13 @@ static float entrada, animFoco[2];
 // Cartazes de quem ja esta salvo, resolvidos UMA vez na abertura. Resolver por
 // quadro voltaria ao catalogo 60 vezes por segundo para desenhar seis imagens
 // que nao mudam enquanto o cartao esta em pe.
-static const char *minis[SI_N_MINI];
+//
+// A URL E COPIADA, e nao apontada para dentro do CatItem. Ver a nota longa em
+// salvospainel.c: o vetor de itens do catalogo troca de bloco a cada
+// republicacao e o bloco antigo e liberado. Guardar o ponteiro aqui derrubou o
+// app na TV poucos segundos depois do arranque — e so na TV, porque no Mac sem
+// conta o catalogo nunca era republicado.
+static char minis[SI_N_MINI][512];
 static int nMinis;
 
 int sintro_aberto(void) { return aberto; }
@@ -70,14 +80,15 @@ static void juntarMinis(void) {
   n = salvos_n();
   for (i = 0; i < n && nMinis < SI_N_MINI; i++) {
     const SalvoItem *s = salvos_item(i);
-    if (s && s->poster[0]) minis[nMinis++] = s->poster;
+    if (s && s->poster[0])
+      snprintf(minis[nMinis++], sizeof minis[0], "%s", s->poster);
   }
   n = cat_n();
   for (i = 0; i < n && nMinis < SI_N_MINI; i++) {
     const CatItem *c = cat_item(i);
     if (!c || !c->naLista || !c->poster[0]) continue;
     if (c->imdb[0] && salvos_tem(c->imdb)) continue;   // ja entrou acima
-    minis[nMinis++] = c->poster;
+    snprintf(minis[nMinis++], sizeof minis[0], "%s", c->poster);
   }
 }
 
@@ -149,14 +160,19 @@ void sintro_atualizar(float dt, Uint32 agora) {
 static void desenhaFigura(float cx, float y, float a) {
   static const float lum[3] = { 0.15f, 0.20f, 0.27f };
   int i;
+  // O leque vai de cx-135 a cx+105 e o disco de cx+67 a cx+135: o conjunto fica
+  // simetrico em cx, e o disco ENCOSTA no cartao da frente. Na primeira versao
+  // ele comecava em cx+96, depois da borda do ultimo cartao — na captura da TV
+  // o "+" aparecia solto no ar, sem relacao visivel com a pilha, e o conjunto
+  // inteiro puxava para a direita.
   for (i = 0; i < 3; i++) {
     float w = 92.0f, h = 132.0f + (float)i * 7.0f;
-    GfxRect c = { cx - 150.0f + (float)i * 74.0f, y + (float)(2 - i) * 7.0f, w, h };
+    GfxRect c = { cx - 135.0f + (float)i * 74.0f, y + (float)(2 - i) * 7.0f, w, h };
     gfx_cor(c, 0.09f, lum[i], lum[i] + 0.004f, lum[i] + 0.014f, a);
   }
-  { GfxRect d = { cx + 96.0f, y + 78.0f, 72.0f, 72.0f };
+  { GfxRect d = { cx + 67.0f, y + 90.0f, 68.0f, 68.0f };
     gfx_cor(d, 0.5f, 0.95f, 0.96f, 0.98f, a);
-    gfx_icone((GfxRect){ d.x + 20.0f, d.y + 20.0f, 32.0f, 32.0f },
+    gfx_icone((GfxRect){ d.x + 19.0f, d.y + 19.0f, 30.0f, 30.0f },
               "mais", 0.07f, 0.07f, 0.09f, a); }
 }
 
@@ -176,8 +192,8 @@ static void desenhaOpcao(float x, float y, float f, int vigor,
     gfx_rect(r, 0, GFX_ANEL, 0, 1.5f / r.w, 0, 0.16f, 0.55f, 0.56f, 0.60f, a);
   { TxtLinha t = txt_linha_corta(TXT_CALLOUT, tit, 245, 246, 250, 255, SI_INT - 44.0f);
     txt_desenhar_alpha(t, x + 22.0f, y + 14.0f, a); }
-  txt_bloco(TXT_CAPTION, desc, 166, 170, 180, x + 22.0f, y + 52.0f,
-            SI_INT - 44.0f, 26.0f, a * 0.95f, 2);
+  txt_bloco(TXT_CAPTION, desc, 166, 170, 180, x + 22.0f, y + 50.0f,
+            SI_INT - 44.0f, 25.0f, a * 0.95f, 2);
 }
 
 void sintro_desenhar(Uint32 agora) {

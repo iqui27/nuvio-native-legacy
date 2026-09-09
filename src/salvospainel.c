@@ -57,11 +57,27 @@
 #define SP_MAX 200
 
 // Linha ja resolvida: o desenho nao volta ao catalogo nem a lista local por
-// quadro. Os ponteiros de texto apontam para memoria estavel — `titulo` e
-// `poster` vem ou do vetor estatico de salvos.c ou do CatItem, e os dois vivem
-// enquanto o app viver.
+// quadro.
+//
+// OS TEXTOS SAO COPIADOS, E NAO APONTADOS — e isto derrubou o app na TV.
+//
+// A primeira versao guardava `const char *titulo` apontando para dentro do
+// CatItem, com um comentario afirmando que a memoria era estavel. Nao e: o
+// vetor `itens` de catalogo.c e do heap e TROCA DE BLOCO a cada republicacao
+// (cat_definir_tudo/cat_acrescentar_lote fazem malloc do bloco novo e liberam o
+// antigo). O proprio catalogo.c documenta isso na linha da troca e segura UM
+// bloco velho em `lixo` justamente porque alguem ja leu memoria liberada ali —
+// mas uma folga de um bloco nao salva quem guarda o ponteiro por varios ciclos.
+//
+// Na TV o resultado foi core dump de 218 MB alguns segundos depois do arranque,
+// quando o segundo ciclo de sync republicou o catalogo (o log parava logo apos
+// "[contalib] biblioteca da conta aplicada"). No Mac, sem conta, o catalogo
+// nunca era republicado e nada acontecia — o defeito so existia com dados reais.
+//
+// Copiar custa ~150 KB estaticos para 200 linhas. E o preco de nao depender do
+// tempo de vida de um bloco que outro modulo troca sem avisar.
 typedef struct {
-  const char *titulo, *poster, *meta;
+  char  titulo[160], poster[512], meta[96];
   char  id[24];
   int   serie;
   int   nota;
@@ -91,6 +107,14 @@ static int ehSerie(const char *tipo, int nTemporadas) {
   return (tipo && !strcmp(tipo, "series")) || nTemporadas > 0;
 }
 
+// Retrato barato do catalogo, para detectar troca de bloco com a mesma
+// contagem. Um strcmp de 16 bytes por quadro com o painel aberto.
+static char marcaPrimeiro[24];
+static int catTrocou(void) {
+  const CatItem *c = cat_n() > 0 ? cat_item(0) : NULL;
+  return c ? strcmp(c->imdb, marcaPrimeiro) != 0 : 0;
+}
+
 static int jaTem(const char *id) {
   int i;
   for (i = 0; i < nLinhas; i++) if (!strcmp(linhas[i].id, id)) return 1;
@@ -115,9 +139,9 @@ static void reconstruir(void) {
     l = &linhas[nLinhas++];
     memset(l, 0, sizeof *l);
     snprintf(l->id, sizeof l->id, "%s", s->id);
-    l->titulo = s->titulo;
-    l->poster = s->poster[0] ? s->poster : NULL;
-    l->meta   = s->meta;
+    snprintf(l->titulo, sizeof l->titulo, "%s", s->titulo);
+    snprintf(l->poster, sizeof l->poster, "%s", s->poster);
+    snprintf(l->meta, sizeof l->meta, "%s", s->meta);
     l->nota   = s->nota;
     l->quandoS = s->quandoS;
     l->serie  = ehSerie(s->tipo, 0);
@@ -133,8 +157,8 @@ static void reconstruir(void) {
         l->episodio  = c->episodio;
         l->restanteMin = c->restanteMin;
         if (c->nota > 0) l->nota = c->nota;
-        if (c->poster[0]) l->poster = c->poster;
-        if (c->meta[0])   l->meta = c->meta;
+        if (c->poster[0]) snprintf(l->poster, sizeof l->poster, "%s", c->poster);
+        if (c->meta[0])   snprintf(l->meta, sizeof l->meta, "%s", c->meta);
         if (ehSerie(c->tipo, c->nTemporadas)) l->serie = 1;
       }
     }
@@ -147,9 +171,9 @@ static void reconstruir(void) {
     l = &linhas[nLinhas++];
     memset(l, 0, sizeof *l);
     snprintf(l->id, sizeof l->id, "%s", c->imdb);
-    l->titulo = c->titulo;
-    l->poster = c->poster[0] ? c->poster : NULL;
-    l->meta   = c->meta;
+    snprintf(l->titulo, sizeof l->titulo, "%s", c->titulo);
+    snprintf(l->poster, sizeof l->poster, "%s", c->poster);
+    snprintf(l->meta, sizeof l->meta, "%s", c->meta);
     l->nota   = c->nota;
     l->serie  = ehSerie(c->tipo, c->nTemporadas);
     l->progresso = c->progresso;
@@ -170,6 +194,8 @@ static void reconstruir(void) {
   }
   nCont = escrita;
   marcaCatN = cat_n();
+  { const CatItem *c = cat_n() > 0 ? cat_item(0) : NULL;
+    snprintf(marcaPrimeiro, sizeof marcaPrimeiro, "%s", c ? c->imdb : ""); }
   if (foco >= nLinhas) foco = nLinhas > 0 ? nLinhas - 1 : 0;
 }
 
@@ -231,7 +257,13 @@ void spainel_atualizar(float dt, Uint32 agora) {
   // isso varias vezes por ciclo). Sem esta reconstrucao a lista continuaria a
   // do instante da abertura, com ponteiros de titulo apontando para CatItem que
   // ja mudou de conteudo — texto de outro filme no card certo.
-  if (aberto && cat_n() != marcaCatN) reconstruir();
+  // CONTAGEM IGUAL NAO PROVA CATALOGO IGUAL — a descoberta republica o mesmo
+  // numero de titulos com outro conteudo. Reconstruir por contagem deixava o
+  // painel com o texto do catalogo anterior; agora que os textos sao COPIADOS
+  // isso nao e mais leitura de memoria liberada, mas continua sendo o nome
+  // errado no card certo. A marca extra e a mesma de contalib_reconciliar: o
+  // primeiro item do catalogo raramente sobrevive identico a uma troca de bloco.
+  if (aberto && (cat_n() != marcaCatN || catTrocou())) reconstruir();
 
   entrada = anim_rampa(entrada, aberto ? 1.0f : 0.0f, dt,
                        aberto ? SP_ABRIR_MS : SP_FECHAR_MS);
@@ -276,10 +308,10 @@ static void quandoTexto(char *dst, size_t tam, long long quandoS) {
 // como chave. E a mesma correcao que a biblioteca ja levou (issue #3).
 static void metaTexto(char *dst, size_t tam, const SPLinha *l) {
   const char *tipo = i18n(l->serie ? "Série" : "Filme");
-  if (l->meta && l->meta[0] && l->nota > 0)
+  if (l->meta[0] && l->nota > 0)
     snprintf(dst, tam, "%s · %s · \xe2\x98\x85 %d,%d", tipo, l->meta,
              l->nota / 10, l->nota % 10);
-  else if (l->meta && l->meta[0])
+  else if (l->meta[0])
     snprintf(dst, tam, "%s · %s", tipo, l->meta);
   else if (l->nota > 0)
     snprintf(dst, tam, "%s · \xe2\x98\x85 %d,%d", tipo, l->nota / 10, l->nota % 10);
@@ -309,7 +341,7 @@ static void desenhaLinha(int i, float dx, float y, float a) {
              0.96f, 0.96f, 0.98f, f * a);
   }
 
-  { GLuint tex = l->poster ? tex_obter(l->poster) : 0;
+  { GLuint tex = l->poster[0] ? tex_obter(l->poster) : 0;
     if (tex) {
       gfx_tex_aspect_atual = tex_aspecto(l->poster);
       gfx_rect(poster, tex, GFX_CARD, 0.0f, 0.0f, 0.0f, 0.08f, 0, 0, 0, a);
@@ -321,7 +353,7 @@ static void desenhaLinha(int i, float dx, float y, float a) {
               NV_COR_ESQUELETO_B, a);
     } }
 
-  { TxtLinha t = txt_linha_corta(TXT_CALLOUT, l->titulo ? l->titulo : "",
+  { TxtLinha t = txt_linha_corta(TXT_CALLOUT, l->titulo,
                                  245, 246, 250, 255, SP_TEXTO_W);
     txt_desenhar_alpha(t, tx, y + 4.0f, a); }
   metaTexto(buf, sizeof buf, l);
