@@ -86,9 +86,20 @@ void col_despejar_fontes(int max) {
     resolverBases(&folders[i]);
     for (s2 = 0; s2 < folders[i].nSources && n < max; s2++, n++) {
       const ColSource *v = &folders[i].sources[s2];
-      printf("[col]   fonte[%s/%s]: base=%s tipo=%s id=%s\n",
+      // O addonId ENTRA no despejo, e ele e o campo que decide.
+      //
+      // Uma fonte sem base nao esta "meio pronta": ela quer um addon que o app
+      // nao soube apontar. Sem o id nao da para dizer se o addon nao esta
+      // instalado, se o manifesto dele falhou, ou se o id mudou dos dois lados
+      // — tres causas com o mesmo "fontes-sem-base>0". Um relator do #18 mandou
+      // colecoes=137 e fontes-sem-base=360: sem esta linha nao havia como saber
+      // QUAIS 360.
+      printf("[col]   fonte[%s/%s]: addon=%s base=%s tipo=%s id=%s\n",
              folders[i].group, folders[i].title,
-             rede_url_publica(v->base, seg, sizeof seg), v->type, v->catId);
+             v->addonId[0] ? v->addonId : "(sem id)",
+             v->base[0] ? rede_url_publica(v->base, seg, sizeof seg)
+                        : "(NAO RESOLVIDA)",
+             v->type, v->catId);
     }
   }
 }

@@ -5,7 +5,10 @@
 #   tizen-clock                    -> depende do relogio do alvo
 # tests/home.sh falha de proposito em nFileiras == 17, aguardando decisao do
 # dono; ela aparece na lista como FALHA CONHECIDA e nao invalida a rodada.
-cd "$(dirname "$0")"
+# ".." porque este script mora em tools/, e a suite e relativa a RAIZ do
+# repositorio. Ele nasceu na raiz e o `cd` de la ficou para tras na mudanca:
+# o sintoma era `tests/*.sh: No such file or directory`.
+cd "$(dirname "$0")/.."
 falhou=0
 for f in tests/*.sh; do
   n=$(basename "$f")
