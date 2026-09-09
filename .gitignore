@@ -43,3 +43,4 @@ build/
 # Artefato do interpretador, gerado toda vez que a varredura roda.
 __pycache__/
 *.pyc
+appinfo.json.stamped  # carimbo de build do tools/arm.sh, nao e fonte

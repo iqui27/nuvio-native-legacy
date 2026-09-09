@@ -95,7 +95,22 @@ typedef enum {
   // contorno seja sempre concentrico, em vez de ser pintado sobre a foto.
   GFX_DISCO = 21,
   GFX_EDITORIAL = 22, // unmodified cinematic art, edge fade only; caller fits aspect
-  GFX_NMODOS = 23
+  // GFX_VEU_CARD — o veu do card de episodio, com a rampa AVALIADA POR PIXEL e
+  // respeitando os cantos arredondados.
+  //
+  // Existia como 14 retangulos empilhados, um por degrau da rampa. Numa TV de
+  // 55" isso e visivel: o dono mandou a foto do card com as faixas contadas a
+  // olho, "da pra ver a graduacao do degrade". Nao adianta subir o numero de
+  // degraus — o olho enxerga a SEGUNDA derivada, e a emenda entre faixas
+  // continua aparecendo (e a mesma razao por que GFX_VEU_BAIXO eleva o
+  // smoothstep ao quadrado). Cada faixa ainda era um quad de largura inteira
+  // com SDF, entao eram 14 passadas de preenchimento por card.
+  //
+  // A rampa e a MESMA de antes, a do `linear-gradient` do app web: alfa 0.06 no
+  // topo, 0.18 a 22%, 0.62 a 52%, 0.86 a 82% e 0.95 na base — so que agora
+  // interpolada no fragmento.
+  GFX_VEU_CARD = 23,
+  GFX_NMODOS = 24
 } GfxModo;
 
 typedef struct {

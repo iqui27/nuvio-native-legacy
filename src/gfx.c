@@ -470,6 +470,22 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  edge*=1.0-smoothstep(0.84,1.0,vUv.y);\n"
   "  gl_FragColor=vec4(c.rgb,c.a*uCor.a*edge);\n"
   "}\n",
+
+  // GFX_VEU_CARD — a rampa de cinco paradas do card de episodio, por pixel.
+  //
+  // Escrita como tres mix() encadeados em vez de um laco: GLSL ES 1.00 nao
+  // garante laco com limite variavel, e tres mix compilam para o mesmo punhado
+  // de instrucoes que o laco geraria.
+  "void main(){\n"
+  "  float m = smoothstep(0.006,-0.006, sdf(vUv, uRaio, uAspect));\n"
+  "  if (m <= 0.001) discard;\n"
+  "  float t = clamp(vUv.y, 0.0, 1.0);\n"
+  "  float g = mix(0.06, 0.18, smoothstep(0.00, 0.22, t));\n"
+  "  g = mix(g,   0.62, smoothstep(0.22, 0.52, t));\n"
+  "  g = mix(g,   0.86, smoothstep(0.52, 0.82, t));\n"
+  "  g = mix(g,   0.95, smoothstep(0.82, 1.00, t));\n"
+  "  gl_FragColor = vec4(uCor.rgb, uCor.a * g * m);\n"
+  "}\n",
 };
 
 // Cada corpo declara o que usa; montar so o necessario mantem o shader enxuto.
@@ -485,7 +501,8 @@ static const struct { int sdf, cover; } PRECISA[GFX_NMODOS] = {
   {0,1},   /* GFX_AVATAR */
   {0,0},   /* GFX_RETRATO */
   {0,0},   /* GFX_DISCO */
-  {0,0}    /* GFX_EDITORIAL */
+  {0,0},   /* GFX_EDITORIAL */
+  {1,0}    /* GFX_VEU_CARD — precisa do SDF: o veu segue os cantos do card */
 };
 
 static GLuint compila(GLenum tipo, const char *src) {

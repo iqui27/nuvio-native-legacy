@@ -27,6 +27,7 @@ static int veioDoCache;
 // Garante espaco para `quero` itens. Devolve 0 se nao deu (e o chamador segue
 // com o que ja tinha, que e melhor que perder tudo).
 static void garantirFaixas(int quantos);
+static void zerarFaixas(int quantos);
 
 static int garantirEspaco(int quero) {
   CatItem *novo;
@@ -52,6 +53,10 @@ static CatEp eps[CAT_EP_MAX];
 // Faixas de episodio por titulo, do mesmo tamanho do vetor de itens — que
 // agora cresce, entao estes tambem.
 static int  *epIni, *epQtd, nEps;
+// SOBE A CADA TROCA DO CATALOGO INTEIRO. Quem guarda um indice (a pagina de
+// detalhe guarda) precisa saber que ele deixou de valer — e, no caso dos
+// episodios, que a faixa dele foi ZERADA junto e ninguem vai repedir sozinho.
+static unsigned catRevisao;
 
 // O progresso de reproducao e uma posicao, nao uma prova de que o titulo foi
 // marcado como assistido. O historico do Trakt fica separado, por identidade
@@ -124,6 +129,24 @@ const char *cat_tipo_por_imdb(const char *imdb) {
   return (imdb && strchr(imdb, ':')) ? "series" : "movie";
 }
 
+// Quantas faixas ja existem. Sem este numero nao da para zerar SO a cauda nova,
+// e era por nao existir que a funcao abaixo zerava tudo.
+static int nFaixas;
+
+// CRESCER O VETOR NAO PODE APAGAR OS EPISODIOS DE QUEM JA ESTAVA NELE.
+//
+// Esta funcao fazia memset no vetor INTEIRO, e e chamada por cat_acrescentar e
+// pelo append em lote — dois caminhos que so ADICIONAM ao fim e NAO mexem no
+// indice de ninguem. O efeito, medido na C9: a pagina de detalhe de "Os
+// Aspones" publicava os 7 episodios aos 13,8 s (`[desc] ... 7 episodios
+// publicados`, `[t] episodios na tela`), o proximo titulo que a descoberta
+// acrescentava zerava epQtd de todo mundo, e a secao de episodios sumia da
+// pagina — com o D-pad pulando de "Temporadas" direto para as abas, porque
+// secao com zero colunas e intransponivel (focus.c). O dono via a pagina de uma
+// serie sem lugar nenhum onde ver os episodios.
+//
+// Quem PRECISA invalidar tudo e cat_definir_tudo, onde os indices realmente
+// mudam — e la a chamada e explicita, logo abaixo de `nEps = 0`.
 static void garantirFaixas(int quantos) {
   int *a, *b;
   if (quantos < 1) return;
@@ -131,8 +154,20 @@ static void garantirFaixas(int quantos) {
   b = realloc(epQtd, sizeof(int) * (size_t)quantos);
   if (a) epIni = a;
   if (b) epQtd = b;
-  if (epIni) memset(epIni, 0, sizeof(int) * (size_t)quantos);
-  if (epQtd) memset(epQtd, 0, sizeof(int) * (size_t)quantos);
+  // realloc NAO inicializa o que cresceu: a cauda nova sai com lixo, e um
+  // epQtd de lixo faz cat_episodio ler fora do vetor de episodios.
+  if (quantos > nFaixas) {
+    size_t novos = (size_t)(quantos - nFaixas);
+    if (epIni) memset(epIni + nFaixas, 0, sizeof(int) * novos);
+    if (epQtd) memset(epQtd + nFaixas, 0, sizeof(int) * novos);
+  }
+  nFaixas = quantos;
+}
+
+// Troca de catalogo: os indices mudaram e nenhuma faixa antiga vale.
+static void zerarFaixas(int quantos) {
+  nFaixas = 0;
+  garantirFaixas(quantos);
 }
 static int n = 0;
 
@@ -328,7 +363,7 @@ int cat_carregar(const char *dirArte) {
   snprintf(caminho, sizeof caminho, "%s/episodios.txt", dirArte);
   { FILE *fe2 = fopen(caminho, "r");
     nEps = 0;
-    garantirFaixas(nAlocado);
+    zerarFaixas(nAlocado);   // carga do zero: nenhuma faixa antiga vale
     if (fe2) {
       while (nEps < CAT_EP_MAX && fgets(linha, sizeof linha, fe2)) {
         char c1[8], c2[8], c3[8];
@@ -803,6 +838,8 @@ void cat_salvar_progresso_ep(int indice, double posSeg, double durSeg, int tempo
   cat_aplicar_progresso(indice, posSeg, durSeg, temporada, episodio);
 }
 
+unsigned cat_revisao(void) { return catRevisao; }
+
 int cat_n_episodios(int indiceItem) {
   int m = cat_n();
   // epQtd so nasce em garantirFaixas, que em cat_carregar vem DEPOIS de
@@ -972,7 +1009,8 @@ void cat_definir_tudo(const CatItem *lista, int qtd,
   }
   // Episodios do catalogo anterior nao valem para o novo: os indices mudaram.
   nEps = 0;
-  garantirFaixas(nAlocado);
+  zerarFaixas(nAlocado);
+  catRevisao++;
   (void)0;
   // O progresso e por imdb e vive em progresso.c, entao sobrevive a troca —
   // mas precisa ser reaplicado, porque os itens novos nasceram zerados. E aqui

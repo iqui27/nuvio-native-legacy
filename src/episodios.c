@@ -46,6 +46,12 @@ static int vmSegurando, vmConsumir;
 // menu passa a servir tambem a pagina de detalhe, onde a folha nem esta aberta.
 static int  vmIdx = -1, vmT, vmE;
 static char vmNome[96];
+// A MINIATURA DO EPISODIO, resolvida UMA vez na abertura. O cartao mostra a
+// arte do episodio de que ele fala — sem ela o menu e quatro linhas de texto
+// que poderiam ser de qualquer titulo. Procurar no catalogo a cada quadro
+// custaria uma varredura por episodio 60 vezes por segundo para desenhar uma
+// imagem que nao muda enquanto o menu estiver aberto.
+static char vmThumb[400];
 static int  vmSo;        // 1 = aberto sozinho, sobre outra tela
 static int  vmFontesPed; // consumido por episodios_menu_pediu_fontes()
 
@@ -58,6 +64,15 @@ static void menuAbrir(int idx, int t, int e, const char *nome, int so) {
   if (!ci || !ci->imdb[0]) return;
   vmIdx = idx; vmT = t; vmE = e; vmSo = so;
   snprintf(vmNome, sizeof vmNome, "%s", nome ? nome : "");
+  vmThumb[0] = 0;
+  { int i;
+    for (i = 0; i < cat_n_episodios(idx); i++) {
+      const CatEp *ce = cat_episodio(idx, i);
+      if (ce && ce->temporada == t && ce->episodio == e) {
+        snprintf(vmThumb, sizeof vmThumb, "%s", ce->thumb);
+        break;
+      }
+    } }
   // O SENTIDO SAI DO ESTADO: quem esta olhando um episodio visto quer
   // desmarcar. Desconhecido (-1) conta como nao visto.
   vmVisto = vistoep_estado(ci->imdb, t, e) == 1 ? 0 : 1;
@@ -167,32 +182,60 @@ static void menuDesenhar(float x, float larg, float anim) {
     // CENTRADO SOBRE A FOLHA, e nao sobre a tela. A folha ocupa so os EP_W da
     // direita; centrar em NV_TELA_W punha o menu sobre o vazio da esquerda,
     // longe do episodio a que ele se refere — visivel na captura de revisao.
-    // A largura tambem cabe DENTRO da folha, para o menu nao parecer de outra
-    // tela.
-    // TETO NA LARGURA. Dentro da folha `larg` e a coluna dela e o menu fica justo;
-    // sobre a pagina de detalhe `larg` e a tela inteira, e sem teto o menu virava
-    // uma faixa de 1848 px atravessando tudo — visto na captura de revisao. O
-    // teto e a largura que ele ja tinha na folha, entao os dois lugares mostram
-    // o MESMO menu.
-    float mw=larg-72.0f, mh=120.0f+vmOpcoes()*62.0f+62.0f;
-    if (mw > EP_W-72.0f) mw = EP_W-72.0f;
-    GfxRect m={x+(larg-mw)*.5f,(NV_TELA_H-mh)*.5f,mw,mh};
+    //
+    // TETO NA LARGURA. Dentro da folha `larg` e a coluna dela e o menu fica
+    // justo; sobre a pagina de detalhe `larg` e a tela inteira, e sem teto o
+    // menu virava uma faixa de 1848 px atravessando tudo — visto na captura de
+    // revisao. O teto e a largura que ele ja tinha na folha, entao os dois
+    // lugares mostram o MESMO menu.
+    //
+    // A ALTURA E SOMADA, e nao cravada. Antes era `120+n*62+62`, um numero que
+    // nao dizia de onde vinha, e a dica de teclas encostava na ultima pilula —
+    // 8 px de folga na captura da TV, que na tela le como texto grudado no
+    // botao. Agora cada pedaco entra na conta com nome.
+    const float PAD=32.0f, TH_W=176.0f, TH_H=99.0f, OPT_H=54.0f, OPT_PASSO=62.0f;
+    const float CAB_H=TH_H+22.0f;              // cabecalho: a miniatura manda
+    float mw=larg-72.0f;
+    float optTop, mh;
     char cab[140];
     int i;
+    if (mw > EP_W-72.0f) mw = EP_W-72.0f;
+    optTop = PAD + CAB_H;
+    mh = optTop + (float)(vmOpcoes()-1)*OPT_PASSO + OPT_H
+         + 22.0f    // respiro antes da dica
+         + 26.0f    // a dica
+         + PAD;     // rodape
+    { GfxRect m={x+(larg-mw)*.5f,(NV_TELA_H-mh)*.5f,mw,mh};
     // Veu proprio: a lista atras tem texto pequeno em tres colunas.
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,.72f*anim);
     gfx_cor(m,.05f,.11f,.11f,.13f,.99f*anim);
-    txt_desenhar_alpha(txt_linha(TXT_CAPTION2,
-        vmVisto?"MARCAR COMO ASSISTIDO":"DESMARCAR COMO ASSISTIDO",
-        174,178,188,255),m.x+32,m.y+28,anim);
-    snprintf(cab,sizeof cab,i18n("T%dE%d · %s"),vmT,vmE,vmNome);
-    txt_desenhar_alpha(txt_linha_corta(TXT_HEADLINE,cab,245,248,255,255,mw-64),
-                       m.x+32,m.y+56,anim);
+
+    // CABECALHO COM A ARTE DO EPISODIO. Sem miniatura o texto ocupa a linha
+    // inteira, em vez de deixar um buraco do tamanho da imagem que nao veio.
+    { float tx=m.x+PAD, tw=mw-PAD*2.0f;
+      GLuint th=vmThumb[0]?tex_obter_larg(vmThumb,TH_W):0;
+      if (th) {
+        GfxRect r={m.x+PAD,m.y+PAD,TH_W,TH_H};
+        gfx_tex_aspect_atual=tex_aspecto(vmThumb);
+        gfx_rect(r,th,GFX_CARD,0,0,0,10.0f/TH_H,0,0,0,anim);
+        gfx_tex_aspect_atual=0.0f;
+        tx=m.x+PAD+TH_W+22.0f; tw=mw-(TH_W+22.0f)-PAD*2.0f;
+      }
+      txt_desenhar_alpha(txt_linha(TXT_CAPTION2,
+          vmVisto?i18n("MARCAR COMO ASSISTIDO"):i18n("DESMARCAR COMO ASSISTIDO"),
+          174,178,188,255),tx,m.y+PAD+6.0f,anim);
+      snprintf(cab,sizeof cab,i18n("T%dE%d · %s"),vmT,vmE,vmNome);
+      txt_desenhar_alpha(txt_linha_corta(TXT_HEADLINE,cab,245,248,255,255,tw),
+                         tx,m.y+PAD+36.0f,anim);
+      (void)tw; }
+
     for(i=0;i<vmOpcoes();i++) {
-      GfxRect r={m.x+24,m.y+120+i*62,mw-48,54};
+      GfxRect r={m.x+24,m.y+optTop+(float)i*OPT_PASSO,mw-48,OPT_H};
       float f=(i==vmFoco)?1.0f:0.0f;
       float lum=f>.5f?.961f:.176f;
       int c=f>.5f?17:240;
+      float ic=f>.5f?0.10f:0.88f;      // o icone acompanha o texto
+      const char *nomeIcone;
       char rot[120];
       int quantos;
       // O NUMERO NO ROTULO, e nao so o verbo: "marcar 7 episodios" e uma
@@ -203,26 +246,54 @@ static void menuDesenhar(float x, float larg, float anim) {
         ? vistoep_ate_aqui(ci->imdb,vmT,vmE,NULL,0)
         : vistoep_temporada(ci->imdb,vmT,NULL,0);
       else quantos=0;
-      gfx_cor(r,14.0f/54.0f,lum,lum,lum,anim);
-      if(i==VM_ESTE) snprintf(rot,sizeof rot,"%s",
-                              vmVisto?"Este episódio":"Este episódio");
-      else if(i==VM_ATE) snprintf(rot,sizeof rot,
-                                  quantos==1?i18n("Até aqui (%d episódio)")
-                                           :i18n("Até aqui (%d episódios)"),quantos);
-      else if(i==VM_TEMP) snprintf(rot,sizeof rot,
-                    quantos==1?i18n("Temporada inteira (%d episódio)")
-                             :i18n("Temporada inteira (%d episódios)"),quantos);
-      else snprintf(rot,sizeof rot,"%s",i18n("Fontes deste episódio"));
-      txt_desenhar_alpha(txt_linha_corta(TXT_PLR_CORPO,rot,c,c,c,255,mw-96),
-                         r.x+28,r.y+(54-28)*.5f,anim);
+      gfx_cor(r,14.0f/OPT_H,lum,lum,lum,anim);
+      if(i==VM_ESTE) {
+        // O ROTULO MUDA COM O SENTIDO. As duas metades do ternario eram
+        // identicas ("Este episódio" dos dois lados) e nenhuma passava por
+        // i18n — em ingles a linha saia em portugues.
+        snprintf(rot,sizeof rot,"%s",
+                 vmVisto?i18n("Marcar este episódio"):i18n("Desmarcar este episódio"));
+        nomeIcone=vmVisto?"visto":"naovisto";
+      } else if(i==VM_ATE) {
+        snprintf(rot,sizeof rot,
+                 quantos==1?i18n("Até aqui (%d episódio)")
+                          :i18n("Até aqui (%d episódios)"),quantos);
+        nomeIcone="avancar";
+      } else if(i==VM_TEMP) {
+        snprintf(rot,sizeof rot,
+                 quantos==1?i18n("Temporada inteira (%d episódio)")
+                          :i18n("Temporada inteira (%d episódios)"),quantos);
+        nomeIcone="episodios";
+      } else {
+        snprintf(rot,sizeof rot,"%s",i18n("Fontes deste episódio"));
+        nomeIcone="fontes";
+      }
+      // ICONE DE ARQUIVO, nao desenhado a mao. Os .png de art/icones/ guardam
+      // a forma no alpha e a cor vem daqui, entao o MESMO arquivo serve escuro
+      // sobre a pilula branca do foco e claro sobre a pilula apagada.
+      { GfxRect gi={r.x+22.0f,r.y+(OPT_H-28.0f)*.5f,28.0f,28.0f};
+        gfx_icone(gi,nomeIcone,ic,ic,ic,anim); }
+      // A LARGURA DE CORTE SAI DA GEOMETRIA, e nao de um numero escolhido a
+      // olho. O texto comeca em r.x+66 e a pilula acaba em r.x+r.w; o que sobra
+      // e r.w-66, menos 22 de respiro na direita. Antes o corte era `mw-96` com
+      // o texto em r.x+28 sobre uma pilula de mw-48 — 8 px a mais do que cabia,
+      // e a ultima letra encostava na borda. E o "ta cortando um pouco o texto".
+      //
+      // A ALTURA TAMBEM E MEDIDA: centrar por 28 fixo (o tamanho do icone) e um
+      // chute sobre a fonte, e um chute errado poe os descendentes por baixo da
+      // borda da pilula.
+      { TxtLinha l=txt_linha_corta(TXT_PLR_CORPO,rot,c,c,c,255,r.w-66.0f-22.0f);
+        txt_desenhar_alpha(l,r.x+66.0f,r.y+(OPT_H-(float)l.h)*.5f,anim); }
     }
-    // A DICA FICA ABAIXO DA ULTIMA OPCAO, e a conta e explicita: as tres linhas
-    // terminam em m.y+120+3*62-8, e o rodape cravado em mh-52 caia POR CIMA da
-    // terceira — a captura de revisao mostrou "Whole season" atravessado pelo
-    // texto de ajuda. Mesmo erro de deslocamento fixo que a folha de fileiras
-    // teve hoje.
+    // A DICA FICA ABAIXO DA ULTIMA OPCAO, com 22 de respiro e nao 8. Com 8 ela
+    // encostava na pilula "Fontes deste episódio" — na captura da TV as duas
+    // linhas leem como uma coisa so. O deslocamento sai da MESMA conta que
+    // dimensionou o cartao, entao mudar o numero de opcoes nao volta a
+    // desalinhar (foi assim que o rodape ja passou POR CIMA da terceira linha).
     txt_bloco(TXT_CAPTION,"↑ ↓  Escolher   ·   OK  Aplicar   ·   Voltar  Fechar",
-              155,159,169,m.x+28,m.y+120+vmOpcoes()*62+8,mw-56,26,anim*.86f,1);
+              155,159,169,m.x+28,
+              m.y+optTop+(float)(vmOpcoes()-1)*OPT_PASSO+OPT_H+22.0f,
+              mw-56,26,anim*.86f,1); }
   }
 }
 

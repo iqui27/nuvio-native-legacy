@@ -323,6 +323,9 @@ void cat_atualizar_item(int indice, const CatItem *novo);
 // responde na hora, sem rede, e acerta o suficiente para a fileira valer.
 int           cat_similares(int indice, int *saida, int max);
 
+// Quantas vezes o catalogo INTEIRO foi trocado. Muda => todo indice guardado
+// fora daqui deixou de valer, e as faixas de episodio foram zeradas.
+unsigned      cat_revisao(void);
 int           cat_n_episodios(int indiceItem);
 const CatEp  *cat_episodio(int indiceItem, int i);   // indice circular; NULL se o catalogo esta vazio
 

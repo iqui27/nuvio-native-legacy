@@ -79,6 +79,8 @@ static int  idx = 0;                 // titulo atual dentro do acervo
 static char idxImdb[24];
 static CatItem idxCopia;
 static int  idxTemCopia;
+// Ultima revisao do catalogo que esta pagina ja tratou. Ver detail_atualizar.
+static unsigned revistaVista;
 static float t = 0.0f;               // 0 = card na home, 1 = tela cheia
 // Dois estados, nao tres: o hero (nivel 0) e a pagina rolada (nivel 1). O
 // nivel intermediario "cartao vira tela cheia" so fazia sentido enquanto havia
@@ -468,6 +470,7 @@ void detail_abrir(const HomeItem *it) {
   t = 0.0f; pg = 0.0f; scrollY = 0.0f; abaInfo = 0; pessoaAberta = 0;
   relFoco = 0; pedAbrir = -1; ratTemp = 0;
   idx = it->indice;
+  revistaVista = cat_revisao();
   // Guarda identidade e copia ANTES de qualquer republicacao. Ver revalidarIdx.
   { const CatItem *ci0 = cat_item(idx);
     idxImdb[0] = 0; idxTemCopia = 0;
@@ -1187,6 +1190,30 @@ static void revalidarIdx(void) {
 void detail_atualizar(float dt, Uint32 agora) {
   if (!aberto) return;
   revalidarIdx();
+  // O CATALOGO TROCOU: OS EPISODIOS FORAM JUNTO, E NINGUEM OS REPEDIA.
+  //
+  // cat_definir_tudo zera as faixas de episodio de proposito — os indices
+  // mudaram e uma faixa antiga apontaria para outro titulo. Mas quem estava com
+  // uma serie ABERTA perdia a secao inteira, e nada a reconstruia: o pedido so
+  // sai em app.c quando a pagina abre.
+  //
+  // MEDIDO na C9: "Os Aspones" publica os 7 episodios aos 13,4 s
+  // (`[desc] ... 7 episodios publicados`), o ciclo de descoberta termina com
+  // `[desc] catalogo montado com 292 titulos`, e dali em diante a secao some —
+  // o D-pad pula de "Temporadas" direto para as abas, porque secao com zero
+  // colunas e intransponivel (focus.c). Para quem esta olhando, a pagina de uma
+  // serie simplesmente nao tem onde ver os episodios.
+  //
+  // Repedir e barato: a meta ja esta no cache de disco (metaCacheObter), entao
+  // isto nao volta a rede. E desc_episodios sai sozinho se a faixa ja existir.
+  { unsigned rev = cat_revisao();
+    if (rev != revistaVista) {
+      revistaVista = rev;
+      if (ehSerie() && cat_n_episodios(idx) < 1) {
+        const CatItem *ci = cat_item(idx);
+        desc_episodios(idx, ci ? ci->temporada : 0);
+      }
+    } }
   sincronizarColunas();
   // Solta o pedido de episodios que ficou guardado por ter chegado com outro
   // carregamento em voo.
@@ -1942,32 +1969,23 @@ static void desenhaTemporada(GfxRect r, int c, float f, float a) {
 // cantos de baixo acompanham a miniatura (uma faixa de cantos retos poria dois
 // dentes escuros fora do arredondamento) e o empilhamento reproduz a rampa,
 // porque compor N camadas de alfa `d` da 1-(1-d)^n.
+// O VEU DO CARD, EM UMA PASSADA E SEM FAIXAS.
+//
+// Eram 14 retangulos empilhados, um por degrau da rampa, cada um um quad de
+// largura inteira com SDF. Numa TV de 55" os degraus SE VEEM: o dono mandou a
+// foto do card com as faixas contaveis a olho. Subir o numero de degraus nao
+// resolve — o olho enxerga a segunda derivada e a emenda entre faixas continua
+// aparecendo, que e a mesma razao pela qual GFX_VEU_BAIXO eleva o smoothstep ao
+// quadrado.
+//
+// A rampa nao mudou (as cinco paradas do `linear-gradient` do web); ela so
+// passou a ser avaliada no fragmento. Ver GFX_VEU_CARD em gfx.h. De quebra sao
+// 14 passadas de preenchimento a menos por card, numa Mali-G71 que ja e o
+// gargalo desta tela.
 static void veuEpisodio(GfxRect th, float a) {
-  static const float PARADA[5] = { 0.00f, 0.22f, 0.52f, 0.82f, 1.00f };
-  static const float ALFA[5]   = { 0.06f, 0.18f, 0.62f, 0.86f, 0.95f };
-  const int PASSOS = 14;
-  float acum = 0.0f;
-  for (int i = 0; i <= PASSOS; i++) {
-    float u = (float)i / PASSOS;
-    // Alvo interpolado linearmente por partes, como o `linear-gradient`.
-    float alvo = ALFA[4];
-    for (int k = 0; k < 4; k++)
-      if (u <= PARADA[k + 1]) {
-        float d = PARADA[k + 1] - PARADA[k];
-        alvo = ALFA[k] + (ALFA[k + 1] - ALFA[k]) * (d > 0 ? (u - PARADA[k]) / d : 0);
-        break;
-      }
-    // Quanto ESTA faixa precisa acrescentar para que o acumulado bata no alvo.
-    float d = (alvo - acum) / (1.0f - acum);
-    if (d <= 0.001f) continue;
-    acum = alvo;
-    float topo = th.y + th.h * u;
-    GfxRect faixa = { th.x, topo, th.w, th.y + th.h - topo };
-    if (faixa.h < 2.0f) continue;
-    float raio = NV_DETP_EP_RAIO / (faixa.w < faixa.h ? faixa.w : faixa.h);
-    if (raio > 0.5f) raio = 0.5f;
-    gfx_cor(faixa, raio, 0, 0, 0, d * a);
-  }
+  float raio = NV_DETP_EP_RAIO / (th.w < th.h ? th.w : th.h);
+  if (raio > 0.5f) raio = 0.5f;
+  gfx_rect(th, 0, GFX_VEU_CARD, 0, 0, 0, raio, 0, 0, 0, a);
 }
 
 // Card de episodio: 640x422, com a miniatura de 640x414 e TODO o texto dentro
