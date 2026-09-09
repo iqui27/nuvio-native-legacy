@@ -75,5 +75,13 @@ const char *i18n(const char *s) {
     if (c == 0) return TAB[m].en;
     if (c < 0) hi = m - 1; else lo = m + 1;
   }
+  // NAO ADIANTA RECLAMAR AQUI, e eu tentei: text.c chama i18n em cada linha
+  // DESENHADA, entao esta funcao ve tambem titulo de filme, sinopse e cada
+  // fragmento de quebra de linha. Uma medicao de 25 s no Mac produziu 96
+  // avisos — sinopse do Fallout palavra a palavra, letras soltas do relogio —
+  // e encheu o teto antes de qualquer texto de interface aparecer. O sinal
+  // real ficaria enterrado no log de quem relata. Separar interface de
+  // conteudo aqui exigiria a mesma heuristica de portugues que ja falhou tres
+  // vezes na varredura estatica, e ela erra igual em "Detalhes" e "Cartazes".
   return s;
 }

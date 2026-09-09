@@ -1,4 +1,5 @@
 #include "catalogo.h"
+#include "idioma.h"
 #include "descoberta.h"
 #include "progresso.h"
 // O cache em disco depende destes tres: dados.h diz ONDE se pode gravar,
@@ -186,7 +187,15 @@ int cat_carregar(const char *dirArte) {
         const char *pt;
         if (n >= sizeof parte) n = sizeof parte - 1;
         memcpy(parte, q, n); parte[n] = 0;
-        pt = desc_genero_pt(parte);
+        // O PRIMEIRO PEDACO NAO E GENERO, e por isso nao pode ir por
+        // desc_genero_pt. Ele e o rotulo do tipo, e o pacote ja o guarda em
+        // PORTUGUES ("Filme  ·  Science Fiction"): desc_genero_pt so sabe
+        // ingles->portugues e, com o ingles ligado, devolve tudo intacto. O
+        // resultado era "Programa de TV  ·  Action  ·  Adventure" numa
+        // interface inteira em ingles — generos certos, so o tipo em
+        // portugues. Relatado numa OLED48A2PUA e reproduzido aqui.
+        // i18n() e quem tem as chaves Filme->Movie e Programa de TV->TV Show.
+        pt = o ? desc_genero_pt(parte) : i18n(parte);
         o += (size_t)snprintf(saida + o, sizeof saida - o, "%s%s",
                               o ? SEP : "", pt);
         if (!sp) break;
@@ -362,12 +371,24 @@ int cat_carregar(const char *dirArte) {
 // Ver a nota em catalogo.h. O cabecalho carrega a versao E o sizeof(CatItem):
 // e o sizeof que protege de verdade, porque acrescentar um campo na struct
 // muda o layout sem que ninguem se lembre de subir a versao a mao.
+// SO O PROTOTIPO, e nao #include "ajustes.h": aquele cabecalho puxa
+// <SDL2/SDL.h>, e catalogo.c e compilado sem SDL por tests/catcache.sh — que e
+// justamente o teste deste cache. Incluir o cabecalho troca um teste leve por
+// um que precisa da biblioteca grafica inteira para conferir um fwrite.
+int ajustes_idioma_ingles(void);
+
 #define CACHE_MAGIA  0x4E56434Bu   /* "NVCK" */
 // VERSAO 2: o cabecalho passou a carregar a identidade do dono. Subir a versao
 // nao e formalidade — um arquivo da versao 1 lido com esta struct daria um
 // usuario de lixo e um perfil de lixo, e a comparacao abaixo o recusaria por
 // acaso em vez de por regra.
-#define CACHE_VERSAO 2
+// VERSAO 3: o cabecalho passou a carregar o IDIOMA. `CatItem.genero` guarda o
+// rotulo do tipo JA TRADUZIDO ("Programa de TV · Drama"), montado na hora de
+// analisar — e o cache grava o CatItem inteiro. Sem este campo, uma home
+// gravada em portugues continuava dizendo "Programa de TV" e "Filme" depois de
+// a pessoa mudar para ingles, para sempre, enquanto o resto da tela (que passa
+// por i18n a cada desenho) ja estava traduzido. Relatado numa OLED48A2PUA.
+#define CACHE_VERSAO 3
 
 typedef struct {
   unsigned magia, versao, tamItem, tamFileira;
@@ -381,6 +402,7 @@ typedef struct {
   // credencial de addon do usuario anterior.
   char usuario[64];   // `sub` do JWT; "" quando deslogado
   int  perfil;        // perfis_ativo()
+  int  ingles;        // ajustes_idioma_ingles() quando o arquivo foi escrito
 } CacheCab;
 
 // Quem esta logado AGORA. Chamada nas duas pontas — gravar e ler — e por isso o
@@ -517,6 +539,7 @@ int cat_gravar_cache(const char *dirArte) {
   // byte impossivel e vaza pedaco de pilha para o disco.
   memset(&c, 0, sizeof c);
   c.magia = CACHE_MAGIA; c.versao = CACHE_VERSAO;
+  c.ingles = ajustes_idioma_ingles();
   c.tamItem = (unsigned)sizeof(CatItem);
   c.tamFileira = (unsigned)sizeof(CatFileira);
   c.nItens = n; c.nFileiras = nFils;
@@ -575,9 +598,14 @@ int cat_ler_cache(const char *dirArte) {
   // passa por sync_esquecer_usuario.
   c.usuario[sizeof c.usuario - 1] = 0;
   identidadeAtual(usuario, sizeof usuario, &perfil);
-  if (strcmp(c.usuario, usuario) != 0 || c.perfil != perfil) {
+  // O IDIOMA ENTRA NA MESMA COMPARACAO, e pelo mesmo motivo dos outros dois:
+  // o arquivo carrega texto ja montado para um idioma. Subir a versao invalida
+  // os arquivos antigos UMA VEZ; sem esta linha, trocar de idioma depois disso
+  // nao invalidaria nada e a home voltaria a dizer "Programa de TV" em ingles.
+  if (strcmp(c.usuario, usuario) != 0 || c.perfil != perfil ||
+      c.ingles != ajustes_idioma_ingles()) {
     fclose(f);
-    printf("[cat] cache descartado (era de outro usuario/perfil)\n");
+    printf("[cat] cache descartado (era de outro usuario/perfil/idioma)\n");
     fflush(stdout);
     CACHE_FS_TRAVAR();
     remove(caminho);
