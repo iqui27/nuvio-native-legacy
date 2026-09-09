@@ -222,8 +222,14 @@
   // pelo sistema. Equivale ao hint SDL_WEBOS_ACCESS_POLICY_KEYS_BACK do webOS.
   try {
     if (window.tizen && tizen.tvinputdevice) {
+      // ChannelUp e o atalho de "Salvos" NO TIZEN, e a razao e o controle e nao
+      // o software: os One Remote novos NAO tem fileira de cores. A azul chega
+      // ao app, mas so depois de abrir a barra de cores pelo botao de numeros —
+      // ninguem faz isso por um atalho. O rocker CH e botao FISICO em todo
+      // controle Samsung e o app nao usa canal para nada. Na LG a azul continua,
+      // que e onde ela funciona bem.
       ["MediaPlay", "MediaPause", "MediaPlayPause", "MediaStop",
-       "MediaRewind", "MediaFastForward",
+       "MediaRewind", "MediaFastForward", "ChannelUp",
        "ColorF0Red", "ColorF1Green", "ColorF2Yellow", "ColorF3Blue"]
         .forEach(function (k) {
           try { tizen.tvinputdevice.registerKey(k); } catch (e) {}
@@ -343,12 +349,27 @@
     if (!p.hidden && window.__nvPintar) window.__nvPintar();
   }
   window.addEventListener("keydown", function (ev) {
-    // 403 = ColorF0Red, 404 = ColorF1Green. F1/F2 servem para testar no desktop.
+    // 403 = ColorF0Red, 404 = ColorF1Green, 427 = ChannelUp. F1/F2/F3 servem
+    // para testar no desktop.
     var vermelha = (ev.keyCode === 403 || ev.key === "F1");
     var verde    = (ev.keyCode === 404 || ev.key === "F2");
-    if (!vermelha && !verde) return;
+    var canal    = (ev.keyCode === 427 || ev.key === "F3");
+    if (!vermelha && !verde && !canal) return;
     ev.preventDefault();
     ev.stopPropagation();
+    // CANAL+ ABRE "SALVOS". O keyCode 427 nao existe na tabela do SDL e morreria
+    // no navegador, igual as coloridas: vira um "s" sintetico, que e a tecla que
+    // app.c ja escuta ao lado do NV_SCANCODE_BLUE da LG.
+    if (canal) {
+      var alvoS = document.getElementById("canvas") || window;
+      ["keydown", "keyup"].forEach(function (t) {
+        alvoS.dispatchEvent(new KeyboardEvent(t, {
+          key: "s", code: "KeyS", keyCode: 83, which: 83,
+          bubbles: true, cancelable: true
+        }));
+      });
+      return;
+    }
     if (verde || !window.__nvPrimeiroQuadro) { mostrarPainelDOM(); return; }
     // O par keydown+keyup completo: mandar so o keydown deixa a tecla presa
     // para o SDL, e registro.c usa o keyup para nao vazar o toque adiante.
