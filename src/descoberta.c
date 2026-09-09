@@ -781,44 +781,50 @@ static void lerPrefs(void) {
 // So conta quando a colecao esta VISIVEL como fileira. Uma pasta cujo grupo foi
 // desligado nao pode engolir o catalogo dela junto — senao desligar a colecao
 // faria o conteudo sumir de vez, em vez de voltar a aparecer solto.
-// ESCONDER A COLECAO NAO PODE FAZER OS CATALOGOS DELA VOLTAREM SOZINHOS.
-//
-// Esta funcao testava tambem se o grupo estava visivel e devolvia 0 quando nao
-// estava — ou seja, com a colecao escondida o catalogo deixava de ser
-// reconhecido como parte dela e virava fileira solta. MEDIDO na C9 com 169
-// colecoes: `fileirasui.txt` traz `collection_4fdc51c9-… 1` (o dono escondeu
-// "Trending") e a home mostrava "Trending - Filme" e "Top 100 Today - Filme"
-// como duas fileiras separadas. E o #18 em uma frase: a colecao aparece
-// dividida em varias fileiras.
-//
-// Ninguem desenharia a regra antiga de proposito. Ela dizia: "com o grupo a
-// vista, a colecao representa o catalogo; com o grupo escondido, o catalogo se
-// representa sozinho". Quem esconde uma colecao esta escondendo aquele
-// conteudo, nao pedindo para ve-lo destrinchado.
-//
-// O nome mudou junto, porque era o nome que carregava a regra errada: a
-// pergunta e "este catalogo esta dentro de alguma colecao?", e a visibilidade
-// do grupo e assunto de quem desenha a fileira do grupo.
-// Quantos catalogos a regra acima barrou ANTES de virarem fileira, no ciclo
-// corrente. Sem este numero a linha [col] diz "engolidas=0" enquanto o
-// engolimento aconteceu — so que mais cedo, na declaracao — e quem le o log
-// conclui que a regra nao rodou. Ja perdi uma rodada por um contador que
-// media so metade do caminho.
+// Quantos catalogos a regra abaixo barrou JA NA DECLARACAO, no ciclo corrente.
+// A linha [col] contava so o que era barrado na remontagem e por isso dizia
+// "engolidas=0" enquanto o engolimento acontecia — mais cedo, em outro ponto.
+// Um contador que mede metade do caminho ja me custou uma rodada.
 static int engolidasNaDeclaracao;
 
-static int dentroDeColecaoBase(const char *base, const char *tipo,
-                               const char *id) {
+// A VISIBILIDADE DO GRUPO FAZ PARTE DA PERGUNTA, E EU JA A TIREI UMA VEZ.
+//
+// Tentacao (minha, em 2026-09-09): o nome diz "esta dentro de uma colecao?" e
+// o teste de visibilidade parece sobra. Tirei, e quebrei a home do dono na
+// mesma tarde. O caso dele, direto do `fileirasui.txt` da C9:
+//
+//   linha collection_4fdc51c9-…                     1  0  1  Trending
+//   linha app.xperience.…_movie_trending_movies     0  2  1  Trending - Filme
+//
+// (o primeiro numero e `oculta`.) Ele escondeu a COLECAO "Trending" e manteve
+// a FILEIRA "Trending - Filme" ligada, na posicao dela, antes de "Directors".
+// Sao duas escolhas independentes e as duas sao dele. Engolir o catalogo
+// porque ele pertence a uma colecao escondida apaga a fileira que a pessoa
+// deixou ligada de proposito — foi exatamente o que aconteceu.
+//
+// Entao a regra e: a colecao so representa o catalogo ENQUANTO ela aparece.
+// Escondida, ela nao representa ninguem, e o catalogo volta a se representar.
+// Isso NAO e o #18: la a queixa e sobre colecao dividida em varias fileiras
+// com o grupo VISIVEL, e nesse caminho o teste abaixo devolve 1 e engole.
+static int dentroDeColecaoVisivelBase(const char *base, const char *tipo,
+                                      const char *id) {
+  const ColFolder *f;
+  char chaveGrupo[96];
   if (!base || !base[0]) return 0;
-  return col_por_catalogo(base, tipo, id) != NULL;
+  f = col_por_catalogo(base, tipo, id);
+  if (!f) return 0;
+  col_chave_grupo(f->group, chaveGrupo, sizeof chaveGrupo);
+  if (fil_oculta(chaveGrupo) || catordem_oculta(chaveGrupo, chaveGrupo)) return 0;
+  return 1;
 }
 
-static int dentroDeColecao(const Decl *d) {
-  return dentroDeColecaoBase(d->base, d->tipo, d->id);
+static int dentroDeColecaoVisivel(const Decl *d) {
+  return dentroDeColecaoVisivelBase(d->base, d->tipo, d->id);
 }
 
 static int desligada(const Decl *d) {
   int i;
-  if (dentroDeColecao(d)) return 1;
+  if (dentroDeColecaoVisivel(d)) return 1;
   // A escolha feita NA TV (Ajustes -> Fileiras da Home) vem primeiro. Ela e
   // local de proposito e nunca sobe para a conta — a trava esta no topo de
   // catordem.h e repetida em fileiras.h. Sem esta precedencia, desligar uma
@@ -1476,7 +1482,7 @@ static void *montar(void *u) {
           Decl *d = &decls[ordem[cursor]];
           int t, repetida = 0;
           if (desligada(d)) {
-            if (dentroDeColecao(d)) engolidasNaDeclaracao++;
+            if (dentroDeColecaoVisivel(d)) engolidasNaDeclaracao++;
             continue;
           }
           // MESMA CHAVE DUAS VEZES = MESMA FILEIRA DUAS VEZES. Acontece quando
@@ -1636,7 +1642,7 @@ static void *montar(void *u) {
     // A ULTIMA PALAVRA SOBRE AS COLECOES E AQUI. Issue #18, terceira tentativa,
     // e desta vez o problema nao era a REGRA e sim QUANDO ela roda.
     //
-    // dentroDeColecaoBase — quem decide que um catalogo pertence a uma
+    // dentroDeColecaoVisivelBase — quem decide que um catalogo pertence a uma
     // colecao e nao merece fileira propria — so existe dentro de
     // desc_remontar_fileiras(), e quem chamava essa funcao era so o sync, no
     // instante em que as colecoes da conta chegam. MEDIDO nesta LG: as colecoes
@@ -1741,7 +1747,7 @@ void desc_remontar_fileiras(void) {
     const CatFileira *f = &filsMontadas[i];
     if (!f->base[0]) continue;
     if (fil_oculta(f->chave) || catordem_oculta(f->chave, f->chave)) continue;
-    if (dentroDeColecaoBase(f->base, f->tipo, f->catId)) { engolidas++; continue; }
+    if (dentroDeColecaoVisivelBase(f->base, f->tipo, f->catId)) { engolidas++; continue; }
     if (nCat < CAT_FIL_MAX) { chaves[nCat] = f->chave; idxCat[nCat] = i; nCat++; }
   }
   // SEMPRE, e nao so quando engoliu: a linha existe para o caso em que ela
