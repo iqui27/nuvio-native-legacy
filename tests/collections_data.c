@@ -2,6 +2,17 @@
 #include <assert.h>
 #include <unistd.h>
 #include "../src/descoberta.c"
+// descoberta.c passou a traduzir os rotulos que monta ("Filme", "Serie", a
+// data por extenso) e este teste nao linka idioma.c: linkar puxaria
+// ajustes_idioma_ingles e, atras dele, ajustes.c e o resto do app — o oposto
+// do que um teste do leitor paginado deve carregar. Devolver a entrada e o que
+// i18n faz com o idioma em portugues, que e o padrao, entao os rotulos que as
+// asserçoes comparam sao exatamente os de producao. Mesmo stub de
+// tests/colfileiras.c.
+// 0 = portugues, o padrao — e o idioma em que as asserçoes deste arquivo
+// escreveram os rotulos esperados.
+int ajustes_idioma_ingles(void) { return 0; }
+const char *i18n(const char *s) { return s; }
 static int calls;
 static pthread_mutex_t fakeLock=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t fakeCond=PTHREAD_COND_INITIALIZER;
