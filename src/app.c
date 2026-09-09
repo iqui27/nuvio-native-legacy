@@ -754,7 +754,47 @@ void app_atualizar(float dt, Uint32 agora) {
   faixas_atualizar(dt, agora);
   stream_folha_atualizar(dt, agora);
 
-  if (player_quer_sair() && !player_aberto()) player_encerrar();
+  // SAIR DO PLAYER PODE PRECISAR REFAZER "CONTINUAR ASSISTINDO".
+  //
+  // Relato: "assisto um filme ou episodio, saio do player, e o titulo so
+  // aparece em Continuar assistindo depois de fechar e reabrir o app".
+  // Certissimo: o progresso e gravado na hora, mas a FILEIRA e montada durante
+  // a descoberta (montarContinuar), e nada a refazia ao sair.
+  //
+  // POR QUE desc_repetir() E NAO UMA REMONTAGEM BARATA, que era o meu primeiro
+  // reflexo: montarContinuar chama a rede (trakt_continuar, trakt_enfeitar_lote)
+  // e usa buffers `static` do fio de descoberta — chama-la daqui seria I/O
+  // bloqueante no fio de desenho E corrida com aquele fio. desc_repetir() ja e
+  // a resposta da casa para "esta fileira precisa ser refeita": ajustes.c a usa
+  // quando a FONTE do Continuar assistindo muda, que e o mesmo problema.
+  //
+  // SO QUANDO O TITULO NAO ESTA LA. Continuar algo que ja esta na fileira e o
+  // caso comum, e ali nada mudou de lugar — pagar um ciclo inteiro (~20 s nesta
+  // TV) a cada saida do player seria cobrar do comum o preco do raro.
+  if (player_quer_sair() && !player_aberto()) {
+    int idx = player_indice();
+    const CatItem *ci = idx >= 0 ? cat_item(idx) : NULL;
+    int naFileira = 0;
+    if (ci && ci->imdb[0]) {
+      int r;
+      for (r = 0; r < cat_n_fileiras() && !naFileira; r++) {
+        const CatFileira *f = cat_fileira(r);
+        if (!f || strcmp(f->chave, "continue_watching")) continue;
+        { int k;
+          for (k = 0; k < f->n; k++) {
+            const CatItem *it = cat_item(f->ini + k);
+            if (it && !strcmp(it->imdb, ci->imdb)) { naFileira = 1; break; }
+          } }
+      }
+      if (!naFileira) {
+        printf("[home] %s nao estava em Continuar assistindo: refazendo\n",
+               ci->imdb);
+        fflush(stdout);
+        desc_repetir();
+      }
+    }
+    player_encerrar();
+  }
 
   player_atualizar(dt, agora);
   detail_atualizar(dt, agora);
