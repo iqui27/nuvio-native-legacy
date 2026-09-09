@@ -252,6 +252,10 @@ static void aplicar(void) {
       // na proxima remontagem do catalogo, e para quem apertou parece que nada
       // aconteceu.
       cat_zerar_progresso(atual);
+      // E TIRA O CARD DA FILEIRA, que zerar o progresso nao faz: sem isto ele
+      // fica ali sem barra de progresso ate a proxima remontagem do catalogo, e
+      // o relator do #22 via a remocao so depois de fechar e reabrir o app.
+      cat_tirar_item_da_fileira(atual);
       aberto = 0;
       break;
     }

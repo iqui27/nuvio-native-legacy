@@ -218,6 +218,11 @@ void cat_definir_na_lista(int i, int naLista);
 // apaga o registro persistido e prog_remover; esta funcao existe para o card
 // sair da fileira "Continuar assistindo" no mesmo quadro, sem esperar a
 // proxima remontagem do catalogo.
+// Tira um item da janela da fileira que o contem, sem mexer nas outras (as
+// janelas sao disjuntas). Devolve 1 se achou. Ver a nota em catalogo.c: zerar
+// o progresso apaga a legenda mas deixa o card na fileira, e era isso que fazia
+// a remocao de "Continuar assistindo" so aparecer na proxima abertura (#22).
+int cat_tirar_item_da_fileira(int indice);
 void cat_zerar_progresso(int indice);
 
 void cat_salvar_progresso(int indice, double posSeg, double durSeg);

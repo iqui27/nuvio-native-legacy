@@ -724,6 +724,60 @@ static int aplicarProgressoDoDisco(void) {
   return aplicados;
 }
 
+// TIRA O ITEM DA JANELA DA FILEIRA QUE O CONTEM. Issue #22.
+//
+// cat_zerar_progresso, logo abaixo, apaga o que a legenda desenha — mas o card
+// CONTINUA na fileira, agora sem barra, ate a proxima remontagem do catalogo.
+// Foi o que o relator descreveu depois do conserto das tres fontes: "e removido
+// mesmo, mas so some quando eu fecho o app e abro de novo".
+//
+// COMO, sem quebrar as outras fileiras: as janelas sao disjuntas e contiguas
+// (ver CatFileira em catalogo.h), entao um item pertence a UMA fileira so.
+// Encolher `n` e deslocar o resto DENTRO da janela nao move nenhum indice de
+// outra fileira — o que sobra e um slot orfao no fim, que fileira nenhuma
+// referencia. Compactar o vetor de itens, que seria o reflexo obvio, faria o
+// contrario: mudaria o `ini` de todas as fileiras seguintes.
+//
+// ORDEM DAS DUAS ESCRITAS, e ela importa porque o fio de desenho le sem trava:
+// `n` desce PRIMEIRO. Um leitor no meio disso ve a fileira uma unidade menor
+// com o conteudo ainda antigo — um quadro com o card repetido no pior caso —,
+// nunca um indice fora da janela. Na ordem inversa ele leria o slot orfao.
+//
+// Devolve 1 se achou e tirou.
+int cat_tirar_item_da_fileira(int indice) {
+  int r;
+  if (indice < 0 || indice >= n) return 0;
+  for (r = 0; r < nFils; r++) {
+    CatFileira *f = &fils[r];
+    int quantos;
+    char nome[sizeof f->chave];
+    if (indice < f->ini || indice >= f->ini + f->n) continue;
+    // COPIA O NOME ANTES, porque a compactacao la embaixo sobrescreve fils[r]
+    // com a fileira seguinte — ler f->chave depois dela imprime o nome ERRADO.
+    // O teste pegou: tirando os tres itens da "retomada", a terceira linha
+    // dizia "populares". A logica estava certa e so o log mentia, que e o tipo
+    // de coisa que custa uma sessao inteira de depuracao mais tarde.
+    snprintf(nome, sizeof nome, "%s", f->chave);
+    f->n--;
+    quantos = f->ini + f->n - indice;
+    if (quantos > 0)
+      memmove(&itens[indice], &itens[indice + 1],
+              sizeof(CatItem) * (size_t)quantos);
+    // Fileira que esvaziou sai da lista, senao a home desenha um titulo com
+    // nada embaixo. Mesmo protocolo: zera a contagem antes de mexer no vetor.
+    if (f->n < 1) {
+      int k, total = nFils;
+      nFils = 0;
+      for (k = r; k + 1 < total; k++) fils[k] = fils[k + 1];
+      nFils = total - 1;
+    }
+    printf("[cat] item %d tirado da fileira \"%s\"\n", indice, nome);
+    fflush(stdout);
+    return 1;
+  }
+  return 0;
+}
+
 void cat_zerar_progresso(int indice) {
   if (indice < 0 || indice >= n) return;
   // Os quatro campos que a home le para decidir se o card entra em "Continuar
