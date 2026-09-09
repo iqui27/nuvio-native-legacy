@@ -33,5 +33,10 @@ const ColFolder *col_por_catalogo(const char *base, const char *type, const char
 int col_fontes_sem_base(void);
 // Despeja ate `max` fontes com a base REDIGIDA, para comparar os dois lados.
 void col_despejar_fontes(int max);
+// Ate onde a fileira (base,type,id) chegou ao procurar colecao: 0 nenhuma base
+// igual, 1 so a base, 2 base+type, 3 os tres (e entao o grupo e que esta
+// oculto). Preenche `grupo` com o nome do grupo do melhor casamento.
+int col_diagnostico(const char *base, const char *type, const char *id,
+                    char *grupo, unsigned n);
 void col_cor(const ColFolder *f, float *r, float *g, float *b);
 #endif

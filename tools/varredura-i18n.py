@@ -161,6 +161,15 @@ IGNORAR = {
     "# a conta nem para o Trakt.\n",
     "%d addons · %d progressos · %d vistos · %d na lista · %d coleções%s",
     "hdr do pipeline: %s (fonte DV=%d)",
+    # Os quatro motivos do diagnostico [col] (descoberta.c). Sao DADOS DE UM
+    # VETOR, e nao argumento de printf: a varredura olha o que vem antes do
+    # literal e ali so ha uma chave de inicializacao, entao NAO_E_TELA nao tem
+    # como reconhece-los. Ficam em portugues de proposito — quem le e quem
+    # abre uma issue, e a linha inteira em volta deles ja e portugues.
+    "nenhuma colecao usa este addon",
+    "colecao tem o addon, mas com outro tipo",
+    "colecao tem addon e tipo, mas outro id de catalogo",
+    "CASOU — nao engoliu porque o grupo esta oculto",
 }
 
 def varrer():

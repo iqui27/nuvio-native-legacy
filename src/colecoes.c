@@ -104,6 +104,53 @@ void col_despejar_fontes(int max) {
   }
 }
 
+// POR QUE ESTA FILEIRA NAO FOI ENGOLIDA. O despejo de fontes nao respondia
+// isso: com 137 pastas ele mostra as 6 primeiras, todas da MESMA pasta, e um
+// relator do #18 mandou exatamente isso — seis fontes de "Streaming/Netflix"
+// que nao tem nada a ver com as fileiras soltas dele. Amostra cega nao serve
+// para comparar dois lados.
+//
+// Aqui a pergunta e feita ao contrario: dada a fileira, ATE ONDE ela chegou
+// antes de nao casar. Os niveis sao cumulativos e a ordem e a da comparacao em
+// col_por_catalogo:
+//
+//   0  nenhuma fonte tem esta base       — o addon nao esta em colecao nenhuma
+//   1  base casa, `type` nao             — a colecao pede movie e a fileira e series
+//   2  base e `type` casam, `catId` nao  — id de catalogo diferente dos dois lados
+//   3  os tres casam                     — e ai o motivo NAO e o casamento: o
+//                                          grupo esta oculto (ver
+//                                          dentroDeColecaoVisivelBase)
+//
+// Nada de URL sai daqui de proposito. O que o relator precisa mandar e o
+// NIVEL, e a base do Xperience leva um JWT no caminho — imprimi-la redigida
+// esconderia justamente o trecho que diferencia duas bases, e imprimi-la
+// inteira publicaria a credencial dele num relato de defeito.
+int col_diagnostico(const char *base, const char *type, const char *id,
+                    char *grupo, unsigned n) {
+  int i, s, melhor = 0;
+  if (grupo && n) grupo[0] = 0;
+  if (!base || !base[0] || !type || !id) return 0;
+  for (i = 0; i < count; i++) {
+    resolverBases(&folders[i]);
+    for (s = 0; s < folders[i].nSources; s++) {
+      const ColSource *v = &folders[i].sources[s];
+      int nivel;
+      if (strcmp(v->base, base)) continue;
+      nivel = 1;
+      if (!strcmp(v->type, type)) {
+        nivel = 2;
+        if (!strcmp(v->catId, id)) nivel = 3;
+      }
+      if (nivel > melhor) {
+        melhor = nivel;
+        if (grupo && n) snprintf(grupo, n, "%s", folders[i].group);
+        if (melhor == 3) return 3;
+      }
+    }
+  }
+  return melhor;
+}
+
 const ColFolder *col_por_catalogo(const char *base,const char *type,const char *id) {
   // Base vazia nao pergunta nada: sem esta guarda uma consulta sem URL casava
   // com QUALQUER fonte cuja base ainda estivesse vazia — um falso positivo que

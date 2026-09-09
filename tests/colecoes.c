@@ -55,6 +55,29 @@ int main(void) {
     assert(!strcmp(col_folder(0)->group, "Streaming Renomeado") && !strcmp(col_folder(0)->sources[0].base, "https://addon/abc"));
     assert(!strcmp(col_folder(1)->cover, "https://cdn/n.webp") && !col_folder(1)->local);
     puts("ok  pasta do pacote guarda arte e quadros; a conta da grupo, titulo e pastas novas"); }
+  // OS QUATRO NIVEIS DE col_diagnostico. O que este teste guarda nao e a
+  // funcao e sim a CAPACIDADE DE SEPARAR causas: os quatro casos abaixo
+  // produzem hoje o mesmo sintoma na tela (fileira solta na home, #18) e o
+  // nivel e a unica coisa que diz qual deles aconteceu. Se dois deles voltarem
+  // a devolver o mesmo numero, o diagnostico volta a ser inutil e o relator
+  // volta a mandar log que nao decide nada.
+  { char g[64];
+    assert(col_definir_json("{\"collections\":[{\"id\":\"c\",\"title\":\"Streaming\","
+           "\"folders\":[{\"id\":\"g\",\"title\":\"G\",\"sources\":["
+           "{\"addonBaseUrl\":\"https://x\",\"type\":\"movie\",\"catalogId\":\"top\"}]}]}]}") == 1);
+    assert(col_diagnostico("https://outro", "movie", "top", g, sizeof g) == 0);
+    assert(col_diagnostico("https://x", "series", "top", g, sizeof g) == 1);
+    assert(col_diagnostico("https://x", "movie", "imdbRating", g, sizeof g) == 2);
+    assert(col_diagnostico("https://x", "movie", "top", g, sizeof g) == 3);
+    // O grupo sai junto: sem ele o nivel 3 diz "casou" e nao diz ONDE, e o
+    // nivel 3 e exatamente o caso em que a pessoa precisa ir desocultar algo.
+    assert(!strcmp(g, "Streaming"));
+    // Base vazia nao casa com nada. Sem esta guarda uma fileira sem base
+    // casaria com toda fonte ainda nao resolvida — o falso positivo que
+    // col_por_catalogo ja evita, repetido aqui porque sao duas varreduras.
+    assert(col_diagnostico("", "movie", "top", g, sizeof g) == 0);
+    puts("ok  col_diagnostico separa os quatro motivos de nao engolir"); }
+
   puts("colecoes: tudo ok");
   return 0;
 }

@@ -781,25 +781,44 @@ static void lerPrefs(void) {
 // So conta quando a colecao esta VISIVEL como fileira. Uma pasta cujo grupo foi
 // desligado nao pode engolir o catalogo dela junto — senao desligar a colecao
 // faria o conteudo sumir de vez, em vez de voltar a aparecer solto.
-static int dentroDeColecaoVisivelBase(const char *base, const char *tipo,
-                                      const char *id) {
-  const ColFolder *f;
-  char chaveGrupo[96];
+// ESCONDER A COLECAO NAO PODE FAZER OS CATALOGOS DELA VOLTAREM SOZINHOS.
+//
+// Esta funcao testava tambem se o grupo estava visivel e devolvia 0 quando nao
+// estava — ou seja, com a colecao escondida o catalogo deixava de ser
+// reconhecido como parte dela e virava fileira solta. MEDIDO na C9 com 169
+// colecoes: `fileirasui.txt` traz `collection_4fdc51c9-… 1` (o dono escondeu
+// "Trending") e a home mostrava "Trending - Filme" e "Top 100 Today - Filme"
+// como duas fileiras separadas. E o #18 em uma frase: a colecao aparece
+// dividida em varias fileiras.
+//
+// Ninguem desenharia a regra antiga de proposito. Ela dizia: "com o grupo a
+// vista, a colecao representa o catalogo; com o grupo escondido, o catalogo se
+// representa sozinho". Quem esconde uma colecao esta escondendo aquele
+// conteudo, nao pedindo para ve-lo destrinchado.
+//
+// O nome mudou junto, porque era o nome que carregava a regra errada: a
+// pergunta e "este catalogo esta dentro de alguma colecao?", e a visibilidade
+// do grupo e assunto de quem desenha a fileira do grupo.
+// Quantos catalogos a regra acima barrou ANTES de virarem fileira, no ciclo
+// corrente. Sem este numero a linha [col] diz "engolidas=0" enquanto o
+// engolimento aconteceu — so que mais cedo, na declaracao — e quem le o log
+// conclui que a regra nao rodou. Ja perdi uma rodada por um contador que
+// media so metade do caminho.
+static int engolidasNaDeclaracao;
+
+static int dentroDeColecaoBase(const char *base, const char *tipo,
+                               const char *id) {
   if (!base || !base[0]) return 0;
-  f = col_por_catalogo(base, tipo, id);
-  if (!f) return 0;
-  col_chave_grupo(f->group, chaveGrupo, sizeof chaveGrupo);
-  if (fil_oculta(chaveGrupo) || catordem_oculta(chaveGrupo, chaveGrupo)) return 0;
-  return 1;
+  return col_por_catalogo(base, tipo, id) != NULL;
 }
 
-static int dentroDeColecaoVisivel(const Decl *d) {
-  return dentroDeColecaoVisivelBase(d->base, d->tipo, d->id);
+static int dentroDeColecao(const Decl *d) {
+  return dentroDeColecaoBase(d->base, d->tipo, d->id);
 }
 
 static int desligada(const Decl *d) {
   int i;
-  if (dentroDeColecaoVisivel(d)) return 1;
+  if (dentroDeColecao(d)) return 1;
   // A escolha feita NA TV (Ajustes -> Fileiras da Home) vem primeiro. Ela e
   // local de proposito e nunca sobe para a conta — a trava esta no topo de
   // catordem.h e repetida em fileiras.h. Sem esta precedencia, desligar uma
@@ -1434,6 +1453,10 @@ static void *montar(void *u) {
       // linha dizendo qual dos tres foi.
       int pedidos = 0, responderam = 0, vazios = 0, duplicados = 0;
       int cursor = 0, rodadas = 0;
+      // Zera POR CICLO. Um contador que so cresce diria, na terceira volta, um
+      // numero que e a soma de tres montagens — e a linha [col] existe para
+      // descrever a montagem que acabou de acontecer.
+      engolidasNaDeclaracao = 0;
       tarefas = calloc(CAT_FIL_MAX, sizeof(TarefaCat));
 
       // EM RODADAS, e nao num lote so. Com um lote de exatamente `teto`
@@ -1452,7 +1475,10 @@ static void *montar(void *u) {
         for (; cursor < nOrdem && nTarefas < alvo; cursor++) {
           Decl *d = &decls[ordem[cursor]];
           int t, repetida = 0;
-          if (desligada(d)) continue;
+          if (desligada(d)) {
+            if (dentroDeColecao(d)) engolidasNaDeclaracao++;
+            continue;
+          }
           // MESMA CHAVE DUAS VEZES = MESMA FILEIRA DUAS VEZES. Acontece quando
           // o mesmo addon entra duas vezes na lista (`addons.txt` mais a conta)
           // ou quando um manifesto declara o catalogo repetido: a chave e
@@ -1610,7 +1636,7 @@ static void *montar(void *u) {
     // A ULTIMA PALAVRA SOBRE AS COLECOES E AQUI. Issue #18, terceira tentativa,
     // e desta vez o problema nao era a REGRA e sim QUANDO ela roda.
     //
-    // dentroDeColecaoVisivelBase — quem decide que um catalogo pertence a uma
+    // dentroDeColecaoBase — quem decide que um catalogo pertence a uma
     // colecao e nao merece fileira propria — so existe dentro de
     // desc_remontar_fileiras(), e quem chamava essa funcao era so o sync, no
     // instante em que as colecoes da conta chegam. MEDIDO nesta LG: as colecoes
@@ -1715,7 +1741,7 @@ void desc_remontar_fileiras(void) {
     const CatFileira *f = &filsMontadas[i];
     if (!f->base[0]) continue;
     if (fil_oculta(f->chave) || catordem_oculta(f->chave, f->chave)) continue;
-    if (dentroDeColecaoVisivelBase(f->base, f->tipo, f->catId)) { engolidas++; continue; }
+    if (dentroDeColecaoBase(f->base, f->tipo, f->catId)) { engolidas++; continue; }
     if (nCat < CAT_FIL_MAX) { chaves[nCat] = f->chave; idxCat[nCat] = i; nCat++; }
   }
   // SEMPRE, e nao so quando engoliu: a linha existe para o caso em que ela
@@ -1724,20 +1750,53 @@ void desc_remontar_fileiras(void) {
   // mas o manifesto do addon ainda nao, e por isso nenhuma casa; com
   // "sem-base=0 engolidas=0" o casamento falhou por outro motivo e o problema
   // e a comparacao, nao a ordem de chegada.
-  printf("[col] fileiras de catalogo=%d engolidas=%d | colecoes=%d "
-         "fontes-sem-base=%d\n", nCat, engolidas, col_n(), col_fontes_sem_base());
+  printf("[col] fileiras de catalogo=%d engolidas=%d (%d na declaracao) | "
+         "colecoes=%d fontes-sem-base=%d\n", nCat, engolidas,
+         engolidasNaDeclaracao, col_n(), col_fontes_sem_base());
   // COM engolidas=0 E colecoes>0, o que falta e ver os DOIS lados da
   // comparacao. A base vai REDIGIDA por rede_url_publica: a do Xperience leva
   // um JWT dentro do caminho, e este log e lido e colado em relato de defeito.
-  if (!engolidas && col_n() > 0) {
-    char seg[120];
+  // O DESPEJO CEGO NAO RESPONDIA A PERGUNTA e foi trocado.
+  //
+  // Ele imprimia as 8 primeiras fileiras e as 6 primeiras fontes. Com 137
+  // pastas as 6 saem todas da PRIMEIRA pasta, e o relator do #18 mandou
+  // exatamente isso: seis fontes de "Streaming/Netflix" ao lado de fileiras do
+  // Cinemeta e do Xperience que nao tem relacao com elas. Dois lados que nao se
+  // encostam nao dizem qual campo falhou.
+  //
+  // Agora a pergunta e por fileira: ate onde ela chegou (ver col_diagnostico).
+  // O nivel separa as causas que hoje se parecem — addon fora de colecao,
+  // `type` trocado, `catId` diferente, e o caso em que o casamento deu certo e
+  // quem escondeu a fileira foi o grupo oculto.
+  if (!engolidas && !engolidasNaDeclaracao && col_n() > 0) {
     int i2;
-    for (i2 = 0; i2 < nCat && i2 < 8; i2++) {
+    for (i2 = 0; i2 < nCat && i2 < 12; i2++) {
       const CatFileira *f2 = &filsMontadas[idxCat[i2]];
-      printf("[col]   fileira: base=%s tipo=%s id=%s\n",
-             rede_url_publica(f2->base, seg, sizeof seg), f2->tipo, f2->catId);
+      char grupo[64];
+      int nivel = col_diagnostico(f2->base, f2->tipo, f2->catId,
+                                  grupo, sizeof grupo);
+      static const char *porque[4] = {
+        "nenhuma colecao usa este addon",
+        "colecao tem o addon, mas com outro tipo",
+        "colecao tem addon e tipo, mas outro id de catalogo",
+        "CASOU — nao engoliu porque o grupo esta oculto"
+      };
+      printf("[col]   %s (%s): nivel=%d %s%s%s\n",
+             f2->catId, f2->tipo, nivel, porque[nivel],
+             grupo[0] ? " | grupo=" : "", grupo[0] ? grupo : "");
+      // NIVEL 3 PRECISA DIZER QUEM ESCONDEU. Sao duas listas independentes com
+      // o mesmo efeito na tela: a escolha feita nesta TV (fileiras.txt) e a que
+      // veio da conta. Sem separa-las o relator nao sabe onde desfazer, e eu ja
+      // gastei uma rodada supondo que fosse a local quando o arquivo nem existia
+      // no aparelho.
+      if (nivel == 3) {
+        char ch[96];
+        col_chave_grupo(grupo, ch, sizeof ch);
+        printf("[col]     %s oculto por: %s%s\n", ch,
+               fil_oculta(ch) ? "esta TV " : "",
+               catordem_oculta(ch, ch) ? "a conta" : "");
+      }
     }
-    col_despejar_fontes(6);
   }
   fflush(stdout);
 
