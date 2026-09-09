@@ -31,6 +31,13 @@
 #define PS_AV_MIN      168.0f
 #define PS_VAO_RAZAO     0.34f   // vao entre avatares, em fracao do diametro
 #define PS_VAO_MIN       28.0f
+// O VAO CRESCE QUANDO SOBRA LARGURA. Com dois perfis o diametro bate no teto de
+// 288 e sobram mais de 1100 px de tela vazia — mas o vao continuava em 0.34*d, e
+// os dois circulos ficavam encostados no meio com o halo do focado invadindo o
+// vizinho. Deixar o vao usar parte da folga separa os dois sem mexer no tamanho.
+// O teto de 0.62 e o ponto em que a fileira comeca a ler como dois elementos
+// soltos em vez de uma lista.
+#define PS_VAO_RAZAO_MAX 0.62f
 #define PS_TITULO_Y     148.0f
 #define PS_SUB_Y        258.0f
 #define PS_FILA_Y       396.0f   // topo do avatar SEM foco
@@ -130,7 +137,11 @@ static float vaoDe(int m, float d) {
   float g = d * PS_VAO_RAZAO;
   if (m <= 1) return g;
   { float sobra = (util - (float)m * d) / (float)(m - 1);
-    if (g > sobra) g = sobra; }
+    // Sobrando espaco, o vao se estica ate PS_VAO_RAZAO_MAX; faltando, ele
+    // encolhe ate PS_VAO_MIN. E a mesma conta nos dois sentidos.
+    float teto = d * PS_VAO_RAZAO_MAX;
+    if (sobra > g) g = sobra > teto ? teto : sobra;
+    else g = sobra; }
   return g < PS_VAO_MIN ? PS_VAO_MIN : g;
 }
 
