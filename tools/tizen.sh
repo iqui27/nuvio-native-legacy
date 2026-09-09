@@ -148,7 +148,22 @@ eval emcc src/*.c -o "$SAIDA/index.html" -O2 "$ENV_D" \
   `# pthread_create, e quando o pool esgota cada fio novo exige criar um Worker` \
   `# e instanciar de novo os 3,2 MB de wasm. sessao_login_comecar cria fio na` \
   `# tela de login — que e onde a TV travou com o pool em 4.` \
-  -pthread -sPTHREAD_POOL_SIZE=12 -sPTHREAD_POOL_SIZE_STRICT=0 \
+  `# 12 NAO BASTOU, e agora ha medida de campo e nao suposicao: o log de uma TV` \
+  `# Samsung em uso mostrou "[fios] livres=0 vivos=12  <<< POOL NO LIMITE"` \
+  `# repetido, com o aviso "Blocking on the main thread is very dangerous" do` \
+  `# Emscripten logo antes — que e o quadro descrito acima, o de pool seco.` \
+  `# A CONTA explica: os orcamentos de fios simultaneos somam mais de 20 quando` \
+  `# as fases se sobrepoem (ADD_FIOS 4, BUSCA_FIOS 3, CAT_FIOS 3, VER_FIOS 4,` \
+  `# NV_TEX_FIOS 2 + NV_TEX_FIOS_REDE 4, TK_FIOS 3, mais os avulsos de sync,` \
+  `# video e extras). Com 12 o pool seca em qualquer arranque com conta.` \
+  `# 20 cobre o pico observado com folga. CUSTO MEDIDO no navegador, e ele NAO` \
+  `# e o que eu supus: com 12 e com 20 o heap fica igual (malloc=18,9 MiB,` \
+  `# livre-no-heap=7,9 MiB). Worker OCIOSO nao aloca pilha — os 2 MiB de` \
+  `# DEFAULT_PTHREAD_STACK_SIZE so saem no pthread_create. O que os 8 workers a` \
+  `# mais custam e memoria do NAVEGADOR (cada um instancia os ~3,2 MB de wasm),` \
+  `# e e exatamente esse trabalho que sai do caminho critico: com o pool seco` \
+  `# ele acontecia no MEIO da sessao e no FIO PRINCIPAL.` \
+  -pthread -sPTHREAD_POOL_SIZE=20 -sPTHREAD_POOL_SIZE_STRICT=0 \
   -sEXPORTED_FUNCTIONS='["_main","_malloc","_free"]' \
   `# PThread exportado para o medidor de fios de tizen-shell.html. NAO e` \
   `# opcional: sem o export, LER a variavel dispara o abort() do runtime` \
