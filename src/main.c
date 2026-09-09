@@ -67,6 +67,11 @@ static SDL_Keycode codigoDaTecla(const char *nome) {
   // "log" abre/fecha o painel de registro na tela. Sem isto, exercitar o painel
   // exigia a tecla vermelha de um controle de TV — e no Mac ela nao existe.
   if (!strcmp(nome, "log"))   return SDLK_F9;
+  // "azul" abre o painel de Salvos, pelo mesmo motivo do "log" logo acima: a
+  // tecla de verdade e a AZUL do controle da TV (NV_SCANCODE_BLUE, 489), e ela
+  // nao existe em teclado nenhum. app.c ja aceita o S como equivalente dela; e
+  // esse S que sai daqui, entao o caminho exercitado e o mesmo.
+  if (!strcmp(nome, "azul"))  return SDLK_s;
   return 0;
 }
 

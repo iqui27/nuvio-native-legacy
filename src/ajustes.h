@@ -57,6 +57,15 @@ int   ajustes_sufixo_tipo(void);        // catalogTypeSuffixEnabled
 int   ajustes_ocultar_nao_lancados(void);   // hideUnreleasedContent
 void  ajustes_definir_ocultar_nao_lancados(int ligado);
 int   ajustes_data_completa(void);      // showFullReleaseDate
+// Onde o "+" escreve. 1 = tambem na watchlist do Trakt, 0 = so na lista local
+// desta TV. LOCAL: nao existe campo equivalente no perfil da conta, entao a
+// escolha nunca sobe nem desce pelo blob — mas ela PRECISA sobreviver ao
+// fechamento, e gravar() pula toda chave iniciada por "-"; por isso a chave em
+// ajustes.txt ("salvosDestino") NAO leva o "-" das linhas de conta. (A primeira
+// versao deste comentario dizia o contrario do codigo.) A lista local e escrita
+// nos DOIS valores — ver a nota de V_SALVOS em ajustes.c e a abertura de salvos.h.
+int   ajustes_salvos_no_trakt(void);
+void  ajustes_definir_salvos_no_trakt(int noTrakt);
 // homeImdbRatingsVisibility: 0 SHOW_ALL, 1 HIDE_ALL
 int   ajustes_notas_home(void);
 // discoverLocation: 0 in_search, 1 in_sidebar, 2 off

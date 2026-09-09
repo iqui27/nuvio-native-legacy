@@ -18,6 +18,8 @@
 #include "legenda.h"
 #include "intro.h"
 #include "perfil.h"
+#include "salvospainel.h"
+#include "salvos.h"
 #include "social.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
@@ -46,8 +48,8 @@ static void teclaMenu(SDL_Keycode k) {
   SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=k;menu_evento(&e);
 }
 static void testar(void) {
-  perfil_iniciar();perfil_abrir_lateral();
-  assert(perfil_lateral() && perfil_aberto());
+  perfil_iniciar();perfil_abrir();
+  assert(perfil_aberto());
   { PerfilDados pd={0};
     snprintf(pd.nome,sizeof pd.nome,"Perfil de teste");
     snprintf(pd.usuario,sizeof pd.usuario,"teste");
@@ -57,14 +59,28 @@ static void testar(void) {
     perfil_definir_erro("rede indisponível");
     perfil_definir_dados(NULL);
   }
-  SDL_Event pe={0};pe.type=SDL_KEYDOWN;pe.key.keysym.sym=SDLK_DOWN;
-  perfil_evento(&pe);pe.key.keysym.sym=SDLK_RETURN;perfil_evento(&pe);
+  // Sem snapshot, OK na tela inteira pede nova tentativa. (Este trecho cobria
+  // o painel lateral "Sua atividade", removido: os tres botoes dele — Fechar,
+  // Atualizar, Ver perfil completo — nao existem mais, porque os dois atalhos
+  // que abriam o painel agora vao direto ao destino. O que sobrou de testavel
+  // e o pedido de atualizacao e o Voltar.)
+  SDL_Event pe={0};pe.type=SDL_KEYDOWN;pe.key.keysym.sym=SDLK_RETURN;
+  perfil_evento(&pe);
   assert(perfil_pediu_atualizar());
-  pe.key.keysym.sym=SDLK_DOWN;perfil_evento(&pe);
-  pe.key.keysym.sym=SDLK_RETURN;perfil_evento(&pe);
-  assert(perfil_pediu_completo());
-  perfil_abrir_lateral();pe.key.keysym.sym=SDLK_ESCAPE;perfil_evento(&pe);
+  pe.key.keysym.sym=SDLK_ESCAPE;perfil_evento(&pe);
   assert(!perfil_aberto() && perfil_quer_sair());
+
+  // PAINEL DE SALVOS, o que a tecla AZUL abre agora. Com a lista vazia ele nao
+  // tem linha nenhuma, entao OK nao pode inventar um pedido de abrir — era o
+  // caminho mais facil de um indice fora da faixa.
+  spainel_abrir();
+  assert(spainel_aberto() && spainel_visivel());
+  { SDL_Event se={0};se.type=SDL_KEYDOWN;
+    se.key.keysym.sym=SDLK_DOWN;spainel_evento(&se);
+    se.key.keysym.sym=SDLK_RETURN;spainel_evento(&se);
+    assert(salvos_n()>0 || spainel_pediu_abrir()==NULL);
+    se.key.keysym.sym=SDLK_LEFT;spainel_evento(&se);
+    assert(!spainel_aberto()); }
   char json[24000];size_t p=0;
   LegendaCue *lc=NULL;
   int nc=legenda_extrair("WEBVTT\n\n00:00:01.000 --> 00:00:03.250\n<i>Olá &amp; bem-vindo</i>\n\n2\n00:00:04,000 --> 00:00:06,000\nSegunda linha\n",&lc);
@@ -271,7 +287,10 @@ int main(int argc,char **argv) {
     perfil_evento(&e);captura("/tmp/nuvio-profile-calendar.bmp",w,5);
     for(int i=0;i<6;i++)perfil_evento(&e);
     captura("/tmp/nuvio-profile-ranks.bmp",w,5);
-    perfil_abrir_lateral();captura("/tmp/nuvio-profile-sidebar.bmp",w,5);
+    // O painel lateral do perfil deixou de existir; a captura equivalente hoje
+    // e a do painel de Salvos, que ocupa a mesma moldura.
+    spainel_abrir();spainel_atualizar(1.0f,SDL_GetTicks());
+    captura("/tmp/nuvio-salvos-painel.bmp",w,5);
     return 0;
   }
   cat_carregar("deploy/app/art");
