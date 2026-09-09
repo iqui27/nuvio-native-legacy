@@ -124,6 +124,7 @@
   { "COLEÇÕES", "COLLECTIONS" },
   { "Cabe %d fileira a mais aqui", "Room for %d more row here" },
   { "Cabem %d fileiras a mais aqui", "Room for %d more rows here" },
+  { "Carregando arte…", "Loading artwork…" },
   { "Carregando atividade…", "Loading activity…" },
   { "Carregando comentários…", "Loading comments…" },
   { "Carregando episódios…", "Loading episodes…" },

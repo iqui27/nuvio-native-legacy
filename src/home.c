@@ -178,6 +178,9 @@ static Uint32 heroPendenteEm = 0;
 static int    heroDesejado = -1;
 // Quando heroDesejado foi anunciado. E o relogio do teto de NV_HERO_ESPERA_MS.
 static Uint32 heroDesejadoEm = 0;
+// Telemetria da espera do heroi — ver o bloco que a imprime, no desenho.
+static int heroEstourou, heroEsperaN, heroEsperaEstouros;
+static unsigned heroEsperaSoma, heroEsperaPior;
 
 // --- EXPANSAO DO CARTAZ FOCADO EM REPOUSO ------------------------------------
 //
@@ -295,11 +298,18 @@ static int desenhaArteHero(GfxRect r, GfxModo modo, const CatItem *item,
   return 1;
 }
 
-static void desenhaPlaceholderHero(GfxRect r, const CatItem *item, float alpha) {
+// `esperando` separa DUAS COISAS QUE NAO SAO A MESMA, e a diferenca nasceu com
+// o teto de NV_HERO_ESPERA_MS: passado o prazo o heroi troca sem a arte, e a
+// arte esta A CAMINHO — dizer "Arte indisponível" ali seria trocar uma mentira
+// (a arte do titulo anterior) por outra (a arte nao existe). Sem o teto so
+// havia o caso de arte que de fato nao existe, e por isso a frase era uma so.
+static void desenhaPlaceholderHero(GfxRect r, const CatItem *item, float alpha,
+                                   int esperando) {
   GfxRect bloco = { r.x + r.w * 0.58f, r.y + 32.0f,
                     r.w * 0.34f, r.h - 64.0f };
   gfx_cor(bloco, 0.035f, 0.075f, 0.082f, 0.098f, alpha * 0.92f);
-  { TxtLinha t = txt_linha(TXT_HERO_META, "Arte indisponível",
+  { TxtLinha t = txt_linha(TXT_HERO_META,
+                            esperando ? "Carregando arte…" : "Arte indisponível",
                             185, 191, 204, 255);
     txt_desenhar_alpha(t, bloco.x + 28.0f,
                        bloco.y + bloco.h * 0.5f - t.h * 0.5f,
@@ -1651,16 +1661,26 @@ static void desenhaHero(Uint32 agora, float saida) {
     // novo em vez da arte do anterior. O pedido acima ja enfileirou o decode,
     // entao a arte entra sozinha assim que chegar.
     if (!artePronta && SDL_GetTicks() - heroDesejadoEm >= NV_HERO_ESPERA_MS) {
-      static int avisou;
-      if (!avisou) {
-        avisou = 1;
-        printf("[home] heroi trocado sem arte: %u ms de espera estourados\n",
-               (unsigned)NV_HERO_ESPERA_MS);
-        fflush(stdout);
-      }
       artePronta = 1;
+      heroEstourou = 1;
     }
     if (artePronta) {
+      // A ESPERA REAL, medida e nao suposta. E o intervalo entre o foco parar
+      // (heroDesejadoEm) e o heroi corresponder — que e exatamente o que o
+      // relator do #21 descreve como "don't match for a moment". Sem este
+      // numero, pre-buscar os vizinhos seria adivinhacao, e pre-busca custa
+      // textura de 1920 (~8 MB) que pode despejar os posteres da tela.
+      unsigned esperou = (unsigned)(SDL_GetTicks() - heroDesejadoEm);
+      heroEsperaN++;
+      heroEsperaSoma += esperou;
+      if (esperou > heroEsperaPior) heroEsperaPior = esperou;
+      if (heroEstourou) heroEsperaEstouros++;
+      printf("[hero] espera %u ms%s | n=%d media=%u pior=%u estouros=%d\n",
+             esperou, heroEstourou ? " (ESTOUROU, sem arte)" : "",
+             heroEsperaN, (unsigned)(heroEsperaSoma / (unsigned)heroEsperaN),
+             heroEsperaPior, heroEsperaEstouros);
+      fflush(stdout);
+      heroEstourou = 0;
       heroAnterior = heroAtual;
       heroAtual = heroDesejado;
       heroDesejado = -1;
@@ -1691,14 +1711,17 @@ static void desenhaHero(Uint32 agora, float saida) {
     (void)desenhaArteHero(r, modoHero, cAnt, arteB,
                           anim_suave(heroSai) * aArte);
   } else if (heroSai > 0.0f) {
-    desenhaPlaceholderHero(r, cAnt, anim_suave(heroSai) * aArte);
+    desenhaPlaceholderHero(r, cAnt, anim_suave(heroSai) * aArte, 0);
   }
   if (tAtu && heroEntra > 0.0f) {
     (void)desenhaArteHero(r, modoHero, ci, arteA,
                           anim_suave(heroEntra) * aArte);
   } else if (!tAtu) {
+    // ESPERANDO quando ha caminho de arte e ela ainda nao decodificou; ausente
+    // quando o titulo nao tem arte nenhuma para pedir.
     desenhaPlaceholderHero(r, ci,
-                           aArte * (heroEntra > 0.0f ? 1.0f : heroEntra));
+                           aArte * (heroEntra > 0.0f ? 1.0f : heroEntra),
+                           arteA != NULL && arteA[0] != 0);
   }
   gfx_tex_aspect_atual = 0.0f;
   heroArteRect = r;
