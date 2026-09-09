@@ -161,21 +161,32 @@ long long js_ms_iso(const char *s) {
 // Ver a nota em js.h. Veio de addons.c, onde era o leitor do "id" do manifesto,
 // quando o segundo consumidor apareceu (o titulo localizado do TMDB).
 int js_texto_raiz(const char *corpo, const char *chave, char *dst, size_t tam) {
+  return js_texto_raiz_em(corpo, NULL, chave, dst, tam);
+}
+
+// Ver a nota em js.h. Nasceu quando o mesmo defeito do "id" do manifesto
+// apareceu UM NIVEL ABAIXO: o "name" de cada catalogo era lido com js_texto
+// sobre a faixa do objeto, e o Bingecat escreve `extra` ANTES de `name` — a
+// fileira saia batizada de "Skip", "Genre" ou "Search", que sao os nomes dos
+// EXTRAS (skip e o de paginacao do Stremio). Foi esse rotulo que fez o relato
+// da issue #24 parecer "catalogo que so responde com parametro".
+int js_texto_raiz_em(const char *ini, const char *fim, const char *chave,
+                     char *dst, size_t tam) {
   const char *p;
   size_t nChave;
   int prof = 0;
-  if (!corpo || !chave || !dst || tam == 0) return 0;
+  if (!ini || !chave || !dst || tam == 0) return 0;
   dst[0] = 0;
   nChave = strlen(chave);
-  p = strchr(corpo, '{');
-  if (!p) return 0;
-  for (; *p; p++) {
+  p = strchr(ini, '{');
+  if (!p || (fim && p >= fim)) return 0;
+  for (; *p && (!fim || p < fim); p++) {
     if (*p == '"') {
-      const char *ini = p + 1;
-      const char *q = ini;
+      const char *ini2 = p + 1;
+      const char *q = ini2;
       while (*q && *q != '"') q += (*q == '\\' && q[1]) ? 2 : 1;
-      if (prof == 1 && (size_t)(q - ini) == nChave &&
-          !strncmp(ini, chave, nChave)) {
+      if (prof == 1 && (size_t)(q - ini2) == nChave &&
+          !strncmp(ini2, chave, nChave)) {
         const char *v = q + 1;
         while (*v == ' ' || *v == ':' || *v == '\n' || *v == '\t' || *v == '\r') v++;
         // Valor nao-string (numero, null, objeto) devolve 0 em vez de meia

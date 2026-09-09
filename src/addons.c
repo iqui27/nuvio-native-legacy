@@ -40,6 +40,39 @@ static Stream *resultado;
 static int nResultado;
 static char pendId[64], pendTipo[16];
 
+// A BASE de um addon a partir da URL guardada (arquivo local ou conta). A URL
+// aponta para o manifesto; a base e ela sem o sufixo, e e dela que saem
+// <base>/catalog/..., <base>/stream/... e <base>/manifest.json.
+//
+// A REGRA E UMA SO, E MORA AQUI. Havia tres copias dela (arquivo local, conta
+// e a comparacao "a lista mudou?") e as tres tinham o mesmo furo: so
+// reconheciam "/manifest.json" no FIM EXATO da string. O Bingecat entrega a
+// URL como .../manifest.json?ver=N — com query string — e o sufixo nao casava.
+// A "base" ficava sendo a URL inteira, e TODO pedido virava
+// .../manifest.json?ver=N/catalog/movie/<id>.json. O servidor dele responde a
+// isso com o proprio manifesto (HTTP 200, corpo com "catalogs" e sem "metas"),
+// entao lerCatalogo via "respondeu, zero itens" e o log dizia "catalogo vazio"
+// para os 21 catalogos, inclusive "Because you watched Silo" — um catalogo que,
+// pedido pela base certa, devolve 12 titulos. E a issue #24 inteira: nao era
+// falta de parametro, era a URL.
+//
+// Medido na TV do dono com a base cortada: o mesmo catalogo devolve 19.908
+// bytes de metas com ou sem a query re-anexada, entao a query nao carrega
+// configuracao e pode cair. Se um dia aparecer addon que precise dela no
+// caminho de catalogo, e aqui que isso se decide.
+static void baseNormalizada(const char *url, char *dst, size_t tam) {
+  size_t k;
+  char *q;
+  snprintf(dst, tam, "%s", url);
+  q = strchr(dst, '?');
+  if (q) *q = 0;
+  k = strlen(dst);
+  if (k > 14 && !strcmp(dst + k - 14, "/manifest.json")) { k -= 14; dst[k] = 0; }
+  // Barra final fora nos dois casos: "<base>//catalog" e uma URL diferente de
+  // "<base>/catalog" para mais de um servidor.
+  while (k && dst[k - 1] == '/') dst[--k] = 0;
+}
+
 // --- leitura do arquivo de configuracao -------------------------------------
 
 int addons_carregar(const char *dirArte) {
@@ -52,7 +85,6 @@ int addons_carregar(const char *dirArte) {
   while (nAddon < ADD_MAX && fgets(linha, sizeof linha, f)) {
     char *tab = strchr(linha, '\t');
     char *fim;
-    size_t n;
     // TAB e nao "|" como separador: nome de addon contem "|" de verdade
     // ("AIOStreams | ElfHosted") e partir no primeiro pipe corrompia a URL.
     if (!tab) continue;
@@ -79,12 +111,7 @@ int addons_carregar(const char *dirArte) {
         addon[nAddon].fonte = atoi(tab2 + 1);
       } }
     snprintf(addon[nAddon].nome, sizeof addon[nAddon].nome, "%s", linha);
-    snprintf(addon[nAddon].base, sizeof addon[nAddon].base, "%s", tab + 1);
-    // A URL guardada aponta para o manifesto; a base e ela sem esse sufixo.
-    n = strlen(addon[nAddon].base);
-    if (n > 14 && !strcmp(addon[nAddon].base + n - 14, "/manifest.json"))
-      addon[nAddon].base[n - 14] = 0;
-    else while (n && addon[nAddon].base[n - 1] == '/') addon[nAddon].base[--n] = 0;
+    baseNormalizada(tab + 1, addon[nAddon].base, sizeof addon[nAddon].base);
     nAddon++;
   }
   fclose(f);
@@ -92,16 +119,6 @@ int addons_carregar(const char *dirArte) {
     for (k = 0; k < nAddon; k++) f += addon[k].fonte;
     printf("[addons] %d configurados, %d fornecem stream\n", nAddon, f); }
   return nAddon;
-}
-
-// A base normalizada de uma entrada da conta, do mesmo jeito que o laco abaixo
-// normaliza. Existe para poder COMPARAR sem duplicar a regra.
-static void baseNormalizada(const char *url, char *dst, size_t tam) {
-  size_t k;
-  snprintf(dst, tam, "%s", url);
-  k = strlen(dst);
-  if (k > 14 && !strcmp(dst + k - 14, "/manifest.json")) dst[k - 14] = 0;
-  else while (k && dst[k - 1] == '/') dst[--k] = 0;
 }
 
 // A lista que chegou e IGUAL a que ja esta valendo?
@@ -141,7 +158,6 @@ int addons_definir_lista(const AddonRemoto *nova, int n) {
   // da conta perderem a URL dos addons ate a proxima leitura.
   if (listaIgual(nova, n)) return 0;
   for (i = 0; i < n && aceitos < ADD_MAX; i++) {
-    size_t k;
     // Addon DESLIGADO tambem entra: ele aparece na lista e pode ser religado
     // aqui. So nao e consultado (ver ativoParaConsulta).
     if (!nova[i].url[0]) continue;
@@ -156,11 +172,7 @@ int addons_definir_lista(const AddonRemoto *nova, int n) {
     memset(&addon[aceitos], 0, sizeof addon[aceitos]);
     snprintf(addon[aceitos].nome, sizeof addon[aceitos].nome, "%s",
              nova[i].nome[0] ? nova[i].nome : "Addon");
-    snprintf(addon[aceitos].base, sizeof addon[aceitos].base, "%s", nova[i].url);
-    k = strlen(addon[aceitos].base);
-    if (k > 14 && !strcmp(addon[aceitos].base + k - 14, "/manifest.json"))
-      addon[aceitos].base[k - 14] = 0;
-    else while (k && addon[aceitos].base[k - 1] == '/') addon[aceitos].base[--k] = 0;
+    baseNormalizada(nova[i].url, addon[aceitos].base, sizeof addon[aceitos].base);
     // A conta nao diz o que cada addon fornece; o manifesto e que diria, e
     // consultar todos no arranque custaria uma viagem por addon. Assumir que
     // fornece tudo faz no maximo uma consulta vazia a mais por titulo — o

@@ -77,5 +77,13 @@ long long js_ms_iso(const char *s);
 // ou [ ] interno. Nao e um analisador: respeita aspas e escape e nada mais.
 // 1 quando achou e coube. Valor que nao e string devolve 0.
 int js_texto_raiz(const char *corpo, const char *chave, char *dst, size_t tam);
+// O mesmo, para um objeto que nao e o documento inteiro: le as chaves de
+// profundidade 1 do primeiro '{' em [ini,fim). E o leitor certo para o "name"
+// de um catalogo dentro de catalogs[] — js_texto(p, f, "name") devolve o
+// primeiro "name" que encontrar na faixa, e se o objeto escreve `extra` antes
+// de `name` (o Bingecat escreve) o primeiro e o nome de um EXTRA. `fim` NULL
+// significa "ate o fim da string".
+int js_texto_raiz_em(const char *ini, const char *fim, const char *chave,
+                     char *dst, size_t tam);
 
 #endif

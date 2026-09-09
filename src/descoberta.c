@@ -859,7 +859,15 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max) {
     tipo[0] = id[0] = nome[0] = 0;
     js_texto(p, f, "type", tipo, sizeof tipo);
     js_texto(p, f, "id",   id,   sizeof id);
-    js_texto(p, f, "name", nome, sizeof nome);
+    // RAIZ DO OBJETO, e nao a primeira ocorrencia na faixa. O Bingecat escreve
+    // `extra: [{name:"skip"}, {name:"genre"}, ...]` ANTES de `name`, e js_texto
+    // devolvia o nome do primeiro extra: as fileiras dele apareciam como "Skip
+    // - Filme", "Genre - Série" e "Search - Filme" em Ajustes e no log. Foi
+    // esse rotulo, e nao o manifesto, que fez a issue #24 parecer um caso de
+    // "catalogo que exige parametro" — "Search - Movie" era um catalogo
+    // qualquer cujo primeiro extra se chamava search. Mesma armadilha ja
+    // descrita para o "id" do addon (js_texto_raiz), um nivel abaixo.
+    js_texto_raiz_em(p, f, "name", nome, sizeof nome);
     // Sem tipo ou sem id nao da para montar a URL do catalogo; e um catalogo
     // que nao responde e pior que uma fileira a menos.
     if (tipo[0] && id[0]) {
@@ -890,7 +898,9 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max) {
         // limite: sao 16 alvos de busca contra centenas de fileiras.
         if (d->buscavel) {
           char rotulo[96], nomeAddon[96] = "";
-          js_texto(corpo, fim, "name", nomeAddon, sizeof nomeAddon);
+          // Raiz do MANIFESTO: "name" tambem existe em cada catalogs[] e ha
+          // manifesto que escreve catalogs antes de name (ver addons.c).
+          js_texto_raiz(corpo, "name", nomeAddon, sizeof nomeAddon);
           formatarTitulo(nome, tipo, rotulo, sizeof rotulo);
           desc_alvo_busca(base, tipo, id, rotulo,
                           nomeAddon[0] ? nomeAddon
@@ -905,7 +915,7 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max) {
       // Nome legivel do addon, para a linha "de <addon>" sob o titulo da
       // fileira de resultados. O manifesto tem `name`; sem ele fica o id.
       { char an[96] = "";
-        js_texto(corpo, fim, "name", an, sizeof an);
+        js_texto_raiz(corpo, "name", an, sizeof an);
         snprintf(d->nomeAddon, sizeof d->nomeAddon, "%s",
                  an[0] ? an : (addonId[0] ? addonId : "addon")); }
       if (n < max) n++;
