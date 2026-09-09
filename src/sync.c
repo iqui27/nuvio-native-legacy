@@ -428,6 +428,35 @@ static void puxarSoLeitura(void) {
 static void *rodar(void *u) {
   (void)u;
   perfis_puxar();
+  // ESCOLHA DE PERFIL PENDENTE: PARA AQUI, e nao adivinha o perfil 1.
+  //
+  // Issue #19, "Random Profile Data Appears Briefly Before My Trakt Profile
+  // Loads". Todo o resto deste ciclo e POR PERFIL — addons, credenciais,
+  // progresso, biblioteca, vistos, colecoes, ajustes, catalogos da home; cada
+  // RPC leva p_profile_id. `ativo` nasce em 1 (perfis.c) e so vira o perfil de
+  // verdade quando alguem escolhe. Numa conta com mais de um perfil e nenhuma
+  // escolha salva NESTA TV, o primeiro ciclo puxava tudo do perfil 1, a home
+  // montava com o dado dele, a pessoa escolhia o perfil dela e tudo trocava —
+  // que e exatamente o que o relator descreve e filmou.
+  //
+  // Isto ERA CONHECIDO e estava escrito em app.c, no ponto que roda o segundo
+  // ciclo: "traz os addons e o progresso DESTE perfil, e nao os do perfil 1 que
+  // o primeiro ciclo pegou por falta de escolha". A segunda volta consertava o
+  // dado; nao consertava o que a pessoa ja tinha visto na tela.
+  //
+  // Home vazia por alguns segundos e melhor que a home de outro perfil. E nao
+  // custa nada a quem ja escolheu: com perfil salvo, perfis_precisa_escolher()
+  // e falso e o ciclo segue inteiro, como sempre. app.c abre a tela de escolha
+  // e chama sync_iniciar() de novo assim que houver escolha.
+  if (perfis_precisa_escolher()) {
+    printf("[sync] ciclo interrompido: %d perfis e nenhum escolhido nesta TV\n",
+           perfis_n());
+    fflush(stdout);
+    snprintf(resumo, sizeof resumo, "aguardando escolha de perfil");
+    estado = SYNC_PRONTO;
+    fioPronto = 1;
+    return NULL;
+  }
   puxarAddons();
   // OS ADDONS SAO A SEGUNDA RPC DO CICLO, E ERAM APLICADOS NA ULTIMA LINHA DELE.
   //

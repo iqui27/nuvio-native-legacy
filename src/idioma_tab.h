@@ -589,6 +589,7 @@
   { "Zoom ultra", "Ultra zoom" },
   { "abril", "April" },
   { "agosto", "August" },
+  { "aguardando escolha de perfil", "waiting for a profile to be chosen" },
   { "apagar", "delete" },
   { "app sem configuracao de servidor", "app built without a server" },
   { "assistindo agora", "watching now" },
