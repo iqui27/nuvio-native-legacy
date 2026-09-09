@@ -256,6 +256,7 @@
   { "Fonte OpenSubtitles", "OpenSubtitles source" },
   { "Fonte do \"Continuar assistindo\"", "Source for \"Continue Watching\"" },
   { "Fontes", "Sources" },
+  { "Fontes deste episódio", "Sources for this episode" },
   { "Fora da biblioteca", "Not in library" },
   { "Fora do limite", "Beyond the limit" },
   { "Francês", "French" },

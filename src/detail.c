@@ -20,6 +20,7 @@
 //   4. Ao rolar, a arte de fundo NAO desfoca: ela vai a 15% de opacidade em
 //      0.8s. O desfoque gaussiano era do app da Apple TV.
 #include "detail.h"
+#include "episodios.h"
 #include "idioma.h"
 #include "badges.h"
 #include "marco.h"
@@ -825,6 +826,16 @@ static int acaoEm(int n) {
 void detail_evento(const SDL_Event *e) {
   if (saindo) return;
 
+  // O MENU DE VISTO COME OS EVENTOS. Mesma regra da ficha da pessoa logo
+  // abaixo: e a coisa mais recente na tela e e para ela que a pessoa olha.
+  if (episodios_menu_aberto()) {
+    episodios_menu_evento(e);
+    // "Fontes deste episodio" e a porta que a pressao longa tomou do card:
+    // antes dela, qualquer OK ali abria as fontes.
+    if (episodios_menu_pediu_fontes()) pedFontes = 1;
+    return;
+  }
+
   // A FICHA DA PESSOA come os eventos enquanto esta aberta. Ela e outra tela e
   // nao uma secao desta: deixar a tela de titulo continuar respondendo por
   // baixo faria a seta mover duas coisas ao mesmo tempo.
@@ -991,10 +1002,21 @@ void detail_evento(const SDL_Event *e) {
     } else if (foco.fileira == SEC_ABAS_INFO) {
       abaInfo = foco.coluna;
     } else if (foco.fileira == SEC_EPISODIOS) {
-      // No web e `openEpisodeStreams`. Aqui a folha de fontes ainda e a do
-      // titulo: `stream_folha_abrir()` nao recebe episodio. Melhor abrir a
-      // folha que existe do que nao responder ao OK.
-      pedFontes = 1;
+      // PRESSAO LONGA ABRE O MENU DE VISTO; o toque curto continua abrindo as
+      // fontes, que e o que este card sempre fez.
+      //
+      // "marcar este / ate aqui / a temporada inteira" existia desde a 1.0.25 e
+      // era INALCANCAVEL daqui: o menu so vivia dentro da folha de episodios, e
+      // a folha so abre de dentro do player. Quem estava na pagina de detalhe —
+      // que e onde qualquer um iria procurar — segurava o card e via as fontes.
+      const CatEp *ep = cat_episodio(idx, foco.coluna);
+      if (dur >= NV_HOLD_MS && ep)
+        episodios_menu_visto(idx, ep->temporada, ep->episodio, ep->nome);
+      else
+        // No web e `openEpisodeStreams`. Aqui a folha de fontes ainda e a do
+        // titulo: `stream_folha_abrir()` nao recebe episodio. Melhor abrir a
+        // folha que existe do que nao responder ao OK.
+        pedFontes = 1;
     }
     return;
   }
@@ -3124,6 +3146,8 @@ void detail_desenhar(Uint32 agora) {
   for (int r = 0; r < N_SECOES; r++) desenhaSecao(r, pg, agora);
   // POR CIMA de tudo: a ficha e outra tela, nao uma secao desta.
   if (pessoaAberta) desenhaPessoa(s);
+  // E o menu de visto por cima da ficha tambem: ele e o ultimo a abrir.
+  episodios_menu_desenhar();
 }
 
 int detail_indice(void) { return idx; }
