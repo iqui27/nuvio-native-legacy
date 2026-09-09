@@ -377,7 +377,32 @@ static void podar(void) {
 // poster passa a custar 2,2 MB. O hero continua com teto proprio de 1920, pela
 // promocao.
 #define NV_TEX_LARG_MAX 640
+// TETO DO HEROI: 1920 no webOS, 1280 no Tizen. Os dois numeros sao medidos, e
+// medem coisas diferentes porque as duas TVs se comportam de forma oposta.
+//
+//   LG C9      despejos=0    espera media 287 ms   estouros 3 em 18
+//   Samsung    despejos=31 a 56 por amostra de 3 s, espera media 399 ms,
+//   AU7000     estouros 18 em 24 — tres de cada quatro trocas de heroi
+//              mostram o marcador em vez da arte
+//
+// No Tizen o cache vive ENCOSTADO no teto (texturas=94, 94.4MB de 96) e gira
+// quase inteiro a cada poucos segundos; cada volta custa baixar, decodificar e
+// subir de novo, e e isso que aparece como FPS 22-28 com 35 janks. Um heroi de
+// 1920x1080x4 sao 8,3 MB; a 1280 sao 3,7 MB — 55% a menos, e a decodificacao
+// cai junto, que e o que a espera de 400 ms mede.
+//
+// POR QUE NAO PRE-BUSCAR OS VIZINHOS, que era o pedido do #21: pre-busca
+// ACRESCENTA duas texturas de heroi num cache que ja despeja. O que sairia sao
+// os posteres — e o mesmo relator diz que os posteres tambem estao lentos.
+// Seria trocar fundo lento por tudo lento.
+//
+// O LG fica em 1920 porque la nao ha problema nenhum a resolver, e cortar
+// qualidade sem defeito e so perda.
+#ifdef __EMSCRIPTEN__
+#define NV_TEX_HERO_LARG_MAX 1280
+#else
 #define NV_TEX_HERO_LARG_MAX 1920
+#endif
 
 // TETO POR USO — o 640 acima e o padrao, e ele e GRANDE DEMAIS para a maioria
 // das artes. Ele foi dimensionado pela MAIOR arte de card (a miniatura de

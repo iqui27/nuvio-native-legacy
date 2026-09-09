@@ -1671,14 +1671,29 @@ static void desenhaHero(Uint32 agora, float saida) {
       // numero, pre-buscar os vizinhos seria adivinhacao, e pre-busca custa
       // textura de 1920 (~8 MB) que pode despejar os posteres da tela.
       unsigned esperou = (unsigned)(SDL_GetTicks() - heroDesejadoEm);
-      heroEsperaN++;
-      heroEsperaSoma += esperou;
-      if (esperou > heroEsperaPior) heroEsperaPior = esperou;
-      if (heroEstourou) heroEsperaEstouros++;
-      printf("[hero] espera %u ms%s | n=%d media=%u pior=%u estouros=%d\n",
-             esperou, heroEstourou ? " (ESTOUROU, sem arte)" : "",
-             heroEsperaN, (unsigned)(heroEsperaSoma / (unsigned)heroEsperaN),
-             heroEsperaPior, heroEsperaEstouros);
+      // AMOSTRA ABSURDA NAO ENTRA NA CONTA, e a primeira quase sempre e uma.
+      //
+      // `heroDesejadoEm` e marcado quando o heroi PASSA A SER desejado, e no
+      // arranque isso acontece antes de existir gente apertando tecla. Medindo
+      // na LG saiu "espera 122713 ms" na amostra 1 — dois minutos de app
+      // PARADO — e a media foi de 125 ms reais para 40989. Um numero desses nao
+      // e espera de arte, e ele afoga justamente o dado que a medicao existe
+      // para produzir. O teto de descarte e generoso de proposito: uma espera
+      // real de 10 s ja seria um defeito gritante e continua sendo contada.
+      if (esperou > 10000u) {
+        printf("[hero] amostra de %u ms descartada (app parado, nao espera)\n",
+               esperou);
+        fflush(stdout);
+      } else {
+        heroEsperaN++;
+        heroEsperaSoma += esperou;
+        if (esperou > heroEsperaPior) heroEsperaPior = esperou;
+        if (heroEstourou) heroEsperaEstouros++;
+        printf("[hero] espera %u ms%s | n=%d media=%u pior=%u estouros=%d\n",
+               esperou, heroEstourou ? " (ESTOUROU, sem arte)" : "",
+               heroEsperaN, (unsigned)(heroEsperaSoma / (unsigned)heroEsperaN),
+               heroEsperaPior, heroEsperaEstouros);
+      }
       fflush(stdout);
       heroEstourou = 0;
       heroAnterior = heroAtual;
