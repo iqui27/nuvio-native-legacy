@@ -50,6 +50,7 @@ static const char *COLECAO_DA_CONTA =
 
 int   addons_n(void)              { return 1; }
 const char *addons_base(int i)    { (void)i; return BASE; }
+const char *addons_nome(int i)              { (void)i; return "addon"; }
 const char *addons_base_por_id(const char *id) {
   if (!sondaLeu) return "";       // exatamente o que addons.c faz antes da sonda
   return id && !strcmp(id, AID) ? BASE : "";

@@ -1296,8 +1296,39 @@ static void *montar(void *u) {
     // nunca nos alvos. Um addon sem catalogo nenhum devolve zero Decl e nao
     // registra alvo nenhum, entao o custo de ler o manifesto dele e um pedido
     // por volta e mais nada.
-    for (i = 0; i < addons_n(); i++)
-      nDecl += lerManifesto(i, addons_base(i), decls + nDecl, DECL_MAX - nDecl);
+    // COTA POR ADDON, e nao primeiro a chegar leva tudo.
+    //
+    // O teto de DECL_MAX era repartido por ordem: quem fosse lido antes gastava
+    // quantas vagas quisesse. O Xperience declara 605 catalogos e e o segundo da
+    // lista, entao ele sozinho tomava as 256 e TODO addon depois dele ficava com
+    // ZERO declaracoes — manifesto lido (a busca funciona), mas nenhum catalogo
+    // que pudesse virar fileira. Medido nesta TV: as 6 fileiras de catalogo da
+    // home eram todas do Xperience; AIOStreams, Akashi TV e Bingecat nao tinham
+    // nenhuma. Foi o relato do Bingecat que expos isso, mas o defeito nao e do
+    // addon nem do manifesto dele: e de quem reparte as vagas.
+    //
+    // Subir o teto nao resolve — 605 de um addon so estoura qualquer numero
+    // razoavel, e o vetor e estatico. Repartir resolve.
+    //
+    // A conta: cada addon tem direito a DECL_MAX/n. Quem declara menos que a
+    // cota deixa a sobra para os SEGUINTES (`folga`), entao nada se perde
+    // quando ha addon pequeno — OpenSubtitles nao declara catalogo nenhum e
+    // passa a cota inteira dele adiante. Uma volta so, sem reler manifesto:
+    // reler custaria um pedido de rede por addon.
+    { int nAd = addons_n();
+      int cota = nAd > 0 ? DECL_MAX / nAd : DECL_MAX;
+      int folga = 0;
+      if (cota < 1) cota = 1;
+      for (i = 0; i < nAd; i++) {
+        int teto = cota + folga;
+        int lidos;
+        if (teto > DECL_MAX - nDecl) teto = DECL_MAX - nDecl;
+        lidos = lerManifesto(i, addons_base(i), decls + nDecl, teto);
+        nDecl += lidos;
+        folga = lidos < cota + folga ? cota + folga - lidos : 0;
+        printf("[desc]   %s: %d catalogo(s) declarado(s) (cota %d)\n",
+               addons_nome(i), lidos, cota);
+      } }
     printf("[desc] %d catalogos declarados pelos addons\n", nDecl);
 
     // ALVOS DE BUSCA. Independem da ordem/filtro das FILEIRAS da home: um

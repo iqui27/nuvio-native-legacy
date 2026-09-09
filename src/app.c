@@ -450,11 +450,27 @@ void app_atualizar(float dt, Uint32 agora) {
       // ciclo pegou. So quando MUDOU: confirmar o mesmo perfil e o caso comum
       // agora que a tela abre a cada arranque, e recarregar tudo ali seria
       // cobrar o preco de uma troca em toda abertura do app.
+      // O CICLO PRECISA CONTINUAR MESMO QUANDO O PERFIL NAO MUDOU, e foi isso
+      // que eu errei ao economizar aqui.
+      //
+      // rodar() PARA depois de perfis_puxar() quando ha escolha pendente — o
+      // sync fica interrompido justamente esperando esta tela. Se confirmar o
+      // mesmo perfil nao reinicia nada, o ciclo nunca termina e a conta NAO
+      // SINCRONIZA a sessao inteira: os addons, o Trakt e o progresso ficam nos
+      // do cache da abertura anterior. Medido na TV do dono: ele acrescentou um
+      // addon na conta, confirmou o mesmo perfil, e o app seguiu listando os 4
+      // addons antigos, com "[sync] ciclo interrompido" como ultima linha.
+      // Confirmar o mesmo perfil e o caso COMUM, entao o defeito valia para
+      // quase toda abertura de quem tem mais de um perfil.
+      //
+      // O que continua condicionado a troca e so o CARO: invalidarPerfil()
+      // joga fora o que ja foi carregado, e reaplicar ajustes so faz sentido
+      // quando o destino mudou.
       if (perfis_ativo() != perfilAntes) {
         invalidarPerfil();
         sync_reaplicar_ajustes();
-        sync_iniciar();
       }
+      sync_iniciar();
       tela = TELA_HOME;
     }
     return;

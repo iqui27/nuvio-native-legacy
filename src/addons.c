@@ -500,8 +500,15 @@ static void capacidadesDoManifesto(int i, const char *corpo) {
   // em js.h, que e onde este leitor mora agora — o TMDB precisou do mesmo.
   if (js_texto_raiz(corpo, "id", addon[i].id, sizeof addon[i].id))
     printf("[addons] %s: id do manifesto = %s\n", addon[i].nome, addon[i].id);
+  // js_texto_raiz, e nao js_texto: exatamente a mesma armadilha que o
+  // comentario acima descreve para o "id", repetida na instrucao seguinte. Um
+  // manifesto Stremio tem "name" tambem dentro de cada catalogs[], e o leitor
+  // solto pega o PRIMEIRO do documento. O Bingecat declara um catalogo chamado
+  // "search" e o addon inteiro passava a se chamar "search" — no log, na folha
+  // de fileiras dos Ajustes e em qualquer lugar que mostre de onde a fileira
+  // veio.
   { char nome[64];
-    if (js_texto(corpo, NULL, "name", nome, sizeof nome) && nome[0])
+    if (js_texto_raiz(corpo, "name", nome, sizeof nome) && nome[0])
       snprintf(addon[i].nome, sizeof addon[i].nome, "%s", nome); }
   if (!r) {
     printf("[addons] %s: manifesto sem \"resources\" legivel; capacidades ficam supostas\n",

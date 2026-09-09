@@ -27,7 +27,15 @@
 // ordem efetiva da home, que sao os unicos que disputam as (no maximo 16)
 // posicoes desenhadas. Listar centenas numa lista de D-pad seria inutilizavel e
 // o resto nunca chegaria perto de virar fileira.
-#define FIL_MAX      64
+// Quantas fileiras a folha dos Ajustes consegue LISTAR para a pessoa ordenar.
+//
+// Era 64 e ficou pequeno quando a cota por addon (descoberta.c) passou a deixar
+// todo addon declarar: nesta conta sao 135 catalogos declarados, e os do addon
+// lido por ultimo — o Bingecat — nao entravam na lista. Ou seja, alem de nao
+// aparecerem na home, eles nao podiam nem ser LIGADOS, que e a outra metade do
+// relato. 192 cobre com folga; cada entrada custa ~300 bytes, entao a folha
+// inteira sai de 19 KB para 58 KB.
+#define FIL_MAX      192
 #define FIL_CHAVE   192
 #define FIL_TITULO   96
 
