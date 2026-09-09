@@ -97,6 +97,19 @@ static int redeCaida;
 
 const char *sessao_usuario(void) { return "usuario-de-teste"; }
 
+// O catalogo de avatares oficiais e uma RPC ANONIMA (get_avatar_catalog). Aqui
+// ele devolve vazio de proposito: a regra que este teste guarda e QUANDO a tela
+// aparece e em que perfil o cursor nasce, e nada disso depende de haver foto.
+// Devolver NULL exercita o caminho de "sem catalogo", que e o de quem esta sem
+// rede — e ai o avatar continua sendo a inicial no circulo colorido.
+const char *nuvem_url(void) { return "https://exemplo.invalido"; }
+char *nuvem_rpc_com(const char *funcao, const char *corpoJson,
+                    const char *bearer, int *status) {
+  (void)funcao; (void)corpoJson; (void)bearer;
+  if (status) *status = 0;
+  return NULL;
+}
+
 char *sessao_rpc(const char *funcao, const char *corpoJson, int *status) {
   const char *r = NULL;
   if (status) *status = 200;

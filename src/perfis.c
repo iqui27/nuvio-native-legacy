@@ -141,6 +141,60 @@ static void lerCache(void) {
   }
 }
 
+// --- CATALOGO DE AVATARES OFICIAIS -------------------------------------------
+//
+// get_avatar_catalog devolve 42 linhas com `id` e `storage_path`
+// ("avatar_lalo" -> "animals/bram-v1.png"), e a imagem publica mora em
+// <url>/storage/v1/object/public/avatars/<storage_path>. MEDIDO: a RPC responde
+// com a chave ANONIMA, sem token de usuario — o catalogo e o mesmo para todo
+// mundo, entao nao ha o que autorizar.
+//
+// Buscado UMA VEZ por sessao e guardado inteiro: sao ~4 KB de JSON, e pedir por
+// perfil faria a mesma chamada ate oito vezes no arranque.
+#define AV_MAX 64
+typedef struct { char id[64], caminho[128]; } AvatarCat;
+static AvatarCat avCat[AV_MAX];
+static int nAvCat, avCatTentado;
+
+static void avatarCatalogoCarregar(void) {
+  char *r;
+  int st = 0;
+  const char *p;
+  if (avCatTentado) return;
+  avCatTentado = 1;
+  r = nuvem_rpc_com("get_avatar_catalog", "{}", NULL, &st);
+  if (!r || st < 200 || st >= 300) {
+    if (st) printf("[perfis] catalogo de avatares: HTTP %d\n", st);
+    free(r);
+    return;
+  }
+  for (p = js_raiz_array(r); p && nAvCat < AV_MAX; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    AvatarCat *a = &avCat[nAvCat];
+    a->id[0] = a->caminho[0] = 0;
+    js_texto(p, f, "id", a->id, sizeof a->id);
+    js_texto(p, f, "storage_path", a->caminho, sizeof a->caminho);
+    if (a->id[0] && a->caminho[0]) nAvCat++;
+  }
+  free(r);
+  printf("[perfis] %d avatares oficiais no catalogo\n", nAvCat);
+  fflush(stdout);
+}
+
+// Monta a URL publica do avatar `id`. Devolve 1 quando achou.
+static int avatarOficial(const char *id, char *dst, size_t tam) {
+  int i;
+  if (!id || !id[0] || !dst || !tam) return 0;
+  avatarCatalogoCarregar();
+  for (i = 0; i < nAvCat; i++) {
+    if (strcmp(avCat[i].id, id)) continue;
+    snprintf(dst, tam, "%s/storage/v1/object/public/avatars/%s",
+             nuvem_url(), avCat[i].caminho);
+    return 1;
+  }
+  return 0;
+}
+
 int perfis_puxar(void) {
   char *r;
   int st = 0;
@@ -170,6 +224,22 @@ int perfis_puxar(void) {
       if (!js_texto(p, f, "name", tmp[novos].nome, sizeof tmp[novos].nome))
         snprintf(tmp[novos].nome, sizeof tmp[novos].nome, "Perfil %d", (int)idx);
       js_texto(p, f, "avatar_url", tmp[novos].avatarUrl, sizeof tmp[novos].avatarUrl);
+      // O AVATAR OFICIAL VEM POR ID, e nao por URL. `avatar_url` so e
+      // preenchido para foto que a pessoa subiu; quem escolhe um dos avatares
+      // do Nuvio guarda `avatar_id` ("avatar_lalo") e a imagem sai do catalogo.
+      // Ver avatarOficial: e uma RPC, get_avatar_catalog, e nao a tabela
+      // `avatars` — foi por procurar a tabela que uma medicao antiga concluiu
+      // que nao havia como resolver o id, e os perfis ficaram todos com a
+      // inicial num circulo colorido.
+      if (!tmp[novos].avatarUrl[0]) {
+        char aid[64] = "";
+        if (js_texto(p, f, "avatar_id", aid, sizeof aid) && aid[0] &&
+            !avatarOficial(aid, tmp[novos].avatarUrl, sizeof tmp[novos].avatarUrl))
+          // O perfil PEDE um avatar que o catalogo nao tem. Sem esta linha o
+          // circulo cai na inicial e nada diz por que — indistinguivel de um
+          // perfil que nunca escolheu avatar nenhum.
+          printf("[perfis] avatar \"%s\" nao esta no catalogo\n", aid);
+      }
       js_texto(p, f, "profile_background_url", tmp[novos].fundoUrl,
                sizeof tmp[novos].fundoUrl);
       if (!js_texto(p, f, "avatar_color_hex", tmp[novos].corHex, sizeof tmp[novos].corHex))
