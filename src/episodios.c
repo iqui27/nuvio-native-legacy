@@ -8,7 +8,12 @@
 #include "text.h"
 #include "layout.h"
 #include "anim.h"
+#include "vistoep.h"
+#include "trakt.h"
+#include "syncprog.h"
+#include <pthread.h>
 #include <stdio.h>
+#include <string.h>
 
 #define EP_W 720.0f
 #define EP_ROW 172.0f
@@ -17,6 +22,32 @@ static int aberto, titulo, atualT, atualE, temporada, foco, grupo;
 static int pedidoT, pedidoE;
 static float anim, scroll;
 static int localizarAtual;
+
+// --- MENU DE VISTO -----------------------------------------------------------
+//
+// Segurar OK numa linha abre. Os tres gestos que o dono pediu — este episodio,
+// ate aqui, a temporada inteira — sao O MESMO LOTE em tamanhos diferentes
+// (vistoep.h), e o sentido (marcar ou desmarcar) sai do estado do episodio em
+// foco: quem esta olhando um episodio visto quer desmarcar.
+enum { VM_ESTE = 0, VM_ATE, VM_TEMP, VM_N };
+static int vmAberto, vmFoco, vmVisto;      // vmVisto: o sentido do gesto
+static Uint32 vmDesde;                     // relogio da pressao longa
+static int vmSegurando, vmConsumir;
+
+// O ENVIO VAI PARA UM FIO. trakt_episodios_marcar e syncep_empurrar sao
+// sincronas de proposito (esta escrito nos dois cabecalhos), e cada uma pode
+// levar 20 s de timeout. No fio do desenho isso congela a TV.
+//
+// O efeito LOCAL ja aconteceu antes de o fio nascer: a lista redesenha no mesmo
+// quadro e este fio so leva a noticia ao servidor.
+typedef struct { char imdb[24], tipo[12]; VistoPar pares[64]; int n, visto; } Envio;
+static void *enviarVisto(void *u) {
+  Envio *e = (Envio *)u;
+  trakt_episodios_marcar(e->imdb, e->pares, e->n, e->visto);
+  syncep_empurrar(e->imdb, e->tipo, e->pares, e->n, e->visto);
+  free(e);
+  return NULL;
+}
 
 static int nTemporadas(void) {
   const CatItem *c = cat_item(titulo);
@@ -42,9 +73,43 @@ static int nLinhas(void) {
   }
   return n;
 }
+// Aplica o gesto: monta o lote, muda o local na hora, e manda o resto para um
+// fio. Devolve 0 quando nao ha nada a fazer — e o caso de marcar o que ja esta
+// marcado, que nao deve gastar uma requisicao.
+static int aplicarVisto(int modo, int visto) {
+  const CatItem *ci = cat_item(titulo);
+  const CatEp *ep = epLinha(foco);
+  VistoPar lote[64];
+  int n = 0, mudou;
+  if (!ci || !ep || !ci->imdb[0]) return 0;
+  if (modo == VM_ESTE) {
+    lote[0].temporada = (short)ep->temporada;
+    lote[0].episodio = (short)ep->episodio;
+    n = 1;
+  } else if (modo == VM_ATE) {
+    n = vistoep_ate_aqui(ci->imdb, ep->temporada, ep->episodio, lote, 64);
+  } else {
+    n = vistoep_temporada(ci->imdb, numTemporada(temporada), lote, 64);
+  }
+  if (n < 1) return 0;
+  mudou = vistoep_marcar_lote(ci->imdb, lote, n, visto);
+  if (!mudou) return 0;
+  { Envio *env = (Envio *)calloc(1, sizeof *env);
+    pthread_t fio;
+    if (!env) return mudou;
+    snprintf(env->imdb, sizeof env->imdb, "%s", ci->imdb);
+    snprintf(env->tipo, sizeof env->tipo, "%s", ci->tipo[0] ? ci->tipo : "series");
+    memcpy(env->pares, lote, sizeof(VistoPar) * (size_t)n);
+    env->n = n; env->visto = visto;
+    if (pthread_create(&fio, NULL, enviarVisto, env) == 0) pthread_detach(fio);
+    else free(env); }
+  return mudou;
+}
+
 void episodios_abrir(int idx, int t, int e) {
   titulo = idx; atualT = t; atualE = e; aberto = 1;
   temporada = foco = 0; grupo = 1; pedidoE = 0; scroll = 0;
+  vmAberto = 0; vmSegurando = 0; vmConsumir = 0;
   localizarAtual = 1;
   for (int i = 0; i < nTemporadas(); i++) if (numTemporada(i) == t) temporada = i;
   for (int i = 0; i < nLinhas(); i++) if (epLinha(i)->episodio == e) foco = i;
@@ -57,8 +122,81 @@ int episodios_escolheu(int *t, int *e) {
   *t = pedidoT; *e = pedidoE; pedidoE = 0; return 1;
 }
 void episodios_evento(const SDL_Event *ev) {
-  if (!aberto || ev->type != SDL_KEYDOWN) return;
+  if (!aberto) return;
+  { SDL_Keycode ko = ev->key.keysym.sym;
+    int ehOk = (ko == SDLK_RETURN || ko == SDLK_KP_ENTER || ko == SDLK_SPACE);
+
+    // O MENU COME A TECLA ENQUANTO ESTA NO AR. Mesma regra do menu do cartaz:
+    // ele e a coisa mais recente na tela e e para ela que a pessoa esta
+    // olhando.
+    if (vmAberto) {
+      if (ev->type == SDL_KEYUP && ehOk) { vmConsumir = 0; return; }
+      if (ev->type != SDL_KEYDOWN) return;
+      // Repeticao automatica nunca e uma segunda escolha, e o OK que ABRIU o
+      // menu nao escolhe nada — as duas regras que o menu do cartaz aprendeu
+      // do jeito dificil (ver ctxmenu.c).
+      if (ehOk && (ev->key.repeat || vmConsumir)) return;
+      if (ko == SDLK_UP)   { if (vmFoco > 0) vmFoco--; return; }
+      if (ko == SDLK_DOWN) { if (vmFoco < VM_N - 1) vmFoco++; return; }
+      if (ehOk) { aplicarVisto(vmFoco, vmVisto); vmAberto = 0; return; }
+      vmAberto = 0;   // qualquer outra tecla fecha
+      return;
+    }
+
+    // PRESSAO LONGA SOBRE UMA LINHA DE EPISODIO. So no grupo da lista: em cima
+    // das temporadas ou do cabecalho nao ha episodio para marcar.
+    if (ehOk && grupo == 1) {
+      if (ev->type == SDL_KEYDOWN && !ev->key.repeat) {
+        vmSegurando = 1; vmDesde = SDL_GetTicks(); return;
+      }
+      if (ev->type == SDL_KEYUP) {
+        // A GUARDA OLHA SE FOI PRESSIONADO AQUI, e nao a duracao. Soltar sem
+        // ter pressionado nesta camada nao e clique — a de cima pode ter
+        // fechado no KEYDOWN e o KEYUP vazar para ca; e a mesma guarda que
+        // home.c, detail.c e ctxmenu.c ja tem, pelo mesmo defeito.
+        //
+        // TESTAR `dur != 0` NO LUGAR DISSO ENGOLE O TOQUE RAPIDO: descida e
+        // subida no mesmo milissegundo dao dur=0, que e legitimo. Foi assim na
+        // primeira versao, e tests/player.sh pegou na primeira rodada.
+        int foiAqui = vmSegurando;
+        Uint32 dur = foiAqui ? SDL_GetTicks() - vmDesde : 0;
+        vmSegurando = 0;
+        if (!foiAqui) return;
+        if (dur >= NV_HOLD_MS) {
+          const CatItem *ci = cat_item(titulo);
+          const CatEp *e2 = epLinha(foco);
+          if (ci && e2) {
+            // O SENTIDO SAI DO ESTADO: quem esta olhando um episodio visto
+            // quer desmarcar. Estado desconhecido (-1) conta como nao visto,
+            // que e a acao que faz sentido oferecer primeiro.
+            vmVisto = vistoep_estado(ci->imdb, e2->temporada, e2->episodio) == 1 ? 0 : 1;
+            vmAberto = 1; vmFoco = 0; vmConsumir = 1;
+          }
+          return;
+        }
+        // TOQUE CURTO ABRE O EPISODIO, e a acao acontece AQUI e nao no ramo
+        // antigo la embaixo: o KEYUP e o unico momento que conhece a DURACAO, e
+        // e ela que separa abrir de segurar. Deixar isso para o KEYDOWN faria a
+        // pressao longa nunca existir, porque o episodio ja teria aberto.
+        { const CatEp *e2 = epLinha(foco);
+          if (e2) {
+            if (e2->temporada != atualT || e2->episodio != atualE) {
+              pedidoT = e2->temporada; pedidoE = e2->episodio;
+            }
+            aberto = 0;
+          } }
+        return;
+      }
+    }
+    if (ev->type == SDL_KEYUP) { vmSegurando = 0; return; }
+  }
+  if (ev->type != SDL_KEYDOWN) return;
   SDL_Keycode k = ev->key.keysym.sym;
+  // O OK JA FOI DECIDIDO NO KEYUP acima (e o unico jeito de conhecer a
+  // DURACAO). Deixar o KEYDOWN cair no ramo antigo abriria o episodio antes de
+  // a pressao longa poder existir.
+  if ((k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) && grupo == 1)
+    return;
   if(k==SDLK_r) { desc_episodios(titulo,numTemporada(temporada)); return; }
   if (k == SDLK_ESCAPE || k == SDLK_BACKSPACE || k == SDLK_DELETE || k == SDLK_AC_BACK) {
     aberto = 0; return;
@@ -156,10 +294,16 @@ void episodios_desenhar(void) {
     float tx=x+260, w=EP_W-310;
     txt_desenhar_alpha(txt_linha_corta(TXT_PAINEL_ITEM,ep->nome[0]?ep->nome:num,242,243,245,255,w),tx,y+16,anim);
     int atual=ep->temporada==atualT && ep->episodio==atualE;
-    int visto=extras_ep_visto(ep->temporada,ep->episodio);
+    // O ESTADO SAI DO MAPA, e nao mais da matriz [20][40] de extras.c. A
+    // matriz so guarda o "sim": ela nao distingue "nao viu" de "nao sei", e
+    // cortava em silencio a temporada 21 e o episodio 40. O mapa distingue, e
+    // e ele que as acoes de marcar em lote mudam — desenhar de uma fonte e
+    // agir sobre outra faria a linha nao mudar depois do gesto.
+    const CatItem *cim=cat_item(titulo);
+    int visto=cim?vistoep_estado(cim->imdb,ep->temporada,ep->episodio):-1;
     char estado[96];
     if(atual) snprintf(estado,sizeof estado,"Reproduzindo agora");
-    else if(visto) snprintf(estado,sizeof estado,i18n("✓ Assistido%s%s"),ep->duracao[0]?" · ":"",ep->duracao);
+    else if(visto==1) snprintf(estado,sizeof estado,i18n("✓ Assistido%s%s"),ep->duracao[0]?" · ":"",ep->duracao);
     else snprintf(estado,sizeof estado,"%s%s%s",ep->data,ep->data[0]&&ep->duracao[0]?" · ":"",ep->duracao);
     txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,estado,atual?236:180,atual?237:182,atual?240:188,255,w),tx,y+48,anim);
     txt_bloco(TXT_PG_FIM,ep->sinopse,186,188,194,tx,y+78,w,25,anim,3);
@@ -171,5 +315,71 @@ void episodios_desenhar(void) {
   if(n) {
     char contador[48];snprintf(contador,sizeof contador,i18n("%d de %d episódios"),foco+1,n);
     txt_desenhar_alpha(txt_linha(TXT_MINI,contador,166,168,174,255),x+40,NV_TELA_H-26,anim);
+  }
+  // DICA DO GESTO, escrita na tela. Pressao longa nao se descobre sozinha num
+  // D-pad — foi a licao do menu do cartaz, que ganhou a mesma linha.
+  if(n && grupo==1 && !vmAberto) {
+    txt_desenhar_alpha(txt_linha(TXT_MINI,"Segure OK para marcar como assistido",
+                                 150,153,162,255),x+300,NV_TELA_H-26,anim*.9f);
+  }
+
+  // --- MENU DE VISTO ---------------------------------------------------------
+  if(vmAberto) {
+    const CatEp *ep=epLinha(foco);
+    const CatItem *ci=cat_item(titulo);
+    // CENTRADO SOBRE A FOLHA, e nao sobre a tela. A folha ocupa so os EP_W da
+    // direita; centrar em NV_TELA_W punha o menu sobre o vazio da esquerda,
+    // longe do episodio a que ele se refere — visivel na captura de revisao.
+    // A largura tambem cabe DENTRO da folha, para o menu nao parecer de outra
+    // tela.
+    float mw=EP_W-72.0f, mh=352.0f;
+    GfxRect m={x+(EP_W-mw)*.5f,(NV_TELA_H-mh)*.5f,mw,mh};
+    char cab[140];
+    int i;
+    // Veu proprio: a lista atras tem texto pequeno em tres colunas.
+    gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,.72f*anim);
+    gfx_cor(m,.05f,.11f,.11f,.13f,.99f*anim);
+    txt_desenhar_alpha(txt_linha(TXT_CAPTION2,
+        vmVisto?"MARCAR COMO ASSISTIDO":"DESMARCAR COMO ASSISTIDO",
+        174,178,188,255),m.x+32,m.y+28,anim);
+    if(ep) snprintf(cab,sizeof cab,i18n("T%dE%d · %s"),ep->temporada,ep->episodio,
+                    ep->nome[0]?ep->nome:"");
+    else cab[0]=0;
+    txt_desenhar_alpha(txt_linha_corta(TXT_HEADLINE,cab,245,248,255,255,mw-64),
+                       m.x+32,m.y+56,anim);
+    for(i=0;i<VM_N;i++) {
+      GfxRect r={m.x+24,m.y+120+i*62,mw-48,54};
+      float f=(i==vmFoco)?1.0f:0.0f;
+      float lum=f>.5f?.961f:.176f;
+      int c=f>.5f?17:240;
+      char rot[120];
+      int quantos;
+      // O NUMERO NO ROTULO, e nao so o verbo: "marcar 7 episodios" e uma
+      // decisao diferente de "marcar 1", e a pessoa tem de ver qual das duas
+      // esta prestes a tomar. Sai do mapa, que e o mesmo que a acao vai usar.
+      if(i==VM_ESTE) quantos=1;
+      else if(ci&&ep) quantos=(i==VM_ATE)
+        ? vistoep_ate_aqui(ci->imdb,ep->temporada,ep->episodio,NULL,0)
+        : vistoep_temporada(ci->imdb,numTemporada(temporada),NULL,0);
+      else quantos=0;
+      gfx_cor(r,14.0f/54.0f,lum,lum,lum,anim);
+      if(i==VM_ESTE) snprintf(rot,sizeof rot,"%s",
+                              vmVisto?"Este episódio":"Este episódio");
+      else if(i==VM_ATE) snprintf(rot,sizeof rot,
+                                  quantos==1?i18n("Até aqui (%d episódio)")
+                                           :i18n("Até aqui (%d episódios)"),quantos);
+      else snprintf(rot,sizeof rot,
+                    quantos==1?i18n("Temporada inteira (%d episódio)")
+                             :i18n("Temporada inteira (%d episódios)"),quantos);
+      txt_desenhar_alpha(txt_linha_corta(TXT_PLR_CORPO,rot,c,c,c,255,mw-96),
+                         r.x+28,r.y+(54-28)*.5f,anim);
+    }
+    // A DICA FICA ABAIXO DA ULTIMA OPCAO, e a conta e explicita: as tres linhas
+    // terminam em m.y+120+3*62-8, e o rodape cravado em mh-52 caia POR CIMA da
+    // terceira — a captura de revisao mostrou "Whole season" atravessado pelo
+    // texto de ajuda. Mesmo erro de deslocamento fixo que a folha de fileiras
+    // teve hoje.
+    txt_bloco(TXT_CAPTION,"↑ ↓  Escolher   ·   OK  Aplicar   ·   Voltar  Fechar",
+              155,159,169,m.x+28,m.y+120+VM_N*62+8,mw-56,26,anim*.86f,1);
   }
 }

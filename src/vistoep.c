@@ -119,12 +119,19 @@ int vistoep_ate_aqui(const char *imdb, int temporada, int episodio,
   char id[16];
   int i, k = 0;
   base(imdb, id, sizeof id);
-  if (!id[0] || !saida) return 0;
-  for (i = 0; i < n && k < max; i++) {
+  if (!id[0]) return 0;
+  // `saida` NULO E MODO CONTAGEM, e `max` e ignorado nele. A tela precisa do
+  // NUMERO antes de decidir se cabe pedir a acao ("Ate aqui (7 episodios)"), e
+  // sem isto ela teria de alocar um vetor so para descobrir o tamanho — ou,
+  // pior, passar max=0 e receber 0 sempre, que foi o primeiro erro aqui.
+  for (i = 0; i < n; i++) {
     if (strcmp(mapa[i].id, id)) continue;
     if (!antesOuIgual(mapa[i].temp, mapa[i].ep, temporada, episodio)) continue;
-    saida[k].temporada = mapa[i].temp;
-    saida[k].episodio = mapa[i].ep;
+    if (saida) {
+      if (k >= max) break;
+      saida[k].temporada = mapa[i].temp;
+      saida[k].episodio = mapa[i].ep;
+    }
     k++;
   }
   return k;
@@ -134,11 +141,14 @@ int vistoep_temporada(const char *imdb, int temporada, VistoPar *saida, int max)
   char id[16];
   int i, k = 0;
   base(imdb, id, sizeof id);
-  if (!id[0] || !saida) return 0;
-  for (i = 0; i < n && k < max; i++) {
+  if (!id[0]) return 0;
+  for (i = 0; i < n; i++) {                 // saida nula = contagem, ver acima
     if (mapa[i].temp != temporada || strcmp(mapa[i].id, id)) continue;
-    saida[k].temporada = mapa[i].temp;
-    saida[k].episodio = mapa[i].ep;
+    if (saida) {
+      if (k >= max) break;
+      saida[k].temporada = mapa[i].temp;
+      saida[k].episodio = mapa[i].ep;
+    }
     k++;
   }
   return k;

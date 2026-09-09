@@ -29,8 +29,15 @@
 extern int cat_historico_estado_item(int indice);
 extern void cat_historico_definir_id(const char *imdb, const char *tipo, int visto);
 
+// O PAR KEYDOWN+KEYUP, e nao so o KEYDOWN. A folha de episodios passou a
+// decidir o OK na SUBIDA da tecla, porque e ela que conhece a DURACAO — e a
+// duracao e o que separa "abrir o episodio" de "segurar para marcar como
+// assistido". Mandar so a descida deixava o toque pela metade, e o teste pegou
+// isso na primeira rodada. Um controle de verdade sempre manda os dois.
 static void tecla(SDL_Keycode k) {
-  SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=k;episodios_evento(&e);
+  SDL_Event e={0};
+  e.type=SDL_KEYDOWN;e.key.keysym.sym=k;episodios_evento(&e);
+  e.type=SDL_KEYUP;episodios_evento(&e);
 }
 static void teclaPlayer(SDL_Keycode k) {
   SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=k;player_evento(&e);

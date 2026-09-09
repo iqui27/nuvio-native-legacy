@@ -132,6 +132,15 @@ int main(void) {
     k = vistoep_ate_aqui("tt14688458", 2, 2, lote, 3);
     assert(k == 3);
     puts("ok  o teto do vetor e respeitado");
+
+    // MODO CONTAGEM. A tela precisa do numero para escrever "Ate aqui (7
+    // episodios)" ANTES de decidir agir, e a primeira versao passava max=0
+    // com um vetor de verdade — o laco parava em `k < max` e o rotulo dizia
+    // zero em toda linha.
+    assert(vistoep_ate_aqui("tt14688458", 2, 2, NULL, 0) == 6);
+    assert(vistoep_temporada("tt14688458", 1, NULL, 0) == 4);
+    assert(vistoep_temporada("tt14688458", 9, NULL, 0) == 0);
+    puts("ok  saida nula conta sem truncar em max");
   }
 
   puts("vistoep: tudo ok");
