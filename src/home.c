@@ -181,6 +181,10 @@ static Uint32 heroDesejadoEm = 0;
 // Telemetria da espera do heroi — ver o bloco que a imprime, no desenho.
 static int heroEstourou, heroEsperaN, heroEsperaEstouros;
 static unsigned heroEsperaSoma, heroEsperaPior;
+// O item cujo heroi estourou o prazo e ainda nao teve a arte decodificada, e o
+// instante em que ele passou a ser desejado. -1 = ninguem atrasado.
+static int      heroTardeItem = -1;
+static unsigned heroTardeEm;
 
 // --- EXPANSAO DO CARTAZ FOCADO EM REPOUSO ------------------------------------
 //
@@ -707,7 +711,10 @@ static void posGravar(void) {
   // NADA DE CREDENCIAL AQUI: so chave de fileira, coluna e rolagem. A `base` da
   // fileira e uma URL de addon com JWT no caminho (ver catalogo.h) e nunca
   // entra neste arquivo.
-  dados_gravar(HOME_POS_ARQ, buf);
+  // LEVE de proposito: ver dados_gravar_leve. Esta funcao roda toda vez que o
+  // foco descansa, e no Tizen cada descarga custa 30-52 ms sincronos — andar
+  // pela home virava um quadro travado por movimento (#21).
+  dados_gravar_leve(HOME_POS_ARQ, buf);
 }
 
 static void posLer(void) {
@@ -1695,6 +1702,18 @@ static void desenhaHero(Uint32 agora, float saida) {
                heroEsperaPior, heroEsperaEstouros);
       }
       fflush(stdout);
+      // O NUMERO ACIMA NAO MEDE A DEMORA, MEDE O NOSSO PRAZO.
+      //
+      // A espera e interrompida em NV_HERO_ESPERA_MS (400), entao ela NUNCA
+      // passa muito de 400 — o relator do #21 mandou "media=412 pior=426
+      // estouros=5" em n=6, que lido de fora parece "410 ms de demora" e na
+      // verdade quer dizer "estourou todas as vezes, e nao sei por quanto".
+      // Com esse numero nao da para saber se a arte chega aos 450 ms ou aos 4 s,
+      // e as duas pedem conserto diferente.
+      //
+      // Por isso o item que estourou continua sendo cronometrado DEPOIS da
+      // troca, ate a textura existir de verdade (ver heroTardeItem abaixo).
+      if (heroEstourou) { heroTardeItem = heroDesejado; heroTardeEm = heroDesejadoEm; }
       heroEstourou = 0;
       heroAnterior = heroAtual;
       heroAtual = heroDesejado;
@@ -1720,6 +1739,19 @@ static void desenhaHero(Uint32 agora, float saida) {
   // Pedir a nova JA, durante o esvanecimento: e este pedido que enfileira o
   // decode, e e por isso que o vazio dura o tempo do carregamento e nao mais.
   GLuint tAtu = arteA ? tex_obter_hero(arteA) : 0;
+  // A ARTE ATRASADA CHEGOU — e so agora da para dizer quanto ela demorou.
+  if (heroTardeItem >= 0) {
+    if (heroTardeItem != heroAtual) {
+      // O foco andou de novo antes de a arte chegar. Cronometrar ate aqui
+      // mediria a paciencia de quem esta com o controle, nao o decode.
+      heroTardeItem = -1;
+    } else if (tAtu) {
+      printf("[hero] arte atrasada chegou em %u ms (prazo e %d)\n",
+             (unsigned)(SDL_GetTicks() - heroTardeEm), NV_HERO_ESPERA_MS);
+      fflush(stdout);
+      heroTardeItem = -1;
+    }
+  }
   if (tAnt) {
     // Esvanecimento com aceleracao e desaceleracao: o medido fica ~25% do
     // percurso quase parado no comeco, entao rampa reta le como corte na saida.

@@ -31,6 +31,10 @@ char *dados_caminho(char *dst, unsigned tam, const char *nome);
 // metade e exatamente o tipo de defeito que so aparece no aparelho de outra
 // pessoa.
 int dados_gravar(const char *nome, const char *conteudo);
+// Mesma gravacao, mas a descarga para o IndexedDB pode esperar: e o relogio de
+// 15 s em vez do de 700 ms. So para conteudo RE-OBTIVEL — posicao de cursor,
+// cache de imagem. Dado do usuario continua em dados_gravar.
+int dados_gravar_leve(const char *nome, const char *conteudo);
 
 // Le `nome` inteiro para um buffer novo terminado em NUL (free pelo chamador).
 char *dados_ler(const char *nome);

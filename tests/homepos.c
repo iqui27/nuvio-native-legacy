@@ -34,6 +34,14 @@ int dados_gravar(const char *nome, const char *conteudo) {
   arqNome[nArq] = strdup(nome); arqDado[nArq] = strdup(conteudo); nArq++;
   return 1;
 }
+// A posicao da home grava por AQUI, e nao por dados_gravar: a unica diferenca
+// entre as duas e quando o Tizen descarrega para o IndexedDB (ver
+// dados_gravar_leve), o que nao existe neste teste. O duble delega para nao
+// haver duas copias do disco falso — com duas, gravar por um caminho e ler pelo
+// outro passaria a devolver NULL e o teste acusaria a home, nao o duble.
+int dados_gravar_leve(const char *nome, const char *conteudo) {
+  return dados_gravar(nome, conteudo);
+}
 // NULL de proposito, como em home_layout.c: fileiras.c sai cedo em carregar() e
 // a escolha local nasce vazia, que e o estado de quem nunca abriu o app.
 char *dados_caminho(char *dst, unsigned tam, const char *nome) {

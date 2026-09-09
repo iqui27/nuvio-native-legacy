@@ -275,7 +275,19 @@ char *dados_caminho(char *dst, unsigned tam, const char *nome) {
   return dst;
 }
 
-int dados_gravar(const char *nome, const char *conteudo) {
+// GRAVACAO QUE NAO MERECE UMA DESCARGA SO PARA ELA.
+//
+// `leve` escolhe entre os dois relogios do topo deste arquivo: 700 ms para dado
+// do usuario, 15 s para conteudo re-obtivel. A diferenca aparece na TV Samsung
+// e nao na LG, porque no WASM a descarga e FS.syncfs e ela custa 30 a 52 ms
+// SINCRONOS — medido no aparelho do relator do #21, uma descarga a cada janela
+// de relatorio enquanto ele so andava com o foco.
+//
+// A posicao da home era o gatilho: ela e gravada quando o foco descansa, e ia
+// pelo caminho de 700 ms. Andar pela home virava uma descarga a cada movimento.
+// Posicao de cursor e re-obtivel — perde-la ao fechar o app custa uma rolagem,
+// contra 30-52 ms de quadro travado a cada passo.
+static int gravarInterno(const char *nome, const char *conteudo, int leve) {
   char caminho[600], tmp[600];
   FILE *f;
   size_t n;
@@ -290,9 +302,19 @@ int dados_gravar(const char *nome, const char *conteudo) {
   if (rename(tmp, caminho) != 0) { remove(tmp); NV_FS_LIBERAR(); return 0; }
   NV_FS_LIBERAR();
 #ifdef __EMSCRIPTEN__
-  sujo = 1;
+  if (leve) sujoLeve = 1; else sujo = 1;
+#else
+  (void)leve;
 #endif
   return 1;
+}
+
+int dados_gravar(const char *nome, const char *conteudo) {
+  return gravarInterno(nome, conteudo, 0);
+}
+
+int dados_gravar_leve(const char *nome, const char *conteudo) {
+  return gravarInterno(nome, conteudo, 1);
 }
 
 char *dados_ler(const char *nome) {
