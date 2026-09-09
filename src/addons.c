@@ -498,6 +498,13 @@ static void capacidadesDoManifesto(int i, const char *corpo) {
   // O "id" DA RAIZ, e nao o primeiro "id" do documento: um manifesto Stremio
   // tem "id" tambem dentro de catalogs[] e de behaviorHints. Ver js_texto_raiz
   // em js.h, que e onde este leitor mora agora — o TMDB precisou do mesmo.
+  // O HOST, redigido, ANTES do resto. Sem ele nao da para dizer de onde um
+  // addon fala, e "de onde?" e a primeira pergunta quando um addon funciona
+  // num aparelho e nao no outro. O caminho fica de fora porque nele viaja
+  // credencial — o Xperience embute um JWT ali; ver rede_url_publica em rede.h.
+  { char seg[120];
+    printf("[addons] %s: de %s\n", addon[i].nome,
+           rede_url_publica(addons_base(i), seg, sizeof seg)); }
   if (js_texto_raiz(corpo, "id", addon[i].id, sizeof addon[i].id))
     printf("[addons] %s: id do manifesto = %s\n", addon[i].nome, addon[i].id);
   // js_texto_raiz, e nao js_texto: exatamente a mesma armadilha que o
