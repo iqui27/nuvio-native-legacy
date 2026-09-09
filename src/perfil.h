@@ -83,9 +83,14 @@ int  perfil_iniciar(void);
 void perfil_encerrar(void);
 
 void perfil_abrir(void);
-void perfil_abrir_lateral(void);
-int perfil_lateral(void);
-int perfil_pediu_completo(void);
+// perfil_abrir_lateral / perfil_lateral / perfil_pediu_completo FORAM REMOVIDAS.
+//
+// Eram o painel "Sua atividade": um cartao de 776px na direita, com "Fechar",
+// "Atualizar" e "Ver perfil completo", aberto pela tecla AZUL e pelo item
+// "Perfil e Stats" do menu. Os dois caminhos agora vao direto ao que
+// prometiam — a AZUL abre o painel de Salvos (salvospainel.h) e o item do menu
+// abre esta tela inteira. Sem chamador, o modo lateral era codigo morto
+// desenhando um terceiro estado que ninguem mais alcancava.
 void perfil_fechar(void);
 int  perfil_aberto(void);
 int  perfil_quer_sair(void);       // consome o pedido de voltar

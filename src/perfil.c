@@ -46,7 +46,6 @@ static int aberto, sair, carregando, temDados;
 static int temIdentidade;
 static int secao, item, escolhido = -1;
 static int dia, pedirAtualizar;
-static int lateral, completo, lateralFoco;
 static char erro[160];
 #define PF_CARREGANDO PERFIL_ESTADO_CARREGANDO
 #define PF_ATUALIZANDO PERFIL_ESTADO_ATUALIZANDO
@@ -99,14 +98,10 @@ int perfil_iniciar(void) {
 }
 void perfil_encerrar(void) { perfil_iniciar(); }
 void perfil_abrir(void) {
-  lateral = completo = 0;
   aberto = 1; sair = 0; escolhido = -1; secao = item = 0;
   scroll = scrollAlvo = velScroll = 0;
   pedirAtualizar = 0;
 }
-void perfil_abrir_lateral(void) { perfil_abrir(); lateral=1; lateralFoco=0; }
-int perfil_lateral(void) { return lateral && (aberto || entrada>.002f); }
-int perfil_pediu_completo(void) { int v=completo;completo=0;return v; }
 void perfil_fechar(void) { aberto = 0; sair = 1; }
 int perfil_aberto(void) { return aberto; }
 int perfil_quer_sair(void) { int q = sair; sair = 0; return q; }
@@ -183,17 +178,6 @@ int perfil_item_selecionado(PerfilDestaque *saida) {
 void perfil_evento(const SDL_Event *e) {
   if (!aberto || !e || e->type != SDL_KEYDOWN) return;
   SDL_Keycode k = e->key.keysym.sym;
-  if(lateral) {
-    if(k==SDLK_ESCAPE || k==SDLK_AC_BACK || k==SDLK_BACKSPACE || k==SDLK_LEFT) {perfil_fechar();return;}
-    if(k==SDLK_UP && lateralFoco>0)lateralFoco--;
-    if(k==SDLK_DOWN && lateralFoco<2)lateralFoco++;
-    if(k==SDLK_RETURN || k==SDLK_KP_ENTER) {
-      if(lateralFoco==0)perfil_fechar();
-      else if(lateralFoco==1){if(!carregando)pedirAtualizar=1;}
-      else {completo=1;aberto=0;}
-    }
-    return;
-  }
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE || k == SDLK_DELETE) {
     perfil_fechar(); return;
   }
@@ -492,42 +476,6 @@ static void desenharDestaques(float a) {
 void perfil_desenhar(Uint32 agora) {
   if (entrada <= .002f) return;
   float a=entrada;
-  if(lateral) {
-    float x=1120+(1-a)*800;
-    gfx_cor((GfxRect){0,0,1920,1080},0,.015f,.018f,.025f,.65f*a);
-    gfx_cor((GfxRect){x,24,776,1032},.035f,.08f,.075f,.09f,a);
-    txt_desenhar_alpha(txt_linha(TXT_TITULO3,"Sua atividade",244,242,248,255),x+44,62,a);
-    const char *labels[]={"Fechar","Atualizar","Ver perfil completo"};
-    for(int i=0;i<3;i++) {
-      GfxRect b={x+44,i==0?130:878+(i-1)*76,688,60};
-      int f=lateralFoco==i;
-      gfx_cor(b,.18f,f?.92f:.14f,f?.91f:.13f,f?.96f:.16f,a);
-      txt_desenhar_alpha(txt_linha(TXT_BODY,labels[i],f?25:236,f?24:234,f?30:242,255),b.x+24,b.y+14,a);
-    }
-    const char *msg=erro[0]?erro:carregando?"Carregando histórico…":dados.periodo;
-    txt_desenhar_alpha(txt_linha_corta(TXT_BODY,msg,193,186,202,255,688),x+44,220,a);
-    if(!carregando && !erro[0] && !temDados)
-      txt_desenhar_alpha(txt_linha(TXT_BODY,"Sem atividade neste período",221,217,228,255),x+44,270,a);
-    if(temDados) {
-      const char *sem[]={"D","S","T","Q","Q","S","S"};
-      for(int c=0;c<7;c++)txt_desenhar_alpha(txt_linha(TXT_CAPTION,sem[c],185,177,197,255),x+63+c*94,280,a);
-      unsigned max=0;for(int d=0;d<dados.nDias;d++)if(dados.atividade[d]>max)max=dados.atividade[d];
-      for(int d=0;d<dados.nDias;d++) {
-        int slot=d+dados.primeiroDiaSemana;float v=max?(float)dados.atividade[d]/max:0.0f;
-        GfxRect b={x+44+(slot%7)*94,320+(slot/7)*70,82,58};
-        gfx_cor(b,.14f,.14f+v*.43f,.12f+v*.08f,.18f+v*.51f,a);
-        char n[8];snprintf(n,sizeof n,"%d",d+1);
-        txt_desenhar_alpha(txt_linha(TXT_CAPTION,n,243,239,249,255),b.x+24,b.y+16,a);
-      }
-      char b[128],dur[32];tempo(dur,sizeof dur,dados.minutos);
-      snprintf(b,sizeof b,i18n("%s · %d reproduções"),dur,dados.plays);
-      txt_desenhar_alpha(txt_linha_corta(TXT_BODY,b,244,240,248,255,688),x+44,755,a);
-      snprintf(b,sizeof b,i18n("%d dias ativos · %d dias seguidos no mês"),dados.diasAtivosMes,dados.streakAtual);
-      txt_desenhar_alpha(txt_linha_corta(TXT_CAPTION,b,193,181,210,255,688),x+44,801,a);
-      if(dados.parcial)txt_desenhar_alpha(txt_linha(TXT_MINI,"Histórico parcial · detalhes no perfil",180,170,192,255),x+44,840,a);
-    }
-    return;
-  }
   gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,
           NV_COR_FUNDO_R,NV_COR_FUNDO_G,NV_COR_FUNDO_B,a);
   gfx_recorte(0,0,NV_TELA_W,PF_CONTEUDO_H);
