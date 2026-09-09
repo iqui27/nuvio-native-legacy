@@ -43,9 +43,10 @@ int  vistoep_contar(const char *imdb);
 // nada desta serie", que e a diferenca entre desenhar zero e nao desenhar nada.
 int  vistoep_conhecido(const char *imdb);
 
-// Le o corpo de /sync/watched/shows do Trakt. Devolve quantos episodios
-// entraram, ou -1 em corpo invalido.
-int  vistoep_ler_trakt(const char *json);
+// Le o corpo de /shows/<id>/progress/watched do Trakt, que enumera a serie
+// INTEIRA com `completed` por episodio — entao este leitor escreve 0 tambem, e
+// nao so 1. Devolve quantos episodios entraram, ou -1 em corpo invalido.
+int  vistoep_ler_progresso(const char *imdb, const char *json);
 
 int  vistoep_n(void);          // total de episodios no mapa, para log e teste
 void vistoep_esquecer(void);   // logout

@@ -1838,6 +1838,15 @@ static void *buscarEps(void *u) {
     metaCacheGuardar(serie, corpo);
   }
   if (!ehFilme) publicarEpisodios(corpo, alvoItem, it->titulo);
+  // QUAIS DESSES EPISODIOS JA FORAM VISTOS — no mesmo fio e no mesmo momento.
+  //
+  // Aqui, e nao no ciclo grande: /shows/<id>/progress/watched e uma requisicao
+  // POR SERIE, e o dado so importa quando a lista de episodios daquela serie
+  // vai aparecer. Fazer isso para as 75 series da conta no arranque custaria 75
+  // requisicoes para usar uma. E aqui ja se esta num fio proprio, com a lista
+  // recem-publicada, entao a marca chega junto com as linhas em vez de piscar
+  // depois.
+  if (!ehFilme) trakt_progresso_serie(serie);
   // A MESMA resposta traz elenco, direcao e a lista de temporadas. Buscar de
   // novo para cada uma seria tres viagens ao mesmo lugar.
   {

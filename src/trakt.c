@@ -269,6 +269,52 @@ int trakt_playback_remover(const char *imdb) {
   return ok;
 }
 
+// QUAIS EPISODIOS DESTA SERIE ESTAO VISTOS.
+//
+// POR SERIE, E SOB DEMANDA — e as duas coisas foram MEDIDAS, nao escolhidas.
+//
+// A primeira tentativa foi /sync/watched/shows, que a documentacao descreve
+// como o mapa completo por temporada. Na TV do dono, com 75 series na conta,
+// ela devolveu 25540 bytes SEM UMA UNICA ocorrencia de "seasons"; com
+// ?extended=full subiu para 90675 bytes e continuou com seasons=0, episodes=0,
+// number=0 — so a lista de series com contagem de plays. Ou seja: por este
+// caminho o detalhamento por episodio nao vem, e insistir nele custa 90 KB por
+// ciclo para nada. Nao retentar sem uma medicao nova.
+//
+// /shows/<id>/progress/watched devolve o mapa completo de UMA serie, com
+// `completed` por episodio. Uma requisicao, no momento em que a lista de
+// episodios daquele titulo abre — que e exatamente quando o dado importa. Para
+// 75 series, e uma chamada em vez de um mapa gigante que quase nunca e usado
+// inteiro.
+//
+// `?hidden=false&specials=true&count_specials=false`: especiais aparecem na
+// lista de episodios do app, entao tem de aparecer no mapa; contar especiais no
+// total mudaria a conta de "quantos faltam" sem mudar o que se ve.
+int trakt_progresso_serie(const char *imdb) {
+  const char *cab[4];
+  char aut[200], chaveCab[140], url[180], id[24];
+  char *corpo;
+  int i, n = 0;
+  if (!ligado || !imdb || imdb[0] != 't') return 0;
+  for (i = 0; imdb[i] && imdb[i] != ':' && i < (int)sizeof id - 1; i++) id[i] = imdb[i];
+  id[i] = 0;
+  if (!id[0]) return 0;
+  snprintf(aut, sizeof aut, "Authorization: Bearer %s", token);
+  snprintf(chaveCab, sizeof chaveCab, "trakt-api-key: %s", cliente);
+  cab[0] = aut;
+  cab[1] = "trakt-api-version: 2";
+  cab[2] = chaveCab;
+  cab[3] = NULL;
+  snprintf(url, sizeof url,
+           "https://api.trakt.tv/shows/%s/progress/watched"
+           "?hidden=false&specials=true&count_specials=false", id);
+  corpo = rede_baixar_com(url, 20, cab);
+  if (!corpo) { printf("[trakt] progresso de %s: sem resposta\n", id); fflush(stdout); return 0; }
+  n = vistoep_ler_progresso(id, corpo);
+  free(corpo);
+  return n;
+}
+
 // A barra de retomada vem de /sync/playback e nao informa se o titulo foi
 // marcado como assistido. Consultamos o historico real uma vez no mesmo ciclo
 // de descoberta para que a modal nao trate progresso alto como prova de visto.
@@ -398,19 +444,8 @@ int trakt_continuar(CatItem *saida, int max) {
   }
   free(corpo);
   carregarHistoricoReal(cab);
-  // O MAPA COMPLETO DE EPISODIOS VISTOS, e nao as ultimas reproducoes.
-  //
-  // carregarHistoricoReal le /sync/history?limit=100, que responde "o que foi
-  // visto recentemente" e PULA episodio de proposito. Para saber se um episodio
-  // especifico esta visto e preciso /sync/watched/shows, que devolve o conjunto
-  // inteiro por temporada — e e o unico jeito de a lista de episodios dizer a
-  // verdade sobre cada linha.
-  //
-  // Uma chamada por ciclo, no mesmo fio e com os mesmos cabecalhos. Nao ha
-  // paginacao: a resposta e o estado completo.
-  { char *w = rede_baixar_com("https://api.trakt.tv/sync/watched/shows", 25, cab);
-    if (w) { vistoep_ler_trakt(w); free(w); }
-    else printf("[trakt] sem resposta em /sync/watched/shows\n"); }
+  // O MAPA DE EPISODIOS VISTOS NAO SAI DAQUI. Ver trakt_progresso_serie: ele e
+  // buscado por SERIE, quando a lista de episodios daquele titulo abre.
 
   n = trakt_enfeitar_lote(saida, n);
 

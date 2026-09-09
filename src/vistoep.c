@@ -101,46 +101,44 @@ void vistoep_esquecer(void) {
 
 // ------------------------------------------------------------------- Trakt
 
-// /sync/watched/shows: array de { plays, last_watched_at,
-//   show: { ids: { imdb } }, seasons: [ { number, episodes: [ { number } ] } ] }
+// /shows/<id>/progress/watched:
+//   { aired, completed, seasons: [ { number, aired, completed,
+//       episodes: [ { number, completed, last_watched_at } ] } ] }
 //
-// SO O QUE ESTA LA E VISTO, e o que nao esta nao e "nao visto": a resposta e o
-// conjunto do que foi assistido, e a ausencia de um episodio pode ser tanto
-// "nao viu" quanto "o Trakt nao conhece". Por isso este leitor so escreve 1, e
-// vistoep_estado devolve -1 para o resto — a diferenca entre 0 e -1 e o que
-// impede a tela de afirmar "nao assistido" sobre algo que ela nao sabe.
-int vistoep_ler_trakt(const char *json) {
-  const char *p;
+// AQUI `completed` E EXPLICITO, e por isso este leitor escreve 0 TAMBEM. E a
+// diferenca com um mapa montado de "o que foi assistido": ali a ausencia de um
+// episodio nao prova nada, aqui a resposta enumera a serie inteira e diz sim ou
+// nao para cada linha. Depois desta leitura, vistoep_estado so devolve -1 para
+// serie que nunca foi consultada — e a tela pode confiar no 0.
+int vistoep_ler_progresso(const char *imdb, const char *json) {
+  const char *temps;
+  const char *fim;
   int total = 0;
-  if (!json) return -1;
-  p = js_raiz_array(json);
-  if (!p) return -1;
-  for (; p; p = js_prox(js_fim(p))) {
-    const char *fim = js_fim(p), *sh, *temps;
-    char imdb[24] = "";
-    if (!fim) break;
-    sh = strstr(p, "\"show\"");
-    if (!sh || sh >= fim) continue;
-    { const char *fs = js_fim(strchr(sh, '{'));
-      js_texto(sh, fs, "imdb", imdb, sizeof imdb); }
-    if (!imdb[0]) continue;
-    temps = js_array(p, fim, "seasons");
-    for (; temps && *temps == '{'; temps = js_prox(js_fim(temps))) {
-      const char *ft = js_fim(temps), *eps;
-      int nt = (int)js_num(temps, ft, "number", -1.0);
-      if (nt < 0 || !ft) break;
-      eps = js_array(temps, ft, "episodes");
-      for (; eps && *eps == '{'; eps = js_prox(js_fim(eps))) {
-        const char *fe = js_fim(eps);
-        int ne = (int)js_num(eps, fe, "number", -1.0);
-        if (!fe) break;
-        if (ne >= 1) { vistoep_definir(imdb, nt, ne, 1); total++; }
-        if (fe >= ft) break;
-      }
-      if (ft >= fim) break;
+  if (!imdb || !imdb[0] || !json) return -1;
+  fim = json + strlen(json);
+  temps = js_array(json, fim, "seasons");
+  if (!temps) { printf("[vistoep] %s: resposta sem \"seasons\"\n", imdb); fflush(stdout); return -1; }
+  for (; temps && *temps == '{'; temps = js_prox(js_fim(temps))) {
+    const char *ft = js_fim(temps), *eps;
+    int nt = (int)js_num(temps, ft, "number", -1.0);
+    if (!ft || nt < 0) break;
+    eps = js_array(temps, ft, "episodes");
+    for (; eps && *eps == '{'; eps = js_prox(js_fim(eps))) {
+      const char *fe = js_fim(eps);
+      int ne, feito;
+      if (!fe) break;
+      ne = (int)js_num(eps, fe, "number", -1.0);
+      // js_bool nao existe nesta camada; `completed` e true/false cru.
+      { const char *c = strstr(eps, "\"completed\"");
+        feito = (c && c < fe && strstr(c, "true") && strstr(c, "true") < fe &&
+                 (size_t)(strstr(c, "true") - c) < 16) ? 1 : 0; }
+      if (ne >= 1) { vistoep_definir(imdb, nt, ne, feito); total++; }
+      if (fe >= ft) break;
     }
+    if (ft >= fim) break;
   }
-  printf("[vistoep] Trakt: %d episodios vistos em %d no mapa\n", total, n);
+  printf("[vistoep] %s: %d episodios no mapa (%d vistos)\n",
+         imdb, total, vistoep_contar(imdb));
   fflush(stdout);
   return total;
 }
