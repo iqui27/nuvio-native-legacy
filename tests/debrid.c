@@ -2,6 +2,7 @@
 // da API, e o parser aceitando torrent sem url. Sem SDL, sem rede.
 #include "../src/debrid.h"
 #include "../src/streams.h"
+#include "../src/rede.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -50,6 +51,19 @@ int main(void) {
   assert(strstr(ultimoCt, "x-www-form-urlencoded"));
   assert(!strcmp(corpoSelect, "files=2"));
   puts("ok  resolve 2x05 pelo nome do arquivo, form-urlencoded");
+
+  // A URL QUE ACABOU DE SER RESOLVIDA E CREDENCIAL: quem tem o "/d/QQ/" baixa
+  // na conta de quem pediu, e debrid.c a IMPRIME no log — que e lido, copiado
+  // e colado em relato de defeito. Por isso este teste linka o
+  // rede_url_publica DE VERDADE (src/redeurl.c) em vez de um stub: com um
+  // stub, uma regressao que passasse a imprimir o link inteiro sairia verde.
+  { char seg[120];
+    const char *pub = rede_url_publica(url, seg, sizeof seg);
+    assert(!strstr(pub, "/d/QQ"));            // a chave nao sai
+    assert(!strstr(pub, "Show.S02E05.mkv"));  // nem o resto do caminho
+    assert(strstr(pub, "x.download.real-debrid.com"));  // o host fica: e o que diagnostica
+    assert(strstr(pub, "/..."));              // e diz que havia caminho
+    puts("ok  o link do Real-Debrid nao vai inteiro para o log"); }
 
   // filme: maior video; sample.txt fora
   debrid_definir_episodio(0, 0);

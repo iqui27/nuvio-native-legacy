@@ -7,28 +7,6 @@
 #include <strings.h>
 #include <dlfcn.h>
 
-// Ver rede.h. Fica ANTES da guarda de alvo porque os dois caminhos de rede
-// imprimem URL, e debrid.c tambem usa.
-const char *rede_url_publica(const char *url, char *dst, unsigned tam) {
-  const char *e, *h;
-  unsigned n;
-  if (!dst || tam == 0) return "";
-  dst[0] = 0;
-  if (!url || !*url) return dst;
-  e = strstr(url, "://");
-  if (!e) { snprintf(dst, tam, "%.*s", (int)tam - 1, url); return dst; }
-  h = e + 3;
-  while (*h && *h != '/' && *h != '?' && *h != '#') h++;
-  n = (unsigned)(h - url);
-  if (n >= tam) n = tam - 1;
-  memcpy(dst, url, n);
-  dst[n] = 0;
-  // O "/..." avisa que havia caminho: sem ele, um log com host nu parece um
-  // pedido a raiz do servidor, que e uma leitura errada.
-  if (*h && n + 4 < tam) { memcpy(dst + n, "/...", 4); dst[n + 4] = 0; }
-  return dst;
-}
-
 #ifdef __EMSCRIPTEN__
 // ---------------------------------------------------------------- EMSCRIPTEN
 // Caminho de rede do alvo Tizen (WASM).
