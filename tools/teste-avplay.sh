@@ -18,7 +18,7 @@ eval emcc src/*.c tools/teste-avplay.c -o "$SAIDA/index.html" -O1 -g2 "$ENV_D" \
   -sSTACK_SIZE=8388608 -sDEFAULT_PTHREAD_STACK_SIZE=8388608 \
   -sASYNCIFY -sASYNCIFY_STACK_SIZE=32768 \
   -pthread -sPTHREAD_POOL_SIZE=32 -sPTHREAD_POOL_SIZE_STRICT=0 \
-  -sEXPORTED_FUNCTIONS='["_main","_malloc","_free","_nv_teste_avplay","_nv_teste_avplay_fase2","_nv_teste_avplay_fim","_nv_teste_bombear"]' \
+  -sEXPORTED_FUNCTIONS='["_main","_malloc","_free","_nv_teste_avplay","_nv_teste_avplay_fase2","_nv_teste_avplay_zoom","_nv_teste_avplay_fim","_nv_teste_bombear"]' \
   -sEXPORTED_RUNTIME_METHODS='["ccall"]' \
   -lidbfs.js -sEXIT_RUNTIME=0 \
   --preload-file deploy/app/fonts@/app/fonts \
