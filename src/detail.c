@@ -27,6 +27,7 @@
 #include "ajustes.h"
 #include "home.h"
 #include "extras.h"
+#include "vistoep.h"
 #include "pessoa.h"
 #include "streams.h"
 #include "descoberta.h"
@@ -2004,7 +2005,22 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
   // A mascara vem DEPOIS do veu de texto de proposito: ela precisa cobrir a
   // miniatura inteira, inclusive a parte ja escurecida, senao o card visto e o
   // nao visto ficam parecidos justo em cima do texto.
-  if (ep && extras_ep_visto(ep->temporada, ep->episodio)) {
+  //
+  // A FONTE E O MAPA (vistoep), e nao mais a matriz de extras.c. Era o defeito
+  // que o dono relatou assim: "se eu desmarcar ou marcar como assistido ele nao
+  // atualiza os cards". O menu de visto escreve em vistoep_marcar_lote e este
+  // card lia extras_ep_visto — duas verdades diferentes, e a que a pessoa
+  // acabava de mudar nao era a desenhada.
+  //
+  // O aviso ja estava escrito, em episodios.c, quando a FOLHA passou pelo mesmo
+  // conserto: "desenhar de uma fonte e agir sobre outra faria a linha nao mudar
+  // depois do gesto". A folha foi arrumada, esta copia nao — e nada apontava de
+  // uma para a outra.
+  //
+  // A matriz tambem so guarda o "sim": ela nao distingue "nao viu" de "nao
+  // sei", e cortava em silencio a temporada 21 e o episodio 40.
+  if (ep && serie && serie->imdb[0] &&
+      vistoep_estado(serie->imdb, ep->temporada, ep->episodio) == 1) {
     float d = 36.0f;
     GfxRect selo = { th.x + th.w - d - 16.0f, th.y + 16.0f, d, d };
     gfx_cor(th, raioTh, 0.0f, 0.0f, 0.0f, 0.22f * a);
