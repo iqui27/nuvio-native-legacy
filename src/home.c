@@ -176,6 +176,8 @@ static Uint32 heroPendenteEm = 0;
 // outra. Agora a velha fica NO LUGAR ate a nova estar decodificada; so entao a
 // troca comeca. Andar rapido deixa de mexer no fundo.
 static int    heroDesejado = -1;
+// Quando heroDesejado foi anunciado. E o relogio do teto de NV_HERO_ESPERA_MS.
+static Uint32 heroDesejadoEm = 0;
 
 // --- EXPANSAO DO CARTAZ FOCADO EM REPOUSO ------------------------------------
 //
@@ -1305,6 +1307,7 @@ void home_atualizar(float dt, Uint32 agora) {
         agora - heroPendenteEm >= NV_HERO_REPOUSO_MS) {
       // So ANUNCIA o desejo. Quem efetiva a troca e o desenho, quando a textura
       // da arte nova estiver pronta — ver heroDesejado.
+      if (heroDesejado != heroPendente) heroDesejadoEm = agora;
       heroDesejado = heroPendente;
     } else if (alvo < 0 && agora >= heroTrocaEm) {
       // Sem card em foco, agenda o proximo item e deixa o desenho efetivar a
@@ -1313,6 +1316,7 @@ void home_atualizar(float dt, Uint32 agora) {
       int proximo = total > 0 ? (heroAtual + 1) % total : 0;
       heroPendente = proximo;
       heroPendenteEm = agora - NV_HERO_REPOUSO_MS;
+      if (heroDesejado != proximo) heroDesejadoEm = agora;
       heroDesejado = proximo;
       heroTrocaEm = agora + NV_HERO_INTERVALO_MS;
     }
@@ -1642,6 +1646,20 @@ static void desenhaHero(Uint32 agora, float saida) {
     // Ausencia de arte tambem e um estado pronto: o placeholder pertence ao
     // item e pode entrar sem apagar o hero anterior primeiro.
     int artePronta = !arteD || tex_obter_hero(arteD);
+    // ...OU A ESPERA ESTOUROU. Ver NV_HERO_ESPERA_MS em layout.h: passar do
+    // prazo troca mesmo sem textura, e o heroi mostra o marcador do titulo
+    // novo em vez da arte do anterior. O pedido acima ja enfileirou o decode,
+    // entao a arte entra sozinha assim que chegar.
+    if (!artePronta && SDL_GetTicks() - heroDesejadoEm >= NV_HERO_ESPERA_MS) {
+      static int avisou;
+      if (!avisou) {
+        avisou = 1;
+        printf("[home] heroi trocado sem arte: %u ms de espera estourados\n",
+               (unsigned)NV_HERO_ESPERA_MS);
+        fflush(stdout);
+      }
+      artePronta = 1;
+    }
     if (artePronta) {
       heroAnterior = heroAtual;
       heroAtual = heroDesejado;

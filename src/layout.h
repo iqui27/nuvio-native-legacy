@@ -336,6 +336,25 @@
 // entao atravessar a fileira nao dispara nenhuma troca; e curto o bastante para
 // que parar no card e ver o fundo responder pareca imediato.
 #define NV_HERO_REPOUSO_MS    220
+// TETO DA ESPERA PELA ARTE DO HEROI, depois do repouso.
+//
+// A troca do heroi so acontecia com a textura nova JA DECODIFICADA, e enquanto
+// isso a arte ANTIGA ficava na tela. Por 200 ms isso e o certo — evita piscar
+// enquanto se anda pela fileira. Por tres segundos e uma MENTIRA: o cartao em
+// foco ja e outro titulo e o heroi ainda mostra o anterior. Foi o issue #21,
+// relatado com video: "the title that is focused and the hero image shown on
+// screen don't match for a moment".
+//
+// Passado este prazo a troca acontece de qualquer jeito e o heroi mostra o
+// MARCADOR do titulo novo (desenhaPlaceholderHero), que ja existia para o caso
+// de item sem arte. Marcador neutro do titulo CERTO e melhor que arte perfeita
+// do titulo ERRADO — a tela deixa de afirmar algo falso, que e o defeito de
+// verdade aqui; a lentidao e so a causa.
+//
+// 400 ms: com a arte em cache a troca acontece antes disso e o prazo nunca e
+// alcancado; ele so aparece quando ha rede no caminho. Somado ao repouso da
+// 620 ms entre o foco parar e o heroi corresponder.
+#define NV_HERO_ESPERA_MS     400
 #define NV_HERO_DOT           9.0f
 #define NV_HERO_DOT_GAP      14.0f
 
