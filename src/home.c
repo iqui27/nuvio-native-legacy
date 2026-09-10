@@ -1652,7 +1652,7 @@ static void desenhaHero(Uint32 agora, float saida) {
         const char *con=diretor_conhecido(folder->title);
         if (con[0]) {
           char linha[300];
-          snprintf(linha,sizeof linha,"Conhecido por  %s",con);
+          snprintf(linha,sizeof linha,i18n("Conhecido por  %s"),con);
           txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,linha,220,224,233,255,780),
                              x,NV_COLLECTION_HERO_LOGO_Y+136.0f,a);
         }
@@ -1700,7 +1700,7 @@ static void desenhaHero(Uint32 agora, float saida) {
           int linhas=(int)((teto-yy-fixo-12)/31);if(linhas>3)linhas=3;
           if(meta[0]){txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,meta,201,206,218,255,larg),x,yy,a);yy+=38;}
           if(bio[0]&&linhas>0){yy+=txt_bloco(TXT_HERO_SIN,bio,222,225,232,x,yy,larg,31,a,linhas)+12;}
-          if(con[0]){char l[300];snprintf(l,sizeof l,"Conhecido por  %s",con);
+          if(con[0]){char l[300];snprintf(l,sizeof l,i18n("Conhecido por  %s"),con);
             txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,l,236,232,244,255,larg),x,yy,a);yy+=38;}
           yCap=yy;
         }

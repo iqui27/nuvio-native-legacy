@@ -2820,7 +2820,7 @@ static void desenhaComentarios(float x, float y, float a) {
       if (nota > 0)
         snprintf(rodape, sizeof rodape, i18n("%d/10   %d curtidas"), nota, cur);
       else
-        snprintf(rodape, sizeof rodape, "%d curtidas", cur);
+        snprintf(rodape, sizeof rodape, i18n("%d curtidas"), cur);
       { TxtLinha lr = txt_linha(TXT_CAPTION2, rodape, 150, 154, 163, 255);
         txt_desenhar_alpha(lr, px, y + COM_CARD_H - COM_PAD - lr.h, a * 0.9f); } }
   }

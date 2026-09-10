@@ -103,14 +103,32 @@ PT = re.compile(
     r"seguir|personalizar|marcar|desmarcar|restaurar|padrao|padrão|opcoes|"
     r"opções|biblioteca|conta|perfil|tela|catalogo|catálogo|fileira|fileiras|"
     r"poster|pôster|destaque|amigos|historico|histórico|informacao|"
-    r"informação|aguarde|selecionar|navegar|fechar)\b",
+    r"informação|aguarde|selecionar|navegar|fechar|"
+    # Palavras das TRES frases que vazaram na v1.0.35 ("Conhecido por %s",
+    # "%d curtidas", "0 a %d por dia"): nenhuma delas tinha stopword da lista
+    # acima, entao a porta 2 nao as viu e elas foram para a TV em portugues.
+    r"por|dia|dias|curtidas|conhecido|título|titulo|títulos|titulos|"
+    r"coleção|colecao|gênero|genero|nudez|leve|moderado|severo)\b",
     re.IGNORECASE)
 
 def eh_frase(s):
     """Tem cara de frase de interface? Descarta formato puro, id, url, chave JSON."""
     if len(s) < 3: return False
     if s.startswith(("http", "/", "tt", "{", "[", "#")): return False
-    if re.fullmatch(r"[%\-+0-9.*a-zA-Z\s:/,]*", s) and "%" in s: return False
+    # CAMINHO E URL montados com %s. So o startswith nao pega "%s/catalogo.txt"
+    # nem "luna://com.webos.media/%s", e depois que a regra de formato passou a
+    # deixar frases com "%" entrarem, os quatro viraram ruido fixo.
+    if "://" in s: return False
+    if re.search(r"/[A-Za-z0-9._-]+\.[A-Za-z]{2,4}$", s): return False
+    # FORMATO PURO x FRASE QUE CONTEM FORMATO, e a diferenca custou tres
+    # frases em portugues na v1.0.35. A regra antiga descartava todo literal
+    # ASCII com "%" dentro — e "Conhecido por  %s", "%d curtidas" e
+    # "0 a %d por dia" sao exatamente isso: sem acento, so letras e um
+    # especificador. Agora tira os especificadores e pergunta se SOBROU
+    # palavra; se nao sobrou, ai sim e formato puro ("%s/%s", "%d de %d").
+    if "%" in s:
+        resto = re.sub(r"%[-+0-9.*# ]*[a-zA-Z]", " ", s)
+        if not re.search(r"[a-zA-ZáàâãéêíóôõúçÁ-Ú]{3}", resto): return False
     if not re.search(r"[a-zA-ZáàâãéêíóôõúçÁ-Ú]{3}", s): return False
     return True
 
@@ -155,12 +173,21 @@ IGNORAR = {
     "crédit", "crédito",            # palavra procurada no capitulo do MKV
     # Nome proprio e sigla: iguais nos dois idiomas.
     "IMDb", "Trakt", "YouTube", "PIN", "AI-powered",
+    # ISO 639-2 do portugues (linguas.c). Virou candidato quando "por" entrou
+    # na lista de palavras de portugues; e codigo de idioma, nao rotulo.
+    "por",
     # Nao sao tela: cabecalho do arquivo de preferencias e duas linhas de log
     # que a heuristica de portugues nao tem como distinguir das frases.
     "# Fileiras da Home, escolha DESTE aparelho. Nunca e enviada para\n"
     "# a conta nem para o Trakt.\n",
     "%d addons · %d progressos · %d vistos · %d na lista · %d coleções%s",
     "hdr do pipeline: %s (fonte DV=%d)",
+    # Tres marcos de video.c/video_tizen.c. O buffer e montado numa instrucao
+    # e entregue a marco() na SEGUINTE, entao marco — que ja esta em
+    # NAO_E_TELA — fica fora do contexto que a varredura le. Sao log.
+    "pipeline erro: %.60s",
+    "mkv: %d faixas lidas, %d legendas com idioma",
+    "seek para %ds",
     # Os quatro motivos do diagnostico [col] (descoberta.c). Sao DADOS DE UM
     # VETOR, e nao argumento de printf: a varredura olha o que vem antes do
     # literal e ali so ha uma chave de inicializacao, entao NAO_E_TELA nao tem

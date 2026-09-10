@@ -390,7 +390,7 @@ static void desenharAtividade(float a) {
     gfx_cor((GfxRect){lx+i*38,PF_ATIV_Y+150-scroll,28,28},.18f,
              i?.38f+.23f*q:.12f,i?.13f+.13f*q:.12f,i?.52f+.31f*q:.14f,a);
   }
-  snprintf(b,sizeof(b),"0 a %d por dia",max);
+  snprintf(b,sizeof(b),i18n("0 a %d por dia"),max);
   corta(TXT_MINI,b,184,lx,PF_ATIV_Y+196,painel.w-480,a);
   if(dados.atividade[melhor]){
     snprintf(b,sizeof(b),i18n("Pico: %d reproduções no dia %d"),max,melhor+1);

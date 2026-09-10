@@ -34,6 +34,20 @@ int main(void) {
   confere("Sáb", "Sat");
   confere("Mostrar \"Continuar assistindo\"", "Show \"Continue Watching\"");
 
+  // Os selos da guia parental: nao sao literais no ponto de desenho (vem de
+  // parental_rotulo/parental_gravidade), entao a varredura estatica nao os
+  // cobre. Ficaram em portugues ate a v1.0.35 por isso.
+  confere("Nudez", "Nudity");
+  confere("Violência", "Violence");
+  confere("Leve", "Mild");
+  confere("Moderado", "Moderate");
+  confere("Severo", "Severe");
+
+  // Legendas montadas com %s: a frase pronta nunca casa com chave, entao a
+  // parte em portugues tem de ser traduzida ANTES de entrar no formato.
+  confere("Seleção do seu catálogo", "A selection from your catalog");
+  confere("Conhecido por  %s", "Known for  %s");
+
   // Sem chave: devolve o proprio texto. E o caso de todo titulo de filme.
   confere("Blade Runner 2049", "Blade Runner 2049");
   confere("", "");

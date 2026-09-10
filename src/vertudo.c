@@ -388,7 +388,7 @@ static void themeHeader(float a,float x0) {
     "O addon desta coleção não está instalado nesta TV.");
   else if(desc_vertudo_erro())snprintf(caption,sizeof caption,"Não foi possível carregar. OK para tentar novamente.");
   else if(!n)snprintf(caption,sizeof caption,"%s",desc_vertudo_carregando()?"Carregando títulos…":"Nenhum título nesta lista.");
-  else snprintf(caption,sizeof caption,i18n("%d títulos%s  ·  %s"),n,desc_vertudo_fim()?"":i18n(" carregados"),legendaGrupo());
+  else snprintf(caption,sizeof caption,i18n("%d títulos%s  ·  %s"),n,desc_vertudo_fim()?"":i18n(" carregados"),i18n(legendaGrupo()));
   TxtLinha sub=txt_linha_corta(TXT_DET_META2,caption,196,202,213,255,960);txt_desenhar_alpha(sub,x0,192,a);
   if(collection&&collection->nSources>1) {
     int first=tabCursor>3?tabCursor-3:0;
