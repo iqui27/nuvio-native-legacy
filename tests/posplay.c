@@ -10,6 +10,8 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 static int tecla(int k) {
   SDL_Event e;
@@ -124,6 +126,64 @@ int main(void) {
   assert(posplay_pediu_episodio(&t, &e));
   assert(t == 5 && e == 9);               // e nao 3, o "proximo" de E2
   puts("ok  o proximo sai do episodio que o player toca");
+
+  // O PAINEL DE FILME NAO PODE SUBIR NO COMECO. Relato: "More Like This
+  // aparece quando o filme comeca".
+  //
+  // A estimativa de creditos tem piso de 150 s (PP_FILME_MIN_S). Sem teto, esse
+  // piso virava a regra em qualquer coisa mais curta: no segundo ZERO ja sobrava
+  // menos que a janela e o painel decidia subir. O mesmo no instante inicial em
+  // que o pipeline ainda informa uma duracao pequena.
+  //
+  // A ASSERCAO E SOBRE A LINHA DE LOG, e nao sobre posplay_visivel(). O caminho
+  // de filme so fica visivel quando ha titulos relacionados, que vem da rede e
+  // aqui sao zero — entao a visibilidade diria "nao apareceu" em TODOS os casos
+  // e o teste passaria com qualquer coisa, inclusive com a funcao desligada. A
+  // linha "[posplay] relacionados em ..." e impressa exatamente quando a decisao
+  // dispara, que e o que este teste quer medir.
+  { struct { double dur, pos; int esperado; const char *nome; } casos[] = {
+      { 3600.0,    0.0, 0, "filme de 1h no segundo zero" },
+      { 3600.0,   30.0, 0, "filme de 1h aos 30 s" },
+      {  120.0,    0.0, 0, "video de 2 min no zero — mais curto que o piso" },
+      {   80.0,    5.0, 0, "video de 80 s logo no comeco" },
+      { 3600.0, 3550.0, 1, "filme de 1h faltando 50 s" },
+      {  120.0,  115.0, 1, "video de 2 min faltando 5 s" },
+    };
+    size_t k2;
+    for (k2 = 0; k2 < sizeof casos / sizeof casos[0]; k2++) {
+      char linha[256] = "";
+      FILE *f;
+      int decidiu = 0, salvo, arq;
+      posplay_fechar();
+      // dup/dup2 e nao freopen("/dev/tty"): o teste roda em pipe no
+      // testa-tudo.sh, onde /dev/tty nao existe — reabrir por la perderia a
+      // saida do resto do arquivo, e foi o que aconteceu na primeira versao.
+      fflush(stdout);
+      salvo = dup(fileno(stdout));
+      arq = open("/tmp/nuvio-posplay-log.txt", O_WRONLY | O_CREAT | O_TRUNC, 0600);
+      if (arq >= 0) {
+        dup2(arq, fileno(stdout));
+        close(arq);
+        posplay_atualizar(0.016f, 1000, casos[k2].pos, casos[k2].dur, 0, 0, 0);
+        fflush(stdout);
+        dup2(salvo, fileno(stdout));
+      }
+      close(salvo);
+      f = fopen("/tmp/nuvio-posplay-log.txt", "r");
+      if (f) {
+        while (fgets(linha, sizeof linha, f))
+          if (strstr(linha, "[posplay] relacionados em")) decidiu = 1;
+        fclose(f);
+      }
+      if (decidiu != casos[k2].esperado) {
+        fprintf(stderr, "FALHOU: %s -> decidiu=%d, esperava %d\n",
+                casos[k2].nome, decidiu, casos[k2].esperado);
+        assert(0);
+      }
+    }
+    remove("/tmp/nuvio-posplay-log.txt");
+    posplay_fechar(); }
+  puts("ok  o painel de filme nao sobe no comeco, e ainda sobe no fim");
 
   puts("posplay: tudo ok");
   return 0;

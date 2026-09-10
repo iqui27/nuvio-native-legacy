@@ -161,6 +161,19 @@ void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
     double resta;
     if (janela < PP_FILME_MIN_S) janela = PP_FILME_MIN_S;
     if (janela > PP_FILME_MAX_S) janela = PP_FILME_MAX_S;
+    // A JANELA NUNCA PASSA DE METADE DO FILME, e este teto vem por ultimo — de
+    // proposito, depois do piso, senao o piso o desfaz.
+    //
+    // Sem ele o piso de 150 s virava a regra em qualquer coisa mais curta que
+    // isso: `resta` comeca valendo a duracao inteira, entao no segundo ZERO ja
+    // era `resta <= janela` e o painel subia junto com o filme. Vale para
+    // conteudo curto de verdade e tambem para o instante inicial em que o
+    // pipeline ainda informa uma duracao pequena — e o relato de "More Like
+    // This aparece quando o filme comeca".
+    //
+    // Com o teto, em posSeg=0 sobra a duracao inteira, que e sempre maior que
+    // metade dela: o painel nao tem como subir no comeco.
+    if (janela > durSeg * 0.5) janela = durSeg * 0.5;
     resta = durSeg - posSeg;
     deveAparecer = (resta > 0.0 && resta <= janela);
   }
