@@ -367,14 +367,50 @@ int main(int argc, char **argv) {
   // tex_escala recebem dw/NV_TELA_W, que e o mesmo caminho pelo qual a previa
   // no Mac (retina) desenha em 2x. Se voltar 1920x1080, a resposta e a mesma da
   // C9 e nao ha o que fazer neste lado.
+  int pedeW, pedeH;
+
+  // OS DADOS ANTES DA JANELA, e so por causa desta escolha.
+  //
+  // dados_iniciar ficava perto de app_iniciar, bem depois daqui. Mas o tamanho
+  // da superficie e decidido AGORA, uma vez, e nao ha como redimensiona-la
+  // depois — entao o ajuste precisa estar legivel antes. Ela nao depende de
+  // SDL: mexe em getenv/fopen/mkdir, e no Emscripten monta o IDBFS. `dirArte`
+  // ja esta resolvido desde o topo do main.
+  dados_iniciar(dirArte);
+  // E OS AJUSTES LOGO ATRAS, pelo mesmo motivo: ajustes_4k() le `valor[]`, que
+  // so sai do padrao depois desta chamada. Sem ela a opcao existia na tela,
+  // gravava no arquivo e nao fazia efeito nenhum — o pior tipo de ajuste.
+  //
+  // A chamada de sempre, la embaixo, FICA: ela roda depois de addons_carregar
+  // e e a que estabelece o idioma e o espelho do limite de fileiras. Reler o
+  // mesmo arquivo duas vezes e barato e deixa aquele bloco intacto.
+  ajustes_dir(dados_dir()[0] ? dados_dir() : dirArte);
+
+  // 4K SO ONDE A TV DEIXA, E SO SE PEDIREM.
+  //
+  // Medido nos dois extremos: uma C9 de 2019 (webOS 4.10) IGNORA o pedido em
+  // silencio e devolve 1920x1080, tanto por SDL_CreateWindow quanto por
+  // `resolution` no appinfo.json; um B4 de 2024 CONCEDE — o relator do #28
+  // mediu `drawable=3840x2160` e disse que a fluidez nao mudou, com a
+  // interface ja desenhada em quatro vezes os pixels.
+  //
+  // Por isso e ajuste e nao padrao: onde a TV concede, quadruplicar o
+  // preenchimento e decisao de quem esta olhando, nao minha. Onde ela nao
+  // concede, ligar nao faz mal nenhum — volta 1080p e o log diz isso.
+  //
+  // NV_PEDIR_4K continua existindo para a build de medicao, que precisa pedir
+  // sem depender de ajuste gravado.
+  { int quer4k = ajustes_4k();
 #ifdef NV_PEDIR_4K
-  const int pedeW = 3840, pedeH = 2160;
-  printf("[4k] build de medicao: pedindo %dx%d\n", pedeW, pedeH);
-  fflush(stdout);
-#else
-  const int pedeW = (int)NV_TELA_W, pedeH = (int)NV_TELA_H;
+    quer4k = 1;
+    printf("[4k] build de medicao: pedindo 3840x2160\n");
 #endif
-  SDL_Window *win = SDL_CreateWindow("Nuvio", SDL_WINDOWPOS_CENTERED,
+    pedeW = quer4k ? 3840 : (int)NV_TELA_W;
+    pedeH = quer4k ? 2160 : (int)NV_TELA_H;
+    if (quer4k) { printf("[4k] pedindo %dx%d — a linha `janela=` abaixo diz o "
+                         "que a TV concedeu\n", pedeW, pedeH); fflush(stdout); } }
+  SDL_Window *win;
+  win = SDL_CreateWindow("Nuvio", SDL_WINDOWPOS_CENTERED,
                                      SDL_WINDOWPOS_CENTERED,
                                      pedeW, pedeH, flags);
   if (!win) { printf("janela: %s\n", SDL_GetError()); return 1; }
@@ -493,8 +529,8 @@ int main(int argc, char **argv) {
   // fileira que entra na tela pede tudo de uma vez em vez de pedir aos poucos.
   tex_iniciar(192);
   // A conta vem ANTES da UI: app_iniciar decide entre abrir na home e abrir no
-  // login, e para decidir ele precisa saber se ha sessao gravada.
-  dados_iniciar(dirArte);
+  // login, e para decidir ele precisa saber se ha sessao gravada. (dados_iniciar
+  // ja rodou la em cima, antes da janela — ver a nota do 4K.)
   nuvem_configurar(dirArte);
   sessao_iniciar();
   perfis_carregar_ativo();

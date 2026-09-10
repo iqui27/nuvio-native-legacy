@@ -73,6 +73,10 @@ int   ajustes_local_descobrir(void);
 int   ajustes_descobrir_na_busca(void); // searchDiscoverEnabled (derivado)
 
 // --- LAYOUT: continuar assistindo -------------------------------------------
+// 1 = pedir uma superficie 3840x2160 na criacao da janela. A TV pode ignorar,
+// e a maioria ignora — a linha `janela=... drawable=...` do log diz o que ela
+// respondeu. Ver a nota em main.c.
+int   ajustes_4k(void);
 int   ajustes_cw_ligado(void);          // continueWatchingEnabled
 int   ajustes_cw_estilo(void);          // 0 card, 1 largo (wide), 2 poster
 int   ajustes_cw_thumb_episodio(void);  // useEpisodeThumbnailsInCw

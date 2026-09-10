@@ -100,7 +100,7 @@ typedef enum {
   // Tamanho do item
   AJ_LARGURA_DP, AJ_RAIO_DP,
   // Interface
-  AJ_IDIOMA, AJ_ANIM,
+  AJ_IDIOMA, AJ_ANIM, AJ_RESOLUCAO,
   // Conta
   AJ_PERFIL_ATIVO, AJ_SYNC, AJ_ADDONS, AJ_SALVOS_DEST, AJ_TRAKT, AJ_SIMKL, AJ_SAIR,
   // Sobre
@@ -112,6 +112,11 @@ static const char *V_QUALIDADE[] = { "Automática", "4K", "1080p", "720p" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
 static const char *V_IDIOMA[]    = { "Português", "English" };
 static const char *V_ANIM[]      = { "Completas", "Reduzidas" };
+// A ORDEM IMPORTA: o indice 0 e o padrao (ver a lista de padroes, que e
+// posicional), e o padrao tem de ser 1080p. Numa TV que NAO concede a
+// superficie 4K a escolha nao faz nada, e numa que concede ela quadruplica o
+// preenchimento — nao e coisa para ligar sozinha em aparelho nenhum.
+static const char *V_RESOLUCAO[] = { "1080p", "4K (experimental)" };
 // `collapseSidebar`: recolhida = a rail some e o conteudo comeca em 104.
 static const char *V_RAIL[]      = { "Recolhida", "Fixa" };
 // `continueWatchingCardStyle`, validado em layoutPreferences.js contra
@@ -252,6 +257,7 @@ static const Opcao OPCOES[AJ_N] = {
 
   ESC("Idioma",                     V_IDIOMA, 2),
   ESC("Animações",                  V_ANIM, 2),
+  ESC("Resolução da interface",     V_RESOLUCAO, 2),
 
   LER("Perfil"),
   LER("Sincronização"),
@@ -300,7 +306,7 @@ static const char *CHAVE[] = {
   "cardDepthContinueWatchingEnabled", "cardDepthEpisodeCardsEnabled",
   "cardDepthCastEnabled", "cardDepthTrailersEnabled",
   "posterCardWidthDp", "posterCardCornerRadiusDp",
-  "idioma", "animacoes",
+  "idioma", "animacoes", "resolucao_ui",
   // Conta: sao linhas locais, nao vem nem vao para o perfil na nuvem.
   // "salvosDestino" e LOCAL como cwFonteLocal, e por isso SEM o "-": o app
   // oficial nao tem esta escolha, entao nao ha campo dela no blob da conta —
@@ -361,7 +367,7 @@ static const struct {
   { "Continuar assistindo", "Retomar",    "avancar",      AJ_CW_LIGADO,            8 },
   { "Página de detalhes",   "Detalhes",   "episodios",    AJ_DET_BLUR_NAO_VISTOS,  4 },
   { "Pôsteres e cards",     "Cartazes",   "aspecto",      AJ_EXPANDIR,            14 },
-  { "Interface e conta",    "Conta",      "menu_profile", AJ_IDIOMA,              11 },
+  { "Interface e conta",    "Conta",      "menu_profile", AJ_IDIOMA,              12 },
 };
 #define AJ_N_SECOES (int)(sizeof SECOES / sizeof *SECOES)
 
@@ -481,7 +487,7 @@ static int valor[AJ_N] = {
   // do release publico, e ler uma interface em portugues sem ter escolhido e
   // pior do que ler em ingles sem ter escolhido. Quem prefere portugues troca
   // em Ajustes -> Interface, e a escolha fica gravada.
-  1, 0,             /* idioma, animacoes */
+  1, 0, 0,          /* idioma, animacoes, resolucao (0 = 1080p) */
   // O COMENTARIO ANTIGO AQUI ESTAVA ERRADO, e o erro so nao machucou por sorte.
   // Ele dizia `0, 0, /* versao, espaco */` logo depois do idioma, mas esta
   // lista e POSICIONAL: entre AJ_ANIM e AJ_VERSAO_I existem SETE opcoes de
@@ -535,6 +541,9 @@ static int heroCatalogos = 0;
 static int lig(int op)  { return valor[op] == 0; }
 
 int ajustes_animacoes_reduzidas(void) { return valor[AJ_ANIM] == 1; }
+// Lido UMA vez, na criacao da janela, antes de qualquer desenho: trocar isto
+// com o app aberto nao redimensiona a superficie. Ver main.c.
+int ajustes_4k(void)                  { return valor[AJ_RESOLUCAO] == 1; }
 int ajustes_dolby_vision(void)        { return lig(AJ_DV); }
 int ajustes_dolby_atmos(void)         { return lig(AJ_ATMOS); }
 int ajustes_pausa_overlay(void)       { return lig(AJ_PAUSA_OVERLAY); }
@@ -1075,6 +1084,7 @@ static const char *ajudaOpcao(int op) {
     // --- Interface e conta
     case AJ_IDIOMA: return "Idioma de toda a interface. Não muda o idioma das legendas nem do áudio.";
     case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";
+    case AJ_RESOLUCAO: return "Desenha a interface em 4K nas TVs que permitem. Muitas ignoram o pedido e continuam em 1080p — o log diz qual é o caso. Vale reiniciar o app depois de mudar. O vídeo já é 4K nos dois casos.";
     case AJ_PERFIL_ATIVO: return "Perfil em uso nesta TV. Trocar de perfil é feito na tela de perfis, ao abrir o app.";
     case AJ_SYNC: return "Estado da última troca de dados com a sua conta: addons, progresso, coleções e preferências.";
     case AJ_ADDONS: return "Abre a lista de addons da sua conta, para ligar e desligar cada um nesta TV.";
