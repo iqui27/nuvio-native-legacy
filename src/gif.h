@@ -22,6 +22,13 @@
 #define NV_GIF_H
 #include "gl_compat.h"
 
+// ESTE ALVO ANIMA GIF? Constante em tempo de compilacao (1 no Tizen, 0 no
+// resto). Existe para quem CHAMA nao pagar nada onde a resposta e nao: sem ela,
+// o cartaz em foco no webOS pediria o download do GIF a cada foco, para
+// gif_textura devolver 0 no fim — banda e espaco de cache gastos num arquivo
+// que nunca vai ser desenhado.
+int gif_pode_animar(void);
+
 // O arquivo e um GIF com MAIS DE UM quadro? Le so a estrutura de blocos, que e
 // toda prefixada por tamanho — nao decodifica pixel nenhum.
 int gif_animado(const char *caminho);

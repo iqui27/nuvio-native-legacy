@@ -39,6 +39,12 @@ static size_t pularSubBlocos(const unsigned char *b, size_t n, size_t p) {
   return 0;
 }
 
+#ifdef __EMSCRIPTEN__
+int gif_pode_animar(void) { return 1; }
+#else
+int gif_pode_animar(void) { return 0; }
+#endif
+
 int gif_animado(const char *caminho) {
   FILE *f;
   unsigned char *b;

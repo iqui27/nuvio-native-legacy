@@ -18,6 +18,7 @@
 #include "ajustes.h"
 #include "catalogo.h"
 #include "colecoes.h"
+#include "gif.h"
 #include "badges.h"
 #include "extras.h"
 #include "diretor.h"
@@ -2001,6 +2002,12 @@ static void desenhaFundo(void) {
 static void desenhaAtalhos(int r, float y) {
   float w = larguraFil(r), h = alturaFil(r);
   static int ultimo=-1;static Uint32 desde;
+  // Estado do ramo de GIF (#29), ao lado do da sequencia de JPEG porque os dois
+  // descrevem o MESMO cartaz em foco e sao zerados juntos quando ele muda.
+  //   gifAnima  -1 = ainda nao perguntei, 0 = nao e animado, 1 = e
+  //   gifUltimo instante da ultima amostra, para o passo de 67 ms
+  //   gifTex    a textura devolvida, reaproveitada entre as amostras
+  static int gifAnima=-1;static Uint32 gifUltimo;static GLuint gifTex;
   for (int c = 0; c < fileiras[r].n; c++) {
     float x = ajustes_conteudo_x() + c * passoFil(r) - scrollX[r];
     if (x + w < 0 || x > NV_TELA_W) continue;
@@ -2015,7 +2022,55 @@ static void desenhaAtalhos(int r, float y) {
     gfx_cor(card, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, 1);
     const ColFolder *folder=col_folder(fileiras[r].folders[c]);if(!folder)continue;
     const char *arte = folder->cover;
+    // POR CARTAZ, e nao estatico: diz se ESTE quadro esta desenhando o GIF, e a
+    // resposta muda de cartaz para cartaz dentro do mesmo laco.
+    int gifDesenhando = 0;
     GLuint tex = arte && arte[0] ? tex_obter_larg(arte, w) : 0;
+    // GIF DA CONTA, quando nao ha sequencia de JPEG (#29).
+    //
+    // O importador converte `focusGifUrl` em 001.jpg…090.jpg com ffmpeg, e o
+    // ramo de baixo toca isso. Mas 117 das 169 pastas do pacote saem com
+    // frames==0 — o importador so gera a sequencia quando o perfil trazia a URL
+    // NA HORA da importacao —, e pasta que vem da conta nunca tem sequencia
+    // nenhuma. Para todas essas, a unica animacao possivel e o proprio GIF.
+    //
+    // So o Tizen anima: la o navegador conta o tempo e compoe os quadros. No
+    // webOS gif_textura devolve 0 (nao ha libgif nem IMG_LoadAnimation no
+    // aparelho) e o cartaz fica na capa parada, como hoje. Ver gif.h.
+    if(gif_pode_animar()&&
+       foco.fileira==r&&foco.coluna==c&&folder->frames<1&&folder->focusGif[0] &&
+       !ajustes_animacoes_reduzidas()) {
+      int id=fileiras[r].folders[c];Uint32 now=SDL_GetTicks();
+      // O ARQUIVO E PEDIDO FORA DO ATRASO de 350 ms. Dentro dele, o download so
+      // comecaria depois do atraso e o primeiro quadro chegaria tarde; pedir
+      // cedo custa uma consulta ao cache, que devolve NULL enquanto nao chegou.
+      const char *arq = tex_arquivo(folder->focusGif);
+      if(ultimo!=id){
+        ultimo=id;desde=now;gifUltimo=0;gifAnima=-1;
+        // gif_parar SOLTA O BLOB do cartaz anterior. Sem isto ele fica preso e
+        // o proximo cartaz teria de revoga-lo tarde.
+        gif_parar();
+      }
+      // gif_animado LE O ARQUIVO INTEIRO. Uma vez por cartaz, e nao por quadro.
+      if(gifAnima<0&&arq) gifAnima=gif_animado(arq);
+      if(arq&&gifAnima>0&&now-desde>350&&now-gifUltimo>=67) {
+        // 67 ms e o mesmo passo da sequencia de JPEG. Cada chamada copia
+        // 480x270 RGBA = 518 KB do canvas ate a textura; a 60 fps seriam
+        // ~31 MB/s numa TV que ja e o gargalo do cache de imagem.
+        GLuint motion=gif_textura(arq,480);
+        gifUltimo=now;
+        if(motion){
+          tex=motion;
+          // A PROPORCAO DA CAPA NAO VALE AQUI. Abaixo o desenho usa
+          // tex_aspecto(arte), que e a da capa; o GIF do CDN pode vir em
+          // qualquer proporcao. Zero deixa o desenho usar a moldura.
+          gifDesenhando=1;
+        }
+      } else if(arq&&gifAnima>0&&now-desde>350&&gifTex){
+        tex=gifTex;gifDesenhando=1;
+      }
+      if(tex&&gifDesenhando)gifTex=tex;
+    }
     if(foco.fileira==r&&foco.coluna==c&&folder->frames>0 &&
        !ajustes_animacoes_reduzidas()) {
       int id=fileiras[r].folders[c];Uint32 now=SDL_GetTicks();
@@ -2032,7 +2087,7 @@ static void desenhaAtalhos(int r, float y) {
       }
     }
     if (tex) {
-      gfx_tex_aspect_atual = tex_aspecto(arte);
+      gfx_tex_aspect_atual = gifDesenhando ? 0.0f : tex_aspecto(arte);
       gfx_rect(card, tex, GFX_CARD, 0, 0, 0, raio, 0, 0, 0, 1);
       gfx_tex_aspect_atual = 0;
     }
