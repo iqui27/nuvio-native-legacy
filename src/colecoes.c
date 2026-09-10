@@ -278,7 +278,17 @@ static void lerColecaoWeb(const char *c, const char *ce) {
     js_texto(p, pe, "coverImageUrl", v->cover, sizeof v->cover);
     if (!js_texto(p, pe, "heroBackdropUrl", v->hero, sizeof v->hero)) snprintf(v->hero, sizeof v->hero, "%s", fundo);
     js_texto(p, pe, "titleLogoUrl", v->logo, sizeof v->logo);
+    // GIF DE FOCO (#29). Fica como URL, igual a cover/hero/logo: quem for
+    // anima-lo pede o arquivo ao cache de disco (tex_arquivo) na hora em que o
+    // cartaz recebe foco. O campo pode simplesmente nao vir — pasta sem
+    // animacao e o caso comum, e ai `focusGif` continua vazio.
+    //
+    // focusGifEnabled:false DESLIGA a animacao mesmo com a URL presente, que e
+    // a mesma regra de tools/import-collections.mjs. Ausente vale como ligado.
+    js_texto(p, pe, "focusGifUrl", v->focusGif, sizeof v->focusGif);
     { char b[8]; v->hideTitle = js_bruto(p, pe, "hideTitle", b, sizeof b) && strstr(b, "true") ? 1 : 0; }
+    { char b[8];
+      if (js_bruto(p, pe, "focusGifEnabled", b, sizeof b) && strstr(b, "false")) v->focusGif[0] = 0; }
     const char *src = js_array(p, pe, "sources");
     if (!src) src = js_array(p, pe, "catalogSources");
     for (const char *s = src; s && v->nSources < COL_SOURCE_MAX; s = js_prox(js_fim(s))) {
@@ -367,6 +377,19 @@ int col_definir_json(const char *json) {
       snprintf(v.group, sizeof v.group, "%s", folders[i].group);
       snprintf(v.groupId, sizeof v.groupId, "%s", folders[i].groupId);
       snprintf(v.title, sizeof v.title, "%s", folders[i].title);
+      // O GIF DA CONTA SO ENTRA ONDE NAO HA SEQUENCIA LOCAL, e isso nao abre
+      // excecao na regra acima: a versao local nao tem GIF nenhum para perder.
+      // col_carregar nunca preenche focusGif — no pacote o GIF ja virou
+      // 001.jpg..090.jpg na importacao e o que resta dele e frames+frameDir.
+      //
+      // Entao ha dois casos, e so um deles muda de mao:
+      //   frames > 0  — a pasta ja anima pela sequencia curada. Fica como esta.
+      //   frames == 0 — nao ha animacao nenhuma para preservar (117 das 169
+      //                 pastas do collections.json do pacote estao assim, por
+      //                 falta de focusGifUrl no perfil na hora da importacao).
+      //                 Descartar a URL da conta aqui seria jogar fora a unica
+      //                 animacao que existe, sem nada no lugar.
+      if (!v.frames) snprintf(v.focusGif, sizeof v.focusGif, "%s", folders[i].focusGif);
       folders[i] = v; casadas++; break;
     }
     printf("[colecoes] %d pastas da conta casaram com a arte do pacote\n", casadas);

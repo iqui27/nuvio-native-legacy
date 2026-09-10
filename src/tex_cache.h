@@ -41,6 +41,19 @@ void tex_escala(float e);
 // Prefira esta a tex_obter em qualquer arte de lista: e onde o cache estoura.
 GLuint tex_obter_larg(const char *caminho, float largLayout);
 
+// Caminho do ARQUIVO local de uma URL, ou NULL enquanto ele nao chegou. Um
+// caminho que ja e local volta como veio. Nunca bloqueia: quando o arquivo
+// ainda nao esta no cache de disco, pede o download pela MESMA fila de rede das
+// imagens e devolve NULL — chamar de novo no quadro seguinte e o esperado.
+//
+// Existe para o GIF de foco das colecoes (#29): gif_textura() precisa do
+// ARQUIVO para montar o blob que a <img> anima, e nao de uma textura. tex_obter
+// nao serve porque devolve UM quadro decodificado e nenhum caminho de volta.
+//
+// Devolve ponteiro para buffer ESTATICO: use antes da proxima chamada, e so da
+// thread de desenho.
+const char *tex_arquivo(const char *url);
+
 // Proporcao (w/h) da textura ja carregada; 0 se ainda nao esta pronta.
 // Necessaria para o "cover" do shader — sem ela a arte estica.
 float tex_aspecto(const char *caminho);

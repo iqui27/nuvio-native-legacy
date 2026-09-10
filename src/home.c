@@ -1218,8 +1218,38 @@ static void sincronizarFileiras(void) {
     //
     // Fileira que a pessoa DESLIGOU nao conta: ela ja saiu no laco acima, e
     // anunciar como "cabe mais uma" o que ela mandou embora seria ruido.
-    cortadasPeloLimite = (w > lim) ? w - lim : 0;
-    if (w > lim) w = lim;
+    // O LIMITE CONTA O QUE CUSTA REQUISICAO, E SO ISSO.
+    //
+    // A definicao esta escrita em descoberta.c, onde o mesmo numero e aplicado:
+    // "corta o que vai ser PEDIDO pela rede, e nao o desenho: sete fileiras tem
+    // de custar sete GET, senao o ajuste economiza pixel e nao trabalho".
+    //
+    // Aqui ele estava sendo aplicado uma SEGUNDA vez, sobre a lista ja montada,
+    // e nessa lista entram coisas que nao pedem nada a rede: as fileiras de
+    // COLECAO (pastas que ja estao em memoria) e as fixas — "Continuar
+    // assistindo", "Amigos assistindo", "Retomar agora". Elas consumiam vagas
+    // de um orcamento que existe para poupar REDE, e o que sobrava do teto era
+    // cortado pelo fim — que e onde as colecoes entram (ver o bloco de col_n()
+    // acima). Com o Trakt ligado, as fileiras dele empurravam o corte para
+    // cima e as colecoes eram as primeiras a cair. E a metade do #30 que o
+    // conserto da assinatura nao resolvia.
+    //
+    // Agora so conta quem tem `base` e `catId`, que e exatamente o par que
+    // define um catalogo de addon — a mesma condicao que decide o card
+    // "Ver tudo" mais acima. MAX_FIL continua sendo o teto duro da estrutura.
+    // COMPACTA, NAO TRUNCA. Truncar no primeiro catalogo excedente jogaria fora
+    // tudo que vem DEPOIS dele — e as fileiras de colecao entram justamente no
+    // fim da lista. O corte tem de pular o catalogo que passou do orcamento e
+    // seguir, deixando passar quem nao pede rede.
+    { int q2, rede = 0, mantidas = 0;
+      for (q2 = 0; q2 < w; q2++) {
+        int pedeRede = arranjo[q2].base[0] && arranjo[q2].catId[0];
+        if (pedeRede && ++rede > lim) continue;
+        if (mantidas != q2) arranjo[mantidas] = arranjo[q2];
+        mantidas++;
+      }
+      cortadasPeloLimite = w - mantidas;
+      w = mantidas; }
     memcpy(fileiras, arranjo, sizeof(Fileira) * (size_t)w);
     destino = w;
   }

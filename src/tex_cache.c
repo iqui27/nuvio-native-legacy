@@ -1042,6 +1042,40 @@ GLuint tex_obter_hero(const char *caminho) {
   return tex_obter_limite(caminho, NV_TEX_HERO_LARG_MAX);
 }
 
+// O ARQUIVO, e nao a textura. Ver a nota em tex_cache.h.
+//
+// TUDO AQUI E REAPROVEITAMENTO, de proposito. O download, o nome estavel da
+// URL, a gravacao atomica em .parcial, a conferencia de assinatura, o recuo em
+// falha e a deduplicacao ja existem em garantirLocal e no fio de rede; escrever
+// um segundo download ao lado deles seria repetir seis defeitos ja consertados.
+// O unico gasto e a textura de UM quadro que o decode produz de brinde, pedida
+// aqui com o menor teto possivel — o LRU a despeja como qualquer outra.
+//
+// LIMITE CONHECIDO, no alvo Tizen: passando de NV_CACHE_DISCO_MAX o fio de
+// decode APAGA o arquivo do cache logo depois de decodificar (ver a nota longa
+// la embaixo, sobre MEMFS). Quando isso acontece esta funcao nunca acha o
+// arquivo e devolve NULL para sempre — o cartaz fica parado, que e o
+// comportamento de hoje. Nao vira laco de download: o item ja esta PRONTO e o
+// pedido abaixo so encosta no LRU.
+const char *tex_arquivo(const char *url) {
+  static char local[600];
+  FILE *f;
+  long n = 0;
+  if (!url || !*url) return NULL;
+  // Ja e arquivo: e o caso das pastas do pacote, cujo caminho vem do disco.
+  if (strncmp(url, "http://", 7) && strncmp(url, "https://", 8)) return url;
+  if (!dirCache[0]) return NULL;
+  nomeDeCache(url, local, sizeof local);
+  f = fopen(local, "rb");
+  if (f) { fseek(f, 0, SEEK_END); n = ftell(f); fclose(f); }
+  // Mesmo piso de garantirLocal: abaixo disso e pagina de erro, nao arquivo.
+  if (n > 512) return local;
+  // 128 e o teto MINIMO que tex_obter_limite aceita pelo caminho normal; o que
+  // interessa e o efeito colateral, que e o arquivo no disco.
+  tex_obter_limite(url, 128);
+  return NULL;
+}
+
 float tex_aspecto(const char *caminho) {
   if (!caminho || !*caminho) return 0.0f;
   float a = 0.0f;

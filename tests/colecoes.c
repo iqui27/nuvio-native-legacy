@@ -44,6 +44,20 @@ int main(void) {
   assert(col_definir_json("[{\"profile_id\":1,\"collections_json\":[{\"id\":\"r\",\"title\":\"R\",\"folders\":[{\"id\":\"g\",\"title\":\"G\",\"sources\":[{\"addonId\":\"a\",\"type\":\"movie\",\"catalogId\":\"k\"}]}]}],\"updated_at\":\"x\"}]") == 1);
   assert(!strcmp(col_folder(0)->groupId, "r"));
   puts("ok  linha da RPC com o array direto");
+  // GIF DE FOCO (#29). O pacote nao guarda URL nenhuma — ele converte o GIF em
+  // 001.jpg..090.jpg na importacao —, entao a URL so chega por aqui. Sem esta
+  // leitura as colecoes da conta nunca animam, que e o issue inteiro.
+  assert(col_definir_json("{\"collections\":[{\"id\":\"c\",\"title\":\"T\",\"folders\":["
+    "{\"id\":\"g1\",\"title\":\"Com GIF\",\"focusGifUrl\":\"https://cdn/a.gif\","
+      "\"sources\":[{\"addonId\":\"a\",\"type\":\"movie\",\"catalogId\":\"k\"}]},"
+    "{\"id\":\"g2\",\"title\":\"Sem campo\","
+      "\"sources\":[{\"addonId\":\"a\",\"type\":\"movie\",\"catalogId\":\"k\"}]},"
+    "{\"id\":\"g3\",\"title\":\"Desligado\",\"focusGifUrl\":\"https://cdn/c.gif\",\"focusGifEnabled\":false,"
+      "\"sources\":[{\"addonId\":\"a\",\"type\":\"movie\",\"catalogId\":\"k\"}]}]}]}") == 3);
+  assert(!strcmp(col_folder(0)->focusGif, "https://cdn/a.gif"));
+  assert(!col_folder(1)->focusGif[0]);   // campo ausente e o caso comum
+  assert(!col_folder(2)->focusGif[0]);   // focusGifEnabled:false desliga
+  puts("ok  focusGifUrl entra, campo ausente fica vazio, focusGifEnabled:false desliga");
   // pacote + conta com o mesmo id: fica a arte local, grupo/titulo da conta
   { char dir[] = "/tmp/nuvio-col-XXXXXX"; char caminho[300]; FILE *f;
     assert(mkdtemp(dir));
@@ -55,6 +69,34 @@ int main(void) {
     assert(!strcmp(col_folder(0)->group, "Streaming Renomeado") && !strcmp(col_folder(0)->sources[0].base, "https://addon/abc"));
     assert(!strcmp(col_folder(1)->cover, "https://cdn/n.webp") && !col_folder(1)->local);
     puts("ok  pasta do pacote guarda arte e quadros; a conta da grupo, titulo e pastas novas"); }
+  // O GIF DA CONTA CONTRA A ARTE DO PACOTE. A regra e "a versao local fica
+  // inteira", e o GIF nao a contradiz: o pacote nao TEM focusGif para perder.
+  //   frames > 0  — ja anima pela sequencia curada; a URL da conta e ignorada.
+  //   frames == 0 — nao ha animacao nenhuma; a URL entra, senao a pasta ficaria
+  //                 parada tendo GIF disponivel.
+  { char dir[] = "/tmp/nuvio-colgif-XXXXXX"; char caminho[300]; FILE *f;
+    const char *conta =
+      "{\"collections\":[{\"id\":\"c1\",\"title\":\"G\",\"folders\":["
+      "{\"id\":\"comq\",\"title\":\"Com quadros\",\"focusGifUrl\":\"https://cdn/q.gif\","
+        "\"sources\":[{\"addonId\":\"a\",\"type\":\"movie\",\"catalogId\":\"k\"}]},"
+      "{\"id\":\"semq\",\"title\":\"Sem quadros\",\"focusGifUrl\":\"https://cdn/s.gif\","
+        "\"sources\":[{\"addonId\":\"a\",\"type\":\"movie\",\"catalogId\":\"k\"}]}]}]}";
+    assert(mkdtemp(dir));
+    snprintf(caminho, sizeof caminho, "%s/collections.json", dir); f = fopen(caminho, "w");
+    fputs("{\"groups\":[{\"id\":\"c1\",\"title\":\"G\",\"folders\":["
+          "{\"id\":\"comq\",\"title\":\"Com quadros\",\"frames\":12,"
+            "\"sources\":[{\"title\":\"M\",\"base\":\"https://a\",\"type\":\"movie\",\"catId\":\"k\"}]},"
+          "{\"id\":\"semq\",\"title\":\"Sem quadros\",\"frames\":0,"
+            "\"sources\":[{\"title\":\"M\",\"base\":\"https://a\",\"type\":\"movie\",\"catId\":\"k\"}]}]}]}", f);
+    fclose(f);
+    assert(col_carregar(dir) == 2);
+    assert(!col_folder(0)->focusGif[0] && !col_folder(1)->focusGif[0]);
+    assert(col_definir_json(conta) == 2);
+    assert(col_folder(0)->frames == 12 && !col_folder(0)->focusGif[0]);
+    assert(col_folder(1)->frames == 0 && !strcmp(col_folder(1)->focusGif, "https://cdn/s.gif"));
+    assert(col_folder(0)->local && col_folder(1)->local);
+    remove(caminho); rmdir(dir);
+    puts("ok  o GIF da conta so entra na pasta local que nao tem sequencia de quadros"); }
   // OS QUATRO NIVEIS DE col_diagnostico. O que este teste guarda nao e a
   // funcao e sim a CAPACIDADE DE SEPARAR causas: os quatro casos abaixo
   // produzem hoje o mesmo sintoma na tela (fileira solta na home, #18) e o

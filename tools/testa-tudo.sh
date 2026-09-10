@@ -3,8 +3,11 @@
 #   *_shot / cinematic / director  -> precisam de arte e de GL, nao de logica
 #   webp-tizen                     -> sobe um servidor e NUNCA sai (trava tudo)
 #   tizen-clock                    -> depende do relogio do alvo
-# tests/home.sh falha de proposito em nFileiras == 17, aguardando decisao do
-# dono; ela aparece na lista como FALHA CONHECIDA e nao invalida a rodada.
+# A EXCECAO DA home.sh SAIU. Ela falhava de proposito em nFileiras == 17 com
+# limite 16 — dezesseis catalogos MAIS uma colecao — esperando a decisao sobre
+# se colecao e fileira fixa gastam o orcamento do limite. A decisao foi que nao
+# gastam (o limite conta o que pede rede; ver o corte em home.c), e com isso o
+# teste passa sozinho. Se ele voltar a falhar, e regressao de verdade.
 # ".." porque este script mora em tools/, e a suite e relativa a RAIZ do
 # repositorio. Ele nasceu na raiz e o `cd` de la ficou para tras na mudanca:
 # o sintoma era `tests/*.sh: No such file or directory`.
@@ -18,7 +21,6 @@ for f in tests/*.sh; do
   if bash "$f" >/tmp/nvteste.log 2>&1; then
     echo "ok    $n"
   else
-    if [ "$n" = "home.sh" ]; then echo "FALHA CONHECIDA  $n"; continue; fi
     echo "FALHA $n"; tail -15 /tmp/nvteste.log; falhou=1
   fi
 done

@@ -8,6 +8,12 @@ typedef struct {
   char groupId[64];   /* id da colecao no web; a chave de ordem da conta e collection_<groupId> */
   char frameDir[600];
   char detailHero[512];
+  /* GIF de foco que a CONTA manda (focusGifUrl). O PACOTE nao guarda URL:
+     tools/import-collections.mjs ja converte o GIF em 001.jpg..090.jpg na
+     importacao, e o que sobra dele aqui e frames+frameDir. Vazio quando a
+     conta nao mandou o campo ou mandou focusGifEnabled:false. Ver src/gif.h
+     para onde isso anima (Tizen) e onde nao anima (webOS). */
+  char focusGif[512];
   int editorial; /* 1: legacy vector export; 2: approved cinematic image pair */
   int local;     /* 1: veio do collections.json do pacote (arte e ajustes curados aqui) */
   int frames, hideTitle, nSources;
