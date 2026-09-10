@@ -121,13 +121,11 @@ static float scrollY = 0.0f;         // rolagem VERTICAL do documento
 static int temporada = 0;            // temporada ESCOLHIDA (nao a focada)
 // Repouso do foco sobre a fileira de temporadas, para trocar de temporada ao
 // PARAR numa pilula em vez de a cada pilula por que se passa.
-static int    tempPend = 0;
 // Episodio para o qual a aba de temporada APONTA. A rolagem da fileira de
 // episodios usa este indice enquanto o foco esta na fileira de temporadas —
 // antes a troca de temporada arrastava o FOCO para o episodio, e com isso o
 // D-pad saia da fileira de abas: nao dava para passar da segunda temporada.
 static int    epAncora = 0;
-static Uint32 tempDesde = 0;
 // Comentarios: 0 = da SERIE, 1 = do EPISODIO. E o seletor que a referencia poe
 // sob "Avaliações do Trakt". Em filme nao existe e fica cravado em 0.
 static int comentEp = 0;
@@ -146,6 +144,8 @@ typedef enum { SEC_TEMPORADAS, SEC_EPISODIOS, SEC_ABAS_INFO, SEC_ELENCO,
 static int ehSerie(void);
 static float alturaCabComentarios(void);
 static int temporadaEm(int c);
+static int epAbsoluto(int c);
+static int epVisiveis(void);
 static float baseDaAbaAtiva(void);
 // A fileira de comentarios e definida junto do desenho dela, la embaixo, mas a
 // contagem de colunas e a largura de item — que ficam aqui em cima — precisam
@@ -196,30 +196,56 @@ static const char *cabecalhoDe(int r) {
   }
 }
 
-// A ABA DE TEMPORADA E UM ATALHO DE ROLAGEM, nao um filtro.
+// A ABA DE TEMPORADA VOLTOU A SER UM FILTRO. Issue #35.
 //
-// Proposta do dono, e melhor que o que estava: a lista de episodios passou a
-// ser UNICA (todas as temporadas, ordenadas), e a aba apenas leva o foco ao
-// PRIMEIRO episodio daquela temporada. Nao ha recarga, nao ha rede, nao ha
-// reconstrucao — a demora ao trocar de aba deixa de existir porque a troca
-// deixa de acontecer.
-static void irParaTemporada(int c, int moverFoco) {
-  int alvo = temporadaEm(c), n = cat_n_episodios(idx), i;
-  if (alvo <= 0 || n < 1) return;
-  if (n > foco.nColunas[SEC_EPISODIOS]) n = foco.nColunas[SEC_EPISODIOS];
+// A lista era UNICA (todas as temporadas emendadas, ordenadas) e a aba so
+// levava o foco ao primeiro episodio daquela temporada. A razao daquilo era a
+// demora: trocar de aba pedia a temporada a rede. Essa razao NAO EXISTE MAIS —
+// desc_episodios ignora o numero da temporada e traz a serie inteira num
+// pedido so ("A lista agora e UNICA e cobre todas as temporadas, entao ter
+// qualquer episodio deste titulo ja basta"). Com tudo em memoria, filtrar a
+// fileira e trabalho de VISTA: nao ha rede, nao ha remontagem, nao ha demora
+// para trazer de volta.
+//
+// O que o relator descreve e o efeito colateral que sobrou: numa serie de tres
+// temporadas a fileira mostrava doze cards seguidos e passar de T1E4 para a
+// direita caia em T2E1 sem que a aba dissesse nada. A aba virava enfeite.
+//
+// COLUNA E RELATIVA, cat_episodio() e ABSOLUTO. Todo mundo que le a fileira
+// passa por epAbsoluto(); quem conta, por epVisiveis().
+static int epAbsoluto(int c) {
+  int alvo = temporadaEm(temporada), n = cat_n_episodios(idx), i, j = 0;
+  if (c < 0) return -1;
+  // Sem lista de temporadas nao ha filtro possivel: a fileira e a lista crua.
+  { const CatItem *ci = cat_item(idx);
+    if (!ci || ci->nTemporadas < 1) return c < n ? c : -1; }
   for (i = 0; i < n; i++) {
     const CatEp *e = cat_episodio(idx, i);
-    if (e && e->temporada == alvo) {
-      // A ancora move a ROLAGEM sempre; o FOCO so quando o dono confirma com
-      // OK ou desce para a fileira. Puxar o foco no simples passar por cima da
-      // pilula tirava o dono da fileira de temporadas e prendia a navegacao
-      // nas duas primeiras abas.
-      epAncora = i;
-      foco.colunaLembrada[SEC_EPISODIOS] = i;
-      if (moverFoco) { foco.fileira = SEC_EPISODIOS; foco.coluna = i; }
-      return;
-    }
+    if (e && e->temporada == alvo && j++ == c) return i;
   }
+  return -1;
+}
+
+static int epVisiveis(void) {
+  int alvo = temporadaEm(temporada), n = cat_n_episodios(idx), i, q = 0;
+  if (n < 1) return 0;
+  { const CatItem *ci = cat_item(idx);
+    if (!ci || ci->nTemporadas < 1) return n; }
+  for (i = 0; i < n; i++) {
+    const CatEp *e = cat_episodio(idx, i);
+    if (e && e->temporada == alvo) q++;
+  }
+  return q;
+}
+
+// Trocar de aba agora REINICIA a fileira, porque ela passou a mostrar outra
+// coisa. A ancora deixa de ser uma posicao no meio da lista emendada e passa a
+// ser sempre o comeco.
+static void irParaTemporada(int c, int moverFoco) {
+  (void)c;
+  epAncora = 0;
+  foco.colunaLembrada[SEC_EPISODIOS] = 0;
+  if (moverFoco && epVisiveis() > 0) { foco.fileira = SEC_EPISODIOS; foco.coluna = 0; }
 }
 
 // Filme sem elenco ainda, com o meta em voo. E o unico caso em que uma secao
@@ -494,7 +520,6 @@ void detail_abrir(const HomeItem *it) {
       for (k = 0; k < ci0->nTemporadas; k++)
         if (ci0->temporadas[k] == e0->temporada) { temporada = k; break; }
     } }
-  tempPend = temporada; tempDesde = 0;
   epAncora = 0;
   int cols[N_SECOES]; for (int i = 0; i < N_SECOES; i++) cols[i] = secaoColunas(i);
   focus_iniciar(&foco, N_SECOES, cols);
@@ -539,7 +564,7 @@ static int episodioAlvo(int *temp, int *epis, int *origem) {
   const CatEp *ep = NULL;
   if (origem) *origem = 0;
 
-  if (foco.fileira == SEC_EPISODIOS) ep = cat_episodio(idx, foco.coluna);
+  if (foco.fileira == SEC_EPISODIOS) ep = cat_episodio(idx, epAbsoluto(foco.coluna));
   if (ep) {
     if (temp) *temp = ep->temporada;
     if (epis) *epis = ep->episodio;
@@ -577,7 +602,10 @@ static int episodioAlvo(int *temp, int *epis, int *origem) {
         }
       }
     } }
-  ep = cat_episodio(idx, 0);
+  // O PRIMEIRO DA TEMPORADA EM EXIBICAO, que e o que a nota acima promete —
+  // com a lista emendada isto era o primeiro episodio da SERIE, qualquer que
+  // fosse a aba aberta.
+  ep = cat_episodio(idx, epAbsoluto(0));
   if (!ep) return 0;
   if (temp) *temp = ep->temporada;
   if (epis) *epis = ep->episodio;
@@ -720,7 +748,7 @@ static int secaoN(int r) {
         return ci->nTemporadas < N_ITENS ? ci->nTemporadas : N_ITENS;
       return 0;
     case SEC_EPISODIOS: {
-      int q = cat_n_episodios(idx);
+      int q = epVisiveis();
       if (q <= 0) return 0;
       return q < N_ITENS ? q : N_ITENS;
     }
@@ -989,7 +1017,6 @@ void detail_evento(const SDL_Event *e) {
       // Trocar de aba BUSCA a temporada. Antes so mudava o realce e a lista
       // continuava a mesma, o que fazia a aba parecer quebrada.
       temporada = foco.coluna;
-      tempPend = temporada; tempDesde = 0;
       irParaTemporada(temporada, 1);
     } else if (foco.fileira == SEC_ELENCO && abaIdDe(abaInfo) == ABA_ELENCO) {
       // OK num rosto abre a FILMOGRAFIA da pessoa. E o `openCastDetail` do web
@@ -1013,7 +1040,7 @@ void detail_evento(const SDL_Event *e) {
       // era INALCANCAVEL daqui: o menu so vivia dentro da folha de episodios, e
       // a folha so abre de dentro do player. Quem estava na pagina de detalhe —
       // que e onde qualquer um iria procurar — segurava o card e via as fontes.
-      const CatEp *ep = cat_episodio(idx, foco.coluna);
+      const CatEp *ep = cat_episodio(idx, epAbsoluto(foco.coluna));
       if (dur >= NV_HOLD_MS && ep)
         episodios_menu_visto(idx, ep->temporada, ep->episodio, ep->nome);
       else
@@ -1188,6 +1215,10 @@ static void revalidarIdx(void) {
 }
 
 void detail_atualizar(float dt, Uint32 agora) {
+  // `agora` ficou sem uso quando o repouso da troca de temporada saiu (ver a
+  // nota mais abaixo). Fica na assinatura porque ela e a mesma de todas as
+  // telas e app.c chama todas do mesmo jeito.
+  (void)agora;
   if (!aberto) return;
   revalidarIdx();
   // O CATALOGO TROCOU: OS EPISODIOS FORAM JUNTO, E NINGUEM OS REPEDIA.
@@ -1230,20 +1261,20 @@ void detail_atualizar(float dt, Uint32 agora) {
   // Com REPOUSO, pela mesma razao do heroi (NV_HERO_REPOUSO_MS): varrer quatro
   // temporadas de ponta a ponta dispararia quatro consultas das quais so a
   // ultima interessa. Espera o foco parar e so entao troca.
+  // SEM REPOUSO, e o repouso foi embora junto com a razao dele. Ele existia
+  // para nao disparar quatro consultas ao varrer quatro abas de ponta a ponta;
+  // hoje trocar de aba nao consulta nada, so muda quais episodios a fileira
+  // mostra. Esperar meio segundo para trocar uma VISTA e a propria "demora ao
+  // trocar de temporada" que o repouso tentava evitar.
   if (nivel >= 1 && foco.fileira == SEC_TEMPORADAS) {
-    if (foco.coluna != tempPend) { tempPend = foco.coluna; tempDesde = agora; }
-    else if (tempPend != temporada && tempDesde &&
-             agora - tempDesde >= NV_HERO_REPOUSO_MS) {
-      temporada = tempPend;
+    if (foco.coluna != temporada) {
+      temporada = foco.coluna;
       irParaTemporada(temporada, 0);
-      tempDesde = 0;
     }
-  } else {
-    tempPend = temporada;
-    tempDesde = 0;
+  } else if (foco.fileira == SEC_EPISODIOS) {
     // Andar pelos episodios move a ancora junto: voltando para as abas, a
     // fileira nao pula de volta para o episodio de onde a aba a deixou.
-    if (foco.fileira == SEC_EPISODIOS) epAncora = foco.coluna;
+    epAncora = foco.coluna;
   }
 
   // SELETOR DE COMENTARIOS, pela mesma regra: mover o foco ja troca a fonte.
@@ -1993,7 +2024,7 @@ static void veuEpisodio(GfxRect th, float a) {
 // (miniatura em cima, texto embaixo, que e o app da Apple TV).
 static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
   (void)agora;
-  const CatEp *ep = cat_episodio(idx, c);
+  const CatEp *ep = cat_episodio(idx, epAbsoluto(c));
   GfxRect th = { r.x, r.y, r.w, NV_DETP_EP_THUMB_H };
   float raioTh = NV_DETP_EP_RAIO / NV_DETP_EP_THUMB_H;
 
