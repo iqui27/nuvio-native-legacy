@@ -605,6 +605,7 @@ int main(int argc, char **argv) {
   double perFreq = (double)SDL_GetPerformanceFrequency();
   Uint64 ultQuadro = SDL_GetPerformanceCounter();
   double fEv=0, fBomb=0, fUpd=0, fDes=0, fSwap=0, fAux=0, fClr=0;
+  int fUplN=0, pUplN=0; long fUplB=0, pUplB=0;
   double pEv=0, pBomb=0, pUpd=0, pDes=0, pSwap=0, pAux=0, pClr=0;
   // Dentro de `des`: quanto e travessia de GL e quanto e busca no cache.
   double fFill=0, pFill=0; int fNCheio=0, pNCheio=0;
@@ -693,12 +694,23 @@ int main(int argc, char **argv) {
     Uint64 cQuadro = SDL_GetPerformanceCounter();
     double dtms = (double)(cQuadro - ultQuadro) * 1000.0 / perFreq;
     ultQuadro = cQuadro;
-    if (dtms > 100.0) dtms = 100.0;
     if (dtms < 0.0) dtms = 0.0;
-    float dt = (float)(dtms / 1000.0);
+    // O TETO E DA ANIMACAO, NAO DA MEDICAO, e confundir os dois cegou o
+    // diagnostico do issue #33. `dtms` era grampeado em 100 ms ANTES de virar
+    // `pior`, entao todo quadro de 100 ms para cima virava exatamente
+    // "pior=100.0ms". O log do relator tinha essa linha tres vezes e ela nao
+    // queria dizer "cem milissegundos": queria dizer "cem ou mais, nao sei
+    // quanto". Com FPS=9.6 na mesma janela — 104 ms de media — havia quadro
+    // muito acima disso, e o numero que existia para revelar isso escondia.
+    //
+    // O teto continua onde sempre precisou estar: voltar de suspensao entrega
+    // um dt de varios segundos e a animacao daria um salto.
+    double dtAnim = dtms > 100.0 ? 100.0 : dtms;
+    float dt = (float)(dtAnim / 1000.0);
     if (quadros > 20) {
       if (dtms > pior) { pior = dtms; piorTxtMs = txtMsQuadro; piorTxtN = txtNQuadro;
                          pEv=fEv; pBomb=fBomb; pUpd=fUpd; pDes=fDes; pSwap=fSwap; pAux=fAux; pClr=fClr;
+                         pUplN=fUplN; pUplB=fUplB;
                          pGfxMs=fGfxMs; pTexMs=fTexMs; pNRect=fNRect; pNProg=fNProg;
                          pNBind=fNBind; pNBusca=fNBusca; pOutMs=fOutMs; pNOut=fNOut; pFill=fFill; pNCheio=fNCheio; }
       if (dtms > 33.0) janks++;
@@ -718,8 +730,10 @@ int main(int argc, char **argv) {
     // envio grande de antes, e a fileira que entra na tela deixa de aparecer aos
     // pedacos.
     Uint64 t0 = NV_T0();
+    tex_upl_n = 0; tex_upl_bytes = 0;
     tex_bombear(3);
     fBomb = NV_DT(t0);
+    fUplN = tex_upl_n; fUplB = tex_upl_bytes;
     t0 = NV_T0();
     app_atualizar(dt, agora);
     fUpd = NV_DT(t0);
@@ -790,6 +804,24 @@ int main(int argc, char **argv) {
                emscripten_get_heap_size() / 1048576.0,
                mi.uordblks / 1048576.0, mi.fordblks / 1048576.0); }
 #endif
+      // A REPARTICAO DO PIOR QUADRO, NA TELA E NAO SO NO ARQUIVO.
+      //
+      // Ela ja existia, mas so em /tmp/nuvio-fps.txt — e quem relata desempenho
+      // no Samsung ve o painel de log do proprio app, nunca esse arquivo. O
+      // resultado foi o #33: tres linhas de "pior=100.0ms" sem NADA que
+      // dissesse em que fase o tempo foi gasto, e duas causas candidatas com
+      // conserto diferente. So sai quando o quadro passou de jank, para nao
+      // dobrar o log em uso normal.
+      //
+      // `bomb` e a subida de textura para a GPU; `upl` diz se foi UMA arte
+      // grande ou muitas pequenas, que e a diferenca entre partir o upload e
+      // reduzir o orcamento.
+      if (pior > 33.0) {
+        printf("[quadro] pior=%.1fms | ev=%.1f bomb=%.1f(%d tex, %.1fMB)"
+               " upd=%.1f clr=%.1f des=%.1f aux=%.1f swap=%.1f\n",
+               pior, pEv, pBomb, pUplN, pUplB / 1048576.0,
+               pUpd, pClr, pDes, pAux, pSwap);
+      }
       fflush(stdout);
       // A MESMA linha vai para um arquivo. No aparelho a saida padrao do app
       // lancado pelo applicationManager nao chega a lugar nenhum que se possa
@@ -815,6 +847,7 @@ int main(int argc, char **argv) {
       txt_despejos = 0;
       dados_desc_zerar();
       pEv=pBomb=pUpd=pDes=pSwap=pAux=pClr=0;
+      pUplN=0; pUplB=0;
       pGfxMs=pTexMs=pOutMs=0; pNRect=pNProg=pNBind=pNBusca=pNOut=0; pFill=0; pNCheio=0;
     }
   }

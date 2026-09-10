@@ -2,7 +2,7 @@
 <widget xmlns="http://www.w3.org/ns/widgets"
         xmlns:tizen="http://tizen.org/ns/widgets"
         id="http://nuvio.tv/native"
-        version="1.0.38"
+        version="1.0.39"
         viewmodes="maximized">
 
   <!-- required_version 5.5: e a partir dele que a TV executa WebAssembly

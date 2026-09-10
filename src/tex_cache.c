@@ -1102,6 +1102,9 @@ int tex_marca_escura(const char *caminho) {
   return r;
 }
 
+int    tex_upl_n;
+long   tex_upl_bytes;
+
 int tex_bombear(int max_por_quadro) {
   int subiu = 0;
   Uint64 inicio = SDL_GetPerformanceCounter();
@@ -1122,6 +1125,8 @@ int tex_bombear(int max_por_quadro) {
     if (!sup) break;
 
     GLuint t; glGenTextures(1, &t); glBindTexture(GL_TEXTURE_2D, t);
+    tex_upl_n++;
+    tex_upl_bytes += (long)sup->w * sup->h * 4;
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, sup->w, sup->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, sup->pixels);
     // Mipmaps servem a duas coisas: reduzir o serrilhado quando a arte aparece
   // menor que o original, e — a razao de terem entrado agora — permitir o fundo

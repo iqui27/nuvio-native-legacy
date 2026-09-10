@@ -82,6 +82,13 @@ int tex_bombear(int max_por_quadro);
 // Telemetria de quadro do cache: quantas buscas por caminho e quanto custaram.
 // acharIndice era LINEAR sobre 192 slots e cada card da lista chama 2-3 vezes
 // por quadro; estes numeros dizem se isso pesa de verdade ou nao.
+// QUANTO O QUADRO GASTOU SUBINDO PIXEL PARA A GPU, e nao so quanto tempo o
+// bombeamento levou. Uma unica arte de heroi e 1920x1080x4 = 8 MB num
+// glTexImage2D so; saber que `bomb` custou 90 ms sem saber se foi UMA textura
+// grande ou trinta pequenas leva a consertos diferentes. Zerados por quadro
+// por quem mede (main.c).
+extern int    tex_upl_n;
+extern long   tex_upl_bytes;
 extern int    tex_n_busca;
 extern double tex_ms_busca;
 void tex_novo_quadro(void);
