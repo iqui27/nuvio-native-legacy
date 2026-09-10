@@ -43,8 +43,14 @@ tools/env.sh --env-file "$ENVF"
 # NUVIO_EXTRA_CFLAGS: bandeiras a mais para uma build de teste, sem tocar no
 # codigo. Nasceu para o -DNV_PEDIR_4K do issue #28, que so existe para uma
 # pessoa medir numa TV que nao temos aqui.
-echo "NUVIO_EXTRA_CFLAGS=${NUVIO_EXTRA_CFLAGS:-}" >> "$ENVF"
+#
+# VAI POR -e E NAO PELO ENV-FILE. O env-file e lido pela conferencia logo
+# abaixo, que exige encontrar o VALOR de cada chave dentro do binario — e uma
+# bandeira de compilacao nao e uma string do binario. Posta la, ela derrubava a
+# build com "ABORTADO: NUVIO_EXTRA_CFLAGS nao entrou no binario ARM", que e a
+# guarda funcionando sobre a coisa errada.
 docker run --rm --platform linux/arm64 --env-file "$ENVF" \
+  -e NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-}" \
   -v "$PWD":/work nuvio-webos-sdk sh -c '
   SR=$NUVIO_SYSROOT
   arm-webos-linux-gnueabi-gcc src/*.c -o nuvio-proto.arm -O2 $NUVIO_EXTRA_CFLAGS \
@@ -74,7 +80,9 @@ while IFS='=' read -r NOME VALOR; do
     echo "    aviso: $NOME vazio em local.properties"
     continue
   fi
-  if ! strings nuvio-proto.arm 2>/dev/null | grep -qF "$VALOR"; then
+  # `--` antes do padrao: um valor comecando por "-" viraria opcao do grep
+  # ("grep: unknown --devices option" foi como isso apareceu).
+  if ! strings nuvio-proto.arm 2>/dev/null | grep -qF -- "$VALOR"; then
     echo "    ABORTADO: $NOME nao entrou no binario ARM"
     exit 1
   fi
