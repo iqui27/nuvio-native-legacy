@@ -166,6 +166,42 @@ int main(void) {
     assert(fil_revisao() == antes); }
   puts("ok  contagem nova nao reescreve o arquivo nem bumpa a revisao");
 
+
+  // POR ULTIMO, e de proposito: este caso chama fil_esquecer() e recomeca a
+  // lista do zero. No meio do arquivo ele derrubava os testes seguintes, que
+  // seguem encadeados sobre o estado deixado pelo anterior.
+  // HOME PELA METADE NAO REBAIXA QUEM ELA NAO VIU. Issue #30. HOME PELA METADE NAO REBAIXA QUEM ELA NAO VIU. Issue #30.
+  //
+  // No arranque a home publica em ~16 etapas: os catalogos entram primeiro e as
+  // colecoes da conta chegam DEPOIS de todas elas. Cada uma dessas etapas
+  // chamava esta funcao. A versao antiga reconstruia a lista inteira — as
+  // chaves da tela primeiro, "todo o resto" atras — entao cada etapa precoce
+  // empurrava a colecao para o fim, o limite de fileiras a cortava, e cortada
+  // ela nunca mais voltava a tela para ser promovida. O relator so conseguia
+  // trazer de volta desligando e religando a mao, e o arranque seguinte
+  // rebaixava outra vez.
+  //
+  // A assercao e sobre a POSICAO de quem esta ausente: "colecao" tem de
+  // continuar no indice 2 depois de uma remontagem que so conhece catB e catA.
+  { const char *ordem[] = { "continuar", "amigos", "colecao", "catB", "catA" };
+    const char *meiaHome[] = { "catB", "catA" };
+    int j;
+    fil_esquecer();
+    for (j = 0; j < 5; j++) fil_registrar(ordem[j], ordem[j], "", "movie", 3);
+    conferir("antes da meia home", ordem, 5);
+    fil_espelhar_ordem(meiaHome, 2);
+    // catB e catA ocupavam os indices 3 e 4 e sao os unicos que a tela viu;
+    // eles podem trocar entre si, e ninguem mais pode sair do lugar.
+    { const char *esperado[] = { "continuar", "amigos", "colecao", "catB", "catA" };
+      conferir("meia home nao rebaixa o ausente", esperado, 5); }
+    // E quando a tela ve os dois na ordem INVERTIDA, a troca acontece — dentro
+    // dos mesmos dois slots. Sem esta metade o teste passaria com uma funcao
+    // que simplesmente nao faz nada.
+    { const char *invertida[] = { "catA", "catB" };
+      const char *esperado[] = { "continuar", "amigos", "colecao", "catA", "catB" };
+      fil_espelhar_ordem(invertida, 2);
+      conferir("a tela permuta o que conhece", esperado, 5); } }
+  puts("ok  home pela metade nao empurra a colecao para o fim (#30)");
   puts("fileiras: tudo ok");
   return 0;
 }

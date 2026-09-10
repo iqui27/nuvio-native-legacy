@@ -385,16 +385,40 @@ void fil_espelhar_ordem(const char *const *chaves, int n) {
   pthread_mutex_lock(&trava);
   garantir();
   if (!ordemLocal && nLinhas > 0) {
+    // SO REORDENA O QUE A TELA CONHECE. Quem ela nao mencionou fica EXATAMENTE
+    // onde estava — nao vai para o fim.
+    //
+    // A versao antiga reconstruia a lista inteira: primeiro as chaves da tela,
+    // na ordem dela, e depois "todo o resto" atras. Parece inofensivo, mas esta
+    // funcao roda A CADA REMONTAGEM, e no arranque a home esta pela metade — os
+    // catalogos entram em ~16 publicacoes e as colecoes da conta chegam depois
+    // de todas elas. Cada remontagem precoce empurrava as colecoes para o fim
+    // da ordem.
+    //
+    // E dali elas nao voltavam: no fim da ordem o limite de fileiras as corta,
+    // cortadas nunca aparecem na tela, e nao aparecendo nunca sao promovidas de
+    // volta. Um poco. A unica saida era desligar e religar a fileira a mao — e
+    // o proximo arranque rebaixava tudo de novo, que e exatamente o relato do
+    // #30: "toggling makes it appear again; exit and reopen and it disappears".
+    //
+    // Agora a tela so permuta as fileiras dela DENTRO DAS POSICOES QUE ELAS JA
+    // OCUPAM. Uma home pela metade nao tem como mexer em quem ela nem viu.
+    int slots[FIL_MAX], m = 0;
+    char posto[FIL_MAX];
     memset(usado, 0, sizeof usado);
-    for (i = 0; i < n && k < FIL_MAX; i++) {
+    for (i = 0; i < n; i++) {
       int p = chaves[i] ? achar(chaves[i]) : -1;
-      if (p >= 0 && !usado[p]) { novo[k++] = linhas[p]; usado[p] = 1; }
+      if (p >= 0) usado[p] = 1;
     }
-    for (i = 0; i < nLinhas && k < FIL_MAX; i++)
-      if (!usado[i]) novo[k++] = linhas[i];
-    // So troca se a conta bater: uma lista curta aqui apagaria fileiras
-    // conhecidas, e e por elas que Ajustes religa o que foi desligado.
-    if (k == nLinhas) memcpy(linhas, novo, sizeof(Linha) * (size_t)k);
+    for (i = 0; i < nLinhas && m < FIL_MAX; i++)
+      if (usado[i]) slots[m++] = i;
+    memcpy(novo, linhas, sizeof(Linha) * (size_t)nLinhas);
+    memset(posto, 0, sizeof posto);
+    for (i = 0; i < n && k < m; i++) {
+      int p = chaves[i] ? achar(chaves[i]) : -1;
+      if (p >= 0 && !posto[p]) { posto[p] = 1; novo[slots[k++]] = linhas[p]; }
+    }
+    memcpy(linhas, novo, sizeof(Linha) * (size_t)nLinhas);
   }
   pthread_mutex_unlock(&trava);
 }
