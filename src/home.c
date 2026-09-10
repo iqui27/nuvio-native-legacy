@@ -2244,7 +2244,7 @@ void home_desenhar(Uint32 agora) {
             txt_desenhar(acao,tx,conteudoTopo+38.0f);
             TxtLinha titulo=txt_linha_corta(TXT_CW_META,cItem->titulo,228,231,239,255,tw);
             txt_desenhar(titulo,tx,conteudoTopo+92.0f);
-            TxtLinha ep=txt_linha_corta(TXT_MINI,cItem->temporada?cItem->direcao:"Filme",181,185,196,255,tw);
+            TxtLinha ep=txt_linha_corta(TXT_MINI,cItem->temporada?cItem->direcao:i18n("Filme"),181,185,196,255,tw);
             txt_desenhar(ep,tx,conteudoTopo+130.0f);
             TxtLinha fonte=txt_linha_corta(TXT_MINI,cItem->provNome[0]?cItem->provNome:"Trakt",155,161,174,255,tw);
             txt_desenhar(fonte,tx,conteudoBase-14.0f);
@@ -2478,7 +2478,7 @@ void home_desenhar(Uint32 agora) {
             // aqui e carimbava nome e genero de outro titulo no card.
             const char *nome   = (ci && ci->titulo[0]) ? ci->titulo : NULL;
             const char *genero = (ci && ci->genero[0]) ? ci->genero
-                                : ci ? (!strcmp(ci->tipo, "series") ? "Série" : "Filme") : NULL;
+                                : ci ? i18n(!strcmp(ci->tipo, "series") ? "Série" : "Filme") : NULL;
             TxtLinha tg = genero
                         ? txt_linha_corta(TXT_HERO_META, genero, 226, 228, 233, 255, w - 64)
                         : (TxtLinha){ 0, 0, 0 };

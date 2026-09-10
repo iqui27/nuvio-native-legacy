@@ -2,6 +2,7 @@
 #include "vistoep.h"
 #include "catalogo.h"
 #include "js.h"
+#include "idioma.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -73,7 +74,14 @@ static void comporGenero(char *dst, size_t tam, const char *tipo,
   char cru[600];
   const char *p;
   int k;
-  k = snprintf(dst, tam, "%s", strcmp(tipo, "series") ? "Filme" : "Programa de TV");
+  // PASSA POR i18n() COMO TODO ROTULO DE TIPO. Este campo vai direto para a
+  // tela (CatItem.genero, a linha "Programa de TV · Drama"), e a traducao que
+  // existe em catalogo.c so roda no catalogo do PACOTE, na leitura do extra.txt
+  // — item vindo da CONTA nao passa por la. Com o app em ingles a linha saia
+  // "TV Show" nos titulos do pacote e "Programa de TV" nos da conta, na mesma
+  // home. E a metade do #23 que a correcao da 1.0.28 nao alcancou.
+  k = snprintf(dst, tam, "%s",
+               i18n(strcmp(tipo, "series") ? "Filme" : "Programa de TV"));
   if (k < 0 || (size_t)k + 1 >= tam) return;
   if (!js_bruto(ini, fim, "genres", cru, sizeof cru)) return;
   for (p = cru; *p;) {

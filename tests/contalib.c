@@ -42,6 +42,15 @@ static void confereTexto(const char *o_que, const char *obtido, const char *espe
 static CatItem cat[FALSO_MAX];
 static int catN;
 
+// i18n() DEVOLVENDO A CHAVE, de proposito: este teste confere o PORTUGUES que
+// contalib compoe ("Programa de TV · Drama"), e um duble que traduzisse mudaria
+// o que esta sendo verificado. O que o duble prova, junto com o codigo, e que a
+// composicao PASSA pela traducao — se alguem tirar a chamada, o app volta a
+// misturar idiomas na home (#23) e este arquivo nem pisca. Por isso a assercao
+// que importa esta no i18n.sh, que varre as chaves; aqui so nao pode quebrar o
+// link.
+const char *i18n(const char *s) { return s; }
+
 int cat_n(void) { return catN; }
 
 const CatItem *cat_item(int i) {

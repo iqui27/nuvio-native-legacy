@@ -732,7 +732,11 @@ void player_encerrar(void) {
            (unsigned)(tv - t0), (unsigned)(SDL_GetTicks() - tv));
     fflush(stdout); }
   comVideo = 0; esperandoFonte = 0; aberto = 0; saindo = 0; pediuSair = 0;
-  inicioImagem = 0;
+  // Os DOIS relogios, e nao so o do primeiro quadro. `pgDesde` sobrevivendo ao
+  // fechamento faria a proxima reproducao achar que a janela do aviso ja tinha
+  // corrido — o aviso simplesmente nao entraria, sem nada no log dizendo por
+  // que. Ver a nota no desenho da guia parental.
+  inicioImagem = 0; pgDesde = 0;
 }
 
 // O ultimo botao da fileira: "Episodios" numa serie, "Relacionados" num filme

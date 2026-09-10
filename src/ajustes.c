@@ -900,30 +900,40 @@ static const char *textoLeitura(int op) {
     snprintf(bufp, sizeof bufp, i18n("Perfil %d"), perfis_ativo());
     return bufp;
   }
+  // TODO VALOR DAQUI VAI PARA A TELA, ENTAO TODO VALOR PASSA POR i18n().
+  //
+  // Estes voltavam CRUS e a varredura nao os via: ela olha o literal entregue a
+  // uma funcao de DESENHO, e aqui o literal e devolvido por um `return` — quem
+  // desenha recebe um `const char *` e nao tem como saber de onde veio. Doze
+  // literais atravessaram assim, e o relator do #23 os leu na TV em ingles:
+  // "conectado" e "conectar" nas linhas do Trakt e do Simkl.
+  //
+  // Regra para quem editar esta funcao: se o texto aparece na lista de Ajustes,
+  // ele e interface. Nao ha valor "tecnico demais para traduzir" aqui.
   if (op == AJ_SYNC) {
     switch (sync_estado()) {
-      case SYNC_RODANDO: return "sincronizando…";
-      case SYNC_FALHOU:  return "falhou";
+      case SYNC_RODANDO: return i18n("sincronizando…");
+      case SYNC_FALHOU:  return i18n("falhou");
       case SYNC_PRONTO:  return sync_resumo();
-      default:           return sessao_logada() ? "aguardando" : "sem conta";
+      default:           return sessao_logada() ? i18n("aguardando") : i18n("sem conta");
     }
   }
   if (op == AJ_TRAKT) {
     switch (traktauth_estado()) {
-      case TRA_LIGADO:     return "conectado";
-      case TRA_PEDINDO:    return "preparando…";
-      case TRA_AGUARDANDO: return "aguardando";
-      case TRA_ERRO:       return "falhou";
-      default:             return "conectar";
+      case TRA_LIGADO:     return i18n("conectado");
+      case TRA_PEDINDO:    return i18n("preparando…");
+      case TRA_AGUARDANDO: return i18n("aguardando");
+      case TRA_ERRO:       return i18n("falhou");
+      default:             return i18n("conectar");
     }
   }
   if (op == AJ_SIMKL) {
     switch (simklauth_estado()) {
-      case SMK_LIGADO:     return "conectado";
-      case SMK_PEDINDO:    return "preparando…";
-      case SMK_AGUARDANDO: return "aguardando";
-      case SMK_ERRO:       return "falhou";
-      default:             return "conectar";
+      case SMK_LIGADO:     return i18n("conectado");
+      case SMK_PEDINDO:    return i18n("preparando…");
+      case SMK_AGUARDANDO: return i18n("aguardando");
+      case SMK_ERRO:       return i18n("falhou");
+      default:             return i18n("conectar");
     }
   }
   if (op == AJ_ADDONS) {
@@ -932,11 +942,11 @@ static const char *textoLeitura(int op) {
     snprintf(buf, sizeof buf, i18n("%d de %d"), lig, n);
     return buf;
   }
-  if (op == AJ_SAIR) return "OK";
+  if (op == AJ_SAIR) return "OK";   /* igual nos dois idiomas */
   if (op == AJ_HERO_CATALOGOS) {
     // "Todos" com a lista vazia e o que o web escreve (common_all), e e o estado
     // do perfil do dono. Um "0" ali leria como "nenhum", o oposto do que e.
-    if (heroCatalogos <= 0) return "Todos";
+    if (heroCatalogos <= 0) return i18n("Todos");
     snprintf(buf, sizeof buf, "%d", heroCatalogos);
     return buf;
   }
