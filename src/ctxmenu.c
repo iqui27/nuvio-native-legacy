@@ -87,8 +87,21 @@ static int observarHold(void *u, SDL_Event *e) {
   return 0;
 }
 
-// Ate tres: detalhes, biblioteca e — so em filme/serie — assistido.
-#define CTX_MAX 3
+// QUATRO: detalhes, salvar, assistido (so em filme/serie) e tirar de
+// Continuar assistindo (so em item com progresso).
+//
+// ERA TRES, E O QUARTO EXISTIA MESMO ASSIM. Em filme com progresso as quatro
+// condicoes valem ao mesmo tempo e montar() escrevia em ops[3] — fora do
+// vetor. O sintoma que chegou (issue #36) foi o mais brando dos possiveis:
+// focoAnim so era animado ate CTX_MAX, entao a ultima linha do menu NUNCA
+// acendia ("doesn't go white to show it is selected"). O desenho ia ate nOps e
+// lia focoAnim[3], que ninguem escrevia.
+//
+// A opcao de Continuar assistindo entrou depois das outras tres, e o teto
+// ficou onde estava. Por isso o append agora passa por juntar(), que confere o
+// teto num lugar so: uma quinta opcao deixa de aparecer, em vez de corromper
+// memoria.
+#define CTX_MAX 4
 static struct { const char *rot; int acao; } ops[CTX_MAX];
 static int nOps;
 static float focoAnim[CTX_MAX];
@@ -108,12 +121,18 @@ static int indiceAtual(void) {
   return idx;
 }
 
+// O UNICO CAMINHO PARA DENTRO DE ops[]. Ver a nota em CTX_MAX.
+static void juntar(const char *rot, int acao) {
+  if (nOps >= CTX_MAX) return;
+  ops[nOps].rot = rot; ops[nOps].acao = acao; nOps++;
+}
+
 static void montar(void) {
   int i = indiceAtual();
   const CatItem *ci = i >= 0 ? cat_item(i) : NULL;
   nOps = 0;
   if (!ci) return;
-  ops[nOps].rot = "Ver detalhes";        ops[nOps].acao = OP_DETALHES;  nOps++;
+  juntar("Ver detalhes", OP_DETALHES);
   // Sem IMDb nao ha endpoint remoto suportado para esta acao. Nao oferecer
   // um botao que so aparentaria funcionar e inventaria estado local.
   if (ci->imdb[0]) {
@@ -122,23 +141,20 @@ static void montar(void) {
     // tela Biblioteca e nao encontrava relacao com o "+" que tinha apertado no
     // detalhe. Agora as tres portas da mesma acao (o "+", esta linha e o painel
     // da tecla AZUL) usam a palavra "salvar", e todas escrevem no mesmo lugar.
-    if (estadoOperacao == CTX_PENDENTE && operacao == CTX_OP_LISTA)
-      ops[nOps].rot = intencao ? "Salvando..." : "Removendo dos Salvos...";
-    else
-      ops[nOps].rot = ci->naLista ? "Remover dos Salvos" : "Salvar";
-    ops[nOps].acao = OP_LISTA; nOps++;
+    juntar(estadoOperacao == CTX_PENDENTE && operacao == CTX_OP_LISTA
+             ? (intencao ? "Salvando..." : "Removendo dos Salvos...")
+             : (ci->naLista ? "Remover dos Salvos" : "Salvar"),
+           OP_LISTA);
   }
   // O web so oferece "assistido" em filme e serie — nao em canal nem evento,
   // que sao tipos que os addons do dono tambem declaram.
   if (ci->imdb[0] && (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series"))) {
-    if (estadoOperacao == CTX_PENDENTE && operacao == CTX_OP_HISTORICO)
-      ops[nOps].rot = intencao ? "Marcando como assistido..."
-                               : "Desmarcando como assistido...";
-    else
-      ops[nOps].rot = cat_historico_estado_item(i) == 1
-                        ? "Desmarcar como assistido"
-                        : "Marcar como assistido";
-    ops[nOps].acao = OP_ASSISTIDO; nOps++;
+    juntar(estadoOperacao == CTX_PENDENTE && operacao == CTX_OP_HISTORICO
+             ? (intencao ? "Marcando como assistido..."
+                         : "Desmarcando como assistido...")
+             : (cat_historico_estado_item(i) == 1 ? "Desmarcar como assistido"
+                                                  : "Marcar como assistido"),
+           OP_ASSISTIDO);
   }
   // TIRAR DE "CONTINUAR ASSISTINDO".
   //
@@ -152,8 +168,7 @@ static void montar(void) {
   // card aparecer na fileira. Quem terminou um filme quer as duas; quem
   // desistiu no meio quer so esta.
   if (ci->progresso > 0 && ci->imdb[0]) {
-    ops[nOps].rot = "Tirar de Continuar assistindo";
-    ops[nOps].acao = OP_TIRAR_CONTINUAR; nOps++;
+    juntar("Tirar de Continuar assistindo", OP_TIRAR_CONTINUAR);
   }
   // O FOCO TEM DE CABER NA LISTA QUE ACABOU DE SER MONTADA.
   //

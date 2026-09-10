@@ -32,4 +32,21 @@ rg -q 'confirmado = status >= 200 && status < 300' src/trakt.c
 # A pressao longa continua pertencendo a home.c e chega ao modal via KEYUP.
 rg -q 'home.c:.*NV_HOLD_MS.*KEYUP' src/ctxmenu.h
 
+# O TETO DO MENU TEM DE CABER O MENU. Issue #36: CTX_MAX era 3 e havia quatro
+# opcoes possiveis ao mesmo tempo (filme com progresso), entao montar() escrevia
+# em ops[3]. O sintoma foi a ultima linha nunca acender, porque focoAnim so era
+# animado ate CTX_MAX. Aqui se cobra que o numero de opcoes que montar() pode
+# empilhar nunca passe do vetor, e que ops[] so seja escrito por juntar().
+ctx_max=$(rg -n '^#define CTX_MAX ' src/ctxmenu.c | sed 's/.*CTX_MAX *//')
+n_juntar=$(rg -c '^\s*juntar\(' src/ctxmenu.c)
+[ "$n_juntar" -le "$ctx_max" ] || {
+  echo "ctxmenu: $n_juntar opcoes possiveis para CTX_MAX=$ctx_max" >&2; exit 1; }
+rg -q 'ops\[nOps\]\.rot = rot' src/ctxmenu.c
+[ "$(rg -c 'ops\[nOps\]' src/ctxmenu.c)" -eq 1 ] || {
+  echo 'ctxmenu: ops[nOps] escrito fora de juntar()' >&2; exit 1; }
+
+# O foco tem de ser animado ate onde o desenho le. Ler focoAnim[i] com i < nOps
+# enquanto o laco de animacao vai so ate CTX_MAX foi exatamente o defeito.
+rg -q 'for \(i = 0; i < CTX_MAX; i\+\+\)' src/ctxmenu.c
+
 echo 'ctxmenu contract: PASS'
