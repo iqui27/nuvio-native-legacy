@@ -354,9 +354,29 @@ int main(int argc, char **argv) {
   //
   // txt_iniciar continua recebendo a escala do drawable: no aparelho ela e 1 e
   // nao muda nada, no Mac (retina) ela e 2 e a previa deixa de mentir.
+  // BUILD DE MEDICAO, LIGADA SO POR BANDEIRA DE COMPILACAO (issue #28).
+  //
+  // A medicao acima e de 2019, numa C9. O relator tem um B4 de 2024, com um
+  // compositor muito mais novo, e nao ha nenhum desses aqui para testar. Em vez
+  // de adivinhar ou de embutir um ajuste que ninguem sabe se funciona, existe
+  // esta bandeira: `NUVIO_EXTRA_CFLAGS=-DNV_PEDIR_4K bash tools/arm.sh --ipk`
+  // gera um .ipk que PEDE 3840x2160 e imprime o que recebeu na linha
+  // `janela=... drawable=...` que ja existe logo abaixo.
+  //
+  // Se o drawable voltar 3840x2160, o resto do app ja acompanha: txt_iniciar e
+  // tex_escala recebem dw/NV_TELA_W, que e o mesmo caminho pelo qual a previa
+  // no Mac (retina) desenha em 2x. Se voltar 1920x1080, a resposta e a mesma da
+  // C9 e nao ha o que fazer neste lado.
+#ifdef NV_PEDIR_4K
+  const int pedeW = 3840, pedeH = 2160;
+  printf("[4k] build de medicao: pedindo %dx%d\n", pedeW, pedeH);
+  fflush(stdout);
+#else
+  const int pedeW = (int)NV_TELA_W, pedeH = (int)NV_TELA_H;
+#endif
   SDL_Window *win = SDL_CreateWindow("Nuvio", SDL_WINDOWPOS_CENTERED,
                                      SDL_WINDOWPOS_CENTERED,
-                                     (int)NV_TELA_W, (int)NV_TELA_H, flags);
+                                     pedeW, pedeH, flags);
   if (!win) { printf("janela: %s\n", SDL_GetError()); return 1; }
   // App de TV nao tem ponteiro: o cursor por cima da interface polui a leitura
   // e some sozinho no aparelho, mas nao no Mac.

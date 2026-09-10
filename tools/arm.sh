@@ -40,10 +40,14 @@ limpar() { [ -n "$LIXO" ] && rm -rf $LIXO; }
 trap limpar EXIT
 ENVF=$(mktemp); LIXO="$LIXO $ENVF"
 tools/env.sh --env-file "$ENVF"
+# NUVIO_EXTRA_CFLAGS: bandeiras a mais para uma build de teste, sem tocar no
+# codigo. Nasceu para o -DNV_PEDIR_4K do issue #28, que so existe para uma
+# pessoa medir numa TV que nao temos aqui.
+echo "NUVIO_EXTRA_CFLAGS=${NUVIO_EXTRA_CFLAGS:-}" >> "$ENVF"
 docker run --rm --platform linux/arm64 --env-file "$ENVF" \
   -v "$PWD":/work nuvio-webos-sdk sh -c '
   SR=$NUVIO_SYSROOT
-  arm-webos-linux-gnueabi-gcc src/*.c -o nuvio-proto.arm -O2 \
+  arm-webos-linux-gnueabi-gcc src/*.c -o nuvio-proto.arm -O2 $NUVIO_EXTRA_CFLAGS \
     -DNV_SUPABASE_URL="\"$NV_SUPABASE_URL\"" \
     -DNV_SUPABASE_ANON_KEY="\"$NV_SUPABASE_ANON_KEY\"" \
     -DNV_TV_LOGIN_BASE="\"$NV_TV_LOGIN_BASE\"" \
