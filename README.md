@@ -106,3 +106,22 @@ Most design documents are in Portuguese, since they were written for the author:
 [PORT-LEGACY.md](PORT-LEGACY.md), [PLANO-CONTA-SYNC.md](PLANO-CONTA-SYNC.md),
 [MEDIDAS-WEB.md](MEDIDAS-WEB.md), [FERRAMENTAS.md](FERRAMENTAS.md).
 [INSTALL.md](INSTALL.md) and this file are in English.
+
+## License
+
+[GNU General Public License v3.0](LICENSE).
+
+GPLv3 is not an arbitrary pick. The C in `src/` is written from scratch, but the
+interface icons in `deploy/app/art/icones/` are rasterised from the SVGs of the
+upstream web app — seven of them still ship as `.svg` — and that app is GPLv3,
+as is the [web fork](https://github.com/iqui27/NuvioTVSmart-legacy-webos) this
+project grew alongside. Derived assets carry the licence of what they derive
+from, so the whole thing goes out under the same terms the rest of the ecosystem
+uses.
+
+"Nuvio", the logo and the wordmark belong to the original authors. The GPL
+covers the code, **not** the name or the branding — they appear here only to
+identify the project this one is derived from. Unofficial and unaffiliated.
+
+Artwork fetched at runtime (TMDB, Trakt, add-on CDNs) belongs to whoever owns
+it and is not covered by this licence.
