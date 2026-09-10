@@ -185,6 +185,38 @@ int main(void) {
     posplay_fechar(); }
   puts("ok  o painel de filme nao sobe no comeco, e ainda sobe no fim");
 
+  // O CARTAO DE PROXIMO EPISODIO, issue #34: "the play next option kicks in
+  // before the show has got to the credits". A causa era ordem de regras, nao
+  // marcador ausente: o marcador era lido e aprovado, e a regra dos 2 minutos
+  // logo abaixo dele abria o cartao primeiro em todo episodio cujos creditos
+  // comecassem a menos de 120 s do fim — que e a maioria.
+  { struct { const char *nome; double pos, dur, cred; int esperado; } cs[] = {
+      // 22,5 min com creditos a 60 s do fim. A 110 s do fim a regra velha ja
+      // abria o cartao; o marcador diz que ainda falta um minuto de episodio.
+      { "marcador aceito, ainda antes dele",   1240.0, 1350.0, 1290.0, 0 },
+      { "marcador aceito, chegou nele",        1290.0, 1350.0, 1290.0, 1 },
+      { "marcador aceito, depois dele",        1330.0, 1350.0, 1290.0, 1 },
+      // Sem marcador nenhum a regra dos 2 minutos continua sendo a regra.
+      { "sem marcador, dentro dos 2 min",      1240.0, 1350.0,    0.0, 1 },
+      { "sem marcador, fora dos 2 min",        1200.0, 1350.0,    0.0, 0 },
+      // Marcador absurdo (creditos no meio do episodio) e RECUSADO pela
+      // sanidade e nao pode calar a regra de baixo — senao o cartao nunca
+      // apareceria naquele episodio.
+      { "marcador recusado, meio do episodio", 2000.0, 3000.0, 1000.0, 0 },
+      { "marcador recusado, fim do episodio",  2900.0, 3000.0, 1000.0, 1 },
+      // Duracao invalida: nao decide nada.
+      { "sem duracao",                            0.0,    0.0,    0.0, 0 },
+    };
+    for (size_t k3 = 0; k3 < sizeof cs / sizeof *cs; k3++) {
+      int r = player_regra_proximo(cs[k3].pos, cs[k3].dur, cs[k3].cred);
+      if (r != cs[k3].esperado) {
+        fprintf(stderr, "FALHOU: %s -> %d, esperava %d\n",
+                cs[k3].nome, r, cs[k3].esperado);
+        assert(0);
+      }
+    } }
+  puts("ok  o cartao de proximo episodio obedece ao marcador de creditos");
+
   puts("posplay: tudo ok");
   return 0;
 }

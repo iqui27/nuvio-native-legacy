@@ -21,6 +21,11 @@ const char *player_linha_episodio(void);
 int player_pediu_fontes(void);
 int player_pediu_proximo(int *temporada, int *episodio);
 const CatEp *player_proximo_episodio(void);
+// A REGRA DO CARTAO DE PROXIMO EPISODIO, isolada do estado do player para
+// poder ser exercitada por teste. `cred` e o segundo em que os creditos
+// comecam (0 quando nenhuma das duas fontes tem marcador). Devolve 1 quando o
+// cartao deve estar no ar.
+int player_regra_proximo(double posSeg, double durSeg, double cred);
 void player_erro_fonte(void);
 
 // 1 quando ha video de verdade por tras desta sessao. O desenho usa isto para

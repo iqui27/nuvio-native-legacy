@@ -782,31 +782,63 @@ static int temUltimoBotao(void) {
 #define PLR_CRED_TETO_S 300.0
 #define PLR_CRED_PISO_S 120.0
 
-static double credJanela(void) {
-  double j = duracaoSeg * PLR_CRED_FRACAO;
+static double credJanelaDe(double durSeg) {
+  double j = durSeg * PLR_CRED_FRACAO;
   if (j > PLR_CRED_TETO_S) j = PLR_CRED_TETO_S;
   if (j < PLR_CRED_PISO_S) j = PLR_CRED_PISO_S;
   return j;
 }
+static double credJanela(void) { return credJanelaDe(duracaoSeg); }
+
+// A REGRA SOZINHA, sem o estado do player e sem log: e o que o teste consegue
+// chamar. ofertaProximo() abaixo e ela mais a leitura das duas fontes de
+// marcador e as duas linhas de diagnostico.
+int player_regra_proximo(double posSeg, double durSeg, double cred) {
+  if (durSeg <= 1.0) return 0;
+  if (cred > 1.0 && durSeg - cred <= credJanelaDe(durSeg))
+    return posSeg >= cred;   // marcador aceito: ele manda, e so ele
+  return durSeg - posSeg <= PLR_CRED_PISO_S;
+}
 
 static int ofertaProximo(void) {
-  const CatEp *p=player_proximo_episodio();double fim;int tipo;
+  const CatEp *p=player_proximo_episodio();
   if(!p||duracaoSeg<=1)return 0;
-  if(intro_ativo(posSeg,&fim,&tipo)&&tipo==INTRO_CREDITOS) {
-    double resta = duracaoSeg - posSeg, janela = credJanela();
-    // UMA LINHA POR MARCADOR, e nao por quadro: `fim` identifica o trecho.
-    // Os dois lados sao registrados de proposito. So o recusado aparecia no
-    // log, e por isso "ainda aparece antes do final" nao tinha como ser
-    // medido — nao dava para saber se quem abriu o cartao foi o marcador
-    // aceito ou a regra dos 2 minutos com uma duracao errada.
-    { if (!credAvisado || credAvisadoEm != fim) {
-        credAvisado = 1; credAvisadoEm = fim;
-        printf("[posplay] creditos %s: restam %.0fs de %.0fs (janela %.0fs)\n",
-               resta <= janela ? "aceito" : "RECUSADO", resta,
-               (double)duracaoSeg, janela);
-        fflush(stdout);
-      } }
-    if (resta <= janela) return 1;
+  // DUAS FONTES, NESTA ORDEM, e e a mesma ordem do posplay.c: o capitulo do
+  // Matroska descreve ESTA copia, o TheIntroDB descreve o lancamento. Esta
+  // funcao so olhava o TheIntroDB (por intro_ativo), entao um episodio em MKV
+  // com capitulo de creditos tinha o capitulo ignorado aqui e obedecido no
+  // painel de filme — duas leituras diferentes do mesmo arquivo.
+  double cred = video_creditos();
+  if (cred <= 1.0) cred = intro_creditos_seg();
+  if (cred > 1.0) {
+    // SANIDADE: ver a nota de credJanela acima. Marcador que sobra mais que a
+    // janela nao e credito, e dado errado — cai na regra de baixo.
+    double resta = duracaoSeg - cred, janela = credJanela();
+    int aceito = resta <= janela;
+    // UMA LINHA POR MARCADOR, e nao por quadro. Os dois lados sao registrados
+    // de proposito: so o recusado aparecia no log, e por isso "ainda aparece
+    // antes do final" nao tinha como ser medido — nao dava para saber se quem
+    // abriu o cartao foi o marcador aceito ou a regra dos 2 minutos com uma
+    // duracao errada.
+    if (!credAvisado || credAvisadoEm != cred) {
+      credAvisado = 1; credAvisadoEm = cred;
+      printf("[posplay] creditos %s: comecam em %.0fs de %.0fs (sobram %.0fs, janela %.0fs)\n",
+             aceito ? "aceito" : "RECUSADO", cred, (double)duracaoSeg,
+             resta, janela);
+      fflush(stdout);
+    }
+    // HA MARCADOR ACEITO: ELE MANDA, E SO ELE.
+    //
+    // Este `return` e o conserto do #34. Antes, um marcador aceito nao impedia
+    // a regra dos 2 minutos logo abaixo de rodar primeiro: em todo episodio
+    // cujos creditos comecam a MENOS de 120 s do fim — que e a maioria — o
+    // cartao subia antes do marcador que existia justamente para segura-lo.
+    // O marcador era lido, era aprovado, e nao servia para nada.
+    //
+    // E a mesma guarda que o filme ganhou na 1.0.35 (posplay.c: "ha marcador e
+    // ele ainda nao chegou: NAO cair no plano B"). A serie tinha ficado de
+    // fora.
+    if (aceito) return player_regra_proximo(posSeg, duracaoSeg, cred);
   }
   // FALLBACK sem dado de ninguem. Se a duracao estiver errada, e ELE quem abre
   // o cartao cedo — por isso a linha abaixo diz de onde veio.
