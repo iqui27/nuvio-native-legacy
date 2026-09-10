@@ -1,4 +1,5 @@
 #include "posplay.h"
+#include "intro.h"
 #include "idioma.h"
 #include "catalogo.h"
 #include "extras.h"
@@ -124,7 +125,16 @@ static int acharProximo(int idxItem, int t, int e) {
 void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
                        int ehSerie, int idxCatalogo, int janelaSerie) {
   int deveAparecer = 0;
+  // DUAS FONTES DE MARCADOR, nesta ordem e por este motivo: o capitulo do
+  // Matroska vem do PROPRIO arquivo que esta tocando, entao ele descreve esta
+  // copia; o TheIntroDB descreve o LANCAMENTO, e uma copia com abertura
+  // diferente ou com anuncio na frente sai deslocada. Quando o arquivo diz,
+  // ele ganha.
+  //
+  // O segundo cobre o caso que antes so tinha estimativa: filme em MP4, que nao
+  // tem capitulo nenhum para ler.
   double creditosSeg = video_creditos();
+  if (creditosSeg <= 1.0) creditosSeg = intro_creditos_seg();
   anim = anim_mola(anim, visivel ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
   if (durSeg <= 1.0) return;
 

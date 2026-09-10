@@ -85,7 +85,13 @@ static void testar(void) {
   LegendaCue *lc=NULL;
   int nc=legenda_extrair("WEBVTT\n\n00:00:01.000 --> 00:00:03.250\n<i>Olá &amp; bem-vindo</i>\n\n2\n00:00:04,000 --> 00:00:06,000\nSegunda linha\n",&lc);
   assert(nc==2&&lc[0].inicio==1.0&&lc[0].fim==3.25&&!strcmp(lc[0].texto,"Olá & bem-vindo"));free(lc);
-  IntroTrecho it[3];int ni=intro_extrair("{\"intro\":{\"start_sec\":12,\"end_sec\":44},\"recap\":null,\"outro\":{\"start_sec\":3000,\"end_sec\":3060}}",it,3);
+  // FORMATO DO TheIntroDB, que substituiu o api.introdb.app: chave com ARRAY,
+  // tempos em MILISSEGUNDOS e "credits" no lugar de "outro". A carga antiga
+  // ("intro":{"start_sec":12,...}) nao existe mais em resposta nenhuma. A
+  // cobertura fina do leitor esta em tests/intro.sh; aqui fica so o fio que
+  // prova que o player ainda enxerga os dois tipos.
+  IntroTrecho it[3];int ni=intro_extrair("{\"intro\":[{\"start_ms\":12000,\"end_ms\":44000}],"
+                                         "\"credits\":[{\"start_ms\":3000000,\"end_ms\":3060000}]}",it,3);
   assert(ni==2&&it[0].tipo==INTRO_ABERTURA&&it[0].fim==44&&it[1].tipo==INTRO_CREDITOS);
   char legurl[256];
   video_normalizar_url_legenda("https://subs.example/file/123",legurl,sizeof legurl);

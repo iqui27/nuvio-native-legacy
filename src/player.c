@@ -242,7 +242,21 @@ void player_definir_episodio(int t, int e) {
   retomarPct = 0;
   if (c && c->progresso > 0 && c->progresso < 90 &&
       (strcmp(c->tipo,"series") || (t==c->temporada && e==c->episodio))) retomarPct=c->progresso;
-  if (!c || strcmp(c->tipo, "series")) { epT = epE = 0; intro_desligar(); return; }
+  // FILME TAMBEM PEDE MARCADOR, e ate agora nao pedia: esta linha desligava o
+  // modulo e voltava. Fazia sentido enquanto a fonte era o api.introdb.app, que
+  // e indexado por episodio; o TheIntroDB responde por imdb sozinho e devolve os
+  // creditos do filme (ver intro.h). Sem isto, filme so tinha o capitulo do
+  // Matroska — e num MP4, nada.
+  if (!c) { epT = epE = 0; intro_desligar(); return; }
+  if (strcmp(c->tipo, "series")) {
+    epT = epE = 0;
+    if (idx != introIdx || introT || introE) {
+      introIdx = idx; introT = introE = 0;
+      intro_pedir(c->imdb, 0, 0);
+      credAvisado = credFimAvisado = 0; credAvisadoEm = 0;
+    }
+    return;
+  }
   if (epT < 1) epT = c->temporada > 0 ? c->temporada : 1;
   if (epE < 1) epE = c->episodio > 0 ? c->episodio : 1;
   // T/E vira S/E em ingles, e a frase montada nao casa com chave nenhuma:
