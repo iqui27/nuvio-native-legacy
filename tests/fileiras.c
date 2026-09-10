@@ -200,7 +200,25 @@ int main(void) {
     { const char *invertida[] = { "catA", "catB" };
       const char *esperado[] = { "continuar", "amigos", "colecao", "catA", "catB" };
       fil_espelhar_ordem(invertida, 2);
-      conferir("a tela permuta o que conhece", esperado, 5); } }
+      conferir("a tela permuta o que conhece", esperado, 5); }
+    // CHAVE QUE A LISTA NAO CONHECE, na primeira posicao. Este e o caso REAL
+    // mais comum e o unico que separa a implementacao certa de uma errada
+    // plausivel: "last_session" entra na lista que a home passa (home.c) mas
+    // NAO e registrado, entao achar() devolve -1 para ela.
+    //
+    // Uma revisao trocou `slots[k++]` por `slots[i]` e a suite inteira passou,
+    // inclusive os dois casos acima — porque neles todas as chaves eram
+    // conhecidas e i coincidia com k. Com a desconhecida na frente os dois
+    // deixam de coincidir, e a variante errada nao permuta nada.
+    { const char *comOrfa[] = { "last_session", "catB", "catA" };
+      const char *esperado[] = { "continuar", "amigos", "colecao", "catB", "catA" };
+      fil_espelhar_ordem(comOrfa, 3);
+      conferir("chave desconhecida na frente nao desalinha", esperado, 5); }
+    // NULL, repetida, e n maior que a lista: nenhum deles pode escrever fora.
+    { const char *sujo[4]; const char *esperado[] = { "continuar", "amigos", "colecao", "catA", "catB" };
+      sujo[0] = NULL; sujo[1] = "catA"; sujo[2] = "catA"; sujo[3] = "catB";
+      fil_espelhar_ordem(sujo, 4);
+      conferir("NULL e chave repetida nao quebram", esperado, 5); } }
   puts("ok  home pela metade nao empurra a colecao para o fim (#30)");
   puts("fileiras: tudo ok");
   return 0;

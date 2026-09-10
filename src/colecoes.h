@@ -25,6 +25,9 @@ int col_definir_json(const char *json);
 // tem id (web e catordem usam o id), senao collection_<titulo do grupo>.
 void col_chave_grupo(const char *group, char *dst, unsigned n);
 int col_n(void);
+// Muda sempre que o conjunto de pastas muda. Quem decide remontar a tela deve
+// olhar ISTO e nao col_n(): trocar N pastas por outras N mantem o numero.
+unsigned col_revisao(void);
 const ColFolder *col_folder(int i);
 int col_grupo(const char *nome, int *indices, int max);
 const ColFolder *col_por_catalogo(const char *base, const char *type, const char *id);

@@ -14,6 +14,16 @@ static void localiza(char *value,size_t cap,const char *dir) {
   char rel[600];snprintf(rel,sizeof rel,"%s",value);snprintf(value,cap,"%s/%s",dir,rel);
 }
 int col_n(void) { return count; }
+// SOBE A CADA TROCA DO CONJUNTO DE PASTAS. A home decide se remonta por uma
+// assinatura, e ate agora essa assinatura so olhava as fileiras de CATALOGO —
+// nada de colecao. Como as colecoes da conta chegam DEPOIS de o catalogo se
+// acomodar, a assinatura nao mudava e a remontagem nao acontecia: as pastas
+// existiam em memoria e nao entravam na tela. E o #30.
+//
+// Contador e nao `count`: trocar quinze pastas por outras quinze deixa o
+// numero igual e a home errada.
+static unsigned revisao;
+unsigned col_revisao(void) { return revisao; }
 // Fonte da conta vem com addonId e sem URL; a URL so existe depois que a sonda
 // leu o manifesto daquele addon. Resolver no acesso deixa a pasta pronta assim
 // que a sonda passar, sem ninguem precisar avisar.
@@ -181,6 +191,7 @@ static int arteEditorial(char *saida,size_t n,const char *dir,const char *sub,
 }
 
 int col_carregar(const char *dir) {
+  revisao++;
   char path[700];snprintf(path,sizeof path,"%s/collections.json",dir);
   FILE *f=fopen(path,"rb");if(!f)return 0;
   fseek(f,0,SEEK_END);long size=ftell(f);rewind(f);
@@ -366,7 +377,14 @@ int col_definir_json(const char *json) {
     printf("[colecoes] conta veio vazia; mantendo as locais (%d) | %u bytes, comeca \"%.60s\", arr=%s\n",
            antes, (unsigned)strlen(json), json, arr ? "sim" : "nao");
   }
-  else printf("[colecoes] %d pastas vindas da conta\n", novas);
+  else {
+    // SO AQUI, e nao na entrada da funcao. Bumpar de saida faria a assinatura
+    // da home mudar a CADA ciclo de sync, inclusive quando a conta veio vazia e
+    // as pastas locais foram mantidas — uma remontagem por ciclo, de graca, que
+    // reinicia animacoes e refaz o foco.
+    revisao++;
+    printf("[colecoes] %d pastas vindas da conta\n", novas);
+  }
   free(solto);
   return novas;
 }

@@ -970,6 +970,16 @@ static void sincronizarFileiras(void) {
   // nao uma varredura: fil_revisao e fil_limite leem um inteiro sob mutex.
   revisao = (revisao ^ fil_revisao()) * 16777619u;
   revisao = (revisao ^ (unsigned)fil_limite()) * 16777619u;
+  // AS COLECOES ENTRAM NA ASSINATURA. Sem este termo a home so remontava quando
+  // uma fileira de CATALOGO mudava — e as colecoes da conta chegam depois de o
+  // catalogo ja ter se acomodado (sync.c chama col_definir_json e so entao pede
+  // a remontagem). Resultado: as pastas existiam em memoria e nao entravam na
+  // tela ate alguma outra coisa mexer no catalogo.
+  //
+  // Era isso que o relator do #30 contornava desligando e religando uma fileira
+  // em Ajustes: aquilo bumpa fil_revisao(), a assinatura muda, a home remonta e
+  // a colecao aparece. Fechar e reabrir voltava ao mesmo lugar.
+  revisao = (revisao ^ col_revisao()) * 16777619u;
   for (r = 0; r < nCat; r++) {
     const CatFileira *cf = cat_fileira(r);
     if (!cf) break;
