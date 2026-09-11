@@ -134,6 +134,8 @@
   { "Cabe %d fileira a mais aqui", "Room for %d more row here" },
   { "Cabem %d fileiras a mais aqui", "Room for %d more rows here" },
   { "Cada perfil tem sua própria lista e seu progresso.", "Each profile has its own list and its own progress." },
+  { "Canais", "Channels" },
+  { "Canal", "Channel" },
   { "Carregando arte…", "Loading artwork…" },
   { "Carregando atividade…", "Loading activity…" },
   { "Carregando comentários…", "Loading comments…" },

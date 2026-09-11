@@ -560,6 +560,24 @@ int desc_buscando(void) {
 
 // Um item do catalogo montado a partir de um meta do Stremio. Devolve 1 se
 // deu para aproveitar (precisa de nome e de alguma arte).
+// O TIPO COMO ELE APARECE NA TELA. Tres formas, porque as tres telas pedem
+// coisas diferentes: singular na linha de genero do card, plural no titulo da
+// fileira (e o que o app web escreve — "Canais de TV - Canais"), e o rotulo
+// CRU em ingles so para nao repetir o sufixo quando o proprio addon ja o
+// escreveu no nome.
+//
+// Antes disto tudo que nao fosse "series" era FILME, e um canal de TV ao vivo
+// aparecia como "Filme" na linha de genero e "- Filme" no titulo da fileira
+// (issue #37). Os tipos que o Stremio usa para canal sao `channel` e `tv`; os
+// dois chegam nos addons do dono.
+static int ehCanal(const char *tipo) {
+  return tipo && (!strcmp(tipo, "channel") || !strcmp(tipo, "tv"));
+}
+static const char *rotuloTipoSing(const char *tipo) {
+  if (ehCanal(tipo)) return "Canal";
+  return strcmp(tipo, "series") ? "Filme" : "Programa de TV";
+}
+
 static int deMeta(const char *ini, const char *fim, const char *tipo, CatItem *d) {
   char v[900];
   memset(d, 0, sizeof *d);
@@ -619,7 +637,7 @@ static int deMeta(const char *ini, const char *fim, const char *tipo, CatItem *d
         } }
     }
     snprintf(d->genero, sizeof d->genero, "%s%s%s%s%s",
-             i18n(strcmp(tipo, "series") ? "Filme" : "Programa de TV"),
+             i18n(rotuloTipoSing(tipo)),
              g1[0] ? "  \xc2\xb7  " : "", g1,
              g2[0] ? "  \xc2\xb7  " : "", g2);
   }
@@ -843,8 +861,10 @@ static int desligada(const Decl *d) {
 // maiuscula e, se o nome ja NAO termina com o rotulo do tipo, " - <tipo>".
 // E por isso que a home mostra "For You - Filme" e nao "for you".
 static void formatarTitulo(const char *nome, const char *tipo, char *dst, size_t tam) {
-  const char *rotulo = i18n(strcmp(tipo, "series") ? "Filme" : "S\xc3\xa9rie");
-  const char *cru    = strcmp(tipo, "series") ? "Movie" : "Series";
+  const char *rotulo = i18n(ehCanal(tipo) ? "Canais"
+                            : strcmp(tipo, "series") ? "Filme" : "S\xc3\xa9rie");
+  const char *cru    = ehCanal(tipo) ? "Channels"
+                     : strcmp(tipo, "series") ? "Movie" : "Series";
   size_t ln = strlen(nome), lr = strlen(rotulo), lc = strlen(cru);
   int jaTem = 0;
   if (!nome[0]) { snprintf(dst, tam, "%s", rotulo); return; }
@@ -913,7 +933,13 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max) {
           const char *sc = strstr(ex, "\"search\"");
           if (sc && sc < f) d->buscavel = 1;
         }
-        if (strcmp(tipo, "movie") && strcmp(tipo, "series")) d->buscavel = 0;
+        // CANAL TAMBEM E BUSCAVEL. O que continua de fora e `event` e
+        // `collections`, que nao tem tela. Canal tem: o card abre a pagina de
+        // titulo e o pedido de stream ja sai com o tipo certo
+        // (addons_buscar_streams preserva `tipo`), entao procurar "ESPN" e uma
+        // pergunta que este app sabe responder.
+        if (strcmp(tipo, "movie") && strcmp(tipo, "series") && !ehCanal(tipo))
+          d->buscavel = 0;
         // Registra AQUI, e nao depois varrendo o vetor de Decl.
         //
         // O Xperience declara 605 catalogos e poe os dois de BUSCA nas duas
@@ -1385,6 +1411,34 @@ static void *montar(void *u) {
           if (!vistos[j] && !strcmp(decls[j].chave, prefOrdem[k])) {
             ordem[nOrdem++] = j; vistos[j] = 1; break;
           }
+      // INTERCALADO POR ADDON, e nao na ordem em que os manifestos foram
+      // lidos. E o MESMO defeito que a cota de declaracoes resolveu um nivel
+      // abaixo ("o defeito nao e do addon nem do manifesto dele: e de quem
+      // reparte as vagas"), e ele voltava aqui: a home pede so as primeiras N
+      // desta lista, e na ordem crua as N eram todas do primeiro addon.
+      //
+      // MEDIDO na LG do dono ao investigar o #37: 124 catalogos declarados, 6
+      // viram fileira, o Xperience declara 72 e vem primeiro — o FrostView,
+      // com UM catalogo, ficava em 124o e nunca era pedido. Quem acabou de
+      // instalar um addon nao tinha como ver nada dele.
+      //
+      // Cada addon leva a PRIMEIRA fileira antes de qualquer um levar a
+      // segunda; dentro do addon, a ordem do manifesto. Quem tem prefencia
+      // salva ja saiu no laco de cima e nao entra nesta partilha.
+      { int nAd2 = addons_n();
+        for (;;) {
+          int pegou = 0, i2;
+          for (i2 = 0; i2 < nAd2; i2++) {
+            const char *b = addons_base(i2);
+            if (!b || !b[0]) continue;
+            for (j = 0; j < nDecl; j++)
+              if (!vistos[j] && decls[j].base && !strcmp(decls[j].base, b)) {
+                ordem[nOrdem++] = j; vistos[j] = 1; pegou = 1; break;
+              }
+          }
+          if (!pegou) break;
+        } }
+      // Sobra: declaracao cuja base nao casa com addon nenhum da lista atual.
       for (j = 0; j < nDecl; j++) if (!vistos[j]) ordem[nOrdem++] = j;
 
       // A ordem da CONTA por cima da ordem local, e a regra e UNIAO, nao
