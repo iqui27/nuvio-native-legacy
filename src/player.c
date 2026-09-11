@@ -146,10 +146,20 @@
 // nao e refeita la.
 #define PG_BARRA_W         6.0f
 // Quanto tempo a guia parental fica na tela, contando do primeiro quadro com
-// imagem, e quanto dura o esmaecimento final. Sete segundos e o bastante para
-// ler quatro linhas curtas sem virar mobilia — depois disso ela nao volta nesta
+// imagem, e quanto dura o esmaecimento final. Depois disso ela nao volta nesta
 // reproducao.
-#define PG_SEG_TOTAL       7.0f
+//
+// ERAM SETE SEGUNDOS, e a conta que os justificava media LEITURA, nao quadros.
+// Sete segundos sao o bastante para ler quatro linhas curtas a 60 fps. No
+// Samsung do relator do #31 o app estava a 1,3-2,6 fps nos trechos ruins (ver
+// #33): a entrada escalonada sozinha leva ~1 s, e os sete segundos inteiros
+// cabem em cerca de DEZ quadros desenhados. Para quem esta na frente da TV isso
+// e exatamente o relato — "aparece por uma fracao de segundo e some".
+//
+// Doze segundos nao consertam o fps, e nao e para isso que estao aqui: eles
+// fazem o aviso sobreviver a um aparelho lento, que e a unica coisa que este
+// numero pode fazer sozinho.
+#define PG_SEG_TOTAL      12.0f
 // Depois disto o aviso nao entra mais: e um aviso do comeco do filme, e a
 // resposta pode chegar tarde. Ver a nota no desenho.
 #define PG_LIMITE_SEG     45.0f
