@@ -2008,6 +2008,9 @@ static void desenhaAtalhos(int r, float y) {
   //   gifUltimo instante da ultima amostra, para o passo de 67 ms
   //   gifTex    a textura devolvida, reaproveitada entre as amostras
   static int gifAnima=-1;static Uint32 gifUltimo;static GLuint gifTex;
+  // Quadro da sequencia de JPEG que ja esta resolvido, para nao reconsultar
+  // o cache nos ~4 quadros de tela que cabem entre dois passos de 67 ms.
+  static int seqIndice=-1;static GLuint seqTex;
   for (int c = 0; c < fileiras[r].n; c++) {
     float x = ajustes_conteudo_x() + c * passoFil(r) - scrollX[r];
     if (x + w < 0 || x > NV_TELA_W) continue;
@@ -2074,16 +2077,34 @@ static void desenhaAtalhos(int r, float y) {
     if(foco.fileira==r&&foco.coluna==c&&folder->frames>0 &&
        !ajustes_animacoes_reduzidas()) {
       int id=fileiras[r].folders[c];Uint32 now=SDL_GetTicks();
-      if(ultimo!=id){ultimo=id;desde=now;}
+      if(ultimo!=id){ultimo=id;desde=now;seqIndice=-1;seqTex=0;}
       if(now-desde>350) {
         char frame[700];int index=(int)((now-desde-350)/67)%folder->frames+1;
-        snprintf(frame,sizeof frame,"%s/%03d.jpg",folder->frameDir,index);
-        GLuint motion=tex_obter_larg(frame,480);
-        if(motion)tex=motion;
-        snprintf(frame,sizeof frame,"%s/%03d.jpg",folder->frameDir,index%folder->frames+1);
-        tex_obter_larg(frame,480);
-        snprintf(frame,sizeof frame,"%s/%03d.jpg",folder->frameDir,(index+1)%folder->frames+1);
-        tex_obter_larg(frame,480);
+        // SO QUANDO O QUADRO DA SEQUENCIA MUDA, e nao a 60 por segundo.
+        //
+        // Este bloco pedia TRES texturas ao cache em TODO quadro — a atual e
+        // duas de pre-busca — enquanto o indice so avanca a cada 67 ms. Numa
+        // TV a 60 fps sao 180 consultas por segundo aos mesmos tres arquivos,
+        // cada uma pegando o mutex que os dois fios de decode tambem disputam,
+        // e cada uma remarcando `ultimoQuadro` das tres entradas — o que
+        // distorce o LRU a favor da sequencia e contra os cartazes visiveis.
+        // O ramo do GIF logo acima ja andava no passo certo (`>=67`); este
+        // ficou de fora.
+        //
+        // A textura resolvida fica guardada entre os passos, senao o cartaz
+        // voltaria a capa parada nos quadros em que nao se consulta nada.
+        if(index!=seqIndice){
+          seqIndice=index;
+          snprintf(frame,sizeof frame,"%s/%03d.jpg",folder->frameDir,index);
+          seqTex=tex_obter_larg(frame,480);
+          // UMA de pre-busca, nao duas: a segunda so existia para cobrir o
+          // caso de a primeira nao ter chegado, e a 67 ms de passo ela chega.
+          // Cada quadro da sequencia e 480x270 RGBA = 518 KB no cache; uma
+          // pasta de 90 quadros sao 46 MB de um orcamento de 96.
+          snprintf(frame,sizeof frame,"%s/%03d.jpg",folder->frameDir,index%folder->frames+1);
+          tex_obter_larg(frame,480);
+        }
+        if(seqTex)tex=seqTex;
       }
     }
     if (tex) {

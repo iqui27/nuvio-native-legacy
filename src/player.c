@@ -1725,7 +1725,25 @@ void player_desenhar(Uint32 agora) {
     // assistindo ja passou do ponto em que um aviso faz sentido, e ele nao
     // entra mais.
     float tg = inicioImagem ? (float)(agora - inicioImagem) / 1000.0f : -1.0f;
-    if (np > 0 && tg >= 0.0f && !pgDesde && tg < PG_LIMITE_SEG) pgDesde = agora;
+    // POR QUE ELE ABRIU, E POR QUE FECHOU. Issue #31 na segunda rodada: "I can
+    // sometimes see the advisory line for only a fraction of a second, and then
+    // it disappears". Com so o "[parental] -> N linhas" nao da para separar as
+    // tres causas — a guia nunca chegou, chegou e a janela ja tinha fechado, ou
+    // chegou, abriu e algo a derrubou antes dos sete segundos. Uma linha por
+    // abertura e uma por fechamento, nunca por quadro.
+    if (np > 0 && tg >= 0.0f && !pgDesde && tg < PG_LIMITE_SEG) {
+      pgDesde = agora;
+      printf("[pg] abriu: %d selos, %.1fs depois da imagem\n", np, tg);
+      fflush(stdout);
+    }
+    if (np < 1 && pgDesde) {
+      // Caiu a zero COM O PAINEL NO AR. So parental_pedir zera nLinhas, e ele
+      // so zera quando o imdb pedido muda — ou seja, alguem trocou de titulo
+      // por baixo desta reproducao.
+      printf("[pg] derrubado: a guia zerou com o painel no ar (%.1fs de %.1f)\n",
+             (float)(agora - pgDesde) / 1000.0f, PG_SEG_TOTAL);
+      fflush(stdout);
+    }
     if (np < 1) pgDesde = 0;
     if (np > 0 && pgDesde &&
         (float)(agora - pgDesde) / 1000.0f < PG_SEG_TOTAL) {

@@ -161,9 +161,22 @@ int parental_n(void) {
   pthread_mutex_unlock(&trava);
   return n;
 }
+// SOB A TRAVA, como parental_n. Estes dois liam `nLinhas` e `linhas` enquanto
+// o fio de busca os reescrevia segurando o mutex — o desenho podia ver a
+// contagem nova com a linha velha. Sao ~10 chamadas por quadro; o mutex nao
+// custa nada aqui, e o ponteiro devolvido aponta para literal (CATS/NIVEIS),
+// que nao muda depois de solto.
 const char *parental_rotulo(int i) {
-  return (i >= 0 && i < nLinhas) ? linhas[i].rotulo : "";
+  const char *r = "";
+  pthread_mutex_lock(&trava);
+  if (i >= 0 && i < nLinhas) r = linhas[i].rotulo;
+  pthread_mutex_unlock(&trava);
+  return r;
 }
 const char *parental_gravidade(int i) {
-  return (i >= 0 && i < nLinhas) ? linhas[i].gravidade : "";
+  const char *r = "";
+  pthread_mutex_lock(&trava);
+  if (i >= 0 && i < nLinhas) r = linhas[i].gravidade;
+  pthread_mutex_unlock(&trava);
+  return r;
 }
