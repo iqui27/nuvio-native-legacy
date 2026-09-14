@@ -13,6 +13,13 @@
 // escreveram os rotulos esperados.
 int ajustes_idioma_ingles(void) { return 0; }
 const char *i18n(const char *s) { return s; }
+// Ramo de fonte nao-addon (issue #44) e refazer da fileira CW (#38): nao sao
+// o que este teste mede, mas fioVerTudo/fioContinuar referenciam os simbolos.
+const char *nuvem_trakt_cliente(void) { return ""; }
+char *rede_baixar_com(const char *u, int t, const char *const *c) {
+  (void)c; return rede_baixar(u, t); }
+int trakt_enfeitar_lote(CatItem *s, int n) { (void)s; (void)n; return 0; }
+void cat_trocar_continuar(const CatItem *l, int q) { (void)l; (void)q; }
 static int calls;
 static pthread_mutex_t fakeLock=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t fakeCond=PTHREAD_COND_INITIALIZER;

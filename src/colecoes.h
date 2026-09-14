@@ -2,7 +2,22 @@
 #define NV_COLECOES_H
 #define COL_MAX 256
 #define COL_SOURCE_MAX 32
-typedef struct { char title[128], base[600], type[8], catId[96], genre[96]; char addonId[96]; } ColSource;
+typedef struct {
+  char title[128], base[600], type[8], catId[96], genre[96]; char addonId[96];
+  // PROVEDOR NAO-ADDON (issue #44). Vazio = catalogo de addon, identificado por
+  // base/type/catId como sempre foi. O editor de colecoes do site tambem grava
+  // fontes "tmdb" e "trakt", que nao tem catalogo de addon equivalente: quem
+  // resolve e o vertudo, perguntando direto ao TMDB ou ao Trakt — ver
+  // desc_vertudo_fonte em descoberta.c.
+  char prov[8];
+  char tmdbTipo[16];   // LIST|COLLECTION|PERSON|DIRECTOR|COMPANY|NETWORK; vazio = discover
+  long tmdbId;         // id da lista/colecao/pessoa/empresa/rede; 0 = discover puro
+  char midia[8];       // "MOVIE" | "TV" — escolhe o endpoint e o tipo do item
+  char ordenar[48];    // sort_by do TMDB / sort_by da lista Trakt
+  char ordem[8];       // sort_how do Trakt: "asc" | "desc"
+  long traktLista;     // id da lista no Trakt
+  char filtros[384];   // objeto "filters" cru; o montador da URL traduz
+} ColSource;
 typedef struct {
   char id[96], title[128], group[64], cover[512], hero[512], logo[512];
   char groupId[64];   /* id da colecao no web; a chave de ordem da conta e collection_<groupId> */

@@ -12,6 +12,7 @@
 #define NV_DESCOBERTA_H
 #include <stddef.h>
 #include "catalogo.h"
+#include "colecoes.h"
 
 // Dispara a montagem do catalogo num fio proprio. Volta na hora.
 void desc_iniciar(void);
@@ -20,6 +21,10 @@ void desc_iniciar(void);
 // se um ciclo ja estiver no ar, o pedido fica guardado e roda ao fim dele, em
 // vez de ser descartado. Chamar do fio principal.
 void desc_repetir(void);
+// Refaz so a fileira "Continuar assistindo", fora do ciclo completo (issue
+// #38). Fio proprio: remontar a fileira faz rede. Pedido repetido enquanto um
+// fio ja roda vira UMA rodada a mais no fim, nao uma fila.
+void desc_refazer_continuar(void);
 
 // Quantas fileiras A MAIS a home mostraria se o limite fosse ao maximo. 0
 // quando o limite nao esta cortando nada.
@@ -135,6 +140,10 @@ int  desc_buscando(void);
 // refaz o pedido.
 void desc_vertudo_abrir(const char *base, const char *tipo, const char *catId);
 void desc_vertudo_filtro(const char *base, const char *tipo, const char *catId, const char *genre);
+// Fonte nao-addon de pasta de colecao (issue #44): provider "tmdb" ou
+// "trakt" vindo do site. Os itens sao pedidos direto a esses servicos —
+// nao passa por catalogo de addon.
+void desc_vertudo_fonte(const ColSource *s);
 int desc_vertudo_erro(void);
 // Pede a proxima pagina, se houver. Nada acontece se a ultima veio curta — sinal
 // de fim de lista no protocolo.

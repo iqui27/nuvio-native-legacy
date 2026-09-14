@@ -8,10 +8,23 @@
 #include "dados.h"
 #include "sessao.h"
 #include "perfis.h"
+#include <pthread.h>
 #include <stdio.h>
 
 static int mesmoTitulo(const char *a, const char *b);
 static int aplicarProgressoDoDisco(void);
+
+// --- QUEM PODE TROCAR O VETOR ------------------------------------------------
+// Dois publicadores podem se encontrar: o fio da descoberta (cat_definir_tudo)
+// e o fio que refaz so a fileira "Continuar assistindo" (cat_trocar_continuar,
+// ver desc_refazer_continuar). A trava e so ENTRE publicadores — o desenho
+// nunca a pega e segue lendo pelo protocolo de ordem de escrita: `n` zera
+// antes de o ponteiro trocar, e o bloco velho nao e liberado na hora.
+static pthread_mutex_t pubTrava = PTHREAD_MUTEX_INITIALIZER;
+// O bloco trocado fora morre na troca SEGUINTE, quando nenhum leitor o alcanca
+// mais. Compartilhado entre os que trocam o conjunto inteiro: cada troca mata
+// o lixo da anterior, seja qual delas for.
+static CatItem *lixoTroca;
 #include <string.h>
 #include <stdlib.h>
 
@@ -812,6 +825,7 @@ static int aplicarProgressoDoDisco(void) {
 int cat_tirar_item_da_fileira(int indice) {
   int r;
   if (indice < 0 || indice >= n) return 0;
+  pthread_mutex_lock(&pubTrava);
   for (r = 0; r < nFils; r++) {
     CatFileira *f = &fils[r];
     int quantos;
@@ -838,8 +852,10 @@ int cat_tirar_item_da_fileira(int indice) {
     }
     printf("[cat] item %d tirado da fileira \"%s\"\n", indice, nome);
     fflush(stdout);
+    pthread_mutex_unlock(&pubTrava);
     return 1;
   }
+  pthread_mutex_unlock(&pubTrava);
   return 0;
 }
 
@@ -938,6 +954,7 @@ int cat_acrescentar_lote(const CatItem *v, int qtd, int *saidaIdx) {
   novoN = n + qtd;
   novo = malloc(sizeof(CatItem) * (size_t)novoN);
   if (!novo) return 0;
+  pthread_mutex_lock(&pubTrava);
   memcpy(novo, itens, sizeof(CatItem) * (size_t)n);
   memcpy(&novo[n], v, sizeof(CatItem) * (size_t)qtd);
   if (saidaIdx) for (k = 0; k < qtd; k++) saidaIdx[k] = n + k;
@@ -947,6 +964,7 @@ int cat_acrescentar_lote(const CatItem *v, int qtd, int *saidaIdx) {
   nAlocado = novoN;
   n = novoN;
   garantirFaixas(nAlocado);
+  pthread_mutex_unlock(&pubTrava);
   return qtd;
 }
 
@@ -959,6 +977,7 @@ int cat_acrescentar(const CatItem *item) {
   novoN = n + 1;
   novo = malloc(sizeof(CatItem) * (size_t)novoN);
   if (!novo) return -1;
+  pthread_mutex_lock(&pubTrava);
   memcpy(novo, itens, sizeof(CatItem) * (size_t)n);
   memcpy(&novo[n], item, sizeof(CatItem));
   free(lixoAcr);
@@ -967,6 +986,7 @@ int cat_acrescentar(const CatItem *item) {
   nAlocado = novoN;
   n = novoN;
   garantirFaixas(nAlocado);
+  pthread_mutex_unlock(&pubTrava);
   return novoN - 1;
 }
 
@@ -978,6 +998,7 @@ void cat_republicar_fileiras(const CatFileira *novasFils, int nNovas) {
   int k, q, v = 0;
   if (!novasFils || nNovas < 1 || n < 1) return;
   q = nNovas > CAT_FIL_MAX ? CAT_FIL_MAX : nNovas;
+  pthread_mutex_lock(&pubTrava);
   nFils = 0;                 // ver a nota em catalogo.h: zera antes de mexer
   for (k = 0; k < q; k++) {
     CatFileira f = novasFils[k];
@@ -987,6 +1008,7 @@ void cat_republicar_fileiras(const CatFileira *novasFils, int nNovas) {
     fils[v++] = f;
   }
   nFils = v;
+  pthread_mutex_unlock(&pubTrava);
 }
 
 void cat_definir_tudo(const CatItem *lista, int qtd,
@@ -1008,16 +1030,16 @@ void cat_definir_tudo(const CatItem *lista, int qtd,
   {
     int novoN = qtd > CAT_MAX ? CAT_MAX : qtd;
     CatItem *novo = malloc(sizeof(CatItem) * (size_t)novoN);
-    static CatItem *lixo;
     if (!novo) return;
     memcpy(novo, lista, sizeof(CatItem) * (size_t)novoN);
     // As fileiras caem JUNTO com `n`. Elas sao janelas (ini,n) no vetor de
     // itens; deixar as antigas de pe por um quadro enquanto o vetor troca faz o
     // desenho ler fora da faixa.
+    pthread_mutex_lock(&pubTrava);
     n = 0;
     nFils = 0;
-    free(lixo);
-    lixo = itens;
+    free(lixoTroca);
+    lixoTroca = itens;
     itens = novo;
     nAlocado = novoN;
     n = novoN;
@@ -1036,6 +1058,7 @@ void cat_definir_tudo(const CatItem *lista, int qtd,
       }
       nFils = v;
     }
+    pthread_mutex_unlock(&pubTrava);
   }
   // Episodios do catalogo anterior nao valem para o novo: os indices mudaram.
   nEps = 0;
@@ -1047,6 +1070,80 @@ void cat_definir_tudo(const CatItem *lista, int qtd,
   // que uma linha da conta que antes nao casava com nada passa a casar, quando
   // o titulo dela entra no catalogo.
   aplicarProgressoDoDisco();
+}
+
+// TROCA SO A JANELA DE "CONTINUAR ASSISTINDO" (issue #38).
+//
+// A fileira so era refeita dentro de montar(), no ciclo completo da descoberta.
+// Fora dele, nada a recompunha: sair do player atualizava o progresso do item
+// no lugar (cat_salvar_progresso_ep), mas um titulo que ENTROU em progresso
+// nao aparecia na fileira e um que TERMINOU nao saia dela ate o ciclo
+// seguinte — o "nao atualiza ou demora" do relato. O progresso da conta, que
+// chega pelo sync fora de qualquer ciclo, caia no mesmo vazio.
+//
+// A cirurgia e uma troca de bloco igual a de cat_definir_tudo: a janela da
+// fileira fica sempre em ini=0 (os dois pontos de publicacao a poem la), entao
+// o vetor novo e [itens novos][resto do acervo a partir do fim da janela
+// velha]. As fileiras seguintes andam `delta` posicoes no `ini` — janelas sao
+// disjuntas, entao nenhuma outra muda de conteudo. Fileira esvaziada sai da
+// lista; fileira que nao existia entra na posicao 0, onde montar() a poria.
+//
+// Roda sob pubTrava: a descoberta pode estar trocando o catalogo neste mesmo
+// instante, e duas trocas simultaneas liberariam o mesmo bloco duas vezes.
+void cat_trocar_continuar(const CatItem *lista, int qtd) {
+  CatFileira novas[CAT_FIL_MAX];
+  CatItem *novo;
+  int r, cw = -1, cwIni = 0, cwN = 0, delta, novoN, nv = 0;
+  if (qtd < 0) qtd = 0;
+  pthread_mutex_lock(&pubTrava);
+  for (r = 0; r < nFils; r++)
+    if (!strcmp(fils[r].chave, "continue_watching")) {
+      cw = r; cwIni = fils[r].ini; cwN = fils[r].n; break;
+    }
+  delta = qtd - cwN;
+  novoN = n + delta;
+  if (novoN > CAT_MAX) { qtd -= novoN - CAT_MAX; delta = qtd - cwN; novoN = CAT_MAX; }
+  if (novoN < 0) { pthread_mutex_unlock(&pubTrava); return; }
+  novo = malloc(sizeof(CatItem) * (size_t)(novoN > 0 ? novoN : 1));
+  if (!novo) { pthread_mutex_unlock(&pubTrava); return; }
+  if (cwIni) memcpy(novo, itens, sizeof(CatItem) * (size_t)cwIni);
+  if (qtd) memcpy(novo + cwIni, lista, sizeof(CatItem) * (size_t)qtd);
+  if (n - cwIni - cwN > 0)
+    memcpy(novo + cwIni + qtd, itens + cwIni + cwN,
+           sizeof(CatItem) * (size_t)(n - cwIni - cwN));
+  for (r = 0; r < nFils; r++) {
+    CatFileira f = fils[r];
+    if (r == cw) { f.n = qtd; }
+    else if (f.ini >= cwIni + cwN) f.ini += delta;
+    if (f.n < 1) continue;
+    novas[nv++] = f;
+  }
+  if (cw < 0 && qtd > 0 && nv < CAT_FIL_MAX) {
+    memmove(novas + 1, novas, sizeof *novas * (size_t)nv);
+    memset(&novas[0], 0, sizeof novas[0]);
+    snprintf(novas[0].chave,  sizeof novas[0].chave,  "continue_watching");
+    snprintf(novas[0].titulo, sizeof novas[0].titulo, "Continuar assistindo");
+    snprintf(novas[0].tipo,   sizeof novas[0].tipo,   "movie");
+    novas[0].ini = 0; novas[0].n = qtd;
+    nv++;
+  }
+  n = 0;
+  nFils = 0;
+  free(lixoTroca);
+  lixoTroca = itens;
+  itens = novo;
+  nAlocado = novoN;
+  n = novoN;
+  memcpy(fils, novas, sizeof *novas * (size_t)nv);
+  nFils = nv;
+  pthread_mutex_unlock(&pubTrava);
+  // Os indices andaram: nenhuma faixa de episodio vale para o item novo.
+  nEps = 0;
+  zerarFaixas(nAlocado);
+  catRevisao++;
+  aplicarProgressoDoDisco();
+  printf("[cat] continuar assistindo refeita: %d item(ns)\n", qtd);
+  fflush(stdout);
 }
 
 void cat_definir_episodios(int indiceItem, const CatEp *lista, int qtd) {

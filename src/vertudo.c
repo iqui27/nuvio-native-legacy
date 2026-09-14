@@ -11,6 +11,7 @@
 #include "ajustes.h"
 #include "diretor.h"
 #include "addons.h"
+#include "nuvem.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -100,6 +101,24 @@ static void openSource(void) {
   snprintf(catalogId,sizeof catalogId,"%s",s->catId);
   ranked=strstr(s->catId,"top100")||strstr(s->catId,"top250")||strstr(s->catId,"top10");
   foco=0;scrollY=velY=0;orderN=-1;
+  // FONTE NAO-ADDON (issue #44): "tmdb"/"trakt" vinda do site. Nao tem base
+  // de catalogo — o conteudo e pedido direto ao servico pelo
+  // desc_vertudo_fonte. "Sem fonte" aqui quer dizer servico nao configurado
+  // nesta TV (sem chave do TMDB / sem client id do Trakt), nao addon
+  // faltando.
+  if (s->prov[0]) {
+    semFonte = !strcmp(s->prov,"tmdb") ? !desc_chave_tmdb()[0]
+                                      : !nuvem_trakt_cliente()[0];
+    snprintf(catalogId,sizeof catalogId,"%s",s->title);
+    if (semFonte) {
+      printf("[vertudo] fonte %s sem servico configurado: %s\n",
+             s->prov, s->title);
+      fflush(stdout);
+      return;
+    }
+    desc_vertudo_fonte(s);
+    return;
+  }
   // BASE VAZIA NAO VIRA PEDIDO.
   //
   // desc_vertudo_filtro so recusa ponteiro NULO, e `base` e um vetor dentro da
@@ -128,7 +147,8 @@ void vertudo_colecao(const ColFolder *folder) {
   // Numa pasta com varias abas e comum que so parte dos addons esteja instalada
   // aqui; abrir na aba morta faz a pasta inteira parecer vazia.
   for (i = 0; i < folder->nSources; i++)
-    if (baseDaFonte(&folder->sources[i])[0]) { source = tabCursor = i; break; }
+    if (folder->sources[i].prov[0] || baseDaFonte(&folder->sources[i])[0])
+      { source = tabCursor = i; break; }
   snprintf(titulo,sizeof titulo,"%s",folder->title);openSource();
 }
 
@@ -180,9 +200,18 @@ void vertudo_evento(const SDL_Event *e) {
     // possa abri-lo por indice, que e como todo o app trabalha.
     CatItem it;
     if (viewItem(foco, &it)) {
-      int idx = it.imdb[0] ? cat_indice_por_imdb(it.imdb) : -1;
-      if (idx < 0) idx = cat_acrescentar(&it);
-      if (idx >= 0) { pedAbrir = idx; } // conserva a lista e a posição ao voltar
+      // Item de fonte TMDB (issue #44): o id e "tmdb:<n>", nao imdb. Quem
+      // resolve e o caminho sob-demanda ja usado pela filmografia de elenco:
+      // external_ids -> imdb -> meta do Cinemeta -> cat_acrescentar, e o
+      // desc_titulo_pronto do loop principal abre o detalhe.
+      if (!strncmp(it.imdb, "tmdb:", 5)) {
+        desc_pedir_titulo_tmdb(atol(it.imdb + 5),
+                               !strcmp(it.tipo, "series") ? "tv" : "movie");
+      } else {
+        int idx = it.imdb[0] ? cat_indice_por_imdb(it.imdb) : -1;
+        if (idx < 0) idx = cat_acrescentar(&it);
+        if (idx >= 0) { pedAbrir = idx; } // conserva a lista e a posição ao voltar
+      }
     }
   }
   // Chegando perto do fim, pede a proxima pagina. Antes de o dono ver o vazio,
@@ -384,8 +413,13 @@ static void themeHeader(float a,float x0) {
     gfx_rect((GfxRect){x0,83,w,h},logo,tex_marca_escura(collection->logo)?GFX_MARCA:GFX_TEXTO,0,0,0,0,.96f,.97f,.98f,a);
   } else {TxtLinha title=txt_linha_corta(TXT_TITULO1,titulo,242,243,247,255,940);txt_desenhar_alpha(title,x0,80,a);}
   char caption[180];int n=nItens();
-  if(semFonte)snprintf(caption,sizeof caption,"%s",
-    "O addon desta coleção não está instalado nesta TV.");
+  if(semFonte) {
+    const char *pv=collection&&source<collection->nSources?collection->sources[source].prov:"";
+    snprintf(caption,sizeof caption,"%s",
+      !strcmp(pv,"tmdb")?i18n("O TMDB não está configurado nesta TV."):
+      !strcmp(pv,"trakt")?i18n("O Trakt não está configurado nesta TV."):
+      i18n("O addon desta coleção não está instalado nesta TV."));
+  }
   else if(desc_vertudo_erro())snprintf(caption,sizeof caption,"Não foi possível carregar. OK para tentar novamente.");
   else if(!n)snprintf(caption,sizeof caption,"%s",desc_vertudo_carregando()?"Carregando títulos…":"Nenhum título nesta lista.");
   else snprintf(caption,sizeof caption,i18n("%d títulos%s  ·  %s"),n,desc_vertudo_fim()?"":i18n(" carregados"),i18n(legendaGrupo()));

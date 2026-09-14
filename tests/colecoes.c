@@ -18,15 +18,32 @@ int main(void) {
   const ColFolder *f = col_folder(0);
   assert(f && !strcmp(f->group, "Streaming") && !strcmp(f->groupId, "c1") && !strcmp(f->id, "f1"));
   assert(!strcmp(f->hero, "https://img/bg.jpg") && !strcmp(f->cover, "https://img/nf.jpg") && f->hideTitle == 1);
-  assert(f->nSources == 2);
+  assert(f->nSources == 3);
   assert(!strcmp(f->sources[0].base, "https://addon/abc") && !strcmp(f->sources[0].catId, "nf_movies") && !f->sources[0].genre[0]);
-  assert(!strcmp(f->sources[1].title, "Series") && !strcmp(f->sources[1].type, "series"));
-  puts("ok  shape do web: linha da RPC, manifest.json cortado, tmdb fora, genre None vazio");
+  // A fonte tmdb ENTRA (issue #44): antes ela era descartada e uma pasta so
+  // de fontes tmdb/trakt sumia inteira — a colecao "instalada no site" que
+  // nunca aparecia na TV.
+  assert(!strcmp(f->sources[1].prov, "tmdb") && !strcmp(f->sources[1].tmdbTipo, "DISCOVER"));
+  assert(!strcmp(f->sources[2].title, "Series") && !strcmp(f->sources[2].type, "series"));
+  puts("ok  shape do web: linha da RPC, manifest.json cortado, fonte tmdb entra, genre None vazio");
 
   char chave[192];
   col_chave_grupo("Streaming", chave, sizeof chave); assert(!strcmp(chave, "collection_c1"));
   col_chave_grupo("Outro", chave, sizeof chave);     assert(!strcmp(chave, "collection_Outro"));
   puts("ok  chave por id da colecao, nome quando nao ha id");
+
+  // Fonte trakt do editor do site: lista publica por id, com ordenacao.
+  assert(col_definir_json("{\"collections\":[{\"id\":\"ct\",\"title\":\"T\",\"folders\":[{\"id\":\"g\",\"title\":\"G\",\"sources\":["
+    "{\"provider\":\"trakt\",\"traktListId\":1234,\"mediaType\":\"MOVIE\",\"sortBy\":\"rank\",\"sortHow\":\"asc\",\"title\":\"Top filmes\"},"
+    "{\"provider\":\"tmdb\",\"tmdbSourceType\":\"PERSON\",\"tmdbId\":6384,\"mediaType\":\"MOVIE\",\"filters\":{\"withGenres\":\"28\"}},"
+    "{\"provider\":\"desconhecido\",\"catalogId\":\"x\"}]}]}]}") == 1);
+  f = col_folder(0);
+  assert(f->nSources == 2);   // provedor desconhecido continua fora
+  assert(!strcmp(f->sources[0].prov, "trakt") && f->sources[0].traktLista == 1234
+         && !strcmp(f->sources[0].ordenar, "rank") && !strcmp(f->sources[0].ordem, "asc"));
+  assert(!strcmp(f->sources[1].prov, "tmdb") && !strcmp(f->sources[1].tmdbTipo, "PERSON")
+         && f->sources[1].tmdbId == 6384 && strstr(f->sources[1].filtros, "withGenres"));
+  puts("ok  fontes trakt e tmdb entram com id, ordenacao e filtros");
 
   // string escapada, como parseRemoteCollectionsPayload aceita
   const char *esc = "{\"collections_json\":\"{\\\"collections\\\":[{\\\"id\\\":\\\"c9\\\",\\\"title\\\":\\\"T\\\",\\\"folders\\\":[{\\\"id\\\":\\\"g\\\",\\\"title\\\":\\\"G\\\",\\\"sources\\\":[{\\\"addonBaseUrl\\\":\\\"https://a\\\",\\\"type\\\":\\\"movie\\\",\\\"catalogId\\\":\\\"k\\\"}]}]}]}\"}";

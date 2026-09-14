@@ -123,6 +123,12 @@ int   trakt_continuar(CatItem *s, int m)   { (void)s; (void)m; return 0; }
 int   trakt_enfeitar_lote(CatItem *s, int n) { (void)s; (void)n; return 0; }
 int   trakt_lista(const char *q, CatItem *s, int m) { (void)q; (void)s; (void)m; return 0; }
 int   trakt_social(CatItem *s, int m)      { (void)s; (void)m; return 0; }
+// Fontes nao-addon (issue #44) e a refazagem da fileira CW (#38): o cenario
+// testado nao tem nenhum dos dois, mas o codigo referencia os simbolos.
+void  cat_trocar_continuar(const CatItem *l, int q) { (void)l; (void)q; }
+const char *nuvem_trakt_cliente(void)      { return ""; }
+char *rede_baixar_com(const char *u, int t, const char *const *c) {
+  (void)c; return rede_baixar(u, t); }
 
 // ------------------------------------------------------------------ o teste
 static void esperarCiclo(void) {

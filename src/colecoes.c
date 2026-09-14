@@ -29,7 +29,7 @@ unsigned col_revisao(void) { return revisao; }
 // que a sonda passar, sem ninguem precisar avisar.
 static void resolverBases(ColFolder *v) {
   for (int s = 0; s < v->nSources; s++)
-    if (!v->sources[s].base[0] && v->sources[s].addonId[0])
+    if (!v->sources[s].prov[0] && !v->sources[s].base[0] && v->sources[s].addonId[0])
       snprintf(v->sources[s].base, sizeof v->sources[s].base, "%s", addons_base_por_id(v->sources[s].addonId));
 }
 const ColFolder *col_folder(int i) {
@@ -82,7 +82,7 @@ int col_fontes_sem_base(void) {
   for (i = 0; i < count; i++) {
     resolverBases(&folders[i]);
     for (s = 0; s < folders[i].nSources; s++)
-      if (!folders[i].sources[s].base[0]) n++;
+      if (!folders[i].sources[s].prov[0] && !folders[i].sources[s].base[0]) n++;
   }
   return n;
 }
@@ -104,12 +104,17 @@ void col_despejar_fontes(int max) {
       // — tres causas com o mesmo "fontes-sem-base>0". Um relator do #18 mandou
       // colecoes=137 e fontes-sem-base=360: sem esta linha nao havia como saber
       // QUAIS 360.
-      printf("[col]   fonte[%s/%s]: addon=%s base=%s tipo=%s id=%s\n",
-             folders[i].group, folders[i].title,
-             v->addonId[0] ? v->addonId : "(sem id)",
-             v->base[0] ? rede_url_publica(v->base, seg, sizeof seg)
-                        : "(NAO RESOLVIDA)",
-             v->type, v->catId);
+      if (v->prov[0])
+        printf("[col]   fonte[%s/%s]: prov=%s tmdbTipo=%s tmdbId=%ld lista=%ld midia=%s\n",
+               folders[i].group, folders[i].title, v->prov, v->tmdbTipo,
+               v->tmdbId, v->traktLista, v->midia);
+      else
+        printf("[col]   fonte[%s/%s]: addon=%s base=%s tipo=%s id=%s\n",
+               folders[i].group, folders[i].title,
+               v->addonId[0] ? v->addonId : "(sem id)",
+               v->base[0] ? rede_url_publica(v->base, seg, sizeof seg)
+                          : "(NAO RESOLVIDA)",
+               v->type, v->catId);
     }
   }
 }
@@ -145,6 +150,7 @@ int col_diagnostico(const char *base, const char *type, const char *id,
     for (s = 0; s < folders[i].nSources; s++) {
       const ColSource *v = &folders[i].sources[s];
       int nivel;
+      if (v->prov[0]) continue;   // fonte tmdb/trakt nao casa com catalogo de addon
       if (strcmp(v->base, base)) continue;
       nivel = 1;
       if (!strcmp(v->type, type)) {
@@ -295,8 +301,34 @@ static void lerColecaoWeb(const char *c, const char *ce) {
       const char *se = js_fim(s); ColSource *a = &v->sources[v->nSources]; char prov[16] = "";
       memset(a, 0, sizeof *a);
       js_texto(s, se, "provider", prov, sizeof prov);
-      // tmdb/trakt como fonte de pasta nao tem equivalente aqui: so addon.
-      // tmdb/trakt como fonte de pasta nao tem equivalente aqui: so addon.
+      // Fontes nao-addon (issue #44): o editor do site grava provider "tmdb"
+      // (listas, colecoes, pessoas/diretores, empresas, redes ou um discover
+      // com filtros) e "trakt" (listas publicas). Nao sao catalogos de addon:
+      // carregam campos proprios e quem busca os itens e o vertudo, via
+      // desc_vertudo_fonte. Antes disto a pasta ficava com nSources==0 e era
+      // descartada inteira — era a colecao "instalada no site" que nunca
+      // aparecia na TV.
+      if (!strcasecmp(prov, "tmdb")) {
+        js_texto(s, se, "title", a->title, sizeof a->title);
+        js_texto(s, se, "tmdbSourceType", a->tmdbTipo, sizeof a->tmdbTipo);
+        a->tmdbId = (long)js_num(s, se, "tmdbId", 0.0);
+        js_texto(s, se, "mediaType", a->midia, sizeof a->midia);
+        js_texto(s, se, "sortBy", a->ordenar, sizeof a->ordenar);
+        js_bruto(s, se, "filters", a->filtros, sizeof a->filtros);
+        if (!a->title[0])
+          snprintf(a->title, sizeof a->title, "%s", a->tmdbTipo[0] ? a->tmdbTipo : "TMDB");
+        snprintf(a->prov, sizeof a->prov, "tmdb"); v->nSources++; continue;
+      }
+      if (!strcasecmp(prov, "trakt")) {
+        js_texto(s, se, "title", a->title, sizeof a->title);
+        a->traktLista = (long)js_num(s, se, "traktListId", 0.0);
+        js_texto(s, se, "mediaType", a->midia, sizeof a->midia);
+        js_texto(s, se, "sortBy", a->ordenar, sizeof a->ordenar);
+        js_texto(s, se, "sortHow", a->ordem, sizeof a->ordem);
+        if (!a->title[0]) snprintf(a->title, sizeof a->title, "Lista Trakt");
+        if (a->traktLista <= 0) { fPulProvedor++; continue; }
+        snprintf(a->prov, sizeof a->prov, "trakt"); v->nSources++; continue;
+      }
       if (prov[0] && strcasecmp(prov, "addon")) { fPulProvedor++; continue; }
       if (!js_texto(s, se, "addonBaseUrl", a->base, sizeof a->base)) js_texto(s, se, "addon_base_url", a->base, sizeof a->base);
       tirarManifest(a->base);

@@ -292,6 +292,12 @@ typedef struct {
 int cat_n_fileiras(void);
 const CatFileira *cat_fileira(int r);   // NULL fora da faixa
 
+// Refaz SO a fileira "continue_watching" (issue #38): os itens novos tomam o
+// lugar da janela dela no vetor unico, as demais fileiras deslizam no `ini` e
+// a revisao sobe para a home remontar. Chamada pelo fio dedicado da
+// descoberta — montarContinuar faz rede e nao pode rodar no desenho.
+void cat_trocar_continuar(const CatItem *lista, int qtd);
+
 // Troca itens E fileiras de uma vez. Tem de ser uma chamada so: com duas, o fio
 // do desenho pega um quadro com as fileiras novas apontando para os itens
 // velhos, e a janela (ini,n) cai fora do vetor.

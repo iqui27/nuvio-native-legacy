@@ -1374,6 +1374,17 @@ void home_atualizar(float dt, Uint32 agora) {
     if (alvo >= 0 && alvo != heroPendente) {
       heroPendente = alvo;
       heroPendenteEm = agora;
+      // AQUECE O ARQUIVO JA, no passo do foco e nao no da troca. O pedido de
+      // 1920 so acontecia quando o candidato virava heroi desejado — depois do
+      // repouso — e o download+decode de uma arte de tela cheia nao cabe no
+      // prazo de NV_HERO_ESPERA_MS: o log do #39 media arte chegando entre
+      // ~700 ms e ~8,6 s DEPOIS do estouro. tex_arquivo baixa para o cache de
+      // disco por um pedido de 128 px — centavos de textura, nao os ~8 MB do
+      // hero — e quem atravessa a fileira rapido tem o decode descartado por
+      // pedidoObsoleto antes de virar textura. Quando a troca enfim acontece,
+      // garantirLocal acha o arquivo no disco e so resta o decode.
+      { const char *quente = arte_por_identidade(alvo, 1);
+        if (quente) tex_arquivo(quente); }
       // Voltou para a arte que ja esta no ar: cancela a troca que ainda nao
       // aconteceu, senao ela dispararia depois sem ninguem ter pedido.
       if (heroPendente == heroAtual) heroDesejado = -1;
@@ -1391,6 +1402,10 @@ void home_atualizar(float dt, Uint32 agora) {
       int proximo = total > 0 ? (heroAtual + 1) % total : 0;
       heroPendente = proximo;
       heroPendenteEm = agora - NV_HERO_REPOUSO_MS;
+      // O carrossel tambem ganha o arquivo quente: o proximo item ja e
+      // conhecido aqui, muito antes de o prazo de espera comecar a contar.
+      { const char *quente = arte_por_identidade(proximo, 1);
+        if (quente) tex_arquivo(quente); }
       if (heroDesejado != proximo) heroDesejadoEm = agora;
       heroDesejado = proximo;
       heroTrocaEm = agora + NV_HERO_INTERVALO_MS;

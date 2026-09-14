@@ -60,6 +60,7 @@ static void avisarCascaAberto(int v) { (void)v; }
 #include "intro.h"
 #include "pausao.h"
 #include "home.h"
+#include "descoberta.h"
 #include <time.h>
 #include <stdio.h>
 #include <string.h>
@@ -759,6 +760,10 @@ void player_encerrar(void) {
       // usuario liga o Trakt, e o progresso do app oficial vem da conta.
       sync_sujar_progresso();
     }
+    // A fileira "Continuar assistindo" so era refeita no ciclo completo da
+    // descoberta (issue #38): sem isto o titulo terminado ficava nela e o que
+    // comecou agora nao entrava ate a proxima volta.
+    desc_refazer_continuar();
   }
   // QUANTO CUSTA CADA PASSO DA SAIDA, e por que isto e uma medida e nao um
   // conserto.

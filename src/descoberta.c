@@ -9,6 +9,7 @@
 #include "catalogo.h"
 #include "addons.h"
 #include "rede.h"
+#include "nuvem.h"
 #include "js.h"
 #include "trakt.h"
 #include "progresso.h"
@@ -1151,6 +1152,12 @@ static int mesmaObra(const CatItem *a, const CatItem *b) {
 // Um candidato da fileira, com o que se sabe sobre QUANDO ele aconteceu.
 typedef struct { CatItem *item; long long ms; int ord; } Cand;
 
+// A fileira tambem e refeita FORA do ciclo completo (issue #38), pelo fio de
+// desc_refazer_continuar. Os buffers estaticos abaixo — e os de
+// trakt_enfeitar_lote, chamado tambem por trakt_social — nao admitem dois
+// montadores ao mesmo tempo, entao a trava cobre os DOIS usos em montar().
+static pthread_mutex_t contTrava = PTHREAD_MUTEX_INITIALIZER;
+
 static int montarContinuar(CatItem *saida, int max) {
   // static: dois lotes de 8 CatItem passam de 50 KB e montar() roda uma vez,
   // num fio so — a mesma razao do vetor de Decl mais abaixo.
@@ -1173,6 +1180,22 @@ static int montarContinuar(CatItem *saida, int max) {
   // relato.
   for (i = 0, w = 0; i < nT; i++) {
     if (!emAndamento(doTrakt[i].progresso)) { fora++; continue; }
+    // O REGISTRO LOCAL MAIS NOVO VENCE A RESPOSTA DO TRAKT. Sem este cruzamento
+    // a refazagem da fileira (issue #38) lia um /sync/playback que ainda nao
+    // recebeu o scrobble que acabamos de mandar: o titulo terminado voltava a
+    // aparecer como "em andamento" por alguns minutos. O desempate e por
+    // instante — um registro local mais VELHO que o paused_at do Trakt nao
+    // manda em nada.
+    { ProgRegistro r; char id[24], chave[48];
+      int tt = doTrakt[i].temporada, ee = doTrakt[i].episodio;
+      prog_content_id(id, sizeof id, doTrakt[i].imdb, &tt, &ee);
+      prog_chave(chave, sizeof chave, id, tt, ee);
+      if (prog_por_chave(chave, &r) && r.durSeg > 1.0 &&
+          r.lastWatchedMs > doTrakt[i].retomadoMs) {
+        int pct = (int)(100.0 * r.posSeg / r.durSeg);
+        if (!emAndamento(pct)) { fora++; continue; }
+        doTrakt[i].progresso = pct;
+      } }
     if (w != i) doTrakt[w] = doTrakt[i];
     w++;
   }
@@ -1227,6 +1250,43 @@ static int montarContinuar(CatItem *saida, int max) {
   return nJ;
 }
 
+// --- REFAZER "CONTINUAR ASSISTINDO" FORA DO CICLO (issue #38) -----------------
+//
+// A fileira era recomposta so dentro de montar(), uma vez por ciclo de
+// descoberta. Entre dois ciclos, quem mudava o progresso — sair do player, ou
+// o sync trazendo o que o celular assistiu — atualizava o ITEM no lugar e a
+// fileira continuava com o conjunto velho: titulo que entrou em progresso nao
+// aparecia, titulo terminado nao saia. Era o "nao atualiza ou demora" do
+// relato: a atualizacao existia, mas so o desenho do card a via.
+//
+// O refazer e o MESMO montarContinuar, em fio proprio porque ele faz rede
+// (/sync/playback + um meta por item). Quem pede duas vezes seguidas — sair
+// do player no meio de uma refazagem — ganha UMA rodada a mais no fim, nao
+// uma fila: so o estado final interessa.
+static volatile int cwVivo, cwDeNovo;
+void desc_refazer_continuar(void);
+
+static void *fioContinuar(void *u) {
+  CatItem lote[CONT_MAX];
+  int n;
+  (void)u;
+  pthread_mutex_lock(&contTrava);
+  n = montarContinuar(lote, CONT_MAX);
+  pthread_mutex_unlock(&contTrava);
+  cat_trocar_continuar(lote, n);
+  cwVivo = 0;
+  if (cwDeNovo) { cwDeNovo = 0; desc_refazer_continuar(); }
+  return NULL;
+}
+
+void desc_refazer_continuar(void) {
+  pthread_t t;
+  if (cwVivo) { cwDeNovo = 1; return; }
+  cwVivo = 1;
+  if (pthread_create(&t, NULL, fioContinuar, NULL) != 0) cwVivo = 0;
+  else pthread_detach(t);
+}
+
 static void *montar(void *u) {
   // O lote tambem cresce: era dimensionado por CAT_MAX e por isso herdava o
   // mesmo teto arbitrario.
@@ -1244,13 +1304,17 @@ static void *montar(void *u) {
   // AS DUAS FONTES, UNIDAS. Ver o cabecalho de montarContinuar: com Trakt
   // vinculado esta fileira ignorava o progresso da conta Nuvio, que e o que
   // chega do celular do dono.
+  pthread_mutex_lock(&contTrava);
   nContinuar = montarContinuar(lote, 8);
   n += nContinuar;
   marco("trakt continuar assistindo");
   // O feed social oficial e uma fileira propria, logo depois do retorno ao
   // que estava sendo visto. Ele vem cedo para nao depender dos manifestos dos
   // addons e usa a mesma credencial Trakt ja carregada.
+  // Sob a MESMA trava: trakt_social e montarContinuar compartilham os buffers
+  // de trakt_enfeitar_lote com o fio de desc_refazer_continuar.
   nSocial = trakt_social(lote + n, 8);
+  pthread_mutex_unlock(&contTrava);
   n += nSocial;
   marco("trakt atividade dos amigos");
   // O historico do Trakt e a PRIMEIRA fileira da home e chega ~1,6 s antes dos
@@ -2229,18 +2293,271 @@ static int      vtN;
 static char     vtBase[600], vtTipo[8], vtCat[96], vtGenre[96];
 static int      vtPagina, vtFim, vtFioVivo, vtErro;
 static unsigned vtGeracao;
+// Fonte nao-addon aberta por desc_vertudo_fonte (issue #44): vtProvedor 1 e
+// TMDB, 2 e Trakt; vtFonte e uma copia zerada da ColSource para o memcmp de
+// "mesma fonte" ser seguro (a struct tem preenchimento).
+static ColSource vtFonte;
+static int      vtProvedor;
 static pthread_mutex_t vtTrava = PTHREAD_MUTEX_INITIALIZER;
+
+// Um item de resultado do TMDB (results[], items[], cast[], crew[],
+// parts[]) vira CatItem. O id fica "tmdb:<n>" — nao e imdb, e quem abre
+// resolve pelo desc_pedir_titulo_tmdb (vertudo checa o prefixo). O tipo vem
+// do media_type do item quando ele existe (combined_credits mistura filme e
+// serie); sem ele vale o tipo padrao da fonte.
+static int deMetaTmdb(const char *p, const char *f, const char *tipoPadrao,
+                      CatItem *d) {
+  char v[512];
+  memset(d, 0, sizeof *d);
+  long id = (long)js_num(p, f, "id", 0.0);
+  if (id <= 0) return 0;
+  if (!js_texto(p, f, "title", d->titulo, sizeof d->titulo) &&
+      !js_texto(p, f, "name", d->titulo, sizeof d->titulo)) return 0;
+  if (!js_texto(p, f, "poster_path", v, sizeof v) || v[0] != '/') return 0;
+  snprintf(d->poster, sizeof d->poster, "https://image.tmdb.org/t/p/w342%s", v);
+  if (js_texto(p, f, "backdrop_path", v, sizeof v) && v[0] == '/')
+    // w1280 e nao original: ver a conta do mesmo trecho em deMeta — 33 MB
+    // decodificados por arte no nucleo fraco da TV.
+    snprintf(d->backdrop, sizeof d->backdrop, "https://image.tmdb.org/t/p/w1280%s", v);
+  else snprintf(d->backdrop, sizeof d->backdrop, "%s", d->poster);
+  { char mt[12] = "";
+    js_texto(p, f, "media_type", mt, sizeof mt);
+    snprintf(d->tipo, sizeof d->tipo, "%s",
+             !strcmp(mt, "tv") ? "series" : mt[0] ? "movie" : tipoPadrao); }
+  snprintf(d->imdb, sizeof d->imdb, "tmdb:%ld", id);
+  d->tmdb = id;
+  { char dt[16] = "";
+    if (!js_texto(p, f, "release_date", dt, sizeof dt))
+      js_texto(p, f, "first_air_date", dt, sizeof dt);
+    snprintf(d->meta, sizeof d->meta, "%.4s", dt); }
+  snprintf(d->genero, sizeof d->genero, "%s", i18n(rotuloTipoSing(d->tipo)));
+  d->nota = (int)(js_num(p, f, "vote_average", 0.0) * 10.0 + 0.5);
+  js_texto(p, f, "overview", d->sinopse, sizeof d->sinopse);
+  return 1;
+}
+
+// Entrada de lista do Trakt ({type, movie:{...}} / {type, show:{...}}). So
+// entra o que tem ids.imdb — sem ele nao ha como resolver o titulo em nenhum
+// catalogo. O poster NAO vem na resposta da lista (o web le entity.images,
+// que so chega com extended=full; mesmo assim nem toda lista os traz) — quem
+// preenche e o trakt_enfeitar_lote depois do parse da pagina.
+static int deMetaTrakt(const char *p, const char *f, const char *midia,
+                       CatItem *d) {
+  char bruto[1400], ids[400], v[64];
+  const char *e, *fe;
+  int serie;
+  memset(d, 0, sizeof *d);
+  // O objeto do titulo fica sob "movie" ou "show"; a midia da fonte diz qual,
+  // mas aceita os dois porque listas mistas existem. js_bruto devolve o
+  // objeto cru, com as chaves — o parse acontece sobre essa copia.
+  serie = !strcasecmp(midia, "TV");
+  if (!js_bruto(p, f, serie ? "show" : "movie", bruto, sizeof bruto)) {
+    serie = !serie;
+    if (!js_bruto(p, f, serie ? "show" : "movie", bruto, sizeof bruto))
+      return 0;
+  }
+  e = bruto; fe = bruto + strlen(bruto);
+  if (!js_bruto(e, fe, "ids", ids, sizeof ids) ||
+      !js_texto(ids, ids + strlen(ids), "imdb", v, sizeof v) || !v[0])
+      return 0;
+  snprintf(d->imdb, sizeof d->imdb, "%s", v);
+  if (!js_texto(e, fe, "title", d->titulo, sizeof d->titulo) &&
+      !js_texto(e, fe, "name", d->titulo, sizeof d->titulo)) return 0;
+  { long ano = (long)js_num(e, fe, "year", 0.0);
+    if (ano) snprintf(d->meta, sizeof d->meta, "%ld", ano); }
+  snprintf(d->tipo, sizeof d->tipo, "%s", serie ? "series" : "movie");
+  snprintf(d->genero, sizeof d->genero, "%s", i18n(rotuloTipoSing(d->tipo)));
+  return 1;
+}
+
+// Traduz o objeto "filters" do editor do site para parametros do /discover
+// do TMDB — mesma lista de chaves que applyTmdbDiscoverFilters do web.
+static void tmdbFiltros(char *q, size_t n, const char *filtros, int isTv) {
+  const char *fim = filtros ? filtros + strlen(filtros) : NULL;
+  static const struct { const char *js, *url; int soTv; } M[] = {
+    {"withGenres","with_genres",0}, {"withoutGenres","without_genres",0},
+    {"voteAverageGte","vote_average.gte",0}, {"voteAverageLte","vote_average.lte",0},
+    {"voteCountGte","vote_count.gte",0},
+    {"withOriginalLanguage","with_original_language",0},
+    {"withOriginCountry","with_origin_country",0},
+    {"withKeywords","with_keywords",0}, {"withoutKeywords","without_keywords",0},
+    {"withCompanies","with_companies",0}, {"withoutCompanies","without_companies",0},
+    {"withNetworks","with_networks",1},
+    {"withRuntimeGte","with_runtime.gte",0}, {"withRuntimeLte","with_runtime.lte",0},
+  };
+  char v[128];
+  size_t u;
+  if (!filtros || *filtros != '{') return;
+  for (u = 0; u < sizeof M / sizeof *M; u++) {
+    if (M[u].soTv && !isTv) continue;
+    if (js_texto(filtros, fim, M[u].js, v, sizeof v) && v[0])
+      snprintf(q + strlen(q), n - strlen(q), "&%s=%s", M[u].url, v);
+  }
+  if (js_texto(filtros, fim, "releaseDateGte", v, sizeof v) && v[0])
+    snprintf(q + strlen(q), n - strlen(q), "&%s.gte=%s",
+             isTv ? "first_air_date" : "release_date", v);
+  if (js_texto(filtros, fim, "releaseDateLte", v, sizeof v) && v[0])
+    snprintf(q + strlen(q), n - strlen(q), "&%s.lte=%s",
+             isTv ? "first_air_date" : "release_date", v);
+  { long ano = (long)js_num(filtros, fim, "year", 0.0);
+    if (ano > 0)
+      snprintf(q + strlen(q), n - strlen(q), "&%s=%ld",
+               isTv ? "first_air_date_year" : "year", ano); }
+  if (js_texto(filtros, fim, "withWatchProviders", v, sizeof v) && v[0]) {
+    char reg[8] = "";
+    js_texto(filtros, fim, "watchRegion", reg, sizeof reg);
+    snprintf(q + strlen(q), n - strlen(q), "&watch_region=%s&with_watch_providers=%s",
+             reg[0] ? reg : "US", v);
+  }
+}
+
+// Monta a URL da pagina `pagina` da fonte TMDB. Espelha fetchTmdbSourceItems
+// do web: COLLECTION, LIST, PERSON/DIRECTOR e discover. Devolve o nome do
+// array de itens na resposta via `vetor` ("results", "items", "cast", "crew"
+// ou "parts") e 0 quando falta a chave da API.
+static const char *tmdbMontarUrl(const ColSource *f, int pagina,
+                                 char *url, size_t n) {
+  int isTv = !strcasecmp(f->midia, "TV") || !strcasecmp(f->tmdbTipo, "NETWORK");
+  const char *mt = isTv ? "tv" : "movie";
+  if (!tmdbChave[0]) return NULL;
+  if (!strcasecmp(f->tmdbTipo, "COLLECTION") && f->tmdbId > 0) {
+    snprintf(url, n, "%s/collection/%ld?api_key=%s&language=%s",
+             TMDB, f->tmdbId, tmdbChave, desc_tmdb_idioma());
+    return "parts";
+  }
+  if (!strcasecmp(f->tmdbTipo, "LIST") && f->tmdbId > 0) {
+    snprintf(url, n, "%s/list/%ld?api_key=%s&language=%s&page=%d",
+             TMDB, f->tmdbId, tmdbChave, desc_tmdb_idioma(), pagina);
+    return "items";
+  }
+  if ((!strcasecmp(f->tmdbTipo, "PERSON") || !strcasecmp(f->tmdbTipo, "DIRECTOR"))
+      && f->tmdbId > 0) {
+    snprintf(url, n, "%s/person/%ld/combined_credits?api_key=%s&language=%s",
+             TMDB, f->tmdbId, tmdbChave, desc_tmdb_idioma());
+    return !strcasecmp(f->tmdbTipo, "DIRECTOR") ? "crew" : "cast";
+  }
+  { char q[1400] = "";
+    snprintf(q, sizeof q, "&sort_by=%s",
+             f->ordenar[0] ? f->ordenar
+                           : isTv ? "first_air_date.desc" : "popularity.desc");
+    tmdbFiltros(q, sizeof q, f->filtros, isTv);
+    if (!strcasecmp(f->tmdbTipo, "COMPANY") && f->tmdbId > 0)
+      snprintf(q + strlen(q), sizeof q - strlen(q), "&with_companies=%ld", f->tmdbId);
+    else if (!strcasecmp(f->tmdbTipo, "NETWORK") && f->tmdbId > 0) {
+      // Rede: igual ao web — so o que ja saiu, e com_status exclui pilotos
+      // cancelados e producoes sem data.
+      char hoje[12] = "";
+      { time_t t = time(NULL); struct tm tmv;
+        if (localtime_r(&t, &tmv))
+          snprintf(hoje, sizeof hoje, "%04d-%02d-%02d",
+                   tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday); }
+      snprintf(q + strlen(q), sizeof q - strlen(q),
+               "&with_networks=%ld&first_air_date.lte=%s&with_status=0|3|4",
+               f->tmdbId, hoje[0] ? hoje : "9999-12-31");
+    } else if (f->tmdbId > 0)
+      snprintf(q + strlen(q), sizeof q - strlen(q), "&%s=%ld",
+               isTv ? "with_networks" : "with_companies", f->tmdbId);
+    snprintf(url, n, "%s/discover/%s?api_key=%s&language=%s&page=%d%s",
+             TMDB, mt, tmdbChave, desc_tmdb_idioma(), pagina, q);
+    return "results";
+  }
+}
 
 static void *fioVerTudo(void *u) {
   (void)u;
   for (;;) {
   char url[1600], base[600], type[8], id[96], genre[96], encoded[290], *corpo;
-  int raw=0, skip, cap;unsigned generation;
+  int raw=0, skip, cap, prov;unsigned generation;
+  ColSource fonte;
   pthread_mutex_lock(&vtTrava);
-  skip=vtPagina;generation=vtGeracao;
+  skip=vtPagina;generation=vtGeracao;prov=vtProvedor;
+  memset(&fonte,0,sizeof fonte);fonte=vtFonte;
   snprintf(base,sizeof base,"%s",vtBase);snprintf(type,sizeof type,"%s",vtTipo);
   snprintf(id,sizeof id,"%s",vtCat);snprintf(genre,sizeof genre,"%s",vtGenre);
   pthread_mutex_unlock(&vtTrava);
+
+  // FONTE NAO-ADDON (issue #44): pasta de colecao do site cujo conteudo vem
+  // do TMDB ou do Trakt, nao de um catalogo de addon. vtPagina aqui e o
+  // NUMERO da pagina (comeca em 1), nao o skip de itens.
+  if (prov) {
+    CatItem lote[48]; int nl=0, semMais=0, ok=0;
+    corpo=NULL;
+    if (prov==1) {
+      const char *vetor=tmdbMontarUrl(&fonte,skip,url,sizeof url);
+      if (vetor) corpo=rede_baixar(url,12);
+      if (corpo) {
+        const char *padrao=!strcasecmp(fonte.midia,"TV")?"series":"movie";
+        const char *p=js_array(corpo,NULL,vetor);
+        for(;p&&nl<48;p=js_prox(js_fim(p))) {
+          const char *f=js_fim(p);raw++;
+          // DIRECTOR: a resposta e crew[] inteira e so entra quem tem
+          // job=Director — o web filtra igual.
+          if (!strcasecmp(fonte.tmdbTipo,"DIRECTOR")) {
+            char job[48]="";
+            js_texto(p,f,"job",job,sizeof job);
+            if (strcasecmp(job,"director")) continue;
+          }
+          if (deMetaTmdb(p,f,padrao,&lote[nl])) nl++;
+        }
+        if (!strcasecmp(fonte.tmdbTipo,"COLLECTION")||
+            !strcasecmp(fonte.tmdbTipo,"PERSON")||
+            !strcasecmp(fonte.tmdbTipo,"DIRECTOR")) semMais=1;
+        else {
+          long tp=(long)js_num(corpo,NULL,"total_pages",0);
+          long pg=(long)js_num(corpo,NULL,"page",skip);
+          if (!tp||pg>=tp||!nl) semMais=1;
+        }
+        ok=1;
+      }
+    } else {
+      // Lista publica do Trakt: so precisa do client id do aplicativo, nao
+      // do token da pessoa (o web faz igual — buildTraktHeaders).
+      const char *cli=nuvem_trakt_cliente();
+      if (cli[0]) {
+        char chave[160];
+        const char *cab[]={"trakt-api-version: 2",NULL,NULL};
+        snprintf(chave,sizeof chave,"trakt-api-key: %s",cli);
+        cab[1]=chave;
+        snprintf(url,sizeof url,
+          "https://api.trakt.tv/lists/%ld/items/%s?page=%d&limit=40&sort_by=%s&sort_how=%s",
+          fonte.traktLista,!strcasecmp(fonte.midia,"TV")?"show":"movie",
+          skip,fonte.ordenar[0]?fonte.ordenar:"rank",
+          fonte.ordem[0]?fonte.ordem:"asc");
+        corpo=rede_baixar_com(url,12,cab);
+        if (corpo) {
+          const char *p=*corpo=='['?js_raiz_array(corpo):NULL;
+          for(;p&&nl<48;p=js_prox(js_fim(p))) {
+            const char *f=js_fim(p);raw++;
+            if (deMetaTrakt(p,f,fonte.midia,&lote[nl])) nl++;
+          }
+          // rede_baixar nao devolve cabecalhos; menos que a pagina cheia e o
+          // fim da lista (o web le X-Pagination-Page-Count, mesmo efeito).
+          if (raw<40) semMais=1;
+          ok=1;
+        }
+      }
+    }
+    free(corpo);
+    // Itens do Trakt chegam sem poster: o lote inteiro ganha arte pelo
+    // Cinemeta de uma vez, como a fileira "Continuar assistindo" ja faz.
+    if (prov==2&&nl) trakt_enfeitar_lote(lote,nl);
+    pthread_mutex_lock(&vtTrava);
+    if(generation!=vtGeracao){pthread_mutex_unlock(&vtTrava);continue;}
+    { int added=0;
+      for(int i=0;i<nl&&vtN<VT_MAX;i++){
+        int dup=0;
+        for(int j=0;j<vtN;j++)
+          if(lote[i].imdb[0]&&!strcmp(vtItens[j].imdb,lote[i].imdb)
+             &&!strcmp(vtItens[j].tipo,lote[i].tipo)){dup=1;break;}
+        if(!dup){vtItens[vtN++]=lote[i];added++;}
+      }
+      vtErro=!ok;
+      if(ok){if(semMais||!added||vtN>=VT_MAX)vtFim=1;else vtPagina=skip+1;}
+      vtFioVivo=0; }
+    pthread_mutex_unlock(&vtTrava);
+    return NULL;
+  }
+
   int z=0;
   for(const unsigned char *c=(const unsigned char *)genre;*c&&z<(int)sizeof encoded-4;c++) {
     if((*c>='a'&&*c<='z')||(*c>='A'&&*c<='Z')||(*c>='0'&&*c<='9')||*c=='-'||*c=='_')encoded[z++]=*c;
@@ -2284,7 +2601,7 @@ static void *fioVerTudo(void *u) {
 static void vtDisparar(void) {
   pthread_t t;
   pthread_mutex_lock(&vtTrava);
-  if (vtFioVivo || vtFim || !vtBase[0]) {pthread_mutex_unlock(&vtTrava);return;}
+  if (vtFioVivo || vtFim || (!vtBase[0] && !vtProvedor)) {pthread_mutex_unlock(&vtTrava);return;}
   vtFioVivo = 1;
   vtErro=0;
   if (pthread_create(&t, NULL, fioVerTudo, NULL) != 0) vtFioVivo = 0;
@@ -2300,7 +2617,7 @@ void desc_vertudo_filtro(const char *base, const char *tipo, const char *catId,c
   pthread_mutex_lock(&vtTrava);
   // Mesmo catalogo que ja esta aberto: mantem o que ja foi lido em vez de
   // recomecar do zero (o dono pode ter voltado e entrado de novo).
-  if (!strcmp(vtBase, base) && !strcmp(vtTipo, tipo) && !strcmp(vtCat, catId)
+  if (!vtProvedor && !strcmp(vtBase, base) && !strcmp(vtTipo, tipo) && !strcmp(vtCat, catId)
       && !strcmp(vtGenre,genre?genre:"") && vtN > 0) {
     pthread_mutex_unlock(&vtTrava);
     return;
@@ -2309,7 +2626,27 @@ void desc_vertudo_filtro(const char *base, const char *tipo, const char *catId,c
   snprintf(vtTipo, sizeof vtTipo, "%s", tipo);
   snprintf(vtCat,  sizeof vtCat,  "%s", catId);
   snprintf(vtGenre,sizeof vtGenre,"%s",genre?genre:"");
+  vtProvedor=0;
   vtN = 0; vtPagina = 0; vtFim = 0;vtErro=0;vtGeracao++;
+  pthread_mutex_unlock(&vtTrava);
+  vtDisparar();
+}
+
+// Abre uma fonte nao-addon de pasta de colecao (issue #44): "tmdb" ou
+// "trakt". Mesmo protocolo do catalogo de addon — geracao nova, memoria
+// guardada entre aberturas da mesma fonte — so muda quem responde.
+void desc_vertudo_fonte(const ColSource *s) {
+  ColSource copia;
+  if (!s || !s->prov[0]) return;
+  memset(&copia, 0, sizeof copia); copia = *s;
+  pthread_mutex_lock(&vtTrava);
+  if (vtProvedor && !memcmp(&vtFonte, &copia, sizeof copia) && vtN > 0) {
+    pthread_mutex_unlock(&vtTrava); return;
+  }
+  vtFonte = copia;
+  vtProvedor = !strcmp(s->prov, "trakt") ? 2 : 1;
+  vtBase[0] = 0;
+  vtN = 0; vtPagina = 1; vtFim = 0; vtErro = 0; vtGeracao++;
   pthread_mutex_unlock(&vtTrava);
   vtDisparar();
 }

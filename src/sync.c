@@ -655,7 +655,9 @@ void sync_passo(unsigned agoraMs) {
   // Progresso da conta: progresso.c decide linha a linha (pendente local vence,
   // senao o mais novo), guarda ate o que nao tem titulo no catalogo ainda, e
   // o catalogo recebe so o que foi aceito.
-  syncprog_aplicar(NULL);
+  // Aceito novo refaz a fileira: sem isto o que o celular assistiu so aparecia
+  // em "Continuar assistindo" no proximo ciclo de descoberta (issue #38).
+  if (syncprog_aplicar(NULL) > 0) desc_refazer_continuar();
   if (estado == SYNC_PRONTO) ultimoOk = agoraMs;
 }
 
