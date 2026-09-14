@@ -36,6 +36,20 @@
 #include "anim.h"
 #include "layout.h"
 #include "catalogo.h"
+
+// A CASCA DO TIZEN PRECISA SABER SE O PLAYER ESTA NA TELA. tools/tizen-shell.html
+// traduz as teclas de midia do controle Samsung (play/pause, stop, avancar,
+// voltar) para as teclas que este arquivo ja entende — e so pode fazer isso
+// enquanto o player existe. Fora dele, play/pause viraria "OK" em cima do que
+// estivesse em foco, inclusive um item de menu que marca coisa como vista. Um
+// OK perdido ja fez exatamente isso uma vez na conta do dono (#36). O aviso e
+// dado nas TRES transicoes de `aberto`, e so nelas: nada por quadro.
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+static void avisarCascaAberto(int v) { EM_ASM({ window.nvPlayerAberto = $0; }, v); }
+#else
+static void avisarCascaAberto(int v) { (void)v; }
+#endif
 #include "trakt.h"
 #include "sync.h"
 #include "parental.h"
@@ -665,6 +679,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   int n = cat_n(); if (n < 1) n = 1;
   idx = ((indiceCatalogo % n) + n) % n;
   aberto = 1; saindo = 0; pediuSair = 0; barraFoco = 0;
+  avisarCascaAberto(1);
   // Titulo novo: um avanco em curso do anterior mandaria a posicao velha ao
   // pipeline novo assim que o silencio vencesse.
   scrubbing = 0; scrubPassos = 0; scrubTocava = 0;
@@ -769,6 +784,7 @@ void player_encerrar(void) {
            (unsigned)(tv - t0), (unsigned)(SDL_GetTicks() - tv));
     fflush(stdout); }
   comVideo = 0; esperandoFonte = 0; aberto = 0; saindo = 0; pediuSair = 0;
+  avisarCascaAberto(0);
   // Os DOIS relogios, e nao so o do primeiro quadro. `pgDesde` sobrevivendo ao
   // fechamento faria a proxima reproducao achar que a janela do aviso ja tinha
   // corrido — o aviso simplesmente nao entraria, sem nada no log dizendo por
@@ -1084,7 +1100,7 @@ void player_atualizar(float dt, Uint32 agora) {
   // enquanto o app ainda procurava fonte, e ela sumiria antes de o filme
   // aparecer.
   if (!inicioImagem && comVideo && video_pronto()) { inicioImagem = agora; acordar(); }
-  if (saindo && entrada < 0.02f) { aberto = 0; saindo = 0; entrada = 0.0f; return; }
+  if (saindo && entrada < 0.02f) { aberto = 0; saindo = 0; entrada = 0.0f; avisarCascaAberto(0); return; }
 
   // Havendo pipeline, posicao e duracao vem DELE; o dt so serve para as
   // animacoes. O relogio somado continua existindo para quando nao ha video

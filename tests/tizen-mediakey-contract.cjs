@@ -75,6 +75,16 @@ vm.runInContext(scriptMatch[1], context);
     return received;
   }
 
+  // OUTSIDE THE PLAYER THE KEY IS SWALLOWED, NOT TRANSLATED. player.c sets
+  // window.nvPlayerAberto on open/close; without it, play/pause on the home
+  // or on a context menu would become an OK on whatever is focused.
+  check('with the player closed, MediaPlayPause produces no synthetic event', () => {
+    context.window.nvPlayerAberto = 0;
+    assert.equal(fireMediaKey(10252).length, 0);
+  });
+
+  context.window.nvPlayerAberto = 1;
+
   check('MediaPlayPause (10252, QN90D single play/pause key) maps to Enter', () => {
     const got = fireMediaKey(10252);
     assert.equal(got.length, 1, 'expected exactly one synthetic keydown on canvas');

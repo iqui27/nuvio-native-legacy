@@ -348,9 +348,15 @@
     412:   { key: "ArrowLeft", code: "ArrowLeft", keyCode: 37 },  // MediaRewind
     417:   { key: "ArrowRight", code: "ArrowRight", keyCode: 39 } // MediaFastForward
   };
+  // SO COM O PLAYER NA TELA. player.c escreve window.nvPlayerAberto nas
+  // transicoes de abrir/fechar. Sem esta guarda, play/pause na home ou num
+  // menu de contexto viraria um OK em cima do que estivesse em foco — e o
+  // menu tem "marcar como visto". Fora do player a tecla e engolida, nao
+  // repassada: o app nao tem nada util para fazer com ela ali.
   window.addEventListener("keydown", function (ev) {
     var alvoTecla = MEDIA_TECLA[ev.keyCode];
     if (!alvoTecla) return;
+    if (!window.nvPlayerAberto) { ev.preventDefault(); ev.stopPropagation(); return; }
     ev.preventDefault();
     ev.stopPropagation();
     var alvo = document.getElementById("canvas") || window;
