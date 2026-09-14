@@ -1452,6 +1452,119 @@ void player_desenhar(Uint32 agora) {
   // para criar.
   posplay_desenhar(agora, NV_TELA_H - PLR_PAD_Y);
 
+  // GUIA PARENTAL, canto superior esquerdo (.player-parental-guide).
+  //
+  // MOVIDO PARA ANTES DO RETORNO DE "TOCANDO LIMPO" (issue #31, "it needs me
+  // to toggle the player menu to see it"). Este bloco inteiro morava depois
+  // do `if (a <= 0.005f) return;` abaixo — o MESMO retorno que ja tinha
+  // prendido o painel de pos-reproducao (ver o comentario dele, logo acima).
+  // `a` e o alpha da OSD (anim * entrada) e cai a zero assim que os controles
+  // terminam de sumir, poucos segundos depois de abrir o titulo; a guia usa
+  // seu PROPRIO relogio (pgDesde/entrada/saida, nada de `anim`) mas dependia
+  // do mesmo `return` antecipado so por estar depois dele no arquivo. Sem
+  // mexer no menu a OSD nunca fica de pe por tempo nenhum e a funcao nunca
+  // chegava a esta linha; abrir e fechar o menu uma vez bastava para o `a`
+  // ficar alto o suficiente numa passada e o painel finalmente desenhar. Os
+  // diagnosticos `[pg] abriu`/`[pg] derrubado` (abaixo) continuavam mudos
+  // porque pgDesde so e escrito aqui dentro — a funcao nunca alcancava esta
+  // linha para escrever nada.
+  //
+  // Aqui havia um selo de classificacao com o GENERO do titulo ao lado, que
+  // nao existe no app web — genero nao e advertencia de conteudo, e "Drama"
+  // dentro de um selo laranja se le como aviso. O web mostra ate cinco linhas
+  // "Categoria · Gravidade" vindas do guia parental do IMDb, com uma barra
+  // vertical de 6px na cor de destaque encostada a esquerda.
+  //
+  //   .player-parental-guide  left 64, top 48
+  //   .player-parental-line   6 de largura, raio 3, altura = a da lista
+  //   .player-parental-list   padding-left 20, gap 4
+  //   .player-parental-item   36 de altura
+  //   rotulo 22/600 branco 85% · separador 22/400 branco 40% ·
+  //   gravidade 22/400 branco 50%
+  //
+  // TEMPO PROPRIO, e nao o alpha do OSD. Esta guia e um AVISO DE ABERTURA: diz
+  // o que o filme contem antes de a cena comecar a valer. Presa ao OSD ela
+  // reaparecia toda vez que o dono mexia no controle, no meio do filme, quando
+  // a informacao ja nao serve para nada — "ele deveria so aparecer animado no
+  // inicio do filme e depois nao deveria aparecer mais".
+  //
+  // Conta de inicioImagem (o primeiro quadro com imagem, nao a abertura da
+  // tela): entra escalonada linha a linha, fica PG_SEG_VISIVEL e sai. Depois
+  // disso nao volta nesta reproducao.
+  {
+    int np = parental_n();
+    // A JANELA COMECA QUANDO A RESPOSTA CHEGA, e nao no primeiro quadro.
+    //
+    // Era `tg < PG_SEG_TOTAL`, com tg contado do primeiro quadro: sete
+    // segundos. A consulta a api.tiffara.com tem timeout de OITO. Numa rede
+    // comum ela chega depois de a janela ter fechado, e os selos nunca
+    // aparecem — sem erro, sem nada na tela. E a metade lenta do relato do
+    // rawldon (#31): "sometimes the badges appear correctly, but most of the
+    // time they are missing". A outra metade era o pedido descartado quando
+    // outro estava em voo (ver parental.c).
+    //
+    // O teto de PG_LIMITE_SEG segura a intencao original: isto e um aviso do
+    // COMECO do filme. Se a resposta demorar mais do que isso, quem esta
+    // assistindo ja passou do ponto em que um aviso faz sentido, e ele nao
+    // entra mais.
+    float tg = inicioImagem ? (float)(agora - inicioImagem) / 1000.0f : -1.0f;
+    // POR QUE ELE ABRIU, E POR QUE FECHOU. Issue #31 na segunda rodada: "I can
+    // sometimes see the advisory line for only a fraction of a second, and then
+    // it disappears". Com so o "[parental] -> N linhas" nao da para separar as
+    // tres causas — a guia nunca chegou, chegou e a janela ja tinha fechado, ou
+    // chegou, abriu e algo a derrubou antes dos sete segundos. Uma linha por
+    // abertura e uma por fechamento, nunca por quadro.
+    if (np > 0 && tg >= 0.0f && !pgDesde && tg < PG_LIMITE_SEG) {
+      pgDesde = agora;
+      printf("[pg] abriu: %d selos, %.1fs depois da imagem\n", np, tg);
+      fflush(stdout);
+    }
+    if (np < 1 && pgDesde) {
+      // Caiu a zero COM O PAINEL NO AR. So parental_pedir zera nLinhas, e ele
+      // so zera quando o imdb pedido muda — ou seja, alguem trocou de titulo
+      // por baixo desta reproducao.
+      printf("[pg] derrubado: a guia zerou com o painel no ar (%.1fs de %.1f)\n",
+             (float)(agora - pgDesde) / 1000.0f, PG_SEG_TOTAL);
+      fflush(stdout);
+    }
+    if (np < 1) pgDesde = 0;
+    if (np > 0 && pgDesde &&
+        (float)(agora - pgDesde) / 1000.0f < PG_SEG_TOTAL) {
+      tg = (float)(agora - pgDesde) / 1000.0f;
+      float saida = anim_clamp((PG_SEG_TOTAL - tg) / PG_SEG_SAIDA, 0.0f, 1.0f);
+      float lin = PG_LINHA_H, gap = PG_LINHA_GAP;
+      float alt = np * lin + (np - 1) * gap;
+      float y0 = PLR_PAD_Y;
+      // A barra so cresce depois que a primeira linha entrou, senao ela aparece
+      // sozinha apontando para o vazio.
+      float eB = anim_clamp((tg - 0.10f) / 0.34f, 0.0f, 1.0f);
+      eB = 1.0f - (1.0f - eB) * (1.0f - eB);
+      { GfxRect barra = { PLR_PAD_X, y0, PG_BARRA_W, alt * eB };
+        if (eB > 0.01f)
+          gfx_cor(barra, 0.5f * (PG_BARRA_W / (alt * eB)),
+                  PLR_FILL_C, PLR_FILL_C, PLR_FILL_C, entrada * saida); }
+      float xt = PLR_PAD_X + PG_BARRA_W + PG_LISTA_PADX;
+      for (int i = 0; i < np; i++) {
+        float yl = y0 + i * (lin + gap);
+        float ts = anim_clamp((tg - 0.18f - i * 0.10f) / 0.30f, 0.0f, 1.0f);
+        float ee = 1.0f - (1.0f - ts) * (1.0f - ts);   // desaceleracao
+        float ag = entrada * saida * ee;
+        float dx = (1.0f - ee) * 18.0f;                // entra deslizando da esquerda
+        TxtLinha lr, ls, lg;
+        float cy, x;
+        if (ag <= 0.004f) continue;
+        lr = txt_linha(TXT_PG_ROTULO, parental_rotulo(i), 255, 255, 255, 255);
+        ls = txt_linha(TXT_PG_GRAV, "\xc2\xb7", 255, 255, 255, 255);
+        lg = txt_linha(TXT_PG_GRAV, parental_gravidade(i), 255, 255, 255, 255);
+        cy = yl + (lin - lr.h) * 0.5f;
+        x  = xt - dx;
+        txt_desenhar_alpha(lr, x, cy, ag * 0.85f);  x += lr.w;
+        txt_desenhar_alpha(ls, x, yl + (lin - ls.h) * 0.5f, ag * 0.40f); x += ls.w;
+        txt_desenhar_alpha(lg, x, yl + (lin - lg.h) * 0.5f, ag * 0.50f);
+      }
+    }
+  }
+
   float a = anim * entrada;
   // O botao de pular fica POR CIMA dos degrades e dos controles: desenhado
   // antes deles, o veu de 400px do rodape o afogava assim que a barra subia —
@@ -1705,104 +1818,6 @@ void player_desenhar(Uint32 agora) {
                              sy + (1.0f - e) * 10.0f, a * 0.85f * e);
         sy += l.h + 6.0f;
       } }
-  }
-
-  // GUIA PARENTAL, canto superior esquerdo (.player-parental-guide).
-  //
-  // Aqui havia um selo de classificacao com o GENERO do titulo ao lado, que
-  // nao existe no app web — genero nao e advertencia de conteudo, e "Drama"
-  // dentro de um selo laranja se le como aviso. O web mostra ate cinco linhas
-  // "Categoria · Gravidade" vindas do guia parental do IMDb, com uma barra
-  // vertical de 6px na cor de destaque encostada a esquerda.
-  //
-  //   .player-parental-guide  left 64, top 48
-  //   .player-parental-line   6 de largura, raio 3, altura = a da lista
-  //   .player-parental-list   padding-left 20, gap 4
-  //   .player-parental-item   36 de altura
-  //   rotulo 22/600 branco 85% · separador 22/400 branco 40% ·
-  //   gravidade 22/400 branco 50%
-  //
-  // TEMPO PROPRIO, e nao o alpha do OSD. Esta guia e um AVISO DE ABERTURA: diz
-  // o que o filme contem antes de a cena comecar a valer. Presa ao OSD ela
-  // reaparecia toda vez que o dono mexia no controle, no meio do filme, quando
-  // a informacao ja nao serve para nada — "ele deveria so aparecer animado no
-  // inicio do filme e depois nao deveria aparecer mais".
-  //
-  // Conta de inicioImagem (o primeiro quadro com imagem, nao a abertura da
-  // tela): entra escalonada linha a linha, fica PG_SEG_VISIVEL e sai. Depois
-  // disso nao volta nesta reproducao.
-  {
-    int np = parental_n();
-    // A JANELA COMECA QUANDO A RESPOSTA CHEGA, e nao no primeiro quadro.
-    //
-    // Era `tg < PG_SEG_TOTAL`, com tg contado do primeiro quadro: sete
-    // segundos. A consulta a api.tiffara.com tem timeout de OITO. Numa rede
-    // comum ela chega depois de a janela ter fechado, e os selos nunca
-    // aparecem — sem erro, sem nada na tela. E a metade lenta do relato do
-    // rawldon (#31): "sometimes the badges appear correctly, but most of the
-    // time they are missing". A outra metade era o pedido descartado quando
-    // outro estava em voo (ver parental.c).
-    //
-    // O teto de PG_LIMITE_SEG segura a intencao original: isto e um aviso do
-    // COMECO do filme. Se a resposta demorar mais do que isso, quem esta
-    // assistindo ja passou do ponto em que um aviso faz sentido, e ele nao
-    // entra mais.
-    float tg = inicioImagem ? (float)(agora - inicioImagem) / 1000.0f : -1.0f;
-    // POR QUE ELE ABRIU, E POR QUE FECHOU. Issue #31 na segunda rodada: "I can
-    // sometimes see the advisory line for only a fraction of a second, and then
-    // it disappears". Com so o "[parental] -> N linhas" nao da para separar as
-    // tres causas — a guia nunca chegou, chegou e a janela ja tinha fechado, ou
-    // chegou, abriu e algo a derrubou antes dos sete segundos. Uma linha por
-    // abertura e uma por fechamento, nunca por quadro.
-    if (np > 0 && tg >= 0.0f && !pgDesde && tg < PG_LIMITE_SEG) {
-      pgDesde = agora;
-      printf("[pg] abriu: %d selos, %.1fs depois da imagem\n", np, tg);
-      fflush(stdout);
-    }
-    if (np < 1 && pgDesde) {
-      // Caiu a zero COM O PAINEL NO AR. So parental_pedir zera nLinhas, e ele
-      // so zera quando o imdb pedido muda — ou seja, alguem trocou de titulo
-      // por baixo desta reproducao.
-      printf("[pg] derrubado: a guia zerou com o painel no ar (%.1fs de %.1f)\n",
-             (float)(agora - pgDesde) / 1000.0f, PG_SEG_TOTAL);
-      fflush(stdout);
-    }
-    if (np < 1) pgDesde = 0;
-    if (np > 0 && pgDesde &&
-        (float)(agora - pgDesde) / 1000.0f < PG_SEG_TOTAL) {
-      tg = (float)(agora - pgDesde) / 1000.0f;
-      float saida = anim_clamp((PG_SEG_TOTAL - tg) / PG_SEG_SAIDA, 0.0f, 1.0f);
-      float lin = PG_LINHA_H, gap = PG_LINHA_GAP;
-      float alt = np * lin + (np - 1) * gap;
-      float y0 = PLR_PAD_Y;
-      // A barra so cresce depois que a primeira linha entrou, senao ela aparece
-      // sozinha apontando para o vazio.
-      float eB = anim_clamp((tg - 0.10f) / 0.34f, 0.0f, 1.0f);
-      eB = 1.0f - (1.0f - eB) * (1.0f - eB);
-      { GfxRect barra = { PLR_PAD_X, y0, PG_BARRA_W, alt * eB };
-        if (eB > 0.01f)
-          gfx_cor(barra, 0.5f * (PG_BARRA_W / (alt * eB)),
-                  PLR_FILL_C, PLR_FILL_C, PLR_FILL_C, entrada * saida); }
-      float xt = PLR_PAD_X + PG_BARRA_W + PG_LISTA_PADX;
-      for (int i = 0; i < np; i++) {
-        float yl = y0 + i * (lin + gap);
-        float ts = anim_clamp((tg - 0.18f - i * 0.10f) / 0.30f, 0.0f, 1.0f);
-        float ee = 1.0f - (1.0f - ts) * (1.0f - ts);   // desaceleracao
-        float ag = entrada * saida * ee;
-        float dx = (1.0f - ee) * 18.0f;                // entra deslizando da esquerda
-        TxtLinha lr, ls, lg;
-        float cy, x;
-        if (ag <= 0.004f) continue;
-        lr = txt_linha(TXT_PG_ROTULO, parental_rotulo(i), 255, 255, 255, 255);
-        ls = txt_linha(TXT_PG_GRAV, "\xc2\xb7", 255, 255, 255, 255);
-        lg = txt_linha(TXT_PG_GRAV, parental_gravidade(i), 255, 255, 255, 255);
-        cy = yl + (lin - lr.h) * 0.5f;
-        x  = xt - dx;
-        txt_desenhar_alpha(lr, x, cy, ag * 0.85f);  x += lr.w;
-        txt_desenhar_alpha(ls, x, yl + (lin - ls.h) * 0.5f, ag * 0.40f); x += ls.w;
-        txt_desenhar_alpha(lg, x, yl + (lin - lg.h) * 0.5f, ag * 0.50f);
-      }
-    }
   }
 
   // POR CIMA DE TUDO: o painel de pos-reproducao e o mais recente na tela.
