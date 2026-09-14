@@ -87,6 +87,21 @@ int main(void) {
             achado == 0);
   }
 
+  // SERIE COM ID QUE NAO E DO IMDB. O sufixo ":temporada:episodio" e o unico
+  // que este codigo cria, entao ele e o discriminador — nao o prefixo "tt".
+  // Com a regra presa ao "tt", "kitsu:12345:2:1" deixava de casar com o titulo
+  // "kitsu:12345"; com o corte cego no primeiro ':' ela casava com QUALQUER
+  // outro "kitsu:...", que e o mesmo defeito dos canais.
+  {
+    CatItem anime[2];
+    const char *ids[] = { "kitsu:12345:2:1", "kitsu:99999:1:1" };
+    semear(anime, 2, ids);
+    confere("serie sem id de IMDb casa com o proprio titulo",
+            cat_indice_por_imdb("kitsu:12345") == 0);
+    confere("e nao casa com outra serie do mesmo provedor",
+            cat_indice_por_imdb("kitsu:99999") == 1);
+  }
+
   if (falhas) { printf("FALHOU: %d checagem(ns)\n", falhas); return 1; }
   puts("PASS: canais com ids distintos nao colidem em cat_indice_por_imdb; "
        "id de IMDb com temporada:episodio continua casando.");

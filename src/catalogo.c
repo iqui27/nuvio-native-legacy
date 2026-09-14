@@ -680,19 +680,41 @@ const CatItem *cat_item(int i) {
   return &itens[((i % n) + n) % n];
 }
 
-// Compara so ate o primeiro ':' — o catalogo guarda "tt123:2:1" em serie com
-// progresso, e quem procura tem so o id do titulo. ISSO SO VALE PARA ID DE
-// IMDB ("tt..."): id de canal e "cs:channel:<hash>", com ':' logo depois do
-// prefixo de DUAS letras, nao separando temporada/episodio. Truncar ali fazia
-// todo canal comparar igual so pelos dois primeiros bytes "cs" — qualquer
-// canal "achava" o primeiro da lista, e clicar num abria outro (#37, relato
-// apos 1.0.42: "jumps to a different channel"). Para qualquer id que nao
-// comece com "tt" a comparacao e INTEIRA, sem truncar.
+// ":<digitos>:<digitos>" e so isso — o sufixo de temporada/episodio.
+static int ehSufixoEp(const char *r) {
+  int n = 0;
+  if (*r != ':') return 0;
+  r++;
+  while (*r >= '0' && *r <= '9') { r++; n++; }
+  if (!n || *r != ':') return 0;
+  r++; n = 0;
+  while (*r >= '0' && *r <= '9') { r++; n++; }
+  return n && !*r;
+}
+
+// ERA "compara so ate o primeiro ':'", porque serie com progresso e guardada
+// como "tt123:2:1" e quem procura tem so "tt123". O corte cego cobrava caro em
+// id que NAO e do IMDb: canal e "cs:channel:<hash>", e o primeiro ':' cai logo
+// depois do prefixo de duas letras — todo canal virava "cs", qualquer um
+// "achava" o primeiro da lista, e clicar num abria outro (#37, relato apos a
+// 1.0.42: "jumps to a different channel"). O mesmo valia para "kitsu:12345".
+//
+// A regra agora nao adivinha pelo prefixo: ou os dois ids sao iguais, ou o que
+// sobra de um lado e EXATAMENTE ":<temporada>:<episodio>". E o unico sufixo que
+// este codigo mesmo cria.
 static int mesmoTitulo(const char *a, const char *b) {
-  int ehImdb = a[0] == 't' && a[1] == 't' && b[0] == 't' && b[1] == 't';
-  if (!ehImdb) return strcmp(a, b) == 0;
-  while (*a && *b && *a != ':' && *b != ':') { if (*a != *b) return 0; a++; b++; }
-  return (!*a || *a == ':') && (!*b || *b == ':');
+  size_t na, nb;
+  if (!strcmp(a, b)) return 1;
+  // O que pode sobrar de um lado e SO ":<temporada>:<episodio>", que e como o
+  // progresso de serie e chaveado. Quem procura tem o id do titulo; quem esta
+  // guardado pode ter o episodio grudado. Qualquer outra diferenca e outro
+  // titulo.
+  na = strlen(a); nb = strlen(b);
+  { const char *lon = na > nb ? a : b, *cur = na > nb ? b : a;
+    size_t nc = na > nb ? nb : na;
+    const char *r = lon + nc;
+    if (strncmp(lon, cur, nc)) return 0;
+    return ehSufixoEp(r); }
 }
 
 void cat_dir_gravacao(const char *dir) {
