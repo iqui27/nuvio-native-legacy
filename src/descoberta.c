@@ -1506,6 +1506,51 @@ static void *montar(void *u) {
       int teto = fil_limite();
       if (teto > CAT_FIL_MAX) teto = CAT_FIL_MAX;
 
+      // UMA VAGA GARANTIDA POR ADDON, e ela vem DEPOIS das duas ordens.
+      //
+      // A partilha por addon (la em cima) so governa o que a conta nao ordena,
+      // e isso nao bastou: MEDIDO na LG do dono com os sete addons, as seis
+      // fileiras continuaram sendo as da conta e o FrostView — um catalogo,
+      // recem-instalado — seguiu invisivel. A ordem da conta sozinha ja tem
+      // mais de seis catalogos, entao o orcamento acaba antes de a partilha ser
+      // alcancada. Eu tinha dito na issue #37 que a partilha resolvia; nao
+      // resolvia, e a correcao esta publicada la.
+      //
+      // Aqui a regra e mais forte e o preco esta dito: um addon que ficaria com
+      // ZERO fileira toma a vaga do addon que ja tem mais de uma, o mais tarde
+      // possivel dentro da janela. Isso mexe de proposito numa ordem que a
+      // pessoa arrumou no app web — o que se ganha e a garantia de que instalar
+      // um addon mostra alguma coisa dele, que e a pergunta que traz a issue.
+      // Quem ja aparece nao perde a vaga; quem perde e a SEGUNDA fileira de
+      // quem tem duas.
+      { int janela = teto - nFil, i3, nAd3 = addons_n();
+        if (janela > nOrdem) janela = nOrdem;
+        for (i3 = 0; i3 < nAd3 && janela > 1; i3++) {
+          const char *b = addons_base(i3);
+          int q, alvo = -1, ceder = -1;
+          if (!b || !b[0]) continue;
+          for (q = 0; q < janela; q++)
+            if (decls[ordem[q]].base && !strcmp(decls[ordem[q]].base, b)) break;
+          if (q < janela) continue;                 // ja tem vaga
+          for (q = janela; q < nOrdem; q++)
+            if (decls[ordem[q]].base && !strcmp(decls[ordem[q]].base, b)) { alvo = q; break; }
+          if (alvo < 0) continue;                   // addon sem catalogo declarado
+          // Cede a ULTIMA posicao da janela cujo addon ja aparece antes dela.
+          { int r, s;
+            for (r = janela - 1; r > 0 && ceder < 0; r--) {
+              const char *br = decls[ordem[r]].base;
+              if (!br) continue;
+              for (s = 0; s < r; s++)
+                if (decls[ordem[s]].base && !strcmp(decls[ordem[s]].base, br)) { ceder = r; break; }
+            } }
+          if (ceder < 0) continue;                  // ninguem tem duas: nada a ceder
+          { int mov = ordem[alvo], w;
+            for (w = alvo; w > ceder; w--) ordem[w] = ordem[w - 1];
+            ordem[ceder] = mov; }
+          printf("[desc] vaga garantida: %s entra em %d (%s)\n",
+                 addons_nome(i3), ceder, decls[ordem[ceder]].titulo);
+        } }
+
       int marcouPrimeira = 0;
       // Instrumentacao do arranque. Antes dava para ver o TOTAL de fileiras e
       // nada mais: catalogo que nao respondeu, catalogo vazio e catalogo
