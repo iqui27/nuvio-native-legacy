@@ -681,8 +681,16 @@ const CatItem *cat_item(int i) {
 }
 
 // Compara so ate o primeiro ':' — o catalogo guarda "tt123:2:1" em serie com
-// progresso, e quem procura tem so o id do titulo.
+// progresso, e quem procura tem so o id do titulo. ISSO SO VALE PARA ID DE
+// IMDB ("tt..."): id de canal e "cs:channel:<hash>", com ':' logo depois do
+// prefixo de DUAS letras, nao separando temporada/episodio. Truncar ali fazia
+// todo canal comparar igual so pelos dois primeiros bytes "cs" — qualquer
+// canal "achava" o primeiro da lista, e clicar num abria outro (#37, relato
+// apos 1.0.42: "jumps to a different channel"). Para qualquer id que nao
+// comece com "tt" a comparacao e INTEIRA, sem truncar.
 static int mesmoTitulo(const char *a, const char *b) {
+  int ehImdb = a[0] == 't' && a[1] == 't' && b[0] == 't' && b[1] == 't';
+  if (!ehImdb) return strcmp(a, b) == 0;
   while (*a && *b && *a != ':' && *b != ':') { if (*a != *b) return 0; a++; b++; }
   return (!*a || *a == ':') && (!*b || *b == ':');
 }

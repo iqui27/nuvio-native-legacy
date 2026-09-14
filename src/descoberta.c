@@ -2069,6 +2069,14 @@ static void *buscarEps(void *u) {
   char serie[24];
   (void)u;
   if (!orig || !orig->imdb[0]) { fioEpVivo = 0; return NULL; }
+  // CANAL NAO PASSA AQUI. O Cinemeta so conhece filme/serie por id do IMDb
+  // ("tt..."); id de canal e "cs:channel:<hash>". "ehFilme = tipo != series"
+  // tratava canal como filme, pedia /meta/movie/<id> com um id que o
+  // Cinemeta nunca teve, E o corte no primeiro ':' (abaixo, ao montar
+  // `serie`) reduzia TODO canal a "cs" — a mesma chave de cache para todos,
+  // entao o primeiro canal aberto "vazava" elenco/genero/nota para os
+  // seguintes. Medido: nenhum canal tem tipo "movie" nem "series" (#37).
+  if (ehCanal(orig->tipo)) { fioEpVivo = 0; return NULL; }
   // FILME TAMBEM PASSA AQUI. O /meta/movie traz elenco, direcao, generos e
   // nota — antes so os titulos enriquecidos no catalogo tinham elenco, e a
   // pagina do filme abria sem a fileira. O que e so de serie (episodios,
