@@ -60,10 +60,14 @@ int main(void) {
   // imdb[16] no catalogo (14 uteis + NUL): "cs:channel:" ja leva 11, sobra so
   // 1 byte para diferenciar — o suficiente para provar a colisao, que e
   // exatamente onde ela mordia.
+  // IDS REAIS DO FROSTVIEW, COMPRIDOS DE PROPOSITO. Com CatItem.imdb[16] os
+  // tres cortavam em "cs:channel:glob" e viravam o mesmo item — foi o "pula
+  // para outro canal" medido no Mac com a conta do dono (#37). Id curto aqui
+  // passaria sem cobrir o defeito.
   const char *canais[] = {
-    "cs:channel:a",
-    "cs:channel:b",
-    "cs:channel:c",
+    "cs:channel:globo-tv-integracao-ituiutaba",
+    "cs:channel:globo-tv-liberal-maraba",
+    "cs:channel:globo-tv-sao-francisco",
   };
   semear(itens, 3, canais);
 

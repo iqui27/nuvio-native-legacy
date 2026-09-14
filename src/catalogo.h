@@ -76,7 +76,14 @@ typedef struct {
   // reconstruido da rede — uma tabela por indice apontaria para outro titulo
   // depois da primeira atualizacao.
   int  naLista, naColecao;
-  char imdb[16];
+  // 64 E NAO 16. O campo nasceu para "tt11280740", e 16 bastava. O id de um
+  // addon de canal e "cs:channel:globo-tv-integracao-ituiutaba" — 16 bytes
+  // cortavam TODO canal da Globo em "cs:channel:glob": todos viravam o mesmo
+  // item (clicar num abria outro), e /stream/channel/cs:channel:glob.json
+  // voltava vazio ("source error"). Medido no Mac com a conta do dono, #37.
+  // O cache em disco carrega sizeof(CatItem) no cabecalho e se invalida
+  // sozinho com esta mudanca.
+  char imdb[64];
   char tipo[8];
   // Autoria do feed social, separada dos metadados do filme.
   char socialNome[96], socialSlug[128], socialAvatar[768], socialAcao[64];

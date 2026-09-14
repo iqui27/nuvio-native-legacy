@@ -220,10 +220,9 @@ int contalib_tem_conta(void) { return temConta && nItens > 0; }
 
 static void montarItem(CatItem *d, const ContaLibItem *s) {
   memset(d, 0, sizeof *d);
-  // Precisao no formato, e nao snprintf cru: CatItem.imdb tem 16 bytes e
-  // ContaLibItem.id tem 24. Sem o `%.15s` o gcc acusa -Wformat-truncation e o
-  // corte fica implicito.
-  snprintf(d->imdb, sizeof d->imdb, "%.15s", s->id);
+  // CatItem.imdb tem 64 desde o #37 (id de canal e comprido); ContaLibItem.id
+  // tem 24, entao cabe inteiro e o `%.15s` que cortava aqui saiu.
+  snprintf(d->imdb, sizeof d->imdb, "%s", s->id);
   snprintf(d->tipo, sizeof d->tipo, "%.7s", s->tipo);
   snprintf(d->titulo, sizeof d->titulo, "%s", s->titulo);
   snprintf(d->genero, sizeof d->genero, "%s", s->genero);
