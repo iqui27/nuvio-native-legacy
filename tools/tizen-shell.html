@@ -318,6 +318,51 @@
     });
   }, true);
 
+  // TECLAS DE MIDIA DO CONTROLE SAMSUNG -> as teclas que player.c ja entende.
+  //
+  // Registrar a tecla (acima, no tizen.tvinputdevice.registerKey) so faz o
+  // firmware ENTREGAR o evento ao app; nao basta. O keyCode que chega
+  // (10252, 415, 19, 413, 412, 417) nao existe na tabela do SDL — o
+  // Emscripten so conhece teclado de PC — entao o evento morre no navegador
+  // exatamente como o 10009 do Return acima, so que sem nenhuma linha no
+  // painel de log dizendo isso: o botao "nao faz nada" e nao ha pista.
+  // player_evento() (src/player.c) alterna play/pause em SDLK_RETURN,
+  // SDLK_KP_ENTER ou SDLK_SPACE; nao existe tratamento de tecla de midia
+  // nenhuma em C. Traduzir aqui, e nao ensinar o C a conhecer estes
+  // keyCodes, pelo mesmo motivo do 10009: a tecla de OK ja faz o certo em
+  // todo estado do player (painel de pausa, barra em foco, botao PLAY em
+  // foco), reimplementar isso a partir do zero para um keyCode novo so
+  // duplicaria a logica e divergiria dela com o tempo.
+  //
+  // Controles Samsung de 2023+ (ex.: QN90D) tem UMA tecla fisica de
+  // play/pause, que manda MediaPlayPause (10252) — nao Play e Pause
+  // separados. MediaPlay/MediaPause ficam para controles mais antigos ou
+  // remotos por app. Os tres alternam o mesmo estado aqui porque o app so
+  // tem um alternarTocando(), sem estado de "play" e "pause" pedidos
+  // separadamente pelo controle.
+  var MEDIA_TECLA = {
+    10252: { key: "Enter", code: "Enter", keyCode: 13 },  // MediaPlayPause
+    415:   { key: "Enter", code: "Enter", keyCode: 13 },   // MediaPlay
+    19:    { key: "Enter", code: "Enter", keyCode: 13 },   // MediaPause
+    413:   { key: "Escape", code: "Escape", keyCode: 27 }, // MediaStop
+    412:   { key: "ArrowLeft", code: "ArrowLeft", keyCode: 37 },  // MediaRewind
+    417:   { key: "ArrowRight", code: "ArrowRight", keyCode: 39 } // MediaFastForward
+  };
+  window.addEventListener("keydown", function (ev) {
+    var alvoTecla = MEDIA_TECLA[ev.keyCode];
+    if (!alvoTecla) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    var alvo = document.getElementById("canvas") || window;
+    ["keydown", "keyup"].forEach(function (t) {
+      alvo.dispatchEvent(new KeyboardEvent(t, {
+        key: alvoTecla.key, code: alvoTecla.code,
+        keyCode: alvoTecla.keyCode, which: alvoTecla.keyCode,
+        bubbles: true, cancelable: true
+      }));
+    });
+  }, true);
+
   // DOIS PAINEIS DE LOG, UMA TECLA VERMELHA — e por isso ela troca de dono.
   //
   // Agora existe um painel de log EM C (src/registro.c), que o dono abre com a
