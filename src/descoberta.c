@@ -771,7 +771,15 @@ static int lerCatalogo(const char *base, const char *tipo, const char *id,
 // existiam: o app se comportava como se o dono tivesse instalado um addon so.
 // O sintoma que chegou primeiro foi a busca ("nao procura em todos os
 // catalogos"), mas o teto cortava tudo.
-#define DECL_MAX 256
+// 512, nao mais 256: issue #42(a), "some rows were not showing no matter
+// what". A cota por addon (DECL_MAX/nAd, logo abaixo) ja resolveu o addon
+// SOZINHO tomando tudo; o que ela nao resolve e o TOTAL — com muitos addons
+// modestos (nenhum sozinho estoura a cota) a SOMA dos catalogos legitimos
+// passava de 256 e os ultimos, por addon, eram cortados mesmo cabendo de
+// sobra na memoria (Decl tem ~950 bytes; 512 custam ~475 KB, uma unica vez,
+// por ciclo). 512 nao e "o numero certo" — nao ha um; e so mais folga antes de
+// o mesmo corte voltar a acontecer com addons de sobra.
+#define DECL_MAX 512
 // Quantos itens cada fileira mostra. A home desenha no maximo MAX_CARDS (12) e
 // buscar mais e trafego que ninguem ve.
 #define MAX_POR_FILEIRA 12
@@ -935,11 +943,21 @@ static void formatarTitulo(const char *nome, const char *tipo, char *dst, size_t
 }
 
 // Le <base>/manifest.json e acrescenta os catalogos declarados.
-static int lerManifesto(int iAddon, const char *base, Decl *saida, int max) {
+// `totalReal`, quando nao NULL, recebe quantos catalogos com tipo+id validos
+// o manifesto declara DE VERDADE — inclusive os que passaram de `max` e nao
+// couberam em `saida`. Sem isto nao ha como o chamador (a cota por addon, mais
+// abaixo) DIZER quantos catalogos ficaram de fora por cota em vez de fingir
+// que o addon so tinha `max` mesmo — issue #42(a), "some rows were not
+// showing no matter what": a pessoa via o log dizer "8 catalogo(s)
+// declarado(s)" para um addon que na verdade declara 40, sem nada apontando
+// que os outros 32 foram cortados aqui e nao em lugar nenhum que ela pudesse
+// mudar.
+static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
+                         int *totalReal) {
   char url[900], addonId[96] = "", nome[96], tipo[8], id[96];
   char *corpo;
   const char *p, *fim;
-  int n = 0;
+  int n = 0, total = 0;
   snprintf(url, sizeof url, "%s/manifest.json", base);
   corpo = rede_baixar(url, 20);
   if (!corpo) return 0;
@@ -976,6 +994,7 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max) {
     // que nao responde e pior que uma fileira a menos.
     if (tipo[0] && id[0]) {
       Decl local, *d;
+      total++;
       // Vetor cheio: usa um Decl de rascunho so para decidir/registrar a busca.
       d = (n < max) ? &saida[n] : &local;
       memset(d, 0, sizeof *d);
@@ -1033,6 +1052,7 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max) {
     p = js_prox(f);
   }
   free(corpo);
+  if (totalReal) *totalReal = total;
   return n;
 }
 
@@ -1504,13 +1524,24 @@ static void *montar(void *u) {
       if (cota < 1) cota = 1;
       for (i = 0; i < nAd; i++) {
         int teto = cota + folga;
-        int lidos;
+        int lidos, real = 0;
         if (teto > DECL_MAX - nDecl) teto = DECL_MAX - nDecl;
-        lidos = lerManifesto(i, addons_base(i), decls + nDecl, teto);
+        lidos = lerManifesto(i, addons_base(i), decls + nDecl, teto, &real);
         nDecl += lidos;
         folga = lidos < cota + folga ? cota + folga - lidos : 0;
-        printf("[desc]   %s: %d catalogo(s) declarado(s) (cota %d)\n",
-               addons_nome(i), lidos, cota);
+        // ISSUE #42(a): a linha de sempre ("N catalogo(s) declarado(s)") nao
+        // dizia se N era o TOTAL do addon ou so o que a cota deixou passar —
+        // quem lia o log via "8 catalogo(s)" e nao tinha como saber que o
+        // addon declarava 40. `real` (o total que o manifesto tem de verdade,
+        // contado em lerManifesto mesmo depois de `saida` encher) torna o
+        // corte visivel e diz o numero que falta.
+        if (real > lidos)
+          printf("[desc]   %s: %d catalogo(s) declarado(s) (cota %d, "
+                 "manifesto tem %d — %d de fora por cota)\n",
+                 addons_nome(i), lidos, cota, real, real - lidos);
+        else
+          printf("[desc]   %s: %d catalogo(s) declarado(s) (cota %d)\n",
+                 addons_nome(i), lidos, cota);
       } }
     printf("[desc] %d catalogos declarados pelos addons\n", nDecl);
 
@@ -1758,7 +1789,17 @@ static void *montar(void *u) {
               printf("[desc] catalogo vazio: %s\n", d->titulo);
               continue;
             }
-            if (!got) continue;   // sem resposta em 8 s; ja contado acima
+            if (!got) {
+              // ISSUE #42(a): antes disto o log so tinha o resumo do fim da
+              // rodada ("N pedidos, M responderam") — quem quisesse saber QUAL
+              // fileira sumiu tinha de adivinhar por subtracao. Nomear o
+              // catalogo aqui, igual ao "catalogo vazio" acima, e o que falta
+              // para responder "por que esta fileira nao apareceu" por fileira
+              // pedida, e nao so por total.
+              printf("[desc] catalogo sem resposta a tempo: %s (%s)\n",
+                     d->titulo, d->nomeAddon);
+              continue;   // sem resposta; a rodada seguinte pede outro
+            }
             GARANTE(MAX_POR_FILEIRA + 2);
             if (got > cap - n) got = cap - n;
             if (got <= 0) continue;
