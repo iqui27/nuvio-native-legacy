@@ -83,6 +83,7 @@
 
 #include "video.h"
 #include "linguas.h"
+#include "idioma.h"
 #include "marco.h"
 #include "mkv.h"
 #include <SDL2/SDL.h>
@@ -589,15 +590,20 @@ static void lerFaixas(void) {
     // O rotulo e escrito por ULTIMO, depois do idioma, e de uma vez so: e o
     // campo que a tela desenha, e este arquivo — como o da LG — nao tem mutex
     // nenhum. O dano possivel e um rotulo lido pela metade em UM quadro.
+    //
+    // i18n() ANTES de montar, e nao depois: "Português  ·  AAC 5.1" (idioma +
+    // rot) nunca casa com chave nenhuma da tabela (varredura-i18n.py, porta
+    // 2), entao ficava em portugues mesmo com o app em ingles. Mesmo bug do
+    // video.c (LG) — este arquivo e o espelho Tizen, ver #42.
     if (idioma[0] && rot[0])
-      snprintf(f->rotulo, sizeof f->rotulo, "%s  \xc2\xb7  %s", ling_nome(idioma), rot);
+      snprintf(f->rotulo, sizeof f->rotulo, "%s  \xc2\xb7  %s", i18n(ling_nome(idioma)), rot);
     else if (idioma[0])
-      snprintf(f->rotulo, sizeof f->rotulo, "%s", ling_nome(idioma));
+      snprintf(f->rotulo, sizeof f->rotulo, "%s", i18n(ling_nome(idioma)));
     else if (rot[0])
       snprintf(f->rotulo, sizeof f->rotulo, "%s", rot);
     else
       snprintf(f->rotulo, sizeof f->rotulo, "%s %d",
-               tipo == 'A' ? "Audio" : "Legenda",
+               i18n(tipo == 'A' ? "Áudio" : "Legenda"),
                tipo == 'A' ? nAudio : nLeg);
   }
   printf("[video] faixas: %d audio, %d legenda\n", nAudio, nLeg);

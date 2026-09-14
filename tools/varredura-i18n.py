@@ -132,6 +132,71 @@ def eh_frase(s):
     if not re.search(r"[a-zA-ZáàâãéêíóôõúçÁ-Ú]{3}", s): return False
     return True
 
+# TERCEIRA FAMILIA DE DEFEITO, achada no menu de legendas/audio do player
+# (issues #41/#42): FUNCAO QUE DEVOLVE ROTULO JA EM PORTUGUES, chamada sem
+# i18n() em volta. ling_nome() (linguas.c) e o caso medido — devolve
+# "Português", "Inglês" etc de uma tabela propria, e nao de idioma_tab.h — mas
+# a lista cobre qualquer funcao assim que aparecer.
+#
+# POR QUE A VARREDURA DE CIMA NAO PEGA ISTO: aquela olha literais de string.
+# `ling_nome(f->idioma)` nao e um literal, e uma chamada — o texto que ela
+# devolve so existe em tempo de execucao. Uma chamada direta a uma funcao de
+# desenho (`txt_linha_corta(TXT_X, ling_nome(c), ...)`) ainda traduz, porque
+# text.c aplica i18n() em CIMA do que a funcao devolver, seja literal ou nao.
+# O buraco e o INVERSO: `ling_nome(...)` jogado dentro de um snprintf/vsnprintf
+# que MONTA uma string composta ("%s  ·  %s") sem passar aquele pedaco por
+# i18n() antes — a string final nunca bate com chave nenhuma da tabela, e nunca
+# vai bater, entao fica em portugues para sempre. Ver video.c/video_tizen.c
+# (rotulo de faixa de audio) e addons.c (rotulo de legenda do OpenSubtitles):
+# os tres tinham exatamente este buraco.
+FUNCOES_ROTULO_PT = ("ling_nome",)
+
+RE_FUNC_ROTULO = re.compile(
+    r"(?<![A-Za-z0-9_])(" + "|".join(FUNCOES_ROTULO_PT) + r")\s*\(")
+# i18n( imediatamente antes da chamada: i18n(ling_nome(...)) esta correto.
+RE_I18N_ANTES = re.compile(r"i18n\s*\(\s*$")
+
+# CONFERIDAS UMA A UMA, cada uma com o motivo — mesma disciplina da IGNORAR lá
+# em cima. Sem esta lista a secao (3) não pode virar teste (achar_rotulo_
+# sem_i18n() sozinha nao sabe separar "seguro" de "esqueceram").
+IGNORAR_FUNCAO = {
+    # A propria DEFINICAO de ling_nome() em linguas.c contem "ling_nome(" no
+    # cabecalho (`const char *ling_nome(const char *c) {`) — nao e uma
+    # CHAMADA, e o regex nao distingue. So existe uma vez neste arquivo.
+    "linguas.c",
+    # ajustes.c:167 guarda ling_nome() CRU de proposito: rotulosDeIdioma() roda
+    # uma vez por abertura da tela, nao por quadro. Quem traduz de verdade e
+    # desenhaLinha->txt_linha_corta, a cada quadro, com o idioma CORRENTE —
+    # exatamente como os outros rotulos desta tela (V_QUALIDADE etc.), que
+    # tambem ficam em portugues no vetor e so viram ingles no desenho. i18n()
+    # aqui prenderia a lista no idioma de quando a tela abriu.
+    "ajustes.c:167",
+}
+
+def achar_rotulo_sem_i18n(txt, linha_de, ctx_fn, re_desenho, re_nao_e_tela, nome_arq):
+    """Toda chamada a uma FUNCOES_ROTULO_PT que nem e i18n(...), nem e
+    argumento DIRETO de uma funcao de desenho, nem log/comparacao — as tres
+    formas seguras. O resto e uma string que vai ser MONTADA (snprintf) sem
+    traducao, o buraco desta secao."""
+    achados = []
+    if nome_arq in IGNORAR_FUNCAO:
+        return achados
+    for m in RE_FUNC_ROTULO.finditer(txt):
+        j = m.start()
+        while j > 0 and txt[j-1] in " \t\n":
+            j -= 1
+        pedaco = txt[max(0, j-6):j]
+        if RE_I18N_ANTES.search(pedaco):
+            continue
+        ctx = ctx_fn(txt, m.start())
+        if re_desenho.search(ctx) or re_nao_e_tela.search(ctx):
+            continue
+        ln = linha_de(m.start())
+        if f"{nome_arq}:{ln}" in IGNORAR_FUNCAO:
+            continue
+        achados.append((m.group(1), ln))
+    return achados
+
 # Chamadas cujo texto NAO vai para a tela: log, comparacao, arquivo, rede.
 # E a lista que separa "[rede] OpenSSL travado para %d regioes" (log, fica em
 # portugues de proposito) de "Nenhuma fonte" (interface, tem de traduzir).
@@ -202,6 +267,7 @@ IGNORAR = {
 def varrer():
     chaves = chaves_da_tabela()
     faltando_tabela, faltando_i18n = {}, {}
+    faltando_funcao = {}
     for arq in sorted((RAIZ / "src").glob("*.c")):
         if arq.name == "idioma.c":
             continue
@@ -218,6 +284,10 @@ def varrer():
                 if quebras[mid] <= off: lo = mid
                 else: hi = mid - 1
             return lo + 1
+
+        for nome, ln in achar_rotulo_sem_i18n(txt, linha_de, contexto, RE_DESENHO,
+                                              RE_NAO_E_TELA, arq.name):
+            faltando_funcao.setdefault(nome, []).append(f"{arq.name}:{ln}")
 
         # Fora de comentario e fora de #include: percorre e pega cada bloco de
         # literais adjacentes uma vez so.
@@ -281,10 +351,10 @@ def varrer():
                     faltando_i18n.setdefault(s, []).append(onde)
             elif s not in chaves and s not in IGNORAR:
                 faltando_tabela.setdefault(s, []).append(onde)
-    return faltando_tabela, faltando_i18n
+    return faltando_tabela, faltando_i18n, faltando_funcao
 
 if __name__ == "__main__":
-    tab, fmt = varrer()
+    tab, fmt, func = varrer()
     if "--tabela" in sys.argv:
         for s in sorted(tab): print('  { "%s", "" },' % s.replace('"', '\\"'))
         sys.exit(0)
@@ -295,4 +365,8 @@ if __name__ == "__main__":
     print("=== (2) snprintf em portugues SEM i18n no formato: %d ===" % len(fmt))
     for s in sorted(fmt):
         print("  %-72s %s" % (repr(s)[:72], ", ".join(fmt[s][:3])))
-    sys.exit(1 if (tab or fmt) else 0)
+    print()
+    print("=== (3) funcao que devolve rotulo em portugues, chamada sem i18n(): %d ===" % len(func))
+    for s in sorted(func):
+        print("  %-72s %s" % (s, ", ".join(func[s][:6])))
+    sys.exit(1 if (tab or fmt or func) else 0)

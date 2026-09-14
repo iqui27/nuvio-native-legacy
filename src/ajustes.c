@@ -164,6 +164,14 @@ static void rotulosDeIdioma(void) {
     const char *c = ling_opcao_codigo(i);
     // "" = seguir a conta; "*" = mostrar tudo. Os dois primeiros sao acoes, nao
     // idiomas, e por isso tem rotulo proprio.
+    // SEM i18n() AQUI DE PROPOSITO: rotulosDeIdioma() roda uma vez por abertura
+    // da tela (ajustes_iniciar/ajustes_dir), nao a cada quadro. Se traduzisse
+    // aqui, trocar "Idioma da interface" para Ingles DENTRO da mesma sessao de
+    // Ajustes deixaria a lista de idiomas presa no idioma antigo ate a tela
+    // reabrir. Guardando o nome cru, quem traduz e desenhaLinha->txt_linha_corta
+    // a cada quadro (text.c aplica i18n() no que for desenhado, sempre com o
+    // idioma CORRENTE) — o mesmo motivo por que os demais rotulos desta tabela
+    // (V_QUALIDADE etc.) tambem ficam em portugues aqui.
     V_LINGUA[i] = !c[0] ? "Da conta" : (!strcmp(c, "*") ? "Todas" : ling_nome(c));
   }
   nLingua = n;

@@ -435,12 +435,16 @@ static void *buscarLegendas(void *u) {
               js_texto(q, f, "subtitleFileName", nome, sizeof nome);
               if (!nome[0]) js_texto(q, f, "movieReleaseName", nome, sizeof nome);
               snprintf(d->idioma, sizeof d->idioma, "%s", l);
+              // i18n() no NOME DO IDIOMA tambem, e nao so no formato: o
+              // formato traduzido nao traduz o que entra em %s — "Português"
+              // continuava aparecendo dentro de "T1E1 · Português · arquivo"
+              // com o app em ingles, porque so a moldura tinha chave.
               if (temporada > 0 && episodio > 0)
                 snprintf(d->rotulo, sizeof d->rotulo, i18n("T%dE%d  \xc2\xb7  %s%s%.22s"),
-                         temporada, episodio, ling_nome(l), nome[0] ? "  \xc2\xb7  " : "", nome);
+                         temporada, episodio, i18n(ling_nome(l)), nome[0] ? "  \xc2\xb7  " : "", nome);
               else
                 snprintf(d->rotulo, sizeof d->rotulo, "%s%s%.36s",
-                         ling_nome(l), nome[0] ? "  \xc2\xb7  " : "", nome);
+                         i18n(ling_nome(l)), nome[0] ? "  \xc2\xb7  " : "", nome);
               nAchadas++; noGrupo++;
             }
             q = js_prox(f);

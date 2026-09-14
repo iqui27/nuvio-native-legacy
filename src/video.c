@@ -589,8 +589,13 @@ static int aoEvento(LSHandle *h, LSMessage *m, void *u) {
           if (c3 == 6) snprintf(ch, sizeof ch, "5.1");
           else if (c3 == 8) snprintf(ch, sizeof ch, "7.1");
           else if (c3 == 2) snprintf(ch, sizeof ch, "2.0"); }
+        // TRADUZ A PARTE ANTES DE MONTAR: "Português  ·  5.1" nunca casa com
+        // chave nenhuma da tabela (varredura-i18n.py, porta 2), entao o
+        // rotulo ficava em portugues mesmo com o app em ingles sempre que
+        // havia canal ou Atmos ao lado do idioma. i18n() aqui, snprintf
+        // depois — como as telas ja consertadas fazem.
         snprintf(f->rotulo, sizeof f->rotulo, "%s%s%s%s%s",
-                 f->idioma[0] ? ling_nome(f->idioma) : "Faixa",
+                 f->idioma[0] ? i18n(ling_nome(f->idioma)) : i18n("Faixa"),
                  imm[0] ? "  \xc2\xb7  " : (ch[0] ? "  \xc2\xb7  " : ""),
                  imm[0] ? "Atmos" : "",
                  (imm[0] && ch[0]) ? " " : "", ch);
@@ -628,7 +633,7 @@ static int aoEvento(LSHandle *h, LSMessage *m, void *u) {
         // Arquivo sem etiqueta de idioma e o caso comum em MKV de release.
         // Numerar e honesto; inventar "Ingles" seria pior.
         if (f->idioma[0])
-          snprintf(f->rotulo, sizeof f->rotulo, "%s", ling_nome(f->idioma));
+          snprintf(f->rotulo, sizeof f->rotulo, "%s", i18n(ling_nome(f->idioma)));
         else
           snprintf(f->rotulo, sizeof f->rotulo, i18n("Legenda %d"), f->numero + 1);
         nLeg++;
@@ -1137,11 +1142,11 @@ static void *lerMkv(void *arg) {
       // escuro — e essa e justamente a lista que ele reclamou.
       if (fx[j].nome[0])
         snprintf(faixaLeg[i].rotulo, sizeof faixaLeg[i].rotulo, "%s%s%s",
-                 faixaLeg[i].idioma[0] ? ling_nome(faixaLeg[i].idioma) : "",
+                 faixaLeg[i].idioma[0] ? i18n(ling_nome(faixaLeg[i].idioma)) : "",
                  faixaLeg[i].idioma[0] ? "  \xc2\xb7  " : "", fx[j].nome);
       else if (faixaLeg[i].idioma[0])
         snprintf(faixaLeg[i].rotulo, sizeof faixaLeg[i].rotulo, "%s",
-                 ling_nome(faixaLeg[i].idioma));
+                 i18n(ling_nome(faixaLeg[i].idioma)));
       break;
     }
   }
