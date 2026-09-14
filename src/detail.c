@@ -509,20 +509,53 @@ void detail_abrir(const HomeItem *it) {
   // faria a barra de abas surgir com o titulo ja na tela.
   { const CatItem *ci = cat_item(idx);
     if (ci && ci->imdb[0]) extras_pedir(ci->imdb, ehSerie(), ci->tmdb); }
-  // A aba marcada tem de ser a da temporada que os episodios trazem. Comecando
-  // sempre em 0, uma serie cujo primeiro episodio carregado e da 4 abria com
-  // "Temporada 1" aceso — o rotulo desmentia a lista logo abaixo.
+  // A aba marcada tem de ser a da temporada de "Continuar assistindo", nao a
+  // do primeiro episodio da serie. Issue #43: abrindo pela fileira com S2E2 em
+  // andamento a aba acendia sempre "Temporada 1" (o primeiro episodio
+  // carregado) — e o dono, ao descer para a fileira de episodios, via a coluna
+  // ZERAR por irParaTemporada (comentario ali: "trocar de aba REINICIA a
+  // fileira"), o que empurrava o foco de volta para a temporada em exibicao —
+  // que como a aba tinha sido a errada, era a 1, e ele lia isso como
+  // "voltou para T1E1". A raiz e a mesma nos dois: nada aqui perguntava pelo
+  // progresso.
+  //
+  // Mesma prioridade do botao "Retomar" (ver episodioAlvo, servida em
+  // episodioPadrao): o progresso local em CatItem, que ja chega com o
+  // titulo — sem depender do /shows/<id>/progress/watched, que ainda nao
+  // respondeu neste instante.
   temporada = 0;
-  { const CatEp *e0 = cat_episodio(idx, 0);
-    const CatItem *ci0 = cat_item(idx);
-    if (e0 && ci0) {
-      int k;
-      for (k = 0; k < ci0->nTemporadas; k++)
-        if (ci0->temporadas[k] == e0->temporada) { temporada = k; break; }
-    } }
   epAncora = 0;
+  { const CatItem *ci0 = cat_item(idx);
+    int t = 0, e = 0, achou = 0;
+    if (ci0 && ci0->progresso > 0 && ci0->progresso < 90 &&
+        ci0->temporada > 0 && ci0->episodio > 0) {
+      t = ci0->temporada; e = ci0->episodio; achou = 1;
+    } else {
+      const CatEp *e0 = cat_episodio(idx, 0);
+      if (e0) { t = e0->temporada; e = e0->episodio; achou = 1; }
+    }
+    if (achou && ci0) {
+      int k, n = cat_n_episodios(idx), i, col = 0, achouCol = -1;
+      for (k = 0; k < ci0->nTemporadas; k++)
+        if (ci0->temporadas[k] == t) { temporada = k; break; }
+      for (i = 0; i < n; i++) {
+        const CatEp *ep = cat_episodio(idx, i);
+        if (!ep || ep->temporada != t) continue;
+        if (ep->episodio == e) { achouCol = col; break; }
+        col++;
+      }
+      if (achouCol >= 0) epAncora = achouCol;
+    } }
   int cols[N_SECOES]; for (int i = 0; i < N_SECOES; i++) cols[i] = secaoColunas(i);
   focus_iniciar(&foco, N_SECOES, cols);
+  // SEM ISTO, descer do hero (foco.coluna = 0, linha mais abaixo) e trocar de
+  // aba (irParaTemporada) reescrevem os dois valores acima com zero antes que
+  // o usuario mexa em qualquer coisa — colunaLembrada e a MEMORIA que
+  // focus_mover consulta ao entrar numa fileira (focus.c:26), e ela nasce
+  // zerada pelo memset de focus_iniciar. Semea-la aqui e o unico jeito de a
+  // pagina lembrar onde o progresso estava.
+  foco.colunaLembrada[SEC_TEMPORADAS] = temporada;
+  foco.colunaLembrada[SEC_EPISODIOS]  = epAncora;
   memset(animFoco, 0, sizeof animFoco);
   memset(scrollSec, 0, sizeof scrollSec);
 }
@@ -1066,8 +1099,20 @@ void detail_evento(const SDL_Event *e) {
       // temporadas nem episodios, e parar numa fileira vazia deixava o D-pad
       // sem resposta. Tem de ser secaoColunas e nao secaoN: os trailers sao
       // DESENHADOS mas nao aceitam foco, e um filme sem elenco pousaria neles.
+      //
+      // A COLUNA VEM DA MEMORIA, nao de zero. Issue #43: cravar 0 aqui jogava
+      // fora a temporada e o episodio que detail_abrir semeou em
+      // colunaLembrada — a fileira de temporadas abria sempre na primeira aba,
+      // e ela e quem trocaria a lista de episodios para a temporada errada no
+      // proximo quadro (ver o sincronizador em detail_atualizar).
       for (int r = 0; r < N_SECOES; r++)
-        if (secaoColunas(r) > 0) { foco.fileira = r; foco.coluna = 0; nivel = 1; break; }
+        if (secaoColunas(r) > 0) {
+          int alvo = foco.colunaLembrada[r];
+          if (alvo >= secaoColunas(r)) alvo = secaoColunas(r) - 1;
+          if (alvo < 0) alvo = 0;
+          foco.fileira = r; foco.coluna = alvo; nivel = 1;
+          break;
+        }
     }
     else if (k == SDLK_RIGHT) { if (botao < nBotoes() - 1) botao++; }
     else if (k == SDLK_LEFT)  { if (botao > 0) botao--; }

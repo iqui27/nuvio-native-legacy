@@ -41,4 +41,32 @@ fi
 # O desenho do card tambem passa pelo mapeamento.
 rg -q 'const CatEp \*ep = cat_episodio\(idx, epAbsoluto\(c\)\);' src/detail.c
 
+# Issue #43: abrir pela fileira "Continuar assistindo" tinha de acender a aba
+# da temporada em PROGRESSO (S2E2 numa serie de 4 temporadas, por exemplo), e
+# nao a do primeiro episodio da serie (S1E1). Sem isto detail_abrir escolhia
+# sempre a temporada de cat_episodio(idx, 0) e ignorava ci->temporada.
+if ! rg -q 'ci0->progresso > 0 && ci0->progresso < 90 &&' src/detail.c; then
+  echo 'detail: temporada inicial ignora o progresso de Continuar assistindo' >&2
+  exit 1
+fi
+
+# E a coluna tinha de nascer na posicao RELATIVA do episodio em progresso
+# dentro da temporada, nao em 0 — senao o card de abertura mostrava T2E1 no
+# lugar de T2E2.
+if ! rg -q 'foco\.colunaLembrada\[SEC_EPISODIOS\]\s*=\s*epAncora;' src/detail.c; then
+  echo 'detail: coluna inicial da fileira de episodios nao usa a posicao do progresso' >&2
+  exit 1
+fi
+
+# Descer do hero nao pode jogar fora essa memoria. O defeito relatado na
+# issue: "pressing down to select which season returns me to season 1
+# episode 1" — porque este trecho cravava foco.coluna em 0 na fileira de
+# temporadas, e o sincronizador de detail_atualizar lia esse 0 como "usuario
+# escolheu a Temporada 1" e reescrevia `temporada` por cima do valor certo.
+if rg -q 'foco\.fileira = r; foco\.coluna = 0; nivel = 1;' src/detail.c; then
+  echo 'detail: descer do hero zera a coluna e perde a temporada do progresso' >&2
+  exit 1
+fi
+rg -q 'alvo = foco\.colunaLembrada\[r\];' src/detail.c
+
 echo 'detail eps: PASS'
