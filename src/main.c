@@ -385,6 +385,11 @@ int main(int argc, char **argv) {
   // e e a que estabelece o idioma e o espelho do limite de fileiras. Reler o
   // mesmo arquivo duas vezes e barato e deixa aquele bloco intacto.
   ajustes_dir(dados_dir()[0] ? dados_dir() : dirArte);
+  // MESMA PASTA DO ajustes_dir logo acima, e pelo mesmo motivo: sem isto
+  // art/player.txt (estilo de legenda, aspecto) gravava na pasta de ARTE, nao
+  // na de DADOS — e so a de dados sobrevive a TV matando o processo (issue
+  // #42, "Settings are not getting saved").
+  player_dir(dados_dir()[0] ? dados_dir() : dirArte);
 
   // 4K SO ONDE A TV DEIXA, E SO SE PEDIREM.
   //

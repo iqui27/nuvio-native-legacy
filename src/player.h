@@ -101,5 +101,10 @@ void        player_aspecto_ciclar(void);       // proximo modo + aviso na tela
 // chama player_leg_estilo_mudou(), que aplica no pipeline e grava.
 VideoLegendaEstilo *player_leg_estilo(void);
 void player_leg_estilo_mudou(void);
+// Diretorio de DADOS (nao de arte) onde art/player.txt e gravado. Chamada por
+// main.c com o mesmo valor de ajustes_dir — sem isto o arquivo ia parar na
+// pasta de arte, que a TV nao trata como persistente. Ver a nota em
+// prefsArquivo (player.c).
+void player_dir(const char *dir);
 
 #endif

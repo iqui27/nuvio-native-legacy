@@ -383,10 +383,23 @@ const char *player_aspecto_rotulo(int modo) {
 }
 int player_aspecto(void) { return aspecto; }
 
-// Onde o modo escolhido fica gravado. Mesmo diretorio que o main.c passa para o
-// resto do app (SDL_GetBasePath()+"art", com /tmp/art de reserva). O web guarda
-// isso em DeviceLocalPlayerPreferences, por aparelho: escolher "Zoom cinema" e
-// reencontrar "Original" no filme seguinte transformaria o modo em brinquedo.
+// Onde o modo escolhido fica gravado. ERA SDL_GetBasePath()+"art" direto — a
+// pasta de ARTE (cache de poster/backdrop), nao a de DADOS. No Mac as duas
+// convivem no mesmo lugar e ninguem notava; no aparelho de verdade sao
+// diretorios diferentes (ver dados_iniciar/dados_dir), e so o de DADOS e o que
+// main.c trata como persistente — e o que ajustes_dir tambem recebe. Gravar
+// legenda/aspecto na pasta errada e o tipo de bug que some ao reabrir o app: a
+// TV mata o processo (nunca ha saida limpa), e o que sobrevive e so o que foi
+// escrito no diretorio de dados de verdade. ISSUE #42: "Settings are not
+// getting saved (player caption settings)".
+//
+// player_dir() e chamada por main.c com dados_dir() (o mesmo valor que
+// ajustes_dir recebe); SDL_GetBasePath()+"art" continua como ultimo recurso
+// para quem chama player_abrir sem ter passado por main.c (testes).
+void player_dir(const char *dir) {
+  if (!dir || !*dir) return;
+  snprintf(dirPrefs, sizeof dirPrefs, "%s", dir);
+}
 static const char *prefsArquivo(void) {
   static char caminho[600];
   if (!dirPrefs[0]) {
