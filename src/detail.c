@@ -33,6 +33,7 @@
 #include "descoberta.h"
 #include "diretor.h"
 #include "gfx.h"
+#include "vertudo.h"
 #include "text.h"
 #include "tex_cache.h"
 #include "focus.h"
@@ -63,13 +64,20 @@
 #define REL_CARD_W   212.0f
 #define REL_CARD_H   318.0f
 #define REL_CARD_GAP  32.0f
+
+// Cartao de produtora/rede: o dobro aproximado do `.detail-company-card` do web
+// (180x70 em px de CSS) — na TV 1080p os cards medem em torno disto.
+#define EST_CARD_W   240.0f
+#define EST_CARD_H   100.0f
+#define EST_GAP       18.0f
+#define EST_TITULO_H  46.0f   // linha do titulo proprio na serie
 // MEDIDO na referencia (TCL, 1920x1080): cartao 722x466, vao 25, canto 20.
 #define COM_CARD_W   722.0f
 #define COM_CARD_H   466.0f
 #define COM_PAD       28.0f
 #define COM_CARD_GAP  25.0f   // MEDIDO
 
-#define N_SECOES    8
+#define N_SECOES    9
 #define N_ELENCO    6
 
 static HomeItem item;
@@ -137,7 +145,7 @@ static int abaInfo = 0;              // aba de informacao escolhida
 // conhecido e a rolagem so muda o quanto dele se enxerga.
 typedef enum { SEC_TEMPORADAS, SEC_EPISODIOS, SEC_ABAS_INFO, SEC_ELENCO,
                SEC_TRAILERS, SEC_RELACIONADOS, SEC_COMENTARIOS,
-               SEC_DETALHES } TipoSecao;
+               SEC_ESTUDIOS, SEC_DETALHES } TipoSecao;
 // Definida adiante, junto do resto das consultas ao catalogo; declarada aqui
 // porque recalcularLayout, cabecalhoDe e nAvaliaveis, todas acima dela,
 // precisam separar serie de filme.
@@ -191,6 +199,9 @@ static const char *cabecalhoDe(int r) {
     // o subtitulo "Avaliações do Trakt". Com os dois saiam DOIS titulos
     // empilhados dizendo a mesma coisa.
     case SEC_COMENTARIOS:  return NULL;
+    // Na serie o titulo sai DENTRO da secao (desenhaEstudios), porque as secoes
+    // dela nao levam cabecalho — mesmo motivo do "trakt Comentarios".
+    case SEC_ESTUDIOS:     return "Estúdios";
     case SEC_DETALHES:     return "Detalhes do Filme";
     default:           return NULL;
   }
@@ -295,7 +306,15 @@ static void recalcularLayout(void) {
     y = baseDaAbaAtiva() + NV_DETP_EL_GAP_TRAKT;
     topoSec[SEC_COMENTARIOS] = conteudoSec[SEC_COMENTARIOS] = y;
     if (secaoN(SEC_COMENTARIOS) > 0) {
-      float fim = y + alturaSecao(SEC_COMENTARIOS) + NV_DETF_PAD_FIM;
+      y += alturaSecao(SEC_COMENTARIOS) + NV_DETF_SEC_GAP;
+      float fim = y + NV_DETF_PAD_FIM - NV_DETF_SEC_GAP;
+      if (fim > docFim) docFim = fim;
+    }
+    // Estudios/redes empilham DEPOIS dos comentarios, como no web
+    // (renderCompanySections monta a secao ao fim do corpo da pagina).
+    topoSec[SEC_ESTUDIOS] = conteudoSec[SEC_ESTUDIOS] = y;
+    if (secaoN(SEC_ESTUDIOS) > 0) {
+      float fim = y + alturaSecao(SEC_ESTUDIOS) + NV_DETF_PAD_FIM;
       if (fim > docFim) docFim = fim;
     }
     return;
@@ -359,7 +378,9 @@ static int nAvaliaveis(void) {
   if (ehSerie() && extras_n_temporadas() > 0) return extras_n_temporadas();
   for (i = 0; i < EX_NFONTES; i++) {
     int v = extras_nota(i);
-    if (i == EX_IMDB && !v) v = notaDe(idx);
+    // O fallback do catalogo tambem some quando a fonte esta desligada —
+    // "esconder IMDb" quer dizer esconder o cartao, nao so a nota do mdbList.
+    if (i == EX_IMDB && !v && ajustes_mdblist_fonte(EX_IMDB)) v = notaDe(idx);
     if (v) n++;
   }
   return n;
@@ -764,6 +785,9 @@ static float alturaSecao(int r) {
     // + o cabecalho: sem ele a secao seguinte ("Detalhes do Filme") era
     // empilhada usando so a altura dos cartoes e saia POR CIMA deles.
     case SEC_COMENTARIOS:  return alturaCabComentarios() + COM_CARD_H;
+    // Na serie o titulo "Redes e estudios" sai DENTRO da secao (cabecalhoDe
+    // devolve NULL para ela), entao a linha do titulo entra na altura.
+    case SEC_ESTUDIOS:     return EST_CARD_H + (ehSerie() ? EST_TITULO_H : 0.0f);
     case SEC_DETALHES:     return nLinhasDetalhe() * NV_DETF_DET_LINHA;
   }
   return 0.0f;
@@ -850,6 +874,13 @@ static int secaoN(int r) {
       if (nc <= 0 && extras_n_comentarios() <= 0) return 0;
       return nPilulasCom() + nc;
     }
+    // Produtoras (filme) e redes+produtoras (serie) vindos do TMDB. Cada logo
+    // e uma coluna focavel que abre o browse da entidade — o mesmo caminho das
+    // pastas sinteticas TMDB das colecoes.
+    case SEC_ESTUDIOS: {
+      int n = extras_n_estudios();
+      return n < N_ITENS ? n : N_ITENS;
+    }
     // A tabela e UMA coluna focavel, nao uma por linha: o D-pad desce ate ela,
     // ela rola para a tela e pronto. Zero colunas faria focus_mover PULA-LA
     // (focus.c:25) e a secao viraria inalcancavel — logo, tambem irrolavel.
@@ -863,11 +894,9 @@ static int secaoN(int r) {
 // O botao primario e UM SO, e ele TROCA DE ROTULO conforme o estado:
 // "Reproduzir" quando nunca foi aberto, "Retomar TxEy" quando ha progresso.
 //
-// Havia um segundo botao ("Reproduzir desde o inicio") que aparecia junto da
-// linha de retomada. Saiu por decisao do dono: "quando ja tiver comecado nao use
-// outro botao para resumir, use o mesmo botao de reproduzir, so troque ele". E o
-// que a referencia mostra tambem — primario + TRES circulares (+, ja assisti,
-// trailer), sem segundo botao de texto.
+// O segundo botao ("Assistir do comeco") voltou pela issue #46: aparece so
+// quando ha progresso que o player retomaria — primario "Retomar", secundario
+// "do comeco". Sem progresso ele nao existe e a linha fica como antes.
 // QUANTOS CIRCULARES, e a resposta depende do tipo. MEDIDO nas duas capturas
 // do aparelho: o FILME ("Ma") tem tres — mais, olho de "ja assisti" e trailer —
 // e a SERIE ("Lioness") tem DOIS, sem o olho. Faz sentido e nao e descuido da
@@ -876,14 +905,32 @@ static int secaoN(int r) {
 // serie inteira", que nao e coisa que o Trakt guarde por titulo.
 //
 // Este arquivo desenhava TRES nos dois casos.
-static int nBotoes(void) { return ehSerie() ? 3 : 4; }
+static int temInicio(void) {
+  const CatItem *ci = cat_item(idx);
+  if (!ci) return 0;
+  // O MESMO criterio do player (player.c: retomarPct): progresso guardado
+  // abaixo de 90. Em serie, so quando o episodio-alvo e o "Retomar" — com um
+  // episodio em foco na fileira (origem 1) o primario toca AQUELE episodio e
+  // nao ha retomada a desfazer.
+  if (!ehSerie()) return ci->progresso > 0 && ci->progresso < 90;
+  { int t0 = 0, e0 = 0, de = 0;
+    return episodioAlvo(&t0, &e0, &de) && de == 2; }
+}
+static int nBotoes(void) { return (ehSerie() ? 3 : 4) + (temInicio() ? 1 : 0); }
 
 // Que ACAO esta na posicao `n` da linha. As acoes tem numeros fixos (0
-// primario, 1 lista, 2 assistido, 3 fontes) porque detail_evento decide por
-// eles; o que muda com o tipo e quais posicoes existem. Sem esta traducao, na
-// serie o segundo circular (que e o de fontes) dispararia "marcar assistido".
-enum { ACAO_PRIMARIO = 0, ACAO_LISTA = 1, ACAO_ASSISTIDO = 2, ACAO_FONTES = 3 };
+// primario, 1 lista, 2 assistido, 3 fontes, 4 inicio) porque detail_evento
+// decide por eles; o que muda com o tipo e quais posicoes existem. Sem esta
+// traducao, na serie o segundo circular (que e o de fontes) dispararia
+// "marcar assistido". Quando temInicio, a posicao 1 e o secundario de texto
+// e os circulares escorregam um para a direita.
+enum { ACAO_PRIMARIO = 0, ACAO_LISTA = 1, ACAO_ASSISTIDO = 2, ACAO_FONTES = 3,
+       ACAO_INICIO = 4 };
 static int acaoEm(int n) {
+  if (temInicio()) {
+    if (n == 1) return ACAO_INICIO;
+    n--;
+  }
   if (n >= 2 && ehSerie()) return n + 1;   // serie pula o olho
   return n;
 }
@@ -990,9 +1037,15 @@ void detail_evento(const SDL_Event *e) {
           if (t > 0) desc_pedir_titulo_tmdb(t, "movie");
         } else {
           const char *id = extras_relacionado_imdb(relFoco);
-          int alvo = cat_indice_por_imdb(id);
-          if (alvo >= 0) pedAbrir = alvo;
-          else if (id[0]) desc_pedir_titulo(id);
+          // "tmdb:<id>" = recomendacao do TMDB (tmdb_use_more_like_this): nao
+          // tem imdb ate a meta chegar, entao abre pelo id do TMDB direto.
+          if (!strncmp(id, "tmdb:", 5))
+            desc_pedir_titulo_tmdb(atol(id + 5), ehSerie() ? "tv" : "movie");
+          else {
+            int alvo = cat_indice_por_imdb(id);
+            if (alvo >= 0) pedAbrir = alvo;
+            else if (id[0]) desc_pedir_titulo(id);
+          }
         }
         return; }
       default: break;
@@ -1031,6 +1084,10 @@ void detail_evento(const SDL_Event *e) {
       int acao = acaoEm(botao);
       if (acao == ACAO_PRIMARIO) {
         if (dur >= NV_HOLD_MS) pedFontes = 1; else pedReproduzir = 1;
+      } else if (acao == ACAO_INICIO) {
+        // "Assistir do comeco" (issue #46): mesmo caminho do primario, mas o
+        // roteador zera a retomada DESTA sessao depois de armar o episodio.
+        pedDoInicio = 1;
       } else if (acao == ACAO_LISTA) {
         pedMarcar = 1;
       } else if (acao == ACAO_ASSISTIDO) {
@@ -1041,11 +1098,15 @@ void detail_evento(const SDL_Event *e) {
     } else if (foco.fileira == SEC_RELACIONADOS) {
       // FILME: "Mais como este" e secao propria. Mesmo destino do caminho de
       // serie — abre do catalogo quando ja temos meta, senao pede e o roteador
-      // termina quando chegar.
+      // termina quando chegar. "tmdb:<id>" = recomendacao do TMDB.
       const char *id = extras_relacionado_imdb(foco.coluna);
-      int alvo = id[0] ? cat_indice_por_imdb(id) : -1;
-      if (alvo >= 0) pedAbrir = alvo;
-      else if (id[0]) desc_pedir_titulo(id);
+      if (!strncmp(id, "tmdb:", 5))
+        desc_pedir_titulo_tmdb(atol(id + 5), "movie");
+      else {
+        int alvo = id[0] ? cat_indice_por_imdb(id) : -1;
+        if (alvo >= 0) pedAbrir = alvo;
+        else if (id[0]) desc_pedir_titulo(id);
+      }
     } else if (foco.fileira == SEC_TEMPORADAS) {
       // Trocar de aba BUSCA a temporada. Antes so mudava o realce e a lista
       // continuava a mesma, o que fazia a aba parecer quebrada.
@@ -1065,6 +1126,39 @@ void detail_evento(const SDL_Event *e) {
       }
     } else if (foco.fileira == SEC_ABAS_INFO) {
       abaInfo = foco.coluna;
+    } else if (foco.fileira == SEC_TRAILERS) {
+      // OK num trailer abre o video no app nativo da plataforma (navegador do
+      // webOS, aba do Tizen, browser do desktop). O card sempre foi focavel;
+      // agora o OK faz algo em vez de ficar mudo.
+      extras_trailer_abrir(foco.coluna);
+    } else if (foco.fileira == SEC_ESTUDIOS) {
+      // OK num logo abre o browse daquela produtora/rede no vertudo — e a
+      // mesma pasta sintetica TMDB que as colecoes usam (issue #44), montada
+      // na hora. Sem id numerico nao ha endpoint para chamar: o OK nao faz
+      // nada em vez de adivinhar pelo nome.
+      //
+      // vertudo_colecao guarda o PONTEIRO da pasta, nao uma copia — por isso a
+      // struct e estatica e nao local.
+      static ColFolder pasta;
+      long tmdbId = extras_estudio_tmdb(foco.coluna);
+      if (tmdbId > 0) {
+        memset(&pasta, 0, sizeof pasta);
+        snprintf(pasta.title, sizeof pasta.title, "%s",
+                 extras_estudio_nome(foco.coluna));
+        snprintf(pasta.sources[0].prov, sizeof pasta.sources[0].prov, "tmdb");
+        snprintf(pasta.sources[0].tmdbTipo, sizeof pasta.sources[0].tmdbTipo,
+                 "%s", extras_estudio_rede(foco.coluna) ? "NETWORK" : "COMPANY");
+        pasta.sources[0].tmdbId = tmdbId;
+        snprintf(pasta.sources[0].midia, sizeof pasta.sources[0].midia,
+                 "%s", ehSerie() ? "TV" : "MOVIE");
+        pasta.nSources = 1;
+        vertudo_colecao(&pasta);
+        // vertudo vive ABAIXO do detalhe na pilha de telas: os eventos so
+        // chegam a ela quando o detalhe nao esta aberto, e o desenho idem.
+        // Sem `saindo` a lista abria escondida atras da pagina — e so
+        // aparecia quando a pessoa desistia e voltava para a home.
+        saindo = 1;
+      }
     } else if (foco.fileira == SEC_EPISODIOS) {
       // PRESSAO LONGA ABRE O MENU DE VISTO; o toque curto continua abrindo as
       // fontes, que e o que este card sempre fez.
@@ -1147,6 +1241,7 @@ static float larguraItem(int r, int c) {
     // A tabela e um bloco so, da largura da divisoria. Cair no `default` daria
     // a ela a largura de um avatar de elenco, e o culling horizontal cortaria
     // a tabela fora da tela.
+    case SEC_ESTUDIOS:    return EST_CARD_W;
     case SEC_DETALHES:    return NV_DETF_DET_W;
     default:              return NV_DETP_EL_W;
   }
@@ -1159,6 +1254,7 @@ static float xItem(int r, int c) {
     if (r == SEC_ELENCO)    { x += NV_DETP_EL_PASSO; continue; }
     if (r == SEC_TRAILERS)  { x += NV_DETF_TR_PASSO;  continue; }
     if (r == SEC_RELACIONADOS) { x += REL_CARD_W + REL_CARD_GAP; continue; }
+    if (r == SEC_ESTUDIOS)     { x += EST_CARD_W + EST_GAP; continue; }
     if (r == SEC_COMENTARIOS) {
       // As pilulas somam largura + vao; os CARTOES recomecam em NV_DETP_X
       // porque ficam numa LINHA de baixo. xItem deixa de ser monotonico nesta
@@ -1800,6 +1896,13 @@ static void heroWeb(float a, float desloc) {
     GfxRect rp = { bx, yAcoes, larguraPrimario(rot), NV_DETW2_BTN_H };
     desenhaBotao(rp, rot, 0, nivel == 0 && botao == nb, a);
     bx += rp.w + NV_DETW2_BTN_GAP; nb++;
+    if (temInicio()) {
+      // "Assistir do comeco" entre o primario e os circulares (issue #46).
+      const char *rotIni = i18n("Assistir do começo");
+      GfxRect rs = { bx, yAcoes, larguraSecundario(rotIni), NV_DETW2_BTN_H };
+      desenhaSecundario(rs, rotIni, nivel == 0 && botao == nb, a);
+      bx += rs.w + NV_DETW2_BTN_GAP; nb++;
+    }
     for (; nb < n; nb++) {
       GfxRect rc = { bx, cyBtn - NV_DETW2_CIRC * 0.5f,
                      NV_DETW2_CIRC, NV_DETW2_CIRC };
@@ -2277,11 +2380,8 @@ static void desenhaAbaInfo(float x, float y, int i, float f, float a) {
 // cinza. A miniatura vem de img.youtube.com por URL previsivel, e tex_obter
 // baixa e cacheia sozinho — nao ha codigo de rede aqui.
 //
-// NAO E FOCAVEL, e isso e decisao, nao pendencia: este app nao tem reprodutor
-// de YouTube. A mesma regra ja tirou o botao de trailer do hero (detail.c) e o
-// glifo do YouTube do terceiro circular (gfx.c) — um controle que promete o que
-// nao cumpre e pior que a ausencia dele. O card entra na composicao para a
-// pagina nao mentir sobre o que o filme tem; abrir, nao abre.
+// E focavel e OK abre o video no app nativo da plataforma: navegador do webOS
+// (luna-send), aba do Tizen (window.open) ou browser do desktop (open).
 static void desenhaTrailer(float x, float y, int c, float a) {
   const char *mini = extras_trailer_miniatura(c);
   GfxRect v = { x, y, NV_DETF_TR_W, NV_DETF_TR_VIDEO_H };
@@ -2550,7 +2650,7 @@ static void desenhaAvaliacoes(float x, float y, float a) {
     char txt[8];
     // Sem mdbList o IMDb ainda vem do catalogo, que guarda 0..100; no vetor a
     // escala e "cru x 10", e para o imdb o cru e 0..10.
-    if (i == EX_IMDB && !v) v = notaDe(idx);
+    if (i == EX_IMDB && !v && ajustes_mdblist_fonte(EX_IMDB)) v = notaDe(idx);
     if (!v) continue;
     if (extras_fonte_percentual(i))
       snprintf(txt, sizeof txt, "%d%%", (v + 5) / 10);
@@ -2619,6 +2719,39 @@ static void desenhaRelacionados(float x, float y, float a) {
           txt_desenhar_alpha(la, cx, y + REL_CARD_H + 12.0f + lt.h + 6.0f,
                              a * 0.9f);
         } } }
+  }
+}
+
+// Cartao de produtora/rede: logo TMDB centralizado quando ha, nome quando nao
+// — o `.detail-company-card` do web faz a mesma escolha (img ou span). O card
+// e FOCAVEL e o OK abre o browse da entidade (mesma pasta sintetica TMDB das
+// colecoes).
+static void desenhaEstudio(float x, float y, int i, float f, float a) {
+  GfxRect r = { x, y, EST_CARD_W, EST_CARD_H };
+  const char *logo = extras_estudio_logo(i);
+  GLuint t;
+  moldura(r, 14.0f, a);
+  if (f > 0.01f) {
+    GfxRect anel = { r.x - 4, r.y - 4, r.w + 8, r.h + 8 };
+    gfx_cor(anel, 16.0f / EST_CARD_H, 1, 1, 1, 0.35f * a * f);
+  }
+  t = logo[0] ? tex_obter(logo) : 0;
+  if (t) {
+    float ap = tex_aspecto(logo), w, h;
+    if (ap <= 0.0f) ap = 3.0f;
+    h = 52.0f; w = h * ap;
+    if (w > EST_CARD_W - 36.0f) { w = EST_CARD_W - 36.0f; h = w / ap; }
+    { GfxRect rl = { x + (EST_CARD_W - w) * 0.5f, y + (EST_CARD_H - h) * 0.5f, w, h };
+      // Logo escuro some no card escuro: mesma regra do logo do titulo —
+      // luminancia medida na thread de decode, so a arte escura e tingida.
+      GfxModo m = tex_marca_escura(logo) ? GFX_MARCA : GFX_CARD;
+      gfx_tex_aspect_atual = 0.0f;
+      gfx_rect(rl, t, m, 0, 0, 0, 0.0f, 1, 1, 1, a); }
+  } else {
+    TxtLinha ln = txt_linha_corta(TXT_DET_META2, extras_estudio_nome(i),
+                                  208, 212, 220, 255, EST_CARD_W - 28.0f);
+    txt_desenhar_alpha(ln, x + (EST_CARD_W - ln.w) * 0.5f,
+                       y + (EST_CARD_H - ln.h) * 0.5f, a * 0.95f);
   }
 }
 
@@ -2950,7 +3083,10 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     // Consertar o recalcularLayout nao bastou: aquilo governa foco e rolagem, e
     // este switch e quem escolhe onde DESENHAR. Eram dois numeros para o mesmo
     // lugar, e so um deles tinha sido corrigido.
-    case SEC_COMENTARIOS: y = conteudoSec[r]; break;
+    // Estudios e empilhado como os comentarios: vem DEPOIS da fileira da aba,
+    // e o `default` mandaria ele para o y do elenco — por cima dos avatares.
+    case SEC_COMENTARIOS:
+    case SEC_ESTUDIOS:    y = conteudoSec[r]; break;
     default:             y = NV_DETP_EL_Y;   break;
   }
   y -= scrollY;
@@ -2979,6 +3115,13 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     } }
   { float alt = alturaSecao(r);
     if (y > NV_TELA_H || y + alt < -40.0f) return; }
+
+  // Na serie a secao de estudios/redes nao tem cabecalho externo — o titulo
+  // sai aqui, como o "trakt Comentarios" sai dentro da secao de comentarios.
+  if (r == SEC_ESTUDIOS && ehSerie()) {
+    TxtLinha lt = txt_linha(TXT_DET_META2, "Redes e estúdios", 150, 154, 163, 255);
+    txt_desenhar_alpha(lt, NV_DETP_X, y, a * 0.9f);
+  }
 
   for (int c = 0; c < n && c < N_ITENS; c++) {
     float f = animFoco[r][c];
@@ -3013,6 +3156,9 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
         }
         break;
       case SEC_COMENTARIOS:  desenhaComentarios(NV_DETP_X, y, a); break;
+      case SEC_ESTUDIOS:
+        desenhaEstudio(x, y + (ehSerie() ? EST_TITULO_H : 0.0f), c, f, a);
+        break;
       case SEC_DETALHES: desenhaDetalhes(x, y, f, a); break;
       default: desenhaElenco(x, y, c, f, a); break;
     }

@@ -19,9 +19,17 @@
 int dados_gravar(const char *nome, const char *conteudo) {
   (void)nome; (void)conteudo; return 1;
 }
+// NULL ate o teste da tabela cheia escrever o arquivo de verdade: linha lida
+// do disco nasce com vista=0, que e o que separa "morta" de "ainda nao montou"
+// no resgate de fileiras.c. Registrar pela API marcaria vista=1 e o teste
+// mediria outra coisa.
+static int usaArquivo = 0;
 char *dados_caminho(char *dst, unsigned tam, const char *nome) {
-  (void)dst; (void)tam; (void)nome; return NULL;
+  if (!usaArquivo) { (void)dst; (void)tam; (void)nome; return NULL; }
+  snprintf(dst, tam, "/tmp/%s", nome);
+  return dst;
 }
+void fil_teste_recarregar(void);
 
 // A ordem que a HOME desenha: fixas primeiro, catalogo depois.
 static const char *DA_HOME[] = { "continuar", "amigos", "catA", "catB", "catC" };
@@ -66,7 +74,7 @@ int main(void) {
 
   // 1. A LISTA DE AJUSTES PASSA A ESPELHAR A HOME. Antes disto ela mostrava
   //    catA, catB, catC, continuar, amigos — uma lista que ninguem ve na home.
-  fil_espelhar_ordem(DA_HOME, N_HOME);
+  fil_espelhar_ordem(DA_HOME, NULL, N_HOME);
   conferir("depois de espelhar", DA_HOME, N_HOME);
   puts("ok  Ajustes mostra a mesma ordem da home");
 
@@ -88,7 +96,7 @@ int main(void) {
 
   // 3. DEPOIS DE REORDENAR, quem manda e a pessoa: espelhar vira no-op, senao
   //    a proxima remontagem da home desfaria a escolha dela.
-  fil_espelhar_ordem(DA_HOME, N_HOME);
+  fil_espelhar_ordem(DA_HOME, NULL, N_HOME);
   { const char *esperado[] = { "continuar", "catA", "amigos", "catB", "catC" };
     conferir("espelhar depois de mover", esperado, N_HOME); }
   puts("ok  espelhar nao desfaz a escolha da pessoa");
@@ -189,7 +197,7 @@ int main(void) {
     fil_esquecer();
     for (j = 0; j < 5; j++) fil_registrar(ordem[j], ordem[j], "", "movie", 3);
     conferir("antes da meia home", ordem, 5);
-    fil_espelhar_ordem(meiaHome, 2);
+    fil_espelhar_ordem(meiaHome, NULL, 2);
     // catB e catA ocupavam os indices 3 e 4 e sao os unicos que a tela viu;
     // eles podem trocar entre si, e ninguem mais pode sair do lugar.
     { const char *esperado[] = { "continuar", "amigos", "colecao", "catB", "catA" };
@@ -199,7 +207,7 @@ int main(void) {
     // que simplesmente nao faz nada.
     { const char *invertida[] = { "catA", "catB" };
       const char *esperado[] = { "continuar", "amigos", "colecao", "catA", "catB" };
-      fil_espelhar_ordem(invertida, 2);
+      fil_espelhar_ordem(invertida, NULL, 2);
       conferir("a tela permuta o que conhece", esperado, 5); }
     // CHAVE QUE A LISTA NAO CONHECE, na primeira posicao. Este e o caso REAL
     // mais comum e o unico que separa a implementacao certa de uma errada
@@ -212,14 +220,129 @@ int main(void) {
     // deixam de coincidir, e a variante errada nao permuta nada.
     { const char *comOrfa[] = { "last_session", "catB", "catA" };
       const char *esperado[] = { "continuar", "amigos", "colecao", "catB", "catA" };
-      fil_espelhar_ordem(comOrfa, 3);
+      fil_espelhar_ordem(comOrfa, NULL, 3);
       conferir("chave desconhecida na frente nao desalinha", esperado, 5); }
     // NULL, repetida, e n maior que a lista: nenhum deles pode escrever fora.
     { const char *sujo[4]; const char *esperado[] = { "continuar", "amigos", "colecao", "catA", "catB" };
       sujo[0] = NULL; sujo[1] = "catA"; sujo[2] = "catA"; sujo[3] = "catB";
-      fil_espelhar_ordem(sujo, 4);
+      fil_espelhar_ordem(sujo, NULL, 4);
       conferir("NULL e chave repetida nao quebram", esperado, 5); } }
   puts("ok  home pela metade nao empurra a colecao para o fim (#30)");
+
+  // MOVER O BLOCO DO ADDON INTEIRO. A folha de Ajustes tem dois modos: fileira
+  // a fileira (fil_mover) e bloco (fil_mover_grupo), que troca TODAS as linhas
+  // do addon com o bloco vizinho de uma vez. Sem ele, juntar o Xperience
+  // inteiro para cima era N movimentos — um por catalogo do addon.
+  fil_esquecer();
+  fil_registrar("continue_watching", "Continuar", "", "", 5);
+  fil_registrar("cineA", "Top", "Cinemeta", "movie", 10);
+  fil_registrar("cineB", "Popular", "Cinemeta", "series", 10);
+  fil_registrar("xpA", "For You", "Xperience", "movie", 12);
+  fil_registrar("xpB", "Trending", "Xperience", "series", 12);
+  { const char *o0[] = { "continue_watching", "cineA", "cineB", "xpA", "xpB" };
+    conferir("blocos antes de mover", o0, 5); }
+  // Sobe o BLOCO Xperience inteiro (a partir da linha xpB, de proposito —
+  // a funcao tem de achar a extensao do bloco sozinha).
+  { int novo = fil_mover_grupo(4, -1);
+    const char *o1[] = { "continue_watching", "xpA", "xpB", "cineA", "cineB" };
+    conferir("bloco Xperience subiu inteiro", o1, 5);
+    assert(novo == 2);   // xpB: indice 4 -> 2 (pulou o bloco de 2 do Cinemeta)
+  }
+  // E desce de volta, trocando com o bloco Cinemeta inteiro de uma vez.
+  { int novo = fil_mover_grupo(2, 1);
+    const char *o2[] = { "continue_watching", "cineA", "cineB", "xpA", "xpB" };
+    conferir("bloco Xperience desceu inteiro", o2, 5);
+    assert(novo == 4); }
+  // Borda: o topo nao sobe porque nao ha nada acima.
+  { int novo = fil_mover_grupo(0, -1);
+    assert(novo == 0);
+    const char *o3[] = { "continue_watching", "cineA", "cineB", "xpA", "xpB" };
+    conferir("topo nao sobe mais", o3, 5); }
+  puts("ok  mover bloco troca o addon inteiro com o vizinho");
+
+  // AGRUPAR POR ADDON. Quando a ordem veio misturada da conta, a acao junta as
+  // linhas de cada addon: fixas do app primeiro, colecoes depois, catalogos
+  // por addon na ordem de primeira aparicao — e dentro do addon a ordem
+  // relativa se preserva (o sort e estavel).
+  fil_esquecer();
+  fil_registrar("xpA", "For You", "Xperience", "movie", 12);
+  fil_registrar("continue_watching", "Continuar", "", "", 5);
+  fil_registrar("cineA", "Top", "Cinemeta", "movie", 10);
+  fil_registrar("xpB", "Trending", "Xperience", "series", 12);
+  fil_registrar("collection_a24", "A24", "", "", 8);
+  fil_registrar("cineB", "Popular", "Cinemeta", "series", 10);
+  fil_ordenar_por_addon();
+  { const char *o4[] = { "continue_watching", "collection_a24",
+                         "xpA", "xpB", "cineA", "cineB" };
+    conferir("ordenar por addon", o4, 6); }
+  // Idempotente: ordenar de novo nao muda nada.
+  fil_ordenar_por_addon();
+  { const char *o5[] = { "continue_watching", "collection_a24",
+                         "xpA", "xpB", "cineA", "cineB" };
+    conferir("ordenar por addon (2a vez)", o5, 6); }
+  puts("ok  agrupar por addon junta os catalogos sem embaralhar o addon");
+
+  // TABELA CHEIA NAO ENGOLE CHAVE VIVA. O arquivo do dono lotou FIL_MAX com
+  // chaves mortas do AICat (uma nova a cada ciclo) e a colecao do FrostView
+  // aparecia na home sem nunca entrar na folha. O resgate toma a vaga de uma
+  // linha morta sem escolha; linha com escolha (desligada, forma, tamanho)
+  // nao e vitima.
+  fil_esquecer();
+  { int j;
+    // As mortas vem DO ARQUIVO: e assim que elas existem de verdade — carregadas
+    // no arranque, nunca declaradas nesta sessao (vista=0). Pelo registrador elas
+    // seriam vistas e o resgate, certamente, nao as tocaria.
+    FILE *arq = fopen("/tmp/fileirasui.txt", "w");
+    assert(arq);
+    // campos: chave \t oculta \t tipo \t tamanho \t titulo — 0/0/1 sao os
+    // PADROES de quem nunca foi escolhida (tipo AUTO=0, tamanho PADRAO=1).
+    for (j = 0; j < FIL_MAX; j++)
+      fprintf(arq, "linha morta_%d\t0\t0\t1\tMorta %d\n", j, j);
+    fclose(arq);
+    usaArquivo = 1;
+    fil_teste_recarregar();
+    assert(fil_n() == FIL_MAX);
+    // Duas com escolha: uma desligada, uma com forma trocada. Nenhuma pode
+    // ser vitima do resgate.
+    fil_alternar(10);
+    fil_ciclar_tipo(20);
+    // A home mostra so tres chaves: duas mortas e UMA NOVA.
+    { const char *home[] = { "morta_5", "nova_frostview", "morta_7" };
+      const char *tit[]  = { "Morta 5", "FrostView", "Morta 7" };
+      fil_espelhar_ordem(home, tit, 3);
+      assert(fil_n() == FIL_MAX);   // a tabela continua cheia, nao estoura
+      { int v = -1;
+        for (j = 0; j < fil_n(); j++)
+          if (!strcmp(fil_chave(j), "nova_frostview")) v = j;
+        assert(v >= 0);                          // a nova entrou
+        assert(!strcmp(fil_titulo(v), "FrostView")); // e com o titulo, nao a chave
+        assert(fil_linha_na_home(v)); }
+      // As duas escolhidas seguem na lista.
+      { int tem10 = 0, tem20 = 0;
+        for (j = 0; j < fil_n(); j++) {
+          if (!strcmp(fil_chave(j), "morta_10")) { tem10 = 1; assert(fil_linha_oculta(j)); }
+          if (!strcmp(fil_chave(j), "morta_20")) { tem20 = 1; assert(fil_linha_tipo(j) == 1); }
+        }
+        assert(tem10 && tem20); } } }
+  puts("ok  tabela cheia: chave viva toma a vaga de linha morta sem escolha");
+
+  // MOVER PULA LINHA FORA DA HOME. A fantasma no meio nao come o movimento:
+  // a fileira troca com a proxima VIVA, e a home muda junto.
+  fil_esquecer();
+  fil_registrar("vivoA", "A", "Cinemeta", "movie", 4);
+  fil_registrar("fantasma", "G", "AICat", "movie", 4);
+  fil_registrar("vivoB", "B", "Cinemeta", "movie", 4);
+  { const char *home[] = { "vivoA", "vivoB" };
+    fil_espelhar_ordem(home, NULL, 2);
+    assert(fil_mover(0, 1) == 2);   // A passa pelo fantasma e para depois de B
+    { const char *ordem[] = { "vivoB", "fantasma", "vivoA" };
+      conferir("vivo pulou a fantasma", ordem, 3); }
+    // E a home reflete: A depois de B.
+    { int ord[8], q = fil_unir(home, 2, ord, 8);
+      assert(q == 2);
+      assert(!strcmp(home[ord[0]], "vivoB") && !strcmp(home[ord[1]], "vivoA")); } }
+  puts("ok  mover pula linha fora da home");
+
   puts("fileiras: tudo ok");
   return 0;
 }

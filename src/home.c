@@ -115,6 +115,21 @@ int home_pediu_pessoa_social(CatItem *saida) {
 }
 int home_pediu_social(void) { int v=pedidoSocial;pedidoSocial=0;return v; }
 
+// Pedido de abrir o GUIA DE CANAIS: o "Ver tudo" de uma fileira de canal nao
+// leva a grade de cartazes — leva ao guia, e o OK num cartao de canal abre o
+// guia ja focado nele. `guiaId` guarda o id para guia_focar_id.
+static int pedidoGuia;
+static char guiaId[80];
+static int fileiraEhCanal(const Fileira *f) {
+  return f && (!strcmp(f->catTipo, "channel") || !strcmp(f->catTipo, "tv"));
+}
+int home_pediu_guia(char *id, int tam) {
+  if (!pedidoGuia) return 0;
+  pedidoGuia = 0;
+  if (id && tam > 0) { snprintf(id, (size_t)tam, "%s", guiaId); guiaId[0] = 0; }
+  return 1;
+}
+
 // Classifica somente os nomes públicos do catálogo. Nunca inspeciona a URL
 // (que pode conter tokens) nem inventa premiações ou disponibilidade.
 static int contemNome(const char *nome, const char *termo) {
@@ -130,6 +145,12 @@ static int contemNome(const char *nome, const char *termo) {
 static TipoFileira perfilCatalogo(const char *nome) {
   static const char *premios[] = {"oscar", "academy", "award", "premia", "cannes", "golden globe"};
   static const char *servicos[] = {"netflix", "disney", "prime video", "amazon", "apple tv", "hbo", "max -", "paramount", "globoplay", "mubi", "crunchyroll"};
+  // Top 100 / Top 10 viram a pilha com ranking. Detecta pelo titulo que o
+  // catalogo trouxe (ex: "Top 100 · Movies"), nao pelo id — o id e do addon e
+  // pode ser qualquer coisa.
+  if (contemNome(nome, "top 100") || contemNome(nome, "top100") ||
+      contemNome(nome, "top 10") || contemNome(nome, "top10"))
+    return FILEIRA_TOP10;
   for (size_t i = 0; i < sizeof premios / sizeof premios[0]; i++)
     if (contemNome(nome, premios[i])) return FILEIRA_COLECAO;
   for (size_t i = 0; i < sizeof servicos / sizeof servicos[0]; i++)
@@ -862,10 +883,20 @@ void home_evento(const SDL_Event *e) {
           vertudo_colecao(col_folder(fileiras[foco.fileira].folders[foco.coluna]));
         }
       } else if (noVerTudo) {
-        vertudo_abrir(fileiras[foco.fileira].base, fileiras[foco.fileira].catTipo,
-                      fileiras[foco.fileira].catId, fileiras[foco.fileira].titulo);
+        if (fileiraEhCanal(&fileiras[foco.fileira])) {
+          pedidoGuia = 1; guiaId[0] = 0;
+        } else {
+          vertudo_abrir(fileiras[foco.fileira].base, fileiras[foco.fileira].catTipo,
+                        fileiras[foco.fileira].catId, fileiras[foco.fileira].titulo);
+        }
       } else if (dur >= NV_HOLD_MS) {
         ctx_abrir(fileiras[foco.fileira].ini + foco.coluna);
+      } else if (fileiraEhCanal(&fileiras[foco.fileira])) {
+        // OK num cartao de canal abre o guia focado nele — o canal nao tem
+        // pagina de detalhe que ajude: nao ha episodios, elenco ou "sobre".
+        const CatItem *ci = cat_item_exato(fileiras[foco.fileira].ini + foco.coluna);
+        pedidoGuia = 1;
+        snprintf(guiaId, sizeof guiaId, "%s", ci ? ci->imdb : "");
       } else {
         pedidoAbrir = 1;
       }
@@ -1046,59 +1077,10 @@ static void sincronizarFileiras(void) {
     destino++;
   }
   if (col_n()) {
-    Fileira orig[MAX_FIL];int total=destino;memcpy(orig,fileiras,sizeof orig);destino=0;
-    // A ordem que a pessoa gravou na conta GANHA da curadoria fixa abaixo. Sem
-    // isto o recurso nao existiria em aparelho com colecoes: a descoberta ja
-    // teria posto as fileiras na ordem da conta e esta tabela as reordenaria
-    // de novo, e a pessoa veria a TV ignorar o que ela arrumou no app web.
-    // Os grupos de colecao continuam entrando — no FIM, que e onde a regra de
-    // uniao poe o que e local e o remoto nao conhece.
-    int ordemDaConta = catordem_tem_ordem();
-    if (ordemDaConta) { memcpy(fileiras,orig,sizeof(Fileira)*(size_t)total); destino=total; }
-    const char *ids[]={"continue_watching","social_activity","now_playing_movies","@Streaming",
-      "trending_movies","trending_series","@Themes","ai_movies_for_you",
-      "ai_series_for_you","snoak_top100_movies","snoak_top100_series",
-      "@Awards","@Directors","@Genres"};
-    const char *names[]={"Continuar assistindo","Entre amigos","Recent Release","Streaming",
-      "Trending Movies","Trending Series","Themes","Picked for You · Movies",
-      "Picked for You · Series","Top 100 · Movies","Top 100 · Series",
-      "Awards","Directors","Genres"};
-    // A curadoria conhecida ganha prioridade, mas nao e uma lista de corte.
-    // O web mantem chaves novas no fim e a home nativa precisa fazer o mesmo:
-    // catalogos e grupos que nao estavam nesta tabela continuam acessiveis.
-    for(size_t s=0;s<sizeof ids/sizeof ids[0] && destino<MAX_FIL;s++) {
-      // Com ordem da conta, so os grupos de colecao ('@') entram por aqui: as
-      // entradas de catalogo desta tabela promoveriam fileiras para cima da
-      // ordem escolhida.
-      if(ordemDaConta && ids[s][0]!='@') continue;
-      if(ids[s][0]=='@') {
-        Fileira v={0};v.n=col_grupo(ids[s]+1,v.folders,MAX_CARDS);
-        if(!v.n)continue;
-        v.tipo=FILEIRA_CATALOGOS;
-        col_chave_grupo(ids[s]+1,v.chave,sizeof v.chave);
-        snprintf(v.titulo,sizeof v.titulo,"%s",names[s]);fileiras[destino++]=v;
-      } else for(int k=0;k<total;k++) {
-        if(strcmp(orig[k].catId,ids[s])&&strcmp(orig[k].chave,ids[s]))continue;
-        fileiras[destino]=orig[k];
-        snprintf(fileiras[destino].titulo,sizeof fileiras[destino].titulo,"%s",names[s]);
-        if(s==1)fileiras[destino].tipo=FILEIRA_SOCIAL;
-        else if(s==2)fileiras[destino].tipo=FILEIRA_DESTAQUE;
-        else if(s==9||s==10)fileiras[destino].tipo=FILEIRA_TOP10;
-        else if(s!=0)fileiras[destino].tipo=FILEIRA_NORMAL;
-        destino++;break;
-      }
-    }
-    // Tudo que nao casou com a curadoria acima permanece na ordem declarada
-    // pelo addon/preferencia. A comparacao por chave evita duplicar uma linha
-    // especial que ja foi promovida.
-    for(int k=0;k<total && destino<MAX_FIL;k++) {
-      int visto=0;
-      for(int j=0;j<destino;j++) if(!strcmp(fileiras[j].chave,orig[k].chave)){visto=1;break;}
-      if(!visto) fileiras[destino++]=orig[k];
-    }
-    // Grupos adicionais tambem sao configuracao do usuario. Nao dependem de
-    // nomes que conheciamos quando a tabela foi escrita, e cada grupo aparece
-    // uma vez com todos os seus folders.
+    // GRUPOS DE COLECAO entram no fim, na ordem em que a conta os declarou.
+    // A ordem da home e a ordem que a pessoa escolheu na conta (catordem) ou
+    // na TV (fil_unir); esta lista so ACRESCENTA o que a conta tem e a home
+    // ainda nao mostra. Nenhuma tabela fixa reordena por cima.
     for(int i=0;i<col_n() && destino<MAX_FIL;i++) {
       const ColFolder *folder=col_folder(i);
       int grupoVisto=0;
@@ -1173,7 +1155,7 @@ static void sincronizarFileiras(void) {
     // static, e nao pilha: sao ~35 KB e esta funcao ja carrega dois vetores
     // desse tamanho (antigas, orig). Roda so no fio de desenho.
     static Fileira arranjo[MAX_FIL];
-    const char *ch[MAX_FIL];
+    const char *ch[MAX_FIL], *ti[MAX_FIL];
     int ord[MAX_FIL], q, k, w = 0, lim = fil_limite();
     for (q = 0; q < destino; q++) {
       // REGISTRA TAMBEM O QUE VAI SAIR abaixo. E o registro que deixa a tela de
@@ -1187,12 +1169,14 @@ static void sincronizarFileiras(void) {
         fil_registrar(fileiras[q].chave, fileiras[q].titulo,
                       "", fileiras[q].catTipo, fileiras[q].n);
       ch[q] = fileiras[q].chave;
+      ti[q] = fileiras[q].titulo;
     }
     fil_gravar_registro();
     // A lista de Ajustes passa a espelhar ESTA ordem enquanto ninguem tiver
     // reordenado. Sem isto o primeiro movimento em Ajustes reembaralhava a home
-    // inteira em vez de mover uma fileira — ver fil_espelhar_ordem.
-    fil_espelhar_ordem(ch, destino);
+    // inteira em vez de mover uma fileira — ver fil_espelhar_ordem. O titulo
+    // vai junto para a chave resgatada de tabela cheia nao mostrar a si mesma.
+    fil_espelhar_ordem(ch, ti, destino);
     // "Retomar agora" e contexto do player, nao fileira de catalogo: fica presa
     // no topo, fora da ordem e fora do liga/desliga. Ela aparece por causa de
     // uma sessao interrompida e desaparece sozinha; deixar a pessoa mover ou
@@ -2559,7 +2543,10 @@ void home_desenhar(Uint32 agora) {
           // catalogo o card fica so com a arte — melhor que um nome generico
           // por cima dela.
           if (abre > 0.01f && cItem && cItem->logo[0]) {
-            GLuint tl = tex_obter(cItem->logo);
+            // Largura pedida pela tela, nao o teto generico de 640: o logo
+            // nunca passa de ~65% do card, e decodificar o arquivo inteiro
+            // so para encolher depois era cache e tempo jogados fora.
+            GLuint tl = tex_obter_larg(cItem->logo, w * 0.65f);
             if (tl) {
               float pad = 34.0f * esc;
               float ap = tex_aspecto(cItem->logo);

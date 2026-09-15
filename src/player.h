@@ -15,6 +15,7 @@
 // Com NULL, aguarda a consulta de fontes; nao simula uma reproducao.
 void player_abrir(int indiceCatalogo, const char *url);
 void player_definir_episodio(int temporada, int episodio);
+void player_do_inicio(void);
 void player_episodio_atual(int *temporada, int *episodio);
 int player_indice(void);
 const char *player_linha_episodio(void);
@@ -45,6 +46,11 @@ int  player_controles_visiveis(void);
 void player_definir_fonte(const char *url);
 
 int  player_aberto(void);   // 1 enquanto a tela existe, inclusive durante o fade de saida
+// Pedidos que so existem com um CANAL no ar (tipo "channel"/"tv"):
+// `player_pediu_guia` — BAIXO ou a tecla azul pediram o overlay do guia.
+// `player_pediu_zap` — CH+/CH- do controle (NV_SCANCODE_CH_UP/DOWN): +1/-1.
+int  player_pediu_guia(void);
+int  player_pediu_zap(void);
 void player_evento(const SDL_Event *e);
 void player_atualizar(float dt, Uint32 agora);
 void player_desenhar(Uint32 agora);

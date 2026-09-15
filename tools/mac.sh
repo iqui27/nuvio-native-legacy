@@ -24,6 +24,6 @@ ENV_D=$(tools/env.sh)
 export NUVIO_DADOS="${NUVIO_DADOS:-$HOME/.nuvio}"
 eval cc src/*.c -o /tmp/nuvio-native-legacy-mac -O1 -g "$ENV_D" \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf \
+  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz \
   -framework OpenGL -Wno-deprecated-declarations
 exec /tmp/nuvio-native-legacy-mac "$(pwd)/deploy/app/art" "$@"

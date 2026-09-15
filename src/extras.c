@@ -4,10 +4,14 @@
 #include "rede.h"
 #include "js.h"
 #include "descoberta.h"
+#include "ajustes.h"
 #include <pthread.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 static int  notaTrakt, votosTrakt;
 static int  notas[EX_NFONTES];
@@ -52,6 +56,8 @@ void extras_definir_chave(const char *chave) {
   fflush(stdout);
 }
 
+int extras_mdblist_tem_chave(void) { return mdbChave[0] != 0; }
+
 void extras_carregar(const char *dirArte) {
   char caminho[600];
   FILE *f;
@@ -68,7 +74,11 @@ void extras_carregar(const char *dirArte) {
 }
 
 int extras_nota(int fonte) {
-  return (fonte >= 0 && fonte < EX_NFONTES) ? notas[fonte] : 0;
+  // mdblist_show_* esconde a fonte na hora de LER, nao na de buscar: o cartao
+  // some ja no primeiro ajuste, sem esperar o titulo ser reaberto.
+  if (fonte < 0 || fonte >= EX_NFONTES) return 0;
+  if (!ajustes_mdblist_fonte(fonte)) return 0;
+  return notas[fonte];
 }
 const char *extras_fonte_marca(int fonte) {
   return (fonte >= 0 && fonte < EX_NFONTES) ? FONTE[fonte] : "";
@@ -134,6 +144,14 @@ static struct { char yt[16], nome[80], mini[80]; } trailer[EX_TRAILER_MAX];
 static int  nTrailer;
 static struct { char titulo[120], ano[8]; long tmdb; } col[EX_COL_MAX];
 static int  nCol;
+// PRODUTORAS E REDES, para a fileira de logos da pagina de detalhe. No web sao
+// duas secoes ("Production", "Network"); aqui viram uma so lista — a rede vem
+// primeiro nas series, como no renderCompanySections da referencia.
+// `rede` decide o tipo da fonte TMDB que o OK abre (NETWORK x COMPANY).
+#define EX_EST_MAX 10
+static struct { char nome[80], logo[220]; long tmdb; int rede; }
+            estudio[EX_EST_MAX];
+static int  nEstudio;
 static long tmdbEmCurso;
 
 static char idPedido[24], idEmCurso[24];
@@ -205,10 +223,12 @@ static void *buscar(void *arg) {
   tipo = serie ? "shows" : "movies";
   pthread_mutex_unlock(&trava);
 
-  if (!trakt_cabecalhos(cab, aut, sizeof aut, chave, sizeof chave)) {
-    finalizarBusca(id);
-    return NULL;
-  }
+  // O Trakt E OPCIONAL. Os blocos que dependem dele (vistos, nota Trakt,
+  // comentarios, notas por episodio, related de sobra) rodam so quando ha
+  // sessao; a ficha TMDB, o MDBList e as recomendacoes nao precisam dele.
+  // Antes disto um Trakt desvinculado matava o fio inteiro — e junto com ele
+  // morriam os relacionados TMDB, que nao consultam o Trakt em nada.
+  int temTrakt = trakt_cabecalhos(cab, aut, sizeof aut, chave, sizeof chave);
 
   // O QUE JA FOI VISTO VEM PRIMEIRO.
   //
@@ -219,7 +239,7 @@ static void *buscar(void *arg) {
   // ("Retomar"/"Próximo"), entao era exatamente o ultimo a chegar e o primeiro
   // que o dono nota faltando.
   // --- episodios ja assistidos (so serie) ---
-  if (serie) {
+  if (serie && temTrakt) {
     snprintf(url, sizeof url,
              "https://api.trakt.tv/shows/%s/progress/watched", id);
     corpo = rede_baixar_com(url, 20, cab);
@@ -296,6 +316,7 @@ static void *buscar(void *arg) {
 
 
   // --- nota ---
+  if (temTrakt) {
   snprintf(url, sizeof url, "https://api.trakt.tv/%s/%s/ratings", tipo, id);
   corpo = rede_baixar_com(url, 12, cab);
   if (corpo) {
@@ -316,9 +337,10 @@ static void *buscar(void *arg) {
     }
     pthread_mutex_unlock(&trava);
   }
+  }
 
-  // --- notas do mdbList, se o dono tiver chave ---
-  if (serie && pedidoAindaAtual(id)) {
+  // --- status da serie (Trakt; o TMDB ja trouxe o seu na ficha) ---
+  if (serie && temTrakt && pedidoAindaAtual(id)) {
     snprintf(url,sizeof url,"https://api.trakt.tv/shows/%s?extended=full",id);
     corpo=rede_baixar_com(url,8,cab);
     if(corpo) {
@@ -335,7 +357,9 @@ static void *buscar(void *arg) {
   // Um POST por provedor, como o web faz (fetchProviderRating): a api aceita
   // "ids" em lote mas so um provedor por chamada. Sao sete chamadas curtas; o
   // fio ja e proprio, entao nao atrapalha o desenho.
-  if (mdbChave[0]) {
+  // mdblist_enabled corta a CONSULTA — as notas que o app tem por conta
+  // propria (Trakt direto, IMDb do catalogo) nao dependem desta chave.
+  if (mdbChave[0] && ajustes_mdblist_ligado()) {
     const char *cabJ[3];
     char kj[64];
     char corpoPost[80];
@@ -362,6 +386,7 @@ static void *buscar(void *arg) {
   }
 
   // --- comentarios, os mais curtidos primeiro ---
+  if (temTrakt) {
   snprintf(url, sizeof url,
            "https://api.trakt.tv/%s/%s/comments/likes?limit=%d", tipo, id,
            EX_COMENT_MAX);
@@ -401,9 +426,10 @@ static void *buscar(void *arg) {
     }
     pthread_mutex_unlock(&trava);
   }
+  }
 
   // --- notas por episodio, so em serie ---
-  if (serie) {
+  if (serie && temTrakt) {
     snprintf(url, sizeof url,
              "https://api.trakt.tv/shows/%s/seasons?extended=episodes,full", id);
     corpo = rede_baixar_com(url, 20, cab);
@@ -440,35 +466,55 @@ static void *buscar(void *arg) {
     }
   }
 
-  // --- colecao (so filme, e so quando ja sabemos o id do TMDB) ---
-  if (!serie) {
+  // --- TMDB: ficha, trailers, produtoras, recomendacoes (filme E serie) ---
+  //
+  // Antes so o filme entrava aqui — a serie ficava sem os logos de rede, sem
+  // "Mais como este" do TMDB e sem nada do append. O que muda por tipo: o
+  // endpoint (movie x tv), o /find (movie_results x tv_results) e os extras
+  // do append (release_dates so existe em filme; em serie a classificacao e
+  // content_ratings, e ainda nao ha onde mostra-la — o Detalhes e so de filme).
+  {
     const char *chave = desc_chave_tmdb();
-    long idCol = 0, idFilme = tmdbId;
+    long idCol = 0, idT = tmdbId;
     char nome[80] = "";
+    int tNums[EX_TEMP_MAX], nTNum = 0;
     // O id do TMDB so fica no catalogo DEPOIS do enriquecimento do elenco; na
     // PRIMEIRA abertura de um titulo ele ainda e 0, e a aba nao apareceria
     // justamente na visita em que o dono esta olhando. /find resolve na hora.
-    if (chave && chave[0] && idFilme <= 0) {
+    if (chave[0] && idT <= 0) {
       snprintf(url, sizeof url,
                "https://api.themoviedb.org/3/find/%s?api_key=%s"
                "&external_source=imdb_id", id, chave);
       corpo = rede_baixar(url, 15);
       if (corpo) {
-        const char *v = js_array(corpo, NULL, "movie_results");
-        if (v) idFilme = (long)js_num(v, js_fim(v), "id", 0.0);
+        const char *v = js_array(corpo, NULL, serie ? "tv_results" : "movie_results");
+        if (v) idT = (long)js_num(v, js_fim(v), "id", 0.0);
         free(corpo);
       }
     }
-    if (chave && chave[0] && idFilme > 0) {
-      // `append_to_response` faz o TMDB devolver release_dates e videos DENTRO
-      // deste mesmo corpo. Antes esta chamada ja acontecia e o parse lia so
-      // belongs_to_collection: status, runtime, release_date e os paises
-      // chegavam e eram descartados. Agora a ficha inteira e os trailers saem
-      // daqui, sem nenhuma viagem a mais.
+    // Nao buscar quando nao ha NADA ligado que saia desta viagem: economiza o
+    // pedido quando o dono desligou ficha, trailers, produtoras e recomenda-
+    // coes de uma vez — o toggle de cada uma ja diz que nao vale ir.
+    if (chave[0] && idT > 0 &&
+        ((!serie && (ajustes_tmdb_ficha() || ajustes_tmdb_datas() ||
+                     ajustes_tmdb_trailers() || ajustes_tmdb_col() ||
+                     ajustes_tmdb_prod())) ||
+         (serie && (ajustes_tmdb_prod() || ajustes_tmdb_redes() ||
+                    ajustes_tmdb_mais() || ajustes_tmdb_eps())))) {
+      // `append_to_response` faz o TMDB devolver extras DENTRO deste mesmo
+      // corpo. O conjunto segue os toggles da conta: release_dates responde a
+      // tmdb_use_release_dates, videos a tmdb_use_trailers, recommendations a
+      // tmdb_use_more_like_this. O corpo sempre traz status, runtime e as
+      // produtoras/redes — ler nao custa viagem nenhuma.
+      char append[80] = "";
+      if (!serie && ajustes_tmdb_datas())    snprintf(append, sizeof append, "release_dates");
+      if (!serie && ajustes_tmdb_trailers()) snprintf(append + strlen(append), sizeof append - strlen(append), "%svideos", append[0] ? "," : "");
+      if (ajustes_tmdb_mais())               snprintf(append + strlen(append), sizeof append - strlen(append), "%srecommendations", append[0] ? "," : "");
       snprintf(url, sizeof url,
-               "%s/movie/%ld?api_key=%s&language=%s"
-               "&append_to_response=release_dates,videos",
-               "https://api.themoviedb.org/3", idFilme, chave, desc_tmdb_idioma());
+               "%s/%s/%ld?api_key=%s&language=%s%s%s",
+               "https://api.themoviedb.org/3", serie ? "tv" : "movie", idT,
+               chave, desc_tmdb_idioma(),
+               append[0] ? "&append_to_response=" : "", append);
       corpo = rede_baixar(url, 15);
       if (corpo) {
         // A ficha abaixo escreve varios campos globais. Segura a mesma trava
@@ -482,15 +528,18 @@ static void *buscar(void *arg) {
           return NULL;
         }
         const char *fimC = corpo + strlen(corpo);
-        const char *b = strstr(corpo, "\"belongs_to_collection\"");
-        if (b) {
-          const char *o = strchr(b, '{');
-          if (o) { const char *of = js_fim(o);
-                   idCol = (long)js_num(o, of, "id", 0.0);
-                   js_texto(o, of, "name", nome, sizeof nome); }
+        if (!serie) {
+          const char *b = strstr(corpo, "\"belongs_to_collection\"");
+          if (b) {
+            const char *o = strchr(b, '{');
+            if (o) { const char *of = js_fim(o);
+                     idCol = (long)js_num(o, of, "id", 0.0);
+                     js_texto(o, of, "name", nome, sizeof nome); }
+          }
         }
 
-        // --- ficha tecnica ---
+        // --- ficha tecnica (so filme: a serie nao tem secao de Detalhes) ---
+        if (!serie && ajustes_tmdb_ficha()) {
         js_texto(corpo, fimC, "status", fichaStatus, sizeof fichaStatus);
         js_texto(corpo, fimC, "release_date", fichaLanc, sizeof fichaLanc);
         fichaDur = (int)js_num(corpo, fimC, "runtime", 0.0);
@@ -514,12 +563,14 @@ static void *buscar(void *arg) {
             }
             p2 = js_prox(pf);
           } }
+        }
 
         // Classificacao etaria: release_dates.results[] tem um bloco por pais,
         // e cada bloco tem release_dates[] com `certification`. Preferimos BR;
         // na falta, US; na falta das duas, a primeira nao-vazia que aparecer.
         // Muitos paises trazem a chave com string VAZIA, e aceitar a primeira
         // ocorrencia sem olhar o conteudo enchia o selo de nada.
+        if (!serie && ajustes_tmdb_datas())
         { const char *res = js_array(corpo, fimC, "results");
           char br[12] = "", us[12] = "", qq[12] = "";
           while (res) {
@@ -545,6 +596,8 @@ static void *buscar(void *arg) {
         // Trailers: videos.results[]. So YouTube (o unico host cuja miniatura
         // e obtivel por URL previsivel) e so o que for Trailer ou Teaser — o
         // TMDB mistura ali featurette, clipe e cena de bastidor.
+        // Filme apenas: a fileira de trailers nao existe no layout de serie.
+        if (!serie && ajustes_tmdb_trailers())
         { const char *v = js_array(corpo, fimC, "results");
           // `results` aparece duas vezes no corpo (release_dates e videos);
           // procura a partir do bloco de videos para nao pegar o errado.
@@ -569,11 +622,184 @@ static void *buscar(void *arg) {
             v = js_prox(vf);
           } }
 
+        // PRODUTORAS E REDES — a fileira de logos da pagina de detalhe. No web
+        // (renderCompanySections) sao duas secoes, rede primeiro na serie;
+        // aqui uma lista so, mesma ordem. O toggle separa os dois: desligar
+        // "Produtoras" nao derruba as redes da serie.
+        { int ne = 0, passo;
+          static const char *CAMPO[2] = { "production_companies", "networks" };
+          // Serie: redes primeiro, como o web; filme: so produtoras (a /movie
+          // nao tem campo networks).
+          for (passo = 0; passo < 2; passo++) {
+            int rede = (passo == 1);
+            const char *p2;
+            if (!serie && rede) break;
+            if (rede && !ajustes_tmdb_redes()) continue;
+            if (!rede && !ajustes_tmdb_prod()) continue;
+            p2 = js_array(corpo, fimC, CAMPO[passo]);
+            while (p2 && ne < EX_EST_MAX) {
+              const char *pf = js_fim(p2);
+              char nm[80] = "", lg[220] = "", lp[160] = "";
+              long tid;
+              js_texto(p2, pf, "name", nm, sizeof nm);
+              tid = (long)js_num(p2, pf, "id", 0.0);
+              // logo_path costuma ser .svg — o SDL_image do pacote nao decoda.
+              // Guarda so quando for raster (png/jpg); o card cai no nome.
+              if (js_texto(p2, pf, "logo_path", lp, sizeof lp) &&
+                  lp[0] == '/' && !strstr(lp, ".svg"))
+                snprintf(lg, sizeof lg,
+                         "https://image.tmdb.org/t/p/w185%s", lp);
+              if (nm[0] || tid > 0) {
+                snprintf(estudio[ne].nome, sizeof estudio[ne].nome, "%s", nm);
+                snprintf(estudio[ne].logo, sizeof estudio[ne].logo, "%s", lg);
+                estudio[ne].tmdb = tid;
+                estudio[ne].rede = rede;
+                ne++;
+              }
+              p2 = js_prox(pf);
+            }
+          }
+          nEstudio = ne; }
+
+        // "MAIS COMO ESTE" DO TMDB — recommendations.results[]. Preenche rel[]
+        // com o id do TMDB (sem imdb ainda); o detalhe abre pelo prefixo
+        // "tmdb:", como o credito de ator ja faz. O Trakt continua sendo a
+        // resposta quando este append falhar ou vier vazio — ver a guarda
+        // `!nRel` na consulta de relacionados logo abaixo.
+        if (ajustes_tmdb_mais()) {
+          const char *rec = strstr(corpo, "\"recommendations\"");
+          const char *p2 = rec ? js_array(rec, fimC, "results") : NULL;
+          int nr = 0;
+          while (p2 && nr < EX_REL_MAX) {
+            const char *pf = js_fim(p2);
+            char t[120] = "", dt[16] = "", pp[200] = "";
+            long tid;
+            js_texto(p2, pf, serie ? "name" : "title", t, sizeof t);
+            js_texto(p2, pf, serie ? "first_air_date" : "release_date",
+                     dt, sizeof dt);
+            if (js_texto(p2, pf, "poster_path", pp, sizeof pp) && pp[0] == '/') {
+              char url2[230];
+              snprintf(url2, sizeof url2,
+                       "https://image.tmdb.org/t/p/w342%s", pp);
+              snprintf(pp, sizeof pp, "%s", url2);
+            } else pp[0] = 0;
+            tid = (long)js_num(p2, pf, "id", 0.0);
+            if (t[0] && tid > 0) {
+              snprintf(rel[nr].titulo, sizeof rel[nr].titulo, "%s", t);
+              if (strlen(dt) >= 4) { memcpy(rel[nr].ano, dt, 4); rel[nr].ano[4] = 0; }
+              else rel[nr].ano[0] = 0;
+              // O marcador "tmdb:" e o que detail.c checa no OK — o item nao
+              // tem imdb ate o titulo ser aberto.
+              snprintf(rel[nr].imdb, sizeof rel[nr].imdb, "tmdb:%ld", tid);
+              snprintf(rel[nr].poster, sizeof rel[nr].poster, "%s", pp);
+              nr++;
+            }
+            p2 = js_prox(pf);
+          }
+          nRel = nr;
+        }
+
+        // Temporadas declaradas — a lista de numeros que o enriquecimento de
+        // episodios (abaixo, fora do corpo) vai pedir uma a uma.
+        if (serie && ajustes_tmdb_eps())
+        { const char *p2 = js_array(corpo, fimC, "seasons");
+          while (p2 && nTNum < EX_TEMP_MAX) {
+            const char *pf = js_fim(p2);
+            int sn = (int)js_num(p2, pf, "season_number", -1.0);
+            if (sn > 0) tNums[nTNum++] = sn;
+            p2 = js_prox(pf);
+          } }
+
         pthread_mutex_unlock(&trava);
         free(corpo);
       }
     }
-    if (idCol > 0) {
+
+    // NOTAS DE EPISODIO DO TMDB — um pedido por temporada, como o
+    // fetchEpisodeEnrichment do web. Os votos entram em temps[] completando o
+    // que o Trakt nao tem (nota 0 ou episodio ausente); a fileira de notas
+    // por episodio nao precisa saber de onde vieram.
+    if (serie && ajustes_tmdb_eps() && idT > 0) {
+      int sn[EX_TEMP_MAX], nsn = 0, t2;
+      // Uniao das temporadas que o Trakt ja deu com as que o TMDB declarou.
+      for (t2 = 0; t2 < nTemps && nsn < EX_TEMP_MAX; t2++)
+        sn[nsn++] = temps[t2].numero;
+      for (t2 = 0; t2 < nTNum && nsn < EX_TEMP_MAX; t2++) {
+        int k, tem = 0;
+        for (k = 0; k < nsn; k++) if (sn[k] == tNums[t2]) tem = 1;
+        if (!tem) sn[nsn++] = tNums[t2];
+      }
+      for (t2 = 0; t2 < nsn; t2++) {
+        // Temporada que o Trakt ja deu INTEIRA (todos os episodios com nota)
+        // nao precisa de uma viagem ao TMDB — era o rabo mais longo da cadeia:
+        // uma serie de 12 temporadas fazia 12 GETs para preencher lacuna nenhuma.
+        { int t3, completa = 0, e3;
+          pthread_mutex_lock(&trava);
+          for (t3 = 0; t3 < nTemps; t3++)
+            if (temps[t3].numero == sn[t2]) break;
+          if (t3 < nTemps && temps[t3].nEps > 0) {
+            completa = 1;
+            for (e3 = 0; e3 < temps[t3].nEps; e3++)
+              if (!temps[t3].eps[e3].nota) { completa = 0; break; }
+          }
+          pthread_mutex_unlock(&trava);
+          if (completa) continue; }
+        snprintf(url, sizeof url,
+                 "%s/tv/%ld/season/%d?api_key=%s&language=%s",
+                 "https://api.themoviedb.org/3", idT, sn[t2], chave,
+                 desc_tmdb_idioma());
+        corpo = rede_baixar(url, 15);
+        if (!corpo) continue;
+        { struct { int ep, nota; } eps[EX_EP_MAX];
+          int ne = 0;
+          const char *p2 = js_array(corpo, NULL, "episodes");
+          while (p2 && ne < EX_EP_MAX) {
+            const char *pf = js_fim(p2);
+            int en = (int)js_num(p2, pf, "episode_number", -1.0);
+            double r = js_num(p2, pf, "vote_average", 0.0);
+            if (en > 0 && r > 0.0) {
+              eps[ne].ep = en;
+              eps[ne].nota = (int)(r * 10.0 + 0.5);
+              ne++;
+            }
+            p2 = js_prox(pf);
+          }
+          free(corpo);
+          if (!ne) continue;
+          pthread_mutex_lock(&trava);
+          if (!strcmp(id, idPedido)) {
+            int t3;
+            for (t3 = 0; t3 < nTemps; t3++)
+              if (temps[t3].numero == sn[t2]) break;
+            if (t3 == nTemps && nTemps < EX_TEMP_MAX) {
+              temps[t3].numero = sn[t2];
+              temps[t3].nEps = 0;
+              nTemps++;
+            }
+            if (t3 < nTemps) {
+              int e2;
+              for (e2 = 0; e2 < ne; e2++) {
+                int k;
+                for (k = 0; k < temps[t3].nEps; k++)
+                  if (temps[t3].eps[k].ep == eps[e2].ep) break;
+                if (k < temps[t3].nEps) {
+                  // Trakt sem nota (0) recebe a do TMDB; nota de verdade
+                  // fica — a do Trakt reflete a comunidade que o app ja usa.
+                  if (!temps[t3].eps[k].nota)
+                    temps[t3].eps[k].nota = eps[e2].nota;
+                } else if (temps[t3].nEps < EX_EP_MAX) {
+                  temps[t3].eps[k].ep = eps[e2].ep;
+                  temps[t3].eps[k].nota = eps[e2].nota;
+                  temps[t3].nEps++;
+                }
+              }
+            }
+          }
+          pthread_mutex_unlock(&trava);
+        }
+      }
+    }
+    if (!serie && ajustes_tmdb_col() && idCol > 0) {
       snprintf(url, sizeof url, "%s/collection/%ld?api_key=%s&language=%s",
                "https://api.themoviedb.org/3", idCol, chave, desc_tmdb_idioma());
       corpo = rede_baixar(url, 15);
@@ -615,6 +841,12 @@ static void *buscar(void *arg) {
   if (!pedidoAindaAtual(id)) { finalizarBusca(id); return NULL; }
 
   // --- relacionados ---
+  // "Mais como este": quando o TMDB ja encheu rel[] pelo append
+  // recommendations (tmdb_use_more_like_this), o Trakt nao e consultado —
+  // e o web faz a mesma escolha (TMDB primeiro, Trakt como o que sobra).
+  // Quando o append falhou ou veio vazio, o Trakt responde como sempre.
+  if (nRel == 0 && temTrakt)
+  {
   snprintf(url, sizeof url,
            "https://api.trakt.tv/%s/%s/related?limit=%d&extended=images",
            tipo, id, EX_REL_MAX);
@@ -685,6 +917,7 @@ static void *buscar(void *arg) {
     }
     pthread_mutex_unlock(&trava);
   }
+  }
 
   { int k, q = 0;
     for (k = 0; k < EX_NFONTES; k++) if (notas[k]) q++;
@@ -700,7 +933,14 @@ static void *buscar(void *arg) {
 void extras_pedir(const char *imdb, int serie, long tmdbId) {
   char id[24];
   const char *dp;
-  if (!imdb || imdb[0] != 't' || !trakt_ativo()) return;
+  if (!imdb || imdb[0] != 't') return;
+  // Sem nenhuma fonte online nao ha o que buscar: o Trakt alimenta vistos,
+  // nota, comentarios e related de sobra; a chave TMDB alimenta ficha,
+  // produtoras e "Mais como este"; o MDBList alimenta as notas por fonte.
+  // Antes o teste era so trakt_ativo — e uma conta sem Trakt perdia ate o
+  // que nao depende dele.
+  if (!trakt_ativo() && !desc_chave_tmdb()[0] &&
+      !(mdbChave[0] && ajustes_mdblist_ligado())) return;
   // O campo do catalogo pode vir com episodio ("tt9737326:2:1"), que e o
   // formato que os addons de fonte usam. O Trakt so conhece o id do TITULO —
   // com o sufixo ele responde 404 e as tres abas ficavam vazias em toda serie.
@@ -717,7 +957,7 @@ void extras_pedir(const char *imdb, int serie, long tmdbId) {
   tmdbPedido = tmdbId;
   notaTrakt = votosTrakt = nComent = nRel = nTemps = nCol = 0;
   colNome[0] = 0;
-  nTrailer = fichaDur = 0;
+  nTrailer = fichaDur = nEstudio = 0;
   fichaStatus[0] = fichaPaises[0] = fichaCert[0] = fichaLanc[0] = 0;
   memset(vistos, 0, sizeof vistos);
   progressoPronto = proximoT = proximoE = 0;
@@ -882,6 +1122,35 @@ const char *extras_trailer_miniatura(int i) {
   return (i >= 0 && i < nTrailer) ? trailer[i].mini : "";
 }
 
+// Abre o trailer no app nativo da plataforma. O app nao tem reprodutor de
+// YouTube embutido; em vez de prometer e nao cumprir, entrega o video ao
+// componente que cada plataforma ja tem: o navegador do webOS (via luna-send),
+// a aba do Tizen (window.open) ou o browser do desktop (open).
+void extras_trailer_abrir(int i) {
+  const char *yt = extras_trailer_yt(i);
+  if (!yt[0]) return;
+  char url[128];
+  snprintf(url, sizeof url, "https://www.youtube.com/watch?v=%s", yt);
+#if defined(__EMSCRIPTEN__)
+  char js[200];
+  snprintf(js, sizeof js, "window.open('%s','_blank')", url);
+  emscripten_run_script(js);
+#elif defined(__APPLE__)
+  char cmd[160];
+  snprintf(cmd, sizeof cmd, "open '%s'", url);
+  system(cmd);
+#else
+  // webOS: luna-send lanca o navegador com a URL. O app roda como root e
+  // /usr/bin/luna-send e acessivel dentro do jail.
+  char cmd[512];
+  snprintf(cmd, sizeof cmd,
+    "luna-send -n 1 luna://com.webos.applicationManager/launch "
+    "'{\"id\":\"com.webos.app.browser\",\"params\":{\"target\":\"%s\"}}'",
+    url);
+  system(cmd);
+#endif
+}
+
 const char *extras_colecao_nome(void) { return colNome; }
 int extras_n_colecao(void) { return nCol; }
 const char *extras_colecao_titulo(int i) {
@@ -891,6 +1160,21 @@ const char *extras_colecao_ano(int i) {
   return (i >= 0 && i < nCol) ? col[i].ano : "";
 }
 long extras_colecao_tmdb(int i) { return (i >= 0 && i < nCol) ? col[i].tmdb : 0; }
+
+// PRODUTORAS/REDES — ver a declaracao de `estudio` la em cima.
+int extras_n_estudios(void) { return nEstudio; }
+const char *extras_estudio_nome(int i) {
+  return (i >= 0 && i < nEstudio) ? estudio[i].nome : "";
+}
+const char *extras_estudio_logo(int i) {
+  return (i >= 0 && i < nEstudio) ? estudio[i].logo : "";
+}
+long extras_estudio_tmdb(int i) {
+  return (i >= 0 && i < nEstudio) ? estudio[i].tmdb : 0;
+}
+int extras_estudio_rede(int i) {
+  return (i >= 0 && i < nEstudio) ? estudio[i].rede : 0;
+}
 
 int extras_n_temporadas(void) { return nTemps; }
 int extras_temporada_numero(int t) {

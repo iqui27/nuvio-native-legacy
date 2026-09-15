@@ -28,6 +28,9 @@ int  trakt_carregar(const char *dirArte);   // 1 quando ha credencial
 int  trakt_cabecalhos(const char **cab, char *aut, size_t nAut,
                       char *chave, size_t nChave);
 int  trakt_ativo(void);
+// 1 quando a ultima resposta do Trakt foi 401 para ESTE token. traktauth
+// observa isto para disparar a renovacao por refresh token.
+int  trakt_recusada(void);
 
 // Credencial vinda da CONTA, no lugar do arquivo. O token sai de
 // sync_pull_provider_credentials (provider "trakt"); o clientId e do

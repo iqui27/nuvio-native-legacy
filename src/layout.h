@@ -85,6 +85,10 @@
 // SDL_scancode.h padrao, por isso vem como numero.
 #define NV_SCANCODE_BACK 482
 #define NV_SCANCODE_BLUE 489 // SDL_webOS.h: SDL_WEBOS_SCANCODE_BLUE
+// CH+/CH- do controle da LG. Existiam no SDL_webOS.h do sysroot e nao tinham
+// consumidor — agora trocam de canal no player quando um canal esta no ar.
+#define NV_SCANCODE_CH_UP   480 // SDL_WEBOS_SCANCODE_CH_UP
+#define NV_SCANCODE_CH_DOWN 481 // SDL_WEBOS_SCANCODE_CH_DOWN
 // Quanto tempo o OK precisa ficar pressionado para valer como pressao longa.
 //
 // 700 ms, e nao os 500 de antes. O relato foi "seguro e ele acaba clicando

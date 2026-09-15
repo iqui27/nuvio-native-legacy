@@ -87,6 +87,10 @@ void cat_republicar_fileiras(const CatFileira *f, int n) { guardar(f, n); }
 void  SDL_Delay(Uint32 ms)                 { usleep(ms * 1000); }
 int   ajustes_cw_fonte(void)               { return 0; }
 int   ajustes_idioma_ingles(void)          { return 0; }
+// Integracao TMDB ligada por padrao, como no app de verdade — o portao
+// desc_chave_tmdb consulta estes stubs pelo caminho inteiro.
+int   ajustes_tmdb_ligado(void)            { return 1; }
+const char *ajustes_tmdb_idioma(void)      { return "pt-BR"; }
 int   cat_acrescentar(const CatItem *i)    { (void)i; return -1; }
 void  cat_atualizar_item(int i, const CatItem *n) { (void)i; (void)n; }
 void  cat_cache_substituido(void)          { }

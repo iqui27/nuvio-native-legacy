@@ -63,7 +63,7 @@
 // "Inicio" sem acento era erro de portugues NA TELA. E "Busca", nao "Buscar":
 // os outros tres sao substantivos (Biblioteca, Ajustes) e o verbo destoava.
 // Rotulos e ordem conferidos na referencia.
-static const char *ROTULOS[MENU_N] = { "Início", "Busca", "Biblioteca", "Perfil e Stats", "Ajustes" };
+static const char *ROTULOS[MENU_N] = { "Início", "Guia TV", "Busca", "Biblioteca", "Perfil e Stats", "Ajustes" };
 
 // RODAPE: quem esta usando o app, e a porta para trocar. Ele e um item de
 // FOCO a mais, no indice MENU_N — nao entrou no enum de proposito, porque
@@ -189,7 +189,7 @@ void menu_atualizar(float dt, Uint32 agora) {
 
 // Mesmos vetores do sidebar oficial, rasterizados no build e tintados pelo shader.
 static void icone(int d, float cx, float cy, float s, float r, float g, float b, float a) {
-  static const char *nomes[MENU_N] = {"menu_home", "menu_search", "menu_library", "menu_profile", "menu_settings"};
+  static const char *nomes[MENU_N] = {"menu_home", "menu_guide", "menu_search", "menu_library", "menu_profile", "menu_settings"};
   if (d < 0 || d >= MENU_N) return;
   gfx_icone((GfxRect){cx-s*.5f, cy-s*.5f, s, s}, nomes[d], r, g, b, a);
 }

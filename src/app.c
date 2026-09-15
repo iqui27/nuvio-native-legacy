@@ -23,6 +23,8 @@
 #include "simklauth.h"
 #include "text.h"
 #include "vertudo.h"
+#include "guia.h"
+#include "epg.h"
 #include "posplay.h"
 #include "ctxmenu.h"
 #include "marco.h"
@@ -179,6 +181,7 @@ static void trocarTela(Tela nova) {
   // Cada tela zera o proprio estado ao ser aberta: voltar para a busca com o
   // texto de duas navegacoes atras seria lixo, nao memoria util.
   switch (tela) {
+    case TELA_GUIA:       guia_abrir();         break;
     case TELA_BUSCA:      busca_iniciar();      break;
     case TELA_BIBLIOTECA: biblioteca_iniciar(); break;
     case TELA_PERFIL:     perfil_abrir(); pedirPerfil(); break;
@@ -207,6 +210,28 @@ static void episodioDoDetalhe(void) {
   int t=0,e=0;
   detail_ep_foco(&t,&e);
   player_definir_episodio(t,e);
+}
+
+// TOCAR UM CANAL, direto — o "OK assiste" do guia e o zap do CH+/-.
+//
+// O guia entrega um CatItem pronto (id completo do addon, tipo "channel"):
+// canal que ja passou pelo catalogo ganha o indice dele, os demais entram por
+// cat_acrescentar — o player le tudo de cat_item. Reusa o mesmo encerramento
+// do episodio seguinte: o fluxo antigo para antes de o novo pedir fonte, e
+// aguardandoFonte=1 manda a escolha para stream_primeira_boa, como o
+// Reproduzir do detalhe — sem folha de fontes no meio, que para um canal ao
+// vivo so atrapalharia o zapear.
+static void tocarCanal(const CatItem *it) {
+  int ni;
+  if (!it || !it->imdb[0]) return;
+  ni = cat_indice_por_imdb(it->imdb);
+  if (ni < 0) ni = cat_acrescentar(it);
+  if (ni < 0) return;
+  if (player_aberto()) player_encerrar();
+  player_abrir(ni, NULL);
+  addons_buscar(it->imdb, "channel");
+  aguardandoFonte = 1;
+  marco("guia: buscando fontes do canal");
 }
 
 // A home carregou? Sem arte no pacote ela nao carrega, e ate agora isso
@@ -321,6 +346,10 @@ void app_evento(const SDL_Event *e) {
   if (faixas_aberta()) { faixas_evento(e); return; }
   if (episodios_aberto()) { episodios_evento(e); return; }
   if (stream_folha_aberta()) { stream_folha_evento(e); return; }
+  // O OVERLAY DO GUIA fica acima do player: aberto, ele e quem recebe o D-pad
+  // (e o KEYUP do OK longo que marca favorito — por isso esta guarda vem antes
+  // do player e nao dentro do switch de telas).
+  if (guia_overlay_aberta()) { guia_evento(e); return; }
   if (player_aberto()) { player_evento(e); return; }
   if (detail_aberto()) { detail_evento(e); return; }
   if (spainel_aberto()) { spainel_evento(e); return; }
@@ -332,6 +361,7 @@ void app_evento(const SDL_Event *e) {
   if (vertudo_aberta()) { vertudo_evento(e); return; }
 
   switch (tela) {
+    case TELA_GUIA:       guia_evento(e);       break;
     case TELA_BUSCA:      busca_evento(e);      break;
     case TELA_BIBLIOTECA: biblioteca_evento(e); break;
     case TELA_PERFIL:     perfil_evento(e);     break;
@@ -585,6 +615,14 @@ void app_atualizar(float dt, Uint32 agora) {
   if (tela==TELA_HOME && home_pediu_social()) {
     trocarTela(TELA_AJUSTES);menu_definir_destino(MENU_AJUSTES);
   }
+  // "Ver tudo" de uma fileira de canais (ou OK num cartao de canal) abre o
+  // GUIA — o canal nao tem grade de cartazes para mostrar; tem programacao.
+  { char gid[80] = "";
+    if (tela == TELA_HOME && home_pediu_guia(gid, sizeof gid)) {
+      trocarTela(TELA_GUIA);
+      menu_definir_destino(MENU_GUIA);
+      if (gid[0]) guia_focar_id(gid);
+    } }
   // A lista de addons foi aberta DE Ajustes, entao o Back dela volta para
   // Ajustes. Cair na home aqui faria a pessoa refazer o caminho inteiro so
   // para ligar dois addons seguidos.
@@ -598,7 +636,8 @@ void app_atualizar(float dt, Uint32 agora) {
 
   // Fora da home, o Back tem para onde voltar: a home. So nela ele fecha o app.
   if (tela != TELA_HOME) {
-    int fechar = (tela == TELA_BUSCA      && busca_quer_sair())
+    int fechar = (tela == TELA_GUIA       && guia_quer_sair())
+              || (tela == TELA_BUSCA      && busca_quer_sair())
               || (tela == TELA_BIBLIOTECA && biblioteca_quer_sair())
               || (tela == TELA_PERFIL      && perfil_quer_sair())
               || (tela == TELA_SOCIAL      && social_quer_sair())
@@ -621,6 +660,7 @@ void app_atualizar(float dt, Uint32 agora) {
 
   if (menu_mudou_destino()) {
     switch (menu_destino()) {
+      case MENU_GUIA:       trocarTela(TELA_GUIA);       break;
       case MENU_BUSCAR:     trocarTela(TELA_BUSCA);      break;
       case MENU_BIBLIOTECA: trocarTela(TELA_BIBLIOTECA); break;
       // DIRETO PARA A TELA, e nao mais para o painel lateral. O item do menu
@@ -691,7 +731,12 @@ void app_atualizar(float dt, Uint32 agora) {
         // ele esperar de olho numa lista vazia.
         addons_buscar_legendas(alvo, ci->tipo);
       } }
-    if (detail_pediu_reproduzir() && aguardandoFonte != 2) {
+    // "Assistir do comeco" (issue #46) segue o MESMO caminho do primario; a
+    // unica diferenca e a trava de retomada, armada depois de o episodio ficar
+    // definitivo — player_do_inicio sobrevive as re-chamadas tardias de
+    // player_definir_episodio.
+    int doInicio = detail_pediu_do_inicio();
+    if ((detail_pediu_reproduzir() || doInicio) && aguardandoFonte != 2) {
       // A tela abre JA, no estado "abrindo fonte", e a escolha acontece depois.
       // Escolher antes deixaria o botao sem resposta por segundos, e escolher
       // sem verificar entregava o video de aviso do debrid — que toca normal e
@@ -699,6 +744,7 @@ void app_atualizar(float dt, Uint32 agora) {
       const CatItem *ci = cat_item(detail_indice());
       player_abrir(detail_indice(), NULL);
       episodioDoDetalhe();
+      if (doInicio) player_do_inicio();
       // O episodio so fica definitivo DEPOIS de abrir o player. Refaça sempre
       // o pedido de legenda nesse ponto; a busca de prefetch pode ter comecado
       // no episodio anteriormente focado e o worker agora troca para o pedido
@@ -791,6 +837,29 @@ void app_atualizar(float dt, Uint32 agora) {
   if (aguardandoFonte != 2 && player_pediu_fontes()) {
     stream_folha_contexto(player_linha_episodio());
     stream_folha_abrir();
+  }
+
+  // CANAL ESCOLHIDO NO GUIA — tela cheia ou overlay, mesma acao: toca direto.
+  { CatItem it;
+    if (aguardandoFonte != 2 && guia_pediu_canal(&it)) tocarCanal(&it); }
+
+  // CH+/- COM CANAL NO AR: zap na ordem do guia. A lista pode ainda nao ter
+  // sido carregada (guia nunca aberto nesta sessao): a primeira tecla dispara
+  // a carga e nao troca nada, a seguinte ja zapeia.
+  { int dir = player_pediu_zap();
+    if (dir && player_aberto() && aguardandoFonte != 2) {
+      const CatItem *c = cat_item(player_indice());
+      CatItem it;
+      if (c && guia_zap(c->imdb, dir, &it)) tocarCanal(&it);
+      else guia_carregar();
+    } }
+
+  // BAIXO/AZUL COM CANAL NO AR: o overlay do guia abre focado no canal que
+  // esta tocando.
+  if (player_pediu_guia() && player_aberto()) {
+    const CatItem *c = cat_item(player_indice());
+    guia_overlay_abrir();
+    if (c) guia_focar_id(c->imdb);
   }
   if (aguardandoFonte != 2 && stream_folha_recarregar()) {
     if (player_aberto()) buscarParaPlayer();
@@ -922,6 +991,11 @@ void app_atualizar(float dt, Uint32 agora) {
     } }
 
   vertudo_atualizar(dt, agora);
+  // O guia publica o fio de carga e bombeia o EPG mesmo fechado — barato, e e
+  // o que deixa o zap por CH+/- responder na segunda tecla em vez de na
+  // vigesima. Com o player num canal, epg_passo alimenta o banner "agora".
+  guia_atualizar(dt, agora);
+  if (player_aberto()) epg_passo();
   ctx_atualizar(dt, agora);
   { int i = ctx_pediu_detalhes();
     if (i >= 0) {
@@ -1018,6 +1092,7 @@ static void desenharTelas(Uint32 agora) {
     // nao precisa ser desenhada por baixo — a mesma conta do detail_cobre_tela.
     if (!detail_cobre_tela() && !vertudo_aberta()) {
       switch (tela) {
+        case TELA_GUIA:       guia_desenhar(agora);       break;
         case TELA_BUSCA:      busca_desenhar(agora);      break;
         case TELA_BIBLIOTECA: biblioteca_desenhar(agora); break;
         case TELA_PERFIL:     perfil_desenhar(agora);     break;
@@ -1057,6 +1132,9 @@ static void desenharTelas(Uint32 agora) {
     if (spainel_visivel() && !detail_aberto()) spainel_desenhar(agora);
   }
   player_desenhar(agora);
+  // O overlay do guia vai POR CIMA do player — o video continua atras do fundo
+  // a 94%, que e o que diz "a TV nao parou" enquanto se troca de canal.
+  if (guia_overlay_aberta()) guia_desenhar(agora);
   episodios_desenhar();
   stream_folha_desenhar(agora);
   faixas_desenhar(agora);

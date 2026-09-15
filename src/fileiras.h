@@ -150,6 +150,12 @@ int         fil_linha_origem(int i);
 const char *fil_linha_addon(int i);
 const char *fil_linha_conteudo(int i);
 int         fil_linha_itens(int i);
+// `fil_linha_na_home`: a ultima home montada tinha esta fileira.
+// `fil_linha_vista`: algum registrador a viu nesta sessao — catalogo que a
+// descoberta declarou mas o limite cortou tem vista=1 e naHome=0; linha de
+// addon que foi embora tem as duas zeradas e a folha a marca "Fora da Home".
+int         fil_linha_na_home(int i);
+int         fil_linha_vista(int i);
 // 0 quando a forma do card NAO e escolha desta fileira: "Continuar assistindo"
 // tira a forma de `continueWatchingCardStyle`, o feed dos amigos precisa do
 // card com autoria e um grupo de colecao desenha atalhos, nao titulos. Oferecer
@@ -162,11 +168,25 @@ void fil_ciclar_tipo(int i);
 void fil_ciclar_tam(int i);
 // Troca a linha com a vizinha e devolve o novo indice dela (o mesmo, se nao deu
 // para mover). E o gesto de "pegar e mover" da tela de reordenar.
-// Alinha a lista de Ajustes com a ordem que a home desenha, ENQUANTO a pessoa
-// nunca tiver reordenado. Depois do primeiro fil_mover nao faz nada: dali em
-// diante quem manda e a escolha dela. Ver a nota longa em fileiras.c.
-void fil_espelhar_ordem(const char *const *chaves, int n);
+// Alinha a lista de Ajustes com a ordem que a home desenha. Sem ordem local
+// reordena o bloco da tela na ordem dela; com ordem local a ordem da pessoa
+// fica e as chaves novas entram no fim. Linhas que a home nao tem ficam onde
+// estavam e ganham naHome=0 — mover uma colecao que so monta tarde para o fim
+// apagaria a posicao que a pessoa deu a ela (a folha as marca "Fora da Home").
+// Chave da tela que a lista nao conhece (tabela cheia) toma a vaga de uma
+// linha morta sem escolha. `titulos` pode ser NULL — sem ele a linha resgatada
+// mostra a chave ate o proximo registro.
+void fil_espelhar_ordem(const char *const *chaves,
+                        const char *const *titulos, int n);
 int  fil_mover(int i, int direcao);
+// Move o BLOCO inteiro de um addon para cima ou para baixo, trocando com o
+// bloco vizinho inteiro. Devolve o novo indice da linha `i`, ou `i` se nao
+// deu para mover.
+int  fil_mover_grupo(int i, int direcao);
+// Reordena a lista inteira por addon: fixas do app, colecoes, depois catalogos
+// agrupados pelo nome do addon. Marca ordemLocal — a ordenacao e escolha da
+// pessoa.
+void fil_ordenar_por_addon(void);
 
 // --- consulta por chave (descoberta.c e home.c) ------------------------------
 int   fil_oculta(const char *chave);

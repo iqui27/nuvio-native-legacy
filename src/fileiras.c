@@ -21,6 +21,8 @@ typedef struct {
   char addon[48];      // nome do addon que declara o catalogo; "" desconhecido
   char conteudo[8];    // "movie" | "series" | ""
   int  itens;          // titulos que a fileira tem agora; -1 desconhecido
+  int  vista;          // registrada nesta sessao (descoberta ou home)
+  int  naHome;         // estava na ultima lista que a home montou
 } Linha;
 
 static Linha linhas[FIL_MAX];
@@ -256,6 +258,7 @@ void fil_registrar(const char *chave, const char *titulo,
     linhas[i].itens = -1;
     grava = 1;
   }
+  linhas[i].vista = 1;
   // O PRIMEIRO A REGISTRAR MANDA NO NOME, e nao o ultimo. Sao dois
   // registradores: a descoberta com o nome do catalogo (ja com customTitles) e
   // a home com o nome que ela desenha, que para meia dezena de chaves conhecidas
@@ -329,6 +332,12 @@ const char *fil_linha_conteudo(int i) {
 int fil_linha_itens(int i) {
   return (i >= 0 && i < nLinhas) ? linhas[i].itens : -1;
 }
+int fil_linha_na_home(int i) {
+  return (i >= 0 && i < nLinhas) ? linhas[i].naHome : 0;
+}
+int fil_linha_vista(int i) {
+  return (i >= 0 && i < nLinhas) ? linhas[i].vista : 0;
+}
 int fil_aceita_tipo(int i)  { return (i >= 0 && i < nLinhas) && !formaFixa(linhas[i].chave); }
 
 // ------------------------------------------------------------------ mutacao
@@ -377,45 +386,102 @@ void fil_ciclar_tam(int i) {
 // remontagem, e bumpar a revisao aqui faria a home se remontar para sempre.
 // Nada se perde por nao gravar — enquanto ordemLocal e 0 esta ordem e
 // recalculada da home a cada arranque.
-void fil_espelhar_ordem(const char *const *chaves, int n) {
+// A LISTA SEGUE A HOME ATE A PRIMEIRA REORDENACAO — e quem a home nao tem
+// fica marcado, nao apagado nem reordenado.
+//
+// Duas ausencias tem destinos diferentes de proposito:
+//
+// - AUSENTE FICA ONDE ESTA. Uma linha fora da home pode estar so AINDA NAO
+//   MONTADA — no arranque a home publica em ~16 etapas e as colecoes chegam
+//   por ultimo. Mover as ausentes para o fim (a tentacao obvia) regravaria a
+//   posicao que a pessoa deu a elas, e a cada boot uma colecao tardia
+//   reapareceria no fim. Elas ficam paradas e a folha as marca "Fora da
+//   Home"; o poço do #30 nao volta porque a visibilidade nao depende da
+//   posicao — fil_unir emite na ordem da propria lista, ausente ou nao.
+//
+// - CHAVE VIVA SEM REGISTRO ENTRA NO FIM. fil_registrar descarta quando a
+//   tabela lota (FIL_MAX=192 e o arquivo do dono esta cheio de chaves mortas
+//   que o AICat gera a cada ciclo — "because_watched_v11201192"). Era assim
+//   que a colecao do FrostView aparecia na home e nunca na folha. O resgate
+//   toma a vaga de uma linha morta SEM nenhuma escolha da pessoa (ligada,
+//   forma e tamanho padrao) — perder esse registro nao perde nada.
+void fil_espelhar_ordem(const char *const *chaves,
+                        const char *const *titulos, int n) {
   static Linha novo[FIL_MAX];
   char usado[FIL_MAX];
   int i, k = 0;
   if (!chaves || n < 1) return;
   pthread_mutex_lock(&trava);
   garantir();
-  if (!ordemLocal && nLinhas > 0) {
-    // SO REORDENA O QUE A TELA CONHECE. Quem ela nao mencionou fica EXATAMENTE
-    // onde estava — nao vai para o fim.
-    //
-    // A versao antiga reconstruia a lista inteira: primeiro as chaves da tela,
-    // na ordem dela, e depois "todo o resto" atras. Parece inofensivo, mas esta
-    // funcao roda A CADA REMONTAGEM, e no arranque a home esta pela metade — os
-    // catalogos entram em ~16 publicacoes e as colecoes da conta chegam depois
-    // de todas elas. Cada remontagem precoce empurrava as colecoes para o fim
-    // da ordem.
-    //
-    // E dali elas nao voltavam: no fim da ordem o limite de fileiras as corta,
-    // cortadas nunca aparecem na tela, e nao aparecendo nunca sao promovidas de
-    // volta. Um poco. A unica saida era desligar e religar a fileira a mao — e
-    // o proximo arranque rebaixava tudo de novo, que e exatamente o relato do
-    // #30: "toggling makes it appear again; exit and reopen and it disappears".
-    //
-    // Agora a tela so permuta as fileiras dela DENTRO DAS POSICOES QUE ELAS JA
-    // OCUPAM. Uma home pela metade nao tem como mexer em quem ela nem viu.
+  memset(usado, 0, sizeof usado);
+  for (i = 0; i < n; i++) {
+    // "last_session" nao entra nem no mapa: e contexto do player, nao fileira
+    // — home.c nao a registra e ela nao pode virar linha da folha.
+    int p = (chaves[i] && strcmp(chaves[i], "last_session"))
+            ? achar(chaves[i]) : -1;
+    if (p >= 0) usado[p] = 1;
+  }
+  // O RESGATE. O titulo vem de quem chama — a home o tem na mao; sem ele a
+  // linha mostraria a chave crua ate o proximo registro. A vaga sai de linha
+  // morta sem escolha, compactada para fora; sem morta e sem vaga, fica para
+  // a proxima montagem.
+  for (i = 0; i < n; i++) {
+    int v;
+    if (!chaves[i] || !strcmp(chaves[i], "last_session") ||
+        achar(chaves[i]) >= 0) continue;
+    if (nLinhas < FIL_MAX) {
+      v = nLinhas++;
+    } else {
+      // Morta de verdade e NUNCA vista nesta sessao: uma colecao que so monta
+      // tarde tem vista=1 e naHome=0 nesta volta — sem o !vista o resgate
+      // roubava o registro dela na primeira publicacao parcial da home.
+      for (v = 0; v < nLinhas; v++)
+        if (!usado[v] && !linhas[v].vista && !linhas[v].oculta &&
+            linhas[v].tipo == FIL_TIPO_AUTO && linhas[v].tam == FIL_TAM_PADRAO)
+          break;
+      if (v >= nLinhas) continue;
+      memmove(linhas + v, linhas + v + 1,
+              sizeof(Linha) * (size_t)(nLinhas - v - 1));
+      nLinhas--;
+      memset(usado, 0, sizeof usado);
+      for (k = 0; k < n; k++) {
+        int p = (chaves[k] && strcmp(chaves[k], "last_session"))
+                ? achar(chaves[k]) : -1;
+        if (p >= 0) usado[p] = 1;
+      }
+      v = nLinhas++;
+    }
+    memset(&linhas[v], 0, sizeof linhas[v]);
+    snprintf(linhas[v].chave, FIL_CHAVE, "%s", chaves[i]);
+    if (titulos && titulos[i])
+      snprintf(linhas[v].titulo, FIL_TITULO, "%s", titulos[i]);
+    linhas[v].tam = FIL_TAM_PADRAO;
+    linhas[v].itens = -1;
+    linhas[v].vista = 1;
+    usado[v] = 1;
+    registroSujo = 1;
+  }
+  for (i = 0; i < nLinhas; i++) linhas[i].naHome = usado[i] ? 1 : 0;
+  if (ordemLocal) {
+    // A ordem e da pessoa: NAO REORDENA. O resgate acima ja poe a chave nova
+    // no fim, que e onde fil_unir a colocaria na home.
+    pthread_mutex_unlock(&trava);
+    return;
+  }
+  if (nLinhas > 0) {
+    // SO REORDENA O QUE A TELA CONHECE, dentro das posicoes que elas ja
+    // ocupam — quem ela nao mencionou fica exatamente onde estava. E o que
+    // impede a home pela metade de rebaixar a colecao que ainda nao chegou.
     int slots[FIL_MAX], m = 0;
     char posto[FIL_MAX];
-    memset(usado, 0, sizeof usado);
-    for (i = 0; i < n; i++) {
-      int p = chaves[i] ? achar(chaves[i]) : -1;
-      if (p >= 0) usado[p] = 1;
-    }
+    k = 0;
     for (i = 0; i < nLinhas && m < FIL_MAX; i++)
       if (usado[i]) slots[m++] = i;
     memcpy(novo, linhas, sizeof(Linha) * (size_t)nLinhas);
     memset(posto, 0, sizeof posto);
     for (i = 0; i < n && k < m; i++) {
-      int p = chaves[i] ? achar(chaves[i]) : -1;
+      int p = (chaves[i] && strcmp(chaves[i], "last_session"))
+              ? achar(chaves[i]) : -1;
       if (p >= 0 && !posto[p]) { posto[p] = 1; novo[slots[k++]] = linhas[p]; }
     }
     memcpy(linhas, novo, sizeof(Linha) * (size_t)nLinhas);
@@ -424,19 +490,128 @@ void fil_espelhar_ordem(const char *const *chaves, int n) {
 }
 
 int fil_mover(int i, int direcao) {
-  int j = i + (direcao > 0 ? 1 : -1);
+  int j, ret = i;
   pthread_mutex_lock(&trava);
-  if (i >= 0 && i < nLinhas && j >= 0 && j < nLinhas) {
-    Linha t = linhas[i]; linhas[i] = linhas[j]; linhas[j] = t;
-    // A partir do primeiro movimento a ordem local EXISTE e passa a vencer a da
-    // conta. Antes disso o arquivo so guarda liga/desliga e forma, e a ordem
-    // continua sendo a do app web — que e o certo para quem nunca mexeu aqui.
-    ordemLocal = 1;
-    gravar();
-    i = j;
+  if (i >= 0 && i < nLinhas) {
+    int dir = direcao > 0 ? 1 : -1, temHome = 0;
+    // LINHA FORA DA HOME E TRANSPARENTE para quem esta nela: trocar com uma
+    // delas mudava a folha sem mudar a home — o "mexi e nada aconteceu" do
+    // relato. A lista so sabe quem esta na home depois da primeira montagem;
+    // sem nenhuma marcada, volta a troca simples de vizinhos.
+    for (j = 0; j < nLinhas; j++) if (linhas[j].naHome) { temHome = 1; break; }
+    j = i + dir;
+    if (temHome && linhas[i].naHome)
+      while (j >= 0 && j < nLinhas && !linhas[j].naHome) j += dir;
+    if (j >= 0 && j < nLinhas) {
+      Linha t = linhas[i]; linhas[i] = linhas[j]; linhas[j] = t;
+      // A partir do primeiro movimento a ordem local EXISTE e passa a vencer
+      // a da conta. Antes disso o arquivo so guarda liga/desliga e forma, e a
+      // ordem continua sendo a do app web — que e o certo para quem nunca
+      // mexeu aqui.
+      ordemLocal = 1;
+      gravar();
+      ret = j;
+    }
   }
   pthread_mutex_unlock(&trava);
-  return i;
+  return ret;
+}
+
+// O GRUPO de uma linha: o nome do addon que a declarou, ou "" para as fixas do
+// app. Duas linhas com o mesmo addon formam um bloco, e o bloco inteiro se move
+// junto. Ver o comentario de fil_registrar sobre o campo addon.
+// O "grupo" de uma linha para fins de mover-em-bloco: nao e so o nome do
+// addon. Linhas do app tem addon vazio e COLECOES tambem — pelo nome cru as
+// tres coisas virariam um bloco so, e mover uma colecao arrastaria
+// "Continuar assistindo" junto. Por isso o grupo segue a ORIGEM da chave:
+// todas as do app sao um bloco, todas as colecoes sao outro, e cada addon e
+// um bloco proprio — as mesmas secoes que a folha de Ajustes desenha.
+static const char *grupoDe(int i) {
+  static char app[] = "\x01" "app", col[] = "\x01" "col", vazio[] = "";
+  int o;
+  if (i < 0 || i >= nLinhas) return vazio;
+  o = fil_origem_de(linhas[i].chave);
+  if (o == FIL_ORIGEM_APP)      return app;
+  if (o == FIL_ORIGEM_COLECAO)  return col;
+  return linhas[i].addon;
+}
+
+// Extensao do bloco que contem a linha `i`: anda para tras e para a frente
+// enquanto o addon for o mesmo. Devolve [ini, fim] inclusive.
+static void blocoDe(int i, int *ini, int *fim) {
+  const char *addon = grupoDe(i);
+  int a = i, b = i;
+  for (; a > 0 && !strcmp(grupoDe(a - 1), addon); a--) {}
+  for (; b < nLinhas - 1 && !strcmp(grupoDe(b + 1), addon); b++) {}
+  *ini = a; *fim = b;
+}
+
+// Move o BLOCO inteiro de um addon para cima ou para baixo, trocando com o
+// bloco vizinho inteiro (que pode ter varias linhas). Devolve o novo indice
+// da linha `i` dentro do bloco, ou `i` se nao deu para mover.
+//
+// BLOCO FANTASMA NAO VALE TROCA. Um bloco todo fora da home (addon que saiu,
+// catalogo ainda nao montado) trocado com um bloco vivo mudava a folha sem
+// mudar a home — o mesmo defeito de fil_mover, uma camada acima. Um bloco
+// vivo pula quantos blocos fantasmas estiverem no caminho ate o proximo vivo;
+// um bloco fantasma troca com o vizinho direto, vivo ou nao — a ordem dele
+// so vale entre os fantasmas.
+int fil_mover_grupo(int i, int direcao) {
+  int ret = i;
+  pthread_mutex_lock(&trava);
+  garantir();
+  if (i >= 0 && i < nLinhas) {
+    int ini, fim, vIni, vFim, b, q, meuVivo = 0, temHome = 0;
+    blocoDe(i, &ini, &fim);
+    for (q = 0; q < nLinhas; q++) if (linhas[q].naHome) { temHome = 1; break; }
+    if (temHome)
+      for (q = ini; q <= fim; q++) if (linhas[q].naHome) { meuVivo = 1; break; }
+    if (direcao > 0) {
+      b = fim + 1;
+      if (b >= nLinhas) goto sair;
+      blocoDe(b, &vIni, &vFim);
+      while (meuVivo) {
+        int vivo = 0;
+        for (q = vIni; q <= vFim; q++) if (linhas[q].naHome) { vivo = 1; break; }
+        if (vivo) break;
+        b = vFim + 1;
+        if (b >= nLinhas) goto sair;
+        blocoDe(b, &vIni, &vFim);
+      }
+      // Rotaciona [eu][o que passou por cima][vizinho] -> [meio][vizinho][eu].
+      { int tamMeu = fim - ini + 1, tamMeio = vFim - fim;
+        static Linha tmp[FIL_MAX];
+        memcpy(tmp, linhas + ini, sizeof(Linha) * (size_t)tamMeu);
+        memmove(linhas + ini, linhas + fim + 1, sizeof(Linha) * (size_t)tamMeio);
+        memcpy(linhas + ini + tamMeio, tmp, sizeof(Linha) * (size_t)tamMeu);
+        ordemLocal = 1; gravar();
+        ret = ini + tamMeio + (i - ini); }
+    } else {
+      b = ini - 1;
+      if (b < 0) goto sair;
+      blocoDe(b, &vIni, &vFim);
+      while (meuVivo) {
+        int vivo = 0;
+        for (q = vIni; q <= vFim; q++) if (linhas[q].naHome) { vivo = 1; break; }
+        if (vivo) break;
+        b = vIni - 1;
+        if (b < 0) goto sair;
+        blocoDe(b, &vIni, &vFim);
+      }
+      // Rotaciona [vizinho][o que passei por baixo][eu] -> [eu][vizinho][meio].
+      { int tamMeu = fim - ini + 1, tamMeio = ini - vIni;
+        static Linha tmp[FIL_MAX];
+        memcpy(tmp, linhas + ini, sizeof(Linha) * (size_t)tamMeu);
+        memmove(linhas + vIni + tamMeu, linhas + vIni,
+                sizeof(Linha) * (size_t)tamMeio);
+        memcpy(linhas + vIni, tmp, sizeof(Linha) * (size_t)tamMeu);
+        ordemLocal = 1; gravar();
+        ret = vIni + (i - ini); }
+    }
+  }
+sair:
+  pthread_mutex_unlock(&trava);
+  return ret;
 }
 
 // ------------------------------------------------------------------ consulta
@@ -524,6 +699,52 @@ void fil_esquecer(void) {
   limite = FIL_LIMITE_PADRAO;
   carregado = 1;   // nao reler o arquivo de quem saiu
   memset(linhas, 0, sizeof linhas);
+  gravar();
+  pthread_mutex_unlock(&trava);
+}
+
+#ifdef FIL_TESTE
+// Costura de teste: esquecer() NAO pode reler o arquivo (apagou o de quem
+// saiu), mas o teste da tabela cheia precisa de linhas "mortas" de verdade —
+// carregadas do disco, com vista=0, que e o que o resgate procura.
+void fil_teste_recarregar(void) { carregado = 0; }
+#endif
+
+// ORDENA A LISTA POR ADDON: primeiro as fixas do app, depois colecoes, depois
+// os catalogos agrupados pelo nome do addon. Dentro de cada addon a ordem
+// relativa se preserva — a funcao e um sort estavel.
+//
+// A pessoa chama isto quando a lista esta misturada e ela quer ver "o que e do
+// Xperience junto". Como muda a ordem, `ordemLocal` vira 1 — a ordenacao e a
+// escolha dela, nao um efeito colateral.
+void fil_ordenar_por_addon(void) {
+  static Linha novo[FIL_MAX];
+  int i, k = 0;
+  pthread_mutex_lock(&trava);
+  garantir();
+  // Passo 1: app e colecao primeiro, na ordem em que ja estao.
+  for (i = 0; i < nLinhas; i++)
+    if (fil_origem_de(linhas[i].chave) != FIL_ORIGEM_CATALOGO)
+      novo[k++] = linhas[i];
+  // Passo 2: catalogos agrupados por addon, na ordem de primeira aparicao.
+  { char vistos[FIL_MAX][48]; int nV = 0;
+    for (i = 0; i < nLinhas; i++) {
+      const char *a = linhas[i].addon;
+      int j;
+      if (fil_origem_de(linhas[i].chave) != FIL_ORIGEM_CATALOGO) continue;
+      for (j = 0; j < nV; j++) if (!strcmp(vistos[j], a)) break;
+      if (j < nV) continue;   // addon ja teve a vez
+      if (nV < FIL_MAX) snprintf(vistos[nV], 48, "%s", a);
+      nV++;
+      for (j = i; j < nLinhas; j++)
+        if (fil_origem_de(linhas[j].chave) == FIL_ORIGEM_CATALOGO &&
+            !strcmp(linhas[j].addon, a))
+          novo[k++] = linhas[j];
+    }
+  }
+  memcpy(linhas, novo, sizeof(Linha) * (size_t)k);
+  nLinhas = k;
+  ordemLocal = 1;
   gravar();
   pthread_mutex_unlock(&trava);
 }

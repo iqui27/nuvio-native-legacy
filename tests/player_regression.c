@@ -167,8 +167,12 @@ static void testar(void) {
   for(int i=0;i<10;i++)teclaPlayer(SDLK_RIGHT);
   teclaPlayer(SDLK_RETURN);assert(player_pediu_fontes() && !episodios_aberto());
   player_encerrar();strcpy(c.tipo,"series");
+  // O menu ganhou o GUIA TV entre Inicio e Busca: um DOWN agora para nele, e
+  // Buscar fica a dois. A ordem e a assercao do item novo.
   menu_iniciar();menu_abrir();teclaMenu(SDLK_DOWN);teclaMenu(SDLK_RETURN);
-  assert(menu_destino()==MENU_BUSCAR && menu_mudou_destino() && !menu_mudou_destino());
+  assert(menu_destino()==MENU_GUIA && menu_mudou_destino() && !menu_mudou_destino());
+  menu_abrir();teclaMenu(SDLK_DOWN);teclaMenu(SDLK_RETURN);
+  assert(menu_destino()==MENU_BUSCAR && menu_mudou_destino());
   menu_abrir();teclaMenu(SDLK_DOWN);teclaMenu(SDLK_ESCAPE);
   assert(!menu_aberto() && menu_destino()==MENU_BUSCAR);
   char pasta[]="/tmp/nuvio-progress-test-XXXXXX",arquivo[256];assert(mkdtemp(pasta));
@@ -186,6 +190,33 @@ static void testar(void) {
   assert(cat_item(0)->temporada==2 && cat_item(0)->episodio==4 && cat_item(0)->progresso==50);
   assert(!cat_item(0)->nomeEpisodio[0]);
   unlink(arquivo);snprintf(arquivo,sizeof arquivo,"%s/progresso.txt",pasta);unlink(arquivo);rmdir(pasta);
+
+  // CANAL AO VIVO: os scancodes do controle da LG (SDL_webOS.h) viram pedidos
+  // — CH+/- = zap na ordem do guia, BAIXO e AZUL = overlay. Num FILME as
+  // mesmas teclas nao podem disparar nada disso.
+  { CatItem tv={0};
+    snprintf(tv.tipo,sizeof tv.tipo,"channel");
+    snprintf(tv.titulo,sizeof tv.titulo,"Canal Teste");
+    snprintf(tv.imdb,sizeof tv.imdb,"cs:channel:teste");
+    cat_definir(&tv,1);
+    player_abrir(0,NULL);
+    assert(player_aberto());
+    { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.scancode=480; /* CH_UP */
+      player_evento(&e);assert(player_pediu_zap()==1 && !player_pediu_zap()); }
+    { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.scancode=481; /* CH_DOWN */
+      player_evento(&e);assert(player_pediu_zap()==-1); }
+    { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_DOWN;
+      player_evento(&e);assert(player_pediu_guia()==1 && !player_pediu_guia()); }
+    { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.scancode=489; /* BLUE */
+      player_evento(&e);assert(player_pediu_guia()==1); }
+    // E fora de canal, CH+/- nao e zap: segue o caminho normal do player.
+    player_encerrar();
+    strcpy(tv.tipo,"movie");cat_definir(&tv,1);player_abrir(0,NULL);
+    { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.scancode=480;
+      player_evento(&e);assert(!player_pediu_zap()); }
+    player_encerrar();
+    strcpy(tv.tipo,"series");cat_definir(&tv,1);
+  }
   puts("PASS: 40 fontes, DV em filename, DVD negativo, sem fontes fictícias, 40 episódios, foco/seleção e título do episódio.");
 }
 

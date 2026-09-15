@@ -22,6 +22,7 @@
 // significa que voltar para a home custa um passo a mais que ir buscar.
 typedef enum {
   MENU_INICIO,
+  MENU_GUIA,
   MENU_BUSCAR,
   MENU_BIBLIOTECA,
   MENU_PERFIL,

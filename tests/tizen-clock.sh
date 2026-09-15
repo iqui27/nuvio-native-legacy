@@ -14,7 +14,7 @@ for variant in before after; do
   if [ "$variant" = after ]; then flags=(-sWASM_BIGINT=0); fi
   "$EMCC" tests/tizen-clock.c src/marco.c -Isrc -O2 \
     -sENVIRONMENT=shell -sSINGLE_FILE=1 -sASSERTIONS=0 \
-    "${flags[@]}" -o "$OUT/$variant.js"
+    ${flags[@]+"${flags[@]}"} -o "$OUT/$variant.js"
   npx --yes esbuild@0.25.0 "$OUT/$variant.js" --target=chrome76 \
     --outfile="$OUT/$variant.76.js" --log-level=error
 done

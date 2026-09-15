@@ -17,7 +17,7 @@ for source in src/*.c; do
 done
 cc "${sources[@]}" tests/player_prefs.c -Isrc -o /tmp/nuvio-player-prefs-tests \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -framework OpenGL \
+  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined
 
 export NUVIO_DADOS="$DADOS"

@@ -1,5 +1,7 @@
 #include "trakt.h"
 #include "vistoep.h"
+#include "ajustes.h"
+#include "descoberta.h"
 #include "jsw.h"
 #include "idioma.h"
 #include "rede.h"
@@ -54,6 +56,25 @@ int trakt_operacao_estado(int tipo) {
 
 int trakt_ativo(void) { return ligado; }
 
+// A CREDENCIAL FOI RECUSADA (HTTP 401). O 401 so chegava ao log — a tela
+// seguia dizendo "conectado" e o dono so percebia quando o "Continuar
+// assistindo" nao vinha. Quem avisa e a camada de rede (rede_avisar_401),
+// porque o 401 pode vir de qualquer chamada — continuar, historico, extras.
+// traktauth_passo e quem age: tenta renovar pelo refresh guardado e, se o
+// refresh tambem morreu, derruba o estado para invalido.
+static volatile int credRecusada;
+static void avisoHttp401(const char *url) {
+  // /oauth/* responde 401 por credencial de APLICATIVO ruim — e problema do
+  // pacote, nao da sessao do usuario.
+  if (!strstr(url, "api.trakt.tv") || strstr(url, "/oauth/")) return;
+  if (ligado && !estadoLer(&credRecusada)) {
+    estadoEscrever(&credRecusada, 1);
+    printf("[trakt] HTTP 401: credencial recusada — renovacao pendente\n");
+    fflush(stdout);
+  }
+}
+int trakt_recusada(void) { return estadoLer(&credRecusada); }
+
 void trakt_esquecer(void) {
   token[0] = 0;
   cliente[0] = 0;
@@ -66,6 +87,10 @@ int trakt_definir(const char *tk, const char *cli) {
   snprintf(token, sizeof token, "%s", tk);
   if (cli && *cli) snprintf(cliente, sizeof cliente, "%s", cli);
   ligado = token[0] && cliente[0];
+  // Token NOVO limpa a marca de recusa — e o mesmo caminho por onde a
+  // renovacao (traktauth) e o pareamento novo chegam.
+  estadoEscrever(&credRecusada, 0);
+  rede_avisar_401(avisoHttp401);
   printf("[trakt] credencial da conta: %s\n",
          ligado ? "ativa" : "sem client id do aplicativo (ver tools/env.sh)");
   return ligado;
@@ -105,6 +130,10 @@ int trakt_carregar(const char *dirArte) {
   }
   fclose(f);
   ligado = token[0] && cliente[0];
+  // O ouvinte de 401 tambem vale para a credencial do PACOTE: este caminho nao
+  // passa por trakt_definir, e sem o registro a sessao morta do arquivo seguia
+  // invisivel — exatamente o caso que o dono relatou.
+  rede_avisar_401(avisoHttp401);
   printf("[trakt] %s\n", ligado ? "credencial carregada" : "credencial incompleta");
   return ligado;
 }
@@ -129,6 +158,49 @@ static int enfeitar(CatItem *d, const char *tipo) {
   ok = js_texto(corpo, NULL, "poster", d->poster, sizeof d->poster);
   js_texto(corpo, NULL, "background", d->backdrop, sizeof d->backdrop);
   js_texto(corpo, NULL, "logo", d->logo, sizeof d->logo);
+  // Continuar assistindo SEM arte acontece — o Cinemeta nao cobre tudo. Com a
+  // conta pedindo enriquecimento (`tmdb_enrich_continue_watching`), o TMDB
+  // completa o que faltou: /find resolve o id e a ficha devolve as imagens.
+  // So roda para item carente; no caso comum este bloco nem chega a rede.
+  if (ajustes_tmdb_cw() && (!d->backdrop[0] || !d->poster[0])) {
+    const char *chave = desc_chave_tmdb();
+    if (chave[0]) {
+      char *c2;
+      snprintf(url, sizeof url,
+               "https://api.themoviedb.org/3/find/%s?api_key=%s"
+               "&external_source=imdb_id", serie, chave);
+      c2 = rede_baixar(url, 8);
+      if (c2) {
+        long idT = 0;
+        const char *p = js_array(c2, NULL,
+                      !strcmp(tipo, "series") ? "tv_results" : "movie_results");
+        if (p) idT = (long)js_num(p, js_fim(p), "id", 0.0);
+        free(c2);
+        if (idT > 0) {
+          snprintf(url, sizeof url,
+                   "https://api.themoviedb.org/3/%s/%ld?api_key=%s&language=%s",
+                   !strcmp(tipo, "series") ? "tv" : "movie", idT, chave,
+                   desc_tmdb_idioma());
+          c2 = rede_baixar(url, 8);
+          if (c2) {
+            char pp[160] = "";
+            if (!d->backdrop[0] &&
+                js_texto(c2, NULL, "backdrop_path", pp, sizeof pp) &&
+                pp[0] == '/')
+              snprintf(d->backdrop, sizeof d->backdrop,
+                       "https://image.tmdb.org/t/p/w780%s", pp);
+            pp[0] = 0;
+            if (!d->poster[0] &&
+                js_texto(c2, NULL, "poster_path", pp, sizeof pp) &&
+                pp[0] == '/')
+              snprintf(d->poster, sizeof d->poster,
+                       "https://image.tmdb.org/t/p/w342%s", pp);
+            free(c2);
+          }
+        }
+      }
+    }
+  }
   if (!d->titulo[0]) js_texto(corpo, NULL, "name", d->titulo, sizeof d->titulo);
   js_texto(corpo, NULL, "description", d->sinopse, sizeof d->sinopse);
   if (!d->backdrop[0]) snprintf(d->backdrop, sizeof d->backdrop, "%s", d->poster);

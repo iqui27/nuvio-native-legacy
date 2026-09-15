@@ -10,7 +10,7 @@ flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 # So catordem.c e js.c: o leitor nao depende de SDL, de rede nem da descoberta,
 # e linkar o app inteiro aqui so tornaria o teste lento e fragil.
-cc "${flags[@]}" src/catordem.c src/js.c tests/catordem.c \
+cc ${flags[@]+"${flags[@]}"} src/catordem.c src/js.c tests/catordem.c \
   -Isrc -o /tmp/nuvio-catordem-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
 /tmp/nuvio-catordem-tests

@@ -122,6 +122,31 @@ int   ajustes_largura_poster_dp(void);
 int   ajustes_raio_poster_dp(void);
 float ajustes_raio_poster_px(void);   // raio em px (dp x 2)
 
+// --- INTEGRACOES --------------------------------------------------------------
+// Chaves snake_case identicas as de tmdb_settings / mdblist_settings do blob
+// da conta (profileSettingsSyncService.js do web) — ajustes_aplicar_blob as
+// aplica sozinha. Cada accessor ja combina o master: com o integracao
+// desligada, TODOS os ajustes_tmdb_* / ajustes_mdblist_fonte() devolvem 0.
+int         ajustes_tmdb_ligado(void);          // tmdb_enabled
+const char *ajustes_tmdb_idioma(void);          // "pt-BR", "en-US"… (TMDB)
+int         ajustes_tmdb_arte(void);            // tmdb_use_artwork
+int         ajustes_tmdb_basico(void);          // tmdb_use_basic_info
+int         ajustes_tmdb_ficha(void);           // tmdb_use_details
+int         ajustes_tmdb_datas(void);           // tmdb_use_release_dates
+int         ajustes_tmdb_elenco(void);          // tmdb_use_credits
+int         ajustes_tmdb_prod(void);            // tmdb_use_productions
+int         ajustes_tmdb_redes(void);           // tmdb_use_networks
+int         ajustes_tmdb_eps(void);             // tmdb_use_episodes
+int         ajustes_tmdb_trailers(void);        // tmdb_use_trailers
+int         ajustes_tmdb_mais(void);            // tmdb_use_more_like_this
+int         ajustes_tmdb_col(void);             // tmdb_use_collections
+int         ajustes_tmdb_cw(void);              // tmdb_enrich_continue_watching
+
+int         ajustes_mdblist_ligado(void);       // mdblist_enabled
+// `fonte` e um ExFonte de extras.h (trakt, imdb, tmdb, tomatoes, audience,
+// metacritic, letterboxd). 0 = esconder a nota dessa fonte na fileira.
+int         ajustes_mdblist_fonte(int fonte);   // mdblist_show_*
+
 // --- AJUSTES QUE VEM DA CONTA ------------------------------------------------
 // Aplica o blob de `sync_pull_profile_settings_blob` (o objeto `settings_json`,
 // como texto JSON cru) sobre os valores locais. Devolve quantas opcoes mudaram.

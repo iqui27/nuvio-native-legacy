@@ -85,7 +85,14 @@ void desc_tmdb(const char *dirArte) {
   printf("[desc] tmdb %s\n", tmdbChave[0] ? "ok" : "ausente");
 }
 
-const char *desc_chave_tmdb(void) { return tmdbChave; }
+// PORTAO UNICO do TMDB. Todo pedido a api.themoviedb.org passa por aqui, entao
+// "tmdb_enabled" da conta (Ajustes -> Integracoes) corta TUDO de uma vez —
+// elenco com foto, ficha, trailers, colecao, fontes de colecao do vertudo —
+// sem cada consumidor precisar perguntar de novo. "" faz todos os `if` de
+// chave cairem fora.
+const char *desc_chave_tmdb(void) {
+  return ajustes_tmdb_ligado() ? tmdbChave : "";
+}
 
 // strstr que NAO passa de `fim`. O objeto da regiao BR termina antes das
 // outras regioes na resposta do TMDB; procurar rent/buy no corpo inteiro
@@ -157,10 +164,13 @@ static int provedorEntre(const char *ini, const char *fim, const char *chave,
 // id do IMDb e so entao pedir os creditos.
 static void fotosDoElenco(CatItem *d, const char *imdbSerie, int serie) {
   char url[400], *corpo;
+  const char *chave;
   long idTmdb = 0;
-  if (!tmdbChave[0] || d->nElenco < 1) return;
+  if (!d->nElenco) return;
+  chave = desc_chave_tmdb();            // "" com a integracao desligada
+  if (!chave[0]) return;
   snprintf(url, sizeof url, "%s/find/%s?api_key=%s&external_source=imdb_id",
-           TMDB, imdbSerie, tmdbChave);
+           TMDB, imdbSerie, chave);
   corpo = rede_baixar(url, 20);
   if (!corpo) return;
   { const char *vet = serie ? "tv_results" : "movie_results";
@@ -190,47 +200,95 @@ static void fotosDoElenco(CatItem *d, const char *imdbSerie, int serie) {
   // sinopse quando ninguem traduziu aquele filme, e trocar o ingles por vazio
   // deixaria a tela SEM titulo. Falta de traducao continua mostrando o
   // original, que e o comportamento honesto.
-  snprintf(url, sizeof url, "%s/%s/%ld?api_key=%s&language=%s",
-           TMDB, serie ? "tv" : "movie", idTmdb, tmdbChave, desc_tmdb_idioma());
-  corpo = rede_baixar(url, 20);
-  if (corpo) {
-    char t[160], sin[900];
-    if (js_texto_raiz(corpo, serie ? "name" : "title", t, sizeof t) && t[0])
-      snprintf(d->titulo, sizeof d->titulo, "%s", t);
-    if (js_texto_raiz(corpo, "overview", sin, sizeof sin) && sin[0])
-      snprintf(d->sinopse, sizeof d->sinopse, "%s", sin);
-    free(corpo);
+  // "Titulo e sinopse" e `tmdb_use_basic_info`: desligado, o texto fica o do
+  // catalogo do addon — e o elenco (logo abaixo) segue `tmdb_use_credits`.
+  // "Arte localizada" (`tmdb_use_artwork`) vem no MESMO pedido via
+  // append_to_response=images: o logo do titulo no idioma configurado
+  // substitui o do catalogo, que e quase sempre o ingles do Cinemeta.
+  if (ajustes_tmdb_basico() || ajustes_tmdb_arte()) {
+    char incImg[64] = "";
+    if (ajustes_tmdb_arte())
+      // include_image_language aceita a lista; "%.2s" de "pt-BR" da "pt".
+      snprintf(incImg, sizeof incImg,
+               "&append_to_response=images&include_image_language=%.2s,null,en",
+               desc_tmdb_idioma());
+    snprintf(url, sizeof url, "%s/%s/%ld?api_key=%s&language=%s%s",
+             TMDB, serie ? "tv" : "movie", idTmdb, chave, desc_tmdb_idioma(),
+             incImg);
+    corpo = rede_baixar(url, 20);
+    if (corpo) {
+      if (ajustes_tmdb_basico()) {
+        char t[160], sin[900];
+        if (js_texto_raiz(corpo, serie ? "name" : "title", t, sizeof t) && t[0])
+          snprintf(d->titulo, sizeof d->titulo, "%s", t);
+        if (js_texto_raiz(corpo, "overview", sin, sizeof sin) && sin[0])
+          snprintf(d->sinopse, sizeof d->sinopse, "%s", sin);
+      }
+      if (ajustes_tmdb_arte()) {
+        // images.logos[]: prefere o do idioma configurado; na falta, o sem
+        // idioma (iso_639_1 null le como "") ou o ingles. Vazio nao substitui
+        // — mesma regra do titulo, um logo que nao veio nao apaga o atual.
+        const char *im = strstr(corpo, "\"images\"");
+        const char *imObj = im ? strchr(im, '{') : NULL;
+        const char *imFim = imObj ? js_fim(imObj) : NULL;
+        const char *p = (imObj && imFim) ? js_array(imObj, imFim, "logos")
+                                         : NULL;
+        char base[3] = "", local[160] = "", neutro[160] = "", en[160] = "";
+        snprintf(base, sizeof base, "%.2s", desc_tmdb_idioma());
+        while (p) {
+          const char *f = js_fim(p);
+          char iso[8] = "", fp[160] = "";
+          js_texto(p, f, "iso_639_1", iso, sizeof iso);
+          js_texto(p, f, "file_path", fp, sizeof fp);
+          if (fp[0] == '/') {
+            if      (!strcmp(iso, base)) snprintf(local,  sizeof local,  "%s", fp);
+            else if (!iso[0] && !neutro[0]) snprintf(neutro, sizeof neutro, "%s", fp);
+            else if (!strcmp(iso, "en") && !en[0]) snprintf(en, sizeof en, "%s", fp);
+          }
+          p = js_prox(f);
+        }
+        { const char *esc = local[0] ? local : neutro[0] ? neutro : en;
+          if (esc[0])
+            snprintf(d->logo, sizeof d->logo,
+                     "https://image.tmdb.org/t/p/w500%s", esc); }
+      }
+      free(corpo);
+    }
   }
 
-  snprintf(url, sizeof url, "%s/%s/%ld/credits?api_key=%s",
-           TMDB, serie ? "tv" : "movie", idTmdb, tmdbChave);
-  corpo = rede_baixar(url, 20);
-  if (!corpo) return;
-  { const char *p = js_array(corpo, NULL, "cast");
-    int k = 0;
-    (void)0;
-    while (p && k < d->nElenco) {
-      const char *f = js_fim(p);
-      char caminhoFoto[128] = "";
-      js_texto(p, f, "character", d->elenco[k].papel, sizeof d->elenco[k].papel);
-      d->elenco[k].tmdb = (long)js_num(p, f, "id", 0.0);
-      if (js_texto(p, f, "profile_path", caminhoFoto, sizeof caminhoFoto) &&
-          caminhoFoto[0] == '/')
-        snprintf(d->elenco[k].foto, sizeof d->elenco[k].foto,
-                 "https://image.tmdb.org/t/p/w185%s", caminhoFoto);
-      // O TMDB devolve o elenco na mesma ordem de importancia que o Cinemeta,
-      // entao casar por posicao acerta na pratica; casar por nome falharia nos
-      // acentos e nos nomes escritos de forma diferente entre as duas bases.
-      k++;
-      p = js_prox(f);
-    } }
-  free(corpo);
+  // Elenco com foto e `tmdb_use_credits`. O `free` mora DENTRO do if porque o
+  // watch/providers logo abaixo nao depende dele.
+  if (ajustes_tmdb_elenco()) {
+    snprintf(url, sizeof url, "%s/%s/%ld/credits?api_key=%s",
+             TMDB, serie ? "tv" : "movie", idTmdb, chave);
+    corpo = rede_baixar(url, 20);
+    if (corpo) {
+      const char *p = js_array(corpo, NULL, "cast");
+      int k = 0;
+      while (p && k < d->nElenco) {
+        const char *f = js_fim(p);
+        char caminhoFoto[128] = "";
+        js_texto(p, f, "character", d->elenco[k].papel, sizeof d->elenco[k].papel);
+        d->elenco[k].tmdb = (long)js_num(p, f, "id", 0.0);
+        if (js_texto(p, f, "profile_path", caminhoFoto, sizeof caminhoFoto) &&
+            caminhoFoto[0] == '/')
+          snprintf(d->elenco[k].foto, sizeof d->elenco[k].foto,
+                   "https://image.tmdb.org/t/p/w185%s", caminhoFoto);
+        // O TMDB devolve o elenco na mesma ordem de importancia que o Cinemeta,
+        // entao casar por posicao acerta na pratica; casar por nome falharia nos
+        // acentos e nos nomes escritos de forma diferente entre as duas bases.
+        k++;
+        p = js_prox(f);
+      }
+      free(corpo);
+    }
+  }
 
   // Onde assistir. Os campos provLogo/provNome existiam no CatItem e NUNCA
   // eram preenchidos no caminho dinamico — o selo do streaming ficava vazio em
   // todo titulo. O TMDB responde por regiao; BR e a do dono.
   snprintf(url, sizeof url, "%s/%s/%ld/watch/providers?api_key=%s",
-           TMDB, serie ? "tv" : "movie", idTmdb, tmdbChave);
+           TMDB, serie ? "tv" : "movie", idTmdb, chave);
   corpo = rede_baixar(url, 20);
   if (corpo) {
     const char *br = strstr(corpo, "\"BR\"");
@@ -2084,7 +2142,9 @@ static void metaCacheGuardar(const char *id, const char *corpo) {
 // fileira de episodios aparece depois da primeira resposta, sem esperar pelas
 // duas viagens ao TMDB usadas para foto e personagem do elenco.
 static int publicarEpisodios(const char *corpo, int alvoItem, const char *titulo) {
-#define VIDEOS_MAX 600
+// Em par com CAT_EP_MAX (catalogo.c): um titulo que caiba no store nao pode
+// truncar no parse, e um que nao caiba trunca aqui em vez de zerar os outros.
+#define VIDEOS_MAX 1200
   CatEp *eps = malloc(sizeof(CatEp) * VIDEOS_MAX);
   int n = 0;
   if (!eps) return 0;
@@ -2419,21 +2479,22 @@ static const char *tmdbMontarUrl(const ColSource *f, int pagina,
                                  char *url, size_t n) {
   int isTv = !strcasecmp(f->midia, "TV") || !strcasecmp(f->tmdbTipo, "NETWORK");
   const char *mt = isTv ? "tv" : "movie";
-  if (!tmdbChave[0]) return NULL;
+  const char *chave = desc_chave_tmdb();
+  if (!chave[0]) return NULL;
   if (!strcasecmp(f->tmdbTipo, "COLLECTION") && f->tmdbId > 0) {
     snprintf(url, n, "%s/collection/%ld?api_key=%s&language=%s",
-             TMDB, f->tmdbId, tmdbChave, desc_tmdb_idioma());
+             TMDB, f->tmdbId, chave, desc_tmdb_idioma());
     return "parts";
   }
   if (!strcasecmp(f->tmdbTipo, "LIST") && f->tmdbId > 0) {
     snprintf(url, n, "%s/list/%ld?api_key=%s&language=%s&page=%d",
-             TMDB, f->tmdbId, tmdbChave, desc_tmdb_idioma(), pagina);
+             TMDB, f->tmdbId, chave, desc_tmdb_idioma(), pagina);
     return "items";
   }
   if ((!strcasecmp(f->tmdbTipo, "PERSON") || !strcasecmp(f->tmdbTipo, "DIRECTOR"))
       && f->tmdbId > 0) {
     snprintf(url, n, "%s/person/%ld/combined_credits?api_key=%s&language=%s",
-             TMDB, f->tmdbId, tmdbChave, desc_tmdb_idioma());
+             TMDB, f->tmdbId, chave, desc_tmdb_idioma());
     return !strcasecmp(f->tmdbTipo, "DIRECTOR") ? "crew" : "cast";
   }
   { char q[1400] = "";
@@ -2458,7 +2519,7 @@ static const char *tmdbMontarUrl(const ColSource *f, int pagina,
       snprintf(q + strlen(q), sizeof q - strlen(q), "&%s=%ld",
                isTv ? "with_networks" : "with_companies", f->tmdbId);
     snprintf(url, n, "%s/discover/%s?api_key=%s&language=%s&page=%d%s",
-             TMDB, mt, tmdbChave, desc_tmdb_idioma(), pagina, q);
+             TMDB, mt, chave, desc_tmdb_idioma(), pagina, q);
     return "results";
   }
 }
@@ -2791,4 +2852,7 @@ void desc_pedir_titulo(const char *imdb) {
 int desc_titulo_pronto(void) { int v = sobIndice; sobIndice = -1; return v; }
 int desc_titulo_buscando(void) { return sobFioVivo; }
 
-const char *desc_tmdb_idioma(void) { return ajustes_idioma_ingles() ? "en-US" : "pt-BR"; }
+// Idioma dos textos do TMDB. Antes era so o idioma da interface; agora a
+// conta pode escolher outro em Ajustes -> Integracoes (tmdb_language), e
+// "Da interface" continua sendo o padrao — ver ajustes_tmdb_idioma().
+const char *desc_tmdb_idioma(void) { return ajustes_tmdb_idioma(); }

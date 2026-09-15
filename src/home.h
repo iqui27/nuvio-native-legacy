@@ -57,5 +57,8 @@ int  home_pediu_abrir(void);   // OK pressionado: consome o pedido
 int  home_pediu_menu(void);    // ESQUERDA na primeira coluna: chama o menu
 int home_pediu_social(void);
 int home_pediu_pessoa_social(CatItem *saida);
+// OK numa fileira de canal ("Ver tudo" dela, ou num cartao de canal — que ai
+// recebe o id para o guia ja abrir focado nele). `id` pode ser NULL.
+int  home_pediu_guia(char *id, int tam);
 
 #endif

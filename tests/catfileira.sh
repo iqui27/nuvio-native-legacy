@@ -9,7 +9,7 @@ set -eu
 cd "$(dirname "$0")/.."
 flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
-cc "${flags[@]}" src/catalogo.c tests/catfileira.c \
+cc ${flags[@]+"${flags[@]}"} src/catalogo.c tests/catfileira.c \
   -Isrc -o /tmp/nuvio-catfileira-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
 /tmp/nuvio-catfileira-tests

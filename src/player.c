@@ -61,6 +61,8 @@ static void avisarCascaAberto(int v) { (void)v; }
 #include "pausao.h"
 #include "home.h"
 #include "descoberta.h"
+#include "guia.h"
+#include "epg.h"
 #include <time.h>
 #include <stdio.h>
 #include <string.h>
@@ -227,13 +229,28 @@ static int   comVideo = 0;
 static int   pedFaixas = 0;
 static int   esperandoFonte = 0;   // aberto sem URL, esperando o addon responder
 static float posSeg = 0.0f;
-static int trechoPulavel(double *fim) { int tipo; return intro_ativo(posSeg, fim, &tipo) && tipo != INTRO_CREDITOS; }
+// Creditos tambem sao pulaveis — e o "Skip Outro" do web.
+static int trechoPulavel(double *fim) { int tipo; return intro_ativo(posSeg, fim, &tipo); }
 static float duracaoSeg = PLR_DUR_PADRAO;
+// O fim ZERO do TheIntroDB quer dizer "ate o fim da midia" (intro.c): mirar
+// fim+0.25 ai seria um salto para o COMECO do arquivo — o alvo resolve o nulo.
+static double puloDestino(double fim) { return fim > 0.0 ? fim + .25 : duracaoSeg; }
 
 static char linhaEp[220];          // "T1, E1 · <sinopse curta>", montada na abertura
 
 static const CatItem *item(void) { return cat_item(idx); }
+// CANAL DE TV (tipo "channel"/"tv"): sem progresso a gravar, sem episodio a
+// seguir, sem fim — e com o GUIA como menu de contexto (BAIXO/azul abrem o
+// overlay, CH+/- trocam de canal). Uma funcao e nao um campo porque idx troca
+// a cada player_abrir.
+static int ehCanal(void) {
+  const CatItem *ci = item();
+  return ci && (!strcmp(ci->tipo, "channel") || !strcmp(ci->tipo, "tv"));
+}
 static int epT, epE, pedFontes, erroFonte, pedProxT, pedProxE;
+static int pedGuia, pedZap;   // pedidos de canal: overlay do guia / CH+/-
+// Indice EPG do canal no ar, resolvido uma vez por abertura (-2 = sem grade).
+static int epgIdx = -1;
 // Diagnostico da janela do cartao de proximo episodio. Zerados a cada episodio
 // por player_definir_episodio: um `static int` dentro da funcao registraria a
 // PRIMEIRA reproducao da sessao e ficaria mudo em todas as outras — que e
@@ -242,8 +259,15 @@ static int credAvisado, credFimAvisado;
 static double credAvisadoEm;
 static int introIdx=-1, introT=-1, introE=-1;
 static int retomadaAplicada, retomarPct;
+// "Assistir do comeco" (issue #46): trava da sessao, armada por
+// player_do_inicio depois de player_abrir. Tem de sobreviver as CHAMADAS
+// REPETIDAS de player_definir_episodio — uma delas dispara quando o nome do
+// episodio chega tarde (player_atualizar) e reatribuiria retomarPct.
+static int semRetomada;
 int player_indice(void) { return idx; }
 const char *player_linha_episodio(void) { return linhaEp; }
+int  player_pediu_guia(void) { int v = pedGuia; pedGuia = 0; return v; }
+int  player_pediu_zap(void)  { int v = pedZap;  pedZap  = 0; return v; }
 void player_episodio_atual(int *t, int *e) { *t = epT; *e = epE; }
 int player_pediu_fontes(void) { int p = pedFontes; pedFontes = 0; return p; }
 int player_pediu_proximo(int *t,int *e) {
@@ -261,11 +285,16 @@ const CatEp *player_proximo_episodio(void) {
   return melhor;
 }
 void player_erro_fonte(void) { esperandoFonte = 0; erroFonte = 1; visivel = 1; tocando = 0; }
+// Arma DEPOIS de player_abrir + player_definir_episodio: daqui em diante a
+// sessao ignora o ponto salvo, inclusive nas re-chamadas tardias de
+// player_definir_episodio. O progresso gravado NAO e apagado — comecar do
+// zero nao desmarca nada (mesma regra do web: startOver so pula o seek).
+void player_do_inicio(void) { semRetomada = 1; retomarPct = 0; }
 void player_definir_episodio(int t, int e) {
   const CatItem *c = item();
   epT = t; epE = e; linhaEp[0] = 0;
   retomarPct = 0;
-  if (c && c->progresso > 0 && c->progresso < 90 &&
+  if (c && !semRetomada && c->progresso > 0 && c->progresso < 90 &&
       (strcmp(c->tipo,"series") || (t==c->temporada && e==c->episodio))) retomarPct=c->progresso;
   // FILME TAMBEM PEDE MARCADOR, e ate agora nao pedia: esta linha desligava o
   // modulo e voltava. Fazia sentido enquanto a fonte era o api.introdb.app, que
@@ -687,13 +716,18 @@ void player_abrir(int indiceCatalogo, const char *url) {
   encolhe = 1.0f; encolheAlvo = 0.0f; encolheT = 0.0f; encolheEm = 0;
   posplay_fechar();   // titulo novo, painel do anterior nao vale mais
   pgDesde = 0;
-  // Guia parental do titulo: pedido AQUI e nao no desenho, para que a resposta
-  // ja tenha chegado quando os controles aparecerem pela primeira vez.
+  epgIdx = -1;
+  // Canal ao vivo nao tem classificacao por titulo: o id "cs:channel:..." nao
+  // existe na base parental e o pedido so gastaria uma requisicao.
   { const CatItem *ci = cat_item(idx);
-    if (ci && ci->imdb[0]) parental_pedir(ci->imdb); }
+    if (ci && ci->imdb[0] && !ehCanal()) parental_pedir(ci->imdb);
+    // A grade EPG comeca a baixar ja: o banner "agora/a seguir" do OSD e o
+    // overlay do guia dependem dela. Idempotente.
+    if (ci && ehCanal()) { epg_iniciar(); guia_carregar(); } }
   tocando = 1; visivel = 1; anim = 0.0f; entrada = 0.0f;
   pedFontes = erroFonte = pedFaixas = pedProxT = pedProxE = 0; inicioImagem = 0;
-  retomadaAplicada=0;
+  pedGuia = pedZap = 0;
+  retomadaAplicada=0; semRetomada=0;
   botao = PLR_PLAY;
   memset(focoB, 0, sizeof focoB);
   posSeg = 0.0f;
@@ -744,7 +778,10 @@ void player_encerrar(void) {
   // Salvar ANTES de parar: video_parar descarrega o pipeline e a posicao some
   // junto. Titulo quase no fim conta como visto por inteiro — voltar a um card
   // marcando "2 min restantes" que na verdade acabou e pior que arredondar.
-  if (comVideo && video_pronto() && duracaoSeg > 1.0f) {
+  if (comVideo && video_pronto() && duracaoSeg > 1.0f && !ehCanal()) {
+    // CANAL nao grava progresso: uma transmissao ao vivo nao tem "onde parou" —
+    // guardar posSeg contra a duracao reserva colocaria "Globo 68%" em
+    // Continuar assistindo, que e justamente o que nao pode acontecer.
     float pos = posSeg >= duracaoSeg - 60.0f ? duracaoSeg : posSeg;
     const CatItem *ci = cat_item(idx);
     home_registrar_retorno(idx, pos, duracaoSeg);
@@ -903,6 +940,49 @@ static int ofertaProximo(void) {
 // barra junto — o usuario precisa ver o efeito do que apertou.
 static void acordar(void) { visivel = 1; ultimoInput = SDL_GetTicks(); }
 
+// AS DUAS LINHAS DO CANAL no OSD: "AGORA hh:mm–hh:mm · titulo" e "A SEGUIR
+// hh:mm · titulo", da grade EPG. Sem grade real o canal se mostra como
+// "AO VIVO" — a verdade, em vez de um programa inventado.
+static void linhasCanal(char *l1, size_t n1, char *l2, size_t n2) {
+  const CatItem *ci = item();
+  time_t agoraT = time(NULL);
+  EpgProg ag, px;
+  struct tm lt;
+  if (n1) l1[0] = 0;
+  if (n2) l2[0] = 0;
+  if (!ci) { if (n1) snprintf(l1, n1, "%s", i18n("AO VIVO")); return; }
+  if (epgIdx == -1 && epg_estado() == EPG_PRONTO) {
+    epgIdx = epg_match(ci->titulo);
+    if (epgIdx < 0) epgIdx = -2;
+  }
+  if (epgIdx >= 0 && epg_agora(epgIdx, agoraT, &ag)) {
+    char h1[8], h2[8];
+    localtime_r(&ag.ini, &lt); strftime(h1, sizeof h1, "%H:%M", &lt);
+    localtime_r(&ag.fim, &lt); strftime(h2, sizeof h2, "%H:%M", &lt);
+    snprintf(l1, n1, "%s  %s\xe2\x80\x93%s  \xc2\xb7  %s",
+             i18n("AGORA"), h1, h2, ag.titulo);
+    if (epg_proximo(epgIdx, agoraT, 0, &px)) {
+      char h3[8];
+      localtime_r(&px.ini, &lt); strftime(h3, sizeof h3, "%H:%M", &lt);
+      snprintf(l2, n2, "%s %s  \xc2\xb7  %s", i18n("A seguir"), h3, px.titulo);
+    }
+  } else {
+    snprintf(l1, n1, "%s", i18n("AO VIVO"));
+  }
+}
+
+// A barra do CANAL mostra o progresso do PROGRAMA no ar, nao do fluxo — um
+// ao vivo nao tem fim, e a posSeg contra a duracao reserva diria "1h12 de
+// 1h54" sobre uma transmissao que nao termina.
+static float fracCanal(void) {
+  time_t agoraT = time(NULL);
+  EpgProg ag;
+  if (epgIdx >= 0 && epg_agora(epgIdx, agoraT, &ag) && ag.fim > ag.ini)
+    return anim_clamp((float)(agoraT - ag.ini) / (float)(ag.fim - ag.ini),
+                      0.0f, 1.0f);
+  return 0.0f;
+}
+
 static void alternarTocando(void) {
   tocando = !tocando;
   if (comVideo) video_pausar(!tocando);
@@ -991,13 +1071,27 @@ void player_evento(const SDL_Event *e) {
   // precisa da interface aberta. O 0 e a tecla livre no controle da LG.
   if (k == SDLK_0 || k == SDLK_KP_0) { player_aspecto_ciclar(); return; }
 
+  // CANAL AO VIVO: o guia e o controle remoto dele. BAIXO e o botao AZUL abrem
+  // o overlay do guia em qualquer estado — controles em pe ou escondidos — e
+  // e la que mora "o que esta passando / trocar de canal". CH+/- (scancodes
+  // 480/481 do SDL_webOS.h da LG) zapeiam na ordem do guia sem overlay no
+  // meio; no Tizen o CH+ ja chega aqui como "s" pela casca (tizen-shell.html).
+  if (ehCanal()) {
+    int sc = e->key.keysym.scancode;
+    if (sc == NV_SCANCODE_CH_UP)   { pedZap = 1;  return; }
+    if (sc == NV_SCANCODE_CH_DOWN) { pedZap = -1; return; }
+    if (k == SDLK_DOWN || k == SDLK_s || sc == NV_SCANCODE_BLUE) {
+      pedGuia = 1; return;
+    }
+  }
+
   if (!visivel) {
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
       // O proximo episodio NAO e mais tratado aqui: posplay_evento roda antes
       // de tudo em player_evento e ja consome o OK enquanto o cartao esta no
       // ar. Manter esta linha faria o OK disparar a troca duas vezes.
-      { double fim;int tipo;if(intro_ativo(posSeg,&fim,&tipo)&&tipo!=INTRO_CREDITOS){
-          posSeg=(float)fim+.25f;if(comVideo)video_buscar(posSeg);return; } }
+      { double fim;if(trechoPulavel(&fim)){
+          posSeg=(float)puloDestino(fim);if(comVideo)video_buscar(posSeg);return; } }
       alternarTocando(); acordar(); return;
     }
     if (k == SDLK_UP || k == SDLK_DOWN || k == SDLK_LEFT || k == SDLK_RIGHT) {
@@ -1021,7 +1115,7 @@ void player_evento(const SDL_Event *e) {
     double fim;
     if (!trechoPulavel(&fim)) skipFoco = 0;          // o trecho acabou por baixo do foco
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
-      posSeg = (float)fim + .25f; if (comVideo) video_buscar(posSeg);
+      posSeg = (float)puloDestino(fim); if (comVideo) video_buscar(posSeg);
       skipFoco = 0; acordar(); return;
     } else if (k == SDLK_DOWN) { skipFoco = 0; acordar(); return; }
     else if (k == SDLK_UP) { pedFaixas = 1; acordar(); return; }
@@ -1044,7 +1138,10 @@ void player_evento(const SDL_Event *e) {
       // passar a grudar. Um botao a mais na fileira custaria largura que a
       // serie nao tem sobrando.
       case PLR_EPISODIOS:
-        if (epT > 0) episodios_abrir(idx, epT, epE);
+        // Canal nao tem episodio nem "relacionados": o mesmo lugar vira a
+        // porta do guia, que e a lista de escolha dele.
+        if (ehCanal()) pedGuia = 1;
+        else if (epT > 0) episodios_abrir(idx, epT, epE);
         else posplay_abrir_relacionados(idx);
         break;
       default:          pedFaixas = 1;     break;   // 1 = coluna do audio
@@ -1156,14 +1253,20 @@ void player_atualizar(float dt, Uint32 agora) {
     tocando = video_tocando();
   } else if (tocando && !esperandoFonte && !erroFonte) {
     posSeg += dt;
-    if (posSeg >= duracaoSeg) { posSeg = duracaoSeg; tocando = 0; }
+    // Canal ao vivo nao "termina": o relogio reserva estourar em ~1h54 nao pode
+    // derrubar o estado para pausado com a transmissao ainda no ar.
+    if (posSeg >= duracaoSeg) { posSeg = duracaoSeg; if (!ehCanal()) tocando = 0; }
   }
 
   // PÓS-REPRODUÇÃO: o proximo episodio ou os relacionados, no fim do titulo.
   { const CatItem *ci = cat_item(idx);
     int eSerie = ci && !strcmp(ci->tipo, "series");
-    posplay_atualizar(dt, agora, posSeg, duracaoSeg, eSerie, idx,
-                      eSerie && ofertaProximo()); }
+    // Canal ao vivo nao tem "fim": sem a guarda, o relogio reserva cruzaria os
+    // 90% em ~1h42 de exibicao e abriria o painel de relacionados no meio da
+    // programacao.
+    if (!ehCanal())
+      posplay_atualizar(dt, agora, posSeg, duracaoSeg, eSerie, idx,
+                        eSerie && ofertaProximo()); }
   // Com o painel no ar os controles nao somem: eles sao a saida do dono.
   if (posplay_visivel()) ultimoInput = agora;
 
@@ -1314,12 +1417,14 @@ static void desenharAcoesEpisodio(void){
   // (ofertaProximo). Duas interfaces para a mesma coisa na mesma tela era o
   // defeito de fundo; sobrou uma.
   (void)prox;
-  if(!trecho||tipo==INTRO_CREDITOS){skipFoco=0;return;}
+  if(!trecho){skipFoco=0;return;}
   {
     // .player-skip-intro: left 64, bottom 60; com controles em pe sobe para
     // cima deles (.is-raised). O deslize acompanha `anim`, a mesma mola dos
     // controles, para o botao nao pular de lugar.
-    const char *rot=tipo==INTRO_RESUMO?"Pular resumo":"Pular abertura";
+    const char *rot=tipo==INTRO_RESUMO?i18n("Pular resumo"):
+                    tipo==INTRO_CREDITOS?i18n("Pular créditos"):
+                    i18n("Pular abertura");
     int sel=skipFoco&&visivel;
     TxtLinha t=sel?txt_linha(TXT_BODY,rot,20,20,24,255):txt_linha(TXT_BODY,rot,250,250,252,255);
     float w=t.w+116, y=(NV_TELA_H-60.0f-88.0f)-anim*(NV_TELA_H-60.0f-88.0f-730.0f);
@@ -1651,7 +1756,9 @@ void player_desenhar(Uint32 agora) {
   // player.c nao inclui detail.h — e nao deve incluir so por um numero.
   float cx = bx + PLR_MARGEM;
   float cw = bw - PLR_MARGEM * 2.0f;
-  float frac = duracaoSeg > 0.0f ? anim_clamp(posSeg / duracaoSeg, 0.0f, 1.0f) : 0.0f;
+  float frac = ehCanal()
+             ? fracCanal()
+             : (duracaoSeg > 0.0f ? anim_clamp(posSeg / duracaoSeg, 0.0f, 1.0f) : 0.0f);
   // Com foco o trilho engorda de 6 para 10 e clareia de 0.30 para 0.45, e ele
   // cresce para BAIXO a partir da mesma linha de base — subir moveria tambem a
   // meta e o titulo, que estao ancorados nela.
@@ -1665,7 +1772,7 @@ void player_desenhar(Uint32 agora) {
   // esta a frente do relogio. Sem dado do pipeline o segmento nao existe —
   // inventar "quase todo carregado" seria pior que a barra simples. No web ele
   // e a MESMA cor do preenchimento a 0.35 (.player-progress-buffered).
-  { float bufFrac = duracaoSeg > 0.0f ? anim_clamp(video_buffer_fim() / duracaoSeg, 0.0f, 1.0f) : 0.0f;
+  { float bufFrac = (!ehCanal() && duracaoSeg > 0.0f) ? anim_clamp(video_buffer_fim() / duracaoSeg, 0.0f, 1.0f) : 0.0f;
     if (bufFrac > frac + 0.004f) {
       GfxRect buf = { bx + bw * frac, yBarra, bw * (bufFrac - frac), hTrilho };
       gfx_cor(buf, PLR_TRILHO_R, PLR_FILL_C, PLR_FILL_C, PLR_FILL_C, 0.35f * a);
@@ -1678,7 +1785,23 @@ void player_desenhar(Uint32 agora) {
   // Filme: somente nome. Serie: nome seguido de T/E e titulo do episodio.
   // O arquivo e o provedor pertencem a folha de fontes, nao ao transporte.
   float yMetaBase = yBarra - PLR_GAP_BARRA;
-  if (linhaEp[0]) {
+  if (ehCanal()) {
+    // Canal: no lugar do "T/E · episodio" vai a programacao — o que esta no
+    // ar e o que vem depois, que e a parte do guia que interessa enquanto
+    // toca. A mesma informacao que o overlay abre com BAIXO.
+    char l1[300], l2[300];
+    linhasCanal(l1, sizeof l1, l2, sizeof l2);
+    { TxtLinha le = txt_linha_corta(TXT_PLR_CORPO, l1, 218,220,224,255, cw*.67f);
+      yMetaBase -= le.h;
+      txt_desenhar_alpha(le, cx, yMetaBase, a);
+      yMetaBase -= 6; }
+    if (l2[0]) {
+      TxtLinha l2t = txt_linha_corta(TXT_PG_FIM, l2, 160,162,170,255, cw*.67f);
+      yMetaBase -= l2t.h;
+      txt_desenhar_alpha(l2t, cx, yMetaBase, a);
+      yMetaBase -= 6;
+    }
+  } else if (linhaEp[0]) {
     TxtLinha le=txt_linha_corta(TXT_PLR_CORPO,linhaEp,218,220,224,255,cw*.67f);
     yMetaBase-=le.h;
     txt_desenhar_alpha(le,cx,yMetaBase,a);
@@ -1731,7 +1854,8 @@ void player_desenhar(Uint32 agora) {
     }
     if (!barraFoco) {
       const char *rotulos[]={"Reproduzir / pausar","Proporção","Legendas","Áudio","Fontes","Episódios"};
-      const char *rot = (botao==PLR_EPISODIOS && epT<=0) ? "Relacionados" : rotulos[botao];
+      const char *rot = (botao==PLR_EPISODIOS && epT<=0)
+                        ? (ehCanal() ? "Guia" : "Relacionados") : rotulos[botao];
       TxtLinha label=txt_linha(TXT_PG_FIM,rot,210,212,218,255);
       txt_desenhar_alpha(label,cxs[botao]-label.w*.5f,cyBotoes+PLR_BTN_D*.5f+10,a);
     }
@@ -1744,9 +1868,15 @@ void player_desenhar(Uint32 agora) {
   // circulos porque no web ele e um item de uma flex row com align-items:center.
   {
     char t1[24], t2[24], tudo[52];
-    fmtTempo(t1, sizeof t1, posSeg, 0);
-    fmtTempo(t2, sizeof t2, duracaoSeg, 0);
-    snprintf(tudo, sizeof tudo, "%s / %s", t1, t2);
+    if (ehCanal()) {
+      // "AO VIVO" e nao "1:12:00 / 1:54:00": a duracao reserva nao existe para
+      // quem esta assistindo, e um tempo crescente leria como gravacao.
+      snprintf(tudo, sizeof tudo, "%s", i18n("AO VIVO"));
+    } else {
+      fmtTempo(t1, sizeof t1, posSeg, 0);
+      fmtTempo(t2, sizeof t2, duracaoSeg, 0);
+      snprintf(tudo, sizeof tudo, "%s / %s", t1, t2);
+    }
     { TxtLinha l = txt_linha(TXT_PLR_CORPO, tudo, 255, 255, 255, 230);
       txt_desenhar_alpha(l, cx + cw - l.w,
                          cyBotoes - (float)l.h * 0.5f, a * 0.9f); }

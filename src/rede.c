@@ -107,6 +107,10 @@ static char *juntarCabs(const char *const *cab, const char *extra) {
   return s;
 }
 
+// Ouvinte unico dos 401 — ver rede_avisar_401 no cabecalho.
+static void (*aviso401)(const char *url);
+void rede_avisar_401(void (*f)(const char *url)) { aviso401 = f; }
+
 static char *pedir(const char *metodo, const char *url, const char *const *cab,
                    const char *extraCab, const char *corpo,
                    long *tam, int *status) {
@@ -118,6 +122,7 @@ static char *pedir(const char *metodo, const char *url, const char *const *cab,
   corpoResp = nv_http(metodo, url, cabs, corpo, &n, &http, NULL, 0);
   free(cabs);
   if (status) *status = http;
+  if (http == 401 && aviso401) aviso401(url);
   if (!corpoResp) { char seg[120];
     printf("[rede] falhou em %s\n", rede_url_publica(url, seg, sizeof seg));
     return NULL; }
@@ -265,6 +270,12 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
 #define OPT_CUSTOMREQUEST   10036
 // CURLINFO_RESPONSE_CODE = CURLINFO_LONG (0x200000) + 2.
 #define INFO_RESPONSE_CODE   2097154
+
+// Ouvinte unico dos 401 — ver rede_avisar_401 no cabecalho. (O ramo
+// Emscripten tem a sua propria definicao, porque os dois lados do #ifdef
+// compilam separado.)
+static void (*aviso401)(const char *url);
+void rede_avisar_401(void (*f)(const char *url)) { aviso401 = f; }
 
 static void *(*curl_init)(void);
 static int   (*curl_setopt)(void *, int, ...);
@@ -521,6 +532,7 @@ static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
   { long http = 0;
     if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
     if (status) *status = (int)http;
+    if (http == 401 && aviso401) aviso401(url);
     if (!r && http >= 400 && !status) {
       curl_cleanup(c);
       if (lista && slist_free) slist_free(lista);
@@ -603,7 +615,10 @@ char *rede_apagar(const char *url, int segundos, const char *const *cab,
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
   r = curl_perform(c);
-  if (status && curl_getinfo) { long h = 0; curl_getinfo(c, INFO_RESPONSE_CODE, &h); *status = (int)h; }
+  { long h = 0;
+    if (!r && curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &h);
+    if (status) *status = (int)h;
+    if (h == 401 && aviso401) aviso401(url); }
   if (lista && slist_free) slist_free(lista);
   curl_cleanup(c);
   if (r != 0) { free(b.p); return NULL; }
@@ -644,11 +659,10 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cab,
   }
   r = curl_perform(c);
   // O codigo sai ANTES do cleanup: depois dele a alca nao existe mais.
-  if (status && !r && curl_getinfo) {
-    long codigo = 0;
-    curl_getinfo(c, INFO_RESPONSE_CODE, &codigo);
-    *status = (int)codigo;
-  }
+  { long codigo = 0;
+    if (!r && curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &codigo);
+    if (status) *status = (int)codigo;
+    if (codigo == 401 && aviso401) aviso401(url); }
   curl_cleanup(c);
   if (lista && slist_free) slist_free(lista);
   // Falha de TRANSPORTE (r != 0) continua sendo NULL — ai nao houve resposta

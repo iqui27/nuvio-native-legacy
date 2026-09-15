@@ -26,7 +26,8 @@ typedef enum {
   TRA_PEDINDO,     // buscando o codigo
   TRA_AGUARDANDO,  // codigo na tela, esperando a pessoa autorizar
   TRA_LIGADO,      // token obtido
-  TRA_ERRO
+  TRA_ERRO,
+  TRA_INVALIDO     // token recusado (401) e refresh impossivel ou negado
 } TraEstado;
 
 // Comeca o fluxo num fio proprio. Idempotente enquanto um estiver em andamento.

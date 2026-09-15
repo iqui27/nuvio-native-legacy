@@ -96,21 +96,31 @@ int main(void) {
   const char *ids[]={"", "now_playing_movies","trending_movies","trending_series",
     "ai_movies_for_you","ai_series_for_you","snoak_top100_movies","snoak_top100_series"};
   for(int i=1;i<8;i++)snprintf(fils[i].catId,sizeof fils[i].catId,"%s",ids[i]);
+  // TOP10 sai do TITULO que o catalogo trouxe (perfilCatalogo), nao do catId —
+  // o id e do addon e pode ser qualquer coisa.
+  snprintf(fils[6].titulo,sizeof fils[6].titulo,"Top 100 - Filme");
+  snprintf(fils[7].titulo,sizeof fils[7].titulo,"Top 100 - Serie");
   cat_definir_tudo(itensTeste,48,fils,16);filsAplicadas=-1;sincronizarFileiras();
-  // A curadoria ordena os atalhos conhecidos, mas nao apaga fileiras novas
-  // declaradas pelo addon. O fixture tem oito chaves fora da tabela editorial.
+  // SEM TABELA DE CURADORIA: a ordem e a da conta (catordem) ou a local
+  // (fil_unir) — a montagem nao renomeia nem reordena por cima da escolha.
+  // O que a home acrescenta sozinha entra nos lugares fixos dela: "Entre
+  // amigos" em segundo, grupos de colecao no FIM, na ordem declarada.
   assert(nFileiras>=11);
   assert(fileiras[1].tipo==FILEIRA_SOCIAL);
-  assert(!strcmp(fileiras[2].titulo,"Recent Release"));
-  assert(!strcmp(fileiras[3].titulo,"Streaming"));
-  assert(fileiras[3].tipo==FILEIRA_CATALOGOS);
-  assert(!strcmp(col_folder(fileiras[3].folders[0])->title,"Netflix"));
-  assert(!strcmp(fileiras[4].titulo,"Trending Movies"));
-  assert(!strcmp(fileiras[6].titulo,"Themes"));
-  assert(!strcmp(fileiras[7].catId,"ai_movies_for_you"));
-  assert(fileiras[9].tipo==FILEIRA_TOP10);
-  assert(fileiras[10].tipo==FILEIRA_TOP10);
-  assert(fileiras[9].stackN==3 && fileiras[9].n==1);
+  // O primeiro catalogo com conteudo vira o destaque; o resto segue a ordem.
+  assert(fileiras[2].tipo==FILEIRA_DESTAQUE);
+  assert(!strcmp(fileiras[2].chave,"catalogo_1"));
+  assert(fileiras[nFileiras-2].tipo==FILEIRA_CATALOGOS);
+  assert(!strcmp(fileiras[nFileiras-2].titulo,"Streaming"));
+  assert(!strcmp(col_folder(fileiras[nFileiras-2].folders[0])->title,"Netflix"));
+  assert(!strcmp(fileiras[nFileiras-1].titulo,"Themes"));
+  { int tops=0;
+    for (int r=0; r<nFileiras; r++)
+      if (fileiras[r].tipo==FILEIRA_TOP10) {
+        tops++;
+        assert(fileiras[r].stackN==3 && fileiras[r].n==1);
+      }
+    assert(tops==2); }
   for (int i=8; i<16; i++) {
     int encontrado=0;
     for (int r=0; r<nFileiras; r++)

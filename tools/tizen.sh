@@ -118,6 +118,8 @@ fi
 eval emcc src/*.c -o "$SAIDA/index.html" -O2 "$ENV_D" \
   -sWASM_BIGINT=0 \
   -sUSE_SDL=2 -sUSE_SDL_IMAGE=2 -sUSE_SDL_TTF=2 \
+  `# zlib do emscripten: epg.c infla o XMLTV .gz do epgshare01 com inflate.` \
+  -sUSE_ZLIB=1 \
   -sSDL2_IMAGE_FORMATS='["png","jpg"]' \
   -sMAX_WEBGL_VERSION=1 \
   -sINITIAL_MEMORY=268435456 -sALLOW_MEMORY_GROWTH=0 -sABORTING_MALLOC=1 \

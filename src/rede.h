@@ -75,6 +75,11 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cabecalho
 char *rede_baixar_st(const char *url, int segundos, const char *const *cabecalhos,
                      int *status);
 
+// Registra quem OUVE os 401. Sem isto um token de sessao vencido era so uma
+// linha no log — o Trakt continuava "conectado" na tela enquanto toda
+// resposta voltava 401. O callback recebe a URL e decide se a recusa e dele.
+void rede_avisar_401(void (*f)(const char *url));
+
 // Carrega a libcurl AGORA, no fio que chamar. Existe para o arranque fazer isso
 // no fio principal, antes de qualquer fio de rede nascer: `curl_global_init`
 // nao e seguro entre fios, e a trava interna e a segunda linha de defesa, nao a

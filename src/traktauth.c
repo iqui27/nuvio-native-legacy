@@ -277,6 +277,56 @@ static void empurrarParaConta(void) {
   jsw_livre(&c);
 }
 
+// RENOVAR PELO REFRESH TOKEN. O refresh sempre foi GRAVADO (coluna 3 do
+// trakt.txt) mas nunca usado — um access token vencido ficava para sempre,
+// e a tela dizia "conectado" com tudo voltando 401. grant_type padrao OAuth;
+// o Trakt responde com um refresh NOVO (rotacao), que vai junto para a conta.
+static void *fioRenovar(void *u) {
+  Jsw w;
+  char *r;
+  int st = 0;
+  (void)u;
+  jsw_iniciar(&w);
+  jsw_obj_ini(&w);
+  jsw_cs(&w, "refresh_token", refresh);
+  jsw_cs(&w, "client_id", nuvem_trakt_cliente());
+  jsw_cs(&w, "client_secret", nuvem_trakt_segredo());
+  jsw_cs(&w, "redirect_uri", "urn:ietf:wg:oauth:2.0:oob");
+  jsw_cs(&w, "grant_type", "refresh_token");
+  jsw_obj_fim(&w);
+  r = postar("/oauth/token", jsw_texto_final(&w), &st);
+  jsw_livre(&w);
+
+  if (r && st >= 200 && st < 300) {
+    char t[300];
+    const char *fim = r + strlen(r);
+    if (js_texto(r, fim, "access_token", t, sizeof t)) {
+      snprintf(token, sizeof token, "%s", t);
+      // O refresh ROTACIONA: o velho morre nesta resposta.
+      if (!js_texto(r, fim, "refresh_token", refresh, sizeof refresh))
+        refresh[0] = 0;
+      criadoEm  = (long)js_num(r, fim, "created_at", (double)time(NULL));
+      expiraSeg = (long)js_num(r, fim, "expires_in", 86400);
+      tokenNovo = 1;
+      estado = TRA_LIGADO;
+      printf("[trakt] credencial renovada pelo refresh token\n");
+    } else {
+      snprintf(erro, sizeof erro, "a renovacao veio sem token");
+      estado = TRA_INVALIDO;
+    }
+  } else if (st == 400 || st == 401 || st == 403 || st == 404) {
+    // invalid_grant: o refresh tambem morreu — so re-pareando.
+    snprintf(erro, sizeof erro, "%s",
+             i18n("a sessão do Trakt expirou — conecte de novo"));
+    estado = TRA_INVALIDO;
+  }
+  // Falha de TRANSPORTE (st==0): estado nao muda; traktauth_passo tenta de
+  // novo, porque uma TV sem rede por um minuto nao e sessao morta.
+  free(r);
+  fioPronto = 1;
+  return NULL;
+}
+
 static void soltar(void *(*rotina)(void *)) {
   if (fioVivo) return;
   fioPronto = 0;
@@ -296,6 +346,32 @@ void traktauth_comecar(void) {
 void traktauth_passo(unsigned agoraMs) {
   if (fioVivo && fioPronto) { fioVivo = 0; fioPronto = 0; }
   if (fioVivo) return;
+
+  // 401 NA SESSAO: a rede marcou a credencial como recusada. Com refresh
+  // guardado, renova — uma tentativa por minuto, porque falha de transporte
+  // nao derruba o estado. Sem refresh (credencial do pacote ou vinda da conta
+  // sem ele), nao ha caminho: o estado cai para INVALIDO e a tela finalmente
+  // diz a verdade ("expirou", nao "conectado").
+  //
+  // A guarda nao e `estado == TRA_LIGADO`: um token carregado do pacote deixa
+  // o estado em PARADO com trakt_ativo() ligado, e era justamente esse o caso
+  // que mostrava "conectado" com tudo falhando.
+  if (trakt_recusada() && trakt_ativo() &&
+      estado != TRA_PEDINDO && estado != TRA_AGUARDANDO &&
+      estado != TRA_INVALIDO) {
+    static unsigned ultimaRenovacao;
+    if (refresh[0]) {
+      if (agoraMs - ultimaRenovacao > 60000u) {
+        ultimaRenovacao = agoraMs;
+        soltar(fioRenovar);
+      }
+    } else {
+      snprintf(erro, sizeof erro, "%s",
+               i18n("a sessão do Trakt expirou — conecte de novo"));
+      estado = TRA_INVALIDO;
+    }
+  }
+
   // Token que a conta ainda nao tem (push falhou, ou veio de um arquivo antigo):
   // uma tentativa por ciclo de sync concluido, nunca em laco.
   { static unsigned ultimaTentativa;

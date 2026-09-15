@@ -19,7 +19,7 @@ if [ "${1:-}" = --capturas ]; then
   for f in src/*.c; do [ "$f" != src/main.c ] && fontes+=("$f"); done
   cc "${fontes[@]}" tests/perfilsel_visual.c -Isrc -o /tmp/nuvio-perfilsel-shot \
     -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-    -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -framework OpenGL \
+    -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
     -Wno-deprecated-declarations -Wno-macro-redefined
   D=$(mktemp -d); trap 'rm -rf "$D"' EXIT
   # NUVIO_DADOS, e NAO uma variavel inventada: e a unica que dados_iniciar()
@@ -33,7 +33,7 @@ flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 # So perfis.c, js.c e jsw.c: a regra nao depende de SDL, de rede nem da tela, e
 # linkar o app inteiro aqui tornaria o teste lento e fragil.
-cc "${flags[@]}" src/perfis.c src/js.c src/jsw.c tests/perfilsel.c \
+cc ${flags[@]+"${flags[@]}"} src/perfis.c src/js.c src/jsw.c tests/perfilsel.c \
   -Isrc -o /tmp/nuvio-perfilsel-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
 

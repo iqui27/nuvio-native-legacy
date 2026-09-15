@@ -13,6 +13,7 @@
 // lidos da tela rodando.
 #include "ajustes.h"
 #include "descoberta.h"
+#include "extras.h"
 #include "fileiras.h"
 #include "idioma.h"
 #include "linguas.h"
@@ -27,8 +28,10 @@
 #include "perfis.h"
 #include "traktauth.h"
 #include "simklauth.h"
+#include "qr.h"
 #include "js.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // Versao do app: mesma string do appinfo.json empacotado. Fica aqui porque a
@@ -105,6 +108,15 @@ typedef enum {
   AJ_PERFIL_ATIVO, AJ_SYNC, AJ_ADDONS, AJ_SALVOS_DEST, AJ_TRAKT, AJ_SIMKL, AJ_SAIR,
   // Sobre
   AJ_VERSAO_I, AJ_ESPACO,
+  // Integracoes — TMDB (tmdb_settings do blob da conta, ver
+  // profileSettingsSyncService.js do web)
+  AJ_TMDB_LIGADO, AJ_TMDB_IDIOMA, AJ_TMDB_ARTE, AJ_TMDB_BASICO, AJ_TMDB_FICHA,
+  AJ_TMDB_DATAS,
+  AJ_TMDB_ELENCO, AJ_TMDB_PROD, AJ_TMDB_REDES, AJ_TMDB_EPS, AJ_TMDB_TRAILERS,
+  AJ_TMDB_MAIS, AJ_TMDB_COL, AJ_TMDB_CW,
+  // Integracoes — MDBList (mdblist_settings do blob)
+  AJ_MDB_LIGADO, AJ_MDB_CHAVE, AJ_MDB_TRAKT, AJ_MDB_IMDB, AJ_MDB_TMDB,
+  AJ_MDB_LETTER, AJ_MDB_TOMATES, AJ_MDB_AUDIENCIA, AJ_MDB_META, AJ_MDB_MAL,
   AJ_N
 } OpcaoId;
 
@@ -147,6 +159,16 @@ static const char *V_NOTAS[]     = { "Mostrar", "Ocultar" };
 // padrao para a lista local faria o "+" de quem usa Trakt parar de publicar la
 // depois de uma atualizacao, sem ninguem ter pedido.
 static const char *V_SALVOS[]    = { "Lista do Nuvio", "Watchlist do Trakt" };
+// `tmdb_language` no blob da conta guarda so o idioma BASE ("pt", "en") —
+// normalizeTmdbLanguageForAndroid corta a regiao. A lista aqui e curta de
+// proposito: a do web e gerada de AVAILABLE_LANGUAGES inteiro, e atravessar
+// 40 idiomas numa seta de controle e pior que cobrir os que fazem sentido
+// nesta TV. "Da interface" preserva o comportamento anterior: pt-BR quando a
+// interface esta em portugues, en-US em ingles.
+static const char *V_TMDB_LING[] = {
+  "Da interface", "Português (Brasil)", "English", "Español", "Français",
+  "Deutsch", "Italiano", "Português (Portugal)", "日本語", "한국어", "中文"
+};
 // Preenchido em rotulosDeIdioma(), no arranque: os nomes saem de linguas.c em
 // vez de serem uma segunda lista escrita a mao aqui. LING_MAX_OPC e folga: se
 // linguas.c crescer, o excedente simplesmente nao aparece — melhor que ler
@@ -276,6 +298,39 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Sair da conta"),
   LER("Versão"),
   LER("Memória usada por imagens"),
+
+  // Integracoes — TMDB. Os rotulos seguem a pagina integration:tmdb do web
+  // (settingsScreen.js): um master + um toggle por recurso que o enriquecimento
+  // toca. LIGADO por padrao em tudo: diferente do web, onde o TMDB e opt-in, o
+  // nativo sempre enriqueceu por ele — nascer desligado apagaria elenco com
+  // foto, ficha e trailers de quem ja usa o app sem nunca ter visto o ajuste.
+  ESC("TMDB",                       V_LIGA, 2),   // tmdb_enabled
+  ESC("Idioma dos metadados",       V_TMDB_LING, 11), // tmdb_language
+  ESC("Arte localizada",            V_LIGA, 2),   // tmdb_use_artwork
+  ESC("Título e sinopse",           V_LIGA, 2),   // tmdb_use_basic_info
+  ESC("Ficha técnica",              V_LIGA, 2),   // tmdb_use_details
+  ESC("Datas de lançamento",        V_LIGA, 2),   // tmdb_use_release_dates
+  ESC("Elenco e equipe",            V_LIGA, 2),   // tmdb_use_credits
+  ESC("Produtoras",                 V_LIGA, 2),   // tmdb_use_productions
+  ESC("Redes e estúdios",           V_LIGA, 2),   // tmdb_use_networks
+  ESC("Episódios",                  V_LIGA, 2),   // tmdb_use_episodes
+  ESC("Trailers",                   V_LIGA, 2),   // tmdb_use_trailers
+  ESC("\"Mais como este\"",         V_LIGA, 2),   // tmdb_use_more_like_this
+  ESC("Coleções e sagas",           V_LIGA, 2),   // tmdb_use_collections
+  ESC("Enriquecer \"Continuar assistindo\"", V_LIGA, 2), // tmdb_enrich_continue_watching
+
+  // Integracoes — MDBList. O master liga/desliga a consulta; os demais
+  // escolhem quais fontes de nota viram cartao na pagina de titulo.
+  ESC("MDBList",                    V_LIGA, 2),   // mdblist_enabled
+  LER("Chave da API"),                            // mdblist_api_key (status)
+  ESC("Notas do Trakt",             V_LIGA, 2),   // mdblist_show_trakt
+  ESC("Notas do IMDb",              V_LIGA, 2),   // mdblist_show_imdb
+  ESC("Notas do TMDB",              V_LIGA, 2),   // mdblist_show_tmdb
+  ESC("Notas do Letterboxd",        V_LIGA, 2),   // mdblist_show_letterboxd
+  ESC("Notas do Rotten Tomatoes",   V_LIGA, 2),   // mdblist_show_tomatoes
+  ESC("Nota da audiência",          V_LIGA, 2),   // mdblist_show_audience
+  ESC("Notas do Metacritic",        V_LIGA, 2),   // mdblist_show_metacritic
+  ESC("Notas do MyAnimeList",       V_LIGA, 2),   // mdblist_show_mal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -322,6 +377,21 @@ static const char *CHAVE[] = {
   // iniciada por "-".
   "-perfil", "-sync", "-addons", "salvosDestino", "-trakt", "-simkl", "-sair",
   "-versao", "-espaco",
+  // Integracoes: os nomes sao exatamente os que profileSettingsSyncService.js
+  // exporta dentro de tmdb_settings / mdblist_settings — a conta aplica e a
+  // TV respeita a escolha feita no app web, e vice-versa.
+  "tmdb_enabled", "tmdb_language", "tmdb_use_artwork", "tmdb_use_basic_info",
+  "tmdb_use_details",
+  "tmdb_use_release_dates", "tmdb_use_credits", "tmdb_use_productions",
+  "tmdb_use_networks", "tmdb_use_episodes", "tmdb_use_trailers",
+  "tmdb_use_more_like_this", "tmdb_use_collections",
+  "tmdb_enrich_continue_watching",
+  // A chave do mdblist chega pelas CREDENCIAIS da conta (sync.c), nao pelo
+  // blob de ajustes; a linha aqui so mostra o estado, por isso o "-".
+  "mdblist_enabled", "-mdblistChave",
+  "mdblist_show_trakt", "mdblist_show_imdb", "mdblist_show_tmdb",
+  "mdblist_show_letterboxd", "mdblist_show_tomatoes", "mdblist_show_audience",
+  "mdblist_show_metacritic", "mdblist_show_mal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -376,6 +446,7 @@ static const struct {
   { "Página de detalhes",   "Detalhes",   "episodios",    AJ_DET_BLUR_NAO_VISTOS,  4 },
   { "Pôsteres e cards",     "Cartazes",   "aspecto",      AJ_EXPANDIR,            14 },
   { "Interface e conta",    "Conta",      "menu_profile", AJ_IDIOMA,              12 },
+  { "Integrações",          "Integrações","addon",        AJ_TMDB_LIGADO,         24 },
 };
 #define AJ_N_SECOES (int)(sizeof SECOES / sizeof *SECOES)
 
@@ -390,6 +461,7 @@ static const char *SECAO_AJUDA[AJ_N_SECOES] = {
   "A tela de um filme ou série: spoilers dos episódios, botão de trailer e de onde vêm os dados.",
   "A aparência dos cartazes em toda a interface: foco, profundidade, largura e arredondamento.",
   "Idioma da interface, animações, sua conta, addons, serviços conectados e informações do app.",
+  "Serviços de metadados: o que o TMDB enriquece na interface e quais fontes de nota o MDBList mostra.",
 };
 
 // SUBSECAO: rotula um bloco DENTRO da categoria. Existe porque juntar doze
@@ -408,6 +480,11 @@ static const struct { int op; const char *titulo; } SUBSECOES[] = {
   { AJ_LARGURA_DP,   "Tamanho do cartaz" },
   { AJ_PERFIL_ATIVO, "Sua conta" },
   { AJ_VERSAO_I,     "Sobre este app" },
+  // A regra "primeira opcao da secao nao leva subsecao" vale quando o rotulo
+  // repetiria o da secao. Aqui ele NAO repete — a secao e "Integracoes" e o
+  // bloco e "TMDB" — e sem ele as treze linhas do TMDB liam-se como avulsas.
+  { AJ_TMDB_LIGADO,  "TMDB" },
+  { AJ_MDB_LIGADO,   "MDBList" },
 };
 #define AJ_N_SUBSECOES (int)(sizeof SUBSECOES / sizeof *SUBSECOES)
 
@@ -509,6 +586,22 @@ static int valor[AJ_N] = {
   1,                /* onde o + salva: watchlist do Trakt (ver V_SALVOS) */
   0, 0, 0,          /* trakt, simkl, sair: acoes */
   0, 0,             /* versao, espaco */
+
+  // Integracoes — TMDB. Tudo LIGADO de fabrica neste app: o enriquecimento por
+  // TMDB sempre foi incondicional aqui, e nascer desligado removeria da tela
+  // dados que o usuario ja ve (elenco com foto, ficha, trailers). A escolha da
+  // conta continua mandando quando a chave chega no blob — este e so o ponto
+  // de partida de quem nunca abriu o ajuste em lugar nenhum.
+  0,                /* tmdb ligado */
+  0,                /* idioma: da interface */
+  0, 0, 0, 0, 0, 0, 0, /* arte, basico, ficha, datas, elenco, produtoras, redes */
+  0, 0, 0, 0,       /* episodios, trailers, mais como este, colecoes */
+  0,                /* enriquecer continuar assistindo */
+  // MDBList: idem — a conta que traz a chave, e a consulta sempre correu.
+  0,                /* mdblist ligado */
+  0,                /* chave: leitura */
+  0, 0, 0, 0, 0, 0, 0, 0, /* trakt, imdb, tmdb, letterboxd, tomatoes,
+                           audiencia, metacritic, mal */
 };
 
 // Pedido de abrir a lista de addons, lido e zerado pelo app.c. A tela nao e
@@ -532,8 +625,17 @@ static int focoIndice = 0;
 static int filAberta;
 static int filFoco;
 static int filCampo;
-static int filPegou;             // 1 = item "na mao", cima/baixo movem ele
+// 0 = nada na mao, 1 = fileira na mao, 2 = BLOCO do addon na mao.
+// O bloco e o conjunto de fileiras contiguas do mesmo addon — mover o bloco
+// inteiro e o "mover de uma vez" que a pessoa pede quando ha 60 fileiras de 5
+// addons e ela quer subir "o Xperience" sem subir cada catalogo dele.
+static int filPegou;
 static int filPegouDe;           // de onde ele saiu, para Voltar cancelar
+// MODO EDICAO da lista principal. Antes esquerda/direita trocava o valor da
+// linha em foco DIRETO — cada toque de navegacao que errasse a linha mudava
+// um ajuste sem a pessoa pedir ("fica estranho, nao intuitivo"). Agora OK
+// trava a linha para edicao e so entao as setas ajustam; OK ou Voltar soltam.
+static int emEdicao;
 static int filTopo;              // primeira linha desenhada (rolagem)
 // Uma lista de UMA coluna nao precisa do focus.h: a memoria de coluna que ele
 // existe para resolver nao tem o que lembrar aqui, e o indice cru deixa o
@@ -633,6 +735,59 @@ float ajustes_conteudo_x(void) {
 }
 const char *ajustes_qualidade(void)   { return V_QUALIDADE[valor[AJ_QUALIDADE]]; }
 
+// --- Integracoes ------------------------------------------------------------
+//
+// TMDB: cada sub-toggle vale sozinho, mas o CONSUMIDOR so deve ler
+// `ajustes_tmdb_*` DEPOIS do portao — `desc_chave_tmdb()` devolve "" quando
+// ajustes_tmdb_ligado() e 0, e sem chave nenhum pedido ao TMDB sai. Ainda
+// assim os acessores ja retornam 0 com o master desligado, para quem os usar
+// nao precisar lembrar da segunda pergunta.
+int ajustes_tmdb_ligado(void)         { return lig(AJ_TMDB_LIGADO); }
+// Codigo no formato da API do TMDB ("pt-BR", "en-US"). "Da interface" (0)
+// segue o idioma do app, que e o comportamento que desc_tmdb_idioma() sempre
+// teve.
+const char *ajustes_tmdb_idioma(void) {
+  static const char *L[] = {
+    NULL, "pt-BR", "en-US", "es-ES", "fr-FR", "de-DE", "it-IT", "pt-PT",
+    "ja-JP", "ko-KR", "zh-CN"
+  };
+  int v = valor[AJ_TMDB_IDIOMA];
+  if (v < 0 || v >= (int)(sizeof L / sizeof *L)) v = 0;
+  // "Da interface" resolve AQUI, na hora de perguntar, e nao na gravacao:
+  // trocar o idioma do app tem de refletir sem tocar neste ajuste.
+  if (!L[v]) return ajustes_idioma_ingles() ? "en-US" : "pt-BR";
+  return L[v];
+}
+#define TMDB_USA(op) (lig(AJ_TMDB_LIGADO) && lig(op))
+int ajustes_tmdb_arte(void)           { return TMDB_USA(AJ_TMDB_ARTE); }
+int ajustes_tmdb_basico(void)         { return TMDB_USA(AJ_TMDB_BASICO); }
+int ajustes_tmdb_ficha(void)          { return TMDB_USA(AJ_TMDB_FICHA); }
+int ajustes_tmdb_datas(void)          { return TMDB_USA(AJ_TMDB_DATAS); }
+int ajustes_tmdb_elenco(void)         { return TMDB_USA(AJ_TMDB_ELENCO); }
+int ajustes_tmdb_prod(void)           { return TMDB_USA(AJ_TMDB_PROD); }
+int ajustes_tmdb_redes(void)          { return TMDB_USA(AJ_TMDB_REDES); }
+int ajustes_tmdb_eps(void)            { return TMDB_USA(AJ_TMDB_EPS); }
+int ajustes_tmdb_trailers(void)       { return TMDB_USA(AJ_TMDB_TRAILERS); }
+int ajustes_tmdb_mais(void)           { return TMDB_USA(AJ_TMDB_MAIS); }
+int ajustes_tmdb_col(void)            { return TMDB_USA(AJ_TMDB_COL); }
+int ajustes_tmdb_cw(void)             { return TMDB_USA(AJ_TMDB_CW); }
+
+int ajustes_mdblist_ligado(void)      { return lig(AJ_MDB_LIGADO); }
+// `fonte` e um ExFonte de extras.h (a ordem dele, nao a das linhas aqui).
+// NAO combina com o master de proposito: o master corta a CONSULTA ao mdbList,
+// e as notas Trakt/IMDb que o app tem por conta propria (sem chave nenhuma)
+// nao sao dados do mdbList — esconde-las junto seria punir o usuario pelo que
+// outro servico faz. Cada show_* continua valendo sobre a sua fonte. MAL nao
+// tem fonte no extras de hoje — o ajuste fica gravado a espera dela.
+int ajustes_mdblist_fonte(int fonte) {
+  static const int OP[] = {
+    AJ_MDB_TRAKT, AJ_MDB_IMDB, AJ_MDB_TMDB, AJ_MDB_TOMATES,
+    AJ_MDB_AUDIENCIA, AJ_MDB_META, AJ_MDB_LETTER
+  };
+  if (fonte < 0 || fonte >= (int)(sizeof OP / sizeof *OP)) return 0;
+  return lig(OP[fonte]);
+}
+
 // Onde os ajustes ficam. Ate a versao anterior nada era gravado: mexer numa
 // opcao valia so enquanto o app estivesse aberto, e voltar depois mostrava tudo
 // no padrao — o que faz a tela inteira parecer decorativa.
@@ -647,6 +802,16 @@ static const char *W_DESCOBRIR[] = { "in_search", "in_sidebar", "off", NULL };
 static const char *W_NOTAS[]     = { "SHOW_ALL", "HIDE_ALL", NULL };
 static const char *W_CW[]        = { "card", "wide", "poster", NULL };
 static const char *W_CW_ORDEM[]  = { "default", "streaming_style", "split_upcoming", NULL };
+// `tmdb_language` chega da conta ja cortado na BASE ("pt", "en" — ver
+// normalizeTmdbLanguageForAndroid no web). Posicional com V_TMDB_LING: "pt"
+// vira Portugues (Brasil), e pt-PT e inalcancavel pelo blob — fica como
+// escolha local apenas. O indice 0 e um sentinela: a conta sempre manda um
+// idioma de verdade, e um idioma que a lista nao tem (digamos "nl") mantem o
+// valor atual em vez de inventar um.
+static const char *W_TMDB_LING[] = {
+  "interface", "pt", "en", "es", "fr", "de", "it", "pt-pt", "ja", "ko", "zh",
+  NULL
+};
 
 // `heroSectionEnabled` -> `hero_section_enabled`. Uma sequencia de maiusculas
 // conta como uma palavra so (`homeImdbRatingsVisibility` ->
@@ -683,6 +848,7 @@ static const char *const *literaisDe(int op) {
     case AJ_CW_FONTE:   return W_CW;
     case AJ_CW_ESTILO:  return W_CW;
     case AJ_CW_ORDEM:   return W_CW_ORDEM;
+    case AJ_TMDB_IDIOMA: return W_TMDB_LING;
     default:            return NULL;
   }
 }
@@ -892,6 +1058,7 @@ int ajustes_iniciar(void) {
   focoOp = 0; scrollY = 0.0f; sair = 0;
   focoIndice = 0;
   filAberta = 0; filFoco = 0; filCampo = 0; filPegou = 0; filTopo = 0;
+  emEdicao = 0;
   valor[AJ_FIL_LIMITE] = fil_limite();
   // Tambem aqui, e nao so em ajustes_dir: sem arquivo de ajustes aquele caminho
   // volta cedo e os rotulos ficariam vazios na primeira abertura da tela.
@@ -941,6 +1108,7 @@ static const char *textoLeitura(int op) {
       case TRA_PEDINDO:    return i18n("preparando…");
       case TRA_AGUARDANDO: return i18n("aguardando");
       case TRA_ERRO:       return i18n("falhou");
+      case TRA_INVALIDO:   return i18n("expirou — reconectar");
       default:             return i18n("conectar");
     }
   }
@@ -960,6 +1128,12 @@ static const char *textoLeitura(int op) {
     return buf;
   }
   if (op == AJ_SAIR) return "OK";   /* igual nos dois idiomas */
+  if (op == AJ_MDB_CHAVE) {
+    // A chave chega pela CONTA (sync.c -> extras_definir_chave) ou pelo
+    // arquivo art/mdblist.txt. Mostra so o estado, nunca os caracteres — a
+    // linha e de leitura justamente porque nao ha teclado nesta tela.
+    return extras_mdblist_tem_chave() ? i18n("definida") : i18n("ausente");
+  }
   if (op == AJ_HERO_CATALOGOS) {
     // "Todos" com a lista vazia e o que o web escreve (common_all), e e o estado
     // do perfil do dono. Um "0" ali leria como "nenhum", o oposto do que e.
@@ -993,6 +1167,18 @@ static int inativa(int op) {
     case AJ_PROF_POSTERS: case AJ_PROF_CW: case AJ_PROF_EPS:
     case AJ_PROF_ELENCO: case AJ_PROF_TRAILERS:
       return !ajustes_profundidade();
+    // Integracoes: cada recurso depende do master da sua integracao, como o
+    // `disabled: !enabled` das linhas do web.
+    case AJ_TMDB_IDIOMA: case AJ_TMDB_ARTE: case AJ_TMDB_FICHA:
+    case AJ_TMDB_DATAS: case AJ_TMDB_ELENCO: case AJ_TMDB_PROD:
+    case AJ_TMDB_REDES: case AJ_TMDB_EPS: case AJ_TMDB_TRAILERS:
+    case AJ_TMDB_MAIS: case AJ_TMDB_COL: case AJ_TMDB_CW:
+      return !ajustes_tmdb_ligado();
+    case AJ_MDB_CHAVE:
+    case AJ_MDB_TRAKT: case AJ_MDB_IMDB: case AJ_MDB_TMDB:
+    case AJ_MDB_LETTER: case AJ_MDB_TOMATES: case AJ_MDB_AUDIENCIA:
+    case AJ_MDB_META: case AJ_MDB_MAL:
+      return !ajustes_mdblist_ligado();
     default: return 0;
   }
 }
@@ -1032,6 +1218,10 @@ static const char *ajudaOpcao(int op) {
         ? "Ative Miniatura do episódio para desfocar a imagem do próximo episódio."
         : "Ative Continuar assistindo para ajustar os cards de retomada.";
     if (op == AJ_EXPANDIR_ATRASO) return "Ative Expandir pôster ao focar para ajustar o tempo de espera.";
+    if (op > AJ_TMDB_LIGADO && op <= AJ_TMDB_CW)
+      return "Ative TMDB para ajustar o que ele enriquece.";
+    if (op > AJ_MDB_LIGADO && op <= AJ_MDB_MAL)
+      return "Ative MDBList para escolher as fontes de nota.";
     return "Ative Efeito de profundidade para personalizar este detalhe.";
   }
   switch (op) {
@@ -1101,6 +1291,28 @@ static const char *ajudaOpcao(int op) {
     case AJ_SAIR: return "Sai da conta nesta TV e apaga daqui a sessão, os addons e o progresso guardados.";
     case AJ_ESPACO: return "Uso atual de memória pelo cache de imagens, não espaço ocupado no armazenamento da TV.";
     case AJ_VERSAO_I: return "Versão do aplicativo. Esta informação não pode ser alterada.";
+
+    // --- Integracoes
+    case AJ_TMDB_LIGADO: return "O TMDB enriquece títulos com sinopse, elenco com foto, ficha técnica e trailers. Desligar corta tudo isso de uma vez.";
+    case AJ_TMDB_IDIOMA: return "Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.";
+    case AJ_TMDB_ARTE: return "Prefere pôster e fundo traduzidos pelo TMDB quando o título tem arte no seu idioma.";
+    case AJ_TMDB_BASICO: return "Usa título e sinopse do TMDB no lugar dos que vieram no catálogo do addon.";
+    case AJ_TMDB_FICHA: return "Preenche a ficha técnica da página do título (status, duração, países).";
+    case AJ_TMDB_DATAS: return "Datas de estreia e classificação etária do seu país, pelo TMDB.";
+    case AJ_TMDB_ELENCO: return "Fotos do elenco e nomes dos papéis, vindos do TMDB.";
+    case AJ_TMDB_PROD: return "Lista as produtoras na página do título; tocar num logo abre os títulos dela.";
+    case AJ_TMDB_REDES: return "Lista as redes (HBO, Netflix…) na página da série; tocar num logo abre os títulos dela.";
+    case AJ_TMDB_EPS: return "Busca dados de episódios no TMDB para complementar os que vêm do addon.";
+    case AJ_TMDB_TRAILERS: return "A fileira de trailers da página do título. Desligue para esconder os cards.";
+    case AJ_TMDB_MAIS: return "A aba \"Mais como este\" passa a usar as recomendações do TMDB.";
+    case AJ_TMDB_COL: return "A aba de coleção/saga (as outras partes da franquia) na página do filme.";
+    case AJ_TMDB_CW: return "Usa o TMDB para preencher os cartazes da fileira de retomada.";
+    case AJ_MDB_LIGADO: return "O MDBList junta notas de várias fontes na página do título. Desligar esconde a fileira inteira.";
+    case AJ_MDB_CHAVE: return "A chave vem da sua conta Nuvio ou do arquivo do pacote. Não dá para digitar nesta TV.";
+    case AJ_MDB_TRAKT: case AJ_MDB_IMDB: case AJ_MDB_TMDB:
+    case AJ_MDB_LETTER: case AJ_MDB_TOMATES: case AJ_MDB_AUDIENCIA:
+    case AJ_MDB_META: case AJ_MDB_MAL:
+      return "Mostra ou esconde esta fonte na fileira de notas da página do título.";
     default: return "Use as setas laterais para escolher. A preferência é aplicada ao alterar o valor.";
   }
 }
@@ -1199,10 +1411,18 @@ static void eventoFileiras(SDL_Keycode k) {
       // controle na mao da pessoa. Com o teto, o pior caso e o item ficar onde
       // esta.
       int passos = FIL_MAX + 1;
-      while (filFoco != filPegouDe && passos-- > 0) {
-        int antes = filFoco;
-        filFoco = fil_mover(filFoco, filPegouDe > filFoco ? 1 : -1);
-        if (filFoco == antes) break;
+      if (filPegou == 2) {
+        while (filFoco != filPegouDe && passos-- > 0) {
+          int antes = filFoco;
+          filFoco = fil_mover_grupo(filFoco, filPegouDe > filFoco ? 1 : -1);
+          if (filFoco == antes) break;
+        }
+      } else {
+        while (filFoco != filPegouDe && passos-- > 0) {
+          int antes = filFoco;
+          filFoco = fil_mover(filFoco, filPegouDe > filFoco ? 1 : -1);
+          if (filFoco == antes) break;
+        }
       }
       filPegou = 0;
     } else {
@@ -1211,24 +1431,31 @@ static void eventoFileiras(SDL_Keycode k) {
     return;
   }
   if (n < 1) return;   // estado vazio: nao ha o que mover nem ligar
-  if (filFoco >= n) filFoco = n - 1;
+  // filFoco == n e o BOTAO "Agrupar por addon", uma posicao alem da ultima
+  // fileira. ↑ da primeira sobe para ele; ↓ da ultima desce para ele.
+  if (filFoco > n) filFoco = n;
   if (k == SDLK_DOWN || k == SDLK_UP) {
     int dir = (k == SDLK_DOWN) ? 1 : -1;
-    if (filPegou) filFoco = fil_mover(filFoco, dir);
-    else if (filFoco + dir >= 0 && filFoco + dir < n) filFoco += dir;
+    if (filPegou == 2) filFoco = fil_mover_grupo(filFoco, dir);
+    else if (filPegou) filFoco = fil_mover(filFoco, dir);
+    else if (filFoco + dir >= 0 && filFoco + dir <= n) filFoco += dir;
     return;
   }
   if (k == SDLK_LEFT || k == SDLK_RIGHT) {
-    // Com o item na mao, esquerda/direita nao fazem nada de proposito: trocar de
-    // coluna no meio de um movimento e o caminho mais curto para soltar a
-    // fileira num lugar que a pessoa nao escolheu.
-    if (filPegou) return;
+    if (filPegou) {
+      // Com o item na mao, esquerda/direita alterna entre mover a FILEIRA e
+      // mover o BLOCO do addon inteiro. O texto da folha diz qual e o modo.
+      filPegou = (filPegou == 1) ? 2 : 1;
+      return;
+    }
+    if (filFoco == n) return;   // o botao nao tem colunas
     filCampo += (k == SDLK_RIGHT) ? 1 : -1;
     if (filCampo < 0) filCampo = 0;
     if (filCampo > AJ_FIL_CAMPOS - 1) filCampo = AJ_FIL_CAMPOS - 1;
     return;
   }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+    if (filFoco == n) { fil_ordenar_por_addon(); filFoco = 0; filCampo = 0; return; }
     switch (filCampo) {
       case 0: if (!filPegou) { filPegou = 1; filPegouDe = filFoco; }
               else filPegou = 0;
@@ -1291,14 +1518,29 @@ void ajustes_evento(const SDL_Event *e) {
       if (k == SDLK_RIGHT || k == SDLK_RETURN || k == SDLK_KP_ENTER) { focoIndice = 0; return; }
       return;
     }
-    if (voltar) { focoIndice = 1; return; } }
+    // Voltar solta a edicao antes de subir para o indice — dois niveis de
+    // "sair", como o Voltar da folha de fileiras que primeiro solta o item.
+    if (voltar) { if (emEdicao) emEdicao = 0; else focoIndice = 1; return; } }
 
-  if (k == SDLK_DOWN)      { if (focoOp < AJ_N - 1) focoOp++; }
-  else if (k == SDLK_UP)   { if (focoOp > 0)        focoOp--; }
+  if (k == SDLK_DOWN || k == SDLK_UP) {
+    // Navegar CONFIRMA a edicao (o valor ja foi gravado a cada toque) — como
+    // o OK, e nao como um cancelamento que a lista nao tem.
+    emEdicao = 0;
+    if (k == SDLK_DOWN) { if (focoOp < AJ_N - 1) focoOp++; }
+    else                { if (focoOp > 0)        focoOp--; }
+  }
   else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
-    if (OPCOES[focoOp].tipo != OP_ACAO) return;
+    // OK em linha de valor entra no modo edicao; em acao, age; nas demais,
+    // nao faz nada — uma linha de leitura nao tem o que confirmar.
+    if (OPCOES[focoOp].tipo != OP_ACAO) {
+      // OK alterna: entra no modo edicao e, de dentro dele, confirma — o valor
+      // ja foi gravado a cada toque de seta, nao ha o que desfazer.
+      if (mutavel(focoOp)) emEdicao = !emEdicao;
+      return;
+    }
     if (focoOp == AJ_FIL_ORDEM) {
       filAberta = 1; filFoco = 0; filCampo = 0; filPegou = 0; filTopo = 0;
+      emEdicao = 0;
       return;
     }
     if (focoOp == AJ_ADDONS) { pediuAddons = 1; return; }
@@ -1323,11 +1565,12 @@ void ajustes_evento(const SDL_Event *e) {
   }
   else if (k == SDLK_PAGEUP || k == SDLK_PAGEDOWN) {
     int s = secaoAtual() + (k == SDLK_PAGEDOWN ? 1 : -1);
-    if (s >= 0 && s < AJ_N_SECOES) focoOp = SECOES[s].ini;
+    if (s >= 0 && s < AJ_N_SECOES) { focoOp = SECOES[s].ini; emEdicao = 0; }
   }
   else if (k == SDLK_LEFT || k == SDLK_RIGHT) {
-    // Item so de leitura ou desligado pela dependencia nao muda com nada.
-    if (!mutavel(focoOp)) return;
+    // Fora do modo edicao as setas nao tocam em valor nenhum — OK e a porta
+    // de entrada. Ver a nota de emEdicao.
+    if (!emEdicao || !mutavel(focoOp)) return;
     const Opcao *o = &OPCOES[focoOp];
     int dir = (k == SDLK_RIGHT) ? 1 : -1;
     if (o->tipo == OP_NUMERO) {
@@ -1488,9 +1731,13 @@ static void desenhaLinha(int op, float y, float f) {
       gfx_cor(cheio, 0.5f, 0.94f, 0.94f, 0.96f, 0.92f * aTexto);
   }
 
-  // As setas so aparecem na linha em foco que MUDA. Elas sao a instrucao: sem
-  // elas, nada na tela diz que esquerda/direita e o gesto certo.
-  if (podeMudar && f > 0.02f) {
+  // MODO EDICAO: as setas e o realce do valor so existem depois do OK. Sem
+  // edicao a linha em foco mostra so o valor — a porta de entrada e escrita
+  // no rodape de dicas, nao rabiscada em cada linha.
+  if (podeMudar && emEdicao && f > 0.02f) {
+    GfxRect pill = { valorDir - val.w - 44.0f, y + (AJ_LINHA_H - 34.0f) * 0.5f,
+                     val.w + 80.0f, 34.0f };
+    gfx_cor(pill, 0.5f, 0.55f, 0.62f, 0.75f, 0.35f * a);
     TxtLinha dir = txt_linha(TXT_CAPTION2, "\xe2\x96\xb6", cv, cv, cv, 255);
     TxtLinha esq = txt_linha(TXT_CAPTION2, "\xe2\x97\x80", cv, cv, cv, 255);
     txt_desenhar_alpha(dir, xDir - dir.w, y + (AJ_LINHA_H - dir.h) * 0.5f, aTexto * f);
@@ -1504,6 +1751,41 @@ static void desenhaLinha(int op, float y, float f) {
 // caracteres no Trakt — e o endereco e fixo, entao da para ler da TV e digitar
 // no celular. Nao precisa de QR, ao contrario dos 32 digitos hexadecimais do
 // login da conta.
+// O QR DO VINCULO. A folha so mostrava o codigo curto e o endereco — a pessoa
+// tinha de abrir o navegador do celular, digitar trakt.tv/activate e DEPOIS o
+// codigo. Com o simbolo a camera abre a pagina direto. Mesmo cuidado da tela
+// de login (login.c): NEAREST, fundo claro com zona de silencio.
+static GLuint texQrVin;
+static char   qrVinDe[256];
+
+static void qrVinTex(const char *texto) {
+  Qr q; int lado, x, y; unsigned char *px;
+  if (!texto || !texto[0]) return;
+  if (!strcmp(qrVinDe, texto) && texQrVin) return;
+  if (!qr_gerar(&q, texto)) return;
+  lado = q.lado + 8;                    // 4 modulos de silencio por lado
+  px = (unsigned char *)malloc((size_t)lado * lado * 3);
+  if (!px) return;
+  memset(px, 255, (size_t)lado * lado * 3);
+  for (y = 0; y < q.lado; y++)
+    for (x = 0; x < q.lado; x++)
+      if (qr_modulo(&q, x, y)) {
+        size_t i = ((size_t)(y + 4) * lado + (x + 4)) * 3;
+        px[i] = px[i + 1] = px[i + 2] = 0;
+      }
+  if (!texQrVin) glGenTextures(1, &texQrVin);
+  glBindTexture(GL_TEXTURE_2D, texQrVin);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, lado, lado, 0, GL_RGB,
+               GL_UNSIGNED_BYTE, px);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  free(px);
+  snprintf(qrVinDe, sizeof qrVinDe, "%s", texto);
+}
+
 static void desenhaVinculo(const char *servico, const char *codigo,
                            const char *endereco, const char *falha, int esperando) {
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
@@ -1538,26 +1820,37 @@ static void desenhaVinculo(const char *servico, const char *codigo,
     return;
   }
 
-  l = txt_linha(TXT_BODY, "No celular, abra:", 176, 178, 186, 255);
-  txt_desenhar(l, (NV_TELA_W - l.w) * 0.5f, y);
-  y += 52.0f;
-  l = txt_linha(TXT_TITULO3, endereco && endereco[0] ? endereco : "-", 255, 255, 255, 255);
-  txt_desenhar(l, (NV_TELA_W - l.w) * 0.5f, y);
-  y += 92.0f;
-  l = txt_linha(TXT_BODY, "e informe o código:", 176, 178, 186, 255);
-  txt_desenhar(l, (NV_TELA_W - l.w) * 0.5f, y);
-  y += 66.0f;
-
-  // Espacamento entre letras: um codigo curto sem tracking le como palavra, e
-  // a pessoa transcreve errado.
-  { float larg = txt_tracking(TXT_TITULO1, codigo, 255, 255, 255, -1.0f, 0.0f, 1.0f, 16.0f);
-    txt_tracking(TXT_TITULO1, codigo, 255, 255, 255,
-                 (NV_TELA_W - larg) * 0.5f, y, 1.0f, 16.0f); }
-  y += 130.0f;
+  // QR a ESQUERDA, instrucoes a DIREITA. Apontar a camera abre a pagina de
+  // ativacao; o codigo continua grande ao lado porque a pagina o pede em
+  // seguida — sem ele visivel o QR serviria para nada.
+  { float qLado = 300.0f;
+    float qx = cartao.x + 64.0f, qy = 350.0f;
+    float tx = cartao.x + 440.0f, ty = qy + 6.0f;
+    qrVinTex(endereco);
+    if (texQrVin) {
+      GfxRect moldura = { qx - 16.0f, qy - 16.0f, qLado + 32.0f, qLado + 32.0f };
+      GfxRect rq = { qx, qy, qLado, qLado };
+      gfx_cor(moldura, 0.06f, 1.0f, 1.0f, 1.0f, 1.0f);
+      gfx_tex_aspect_atual = 0.0f;   // 1:1, sem recorte
+      gfx_rect(rq, texQrVin, GFX_SNAP, 0, 0.0f, 0.0f, 0.0f, 0, 0, 0, 1.0f);
+    }
+    l = txt_linha(TXT_BODY, "No celular, abra:", 176, 178, 186, 255);
+    txt_desenhar(l, tx, ty);
+    ty += 52.0f;
+    l = txt_linha(TXT_TITULO3, endereco && endereco[0] ? endereco : "-",
+                  255, 255, 255, 255);
+    txt_desenhar(l, tx, ty);
+    ty += 96.0f;
+    l = txt_linha(TXT_BODY, "e informe o código:", 176, 178, 186, 255);
+    txt_desenhar(l, tx, ty);
+    ty += 62.0f;
+    // Espacamento entre letras: um codigo curto sem tracking le como palavra,
+    // e a pessoa transcreve errado.
+    txt_tracking(TXT_TITULO1, codigo, 255, 255, 255, tx, ty, 1.0f, 16.0f); }
 
   if (esperando) {
     l = txt_linha(TXT_CAPTION, "Aguardando a autorização…", 150, 152, 160, 255);
-    txt_desenhar(l, (NV_TELA_W - l.w) * 0.5f, y);
+    txt_desenhar(l, (NV_TELA_W - l.w) * 0.5f, cartao.y + cartao.h - 60.0f);
   }
 }
 
@@ -1600,14 +1893,11 @@ static void desenhaIndice(void) {
 #define AJ_FIL_W      1480.0f
 #define AJ_FIL_H       920.0f
 #define AJ_FIL_Y        80.0f
-#define AJ_FIL_LINHA    64.0f
+#define AJ_FIL_LINHA    76.0f
 #define AJ_FIL_LGAP      6.0f
-// SETE, e nao oito. A oitava linha terminava em y+746 e a ficha da fileira em
-// foco comeca em y+684 — na captura de revisao o texto da ficha saiu ESCRITO
-// POR CIMA da ultima fileira. Com a ficha respondendo "de qual addon veio,
-// filme ou serie, quantos titulos", uma linha a menos custa menos do que a
-// ficha valia.
-#define AJ_FIL_VIS       7      // linhas desenhadas por vez
+// SEIS, e nao sete. A linha cresceu para 76 para caber o nome do addon sob o
+// titulo — sete linhas de 76 terminariam em y+578 e a ficha comeca em y+684.
+#define AJ_FIL_VIS       6      // linhas desenhadas por vez
 
 // As quatro colunas, em x relativo ao cartao. A primeira e a ALCA DE MOVER: e
 // nela que OK pega e solta a fileira.
@@ -1635,8 +1925,7 @@ static void desenhaFileiras(void) {
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
   GfxRect cartao = { (NV_TELA_W - AJ_FIL_W) * 0.5f, AJ_FIL_Y, AJ_FIL_W, AJ_FIL_H };
   int n = fil_n(), lim = fil_limite();
-  int ligadas[FIL_MAX];
-  int i, vistas = 0;
+  int i;
   float cx = cartao.x, y, filCabecY;
   TxtLinha l;
   char buf[120];
@@ -1657,7 +1946,8 @@ static void desenhaFileiras(void) {
     hy += l.h + 8.0f;
     // FRASE MONTADA: i18n no FORMATO, porque a string final nunca casa com uma
     // chave da tabela (ver idioma.h).
-    snprintf(buf, sizeof buf, i18n("As %d primeiras ligadas aparecem na Home"), lim);
+    snprintf(buf, sizeof buf,
+             i18n("Limite de %d fileiras — coleções não contam"), lim);
     l = txt_linha(TXT_CAPTION, buf, 176, 179, 188, 255);
     txt_desenhar(l, cx + 40.0f, hy);
     hy += l.h + 6.0f;
@@ -1688,20 +1978,25 @@ static void desenhaFileiras(void) {
     return;
   }
 
-  if (filFoco >= n) filFoco = n - 1;
+  // filFoco == n e a posicao do BOTAO "Agrupar por addon" — rebaixar para n-1
+  // aqui era o que o tornava inalcancavel: o evento subia para n e o desenho
+  // derrubava de volta.
+  if (filFoco > n) filFoco = n;
   if (filFoco < 0) filFoco = 0;
   if (filFoco < filTopo) filTopo = filFoco;
   if (filFoco >= filTopo + AJ_FIL_VIS) filTopo = filFoco - AJ_FIL_VIS + 1;
   if (filTopo > n - AJ_FIL_VIS) filTopo = n - AJ_FIL_VIS;
   if (filTopo < 0) filTopo = 0;
 
-  // Quantas LIGADAS existem ate cada linha. Precisa varrer desde o inicio
-  // mesmo com a lista rolada: a posicao dentro do limite depende do que esta
-  // acima, inclusive do que nao esta na tela.
-  for (i = 0; i < n && i < FIL_MAX; i++) {
-    if (!fil_linha_oculta(i)) vistas++;
-    ligadas[i] = vistas;
-  }
+  // O ESTADO DA FILEIRA SAI DO FATO, NAO DE UMA PREVISAO DE CONTA. A home ja
+  // sabe quem ela desenhou (naHome) e a descoberta ja sabe quem ela declarou
+  // (vista) — e entre as duas a "vaga garantida por addon" promove catalogo
+  // para dentro da janela, entao nenhuma conta por posicao acertaria sempre.
+  // Na home e "Ligada" e ponto; catalogo declarado que ficou de fora e
+  // "Fora do limite" (foi o limite que o cortou — vazio ou sem resposta nem
+  // chega a ser declarado como fileira); o resto, nunca visto nesta sessao,
+  // e "Fora da Home". Marcar "Fora do limite" numa fileira visivel na home
+  // era o relato "mostra coisa que o menu diz que esta fora".
 
   // Cabecalho das colunas.
   for (i = 0; i < AJ_FIL_CAMPOS; i++) {
@@ -1710,18 +2005,33 @@ static void desenhaFileiras(void) {
   }
 
   y = filCabecY + 34.0f;
+  int limiteMarcado = 0;
   for (i = filTopo; i < n && i < filTopo + AJ_FIL_VIS; i++) {
     GfxRect linha = { cx + 24.0f, y, AJ_FIL_W - 48.0f, AJ_FIL_LINHA };
     float raio = 12.0f / AJ_FIL_LINHA;
     int foco = (i == filFoco);
     int oculta = fil_linha_oculta(i);
-    int fora = !oculta && ligadas[i] > lim;
+    int fora = !oculta && fil_linha_origem(i) == FIL_ORIGEM_CATALOGO &&
+               fil_linha_vista(i) && !fil_linha_na_home(i);
+    int foraDaHome = !oculta && !fil_linha_na_home(i) && !fora;
     // Apagada por dois motivos DIFERENTES e por isso com dois pesos: desligada
-    // e escolha da pessoa, fora do limite e consequencia do limite.
-    float aTexto = oculta ? 0.55f : (fora ? 0.72f : 1.0f);
+    // e escolha da pessoa, fora do limite e consequencia do limite. Fora da
+    // home e informativo — addon que saiu, catalogo ainda nao montado.
+    float aTexto = oculta ? 0.55f : ((fora || foraDaHome) ? 0.72f : 1.0f);
     int c = oculta ? 150 : 234;
     gfx_cor(linha, raio, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
             filPegou && foco ? 1.0f : (foco ? 0.72f : 0.30f));
+
+    // A LINHA DIVISORIA DO LIMITE: marca onde a Home corta. Toda fileira abaixo
+    // dela esta "Fora do limite" — e a primeira vez que a pessoa ve isso sem
+    // ter de ler a ficha de cada uma.
+    if (fora && !limiteMarcado) {
+      GfxRect corte = { cx + 24.0f, y - AJ_FIL_LGAP * 0.5f - 1.0f,
+                        AJ_FIL_W - 48.0f, 2.0f };
+      gfx_cor(corte, 0.0f, 0.90f, 0.72f, 0.42f, 0.55f);
+      limiteMarcado = 1;
+    }
+
     if (foco) {
       // O ANEL MARCA A COLUNA, nao a linha: e a coluna que diz o que OK vai
       // fazer. Com o anel na linha inteira, as quatro acoes de OK ficariam
@@ -1755,11 +2065,23 @@ static void desenhaFileiras(void) {
         txt_desenhar(m, tx, y + (AJ_FIL_LINHA - m.h) * 0.5f);
         tx += m.w + 12.0f; tw -= m.w + 12.0f;
       }
-      l = txt_linha_corta(TXT_CALLOUT, fil_titulo(i), c, c, c, 255, tw);
-      txt_desenhar_alpha(l, tx, y + (AJ_FIL_LINHA - l.h) * 0.5f, aTexto); }
+      // TITULO na linha de cima, ADDON na de baixo. Com 60+ fileiras de 5
+      // addons, a unica forma de "separar por addon" sem perder a ordem e
+      // mostrar o nome em cada linha — a ficha do rodape repete a mesma
+      // informacao para quem quiser mais detalhe.
+      { const char *addon = fil_linha_addon(i);
+        l = txt_linha_corta(TXT_CALLOUT, fil_titulo(i), c, c, c, 255, tw);
+        txt_desenhar_alpha(l, tx, y + 8.0f, aTexto);
+        if (addon[0]) {
+          TxtLinha ad = txt_linha_corta(TXT_MINI, addon, 148, 151, 160, 255, tw);
+          txt_desenhar_alpha(ad, tx, y + 8.0f + l.h + 4.0f, aTexto * 0.85f);
+        }
+      } }
 
-    { const char *est = oculta ? "Desligada" : (fora ? "Fora do limite" : "Ligada");
-      int er = oculta ? 176 : (fora ? 226 : 150);
+    { const char *est = oculta ? "Desligada"
+                      : fora ? "Fora do limite"
+                      : foraDaHome ? "Fora da Home" : "Ligada";
+      int er = oculta ? 176 : (fora ? 226 : (foraDaHome ? 196 : 150));
       int eg = oculta ? 122 : (fora ? 186 : 214);
       int eb = oculta ? 122 : (fora ? 108 : 158);
       l = txt_linha_corta(TXT_CALLOUT, est, er, eg, eb, 255, AJ_FIL_COL[1].w);
@@ -1783,10 +2105,31 @@ static void desenhaFileiras(void) {
   }
 
   // Posicao na lista, em vez de uma barra de rolagem sozinha: com 64 fileiras a
-  // barra fica com 6 px e nao diz onde a pessoa esta.
-  snprintf(buf, sizeof buf, i18n("%d de %d"), filFoco + 1, n);
+  // barra fica com 6 px e nao diz onde a pessoa esta. No botao de agrupar ela
+  // diz "botao", nao um numero a mais que nao existe.
+  if (filFoco == n)
+    snprintf(buf, sizeof buf, "%s", i18n("Botão"));
+  else
+    snprintf(buf, sizeof buf, i18n("%d de %d"), filFoco + 1, n);
   l = txt_linha(TXT_CAPTION, buf, 156, 159, 168, 255);
   txt_desenhar(l, cx + AJ_FIL_W - 40.0f - l.w, filCabecY);
+
+  // BOTAO "AGRUPAR POR ADDON", no fim da lista. Reordena todas as fileiras
+  // agrupando pelo nome do addon — e a resposta para "mostre o que e de cada
+  // addon junto". filFoco == n e a posicao dele.
+  { int sortFoco = (filFoco == n);
+    float sy = y + 14.0f;
+    GfxRect btn = { cx + 24.0f, sy, AJ_FIL_W - 48.0f, 52.0f };
+    gfx_cor(btn, 26.0f, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
+            sortFoco ? 0.72f : 0.30f);
+    if (sortFoco) {
+      GfxRect anel = { btn.x, btn.y, btn.w, btn.h };
+      gfx_rect(anel, 0, GFX_ANEL, 0, NV_ANEL_FOCO / 52.0f, 0, 0.23f,
+               0.96f, 0.96f, 0.97f, 1.0f);
+    }
+    l = txt_linha(TXT_CALLOUT, "Agrupar por addon", 220, 220, 220, 255);
+    txt_desenhar(l, btn.x + (btn.w - l.w) * 0.5f,
+                 btn.y + (btn.h - l.h) * 0.5f); }
 
   // A FICHA DA FILEIRA EM FOCO. O selo da linha diz a CLASSE em duas palavras;
   // aqui vai o que decide de verdade se ela fica ou sai: de qual addon veio,
@@ -1819,17 +2162,25 @@ static void desenhaFileiras(void) {
   // A INSTRUCAO, escrita na tela. O gesto de pegar e mover nao se descobre
   // sozinho num D-pad, e ele muda quando o item esta na mao.
   y = cartao.y + AJ_FIL_H - 168.0f;
-  if (filPegou) {
+  if (filPegou == 2) {
     txt_bloco(TXT_CAPTION,
-              "↑ ↓  Mover a fileira\nOK  Soltar aqui\nVoltar  Cancelar o movimento",
-              206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 3);
+              "↑ ↓  Mover o bloco do addon\n← →  Mover so a fileira\nOK  Soltar aqui\nVoltar  Cancelar",
+              206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 4);
+  } else if (filPegou) {
+    txt_bloco(TXT_CAPTION,
+              "↑ ↓  Mover a fileira\n← →  Mover o bloco do addon\nOK  Soltar aqui\nVoltar  Cancelar o movimento",
+              206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 4);
+  } else if (filFoco == n) {
+    txt_bloco(TXT_CAPTION,
+              "OK  Agrupar as fileiras por addon\nVoltar  Fechar",
+              206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 2);
   } else {
     txt_bloco(TXT_CAPTION,
               "↑ ↓  Escolher fileira\n← →  Trocar de coluna\n"
               "OK  Pegar e mover (coluna Fileira) · Ligar, trocar card e tamanho nas outras\n"
               "Voltar  Fechar",
               206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 4);
-    if (filCampo == 2 && !fil_aceita_tipo(filFoco)) {
+    if (filFoco < n && filCampo == 2 && !fil_aceita_tipo(filFoco)) {
       l = txt_linha_corta(TXT_MINI, motivoFormaFixa(fil_chave(filFoco)),
                           176, 179, 188, 255, AJ_FIL_W - 80.0f);
       txt_desenhar(l, cx + 40.0f, cartao.y + AJ_FIL_H - 42.0f);
@@ -1910,9 +2261,13 @@ void ajustes_desenhar(Uint32 agora) {
                               "OK   Abrir",
                               "Voltar   Ir para as categorias" };
       const char *dVal[] = { "↑ ↓   Navegar",
-                             "← →   Alterar o valor",
+                             "OK   Alterar o valor",
                              "Voltar   Ir para as categorias" };
+      const char *dEdi[] = { "← →   Alterar o valor",
+                             "OK   Confirmar",
+                             "Voltar   Confirmar" };
       const char *const *d = focoIndice ? dIdx
+                           : emEdicao ? dEdi
                            : OPCOES[focoOp].tipo == OP_ACAO ? dAcao : dVal;
       desenhaDicas(d, 3, hx, hy, hw, 155, 159, 169); }
   }

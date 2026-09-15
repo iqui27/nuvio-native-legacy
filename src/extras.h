@@ -35,6 +35,10 @@ typedef enum {
 // Le art/mdblist.txt. Sem ele o modulo funciona com Trakt e IMDb apenas.
 void extras_carregar(const char *dirArte);
 
+// 1 quando existe chave do mdbList (conta ou art/mdblist.txt). A tela de
+// Ajustes mostra so o estado — os caracteres nunca saem deste modulo.
+int  extras_mdblist_tem_chave(void);
+
 // Chave do mdblist vinda da CONTA. Mesmo motivo do TMDB: enquanto sair de
 // art/mdblist.txt (que esta ate com modo 0600), o pacote distribui a chave de
 // quem o montou.
@@ -114,6 +118,18 @@ const char *extras_colecao_titulo(int i);
 const char *extras_colecao_ano(int i);
 long extras_colecao_tmdb(int i);
 
+// PRODUTORAS E REDES, para a fileira de logos da pagina de detalhe — no web e
+// o renderCompanySections ("Production"/"Network"). Vem do corpo principal
+// do /movie|tv/<id>: nenhuma viagem a mais. `rede` distingue NETWORK (so
+// serie) de COMPANY, que e o tipo da fonte TMDB que o OK abre no vertudo.
+// logo e URL absoluta (image.tmdb.org w185) e fica "" quando o logo e .svg —
+// o pacote nao decoda svg; quem desenha cai no nome.
+int         extras_n_estudios(void);
+const char *extras_estudio_nome(int i);
+const char *extras_estudio_logo(int i);
+long        extras_estudio_tmdb(int i);
+int         extras_estudio_rede(int i);
+
 // EPISODIOS JA ASSISTIDOS, do Trakt (/shows/<id>/progress/watched). O card do
 // episodio ganha uma mascara e um check quando o dono ja viu. Sem isto, quem
 // acompanha uma serie nao tinha como saber onde parou olhando a lista.
@@ -140,13 +156,10 @@ const char *extras_ficha_paises(void);          // "United States of America, Ca
 const char *extras_ficha_classificacao(void);   // "R", "PG-13", "14"
 const char *extras_ficha_lancamento(void);      // "2026-01-15"
 
-// TRAILERS. So o que da para mostrar: id do YouTube, nome e miniatura.
-//
-// NAO HA COMO TOCAR. O app web abre um iframe do YouTube; este port nao tem
-// reprodutor nem extrator de stream, e a decisao ja registrada em detail.c e
-// gfx.c foi remover o botao de trailer em vez de deixar um controle que promete
-// o que nao cumpre. A mesma regra vale aqui: o card entra na composicao, mas
-// nao deve receber foco enquanto nao houver o que abrir.
+// TRAILERS. O id do YouTube, nome e miniatura saem do /movie/<id> do TMDB
+// (append_to_response=videos). O card e focavel e OK abre o video no app
+// nativo da plataforma: navegador do webOS (luna-send), aba do Tizen
+// (window.open) ou browser do desktop (open).
 #define EX_TRAILER_MAX 6
 int         extras_n_trailers(void);
 const char *extras_trailer_yt(int i);        // id do video ("dQw4w9WgXcQ")
@@ -155,6 +168,8 @@ const char *extras_trailer_nome(int i);      // "Official Trailer"
 // caminho que o web usa (metaDetailsScreen.js:5728). Passe direto a tex_obter:
 // o cache de texturas baixa e guarda qualquer URL sozinho.
 const char *extras_trailer_miniatura(int i);
+// Abre o trailer no app nativo (browser/YouTube). Sem retorno.
+void        extras_trailer_abrir(int i);
 
 // Titulos relacionados, para a aba "Mais como este".
 int  extras_n_relacionados(void);
