@@ -332,16 +332,32 @@ int main(void) {
   fil_registrar("vivoA", "A", "Cinemeta", "movie", 4);
   fil_registrar("fantasma", "G", "AICat", "movie", 4);
   fil_registrar("vivoB", "B", "Cinemeta", "movie", 4);
+  fil_remover(1);                   // a fantasma esta OCULTA: e ela que e transparente
   { const char *home[] = { "vivoA", "vivoB" };
     fil_espelhar_ordem(home, NULL, 2);
-    assert(fil_mover(0, 1) == 2);   // A passa pelo fantasma e para depois de B
+    assert(fil_mover(0, 1) == 2);   // A passa pela oculta e para depois de B
     { const char *ordem[] = { "vivoB", "fantasma", "vivoA" };
       conferir("vivo pulou a fantasma", ordem, 3); }
     // E a home reflete: A depois de B.
     { int ord[8], q = fil_unir(home, 2, ord, 8);
       assert(q == 2);
       assert(!strcmp(home[ord[0]], "vivoB") && !strcmp(home[ord[1]], "vivoA")); } }
-  puts("ok  mover pula linha fora da home");
+  puts("ok  mover pula linha oculta");
+
+  // MOVER ENTRE LIGADAS QUE A HOME AINDA NAO MONTOU (recem-adicionada, na
+  // fila): o vizinho e a proxima ligada, e nao "a proxima que a home ja tem".
+  fil_esquecer();
+  fil_registrar("h1", "H1", "X", "movie", 4);
+  fil_registrar("h2", "H2", "X", "movie", 4);
+  fil_registrar("nova", "Nova", "Y", "movie", 4);
+  { const char *home[] = { "h1", "h2" };
+    fil_espelhar_ordem(home, NULL, 2);         // nova: ligada, naHome=0
+    assert(fil_mover(1, 1) == 2);              // h2 troca com nova, nao trava
+    assert(!strcmp(fil_chave(1), "nova") && !strcmp(fil_chave(2), "h2"));
+    assert(fil_mover(2, -1) == 1);             // e volta
+    assert(fil_mover(1, -1) == 0);             // e sobe de novo, sem travar
+  }
+  puts("ok  mover entre ligadas que a home ainda nao montou");
 
   // NA HOME / NA FILA / FORA, E A FILA E SO A ORDEM. Limite 4 (o minimo e 3),
   // seis ligadas: as quatro primeiras estao na home, as duas seguintes na fila,

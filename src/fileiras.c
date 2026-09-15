@@ -684,15 +684,18 @@ int fil_mover(int i, int direcao) {
   int j, ret = i;
   pthread_mutex_lock(&trava);
   if (i >= 0 && i < nLinhas) {
-    int dir = direcao > 0 ? 1 : -1, temHome = 0;
-    // LINHA FORA DA HOME E TRANSPARENTE para quem esta nela: trocar com uma
-    // delas mudava a folha sem mudar a home — o "mexi e nada aconteceu" do
-    // relato. A lista so sabe quem esta na home depois da primeira montagem;
-    // sem nenhuma marcada, volta a troca simples de vizinhos.
-    for (j = 0; j < nLinhas; j++) if (linhas[j].naHome) { temHome = 1; break; }
+    int dir = direcao > 0 ? 1 : -1;
+    // LINHA OCULTA E TRANSPARENTE: mover pula por cima dela e troca com a
+    // proxima LIGADA. A regra anterior pulava quem NAO ESTAVA NA HOME
+    // (naHome), e isso quebrou a folha em duas abas: a aba "Na Home" lista as
+    // ligadas, e uma ligada recem-adicionada (ou na fila) ainda tem naHome=0
+    // ate a home remontar — o movimento saltava por cima dela, ou nao
+    // encontrava vizinho nenhum e travava ("clico na fileira e ela trava e
+    // nao mexe, as vezes move so uma"). Na aba, o vizinho visivel e a proxima
+    // ligada; e o que a home tambem entende, porque ela e as primeiras N
+    // ligadas na ordem.
     j = i + dir;
-    if (temHome && linhas[i].naHome)
-      while (j >= 0 && j < nLinhas && !linhas[j].naHome) j += dir;
+    while (j >= 0 && j < nLinhas && linhas[j].oculta) j += dir;
     if (j >= 0 && j < nLinhas) {
       Linha t = linhas[i]; linhas[i] = linhas[j]; linhas[j] = t;
       // A partir do primeiro movimento a ordem local EXISTE e passa a vencer
@@ -752,18 +755,17 @@ int fil_mover_grupo(int i, int direcao) {
   pthread_mutex_lock(&trava);
   garantir();
   if (i >= 0 && i < nLinhas) {
-    int ini, fim, vIni, vFim, b, q, meuVivo = 0, temHome = 0;
+    int ini, fim, vIni, vFim, b, q, meuVivo = 0;
     blocoDe(i, &ini, &fim);
-    for (q = 0; q < nLinhas; q++) if (linhas[q].naHome) { temHome = 1; break; }
-    if (temHome)
-      for (q = ini; q <= fim; q++) if (linhas[q].naHome) { meuVivo = 1; break; }
+    // Mesma regra de fil_mover: bloco "vivo" e bloco com alguma linha LIGADA.
+    for (q = ini; q <= fim; q++) if (!linhas[q].oculta) { meuVivo = 1; break; }
     if (direcao > 0) {
       b = fim + 1;
       if (b >= nLinhas) goto sair;
       blocoDe(b, &vIni, &vFim);
       while (meuVivo) {
         int vivo = 0;
-        for (q = vIni; q <= vFim; q++) if (linhas[q].naHome) { vivo = 1; break; }
+        for (q = vIni; q <= vFim; q++) if (!linhas[q].oculta) { vivo = 1; break; }
         if (vivo) break;
         b = vFim + 1;
         if (b >= nLinhas) goto sair;
@@ -783,7 +785,7 @@ int fil_mover_grupo(int i, int direcao) {
       blocoDe(b, &vIni, &vFim);
       while (meuVivo) {
         int vivo = 0;
-        for (q = vIni; q <= vFim; q++) if (linhas[q].naHome) { vivo = 1; break; }
+        for (q = vIni; q <= vFim; q++) if (!linhas[q].oculta) { vivo = 1; break; }
         if (vivo) break;
         b = vIni - 1;
         if (b < 0) goto sair;
