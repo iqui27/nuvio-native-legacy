@@ -1476,8 +1476,92 @@ static void fileirasReagir(void) {
     }
 }
 
+// DUAS ABAS: "Na Home" e "Fora da Home". Desenho do dono.
+//
+// A lista unica anterior misturava tudo — 192 linhas com ligadas no meio,
+// desligadas, addon que sumiu, catalogos de busca — e a pessoa nao achava as
+// 16 que importam (relato do @rawldon: "the active ones should be grouped at
+// the top"). Agora:
+//
+//   NA HOME      as ligadas, na ordem em que a home monta. Ate `limite` delas
+//                estao na home; as que passam do limite estao NA FILA, abaixo
+//                de um separador, e entram sozinhas quando alguem sai. Aqui se
+//                reordena, remove e escolhe card e tamanho.
+//
+//   FORA DA HOME tudo o que esta desligado, agrupado por addon e em ordem
+//                alfabetica, com salto por letra ao segurar cima/baixo. OK
+//                adiciona: entra na home se cabe, senao entra na fila — e a
+//                tela DIZ "Home cheia".
+//
+// A fila nao e estrutura nova: e a ordem de sempre lida de outro jeito (ver
+// fil_estado em fileiras.h). Tudo continua no mesmo arquivo, agora por perfil.
+static int filAba;                    // 0 = Na Home, 1 = Fora da Home
+static int filNaBarra;                // foco na barra de abas
+static int filLista[FIL_MAX];         // indices fil_* da aba corrente, na ordem da tela
+static int filListaN;
+static int filSep;                    // posicao na lista onde comeca a fila (-1 = nao ha)
+static char   filAviso[120];          // "Home cheia..." por alguns segundos
+static Uint32 filAvisoAte;
+// Salto por letra: cima/baixo SEGURADO. O firmware repete o KEYDOWN; tres
+// repeticoes seguidas dentro de FIL_RAJADA_MS viram salto para a proxima letra.
+static Uint32 filUltTecla; static int filRajada; static SDL_Keycode filRajadaTecla;
+#define FIL_RAJADA_MS   260
+#define FIL_RAJADA_MIN    3
+
+static void filAvisar(const char *txt) {
+  snprintf(filAviso, sizeof filAviso, "%s", txt);
+  filAvisoAte = SDL_GetTicks() + 2600;
+}
+
+// Ordem da aba "Fora": origem (app, colecao, catalogo), depois addon, depois
+// titulo — os tres sem caixa. Estavel: empate fica na ordem da lista.
+static int filCmpFora(const void *pa, const void *pb) {
+  int a = *(const int *)pa, b = *(const int *)pb, c;
+  c = fil_linha_origem(a) - fil_linha_origem(b);
+  if (c) return c;
+  c = strcasecmp(fil_linha_addon(a), fil_linha_addon(b));
+  if (c) return c;
+  c = strcasecmp(fil_titulo(a), fil_titulo(b));
+  if (c) return c;
+  return a - b;
+}
+
+static void filMontarLista(void) {
+  int i, n = fil_n();
+  filListaN = 0; filSep = -1;
+  if (filAba == 0) {
+    for (i = 0; i < n; i++) {
+      int e = fil_estado(i);
+      if (e == FIL_FORA) continue;
+      if (e == FIL_NA_FILA && filSep < 0) filSep = filListaN;
+      filLista[filListaN++] = i;
+    }
+  } else {
+    for (i = 0; i < n; i++) if (fil_estado(i) == FIL_FORA) filLista[filListaN++] = i;
+    qsort(filLista, (size_t)filListaN, sizeof *filLista, filCmpFora);
+  }
+  if (filFoco > filListaN) filFoco = filListaN;
+  if (filFoco < 0) filFoco = 0;
+}
+
+// Linha da tela -> indice em fil_*. -1 no botao (aba 0, posicao filListaN).
+static int filIdx(int pos) {
+  return (pos >= 0 && pos < filListaN) ? filLista[pos] : -1;
+}
+
+// Primeira letra "de ordem" do titulo, em caixa alta; digito e simbolo viram '#'.
+static char filLetra(int i) {
+  const char *t = fil_titulo(i);
+  unsigned char c = (unsigned char)(t && t[0] ? t[0] : '#');
+  if (c >= 'a' && c <= 'z') c -= 32;
+  if (c >= 'A' && c <= 'Z') return (char)c;
+  return '#';
+}
+
 static void eventoFileiras(SDL_Keycode k) {
-  int n = fil_n();
+  int n;
+  filMontarLista();
+  n = filListaN;
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE) {
     if (filPegou) {
@@ -1487,40 +1571,66 @@ static void eventoFileiras(SDL_Keycode k) {
       //
       // O `passos` nao e paranoia: se a lista encolher enquanto o item esta na
       // mao (logout, ou um addon que sumiu), fil_mover devolve o MESMO indice
-      // e um `while (filFoco != filPegouDe)` fica preso — trava o app com o
-      // controle na mao da pessoa. Com o teto, o pior caso e o item ficar onde
-      // esta.
+      // e um `while` sem teto fica preso — trava o app com o controle na mao
+      // da pessoa. Com o teto, o pior caso e o item ficar onde esta.
       int passos = FIL_MAX + 1;
-      if (filPegou == 2) {
-        while (filFoco != filPegouDe && passos-- > 0) {
-          int antes = filFoco;
-          filFoco = fil_mover_grupo(filFoco, filPegouDe > filFoco ? 1 : -1);
-          if (filFoco == antes) break;
-        }
-      } else {
-        while (filFoco != filPegouDe && passos-- > 0) {
-          int antes = filFoco;
-          filFoco = fil_mover(filFoco, filPegouDe > filFoco ? 1 : -1);
-          if (filFoco == antes) break;
-        }
+      int idx = filIdx(filFoco);
+      while (idx >= 0 && idx != filPegouDe && passos-- > 0) {
+        int antes = idx;
+        idx = (filPegou == 2) ? fil_mover_grupo(idx, filPegouDe > idx ? 1 : -1)
+                              : fil_mover(idx, filPegouDe > idx ? 1 : -1);
+        if (idx == antes) break;
       }
       filPegou = 0;
+      filMontarLista();
+      { int p; for (p = 0; p < filListaN; p++) if (filLista[p] == idx) filFoco = p; }
     } else {
       filAberta = 0;
     }
     return;
   }
-  if (n < 1) return;   // estado vazio: nao ha o que mover nem ligar
-  // filFoco == n e o BOTAO "Agrupar por addon", uma posicao alem da ultima
-  // fileira. ↑ da primeira sobe para ele; ↓ da ultima desce para ele.
-  if (filFoco > n) filFoco = n;
-  if (k == SDLK_DOWN || k == SDLK_UP) {
-    int dir = (k == SDLK_DOWN) ? 1 : -1;
-    if (filPegou == 2) filFoco = fil_mover_grupo(filFoco, dir);
-    else if (filPegou) filFoco = fil_mover(filFoco, dir);
-    else if (filFoco + dir >= 0 && filFoco + dir <= n) filFoco += dir;
+
+  // BARRA DE ABAS: ← → trocam a aba, ↓ volta para a lista.
+  if (filNaBarra) {
+    if (k == SDLK_LEFT || k == SDLK_RIGHT) {
+      filAba = !filAba; filFoco = 0; filTopo = 0; filCampo = 0; filPegou = 0;
+      filMontarLista();
+    } else if (k == SDLK_DOWN || k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+      filNaBarra = 0;
+    }
     return;
   }
+
+  if (k == SDLK_DOWN || k == SDLK_UP) {
+    int dir = (k == SDLK_DOWN) ? 1 : -1;
+    Uint32 agora = SDL_GetTicks();
+    // Rajada: a mesma tecla repetida sem folga.
+    if (k == filRajadaTecla && agora - filUltTecla < FIL_RAJADA_MS) filRajada++;
+    else filRajada = 0;
+    filRajadaTecla = k; filUltTecla = agora;
+
+    if (filPegou == 2) { int idx = fil_mover_grupo(filIdx(filFoco), dir); filMontarLista();
+                         { int p; for (p = 0; p < filListaN; p++) if (filLista[p] == idx) filFoco = p; } return; }
+    if (filPegou)      { int idx = fil_mover(filIdx(filFoco), dir); filMontarLista();
+                         { int p; for (p = 0; p < filListaN; p++) if (filLista[p] == idx) filFoco = p; } return; }
+    if (k == SDLK_UP && filFoco == 0) { filNaBarra = 1; return; }
+    // SALTO POR LETRA na aba "Fora": segurando, pula para a proxima letra em
+    // vez de andar linha a linha — com 200 linhas e o unico jeito de chegar
+    // ao fim sem soltar o dedo por um minuto.
+    if (filAba == 1 && filRajada >= FIL_RAJADA_MIN && n > 0) {
+      int p = filFoco, letra = filLetra(filIdx(filFoco));
+      while (p + dir >= 0 && p + dir < n && filLetra(filIdx(p + dir)) == letra) p += dir;
+      if (p + dir >= 0 && p + dir < n) p += dir;
+      filFoco = p;
+      return;
+    }
+    // Aba 0: filFoco == n e o botao "Agrupar por addon". Na aba 1 nao ha botao.
+    { int max = (filAba == 0) ? n : n - 1;
+      if (filFoco + dir >= 0 && filFoco + dir <= max) filFoco += dir; }
+    return;
+  }
+  filRajada = 0;
+
   if (k == SDLK_LEFT || k == SDLK_RIGHT) {
     if (filPegou) {
       // Com o item na mao, esquerda/direita alterna entre mover a FILEIRA e
@@ -1528,25 +1638,50 @@ static void eventoFileiras(SDL_Keycode k) {
       filPegou = (filPegou == 1) ? 2 : 1;
       return;
     }
-    if (filFoco == n) return;   // o botao nao tem colunas
+    if (filAba == 1 || filFoco == n) return;   // uma coluna so; o botao nao tem colunas
     filCampo += (k == SDLK_RIGHT) ? 1 : -1;
     if (filCampo < 0) filCampo = 0;
     if (filCampo > AJ_FIL_CAMPOS - 1) filCampo = AJ_FIL_CAMPOS - 1;
     return;
   }
+
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+    int idx = filIdx(filFoco);
+    if (n < 1) return;
+    if (filAba == 1) {
+      // ADICIONAR. Cabe: entra na home. Nao cabe: entra na fila, e a tela diz.
+      int est = -1;
+      if (idx < 0) return;
+      fil_adicionar(idx, &est);
+      if (est == FIL_NA_FILA) {
+        char b[120];
+        snprintf(b, sizeof b, i18n("Home cheia (%d de %d) · entrou na fila e sobe quando abrir vaga"),
+                 fil_limite(), fil_limite());
+        filAvisar(b);
+      } else filAvisar(i18n("Adicionada à Home"));
+      fileirasReagir();
+      filMontarLista();
+      if (filFoco >= filListaN) filFoco = filListaN - 1;
+      if (filFoco < 0) filFoco = 0;
+      return;
+    }
     if (filFoco == n) { fil_ordenar_por_addon(); filFoco = 0; filCampo = 0;
-                        fileirasReagir(); return; }
+                        fileirasReagir(); filMontarLista(); return; }
+    if (idx < 0) return;
     switch (filCampo) {
-      case 0: if (!filPegou) { filPegou = 1; filPegouDe = filFoco; }
+      case 0: if (!filPegou) { filPegou = 1; filPegouDe = idx; }
               else { filPegou = 0;
                      // Soltou em lugar diferente: a home nao sabe ainda.
-                     if (filFoco != filPegouDe) fileirasReagir(); }
+                     if (idx != filPegouDe) fileirasReagir(); }
               break;
-      case 1: fil_alternar(filFoco); fileirasReagir(); break;
-      case 2: if (fil_aceita_tipo(filFoco)) { fil_ciclar_tipo(filFoco);
-                                            fileirasReagir(); } break;
-      default: fil_ciclar_tam(filFoco); break;
+      case 1: // REMOVER: vai para "Fora da Home"; quem estava na fila sobe.
+              fil_remover(idx);
+              filAvisar(i18n("Removida da Home"));
+              fileirasReagir(); filMontarLista();
+              if (filFoco >= filListaN) filFoco = filListaN > 0 ? filListaN - 1 : 0;
+              break;
+      case 2: if (fil_aceita_tipo(idx)) { fil_ciclar_tipo(idx); fileirasReagir(); } break;
+      default: fil_ciclar_tam(idx); break;
     }
   }
 }
@@ -1624,6 +1759,7 @@ void ajustes_evento(const SDL_Event *e) {
     }
     if (focoOp == AJ_FIL_ORDEM) {
       filAberta = 1; filFoco = 0; filCampo = 0; filPegou = 0; filTopo = 0;
+      filAba = 0; filNaBarra = 0; filAviso[0] = 0;
       emEdicao = 0;
       return;
     }
@@ -2012,245 +2148,238 @@ static const char *motivoFormaFixa(const char *chave) {
 static void desenhaFileiras(void) {
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
   GfxRect cartao = { (NV_TELA_W - AJ_FIL_W) * 0.5f, AJ_FIL_Y, AJ_FIL_W, AJ_FIL_H };
-  int n = fil_n(), lim = fil_limite();
-  int i;
+  int n, lim = fil_limite();
+  int i, vis;
   float cx = cartao.x, y, filCabecY;
   TxtLinha l;
-  char buf[120];
+  char buf[160];
+  float ar, ag, ab;
+  ajustes_acento(&ar, &ag, &ab);
+
+  filMontarLista();
+  n = filListaN;
 
   // Veu quase opaco mais cartao solido: a lista de Ajustes atras atravessava o
   // texto do vinculo, e aqui ha texto pequeno em quatro colunas.
   gfx_cor(tela, 0.0f, 0.0f, 0.0f, 0.0f, 0.92f);
   gfx_cor(cartao, 0.03f, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
 
-  // EMPILHADO PELA ALTURA MEDIDA, e nao por deslocamentos fixos de 46 e 78.
-  // Com numero cravado o titulo em TXT_TITULO2 caia POR CIMA do subtitulo — a
-  // captura de revisao mostrou "Home rows" e "The first 7 enabled..." na mesma
-  // faixa de pixels. A altura de uma linha depende do estilo, da escala e do
-  // idioma; so txt_linha sabe qual e.
+  // EMPILHADO PELA ALTURA MEDIDA, e nao por deslocamentos fixos: a altura de
+  // uma linha depende do estilo, da escala e do idioma, e so txt_linha sabe.
   { float hy = cartao.y + 30.0f;
     l = txt_linha(TXT_TITULO2, "Fileiras da Home", 255, 255, 255, 255);
     txt_desenhar(l, cx + 40.0f, hy);
     hy += l.h + 8.0f;
-    // FRASE MONTADA: i18n no FORMATO, porque a string final nunca casa com uma
-    // chave da tabela (ver idioma.h).
-    snprintf(buf, sizeof buf,
-             i18n("Limite de %d fileiras — coleções não contam"), lim);
-    l = txt_linha(TXT_CAPTION, buf, 176, 179, 188, 255);
-    txt_desenhar(l, cx + 40.0f, hy);
-    hy += l.h + 6.0f;
-    // A escolha e local, e a tela DIZ isso. Sem esta linha a pessoa espera que a
-    // ordem apareça no celular dela, e ela nunca vai.
-    l = txt_linha(TXT_MINI, "Vale só nesta TV · não altera a Home dos outros aparelhos",
+    l = txt_linha(TXT_MINI, "Vale só nesta TV e neste perfil · não altera a Home dos outros aparelhos",
                   150, 153, 162, 255);
     txt_desenhar(l, cx + 40.0f, hy);
-    // O CABECALHO DAS COLUNAS DESCE COM O BLOCO, pelo mesmo motivo: cravado em
-    // y+148 ele ficava POR BAIXO desta terceira linha assim que o titulo
-    // crescia — visivel na captura como "Row" atravessado pela nota. O piso
-    // preserva o espacamento de quando o bloco e curto.
-    filCabecY = hy + l.h + 16.0f;
-    if (filCabecY < cartao.y + 148.0f) filCabecY = cartao.y + 148.0f; }
+    hy += l.h + 14.0f;
 
-  if (n < 1) {
-    // ESTADO VAZIO com texto, e nao um cartao em branco: "titulo e nada abaixo"
-    // se le como travamento.
-    l = txt_linha(TXT_HEADLINE, "Nenhuma fileira conhecida ainda",
-                  222, 224, 232, 255);
-    txt_desenhar(l, cx + 40.0f, cartao.y + 220.0f);
+    // BARRA DE ABAS. Duas pilulas com a contagem: "Na Home 14 de 16" diz de
+    // uma vez o que esta em uso e o limite; "Fora da Home 178" diz o tamanho
+    // do resto. A ativa e clara; a outra, apagada; o anel so quando a barra
+    // tem o foco.
+    { float bx = cx + 40.0f, bh = 44.0f;
+      int t;
+      for (t = 0; t < 2; t++) {
+        int ativa = (filAba == t);
+        if (t == 0) snprintf(buf, sizeof buf, i18n("Na Home  %d de %d"), fil_n_na_home(), lim);
+        else        snprintf(buf, sizeof buf, i18n("Fora da Home  %d"), fil_n() - fil_n_na_home() - fil_n_fila());
+        l = txt_linha(TXT_CALLOUT, buf, ativa ? 255 : 170, ativa ? 255 : 173, ativa ? 255 : 182, 255);
+        { GfxRect pil = { bx, hy, l.w + 44.0f, bh };
+          gfx_cor(pil, NV_RAIO_PILL, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
+                  ativa ? 0.95f : 0.30f);
+          if (filNaBarra && ativa)
+            gfx_rect((GfxRect){ pil.x - NV_ANEL_FOCO, pil.y - NV_ANEL_FOCO,
+                                pil.w + NV_ANEL_FOCO * 2, pil.h + NV_ANEL_FOCO * 2 },
+                     0, GFX_ANEL, 0, NV_ANEL_FOCO / (pil.h + NV_ANEL_FOCO * 2), 0,
+                     NV_RAIO_PILL, ar, ag, ab, 1.0f);
+          txt_desenhar(l, pil.x + 22.0f, pil.y + (bh - l.h) * 0.5f);
+          bx += pil.w + 14.0f; }
+      }
+      // Fila, quando ha: um numero ao lado das abas, para nao ser surpresa.
+      if (fil_n_fila() > 0) {
+        snprintf(buf, sizeof buf, fil_n_fila() == 1 ? i18n("%d na fila") : i18n("%d na fila"), fil_n_fila());
+        l = txt_linha(TXT_CAPTION, buf, 226, 186, 108, 255);
+        txt_desenhar(l, bx + 8.0f, hy + (bh - l.h) * 0.5f);
+      }
+      hy += bh + 12.0f; }
+    filCabecY = hy; }
+
+  if (n < 1 && filAba == 0) {
+    l = txt_linha(TXT_HEADLINE, "Nenhuma fileira ligada", 222, 224, 232, 255);
+    txt_desenhar(l, cx + 40.0f, filCabecY + 40.0f);
+    txt_bloco(TXT_CAPTION,
+              "Vá para a aba \"Fora da Home\" (↑ e depois →) e aperte OK numa fileira para adicioná-la.",
+              183, 186, 194, cx + 40.0f, filCabecY + 88.0f, AJ_FIL_W - 80.0f, 34, 1, 3);
+  } else if (n < 1) {
+    l = txt_linha(TXT_HEADLINE, "Tudo o que o app conhece já está na Home", 222, 224, 232, 255);
+    txt_desenhar(l, cx + 40.0f, filCabecY + 40.0f);
     txt_bloco(TXT_CAPTION,
               "As fileiras aparecem aqui depois que o app lê os catálogos dos seus addons. "
               "Abra a Home, espere o catálogo carregar e volte a esta tela.",
-              183, 186, 194, cx + 40.0f, cartao.y + 268.0f, AJ_FIL_W - 80.0f, 34, 1, 3);
-    l = txt_linha(TXT_CAPTION, "Voltar  Fechar", 156, 159, 168, 255);
-    txt_desenhar(l, cx + 40.0f, cartao.y + AJ_FIL_H - 70.0f);
-    return;
+              183, 186, 194, cx + 40.0f, filCabecY + 88.0f, AJ_FIL_W - 80.0f, 34, 1, 3);
   }
 
-  // filFoco == n e a posicao do BOTAO "Agrupar por addon" — rebaixar para n-1
-  // aqui era o que o tornava inalcancavel: o evento subia para n e o desenho
-  // derrubava de volta.
+  // QUANTAS LINHAS CABEM, medido no espaco que sobra entre o cabecalho das
+  // colunas e a ficha do rodape — e nao um numero cravado. A barra de abas
+  // empurrou a lista ~60 px para baixo, e com o 6 fixo a sexta linha caia em
+  // cima da ficha e do botao (visto na captura de revisao).
+  { float topoLista = filCabecY + 34.0f;
+    float fimLista  = cartao.y + AJ_FIL_H - 232.0f - 8.0f - (filAba == 0 ? 52.0f + 8.0f : 0.0f);
+    vis = (int)((fimLista - topoLista) / (AJ_FIL_LINHA + AJ_FIL_LGAP));
+    if (vis < 3) vis = 3; }
+
   if (filFoco > n) filFoco = n;
   if (filFoco < 0) filFoco = 0;
   if (filFoco < filTopo) filTopo = filFoco;
-  if (filFoco >= filTopo + AJ_FIL_VIS) filTopo = filFoco - AJ_FIL_VIS + 1;
-  if (filTopo > n - AJ_FIL_VIS) filTopo = n - AJ_FIL_VIS;
+  if (filFoco >= filTopo + vis) filTopo = filFoco - vis + 1;
+  if (filTopo > n - vis) filTopo = n - vis;
   if (filTopo < 0) filTopo = 0;
 
-  // O ESTADO DA FILEIRA SAI DO FATO, NAO DE UMA PREVISAO DE CONTA. A home ja
-  // sabe quem ela desenhou (naHome) e a descoberta ja sabe quem ela declarou
-  // (vista) — e entre as duas a "vaga garantida por addon" promove catalogo
-  // para dentro da janela, entao nenhuma conta por posicao acertaria sempre.
-  // Na home e "Ligada" e ponto; catalogo declarado que ficou de fora e
-  // "Fora do limite" (foi o limite que o cortou — vazio ou sem resposta nem
-  // chega a ser declarado como fileira); o resto, nunca visto nesta sessao,
-  // e "Fora da Home". Marcar "Fora do limite" numa fileira visivel na home
-  // era o relato "mostra coisa que o menu diz que esta fora".
-
-  // Cabecalho das colunas.
-  for (i = 0; i < AJ_FIL_CAMPOS; i++) {
-    l = txt_linha(TXT_MINI, AJ_FIL_COL[i].cabec, 148, 151, 160, 255);
-    txt_desenhar(l, cx + AJ_FIL_COL[i].x, filCabecY);
+  // Cabecalho das colunas. Na aba "Fora" so ha a coluna da fileira e a acao.
+  if (n > 0) {
+    if (filAba == 0)
+      for (i = 0; i < AJ_FIL_CAMPOS; i++) {
+        l = txt_linha(TXT_MINI, AJ_FIL_COL[i].cabec, 148, 151, 160, 255);
+        txt_desenhar(l, cx + AJ_FIL_COL[i].x, filCabecY);
+      }
+    else {
+      l = txt_linha(TXT_MINI, "Fileira", 148, 151, 160, 255);
+      txt_desenhar(l, cx + AJ_FIL_COL[0].x, filCabecY);
+      l = txt_linha(TXT_MINI, "Addon", 148, 151, 160, 255);
+      txt_desenhar(l, cx + AJ_FIL_COL[1].x, filCabecY);
+    }
   }
 
   y = filCabecY + 34.0f;
-  int limiteMarcado = 0;
-  for (i = filTopo; i < n && i < filTopo + AJ_FIL_VIS; i++) {
+  for (i = filTopo; i < n && i < filTopo + vis; i++) {
+    int idx = filLista[i];
     GfxRect linha = { cx + 24.0f, y, AJ_FIL_W - 48.0f, AJ_FIL_LINHA };
     float raio = 12.0f / AJ_FIL_LINHA;
-    int foco = (i == filFoco);
-    int oculta = fil_linha_oculta(i);
-    int fora = !oculta && fil_linha_origem(i) == FIL_ORIGEM_CATALOGO &&
-               fil_linha_vista(i) && !fil_linha_na_home(i);
-    int foraDaHome = !oculta && !fil_linha_na_home(i) && !fora;
-    // Apagada por dois motivos DIFERENTES e por isso com dois pesos: desligada
-    // e escolha da pessoa, fora do limite e consequencia do limite. Fora da
-    // home e informativo — addon que saiu, catalogo ainda nao montado.
-    float aTexto = oculta ? 0.55f : ((fora || foraDaHome) ? 0.72f : 1.0f);
-    int c = oculta ? 150 : 234;
+    int foco = (i == filFoco && !filNaBarra);
+    int naFila = (filAba == 0 && filSep >= 0 && i >= filSep);
+    float aTexto = naFila ? 0.80f : 1.0f;
+    int c = 234;
     gfx_cor(linha, raio, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
             filPegou && foco ? 1.0f : (foco ? 0.72f : 0.30f));
 
-    // A LINHA DIVISORIA DO LIMITE: marca onde a Home corta. Toda fileira abaixo
-    // dela esta "Fora do limite" — e a primeira vez que a pessoa ve isso sem
-    // ter de ler a ficha de cada uma.
-    if (fora && !limiteMarcado) {
-      GfxRect corte = { cx + 24.0f, y - AJ_FIL_LGAP * 0.5f - 1.0f,
-                        AJ_FIL_W - 48.0f, 2.0f };
-      gfx_cor(corte, 0.0f, 0.90f, 0.72f, 0.42f, 0.55f);
-      limiteMarcado = 1;
+    // SEPARADOR DA FILA: a partir daqui as fileiras esperam vaga.
+    if (filAba == 0 && filSep >= 0 && i == filSep) {
+      GfxRect corte = { cx + 24.0f, y - AJ_FIL_LGAP * 0.5f - 1.0f, AJ_FIL_W - 48.0f, 2.0f };
+      gfx_cor(corte, 0.0f, 0.90f, 0.72f, 0.42f, 0.65f);
     }
 
     if (foco) {
       // O ANEL MARCA A COLUNA, nao a linha: e a coluna que diz o que OK vai
-      // fazer. Com o anel na linha inteira, as quatro acoes de OK ficariam
-      // indistinguiveis.
-      GfxRect cel = { cx + AJ_FIL_COL[filCampo].x - 12.0f, y,
-                      AJ_FIL_COL[filCampo].w + 24.0f, AJ_FIL_LINHA };
-      float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-      gfx_rect(cel, 0, GFX_ANEL, 0, NV_ANEL_FOCO / AJ_FIL_LINHA, 0, raio,
-               ar, ag, ab, 1.0f);
+      // fazer. Na aba "Fora" ha uma acao so, e o anel toma a linha inteira.
+      GfxRect cel = (filAba == 0)
+        ? (GfxRect){ cx + AJ_FIL_COL[filCampo].x - 12.0f, y, AJ_FIL_COL[filCampo].w + 24.0f, AJ_FIL_LINHA }
+        : linha;
+      gfx_rect(cel, 0, GFX_ANEL, 0, NV_ANEL_FOCO / AJ_FIL_LINHA, 0, raio, ar, ag, ab, 1.0f);
     }
 
     { float tx = cx + AJ_FIL_COL[0].x;
       float tw = AJ_FIL_COL[0].w;
-      // SELO DE ORIGEM ANTES DO NOME. Sem ele a folha e uma lista de quinze
-      // nomes soltos e nao ha como saber que "A24" e um grupo de colecoes,
-      // "Popular" um catalogo do Cinemeta e "Entre amigos" uma fileira que o
-      // app monta sozinho — o relato foi literalmente "mostre o que e lista e
-      // o que e catalogo".
-      //
-      // ICONE E NAO SO COR: a 3 m a diferenca entre dois cinzas nao existe, e
-      // uma parte das TVs do relato esta em ingles com a interface em
-      // portugues (issue #12) — a forma sobrevive aos dois problemas.
-      { int orig = fil_linha_origem(i);
+      // SELO DE ORIGEM ANTES DO NOME: icone, porque a 3 m dois cinzas sao
+      // iguais e a forma sobrevive ao idioma.
+      { int orig = fil_linha_origem(idx);
         GfxRect ic = { tx, y + (AJ_FIL_LINHA - 26.0f) * 0.5f, 26.0f, 26.0f };
-        float ia = aTexto * (oculta ? 0.6f : 0.9f);
-        gfx_icone(ic, fil_origem_icone(orig), 0.78f, 0.80f, 0.85f, ia);
+        gfx_icone(ic, fil_origem_icone(orig), 0.78f, 0.80f, 0.85f, aTexto * 0.9f);
         tx += 38.0f; tw -= 38.0f; }
       if (filPegou && foco) {
-        // Marca de "na mao". Sem ela, a linha pega e a linha em foco tem a
-        // mesma cara e cima/baixo parecem ter deixado de navegar.
         TxtLinha m = txt_linha(TXT_CALLOUT, "\xe2\x87\x95", 250, 250, 252, 255);
         txt_desenhar(m, tx, y + (AJ_FIL_LINHA - m.h) * 0.5f);
         tx += m.w + 12.0f; tw -= m.w + 12.0f;
       }
-      // TITULO na linha de cima, ADDON na de baixo. Com 60+ fileiras de 5
-      // addons, a unica forma de "separar por addon" sem perder a ordem e
-      // mostrar o nome em cada linha — a ficha do rodape repete a mesma
-      // informacao para quem quiser mais detalhe.
-      { const char *addon = fil_linha_addon(i);
-        l = txt_linha_corta(TXT_CALLOUT, fil_titulo(i), c, c, c, 255, tw);
+      { const char *addon = fil_linha_addon(idx);
+        l = txt_linha_corta(TXT_CALLOUT, fil_titulo(idx), c, c, c, 255, tw);
         txt_desenhar_alpha(l, tx, y + 8.0f, aTexto);
-        if (addon[0]) {
+        // Na aba 0 o addon vai sob o titulo; na aba 1 ele tem coluna propria,
+        // porque e o agrupamento — e o cabecalho de grupo e a mudanca de nome.
+        if (filAba == 0 && addon[0]) {
           TxtLinha ad = txt_linha_corta(TXT_MINI, addon, 148, 151, 160, 255, tw);
           txt_desenhar_alpha(ad, tx, y + 8.0f + l.h + 4.0f, aTexto * 0.85f);
         }
       } }
 
-    { const char *est = oculta ? "Desligada"
-                      : fora ? "Fora do limite"
-                      : foraDaHome ? "Fora da Home" : "Ligada";
-      int er = oculta ? 176 : (fora ? 226 : (foraDaHome ? 196 : 150));
-      int eg = oculta ? 122 : (fora ? 186 : 214);
-      int eb = oculta ? 122 : (fora ? 108 : 158);
-      l = txt_linha_corta(TXT_CALLOUT, est, er, eg, eb, 255, AJ_FIL_COL[1].w);
-      txt_desenhar_alpha(l, cx + AJ_FIL_COL[1].x,
-                         y + (AJ_FIL_LINHA - l.h) * 0.5f, 1.0f); }
-
-    { int aceita = fil_aceita_tipo(i);
-      // Sem i18n aqui: txt_linha_corta ja traduz toda linha que desenha
-      // (text.c), e chamar duas vezes so daria uma busca binaria a mais.
-      const char *rot = aceita ? fil_tipo_rotulo(fil_linha_tipo(i)) : "Fixo";
-      int cc = aceita ? 220 : 150;
-      l = txt_linha_corta(TXT_CALLOUT, rot, cc, cc, cc, 255, AJ_FIL_COL[2].w);
-      txt_desenhar_alpha(l, cx + AJ_FIL_COL[2].x,
-                         y + (AJ_FIL_LINHA - l.h) * 0.5f, aTexto); }
-
-    { l = txt_linha_corta(TXT_CALLOUT, fil_tam_rotulo(fil_linha_tam(i)),
-                          220, 220, 220, 255, AJ_FIL_COL[3].w);
-      txt_desenhar_alpha(l, cx + AJ_FIL_COL[3].x,
-                         y + (AJ_FIL_LINHA - l.h) * 0.5f, aTexto); }
+    if (filAba == 0) {
+      { const char *est = naFila ? "Na fila" : "Na Home";
+        int er = naFila ? 226 : 150, eg = naFila ? 186 : 214, eb = naFila ? 108 : 158;
+        // A coluna "Estado" e tambem a acao REMOVER: com o foco nela, diz.
+        if (foco && filCampo == 1) { est = "Remover"; er = 240; eg = 200; eb = 200; }
+        l = txt_linha_corta(TXT_CALLOUT, est, er, eg, eb, 255, AJ_FIL_COL[1].w);
+        txt_desenhar_alpha(l, cx + AJ_FIL_COL[1].x, y + (AJ_FIL_LINHA - l.h) * 0.5f, 1.0f); }
+      { int aceita = fil_aceita_tipo(idx);
+        const char *rot = aceita ? fil_tipo_rotulo(fil_linha_tipo(idx)) : "Fixo";
+        int cc = aceita ? 220 : 150;
+        l = txt_linha_corta(TXT_CALLOUT, rot, cc, cc, cc, 255, AJ_FIL_COL[2].w);
+        txt_desenhar_alpha(l, cx + AJ_FIL_COL[2].x, y + (AJ_FIL_LINHA - l.h) * 0.5f, aTexto); }
+      { l = txt_linha_corta(TXT_CALLOUT, fil_tam_rotulo(fil_linha_tam(idx)), 220, 220, 220, 255, AJ_FIL_COL[3].w);
+        txt_desenhar_alpha(l, cx + AJ_FIL_COL[3].x, y + (AJ_FIL_LINHA - l.h) * 0.5f, aTexto); }
+    } else {
+      // GRUPO: o nome do addon aparece na PRIMEIRA linha de cada bloco e some
+      // nas seguintes — e o agrupamento que a pessoa pediu, sem gastar linha
+      // de cabecalho numa lista que ja e longa.
+      const char *addon = fil_linha_addon(idx);
+      const char *rot = addon[0] ? addon : i18n(fil_origem_rotulo(fil_linha_origem(idx)));
+      int primeiro = (i == 0) || strcasecmp(fil_linha_addon(filLista[i - 1]), addon) != 0 ||
+                     fil_linha_origem(filLista[i - 1]) != fil_linha_origem(idx);
+      if (primeiro) {
+        l = txt_linha_corta(TXT_CALLOUT, rot, 200, 203, 212, 255, AJ_FIL_COL[1].w + AJ_FIL_COL[2].w);
+        txt_desenhar_alpha(l, cx + AJ_FIL_COL[1].x, y + (AJ_FIL_LINHA - l.h) * 0.5f, 1.0f);
+      }
+      { const char *acao = foco ? "OK  Adicionar à Home" : "";
+        l = txt_linha(TXT_CALLOUT, acao, 150, 214, 158, 255);
+        txt_desenhar_alpha(l, cx + AJ_FIL_COL[3].x, y + (AJ_FIL_LINHA - l.h) * 0.5f, 1.0f); }
+    }
     y += AJ_FIL_LINHA + AJ_FIL_LGAP;
   }
 
-  // Posicao na lista, em vez de uma barra de rolagem sozinha: com 64 fileiras a
-  // barra fica com 6 px e nao diz onde a pessoa esta. No botao de agrupar ela
-  // diz "botao", nao um numero a mais que nao existe.
-  if (filFoco == n)
-    snprintf(buf, sizeof buf, "%s", i18n("Botão"));
-  else
-    snprintf(buf, sizeof buf, i18n("%d de %d"), filFoco + 1, n);
-  l = txt_linha(TXT_CAPTION, buf, 156, 159, 168, 255);
-  txt_desenhar(l, cx + AJ_FIL_W - 40.0f - l.w, filCabecY);
+  // Posicao na lista: com 200 linhas a barra de rolagem teria 6 px.
+  if (n > 0) {
+    if (filAba == 0 && filFoco == n) snprintf(buf, sizeof buf, "%s", i18n("Botão"));
+    else snprintf(buf, sizeof buf, i18n("%d de %d"), filFoco + 1, n);
+    l = txt_linha(TXT_CAPTION, buf, 156, 159, 168, 255);
+    txt_desenhar(l, cx + AJ_FIL_W - 40.0f - l.w, filCabecY);
+  }
 
-  // BOTAO "AGRUPAR POR ADDON", no fim da lista. Reordena todas as fileiras
-  // agrupando pelo nome do addon — e a resposta para "mostre o que e de cada
-  // addon junto". filFoco == n e a posicao dele.
-  { int sortFoco = (filFoco == n);
+  // BOTAO "AGRUPAR POR ADDON", so na aba 0, no fim da lista.
+  if (filAba == 0 && n > 0) {
+    int sortFoco = (filFoco == n && !filNaBarra);
     float sy = y + 14.0f;
     GfxRect btn = { cx + 24.0f, sy, AJ_FIL_W - 48.0f, 52.0f };
-    gfx_cor(btn, 26.0f, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
-            sortFoco ? 0.72f : 0.30f);
-    if (sortFoco) {
-      GfxRect anel = { btn.x, btn.y, btn.w, btn.h };
-      float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-      gfx_rect(anel, 0, GFX_ANEL, 0, NV_ANEL_FOCO / 52.0f, 0, 0.23f,
-               ar, ag, ab, 1.0f);
-    }
+    gfx_cor(btn, 26.0f, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, sortFoco ? 0.72f : 0.30f);
+    if (sortFoco)
+      gfx_rect(btn, 0, GFX_ANEL, 0, NV_ANEL_FOCO / 52.0f, 0, 0.23f, ar, ag, ab, 1.0f);
     l = txt_linha(TXT_CALLOUT, "Agrupar por addon", 220, 220, 220, 255);
-    txt_desenhar(l, btn.x + (btn.w - l.w) * 0.5f,
-                 btn.y + (btn.h - l.h) * 0.5f); }
+    txt_desenhar(l, btn.x + (btn.w - l.w) * 0.5f, btn.y + (btn.h - l.h) * 0.5f);
+  }
 
-  // A FICHA DA FILEIRA EM FOCO. O selo da linha diz a CLASSE em duas palavras;
-  // aqui vai o que decide de verdade se ela fica ou sai: de qual addon veio,
-  // se e de filme ou de serie, e quantos titulos ela tem AGORA.
-  //
-  // A contagem so existe depois que a Home montou nesta sessao (fil_linha_itens
-  // devolve -1 antes disso) — e omitida em vez de aparecer como "0 titulos",
-  // que seria mentira sobre uma fileira que talvez esteja cheia.
-  if (n > 0 && filFoco >= 0 && filFoco < n) {
-    int orig = fil_linha_origem(filFoco);
-    const char *addon = fil_linha_addon(filFoco);
-    const char *cont  = fil_linha_conteudo(filFoco);
-    int itens = fil_linha_itens(filFoco);
+  // A FICHA DA FILEIRA EM FOCO: de qual addon veio, filme ou serie, e quantos
+  // titulos ela tem AGORA (omitido antes de a Home montar — "0 titulos" seria
+  // mentira sobre uma fileira talvez cheia).
+  if (n > 0 && filFoco >= 0 && filFoco < n && !filNaBarra) {
+    int idx = filLista[filFoco];
+    int orig = fil_linha_origem(idx);
+    const char *addon = fil_linha_addon(idx);
+    const char *cont  = fil_linha_conteudo(idx);
+    int itens = fil_linha_itens(idx);
     char ficha[220];
     int k = snprintf(ficha, sizeof ficha, "%s", i18n(fil_origem_rotulo(orig)));
-    if (addon && addon[0])
-      k += snprintf(ficha + k, sizeof ficha - (size_t)k, "  ·  %s", addon);
-    if (cont && cont[0])
-      k += snprintf(ficha + k, sizeof ficha - (size_t)k, "  ·  %s", i18n(cont));
+    if (addon && addon[0]) k += snprintf(ficha + k, sizeof ficha - (size_t)k, "  ·  %s", addon);
+    if (cont && cont[0])   k += snprintf(ficha + k, sizeof ficha - (size_t)k, "  ·  %s", i18n(cont));
     if (itens >= 0)
       snprintf(ficha + k, sizeof ficha - (size_t)k,
                itens == 1 ? i18n("  ·  %d título") : i18n("  ·  %d títulos"), itens);
     l = txt_linha_corta(TXT_CALLOUT, ficha, 232, 234, 241, 255, AJ_FIL_W - 80.0f);
     txt_desenhar(l, cx + 40.0f, cartao.y + AJ_FIL_H - 232.0f);
-    l = txt_linha_corta(TXT_MINI, fil_origem_ajuda(orig),
-                        170, 173, 182, 255, AJ_FIL_W - 80.0f);
+    l = txt_linha_corta(TXT_MINI, fil_origem_ajuda(orig), 170, 173, 182, 255, AJ_FIL_W - 80.0f);
     txt_desenhar(l, cx + 40.0f, cartao.y + AJ_FIL_H - 200.0f);
   }
 
-  // A INSTRUCAO, escrita na tela. O gesto de pegar e mover nao se descobre
-  // sozinho num D-pad, e ele muda quando o item esta na mao.
+  // A INSTRUCAO, escrita na tela: o gesto de pegar e mover nao se descobre
+  // sozinho num D-pad, e muda com o item na mao e com a aba.
   y = cartao.y + AJ_FIL_H - 168.0f;
   if (filPegou == 2) {
     txt_bloco(TXT_CAPTION,
@@ -2260,21 +2389,39 @@ static void desenhaFileiras(void) {
     txt_bloco(TXT_CAPTION,
               "↑ ↓  Mover a fileira\n← →  Mover o bloco do addon\nOK  Soltar aqui\nVoltar  Cancelar o movimento",
               206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 4);
-  } else if (filFoco == n) {
+  } else if (filNaBarra) {
+    txt_bloco(TXT_CAPTION, "← →  Trocar de aba\n↓  Voltar à lista\nVoltar  Fechar",
+              206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 3);
+  } else if (filAba == 1) {
     txt_bloco(TXT_CAPTION,
-              "OK  Agrupar as fileiras por addon\nVoltar  Fechar",
+              "↑ ↓  Escolher fileira · segure para pular por letra\n"
+              "OK  Adicionar à Home (entra na fila se a Home estiver cheia)\n"
+              "↑ no topo  Abas\nVoltar  Fechar",
+              206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 4);
+  } else if (filFoco == n) {
+    txt_bloco(TXT_CAPTION, "OK  Agrupar as fileiras por addon\nVoltar  Fechar",
               206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 2);
   } else {
     txt_bloco(TXT_CAPTION,
               "↑ ↓  Escolher fileira\n← →  Trocar de coluna\n"
-              "OK  Pegar e mover (coluna Fileira) · Ligar, trocar card e tamanho nas outras\n"
+              "OK  Pegar e mover (coluna Fileira) · Remover, trocar card e tamanho nas outras\n"
               "Voltar  Fechar",
               206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 4);
-    if (filFoco < n && filCampo == 2 && !fil_aceita_tipo(filFoco)) {
-      l = txt_linha_corta(TXT_MINI, motivoFormaFixa(fil_chave(filFoco)),
+    if (filFoco < n && filCampo == 2 && !fil_aceita_tipo(filLista[filFoco])) {
+      l = txt_linha_corta(TXT_MINI, motivoFormaFixa(fil_chave(filLista[filFoco])),
                           176, 179, 188, 255, AJ_FIL_W - 80.0f);
       txt_desenhar(l, cx + 40.0f, cartao.y + AJ_FIL_H - 42.0f);
     }
+  }
+
+  // AVISO ("Home cheia...", "Adicionada..."): pilula no rodape do cartao por
+  // alguns segundos. E a resposta visivel ao OK, que na aba "Fora" nao muda
+  // nada na linha em que a pessoa esta olhando.
+  if (filAviso[0] && SDL_GetTicks() < filAvisoAte) {
+    l = txt_linha(TXT_CALLOUT, filAviso, 20, 22, 28, 255);
+    { GfxRect pil = { cx + (AJ_FIL_W - l.w - 56.0f) * 0.5f, cartao.y + AJ_FIL_H - 84.0f, l.w + 56.0f, 48.0f };
+      gfx_cor(pil, NV_RAIO_PILL, 0.96f, 0.86f, 0.52f, 0.96f);
+      txt_desenhar(l, pil.x + 28.0f, pil.y + (pil.h - l.h) * 0.5f); }
   }
 }
 

@@ -42,6 +42,7 @@ int  addons_exportar(AddonRemoto *saida, int max);
 void addons_esquecer(void);
 int  addons_n(void);
 const char *addons_base(int i);   // URL base, sem /manifest.json
+const char *addons_id_manifesto(int i);   // "id" do manifesto; "" ate a sonda ler
 const char *addons_base_por_id(const char *idManifesto);   // "" ate a sonda conhecer o id
 int  addons_tem_catalogo(int i);  // 1 quando o addon fornece catalogo
 

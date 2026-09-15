@@ -28,6 +28,19 @@ typedef struct {
 static Linha linhas[FIL_MAX];
 static int   nLinhas;
 static int   limite = FIL_LIMITE_PADRAO;
+// PERFIL DONO DESTA ESCOLHA. Ate aqui fileirasui.txt era UM por aparelho:
+// quem trocava de perfil na tela "Quem esta assistindo?" herdava a home que o
+// outro arrumou. Agora cada perfil tem o seu (fileirasui-p<N>.txt); 0 e o
+// nome antigo, que continua valendo para quem nunca escolheu perfil e serve de
+// SEMENTE para o primeiro arquivo de cada perfil — ninguem perde a ordem que
+// ja tinha no dia em que a separacao entrou.
+static int   perfil;
+static const char *arquivoDoPerfil(void) {
+  static char nome[48];
+  if (perfil <= 0) return "fileirasui.txt";
+  snprintf(nome, sizeof nome, "fileirasui-p%d.txt", perfil);
+  return nome;
+}
 static int   ordemLocal;      // 1 = a pessoa MOVEU algo; ver fil_tem_ordem
 static int   carregado;
 static int   registroSujo;   // ver fil_gravar_registro
@@ -158,7 +171,7 @@ static void gravar(void) {
     k += (size_t)snprintf(txt + k, cap - k, "linha %s\t%d\t%d\t%d\t%s\n",
                           linhas[i].chave, linhas[i].oculta, linhas[i].tipo,
                           linhas[i].tam, linhas[i].titulo);
-  if (k < cap) dados_gravar("fileirasui.txt", txt);
+  if (k < cap) dados_gravar(arquivoDoPerfil(), txt);
   free(txt);
   revisao++;
 }
@@ -167,8 +180,12 @@ static void carregar(void) {
   char caminho[600], buf[900];
   FILE *f;
   carregado = 1;
-  if (!dados_caminho(caminho, sizeof caminho, "fileirasui.txt")) return;
+  if (!dados_caminho(caminho, sizeof caminho, arquivoDoPerfil())) return;
   f = fopen(caminho, "r");
+  // Perfil sem arquivo proprio ainda: comeca do arquivo antigo do aparelho,
+  // que e o que a pessoa via ate ontem. A primeira mutacao grava o proprio.
+  if (!f && perfil > 0 && dados_caminho(caminho, sizeof caminho, "fileirasui.txt"))
+    f = fopen(caminho, "r");
   if (!f) return;
   while (fgets(buf, sizeof buf, f)) {
     char *fim = buf + strlen(buf);
@@ -223,11 +240,147 @@ int fil_limite(void) {
   return v;
 }
 
+// As primeiras `limite` linhas LIGADAS, na ordem local, sao a home; as ligadas
+// depois disso sao a FILA (entram sozinhas quando alguem sai); as ocultas estao
+// fora. Ver fil_estado. Devolve, para a linha i, quantas ligadas ha antes dela.
+static int posicaoLigada(int i) {
+  int k, p = 0;
+  for (k = 0; k < i && k < nLinhas; k++) if (!linhas[k].oculta) p++;
+  return p;
+}
+
 void fil_definir_limite(int n) {
   pthread_mutex_lock(&trava);
   garantir();
   n = limita(n, FIL_LIMITE_MIN, FIL_LIMITE_MAX);
-  if (n != limite) { limite = n; gravar(); }
+  if (n != limite) {
+    // LIMITE MENOR: quem ficou de fora VIRA "fora da home", e nao fila. Decisao
+    // do dono ("viram fora da home"): a fila e para quem a pessoa ACABOU de
+    // pedir e nao coube; quem foi empurrado por um limite menor nao pediu
+    // nada, e re-entrar sozinho depois seria a home mudando por conta propria.
+    if (n < limite) {
+      int i, p = 0;
+      for (i = 0; i < nLinhas; i++) {
+        if (linhas[i].oculta) continue;
+        if (p >= n) linhas[i].oculta = 1;
+        p++;
+      }
+    }
+    limite = n; gravar();
+  }
+  pthread_mutex_unlock(&trava);
+}
+
+int fil_estado(int i) {
+  int r = FIL_FORA;
+  pthread_mutex_lock(&trava);
+  garantir();
+  if (i >= 0 && i < nLinhas && !linhas[i].oculta)
+    r = posicaoLigada(i) < limite ? FIL_NA_HOME : FIL_NA_FILA;
+  pthread_mutex_unlock(&trava);
+  return r;
+}
+
+int fil_n_na_home(void) {
+  int i, p = 0;
+  pthread_mutex_lock(&trava);
+  garantir();
+  for (i = 0; i < nLinhas; i++) if (!linhas[i].oculta) p++;
+  pthread_mutex_unlock(&trava);
+  return p < limite ? p : limite;
+}
+
+int fil_n_fila(void) {
+  int i, p = 0;
+  pthread_mutex_lock(&trava);
+  garantir();
+  for (i = 0; i < nLinhas; i++) if (!linhas[i].oculta) p++;
+  pthread_mutex_unlock(&trava);
+  return p > limite ? p - limite : 0;
+}
+
+// ADICIONAR A HOME: liga e vai para o FIM do bloco ligado. Se ainda cabe no
+// limite, entra na home; senao entra na fila, atras de quem ja esperava — e
+// sobe sozinha quando alguem for removido, porque a fila e so a ordem. Devolve
+// o indice novo da linha (ela pode ter se movido) e escreve o estado em
+// `estado`. Marca ordemLocal: colocar alguem no fim e uma escolha de posicao.
+int fil_adicionar(int i, int *estado) {
+  int j, ultimo = -1;
+  Linha tmp;
+  pthread_mutex_lock(&trava);
+  garantir();
+  if (i < 0 || i >= nLinhas) { pthread_mutex_unlock(&trava); if (estado) *estado = FIL_FORA; return i; }
+  linhas[i].oculta = 0;
+  for (j = nLinhas - 1; j >= 0; j--) if (!linhas[j].oculta && j != i) { ultimo = j; break; }
+  // Ja esta depois do ultimo ligado: nao ha para onde ir.
+  if (ultimo >= 0 && i < ultimo) {
+    tmp = linhas[i];
+    memmove(&linhas[i], &linhas[i + 1], sizeof(Linha) * (size_t)(ultimo - i));
+    linhas[ultimo] = tmp;
+    i = ultimo;
+    ordemLocal = 1;
+  }
+  if (estado) *estado = posicaoLigada(i) < limite ? FIL_NA_HOME : FIL_NA_FILA;
+  gravar();
+  pthread_mutex_unlock(&trava);
+  return i;
+}
+
+// REMOVER DA HOME: desliga. A posicao fica — se a pessoa religar, volta ao
+// fim do bloco por fil_adicionar. Quem estava na fila sobe por consequencia.
+void fil_remover(int i) {
+  pthread_mutex_lock(&trava);
+  garantir();
+  if (i >= 0 && i < nLinhas && !linhas[i].oculta) { linhas[i].oculta = 1; gravar(); }
+  pthread_mutex_unlock(&trava);
+}
+
+// PODA DE FANTASMAS. Um addon removido da conta deixa os catalogos dele na
+// lista — e na home, ate o proximo login (relato do @rawldon: "ghost
+// entries... only disappear after I sign out and back in"). Chamada quando
+// TODOS os manifestos da volta foram lidos, com os ids e as bases dos addons
+// que existem AGORA: catalogo cuja chave nao comeca por nenhum deles, e que
+// ninguem registrou nesta sessao, e de um addon que ja nao esta na conta.
+//
+// So catalogo: fileira do app e grupo de colecao nao tem addon. So `vista == 0`:
+// o que foi visto nesta sessao esta vivo por definicao, e a dupla condicao
+// protege contra chamar isto cedo demais. Devolve quantas linhas sairam.
+int fil_podar_catalogos(const char *const *ids, const char *const *bases, int n) {
+  int i, w = 0, fora = 0;
+  pthread_mutex_lock(&trava);
+  garantir();
+  for (i = 0; i < nLinhas; i++) {
+    int vivo = 1;
+    if (fil_origem_de(linhas[i].chave) == FIL_ORIGEM_CATALOGO && !linhas[i].vista) {
+      int k;
+      vivo = 0;
+      for (k = 0; k < n && !vivo; k++) {
+        size_t li = ids[k] ? strlen(ids[k]) : 0, lb = bases[k] ? strlen(bases[k]) : 0;
+        if (li && !strncmp(linhas[i].chave, ids[k], li) && linhas[i].chave[li] == '_') vivo = 1;
+        if (lb && !strncmp(linhas[i].chave, bases[k], lb) && linhas[i].chave[lb] == '_') vivo = 1;
+      }
+    }
+    if (vivo) { if (w != i) linhas[w] = linhas[i]; w++; }
+    else fora++;
+  }
+  if (fora) { nLinhas = w; gravar(); }
+  pthread_mutex_unlock(&trava);
+  if (fora) { printf("[fileiras] %d fileira(s) de addon que ja nao existe sairam da lista\n", fora); fflush(stdout); }
+  return fora;
+}
+
+// TROCA DE PERFIL: solta a lista e le o arquivo do perfil novo na proxima
+// consulta. Nao grava nada aqui — o arquivo do perfil que saiu ja esta em dia.
+void fil_definir_perfil(int p) {
+  pthread_mutex_lock(&trava);
+  if (p < 0) p = 0;
+  if (p != perfil) {
+    perfil = p;
+    nLinhas = 0; ordemLocal = 0; limite = FIL_LIMITE_PADRAO;
+    memset(linhas, 0, sizeof linhas);
+    carregado = 0;
+    revisao++;
+  }
   pthread_mutex_unlock(&trava);
 }
 

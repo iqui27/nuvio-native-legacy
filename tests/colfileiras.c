@@ -50,6 +50,7 @@ static const char *COLECAO_DA_CONTA =
 
 int   addons_n(void)              { return 1; }
 const char *addons_base(int i)    { (void)i; return BASE; }
+const char *addons_id_manifesto(int i) { (void)i; return ""; }
 const char *addons_nome(int i)              { (void)i; return "addon"; }
 const char *addons_base_por_id(const char *id) {
   if (!sondaLeu) return "";       // exatamente o que addons.c faz antes da sonda
@@ -101,6 +102,8 @@ int   cat_indice_por_imdb(const char *s)   { (void)s; return -1; }
 const CatItem *cat_item(int i)             { (void)i; return NULL; }
 int   cat_n_episodios(int i)               { (void)i; return 0; }
 void  fil_gravar_registro(void)            { }
+int   fil_podar_catalogos(const char *const *ids, const char *const *bases, int n) {
+  (void)ids; (void)bases; (void)n; return 0; }
 int   fil_limite(void)                     { return limiteFileiras; }
 int   fil_oculta(const char *c)            { (void)c; return 0; }
 // A assinatura ganhou addon/tipo/contagem quando a folha de fileiras passou a

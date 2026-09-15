@@ -102,7 +102,34 @@ const char *fil_origem_ajuda(int origem);
 
 // --- limite ------------------------------------------------------------------
 int  fil_limite(void);
+// Ao BAIXAR o limite, as ligadas que ficaram alem dele viram "fora da home"
+// (ocultas), nao fila. Decisao do dono; ver o comentario na definicao.
 void fil_definir_limite(int n);
+
+// --- na home, na fila, fora --------------------------------------------------
+// A ORDEM E A FILA. As primeiras `limite` linhas ligadas, na ordem local, sao
+// as que a home monta; as ligadas depois disso estao NA FILA e entram sozinhas
+// quando alguem antes delas e removido; as ocultas estao fora. Nao ha campo
+// novo no arquivo: e a mesma ordem e o mesmo `oculta` de sempre, lidos de
+// outro jeito — e e assim que a fila sobrevive byte a byte ao arquivo antigo.
+typedef enum { FIL_NA_HOME = 0, FIL_NA_FILA, FIL_FORA } FilEstado;
+int  fil_estado(int i);
+int  fil_n_na_home(void);
+int  fil_n_fila(void);
+// Liga e poe no fim do bloco ligado. Devolve o indice NOVO (a linha se move) e
+// escreve em `estado` onde ela caiu — NA_HOME quando coube, NA_FILA quando a
+// home estava cheia. Quem chama mostra "home cheia" nesse caso.
+int  fil_adicionar(int i, int *estado);
+void fil_remover(int i);
+
+// --- perfil e poda -----------------------------------------------------------
+// A escolha e POR PERFIL (fileirasui-p<N>.txt; 0 = o arquivo antigo, que serve
+// de semente ao primeiro arquivo de cada perfil). Chamar na troca de perfil.
+void fil_definir_perfil(int perfil);
+// Tira da lista os catalogos de addons que ja nao estao na conta. `ids` e
+// `bases` sao os ids de manifesto e as URLs base dos addons ATUAIS; so vale
+// depois de todos os manifestos da volta terem sido lidos. Devolve quantas.
+int  fil_podar_catalogos(const char *const *ids, const char *const *bases, int n);
 
 // --- registro das fileiras que EXISTEM --------------------------------------
 // Chamado por quem monta a lista (descoberta.c com os catalogos declarados,

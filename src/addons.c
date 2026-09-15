@@ -230,6 +230,13 @@ void addons_esquecer(void) {
 
 int addons_n(void) { return nAddon; }
 
+// O id do manifesto ("com.frostview"), ou "" enquanto a sonda nao o leu. E o
+// prefixo da homeCatalogKey dos catalogos deste addon — e por isso a poda de
+// fantasmas de fileiras.c pede por ele.
+const char *addons_id_manifesto(int i) {
+  return (i >= 0 && i < nAddon) ? addon[i].id : "";
+}
+
 const char *addons_base(int i) {
   return (i >= 0 && i < nAddon) ? addon[i].base : "";
 }

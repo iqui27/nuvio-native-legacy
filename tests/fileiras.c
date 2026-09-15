@@ -343,6 +343,67 @@ int main(void) {
       assert(!strcmp(home[ord[0]], "vivoB") && !strcmp(home[ord[1]], "vivoA")); } }
   puts("ok  mover pula linha fora da home");
 
+  // NA HOME / NA FILA / FORA, E A FILA E SO A ORDEM. Limite 4 (o minimo e 3),
+  // seis ligadas: as quatro primeiras estao na home, as duas seguintes na fila,
+  // e remover uma da home faz a primeira da fila subir SEM ninguem mexer nela.
+  fil_esquecer();
+  fil_definir_limite(4);
+  { int j;
+    const char *n[] = { "a", "b", "c", "d", "e", "f", "g" };
+    for (j = 0; j < 7; j++) fil_registrar(n[j], n[j], "X", "movie", 1);
+    fil_remover(6);                       // g fora
+    assert(fil_estado(0) == FIL_NA_HOME && fil_estado(3) == FIL_NA_HOME);
+    assert(fil_estado(4) == FIL_NA_FILA && fil_estado(5) == FIL_NA_FILA);
+    assert(fil_estado(6) == FIL_FORA);
+    assert(fil_n_na_home() == 4 && fil_n_fila() == 2);
+    fil_remover(1);                       // b sai da home
+    assert(fil_estado(4) == FIL_NA_HOME); // e subiu sozinha
+    assert(fil_estado(5) == FIL_NA_FILA);
+    assert(fil_n_fila() == 1);
+    // ADICIONAR com a home cheia: vai para o FIM do bloco ligado, na fila,
+    // atras de quem ja esperava — e o chamador fica sabendo.
+    { int est = -1, novo = fil_adicionar(1, &est);   // b volta
+      int pf = -1, pb = -1;
+      assert(est == FIL_NA_FILA);
+      assert(!strcmp(fil_chave(novo), "b"));
+      for (j = 0; j < fil_n(); j++) { if (!strcmp(fil_chave(j), "f")) pf = j; if (!strcmp(fil_chave(j), "b")) pb = j; }
+      assert(pf < pb); }                  // f esperava antes: continua na frente
+    assert(fil_n_fila() == 2);
+    // LIMITE QUE BAIXA: quem ficou alem vira FORA, nao fila.
+    fil_definir_limite(4);                // sem mudanca: nada acontece
+    assert(fil_n_fila() == 2);
+    fil_definir_limite(3);
+    assert(fil_n_na_home() == 3 && fil_n_fila() == 0);
+    { int ocultas = 0; for (j = 0; j < fil_n(); j++) if (fil_linha_oculta(j)) ocultas++;
+      assert(ocultas == 4); } }           // g, e as tres empurradas
+  puts("ok  fila: e a ordem; remover promove; limite menor manda para fora");
+
+  // PODA: catalogo de addon que sumiu da conta sai; o resto fica.
+  fil_esquecer();
+  { int j;
+    const char *ids[] = { "addonvivo" }; const char *bases[] = { "https://vivo.example" };
+    // Nada visto == tudo candidato; mas so catalogo de addon ausente cai.
+    // Antes: simula linha lida do disco (vista=0) para o fantasma.
+    usaArquivo = 1;
+    { FILE *f = fopen("/tmp/fileirasui.txt", "w");
+      fprintf(f, "limite 7\nordem 0\n");
+      fprintf(f, "linha addonvivo_movie_top\t0\t0\t1\tTop\n");
+      fprintf(f, "linha addonmorto_movie_top\t0\t0\t1\tFantasma\n");
+      fprintf(f, "linha continue_watching\t0\t0\t1\tContinuar\n");
+      fprintf(f, "linha collection_x\t0\t0\t1\tColecao\n");
+      fclose(f); }
+    fil_teste_recarregar();
+    assert(fil_n() == 4);
+    // O vivo foi VISTO nesta sessao; o fantasma nao. So o fantasma cai.
+    fil_registrar("addonvivo_movie_top", "Top", "Vivo", "movie", 5);
+    assert(fil_podar_catalogos(ids, bases, 1) == 1);
+    assert(fil_n() == 3);
+    for (j = 0; j < fil_n(); j++) assert(strcmp(fil_chave(j), "addonmorto_movie_top") != 0);
+    // Chamar de novo nao tira mais nada.
+    assert(fil_podar_catalogos(ids, bases, 1) == 0);
+    usaArquivo = 0; }
+  puts("ok  poda: catalogo de addon removido sai, app e colecao ficam");
+
   puts("fileiras: tudo ok");
   return 0;
 }

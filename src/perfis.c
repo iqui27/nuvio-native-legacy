@@ -2,6 +2,7 @@
 #include "sessao.h"
 #include "nuvem.h"
 #include "dados.h"
+#include "fileiras.h"   /* fil_definir_perfil: a escolha de fileiras e por perfil */
 #include "js.h"
 #include "jsw.h"
 #include <stdio.h>
@@ -317,6 +318,9 @@ void perfis_carregar_ativo(void) {
     if (v > 0) { ativo = v; gravado = 1; }
     free(b);
   }
+  // A escolha de fileiras acompanha o perfil desde o arranque, senao a home
+  // do perfil 1 e montada com o arquivo do perfil 2 ate a primeira troca.
+  fil_definir_perfil(ativo);
   lerCache();
 }
 
@@ -324,6 +328,7 @@ void perfis_definir_ativo(int indice) {
   char linha[32];
   if (indice <= 0) return;
   ativo = indice;
+  fil_definir_perfil(indice);
   escolhido = 1;
   gravado = 1;
   snprintf(linha, sizeof linha, "%d\n", indice);

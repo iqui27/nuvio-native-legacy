@@ -1755,6 +1755,16 @@ static void *montar(void *u) {
         printf("[desc] %d catalogo(s) so respondem com busca e nao viram fileira\n", cortados);
       nDecl = w2; }
     printf("[desc] %d catalogos declarados pelos addons\n", nDecl);
+    // FANTASMAS. Addon removido da conta deixava os catalogos dele na lista de
+    // fileiras — e na home — ate o proximo login (@rawldon). Aqui TODOS os
+    // manifestos desta volta ja foram lidos, entao a lista de addons vivos e
+    // completa e a poda e segura: so cai catalogo cujo addon nao esta mais na
+    // conta E que ninguem registrou nesta sessao.
+    { const char *ids[16], *bases[16];
+      int na = addons_n(), q;
+      if (na > 16) na = 16;
+      for (q = 0; q < na; q++) { ids[q] = addons_id_manifesto(q); bases[q] = addons_base(q); }
+      if (fil_podar_catalogos(ids, bases, na)) fil_gravar_registro(); }
 
     // ALVOS DE BUSCA. Independem da ordem/filtro das FILEIRAS da home: um
     // catalogo pode estar desativado na home e ainda assim ser bom para
