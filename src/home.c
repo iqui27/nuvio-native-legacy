@@ -268,6 +268,28 @@ static void carregaDir(const char *dir, char destino[][512], int *n, const char 
 //
 //   `continueWatchingCardStyle` decide a fileira de "Continuar assistindo":
 //   "card" e "largo" desenham deitado, "poster" usa o mesmo 2:3 das outras.
+// "Largura do item" (posterCardWidthDp) VIRANDO TAMANHO DE VERDADE.
+//
+// A opcao existia em Ajustes, era gravada e sincronizava com a conta — e nao
+// mexia em UM pixel: ajustes_largura_poster_dp() nao tinha NENHUM consumidor no
+// app inteiro. So o arredondamento (o ajuste vizinho) era aplicado. Relato do
+// @praveencudz no #42: "poster size increases in the settings was not working".
+//
+// ESCALA RELATIVA, e nao a formula do web. O web calcula a largura a partir do
+// dp (`buildModernHomeSizingStyle`: dp * 0,84 * 1,08 * 2), e aplicar isso aqui
+// daria 229 px no padrao de fabrica contra os 212 que este app usa — e 212 nao
+// e um chute, e a MEDICAO do app web rodando em 1920x1080 (ver NV_CARD_W em
+// layout.h). Escalar pelo padrao preserva exatamente o que ja estava medido: em
+// 126 dp o fator e 1,0 e nada muda; 200 dp da 1,59x e 72 dp da 0,57x, a mesma
+// amplitude que a opcao oferece la.
+//
+// A ALTURA ACOMPANHA, senao o cartaz deixa de ser 2:3 e a arte distorce.
+static float escalaDoAjuste(void) {
+  int dp = ajustes_largura_poster_dp();
+  if (dp < 72 || dp > 200) return 1.0f;    // valor de outra versao: nao mexe
+  return (float)dp / 126.0f;               // 126 = o padrao de fabrica
+}
+
 static float larguraDe(TipoFileira t) {
   switch (t) {
     case FILEIRA_CONTINUE: return NV_DESTAQUE_W;
@@ -278,8 +300,9 @@ static float larguraDe(TipoFileira t) {
     case FILEIRA_TOP10: return 212.0f;
     case FILEIRA_RETORNO: return 680.0f;
     case FILEIRA_CATALOGOS: return 360.0f;
-    default:               return ajustes_posteres_deitados() ? NV_CARD_LAND_W
-                                                              : NV_CARD_W;
+    default:               return escalaDoAjuste() *
+                             (ajustes_posteres_deitados() ? NV_CARD_LAND_W
+                                                          : NV_CARD_W);
   }
 }
 // Quantos titulos o hero percorre. Vem do catalogo quando existe.
@@ -421,8 +444,9 @@ static float alturaDe(TipoFileira t) {
     case FILEIRA_RETORNO: return 178.0f;
     case FILEIRA_TOP10: return 320.0f;
     case FILEIRA_CATALOGOS: return 203.0f;
-    default:               return ajustes_posteres_deitados() ? NV_CARD_LAND_H
-                                                              : NV_CARD_H;
+    default:               return escalaDoAjuste() *
+                             (ajustes_posteres_deitados() ? NV_CARD_LAND_H
+                                                          : NV_CARD_H);
   }
 }
 static int temRotulo(TipoFileira t) {

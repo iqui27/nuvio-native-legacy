@@ -615,6 +615,19 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
   r = curl_perform(c);
   if (!r) curl_getinfo(c, INFO_URL_FINAL, &fim);
   if (!r && fim) snprintf(dst, tam, "%s", fim);
+  // DIZER POR QUE FALHOU. Quem chama (streams.c) so imprimia "N nao resolveu",
+  // e "nao resolveu" cobre coisas muito diferentes: host que nao existe (6),
+  // recusa de conexao (7), estouro de tempo (28), TLS (35, 60) e HTTP 4xx/5xx
+  // do proprio servidor da fonte. Sem separar, todo relato de "nao toca" vira
+  // adivinhacao — e foi exatamente onde este ficou parado.
+  if (r || !fim) {
+    long http = 0;
+    char seg[120];
+    curl_getinfo(c, INFO_RESPONSE_CODE, &http);
+    printf("[rede] url final falhou: curl %d, HTTP %ld em %s\n", r, http,
+           rede_url_publica(url, seg, sizeof seg));
+    fflush(stdout);
+  }
   soltarHandle(c);
   free(b.p);
   return (!r && fim) ? 1 : 0;

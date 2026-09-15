@@ -13,7 +13,13 @@
 #include <pthread.h>
 #include <stdatomic.h>
 
-#define ADD_MAX 12
+// 16, e nao 12. O sync le ate SY_ADD_MAX (16) addons da conta e entregava a
+// lista inteira aqui; o laco de addons_definir_lista cortava no 12o EM SILENCIO
+// — o log dizia "12 vindos da conta" como se fossem todos. Quem tem mais de
+// doze addons via os ultimos sumirem sem nenhuma explicacao, que e exatamente o
+// "some addons were missing (i dont know the reason)" do #42. Os dois tetos
+// agora sao o mesmo numero, e o corte, se um dia voltar a acontecer, e dito.
+#define ADD_MAX 16
 
 // `fonte` marca quem realmente entrega stream. Descoberto pelo manifesto: o
 // Xperience declara resources catalog/meta/subtitles e NENHUM stream, entao
@@ -195,6 +201,13 @@ int addons_definir_lista(const AddonRemoto *nova, int n) {
   }
   nAddon = aceitos;
   printf("[addons] %d vindos da conta\n", nAddon);
+  // DIZER QUANDO CORTOU. Um addon que some sem uma linha de log e indistinguivel
+  // de um addon que a conta nao tem.
+  { int uteis = 0, q;
+    for (q = 0; q < n; q++) if (nova[q].url[0]) uteis++;
+    if (uteis > aceitos)
+      printf("[addons] %d da conta ficaram de fora: o app guarda no maximo %d\n",
+             uteis - aceitos, ADD_MAX); }
   return 1;
 }
 

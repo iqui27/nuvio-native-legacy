@@ -799,6 +799,11 @@ typedef struct {
   // `extra: [{name:"search"}]` (formato novo) ou `extraSupported: ["search"]`
   // (antigo) — os addons do dono usam os dois.
   int buscavel;
+  // 1 quando o manifesto marca o extra `search` como `isRequired` — ou seja, o
+  // catalogo so responde a quem digitou um termo, e a home nao tem termo. Ele
+  // continua servindo a BUSCA; o que ele nao pode e virar fileira. Ver a nota
+  // em exigeBusca(), inclusive por que isto NAO vale para os outros extras.
+  int exigeParam;
   char nomeAddon[64];   // "Xperience", para a linha "de <addon>" no resultado
 } Decl;
 
@@ -1070,6 +1075,63 @@ static char *maniPegar(const char *url) {
   return corpo;
 }
 
+// CATALOGO DE BUSCA NAO PODE VIRAR FILEIRA.
+//
+// O protocolo Stremio marca em cada `extra` se ele e obrigatorio:
+//   "extra":[{"name":"search","isRequired":true}]
+// Um catalogo que EXIGE `search` responde vazio ao pedido sem termo que a home
+// faz — e a home nao tem termo nenhum para dar. Nada aqui lia esse campo, entao
+// esses catalogos viravam fileira, gastavam uma vaga do teto e voltavam vazios
+// TODA VEZ, as mesmas. Medido na LG, em toda sessao, com uma delas tendo ate
+// ganhado a "vaga garantida" do addon:
+//   [desc] vaga garantida: AIOStreams entra em 11 (Debridio TMDB - Search - Filme)
+//   [desc] catalogo vazio: Debridio TMDB - Search - Filme
+// E parte do "some rows were not showing no matter what" do #42. Eles continuam
+// servindo a BUSCA, que e para o que existem — so deixam de fingir que sao
+// fileira.
+//
+// SO `search`, E ISSO E UMA CORRECAO DE UMA REGRA MINHA ANTERIOR. A primeira
+// versao cortava QUALQUER extra obrigatorio, e MEDIDO na LG isso derrubou 247
+// dos 286 catalogos: addon real declara `{"name":"genre","isRequired":true}` e
+// mesmo assim responde a consulta sem genero nenhum. "Christian Bale - Filme"
+// era uma dessas — vinha com 12 titulos no log da sessao anterior e sumiu da
+// home. Declarar obrigatorio NAO e o mesmo que recusar sem o parametro; a
+// unica exigencia que o app sabe que nao consegue satisfazer e o termo de
+// busca, porque ele so existe quando alguem digita.
+//
+// Percorre os objetos de `extra` na faixa deste catalogo. `extraSupported` (o
+// formato antigo) e uma lista de STRINGS, sem obrigatoriedade nenhuma.
+static int exigeBusca(const char *p, const char *f) {
+  const char *ex = strstr(p, "\"extra\"");
+  const char *o;
+  if (!ex || ex >= f) return 0;
+  o = strchr(ex, '[');
+  if (!o || o >= f) return 0;
+  for (o = strchr(o, '{'); o && o < f; o = strchr(o + 1, '{')) {
+    const char *fo = strchr(o, '}');
+    const char *req, *nome;
+    if (!fo || fo > f) break;
+    req = strstr(o, "\"isRequired\"");
+    if (req && req < fo) {
+      // Aceita `true` e `"true"`: ha manifesto que escreve o booleano como
+      // texto, e recusar so o primeiro deixaria o defeito de pe para ele.
+      const char *v = req + 12;
+      while (*v && (*v == ':' || *v == ' ' || *v == '"')) v++;
+      if (!strncmp(v, "true", 4)) {
+        // O `name` DESTE extra, e nao qualquer "search" na faixa: um catalogo
+        // com `genre` obrigatorio e `search` opcional continua sendo fileira.
+        nome = strstr(o, "\"name\"");
+        if (nome && nome < fo) {
+          const char *w = nome + 6;
+          while (*w && (*w == ':' || *w == ' ' || *w == '"')) w++;
+          if (!strncmp(w, "search", 6)) return 1;
+        }
+      }
+    }
+  }
+  return 0;
+}
+
 static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
                          int *totalReal) {
   char url[900], addonId[96] = "", nome[96], tipo[8], id[96];
@@ -1156,6 +1218,7 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
                           nomeAddon[0] ? nomeAddon
                                        : (addonId[0] ? addonId : "addon"));
         } }
+      d->exigeParam = exigeBusca(p, f);
       snprintf(d->tipo, sizeof d->tipo, "%s", tipo);
       snprintf(d->id,   sizeof d->id,   "%s", id);
       snprintf(d->chave, sizeof d->chave, "%s_%s_%s",
@@ -1668,6 +1731,29 @@ static void *montar(void *u) {
           printf("[desc]   %s: %d catalogo(s) declarado(s) (cota %d)\n",
                  addons_nome(i), lidos, cota);
       } }
+    // FORA OS QUE SO RESPONDEM COM TERMO DE BUSCA, antes de ordenacao e cota.
+    //
+    // Ver exigeBusca(): eles respondem vazio ao unico pedido que a home sabe
+    // fazer. Tirar aqui, e nao no laco de rodadas, e o que impede que gastem
+    // vaga do teto — inclusive a "vaga garantida" do addon, que era como um
+    // addon inteiro acabava representado na home por uma fileira que nunca teve
+    // conteudo. Os alvos de BUSCA ja foram registrados dentro de lerManifesto e
+    // nao passam por aqui: o catalogo continua buscavel, so deixa de fingir que
+    // e fileira.
+    { int r2, w2 = 0, cortados = 0;
+      for (r2 = 0; r2 < nDecl; r2++) {
+        if (decls[r2].exigeParam) {
+          if (cortados < 6)
+            printf("[desc]   fora da home (so responde com busca): %s\n", decls[r2].titulo);
+          cortados++;
+          continue;
+        }
+        if (w2 != r2) decls[w2] = decls[r2];
+        w2++;
+      }
+      if (cortados)
+        printf("[desc] %d catalogo(s) so respondem com busca e nao viram fileira\n", cortados);
+      nDecl = w2; }
     printf("[desc] %d catalogos declarados pelos addons\n", nDecl);
 
     // ALVOS DE BUSCA. Independem da ordem/filtro das FILEIRAS da home: um

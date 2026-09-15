@@ -115,6 +115,43 @@ static int enderecoDeAviso(const char *u) {
          strstr(u, "slate.mp4") || strstr(u, "slate.m3u8") ? 1 : 0;
 }
 
+// PLAYLIST HLS SEM UM SEGMENTO SEQUER e fonte MORTA, e ela passava na
+// verificacao.
+//
+// MEDIDO na LG, canal da FrostView que o dono relatou como "nao toca mais": o
+// proxy devolve HTTP 200, `application/vnd.apple.mpegurl`, 98 bytes:
+//     #EXTM3U
+//     #EXT-X-VERSION:3
+//     #EXT-X-TARGETDURATION:2
+//     #EXT-X-MEDIA-SEQUENCE:0
+//     #EXT-X-PLAYLIST-TYPE:LIVE
+// Cabecalho e mais nada — nenhum #EXTINF, nenhum .ts, nenhuma variante. A
+// origem (praia13.com) responde 522, ou seja o canal caiu e o proxy passou a
+// servir um esqueleto. rede_url_final so pergunta "a URL resolve?", e resolve:
+// a fonte era marcada OK, ia para o pipeline, e o webOS respondia
+// `errorCode 100 "Playing error"` — que e o sintoma sem nenhuma pista.
+// Outro canal do mesmo addon devolve 1585 bytes e toca, entao isto separa
+// fonte morta de fonte viva no mesmo servidor.
+//
+// So para .m3u8: o custo e um GET de poucos KB na fonte que ja ia ser usada, e
+// so acontece na candidata que chegou ate aqui. MP4 continua julgado pelo
+// endereco, como antes.
+static int playlistVazia(const char *url) {
+  char *corpo;
+  long n = 0;
+  int vazia;
+  if (!strstr(url, ".m3u8") && !strstr(url, "m3u8")) return 0;
+  corpo = rede_baixar_bin(url, 8, &n);
+  if (!corpo) return 0;    // nao baixou: nao e prova de vazia, deixa passar
+  // Um segmento (#EXTINF) ou uma variante (#EXT-X-STREAM-INF) bastam. A lista
+  // mestre so tem variantes; a de midia so tem segmentos.
+  vazia = !strstr(corpo, "#EXTINF") && !strstr(corpo, "#EXT-X-STREAM-INF");
+  if (vazia)
+    printf("[fonte] playlist sem segmento (%ld B)\n", n);
+  free(corpo);
+  return vazia;
+}
+
 // VERIFICACAO DAS CANDIDATAS EM PARALELO.
 //
 // Eram ate 8 rede_url_final EM SERIE, 20 s cada — a segunda metade dos 16,5 s
@@ -159,6 +196,10 @@ static void *fioVerificar(void *u) {
     }
     if (enderecoDeAviso(fim)) {
       printf("[fonte] %d e aviso (%.60s)\n", i, fim);
+      continue;
+    }
+    if (playlistVazia(fim)) {
+      printf("[fonte] %d tem playlist vazia (canal fora do ar)\n", i);
       continue;
     }
     verifs[meu].ok = 1;
