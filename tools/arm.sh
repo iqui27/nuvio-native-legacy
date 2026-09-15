@@ -62,6 +62,7 @@ docker run --rm --platform linux/arm64 --env-file "$ENVF" \
     -DNV_SIMKL_CLIENT_ID="\"$NV_SIMKL_CLIENT_ID\"" \
     -DNV_SIMKL_APP="\"$NV_SIMKL_APP\"" \
     -DNV_TMDB_API_KEY="\"$NV_TMDB_API_KEY\"" \
+    -DNV_VERSAO="\"$NV_VERSAO\"" \
     -I$SR/usr/include -I$SR/usr/include/SDL2 \
     -lSDL2 -lSDL2_image -lSDL2_ttf -lGLESv2 -lEGL -ldl -lpthread -lz -lm'
 

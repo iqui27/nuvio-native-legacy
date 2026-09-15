@@ -29,14 +29,20 @@
 #include "traktauth.h"
 #include "simklauth.h"
 #include "qr.h"
+#include "atualizacao.h"
 #include "js.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-// Versao do app: mesma string do appinfo.json empacotado. Fica aqui porque a
-// tela nao tem como ler o manifesto em tempo de execucao no aparelho.
-#define AJ_VERSAO       "1.0.44"
+// Versao do app: vem do build (-DNV_VERSAO, que tools/env.sh le do
+// appinfo.json). Era um literal aqui e ficou parado em 1.0.44 por nove
+// releases — a tela de Ajustes mentia a versao. "dev" so aparece numa
+// compilacao a mao, sem o env.sh.
+#ifndef NV_VERSAO
+#define NV_VERSAO "dev"
+#endif
+#define AJ_VERSAO       NV_VERSAO
 
 #define AJ_LINHA_H       88.0f
 #define AJ_LINHA_GAP      8.0f
@@ -1128,7 +1134,14 @@ int ajustes_quer_sair(void) { return sair; }
 // aparelho — um numero fixo aqui seria mentira e nunca mudaria.
 static const char *textoLeitura(int op) {
   static char buf[64];
-  if (op == AJ_VERSAO_I) return AJ_VERSAO;
+  if (op == AJ_VERSAO_I) {
+    // Com release mais nova no GitHub, a linha diz as duas.
+    if (atualizacao_nova()[0]) {
+      snprintf(buf, sizeof buf, i18n("%s · nova: %s"), AJ_VERSAO, atualizacao_nova());
+      return buf;
+    }
+    return AJ_VERSAO;
+  }
   if (op == AJ_PERFIL_ATIVO) {
     static char bufp[80];
     int i;

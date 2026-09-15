@@ -25,6 +25,20 @@ TRS=$(valor TRAKT_CLIENT_SECRET)
 SMK=$(valor SIMKL_CLIENT_ID)
 SMA=$(valor SIMKL_APP_NAME)
 TMD=$(valor TMDB_API_KEY)
+# A versao do app sai do appinfo.json — FONTE UNICA. Ela ja vivia em tres
+# lugares (appinfo.json, tizen-config.xml e um #define em ajustes.c) e o
+# terceiro ficou parado em 1.0.44 por nove releases: a tela de Ajustes mentia
+# a versao. O binario recebe -DNV_VERSAO e a conferencia do arm.sh exige
+# encontrar o valor dentro dele, como com as demais chaves.
+RAIZ="$(cd "$(dirname "$0")/.." && pwd)"
+VER=$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' "$RAIZ/deploy/app/appinfo.json" | head -1)
+VERT=$(grep -v "<?xml" "$RAIZ/tools/tizen-config.xml" | sed -n 's/.*[[:space:]]version="\([0-9.]*\)".*/\1/p' | head -1)
+if [ -z "$VER" ]; then
+  echo "env.sh: nao achei \"version\" em deploy/app/appinfo.json" >&2; exit 2
+fi
+if [ "$VER" != "$VERT" ]; then
+  echo "env.sh: appinfo.json diz $VER e tizen-config.xml diz $VERT -- alinhe antes de compilar" >&2; exit 2
+fi
 
 if [ -z "$URL" ] || [ -z "$KEY" ]; then
   # Falhar em silencio produziria um .ipk que abre, mostra a tela de login e
@@ -48,10 +62,11 @@ if [ "$1" = "--env-file" ]; then
     printf 'NV_SIMKL_CLIENT_ID=%s\n' "$SMK"
     printf 'NV_SIMKL_APP=%s\n' "$SMA"
     printf 'NV_TMDB_API_KEY=%s\n' "$TMD"
+    printf 'NV_VERSAO=%s\n' "$VER"
   } > "$2"
   chmod 600 "$2"
   exit 0
 fi
 
-printf -- '-DNV_SUPABASE_URL=\\"%s\\" -DNV_SUPABASE_ANON_KEY=\\"%s\\" -DNV_TV_LOGIN_BASE=\\"%s\\" -DNV_TRAKT_CLIENT_ID=\\"%s\\" -DNV_TRAKT_CLIENT_SECRET=\\"%s\\" -DNV_SIMKL_CLIENT_ID=\\"%s\\" -DNV_SIMKL_APP=\\"%s\\" -DNV_TMDB_API_KEY=\\"%s\\"' \
-  "$URL" "$KEY" "$TVB" "$TRK" "$TRS" "$SMK" "$SMA" "$TMD"
+printf -- '-DNV_SUPABASE_URL=\\"%s\\" -DNV_SUPABASE_ANON_KEY=\\"%s\\" -DNV_TV_LOGIN_BASE=\\"%s\\" -DNV_TRAKT_CLIENT_ID=\\"%s\\" -DNV_TRAKT_CLIENT_SECRET=\\"%s\\" -DNV_SIMKL_CLIENT_ID=\\"%s\\" -DNV_SIMKL_APP=\\"%s\\" -DNV_TMDB_API_KEY=\\"%s\\" -DNV_VERSAO=\\"%s\\"' \
+  "$URL" "$KEY" "$TVB" "$TRK" "$TRS" "$SMK" "$SMA" "$TMD" "$VER"

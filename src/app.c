@@ -39,6 +39,7 @@
 #include "salvospainel.h"
 #include "salvosintro.h"
 #include "novidades.h"
+#include "atualizacao.h"
 #include "pipintro.h"
 #include "social.h"
 #include "ajustes.h"
@@ -379,6 +380,7 @@ void app_evento(const SDL_Event *e) {
   // esta no ar — o Voltar aqui escolhe "fechar o video", nao so fecha cartao.
   if (pipintro_aberto()) { pipintro_evento(e); return; }
   if (novidades_aberto()) { novidades_evento(e); return; }
+  if (atualizacao_aberta()) { atualizacao_evento(e); return; }
 
   // A folha de fontes fica acima de tudo: ela e uma pergunta, e enquanto ela
   // esta em pe nada mais deve responder ao D-pad.
@@ -630,6 +632,13 @@ void app_atualizar(float dt, Uint32 agora) {
     // O cartao do Guia de TV espera o de Salvos sair — dois cartoes de
     // primeira vez ao mesmo tempo seria um em cima do outro.
     if (!registro_aberto() && !sintro_aberto()) novidades_primeira_vez();
+    // AVISO DE VERSAO NOVA: a consulta ao GitHub so parte quando a home esta
+    // de pe (nao disputa a rede com o catalogo), e o cartao so abre quando
+    // nenhum outro cartao de primeira vez esta aberto.
+    atualizacao_verificar();
+    if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
+        !pipintro_aberto())
+      atualizacao_mostrar_se_houver();
   }
 
   // E o ciclo automatico — nunca com o player aberto: rajada de HTTP no meio
@@ -1184,6 +1193,7 @@ void app_atualizar(float dt, Uint32 agora) {
   spainel_atualizar(dt, agora);
   sintro_atualizar(dt, agora);
   novidades_atualizar(dt, agora);
+  atualizacao_atualizar(dt, agora);
   pipintro_atualizar(dt, agora);
   if(tela==TELA_SOCIAL) social_atualizar(dt, agora);
   if(tela==TELA_ADDONS) addonsui_atualizar(dt, agora);
@@ -1307,6 +1317,7 @@ void app_desenhar(Uint32 agora) {
   player_mini_desenhar(agora);
   if (!registro_aberto()) sintro_desenhar(agora);
   if (!registro_aberto()) novidades_desenhar(agora);
+  if (!registro_aberto()) atualizacao_desenhar(agora);
   if (!registro_aberto()) pipintro_desenhar(agora);
   registro_desenhar();
 }
