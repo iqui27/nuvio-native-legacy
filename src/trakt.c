@@ -56,6 +56,9 @@ int trakt_operacao_estado(int tipo) {
 
 int trakt_ativo(void) { return ligado; }
 
+// Definida junto de trakt_social; declarada aqui porque trakt_definir a chama.
+void trakt_social_reavaliar(void);
+
 // A CREDENCIAL FOI RECUSADA (HTTP 401). O 401 so chegava ao log — a tela
 // seguia dizendo "conectado" e o dono so percebia quando o "Continuar
 // assistindo" nao vinha. Quem avisa e a camada de rede (rede_avisar_401),
@@ -66,7 +69,16 @@ static volatile int credRecusada;
 static void avisoHttp401(const char *url) {
   // /oauth/* responde 401 por credencial de APLICATIVO ruim — e problema do
   // pacote, nao da sessao do usuario.
-  if (!strstr(url, "api.trakt.tv") || strstr(url, "/oauth/")) return;
+  //
+  // .../activities TAMBEM NAO E PROVA DE NADA. MEDIDO na LG com o token bom
+  // desta TV: friends/activities e following/activities respondem 401 SEMPRE
+  // (o feed agregado exige um escopo que esta conta nao tem), enquanto
+  // sync/playback, sync/history e as listas respondem 200 com o MESMO token.
+  // Como este aviso disparava neles, TODO arranque marcava "credencial
+  // recusada", gastava o refresh token (que o Trakt gira a cada uso) e ainda
+  // pedia remontagem da home. O fallback honesto ja existe em socialPorSeguidos.
+  if (!strstr(url, "api.trakt.tv") || strstr(url, "/oauth/") ||
+      strstr(url, "/activities")) return;
   if (ligado && !estadoLer(&credRecusada)) {
     estadoEscrever(&credRecusada, 1);
     printf("[trakt] HTTP 401: credencial recusada — renovacao pendente\n");
@@ -90,6 +102,7 @@ int trakt_definir(const char *tk, const char *cli) {
   // Token NOVO limpa a marca de recusa — e o mesmo caminho por onde a
   // renovacao (traktauth) e o pareamento novo chegam.
   estadoEscrever(&credRecusada, 0);
+  trakt_social_reavaliar();
   rede_avisar_401(avisoHttp401);
   printf("[trakt] credencial da conta: %s\n",
          ligado ? "ativa" : "sem client id do aplicativo (ver tools/env.sh)");
@@ -136,6 +149,77 @@ int trakt_carregar(const char *dirArte) {
   rede_avisar_401(avisoHttp401);
   printf("[trakt] %s\n", ligado ? "credencial carregada" : "credencial incompleta");
   return ligado;
+}
+
+
+// A PRIMEIRA URL DE UMA LISTA DE IMAGENS do bloco "images" do Trakt.
+//
+// `?extended=full` ja devolve, dentro de cada movie/show, um objeto assim:
+//   "images":{"logo":["media.trakt.tv/.../x.png.webp"],"fanart":[...],
+//             "poster":[...],"thumb":[],"banner":[],"clearart":[]}
+// MEDIDO na LG: os 39 itens de /sync/playback traziam poster e fanart, 37
+// traziam logo. Cada uma dessas artes custava um GET ao Cinemeta que agora nao
+// precisa acontecer.
+//
+// js_texto nao serve: o valor e um ARRAY de strings, nao uma string. As URLs
+// vem SEM esquema ("media.trakt.tv/..."), entao o https:// e colado aqui.
+static int imagemTrakt(const char *bloco, const char *fim, const char *chave,
+                       char *dst, size_t n) {
+  char alvo[24];
+  const char *img, *p, *ini;
+  size_t L;
+  if (!bloco || !dst || !n) return 0;
+  img = strstr(bloco, "\"images\"");
+  if (!img || (fim && img >= fim)) return 0;
+  snprintf(alvo, sizeof alvo, "\"%s\"", chave);
+  p = strstr(img, alvo);
+  if (!p || (fim && p >= fim)) return 0;
+  p = strchr(p + strlen(alvo), '[');
+  if (!p) return 0;
+  // Lista VAZIA ("thumb":[]) nao e arte: nao inventar uma.
+  while (*++p && (unsigned char)*p <= ' ') { }
+  if (*p != '"') return 0;
+  ini = ++p;
+  while (*p && *p != '"') p++;
+  L = (size_t)(p - ini);
+  if (!L || L + 9 >= n) return 0;
+  if (!strncmp(ini, "http", 4)) snprintf(dst, n, "%.*s", (int)L, ini);
+  else                          snprintf(dst, n, "https://%.*s", (int)L, ini);
+  return 1;
+}
+
+// O QUE O PROPRIO TRAKT JA MANDOU, aproveitado em vez de rebaixado.
+// Preenche arte, sinopse e a legenda (ano/duracao/minutos que faltam) a partir
+// do bloco movie/show de `?extended=full`. Quem sai daqui com poster, backdrop
+// e sinopse nao volta ao Cinemeta — ver a guarda em trakt_enfeitar_lote.
+static void doBlocoTrakt(CatItem *d, const char *bloco, const char *fim,
+                         const char *tipo) {
+  int minutos, ano;
+  if (!bloco) return;
+  imagemTrakt(bloco, fim, "poster", d->poster, sizeof d->poster);
+  imagemTrakt(bloco, fim, "fanart", d->backdrop, sizeof d->backdrop);
+  imagemTrakt(bloco, fim, "logo",   d->logo,     sizeof d->logo);
+  if (!d->backdrop[0]) snprintf(d->backdrop, sizeof d->backdrop, "%s", d->poster);
+  if (!d->sinopse[0]) js_texto(bloco, fim, "overview", d->sinopse, sizeof d->sinopse);
+  minutos = (int)js_num(bloco, fim, "runtime", 0.0);
+  ano     = (int)js_num(bloco, fim, "year", 0.0);
+  if (ano > 0 || minutos > 0) {
+    char a[16] = "", r[16] = "";
+    if (ano > 0)     snprintf(a, sizeof a, "%d", ano);
+    if (minutos > 0) snprintf(r, sizeof r, "%d min", minutos);
+    snprintf(d->meta, sizeof d->meta, "%s%s%s", a,
+             (a[0] && r[0]) ? "  \xc2\xb7  " : "", r);
+  }
+  // Mesma conta de enfeitar: a porcentagem e do Trakt, a duracao e daqui.
+  if (minutos > 0) {
+    if (d->progresso > 0 && d->progresso < 100)
+      d->restanteMin = minutos - (minutos * d->progresso) / 100;
+    else if (d->progresso == 0)
+      d->restanteMin = minutos;
+  }
+  snprintf(d->genero, sizeof d->genero, "%s",
+           (tipo && !strcmp(tipo, "series")) ? "Programa de TV" : "Filme");
+  if (!d->classificacao[0]) snprintf(d->classificacao, sizeof d->classificacao, "14");
 }
 
 // Arte e sinopse por id do IMDb. O Trakt devolve so identificadores e
@@ -250,7 +334,11 @@ static void *fioEnfeitar(void *u) {
     if (enfProx >= enfN) { pthread_mutex_unlock(&enfTrava); return NULL; }
     meu = enfProx++;
     pthread_mutex_unlock(&enfTrava);
-    enfTarefas[meu].ok = enfeitar(enfTarefas[meu].d, enfTarefas[meu].tipo);
+    { CatItem *d = enfTarefas[meu].d;
+      // Pronto = nao ha o que buscar. `ok` fica 1 para ele sobreviver a
+      // compactacao logo abaixo.
+      if (d->poster[0] && d->backdrop[0] && d->sinopse[0]) enfTarefas[meu].ok = 1;
+      else enfTarefas[meu].ok = enfeitar(d, enfTarefas[meu].tipo); }
   }
 }
 
@@ -263,7 +351,18 @@ static void *fioEnfeitar(void *u) {
 // (descoberta.c, sem Trakt) precisa exatamente do mesmo enfeite: tem imdb,
 // tipo e porcentagem, e falta arte, sinopse e minutos restantes.
 int trakt_enfeitar_lote(CatItem *saida, int n) {
+  int jaFeitos = 0, q0;
   if (n <= 0) return 0;
+  // QUEM JA TEM TUDO NAO VOLTA A REDE. O item vindo do Trakt com
+  // `?extended=full` chega com arte e sinopse (ver doBlocoTrakt); o item vindo
+  // do progresso LOCAL chega zerado e continua precisando do Cinemeta. A
+  // guarda e por CONTEUDO e nao por origem, entao serve as duas fontes.
+  for (q0 = 0; q0 < n; q0++)
+    if (saida[q0].poster[0] && saida[q0].backdrop[0] && saida[q0].sinopse[0])
+      jaFeitos++;
+  if (jaFeitos) { printf("[trakt] enfeite: %d de %d ja vieram prontos\n", jaFeitos, n);
+                  fflush(stdout); }
+  if (jaFeitos == n) return n;
   enfTarefas = calloc((size_t)n, sizeof(TarefaEnf));
   if (enfTarefas) {
     pthread_t fios[TK_FIOS];
@@ -286,7 +385,8 @@ int trakt_enfeitar_lote(CatItem *saida, int n) {
     // Sem memoria para a fila: em serie, no proprio fio.
     int r, w;
     for (r = 0, w = 0; r < n; r++)
-      if (enfeitar(&saida[r], saida[r].tipo)) { if (w != r) saida[w] = saida[r]; w++; }
+      if ((saida[r].poster[0] && saida[r].backdrop[0] && saida[r].sinopse[0]) ||
+          enfeitar(&saida[r], saida[r].tipo)) { if (w != r) saida[w] = saida[r]; w++; }
     n = w;
   }
   return n;
@@ -506,6 +606,10 @@ int trakt_continuar(CatItem *saida, int max) {
           const char *fb = js_fim(strchr(bloco, '{'));
           js_texto(bloco, fb, "title", d->titulo, sizeof d->titulo);
           js_texto(bloco, fb, "imdb", imdb, sizeof imdb);
+          // ARTE, SINOPSE E DURACAO JA VEM AQUI (extended=full). Sem isto cada
+          // item custava um GET ao Cinemeta — ate 15 deles antes de a primeira
+          // fileira da home existir.
+          doBlocoTrakt(d, bloco, fb, serie ? "series" : "movie");
         } }
       if (!imdb[0]) { p = js_prox(f); continue; }
       if (serie) {
@@ -601,22 +705,38 @@ static char *socialPorSeguidos(const char *const *cab, int max) {
   return out;
 }
 
+// Zerada por trakt_definir: credencial nova pode ter o escopo que faltava.
+static volatile int socialSemFeed;
+void trakt_social_reavaliar(void) { socialSemFeed = 0; }
+
 int trakt_social(CatItem *saida, int max) {
   const char *cab[4];
   char aut[200], chave[140], *corpo;
   const char *p;
   int n = 0;
+  // O FEED AGREGADO NAO EXISTE PARA ESTA CONTA, e isso nao muda no meio da
+  // sessao. MEDIDO na LG: os dois /activities respondem 401 sempre, e o app
+  // pagava os dois em TODO ciclo da home antes de cair no fallback. Um token
+  // novo (trakt_definir) zera a marca, porque ai a resposta pode mudar.
   if (!ligado || max < 1) return 0;
   if (!trakt_cabecalhos(cab, aut, sizeof aut, chave, sizeof chave)) return 0;
-  corpo = rede_baixar_com(
-    "https://api.trakt.tv/users/me/friends/activities?extended=full&page=1&limit=12",
-    20, cab);
-  // Contas sem o escopo social novo podem receber 401 no grafo `friends`,
-  // embora o token continue valido para historico. `following` e o fallback
-  // honesto: ainda sao pessoas escolhidas pelo dono, nunca atividade global.
-  if (!corpo) corpo = rede_baixar_com(
-    "https://api.trakt.tv/users/me/following/activities?extended=full&page=1&limit=12",
-    20, cab);
+  corpo = NULL;
+  if (!socialSemFeed) {
+    corpo = rede_baixar_com(
+      "https://api.trakt.tv/users/me/friends/activities?extended=full&page=1&limit=12",
+      20, cab);
+    // Contas sem o escopo social novo podem receber 401 no grafo `friends`,
+    // embora o token continue valido para historico. `following` e o fallback
+    // honesto: ainda sao pessoas escolhidas pelo dono, nunca atividade global.
+    if (!corpo) corpo = rede_baixar_com(
+      "https://api.trakt.tv/users/me/following/activities?extended=full&page=1&limit=12",
+      20, cab);
+    if (!corpo) {
+      socialSemFeed = 1;
+      printf("[trakt] feed agregado indisponivel nesta conta; usando os seguidos\n");
+      fflush(stdout);
+    }
+  }
   if (!corpo) corpo=socialPorSeguidos(cab,max);
   if (!corpo) { printf("[trakt] feed social indisponivel\n"); return 0; }
   p = strchr(corpo, '['); p = p ? p + 1 : NULL;
@@ -655,6 +775,7 @@ int trakt_social(CatItem *saida, int max) {
       js_texto(bs, fb, "title", d->titulo, sizeof d->titulo);
       js_texto(bs, fb, "imdb", imdb, sizeof imdb);
       snprintf(d->tipo, sizeof d->tipo, "series");
+      doBlocoTrakt(d, bs, fb, "series");
       if (be && be < f) {
         const char *fe = js_fim(strchr(be, '{'));
         d->temporada = (int)js_num(be, fe, "season", 0);
@@ -673,6 +794,7 @@ int trakt_social(CatItem *saida, int max) {
       js_texto(bm, fb, "title", d->titulo, sizeof d->titulo);
       js_texto(bm, fb, "imdb", imdb, sizeof imdb);
       snprintf(d->tipo, sizeof d->tipo, "movie");
+      doBlocoTrakt(d, bm, fb, "movie");
       snprintf(d->direcao, sizeof d->direcao, "Filme");
     }
     if (!imdb[0]) { p = js_prox(f); continue; }

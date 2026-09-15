@@ -285,7 +285,43 @@ static int   (*curl_global)(long);
 static void *(*slist_append)(void *, const char *);
 static void  (*slist_free)(void *);
 static int   (*curl_getinfo)(void *, int, ...);
+static void  (*curl_reset)(void *);
 static int    pronto;
+
+// UM HANDLE POR FIO, REUSADO, e nao um novo por pedido.
+//
+// Cada `curl_easy_init` + `perform` + `cleanup` abria conexao NOVA: DNS + TCP +
+// handshake TLS numa CPU de 2019, para cada imagem e cada chamada de API.
+// MEDIDO na LG com o curl da propria TV, mesma URL, conexao nova x reusada:
+// metahub (poster) 190 -> 27 ms, cinemeta 212 -> 40 ms, image.tmdb.org
+// 875 -> 176 ms. So o handshake custa 150-200 ms (trakt, cinemeta, metahub) e
+// ~500 ms no tmdb — numa imagem de 20 KB, 80% do tempo era abrir a conexao.
+//
+// O cache de conexoes e de DNS da libcurl vive DENTRO do handle facil; jogar o
+// handle fora a cada pedido jogava os dois fora. Um handle por fio (chave
+// pthread, destruido quando o fio morre) mantem as conexoes abertas entre
+// pedidos do mesmo fio sem partilhar nada entre fios — `curl_easy_*` nao pode
+// ser usado por dois fios ao mesmo tempo, e assim nunca e. `curl_easy_reset`
+// limpa as opcoes do pedido anterior e PRESERVA conexoes, DNS e sessoes TLS.
+//
+// Bonus: `curl_easy_cleanup` era onde o OpenSSL 1.0 morria (ver
+// prepararOpenSSL); agora ele so roda no fim do fio.
+static pthread_key_t handleChave;
+static pthread_once_t handleUma = PTHREAD_ONCE_INIT;
+static void handleSoltar(void *c) { if (c && curl_cleanup) curl_cleanup(c); }
+static void handleCriarChave(void) { pthread_key_create(&handleChave, handleSoltar); }
+static void *pegarHandle(void) {
+  void *c;
+  if (!curl_reset) return curl_init();     // libcurl sem reset: como antes
+  pthread_once(&handleUma, handleCriarChave);
+  c = pthread_getspecific(handleChave);
+  if (c) { curl_reset(c); return c; }
+  c = curl_init();
+  if (c) pthread_setspecific(handleChave, c);
+  return c;
+}
+// Devolve o handle ao fio. So destroi de verdade quando nao ha reuso.
+static void soltarHandle(void *c) { if (!curl_reset) curl_cleanup(c); }
 
 typedef struct { char *p; size_t n; } Balde;
 
@@ -490,7 +526,7 @@ static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
   int r;
   if (status) *status = 0;
   if (!url || !*url || !abrir()) return NULL;
-  c = curl_init();
+  c = pegarHandle();
   if (!c) return NULL;
   curl_setopt(c, OPT_URL, url);
   curl_setopt(c, OPT_WRITEFUNCTION, receber);
@@ -534,16 +570,16 @@ static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
     if (status) *status = (int)http;
     if (http == 401 && aviso401) aviso401(url);
     if (!r && http >= 400 && !status) {
-      curl_cleanup(c);
-      if (lista && slist_free) slist_free(lista);
+      if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
+      soltarHandle(c);
       free(b.p);
       { char seg[120];
         printf("[rede] HTTP %ld em %s\n", http, rede_url_publica(url, seg, sizeof seg)); }
       fflush(stdout);
       return NULL;
     } }
-  curl_cleanup(c);
-  if (lista && slist_free) slist_free(lista);
+  if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
+  soltarHandle(c);
   // 23 = CURLE_WRITE_ERROR. Quando ha teto, ele e o resultado ESPERADO: o
   // recebedor devolve menos bytes de proposito para cortar a conexao assim que
   // enche. Nesse caso o que ja veio e exatamente o que se queria — tratar como
@@ -562,7 +598,7 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
   char *fim = NULL;
   int r;
   if (!url || !*url || !abrir() || !curl_getinfo) return 0;
-  c = curl_init();
+  c = pegarHandle();
   if (!c) return 0;
   curl_setopt(c, OPT_URL, url);
   curl_setopt(c, OPT_WRITEFUNCTION, receber);
@@ -579,7 +615,7 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
   r = curl_perform(c);
   if (!r) curl_getinfo(c, INFO_URL_FINAL, &fim);
   if (!r && fim) snprintf(dst, tam, "%s", fim);
-  curl_cleanup(c);
+  soltarHandle(c);
   free(b.p);
   return (!r && fim) ? 1 : 0;
 }
@@ -598,7 +634,7 @@ char *rede_apagar(const char *url, int segundos, const char *const *cab,
   int r;
   if (status) *status = 0;
   if (!url || !*url || !abrir()) return NULL;
-  c = curl_init();
+  c = pegarHandle();
   if (!c) return NULL;
   curl_setopt(c, OPT_URL, url);
   curl_setopt(c, OPT_WRITEFUNCTION, receber);
@@ -619,8 +655,8 @@ char *rede_apagar(const char *url, int segundos, const char *const *cab,
     if (!r && curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &h);
     if (status) *status = (int)h;
     if (h == 401 && aviso401) aviso401(url); }
-  if (lista && slist_free) slist_free(lista);
-  curl_cleanup(c);
+  if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
+  soltarHandle(c);
   if (r != 0) { free(b.p); return NULL; }
   // 204 sem corpo e a resposta NORMAL de um DELETE aceito: devolver NULL ali
   // faria o chamador ler sucesso como falha de transporte.
@@ -635,7 +671,7 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cab,
   int r;
   if (status) *status = 0;
   if (!url || !*url || !abrir()) return NULL;
-  c = curl_init();
+  c = pegarHandle();
   if (!c) return NULL;
   curl_setopt(c, OPT_URL, url);
   curl_setopt(c, OPT_WRITEFUNCTION, receber);
@@ -663,8 +699,8 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cab,
     if (!r && curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &codigo);
     if (status) *status = (int)codigo;
     if (codigo == 401 && aviso401) aviso401(url); }
-  curl_cleanup(c);
-  if (lista && slist_free) slist_free(lista);
+  if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
+  soltarHandle(c);
   // Falha de TRANSPORTE (r != 0) continua sendo NULL — ai nao houve resposta
   // nenhuma. O corpo de um 4xx, ao contrario, e devolvido: e nele que o
   // PostgREST explica o que faltou.
