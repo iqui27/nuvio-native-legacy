@@ -2955,8 +2955,9 @@ static float cabecalhoComentarios(float x, float y, float a) {
       if (f > 0.01f && !sel) {
         GfxRect anel = { r.x - NV_ANEL_FOCO, r.y - NV_ANEL_FOCO,
                          r.w + NV_ANEL_FOCO * 2, r.h + NV_ANEL_FOCO * 2 };
+        float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
         gfx_rect(anel, 0, GFX_ANEL, 0, NV_ANEL_FOCO / anel.h, 0, NV_RAIO_PILL,
-                 1, 1, 1, f * a);
+                 ar, ag, ab, f * a);
       }
       { int cor = sel ? 17 : 255;
         TxtLinha l = txt_linha(TXT_PLR_CORPO, COM_ROT[k], cor, cor, cor, 255);
@@ -3004,8 +3005,9 @@ static void desenhaComentarios(float x, float y, float a) {
                        card.w + NV_ANEL_FOCO * 2, card.h + NV_ANEL_FOCO * 2 };
       // Raio EXTERNO = raio do cartao + espessura do anel, senao o canto do
       // anel fica mais quadrado que o do cartao e as duas curvas descasam.
+      float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
       gfx_rect(anel, 0, GFX_ANEL, 0, NV_ANEL_FOCO / anel.h, 0,
-               (20.0f + NV_ANEL_FOCO) / anel.h, 1, 1, 1, a);
+               (20.0f + NV_ANEL_FOCO) / anel.h, ar, ag, ab, a);
     }
 
     { TxtLinha lu = txt_linha_corta(TXT_ROW_TITULO,

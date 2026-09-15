@@ -129,9 +129,11 @@ void addonsui_desenhar(Uint32 agora) {
 
     gfx_cor(linha, RAIO, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
             (0.34f + 0.66f * f) * a);
-    if (i == foco)
+    if (i == foco) {
+      float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
       gfx_rect(linha, 0, GFX_ANEL, 0, NV_ANEL_FOCO / LINHA_H, 0,
-               RAIO, 0.96f, 0.96f, 0.97f, a);
+               RAIO, ar, ag, ab, a);
+    }
 
     // Addon desligado fica apagado, e o estado vai ESCRITO na direita: cor
     // sozinha nao diz se aquilo esta ligado ou so sem foco.

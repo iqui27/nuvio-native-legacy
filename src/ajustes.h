@@ -34,6 +34,12 @@ int ajustes_dolby_atmos(void);
 // pausar o video. Ver pausao.h.
 int ajustes_pausa_overlay(void);
 int ajustes_idioma_ingles(void);
+
+// COR DO ANEL DE FOCO, escolhida em "Cor de destaque" ou herdada da conta
+// (selected_theme). Um "tema" neste app e so isto: ver TEMA_ACENTO em
+// ajustes.c para o motivo de nao ser a paleta inteira. Branco e o padrao, que
+// e exatamente o anel que sempre existiu.
+void ajustes_acento(float *r, float *g, float *b);
 // "Automática", "4K", "1080p" ou "720p" — o rotulo exibido, para quem seleciona
 // a fonte de video mostrar exatamente o que o usuario escolheu.
 const char *ajustes_qualidade(void);

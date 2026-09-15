@@ -2017,9 +2017,10 @@ static void desenhaAtalhos(int r, float y) {
     GfxRect card = {x, y, w, h};
     if (f > .01f) {
       float menor = w < h ? w : h;
+      float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
       gfx_cor((GfxRect){x - NV_ANEL_FOCO, y - NV_ANEL_FOCO,
         w + 2*NV_ANEL_FOCO, h + 2*NV_ANEL_FOCO},
-        (raio * menor + NV_ANEL_FOCO) / (menor + 2*NV_ANEL_FOCO), .96f, .97f, .98f, f);
+        (raio * menor + NV_ANEL_FOCO) / (menor + 2*NV_ANEL_FOCO), ar, ag, ab, f);
     }
     gfx_cor(card, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, 1);
     const ColFolder *folder=col_folder(fileiras[r].folders[c]);if(!folder)continue;
@@ -2409,7 +2410,8 @@ void home_desenhar(Uint32 agora) {
           if (f > 0.01f) {
             GfxRect borda = { px - NV_ANEL_FOCO, py - NV_ANEL_FOCO,
                               w + NV_ANEL_FOCO * 2, h + NV_ANEL_FOCO * 2 };
-            gfx_cor(borda, raio, 1.0f, 1.0f, 1.0f, f);
+            float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+            gfx_cor(borda, raio, ar, ag, ab, f);
           }
           GfxRect card = { px, py, w, h };
           // CARD SEM ARTE: superficie solida, nao o vazio. Sem isto o card

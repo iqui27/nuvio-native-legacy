@@ -103,7 +103,7 @@ typedef enum {
   // Tamanho do item
   AJ_LARGURA_DP, AJ_RAIO_DP,
   // Interface
-  AJ_IDIOMA, AJ_ANIM, AJ_RESOLUCAO,
+  AJ_IDIOMA, AJ_ANIM, AJ_RESOLUCAO, AJ_TEMA,
   // Conta
   AJ_PERFIL_ATIVO, AJ_SYNC, AJ_ADDONS, AJ_SALVOS_DEST, AJ_TRAKT, AJ_SIMKL, AJ_SAIR,
   // Sobre
@@ -177,6 +177,44 @@ static const char *V_TMDB_LING[] = {
 // anterior era 24 e TRUNCAVA em silencio — os idiomas do fim da lista existiam
 // em linguas.c e nao apareciam na tela.
 #define LING_MAX_OPC 32
+// TEMA: a cor de DESTAQUE, e so ela.
+//
+// O app web tem doze temas e cada um troca onze variaveis de CSS, o fundo
+// incluido. Aqui entra UMA: `--focus-color`, o anel que marca onde o foco
+// esta. E a escolha honesta para este app, e a razao esta medida: os tons de
+// cinza desta interface foram calibrados um a um contra o fundo #0D0D0D (ver
+// NV_COR_FUNDO em layout.h, e o defeito de contraste 1,0:1 que ele descreve).
+// Trocar o fundo por tema invalidaria essa calibragem inteira, sem ninguem
+// para refaze-la. O anel, ao contrario, e sempre branco hoje: tingi-lo nao
+// depende de recalibrar nada e e o elemento que o olho segue no sofa.
+//
+// Os valores sao os `--focus-color` de themeColors.js do app web, copiados,
+// nao escolhidos — e por isso a TV mostra a mesma cor que a pessoa viu la.
+static const struct { float r, g, b; } TEMA_ACENTO[] = {
+  { 1.000f, 1.000f, 1.000f },   // WHITE        #ffffff
+  { 1.000f, 0.322f, 0.322f },   // CRIMSON      #ff5252
+  { 0.259f, 0.647f, 0.961f },   // OCEAN        #42a5f5
+  { 0.671f, 0.278f, 0.737f },   // VIOLET       #ab47bc
+  { 0.400f, 0.733f, 0.416f },   // EMERALD      #66bb6a
+  { 1.000f, 0.655f, 0.149f },   // AMBER        #ffa726
+  { 0.925f, 0.251f, 0.478f },   // ROSE         #ec407a
+  { 1.000f, 0.831f, 0.361f },   // GOLD         #ffd45c
+  { 0.482f, 0.941f, 0.553f },   // JADE         #7bf08d
+  { 1.000f, 0.702f, 0.478f },   // ROSE_GOLD    #ffb37a
+  { 0.302f, 0.890f, 1.000f },   // ARCTIC_BLUE  #4de3ff
+  { 0.953f, 0.961f, 0.969f },   // GRAPHITE     #f3f5f7
+};
+#define AJ_N_TEMAS (int)(sizeof TEMA_ACENTO / sizeof *TEMA_ACENTO)
+static const char *V_TEMA[] = {
+  "Branco", "Carmesim", "Oceano", "Violeta", "Esmeralda", "Âmbar",
+  "Rosa", "Dourado", "Jade", "Ouro rosé", "Azul ártico", "Grafite"
+};
+// MESMA ORDEM de TEMA_ACENTO e de V_TEMA: e o indice que liga os tres.
+static const char *W_TEMA[] = {
+  "WHITE", "CRIMSON", "OCEAN", "VIOLET", "EMERALD", "AMBER",
+  "ROSE", "GOLD", "JADE", "ROSE_GOLD", "ARCTIC_BLUE", "GRAPHITE", NULL
+};
+
 static const char *V_LINGUA[LING_MAX_OPC];
 static int         nLingua;
 static void rotulosDeIdioma(void) {
@@ -288,6 +326,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Idioma",                     V_IDIOMA, 2),
   ESC("Animações",                  V_ANIM, 2),
   ESC("Resolução da interface",     V_RESOLUCAO, 2),
+  ESC("Cor de destaque",            V_TEMA, AJ_N_TEMAS),  // selected_theme
 
   LER("Perfil"),
   LER("Sincronização"),
@@ -370,6 +409,12 @@ static const char *CHAVE[] = {
   "cardDepthCastEnabled", "cardDepthTrailersEnabled",
   "posterCardWidthDp", "posterCardCornerRadiusDp",
   "idioma", "animacoes", "resolucao_ui",
+  // A conta JA MANDAVA esta chave e o app a jogava fora: ela vem dentro de
+  // theme_settings no blob de ajustes (profileSettingsSyncService.js), e o
+  // laco de ajustes_aplicar_blob so procura as chaves que estao nesta lista.
+  // Quem escolher JADE no app web ganha o anel jade na TV sem configurar de
+  // novo — e o contrario tambem vale.
+  "selected_theme",
   // Conta: sao linhas locais, nao vem nem vao para o perfil na nuvem.
   // "salvosDestino" e LOCAL como cwFonteLocal, e por isso SEM o "-": o app
   // oficial nao tem esta escolha, entao nao ha campo dela no blob da conta —
@@ -445,7 +490,7 @@ static const struct {
   { "Continuar assistindo", "Retomar",    "avancar",      AJ_CW_LIGADO,            8 },
   { "Página de detalhes",   "Detalhes",   "episodios",    AJ_DET_BLUR_NAO_VISTOS,  4 },
   { "Pôsteres e cards",     "Cartazes",   "aspecto",      AJ_EXPANDIR,            14 },
-  { "Interface e conta",    "Conta",      "menu_profile", AJ_IDIOMA,              12 },
+  { "Interface e conta",    "Conta",      "menu_profile", AJ_IDIOMA,              13 },
   { "Integrações",          "Integrações","addon",        AJ_TMDB_LIGADO,         24 },
 };
 #define AJ_N_SECOES (int)(sizeof SECOES / sizeof *SECOES)
@@ -659,6 +704,15 @@ int ajustes_dolby_atmos(void)         { return lig(AJ_ATMOS); }
 int ajustes_pausa_overlay(void)       { return lig(AJ_PAUSA_OVERLAY); }
 int ajustes_idioma_ingles(void)       { return valor[AJ_IDIOMA] == 1; }
 
+// Cor do ANEL DE FOCO. Ver TEMA_ACENTO: um tema aqui e so isto.
+void ajustes_acento(float *r, float *g, float *b) {
+  int i = valor[AJ_TEMA];
+  if (i < 0 || i >= AJ_N_TEMAS) i = 0;   // arquivo de outra versao: branco
+  if (r) *r = TEMA_ACENTO[i].r;
+  if (g) *g = TEMA_ACENTO[i].g;
+  if (b) *b = TEMA_ACENTO[i].b;
+}
+
 // `collapseSidebar: modernSidebar ? false : Boolean(collapseSidebar)` — a barra
 // moderna DESLIGA o recolhimento, e nao o contrario. Copiado de
 // normalizeLayoutPreferences para nao inventar precedencia.
@@ -849,6 +903,7 @@ static const char *const *literaisDe(int op) {
     case AJ_CW_ESTILO:  return W_CW;
     case AJ_CW_ORDEM:   return W_CW_ORDEM;
     case AJ_TMDB_IDIOMA: return W_TMDB_LING;
+    case AJ_TEMA:       return W_TEMA;
     default:            return NULL;
   }
 }
@@ -1281,6 +1336,7 @@ static const char *ajudaOpcao(int op) {
 
     // --- Interface e conta
     case AJ_IDIOMA: return "Idioma de toda a interface. Não muda o idioma das legendas nem do áudio.";
+    case AJ_TEMA: return "Cor do anel que marca onde está o foco. É a mesma escolha de tema do app web, e vale só para o anel: o resto da interface não muda de cor.";
     case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";
     case AJ_RESOLUCAO: return "Desenha a interface em 4K nas TVs que permitem. Muitas ignoram o pedido e continuam em 1080p — o log diz qual é o caso. Vale reiniciar o app depois de mudar. O vídeo já é 4K nos dois casos.";
     case AJ_PERFIL_ATIVO: return "Perfil em uso nesta TV. Trocar de perfil é feito na tela de perfis, ao abrir o app.";
@@ -1722,9 +1778,11 @@ static void desenhaLinha(int op, float y, float f) {
   // Mesmo vocabulário do menu: superfície escura, texto claro e foco explícito.
   gfx_cor(linha, AJ_RAIO, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
           (0.34f + 0.66f * f) * a);
-  if (op == focoOp)
+  if (op == focoOp) {
+    float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
     gfx_rect(linha, 0, GFX_ANEL, 0, NV_ANEL_FOCO / AJ_LINHA_H, 0,
-             AJ_RAIO, 0.96f, 0.96f, 0.97f, a);
+             AJ_RAIO, ar, ag, ab, a);
+  }
 
   // Uma linha inativa fica visivelmente mais apagada QUE a de leitura: leitura e
   // informacao, inativa e "isto existe mas depende de outra coisa".
@@ -1904,9 +1962,11 @@ static void desenhaIndice(void) {
     TxtLinha t;
     gfx_cor(r, raio, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
             atual ? (focoIndice ? 1.0f : 0.60f) : 0.26f);
-    if (atual && focoIndice)
+    if (atual && focoIndice) {
+      float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
       gfx_rect(r, 0, GFX_ANEL, 0, NV_ANEL_FOCO / AJ_IDX_H, 0, raio,
-               0.96f, 0.96f, 0.97f, 1.0f);
+               ar, ag, ab, 1.0f);
+    }
     // O ICONE E A ANCORA da varredura de olho: a 3 m o nome da categoria e
     // texto pequeno, e o simbolo e o que se reconhece antes de ler.
     gfx_icone(ic, SECOES[s].icone, ci, ci, ci, 1.0f);
@@ -2066,8 +2126,9 @@ static void desenhaFileiras(void) {
       // indistinguiveis.
       GfxRect cel = { cx + AJ_FIL_COL[filCampo].x - 12.0f, y,
                       AJ_FIL_COL[filCampo].w + 24.0f, AJ_FIL_LINHA };
+      float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
       gfx_rect(cel, 0, GFX_ANEL, 0, NV_ANEL_FOCO / AJ_FIL_LINHA, 0, raio,
-               0.96f, 0.96f, 0.97f, 1.0f);
+               ar, ag, ab, 1.0f);
     }
 
     { float tx = cx + AJ_FIL_COL[0].x;
@@ -2152,8 +2213,9 @@ static void desenhaFileiras(void) {
             sortFoco ? 0.72f : 0.30f);
     if (sortFoco) {
       GfxRect anel = { btn.x, btn.y, btn.w, btn.h };
+      float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
       gfx_rect(anel, 0, GFX_ANEL, 0, NV_ANEL_FOCO / 52.0f, 0, 0.23f,
-               0.96f, 0.96f, 0.97f, 1.0f);
+               ar, ag, ab, 1.0f);
     }
     l = txt_linha(TXT_CALLOUT, "Agrupar por addon", 220, 220, 220, 255);
     txt_desenhar(l, btn.x + (btn.w - l.w) * 0.5f,

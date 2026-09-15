@@ -239,7 +239,8 @@ static void desenhaRodape(float px, float w, float alpha, float foco) {
     GfxRect anel = { pill.x - NV_ANEL_FOCO, pill.y - NV_ANEL_FOCO,
                      pill.w + NV_ANEL_FOCO * 2, pill.h + NV_ANEL_FOCO * 2 };
     float raio = (pill.h * NV_MENU_RAIO_PILL + NV_ANEL_FOCO) / anel.h;
-    gfx_cor(anel, raio, 1, 1, 1, foco * alpha);
+    float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+    gfx_cor(anel, raio, ar, ag, ab, foco * alpha);
     gfx_cor(pill, NV_MENU_RAIO_PILL, NV_COR_FOCO_R, NV_COR_FOCO_G,
             NV_COR_FOCO_B, foco * alpha);
   }
@@ -330,7 +331,8 @@ void menu_desenhar(Uint32 agora) {
       { GfxRect anel = { pill.x - NV_ANEL_FOCO, pill.y - NV_ANEL_FOCO,
                          pill.w + NV_ANEL_FOCO * 2, pill.h + NV_ANEL_FOCO * 2 };
         float raio = (pill.h * NV_MENU_RAIO_PILL + NV_ANEL_FOCO) / anel.h;
-        gfx_cor(anel, raio, 1, 1, 1, f * desliza); }
+        float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+        gfx_cor(anel, raio, ar, ag, ab, f * desliza); }
       gfx_cor(pill, NV_MENU_RAIO_PILL, NV_COR_FOCO_R, NV_COR_FOCO_G,
               NV_COR_FOCO_B, f * desliza);
     }

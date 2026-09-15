@@ -14,6 +14,7 @@
 // `pendPronto` e o fio de desenho copia para os vetores publicados. Leitores
 // nunca tocam no staging — mesma disciplina do epg.c.
 #include "guia.h"
+#include "ajustes.h"   /* ajustes_acento: cor do anel de foco */
 #include "epg.h"
 #include "rede.h"
 #include "addons.h"
@@ -697,7 +698,8 @@ static void desenharCard(GCanal *c, float x, float y, float foco, float a,
   if (foco > 0.01f) {
     GfxRect anel = { r.x - NV_ANEL_FOCO, r.y - NV_ANEL_FOCO,
                      r.w + NV_ANEL_FOCO * 2, r.h + NV_ANEL_FOCO * 2 };
-    gfx_cor(anel, 0.10f, 1, 1, 1, foco * a);
+    float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+    gfx_cor(anel, 0.10f, ar, ag, ab, foco * a);
   }
   gfx_cor(r, 0.08f, lum, lum, lum + 0.01f, a);
 
