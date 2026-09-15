@@ -238,14 +238,29 @@ static double puloDestino(double fim) { return fim > 0.0 ? fim + .25 : duracaoSe
 
 static char linhaEp[220];          // "T1, E1 · <sinopse curta>", montada na abertura
 
-static const CatItem *item(void) { return cat_item(idx); }
 // CANAL DE TV (tipo "channel"/"tv"): sem progresso a gravar, sem episodio a
 // seguir, sem fim — e com o GUIA como menu de contexto (BAIXO/azul abrem o
-// overlay, CH+/- trocam de canal). Uma funcao e nao um campo porque idx troca
-// a cada player_abrir.
-static int ehCanal(void) {
-  const CatItem *ci = item();
-  return ci && (!strcmp(ci->tipo, "channel") || !strcmp(ci->tipo, "tv"));
+// overlay, CH+/- trocam de canal).
+//
+// O item fica CONGELADO na abertura, nao relido do catalogo a cada chamada: a
+// descoberta republica o vetor de itens inteiro por fileira (cat_definir_tudo)
+// DURANTE a reproducao, e a troca faz `idx` apontar para outro titulo — o
+// canal no ar virava "nao-canal", o Baixo voltava a so acordar a interface e
+// o overlay nunca abria. CatItem e so arrays, a copia e segura.
+static int     canalSessao;
+static CatItem itemCanal;
+static const CatItem *item(void) {
+  return canalSessao ? &itemCanal : cat_item(idx);
+}
+static int ehCanal(void) { return canalSessao; }
+const char *player_id_canal(void) { return canalSessao ? itemCanal.imdb : ""; }
+// Marcacao deterministica para quem JA SABE que e canal (o guia): cobre a
+// janela em que uma republicacao cai entre o cat_acrescentar e o player_abrir
+// — o item no indice ja pode ser outro quando player_abrir le.
+void player_marcar_canal(const CatItem *it) {
+  if (!it) return;
+  canalSessao = 1;
+  itemCanal = *it;
 }
 static int epT, epE, pedFontes, erroFonte, pedProxT, pedProxE;
 static int pedGuia, pedZap;   // pedidos de canal: overlay do guia / CH+/-
@@ -294,7 +309,9 @@ void player_definir_episodio(int t, int e) {
   const CatItem *c = item();
   epT = t; epE = e; linhaEp[0] = 0;
   retomarPct = 0;
-  if (c && !semRetomada && c->progresso > 0 && c->progresso < 90 &&
+  // !canalSessao: canal nao tem retomada, e se o indice ja foi remapeado o
+  // "progresso" lido ali seria de outro titulo qualquer.
+  if (c && !canalSessao && !semRetomada && c->progresso > 0 && c->progresso < 90 &&
       (strcmp(c->tipo,"series") || (t==c->temporada && e==c->episodio))) retomarPct=c->progresso;
   // FILME TAMBEM PEDE MARCADOR, e ate agora nao pedia: esta linha desligava o
   // modulo e voltava. Fazia sentido enquanto a fonte era o api.introdb.app, que
@@ -720,10 +737,12 @@ void player_abrir(int indiceCatalogo, const char *url) {
   // Canal ao vivo nao tem classificacao por titulo: o id "cs:channel:..." nao
   // existe na base parental e o pedido so gastaria uma requisicao.
   { const CatItem *ci = cat_item(idx);
-    if (ci && ci->imdb[0] && !ehCanal()) parental_pedir(ci->imdb);
+    canalSessao = ci && (!strcmp(ci->tipo, "channel") || !strcmp(ci->tipo, "tv"));
+    if (canalSessao) itemCanal = *ci;
+    if (ci && ci->imdb[0] && !canalSessao) parental_pedir(ci->imdb);
     // A grade EPG comeca a baixar ja: o banner "agora/a seguir" do OSD e o
     // overlay do guia dependem dela. Idempotente.
-    if (ci && ehCanal()) { epg_iniciar(); guia_carregar(); } }
+    if (canalSessao) { epg_iniciar(); guia_carregar(); } }
   tocando = 1; visivel = 1; anim = 0.0f; entrada = 0.0f;
   pedFontes = erroFonte = pedFaixas = pedProxT = pedProxE = 0; inicioImagem = 0;
   pedGuia = pedZap = 0;
@@ -944,15 +963,16 @@ static void acordar(void) { visivel = 1; ultimoInput = SDL_GetTicks(); }
 // hh:mm · titulo", da grade EPG. Sem grade real o canal se mostra como
 // "AO VIVO" — a verdade, em vez de um programa inventado.
 static void linhasCanal(char *l1, size_t n1, char *l2, size_t n2) {
-  const CatItem *ci = item();
   time_t agoraT = time(NULL);
   EpgProg ag, px;
   struct tm lt;
   if (n1) l1[0] = 0;
   if (n2) l2[0] = 0;
-  if (!ci) { if (n1) snprintf(l1, n1, "%s", i18n("AO VIVO")); return; }
+  // item() ja devolve o canal congelado da sessao — o indice no catalogo pode
+  // ter sido remapeado por uma republicacao da descoberta.
+  if (!itemCanal.titulo[0]) { if (n1) snprintf(l1, n1, "%s", i18n("AO VIVO")); return; }
   if (epgIdx == -1 && epg_estado() == EPG_PRONTO) {
-    epgIdx = epg_match(ci->titulo);
+    epgIdx = epg_match(itemCanal.titulo);
     if (epgIdx < 0) epgIdx = -2;
   }
   if (epgIdx >= 0 && epg_agora(epgIdx, agoraT, &ag)) {
@@ -1818,7 +1838,8 @@ void player_desenhar(Uint32 agora) {
   // Texto tambem e o que o resto da tela usa (o relogio, o tempo, os selos),
   // entao o canto passa a ter UMA gramatica so.
   float hTit, yTit;
-  { const char *nome = (c && c->titulo[0]) ? c->titulo : "Reproduzindo";
+  { const char *nome = canalSessao ? (itemCanal.titulo[0] ? itemCanal.titulo : "Canal")
+                                 : (c && c->titulo[0]) ? c->titulo : "Reproduzindo";
     TxtLinha lt = txt_linha_corta(TXT_PLR_TITULO, nome, 255, 255, 255, 255,
                                   cw * 0.62f);
     hTit = (float)lt.h;

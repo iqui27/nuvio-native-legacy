@@ -16,6 +16,7 @@
 #include "guia.h"
 #include "epg.h"
 #include "rede.h"
+#include "addons.h"
 #include "dados.h"
 #include "js.h"
 #include "gfx.h"
@@ -33,7 +34,7 @@
 #define G_MAX_CANAL  900
 #define G_MAX_CAT     48
 #define G_MAX_FAV    400
-#define G_MAX_FONTE    4
+#define G_MAX_FONTE    8
 #define G_PAGINA     100
 
 // --- layout ---------------------------------------------------------------
@@ -87,6 +88,10 @@ static char focoPend[80];
 // Catalogos de canal descobertos na home (tipo "channel"/"tv").
 typedef struct { char base[600], tipo[8], id[96]; } GFonte;
 static GFonte fontes[G_MAX_FONTE]; static int nFontes, fontesOk;
+// Copia de trabalho do fio: as fileiras sao so o caminho rapido. O manifesto
+// de cada addon ativo declara TODOS os catalogos de canal, montados na home
+// ou nao — sem a sonda o guia ficava limitado ao que coube nas fileiras.
+static GFonte sFontes[G_MAX_FONTE]; static int sNFontes;
 
 // --- favoritos --------------------------------------------------------------
 static char fav[G_MAX_FAV][80]; static int nFav, favLido;
@@ -211,7 +216,9 @@ static int sCanalPorId(const char *id) {
   return -1;
 }
 
-// Uma pagina de catalogo. Devolve quantos canais entraram (0 encerra a pagina).
+// Uma pagina de catalogo. Devolve quantos METAS a pagina trouxe — nao quantos
+// entraram: uma fonte pode repetir canais de outra, e contar so os novos
+// encerraria a pagina uma rodada cedo, deixando os exclusivos de tras.
 static int lerPagina(const GFonte *f, int skip) {
   char url[1200];
   char *corpo;
@@ -231,6 +238,7 @@ static int lerPagina(const GFonte *f, int skip) {
     char gen[64] = "";
     memset(&c, 0, sizeof c);
     c.epg = -1; c.cat = -1;
+    n++;
     if (js_texto(p, fim, "id", c.id, sizeof c.id) &&
         js_texto(p, fim, "name", c.nome, sizeof c.nome) &&
         sCanalPorId(c.id) < 0) {
@@ -241,7 +249,7 @@ static int lerPagina(const GFonte *f, int skip) {
         if (!g) g = js_array(p, fim, "genres");
         lerStrEl(g, gen, sizeof gen); }
       c.cat = sCatDe(gen[0] ? gen : "Outros");
-      if (c.cat >= 0) { sCanais[sNCanais++] = c; n++; }
+      if (c.cat >= 0) sCanais[sNCanais++] = c;
     }
     p = js_prox(fim);
   }
@@ -249,13 +257,64 @@ static int lerPagina(const GFonte *f, int skip) {
   return n;
 }
 
+static int fonteJa(const char *base, const char *id) {
+  for (int i = 0; i < sNFontes; i++)
+    if (!strcmp(sFontes[i].base, base) && !strcmp(sFontes[i].id, id)) return 1;
+  return 0;
+}
+
+// SONDA DE MANIFESTOS, no fio de trabalho. A home monta no maximo
+// CAT_FIL_MAX fileiras e so depois que cada catalogo responde — um catalogo
+// de canal fora do corte (ou ainda nao montado) deixava o guia sem fonte e
+// era exatamente o "nao tem os dados de todos os canais". O manifesto declara
+// tudo; baixar `base/manifest.json` de cada addon ativo e varrer catalogs[]
+// cobre o caso. E o mesmo padrao de lerManifesto da descoberta, do mesmo
+// tipo de fio.
+static void sondaManifestos(void) {
+  int a;
+  for (a = 0; a < addons_n() && sNFontes < G_MAX_FONTE; a++) {
+    const char *base;
+    char url[700];
+    char *corpo;
+    const char *p, *fim;
+    if (!addons_ativo(a)) continue;
+    base = addons_base(a);
+    if (!base || !base[0]) continue;
+    snprintf(url, sizeof url, "%s/manifest.json", base);
+    corpo = rede_baixar(url, 15);
+    if (!corpo) continue;
+    fim = corpo + strlen(corpo);
+    p = js_array(corpo, fim, "catalogs");
+    while (p && sNFontes < G_MAX_FONTE) {
+      const char *f = js_fim(p);
+      char tipo[16] = "", id[96] = "";
+      js_texto(p, f, "type", tipo, sizeof tipo);
+      js_texto(p, f, "id", id, sizeof id);
+      if (ehCanal(tipo) && id[0] && !fonteJa(base, id)) {
+        snprintf(sFontes[sNFontes].base, sizeof sFontes[sNFontes].base, "%s", base);
+        snprintf(sFontes[sNFontes].tipo, sizeof sFontes[sNFontes].tipo, "%s", tipo);
+        snprintf(sFontes[sNFontes].id,   sizeof sFontes[sNFontes].id,   "%s", id);
+        sNFontes++;
+      }
+      p = js_prox(f);
+    }
+    free(corpo);
+  }
+}
+
 static void *fioGuia(void *u) {
   int ok = 0;
   (void)u;
   sNCanais = 0; sNCats = 0;
-  for (int i = 0; i < nFontes; i++) {
+  // Fontes das fileiras (descobertas no fio de desenho) primeiro — zero rede
+  // extra. A sonda de manifestos completa com o que a home nao montou.
+  sNFontes = 0;
+  for (int i = 0; i < nFontes && sNFontes < G_MAX_FONTE; i++)
+    sFontes[sNFontes++] = fontes[i];
+  sondaManifestos();
+  for (int i = 0; i < sNFontes; i++) {
     for (int skip = 0; sNCanais < G_MAX_CANAL; skip += G_PAGINA) {
-      int n = lerPagina(&fontes[i], skip);
+      int n = lerPagina(&sFontes[i], skip);
       if (n <= 0) break;
       ok = 1;
       if (n < G_PAGINA) break;    // ultima pagina veio curta
@@ -271,6 +330,11 @@ static void publicar(void) {
   memcpy(canais, sCanais, sizeof(GCanal) * (size_t)sNCanais);
   memcpy(cats, sCats, sizeof sCats);
   nCanais = sNCanais; nCats = sNCats;
+  // As fontes efetivas sao as do fio — fileiras + manifestos. Sem a copia, a
+  // mensagem "Nenhum catalogo de canais" e o loop de re-tentativa liam a
+  // contagem das fileiras apenas.
+  memcpy(fontes, sFontes, sizeof sFontes);
+  nFontes = sNFontes;
   // Ordena os canais por categoria (estavel na ordem de chegada) para que cada
   // fileira seja uma janela contigua — o mesmo desenho de CatFileira.
   { GCanal tmp[G_MAX_CANAL];
@@ -303,7 +367,9 @@ static void publicar(void) {
 
 static void iniciarCarga(void) {
   pthread_t t;
-  if (fioVivo || !nFontes) return;
+  // Sem portaria por nFontes: a sonda de manifestos dentro do fio pode achar
+  // catalogo de canal que nenhuma fileira montou.
+  if (fioVivo) return;
   fioVivo = 1;
   estado = G_BAIXANDO;
   if (pthread_create(&t, NULL, fioGuia, NULL) != 0) { fioVivo = 0; estado = G_FALHOU; }
@@ -317,8 +383,8 @@ void guia_carregar(void) {
   if (!favLido) favLer();
   // Sem fonte achada, tenta de novo a cada chamada: a descoberta da home pode
   // nao ter montado as fileiras ainda quando o primeiro CH+/- chega.
-  if (!fontesOk || !nFontes) descobrirFontes();
-  if (estado == G_PARADO && nFontes) iniciarCarga();
+  if (!fontesOk) descobrirFontes();
+  if (estado == G_PARADO || estado == G_FALHOU) iniciarCarga();
   epg_iniciar();
 }
 
@@ -338,6 +404,13 @@ static Uint32 dirDesde, dirTick, ultNavCat;
 // OK longo = favorito.
 static Uint32 okDesde; static int okLongo;
 
+// Instantaneo da ABERTURA do overlay. O firmware repete o KEYDOWN da tecla
+// segurada, e a tecla que ABRE (azul, ou `s` no Tizen) e a mesma que FECHA:
+// sem este repouso, segurar o botao um pouco a mais abria e fechava o overlay
+// em ~130 ms — o sintoma relatado de "o guia nao aparece quando esta tocando".
+static Uint32 overlayDesde;
+#define G_OVERLAY_REP_MS 400
+
 static void focoValido(void) {
   int l = nLinhas();
   if (focoLin >= l) focoLin = l - 1;
@@ -355,6 +428,7 @@ void guia_abrir(void) {
 void guia_overlay_abrir(void) {
   guia_carregar();
   overlay = 1; entrada = 0.0f;
+  overlayDesde = SDL_GetTicks();
   focoValido();
 }
 
@@ -473,9 +547,12 @@ void guia_evento(const SDL_Event *e) {
   }
   // No overlay, AZUL nunca navega: e a tecla que o abre e fecha. O BAIXO que
   // abriu o overlay NAO o fecha aqui — dentro dele, baixo navega como no guia
-  // (o Voltar e a saida).
-  if (overlay && (k == SDLK_s || e->key.keysym.scancode == NV_SCANCODE_BLUE))
-    { sair(); return; }
+  // (o Voltar e a saida). O repouso de G_OVERLAY_REP_MS ignora a repeticao do
+  // firmware do botao que o abriu, senao segurar o azul fechava na hora.
+  if (overlay && (k == SDLK_s || e->key.keysym.scancode == NV_SCANCODE_BLUE)) {
+    if (agora - overlayDesde < G_OVERLAY_REP_MS) return;
+    sair(); return;
+  }
 
   // CH+/- do controle da LG (scancodes 480/481 do SDL_webOS.h): dentro do
   // guia eles pulam CATEGORIA, nao canal — e a mesma leitura do "segurar"
@@ -570,12 +647,26 @@ void guia_atualizar(float dt, Uint32 agora) {
     okLongo = 1;
   }
 
-  // Rolagem vertical mira a fileira focada a ~1/3 da altura util.
-  { float alvo = (float)focoLin * G_PASSO_Y - (NV_TELA_H - G_TOPO) * 0.30f;
+  // Rolagem vertical: a fileira focada ancora uma fileira abaixo do topo da
+  // area, alinhada no limite de fileira. Assim a fileira anterior fica
+  // INTEIRA visivel (cabecalho + cartoes) como contexto — antes a mira de
+  // ~1/3 deixava o cabecalho dela cortado na borda do recorte, como se a
+  // fileira estivesse "fora da lista".
+  { float alvo = (float)(focoLin > 0 ? focoLin - 1 : 0) * G_PASSO_Y;
     float maxY = (float)nLinhas() * G_PASSO_Y - (NV_TELA_H - G_TOPO) + 80.0f;
     if (alvo < 0.0f) alvo = 0.0f;
     if (maxY < 0.0f) maxY = 0.0f;
-    if (alvo > maxY) alvo = maxY;
+    if (alvo > maxY) {
+      alvo = maxY;
+      // O clamp do fim desalinha as fileiras: se a borda de cima do recorte
+      // cai no meio de um cabecalho de categoria, rola o restinho para
+      // esconde-lo de vez (o espaco que sobra embaixo absorve a folga).
+      { float corte = alvo - 20.0f;
+        if (corte > 0.0f) {
+          float resto = corte - (float)(int)(corte / G_PASSO_Y) * G_PASSO_Y;
+          if (resto > 0.0f && resto < G_HEAD_H) alvo += G_HEAD_H - resto;
+        } }
+    }
     rolY = anim_mola2(&velY, rolY, alvo, dt, NV_MOLA_SCROLL); }
   // Rolagem horizontal da fileira em foco.
   { int l = focoLin;

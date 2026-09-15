@@ -51,6 +51,13 @@ int  player_aberto(void);   // 1 enquanto a tela existe, inclusive durante o fad
 // `player_pediu_zap` — CH+/CH- do controle (NV_SCANCODE_CH_UP/DOWN): +1/-1.
 int  player_pediu_guia(void);
 int  player_pediu_zap(void);
+// Identidade do canal congelada na abertura: o indice do catalogo pode ser
+// remapeado por uma republicacao da descoberta em plena reproducao, e zap/foco
+// do guia nao podem depender dele. "" quando a sessao nao e de canal.
+const char *player_id_canal(void);
+// Marca a sessao como CANAL com o item inteiro de quem abriu — usada pelo
+// guia, que e quem sabe o que pediu para tocar.
+void player_marcar_canal(const CatItem *item);
 void player_evento(const SDL_Event *e);
 void player_atualizar(float dt, Uint32 agora);
 void player_desenhar(Uint32 agora);

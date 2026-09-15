@@ -194,16 +194,23 @@ static void alvoPlayer(char *alvo, size_t tam) {
   const CatItem *c = cat_item(player_indice());
   int t, e;
   player_episodio_atual(&t, &e);
+  // Canal no ar: o id congelado na abertura vence o indice, que uma
+  // republicacao do catalogo ja pode ter apontado para outro item.
+  if (player_id_canal()[0]) { snprintf(alvo,tam,"%s",player_id_canal()); return; }
   if (!c) { alvo[0] = 0; return; }
   if (t > 0 && e > 0) snprintf(alvo,tam,"%.*s:%d:%d",(int)strcspn(c->imdb,":"),c->imdb,t,e);
   else snprintf(alvo,tam,"%s",c->imdb);
 }
 static void buscarParaPlayer(void) {
-  const CatItem *c = cat_item(player_indice());
   char alvo[64]; alvoPlayer(alvo,sizeof alvo);
-  if (c && alvo[0]) {
-    addons_buscar(alvo,c->tipo);
-    addons_buscar_legendas(alvo,c->tipo);
+  const char *idC = player_id_canal();
+  if (idC[0]) { addons_buscar(alvo,"channel"); addons_buscar_legendas(alvo,"channel"); return; }
+  {
+    const CatItem *c = cat_item(player_indice());
+    if (c && alvo[0]) {
+      addons_buscar(alvo,c->tipo);
+      addons_buscar_legendas(alvo,c->tipo);
+    }
   }
 }
 static void episodioDoDetalhe(void) {
@@ -229,6 +236,9 @@ static void tocarCanal(const CatItem *it) {
   if (ni < 0) return;
   if (player_aberto()) player_encerrar();
   player_abrir(ni, NULL);
+  // cat_acrescentar e cat_definir_tudo correm juntos: se uma republicacao
+  // atravessou os dois, ni ja nao e o canal. A marca garante a sessao.
+  player_marcar_canal(it);
   addons_buscar(it->imdb, "channel");
   aguardandoFonte = 1;
   marco("guia: buscando fontes do canal");
@@ -848,18 +858,19 @@ void app_atualizar(float dt, Uint32 agora) {
   // a carga e nao troca nada, a seguinte ja zapeia.
   { int dir = player_pediu_zap();
     if (dir && player_aberto() && aguardandoFonte != 2) {
-      const CatItem *c = cat_item(player_indice());
+      const char *id = player_id_canal();
       CatItem it;
-      if (c && guia_zap(c->imdb, dir, &it)) tocarCanal(&it);
+      if (id[0] && guia_zap(id, dir, &it)) tocarCanal(&it);
       else guia_carregar();
     } }
 
   // BAIXO/AZUL COM CANAL NO AR: o overlay do guia abre focado no canal que
-  // esta tocando.
+  // esta tocando. player_id_canal e o id congelado na abertura — o indice no
+  // catalogo pode ja ter sido remapeado por uma republicacao da descoberta.
   if (player_pediu_guia() && player_aberto()) {
-    const CatItem *c = cat_item(player_indice());
+    const char *id = player_id_canal();
     guia_overlay_abrir();
-    if (c) guia_focar_id(c->imdb);
+    if (id[0]) guia_focar_id(id);
   }
   if (aguardandoFonte != 2 && stream_folha_recarregar()) {
     if (player_aberto()) buscarParaPlayer();

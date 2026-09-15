@@ -9,7 +9,7 @@ por que cada decisão é assim.
 
 | Dado | De onde |
 |------|---------|
-| Canais, logo, descrição, categoria (`genre`) | catálogo do addon de canal (hoje o FrostView TV, `froststream-channels`), lido por inteiro com paginação `skip=N` — `guia.c`/`lerPagina` |
+| Canais, logo, descrição, categoria (`genre`) | catálogo do addon de canal (hoje o FrostView TV, `froststream-channels`), lido por inteiro com paginação `skip=N` — `guia.c`/`lerPagina`. As fontes vêm das fileiras montadas E da sonda de manifestos (`sondaManifestos`), que varre `catalogs[]` de cada addon ativo — a home tem teto de 16 fileiras, então um catálogo de canal fora do corte não pode deixar o guia sem dados |
 | O que está passando (agora/a seguir) | XMLTV do epgshare01 (`epg_ripper_BR1.xml.gz` + `_BR2.xml.gz`, ~3,5 dias de grade em português) — `epg.c` |
 | Favoritos | `guia-fav.txt` na pasta de dados, um id por linha. Arquivo próprio porque `SalvoItem.id` tem 24 bytes e os ids do FrostView têm ~45 |
 
@@ -41,6 +41,18 @@ resultado pronto (`epg_passo`), nunca lê o staging.
   `player_pediu_zap`/`player_pediu_guia` consumidos em `app.c`.
 - No Tizen a casca entrega CH+ como a tecla `s` (tizen-shell.html); por isso
   `s` também abre/fecha o overlay quando um canal está no ar.
+
+## Identidade do canal no player
+
+O player guarda só um índice no vetor do catálogo, e a descoberta republica
+esse vetor inteiro a cada fileira que responde — inclusive durante a
+reprodução. Sem proteção, o índice passa a apontar para outro item e a sessão
+deixa de ser "canal": o Baixo volta a só acordar os controles e o overlay
+nunca abre. Por isso `player_abrir` congela `canalSessao`, `idCanal` e
+`tituloCanal` na abertura (`player_id_canal`), e `tocarCanal` ainda chama
+`player_marcar_canal` depois — a janela entre `cat_acrescentar` e
+`player_abrir` pode atravessar uma republicação. A repetição de KEYDOWN da
+tecla que abre o overlay (azul/`s`) é absorvida por `G_OVERLAY_REP_MS`.
 
 ## Teste
 

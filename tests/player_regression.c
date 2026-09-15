@@ -209,6 +209,37 @@ static void testar(void) {
       player_evento(&e);assert(player_pediu_guia()==1 && !player_pediu_guia()); }
     { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.scancode=489; /* BLUE */
       player_evento(&e);assert(player_pediu_guia()==1); }
+    // REPUBLICACAO EM PLENA SESSAO: a descoberta troca o vetor de itens por
+    // fileira (cat_definir), e o indice do player passa a apontar para outro
+    // titulo. A sessao de canal NAO pode morrer junto — Baixo continua
+    // abrindo o overlay e player_id_canal devolve o id congelado.
+    { CatItem filme={0};
+      snprintf(filme.tipo,sizeof filme.tipo,"movie");
+      snprintf(filme.titulo,sizeof filme.titulo,"Filme Que Entrou No Lugar");
+      snprintf(filme.imdb,sizeof filme.imdb,"tt9999999");
+      cat_definir(&filme,1); }
+    assert(!strcmp(player_id_canal(),"cs:channel:teste"));
+    { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_DOWN;
+      player_evento(&e);assert(player_pediu_guia()==1); }
+    { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.scancode=480;
+      player_evento(&e);assert(player_pediu_zap()==1); }
+    // player_marcar_canal: quem abriu pelo guia marca a sessao mesmo que o
+    // indice ja tenha vindo errado de uma republicacao anterior.
+    player_encerrar();
+    { CatItem filme={0}, marcado={0};
+      snprintf(filme.tipo,sizeof filme.tipo,"movie");
+      snprintf(filme.imdb,sizeof filme.imdb,"tt8888888");
+      cat_definir(&filme,1);
+      player_abrir(0,NULL);
+      assert(!player_id_canal()[0]);
+      snprintf(marcado.imdb,sizeof marcado.imdb,"cs:channel:marcado");
+      snprintf(marcado.titulo,sizeof marcado.titulo,"Canal Marcado");
+      snprintf(marcado.tipo,sizeof marcado.tipo,"channel");
+      player_marcar_canal(&marcado);
+      assert(!strcmp(player_id_canal(),"cs:channel:marcado"));
+      { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_DOWN;
+        player_evento(&e);assert(player_pediu_guia()==1); }
+    }
     // E fora de canal, CH+/- nao e zap: segue o caminho normal do player.
     player_encerrar();
     strcpy(tv.tipo,"movie");cat_definir(&tv,1);player_abrir(0,NULL);
