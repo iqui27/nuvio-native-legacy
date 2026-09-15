@@ -23,6 +23,57 @@
           background: rgba(0,0,0,.82); padding: 14px 18px; border-radius: 8px;
           max-height: 92%; overflow: hidden; }
   #diag .e { color: #ff8b7a; }
+  /* ABERTURA, no lugar do painel tecnico.
+     O que a pessoa via ate aqui era o userAgent, o SharedArrayBuffer e as
+     cinco linhas de WebGL — diagnostico de quem esta consertando o port, nao
+     de quem vai assistir um filme. E ela via isso do primeiro instante ate o
+     primeiro quadro, que neste alvo inclui o preload do wasm e dos dados.
+     O painel nao sumiu: ver a nota em #diag[hidden] mais abaixo.
+
+     Fundo OPACO aqui e, ao contrario do body, correto: antes do primeiro
+     quadro nao ha AVPlay tocando nada atras, e a abertura some exatamente no
+     quadro em que poderia haver.
+
+     O ICONE NAO TEM FUNDO TRANSPARENTE, e isso decide as duas linhas abaixo.
+     Medido lendo os pixels do icon.png da Samsung num navegador: o fundo dele
+     e um degrade quase preto, de 3,5,19 nos cantos a 5,7,24 no meio das
+     bordas. Posto sobre qualquer cor chapada ele aparece como um RETANGULO em
+     volta da marca — e um degrade nao casa com cor nenhuma.
+     `mix-blend-mode: lighten` sobre exatamente o tom MAIS CLARO dele (#050718)
+     resolve sem editar a arte: todo pixel do fundo do icone e igual ou mais
+     escuro que a tela, entao some nela; a marca, que e clara, passa intacta.
+     Navegador que ignore a propriedade cai no retangulo de hoje, que e o
+     comportamento tolerado e nao uma falha.
+     O app entra desenhando o proprio fundo (NV_COR_FUNDO, #0D0D0D em
+     layout.h); os dois sao quase pretos e a troca no primeiro quadro nao se
+     percebe. */
+  #abertura { position: absolute; inset: 0; z-index: 4; background: #050718;
+              display: flex; flex-direction: column;
+              align-items: center; justify-content: center; }
+  #abertura img { width: 512px; max-width: 42%; height: auto;
+                  mix-blend-mode: lighten;
+                  animation: nvPulso 1.8s ease-in-out infinite; }
+  /* Barra do preload. Sem nenhum movimento na tela, um arranque de dez
+     segundos e indistinguivel de um travado — que e a duvida que o painel
+     tecnico respondia por acidente.
+
+     Ela e INDETERMINADA (vai e volta) so enquanto ninguem sabe a fracao. Assim
+     que o Emscripten comeca a baixar o index.data ele informa quantos bytes de
+     quantos, e ai a barra passa a dizer a VERDADE — ver Module.setStatus. Uma
+     barra que anda sozinha fingindo progresso e pior que nenhuma: ela promete
+     um fim que nao esta medindo. */
+  #abertura .barra { margin-top: 40px; width: 320px; height: 4px;
+                     border-radius: 2px; background: rgba(255,255,255,.14);
+                     overflow: hidden; }
+  #abertura .barra i { display: block; height: 100%; width: 30%;
+                       border-radius: 2px; background: rgba(255,255,255,.75);
+                       animation: nvCorre 1.4s ease-in-out infinite; }
+  /* Fracao conhecida: para de vaguear e passa a crescer da esquerda. */
+  #abertura .barra.medida i { animation: none; transform: none;
+                              transition: width .25s linear; }
+  @keyframes nvPulso { 0%, 100% { opacity: 1; } 50% { opacity: .72; } }
+  @keyframes nvCorre { 0% { transform: translateX(-110%); }
+                       100% { transform: translateX(440%); } }
   #avPlayerObject { position: absolute; inset: 0; width: 100%; height: 100%;
                     z-index: 0; }
   /* O BUFFER de desenho continua 1920x1080 (atributos width/height do
@@ -48,7 +99,14 @@
 <!-- O AVPlay so existe se este objeto existir. Nao e decorativo: `webapis.avplay`
      falha sem ele em varios firmwares. -->
 <object id="avPlayerObject" type="application/avplayer"></object>
-<div id="diag">Nuvio: iniciando…</div>
+<!-- A ABERTURA fica ANTES do painel no DOM so por leitura; quem manda na
+     sobreposicao e o z-index (abertura 4, diag 5): com o painel aberto por
+     tecla ou pelo cao de guarda, e ele que fica por cima. -->
+<div id="abertura"><img src="icon.png" alt="Nuvio"><div class="barra"><i></i></div></div>
+<!-- NASCE ESCONDIDO. Ver o cao de guarda no fim do arranque: ele volta sozinho
+     quando o primeiro quadro NAO chega, que e o unico caso em que ele tinha de
+     estar na tela. A tecla verde tambem continua trazendo-o a qualquer hora. -->
+<div id="diag" hidden>Nuvio: iniciando…</div>
 <canvas id="canvas" width="1920" height="1080" tabindex="0"
         oncontextmenu="event.preventDefault()"></canvas>
 <script>
@@ -186,6 +244,29 @@
       var t2 = "ERRO promessa: " + (ev.reason && ev.reason.message ? ev.reason.message : ev.reason);
       console.log("[NV-ERRO] " + t2); mostrar(t2, 1);
     });
+
+    // CAO DE GUARDA DO ARRANQUE.
+    //
+    // O painel nascia visivel porque o defeito que ele existe para explicar —
+    // TELA PRETA — nao avisa: se o primeiro quadro nunca chega, nao ha mais
+    // nada na tela para ler. Esconde-lo sem mais faria toda falha de arranque
+    // virar "abriu e ficou preto", sem uma linha sequer.
+    //
+    // A saida e trocar "sempre visivel" por "visivel quando FALHOU": passado o
+    // prazo sem primeiro quadro, o painel volta sozinho com o log inteiro que
+    // ele guardou em silencio — e a foto da tela continua valendo o mesmo.
+    //
+    // 25 s e folgado de proposito. O arranque normal aqui inclui o preload do
+    // wasm e dos dados e depois todo o arranque em C; ver o [t] do marco
+    // "primeiro quadro na tela" no log. Um prazo curto acusaria arranque lento
+    // como se fosse falha, que e justamente o susto que este commit tira da
+    // frente de quem so quer assistir.
+    setTimeout(function () {
+      if (window.__nvPrimeiroQuadro) return;
+      mostrar("primeiro quadro nao veio em 25 s — abrindo o diagnostico", 1);
+      var p = document.getElementById("diag");
+      if (p) { p.hidden = false; pintar(); }
+    }, 25000);
   })();
 
   var Module = {
@@ -194,6 +275,25 @@
     // monta as fontes.
     arguments: ["/app/art"],
     canvas: (function () { return document.getElementById("canvas"); })(),
+    // O QUE O RUNTIME JA SABIA E NINGUEM PERGUNTAVA. O Emscripten anuncia o
+    // andamento do preload por aqui, em texto ("Downloading data... (8/28 MB)").
+    // Com 28 MB de index.data essa e a maior parte da espera — e era justamente
+    // o trecho em que a tela nao dizia nada. A fracao vai para a barra da
+    // abertura; o texto inteiro vai para o painel, que e onde ele ajuda a
+    // explicar um arranque travado.
+    setStatus: function (t) {
+      if (!t) return;
+      if (window.__nvDiag) window.__nvDiag(t);
+      var barra = document.querySelector("#abertura .barra");
+      if (!barra) return;
+      var m = /\((\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\)/.exec(t);
+      if (!m) return;
+      var fim = parseFloat(m[2]);
+      if (!(fim > 0)) return;
+      var pct = Math.max(2, Math.min(100, (parseFloat(m[1]) / fim) * 100));
+      barra.className = "barra medida";
+      barra.firstChild.style.width = pct.toFixed(1) + "%";
+    },
     print: function (t) {
       console.log(t);
       // O painel morre no primeiro quadro: dai em diante o app fala por si.
@@ -205,6 +305,13 @@
         // mais onde ler nada. O painel continua recebendo linhas em silencio e
         // volta com a tecla VERMELHA do controle.
         if (t.indexOf("primeiro quadro na tela") >= 0) {
+          // A abertura sai AQUI e nao antes: o quadro que a substitui ja esta
+          // desenhado, entao nao ha intervalo em que a tela fique vazia. Ela e
+          // removida do DOM (o painel apenas se esconde) porque, ao contrario
+          // dele, nao ha por que traze-la de volta — e o fundo OPACO dela
+          // taparia o AVPlay, que desenha atras da pagina.
+          var ab = document.getElementById("abertura");
+          if (ab && ab.parentNode) ab.parentNode.removeChild(ab);
           var p = document.getElementById("diag");
           if (p) p.hidden = true;
           // A PARTIR DAQUI A TECLA VERMELHA E DO APP, e nao mais deste painel.
