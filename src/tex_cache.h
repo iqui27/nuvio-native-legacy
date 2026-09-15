@@ -31,6 +31,9 @@ GLuint tex_obter_hero(const char *caminho);
 // Escala entre o pixel do BUFFER e o pixel de layout (1 na TV, 2 no Mac
 // retina). Definir uma vez no arranque, junto com a do texto.
 void tex_escala(float e);
+// Reduz uma superficie por media de area para lw x lh, em ABGR8888. Publica
+// para tests/reduzir.c; o decode usa a mesma funcao.
+struct SDL_Surface *tex_reduzir(struct SDL_Surface *src, int lw, int lh);
 
 // Como tex_obter, mas dizendo COM QUE LARGURA a arte vai ser desenhada, em
 // pixels de layout. O teto de decodificacao sai dai, em vez do padrao unico de

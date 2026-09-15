@@ -630,6 +630,125 @@ static int threadRede(void *arg) {
   }
 }
 
+// REDUZ POR MEDIA DE AREA. Cada pixel de destino e a media de TODOS os pixels
+// de origem que caem na sua celula, pesada pelo alpha (logo com borda
+// transparente nao ganha franja escura).
+//
+// Existe porque SDL_BlitScaled NAO faz media de vizinhos, ao contrario do que
+// o comentario que estava aqui dizia: SDL_UpperBlitScaled chama o caminho com
+// SDL_ScaleModeNearest (SDL_surface.c, conferido no 2.32.10), e o vizinho mais
+// proximo DESCARTA colunas e linhas inteiras. Um backdrop de 1920 para o teto
+// de 1280 perdia uma coluna em cada tres e saia serrilhado; a GPU o esticava
+// de volta com GL_LINEAR, e o resultado era serrilhado E borrado — o "lavado,
+// baixa qualidade" do #54. Nos posteres (342 ou 500 para 212) o mesmo.
+//
+// A conversao de formato e feita POR FAIXA de linhas, e nao na imagem inteira:
+// a copia intermediaria em tamanho cheio era o que estourava o heap de 256 MiB
+// do Tizen com backdrops de 3840x2160 (33 MB cada). Aqui o pico e a fonte mais
+// uma faixa de poucas linhas.
+SDL_Surface *tex_reduzir(SDL_Surface *src, int lw, int lh) {
+  SDL_Surface *dst;
+  int sw = src->w, sh = src->h;
+  if (lw <= 0 || lh <= 0 || sw <= 0 || sh <= 0) return NULL;
+  if (SDL_ISPIXELFORMAT_INDEXED(src->format->format)) {
+    // SDL_ConvertPixels nao carrega a paleta. Imagem indexada e PNG pequeno
+    // (logo); converter inteira aqui nao custa.
+    SDL_Surface *c = SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_ABGR8888, 0);
+    if (!c) return NULL;
+    dst = tex_reduzir(c, lw, lh);
+    SDL_FreeSurface(c);
+    return dst;
+  }
+  dst = SDL_CreateRGBSurfaceWithFormat(0, lw, lh, 32, SDL_PIXELFORMAT_ABGR8888);
+  if (!dst) return NULL;
+  // COBERTURA FRACIONARIA, em pesos de 0 a 256. Com razao 1,5 (1920 -> 1280)
+  // uma celula inteira de pixels daria 1 pixel de origem em um quarto das
+  // celulas — e esses sairiam sem media nenhuma. O pixel de origem que a
+  // celula corta ao meio entra com metade do peso, e ai todo pixel de destino
+  // e media de verdade.
+  //
+  // Passo horizontal em 32 bits por linha de origem (255*255*256 por pixel,
+  // vezes a largura da celula — cabe ate celulas de ~65 pixels); passo
+  // vertical em 64 bits, porque soma linhas ja somadas vezes outro peso.
+  int faixaH = sh / lh + 3;
+  size_t faixaPitch = (size_t)sw * 4;
+  unsigned char *faixa = (unsigned char *)malloc(faixaPitch * (size_t)faixaH);
+  unsigned *lin = (unsigned *)malloc(sizeof(unsigned) * (size_t)lw * 5);
+  unsigned long long *acc =
+      (unsigned long long *)malloc(sizeof(unsigned long long) * (size_t)lw * 5);
+  // Por coluna de destino: x0, x1 (exclusivo), peso do primeiro, peso do ultimo.
+  int *cx = (int *)malloc(sizeof(int) * (size_t)lw * 4);
+  if (!faixa || !lin || !acc || !cx) {
+    free(faixa); free(lin); free(acc); free(cx);
+    SDL_FreeSurface(dst);
+    return NULL;
+  }
+  int ox, oy;
+  for (ox = 0; ox < lw; ox++) {
+    double ini = (double)ox * sw / lw, fim = (double)(ox + 1) * sw / lw;
+    int x0 = (int)ini, x1 = (int)(fim + 0.999999);
+    if (x1 <= x0) x1 = x0 + 1;
+    if (x1 > sw) x1 = sw;
+    double p0 = ((x0 + 1 < fim ? x0 + 1 : fim) - ini);
+    double p1 = (fim - (x1 - 1 > ini ? x1 - 1 : ini));
+    if (x1 - x0 == 1) p0 = p1 = fim - ini;
+    cx[ox * 4] = x0; cx[ox * 4 + 1] = x1;
+    cx[ox * 4 + 2] = (int)(p0 * 256.0 + 0.5);
+    cx[ox * 4 + 3] = (int)(p1 * 256.0 + 0.5);
+  }
+  int precisaLock = SDL_MUSTLOCK(src);
+  if (precisaLock) SDL_LockSurface(src);
+  for (oy = 0; oy < lh; oy++) {
+    double ini = (double)oy * sh / lh, fim = (double)(oy + 1) * sh / lh;
+    int y0 = (int)ini, y1 = (int)(fim + 0.999999);
+    if (y1 <= y0) y1 = y0 + 1;
+    if (y1 > sh) y1 = sh;
+    int n = y1 - y0, yy;
+    if (n > faixaH) n = faixaH;
+    SDL_ConvertPixels(sw, n, src->format->format,
+                      (const unsigned char *)src->pixels + (size_t)y0 * src->pitch,
+                      src->pitch, SDL_PIXELFORMAT_ABGR8888, faixa, (int)faixaPitch);
+    memset(acc, 0, sizeof(unsigned long long) * (size_t)lw * 5);
+    for (yy = 0; yy < n; yy++) {
+      const unsigned char *ln = faixa + (size_t)yy * faixaPitch;
+      int y = y0 + yy;
+      double py = (y + 1 < fim ? y + 1 : fim) - (y > ini ? y : ini);
+      unsigned wy = (unsigned)(py * 256.0 + 0.5);
+      if (!wy) continue;
+      for (ox = 0; ox < lw; ox++) {
+        unsigned *a = lin + ox * 5;
+        int x, x0 = cx[ox * 4], x1 = cx[ox * 4 + 1];
+        a[0] = a[1] = a[2] = a[3] = a[4] = 0;
+        for (x = x0; x < x1; x++) {
+          const unsigned char *q = ln + (size_t)x * 4;   // ABGR8888: R,G,B,A
+          unsigned w = x == x0 ? (unsigned)cx[ox * 4 + 2]
+                     : x == x1 - 1 ? (unsigned)cx[ox * 4 + 3] : 256u;
+          unsigned al = q[3] * w;
+          a[0] += q[0] * al; a[1] += q[1] * al; a[2] += q[2] * al;
+          a[3] += al; a[4] += w;
+        }
+      }
+      for (ox = 0; ox < lw * 5; ox++) acc[ox] += (unsigned long long)lin[ox] * wy;
+    }
+    unsigned char *out = (unsigned char *)dst->pixels + (size_t)oy * dst->pitch;
+    for (ox = 0; ox < lw; ox++) {
+      const unsigned long long *a = acc + ox * 5;
+      unsigned char *q = out + (size_t)ox * 4;
+      if (a[3] > 0) {
+        q[0] = (unsigned char)((a[0] + a[3] / 2) / a[3]);
+        q[1] = (unsigned char)((a[1] + a[3] / 2) / a[3]);
+        q[2] = (unsigned char)((a[2] + a[3] / 2) / a[3]);
+        q[3] = (unsigned char)((a[3] + a[4] / 2) / a[4]);
+      } else {
+        q[0] = q[1] = q[2] = q[3] = 0;
+      }
+    }
+  }
+  if (precisaLock) SDL_UnlockSurface(src);
+  free(faixa); free(lin); free(acc); free(cx);
+  return dst;
+}
+
 static int threadDecode(void *arg) {
   (void)arg;
   // PRIORIDADE BAIXA, e isto nao e detalhe.
@@ -686,27 +805,15 @@ static int threadDecode(void *arg) {
       // "Cannot enlarge memory arrays to size 295014400 bytes (OOM)" com a home
       // ja desenhada e 38 fps.
       //
-      // O SDL_BlitScaled CONVERTE O FORMATO durante a copia, entao a copia
-      // intermediaria em tamanho cheio nunca precisou existir: o destino ja
-      // nasce com 640 de largura e no formato final. O pico cai de 2x para 1x
-      // o tamanho da fonte.
-      //
-      // BLENDMODE_NONE e obrigatorio: o padrao para arte com alpha e BLEND, e
-      // blitar em cima de uma superficie recem-criada (que e transparente)
-      // multiplicaria a cor pelo alpha e escureceria a borda dos logos. NONE
-      // copia o pixel como esta, que e o que uma conversao faz.
+      // tex_reduzir CONVERTE O FORMATO por faixa de linhas enquanto reduz,
+      // entao a copia intermediaria em tamanho cheio nunca precisa existir: o
+      // destino ja nasce com 640 de largura e no formato final. O pico cai de
+      // 2x para 1x o tamanho da fonte.
       if (bruta->w > limite) {
         int lw = limite;
         int lh = bruta->h * lw / bruta->w;
-        SDL_Surface *menor = SDL_CreateRGBSurfaceWithFormat(
-            0, lw, lh > 0 ? lh : 1, 32, SDL_PIXELFORMAT_ABGR8888);
-        if (menor) {
-          SDL_SetSurfaceBlendMode(bruta, SDL_BLENDMODE_NONE);
-          // BlitScaled faz media dos vizinhos; um decimador ingenuo deixaria a
-          // arte serrilhada.
-          SDL_BlitScaled(bruta, NULL, menor, NULL);
-          conv = menor;
-        }
+        // Media de area, nao SDL_BlitScaled: ver tex_reduzir.
+        conv = tex_reduzir(bruta, lw, lh > 0 ? lh : 1);
       }
       // Fonte ja pequena, ou a superficie reduzida nao pode ser criada: o
       // caminho antigo continua valendo.
@@ -766,12 +873,8 @@ static int threadDecode(void *arg) {
     if (conv && conv->w > limite) {
       int lw = limite;
       int lh = conv->h * lw / conv->w;
-      SDL_Surface *menor = SDL_CreateRGBSurfaceWithFormat(
-          0, lw, lh, 32, SDL_PIXELFORMAT_ABGR8888);
+      SDL_Surface *menor = tex_reduzir(conv, lw, lh > 0 ? lh : 1);
       if (menor) {
-        // BlitScaled faz media dos vizinhos; um decimador ingenuo deixaria a
-        // arte serrilhada, que foi exatamente o defeito do fundo pixelado.
-        SDL_BlitScaled(conv, NULL, menor, NULL);
         SDL_FreeSurface(conv);
         conv = menor;
       }
