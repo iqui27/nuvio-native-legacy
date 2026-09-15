@@ -27,6 +27,10 @@ static char userCode[32];
 static char url[160];
 static char erro[200];
 static char token[300], refresh[300];
+// 1 quando o carregar achou o access token vencido no papel mas com refresh
+// valido: a renovacao sai no primeiro passo, sem esperar o primeiro 401 e sem
+// gastar as chamadas do ciclo de descoberta com uma credencial morta.
+static int renovacaoPend;
 static unsigned pollMs = TRA_POLL_PADRAO;
 static unsigned proximoPoll, comecouMs, limiteMs;
 // Prazo em RELOGIO DE PAREDE, nao em ticks: o pedido tem de sobreviver a um
@@ -100,7 +104,18 @@ int traktauth_carregar(void) {
   pushPendente = col[5] ? atoi(col[5]) : 1;
   if (b[0]) {
     snprintf(token, sizeof token, "%s", b);
-    trakt_definir(token, nuvem_trakt_cliente());
+    // Vencido no papel: criadoEm+expiraSeg ja passaram. Definir este token faria
+    // cada chamada do primeiro ciclo de descoberta sair para a rede e voltar
+    // 401 — segundos por chamada, no pool que o resto da home tambem usa. Com
+    // refresh na mao a renovacao resolve antes; o passo aplica o token novo e
+    // manda remontar as fileiras.
+    if (refresh[0] && criadoEm > 0 && expiraSeg > 0 &&
+        (long)time(NULL) >= criadoEm + expiraSeg - 300) {
+      renovacaoPend = 1;
+      printf("[trakt] token vencido no arquivo — renovando antes do 401\n");
+    } else {
+      trakt_definir(token, nuvem_trakt_cliente());
+    }
     estado = TRA_LIGADO;
   }
   free(b);
@@ -138,6 +153,7 @@ int traktauth_carregar(void) {
 
 void traktauth_esquecer(void) {
   token[0] = refresh[0] = url[0] = erro[0] = 0;
+  renovacaoPend = 0;
   estado = TRA_PARADO;
   dados_apagar(TRA_ARQ);
   esquecerFluxo();
@@ -356,12 +372,15 @@ void traktauth_passo(unsigned agoraMs) {
   // A guarda nao e `estado == TRA_LIGADO`: um token carregado do pacote deixa
   // o estado em PARADO com trakt_ativo() ligado, e era justamente esse o caso
   // que mostrava "conectado" com tudo falhando.
-  if (trakt_recusada() && trakt_ativo() &&
+  if (((trakt_recusada() && trakt_ativo()) || renovacaoPend) &&
       estado != TRA_PEDINDO && estado != TRA_AGUARDANDO &&
       estado != TRA_INVALIDO) {
+    // ultimaRenovacao==0 e "nunca tentei", nao "tentei no instante zero" —
+    // sem este caso um 401 no primeiro minuto de app so renovava depois dos
+    // 60 s de uptime, que era o "demora para o Trakt aparecer".
     static unsigned ultimaRenovacao;
     if (refresh[0]) {
-      if (agoraMs - ultimaRenovacao > 60000u) {
+      if (!ultimaRenovacao || agoraMs - ultimaRenovacao > 60000u) {
         ultimaRenovacao = agoraMs;
         soltar(fioRenovar);
       }
@@ -381,6 +400,7 @@ void traktauth_passo(unsigned agoraMs) {
   // Aplicar o token no LACO PRINCIPAL, nunca no fio: trakt.c e lido pela UI.
   if (tokenNovo) {
     tokenNovo = 0;
+    renovacaoPend = 0;
     trakt_definir(token, nuvem_trakt_cliente());
     pushPendente = 1;
     empurrarParaConta();
