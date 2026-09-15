@@ -1,6 +1,6 @@
 # Installing on another TV
 
-Download `space.nuvio.native.legacy_1.0.1_arm.ipk` (**175 MB**) from the
+Download the `.ipk` (**~47 MB**) from the
 [releases page](https://github.com/iqui27/nuvio-native-legacy/releases/latest),
 or build it yourself:
 
@@ -22,11 +22,21 @@ The package contains **no credentials**. `tools/testa-ipk.sh` proves it, and
 | LG developer account | required | only to install the channel | no |
 | Install with | `ares-install` | from the TV itself | `bash tools/arm.sh` |
 
+### Which webOS versions
+
+webOS **4.x** is measured, on a C9. webOS **5+** is reported working by users.
+webOS **3.x** has an experimental build on the `webos3` branch — see the webOS 3
+section of the [README](README.md) for what was changed, how it was verified
+against retail firmware symbol dumps, and the three things that verification
+cannot answer. Nobody here owns a webOS 3 set, so treat it as an experiment: for
+those TVs the [web fork](https://github.com/iqui27/NuvioTVSmart-legacy-webos) is
+the safer choice.
+
 ### Developer Mode
 
 ```bash
 ares-setup-device
-ares-install space.nuvio.native.legacy_1.0.1_arm.ipk -d <name>
+ares-install space.nuvio.native.legacy_<version>_arm.ipk -d <name>
 ares-launch space.nuvio.native.legacy -d <name>
 ```
 
@@ -92,9 +102,11 @@ here — this TV has no Developer Mode app installed and port 9922 is closed
 
 ## What still bothers me
 
-- **175 MB**, nearly all prebaked artwork — and it is the packager's: whoever
-  installs it sees someone else's catalogue before signing in. Not a credential,
-  but it does not belong there.
+- **~47 MB**, nearly all prebaked artwork, so the home screen has something to
+  show before you sign in. It used to be 175 MB and to carry the packager's own
+  catalogue and addon keys; `arm.sh` now excludes every personal file and
+  verifies the exclusion against the finished package, deleting it if one
+  appears.
 - **50 h** sessions in Developer Mode. LG's limit, not the app's.
 - The package uses the id `space.nuvio.native.legacy` so it can coexist with the
   web app (`space.nuvio.webos`) on the same TV. See PORT-LEGACY.md.

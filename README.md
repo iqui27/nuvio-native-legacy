@@ -6,19 +6,20 @@ JavaScript in the TV's browser. Built and measured on a 2019 OLED65C9
 It also builds for Samsung Tizen, as WebAssembly inside a `.wgt`.
 
 Video plays through the TV's own pipeline — LS2 to `com.webos.media` — on a
-hardware plane behind the GL surface, not in a browser. On webOS 4 the plane is
-held by `libAcbAPI`; LG removed that library in webOS 5, so newer sets use SDL's
-exported-window API instead.
+hardware plane behind the GL surface, not in a browser. On webOS 2 through 4 the
+plane is held by `libAcbAPI`; LG removed that library in webOS 5, so newer sets
+use SDL's exported-window API instead. The binary carries both paths and picks
+at startup.
 
 **[Download the .ipk](https://github.com/iqui27/nuvio-native-legacy/releases/latest)**
 · [Install guide](INSTALL.md)
 
 ## Which build fits your TV
 
-| | webOS 3 | webOS 4.x | webOS 5+ | Samsung Tizen |
-|---|---|---|---|---|
-| **This one** (native C/SDL2) | no | **yes**, measured | **reported working** | yes, as a `.wgt` |
-| [Web fork](https://github.com/iqui27/NuvioTVSmart-legacy-webos) (JavaScript) | preview builds | yes | yes | — |
+| | webOS 2.x | webOS 3.x | webOS 4.x | webOS 5+ | Samsung Tizen |
+|---|---|---|---|---|---|
+| **This one** (native C/SDL2) | loads, untested | **experimental build** | **yes**, measured | **reported working** | yes, as a `.wgt` |
+| [Web fork](https://github.com/iqui27/NuvioTVSmart-legacy-webos) (JavaScript) | — | preview builds | yes | yes | — |
 
 **This table used to say webOS 5+ did not work, and that was wrong.** The video
 path once depended on `libAcbAPI`, which LG removed in webOS 5; since then the
@@ -33,10 +34,69 @@ One piece of that path is optional: if the TV does not expose the source-crop
 call, video plays but the zoom/aspect modes do nothing. The app says which case
 it is in, in its log.
 
-webOS 3 is not targeted at all. For those TVs the
-[web fork](https://github.com/iqui27/NuvioTVSmart-legacy-webos) is the one to
-use — plain JavaScript, tuned for Chromium 53 and low RAM, and it carries
-preview builds for webOS 3 (C8, B7).
+### webOS 3, and how far back this binary actually reaches
+
+The table said "no" here for a long time, on the assumption that a 2016 TV would
+need real porting work. It does not. There was **one symbol** in the way.
+
+webosbrew publishes symbol dumps of retail firmware
+([dev-toolbox-cli](https://github.com/webosbrew/dev-toolbox-cli), `common/data`).
+Comparing the undefined symbols of the ARM binary against those dumps — using a
+webOS 4.10 set as the baseline, because that is where the app demonstrably runs
+— exactly one of 199 was missing on the old firmware:
+
+```
+webOS 2.2.3  (2015, W15M)   SDL_CreateRGBSurfaceWithFormat
+webOS 3.4.0  (2016, W16N)   SDL_CreateRGBSurfaceWithFormat
+webOS 3.9.2  (2017, W17H)   SDL_CreateRGBSurfaceWithFormat
+webOS 4.10.0 (2019, W19P)   nothing
+```
+
+That function arrived in SDL 2.0.5. webOS 3.4 ships SDL 2.0.2, webOS 3.9 ships
+2.0.4, and the 2019 set ships a 2.0.4 that LG evidently patched, because it
+exports the symbol. `src/sdlcompat.h` does the same thing with
+`SDL_PixelFormatEnumToMasks` + `SDL_CreateRGBSurface`, both present since SDL
+2.0.0, and replaces the three call sites unconditionally — not behind a `dlsym`
+— so the TV we can test on exercises exactly the code the TV we cannot test on
+will run.
+
+The video path needed nothing. It was the expected blocker, and it is not one:
+`video_iniciar()` already picks between `libAcbAPI` and SDL's exported window
+depending on which exists, the exported window is the webOS 5+ branch, and
+webOS 3.4 ships `libAcbAPI.so.1.0.0` — the same path the C9 uses. One further
+symbol, `AcbAPI_setMediaAudioData`, is absent on webOS 3.4.0 and had to become
+optional instead of fatal; its only caller is a diagnostic `printf`.
+
+Verified with webosbrew's own tool, not only a script of our own:
+
+```
+webosbrew-ipk-verify -r ">=3,<4"   All OK, exit 0
+webosbrew-ipk-verify -r ">=2"      All OK, exit 0
+webosbrew-ipk-verify               across all 14 bundled firmwares, only
+                                   webOS 1.2 and 1.4 report anything
+                                   (SDL_GL_GetDrawableSize, SDL_GetBasePath)
+```
+
+**A symbol existing is not the same as it working**, and webosbrew says plainly
+that they have been bitten by treating it as proof. Nobody here owns a webOS 3
+set. Three things no symbol dump can answer:
+
+- **Codec.** The [moonlight-tv compatibility
+  matrix](https://github.com/mariotaku/moonlight-tv/wiki/Compatibility-Status)
+  marks webOS 3.x as no H.265 and no HDR. Most debrid content today is x265, so
+  that may be the real ceiling on usefulness rather than anything in this code.
+- **RAM.** 624 MB total on one of the reporting sets, around 300 MB free.
+- **The uMediaServer payload.** This app talks Luna/JSON directly, which
+  sidesteps the `libplayerAPIs` C++ ABI churn that forces webosbrew's samples
+  into four build variants — but the shape of the `load` document may still
+  differ by generation.
+
+The build lives on the `webos3` branch and ships as a prerelease
+([native-webos3-exp.1](https://github.com/iqui27/nuvio-native-legacy/releases/tag/native-webos3-exp.1)).
+For a webOS 3 TV the
+[web fork](https://github.com/iqui27/NuvioTVSmart-legacy-webos) is still the
+safer choice — plain JavaScript, tuned for Chromium 53 and low RAM, with
+preview builds people have actually run. Reports from either are welcome.
 
 Both are unofficial and not affiliated with NuvioMedia.
 
@@ -95,8 +155,16 @@ Written down because each one cost a day:
   `com.webos.media` over LS2 directly is what works.
 - When SAM launches a native app, stdout and stderr go to `/dev/null`. Every
   printf is discarded until you `freopen` a log file.
-- The Back button never arrives as a key: it appears as FOCUS_LOST →
-  FOCUS_GAINED within a few ms. A real exit is FOCUS_LOST with no return.
+- The Back button does not arrive at all until the surface asks for it. The
+  webOS compositor swallows it and opens the app bar unless LG's SDL Wayland
+  backend declares otherwise, through the `SDL_WEBOS_ACCESS_POLICY_KEYS_BACK`
+  hint — which is read only when the window is *created*, so setting it later
+  does nothing. With the hint on it arrives as webOS's own scancode 482, not as
+  `SDLK_AC_BACK` and not as the 461 that web apps see. (This entry used to
+  describe a FOCUS_LOST → FOCUS_GAINED pair. That was true of an older build and
+  became actively wrong: `FOCUS_LOST` appears nowhere in `src/` today.)
+- Firmware symbol dumps answer "will this load" without owning the TV. See the
+  webOS 3 section above for the method and for what it does not prove.
 - Do not link libcurl. The SDK ships `.so.4`, the TV has `.so.5`, and the binary
   will not start. `dlopen` at runtime, trying both.
 
