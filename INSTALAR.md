@@ -6,7 +6,7 @@ O pacote sai de:
 bash tools/arm.sh --ipk
 ```
 
-`space.nuvio.native.legacy_1.0.1_arm.ipk`, **172 MB**, sem credencial nenhuma
+`space.nuvio.native.legacy_<versao>_arm.ipk`, **~47 MB**, sem credencial nenhuma
 dentro — `tools/testa-ipk.sh` prova isso, e o proprio `arm.sh` aborta e apaga o
 pacote se alguma voltar.
 
@@ -21,11 +21,22 @@ pacote se alguma voltar.
 | Conta LG de desenvolvedor | precisa | so para instalar o canal | nao |
 | Instala com | `ares-install` | pela propria TV | `bash tools/arm.sh` |
 
+### Quais versoes de webOS
+
+webOS **4.x** e medido, numa C9. webOS **5+** e relatado funcionando por
+usuarios. webOS **3.x** tem uma build experimental na branch `webos3` — a secao
+de webOS 3 do [README](README.md) explica o que mudou, como foi verificado
+contra dumps de simbolo de firmware retail, e as tres coisas que essa
+verificacao NAO responde. Ninguem aqui tem uma TV webOS 3, entao trate como
+experimento: para esses aparelhos o
+[fork web](https://github.com/iqui27/NuvioTVSmart-legacy-webos) e a escolha mais
+segura.
+
 ### Developer Mode
 
 ```bash
 ares-setup-device                 # cadastra IP e chave do Dev Mode
-ares-install space.nuvio.native.legacy_1.0.1_arm.ipk -d <nome>
+ares-install space.nuvio.native.legacy_<versao>_arm.ipk -d <nome>
 ares-launch space.nuvio.native.legacy -d <nome>
 ```
 
@@ -88,9 +99,10 @@ esta fechada (conferido).
 
 ## O que ainda incomoda
 
-- **172 MB**, quase tudo arte pre-assada — e ela e do dono do pacote: quem
-  instala ve o catalogo dele antes de logar. Nao e credencial, mas nao devia
-  estar ali.
+- **~47 MB**, quase tudo arte pre-assada, para a home ter o que mostrar antes
+  do login. Ja foram 172 MB e a arte era do dono do pacote — quem instalava via
+  o catalogo dele antes de logar. Hoje o `arm.sh` exclui todo arquivo pessoal e
+  CONFERE a exclusao no pacote pronto, apagando-o se algum aparecer.
 - **50h** no Developer Mode. Limite da LG, nao do app.
 - O pacote usa o id `space.nuvio.native.legacy` para conviver com o app web
   (`space.nuvio.webos`) na mesma TV. Ver PORT-LEGACY.md.
