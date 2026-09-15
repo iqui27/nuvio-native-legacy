@@ -4,7 +4,7 @@
   "vendor": "iqui27",
   "type": "native",
   "main": "nuvio-proto",
-  "title": "Nuvio Legacy Native (BUILD)",
+  "title": "Nuvio Native webOS3 (EXP)",
   "icon": "icon.png",
   "largeIcon": "icon-large.png",
   "resolution": "1920x1080",
@@ -13,6 +13,5 @@
   "disableBackHistoryAPI": true,
   "requiredPermissions": [
     "all"
-  ],
-  "nativeLifeCycleInterfaceVersion": 2
+  ]
 }

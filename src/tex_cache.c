@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "sdlcompat.h"
 
 #define MAX_ITENS_ABS 512
 #define MAX_FILA 128
@@ -698,7 +699,7 @@ static int threadDecode(void *arg) {
       if (bruta->w > limite) {
         int lw = limite;
         int lh = bruta->h * lw / bruta->w;
-        SDL_Surface *menor = SDL_CreateRGBSurfaceWithFormat(
+        SDL_Surface *menor = nv_superficie(
             0, lw, lh > 0 ? lh : 1, 32, SDL_PIXELFORMAT_ABGR8888);
         if (menor) {
           SDL_SetSurfaceBlendMode(bruta, SDL_BLENDMODE_NONE);
@@ -766,7 +767,7 @@ static int threadDecode(void *arg) {
     if (conv && conv->w > limite) {
       int lw = limite;
       int lh = conv->h * lw / conv->w;
-      SDL_Surface *menor = SDL_CreateRGBSurfaceWithFormat(
+      SDL_Surface *menor = nv_superficie(
           0, lw, lh, 32, SDL_PIXELFORMAT_ABGR8888);
       if (menor) {
         // BlitScaled faz media dos vizinhos; um decimador ingenuo deixaria a
