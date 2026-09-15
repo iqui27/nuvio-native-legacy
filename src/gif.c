@@ -113,10 +113,28 @@ EM_JS(void, gif_js_preparar, (const char *cam, const unsigned char *dados, int n
   var caminho = UTF8ToString(cam);
   if (Module.nvGif && Module.nvGif.caminho === caminho) return;
   if (Module.nvGif && Module.nvGif.url) URL.revokeObjectURL(Module.nvGif.url);
+  if (Module.nvGif && Module.nvGif.img && Module.nvGif.img.parentNode)
+    Module.nvGif.img.parentNode.removeChild(Module.nvGif.img);
   var bytes = HEAPU8.slice(dados, dados + n);
   var url = URL.createObjectURL(new Blob([bytes], { type: 'image/gif' }));
   var img = new Image();
   img.src = url;
+  // A <img> TEM DE ESTAR NO DOCUMENTO, E SER PINTADA. O Chromium so avanca a
+  // animacao de um GIF enquanto alguem PINTA a imagem: uma <img> solta, fora
+  // do DOM, nao tem caixa de layout nem observador, entao o decodificador
+  // entrega os primeiros quadros conforme decodifica e depois PARA — e
+  // drawImage passa a copiar sempre o mesmo quadro. E exatamente o relato do
+  // @rawldon: "comeca certo, pisca depois de ~1 s e congela num quadro".
+  // O comentario acima ("uma <img> anda sozinha") so vale para <img> na tela.
+  //
+  // Entao ela entra no documento: 2x2 px, no canto, quase transparente, acima
+  // do canvas (z-index maior que o do #canvas do shell) — se ficasse por
+  // baixo, ou com display:none / visibility:hidden / opacity:0, o Chromium
+  // teria motivo para nao pinta-la e a animacao pararia do mesmo jeito. Fora
+  // da viewport tambem nao serve: imagem fora da tela nao e pintada.
+  img.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;' +
+                      'opacity:0.02;pointer-events:none;z-index:9';
+  (document.body || document.documentElement).appendChild(img);
   Module.nvGif = { caminho: caminho, url: url, img: img, cv: null, cx: null };
 });
 
@@ -139,6 +157,10 @@ EM_JS(int, gif_js_quadro, (unsigned char *destino, int larg, int alt), {
 
 EM_JS(void, gif_js_soltar, (), {
   if (Module.nvGif && Module.nvGif.url) URL.revokeObjectURL(Module.nvGif.url);
+  // Sai do documento junto: sem isto cada cartaz focado deixaria uma <img>
+  // animando para sempre no canto, gastando decodificacao por nada.
+  if (Module.nvGif && Module.nvGif.img && Module.nvGif.img.parentNode)
+    Module.nvGif.img.parentNode.removeChild(Module.nvGif.img);
   Module.nvGif = null;
 });
 

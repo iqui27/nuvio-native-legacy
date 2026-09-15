@@ -6,6 +6,7 @@
 #include "text.h"
 #include "anim.h"
 #include "layout.h"
+#include "ajustes.h"   /* ajustes_qualidade: o teto de "Qualidade maxima" */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -77,6 +78,32 @@ const Stream *stream_item(int i) {
 // Somar pesos em vez de comparar campo a campo deixa a regra num lugar so e
 // legivel: mudar a preferencia e mexer num numero, nao reescrever um encadeado
 // de ifs onde a ordem das comparacoes vira a regra escondida.
+// TETO DE QUALIDADE ESCOLHIDO EM AJUSTES, que ate agora nao valia nada.
+//
+// "Qualidade maxima" (Automatica / 4K / 1080p / 720p) era gravada, sincronizada
+// com a conta e lida por NINGUEM: `ajustes_qualidade()` nao tinha consumidor na
+// escolha de fonte. Quem punha 1080p continuava abrindo a fonte 4K — inclusive
+// em canal ao vivo, onde a 4K e a primeira da lista do addon e, numa conexao
+// que nao a sustenta, ela e justamente a que demora ou nem abre.
+//
+// Devolve 0 para "sem teto".
+static int alturaMax(void) {
+  const char *q = ajustes_qualidade();
+  if (!q || !q[0]) return 0;
+  if (!strcmp(q, "4K"))    return 2160;
+  if (!strcmp(q, "1080p")) return 1080;
+  if (!strcmp(q, "720p"))  return 720;
+  return 0;                                  // "Automatica"
+}
+
+// 1 quando a fonte cabe no teto. Fonte SEM altura declarada cabe: a maioria dos
+// canais nao diz resolucao nenhuma, e recusar o que nao se sabe deixaria a
+// pessoa sem fonte por causa de um campo que o addon nao preencheu.
+static int cabeNoTeto(const Stream *s) {
+  int teto = alturaMax();
+  return !teto || !s->altura || s->altura <= teto;
+}
+
 static long pontos(const Stream *s) {
   long p = 0;
   // DOLBY VISION SO VALE PONTO EM MP4 — e isto e medida, nao teoria.
@@ -102,6 +129,10 @@ static long pontos(const Stream *s) {
   if (s->mp4 && s->dolbyVision)                      p +=  10000;
   if (s->dolbyAtmos)                                 p +=   2000;
   p += s->altura;
+  // ACIMA DO TETO vai para o fim da fila, e nao para fora dela: o teto e
+  // preferencia, nao filtro. Uma lista em que so ha 4K e com teto de 1080p tem
+  // de continuar tocando — em 4K, com uma linha no log dizendo por que.
+  if (!cabeNoTeto(s)) p -= 1000000;
   return p;
 }
 
@@ -255,6 +286,123 @@ int stream_primeira_boa(int tentativas) {
   if (escolhida >= 0) printf("[fonte] %d ok\n", escolhida);
   return escolhida;
 }
+
+// A PRIMEIRA FONTE DE CANAL QUE ESTA VIVA, conferida em paralelo e por
+// PLAYLIST, nao por pipeline.
+//
+// MEDIDO na LG, canal da FrostView com seis candidatas mortas: o canal ia
+// DIRETO para a primeira da lista e o watchdog de app.c dava 12 s a cada uma
+// antes de passar para a proxima — 12, 24, 36, 48, 60 s no log, quase dois
+// minutos ate tocar. E o prazo nao pode ser curto: 12 s e o que um canal VIVO
+// leva para abrir num 4K pesado.
+//
+// O barato aqui e que uma fonte morta se denuncia em MEIO SEGUNDO: o proxy
+// responde 200 com uma playlist de 98 bytes, cabecalho e nenhum segmento (ver
+// playlistVazia). Entao, em vez de esperar o pipeline falhar, pergunta-se a
+// playlist — as candidatas em paralelo, e a primeira viva vai para o player.
+//
+// ORDEM DA LISTA, e nao pontuacao: para canal ao vivo o addon ja manda
+// FHD/HD/SD ordenado, e essa ordem e o ranking dele. (O caminho de filme, em
+// stream_primeira_boa, continua por pontuacao.)
+//
+// NAO chama rede_url_final: o link de canal nao passa por debrid nem por
+// redirecionamento de expiracao, e aquela chamada custa outro pedido com
+// timeout de 10 s. Aqui o unico pedido e o da propria playlist, com 5 s.
+// 8 fios e nao 4: a conferencia inteira precisa caber numa rodada so, senao a
+// segunda leva outro CANAL_PRAZO_S. Sao pedidos de poucos KB.
+#define CANAL_FIOS   8
+// 3 s. MEDIDO na LG: canal vivo devolve a playlist em 0,5 s; o proxy que
+// pendurou nao devolve em 5, 12 nem 30 (curl do proprio aparelho: `http=000`,
+// zero byte). Esperar mais so adia o inevitavel — e este prazo entra INTEIRO no
+// tempo que a pessoa fica olhando para a tela preta quando o canal esta fora.
+#define CANAL_PRAZO_S 3
+static int canalProx, canalN;
+// Classe de cada candidata: 0 = nao conferida ainda, 1 = VIVA (playlist com
+// segmento), 2 = MORTA (respondeu sem segmento), 3 = MUDA (nao respondeu).
+static unsigned char *canalClasse;
+static int classeEscolhida;
+static pthread_mutex_t canalTrava = PTHREAD_MUTEX_INITIALIZER;
+
+static void *fioCanal(void *u) {
+  (void)u;
+  for (;;) {
+    int meu;
+    char *corpo;
+    long n = 0;
+    pthread_mutex_lock(&canalTrava);
+    if (canalProx >= canalN) { pthread_mutex_unlock(&canalTrava); return NULL; }
+    meu = canalProx++;
+    pthread_mutex_unlock(&canalTrava);
+    if (!lista[meu].url[0]) { canalClasse[meu] = 2; continue; }
+    corpo = rede_baixar_bin(lista[meu].url, CANAL_PRAZO_S, &n);
+    if (!corpo) {
+      // MUDA. MEDIDO na LG com o curl do proprio aparelho: estas URLs do proxy
+      // do FrostView nao devolvem NADA — `http=000`, 12 s de espera, zero byte.
+      // Nao e a rede da casa: outra URL do mesmo host responde 200 em 0,5 s.
+      // Fonte que nao entrega a playlist em CANAL_PRAZO_S tambem nao vai
+      // entregar segmento ao pipeline, entao ela cai para ultimo recurso — mas
+      // NAO e descartada, porque uma rede ruim de verdade se pareceria com isto.
+      canalClasse[meu] = 3;
+      printf("[fonte] %d muda: playlist nao respondeu em %ds\n", meu, CANAL_PRAZO_S);
+    } else if (strstr(corpo, "#EXTINF") || strstr(corpo, "#EXT-X-STREAM-INF")) {
+      canalClasse[meu] = 1;
+    } else {
+      canalClasse[meu] = 2;
+      printf("[fonte] %d morta: playlist com %ld B e nenhum segmento\n", meu, n);
+    }
+    free(corpo);
+  }
+}
+
+int stream_canal_primeira_viva(int tentativas) {
+  int total = stream_n(), q, criados = 0, escolhida = -1;
+  pthread_t fios[CANAL_FIOS];
+  if (total < 1) return -1;
+  if (tentativas < 1 || tentativas > total) tentativas = total;
+  canalClasse = calloc((size_t)tentativas, 1);
+  if (!canalClasse) return -1;
+  marco("canal: conferindo playlists");
+  canalProx = 0; canalN = tentativas;
+  for (q = 0; q < CANAL_FIOS && q < tentativas; q++)
+    if (pthread_create(&fios[criados], NULL, fioCanal, NULL) == 0) criados++;
+  if (!criados) fioCanal(NULL);
+  for (q = 0; q < criados; q++) pthread_join(fios[q], NULL);
+
+  // PREFERENCIA POR CLASSE, e dentro da classe pela ORDEM DO ADDON — que para
+  // canal ao vivo e o ranking dele (FHD/HD/SD). Viva ganha de muda; muda ganha
+  // de nada. Morta nunca entra: ela JA respondeu dizendo que nao tem segmento.
+  // Ordem de preferencia: viva dentro do teto, viva acima do teto, muda dentro
+  // do teto, muda. O teto nunca tira a ultima fonte da mesa.
+  for (q = 0; q < tentativas && escolhida < 0; q++)
+    if (canalClasse[q] == 1 && cabeNoTeto(&lista[q])) escolhida = q;
+  for (q = 0; q < tentativas && escolhida < 0; q++)
+    if (canalClasse[q] == 1) escolhida = q;
+  for (q = 0; q < tentativas && escolhida < 0; q++)
+    if (canalClasse[q] == 3 && cabeNoTeto(&lista[q])) escolhida = q;
+  for (q = 0; q < tentativas && escolhida < 0; q++)
+    if (canalClasse[q] == 3) escolhida = q;
+  if (escolhida >= 0 && !cabeNoTeto(&lista[escolhida]))
+    printf("[fonte] canal: nenhuma fonte dentro do teto de %dp; usando %dp\n",
+           alturaMax(), lista[escolhida].altura);
+  { int vivas = 0, mortas = 0, mudas = 0;
+    for (q = 0; q < tentativas; q++) {
+      if (canalClasse[q] == 1) vivas++;
+      else if (canalClasse[q] == 2) mortas++;
+      else if (canalClasse[q] == 3) mudas++;
+    }
+    printf("[fonte] canal: %d viva(s), %d morta(s), %d muda(s) de %d; escolhida %d\n",
+           vivas, mortas, mudas, tentativas, escolhida); }
+  marco(escolhida >= 0 ? "canal: fonte escolhida por playlist"
+                       : "canal: nenhuma playlist utilizavel");
+  // A CLASSE DA ESCOLHIDA fica disponivel para quem chamou: uma fonte MUDA que
+  // entrou por falta de opcao nao merece o mesmo prazo de uma viva. Ver
+  // stream_canal_classe_escolhida e o watchdog em app.c.
+  classeEscolhida = (escolhida >= 0) ? canalClasse[escolhida] : 0;
+  free(canalClasse); canalClasse = NULL;
+  return escolhida;
+}
+
+int stream_canal_classe_escolhida(void) { return classeEscolhida; }
 
 int stream_automatico(void) {
   if (!stream_n()) return -1;

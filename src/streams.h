@@ -67,6 +67,19 @@ Uint32 stream_idade_ms(void);
 // BLOQUEIA — chamar de fio proprio.
 int  stream_primeira_boa(int tentativas);
 
+// CANAL AO VIVO: a primeira fonte da lista cuja PLAYLIST tem segmento, com as
+// candidatas conferidas em paralelo. Existe porque a verificacao de filme
+// (stream_primeira_boa) custa um rede_url_final de 10 s por candidata, e porque
+// entregar a primeira sem conferir custava 12 s de watchdog POR FONTE MORTA —
+// medido em quase dois minutos num canal com seis mortas. Ver a nota longa na
+// definicao. Devolve -1 quando nenhuma respondeu com segmento.
+int  stream_canal_primeira_viva(int tentativas);
+
+// Classe da fonte que stream_canal_primeira_viva acabou de escolher:
+// 1 = VIVA (playlist com segmento), 3 = MUDA (nao respondeu a tempo), 0 = nenhuma.
+// Serve para o chamador dar prazo menor a quem ja provou estar ruim.
+int  stream_canal_classe_escolhida(void);
+
 // --- folha de fontes (a lista que sobe por cima do player/detalhe) ---
 void stream_folha_abrir(void);
 int  stream_folha_aberta(void);
