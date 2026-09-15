@@ -70,6 +70,7 @@ void video_definir_mp4(int ehMp4);
 int    video_tocando(void);
 int    video_pronto(void);   // 1 depois do loadCompleted
 int    video_ativo(void);    // 1 assim que ha mediaId — e o que abre o furo
+int    video_falhou(void);   // 1 depois de um errorText real na fonte atual
 
 // --- faixas -----------------------------------------------------------------
 // Tudo isto sai do evento sourceInfo da assinatura do uMS: o addon nao informa

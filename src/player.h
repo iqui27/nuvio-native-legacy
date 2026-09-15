@@ -28,6 +28,9 @@ const CatEp *player_proximo_episodio(void);
 // cartao deve estar no ar.
 int player_regra_proximo(double posSeg, double durSeg, double cred);
 void player_erro_fonte(void);
+// 1 quando a fonte atual falhou. O app usa no watchdog de canal: stream de TV
+// ao vivo que nao abre troca sozinho para o proximo da lista.
+int  player_fonte_falhou(void);
 
 // 1 quando ha video de verdade por tras desta sessao. O desenho usa isto para
 // nao pintar a arte-chave por cima do plano de video.
@@ -63,6 +66,25 @@ void player_atualizar(float dt, Uint32 agora);
 void player_desenhar(Uint32 agora);
 int  player_quer_sair(void);  // 1 assim que o Back foi apertado
 void player_encerrar(void);
+
+// --- MINI-PLAYER (PiP) DE CANAL ---------------------------------------------
+// Sair de um canal para a home nao mata a transmissao: o destino do plano de
+// video encolhe para um canto e o app fura a superficie ali. O decode nao
+// muda — so muda para onde o quadro vai.
+//
+// `player_minimizavel`: 1 quando a sessao e de canal com pipeline no ar — o
+//   app chama player_minimizar() no lugar de player_encerrar() na saida.
+// `player_restaurar`:  volta a tela cheia instantaneamente (o fluxo nunca
+//   parou). `player_fechar_mini`: fecha de vez. `player_manter_mini`: marca
+//   a proxima abertura como zap dentro do PiP (o CH+/- chama antes de
+//   tocarCanal) — sem ela, abrir um canal volta a tela cheia.
+int  player_minimizavel(void);
+void player_minimizar(void);
+int  player_mini_ativo(void);
+void player_manter_mini(void);
+void player_restaurar(void);
+void player_fechar_mini(void);
+void player_mini_desenhar(Uint32 agora);
 
 // --- MODOS DE PROPORCAO -----------------------------------------------------
 // Os OITO modos do app web, na mesma ordem e com os mesmos fatores

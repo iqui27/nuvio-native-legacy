@@ -225,6 +225,10 @@ void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca);
 // Zera cor E alpha do retangulo, com blend desligado, abrindo a superficie para
 // o plano de video que fica atras dela. Ver video.h.
 void gfx_furo(GfxRect r);
+// O mesmo furo com cantos arredondados (raio em fracao do menor lado, como o
+// gfx_cor): o que fica fora do SDF mantem a alpha da superficie e o plano de
+// video so aparece pela area arredondada.
+void gfx_furo_raio(GfxRect r, float raio);
 void gfx_textura(GfxRect r, GLuint tex);
 
 #endif

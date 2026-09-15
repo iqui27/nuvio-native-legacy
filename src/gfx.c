@@ -674,8 +674,12 @@ void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca) {
 // alpha aqui e o canal de composicao da janela, entao isto so tem efeito com
 // SDL_GL_ALPHA_SIZE 8 pedido antes de criar a janela.
 void gfx_furo(GfxRect r) {
+  gfx_furo_raio(r, 0.0f);
+}
+
+void gfx_furo_raio(GfxRect r, float raio) {
   glDisable(GL_BLEND);
-  gfx_rect(r, 0, GFX_COR, 0, 0, 0, 0.0f, 0, 0, 0, 0);
+  gfx_rect(r, 0, GFX_COR, 0, 0, 0, raio, 0, 0, 0, 0);
   glEnable(GL_BLEND);
 }
 

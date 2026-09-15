@@ -29,13 +29,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <pthread.h>
 #include <time.h>
 
 #define G_MAX_CANAL  900
 #define G_MAX_CAT     48
 #define G_MAX_FAV    400
-#define G_MAX_FONTE    8
+// Cada addon pode declarar VARIOS catalogos de canal no manifesto; 8 so
+// bastava para um FrostView.
+#define G_MAX_FONTE   24
 #define G_PAGINA     100
 
 // --- layout ---------------------------------------------------------------
@@ -87,7 +90,7 @@ static int fioVivo, pendPronto;
 static char focoPend[80];
 
 // Catalogos de canal descobertos na home (tipo "channel"/"tv").
-typedef struct { char base[600], tipo[8], id[96]; } GFonte;
+typedef struct { char base[600], tipo[16], id[96]; } GFonte;
 static GFonte fontes[G_MAX_FONTE]; static int nFontes, fontesOk;
 // Copia de trabalho do fio: as fileiras sao so o caminho rapido. O manifesto
 // de cada addon ativo declara TODOS os catalogos de canal, montados na home
@@ -168,8 +171,18 @@ static int linhaCatDe(int l) {  // indice em cats[], -1 = favoritos
 }
 
 // --- carga --------------------------------------------------------------------
+// Tipos de catalogo que os addons de canal usam no manifesto Stremio:
+// "channel" (FrostView), "tv" (o tipo nativo de TV ao vivo do Stremio) e os
+// raros "channels"/"live"/"iptv" de addons de lista. Qualquer addon novo que
+// declare um catalogo desses cai direto no guia — e a resposta ao "se outro
+// addon de canais entrar, ele ja vai parar aqui".
 static int ehCanal(const char *t) {
-  return t && (!strcmp(t, "channel") || !strcmp(t, "tv"));
+  static const char *tipos[] = { "channel", "tv", "channels", "live", "iptv" };
+  int i;
+  if (!t || !t[0]) return 0;
+  for (i = 0; i < (int)(sizeof tipos / sizeof tipos[0]); i++)
+    if (!strcasecmp(t, tipos[i])) return 1;
+  return 0;
 }
 
 // Descobre os catalogos de canal pelas fileiras que a descoberta ja montou.
@@ -243,6 +256,11 @@ static int lerPagina(const GFonte *f, int skip) {
     if (js_texto(p, fim, "id", c.id, sizeof c.id) &&
         js_texto(p, fim, "name", c.nome, sizeof c.nome) &&
         sCanalPorId(c.id) < 0) {
+      char mtipo[16] = "";
+      // O catalogo se declara de canal, mas um meta que se diz filme/serie
+      // nao entra — protege o guia de catalogo mal declarado.
+      if (js_texto(p, fim, "type", mtipo, sizeof mtipo) &&
+          mtipo[0] && !ehCanal(mtipo)) { p = js_prox(fim); continue; }
       if (!js_texto(p, fim, "poster", c.logo, sizeof c.logo))
         js_texto(p, fim, "logo", c.logo, sizeof c.logo);
       js_texto(p, fim, "description", c.desc, sizeof c.desc);
@@ -404,6 +422,10 @@ static Uint32 dirDesde, dirTick, ultNavCat;
 
 // OK longo = favorito.
 static Uint32 okDesde; static int okLongo;
+
+// Quando foi a ultima tentativa de carga com o guia vazio. Ver guia_atualizar.
+#define G_RETENTAR_MS 10000u
+static Uint32 ultTentativa;
 
 // Instantaneo da ABERTURA do overlay. O firmware repete o KEYDOWN da tecla
 // segurada, e a tecla que ABRE (azul, ou `s` no Tizen) e a mesma que FECHA:
@@ -631,9 +653,27 @@ void guia_atualizar(float dt, Uint32 agora) {
   epgPasso();
   // O catalogo pode ter chegado DEPOIS da abertura (descoberta ainda montando
   // as fileiras): tentar de novo ate aparecer uma fonte de canal.
-  if (!nFontes && estado != G_BAIXANDO) {
+  //
+  // A RETENTATIVA NAO PODE DEPENDER DE `nFontes`, e era essa a trava.
+  // descobrirFontes() le apenas as FILEIRAS publicadas da home, e o catalogo de
+  // canal do FrostView nao vira fileira — quem o encontra e a sonda de
+  // manifestos, que so roda DENTRO do fio de carga (o proprio iniciarCarga ja
+  // diz isso: "sem portaria por nFontes"). Entao, com a primeira carga tendo
+  // acontecido antes de os addons da conta chegarem, ficava assim para sempre:
+  //   [guia] 0 canais em 0 categorias
+  // e a tela dizendo "o guia precisa de um addon de canais", com o FrostView
+  // instalado e respondendo 200. MEDIDO na LG: reabrir o guia nao consertava,
+  // porque nada aqui chamava a carga de novo.
+  //
+  // Agora a tentativa e por TEMPO enquanto nao ha canal: a cada 10 s com o guia
+  // na tela. Sao dois GET de manifesto por tentativa, e so enquanto a tela esta
+  // aberta e vazia — que e exatamente a situacao em que a pessoa esta olhando
+  // para um guia sem nada e esperando.
+  if (!nCanais && estado != G_BAIXANDO &&
+      (!ultTentativa || agora - ultTentativa > G_RETENTAR_MS)) {
+    ultTentativa = agora ? agora : 1;
     descobrirFontes();
-    if (nFontes) iniciarCarga();
+    iniciarCarga();
   }
 
   // Timeout do modo salta-categoria e da direcao segurada. O firmware nao
