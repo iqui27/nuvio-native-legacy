@@ -155,6 +155,41 @@ EM_JS(int, gif_js_quadro, (unsigned char *destino, int larg, int alt), {
   return 1;
 });
 
+// SOBE O QUADRO DIRETO PARA A TEXTURA, pela propria WebGL, sem passar por
+// getImageData nem pelo heap do wasm.
+//
+// O caminho anterior era canvas.drawImage -> getImageData (leitura da GPU
+// para a CPU, 480x270x4 = 518 KB) -> HEAPU8.set -> glTexSubImage2D (volta para
+// a GPU), quinze vezes por segundo. Nas fotos do log do @rawldon (#49) o
+// resultado era `swap=118..146 ms` e FPS entre 25 e 34 assim que a capa
+// animada ganhava o foco — o app inteiro engasgava, e o "pisca" do relato e
+// esse engasgo. texImage2D aceita a <img> (ou o canvas) como fonte e o
+// navegador copia GPU->GPU. Desenha-se num canvas de `larg` de largura so para
+// limitar o tamanho da textura; a copia do canvas para a textura continua sem
+// tocar a CPU.
+//
+// `GL.textures[nome]` e a tabela da biblioteca GL do Emscripten: o nome que o
+// C recebeu de glGenTextures aponta para o WebGLTexture de verdade.
+EM_JS(int, gif_js_subir, (int nomeTex, int larg, int alt, int mesmoTamanho), {
+  var g = Module.nvGif;
+  if (!g || !g.img || !g.img.complete || !g.img.naturalWidth) return 0;
+  var ctx = (typeof GL !== 'undefined' && GL.currentContext) ? GL.currentContext.GLctx : null;
+  var tex = (typeof GL !== 'undefined' && GL.textures) ? GL.textures[nomeTex] : null;
+  if (!ctx || !tex) return 0;
+  if (!g.cv || g.cv.width !== larg || g.cv.height !== alt) {
+    g.cv = document.createElement('canvas');
+    g.cv.width = larg; g.cv.height = alt;
+    g.cx = g.cv.getContext('2d');
+  }
+  g.cx.drawImage(g.img, 0, 0, larg, alt);
+  ctx.bindTexture(ctx.TEXTURE_2D, tex);
+  try {
+    if (mesmoTamanho) ctx.texSubImage2D(ctx.TEXTURE_2D, 0, 0, 0, ctx.RGBA, ctx.UNSIGNED_BYTE, g.cv);
+    else              ctx.texImage2D(ctx.TEXTURE_2D, 0, ctx.RGBA, ctx.RGBA, ctx.UNSIGNED_BYTE, g.cv);
+  } catch (e) { return 0; }
+  return 1;
+});
+
 EM_JS(void, gif_js_soltar, (), {
   if (Module.nvGif && Module.nvGif.url) URL.revokeObjectURL(Module.nvGif.url);
   // Sai do documento junto: sem isto cada cartaz focado deixaria uma <img>
@@ -205,13 +240,9 @@ GLuint gif_textura(const char *caminho, int largAlvo) {
     h = (int)((double)nh * largAlvo / nw + 0.5);
     if (h < 1) h = 1; }
 
-  px = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
-  if (!px) return 0;
-  if (!gif_js_quadro(px, w, h)) { free(px); return 0; }
-
   if (!tex) {
     glGenTextures(1, &tex);
-    if (!tex) { free(px); return 0; }
+    if (!tex) return 0;
   }
   glBindTexture(GL_TEXTURE_2D, tex);
   if (w != texW || h != texH) {
@@ -219,11 +250,20 @@ GLuint gif_textura(const char *caminho, int largAlvo) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  }
+  // GPU -> GPU. Se a WebGL recusar (contexto perdido, tabela GL ausente), cai
+  // no caminho antigo pela CPU — mais lento, mas anima.
+  if (gif_js_subir((int)tex, w, h, w == texW && h == texH)) {
+    texW = w; texH = h;
+    return tex;
+  }
+  px = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
+  if (!px) return 0;
+  if (!gif_js_quadro(px, w, h)) { free(px); return 0; }
+  if (w != texW || h != texH) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
     texW = w; texH = h;
   } else {
-    // MESMO TAMANHO = MESMA TEXTURA, so o conteudo troca. glTexImage2D a cada
-    // quadro realoca no driver; glTexSubImage2D escreve por cima.
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px);
   }
   free(px);

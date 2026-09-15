@@ -855,17 +855,34 @@ static int threadDecode(void *arg) {
                  fclose(g); } }
       printf("[tex] decode falhou (%s) tam=%ld magica=%02x%02x%02x%02x: %.70s\n",
              IMG_GetError(), tam, mag[0], mag[1], mag[2], mag[3], caminho);
-      // APAGA o arquivo que nao decodifica. Ele so pode ter chegado ao cache
-      // corrompido — a assinatura foi conferida no download —, e mante-lo
-      // significa que esta arte NUNCA mais carrega, nem depois de o problema
-      // que a truncou passar. Apagando, o proximo pedido baixa de novo.
-      if (noCache(caminho)) remove(caminho);
-      fflush(stdout);
-      // Arquivo LOCAL que nao decodifica esta envenenado: garantirLocal o
-      // aceita para sempre por ter mais de 512 bytes, entao sem apagar aqui o
-      // item nunca mais teria arte. Só apaga o que esta no NOSSO cache.
-      if (dirCache[0] && !strncmp(caminho, dirCache, strlen(dirCache)))
-        remove(caminho);
+      // GIF INTEIRO NAO E ARQUIVO ENVENENADO — E ARQUIVO DE OUTRO LEITOR.
+      //
+      // Issue #49, e as duas fotos do log do @rawldon fecham a cadeia: o
+      // SDL_image do alvo Tizen nao le GIF ("Unsupported image format",
+      // magica 47494638 = "GIF8"), este ramo APAGAVA o arquivo, e quem o usa
+      // de verdade e gif.c, que anima a capa pela <img> do navegador. Com o
+      // arquivo apagado, tex_arquivo() volta a devolver NULL, home.c cai na
+      // capa parada, o cache baixa o GIF DE NOVO (o cache-disco dele subia
+      // 1,2 -> 2,2 -> 3,2 MB, um megabyte por volta), a capa volta a animar
+      // por um instante, o decode falha de novo e apaga de novo. E o "toca
+      // um segundo, pisca e congela" do relato — com o recuo de 2 s e 10 s
+      // deste mesmo cache marcando o ritmo.
+      //
+      // Um GIF com a assinatura certa e tamanho de GIF nao esta corrompido:
+      // esta so no leitor errado. Fica no disco (para gif.c) e o item aqui
+      // continua FALHOU, sem baixar de novo.
+      { int ehGif = (mag[0] == 'G' && mag[1] == 'I' && mag[2] == 'F' && mag[3] == '8');
+        if (!ehGif) {
+          // APAGA o arquivo que nao decodifica. Ele so pode ter chegado ao
+          // cache corrompido — a assinatura foi conferida no download —, e
+          // mante-lo significa que esta arte NUNCA mais carrega, nem depois de
+          // o problema que a truncou passar. Apagando, o proximo pedido baixa
+          // de novo. Só apaga o que esta no NOSSO cache.
+          if (noCache(caminho)) remove(caminho);
+        } else {
+          printf("[tex] e um GIF: fica no disco para gif.c, sem baixar de novo\n");
+        }
+        fflush(stdout); }
     }
   }
 }
