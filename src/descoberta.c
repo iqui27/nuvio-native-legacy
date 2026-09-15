@@ -13,6 +13,7 @@
 #include "js.h"
 #include "trakt.h"
 #include "progresso.h"
+#include <stdint.h>   /* uintptr_t: a geracao viaja no argumento do fio */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -952,6 +953,123 @@ static void formatarTitulo(const char *nome, const char *tipo, char *dst, size_t
 // declarado(s)" para um addon que na verdade declara 40, sem nada apontando
 // que os outros 32 foram cortados aqui e nao em lugar nenhum que ela pudesse
 // mudar.
+
+// --- MANIFESTOS BAIXADOS ANTES, E EM PARALELO ---------------------------------
+//
+// MEDIDO na LG: "manifestos lidos" chegava 7 s depois de "amigos assistindo",
+// e nesses 7 s a home ja estava montada esperando — porque os manifestos so
+// comecavam DEPOIS de o Trakt terminar, e ainda um de cada vez. Nenhuma das
+// duas esperas e necessaria: o manifesto de um addon nao depende do Trakt nem
+// do manifesto do addon do lado.
+//
+// Entao a busca comeca no PRIMEIRO instante de montar(), em fios proprios, e o
+// laco de leitura (que continua sequencial, porque a COTA de declaracoes
+// depende da ordem e da sobra do addon anterior) so espera o que ainda nao
+// chegou. Com os 4 addons desta TV o download inteiro cabe dentro do tempo do
+// Trakt.
+//
+// A lista de addons pode ser trocada pelo sync no meio do caminho: por isso a
+// URL e COPIADA na largada e o corpo so e entregue a quem pedir exatamente
+// aquela URL. Um addon trocado no meio simplesmente nao acha o seu corpo aqui
+// e baixa como antes — mais lento, nunca errado.
+#define MANI_MAX  12
+#define MANI_FIOS  4
+static struct {
+  char  url[900];
+  char *corpo;
+  int   pronto;      // 1 = tentativa terminada (corpo pode ser NULL)
+} mani[MANI_MAX];
+static int  maniN;
+static pthread_mutex_t maniTrava = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  maniCond  = PTHREAD_COND_INITIALIZER;
+static int  maniProx;
+// A volta a que os fios pertencem. Um fio de uma volta ANTERIOR — que sobra
+// quando a lista de addons muda no meio e ninguem pede aquele corpo — nao pode
+// gravar em cima da tabela desta volta nem marcar `pronto` no lugar de outro
+// addon. Ele descobre que ficou para tras aqui, joga o proprio download fora e
+// sai.
+static unsigned maniGeracao;
+
+static void *fioManifesto(void *u) {
+  unsigned minha = (unsigned)(uintptr_t)u;
+  for (;;) {
+    int meu;
+    char *corpo;
+    char url[900];
+    pthread_mutex_lock(&maniTrava);
+    if (minha != maniGeracao || maniProx >= maniN) {
+      pthread_mutex_unlock(&maniTrava); return NULL;
+    }
+    meu = maniProx++;
+    snprintf(url, sizeof url, "%s", mani[meu].url);
+    pthread_mutex_unlock(&maniTrava);
+    corpo = rede_baixar(url, 20);
+    pthread_mutex_lock(&maniTrava);
+    if (minha != maniGeracao) {
+      pthread_mutex_unlock(&maniTrava); free(corpo); return NULL;
+    }
+    mani[meu].corpo = corpo;
+    mani[meu].pronto = 1;
+    pthread_cond_broadcast(&maniCond);
+    pthread_mutex_unlock(&maniTrava);
+  }
+}
+
+// Larga o download de todos os manifestos. Volta na hora.
+static void maniLargar(void) {
+  int nAd = addons_n(), i, criados = 0;
+  pthread_t fios[MANI_FIOS];
+  pthread_mutex_lock(&maniTrava);
+  // Sobra da volta anterior (ninguem pediu, addon trocado no meio): nao pode
+  // virar vazamento nem ser entregue como se fosse desta volta.
+  for (i = 0; i < maniN; i++) { free(mani[i].corpo); mani[i].corpo = NULL; }
+  maniN = nAd > MANI_MAX ? MANI_MAX : nAd;
+  for (i = 0; i < maniN; i++) {
+    snprintf(mani[i].url, sizeof mani[i].url, "%s/manifest.json", addons_base(i));
+    mani[i].pronto = 0;
+  }
+  maniProx = 0;
+  maniGeracao++;
+  // Ninguem mais espera por um `pronto` que a volta passada deixou pendente.
+  pthread_cond_broadcast(&maniCond);
+  { unsigned g = maniGeracao;
+    pthread_mutex_unlock(&maniTrava);
+  if (maniN < 1) return;
+  for (i = 0; i < MANI_FIOS && i < maniN; i++)
+    if (pthread_create(&fios[criados], NULL, fioManifesto,
+                       (void *)(uintptr_t)g) == 0) {
+      pthread_detach(fios[criados]);
+      criados++;
+    } }
+  // Sem fio nenhum o corpo fica NULL e `pronto` fica 0: maniPegar percebe que
+  // ninguem esta baixando e baixa no proprio fio, como sempre foi.
+  if (!criados) {
+    pthread_mutex_lock(&maniTrava);
+    maniN = 0;
+    pthread_cond_broadcast(&maniCond);
+    pthread_mutex_unlock(&maniTrava);
+  }
+}
+
+// O corpo do manifesto de `url`, esperando o download largado por maniLargar se
+// ele ainda estiver em curso. A posse passa para quem chamou.
+static char *maniPegar(const char *url) {
+  int i;
+  char *corpo = NULL;
+  pthread_mutex_lock(&maniTrava);
+  for (i = 0; i < maniN; i++) if (!strcmp(mani[i].url, url)) break;
+  if (i < maniN) {
+    unsigned g = maniGeracao;
+    // A espera acaba tambem quando a volta vira: nesse caso o corpo daqui nao
+    // serve mais a ninguem e quem chamou baixa por conta propria.
+    while (!mani[i].pronto && g == maniGeracao)
+      pthread_cond_wait(&maniCond, &maniTrava);
+    if (g == maniGeracao) { corpo = mani[i].corpo; mani[i].corpo = NULL; }
+  }
+  pthread_mutex_unlock(&maniTrava);
+  return corpo;
+}
+
 static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
                          int *totalReal) {
   char url[900], addonId[96] = "", nome[96], tipo[8], id[96];
@@ -959,7 +1077,10 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
   const char *p, *fim;
   int n = 0, total = 0;
   snprintf(url, sizeof url, "%s/manifest.json", base);
-  corpo = rede_baixar(url, 20);
+  // Ja largado em paralelo no comeco de montar(); so cai na rede aqui quando
+  // este addon nao estava na lista daquele instante.
+  corpo = maniPegar(url);
+  if (!corpo) corpo = rede_baixar(url, 20);
   if (!corpo) return 0;
   fim = corpo + strlen(corpo);
   // O MESMO CORPO SERVE AOS DOIS LEITORES. Ver addons_manifesto_lido: sem esta
@@ -1379,6 +1500,10 @@ static void *montar(void *u) {
   // posicoes do catalogo nessa fileira, entao a ordem aqui e o que define o
   // que aparece la — e o historico tem de ganhar das recomendacoes.
   marco("montar: inicio");
+  // OS MANIFESTOS COMECAM A CHEGAR AGORA, nao daqui a seis segundos. Ver o
+  // cabecalho de maniLargar: eles nao dependem do Trakt, e eram o bloco de 7 s
+  // logo depois dele.
+  maniLargar();
   // AS DUAS FONTES, UNIDAS. Ver o cabecalho de montarContinuar: com Trakt
   // vinculado esta fileira ignorava o progresso da conta Nuvio, que e o que
   // chega do celular do dono.
