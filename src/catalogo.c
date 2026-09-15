@@ -690,6 +690,35 @@ int cat_ler_cache(const char *dirArte) {
 
 int cat_do_cache(void) { return veioDoCache; }
 
+// ASSINATURA DE UM CATALOGO: o que a home DESENHA dele — fileiras (chave,
+// titulo, janela) e a identidade de cada item (imdb, tipo). FNV-1a sobre isso.
+// Arte, sinopse e contagens nao entram: mudam sem que a home mude de forma.
+// Serve para a descoberta saber se o que ela acabou de montar e o MESMO que ja
+// esta na tela, e nesse caso nao publicar — publicar igual e remontar a home
+// por nada, que e o "ela fica recarregando" do dono.
+unsigned long cat_assinatura_de(const CatItem *lista, int qtd,
+                                const CatFileira *fl, int nf) {
+  unsigned long h = 2166136261UL;
+  int i;
+  const char *p;
+#define MIX(str) for (p = (str); p && *p; p++) { h ^= (unsigned char)*p; h *= 16777619UL; }
+  for (i = 0; i < nf; i++) {
+    MIX(fl[i].chave); MIX(fl[i].titulo);
+    h ^= (unsigned long)fl[i].ini * 31UL + (unsigned long)fl[i].n; h *= 16777619UL;
+  }
+  for (i = 0; i < qtd; i++) { MIX(lista[i].imdb); MIX(lista[i].tipo); }
+#undef MIX
+  return h;
+}
+
+unsigned long cat_assinatura(void) {
+  unsigned long h;
+  pthread_mutex_lock(&pubTrava);
+  h = cat_assinatura_de(itens, n, fils, nFils);
+  pthread_mutex_unlock(&pubTrava);
+  return h;
+}
+
 int cat_n(void) { return n; }
 
 const CatItem *cat_item(int i) {
@@ -1003,6 +1032,16 @@ void cat_republicar_fileiras(const CatFileira *novasFils, int nNovas) {
   if (!novasFils || nNovas < 1 || n < 1) return;
   q = nNovas > CAT_FIL_MAX ? CAT_FIL_MAX : nNovas;
   pthread_mutex_lock(&pubTrava);
+  // IGUAL AO QUE ESTA: nao mexe. A remontagem sem rede roda a cada sync e a
+  // cada ajuste de fileira; quando o resultado e o mesmo conjunto na mesma
+  // ordem, zerar e reescrever as fileiras faz a home se reconstruir por nada.
+  if (q == nFils) {
+    int igual = 1;
+    for (k = 0; k < q && igual; k++)
+      if (strcmp(novasFils[k].chave, fils[k].chave) || novasFils[k].ini != fils[k].ini ||
+          novasFils[k].n != fils[k].n) igual = 0;
+    if (igual) { pthread_mutex_unlock(&pubTrava); return; }
+  }
   nFils = 0;                 // ver a nota em catalogo.h: zera antes de mexer
   for (k = 0; k < q; k++) {
     CatFileira f = novasFils[k];

@@ -378,6 +378,27 @@ int main(void) {
       assert(ocultas == 4); } }           // g, e as tres empurradas
   puts("ok  fila: e a ordem; remover promove; limite menor manda para fora");
 
+  // NORMALIZAR: ligada alem do limite SEM marca de fila vira fora; a que a
+  // pessoa pos na fila fica; a que a home desenha (naHome) fica.
+  fil_esquecer();
+  fil_definir_limite(3);
+  { int j, est = -1;
+    const char *n[] = { "a", "b", "c", "d", "e", "f" };
+    for (j = 0; j < 6; j++) fil_registrar(n[j], n[j], "X", "movie", 1);
+    // e: a home desenhou (vaga garantida) — espelha como na home
+    { const char *home[] = { "a", "b", "c", "e" }; fil_espelhar_ordem(home, NULL, 4); }
+    // f: pedida pela pessoa com a home cheia
+    { int pf = -1; for (j = 0; j < fil_n(); j++) if (!strcmp(fil_chave(j), "f")) pf = j;
+      fil_adicionar(pf, &est); assert(est == FIL_NA_FILA); }
+    fil_normalizar();
+    for (j = 0; j < fil_n(); j++) {
+      const char *k = fil_chave(j);
+      if (!strcmp(k, "d")) assert(fil_linha_oculta(j));           // sobrou: fora
+      if (!strcmp(k, "e")) assert(!fil_linha_oculta(j));          // na home: fica
+      if (!strcmp(k, "f")) assert(!fil_linha_oculta(j) && fil_estado(j) == FIL_NA_FILA);
+    } }
+  puts("ok  normalizar: so a fila pedida fica alem do limite");
+
   // PODA: catalogo de addon que sumiu da conta sai; o resto fica.
   fil_esquecer();
   { int j;

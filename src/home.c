@@ -18,6 +18,7 @@
 #include "ajustes.h"
 #include "catalogo.h"
 #include "colecoes.h"
+#include "addons.h"   /* addons_nome_por_id: o addon de um grupo de colecoes */
 #include "gif.h"
 #include "badges.h"
 #include "extras.h"
@@ -1189,9 +1190,20 @@ static void sincronizarFileiras(void) {
       // Addon vazio: quem sabe o nome dele e a descoberta, que registra a mesma
       // chave com ele (o primeiro a saber preenche). Daqui saem o TIPO do
       // catalogo e a CONTAGEM, que so existem depois de a fileira ser montada.
-      if (strcmp(fileiras[q].chave, "last_session"))
+      if (strcmp(fileiras[q].chave, "last_session")) {
+        // GRUPO DE COLECOES leva o nome do addon dominante, para a tela de
+        // fileiras agrupa-lo junto dos catalogos daquele addon ("deixar
+        // agrupado as fileiras e colecoes por addons"). Misto ou sem addon
+        // fica "" e a tela o rotula "Colecao".
+        const char *addonNome = "";
+        if (!strncmp(fileiras[q].chave, "collection_", 11)) {
+          char id[96];
+          if (col_grupo_addon(fileiras[q].titulo, id, sizeof id))
+            addonNome = addons_nome_por_id(id);
+        }
         fil_registrar(fileiras[q].chave, fileiras[q].titulo,
-                      "", fileiras[q].catTipo, fileiras[q].n);
+                      addonNome, fileiras[q].catTipo, fileiras[q].n);
+      }
       ch[q] = fileiras[q].chave;
       ti[q] = fileiras[q].titulo;
     }

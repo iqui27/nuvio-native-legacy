@@ -185,6 +185,7 @@ int  cat_apagar_cache(void);
 // catalogo completo. Sem cache, publica em partes como antes.
 int  cat_do_cache(void);
 void cat_cache_substituido(void);
+
 int  cat_n(void);
 const CatItem *cat_item(int i);
 
@@ -272,7 +273,7 @@ void cat_definir(const CatItem *lista, int n);
 typedef struct {
   char chave[192];   // homeCatalogKey: <addonId>_<tipo>_<catalogoId>
   char titulo[96];   // ja formatado, com o sufixo de tipo
-  char tipo[8];      // "movie" | "series"
+  char tipo[16];     // "movie" | "series" | tipos de canal ("channels" tem 9)
   // DE ONDE A FILEIRA VEIO. A chave acima identifica o catalogo mas nao serve
   // para CHAMAR de novo: ela carrega o id do ADDON, nao o endereco dele.
   // Sem estes dois nao ha como pedir a continuacao da lista, que e o que a tela
@@ -316,6 +317,11 @@ void cat_trocar_continuar(const CatItem *lista, int qtd);
 // validas o tempo todo.
 void cat_republicar_fileiras(const CatFileira *fils, int nNovas);
 
+// Assinatura do que a home desenha (fileiras + identidade dos itens). A
+// descoberta compara a do candidato com a da tela e SO publica se mudou.
+unsigned long cat_assinatura(void);
+unsigned long cat_assinatura_de(const CatItem *lista, int qtd,
+                                const CatFileira *fl, int nf);
 void cat_definir_tudo(const CatItem *lista, int qtd,
                       const CatFileira *fils, int nFils);
 

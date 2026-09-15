@@ -121,6 +121,9 @@ int  fil_n_fila(void);
 // home estava cheia. Quem chama mostra "home cheia" nesse caso.
 int  fil_adicionar(int i, int *estado);
 void fil_remover(int i);
+// Ligada alem do limite que NAO foi posta na fila pela pessoa vira "fora".
+// Chamar ao abrir a folha. Ver a definicao para a protecao da vaga garantida.
+void fil_normalizar(void);
 
 // --- perfil e poda -----------------------------------------------------------
 // A escolha e POR PERFIL (fileirasui-p<N>.txt; 0 = o arquivo antigo, que serve

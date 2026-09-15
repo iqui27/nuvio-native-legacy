@@ -156,6 +156,10 @@ int main(int argc, char **argv) {
   tecla(SDLK_RETURN);
   snprintf(nome, sizeof nome, "%s-fileiras-adicionada.bmp", saida);
   captura(nome, w);
+  // Desce ate o ULTIMO botao ("Atualizar tudo"): tem de ser alcancavel.
+  for (i = 0; i < 12; i++) tecla(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-fileiras-botao.bmp", saida);
+  captura(nome, w);
 
   tex_encerrar();
   txt_encerrar();

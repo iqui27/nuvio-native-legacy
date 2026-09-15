@@ -1556,6 +1556,16 @@ static void *montar(void *u) {
   CatItem *lote = malloc(sizeof(CatItem) * (size_t)cap);
   int n = 0, i;
   int nContinuar = 0, nSocial = 0;
+  // PUBLICAR EM PARTES SO COM A TELA VAZIA.
+  //
+  // A publicacao fileira a fileira existe para a PRIMEIRA home aparecer cedo.
+  // Numa volta seguinte (sync que trouxe addons, remontagem pedida, ciclo de
+  // 5 min) ela e o oposto disso: a home que estava inteira na tela encolhe
+  // para duas fileiras e vai crescendo de novo — MEDIDO no log desta LG,
+  // "[home] 13 fileiras na tela" seguido de "6", "8", "9", "11", "13", "14"...
+  // Era o "ela fica recarregando" do dono. Com algo na tela, a volta monta em
+  // silencio e publica UMA vez no fim — e so se mudou (ver a assinatura).
+  int progressivo = (cat_n() == 0);
   (void)u;
   if (!lote) { buscando = 0; return NULL; }
 
@@ -1588,7 +1598,7 @@ static void *montar(void *u) {
   // segurar tudo ate o fim.
   // Monta direto em filsMontadas: o vetor local `fil` so existe mais abaixo, e
   // criar um aqui so para copiar seria trabalho a toa.
-  if (n > 0 && !cat_do_cache()) {
+  if (n > 0 && progressivo) {
     int nf = 0;
     if (nContinuar > 0) {
       CatFileira *f0 = &filsMontadas[nf++];
@@ -2050,9 +2060,10 @@ static void *montar(void *u) {
           // no de desenho.
           nFileirasMontadas = nFil;
           memcpy(filsMontadas, fil, sizeof(CatFileira) * (size_t)nFil);
-          // So publica em partes se a tela estiver com o catalogo do PACOTE.
-          // Sobre o cache seria um retrocesso visivel: 16 fileiras viram 1.
-          if (!cat_do_cache())
+          // So publica em partes com a tela VAZIA. Sobre o cache — ou sobre a
+          // home da volta anterior — seria um retrocesso visivel: 16 fileiras
+          // viram 1. Ver `progressivo` no inicio de montar().
+          if (progressivo)
             cat_definir_tudo(lote, n, filsMontadas, nFileirasMontadas);
           // Bandeira propria: `nFil == 1` nunca acontece aqui porque a fileira
           // "Continuar assistindo" ja ocupou a posicao 0 antes do laco.
@@ -2117,10 +2128,21 @@ static void *montar(void *u) {
 #undef GARANTE
 
   if (n) {
-    cat_definir_tudo(lote, n, filsMontadas, nFileirasMontadas);
+    // SO PUBLICA SE MUDOU. A mesma home montada de novo (ciclo de 5 min, sync
+    // sem novidade) tem a mesma assinatura que a da tela; republicar seria
+    // trocar o vetor, subir a revisao e a home se remontar — foco, rolagem e
+    // arte de volta a zero — para mostrar exatamente o que ja mostrava.
+    unsigned long antes = cat_assinatura();
+    unsigned long depois = cat_assinatura_de(lote, n, filsMontadas, nFileirasMontadas);
+    if (depois != antes || cat_do_cache()) {
+      cat_definir_tudo(lote, n, filsMontadas, nFileirasMontadas);
+      marco("catalogo da rede publicado");
+      printf("[desc] catalogo montado com %d titulos\n", n);
+    } else {
+      marco("catalogo da rede igual ao da tela: nao republicado");
+      printf("[desc] catalogo montado com %d titulos, igual ao que esta na tela; mantido\n", n);
+    }
     cat_cache_substituido();
-    marco("catalogo da rede publicado");
-    printf("[desc] catalogo montado com %d titulos\n", n);
 
     // A ULTIMA PALAVRA SOBRE AS COLECOES E AQUI. Issue #18, terceira tentativa,
     // e desta vez o problema nao era a REGRA e sim QUANDO ela roda.

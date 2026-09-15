@@ -236,6 +236,14 @@ int addons_n(void) { return nAddon; }
 const char *addons_id_manifesto(int i) {
   return (i >= 0 && i < nAddon) ? addon[i].id : "";
 }
+// Nome de exibicao pelo id do manifesto; "" quando nenhum addon da lista tem
+// esse id (addon removido, ou sonda ainda nao leu o manifesto).
+const char *addons_nome_por_id(const char *id) {
+  int i;
+  if (!id || !id[0]) return "";
+  for (i = 0; i < nAddon; i++) if (addon[i].id[0] && !strcmp(addon[i].id, id)) return addon[i].nome;
+  return "";
+}
 
 const char *addons_base(int i) {
   return (i >= 0 && i < nAddon) ? addon[i].base : "";

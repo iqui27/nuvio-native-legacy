@@ -15,6 +15,13 @@ typedef struct {
   int  oculta;
   int  tipo;    // FilTipo
   int  tam;     // FilTam
+  // NA FILA POR ESCOLHA. So quem foi ADICIONADO com a home cheia fica ligado
+  // alem do limite; tudo o mais que passar do limite vira "fora" quando a
+  // folha abre (fil_normalizar). Sem esta marca nao ha como distinguir "a
+  // pessoa pediu e esta esperando vaga" de "sobrou do arquivo antigo" ou de
+  // "o addon declarou hoje e entrou no fim ligado". Vai para o arquivo como
+  // quinto numero, ANTES do titulo; o leitor aceita a linha sem ele.
+  int  fila;
   // SO EM MEMORIA — nao entram no arquivo. Ver o cabecalho de fil_registrar em
   // fileiras.h: o formato gravado tem o titulo no fim da linha e acrescentar
   // campos faria o arquivo de quem ja usa o app ser descartado inteiro.
@@ -168,9 +175,9 @@ static void gravar(void) {
   for (i = 0; i < nLinhas && k < cap; i++)
     // Tabulacao e nao espaco: titulo de catalogo tem espaco dentro ("For You -
     // Filme") e a chave do Xperience carrega o id inteiro do addon.
-    k += (size_t)snprintf(txt + k, cap - k, "linha %s\t%d\t%d\t%d\t%s\n",
+    k += (size_t)snprintf(txt + k, cap - k, "linha %s\t%d\t%d\t%d\t%d\t%s\n",
                           linhas[i].chave, linhas[i].oculta, linhas[i].tipo,
-                          linhas[i].tam, linhas[i].titulo);
+                          linhas[i].tam, linhas[i].fila, linhas[i].titulo);
   if (k < cap) dados_gravar(arquivoDoPerfil(), txt);
   free(txt);
   revisao++;
@@ -208,6 +215,13 @@ static void carregar(void) {
       }
       if (c < 4) continue;
       memset(&linhas[nLinhas], 0, sizeof linhas[nLinhas]);
+      // QUINTO NUMERO OPCIONAL (fila), antes do titulo. Arquivo antigo nao o
+      // tem, e ai `p` ja e o titulo. Um titulo nunca comeca por "digito+TAB".
+      { char *tab = strchr(p, '\t');
+        if (tab && tab > p && tab - p <= 2 && p[0] >= '0' && p[0] <= '9') {
+          linhas[nLinhas].fila = atoi(p) ? 1 : 0;
+          p = tab + 1;
+        } }
       // -1 e nao 0: "ainda nao sei" e diferente de "vazia". Uma fileira lida do
       // arquivo so ganha contagem quando a home a monta nesta sessao, e mostrar
       // "0 títulos" antes disso acusaria de vazia uma fileira cheia.
@@ -262,7 +276,7 @@ void fil_definir_limite(int n) {
       int i, p = 0;
       for (i = 0; i < nLinhas; i++) {
         if (linhas[i].oculta) continue;
-        if (p >= n) linhas[i].oculta = 1;
+        if (p >= n) { linhas[i].oculta = 1; linhas[i].fila = 0; }
         p++;
       }
     }
@@ -320,10 +334,34 @@ int fil_adicionar(int i, int *estado) {
     i = ultimo;
     ordemLocal = 1;
   }
-  if (estado) *estado = posicaoLigada(i) < limite ? FIL_NA_HOME : FIL_NA_FILA;
+  linhas[i].fila = posicaoLigada(i) < limite ? 0 : 1;
+  if (estado) *estado = linhas[i].fila ? FIL_NA_FILA : FIL_NA_HOME;
   gravar();
   pthread_mutex_unlock(&trava);
   return i;
+}
+
+// NORMALIZA: ligada alem do limite SEM a marca de fila vira "fora"; ligada
+// dentro do limite perde a marca (ja entrou). Decisao do dono: "o que tiver
+// fora do limite ja colocar no fora da home, para facilitar". Roda quando a
+// folha abre e depois de cada leva de registros — e o que impede o arquivo
+// antigo (100 ligadas, limite 14) de virar uma fila de 86.
+//
+// PROTECAO: linha que a home ESTA desenhando (naHome) nunca e escondida por
+// aqui, mesmo alem do limite — e o caso da "vaga garantida por addon", que a
+// descoberta promove para dentro da janela por conta propria.
+void fil_normalizar(void) {
+  int i, p = 0, mudou = 0;
+  pthread_mutex_lock(&trava);
+  garantir();
+  for (i = 0; i < nLinhas; i++) {
+    if (linhas[i].oculta) continue;
+    if (p < limite) { if (linhas[i].fila) { linhas[i].fila = 0; mudou = 1; } }
+    else if (!linhas[i].fila && !linhas[i].naHome) { linhas[i].oculta = 1; mudou = 1; continue; }
+    p++;
+  }
+  if (mudou) gravar();
+  pthread_mutex_unlock(&trava);
 }
 
 // REMOVER DA HOME: desliga. A posicao fica — se a pessoa religar, volta ao
@@ -331,7 +369,7 @@ int fil_adicionar(int i, int *estado) {
 void fil_remover(int i) {
   pthread_mutex_lock(&trava);
   garantir();
-  if (i >= 0 && i < nLinhas && !linhas[i].oculta) { linhas[i].oculta = 1; gravar(); }
+  if (i >= 0 && i < nLinhas && !linhas[i].oculta) { linhas[i].oculta = 1; linhas[i].fila = 0; gravar(); }
   pthread_mutex_unlock(&trava);
 }
 

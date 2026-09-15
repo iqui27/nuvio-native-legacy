@@ -97,6 +97,10 @@ void  cat_atualizar_item(int i, const CatItem *n) { (void)i; (void)n; }
 void  cat_cache_substituido(void)          { }
 void  cat_definir_episodios(int i, const CatEp *l, int n) { (void)i; (void)l; (void)n; }
 int   cat_do_cache(void)                   { return 0; }
+int   cat_n(void)                          { return 0; }
+unsigned long cat_assinatura(void)         { return 0; }
+unsigned long cat_assinatura_de(const CatItem *l, int q, const CatFileira *f, int n) {
+  (void)l; (void)q; (void)f; (void)n; return 1; }
 int   cat_gravar_cache(const char *d)      { (void)d; return 0; }
 int   cat_indice_por_imdb(const char *s)   { (void)s; return -1; }
 const CatItem *cat_item(int i)             { (void)i; return NULL; }

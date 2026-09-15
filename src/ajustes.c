@@ -1515,12 +1515,17 @@ static void filAvisar(const char *txt) {
 
 // Ordem da aba "Fora": origem (app, colecao, catalogo), depois addon, depois
 // titulo — os tres sem caixa. Estavel: empate fica na ordem da lista.
+static int filForaAgrupada = 1;   // aba "Fora": por addon (1) ou alfabetica unica (0)
 static int filCmpFora(const void *pa, const void *pb) {
   int a = *(const int *)pa, b = *(const int *)pb, c;
-  c = fil_linha_origem(a) - fil_linha_origem(b);
-  if (c) return c;
-  c = strcasecmp(fil_linha_addon(a), fil_linha_addon(b));
-  if (c) return c;
+  if (filForaAgrupada) {
+    // Addon primeiro; grupo de colecao entra no addon dele quando tem um
+    // (col_grupo_addon), senao fica no bloco "Colecao" com os sem addon.
+    c = strcasecmp(fil_linha_addon(a), fil_linha_addon(b));
+    if (c) return c;
+    c = fil_linha_origem(a) - fil_linha_origem(b);
+    if (c) return c;
+  }
   c = strcasecmp(fil_titulo(a), fil_titulo(b));
   if (c) return c;
   return a - b;
@@ -1540,7 +1545,8 @@ static void filMontarLista(void) {
     for (i = 0; i < n; i++) if (fil_estado(i) == FIL_FORA) filLista[filListaN++] = i;
     qsort(filLista, (size_t)filListaN, sizeof *filLista, filCmpFora);
   }
-  if (filFoco > filListaN) filFoco = filListaN;
+  { int max = filListaN + (filAba == 1 ? 1 : 0);
+    if (filFoco > max) filFoco = max; }
   if (filFoco < 0) filFoco = 0;
 }
 
@@ -1617,15 +1623,17 @@ static void eventoFileiras(SDL_Keycode k) {
     // SALTO POR LETRA na aba "Fora": segurando, pula para a proxima letra em
     // vez de andar linha a linha — com 200 linhas e o unico jeito de chegar
     // ao fim sem soltar o dedo por um minuto.
-    if (filAba == 1 && filRajada >= FIL_RAJADA_MIN && n > 0) {
+    if (filAba == 1 && filRajada >= FIL_RAJADA_MIN && n > 0 && filFoco < n) {
       int p = filFoco, letra = filLetra(filIdx(filFoco));
       while (p + dir >= 0 && p + dir < n && filLetra(filIdx(p + dir)) == letra) p += dir;
       if (p + dir >= 0 && p + dir < n) p += dir;
-      filFoco = p;
-      return;
+      // Sem proxima letra o salto nao anda — e ai o passo normal vale, senao a
+      // tecla segurada nunca chegava ao botao "Atualizar tudo" no fim da lista.
+      if (p != filFoco) { filFoco = p; return; }
     }
-    // Aba 0: filFoco == n e o botao "Agrupar por addon". Na aba 1 nao ha botao.
-    { int max = (filAba == 0) ? n : n - 1;
+    // Botoes no fim: aba 0 tem "Atualizar tudo" em n; aba 1 tem "Agrupar por
+    // addon" em n e "Atualizar tudo" em n+1.
+    { int max = (filAba == 0) ? n : n + 1;
       if (filFoco + dir >= 0 && filFoco + dir <= max) filFoco += dir; }
     return;
   }
@@ -1638,7 +1646,7 @@ static void eventoFileiras(SDL_Keycode k) {
       filPegou = (filPegou == 1) ? 2 : 1;
       return;
     }
-    if (filAba == 1 || filFoco == n) return;   // uma coluna so; o botao nao tem colunas
+    if (filAba == 1 || filFoco >= n) return;   // uma coluna so; os botoes nao tem colunas
     filCampo += (k == SDLK_RIGHT) ? 1 : -1;
     if (filCampo < 0) filCampo = 0;
     if (filCampo > AJ_FIL_CAMPOS - 1) filCampo = AJ_FIL_CAMPOS - 1;
@@ -1647,7 +1655,26 @@ static void eventoFileiras(SDL_Keycode k) {
 
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
     int idx = filIdx(filFoco);
+    // ATUALIZAR TUDO: um sync da conta (addons, colecoes, ajustes) e uma volta
+    // completa da descoberta. E o botao para "instalei/removi um addon no
+    // celular e quero ver aqui agora", sem sair da conta nem esperar o ciclo.
+    // A poda de fantasmas roda dentro da volta.
+    if ((filAba == 0 && filFoco == n) || (filAba == 1 && filFoco == n + 1)) {
+      sync_iniciar();
+      desc_repetir();
+      filAvisar(i18n("Atualizando: addons, coleções e fileiras — a Home se refaz uma vez, no fim"));
+      return;
+    }
     if (n < 1) return;
+    if (filAba == 1 && filFoco == n) {
+      // AGRUPAR POR ADDON e uma alternancia desta aba: agrupado (padrao) ou
+      // uma lista alfabetica unica. Na aba "Na Home" nao existe — la a ordem e
+      // a da home, e a pessoa e quem a arruma.
+      filForaAgrupada = !filForaAgrupada;
+      filFoco = 0; filTopo = 0;
+      filMontarLista();
+      return;
+    }
     if (filAba == 1) {
       // ADICIONAR. Cabe: entra na home. Nao cabe: entra na fila, e a tela diz.
       int est = -1;
@@ -1665,8 +1692,6 @@ static void eventoFileiras(SDL_Keycode k) {
       if (filFoco < 0) filFoco = 0;
       return;
     }
-    if (filFoco == n) { fil_ordenar_por_addon(); filFoco = 0; filCampo = 0;
-                        fileirasReagir(); filMontarLista(); return; }
     if (idx < 0) return;
     switch (filCampo) {
       case 0: if (!filPegou) { filPegou = 1; filPegouDe = idx; }
@@ -1760,6 +1785,9 @@ void ajustes_evento(const SDL_Event *e) {
     if (focoOp == AJ_FIL_ORDEM) {
       filAberta = 1; filFoco = 0; filCampo = 0; filPegou = 0; filTopo = 0;
       filAba = 0; filNaBarra = 0; filAviso[0] = 0;
+      // O que passou do limite sem ter sido pedido vai para "Fora da Home"
+      // antes de a lista aparecer — ver fil_normalizar.
+      fil_normalizar();
       emEdicao = 0;
       return;
     }
@@ -2226,11 +2254,12 @@ static void desenhaFileiras(void) {
   // empurrou a lista ~60 px para baixo, e com o 6 fixo a sexta linha caia em
   // cima da ficha e do botao (visto na captura de revisao).
   { float topoLista = filCabecY + 34.0f;
-    float fimLista  = cartao.y + AJ_FIL_H - 232.0f - 8.0f - (filAba == 0 ? 52.0f + 8.0f : 0.0f);
+    float fimLista  = cartao.y + AJ_FIL_H - 232.0f - 8.0f - (52.0f + 8.0f);
     vis = (int)((fimLista - topoLista) / (AJ_FIL_LINHA + AJ_FIL_LGAP));
     if (vis < 3) vis = 3; }
 
-  if (filFoco > n) filFoco = n;
+  { int max = n + (filAba == 1 ? 1 : 0);
+    if (filFoco > max) filFoco = max; }
   if (filFoco < 0) filFoco = 0;
   if (filFoco < filTopo) filTopo = filFoco;
   if (filFoco >= filTopo + vis) filTopo = filFoco - vis + 1;
@@ -2323,7 +2352,8 @@ static void desenhaFileiras(void) {
       // de cabecalho numa lista que ja e longa.
       const char *addon = fil_linha_addon(idx);
       const char *rot = addon[0] ? addon : i18n(fil_origem_rotulo(fil_linha_origem(idx)));
-      int primeiro = (i == 0) || strcasecmp(fil_linha_addon(filLista[i - 1]), addon) != 0 ||
+      int primeiro = !filForaAgrupada || (i == 0) ||
+                     strcasecmp(fil_linha_addon(filLista[i - 1]), addon) != 0 ||
                      fil_linha_origem(filLista[i - 1]) != fil_linha_origem(idx);
       if (primeiro) {
         l = txt_linha_corta(TXT_CALLOUT, rot, 200, 203, 212, 255, AJ_FIL_COL[1].w + AJ_FIL_COL[2].w);
@@ -2338,23 +2368,32 @@ static void desenhaFileiras(void) {
 
   // Posicao na lista: com 200 linhas a barra de rolagem teria 6 px.
   if (n > 0) {
-    if (filAba == 0 && filFoco == n) snprintf(buf, sizeof buf, "%s", i18n("Botão"));
+    if (filFoco >= n) snprintf(buf, sizeof buf, "%s", i18n("Botão"));
     else snprintf(buf, sizeof buf, i18n("%d de %d"), filFoco + 1, n);
     l = txt_linha(TXT_CAPTION, buf, 156, 159, 168, 255);
     txt_desenhar(l, cx + AJ_FIL_W - 40.0f - l.w, filCabecY);
   }
 
-  // BOTAO "AGRUPAR POR ADDON", so na aba 0, no fim da lista.
-  if (filAba == 0 && n > 0) {
-    int sortFoco = (filFoco == n && !filNaBarra);
-    float sy = y + 14.0f;
-    GfxRect btn = { cx + 24.0f, sy, AJ_FIL_W - 48.0f, 52.0f };
-    gfx_cor(btn, 26.0f, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, sortFoco ? 0.72f : 0.30f);
-    if (sortFoco)
-      gfx_rect(btn, 0, GFX_ANEL, 0, NV_ANEL_FOCO / 52.0f, 0, 0.23f, ar, ag, ab, 1.0f);
-    l = txt_linha(TXT_CALLOUT, "Agrupar por addon", 220, 220, 220, 255);
-    txt_desenhar(l, btn.x + (btn.w - l.w) * 0.5f, btn.y + (btn.h - l.h) * 0.5f);
-  }
+  // BOTOES no fim da lista, lado a lado. Aba "Fora": "Agrupar por addon" (a
+  // alternancia agrupado/alfabetico) e "Atualizar tudo". Aba "Na Home": so
+  // "Atualizar tudo" — la a ordem e a da home e a pessoa e quem a arruma.
+  { float sy = y + 14.0f, bw = AJ_FIL_W - 48.0f, bx = cx + 24.0f;
+    int nb = (filAba == 1) ? 2 : 1, b;
+    float cada = (bw - (nb - 1) * 16.0f) / nb;
+    for (b = 0; b < nb; b++) {
+      int ehAgrupar = (filAba == 1 && b == 0);
+      int pos = ehAgrupar ? n : (filAba == 1 ? n + 1 : n);
+      int foco = (filFoco == pos && !filNaBarra);
+      const char *rot = ehAgrupar ? (filForaAgrupada ? "Agrupado por addon · OK: lista alfabética"
+                                                     : "Alfabética · OK: agrupar por addon")
+                                  : "Atualizar tudo";
+      GfxRect btn = { bx + b * (cada + 16.0f), sy, cada, 52.0f };
+      gfx_cor(btn, 26.0f / cada, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, foco ? 0.72f : 0.30f);
+      if (foco)
+        gfx_rect(btn, 0, GFX_ANEL, 0, NV_ANEL_FOCO / 52.0f, 0, 26.0f / cada, ar, ag, ab, 1.0f);
+      l = txt_linha(TXT_CALLOUT, rot, 220, 220, 220, 255);
+      txt_desenhar(l, btn.x + (btn.w - l.w) * 0.5f, btn.y + (btn.h - l.h) * 0.5f);
+    } }
 
   // A FICHA DA FILEIRA EM FOCO: de qual addon veio, filme ou serie, e quantos
   // titulos ela tem AGORA (omitido antes de a Home montar — "0 titulos" seria
@@ -2392,14 +2431,18 @@ static void desenhaFileiras(void) {
   } else if (filNaBarra) {
     txt_bloco(TXT_CAPTION, "← →  Trocar de aba\n↓  Voltar à lista\nVoltar  Fechar",
               206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 3);
-  } else if (filAba == 1) {
+  } else if (filAba == 1 && filFoco < n) {
     txt_bloco(TXT_CAPTION,
               "↑ ↓  Escolher fileira · segure para pular por letra\n"
               "OK  Adicionar à Home (entra na fila se a Home estiver cheia)\n"
               "↑ no topo  Abas\nVoltar  Fechar",
               206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 4);
-  } else if (filFoco == n) {
-    txt_bloco(TXT_CAPTION, "OK  Agrupar as fileiras por addon\nVoltar  Fechar",
+  } else if ((filAba == 0 && filFoco == n) || (filAba == 1 && filFoco == n + 1)) {
+    txt_bloco(TXT_CAPTION,
+              "OK  Sincronizar a conta e refazer a Home agora (addons, coleções e fileiras)\nVoltar  Fechar",
+              206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 2);
+  } else if (filAba == 1 && filFoco == n) {
+    txt_bloco(TXT_CAPTION, "OK  Alternar entre agrupado por addon e lista alfabética\nVoltar  Fechar",
               206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 2);
   } else {
     txt_bloco(TXT_CAPTION,

@@ -37,6 +37,31 @@ const ColFolder *col_folder(int i) {
   resolverBases(&folders[i]);
   return &folders[i];
 }
+// O ADDON DE UM GRUPO DE COLECOES, quando ha um so. Um grupo e um conjunto de
+// pastas, cada pasta com fontes de varios addons (ou TMDB/Trakt), entao o
+// "addon da colecao" nao existe em geral — mas na pratica quase toda colecao
+// aponta para um addon so, e e assim que a tela de fileiras consegue agrupa-la
+// junto dos catalogos dele em vez de num bloco "Colecao" a parte. Devolve o
+// addonId dominante quando ele responde por TODAS as fontes de addon do grupo,
+// senao "" (grupo misto fica como "Colecao").
+int col_grupo_addon(const char *name, char *dst, unsigned n) {
+  int i, k;
+  char dono[96] = "";
+  if (n) dst[0] = 0;
+  for (i = 0; i < count; i++) {
+    if (strcasecmp(name, folders[i].group)) continue;
+    for (k = 0; k < folders[i].nSources; k++) {
+      const ColSource *sc = &folders[i].sources[k];
+      if (sc->prov[0] || !sc->addonId[0]) continue;   // TMDB/Trakt nao e addon
+      if (!dono[0]) snprintf(dono, sizeof dono, "%s", sc->addonId);
+      else if (strcmp(dono, sc->addonId)) return 0;   // misto
+    }
+  }
+  if (!dono[0]) return 0;
+  snprintf(dst, n, "%s", dono);
+  return 1;
+}
+
 int col_grupo(const char *name,int *indices,int max) {
   int n=0;for(int i=0;i<count&&n<max;i++) if(!strcasecmp(name,folders[i].group)) indices[n++]=i;return n;
 }
