@@ -1396,6 +1396,30 @@ static float yDaOpcao(int op) {
 // painel de diagnostico do shell), e esquerda/direita sao a navegacao entre
 // colunas. Entao: esquerda/direita escolhem A COLUNA, OK age NA COLUNA, e a
 // coluna do nome e a alca de mover. A folha escreve isso na tela.
+// REAGIR A UMA MUDANCA NA FOLHA. Mexer na ordem/liga-desliga so gravava a
+// preferencia — a home seguia com o arranjo velho e o rotulo "Fora do limite"
+// ficava preso, porque naHome so e re-marcado quando a home remonta. Duas
+// reacoes, na ordem do barato para o caro:
+//
+// 1. desc_remontar_fileiras(): sem rede, reaplica ordem/limite sobre o que ja
+//    foi baixado. Resolve na hora tudo que ja tem dado no aparelho.
+// 2. desc_repetir(): a fileira promovida para dentro do limite que nunca foi
+//    buscada (vista na declaracao, nunca naHome) nao tem item nenhum salvo —
+//    nao ha o que a remontagem desenhar. So um ciclo de rede a traz. Varre so
+//    as primeiras `limite` posicoes: fora dele ela continuaria cortada de
+//    qualquer jeito, e o ciclo seria pago sem efeito.
+static void fileirasReagir(void) {
+  int i, teto = fil_limite(), n = fil_n();
+  desc_remontar_fileiras();
+  for (i = 0; i < n && i < teto; i++)
+    if (!fil_linha_oculta(i) && fil_linha_vista(i) && !fil_linha_na_home(i)) {
+      printf("[ajustes] %d dentro do limite sem dados: ciclo de rede\n", i);
+      fflush(stdout);
+      desc_repetir();
+      return;
+    }
+}
+
 static void eventoFileiras(SDL_Keycode k) {
   int n = fil_n();
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
@@ -1455,13 +1479,17 @@ static void eventoFileiras(SDL_Keycode k) {
     return;
   }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
-    if (filFoco == n) { fil_ordenar_por_addon(); filFoco = 0; filCampo = 0; return; }
+    if (filFoco == n) { fil_ordenar_por_addon(); filFoco = 0; filCampo = 0;
+                        fileirasReagir(); return; }
     switch (filCampo) {
       case 0: if (!filPegou) { filPegou = 1; filPegouDe = filFoco; }
-              else filPegou = 0;
+              else { filPegou = 0;
+                     // Soltou em lugar diferente: a home nao sabe ainda.
+                     if (filFoco != filPegouDe) fileirasReagir(); }
               break;
-      case 1: fil_alternar(filFoco); break;
-      case 2: if (fil_aceita_tipo(filFoco)) fil_ciclar_tipo(filFoco); break;
+      case 1: fil_alternar(filFoco); fileirasReagir(); break;
+      case 2: if (fil_aceita_tipo(filFoco)) { fil_ciclar_tipo(filFoco);
+                                            fileirasReagir(); } break;
       default: fil_ciclar_tam(filFoco); break;
     }
   }
