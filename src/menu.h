@@ -25,6 +25,10 @@ typedef enum {
   MENU_GUIA,
   MENU_BUSCAR,
   MENU_BIBLIOTECA,
+  // AGENDA — o calendario das series acompanhadas. Fica DEPOIS da Biblioteca
+  // e antes do Perfil de proposito: as duas falam do acervo da pessoa (o que
+  // ela guardou, e quando o que ela guardou sai), e o Perfil e sobre ela.
+  MENU_AGENDA,
   MENU_PERFIL,
   MENU_AJUSTES,
   MENU_N

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+<!-- DESPERTADOR — a fonte de verdade do icone de lembrete (agendaui.h explica
+     por que o desenho mora num lugar so). 24x24, traco 1.9, ponta e junta
+     redondas: exatamente o mesmo corpo de recomendar.svg, que e o vizinho de
+     linha no hero. Rasterizado em 128x128, como todo icone desta pasta.
+
+     ESTA VERSAO NASCEU DE UMA MEDIDA, nao de gosto. A anterior tinha campainha
+     de circulo cheio (r 2,3 com traco 1,9 deixa furo de 2,7 — a 3 m fecha e
+     vira bolinha), mais pescoco e pe separados: oito marcas e caixa de 106x114,
+     a mais alta da pasta. Tinta somada no arquivo de 128: 4762 px, contra 2923
+     da nuvem e 3582 do aviao de papel do lado. Dentro do circulo de 96 do hero,
+     com o glifo em 0,42, isso virava 472 px2 de tinta contra 182 da nuvem e 223
+     do aviao — duas vezes e meia o vizinho. Era esse o "pesado".
+
+     O QUE MUDOU: as campainhas viraram os DOIS TRACOS INCLINADOS do topo (o
+     suporte do sino), que e como se desenha despertador quando o traco e fino e
+     e a unica forma que nao fecha de longe; sumiram o pescoco e o circulo
+     cheio; sobraram seis marcas. Tinta 4054 e caixa 102x106 — entre o "+"
+     (96x96) e o aviao (109x109), com o MESMO traco de 1,9 dos dois.
+
+     NAO AFINAR O TRACO para aliviar mais: afinado, ele deixa de casar com os
+     vizinhos e o defeito so troca de sinal. O peso estava no numero de marcas e
+     na escala, nao na espessura.
+
+     Cor unica recortada no ALFA: o codigo tinge com GFX_MARCA (ver gfx.h). Um
+     PNG com cor propria quebraria o caso de superficie clara. -->
+<circle cx="12" cy="12.18" r="7.78"/>
+<path d="M12 7.97V12.18H15.13"/>
+<path d="M5.9 3.06 3.31 5.43"/>
+<path d="M18.1 3.06 20.69 5.43"/>
+<path d="M6.33 18.77 4.22 20.93"/>
+<path d="M17.67 18.77 19.78 20.93"/>
+</svg>
