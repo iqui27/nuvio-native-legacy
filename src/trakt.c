@@ -6,6 +6,7 @@
 #include "idioma.h"
 #include "rede.h"
 #include "js.h"
+#include "nuvem.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -116,6 +117,23 @@ int trakt_cabecalhos(const char **cab, char *aut, size_t nAut,
   snprintf(aut, nAut, "Authorization: Bearer %s", token);
   snprintf(chave, nChave, "trakt-api-key: %s", cliente);
   cab[0] = aut; cab[1] = "trakt-api-version: 2"; cab[2] = chave; cab[3] = NULL;
+  return 1;
+}
+
+// A chave do APLICATIVO, venha ela de onde vier. Duas fontes e nesta ordem:
+// o `cliente` deste modulo (vinculo desta TV, ou art/trakt.txt) e, faltando
+// ele, a chave compilada no pacote que nuvem.c guarda. A segunda e a que
+// interessa aqui: e a unica que existe em quem nunca vinculou conta nenhuma.
+static const char *chaveApp(void) {
+  if (cliente[0]) return cliente;
+  return nuvem_trakt_cliente();
+}
+
+int trakt_cabecalhos_publicos(const char **cab, char *chave, size_t nChave) {
+  const char *k = chaveApp();
+  if (!k || !k[0]) return 0;
+  snprintf(chave, nChave, "trakt-api-key: %s", k);
+  cab[0] = "trakt-api-version: 2"; cab[1] = chave; cab[2] = NULL;
   return 1;
 }
 

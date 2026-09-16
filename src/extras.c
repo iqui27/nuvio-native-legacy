@@ -5,6 +5,7 @@
 #include "js.h"
 #include "descoberta.h"
 #include "ajustes.h"
+#include "agenda.h"
 #include <pthread.h>
 #include <string.h>
 #include <stdio.h>
@@ -132,6 +133,12 @@ static struct { char titulo[120], ano[8], imdb[16], poster[200]; } rel[EX_REL_MA
 #define EX_VIS_E 40
 static unsigned char vistos[EX_VIS_T][EX_VIS_E];
 static int progressoPronto, proximoT, proximoE;
+// QUANTOS EPISODIOS JA EXIBIDOS E QUANTOS VISTOS, os dois numeros do TOPO da
+// resposta de /progress/watched. Nao sao derivaveis da matriz `vistos`: ela e
+// [EX_VIS_T][EX_VIS_E] e uma serie maior que isso cai fora dela em silencio — e
+// "aired" do Trakt ja desconta episodio que ainda nao foi ao ar, que e
+// justamente o denominador certo para uma porcentagem.
+static int epsExibidos, epsVistos;
 static int  nRel;
 static struct { int numero; int nEps; struct { int ep, nota; } eps[EX_EP_MAX]; }
             temps[EX_TEMP_MAX];
@@ -140,6 +147,12 @@ static char colNome[80];
 // Ficha tecnica e trailers: mesma viagem /movie/<id> da colecao.
 static char fichaStatus[32], fichaPaises[160], fichaCert[12], fichaLanc[16];
 static int  fichaDur;
+// AGENDA DA SERIE — proximo episodio e situacao, do MESMO corpo /tv/<id>.
+// Ver agenda.h para o porque de nao ser o Trakt. Os campos sempre estiveram
+// neste corpo; o parse antigo os jogava fora, como jogava fora status e
+// runtime do filme antes da ficha tecnica existir.
+static char agStatus[32], agDataProx[16], agDataUlt[16], agNomeEp[120];
+static int  agTemp, agEp;
 static struct { char yt[16], nome[80], mini[80]; } trailer[EX_TRAILER_MAX];
 static int  nTrailer;
 static struct { char titulo[120], ano[8]; long tmdb; } col[EX_COL_MAX];
@@ -229,6 +242,17 @@ static void *buscar(void *arg) {
   // Antes disto um Trakt desvinculado matava o fio inteiro — e junto com ele
   // morriam os relacionados TMDB, que nao consultam o Trakt em nada.
   int temTrakt = trakt_cabecalhos(cab, aut, sizeof aut, chave, sizeof chave);
+  // CABECALHOS SEM CONTA, para o unico bloco daqui que nao precisa de uma.
+  // MEDIDO em 16/09/2026: `seasons?extended=episodes,full` responde 200 com
+  // `trakt-api-key` sozinho — o token nunca fez falta ali, e era so por ele
+  // estar amarrado a trakt_cabecalhos() que quem nao vinculou o Trakt ficava
+  // sem NENHUMA nota por episodio (a aba "Avaliações" caia nos cartoes do
+  // filme) e sem os graficos de audiencia, que leem a mesma lista.
+  // Sao vetores PROPRIOS e nao um remendo em `cab`: o `cab` vale para o resto
+  // da funcao, que continua exigindo token de verdade.
+  const char *cabPub[3];
+  char chavePub[140];
+  int temChave = trakt_cabecalhos_publicos(cabPub, chavePub, sizeof chavePub);
 
   // O QUE JA FOI VISTO VEM PRIMEIRO.
   //
@@ -246,6 +270,15 @@ static void *buscar(void *arg) {
     if (corpo) {
       unsigned char novo[EX_VIS_T][EX_VIS_E];
       const char *p = js_array(corpo, NULL, "seasons");
+      // OS DOIS CONTADORES SAEM DO CABECALHO, antes do array — e tem de ser
+      // antes MESMO: "completed" reaparece como BOOLEANO em cada episodio, e
+      // procurar no corpo inteiro acharia o do primeiro episodio em vez do
+      // total. js_num sobre a fatia que termina onde o array comeca resolve.
+      int exib = 0, vist = 0;
+      { const char *cab = strstr(corpo, "\"seasons\"");
+        const char *fimCab = cab ? cab : corpo + strlen(corpo);
+        exib = (int)js_num(corpo, fimCab, "aired", 0.0);
+        vist = (int)js_num(corpo, fimCab, "completed", 0.0); }
       memset(novo, 0, sizeof novo);
       while (p) {
         const char *f = js_fim(p);
@@ -305,6 +338,7 @@ static void *buscar(void *arg) {
       if (!strcmp(id, idPedido) && valido) {
         memcpy(vistos, novo, sizeof vistos);
         proximoT = pt; proximoE = pe; progressoPronto = 1;
+        epsExibidos = exib; epsVistos = vist;
       }
       pthread_mutex_unlock(&trava);
     }
@@ -429,10 +463,14 @@ static void *buscar(void *arg) {
   }
 
   // --- notas por episodio, so em serie ---
-  if (serie && temTrakt) {
+  // SEM CONTA TAMBEM. Ver a nota de cabPub la em cima: a chave do aplicativo
+  // basta para esta chamada, entao a condicao e "ha alguma credencial", e nao
+  // "ha token". Com token o cabecalho continua sendo o completo — nao ha
+  // motivo para pedir anonimamente quem esta logado.
+  if (serie && (temTrakt || temChave)) {
     snprintf(url, sizeof url,
              "https://api.trakt.tv/shows/%s/seasons?extended=episodes,full", id);
-    corpo = rede_baixar_com(url, 20, cab);
+    corpo = rede_baixar_com(url, 20, temTrakt ? cab : cabPub);
     if (corpo) {
       int nt = 0;
       const char *p = strchr(corpo, '[');
@@ -495,12 +533,22 @@ static void *buscar(void *arg) {
     // Nao buscar quando nao ha NADA ligado que saia desta viagem: economiza o
     // pedido quando o dono desligou ficha, trailers, produtoras e recomenda-
     // coes de uma vez — o toggle de cada uma ja diz que nao vale ir.
+    // A SERIE PASSA A PEDIR SEMPRE, e o filme continua sob os toggles.
+    //
+    // Este corpo traz `status`, `next_episode_to_air` e `last_episode_to_air`,
+    // que sao a AGENDA da serie — informacao base da pagina, do mesmo estatuto
+    // que status e runtime tem no filme, e nao um extra opcional. Amarra-la a
+    // "Produtoras"/"Redes"/"Mais como este"/"Episodios" faria a data de
+    // estreia sumir por causa de um toggle que fala de outra coisa.
+    //
+    // O QUE ISTO CUSTA, dito por inteiro: na configuracao padrao, NADA — os
+    // quatro toggles vem ligados e o pedido ja acontecia. Para quem desligou
+    // os quatro, e um GET /tv/<id> por serie aberta que antes nao havia.
     if (chave[0] && idT > 0 &&
-        ((!serie && (ajustes_tmdb_ficha() || ajustes_tmdb_datas() ||
-                     ajustes_tmdb_trailers() || ajustes_tmdb_col() ||
-                     ajustes_tmdb_prod())) ||
-         (serie && (ajustes_tmdb_prod() || ajustes_tmdb_redes() ||
-                    ajustes_tmdb_mais() || ajustes_tmdb_eps())))) {
+        (serie ||
+         (ajustes_tmdb_ficha() || ajustes_tmdb_datas() ||
+          ajustes_tmdb_trailers() || ajustes_tmdb_col() ||
+          ajustes_tmdb_prod()))) {
       // `append_to_response` faz o TMDB devolver extras DENTRO deste mesmo
       // corpo. O conjunto segue os toggles da conta: release_dates responde a
       // tmdb_use_release_dates, videos a tmdb_use_trailers, recommendations a
@@ -528,6 +576,42 @@ static void *buscar(void *arg) {
           return NULL;
         }
         const char *fimC = corpo + strlen(corpo);
+        // --- AGENDA DA SERIE (nenhuma viagem a mais) ----------------------
+        //
+        // `status`, `next_episode_to_air` e `last_episode_to_air` ja vinham
+        // neste corpo e eram descartados. Sao os tres campos de que a tela de
+        // titulo e o calendario precisam para dizer QUANDO sai o proximo
+        // episodio — ou para dizer que a serie acabou, em vez de inventar uma
+        // data. Ver agenda.h.
+        //
+        // `null` e um valor legitimo dos dois blocos: serie encerrada nao tem
+        // proximo episodio. A guarda compara a posicao do "null" com a da
+        // primeira chave; sem ela, a busca por '{' pularia para o objeto
+        // seguinte do corpo e a serie encerrada herdaria a data de outra coisa.
+        if (serie) {
+          const char *b = strstr(corpo, "\"next_episode_to_air\"");
+          agTemp = agEp = 0;
+          agDataProx[0] = agNomeEp[0] = agDataUlt[0] = 0;
+          js_texto(corpo, fimC, "status", agStatus, sizeof agStatus);
+          if (b) {
+            const char *o = strchr(b, '{');
+            const char *nulo = strstr(b, "null");
+            if (o && (!nulo || nulo > o)) {
+              const char *of = js_fim(o);
+              agTemp = (int)js_num(o, of, "season_number", 0.0);
+              agEp   = (int)js_num(o, of, "episode_number", 0.0);
+              js_texto(o, of, "air_date", agDataProx, sizeof agDataProx);
+              js_texto(o, of, "name", agNomeEp, sizeof agNomeEp);
+            }
+          }
+          b = strstr(corpo, "\"last_episode_to_air\"");
+          if (b) {
+            const char *o = strchr(b, '{');
+            const char *nulo = strstr(b, "null");
+            if (o && (!nulo || nulo > o))
+              js_texto(o, js_fim(o), "air_date", agDataUlt, sizeof agDataUlt);
+          }
+        }
         if (!serie) {
           const char *b = strstr(corpo, "\"belongs_to_collection\"");
           if (b) {
@@ -712,6 +796,12 @@ static void *buscar(void *arg) {
 
         pthread_mutex_unlock(&trava);
         free(corpo);
+        // FORA DA TRAVA de proposito: agenda_registrar grava em disco e tem
+        // trava propria. Segurar a deste modulo durante uma escrita de arquivo
+        // faria o desenho esperar o disco no fio principal.
+        if (serie && (agStatus[0] || agDataProx[0]))
+          agenda_registrar(id, NULL, NULL, agStatus, agTemp, agEp, agNomeEp,
+                           agDataProx, agDataUlt);
       }
     }
 
@@ -959,8 +1049,11 @@ void extras_pedir(const char *imdb, int serie, long tmdbId) {
   colNome[0] = 0;
   nTrailer = fichaDur = nEstudio = 0;
   fichaStatus[0] = fichaPaises[0] = fichaCert[0] = fichaLanc[0] = 0;
+  agStatus[0] = agDataProx[0] = agDataUlt[0] = agNomeEp[0] = 0;
+  agTemp = agEp = 0;
   memset(vistos, 0, sizeof vistos);
   progressoPronto = proximoT = proximoE = 0;
+  epsExibidos = epsVistos = 0;
   memset(notas, 0, sizeof notas);
   if (fioVivo) { pthread_mutex_unlock(&trava); return; }
   snprintf(idEmCurso, sizeof idEmCurso, "%s", imdb);
@@ -1106,6 +1199,12 @@ int extras_comentario_nota(int i) {
 }
 
 const char *extras_ficha_status(void)        { return fichaStatus; }
+const char *extras_agenda_status(void)       { return agStatus; }
+const char *extras_agenda_data(void)         { return agDataProx; }
+const char *extras_agenda_data_ultimo(void)  { return agDataUlt; }
+const char *extras_agenda_nome_ep(void)      { return agNomeEp; }
+int         extras_agenda_temporada(void)    { return agTemp; }
+int         extras_agenda_episodio(void)     { return agEp; }
 int         extras_ficha_duracao(void)       { return fichaDur; }
 const char *extras_ficha_paises(void)        { return fichaPaises; }
 const char *extras_ficha_classificacao(void) { return fichaCert; }
@@ -1217,6 +1316,21 @@ int extras_progresso_pronto(void) {
   pthread_mutex_unlock(&trava);
   return pronto;
 }
+// Devolve 1 so quando o historico chegou E a serie tem episodio exibido. Zero
+// exibidos nao e "0% assistido": e serie que ainda nao estreou, e 0% ali seria
+// uma afirmacao sobre nada.
+int extras_progresso_serie(int *vistosEp, int *exibidos) {
+  int pronto, v, e;
+  pthread_mutex_lock(&trava);
+  pronto = progressoPronto; v = epsVistos; e = epsExibidos;
+  pthread_mutex_unlock(&trava);
+  if (!pronto || e <= 0) return 0;
+  if (v > e) v = e;      // o Trakt conta reprise; a porcentagem nao passa de 100
+  if (vistosEp) *vistosEp = v;
+  if (exibidos) *exibidos = e;
+  return 1;
+}
+
 int extras_proximo_episodio(int *t, int *e) {
   pthread_mutex_lock(&trava);
   int ok = progressoPronto && proximoT > 0 && proximoE > 0;

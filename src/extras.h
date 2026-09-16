@@ -138,6 +138,11 @@ int  extras_ep_visto(int temporada, int episodio);
 // que todos os episodios estao por assistir.
 int extras_progresso_pronto(void);
 int extras_proximo_episodio(int *temporada, int *episodio);
+// QUANTO DA SERIE JA FOI VISTO. Os dois contadores vem do TOPO da mesma
+// resposta de /progress/watched que ja e baixada — zero pedido a mais. Devolve
+// 0, sem escrever nada, enquanto o historico nao chegou ou quando a serie nao
+// tem episodio exibido.
+int extras_progresso_serie(int *vistosEp, int *exibidos);
 
 // FICHA TECNICA do filme, para a secao "Detalhes do Filme".
 //
@@ -170,6 +175,27 @@ const char *extras_trailer_nome(int i);      // "Official Trailer"
 const char *extras_trailer_miniatura(int i);
 // Abre o trailer no app nativo (browser/YouTube). Sem retorno.
 void        extras_trailer_abrir(int i);
+
+// AGENDA DA SERIE — quando sai o proximo episodio, e a situacao da serie.
+//
+// Sai do MESMO corpo /tv/<id> que ja trazia redes, "mais como este" e a lista
+// de temporadas: `status`, `next_episode_to_air` e `last_episode_to_air`
+// sempre estiveram la e eram descartados. NENHUM PEDIDO DE REDE NOVO na
+// pagina de titulo — a mesma conta da ficha tecnica do filme, acima.
+//
+// Vazio quando nao chegou ou quando o TMDB nao tem o campo, e ai quem desenha
+// OMITE a linha. Serie encerrada devolve `status` com data vazia: e o caso em
+// que a interface diz "Série encerrada" em vez de uma data inventada.
+//
+// Estes campos tambem sao entregues a agenda.c, que os guarda por perfil — os
+// acessores aqui existem para o teste e para quem quiser o dado cru da visita
+// em curso.
+const char *extras_agenda_status(void);       // "Returning Series", "Ended"
+const char *extras_agenda_data(void);         // "2026-09-18"; "" = nao ha
+const char *extras_agenda_data_ultimo(void);  // ultimo episodio que foi ao ar
+const char *extras_agenda_nome_ep(void);
+int         extras_agenda_temporada(void);
+int         extras_agenda_episodio(void);
 
 // Titulos relacionados, para a aba "Mais como este".
 int  extras_n_relacionados(void);

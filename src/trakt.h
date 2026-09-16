@@ -27,6 +27,25 @@ int  trakt_carregar(const char *dirArte);   // 1 quando ha credencial
 // os cabecalhos apontam para eles e precisam viver ate o fim do pedido.
 int  trakt_cabecalhos(const char **cab, char *aut, size_t nAut,
                       char *chave, size_t nChave);
+// CABECALHOS SEM CONTA, para os endpoints do Trakt que respondem so com a
+// chave do APLICATIVO. `cab` precisa de 3 posicoes (a ultima recebe NULL) e
+// `chave` e o buffer de quem chama, como em trakt_cabecalhos.
+//
+// MEDIDO em 16/09/2026 contra a api de verdade, com `trakt-api-version: 2` e
+// `trakt-api-key` e NENHUM Authorization:
+//
+//   /shows/tt0903747/stats                        -> 200
+//   /shows/tt0903747/seasons/1/episodes/1/stats   -> 200
+//   /shows/tt0903747/seasons?extended=episodes,full -> 200
+//   sem a chave nenhuma                           -> 403
+//
+// Ou seja: o que separava os graficos de audiencia e as notas por episodio de
+// quem NUNCA vinculou o Trakt nao era a api, era este modulo — a chave do
+// aplicativo so saia por trakt_cabecalhos(), que exige token. A chave nao e
+// segredo de ninguem: ela vem compilada no pacote (-DNV_TRAKT_CLIENT_ID) e e a
+// mesma para todo mundo que instala. Devolve 0 quando nem o vinculo nem o
+// pacote trazem chave — e ai quem chama esconde a secao em vez de tentar.
+int  trakt_cabecalhos_publicos(const char **cab, char *chave, size_t nChave);
 int  trakt_ativo(void);
 // 1 quando a ultima resposta do Trakt foi 401 para ESTE token. traktauth
 // observa isto para disparar a renovacao por refresh token.

@@ -28,6 +28,8 @@
 #include "ajustes.h"
 #include "home.h"
 #include "extras.h"
+#include "agenda.h"
+#include "agendaui.h"
 #include "vistoep.h"
 #include "pessoa.h"
 #include "streams.h"
@@ -43,6 +45,8 @@
 #include "catalogo.h"
 #include "recomenda.h"
 #include "recenviar.h"
+#include "serieaud.h"
+#include "seriefrases.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -79,8 +83,23 @@
 #define COM_CARD_H   466.0f
 #define COM_PAD       28.0f
 #define COM_CARD_GAP  25.0f   // MEDIDO
+// Altura da CHAMADA das duas secoes sob demanda: a linha do titulo (TXT_HEADLINE,
+// 38), a da procedencia e a do custo (TXT_DET_META2, 23), com os mesmos vaos
+// que o cabecalho dos proprios modulos usa. Constante e nao medida por txt_linha
+// porque ela entra em alturaSecao, que roda no empilhamento de todo quadro.
+#define CHAMADA_H    124.0f
+// Vao entre os tres graficos de audiencia. O mesmo NV_DETF_SEC_GAP que separa
+// secoes de filme: os tres paineis tem cabecalho proprio e leem como tres
+// blocos, nao como um bloco de tres partes.
+#define AUD_GAP       64.0f
+// Divisao do par frases | ficha. 1040 e a largura do bloco de texto do heroi
+// (NV_DETW2_TEXTO_W) e dos "Detalhes do Filme", e os 592 que sobram sao
+// exatamente a largura em que a ficha de producao foi desenhada e julgada (ver
+// a nota no fim de seriefrases.c). 1040 + 96 + 592 = 1728, a faixa inteira.
+#define FR_COL_W    1040.0f
+#define FR_COL_GAP    96.0f
 
-#define N_SECOES    9
+#define N_SECOES    13
 #define N_ELENCO    6
 
 static HomeItem item;
@@ -142,13 +161,102 @@ static int    epAncora = 0;
 static int comentEp = 0;
 static int abaInfo = 0;              // aba de informacao escolhida
 
+// AS DUAS SECOES QUE SO CARREGAM QUANDO ALGUEM ENTRA NELAS.
+//
+// serieaud custa 1 pedido do /stats da serie MAIS 1 por episodio (teto 24);
+// seriefrases custa 2 (um SPARQL no Wikidata, um parse do Wikiquote). Nenhum
+// dos dois pode sair na abertura da pagina: a maioria das visitas a um titulo
+// nunca rola ate aqui, e quem so quer apertar "Reproduzir" pagaria 25 viagens
+// por nada. A disciplina e a que a secao de comentarios ja tem para os
+// comentarios de EPISODIO (extras.h): o conteudo que custa so e pedido — e so e
+// DESENHADO — quando a pessoa escolhe ver.
+//
+// "Escolher ver" aqui e o FOCO ENTRAR na secao, e nao ela aparecer na tela.
+// A diferenca importa porque nesta pagina nao ha rolagem livre: a rolagem
+// persegue a secao focada, entao a secao de baixo fica meia visivel o tempo
+// todo em que o foco esta na de cima. Disparar por visibilidade faria os 25
+// pedidos so por alguem estar olhando as abas.
+//
+// Enquanto nao entrou, a secao mostra a CHAMADA (titulo + procedencia + o
+// custo) e nada mais. Nao e enfeite: os dois modulos desenham "sem dados" com
+// lista vazia e sem fio no ar, e essa frase seria MENTIRA antes do primeiro
+// pedido — o app estaria dizendo que o titulo nao tem frases sem nunca ter
+// perguntado.
+static int audAberta;         // a temporada aberta abaixo ja foi pedida
+static int audTempAberta = -1;// NUMERO da temporada que audAberta descreve
+// Ultimo NUMERO de temporada que a pagina mostrou. Serve a duas coisas de uma
+// vez: fechar a audiencia quando a escolha muda e manter a grade de pastilhas
+// da aba "Avaliações" na MESMA temporada dos graficos.
+static int audTempVista = -1;
+static int frasesAberta;
+// Altura MEDIDA no ultimo desenho. Os dois modulos so dizem quanto ocuparam
+// DEPOIS de desenhar (e o valor de retorno de cada painel), e o empilhamento
+// precisa do numero antes. Um quadro de atraso e o preco, e ele so aparece nas
+// duas trocas de estado que existem (chamada -> carregando -> pronto), nunca
+// por quadro: a secao de frases e a ultima do documento (mexe so no docFim) e a
+// de audiencia so muda de altura com o foco DENTRO dela, onde a rolagem ja mira
+// o topo dela, que nao se move.
+static float audAlt[3] = { 380.0f, 402.0f, 484.0f }, frasesAlt = 520.0f;
+// PISO DE ALTURA DE CADA BANDA, e ele nao e cosmetico — e o que impede o unico
+// defeito grave que a altura-medida-no-ultimo-desenho pode causar.
+//
+// MEDIDO na captura (tests/detail_secoes_shot.sh, 1920x1080): com a temporada
+// inteira na mao o arco ocupa 380, o radar 402 e a impressao digital 484. Os
+// tres sao dominados por constantes fixas do modulo (a caixa do grafico mede
+// 210, 200 e 200) — o que varia com o conteudo sao poucas linhas de rodape, e
+// sempre PARA MAIS.
+//
+// O DEFEITO QUE ISTO CORRIGE apareceu na captura do estado "carregando": no
+// quadro em que a banda troca de vazia para cheia, o empilhamento ainda usa a
+// altura do quadro anterior (~140, a do aviso de vazio) e o CABECALHO DO RADAR
+// era desenhado POR CIMA da curva do arco. E o mesmo acidente que a secao do
+// Trakt ja teve contra os avatares do elenco, e um quadro dele ja e o suficiente
+// para a pessoa ver dois textos sobrepostos ao entrar na secao.
+//
+// Com o piso, a banda vazia RESERVA o espaco que o grafico vai ocupar — que e a
+// mesma disciplina dos esqueletos de episodio e de elenco deste arquivo
+// ("ocupa exatamente as coordenadas finais, para a resposta so preencher e nao
+// deslocar a pagina"). A medida so pode fazer a banda CRESCER.
+static const float AUD_PISO[3] = { 380.0f, 402.0f, 484.0f };
+// 1 quando a fileira `r` e uma das tres bandas de audiencia. Vira indice em
+// audAlt com `r - SEC_AUD_ARCO`.
+#define EH_AUD(r) ((r) >= SEC_AUD_ARCO && (r) <= SEC_AUD_DIGITAL)
+
 // As quatro secoes do web, com o topo do GRUPO em coordenada de documento — e
 // nao uma pilha de alturas somadas, que era o modelo do app da Apple TV. As
 // posicoes sao fixas porque no web tambem sao: o documento tem tamanho
 // conhecido e a rolagem so muda o quanto dele se enxerga.
+// A AUDIENCIA SAO TRES FILEIRAS E NAO UMA, e isto veio da captura, nao do
+// desenho: os tres graficos empilhados medem ~1290 px e a tela tem 1080. A
+// rolagem desta pagina persegue o TOPO da fileira focada (33% da altura util) e
+// mais nada — dentro de uma fileira o D-pad so anda na horizontal. Com os tres
+// numa fileira so, o radar e a impressao digital ficavam ABAIXO DA DOBRA sem
+// nenhum jeito de chegar neles: uma secao alcancavel cuja maior parte era
+// inalcancavel. Tres fileiras dao ao D-pad o passo que faltava, e cada descida
+// traz a proxima para os mesmos 33%. E tambem a gramatica do resto da pagina:
+// uma fileira focavel por banda.
+//
+// SEC_AUDIENCIA e SEC_FRASES entraram DEPOIS e a posicao delas no enum nao e
+// arbitraria: a ordem do enum E a ordem do D-pad e a ordem de empilhamento do
+// filme (recalcularLayout percorre 0..N_SECOES). Audiencia fica logo abaixo do
+// slot das abas porque e a continuacao do que a aba "Avaliações" comeca —
+// numeros desta temporada.
+//
+// FRASES SUBIU ACIMA DE "Detalhes do Filme" em 16/09, pedido do dono olhando a
+// tela rodando: "quotes pode ser pra cima do movie details". Ela tinha sido
+// posta por ULTIMO com o argumento de ser a unica secao que vale nos dois tipos
+// e a unica cuja fonte nao e nem Trakt nem TMDB — procedencia, que e um
+// criterio de arquiteto e nao de quem esta assistindo. Pela leitura o argumento
+// se inverte: frase celebre e sobre o FILME, e "Detalhes do Filme" e a ficha
+// tecnica, o rodape natural de qualquer pagina de titulo. Ficha tecnica nao
+// merece vir antes de fala memoravel.
+//
+// A ordem da SERIE nao muda com isto: aquele caminho empilha secao por secao
+// com topoSec explicito em recalcularLayout, e SEC_DETALHES nem existe la.
 typedef enum { SEC_TEMPORADAS, SEC_EPISODIOS, SEC_ABAS_INFO, SEC_ELENCO,
+               SEC_AUD_ARCO, SEC_AUD_RADAR, SEC_AUD_DIGITAL,
                SEC_TRAILERS, SEC_RELACIONADOS, SEC_COMENTARIOS,
-               SEC_ESTUDIOS, SEC_DETALHES } TipoSecao;
+               SEC_ESTUDIOS, SEC_FRASES, SEC_DETALHES } TipoSecao;
 // Definida adiante, junto do resto das consultas ao catalogo; declarada aqui
 // porque recalcularLayout, cabecalhoDe e nAvaliaveis, todas acima dela,
 // precisam separar serie de filme.
@@ -158,6 +266,24 @@ static int temporadaEm(int c);
 static int epAbsoluto(int c);
 static int epVisiveis(void);
 static float baseDaAbaAtiva(void);
+// A TEMPORADA ESCOLHIDA NA PAGINA, traduzida para o indice de extras.h.
+//
+// Sao duas contagens diferentes e misturar as duas e o mesmo defeito que o
+// tests/detail_eps.sh guarda para a fileira de episodios: `temporada` e a
+// posicao da PILULA (0,1,2...) e extras guarda as temporadas na ordem que o
+// Trakt devolveu, sem os "Especiais" (extras.c filtra `number > 0`). Numa serie
+// com especiais os dois indices divergem em um, e o grafico sairia com a cara
+// certa e os episodios de outra temporada.
+//
+// Devolve -1 quando a temporada escolhida nao esta na lista do Trakt — e ai a
+// secao de audiencia nao existe, porque nao ha episodio nenhum para plotar.
+static int audTemp(void) {
+  int alvo, t, n = extras_n_temporadas();
+  if (!ehSerie() || n <= 0) return -1;
+  alvo = temporadaEm(temporada);
+  for (t = 0; t < n; t++) if (extras_temporada_numero(t) == alvo) return t;
+  return -1;
+}
 // A fileira de comentarios e definida junto do desenho dela, la embaixo, mas a
 // contagem de colunas e a largura de item — que ficam aqui em cima — precisam
 // perguntar quantas pilulas e quantos cartoes ela tem.
@@ -206,6 +332,15 @@ static const char *cabecalhoDe(int r) {
     // dela nao levam cabecalho — mesmo motivo do "trakt Comentarios".
     case SEC_ESTUDIOS:     return "Estúdios";
     case SEC_DETALHES:     return "Detalhes do Filme";
+    // As duas abaixo trazem o proprio titulo DENTRO do painel (os modulos
+    // desenham "Arco de qualidade"/"Frases" com a linha de procedencia logo
+    // abaixo, que e a parte que nao pode ser separada do titulo). Um cabecalho
+    // externo seria o mesmo nome duas vezes, como ja acontecia com os
+    // comentarios.
+    case SEC_AUD_ARCO:
+    case SEC_AUD_RADAR:
+    case SEC_AUD_DIGITAL:
+    case SEC_FRASES:       return NULL;
     default:           return NULL;
   }
 }
@@ -307,6 +442,17 @@ static void recalcularLayout(void) {
     // porque nome comprido quebra em duas ("Geneva Robertson-Dworet" na propria
     // captura do dono) e empurra o papel para baixo.
     y = baseDaAbaAtiva() + NV_DETP_EL_GAP_TRAKT;
+    // AS TRES BANDAS DE AUDIENCIA vem antes dos comentarios, empilhadas pela
+    // mesma regra: nascem onde a aba ativa termina e empurram o que vem depois.
+    // Altura vinda do ultimo desenho (ver audAlt), porque cada grafico so diz
+    // quanto ocupou depois de desenhado.
+    for (r = SEC_AUD_ARCO; r <= SEC_AUD_DIGITAL; r++) {
+      topoSec[r] = conteudoSec[r] = y;
+      if (secaoN(r) <= 0) continue;
+      y += alturaSecao(r) + NV_DETF_SEC_GAP;
+      { float fim = y + NV_DETF_PAD_FIM - NV_DETF_SEC_GAP;
+        if (fim > docFim) docFim = fim; }
+    }
     topoSec[SEC_COMENTARIOS] = conteudoSec[SEC_COMENTARIOS] = y;
     if (secaoN(SEC_COMENTARIOS) > 0) {
       y += alturaSecao(SEC_COMENTARIOS) + NV_DETF_SEC_GAP;
@@ -316,8 +462,18 @@ static void recalcularLayout(void) {
     // Estudios/redes empilham DEPOIS dos comentarios, como no web
     // (renderCompanySections monta a secao ao fim do corpo da pagina).
     topoSec[SEC_ESTUDIOS] = conteudoSec[SEC_ESTUDIOS] = y;
+    // ESTUDIOS DEIXOU DE SER A ULTIMA e por isso passou a ADIANTAR `y`. Antes
+    // ela so media o proprio fim para o docFim; com a secao de frases embaixo,
+    // nao adiantar aqui punha as duas no mesmo topo — o mesmo defeito que a
+    // secao do Trakt ja teve contra os avatares do elenco.
     if (secaoN(SEC_ESTUDIOS) > 0) {
-      float fim = y + alturaSecao(SEC_ESTUDIOS) + NV_DETF_PAD_FIM;
+      y += alturaSecao(SEC_ESTUDIOS) + NV_DETF_SEC_GAP;
+      float fim = y + NV_DETF_PAD_FIM - NV_DETF_SEC_GAP;
+      if (fim > docFim) docFim = fim;
+    }
+    topoSec[SEC_FRASES] = conteudoSec[SEC_FRASES] = y;
+    if (secaoN(SEC_FRASES) > 0) {
+      float fim = y + alturaSecao(SEC_FRASES) + NV_DETF_PAD_FIM;
       if (fim > docFim) docFim = fim;
     }
     return;
@@ -515,6 +671,15 @@ static void txt_peso(TxtLinha l, float x, float y, float a, float grossura) {
 
 void detail_abrir(const HomeItem *it) {
   marco("detail_abrir");
+  // O TITULO ANTERIOR PODE TER DEIXADO FIO NO AR. Trocar de titulo por dentro
+  // (um credito de ator, um "Mais como este") reabre esta tela sem passar pelo
+  // fechamento, e sem isto os pedidos da serie antiga continuavam saindo para
+  // uma pagina que ninguem esta mais vendo. Os dois modulos param na proxima
+  // fronteira de episodio e descartam o resto; serieaud_abrir/seriefrases_abrir
+  // limpam a marca sozinhos.
+  serieaud_fechar();
+  seriefrases_fechar();
+  audAberta = 0; audTempAberta = -1; audTempVista = -1; frasesAberta = 0;
   item = *it;
   aberto = 1; saindo = 0; nivel = 0; botao = 0;
   t = 0.0f; pg = 0.0f; scrollY = 0.0f; abaInfo = 0; pessoaAberta = 0;
@@ -792,6 +957,17 @@ static float alturaSecao(int r) {
     // devolve NULL para ela), entao a linha do titulo entra na altura.
     case SEC_ESTUDIOS:     return EST_CARD_H + (ehSerie() ? EST_TITULO_H : 0.0f);
     case SEC_DETALHES:     return nLinhasDetalhe() * NV_DETF_DET_LINHA;
+    // As duas sob demanda: a CHAMADA enquanto ninguem entrou (titulo +
+    // procedencia + custo, tres linhas) e a altura MEDIDA no ultimo desenho
+    // depois disso.
+    case SEC_AUD_ARCO:
+    case SEC_AUD_RADAR:
+    case SEC_AUD_DIGITAL: {
+      int b = r - SEC_AUD_ARCO;
+      if (!audAberta) return CHAMADA_H;
+      return audAlt[b] > AUD_PISO[b] ? audAlt[b] : AUD_PISO[b];
+    }
+    case SEC_FRASES:    return frasesAberta ? frasesAlt : CHAMADA_H;
   }
   return 0.0f;
 }
@@ -890,6 +1066,57 @@ static int secaoN(int r) {
     case SEC_DETALHES:
       if (ehSerie()) return 0;
       return nLinhasDetalhe() > 0 ? 1 : 0;
+    // UMA COLUNA POR EPISODIO da temporada escolhida: e o seletor do painel de
+    // impressao digital, que destaca um episodio de cada vez
+    // (serieaud_selecionar). A contagem sai de extras.h e nao do modulo de
+    // audiencia — ela precisa existir ANTES do primeiro pedido, senao a secao
+    // teria zero colunas, focus_mover pularia por cima dela (focus.c) e o
+    // pedido nunca poderia ser disparado: a secao ficaria inalcancavel para
+    // sempre por depender de si mesma.
+    //
+    // Sem essa lista a secao NAO EXISTE, e e a mesma condicao que "sem Trakt":
+    // as notas por episodio e os numeros dos episodios saem todos do
+    // `seasons?extended=episodes,full`. Nao ha aqui uma secao oferecida que nao
+    // possa funcionar nesta instalacao.
+    // A PRIMEIRA BANDA E A PORTA. Ela existe assim que ha lista de episodios —
+    // e por ela que o foco entra e o pedido sai. As outras duas so ganham
+    // coluna DEPOIS disso: enquanto ninguem entrou, elas nao tem nada para
+    // desenhar, e uma fileira que recebe foco sem desenhar nada e exatamente o
+    // que este arquivo ja evita em tres outros lugares.
+    //
+    // O ARCO e o RADAR sao UMA coluna: o foco pousa, a pagina rola ate o
+    // grafico e pronto. Quem tem uma coluna POR EPISODIO e a impressao digital,
+    // onde a escolha muda o rodape de numeros crus (serieaud_selecionar).
+    case SEC_AUD_ARCO:
+      return audTemp() >= 0 ? 1 : 0;
+    case SEC_AUD_RADAR:
+      return (audAberta && audTemp() >= 0) ? 1 : 0;
+    case SEC_AUD_DIGITAL: {
+      int t = audTemp(), n;
+      if (!audAberta || t < 0) return 0;
+      n = extras_n_eps(t);
+      return n < N_ITENS ? n : N_ITENS;
+    }
+    // UMA COLUNA SO, sempre, e por dois motivos que puxam para o mesmo lado:
+    //
+    //   as frases sao uma lista VERTICAL (como a aba "Coleção"), entao o que
+    //   anda entre elas e cima/baixo tratado em detail_evento, nao a coluna; e
+    //
+    //   a contagem NAO PODE depender de seriefrases_n(). Ela e 0 antes de
+    //   alguem entrar (nada foi pedido) e volta a 0 nos titulos sem pagina no
+    //   Wikiquote — que sao a MAIORIA das series (medido: 2 de 12; nos filmes,
+    //   11 de 14 tem). Se a contagem caisse a zero depois de carregar, a secao
+    //   sumiria DEBAIXO do foco que acabou de entrar nela, que e o pior
+    //   desfecho possivel para o D-pad.
+    //
+    // Entao a secao fica, e quem responde pelo vazio e o desenho: os dois
+    // paineis dizem, cada um com a frase do proprio modulo, que a fonte nao tem
+    // aquele titulo. Vazio dito e informacao; secao que desaparece e defeito.
+    // Ainda assim ela nao existe sem IMDb id: sem ele nao ha o que perguntar
+    // nem ao Wikidata nem ao Wikiquote, e a frase de vazio seria sobre uma
+    // consulta que nunca aconteceu.
+    case SEC_FRASES:
+      return (ci && ci->imdb[0]) ? 1 : 0;
   }
   return 0;
 }
@@ -933,8 +1160,39 @@ static int temRecomendar(void) {
   if (!recomenda_ativo() || !ci || !ci->imdb[0]) return 0;
   return !strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series");
 }
+// O BOTAO "LEMBRAR-ME", e as duas condicoes para ele existir.
+//
+// SO EM SERIE COM DATA FUTURA. Serie encerrada, cancelada ou sem data
+// anunciada nao ganha botao: um "Lembrar-me" que nao tem dia para lembrar e
+// exatamente a promessa vazia que este trabalho existe para nao fazer.
+//
+// E UM CIRCULAR, e o rotulo saiu. Pedido do dono depois de ver a captura da
+// pilula: "aqui ser so o relogio e quando tiver ativo ele ficar um verdinho
+// bonito". A objecao antiga a um circular era que nao havia glifo proprio —
+// deixou de valer quando o despertador entrou no pacote de arte, e ele e o
+// unico glifo da linha que se MEXE, entao a 3 m ele e o mais facil de achar, e
+// nao o mais dificil.
+//
+// O ESTADO continua dito em palavra, e nao so em cor: com o botao em foco, a
+// linha logo acima dele (a mesma que diz "Proximo episodio T3E9 · em 3 dias")
+// passa a dizer o nome e o estado do botao. Ver a nota em desenhaLembrete: este
+// app nao tem canal de leitura de tela, e todo circular dele e mudo — esta e a
+// unica superficie onde um nome cabia sem empurrar a grade medida no aparelho.
+static int temLembrar(void) {
+  const CatItem *ci = cat_item(idx);
+  if (!ehSerie() || !ci || !ci->imdb[0]) return 0;
+  return agenda_pode_lembrar(ci->imdb);
+}
+static const char *rotuloLembrar(void) {
+  const CatItem *ci = cat_item(idx);
+  return i18n(ci && agenda_lembrete(ci->imdb) ? "Lembrete ativo" : "Lembrar-me");
+}
+// Instante em que o dono ligou o lembrete, para o despertador tocar inteiro
+// no quadro seguinte ao OK. 0 = nao houve troca nesta sessao.
+static Uint32 lembreteEm;
 static int nBotoes(void) {
-  return (ehSerie() ? 3 : 4) + (temInicio() ? 1 : 0) + (temRecomendar() ? 1 : 0);
+  return (ehSerie() ? 3 : 4) + (temInicio() ? 1 : 0) + (temLembrar() ? 1 : 0)
+         + (temRecomendar() ? 1 : 0);
 }
 
 // Que ACAO esta na posicao `n` da linha. As acoes tem numeros fixos (0
@@ -944,10 +1202,17 @@ static int nBotoes(void) {
 // "marcar assistido". Quando temInicio, a posicao 1 e o secundario de texto
 // e os circulares escorregam um para a direita.
 enum { ACAO_PRIMARIO = 0, ACAO_LISTA = 1, ACAO_ASSISTIDO = 2, ACAO_FONTES = 3,
-       ACAO_INICIO = 4, ACAO_RECOMENDAR = 5 };
+       ACAO_INICIO = 4, ACAO_RECOMENDAR = 5, ACAO_LEMBRAR = 6 };
 static int acaoEm(int n) {
   if (temInicio()) {
     if (n == 1) return ACAO_INICIO;
+    n--;
+  }
+  // O "Lembrar-me" e o SEGUNDO botao de texto, e o desconto vem antes da conta
+  // dos circulares — pela mesma razao que o de temInicio: sem ele a posicao de
+  // um circular escorregaria e o OK dispararia a acao do vizinho.
+  if (temLembrar()) {
+    if (n == 1) return ACAO_LEMBRAR;
     n--;
   }
   // O RECOMENDAR E O ULTIMO DA LINHA e a conferencia vem ANTES do salto da
@@ -1080,6 +1345,24 @@ void detail_evento(const SDL_Event *e) {
 
 
 
+  // AS FRASES SAO UMA LISTA VERTICAL, como a aba "Coleção": cima e baixo andam
+  // DENTRO dela. A secao tem uma coluna so de proposito (ver secaoN), entao nao
+  // ha o que fazer com esquerda/direita aqui.
+  //
+  // NAS PONTAS O EVENTO PASSA ADIANTE e o foco sai da secao — a mesma regra da
+  // colecao, e o que impede a ultima secao do documento de virar uma armadilha
+  // de onde so se sai pelo Voltar.
+  if (e->type == SDL_KEYDOWN && nivel >= 1 && foco.fileira == SEC_FRASES &&
+      !pessoaAberta && seriefrases_n() > 0) {
+    int i = seriefrases_selecionado(), n = seriefrases_n();
+    if (e->key.keysym.sym == SDLK_DOWN && i + 1 < n) {
+      seriefrases_selecionar(i + 1); return;
+    }
+    if (e->key.keysym.sym == SDLK_UP && i > 0) {
+      seriefrases_selecionar(i - 1); return;
+    }
+  }
+
   if (e->type == SDL_KEYDOWN && (e->key.keysym.sym == SDLK_RETURN ||
                                  e->key.keysym.sym == SDLK_KP_ENTER)) {
     if (!okDesceEm) okDesceEm = SDL_GetTicks();
@@ -1112,6 +1395,15 @@ void detail_evento(const SDL_Event *e) {
         // "Assistir do comeco" (issue #46): mesmo caminho do primario, mas o
         // roteador zera a retomada DESTA sessao depois de armar o episodio.
         pedDoInicio = 1;
+      } else if (acao == ACAO_LEMBRAR) {
+        // Liga/desliga na hora e GRAVA. Nao ha confirmacao nem folha: o estado
+        // volta no proprio rotulo do botao, que e o unico lugar onde o dono
+        // vai procurar por ele.
+        const CatItem *ci = cat_item(idx);
+        if (ci && ci->imdb[0]) {
+          agenda_alternar_lembrete(ci->imdb);
+          lembreteEm = SDL_GetTicks();
+        }
       } else if (acao == ACAO_LISTA) {
         pedMarcar = 1;
       } else if (acao == ACAO_ASSISTIDO) {
@@ -1287,6 +1579,13 @@ static float larguraItem(int r, int c) {
     // a tabela fora da tela.
     case SEC_ESTUDIOS:    return EST_CARD_W;
     case SEC_DETALHES:    return NV_DETF_DET_W;
+    // Bloco unico da largura do conteudo: os graficos e os dois paineis de
+    // frases ocupam a faixa inteira. Cair no `default` daria a eles a largura
+    // de um avatar e o recorte horizontal cortaria tudo fora da tela.
+    case SEC_AUD_ARCO:
+    case SEC_AUD_RADAR:
+    case SEC_AUD_DIGITAL:
+    case SEC_FRASES:      return NV_TELA_W - NV_DETP_X * 2;
     default:              return NV_DETP_EL_W;
   }
 }
@@ -1310,6 +1609,11 @@ static float xItem(int r, int c) {
       continue;
     }
     if (r == SEC_DETALHES)  { continue; }   // coluna unica: sempre em NV_DETP_X
+    // Audiencia tem uma coluna por EPISODIO, mas elas nao sao itens lado a
+    // lado: sao posicoes dentro de um grafico que ocupa a faixa inteira. Todas
+    // comecam em NV_DETP_X, e quem marca a escolhida e serieaud_selecionar.
+    // Frases idem, com a coluna unica.
+    if (EH_AUD(r) || r == SEC_FRASES) continue;
     if (r == SEC_TEMPORADAS) x += larguraTemporada(k) + NV_DETP_TEMP_GAP;
     else x += larguraAbaInfo(k) + NV_DETP_ABA_SEP * 2 + 9.0f;  // 9 = largura do "|"
   }
@@ -1405,6 +1709,11 @@ void detail_atualizar(float dt, Uint32 agora) {
   // telas e app.c chama todas do mesmo jeito.
   (void)agora;
   if (!aberto) return;
+  // SAINDO: interrompe os dois fios antes mesmo de a mola terminar. Chamar todo
+  // quadro nao custa nada (e um flag sob mutex) e evita precisar de uma borda:
+  // `saindo` tambem e ligado por caminhos que nao passam pelo Voltar, como o
+  // OK num estudio, que abre o vertudo e deixa esta tela para tras.
+  if (saindo) { serieaud_fechar(); seriefrases_fechar(); }
   revalidarIdx();
   // O CATALOGO TROCOU: OS EPISODIOS FORAM JUNTO, E NINGUEM OS REPEDIA.
   //
@@ -1475,6 +1784,68 @@ void detail_atualizar(float dt, Uint32 agora) {
     }
   }
 
+  // OS DOIS PEDIDOS SOB DEMANDA. Ver a nota em audAberta: saem quando o FOCO
+  // ENTRA na secao, nunca na abertura da pagina.
+  //
+  // Repetir e barato de proposito — os dois modulos saem na hora quando ja
+  // estao no mesmo titulo (e na mesma temporada, no caso da audiencia) —, entao
+  // chamar por quadro enquanto o foco esta aqui e a forma mais simples de nao
+  // precisar de uma borda de "entrou agora" que erra quando o catalogo remonta.
+  if (nivel >= 1 && EH_AUD(foco.fileira)) {
+    int t = audTemp();
+    const CatItem *ci = cat_item(idx);
+    if (ci && ci->imdb[0] && t >= 0) {
+      int numeros[EX_EP_MAX], notas[EX_EP_MAX];
+      int i, n = extras_n_eps(t);
+      if (n > EX_EP_MAX) n = EX_EP_MAX;
+      // AS NOTAS JA ESTAO NA MAO. Vem do mesmo
+      // `seasons?extended=episodes,full` que desenha as pastilhas da aba
+      // "Avaliações"; o arco de qualidade nao custa pedido nenhum por isso.
+      for (i = 0; i < n; i++) {
+        numeros[i] = extras_ep_numero(t, i);
+        notas[i]   = extras_ep_nota(t, i);
+      }
+      serieaud_abrir(ci->imdb, extras_temporada_numero(t), numeros, notas, n);
+      audAberta = 1;
+      audTempAberta = extras_temporada_numero(t);
+    }
+    // O episodio em destaque no painel 3 e a COLUNA focada — e so na banda da
+    // impressao digital, que e a unica com uma coluna por episodio. Nas outras
+    // duas a coluna e sempre 0 e mexer na selecao por causa dela apagaria o
+    // episodio escolhido toda vez que o foco passasse por cima delas.
+    if (foco.fileira == SEC_AUD_DIGITAL) serieaud_selecionar(foco.coluna);
+  }
+  // TROCAR DE TEMPORADA LA EM CIMA MEXE EM DUAS COISAS AQUI EMBAIXO.
+  //
+  // 1. FECHA a audiencia de volta para a chamada. O modulo guarda uma temporada
+  //    por vez; sem isto as bandas continuariam desenhando os graficos da
+  //    temporada ANTERIOR sob o titulo da nova — um grafico com a cara certa e
+  //    os numeros de outra coisa, que e o defeito que serieaud.h manda evitar
+  //    acima de todos.
+  //
+  // 2. LEVA JUNTO a grade de pastilhas da aba "Avaliações" (`ratTemp`). Ela tem
+  //    um seletor de temporada PROPRIO, que nascia sempre na primeira e nunca
+  //    ouvia as pilulas do topo da pagina. Isso passou despercebido enquanto
+  //    ela era a unica coisa da aba; com os graficos logo abaixo dela viraram
+  //    duas leituras da mesma temporada, lado a lado, discordando — visivel na
+  //    captura como "T1" aceso na grade e "E1..E13 da T2" no arco. As pilulas do
+  //    topo sao a escolha da PAGINA; quem estiver dentro da aba continua livre
+  //    para espiar outra temporada com esquerda/direita.
+  if (ehSerie()) {
+    int agoraT = temporadaEm(temporada);
+    if (agoraT != audTempVista) {
+      int t;
+      audTempVista = agoraT;
+      if (audTempAberta != agoraT) audAberta = 0;
+      t = audTemp();
+      if (t >= 0) ratTemp = t;
+    }
+  }
+  if (nivel >= 1 && foco.fileira == SEC_FRASES) {
+    const CatItem *ci = cat_item(idx);
+    if (ci && ci->imdb[0]) { seriefrases_abrir(ci->imdb); frasesAberta = 1; }
+  }
+
   // DEPOIS de sincronizarColunas, nao antes: o empilhamento pergunta a secaoN
   // quem tem conteudo, e secaoN olha dados que chegam da rede. Recalcular com a
   // contagem do quadro anterior deixaria o layout um quadro atrasado — visivel
@@ -1510,6 +1881,11 @@ void detail_atualizar(float dt, Uint32 agora) {
         // scroll de um cartao antigo pendurado esconderia o primeiro cartao
         // assim que o foco subisse para o seletor.
         if (r == SEC_COMENTARIOS && foco.coluna < nPilulasCom()) alvo = 0.0f;
+        // As duas secoes de painel NUNCA rolam na horizontal: a coluna e uma
+        // posicao DENTRO de um desenho de largura fixa, nao um item que possa
+        // sair da tela. Sem esta linha a regra geral abaixo empurrava a secao
+        // inteira 24 px para a esquerda assim que o foco saia da coluna 0.
+        else if (EH_AUD(r) || r == SEC_FRASES) alvo = 0.0f;
         else if (foco.coluna == 0) alvo = 0.0f;
         else if (x + w > alvo + vista - 24.0f) alvo = x + w - vista + 24.0f;
         else if (x < alvo + 24.0f)             alvo = x - 24.0f;
@@ -1538,6 +1914,23 @@ void detail_atualizar(float dt, Uint32 agora) {
     // web — `target.closest(".movie-cast-track, ...")`.
     float maxY = docFim - NV_TELA_H;
     alvoY = conteudoSec[foco.fileira] - NV_TELA_H * alvoSec[foco.fileira];
+    // AS FRASES SAO UMA LISTA ALTA DENTRO DE UMA FILEIRA SO, e a rolagem desta
+    // pagina so sabe mirar o TOPO da fileira focada. Com seis citacoes o painel
+    // passa da altura da tela e as ultimas ficariam abaixo da dobra, escolhidas
+    // pelo D-pad e invisiveis — o mesmo defeito que obrigou a audiencia a virar
+    // tres fileiras, que aqui nao da para resolver do mesmo jeito porque as
+    // citacoes sao uma lista, nao tres blocos com nome proprio.
+    //
+    // Entao a fileira PANORAMIZA: o alvo desliza do topo ate o fim do painel
+    // conforme a escolha desce. Proporcional, e nao por citacao, porque a
+    // altura de cada uma depende de quantas linhas a fala ocupou e o unico
+    // numero que o modulo devolve e o TOTAL.
+    if (foco.fileira == SEC_FRASES && seriefrases_n() > 1) {
+      float sobra = frasesAlt - NV_TELA_H * 0.62f;
+      if (sobra > 0.0f)
+        alvoY += sobra * (float)seriefrases_selecionado()
+                       / (float)(seriefrases_n() - 1);
+    }
     if (alvoY > maxY) alvoY = maxY;
     if (alvoY < 0.0f) alvoY = 0.0f;
   }
@@ -1685,6 +2078,69 @@ static float larguraPrimario(const char *rot) {
 static float larguraSecundario(const char *rot) {
   TxtLinha l = txt_linha(TXT_DET_BOTAO, rot, 255, 255, 255, 255);
   return NV_DETW_BTN2_PADX * 2 + l.w;
+}
+
+// O BOTAO DO LEMBRETE — so o relogio, e verde quando esta armado.
+//
+// Era uma pilula com o despertador e o rotulo "Lembrar-me" / "Lembrete ativo".
+// O dono olhou a captura e pediu o contrario: "aqui ser so o relogio e quando
+// tiver ativo ele ficar um verdinho bonito". Entao ele passou a ser um CIRCULO
+// do mesmo diametro dos vizinhos (96, NV_DETW2_CIRC) — a linha de acoes tem uma
+// gramatica so, e um botao de forma propria ali le como peca de outro app.
+//
+// TRES ESTADOS DE SUPERFICIE, e nenhum deles depende so de cor:
+//   desligado, em repouso  circulo #222 e relogio claro, parado, sem ondas
+//   LIGADO,    em repouso  circulo ESMERALDA e relogio escuro, tremendo, com
+//                          as ondas de som ao lado
+//   em foco                circulo claro preenchido e relogio escuro, a mesma
+//                          regra dos outros circulares (ver desenhaBotao: o
+//                          aparelho marca foco por ESCALA mais inversao de cor,
+//                          e nao por anel)
+// Quem nao distingue verde de cinza le o estado pelas ONDAS e pelo tremor, que
+// so existem com o lembrete ligado. Numa TV a tres metros essa redundancia nao
+// e formalidade: o verde e o cinza tem quase a mesma luminancia em quem enxerga
+// pouca cor, e ai a unica diferenca que resta e a forma.
+//
+// O VERDE E O ESMERALDA #66bb6a DA PALETA DE ACENTOS, nao um verde novo — a
+// mesma regra que o selo do Social ja segue. Ver agendaui_cor_lembrete: sobre a
+// superficie clara do foco ele entra escurecido, porque cheio daria 2,2:1 e
+// sumiria.
+//
+// O NOME DO BOTAO. Este app nao tem canal de leitura de tela (nao ha TTS, nao
+// ha voice guidance), e TODOS os circulares dele — mais, assistido, fontes,
+// recomendar — sao mudos: foi o que se achou procurando "como os outros icones
+// se nomeiam". Em vez de repetir isso, o nome saiu na LINHA DE ESTADO logo
+// acima da fileira, que com o botao em foco passa a dizer o nome e o estado.
+// E o unico lugar com espaco medido: a grade do hero vem do aparelho e uma
+// legenda sob o circulo encostaria na linha de apoio a 4px.
+// O GLIFO USA A MEDIDA DA FILEIRA, 0,333, e nao mais um 0,42 proprio.
+//
+// O 0,42 existia porque o despertador antigo, so de contorno, parecia menor que
+// o "+" cheio ao lado. A conta mostrou que a compensacao andava para o lado
+// errado: com o icone velho (4762 px de tinta no arquivo de 128, contra 2923 da
+// nuvem e 3582 do aviao), 0,42 punha 472 px2 de tinta dentro do circulo de 96,
+// contra 182 da nuvem e 223 do aviao. O botao nao estava pequeno, estava
+// gritando. Com o desenho novo (4054 px, ver lembrete.svg) o mesmo 0,333 dos
+// vizinhos da 253 px2 — dentro da faixa deles, que vai de 118 ("+") a 316
+// (olho). Um numero a menos, e o que sobrou e o que a fileira ja usava.
+static void desenhaLembrete(GfxRect r, int ligado, int focado, float a) {
+  float cr, cg, cb, g;
+  int claro = focado || ligado;
+  if (focado) {
+    float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
+    r.w *= NV_DETW2_FOCO_SY; r.h *= NV_DETW2_FOCO_SY;
+    r.x = cx - r.w * 0.5f; r.y = cy - r.h * 0.5f;
+  }
+  if (focado) gfx_cor(r, NV_RAIO_PILL, 0.961f, 0.961f, 0.961f, a);
+  else if (ligado) {
+    float vr, vg, vb;
+    agendaui_cor_lembrete(1, 0, &vr, &vg, &vb);
+    gfx_cor(r, NV_RAIO_PILL, vr, vg, vb, a);
+  } else gfx_cor(r, NV_RAIO_PILL, 0.133f, 0.133f, 0.133f, a);
+  agendaui_cor_lembrete(ligado, claro, &cr, &cg, &cb);
+  g = r.w * NV_DETW2_CIRC_GLIFO;
+  { GfxRect ic = { r.x + (r.w - g) * 0.5f, r.y + (r.h - g) * 0.5f, g, g };
+    agendaui_despertador(ic, ligado, cr, cg, cb, a, SDL_GetTicks(), lembreteEm); }
 }
 
 // Ano solto do campo `meta` ("2025 · 1 h 54 min" -> "2025" e "1 h 54 min").
@@ -1851,14 +2307,28 @@ static void heroWeb(float a, float desloc) {
   float ySin   = yMeta1 - NV_DETW2_GAP_SIN - hSin;
   float ySup   = sup[0] ? ySin - NV_DETW2_GAP_SUP : ySin;
   float yAcoes = ySup - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H;
-  // A linha de retomada explica o BOTAO, entao fica colada nele — logo acima.
-  float yRetom = yAcoes - NV_DETW_GAP_RETOM - NV_DETW_RETOM_H;
+  // BLOCO DE LINHAS DE ESTADO, empilhado de baixo para cima logo acima dos
+  // botoes. Sao duas, e a ordem tem razao: a retomada explica o BOTAO e fica
+  // colada nele; a agenda ("Próximo episódio T2E5 · em 3 dias") explica o
+  // TITULO e fica acima dela.
+  //
+  // A agenda so ocupa altura quando existe frase. Serie sem registro ainda, ou
+  // registro sem data e sem situacao conhecida, nao empurra nada — a linha
+  // some, e o hero fica exatamente como era.
+  char agLinha[200] = "";
+  { const CatItem *ciAg = cat_item(idx);
+    if (ehSerie() && ciAg && ciAg->imdb[0])
+      agenda_frase(ciAg->imdb, agLinha, sizeof agLinha); }
+  float yEstado = yAcoes - NV_DETW_GAP_RETOM;
+  float yRetom = yEstado, yAgenda = yEstado;
+  if (temRetom > 0.0f) { yEstado -= NV_DETW_RETOM_H; yRetom = yEstado; }
+  if (agLinha[0])      { yEstado -= NV_DETW_RETOM_H; yAgenda = yEstado; }
 
   // Sobe alguns pixels enquanto entra: continua o movimento da arte em vez de
   // aparecer pronto no lugar. `desloc` e a rolagem do documento.
   float sobe = (1.0f - a) * 26.0f + desloc;
   yMeta2 += sobe; yMeta1 += sobe; ySin += sobe; ySup += sobe;
-  yRetom += sobe; yAcoes += sobe;
+  yRetom += sobe; yAgenda += sobe; yAcoes += sobe; yEstado += sobe;
 
   // --- logo -----------------------------------------------------------------
   const char *arqLogo = logoDe(idx);
@@ -1871,9 +2341,21 @@ static void heroWeb(float a, float desloc) {
     if (asp <= 0.0f) asp = 2.5f;
     float h = NV_DETW_LOGO_H, w = h * asp;
     if (w > NV_DETW_LOGO_MAXW) { w = NV_DETW_LOGO_MAXW; h = w / asp; }
-      // O logo assenta acima do que vier primeiro: a linha de retomada quando ha
-    // progresso, senao a propria linha de acoes.
-    float baseLogo = (temRetom ? yRetom : yAcoes) - NV_DETW_LOGO_GAP;
+    // O logo assenta acima do TOPO DO BLOCO DE ESTADO, seja ele qual for.
+    //
+    // DEFEITO CORRIGIDO em 16/09, visto pelo dono numa serie encerrada: esta
+    // linha olhava so `temRetom`. Com logo na tela, sem progresso e COM linha
+    // de agenda ("Show ended · last episode on 13 November 2025"), o logo se
+    // ancorava em `yAcoes` enquanto a agenda era desenhada uma linha acima
+    // disso — ou seja, DENTRO da caixa do logo. As duas coisas saiam uma por
+    // cima da outra.
+    //
+    // `yEstado` ja e o topo do bloco depois de empilhar retomada e agenda (zero,
+    // uma ou as duas), que e exatamente a ancora que o ramo SEM logo, dez linhas
+    // abaixo, sempre usou. Os dois ramos agora concordam, que e o que impede de
+    // o defeito voltar no proximo estado novo.
+    float baseLogo = (temRetom > 0.0f || agLinha[0] ? yEstado : yAcoes)
+                     - NV_DETW_LOGO_GAP;
     GfxRect r = { NV_DETW2_X, baseLogo - h, w, h };
     gfx_tex_aspect_atual = 0.0f;   // o logo ja vem na proporcao certa
     // LOGO PRETO VIRA BRANCO. O TMDB serve a mesma marca em versao clara e
@@ -1902,7 +2384,8 @@ static void heroWeb(float a, float desloc) {
       // Mesma ancora do logo: acima da retomada quando ha, senao das acoes. A
       // altura da CAIXA continua sendo a do logo, para que a linha de acoes nao
       // pule entre um titulo com logo e outro sem.
-      float baseLogo = (temRetom ? yRetom : yAcoes) - NV_DETW_LOGO_GAP;
+      float baseLogo = (temRetom > 0.0f || agLinha[0] ? yEstado : yAcoes)
+                       - NV_DETW_LOGO_GAP;
       txt_desenhar_alpha(t2, NV_DETW2_X,
                          baseLogo - NV_DETW_LOGO_H
                                   + (NV_DETW_LOGO_H - t2.h) * 0.5f, a);
@@ -1953,12 +2436,59 @@ static void heroWeb(float a, float desloc) {
       desenhaSecundario(rs, rotIni, nivel == 0 && botao == nb, a);
       bx += rs.w + NV_DETW2_BTN_GAP; nb++;
     }
+    if (temLembrar()) {
+      const CatItem *ciL = cat_item(idx);
+      GfxRect rs = { bx, cyBtn - NV_DETW2_CIRC * 0.5f,
+                     NV_DETW2_CIRC, NV_DETW2_CIRC };
+      desenhaLembrete(rs, ciL && agenda_lembrete(ciL->imdb),
+                      nivel == 0 && botao == nb, a);
+      bx += NV_DETW2_CIRC + NV_DETW2_BTN_GAP; nb++;
+    }
     for (; nb < n; nb++) {
       GfxRect rc = { bx, cyBtn - NV_DETW2_CIRC * 0.5f,
                      NV_DETW2_CIRC, NV_DETW2_CIRC };
       desenhaBotao(rc, NULL, acaoEm(nb), nivel == 0 && botao == nb, a);
       bx += NV_DETW2_CIRC + NV_DETW2_BTN_GAP;
     } }
+
+  // --- linha da AGENDA ------------------------------------------------------
+  // Cor de realce e nao branco: e a unica linha do hero que fala de uma data
+  // FUTURA, e a 3 m ela precisa se separar da retomada logo abaixo sem virar
+  // um segundo titulo. O texto ja vem traduzido e por extenso de agenda.c —
+  // nao ha segundo formatador de data neste arquivo.
+  if (agLinha[0]) {
+    float ar, ag, ab;
+    // COM O DESPERTADOR EM FOCO, esta linha deixa de falar do TITULO e passa a
+    // falar do BOTAO — nome, estado e o que ele realmente faz. E a legenda que
+    // um circular mudo nao tem onde por, e cai justamente no ponto para onde o
+    // olho ja foi: 37px acima do botao que acabou de receber o foco.
+    //
+    // A frase do mecanismo vem junto de proposito. Numa TV nao ha notificacao —
+    // nem webOS nem Tizen entregam nada a um app fechado — e "Lembrar-me"
+    // sozinho promete um aviso que nao existe. A tela Agenda ja diz isto uma
+    // vez; aqui e onde a duvida nasce.
+    char leg[220];
+    int emFoco = nivel == 0 && temLembrar() && acaoEm(botao) == ACAO_LEMBRAR;
+    int ligado = 0;
+    { const CatItem *ciL = cat_item(idx);
+      ligado = ciL && ciL->imdb[0] && agenda_lembrete(ciL->imdb); }
+    if (emFoco) {
+      snprintf(leg, sizeof leg, "%s \xc2\xb7 %s", rotuloLembrar(),
+               i18n("o aviso aparece quando você abrir o app no dia"));
+      // Verde quando armado, para amarrar a legenda ao circulo verde logo
+      // abaixo dela; cor de realce quando nao.
+      if (ligado) agendaui_cor_lembrete(1, 0, &ar, &ag, &ab);
+      else ajustes_acento(&ar, &ag, &ab);
+    } else {
+      snprintf(leg, sizeof leg, "%s", agLinha);
+      ajustes_acento(&ar, &ag, &ab);
+    }
+    { TxtLinha l = txt_linha_corta(TXT_CAPTION, leg, (int)(ar * 255.0f + 0.5f),
+                                   (int)(ag * 255.0f + 0.5f),
+                                   (int)(ab * 255.0f + 0.5f), 255,
+                                   NV_DETW2_TEXTO_W);
+      txt_desenhar_alpha(l, NV_DETW2_X, yAgenda + (NV_DETW_RETOM_H - l.h) * 0.5f, a); }
+  }
 
   // --- linha de retomada ----------------------------------------------------
   if (ci && ci->progresso > 0) {
@@ -2070,6 +2600,38 @@ static void heroWeb(float a, float desloc) {
         txt_desenhar_alpha(label,x,yc-label.h*.5f,a);mw=label.w;}
       x+=mw+10;txt_desenhar_alpha(lv,x,yc-lv.h*.5f,a);x+=lv.w;
     }
+    // QUANTO DA SERIE VOCE JA VIU, no fim da linha de meta.
+    //
+    // Fica AQUI e nao no bloco de estado logo acima dos botoes porque aquilo
+    // fala do PROXIMO PASSO ("Retomada disponivel 42%", "Proximo episodio
+    // T3E9") e isto fala da OBRA, como o ano e as notas ao lado. Sao dois
+    // assuntos e o hero ja empilha linhas demais.
+    //
+    // ZERO PEDIDO A MAIS: os dois contadores vem do topo da mesma resposta de
+    // /shows/<id>/progress/watched que a marca de "visto" no card do episodio
+    // ja baixa. Ver extras_progresso_serie.
+    //
+    // NAO APARECE quando o historico ainda nao chegou nem quando a serie nao
+    // estreou — 0% ali seria uma afirmacao sobre nada, e o denominador do
+    // Trakt ("aired") ja desconta o que ainda vai ao ar. Tambem nao aparece em
+    // filme, onde a pergunta e outra e a barra de retomada ja responde.
+    if (ehSerie()) {
+      int vis = 0, exib = 0;
+      if (extras_progresso_serie(&vis, &exib)) {
+        char pct[48];
+        int p100 = (vis * 200 + exib) / (exib * 2);   // arredonda, sem float
+        snprintf(pct, sizeof pct, i18n("%d%% assistido · %d de %d"),
+                 p100, vis, exib);
+        { TxtLinha lp = txt_linha(TXT_DET_SIN, pct, 179, 179, 179, 255);
+          if (x + NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D + lp.w
+              <= NV_DETW2_X + NV_HERO_SIN_W) {
+            desenhaPonto(x + NV_DETW2_SEP, yc, 0.502f, a);
+            x += NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D;
+            txt_desenhar_alpha(lp, x, yc - lp.h * 0.5f, a);
+            x += lp.w;
+          } }
+      }
+    }
   }
 
   // --- meta linha 2: [classificacao | status]  ·  duracao  ·  pais -----------
@@ -2172,15 +2734,23 @@ static void desenhaTemporada(GfxRect r, int c, float f, float a) {
   // foco dos botoes circulares do heroi, medida na mesma referencia — foco e
   // "escolhido" deixam de colidir sem precisar de dois tons de cinza que a
   // 3 metros ninguem separa.
-  { float base = sel ? 0.21f : 0.133f;
+  // CORRIGIDO em 16/09/2026, o dono olhando a captura: "aqui tem que ser fill
+  // quando selecionado e nao o contorno". A escolhida-sem-foco tinha anel
+  // #C2C4C9 por cima de um miolo #363636 quase igual ao das outras — o anel
+  // fazia todo o trabalho, e anel e o que a regra proibe.
+  //
+  // Agora sao TRES PREENCHIMENTOS da mesma familia, como a barra de abas da
+  // Biblioteca e o seletor Serie|Episodio: #222 na que nao e nada, 60% da
+  // superficie de foco (#939393) na escolhida em repouso, #F5F5F5 na focada.
+  // Tres degraus bem separados a 3 metros, e nenhum deles e um contorno.
+  { float base = sel ? 0.577f : 0.133f;        // 0.577 = 60% de 0.961
     float lum  = base + (0.961f - base) * f;   // -> #F5F5F5 no foco
     gfx_cor(r, raio, lum, lum, lum, a); }
-  if (sel && f < 0.99f)
-    gfx_rect(r, 0, GFX_ANEL, 0, 1.5f / r.h, 0, raio,
-             0.76f, 0.77f, 0.79f, 0.5f * (1 - f) * a);
-  // Texto: cinza quando so existe, branco quando escolhido, ESCURO quando
-  // focado. Interpolado por `f` para acompanhar a mola em vez de estalar.
-  { float claro = sel ? 255.0f : 179.0f;
+  // Texto: cinza claro na que nao e nada, ESCURO assim que ela e escolhida —
+  // #111 sobre #939393 da 6,1:1, e branco sobre o mesmo cinza daria 2,4:1.
+  // Interpolado por `f` para acompanhar a mola em vez de estalar; na escolhida
+  // os dois extremos ja sao escuros, entao a interpolacao nao muda nada.
+  { float claro = sel ? 17.0f : 179.0f;
     float v = claro + (17.0f - claro) * f;     // -> #111 no foco
     int cor = (int)(v + 0.5f);
     TxtLinha l = txt_linha(TXT_PLR_CORPO, rot, cor, cor, cor, 255);
@@ -2570,25 +3140,42 @@ static void desenhaElenco(float x, float y, int c, float f, float a) {
 // e as fotos da filmografia saiam quadrados enquanto os da home eram
 // arredondados. O valor vem do mesmo `posterCardCornerRadiusDp` da home, para
 // as duas telas terem o mesmo canto.
+// O DIVISOR E A ALTURA, e isto foi conferido no shader, nao deduzido: em
+// FS_SDF (gfx.c) o fragmento faz `p = (uv - 0.5) * vec2(asp, 1.0)` e
+// `b = vec2(0.5*asp, 0.5) - r`, ou seja a meia-extensao vertical e sempre 0,5 e
+// o `r` e medido contra ela. Dividir pelo MENOR LADO, como estava aqui, so
+// acerta em retangulo mais largo que alto; num cartaz (retrato) o menor lado e
+// a LARGURA, e pedir 24/largura sobre uma altura maior pedia um canto bem mais
+// fechado que os 24 px que o comentario dizia garantir. O teto e metade da
+// LARGURA medida na mesma escala, senao um retangulo mais largo que alto
+// termina com canto reto na horizontal e redondo na vertical.
 static float raioCartaz(float w, float h) {
-  float menor = w < h ? w : h;
-  if (menor <= 0.0f) return NV_RAIO_CARD;
-  return ajustes_raio_poster_px() / menor;
+  if (h <= 0.0f) return NV_RAIO_CARD;
+  { float r = ajustes_raio_poster_px() / h;
+    float teto = 0.5f * w / h;
+    if (r > 0.5f)  r = 0.5f;
+    if (r > teto)  r = teto;
+    return r; }
 }
 
+// `raio` chega em PIXEIS e sai em fracao da ALTURA, pela mesma razao escrita
+// em raioCartaz: o `r` do SDF e medido contra a meia-altura. Aqui o retangulo e
+// deitado, entao o menor lado era a altura e a conta antiga dava o mesmo
+// resultado por acidente — o teto pela largura e que faltava.
 static void moldura(GfxRect r, float raio, float a) {
-  float menor = r.w < r.h ? r.w : r.h;
-  raio = menor > 0.0f ? raio / menor : 0.0f;
+  float teto = r.h > 0.0f ? 0.5f * r.w / r.h : 0.5f;
+  raio = r.h > 0.0f ? raio / r.h : 0.0f;
+  if (raio > 0.5f) raio = 0.5f;
+  if (raio > teto) raio = teto;
   // CINZA NEUTRO, o mesmo #2D2D2D das pilulas de temporada e do resto dos
   // componentes. O azul-escuro que estava aqui (#12171F) era o unico tom da
   // familia nesta tela: o cartao de comentario lia como peca de outro app.
   gfx_cor(r, raio, 0.176f, 0.176f, 0.176f, 0.94f * a);
-  // A BORDA SEGUE O CANTO. Eram QUATRO RETANGULOS RETOS de 1 px, um por lado —
-  // eles cruzavam por fora do arredondamento e desenhavam bico nos quatro
-  // cantos, que e o que o dono viu como "borda nao arredondada". GFX_ANEL usa o
-  // mesmo SDF do preenchimento, entao o traco acompanha o raio.
-  gfx_rect(r, 0, GFX_ANEL, 0, 1.0f / (menor > 0.0f ? menor : 1.0f), 0, raio,
-           1, 1, 1, 0.14f * a);
+  // SEM FIO DE CONTORNO. Havia aqui um anel branco a 14% que existia para
+  // "fechar" o cartao sobre a arte de fundo — o dono mandou tirar em 16/09
+  // ("tirar esse contorno daqui tb"), e ele estava contra a regra: nesta tela
+  // contorno so aparece onde preencher e impossivel, e aqui o preenchimento
+  // #2D2D2D ja separa o cartao do fundo sozinho.
 }
 
 // Cartao de nota: a MARCA em cima e o valor embaixo, como o .movie-rating-card
@@ -2776,30 +3363,60 @@ static void desenhaRelacionados(float x, float y, float a) {
 // — o `.detail-company-card` do web faz a mesma escolha (img ou span). O card
 // e FOCAVEL e o OK abre o browse da entidade (mesma pasta sintetica TMDB das
 // colecoes).
+// O CARTAO DE REDE/ESTUDIO. Tres defeitos numa captura so ("tem logo cagada no
+// network and studios"), e os tres tinham a mesma raiz: o logo era desenhado
+// com GFX_CARD.
+//
+// 1. GFX_CARD IGNORA O ALFA DA TEXTURA — ele le so o RGB e recorta pelo SDF.
+//    Logo de marca vem quase sempre recortado sobre transparencia, entao o que
+//    aparecia era o RGB do fundo transparente (preto, na maioria dos PNG) como
+//    se fosse desenho. Era o "quadrado" em volta das letras.
+// 2. GFX_CARD faz OVER-SCAN de 3% em cada borda, reserva de parallax que so
+//    faz sentido em cartaz. Num wordmark isso come a margem que o proprio
+//    arquivo reserva, e a arte sai com as pontas cortadas.
+// 3. GFX_CARD ESCURECE a arte em 20% quando `foco` e 0 (`cor *= 0.80`). Logo de
+//    marca tem cor propria; escurecer inventa outra.
+//
+// GFX_ARTE resolve os tres: RGB e alfa inteiros, recortados pela mesma mascara
+// arredondada, sem over-scan e sem ganho. O recorte monocromatico continua no
+// GFX_MARCA, que e o unico jeito de ele nao sumir — e agora ele TROCA DE TINTA
+// com o foco, porque a superficie embaixo dele troca de claro para escuro.
+//
+// FOCO PREENCHIDO, NAO CONTORNADO: era um halo branco a 35% em volta do
+// cartao. A regra da casa nao tem excecao para cartao de marca.
 static void desenhaEstudio(float x, float y, int i, float f, float a) {
   GfxRect r = { x, y, EST_CARD_W, EST_CARD_H };
   const char *logo = extras_estudio_logo(i);
+  int claro = f > 0.5f;          // DEGRAU: linha ja rasterizada nao muda de cor
   GLuint t;
   moldura(r, 14.0f, a);
-  if (f > 0.01f) {
-    GfxRect anel = { r.x - 4, r.y - 4, r.w + 8, r.h + 8 };
-    gfx_cor(anel, 16.0f / EST_CARD_H, 1, 1, 1, 0.35f * a * f);
-  }
+  if (f > 0.01f)
+    gfx_cor(r, 14.0f / EST_CARD_H, 0.961f, 0.961f, 0.961f, a * f);
   t = logo[0] ? tex_obter(logo) : 0;
   if (t) {
-    float ap = tex_aspecto(logo), w, h;
+    float ap = tex_aspecto(logo), w, h, fr, fg, fb;
+    int recorte;
     if (ap <= 0.0f) ap = 3.0f;
     h = 52.0f; w = h * ap;
     if (w > EST_CARD_W - 36.0f) { w = EST_CARD_W - 36.0f; h = w / ap; }
-    { GfxRect rl = { x + (EST_CARD_W - w) * 0.5f, y + (EST_CARD_H - h) * 0.5f, w, h };
-      // Logo escuro some no card escuro: mesma regra do logo do titulo —
-      // luminancia medida na thread de decode, so a arte escura e tingida.
-      GfxModo m = tex_marca_escura(logo) ? GFX_MARCA : GFX_CARD;
+    // RECORTE = a borda da imagem e transparente (tex_cor_fundo devolve 2).
+    // E a mesma medida que o guia usa para decidir entre tingir e desenhar, e
+    // ela olha o ARQUIVO, nao adivinha pelo nome.
+    recorte = tex_cor_fundo(logo, &fr, &fg, &fb) != 1;
+    { GfxRect rl = { x + (EST_CARD_W - w) * 0.5f,
+                     y + (EST_CARD_H - h) * 0.5f, w, h };
       gfx_tex_aspect_atual = 0.0f;
-      gfx_rect(rl, t, m, 0, 0, 0, 0.0f, 1, 1, 1, a); }
+      if (recorte && tex_marca_escura(logo)) {
+        float tom = claro ? 0.09f : 0.93f;
+        gfx_rect(rl, t, GFX_MARCA, 0, 0, 0, 0.0f, tom, tom, tom, a);
+      } else {
+        gfx_rect(rl, t, GFX_ARTE, 0, 0, 0, 8.0f / h, 1, 1, 1, a);
+      } }
   } else {
+    int c = claro ? 24 : 208;
     TxtLinha ln = txt_linha_corta(TXT_DET_META2, extras_estudio_nome(i),
-                                  208, 212, 220, 255, EST_CARD_W - 28.0f);
+                                  c, c, claro ? 30 : 220, 255,
+                                  EST_CARD_W - 28.0f);
     txt_desenhar_alpha(ln, x + (EST_CARD_W - ln.w) * 0.5f,
                        y + (EST_CARD_H - ln.h) * 0.5f, a * 0.95f);
   }
@@ -3003,6 +3620,14 @@ static float cabecalhoComentarios(float x, float y, float a) {
       // o fundo) — "onde voce esta" e "onde esta o foco" sao
       // duas coisas, e branco e so a segunda. Antes a escolhida era branca e
       // a focada tinha anel; com o foco tambem branco seriam dois brancos.
+      // CORRIGIDO em 16/09/2026, o dono olhando a captura: "aqui tem que ser
+      // fill quando selecionado e nao o contorno". A escolhida-sem-foco era
+      // contorno #6e6e6e, e contorno e justamente o que a regra proibe.
+      //
+      // Os TRES estados viraram tres PREENCHIMENTOS da mesma familia, como a
+      // barra de abas da Biblioteca: realce cheio na focada, realce a 60% na
+      // escolhida em repouso, #2D2D2D na que nao e nenhuma das duas. Sao tres
+      // degraus de brilho bem separados, e nenhum deles e um anel.
       { float cresce = 1.0f + 0.07f * f;
         float dw = r.w * (cresce - 1.0f), dh = r.h * (cresce - 1.0f);
         GfxRect rc = { r.x - dw * 0.5f, r.y - dh * 0.5f, r.w + dw, r.h + dh };
@@ -3010,13 +3635,23 @@ static float cabecalhoComentarios(float x, float y, float a) {
         gfx_cor(rc, NV_RAIO_PILL, lum, lum, lum, a);
         if (f > 0.01f) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
                          gfx_cor(rc, NV_RAIO_PILL, ar, ag, ab, f * a); }
-        else if (sel)
-          gfx_rect(rc, 0, GFX_ANEL, 0, 2.0f / rc.h, 0, NV_RAIO_PILL,
-                   0.431f, 0.431f, 0.431f, a);
+        else if (sel) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+                        gfx_cor(rc, NV_RAIO_PILL, ar * 0.6f, ag * 0.6f,
+                                ab * 0.6f, a); }
         r = rc; }
-      { int cor = (f > 0.5f) ? 17 : 255;
-        TxtLinha l = txt_linha(TXT_PLR_CORPO, COM_ROT[k], cor, cor, cor, 255);
-        txt_peso(l, r.x + (r.w - l.w) * 0.5f, r.y + (r.h - l.h) * 0.5f, a, 0.5f); }
+      // A TINTA DO TEXTO E CALCULADA, nao cravada: a cor de realce e escolha
+      // da pessoa nos Ajustes, e com um realce escuro o preto sobre os 60%
+      // dele seria o mesmo defeito de contraste ao contrario. Luminancia
+      // Rec.709 da superficie que o texto vai pisar, em DEGRAU no meio da
+      // mola (f > 0.5) porque a linha ja rasterizada nao muda de cor.
+      { float ar, ag, ab, ls; int cor;
+        ajustes_acento(&ar, &ag, &ab);
+        if (f > 0.5f)   ls = 0.2126f*ar + 0.7152f*ag + 0.0722f*ab;
+        else if (sel)   ls = (0.2126f*ar + 0.7152f*ag + 0.0722f*ab) * 0.6f;
+        else            ls = 0.176f;
+        cor = (ls > 0.55f) ? 17 : 255;
+        { TxtLinha l = txt_linha(TXT_PLR_CORPO, COM_ROT[k], cor, cor, cor, 255);
+          txt_peso(l, r.x + (r.w - l.w) * 0.5f, r.y + (r.h - l.h) * 0.5f, a, 0.5f); } }
       px += w + COM_PILL_GAP;
     }
     yy += COM_PILL_H;
@@ -3054,21 +3689,24 @@ static void desenhaComentarios(float x, float y, float a) {
     if (cx > NV_TELA_W || cx + COM_CARD_W < 0.0f) continue;
     char rodape[64];
     px = cx + COM_PAD; larg = COM_CARD_W - COM_PAD * 2;
+    // FOCO PREENCHIDO, NAO CONTORNADO. Era um anel na cor de realce em volta
+    // do cartao; o dono mandou tirar o contorno daqui tambem. O cartao em foco
+    // vira a superficie clara #F5F5F5 e as tres linhas de texto invertem —
+    // mesma lingua do resto do app (folha de fontes, painel lateral, Agenda).
+    //
+    // A troca e em DEGRAU e nao interpolada: `txt_linha` guarda a linha ja
+    // rasterizada na cor pedida, entao uma cor que varia por quadro seria uma
+    // entrada nova de cache por quadro.
     moldura(card, 20.0f, a);
-    if (foc) {
-      GfxRect anel = { card.x - NV_ANEL_FOCO, card.y - NV_ANEL_FOCO,
-                       card.w + NV_ANEL_FOCO * 2, card.h + NV_ANEL_FOCO * 2 };
-      // Raio EXTERNO = raio do cartao + espessura do anel, senao o canto do
-      // anel fica mais quadrado que o do cartao e as duas curvas descasam.
-      float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-      gfx_rect(anel, 0, GFX_ANEL, 0, NV_ANEL_FOCO / anel.h, 0,
-               (20.0f + NV_ANEL_FOCO) / anel.h, ar, ag, ab, a);
-    }
+    if (foc) gfx_cor(card, 20.0f / (COM_CARD_W < COM_CARD_H ? COM_CARD_W
+                                                            : COM_CARD_H),
+                     0.961f, 0.961f, 0.961f, a);
 
     { TxtLinha lu = txt_linha_corta(TXT_ROW_TITULO,
                                     daSerie ? extras_comentario_usuario(i)
                                             : extras_comentario_ep_usuario(i),
-                                    245, 248, 255, 255, larg);
+                                    foc ? 17 : 245, foc ? 17 : 248,
+                                    foc ? 20 : 255, 255, larg);
       txt_desenhar_alpha(lu, px, y + COM_PAD, a); }
 
     // O texto para ANTES do rodape: sem o teto de linhas ele passava por cima
@@ -3076,7 +3714,7 @@ static void desenhaComentarios(float x, float y, float a) {
     // de 34.
     txt_bloco(TXT_DET_META2, daSerie ? extras_comentario_texto(i)
                                      : extras_comentario_ep_texto(i),
-              200, 205, 214,
+              foc ? 45 : 200, foc ? 47 : 205, foc ? 52 : 214,
               px, y + COM_PAD + 46.0f, larg, 34.0f, a * 0.95f, 5);
 
     { int nota = daSerie ? extras_comentario_nota(i)
@@ -3087,9 +3725,78 @@ static void desenhaComentarios(float x, float y, float a) {
         snprintf(rodape, sizeof rodape, i18n("%d/10   %d curtidas"), nota, cur);
       else
         snprintf(rodape, sizeof rodape, i18n("%d curtidas"), cur);
-      { TxtLinha lr = txt_linha(TXT_CAPTION2, rodape, 150, 154, 163, 255);
+      { TxtLinha lr = txt_linha(TXT_CAPTION2, rodape,
+                                foc ? 88 : 150, foc ? 90 : 154,
+                                foc ? 96 : 163, 255);
         txt_desenhar_alpha(lr, px, y + COM_CARD_H - COM_PAD - lr.h, a * 0.9f); } }
   }
+}
+
+// --- AS DUAS SECOES SOB DEMANDA ---------------------------------------------
+//
+// A CHAMADA: o que a secao mostra antes de alguem entrar nela. Tres linhas na
+// MESMA tipografia e nos MESMOS vaos que o cabecalho dos dois modulos usa
+// (TXT_HEADLINE, depois TXT_DET_META2), para o titulo nao dar um pulo quando o
+// painel de verdade nascer por cima dela — so o corpo aparece embaixo.
+//
+// A terceira linha diz o CUSTO. Nao e desculpa tecnica vazada para a tela: e a
+// resposta a pergunta que o desenho levanta sozinho ("por que isto esta vazio
+// se tudo o mais ja carregou?"). O mesmo que a secao de comentarios responde
+// com o seletor "Série | Episódio", que tambem so busca quando escolhido.
+static float desenhaChamada(float x, float y, const char *titulo,
+                            const char *fonte, const char *custo, float a) {
+  TxtLinha lt = txt_linha(TXT_HEADLINE, i18n(titulo), 255, 255, 255, 255);
+  TxtLinha lf = txt_linha_corta(TXT_DET_META2, i18n(fonte), 150, 153, 162, 255,
+                                NV_TELA_W - NV_DETP_X * 2);
+  TxtLinha lc = txt_linha_corta(TXT_DET_META2, i18n(custo), 108, 111, 120, 255,
+                                NV_TELA_W - NV_DETP_X * 2);
+  txt_desenhar_alpha(lt, x, y, a);
+  txt_desenhar_alpha(lf, x, y + lt.h + 6.0f, a * 0.95f);
+  txt_desenhar_alpha(lc, x, y + lt.h + 6.0f + lf.h + 10.0f, a * 0.9f);
+  return lt.h + 6.0f + lf.h + 10.0f + lc.h;
+}
+
+// OS TRES GRAFICOS, empilhados. Cada um devolve o que ocupou — e a unica forma
+// de saber a altura, porque ela depende do texto que coube e de quantos
+// episodios responderam.
+//
+// O `a` da pagina nao e repassado: os modulos desenham com txt_desenhar e
+// gfx_cor de alfa proprio, sem parametro de opacidade. Nao e problema aqui
+// porque estas secoes ficam a ~1900 px do topo do documento e so aparecem com
+// a pagina ja assentada (pg == 1); a abertura da tela nunca as mostra.
+static float desenhaAudiencia(int banda, float x, float y, float a) {
+  GfxRect r = { x, y, NV_TELA_W - NV_DETP_X * 2, 0.0f };
+  // A CHAMADA fica so na PRIMEIRA banda: as outras duas nem existem antes de
+  // alguem entrar (secaoN devolve 0), entao repetir o aviso tres vezes seria
+  // tres vezes o mesmo paragrafo sobre a mesma coisa.
+  if (!audAberta)
+    return desenhaChamada(x, y, "Audiência da temporada",
+                          "Quem marcou cada episódio no Trakt — não é a audiência geral",
+                          "Uma consulta por episódio: carrega quando você desce até aqui",
+                          a);
+  if (banda == 0) return serieaud_arco(r);
+  if (banda == 1) return serieaud_radar(r);
+  return serieaud_digital(r);
+}
+
+// FRASES A ESQUERDA, FICHA A DIREITA. Sao duas fontes diferentes (Wikiquote e
+// Wikidata) com coberturas MUITO diferentes — 11 de 14 filmes tem frases, 2 de
+// 12 series; a ficha do Wikidata quase sempre tem algum campo —, e e por isso
+// que elas ficam lado a lado e nao uma sob a outra: a coluna da direita e o que
+// impede a secao de ser uma tela inteira com uma linha de "nao tem" no meio.
+static float desenhaFrases(float x, float y, float a) {
+  GfxRect q = { x, y, FR_COL_W, 0.0f };
+  GfxRect f = { x + FR_COL_W + FR_COL_GAP, y,
+                NV_TELA_W - NV_DETP_X * 2 - FR_COL_W - FR_COL_GAP, 0.0f };
+  float hq, hf;
+  if (!frasesAberta)
+    return desenhaChamada(x, y, "Frases e ficha de produção",
+                          "Wikiquote e Wikidata — nada escrito por nós",
+                          "Duas consultas: carrega quando você desce até aqui",
+                          a);
+  hq = seriefrases_desenhar(q);
+  hf = seriefrases_desenhar_fatos(f);
+  return hq > hf ? hq : hf;
 }
 
 static void desenhaSecao(int r, float a, Uint32 agora) {
@@ -3142,6 +3849,10 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     // lugar, e so um deles tinha sido corrigido.
     // Estudios e empilhado como os comentarios: vem DEPOIS da fileira da aba,
     // e o `default` mandaria ele para o y do elenco — por cima dos avatares.
+    case SEC_AUD_ARCO:
+    case SEC_AUD_RADAR:
+    case SEC_AUD_DIGITAL:
+    case SEC_FRASES:
     case SEC_COMENTARIOS:
     case SEC_ESTUDIOS:    y = conteudoSec[r]; break;
     default:             y = NV_DETP_EL_Y;   break;
@@ -3213,6 +3924,20 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
         }
         break;
       case SEC_COMENTARIOS:  desenhaComentarios(NV_DETP_X, y, a); break;
+      // UMA VEZ SO, e nao uma por coluna: as colunas destas duas sao posicoes
+      // dentro de um desenho unico (o episodio em destaque, a frase em
+      // destaque), como os cartazes de "Mais como este" no filme. A altura
+      // medida volta para o empilhamento do proximo quadro.
+      case SEC_AUD_ARCO:
+      case SEC_AUD_RADAR:
+      case SEC_AUD_DIGITAL:
+        if (c == 0)
+          audAlt[r - SEC_AUD_ARCO] =
+              desenhaAudiencia(r - SEC_AUD_ARCO, NV_DETP_X, y, a);
+        break;
+      case SEC_FRASES:
+        if (c == 0) frasesAlt = desenhaFrases(NV_DETP_X, y, a);
+        break;
       case SEC_ESTUDIOS:
         desenhaEstudio(x, y + (ehSerie() ? EST_TITULO_H : 0.0f), c, f, a);
         break;
