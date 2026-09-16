@@ -416,6 +416,8 @@ const char *sessao_codigo(void)   { return codigo; }
 const char *sessao_url_login(void){ return urlLogin; }
 const char *sessao_erro(void)     { return erro; }
 const char *sessao_usuario(void)  { return sub; }
+// "" para sessao anonima de proposito — ver a nota em sessao.h.
+const char *sessao_token(void)    { return sessao_logada() ? acesso : ""; }
 
 void sessao_login_comecar(void) {
   if (!nuvem_pronta()) {

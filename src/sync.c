@@ -8,6 +8,7 @@
 #include "colecoes.h"
 #include "contalib.h"
 #include "salvos.h"
+#include "recomenda.h"
 #include "trakt.h"
 #include "traktauth.h"
 #include "catalogo.h"
@@ -722,6 +723,10 @@ void sync_esquecer_usuario(void) {
   // sobreviveria ao logout em disco e a proxima pessoa abriria o painel da tecla
   // AZUL com os filmes de quem saiu.
   salvos_esquecer();
+  // E AS RECOMENDACOES, pela mesma razao com um agravante proprio: elas trazem
+  // o NOME de quem mandou. Sem esta linha a proxima pessoa a entrar abriria a
+  // aba Social com a lista de amigos de quem saiu.
+  recomenda_esquecer();
   free(bibBlob);    bibBlob = NULL;    temBibBlob = 0;
   free(vistosBlob); vistosBlob = NULL; temVistosBlob = 0;
   // colBlob estava de fora desta lista desde que foi criado, ao lado de um

@@ -12,6 +12,8 @@
 #include "ajustes.h"
 #include "progresso.h"
 #include "salvos.h"
+#include "recomenda.h"
+#include "idioma.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -101,12 +103,39 @@ static int observarHold(void *u, SDL_Event *e) {
 // ficou onde estava. Por isso o append agora passa por juntar(), que confere o
 // teto num lugar so: uma quinta opcao deixa de aparecer, em vez de corromper
 // memoria.
-#define CTX_MAX 4
+// CINCO desde que "Recomendar a um amigo" entrou. O teto tem de subir JUNTO
+// com a opcao nova: a quarta opcao existiu antes de CTX_MAX virar 4 e o
+// sintoma foi escrita fora do vetor (issue #36). juntar() confere o teto num
+// lugar so, entao uma sexta opcao deixa de aparecer em vez de corromper
+// memoria — mas "deixa de aparecer" tambem e defeito, e por isso o numero sobe
+// aqui e nao em silencio.
+#define CTX_MAX 5
 static struct { const char *rot; int acao; } ops[CTX_MAX];
 static int nOps;
 static float focoAnim[CTX_MAX];
 static int holdObservador;
-enum { OP_DETALHES, OP_LISTA, OP_ASSISTIDO, OP_TIRAR_CONTINUAR };
+enum { OP_DETALHES, OP_LISTA, OP_ASSISTIDO, OP_TIRAR_CONTINUAR, OP_RECOMENDAR };
+
+// --- RECOMENDAR: DUAS TELAS CURTAS DENTRO DO MESMO MODAL ---------------------
+//
+// "Para quem" e depois "o que dizer", e a confirmacao e um aviso curto no
+// proprio modal em vez de uma terceira tela. Elas moram aqui e nao num modulo
+// novo porque sao a mesma caixa, com a mesma moldura, o mesmo foco e o mesmo
+// Voltar: um modulo separado duplicaria tudo isso para mostrar uma lista.
+//
+// TEXTO LIVRE E PAREAMENTO POR CODIGO SAO ETAPAS POSTERIORES e nao estao aqui.
+// O que existe hoje nao os impede: `recomenda_enviar` ja aceita modelo -1 com
+// texto, e a lista de contatos ja distingue origem "trakt" de "nuvio".
+enum { CTX_PAG_OPS = 0, CTX_PAG_CONTATOS, CTX_PAG_MODELOS };
+// Quantas linhas da lista cabem sem o modal virar uma tela inteira. Quem tem
+// mais amigos rola; a lista nao encolhe a fonte.
+#define CTX_JANELA 5
+static int  pagina, pagFoco, pagTopo;
+static RecContato ctts[REC_CONTATOS_MAX];
+static int  nCtts;
+static char alvoId[96], alvoNome[64];
+static char recAviso[160];
+static Uint32 recFecharEm;
 
 static int indiceAtual(void) {
   int n = cat_n();
@@ -170,6 +199,13 @@ static void montar(void) {
   if (ci->progresso > 0 && ci->imdb[0]) {
     juntar("Tirar de Continuar assistindo", OP_TIRAR_CONTINUAR);
   }
+  // SO EXISTE SE O PACOTE TEM O SERVICO. Sem NUVIO_REC_URL compilada,
+  // recomenda_ativo() e 0 e esta linha nunca aparece — o dono publica builds
+  // assim, e um item de menu que so da erro e pior que item nenhum.
+  if (recomenda_ativo() && ci->imdb[0] &&
+      (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series"))) {
+    juntar("Recomendar a um amigo", OP_RECOMENDAR);
+  }
   // O FOCO TEM DE CABER NA LISTA QUE ACABOU DE SER MONTADA.
   //
   // montar() roda de novo a cada confirmacao, e a lista ENCOLHE em casos
@@ -197,6 +233,9 @@ void ctx_abrir(int indice) {
   operacao = CTX_OP_NENHUMA; intencao = 0; estadoOperacao = 0;
   espelhoAplicado = 0;
   operacaoImdb[0] = 0;
+  pagina = CTX_PAG_OPS; pagFoco = 0; pagTopo = 0;
+  alvoId[0] = 0; alvoNome[0] = 0; recAviso[0] = 0; recFecharEm = 0;
+  recomenda_envio_limpar();
   memset(focoAnim, 0, sizeof focoAnim);
   montar();
 }
@@ -263,6 +302,15 @@ static void aplicar(void) {
         estadoOperacao = CTX_FALHA;
       montar();
       break;
+    case OP_RECOMENDAR:
+      // A lista ja esta no aparelho (recomenda.c a guarda do ultimo ciclo);
+      // isto so a copia. A consulta de verdade e disparada em paralelo para o
+      // caso de um amigo ter entrado desde a ultima sondagem.
+      nCtts = recomenda_contatos(ctts, REC_CONTATOS_MAX);
+      recomenda_pedir_agora();
+      pagina = CTX_PAG_CONTATOS;
+      pagFoco = 0; pagTopo = 0;
+      break;
     case OP_TIRAR_CONTINUAR: {
       // A chave e montada do mesmo jeito que progresso.c monta ao gravar —
       // com temporada e episodio quando ha —, senao a linha apagada seria
@@ -298,6 +346,73 @@ static void aplicar(void) {
   if (acao == OP_DETALHES) aberto = 0;
 }
 
+static int nPagina(void) {
+  if (pagina == CTX_PAG_CONTATOS) return nCtts;
+  if (pagina == CTX_PAG_MODELOS)  return REC_MODELOS;
+  return 0;
+}
+
+static const char *rotuloPagina(int i) {
+  if (pagina == CTX_PAG_CONTATOS)
+    return (i >= 0 && i < nCtts) ? ctts[i].nome : "";
+  if (pagina == CTX_PAG_MODELOS) {
+    const char *m = recomenda_modelo(i);
+    return m ? i18n(m) : "";
+  }
+  return "";
+}
+
+// Rola o MINIMO para a linha focada caber, como o painel de Salvos.
+static void ajustarJanela(void) {
+  int n = nPagina();
+  if (pagFoco < 0) pagFoco = 0;
+  if (pagFoco >= n) pagFoco = n > 0 ? n - 1 : 0;
+  if (pagFoco < pagTopo) pagTopo = pagFoco;
+  if (pagFoco >= pagTopo + CTX_JANELA) pagTopo = pagFoco - CTX_JANELA + 1;
+  if (pagTopo < 0) pagTopo = 0;
+}
+
+// Devolve 1 quando a tecla foi consumida por uma das telas de recomendacao.
+static int eventoPagina(SDL_Keycode k, const SDL_Event *e) {
+  if (pagina == CTX_PAG_OPS) return 0;
+  if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
+      k == SDLK_LEFT || e->key.keysym.scancode == NV_SCANCODE_BACK) {
+    // VOLTA UM PASSO, e nao fecha o modal: quem errou o amigo quer trocar de
+    // amigo, nao recomecar do cartaz.
+    pagina = (pagina == CTX_PAG_MODELOS) ? CTX_PAG_CONTATOS : CTX_PAG_OPS;
+    pagFoco = 0; pagTopo = 0;
+    return 1;
+  }
+  if (k == SDLK_UP)   { pagFoco--; ajustarJanela(); return 1; }
+  if (k == SDLK_DOWN) { pagFoco++; ajustarJanela(); return 1; }
+  if (teclaOk(k)) {
+    int n = nPagina();
+    if (n < 1) return 1;                 // lista vazia: OK nao tem o que fazer
+    if (pagina == CTX_PAG_CONTATOS) {
+      snprintf(alvoId,   sizeof alvoId,   "%s", ctts[pagFoco].id);
+      snprintf(alvoNome, sizeof alvoNome, "%s", ctts[pagFoco].nome);
+      pagina = CTX_PAG_MODELOS;
+      pagFoco = 0; pagTopo = 0;
+      return 1;
+    }
+    { int i = indiceAtual();
+      const CatItem *ci = i >= 0 ? cat_item(i) : NULL;
+      // O INDICE DO MODELO E O QUE VIAJA, nao a frase: assim a mesma
+      // recomendacao chega em portugues numa TV e em ingles na outra.
+      if (ci && recomenda_enviar(ci, alvoId, pagFoco, "")) {
+        snprintf(recAviso, sizeof recAviso, i18n("Enviando para %s..."), alvoNome);
+      } else {
+        snprintf(recAviso, sizeof recAviso, "%s",
+                 i18n("Não foi possível enviar. Tente novamente."));
+        recFecharEm = SDL_GetTicks() + 2200;
+      }
+      pagina = CTX_PAG_OPS;
+      pagFoco = 0; pagTopo = 0; }
+    return 1;
+  }
+  return 1;   // nas telas de recomendacao nenhuma outra tecla escapa
+}
+
 void ctx_evento(const SDL_Event *e) {
   int k;
   if (!aberto) return;
@@ -314,6 +429,7 @@ void ctx_evento(const SDL_Event *e) {
   // vezes solta e aperta de novo.
   if (e->key.repeat && teclaOk(k)) return;
   if (esperandoSoltura && teclaOk(k)) return;
+  if (eventoPagina(k, e)) return;
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
       e->key.keysym.scancode == NV_SCANCODE_BACK) { aberto = 0; return; }
   // Enquanto a requisicao esta no ar, OK nao repete a escrita. O foco continua
@@ -346,6 +462,27 @@ void ctx_atualizar(float dt, Uint32 agora) {
       ? (aberto && foco == i ? 1.0f : 0.0f)
       : anim_mola(focoAnim[i], aberto && foco == i ? 1.0f : 0.0f,
                   dt, NV_MOLA_FOCO);
+
+  // O RESULTADO DO ENVIO VEM DO FIO de recomenda.c, nao daqui: este modulo so
+  // le o estado e o transforma na frase curta do modal. O fechamento e
+  // automatico porque a confirmacao nao e uma tela — e um aviso.
+  if (recomenda_ativo() && alvoNome[0] && !recFecharEm) {
+    int est = recomenda_envio_estado();
+    if (est == REC_ENVIO_OK) {
+      snprintf(recAviso, sizeof recAviso, i18n("Enviado para %s"), alvoNome);
+      recFecharEm = agora + 1400;
+      recomenda_envio_limpar();
+    } else if (est == REC_ENVIO_FALHA) {
+      snprintf(recAviso, sizeof recAviso, "%s",
+               i18n("Não foi possível enviar. Tente novamente."));
+      recFecharEm = agora + 2400;
+      recomenda_envio_limpar();
+    }
+  }
+  if (aberto && recFecharEm && (Sint32)(agora - recFecharEm) >= 0) {
+    aberto = 0;
+    recFecharEm = 0;
+  }
 
   atual = indiceAtual();
   if (aberto && atual < 0) { aberto = 0; return; }
@@ -405,6 +542,79 @@ void ctx_atualizar(float dt, Uint32 agora) {
   }
 }
 
+// As duas telas de recomendacao, na mesma moldura do menu. O foco aqui NAO e
+// animado: a cor faz parte da chave do cache de linhas de text.c, e uma cor
+// por quadro em ate 40 contatos estouraria o orcamento de rasterizacao — que e
+// exatamente o defeito documentado na lista de opcoes logo abaixo. Um degrau
+// entre duas cores fixas nao cria entrada nova.
+static void desenharPagina(const CatItem *ci, float a) {
+  int n = nPagina();
+  int vis = n < CTX_JANELA ? n : CTX_JANELA;
+  int i;
+  float alt, x, y;
+  const char *cabeca = pagina == CTX_PAG_CONTATOS ? "Para quem?" : "O que dizer?";
+  const char *titulo = pagina == CTX_PAG_CONTATOS ? ci->titulo : alvoNome;
+  if (vis < 1) vis = 1;   // a linha de "lista vazia" ocupa uma
+
+  { GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+    gfx_cor(tela, 0.0f, 0, 0, 0, 0.72f * a); }
+  alt = CTX_PAD * 2.0f + 120.0f +
+        (float)vis * (CTX_LINHA + CTX_GAP) - CTX_GAP + CTX_RODAPE;
+  x = (NV_TELA_W - CTX_W) * 0.5f;
+  y = (NV_TELA_H - alt) * 0.5f;
+  y += (1.0f - a) * 40.0f;
+  { GfxRect p = { x, y, CTX_W, alt };
+    gfx_cor(p, 0.06f, 0.11f, 0.11f, 0.13f, 0.98f * a); }
+
+  { TxtLinha t = txt_linha(TXT_CAPTION2, "RECOMENDAR A UM AMIGO",
+                           174, 178, 188, 255);
+    txt_desenhar_alpha(t, x + CTX_PAD, y + CTX_PAD, a * 0.95f); }
+  { TxtLinha t = txt_linha_corta(TXT_HEADLINE, titulo, 245, 248, 255, 255,
+                                 CTX_W - CTX_PAD * 2.0f);
+    txt_desenhar_alpha(t, x + CTX_PAD, y + CTX_PAD + 28.0f, a); }
+  { TxtLinha t = txt_linha(TXT_DET_META2, cabeca, 150, 154, 163, 255);
+    txt_desenhar_alpha(t, x + CTX_PAD, y + CTX_PAD + 74.0f, a * 0.9f); }
+
+  if (n < 1) {
+    // SEM CONTATOS AINDA, e isso nao e erro. O caminho do Trakt vincula
+    // sozinho quem ja usa o servico; quem so tem conta Nuvio entra por codigo
+    // de pareamento, que e etapa posterior — e a frase diz isso sem prometer
+    // um botao que ainda nao existe.
+    GfxRect r = { x + CTX_PAD, y + CTX_PAD + 120.0f,
+                  CTX_W - CTX_PAD * 2.0f, CTX_LINHA };
+    TxtLinha t = txt_linha_corta(TXT_PLR_CORPO,
+        "Nenhum amigo ainda. Amigos do Trakt entram sozinhos.",
+        200, 204, 214, 255, r.w - 32.0f);
+    gfx_cor(r, 14.0f / CTX_LINHA, 0.14f, 0.14f, 0.16f, a);
+    txt_desenhar_alpha(t, r.x + 20.0f, r.y + (CTX_LINHA - t.h) * 0.5f, a * 0.95f);
+  }
+  for (i = 0; i < n && i - pagTopo < CTX_JANELA; i++) {
+    float by;
+    GfxRect r;
+    int focada = (i == pagFoco), cor;
+    float lum;
+    if (i < pagTopo) continue;
+    by = y + CTX_PAD + 120.0f + (float)(i - pagTopo) * (CTX_LINHA + CTX_GAP);
+    r.x = x + CTX_PAD; r.y = by;
+    r.w = CTX_W - CTX_PAD * 2.0f; r.h = CTX_LINHA;
+    lum = focada ? 0.961f : 0.176f;
+    cor = focada ? 17 : 240;
+    gfx_cor(r, 14.0f / CTX_LINHA, lum, lum, lum, a);
+    { TxtLinha t = txt_linha_corta(TXT_PLR_CORPO, rotuloPagina(i), cor, cor, cor,
+                                   255, r.w - 88.0f);
+      txt_desenhar_alpha(t, r.x + 44.0f, by + (CTX_LINHA - t.h) * 0.5f, a); }
+    if (focada) {
+      TxtLinha seta = txt_linha(TXT_CAPTION2, "▸", cor, cor, cor, 255);
+      txt_desenhar_alpha(seta, r.x + 16.0f,
+                         by + (CTX_LINHA - seta.h) * 0.5f, a);
+    }
+  }
+
+  { TxtLinha t = txt_linha(TXT_CAPTION2,
+        "↑ ↓ Navegar   OK Selecionar   Voltar Anterior", 155, 159, 169, 255);
+    txt_desenhar_alpha(t, x + CTX_PAD, y + alt - CTX_PAD - t.h, a * 0.86f); }
+}
+
 void ctx_desenhar(Uint32 agora) {
   const CatItem *ci;
   const char *estados[2];
@@ -428,8 +638,12 @@ void ctx_desenhar(Uint32 agora) {
   if (a < 0.01f) return;
   ci = indiceAtual() >= 0 ? cat_item(indiceAtual()) : NULL;
   if (!ci) return;
+  if (pagina != CTX_PAG_OPS) { desenharPagina(ci, a); return; }
 
-  if (estadoOperacao == CTX_PENDENTE)
+  // O aviso do envio ganha da linha de estado da biblioteca enquanto vale: e o
+  // que acabou de acontecer, e o modal esta prestes a fechar por causa dele.
+  if (recAviso[0]) mensagem = recAviso;
+  else if (estadoOperacao == CTX_PENDENTE)
     mensagem = operacao == CTX_OP_LISTA ? "Atualizando biblioteca..."
                                         : (intencao ? "Marcando como assistido..."
                                                     : "Desmarcando como assistido...");

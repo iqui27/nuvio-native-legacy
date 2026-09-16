@@ -41,6 +41,17 @@ const char *sessao_url_login(void);       // URL a exibir
 const char *sessao_erro(void);            // ultima falha, para a tela mostrar
 const char *sessao_usuario(void);         // `sub` do JWT; "" quando deslogado
 
+// TOKEN DE ACESSO CRU, para quem precisa se autenticar em um servidor que NAO
+// e o Supabase do Nuvio. Hoje so o servico de recomendacoes (recomenda.c), que
+// manda `Authorization: Bearer <isto>` e pergunta ao proprio Supabase de quem
+// e — e por isso ele precisa do token e nao do `sub`.
+//
+// Devolve "" quando nao ha sessao de USUARIO: uma sessao anonima (ver o passo 1
+// do fluxo acima) tem token e nao tem dono, e mandar aquele token a outro
+// servidor criaria uma "pessoa" nova a cada arranque. Quem chama nunca deve
+// gravar o valor em disco nem em log.
+const char *sessao_token(void);
+
 // Comeca o fluxo de login num fio proprio (as chamadas bloqueiam). Idempotente
 // enquanto um fluxo estiver em andamento.
 void sessao_login_comecar(void);

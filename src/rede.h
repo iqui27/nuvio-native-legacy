@@ -75,6 +75,23 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cabecalho
 char *rede_baixar_st(const char *url, int segundos, const char *const *cabecalhos,
                      int *status);
 
+// O mesmo, e ainda COPIA O ETag DA RESPOSTA para `etag` (vazio quando o
+// servidor nao mandou nenhum).
+//
+// POR QUE E UMA FUNCAO A MAIS. Nenhum outro caminho deste app precisava ler um
+// cabecalho de RESPOSTA — status bastava. O servico de recomendacoes sonda uma
+// vez por minuto com o app aberto, e sem ETag cada sondagem traria a lista
+// inteira de volta para descobrir que nada mudou. Com ele o caso comum e um
+// 304 sem corpo: o `etag` devolvido aqui e o que volta no `If-None-Match` do
+// pedido seguinte, e o conteudo do valor e OPACO para o cliente — ele so
+// devolve o que recebeu.
+//
+// Num 304 o corpo e NULL e `*status` vale 304; distinguir isso de falha de
+// transporte (`*status` == 0) e por conta de quem chama.
+char *rede_baixar_etag(const char *url, int segundos,
+                       const char *const *cabecalhos, int *status,
+                       char *etag, unsigned tamEtag);
+
 // Registra quem OUVE os 401. Sem isto um token de sessao vencido era so uma
 // linha no log — o Trakt continuava "conectado" na tela enquanto toda
 // resposta voltava 401. O callback recebe a URL e decide se a recusa e dele.

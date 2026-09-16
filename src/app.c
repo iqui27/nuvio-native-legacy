@@ -36,6 +36,7 @@
 #include "biblioteca.h"
 #include "perfil.h"
 #include "salvos.h"
+#include "recomenda.h"
 #include "salvospainel.h"
 #include "salvosintro.h"
 #include "novidades.h"
@@ -286,6 +287,11 @@ int app_iniciar(const char *dirArte) {
   // marca `naLista` no catalogo do cache, entao o painel e a Biblioteca ja
   // abrem certos no primeiro quadro. Ler depois faria a lista local piscar.
   salvos_iniciar();
+  // MESMA RAZAO, OUTRA LISTA: o cache de recomendacoes guarda titulo e poster,
+  // entao a aba Social do painel AZUL desenha no primeiro quadro, antes de
+  // existir catalogo e antes de a rede responder. Isto nao abre conexao — quem
+  // faz isso e recomenda_verificar, la embaixo, com a home ja de pe.
+  recomenda_iniciar();
   // Sem conta, o app abre no login. Com sessao gravada ele nem passa por ela —
   // pedir o codigo de novo a cada arranque seria o mesmo que nao ter gravado.
   if (sessao_logada()) {
@@ -381,6 +387,7 @@ void app_evento(const SDL_Event *e) {
   if (pipintro_aberto()) { pipintro_evento(e); return; }
   if (novidades_aberto()) { novidades_evento(e); return; }
   if (atualizacao_aberta()) { atualizacao_evento(e); return; }
+  if (recomenda_aberta()) { recomenda_evento(e); return; }
 
   // A folha de fontes fica acima de tudo: ela e uma pergunta, e enquanto ela
   // esta em pe nada mais deve responder ao D-pad.
@@ -639,6 +646,15 @@ void app_atualizar(float dt, Uint32 agora) {
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
         !pipintro_aberto())
       atualizacao_mostrar_se_houver();
+    // RECOMENDACAO DE UM AMIGO: a sondagem parte daqui pelo mesmo motivo que a
+    // do GitHub — com a home de pe ela nao disputa a rede com o catalogo. Sem
+    // NUVIO_REC_URL compilada as duas chamadas sao no-op e nenhuma conexao
+    // abre. O cartao obedece as MESMAS guardas dos outros, mais a do proprio
+    // aviso de versao: dois cartoes ao mesmo tempo seria um por cima do outro.
+    recomenda_verificar();
+    if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
+        !pipintro_aberto() && !atualizacao_aberta())
+      recomenda_mostrar_se_houver();
   }
 
   // E o ciclo automatico — nunca com o player aberto: rajada de HTTP no meio
@@ -677,6 +693,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // social.c ja usam para um id que so eles conhecem.
   if (!detail_aberto() && !player_aberto()) {
     const char *alvo = spainel_pediu_abrir();
+    if (!alvo) alvo = recomenda_pediu_abrir();   // mesmo contrato, outra origem
     if (alvo && alvo[0]) {
       int k = cat_indice_por_imdb(alvo);
       if (k >= 0) abrirPorIndice(k); else desc_pedir_titulo(alvo);
@@ -1191,6 +1208,7 @@ void app_atualizar(float dt, Uint32 agora) {
   }
   perfil_atualizar(dt, agora);
   spainel_atualizar(dt, agora);
+  recomenda_atualizar(dt, agora);
   sintro_atualizar(dt, agora);
   novidades_atualizar(dt, agora);
   atualizacao_atualizar(dt, agora);
@@ -1318,6 +1336,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) sintro_desenhar(agora);
   if (!registro_aberto()) novidades_desenhar(agora);
   if (!registro_aberto()) atualizacao_desenhar(agora);
+  if (!registro_aberto()) recomenda_desenhar(agora);
   if (!registro_aberto()) pipintro_desenhar(agora);
   registro_desenhar();
 }
