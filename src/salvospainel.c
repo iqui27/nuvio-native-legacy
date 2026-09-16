@@ -475,17 +475,15 @@ static void desenhaLinha(int i, float dx, float y, float a) {
   GfxRect poster = { px, y, SP_POSTER_W, SP_POSTER_H };
 
   if (f > 0.01f) {
-    // ANEL POR FORA, e nao pilula clara com texto escuro. E o foco da
-    // referencia (o card focado carrega um contorno) e o mesmo que o resto
-    // deste app usa fora dos menus — inverter aqui faria a camada parecer de
-    // outro aplicativo. A COR VEM DO TEMA (ajustes_acento), como nos outros
-    // doze pontos do app; cravado em branco, o ajuste de tema nao fazia nada
-    // nesta camada.
-    float ar, ag, ab;
+    // PILULA CLARA COM TEXTO ESCURO, e nao anel. Esta nota dizia o contrario
+    // — "anel por fora, e nao pilula clara" — e o dono decidiu o oposto em
+    // 16/09, olhando a TV: "os botoes quando selecionados ficar brancos com o
+    // texto preto ... na sidebar quando selecionado ficar assim tambem, e pode
+    // tirar o contorno". A regra passou a valer para o app inteiro (menu.c,
+    // folha de fontes, e esta camada), entao o comentario antigo fica aqui so
+    // como registro de que a troca foi deliberada.
     GfxRect r = { px - 12.0f, y - 10.0f, SP_INTERNO + 24.0f, SP_POSTER_H + 20.0f };
-    ajustes_acento(&ar, &ag, &ab);
-    gfx_cor(r, 0.06f, 0.16f, 0.165f, 0.19f, f * a);
-    gfx_rect(r, 0, GFX_ANEL, 0, NV_ANEL_FOCO / r.w, 0, 0.06f, ar, ag, ab, f * a);
+    gfx_cor(r, 0.06f, 0.961f, 0.961f, 0.968f, f * a);
   }
 
   { GLuint tex = l->poster[0] ? tex_obter(l->poster) : 0;
@@ -500,12 +498,19 @@ static void desenhaLinha(int i, float dx, float y, float a) {
               NV_COR_ESQUELETO_B, a);
     } }
 
-  { TxtLinha t = txt_linha_corta(TXT_CALLOUT, l->titulo,
-                                 245, 246, 250, 255, SP_TEXTO_W);
-    txt_desenhar_alpha(t, tx, y + 4.0f, a); }
-  metaTexto(buf, sizeof buf, l);
-  { TxtLinha t = txt_linha_corta(TXT_CAPTION2, buf, 168, 172, 182, 255, SP_TEXTO_W);
-    txt_desenhar_alpha(t, tx, y + 42.0f, a * 0.95f); }
+  // COM A PILULA CLARA, O TEXTO INVERTE. Claro sobre claro nao se le, e a
+  // troca acontece em DEGRAU (f > 0.5) e nao interpolada: a cor faz parte da
+  // chave do cache de linhas de text.c, e uma cor por quadro rasteriza a
+  // linha a cada quadro — a nota longa disso esta em ctxmenu.c.
+  { int esc = f > 0.5f;
+    int c1 = esc ? 20 : 245, c2 = esc ? 74 : 168;
+    { TxtLinha t = txt_linha_corta(TXT_CALLOUT, l->titulo,
+                                   c1, c1 + 1, c1 + 5, 255, SP_TEXTO_W);
+      txt_desenhar_alpha(t, tx, y + 4.0f, a); }
+    metaTexto(buf, sizeof buf, l);
+    { TxtLinha t = txt_linha_corta(TXT_CAPTION2, buf, c2, c2 + 4, c2 + 14, 255,
+                                   SP_TEXTO_W);
+      txt_desenhar_alpha(t, tx, y + 42.0f, a * 0.95f); } }
 
   if (l->progresso > 0) {
     float p = anim_clamp(l->progresso / 100.0f, 0.0f, 1.0f);
@@ -525,12 +530,14 @@ static void desenhaLinha(int i, float dx, float y, float a) {
       snprintf(buf, sizeof buf, i18n("%d min restantes"), l->restanteMin);
     else
       snprintf(buf, sizeof buf, "%s", i18n("Retomar"));
-    { TxtLinha t = txt_linha_corta(TXT_CAPTION, buf, 198, 202, 212, 255, SP_TEXTO_W);
+    { int c = f > 0.5f ? 56 : 198;
+      TxtLinha t = txt_linha_corta(TXT_CAPTION, buf, c, c + 4, c + 14, 255, SP_TEXTO_W);
       txt_desenhar_alpha(t, tx, y + 102.0f, a * 0.95f); }
   } else {
     quandoTexto(buf, sizeof buf, l->quandoS);
     if (buf[0]) {
-      TxtLinha t = txt_linha_corta(TXT_CAPTION, buf, 150, 154, 165, 255, SP_TEXTO_W);
+      int c = f > 0.5f ? 84 : 150;
+      TxtLinha t = txt_linha_corta(TXT_CAPTION, buf, c, c + 4, c + 15, 255, SP_TEXTO_W);
       txt_desenhar_alpha(t, tx, y + 92.0f, a * 0.9f);
     }
   }
@@ -548,11 +555,11 @@ static void desenhaRecLinha(int i, float dx, float y, float a) {
   GfxRect poster = { px, y, SP_POSTER_W, SP_POSTER_H };
 
   if (f > 0.01f) {
-    float ar, ag, ab;
+    // Mesma pilula clara da aba Salvos — as duas listas sao a mesma camada e
+    // marcar o foco de dois jeitos dentro dela seria pior que qualquer um dos
+    // dois.
     GfxRect anel = { px - 12.0f, y - 10.0f, SP_INTERNO + 24.0f, SP_POSTER_H + 20.0f };
-    ajustes_acento(&ar, &ag, &ab);
-    gfx_cor(anel, 0.06f, 0.16f, 0.165f, 0.19f, f * a);
-    gfx_rect(anel, 0, GFX_ANEL, 0, NV_ANEL_FOCO / anel.w, 0, 0.06f, ar, ag, ab, f * a);
+    gfx_cor(anel, 0.06f, 0.961f, 0.961f, 0.968f, f * a);
   }
 
   { GLuint tex = r->poster[0] ? tex_obter(r->poster) : 0;
@@ -565,7 +572,9 @@ static void desenhaRecLinha(int i, float dx, float y, float a) {
               NV_COR_ESQUELETO_B, a);
     } }
 
-  { TxtLinha t = txt_linha_corta(TXT_CALLOUT, r->titulo, 245, 246, 250, 255,
+  { int esc = f > 0.5f;
+    int c1 = esc ? 20 : 245;
+    TxtLinha t = txt_linha_corta(TXT_CALLOUT, r->titulo, c1, c1 + 1, c1 + 5, 255,
                                  SP_TEXTO_W);
     txt_desenhar_alpha(t, tx, y + 2.0f, a); }
 
@@ -575,16 +584,21 @@ static void desenhaRecLinha(int i, float dx, float y, float a) {
   rec_quando_texto(quando, sizeof quando, r->criado);
   if (quando[0]) snprintf(buf, sizeof buf, "%s · %s", r->deNome, quando);
   else           snprintf(buf, sizeof buf, "%s", r->deNome);
-  { TxtLinha t = txt_linha_corta(TXT_CAPTION2, buf, 168, 172, 182, 255, SP_TEXTO_W);
-    txt_desenhar_alpha(t, tx, y + 44.0f, a * 0.95f); }
-
-  { const char *frase = rec_frase(r);
-    if (frase[0]) {
-      snprintf(buf, sizeof buf, "\xe2\x80\x9c%s\xe2\x80\x9d", frase);
-      { TxtLinha t = txt_linha_corta(TXT_CAPTION, buf, 214, 218, 228, 255,
-                                     SP_TEXTO_W);
-        txt_desenhar_alpha(t, tx, y + 88.0f, a * 0.95f); }
-    } }
+  // As DUAS linhas de baixo invertem junto com o titulo: com a pilula clara,
+  // cinza-claro sobre claro fica ilegivel — foi o que a captura mostrou antes
+  // de isto existir.
+  { int esc = f > 0.5f;
+    int c2 = esc ? 74 : 168, c3 = esc ? 48 : 214;
+    { TxtLinha t = txt_linha_corta(TXT_CAPTION2, buf, c2, c2 + 4, c2 + 14, 255,
+                                   SP_TEXTO_W);
+      txt_desenhar_alpha(t, tx, y + 44.0f, a * 0.95f); }
+    { const char *frase = rec_frase(r);
+      if (frase[0]) {
+        snprintf(buf, sizeof buf, "\xe2\x80\x9c%s\xe2\x80\x9d", frase);
+        { TxtLinha t = txt_linha_corta(TXT_CAPTION, buf, c3, c3 + 4, c3 + 14, 255,
+                                       SP_TEXTO_W);
+          txt_desenhar_alpha(t, tx, y + 88.0f, a * 0.95f); }
+      } } }
 
   if (!r->visto) {
     // Ponto de "ainda nao lida". Some quando a aba e aberta, junto do selo.

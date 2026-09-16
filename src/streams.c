@@ -596,18 +596,28 @@ void stream_folha_desenhar(Uint32 agora) {
     float y=FOLHA_TOPO+row*FOLHA_LINHA-rolagem;
     if(y+FOLHA_LINHA<FOLHA_TOPO || y>NV_TELA_H-32) continue;
     int i=filtrado(row),sel=grupo==1 && foco==row;
+    int corTitulo,corProv,corDesc,corMeta;
     const Stream *s=&lista[i];
+    // PREENCHIMENTO, E NAO CONTORNO. O desenho antigo pintava a linha clara e
+    // desenhava a escura 2 px por dentro — o que sobrava era um contorno de
+    // 2 px. Relato do dono (16/09): "tem lugar como a biblioteca, as fontes e
+    // a sidebar que ainda tao usando o contorno ao inves do fill". A regra que
+    // ele fixou para o app inteiro no mesmo dia (ver menu.c) e: selecionado
+    // fica CLARO com texto ESCURO.
     GfxRect r={x+40,y,FOLHA_W-80,FOLHA_LINHA-14};
     if(sel) gfx_cor(r,.10f,.94f,.94f,.95f,anim);
-    r.x+=2;r.y+=2;r.w-=4;r.h-=4;
-    gfx_cor(r,.09f,.135f,.135f,.14f,anim);
+    else { r.x+=2;r.y+=2;r.w-=4;r.h-=4;
+           gfx_cor(r,.09f,.135f,.135f,.14f,anim); }
+    // As quatro linhas de texto invertem junto: claro sobre claro nao se le.
+    { int c1=sel?22:240, c2=sel?58:175, c3=sel?54:194, c4=sel?40:224;
+      corTitulo=c1; corProv=c2; corDesc=c3; corMeta=c4; }
     float lx=x+62,w=FOLHA_W-124;
     char nome[sizeof s->rotulo],descricao[sizeof s->descricao];
     snprintf(nome,sizeof nome,"%s",s->rotulo);snprintf(descricao,sizeof descricao,"%s",s->descricao);
     // SDL_ttf nao interpreta quebras de linha; nao renderizar glifos .notdef.
     for(char *p=nome;*p;p++)if((unsigned char)*p<32)*p=' ';
     for(char *p=descricao;*p;p++)if((unsigned char)*p<32)*p=' ';
-    txt_desenhar_alpha(txt_linha_corta(TXT_PAINEL_ITEM,nome,240,241,243,255,w),lx,y+16,anim);
+    txt_desenhar_alpha(txt_linha_corta(TXT_PAINEL_ITEM,nome,corTitulo,corTitulo+1,corTitulo+3,255,w),lx,y+16,anim);
     // A FONTE LEMBRADA, MARCADA. Sem a marca, quem abre a folha para conferir
     // continua procurando a propria fonte entre dezenas de linhas — que e a
     // queixa literal do issue #56 ("search through many links to find the same
@@ -642,13 +652,13 @@ void stream_folha_desenhar(Uint32 agora) {
       wProv = w - pil.w - 24.0f;
       if (wProv < 120.0f) wProv = 120.0f;
     }
-    txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,i==atual?"Reproduzindo agora":s->provedor,175,178,185,255,wProv),lx,y+46,anim);
-    txt_bloco(TXT_PG_FIM,descricao,194,197,202,lx,y+76,w,25,anim,2);
+    txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,i==atual?"Reproduzindo agora":s->provedor,corProv,corProv+3,corProv+10,255,wProv),lx,y+46,anim);
+    txt_bloco(TXT_PG_FIM,descricao,corDesc,corDesc+3,corDesc+8,lx,y+76,w,25,anim,2);
     char meta[192],qual[24]="";
     if(s->altura) snprintf(qual,sizeof qual," · %dp",s->altura);
     snprintf(meta,sizeof meta,"%s%s%s%s",containerDa(s),qual,s->dolbyVision?" · Dolby Vision":"",s->dolbyAtmos?" · Atmos":"");
     if(s->tamanhoMB) {size_t p=strlen(meta);snprintf(meta+p,sizeof meta-p," · %.1f GB",s->tamanhoMB/1024.0);}
-    txt_desenhar_alpha(txt_linha_corta(TXT_MINI,meta,224,226,232,255,w),lx,y+140,anim);
+    txt_desenhar_alpha(txt_linha_corta(TXT_MINI,meta,corMeta,corMeta+2,corMeta+8,255,w),lx,y+140,anim);
     badges_desenhar(s->badges,lx,y+171,w,26,anim);
   }
   if(!nf) {
