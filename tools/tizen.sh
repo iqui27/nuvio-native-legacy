@@ -24,6 +24,20 @@ cd "$(dirname "$0")/.."
 # shellcheck disable=SC1091
 source "$EMSDK_DIR/emsdk_env.sh" >/dev/null 2>&1
 
+# --alto-cache: a mesma variante do tools/arm.sh --alto-cache, para quem tem
+# Samsung com RAM sobrando e quer testar o cache de texturas cravado em 300 MB
+# (NV_TEX_MB_FIXO). Sai em build/tizen-altocache, e o tizen-wgt.sh que vier
+# depois herda a pasta e o nome pelas mesmas variaveis. La as texturas moram
+# no processo da GPU, fora do heap de 256 MiB do wasm — ninguem mediu ate onde
+# o navegador da TV aguenta; e por isso e variante, e nao o padrao.
+VARIANTE=""
+if [ "${1:-}" = "--alto-cache" ]; then
+  VARIANTE="altocache"
+  export NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-} -DNV_TEX_MB_FIXO=300"
+  export NUVIO_SAIDA="${NUVIO_SAIDA:-build/tizen-altocache}"
+  export NUVIO_WGT_NOME="${NUVIO_WGT_NOME:-NuvioTV-native-altocache}"
+  echo "tizen.sh: variante ALTO CACHE (300 MB de texturas) -> $NUVIO_SAIDA"
+fi
 SAIDA="${NUVIO_SAIDA:-build/tizen}"
 mkdir -p "$SAIDA"
 
@@ -115,7 +129,7 @@ if [ -n "${NUVIO_LOG_URL:-}" ]; then
   echo "tizen.sh: log sera enviado para $NUVIO_LOG_URL"
 fi
 
-eval emcc src/*.c -o "$SAIDA/index.html" -O2 "$ENV_D" \
+eval emcc src/*.c -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} \
   -sWASM_BIGINT=0 \
   -sUSE_SDL=2 -sUSE_SDL_IMAGE=2 -sUSE_SDL_TTF=2 \
   `# zlib do emscripten: epg.c infla o XMLTV .gz do epgshare01 com inflate.` \

@@ -2548,9 +2548,12 @@ static float desenhaPainelImagens(float x, float y, float w) {
   if (teto <= 0) teto = 1;
   ajustes_acento(&ar, &ag, &ab);
 
-  // 1. A BARRA: usado sobre o teto, na cor de realce.
-  snprintf(a, sizeof a, i18n("%.1f de %d MB · %d%%"), bytes / 1048576.0, mb,
-           (int)(bytes * 100 / teto));
+  // 1. A BARRA: usado sobre o teto, na cor de realce. O teto MOSTRADO e o
+  // efetivo (tex_orcamento_bytes), nao o `mb` decidido: no Mac retina o
+  // orcamento e mb x 4 e a linha dizia "139 de 96 MB". Na TV os dois sao
+  // iguais.
+  snprintf(a, sizeof a, i18n("%.1f de %d MB · %d%%"), bytes / 1048576.0,
+           (int)(teto / 1048576), (int)(bytes * 100 / teto));
   y += linhaStat(x, y, w, i18n("Ocupado"), a);
   { GfxRect trilho = { x, y, w, 8.0f };
     float t = (float)bytes / (float)teto; if (t > 1.0f) t = 1.0f;
