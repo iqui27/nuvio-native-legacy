@@ -21,6 +21,7 @@
 #include "sync.h"
 #include "traktauth.h"
 #include "simklauth.h"
+#include "listas.h"
 #include "text.h"
 #include "vertudo.h"
 #include "guia.h"
@@ -34,6 +35,9 @@
 #include "menu.h"
 #include "busca.h"
 #include "biblioteca.h"
+#include "agendaui.h"
+#include "agenda.h"
+#include "agendaviso.h"
 #include "perfil.h"
 #include "salvos.h"
 #include "recomenda.h"
@@ -41,6 +45,7 @@
 #include "salvospainel.h"
 #include "salvosintro.h"
 #include "novidades.h"
+#include "novidades11.h"
 #include "recintro.h"
 #include "atualizacao.h"
 #include "pipintro.h"
@@ -211,6 +216,7 @@ static void trocarTela(Tela nova) {
     case TELA_GUIA:       guia_abrir();         break;
     case TELA_BUSCA:      busca_iniciar();      break;
     case TELA_BIBLIOTECA: biblioteca_iniciar(); break;
+    case TELA_AGENDA:     agendaui_iniciar();   break;
     case TELA_PERFIL:     perfil_abrir(); pedirPerfil(); break;
     case TELA_AJUSTES:    ajustes_iniciar();    break;
     default: break;
@@ -309,6 +315,12 @@ int app_iniciar(const char *dirArte) {
   // marca `naLista` no catalogo do cache, entao o painel e a Biblioteca ja
   // abrem certos no primeiro quadro. Ler depois faria a lista local piscar.
   salvos_iniciar();
+  // AS LISTAS FIXADAS, PELO MESMO MOTIVO E ANTES DA PRIMEIRA HOME. Uma lista do
+  // Trakt que a Biblioteca levou para a Home so vira fileira quando lst_iniciar
+  // reinjeta a pasta dela em colecoes.c; chamando isto so ao ABRIR a Biblioteca,
+  // a fileira sumiria da home a cada reinicio ate a pessoa passar por la.
+  lst_iniciar();
+  agenda_iniciar();
   // A FONTE LEMBRADA, do mesmo jeito e pelo mesmo motivo: ela e lida antes do
   // primeiro Reproduzir, que pode acontecer segundos depois do arranque quando
   // a pessoa abre direto no "Continuar assistindo".
@@ -412,10 +424,15 @@ void app_evento(const SDL_Event *e) {
   // esta no ar — o Voltar aqui escolhe "fechar o video", nao so fecha cartao.
   if (pipintro_aberto()) { pipintro_evento(e); return; }
   if (novidades_aberto()) { novidades_evento(e); return; }
+  // O cartao da 1.1 vem logo depois, e come esquerda/direita como o do Social:
+  // sao sete paginas, e deixar a tecla vazar moveria o foco da home debaixo
+  // dele. O OK dele AVANCA e so fecha na ultima pagina — ver novidades11.c.
+  if (novidades11_aberto()) { novidades11_evento(e); return; }
   // O explicador do Social e da mesma familia, e come esquerda/direita:
   // deixar a tecla vazar para a home moveria o foco dela debaixo do cartao.
   if (recintro_aberto()) { recintro_evento(e); return; }
   if (atualizacao_aberta()) { atualizacao_evento(e); return; }
+  if (agendaviso_aberto()) { agendaviso_evento(e); return; }
   if (recomenda_aberta()) { recomenda_evento(e); return; }
   // A MODAL DE RECOMENDAR fica acima do detalhe, do menu do cartaz e do
   // painel da tecla AZUL — as tres portas que a abrem. Abaixo do cartao de
@@ -471,6 +488,7 @@ void app_evento(const SDL_Event *e) {
     case TELA_GUIA:       guia_evento(e);       break;
     case TELA_BUSCA:      busca_evento(e);      break;
     case TELA_BIBLIOTECA: biblioteca_evento(e); break;
+    case TELA_AGENDA:     agendaui_evento(e);   break;
     case TELA_PERFIL:     perfil_evento(e);     break;
     case TELA_SOCIAL:     social_evento(e);     break;
     case TELA_ADDONS:     addonsui_evento(e);   break;
@@ -672,12 +690,25 @@ void app_atualizar(float dt, Uint32 agora) {
     // O cartao do Guia de TV espera o de Salvos sair — dois cartoes de
     // primeira vez ao mesmo tempo seria um em cima do outro.
     if (!registro_aberto() && !sintro_aberto()) novidades_primeira_vez();
+    // O CARTAO DA 1.1 VEM DEPOIS DO DO GUIA, e nao antes: quem instala esta
+    // versao vindo de uma anterior a do Guia recebe os dois, e o do Guia fala
+    // de um recurso que a 1.1 pressupoe (o botao AZUL abrindo o guia aparece na
+    // pagina dos botoes coloridos). Ler na ordem em que as coisas chegaram e o
+    // unico jeito de a segunda explicacao fazer sentido.
+    //
+    // Ele vem ANTES do aviso de versao nova, e isso importa: o de versao nova
+    // fala da PROXIMA atualizacao, e a pagina 5 deste explica como ela se
+    // instala. Invertido, a pessoa apertaria "Atualizar agora" antes de saber
+    // o que acontece sem o Homebrew Channel.
+    if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
+        !pipintro_aberto())
+      novidades11_primeira_vez();
     // AVISO DE VERSAO NOVA: a consulta ao GitHub so parte quando a home esta
     // de pe (nao disputa a rede com o catalogo), e o cartao so abre quando
     // nenhum outro cartao de primeira vez esta aberto.
     atualizacao_verificar();
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !pipintro_aberto())
+        !novidades11_aberto() && !pipintro_aberto())
       atualizacao_mostrar_se_houver();
     // RECOMENDACAO DE UM AMIGO: a sondagem parte daqui pelo mesmo motivo que a
     // do GitHub — com a home de pe ela nao disputa a rede com o catalogo. Sem
@@ -686,7 +717,7 @@ void app_atualizar(float dt, Uint32 agora) {
     // aviso de versao: dois cartoes ao mesmo tempo seria um por cima do outro.
     recomenda_verificar();
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !pipintro_aberto() && !atualizacao_aberta())
+        !novidades11_aberto() && !pipintro_aberto() && !atualizacao_aberta())
       recomenda_mostrar_se_houver();
     // EXPLICADOR DAS TELAS SOCIAIS: mesmas guardas de todos os outros, mais
     // a do cartao de recomendacao recebida — dois cartoes ao mesmo tempo
@@ -694,8 +725,17 @@ void app_atualizar(float dt, Uint32 agora) {
     // NUVIO_REC_URL (recomenda_ativo), e por isso nao ha guarda aqui: um
     // anuncio de recurso que nao esta no pacote e pior que silencio.
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !pipintro_aberto() && !atualizacao_aberta() && !recomenda_aberta())
+        !novidades11_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
+        !recomenda_aberta())
       recintro_primeira_vez();
+    // LEMBRETE VENCIDO: o unico aviso que esta TV consegue dar. Ultimo da fila
+    // pela mesma razao de todos os outros — dois cartoes juntos seria um por
+    // cima do outro —, e sem consulta de rede nenhuma: o que ele mostra ja
+    // esta em disco desde que o dono apertou "Lembrar-me".
+    if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
+        !novidades11_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
+        !recomenda_aberta() && !recintro_aberto())
+      agendaviso_mostrar_se_houver();
   }
 
   // E o ciclo automatico — nunca com o player aberto: rajada de HTTP no meio
@@ -774,6 +814,7 @@ void app_atualizar(float dt, Uint32 agora) {
     int fechar = (tela == TELA_GUIA       && guia_quer_sair())
               || (tela == TELA_BUSCA      && busca_quer_sair())
               || (tela == TELA_BIBLIOTECA && biblioteca_quer_sair())
+              || (tela == TELA_AGENDA     && agendaui_quer_sair())
               || (tela == TELA_PERFIL      && perfil_quer_sair())
               || (tela == TELA_SOCIAL      && social_quer_sair())
               || (tela == TELA_AJUSTES    && ajustes_quer_sair());
@@ -798,6 +839,7 @@ void app_atualizar(float dt, Uint32 agora) {
       case MENU_GUIA:       trocarTela(TELA_GUIA);       break;
       case MENU_BUSCAR:     trocarTela(TELA_BUSCA);      break;
       case MENU_BIBLIOTECA: trocarTela(TELA_BIBLIOTECA); break;
+      case MENU_AGENDA:     trocarTela(TELA_AGENDA);     break;
       // DIRETO PARA A TELA, e nao mais para o painel lateral. O item do menu
       // se chama "Perfil e Stats" e abria um resumo de tres botoes por cima da
       // home — para ver as estatisticas de verdade era preciso descer ate "Ver
@@ -1283,6 +1325,7 @@ void app_atualizar(float dt, Uint32 agora) {
   switch (tela) {
     case TELA_BUSCA:      busca_atualizar(dt, agora);      break;
     case TELA_BIBLIOTECA: biblioteca_atualizar(dt, agora); break;
+    case TELA_AGENDA:     agendaui_atualizar(dt, agora);   break;
     case TELA_PERFIL:     break;
     case TELA_AJUSTES:    ajustes_atualizar(dt, agora);    break;
     default:              home_atualizar(dt, agora);       break;
@@ -1293,8 +1336,10 @@ void app_atualizar(float dt, Uint32 agora) {
   recenviar_atualizar(dt, agora);
   sintro_atualizar(dt, agora);
   novidades_atualizar(dt, agora);
+  novidades11_atualizar(dt, agora);
   recintro_atualizar(dt, agora);
   atualizacao_atualizar(dt, agora);
+  agendaviso_atualizar(dt, agora);
   pipintro_atualizar(dt, agora);
   if(tela==TELA_SOCIAL) social_atualizar(dt, agora);
   if(tela==TELA_ADDONS) addonsui_atualizar(dt, agora);
@@ -1352,6 +1397,7 @@ static void desenharTelas(Uint32 agora) {
         case TELA_GUIA:       guia_desenhar(agora);       break;
         case TELA_BUSCA:      busca_desenhar(agora);      break;
         case TELA_BIBLIOTECA: biblioteca_desenhar(agora); break;
+        case TELA_AGENDA:     agendaui_desenhar(agora);   break;
         case TELA_PERFIL:     perfil_desenhar(agora);     break;
         case TELA_SOCIAL:     social_desenhar(agora);     break;
         case TELA_ADDONS:     addonsui_desenhar(agora);   break;
@@ -1418,8 +1464,10 @@ void app_desenhar(Uint32 agora) {
   player_mini_desenhar(agora);
   if (!registro_aberto()) sintro_desenhar(agora);
   if (!registro_aberto()) novidades_desenhar(agora);
+  if (!registro_aberto()) novidades11_desenhar(agora);
   if (!registro_aberto()) recintro_desenhar(agora);
   if (!registro_aberto()) atualizacao_desenhar(agora);
+  if (!registro_aberto()) agendaviso_desenhar(agora);
   if (!registro_aberto()) recenviar_desenhar(agora);
   if (!registro_aberto()) recomenda_desenhar(agora);
   if (!registro_aberto()) pipintro_desenhar(agora);
