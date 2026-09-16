@@ -2,11 +2,12 @@
 
 Escrito para você revisar e postar. Eu não publico nada.
 
-**As imagens estão em `~/Desktop/nuvio-post-2/`** (29 PNG 1920×1080, interface em
+**As imagens estão em `~/Desktop/nuvio-post-2/`** (36 PNG 1920×1080, interface em
 inglês, capturadas do próprio app — build do Mac com a sua conta, mais um recorte
-da C9). A lista com legenda está no fim; a ordem sugerida para a galeria é a
+da C9; as da parte Social vêm do teste com dados de mentira, porque a sua conta
+ainda não tem recomendação real). A lista com legenda está no fim; a ordem sugerida para a galeria é a
 numeração dos arquivos. O Reddit aceita até 20 imagens numa galeria: a seleção
-de 12 marcada com ★ é a que eu usaria.
+de 14 marcada com ★ é a que eu usaria.
 
 **Antes de postar:**
 
@@ -153,15 +154,16 @@ description.
 
 ## Imagens (`~/Desktop/nuvio-post-2/`) e legendas
 
-★ = as 12 que eu poria na galeria, nesta ordem.
+★ = as 14 que eu poria na galeria, nesta ordem (o Reddit aceita 20).
 
 | arquivo | legenda sugerida |
 |---|---|
 | ★ 01b-home-rows.png | Home: hero, rows, focused card grows — no ring |
 | 01-home.png | Home top: Continue Watching and friends on Trakt |
 | ★ 02-menu.png | Side menu, focus as a filled button in the accent colour |
-| ★ 03-guide.png | TV Guide: 768 channels in 35 categories, EPG now/next |
-| 03b-guide-epg.png | Guide further down, with programme bars |
+| ★ 03c-guide-focus.png | TV Guide: 768 channels in 35 categories, EPG on now / up next for the focused channel |
+| 03-guide.png | Guide at the top: category sections |
+| 03b-guide-epg.png | Guide further down, programme bars |
 | 04-search.png | Search with the on-screen keyboard |
 | 05-library.png | Library: Saved and Collection tabs, type/sort filters |
 | ★ 06-profile.png | Profile & Stats from Trakt: hours, rhythm, most watched, genres |
@@ -169,7 +171,8 @@ description.
 | 08-settings-categories.png | Settings with focus on the category column |
 | ★ 09-home-rows.png | Home rows sheet: order, enable, card shape, where each row comes from |
 | 09b-home-rows-out.png | Rows not on Home, grouped by add-on |
-| ★ 10-settings-images.png | Image cache panel: used vs ceiling, on-screen set, 2-minute graph |
+| ★ 10-settings-images.png | Image cache panel: used vs ceiling, on-screen set, 2-minute graph in pressure colour (green) |
+| 10c-settings-images-pressure.png | The same panel with the cache pinned at the ceiling (amber → red) — what the old builds looked like all the time |
 | 11-addons.png | Add-ons: what each provides, read from its manifest |
 | ★ 12-detail.png | Title page: logo, actions, metadata badges |
 | 12b-detail-down.png | Seasons and episodes with Trakt ratings |
@@ -177,7 +180,10 @@ description.
 | 13-player.png | Player controls (video plane not capturable — see note) |
 | ★ 14-sources.png | Sources sheet: provider filters, badges, "Now playing" / automatic pick |
 | ★ 15-saved.png | Saved panel on the blue button |
-| 16-social.png | Social tab: your code, add a friend |
+| ★ 16-social-mock.png | Social tab: what friends sent you, who and when, their line (mock data) |
+| 16b-recommend-to-whom.png | Recommend a title: pick the friend |
+| 16c-recommend-what-to-say.png | Recommend a title: pick a line |
+| 16d-social-arrival-card.png | The card that shows up when a recommendation arrives |
 | ★ 17-profiles.png | Who is watching — per session |
 | ★ 18-collections.png | Collections: streaming services with animated covers |
 | 18b-collections-genres.png | Collections: genres and themes |
