@@ -39,6 +39,10 @@
 #define REC_ARQ        "recomendacoes.txt"
 #define REC_ARQ_CURSOR "recomendacoes-cursor.txt"
 #define REC_ARQ_CARTAO "recomendacoes-cartao.txt"
+// Quem eu sou para o servico: id estavel e codigo de pareamento. Separado
+// dos outros dois porque tem outro tempo de vida — a lista e o cursor mudam a
+// cada ciclo, isto muda uma vez na vida da conta.
+#define REC_ARQ_EU     "recomendacoes-eu.txt"
 
 #define REC_INTERVALO_MS  60000u   // sondagem com o app aberto
 #define REC_ESPERA_MS      2000u   // sem identidade ainda: tentar de novo logo
@@ -85,6 +89,17 @@ static long long  cursor;
 static char       etagRec[96];
 static int        registrado;
 static char       meuId[96];
+static char       meuCodigo[16];
+
+// PEDIDOS DE CONTATO. Sao tres e nenhum e uma fila: vincular por codigo,
+// remover alguem e revarrer o Trakt acontecem um por vez, disparados por um OK
+// numa tela que fica esperando a resposta. Um vetor aqui seria estrutura sem
+// uso — a mesma conta que a nota da `fila` de envio ja faz.
+static char vincCodigo[16];
+static char vincNome[64];
+static int  vincEstado;
+static char removerId[96];
+static int  pedirTrakt, traktEstado, traktAchados;
 
 // Fila de envio: UMA de cada vez, de proposito. O fluxo e "escolho amigo,
 // escolho frase, confirmo" — nao ha como o dono disparar dois antes de ver o
@@ -183,6 +198,13 @@ static void gravarCursor(void) {
   dados_gravar(REC_ARQ_CURSOR, s);
 }
 
+// Chamar com o mutex TOMADO.
+static void gravarEu(void) {
+  char t[160];
+  snprintf(t, sizeof t, "%s\t%s\n", meuId, meuCodigo);
+  dados_gravar(REC_ARQ_EU, t);
+}
+
 void recomenda_iniciar(void) {
   char *b, *linha, *prox;
   if (!recomenda_ativo()) return;
@@ -221,6 +243,18 @@ void recomenda_iniciar(void) {
     if (fimLinha) *fimLinha = 0;
     cursor = atoll(campo(&p));
     snprintf(etagRec, sizeof etagRec, "%s", p ? p : "");
+    free(b);
+  }
+  // O CODIGO VEM DO DISCO ANTES DA REDE. `registrado` continua 0 de proposito:
+  // o ciclo ainda chama /v1/eu (e ele que atualiza o `visto` da pessoa no
+  // servidor). O que este bloco evita e a tela de amigos abrir com o campo do
+  // codigo em branco por um ou dois segundos toda vez que a TV liga.
+  b = dados_ler(REC_ARQ_EU);
+  if (b) {
+    char *p = b, *fimLinha = strchr(b, '\n');
+    if (fimLinha) *fimLinha = 0;
+    snprintf(meuId, sizeof meuId, "%s", campo(&p));
+    snprintf(meuCodigo, sizeof meuCodigo, "%s", p ? p : "");
     free(b);
   }
   printf("[recomenda] %d na lista local, cursor %lld\n", nItens, cursor);
@@ -263,6 +297,120 @@ int recomenda_contatos(RecContato *saida, int max) {
   return n;
 }
 
+const char *recomenda_meu_codigo(void) {
+  // ESTATICO E COPIADO, e nao um ponteiro para `meuCodigo`: o fio de rede
+  // reescreve aquele vetor quando /v1/eu responde, e quem desenha guardaria um
+  // ponteiro para memoria que muda debaixo dele. Sao 16 bytes.
+  static char copia[16];
+  if (!recomenda_ativo() || !mtx) return "";
+  SDL_LockMutex(mtx);
+  snprintf(copia, sizeof copia, "%s", meuCodigo);
+  SDL_UnlockMutex(mtx);
+  return copia;
+}
+
+int recomenda_vincular(const char *codigo) {
+  char limpo[16];
+  size_t k = 0;
+  if (!recomenda_ativo() || !codigo) return 0;
+  // A LIMPEZA E AQUI, e nao no servidor: o teclado da TV so entrega a-z0-9,
+  // mas um codigo ditado por telefone chega com espaco no meio e com a letra
+  // maiuscula de quem leu de uma foto. Seis caracteres exatos ou nada — assim o
+  // 400 de "codigo invalido" nunca chega a sair do aparelho.
+  for (; *codigo && k + 1 < sizeof limpo; codigo++) {
+    char c = *codigo;
+    if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
+    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) limpo[k++] = c;
+  }
+  limpo[k] = 0;
+  if (k != 6) return 0;
+  if (!mtx) mtx = SDL_CreateMutex();
+  SDL_LockMutex(mtx);
+  if (vincCodigo[0] || vincEstado == REC_VINC_INDO) { SDL_UnlockMutex(mtx); return 0; }
+  snprintf(vincCodigo, sizeof vincCodigo, "%s", limpo);
+  vincNome[0] = 0;
+  vincEstado = REC_VINC_INDO;
+  SDL_UnlockMutex(mtx);
+  recomenda_pedir_agora();
+  return 1;
+}
+
+int recomenda_vinculo_estado(void) {
+  int e;
+  if (!mtx) return REC_VINC_NADA;
+  SDL_LockMutex(mtx); e = vincEstado; SDL_UnlockMutex(mtx);
+  return e;
+}
+
+const char *recomenda_vinculo_nome(void) {
+  static char copia[64];
+  if (!mtx) return "";
+  SDL_LockMutex(mtx);
+  snprintf(copia, sizeof copia, "%s", vincNome);
+  SDL_UnlockMutex(mtx);
+  return copia;
+}
+
+void recomenda_vinculo_limpar(void) {
+  if (!mtx) return;
+  SDL_LockMutex(mtx);
+  if (vincEstado != REC_VINC_INDO) { vincEstado = REC_VINC_NADA; vincNome[0] = 0; }
+  SDL_UnlockMutex(mtx);
+}
+
+int recomenda_procurar_trakt(void) {
+  if (!recomenda_ativo()) return 0;
+  if (!mtx) mtx = SDL_CreateMutex();
+  SDL_LockMutex(mtx);
+  if (traktEstado == REC_TRAKT_INDO) { SDL_UnlockMutex(mtx); return 0; }
+  pedirTrakt = 1;
+  traktEstado = REC_TRAKT_INDO;
+  traktAchados = 0;
+  SDL_UnlockMutex(mtx);
+  recomenda_pedir_agora();
+  return 1;
+}
+
+int recomenda_trakt_estado(void) {
+  int e;
+  if (!mtx) return REC_TRAKT_NADA;
+  SDL_LockMutex(mtx); e = traktEstado; SDL_UnlockMutex(mtx);
+  return e;
+}
+
+int recomenda_trakt_achados(void) {
+  int n;
+  if (!mtx) return 0;
+  SDL_LockMutex(mtx); n = traktAchados; SDL_UnlockMutex(mtx);
+  return n;
+}
+
+void recomenda_trakt_limpar(void) {
+  if (!mtx) return;
+  SDL_LockMutex(mtx);
+  if (traktEstado != REC_TRAKT_INDO) traktEstado = REC_TRAKT_NADA;
+  SDL_UnlockMutex(mtx);
+}
+
+int recomenda_remover_contato(const char *id) {
+  if (!recomenda_ativo() || !id || !id[0]) return 0;
+  if (!mtx) mtx = SDL_CreateMutex();
+  SDL_LockMutex(mtx);
+  if (removerId[0]) { SDL_UnlockMutex(mtx); return 0; }
+  snprintf(removerId, sizeof removerId, "%s", id);
+  // TIRA DA LISTA LOCAL NA HORA. A confirmacao do servidor chega no proximo
+  // ciclo e a lista e relida depois dele; sem isto o nome removido continua na
+  // tela ate 200 ms depois, que e tempo suficiente para a pessoa apertar OK de
+  // novo e mandar a mesma remocao duas vezes.
+  { int i, k = 0;
+    for (i = 0; i < nContatos; i++)
+      if (strcmp(contatos[i].id, id)) contatos[k++] = contatos[i];
+    nContatos = k; }
+  SDL_UnlockMutex(mtx);
+  recomenda_pedir_agora();
+  return 1;
+}
+
 void recomenda_marcar_vistas(void) {
   int i, mudou = 0;
   if (!recomenda_ativo() || !mtx) return;
@@ -293,7 +441,7 @@ void recomenda_envio_limpar(void) {
 
 void recomenda_esquecer(void) {
   if (!mtx) { dados_apagar(REC_ARQ); dados_apagar(REC_ARQ_CURSOR);
-              dados_apagar(REC_ARQ_CARTAO); return; }
+              dados_apagar(REC_ARQ_CARTAO); dados_apagar(REC_ARQ_EU); return; }
   SDL_LockMutex(mtx);
   geracao++;
   nItens = 0;
@@ -302,13 +450,21 @@ void recomenda_esquecer(void) {
   cursor = 0;
   etagRec[0] = 0;
   meuId[0] = 0;
+  meuCodigo[0] = 0;
   registrado = 0;
   fila.cheia = 0;
   envioEstado = REC_ENVIO_NADA;
+  // OS PEDIDOS DE CONTATO TAMBEM MORREM AQUI. Um vinculo por codigo no ar
+  // quando alguem sai da conta voltaria vinculando a pessoa ERRADA — a
+  // identidade do cabecalho ja e a da conta seguinte.
+  vincCodigo[0] = 0; vincNome[0] = 0; vincEstado = REC_VINC_NADA;
+  removerId[0] = 0;
+  pedirTrakt = 0; traktEstado = REC_TRAKT_NADA; traktAchados = 0;
   SDL_UnlockMutex(mtx);
   dados_apagar(REC_ARQ);
   dados_apagar(REC_ARQ_CURSOR);
   dados_apagar(REC_ARQ_CARTAO);
+  dados_apagar(REC_ARQ_EU);
   cartaoAberto = 0;
   cartaoMostrado = 0;
 }
@@ -371,11 +527,17 @@ static void jsonEsc(char *dst, size_t tam, const char *s) {
 // estavel. Sem ele nenhuma outra rota tem a quem responder.
 static int registrar(const char **cab) {
   char *r;
-  char id[96] = "";
+  char id[96] = "", codigo[16] = "";
   int st = 0;
   url("/v1/eu");
   r = rede_postar_st(fioUrl, REC_TEMPO_REDE, cab, "", &st);
-  if (r && st >= 200 && st < 300) js_texto_raiz(r, "id", id, sizeof id);
+  if (r && st >= 200 && st < 300) {
+    js_texto_raiz(r, "id", id, sizeof id);
+    // O CODIGO SEMPRE VEM NESTA RESPOSTA e o cliente o ignorava. Era o unico
+    // ponto onde ele existe: nao ha rota para perguntar "qual e o meu codigo?"
+    // depois, porque /v1/eu ja e ela.
+    js_texto_raiz(r, "codigo", codigo, sizeof codigo);
+  }
   free(r);
   if (!id[0]) {
     printf("[recomenda] /v1/eu nao respondeu (HTTP %d)\n", st);
@@ -384,9 +546,12 @@ static int registrar(const char **cab) {
   }
   SDL_LockMutex(mtx);
   snprintf(meuId, sizeof meuId, "%s", id);
+  if (codigo[0]) snprintf(meuCodigo, sizeof meuCodigo, "%s", codigo);
   registrado = 1;
+  gravarEu();
   SDL_UnlockMutex(mtx);
-  printf("[recomenda] registrado como %s\n", id);
+  printf("[recomenda] registrado como %s, codigo %s\n",
+         id, codigo[0] ? codigo : "?");
   fflush(stdout);
   return 1;
 }
@@ -397,17 +562,17 @@ static int registrar(const char **cab) {
 // a parear de novo por codigo seria pedir duas vezes a mesma coisa. O servidor
 // vincula so quem JA usa o servico — quem nunca abriu o app nao vira contato
 // porque nao ha ninguem para receber.
-static void vincularTrakt(const char **cab) {
+static int vincularTrakt(const char **cab) {
   const char *tcab[4];
   char aut[3200], chave[160], *lista;
   char corpo[6000];
   const char *p;
   size_t k;
   int n = 0;
-  if (!trakt_ativo()) return;
-  if (!trakt_cabecalhos(tcab, aut, sizeof aut, chave, sizeof chave)) return;
+  if (!trakt_ativo()) return 0;
+  if (!trakt_cabecalhos(tcab, aut, sizeof aut, chave, sizeof chave)) return 0;
   lista = rede_baixar_com("https://api.trakt.tv/users/me/following", 10, tcab);
-  if (!lista) return;
+  if (!lista) return 0;
   k = (size_t)snprintf(corpo, sizeof corpo, "{\"slugs\":[");
   p = strchr(lista, '[');
   p = p ? p + 1 : NULL;
@@ -433,13 +598,20 @@ static void vincularTrakt(const char **cab) {
   }
   free(lista);
   snprintf(corpo + k, sizeof corpo - k, "]}");
-  if (!n) return;
+  if (!n) return 0;
   url("/v1/contatos/trakt");
-  { int st = 0;
+  { int st = 0, vinculados = 0;
     char *r = rede_postar_st(fioUrl, REC_TEMPO_REDE, cab, corpo, &st);
-    printf("[recomenda] %d seguidos do Trakt oferecidos (HTTP %d)\n", n, st);
+    // QUANTOS DELES JA USAM O SERVICO, que e a unica resposta que interessa a
+    // tela: "2 seguidos oferecidos" e trabalho do cliente, "0 vinculados" e o
+    // que a pessoa precisa ler para entender por que a lista continua vazia.
+    if (r && st >= 200 && st < 300)
+      vinculados = (int)js_num(r, r + strlen(r), "vinculados", 0.0);
+    printf("[recomenda] %d seguidos do Trakt oferecidos, %d vinculados (HTTP %d)\n",
+           n, vinculados, st);
     fflush(stdout);
-    free(r); }
+    free(r);
+    return vinculados; }
 }
 
 static void lerContatos(const char **cab) {
@@ -626,6 +798,88 @@ static void enviarFila(const char **cab) {
   SDL_UnlockMutex(mtx);
 }
 
+// OS TRES PEDIDOS DE CONTATO, num ciclo so: vincular por codigo, remover
+// alguem e revarrer os seguidos do Trakt.
+//
+// A LISTA E RELIDA DEPOIS DE CADA UM, e nao remendada aqui: o servidor e quem
+// sabe o nome de quem entrou e a origem dele, e uma copia montada de memoria
+// divergiria da lista de verdade na primeira diferenca de nome. Custa um GET
+// que so acontece quando alguem apertou OK numa tela de amigos.
+static void tratarContatos(const char **cab) {
+  char codigo[16], remover[96];
+  int querTrakt, mudou = 0;
+
+  SDL_LockMutex(mtx);
+  snprintf(codigo,  sizeof codigo,  "%s", vincCodigo);  vincCodigo[0] = 0;
+  snprintf(remover, sizeof remover, "%s", removerId);   removerId[0] = 0;
+  querTrakt = pedirTrakt; pedirTrakt = 0;
+  SDL_UnlockMutex(mtx);
+
+  if (codigo[0]) {
+    char corpo[64], nome[64] = "", *r;
+    int st = 0, estado;
+    snprintf(corpo, sizeof corpo, "{\"codigo\":\"%s\"}", codigo);
+    url("/v1/contatos");
+    r = rede_postar_st(fioUrl, REC_TEMPO_REDE, cab, corpo, &st);
+    if (st >= 200 && st < 300 && r) {
+      // "nome" so existe dentro de "contato" nesta resposta, entao a primeira
+      // ocorrencia e a certa.
+      js_texto(r, r + strlen(r), "nome", nome, sizeof nome);
+      estado = REC_VINC_OK;
+      mudou = 1;
+    } else if (st == 404) {
+      estado = REC_VINC_NAO_ACHOU;
+    } else if (st == 400) {
+      // O SERVIDOR DA 400 PARA DOIS CASOS e o corpo e o unico jeito de separar:
+      // "codigo invalido" (que recomenda_vincular ja impede de sair daqui) e
+      // "esse codigo e seu". Dizer "codigo nao encontrado" para quem digitou o
+      // proprio codigo manda a pessoa conferir uma coisa que esta certa.
+      estado = (r && strstr(r, "seu")) ? REC_VINC_EU_MESMO : REC_VINC_FALHA;
+    } else {
+      estado = REC_VINC_FALHA;
+    }
+    printf("[recomenda] vincular por codigo HTTP %d\n", st);
+    fflush(stdout);
+    free(r);
+    SDL_LockMutex(mtx);
+    vincEstado = estado;
+    snprintf(vincNome, sizeof vincNome, "%s", nome);
+    SDL_UnlockMutex(mtx);
+  }
+
+  if (remover[0]) {
+    char corpo[160], esc[120];
+    int st = 0;
+    jsonEsc(esc, sizeof esc, remover);
+    snprintf(corpo, sizeof corpo, "{\"id\":\"%s\"}", esc);
+    url("/v1/contatos/remover");
+    free(rede_postar_st(fioUrl, REC_TEMPO_REDE, cab, corpo, &st));
+    printf("[recomenda] remover contato HTTP %d\n", st);
+    fflush(stdout);
+    mudou = 1;
+  }
+
+  if (querTrakt) {
+    int achados = 0, estado;
+    if (!trakt_ativo()) {
+      // SEM TRAKT NAO HA O QUE PROCURAR, e isto nao e falha: quem entrou so com
+      // conta Nuvio nao tem lista de seguidos em lugar nenhum. A tela diz isso
+      // em vez de girar para sempre.
+      estado = REC_TRAKT_SEM_CONTA;
+    } else {
+      achados = vincularTrakt(cab);
+      estado = REC_TRAKT_PRONTO;
+      mudou = 1;
+    }
+    SDL_LockMutex(mtx);
+    traktEstado = estado;
+    traktAchados = achados;
+    SDL_UnlockMutex(mtx);
+  }
+
+  if (mudou) lerContatos(cab);
+}
+
 // POST /v1/rec/visto. O selo ja sumiu localmente quando a aba abriu; isto e so
 // para os OUTROS aparelhos da mesma pessoa concordarem. Falhar aqui nao
 // desfaz nada — a marca local e a que manda na tela.
@@ -660,7 +914,7 @@ static int ciclo(void) {
   SDL_UnlockMutex(mtx);
   if (!reg) {
     if (!registrar(cab)) return 1;   // servidor fora; tentar de novo no proximo
-    vincularTrakt(cab);
+    (void)vincularTrakt(cab);
     lerContatos(cab);
     contatosMs = SDL_GetTicks() + REC_CONTATOS_MS;
   } else if ((Sint32)(SDL_GetTicks() - contatosMs) >= 0) {
@@ -668,6 +922,7 @@ static int ciclo(void) {
     contatosMs = SDL_GetTicks() + REC_CONTATOS_MS;
   }
   enviarFila(cab);
+  tratarContatos(cab);
   confirmarVistas(cab);
   lerRecs(cab);
   return 1;

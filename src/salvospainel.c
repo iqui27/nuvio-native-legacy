@@ -16,6 +16,7 @@
 #include "salvospainel.h"
 #include "salvos.h"
 #include "recomenda.h"
+#include "recenviar.h"
 #include "catalogo.h"
 #include "gfx.h"
 #include "text.h"
@@ -233,7 +234,15 @@ static int temAbas(void) { return recomenda_ativo(); }
 // Quantas linhas a aba corrente desenha. Uma funcao so para as duas, senao a
 // rolagem e o desenho divergem na primeira mudanca.
 static int nVisiveis(void) {
-  return aba == SP_ABA_SOCIAL ? nRecs : nLinhas;
+  // A ABA SOCIAL TEM SEMPRE UMA LINHA A MAIS: "Adicionar um amigo".
+  //
+  // Vazia, ela era uma frase dizendo que nao havia nada e mais nada — o D-pad
+  // nao tinha para onde descer, e esse e exatamente o estado em que o dono
+  // ficou preso (1 pessoa registrada, 0 contatos no servidor). Cheia, a tela
+  // de amigos so seria alcancavel pelo menu de um cartaz — ou seja, para
+  // adicionar alguem era preciso escolher um filme primeiro.
+  if (aba == SP_ABA_SOCIAL) return nRecs + 1;
+  return nLinhas;
 }
 
 static float listaTopo(void) { return SP_LISTA_Y; }
@@ -347,6 +356,13 @@ void spainel_evento(const SDL_Event *e) {
       return;
     }
     if (aba == SP_ABA_SOCIAL) {
+      if (foco == nRecs) {
+        // A ULTIMA LINHA abre a tela de amigos. O painel FICA ABERTO atras: a
+        // modal e uma camada por cima dele e Voltar devolve o foco aqui, em vez
+        // de jogar a pessoa de volta na home.
+        recenviar_abrir_amigos();
+        return;
+      }
       if (foco >= 0 && foco < nRecs) {
         // A ACAO QUE IMPORTA E ABRIR O TITULO, e o contrato para isso ja
         // existe: o painel entrega o IMDb e app.c resolve. Ele nao conhece
@@ -646,17 +662,58 @@ static void desenhaAbas(float dx, float a) {
   }
 }
 
-static void desenhaSocialVazio(float dx, float a) {
-  float cx = SP_X + dx + SP_W * 0.5f;
-  TxtLinha t1 = txt_linha(TXT_CALLOUT, i18n("Nenhuma recomendação ainda"),
-                          240, 242, 248, 255);
-  TxtLinha t2 = txt_linha_corta(TXT_CAPTION,
-      i18n("Quando um amigo mandar um filme, ele aparece aqui."),
-      168, 172, 182, 255, SP_INTERNO);
-  gfx_icone((GfxRect){ cx - 30.0f, listaTopo() + 140.0f, 60.0f, 60.0f },
-            "mais", 0.55f, 0.57f, 0.62f, a);
-  txt_desenhar_alpha(t1, cx - t1.w * 0.5f, listaTopo() + 232.0f, a * 0.96f);
-  txt_desenhar_alpha(t2, cx - t2.w * 0.5f, listaTopo() + 278.0f, a * 0.85f);
+// O ESTADO VAZIO DIZ POR QUE ESTA VAZIO, e nao so que esta.
+//
+// A versao anterior dizia "quando um amigo mandar um filme, ele aparece aqui",
+// que e verdade e nao ajuda em nada: o dono tinha ZERO contatos e a tela nao
+// dava nenhuma pista de que faltava um passo — o vinculo do Trakt so alcanca
+// quem JA usa o servico, e em 15/09/2026 isso eram zero pessoas. Aqui a tela
+// diz a razao, mostra o codigo que ele precisa ditar e oferece a porta.
+// Devolve o y logo abaixo do texto, para a linha-botao nascer colada nele em
+// vez de boiar no fim do painel.
+static float desenhaSocialVazio(float dx, float a) {
+  float x = SP_X + dx + SP_PAD;
+  float y = listaTopo() + 24.0f;
+  const char *cod = recomenda_meu_codigo();
+  { TxtLinha t = txt_linha(TXT_CALLOUT, "Nenhuma recomendação ainda",
+                           240, 242, 248, 255);
+    txt_desenhar_alpha(t, x, y, a * 0.96f); y += t.h + 14.0f; }
+  // EM BLOCO: a coluna do painel tem 688px e a frase tem duas oracoes; numa
+  // linha so, a captura saiu terminando em "Amigos do Trakt entram..." — a
+  // metade que explica o motivo ficava de fora.
+  y += txt_bloco(TXT_CAPTION,
+      "Ninguém da sua lista está aqui ainda. Amigos do Trakt entram sozinhos só depois de instalarem o app.",
+      190, 194, 204, x, y, SP_INTERNO, 30.0f, a * 0.9f, 3) + 22.0f;
+  if (cod[0]) {
+    // O CODIGO TAMBEM AQUI, e nao so na tela de amigos: este e o painel que o
+    // dono abre com uma tecla, e ditar seis caracteres ao telefone e a unica
+    // acao que resolve uma lista vazia hoje.
+    TxtLinha r = txt_linha(TXT_CAPTION2, "Seu código", 160, 164, 175, 255);
+    TxtLinha c = txt_linha(TXT_TITULO2, cod, 246, 248, 255, 255);
+    txt_desenhar_alpha(r, x, y, a * 0.88f);
+    y += r.h + 6.0f;
+    txt_desenhar_alpha(c, x, y, a);
+    y += c.h + 20.0f;
+  }
+  { TxtLinha t = txt_linha_corta(TXT_CAPTION,
+        "Peça o código do seu amigo e adicione-o abaixo.",
+        168, 172, 182, 255, SP_INTERNO);
+    txt_desenhar_alpha(t, x, y, a * 0.85f);
+    y += t.h + 28.0f; }
+  return y;
+}
+
+// A linha-botao do estado vazio. Mesma pilula e mesmo foco invertido das
+// outras listas do app.
+static void desenhaSocialAcao(int i, float dx, float y, float a) {
+  GfxRect r = { SP_X + dx + SP_PAD, y, SP_INTERNO, 76.0f };
+  float f = i >= 0 && i < SP_MAX ? animFoco[i] : 0.0f;
+  float lum = anim_mistura(0.176f, 0.961f, f);
+  int cor = f >= 0.5f ? 17 : 240;
+  gfx_cor(r, 14.0f / r.h, lum, lum, lum, a);
+  { TxtLinha t = txt_linha(TXT_PLR_CORPO, "Adicionar um amigo",
+                           cor, cor, cor, 255);
+    txt_desenhar_alpha(t, r.x + 32.0f, y + (r.h - t.h) * 0.5f, a); }
 }
 
 static void desenhaVazio(float dx, float a) {
@@ -718,7 +775,11 @@ void spainel_desenhar(Uint32 agora) {
   }
 
   if (aba == SP_ABA_SOCIAL) {
-    if (nRecs == 0) { desenhaSocialVazio(x, a); gfx_sem_recorte(); return; }
+    if (nRecs == 0) {
+      desenhaSocialAcao(0, x, desenhaSocialVazio(x, a), a);
+      gfx_sem_recorte();
+      return;
+    }
     gfx_recorte(SP_X + x, listaTopo(), SP_W, SP_LISTA_BASE - listaTopo());
     y = listaTopo() - scrollY;
     for (i = 0; i < nRecs; i++) {
@@ -728,6 +789,10 @@ void spainel_desenhar(Uint32 agora) {
         desenhaRecLinha(i, x, y, a);
       y += SP_PASSO;
     }
+    // A linha de "Adicionar um amigo" fecha a lista, e nao um botao solto no
+    // rodape: ela rola com o resto e recebe foco como qualquer outra.
+    if (y >= listaTopo() - 76.0f && y <= SP_LISTA_BASE)
+      desenhaSocialAcao(nRecs, x, y, a);
     gfx_sem_recorte();
     return;
   }

@@ -111,6 +111,49 @@ void recomenda_envio_limpar(void);
 // Copia ate `max` contatos. Devolve quantos copiou.
 int  recomenda_contatos(RecContato *saida, int max);
 
+// --- QUEM SOU EU, E COMO UM AMIGO ME ACHA -----------------------------------
+//
+// O CODIGO DE PAREAMENTO E A UNICA PORTA PARA QUEM NAO USA TRAKT, e ele nao
+// existia no cliente: `POST /v1/eu` sempre devolveu `{id, nome, codigo}` e o
+// cliente lia so o `id`. Sem o codigo na mao, a tela de "adicionar amigo" nao
+// tem o que ditar no telefone e o servico fica preso aos seguidos do Trakt que
+// JA instalaram o app — que em 15/09/2026 eram zero.
+//
+// Ele tambem vai para o disco (`recomendacoes-eu.txt`), pela mesma razao que a
+// lista de recomendacoes vai: a tela abre no primeiro quadro, antes de o fio de
+// rede ter falado com o servidor, e "seu codigo: ......" piscando por 2 s le
+// como defeito.
+const char *recomenda_meu_codigo(void);
+
+// Enfileira `POST /v1/contatos` com o codigo de um amigo (6 chars a-z0-9; o que
+// nao for e descartado aqui, nao no servidor). 1 quando entrou na fila. O
+// resultado sai em recomenda_vinculo_estado().
+int  recomenda_vincular(const char *codigo);
+enum { REC_VINC_NADA = 0, REC_VINC_INDO, REC_VINC_OK,
+       REC_VINC_NAO_ACHOU,     // 404: ninguem tem esse codigo
+       REC_VINC_EU_MESMO,      // 400: e o meu proprio
+       REC_VINC_FALHA };
+int  recomenda_vinculo_estado(void);
+// Nome de quem acabou de virar contato. "" fora do estado REC_VINC_OK.
+const char *recomenda_vinculo_nome(void);
+void recomenda_vinculo_limpar(void);
+
+// Refaz a varredura dos seguidos do Trakt (`POST /v1/contatos/trakt`) fora do
+// arranque. Ela ja roda sozinha no primeiro ciclo; isto e o "procurar agora"
+// para quando um amigo instalou o app depois. 1 quando enfileirou.
+int  recomenda_procurar_trakt(void);
+enum { REC_TRAKT_NADA = 0, REC_TRAKT_INDO, REC_TRAKT_PRONTO,
+       REC_TRAKT_SEM_CONTA };   // nao ha Trakt ligado neste aparelho
+int  recomenda_trakt_estado(void);
+// Quantos viraram contato na ultima varredura. So faz sentido em REC_TRAKT_PRONTO.
+int  recomenda_trakt_achados(void);
+void recomenda_trakt_limpar(void);
+
+// Enfileira `POST /v1/contatos/remover`. Apaga o vinculo NOS DOIS SENTIDOS e
+// tambem as recomendacoes nao lidas que a pessoa mandou — e o "bloquear" deste
+// servico. 1 quando entrou na fila.
+int  recomenda_remover_contato(const char *id);
+
 // Frase do modelo `i` em portugues (a chave de i18n). NULL fora da faixa.
 const char *recomenda_modelo(int i);
 

@@ -19,6 +19,10 @@
 #include "salvospainel.h"
 #include "salvos.h"
 #include "ctxmenu.h"
+#include "recenviar.h"
+#include "teclado.h"
+#include "detail.h"
+#include "home.h"
 #include "catalogo.h"
 #include "dados.h"
 #include "ajustes.h"
@@ -49,9 +53,29 @@ static void teclaCtx(SDL_Keycode k) {
   ctx_evento(&e);
 }
 
+// A modal compartilhada de envio/amigos (recenviar.c). O menu de contexto a
+// abre e sai da frente, entao daqui em diante as teclas vao para ela.
+static void teclaEnv(SDL_Keycode k) {
+  SDL_Event e;
+  memset(&e, 0, sizeof e);
+  e.type = SDL_KEYDOWN;
+  e.key.keysym.sym = k;
+  recenviar_evento(&e);
+}
+
+static void teclaDet(SDL_Keycode k) {
+  SDL_Event e;
+  memset(&e, 0, sizeof e);
+  e.type = SDL_KEYDOWN;
+  e.key.keysym.sym = k;
+  detail_evento(&e);
+  e.type = SDL_KEYUP;
+  detail_evento(&e);
+}
+
 // `cartao` = 1 desenha o aviso de abertura em vez do painel. As duas telas
 // compartilham o laco porque a captura e a mesma; o que muda e quem desenha.
-enum { DES_PAINEL = 0, DES_CARTAO, DES_CTX };
+enum { DES_PAINEL = 0, DES_CARTAO, DES_CTX, DES_DETALHE };
 static int desenharCartao;
 
 static void captura(const char *nome, SDL_Window *win) {
@@ -66,9 +90,16 @@ static void captura(const char *nome, SDL_Window *win) {
     glClearColor(0.025f, 0.025f, 0.03f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     ctx_atualizar(1.0f / 60.0f, SDL_GetTicks());
-    if (desenharCartao == DES_CARTAO)     recomenda_desenhar(SDL_GetTicks());
-    else if (desenharCartao == DES_CTX)   ctx_desenhar(SDL_GetTicks());
-    else                                  spainel_desenhar(SDL_GetTicks());
+    recenviar_atualizar(1.0f / 60.0f, SDL_GetTicks());
+    if (desenharCartao == DES_DETALHE) {
+      detail_atualizar(1.0f / 60.0f, SDL_GetTicks());
+      detail_desenhar(SDL_GetTicks());
+    }
+    else if (desenharCartao == DES_CARTAO) recomenda_desenhar(SDL_GetTicks());
+    else if (desenharCartao == DES_CTX)    ctx_desenhar(SDL_GetTicks());
+    else                                   spainel_desenhar(SDL_GetTicks());
+    // A modal compartilhada fica POR CIMA de todas elas, como em app.c.
+    recenviar_desenhar(SDL_GetTicks());
     if (i == 149) {
       unsigned char *pix = (unsigned char *)malloc(1920 * 1080 * 4);
       SDL_Surface *s;
@@ -176,6 +207,9 @@ int main(int argc, char **argv) {
   assert(gfx_iniciar());
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64);
+  // Sem isto gfx_icone nao acha nada e os circulares saem VAZIOS — o botao
+  // novo sairia na foto como um disco liso e pareceria certo.
+  gfx_icones_dir("deploy/app/art");
 
   salvos_iniciar();
   recomenda_iniciar();
@@ -207,6 +241,13 @@ int main(int argc, char **argv) {
   tecla(SDLK_DOWN);
   tecla(SDLK_DOWN);
   snprintf(nome, sizeof nome, "%s-social-foco.bmp", saida);
+  captura(nome, w);
+
+  // O FIM DA LISTA, onde mora "Adicionar um amigo". Ela existe TAMBEM com a
+  // lista cheia: sem isto, a unica porta para a tela de amigos seria o menu de
+  // um cartaz, ou seja, escolher um filme para poder adicionar alguem.
+  tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-social-adicionar.bmp", saida);
   captura(nome, w);
 
   // --- AS DUAS TELAS DE ENVIO, no menu de contexto do cartaz ---------------
@@ -246,14 +287,96 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-ctx-opcoes.bmp", saida);
   captura(nome, w);
 
+  // OK em "Recomendar a um amigo" FECHA o menu e abre a modal compartilhada
+  // (recenviar.c). Daqui para baixo as teclas vao para ela — e e exatamente
+  // este o caminho que o botao circular da tela de detalhe tambem percorre.
   teclaCtx(SDLK_RETURN);
-  teclaCtx(SDLK_DOWN);
-  snprintf(nome, sizeof nome, "%s-ctx-contatos.bmp", saida);
+  printf("menu do cartaz aberto: %d; modal de envio aberta: %d\n",
+         ctx_aberto(), recenviar_aberto());
+  teclaEnv(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-envio-contatos.bmp", saida);
   captura(nome, w);
 
-  teclaCtx(SDLK_RETURN);
-  teclaCtx(SDLK_DOWN); teclaCtx(SDLK_DOWN);
-  snprintf(nome, sizeof nome, "%s-ctx-modelos.bmp", saida);
+  teclaEnv(SDLK_RETURN);
+  teclaEnv(SDLK_DOWN); teclaEnv(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-envio-modelos.bmp", saida);
+  captura(nome, w);
+
+  // --- ADICIONAR UM AMIGO ---------------------------------------------------
+  //
+  // O codigo e semeado DENTRO do modulo, como os contatos: ele so existe
+  // depois de /v1/eu responder, e a captura nao pode depender de servidor no
+  // ar. E o codigo de verdade do dono, que e o que ele vai conferir na foto.
+  snprintf(meuCodigo, sizeof meuCodigo, "%s", "uv8scv");
+  teclaEnv(SDLK_AC_BACK);                 // volta de "O que dizer?"
+  teclaEnv(SDLK_DOWN); teclaEnv(SDLK_DOWN);
+  teclaEnv(SDLK_DOWN); teclaEnv(SDLK_DOWN);   // ate "Adicionar um amigo"
+  teclaEnv(SDLK_RETURN);
+  snprintf(nome, sizeof nome, "%s-envio-amigos.bmp", saida);
+  captura(nome, w);
+
+  // O teclado de codigo, por cima da tela de amigos.
+  teclaEnv(SDLK_DOWN);                    // "Digitar o código de um amigo"
+  teclaEnv(SDLK_RETURN);
+  printf("teclado aberto: %d\n", teclado_aberto());
+  teclaEnv(SDLK_RETURN);                  // 'a'
+  teclaEnv(SDLK_RIGHT); teclaEnv(SDLK_RIGHT); teclaEnv(SDLK_RETURN);   // 'c'
+  teclaEnv(SDLK_DOWN); teclaEnv(SDLK_RETURN);                          // 'i'
+  snprintf(nome, sizeof nome, "%s-envio-teclado.bmp", saida);
+  captura(nome, w);
+  teclaEnv(SDLK_AC_BACK);                 // fecha o teclado
+
+  // A CONFIRMACAO DE REMOVER, que e a segunda pressao sobre um contato.
+  teclaEnv(SDLK_DOWN); teclaEnv(SDLK_RETURN);
+  snprintf(nome, sizeof nome, "%s-envio-remover.bmp", saida);
+  captura(nome, w);
+  teclaEnv(SDLK_AC_BACK);                 // desiste da remocao
+  teclaEnv(SDLK_AC_BACK);                 // volta para "Para quem?"
+
+  // --- O ESTADO VAZIO, que e o estado REAL do dono hoje --------------------
+  //
+  // 1 pessoa registrada e 0 contatos no servidor: a lista esta vazia porque
+  // ESTA vazia, e a tela tem de dizer por que e o que fazer. Sem esta captura
+  // a unica prova da tela mais importante do recurso seria o codigo.
+  nContatos = 0;
+  snprintf(nome, sizeof nome, "%s-envio-vazio.bmp", saida);
+  captura(nome, w);
+  teclaEnv(SDLK_AC_BACK);
+  printf("modal fechada: %d\n", !recenviar_aberto());
+
+  // --- A ABA SOCIAL VAZIA ---------------------------------------------------
+  //
+  // Mesma razao: quem abre o painel e nao recebeu nada tem de sair de la
+  // sabendo por que, e com o codigo na tela para ditar.
+  desenharCartao = DES_PAINEL;
+  nItens = 0;                 // a lista local some; o painel reconstroi sozinho
+  // FECHA ANTES DE ABRIR: spainel_abrir sai cedo com o painel ja aberto (ele
+  // esta de pe desde a captura de "salvos"), e sem isto o caminho de D-pad
+  // abaixo comeca de um foco herdado — a primeira versao desta captura saiu com
+  // a linha "Adicionar um amigo" SEM foco por causa disso.
+  spainel_fechar();
+  spainel_abrir();
+  tecla(SDLK_UP); tecla(SDLK_RIGHT);
+  tecla(SDLK_DOWN);           // foco na linha "Adicionar um amigo"
+  snprintf(nome, sizeof nome, "%s-social-vazio.bmp", saida);
+  captura(nome, w);
+  spainel_fechar();
+
+  // --- O BOTAO NA TELA DE DETALHE -------------------------------------------
+  //
+  // O QUINTO CIRCULAR, focado. Quatro DIREITAS a partir do primario num FILME
+  // sem progresso: reproduzir, salvar, assistido, fontes, recomendar.
+  { HomeItem it;
+    memset(&it, 0, sizeof it);
+    it.indice = 0;
+    it.rect = (GfxRect){ 760.0f, 340.0f, 248.0f, 372.0f };
+    it.titulo = "Um Sonho de Liberdade";
+    it.arte = "deploy/app/art/00.jpg";
+    detail_abrir(&it); }
+  desenharCartao = DES_DETALHE;
+  teclaDet(SDLK_RIGHT); teclaDet(SDLK_RIGHT);
+  teclaDet(SDLK_RIGHT); teclaDet(SDLK_RIGHT);
+  snprintf(nome, sizeof nome, "%s-detalhe-botao.bmp", saida);
   captura(nome, w);
 
   SDL_GL_DeleteContext(gl);

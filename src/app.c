@@ -37,9 +37,11 @@
 #include "perfil.h"
 #include "salvos.h"
 #include "recomenda.h"
+#include "recenviar.h"
 #include "salvospainel.h"
 #include "salvosintro.h"
 #include "novidades.h"
+#include "recintro.h"
 #include "atualizacao.h"
 #include "pipintro.h"
 #include "social.h"
@@ -386,8 +388,15 @@ void app_evento(const SDL_Event *e) {
   // esta no ar — o Voltar aqui escolhe "fechar o video", nao so fecha cartao.
   if (pipintro_aberto()) { pipintro_evento(e); return; }
   if (novidades_aberto()) { novidades_evento(e); return; }
+  // O explicador do Social e da mesma familia, e come esquerda/direita:
+  // deixar a tecla vazar para a home moveria o foco dela debaixo do cartao.
+  if (recintro_aberto()) { recintro_evento(e); return; }
   if (atualizacao_aberta()) { atualizacao_evento(e); return; }
   if (recomenda_aberta()) { recomenda_evento(e); return; }
+  // A MODAL DE RECOMENDAR fica acima do detalhe, do menu do cartaz e do
+  // painel da tecla AZUL — as tres portas que a abrem. Abaixo do cartao de
+  // aviso, que e uma pergunta sobre outra recomendacao.
+  if (recenviar_aberto()) { recenviar_evento(e); return; }
 
   // A folha de fontes fica acima de tudo: ela e uma pergunta, e enquanto ela
   // esta em pe nada mais deve responder ao D-pad.
@@ -655,6 +664,14 @@ void app_atualizar(float dt, Uint32 agora) {
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
         !pipintro_aberto() && !atualizacao_aberta())
       recomenda_mostrar_se_houver();
+    // EXPLICADOR DAS TELAS SOCIAIS: mesmas guardas de todos os outros, mais
+    // a do cartao de recomendacao recebida — dois cartoes ao mesmo tempo
+    // seria um por cima do outro. Ele proprio nao abre num pacote sem
+    // NUVIO_REC_URL (recomenda_ativo), e por isso nao ha guarda aqui: um
+    // anuncio de recurso que nao esta no pacote e pior que silencio.
+    if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
+        !pipintro_aberto() && !atualizacao_aberta() && !recomenda_aberta())
+      recintro_primeira_vez();
   }
 
   // E o ciclo automatico — nunca com o player aberto: rajada de HTTP no meio
@@ -1209,8 +1226,10 @@ void app_atualizar(float dt, Uint32 agora) {
   perfil_atualizar(dt, agora);
   spainel_atualizar(dt, agora);
   recomenda_atualizar(dt, agora);
+  recenviar_atualizar(dt, agora);
   sintro_atualizar(dt, agora);
   novidades_atualizar(dt, agora);
+  recintro_atualizar(dt, agora);
   atualizacao_atualizar(dt, agora);
   pipintro_atualizar(dt, agora);
   if(tela==TELA_SOCIAL) social_atualizar(dt, agora);
@@ -1335,7 +1354,9 @@ void app_desenhar(Uint32 agora) {
   player_mini_desenhar(agora);
   if (!registro_aberto()) sintro_desenhar(agora);
   if (!registro_aberto()) novidades_desenhar(agora);
+  if (!registro_aberto()) recintro_desenhar(agora);
   if (!registro_aberto()) atualizacao_desenhar(agora);
+  if (!registro_aberto()) recenviar_desenhar(agora);
   if (!registro_aberto()) recomenda_desenhar(agora);
   if (!registro_aberto()) pipintro_desenhar(agora);
   registro_desenhar();
