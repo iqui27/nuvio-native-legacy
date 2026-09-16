@@ -47,8 +47,25 @@ int main(int argc, char **argv) {
       CONFERE(strstr(notas, "**") == NULL, "sem negrito markdown");
       CONFERE(strstr(notas, "Notes") == NULL, "secao Notes cortada");
       CONFERE(strstr(notas, ".wgt") == NULL, "rodape de instalacao cortado");
+      // O ANEXO CERTO ENTRE DOIS. A release leva .wgt E .ipk, e o .wgt vem
+      // PRIMEIRO no JSON — que e exatamente o caso em que procurar a primeira
+      // ocorrencia da chave (o que textoJson faz) baixaria o pacote do Samsung
+      // para instalar numa LG. Quem decide e o sufixo.
+      { char url[512];
+        CONFERE(acharIpk(j, url, sizeof url), "achou um .ipk nos assets");
+        CONFERE(strstr(url, ".ipk") != NULL && strstr(url, ".wgt") == NULL,
+                "e o .ipk, nao o .wgt: [%s]", url);
+        CONFERE(!strncmp(url, "https://", 8), "url absoluta: [%s]", url); }
       free(j);
     } }
+
+  // Sem anexo nenhum nao ha o que instalar, e isso NAO e erro: release de
+  // codigo-fonte apenas, ou alvo que nao instala.
+  { char url[64];
+    CONFERE(!acharIpk("{\"assets\":[]}", url, sizeof url), "sem anexo devolve 0");
+    CONFERE(url[0] == 0, "e a url fica vazia");
+    CONFERE(!acharIpk("{\"assets\":[{\"browser_download_url\":\"https://x/y.wgt\"}]}",
+                      url, sizeof url), "so .wgt tambem devolve 0"); }
 
   // JSON com escapes variados
   { char d[64];

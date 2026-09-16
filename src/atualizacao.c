@@ -35,6 +35,8 @@
 #define AT_URL   "https://api.github.com/repos/iqui27/nuvio-native-legacy/releases/latest"
 #define AT_ARQ   "atualizacao-vista.txt"
 #define AT_PAGINA "https://github.com/iqui27/nuvio-native-legacy/releases"
+#define AT_APPID  "space.nuvio.native.legacy"
+#define AT_IPK_TMP "/tmp/nuvio-atualizacao.ipk"
 
 #define AT_W        1240.0f
 #define AT_H         760.0f
@@ -52,6 +54,25 @@ static int disparado, pronto, aberto, mostrado;
 static float entrada;
 static char tagNova[32];          // "1.0.54", vazio se nao ha nada mais novo
 static char notas[4096];          // texto ja limpo, linhas separadas por \n
+// URL do .ipk da release. Vazia quando a release nao anexou um (ou quando este
+// alvo nao sabe instalar, e ai nem se procura).
+static char ipkUrl[512];
+
+// INSTALAR DE DENTRO DO APP so existe no webOS, e a razao e de plataforma:
+// aqui o app roda como ROOT (webosbrew) e alcanca o luna-send, que e quem fala
+// com o appInstallService. No Tizen o .wgt vive num runtime de navegador
+// isolado, sem API para instalar widget — la o cartao continua sendo so o
+// aviso. No Mac nao ha o que instalar.
+#if !defined(__EMSCRIPTEN__) && !defined(__APPLE__)
+#define AT_INSTALA 1
+#else
+#define AT_INSTALA 0
+#endif
+
+enum { AT_PARADO = 0, AT_BAIXANDO, AT_INSTALANDO, AT_FALHOU };
+static int estado;
+static int foco;                  // 0 = "Atualizar agora", 1 = "Depois"
+static SDL_Thread *fioInst;
 
 const char *atualizacao_nova(void) { return tagNova; }
 int atualizacao_aberta(void) { return aberto; }
@@ -98,6 +119,31 @@ static int textoJson(const char *corpo, const char *chave, char *dst, size_t tam
   }
   dst[k] = 0;
   return 1;
+}
+
+// O .ipk DENTRO DE assets[]. textoJson acha a PRIMEIRA ocorrencia de uma chave
+// e serve para "tag_name"/"body", que sao da raiz; aqui a chave se repete uma
+// vez por anexo (o .ipk e o .wgt) e o que decide e o SUFIXO. Por isso o laco:
+// varre todas as ocorrencias e fica com a que termina em ".ipk".
+static int acharIpk(const char *corpo, char *dst, size_t tam) {
+  const char *p = corpo;
+  const char *chave = "\"browser_download_url\":";
+  dst[0] = 0;
+  while ((p = strstr(p, chave)) != NULL) {
+    const char *ini;
+    size_t n;
+    p += strlen(chave);
+    while (*p == ' ') p++;
+    if (*p != '"') continue;
+    ini = ++p;
+    while (*p && *p != '"') p++;
+    n = (size_t)(p - ini);
+    if (n > 4 && n < tam && !strncmp(ini + n - 4, ".ipk", 4)) {
+      memcpy(dst, ini, n); dst[n] = 0;
+      return 1;
+    }
+  }
+  return 0;
 }
 
 // Markdown das notas -> linhas de tela. Devolve em `dst`, linhas por \n.
@@ -153,6 +199,7 @@ static int fioConsulta(void *arg) {
   else {
     textoJson(corpo, "tag_name", tag, sizeof tag);
     textoJson(corpo, "body", body, sizeof body);
+    if (AT_INSTALA) acharIpk(corpo, ipkUrl, sizeof ipkUrl);
     free(corpo);
   }
   SDL_LockMutex(mtx);
@@ -169,6 +216,61 @@ static int fioConsulta(void *arg) {
   pronto = 1;
   SDL_UnlockMutex(mtx);
   return 0;
+}
+
+// BAIXA O .ipk E MANDA O SISTEMA INSTALAR.
+//
+// O comando e o mesmo que funciona por SSH nesta TV, com as tres armadilhas que
+// custaram tempo quando foi medido de fora:
+//   - SEM `-i` (subscribe) o luna-send retorna 0 e NAO instala nada, calado;
+//   - em primeiro plano ele nao imprime nada, entao vai com nohup e redirect;
+//   - o proprio instalador MATA este app no meio. Por isso o comando e
+//     desacoplado (`&`): ele sobrevive a nossa morte, que e o caso normal e
+//     nao um erro.
+//
+// Guardamos o ipk em /tmp e nao na pasta de dados: sao ~36 MB que nao devem
+// sobreviver a instalacao nem entrar em backup de perfil.
+static int fioInstalar(void *arg) {
+  char *bin;
+  long n = 0;
+  FILE *f;
+  char cmd[900];
+  (void)arg;
+  bin = rede_baixar_bin(ipkUrl, 180, &n);
+  if (!bin || n < 1024) {
+    free(bin);
+    SDL_LockMutex(mtx); estado = AT_FALHOU; SDL_UnlockMutex(mtx);
+    printf("[atualizacao] download do ipk falhou\n"); fflush(stdout);
+    return 0;
+  }
+  f = fopen(AT_IPK_TMP, "wb");
+  if (!f || fwrite(bin, 1, (size_t)n, f) != (size_t)n) {
+    if (f) fclose(f);
+    free(bin);
+    SDL_LockMutex(mtx); estado = AT_FALHOU; SDL_UnlockMutex(mtx);
+    printf("[atualizacao] nao consegui gravar %s\n", AT_IPK_TMP); fflush(stdout);
+    return 0;
+  }
+  fclose(f);
+  free(bin);
+  printf("[atualizacao] ipk baixado: %ld bytes; chamando o instalador\n", n);
+  fflush(stdout);
+  SDL_LockMutex(mtx); estado = AT_INSTALANDO; SDL_UnlockMutex(mtx);
+  snprintf(cmd, sizeof cmd,
+    "nohup luna-send -i -f luna://com.webos.appInstallService/dev/install "
+    "'{\"id\":\"%s\",\"ipkUrl\":\"%s\",\"subscribe\":true}' "
+    "> /tmp/nuvio-instalar.log 2>&1 &", AT_APPID, AT_IPK_TMP);
+  if (system(cmd) != 0) {
+    SDL_LockMutex(mtx); estado = AT_FALHOU; SDL_UnlockMutex(mtx);
+    printf("[atualizacao] o instalador nao aceitou o pedido\n"); fflush(stdout);
+  }
+  return 0;
+}
+
+// 1 quando existe o que instalar: alvo que sabe, release com .ipk anexado e
+// nenhuma instalacao em andamento.
+static int podeInstalar(void) {
+  return AT_INSTALA && ipkUrl[0] && estado == AT_PARADO;
 }
 
 void atualizacao_verificar(void) {
@@ -196,17 +298,39 @@ void atualizacao_mostrar_se_houver(void) {
   aberto = 1;
 }
 
+// Fecha e ANOTA a versao vista: o cartao e uma vez por tag.
+static void fechar(void) {
+  char s[40];
+  aberto = 0;
+  snprintf(s, sizeof s, "%s\n", tagNova);
+  dados_gravar(AT_ARQ, s);
+}
+
 void atualizacao_evento(const SDL_Event *e) {
   SDL_Keycode k;
   if (!aberto || e->type != SDL_KEYDOWN) return;
   k = e->key.keysym.sym;
+  // VOLTAR sempre fecha, inclusive durante o download: quem desistiu no meio
+  // nao fica preso olhando uma barra. O fio termina sozinho e, se chegar a
+  // instalar, o sistema mata o app de qualquer jeito.
+  if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
+      e->key.keysym.scancode == NV_SCANCODE_BACK) { fechar(); return; }
+  if (estado == AT_BAIXANDO || estado == AT_INSTALANDO) return;
+  if (podeInstalar() && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
+    foco = k == SDLK_LEFT ? 0 : 1;
+    return;
+  }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE ||
-      k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
-      k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK) {
-    char s[40];
-    aberto = 0;
-    snprintf(s, sizeof s, "%s\n", tagNova);
-    dados_gravar(AT_ARQ, s);
+      k == SDLK_DELETE) {
+    if (podeInstalar() && foco == 0) {
+      SDL_Thread *t;
+      SDL_LockMutex(mtx); estado = AT_BAIXANDO; SDL_UnlockMutex(mtx);
+      t = SDL_CreateThread(fioInstalar, "nv-instalar", NULL);
+      if (t) { SDL_DetachThread(t); fioInst = t; }
+      else { SDL_LockMutex(mtx); estado = AT_FALHOU; SDL_UnlockMutex(mtx); }
+      return;
+    }
+    fechar();
   }
 }
 
@@ -262,11 +386,47 @@ void atualizacao_desenhar(Uint32 agora) {
     }
   }
 
-  // rodape: onde baixar, e como fechar
-  y = AT_Y + dy + AT_H - 88.0f;
-  { TxtLinha t = txt_linha(TXT_CAPTION, AT_PAGINA, 176, 180, 190, 255);
-    txt_desenhar_alpha(t, x, y, a * 0.9f); }
-  { TxtLinha t = txt_linha(TXT_CAPTION2, i18n("OK para fechar"), 150, 154, 165, 255);
-    txt_desenhar_alpha(t, AT_X + AT_W - AT_PAD - t.w, y + 4.0f, a * 0.85f); }
+  // RODAPE. Onde ha como instalar, ele vira dois botoes; onde nao ha, continua
+  // sendo o endereco da pagina, que e a unica coisa util a dizer.
+  y = AT_Y + dy + AT_H - 96.0f;
+  if (estado == AT_BAIXANDO || estado == AT_INSTALANDO) {
+    const char *msg = estado == AT_BAIXANDO
+      ? i18n("Baixando a atualização...")
+      // O QUE ACONTECE A SEGUIR, dito antes de acontecer: o instalador do
+      // sistema fecha este app. Sem esta linha a TV apaga sozinha e parece
+      // travamento.
+      : i18n("Instalando. O app vai fechar; abra de novo pelo launcher.");
+    TxtLinha t = txt_linha(TXT_CALLOUT, msg, 232, 236, 246, 255);
+    txt_desenhar_alpha(t, x, y + 8.0f, a);
+  } else if (podeInstalar()) {
+    const char *rot[2];
+    float bx = x;
+    int i;
+    rot[0] = i18n("Atualizar agora");
+    rot[1] = i18n("Depois");
+    for (i = 0; i < 2; i++) {
+      int fc = (i == foco);
+      // Pilula clara com texto escuro no foco, como o menu de cartaz e a folha
+      // de envio — e o vocabulario dos modais deste app, e o cartao e um.
+      int cor = fc ? 17 : 236;
+      TxtLinha t = txt_linha(TXT_CALLOUT, rot[i], cor, cor, cor, 255);
+      GfxRect b = { bx, y, t.w + 64.0f, 64.0f };
+      float lum = fc ? 0.961f : 0.176f;
+      gfx_cor(b, NV_RAIO_PILL, lum, lum, lum, a);
+      txt_desenhar_alpha(t, bx + 32.0f, y + (64.0f - t.h) * 0.5f, a);
+      bx += b.w + 16.0f;
+    }
+  } else {
+    TxtLinha t = txt_linha(TXT_CAPTION,
+        estado == AT_FALHOU ? i18n("Não foi possível atualizar por aqui.") : AT_PAGINA,
+        176, 180, 190, 255);
+    txt_desenhar_alpha(t, x, y + 16.0f, a * 0.9f);
+  }
+  if (estado != AT_BAIXANDO && estado != AT_INSTALANDO) {
+    TxtLinha t = txt_linha(TXT_CAPTION2,
+        podeInstalar() ? i18n("Voltar para fechar") : i18n("OK para fechar"),
+        150, 154, 165, 255);
+    txt_desenhar_alpha(t, AT_X + AT_W - AT_PAD - t.w, y + 24.0f, a * 0.85f);
+  }
   gfx_sem_recorte();
 }
