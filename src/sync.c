@@ -139,6 +139,14 @@ static void puxarAddons(void) {
   free(r);
   nAddonsRem = k;
   temAddonsRem = 1;
+  // REGISTRA O PERFIL PEDIDO, e nao so o resultado. O defeito que levou a esta
+  // linha (perfil secundario com "0 addons", relato do Mane155) era um pedido
+  // BEM FORMADO para o perfil errado: o servidor responde 200 com array vazio,
+  // sem erro nenhum, e nao havia no log uma unica pista de qual profile_id
+  // tinha sido consultado. Zero linhas com perfil != ativo e a assinatura
+  // exata dessa classe de erro.
+  printf("[sync] addons: perfil %d (ativo %d) -> %d linha(s)\n",
+         perfis_ativo_addons(), perfis_ativo(), k);
 }
 
 static void empurrarAddons(void) {
