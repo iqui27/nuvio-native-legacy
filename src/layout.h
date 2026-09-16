@@ -421,8 +421,10 @@
 // devolve nao e a mesma coisa: ela varia com os acentos da linha, entao um
 // paragrafo fica com espacamento irregular linha a linha.
 #define NV_LD_TITULO1    96
+#define NV_LD_TITULO2    72
 #define NV_LD_TITULO3    56
 #define NV_LD_HEADLINE   46
+#define NV_LD_CALLOUT    36
 #define NV_LD_BODY       32
 #define NV_LD_CAPTION    29
 #define NV_LD_CAPTION2   30
