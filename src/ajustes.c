@@ -1214,7 +1214,7 @@ static const char *textoLeitura(int op) {
     return buf;
   }
   int itens = 0, pend = 0; long bytes = 0;
-  tex_estatisticas(&itens, &pend, &bytes);
+  tex_estatisticas(&itens, &pend, &bytes, NULL, NULL);
   snprintf(buf, sizeof buf, i18n("%.1f MB em %d imagens"), bytes / 1048576.0, itens);
   return buf;
 }

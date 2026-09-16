@@ -17,6 +17,15 @@
 #define NV_TEX_STALE_FRAMES 8
 #define NV_TEX_STALE_MS 200
 #define NV_TEX_UPLOAD_BUDGET_MS 4.0
+// Teto de decodificacao das artes de CARD; a nota que justifica o 640 esta
+// mais abaixo, junto do teto do heroi.
+#define NV_TEX_LARG_MAX 640
+// Teto do heroi; a nota com as medidas (LG 1920, Tizen 1280) esta mais abaixo.
+#ifdef __EMSCRIPTEN__
+#define NV_TEX_HERO_LARG_MAX 1280
+#else
+#define NV_TEX_HERO_LARG_MAX 1920
+#endif
 
 // FALHOU e um estado de verdade, nao a ausencia de um. Sem ele, um caminho que
 // nao decodifica volta a VAZIO, o desenho pede de novo no quadro seguinte e o
@@ -65,6 +74,9 @@ typedef struct {
   // dia" — senão, depois de algumas telas, metade da fila seria urgente e a
   // preferência voltaria a ser FIFO entre elas.
   int urgente;
+  // ARTE DE PASSAGEM: quadro de sequencia animada, que vale por 67 ms e nunca
+  // mais. Ver tex_obter_passageira e a nota em despejar().
+  int passageiro;
 } Item;
 
 #define NV_TEX_FIOS 2
@@ -253,7 +265,48 @@ static unsigned long hashCaminho(const char *s) {
 
 int    tex_n_busca = 0;
 double tex_ms_busca = 0.0;
+int    tex_despejos = 0;
+int    tex_despejos_quentes = 0;
 static double texFreqMs = 0.0;
+
+// QUENTE = pedido neste quadro ou no anterior, ou seja, ESTA NA TELA. E a
+// unica arte que despejar produz sintoma visivel: ela some, o desenho pede de
+// novo no quadro seguinte, o decode refaz, ela volta — e o despejo escolhe
+// outra da mesma tela. Esse ciclo e o "pisca" — cada volta custa 2 quadros de
+// placeholder cinza e ~30 ms de CPU, e nunca termina enquanto o conjunto na
+// tela nao couber.
+//
+// Chamado com o mutex tomado. quadroAtual avanca em tex_novo_quadro, que roda
+// DEPOIS de tex_bombear e ANTES de app_desenhar: dentro do bombear o quadro
+// que acabou de ser desenhado ainda e `quadroAtual`, dentro do desenho ele e
+// `quadroAtual - 1`. Aceitar os dois cobre as duas fases.
+static int quente(const Item *it) {
+  return it->ultimoQuadro && quadroAtual - it->ultimoQuadro <= 1;
+}
+
+// DESFAZ UM PEDIDO EM VOO sem perder o que ja havia.
+//
+// Um item PENDENTE pode ter `tex` valida: e a PROMOCAO (poster pedido depois
+// como hero, ou card que abriu e pediu largura maior), em que o slot volta
+// para a fila mantendo a textura pequena. Os fios de rede e decode, ao
+// desistirem de um pedido obsoleto, escreviam VAZIO e zeravam o caminho — e a
+// textura antiga ficava orfa na GPU, com os bytes dela ainda somados em
+// `bytesUsados`. Nem glDeleteTextures resolveria: nao ha contexto GL nos fios.
+//
+// Se ha textura, o item VOLTA A SER PRONTO com ela — a promocao so nao
+// aconteceu, e a versao pequena continua servindo. `limite` fica no valor
+// promovido de proposito: com `w < limite` o proximo pedido cai em
+// `fonteMenor` e nao refaz a promocao a cada quadro.
+static void desistir(int idx) {
+  if (itens[idx].tex) {
+    itens[idx].estado = PRONTO;
+    itens[idx].urgente = 0;
+    return;
+  }
+  itens[idx].estado = VAZIO;
+  itens[idx].caminho[0] = 0;
+}
+
 static int pedidoObsoleto(const Item *it) {
   Uint32 agora;
   if (!it->ultimoPedido || !it->ultimoQuadro) return 0;
@@ -277,8 +330,9 @@ void tex_novo_quadro(void) {
     if (itens[i].estado == DECODIFICADO && pedidoObsoleto(&itens[i])) {
       SDL_FreeSurface(itens[i].sup);
       itens[i].sup = NULL;
-      itens[i].estado = VAZIO;
-      itens[i].caminho[0] = 0;
+      // Promocao decodificada e nunca desenhada: fica a textura pequena, nao
+      // um slot VAZIO com textura orfa (ver desistir).
+      desistir(i);
     }
   }
   SDL_UnlockMutex(mtx);
@@ -347,6 +401,7 @@ static int emVoo(void) {
   return n;
 }
 
+static int despejar(int forcar);
 static int slotLivre(void) {
   if (emVoo() >= nMax / 3) return -1;   // pede de novo no proximo quadro
   for (int i = 0; i < nMax; i++) if (itens[i].estado == VAZIO) return i;
@@ -358,36 +413,89 @@ static int slotLivre(void) {
       itens[i].lum = -1;
       return i;
     }
+  return despejar(1);
+}
+
+// VITIMA LRU ENTRE OS PRONTOS, FRIOS PRIMEIRO. Devolve o slot ja limpo, ou -1.
+//
+// O LRU cru escolhia o menor `uso`, e com o cache no teto isso INCLUI arte que
+// esta na tela: os cards sao desenhados em ordem, entao o primeiro card da
+// primeira fileira e sempre o de menor `uso` entre os visiveis. MEDIDO na LG
+// (log de 16/09): texturas=152 a 95.9 MB de 96 em quase toda amostra de 3 s —
+// o cache VIVE no teto, e cada arte que entra despeja uma que esta la.
+//
+// `forcar` e so do slotLivre: sem vaga nenhuma, despejar um quente e menos
+// ruim que nunca carregar o card novo. podar() nunca forca — estourar o
+// orcamento por um quadro custa nada; despejar a tela custa o pisca.
+//
+// HEROIS FRIOS ALEM DESTES SAEM ANTES DE QUALQUER CARTAZ.
+//
+// MEDIDO na LG (16/09): tex-despejos=46 em 3 s andando por UMA fileira, com o
+// cache no teto. Cada card que ganha foco pede a arte de fundo em 1920 —
+// 8,3 MB — e para ela caber saem doze cartazes de 660 KB. Doze cards de foco
+// e o cache inteiro deu a volta: a fileira de cima ja nao esta la, e voltar a
+// ela e ve-la carregar de novo. Os herois, por sua vez, so servem enquanto o
+// foco esta neles: o de tres cards atras nunca mais vai ser desenhado.
+//
+// Dois e nao um: o hero atual e o anterior, que o crossfade ainda desenha.
+//
+// "Heroi" aqui e o que foi pedido com o teto de tela cheia — tex_obter_hero
+// e o tex_obter_larg de largura inteira, que e onde o cap satura. Nao e a
+// linha do `urgente` (cap > 640): no Mac retina um card de 410 ja passa dela,
+// e a previa despejaria cartazes que a TV nao despeja.
+//
+// O QUADRO DE SEQUENCIA e da mesma familia, pelo motivo oposto: pequeno, mas
+// sao NOVENTA por volta. O cartaz de colecao em foco pede um quadro novo a
+// cada 67 ms (home.c), e cada um vale por esse instante. MEDIDO na LG com o
+// foco parado num deles: tex-despejos=45 a cada 3 s com a tela IGUAL — 15
+// texturas por segundo entrando, e o LRU comum jogando fora, para cada uma,
+// o cartaz mais antigo das fileiras de cima. Um minuto parado ali e o cache
+// inteiro trocado por quadros de animacao; subir uma fileira e ve-la
+// carregar do zero. Quem pede um quadro diz que ele e de passagem
+// (tex_obter_passageira) e ele sai antes de qualquer cartaz.
+//
+// Tres e nao dois, por causa do quadro PRE-BUSCADO: home.c pede o proximo
+// junto com o atual, e ele fica frio (pedido uma vez, desenhado dali a 4
+// quadros) ate a vez dele. Com o hero anterior do crossfade e o quadro que
+// acabou de sair, sao tres frios legitimos ao mesmo tempo.
+#define NV_TEX_PASSAGEIROS_FRIOS 3
+static int ehHero(const Item *it) { return it->limite >= NV_TEX_HERO_LARG_MAX; }
+static int dePassagem(const Item *it) { return it->passageiro || ehHero(it); }
+
+static int despejar(int forcar) {
   int melhor = -1; unsigned long menor = ~0UL;
+  int frio = 0;
+  { int nPf = 0, lru = -1; unsigned long m = ~0UL;
+    for (int i = 0; i < nMax; i++) {
+      if (itens[i].estado != PRONTO || quente(&itens[i]) || !dePassagem(&itens[i])) continue;
+      nPf++;
+      if (itens[i].uso < m) { m = itens[i].uso; lru = i; }
+    }
+    if (nPf > NV_TEX_PASSAGEIROS_FRIOS) { melhor = lru; frio = 1; goto sai; } }
   for (int i = 0; i < nMax; i++) {
     if (itens[i].estado != PRONTO) continue;
+    if (quente(&itens[i])) { if (frio) continue; }
+    else if (!frio) { frio = 1; melhor = -1; menor = ~0UL; }
     if (itens[i].uso < menor) { menor = itens[i].uso; melhor = i; }
   }
-  if (melhor >= 0) {
-    if (itens[melhor].tex) { gfx_tex_esquecer(itens[melhor].tex); glDeleteTextures(1, &itens[melhor].tex); }
-    bytesUsados -= bytesTextura(itens[melhor].w, itens[melhor].h);
-    if (bytesUsados < 0) bytesUsados = 0;
-    memset(&itens[melhor], 0, sizeof(Item));
-    itens[melhor].lum = -1;   // 0 seria "preto"; o desconhecido e -1
-  }
+sai:
+  if (melhor < 0) return -1;
+  if (!frio && !forcar) return -1;
+  tex_despejos++;
+  if (!frio) tex_despejos_quentes++;
+  if (itens[melhor].tex) { gfx_tex_esquecer(itens[melhor].tex); glDeleteTextures(1, &itens[melhor].tex); }
+  bytesUsados -= bytesTextura(itens[melhor].w, itens[melhor].h);
+  if (bytesUsados < 0) bytesUsados = 0;
+  memset(&itens[melhor], 0, sizeof(Item));
+  itens[melhor].lum = -1;   // 0 seria "preto"; o desconhecido e -1
   return melhor;
 }
 
 // Despeja os menos usados ate caber no orcamento. Chamada com o mutex travado.
+// Para quando so resta arte quente ou em voo: ver despejar().
 static void podar(void) {
-  while (bytesUsados > orcamento) {
-    int melhor = -1; unsigned long menor = ~0UL;
-    for (int i = 0; i < nMax; i++) {
-      if (itens[i].estado != PRONTO) continue;
-      if (itens[i].uso < menor) { menor = itens[i].uso; melhor = i; }
-    }
-    if (melhor < 0) break;          // so restou o que esta em voo
-    if (itens[melhor].tex) { gfx_tex_esquecer(itens[melhor].tex); glDeleteTextures(1, &itens[melhor].tex); }
-    bytesUsados -= bytesTextura(itens[melhor].w, itens[melhor].h);
-    if (bytesUsados < 0) bytesUsados = 0;
-    memset(&itens[melhor], 0, sizeof(Item));
-    itens[melhor].lum = -1;   // 0 seria "preto"; o desconhecido e -1
-  }
+  while (bytesUsados > orcamento)
+    if (despejar(0) < 0) break;
 }
 
 // Diretorio onde as imagens baixadas ficam. Uma vez baixada, a imagem vale
@@ -415,8 +523,7 @@ static void podar(void) {
 //
 // 640 cobre a maior arte de card sem sobra e divide o custo por 2,25: o mesmo
 // poster passa a custar 2,2 MB. O hero continua com teto proprio de 1920, pela
-// promocao.
-#define NV_TEX_LARG_MAX 640
+// promocao. (O #define esta no topo do arquivo: despejar() precisa dele antes.)
 // TETO DO HEROI: 1920 no webOS, 1280 no Tizen. Os dois numeros sao medidos, e
 // medem coisas diferentes porque as duas TVs se comportam de forma oposta.
 //
@@ -438,11 +545,7 @@ static void podar(void) {
 //
 // O LG fica em 1920 porque la nao ha problema nenhum a resolver, e cortar
 // qualidade sem defeito e so perda.
-#ifdef __EMSCRIPTEN__
-#define NV_TEX_HERO_LARG_MAX 1280
-#else
-#define NV_TEX_HERO_LARG_MAX 1920
-#endif
+// (O #define de NV_TEX_HERO_LARG_MAX esta no topo do arquivo.)
 
 // TETO POR USO — o 640 acima e o padrao, e ele e GRANDE DEMAIS para a maioria
 // das artes. Ele foi dimensionado pela MAIOR arte de card (a miniatura de
@@ -614,10 +717,7 @@ static int threadRede(void *arg) {
     if (!rodando) { SDL_UnlockMutex(mtx); return 0; }
     idx = tirarFila(fila, &filaIni, filaFim);
     if (itens[idx].estado != PENDENTE || pedidoObsoleto(&itens[idx])) {
-      if (itens[idx].estado == PENDENTE) {
-        itens[idx].estado = VAZIO;
-        itens[idx].caminho[0] = 0;
-      }
+      if (itens[idx].estado == PENDENTE) desistir(idx);
       SDL_UnlockMutex(mtx);
       continue;
     }
@@ -628,10 +728,7 @@ static int threadRede(void *arg) {
     // Caminho local devolve na hora; so URL sai para a rede.
     SDL_LockMutex(mtx);
     if (itens[idx].estado != PENDENTE || pedidoObsoleto(&itens[idx])) {
-      if (itens[idx].estado == PENDENTE) {
-        itens[idx].estado = VAZIO;
-        itens[idx].caminho[0] = 0;
-      }
+      if (itens[idx].estado == PENDENTE) desistir(idx);
       SDL_UnlockMutex(mtx);
       continue;
     }
@@ -642,13 +739,13 @@ static int threadRede(void *arg) {
       // decode e que marcava, e ate la o item ficava PENDENTE ocupando slot.
       SDL_LockMutex(mtx);
       if (itens[idx].estado != PENDENTE || pedidoObsoleto(&itens[idx])) {
-        if (itens[idx].estado == PENDENTE) {
-          itens[idx].estado = VAZIO;
-          itens[idx].caminho[0] = 0;
-        }
+        if (itens[idx].estado == PENDENTE) desistir(idx);
         SDL_UnlockMutex(mtx);
         continue;
       }
+      // Promocao que nao baixou: a textura pequena continua valendo. Marcar
+      // FALHOU aqui apagaria da tela uma arte que existe.
+      if (itens[idx].tex) { desistir(idx); SDL_UnlockMutex(mtx); continue; }
       itens[idx].estado = FALHOU;
       itens[idx].urgente = 0;
       itens[idx].falhas++;
@@ -659,10 +756,7 @@ static int threadRede(void *arg) {
     }
     SDL_LockMutex(mtx);
     if (itens[idx].estado != PENDENTE || pedidoObsoleto(&itens[idx])) {
-      if (itens[idx].estado == PENDENTE) {
-        itens[idx].estado = VAZIO;
-        itens[idx].caminho[0] = 0;
-      }
+      if (itens[idx].estado == PENDENTE) desistir(idx);
       SDL_UnlockMutex(mtx);
       continue;
     }
@@ -807,10 +901,7 @@ static int threadDecode(void *arg) {
     int idx = tirarFila(filaDec, &decIni, decFim);
     SDL_CondSignal(condLivre);   // abriu lugar: solta um fio de rede que espera
     if (itens[idx].estado != PENDENTE || pedidoObsoleto(&itens[idx])) {
-      if (itens[idx].estado == PENDENTE) {
-        itens[idx].estado = VAZIO;
-        itens[idx].caminho[0] = 0;
-      }
+      if (itens[idx].estado == PENDENTE) desistir(idx);
       SDL_UnlockMutex(mtx);
       continue;
     }
@@ -954,9 +1045,13 @@ static int threadDecode(void *arg) {
     if (itens[idx].estado == PENDENTE && pedidoObsoleto(&itens[idx])) {
       // A imagem terminou depois de o card sair da tela. Nao a publique e nao
       // a transforme em falha: outro card pode reutilizar o slot frio.
-      itens[idx].estado = VAZIO;
-      itens[idx].caminho[0] = 0;
+      desistir(idx);
       if (conv) { SDL_FreeSurface(conv); conv = NULL; }
+    } else if (itens[idx].estado == PENDENTE && !conv && itens[idx].tex) {
+      // Promocao que nao decodificou: fica a versao pequena, sem FALHOU — o
+      // FALHOU devolveria 0 ao desenho e a arte sumiria da tela.
+      desistir(idx);
+      falhou = 1;
     } else if (itens[idx].estado == PENDENTE) {
       itens[idx].lum = lumMedia;
       itens[idx].croma = cromaMedia;
@@ -1032,9 +1127,83 @@ static int threadDecode(void *arg) {
   }
 }
 
+// RAM TOTAL DO APARELHO, em MB, por /proc/meminfo. 0 onde nao ha /proc.
+static long memTotalMB(void) {
+#ifdef __EMSCRIPTEN__
+  return 0;
+#else
+  FILE *f = fopen("/proc/meminfo", "r");
+  char linha[128];
+  long kb = 0;
+  if (!f) return 0;
+  while (fgets(linha, sizeof linha, f))
+    if (sscanf(linha, "MemTotal: %ld kB", &kb) == 1) break;
+  fclose(f);
+  return kb / 1024;
+#endif
+}
+
+// O ORCAMENTO E DECIDIDO NO ARRANQUE, PELA RAM DA TV — e nao por uma build
+// para cada modelo.
+//
+// Uma so faixa nao serve a todas: a C9 (2,2 GB) fica folgada em 128 MB e uma
+// webOS 3 de 2016 (1 a 1,5 GB) nao tem esse espaco; uma TV de 3 GB ou mais
+// segura o dobro sem sentir. Tres IPKs seriam tres pacotes para manter e a
+// pessoa tendo de saber quanta RAM a TV dela tem. MemTotal ja diz.
+//
+//   < 800 MB   48 MB    webOS 3 de 2016: um relato de 624 MB TOTAIS, ~300 MB
+//                       livres (README, secao webOS 3). CHUTE pelo tamanho da
+//                       RAM, nao medida: nao ha aparelho desses aqui. O `rss=`
+//                       e o `tela=` do relatorio de FPS confirmam ou corrigem.
+//   < 1,2 GB   64 MB    webOS 3/4 de 1 GB, mesmo chute
+//   < 2 GB     96 MB    webOS 4/5 menores
+//   < 3 GB    128 MB    C9: medido, home usa 44-50 MB quentes, RSS 255-278
+//   >= 3 GB   192 MB    C1/C2/C3 e mais novas
+//
+// Duas portas por cima da tabela:
+//   NV_TEX_MB_FIXO   -D de compilacao: e a build "alto cache" (tools/arm.sh
+//                    --alto-cache, 300 MB) para quem tem TV com muita RAM e
+//                    quer o cache inteiro de uma sessao residente.
+//   NUVIO_TEX_MB     variavel de ambiente, para medir um numero numa TV sem
+//                    recompilar. Vale entre 16 e 1024.
+//
+// O Tizen fica no NV_TEX_ORCAMENTO_MB de layout.h: la o heap e fixo em 256
+// MiB e MemTotal do navegador nao diz nada sobre ele.
+static int orcamentoMB(void) {
+  long mem = memTotalMB();
+  int mb;
+  const char *porque;
+#ifdef NV_TEX_MB_FIXO
+  mb = NV_TEX_MB_FIXO; porque = "build de cache fixo";
+#else
+  if (!mem)          { mb = NV_TEX_ORCAMENTO_MB; porque = "sem /proc/meminfo, padrao"; }
+  else if (mem < 800)  { mb = 48;  porque = "RAM < 800 MB"; }
+  else if (mem < 1200) { mb = 64;  porque = "RAM < 1,2 GB"; }
+  else if (mem < 2000) { mb = 96;  porque = "RAM < 2 GB"; }
+  else if (mem < 3000) { mb = 128; porque = "RAM < 3 GB"; }
+  else                 { mb = 192; porque = "RAM >= 3 GB"; }
+#endif
+  { const char *env = getenv("NUVIO_TEX_MB");
+    if (env && *env) {
+      int v = atoi(env);
+      if (v >= 16 && v <= 1024) { mb = v; porque = "NUVIO_TEX_MB"; }
+    } }
+  printf("[tex] orcamento de texturas: %d MB (%s; MemTotal=%ld MB)\n", mb, porque, mem);
+  fflush(stdout);
+  return mb;
+}
+
 int tex_iniciar(int max_itens) {
+  int mb = orcamentoMB();
   nMax = max_itens > 0 && max_itens <= MAX_ITENS_ABS ? max_itens : 64;
-  // ORCAMENTO ESCALA COM O BUFFER. Os 96 MB sao a conta da TV, onde a escala e
+  // OS SLOTS ACOMPANHAM O ORCAMENTO. 192 slots foram dimensionados para 96-128
+  // MB (~660 KB por cartaz da C9): com 300 MB o cache encheria de slots muito
+  // antes de encher de bytes, e o LRU voltaria a despejar por FALTA DE VAGA
+  // com dois tercos do orcamento por usar. Um slot e meio por MB cobre a
+  // mistura real de cartaz, logo e heroi; o teto absoluto e MAX_ITENS_ABS.
+  { int porBytes = mb * 3 / 2;
+    if (porBytes > nMax) nMax = porBytes > MAX_ITENS_ABS ? MAX_ITENS_ABS : porBytes; }
+  // ORCAMENTO ESCALA COM O BUFFER. Os MB sao a conta da TV, onde a escala e
   // 1. No Mac retina a escala e 2, e a MESMA cena precisa de 4x os pixels — com
   // o teto fixo a previa vivia encostada no limite, despejando arte visivel e
   // mostrando um defeito que o aparelho nao tem. Uma previa que mente e pior
@@ -1043,7 +1212,7 @@ int tex_iniciar(int max_itens) {
   // Na TV o fator e 1 e nada muda; e exatamente por isso que a conta pode ser
   // esta e nao um numero maior cravado.
   { float e = escalaBuf > 0.1f ? escalaBuf : 1.0f;
-    orcamento = (long)(NV_TEX_ORCAMENTO_MB * e * e) * 1024L * 1024L; }
+    orcamento = (long)(mb * e * e) * 1024L * 1024L; }
   bytesUsados = 0;
   memset(itens, 0, sizeof itens);
   mtx = SDL_CreateMutex(); cond = SDL_CreateCond();
@@ -1094,7 +1263,8 @@ void tex_encerrar(void) {
   SDL_DestroyCond(cond); SDL_DestroyMutex(mtx);
 }
 
-static GLuint tex_obter_limite(const char *caminho, int limite, int urgente) {
+static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
+                               int passageiro) {
   if (!caminho || !*caminho) return 0;
   GLuint saida = 0;
   unsigned long h = hashCaminho(caminho);
@@ -1165,7 +1335,19 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente) {
         }
       }
     }
-    saida = itens[i].estado == PRONTO ? itens[i].tex : 0;
+    // A TEXTURA ANTIGA SERVE DURANTE A PROMOCAO — quando ela tem pelo menos
+    // METADE da largura pedida. O card que abre em 16:9 e pede 544 ja tem o
+    // poster de 288: devolver 0 aqui trocava arte por cinza por uns quadros a
+    // cada foco, e o cinza e o "pisca". Um pedido novo tem tex == 0 e cai no
+    // mesmo caminho de sempre.
+    //
+    // A metade e a guarda contra o caso oposto: home.c aquece o arquivo do
+    // hero com tex_arquivo, que e um pedido de 128 px. Sem a guarda, o hero
+    // receberia essa miniatura esticada a 1920 — um borrao de tela cheia por
+    // ~100 ms a cada troca — em vez de esperar a grande, que e o que o
+    // crossfade dele ja sabe fazer.
+    saida = (itens[i].estado == PRONTO || itens[i].w * 2 >= limite)
+              ? itens[i].tex : 0;
   } else {
     int novo = slotLivre();
     if (novo >= 0) {
@@ -1177,6 +1359,7 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente) {
       itens[novo].ultimoQuadro = quadroAtual;
       itens[novo].ultimoPedido = SDL_GetTicks();
       itens[novo].urgente = urgente ? 1 : 0;
+      itens[novo].passageiro = passageiro ? 1 : 0;
       int prox = (filaFim + 1) % MAX_FILA;
       if (prox != filaIni) { fila[filaFim] = novo; filaFim = prox; SDL_CondSignal(cond); }
       else { itens[novo].estado = VAZIO; itens[novo].caminho[0] = 0; } // fila cheia
@@ -1187,15 +1370,14 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente) {
 }
 
 GLuint tex_obter(const char *caminho) {
-  return tex_obter_limite(caminho, NV_TEX_LARG_MAX, 0);
+  return tex_obter_limite(caminho, NV_TEX_LARG_MAX, 0, 0);
 }
 
-// Arte que ocupa a tela inteira: hero da home, backdrop do detalhe e a arte do
-// player. 1920 e a largura do painel — pedir mais so gastaria memoria, pedir
-// menos e ampliar depois.
-GLuint tex_obter_larg(const char *caminho, float largLayout) {
+// Teto de decodificacao a partir da largura de DESENHO. Partilhado por
+// tex_obter_larg e tex_obter_passageira para que o mesmo arquivo pedido pelos
+// dois caminhos caia no mesmo teto e nao seja promovido a toa.
+static int capDeLargura(float largLayout) {
   int cap;
-  if (largLayout <= 1.0f) return tex_obter(caminho);
   cap = (int)(largLayout * escalaBuf * NV_TEX_FOLGA + 0.5f);
   // Arredonda para multiplo de 32: sem isso cada largura de desenho vira um
   // teto proprio, e a mesma arte pedida por dois lugares com poucos pixels de
@@ -1203,12 +1385,27 @@ GLuint tex_obter_larg(const char *caminho, float largLayout) {
   cap = ((cap + 31) / 32) * 32;
   if (cap < 128) cap = 128;
   if (cap > NV_TEX_HERO_LARG_MAX) cap = NV_TEX_HERO_LARG_MAX;
-  // Tela cheia fura a fila; card de fileira, nao (ver `urgente` no Item).
-  return tex_obter_limite(caminho, cap, cap > NV_TEX_LARG_MAX);
+  return cap;
 }
 
+GLuint tex_obter_larg(const char *caminho, float largLayout) {
+  int cap;
+  if (largLayout <= 1.0f) return tex_obter(caminho);
+  cap = capDeLargura(largLayout);
+  // Tela cheia fura a fila; card de fileira, nao (ver `urgente` no Item).
+  return tex_obter_limite(caminho, cap, cap > NV_TEX_LARG_MAX, 0);
+}
+
+GLuint tex_obter_passageira(const char *caminho, float largLayout) {
+  int cap = largLayout <= 1.0f ? NV_TEX_LARG_MAX : capDeLargura(largLayout);
+  return tex_obter_limite(caminho, cap, 0, 1);
+}
+
+// Arte que ocupa a tela inteira: hero da home, backdrop do detalhe e a arte do
+// player. 1920 e a largura do painel — pedir mais so gastaria memoria, pedir
+// menos e ampliar depois.
 GLuint tex_obter_hero(const char *caminho) {
-  return tex_obter_limite(caminho, NV_TEX_HERO_LARG_MAX, 1);
+  return tex_obter_limite(caminho, NV_TEX_HERO_LARG_MAX, 1, 0);
 }
 
 // O ARQUIVO, e nao a textura. Ver a nota em tex_cache.h.
@@ -1241,7 +1438,7 @@ const char *tex_arquivo(const char *url) {
   if (n > 512) return local;
   // 128 e o teto MINIMO que tex_obter_limite aceita pelo caminho normal; o que
   // interessa e o efeito colateral, que e o arquivo no disco.
-  tex_obter_limite(url, 128, 0);
+  tex_obter_limite(url, 128, 0, 0);
   return NULL;
 }
 
@@ -1250,7 +1447,7 @@ float tex_aspecto(const char *caminho) {
   float a = 0.0f;
   unsigned long h = hashCaminho(caminho);
   int i; BUSCA_MEDIDA(i, caminho, h);
-  if (i >= 0 && itens[i].estado == PRONTO && itens[i].h > 0)
+  if (i >= 0 && itens[i].tex && itens[i].h > 0)
     a = (float)itens[i].w / (float)itens[i].h;
   SDL_UnlockMutex(mtx);
   return a;
@@ -1265,7 +1462,7 @@ int tex_marca_escura(const char *caminho) {
   BUSCA_MEDIDA(i, caminho, h);
   // lum < 0 e "ainda nao medi": responde NAO, para nao tingir arte que ainda
   // vai chegar. Errar para o lado de nao mexer.
-  if (i >= 0 && itens[i].estado == PRONTO && itens[i].lum >= 0)
+  if (i >= 0 && itens[i].tex && itens[i].lum >= 0)
     r = (itens[i].lum < NV_LOGO_LUM_MIN && itens[i].croma < NV_LOGO_CROMA_MAX);
   SDL_UnlockMutex(mtx);
   return r;
@@ -1377,17 +1574,24 @@ int tex_bombear(int max_por_quadro) {
   return subiu;
 }
 
-void tex_estatisticas(int *nItens, int *nPend, long *bytes) {
-  int a=0, p=0; long b=0;
+void tex_estatisticas(int *nItens, int *nPend, long *bytes,
+                      int *nQuentes, long *bytesQuentes) {
+  int a=0, p=0, q=0; long b=0, bq=0;
   SDL_LockMutex(mtx);
   for (int i = 0; i < nMax; i++) {
-    if (itens[i].estado == PRONTO) { a++; b += bytesTextura(itens[i].w, itens[i].h); }
-    else if (itens[i].estado != VAZIO) p++;
+    if (itens[i].tex) {
+      long t = bytesTextura(itens[i].w, itens[i].h);
+      a++; b += t;
+      if (quente(&itens[i])) { q++; bq += t; }
+    }
+    if (itens[i].estado == PENDENTE || itens[i].estado == DECODIFICADO) p++;
   }
   SDL_UnlockMutex(mtx);
   if (nItens) *nItens = a;
   if (nPend) *nPend = p;
   if (bytes) *bytes = b;
+  if (nQuentes) *nQuentes = q;
+  if (bytesQuentes) *bytesQuentes = bq;
 }
 
 long tex_cache_disco_bytes(void) { return cacheDiscoBytes; }

@@ -748,6 +748,15 @@
 // demais. Com o catalogo dinamico sao ~48 titulos x 2 imagens, e a 72 o cache
 // vivia encostado no limite (medido: 70,7 MB com 46 texturas), despejando e
 // rebaixando sem parar — 12 a 15 janks por segundo durante a navegacao.
+//
+//
+// ESTE E O PADRAO DO TIZEN E DO MAC SEM /proc. Na TV LG o numero e decidido no
+// arranque pela RAM do aparelho (orcamentoMB em tex_cache.c: 64/96/128/192 MB
+// por faixa de MemTotal), porque uma webOS 3 de 2016 e uma C3 de 3 GB nao
+// cabem no mesmo teto. MEDIDO na C9 em 16/09/2026: a home precisa de 40-47
+// texturas quentes, 44-50 MB; a 96 MB cada foco trazia um heroi de 8,3 MB e
+// despejava doze cartazes. O Tizen fica em 96 porque la o heap e fixo em 256
+// MiB e o cache de disco e RAM (ver tex_cache.c).
 #define NV_TEX_ORCAMENTO_MB 96
 // Secoes da pagina do titulo.
 #define NV_ABA_W          236.0f   // medido

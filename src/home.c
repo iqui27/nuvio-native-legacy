@@ -2154,13 +2154,16 @@ static void desenhaAtalhos(int r, float y) {
         if(index!=seqIndice){
           seqIndice=index;
           snprintf(frame,sizeof frame,"%s/%03d.jpg",folder->frameDir,index);
-          seqTex=tex_obter_larg(frame,480);
+          // PASSAGEIRA, e nao tex_obter_larg: o quadro vale 67 ms, e pedido
+          // como cartaz ele expulsava do cache, um por quadro, os posteres
+          // das fileiras de cima (medido: 15 despejos/s com a tela parada).
+          seqTex=tex_obter_passageira(frame,480);
           // UMA de pre-busca, nao duas: a segunda so existia para cobrir o
           // caso de a primeira nao ter chegado, e a 67 ms de passo ela chega.
           // Cada quadro da sequencia e 480x270 RGBA = 518 KB no cache; uma
           // pasta de 90 quadros sao 46 MB de um orcamento de 96.
           snprintf(frame,sizeof frame,"%s/%03d.jpg",folder->frameDir,index%folder->frames+1);
-          tex_obter_larg(frame,480);
+          tex_obter_passageira(frame,480);
         }
         if(seqTex)tex=seqTex;
       }

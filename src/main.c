@@ -47,6 +47,24 @@
 #endif
 #include "layout.h"
 
+// RSS DO PROCESSO, em MB, lido de /proc/self/statm. E o numero que responde
+// "da para subir o orcamento de texturas?" — o teto de 96 MB foi escolhido
+// com a memoria de 2019 na cabeca e nunca foi conferido contra o que o
+// processo ocupa de verdade na TV (a LG tem 2,2 GB e 860 MB livres). Zero
+// onde nao ha /proc (Emscripten tem o [mem] proprio).
+static double rssMB(void) {
+#ifdef __EMSCRIPTEN__
+  return 0.0;
+#else
+  FILE *f = fopen("/proc/self/statm", "r");
+  long paginas = 0, res = 0;
+  if (!f) return 0.0;
+  if (fscanf(f, "%ld %ld", &paginas, &res) != 2) res = 0;
+  fclose(f);
+  return (double)res * 4096.0 / 1048576.0;
+#endif
+}
+
 // Captura de tela sob demanda. O framebuffer da TV nao pode ser lido nem como
 // root ("Operation not permitted") e o servico de captura da LG responde erro,
 // entao a unica forma de ver o que o app desenha e o proprio app se fotografar.
@@ -789,17 +807,29 @@ int main(int argc, char **argv) {
     quadros++;
 
     if (agora - ultRelato >= 3000) {
-      int itens, pend; long bytes;
-      tex_estatisticas(&itens, &pend, &bytes);
+      int itens, pend, quentes; long bytes, bytesQ;
+      tex_estatisticas(&itens, &pend, &bytes, &quentes, &bytesQ);
       // `idbfs=N/X.Xms` e a descarga para o IndexedDB: quantas e o custo SINCRONO
       // da pior. Sem estes dois numeros nao ha como distinguir "o pico sumiu" de
       // "o pico mudou de fase" — foi essa descarga que produziu os 100 ms.
+      //
+      // `tela=Q/XMB` e o conjunto QUENTE do cache de texturas — o que foi
+      // desenhado nos dois ultimos quadros — e `tex-despejos=N(q=M)` quantas
+      // texturas o cache jogou fora, e quantas dessas estavam na tela. Os dois
+      // numeros faltavam: `despejos=` sempre foi o cache de TEXTO, e o log da
+      // LG de 16/09 mostrava o cache de texturas encostado em 95.9 de 96 MB sem
+      // dizer se ele girava. Se `tela` passa do orcamento, nenhum ajuste de
+      // fila resolve — e o teto.
       printf("FPS=%.1f pior=%.1fms janks=%d | pior-quadro: texto %.1fms em %d linhas"
-             " | texturas=%d pend=%d %.1fMB | despejos=%d | idbfs=%d/%.1fms | cache-disco=%.1fMB%s\n",
+             " | texturas=%d pend=%d %.1fMB tela=%d/%.1fMB tex-despejos=%d(q=%d)"
+             " | despejos=%d | idbfs=%d/%.1fms | cache-disco=%.1fMB | rss=%.0fMB%s\n",
              quadros * 1000.0 / (double)(agora - ultRelato), pior, janks,
-             piorTxtMs, piorTxtN, itens, pend, bytes / 1048576.0, txt_despejos,
+             piorTxtMs, piorTxtN, itens, pend, bytes / 1048576.0,
+             quentes, bytesQ / 1048576.0, tex_despejos, tex_despejos_quentes,
+             txt_despejos,
              dados_desc_n, dados_desc_ms,
              tex_cache_disco_bytes() / 1048576.0,
+             rssMB(),
              dados_persistente() ? "" : "  <<< SEM PERSISTENCIA");
 #ifdef __EMSCRIPTEN__
       // Heap linear, nao RAM total do processo: GPU e memoria JS ficam fora.
@@ -850,6 +880,7 @@ int main(int argc, char **argv) {
         } }
       quadros = 0; ultRelato = agora; pior = 0; janks = 0; piorTxtMs = 0; piorTxtN = 0;
       txt_despejos = 0;
+      tex_despejos = 0; tex_despejos_quentes = 0;
       dados_desc_zerar();
       pEv=pBomb=pUpd=pDes=pSwap=pAux=pClr=0;
       pUplN=0; pUplB=0;
