@@ -16,6 +16,12 @@ de 14 marcada com ★ é a que eu usaria.
    bancada é a C9. Se foi você mesmo numa webOS 3, troque para primeira pessoa.
 2. **Links fora do corpo**, no primeiro comentário — mesma razão do post
    anterior (filtro do Reddit). Lista no fim.
+2b. **Imagem embaixo de cada trecho**: dá, mas só no editor novo do Reddit
+   ("Rich Text", não Markdown). Escreva o parágrafo, tecle Enter e arraste o
+   PNG ali — cada imagem vira um bloco entre os parágrafos. Os marcadores
+   `[IMAGEM: arquivo.png]` no corpo abaixo dizem onde cada uma entra; apague o
+   marcador depois de soltar a imagem. Se o subreddit só aceitar post de texto
+   simples, o plano B é a galeria com as ★ e as legendas da tabela do fim.
 3. **Publique antes** a webos3 1.0.56 e as duas variantes alto-cache
    (`.ipk` e `.wgt`), senão o post aponta para o que não existe.
 4. **Onde:** r/webos, r/LGOLED, r/Nuvio. Ler a regra de autopromoção de cada um.
@@ -55,6 +61,8 @@ and what I learned along the way. Links in the first comment.
   through AVPlay. Users on 2020+ sets (AU7000 among them) supplied most of the
   performance reports below.
 
+[IMAGEM: 01b-home-rows.png]
+
 It is the same `.ipk` for every LG generation. The one thing that differs
 between a 2016 set with 624 MB of RAM and a 2024 set with 3 GB — how much
 artwork to keep in memory — is decided at startup from the TV's own RAM
@@ -64,40 +72,70 @@ people who want to push it, there is a separate **high-cache** build for both
 platforms with the ceiling fixed at 300 MB. Settings shows a live graph of
 what the cache is doing, so you can see whether your set needs it.
 
+[IMAGEM: 10-settings-images.png]
+
 **What was added**
 
 - Multiple profiles with server-side PIN and a "who is watching" screen at
-  launch, asked once per session, not once per install *(17)*
+  launch, asked once per session, not once per install
+
+[IMAGEM: 17-profiles.png]
 - Trakt and Simkl linked from the TV itself through their device-code flows;
   Continue Watching from either; a **Profile & Stats** page — hours watched,
-  activity rhythm, most watched, genres — from your Trakt history *(06)*
+  activity rhythm, most watched, genres — from your Trakt history
+
+[IMAGEM: 06-profile.png]
 - A **Saved** list on the blue button, with a **Social** tab: recommend a title
-  to a friend from its page, add friends by code, see what they sent you *(15, 16)*
+  to a friend from its page, add friends by code, see what they sent you
+
+[IMAGEM: 16-social-mock.png]
+[IMAGEM: 16c-recommend-what-to-say.png]
 - **Live TV**: a guide with EPG for 768 channels in 35 categories, channel PiP,
-  and sources chosen by probing the playlist instead of trusting the first URL
-  *(03)*
+  and sources chosen by probing the playlist instead of trusting the first URL.
+  The focused channel takes the colour of its own logo background.
+
+[IMAGEM: 03c-guide-focus.png]
 - **Collections** from your account — streaming services, genres, themes,
-  film series — with animated covers on focus *(18, 19)*
+  film series — with animated covers on focus
+
+[IMAGEM: 18-collections.png]
 - A **Home rows** sheet: reorder, enable, disable, choose the card shape, see
   which add-on each row comes from and what is queued behind the row limit
-  *(09)*
+
+[IMAGEM: 09-home-rows.png]
 - Add-ons managed on the TV, with what each one actually provides read from
-  its manifest rather than assumed *(11)*
+  its manifest rather than assumed
+
+[IMAGEM: 11-addons.png]
 - Every setting the web app exposes, in the TV's language; the English table
-  went from partial to complete across the issues *(07, 08)*
+  went from partial to complete across the issues
+
+[IMAGEM: 07-settings.png]
 - TMDB and MDBList integration: logos, cast with photos, parental guides,
   ratings, Trakt comments on the title page; a credits marker from TheIntroDB;
-  "More like this" at the *end* of the film, not the start *(12)*
+  "More like this" at the *end* of the film, not the start
+
+[IMAGEM: 12-detail.png]
+[IMAGEM: 12c-detail-down2.png]
 - The app **remembers the source you picked** and uses the same one for the
   next episode — by the add-on's own `bingeGroup` when it sends one, by
   provider + audio-track signature when it does not — and the sources sheet
-  now marks which one would be picked automatically *(14)*
+  now marks which one would be picked automatically
+
+[IMAGEM: 14-sources.png]
 - In-app update check with the release notes, and on rooted LG sets it
   installs the update itself
 - Focus is now a filled button in your accent colour instead of an outline —
-  a request from a photo of my own TV that I agreed with once I saw it *(02, 07)*
-- A watched check on the poster, sized like the reference at last *(23)*
-- First-time cards that explain a feature the first time you meet it *(21, 22)*
+  a request from a photo of my own TV that I agreed with once I saw it
+
+[IMAGEM: 02-menu.png]
+- A watched check on the poster, sized like the reference at last
+
+[IMAGEM: 23-watched-badge.png]
+
+- First-time cards that explain a feature the first time you meet it
+
+[IMAGEM: 21-intro-guide.png]
 
 **What I learned, in case you write one of these**
 
@@ -110,7 +148,9 @@ what the cache is doing, so you can see whether your set needs it.
   evict cold full-screen art and animation frames before any poster; keep the
   old texture while a bigger version decodes; size the budget from the RAM.
   Evictions of on-screen art went from dozens per second to zero, and the
-  numbers are on the Settings page *(10)*.
+  graph turns green instead of red.
+
+[IMAGEM: 10c-settings-images-pressure.png]
 - *`SDL_BlitScaled` is nearest-neighbour.* Its docs say otherwise. Downscaling
   a 1920 backdrop to 1280 dropped one column in three; the GPU then stretched
   it back with linear filtering, so the result was both aliased and blurry.
