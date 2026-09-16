@@ -526,7 +526,9 @@ static void *prenderPlano(void *u) {
         printf("[video] videoData recusou hdrType=%s, repetindo sem HDR: %d\n",
                htipo, acbVideoData(acb, vd, &tarefa));
       }
-      printf("[video] audioData=%d\n", acbAudioData(acb, ad, &tarefa));
+      if (acbAudioData) {
+        printf("[video] audioData=%d\n", acbAudioData(acb, ad, &tarefa));
+      }
       fflush(stdout);
     }
     esperar(300);
@@ -1022,7 +1024,13 @@ int video_iniciar(void) {
   SIM(A, acbDestruir, "AcbAPI_destroy");
   SIM(A, acbConectar, "AcbAPI_connectDass");
   SIM(A, acbVideoData, "AcbAPI_setMediaVideoData");
-  SIM(A, acbAudioData, "AcbAPI_setMediaAudioData");
+  // NAO usa SIM, pela mesma razao de AcbAPI_setCustomDisplayWindow logo acima.
+  // Os dumps de firmware da webosbrew mostram AcbAPI_setMediaAudioData ausente
+  // na webOS 3.4.0 (W16N, 2016) e presente na 3.9.2 e na 4.10. Com SIM o
+  // simbolo faltando derrubava video_iniciar() inteiro e a TV de 2016 ficava
+  // sem NENHUM caminho de video por causa de um printf de diagnostico.
+  *(void **)(&acbAudioData) = dlsym(A, "AcbAPI_setMediaAudioData");
+  if (!acbAudioData) printf("[video] sem AcbAPI_setMediaAudioData; seguindo sem ele\n");
   }
 
   // O nome PRECISA casar com o padrao do papel LS2 do app

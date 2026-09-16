@@ -1,4 +1,5 @@
 #include "tex_cache.h"
+#include "sdlcompat.h"
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
@@ -804,7 +805,7 @@ SDL_Surface *tex_reduzir(SDL_Surface *src, int lw, int lh) {
     SDL_FreeSurface(c);
     return dst;
   }
-  dst = SDL_CreateRGBSurfaceWithFormat(0, lw, lh, 32, SDL_PIXELFORMAT_ABGR8888);
+  dst = nv_superficie(0, lw, lh, 32, SDL_PIXELFORMAT_ABGR8888);
   if (!dst) return NULL;
   // COBERTURA FRACIONARIA, em pesos de 0 a 256. Com razao 1,5 (1920 -> 1280)
   // uma celula inteira de pixels daria 1 pixel de origem em um quarto das

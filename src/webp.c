@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "sdlcompat.h"
 
 // Dois decodificadores atras da mesma porta. Ambos entregam um bloco RGBA
 // recem-alocado (bytes R,G,B,A na memoria) e dizem o tamanho; quem monta a
@@ -185,7 +186,7 @@ SDL_Surface *webp_carregar(const char *caminho) {
   // ABGR8888 no SDL = bytes R,G,B,A na memoria em little-endian, que e o que
   // os dois decodificadores entregam. Copia para uma superficie propria: a do
   // SDL_..From apontaria para memoria de fora.
-  s = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ABGR8888);
+  s = nv_superficie(0, w, h, 32, SDL_PIXELFORMAT_ABGR8888);
   if (s) {
     int y;
     for (y = 0; y < h; y++) memcpy((char *)s->pixels + y * s->pitch, px + (size_t)y * w * 4, (size_t)w * 4);
