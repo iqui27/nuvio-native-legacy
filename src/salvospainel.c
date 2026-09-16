@@ -609,7 +609,8 @@ static void desenhaAbas(float dx, float a) {
   rot[SP_ABA_SOCIAL] = "SOCIAL";
   for (i = 0; i < 2; i++) {
     int ativa = (i == aba);
-    int cor = ativa ? 246 : 176;
+    int emFoco = (foco == SP_FOCO_ABAS && ativa);
+    int cor = emFoco ? 20 : (ativa ? 246 : 176);
     TxtLinha t = txt_linha(TXT_CALLOUT, i18n(rot[i]), cor, cor, cor, 255);
     // O selo so aparece na aba que NAO esta aberta. Ele responde "ha algo
     // novo la?"; com a aba Social na tela, a propria lista responde isso, e o
@@ -624,20 +625,16 @@ static void desenhaAbas(float dx, float a) {
     // A ativa tem de ser a MAIS clara das duas. O fundo do painel ja e 0.075,
     // entao um branco a 0.07 por cima dele chega perto de 0.14 — colado nos
     // 0.188 de NV_COR_FOCO, e na captura a aba fechada parecia a aberta.
-    if (ativa) gfx_cor(p, NV_RAIO_PILL, 0.26f, 0.26f, 0.27f, a);
-    else       gfx_cor(p, NV_RAIO_PILL, 1.0f, 1.0f, 1.0f, 0.04f * a);
-    // O ANEL so aparece quando o D-pad esta NA LINHA DE ABAS, e sai na cor do
-    // tema (ajustes_acento), como nos outros doze pontos do app. Sobre a
-    // pilula escura ele tem contraste sem precisar ser inflado 6px, que era o
-    // que criava a moldura dupla preta-e-branca da foto.
-    if (foco == SP_FOCO_ABAS && ativa) {
-      float ar, ag, ab;
-      GfxRect anel = { p.x - NV_ANEL_FOCO, p.y - NV_ANEL_FOCO,
-                       p.w + NV_ANEL_FOCO * 2.0f, p.h + NV_ANEL_FOCO * 2.0f };
-      ajustes_acento(&ar, &ag, &ab);
-      gfx_rect(anel, 0, GFX_ANEL, 0, NV_ANEL_FOCO / anel.w, 0, NV_RAIO_PILL,
-               ar, ag, ab, a);
-    }
+    // (A nota acima sobre "nunca pilula branca com texto preto" ficou velha:
+    // a regra mudou em 16/09/2026, ver NV_COR_FOCO em layout.h.)
+    //
+    // Com o D-pad NA LINHA DE ABAS a aba aberta e preenchida na cor de
+    // realce com texto escuro, sem anel; fora dela, a aberta e a superficie
+    // clara e a outra fica apagada.
+    if (emFoco) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+                  gfx_cor(p, NV_RAIO_PILL, ar, ag, ab, a); }
+    else if (ativa) gfx_cor(p, NV_RAIO_PILL, 0.26f, 0.26f, 0.27f, a);
+    else            gfx_cor(p, NV_RAIO_PILL, 1.0f, 1.0f, 1.0f, 0.04f * a);
     txt_desenhar_alpha(t, x + 22.0f, SP_ABAS_Y + (SP_ABAS_H - t.h) * 0.5f, a);
     if (selo > 0.0f) {
       char n[16];

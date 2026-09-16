@@ -161,20 +161,15 @@ static void figPainel(float x, float y, float a) {
   th = 52.0f * e;
   for (i = 0; i < 2; i++) {
     int ativa = (i == 1);                       // a foto mostra SOCIAL aberta
-    int cor = ativa ? 246 : 176;
+    int cor = ativa ? 20 : 176;
     TxtLinha t = txt_linha(TXT_MINI, i18n(i == 0 ? "SALVOS" : "SOCIAL"),
                            cor, cor, cor, 255);
     GfxRect pil = { tx, ty, t.w + 44.0f * e, th };
-    // Pilula ESCURA com texto claro, nunca o contrario: e a regra de
-    // NV_COR_FOCO em layout.h, e a propria linha de abas de verdade ja foi
-    // corrigida por causa dela.
-    if (ativa) gfx_cor(pil, NV_RAIO_PILL, 0.26f, 0.26f, 0.27f, a);
+    // A aba aberta E em foco: preenchida na cor de realce com texto escuro,
+    // como a linha de abas de verdade (salvospainel.c) desenha desde
+    // 16/09/2026 — ver NV_COR_FOCO em layout.h.
+    if (ativa) gfx_cor(pil, NV_RAIO_PILL, ar, ag, ab, a);
     else       gfx_cor(pil, NV_RAIO_PILL, 1.0f, 1.0f, 1.0f, 0.04f * a);
-    if (ativa) {
-      GfxRect anel = { pil.x - 2.5f, pil.y - 2.5f, pil.w + 5.0f, pil.h + 5.0f };
-      gfx_rect(anel, 0, GFX_ANEL, 0, 2.5f / anel.h, 0, NV_RAIO_PILL,
-               ar, ag, ab, a);
-    }
     txt_desenhar_alpha(t, pil.x + 22.0f * e, ty + (th - (float)t.h) * 0.5f, a);
     tx += pil.w + 14.0f * e;
   }

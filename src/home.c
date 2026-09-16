@@ -2531,20 +2531,31 @@ void home_desenhar(Uint32 agora) {
           // proprio player ja arredonda para o fim quando falta menos de um
           // minuto (player_encerrar). Marcar so em 100% deixaria de fora
           // justamente o que acabou de ser assistido.
+          //
+          // MEDIDO no web (.title-watched-badge, components.css:4744): disco de
+          // 34 px a 14 px do canto, fundo na COR DE REALCE (--secondary-color),
+          // icone de 28 px em on-secondary. Tamanho FIXO, nao proporcional ao
+          // card: era `w * 0.16`, e no card aberto (w ~730) virava um disco de
+          // 117 px — a "badge" que o dono fotografou e perguntou o que era.
+          //
+          // O "v" e o icone check.png (art/icones, com o .svg ao lado), nao
+          // dois retangulos: gfx_rect nao gira, e os dois tracos horizontais
+          // liam como um traco "—", nao como um check. Nao e o visto.png: esse
+          // e um OLHO, o do botao "marcar como visto" do detalhe, e no disco
+          // de 34 px virava um olho sobre o poster.
           if (cItem && cItem->progresso >= 90 && tipo != FILEIRA_CONTINUE) {
-            float d = w * 0.16f;                 // proporcional ao card
-            float mx = px + w - d - 10.0f, my = py + 10.0f;
+            float d = 34.0f;
+            float mx = px + w - d - 14.0f, my = py + 14.0f;
             GfxRect disco = { mx, my, d, d };
-            gfx_cor(disco, 0.5f, 1, 1, 1, 0.94f);
-            // O "v" desenhado com dois tracos: o glifo da fonte nao serve aqui
-            // porque precisaria de uma linha de texto so para isto, e o cache
-            // de linhas tem 256 entradas disputadas pelos titulos.
-            { float cx = mx + d * 0.5f, cy = my + d * 0.5f;
-              float e = d * 0.085f;              // espessura
-              GfxRect a1 = { cx - d * 0.20f, cy - e * 0.5f, d * 0.20f, e };
-              GfxRect a2 = { cx - d * 0.02f, cy - e * 0.5f, d * 0.34f, e };
-              gfx_rect(a1, 0, GFX_COR, 0, 0, 0, 0.5f, 0.07f, 0.07f, 0.07f, 0.94f);
-              gfx_rect(a2, 0, GFX_COR, 0, 0, 0, 0.5f, 0.07f, 0.07f, 0.07f, 0.94f); }
+            float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+            // Sombra rasa (box-shadow 0 14px 24px .3 na referencia): separa o
+            // disco claro de um poster claro sem virar halo.
+            { GfxRect sombra = { mx, my + 3.0f, d, d };
+              gfx_cor(sombra, 0.5f, 0, 0, 0, 0.28f); }
+            gfx_cor(disco, 0.5f, ar, ag, ab, 1.0f);
+            { float ic = 22.0f;
+              GfxRect g = { mx + (d - ic) * 0.5f, my + (d - ic) * 0.5f, ic, ic };
+              gfx_icone(g, "check", 0.08f, 0.08f, 0.09f, 1.0f); }
           }
 
           // `cardDepthEnabled` mais o interruptor por secao: `cardDepthPosters`

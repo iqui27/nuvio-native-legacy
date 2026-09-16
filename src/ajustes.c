@@ -44,6 +44,10 @@
 #endif
 #define AJ_VERSAO       NV_VERSAO
 
+// TEXTO SOBRE A COR DE REALCE. Todas as cores de TEMA_ACENTO sao claras (a
+// mais escura, o violeta #ab47bc, da 6,6:1 contra #141414), entao o texto do
+// item em foco e sempre escuro — nao ha por que medir por cor.
+#define AJ_TEXTO_ESCURO  20
 #define AJ_LINHA_H       88.0f
 #define AJ_LINHA_GAP      8.0f
 #define AJ_SEC_GAP       46.0f    // fim de uma secao ao cabecalho da proxima
@@ -1213,10 +1217,21 @@ static const char *textoLeitura(int op) {
     snprintf(buf, sizeof buf, "%d", heroCatalogos);
     return buf;
   }
-  int itens = 0, pend = 0; long bytes = 0;
-  tex_estatisticas(&itens, &pend, &bytes, NULL, NULL);
-  snprintf(buf, sizeof buf, i18n("%.1f MB em %d imagens"), bytes / 1048576.0, itens);
-  return buf;
+  if (op == AJ_ESPACO) {
+    // CURTO O BASTANTE PARA CABER NA COLUNA: "201.0 MB em 209 imagens" era
+    // cortado em "209..." na TV, e o numero que sobrava era o menos util. O
+    // detalhe (orcamento, grafico, o que esta na tela) vai no painel da
+    // direita, que tem espaco — ver desenhaPainelImagens.
+    int itens = 0; long bytes = 0;
+    tex_estatisticas(&itens, NULL, &bytes, NULL, NULL);
+    snprintf(buf, sizeof buf, i18n("%.1f MB · %d imagens"), bytes / 1048576.0, itens);
+    return buf;
+  }
+  // ACAO SEM VALOR PROPRIO. Este `return` era o da memoria de imagens, e toda
+  // acao que nao tinha ramo acima caia nele: "Ordenar e ativar fileiras"
+  // mostrava "100.1 MB em 119..." na coluna do valor (foto do dono, 16/09).
+  if (OPCOES[op].tipo == OP_ACAO) return i18n("Abrir");
+  return "";
 }
 
 // Uma opcao pode ficar INATIVA por causa de outra — o web esconde a linha
@@ -1882,7 +1897,10 @@ void ajustes_atualizar(float dt, Uint32 agora) {
     if (legendaEspera <= 0.0f) { legendaEspera = 0.0f; addons_legendas_reiniciar(); }
   }
   for (int i = 0; i < AJ_N; i++) {
-    float alvo = (i == focoOp) ? 1.0f : 0.0f;
+    // Com o foco na coluna de categorias a linha DESCANSA: o preenchimento
+    // de realce e o do foco, e o foco esta na categoria — duas superficies
+    // claras ao mesmo tempo diriam "voce esta em dois lugares".
+    float alvo = (i == focoOp && !focoIndice) ? 1.0f : 0.0f;
     animFoco[i] = ajustes_animacoes_reduzidas() ? alvo : anim_mola(animFoco[i], alvo, dt,
                             alvo > animFoco[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
   }
@@ -1958,26 +1976,33 @@ static void desenhaLinha(int op, float y, float f) {
   int podeMudar = mutavel(op);
   GfxRect linha = { AJ_LISTA_X, y, AJ_LISTA_W, AJ_LINHA_H };
   // Mesmo vocabulário do menu: superfície escura, texto claro e foco explícito.
-  gfx_cor(linha, AJ_RAIO, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
-          (0.34f + 0.66f * f) * a);
-  if (op == focoOp) {
-    float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-    gfx_rect(linha, 0, GFX_ANEL, 0, NV_ANEL_FOCO / AJ_LINHA_H, 0,
-             AJ_RAIO, ar, ag, ab, a);
-  }
+  gfx_cor(linha, AJ_RAIO, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, 0.34f * a);
+  // FOCO = A LINHA PREENCHIDA COM A COR DE REALCE E O TEXTO ESCURO, sem anel.
+  //
+  // Era anel de 4 px por fora de uma superficie um pouco mais clara. Pedido
+  // do dono (16/09): "os botoes quando selecionados ficar brancos com o texto
+  // preto e pode tirar o contorno". A cor de realce passa a ser a cor do
+  // botao — e por isso a escolha de tema muda algo visivel nesta tela.
+  //
+  // `f` e a mola do foco (0..1): o preenchimento acompanha, o texto troca de
+  // cor no meio do caminho. Texto ja rasterizado nao muda de cor, e pedir uma
+  // rasterizacao por passo da mola encheria o cache de linhas.
+  float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+  int emFoco = (f > 0.5f);
+  if (f > 0.01f) gfx_cor(linha, AJ_RAIO, ar, ag, ab, f * a);
 
   // Uma linha inativa fica visivelmente mais apagada QUE a de leitura: leitura e
   // informacao, inativa e "isto existe mas depende de outra coisa".
   float aTexto = a * (desligada ? 0.65f : 1.0f);
-  int cr = podeMudar ? 240 : 192;
+  int cr = emFoco ? AJ_TEXTO_ESCURO : (podeMudar ? 240 : 192);
   TxtLinha rot = txt_linha_corta(TXT_CALLOUT, OPCOES[op].rotulo,
                                 cr, cr, cr, 255, AJ_LISTA_W - 420.0f);
   txt_desenhar_alpha(rot, AJ_LISTA_X + AJ_PAD,
                      y + (AJ_LINHA_H - rot.h) * 0.5f, aTexto);
 
   const char *v = textoValor(op);
-  int cv = podeMudar ? 220 : 176;
-  TxtLinha val = txt_linha_corta(TXT_CALLOUT, v, cv, cv, cv, 255, 310.0f);
+  int cv = emFoco ? AJ_TEXTO_ESCURO + 30 : (podeMudar ? 220 : 176);
+  TxtLinha val = txt_linha_corta(TXT_CALLOUT, v, cv, cv, cv, 255, 360.0f);
   float xDir = AJ_LISTA_X + AJ_LISTA_W - AJ_PAD;
   float valorDir = xDir - 36.0f;
   float vy = y + (AJ_LINHA_H - val.h) * 0.5f;
@@ -1994,9 +2019,11 @@ static void desenhaLinha(int op, float y, float f) {
     vy -= 8.0f;
     GfxRect trilho = { bx, by, bw, bh };
     GfxRect cheio  = { bx, by, bw * anim_clamp(t, 0.0f, 1.0f), bh };
-    gfx_cor(trilho, 0.5f, 0.94f, 0.94f, 0.96f, 0.22f * aTexto);
+    // Sobre o preenchimento claro do foco a barra tem de ser escura.
+    float cb = emFoco ? 0.08f : 0.94f;
+    gfx_cor(trilho, 0.5f, cb, cb, cb + 0.02f, 0.22f * aTexto);
     if (cheio.w > 0.5f)
-      gfx_cor(cheio, 0.5f, 0.94f, 0.94f, 0.96f, 0.92f * aTexto);
+      gfx_cor(cheio, 0.5f, cb, cb, cb + 0.02f, 0.92f * aTexto);
   }
 
   // MODO EDICAO: as setas e o realce do valor so existem depois do OK. Sem
@@ -2005,7 +2032,7 @@ static void desenhaLinha(int op, float y, float f) {
   if (podeMudar && emEdicao && f > 0.02f) {
     GfxRect pill = { valorDir - val.w - 44.0f, y + (AJ_LINHA_H - 34.0f) * 0.5f,
                      val.w + 80.0f, 34.0f };
-    gfx_cor(pill, 0.5f, 0.55f, 0.62f, 0.75f, 0.35f * a);
+    gfx_cor(pill, 0.5f, 0.0f, 0.0f, 0.0f, 0.14f * a);
     TxtLinha dir = txt_linha(TXT_CAPTION2, "\xe2\x96\xb6", cv, cv, cv, 255);
     TxtLinha esq = txt_linha(TXT_CAPTION2, "\xe2\x97\x80", cv, cv, cv, 255);
     txt_desenhar_alpha(dir, xDir - dir.w, y + (AJ_LINHA_H - dir.h) * 0.5f, aTexto * f);
@@ -2136,18 +2163,22 @@ static void desenhaIndice(void) {
   for (s = 0; s < AJ_N_SECOES; s++) {
     GfxRect r = { AJ_IDX_X, y, AJ_IDX_W, AJ_IDX_H };
     int atual = (s == sec);
-    int c = atual ? 240 : 168;
-    float ci = atual ? 0.94f : 0.62f;
+    int emFoco = (atual && focoIndice);
+    int c = emFoco ? AJ_TEXTO_ESCURO : (atual ? 240 : 168);
+    float ci = emFoco ? 0.10f : (atual ? 0.94f : 0.62f);
     GfxRect ic = { AJ_IDX_X + 18.0f, y + (AJ_IDX_H - AJ_IDX_ICONE) * 0.5f,
                    AJ_IDX_ICONE, AJ_IDX_ICONE };
     float tx = ic.x + AJ_IDX_ICONE + 14.0f;
     TxtLinha t;
-    gfx_cor(r, raio, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
-            atual ? (focoIndice ? 1.0f : 0.60f) : 0.26f);
-    if (atual && focoIndice) {
+    // A categoria ATUAL (foco na lista) e a superficie mais clara; a categoria
+    // EM FOCO e o preenchimento de realce com texto escuro, como as linhas —
+    // mesma regra da lista, sem anel (ver desenhaLinha).
+    if (emFoco) {
       float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-      gfx_rect(r, 0, GFX_ANEL, 0, NV_ANEL_FOCO / AJ_IDX_H, 0, raio,
-               ar, ag, ab, 1.0f);
+      gfx_cor(r, raio, ar, ag, ab, 1.0f);
+    } else {
+      gfx_cor(r, raio, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
+              atual ? 0.60f : 0.26f);
     }
     // O ICONE E A ANCORA da varredura de olho: a 3 m o nome da categoria e
     // texto pequeno, e o simbolo e o que se reconhece antes de ler.
@@ -2231,15 +2262,16 @@ static void desenhaFileiras(void) {
         int ativa = (filAba == t);
         if (t == 0) snprintf(buf, sizeof buf, i18n("Na Home  %d de %d"), fil_n_na_home(), lim);
         else        snprintf(buf, sizeof buf, i18n("Fora da Home  %d"), fil_n() - fil_n_na_home() - fil_n_fila());
-        l = txt_linha(TXT_CALLOUT, buf, ativa ? 255 : 170, ativa ? 255 : 173, ativa ? 255 : 182, 255);
-        { GfxRect pil = { bx, hy, l.w + 44.0f, bh };
-          gfx_cor(pil, NV_RAIO_PILL, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
-                  ativa ? 0.95f : 0.30f);
-          if (filNaBarra && ativa)
-            gfx_rect((GfxRect){ pil.x - NV_ANEL_FOCO, pil.y - NV_ANEL_FOCO,
-                                pil.w + NV_ANEL_FOCO * 2, pil.h + NV_ANEL_FOCO * 2 },
-                     0, GFX_ANEL, 0, NV_ANEL_FOCO / (pil.h + NV_ANEL_FOCO * 2), 0,
-                     NV_RAIO_PILL, ar, ag, ab, 1.0f);
+        { int emFoco = (filNaBarra && ativa);
+          int ct = emFoco ? AJ_TEXTO_ESCURO : (ativa ? 255 : 170);
+          l = txt_linha(TXT_CALLOUT, buf, ct, emFoco || ativa ? ct : 173,
+                        emFoco || ativa ? ct : 182, 255);
+          GfxRect pil = { bx, hy, l.w + 44.0f, bh };
+          // Foco = pilula na cor de realce com texto escuro; ativa sem foco =
+          // superficie clara; a outra, apagada. Sem anel (ver desenhaLinha).
+          if (emFoco) gfx_cor(pil, NV_RAIO_PILL, ar, ag, ab, 1.0f);
+          else gfx_cor(pil, NV_RAIO_PILL, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
+                       ativa ? 0.95f : 0.30f);
           txt_desenhar(l, pil.x + 22.0f, pil.y + (bh - l.h) * 0.5f);
           bx += pil.w + 14.0f; }
       }
@@ -2406,10 +2438,11 @@ static void desenhaFileiras(void) {
                                                      : "Alfabética · OK: agrupar por addon")
                                   : "Atualizar tudo";
       GfxRect btn = { bx + b * (cada + 16.0f), sy, cada, 52.0f };
-      gfx_cor(btn, 26.0f / cada, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, foco ? 0.72f : 0.30f);
-      if (foco)
-        gfx_rect(btn, 0, GFX_ANEL, 0, NV_ANEL_FOCO / 52.0f, 0, 26.0f / cada, ar, ag, ab, 1.0f);
-      l = txt_linha(TXT_CALLOUT, rot, 220, 220, 220, 255);
+      // Botao em foco: preenchido com a cor de realce, texto escuro, sem anel.
+      if (foco) gfx_cor(btn, 26.0f / cada, ar, ag, ab, 1.0f);
+      else gfx_cor(btn, 26.0f / cada, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, 0.30f);
+      { int ct = foco ? AJ_TEXTO_ESCURO : 220;
+        l = txt_linha(TXT_CALLOUT, rot, ct, ct, ct, 255); }
       txt_desenhar(l, btn.x + (btn.w - l.w) * 0.5f, btn.y + (btn.h - l.h) * 0.5f);
     } }
 
@@ -2486,6 +2519,91 @@ static void desenhaFileiras(void) {
   }
 }
 
+// PAINEL DA LINHA "MEMORIA USADA POR IMAGENS": o numero que a linha corta e
+// aqui inteiro, mais o que ele nao diz sozinho — quanto e o teto, quanto do
+// cache e o que esta NA TELA agora, se ele anda despejando, e como o teto foi
+// escolhido. Pedido do dono (16/09): "mostrar o valor real e nao cortado, e
+// colocar um grafico e estatistica de uso ao lado". Devolve a altura usada.
+//
+// Os numeros vem do proprio cache (tex_estatisticas, tex_orcamento_info,
+// tex_historico), nao de contas feitas aqui: se o cache mudar de regra, o
+// painel muda junto.
+static float linhaStat(float x, float y, float w, const char *rot, const char *val) {
+  TxtLinha r = txt_linha(TXT_CAPTION, rot, 156, 159, 168, 255);
+  TxtLinha v = txt_linha_corta(TXT_CAPTION, val, 226, 228, 236, 255, w - r.w - 16.0f);
+  txt_desenhar(r, x, y);
+  txt_desenhar(v, x + w - v.w, y);
+  return 34.0f;
+}
+
+static float desenhaPainelImagens(float x, float y, float w) {
+  float y0 = y, ar, ag, ab;
+  int itens = 0, pend = 0, quentes = 0, mb = 0, fixo = 0, slots = 0;
+  long bytes = 0, bytesQ = 0, memTotal = 0, teto;
+  long hist[120]; int nh, i;
+  char a[96], b[96];
+  tex_estatisticas(&itens, &pend, &bytes, &quentes, &bytesQ);
+  tex_orcamento_info(&mb, &memTotal, &fixo, &slots);
+  teto = tex_orcamento_bytes();
+  if (teto <= 0) teto = 1;
+  ajustes_acento(&ar, &ag, &ab);
+
+  // 1. A BARRA: usado sobre o teto, na cor de realce.
+  snprintf(a, sizeof a, i18n("%.1f de %d MB · %d%%"), bytes / 1048576.0, mb,
+           (int)(bytes * 100 / teto));
+  y += linhaStat(x, y, w, i18n("Ocupado"), a);
+  { GfxRect trilho = { x, y, w, 8.0f };
+    float t = (float)bytes / (float)teto; if (t > 1.0f) t = 1.0f;
+    GfxRect cheio = { x, y, w * t, 8.0f };
+    GfxRect naTela = { x, y, w * ((float)bytesQ / (float)teto), 8.0f };
+    gfx_cor(trilho, 0.5f, 0.94f, 0.94f, 0.96f, 0.16f);
+    if (cheio.w > 0.5f) gfx_cor(cheio, 0.5f, ar, ag, ab, 0.55f);
+    // O trecho que esta NA TELA agora, mais forte: e a parte que nao pode
+    // ser despejada sem piscar (ver `quente` em tex_cache.c).
+    if (naTela.w > 0.5f && naTela.w <= cheio.w) gfx_cor(naTela, 0.5f, ar, ag, ab, 1.0f);
+    y += 8.0f + 22.0f; }
+
+  // 2. O GRAFICO: ocupacao nos ultimos dois minutos, uma coluna por segundo,
+  // escala do teto. Uma linha reta e um cache que assentou; serrilhado e
+  // despejo em ciclo — a forma do defeito que este cache tinha.
+  nh = tex_historico(hist, 120);
+  { float gh = 84.0f, gx = x, gw = w;
+    GfxRect fundo = { gx, y, gw, gh };
+    gfx_cor(fundo, 0.0f, 1.0f, 1.0f, 1.0f, 0.06f);
+    if (nh > 1) {
+      float passo = gw / 120.0f;
+      for (i = 0; i < nh; i++) {
+        float h = gh * (float)hist[i] / (float)teto;
+        if (h > gh) h = gh;
+        if (h < 1.0f) continue;
+        GfxRect col = { gx + gw - (float)(nh - i) * passo, y + gh - h, passo + 0.5f, h };
+        gfx_cor(col, 0.0f, ar, ag, ab, 0.70f);
+      }
+    }
+    { TxtLinha l = txt_linha(TXT_MINI, i18n("últimos 2 min · escala do teto"), 130, 133, 142, 255);
+      txt_desenhar(l, gx, y + gh + 6.0f); }
+    y += gh + 34.0f; }
+
+  // 3. AS ESTATISTICAS.
+  snprintf(a, sizeof a, i18n("%d imagens · %.1f MB"), quentes, bytesQ / 1048576.0);
+  y += linhaStat(x, y, w, i18n("Na tela agora"), a);
+  snprintf(a, sizeof a, i18n("%d imagens · %d em carregamento"), itens, pend);
+  y += linhaStat(x, y, w, i18n("No cache"), a);
+  snprintf(a, sizeof a, i18n("%d de %d"), itens + pend, slots);
+  y += linhaStat(x, y, w, i18n("Vagas"), a);
+  snprintf(a, sizeof a, i18n("%ld · %ld da tela"), tex_despejos_total, tex_despejos_quentes_total);
+  y += linhaStat(x, y, w, i18n("Despejadas na sessão"), a);
+  snprintf(a, sizeof a, i18n("%.1f MB"), tex_cache_disco_bytes() / 1048576.0);
+  y += linhaStat(x, y, w, i18n("Baixado na sessão"), a);
+  if (fixo == 1)      snprintf(b, sizeof b, "%s", i18n("cravado nesta build"));
+  else if (fixo == 2) snprintf(b, sizeof b, "%s", "NUVIO_TEX_MB");
+  else if (memTotal > 0) snprintf(b, sizeof b, i18n("pela RAM da TV (%.1f GB)"), memTotal / 1024.0);
+  else snprintf(b, sizeof b, "%s", i18n("padrão"));
+  snprintf(a, sizeof a, "%d MB · %s", mb, b);
+  y += linhaStat(x, y, w, i18n("Teto"), a);
+  return y - y0;
+}
+
 void ajustes_desenhar(Uint32 agora) {
   (void)agora;
   // Fundo opaco proprio: a tela cobre tudo e nao pode depender de quem desenhou
@@ -2549,6 +2667,10 @@ void ajustes_desenhar(Uint32 agora) {
         hy += 16.0f;
         hy += txt_bloco(TXT_CAPTION, ef, 150, 176, 150, hx, hy, hw, 32, 1, 4);
       } }
+    if (!focoIndice && focoOp == AJ_ESPACO) {
+      hy += 22.0f;
+      hy += desenhaPainelImagens(hx, hy, hw);
+    }
     hy += 34.0f;
     // O RODAPE DE AJUDA DIZ O QUE FUNCIONA NO CONTROLE, e nao o que funciona no
     // teclado do Mac. Uma linha por dica, desenhada a mao: ver desenhaDicas.

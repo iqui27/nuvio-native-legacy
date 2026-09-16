@@ -127,24 +127,26 @@ void addonsui_desenhar(Uint32 agora) {
     a = anim_clamp((y - (TOPO - 70.0f)) / 60.0f, 0.0f, 1.0f);
     if (a <= 0.005f) continue;
 
-    gfx_cor(linha, RAIO, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
-            (0.34f + 0.66f * f) * a);
-    if (i == foco) {
+    // Foco = linha preenchida na cor de realce com texto escuro, sem anel:
+    // a mesma regra de ajustes.c (desenhaLinha) e de NV_COR_FOCO em layout.h.
+    gfx_cor(linha, RAIO, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, 0.34f * a);
+    if (f > 0.01f) {
       float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-      gfx_rect(linha, 0, GFX_ANEL, 0, NV_ANEL_FOCO / LINHA_H, 0,
-               RAIO, ar, ag, ab, a);
+      gfx_cor(linha, RAIO, ar, ag, ab, f * a);
     }
+    int emFoco = f > 0.5f;
 
     // Addon desligado fica apagado, e o estado vai ESCRITO na direita: cor
     // sozinha nao diz se aquilo esta ligado ou so sem foco.
     { float aT = a * (ligado ? 1.0f : 0.55f);
+      int c1 = emFoco ? 20 : 240, c2 = emFoco ? 60 : 168;
+      int c3 = emFoco ? 40 : (ligado ? 220 : 150);
       TxtLinha nome = txt_linha_corta(TXT_CALLOUT, addons_nome(i),
-                                      240, 240, 240, 255, LISTA_W - 300.0f);
+                                      c1, c1, c1, 255, LISTA_W - 300.0f);
       TxtLinha cap  = txt_linha_corta(TXT_CAPTION, capacidades(i),
-                                      168, 168, 176, 255, LISTA_W - 300.0f);
+                                      c2, c2, c2 + 8, 255, LISTA_W - 300.0f);
       TxtLinha est  = txt_linha(TXT_CALLOUT, ligado ? "Ligado" : "Desligado",
-                                ligado ? 220 : 150, ligado ? 220 : 150,
-                                ligado ? 226 : 156, 255);
+                                c3, c3, c3 + 6, 255);
       txt_desenhar_alpha(nome, LISTA_X + 34.0f, y + 20.0f, aT);
       txt_desenhar_alpha(cap,  LISTA_X + 34.0f, y + 20.0f + nome.h + 6.0f, aT);
       txt_desenhar_alpha(est,  LISTA_X + LISTA_W - 34.0f - est.w,

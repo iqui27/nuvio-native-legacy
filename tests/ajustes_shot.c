@@ -120,6 +120,10 @@ int main(int argc, char **argv) {
   { int secao = argc > 2 ? atoi(argv[2]) : 2;
     tecla(SDLK_ESCAPE);
     for (i = 0; i < secao; i++) tecla(SDLK_DOWN);
+    // O FOCO NA COLUNA DE CATEGORIAS: a categoria em foco preenchida com a
+    // cor de realce, como as linhas da lista.
+    snprintf(nome, sizeof nome, "%s-indice.bmp", saida);
+    captura(nome, w);
     tecla(SDLK_RETURN); }
   snprintf(nome, sizeof nome, "%s-secao.bmp", saida);
   captura(nome, w);
@@ -159,6 +163,22 @@ int main(int argc, char **argv) {
   // Desce ate o ULTIMO botao ("Atualizar tudo"): tem de ser alcancavel.
   for (i = 0; i < 12; i++) tecla(SDLK_DOWN);
   snprintf(nome, sizeof nome, "%s-fileiras-botao.bmp", saida);
+  captura(nome, w);
+
+  // A LINHA "MEMORIA USADA POR IMAGENS", que e a ultima da categoria da
+  // conta: o painel da direita ganha barra, grafico e estatisticas do cache.
+  // `conta` na linha de comando diz qual categoria, pelo mesmo motivo de
+  // `secao`. Sai da folha, volta ao indice, escolhe a categoria e desce ate o
+  // fim da categoria: 13 linhas, 12 passos. A lista e continua entre
+  // categorias, entao descer "ate parar" cairia na categoria seguinte.
+  { int conta = argc > 4 ? atoi(argv[4]) : 5;
+    tecla(SDLK_ESCAPE);
+    tecla(SDLK_ESCAPE);
+    for (i = 0; i < 12; i++) tecla(SDLK_UP);
+    for (i = 0; i < conta; i++) tecla(SDLK_DOWN);
+    tecla(SDLK_RETURN);
+    for (i = 0; i < 12; i++) tecla(SDLK_DOWN); }
+  snprintf(nome, sizeof nome, "%s-imagens.bmp", saida);
   captura(nome, w);
 
   tex_encerrar();

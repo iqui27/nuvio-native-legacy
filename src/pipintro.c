@@ -14,6 +14,7 @@
 // recursos a direita), mas com DOIS BOTOES — aqui ha uma pergunta de verdade,
 // e nao so um aviso.
 #include "pipintro.h"
+#include "ajustes.h"
 #include "dados.h"
 #include "idioma.h"
 #include "gfx.h"
@@ -140,12 +141,14 @@ static float desenhaFeature(float x, float y, float w, const char *icone,
 
 static void desenhaBotao(GfxRect r, const char *txt, int foco, int prim, float a) {
   float lum = prim ? 0.24f : 0.13f;
-  gfx_cor(r, 0.28f, lum, lum + 0.01f, lum + 0.03f, a);
-  if (foco)
-    gfx_rect(r, 0, GFX_ANEL, 0, NV_ANEL_FOCO / r.w, 0, 0.28f,
-             0.96f, 0.96f, 0.98f, a);
+  // Foco = preenchido na cor de realce com texto escuro, sem anel (a regra
+  // de NV_COR_FOCO em layout.h).
+  if (foco) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+              gfx_cor(r, 0.28f, ar, ag, ab, a); }
+  else gfx_cor(r, 0.28f, lum, lum + 0.01f, lum + 0.03f, a);
   { TxtLinha t = txt_linha(TXT_CALLOUT, i18n(txt),
-        prim ? 252 : 226, prim ? 253 : 228, prim ? 255 : 234, 255);
+        foco ? 20 : (prim ? 252 : 226), foco ? 20 : (prim ? 253 : 228),
+        foco ? 24 : (prim ? 255 : 234), 255);
     txt_desenhar_alpha(t, r.x + (r.w - t.w) * 0.5f,
                        r.y + (r.h - t.h) * 0.5f, a); }
 }

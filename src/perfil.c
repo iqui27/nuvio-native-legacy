@@ -364,9 +364,11 @@ static void desenharVazio(float a) {
   corta(TXT_TITULO2, titulo, PF_FORTE, PF_X, 248, PF_W*.72f, a);
   txt_bloco(TXT_BODY, corpo, PF_MEDIO, PF_MEDIO, PF_MEDIO,
             PF_X, 340, 840, NV_LD_BODY, a, 3);
-  gfx_cor(btn,NV_RAIO_PILL,NV_COR_FOCO_R,NV_COR_FOCO_G,NV_COR_FOCO_B,a);
-  anel(btn,btn.h*NV_RAIO_PILL,a);
-  texto(TXT_DET_BOTAO,"OK · Tentar novamente",PF_FORTE,PF_X+28,472,a);
+  // Botao unico da tela, sempre em foco: preenchido na cor de realce com
+  // texto escuro (a regra de NV_COR_FOCO, layout.h), sem anel.
+  { float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
+    gfx_cor(btn,NV_RAIO_PILL,ar,ag,ab,a); }
+  texto(TXT_DET_BOTAO,"OK · Tentar novamente",20,PF_X+28,472,a);
 }
 
 // Banda 2: quem e (esquerda) e os QUATRO numeros que sobraram (direita).

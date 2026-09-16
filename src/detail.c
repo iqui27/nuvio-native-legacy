@@ -2996,20 +2996,25 @@ static float cabecalhoComentarios(float x, float y, float a) {
       // separados por uma linha preta, que nao le como foco nem como selecao.
       // Na pilula ja invertida o foco se marca pelo TAMANHO, que e a mesma
       // linguagem medida nos botoes circulares do heroi.
-      { float cresce = sel ? (1.0f + 0.07f * f) : 1.0f;
+      //
+      // REVISTO em 16/09/2026 (regra de NV_COR_FOCO, layout.h): o FOCO e a
+      // pilula preenchida na cor de realce com texto escuro, sem anel. A
+      // pilula ESCOLHIDA sem foco marca-se pela borda #6e6e6e (3,9:1 sobre
+      // o fundo) — "onde voce esta" e "onde esta o foco" sao
+      // duas coisas, e branco e so a segunda. Antes a escolhida era branca e
+      // a focada tinha anel; com o foco tambem branco seriam dois brancos.
+      { float cresce = 1.0f + 0.07f * f;
         float dw = r.w * (cresce - 1.0f), dh = r.h * (cresce - 1.0f);
         GfxRect rc = { r.x - dw * 0.5f, r.y - dh * 0.5f, r.w + dw, r.h + dh };
-        float lum = sel ? 0.961f : 0.176f;      // #F5F5F5 / #2D2D2D
+        float lum = 0.176f;                     // #2D2D2D
         gfx_cor(rc, NV_RAIO_PILL, lum, lum, lum, a);
+        if (f > 0.01f) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+                         gfx_cor(rc, NV_RAIO_PILL, ar, ag, ab, f * a); }
+        else if (sel)
+          gfx_rect(rc, 0, GFX_ANEL, 0, 2.0f / rc.h, 0, NV_RAIO_PILL,
+                   0.431f, 0.431f, 0.431f, a);
         r = rc; }
-      if (f > 0.01f && !sel) {
-        GfxRect anel = { r.x - NV_ANEL_FOCO, r.y - NV_ANEL_FOCO,
-                         r.w + NV_ANEL_FOCO * 2, r.h + NV_ANEL_FOCO * 2 };
-        float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-        gfx_rect(anel, 0, GFX_ANEL, 0, NV_ANEL_FOCO / anel.h, 0, NV_RAIO_PILL,
-                 ar, ag, ab, f * a);
-      }
-      { int cor = sel ? 17 : 255;
+      { int cor = (f > 0.5f) ? 17 : 255;
         TxtLinha l = txt_linha(TXT_PLR_CORPO, COM_ROT[k], cor, cor, cor, 255);
         txt_peso(l, r.x + (r.w - l.w) * 0.5f, r.y + (r.h - l.h) * 0.5f, a, 0.5f); }
       px += w + COM_PILL_GAP;

@@ -440,16 +440,20 @@
 #define NV_HOME_SAFE_RIGHT    NV_LEGACY_CONTENT_RIGHT
 #define NV_HOME_TEXT_GUTTER   24.0f
 
-// FOCO EM SUPERFICIE (pilula, item de menu, chip): fundo ESCURO com texto
-// branco — nao o contrario.
+// SUPERFICIE DE BOTAO EM REPOUSO (pilula, item de menu, chip, linha de
+// ajustes): #303030, o token --focus-bg da referencia, MEDIDO na TCL.
 //
-// Usavamos #E4E4E9 (claro) com texto escuro, que alem de invertido em relacao a
-// referencia nao e cor de sistema nenhuma: nem #FFFFFF, nem o #F5F5F5 de
-// --secondary-color. Era um off-white azulado inventado. A referencia tem UM
-// token: --focus-bg #303030, confirmado no CSS do web e MEDIDO exato na TCL.
+// O NOME FICOU VELHO. Ate 16/09/2026 esta era a cor do FOCO, com um anel na
+// cor de realce por fora, e a nota aqui chamava "pilula clara com texto
+// escuro" de padrao errado. O dono, olhando a TV, decidiu o contrario: "os
+// botoes quando selecionados ficar brancos com o texto preto, na sidebar
+// tambem, e pode tirar o contorno — fica mais bonito fill do que contorno".
+// Entao hoje: REPOUSO = esta cor; FOCO = preenchimento na COR DE REALCE
+// (ajustes_acento, branco por padrao) com texto escuro, SEM anel. O anel de
+// foco continua so onde nao da para preencher: cartaz, card com arte, campo
+// de texto.
 //
-// Excecao legitima: o botao primario do detalhe ("Reproduzir") e branco com
-// texto preto nos DOIS apps. Esse continua como esta.
+// Quem ainda desenha anel em botao esta atrasado em relacao a esta decisao.
 #define NV_COR_FOCO_R     0.188f
 #define NV_COR_FOCO_G     0.188f
 #define NV_COR_FOCO_B     0.188f

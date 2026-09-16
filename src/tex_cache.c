@@ -307,6 +307,7 @@ static void desistir(int idx) {
   itens[idx].caminho[0] = 0;
 }
 
+static void amostrar(void);
 static int pedidoObsoleto(const Item *it) {
   Uint32 agora;
   if (!it->ultimoPedido || !it->ultimoQuadro) return 0;
@@ -322,6 +323,7 @@ void tex_novo_quadro(void) {
   if (!mtx) return;
   SDL_LockMutex(mtx);
   quadroAtual++;
+  amostrar();
   // Um decode concluido mas nunca mais desenhado nao deve ocupar memoria nem
   // bloquear a arte que entrou na tela. Pedidos PENDENTES sao cancelados pelo
   // consumidor da fila, para que o indice do slot nao seja reutilizado antes
@@ -481,8 +483,8 @@ static int despejar(int forcar) {
 sai:
   if (melhor < 0) return -1;
   if (!frio && !forcar) return -1;
-  tex_despejos++;
-  if (!frio) tex_despejos_quentes++;
+  tex_despejos++; tex_despejos_total++;
+  if (!frio) { tex_despejos_quentes++; tex_despejos_quentes_total++; }
   if (itens[melhor].tex) { gfx_tex_esquecer(itens[melhor].tex); glDeleteTextures(1, &itens[melhor].tex); }
   bytesUsados -= bytesTextura(itens[melhor].w, itens[melhor].h);
   if (bytesUsados < 0) bytesUsados = 0;
@@ -1169,14 +1171,17 @@ static long memTotalMB(void) {
 //
 // O Tizen fica no NV_TEX_ORCAMENTO_MB de layout.h: la o heap e fixo em 256
 // MiB e MemTotal do navegador nao diz nada sobre ele.
+static int  orcMB = 0;        // o que foi decidido, para tex_orcamento_info
+static long orcMemTotal = 0;
+static int  orcFixo = 0;      // 1 = NV_TEX_MB_FIXO, 2 = NUVIO_TEX_MB
 static int orcamentoMB(void) {
   long mem = memTotalMB();
   int mb;
   const char *porque;
 #ifdef NV_TEX_MB_FIXO
-  mb = NV_TEX_MB_FIXO; porque = "build de cache fixo";
+  mb = NV_TEX_MB_FIXO; porque = "NV_TEX_MB_FIXO"; orcFixo = 1;
 #else
-  if (!mem)          { mb = NV_TEX_ORCAMENTO_MB; porque = "sem /proc/meminfo, padrao"; }
+  if (!mem)          { mb = NV_TEX_ORCAMENTO_MB; porque = "MemTotal indisponivel: NV_TEX_ORCAMENTO_MB"; }
   else if (mem < 800)  { mb = 48;  porque = "RAM < 800 MB"; }
   else if (mem < 1200) { mb = 64;  porque = "RAM < 1,2 GB"; }
   else if (mem < 2000) { mb = 96;  porque = "RAM < 2 GB"; }
@@ -1186,11 +1191,48 @@ static int orcamentoMB(void) {
   { const char *env = getenv("NUVIO_TEX_MB");
     if (env && *env) {
       int v = atoi(env);
-      if (v >= 16 && v <= 1024) { mb = v; porque = "NUVIO_TEX_MB"; }
+      if (v >= 16 && v <= 1024) { mb = v; porque = "NUVIO_TEX_MB"; orcFixo = 2; }
     } }
   printf("[tex] orcamento de texturas: %d MB (%s; MemTotal=%ld MB)\n", mb, porque, mem);
   fflush(stdout);
+  orcMB = mb; orcMemTotal = mem;
   return mb;
+}
+
+void tex_orcamento_info(int *mb, long *memTotal, int *fixo, int *slots) {
+  if (mb) *mb = orcMB;
+  if (memTotal) *memTotal = orcMemTotal;
+  if (fixo) *fixo = orcFixo;
+  if (slots) *slots = nMax;
+}
+
+// HISTORICO DE OCUPACAO, uma amostra por segundo, para o grafico de Ajustes.
+// Anel de NV_TEX_HIST amostras; quem le recebe do mais antigo ao mais novo.
+#define NV_TEX_HIST 120
+static long   hist[NV_TEX_HIST];
+static int    histN = 0, histFim = 0;
+static Uint32 histEm = 0;
+long tex_despejos_total = 0;
+long tex_despejos_quentes_total = 0;
+
+static void amostrar(void) {
+  Uint32 agora = SDL_GetTicks();
+  if (histEm && agora - histEm < 1000) return;
+  histEm = agora;
+  hist[histFim] = bytesUsados;
+  histFim = (histFim + 1) % NV_TEX_HIST;
+  if (histN < NV_TEX_HIST) histN++;
+}
+
+int tex_historico(long *saida, int max) {
+  int n, i, ini;
+  if (!mtx) return 0;
+  SDL_LockMutex(mtx);
+  n = histN < max ? histN : max;
+  ini = (histFim - n + NV_TEX_HIST) % NV_TEX_HIST;
+  for (i = 0; i < n; i++) saida[i] = hist[(ini + i) % NV_TEX_HIST];
+  SDL_UnlockMutex(mtx);
+  return n;
 }
 
 int tex_iniciar(int max_itens) {
@@ -1595,3 +1637,4 @@ void tex_estatisticas(int *nItens, int *nPend, long *bytes,
 }
 
 long tex_cache_disco_bytes(void) { return cacheDiscoBytes; }
+long tex_orcamento_bytes(void) { return orcamento; }

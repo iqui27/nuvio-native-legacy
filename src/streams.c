@@ -583,6 +583,15 @@ void stream_folha_desenhar(Uint32 agora) {
   gfx_sem_recorte();
   gfx_recorte(x+36,FOLHA_TOPO,FOLHA_W-72,NV_TELA_H-FOLHA_TOPO-32);
   int nf=nFiltrados();
+  // A FONTE QUE O AUTOMATICO ESCOLHERIA, marcada. E a resposta a "se eu nao
+  // escolher nada, o que toca?" — que ate aqui a folha nao dava: a pessoa via
+  // trinta linhas e a pontuacao do dono (MP4 4K DV primeiro) decidia em
+  // silencio. A ordem e a mesma de stream_primeira_boa: a lembrada vai na
+  // frente quando existe; senao, a de maior pontuacao. Pedido do dono, 16/09.
+  //
+  // Calculado UMA vez por quadro, fora do laco: stream_automatico percorre a
+  // lista inteira, e chama-lo por linha seria n^2 a cada quadro.
+  int automatica = preferida >= 0 ? preferida : stream_automatico();
   for(int row=0;row<nf;row++) {
     float y=FOLHA_TOPO+row*FOLHA_LINHA-rolagem;
     if(y+FOLHA_LINHA<FOLHA_TOPO || y>NV_TELA_H-32) continue;
@@ -612,15 +621,25 @@ void stream_folha_desenhar(Uint32 agora) {
     // ANTES. Cortar as duas pela largura inteira faria um nome de addon longo
     // passar por baixo do texto da marca — e em portugues a marca e mais larga
     // que em ingles, entao o defeito apareceria so num dos dois idiomas.
+    //
+    // A MARCA E UMA PILULA na cor de realce com texto escuro — o mesmo
+    // desenho do foco no resto do app desde 16/09 — e nao texto solto: a
+    // tres metros, texto colorido de 20 px some no meio de quatro linhas de
+    // texto; a pilula e a unica forma cheia da linha e o olho vai nela.
     float wProv = w;
-    if (i == preferida && i != atual) {
+    if (i != atual && (i == automatica || i == preferida)) {
       float ar, ag, ab;
       TxtLinha m;
+      GfxRect pil;
+      const char *rot = (i == preferida && i == automatica) ? "Sua escolha anterior · automática"
+                      : (i == preferida) ? "Sua escolha anterior"
+                      : "Escolha automática";
       ajustes_acento(&ar, &ag, &ab);
-      m = txt_linha(TXT_MINI, "Sua escolha anterior",
-                    (int)(ar * 255.0f), (int)(ag * 255.0f), (int)(ab * 255.0f), 255);
-      txt_desenhar_alpha(m, lx + w - (float)m.w, y + 50, anim);
-      wProv = w - (float)m.w - 24.0f;
+      m = txt_linha(TXT_MINI, rot, 20, 20, 24, 255);
+      pil = (GfxRect){ lx + w - (float)m.w - 24.0f, y + 44.0f, (float)m.w + 24.0f, (float)m.h + 10.0f };
+      gfx_cor(pil, NV_RAIO_PILL, ar, ag, ab, anim);
+      txt_desenhar_alpha(m, pil.x + 12.0f, pil.y + 5.0f, anim);
+      wProv = w - pil.w - 24.0f;
       if (wProv < 120.0f) wProv = 120.0f;
     }
     txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,i==atual?"Reproduzindo agora":s->provedor,175,178,185,255,wProv),lx,y+46,anim);

@@ -218,17 +218,23 @@ static void desenhaFigura(float cx, float y, float a) {
 static void desenhaOpcao(float x, float y, float f, int vigor,
                          const char *tit, const char *desc, float a) {
   GfxRect r = { x, y, SI_INT, SI_OPCAO_H };
-  float lum = anim_mistura(vigor ? 0.155f : 0.115f, 0.20f, f);
+  float lum = vigor ? 0.155f : 0.115f;
+  int emFoco = f > 0.5f;
   gfx_cor(r, 0.16f, lum, lum + 0.004f, lum + 0.016f, a);
-  if (f > 0.01f)
-    gfx_rect(r, 0, GFX_ANEL, 0, NV_ANEL_FOCO / r.w, 0, 0.16f,
-             0.96f, 0.96f, 0.98f, f * a);
+  // Foco = preenchido na cor de realce com texto escuro, sem anel (a regra
+  // de NV_COR_FOCO em layout.h). O que esta EM VIGOR e sem foco guarda a
+  // borda cinza: e o "onde voce esta" separado do "onde esta o foco".
+  if (f > 0.01f) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+                   gfx_cor(r, 0.16f, ar, ag, ab, f * a); }
   else if (vigor)
     gfx_rect(r, 0, GFX_ANEL, 0, 1.5f / r.w, 0, 0.16f, 0.55f, 0.56f, 0.60f, a);
-  { TxtLinha t = txt_linha_corta(TXT_CALLOUT, tit, 245, 246, 250, 255, SI_INT - 44.0f);
+  { int c = emFoco ? 20 : 245;
+    TxtLinha t = txt_linha_corta(TXT_CALLOUT, tit, c, c + 1, c + 5, 255, SI_INT - 44.0f);
     txt_desenhar_alpha(t, x + 22.0f, y + 14.0f, a); }
-  txt_bloco(TXT_CAPTION, desc, 166, 170, 180, x + 22.0f, y + 50.0f,
-            SI_INT - 44.0f, 25.0f, a * 0.95f, 2);
+  if (emFoco) txt_bloco(TXT_CAPTION, desc, 60, 62, 70, x + 22.0f, y + 50.0f,
+                        SI_INT - 44.0f, 25.0f, a * 0.95f, 2);
+  else txt_bloco(TXT_CAPTION, desc, 166, 170, 180, x + 22.0f, y + 50.0f,
+                 SI_INT - 44.0f, 25.0f, a * 0.95f, 2);
 }
 
 void sintro_desenhar(Uint32 agora) {

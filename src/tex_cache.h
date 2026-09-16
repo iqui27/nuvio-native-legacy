@@ -113,6 +113,18 @@ void tex_estatisticas(int *itens, int *pendentes, long *bytes,
 // cache de TEXTO, e por muito tempo foi lido como se fosse este.
 extern int tex_despejos;
 extern int tex_despejos_quentes;
+// Os mesmos, acumulados desde o arranque (ninguem zera): para a tela de Ajustes.
+extern long tex_despejos_total;
+extern long tex_despejos_quentes_total;
+
+// O orcamento decidido no arranque (ver orcamentoMB em tex_cache.c): MB, a RAM
+// total lida (0 sem /proc), como foi decidido (0 = pela RAM, 1 = cravado na
+// build, 2 = NUVIO_TEX_MB) e quantos slots o cache tem.
+void tex_orcamento_info(int *mb, long *memTotal, int *fixo, int *slots);
+// Ocupacao em bytes, uma amostra por segundo, do mais antigo ao mais novo.
+// Devolve quantas escreveu (ate `max`, no maximo 120).
+int  tex_historico(long *saida, int max);
+long tex_orcamento_bytes(void);
 
 #endif
 
