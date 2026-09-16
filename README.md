@@ -79,7 +79,11 @@ webosbrew-ipk-verify               across all 14 bundled firmwares, only
 
 **A symbol existing is not the same as it working**, and webosbrew says plainly
 that they have been bitten by treating it as proof. Nobody here owns a webOS 3
-set. Three things no symbol dump can answer:
+set — but somebody else does: a tester installed it on a **webOS 3.4.3** set,
+reported that it runs, and the bugs he did find turned into four prereleases in
+two days. So this is now at the same level of evidence as webOS 5+: it works on
+someone else's TV, not on mine. Three things a symbol dump still cannot answer,
+and a report of "it runs" does not settle either:
 
 - **Codec.** The [moonlight-tv compatibility
   matrix](https://github.com/mariotaku/moonlight-tv/wiki/Compatibility-Status)
@@ -92,7 +96,7 @@ set. Three things no symbol dump can answer:
   differ by generation.
 
 The build lives on the `webos3` branch and ships as a prerelease
-([native-webos3-exp.1](https://github.com/iqui27/nuvio-native-legacy/releases/tag/native-webos3-exp.1)).
+([native-webos3-exp.4](https://github.com/iqui27/nuvio-native-legacy/releases/tag/native-webos3-exp.4)).
 For a webOS 3 TV the
 [web fork](https://github.com/iqui27/NuvioTVSmart-legacy-webos) is still the
 safer choice — plain JavaScript, tuned for Chromium 53 and low RAM, with
