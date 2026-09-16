@@ -65,6 +65,9 @@ typedef struct {
   // PRETO (acromatico, variante errada do TMDB) de logo de MARCA escuro mas
   // colorido (vermelho, vinho), que deve passar intacto.
   int croma;
+  // COR DA MARCA: media dos pixels opacos pesada pelo croma, 0..255 cada.
+  // Ver tex_cor_marca; -1 em corR enquanto nao se sabe.
+  int corR, corG, corB;
   // FURA A FILA. Arte que OCUPA A TELA — o hero da home, o fundo do detalhe —
   // é uma só, é a que a pessoa está olhando, e ela entrava na mesma fila FIFO
   // dos pôsteres da fileira. MEDIDO no aparelho do @rawldon (#55): `pend=17`
@@ -415,7 +418,7 @@ static int slotLivre(void) {
   for (int i = 0; i < nMax; i++)
     if (itens[i].estado == FALHOU && itens[i].falhas >= 3) {
       memset(&itens[i], 0, sizeof(Item));
-      itens[i].lum = -1;
+      itens[i].lum = -1; itens[i].corR = -1;
       return i;
     }
   return despejar(1);
@@ -493,6 +496,7 @@ sai:
   if (bytesUsados < 0) bytesUsados = 0;
   memset(&itens[melhor], 0, sizeof(Item));
   itens[melhor].lum = -1;   // 0 seria "preto"; o desconhecido e -1
+  itens[melhor].corR = -1;
   return melhor;
 }
 
@@ -1022,9 +1026,15 @@ static int threadDecode(void *arg) {
     // 1/16 dos pixels bastam para dizer se uma arte e escura, e a conta inteira
     // num logo de 700x271 seria trabalho sem retorno.
     int lumMedia = -1, cromaMedia = 0;
+    int corR = -1, corG = 0, corB = 0;
     if (conv && conv->format->BytesPerPixel == 4) {
       const unsigned char *px = (const unsigned char *)conv->pixels;
       long soma = 0, somaC = 0, n = 0;
+      // COR DA MARCA: media pesada pelo croma, para o azul do Disney+ ganhar
+      // do branco em volta e o verde do SBT ganhar do preto do texto. Num
+      // logo acromatico (Cartoon Network, preto e branco) o peso do croma
+      // e quase zero em todo pixel e a media cai na cor plana.
+      long pr = 0, pg = 0, pb = 0, pw = 0, sr = 0, sg = 0, sb = 0;
       int yy, xx;
       for (yy = 0; yy < conv->h; yy += 4) {
         const unsigned char *ln = px + (size_t)yy * conv->pitch;
@@ -1034,11 +1044,19 @@ static int threadDecode(void *arg) {
           soma += (q[0] * 299 + q[1] * 587 + q[2] * 114) / 1000;
           { int mx = q[0] > q[1] ? q[0] : q[1]; if (q[2] > mx) mx = q[2];
             int mn = q[0] < q[1] ? q[0] : q[1]; if (q[2] < mn) mn = q[2];
-            somaC += mx - mn; }
+            somaC += mx - mn;
+            pr += (long)q[0] * (mx - mn); pg += (long)q[1] * (mx - mn);
+            pb += (long)q[2] * (mx - mn); pw += mx - mn; }
+          sr += q[0]; sg += q[1]; sb += q[2];
           n++;
         }
       }
-      if (n > 0) { lumMedia = (int)(soma / n); cromaMedia = (int)(somaC / n); }
+      if (n > 0) {
+        lumMedia = (int)(soma / n); cromaMedia = (int)(somaC / n);
+        // Peso total de croma abaixo de ~24 por pixel = marca sem cor propria.
+        if (pw > n * 24) { corR = (int)(pr / pw); corG = (int)(pg / pw); corB = (int)(pb / pw); }
+        else             { corR = (int)(sr / n);  corG = (int)(sg / n);  corB = (int)(sb / n); }
+      }
     }
 
     // A FALHA PRECISA APARECER. Sem log, uma imagem que nunca decodifica vira
@@ -1060,6 +1078,7 @@ static int threadDecode(void *arg) {
     } else if (itens[idx].estado == PENDENTE) {
       itens[idx].lum = lumMedia;
       itens[idx].croma = cromaMedia;
+      itens[idx].corR = corR; itens[idx].corG = corG; itens[idx].corB = corB;
       itens[idx].sup = conv;
       if (conv) {
         itens[idx].estado = DECODIFICADO;
@@ -1517,6 +1536,23 @@ float tex_aspecto(const char *caminho) {
     a = (float)itens[i].w / (float)itens[i].h;
   SDL_UnlockMutex(mtx);
   return a;
+}
+
+int tex_cor_marca(const char *caminho, float *r, float *g, float *b) {
+  int ok = 0;
+  unsigned long h;
+  int i;
+  if (!caminho || !*caminho) return 0;
+  h = hashCaminho(caminho);
+  BUSCA_MEDIDA(i, caminho, h);
+  if (i >= 0 && itens[i].tex && itens[i].corR >= 0) {
+    if (r) *r = itens[i].corR / 255.0f;
+    if (g) *g = itens[i].corG / 255.0f;
+    if (b) *b = itens[i].corB / 255.0f;
+    ok = 1;
+  }
+  SDL_UnlockMutex(mtx);
+  return ok;
 }
 
 int tex_marca_escura(const char *caminho) {

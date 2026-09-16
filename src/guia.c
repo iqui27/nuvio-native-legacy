@@ -735,13 +735,22 @@ static void desenharCard(GCanal *c, float x, float y, float foco, float a,
   int temAgora = epg >= 0 && epg_agora(epg, agoraT, &ag);
   int temProx  = epg >= 0 && epg_proximo(epg, agoraT, 0, &px);
 
-  if (foco > 0.01f) {
-    GfxRect anel = { r.x - NV_ANEL_FOCO, r.y - NV_ANEL_FOCO,
-                     r.w + NV_ANEL_FOCO * 2, r.h + NV_ANEL_FOCO * 2 };
-    float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-    gfx_cor(anel, 0.10f, ar, ag, ab, foco * a);
-  }
+  // FOCO = O CARTAO PREENCHIDO NA COR DO CANAL, sem anel. Pedido do dono
+  // (16/09), olhando a captura do guia: "quando ta selecionado ficar com a
+  // cor do fundo da logo do canal". A cor sai dos pixels do logo
+  // (tex_cor_marca: media pesada pelo croma — o azul do Disney+, o verde do
+  // SBT); enquanto o logo nao carregou, a cor de realce, como todo botao do
+  // app desde a mesma decisao (ver NV_COR_FOCO em layout.h).
+  //
+  // O texto acompanha: escuro sobre marca clara, claro sobre marca escura,
+  // decidido pela luminancia da cor e trocado no meio da mola (texto ja
+  // rasterizado nao muda de cor).
+  float cr, cg, cb;
+  int escuro = 0;
+  if (!tex_cor_marca(c->logo, &cr, &cg, &cb)) ajustes_acento(&cr, &cg, &cb);
+  if (foco > 0.5f) escuro = (cr * 0.299f + cg * 0.587f + cb * 0.114f) > 0.55f;
   gfx_cor(r, 0.08f, lum, lum, lum + 0.01f, a);
+  if (foco > 0.01f) gfx_cor(r, 0.08f, cr, cg, cb, foco * a);
 
   // Logo sobre um azulejo claro: os logos do FrostView sao PNG escuros/coloridos
   // pensados para fundo branco — num fundo escuro varios somem.
@@ -761,8 +770,8 @@ static void desenharCard(GCanal *c, float x, float y, float foco, float a,
 
   // Nome ao lado do logo, favorito marcado com a estrela que a fonte ja tem.
   { float tx = x + 120.0f, tw = r.w - 120.0f - 14.0f;
-    txt_bloco(TXT_PAINEL_ITEM, c->nome, 240, 241, 245, tx, y + 16.0f, tw,
-              30.0f, a, 2);
+    if (escuro) txt_bloco(TXT_PAINEL_ITEM, c->nome, 20, 21, 25, tx, y + 16.0f, tw, 30.0f, a, 2);
+    else        txt_bloco(TXT_PAINEL_ITEM, c->nome, 240, 241, 245, tx, y + 16.0f, tw, 30.0f, a, 2);
     if (c->fav) {
       TxtLinha s = txt_linha(TXT_CAPTION, "\xe2\x98\x85", 255, 214, 90, 255);
       txt_desenhar_alpha(s, x + r.w - s.w - 14.0f, y + 14.0f, a);
@@ -774,9 +783,11 @@ static void desenharCard(GCanal *c, float x, float y, float foco, float a,
       char h1[8], h2[8], faixa[40];
       fmtHora(ag.ini, h1, sizeof h1); fmtHora(ag.fim, h2, sizeof h2);
       snprintf(faixa, sizeof faixa, "%s %s\xe2\x80\x93%s", i18n("AGORA"), h1, h2);
-      { TxtLinha l = txt_linha_corta(TXT_MINI, faixa, 148, 200, 255, 255, r.w - 28.0f);
+      { TxtLinha l = escuro ? txt_linha_corta(TXT_MINI, faixa, 30, 50, 90, 255, r.w - 28.0f)
+                            : txt_linha_corta(TXT_MINI, faixa, 148, 200, 255, 255, r.w - 28.0f);
         txt_desenhar_alpha(l, x + 14.0f, ly, a); ly += l.h + 2.0f; }
-      { TxtLinha l = txt_linha_corta(TXT_CAPTION, ag.titulo, 236, 237, 242, 255,
+      { int ct = escuro ? 20 : 236;
+        TxtLinha l = txt_linha_corta(TXT_CAPTION, ag.titulo, ct, ct + 1, ct + 6, 255,
                                    r.w - 28.0f);
         txt_desenhar_alpha(l, x + 14.0f, ly, a); }
       // Barra do programa: quanto ja passou dentro da janela dele.
@@ -785,17 +796,22 @@ static void desenharCard(GCanal *c, float x, float y, float foco, float a,
                   : 0.0f;
         GfxRect tr = { x + 14.0f, y + G_CARD_H - 52.0f, r.w - 28.0f, 4.0f };
         GfxRect an = { tr.x, tr.y, tr.w * f, tr.h };
-        gfx_cor(tr, 0.5f, 1, 1, 1, 0.18f * a);
-        gfx_cor(an, 0.5f, 0.36f, 0.64f, 1.0f, a); }
+        if (escuro) { gfx_cor(tr, 0.5f, 0, 0, 0, 0.18f * a);
+                      gfx_cor(an, 0.5f, 0.06f, 0.08f, 0.14f, a); }
+        else        { gfx_cor(tr, 0.5f, 1, 1, 1, 0.18f * a);
+                      gfx_cor(an, 0.5f, 0.36f, 0.64f, 1.0f, a); } }
     } else {
-      TxtLinha l = txt_linha(TXT_MINI, i18n("AO VIVO"), 255, 120, 120, 255);
+      TxtLinha l = escuro ? txt_linha(TXT_MINI, i18n("AO VIVO"), 150, 30, 30, 255)
+                          : txt_linha(TXT_MINI, i18n("AO VIVO"), 255, 120, 120, 255);
       txt_desenhar_alpha(l, x + 14.0f, ly, a);
       ly += l.h + 2.0f;
-      { TxtLinha t = txt_linha_corta(TXT_CAPTION, c->nome, 236, 237, 242, 255,
+      { int ct = escuro ? 20 : 236;
+        TxtLinha t = txt_linha_corta(TXT_CAPTION, c->nome, ct, ct + 1, ct + 6, 255,
                                    r.w - 28.0f);
         txt_desenhar_alpha(t, x + 14.0f, ly, a); }
       { GfxRect tr = { x + 14.0f, y + G_CARD_H - 52.0f, r.w - 28.0f, 4.0f };
-        gfx_cor(tr, 0.5f, 1, 1, 1, 0.10f * a); }
+        if (escuro) gfx_cor(tr, 0.5f, 0, 0, 0, 0.14f * a);
+        else        gfx_cor(tr, 0.5f, 1, 1, 1, 0.10f * a); }
     } }
 
   // A SEGUIR, numa linha so.
@@ -811,7 +827,8 @@ static void desenharCard(GCanal *c, float x, float y, float foco, float a,
                : epg >= 0 ? i18n("Sem próximos programas")
                           : i18n("Carregando programação…"));
     }
-    { TxtLinha l = txt_linha_corta(TXT_MINI, linha, 160, 162, 170, 255,
+    { int ct = escuro ? 60 : 160;
+      TxtLinha l = txt_linha_corta(TXT_MINI, linha, ct, ct + 2, ct + 10, 255,
                                  r.w - 28.0f);
       txt_desenhar_alpha(l, x + 14.0f, y + G_CARD_H - 36.0f, a); } }
 }

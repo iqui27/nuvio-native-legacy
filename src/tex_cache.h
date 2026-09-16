@@ -85,6 +85,12 @@ float tex_aspecto(const char *caminho);
 // Responde 0 enquanto a textura nao carregou: nao tingir e o padrao seguro.
 int  tex_marca_escura(const char *caminho);
 
+// A COR DA MARCA: media dos pixels opacos pesada pelo croma (o azul do Disney+
+// ganha do branco em volta; um logo preto e branco cai na media plana). Para
+// pintar o cartao em foco com a cor do canal, no guia. 0 enquanto a textura
+// nao carregou — ai o chamador usa a cor de realce, como em qualquer botao.
+int  tex_cor_marca(const char *caminho, float *r, float *g, float *b);
+
 // Chamar uma vez por quadro, na thread de desenho: sobe para a GPU o que a
 // thread de decode terminou. Devolve quantas subiu.
 int tex_bombear(int max_por_quadro);
