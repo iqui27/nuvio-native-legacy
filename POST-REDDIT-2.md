@@ -123,8 +123,10 @@ what the cache is doing, so you can see whether your set needs it.
   now marks which one would be picked automatically
 
 [IMAGEM: 14-sources.png]
-- In-app update check with the release notes, and on rooted LG sets it
-  installs the update itself
+- In-app update check with the release notes, and on LG sets with the Homebrew
+  Channel it installs the update itself
+
+[IMAGEM: 20-update.png]  ← FALTA CAPTURAR: ver a nota no fim
 - Focus is now a filled button in your accent colour instead of an outline —
   a request from a photo of my own TV that I agreed with once I saw it
 
@@ -238,9 +240,17 @@ sai em captura nenhuma (nem na TV); a imagem mostra só os controles, e no Mac
 não há pipeline de vídeo, por isso o aviso "Could not open the source" no meio.
 Se quiser mostrar reprodução, é foto da TV.
 
-Não capturado: o cartão de atualização em inglês (o do Mac fica marcado "Depois"
-e não volta; só tenho a versão em português da TV), e o PiP de canal (precisa de
-vídeo). Se quiser os dois, é tirar na TV.
+**Falta uma imagem: `20-update.png`, o cartão de atualização.** Ele só abre
+quando há release mais nova que a instalada, e no Mac eu não consegui fazer o
+cartão abrir mesmo com a checagem dando `instalada 1.0.50, no GitHub 1.0.56 --
+NOVA` e o arquivo `atualizacao-vista.txt` apagado — alguma guarda da home não
+deixou. **Na TV ele aparece** (foi de lá que veio a versão em português), e a
+TV está com a interface em inglês agora, então é uma captura de 30 s quando
+ela estiver livre: abrir o app, o cartão sobe sozinho na home, tecla vermelha
+não, só a captura.
+
+Também não capturado: o PiP de canal (precisa de vídeo, que não existe no
+build do Mac).
 
 ## Números usados no texto, e de onde vieram
 
