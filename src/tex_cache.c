@@ -1,4 +1,7 @@
 #include "tex_cache.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include "rede.h"
 #include "gfx.h"
 #include <sys/stat.h>
@@ -1129,10 +1132,19 @@ static int threadDecode(void *arg) {
   }
 }
 
-// RAM TOTAL DO APARELHO, em MB, por /proc/meminfo. 0 onde nao ha /proc.
+// RAM TOTAL DO APARELHO, em MB. Na TV LG vem de /proc/meminfo. No Tizen nao
+// ha /proc: vem de navigator.deviceMemory, que o navegador arredonda para
+// 0,25/0,5/1/2/4/8 GB e que nem todo Chromium expoe — sem ele, 0, e o
+// orcamento fica no padrao de layout.h (96 MB), que e o que sempre foi.
 static long memTotalMB(void) {
 #ifdef __EMSCRIPTEN__
-  return 0;
+  double gb = EM_ASM_DOUBLE({
+    try {
+      var m = (typeof navigator !== 'undefined') ? navigator.deviceMemory : 0;
+      return (typeof m === 'number' && m > 0) ? m : 0;
+    } catch (e) { return 0; }
+  });
+  return (long)(gb * 1024.0 + 0.5);
 #else
   FILE *f = fopen("/proc/meminfo", "r");
   char linha[128];
@@ -1162,6 +1174,13 @@ static long memTotalMB(void) {
 //   < 3 GB    128 MB    C9: medido, home usa 44-50 MB quentes, RSS 255-278
 //   >= 3 GB   192 MB    C1/C2/C3 e mais novas
 //
+// NO TIZEN a tabela e outra e mais curta, porque o numero mede outra coisa:
+// navigator.deviceMemory e a RAM do aparelho vista pelo navegador, e as
+// texturas vivem no processo da GPU, fora do heap fixo de 256 MiB do wasm.
+// Sem Samsung aqui, os degraus sao CHUTE conservador: <= 1 GB -> 64, 2 GB ->
+// 96 (o que era), >= 4 GB -> 128. Sem deviceMemory -> 96. O `rss=` nao existe
+// la; o [mem] e o painel de log (tecla vermelha) sao o que confirma.
+//
 // Duas portas por cima da tabela:
 //   NV_TEX_MB_FIXO   -D de compilacao: e a build "alto cache" (tools/arm.sh
 //                    --alto-cache, 300 MB) para quem tem TV com muita RAM e
@@ -1180,6 +1199,11 @@ static int orcamentoMB(void) {
   const char *porque;
 #ifdef NV_TEX_MB_FIXO
   mb = NV_TEX_MB_FIXO; porque = "NV_TEX_MB_FIXO"; orcFixo = 1;
+#elif defined(__EMSCRIPTEN__)
+  if (!mem)            { mb = NV_TEX_ORCAMENTO_MB; porque = "deviceMemory indisponivel: NV_TEX_ORCAMENTO_MB"; }
+  else if (mem <= 1024) { mb = 64;  porque = "deviceMemory <= 1 GB"; }
+  else if (mem < 4096)  { mb = 96;  porque = "deviceMemory 2 GB"; }
+  else                  { mb = 128; porque = "deviceMemory >= 4 GB"; }
 #else
   if (!mem)          { mb = NV_TEX_ORCAMENTO_MB; porque = "MemTotal indisponivel: NV_TEX_ORCAMENTO_MB"; }
   else if (mem < 800)  { mb = 48;  porque = "RAM < 800 MB"; }
