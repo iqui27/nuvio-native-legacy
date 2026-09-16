@@ -492,17 +492,26 @@ static void desenhaProfundidade(GfxRect card, float raio, int ligadaAqui) {
   float borda = ajustes_profundidade_borda();
   float brilho = ajustes_profundidade_brilho();
   float cobertura = ajustes_profundidade_cobertura();
+  // OS DOIS SAO DEGRADE, e nao retangulo chapado — foi a queixa do dono:
+  // "se ativar o brilho do card ele so coloca uma barra grossa no topo, fica
+  // estranho". Era literalmente isso: um branco solido de 12 a 30 px em cima e
+  // outro cobrindo 28% da altura, os dois com aresta dura embaixo. A propria
+  // nota acima ja dizia que a referencia usa gradiente.
+  //
+  // O retangulo e desenhado com a ALTURA DO CARD e a rampa corta dentro dele
+  // (uPar.x), em vez de um retangulo baixo com raio proprio: assim o realce
+  // segue os cantos arredondados do card, que era o outro defeito visivel —
+  // a faixa passava reta por cima do canto.
   if (borda > 0.001f) {
-    float h = 12.0f + 18.0f * cobertura;
-    GfxRect faixa = { card.x, card.y, card.w, h };
-    // Raio proporcional: a faixa e muito mais baixa que o card, entao repetir a
-    // fracao do card arredondaria demais e a borda descolaria do canto.
-    gfx_cor(faixa, raio * (card.h / (h > 0.0f ? h : 1.0f)) * 0.5f,
-            1.0f, 1.0f, 1.0f, borda * 0.55f);
+    float alcance = (12.0f + 18.0f * cobertura) / (card.h > 1.0f ? card.h : 1.0f);
+    gfx_rect(card, 0, GFX_BRILHO_TOPO, 0, alcance, 0, raio,
+             1.0f, 1.0f, 1.0f, borda * 0.55f);
   }
   if (brilho > 0.001f) {
-    GfxRect refl = { card.x, card.y + card.h * 0.06f, card.w, card.h * 0.28f };
-    gfx_cor(refl, raio, 1.0f, 1.0f, 1.0f, brilho * 0.18f);
+    // O reflexo vai mais fundo e mais fraco: e o `--card-depth-sheen`, uma
+    // claridade que desce pela parte alta, nao uma segunda borda.
+    gfx_rect(card, 0, GFX_BRILHO_TOPO, 0, 0.34f, 0, raio,
+             1.0f, 1.0f, 1.0f, brilho * 0.18f);
   }
 }
 // ZERO. MEDIDO no app web (sessao logada, perfil do dono): o card em foco tem
@@ -2147,8 +2156,15 @@ static void desenhaAtalhos(int r, float y) {
     }
     if (tex) {
       gfx_tex_aspect_atual = gifDesenhando ? 0.0f : tex_aspecto(arte);
-      gfx_rect(card, tex, GFX_CARD, 0, 0, 0, raio, 0, 0, 0, 1);
+      // PASSA O FOCO, como a fileira de cartazes faz. Antes ia 0 fixo: o card
+      // de COLECAO era o unico formato que nao clareava, nao ganhava o
+      // especular e nao respondia ao foco de jeito nenhum — a queixa do dono
+      // de que "tem cards que nao tem as animacoes de foco". A forma continua
+      // diferente; a resposta ao foco, nao.
+      gfx_rect(card, tex, GFX_CARD, f, 0, 0, raio, 0, 0, 0, 1);
       gfx_tex_aspect_atual = 0;
+      // E a profundidade tambem vale aqui, pelo mesmo interruptor dos cartazes.
+      desenhaProfundidade(card, raio, ajustes_profundidade_posters());
     }
     // A propria capa e a identidade do catalogo. O nome/logo vinha sendo
     // desenhado novamente por cima dela e criava exatamente a duplicacao que

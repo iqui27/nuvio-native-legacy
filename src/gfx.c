@@ -495,6 +495,20 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  g = mix(g,   0.95, smoothstep(0.82, 1.00, t));\n"
   "  gl_FragColor = vec4(uCor.rgb, uCor.a * g * m);\n"
   "}\n",
+
+  // GFX_BRILHO_TOPO — realce claro no alto, rampa por pixel, cantos do card.
+  //
+  // A rampa e o smoothstep AO QUADRADO, pelo mesmo motivo escrito em
+  // GFX_VEU_BAIXO: com a rampa linear o olho enxerga a segunda derivada e
+  // aparece uma emenda onde ela comeca — que e exatamente o "risco" que um
+  // retangulo chapado ja fazia, so que mais fraco.
+  "void main(){\n"
+  "  float d = sdf(vUv, uRaio, uAspect);\n"
+  "  float m = smoothstep(0.006,-0.006,d);\n"
+  "  if (m <= 0.001) discard;\n"
+  "  float t = 1.0 - smoothstep(0.0, max(uPar.x, 0.001), vUv.y);\n"
+  "  gl_FragColor = vec4(uCor.rgb, uCor.a * t * t * m);\n"
+  "}\n",
 };
 
 // Cada corpo declara o que usa; montar so o necessario mantem o shader enxuto.
@@ -511,7 +525,8 @@ static const struct { int sdf, cover; } PRECISA[GFX_NMODOS] = {
   {0,0},   /* GFX_RETRATO */
   {0,0},   /* GFX_DISCO */
   {0,0},   /* GFX_EDITORIAL */
-  {1,0}    /* GFX_VEU_CARD — precisa do SDF: o veu segue os cantos do card */
+  {1,0},   /* GFX_VEU_CARD — precisa do SDF: o veu segue os cantos do card */
+  {1,0}    /* GFX_BRILHO_TOPO — idem, e pelo mesmo motivo */
 };
 
 static GLuint compila(GLenum tipo, const char *src) {

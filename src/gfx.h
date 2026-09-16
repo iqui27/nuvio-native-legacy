@@ -110,7 +110,20 @@ typedef enum {
   // topo, 0.18 a 22%, 0.62 a 52%, 0.86 a 82% e 0.95 na base — so que agora
   // interpolada no fragmento.
   GFX_VEU_CARD = 23,
-  GFX_NMODOS = 24
+  // GFX_BRILHO_TOPO — realce CLARO no alto do card, com a rampa por pixel e
+  // respeitando os cantos arredondados. E o par claro do GFX_VEU_CARD.
+  //
+  // Existe porque o "efeito de profundidade" (cardDepth* do web) era desenhado
+  // com DOIS RETANGULOS CHAPADOS: um branco de 12 a 30 px no topo e outro
+  // cobrindo 28% da altura. O dono descreveu o resultado como "uma barra grossa
+  // no topo, fica estranho", e era literalmente isso — inclusive passando por
+  // cima dos cantos arredondados, porque gfx_cor com raio proprio nao
+  // acompanha o canto do card embaixo.
+  //
+  // uPar.x = ate onde a rampa vai, em fracao da ALTURA DESTE retangulo. A cor
+  // vem de uCor.rgb (branco para realce), o alfa de uCor.a.
+  GFX_BRILHO_TOPO = 24,
+  GFX_NMODOS = 25
 } GfxModo;
 
 typedef struct {
