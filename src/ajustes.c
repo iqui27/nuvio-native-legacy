@@ -2624,7 +2624,8 @@ static float desenhaPainelImagens(float x, float y, float w) {
   else if (fixo == 2) snprintf(b, sizeof b, "%s", "NUVIO_TEX_MB");
   else if (memTotal > 0) snprintf(b, sizeof b, i18n("pela RAM da TV (%.1f GB)"), memTotal / 1024.0);
   else snprintf(b, sizeof b, "%s", i18n("padrão"));
-  snprintf(a, sizeof a, "%d MB · %s", mb, b);
+  // O teto mostrado e o efetivo (no Mac retina e mb x 4; na TV, o mesmo).
+  snprintf(a, sizeof a, "%d MB · %s", (int)(teto / 1048576), b);
   y += linhaStat(x, y, w, i18n("Teto"), a);
   return y - y0;
 }
