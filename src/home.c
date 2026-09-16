@@ -2051,7 +2051,9 @@ static void desenhaAtalhos(int r, float y) {
     if (x + w < 0 || x > NV_TELA_W) continue;
     float f = animFoco[r][c], raio = raioDe(w, h);
     GfxRect card = {x, y, w, h};
-    if (f > .01f) {
+    // O ANEL E OPCIONAL (Ajustes > Foco no cartaz). Sem ele o foco continua
+    // dito pelo tamanho e pela animacao do cartaz — o que sai e so a borda.
+    if (f > .01f && ajustes_borda_foco()) {
       float menor = w < h ? w : h;
       float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
       gfx_cor((GfxRect){x - NV_ANEL_FOCO, y - NV_ANEL_FOCO,
@@ -2157,6 +2159,10 @@ static void desenhaAtalhos(int r, float y) {
 }
 
 void home_desenhar(Uint32 agora) {
+  // O REBORDO DO CARTAZ EM FOCO e ajuste da pessoa, e ele mora no shader do
+  // GFX_CARD (nao e um retangulo desenhado por cima): por isso vai por uma
+  // variavel de modulo, uma vez por quadro, e nao em cada chamada.
+  gfx_borda_foco_atual = ajustes_borda_foco() ? 1.0f : 0.0f;
   desenhaFundo();
   float pd = detail_progresso();
   if (ajustes_hero_ligado()) desenhaHero(agora, pd);
@@ -2443,7 +2449,7 @@ void home_desenhar(Uint32 agora) {
           // e UM numero para o app inteiro (NV_DETW_ANEL ja valia 4 e so era
           // usado no detalhe).
           float raio = raioDe(w, h);
-          if (f > 0.01f) {
+          if (f > 0.01f && ajustes_borda_foco()) {
             GfxRect borda = { px - NV_ANEL_FOCO, py - NV_ANEL_FOCO,
                               w + NV_ANEL_FOCO * 2, h + NV_ANEL_FOCO * 2 };
             float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
@@ -2741,6 +2747,11 @@ void home_desenhar(Uint32 agora) {
   }
 
   gfx_opacidade_grupo=1;
+  // DEVOLVE O REBORDO ao sair: a variavel e global e o detalhe, a busca e a
+  // biblioteca desenham GFX_CARD tambem. O ajuste e "na Home", entao ele nao
+  // pode vazar para as outras telas — mesma disciplina de gfx_opacidade_grupo
+  // logo acima.
+  gfx_borda_foco_atual = 1.0f;
   gfx_sem_recorte();
 }
 

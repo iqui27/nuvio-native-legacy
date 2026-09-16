@@ -9,13 +9,18 @@
 // shader que usasse a mesma variavel.
 typedef struct {
   GLuint prog;
-  GLint rect, tela, tex, foco, par, raio, cor, asp, texAsp;
+  GLint rect, tela, tex, foco, par, raio, cor, asp, texAsp, borda;
 } Programa;
 static Programa progs[GFX_NMODOS];
 static int progAtual = -1;
 // Proporcao da textura corrente, para o "cover". Fica global porque o desenho e
 // imediato: quem chama define antes de cada rect com textura.
 float gfx_tex_aspect_atual = 0.0f;
+// 1 = desenhar o rebordo claro que marca o cartaz em foco; 0 = nao desenhar.
+// Vive aqui, e nao num parametro de gfx_rect, pela mesma razao do aspecto da
+// textura: sao dezenas de chamadas e a resposta e a mesma para todas dentro do
+// mesmo quadro. Quem o define e a tela, a partir do ajuste da pessoa.
+float gfx_borda_foco_atual = 1.0f;
 float gfx_opacidade_grupo = 1.0f;
 // Tamanho real do alvo da tela (em retina, maior que 1920x1080). Guardado aqui
 // porque toda volta de FBO precisa restaurar o viewport com ele.
@@ -54,6 +59,7 @@ static const char *FS_CABECA =
   "varying vec2 vUv;\n"
   "uniform sampler2D uTex;\n"
   "uniform float uFoco;\n"
+  "uniform float uBorda;\n"
   "uniform vec2  uPar;\n"
   "uniform float uRaio;\n"
   "uniform vec4  uCor;\n"
@@ -95,7 +101,10 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "    float e = (dot(vUv-0.5, vec2(0.5029,-0.8644)) + uPar.x*3.0) * 3.0;\n"
   "    cor += exp(-e*e) * 0.16 * uFoco;\n"
   "    cor *= (0.80 + 0.20*uFoco);\n"
-  "    cor += smoothstep(0.010,0.0,abs(d)) * uFoco * 0.35;\n"
+  // O REBORDO E OPCIONAL (Ajustes > Borda no cartaz em foco). O resto do
+  // bloco de foco fica: o cartaz em foco continua mais claro e com o
+  // especular, entao desligar a borda nao deixa o foco invisivel.
+  "    cor += smoothstep(0.010,0.0,abs(d)) * uFoco * 0.35 * uBorda;\n"
   "  } else cor *= 0.80;\n"
   "  gl_FragColor = vec4(cor, m * uCor.a);\n"
   "}\n",
@@ -539,6 +548,7 @@ int gfx_iniciar(void) {
     progs[m].cor  = glGetUniformLocation(p, "uCor");
     progs[m].asp  = glGetUniformLocation(p, "uAspect");
     progs[m].texAsp = glGetUniformLocation(p, "uTexAsp");
+    progs[m].borda  = glGetUniformLocation(p, "uBorda");
     glUseProgram(p);
     glUniform2f(progs[m].tela, NV_TELA_W, NV_TELA_H);
     glUniform1i(progs[m].tex, 0);
@@ -650,6 +660,7 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
   if (P->raio >= 0)   glUniform1f(P->raio, raio);
   if (P->asp >= 0)    glUniform1f(P->asp, r.h > 0 ? r.w / r.h : 1.0f);
   if (P->texAsp >= 0) glUniform1f(P->texAsp, gfx_tex_aspect_atual);
+  if (P->borda >= 0)  glUniform1f(P->borda, gfx_borda_foco_atual);
   if (P->cor >= 0)    glUniform4f(P->cor, cr, cg, cb, ca * gfx_opacidade_grupo);
   if (tex && tex != texAtual) {
     glActiveTexture(GL_TEXTURE0);

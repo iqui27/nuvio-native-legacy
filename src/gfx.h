@@ -120,6 +120,10 @@ typedef struct {
 // Proporcao (w/h) da textura a desenhar. 0 = mapeia direto (texto, veu).
 // Definir ANTES de gfx_rect para que a arte seja recortada, nunca esticada.
 extern float gfx_tex_aspect_atual;
+// 1 = o cartaz em foco ganha o rebordo claro no GFX_CARD; 0 = nao ganha. E um
+// ajuste da pessoa (Ajustes > Foco no cartaz), lido uma vez por quadro pela
+// tela que desenha; o brilho e o especular do foco nao dependem dele.
+extern float gfx_borda_foco_atual;
 // Opacidade de grupo: deve voltar a 1 ao terminar o grupo.
 extern float gfx_opacidade_grupo;
 

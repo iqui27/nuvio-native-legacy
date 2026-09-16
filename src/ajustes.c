@@ -102,7 +102,7 @@ typedef enum {
   // Pagina de detalhe
   AJ_DET_BLUR_NAO_VISTOS, AJ_DET_TRAILER, AJ_DET_META_EXT, AJ_DET_DATA_CHEIA,
   // Foco no poster
-  AJ_EXPANDIR, AJ_EXPANDIR_ATRASO, AJ_NAV_RAPIDA,
+  AJ_EXPANDIR, AJ_EXPANDIR_ATRASO, AJ_NAV_RAPIDA, AJ_BORDA_FOCO,
   // Profundidade
   AJ_PROF, AJ_PROF_BORDA, AJ_PROF_BRILHO, AJ_PROF_COBERTURA,
   AJ_PROF_POSTERS, AJ_PROF_CW, AJ_PROF_EPS, AJ_PROF_ELENCO, AJ_PROF_TRAILERS,
@@ -315,6 +315,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Expandir pôster ao focar",   V_LIGA, 2),   // focusedPosterBackdropExpandEnabled
   NUM("Atraso da expansão",         0, 10, 1, " s"), // ...ExpandDelaySeconds
   ESC("Navegação horizontal rápida", V_LIGA, 2),  // fastHorizontalNavigationEnabled
+  ESC("Borda no cartaz em foco",    V_LIGA, 2),   // local: ver bordaFocoCartaz
 
   ESC("Efeito de profundidade",     V_LIGA, 2),   // cardDepthEnabled
   NUM("Brilho da borda",            0, 100, 2, "%"), // cardDepthEdgeStrength
@@ -409,6 +410,7 @@ static const char *CHAVE[] = {
   "preferExternalMetaAddonDetail", "showFullReleaseDate",
   "focusedPosterBackdropExpandEnabled", "focusedPosterBackdropExpandDelaySeconds",
   "fastHorizontalNavigationEnabled",
+  "bordaFocoCartaz",
   "cardDepthEnabled", "cardDepthEdgeStrength", "cardDepthSheenStrength",
   "cardDepthEdgeCoverage", "cardDepthPostersEnabled",
   "cardDepthContinueWatchingEnabled", "cardDepthEpisodeCardsEnabled",
@@ -609,6 +611,7 @@ static int valor[AJ_N] = {
   0,                /* expandir poster ao focar: ligado (DEFAULT do web) */
   3,                /* atraso: 3s */
   1,                /* navegacao horizontal rapida: desligada (fabrica) */
+  0,                /* borda no cartaz em foco: ligada (o foco de sempre) */
 
   1,                /* efeito de profundidade: desligado (fabrica) */
   28,               /* brilho da borda */
@@ -771,6 +774,7 @@ int ajustes_meta_externo(void)        { return lig(AJ_DET_META_EXT); }
 int   ajustes_expandir_poster(void)   { return lig(AJ_EXPANDIR); }
 float ajustes_expandir_poster_atraso(void) { return (float)valor[AJ_EXPANDIR_ATRASO]; }
 int   ajustes_navegacao_horizontal_rapida(void) { return lig(AJ_NAV_RAPIDA); }
+int   ajustes_borda_foco(void) { return lig(AJ_BORDA_FOCO); }
 
 int   ajustes_profundidade(void)      { return lig(AJ_PROF); }
 float ajustes_profundidade_borda(void)     { return valor[AJ_PROF_BORDA] / 100.0f; }
@@ -1337,6 +1341,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_EXPANDIR: return "O cartaz em foco cresce e abre a arte deitada atrás dele depois de um instante parado.";
     case AJ_EXPANDIR_ATRASO: return "Quanto tempo o foco precisa ficar parado antes de o cartaz expandir.";
     case AJ_NAV_RAPIDA: return "Andar de lado numa fileira não espera a animação terminar. Serve para controle que repete rápido.";
+    case AJ_BORDA_FOCO: return "O anel colorido que marca o cartaz em foco na Home. Desligado, o foco fica só pelo tamanho do cartaz.";
     case AJ_PROF: return "Dá relevo aos cartazes: borda iluminada e um reflexo que acompanha o foco.";
     case AJ_PROF_BORDA: return "Quanto a borda do cartaz em foco acende.";
     case AJ_PROF_BRILHO: return "Quanto o reflexo passa por cima da arte do cartaz em foco.";
