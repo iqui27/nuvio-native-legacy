@@ -53,6 +53,18 @@ typedef struct {
   // PRETO (acromatico, variante errada do TMDB) de logo de MARCA escuro mas
   // colorido (vermelho, vinho), que deve passar intacto.
   int croma;
+  // FURA A FILA. Arte que OCUPA A TELA — o hero da home, o fundo do detalhe —
+  // é uma só, é a que a pessoa está olhando, e ela entrava na mesma fila FIFO
+  // dos pôsteres da fileira. MEDIDO no aparelho do @rawldon (#55): `pend=17`
+  // com o cache no teto, e `[hero] arte atrasada chegou em 12249 ms` contra um
+  // prazo de 400. Doze segundos de fundo vazio porque dezessete miniaturas
+  // estavam na frente.
+  //
+  // Vira 0 de novo quando o item conclui (PRONTO ou FALHOU): assim "urgente"
+  // quer dizer "pedido como tela cheia e ainda devendo", e não "já foi hero um
+  // dia" — senão, depois de algumas telas, metade da fila seria urgente e a
+  // preferência voltaria a ser FIFO entre elas.
+  int urgente;
 } Item;
 
 #define NV_TEX_FIOS 2
@@ -179,6 +191,34 @@ static SDL_cond *condDec;
 
 // Sinalizado pelos fios de decode quando LIBERAM um lugar na fila.
 static SDL_cond *condLivre;
+
+// Tira o proximo da fila circular, com o URGENTE furando a ordem. Chamado com
+// o mutex tomado.
+//
+// A varredura e linear sobre no maximo MAX_FILA (128) inteiros e acontece uma
+// vez por item retirado, nao por quadro. Reordenar a fila inteira custaria o
+// mesmo e perderia a ordem de chegada dos demais, que e o que faz a fileira
+// aparecer da esquerda para a direita em vez de embaralhada.
+static int tirarFila(int *f, int *ini, int fim) {
+  int p = *ini, achou = -1, idx;
+  while (p != fim) {
+    if (itens[f[p]].urgente) { achou = p; break; }
+    p = (p + 1) % MAX_FILA;
+  }
+  if (achou < 0) {
+    idx = f[*ini]; *ini = (*ini + 1) % MAX_FILA; return idx;
+  }
+  idx = f[achou];
+  // Fecha o buraco puxando quem estava ANTES dele para a frente: os outros
+  // mantem a ordem relativa e so o urgente muda de lugar.
+  while (achou != *ini) {
+    int ant = (achou - 1 + MAX_FILA) % MAX_FILA;
+    f[achou] = f[ant];
+    achou = ant;
+  }
+  *ini = (*ini + 1) % MAX_FILA;
+  return idx;
+}
 
 // Enfileira para DECODIFICAR. Chamado com o mutex tomado, e ESPERA quando a
 // fila esta cheia.
@@ -572,7 +612,7 @@ static int threadRede(void *arg) {
     SDL_LockMutex(mtx);
     while (rodando && filaIni == filaFim) SDL_CondWait(cond, mtx);
     if (!rodando) { SDL_UnlockMutex(mtx); return 0; }
-    idx = fila[filaIni]; filaIni = (filaIni + 1) % MAX_FILA;
+    idx = tirarFila(fila, &filaIni, filaFim);
     if (itens[idx].estado != PENDENTE || pedidoObsoleto(&itens[idx])) {
       if (itens[idx].estado == PENDENTE) {
         itens[idx].estado = VAZIO;
@@ -610,6 +650,7 @@ static int threadRede(void *arg) {
         continue;
       }
       itens[idx].estado = FALHOU;
+      itens[idx].urgente = 0;
       itens[idx].falhas++;
       itens[idx].tentarEm = SDL_GetTicks() +
           (itens[idx].falhas == 1 ? 2000 : (itens[idx].falhas == 2 ? 10000 : 60000));
@@ -763,7 +804,7 @@ static int threadDecode(void *arg) {
     SDL_LockMutex(mtx);
     while (rodando && decIni == decFim) SDL_CondWait(condDec, mtx);
     if (!rodando) { SDL_UnlockMutex(mtx); return 0; }
-    int idx = filaDec[decIni]; decIni = (decIni + 1) % MAX_FILA;
+    int idx = tirarFila(filaDec, &decIni, decFim);
     SDL_CondSignal(condLivre);   // abriu lugar: solta um fio de rede que espera
     if (itens[idx].estado != PENDENTE || pedidoObsoleto(&itens[idx])) {
       if (itens[idx].estado == PENDENTE) {
@@ -930,6 +971,7 @@ static int threadDecode(void *arg) {
         static const Uint32 RECUO[3] = { 2000, 10000, 60000 };
         int k = itens[idx].falhas;
         itens[idx].estado = FALHOU;
+        itens[idx].urgente = 0;
         itens[idx].falhas = k + 1;
         itens[idx].tentarEm = SDL_GetTicks() + RECUO[k < 3 ? k : 2];
         falhou = 1;
@@ -1052,7 +1094,7 @@ void tex_encerrar(void) {
   SDL_DestroyCond(cond); SDL_DestroyMutex(mtx);
 }
 
-static GLuint tex_obter_limite(const char *caminho, int limite) {
+static GLuint tex_obter_limite(const char *caminho, int limite, int urgente) {
   if (!caminho || !*caminho) return 0;
   GLuint saida = 0;
   unsigned long h = hashCaminho(caminho);
@@ -1060,6 +1102,7 @@ static GLuint tex_obter_limite(const char *caminho, int limite) {
   if (i >= 0 && itens[i].estado == FALHOU) {
     itens[i].ultimoQuadro = quadroAtual;
     itens[i].ultimoPedido = SDL_GetTicks();
+    if (urgente) itens[i].urgente = 1;
     // Ja falhou: so volta para a fila quando o RECUO vencer, e no maximo
     // QUATRO vezes. Sem a espera o pedido voltava a cada quadro e a arte
     // quebrada tomava a frente da boa; sem o teto acontece coisa pior, e ela
@@ -1099,6 +1142,10 @@ static GLuint tex_obter_limite(const char *caminho, int limite) {
     itens[i].ultimoQuadro = quadroAtual;
     itens[i].ultimoPedido = SDL_GetTicks();
     itens[i].uso = ++relogio;
+    // Marca mesmo quem JA esta na fila: a arte do hero costuma ter sido pedida
+    // antes, como poster da fileira, e e exatamente esse item que precisa
+    // furar a fila agora.
+    if (urgente && itens[i].estado != PRONTO) itens[i].urgente = 1;
     // PROMOCAO: a mesma arte pode ser pedida como poster (960) e depois como
     // hero (1920). Se o teto novo e maior e a textura pronta ficou menor que
     // ele, refaz — senao o hero herda para sempre a versao pequena que o card
@@ -1129,6 +1176,7 @@ static GLuint tex_obter_limite(const char *caminho, int limite) {
       itens[novo].uso = ++relogio;
       itens[novo].ultimoQuadro = quadroAtual;
       itens[novo].ultimoPedido = SDL_GetTicks();
+      itens[novo].urgente = urgente ? 1 : 0;
       int prox = (filaFim + 1) % MAX_FILA;
       if (prox != filaIni) { fila[filaFim] = novo; filaFim = prox; SDL_CondSignal(cond); }
       else { itens[novo].estado = VAZIO; itens[novo].caminho[0] = 0; } // fila cheia
@@ -1139,7 +1187,7 @@ static GLuint tex_obter_limite(const char *caminho, int limite) {
 }
 
 GLuint tex_obter(const char *caminho) {
-  return tex_obter_limite(caminho, NV_TEX_LARG_MAX);
+  return tex_obter_limite(caminho, NV_TEX_LARG_MAX, 0);
 }
 
 // Arte que ocupa a tela inteira: hero da home, backdrop do detalhe e a arte do
@@ -1155,11 +1203,12 @@ GLuint tex_obter_larg(const char *caminho, float largLayout) {
   cap = ((cap + 31) / 32) * 32;
   if (cap < 128) cap = 128;
   if (cap > NV_TEX_HERO_LARG_MAX) cap = NV_TEX_HERO_LARG_MAX;
-  return tex_obter_limite(caminho, cap);
+  // Tela cheia fura a fila; card de fileira, nao (ver `urgente` no Item).
+  return tex_obter_limite(caminho, cap, cap > NV_TEX_LARG_MAX);
 }
 
 GLuint tex_obter_hero(const char *caminho) {
-  return tex_obter_limite(caminho, NV_TEX_HERO_LARG_MAX);
+  return tex_obter_limite(caminho, NV_TEX_HERO_LARG_MAX, 1);
 }
 
 // O ARQUIVO, e nao a textura. Ver a nota em tex_cache.h.
@@ -1192,7 +1241,7 @@ const char *tex_arquivo(const char *url) {
   if (n > 512) return local;
   // 128 e o teto MINIMO que tex_obter_limite aceita pelo caminho normal; o que
   // interessa e o efeito colateral, que e o arquivo no disco.
-  tex_obter_limite(url, 128);
+  tex_obter_limite(url, 128, 0);
   return NULL;
 }
 
@@ -1318,6 +1367,7 @@ int tex_bombear(int max_por_quadro) {
     }
     itens[alvo].tex = t; itens[alvo].w = sup->w; itens[alvo].h = sup->h;
     itens[alvo].estado = PRONTO;
+    itens[alvo].urgente = 0;
     bytesUsados += bytesTextura(sup->w, sup->h);
     podar();
     SDL_UnlockMutex(mtx);
