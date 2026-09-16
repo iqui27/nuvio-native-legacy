@@ -408,6 +408,10 @@ static void desenhaVazio(void) {
 }
 
 void biblioteca_desenhar(Uint32 agora) {
+  // Mesmo ajuste, mesma disciplina da home: o rebordo claro do GFX_CARD e
+  // ligado aqui e DEVOLVIDO no fim, porque a variavel e global e as outras
+  // telas desenham card tambem.
+  gfx_borda_foco_atual = ajustes_borda_foco() ? 1.0f : 0.0f;
   (void)agora;
   // Fundo opaco proprio: a biblioteca cobre a tela inteira e nao pode contar com
   // quem desenhou antes dela.
@@ -527,9 +531,17 @@ void biblioteca_desenhar(Uint32 agora) {
         // reserva `border: 4px solid transparent`), e nao um halo por fora —
         // "Android TV uses the inside focus border, not an outer halo", diz o
         // proprio comentario da folha.
-        if (f > 0.01f) {
+        // O CONTORNO OBEDECE O MESMO AJUSTE DA HOME (Ajustes > Foco no
+        // cartaz). O relato do dono: "na biblioteca o contorno do poster nao
+        // some se tiver desmarcado nos ajustes igual a home". Aqui o cartaz ja
+        // CRESCE ao focar (NV_BIB_FOCO_ESCALA), entao sem o contorno o foco
+        // continua dito — e a cor sai de ajustes_acento, como nos outros treze
+        // pontos do app, em vez do branco cravado que estava aqui.
+        if (f > 0.01f && ajustes_borda_foco()) {
+          float ar, ag, ab;
+          ajustes_acento(&ar, &ag, &ab);
           gfx_rect(card, 0, GFX_ANEL, 0, NV_BIB_POSTER_BORDA / card.w,
-                   0, raio, 0.961f, 0.961f, 0.961f, f * a);
+                   0, raio, ar, ag, ab, f * a);
         }
 
         // Titulo 32/500, uma linha, cortado com reticencias — o web usa
@@ -542,4 +554,5 @@ void biblioteca_desenhar(Uint32 agora) {
         }
       }
     }
+  gfx_borda_foco_atual = 1.0f;
 }

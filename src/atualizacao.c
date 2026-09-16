@@ -24,6 +24,7 @@
 #include "anim.h"
 #include "layout.h"
 #include "idioma.h"
+#include "ajustes.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,7 +37,9 @@
 #define AT_ARQ   "atualizacao-vista.txt"
 #define AT_PAGINA "https://github.com/iqui27/nuvio-native-legacy/releases"
 #define AT_APPID  "space.nuvio.native.legacy"
-#define AT_IPK_TMP "/tmp/nuvio-atualizacao.ipk"
+#define AT_LUNA_PUB "/usr/bin/luna-send-pub"
+#define AT_LOG_INST "/tmp/nuvio-instalar.log"
+#define AT_HB_DIR   "/media/developer/apps/usr/palm/applications/org.webosbrew.hbchannel"
 
 #define AT_W        1240.0f
 #define AT_H         760.0f
@@ -57,6 +60,7 @@ static char notas[4096];          // texto ja limpo, linhas separadas por \n
 // URL do .ipk da release. Vazia quando a release nao anexou um (ou quando este
 // alvo nao sabe instalar, e ai nem se procura).
 static char ipkUrl[512];
+static char ipkHash[80];          // sha256 em hex; vazio quando a release nao diz
 
 // INSTALAR DE DENTRO DO APP so existe no webOS, e a razao e de plataforma:
 // aqui o app roda como ROOT (webosbrew) e alcanca o luna-send, que e quem fala
@@ -69,7 +73,13 @@ static char ipkUrl[512];
 #define AT_INSTALA 0
 #endif
 
-enum { AT_PARADO = 0, AT_BAIXANDO, AT_INSTALANDO, AT_FALHOU };
+enum { AT_PARADO = 0, AT_BAIXANDO, AT_INSTALANDO, AT_PRONTO, AT_FALHOU };
+// Quanto o instalador ja andou (0..100) e em que passo ele esta. Os dois saem
+// do log do proprio servico, que publica `progress` e `statusText` a cada
+// volta — sem isso a tela ficaria com uma frase parada por dois minutos, que e
+// exatamente o tempo em que a pessoa acha que travou.
+static float instPct;
+static char  instPasso[48];
 static int estado;
 static int foco;                  // 0 = "Atualizar agora", 1 = "Depois"
 static SDL_Thread *fioInst;
@@ -125,10 +135,12 @@ static int textoJson(const char *corpo, const char *chave, char *dst, size_t tam
 // e serve para "tag_name"/"body", que sao da raiz; aqui a chave se repete uma
 // vez por anexo (o .ipk e o .wgt) e o que decide e o SUFIXO. Por isso o laco:
 // varre todas as ocorrencias e fica com a que termina em ".ipk".
-static int acharIpk(const char *corpo, char *dst, size_t tam) {
+static int acharIpk(const char *corpo, char *dst, size_t tam,
+                   char *hash, size_t tamHash) {
   const char *p = corpo;
   const char *chave = "\"browser_download_url\":";
   dst[0] = 0;
+  if (hash && tamHash) hash[0] = 0;
   while ((p = strstr(p, chave)) != NULL) {
     const char *ini;
     size_t n;
@@ -140,6 +152,36 @@ static int acharIpk(const char *corpo, char *dst, size_t tam) {
     n = (size_t)(p - ini);
     if (n > 4 && n < tam && !strncmp(ini + n - 4, ".ipk", 4)) {
       memcpy(dst, ini, n); dst[n] = 0;
+      // O SHA-256 DO MESMO ANEXO, e ele e obrigatorio na pratica: sem ele o
+      // instalador do Homebrew Channel compara o hash calculado contra
+      // `undefined` e responde `returnValue: false` com "Invalid file
+      // checksum" — MEDIDO na C9, e o arquivo ate chegou a ser instalado, o
+      // que e pior: sucesso reportado como falha.
+      //
+      // O campo vem ANTES do browser_download_url dentro do mesmo anexo (a
+      // ordem do JSON do GitHub e ... size, digest, download_count, ...,
+      // browser_download_url), entao a busca e PARA TRAS a partir da url. Ir
+      // para frente pegaria o digest do anexo SEGUINTE.
+      if (hash && tamHash) {
+        const char *d = NULL, *q = corpo;
+        while (q < ini) {
+          const char *r = strstr(q, "\"digest\":");
+          if (!r || r > ini) break;
+          d = r; q = r + 8;
+        }
+        if (d) {
+          d = strchr(d + 8, '"');
+          if (d) {
+            const char *e;
+            d++;
+            if (!strncmp(d, "sha256:", 7)) d += 7;   // so o hex interessa
+            e = strchr(d, '"');
+            if (e && (size_t)(e - d) < tamHash) {
+              memcpy(hash, d, (size_t)(e - d)); hash[e - d] = 0;
+            }
+          }
+        }
+      }
       return 1;
     }
   }
@@ -199,7 +241,7 @@ static int fioConsulta(void *arg) {
   else {
     textoJson(corpo, "tag_name", tag, sizeof tag);
     textoJson(corpo, "body", body, sizeof body);
-    if (AT_INSTALA) acharIpk(corpo, ipkUrl, sizeof ipkUrl);
+    if (AT_INSTALA) acharIpk(corpo, ipkUrl, sizeof ipkUrl, ipkHash, sizeof ipkHash);
     free(corpo);
   }
   SDL_LockMutex(mtx);
@@ -218,59 +260,104 @@ static int fioConsulta(void *arg) {
   return 0;
 }
 
-// BAIXA O .ipk E MANDA O SISTEMA INSTALAR.
+// MANDA O SISTEMA INSTALAR o .ipk da release.
 //
-// O comando e o mesmo que funciona por SSH nesta TV, com as tres armadilhas que
-// custaram tempo quando foi medido de fora:
-//   - SEM `-i` (subscribe) o luna-send retorna 0 e NAO instala nada, calado;
-//   - em primeiro plano ele nao imprime nada, entao vai com nohup e redirect;
-//   - o proprio instalador MATA este app no meio. Por isso o comando e
-//     desacoplado (`&`): ele sobrevive a nossa morte, que e o caso normal e
-//     nao um erro.
+// MEDIDO NA C9, e foi o que derrubou a primeira versao disto: o app NAO roda
+// como root. O arquivo que ele grava sai com uid 5152, e `/usr/bin/luna-send`
+// e `-rwx------ root root` — a chamada morria com "can't execute 'luna-send':
+// Permission denied" no log do nohup, depois de ja ter baixado 36 MB. Root
+// nesta TV e o que EU tenho por SSH; o app continua no jail.
 //
-// Guardamos o ipk em /tmp e nao na pasta de dados: sao ~36 MB que nao devem
-// sobreviver a instalacao nem entrar em backup de perfil.
+// O que o app alcanca: `/usr/bin/luna-send-pub` (-rwxr-xr-x) e, por ele, o
+// servico do Homebrew Channel, que ESTE roda como root e existe justamente
+// para instalar ipk. Ele tem os metodos install/uninstall/exec/spawn, e o
+// install aceita `ipkUrl` — entao passamos a URL da release direto e nem
+// baixamos: quem baixa e ele, sem 36 MB passando pelo nosso heap.
+//
+// Sem o Homebrew Channel instalado nao ha caminho nenhum, e o cartao volta a
+// ser so aviso (ver podeInstalar).
 static int fioInstalar(void *arg) {
-  char *bin;
-  long n = 0;
-  FILE *f;
   char cmd[900];
   (void)arg;
-  bin = rede_baixar_bin(ipkUrl, 180, &n);
-  if (!bin || n < 1024) {
-    free(bin);
-    SDL_LockMutex(mtx); estado = AT_FALHOU; SDL_UnlockMutex(mtx);
-    printf("[atualizacao] download do ipk falhou\n"); fflush(stdout);
-    return 0;
-  }
-  f = fopen(AT_IPK_TMP, "wb");
-  if (!f || fwrite(bin, 1, (size_t)n, f) != (size_t)n) {
-    if (f) fclose(f);
-    free(bin);
-    SDL_LockMutex(mtx); estado = AT_FALHOU; SDL_UnlockMutex(mtx);
-    printf("[atualizacao] nao consegui gravar %s\n", AT_IPK_TMP); fflush(stdout);
-    return 0;
-  }
-  fclose(f);
-  free(bin);
-  printf("[atualizacao] ipk baixado: %ld bytes; chamando o instalador\n", n);
+  { char extra[110] = "";
+    if (ipkHash[0]) snprintf(extra, sizeof extra, ",\"ipkHash\":\"%s\"", ipkHash);
+    snprintf(cmd, sizeof cmd,
+      "nohup %s -i -f luna://org.webosbrew.hbchannel.service/install "
+      "'{\"ipkUrl\":\"%s\"%s,\"subscribe\":true}' "
+      "> %s 2>&1 &", AT_LUNA_PUB, ipkUrl, extra, AT_LOG_INST); }
+  printf("[atualizacao] instalando %s\n", ipkUrl);
   fflush(stdout);
-  SDL_LockMutex(mtx); estado = AT_INSTALANDO; SDL_UnlockMutex(mtx);
-  snprintf(cmd, sizeof cmd,
-    "nohup luna-send -i -f luna://com.webos.appInstallService/dev/install "
-    "'{\"id\":\"%s\",\"ipkUrl\":\"%s\",\"subscribe\":true}' "
-    "> /tmp/nuvio-instalar.log 2>&1 &", AT_APPID, AT_IPK_TMP);
   if (system(cmd) != 0) {
     SDL_LockMutex(mtx); estado = AT_FALHOU; SDL_UnlockMutex(mtx);
     printf("[atualizacao] o instalador nao aceitou o pedido\n"); fflush(stdout);
+    return 0;
   }
+  // ACOMPANHA O LOG. O servico responde por subscribe e o luna-send vai
+  // escrevendo cada resposta no arquivo; ler o arquivo e mais simples e mais
+  // robusto do que abrir o barramento aqui — e o arquivo tem poucos KB.
+  //
+  // Teto de 8 minutos: sao ~36 MB numa TV, e passar disso e sinal de que a
+  // resposta nao vem mais. Sem teto o fio ficaria vivo para sempre.
+  { Uint32 ate = SDL_GetTicks() + 8 * 60 * 1000;
+    while (SDL_GetTicks() < ate) {
+      FILE *f = fopen(AT_LOG_INST, "rb");
+      SDL_Delay(300);
+      if (!f) continue;
+      { static char buf[8192];
+        size_t n = fread(buf, 1, sizeof buf - 1, f);
+        const char *p, *ult;
+        float pct = -1.0f;
+        char passo[48] = "";
+        int fim = 0, erro = 0;
+        fclose(f);
+        buf[n] = 0;
+        // O ARQUIVO CRESCE, entao o que vale e a ULTIMA ocorrencia de cada
+        // campo — a primeira e o comeco do download, e ficaria congelada.
+        for (p = buf, ult = NULL; (p = strstr(p, "\"progress\":")) != NULL; p += 11) ult = p;
+        if (ult) pct = (float)atof(ult + 11);
+        for (p = buf, ult = NULL; (p = strstr(p, "\"statusText\":")) != NULL; p += 13) ult = p;
+        if (ult) {
+          const char *ini = strchr(ult + 13, '"');
+          if (ini) {
+            const char *e = strchr(++ini, '"');
+            size_t k = e ? (size_t)(e - ini) : 0;
+            if (k && k < sizeof passo) { memcpy(passo, ini, k); passo[k] = 0; }
+          }
+        }
+        if (strstr(buf, "\"finished\": true") || strstr(buf, "\"finished\":true")) fim = 1;
+        if (strstr(buf, "\"errorText\"")) erro = 1;
+        SDL_LockMutex(mtx);
+        if (pct >= 0.0f) instPct = pct;
+        if (passo[0]) snprintf(instPasso, sizeof instPasso, "%s", passo);
+        if (fim)       estado = AT_PRONTO;
+        else if (erro) estado = AT_FALHOU;
+        SDL_UnlockMutex(mtx);
+        if (fim || erro) {
+          printf("[atualizacao] instalador terminou: %s\n", fim ? "ok" : "falhou");
+          fflush(stdout);
+          return 0;
+        } } } }
+  SDL_LockMutex(mtx); estado = AT_FALHOU; SDL_UnlockMutex(mtx);
+  printf("[atualizacao] instalador nao respondeu no prazo\n"); fflush(stdout);
   return 0;
 }
 
 // 1 quando existe o que instalar: alvo que sabe, release com .ipk anexado e
 // nenhuma instalacao em andamento.
+// O Homebrew Channel precisa ESTAR no aparelho: sem ele o servico nao existe e
+// o botao prometeria o que nao acontece. Conferido uma vez, no primeiro uso.
+static int temInstalador(void) {
+  static int visto = -1;
+  FILE *f;
+  if (visto >= 0) return visto;
+  f = fopen(AT_HB_DIR "/appinfo.json", "r");
+  visto = f != NULL;
+  if (f) fclose(f);
+  return visto;
+}
+
 static int podeInstalar(void) {
-  return AT_INSTALA && ipkUrl[0] && estado == AT_PARADO;
+  return AT_INSTALA && ipkUrl[0] && estado == AT_PARADO && temInstalador();
 }
 
 void atualizacao_verificar(void) {
@@ -315,7 +402,7 @@ void atualizacao_evento(const SDL_Event *e) {
   // instalar, o sistema mata o app de qualquer jeito.
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
       e->key.keysym.scancode == NV_SCANCODE_BACK) { fechar(); return; }
-  if (estado == AT_BAIXANDO || estado == AT_INSTALANDO) return;
+  if (estado == AT_INSTALANDO) return;
   if (podeInstalar() && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
     foco = k == SDLK_LEFT ? 0 : 1;
     return;
@@ -324,7 +411,7 @@ void atualizacao_evento(const SDL_Event *e) {
       k == SDLK_DELETE) {
     if (podeInstalar() && foco == 0) {
       SDL_Thread *t;
-      SDL_LockMutex(mtx); estado = AT_BAIXANDO; SDL_UnlockMutex(mtx);
+      SDL_LockMutex(mtx); estado = AT_INSTALANDO; SDL_UnlockMutex(mtx);
       t = SDL_CreateThread(fioInstalar, "nv-instalar", NULL);
       if (t) { SDL_DetachThread(t); fioInst = t; }
       else { SDL_LockMutex(mtx); estado = AT_FALHOU; SDL_UnlockMutex(mtx); }
@@ -389,15 +476,38 @@ void atualizacao_desenhar(Uint32 agora) {
   // RODAPE. Onde ha como instalar, ele vira dois botoes; onde nao ha, continua
   // sendo o endereco da pagina, que e a unica coisa util a dizer.
   y = AT_Y + dy + AT_H - 96.0f;
-  if (estado == AT_BAIXANDO || estado == AT_INSTALANDO) {
-    const char *msg = estado == AT_BAIXANDO
-      ? i18n("Baixando a atualização...")
-      // O QUE ACONTECE A SEGUIR, dito antes de acontecer: o instalador do
-      // sistema fecha este app. Sem esta linha a TV apaga sozinha e parece
-      // travamento.
-      : i18n("Instalando. O app vai fechar; abra de novo pelo launcher.");
-    TxtLinha t = txt_linha(TXT_CALLOUT, msg, 232, 236, 246, 255);
-    txt_desenhar_alpha(t, x, y + 8.0f, a);
+  if (estado == AT_INSTALANDO || estado == AT_PRONTO) {
+    // BARRA E PORCENTAGEM, e nao uma frase parada. O numero e o passo vem do
+    // proprio instalador (progress/statusText); enquanto ele nao disse nada a
+    // barra fica vazia em vez de inventar movimento.
+    float pct, larg = w * 0.62f;
+    char passo[48];
+    SDL_LockMutex(mtx);
+    pct = estado == AT_PRONTO ? 100.0f : instPct;
+    snprintf(passo, sizeof passo, "%s", instPasso);
+    SDL_UnlockMutex(mtx);
+    if (pct < 0.0f) pct = 0.0f;
+    if (pct > 100.0f) pct = 100.0f;
+    { const char *msg = estado == AT_PRONTO
+        ? i18n("Atualizado. Feche e abra o app para usar.")
+        : (!strncmp(passo, "Verif", 5) ? i18n("Conferindo o arquivo...")
+        : (!strncmp(passo, "Install", 7) ? i18n("Instalando...")
+        :  i18n("Baixando a atualização...")));
+      TxtLinha t = txt_linha(TXT_CALLOUT, msg, 232, 236, 246, 255);
+      txt_desenhar_alpha(t, x, y, a); }
+    { GfxRect trilho = { x, y + 46.0f, larg, 10.0f };
+      GfxRect cheio  = { x, y + 46.0f, larg * (pct / 100.0f), 10.0f };
+      float ar, ag, ab;
+      ajustes_acento(&ar, &ag, &ab);
+      gfx_cor(trilho, NV_RAIO_PILL, 1.0f, 1.0f, 1.0f, 0.14f * a);
+      // Menos de meia altura de barra nao desenha: um retangulo de 2 px com
+      // canto arredondado vira um pontinho torto no canto esquerdo.
+      if (cheio.w > 12.0f) gfx_cor(cheio, NV_RAIO_PILL, ar, ag, ab, a);
+      { char n[16];
+        TxtLinha t;
+        snprintf(n, sizeof n, "%d%%", (int)(pct + 0.5f));
+        t = txt_linha(TXT_CAPTION, n, 200, 204, 214, 255);
+        txt_desenhar_alpha(t, x + larg + 20.0f, y + 40.0f, a * 0.95f); } }
   } else if (podeInstalar()) {
     const char *rot[2];
     float bx = x;
@@ -422,7 +532,7 @@ void atualizacao_desenhar(Uint32 agora) {
         176, 180, 190, 255);
     txt_desenhar_alpha(t, x, y + 16.0f, a * 0.9f);
   }
-  if (estado != AT_BAIXANDO && estado != AT_INSTALANDO) {
+  if (estado != AT_INSTALANDO && estado != AT_PRONTO) {
     TxtLinha t = txt_linha(TXT_CAPTION2,
         podeInstalar() ? i18n("Voltar para fechar") : i18n("OK para fechar"),
         150, 154, 165, 255);

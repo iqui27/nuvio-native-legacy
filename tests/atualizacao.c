@@ -51,8 +51,8 @@ int main(int argc, char **argv) {
       // PRIMEIRO no JSON — que e exatamente o caso em que procurar a primeira
       // ocorrencia da chave (o que textoJson faz) baixaria o pacote do Samsung
       // para instalar numa LG. Quem decide e o sufixo.
-      { char url[512];
-        CONFERE(acharIpk(j, url, sizeof url), "achou um .ipk nos assets");
+      { char url[512], hash[80];
+        CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash), "achou um .ipk nos assets");
         CONFERE(strstr(url, ".ipk") != NULL && strstr(url, ".wgt") == NULL,
                 "e o .ipk, nao o .wgt: [%s]", url);
         CONFERE(!strncmp(url, "https://", 8), "url absoluta: [%s]", url); }
@@ -61,11 +61,24 @@ int main(int argc, char **argv) {
 
   // Sem anexo nenhum nao ha o que instalar, e isso NAO e erro: release de
   // codigo-fonte apenas, ou alvo que nao instala.
-  { char url[64];
-    CONFERE(!acharIpk("{\"assets\":[]}", url, sizeof url), "sem anexo devolve 0");
+  { char url[64], hash[80];
+    CONFERE(!acharIpk("{\"assets\":[]}", url, sizeof url, hash, sizeof hash),
+            "sem anexo devolve 0");
     CONFERE(url[0] == 0, "e a url fica vazia");
     CONFERE(!acharIpk("{\"assets\":[{\"browser_download_url\":\"https://x/y.wgt\"}]}",
-                      url, sizeof url), "so .wgt tambem devolve 0"); }
+                      url, sizeof url, hash, sizeof hash), "so .wgt tambem devolve 0"); }
+
+  // O DIGEST DO ANEXO CERTO. Sem ele o instalador do Homebrew Channel recusa
+  // com "Invalid file checksum", e o digest do .wgt (que vem ANTES no JSON)
+  // seria o erro facil de cometer.
+  { char url[128], hash[80];
+    const char *j =
+      "{\"assets\":["
+      "{\"digest\":\"sha256:aaaa\",\"browser_download_url\":\"https://x/a.wgt\"},"
+      "{\"digest\":\"sha256:bbbb\",\"browser_download_url\":\"https://x/b.ipk\"}]}";
+    CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash), "achou o ipk");
+    CONFERE(!strcmp(url, "https://x/b.ipk"), "url do ipk: [%s]", url);
+    CONFERE(!strcmp(hash, "bbbb"), "digest do MESMO anexo, sem o prefixo: [%s]", hash); }
 
   // JSON com escapes variados
   { char d[64];
