@@ -241,6 +241,11 @@ IGNORAR = {
     # ISO 639-2 do portugues (linguas.c). Virou candidato quando "por" entrou
     # na lista de palavras de portugues; e codigo de idioma, nao rotulo.
     "por",
+    # O MESMO CODIGO EM MAIUSCULA (fontepref.c). E o valor da tabela TERMOS,
+    # que traduz "portugues"/"brazilian"/"nacional" num codigo de idioma para
+    # COMPARAR duas fontes entre si. Nunca chega na tela: a assinatura inteira
+    # ("BR+DUB+POR") so aparece em printf de diagnostico.
+    "POR",
     # Nao sao tela: cabecalho do arquivo de preferencias e duas linhas de log
     # que a heuristica de portugues nao tem como distinguir das frases.
     "# Fileiras da Home, escolha DESTE aparelho. Nunca e enviada para\n"

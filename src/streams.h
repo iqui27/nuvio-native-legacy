@@ -55,6 +55,20 @@ const Stream *stream_item(int i);
 // Indice do stream que o modo automatico escolhe, ou -1 se a lista esta vazia.
 int  stream_automatico(void);
 
+// A FONTE LEMBRADA DESTE TITULO, quando ela existe nesta lista. Quem decide
+// qual e (provedor + trilha de audio) e fontepref.c; aqui ela e um indice que
+// stream_primeira_boa poe NA FRENTE da fila de verificacao, e que a folha
+// marca na tela. -1 desliga.
+//
+// Nao substitui stream_automatico(): a preferida e uma CANDIDATA, verificada
+// como as outras. Sumiu da lista, ou o link nao resolve, e a pontuacao assume
+// sem que ninguem precise escolher nada.
+//
+// A lista nova zera isto (stream_definir_lista): indice da lista de ontem
+// aponta para outra fonte hoje.
+void stream_preferir(int indice);
+int  stream_preferida(void);
+
 // Ha quantos ms a lista chegou. Os links de reproducao dos servicos de debrid
 // sao ASSINADOS E EXPIRAM: usar um link de minutos atras faz o servidor
 // redirecionar para um video de aviso ("This playback link couldn't be

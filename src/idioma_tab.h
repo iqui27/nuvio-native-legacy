@@ -775,6 +775,7 @@
   { "Sua coleção aparece aqui", "Your collection shows up here" },
   { "Sua coleção no Trakt", "Your Trakt collection" },
   { "Sua conta", "Your account" },
+  { "Sua escolha anterior", "Your previous pick" },
   { "Sua lista", "Your list" },
   { "Sua lista para assistir", "Your watchlist" },
   { "Sua próxima sessão começa aqui", "Your next session starts here" },

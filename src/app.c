@@ -48,6 +48,7 @@
 #include "ajustes.h"
 #include "player.h"
 #include "streams.h"
+#include "fontepref.h"
 #include "video.h"
 #include "addons.h"
 #include "descoberta.h"
@@ -239,6 +240,25 @@ static void buscarParaPlayer(void) {
     }
   }
 }
+// ID BASE DO TITULO EM JOGO, sem ":temporada:episodio".
+//
+// E a chave da preferencia de fonte, e ela e DO TITULO de proposito: o issue
+// #56 pede que o episodio seguinte continue na fonte do anterior, entao um
+// registro por episodio nao serviria para nada — ele so existiria depois de a
+// pessoa ja ter escolhido naquele episodio.
+//
+// Canal ao vivo nao tem preferencia: a lista dele e outra a cada zapeada, o
+// "provedor" e o mesmo para todos os canais do addon, e ali quem manda e o
+// watchdog de fonte morta. Devolve vazio, e vazio desliga tudo isto.
+static void idBaseDoTitulo(char *dst, size_t tam) {
+  const CatItem *c;
+  if (tam) dst[0] = 0;
+  if (player_id_canal()[0]) return;
+  c = cat_item(player_aberto() ? player_indice() : detail_indice());
+  if (!c || !c->imdb[0]) return;
+  fontepref_id_base(c->imdb, dst, (unsigned)tam);
+}
+
 static void episodioDoDetalhe(void) {
   int t=0,e=0;
   detail_ep_foco(&t,&e);
@@ -289,6 +309,10 @@ int app_iniciar(const char *dirArte) {
   // marca `naLista` no catalogo do cache, entao o painel e a Biblioteca ja
   // abrem certos no primeiro quadro. Ler depois faria a lista local piscar.
   salvos_iniciar();
+  // A FONTE LEMBRADA, do mesmo jeito e pelo mesmo motivo: ela e lida antes do
+  // primeiro Reproduzir, que pode acontecer segundos depois do arranque quando
+  // a pessoa abre direto no "Continuar assistindo".
+  fontepref_iniciar();
   // MESMA RAZAO, OUTRA LISTA: o cache de recomendacoes guarda titulo e poster,
   // entao a aba Social do painel AZUL desenha no primeiro quadro, antes de
   // existir catalogo e antes de a rede responder. Isto nao abre conexao — quem
@@ -897,7 +921,14 @@ void app_atualizar(float dt, Uint32 agora) {
         trakt_watchlist(c->imdb, entrar);
       if (c) cat_definir_na_lista(i, entrar);
     }
-    if (detail_pediu_fontes())     stream_folha_abrir();
+    if (detail_pediu_fontes()) {
+      // A lembrada e localizada ANTES de abrir, para a folha ja desenhar a
+      // marca no primeiro quadro. E so uma varredura da lista em memoria.
+      char base[24];
+      idBaseDoTitulo(base, sizeof base);
+      stream_preferir(base[0] ? fontepref_escolher(base) : -1);
+      stream_folha_abrir();
+    }
   }
   // Escolher uma fonte na folha inicia a reproducao DELA. Trocar de fonte com o
   // player ja aberto tambem vale: fecha a sessao atual e abre na nova, senao
@@ -927,9 +958,26 @@ void app_atualizar(float dt, Uint32 agora) {
       // melhor que uma tela de erro sem nenhuma tentativa.
       if (fonteEscolhida < 0) fonteEscolhida = stream_automatico();
       canalFonteDesde = SDL_GetTicks();
-    } else if (pthread_create(&fioFonte, NULL, escolherFonte, NULL) != 0) {
-      aguardandoFonte = 0; player_erro_fonte();
-    } else fioFonteVivo = 1;
+    } else {
+      // A FONTE LEMBRADA DESTE TITULO ENTRA NA FRENTE DA FILA (issues #56/#57).
+      //
+      // AQUI e nao no botao: a lista so existe depois de os addons
+      // responderem, e este e o unico ponto por onde passam TODOS os caminhos
+      // que pedem fonte — Reproduzir/Retomar do detalhe, "assistir do comeco",
+      // trocar de episodio na folha, e o proximo episodio automatico. Um so
+      // lugar e o que impede a correcao de valer em tres telas e faltar na
+      // quarta.
+      //
+      // Nada lembrado devolve -1, stream_preferir(-1) desliga, e a verificacao
+      // roda exatamente como rodava antes. Quem nunca abriu a folha de fontes
+      // nao ve diferenca nenhuma.
+      char base[24];
+      idBaseDoTitulo(base, sizeof base);
+      stream_preferir(base[0] ? fontepref_escolher(base) : -1);
+      if (pthread_create(&fioFonte, NULL, escolherFonte, NULL) != 0) {
+        aguardandoFonte = 0; player_erro_fonte();
+      } else fioFonteVivo = 1;
+    }
   }
   if (aguardandoFonte == 2 && fonteEscolhida != -2) {
     if (fioFonteVivo) { pthread_join(fioFonte,NULL); fioFonteVivo = 0; }
@@ -991,6 +1039,19 @@ void app_atualizar(float dt, Uint32 agora) {
   if (aguardandoFonte != 2 && stream_folha_escolheu(&fonte)) {
     const Stream *s = stream_item(fonte);
     printf("fonte escolhida: %s\n", s ? s->rotulo : "?");
+    // GUARDAR A ESCOLHA, e SO a manual. O que o automatico escolhe nao vira
+    // preferencia: quem nunca abriu esta folha continua com a regra da
+    // pontuacao para sempre, que e a condicao de nao quebrar o app de quem
+    // nunca escolheu nada.
+    if (s) {
+      char base[24];
+      idBaseDoTitulo(base, sizeof base);
+      if (base[0]) fontepref_guardar(base, s);
+      // A MARCA DA FOLHA SEGUE A ESCOLHA NOVA. Sem esta linha, reabrir a folha
+      // logo depois de trocar de fonte mostraria "Sua escolha anterior" na
+      // fonte antiga — a tela contradizendo o que a pessoa acabou de fazer.
+      stream_preferir(fonte);
+    }
     if (s) video_definir_dv(s->dolbyVision);
     if (s) {
       aguardandoFonte=0;
@@ -1007,7 +1068,10 @@ void app_atualizar(float dt, Uint32 agora) {
     }
   }
   if (aguardandoFonte != 2 && player_pediu_fontes()) {
+    char base[24];
     stream_folha_contexto(player_linha_episodio());
+    idBaseDoTitulo(base, sizeof base);
+    stream_preferir(base[0] ? fontepref_escolher(base) : -1);
     stream_folha_abrir();
   }
 

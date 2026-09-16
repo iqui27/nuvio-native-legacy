@@ -25,6 +25,18 @@ static int atual = -1, recarregar;
 static char contexto[320];
 void stream_definir_atual(int i) { atual = i >= 0 && i < n ? i : -1; }
 int stream_atual(void) { return atual; }
+
+// A FONTE QUE A PESSOA JA TINHA ESCOLHIDO neste titulo, quando ela existe
+// nesta lista. Quem a encontra e fontepref.c (a regra de igualdade mora la);
+// aqui ela e so um indice que entra NA FRENTE da fila de verificacao.
+//
+// Por que um indice guardado e nao um parametro de stream_primeira_boa: a
+// verificacao roda em fio proprio, disparada por app.c com a lista ja pronta,
+// e acrescentar parametro obrigaria o fio a carregar o id do titulo — que ele
+// nao tem e nao deveria precisar ter.
+static int preferida = -1;
+void stream_preferir(int i) { preferida = (i >= 0 && i < n) ? i : -1; }
+int stream_preferida(void) { return preferida; }
 void stream_folha_contexto(const char *s) { snprintf(contexto, sizeof contexto, "%s", s ? s : ""); }
 int stream_folha_recarregar(void) { int r = recarregar; recarregar = 0; return r; }
 
@@ -60,6 +72,10 @@ void stream_definir_lista(const Stream *l, int qtd) {
     if (l[i].url[0] || debrid_ativo()) nova[k++] = l[i];
   if (nova && qtd - k) printf("[fonte] %d torrents sem debrid descartados\n", qtd - k);
   free(lista); lista = nova; n = nova ? k : 0; atual = -1;
+  // LISTA NOVA, INDICE VELHO NAO VALE. A preferida e uma posicao na lista
+  // ANTERIOR; mantida, ela apontaria para outra fonte do episodio seguinte —
+  // o tipo de defeito que toca a coisa errada sem nenhum erro no log.
+  preferida = -1;
   foco = 0;
 }
 
@@ -247,6 +263,16 @@ int stream_primeira_boa(int tentativas) {
   usados = calloc((size_t)tentativas, sizeof *usados);
   if (!usados) return -1;
 
+  // A PREFERIDA ENTRA PRIMEIRO, antes da pontuacao. Ela e a fonte que a pessoa
+  // escolheu a mao neste titulo (issues #56 e #57) e pode estar em qualquer
+  // posicao da lista — numa lista de 40 fontes a dublada costuma estar longe
+  // do topo, e as `tentativas` melhores por pontuacao nunca chegariam nela.
+  //
+  // Entra como CANDIDATA, nao como decisao: ela passa pela mesma verificacao
+  // de link que todas as outras, e se nao resolver a ordem por pontuacao
+  // continua logo atras. Fonte lembrada que sumiu nao pode travar reproducao.
+  if (preferida >= 0 && preferida < total) usados[nu++] = preferida;
+
   // Seleciona as `tentativas` melhores, EM ORDEM DE PONTUACAO — a mesma ordem
   // que o laco em serie percorria.
   while (nu < tentativas) {
@@ -277,7 +303,8 @@ int stream_primeira_boa(int tentativas) {
       if (!criados) fioVerificar(NULL);   // sem fios: em serie, mesmo resultado
       for (q = 0; q < criados; q++) pthread_join(fios[q], NULL);
     }
-    // Primeira que passou, na ordem de pontuacao.
+    // Primeira que passou, NA ORDEM EM QUE FORAM ENFILEIRADAS: a preferida (se
+    // havia uma), depois a pontuacao.
     for (q = 0; q < nu; q++)
       if (verifs[q].ok) { escolhida = verifs[q].idx; break; }
   }
@@ -572,7 +599,31 @@ void stream_folha_desenhar(Uint32 agora) {
     for(char *p=nome;*p;p++)if((unsigned char)*p<32)*p=' ';
     for(char *p=descricao;*p;p++)if((unsigned char)*p<32)*p=' ';
     txt_desenhar_alpha(txt_linha_corta(TXT_PAINEL_ITEM,nome,240,241,243,255,w),lx,y+16,anim);
-    txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,i==atual?"Reproduzindo agora":s->provedor,175,178,185,255,w),lx,y+46,anim);
+    // A FONTE LEMBRADA, MARCADA. Sem a marca, quem abre a folha para conferir
+    // continua procurando a propria fonte entre dezenas de linhas — que e a
+    // queixa literal do issue #56 ("search through many links to find the same
+    // source again"). Ancorada a DIREITA da mesma linha do provedor: e o unico
+    // espaco vazio da linha, e alinhada a direita ela nao empurra nada.
+    //
+    // Nao aparece na que esta tocando: ali "Reproduzindo agora" ja ocupa a
+    // linha e dizer as duas coisas seria ruido.
+    //
+    // A LINHA DO PROVEDOR PERDE A LARGURA DA MARCA, e por isso ela e desenhada
+    // ANTES. Cortar as duas pela largura inteira faria um nome de addon longo
+    // passar por baixo do texto da marca — e em portugues a marca e mais larga
+    // que em ingles, entao o defeito apareceria so num dos dois idiomas.
+    float wProv = w;
+    if (i == preferida && i != atual) {
+      float ar, ag, ab;
+      TxtLinha m;
+      ajustes_acento(&ar, &ag, &ab);
+      m = txt_linha(TXT_MINI, "Sua escolha anterior",
+                    (int)(ar * 255.0f), (int)(ag * 255.0f), (int)(ab * 255.0f), 255);
+      txt_desenhar_alpha(m, lx + w - (float)m.w, y + 50, anim);
+      wProv = w - (float)m.w - 24.0f;
+      if (wProv < 120.0f) wProv = 120.0f;
+    }
+    txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,i==atual?"Reproduzindo agora":s->provedor,175,178,185,255,wProv),lx,y+46,anim);
     txt_bloco(TXT_PG_FIM,descricao,194,197,202,lx,y+76,w,25,anim,2);
     char meta[192],qual[24]="";
     if(s->altura) snprintf(qual,sizeof qual," · %dp",s->altura);
