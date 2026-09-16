@@ -523,9 +523,20 @@ static void desenhaProfundidade(GfxRect card, float raio, int ligadaAqui) {
 //
 // O foco no web se marca por um ANEL de 2px `#f5f5f5` desenhado por dentro e
 // por fora da arte (box-shadow inset + outset), com o card mantendo a caixa.
+//
+// E POR ISSO QUE O CRESCIMENTO VOLTOU AMARRADO AO ANEL, e nao solto: com a
+// borda ligada o card mantem a caixa, como na referencia; com a borda
+// DESLIGADA o foco perderia a unica marca que tinha, entao quem marca passa a
+// ser o tamanho. Pedido do dono: "vamos deixar ele crescer ao focar quando
+// tirar o contorno". As duas coisas nunca acontecem juntas.
+//
+// 6%, e o teto vem da medida que ja estava escrita aqui: o titulo da fileira
+// fica 15 px acima dos cards, o crescimento e simetrico em torno do centro, e
+// um poster de 322 px sobe metade de 322*0,06 = 9,7 px. Os 9% do tvOS subiam
+// 14,5 px e era isso que encostava no titulo.
 static float escalaDe(TipoFileira t) {
   (void)t;
-  return 0.0f;
+  return ajustes_borda_foco() ? 0.0f : 0.06f;
 }
 // --- MEDIDA POR FILEIRA, e nao por tipo -------------------------------------
 //
