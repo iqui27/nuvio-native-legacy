@@ -1,0 +1,42 @@
+[
+  {
+    "name": "Clássicos do terror",
+    "description": "O que eu revejo em outubro",
+    "privacy": "public",
+    "share_link": "https://trakt.tv/lists/1049904",
+    "type": "personal",
+    "display_numbers": false,
+    "allow_comments": true,
+    "sort_by": "rank",
+    "sort_how": "asc",
+    "created_at": "2024-10-01T12:00:00.000Z",
+    "updated_at": "2026-09-01T08:30:00.000Z",
+    "item_count": 42,
+    "comment_count": 0,
+    "likes": 3,
+    "ids": { "trakt": 1049904, "slug": "classicos-do-terror" },
+    "user": {
+      "username": "iqui27",
+      "private": false,
+      "name": "Henrique",
+      "vip": false,
+      "ids": { "slug": "iqui27" }
+    }
+  },
+  {
+    "name": "Para ver com a família",
+    "description": "",
+    "privacy": "private",
+    "item_count": 7,
+    "comment_count": 0,
+    "likes": 0,
+    "ids": { "trakt": 2200311, "slug": "para-ver-com-a-familia" },
+    "user": {
+      "username": "iqui27",
+      "private": false,
+      "name": "Henrique",
+      "vip": false,
+      "ids": { "slug": "iqui27" }
+    }
+  }
+]

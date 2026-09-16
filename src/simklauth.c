@@ -58,6 +58,8 @@ int simklauth_carregar(void) {
   return token[0] != 0;
 }
 
+const char *simklauth_token(void) { return token; }
+
 void simklauth_esquecer(void) {
   token[0] = userCode[0] = url[0] = erro[0] = 0;
   estado = SMK_PARADO;

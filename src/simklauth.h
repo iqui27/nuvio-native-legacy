@@ -9,10 +9,13 @@
 //     -> {"result":"KO"}                        ainda nao autorizado
 //     -> {"result":"OK","access_token":"..."}   pronto
 //
-// LIMITE HONESTO: hoje NENHUMA tela deste app consome Simkl — nao ha um
-// simkl.c como ha o trakt.c. Vincular aqui serve para a CREDENCIAL CHEGAR NA
-// CONTA, e dali para o app web e o celular. Quando o nativo ganhar leitura de
-// Simkl, o token ja vai estar no lugar.
+// O QUE CONSOME ISTO HOJE: a aba "Listas" da Biblioteca (src/listas.c), que le
+// os CINCO ESTADOS de acompanhamento do Simkl (/sync/all-items/<tipo>/<estado>)
+// com o token daqui. O Simkl nao tem listas nomeadas na API — nao existe
+// equivalente a /users/me/lists do Trakt —, entao "listas do Simkl" quer dizer
+// esses cinco estados, e a tela diz isso em vez de fingir outra coisa.
+// Vincular aqui continua servindo tambem para a CREDENCIAL CHEGAR NA CONTA, e
+// dali para o app web e o celular.
 // LIMITE CONHECIDO, e diferente do Trakt: aqui o pedido pendente NAO sobrevive
 // a um reinicio do app — o PIN vive so na memoria. No Trakt isso foi corrigido
 // porque mordeu de verdade (o dono autorizou e o app tinha reiniciado no meio);
@@ -39,6 +42,10 @@ const char *simklauth_erro(void);
 
 void simklauth_cancelar(void);
 int  simklauth_carregar(void);    // le o token guardado; 1 quando havia
+// Token de acesso, ou "" quando nao ha vinculo. Existe desde que a Biblioteca
+// passou a ler as listas do Simkl (src/listas.c) — ate entao nada neste app
+// consumia Simkl e o token so servia para chegar a conta.
+const char *simklauth_token(void);
 void simklauth_esquecer(void);
 
 #endif

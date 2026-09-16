@@ -9,11 +9,14 @@
 #include <unistd.h>
 static ColFolder folders[COL_MAX];
 static int count;
+static ColFolder extras[COL_EXTRA_MAX];
+static int nExtras;
 static void localiza(char *value,size_t cap,const char *dir) {
   if(!value[0]||strstr(value,"://")||value[0]=='/')return;
   char rel[600];snprintf(rel,sizeof rel,"%s",value);snprintf(value,cap,"%s/%s",dir,rel);
 }
 int col_n(void) { return count; }
+
 // SOBE A CADA TROCA DO CONJUNTO DE PASTAS. A home decide se remonta por uma
 // assinatura, e ate agora essa assinatura so olhava as fileiras de CATALOGO —
 // nada de colecao. Como as colecoes da conta chegam DEPOIS de o catalogo se
@@ -24,6 +27,33 @@ int col_n(void) { return count; }
 // numero igual e a home errada.
 static unsigned revisao;
 unsigned col_revisao(void) { return revisao; }
+// Tira as extras que estao em folders[] e poe de volta as de agora. Chamada
+// depois de TODA reconstrucao (pacote ou conta) e a cada troca do conjunto.
+static void aplicarExtras(void) {
+  int i, k = 0;
+  for (i = 0; i < count; i++) if (!folders[i].extra) folders[k++] = folders[i];
+  count = k;
+  for (i = 0; i < nExtras && count < COL_MAX; i++) folders[count++] = extras[i];
+}
+
+int col_extra_definir(const ColFolder *v, int n) {
+  int i;
+  if (n < 0) n = 0;
+  if (n > COL_EXTRA_MAX) n = COL_EXTRA_MAX;
+  nExtras = 0;
+  for (i = 0; i < n && v; i++) {
+    extras[nExtras] = v[i];
+    extras[nExtras].extra = 1;
+    extras[nExtras].local = 0;   // nao e do pacote: nao disputa a arte curada
+    nExtras++;
+  }
+  aplicarExtras();
+  // A home so remonta quando ESTE numero muda. Sem o bump, fixar uma lista na
+  // Home so apareceria no proximo ciclo de rede.
+  revisao++;
+  return nExtras;
+}
+
 // Fonte da conta vem com addonId e sem URL; a URL so existe depois que a sonda
 // leu o manifesto daquele addon. Resolver no acesso deixa a pasta pronta assim
 // que a sonda passar, sem ninguem precisar avisar.
@@ -262,7 +292,7 @@ int col_carregar(const char *dir) {
       v->local=1;
       if(v->nSources&&v->title[0])count++;
     }
-  }free(body);return count;
+  }free(body);aplicarExtras();return count;
 }
 void col_cor(const ColFolder *f,float *r,float *g,float *b) {
   *r=.16f;*g=.23f;*b=.30f;if(!f)return;
@@ -465,6 +495,7 @@ int col_definir_json(const char *json) {
     revisao++;
     printf("[colecoes] %d pastas vindas da conta\n", novas);
   }
+  aplicarExtras();
   free(solto);
   return novas;
 }

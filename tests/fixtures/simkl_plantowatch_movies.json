@@ -1,0 +1,31 @@
+{
+  "movies": [
+    {
+      "last_watched_at": null,
+      "status": "plantowatch",
+      "added_to_watchlist_at": "2026-08-14T19:02:11Z",
+      "movie": {
+        "title": "Aftersun",
+        "poster": "12/1234abcd",
+        "year": 2022,
+        "ids": { "simkl": 1450221, "slug": "aftersun-2022", "imdb": "tt19770238", "tmdb": "800815" }
+      }
+    },
+    {
+      "status": "plantowatch",
+      "movie": {
+        "title": "Tudo em Todo Lugar ao Mesmo Tempo",
+        "year": 2022,
+        "ids": { "simkl": 1099887, "imdb": "tt6710474" }
+      }
+    },
+    {
+      "status": "plantowatch",
+      "movie": {
+        "title": "Sem imdb, tem de sair fora",
+        "year": 2021,
+        "ids": { "simkl": 777 }
+      }
+    }
+  ]
+}

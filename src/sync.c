@@ -2,6 +2,7 @@
 #include "sessao.h"
 #include "nuvem.h"
 #include "perfis.h"
+#include "agenda.h"
 #include "dados.h"
 #include "addons.h"
 #include "debrid.h"
@@ -732,6 +733,10 @@ void sync_esquecer_usuario(void) {
   // sobreviveria ao logout em disco e a proxima pessoa abriria o painel da tecla
   // AZUL com os filmes de quem saiu.
   salvos_esquecer();
+  // E A AGENDA: o calendario e os lembretes sao a lista de series de quem
+  // saiu, com o dia em que cada uma volta. Mesmo argumento dos salvos, e com o
+  // agravante de a tela Agenda mostrar essa lista inteira de uma vez.
+  agenda_esquecer();
   // E AS RECOMENDACOES, pela mesma razao com um agravante proprio: elas trazem
   // o NOME de quem mandou. Sem esta linha a proxima pessoa a entrar abriria a
   // aba Social com a lista de amigos de quem saiu.

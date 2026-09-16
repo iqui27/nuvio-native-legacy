@@ -31,10 +31,26 @@ typedef struct {
   char focusGif[512];
   int editorial; /* 1: legacy vector export; 2: approved cinematic image pair */
   int local;     /* 1: veio do collections.json do pacote (arte e ajustes curados aqui) */
+  /* 1: pasta ACRESCENTADA PELO APP, nao vinda da conta nem do pacote. Ver
+     col_extra_definir: e a marca que permite reinjeta-la depois de cada
+     reconstrucao sem duplicar. */
+  int extra;
   int frames, hideTitle, nSources;
   ColSource sources[COL_SOURCE_MAX];
 } ColFolder;
 int col_carregar(const char *dir);
+/* Pastas que o PROPRIO APP acrescenta (hoje: as listas do Trakt que a
+   Biblioteca levou para a Home — ver src/listas.c).
+
+   POR QUE PRECISA EXISTIR. col_definir_json RECONSTROI folders[] do zero a cada
+   pull da conta. Uma pasta acrescentada por fora some no primeiro sync, e o
+   sintoma seria a fileira da lista fixada desaparecendo da home sozinha alguns
+   segundos depois do arranque — defeito mudo e intermitente, do mesmo tipo do
+   #18. Guardadas aqui, elas sao REINJETADAS depois de cada reconstrucao.
+
+   Substitui o conjunto inteiro (n=0 limpa). Devolve quantas ficaram. */
+#define COL_EXTRA_MAX 24
+int col_extra_definir(const ColFolder *v, int n);
 // Colecoes da CONTA (sync_pull_collections), no shape do collectionsStore.js do
 // web: collections[{id,title,backdropImageUrl,folders[{id,title,coverImageUrl,
 // heroBackdropUrl,titleLogoUrl,hideTitle,sources[{provider,addonBaseUrl,type,

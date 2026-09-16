@@ -1,0 +1,43 @@
+[
+  {
+    "type": "list",
+    "score": 1000.0,
+    "list": {
+      "name": "A24 — tudo",
+      "description": "Todos os lançamentos do estúdio",
+      "privacy": "public",
+      "item_count": 138,
+      "comment_count": 12,
+      "likes": 901,
+      "ids": { "trakt": 8842211, "slug": "a24-tudo" },
+      "user": {
+        "username": "cinefilo_br",
+        "private": false,
+        "name": "Cinéfilo",
+        "vip": true,
+        "ids": { "slug": "cinefilo-br" }
+      }
+    }
+  },
+  {
+    "type": "list",
+    "score": 812.5,
+    "list": {
+      "name": "Sci-fi dos anos 80",
+      "description": "",
+      "privacy": "public",
+      "item_count": 55,
+      "likes": 47,
+      "ids": { "trakt": 991002, "slug": "sci-fi-dos-anos-80" },
+      "user": {
+        "username": "retrovision",
+        "ids": { "slug": "retrovision" }
+      }
+    }
+  },
+  {
+    "type": "movie",
+    "score": 40.0,
+    "movie": { "title": "Isto não é uma lista", "ids": { "trakt": 1, "slug": "x" } }
+  }
+]
