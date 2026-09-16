@@ -24,6 +24,7 @@
 #define NV_RECOMENDA_H
 
 #include "catalogo.h"
+#include "gfx.h"
 #include <SDL2/SDL.h>
 #include <stddef.h>
 
@@ -34,6 +35,10 @@
 // a retencao de 90 dias do servidor apagar as velhas.
 #define REC_MAX           60
 #define REC_CONTATOS_MAX  40
+// Teto da lista de sugestoes — o MESMO SUG_MAX do servidor, que ja corta em 20.
+// Este numero aqui nao e a regra, e a garantia de que uma resposta maior que a
+// combinada nao escreve fora do vetor.
+#define REC_SUGESTOES_MAX 20
 // Quantos modelos prontos existem. Texto livre (modelo -1) e etapa posterior.
 #define REC_MODELOS        6
 
@@ -42,6 +47,16 @@ typedef struct {
   long long criado;    // epoch em segundos
   char de[96];         // "trakt:<slug>" | "nuvio:<sub>"
   char deNome[64];     // nome de exibicao de quem mandou
+  // FOTO DE PERFIL DE QUEM MANDOU. Vazio e estado NORMAL, e nao falha: a conta
+  // Nuvio nao expoe foto na verificacao de identidade (ver idNuvio no servidor)
+  // e quem entrou por codigo costuma cair nesse caso. Vazio desenha a inicial
+  // num disco colorido, como perfilsel.c ja faz nos perfis sem foto.
+  //
+  // 256 E NAO 512 como o `poster`: sao 60 linhas guardadas, e cada byte aqui
+  // custa 60 vezes na memoria estatica do modulo (a nota de REC_MAX explica por
+  // que isso importa no alvo Tizen). O avatar do Trakt e uma URL de
+  // walter.trakt.tv ou do Gravatar — as duas familias ficam bem abaixo disso.
+  char deAvatar[256];
   char imdb[24];
   char tipo[8];        // "movie" | "series"
   char titulo[160];
@@ -49,14 +64,44 @@ typedef struct {
   char ano[16];
   int  modelo;         // indice do template; -1 = texto livre
   char texto[72];      // so quando modelo == -1
+  // NOTA DO IMDb EM CENTESIMOS (83 = 8,3), a MESMA unidade do `nota` do
+  // CatItem — la ela nasce de `imdbRating * 10` (descoberta.c) e e desenhada
+  // como `nota/10 , nota%10`. 0 = desconhecida, e o selo some.
+  //
+  // VIAJA COM A RECOMENDACAO, e nao e procurada no catalogo de quem recebe: o
+  // titulo recomendado pode nao estar no catalogo dele, que e precisamente o
+  // caso que uma recomendacao existe para cobrir.
+  int  nota;
   int  visto;          // 0 = ainda conta para o selo
 } RecItem;
 
 typedef struct {
   char id[96];
   char nome[64];
+  char avatar[256];    // vazio = desenhar a inicial; ver RecItem.deAvatar
   char origem[8];      // "trakt" | "nuvio"
 } RecContato;
+
+// GENTE QUE A PESSOA TALVEZ CONHECA, e como o servico chegou ate ela.
+//
+// AS DUAS FONTES E O QUE ELAS NAO PRECISAM. Nenhuma das duas manda um dado novo
+// para fora da TV:
+//   "trakt" — quem ela ja segue no Trakt e tambem usa o servico. A lista de
+//             slugs que vai no pedido e a MESMA que /v1/contatos/trakt ja
+//             recebia; o proprio Trakt a publica.
+//   "amigo" — alcancavel por um contato que ela ja tem. E um JOIN no servidor
+//             sobre a tabela de contatos; o cliente nao manda nada e nao recebe
+//             a lista de amigos de ninguem — so o NOME de um intermediario.
+//
+// EM AMBAS, SO APARECE QUEM ACEITOU APARECER. A tela de consentimento promete
+// isso com todas as letras, e uma excecao aqui faria daquela frase uma mentira.
+typedef struct {
+  char id[96];
+  char nome[64];
+  char avatar[256];
+  char origem[8];      // "trakt" | "amigo"
+  char viaNome[64];    // nome do contato em comum; so em "amigo"
+} RecSugestao;
 
 // 0 quando o pacote saiu SEM NUVIO_REC_URL. Nesse caso nada mais aqui faz
 // coisa alguma, e quem desenha deve esconder a superficie inteira.
@@ -110,6 +155,46 @@ void recomenda_envio_limpar(void);
 
 // Copia ate `max` contatos. Devolve quantos copiou.
 int  recomenda_contatos(RecContato *saida, int max);
+
+// --- APARECER PARA OUTRAS PESSOAS -------------------------------------------
+//
+// O PADRAO E NAO, E O PADRAO NAO E "NAO": sao TRES estados, e a diferenca entre
+// os dois primeiros e a tela inteira. "Nao perguntado" e o que faz a aba Social
+// abrir com a pergunta; "nao" e uma resposta que a pessoa deu e que nao se
+// pergunta de novo. Um sinalizador de dois valores confundiria "ela recusou"
+// com "ela ainda nao viu", e a segunda leitura autoriza perguntar toda vez —
+// que e como um consentimento vira um obstaculo a ser clicado sem ler.
+//
+// O EFEITO NO SERVIDOR E UM SO: se a pessoa pode APARECER na lista de sugestoes
+// de outra gente. Ele nao governa receber recomendacao, nao governa o codigo de
+// pareamento e nao governa os contatos que ela ja tem. Recusar nao tira nada
+// dela — e por isso a tela pode dizer isso sem ressalva.
+enum { REC_APARECER_NAO_PERGUNTADO = 0, REC_APARECER_NAO, REC_APARECER_SIM };
+int  recomenda_aparecer(void);
+
+// Grava a resposta no aparelho NA HORA e enfileira o aviso ao servidor. Grava
+// primeiro de proposito: a pergunta nao pode voltar na proxima abertura so
+// porque a rede estava fora, e um "sim" que nao chegou ao servidor e uma pessoa
+// que nao apareceu — que e o lado seguro do erro.
+void recomenda_responder_aparecer(int sim);
+
+// --- SUGESTOES ---------------------------------------------------------------
+int  recomenda_n_sugestoes(void);
+// Copia da sugestao `i`. 1 quando copiou. COPIA e nao ponteiro, pelo mesmo
+// motivo de recomenda_item.
+int  recomenda_sugestao(int i, RecSugestao *saida);
+
+// Enfileira `POST /v1/contatos/sugerido`: vira contato nos dois sentidos. Tira
+// da lista local na hora (a resposta chega no proximo ciclo) e devolve 1 quando
+// entrou na fila. O servidor RECALCULA as sugestoes antes de vincular — um id
+// que nao esta nelas volta 403, entao esta rota nao e "vincule-me a qualquer
+// um".
+int  recomenda_adicionar_sugerido(const char *id);
+
+// Frase de origem JA PRONTA de uma sugestao ("Segue no Trakt", "Amigo de
+// Gustavo"). Nunca NULL. Mora aqui, e nao em quem desenha, porque a regra de
+// "origem amigo sem viaNome" tem de ter UMA resposta.
+void rec_sugestao_origem(char *dst, size_t tam, const RecSugestao *s);
 
 // --- QUEM SOU EU, E COMO UM AMIGO ME ACHA -----------------------------------
 //
@@ -165,6 +250,32 @@ const char *rec_frase(const RecItem *r);
 // "há 2 h" — a frase INTEIRA passa por i18n como formato, nao montada de
 // pedacos (mesma regra do "Salvo há 2 horas" de salvospainel.c).
 void rec_quando_texto(char *dst, size_t tam, long long quandoS);
+
+// --- AS TRES MARCAS DA LINHA, compartilhadas com quem desenha ----------------
+//
+// MORAM AQUI, e nao em salvospainel.c, porque as MESMAS tres aparecem em duas
+// superficies: a linha da aba Social e o cartao que abre com o app. Duplicar o
+// desenho faria as duas divergirem na primeira correcao — foi o que aconteceu
+// com a frase do modelo antes de rec_frase existir.
+
+// Disco do avatar em `a`: a foto quando ha URL, senao a INICIAL do nome sobre
+// uma cor derivada do id. Mesma receita de perfilsel.c (soquete escuro, cor por
+// cima, foto ou letra), sem a parte de GIF — a foto do Trakt nao anima.
+void rec_avatar(GfxRect a, const char *url, const char *nome, const char *id,
+                float alfa);
+
+// Altura unica dos dois selos, e o vao entre eles. Ficam aqui porque quem
+// desenha a linha precisa deles para centrar o texto ao lado.
+#define REC_SELO_H    30.0f
+#define REC_SELO_GAP  12.0f
+
+// Selo de tipo ("Filme" / "Série") em `x,y`. Devolve a largura desenhada.
+// `escuro` inverte as cores para o fundo claro do foco.
+float rec_selo_tipo(float x, float y, const char *tipo, int escuro, float alfa);
+
+// Selo do IMDb com a nota em centesimos. Devolve a largura, ou 0 com nota <= 0
+// — quem chama nao precisa perguntar antes.
+float rec_selo_imdb(float x, float y, int nota, int escuro, float alfa);
 
 // Apaga cache, cursor e marca do cartao do aparelho. Chamar de
 // sync_esquecer_usuario: recomendacao e tao pessoal quanto a lista de salvos.

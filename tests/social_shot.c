@@ -121,7 +121,18 @@ static void captura(const char *nome, SDL_Window *win) {
 }
 
 // Escreve o cache como o app o escreveria. Os campos, em ordem:
-// id, criado, visto, modelo, tipo, ano, de, deNome, imdb, poster, texto, titulo.
+//   v2: id criado visto modelo tipo ano de deNome imdb poster texto
+//       nota deAvatar titulo
+//   v1: os mesmos, SEM nota e SEM deAvatar.
+//
+// AS QUATRO LINHAS COBREM OS QUATRO ESTADOS que a foto precisa provar, e nao
+// quatro titulos bonitos:
+//   7 — nao lida, COM foto, filme, nota 9,3
+//   6 — nao lida, SEM foto (conta Nuvio), serie, nota 9,5, texto livre
+//   5 — ja lida, com foto, filme, nota 8,5
+//   4 — ja lida, em formato v1: o cache que a versao instalada na TV do dono
+//       gravou. Ela tem de aparecer inteira, sem nota e sem foto, e nao sumir
+//       nem sair com o titulo no lugar da nota.
 static void semear(const char *dir) {
   char caminho[700];
   long long agora = (long long)time(NULL);
@@ -129,15 +140,16 @@ static void semear(const char *dir) {
   snprintf(caminho, sizeof caminho, "%s/recomendacoes.txt", dir);
   f = fopen(caminho, "wb");
   assert(f);
-  fprintf(f, "# nuvio recomendacoes v1\n");
+  fprintf(f, "# nuvio recomendacoes v2\n");
   fprintf(f, "7\t%lld\t0\t2\tmovie\t1994\ttrakt:gustavo\tGustavo\ttt0111161\t"
-             "deploy/app/art/00.jpg\t\tUm Sonho de Liberdade\n", agora - 900);
+             "deploy/app/art/00.jpg\t\t93\tdeploy/app/art/elenco/00_0.jpg\t"
+             "Um Sonho de Liberdade\n", agora - 900);
   fprintf(f, "6\t%lld\t0\t-1\tseries\t2008\tnuvio:9a1c\tMarina\ttt0903747\t"
-             "deploy/app/art/01.jpg\tisso e melhor que tudo\tBreaking Bad\n",
-          agora - 9000);
+             "deploy/app/art/01.jpg\tisso e melhor que tudo\t95\t\t"
+             "Breaking Bad\n", agora - 9000);
   fprintf(f, "5\t%lld\t1\t4\tmovie\t2014\ttrakt:gustavo\tGustavo\ttt2582802\t"
-             "deploy/app/art/02.jpg\t\tWhiplash: Em Busca da Perfeição\n",
-          agora - 200000);
+             "deploy/app/art/02.jpg\t\t85\tdeploy/app/art/elenco/00_0.jpg\t"
+             "Whiplash: Em Busca da Perfeição\n", agora - 200000);
   fprintf(f, "4\t%lld\t1\t0\tseries\t2016\tnuvio:3b2d\tCarolina Menezes\t"
              "tt4574334\tdeploy/app/art/03.jpg\t\tStranger Things\n",
           agora - 400000);
@@ -224,6 +236,16 @@ int main(int argc, char **argv) {
   desenharCartao = DES_CARTAO;
   snprintf(nome, sizeof nome, "%s-cartao.bmp", saida);
   captura(nome, w);
+
+  // O MESMO CARTAO COM UM AMIGO SEM FOTO. `cartaoItem` e trocado por dentro
+  // (este teste inclui recomenda.c inteiro) porque mostrar_se_houver escolhe
+  // sempre a mais NOVA nao lida, e a mais nova e justamente a que tem foto — o
+  // caminho da inicial no disco colorido nunca apareceria em captura nenhuma.
+  cartaoItem = itens[1];
+  cartaoAberto = 1;
+  snprintf(nome, sizeof nome, "%s-cartao-sem-foto.bmp", saida);
+  captura(nome, w);
+  cartaoAberto = 0;
   desenharCartao = DES_PAINEL;
 
   spainel_abrir();
@@ -232,6 +254,53 @@ int main(int argc, char **argv) {
 
   // CIMA leva o foco para a linha de abas; DIREITA troca para SOCIAL. E
   // exatamente o caminho que o D-pad da TV percorre.
+  //
+  // NA PRIMEIRA ENTRADA A ABA E A PERGUNTA, e nao a lista: `aparecer` nasce em
+  // REC_APARECER_NAO_PERGUNTADO porque nao ha `recomendacoes-aparecer.txt` em
+  // NUVIO_DADOS. Esta captura e a prova de que a pergunta chega antes de
+  // qualquer coisa — inclusive antes das quatro recomendacoes ja semeadas.
+  tecla(SDLK_UP);
+  tecla(SDLK_RIGHT);
+  printf("consentimento na tela: %d (aparecer=%d)\n",
+         recomenda_aparecer() == REC_APARECER_NAO_PERGUNTADO, aparecer);
+  snprintf(nome, sizeof nome, "%s-social-consentimento.bmp", saida);
+  captura(nome, w);
+
+  // COM O FOCO NA PRIMEIRA RESPOSTA, que e o "NAO". Descer uma vez cai nela: um
+  // OK dado sem ler recusa, e recusar e o lado em que errar nao custa nada.
+  tecla(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-social-consentimento-foco.bmp", saida);
+  captura(nome, w);
+
+  // A RESPOSTA E DADA POR DENTRO, e nao com um OK: recomenda_responder_aparecer
+  // enfileira um POST e acorda o fio de rede, e uma captura nao pode depender
+  // de servidor no ar (a mesma razao dos contatos e do codigo semeados mais
+  // abaixo). O que a foto tem de provar e o desenho da lista DEPOIS do sim.
+  aparecer = REC_APARECER_SIM;
+
+  // AS SUGESTOES, semeadas dentro do modulo. As tres cobrem os tres estados que
+  // a linha precisa saber desenhar:
+  //   0 — seguido no Trakt, COM foto
+  //   1 — amigo de um contato, SEM foto (conta Nuvio cai na inicial)
+  //   2 — amigo de um contato cujo nome o servidor nao tem: a frase de origem
+  //       tem de virar "Amigo de um contato seu" e nao "Amigo de "
+  nSugestoes = 3;
+  memset(sugestoes, 0, sizeof sugestoes);
+  snprintf(sugestoes[0].nome,   sizeof sugestoes[0].nome,   "%s", "Rafael Pires");
+  snprintf(sugestoes[0].id,     sizeof sugestoes[0].id,     "%s", "trakt:rafael-pires");
+  snprintf(sugestoes[0].avatar, sizeof sugestoes[0].avatar, "%s",
+           "deploy/app/art/elenco/00_0.jpg");
+  snprintf(sugestoes[0].origem, sizeof sugestoes[0].origem, "%s", "trakt");
+  snprintf(sugestoes[1].nome,    sizeof sugestoes[1].nome,    "%s", "Marina Duarte");
+  snprintf(sugestoes[1].id,      sizeof sugestoes[1].id,      "%s", "nuvio:9a1c");
+  snprintf(sugestoes[1].origem,  sizeof sugestoes[1].origem,  "%s", "amigo");
+  snprintf(sugestoes[1].viaNome, sizeof sugestoes[1].viaNome, "%s", "Gustavo");
+  snprintf(sugestoes[2].nome,   sizeof sugestoes[2].nome,   "%s", "pedrinho_23");
+  snprintf(sugestoes[2].id,     sizeof sugestoes[2].id,     "%s", "trakt:pedrinho-23");
+  snprintf(sugestoes[2].origem, sizeof sugestoes[2].origem, "%s", "amigo");
+
+  spainel_fechar();
+  spainel_abrir();
   tecla(SDLK_UP);
   tecla(SDLK_RIGHT);
   snprintf(nome, sizeof nome, "%s-social.bmp", saida);
@@ -243,11 +312,26 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-social-foco.bmp", saida);
   captura(nome, w);
 
-  // O FIM DA LISTA, onde mora "Adicionar um amigo". Ela existe TAMBEM com a
-  // lista cheia: sem isto, a unica porta para a tela de amigos seria o menu de
-  // um cartaz, ou seja, escolher um filme para poder adicionar alguem.
+  // AS SUGESTOES, com o foco na primeira delas. Quatro recomendacoes na frente,
+  // entao a quinta descida cai na primeira sugestao.
+  tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-social-sugestoes.bmp", saida);
+  captura(nome, w);
+
+  // O FIM DA LISTA, onde moram "Adicionar um amigo" e o interruptor de
+  // aparecer. A primeira existe TAMBEM com a lista cheia: sem ela, a unica
+  // porta para a tela de amigos seria o menu de um cartaz, ou seja, escolher um
+  // filme para poder adicionar alguem. O segundo e o unico lugar em que a
+  // resposta do consentimento pode ser trocada depois.
+  // Tres descidas a partir da primeira sugestao: as outras duas sugestoes e
+  // entao "Adicionar um amigo". A quarta cairia direto no interruptor, e as
+  // duas capturas sairiam iguais — foi o que a primeira rodada mostrou.
   tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_DOWN);
   snprintf(nome, sizeof nome, "%s-social-adicionar.bmp", saida);
+  captura(nome, w);
+
+  tecla(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-social-aparecer.bmp", saida);
   captura(nome, w);
 
   // --- AS DUAS TELAS DE ENVIO, no menu de contexto do cartaz ---------------
@@ -265,6 +349,8 @@ int main(int argc, char **argv) {
   nContatos = 4;
   snprintf(contatos[0].nome, sizeof contatos[0].nome, "%s", "Gustavo");
   snprintf(contatos[0].id,   sizeof contatos[0].id,   "%s", "trakt:gustavo");
+  snprintf(contatos[0].avatar, sizeof contatos[0].avatar, "%s",
+           "deploy/app/art/elenco/00_0.jpg");
   snprintf(contatos[1].nome, sizeof contatos[1].nome, "%s", "Marina Duarte");
   snprintf(contatos[1].id,   sizeof contatos[1].id,   "%s", "nuvio:9a1c");
   snprintf(contatos[2].nome, sizeof contatos[2].nome, "%s", "Carolina Menezes");
@@ -350,6 +436,10 @@ int main(int argc, char **argv) {
   // sabendo por que, e com o codigo na tela para ditar.
   desenharCartao = DES_PAINEL;
   nItens = 0;                 // a lista local some; o painel reconstroi sozinho
+  // E AS SUGESTOES TAMBEM. O vazio de verdade e "nada recebido E ninguem para
+  // sugerir" — com tres sugestoes na tela a foto provaria outra coisa, e a
+  // linha que o D-pad alcanca com uma descida deixaria de ser a que interessa.
+  nSugestoes = 0;
   // FECHA ANTES DE ABRIR: spainel_abrir sai cedo com o painel ja aberto (ele
   // esta de pe desde a captura de "salvos"), e sem isto o caminho de D-pad
   // abaixo comeca de um foco herdado — a primeira versao desta captura saiu com

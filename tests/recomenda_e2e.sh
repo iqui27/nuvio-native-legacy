@@ -43,7 +43,18 @@ B=(-H "authorization: Bearer tok-e2e-b" -H "x-nuvio-auth: nuvio" -H "content-typ
 COD=$(curl -s -X POST "${A[@]}" "$BASE/v1/eu" | sed -E 's/.*"codigo":"([a-z0-9]{6})".*/\1/')
 curl -s -X POST "${B[@]}" "$BASE/v1/eu" > /dev/null
 curl -s -X POST "${B[@]}" -d "{\"codigo\":\"$COD\"}" "$BASE/v1/contatos" > /dev/null
-curl -s -X POST "${B[@]}" -d '{"para":"nuvio:e2e","imdb":"tt0111161","tipo":"movie","titulo":"Um Sonho de Liberdade","poster":"https://exemplo/p.jpg","ano":"1994","modelo":2}' \
+# O D1 LOCAL E PERSISTENTE, E O SERVIDOR SO ACEITA 5 ENVIOS POR PAR POR DIA.
+# Sem esta limpeza, a SEXTA execucao do teste no mesmo dia recebe 429 na linha
+# abaixo, nenhuma recomendacao nova e plantada, e o teste falha em "ela conta
+# para o selo: 0" — uma falha que nao tem nada a ver com o cliente e que so
+# aparece para quem ja rodou a suite cinco vezes. MEDIDO em 16/09/2026.
+( cd servidor/recomendacoes && npx wrangler@4 d1 execute nuvio-recomendacoes \
+    --local --command "DELETE FROM rec WHERE para = 'nuvio:e2e' OR para = 'nuvio:e2e-b'" \
+    >/dev/null 2>&1 )
+
+# `nota` VAI NO CORPO porque e assim que o cliente a manda: quem recomenda tem
+# o CatItem na mao e e o unico que tem. O valor e em centesimos (88 = 8,8).
+curl -s -X POST "${B[@]}" -d '{"para":"nuvio:e2e","imdb":"tt0111161","tipo":"movie","titulo":"Um Sonho de Liberdade","poster":"https://exemplo/p.jpg","ano":"1994","modelo":2,"nota":88}' \
   "$BASE/v1/rec" > /dev/null
 
 sources=()

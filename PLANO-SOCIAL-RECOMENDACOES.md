@@ -221,3 +221,90 @@ exatamente o que uma TV nao deve fazer.
    nova).
 
 Cada passo e testavel sozinho na TV; nenhum depende do seguinte para ser util.
+
+---
+
+## Parte 6 — Aparecer para outras pessoas, e as sugestoes (16/09/2026)
+
+Pedido do dono: "na parte social quando entrar a primeira vez, perguntar se quer
+ser discoverable, pq ai podemos adicionar as pessoas que instalaram o app,
+mostrar os que tem gosto parecido, ver o historico e adicionar como amigo".
+
+Entregue: a **pergunta**, o **sinalizador** e as **sugestoes**. NAO entregue:
+gosto parecido e historico — ver "O que ficou de fora" no fim.
+
+### 6a. A pergunta, uma vez, com o NAO como padrao
+
+Na primeira vez que a aba Social abre, ela E a pergunta: o texto ocupa o painel
+e as duas respostas sao as duas unicas linhas. Nao da para rolar por cima dela.
+
+Sao TRES estados no cliente (`REC_APARECER_NAO_PERGUNTADO` / `_NAO` / `_SIM`) e
+nao dois. "Nao perguntado" e o que faz a tela aparecer; "nao" e uma resposta
+dada, que nao se pergunta de novo. Com um sinalizador de dois valores, "ela
+recusou" e "ela ainda nao viu" seriam o mesmo estado, e a pergunta voltaria a
+cada arranque — que e como um consentimento vira um obstaculo a ser clicado.
+
+A resposta mora em `recomendacoes-aparecer.txt`, e gravada ANTES de qualquer
+rede, e some com `sync_esquecer_usuario` como o resto. Falha de rede nao a
+desfaz: o aviso ao servidor fica pendente e sai no proximo ciclo.
+
+O servidor e a autoridade POR IDENTIDADE (`/v1/eu` devolve `descobrivel`), e a
+reconciliacao e em um sentido so: um aparelho que NUNCA perguntou adota o "sim"
+respondido em outra TV da mesma pessoa; um aparelho que ja tem resposta NAO e
+virado pelo servidor — ele e que corrige o servidor no ciclo seguinte.
+
+### 6b. O sinalizador no servidor
+
+`pessoa.descobrivel INTEGER NOT NULL DEFAULT 0` (migracao 002, so aditiva).
+Escrito por UMA rota, `POST /v1/descobrivel`, que **nao aceita um id**: quem e
+escrito e sempre quem o token identificou. Nao existe pedido possivel que ligue
+o sinalizador de terceiro — a ausencia do campo e o mecanismo, nao uma validacao
+que alguem possa esquecer de rodar.
+
+Ele governa UMA coisa: aparecer na lista de sugestoes dos outros. Nao governa
+receber recomendacao, nem o codigo de pareamento, nem os contatos que ja
+existem. Por isso a tela pode dizer "se voce recusar, nada muda alem disso" sem
+ressalva — e por isso desligar nunca desfaz um vinculo.
+
+### 6c. As sugestoes, e o que elas NAO precisam
+
+`POST /v1/sugestoes` devolve ate 20, de duas fontes:
+
+1. **Trakt** — quem a pessoa ja segue e tambem usa o servico. Os slugs vao no
+   corpo; e a MESMA lista que `/v1/contatos/trakt` ja recebia, e o Trakt a
+   publica. Nenhum dado novo sai da TV.
+2. **Amigo de amigo** — `JOIN` de `contato` com ele mesmo no servidor. O cliente
+   nao manda nada, e o que volta e "fulano, alcancavel por Gustavo" — nunca a
+   lista de contatos do Gustavo, nem quantos contatos em comum existem.
+
+`descobrivel = 1` filtra as DUAS. O filtro podia valer so para (2) — em (1) a
+pessoa ja segue o outro no Trakt e portanto ja sabe que ele existe — e vale para
+as duas assim mesmo, porque a tela de consentimento promete isso e uma excecao
+silenciosa faria daquela frase uma mentira.
+
+Adicionar e UMA acao: `POST /v1/contatos/sugerido` recalcula as sugestoes com a
+MESMA funcao que as desenhou e recusa (403) qualquer id que nao esteja nelas.
+Sem isso a rota seria "vincule-me a qualquer id" e quem soubesse um `nuvio:<sub>`
+viraria contato sem passar por codigo, por Trakt, nem pelo consentimento.
+
+**A varredura automatica dos seguidos do Trakt saiu do arranque.** Ela
+transformava em contato, sem ninguem apertar nada e a cada arranque, toda pessoa
+que o dono segue no Trakt e que usa o servico. "Mostrar ... e adicionar como
+amigo" sao dois passos, e o segundo e de quem esta olhando. A rota continua
+existindo e o botao "procurar amigos do Trakt" da tela de amigos continua
+vinculando na hora — o que deixou de existir e a varredura silenciosa. Reverter
+e recolocar uma linha em `ciclo()`, e o comentario la diz qual.
+
+### 6d. O que ficou de fora, e por que e outra decisao
+
+"Mostrar os que tem gosto parecido" e "ver o historico" exigem que a TV mande
+para o nosso servidor **o que a pessoa assiste** — coisa que ela nunca fez: o
+servico guarda recomendacoes e contatos, e mais nada. Isso e uma escalada de
+privacidade, nao um recurso a mais, e contradiz a regra escrita do proprio
+projeto (`PLANO-CONTA-SYNC.md`, contrato de RPC social): *"circle_list devolve
+ultima_atividade como marca de tempo, NUNCA o que a pessoa assistiu. So aparece
+o que ela indicou de proposito."*
+
+O dimensionamento das opcoes (que dado minimo cada uma exige, onde ficaria, o
+que um estranho inferiria e como se revoga) foi entregue no relatorio da sessao
+que escreveu esta parte. Nenhuma linha de codigo dela existe.

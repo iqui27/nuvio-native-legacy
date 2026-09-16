@@ -113,6 +113,50 @@ static int aba;
 static RecItem recs[REC_MAX];
 static int nRecs;
 
+// A ABA SOCIAL DEIXOU DE SER UMA LISTA SO. Ela tem agora quatro tipos de linha
+// com ALTURAS DIFERENTES, e por isso existe este vetor em vez de um indice
+// direto na lista de recomendacoes: a rolagem, o foco e o desenho tem de
+// concordar sobre onde comeca a linha `i`, e a unica forma de garantir isso e
+// as tres perguntarem ao MESMO lugar.
+//
+//   SPS_CONSENT_NAO / _SIM  as duas respostas da pergunta de primeira entrada
+//   SPS_REC                 uma recomendacao recebida
+//   SPS_SUG                 alguem que a pessoa talvez conheca
+//   SPS_ADICIONAR           "Adicionar um amigo"
+//   SPS_APARECER            o interruptor de "apareco para os outros?"
+//
+// COM A PERGUNTA NA TELA A LISTA TEM SO DUAS LINHAS, as duas respostas. Nao e
+// uma tela separada com laco proprio: o D-pad, a rolagem, a animacao de foco e
+// o recorte do painel ja funcionam para linhas, e uma segunda maquina de estado
+// para duas pilulas divergiria da primeira na primeira correcao.
+enum { SPS_CONSENT_NAO = 0, SPS_CONSENT_SIM, SPS_REC, SPS_SUG,
+       SPS_ADICIONAR, SPS_APARECER };
+typedef struct { unsigned char tipo; short idx; } SPSocial;
+#define SP_SOCIAL_MAX (REC_MAX + REC_SUGESTOES_MAX + 4)
+static SPSocial social[SP_SOCIAL_MAX];
+static int nSocial;
+static RecSugestao sugs[REC_SUGESTOES_MAX];
+static int nSugs;
+// Retrato do estado do consentimento na ultima reconstrucao. O fio de rede pode
+// adotar um "sim" respondido em OUTRA TV no meio de um ciclo (ver a
+// reconciliacao em recomenda.c), e sem esta marca a pergunta continuaria na
+// tela depois de ja ter sido respondida.
+static int consentEstado = -1;
+
+// Alturas das linhas novas. A recomendacao mantem SP_POSTER_H + SPS_GAP, que e
+// exatamente o SP_PASSO de antes — a aba nao mudou de ritmo, so ganhou vizinhos.
+#define SPS_GAP         22.0f
+#define SPS_H_CONSENT   84.0f
+#define SPS_H_SUG      112.0f
+#define SPS_H_ACAO      76.0f
+#define SPS_H_APARECER 104.0f
+// Alturas dos dois blocos de texto que NAO sao linha e por isso nao recebem
+// foco: o enunciado da pergunta e a explicacao do estado vazio. Sao constantes
+// e nao medidas porque a rolagem precisa delas ANTES do desenho — e as duas
+// foram conferidas na captura, que e o unico juiz util aqui.
+#define SPS_CONSENT_TOPO 400.0f
+#define SPS_VAZIO_TOPO   320.0f
+
 static int aberto, foco, marcaCatN = -1;
 static float entrada, scrollY;
 static float animFoco[SP_MAX];
@@ -241,11 +285,42 @@ static int nVisiveis(void) {
   // ficou preso (1 pessoa registrada, 0 contatos no servidor). Cheia, a tela
   // de amigos so seria alcancavel pelo menu de um cartaz — ou seja, para
   // adicionar alguem era preciso escolher um filme primeiro.
-  if (aba == SP_ABA_SOCIAL) return nRecs + 1;
+  if (aba == SP_ABA_SOCIAL) return nSocial;
   return nLinhas;
 }
 
 static float listaTopo(void) { return SP_LISTA_Y; }
+
+// 1 enquanto a pergunta de primeira entrada esta na tela.
+static int consentindo(void) {
+  return aba == SP_ABA_SOCIAL && nSocial > 0 && social[0].tipo == SPS_CONSENT_NAO;
+}
+
+static float socialAlt(int i) {
+  if (i < 0 || i >= nSocial) return 0.0f;
+  switch (social[i].tipo) {
+    case SPS_REC:       return SP_POSTER_H;
+    case SPS_SUG:       return SPS_H_SUG;
+    case SPS_ADICIONAR: return SPS_H_ACAO;
+    case SPS_APARECER:  return SPS_H_APARECER;
+    default:            return SPS_H_CONSENT;
+  }
+}
+
+// Cabecalho de secao ANTES da linha `i`, quando houver. So existe um: o que
+// separa as recomendacoes das sugestoes. Sem ele, um nome desconhecido
+// apareceria logo abaixo de uma recomendacao de um amigo e leria como remetente.
+static float socialAntes(int i) {
+  if (i < 0 || i >= nSocial || social[i].tipo != SPS_SUG) return 0.0f;
+  return (i == 0 || social[i - 1].tipo != SPS_SUG) ? SP_SECAO_H : 0.0f;
+}
+
+// Altura do bloco de texto que abre a lista e nao recebe foco.
+static float socialTopo(void) {
+  if (aba != SP_ABA_SOCIAL) return 0.0f;
+  if (consentindo()) return SPS_CONSENT_TOPO;
+  return nRecs == 0 ? SPS_VAZIO_TOPO : 0.0f;
+}
 
 // Copia a lista de recomendacoes para dentro do painel. COPIA, e nao ponteiro:
 // a lista de recomenda.c vive atras de um mutex que o fio de rede reescreve, e
@@ -254,10 +329,49 @@ static float listaTopo(void) { return SP_LISTA_Y; }
 static void reconstruirSocial(void) {
   int i;
   nRecs = 0;
+  nSugs = 0;
+  nSocial = 0;
+  consentEstado = -1;
   if (!temAbas()) return;
+  consentEstado = recomenda_aparecer();
+
+  // A PERGUNTA VEM ANTES DE TUDO, e ela e a lista inteira enquanto durar. Nao e
+  // um cartaz por cima de uma lista que da para ler por baixo: o pedido foi
+  // "quando entrar a primeira vez, perguntar", e uma pergunta que se pode
+  // ignorar rolando a tela nao foi feita.
+  //
+  // O "NAO" VEM PRIMEIRO. E a resposta padrao, e a primeira linha e a que
+  // recebe o foco quando o D-pad desce — quem apertar OK duas vezes sem ler
+  // acaba em "nao", que e o unico lado em que errar nao custa nada a ninguem.
+  if (consentEstado == REC_APARECER_NAO_PERGUNTADO) {
+    social[nSocial].tipo = SPS_CONSENT_NAO; social[nSocial].idx = 0; nSocial++;
+    social[nSocial].tipo = SPS_CONSENT_SIM; social[nSocial].idx = 0; nSocial++;
+    return;
+  }
+
   for (i = 0; i < REC_MAX && nRecs < REC_MAX; i++)
     if (recomenda_item(i, &recs[nRecs])) nRecs++;
     else break;
+  for (i = 0; i < REC_SUGESTOES_MAX && nSugs < REC_SUGESTOES_MAX; i++)
+    if (recomenda_sugestao(i, &sugs[nSugs])) nSugs++;
+    else break;
+
+  for (i = 0; i < nRecs && nSocial < SP_SOCIAL_MAX; i++) {
+    social[nSocial].tipo = SPS_REC; social[nSocial].idx = (short)i; nSocial++;
+  }
+  for (i = 0; i < nSugs && nSocial < SP_SOCIAL_MAX; i++) {
+    social[nSocial].tipo = SPS_SUG; social[nSocial].idx = (short)i; nSocial++;
+  }
+  if (nSocial < SP_SOCIAL_MAX) {
+    social[nSocial].tipo = SPS_ADICIONAR; social[nSocial].idx = 0; nSocial++;
+  }
+  // O INTERRUPTOR FECHA A ABA, e nao mora em Ajustes. Ele responde uma pergunta
+  // que so faz sentido olhando para esta lista ("quem me ve?"), e quem quiser
+  // mudar de ideia vai procura-lo onde a pergunta foi feita. A alternativa em
+  // Ajustes esta descrita no relatorio; as duas podem coexistir.
+  if (nSocial < SP_SOCIAL_MAX) {
+    social[nSocial].tipo = SPS_APARECER; social[nSocial].idx = 0; nSocial++;
+  }
 }
 
 static void trocarAba(int nova) {
@@ -278,7 +392,10 @@ static void trocarAba(int nova) {
     // le visto=1 e os pontos somem sozinhos.
     recomenda_pedir_agora();
     reconstruirSocial();
-    recomenda_marcar_vistas();
+    // COM A PERGUNTA NA TELA NADA E MARCADO COMO LIDO. A lista esta atras dela:
+    // apagar o selo agora diria "voce ja viu" sobre uma lista que ninguem viu,
+    // e o aviso nao voltaria.
+    if (!consentindo()) recomenda_marcar_vistas();
   }
 }
 
@@ -301,10 +418,17 @@ void spainel_fechar(void) { aberto = 0; }
 // suficiente para o card focado ficar meio escondido atras do cabecalho.
 static float topoDe(int i) {
   float y;
-  // A aba Social nao tem secoes: uma recomendacao nao esta "comecada" nem
-  // "nao comecada", e inventar um cabecalho so para simetria custaria 54px de
-  // uma lista que ja e curta.
-  if (aba == SP_ABA_SOCIAL) return (float)i * SP_PASSO;
+  // A ABA SOCIAL SOMA LINHA A LINHA, e nao multiplica por um passo fixo: as
+  // linhas dela tem quatro alturas diferentes. Era `i * SP_PASSO` enquanto
+  // todas eram recomendacoes; com uma sugestao de 112px no meio, a multiplicacao
+  // erraria a partir dali e a rolagem pararia o foco meio fora da janela.
+  if (aba == SP_ABA_SOCIAL) {
+    int k;
+    y = socialTopo();
+    for (k = 0; k < i && k < nSocial; k++)
+      y += socialAntes(k) + socialAlt(k) + SPS_GAP;
+    return y + socialAntes(i);
+  }
   // Rotulo da primeira secao, sempre; mais o de "Não começados" para quem vem
   // depois dele. Com nCont == 0 nao existe segunda secao — a unica que aparece
   // e "Sua lista", e o segundo termo tem de ser zero para todo mundo.
@@ -356,22 +480,53 @@ void spainel_evento(const SDL_Event *e) {
       return;
     }
     if (aba == SP_ABA_SOCIAL) {
-      if (foco == nRecs) {
-        // A ULTIMA LINHA abre a tela de amigos. O painel FICA ABERTO atras: a
-        // modal e uma camada por cima dele e Voltar devolve o foco aqui, em vez
-        // de jogar a pessoa de volta na home.
-        recenviar_abrir_amigos();
-        return;
+      if (foco < 0 || foco >= nSocial) return;
+      switch (social[foco].tipo) {
+        case SPS_CONSENT_NAO:
+        case SPS_CONSENT_SIM:
+          recomenda_responder_aparecer(social[foco].tipo == SPS_CONSENT_SIM);
+          reconstruirSocial();
+          // A LISTA COMECA DO TOPO depois da resposta. Manter o foco na linha 1
+          // deixaria o dedo em cima de uma sugestao que a pessoa nem viu
+          // aparecer, e o proximo OK a adicionaria como contato.
+          foco = 0;
+          scrollY = 0.0f;
+          memset(animFoco, 0, sizeof animFoco);
+          recomenda_marcar_vistas();
+          return;
+        case SPS_SUG:
+          // UMA ACAO, como o pedido pediu: o OK vincula. O servidor recalcula
+          // as sugestoes antes de aceitar, entao um id que ja nao esta na lista
+          // (a pessoa revogou entre a tela e o OK) volta recusado.
+          if (social[foco].idx >= 0 && social[foco].idx < nSugs)
+            recomenda_adicionar_sugerido(sugs[social[foco].idx].id);
+          reconstruirSocial();
+          if (foco >= nSocial) foco = nSocial > 0 ? nSocial - 1 : 0;
+          return;
+        case SPS_ADICIONAR:
+          // A TELA DE AMIGOS. O painel FICA ABERTO atras: a modal e uma camada
+          // por cima dele e Voltar devolve o foco aqui, em vez de jogar a
+          // pessoa de volta na home.
+          recenviar_abrir_amigos();
+          return;
+        case SPS_APARECER:
+          // MUDAR DE IDEIA CUSTA UM OK, nos dois sentidos. Sem confirmacao de
+          // proposito: desligar e a direcao segura, e pedir "tem certeza?" para
+          // sair de uma lista e o padrao que faz as pessoas desistirem de sair.
+          recomenda_responder_aparecer(recomenda_aparecer() != REC_APARECER_SIM);
+          reconstruirSocial();
+          return;
+        default:
+          // A ACAO QUE IMPORTA E ABRIR O TITULO, e o contrato para isso ja
+          // existe: o painel entrega o IMDb e app.c resolve. Ele nao conhece
+          // detail.c nem a descoberta, exatamente como antes.
+          if (social[foco].idx >= 0 && social[foco].idx < nRecs) {
+            snprintf(pedido, sizeof pedido, "%s", recs[social[foco].idx].imdb);
+            temPedido = 1;
+            aberto = 0;
+          }
+          return;
       }
-      if (foco >= 0 && foco < nRecs) {
-        // A ACAO QUE IMPORTA E ABRIR O TITULO, e o contrato para isso ja
-        // existe: o painel entrega o IMDb e app.c resolve. Ele nao conhece
-        // detail.c nem a descoberta, exatamente como antes.
-        snprintf(pedido, sizeof pedido, "%s", recs[foco].imdb);
-        temPedido = 1;
-        aberto = 0;
-      }
-      return;
     }
     if (foco >= 0 && foco < nLinhas) {
       snprintf(pedido, sizeof pedido, "%s", linhas[foco].id);
@@ -405,7 +560,17 @@ void spainel_atualizar(float dt, Uint32 agora) {
   // a cada 60 s, e uma recomendacao que chega enquanto a aba esta na tela tem
   // de aparecer. A copia e barata (memcpy de ate 60 registros) e so acontece
   // com a aba Social visivel.
-  if (aberto && aba == SP_ABA_SOCIAL && nRecs != recomenda_n()) reconstruirSocial();
+  // A LISTA SOCIAL TAMBEM MUDA COM O PAINEL ABERTO, e agora por tres motivos e
+  // nao um: chegou recomendacao, chegou (ou saiu) sugestao, ou a resposta sobre
+  // aparecer foi reconciliada com o servidor — esta ultima acontece quando a
+  // pessoa respondeu SIM em outra TV e o registro deste aparelho adotou a
+  // resposta. Sem ela a pergunta continuaria na tela ja respondida.
+  if (aberto && aba == SP_ABA_SOCIAL &&
+      (nRecs != recomenda_n() || nSugs != recomenda_n_sugestoes() ||
+       consentEstado != recomenda_aparecer())) {
+    reconstruirSocial();
+    if (foco >= nVisiveis()) foco = nVisiveis() > 0 ? nVisiveis() - 1 : 0;
+  }
 
   entrada = anim_rampa(entrada, aberto ? 1.0f : 0.0f, dt,
                        aberto ? SP_ABRIR_MS : SP_FECHAR_MS);
@@ -424,7 +589,10 @@ void spainel_atualizar(float dt, Uint32 agora) {
   else if (nVisiveis() > 0 && foco >= 0 && foco < nVisiveis()) {
     float janela = SP_LISTA_BASE - listaTopo();
     topo = topoDe(foco);
-    base = topo + SP_POSTER_H;
+    // A ALTURA DA LINHA FOCADA, e nao SP_POSTER_H sempre: na aba Social a linha
+    // pode ter 84, 112 ou 138px, e usar a maior empurraria a rolagem 54px alem
+    // do necessario num interruptor de 104.
+    base = topo + (aba == SP_ABA_SOCIAL ? socialAlt(foco) : SP_POSTER_H);
     if (base - alvo > janela) alvo = base - janela;
     if (topo - alvo < 0.0f) alvo = topo;
   }
@@ -543,13 +711,42 @@ static void desenhaLinha(int i, float dx, float y, float a) {
   }
 }
 
-// Uma linha da aba Social: cartaz, titulo, quem mandou e quando, e a frase.
+// Uma linha da aba Social: cartaz, titulo, a CARA e o nome de quem mandou,
+// filme-ou-serie, a nota do IMDb, a frase — e, quando ainda nao foi lida, a
+// barra de acento na borda esquerda.
+//
 // O cartaz e a MESMA tex_cache do resto do app; a recomendacao guarda a URL do
-// poster no proprio arquivo (recomenda.h), entao a linha se desenha sem
-// depender do catalogo.
-static void desenhaRecLinha(int i, float dx, float y, float a) {
-  const RecItem *r = &recs[i];
-  float f = animFoco[i];
+// poster, a do avatar e a nota no proprio arquivo (recomenda.h), entao a linha
+// se desenha sem depender do catalogo. ISSO E O PONTO: o titulo recomendado
+// costuma NAO estar no catalogo de quem recebe — se a nota fosse procurada
+// ali, ela apareceria justamente nas linhas em que menos importa.
+//
+// AS QUATRO FAIXAS, dentro dos 138px do cartaz:
+//   +0    titulo                       (TXT_CALLOUT, 28)
+//   +38   disco de 30 + "Nome · há 2 h"
+//   +76   selos: [Filme] [IMDb 8,3]    (REC_SELO_H = 30)
+//   +108  a frase entre aspas          (TXT_CAPTION, 22)
+#define SPR_AVATAR   30.0f
+#define SPR_AV_GAP   12.0f
+#define SPR_Y_NOME   38.0f
+#define SPR_Y_SELOS  76.0f
+#define SPR_Y_FRASE 108.0f
+// Barra de "ainda nao lida" na borda esquerda da linha.
+#define SPR_BARRA_W   6.0f
+// A LINHA DE SUGESTAO. 56 e o mesmo disco do cartao de abertura (RC_AVATAR) e o
+// menor em que a INICIAL ainda se le a 3 m — sugestao de conta Nuvio quase
+// nunca tem foto, entao a inicial e o caso comum e nao a excecao.
+#define SPS_SUG_AV   56.0f
+#define SPS_SUG_GAP  18.0f
+#define SPS_SUG_PADX 14.0f
+
+// `linha` e a posicao na lista da aba (de onde sai a animacao de foco) e `idx`
+// a posicao na lista de recomendacoes. Os dois coincidem hoje — as
+// recomendacoes vem primeiro — e sao parametros separados para que continuem
+// coincidindo por construcao e nao por sorte no dia em que algo entrar antes.
+static void desenhaRecLinha(int linha, int idx, float dx, float y, float a) {
+  const RecItem *r = &recs[idx];
+  float f = (linha >= 0 && linha < SP_MAX) ? animFoco[linha] : 0.0f;
   float px = SP_X + dx + SP_PAD, tx = SP_X + dx + SP_TEXTO_X;
   char buf[320], quando[64];
   GfxRect poster = { px, y, SP_POSTER_W, SP_POSTER_H };
@@ -560,6 +757,33 @@ static void desenhaRecLinha(int i, float dx, float y, float a) {
     // dois.
     GfxRect anel = { px - 12.0f, y - 10.0f, SP_INTERNO + 24.0f, SP_POSTER_H + 20.0f };
     gfx_cor(anel, 0.06f, 0.961f, 0.961f, 0.968f, f * a);
+  }
+
+  if (!r->visto) {
+    // A MARCA DE "NAO LIDA" E UMA BARRA, e nao mais um ponto de 10px.
+    //
+    // O ponto morava no vao entre o cartaz e o texto, tinha a area de um grao
+    // de arroz a tres metros e sumia por completo quando a linha ganhava a
+    // pilula clara do foco (azul 0.42/0.72/0.98 sobre branco 0.96). A barra
+    // ocupa a altura INTEIRA do cartaz na borda da camada, onde nada mais
+    // desenha, e por isso continua visivel com e sem foco.
+    //
+    // NA COR DE ACENTO DO APARELHO, e nao no azul cravado de antes: o dono
+    // escolhe o acento em Ajustes e toda marca de estado do app ja o obedece.
+    //
+    // E POR ISSO ELA FICA FORA DA PILULA DO FOCO, em px-24 contra os px-12 em
+    // que a pilula comeca. O acento PADRAO e BRANCO: pintada por dentro da
+    // pilula clara, a barra sumiria justamente na linha em que o dedo esta.
+    // CONFERIDO nas duas capturas — tema OCEANO (azul) e tema padrao (branco).
+    //
+    // O RAIO E 3px EXPRESSOS EM ALTURAS, e nao 0.5: o SDF de gfx.c normaliza
+    // pela ALTURA do retangulo (uAspect = w/h), entao 0.5 num retangulo de
+    // 6x138 pede um raio de 69px e o que sai e uma lente pontuda de 50px — foi
+    // exatamente o que a primeira captura mostrou.
+    float ar, ag, ab;
+    GfxRect barra = { px - 24.0f, y, SPR_BARRA_W, SP_POSTER_H };
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_cor(barra, SPR_BARRA_W * 0.5f / SP_POSTER_H, ar, ag, ab, a);
   }
 
   { GLuint tex = r->poster[0] ? tex_obter(r->poster) : 0;
@@ -589,25 +813,29 @@ static void desenhaRecLinha(int i, float dx, float y, float a) {
   // de isto existir.
   { int esc = f > 0.5f;
     int c2 = esc ? 74 : 168, c3 = esc ? 48 : 214;
-    { TxtLinha t = txt_linha_corta(TXT_CAPTION2, buf, c2, c2 + 4, c2 + 14, 255,
-                                   SP_TEXTO_W);
-      txt_desenhar_alpha(t, tx, y + 44.0f, a * 0.95f); }
+    // O DISCO DA FOTO ANTES DO NOME. Com quatro recomendacoes na tela, a cara
+    // e o que distingue uma linha da outra antes de qualquer leitura — era o
+    // pedido do dono, e e o unico item da linha que nao depende de ler.
+    { GfxRect av = { tx, y + SPR_Y_NOME, SPR_AVATAR, SPR_AVATAR };
+      rec_avatar(av, r->deAvatar, r->deNome, r->de, a); }
+    { float nx = tx + SPR_AVATAR + SPR_AV_GAP;
+      TxtLinha t = txt_linha_corta(TXT_CAPTION2, buf, c2, c2 + 4, c2 + 14, 255,
+                                   SP_TEXTO_W - (SPR_AVATAR + SPR_AV_GAP));
+      txt_desenhar_alpha(t, nx, y + SPR_Y_NOME + (SPR_AVATAR - t.h) * 0.5f,
+                         a * 0.95f); }
+    // FILME OU SÉRIE, E A NOTA. `tipo` sempre existiu no RecItem e nunca era
+    // desenhado: a linha nao dizia se o amigo estava mandando um filme de duas
+    // horas ou oito temporadas.
+    { float sx = tx;
+      sx += rec_selo_tipo(sx, y + SPR_Y_SELOS, r->tipo, esc, a) + REC_SELO_GAP;
+      rec_selo_imdb(sx, y + SPR_Y_SELOS, r->nota, esc, a); }
     { const char *frase = rec_frase(r);
       if (frase[0]) {
         snprintf(buf, sizeof buf, "\xe2\x80\x9c%s\xe2\x80\x9d", frase);
         { TxtLinha t = txt_linha_corta(TXT_CAPTION, buf, c3, c3 + 4, c3 + 14, 255,
                                        SP_TEXTO_W);
-          txt_desenhar_alpha(t, tx, y + 88.0f, a * 0.95f); }
+          txt_desenhar_alpha(t, tx, y + SPR_Y_FRASE, a * 0.95f); }
       } } }
-
-  if (!r->visto) {
-    // Ponto de "ainda nao lida". Some quando a aba e aberta, junto do selo.
-    // Fica CENTRADO na linha do titulo e com folga dos dois lados do vao: a
-    // versao anterior nascia no topo do titulo e a 8px dele, e a foto ampliada
-    // mostrou os dois grudados.
-    GfxRect ponto = { tx - 22.0f, y + 15.0f, 10.0f, 10.0f };
-    gfx_cor(ponto, 0.5f, 0.42f, 0.72f, 0.98f, a);
-  }
 }
 
 // A LINHA DE ABAS. Sem animacao de cor de proposito: a cor faz parte da chave
@@ -682,23 +910,22 @@ static void desenhaAbas(float dx, float a) {
 // diz a razao, mostra o codigo que ele precisa ditar e oferece a porta.
 // Devolve o y logo abaixo do texto, para a linha-botao nascer colada nele em
 // vez de boiar no fim do painel.
-static float desenhaSocialVazio(float dx, float a) {
+static void desenhaSocialVazio(float dx, float y0, float a) {
   float x = SP_X + dx + SP_PAD;
-  float y = listaTopo() + 24.0f;
+  float y = y0 + 8.0f;
   const char *cod = recomenda_meu_codigo();
   { TxtLinha t = txt_linha(TXT_CALLOUT, "Nenhuma recomendação ainda",
                            240, 242, 248, 255);
     txt_desenhar_alpha(t, x, y, a * 0.96f); y += t.h + 14.0f; }
   // EM BLOCO: a coluna do painel tem 688px e a frase tem duas oracoes; numa
-  // linha so, a captura saiu terminando em "Amigos do Trakt entram..." — a
-  // metade que explica o motivo ficava de fora.
+  // linha so, a captura saiu cortada no meio.
   y += txt_bloco(TXT_CAPTION,
-      "Ninguém da sua lista está aqui ainda. Amigos do Trakt entram sozinhos só depois de instalarem o app.",
+      "Quando alguém da sua lista te recomendar um filme ou série, ele aparece aqui.",
       190, 194, 204, x, y, SP_INTERNO, 30.0f, a * 0.9f, 3) + 22.0f;
   if (cod[0]) {
     // O CODIGO TAMBEM AQUI, e nao so na tela de amigos: este e o painel que o
-    // dono abre com uma tecla, e ditar seis caracteres ao telefone e a unica
-    // acao que resolve uma lista vazia hoje.
+    // dono abre com uma tecla, e ditar seis caracteres ao telefone e a acao que
+    // resolve uma lista vazia sem depender de ninguem ter aceitado aparecer.
     TxtLinha r = txt_linha(TXT_CAPTION2, "Seu código", 160, 164, 175, 255);
     TxtLinha c = txt_linha(TXT_TITULO2, cod, 246, 248, 255, 255);
     txt_desenhar_alpha(r, x, y, a * 0.88f);
@@ -709,22 +936,114 @@ static float desenhaSocialVazio(float dx, float a) {
   { TxtLinha t = txt_linha_corta(TXT_CAPTION,
         "Peça o código do seu amigo e adicione-o abaixo.",
         168, 172, 182, 255, SP_INTERNO);
-    txt_desenhar_alpha(t, x, y, a * 0.85f);
-    y += t.h + 28.0f; }
-  return y;
+    txt_desenhar_alpha(t, x, y, a * 0.85f); }
 }
 
-// A linha-botao do estado vazio. Mesma pilula e mesmo foco invertido das
-// outras listas do app.
-static void desenhaSocialAcao(int i, float dx, float y, float a) {
-  GfxRect r = { SP_X + dx + SP_PAD, y, SP_INTERNO, 76.0f };
-  float f = i >= 0 && i < SP_MAX ? animFoco[i] : 0.0f;
+// A PERGUNTA DA PRIMEIRA ENTRADA, por extenso.
+//
+// AS QUATRO FRASES SAO A FUNCAO INTEIRA, e a ordem delas foi escolhida: o que
+// os OUTROS passam a ver vem primeiro, o que eles NAO veem vem logo depois, o
+// preco de recusar (nenhum) vem em terceiro e a reversibilidade fecha. Quem ler
+// so a primeira ja sabe o essencial; quem ler ate o fim nao encontra nenhuma
+// ressalva que contradiga o comeco. Nao ha frase aqui que o codigo nao cumpra:
+// o servidor so guarda nome, foto e contatos, e a consulta de sugestao filtra
+// por `descobrivel = 1` nos DOIS ramos justamente para esta lista ser verdade.
+static void desenhaConsentimento(float dx, float y0, float a) {
+  float x = SP_X + dx + SP_PAD;
+  float y = y0 + 8.0f;
+  // TXT_CALLOUT E NAO TXT_TITULO2. Com o titulo grande a pergunta saiu da
+  // captura como "Aparecer para outras pessoa" — 688px de coluna nao cabem uma
+  // frase de 29 caracteres naquele corpo, e um enunciado cortado ao meio e
+  // pior que um enunciado menor.
+  { TxtLinha t = txt_linha(TXT_CALLOUT, "Aparecer para outras pessoas?",
+                           246, 247, 252, 255);
+    txt_desenhar_alpha(t, x, y, a); y += t.h + 18.0f; }
+  y += txt_bloco(TXT_CAPTION,
+      "Se você aceitar, quem já te segue no Trakt e os amigos dos seus amigos passam a ver seu nome e sua foto numa lista de sugestões, e podem te adicionar como contato.",
+      214, 218, 228, x, y, SP_INTERNO, 30.0f, a * 0.95f, 4) + 18.0f;
+  y += txt_bloco(TXT_CAPTION,
+      "Eles não veem o que você assiste, o que você salvou nem o que você recomendou. Nada disso sai desta TV.",
+      214, 218, 228, x, y, SP_INTERNO, 30.0f, a * 0.95f, 3) + 18.0f;
+  y += txt_bloco(TXT_CAPTION,
+      "Se você recusar, continua recebendo e enviando recomendações do mesmo jeito. Você só não aparece na lista de ninguém.",
+      190, 194, 204, x, y, SP_INTERNO, 30.0f, a * 0.9f, 3) + 18.0f;
+  txt_bloco(TXT_CAPTION,
+      "Dá para mudar essa resposta quando quiser, no fim desta aba.",
+      160, 164, 175, x, y, SP_INTERNO, 30.0f, a * 0.85f, 2);
+}
+
+// Uma linha-botao: pilula que inverte no foco, com um subtitulo opcional.
+// Mesma pilula e mesmo foco invertido das outras listas do app.
+static void desenhaBotaoLinha(int i, float dx, float y, float alt, float a,
+                              const char *titulo, const char *sub) {
+  GfxRect r = { SP_X + dx + SP_PAD, y, SP_INTERNO, alt };
+  float f = (i >= 0 && i < SP_MAX) ? animFoco[i] : 0.0f;
   float lum = anim_mistura(0.176f, 0.961f, f);
-  int cor = f >= 0.5f ? 17 : 240;
-  gfx_cor(r, 14.0f / r.h, lum, lum, lum, a);
-  { TxtLinha t = txt_linha(TXT_PLR_CORPO, "Adicionar um amigo",
-                           cor, cor, cor, 255);
-    txt_desenhar_alpha(t, r.x + 32.0f, y + (r.h - t.h) * 0.5f, a); }
+  int c1 = f >= 0.5f ? 17 : 240, c2 = f >= 0.5f ? 74 : 168;
+  gfx_cor(r, 14.0f / alt, lum, lum, lum, a);
+  if (sub && sub[0]) {
+    TxtLinha t = txt_linha_corta(TXT_PLR_CORPO, titulo, c1, c1, c1, 255,
+                                 SP_INTERNO - 64.0f);
+    TxtLinha s = txt_linha_corta(TXT_CAPTION, sub, c2, c2 + 4, c2 + 14, 255,
+                                 SP_INTERNO - 64.0f);
+    float h = t.h + 8.0f + s.h;
+    txt_desenhar_alpha(t, r.x + 32.0f, y + (alt - h) * 0.5f, a);
+    txt_desenhar_alpha(s, r.x + 32.0f, y + (alt - h) * 0.5f + t.h + 8.0f,
+                       a * 0.95f);
+    return;
+  }
+  { TxtLinha t = txt_linha_corta(TXT_PLR_CORPO, titulo, c1, c1, c1, 255,
+                                 SP_INTERNO - 64.0f);
+    txt_desenhar_alpha(t, r.x + 32.0f, y + (alt - t.h) * 0.5f, a); }
+}
+
+// Uma sugestao: a cara, o nome, POR ONDE ela chegou, e a pilula que diz o que
+// o OK faz.
+//
+// A LINHA DA ORIGEM NAO E ENFEITE — e ela que separa "alguem que voce talvez
+// conheca" de "um estranho que o app resolveu mostrar". Sem "Segue no Trakt" ou
+// "Amigo de Gustavo", a resposta honesta a "quem e essa pessoa?" seria "nao
+// sei", e a de quem esta olhando seria recusar.
+static void desenhaSugLinha(int i, int idx, float dx, float y, float a) {
+  const RecSugestao *s = &sugs[idx];
+  float f = (i >= 0 && i < SP_MAX) ? animFoco[i] : 0.0f;
+  float px = SP_X + dx + SP_PAD;
+  char origem[128];
+  int esc = f > 0.5f;
+
+  if (f > 0.01f) {
+    // Mesma pilula clara das outras linhas desta camada.
+    GfxRect p = { px - 12.0f, y - 10.0f, SP_INTERNO + 24.0f, SPS_H_SUG + 20.0f };
+    gfx_cor(p, 0.06f, 0.961f, 0.961f, 0.968f, f * a);
+  }
+  { GfxRect av = { px, y + (SPS_H_SUG - SPS_SUG_AV) * 0.5f,
+                   SPS_SUG_AV, SPS_SUG_AV };
+    rec_avatar(av, s->avatar, s->nome, s->id, a); }
+  rec_sugestao_origem(origem, sizeof origem, s);
+  { float tx = px + SPS_SUG_AV + SPS_SUG_GAP;
+    // A PILULA DA ACAO E MEDIDA ANTES DO NOME, e o nome e cortado para caber ao
+    // lado dela: sem isso, "Carolina Menezes" passava por baixo de "Adicionar"
+    // e as duas ficavam ilegiveis na captura.
+    TxtLinha acao = txt_linha(TXT_CAPTION2, "Adicionar",
+                              esc ? 32 : 222, esc ? 34 : 226, esc ? 40 : 236, 255);
+    float pw = acao.w + SPS_SUG_PADX * 2.0f;
+    float larg = SP_INTERNO - (SPS_SUG_AV + SPS_SUG_GAP) - pw - 20.0f;
+    int c1 = esc ? 20 : 245, c2 = esc ? 74 : 168;
+    { TxtLinha t = txt_linha_corta(TXT_CALLOUT, s->nome, c1, c1 + 1, c1 + 5, 255,
+                                   larg);
+      txt_desenhar_alpha(t, tx, y + 26.0f, a); }
+    { TxtLinha t = txt_linha_corta(TXT_CAPTION2, origem, c2, c2 + 4, c2 + 14,
+                                   255, larg);
+      txt_desenhar_alpha(t, tx, y + 62.0f, a * 0.95f); }
+    // PREENCHIMENTO E NAO CONTORNO, e com as DUAS combinacoes: sobre a pilula
+    // clara do foco, um preenchimento branco a 0.12 desaparece — a mesma
+    // armadilha de rec_selo_tipo, e a mesma saida.
+    { GfxRect p = { px + SP_INTERNO - pw, y + (SPS_H_SUG - REC_SELO_H) * 0.5f,
+                    pw, REC_SELO_H };
+      gfx_cor(p, 0.5f, esc ? 0.06f : 1.0f, esc ? 0.06f : 1.0f,
+              esc ? 0.08f : 1.0f, (esc ? 0.10f : 0.12f) * a);
+      txt_desenhar_alpha(acao, p.x + SPS_SUG_PADX,
+                         p.y + (REC_SELO_H - acao.h) * 0.5f, a); } }
 }
 
 static void desenhaVazio(float dx, float a) {
@@ -763,13 +1082,19 @@ void spainel_desenhar(Uint32 agora) {
 
   // Cabecalho: a linha de resumo em cima e o nome grande embaixo, como na
   // referencia. As PARTES passam por i18n; a juncao, nao (ver metaTexto).
-  if (aba == SP_ABA_SOCIAL)
-    snprintf(buf, sizeof buf, "%d %s", nRecs,
-             i18n(nRecs == 1 ? "recomendação" : "recomendações"));
-  else
+  // recomenda_n() E NAO nRecs: com a pergunta de consentimento na tela a lista
+  // local esta vazia de proposito, e escrever "0 recomendações" ao lado de uma
+  // aba com o selo em 2 seria o painel se contradizendo em dois centimetros.
+  if (aba == SP_ABA_SOCIAL) {
+    int n = recomenda_n();
+    snprintf(buf, sizeof buf, "%d %s", n,
+             i18n(n == 1 ? "recomendação" : "recomendações"));
+  }
+  else {
     snprintf(buf, sizeof buf, "%d %s   ·   %d %s", nLinhas,
              i18n(nLinhas == 1 ? "título" : "títulos"),
              nCont, i18n("para retomar"));
+  }
   // COM ABAS a contagem vai para a DIREITA da propria linha de abas, e nao
   // numa linha solta acima delas: sozinha la em cima ela lia como um titulo
   // orfao, que foi a primeira coisa que saltou na foto ampliada.
@@ -786,24 +1111,53 @@ void spainel_desenhar(Uint32 agora) {
   }
 
   if (aba == SP_ABA_SOCIAL) {
-    if (nRecs == 0) {
-      desenhaSocialAcao(0, x, desenhaSocialVazio(x, a), a);
-      gfx_sem_recorte();
-      return;
-    }
     gfx_recorte(SP_X + x, listaTopo(), SP_W, SP_LISTA_BASE - listaTopo());
     y = listaTopo() - scrollY;
-    for (i = 0; i < nRecs; i++) {
+    // O BLOCO DE TEXTO ROLA COM A LISTA, e nao fica preso no topo: ele explica
+    // a lista que vem logo abaixo, e um texto fixo com linhas passando por
+    // baixo dele leria como duas telas empilhadas.
+    if (consentindo())    desenhaConsentimento(x, y, a);
+    else if (nRecs == 0)  desenhaSocialVazio(x, y, a);
+    y += socialTopo();
+    for (i = 0; i < nSocial; i++) {
+      float alt = socialAlt(i);
+      float cab = socialAntes(i);
+      if (cab > 0.0f) {
+        if (y + cab >= listaTopo() && y <= SP_LISTA_BASE) {
+          TxtLinha t = txt_linha(TXT_CAPTION2, "Pessoas que você talvez conheça",
+                                 150, 154, 165, 255);
+          txt_desenhar_alpha(t, SP_X + x + SP_PAD, y + cab - t.h - 12.0f, a * 0.9f);
+        }
+        y += cab;
+      }
       // Fora da janela nao custa texto nem textura — mesma razao da lista de
       // Salvos logo abaixo.
-      if (y + SP_POSTER_H >= listaTopo() && y <= SP_LISTA_BASE)
-        desenhaRecLinha(i, x, y, a);
-      y += SP_PASSO;
+      if (y + alt >= listaTopo() && y <= SP_LISTA_BASE) {
+        switch (social[i].tipo) {
+          case SPS_REC: desenhaRecLinha(i, social[i].idx, x, y, a); break;
+          case SPS_SUG: desenhaSugLinha(i, social[i].idx, x, y, a); break;
+          case SPS_ADICIONAR:
+            // A linha de "Adicionar um amigo" fecha a lista, e nao um botao
+            // solto no rodape: ela rola com o resto e recebe foco como qualquer
+            // outra.
+            desenhaBotaoLinha(i, x, y, alt, a, "Adicionar um amigo", NULL);
+            break;
+          case SPS_APARECER:
+            desenhaBotaoLinha(i, x, y, alt, a, "Aparecer para outras pessoas",
+                              recomenda_aparecer() == REC_APARECER_SIM
+                                ? "Sim, você aparece nas sugestões de quem te conhece"
+                                : "Não, você não aparece na lista de ninguém");
+            break;
+          case SPS_CONSENT_SIM:
+            desenhaBotaoLinha(i, x, y, alt, a, "Sim, pode me mostrar", NULL);
+            break;
+          default:
+            desenhaBotaoLinha(i, x, y, alt, a, "Não, não quero aparecer", NULL);
+            break;
+        }
+      }
+      y += alt + SPS_GAP;
     }
-    // A linha de "Adicionar um amigo" fecha a lista, e nao um botao solto no
-    // rodape: ela rola com o resto e recebe foco como qualquer outra.
-    if (y >= listaTopo() - 76.0f && y <= SP_LISTA_BASE)
-      desenhaSocialAcao(nRecs, x, y, a);
     gfx_sem_recorte();
     return;
   }

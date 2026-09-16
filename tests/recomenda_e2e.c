@@ -84,6 +84,12 @@ int main(void) {
       CONFERE(!strcmp(r.ano, "1994"), "ano: [%s]", r.ano);
       CONFERE(r.modelo == 2, "modelo: %d", r.modelo);
       CONFERE(r.criado > 0, "criado: %lld", r.criado);
+      // A NOTA E A FOTO VEM NO MESMO JSON, e este e o unico teste que prova
+      // isso contra o SQL do Worker: `nota` sai da linha de `rec` e `deAvatar`
+      // sai do JOIN com `pessoa`. Vazio aqui e o certo — a identidade e uma
+      // conta Nuvio, que nao expoe foto na verificacao.
+      CONFERE(r.nota == 88, "nota em centesimos: %d", r.nota);
+      CONFERE(!r.deAvatar[0], "conta Nuvio chega sem foto: [%s]", r.deAvatar);
     } }
 
   // Enviar de volta, pelo caminho que a interface usa.
@@ -93,6 +99,7 @@ int main(void) {
     snprintf(ci.tipo, sizeof ci.tipo, "%s", "movie");
     snprintf(ci.titulo, sizeof ci.titulo, "%s", "O Poderoso Chefão");
     snprintf(ci.meta, sizeof ci.meta, "%s", "1972 · 2h55");
+    ci.nota = 92;
     CONFERE(recomenda_enviar(&ci, "nuvio:e2e-b", 4, ""), "enviar enfileirou");
     enviarFila(cab);
     CONFERE(recomenda_envio_estado() == REC_ENVIO_OK,

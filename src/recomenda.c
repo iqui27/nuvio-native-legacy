@@ -43,6 +43,13 @@
 // dos outros dois porque tem outro tempo de vida — a lista e o cursor mudam a
 // cada ciclo, isto muda uma vez na vida da conta.
 #define REC_ARQ_EU     "recomendacoes-eu.txt"
+// A RESPOSTA SOBRE APARECER PARA OS OUTROS, em arquivo PROPRIO e nao numa
+// coluna de `recomendacoes-eu.txt`. Os dois tem o mesmo tempo de vida, mas nao
+// o mesmo dono: `eu` e devolvido pelo servidor e reescrito a cada arranque,
+// isto e uma escolha da PESSOA e so ela escreve. Um campo a mais no arquivo do
+// servidor seria uma linha de codigo a menos e uma chance a mais de a resposta
+// dela ser sobrescrita por uma resposta de rede.
+#define REC_ARQ_APARECER "recomendacoes-aparecer.txt"
 
 #define REC_INTERVALO_MS  60000u   // sondagem com o app aberto
 #define REC_ESPERA_MS      2000u   // sem identidade ainda: tentar de novo logo
@@ -63,6 +70,19 @@
 #define RC_POSTER_H  330.0f
 #define RC_ABRIR_MS  280.0f
 #define RC_FECHAR_MS 160.0f
+// Disco da foto de quem mandou, no cartao. 56 e o menor em que a INICIAL ainda
+// se le a 3 m — a mesma conta que PS_AV_MIN faz em perfilsel.c, so que ali o
+// disco e a tela inteira e aqui ele divide a linha com o nome.
+#define RC_AVATAR     56.0f
+#define RC_AVATAR_GAP 18.0f
+
+// REC_SELO_H e REC_SELO_GAP moram em recomenda.h: quem desenha precisa deles
+// para posicionar a linha dos selos.
+#define REC_SELO_PADX  14.0f
+// A marca amarela do IMDb, na mesma proporcao do selo de detail.c (60x30)
+// reduzida para caber na coluna de 568px do painel.
+#define REC_IMDB_W     52.0f
+#define REC_IMDB_GAP    8.0f
 
 // Os modelos prontos. O TEXTO FINAL passa por i18n na hora de desenhar, como
 // todo o resto; o que viaja ao servidor e o INDICE, nao a frase — assim a
@@ -91,6 +111,23 @@ static int        registrado;
 static char       meuId[96];
 static char       meuCodigo[16];
 
+// APARECER PARA OUTRAS PESSOAS. `aparecer` e um dos tres REC_APARECER_*;
+// `aparecerPendente` e -1 quando nao ha nada a dizer ao servidor, ou 0/1 para
+// enviar. Sao dois campos e nao um porque "a resposta dela" e "o que falta
+// avisar" tem tempos de vida diferentes: a resposta e definitiva no disco no
+// mesmo instante em que ela aperta OK, o aviso pode levar tres ciclos de rede.
+static int aparecer;
+static int aparecerPendente = -1;
+
+static RecSugestao sugestoes[REC_SUGESTOES_MAX];
+static int         nSugestoes;
+// Um de cada vez, como `removerId` e pela mesma razao: e sempre um OK numa tela
+// que fica esperando a resposta.
+static char        sugAdicionar[96];
+// Pede a lista de sugestoes fora da hora (ao abrir a aba Social). Fora disso
+// ela acompanha o relogio dos contatos — ver REC_CONTATOS_MS.
+static int         pedirSugestoes;
+
 // PEDIDOS DE CONTATO. Sao tres e nenhum e uma fila: vincular por codigo,
 // remover alguem e revarrer o Trakt acontecem um por vez, disparados por um OK
 // numa tela que fica esperando a resposta. Um vetor aqui seria estrutura sem
@@ -108,6 +145,7 @@ static struct {
   char imdb[24], tipo[8], titulo[160], poster[512], ano[16];
   char para[96], texto[72];
   int  modelo;
+  int  nota;                  // centesimos, como o `nota` do CatItem
   int  cheia;
 } fila;
 static int envioEstado;
@@ -154,6 +192,28 @@ const char *recomenda_pediu_abrir(void) {
 // depois dele. Campo que faltar na leitura vira vazio e a linha continua
 // valida, para que uma versao futura com mais colunas nao invalide o arquivo
 // de quem ja usa o app.
+//
+// v1: id criado visto modelo tipo ano de deNome imdb poster texto | titulo
+// v2: ... os mesmos, mais NOTA e DEAVATAR                          | titulo
+//
+// AS COLUNAS NOVAS ENTRAM ANTES DO TITULO porque o titulo e o unico campo que
+// pode conter qualquer coisa e por isso e lido como "o resto da linha".
+//
+// QUEM DECIDE A VERSAO E A CONTAGEM DE TABS DA PROPRIA LINHA, e nao o cabecalho
+// "# nuvio recomendacoes vN". Sao 11 tabs na v1 e 13 na v2, sempre — campo
+// vazio ainda gasta o seu separador, e semTab garante que nenhum VALOR contem
+// tabulacao. Pelo cabecalho, um arquivo truncado na primeira linha (ou copiado
+// sem ela) seria lido com o deslocamento errado e o titulo viraria a nota; pela
+// contagem, cada linha se explica sozinha. O cabecalho continua sendo escrito
+// como v2, para quem abrir o arquivo com o olho.
+#define REC_TABS_V1 11
+#define REC_TABS_V2 13
+
+static int contaTabs(const char *s) {
+  int n = 0;
+  for (; *s; s++) if (*s == '\t') n++;
+  return n;
+}
 
 // Tira TAB e quebra de linha do que veio da rede. O servidor ja limita tamanho
 // e o texto livre a a-z0-9, mas o NOME de exibicao vem do Trakt e do Supabase
@@ -172,19 +232,24 @@ static char *campo(char **p) {
 
 // Chamar com o mutex TOMADO.
 static void gravar(void) {
-  size_t cap = (size_t)REC_MAX * 1000u + 64u;
+  // 1400 E NAO 1000 desde a v2: poster (512) + deAvatar (256) + titulo (160) +
+  // de (96) + deNome (64) + o resto ja passam de 1100 bytes numa linha cheia, e
+  // com o teto antigo a ultima linha sairia cortada no meio de uma URL.
+  size_t cap = (size_t)REC_MAX * 1400u + 64u;
   char *buf = (char *)malloc(cap);
   size_t k = 0;
   int i;
   if (!buf) return;
-  k += (size_t)snprintf(buf + k, cap - k, "# nuvio recomendacoes v1\n");
+  k += (size_t)snprintf(buf + k, cap - k, "# nuvio recomendacoes v2\n");
   for (i = 0; i < nItens && k + 1 < cap; i++)
     k += (size_t)snprintf(buf + k, cap - k,
-                          "%lld\t%lld\t%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+                          "%lld\t%lld\t%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t"
+                          "%d\t%s\t%s\n",
                           itens[i].id, itens[i].criado, itens[i].visto,
                           itens[i].modelo, itens[i].tipo, itens[i].ano,
                           itens[i].de, itens[i].deNome, itens[i].imdb,
-                          itens[i].poster, itens[i].texto, itens[i].titulo);
+                          itens[i].poster, itens[i].texto,
+                          itens[i].nota, itens[i].deAvatar, itens[i].titulo);
   dados_gravar(REC_ARQ, buf);
   free(buf);
 }
@@ -205,6 +270,17 @@ static void gravarEu(void) {
   dados_gravar(REC_ARQ_EU, t);
 }
 
+// Chamar com o mutex TOMADO. `dados_gravar` e nao `dados_gravar_leve`: esta e
+// uma resposta da PESSOA e nao um dado re-obtivel. Perder a lista de posters
+// custa um download; perder um "nao" custa perguntar de novo a alguem que ja
+// tinha respondido — e uma pergunta de consentimento que reaparece ensina a
+// responder sem ler.
+static void gravarAparecer(void) {
+  char s[32];
+  snprintf(s, sizeof s, "%d\n", aparecer);
+  dados_gravar(REC_ARQ_APARECER, s);
+}
+
 void recomenda_iniciar(void) {
   char *b, *linha, *prox;
   if (!recomenda_ativo()) return;
@@ -215,9 +291,12 @@ void recomenda_iniciar(void) {
   for (linha = b; linha && *linha && nItens < REC_MAX; linha = prox) {
     char *p, *fim = strchr(linha, '\n');
     RecItem *r;
+    int tabs;
     prox = fim ? fim + 1 : NULL;
     if (fim) *fim = 0;
     if (linha[0] == '#' || !linha[0]) continue;
+    // ANTES de campo(), que troca cada TAB por um terminador.
+    tabs = contaTabs(linha);
     p = linha;
     r = &itens[nItens];
     memset(r, 0, sizeof *r);
@@ -232,6 +311,13 @@ void recomenda_iniciar(void) {
     snprintf(r->imdb,   sizeof r->imdb,   "%s", campo(&p));
     snprintf(r->poster, sizeof r->poster, "%s", campo(&p));
     snprintf(r->texto,  sizeof r->texto,  "%s", campo(&p));
+    // v1 NAO TEM ESTES DOIS, e nao e um arquivo corrompido: e o cache gravado
+    // pela versao instalada hoje na TV do dono. Sem este desvio, o titulo dele
+    // seria lido como a nota e a lista abriria com quatro linhas sem nome.
+    if (tabs >= REC_TABS_V2) {
+      r->nota = atoi(campo(&p));
+      snprintf(r->deAvatar, sizeof r->deAvatar, "%s", campo(&p));
+    }
     snprintf(r->titulo, sizeof r->titulo, "%s", p ? p : "");
     if (r->id <= 0 || strncmp(r->imdb, "tt", 2)) continue;   // linha inutil
     nItens++;
@@ -257,7 +343,19 @@ void recomenda_iniciar(void) {
     snprintf(meuCodigo, sizeof meuCodigo, "%s", p ? p : "");
     free(b);
   }
-  printf("[recomenda] %d na lista local, cursor %lld\n", nItens, cursor);
+  // A RESPOSTA SOBRE APARECER VEM DO DISCO E NAO DA REDE, e por isso ela e lida
+  // aqui e nao no primeiro ciclo: a aba Social pode abrir no primeiro segundo,
+  // e um estado "nao perguntado" por falta de resposta do servidor mostraria a
+  // tela de consentimento de novo a quem ja respondeu.
+  aparecer = REC_APARECER_NAO_PERGUNTADO;
+  b = dados_ler(REC_ARQ_APARECER);
+  if (b) {
+    int v = atoi(b);
+    if (v == REC_APARECER_NAO || v == REC_APARECER_SIM) aparecer = v;
+    free(b);
+  }
+  printf("[recomenda] %d na lista local, cursor %lld, aparecer %d\n",
+         nItens, cursor, aparecer);
   fflush(stdout);
   SDL_UnlockMutex(mtx);
 }
@@ -295,6 +393,63 @@ int recomenda_contatos(RecContato *saida, int max) {
   for (i = 0; i < n; i++) saida[i] = contatos[i];
   SDL_UnlockMutex(mtx);
   return n;
+}
+
+int recomenda_aparecer(void) {
+  int v;
+  // SEM SERVICO NAO HA PERGUNTA. Um pacote sem NUVIO_REC_URL nao tem aba
+  // Social, e devolver "nao perguntado" aqui faria a tela de consentimento
+  // existir num app onde ela nao pode levar a lugar nenhum.
+  if (!recomenda_ativo() || !mtx) return REC_APARECER_NAO;
+  SDL_LockMutex(mtx); v = aparecer; SDL_UnlockMutex(mtx);
+  return v;
+}
+
+void recomenda_responder_aparecer(int sim) {
+  if (!recomenda_ativo()) return;
+  if (!mtx) mtx = SDL_CreateMutex();
+  SDL_LockMutex(mtx);
+  aparecer = sim ? REC_APARECER_SIM : REC_APARECER_NAO;
+  aparecerPendente = sim ? 1 : 0;
+  gravarAparecer();
+  SDL_UnlockMutex(mtx);
+  // PEDE UM CICLO AGORA porque um "sim" so vale quando o servidor souber, e o
+  // efeito visivel dele (as sugestoes) vem no mesmo ciclo.
+  recomenda_pedir_agora();
+}
+
+int recomenda_n_sugestoes(void) {
+  int n;
+  if (!recomenda_ativo() || !mtx) return 0;
+  SDL_LockMutex(mtx); n = nSugestoes; SDL_UnlockMutex(mtx);
+  return n;
+}
+
+int recomenda_sugestao(int i, RecSugestao *saida) {
+  int ok = 0;
+  if (!recomenda_ativo() || !mtx || !saida) return 0;
+  SDL_LockMutex(mtx);
+  if (i >= 0 && i < nSugestoes) { *saida = sugestoes[i]; ok = 1; }
+  SDL_UnlockMutex(mtx);
+  return ok;
+}
+
+int recomenda_adicionar_sugerido(const char *id) {
+  if (!recomenda_ativo() || !id || !id[0]) return 0;
+  if (!mtx) mtx = SDL_CreateMutex();
+  SDL_LockMutex(mtx);
+  if (sugAdicionar[0]) { SDL_UnlockMutex(mtx); return 0; }
+  snprintf(sugAdicionar, sizeof sugAdicionar, "%s", id);
+  // TIRA DA LISTA LOCAL NA HORA, como recomenda_remover_contato faz com o
+  // contato removido e pela mesma razao: sem isto o nome continua sugerido por
+  // ate 200 ms, que e tempo de sobra para um segundo OK mandar o mesmo pedido.
+  { int i, k = 0;
+    for (i = 0; i < nSugestoes; i++)
+      if (strcmp(sugestoes[i].id, id)) sugestoes[k++] = sugestoes[i];
+    nSugestoes = k; }
+  SDL_UnlockMutex(mtx);
+  recomenda_pedir_agora();
+  return 1;
 }
 
 const char *recomenda_meu_codigo(void) {
@@ -441,11 +596,22 @@ void recomenda_envio_limpar(void) {
 
 void recomenda_esquecer(void) {
   if (!mtx) { dados_apagar(REC_ARQ); dados_apagar(REC_ARQ_CURSOR);
-              dados_apagar(REC_ARQ_CARTAO); dados_apagar(REC_ARQ_EU); return; }
+              dados_apagar(REC_ARQ_CARTAO); dados_apagar(REC_ARQ_EU);
+              dados_apagar(REC_ARQ_APARECER); return; }
   SDL_LockMutex(mtx);
   geracao++;
   nItens = 0;
   nContatos = 0;
+  nSugestoes = 0;
+  sugAdicionar[0] = 0;
+  pedirSugestoes = 0;
+  // A RESPOSTA VOLTA A "NAO PERGUNTADO", e nao a "nao". Quem entra na conta
+  // depois nao respondeu nada, e herdar o "nao" de quem saiu seria esconder a
+  // pergunta de alguem que nunca a viu. Herdar o "sim" seria pior ainda. O
+  // servidor guarda a resposta POR IDENTIDADE, entao a de quem saiu continua
+  // valendo para ela, e a de quem entrar e relida no primeiro registro.
+  aparecer = REC_APARECER_NAO_PERGUNTADO;
+  aparecerPendente = -1;
   nVistoFila = 0;
   cursor = 0;
   etagRec[0] = 0;
@@ -465,6 +631,7 @@ void recomenda_esquecer(void) {
   dados_apagar(REC_ARQ_CURSOR);
   dados_apagar(REC_ARQ_CARTAO);
   dados_apagar(REC_ARQ_EU);
+  dados_apagar(REC_ARQ_APARECER);
   cartaoAberto = 0;
   cartaoMostrado = 0;
 }
@@ -528,10 +695,13 @@ static void jsonEsc(char *dst, size_t tam, const char *s) {
 static int registrar(const char **cab) {
   char *r;
   char id[96] = "", codigo[16] = "";
-  int st = 0;
+  int st = 0, desc = 0;
   url("/v1/eu");
   r = rede_postar_st(fioUrl, REC_TEMPO_REDE, cab, "", &st);
   if (r && st >= 200 && st < 300) {
+    // O QUE O SERVIDOR GUARDOU SOBRE APARECER. Ele e a autoridade por
+    // IDENTIDADE, e este aparelho pode ser o segundo da mesma pessoa.
+    desc = (int)js_num(r, r + strlen(r), "descobrivel", 0.0) ? 1 : 0;
     js_texto_raiz(r, "id", id, sizeof id);
     // O CODIGO SEMPRE VEM NESTA RESPOSTA e o cliente o ignorava. Era o unico
     // ponto onde ele existe: nao ha rota para perguntar "qual e o meu codigo?"
@@ -549,34 +719,64 @@ static int registrar(const char **cab) {
   if (codigo[0]) snprintf(meuCodigo, sizeof meuCodigo, "%s", codigo);
   registrado = 1;
   gravarEu();
+  // RECONCILIACAO EM UM SO SENTIDO, e o sentido importa.
+  //
+  // Se este aparelho nunca perguntou e o servidor ja diz 1, a pessoa respondeu
+  // SIM em outra TV: adotar isso e a resposta certa, e e o unico caminho pelo
+  // qual `aparecer` vira SIM sem alguem apertar OK aqui. O contrario NAO vale:
+  // servidor em 0 com este aparelho em "nao perguntado" continua "nao
+  // perguntado", porque 0 e tambem o estado de quem nunca respondeu nada e
+  // adota-lo como "nao" apagaria a pergunta sem ela ter sido feita.
+  //
+  // Quando este aparelho TEM uma resposta e o servidor discorda, quem manda e a
+  // resposta daqui — ela e mais nova por construcao: ou foi dada nesta TV, ou
+  // veio de um /v1/eu anterior.
+  if (aparecer == REC_APARECER_NAO_PERGUNTADO) {
+    if (desc) { aparecer = REC_APARECER_SIM; gravarAparecer(); }
+  } else if (desc != (aparecer == REC_APARECER_SIM)) {
+    aparecerPendente = (aparecer == REC_APARECER_SIM) ? 1 : 0;
+  }
   SDL_UnlockMutex(mtx);
-  printf("[recomenda] registrado como %s, codigo %s\n",
-         id, codigo[0] ? codigo : "?");
+  printf("[recomenda] registrado como %s, codigo %s, descobrivel %d\n",
+         id, codigo[0] ? codigo : "?", desc);
   fflush(stdout);
   return 1;
 }
 
-// POST /v1/contatos/trakt com os slugs de quem o dono segue.
+// Monta `{"slugs":[...]}` com quem o dono segue no Trakt, e devolve quantos
+// entraram. 0 quando nao ha Trakt ligado ou a lista voltou vazia — e nesse caso
+// `corpo` fica com um `{}` valido, porque as duas rotas que o usam aceitam
+// corpo sem slugs (a de sugestoes ainda tem o ramo de amigo-de-amigo).
 //
-// O AMIGO DO TRAKT JA E CONTATO POR CONSTRUCAO: os dois se seguem la. Obrigar
-// a parear de novo por codigo seria pedir duas vezes a mesma coisa. O servidor
-// vincula so quem JA usa o servico — quem nunca abriu o app nao vira contato
-// porque nao ha ninguem para receber.
-static int vincularTrakt(const char **cab) {
+// A LISTA E CACHEADA POR REC_CONTATOS_MS. Ela e pedida por DUAS rotas agora
+// (sugestoes e o vinculo manual do Trakt), e a aba Social pede um ciclo toda
+// vez que abre: sem o cache, abrir e fechar o painel tres vezes custaria tres
+// downloads de `users/me/following` ao Trakt, que tem limite de requisicao por
+// aplicativo — nao por aparelho.
+static char     fioSlugs[6000];
+static int      fioSlugsN;
+static Uint32   fioSlugsMs;
+static int      fioSlugsTem;
+
+static int corpoSlugsTrakt(char *corpo, size_t tam) {
   const char *tcab[4];
   char aut[3200], chave[160], *lista;
-  char corpo[6000];
   const char *p;
   size_t k;
   int n = 0;
+  if (fioSlugsTem && (Sint32)(SDL_GetTicks() - fioSlugsMs) < 0) {
+    snprintf(corpo, tam, "%s", fioSlugs);
+    return fioSlugsN;
+  }
+  snprintf(corpo, tam, "{}");
   if (!trakt_ativo()) return 0;
   if (!trakt_cabecalhos(tcab, aut, sizeof aut, chave, sizeof chave)) return 0;
   lista = rede_baixar_com("https://api.trakt.tv/users/me/following", 10, tcab);
   if (!lista) return 0;
-  k = (size_t)snprintf(corpo, sizeof corpo, "{\"slugs\":[");
+  k = (size_t)snprintf(corpo, tam, "{\"slugs\":[");
   p = strchr(lista, '[');
   p = p ? p + 1 : NULL;
-  while (p && *p && n < 200 && k + 80 < sizeof corpo) {
+  while (p && *p && n < 200 && k + 80 < tam) {
     const char *f, *u;
     char slug[96] = "";
     while (*p && (unsigned char)*p <= ' ') p++;
@@ -590,14 +790,28 @@ static int vincularTrakt(const char **cab) {
     if (slug[0]) {
       char esc[128];
       jsonEsc(esc, sizeof esc, slug);
-      k += (size_t)snprintf(corpo + k, sizeof corpo - k, "%s\"%s\"",
-                            n ? "," : "", esc);
+      k += (size_t)snprintf(corpo + k, tam - k, "%s\"%s\"", n ? "," : "", esc);
       n++;
     }
     p = js_prox(f);
   }
   free(lista);
-  snprintf(corpo + k, sizeof corpo - k, "]}");
+  snprintf(corpo + k, tam - k, "]}");
+  if (!n) { snprintf(corpo, tam, "{}"); return 0; }
+  snprintf(fioSlugs, sizeof fioSlugs, "%s", corpo);
+  fioSlugsN = n;
+  fioSlugsTem = 1;
+  fioSlugsMs = SDL_GetTicks() + REC_CONTATOS_MS;
+  return n;
+}
+
+// POST /v1/contatos/trakt com os slugs de quem o dono segue.
+//
+// SO PELO BOTAO "PROCURAR AMIGOS DO TRAKT", e nao mais no primeiro ciclo. Ver a
+// nota longa em ciclo().
+static int vincularTrakt(const char **cab) {
+  char corpo[6000];
+  int n = corpoSlugsTrakt(corpo, sizeof corpo);
   if (!n) return 0;
   url("/v1/contatos/trakt");
   { int st = 0, vinculados = 0;
@@ -628,6 +842,7 @@ static void lerContatos(const char **cab) {
     memset(&novos[n], 0, sizeof novos[n]);
     js_texto(p, f, "id",     novos[n].id,     sizeof novos[n].id);
     js_texto(p, f, "nome",   novos[n].nome,   sizeof novos[n].nome);
+    js_texto(p, f, "avatar", novos[n].avatar, sizeof novos[n].avatar);
     js_texto(p, f, "origem", novos[n].origem, sizeof novos[n].origem);
     semTab(novos[n].nome);
     // Contato sem nome nao e contato quebrado: quem nunca preencheu o perfil
@@ -644,6 +859,115 @@ static void lerContatos(const char **cab) {
   memcpy(contatos, novos, sizeof(RecContato) * (size_t)n);
   nContatos = n;
   SDL_UnlockMutex(mtx);
+}
+
+// POST /v1/descobrivel. So sai quando ha resposta a dar: `aparecerPendente` e
+// -1 no caso comum e o ciclo inteiro custa um teste de inteiro.
+//
+// FALHA NAO DESFAZ A RESPOSTA NO DISCO, e por isso o pendente SO e limpo com o
+// servidor confirmando. Com a rede fora, a escolha continua gravada aqui e o
+// aviso sai no proximo ciclo; a pessoa nao e perguntada de novo e tambem nao
+// fica com a tela dizendo "sim" enquanto o servidor pensa "nao".
+static void enviarAparecer(const char **cab) {
+  char corpo[48];
+  char *r;
+  int quer, st = 0;
+  SDL_LockMutex(mtx);
+  quer = aparecerPendente;
+  SDL_UnlockMutex(mtx);
+  if (quer < 0) return;
+  snprintf(corpo, sizeof corpo, "{\"descobrivel\":%d}", quer ? 1 : 0);
+  url("/v1/descobrivel");
+  r = rede_postar_st(fioUrl, REC_TEMPO_REDE, cab, corpo, &st);
+  printf("[recomenda] aparecer=%d HTTP %d\n", quer, st);
+  fflush(stdout);
+  free(r);
+  if (st >= 200 && st < 300) {
+    SDL_LockMutex(mtx);
+    // SO LIMPA SE NINGUEM MUDOU DE IDEIA NO MEIO. A pessoa pode ter apertado o
+    // interruptor de novo enquanto este pedido estava no ar; limpar cegamente
+    // perderia a segunda resposta, que e a que vale.
+    if (aparecerPendente == quer) aparecerPendente = -1;
+    SDL_UnlockMutex(mtx);
+  }
+}
+
+// POST /v1/sugestoes. O corpo leva os slugs do Trakt (cacheados) e nada mais —
+// o ramo de amigo-de-amigo e um JOIN do servidor sobre a tabela de contatos,
+// que este aparelho nao tem e nao vai ter.
+static void lerSugestoes(const char **cab) {
+  char corpo[6000];
+  char *r;
+  const char *p;
+  RecSugestao novos[REC_SUGESTOES_MAX];
+  unsigned ger;
+  int n = 0, st = 0;
+  SDL_LockMutex(mtx);
+  ger = geracao;
+  SDL_UnlockMutex(mtx);
+  corpoSlugsTrakt(corpo, sizeof corpo);
+  url("/v1/sugestoes");
+  r = rede_postar_st(fioUrl, REC_TEMPO_REDE, cab, corpo, &st);
+  if (!r || st < 200 || st >= 300) { free(r); return; }
+  p = js_array(r, NULL, "sugestoes");
+  while (p && *p == '{' && n < REC_SUGESTOES_MAX) {
+    const char *f = js_fim(p);
+    memset(&novos[n], 0, sizeof novos[n]);
+    js_texto(p, f, "id",      novos[n].id,      sizeof novos[n].id);
+    js_texto(p, f, "nome",    novos[n].nome,    sizeof novos[n].nome);
+    js_texto(p, f, "avatar",  novos[n].avatar,  sizeof novos[n].avatar);
+    js_texto(p, f, "origem",  novos[n].origem,  sizeof novos[n].origem);
+    js_texto(p, f, "viaNome", novos[n].viaNome, sizeof novos[n].viaNome);
+    semTab(novos[n].nome);
+    semTab(novos[n].viaNome);
+    // Sem nome, o slug. Mesma regra de lerContatos: quem nunca preencheu o
+    // perfil no Trakt aparece so com o slug, e o slug e o que se reconhece.
+    if (!novos[n].nome[0] && novos[n].id[0]) {
+      const char *dp = strchr(novos[n].id, ':');
+      snprintf(novos[n].nome, sizeof novos[n].nome, "%s", dp ? dp + 1 : novos[n].id);
+    }
+    if (novos[n].id[0]) n++;
+    p = js_prox(f);
+  }
+  free(r);
+  SDL_LockMutex(mtx);
+  // Saiu da conta enquanto isto estava no ar: sugestao de outra pessoa na tela
+  // de quem acabou de entrar seria o pior tipo de vazamento deste recurso.
+  if (ger == geracao) {
+    memcpy(sugestoes, novos, sizeof(RecSugestao) * (size_t)n);
+    nSugestoes = n;
+  }
+  SDL_UnlockMutex(mtx);
+}
+
+// POST /v1/contatos/sugerido. Devolve 1 quando vinculou — quem chama releia a
+// lista de contatos depois.
+static int adicionarSugerido(const char **cab, const char *id) {
+  char corpo[6200], slugs[6000], esc[120];
+  char *r;
+  int st = 0, ok;
+  jsonEsc(esc, sizeof esc, id);
+  // OS SLUGS VAO JUNTO porque o servidor RECALCULA as sugestoes antes de
+  // vincular, e sem eles o ramo do Trakt nao existe naquele recalculo — um
+  // seguido do Trakt seria recusado com 403 na hora de adicionar, depois de ter
+  // aparecido na tela. O ramo de amigo-de-amigo nao precisa de nada.
+  corpoSlugsTrakt(slugs, sizeof slugs);
+  { const char *interno = strchr(slugs, '[');
+    if (interno) {
+      const char *fim = strrchr(slugs, ']');
+      size_t tam = fim && fim > interno ? (size_t)(fim - interno + 1) : 0;
+      snprintf(corpo, sizeof corpo, "{\"id\":\"%s\",\"slugs\":%.*s}",
+               esc, (int)tam, interno);
+    } else {
+      snprintf(corpo, sizeof corpo, "{\"id\":\"%s\"}", esc);
+    } }
+  url("/v1/contatos/sugerido");
+  r = rede_postar_st(fioUrl, REC_TEMPO_REDE, cab, corpo, &st);
+  ok = r && st >= 200 && st < 300 && strstr(r, "\"ok\"") != NULL;
+  printf("[recomenda] adicionar sugerido HTTP %d%s\n", st, ok ? "" : " -- falhou");
+  fflush(stdout);
+  free(r);
+  return ok;
 }
 
 // Insere `r` na posicao certa por id DECRESCENTE. Chamar com o mutex TOMADO.
@@ -677,9 +1001,15 @@ static void lerItem(const char *p, const char *f, RecItem *r) {
   r->id     = (long long)js_num(p, f, "id", 0.0);
   r->criado = (long long)js_num(p, f, "criado", 0.0);
   r->modelo = (int)js_num(p, f, "modelo", 0.0);
+  r->nota   = (int)js_num(p, f, "nota", 0.0);
   r->visto  = (int)js_num(p, f, "visto", 0.0);
+  // FORA DA FAIXA VIRA 0 e nao um selo com "25,5": o servidor ja recusa, mas o
+  // cache em disco pode ter vindo de uma versao futura, e desenhar lixo e pior
+  // que nao desenhar.
+  if (r->nota < 0 || r->nota > 100) r->nota = 0;
   js_texto(p, f, "de",     r->de,     sizeof r->de);
   js_texto(p, f, "deNome", r->deNome, sizeof r->deNome);
+  js_texto(p, f, "deAvatar", r->deAvatar, sizeof r->deAvatar);
   js_texto(p, f, "imdb",   r->imdb,   sizeof r->imdb);
   js_texto(p, f, "tipo",   r->tipo,   sizeof r->tipo);
   js_texto(p, f, "titulo", r->titulo, sizeof r->titulo);
@@ -687,6 +1017,7 @@ static void lerItem(const char *p, const char *f, RecItem *r) {
   js_texto(p, f, "ano",    r->ano,    sizeof r->ano);
   js_texto(p, f, "texto",  r->texto,  sizeof r->texto);
   semTab(r->deNome);
+  semTab(r->deAvatar);
   semTab(r->titulo);
   semTab(r->texto);
   if (!r->tipo[0]) snprintf(r->tipo, sizeof r->tipo, "movie");
@@ -781,8 +1112,9 @@ static void enviarFila(const char **cab) {
   jsonEsc(tx, sizeof tx, fila.texto);
   snprintf(corpo, sizeof corpo,
            "{\"para\":\"%s\",\"imdb\":\"%s\",\"tipo\":\"%s\",\"titulo\":\"%s\","
-           "\"poster\":\"%s\",\"ano\":\"%s\",\"modelo\":%d,\"texto\":\"%s\"}",
-           pa, fila.imdb, ti, t, po, an, fila.modelo, tx);
+           "\"poster\":\"%s\",\"ano\":\"%s\",\"modelo\":%d,\"nota\":%d,"
+           "\"texto\":\"%s\"}",
+           pa, fila.imdb, ti, t, po, an, fila.modelo, fila.nota, tx);
   fila.cheia = 0;
   envioEstado = REC_ENVIO_INDO;
   SDL_UnlockMutex(mtx);
@@ -806,14 +1138,33 @@ static void enviarFila(const char **cab) {
 // divergiria da lista de verdade na primeira diferenca de nome. Custa um GET
 // que so acontece quando alguem apertou OK numa tela de amigos.
 static void tratarContatos(const char **cab) {
-  char codigo[16], remover[96];
+  char codigo[16], remover[96], sugerido[96];
   int querTrakt, mudou = 0;
 
   SDL_LockMutex(mtx);
-  snprintf(codigo,  sizeof codigo,  "%s", vincCodigo);  vincCodigo[0] = 0;
-  snprintf(remover, sizeof remover, "%s", removerId);   removerId[0] = 0;
+  snprintf(codigo,   sizeof codigo,   "%s", vincCodigo);   vincCodigo[0] = 0;
+  snprintf(remover,  sizeof remover,  "%s", removerId);    removerId[0] = 0;
+  snprintf(sugerido, sizeof sugerido, "%s", sugAdicionar); sugAdicionar[0] = 0;
   querTrakt = pedirTrakt; pedirTrakt = 0;
   SDL_UnlockMutex(mtx);
+
+  // ADICIONAR UMA SUGESTAO USA O MESMO ESTADO DE "VINCULAR POR CODIGO"
+  // (REC_VINC_*), e nao um par de enums parecido: as duas acoes terminam do
+  // mesmo jeito para quem esta olhando — "fulano virou contato" ou "nao deu" —
+  // e duas maquinas de estado para uma frase so divergiriam na primeira
+  // correcao, como o desenho da frase do modelo divergiu antes de rec_frase.
+  if (sugerido[0]) {
+    int ok = adicionarSugerido(cab, sugerido);
+    SDL_LockMutex(mtx);
+    vincEstado = ok ? REC_VINC_OK : REC_VINC_FALHA;
+    vincNome[0] = 0;
+    // RELE AS SUGESTOES NO MESMO CICLO, e nao daqui a dez minutos. Quem entrou
+    // como contato tem de sair da lista de sugeridos, e quem o servidor recusou
+    // (a pessoa revogou entre a tela e o OK) tem de sair tambem.
+    pedirSugestoes = 1;
+    SDL_UnlockMutex(mtx);
+    mudou = 1;
+  }
 
   if (codigo[0]) {
     char corpo[64], nome[64] = "", *r;
@@ -907,23 +1258,44 @@ static void confirmarVistas(const char **cab) {
 // havia identidade para tentar, que e o caso do primeiro segundo do arranque.
 static int ciclo(void) {
   const char *cab[3];
-  int reg;
+  int reg, querSug;
   if (!identidade(cab)) return 0;
   SDL_LockMutex(mtx);
   reg = registrado;
   SDL_UnlockMutex(mtx);
   if (!reg) {
     if (!registrar(cab)) return 1;   // servidor fora; tentar de novo no proximo
-    (void)vincularTrakt(cab);
+    // O VINCULO AUTOMATICO DOS SEGUIDOS DO TRAKT SAIU DAQUI, e a troca e
+    // deliberada. Ele transformava em contato, sem ninguem apertar nada, toda
+    // pessoa que o dono segue no Trakt e que tambem usa o servico — dos dois
+    // lados, e a cada arranque do app. O pedido que originou esta mudanca diz
+    // "mostrar os que instalaram o app ... e adicionar como amigo": mostrar e
+    // adicionar sao dois passos, e o segundo e de quem esta olhando.
+    //
+    // O QUE NAO MUDOU: a rota /v1/contatos/trakt continua existindo e continua
+    // vinculando na hora — ela e o botao "procurar amigos do Trakt" da tela de
+    // amigos, que e uma acao que alguem toma. O que deixou de existir e a
+    // varredura silenciosa no arranque. Reverter e recolocar uma linha aqui.
     lerContatos(cab);
+    lerSugestoes(cab);
     contatosMs = SDL_GetTicks() + REC_CONTATOS_MS;
   } else if ((Sint32)(SDL_GetTicks() - contatosMs) >= 0) {
     lerContatos(cab);
+    lerSugestoes(cab);
     contatosMs = SDL_GetTicks() + REC_CONTATOS_MS;
   }
+  enviarAparecer(cab);
   enviarFila(cab);
   tratarContatos(cab);
   confirmarVistas(cab);
+  SDL_LockMutex(mtx);
+  querSug = pedirSugestoes; pedirSugestoes = 0;
+  SDL_UnlockMutex(mtx);
+  // FORA DO RELOGIO DE DEZ MINUTOS so quando alguem pediu: abrir a aba Social
+  // ou aceitar uma sugestao. A sondagem de 60 s NAO pede sugestao — a lista de
+  // quem a pessoa talvez conheca nao muda de minuto em minuto, e cada pedido
+  // custa um JOIN no servidor e, no ramo do Trakt, uma leitura do cache.
+  if (querSug) lerSugestoes(cab);
   lerRecs(cab);
   return 1;
 }
@@ -976,6 +1348,12 @@ void recomenda_pedir_agora(void) {
   if (!mtx) return;
   SDL_LockMutex(mtx);
   pedidoAgora = 1;
+  // AS SUGESTOES ACOMPANHAM O PEDIDO MANUAL, e nao a sondagem de 60 s. Quem
+  // chama esta funcao e sempre uma acao de quem esta na sala — abrir a aba
+  // Social, vincular alguem, responder a pergunta do consentimento — e depois
+  // de qualquer uma delas a lista de sugeridos pode ter mudado. A sondagem
+  // periodica continua sem pedir nada disso.
+  pedirSugestoes = 1;
   SDL_UnlockMutex(mtx);
 }
 
@@ -1001,6 +1379,11 @@ int recomenda_enviar(const CatItem *ci, const char *paraId, int modelo,
       else if (k) break;
     fila.ano[k] = 0;
     if (k != 4) fila.ano[0] = 0; }
+  // A NOTA SAI DAQUI, do CatItem de quem MANDA, e nao do catalogo de quem
+  // recebe: o titulo recomendado pode nao existir no catalogo do amigo — e esse
+  // e justamente o caso em que uma recomendacao e util. A unidade e a do
+  // CatItem (centesimos, 83 = 8,3); fora da faixa vira 0 e o selo some.
+  fila.nota = (ci->nota >= 0 && ci->nota <= 100) ? ci->nota : 0;
   snprintf(fila.para,  sizeof fila.para,  "%s", paraId);
   snprintf(fila.texto, sizeof fila.texto, "%s", texto ? texto : "");
   fila.modelo = modelo;
@@ -1080,11 +1463,149 @@ void rec_quando_texto(char *dst, size_t tam, long long quandoS) {
   else                 snprintf(dst, tam, i18n("há %d dias"), (int)(d / 86400));
 }
 
+// "Segue no Trakt" / "Amigo de Gustavo". A FRASE INTEIRA passa por i18n como
+// FORMATO, e nao montada de "Amigo de" + nome: em ingles a preposicao e a ordem
+// mudam, e a chave da tabela e sempre uma string inteira.
+void rec_sugestao_origem(char *dst, size_t tam, const RecSugestao *s) {
+  if (!dst || tam < 2) return;
+  dst[0] = 0;
+  if (!s) return;
+  if (!strcmp(s->origem, "trakt")) {
+    // "VOCE SEGUE", com o sujeito. `users/me/following` e quem o dono segue, e
+    // nao quem o segue — "Segue no Trakt" sozinho le como o contrario, e a
+    // frase existe justamente para a pessoa decidir se conhece o sugerido.
+    snprintf(dst, tam, "%s", i18n("Você segue no Trakt"));
+    return;
+  }
+  // SEM O NOME DO INTERMEDIARIO ainda ha o que dizer, e dizer importa: a frase
+  // e a unica coisa na linha que explica por que um estranho esta sendo
+  // sugerido. Vazio acontece quando quem faz a ponte nunca preencheu o perfil.
+  if (s->viaNome[0]) snprintf(dst, tam, i18n("Amigo de %s"), s->viaNome);
+  else               snprintf(dst, tam, "%s", i18n("Amigo de um contato seu"));
+}
+
 // Frase da recomendacao: o modelo traduzido, ou o texto livre como veio.
 const char *rec_frase(const RecItem *r) {
   if (!r) return "";
   if (r->modelo >= 0 && r->modelo < REC_MODELOS) return i18n(MODELOS[r->modelo]);
   return r->texto;
+}
+
+// --- AS TRES MARCAS DA LINHA -------------------------------------------------
+
+// Primeiro CARACTERE, e nao primeiro byte: "Álvaro" tem dois bytes na primeira
+// letra e cortar no byte produz um glifo invalido. Copiada de perfilsel.c de
+// proposito — la ela e estatica, e exportar uma funcao de uma tela de perfil
+// para um modulo de rede seria a dependencia errada.
+static void recInicial(const char *nome, char *dst, size_t tam) {
+  size_t z = 1;
+  if (tam < 5) { if (tam) dst[0] = 0; return; }
+  if (!nome || !nome[0]) { dst[0] = '?'; dst[1] = 0; return; }
+  while (z < 4 && (nome[z] & 0xc0) == 0x80) z++;
+  memcpy(dst, nome, z);
+  dst[z] = 0;
+}
+
+// A COR DO DISCO SAI DO ID, e nao de um acaso nem do acento do aparelho.
+//
+// perfilsel.c usa a cor que a CONTA guarda para cada perfil; um contato deste
+// servico nao tem cor nenhuma no servidor, e inventar uma nova a cada quadro
+// faria o mesmo amigo mudar de cor entre duas linhas. Um hash do id estavel
+// resolve os dois: a cor e sempre a mesma para a mesma pessoa, e duas pessoas
+// diferentes quase sempre caem em discos diferentes.
+//
+// As seis cores sao as da paleta de acentos que ajustes.c ja oferece, e nao um
+// arco-iris novo: elas ja foram escolhidas para ter contraste contra o #0D0D0D
+// do fundo e para a letra branca se ler por cima.
+static void recCorDoId(const char *id, float *r, float *g, float *b) {
+  static const float PALETA[6][3] = {
+    { 0.180f, 0.490f, 0.910f },   // azul
+    { 0.400f, 0.733f, 0.416f },   // verde
+    { 0.855f, 0.420f, 0.290f },   // coral
+    { 0.560f, 0.420f, 0.850f },   // violeta
+    { 0.910f, 0.650f, 0.200f },   // ambar
+    { 0.180f, 0.680f, 0.700f },   // turquesa
+  };
+  unsigned h = 2166136261u;       // FNV-1a: oito linhas a menos que um md5 e
+  const char *p = id ? id : "";   // com a unica propriedade que interessa aqui
+  for (; *p; p++) { h ^= (unsigned char)*p; h *= 16777619u; }
+  h %= 6u;
+  *r = PALETA[h][0]; *g = PALETA[h][1]; *b = PALETA[h][2];
+}
+
+void rec_avatar(GfxRect a, const char *url, const char *nome, const char *id,
+                float alfa) {
+  GLuint foto = (url && url[0]) ? tex_obter_larg(url, a.w) : 0;
+  // SOQUETE ESCURO POR BAIXO SEMPRE, como perfilsel.c: enquanto a foto nao
+  // chega da rede, o lugar dela e um disco e nao um buraco com o fundo do
+  // painel aparecendo — e um buraco redondo le como defeito.
+  gfx_rect(a, 0, GFX_DISCO, 0, 0, 0, 0, 0.09f, 0.09f, 0.10f, alfa);
+  if (foto) {
+    gfx_tex_aspect_atual = tex_aspecto(url);
+    gfx_rect(a, foto, GFX_AVATAR, 0, 0, 0, 0, 1, 1, 1, alfa);
+    gfx_tex_aspect_atual = 0.0f;
+    return;
+  }
+  { float cr, cg, cb;
+    char ini[8];
+    TxtLinha l;
+    recCorDoId(id && id[0] ? id : nome, &cr, &cg, &cb);
+    gfx_rect(a, 0, GFX_DISCO, 0, 0, 0, 0, cr, cg, cb, alfa);
+    recInicial(nome, ini, sizeof ini);
+    l = txt_linha(a.w >= 48.0f ? TXT_CALLOUT : TXT_CAPTION2, ini, 255, 255, 255, 255);
+    txt_desenhar_alpha(l, a.x + (a.w - l.w) * 0.5f, a.y + (a.h - l.h) * 0.5f, alfa); }
+}
+
+float rec_selo_tipo(float x, float y, const char *tipo, int escuro, float alfa) {
+  // "Série" e "Filme" JA SAO CHAVES DA TABELA — as mesmas que metaTexto usa na
+  // aba Salvos. Reaproveita-las e o que faz a aba Social e a aba Salvos dizerem
+  // "Série" com a mesma palavra em qualquer idioma.
+  int serie = tipo && !strncmp(tipo, "series", 6);
+  TxtLinha t = txt_linha(TXT_CAPTION2, i18n(serie ? "Série" : "Filme"),
+                         escuro ? 32 : 222, escuro ? 34 : 226,
+                         escuro ? 40 : 236, 255);
+  GfxRect p = { x, y, t.w + REC_SELO_PADX * 2.0f, REC_SELO_H };
+  // PREENCHIMENTO, NUNCA CONTORNO. Esta primeira versao era um GFX_ANEL, e o
+  // dono corrigiu olhando a captura: "deixa fill sem contorno". A regra vale
+  // para o app inteiro desde 16/09/2026 (esta escrita em menu.c) — superficie
+  // cheia de baixo contraste com texto claro para a marca discreta, superficie
+  // clara com texto escuro para o que esta realcado. Contorno so onde e
+  // impossivel preencher: cartaz com arte, campo de busca, quadro do PiP.
+  //
+  // E POR ISSO QUE ELE TEM DUAS COMBINACOES. Com a linha em foco o fundo vira
+  // a pilula clara, e um preenchimento branco a 0.10 sobre ela desaparece —
+  // a mesma armadilha em que `ajustes_acento()` (branco no tema padrao) faz
+  // cair quem pinta uma pilula de acento sobre superficie clara. `escuro`
+  // inverte: cinza escuro a 0.10 com o texto quase preto.
+  gfx_cor(p, 0.5f,
+          escuro ? 0.06f : 1.0f, escuro ? 0.06f : 1.0f, escuro ? 0.08f : 1.0f,
+          (escuro ? 0.10f : 0.12f) * alfa);
+  txt_desenhar_alpha(t, x + REC_SELO_PADX, y + (REC_SELO_H - t.h) * 0.5f, alfa);
+  return p.w;
+}
+
+float rec_selo_imdb(float x, float y, int nota, int escuro, float alfa) {
+  char txt[8];
+  TxtLinha l, lm;
+  GfxRect marca;
+  if (nota <= 0) return 0.0f;
+  // VIRGULA DECIMAL, como detail.c e como a linha de meta da aba Salvos: o
+  // "%.1f" do C escreve ponto e a interface inteira e em portugues.
+  snprintf(txt, sizeof txt, "%d,%d", nota / 10, nota % 10);
+  l = txt_linha(TXT_CAPTION2, txt, escuro ? 40 : 214, escuro ? 42 : 218,
+                escuro ? 48 : 228, 255);
+  marca.x = x; marca.y = y; marca.w = REC_IMDB_W; marca.h = REC_SELO_H;
+  gfx_cor(marca, 4.0f / REC_SELO_H, 0.965f, 0.780f, 0.0f, alfa);  // #f6c700
+  // TXT_MINI JA E BOLD na tabela de estilos (e o estilo do selo de
+  // classificacao). detail.c engrossa o dele com um txt_peso que e estatico
+  // daquele arquivo; a 52px de largura a diferenca nao se ve, e copiar a funcao
+  // para ca seria terceira copia do mesmo truque.
+  lm = txt_linha(TXT_MINI, "IMDb", 10, 10, 10, 255);
+  txt_desenhar_alpha(lm, marca.x + (marca.w - lm.w) * 0.5f,
+                     marca.y + (marca.h - lm.h) * 0.5f, alfa);
+  txt_desenhar_alpha(l, x + REC_IMDB_W + REC_IMDB_GAP,
+                     y + (REC_SELO_H - l.h) * 0.5f, alfa);
+  return REC_IMDB_W + REC_IMDB_GAP + l.w;
 }
 
 void recomenda_desenhar(Uint32 agora) {
@@ -1114,30 +1635,45 @@ void recomenda_desenhar(Uint32 agora) {
     } }
 
   x = RC_X + RC_PAD + RC_POSTER_W + 44.0f;
-  y = RC_Y + dy + 76.0f;
+  y = RC_Y + dy + 66.0f;
   { TxtLinha t = txt_linha(TXT_CAPTION2, i18n("RECOMENDAÇÃO DE UM AMIGO"),
                            150, 154, 165, 255);
-    txt_desenhar_alpha(t, x, y, a * 0.92f); y += t.h + 16.0f; }
-  // Formato inteiro em i18n: em ingles o nome vem antes do verbo e depois do
-  // objeto, e uma frase remendada aqui sairia na ordem errada.
-  snprintf(buf, sizeof buf, i18n("%s te recomendou"), cartaoItem.deNome);
-  { TxtLinha t = txt_linha_corta(TXT_CALLOUT, buf, 200, 204, 214, 255,
-                                 RC_W - (x - RC_X) - RC_PAD);
-    txt_desenhar_alpha(t, x, y, a * 0.95f); y += t.h + 10.0f; }
+    txt_desenhar_alpha(t, x, y, a * 0.92f); y += t.h + 14.0f; }
+  // A CARA DE QUEM MANDOU AO LADO DO NOME. Era so o nome, e um nome sozinho num
+  // cartao que aparece no arranque nao diz de quem e ate a pessoa LER — a foto
+  // diz antes. Sem foto (conta Nuvio) o disco leva a inicial, exatamente como
+  // perfilsel.c faz com perfil sem foto.
+  { GfxRect av = { x, y + 2.0f, RC_AVATAR, RC_AVATAR };
+    float tx2 = x + RC_AVATAR + RC_AVATAR_GAP;
+    rec_avatar(av, cartaoItem.deAvatar, cartaoItem.deNome, cartaoItem.de, a);
+    // Formato inteiro em i18n: em ingles o nome vem antes do verbo e depois do
+    // objeto, e uma frase remendada aqui sairia na ordem errada.
+    snprintf(buf, sizeof buf, i18n("%s te recomendou"), cartaoItem.deNome);
+    { TxtLinha t = txt_linha_corta(TXT_CALLOUT, buf, 200, 204, 214, 255,
+                                   RC_W - (tx2 - RC_X) - RC_PAD);
+      txt_desenhar_alpha(t, tx2, y + (RC_AVATAR - t.h) * 0.5f, a * 0.95f); }
+    y += RC_AVATAR + 14.0f; }
   { TxtLinha t = txt_linha_corta(TXT_TITULO2, cartaoItem.titulo, 246, 247, 252,
                                  255, RC_W - (x - RC_X) - RC_PAD);
-    txt_desenhar_alpha(t, x, y, a); y += t.h + 22.0f; }
+    txt_desenhar_alpha(t, x, y, a); y += t.h + 16.0f; }
   { const char *frase = rec_frase(&cartaoItem);
     if (frase[0]) {
       snprintf(buf, sizeof buf, "\xe2\x80\x9c%s\xe2\x80\x9d", frase);
       y += txt_bloco(TXT_BODY, buf, 214, 218, 228, x, y,
-                     RC_W - (x - RC_X) - RC_PAD, 38.0f, a * 0.96f, 2) + 12.0f;
+                     RC_W - (x - RC_X) - RC_PAD, 38.0f, a * 0.96f, 2) + 16.0f;
     } }
-  rec_quando_texto(buf, sizeof buf, cartaoItem.criado);
-  if (buf[0]) {
-    TxtLinha t = txt_linha(TXT_CAPTION, buf, 150, 154, 165, 255);
-    txt_desenhar_alpha(t, x, y, a * 0.85f);
-  }
+  // FILME OU SÉRIE, A NOTA E O QUANDO, NA MESMA LINHA. Sao as tres coisas que
+  // se olham de relance e nenhuma delas merece uma linha propria — juntas elas
+  // custam os mesmos 30px que o "há 2 h" sozinho custava.
+  { float sx = x;
+    sx += rec_selo_tipo(sx, y, cartaoItem.tipo, 0, a * 0.95f) + REC_SELO_GAP;
+    { float w = rec_selo_imdb(sx, y, cartaoItem.nota, 0, a * 0.95f);
+      if (w > 0.0f) sx += w + REC_SELO_GAP + 6.0f; }
+    rec_quando_texto(buf, sizeof buf, cartaoItem.criado);
+    if (buf[0]) {
+      TxtLinha t = txt_linha(TXT_CAPTION, buf, 150, 154, 165, 255);
+      txt_desenhar_alpha(t, sx, y + (REC_SELO_H - t.h) * 0.5f, a * 0.85f);
+    } }
 
   y = RC_Y + dy + RC_H - 70.0f;
   { TxtLinha t = txt_linha(TXT_CAPTION2, i18n("OK para abrir"), 200, 204, 214, 255);

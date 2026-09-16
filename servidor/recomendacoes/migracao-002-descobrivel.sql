@@ -1,0 +1,39 @@
+-- MIGRACAO 002 — "posso aparecer para outras pessoas?", uma coluna por pessoa.
+--
+-- O QUE ELA HABILITA: a lista de sugestoes de gente para adicionar. Sem esta
+-- coluna nao ha como perguntar "quem aceitou aparecer?", e a unica resposta
+-- honesta a essa pergunta seria "ninguem" — que e exatamente o padrao que esta
+-- migracao grava.
+--
+-- O PADRAO E 0 E ISSO E A DECISAO INTEIRA. Todas as linhas que ja existem no
+-- banco no ar passam a ter `descobrivel = 0`, ou seja: ninguem que ja se
+-- registrou vira visivel por causa desta migracao. Quem aparece na sugestao de
+-- alguem e so quem responder SIM na tela de consentimento da aba Social, uma
+-- pessoa de cada vez, depois de ler o que os outros passam a ver.
+--
+-- O BANCO ESTA NO AR, entao esta migracao e SO ADITIVA: uma coluna nova com
+-- DEFAULT, nenhuma coluna renomeada, nenhuma apagada, nenhum indice refeito.
+--
+-- APLICAR NO BANCO DE VERDADE, da raiz do repositorio:
+--
+--   npx wrangler@4 d1 execute nuvio-recomendacoes --remote \
+--     --config servidor/recomendacoes/wrangler.toml \
+--     --file servidor/recomendacoes/migracao-002-descobrivel.sql
+--
+-- E no D1 LOCAL do teste (`--local` no lugar de `--remote`). Depois dela,
+-- `npx wrangler@4 deploy` publica o Worker que usa a coluna — NESTA ORDEM: o
+-- codigo novo le `p.descobrivel` em toda sugestao e em `/v1/eu`, e contra a
+-- tabela velha isso e um erro de SQL na resposta do REGISTRO, ou seja em toda
+-- sondagem de toda TV.
+--
+-- RODAR UMA VEZ SO. `ALTER TABLE ... ADD COLUMN` nao tem "IF NOT EXISTS" no
+-- SQLite: a segunda execucao responde "duplicate column name" e nao altera
+-- nada. Esse erro e o sinal de que a migracao ja passou, nao de que quebrou.
+--
+-- NAO HA INDICE NOVO DE PROPOSITO. As duas consultas que leem a coluna filtram
+-- primeiro por chave primaria (`pessoa.id IN (...)`) ou pela PK de `contato`;
+-- `descobrivel` e sempre o ultimo filtro sobre um punhado de linhas ja
+-- escolhidas. Um indice sobre uma coluna que e 0 em quase toda a tabela custaria
+-- escrita em todo registro para nao ser usado em leitura nenhuma.
+
+ALTER TABLE pessoa ADD COLUMN descobrivel INTEGER NOT NULL DEFAULT 0;

@@ -182,6 +182,12 @@ int main(void) {
       CONFERE(!strcmp(r.imdb, "tt0111161"), "imdb: [%s]", r.imdb);
       CONFERE(!strcmp(r.tipo, "movie"), "tipo: [%s]", r.tipo);
       CONFERE(!strcmp(r.deNome, "Gustavo Lima"), "deNome: [%s]", r.deNome);
+      // A FOTO DE QUEM MANDOU E A NOTA DO TITULO vem do servidor na MESMA
+      // resposta. A nota vem em centesimos (93 = 9,3), como o `nota` do
+      // CatItem — se ela virar 9 ou 9.3 em algum lado, o selo desenha "0,9".
+      CONFERE(strstr(r.deAvatar, "walter.trakt.tv") != NULL,
+              "deAvatar: [%s]", r.deAvatar);
+      CONFERE(r.nota == 93, "nota em centesimos: %d", r.nota);
       CONFERE(!strcmp(r.titulo, "Um Sonho de Liberdade"), "titulo: [%s]", r.titulo);
       CONFERE(!strcmp(r.ano, "1994"), "ano: [%s]", r.ano);
       CONFERE(r.modelo == 2, "modelo: %d", r.modelo);
@@ -217,6 +223,12 @@ int main(void) {
   // --- 5. o texto livre chega inteiro --------------------------------------
   { RecItem r;
     recomenda_item(1, &r);
+    // AMIGO SEM FOTO E CASO NORMAL, e nao erro: conta Nuvio nao expoe avatar na
+    // verificacao de identidade (ver idNuvio no servidor). O campo chega vazio
+    // e quem desenha cai na inicial num disco colorido.
+    CONFERE(!r.deAvatar[0], "contato de conta Nuvio vem sem foto: [%s]",
+            r.deAvatar);
+    CONFERE(r.nota == 95, "nota da serie: %d", r.nota);
     CONFERE(r.modelo == -1, "modelo -1 e texto livre, nao %d", r.modelo);
     CONFERE(!strcmp(rec_frase(&r), "olha isso hoje a noite"),
             "frase do texto livre: [%s]", rec_frase(&r)); }
@@ -264,6 +276,9 @@ int main(void) {
             r.deNome);
     CONFERE(strstr(r.poster, "tt0111161") != NULL, "poster veio do disco: [%s]",
             r.poster);
+    CONFERE(strstr(r.deAvatar, "walter.trakt.tv") != NULL,
+            "a foto veio do disco: [%s]", r.deAvatar);
+    CONFERE(r.nota == 93, "a nota veio do disco: %d", r.nota);
     recomenda_item(1, &r);
     CONFERE(!strcmp(r.texto, "olha isso hoje a noite"),
             "texto livre veio do disco: [%s]", r.texto); }
@@ -285,6 +300,9 @@ int main(void) {
     snprintf(ci.poster, sizeof ci.poster, "%s", "https://exemplo/p.jpg");
     // O CatItem nao tem campo de ano: ele guarda "1972 · 2h55" em `meta`.
     snprintf(ci.meta, sizeof ci.meta, "%s", "1972 · 2h55");
+    // A NOTA SAI DO CatItem DE QUEM MANDA. E a unica origem possivel: quem
+    // recebe pode nao ter o titulo no catalogo dele.
+    ci.nota = 92;
     respStatus = 200;
     respCorpo = "{\"ok\":1,\"id\":9}";
     envioEstado = REC_ENVIO_NADA;
@@ -301,6 +319,8 @@ int main(void) {
     CONFERE(strstr(ultimoCorpoPost, "\"imdb\":\"tt0068646\"") != NULL, "imdb");
     CONFERE(strstr(ultimoCorpoPost, "\"modelo\":4") != NULL, "modelo");
     CONFERE(strstr(ultimoCorpoPost, "\"ano\":\"1972\"") != NULL, "ano");
+    CONFERE(strstr(ultimoCorpoPost, "\"nota\":92") != NULL,
+            "nota no corpo: [%s]", ultimoCorpoPost);
     CONFERE(recomenda_envio_estado() == REC_ENVIO_OK, "estado do envio: %d",
             recomenda_envio_estado());
     // Modelo fora da faixa nao vira requisicao: o servidor guardaria um indice
@@ -320,6 +340,187 @@ int main(void) {
   { char caminho[600];
     dados_caminho(caminho, sizeof caminho, "recomendacoes.txt");
     CONFERE(fopen(caminho, "rb") == NULL, "recomendacoes.txt foi apagado"); }
+
+  // --- 12. O ARQUIVO DA VERSAO ANTERIOR CONTINUA CARREGANDO ----------------
+  //
+  // O cache v1 nao tem `nota` nem `deAvatar`, e as duas colunas novas entraram
+  // ANTES do titulo — que e lido como "o resto da linha". Sem o desvio por
+  // contagem de TAB, a linha v1 seria lida com o titulo no lugar da nota e a
+  // aba Social abriria com quatro linhas sem nome nenhum na TV de quem
+  // atualizar o app. Esta e a linha EXATA que a versao instalada hoje grava.
+  { char caminho[600];
+    FILE *f;
+    RecItem r;
+    dados_caminho(caminho, sizeof caminho, "recomendacoes.txt");
+    f = fopen(caminho, "wb");
+    CONFERE(f != NULL, "abrir %s para escrever a v1", caminho);
+    if (f) {
+      fprintf(f, "# nuvio recomendacoes v1\n");
+      fprintf(f, "7\t1757900000\t0\t2\tmovie\t1994\ttrakt:gustavo\tGustavo\t"
+                 "tt0111161\thttps://exemplo/p.jpg\t\tUm Sonho de Liberdade\n");
+      fprintf(f, "6\t1757890000\t1\t-1\tseries\t2008\tnuvio:9a1c\tMarina\t"
+                 "tt0903747\thttps://exemplo/q.jpg\tolha isso\tBreaking Bad\n");
+      fclose(f);
+    }
+    simularArranque();
+    recomenda_iniciar();
+    CONFERE(recomenda_n() == 2, "as duas linhas v1 carregaram, nao %d",
+            recomenda_n());
+    recomenda_item(0, &r);
+    CONFERE(!strcmp(r.titulo, "Um Sonho de Liberdade"),
+            "o titulo v1 nao virou nota: [%s]", r.titulo);
+    CONFERE(r.nota == 0, "linha v1 nao tem nota: %d", r.nota);
+    CONFERE(!r.deAvatar[0], "linha v1 nao tem foto: [%s]", r.deAvatar);
+    recomenda_item(1, &r);
+    CONFERE(!strcmp(r.titulo, "Breaking Bad"), "segundo titulo v1: [%s]", r.titulo);
+    CONFERE(!strcmp(r.texto, "olha isso"), "texto livre v1: [%s]", r.texto);
+
+    // E A PRIMEIRA GRAVACAO SOBE O ARQUIVO PARA v2, sem perder o que a v1
+    // tinha. marcar_vistas grava; conferimos a forma da linha, nao so o texto.
+    recomenda_marcar_vistas();
+    { char *conteudo = lerArquivo(caminho);
+      int tabs = 0;
+      const char *linha2 = NULL, *q;
+      CONFERE(conteudo != NULL, "reler %s", caminho);
+      if (conteudo) {
+        CONFERE(strstr(conteudo, "# nuvio recomendacoes v2") == conteudo,
+                "o cabecalho subiu para v2");
+        linha2 = strchr(conteudo, '\n');
+        linha2 = linha2 ? linha2 + 1 : NULL;
+        for (q = linha2; q && *q && *q != '\n'; q++) if (*q == '\t') tabs++;
+        CONFERE(tabs == 13, "a linha v2 tem 13 TABs, nao %d", tabs);
+        CONFERE(strstr(conteudo, "Um Sonho de Liberdade") != NULL,
+                "o titulo sobreviveu a subida de versao");
+        free(conteudo);
+      } }
+    simularArranque();
+    recomenda_iniciar();
+    CONFERE(recomenda_n() == 2, "a v2 recem-gravada recarrega: %d", recomenda_n());
+    recomenda_item(0, &r);
+    CONFERE(!strcmp(r.titulo, "Um Sonho de Liberdade"),
+            "titulo depois da subida: [%s]", r.titulo); }
+
+  // --- APARECER PARA OUTRAS PESSOAS ----------------------------------------
+  //
+  // O QUE ESTE BLOCO PROVA, e nada disso e visivel na captura: que o padrao e
+  // "nao perguntado" e nao "sim"; que a resposta e gravada ANTES de qualquer
+  // rede e sobrevive ao arranque; que sair da conta a apaga; e que `descobrivel
+  // = 1` vindo do servidor so e adotado por um aparelho que NUNCA perguntou.
+  //
+  // O terceiro e o unico caminho pelo qual `aparecer` vira SIM sem alguem
+  // apertar OK nesta TV, e ele existe para a segunda TV da mesma pessoa. Se ele
+  // passasse a valer tambem para quem ja respondeu NAO, o "nao" duraria ate o
+  // proximo arranque — e um consentimento que se desfaz sozinho e o defeito que
+  // este bloco esta aqui para impedir.
+  { char caminho[600];
+    char *conteudo;
+    dados_apagar("recomendacoes-aparecer.txt");
+    aparecer = REC_APARECER_NAO_PERGUNTADO;
+    aparecerPendente = -1;
+    simularArranque();
+    recomenda_iniciar();
+    CONFERE(recomenda_aparecer() == REC_APARECER_NAO_PERGUNTADO,
+            "sem arquivo, o padrao e nao perguntado: %d", recomenda_aparecer());
+
+    recomenda_responder_aparecer(0);
+    CONFERE(recomenda_aparecer() == REC_APARECER_NAO,
+            "responder nao grava NAO: %d", recomenda_aparecer());
+    CONFERE(aparecerPendente == 0, "o aviso ao servidor ficou pendente: %d",
+            aparecerPendente);
+    dados_caminho(caminho, sizeof caminho, "recomendacoes-aparecer.txt");
+    conteudo = lerArquivo(caminho);
+    CONFERE(conteudo != NULL, "o arquivo da resposta existe: %s", caminho);
+    if (conteudo) {
+      CONFERE(atoi(conteudo) == REC_APARECER_NAO,
+              "o disco guarda a resposta: [%s]", conteudo);
+      free(conteudo);
+    }
+
+    // SOBREVIVE AO ARRANQUE. Sem isto a pergunta voltaria toda vez que a TV
+    // liga, que e como um consentimento vira um obstaculo a ser clicado.
+    aparecer = REC_APARECER_SIM;        // lixo, para provar que a leitura manda
+    simularArranque();
+    recomenda_iniciar();
+    CONFERE(recomenda_aparecer() == REC_APARECER_NAO,
+            "a resposta volta do disco: %d", recomenda_aparecer());
+
+    // UM SERVIDOR DIZENDO 1 NAO DESFAZ UM "NAO" DADO AQUI.
+    aparecerPendente = -1;
+    { int desc = 1;
+      if (aparecer == REC_APARECER_NAO_PERGUNTADO) {
+        if (desc) { aparecer = REC_APARECER_SIM; gravarAparecer(); }
+      } else if (desc != (aparecer == REC_APARECER_SIM)) {
+        aparecerPendente = (aparecer == REC_APARECER_SIM) ? 1 : 0;
+      } }
+    CONFERE(recomenda_aparecer() == REC_APARECER_NAO,
+            "servidor em 1 nao vira o NAO desta TV: %d", recomenda_aparecer());
+    CONFERE(aparecerPendente == 0,
+            "e o proximo ciclo corrige o servidor: %d", aparecerPendente);
+
+    // MAS UM APARELHO QUE NUNCA PERGUNTOU ADOTA O "SIM" de outra TV da mesma
+    // pessoa — senao a pergunta apareceria uma vez por aparelho.
+    dados_apagar("recomendacoes-aparecer.txt");
+    aparecer = REC_APARECER_NAO_PERGUNTADO;
+    aparecerPendente = -1;
+    { int desc = 1;
+      if (aparecer == REC_APARECER_NAO_PERGUNTADO) {
+        if (desc) { aparecer = REC_APARECER_SIM; gravarAparecer(); }
+      } }
+    CONFERE(recomenda_aparecer() == REC_APARECER_SIM,
+            "quem nunca perguntou adota o sim do servidor: %d",
+            recomenda_aparecer());
+
+    // SAIR DA CONTA APAGA A RESPOSTA. Quem entrar depois nao respondeu nada.
+    recomenda_esquecer();
+    CONFERE(recomenda_aparecer() == REC_APARECER_NAO_PERGUNTADO,
+            "logout devolve a pergunta: %d", recomenda_aparecer());
+    conteudo = lerArquivo(caminho);
+    CONFERE(conteudo == NULL, "e apaga o arquivo da resposta");
+    free(conteudo); }
+
+  // --- SUGESTOES ------------------------------------------------------------
+  //
+  // A frase de origem e o unico texto da linha que explica por que um nome
+  // desconhecido esta na tela. Os tres casos tem de sair diferentes — e o
+  // terceiro (amigo sem nome do intermediario) e o que uma montagem ingenua
+  // deixaria em "Amigo de ".
+  { RecSugestao s;
+    char frase[128];
+    memset(&s, 0, sizeof s);
+    snprintf(s.origem, sizeof s.origem, "%s", "trakt");
+    rec_sugestao_origem(frase, sizeof frase, &s);
+    CONFERE(strstr(frase, "Trakt") != NULL, "origem trakt: [%s]", frase);
+
+    snprintf(s.origem,  sizeof s.origem,  "%s", "amigo");
+    snprintf(s.viaNome, sizeof s.viaNome, "%s", "Gustavo");
+    rec_sugestao_origem(frase, sizeof frase, &s);
+    CONFERE(strstr(frase, "Gustavo") != NULL,
+            "origem amigo cita quem faz a ponte: [%s]", frase);
+
+    s.viaNome[0] = 0;
+    rec_sugestao_origem(frase, sizeof frase, &s);
+    CONFERE(frase[0] && !strchr(frase, ':') && strlen(frase) > 8,
+            "amigo sem nome do intermediario ainda diz algo: [%s]", frase);
+
+    // A LISTA SOME COM O LOGOUT, como a de recomendacoes e pela mesma razao:
+    // uma sugestao e "gente que VOCE talvez conheca", e ela na tela de quem
+    // acabou de entrar seria o pior vazamento possivel deste recurso.
+    nSugestoes = 2;
+    memset(sugestoes, 0, sizeof sugestoes);
+    snprintf(sugestoes[0].id, sizeof sugestoes[0].id, "%s", "trakt:um");
+    snprintf(sugestoes[1].id, sizeof sugestoes[1].id, "%s", "nuvio:dois");
+    CONFERE(recomenda_n_sugestoes() == 2, "duas sugestoes semeadas: %d",
+            recomenda_n_sugestoes());
+    CONFERE(recomenda_sugestao(0, &s) && !strcmp(s.id, "trakt:um"),
+            "copia a sugestao 0: [%s]", s.id);
+    CONFERE(!recomenda_sugestao(2, &s), "indice fora da faixa recusa");
+    // Aceitar uma sugestao a tira da lista NA HORA, sem esperar a rede.
+    CONFERE(recomenda_adicionar_sugerido("trakt:um"), "enfileira o vinculo");
+    CONFERE(recomenda_n_sugestoes() == 1,
+            "a aceita sai da lista na hora: %d", recomenda_n_sugestoes());
+    recomenda_esquecer();
+    CONFERE(recomenda_n_sugestoes() == 0, "logout limpa as sugestoes: %d",
+            recomenda_n_sugestoes()); }
 
   free(fixture);
   printf(falhas ? "recomenda: %d falhas\n" : "recomenda: ok\n", falhas);
