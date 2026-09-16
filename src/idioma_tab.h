@@ -747,6 +747,8 @@
   { "Original", "Original" },
   { "Orçamento", "Budget" },
   { "Orçamento, bilheteria, prêmios e onde foi filmado, tudo vindo do Wikidata.", "Budget, box office, awards and filming locations, all from Wikidata." },
+  { "Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.", "The channel addons on this account are not answering right now. The guide retries every 10 seconds while this screen is open." },
+  { "Os addons de canais não responderam.", "The channel addons did not answer." },
   { "Os botões coloridos", "The coloured buttons" },
   { "Os canais viram um guia", "Your channels become a guide" },
   { "Os filmes e séries da sua coleção no Trakt ficam reunidos nesta aba.", "The movies and shows in your Trakt collection are gathered in this tab." },

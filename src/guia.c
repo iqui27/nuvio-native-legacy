@@ -289,6 +289,11 @@ static int fonteJa(const char *base, const char *id) {
 // tudo; baixar `base/manifest.json` de cada addon ativo e varrer catalogs[]
 // cobre o caso. E o mesmo padrao de lerManifesto da descoberta, do mesmo
 // tipo de fio.
+// Quantos addons de canal foram TENTADOS e nao responderam nesta rodada. Zero
+// com a lista vazia significa mesmo "nenhum addon declara canal". `s` e do fio,
+// `falhas` e a copia publicada, como o resto do estado desta tela.
+static int sFalhas, falhas;
+
 static void sondaManifestos(void) {
   int a;
   for (a = 0; a < addons_n() && sNFontes < G_MAX_FONTE; a++) {
@@ -301,7 +306,14 @@ static void sondaManifestos(void) {
     if (!base || !base[0]) continue;
     snprintf(url, sizeof url, "%s/manifest.json", base);
     corpo = rede_baixar(url, 15);
-    if (!corpo) continue;
+    // MANIFESTO QUE NAO RESPONDE NAO E "ADDON SEM CANAL". A sonda pulava em
+    // silencio, e com isso a tela vazia acusava a conta da pessoa ("instale um
+    // addon de canais") justamente quando o addon ESTAVA instalado e era o
+    // servidor dele que estava fora. Foi o que aconteceu com o FrostView
+    // devolvendo 408 e o Minha TV nao respondendo o catalogo: o guia mandava
+    // instalar o que ja estava la. Contar a falha e o que permite dizer a
+    // verdade tres linhas abaixo.
+    if (!corpo) { sFalhas++; continue; }
     fim = corpo + strlen(corpo);
     p = js_array(corpo, fim, "catalogs");
     while (p && sNFontes < G_MAX_FONTE) {
@@ -324,7 +336,7 @@ static void sondaManifestos(void) {
 static void *fioGuia(void *u) {
   int ok = 0;
   (void)u;
-  sNCanais = 0; sNCats = 0;
+  sNCanais = 0; sNCats = 0; sFalhas = 0;
   // Fontes das fileiras (descobertas no fio de desenho) primeiro — zero rede
   // extra. A sonda de manifestos completa com o que a home nao montou.
   sNFontes = 0;
@@ -339,6 +351,10 @@ static void *fioGuia(void *u) {
       if (n < G_PAGINA) break;    // ultima pagina veio curta
     }
   }
+  // FONTE ACHADA E NENHUMA PAGINA RESPONDEU tambem e "nao respondeu", e nao
+  // "nao existe": e o caso do catalogo de canais que estoura o prazo com o
+  // manifesto tendo vindo 200.
+  if (sNFontes > 0 && !ok) sFalhas++;
   pendPronto = 1;
   if (!ok) estado = G_FALHOU;
   return NULL;
@@ -354,6 +370,7 @@ static void publicar(void) {
   // contagem das fileiras apenas.
   memcpy(fontes, sFontes, sizeof sFontes);
   nFontes = sNFontes;
+  falhas = sFalhas;
   // Ordena os canais por categoria (estavel na ordem de chegada) para que cada
   // fileira seja uma janela contigua — o mesmo desenho de CatFileira.
   { GCanal tmp[G_MAX_CANAL];
@@ -1026,6 +1043,9 @@ void guia_desenhar(Uint32 agora) {
   { char sub[160];
     if (estado == G_BAIXANDO)
       snprintf(sub, sizeof sub, "%s", i18n("Carregando canais…"));
+    else if (falhas && !nCanais)
+      snprintf(sub, sizeof sub, "%s",
+               i18n("Os addons de canais não responderam."));
     else if (estado == G_FALHOU || (fontesOk && !nFontes))
       snprintf(sub, sizeof sub, "%s",
                i18n("Nenhum catálogo de canais nos addons instalados."));
@@ -1067,9 +1087,14 @@ void guia_desenhar(Uint32 agora) {
     }
     gfx_sem_recorte();
   } else if (estado == G_FALHOU || (fontesOk && !nFontes && estado != G_BAIXANDO)) {
-    TxtLinha t = txt_linha_corta(TXT_BODY,
-        i18n("O guia precisa de um addon de canais (como o FrostView TV) instalado na conta."),
-        200, 202, 210, 255, NV_TELA_W - 2 * NV_MARGEM_X);
+    // DUAS FRASES, e a diferenca entre elas e a diferenca entre acusar a
+    // pessoa e contar o que houve. `falhas` diz que alguem foi tentado e nao
+    // respondeu; sem ele, a lista vazia e mesmo falta de addon.
+    const char *msg = falhas
+      ? i18n("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.")
+      : i18n("O guia precisa de um addon de canais (como o FrostView TV) instalado na conta.");
+    TxtLinha t = txt_linha_corta(TXT_BODY, msg, 200, 202, 210, 255,
+                                 NV_TELA_W - 2 * NV_MARGEM_X);
     txt_desenhar_alpha(t, G_AREA_X, 300.0f, a);
   }
 
