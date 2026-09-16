@@ -49,15 +49,28 @@ const limpar = (s, n) => String(s == null ? "" : s).slice(0, n);
 // O cliente diz quem acha que e; o servidor confirma com quem emitiu o token.
 // Nunca se confia no corpo do pedido para isso.
 
+// O USER-AGENT NAO E ENFEITE, e foi o que custou a primeira TV real: o fetch
+// do Workers nao manda User-Agent nenhum, e o Trakt responde 403 a requisicao
+// SEM ele — o mesmo 403 que ele daria a um client id errado. Medido com curl:
+// token invalido COM user-agent da 401, o MESMO pedido com `-A ""` da 403.
+const UA = "nuvio-recomendacoes/1 (+https://github.com/iqui27/nuvio-native-legacy)";
+
 async function idTrakt(token, env) {
   const r = await fetch("https://api.trakt.tv/users/settings", {
     headers: {
       authorization: `Bearer ${token}`,
       "trakt-api-version": "2",
       "trakt-api-key": env.TRAKT_CLIENT_ID,
+      "user-agent": UA,
     },
   });
-  if (!r.ok) return null;
+  if (!r.ok) {
+    // O CODIGO DO TRAKT VAI PARA O LOG, e so ele. Sem isto o cliente ve um 401
+    // nosso e nao ha como saber se o token venceu, se o client id e de outro
+    // aplicativo ou se o Trakt estava fora — tres consertos diferentes.
+    console.log(`trakt /users/settings -> ${r.status}`);
+    return null;
+  }
   const d = await r.json();
   const slug = d?.user?.ids?.slug || d?.user?.username;
   if (!slug) return null;
@@ -66,9 +79,13 @@ async function idTrakt(token, env) {
 
 async function idNuvio(token, env) {
   const r = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${token}` },
+    headers: { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${token}`,
+               "user-agent": UA },
   });
-  if (!r.ok) return null;
+  if (!r.ok) {
+    console.log(`supabase /auth/v1/user -> ${r.status}`);
+    return null;
+  }
   const d = await r.json();
   if (!d?.id) return null;
   const nome = d?.user_metadata?.name || d?.user_metadata?.full_name || "";
