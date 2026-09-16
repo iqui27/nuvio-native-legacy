@@ -257,9 +257,21 @@ int perfis_puxar(void) {
         tmp[novos].primario = js_bruto(p, f, "is_primary", b, sizeof b)
                               ? (strcmp(b, "true") == 0) : ((int)idx == 1); }
       { char b[16];
+        // `uses_primary_addons`, NAO `uses_primary_plugins`. Sao DUAS colunas
+        // diferentes no servidor e este campo decide de qual perfil vem a lista
+        // de ADDONS; a de plugins nao existe aqui. Relato do Mane155 que pegou
+        // isto: o perfil 2 dele mostrava "0 addons" no nativo e 3 no app web.
+        // Com uses_primary_addons=true e uses_primary_plugins=false, o web
+        // resolvia para o perfil 1 (e achava as 3) enquanto o nativo pedia pelo
+        // perfil 2, que nao tem linha nenhuma na tabela `addons` — resposta
+        // vazia, sem erro, e a tela de ajustes dizendo zero.
+        // O nome antigo fica como reserva: linha gravada por uma versao que so
+        // conhecia aquela coluna continua sendo lida.
         tmp[novos].usaAddonsDoPrimario =
-          js_bruto(p, f, "uses_primary_plugins", b, sizeof b)
-          ? (strcmp(b, "true") == 0) : 0; }
+          js_bruto(p, f, "uses_primary_addons", b, sizeof b)
+          ? (strcmp(b, "true") == 0)
+          : (js_bruto(p, f, "uses_primary_plugins", b, sizeof b)
+             ? (strcmp(b, "true") == 0) : 0); }
       novos++;
     }
     if (novos > 0) { memcpy(lista, tmp, sizeof lista); n = novos; }
