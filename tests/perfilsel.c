@@ -51,6 +51,10 @@ int dados_gravar(const char *nome, const char *conteudo) {
   if (!f) return 0;
   fputs(conteudo, f); fclose(f); return 1;
 }
+// fileiras.c nao entra neste teste; o perfil so avisa a troca.
+void fil_definir_perfil(int p) { (void)p; }
+// fontepref.c idem: a fonte lembrada tambem e por perfil, e perfis.c so avisa.
+void fontepref_definir_perfil(int p) { (void)p; }
 int dados_apagar(const char *nome) {
   char c[512]; caminho(c, sizeof c, nome); return remove(c) == 0;
 }

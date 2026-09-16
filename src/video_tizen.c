@@ -809,6 +809,10 @@ double video_buffer_fim(void) { return 0; }
 int    video_tocando(void)    { return tocando; }
 int    video_pronto(void)     { return pronto; }
 int    video_ativo(void)      { return ativo; }
+// 1 depois de um onerror do AVPlay na fonte atual. E o mesmo contrato do
+// video.c (webOS): app.c usa isto no watchdog de canal para pular a fonte
+// morta sem esperar o prazo. Sem esta definicao o alvo Tizen nem linkava.
+int    video_falhou(void)     { return houveErro; }
 
 double video_creditos(void) {
   double dur;

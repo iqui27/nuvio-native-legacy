@@ -6,6 +6,11 @@
 //   - "RecordTV Paulista" vs "Record TV" (prefixo depois de normalizar);
 //   - "Canal Sony" vs "SONY" (palavra inutil na variante curta);
 //   - "H2" vs "History 2" (apelido da tabela);
+//   - "Sao.Paulo/SP..Cartoonito.br": id regional — a chave sai depois do "..";
+//   - "TV.Aparecida.(aberta).br": parentese nao entra na chave;
+//   - "SBT Thathi Vale": afiliada herda a rede "sbt" pelo primeiro token;
+//   - "TV Cidade - RecordTV": substring — a chave mais comprida ("recordtv")
+//     vence "record", e a mesma chave em dois canais nao e ambiguidade;
 //   - canal "24h" sem grade nenhuma (nao casa, nunca).
 #include <assert.h>
 #include <stdio.h>
@@ -50,8 +55,13 @@ int main(void) {
     "<?xml version=\"1.0\"?><tv>"
     "<channel id=\"Globo.RJ.br\"><display-name>Globo RJ</display-name></channel>"
     "<channel id=\"Record.TV.br\"><display-name>Record TV</display-name></channel>"
+    "<channel id=\"Record.br\"><display-name>RECORD</display-name></channel>"
+    "<channel id=\"SP..Record.TV.br\"><display-name>Record TV SP</display-name></channel>"
     "<channel id=\"Sony.br\"><display-name>SONY CHANNEL</display-name></channel>"
     "<channel id=\"History.2.br\"><display-name>History 2</display-name></channel>"
+    "<channel id=\"Sao.Paulo/SP..Cartoonito.br\"><display-name>SP  Cartoonito HD</display-name></channel>"
+    "<channel id=\"MG..TV.Aparecida.(aberta).br\"><display-name>MG  TV Aparecida</display-name></channel>"
+    "<channel id=\"SBT.br\"><display-name>SBT</display-name></channel>"
     "<programme channel=\"Globo.RJ.br\" start=\"%s\" stop=\"%s\"><title>Jornal Nacional</title></programme>"
     "<programme channel=\"Globo.RJ.br\" start=\"%s\" stop=\"%s\"><title>Novela &amp; Cia</title></programme>"
     "<programme channel=\"Globo.RJ.br\" start=\"%s\" stop=\"%s\"><title>Filme da Noite</title></programme>"
@@ -79,6 +89,14 @@ int main(void) {
           epg_match("Canal Sony") >= 0);
   confere("H2 casa pelo apelido com History 2",
           epg_match("H2") >= 0);
+  confere("id regional Sao.Paulo/SP..Cartoonito casa",
+          epg_match("Cartoonito") >= 0);
+  confere("parentese do id nao quebra TV Aparecida",
+          epg_match("TV Aparecida") >= 0);
+  confere("afiliada SBT Thathi Vale herda a rede sbt",
+          epg_match("SBT Thathi Vale") >= 0);
+  confere("TV Cidade - RecordTV casa pela chave mais comprida",
+          epg_match("TV Cidade - RecordTV") >= 0);
   confere("canal 24h sem grade nao casa",
           epg_match("Aladdin 24h") < 0);
   confere("agora fora de canal valido devolve 0",

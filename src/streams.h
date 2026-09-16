@@ -33,6 +33,17 @@ typedef struct {
   long tamanhoMB;       // 0 quando desconhecido
   char descricao[2048];
   char arquivo[512];
+  // O QUE O ADDON DECLARA COMO "a mesma fonte" entre episodios:
+  // behaviorHints.bingeGroup, a convencao do Stremio. Quem manda o campo
+  // resolve o casamento entre episodios SEM heuristica nenhuma — e o proprio
+  // addon dizendo "este stream e o mesmo daquele". Vazio e o normal: muitos
+  // addons nao mandam, e fontepref.c cai na assinatura de audio quando falta.
+  //
+  // 128 e folga sobre o que a convencao produz ("torrentio|1080p",
+  // "mediafusion|<servico>|<qualidade>"): sao rotulos de agrupamento, nao
+  // texto livre. Cortado dos dois lados igual continua casando, pelo mesmo
+  // motivo de FONTEPREF_TRILHA.
+  char bingeGroup[128];
   // Stream SEM url, so com o hash do torrent (Torrentio/Comet sem debrid na
   // URL). So entra na lista quando debrid_ativo(); a url e preenchida na
   // verificacao, por debrid_resolver.
@@ -55,6 +66,20 @@ const Stream *stream_item(int i);
 // Indice do stream que o modo automatico escolhe, ou -1 se a lista esta vazia.
 int  stream_automatico(void);
 
+// A FONTE LEMBRADA DESTE TITULO, quando ela existe nesta lista. Quem decide
+// qual e (provedor + trilha de audio) e fontepref.c; aqui ela e um indice que
+// stream_primeira_boa poe NA FRENTE da fila de verificacao, e que a folha
+// marca na tela. -1 desliga.
+//
+// Nao substitui stream_automatico(): a preferida e uma CANDIDATA, verificada
+// como as outras. Sumiu da lista, ou o link nao resolve, e a pontuacao assume
+// sem que ninguem precise escolher nada.
+//
+// A lista nova zera isto (stream_definir_lista): indice da lista de ontem
+// aponta para outra fonte hoje.
+void stream_preferir(int indice);
+int  stream_preferida(void);
+
 // Ha quantos ms a lista chegou. Os links de reproducao dos servicos de debrid
 // sao ASSINADOS E EXPIRAM: usar um link de minutos atras faz o servidor
 // redirecionar para um video de aviso ("This playback link couldn't be
@@ -66,6 +91,19 @@ Uint32 stream_idade_ms(void);
 // para conteudo DE VERDADE, testando ate `tentativas`. -1 se nenhuma serve.
 // BLOQUEIA — chamar de fio proprio.
 int  stream_primeira_boa(int tentativas);
+
+// CANAL AO VIVO: a primeira fonte da lista cuja PLAYLIST tem segmento, com as
+// candidatas conferidas em paralelo. Existe porque a verificacao de filme
+// (stream_primeira_boa) custa um rede_url_final de 10 s por candidata, e porque
+// entregar a primeira sem conferir custava 12 s de watchdog POR FONTE MORTA —
+// medido em quase dois minutos num canal com seis mortas. Ver a nota longa na
+// definicao. Devolve -1 quando nenhuma respondeu com segmento.
+int  stream_canal_primeira_viva(int tentativas);
+
+// Classe da fonte que stream_canal_primeira_viva acabou de escolher:
+// 1 = VIVA (playlist com segmento), 3 = MUDA (nao respondeu a tempo), 0 = nenhuma.
+// Serve para o chamador dar prazo menor a quem ja provou estar ruim.
+int  stream_canal_classe_escolhida(void);
 
 // --- folha de fontes (a lista que sobe por cima do player/detalhe) ---
 void stream_folha_abrir(void);

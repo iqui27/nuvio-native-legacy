@@ -5,15 +5,21 @@
 // Sem uma fonte a parte, o guia de TV mostraria canais sem dizer o que esta
 // passando — que era exatamente o pedido.
 //
-// A fonte e o epgshare01, que republica grades XMLTV gratuitas por regiao. Os
-// arquivos do Brasil sao epg_ripper_BR1.xml.gz e _BR2.xml.gz (~700 KB gzip,
-// ~8 MB XML cada, cobrindo ~3,5 dias). O download acontece UMA vez por
-// sessao num fio proprio, e o XML fica gravado na pasta de dados: na proxima
-// abertura o guia ja tem grade sem tocar na rede.
+// A fonte e o epgshare01, que republica grades XMLTV gratuitas por regiao.
+// Carregamos BR1+BR2 (Brasil, ~700 KB gzip cada) mais PT1/MX1/AR1 (Portugal,
+// Mexico, Argentina) para cobrir canais de addons nao-brasileiros que o dono
+// instale. US/UK ficam de fora: ~6 MB de gzip viram ~60 MB de XML, caro
+// demais para ganho raro. O download acontece UMA vez por sessao num fio
+// proprio, e o XML fica gravado na pasta de dados: na proxima abertura o
+// guia ja tem grade sem tocar na rede.
 //
 // O casamento entre "o canal que o addon anuncia" e "o canal que a grade
 // conhece" e por NOME NORMALIZADO (acento fora, maiuscula fora, sufixos de
 // qualidade fora) com uma tabela de apelidos para os casos que divergem.
+// Alem do exato, ha regras para afiliada regional ("SBT RJ" casa com a rede
+// "sbt" pelo primeiro token; "TV Cidade - RecordTV" por substring unica) —
+// medido no catalogo real: ~40% dos 768 canais tem grade; o resto e loop
+// "24h" sem programacao em nenhuma fonte e fica como "AO VIVO".
 // Canais sem grade real (os "24h" de um filme so, cams de reality, feeds de
 // evento) ficam sem casamento — o guia os mostra como "ao vivo", sem linha de
 // programa. Ver GUIA-EPG.md ou o comentario de epg_match.

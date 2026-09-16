@@ -32,6 +32,7 @@
 #include "text.h"
 #include "tex_cache.h"
 #include "focus.h"
+#include "teclado.h"
 #include "anim.h"
 #include "layout.h"
 #include "ajustes.h"
@@ -103,8 +104,13 @@ static int   temItemFoco = 0;
 static const int KB_COLUNAS[BU_KB_FILEIRAS] = { 6, 6, 6, 6, 6, 6, 3 };
 // Minusculas como no aparelho: o campo mostra o que foi digitado, e uma consulta
 // em caixa alta le como grito. A comparacao ignora caixa de qualquer forma.
-static const char *TECLAS =
-  "abcdefghijklmnopqrstuvwxyz0123456789";   // 36 = 6 fileiras x 6 colunas
+//
+// O ALFABETO MORA EM teclado.c desde que a modal de digitacao existe. Ele
+// estava escrito aqui, e este arquivo era a referencia que o servidor de
+// recomendacoes cita para dizer que o codigo de pareamento e `a-z0-9`
+// (servidor/recomendacoes/src/index.js) — com duas copias, a segunda a ganhar
+// uma letra deixaria um codigo indigitavel numa das duas telas.
+#define TECLAS (teclado_alfabeto())   // 36 = 6 fileiras x 6 colunas
 
 // --- Normalizacao ------------------------------------------------------------
 // Dobra uma letra latina acentuada (segundo byte de uma sequencia UTF-8 iniciada

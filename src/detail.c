@@ -21,6 +21,7 @@
 //      0.8s. O desfoque gaussiano era do app da Apple TV.
 #include "detail.h"
 #include "episodios.h"
+#include "fontepref.h"
 #include "idioma.h"
 #include "badges.h"
 #include "marco.h"
@@ -40,6 +41,8 @@
 #include "anim.h"
 #include "layout.h"
 #include "catalogo.h"
+#include "recomenda.h"
+#include "recenviar.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -916,7 +919,23 @@ static int temInicio(void) {
   { int t0 = 0, e0 = 0, de = 0;
     return episodioAlvo(&t0, &e0, &de) && de == 2; }
 }
-static int nBotoes(void) { return (ehSerie() ? 3 : 4) + (temInicio() ? 1 : 0); }
+// O QUINTO CIRCULAR: "Recomendar a um amigo".
+//
+// SO EXISTE SE O PACOTE TEM O SERVICO. Sem NUVIO_REC_URL compilada,
+// recomenda_ativo() e 0 e o botao nao aparece — a mesma regra do item de menu
+// do cartaz e da aba Social, e pelo mesmo motivo: o dono publica builds sem a
+// URL, e um circular que so da erro e pior que circular nenhum.
+//
+// E so em filme e serie, como o item de menu: canal e evento nao tem IMDb
+// estavel para o amigo abrir do outro lado.
+static int temRecomendar(void) {
+  const CatItem *ci = cat_item(idx);
+  if (!recomenda_ativo() || !ci || !ci->imdb[0]) return 0;
+  return !strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series");
+}
+static int nBotoes(void) {
+  return (ehSerie() ? 3 : 4) + (temInicio() ? 1 : 0) + (temRecomendar() ? 1 : 0);
+}
 
 // Que ACAO esta na posicao `n` da linha. As acoes tem numeros fixos (0
 // primario, 1 lista, 2 assistido, 3 fontes, 4 inicio) porque detail_evento
@@ -925,12 +944,17 @@ static int nBotoes(void) { return (ehSerie() ? 3 : 4) + (temInicio() ? 1 : 0); }
 // "marcar assistido". Quando temInicio, a posicao 1 e o secundario de texto
 // e os circulares escorregam um para a direita.
 enum { ACAO_PRIMARIO = 0, ACAO_LISTA = 1, ACAO_ASSISTIDO = 2, ACAO_FONTES = 3,
-       ACAO_INICIO = 4 };
+       ACAO_INICIO = 4, ACAO_RECOMENDAR = 5 };
 static int acaoEm(int n) {
   if (temInicio()) {
     if (n == 1) return ACAO_INICIO;
     n--;
   }
+  // O RECOMENDAR E O ULTIMO DA LINHA e a conferencia vem ANTES do salto da
+  // serie: com 3 circulares numa serie, a ultima posicao e n == 3, e a regra
+  // de baixo devolveria 4 — que e ACAO_INICIO, o botao de texto. O OK ali
+  // abriria "assistir do comeco" a partir de um circular de enviar.
+  if (temRecomendar() && n == (ehSerie() ? 3 : 4)) return ACAO_RECOMENDAR;
   if (n >= 2 && ehSerie()) return n + 1;   // serie pula o olho
   return n;
 }
@@ -1092,6 +1116,12 @@ void detail_evento(const SDL_Event *e) {
         pedMarcar = 1;
       } else if (acao == ACAO_ASSISTIDO) {
         pedAssistido = 1;
+      } else if (acao == ACAO_RECOMENDAR) {
+        // A MESMA MODAL DO MENU DO CARTAZ, e nao uma segunda copia dela: ver
+        // recenviar.h. Aberta, ela fica acima desta tela no roteador de app.c e
+        // recebe o D-pad ate fechar.
+        const CatItem *ci = cat_item(idx);
+        if (ci) recenviar_abrir(ci);
       } else {
         pedFontes = 1;
       }
@@ -1168,12 +1198,26 @@ void detail_evento(const SDL_Event *e) {
       // a folha so abre de dentro do player. Quem estava na pagina de detalhe —
       // que e onde qualquer um iria procurar — segurava o card e via as fontes.
       const CatEp *ep = cat_episodio(idx, epAbsoluto(foco.coluna));
+      const CatItem *ci = cat_item(idx);
       if (dur >= NV_HOLD_MS && ep)
         episodios_menu_visto(idx, ep->temporada, ep->episodio, ep->nome);
+      else if (ci && fontepref_tem(ci->imdb))
+        // ISSUE #57. O toque curto no card do episodio abria a folha de fontes
+        // SEMPRE — e este e o card em que uma pessoa aperta OK para retomar uma
+        // serie. "Retomar" acabava em "escolha um link de novo", que e a
+        // descricao do relator palavra por palavra.
+        //
+        // Com uma fonte lembrada para este titulo nao ha o que perguntar:
+        // toca, e o roteador manda a lembrada para a frente da fila de
+        // verificacao (app.c). `episodioAlvo` ja devolve ESTE episodio, porque
+        // o foco esta nele.
+        pedReproduzir = 1;
       else
-        // No web e `openEpisodeStreams`. Aqui a folha de fontes ainda e a do
-        // titulo: `stream_folha_abrir()` nao recebe episodio. Melhor abrir a
-        // folha que existe do que nao responder ao OK.
+        // SEM NADA LEMBRADO, O COMPORTAMENTO DE HOJE, INTACTO. No web e
+        // `openEpisodeStreams`; aqui a folha de fontes ainda e a do titulo
+        // (`stream_folha_abrir()` nao recebe episodio). Melhor abrir a folha
+        // que existe do que nao responder ao OK — e, sem preferencia gravada,
+        // abrir a folha e tambem a unica forma de criar uma.
         pedFontes = 1;
     }
     return;
@@ -1566,6 +1610,12 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
       // icone era sempre o mesmo e nao dizia estado nenhum — era so um enfeite
       // que o dono nao conseguia ler ("avisar o que foi visto").
       gfx_icone(ig, progressoDe(idx) >= 90 ? "visto" : "naovisto", ic, ic, ic, a);
+    } else if (icone == ACAO_RECOMENDAR) {
+      // AVIAO DE PAPEL — o mesmo vocabulario dos vizinhos: um PNG de
+      // deploy/app/art/icones com a forma na alpha, desenhado com GFX_MARCA e
+      // colorido daqui. Nao e glifo de fonte e nao e forma montada no shader:
+      // o dono ja recusou os desenhados a mao ("usa SVG reais", ver gfx.h).
+      gfx_icone(ig, "recomendar", ic, ic, ic, a);
     } else {
       gfx_icone(ig, "fontes", ic, ic, ic, a);
     }

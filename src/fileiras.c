@@ -15,6 +15,13 @@ typedef struct {
   int  oculta;
   int  tipo;    // FilTipo
   int  tam;     // FilTam
+  // NA FILA POR ESCOLHA. So quem foi ADICIONADO com a home cheia fica ligado
+  // alem do limite; tudo o mais que passar do limite vira "fora" quando a
+  // folha abre (fil_normalizar). Sem esta marca nao ha como distinguir "a
+  // pessoa pediu e esta esperando vaga" de "sobrou do arquivo antigo" ou de
+  // "o addon declarou hoje e entrou no fim ligado". Vai para o arquivo como
+  // quinto numero, ANTES do titulo; o leitor aceita a linha sem ele.
+  int  fila;
   // SO EM MEMORIA — nao entram no arquivo. Ver o cabecalho de fil_registrar em
   // fileiras.h: o formato gravado tem o titulo no fim da linha e acrescentar
   // campos faria o arquivo de quem ja usa o app ser descartado inteiro.
@@ -28,6 +35,19 @@ typedef struct {
 static Linha linhas[FIL_MAX];
 static int   nLinhas;
 static int   limite = FIL_LIMITE_PADRAO;
+// PERFIL DONO DESTA ESCOLHA. Ate aqui fileirasui.txt era UM por aparelho:
+// quem trocava de perfil na tela "Quem esta assistindo?" herdava a home que o
+// outro arrumou. Agora cada perfil tem o seu (fileirasui-p<N>.txt); 0 e o
+// nome antigo, que continua valendo para quem nunca escolheu perfil e serve de
+// SEMENTE para o primeiro arquivo de cada perfil — ninguem perde a ordem que
+// ja tinha no dia em que a separacao entrou.
+static int   perfil;
+static const char *arquivoDoPerfil(void) {
+  static char nome[48];
+  if (perfil <= 0) return "fileirasui.txt";
+  snprintf(nome, sizeof nome, "fileirasui-p%d.txt", perfil);
+  return nome;
+}
 static int   ordemLocal;      // 1 = a pessoa MOVEU algo; ver fil_tem_ordem
 static int   carregado;
 static int   registroSujo;   // ver fil_gravar_registro
@@ -155,10 +175,10 @@ static void gravar(void) {
   for (i = 0; i < nLinhas && k < cap; i++)
     // Tabulacao e nao espaco: titulo de catalogo tem espaco dentro ("For You -
     // Filme") e a chave do Xperience carrega o id inteiro do addon.
-    k += (size_t)snprintf(txt + k, cap - k, "linha %s\t%d\t%d\t%d\t%s\n",
+    k += (size_t)snprintf(txt + k, cap - k, "linha %s\t%d\t%d\t%d\t%d\t%s\n",
                           linhas[i].chave, linhas[i].oculta, linhas[i].tipo,
-                          linhas[i].tam, linhas[i].titulo);
-  if (k < cap) dados_gravar("fileirasui.txt", txt);
+                          linhas[i].tam, linhas[i].fila, linhas[i].titulo);
+  if (k < cap) dados_gravar(arquivoDoPerfil(), txt);
   free(txt);
   revisao++;
 }
@@ -167,8 +187,12 @@ static void carregar(void) {
   char caminho[600], buf[900];
   FILE *f;
   carregado = 1;
-  if (!dados_caminho(caminho, sizeof caminho, "fileirasui.txt")) return;
+  if (!dados_caminho(caminho, sizeof caminho, arquivoDoPerfil())) return;
   f = fopen(caminho, "r");
+  // Perfil sem arquivo proprio ainda: comeca do arquivo antigo do aparelho,
+  // que e o que a pessoa via ate ontem. A primeira mutacao grava o proprio.
+  if (!f && perfil > 0 && dados_caminho(caminho, sizeof caminho, "fileirasui.txt"))
+    f = fopen(caminho, "r");
   if (!f) return;
   while (fgets(buf, sizeof buf, f)) {
     char *fim = buf + strlen(buf);
@@ -191,6 +215,13 @@ static void carregar(void) {
       }
       if (c < 4) continue;
       memset(&linhas[nLinhas], 0, sizeof linhas[nLinhas]);
+      // QUINTO NUMERO OPCIONAL (fila), antes do titulo. Arquivo antigo nao o
+      // tem, e ai `p` ja e o titulo. Um titulo nunca comeca por "digito+TAB".
+      { char *tab = strchr(p, '\t');
+        if (tab && tab > p && tab - p <= 2 && p[0] >= '0' && p[0] <= '9') {
+          linhas[nLinhas].fila = atoi(p) ? 1 : 0;
+          p = tab + 1;
+        } }
       // -1 e nao 0: "ainda nao sei" e diferente de "vazia". Uma fileira lida do
       // arquivo so ganha contagem quando a home a monta nesta sessao, e mostrar
       // "0 títulos" antes disso acusaria de vazia uma fileira cheia.
@@ -223,11 +254,171 @@ int fil_limite(void) {
   return v;
 }
 
+// As primeiras `limite` linhas LIGADAS, na ordem local, sao a home; as ligadas
+// depois disso sao a FILA (entram sozinhas quando alguem sai); as ocultas estao
+// fora. Ver fil_estado. Devolve, para a linha i, quantas ligadas ha antes dela.
+static int posicaoLigada(int i) {
+  int k, p = 0;
+  for (k = 0; k < i && k < nLinhas; k++) if (!linhas[k].oculta) p++;
+  return p;
+}
+
 void fil_definir_limite(int n) {
   pthread_mutex_lock(&trava);
   garantir();
   n = limita(n, FIL_LIMITE_MIN, FIL_LIMITE_MAX);
-  if (n != limite) { limite = n; gravar(); }
+  if (n != limite) {
+    // LIMITE MENOR: quem ficou de fora VIRA "fora da home", e nao fila. Decisao
+    // do dono ("viram fora da home"): a fila e para quem a pessoa ACABOU de
+    // pedir e nao coube; quem foi empurrado por um limite menor nao pediu
+    // nada, e re-entrar sozinho depois seria a home mudando por conta propria.
+    if (n < limite) {
+      int i, p = 0;
+      for (i = 0; i < nLinhas; i++) {
+        if (linhas[i].oculta) continue;
+        if (p >= n) { linhas[i].oculta = 1; linhas[i].fila = 0; }
+        p++;
+      }
+    }
+    limite = n; gravar();
+  }
+  pthread_mutex_unlock(&trava);
+}
+
+int fil_estado(int i) {
+  int r = FIL_FORA;
+  pthread_mutex_lock(&trava);
+  garantir();
+  if (i >= 0 && i < nLinhas && !linhas[i].oculta)
+    r = posicaoLigada(i) < limite ? FIL_NA_HOME : FIL_NA_FILA;
+  pthread_mutex_unlock(&trava);
+  return r;
+}
+
+int fil_n_na_home(void) {
+  int i, p = 0;
+  pthread_mutex_lock(&trava);
+  garantir();
+  for (i = 0; i < nLinhas; i++) if (!linhas[i].oculta) p++;
+  pthread_mutex_unlock(&trava);
+  return p < limite ? p : limite;
+}
+
+int fil_n_fila(void) {
+  int i, p = 0;
+  pthread_mutex_lock(&trava);
+  garantir();
+  for (i = 0; i < nLinhas; i++) if (!linhas[i].oculta) p++;
+  pthread_mutex_unlock(&trava);
+  return p > limite ? p - limite : 0;
+}
+
+// ADICIONAR A HOME: liga e vai para o FIM do bloco ligado. Se ainda cabe no
+// limite, entra na home; senao entra na fila, atras de quem ja esperava — e
+// sobe sozinha quando alguem for removido, porque a fila e so a ordem. Devolve
+// o indice novo da linha (ela pode ter se movido) e escreve o estado em
+// `estado`. Marca ordemLocal: colocar alguem no fim e uma escolha de posicao.
+int fil_adicionar(int i, int *estado) {
+  int j, ultimo = -1;
+  Linha tmp;
+  pthread_mutex_lock(&trava);
+  garantir();
+  if (i < 0 || i >= nLinhas) { pthread_mutex_unlock(&trava); if (estado) *estado = FIL_FORA; return i; }
+  linhas[i].oculta = 0;
+  for (j = nLinhas - 1; j >= 0; j--) if (!linhas[j].oculta && j != i) { ultimo = j; break; }
+  // Ja esta depois do ultimo ligado: nao ha para onde ir.
+  if (ultimo >= 0 && i < ultimo) {
+    tmp = linhas[i];
+    memmove(&linhas[i], &linhas[i + 1], sizeof(Linha) * (size_t)(ultimo - i));
+    linhas[ultimo] = tmp;
+    i = ultimo;
+    ordemLocal = 1;
+  }
+  linhas[i].fila = posicaoLigada(i) < limite ? 0 : 1;
+  if (estado) *estado = linhas[i].fila ? FIL_NA_FILA : FIL_NA_HOME;
+  gravar();
+  pthread_mutex_unlock(&trava);
+  return i;
+}
+
+// NORMALIZA: ligada alem do limite SEM a marca de fila vira "fora"; ligada
+// dentro do limite perde a marca (ja entrou). Decisao do dono: "o que tiver
+// fora do limite ja colocar no fora da home, para facilitar". Roda quando a
+// folha abre e depois de cada leva de registros — e o que impede o arquivo
+// antigo (100 ligadas, limite 14) de virar uma fila de 86.
+//
+// PROTECAO: linha que a home ESTA desenhando (naHome) nunca e escondida por
+// aqui, mesmo alem do limite — e o caso da "vaga garantida por addon", que a
+// descoberta promove para dentro da janela por conta propria.
+void fil_normalizar(void) {
+  int i, p = 0, mudou = 0;
+  pthread_mutex_lock(&trava);
+  garantir();
+  for (i = 0; i < nLinhas; i++) {
+    if (linhas[i].oculta) continue;
+    if (p < limite) { if (linhas[i].fila) { linhas[i].fila = 0; mudou = 1; } }
+    else if (!linhas[i].fila && !linhas[i].naHome) { linhas[i].oculta = 1; mudou = 1; continue; }
+    p++;
+  }
+  if (mudou) gravar();
+  pthread_mutex_unlock(&trava);
+}
+
+// REMOVER DA HOME: desliga. A posicao fica — se a pessoa religar, volta ao
+// fim do bloco por fil_adicionar. Quem estava na fila sobe por consequencia.
+void fil_remover(int i) {
+  pthread_mutex_lock(&trava);
+  garantir();
+  if (i >= 0 && i < nLinhas && !linhas[i].oculta) { linhas[i].oculta = 1; linhas[i].fila = 0; gravar(); }
+  pthread_mutex_unlock(&trava);
+}
+
+// PODA DE FANTASMAS. Um addon removido da conta deixa os catalogos dele na
+// lista — e na home, ate o proximo login (relato do @rawldon: "ghost
+// entries... only disappear after I sign out and back in"). Chamada quando
+// TODOS os manifestos da volta foram lidos, com os ids e as bases dos addons
+// que existem AGORA: catalogo cuja chave nao comeca por nenhum deles, e que
+// ninguem registrou nesta sessao, e de um addon que ja nao esta na conta.
+//
+// So catalogo: fileira do app e grupo de colecao nao tem addon. So `vista == 0`:
+// o que foi visto nesta sessao esta vivo por definicao, e a dupla condicao
+// protege contra chamar isto cedo demais. Devolve quantas linhas sairam.
+int fil_podar_catalogos(const char *const *ids, const char *const *bases, int n) {
+  int i, w = 0, fora = 0;
+  pthread_mutex_lock(&trava);
+  garantir();
+  for (i = 0; i < nLinhas; i++) {
+    int vivo = 1;
+    if (fil_origem_de(linhas[i].chave) == FIL_ORIGEM_CATALOGO && !linhas[i].vista) {
+      int k;
+      vivo = 0;
+      for (k = 0; k < n && !vivo; k++) {
+        size_t li = ids[k] ? strlen(ids[k]) : 0, lb = bases[k] ? strlen(bases[k]) : 0;
+        if (li && !strncmp(linhas[i].chave, ids[k], li) && linhas[i].chave[li] == '_') vivo = 1;
+        if (lb && !strncmp(linhas[i].chave, bases[k], lb) && linhas[i].chave[lb] == '_') vivo = 1;
+      }
+    }
+    if (vivo) { if (w != i) linhas[w] = linhas[i]; w++; }
+    else fora++;
+  }
+  if (fora) { nLinhas = w; gravar(); }
+  pthread_mutex_unlock(&trava);
+  if (fora) { printf("[fileiras] %d fileira(s) de addon que ja nao existe sairam da lista\n", fora); fflush(stdout); }
+  return fora;
+}
+
+// TROCA DE PERFIL: solta a lista e le o arquivo do perfil novo na proxima
+// consulta. Nao grava nada aqui — o arquivo do perfil que saiu ja esta em dia.
+void fil_definir_perfil(int p) {
+  pthread_mutex_lock(&trava);
+  if (p < 0) p = 0;
+  if (p != perfil) {
+    perfil = p;
+    nLinhas = 0; ordemLocal = 0; limite = FIL_LIMITE_PADRAO;
+    memset(linhas, 0, sizeof linhas);
+    carregado = 0;
+    revisao++;
+  }
   pthread_mutex_unlock(&trava);
 }
 
@@ -250,7 +441,44 @@ void fil_registrar(const char *chave, const char *titulo,
     // Chave nova entra no FIM, nunca no meio: a mesma regra do
     // ensureOrderKeysWithPrefs do web. Catalogo que o addon passou a declarar
     // hoje nao pode empurrar para baixo a fileira que a pessoa deixou no topo.
-    if (nLinhas >= FIL_MAX) { pthread_mutex_unlock(&trava); return; }
+    // TABELA CHEIA: DESPEJA UMA DISPENSAVEL EM VEZ DE RECUSAR A NOVA.
+    //
+    // Recusar em silencio foi um defeito real, medido na C9 em 15/09/2026: a
+    // conta declara 279 catalogos, o arquivo tinha as 192 linhas do teto de
+    // entao, e SEIS fileiras desenhadas na home nao existiam na tela de
+    // fileiras — nao dava para move-las nem para desliga-las. A lista tem de
+    // conter, sempre, o que a pessoa esta vendo; e o proposito dela.
+    //
+    // O QUE PODE SAIR: so entrada que (a) nao esta na home agora, (b) nao foi
+    // vista nesta sessao, e (c) esta com tudo no padrao — ninguem desligou,
+    // nem escolheu forma ou tamanho. Configuracao da pessoa nunca e despejada
+    // por falta de espaco; se so houver linhas configuradas, a nova fica de
+    // fora, mas AGORA COM LOG, que e o que faltava para isto ser diagnosticavel.
+    //
+    // SAI A ULTIMA ELEGIVEL, e nao a primeira: a posicao na tabela carrega a
+    // ordem da home, e tirar do fim e o que menos mexe no que ja esta em cima.
+    if (nLinhas >= FIL_MAX) {
+      int v = -1, k;
+      for (k = nLinhas - 1; k >= 0 && v < 0; k--)
+        if (!linhas[k].naHome && !linhas[k].vista && !linhas[k].oculta &&
+            linhas[k].tipo == FIL_TIPO_AUTO && linhas[k].tam == FIL_TAM_PADRAO)
+          v = k;
+      if (v < 0) {
+        pthread_mutex_unlock(&trava);
+        printf("[fileiras] tabela cheia (%d) e nada dispensavel: \"%s\" ficou "
+               "fora da lista de fileiras\n", FIL_MAX, chave);
+        fflush(stdout);
+        return;
+      }
+      printf("[fileiras] tabela cheia (%d): \"%s\" saiu para \"%s\" entrar\n",
+             FIL_MAX, linhas[v].titulo[0] ? linhas[v].titulo : linhas[v].chave,
+             chave);
+      fflush(stdout);
+      if (v < nLinhas - 1)
+        memmove(&linhas[v], &linhas[v + 1],
+                sizeof(Linha) * (size_t)(nLinhas - 1 - v));
+      nLinhas--;
+    }
     i = nLinhas++;
     memset(&linhas[i], 0, sizeof linhas[i]);
     snprintf(linhas[i].chave, FIL_CHAVE, "%s", chave);
@@ -493,15 +721,18 @@ int fil_mover(int i, int direcao) {
   int j, ret = i;
   pthread_mutex_lock(&trava);
   if (i >= 0 && i < nLinhas) {
-    int dir = direcao > 0 ? 1 : -1, temHome = 0;
-    // LINHA FORA DA HOME E TRANSPARENTE para quem esta nela: trocar com uma
-    // delas mudava a folha sem mudar a home — o "mexi e nada aconteceu" do
-    // relato. A lista so sabe quem esta na home depois da primeira montagem;
-    // sem nenhuma marcada, volta a troca simples de vizinhos.
-    for (j = 0; j < nLinhas; j++) if (linhas[j].naHome) { temHome = 1; break; }
+    int dir = direcao > 0 ? 1 : -1;
+    // LINHA OCULTA E TRANSPARENTE: mover pula por cima dela e troca com a
+    // proxima LIGADA. A regra anterior pulava quem NAO ESTAVA NA HOME
+    // (naHome), e isso quebrou a folha em duas abas: a aba "Na Home" lista as
+    // ligadas, e uma ligada recem-adicionada (ou na fila) ainda tem naHome=0
+    // ate a home remontar — o movimento saltava por cima dela, ou nao
+    // encontrava vizinho nenhum e travava ("clico na fileira e ela trava e
+    // nao mexe, as vezes move so uma"). Na aba, o vizinho visivel e a proxima
+    // ligada; e o que a home tambem entende, porque ela e as primeiras N
+    // ligadas na ordem.
     j = i + dir;
-    if (temHome && linhas[i].naHome)
-      while (j >= 0 && j < nLinhas && !linhas[j].naHome) j += dir;
+    while (j >= 0 && j < nLinhas && linhas[j].oculta) j += dir;
     if (j >= 0 && j < nLinhas) {
       Linha t = linhas[i]; linhas[i] = linhas[j]; linhas[j] = t;
       // A partir do primeiro movimento a ordem local EXISTE e passa a vencer
@@ -561,18 +792,17 @@ int fil_mover_grupo(int i, int direcao) {
   pthread_mutex_lock(&trava);
   garantir();
   if (i >= 0 && i < nLinhas) {
-    int ini, fim, vIni, vFim, b, q, meuVivo = 0, temHome = 0;
+    int ini, fim, vIni, vFim, b, q, meuVivo = 0;
     blocoDe(i, &ini, &fim);
-    for (q = 0; q < nLinhas; q++) if (linhas[q].naHome) { temHome = 1; break; }
-    if (temHome)
-      for (q = ini; q <= fim; q++) if (linhas[q].naHome) { meuVivo = 1; break; }
+    // Mesma regra de fil_mover: bloco "vivo" e bloco com alguma linha LIGADA.
+    for (q = ini; q <= fim; q++) if (!linhas[q].oculta) { meuVivo = 1; break; }
     if (direcao > 0) {
       b = fim + 1;
       if (b >= nLinhas) goto sair;
       blocoDe(b, &vIni, &vFim);
       while (meuVivo) {
         int vivo = 0;
-        for (q = vIni; q <= vFim; q++) if (linhas[q].naHome) { vivo = 1; break; }
+        for (q = vIni; q <= vFim; q++) if (!linhas[q].oculta) { vivo = 1; break; }
         if (vivo) break;
         b = vFim + 1;
         if (b >= nLinhas) goto sair;
@@ -592,7 +822,7 @@ int fil_mover_grupo(int i, int direcao) {
       blocoDe(b, &vIni, &vFim);
       while (meuVivo) {
         int vivo = 0;
-        for (q = vIni; q <= vFim; q++) if (linhas[q].naHome) { vivo = 1; break; }
+        for (q = vIni; q <= vFim; q++) if (!linhas[q].oculta) { vivo = 1; break; }
         if (vivo) break;
         b = vIni - 1;
         if (b < 0) goto sair;
@@ -708,6 +938,13 @@ void fil_esquecer(void) {
 // saiu), mas o teste da tabela cheia precisa de linhas "mortas" de verdade —
 // carregadas do disco, com vista=0, que e o que o resgate procura.
 void fil_teste_recarregar(void) { carregado = 0; }
+// Zera a marca de "vista nesta sessao" de UMA linha. O despejo da tabela cheia
+// so pode tirar quem nao foi vista, e num teste todas acabam de ser
+// registradas — sem esta costura nao da para exercitar o caminho que o defeito
+// da C9 percorreu (linhas antigas, lidas do disco, com vista=0).
+void fil_teste_esquecer_vista(int i) {
+  if (i >= 0 && i < nLinhas) linhas[i].vista = 0;
+}
 #endif
 
 // ORDENA A LISTA POR ADDON: primeiro as fixas do app, depois colecoes, depois

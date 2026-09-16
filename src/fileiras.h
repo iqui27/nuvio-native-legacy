@@ -30,12 +30,24 @@
 // Quantas fileiras a folha dos Ajustes consegue LISTAR para a pessoa ordenar.
 //
 // Era 64 e ficou pequeno quando a cota por addon (descoberta.c) passou a deixar
-// todo addon declarar: nesta conta sao 135 catalogos declarados, e os do addon
-// lido por ultimo — o Bingecat — nao entravam na lista. Ou seja, alem de nao
-// aparecerem na home, eles nao podiam nem ser LIGADOS, que e a outra metade do
-// relato. 192 cobre com folga; cada entrada custa ~300 bytes, entao a folha
-// inteira sai de 19 KB para 58 KB.
-#define FIL_MAX      192
+// todo addon declarar: naquela medicao eram 135 catalogos declarados, e os do
+// addon lido por ultimo — o Bingecat — nao entravam na lista. Ou seja, alem de
+// nao aparecerem na home, eles nao podiam nem ser LIGADOS, que e a outra metade
+// do relato.
+//
+// 192 NAO COBRIU, e o sintoma foi o mesmo com outra cara. Medido na C9 em
+// 15/09/2026: a conta declara 279 catalogos, `fileirasui-p1.txt` tinha exatas
+// 192 linhas (o teto, cheio) e SEIS fileiras que estavam desenhadas na home —
+// In Theaters, Dragon Ball (filme e serie), Evangelion (filme e serie) e Ghost
+// in the Shell — nao existiam na tela de fileiras. Nao dava para move-las nem
+// para desliga-las. O relato do dono foi exatamente esse: "algumas fileiras que
+// aparecem na home sao diferentes das que estao na tela de reordenar".
+//
+// 320 e o teto de hoje (~96 KB de tabela, ~38 KB de arquivo), mas o numero
+// sozinho nunca resolve: o Xperience declara 605 catalogos por conta propria.
+// Por isso fil_registrar passou a DESPEJAR uma entrada dispensavel quando a
+// tabela enche, em vez de recusar a nova em silencio — a regra esta la.
+#define FIL_MAX      320
 #define FIL_CHAVE   192
 #define FIL_TITULO   96
 
@@ -102,7 +114,37 @@ const char *fil_origem_ajuda(int origem);
 
 // --- limite ------------------------------------------------------------------
 int  fil_limite(void);
+// Ao BAIXAR o limite, as ligadas que ficaram alem dele viram "fora da home"
+// (ocultas), nao fila. Decisao do dono; ver o comentario na definicao.
 void fil_definir_limite(int n);
+
+// --- na home, na fila, fora --------------------------------------------------
+// A ORDEM E A FILA. As primeiras `limite` linhas ligadas, na ordem local, sao
+// as que a home monta; as ligadas depois disso estao NA FILA e entram sozinhas
+// quando alguem antes delas e removido; as ocultas estao fora. Nao ha campo
+// novo no arquivo: e a mesma ordem e o mesmo `oculta` de sempre, lidos de
+// outro jeito — e e assim que a fila sobrevive byte a byte ao arquivo antigo.
+typedef enum { FIL_NA_HOME = 0, FIL_NA_FILA, FIL_FORA } FilEstado;
+int  fil_estado(int i);
+int  fil_n_na_home(void);
+int  fil_n_fila(void);
+// Liga e poe no fim do bloco ligado. Devolve o indice NOVO (a linha se move) e
+// escreve em `estado` onde ela caiu — NA_HOME quando coube, NA_FILA quando a
+// home estava cheia. Quem chama mostra "home cheia" nesse caso.
+int  fil_adicionar(int i, int *estado);
+void fil_remover(int i);
+// Ligada alem do limite que NAO foi posta na fila pela pessoa vira "fora".
+// Chamar ao abrir a folha. Ver a definicao para a protecao da vaga garantida.
+void fil_normalizar(void);
+
+// --- perfil e poda -----------------------------------------------------------
+// A escolha e POR PERFIL (fileirasui-p<N>.txt; 0 = o arquivo antigo, que serve
+// de semente ao primeiro arquivo de cada perfil). Chamar na troca de perfil.
+void fil_definir_perfil(int perfil);
+// Tira da lista os catalogos de addons que ja nao estao na conta. `ids` e
+// `bases` sao os ids de manifesto e as URLs base dos addons ATUAIS; so vale
+// depois de todos os manifestos da volta terem sido lidos. Devolve quantas.
+int  fil_podar_catalogos(const char *const *ids, const char *const *bases, int n);
 
 // --- registro das fileiras que EXISTEM --------------------------------------
 // Chamado por quem monta a lista (descoberta.c com os catalogos declarados,

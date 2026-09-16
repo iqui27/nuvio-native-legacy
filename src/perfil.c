@@ -1,9 +1,20 @@
-// Perfil e Stats: relatorio editorial escuro, pensado para leitura a 3 metros.
+// Perfil e Stats: UMA TELA, sem rolagem.
 //
-// A composicao evita uma grade de cards identicos. O resumo e tipografico, o
-// streak e um calendario, generos viram uma faixa proporcional e os titulos
-// mais vistos ganham paineis largos com arte. O acento violeta pertence aos
-// dados, enquanto o foco continua branco como no restante do native legacy.
+// A versao anterior era um documento de 2180px com quatro secoes, ~49 numerais,
+// ~43 cores e sete estilos de texto. A 3 m nada daquilo se lia: tres violetas
+// quase iguais faziam tres trabalhos diferentes, o mesmo par de inteiros
+// aparecia em tres codificacoes (tiles, barra de proporcao e porcentagem) e o
+// unico texto de navegacao da tela estava em 15px, que text.c documenta como
+// tamanho de SELO e nao de leitura.
+//
+// A regra desta tela agora e: ~7 fatos, duas paradas de foco (o calendario e a
+// lista de mais vistos), UM acento de dado (o violeta do streak e das celulas
+// acesas) e o anel de foco no acento do TEMA, como nas outras doze telas do
+// app. O que era terceira codificacao de um numero ja mostrado foi apagado, nao
+// re-estilizado.
+//
+// Sem rolagem nao ha PF_DOC_H, scroll, velScroll, SECAO_Y nem visivel(): todas
+// as coordenadas daqui sao a posicao final na tela de 1080.
 #include "perfil.h"
 #include "idioma.h"
 #include "anim.h"
@@ -18,28 +29,73 @@
 #include <string.h>
 
 #define PF_X             ajustes_conteudo_x()
-#define PF_W            (NV_TELA_W-PF_X-104.0f)
-#define PF_TOPO           62.0f
-#define PF_RESUMO_Y       92.0f
-#define PF_DESTAQUES_Y   500.0f
-#define PF_ATIV_Y       1120.0f
-#define PF_GENEROS_Y    1660.0f
-#define PF_DOC_H        2180.0f
-#define PF_SECOES          4
-#define PF_CARD_W        ((PF_W-PF_CARD_GAP)*.5f)
-#define PF_CARD_H        112.0f
-#define PF_CARD_GAP       28.0f
+#define PF_W            (NV_TELA_W-PF_X-NV_LEGACY_CONTENT_RIGHT)
+
+// BANDA 1: titulo da pagina, na margem de cima como em ajustes.c.
+// BANDA 2: identidade a esquerda e os quatro numeros a direita.
+#define PF_RESUMO_Y      196.0f
+#define PF_AVATAR        108.0f
+#define PF_NUM_N            4
+// BANDA 3: dois cabecalhos de secao e, abaixo, as duas colunas de conteudo.
+#define PF_SECAO_Y       348.0f
+#define PF_CONT_Y        406.0f
+#define PF_DIR_X        (PF_X+PF_W*0.37f)
+#define PF_DIR_W        (PF_W*0.63f)
+
+// Calendario: 42px de celula e 6 linhas cobrem 31 dias com qualquer primeiro
+// dia da semana (31+6 = 37 celulas). Sem numeral dentro: a celula e cor.
+#define PF_CEL            42.0f
+#define PF_CEL_GAP        10.0f
+#define PF_CAL_PAD        28.0f
+#define PF_CAL_LINHAS      6
+#define PF_CAL_TOPO       74.0f   // topo do painel ate a 1a linha de celulas
+#define PF_CAL_W         (PF_CEL*7.0f+PF_CEL_GAP*6.0f+PF_CAL_PAD*2.0f)
+#define PF_CAL_H         (PF_CAL_TOPO+PF_CEL*PF_CAL_LINHAS \
+                          +PF_CEL_GAP*(PF_CAL_LINHAS-1)+PF_CAL_PAD)
+#define PF_CAL_LEG_Y     (PF_CONT_Y+PF_CAL_H+18.0f)
+#define PF_GEN_Y         902.0f
+#define PF_GEN_VIS          4
+
+#define PF_CARD_H        122.0f
+#define PF_CARD_GAP       22.0f
+#define PF_CARD_ARTE_W   160.0f
+#define PF_CARD_ARTE_H    90.0f
+#define PF_CARD_PAD       18.0f
+
 #define PF_AVISO_H        54.0f
 #define PF_AVISO_Y       (NV_TELA_H-PF_AVISO_H-12.0f)
-#define PF_CONTEUDO_H    (PF_AVISO_Y-12.0f)
+// UMA linha de rodape, em posicao FIXA (ajustes.c:2612). Nao quatro dicas que
+// teleportam para a secao em foco.
+#define PF_RODAPE_Y      (PF_AVISO_Y-40.0f)
+#define PF_CONTEUDO_H    (PF_RODAPE_Y-6.0f)
 
-static const float SECAO_Y[PF_SECOES] = {
-  PF_RESUMO_Y, PF_DESTAQUES_Y, PF_ATIV_Y, PF_GENEROS_Y
+#define PF_SECOES          2   // 0 = calendario, 1 = mais vistos
+
+// PALETA DE TEXTO: tres niveis, e so. Os catorze cinzas anteriores colapsavam
+// em cinco faixas perceptuais de qualquer jeito.
+#define PF_FORTE   244
+#define PF_MEDIO   206
+#define PF_FRACO   162
+// ACENTO DE DADO, um so: o numeral do streak e as celulas acesas do calendario.
+// O anel de FOCO nao usa este violeta — usa ajustes_acento(), o acento que a
+// pessoa escolheu, como nas outras telas.
+#define PF_AC_R   0.745f
+#define PF_AC_G   0.435f
+#define PF_AC_B   0.878f
+
+// Quatro matizes SEPARADOS entre si e do violeta da interface. A paleta antiga
+// tinha oito, quatro deles na mesma familia do acento — as pastilhas de genero
+// pareciam quatro vezes a mesma coisa.
+static const uint32_t PALETA[PF_GEN_VIS] = {
+  0x3C9FE8, 0xE8A33C, 0x4FC08D, 0xE8636F
 };
-static const uint32_t PALETA[PERFIL_MAX_GENEROS] = {
-  0xA84BD6, 0x3C9FE8, 0xC57BE3, 0x5CB8F2,
-  0x71338E, 0x235B79, 0xD6A1E8, 0x777780
-};
+
+// COLUNAS DE NUMERO, em fracao de PF_W: x de cada uma e a largura util dela.
+// NAO sao iguais de proposito. Com passo uniforme "39h 44min" em 56px saia
+// truncado como "39h…", e a ultima coluna cortava justamente o "no mês" que e a
+// ressalva do streak. A ultima vai ate a margem direita.
+static const float PF_NUM_FX[PF_NUM_N] = { 0.34f, 0.56f, 0.68f, 0.80f };
+static const float PF_NUM_FW[PF_NUM_N] = { 0.21f, 0.11f, 0.11f, 0.20f };
 
 static PerfilDados dados;
 static int aberto, sair, carregando, temDados;
@@ -53,22 +109,29 @@ static char erro[160];
 #define PF_STALE PERFIL_ESTADO_STALE
 #define PF_ERRO PERFIL_ESTADO_ERRO
 static PerfilEstado estado=PERFIL_ESTADO_CARREGANDO;
-static float entrada, scroll, scrollAlvo, velScroll;
-static float focoSec[PF_SECOES], focoItem[PERFIL_MAX_DESTAQUES];
+static float entrada, focoCal, focoItem[PERFIL_MAX_DESTAQUES];
 
 static int limitar(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
-static float fmax0(float v) { return v > 0.0f ? v : 0.0f; }
 static void rgb(uint32_t c, float *r, float *g, float *b) {
   *r = ((c >> 16) & 255) / 255.0f;
   *g = ((c >> 8) & 255) / 255.0f;
   *b = (c & 255) / 255.0f;
 }
 static void texto(TxtEstilo e, const char *s, int cor, float x, float y, float a) {
-  txt_desenhar_alpha(txt_linha(e, s ? s : "", cor, cor, cor, 255), x, y - scroll, a);
+  txt_desenhar_alpha(txt_linha(e, s ? s : "", cor, cor, cor, 255), x, y, a);
 }
-static void textoC(TxtEstilo e, const char *s, int r, int g, int b,
-                   float x, float y, float a) {
-  txt_desenhar_alpha(txt_linha(e, s ? s : "", r, g, b, 255), x, y - scroll, a);
+static void corta(TxtEstilo e,const char *s,int c,float x,float y,float w,float a) {
+  txt_desenhar_alpha(txt_linha_corta(e,s,c,c,c,255,w),x,y,a);
+}
+// Anel de foco. RAIO EXTERNO = raio da caixa + espessura do anel, senao o canto
+// do anel fica mais quadrado que o da caixa (detail.c:3006). A cor vem do tema.
+static void anel(GfxRect r, float raioPx, float a) {
+  float ar, ag, ab;
+  GfxRect e = { r.x-NV_ANEL_FOCO, r.y-NV_ANEL_FOCO,
+                r.w+NV_ANEL_FOCO*2.0f, r.h+NV_ANEL_FOCO*2.0f };
+  ajustes_acento(&ar, &ag, &ab);
+  gfx_rect(e, 0, GFX_ANEL, 0, NV_ANEL_FOCO/e.h, 0,
+           (raioPx+NV_ANEL_FOCO)/e.h, ar, ag, ab, a);
 }
 static void numero(char *s, size_t n, int v) { snprintf(s, n, "%d", v < 0 ? 0 : v); }
 static void tempo(char *s, size_t n, int minutos) {
@@ -76,13 +139,10 @@ static void tempo(char *s, size_t n, int minutos) {
   if (minutos < 60) snprintf(s, n, "%d min", minutos);
   else snprintf(s, n, "%dh %02dmin", minutos / 60, minutos % 60);
 }
-static void anel(GfxRect r, float raio, float a) {
-  float menor = r.w < r.h ? r.w : r.h;
-  gfx_rect(r, 0, GFX_ANEL, 0, NV_ANEL_FOCO/menor, 0, raio, 0.96f, 0.96f, 0.98f, a);
-}
-static int visivel(float y, float h) { return y+h-scroll>=0 && y-scroll<NV_TELA_H; }
-static void corta(TxtEstilo e,const char *s,int c,float x,float y,float w,float a) {
-  txt_desenhar_alpha(txt_linha_corta(e,s,c,c,c,255,w),x,y-scroll,a);
+// Quantos destaques cabem: a coluna da direita tem altura fixa e nao rola.
+static int nCards(void) {
+  return dados.nDestaques < PERFIL_MAX_DESTAQUES ? dados.nDestaques
+                                                 : PERFIL_MAX_DESTAQUES;
 }
 
 int perfil_iniciar(void) {
@@ -91,15 +151,17 @@ int perfil_iniciar(void) {
   estado = PF_CARREGANDO;
   secao = item = 0; escolhido = -1;
   dia = pedirAtualizar = 0; erro[0] = 0;
-  entrada = scroll = scrollAlvo = velScroll = 0;
-  memset(focoSec, 0, sizeof(focoSec));
+  entrada = focoCal = 0;
   memset(focoItem, 0, sizeof(focoItem));
   return 1;
 }
 void perfil_encerrar(void) { perfil_iniciar(); }
 void perfil_abrir(void) {
-  aberto = 1; sair = 0; escolhido = -1; secao = item = 0;
-  scroll = scrollAlvo = velScroll = 0;
+  // Abre SEMPRE na primeira parada. Consultar `dados` aqui nao serve: a tela e
+  // aberta antes de o snapshot chegar da worker, entao nDias ainda e 0 e o foco
+  // nascia na coluna da direita. Quem corrige o estado impossivel e
+  // perfil_definir_dados, que e quem sabe o que chegou.
+  aberto = 1; sair = 0; escolhido = -1; item = 0; secao = 0;
   pedirAtualizar = 0;
 }
 void perfil_fechar(void) { aberto = 0; sair = 1; }
@@ -127,7 +189,7 @@ int perfil_pediu_atualizar(void) { int p=pedirAtualizar; pedirAtualizar=0; retur
 void perfil_definir_dados(const PerfilDados *d) {
   if (!d) {
     memset(&dados,0,sizeof(dados));temDados=temIdentidade=carregando=0;
-    secao=item=dia=0;scroll=scrollAlvo=velScroll=0;
+    secao=item=dia=0;
     escolhido=-1;erro[0]=0;estado=PERFIL_ESTADO_CARREGANDO;return;
   }
   dados = *d;
@@ -164,8 +226,13 @@ void perfil_definir_dados(const PerfilDados *d) {
   carregando = 0;
   erro[0]=0; estado=temDados?(dados.plays||dados.nDestaques?PF_PRONTO:PERFIL_ESTADO_SEM_ATIVIDADE):PF_ERRO; escolhido=-1;
   dia=limitar(dia,0,dados.nDias?dados.nDias-1:0);
-  if(!temDados){secao=0;scroll=scrollAlvo=velScroll=0;}
-  if (item >= dados.nDestaques) item = dados.nDestaques ? dados.nDestaques - 1 : 0;
+  if(!temDados)secao=0;
+  if (item >= nCards()) item = nCards() ? nCards() - 1 : 0;
+  // Uma parada so existe se tiver filho focavel. Sem calendario o foco cai nos
+  // cards; sem cards ele volta para o calendario. (Na tela antiga as secoes 0 e
+  // 3 nao tinham filho nenhum: focar nelas so mexia um ponto de 14px.)
+  if (secao == 0 && dados.nDias == 0 && nCards() > 0) secao = 1;
+  if (secao == 1 && nCards() == 0) secao = 0;
 }
 
 int perfil_item_selecionado(PerfilDestaque *saida) {
@@ -187,29 +254,29 @@ void perfil_evento(const SDL_Event *e) {
     return;
   }
   if (!temDados) return;
-  // O calendario recebe o D-pad real, com continuidade entre semanas. Sair
-  // pela primeira/ultima semana devolve a navegacao para as secoes.
-  if(secao==2 && dados.nDias>0) {
-    if(k==SDLK_LEFT && dia>0){dia--;return;}
-    if(k==SDLK_RIGHT && dia+1<dados.nDias){dia++;return;}
-    if(k==SDLK_UP && dia>=7){dia-=7;return;}
-    if(k==SDLK_DOWN && dia+7<dados.nDias){dia+=7;return;}
+  // DUAS paradas de verdade, lado a lado: o calendario a esquerda e a lista de
+  // mais vistos a direita. Esquerda/direita troca de coluna quando a coluna
+  // atual acaba; dentro do calendario as setas andam dia a dia, com
+  // continuidade entre semanas.
+  if (secao == 0 && dados.nDias > 0) {
+    if (k==SDLK_LEFT)  { if (dia>0) { dia--; return; } perfil_fechar(); return; }
+    if (k==SDLK_RIGHT) { if (dia+1<dados.nDias) { dia++; return; }
+                         if (nCards()) secao=1; return; }
+    if (k==SDLK_UP)    { if (dia>=7) dia-=7; return; }
+    if (k==SDLK_DOWN)  { if (dia+7<dados.nDias) dia+=7; return; }
+    return;
   }
-  if(secao==1) {
-    if(k==SDLK_LEFT && item%2){item--;return;}
-    if(k==SDLK_RIGHT && !(item%2) && item+1<dados.nDestaques){item++;return;}
-    if(k==SDLK_UP && item>=2){item-=2;return;}
-    if(k==SDLK_DOWN && item+2<dados.nDestaques){item+=2;return;}
+  if (secao == 1) {
+    if (k==SDLK_LEFT)  { if (dados.nDias>0) secao=0; else perfil_fechar(); return; }
+    if (k==SDLK_UP)    { if (item>0) item--; return; }
+    if (k==SDLK_DOWN)  { if (item+1<nCards()) item++; return; }
+    if (k==SDLK_RETURN || k==SDLK_KP_ENTER || k==SDLK_SPACE) {
+      if (nCards() > 0) escolhido = item;
+      return;
+    }
+    return;
   }
-  if (k == SDLK_LEFT && (secao!=1 || item==0)) { perfil_fechar(); return; }
-  if (k == SDLK_UP && secao > 0) secao--;
-  else if (k == SDLK_DOWN && secao < PF_SECOES - 1) {
-    secao++;
-    if(secao==2)dia=0;
-  }
-  else if (secao == 1 && (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE)) {
-    if (dados.nDestaques > 0) escolhido = item;
-  }
+  if (k == SDLK_LEFT) perfil_fechar();
 }
 
 void perfil_atualizar(float dt, Uint32 agora) {
@@ -217,57 +284,72 @@ void perfil_atualizar(float dt, Uint32 agora) {
   int reduzida=ajustes_animacoes_reduzidas();
   entrada = anim_mola(entrada, aberto ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
   if (!aberto && entrada < 0.002f) entrada = 0;
-  float alvo = SECAO_Y[secao] - (secao == 0 ? PF_RESUMO_Y : 120.0f);
-  float maxScroll = fmax0(PF_DOC_H - NV_TELA_H + 54.0f);
-  scrollAlvo = anim_clamp(alvo, 0, maxScroll);
-  scroll = anim_mola2(&velScroll, scroll, scrollAlvo, dt, NV_MOLA2_SCROLL);
-  if(reduzida) { entrada=aberto?1:0;scroll=scrollAlvo;velScroll=0; }
-  for (int i = 0; i < PF_SECOES; i++)
-    focoSec[i] = anim_mola(focoSec[i], i == secao ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
+  focoCal = anim_mola(focoCal, secao == 0 ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
   for (int i = 0; i < PERFIL_MAX_DESTAQUES; i++)
     focoItem[i] = anim_mola(focoItem[i], secao == 1 && i == item ? 1.0f : 0.0f,
                             dt, NV_MOLA_FOCO);
   if(reduzida) {
-    for(int i=0;i<PF_SECOES;i++)focoSec[i]=(i==secao);
+    entrada=aberto?1:0;
+    focoCal=(secao==0);
     for(int i=0;i<PERFIL_MAX_DESTAQUES;i++)focoItem[i]=(secao==1&&i==item);
   }
 }
 
-static void tituloSecao(const char *s, int qual, float y, float a) {
-  float f = focoSec[qual];
-  GfxRect ponto = { PF_X, y + 14 - scroll, 14, 14 };
-  gfx_cor(ponto, .5f, .54f + .12f*f, .24f + .08f*f, .72f + .16f*f, a);
-  if (f > .02f)
-    anel((GfxRect){ponto.x-5,ponto.y-5,ponto.w+10,ponto.h+10},.5f,a*f);
-  texto(TXT_TITULO3, s, 244, PF_X + 28, y, a);
-  if (f > .02f) {
-    const char *ajuda=qual==1?"Setas: títulos  ·  OK: detalhes":
-       qual==2?"Setas: dias  ·  Voltar: menu":"Cima/baixo: seções  ·  Voltar: menu";
-    TxtLinha d = txt_linha(TXT_MINI, ajuda, 185,185,194,255);
-    txt_desenhar_alpha(d, PF_X + PF_W - d.w, y + 11 - scroll, a * f * .72f);
+// Cabecalho de SECAO no padrao da casa: TXT_HEADLINE, sem ponto violeta e sem
+// dica de navegacao pendurada (ajustes.c:2578, detail.c:3115).
+static void tituloSecao(const char *s, float x, float a) {
+  texto(TXT_HEADLINE, s, PF_MEDIO, x, PF_SECAO_Y, a);
+}
+
+static void tituloPagina(float a) {
+  TxtLinha t = txt_linha(TXT_TITULO1, "Perfil e Stats", PF_FORTE, PF_FORTE, PF_FORTE, 255);
+  txt_desenhar_alpha(t, PF_X, NV_MARGEM_Y, a);
+  // O periodo fica AO LADO do titulo, alinhado pela base, como a linha de
+  // contexto dos Ajustes: e rotulo do recorte, nao um dado a mais.
+  if (dados.periodo[0]) {
+    TxtLinha p = txt_linha(TXT_CAPTION, dados.periodo, PF_FRACO, PF_FRACO, PF_FRACO, 255);
+    txt_desenhar_alpha(p, PF_X + PF_W - p.w,
+                       NV_MARGEM_Y + t.h - p.h - 12.0f, a);
   }
 }
 
+// Esqueleto: os MESMOS retangulos, nas MESMAS coordenadas do conteudo real, em
+// NV_COR_ESQUELETO. O anterior punha blocos em 144/214/342 e nada aparecia ali,
+// entao a tela inteira saltava quando o dado chegava.
 static void desenharLoading(Uint32 agora, float a) {
   float pulso = ajustes_animacoes_reduzidas()?.55f:.48f+.12f*sinf((float)agora*.004f);
-  tituloSecao("Perfil e Stats", 0, PF_TOPO, a);
-  gfx_cor((GfxRect){PF_X,144-scroll,510,40},.18f,.18f,.18f,.20f,pulso*a);
-  gfx_cor((GfxRect){PF_X,214-scroll,930,92},.08f,.18f,.18f,.20f,pulso*a);
-  for (int i=0;i<4;i++)
-    gfx_cor((GfxRect){PF_X+i*274,342-scroll,230,58},.15f,.18f,.18f,.20f,pulso*a);
-  gfx_cor((GfxRect){PF_X,PF_ATIV_Y+58-scroll,PF_W*.57f,432},.035f,.18f,.18f,.20f,pulso*a);
-  gfx_cor((GfxRect){PF_X,PF_GENEROS_Y+58-scroll,PF_W,176},.05f,.18f,.18f,.20f,pulso*a);
-  for (int i=0;i<PERFIL_MAX_DESTAQUES;i++) {
-    int col=i%2,lin=i/2;
-    gfx_cor((GfxRect){PF_X+col*(PF_CARD_W+PF_CARD_GAP),
-                      PF_DESTAQUES_Y+62+lin*(PF_CARD_H+PF_CARD_GAP)-scroll,
-                      PF_CARD_W,PF_CARD_H},.035f,.18f,.18f,.20f,pulso*a);
+  float p = pulso * a;
+  #define PF_ESQ(r_,raio_) gfx_cor((r_),(raio_),NV_COR_ESQUELETO_R, \
+                                   NV_COR_ESQUELETO_G,NV_COR_ESQUELETO_B,p)
+  tituloPagina(a);
+  PF_ESQ(((GfxRect){PF_X,PF_RESUMO_Y,PF_AVATAR,PF_AVATAR}), .5f);
+  PF_ESQ(((GfxRect){PF_X+132,PF_RESUMO_Y+4,300,40}), NV_RAIO_BADGE);
+  PF_ESQ(((GfxRect){PF_X+132,PF_RESUMO_Y+54,170,22}), NV_RAIO_BADGE);
+  for (int i=0;i<PF_NUM_N;i++) {
+    float x = PF_X + PF_W*PF_NUM_FX[i], w = PF_W*PF_NUM_FW[i];
+    PF_ESQ(((GfxRect){x,PF_RESUMO_Y-6,w*.62f,58}), NV_RAIO_BADGE);
+    PF_ESQ(((GfxRect){x,PF_RESUMO_Y+66,w*.80f,22}), NV_RAIO_BADGE);
   }
+  PF_ESQ(((GfxRect){PF_X,PF_SECAO_Y+4,240,34}), NV_RAIO_BADGE);
+  PF_ESQ(((GfxRect){PF_DIR_X,PF_SECAO_Y+4,240,34}), NV_RAIO_BADGE);
+  PF_ESQ(((GfxRect){PF_X,PF_CONT_Y,PF_CAL_W,PF_CAL_H}), NV_RAIO_CARD);
+  PF_ESQ(((GfxRect){PF_X,PF_CAL_LEG_Y,PF_CAL_W*.62f,22}), NV_RAIO_BADGE);
+  PF_ESQ(((GfxRect){PF_X,PF_CAL_LEG_Y+NV_LD_CAPTION,PF_CAL_W*.78f,22}), NV_RAIO_BADGE);
+  for (int i=0;i<PF_GEN_VIS;i++) {
+    float gw = PF_W*0.36f*.5f;
+    PF_ESQ(((GfxRect){PF_X+(i%2)*gw,PF_GEN_Y+(i/2)*NV_LD_CAPTION+6,14,14}), NV_RAIO_BADGE);
+    PF_ESQ(((GfxRect){PF_X+(i%2)*gw+26,PF_GEN_Y+(i/2)*NV_LD_CAPTION,gw*.55f,22}), NV_RAIO_BADGE);
+  }
+  for (int i=0;i<PERFIL_MAX_DESTAQUES;i++)
+    PF_ESQ(((GfxRect){PF_DIR_X,PF_CONT_Y+i*(PF_CARD_H+PF_CARD_GAP),
+                      PF_DIR_W,PF_CARD_H}), NV_RAIO_CARD);
+  #undef PF_ESQ
 }
 
 static void desenharVazio(float a) {
   const char *titulo = "Nenhuma reprodução neste período";
   const char *corpo = "Conecte o Trakt e assista a um filme ou episódio. Seu resumo usa somente o histórico disponível.";
+  GfxRect btn={PF_X,452,330,72};
   if (estado == PERFIL_ESTADO_PRIVADO) {
     titulo = "Perfil privado ou histórico não compartilhado";
     corpo = "O Trakt não liberou um histórico público para esta conta.";
@@ -278,199 +360,162 @@ static void desenharVazio(float a) {
     titulo = "Perfil indisponível";
     corpo = erro[0] ? erro : "Não foi possível confirmar este resumo agora.";
   }
-  tituloSecao("Perfil e Stats", 0, PF_TOPO, a);
-  corta(TXT_TITULO2, titulo, 244, PF_X, 248, PF_W, a);
-  txt_bloco(TXT_BODY,
-    corpo,
-    177,179,187, PF_X, 326-scroll, 780, NV_LD_BODY, a, 3);
-  GfxRect btn={PF_X,452-scroll,330,72};
-  gfx_cor(btn,.24f,NV_COR_FOCO_R,NV_COR_FOCO_G,NV_COR_FOCO_B,a);
-  anel(btn,.24f,a);
-  texto(TXT_DET_BOTAO,"OK · Tentar novamente",240,PF_X+24,472,a);
-  texto(TXT_CAPTION,"Voltar retorna ao menu",182,PF_X,554,a);
+  tituloPagina(a);
+  corta(TXT_TITULO2, titulo, PF_FORTE, PF_X, 248, PF_W*.72f, a);
+  txt_bloco(TXT_BODY, corpo, PF_MEDIO, PF_MEDIO, PF_MEDIO,
+            PF_X, 340, 840, NV_LD_BODY, a, 3);
+  gfx_cor(btn,NV_RAIO_PILL,NV_COR_FOCO_R,NV_COR_FOCO_G,NV_COR_FOCO_B,a);
+  anel(btn,btn.h*NV_RAIO_PILL,a);
+  texto(TXT_DET_BOTAO,"OK · Tentar novamente",PF_FORTE,PF_X+28,472,a);
 }
 
+// Banda 2: quem e (esquerda) e os QUATRO numeros que sobraram (direita).
+// Todos no MESMO estilo — antes o total assistido usava TXT_TITULO1 (76), o
+// streak usava TXT_TITULO1 tambem e os contadores TXT_TITULO2 (56), maior que
+// os cabecalhos de secao.
 static void desenharResumo(float a) {
-  if(!visivel(PF_RESUMO_Y,400))return;
   char b[64], t[64];
-  float identidadeX=PF_X+180.0f, identidadeW=PF_W*.40f;
-  float periodoY = PF_RESUMO_Y + 64.0f;
-  float consumoY = PF_RESUMO_Y + 102.0f;
-  tituloSecao("Perfil e Stats", 0, PF_RESUMO_Y, a);
-  { GfxRect av={PF_X,PF_RESUMO_Y+62,140,140};
-    GLuint tx=dados.avatar[0]?tex_obter_larg(dados.avatar,180):0;
-    gfx_cor(av,.5f,.14f,.16f,.19f,a);
-    if(tx){gfx_tex_aspect_atual=tex_aspecto(dados.avatar);gfx_rect(av,tx,GFX_AVATAR,0,0,0,0,1,1,1,a);gfx_tex_aspect_atual=0;}
-    else gfx_icone((GfxRect){PF_X+38,PF_RESUMO_Y+100,64,64},"menu_profile",.82f,.83f,.86f,a);
-  }
-  if (dados.nome[0]) {
-    corta(TXT_TITULO2,dados.nome,246,identidadeX,PF_RESUMO_Y+62,identidadeW,a);
-    if (dados.usuario[0]) {
-      snprintf(b,sizeof(b),"@%s",dados.usuario);
-      corta(TXT_CAPTION,b,183,identidadeX,PF_RESUMO_Y+122,identidadeW,a);
-      periodoY = PF_RESUMO_Y + 170.0f;
-    } else periodoY = PF_RESUMO_Y + 128.0f;
-    consumoY = periodoY + 44.0f;
-  } else if (dados.usuario[0]) {
-    snprintf(b,sizeof(b),"@%s",dados.usuario);
-    corta(TXT_TITULO2,b,246,identidadeX,PF_RESUMO_Y+62,identidadeW,a);
-    periodoY = PF_RESUMO_Y + 128.0f;
-    consumoY = periodoY + 44.0f;
-  }
-  textoC(TXT_CAPTION, dados.periodo[0] ? dados.periodo : "Período não informado",
-         184,112,220, identidadeX, periodoY, a);
-  if (dados.minutos > 0) {
-    tempo(t,sizeof(t),dados.minutos);
-    snprintf(b,sizeof(b),i18n("%s assistidos"),t);
-  } else snprintf(b,sizeof(b),i18n("%d reproduções registradas"),dados.plays);
-  corta(TXT_TITULO1,b,246,identidadeX,consumoY,identidadeW,a);
-  if(dados.aviso[0])corta(TXT_MINI,dados.aviso,183,identidadeX,PF_RESUMO_Y+292,identidadeW,a);
+  const char *rot[PF_NUM_N];
+  char val[PF_NUM_N][64];
+  float ident = PF_X + PF_AVATAR + 24.0f;
 
-  const char *rot[4]={"REPRODUÇÕES","FILMES","EPISÓDIOS","DIAS ATIVOS"};
-  int val[4]={dados.plays,dados.filmes,dados.episodios,dados.diasAtivosMes};
-  float x=PF_X+PF_W*.58f;
-  for(int i=0;i<4;i++) {
-    float xx=x+(i%2)*PF_W*.22f, yy=PF_RESUMO_Y+62+(i/2)*104;
-    numero(b,sizeof(b),val[i]); texto(TXT_TITULO2,b,244,xx,yy,a);
-    textoC(TXT_MINI,rot[i],166,168,178,xx,yy+62,a);
+  { GfxRect av={PF_X,PF_RESUMO_Y,PF_AVATAR,PF_AVATAR};
+    GLuint tx=dados.avatar[0]?tex_obter_larg(dados.avatar,PF_AVATAR+40.0f):0;
+    gfx_cor(av,.5f,NV_COR_ESQUELETO_R,NV_COR_ESQUELETO_G,NV_COR_ESQUELETO_B,a);
+    if(tx){gfx_tex_aspect_atual=tex_aspecto(dados.avatar);
+           gfx_rect(av,tx,GFX_AVATAR,0,0,0,0,1,1,1,a);gfx_tex_aspect_atual=0;}
+    else gfx_icone((GfxRect){PF_X+24,PF_RESUMO_Y+24,60,60},"menu_profile",
+                   .82f,.83f,.86f,a);
   }
-  if(dados.plays>0 && dados.minutos>0) {
-    tempo(t,sizeof(t),(int)((double)dados.minutos/dados.plays+.5));
-    snprintf(b,sizeof(b),i18n("%s por reprodução"),t);
-    corta(TXT_CAPTION,b,193,x,PF_RESUMO_Y+292,PF_W*.42f,a);
+  if (dados.nome[0] || dados.usuario[0]) {
+    float w = PF_X + PF_W*PF_NUM_FX[0] - ident - 24.0f;
+    if (dados.nome[0]) {
+      corta(TXT_HEADLINE,dados.nome,PF_FORTE,ident,PF_RESUMO_Y+16,w,a);
+      if (dados.usuario[0]) {
+        snprintf(b,sizeof(b),"@%s",dados.usuario);
+        corta(TXT_CAPTION,b,PF_FRACO,ident,PF_RESUMO_Y+16+NV_LD_HEADLINE,w,a);
+      }
+    } else {
+      snprintf(b,sizeof(b),"@%s",dados.usuario);
+      corta(TXT_HEADLINE,b,PF_FORTE,ident,PF_RESUMO_Y+16,w,a);
+    }
   }
-  // As contagens representam eventos de reproducao, nao titulos unicos.
-  double total=(double)dados.filmes+dados.episodios;
-  if(total>0) {
-    float w=PF_W*.50f, filmes=w*(float)(dados.filmes/total);
-    gfx_cor((GfxRect){PF_X,PF_RESUMO_Y+316-scroll,w,10},.4f,.23f,.60f,.82f,a);
-    if(filmes>0)gfx_cor((GfxRect){PF_X,PF_RESUMO_Y+316-scroll,filmes,10},.4f,.65f,.30f,.83f,a);
-    snprintf(b,sizeof(b),i18n("Filmes %.0f%%  ·  Episódios %.0f%%"),100*dados.filmes/total,100*dados.episodios/total);
-    corta(TXT_CAPTION,b,201,PF_X,PF_RESUMO_Y+340,w,a);
+
+  if (dados.minutos > 0) { tempo(t,sizeof t,dados.minutos);
+                           snprintf(val[0],sizeof val[0],"%s",t);
+                           rot[0]="assistidos"; }
+  else { numero(val[0],sizeof val[0],dados.plays); rot[0]="reproduções"; }
+  numero(val[1],sizeof val[1],dados.filmes);     rot[1]="filmes";
+  numero(val[2],sizeof val[2],dados.episodios);  rot[2]="episódios";
+  numero(val[3],sizeof val[3],dados.streakAtual);
+  rot[3]=dados.streakCompleto?"dias em sequência":"dias em sequência no mês";
+
+  for (int i=0;i<PF_NUM_N;i++) {
+    float x = PF_X + PF_W*PF_NUM_FX[i], w = PF_W*PF_NUM_FW[i];
+    // O UNICO numeral com acento e o streak — a promessa de "um violeta, e so
+    // em dado" se cumpre aqui e nas celulas acesas do calendario.
+    if (i==3) txt_desenhar_alpha(
+        txt_linha_corta(TXT_TITULO2,val[i],(int)(PF_AC_R*255),(int)(PF_AC_G*255),
+                        (int)(PF_AC_B*255),255,w),x,PF_RESUMO_Y,a);
+    else corta(TXT_TITULO2,val[i],PF_FORTE,x,PF_RESUMO_Y,w,a);
+    corta(TXT_CAPTION,rot[i],PF_FRACO,x,PF_RESUMO_Y+NV_LD_TITULO2,w,a);
   }
 }
 
 static void desenharAtividade(float a) {
-  if(!visivel(PF_ATIV_Y,500))return;
-  tituloSecao("Ritmo de atividade",2,PF_ATIV_Y,a);
-  GfxRect painel={PF_X,PF_ATIV_Y+58-scroll,PF_W*.57f,432};
-  gfx_cor(painel,.045f,.075f,.073f,.085f,.98f*a);
-  static const char *dias[7]={"Dom","Seg","Ter","Qua","Qui","Sex","Sáb"};
-  float x0=PF_X+32, y0=PF_ATIV_Y+110-scroll, cel=44, gap=10;
+  static const char *diasSem[7]={"Dom","Seg","Ter","Qua","Qui","Sex","Sáb"};
+  GfxRect painel={PF_X,PF_CONT_Y,PF_CAL_W,PF_CAL_H};
+  float x0=PF_X+PF_CAL_PAD, y0=PF_CONT_Y+PF_CAL_TOPO;
+  int max=0;
+  char b[96];
+
+  tituloSecao("Ritmo de atividade", PF_X, a);
+  gfx_cor(painel,NV_RAIO_CARD,NV_COR_FOCO_R,NV_COR_FOCO_G,NV_COR_FOCO_B,.34f*a);
   for(int c=0;c<7;c++) {
-    TxtLinha l=txt_linha(TXT_MINI,dias[c],145,147,156,255);
-    txt_desenhar_alpha(l,x0+c*(cel+gap)+(cel-l.w)*.5f,y0-28,a);
+    TxtLinha l=txt_linha(TXT_CAPTION,diasSem[c],PF_FRACO,PF_FRACO,PF_FRACO,255);
+    txt_desenhar_alpha(l,x0+c*(PF_CEL+PF_CEL_GAP)+(PF_CEL-l.w)*.5f,
+                       PF_CONT_Y+PF_CAL_PAD+2.0f,a);
   }
-  int max=0,melhor=0,ultimo=-1;
-  for(int i=0;i<dados.nDias;i++) {
-    if(dados.atividade[i]) ultimo=i;
-    if(dados.atividade[i]>max){max=dados.atividade[i];melhor=i;}
-  }
+  for(int i=0;i<dados.nDias;i++) if(dados.atividade[i]>max) max=dados.atividade[i];
   for(int i=0;i<dados.nDias;i++) {
     int p=dados.primeiroDiaSemana+i, col=p%7, lin=p/7;
-    float q=max?(float)dados.atividade[i]/max:0.0f;
-    GfxRect c={x0+col*(cel+gap),y0+lin*(cel+gap),cel,cel};
-    if(q<=0) gfx_cor(c,.16f,.12f,.12f,.14f,.78f*a);
-    else gfx_cor(c,.16f,.38f+.23f*q,.13f+.13f*q,.52f+.31f*q,a);
-    char nd[8];snprintf(nd,sizeof(nd),"%d",i+1);
-    TxtLinha l=txt_linha(TXT_MINI,nd,242,242,246,255);
-    txt_desenhar_alpha(l,c.x+(c.w-l.w)*.5f,c.y+(c.h-l.h)*.5f,a);
-    if(secao==2 && i==dia)anel((GfxRect){c.x-3,c.y-3,c.w+6,c.h+6},.20f,a);
+    GfxRect c={x0+col*(PF_CEL+PF_CEL_GAP),y0+lin*(PF_CEL+PF_CEL_GAP),PF_CEL,PF_CEL};
+    if(lin>=PF_CAL_LINHAS) break;
+    // DUAS intensidades, nao cinco. O comentario da versao anterior ja admitia
+    // que cinco tons de violeta nao se distinguem a 3 m — e mesmo assim havia
+    // uma legenda de cinco quadradinhos para explica-los.
+    if(!dados.atividade[i])
+      gfx_cor(c,NV_RAIO_BADGE,NV_COR_FOCO_R,NV_COR_FOCO_G,NV_COR_FOCO_B,.80f*a);
+    else if(max>1 && dados.atividade[i]*2<=max)
+      gfx_cor(c,NV_RAIO_BADGE,PF_AC_R,PF_AC_G,PF_AC_B,.52f*a);
+    else
+      gfx_cor(c,NV_RAIO_BADGE,PF_AC_R,PF_AC_G,PF_AC_B,a);
+    if(i==dia && focoCal>.02f) anel(c,PF_CEL*NV_RAIO_BADGE,a*focoCal);
   }
-  char b[96];
   if(dados.nDias)snprintf(b,sizeof(b),i18n("Dia %d: %u reproduções"),dia+1,dados.atividade[dia]);
   else snprintf(b,sizeof(b),"Atividade diária indisponível");
-  corta(TXT_CAPTION,b,226,PF_X+32,PF_ATIV_Y+450,painel.w-64,a);
-  // Legenda separada do calendario: leitura numerica continua acessivel sem
-  // depender de distinguir cinco tons de violeta na tela.
-  float lx=PF_X+454;
-  texto(TXT_CAPTION,"Reproduções",205,lx,PF_ATIV_Y+106,a);
-  for(int i=0;i<5;i++) {
-    float q=i/4.0f;
-    gfx_cor((GfxRect){lx+i*38,PF_ATIV_Y+150-scroll,28,28},.18f,
-             i?.38f+.23f*q:.12f,i?.13f+.13f*q:.12f,i?.52f+.31f*q:.14f,a);
-  }
-  snprintf(b,sizeof(b),i18n("0 a %d por dia"),max);
-  corta(TXT_MINI,b,184,lx,PF_ATIV_Y+196,painel.w-480,a);
-  if(dados.atividade[melhor]){
-    snprintf(b,sizeof(b),i18n("Pico: %d reproduções no dia %d"),max,melhor+1);
-    corta(TXT_CAPTION,b,219,lx,PF_ATIV_Y+276,painel.w-480,a);
-  }
-  if(ultimo>=0) {
-    snprintf(b,sizeof(b),i18n("Última atividade: dia %d"),ultimo+1);
-    corta(TXT_CAPTION,b,193,lx,PF_ATIV_Y+326,painel.w-480,a);
-  }
-  float rx=PF_X+PF_W*.63f;
-  numero(b,sizeof(b),dados.streakAtual); textoC(TXT_TITULO1,b,190,111,224,rx,PF_ATIV_Y+76,a);
-  corta(TXT_CALLOUT,dados.streakCompleto?"dias em sequência":"dias em sequência no mês",220,rx,PF_ATIV_Y+148,PF_W*.37f,a);
+  corta(TXT_CAPTION,b,PF_MEDIO,PF_X,PF_CAL_LEG_Y,PF_CAL_W,a);
   snprintf(b,sizeof(b),i18n("%d de %d dias ativos no mês"),dados.diasAtivosMes,dados.nDias);
-  corta(TXT_BODY,b,203,rx,PF_ATIV_Y+218,PF_W*.37f,a);
-  if(dados.anoCompleto){
-    snprintf(b,sizeof(b),i18n("%d dias ativos no ano"),dados.diasAtivosAno);
-    corta(TXT_CAPTION,b,185,rx,PF_ATIV_Y+278,PF_W*.37f,a);
-  } else corta(TXT_CAPTION,"Cobertura: período selecionado",185,rx,PF_ATIV_Y+278,PF_W*.37f,a);
+  corta(TXT_CAPTION,b,PF_FRACO,PF_X,PF_CAL_LEG_Y+NV_LD_CAPTION,PF_CAL_W,a);
 }
 
+// Generos: SO as pastilhas, em duas linhas de duas. A faixa proporcional de
+// oito cores que ficava acima delas dizia a mesma coisa pior, e quatro das oito
+// cores eram o mesmo violeta da interface.
 static void desenharGeneros(float a) {
-  if(!visivel(PF_GENEROS_Y,280))return;
-  tituloSecao("Seu mapa de gêneros",3,PF_GENEROS_Y,a);
-  if(!dados.nGeneros) { texto(TXT_BODY,"Os gêneros aparecem conforme o histórico cresce.",170,
-                              PF_X,PF_GENEROS_Y+78,a); return; }
-  double total=0; for(int i=0;i<dados.nGeneros;i++) total+=dados.generos[i].quantidade;
-  if(total<1) total=1;
-  float x=PF_X,y=PF_GENEROS_Y+92-scroll;
-  for(int i=0;i<dados.nGeneros;i++) {
-    float w=PF_W*((float)dados.generos[i].quantidade/total),r,g,b;
-    rgb(dados.generos[i].cor?dados.generos[i].cor:PALETA[i],&r,&g,&b);
-    if(w>2)gfx_cor((GfxRect){x,y,w-2,30},.12f,r,g,b,a); x+=w;
-  }
-  x=PF_X;
-  for(int i=0;i<dados.nGeneros;i++) {
-    float w=PF_W/4,xx=PF_X+(i%4)*w,yy=PF_GENEROS_Y+148+(i/4)*52;
-    float r,g,b;rgb(dados.generos[i].cor?dados.generos[i].cor:PALETA[i],&r,&g,&b);
-    gfx_cor((GfxRect){xx,yy+7-scroll,14,14},.5f,r,g,b,a);
-    char rot[64];snprintf(rot,sizeof(rot),"%s · %d",dados.generos[i].nome,dados.generos[i].quantidade);
-    corta(TXT_CAPTION,rot,219,xx+26,yy,w-42,a);
+  int n = dados.nGeneros < PF_GEN_VIS ? dados.nGeneros : PF_GEN_VIS;
+  float w = PF_W*0.36f*.5f;
+  if (!n) return;
+  for (int i=0;i<n;i++) {
+    float r,g,bl;
+    float xx=PF_X+(i%2)*w, yy=PF_GEN_Y+(i/2)*NV_LD_CAPTION;
+    char rot[80];
+    rgb(dados.generos[i].cor?dados.generos[i].cor:PALETA[i],&r,&g,&bl);
+    gfx_cor((GfxRect){xx,yy+6,14,14},NV_RAIO_BADGE,r,g,bl,a);
+    snprintf(rot,sizeof(rot),"%s · %d",dados.generos[i].nome,dados.generos[i].quantidade);
+    corta(TXT_CAPTION,rot,PF_MEDIO,xx+26,yy,w-46,a);
   }
 }
 
 static void desenharDestaques(float a) {
-  if(!visivel(PF_DESTAQUES_Y,520))return;
-  tituloSecao("Mais vistos",1,PF_DESTAQUES_Y,a);
-  if(!dados.nDestaques) { texto(TXT_BODY,"Nenhum destaque neste período.",170,
-                                PF_X,PF_DESTAQUES_Y+78,a); return; }
-  gfx_recorte(PF_X-12,0,PF_W+24,PF_CONTEUDO_H);
-  for(int i=0;i<dados.nDestaques;i++) {
-    int col=i%2,lin=i/2;
-    float f=focoItem[i], x=PF_X+col*(PF_CARD_W+PF_CARD_GAP);
-    float docY=PF_DESTAQUES_Y+62+lin*(PF_CARD_H+PF_CARD_GAP);
-    float y=docY-scroll;
-    if(y+PF_CARD_H<0 || y>PF_CONTEUDO_H) continue;
-    float lift=f*NV_FOCO_LIFT;
-    GfxRect r={x,y-lift,PF_CARD_W,PF_CARD_H};
-    if(f>.02f) {
-      GfxRect s={r.x-18,r.y+10,r.w+36,r.h+26};
-      gfx_rect(s,0,GFX_SOMBRA,f,0,0,.05f,0,0,0,NV_SOMBRA_ALFA*a*f);
-    }
-    gfx_cor(r,.045f,.045f,.075f,.085f,a);
-    const char *art=dados.destaques[i].backdrop[0]?dados.destaques[i].backdrop:dados.destaques[i].poster;
-    GfxRect mini={r.x+18,r.y+11,168,90};
-    GLuint tx=art[0]?tex_obter_larg(art,mini.w):0;
-    if(tx){gfx_tex_aspect_atual=tex_aspecto(art);gfx_rect(mini,tx,GFX_CARD,f,0,0,.045f,1,1,1,a);gfx_tex_aspect_atual=0;}
-    else gfx_cor(mini,.045f,.14f,.14f,.16f,a);
-    char rank[12],meta[80],linha[112]; snprintf(rank,sizeof(rank),"#%d",i+1);
-    textoC(TXT_CALLOUT,rank,189,112,220,r.x+204,docY-lift+15,a*.90f);
-    corta(TXT_TITULO3,dados.destaques[i].titulo,246,r.x+250,docY-lift+8,r.w-270,a);
-    corta(TXT_CAPTION,dados.destaques[i].detalhe,216,r.x+204,docY-lift+66,r.w-222,a);
-    if(dados.destaques[i].minutos>0) {
-      tempo(meta,sizeof(meta),dados.destaques[i].minutos);
-      snprintf(linha,sizeof(linha),i18n("%d reproduções  ·  %s"),dados.destaques[i].plays,meta);
-    } else snprintf(linha,sizeof(linha),i18n("%d reproduções"),dados.destaques[i].plays);
-    corta(TXT_CAPTION,linha,194,r.x+204,docY-lift+91,r.w-222,a);
-    if(secao==1 && item==i)anel((GfxRect){r.x-NV_ANEL_FOCO,r.y-NV_ANEL_FOCO,
-                              r.w+NV_ANEL_FOCO*2,r.h+NV_ANEL_FOCO*2},.047f,a);
+  int n = nCards();
+  tituloSecao("Mais vistos", PF_DIR_X, a);
+  if(!n) { texto(TXT_BODY,"Nenhum destaque neste período.",PF_FRACO,
+                 PF_DIR_X,PF_CONT_Y+8,a); return; }
+  for(int i=0;i<n;i++) {
+    float f=focoItem[i];
+    GfxRect r={PF_DIR_X,PF_CONT_Y+i*(PF_CARD_H+PF_CARD_GAP),PF_DIR_W,PF_CARD_H};
+    float raio=NV_RAIO_CARD*(r.w<r.h?r.w:r.h);
+    float tx0=r.x+PF_CARD_PAD+PF_CARD_ARTE_W+NV_HOME_TEXT_GUTTER;
+    float tw=r.x+r.w-PF_CARD_PAD-tx0;
+    GfxRect mini={r.x+PF_CARD_PAD,r.y+(PF_CARD_H-PF_CARD_ARTE_H)*.5f,
+                  PF_CARD_ARTE_W,PF_CARD_ARTE_H};
+    const char *art=dados.destaques[i].backdrop[0]?dados.destaques[i].backdrop
+                                                  :dados.destaques[i].poster;
+    GLuint tex=art[0]?tex_obter_larg(art,mini.w):0;
+    char linha[200];
+    // FOCO EM SUPERFICIE: a pilula escura acende e o anel entra JUNTO, os dois
+    // pelo mesmo f. Antes o card subia numa mola e o anel aparecia de uma vez.
+    gfx_cor(r,NV_RAIO_CARD,NV_COR_FOCO_R,NV_COR_FOCO_G,NV_COR_FOCO_B,(.34f+.66f*f)*a);
+    if(f>.02f) anel(r,raio,a*f);
+    if(tex){gfx_tex_aspect_atual=tex_aspecto(art);
+            gfx_rect(mini,tex,GFX_CARD,f,0,0,NV_RAIO_CARD,1,1,1,a);
+            gfx_tex_aspect_atual=0;}
+    else gfx_cor(mini,NV_RAIO_CARD,NV_COR_ESQUELETO_R,NV_COR_ESQUELETO_G,
+                 NV_COR_ESQUELETO_B,a);
+    corta(TXT_CALLOUT,dados.destaques[i].titulo,PF_FORTE,tx0,r.y+30,tw,a);
+    // UMA linha de apoio, nao duas encavaladas (as duas anteriores ficavam a 25px
+    // uma da outra contra NV_LD_CAPTION 29 — entrelinha NEGATIVA — e a de baixo
+    // ainda estourava o card). O "#N" do ranking saiu: a ordem da lista JA e a
+    // posicao. A duracao saiu junto: ela e plays x runtime, o mesmo numero ao
+    // lado outra vez, e era o que fazia a linha precisar de corte.
+    snprintf(linha,sizeof linha,i18n("%d reproduções"),dados.destaques[i].plays);
+    if(dados.destaques[i].detalhe[0]) {
+      char junto[240];
+      snprintf(junto,sizeof junto,"%s  ·  %s",dados.destaques[i].detalhe,linha);
+      corta(TXT_CAPTION,junto,PF_FRACO,tx0,r.y+30+NV_LD_CALLOUT,tw,a);
+    } else corta(TXT_CAPTION,linha,PF_FRACO,tx0,r.y+30+NV_LD_CALLOUT,tw,a);
   }
-  gfx_sem_recorte();
 }
 
 void perfil_desenhar(Uint32 agora) {
@@ -478,13 +523,29 @@ void perfil_desenhar(Uint32 agora) {
   float a=entrada;
   gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,
           NV_COR_FUNDO_R,NV_COR_FUNDO_G,NV_COR_FUNDO_B,a);
+  // UM recorte, aberto aqui e fechado aqui. A versao anterior chamava
+  // gfx_sem_recorte() no fim dos destaques, o que DESLIGA a tesoura em vez de
+  // devolver o recorte externo — so nao dava defeito porque era o ultimo
+  // desenho da tela.
   gfx_recorte(0,0,NV_TELA_W,PF_CONTEUDO_H);
   if(carregando && !temDados) desenharLoading(agora,a);
   else if(!temDados) desenharVazio(a);
   else {
-    desenharResumo(a); desenharAtividade(a); desenharGeneros(a); desenharDestaques(a);
+    tituloPagina(a);
+    desenharResumo(a);
+    desenharAtividade(a);
+    desenharGeneros(a);
+    desenharDestaques(a);
   }
   gfx_sem_recorte();
+
+  if (temDados)
+    texto(TXT_CAPTION,"Setas: navegar  ·  OK: abrir  ·  Voltar: menu",
+          PF_FRACO,PF_X,PF_RODAPE_Y,a);
+  else
+    texto(TXT_CAPTION,"OK: tentar de novo  ·  Voltar: menu",
+          PF_FRACO,PF_X,PF_RODAPE_Y,a);
+
   char avisoBuf[320];
   const char *aviso=NULL;
   if(erro[0]){
@@ -494,8 +555,9 @@ void perfil_desenhar(Uint32 agora) {
   } else if(carregando)aviso="Atualizando histórico sem interromper o conteúdo anterior…";
   else aviso=dados.aviso[0]?dados.aviso:dados.parcial?"Histórico parcial: os totais consideram somente os registros carregados.":NULL;
   if(aviso){
-    gfx_cor((GfxRect){PF_X,PF_AVISO_Y,PF_W,PF_AVISO_H},.15f,.13f,.11f,.16f,.97f*a);
-    TxtLinha l=txt_linha_corta(TXT_CAPTION,aviso,226,217,235,255,PF_W-40);
-    txt_desenhar_alpha(l,PF_X+20,PF_AVISO_Y+14,a);
+    gfx_cor((GfxRect){PF_X,PF_AVISO_Y,PF_W,PF_AVISO_H},NV_RAIO_CARD,
+            NV_COR_FOCO_R,NV_COR_FOCO_G,NV_COR_FOCO_B,.92f*a);
+    TxtLinha l=txt_linha_corta(TXT_CAPTION,aviso,PF_MEDIO,PF_MEDIO,PF_MEDIO,255,PF_W-40);
+    txt_desenhar_alpha(l,PF_X+20,PF_AVISO_Y+(PF_AVISO_H-l.h)*.5f,a);
   }
 }

@@ -49,7 +49,8 @@
 // mais codigo do que juntar e separar.
 EM_JS(char *, nv_http, (const char *metodo, const char *url, const char *cabs,
                         const char *corpo, int *tam, int *status,
-                        char *urlFinal, int urlFinalTam), {
+                        char *urlFinal, int urlFinalTam,
+                        char *etag, int etagTam), {
   var m = UTF8ToString(metodo), u = UTF8ToString(url);
   var xhr = new XMLHttpRequest();
   try {
@@ -75,6 +76,12 @@ EM_JS(char *, nv_http, (const char *metodo, const char *url, const char *cabs,
   if (status) HEAP32[status >> 2] = xhr.status;
   if (urlFinal && urlFinalTam > 0) {
     stringToUTF8(xhr.responseURL || "", urlFinal, urlFinalTam);
+  }
+  // Cabecalho de RESPOSTA, para rede_baixar_etag. getResponseHeader devolve
+  // null quando o servidor nao mandou o cabecalho (ou quando o CORS o esconde);
+  // nos dois casos a string vazia e a resposta certa para quem chama.
+  if (etag && etagTam > 0) {
+    stringToUTF8(xhr.getResponseHeader("etag") || "", etag, etagTam);
   }
 
   var s = xhr.responseText || "";
@@ -111,15 +118,17 @@ static char *juntarCabs(const char *const *cab, const char *extra) {
 static void (*aviso401)(const char *url);
 void rede_avisar_401(void (*f)(const char *url)) { aviso401 = f; }
 
-static char *pedir(const char *metodo, const char *url, const char *const *cab,
-                   const char *extraCab, const char *corpo,
-                   long *tam, int *status) {
+static char *pedir2(const char *metodo, const char *url, const char *const *cab,
+                    const char *extraCab, const char *corpo,
+                    long *tam, int *status, char *etag, unsigned tamEtag) {
   char *cabs, *corpoResp;
   int n = 0, http = 0;
+  if (etag && tamEtag) etag[0] = 0;
   if (status) *status = 0;
   if (!url || !*url) return NULL;
   cabs = juntarCabs(cab, extraCab);
-  corpoResp = nv_http(metodo, url, cabs, corpo, &n, &http, NULL, 0);
+  corpoResp = nv_http(metodo, url, cabs, corpo, &n, &http, NULL, 0,
+                      etag, (int)tamEtag);
   free(cabs);
   if (status) *status = http;
   if (http == 401 && aviso401) aviso401(url);
@@ -152,6 +161,18 @@ static char *pedir(const char *metodo, const char *url, const char *const *cab,
   }
   if (tam) *tam = n;
   return corpoResp;
+}
+
+static char *pedir(const char *metodo, const char *url, const char *const *cab,
+                   const char *extraCab, const char *corpo,
+                   long *tam, int *status) {
+  return pedir2(metodo, url, cab, extraCab, corpo, tam, status, NULL, 0);
+}
+
+char *rede_baixar_etag(const char *url, int segundos, const char *const *cab,
+                       int *status, char *etag, unsigned tamEtag) {
+  (void)segundos;
+  return pedir2("GET", url, cab, NULL, NULL, NULL, status, etag, tamEtag);
 }
 
 char *rede_baixar(const char *url, int segundos) {
@@ -238,7 +259,7 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
   // mas honram Range.
   cab[0] = "Range: bytes=0-64"; cab[1] = NULL;
   cabs = juntarCabs(cab, NULL);
-  corpo = nv_http("GET", url, cabs, NULL, &n, &http, dst, (int)tam);
+  corpo = nv_http("GET", url, cabs, NULL, &n, &http, dst, (int)tam, NULL, 0);
   free(cabs);
   free(corpo);
   return dst[0] ? 1 : 0;
@@ -270,6 +291,9 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
 #define OPT_CUSTOMREQUEST   10036
 // CURLINFO_RESPONSE_CODE = CURLINFO_LONG (0x200000) + 2.
 #define INFO_RESPONSE_CODE   2097154
+// Cabecalhos de RESPOSTA. So rede_baixar_etag os pede; ver a nota la.
+#define OPT_HEADERFUNCTION  20079
+#define OPT_HEADERDATA      10029
 
 // Ouvinte unico dos 401 — ver rede_avisar_401 no cabecalho. (O ramo
 // Emscripten tem a sua propria definicao, porque os dois lados do #ifdef
@@ -328,7 +352,30 @@ typedef struct { char *p; size_t n; } Balde;
 static char *rede_baixar_interno(const char *url, int segundos, long *tam,
                                  const char *const *cab);
 static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
-                                  const char *const *cab, int *status);
+                                  const char *const *cab, int *status,
+                                  char *etag, unsigned tamEtag);
+
+// Onde o ETag da resposta e anotado, quando alguem o pediu.
+typedef struct { char *dst; unsigned tam; } CacaCab;
+
+// A libcurl entrega UMA linha de cabecalho por chamada, com o CRLF no fim. So
+// o ETag interessa; devolver menos bytes do que recebeu abortaria a
+// transferencia, entao o retorno e sempre o tamanho inteiro.
+static size_t receberCab(void *dados, size_t tam, size_t qtd, void *u) {
+  CacaCab *c = (CacaCab *)u;
+  const char *s = (const char *)dados;
+  size_t bytes = tam * qtd, n;
+  if (c && c->dst && c->tam > 1 && bytes > 5 && !strncasecmp(s, "etag:", 5)) {
+    s += 5; bytes -= 5;
+    while (bytes && (*s == ' ' || *s == '\t')) { s++; bytes--; }
+    while (bytes && (s[bytes - 1] == '\r' || s[bytes - 1] == '\n' ||
+                     s[bytes - 1] == ' ')) bytes--;
+    n = bytes < (size_t)c->tam - 1 ? bytes : (size_t)c->tam - 1;
+    memcpy(c->dst, s, n);
+    c->dst[n] = 0;
+  }
+  return tam * qtd;
+}
 
 // Teto opcional de bytes para a proxima transferencia; 0 = sem teto. Existe
 // porque servidor que IGNORA o cabecalho Range responde 200 com o arquivo
@@ -511,24 +558,42 @@ char *rede_baixar_com(const char *url, int segundos, const char *const *cab) {
 
 char *rede_baixar_st(const char *url, int segundos, const char *const *cab,
                      int *status) {
-  return rede_baixar_interno2(url, segundos, NULL, cab, status);
+  return rede_baixar_interno2(url, segundos, NULL, cab, status, NULL, 0);
+}
+
+char *rede_baixar_etag(const char *url, int segundos, const char *const *cab,
+                       int *status, char *etag, unsigned tamEtag) {
+  return rede_baixar_interno2(url, segundos, NULL, cab, status, etag, tamEtag);
 }
 
 static char *rede_baixar_interno(const char *url, int segundos, long *tam,
                                  const char *const *cab) {
-  return rede_baixar_interno2(url, segundos, tam, cab, NULL);
+  return rede_baixar_interno2(url, segundos, tam, cab, NULL, NULL, 0);
 }
 
 static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
-                                  const char *const *cab, int *status) {
+                                  const char *const *cab, int *status,
+                                  char *etag, unsigned tamEtag) {
   Balde b = { NULL, 0 };
+  CacaCab caca;
   void *c, *lista = NULL;
   int r;
+  caca.dst = (etag && tamEtag > 1) ? etag : NULL;
+  caca.tam = tamEtag;
+  if (etag && tamEtag) etag[0] = 0;
   if (status) *status = 0;
   if (!url || !*url || !abrir()) return NULL;
   c = pegarHandle();
   if (!c) return NULL;
   curl_setopt(c, OPT_URL, url);
+  // SO QUANDO ALGUEM PEDIU. O handle e reusado por fio (pegarHandle) e
+  // curl_easy_reset limpa as opcoes entre pedidos, entao deixar o recebedor
+  // instalado aqui nao respinga no pedido seguinte do mesmo fio — mas tambem
+  // nao ha por que pagar uma chamada por cabecalho em todo download de imagem.
+  if (caca.dst) {
+    curl_setopt(c, OPT_HEADERFUNCTION, receberCab);
+    curl_setopt(c, OPT_HEADERDATA, &caca);
+  }
   curl_setopt(c, OPT_WRITEFUNCTION, receber);
   curl_setopt(c, OPT_WRITEDATA, &b);
   curl_setopt(c, OPT_FOLLOWLOCATION, (long)1);

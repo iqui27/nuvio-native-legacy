@@ -104,6 +104,11 @@ int   ajustes_meta_externo(void);            // preferExternalMetaAddonDetail
 int   ajustes_expandir_poster(void);         // focusedPosterBackdropExpandEnabled
 float ajustes_expandir_poster_atraso(void);  // em segundos
 int   ajustes_navegacao_horizontal_rapida(void); // fastHorizontalNavigationEnabled
+// 1 = desenhar o anel colorido no cartaz em foco da Home. Desligado, o foco
+// continua dito pelo TAMANHO do cartaz e pela animacao; o que sai e so a borda.
+// Opcao LOCAL: o app oficial nao tem equivalente, entao ela nao vem nem vai no
+// blob da conta (ver a nota de salvosDestino em CHAVE[]).
+int   ajustes_borda_foco(void);
 
 // --- LAYOUT: profundidade dos cartoes ---------------------------------------
 int   ajustes_profundidade(void);            // cardDepthEnabled

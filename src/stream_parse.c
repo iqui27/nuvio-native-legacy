@@ -53,6 +53,26 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
       js_texto(p, fim, "description", s.descricao, sizeof s.descricao);
       js_texto(p, fim, "title", titulo, sizeof titulo);
       js_texto(p, fim, "filename", s.arquivo, sizeof s.arquivo);
+      // behaviorHints.bingeGroup — ANCORADO NO OBJETO, e nao procurado solto.
+      //
+      // Duas coisas separadas, e as duas custam uma linha:
+      //
+      // 1. `bh < fim` E O QUE IMPORTA DE VERDADE. strstr varre ate o fim do
+      //    documento, nao ate o fim DESTE stream: sem a guarda, uma fonte que
+      //    nao manda behaviorHints herdaria o bingeGroup da fonte SEGUINTE do
+      //    array — e herdaria calada, com o sintoma sendo o app lembrar da
+      //    fonte errada no episodio seguinte. Mesma guarda que o
+      //    "clientResolve" logo acima ja usa, e pelo mesmo motivo.
+      // 2. js_texto_raiz_em le so as chaves de PROFUNDIDADE 1 de
+      //    behaviorHints. behaviorHints tem objeto dentro dele
+      //    (proxyHeaders.request/response, com nomes de cabecalho que o addon
+      //    escolhe), e a regra da casa para chave aninhada de Stremio esta em
+      //    js.h: procurar solto pega a primeira ocorrencia, que nem sempre e a
+      //    que se quer. Nas respostas que deu para inspecionar aqui o js_texto
+      //    solto daria o mesmo resultado; ancorar e seguro de graca.
+      { const char *bh = strstr(p, "\"behaviorHints\"");
+        if (bh && bh < fim)
+          js_texto_raiz_em(bh, fim, "bingeGroup", s.bingeGroup, sizeof s.bingeGroup); }
       if (!s.descricao[0]) snprintf(s.descricao, sizeof s.descricao, "%s", titulo);
       if (!s.rotulo[0]) snprintf(s.rotulo, sizeof s.rotulo, "%s", provedor);
       snprintf(s.provedor, sizeof s.provedor, "%s", provedor);

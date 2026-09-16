@@ -96,6 +96,17 @@ int main(int argc, char **argv) {
   fil_registrar("akashi_movie_anime", "Anime", "Akashi", "movie", 30);
   fil_registrar("mdblist_movie_oscar", "Vencedores do Oscar", "MDBList", "movie", 15);
   fil_registrar("sem.nome_movie_x", "", "", "", -1);
+  // Mais catalogos do que o limite (7): os que passam ficam NA FILA. E dois
+  // removidos, para a aba "Fora da Home" ter o que agrupar por addon.
+  fil_registrar("xperience_movie_acao", "Ação", "Xperience", "movie", 12);
+  fil_registrar("xperience_movie_terror", "Terror", "Xperience", "movie", 12);
+  fil_registrar("xperience_series_animes", "Animes", "Xperience", "series", 12);
+  fil_registrar("aiostreams_movie_top", "Top 100", "AIOStreams", "movie", 12);
+  fil_registrar("akashi_series_dorama", "Doramas", "Akashi", "series", 12);
+  fil_registrar("akashi_movie_bollywood", "Bollywood", "Akashi", "movie", 12);
+  fil_remover(7);   // Anime
+  fil_remover(9);   // sem nome
+  fil_remover(12);  // Animes
 
   ajustes_iniciar();
 
@@ -127,6 +138,27 @@ int main(int argc, char **argv) {
   tecla(SDLK_RIGHT);
   tecla(SDLK_RIGHT);
   snprintf(nome, sizeof nome, "%s-fileiras-catalogo.bmp", saida);
+  captura(nome, w);
+
+  // A FILA: desce ate depois do separador.
+  for (i = 0; i < 7; i++) tecla(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-fileiras-fila.bmp", saida);
+  captura(nome, w);
+
+  // ABA "FORA DA HOME": sobe ate a barra, direita troca a aba, desce na lista.
+  for (i = 0; i < 12; i++) tecla(SDLK_UP);
+  tecla(SDLK_RIGHT);
+  tecla(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-fileiras-fora.bmp", saida);
+  captura(nome, w);
+
+  // OK adiciona: com a home cheia, entra na fila e a tela avisa.
+  tecla(SDLK_RETURN);
+  snprintf(nome, sizeof nome, "%s-fileiras-adicionada.bmp", saida);
+  captura(nome, w);
+  // Desce ate o ULTIMO botao ("Atualizar tudo"): tem de ser alcancavel.
+  for (i = 0; i < 12; i++) tecla(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-fileiras-botao.bmp", saida);
   captura(nome, w);
 
   tex_encerrar();

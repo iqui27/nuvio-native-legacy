@@ -1,0 +1,17 @@
+name = "nuvio-recomendacoes"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "nuvio-recomendacoes"
+database_id = "fbea4764-9125-474e-ae4e-875d2e21b2fc"
+
+# Limpeza da retencao de 90 dias.
+[triggers]
+crons = ["17 4 * * *"]
+
+# Segredos (nao vao aqui; use `wrangler secret put`):
+#   TRAKT_CLIENT_ID     client id do aplicativo no Trakt
+#   SUPABASE_URL        url do projeto Supabase do Nuvio (so para verificar o token)
+#   SUPABASE_ANON_KEY   anon key do mesmo projeto

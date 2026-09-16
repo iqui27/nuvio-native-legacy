@@ -295,6 +295,80 @@ int main(void) {
   gif_parar();                     // duas vezes seguidas nao pode reclamar
   puts("ok  fora do Tizen gif_textura devolve 0 e gif_parar e inofensiva");
 
+  // M) O FATIAMENTO (#49). Achar os quadros nao basta: o Tizen agora anima
+  //    pedindo ao navegador UM QUADRO POR VEZ, e para isso cada quadro tem de
+  //    voltar a ser um GIF completo — mesmo cabecalho, mesma tela logica,
+  //    mesma paleta global, mais o bloco de imagem dele.
+  { GifQuadro q[8];
+    unsigned char saida[4096];
+    size_t prec;
+    int n;
+
+    cabecalho("GIF89a", 1);
+    controleGrafico(); quadro(0);
+    controleGrafico(); quadro(1);
+    fim();
+    n = gif_mapear(buf, nbuf, q, 8);
+    assert(n == 2);
+    // O atraso sai do controle grafico: 10 centesimos sao 100 ms.
+    assert(q[0].atraso == 100 && q[1].atraso == 100);
+    assert(q[0].descarte == 0 && q[1].descarte == 0);
+    assert(q[0].esq == 0 && q[0].topo == 0 && q[0].larg == 2 && q[0].alt == 2);
+    // O SEGUNDO QUADRO TEM PALETA LOCAL, e ela esta DENTRO da faixa fatiada:
+    // remontar sem ela daria um quadro com as cores de outro.
+    assert(q[1].fim - q[1].ini > q[0].fim - q[0].ini);
+
+    prec = gif_montar(buf, nbuf, &q[1], NULL, 0);
+    assert(prec > 0 && prec <= sizeof saida);
+    assert(gif_montar(buf, nbuf, &q[1], saida, sizeof saida) == prec);
+    assert(!memcmp(saida, "GIF89a", 6));
+    assert(saida[prec - 1] == 0x3B);
+    // O resultado tem de ser lido de volta como um GIF de UM quadro so, com o
+    // mesmo atraso e o mesmo retangulo — e um quadro so nao e animacao.
+    { GifQuadro so1[4];
+      assert(gif_mapear(saida, prec, so1, 4) == 1);
+      assert(so1[0].atraso == q[1].atraso);
+      assert(so1[0].larg == q[1].larg && so1[0].alt == q[1].alt); }
+    // Buffer curto nao escreve pela metade: devolve 0 e nao toca em nada.
+    assert(gif_montar(buf, nbuf, &q[1], saida, prec - 1) == 0);
+    puts("ok  fatiamento acha os quadros e remonta um quadro sozinho");
+
+    // Sem controle grafico nenhum o quadro ainda precisa de um passo: 100 ms,
+    // que e o que o navegador usa quando o GIF nao diz nada.
+    cabecalho("GIF89a", 1);
+    quadro(0); quadro(0);
+    fim();
+    n = gif_mapear(buf, nbuf, q, 8);
+    assert(n == 2 && q[0].atraso == 100 && q[0].descarte == 0);
+
+    // METODO DE DESCARTE 2 (limpa a area do quadro antes do proximo) e atraso
+    // de 3 centesimos. Sem ler o descarte, GIF de quadro parcial vira sujeira
+    // acumulada na tela.
+    cabecalho("GIF89a", 1);
+    b1(0x21); b1(0xF9); b1(4); b1(2 << 2); b2(3); b1(0x00); b1(0x00);
+    quadro(0);
+    fim();
+    n = gif_mapear(buf, nbuf, q, 8);
+    assert(n == 1 && q[0].descarte == 2 && q[0].atraso == 30);
+
+    // ATRASO DE 1 CENTESIMO VIRA 100 ms, que e o que todo navegador faz com os
+    // GIF antigos gravados com 0 ou 1. Sem isto o quadro trocaria a cada volta
+    // do laco de desenho.
+    cabecalho("GIF89a", 1);
+    b1(0x21); b1(0xF9); b1(4); b1(0x00); b2(1); b1(0x00); b1(0x00);
+    quadro(0);
+    fim();
+    n = gif_mapear(buf, nbuf, q, 8);
+    assert(n == 1 && q[0].atraso == 100);
+
+    // O que nem chega a ser GIF nao vira quadro nenhum, e sem parametro
+    // invalido derrubar nada.
+    assert(gif_mapear(NULL, 0, q, 8) == 0);
+    assert(gif_mapear(buf, nbuf, q, 0) == 0);
+    assert(gif_mapear((const unsigned char *)"nao e gif de jeito nenhum", 25, q, 8) == 0);
+    assert(gif_montar(buf, nbuf, NULL, NULL, 0) == 0);
+    puts("ok  atraso, descarte e limites do fatiamento"); }
+
   remove(CAMINHO);
   puts("gif: tudo ok");
   return 0;

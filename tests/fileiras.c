@@ -30,6 +30,7 @@ char *dados_caminho(char *dst, unsigned tam, const char *nome) {
   return dst;
 }
 void fil_teste_recarregar(void);
+void fil_teste_esquecer_vista(int i);
 
 // A ordem que a HOME desenha: fixas primeiro, catalogo depois.
 static const char *DA_HOME[] = { "continuar", "amigos", "catA", "catB", "catC" };
@@ -332,16 +333,168 @@ int main(void) {
   fil_registrar("vivoA", "A", "Cinemeta", "movie", 4);
   fil_registrar("fantasma", "G", "AICat", "movie", 4);
   fil_registrar("vivoB", "B", "Cinemeta", "movie", 4);
+  fil_remover(1);                   // a fantasma esta OCULTA: e ela que e transparente
   { const char *home[] = { "vivoA", "vivoB" };
     fil_espelhar_ordem(home, NULL, 2);
-    assert(fil_mover(0, 1) == 2);   // A passa pelo fantasma e para depois de B
+    assert(fil_mover(0, 1) == 2);   // A passa pela oculta e para depois de B
     { const char *ordem[] = { "vivoB", "fantasma", "vivoA" };
       conferir("vivo pulou a fantasma", ordem, 3); }
     // E a home reflete: A depois de B.
     { int ord[8], q = fil_unir(home, 2, ord, 8);
       assert(q == 2);
       assert(!strcmp(home[ord[0]], "vivoB") && !strcmp(home[ord[1]], "vivoA")); } }
-  puts("ok  mover pula linha fora da home");
+  puts("ok  mover pula linha oculta");
+
+  // MOVER ENTRE LIGADAS QUE A HOME AINDA NAO MONTOU (recem-adicionada, na
+  // fila): o vizinho e a proxima ligada, e nao "a proxima que a home ja tem".
+  fil_esquecer();
+  fil_registrar("h1", "H1", "X", "movie", 4);
+  fil_registrar("h2", "H2", "X", "movie", 4);
+  fil_registrar("nova", "Nova", "Y", "movie", 4);
+  { const char *home[] = { "h1", "h2" };
+    fil_espelhar_ordem(home, NULL, 2);         // nova: ligada, naHome=0
+    assert(fil_mover(1, 1) == 2);              // h2 troca com nova, nao trava
+    assert(!strcmp(fil_chave(1), "nova") && !strcmp(fil_chave(2), "h2"));
+    assert(fil_mover(2, -1) == 1);             // e volta
+    assert(fil_mover(1, -1) == 0);             // e sobe de novo, sem travar
+  }
+  puts("ok  mover entre ligadas que a home ainda nao montou");
+
+  // NA HOME / NA FILA / FORA, E A FILA E SO A ORDEM. Limite 4 (o minimo e 3),
+  // seis ligadas: as quatro primeiras estao na home, as duas seguintes na fila,
+  // e remover uma da home faz a primeira da fila subir SEM ninguem mexer nela.
+  fil_esquecer();
+  fil_definir_limite(4);
+  { int j;
+    const char *n[] = { "a", "b", "c", "d", "e", "f", "g" };
+    for (j = 0; j < 7; j++) fil_registrar(n[j], n[j], "X", "movie", 1);
+    fil_remover(6);                       // g fora
+    assert(fil_estado(0) == FIL_NA_HOME && fil_estado(3) == FIL_NA_HOME);
+    assert(fil_estado(4) == FIL_NA_FILA && fil_estado(5) == FIL_NA_FILA);
+    assert(fil_estado(6) == FIL_FORA);
+    assert(fil_n_na_home() == 4 && fil_n_fila() == 2);
+    fil_remover(1);                       // b sai da home
+    assert(fil_estado(4) == FIL_NA_HOME); // e subiu sozinha
+    assert(fil_estado(5) == FIL_NA_FILA);
+    assert(fil_n_fila() == 1);
+    // ADICIONAR com a home cheia: vai para o FIM do bloco ligado, na fila,
+    // atras de quem ja esperava — e o chamador fica sabendo.
+    { int est = -1, novo = fil_adicionar(1, &est);   // b volta
+      int pf = -1, pb = -1;
+      assert(est == FIL_NA_FILA);
+      assert(!strcmp(fil_chave(novo), "b"));
+      for (j = 0; j < fil_n(); j++) { if (!strcmp(fil_chave(j), "f")) pf = j; if (!strcmp(fil_chave(j), "b")) pb = j; }
+      assert(pf < pb); }                  // f esperava antes: continua na frente
+    assert(fil_n_fila() == 2);
+    // LIMITE QUE BAIXA: quem ficou alem vira FORA, nao fila.
+    fil_definir_limite(4);                // sem mudanca: nada acontece
+    assert(fil_n_fila() == 2);
+    fil_definir_limite(3);
+    assert(fil_n_na_home() == 3 && fil_n_fila() == 0);
+    { int ocultas = 0; for (j = 0; j < fil_n(); j++) if (fil_linha_oculta(j)) ocultas++;
+      assert(ocultas == 4); } }           // g, e as tres empurradas
+  puts("ok  fila: e a ordem; remover promove; limite menor manda para fora");
+
+  // NORMALIZAR: ligada alem do limite SEM marca de fila vira fora; a que a
+  // pessoa pos na fila fica; a que a home desenha (naHome) fica.
+  fil_esquecer();
+  fil_definir_limite(3);
+  { int j, est = -1;
+    const char *n[] = { "a", "b", "c", "d", "e", "f" };
+    for (j = 0; j < 6; j++) fil_registrar(n[j], n[j], "X", "movie", 1);
+    // e: a home desenhou (vaga garantida) — espelha como na home
+    { const char *home[] = { "a", "b", "c", "e" }; fil_espelhar_ordem(home, NULL, 4); }
+    // f: pedida pela pessoa com a home cheia
+    { int pf = -1; for (j = 0; j < fil_n(); j++) if (!strcmp(fil_chave(j), "f")) pf = j;
+      fil_adicionar(pf, &est); assert(est == FIL_NA_FILA); }
+    fil_normalizar();
+    for (j = 0; j < fil_n(); j++) {
+      const char *k = fil_chave(j);
+      if (!strcmp(k, "d")) assert(fil_linha_oculta(j));           // sobrou: fora
+      if (!strcmp(k, "e")) assert(!fil_linha_oculta(j));          // na home: fica
+      if (!strcmp(k, "f")) assert(!fil_linha_oculta(j) && fil_estado(j) == FIL_NA_FILA);
+    } }
+  puts("ok  normalizar: so a fila pedida fica alem do limite");
+
+  // PODA: catalogo de addon que sumiu da conta sai; o resto fica.
+  fil_esquecer();
+  { int j;
+    const char *ids[] = { "addonvivo" }; const char *bases[] = { "https://vivo.example" };
+    // Nada visto == tudo candidato; mas so catalogo de addon ausente cai.
+    // Antes: simula linha lida do disco (vista=0) para o fantasma.
+    usaArquivo = 1;
+    { FILE *f = fopen("/tmp/fileirasui.txt", "w");
+      fprintf(f, "limite 7\nordem 0\n");
+      fprintf(f, "linha addonvivo_movie_top\t0\t0\t1\tTop\n");
+      fprintf(f, "linha addonmorto_movie_top\t0\t0\t1\tFantasma\n");
+      fprintf(f, "linha continue_watching\t0\t0\t1\tContinuar\n");
+      fprintf(f, "linha collection_x\t0\t0\t1\tColecao\n");
+      fclose(f); }
+    fil_teste_recarregar();
+    assert(fil_n() == 4);
+    // O vivo foi VISTO nesta sessao; o fantasma nao. So o fantasma cai.
+    fil_registrar("addonvivo_movie_top", "Top", "Vivo", "movie", 5);
+    assert(fil_podar_catalogos(ids, bases, 1) == 1);
+    assert(fil_n() == 3);
+    for (j = 0; j < fil_n(); j++) assert(strcmp(fil_chave(j), "addonmorto_movie_top") != 0);
+    // Chamar de novo nao tira mais nada.
+    assert(fil_podar_catalogos(ids, bases, 1) == 0);
+    usaArquivo = 0; }
+  puts("ok  poda: catalogo de addon removido sai, app e colecao ficam");
+
+  // TABELA CHEIA: o que a home desenha TEM de caber na lista.
+  //
+  // O defeito medido na C9: 279 catalogos declarados contra um teto de 192, e
+  // seis fileiras desenhadas na home que nao existiam na tela de fileiras —
+  // sem como mover nem desligar. fil_registrar recusava em silencio.
+  fil_esquecer();
+  { int j;
+    char ch[32];
+    for (j = 0; j < FIL_MAX; j++) {
+      snprintf(ch, sizeof ch, "enche_%d", j);
+      fil_registrar(ch, ch, "X", "movie", 1);
+    }
+    assert(fil_n() == FIL_MAX);
+    // Ninguem foi visto nem esta na home: a ultima e dispensavel e sai.
+    for (j = 0; j < FIL_MAX; j++) fil_teste_esquecer_vista(j);
+    fil_registrar("chegou_depois", "Chegou depois", "Y", "movie", 3);
+    assert(fil_n() == FIL_MAX);
+    assert(!strcmp(fil_chave(FIL_MAX - 1), "chegou_depois"));
+    // A DE CIMA NAO SE MEXE: o despejo sai do fim, nao do topo.
+    assert(!strcmp(fil_chave(0), "enche_0"));
+    // Quem esta na home nao pode ser despejado. Marca a ultima como desenhada
+    // e confere que a vitima passa a ser a anterior.
+    { const char *home[1];
+      home[0] = fil_chave(FIL_MAX - 1);
+      fil_espelhar_ordem(home, NULL, 1);
+      for (j = 0; j < FIL_MAX - 1; j++) fil_teste_esquecer_vista(j);
+      fil_registrar("mais_uma", "Mais uma", "Y", "movie", 3);
+      assert(fil_n() == FIL_MAX);
+      assert(!strcmp(fil_chave(FIL_MAX - 1), "mais_uma"));
+      // "chegou_depois" continua na lista: ela estava na home.
+      { int achou = 0;
+        for (j = 0; j < fil_n(); j++)
+          if (!strcmp(fil_chave(j), "chegou_depois")) achou = 1;
+        assert(achou); } } }
+  puts("ok  tabela cheia despeja dispensavel e mantem o que esta na home");
+
+  // E CONFIGURACAO DA PESSOA NAO E DESPEJADA POR FALTA DE ESPACO: com todas as
+  // linhas desligadas (que e escolha dela), a nova fica de fora — mas o log
+  // diz, que era o que faltava.
+  fil_esquecer();
+  { int j;
+    char ch[32];
+    for (j = 0; j < FIL_MAX; j++) {
+      snprintf(ch, sizeof ch, "cfg_%d", j);
+      fil_registrar(ch, ch, "X", "movie", 1);
+      fil_remover(j);                 // desliga: e escolha da pessoa
+      fil_teste_esquecer_vista(j);
+    }
+    assert(fil_n() == FIL_MAX);
+    fil_registrar("nao_cabe", "Nao cabe", "Y", "movie", 3);
+    assert(fil_n() == FIL_MAX);
+    for (j = 0; j < fil_n(); j++) assert(strcmp(fil_chave(j), "nao_cabe") != 0); }
+  puts("ok  tabela cheia nao despeja o que a pessoa configurou");
 
   puts("fileiras: tudo ok");
   return 0;

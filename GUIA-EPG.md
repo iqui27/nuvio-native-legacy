@@ -9,21 +9,27 @@ por que cada decisão é assim.
 
 | Dado | De onde |
 |------|---------|
-| Canais, logo, descrição, categoria (`genre`) | catálogo do addon de canal (hoje o FrostView TV, `froststream-channels`), lido por inteiro com paginação `skip=N` — `guia.c`/`lerPagina`. As fontes vêm das fileiras montadas E da sonda de manifestos (`sondaManifestos`), que varre `catalogs[]` de cada addon ativo — a home tem teto de 16 fileiras, então um catálogo de canal fora do corte não pode deixar o guia sem dados |
-| O que está passando (agora/a seguir) | XMLTV do epgshare01 (`epg_ripper_BR1.xml.gz` + `_BR2.xml.gz`, ~3,5 dias de grade em português) — `epg.c` |
+| Canais, logo, descrição, categoria (`genre`) | catálogos de **qualquer addon de canais** — `ehCanal()` aceita `channel`, `tv`, `channels`, `live` e `iptv`; metas cujo `type` não é desses são ignorados. Lidos por inteiro com paginação `skip=N` — `guia.c`/`lerPagina`. As fontes vêm das fileiras montadas E da sonda de manifestos (`sondaManifestos`), que varre `catalogs[]` de cada addon ativo — a home tem teto de 16 fileiras, então um catálogo de canal fora do corte não pode deixar o guia sem dados |
+| O que está passando (agora/a seguir) | XMLTV do epgshare01: `epg_ripper_BR1/BR2` (Brasil) mais `PT1`/`MX1`/`AR1` (Portugal, México, Argentina) para canais de addons de outras regiões. US/UK ficam de fora — ~60 MB de XML descomprimido por ganho raro — `epg.c` |
 | Favoritos | `guia-fav.txt` na pasta de dados, um id por linha. Arquivo próprio porque `SalvoItem.id` tem 24 bytes e os ids do FrostView têm ~45 |
 
 ## O casamento nome → grade
 
 O addon anuncia "Globo RJ HD", a grade conhece `globo.br`. O casamento é por
-nome normalizado (minúscula, sem acento, sem sufixo de qualidade/país) com
-três passos em `epg_match`: forma do id do canal da grade, nome normalizado e
-a tabela `ALIAS` para os que divergem (RecordTV Paulista → Record TV,
-Canal Sony → Sony Channel, H2 → History 2…).
+nome normalizado (minúscula, sem acento, sem sufixo de qualidade/país) em
+passos em `epg_match`: exato, `ALIAS` (RecordTV Paulista → Record TV, H2 →
+History 2, TV União → Record TV…), prefixo, substring de chave mais longa
+única ("TV Cidade - RecordTV" → `recordtv`), e primeiro token para afiliadas
+("SBT Thathi Vale" → `sbt`). Entradas regionais no XMLTV
+(`São.Paulo/SP..Cartoonito.br`) têm a chave extraída depois do `..` —
+`wChavePorId` —, senão o prefixo da cidade vira parte do nome e nada casa.
+Duplicatas do mesmo canal na grade (várias regiões) não contam como
+ambiguidade.
 
-Canais sem grade real — os "24h" de um filme só, cams de reality, feeds de
-evento (DAZN, PPV) — não casam e se mostram como "AO VIVO", sem programa
-inventado.
+Medido no catálogo real do FrostView: **~40% dos 768 canais casam** (311);
+o teto da fonte BR é esse — o resto é loop "24h", cam de reality, feed de
+evento (DAZN, PPV) ou canal sem cobertura XMLTV, e se mostra como "AO VIVO"
+sem programa inventado.
 
 ## Atualização
 

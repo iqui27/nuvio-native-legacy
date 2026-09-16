@@ -18,6 +18,7 @@
 #include "ajustes.h"
 #include "catalogo.h"
 #include "colecoes.h"
+#include "addons.h"   /* addons_nome_por_id: o addon de um grupo de colecoes */
 #include "gif.h"
 #include "badges.h"
 #include "extras.h"
@@ -491,17 +492,26 @@ static void desenhaProfundidade(GfxRect card, float raio, int ligadaAqui) {
   float borda = ajustes_profundidade_borda();
   float brilho = ajustes_profundidade_brilho();
   float cobertura = ajustes_profundidade_cobertura();
+  // OS DOIS SAO DEGRADE, e nao retangulo chapado — foi a queixa do dono:
+  // "se ativar o brilho do card ele so coloca uma barra grossa no topo, fica
+  // estranho". Era literalmente isso: um branco solido de 12 a 30 px em cima e
+  // outro cobrindo 28% da altura, os dois com aresta dura embaixo. A propria
+  // nota acima ja dizia que a referencia usa gradiente.
+  //
+  // O retangulo e desenhado com a ALTURA DO CARD e a rampa corta dentro dele
+  // (uPar.x), em vez de um retangulo baixo com raio proprio: assim o realce
+  // segue os cantos arredondados do card, que era o outro defeito visivel —
+  // a faixa passava reta por cima do canto.
   if (borda > 0.001f) {
-    float h = 12.0f + 18.0f * cobertura;
-    GfxRect faixa = { card.x, card.y, card.w, h };
-    // Raio proporcional: a faixa e muito mais baixa que o card, entao repetir a
-    // fracao do card arredondaria demais e a borda descolaria do canto.
-    gfx_cor(faixa, raio * (card.h / (h > 0.0f ? h : 1.0f)) * 0.5f,
-            1.0f, 1.0f, 1.0f, borda * 0.55f);
+    float alcance = (12.0f + 18.0f * cobertura) / (card.h > 1.0f ? card.h : 1.0f);
+    gfx_rect(card, 0, GFX_BRILHO_TOPO, 0, alcance, 0, raio,
+             1.0f, 1.0f, 1.0f, borda * 0.55f);
   }
   if (brilho > 0.001f) {
-    GfxRect refl = { card.x, card.y + card.h * 0.06f, card.w, card.h * 0.28f };
-    gfx_cor(refl, raio, 1.0f, 1.0f, 1.0f, brilho * 0.18f);
+    // O reflexo vai mais fundo e mais fraco: e o `--card-depth-sheen`, uma
+    // claridade que desce pela parte alta, nao uma segunda borda.
+    gfx_rect(card, 0, GFX_BRILHO_TOPO, 0, 0.34f, 0, raio,
+             1.0f, 1.0f, 1.0f, brilho * 0.18f);
   }
 }
 // ZERO. MEDIDO no app web (sessao logada, perfil do dono): o card em foco tem
@@ -513,9 +523,20 @@ static void desenhaProfundidade(GfxRect card, float raio, int ligadaAqui) {
 //
 // O foco no web se marca por um ANEL de 2px `#f5f5f5` desenhado por dentro e
 // por fora da arte (box-shadow inset + outset), com o card mantendo a caixa.
+//
+// E POR ISSO QUE O CRESCIMENTO VOLTOU AMARRADO AO ANEL, e nao solto: com a
+// borda ligada o card mantem a caixa, como na referencia; com a borda
+// DESLIGADA o foco perderia a unica marca que tinha, entao quem marca passa a
+// ser o tamanho. Pedido do dono: "vamos deixar ele crescer ao focar quando
+// tirar o contorno". As duas coisas nunca acontecem juntas.
+//
+// 6%, e o teto vem da medida que ja estava escrita aqui: o titulo da fileira
+// fica 15 px acima dos cards, o crescimento e simetrico em torno do centro, e
+// um poster de 322 px sobe metade de 322*0,06 = 9,7 px. Os 9% do tvOS subiam
+// 14,5 px e era isso que encostava no titulo.
 static float escalaDe(TipoFileira t) {
   (void)t;
-  return 0.0f;
+  return ajustes_borda_foco() ? 0.0f : 0.06f;
 }
 // --- MEDIDA POR FILEIRA, e nao por tipo -------------------------------------
 //
@@ -1189,9 +1210,20 @@ static void sincronizarFileiras(void) {
       // Addon vazio: quem sabe o nome dele e a descoberta, que registra a mesma
       // chave com ele (o primeiro a saber preenche). Daqui saem o TIPO do
       // catalogo e a CONTAGEM, que so existem depois de a fileira ser montada.
-      if (strcmp(fileiras[q].chave, "last_session"))
+      if (strcmp(fileiras[q].chave, "last_session")) {
+        // GRUPO DE COLECOES leva o nome do addon dominante, para a tela de
+        // fileiras agrupa-lo junto dos catalogos daquele addon ("deixar
+        // agrupado as fileiras e colecoes por addons"). Misto ou sem addon
+        // fica "" e a tela o rotula "Colecao".
+        const char *addonNome = "";
+        if (!strncmp(fileiras[q].chave, "collection_", 11)) {
+          char id[96];
+          if (col_grupo_addon(fileiras[q].titulo, id, sizeof id))
+            addonNome = addons_nome_por_id(id);
+        }
         fil_registrar(fileiras[q].chave, fileiras[q].titulo,
-                      "", fileiras[q].catTipo, fileiras[q].n);
+                      addonNome, fileiras[q].catTipo, fileiras[q].n);
+      }
       ch[q] = fileiras[q].chave;
       ti[q] = fileiras[q].titulo;
     }
@@ -2039,7 +2071,9 @@ static void desenhaAtalhos(int r, float y) {
     if (x + w < 0 || x > NV_TELA_W) continue;
     float f = animFoco[r][c], raio = raioDe(w, h);
     GfxRect card = {x, y, w, h};
-    if (f > .01f) {
+    // O ANEL E OPCIONAL (Ajustes > Foco no cartaz). Sem ele o foco continua
+    // dito pelo tamanho e pela animacao do cartaz — o que sai e so a borda.
+    if (f > .01f && ajustes_borda_foco()) {
       float menor = w < h ? w : h;
       float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
       gfx_cor((GfxRect){x - NV_ANEL_FOCO, y - NV_ANEL_FOCO,
@@ -2120,21 +2154,31 @@ static void desenhaAtalhos(int r, float y) {
         if(index!=seqIndice){
           seqIndice=index;
           snprintf(frame,sizeof frame,"%s/%03d.jpg",folder->frameDir,index);
-          seqTex=tex_obter_larg(frame,480);
+          // PASSAGEIRA, e nao tex_obter_larg: o quadro vale 67 ms, e pedido
+          // como cartaz ele expulsava do cache, um por quadro, os posteres
+          // das fileiras de cima (medido: 15 despejos/s com a tela parada).
+          seqTex=tex_obter_passageira(frame,480);
           // UMA de pre-busca, nao duas: a segunda so existia para cobrir o
           // caso de a primeira nao ter chegado, e a 67 ms de passo ela chega.
           // Cada quadro da sequencia e 480x270 RGBA = 518 KB no cache; uma
           // pasta de 90 quadros sao 46 MB de um orcamento de 96.
           snprintf(frame,sizeof frame,"%s/%03d.jpg",folder->frameDir,index%folder->frames+1);
-          tex_obter_larg(frame,480);
+          tex_obter_passageira(frame,480);
         }
         if(seqTex)tex=seqTex;
       }
     }
     if (tex) {
       gfx_tex_aspect_atual = gifDesenhando ? 0.0f : tex_aspecto(arte);
-      gfx_rect(card, tex, GFX_CARD, 0, 0, 0, raio, 0, 0, 0, 1);
+      // PASSA O FOCO, como a fileira de cartazes faz. Antes ia 0 fixo: o card
+      // de COLECAO era o unico formato que nao clareava, nao ganhava o
+      // especular e nao respondia ao foco de jeito nenhum — a queixa do dono
+      // de que "tem cards que nao tem as animacoes de foco". A forma continua
+      // diferente; a resposta ao foco, nao.
+      gfx_rect(card, tex, GFX_CARD, f, 0, 0, raio, 0, 0, 0, 1);
       gfx_tex_aspect_atual = 0;
+      // E a profundidade tambem vale aqui, pelo mesmo interruptor dos cartazes.
+      desenhaProfundidade(card, raio, ajustes_profundidade_posters());
     }
     // A propria capa e a identidade do catalogo. O nome/logo vinha sendo
     // desenhado novamente por cima dela e criava exatamente a duplicacao que
@@ -2145,6 +2189,10 @@ static void desenhaAtalhos(int r, float y) {
 }
 
 void home_desenhar(Uint32 agora) {
+  // O REBORDO DO CARTAZ EM FOCO e ajuste da pessoa, e ele mora no shader do
+  // GFX_CARD (nao e um retangulo desenhado por cima): por isso vai por uma
+  // variavel de modulo, uma vez por quadro, e nao em cada chamada.
+  gfx_borda_foco_atual = ajustes_borda_foco() ? 1.0f : 0.0f;
   desenhaFundo();
   float pd = detail_progresso();
   if (ajustes_hero_ligado()) desenhaHero(agora, pd);
@@ -2431,7 +2479,7 @@ void home_desenhar(Uint32 agora) {
           // e UM numero para o app inteiro (NV_DETW_ANEL ja valia 4 e so era
           // usado no detalhe).
           float raio = raioDe(w, h);
-          if (f > 0.01f) {
+          if (f > 0.01f && ajustes_borda_foco()) {
             GfxRect borda = { px - NV_ANEL_FOCO, py - NV_ANEL_FOCO,
                               w + NV_ANEL_FOCO * 2, h + NV_ANEL_FOCO * 2 };
             float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
@@ -2729,6 +2777,11 @@ void home_desenhar(Uint32 agora) {
   }
 
   gfx_opacidade_grupo=1;
+  // DEVOLVE O REBORDO ao sair: a variavel e global e o detalhe, a busca e a
+  // biblioteca desenham GFX_CARD tambem. O ajuste e "na Home", entao ele nao
+  // pode vazar para as outras telas — mesma disciplina de gfx_opacidade_grupo
+  // logo acima.
+  gfx_borda_foco_atual = 1.0f;
   gfx_sem_recorte();
 }
 

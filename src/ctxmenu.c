@@ -12,6 +12,9 @@
 #include "ajustes.h"
 #include "progresso.h"
 #include "salvos.h"
+#include "recomenda.h"
+#include "recenviar.h"
+#include "idioma.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -101,12 +104,27 @@ static int observarHold(void *u, SDL_Event *e) {
 // ficou onde estava. Por isso o append agora passa por juntar(), que confere o
 // teto num lugar so: uma quinta opcao deixa de aparecer, em vez de corromper
 // memoria.
-#define CTX_MAX 4
+// CINCO desde que "Recomendar a um amigo" entrou. O teto tem de subir JUNTO
+// com a opcao nova: a quarta opcao existiu antes de CTX_MAX virar 4 e o
+// sintoma foi escrita fora do vetor (issue #36). juntar() confere o teto num
+// lugar so, entao uma sexta opcao deixa de aparecer em vez de corromper
+// memoria — mas "deixa de aparecer" tambem e defeito, e por isso o numero sobe
+// aqui e nao em silencio.
+#define CTX_MAX 5
 static struct { const char *rot; int acao; } ops[CTX_MAX];
 static int nOps;
 static float focoAnim[CTX_MAX];
 static int holdObservador;
-enum { OP_DETALHES, OP_LISTA, OP_ASSISTIDO, OP_TIRAR_CONTINUAR };
+enum { OP_DETALHES, OP_LISTA, OP_ASSISTIDO, OP_TIRAR_CONTINUAR, OP_RECOMENDAR };
+
+// --- RECOMENDAR: O FLUXO NAO MORA MAIS AQUI ---------------------------------
+//
+// "Para quem" e "o que dizer" foram DUAS PAGINAS DENTRO DESTE MODAL ate a tela
+// de detalhe pedir o mesmo fluxo pelo botao circular. Duas copias das mesmas
+// listas divergiriam na primeira mudanca — e a primeira mudanca ja estava
+// pedida: o pareamento por codigo e o estado vazio honesto. As telas viraram
+// recenviar.c, e este arquivo faz o que a tela de detalhe tambem faz: abre a
+// modal compartilhada e sai da frente.
 
 static int indiceAtual(void) {
   int n = cat_n();
@@ -169,6 +187,13 @@ static void montar(void) {
   // desistiu no meio quer so esta.
   if (ci->progresso > 0 && ci->imdb[0]) {
     juntar("Tirar de Continuar assistindo", OP_TIRAR_CONTINUAR);
+  }
+  // SO EXISTE SE O PACOTE TEM O SERVICO. Sem NUVIO_REC_URL compilada,
+  // recomenda_ativo() e 0 e esta linha nunca aparece — o dono publica builds
+  // assim, e um item de menu que so da erro e pior que item nenhum.
+  if (recomenda_ativo() && ci->imdb[0] &&
+      (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series"))) {
+    juntar("Recomendar a um amigo", OP_RECOMENDAR);
   }
   // O FOCO TEM DE CABER NA LISTA QUE ACABOU DE SER MONTADA.
   //
@@ -262,6 +287,13 @@ static void aplicar(void) {
       if (!trakt_assistido_tipo(ci->imdb, ci->tipo, intencao))
         estadoOperacao = CTX_FALHA;
       montar();
+      break;
+    case OP_RECOMENDAR:
+      // FECHA ESTE MODAL E ABRE O COMPARTILHADO. O menu do cartaz falou de um
+      // INDICE da home; dali em diante quem manda e uma copia do CatItem, pela
+      // mesma razao que salvospainel.c copia: o vetor do catalogo troca de
+      // bloco a cada republicacao da descoberta.
+      if (recenviar_abrir(ci)) aberto = 0;
       break;
     case OP_TIRAR_CONTINUAR: {
       // A chave e montada do mesmo jeito que progresso.c monta ao gravar —
@@ -428,7 +460,6 @@ void ctx_desenhar(Uint32 agora) {
   if (a < 0.01f) return;
   ci = indiceAtual() >= 0 ? cat_item(indiceAtual()) : NULL;
   if (!ci) return;
-
   if (estadoOperacao == CTX_PENDENTE)
     mensagem = operacao == CTX_OP_LISTA ? "Atualizando biblioteca..."
                                         : (intencao ? "Marcando como assistido..."

@@ -4,6 +4,18 @@
 #   bash tools/arm.sh            # compila, copia, confere e lanca
 #   bash tools/arm.sh --build    # so compila
 #   bash tools/arm.sh --ipk      # tambem gera o .ipk (para distribuir)
+#   bash tools/arm.sh --ipk --build
+#                                # gera o .ipk e PARA: nao toca na TV. E o modo
+#                                # para empacotar uma variante (webos3, alto
+#                                # cache) sem derrubar o que esta instalado.
+#   bash tools/arm.sh --alto-cache [--ipk|--build]
+#                                # variante ALTO CACHE: orcamento de texturas
+#                                # cravado em 300 MB (NV_TEX_MB_FIXO), para TV
+#                                # com muita RAM. O .ipk sai com sufixo
+#                                # -altocache e o titulo carimbado diz "alto
+#                                # cache". A build comum decide o orcamento no
+#                                # arranque pela RAM (ver orcamentoMB em
+#                                # src/tex_cache.c).
 #
 # NAO usa o appInstallService, e a razao esta escrita no ponto do envio: ele
 # responde sucesso e nao troca o binario.
@@ -25,6 +37,17 @@ TV_IP="${NUVIO_TV_IP:-192.168.1.32}"
 TV_PASS="${NUVIO_TV_PASS:-alpine}"
 APP_ID="space.nuvio.native.legacy"
 ARES="../NuvioWeb-0.3.38-beta/node_modules/.bin/ares-package"
+
+# --alto-cache pode vir antes ou depois de --build/--ipk. So muda uma -D e os
+# nomes; o codigo e o mesmo — e por isso a variante nao precisa de branch.
+VARIANTE=""
+if [ "$1" = "--alto-cache" ]; then shift; VARIANTE="altocache"; fi
+if [ "$2" = "--alto-cache" ]; then set -- "$1"; VARIANTE="altocache"; fi
+if [ "$3" = "--alto-cache" ]; then set -- "$1" "$2"; VARIANTE="altocache"; fi
+if [ "$VARIANTE" = "altocache" ]; then
+  export NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-} -DNV_TEX_MB_FIXO=300"
+  echo "==> variante ALTO CACHE (300 MB de texturas)"
+fi
 
 echo "==> compilando para ARM"
 # A configuracao do servidor entra por VARIAVEL DE AMBIENTE e os -D sao montados
@@ -62,6 +85,8 @@ docker run --rm --platform linux/arm64 --env-file "$ENVF" \
     -DNV_SIMKL_CLIENT_ID="\"$NV_SIMKL_CLIENT_ID\"" \
     -DNV_SIMKL_APP="\"$NV_SIMKL_APP\"" \
     -DNV_TMDB_API_KEY="\"$NV_TMDB_API_KEY\"" \
+    -DNV_REC_URL="\"$NV_REC_URL\"" \
+    -DNV_VERSAO="\"$NV_VERSAO\"" \
     -I$SR/usr/include -I$SR/usr/include/SDL2 \
     -lSDL2 -lSDL2_image -lSDL2_ttf -lGLESv2 -lEGL -ldl -lpthread -lz -lm'
 
@@ -160,6 +185,12 @@ if [ "$1" = "--ipk" ]; then
 
   "$ARES" "$PALCO/app" -o .
   IPK=$(ls -t ./*.ipk | head -1)
+  # A variante ganha o nome no ARQUIVO: dois .ipk com o mesmo nome e md5
+  # diferente e exatamente o que ja publicou build errada uma vez.
+  if [ -n "$VARIANTE" ]; then
+    NOVO="${IPK%.ipk}-$VARIANTE.ipk"
+    mv -f "$IPK" "$NOVO"; IPK="$NOVO"
+  fi
 
   # CONFERE o pacote PRONTO, e nao a pasta de onde ele saiu. A lista de
   # exclusao acima e uma intencao; o teste abaixo e o fato.
@@ -192,7 +223,7 @@ if [ "$1" = "--ipk" ]; then
   echo "    $IPK ($(du -h "$IPK" | cut -f1)) — sem art/{$(echo $ARQ_DE_PESSOA $ACERVO_DE_PESSOA $DIR_DE_PESSOA | tr ' ' ',')}"
 fi
 
-[ "$1" = "--build" ] && exit 0
+if [ "$1" = "--build" ] || [ "$2" = "--build" ]; then exit 0; fi
 
 # A TV ESTA ROOTEADA: copia direta, sem passar pelo instalador.
 #
@@ -234,6 +265,7 @@ $SSH "root@$TV_IP" "cd $APPDIR && mv -f nuvio-proto.novo nuvio-proto && chmod 75
 echo "==> carimbando titulo com a build"
 STAMP=$(md5 -q nuvio-proto.arm 2>/dev/null || md5sum nuvio-proto.arm | cut -d' ' -f1)
 STAMP=${STAMP:0:8}
+[ -n "$VARIANTE" ] && STAMP="$STAMP alto cache"
 sed "s/(BUILD)/($STAMP)/" deploy/app/appinfo.json > /tmp/appinfo.stamped.json
 cp /tmp/appinfo.stamped.json deploy/app/appinfo.json.stamped
 

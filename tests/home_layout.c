@@ -16,6 +16,7 @@ char *dados_caminho(char *dst, unsigned tam, const char *nome) {
 int   dados_apagar(const char *nome) { (void)nome; return 1; }
 int   perfis_ativo(void) { return 1; }
 const char *addons_base_por_id(const char *id) { (void)id; return ""; }
+const char *addons_nome_por_id(const char *id) { (void)id; return ""; }
 
 int main(void) {
   // O TETO DE FILEIRAS NO MAXIMO, porque este teste e sobre COMPOSICAO e FOCO.

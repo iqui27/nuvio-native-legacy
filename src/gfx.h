@@ -110,7 +110,20 @@ typedef enum {
   // topo, 0.18 a 22%, 0.62 a 52%, 0.86 a 82% e 0.95 na base — so que agora
   // interpolada no fragmento.
   GFX_VEU_CARD = 23,
-  GFX_NMODOS = 24
+  // GFX_BRILHO_TOPO — realce CLARO no alto do card, com a rampa por pixel e
+  // respeitando os cantos arredondados. E o par claro do GFX_VEU_CARD.
+  //
+  // Existe porque o "efeito de profundidade" (cardDepth* do web) era desenhado
+  // com DOIS RETANGULOS CHAPADOS: um branco de 12 a 30 px no topo e outro
+  // cobrindo 28% da altura. O dono descreveu o resultado como "uma barra grossa
+  // no topo, fica estranho", e era literalmente isso — inclusive passando por
+  // cima dos cantos arredondados, porque gfx_cor com raio proprio nao
+  // acompanha o canto do card embaixo.
+  //
+  // uPar.x = ate onde a rampa vai, em fracao da ALTURA DESTE retangulo. A cor
+  // vem de uCor.rgb (branco para realce), o alfa de uCor.a.
+  GFX_BRILHO_TOPO = 24,
+  GFX_NMODOS = 25
 } GfxModo;
 
 typedef struct {
@@ -120,6 +133,10 @@ typedef struct {
 // Proporcao (w/h) da textura a desenhar. 0 = mapeia direto (texto, veu).
 // Definir ANTES de gfx_rect para que a arte seja recortada, nunca esticada.
 extern float gfx_tex_aspect_atual;
+// 1 = o cartaz em foco ganha o rebordo claro no GFX_CARD; 0 = nao ganha. E um
+// ajuste da pessoa (Ajustes > Foco no cartaz), lido uma vez por quadro pela
+// tela que desenha; o brilho e o especular do foco nao dependem dele.
+extern float gfx_borda_foco_atual;
 // Opacidade de grupo: deve voltar a 1 ao terminar o grupo.
 extern float gfx_opacidade_grupo;
 
@@ -225,6 +242,10 @@ void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca);
 // Zera cor E alpha do retangulo, com blend desligado, abrindo a superficie para
 // o plano de video que fica atras dela. Ver video.h.
 void gfx_furo(GfxRect r);
+// O mesmo furo com cantos arredondados (raio em fracao do menor lado, como o
+// gfx_cor): o que fica fora do SDF mantem a alpha da superficie e o plano de
+// video so aparece pela area arredondada.
+void gfx_furo_raio(GfxRect r, float raio);
 void gfx_textura(GfxRect r, GLuint tex);
 
 #endif

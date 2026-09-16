@@ -249,8 +249,40 @@ static char linhaEp[220];          // "T1, E1 · <sinopse curta>", montada na ab
 // o overlay nunca abria. CatItem e so arrays, a copia e segura.
 static int     canalSessao;
 static CatItem itemCanal;
+// MINI-PLAYER (PiP): o canal saiu da tela cheia mas segue no ar num canto.
+// `querMini` e o pedido do CH+/- feito dentro do PiP: so ele mantem a
+// miniatura na troca de canal — OK num canal (guia, home) volta a tela cheia.
+static int     mini, querMini;
+// O TITULO ABERTO E UMA COPIA, NAO UM INDICE.
+//
+// `idx` e uma posicao no catalogo, e o catalogo e REPUBLICADO durante a sessao
+// — sync da conta, remontagem da descoberta, colecoes chegando. Depois de uma
+// republicacao a mesma posicao aponta para OUTRO titulo, e tudo que lia
+// cat_item(idx) passava a falar dele: a arte e o nome na tela de carregamento,
+// o alvo da busca de fontes, e ate a GRAVACAO DE PROGRESSO (que ia para o
+// titulo errado). O relato do @rawldon foi o sintoma visivel: ao trocar de
+// fonte, a tela de carregamento piscava a arte de um titulo visto antes —
+// porque player_abrir reabria pelo indice velho.
+//
+// O canal ja tinha exatamente esta protecao (itemCanal / player_marcar_canal),
+// pelo mesmo motivo. Agora TODO titulo e copiado na abertura e e a copia que
+// vale; o indice e re-resolvido pelo IMDb quando alguem precisa dele (ver
+// idxAtual).
+static CatItem itemFixo; static int temFixo;
 static const CatItem *item(void) {
-  return canalSessao ? &itemCanal : cat_item(idx);
+  if (canalSessao) return &itemCanal;
+  if (temFixo) return &itemFixo;
+  return cat_item(idx);
+}
+// O indice CORRENTE do titulo aberto: re-resolvido pelo IMDb, porque o que foi
+// guardado em `idx` pode ter sido deslocado por uma republicacao. Cai em `idx`
+// quando o titulo nao esta mais no catalogo (ou nao tem IMDb).
+static int idxAtual(void) {
+  if (temFixo && itemFixo.imdb[0]) {
+    int i = cat_indice_por_imdb(itemFixo.imdb);
+    if (i >= 0) return i;
+  }
+  return idx;
 }
 static int ehCanal(void) { return canalSessao; }
 const char *player_id_canal(void) { return canalSessao ? itemCanal.imdb : ""; }
@@ -279,7 +311,7 @@ static int retomadaAplicada, retomarPct;
 // REPETIDAS de player_definir_episodio — uma delas dispara quando o nome do
 // episodio chega tarde (player_atualizar) e reatribuiria retomarPct.
 static int semRetomada;
-int player_indice(void) { return idx; }
+int player_indice(void) { return idxAtual(); }
 const char *player_linha_episodio(void) { return linhaEp; }
 int  player_pediu_guia(void) { int v = pedGuia; pedGuia = 0; return v; }
 int  player_pediu_zap(void)  { int v = pedZap;  pedZap  = 0; return v; }
@@ -300,6 +332,9 @@ const CatEp *player_proximo_episodio(void) {
   return melhor;
 }
 void player_erro_fonte(void) { esperandoFonte = 0; erroFonte = 1; visivel = 1; tocando = 0; }
+// Leitura do estado para o watchdog de canal do app.c: uma fonte ao vivo que
+// falhou (ou nao abre no prazo) deve trocar para a proxima da lista sozinha.
+int  player_fonte_falhou(void) { return erroFonte; }
 // Arma DEPOIS de player_abrir + player_definir_episodio: daqui em diante a
 // sessao ignora o ponto salvo, inclusive nas re-chamadas tardias de
 // player_definir_episodio. O progresso gravado NAO e apagado — comecar do
@@ -534,6 +569,7 @@ static float aspectoQuadro(void) {
 }
 
 typedef struct { float x, y, w, h; } PlrRect;
+static PlrRect miniDestino(void);
 
 static PlrRect aspectoRect(int modo) {
   const float tela = NV_TELA_W / NV_TELA_H;
@@ -671,6 +707,14 @@ static void aplicarAspecto(void) {
   int sx, sy, sw, sh;
   if (!comVideo) return;
 
+  // No PiP todo recalculo cai na miniatura — o videoInfo da fonte nova num
+  // zap, por exemplo, chega DEPOIS do video_janela do canto e sem esta
+  // guarda reexpandiria o plano para a tela cheia com a moldura la embaixo.
+  if (mini) { PlrRect o = miniDestino();
+              video_janela((int)(o.x + 0.5f), (int)(o.y + 0.5f),
+                           (int)(o.w + 0.5f), (int)(o.h + 0.5f));
+              return; }
+
   r = aspectoRect(aspecto);
   d = aspectoVisivel(aspecto);
   if (d.w < 1.0f || d.h < 1.0f || r.w < 1.0f || r.h < 1.0f) return;
@@ -723,10 +767,10 @@ void player_aspecto_ciclar(void) {
 }
 
 void player_abrir(int indiceCatalogo, const char *url) {
+  int ficaMini = querMini; querMini = 0;
   int n = cat_n(); if (n < 1) n = 1;
   idx = ((indiceCatalogo % n) + n) % n;
   aberto = 1; saindo = 0; pediuSair = 0; barraFoco = 0;
-  avisarCascaAberto(1);
   // Titulo novo: um avanco em curso do anterior mandaria a posicao velha ao
   // pipeline novo assim que o silencio vencesse.
   scrubbing = 0; scrubPassos = 0; scrubTocava = 0;
@@ -737,8 +781,18 @@ void player_abrir(int indiceCatalogo, const char *url) {
   // Canal ao vivo nao tem classificacao por titulo: o id "cs:channel:..." nao
   // existe na base parental e o pedido so gastaria uma requisicao.
   { const CatItem *ci = cat_item(idx);
+    // A COPIA e feita AQUI, no unico instante em que o indice e sabidamente o
+    // do titulo pedido. Ver item().
+    if (ci) { itemFixo = *ci; temFixo = 1; } else temFixo = 0;
     canalSessao = ci && (!strcmp(ci->tipo, "channel") || !strcmp(ci->tipo, "tv"));
     if (canalSessao) itemCanal = *ci;
+    // So o CH+/- feito dentro do PiP (player_manter_mini) mantem a miniatura
+    // na troca — o stream velho segue no ar ate a fonte nova chegar pelo
+    // fluxo de sempre. Qualquer outra abertura (OK no guia, filme, serie)
+    // volta a tela cheia e para o video do canto.
+    if (ficaMini && canalSessao) { mini = 1; aberto = 0; }
+    else if (mini || ficaMini) { mini = 0; video_parar(); }
+    avisarCascaAberto(aberto);
     if (ci && ci->imdb[0] && !canalSessao) parental_pedir(ci->imdb);
     // A grade EPG comeca a baixar ja: o banner "agora/a seguir" do OSD e o
     // overlay do guia dependem dela. Idempotente.
@@ -776,12 +830,17 @@ int player_quer_sair(void) { return pediuSair; }
 // plano de hardware, e furar a superficie cedo trocava a arte por um retangulo
 // PRETO enquanto o fluxo abria — que era o "clica em reproduzir e fica preto".
 void player_definir_fonte(const char *url) {
-  if (!aberto || !url || !*url) return;
+  if ((!aberto && !mini) || !url || !*url) return;
   esperandoFonte = 0;
   erroFonte = 0;
   comVideo = video_tocar(url);
   if (!comVideo) player_erro_fonte();
-  aplicarAspecto();
+  // No PiP a fonte nova retoca o mesmo canto — o destino de tela cheia do
+  // aplicarAspecto so vale com a tela aberta.
+  if (mini) { PlrRect r = miniDestino();
+              video_janela((int)(r.x + 0.5f), (int)(r.y + 0.5f),
+                           (int)(r.w + 0.5f), (int)(r.h + 0.5f)); }
+  else aplicarAspecto();
 }
 
 // Consome o pedido de abrir a folha de faixas: quem le, zera.
@@ -802,9 +861,12 @@ void player_encerrar(void) {
     // guardar posSeg contra a duracao reserva colocaria "Globo 68%" em
     // Continuar assistindo, que e justamente o que nao pode acontecer.
     float pos = posSeg >= duracaoSeg - 60.0f ? duracaoSeg : posSeg;
-    const CatItem *ci = cat_item(idx);
-    home_registrar_retorno(idx, pos, duracaoSeg);
-    cat_salvar_progresso_ep(idx, pos, duracaoSeg,epT,epE);
+    // Pelo indice CORRENTE do titulo, nao pelo guardado: depois de uma
+    // republicacao o guardado grava o progresso no titulo errado.
+    int ia = idxAtual();
+    const CatItem *ci = item();
+    home_registrar_retorno(ia, pos, duracaoSeg);
+    cat_salvar_progresso_ep(ia, pos, duracaoSeg,epT,epE);
     // E tambem para o Trakt, que e de onde o "continue assistindo" vem: gravar
     // so aqui deixaria este app discordando dos outros aparelhos do dono.
     if (ci && ci->imdb[0]) {
@@ -845,12 +907,132 @@ void player_encerrar(void) {
            (unsigned)(tv - t0), (unsigned)(SDL_GetTicks() - tv));
     fflush(stdout); }
   comVideo = 0; esperandoFonte = 0; aberto = 0; saindo = 0; pediuSair = 0;
+  mini = 0; querMini = 0;
   avisarCascaAberto(0);
   // Os DOIS relogios, e nao so o do primeiro quadro. `pgDesde` sobrevivendo ao
   // fechamento faria a proxima reproducao achar que a janela do aviso ja tinha
   // corrido — o aviso simplesmente nao entraria, sem nada no log dizendo por
   // que. Ver a nota no desenho da guia parental.
   inicioImagem = 0; pgDesde = 0;
+}
+
+// MINI-PLAYER (PiP) DE CANAL AO VIVO.
+//
+// Sair de um canal para a home nao precisa matar a transmissao: o plano de
+// video aceita qualquer retangulo de destino (video_janela), entao "sair"
+// encolhe o destino para um canto e o desenho fura a superficie ali — o
+// decode, que era o custo de verdade, continua exatamente o mesmo, e voltar a
+// tela cheia e instantaneo porque o fluxo nunca parou. So canal entra: um
+// filme no canto tem progresso, episodio e fim para cuidar; um canal ao vivo
+// nao perde nada.
+#define PLR_PIP_W  460.0f
+#define PLR_PIP_H  259.0f
+#define PLR_PIP_X  (NV_TELA_W - PLR_PIP_W - 56.0f)
+#define PLR_PIP_Y  (NV_TELA_H - PLR_PIP_H - 96.0f)
+
+// O destino em miniatura: a caixa e 16:9 e a proporcao do quadro e respeitada
+// DENTRO dela — um canal 4:3 letterboxa na caixa em vez de esticar.
+static PlrRect miniDestino(void) {
+  PlrRect o = { PLR_PIP_X, PLR_PIP_Y, PLR_PIP_W, PLR_PIP_H };
+  float vw = (float)video_largura(), vh = (float)video_altura();
+  if (vw > 1.0f && vh > 1.0f) {
+    float ca = vw / vh, ba = o.w / o.h;
+    if (ca > ba) { float h = o.w / ca; o.y += (o.h - h) * 0.5f; o.h = h; }
+    else         { float w = o.h * ca; o.x += (o.w - w) * 0.5f; o.w = w; }
+  }
+  return o;
+}
+
+int  player_minimizavel(void) { return canalSessao && comVideo; }
+int  player_mini_ativo(void)  { return mini; }
+void player_manter_mini(void) { querMini = 1; }
+
+void player_minimizar(void) {
+  PlrRect r;
+  if (!player_minimizavel()) { player_encerrar(); return; }
+  mini = 1; pediuSair = 0; visivel = 0;
+  pausao_fechar(); episodios_fechar(); posplay_fechar();
+  r = miniDestino();
+  video_janela((int)(r.x + 0.5f), (int)(r.y + 0.5f),
+               (int)(r.w + 0.5f), (int)(r.h + 0.5f));
+}
+
+void player_restaurar(void) {
+  if (!mini) return;
+  mini = 0; aberto = 1; saindo = 0; entrada = 0.0f;
+  visivel = 1; ultimoInput = SDL_GetTicks();
+  avisarCascaAberto(1);
+  aplicarAspecto();   // devolve o destino de tela cheia ao plano
+}
+
+void player_fechar_mini(void) {
+  if (!mini) return;
+  mini = 0;
+  // comVideo pode ja ser 0 (zap em transito: a fonte nova nao chegou) e o
+  // stream velho continuaria no ar — parar e seguro mesmo sem pipeline ativo.
+  video_parar();
+  player_encerrar();
+}
+
+// O PiP por cima de qualquer tela: o furo abre a superficie para o plano de
+// video, o anel vira moldura e a etiqueta do canal desenha DENTRO do furo —
+// o alpha do blend se soma ali, entao a faixa escurece sobre a imagem sem a
+// tampar (mesma propriedade que o veu dos controles usa). O destino e
+// reenviado so quando muda: cada chamada ao plano e uma mensagem ao ACB, e a
+// proporcao real do quadro pode chegar segundos depois da miniatura abrir.
+void player_mini_desenhar(Uint32 agora) {
+  static float lx = -1.0f, ly, lw, lh;
+  PlrRect r; GfxRect f;
+  (void)agora;
+  if (!mini) { lx = -1.0f; return; }
+  r = miniDestino();
+  if (r.x != lx || r.y != ly || r.w != lw || r.h != lh) {
+    video_janela((int)(r.x + 0.5f), (int)(r.y + 0.5f),
+                 (int)(r.w + 0.5f), (int)(r.h + 0.5f));
+    lx = r.x; ly = r.y; lw = r.w; lh = r.h;
+  }
+  f = (GfxRect){ r.x, r.y, r.w, r.h };
+  // Furo com o MESMO raio do anel: sem ele o plano de video e retangular e
+  // os cantos do quadro escapam por fora da moldura arredondada.
+  gfx_furo_raio(f, 0.14f);
+  gfx_rect(f, 0, GFX_ANEL, 0, NV_ANEL_FOCO / f.w, 0, 0.14f,
+           1.0f, 1.0f, 1.0f, 0.85f);
+  // A etiqueta e UMA linha so dentro do furo: ponto vermelho + AO VIVO +
+  // canal + programa do ar, cortada na borda direita do quadro para nomes
+  // longos nao vazarem por cima do anel.
+  gfx_cor((GfxRect){ f.x, f.y + f.h - 50.0f, f.w, 50.0f },
+          0.0f, 0.02f, 0.02f, 0.03f, 0.78f);
+  { char rot[160];
+    TxtLinha lv, nm;
+    float lx2 = f.x + 16.0f, ly2;
+    EpgProg ag;
+    snprintf(rot, sizeof rot, "%s", itemCanal.titulo[0] ? itemCanal.titulo
+                                                        : i18n("Canal"));
+    if (epgIdx >= 0 && epg_agora(epgIdx, time(NULL), &ag)) {
+      size_t u = strlen(rot);
+      snprintf(rot + u, sizeof rot - u, "  \xc2\xb7  %s", ag.titulo);
+    }
+    lv = txt_linha(TXT_MINI, i18n("AO VIVO"), 255, 120, 120, 255);
+    nm = txt_linha(TXT_CAPTION, rot, 246, 247, 252, 255);
+    ly2 = f.y + f.h - 50.0f + (50.0f - nm.h) * 0.5f;
+    gfx_recorte(f.x + 1.0f, f.y + f.h - 50.0f, f.w - 2.0f, 49.0f);
+    gfx_cor((GfxRect){ lx2, ly2 + (nm.h - 10.0f) * 0.5f, 10.0f, 10.0f },
+            0.5f, 0.96f, 0.24f, 0.24f, 1.0f);
+    lx2 += 18.0f;
+    txt_desenhar_alpha(lv, lx2, ly2 + (nm.h - lv.h) * 0.5f, 1.0f);
+    lx2 += lv.w + 14.0f;
+    txt_desenhar_alpha(nm, lx2, ly2, 0.96f);
+    gfx_sem_recorte(); }
+  // A dica de teclas mora num pill escuro sob o quadro: texto solto sobre a
+  // home se perdia no fundo, e "flutuava" quando a miniatura cobria outra
+  // tela.
+  { TxtLinha l = txt_linha(TXT_MINI,
+        i18n("Azul: tela cheia · Voltar: fechar"), 205, 208, 216, 255);
+    gfx_cor((GfxRect){ f.x, PLR_PIP_Y + PLR_PIP_H + 10.0f,
+                       l.w + 30.0f, l.h + 14.0f },
+            0.14f, 0.02f, 0.02f, 0.03f, 0.72f);
+    txt_desenhar_alpha(l, f.x + 15.0f,
+                       PLR_PIP_Y + PLR_PIP_H + 10.0f + 7.0f, 0.9f); }
 }
 
 // O ultimo botao da fileira: "Episodios" numa serie, "Relacionados" num filme
@@ -1279,7 +1461,7 @@ void player_atualizar(float dt, Uint32 agora) {
   }
 
   // PÓS-REPRODUÇÃO: o proximo episodio ou os relacionados, no fim do titulo.
-  { const CatItem *ci = cat_item(idx);
+  { const CatItem *ci = item();
     int eSerie = ci && !strcmp(ci->tipo, "series");
     // Canal ao vivo nao tem "fim": sem a guarda, o relogio reserva cruzaria os
     // 90% em ~1h42 de exibicao e abriria o painel de relacionados no meio da
@@ -1489,12 +1671,24 @@ void player_desenhar(Uint32 agora) {
       gfx_cor(tela, 0.0f, 0, 0, 0, 1.0f);
     if (furo.w > 0.0f && furo.h > 0.0f) gfx_furo(furo);
   } else {
-    const char *arte = (c && c->backdrop[0]) ? c->backdrop : NULL;
+    // CANAL NAO TEM BACKDROP, TEM LOGO. O addon de canais manda a MESMA imagem
+    // em poster/background, e ela e a marca do canal — um PNG pequeno, com
+    // fundo proprio. Esticada para 1920x1080 ela vira um borrao gigante atras da
+    // interface, que foi o que o dono viu e pediu para tirar: "deixe o fundo
+    // preto ao inves do logo no background". A marca passa a ser desenhada no
+    // tamanho dela, no centro, onde antes ficava o nome em texto.
+    const char *arte = (c && c->backdrop[0] && !player_id_canal()[0])
+                     ? c->backdrop : NULL;
     GLuint tex = arte ? tex_obter_hero(arte) : 0;   // ocupa a tela inteira
     if (tex) {
       gfx_tex_aspect_atual = tex_aspecto(arte);
       gfx_rect(tela, tex, GFX_CARD, 0, 0, 0, 0.0f, 0, 0, 0, entrada);
       gfx_tex_aspect_atual = 0.0f;
+    } else if (player_id_canal()[0]) {
+      // PRETO de verdade no canal, e nao o quase-preto da interface: com o
+      // video entrando por tras da pagina, qualquer tinta aqui e uma camada a
+      // mais sobre o plano de hardware.
+      gfx_cor(tela, 0.0f, 0.0f, 0.0f, 0.0f, entrada);
     } else {
       gfx_cor(tela, 0.0f, 0.04f, 0.04f, 0.05f, entrada);
     }
@@ -1507,12 +1701,19 @@ void player_desenhar(Uint32 agora) {
     GfxRect escuro = { 0, 0, NV_TELA_W, NV_TELA_H };
     int k;
     gfx_cor(escuro, 0.0f, 0, 0, 0, 0.55f * entrada);
-    GLuint logo = c && c->logo[0] ? tex_obter_larg(c->logo, 520) : 0;
+    // A MARCA DO CANAL VEM DO BACKDROP QUANDO NAO HA `logo`. O FrostView (e os
+    // addons de canal em geral) nao preenche `logo`: manda a marca em poster e
+    // background. Sem esta linha caia-se no nome em texto — que e justamente o
+    // texto que o dono pediu para trocar pela marca.
+    const char *marca = c ? (c->logo[0] ? c->logo
+                          : (player_id_canal()[0] && c->backdrop[0] ? c->backdrop : NULL))
+                        : NULL;
+    GLuint logo = marca ? tex_obter_larg(marca, 520) : 0;
     if (logo) {
-      float ar = tex_aspecto(c->logo), w = 520, h = ar > 0 ? w / ar : 120;
+      float ar = tex_aspecto(marca), w = 520, h = ar > 0 ? w / ar : 120;
       if (h > 160) { h = 160; w = h * ar; }
       gfx_rect((GfxRect){(NV_TELA_W-w)*.5f,NV_TELA_H*.5f-h-60,w,h},logo,
-               tex_marca_escura(c->logo)?GFX_MARCA:GFX_TEXTO,0,0,0,0,.95f,.95f,.97f,entrada);
+               tex_marca_escura(marca)?GFX_MARCA:GFX_TEXTO,0,0,0,0,.95f,.95f,.97f,entrada);
     } else {
       TxtLinha t = txt_linha_corta(TXT_PLR_TITULO,c?c->titulo:"Reproduzindo",240,241,244,255,680);
       txt_desenhar_alpha(t,(NV_TELA_W-t.w)*.5f,NV_TELA_H*.5f-150,entrada);

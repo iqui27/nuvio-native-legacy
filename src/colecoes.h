@@ -51,6 +51,9 @@ int col_n(void);
 unsigned col_revisao(void);
 const ColFolder *col_folder(int i);
 int col_grupo(const char *nome, int *indices, int max);
+// addonId dominante do grupo (1) ou "" quando as fontes sao de addons
+// diferentes / nao sao de addon (0). Ver a definicao.
+int col_grupo_addon(const char *nome, char *dst, unsigned n);
 const ColFolder *col_por_catalogo(const char *base, const char *type, const char *id);
 // Fontes de colecao ainda sem base resolvida. Ver a nota em colecoes.c: zero
 // significa que toda colecao ja pode engolir o catalogo dela.

@@ -31,6 +31,9 @@ GLuint tex_obter_hero(const char *caminho);
 // Escala entre o pixel do BUFFER e o pixel de layout (1 na TV, 2 no Mac
 // retina). Definir uma vez no arranque, junto com a do texto.
 void tex_escala(float e);
+// Reduz uma superficie por media de area para lw x lh, em ABGR8888. Publica
+// para tests/reduzir.c; o decode usa a mesma funcao.
+struct SDL_Surface *tex_reduzir(struct SDL_Surface *src, int lw, int lh);
 
 // Como tex_obter, mas dizendo COM QUE LARGURA a arte vai ser desenhada, em
 // pixels de layout. O teto de decodificacao sai dai, em vez do padrao unico de
@@ -40,6 +43,13 @@ void tex_escala(float e);
 //
 // Prefira esta a tex_obter em qualquer arte de lista: e onde o cache estoura.
 GLuint tex_obter_larg(const char *caminho, float largLayout);
+
+// Como tex_obter_larg, para arte QUE SO VALE POR UM INSTANTE: o quadro de uma
+// sequencia animada, que a tela mostra por 67 ms e troca. O cache a despeja
+// antes de qualquer cartaz assim que ela sai da tela — senao noventa quadros
+// por volta varrem do cache as fileiras que a pessoa ainda vai rever. Ver a
+// nota em despejar(), tex_cache.c.
+GLuint tex_obter_passageira(const char *caminho, float largLayout);
 
 // Caminho do ARQUIVO local de uma URL, ou NULL enquanto ele nao chegou. Um
 // caminho que ja e local volta como veio. Nunca bloqueia: quando o arquivo
@@ -93,7 +103,16 @@ extern int    tex_n_busca;
 extern double tex_ms_busca;
 void tex_novo_quadro(void);
 
-void tex_estatisticas(int *itens, int *pendentes, long *bytes);
+// `quentes` e o que foi desenhado neste quadro ou no anterior — o conjunto
+// que a tela precisa. Se ele passa do orcamento, o cache nao tem como parar de
+// despejar, e o numero diz isso antes de qualquer hipotese.
+void tex_estatisticas(int *itens, int *pendentes, long *bytes,
+                      int *quentes, long *bytesQuentes);
+// Despejos de TEXTURA desde a ultima zerada (quem mede zera), e quantos deles
+// levaram arte que estava na tela. O `despejos=` do relatorio de FPS conta o
+// cache de TEXTO, e por muito tempo foi lido como se fosse este.
+extern int tex_despejos;
+extern int tex_despejos_quentes;
 
 #endif
 

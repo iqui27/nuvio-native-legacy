@@ -271,8 +271,10 @@ static int enfeitar(CatItem *d, const char *tipo) {
             if (!d->backdrop[0] &&
                 js_texto(c2, NULL, "backdrop_path", pp, sizeof pp) &&
                 pp[0] == '/')
+              // w1280 como no resto do app: w780 esticado para o hero de
+              // 1421 (ou 1920 em tela cheia) saia borrado — #54.
               snprintf(d->backdrop, sizeof d->backdrop,
-                       "https://image.tmdb.org/t/p/w780%s", pp);
+                       "https://image.tmdb.org/t/p/w1280%s", pp);
             pp[0] = 0;
             if (!d->poster[0] &&
                 js_texto(c2, NULL, "poster_path", pp, sizeof pp) &&

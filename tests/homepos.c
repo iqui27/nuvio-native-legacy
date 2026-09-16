@@ -50,6 +50,7 @@ char *dados_caminho(char *dst, unsigned tam, const char *nome) {
 int   dados_apagar(const char *nome) { (void)nome; return 1; }
 int   perfis_ativo(void) { return 1; }
 const char *addons_base_por_id(const char *id) { (void)id; return ""; }
+const char *addons_nome_por_id(const char *id) { (void)id; return ""; }
 
 // Indice da fileira de chave `chave`, ou -1.
 static int idx(const char *chave) {

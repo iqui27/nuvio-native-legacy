@@ -162,6 +162,7 @@ void video_definir_dv(int dv) { (void)dv; }
 int  video_tocando(void) { return 0; }
 int  video_pronto(void) { return 0; }
 int  video_ativo(void) { return 0; }
+int  video_falhou(void) { return 0; }
 int  video_n_audio(void) { return 0; }
 int  video_n_legenda(void) { return 0; }
 const VideoFaixa *video_audio(int i) { (void)i; return 0; }
@@ -305,7 +306,7 @@ static int dvPedido;
 
 static char      midia[64];
 static double    posSeg, durSeg;
-static int       tocando, pronto, ligado;
+static int       tocando, pronto, ligado, falhou;
 
 // PLAYER_TYPE_MSE. O ACB usa isto para saber que a fonte e um pipeline de
 // midia e nao um sintonizador.
@@ -854,7 +855,7 @@ static int aoEvento(LSHandle *h, LSMessage *m, void *u) {
       legAoCarregar   = legAtual;
       snprintf(legUrlAoCarregar, sizeof legUrlAoCarregar, "%s", legUrlAtual);
       marco("pipeline morreu: recarregando");
-    }
+    } else falhou = 1;
   }
   { double v = numeroDe(p, "\"currentTime\":");
     if (v >= 0) {
@@ -1179,6 +1180,7 @@ static int tocarInterno(const char *url, int comDV);
 
 int video_tocar(const char *url) {
   dvRecuado = 0;
+  falhou = 0;
   // FONTE NOVA, decisao nova: o "sem HDR" era sobre o arquivo anterior.
   semDVForcado = 0;
   // Titulo novo: o marcador do anterior nao vale. Sem isto um filme sem
@@ -1370,7 +1372,7 @@ void video_parar(void) {
     snprintf(b, sizeof b, "{\"mediaId\":\"%s\"}", midia);
     chamar("unload", b, soLog);
   }
-  midia[0] = 0; tocando = pronto = 0;
+  midia[0] = 0; tocando = pronto = 0; falhou = 0;
 }
 
 void video_pausar(int pausado) {
@@ -1438,6 +1440,11 @@ void video_janela(int x, int y, int w, int h) {
   if (w < 1 || h < 1) return;
   if (x == janX && y == janY && w == janW && h == janH) return;  // sem repetir o mesmo rect a cada quadro
   janX = x; janY = y; janW = w; janH = h;
+  // A janela simples muda o plano sem passar pelo par fonte/destino — o cache
+  // deixaria de refletir o aplicado e engoliria a proxima chamada identica
+  // (era o "Azul restaura a UI mas o video fica no tamanho do PiP": o par de
+  // tela cheia era igual ao ultimo mandado, e o dedup o descartava).
+  fonX = -1; dstX = -1;
   if (!ligado || !midia[0]) return;   // sem midia presa, aplicar seria no vazio
   if (!acb && !expWin[0]) return;
   printf("[video] janela %d,%d %dx%d cheia=%d\n", x, y, w, h, cheia);
@@ -1562,6 +1569,11 @@ int    video_pronto(void)   { return pronto; }
 // esperar o evento deixaria a tela desenhada por cima do video se o evento
 // mudar de nome ou nao vier.
 int    video_ativo(void)    { return midia[0] != 0; }
+// Erro real do pipeline na fonte atual ("Playing error" e afins). Zera no
+// proximo video_tocar. O watchdog de canal usa isto para trocar de fonte —
+// sem a flag, um pipeline que carrega e morre em seguida nunca dispara a
+// proxima da lista.
+int    video_falhou(void)   { return falhou; }
 
 int  video_n_audio(void)   { return nAudio; }
 int  video_n_legenda(void) { return nLeg; }

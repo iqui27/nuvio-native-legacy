@@ -47,7 +47,15 @@
      O app entra desenhando o proprio fundo (NV_COR_FUNDO, #0D0D0D em
      layout.h); os dois sao quase pretos e a troca no primeiro quadro nao se
      percebe. */
-  #abertura { position: absolute; inset: 0; z-index: 4; background: #050718;
+  /* `top/left/right/bottom` POR EXTENSO, e nao `inset: 0`. O Chromium do
+     Tizen 6.0 (Chrome 76) NAO conhece a abreviacao `inset` (Chrome 87+):
+     ele ignorava a linha, o div ficava absoluto sem offset nenhum — encolhido
+     ao tamanho do icone, no canto superior esquerdo — e o resto da tela era
+     preto. Foi exatamente a foto do @rawldon: "tiny blue square with the play
+     icon in the corner". No Chrome de mesa `inset` funciona e o defeito nao
+     aparece, que e por que a conferencia local passou. */
+  #abertura { position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+              z-index: 4; background: #050718;
               display: flex; flex-direction: column;
               align-items: center; justify-content: center; }
   #abertura img { width: 512px; max-width: 42%; height: auto;
@@ -74,7 +82,8 @@
   @keyframes nvPulso { 0%, 100% { opacity: 1; } 50% { opacity: .72; } }
   @keyframes nvCorre { 0% { transform: translateX(-110%); }
                        100% { transform: translateX(440%); } }
-  #avPlayerObject { position: absolute; inset: 0; width: 100%; height: 100%;
+  /* Mesmo motivo de #abertura: sem `inset` no Chromium desta TV. */
+  #avPlayerObject { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
                     z-index: 0; }
   /* O BUFFER de desenho continua 1920x1080 (atributos width/height do
      elemento); o que muda aqui e o TAMANHO EM TELA. Na TV os dois coincidem e

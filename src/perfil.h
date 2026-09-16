@@ -9,8 +9,11 @@
 #include <SDL2/SDL.h>
 #include <stdint.h>
 
-#define PERFIL_MAX_GENEROS    8
-#define PERFIL_MAX_DESTAQUES  6
+// QUATRO, e nao oito e seis. A tela nao rola mais: cabem quatro cards de
+// destaque e quatro pastilhas de genero, e buscar mais do que se desenha so
+// produz campo morto no snapshot.
+#define PERFIL_MAX_GENEROS    4
+#define PERFIL_MAX_DESTAQUES  4
 #define PERFIL_MAX_DIAS       42
 
 typedef struct {
@@ -41,7 +44,8 @@ typedef struct {
   int episodios;
 
   int streakAtual;
-  int streakAnterior;
+  // streakAnterior FOI REMOVIDO: era declarado, zerado por memset e nunca lido
+  // nem escrito por ninguem — nem pelo produtor (trakt.c), nem pela tela.
   int diasAtivosMes;
   int diasAtivosAno;
   int primeiroDiaSemana;     // 0=domingo..6=sabado

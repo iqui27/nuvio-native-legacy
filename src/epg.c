@@ -31,7 +31,7 @@
 #include <pthread.h>
 #include <zlib.h>
 
-#define EPG_MAX_CANAL 700
+#define EPG_MAX_CANAL 1400
 #define EPG_MAX_CHAVES 6
 // A grade fala ~3,5 dias para a frente; renovar duas vezes por dia cobre a
 // virada sem baixar ~1,4 MB a cada abertura do app.
@@ -39,12 +39,22 @@
 // Evento que terminou ha mais tempo que isto nao interessa a "agora/a seguir".
 #define EPG_JANELA_PASSADO 7200
 
-static const char *FONTE[2] = {
+// BR1/BR2 cobrem o FrostView. PT1/MX1/AR1 entram para os OUTROS addons de
+// canal que o dono possa instalar — Portugal e America Latina sao os
+// catalogos de canal mais comuns depois do brasileiro. US/UK ficam fora:
+// 6,5 MB de gzip viram ~60 MB de XML, caro demais para um ganho raro.
+#define EPG_N_FONTES 5
+static const char *FONTE[EPG_N_FONTES] = {
   "https://epgshare01.online/epgshare01/epg_ripper_BR1.xml.gz",
   "https://epgshare01.online/epgshare01/epg_ripper_BR2.xml.gz",
+  "https://epgshare01.online/epgshare01/epg_ripper_PT1.xml.gz",
+  "https://epgshare01.online/epgshare01/epg_ripper_MX1.xml.gz",
+  "https://epgshare01.online/epgshare01/epg_ripper_AR1.xml.gz",
 };
-static const char *CACHE_XML[2] = { "epg-br1.xml", "epg-br2.xml" };
-static const char *CACHE_TS[2]  = { "epg-br1.ts",  "epg-br2.ts"  };
+static const char *CACHE_XML[EPG_N_FONTES] = {
+  "epg-br1.xml", "epg-br2.xml", "epg-pt1.xml", "epg-mx1.xml", "epg-ar1.xml" };
+static const char *CACHE_TS[EPG_N_FONTES]  = {
+  "epg-br1.ts",  "epg-br2.ts",  "epg-pt1.ts",  "epg-mx1.ts",  "epg-ar1.ts"  };
 
 typedef struct {
   char id[96];
@@ -144,13 +154,19 @@ static int tokenInutil(const char *t, int n, int curta) {
   return 0;
 }
 
-// Escreve a chave em `dst`. Devolve o comprimento.
-static int normChave(const char *s, char *dst, int cap, int curta) {
-  char tok[48]; int tn = 0, n = 0;
+// Escreve a chave em `dst`. Devolve o comprimento. Se `prim` nao e NULL,
+// recebe o PRIMEIRO token aceito — e a forma de reconhecer afiliada
+// regional: "SBT RJ" abre com "sbt", a chave inteira da grade da rede-mae.
+static int normChave(const char *s, char *dst, int cap, int curta,
+                     char *prim, int pcap) {
+  char tok[48]; int tn = 0, n = 0, primOk = 0;
   unsigned cp; const unsigned char *p = (const unsigned char *)s;
+  if (prim && pcap > 0) prim[0] = 0;
   #define FLUSHTOK() do { \
     if (tn && !tokenInutil(tok, tn, curta)) { \
-      if (n + tn < cap - 1) { memcpy(dst + n, tok, (size_t)tn); n += tn; } } \
+      if (n + tn < cap - 1) { memcpy(dst + n, tok, (size_t)tn); n += tn; } \
+      if (prim && !primOk && tn < pcap) \
+        { memcpy(prim, tok, (size_t)tn); prim[tn] = 0; primOk = 1; } } \
     tn = 0; } while (0)
   while (*p) {
     cp = 0;
@@ -185,6 +201,8 @@ static const char *ALIAS[][2] = {
   { "sonychannel",   "sony"                 },
   { "cnbbrasil",     "cnbc"                 },
   { "historychannel","history"              },
+  { "uniao",         "recordtv"             },   // TV Uniao (Record, Fortaleza)
+  { "uniaofortaleza","recordtv"             },
 };
 
 // --- tempo XMLTV -----------------------------------------------------------------
@@ -275,7 +293,7 @@ static int wCanalPorId(EpgGrade *g, const char *id) {
 static void wAddChave(EpgGrade *g, int i, const char *nome) {
   char k[96]; int j, curta;
   for (curta = 0; curta < 2; curta++) {
-    if (!normChave(nome, k, sizeof k, curta) || !k[0]) continue;
+    if (!normChave(nome, k, sizeof k, curta, NULL, 0) || !k[0]) continue;
     for (j = 0; j < g->canais[i].nChaves; j++)
       if (!strcmp(k, g->canais[i].chaves[j])) break;
     if (j < g->canais[i].nChaves || g->canais[i].nChaves >= EPG_MAX_CHAVES) continue;
@@ -284,7 +302,11 @@ static void wAddChave(EpgGrade *g, int i, const char *nome) {
 }
 
 // O id "Globo.RJ.br" tambem vira nome: onde o display-name falta ou difere,
-// a forma do id e a unica pista.
+// a forma do id e a unica pista. Os ids do epgshare01 vem em dois moldes:
+// "Sao.Paulo/SP..Cartoonito.br" (cidade/UF..canal) e "SBT.br" (canal direto).
+// O nome do canal e o que vem depois do ".."; sem ele a ultima "/" devolvia
+// "SP..cartoonito" e a chave saia "spcartoonito" — meio centenar de canais
+// da BR1 ficavam incasaveis ("cartoonito" nunca era gerado).
 static void wChavePorId(EpgGrade *g, int i) {
   char buf[96], tmp[96];
   const char *s;
@@ -292,10 +314,17 @@ static void wChavePorId(EpgGrade *g, int i) {
   snprintf(buf, sizeof buf, "%s", g->canais[i].id);
   { char *b = strrchr(buf, '.');
     if (b && (b - buf) > 2 && b[1] && b[2] && !b[3]) *b = 0; }   // ".br" do fim
-  s = strrchr(buf, '/');
-  s = s ? s + 1 : buf;                       // "Sao.Paulo/SP..X.br" -> "X"
-  for (k = 0; *s && k < sizeof tmp - 1; s++)
+  { char *dd = strstr(buf, "..");
+    s = dd ? dd + 2 : buf; }                   // "Cidade/UF..X" -> "X"
+  { const char *b = strrchr(s, '/');           // fallback sem "..": "a/b" -> "b"
+    if (b) s = b + 1; }
+  for (k = 0; *s && k < sizeof tmp - 1; s++) {
+    if (*s == '(') {                           // "(espelho)"/"(aberta)": nao
+      while (*s && *s != ')') s++;             // identificam o canal
+      if (!*s) break;
+      continue; }
     tmp[k++] = (*s == '.' || *s == '_') ? ' ' : *s;
+  }
   tmp[k] = 0;
   wAddChave(g, i, tmp);
 }
@@ -415,20 +444,27 @@ static int wProcessar(EpgGrade *g, char *xml) {
 }
 
 // --- carga: disco, rede, gzip -------------------------------------------------------
+// O buffer de saida CRESCE conforme o inflate avanca — uma estimativa fixa
+// (gz*10) estourava nas fontes regionais maiores (PT1 comprime ~11x).
 static char *desgzip(const char *buf, long n, long *nOut) {
-  z_stream z; long cap = n * 10 + (1 << 20), feito = 0;
+  z_stream z; long cap = n * 6 + (1 << 20), feito = 0;
   char *out = malloc((size_t)cap);
   if (!out) return NULL;
   memset(&z, 0, sizeof z);
   if (inflateInit2(&z, 16 + 15) != Z_OK) { free(out); return NULL; }
   z.next_in = (Bytef *)buf; z.avail_in = (uInt)n;
   for (;;) {
+    if (cap - feito < (1 << 16)) {                 // folga minima: dobra
+      char *no = realloc(out, (size_t)(cap * 2));
+      if (!no) { inflateEnd(&z); free(out); return NULL; }
+      out = no; cap *= 2;
+    }
     z.next_out = (Bytef *)out + feito;
     z.avail_out = (uInt)(cap - feito);
     { int r = inflate(&z, 0);
       feito = (long)z.total_out;
       if (r == Z_STREAM_END) break;
-      if (r != Z_OK || feito >= cap) { inflateEnd(&z); free(out); return NULL; } }
+      if (r != Z_OK) { inflateEnd(&z); free(out); return NULL; } }
   }
   inflateEnd(&z);
   *nOut = feito;
@@ -485,10 +521,10 @@ static void *fioEpg(void *u) {
   int i, ok = 0;
   (void)u;
   memset(&W, 0, sizeof W);
-  W.capEvs = 45000; W.evs = malloc(sizeof(EpgEv) * (size_t)W.capEvs);
-  W.arenaCap = 4L << 20; W.arena = malloc((size_t)W.arenaCap);
+  W.capEvs = 90000; W.evs = malloc(sizeof(EpgEv) * (size_t)W.capEvs);
+  W.arenaCap = 8L << 20; W.arena = malloc((size_t)W.arenaCap);
   if (!W.evs || !W.arena) { pendPronto = 1; pendOk = 0; return NULL; }
-  for (i = 0; i < 2; i++) {
+  for (i = 0; i < EPG_N_FONTES; i++) {
     long n = 0;
     char *xml = obterXml(i, &n);
     if (xml) {
@@ -539,12 +575,12 @@ void epg_passo(void) {
 }
 
 int epg_match(const char *nome) {
-  char k1[96], k2[96];
+  char k1[96], k2[96], prim[48];
   int i, j, c, melhor = -1;
   long melhorTam = 0, t;
   if (estado != EPG_PRONTO || !nome || !nome[0]) return -1;
-  normChave(nome, k1, sizeof k1, 0);
-  normChave(nome, k2, sizeof k2, 1);
+  normChave(nome, k1, sizeof k1, 0, NULL, 0);
+  normChave(nome, k2, sizeof k2, 1, prim, sizeof prim);
   if (!k1[0]) return -1;
 
   pthread_mutex_lock(&trava);
@@ -586,8 +622,38 @@ int epg_match(const char *nome) {
               !strncmp(P.canais[i].chaves[j], k1, (size_t)t) && melhor != i) {
             melhor = i; nCand++;
           }
-    pthread_mutex_unlock(&trava);
-    if (nCand == 1) return melhor; }
+    if (nCand == 1) { pthread_mutex_unlock(&trava); return melhor; } }
+
+  // 5. uma chave comprida da grade aparece INTEIRA dentro do nome do canal:
+  // "TV Cidade - RecordTV" carrega "recordtv" no fim. Vence a chave mais
+  // comprida ("recordtv" > "record"); empate de tamanho so e ambiguidade se
+  // for chave DIFERENTE — a mesma chave em dois canais e a rede duplicada na
+  // grade (Record.TV.br, SP..Record...), nao duas redes.
+  { long melhorTc = 0; int ambig = 0; const char *melhorChave = NULL;
+    melhor = -1;
+    for (i = 0; i < P.nCanais; i++)
+      for (j = 0; j < P.canais[i].nChaves; j++) {
+        const char *kv = P.canais[i].chaves[j];
+        long tc = (long)strlen(kv);
+        if (tc < 6 || t <= tc) continue;
+        if (!strstr(k1, kv) && !(k2[0] && strstr(k2, kv))) continue;
+        if (tc > melhorTc) { melhorTc = tc; melhor = i; melhorChave = kv; ambig = 0; }
+        else if (tc == melhorTc && i != melhor &&
+                 !(melhorChave && !strcmp(melhorChave, kv)))
+          ambig = 1;
+      }
+    if (melhor >= 0 && !ambig) { pthread_mutex_unlock(&trava); return melhor; } }
+
+  // 6. o primeiro token util do canal E a chave inteira da grade: e a regra
+  // da afiliada regional — "SBT RJ"/"SBT Thathi Vale" herdam a grade da
+  // rede "sbt". Minimo 3 letras para sigla de rede nao colar em qualquer um.
+  if (prim[0] && (long)strlen(prim) >= 3)
+    for (i = 0; i < P.nCanais; i++)
+      for (j = 0; j < P.canais[i].nChaves; j++)
+        if (!strcmp(prim, P.canais[i].chaves[j])) {
+          pthread_mutex_unlock(&trava); return i;
+        }
+  pthread_mutex_unlock(&trava);
   return -1;
 }
 
@@ -645,8 +711,8 @@ void epg_teste_limpar(void) {
 int epg_xml_processar(char *xml) {
   int n;
   epg_teste_limpar();
-  W.capEvs = 45000; W.evs = malloc(sizeof(EpgEv) * (size_t)W.capEvs);
-  W.arenaCap = 4L << 20; W.arena = malloc((size_t)W.arenaCap);
+  W.capEvs = 90000; W.evs = malloc(sizeof(EpgEv) * (size_t)W.capEvs);
+  W.arenaCap = 8L << 20; W.arena = malloc((size_t)W.arenaCap);
   if (!W.evs || !W.arena) return -1;
   n = wProcessar(&W, xml);
   wFechar(&W);
