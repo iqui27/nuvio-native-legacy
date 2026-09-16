@@ -509,6 +509,14 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  float t = 1.0 - smoothstep(0.0, max(uPar.x, 0.001), vUv.y);\n"
   "  gl_FragColor = vec4(uCor.rgb, uCor.a * t * t * m);\n"
   "}\n",
+
+  // GFX_ARTE — a textura intacta, recortada pelos cantos. Ver a nota em gfx.h.
+  "void main(){\n"
+  "  float m = smoothstep(0.006,-0.006, sdf(vUv, uRaio, uAspect));\n"
+  "  if (m <= 0.001) discard;\n"
+  "  vec4 t = texture2D(uTex, vUv);\n"
+  "  gl_FragColor = vec4(t.rgb, t.a * uCor.a * m);\n"
+  "}\n",
 };
 
 // Cada corpo declara o que usa; montar so o necessario mantem o shader enxuto.
@@ -526,7 +534,8 @@ static const struct { int sdf, cover; } PRECISA[GFX_NMODOS] = {
   {0,0},   /* GFX_DISCO */
   {0,0},   /* GFX_EDITORIAL */
   {1,0},   /* GFX_VEU_CARD — precisa do SDF: o veu segue os cantos do card */
-  {1,0}    /* GFX_BRILHO_TOPO — idem, e pelo mesmo motivo */
+  {1,0},   /* GFX_BRILHO_TOPO — idem, e pelo mesmo motivo */
+  {1,0}    /* GFX_ARTE — SDF para os cantos; sem cover, a arte nao e recortada */
 };
 
 static GLuint compila(GLenum tipo, const char *src) {

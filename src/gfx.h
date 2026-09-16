@@ -123,7 +123,20 @@ typedef enum {
   // uPar.x = ate onde a rampa vai, em fracao da ALTURA DESTE retangulo. A cor
   // vem de uCor.rgb (branco para realce), o alfa de uCor.a.
   GFX_BRILHO_TOPO = 24,
-  GFX_NMODOS = 25
+  // GFX_ARTE — a imagem como ela e, so que com os CANTOS ARREDONDADOS.
+  //
+  // Existe por causa do logo de canal que traz fundo proprio (o quadrado preto
+  // do HBO Max, o cinza do Disney+): ele era desenhado por GFX_TEXTO, que nao
+  // tem SDF nenhum, entao o quadrado do arquivo aparecia com canto vivo dentro
+  // de um cartao arredondado — foi o que o dono viu.
+  //
+  // Nenhum dos modos que ja tinham SDF servia: o GFX_CARD escurece a arte em
+  // 20% quando `foco` e 0 e ainda recorta 3% de cada borda para o parallax
+  // (over-scan), o que num logo come a margem que o proprio arquivo reserva; o
+  // GFX_MARCA joga fora o RGB e pinta de uma cor so. Aqui o RGB e o alpha vao
+  // inteiros, multiplicados so pela mascara do SDF.
+  GFX_ARTE = 25,
+  GFX_NMODOS = 26
 } GfxModo;
 
 typedef struct {

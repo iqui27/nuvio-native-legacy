@@ -636,6 +636,13 @@ void stream_folha_desenhar(Uint32 agora) {
     // desenho do foco no resto do app desde 16/09 — e nao texto solto: a
     // tres metros, texto colorido de 20 px some no meio de quatro linhas de
     // texto; a pilula e a unica forma cheia da linha e o olho vai nela.
+    //
+    // NA LINHA SELECIONADA ELA INVERTE, como todo o resto da linha. O acento
+    // e branco por padrao: pilula de acento sobre linha clara e uma pilula
+    // invisivel com texto escuro solto — pior do que nao ter marca. Continua
+    // CHEIA, so troca figura e fundo (fundo escuro, texto claro); um contorno
+    // escuro traria de volta justamente o contorno que o dono tirou do app no
+    // dia 16/09, e a 3 m um traco de 2 px perde para uma forma cheia.
     float wProv = w;
     if (i != atual && (i == automatica || i == preferida)) {
       float ar, ag, ab;
@@ -645,21 +652,35 @@ void stream_folha_desenhar(Uint32 agora) {
                       : (i == preferida) ? "Sua escolha anterior"
                       : "Escolha automática";
       ajustes_acento(&ar, &ag, &ab);
-      m = txt_linha(TXT_MINI, rot, 20, 20, 24, 255);
+      // Sobre linha clara a pilula veste a superficie de repouso da linha
+      // (.135,.135,.14) com o texto claro das demais linhas nao selecionadas.
+      if (sel) { ar = .135f; ag = .135f; ab = .14f; }
+      m = txt_linha(TXT_MINI, rot, sel ? 234 : 20, sel ? 236 : 20, sel ? 242 : 24, 255);
       pil = (GfxRect){ lx + w - (float)m.w - 24.0f, y + 44.0f, (float)m.w + 24.0f, (float)m.h + 10.0f };
       gfx_cor(pil, NV_RAIO_PILL, ar, ag, ab, anim);
       txt_desenhar_alpha(m, pil.x + 12.0f, pil.y + 5.0f, anim);
-      wProv = w - pil.w - 24.0f;
+      // 40 px E NAO 24 DE FOLGA. Com 24 o nome de um addon longo era cortado a
+      // 23 px da pilula — dois blocos de texto encostados que o olho le como
+      // um so. Relato do dono (16/09): "deixa a badge menos colado no texto".
+      wProv = w - pil.w - 40.0f;
       if (wProv < 120.0f) wProv = 120.0f;
     }
     txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,i==atual?"Reproduzindo agora":s->provedor,corProv,corProv+3,corProv+10,255,wProv),lx,y+46,anim);
-    txt_bloco(TXT_PG_FIM,descricao,corDesc,corDesc+3,corDesc+8,lx,y+76,w,25,anim,2);
+    // AS TRES LINHAS DE BAIXO DESCEM 10 px, EM BLOCO. A pilula acaba em y+69 e
+    // a descricao comecava em y+76: 8 px de tinta a tinta, que a 3 m viram
+    // zero. Os 10 px saem da sobra do RODAPE da linha (as badges acabavam em
+    // y+197 numa linha de 214), entao nenhum vao entre as linhas de baixo
+    // muda — so entra ar debaixo da pilula. Mexer na pilula em vez disso a
+    // tiraria do centro da linha do provedor, que e onde ela esta ancorada.
+    txt_bloco(TXT_PG_FIM,descricao,corDesc,corDesc+3,corDesc+8,lx,y+86,w,25,anim,2);
     char meta[192],qual[24]="";
     if(s->altura) snprintf(qual,sizeof qual," · %dp",s->altura);
     snprintf(meta,sizeof meta,"%s%s%s%s",containerDa(s),qual,s->dolbyVision?" · Dolby Vision":"",s->dolbyAtmos?" · Atmos":"");
     if(s->tamanhoMB) {size_t p=strlen(meta);snprintf(meta+p,sizeof meta-p," · %.1f GB",s->tamanhoMB/1024.0);}
-    txt_desenhar_alpha(txt_linha_corta(TXT_MINI,meta,corMeta,corMeta+2,corMeta+8,255,w),lx,y+140,anim);
-    badges_desenhar(s->badges,lx,y+171,w,26,anim);
+    txt_desenhar_alpha(txt_linha_corta(TXT_MINI,meta,corMeta,corMeta+2,corMeta+8,255,w),lx,y+150,anim);
+    // Linha clara pede tinta escura: a arte das badges e branca.
+    if(sel) badges_desenhar_escura(s->badges,lx,y+181,w,26,anim);
+    else    badges_desenhar(s->badges,lx,y+181,w,26,anim);
   }
   if(!nf) {
     const char *s=addons_estado()==ADD_BUSCANDO?"Buscando fontes nos addons…":"Nenhuma fonte direta disponível. Use Recarregar para tentar novamente.";

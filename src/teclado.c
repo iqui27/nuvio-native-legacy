@@ -29,6 +29,11 @@
 #define TE_CX        76.0f
 #define TE_CY        92.0f
 #define TE_CGAP      12.0f
+// Piso de largura da caixa por caractere: abaixo disto o glifo de TXT_TITULO2
+// nao cabe e as letras se sobrepoem. Medido na captura do dono com maxN=24,
+// onde a conta dava 9,5 px por caixa.
+#define TE_CX_MIN    44.0f
+#define TE_CAMPO_PAD 18.0f
 
 #define TE_PAD       44.0f
 // TITULO (46) + DICA em ate duas linhas (2 x 28) + CAIXAS (92) + folgas.
@@ -163,7 +168,6 @@ void teclado_atualizar(float dt, Uint32 agora) {
 void teclado_desenhar(Uint32 agora) {
   float a = anim_suave(anim), dy, x, y;
   int f, c, i;
-  (void)agora;
   if (anim < 0.01f) return;
   dy = (1.0f - a) * 36.0f;
 
@@ -181,9 +185,23 @@ void teclado_desenhar(Uint32 agora) {
     txt_bloco(TXT_CAPTION2, dicaAtual, 160, 164, 175,
               x, TE_Y + dy + TE_DICA_Y, TE_GRADE_W, 28.0f, a * 0.9f, 2);
 
-  // As caixas do que foi digitado. `maxN` delas, sempre — as vazias sao o que
-  // diz "faltam tres" sem uma frase dizendo isso.
-  { float bw = (TE_GRADE_W - (float)(maxN - 1) * TE_CGAP) / (float)maxN;
+  // O QUE FOI DIGITADO — em CAIXAS ou em LINHA, e quem decide e a conta, nao
+  // quem chamou.
+  //
+  // Uma caixa por caractere so funciona enquanto a caixa couber o glifo. Com
+  // maxN = 4 (o codigo do amigo) cada caixa tem 117 px e a fileira de casas
+  // vazias diz "faltam tres" sem precisar de frase nenhuma. Com maxN = 24 (a
+  // busca de listas publicas) a mesma conta da 9,5 px por caixa, e o glifo de
+  // TXT_TITULO2 tem mais de 30: as letras se sobrepunham umas nas outras e o
+  // dono fotografou o resultado — tres "a" viraram uma mancha em cima de uma
+  // cerca de barrinhas.
+  //
+  // Entao: caixa so quando ela cabe o glifo (TE_CX_MIN), senao CAMPO DE TEXTO
+  // com cursor, que e a forma certa para texto livre de qualquer tamanho. E a
+  // fileira de casas vazias nao faz falta aqui — numa busca nao ha numero de
+  // caracteres a completar.
+  if ((TE_GRADE_W - (float)(maxN - 1) * TE_CGAP) / (float)maxN >= TE_CX_MIN) {
+    float bw = (TE_GRADE_W - (float)(maxN - 1) * TE_CGAP) / (float)maxN;
     float bx, by = TE_Y + dy + TE_CAIXA_Y;
     if (bw > TE_CX) bw = TE_CX;
     bx = TE_X + (TE_W - ((float)maxN * bw + (float)(maxN - 1) * TE_CGAP)) * 0.5f;
@@ -204,7 +222,34 @@ void teclado_desenhar(Uint32 agora) {
                            b.y + (b.h - t.h) * 0.5f, a);
       }
       bx += bw + TE_CGAP;
-    } }
+    }
+  } else {
+    GfxRect campo = { TE_X + TE_PAD, TE_Y + dy + TE_CAIXA_Y,
+                      TE_GRADE_W, TE_CY };
+    float tx = campo.x + TE_CAMPO_PAD, cursorX = tx;
+    gfx_cor(campo, NV_RAIO_CARD, 1.0f, 1.0f, 1.0f, 0.07f * a);
+    if (n) {
+      TxtLinha t = txt_linha(TXT_TITULO2, texto, 246, 248, 255, 255);
+      // TEXTO MAIS LARGO QUE O CAMPO ROLA PELO FIM, nao pelo comeco: quem
+      // digita precisa ver a ultima letra que apertou, nao a primeira.
+      float larg = campo.w - TE_CAMPO_PAD * 2.0f;
+      float ox = t.w > larg ? t.w - larg : 0.0f;
+      gfx_recorte(campo.x + TE_CAMPO_PAD, campo.y,
+                  larg, campo.h);
+      txt_desenhar_alpha(t, tx - ox, campo.y + (campo.h - t.h) * 0.5f, a);
+      gfx_sem_recorte();
+      cursorX = tx + (t.w - ox);
+    }
+    // CURSOR SEM PISCA-PISCA quando as animacoes estao reduzidas — piscar e
+    // movimento, e a regra vale aqui como vale no resto do app.
+    { float op = ajustes_animacoes_reduzidas()
+                   ? 0.85f
+                   : 0.35f + 0.5f * (((agora / 500) % 2) ? 0.0f : 1.0f);
+      GfxRect cur = { cursorX + 3.0f, campo.y + 22.0f, 3.0f, campo.h - 44.0f };
+      if (cur.x > campo.x + campo.w - TE_CAMPO_PAD)
+        cur.x = campo.x + campo.w - TE_CAMPO_PAD;
+      gfx_cor(cur, 0.5f, 0.95f, 0.96f, 0.99f, op * a); }
+  }
 
   for (f = 0; f < TE_FILEIRAS; f++) {
     for (c = 0; c < colunasDe(f); c++) {

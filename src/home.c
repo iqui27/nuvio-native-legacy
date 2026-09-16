@@ -475,10 +475,22 @@ static float fileiraGap(void) {
 // o UNICO numero do card moderno que sai mesmo de `posterCardCornerRadiusDp`:
 // 12dp x 2 = 24px, conferido no app rodando. A largura NAO sai de la (ver a
 // nota em ajustes.h).
+// O DIVISOR E A ALTURA, e isto foi conferido no shader, nao deduzido: em
+// FS_SDF (gfx.c) o fragmento faz `p = (uv - 0.5) * vec2(asp, 1.0)` e
+// `b = vec2(0.5*asp, 0.5) - r`, ou seja a meia-extensao vertical e sempre 0,5 e
+// o `r` e medido contra ela. Dividir pelo MENOR LADO, como estava aqui, so
+// acerta em retangulo mais largo que alto; num cartaz (retrato) o menor lado e
+// a LARGURA, e pedir 24/largura sobre uma altura maior pedia um canto bem mais
+// fechado que os 24 px que o comentario dizia garantir. O teto e metade da
+// LARGURA medida na mesma escala, senao um retangulo mais largo que alto
+// termina com canto reto na horizontal e redondo na vertical.
 static float raioDe(float w, float h) {
-  float menor = w < h ? w : h;
-  if (menor <= 0.0f) return NV_RAIO_CARD;
-  return ajustes_raio_poster_px() / menor;
+  if (h <= 0.0f) return NV_RAIO_CARD;
+  { float r = ajustes_raio_poster_px() / h;
+    float teto = 0.5f * w / h;
+    if (r > 0.5f)  r = 0.5f;
+    if (r > teto)  r = teto;
+    return r; }
 }
 
 // --- Profundidade dos cartoes (`cardDepth*`) ---------------------------------

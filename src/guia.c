@@ -769,7 +769,16 @@ static void desenharLogo(const char *logo, GfxRect cx, float lado, float tom,
   comFundo = tex_cor_fundo(logo, &fr, &fg, &fb) == 1;
   { GfxRect lr = { cx.x + (cx.w - w) * 0.5f, cx.y + (cx.h - h) * 0.5f, w, h };
     gfx_tex_aspect_atual = 0.0f;
-    if (comFundo) gfx_rect(lr, t, GFX_TEXTO, 0, 0, 0, 0.0f, 1, 1, 1, a);
+    // O LOGO COM FUNDO PROPRIO E UM QUADRADO, e quadrado dentro de cartao
+    // arredondado aparece — foi o que o dono viu no HBO Max. GFX_ARTE e o
+    // GFX_TEXTO com a mascara dos cantos: mesmo RGB, mesmo alpha, so recortado.
+    // O raio e o do cartao (NV_RAIO_CARD e fracao da ALTURA do retangulo, nao
+    // pixel), entao o canto do logo acompanha o canto do cartao em vez de ter
+    // um raio proprio que brigaria com ele.
+    //
+    // O recortado nao passa por aqui: ele nao tem fundo para arredondar, e a
+    // forma dele ja vem do alpha do arquivo.
+    if (comFundo) gfx_rect(lr, t, GFX_ARTE, 0, 0, 0, NV_RAIO_CARD, 1, 1, 1, a);
     else          gfx_rect(lr, t, GFX_MARCA, 0, 0, 0, 0.0f, tom, tom, tom, a);
   }
 }

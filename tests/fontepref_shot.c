@@ -11,6 +11,7 @@
 // le nem escreve arquivo nenhum e a captura nao toca no ~/.nuvio de quem roda.
 #include "streams.h"
 #include "fontepref.h"
+#include "badges.h"
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
@@ -30,6 +31,11 @@ static void fonte(Stream *s, const char *provedor, const char *rotulo,
   snprintf(s->url, sizeof s->url, "https://exemplo.invalido/%s.mkv", provedor);
   s->altura = altura; s->mp4 = mp4; s->dolbyVision = dv;
   s->tamanhoMB = altura >= 2160 ? 11264 : 2048;
+  // A FILEIRA DE BADGES E O SEGUNDO ITEM QUE A CAPTURA PRECISA MOSTRAR: no app
+  // ela e preenchida por stream_parse, que esta captura nao usa. Sem esta
+  // linha a base da linha sai vazia e a regressao de "badge branca sobre linha
+  // clara" fica invisivel justamente na ferramenta que existe para ve-la.
+  s->badges = badges_detectar(descricao);
 }
 
 static void captura(const char *nome, SDL_Window *win) {
@@ -94,6 +100,7 @@ int main(int argc, char **argv) {
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64);
   gfx_icones_dir("deploy/app/art");
+  badges_carregar("deploy/app/art");   // quem faz isto no app e home.c
 
   fonte(&v[0], "Torrentio", "Torrentio\n4k",
         "Silo.S02E05.2160p.WEB-DL.DV.HDR.Atmos.mp4\n11.2 GB", 2160, 1, 1);
@@ -101,8 +108,14 @@ int main(int argc, char **argv) {
         "Silo.S02E05.1080p.WEB.x264.mkv\nEnglish", 1080, 0, 0);
   fonte(&v[2], "AIOStreams", "AIOStreams\n1080p",
         "Silo.S02E05.1080p.DUAL.mkv\nDual Audio", 1080, 0, 0);
-  fonte(&v[3], "Torrentio", "Torrentio\n1080p",
-        "Silo.S02E05.1080p.DUBLADO.mkv\n\xf0\x9f\x87\xa7\xf0\x9f\x87\xb7 Dublado", 1080, 0, 0);
+  // A LEMBRADA CARREGA BADGES DE PROPOSITO: e a linha que recebe A MARCA e o
+  // realce ao mesmo tempo, entao e nela que "pilula clara sobre linha clara" e
+  // "badge branca sobre linha clara" aparecem juntas.
+  // O NOME DE ADDON E LONGO DE PROPOSITO: e o corte por wProv que decide se a
+  // linha do provedor encosta na marca, e com um "Torrentio" de 9 letras a
+  // folga nunca e exercida — a captura passava sem provar nada.
+  fonte(&v[3], "Torrentio · RealDebrid · Cached", "Torrentio\n1080p",
+        "Silo.S02E05.1080p.WEB-DL.x265.DDP5.1.DUBLADO.mkv\n\xf0\x9f\x87\xa7\xf0\x9f\x87\xb7 Dublado", 1080, 0, 0);
   fonte(&v[4], "Outro Addon", "Outro Addon 720p", "Silo.S02E05.720p.mkv", 720, 0, 0);
   stream_definir_lista(v, 5);
   stream_folha_contexto("T2:E5 · Silo");
@@ -119,7 +132,15 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-folha.bmp", saida);
   captura(nome, w);
 
-  for (i = 0; i < 3; i++) tecla(SDLK_DOWN);
+  // A LEMBRADA (indice 3) SOB O REALCE. E a unica combinacao que prova as duas
+  // coisas de uma vez: a marca e a fileira de badges sobre a superficie CLARA.
+  // Sem esta captura sobra so a linha 1 (badges sem marca) e a linha 4 (marca
+  // nenhuma) — e foi assim que "pilula clara sobre linha clara" passou batido.
+  for (i = 0; i < 2; i++) tecla(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-folha-marca.bmp", saida);
+  captura(nome, w);
+
+  tecla(SDLK_DOWN);
   snprintf(nome, sizeof nome, "%s-folha-foco.bmp", saida);
   captura(nome, w);
 

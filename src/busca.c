@@ -476,7 +476,19 @@ void busca_atualizar(float dt, Uint32 agora) {
 // Campo de consulta: nenhum botao decorativo que nao possa receber foco.
 static void desenhaCabecalho(Uint32 agora) {
   float x = NV_CONTENT_PAD;
-  float raio = NV_BUSCA_RAIO / (NV_BUSCA_HEAD_H * 0.5f) * 0.5f;  // 22 sobre 110
+  // PÍLULA INTEIRA, e nao o canto de 22 px que vinha do web.
+  //
+  // 0,5 e o maximo que o SDF aceita: com `r = 0.5` o `b` do FS_SDF vira
+  // `(0.5*asp - 0.5, 0)`, ou seja as duas pontas sao semicirculos exatos e os
+  // lados sao retos — um estadio. O valor antigo (22 px sobre 110 de altura, =
+  // 0,2) desenhava um retangulo de cantos arredondados, e a 3 m o olho le
+  // aquilo como quadrado com defeito. O dono pediu "mais redondo liso".
+  //
+  // O halo acompanha sozinho: com 0,5 nos dois retangulos, o de fora e 4 px
+  // maior em cada dimensao e as duas formas ficam concentricas sem conta
+  // nenhuma — um raio em PIXEIS exigiria somar a espessura no externo, que e
+  // onde as duas curvas costumam descasar.
+  float raio = 0.5f;
 
   GfxRect campo = { x, BU_HEAD_Y, BU_DIR - x, NV_BUSCA_HEAD_H };
   gfx_cor(campo, raio, 0.133f, 0.133f, 0.133f, 1.0f);
@@ -603,7 +615,12 @@ static void desenhaResultados(Uint32 agora) {
         if (px > BU_DIR || px + NV_BUSCA_CARD_W < BU_RES_X - NV_BUSCA_CARD_W) continue;
         GfxRect poster = { px, cardY, NV_BUSCA_CARD_W, NV_BUSCA_POSTER_H };
         // O card do web NAO escala no foco: marca por borda de 2px, como a home.
-        float raio = NV_BUSCA_RAIO / NV_BUSCA_CARD_W;
+        //
+        // O DIVISOR E A ALTURA. Estava `/ NV_BUSCA_CARD_W`, e num cartaz
+        // (retrato) a largura e o MENOR lado — mas o `r` do FS_SDF e medido
+        // contra a meia-ALTURA, entao 22/248 pedia 0,089 de 372, ou seja 33 px
+        // em vez dos 22 do web. Mesmo erro que estava em home.c e detail.c.
+        float raio = NV_BUSCA_RAIO / NV_BUSCA_POSTER_H;
         if (f > 0.01f) {
           GfxRect b = { poster.x - 2.0f, poster.y - 2.0f,
                         poster.w + 4.0f, poster.h + 4.0f };

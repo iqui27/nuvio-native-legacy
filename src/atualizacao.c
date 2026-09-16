@@ -393,6 +393,13 @@ static void fechar(void) {
   dados_gravar(AT_ARQ, s);
 }
 
+void atualizacao_abrir(void) {
+  if (!mtx) return;
+  SDL_LockMutex(mtx);
+  if (tagNova[0]) { aberto = 1; mostrado = 1; foco = 0; }
+  SDL_UnlockMutex(mtx);
+}
+
 void atualizacao_evento(const SDL_Event *e) {
   SDL_Keycode k;
   if (!aberto || e->type != SDL_KEYDOWN) return;

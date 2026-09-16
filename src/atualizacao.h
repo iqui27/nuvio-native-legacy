@@ -10,6 +10,11 @@ void atualizacao_verificar(void);
 // quando a home esta de pe e nenhum outro cartao esta aberto.
 void atualizacao_mostrar_se_houver(void);
 int  atualizacao_aberta(void);
+// ABRE O CARTAO A PEDIDO, ignorando a marca de "ja mostrado". E a porta de
+// saida de quem apertou "Depois": o cartao so aparece sozinho UMA VEZ por
+// versao, e sem isto aquele "Depois" valeria para sempre. Nao faz nada quando
+// nao ha versao nova.
+void atualizacao_abrir(void);
 // Versao nova conhecida ("" se nenhuma) — para a linha de versao dos Ajustes.
 const char *atualizacao_nova(void);
 void atualizacao_evento(const SDL_Event *e);

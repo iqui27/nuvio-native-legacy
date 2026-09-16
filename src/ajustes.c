@@ -15,6 +15,7 @@
 #include "descoberta.h"
 #include "extras.h"
 #include "fileiras.h"
+#include "listas.h"
 #include "idioma.h"
 #include "linguas.h"
 #include "addons.h"
@@ -117,7 +118,7 @@ typedef enum {
   // Conta
   AJ_PERFIL_ATIVO, AJ_SYNC, AJ_ADDONS, AJ_SALVOS_DEST, AJ_TRAKT, AJ_SIMKL, AJ_SAIR,
   // Sobre
-  AJ_VERSAO_I, AJ_ESPACO,
+  AJ_VERSAO_I, AJ_ATUALIZAR, AJ_ESPACO,
   // Integracoes — TMDB (tmdb_settings do blob da conta, ver
   // profileSettingsSyncService.js do web)
   AJ_TMDB_LIGADO, AJ_TMDB_IDIOMA, AJ_TMDB_ARTE, AJ_TMDB_BASICO, AJ_TMDB_FICHA,
@@ -347,6 +348,10 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Simkl"),
   ACAO("Sair da conta"),
   LER("Versão"),
+  // A porta de saida para quem dispensou o cartao. Ele aparece UMA VEZ por
+  // versao (a marca em atualizacao-vista.txt), e sem esta linha "Depois"
+  // significava "nunca mais nesta versao".
+  ACAO("Atualizar o aplicativo"),
   LER("Memória usada por imagens"),
 
   // Integracoes — TMDB. Os rotulos seguem a pagina integration:tmdb do web
@@ -433,7 +438,7 @@ static const char *CHAVE[] = {
   // mas ela precisa sobreviver ao fechamento, e gravar() pula toda chave
   // iniciada por "-".
   "-perfil", "-sync", "-addons", "salvosDestino", "-trakt", "-simkl", "-sair",
-  "-versao", "-espaco",
+  "-versao", "-atualizar", "-espaco",
   // Integracoes: os nomes sao exatamente os que profileSettingsSyncService.js
   // exporta dentro de tmdb_settings / mdblist_settings — a conta aplica e a
   // TV respeita a escolha feita no app web, e vice-versa.
@@ -643,7 +648,7 @@ static int valor[AJ_N] = {
   0, 0, 0,          /* perfil, sincronizacao, addons: linhas de leitura/acao */
   1,                /* onde o + salva: watchlist do Trakt (ver V_SALVOS) */
   0, 0, 0,          /* trakt, simkl, sair: acoes */
-  0, 0,             /* versao, espaco */
+  0, 0, 0,          /* versao, atualizar, espaco */
 
   // Integracoes — TMDB. Tudo LIGADO de fabrica neste app: o enriquecimento por
   // TMDB sempre foi incondicional aqui, e nascer desligado removeria da tela
@@ -1250,6 +1255,10 @@ static int inativa(int op) {
       return !ajustes_cw_ligado();
     case AJ_CW_BLUR_PROX: return !ajustes_cw_ligado() || !ajustes_cw_thumb_episodio();
     case AJ_EXPANDIR_ATRASO: return !ajustes_expandir_poster();
+    // Sem versao nova no GitHub nao ha o que atualizar: a linha continua
+    // visivel e APAGADA, em vez de sumir — sumir mudaria a contagem de linhas
+    // debaixo do dedo, que e a regra ja escrita para a tela de Layout.
+    case AJ_ATUALIZAR:    return !atualizacao_nova()[0];
     case AJ_PROF_BORDA: case AJ_PROF_BRILHO: case AJ_PROF_COBERTURA:
     case AJ_PROF_POSTERS: case AJ_PROF_CW: case AJ_PROF_EPS:
     case AJ_PROF_ELENCO: case AJ_PROF_TRAILERS:
@@ -1380,6 +1389,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_SAIR: return "Sai da conta nesta TV e apaga daqui a sessão, os addons e o progresso guardados.";
     case AJ_ESPACO: return "Uso atual de memória pelo cache de imagens, não espaço ocupado no armazenamento da TV.";
     case AJ_VERSAO_I: return "Versão do aplicativo. Esta informação não pode ser alterada.";
+    case AJ_ATUALIZAR: return "Abre o cartão da versão nova, com o que mudou e o botão de instalar. Fica apagado quando não há versão nova.";
 
     // --- Integracoes
     case AJ_TMDB_LIGADO: return "O TMDB enriquece títulos com sinopse, elenco com foto, ficha técnica e trailers. Desligar corta tudo isso de uma vez.";
@@ -1824,6 +1834,7 @@ void ajustes_evento(const SDL_Event *e) {
       emEdicao = 0;
       return;
     }
+    if (focoOp == AJ_ATUALIZAR) { atualizacao_abrir(); return; }
     if (focoOp == AJ_ADDONS) { pediuAddons = 1; return; }
     if (focoOp == AJ_TRAKT) { traktauth_comecar(); return; }
     if (focoOp == AJ_SIMKL) { simklauth_comecar(); return; }
@@ -1838,6 +1849,10 @@ void ajustes_evento(const SDL_Event *e) {
       // ordem que vem da conta (ver catordem_esquecer). Sem isto, a proxima
       // pessoa herda a home montada pela anterior.
       fil_esquecer();
+      // As listas FIXADAS tambem sao da conta que saiu: uma lista do Trakt
+      // presa na Biblioteca continuaria ali, com o nome de quem foi embora, e
+      // a fileira dela na home tentaria buscar itens com o token novo.
+      lst_esquecer_conta();
       // A sessao sozinha nao basta: addons, Trakt, perfil e progresso ficariam
       // para a proxima pessoa. Ver o cabecalho de sync_esquecer_usuario.
       sync_esquecer_usuario();
