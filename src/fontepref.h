@@ -46,6 +46,35 @@
 // parecendo que o app lembrou. Nao casou nada: cai calado em
 // stream_automatico(), o comportamento de hoje.
 //
+// --- E ANTES DE TUDO ISSO, O bingeGroup ------------------------------------
+//
+// A assinatura acima nasceu porque o app NUNCA LIA o campo em que o addon ja
+// diz a resposta. O protocolo do Stremio tem `behaviorHints.bingeGroup`: um
+// rotulo que o addon poe em todo stream que ele considera A MESMA FONTE entre
+// episodios. Quem manda o campo resolve o casamento sem heuristica nenhuma —
+// nao ha o que adivinhar sobre idioma, resolucao ou grupo de lancamento,
+// porque quem produziu a lista ja agrupou.
+//
+// A ordem, entao, e:
+//
+//   1. bingeGroup IGUAL. O addon declarou; acabou a conversa.
+//   2. provedor + trilha de audio. Para os addons que nao mandam o campo, que
+//      sao muitos, e para o episodio em que o addon MUDOU o bingeGroup (troca
+//      de servico de debrid, de cache, de versao do addon). A heuristica nao
+//      foi substituida: ela virou a rede embaixo.
+//   3. -1, e stream_automatico() assume, como sempre.
+//
+// A camada 1 NAO EXIGE provedor: o bingeGroup e a declaracao do addon sobre
+// identidade de fonte, e e assim que o app web o usa (um `find` por
+// bingeGroup, sem olhar mais nada). A camada 2 continua exigindo as duas
+// coisas, pelo motivo do paragrafo anterior.
+//
+// --- POR QUE A PREFERENCIA VENCE --------------------------------------------
+//
+// Ver FONTEPREF_VALIDADE_S. Uma preferencia de meses atras aponta para um
+// provedor que talvez nem esteja mais instalado, e faz isso escondendo a folha
+// de fontes (detail.c consulta fontepref_tem para decidir se pergunta ou toca).
+//
 // SO A ESCOLHA MANUAL E GRAVADA. O que o automatico escolhe nao vira
 // preferencia: quem nunca abriu a folha continua com a regra da pontuacao,
 // intocada, para sempre.
@@ -69,10 +98,43 @@
 // lados igual continua casando.
 #define FONTEPREF_TRILHA 64
 
+// Espelha Stream.bingeGroup. Guardado igual ao que veio, cortado igual dos
+// dois lados — como a trilha.
+#define FONTEPREF_BINGE 128
+
+// VALIDADE DA PREFERENCIA — 180 dias.
+//
+// O app web tambem expira a dele, e a comparacao importa porque os dois
+// guardam COISAS DIFERENTES:
+//
+//   - la, `getValid(..., streamReuseLastLinkCacheHours * 3600e3)` com padrao
+//     de 24 h (playerSettingsStore.js) protege um LINK guardado. Link de
+//     debrid e assinado e expira em minutos; 24 h ja e generoso para isso.
+//   - aqui nao ha link guardado nenhum. O que se guarda e IDENTIDADE
+//     (bingeGroup, provedor, assinatura de audio) e a url e sempre resolvida
+//     de novo, na lista de hoje, por stream_primeira_boa. O prazo curto do
+//     link nao tem o que fazer neste arquivo.
+//
+// Entao o que 180 dias protege e outra coisa: um provedor que sumiu, um addon
+// desinstalado, uma assinatura de debrid que acabou. O dano de uma preferencia
+// velha nao e tocar errado — e detail.c NAO PERGUNTAR (issue #57): com
+// fontepref_tem verdadeiro o toque curto no episodio reproduz direto, e se a
+// fonte lembrada nao existe mais a pessoa recebe o que a pontuacao escolher,
+// calada. Passado meio ano, perguntar de novo e o certo.
+//
+// POR QUE NAO MENOS: uma temporada de lancamento semanal com 24 episodios leva
+// ~168 dias do primeiro ao ultimo. Um prazo mais curto expiraria NO MEIO da
+// serie, que e exatamente o caso que o issue #56 existe para atender.
+//
+// POR QUE NAO MAIS: seis meses ja e mais tempo do que a lista de addons desta
+// TV costuma ficar parada.
+#define FONTEPREF_VALIDADE_S (180LL * 24LL * 3600LL)
+
 typedef struct {
   char id[24];                      // IMDb do TITULO, sem ":temporada:episodio"
   char provedor[96];
   char trilha[FONTEPREF_TRILHA];
+  char bingeGroup[FONTEPREF_BINGE]; // o que o addon declarou; vazio e comum
   char rotulo[192];                 // desempate e log
   int  altura;
   long long quandoS;                // time(NULL) da escolha
@@ -108,7 +170,11 @@ void fontepref_trilha(const Stream *s, char *dst, unsigned tam);
 // Devolve 1 quando a tabela mudou. Fonte sem provedor nao entra.
 int fontepref_guardar(const char *id, const Stream *s);
 
-// A preferencia deste titulo, ou NULL.
+// A preferencia deste titulo, ou NULL. VENCIDA CONTA COMO INEXISTENTE (ver
+// FONTEPREF_VALIDADE_S): devolve NULL e a linha fica no arquivo, para ser
+// reescrita na proxima escolha ou descartada como a mais antiga quando a
+// tabela encher. Expirar nao grava — leitura que escreve em disco e como se
+// descobre, meses depois, que o arquivo foi reescrito num desligamento.
 const FontePref *fontepref_do_titulo(const char *id);
 int fontepref_tem(const char *id);
 

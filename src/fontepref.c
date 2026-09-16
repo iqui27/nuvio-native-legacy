@@ -1,6 +1,7 @@
 // A fonte escolhida a mao, lembrada por titulo e por perfil. Ver a nota longa
-// em fontepref.h — em especial POR QUE a chave e provedor + trilha de audio, e
-// por que ela nao pode ser a url.
+// em fontepref.h — em especial a ordem de casamento (bingeGroup declarado pelo
+// addon, depois provedor + trilha de audio), por que a chave nao pode ser a
+// url, e por que a preferencia vence.
 #include "fontepref.h"
 #include "dados.h"
 #include <ctype.h>
@@ -209,17 +210,30 @@ static char *campo(char **p) {
   return ini;
 }
 
+// O bingeGroup ENTROU NO FIM DA LINHA, depois do rotulo, e nao no meio.
+//
+// O arquivo da 1.0.55 tem seis campos. Enfiar o setimo antes do rotulo faria a
+// leitura do arquivo ja existente pousar o ROTULO dentro do bingeGroup —
+// silenciosamente, porque campo que falta vira vazio e a linha continua
+// valida. No fim, o arquivo velho le igualzinho e so nao tem bingeGroup, que e
+// a verdade: a 1.0.55 nao sabia o que e isso.
+//
+// O rotulo deixa de ser "o campo que pode conter qualquer coisa" e passa a ser
+// separado por TAB como os outros. Pode: limpar() ja troca TODO byte abaixo de
+// 32 por espaco antes de gravar, e o TAB e um deles. O ultimo campo agora e o
+// bingeGroup, que passa pelo mesmo limpar().
 static void gravar(void) {
-  size_t cap = (size_t)FONTEPREF_MAX * 420u + 64u;
+  size_t cap = (size_t)FONTEPREF_MAX * 560u + 64u;
   char *buf = (char *)malloc(cap);
   size_t k = 0;
   int i;
   if (!buf) return;
   k += (size_t)snprintf(buf + k, cap - k, "# nuvio fontes v1\n");
   for (i = 0; i < nTab && k + 1 < cap; i++)
-    k += (size_t)snprintf(buf + k, cap - k, "%s\t%lld\t%d\t%s\t%s\t%s\n",
+    k += (size_t)snprintf(buf + k, cap - k, "%s\t%lld\t%d\t%s\t%s\t%s\t%s\n",
                           tabela[i].id, tabela[i].quandoS, tabela[i].altura,
-                          tabela[i].trilha, tabela[i].provedor, tabela[i].rotulo);
+                          tabela[i].trilha, tabela[i].provedor, tabela[i].rotulo,
+                          tabela[i].bingeGroup);
   dados_gravar(arquivoDoPerfil(), buf);
   free(buf);
 }
@@ -232,7 +246,7 @@ void fontepref_iniciar(void) {
   b = dados_ler(arquivoDoPerfil());
   if (!b) return;
   for (linha = b; linha && *linha && nTab < FONTEPREF_MAX; linha = prox) {
-    char *p, *id, *quando, *altura, *trilha, *provedor, *rotulo;
+    char *p, *id, *quando, *altura, *trilha, *provedor, *rotulo, *binge;
     char *fim = strchr(linha, '\n');
     prox = fim ? fim + 1 : NULL;
     if (fim) *fim = 0;
@@ -243,12 +257,13 @@ void fontepref_iniciar(void) {
     altura   = campo(&p);
     trilha   = campo(&p);
     provedor = campo(&p);
-    // O ROTULO E O ULTIMO campo, como o titulo em salvos.txt: e o unico que
-    // pode conter qualquer coisa, e sendo o ultimo nao precisa de separador
-    // depois dele. Campo que faltar vira vazio e a linha continua valida —
-    // uma versao futura pode acrescentar coluna sem invalidar o arquivo de
-    // quem ja usa o app.
-    rotulo = p ? p : (char *)"";
+    rotulo   = campo(&p);
+    // O bingeGroup E O ULTIMO campo, como o titulo em salvos.txt: sendo o
+    // ultimo nao precisa de separador depois dele. Campo que faltar vira vazio
+    // e a linha continua valida — que e exatamente o que acontece ao ler o
+    // arquivo de seis campos gravado pela 1.0.55, e o certo: aquela versao nao
+    // lia bingeGroup nenhum.
+    binge = p ? p : (char *)"";
     if (strncmp(id, "tt", 2)) continue;
     if (!provedor[0]) continue;      // sem provedor a linha nao casa com nada
     { FontePref *f = &tabela[nTab++];
@@ -257,6 +272,7 @@ void fontepref_iniciar(void) {
       snprintf(f->trilha, sizeof f->trilha, "%s", trilha);
       snprintf(f->provedor, sizeof f->provedor, "%s", provedor);
       snprintf(f->rotulo, sizeof f->rotulo, "%s", rotulo);
+      snprintf(f->bingeGroup, sizeof f->bingeGroup, "%s", binge);
       f->quandoS = atoll(quando);
       f->altura = atoi(altura); }
   }
@@ -288,13 +304,45 @@ void fontepref_esquecer(void) {
   carregado = 1;   // ja sabemos o que ha no disco: nada
 }
 
+// VENCEU? Ver FONTEPREF_VALIDADE_S em fontepref.h para o prazo e o porque.
+// Aqui ficam as duas bordas, que sao as que mordem numa TV:
+//
+//   quandoS <= 0  vale para sempre. Linha sem carimbo e linha que veio de um
+//                 arquivo que nao tinha a coluna, ou de um atoll que falhou.
+//                 Tratar ausencia de data como "velhissima" apagaria a escolha
+//                 de todo mundo no primeiro arranque da versao seguinte — o
+//                 lado errado para errar.
+//   agora < quandoS  (preferencia "do futuro") TAMBEM vale. O app web recusa
+//                 esse caso; aqui nao, de proposito: esta TV arranca com o
+//                 relogio errado e so acerta quando a rede sobe, entao "do
+//                 futuro" e o estado NORMAL dos primeiros segundos de uso. Uma
+//                 preferencia honrada a mais custa uma fonte; expirar a tabela
+//                 inteira a cada tomada tirada da parede custa o recurso.
+static int venceu(const FontePref *f) {
+  long long agora = (long long)time(NULL);
+  if (!f || f->quandoS <= 0) return 0;
+  if (agora <= f->quandoS) return 0;
+  return agora - f->quandoS > FONTEPREF_VALIDADE_S;
+}
+
 const FontePref *fontepref_do_titulo(const char *id) {
   char base[24];
   int k;
   if (!carregado) fontepref_iniciar();
   fontepref_id_base(id, base, sizeof base);
   k = achar(base);
-  return k >= 0 ? &tabela[k] : NULL;
+  if (k < 0) return NULL;
+  if (venceu(&tabela[k])) {
+    // Nao apaga e nao grava: ver a nota em fontepref.h. A linha morre sozinha
+    // na proxima escolha (reescrita) ou quando a tabela encher (a mais antiga
+    // sai primeiro, e vencida e velha por definicao).
+    printf("[fonte] preferencia de %s venceu (%lld dias); perguntando de novo\n",
+           tabela[k].id,
+           ((long long)time(NULL) - tabela[k].quandoS) / (24LL * 3600LL));
+    fflush(stdout);
+    return NULL;
+  }
+  return &tabela[k];
 }
 
 int fontepref_tem(const char *id) { return fontepref_do_titulo(id) != NULL; }
@@ -314,12 +362,14 @@ int fontepref_guardar(const char *id, const Stream *s) {
   snprintf(novo.id, sizeof novo.id, "%s", base);
   snprintf(novo.provedor, sizeof novo.provedor, "%s", s->provedor);
   snprintf(novo.rotulo, sizeof novo.rotulo, "%s", s->rotulo);
+  snprintf(novo.bingeGroup, sizeof novo.bingeGroup, "%s", s->bingeGroup);
   fontepref_trilha(s, novo.trilha, sizeof novo.trilha);
   novo.altura = s->altura;
   novo.quandoS = (long long)time(NULL);
   limpar(novo.provedor);
   limpar(novo.rotulo);
   limpar(novo.trilha);
+  limpar(novo.bingeGroup);
 
   k = achar(base);
   if (k < 0) {
@@ -335,40 +385,95 @@ int fontepref_guardar(const char *id, const Stream *s) {
     }
   } else if (!strcmp(tabela[k].provedor, novo.provedor) &&
              !strcmp(tabela[k].trilha, novo.trilha) &&
+             !strcmp(tabela[k].bingeGroup, novo.bingeGroup) &&
              !strcmp(tabela[k].rotulo, novo.rotulo) &&
-             tabela[k].altura == novo.altura) {
+             tabela[k].altura == novo.altura &&
+             !venceu(&tabela[k])) {
     // Mesma escolha de novo: nao reescrever o arquivo por um carimbo de tempo.
+    // MENOS quando ela venceu — ai o carimbo E a novidade, e sem reescrever a
+    // pessoa reescolheria a mesma fonte a cada abertura ate o fim dos tempos.
     return 0;
   }
   tabela[k] = novo;
   gravar();
-  printf("[fonte] preferencia de %s: %s / %s\n", base, novo.provedor,
-         novo.trilha[0] ? novo.trilha : "(sem marca de idioma)");
+  printf("[fonte] preferencia de %s: %s / %s / binge=%s\n", base, novo.provedor,
+         novo.trilha[0] ? novo.trilha : "(sem marca de idioma)",
+         novo.bingeGroup[0] ? novo.bingeGroup : "(o addon nao declarou)");
   fflush(stdout);
   return 1;
 }
 
-int fontepref_escolher(const char *id) {
-  const FontePref *p = fontepref_do_titulo(id);
+// DESEMPATE, o mesmo das duas camadas. Varias fontes podem dividir o mesmo
+// bingeGroup (o addon agrupa por servico/qualidade, nao por arquivo), e varias
+// podem dividir provedor + trilha. Resolucao igual vale 2, rotulo igual vale 4
+// — o rotulo e o sinal mais forte porque e o texto que a pessoa leu na folha
+// quando escolheu.
+static int nota(const Stream *s, const FontePref *p) {
+  int n = 0;
+  if (s->altura == p->altura) n += 2;
+  if (!strcmp(s->rotulo, p->rotulo)) n += 4;
+  return n;
+}
+
+// CAMADA 1: o bingeGroup que o addon declarou. Sem provedor na condicao, como
+// no app web (um `find` por bingeGroup e mais nada): o campo JA E a declaracao
+// de identidade de fonte, e exigir provedor por cima so criaria um jeito novo
+// de nao casar.
+static int porBinge(const FontePref *p) {
   int i, melhor = -1, melhorNota = -1, total = stream_n();
-  if (!p) return -1;
+  if (!p->bingeGroup[0]) return -1;
+  for (i = 0; i < total; i++) {
+    const Stream *s = stream_item(i);
+    int n;
+    if (!s || !s->bingeGroup[0]) continue;
+    if (strcmp(s->bingeGroup, p->bingeGroup)) continue;
+    n = nota(s, p);
+    // `>` e nao `>=`, a mesma disciplina de stream_automatico: em empate fica
+    // o PRIMEIRO da lista, que e a ordem em que o addon devolveu.
+    if (n > melhorNota) { melhorNota = n; melhor = i; }
+  }
+  return melhor;
+}
+
+// CAMADA 2: a heuristica da 1.0.55, intacta. Ela atende os addons que nao
+// mandam bingeGroup — que sao muitos — e o episodio em que o addon MUDOU o
+// rotulo de agrupamento.
+static int porTrilha(const FontePref *p) {
+  int i, melhor = -1, melhorNota = -1, total = stream_n();
   for (i = 0; i < total; i++) {
     const Stream *s = stream_item(i);
     char t[FONTEPREF_TRILHA];
-    int nota;
+    int n;
     if (!s || !s->provedor[0]) continue;
     if (strcasecmp(s->provedor, p->provedor)) continue;
     fontepref_trilha(s, t, sizeof t);
     // TRILHA IDENTICA OU NADA. Ver a nota de fontepref.h: "mesmo provedor, outro
     // audio" e a queixa do issue, nao a solucao dele.
     if (strcmp(t, p->trilha)) continue;
-    nota = 0;
-    if (s->altura == p->altura) nota += 2;
-    if (!strcmp(s->rotulo, p->rotulo)) nota += 4;
-    // `>` e nao `>=`, a mesma disciplina de stream_automatico: em empate fica
-    // o PRIMEIRO da lista, que e a ordem em que o addon devolveu.
-    if (nota > melhorNota) { melhorNota = nota; melhor = i; }
+    n = nota(s, p);
+    if (n > melhorNota) { melhorNota = n; melhor = i; }
   }
+  return melhor;
+}
+
+int fontepref_escolher(const char *id) {
+  const FontePref *p = fontepref_do_titulo(id);
+  int melhor;
+  if (!p) return -1;
+
+  melhor = porBinge(p);
+  if (melhor >= 0) {
+    printf("[fonte] preferida de %s na posicao %d por bingeGroup (%s)\n",
+           p->id, melhor, p->bingeGroup);
+    fflush(stdout);
+    return melhor;
+  }
+  // BINGEGROUP GUARDADO QUE NAO CASOU NAO ENCERRA A BUSCA. O app web tem um
+  // modo (`bingeGroupOnly`) em que a falha abre a folha; aqui nao ha esse
+  // modo, e cair na heuristica e o certo: o addon que troca de servico de
+  // debrid troca o bingeGroup inteiro sem trocar de fonte nenhuma.
+  melhor = porTrilha(p);
+
   if (melhor >= 0)
     printf("[fonte] preferida de %s na posicao %d (%s)\n", p->id, melhor,
            p->trilha[0] ? p->trilha : "sem marca de idioma");

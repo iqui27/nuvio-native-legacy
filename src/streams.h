@@ -33,6 +33,17 @@ typedef struct {
   long tamanhoMB;       // 0 quando desconhecido
   char descricao[2048];
   char arquivo[512];
+  // O QUE O ADDON DECLARA COMO "a mesma fonte" entre episodios:
+  // behaviorHints.bingeGroup, a convencao do Stremio. Quem manda o campo
+  // resolve o casamento entre episodios SEM heuristica nenhuma — e o proprio
+  // addon dizendo "este stream e o mesmo daquele". Vazio e o normal: muitos
+  // addons nao mandam, e fontepref.c cai na assinatura de audio quando falta.
+  //
+  // 128 e folga sobre o que a convencao produz ("torrentio|1080p",
+  // "mediafusion|<servico>|<qualidade>"): sao rotulos de agrupamento, nao
+  // texto livre. Cortado dos dois lados igual continua casando, pelo mesmo
+  // motivo de FONTEPREF_TRILHA.
+  char bingeGroup[128];
   // Stream SEM url, so com o hash do torrent (Torrentio/Comet sem debrid na
   // URL). So entra na lista quando debrid_ativo(); a url e preenchida na
   // verificacao, por debrid_resolver.
