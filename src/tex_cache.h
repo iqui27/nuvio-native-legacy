@@ -85,11 +85,16 @@ float tex_aspecto(const char *caminho);
 // Responde 0 enquanto a textura nao carregou: nao tingir e o padrao seguro.
 int  tex_marca_escura(const char *caminho);
 
-// A COR DA MARCA: media dos pixels opacos pesada pelo croma (o azul do Disney+
-// ganha do branco em volta; um logo preto e branco cai na media plana). Para
-// pintar o cartao em foco com a cor do canal, no guia. 0 enquanto a textura
-// nao carregou — ai o chamador usa a cor de realce, como em qualquer botao.
-int  tex_cor_marca(const char *caminho, float *r, float *g, float *b);
+// A COR DE FUNDO da arte — a media da borda, quando a borda e opaca (logo com
+// fundo proprio, como o quadrado cinza do Disney+). Devolve 1 com a cor; 2
+// quando a borda e transparente (logo recortado: nao ha fundo, quem desenha
+// usa o proprio azulejo); 0 enquanto a textura nao carregou. Para o guia
+// pintar o cartao em foco com a cor por tras do logo do canal.
+int  tex_cor_fundo(const char *caminho, float *r, float *g, float *b);
+// Luminancia media dos pixels opacos, 0..255; -1 enquanto nao carregou. E a
+// mesma medida de tex_marca_escura, exposta crua: o guia a usa para escolher
+// um azulejo ESCURO sob logo claro (o Paramount+ branco sumia no claro).
+int  tex_luminancia(const char *caminho);
 
 // Chamar uma vez por quadro, na thread de desenho: sobe para a GPU o que a
 // thread de decode terminou. Devolve quantas subiu.

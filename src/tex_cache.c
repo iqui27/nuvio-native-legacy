@@ -65,8 +65,9 @@ typedef struct {
   // PRETO (acromatico, variante errada do TMDB) de logo de MARCA escuro mas
   // colorido (vermelho, vinho), que deve passar intacto.
   int croma;
-  // COR DA MARCA: media dos pixels opacos pesada pelo croma, 0..255 cada.
-  // Ver tex_cor_marca; -1 em corR enquanto nao se sabe.
+  // COR DE FUNDO da arte: a media da BORDA quando ela e opaca (logo com
+  // fundo proprio), -2 quando a borda e transparente (logo recortado), -1
+  // enquanto nao se sabe. Ver tex_cor_fundo.
   int corR, corG, corB;
   // FURA A FILA. Arte que OCUPA A TELA — o hero da home, o fundo do detalhe —
   // é uma só, é a que a pessoa está olhando, e ela entrava na mesma fila FIFO
@@ -1030,11 +1031,6 @@ static int threadDecode(void *arg) {
     if (conv && conv->format->BytesPerPixel == 4) {
       const unsigned char *px = (const unsigned char *)conv->pixels;
       long soma = 0, somaC = 0, n = 0;
-      // COR DA MARCA: media pesada pelo croma, para o azul do Disney+ ganhar
-      // do branco em volta e o verde do SBT ganhar do preto do texto. Num
-      // logo acromatico (Cartoon Network, preto e branco) o peso do croma
-      // e quase zero em todo pixel e a media cai na cor plana.
-      long pr = 0, pg = 0, pb = 0, pw = 0, sr = 0, sg = 0, sb = 0;
       int yy, xx;
       for (yy = 0; yy < conv->h; yy += 4) {
         const unsigned char *ln = px + (size_t)yy * conv->pitch;
@@ -1044,19 +1040,36 @@ static int threadDecode(void *arg) {
           soma += (q[0] * 299 + q[1] * 587 + q[2] * 114) / 1000;
           { int mx = q[0] > q[1] ? q[0] : q[1]; if (q[2] > mx) mx = q[2];
             int mn = q[0] < q[1] ? q[0] : q[1]; if (q[2] < mn) mn = q[2];
-            somaC += mx - mn;
-            pr += (long)q[0] * (mx - mn); pg += (long)q[1] * (mx - mn);
-            pb += (long)q[2] * (mx - mn); pw += mx - mn; }
-          sr += q[0]; sg += q[1]; sb += q[2];
+            somaC += mx - mn; }
           n++;
         }
       }
-      if (n > 0) {
-        lumMedia = (int)(soma / n); cromaMedia = (int)(somaC / n);
-        // Peso total de croma abaixo de ~24 por pixel = marca sem cor propria.
-        if (pw > n * 24) { corR = (int)(pr / pw); corG = (int)(pg / pw); corB = (int)(pb / pw); }
-        else             { corR = (int)(sr / n);  corG = (int)(sg / n);  corB = (int)(sb / n); }
-      }
+      if (n > 0) { lumMedia = (int)(soma / n); cromaMedia = (int)(somaC / n); }
+      // COR DE FUNDO: a media da BORDA da imagem (uma moldura de 1 px de
+      // cada lado). Logo com fundo proprio (o quadrado cinza do Disney+) tem
+      // a borda opaca e de uma cor so; logo recortado tem a borda
+      // transparente e ai NAO ha fundo a copiar — quem desenha usa o azulejo
+      // dele. Existe para o guia pintar o cartao em foco com a cor por tras
+      // do logo, e nao com a media da marca (que num logo preto e branco da
+      // um cinza que nao e de ninguem).
+      { long br = 0, bg = 0, bb = 0, bn = 0, bt = 0;
+        int W = conv->w, H = conv->h;
+        for (xx = 0; xx < W; xx += 2) {
+          const unsigned char *q0 = px + (size_t)xx * 4;
+          const unsigned char *q1 = px + (size_t)(H - 1) * conv->pitch + (size_t)xx * 4;
+          bt += 2;
+          if (q0[3] >= 200) { br += q0[0]; bg += q0[1]; bb += q0[2]; bn++; }
+          if (q1[3] >= 200) { br += q1[0]; bg += q1[1]; bb += q1[2]; bn++; }
+        }
+        for (yy = 0; yy < H; yy += 2) {
+          const unsigned char *q0 = px + (size_t)yy * conv->pitch;
+          const unsigned char *q1 = q0 + (size_t)(W - 1) * 4;
+          bt += 2;
+          if (q0[3] >= 200) { br += q0[0]; bg += q0[1]; bb += q0[2]; bn++; }
+          if (q1[3] >= 200) { br += q1[0]; bg += q1[1]; bb += q1[2]; bn++; }
+        }
+        if (bt > 0 && bn * 10 >= bt * 8) { corR = (int)(br / bn); corG = (int)(bg / bn); corB = (int)(bb / bn); }
+        else corR = -2; }
     }
 
     // A FALHA PRECISA APARECER. Sem log, uma imagem que nunca decodifica vira
@@ -1538,18 +1551,32 @@ float tex_aspecto(const char *caminho) {
   return a;
 }
 
-int tex_cor_marca(const char *caminho, float *r, float *g, float *b) {
+int tex_luminancia(const char *caminho) {
+  int r = -1;
+  unsigned long h;
+  int i;
+  if (!caminho || !*caminho) return -1;
+  h = hashCaminho(caminho);
+  BUSCA_MEDIDA(i, caminho, h);
+  if (i >= 0 && itens[i].tex) r = itens[i].lum;
+  SDL_UnlockMutex(mtx);
+  return r;
+}
+
+int tex_cor_fundo(const char *caminho, float *r, float *g, float *b) {
   int ok = 0;
   unsigned long h;
   int i;
   if (!caminho || !*caminho) return 0;
   h = hashCaminho(caminho);
   BUSCA_MEDIDA(i, caminho, h);
-  if (i >= 0 && itens[i].tex && itens[i].corR >= 0) {
-    if (r) *r = itens[i].corR / 255.0f;
-    if (g) *g = itens[i].corG / 255.0f;
-    if (b) *b = itens[i].corB / 255.0f;
-    ok = 1;
+  if (i >= 0 && itens[i].tex) {
+    if (itens[i].corR >= 0) {
+      if (r) *r = itens[i].corR / 255.0f;
+      if (g) *g = itens[i].corG / 255.0f;
+      if (b) *b = itens[i].corB / 255.0f;
+      ok = 1;
+    } else if (itens[i].corR == -2) ok = 2;
   }
   SDL_UnlockMutex(mtx);
   return ok;

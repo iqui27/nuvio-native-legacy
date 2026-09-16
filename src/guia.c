@@ -726,6 +726,54 @@ static void fmtHora(time_t t, char *dst, size_t n) {
 // O cartao de canal: logo + nome em cima, "agora" com barra de progresso e o
 // proximo embaixo. Sem grade real o canal se mostra como "AO VIVO" — a
 // verdade, em vez de um programa inventado.
+// O CARTAO DE CANAL TEM DUAS CORES, E SO DUAS — decisao do dono (16/09),
+// olhando a captura do HBO Max: "tira a borda quando nao ta selecionado" e
+// "muda o fundo da logo do canal, deixa so branco e preto, e o selecionado tb
+// vai ser um ou outro".
+//
+//   sem foco:  cartao QUASE PRETO, logo e texto BRANCOS
+//   com foco:  cartao BRANCO,      logo e texto QUASE PRETOS
+//
+// O QUE SAIU, e por que. Havia um AZULEJO de 92x92 por tras do logo, pintado
+// numa cor derivada do proprio logo (media da borda ou luminancia). Ele era a
+// "borda" da reclamacao: em volta da marca preta do HBO sobrava um quadrado
+// claro que nao pertencia a nada. A cor derivada tambem fazia cada cartao ter
+// um fundo diferente — o oposto de "so branco e preto". Nao ha mais azulejo:
+// o logo e desenhado direto sobre o cartao, nos dois estados.
+//
+// A ARMADILHA DO DESENHO DO LOGO. GFX_TEXTO preserva o RGB da textura;
+// GFX_MARCA tira a forma do ALFA e pinta com a cor passada (ver gfx.h). So o
+// MARCA da um logo de uma cor so — mas se o arquivo nao tiver recorte (fundo
+// opaco proprio), o alfa e cheio e o MARCA desenharia um BLOCO chapado no
+// lugar da marca. tex_cor_fundo ja sabe distinguir os dois casos: devolve 1
+// quando a borda e opaca. Logo recortado vai por MARCA e fica de uma cor so;
+// logo com fundo proprio continua por TEXTO, com o fundo que ja vem no
+// arquivo — tinta-lo apagaria a marca, que e pior que um quadrado preto num
+// cartao preto (que, no HBO, e justamente o resultado certo).
+#define G_LOGO_CLARO 0.965f
+#define G_LOGO_ESC   0.08f
+
+// Desenha o logo do canal na caixa `cx`, sem azulejo. `tom` e a cor do logo
+// recortado (claro sobre cartao escuro, escuro sobre cartao claro).
+static void desenharLogo(const char *logo, GfxRect cx, float lado, float tom,
+                         float a) {
+  GLuint t;
+  float ap, w, h, fr, fg, fb;
+  int comFundo;
+  if (!logo || !logo[0]) return;
+  t = tex_obter_larg(logo, cx.w);
+  ap = tex_aspecto(logo);
+  if (!t || ap <= 0.0f) return;
+  w = lado; h = w / ap;
+  if (h > lado) { h = lado; w = h * ap; }
+  comFundo = tex_cor_fundo(logo, &fr, &fg, &fb) == 1;
+  { GfxRect lr = { cx.x + (cx.w - w) * 0.5f, cx.y + (cx.h - h) * 0.5f, w, h };
+    gfx_tex_aspect_atual = 0.0f;
+    if (comFundo) gfx_rect(lr, t, GFX_TEXTO, 0, 0, 0, 0.0f, 1, 1, 1, a);
+    else          gfx_rect(lr, t, GFX_MARCA, 0, 0, 0, 0.0f, tom, tom, tom, a);
+  }
+}
+
 static void desenharCard(GCanal *c, float x, float y, float foco, float a,
                          time_t agoraT) {
   GfxRect r = { x, y, G_CARD_W, G_CARD_H };
@@ -735,38 +783,33 @@ static void desenharCard(GCanal *c, float x, float y, float foco, float a,
   int temAgora = epg >= 0 && epg_agora(epg, agoraT, &ag);
   int temProx  = epg >= 0 && epg_proximo(epg, agoraT, 0, &px);
 
-  // FOCO = O CARTAO PREENCHIDO NA COR DO CANAL, sem anel. Pedido do dono
-  // (16/09), olhando a captura do guia: "quando ta selecionado ficar com a
-  // cor do fundo da logo do canal". A cor sai dos pixels do logo
-  // (tex_cor_marca: media pesada pelo croma — o azul do Disney+, o verde do
-  // SBT); enquanto o logo nao carregou, a cor de realce, como todo botao do
-  // app desde a mesma decisao (ver NV_COR_FOCO em layout.h).
+  // FOCO = O CARTAO PREENCHIDO NA COR DO FUNDO DO LOGO, sem anel. Pedido do
+  // dono (16/09), olhando a captura do guia: "quando ta selecionado ficar com
+  // a cor do fundo da logo do canal" — e, na rodada seguinte, "nao ta da
+  // mesma cor o fundo do card com o fundo da logo". Entao e A MESMA COR, e
+  // nao uma parecida: logo com fundo proprio (o quadrado cinza do Disney+)
+  // da o cartao naquele cinza; logo recortado nao tem fundo, e o cartao fica
+  // na cor do AZULEJO em que o logo sempre e desenhado — o azulejo some no
+  // cartao. Enquanto o logo nao carregou, a cor de realce, como todo botao
+  // do app desde a mesma decisao (ver NV_COR_FOCO em layout.h).
   //
-  // O texto acompanha: escuro sobre marca clara, claro sobre marca escura,
-  // decidido pela luminancia da cor e trocado no meio da mola (texto ja
+  // O texto acompanha: escuro sobre fundo claro, claro sobre fundo escuro,
+  // decidido pela luminancia e trocado no meio da mola (texto ja
   // rasterizado nao muda de cor).
-  float cr, cg, cb;
-  int escuro = 0;
-  if (!tex_cor_marca(c->logo, &cr, &cg, &cb)) ajustes_acento(&cr, &cg, &cb);
-  if (foco > 0.5f) escuro = (cr * 0.299f + cg * 0.587f + cb * 0.114f) > 0.55f;
+  // O foco troca o cartao de PRETO para BRANCO, e mais nada — sem anel, sem
+  // cor derivada do logo. `escuro` diz que o texto e o logo tem de virar
+  // escuros, e a troca e em DEGRAU no meio da mola: texto ja rasterizado nao
+  // muda de cor, e uma cor por quadro rasterizaria a linha a cada quadro (a
+  // nota longa esta em ctxmenu.c).
+  int escuro = foco > 0.5f;
   gfx_cor(r, 0.08f, lum, lum, lum + 0.01f, a);
-  if (foco > 0.01f) gfx_cor(r, 0.08f, cr, cg, cb, foco * a);
+  if (foco > 0.01f) gfx_cor(r, 0.08f, G_LOGO_CLARO, G_LOGO_CLARO,
+                            G_LOGO_CLARO + 0.004f, foco * a);
 
-  // Logo sobre um azulejo claro: os logos do FrostView sao PNG escuros/coloridos
-  // pensados para fundo branco — num fundo escuro varios somem.
-  { GfxRect az = { x + 14.0f, y + 14.0f, 92.0f, 92.0f };
-    gfx_cor(az, 0.14f, 0.93f, 0.94f, 0.95f, a);
-    if (c->logo[0]) {
-      GLuint t = tex_obter_larg(c->logo, 92.0f);
-      float ap = tex_aspecto(c->logo);
-      if (t && ap > 0.0f) {
-        float w = 80.0f, h = w / ap;
-        if (h > 80.0f) { h = 80.0f; w = h * ap; }
-        GfxRect lr = { az.x + (az.w - w) * 0.5f, az.y + (az.h - h) * 0.5f, w, h };
-        gfx_tex_aspect_atual = 0.0f;
-        gfx_rect(lr, t, GFX_TEXTO, 0, 0, 0, 0.0f, 1, 1, 1, a);
-      }
-    } }
+  // Logo direto sobre o cartao, SEM AZULEJO em nenhum dos dois estados: era o
+  // azulejo que desenhava a "borda" em volta da marca.
+  { GfxRect cx = { x + 14.0f, y + 14.0f, 92.0f, 92.0f };
+    desenharLogo(c->logo, cx, 80.0f, escuro ? G_LOGO_ESC : G_LOGO_CLARO, a); }
 
   // Nome ao lado do logo, favorito marcado com a estrela que a fonte ja tem.
   { float tx = x + 120.0f, tw = r.w - 120.0f - 14.0f;
@@ -844,19 +887,11 @@ static void desenharPainel(float a, time_t agoraT) {
                      NV_TELA_W - G_PAN_X + 24.0f, NV_TELA_H };
   gfx_cor(painel, 0.0f, 0.045f, 0.047f, 0.055f, 0.85f * a);
 
-  // Logo grande, na mesma regra do card (fundo claro).
-  { GfxRect az = { G_PAN_X + (G_PAN_W - 168.0f) * 0.5f, y, 168.0f, 168.0f };
-    gfx_cor(az, 0.10f, 0.93f, 0.94f, 0.95f, a);
-    if (c->logo[0]) {
-      GLuint t = tex_obter_larg(c->logo, 168.0f);
-      float ap = tex_aspecto(c->logo);
-      if (t && ap > 0.0f) {
-        float w = 148.0f, h = w / ap;
-        if (h > 148.0f) { h = 148.0f; w = h * ap; }
-        GfxRect lr = { az.x + (az.w - w) * 0.5f, az.y + (az.h - h) * 0.5f, w, h };
-        gfx_tex_aspect_atual = 0.0f;
-        gfx_rect(lr, t, GFX_TEXTO, 0, 0, 0, 0.0f, 1, 1, 1, a);
-      } }
+  // Logo grande, na MESMA regra do cartao: sem azulejo, claro sobre o painel
+  // escuro. Duas regras diferentes para o mesmo logo em duas telas vizinhas
+  // era o que fazia o Paramount+ sumir de uma e aparecer na outra.
+  { GfxRect cx = { G_PAN_X + (G_PAN_W - 168.0f) * 0.5f, y, 168.0f, 168.0f };
+    desenharLogo(c->logo, cx, 148.0f, G_LOGO_CLARO, a);
     y += 168.0f + 20.0f; }
 
   { TxtLinha t = txt_linha_corta(TXT_PAINEL_TITULO, c->nome, 245, 246, 250, 255,
