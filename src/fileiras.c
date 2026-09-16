@@ -441,7 +441,44 @@ void fil_registrar(const char *chave, const char *titulo,
     // Chave nova entra no FIM, nunca no meio: a mesma regra do
     // ensureOrderKeysWithPrefs do web. Catalogo que o addon passou a declarar
     // hoje nao pode empurrar para baixo a fileira que a pessoa deixou no topo.
-    if (nLinhas >= FIL_MAX) { pthread_mutex_unlock(&trava); return; }
+    // TABELA CHEIA: DESPEJA UMA DISPENSAVEL EM VEZ DE RECUSAR A NOVA.
+    //
+    // Recusar em silencio foi um defeito real, medido na C9 em 15/09/2026: a
+    // conta declara 279 catalogos, o arquivo tinha as 192 linhas do teto de
+    // entao, e SEIS fileiras desenhadas na home nao existiam na tela de
+    // fileiras — nao dava para move-las nem para desliga-las. A lista tem de
+    // conter, sempre, o que a pessoa esta vendo; e o proposito dela.
+    //
+    // O QUE PODE SAIR: so entrada que (a) nao esta na home agora, (b) nao foi
+    // vista nesta sessao, e (c) esta com tudo no padrao — ninguem desligou,
+    // nem escolheu forma ou tamanho. Configuracao da pessoa nunca e despejada
+    // por falta de espaco; se so houver linhas configuradas, a nova fica de
+    // fora, mas AGORA COM LOG, que e o que faltava para isto ser diagnosticavel.
+    //
+    // SAI A ULTIMA ELEGIVEL, e nao a primeira: a posicao na tabela carrega a
+    // ordem da home, e tirar do fim e o que menos mexe no que ja esta em cima.
+    if (nLinhas >= FIL_MAX) {
+      int v = -1, k;
+      for (k = nLinhas - 1; k >= 0 && v < 0; k--)
+        if (!linhas[k].naHome && !linhas[k].vista && !linhas[k].oculta &&
+            linhas[k].tipo == FIL_TIPO_AUTO && linhas[k].tam == FIL_TAM_PADRAO)
+          v = k;
+      if (v < 0) {
+        pthread_mutex_unlock(&trava);
+        printf("[fileiras] tabela cheia (%d) e nada dispensavel: \"%s\" ficou "
+               "fora da lista de fileiras\n", FIL_MAX, chave);
+        fflush(stdout);
+        return;
+      }
+      printf("[fileiras] tabela cheia (%d): \"%s\" saiu para \"%s\" entrar\n",
+             FIL_MAX, linhas[v].titulo[0] ? linhas[v].titulo : linhas[v].chave,
+             chave);
+      fflush(stdout);
+      if (v < nLinhas - 1)
+        memmove(&linhas[v], &linhas[v + 1],
+                sizeof(Linha) * (size_t)(nLinhas - 1 - v));
+      nLinhas--;
+    }
     i = nLinhas++;
     memset(&linhas[i], 0, sizeof linhas[i]);
     snprintf(linhas[i].chave, FIL_CHAVE, "%s", chave);
@@ -901,6 +938,13 @@ void fil_esquecer(void) {
 // saiu), mas o teste da tabela cheia precisa de linhas "mortas" de verdade —
 // carregadas do disco, com vista=0, que e o que o resgate procura.
 void fil_teste_recarregar(void) { carregado = 0; }
+// Zera a marca de "vista nesta sessao" de UMA linha. O despejo da tabela cheia
+// so pode tirar quem nao foi vista, e num teste todas acabam de ser
+// registradas — sem esta costura nao da para exercitar o caminho que o defeito
+// da C9 percorreu (linhas antigas, lidas do disco, com vista=0).
+void fil_teste_esquecer_vista(int i) {
+  if (i >= 0 && i < nLinhas) linhas[i].vista = 0;
+}
 #endif
 
 // ORDENA A LISTA POR ADDON: primeiro as fixas do app, depois colecoes, depois

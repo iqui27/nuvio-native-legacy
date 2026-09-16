@@ -30,12 +30,24 @@
 // Quantas fileiras a folha dos Ajustes consegue LISTAR para a pessoa ordenar.
 //
 // Era 64 e ficou pequeno quando a cota por addon (descoberta.c) passou a deixar
-// todo addon declarar: nesta conta sao 135 catalogos declarados, e os do addon
-// lido por ultimo — o Bingecat — nao entravam na lista. Ou seja, alem de nao
-// aparecerem na home, eles nao podiam nem ser LIGADOS, que e a outra metade do
-// relato. 192 cobre com folga; cada entrada custa ~300 bytes, entao a folha
-// inteira sai de 19 KB para 58 KB.
-#define FIL_MAX      192
+// todo addon declarar: naquela medicao eram 135 catalogos declarados, e os do
+// addon lido por ultimo — o Bingecat — nao entravam na lista. Ou seja, alem de
+// nao aparecerem na home, eles nao podiam nem ser LIGADOS, que e a outra metade
+// do relato.
+//
+// 192 NAO COBRIU, e o sintoma foi o mesmo com outra cara. Medido na C9 em
+// 15/09/2026: a conta declara 279 catalogos, `fileirasui-p1.txt` tinha exatas
+// 192 linhas (o teto, cheio) e SEIS fileiras que estavam desenhadas na home —
+// In Theaters, Dragon Ball (filme e serie), Evangelion (filme e serie) e Ghost
+// in the Shell — nao existiam na tela de fileiras. Nao dava para move-las nem
+// para desliga-las. O relato do dono foi exatamente esse: "algumas fileiras que
+// aparecem na home sao diferentes das que estao na tela de reordenar".
+//
+// 320 e o teto de hoje (~96 KB de tabela, ~38 KB de arquivo), mas o numero
+// sozinho nunca resolve: o Xperience declara 605 catalogos por conta propria.
+// Por isso fil_registrar passou a DESPEJAR uma entrada dispensavel quando a
+// tabela enche, em vez de recusar a nova em silencio — a regra esta la.
+#define FIL_MAX      320
 #define FIL_CHAVE   192
 #define FIL_TITULO   96
 

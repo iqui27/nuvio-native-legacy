@@ -30,6 +30,7 @@ char *dados_caminho(char *dst, unsigned tam, const char *nome) {
   return dst;
 }
 void fil_teste_recarregar(void);
+void fil_teste_esquecer_vista(int i);
 
 // A ordem que a HOME desenha: fixas primeiro, catalogo depois.
 static const char *DA_HOME[] = { "continuar", "amigos", "catA", "catB", "catC" };
@@ -440,6 +441,60 @@ int main(void) {
     assert(fil_podar_catalogos(ids, bases, 1) == 0);
     usaArquivo = 0; }
   puts("ok  poda: catalogo de addon removido sai, app e colecao ficam");
+
+  // TABELA CHEIA: o que a home desenha TEM de caber na lista.
+  //
+  // O defeito medido na C9: 279 catalogos declarados contra um teto de 192, e
+  // seis fileiras desenhadas na home que nao existiam na tela de fileiras —
+  // sem como mover nem desligar. fil_registrar recusava em silencio.
+  fil_esquecer();
+  { int j;
+    char ch[32];
+    for (j = 0; j < FIL_MAX; j++) {
+      snprintf(ch, sizeof ch, "enche_%d", j);
+      fil_registrar(ch, ch, "X", "movie", 1);
+    }
+    assert(fil_n() == FIL_MAX);
+    // Ninguem foi visto nem esta na home: a ultima e dispensavel e sai.
+    for (j = 0; j < FIL_MAX; j++) fil_teste_esquecer_vista(j);
+    fil_registrar("chegou_depois", "Chegou depois", "Y", "movie", 3);
+    assert(fil_n() == FIL_MAX);
+    assert(!strcmp(fil_chave(FIL_MAX - 1), "chegou_depois"));
+    // A DE CIMA NAO SE MEXE: o despejo sai do fim, nao do topo.
+    assert(!strcmp(fil_chave(0), "enche_0"));
+    // Quem esta na home nao pode ser despejado. Marca a ultima como desenhada
+    // e confere que a vitima passa a ser a anterior.
+    { const char *home[1];
+      home[0] = fil_chave(FIL_MAX - 1);
+      fil_espelhar_ordem(home, NULL, 1);
+      for (j = 0; j < FIL_MAX - 1; j++) fil_teste_esquecer_vista(j);
+      fil_registrar("mais_uma", "Mais uma", "Y", "movie", 3);
+      assert(fil_n() == FIL_MAX);
+      assert(!strcmp(fil_chave(FIL_MAX - 1), "mais_uma"));
+      // "chegou_depois" continua na lista: ela estava na home.
+      { int achou = 0;
+        for (j = 0; j < fil_n(); j++)
+          if (!strcmp(fil_chave(j), "chegou_depois")) achou = 1;
+        assert(achou); } } }
+  puts("ok  tabela cheia despeja dispensavel e mantem o que esta na home");
+
+  // E CONFIGURACAO DA PESSOA NAO E DESPEJADA POR FALTA DE ESPACO: com todas as
+  // linhas desligadas (que e escolha dela), a nova fica de fora — mas o log
+  // diz, que era o que faltava.
+  fil_esquecer();
+  { int j;
+    char ch[32];
+    for (j = 0; j < FIL_MAX; j++) {
+      snprintf(ch, sizeof ch, "cfg_%d", j);
+      fil_registrar(ch, ch, "X", "movie", 1);
+      fil_remover(j);                 // desliga: e escolha da pessoa
+      fil_teste_esquecer_vista(j);
+    }
+    assert(fil_n() == FIL_MAX);
+    fil_registrar("nao_cabe", "Nao cabe", "Y", "movie", 3);
+    assert(fil_n() == FIL_MAX);
+    for (j = 0; j < fil_n(); j++) assert(strcmp(fil_chave(j), "nao_cabe") != 0); }
+  puts("ok  tabela cheia nao despeja o que a pessoa configurou");
 
   puts("fileiras: tudo ok");
   return 0;
