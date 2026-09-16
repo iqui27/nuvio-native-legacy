@@ -2536,8 +2536,19 @@ static float linhaStat(float x, float y, float w, const char *rot, const char *v
   return 34.0f;
 }
 
+// COR DE PRESSAO do cache: verde com folga, amarelo perto do teto, vermelho
+// encostado. Pedido do dono (16/09): o grafico e a barra passam a dizer com
+// cor o que o numero diz com digitos. As faixas vem do comportamento medido
+// em tex_cache.c: acima de ~90% o cache despeja a cada arte nova (encostado),
+// entre 70 e 90 ele ainda absorve uma tela de fileiras sem despejar.
+static void corPressao(float t, float *r, float *g, float *b) {
+  if (t < 0.70f)      { *r = 0.24f; *g = 0.86f; *b = 0.52f; }   // #3ddc84
+  else if (t < 0.90f) { *r = 0.96f; *g = 0.78f; *b = 0.30f; }   // ambar
+  else                { *r = 0.93f; *g = 0.30f; *b = 0.30f; }   // vermelho
+}
+
 static float desenhaPainelImagens(float x, float y, float w) {
-  float y0 = y, ar, ag, ab;
+  float y0 = y;
   int itens = 0, pend = 0, quentes = 0, mb = 0, fixo = 0, slots = 0;
   long bytes = 0, bytesQ = 0, memTotal = 0, teto;
   long hist[120]; int nh, i;
@@ -2546,7 +2557,6 @@ static float desenhaPainelImagens(float x, float y, float w) {
   tex_orcamento_info(&mb, &memTotal, &fixo, &slots);
   teto = tex_orcamento_bytes();
   if (teto <= 0) teto = 1;
-  ajustes_acento(&ar, &ag, &ab);
 
   // 1. A BARRA: usado sobre o teto, na cor de realce. O teto MOSTRADO e o
   // efetivo (tex_orcamento_bytes), nao o `mb` decidido: no Mac retina o
@@ -2557,13 +2567,15 @@ static float desenhaPainelImagens(float x, float y, float w) {
   y += linhaStat(x, y, w, i18n("Ocupado"), a);
   { GfxRect trilho = { x, y, w, 8.0f };
     float t = (float)bytes / (float)teto; if (t > 1.0f) t = 1.0f;
+    float pr, pg, pb;
     GfxRect cheio = { x, y, w * t, 8.0f };
     GfxRect naTela = { x, y, w * ((float)bytesQ / (float)teto), 8.0f };
+    corPressao(t, &pr, &pg, &pb);
     gfx_cor(trilho, 0.5f, 0.94f, 0.94f, 0.96f, 0.16f);
-    if (cheio.w > 0.5f) gfx_cor(cheio, 0.5f, ar, ag, ab, 0.55f);
+    if (cheio.w > 0.5f) gfx_cor(cheio, 0.5f, pr, pg, pb, 0.55f);
     // O trecho que esta NA TELA agora, mais forte: e a parte que nao pode
     // ser despejada sem piscar (ver `quente` em tex_cache.c).
-    if (naTela.w > 0.5f && naTela.w <= cheio.w) gfx_cor(naTela, 0.5f, ar, ag, ab, 1.0f);
+    if (naTela.w > 0.5f && naTela.w <= cheio.w) gfx_cor(naTela, 0.5f, pr, pg, pb, 1.0f);
     y += 8.0f + 22.0f; }
 
   // 2. O GRAFICO: ocupacao nos ultimos dois minutos, uma coluna por segundo,
@@ -2576,12 +2588,22 @@ static float desenhaPainelImagens(float x, float y, float w) {
     if (nh > 1) {
       float passo = gw / 120.0f;
       for (i = 0; i < nh; i++) {
-        float h = gh * (float)hist[i] / (float)teto;
+        float t = (float)hist[i] / (float)teto;
+        float h = gh * t, pr, pg, pb;
         if (h > gh) h = gh;
         if (h < 1.0f) continue;
+        // Cada coluna com a cor da pressao DAQUELE segundo: um grafico que
+        // fica verde, sobe para amarelo e vira vermelho e a historia do
+        // cache enchendo — e uma faixa vermelha continua e ele encostado.
+        corPressao(t, &pr, &pg, &pb);
         GfxRect col = { gx + gw - (float)(nh - i) * passo, y + gh - h, passo + 0.5f, h };
-        gfx_cor(col, 0.0f, ar, ag, ab, 0.70f);
+        gfx_cor(col, 0.0f, pr, pg, pb, 0.80f);
       }
+      // Linhas de referencia dos 70% e 90%, para o olho saber onde a cor vira.
+      { GfxRect l70 = { gx, y + gh * 0.30f, gw, 1.0f };
+        GfxRect l90 = { gx, y + gh * 0.10f, gw, 1.0f };
+        gfx_cor(l70, 0.0f, 1.0f, 1.0f, 1.0f, 0.10f);
+        gfx_cor(l90, 0.0f, 1.0f, 1.0f, 1.0f, 0.10f); }
     }
     { TxtLinha l = txt_linha(TXT_MINI, i18n("últimos 2 min · escala do teto"), 130, 133, 142, 255);
       txt_desenhar(l, gx, y + gh + 6.0f); }
