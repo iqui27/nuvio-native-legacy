@@ -26,16 +26,16 @@ source "$EMSDK_DIR/emsdk_env.sh" >/dev/null 2>&1
 
 # --alto-cache: a mesma variante do tools/arm.sh --alto-cache, para quem tem
 # Samsung com RAM sobrando e quer testar o cache de texturas cravado em 300 MB
-# (NV_TEX_MB_FIXO). Sai em build/tizen-altocache, e o tizen-wgt.sh que vier
+# (NV_TEX_MB_FIXO). Sai em build/tizen-highcache, e o tizen-wgt.sh que vier
 # depois herda a pasta e o nome pelas mesmas variaveis. La as texturas moram
 # no processo da GPU, fora do heap de 256 MiB do wasm — ninguem mediu ate onde
 # o navegador da TV aguenta; e por isso e variante, e nao o padrao.
 VARIANTE=""
-if [ "${1:-}" = "--alto-cache" ]; then
-  VARIANTE="altocache"
+if [ "${1:-}" = "--alto-cache" ] || [ "${1:-}" = "--high-cache" ]; then
+  VARIANTE="highcache"
   export NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-} -DNV_TEX_MB_FIXO=300"
-  export NUVIO_SAIDA="${NUVIO_SAIDA:-build/tizen-altocache}"
-  export NUVIO_WGT_NOME="${NUVIO_WGT_NOME:-NuvioTV-native-altocache}"
+  export NUVIO_SAIDA="${NUVIO_SAIDA:-build/tizen-highcache}"
+  export NUVIO_WGT_NOME="${NUVIO_WGT_NOME:-NuvioTV-native-highcache}"
   echo "tizen.sh: variante ALTO CACHE (300 MB de texturas) -> $NUVIO_SAIDA"
 fi
 SAIDA="${NUVIO_SAIDA:-build/tizen}"

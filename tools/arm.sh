@@ -8,11 +8,11 @@
 #                                # gera o .ipk e PARA: nao toca na TV. E o modo
 #                                # para empacotar uma variante (webos3, alto
 #                                # cache) sem derrubar o que esta instalado.
-#   bash tools/arm.sh --alto-cache [--ipk|--build]
+#   bash tools/arm.sh --high-cache [--ipk|--build]   (--alto-cache ainda vale)
 #                                # variante ALTO CACHE: orcamento de texturas
 #                                # cravado em 300 MB (NV_TEX_MB_FIXO), para TV
 #                                # com muita RAM. O .ipk sai com sufixo
-#                                # -altocache e o titulo carimbado diz "alto
+#                                # -highcache e o titulo carimbado diz "high
 #                                # cache". A build comum decide o orcamento no
 #                                # arranque pela RAM (ver orcamentoMB em
 #                                # src/tex_cache.c).
@@ -38,13 +38,13 @@ TV_PASS="${NUVIO_TV_PASS:-alpine}"
 APP_ID="space.nuvio.native.legacy"
 ARES="../NuvioWeb-0.3.38-beta/node_modules/.bin/ares-package"
 
-# --alto-cache pode vir antes ou depois de --build/--ipk. So muda uma -D e os
+# --high-cache pode vir antes ou depois de --build/--ipk. So muda uma -D e os
 # nomes; o codigo e o mesmo — e por isso a variante nao precisa de branch.
 VARIANTE=""
-if [ "$1" = "--alto-cache" ]; then shift; VARIANTE="altocache"; fi
-if [ "$2" = "--alto-cache" ]; then set -- "$1"; VARIANTE="altocache"; fi
-if [ "$3" = "--alto-cache" ]; then set -- "$1" "$2"; VARIANTE="altocache"; fi
-if [ "$VARIANTE" = "altocache" ]; then
+if [ "$1" = "--alto-cache" ] || [ "$1" = "--high-cache" ]; then shift; VARIANTE="highcache"; fi
+if [ "$2" = "--alto-cache" ] || [ "$2" = "--high-cache" ]; then set -- "$1"; VARIANTE="highcache"; fi
+if [ "$3" = "--alto-cache" ] || [ "$3" = "--high-cache" ]; then set -- "$1" "$2"; VARIANTE="highcache"; fi
+if [ "$VARIANTE" = "highcache" ]; then
   export NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-} -DNV_TEX_MB_FIXO=300"
   echo "==> variante ALTO CACHE (300 MB de texturas)"
 fi
@@ -281,7 +281,7 @@ $SSH "root@$TV_IP" "cd $APPDIR && mv -f nuvio-proto.novo nuvio-proto && chmod 75
 echo "==> carimbando titulo com a build"
 STAMP=$(md5 -q nuvio-proto.arm 2>/dev/null || md5sum nuvio-proto.arm | cut -d' ' -f1)
 STAMP=${STAMP:0:8}
-[ -n "$VARIANTE" ] && STAMP="$STAMP alto cache"
+[ -n "$VARIANTE" ] && STAMP="$STAMP high cache"
 sed "s/(BUILD)/($STAMP)/" deploy/app/appinfo.json > /tmp/appinfo.stamped.json
 cp /tmp/appinfo.stamped.json deploy/app/appinfo.json.stamped
 
