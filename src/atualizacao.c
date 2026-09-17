@@ -67,7 +67,16 @@ static char ipkHash[80];          // sha256 em hex; vazio quando a release nao d
 // com o appInstallService. No Tizen o .wgt vive num runtime de navegador
 // isolado, sem API para instalar widget — la o cartao continua sendo so o
 // aviso. No Mac nao ha o que instalar.
-#if !defined(__EMSCRIPTEN__) && !defined(__APPLE__)
+//
+// A CAPTURA PRECISA DO CASO DA LG RODANDO NO MAC. Este cartao so existe quando
+// ha versao nova, e o ramo com botoes e barra so existe onde ha instalador —
+// ou seja, fotografa-lo de verdade exigiria segurar uma release, uma TV e o
+// Homebrew Channel ao mesmo tempo. NV_AT_INSTALA e o unico jeito de o harness
+// alcancar esse ramo; ele NAO e definido por nenhum build de produto (ver
+// tools/env.sh e tools/arm.sh), so por tests/atualizacao_shot.sh.
+#if defined(NV_AT_INSTALA)
+#define AT_INSTALA NV_AT_INSTALA
+#elif !defined(__EMSCRIPTEN__) && !defined(__APPLE__)
 #define AT_INSTALA 1
 #else
 #define AT_INSTALA 0
@@ -349,6 +358,11 @@ static int fioInstalar(void *arg) {
 static int temInstalador(void) {
   static int visto = -1;
   FILE *f;
+#if defined(NV_AT_INSTALA)
+  // No harness nao ha Homebrew Channel em disco para achar; quem forcou
+  // AT_INSTALA esta dizendo justamente "encene a TV que tem".
+  return NV_AT_INSTALA;
+#endif
   if (visto >= 0) return visto;
   f = fopen(AT_HB_DIR "/appinfo.json", "r");
   visto = f != NULL;
