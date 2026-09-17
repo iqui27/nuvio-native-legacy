@@ -63,6 +63,68 @@ static void teclaEnv(SDL_Keycode k) {
   recenviar_evento(&e);
 }
 
+// Roda `quadros` quadros so de bombeamento de textura. tex_bombear e o que faz
+// a fila de decode ANDAR: sem ele nenhuma textura sai de PENDENTE, toda arte
+// fica cinza e um conjunto de capturas de arte em branco passa por aprovado.
+static void bombear(int quadros) {
+  int i;
+  for (i = 0; i < quadros; i++) {
+    SDL_PumpEvents();
+    tex_novo_quadro();
+    tex_bombear(6);
+    SDL_Delay(4);
+  }
+}
+
+// QUANTO O CARTAZ DA MODAL CUSTA, MEDIDO. A hipotese a testar e que ele e de
+// graca porque a arte ja esta decodificada — a pessoa acabou de vir da fileira
+// onde esse mesmo cartaz estava desenhado. O cache e indexado por CAMINHO e so
+// re-decodifica com teto MAIOR (nota de PROMOCAO em tex_cache.c), entao pedir o
+// mesmo arquivo com um teto menor nao deve criar item nem gastar byte.
+//
+// O segundo par mede o caso FRIO: um cartaz que ninguem pediu antes, pedido
+// direto a 102px. Esse e o preco de verdade quando a modal abre sobre uma obra
+// cuja arte saiu do cache.
+static void medirCartaz(void) {
+  int it0, pd0, qt0, it1, pd1, qt1;
+  long by0, bq0, by1, bq1;
+
+  // Como a FILEIRA DA HOME pede: largura de card, teto alto.
+  tex_obter_larg("deploy/app/art/poster/00.jpg", 248.0f);
+  bombear(90);
+  tex_estatisticas(&it0, &pd0, &by0, &qt0, &bq0);
+  // Como ESTA MODAL pede: 102px, o maior valor que ainda cai no teto de 128.
+  tex_obter_larg("deploy/app/art/poster/00.jpg", 102.0f);
+  bombear(90);
+  tex_estatisticas(&it1, &pd1, &by1, &qt1, &bq1);
+  printf("cartaz QUENTE: %d -> %d itens, %ld -> %ld bytes (delta %d itens, "
+         "%ld bytes)\n", it0, it1, by0, by1, it1 - it0, by1 - by0);
+
+  // FRIO: arquivo nunca pedido, direto a 102.
+  tex_estatisticas(&it0, &pd0, &by0, &qt0, &bq0);
+  tex_obter_larg("deploy/app/art/poster/07.jpg", 102.0f);
+  bombear(90);
+  tex_estatisticas(&it1, &pd1, &by1, &qt1, &bq1);
+  printf("cartaz FRIO:   %d -> %d itens, %ld -> %ld bytes (delta %d itens, "
+         "%ld bytes = %.0f KB)\n", it0, it1, by0, by1, it1 - it0, by1 - by0,
+         (double)(by1 - by0) / 1024.0);
+}
+
+// Abre a modal de envio direto, com a obra que a captura quer fotografar. E a
+// MESMA porta que detail.c usa (recenviar_abrir), entao nao e um atalho de
+// teste: e o segundo dos dois caminhos reais.
+static void abrirEnvio(const char *titulo, const char *poster,
+                       const char *meta) {
+  CatItem ci;
+  memset(&ci, 0, sizeof ci);
+  snprintf(ci.imdb, sizeof ci.imdb, "%s", "tt0111161");
+  snprintf(ci.tipo, sizeof ci.tipo, "%s", "movie");
+  snprintf(ci.titulo, sizeof ci.titulo, "%s", titulo);
+  snprintf(ci.poster, sizeof ci.poster, "%s", poster);
+  snprintf(ci.meta, sizeof ci.meta, "%s", meta);
+  assert(recenviar_abrir(&ci));
+}
+
 static void teclaDet(SDL_Keycode k) {
   SDL_Event e;
   memset(&e, 0, sizeof e);
@@ -414,7 +476,13 @@ int main(int argc, char **argv) {
     snprintf(ci.imdb, sizeof ci.imdb, "%s", "tt0111161");
     snprintf(ci.tipo, sizeof ci.tipo, "%s", "movie");
     snprintf(ci.titulo, sizeof ci.titulo, "%s", "Um Sonho de Liberdade");
-    snprintf(ci.poster, sizeof ci.poster, "%s", "deploy/app/art/00.jpg");
+    // CARTAZ DE VERDADE, e nao deploy/app/art/00.jpg. Aquele arquivo e um
+    // BACKDROP 1600x900: o campo `poster` do CatItem e sempre um cartaz 2:3 do
+    // TMDB (os art/poster/*.jpg daqui sao 288x432), e semear 16:9 ali fazia
+    // esta captura validar com confianca total uma forma que a TV nunca
+    // desenha. O caso 16:9 continua fotografado, mas como o CASO ANORMAL que
+    // ele e — ver a captura "arte-deitada" mais abaixo.
+    snprintf(ci.poster, sizeof ci.poster, "%s", "deploy/app/art/poster/00.jpg");
     snprintf(ci.meta, sizeof ci.meta, "%s", "1994 · 2h22");
     cat_definir_tudo(&ci, 1, NULL, 0); }
   nContatos = 4;
@@ -539,6 +607,74 @@ int main(int argc, char **argv) {
   teclaDet(SDLK_RIGHT); teclaDet(SDLK_RIGHT);
   snprintf(nome, sizeof nome, "%s-detalhe-botao.bmp", saida);
   captura(nome, w);
+
+  // --- O CARTAZ DO CABECALHO, SOBRE O CHAO DE VERDADE -----------------------
+  //
+  // A MODAL NAO VIVE SOBRE PRETO. Todas as capturas de envio acima saem sobre o
+  // glClearColor (0,025) porque o menu de contexto ja fechou quando ela abriu —
+  // e um veu de 0,72 sobre quase-preto continua quase-preto. No aparelho ela
+  // abre sobre a HOME (fileiras de cartazes e heroi) ou sobre a pagina de
+  // DETALHE, que e um backdrop de tela cheia. Daqui para baixo o detalhe fica
+  // desenhado atras: e o mais CLARO dos dois chaos reais, e o que decide se o
+  // cartao ainda se separa do fundo e se o cartaz ainda tem silhueta.
+  nContatos = 4;   // foi zerado pela captura do estado vazio
+
+  abrirEnvio("Um Sonho de Liberdade", "deploy/app/art/poster/00.jpg",
+             "1994 · 2h22");
+  teclaEnv(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-arte-real.bmp", saida);
+  captura(nome, w);
+
+  // O PROXIMO PASSO DO MESMO GESTO. E onde o cartaz trabalha mais: o cabecalho
+  // troca o titulo pelo nome do amigo, entao sem ele nada na tela diz QUAL obra
+  // o proximo OK envia. As duas capturas tambem provam a moldura: o cartao tem
+  // de ter a MESMA altura nas duas.
+  teclaEnv(SDLK_RETURN);
+  teclaEnv(SDLK_DOWN); teclaEnv(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-arte-modelos.bmp", saida);
+  captura(nome, w);
+  teclaEnv(SDLK_AC_BACK);
+  teclaEnv(SDLK_AC_BACK);
+
+  // ARTE DEITADA NO CAMPO DO CARTAZ. Acontece de verdade: canal de addon e obra
+  // vinda de lista alheia chegam com 16:9 em `poster`. GFX_ARTE nao tem "cover"
+  // — sem o encaixe por proporcao, esta captura sairia com a imagem ESTICADA a
+  // 2:3, que e uma cara deformada em tela de 55".
+  abrirEnvio("Breaking Bad", "deploy/app/art/00.jpg",
+             "2008 · 5 temporadas");
+  teclaEnv(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-arte-deitada.bmp", saida);
+  captura(nome, w);
+  teclaEnv(SDLK_AC_BACK);
+
+  // ARTE QUE NAO CHEGA. Caminho local que nao existe: o decode falha e a
+  // textura nunca fica pronta, que e o mesmo desenho de "a rede ainda nao
+  // trouxe". Tem de sair ESQUELETO na caixa 2:3, e nao buraco preto.
+  abrirEnvio("Whiplash: Em Busca da Perfeição",
+             "deploy/app/art/poster/nao-existe.jpg", "2014 · 1h47");
+  teclaEnv(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-arte-ausente.bmp", saida);
+  captura(nome, w);
+  teclaEnv(SDLK_AC_BACK);
+
+  // TITULO LONGO. A coluna de texto perdeu 130px para o cartaz; este e o nome
+  // que prova que ela ainda cabe, em duas linhas, sem reticencia.
+  abrirEnvio("O Senhor dos Anéis: A Sociedade do Anel",
+             "deploy/app/art/poster/03.jpg", "2001 · 2h58");
+  snprintf(nome, sizeof nome, "%s-titulo-longo.bmp", saida);
+  captura(nome, w);
+  teclaEnv(SDLK_AC_BACK);
+
+  // SEM CARTAZ NENHUM. `poster` vazio nao reserva espaco: o cabecalho volta a
+  // ser o de antes, em largura cheia. Um retangulo cinza permanente no lugar de
+  // uma arte que nunca vai existir seria pior do que nao ter cartaz.
+  abrirEnvio("Stranger Things", "", "2016 · 4 temporadas");
+  teclaEnv(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-sem-poster.bmp", saida);
+  captura(nome, w);
+  teclaEnv(SDLK_AC_BACK);
+
+  medirCartaz();
 
   SDL_GL_DeleteContext(gl);
   SDL_DestroyWindow(w);
