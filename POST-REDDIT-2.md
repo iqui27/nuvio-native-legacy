@@ -2,12 +2,13 @@
 
 Escrito para você revisar e postar. Eu não publico nada.
 
-**As imagens estão em `~/Desktop/nuvio-post-2/`** (36 PNG 1920×1080, interface em
-inglês, capturadas do próprio app — build do Mac com a sua conta, mais um recorte
+**As imagens estão em `~/Desktop/nuvio-post-2/`** (51 PNG: 30 em 1920×1080, 20 em
+3840×2160 e um recorte de 540×220; interface em inglês, capturadas do próprio
+app — build do Mac com a sua conta, mais as duas da home e o recorte, que vieram
 da C9; as da parte Social vêm do teste com dados de mentira, porque a sua conta
 ainda não tem recomendação real). A lista com legenda está no fim; a ordem sugerida para a galeria é a
 numeração dos arquivos. O Reddit aceita até 20 imagens numa galeria: a seleção
-de 14 marcada com ★ é a que eu usaria.
+marcada com ★ é a que eu usaria — hoje ela tem 24, ver a nota na tabela.
 
 **Antes de postar:**
 
@@ -18,19 +19,21 @@ de 14 marcada com ★ é a que eu usaria.
    primeira pessoa sua. O que existe público e ancora a frase: os defeitos que
    ele achou viraram **quatro pré-releases em dois dias** (exp.1 a exp.4), e a
    exp.4 cita o aparelho dele.
-   **O único ponto que sobrou, e é de link, não de funcionamento:** a build de
-   webOS 3 ainda é uma **pré-release de outra branch** (`native-webos3-exp.4`).
-   Quem clicar na release principal baixa um `.ipk` que não é o dela. Ou você
-   funde a branch e publica um pacote só antes de postar, ou mantém os dois
-   links separados como estão no primeiro comentário. Isso é o que eu vou
-   resolver com o merge da webos3.
-1b. **O que deste post ainda NÃO existe numa release.** A seção
-   "What landed since" descreve a **1.1.0**, que está commitada e instalada na
-   sua C9 — e **não publicada**. Enquanto não houver release no GitHub com o
-   `.ipk` e o `.wgt`, ninguém que ler o post consegue instalar nada daquilo.
-   Ou você publica a v1.1.0 antes de postar, ou apaga a seção. Anunciar o que
-   ninguém consegue instalar é o jeito mais rápido de queimar um post nesses
-   subreddits.
+   **O ponto do link resolveu-se:** não há mais download separado de webOS 3, é
+   um `.ipk` só de 2016 a 2024, e o primeiro comentário perdeu o segundo link.
+   **O que NÃO se resolveu é a evidência**, e o texto separa as duas coisas: o
+   `webosbrew-ipk-verify` contra os dumps de firmware retail prova que o binário
+   **carrega** naquele firmware (todo símbolo que ele usa existe lá), não que
+   alguém assistiu algo numa TV de 2016. Quem sustenta "funciona" continua sendo
+   o testador, e ele rodou as 1.0.x, não a 1.1. Se alguém perguntar no post,
+   essa é a resposta honesta.
+1b. **A v1.1.0 está publicada**, com os quatro pacotes:
+   `space.nuvio.native.legacy_1.1.0_arm.ipk`, o `-highcache.ipk`,
+   `NuvioTV-1.1.0-tizen.wgt` e `NuvioTV-1.1.0-highcache-tizen.wgt`. A seção
+   "What landed in 1.1" descreve exatamente essa build, então o post já pode
+   sair. Abra o link de "Latest release" do primeiro comentário antes de postar
+   e confira que os quatro estão lá — é o único jeito de o post não apontar para
+   o que ninguém consegue instalar.
 1c. **O portal IPTV é o item mais arriscado do bloco da 1.1: eu nunca o testei
    contra um servidor de verdade**, não tenho um. O texto diz isso com todas as
    letras, e essa frase não é humildade — é o que separa "anunciei uma
@@ -53,8 +56,9 @@ de 14 marcada com ★ é a que eu usaria.
    `[IMAGEM: arquivo.png]` no corpo abaixo dizem onde cada uma entra; apague o
    marcador depois de soltar a imagem. Se o subreddit só aceitar post de texto
    simples, o plano B é a galeria com as ★ e as legendas da tabela do fim.
-3. **Publique antes** a webos3 1.0.56 e as duas variantes alto-cache
-   (`.ipk` e `.wgt`), senão o post aponta para o que não existe.
+3. **O corpo do post cita três downloads** — o `.ipk`, o `.wgt` e as variantes
+   alto-cache — e os quatro arquivos da 1.1.0 cobrem os três. Não há mais um
+   quinto para webOS 3 (nota 1).
 4. **Onde:** r/webos, r/LGOLED, r/Nuvio. Ler a regra de autopromoção de cada um.
 
 ---
@@ -70,7 +74,7 @@ de 14 marcada com ★ é a que eu usaria.
 ## Corpo
 
 Twelve days ago I posted a native C/SDL2 port of a webOS streaming app, tested
-on one rooted 2019 C9. Since then: 280 commits, 56 releases, 58 issues opened
+on one rooted 2019 C9. Since then: 291 commits, 57 releases, 59 issues opened
 by people here and 55 of them closed. This is what changed, with screenshots,
 and what I learned along the way. Links in the first comment.
 
@@ -84,8 +88,13 @@ and what I learned along the way. Links in the first comment.
   symbol stopped being fatal. But passing a symbol check is not the same as
   working, and I do not own a 2016 set — so this is here because a tester put
   it on a **webOS 3.4.3** set, reported back that it runs, and the bugs he did
-  find turned into four builds in two days. It ships as a separate build for
-  now, from its own branch.
+  find turned into four builds in two days. As of 1.1 it is no longer a separate
+  download: the same `.ipk` installs from 2016 to 2024. What I can prove about
+  that package is that it *loads* — `webosbrew-ipk-verify -S -d -r ">=3,<4"`
+  says All OK against the retail firmware dumps, meaning every symbol it uses
+  exists on that firmware. What it does not prove is that anyone watched
+  something on a 2016 set, and the tester's report is from the 1.0.x builds, not
+  this one.
 - **webOS 4** — measured here, still the reference set: 60 fps, worst frame
   under 20 ms.
 - **webOS 5, 6 and newer, including the 2024 sets** — working, reported by
@@ -98,7 +107,7 @@ and what I learned along the way. Links in the first comment.
 
 [IMAGEM: 01b-home-rows.png]
 
-One binary, every LG generation from webOS 4 up. The one thing that has to
+One binary, every LG generation from webOS 3 up. The one thing that has to
 differ between a 2016 set with 624 MB of RAM and a 2024 set with 3 GB is how
 much artwork it is allowed to keep decoded in memory, and **the app decides
 that at startup by reading the TV's own RAM** instead of shipping one number
@@ -183,7 +192,7 @@ so you can tell whether your set needs the other build instead of guessing.
 - In-app update check with the release notes, and on LG sets with the Homebrew
   Channel it installs the update itself
 
-[IMAGEM: 20-update.png]  ← FALTA CAPTURAR: ver a nota no fim
+[IMAGEM: 20-update.png]
 - Focus is now a filled button in your accent colour instead of an outline —
   a request from a photo of my own TV that I agreed with once I saw it
 
@@ -196,13 +205,64 @@ so you can tell whether your set needs the other build instead of guessing.
 
 [IMAGEM: 21-intro-guide.png]
 
-**What landed in 1.1 — NOT published yet, see note 1b**
+**What landed in 1.1**
 
-*(Everything above is installable today. Everything in this block is version
-1.1, which is built and running but has no GitHub release yet. Delete this
-whole section if you post before it ships. One item in it — the IPTV portal —
-has also never talked to a real server, and says so where it appears.)*
+*(Everything in this block is version 1.1, which is on the release page now —
+one `.ipk` for every LG generation and one `.wgt` for Samsung, plus the
+high-cache variant of each. One item in it — the IPTV portal — has never talked
+to a real server, and says so where it appears.)*
 
+- **The Home opens on the hero, and the hero is a row now.** Left and right walk
+  the first ten titles, with a **3 / 10** counter next to the title and a button
+  that opens the title's page. Press down and the rows come back exactly where
+  they have always been, with the block of text travelling down with them on the
+  same spring. The automatic rotation used to walk the whole catalogue — 281
+  titles on my account. Nobody could tell while nothing was counting; it becomes
+  a lie the moment a "3 / 281" appears next to it. Both walk the same ten now.
+
+[IMAGEM: 01-home.png]
+- **What the hero shows is a setting.** It is the first line of the Home rows
+  sheet (Settings → Home → Reorder), with left and right choosing between
+  Automatic, Random from the catalog, and each row that is on the Home — pick a
+  row and the hero shows that row's titles. It is per profile. A row that stops
+  existing does not clear the choice, because the add-on may come back: the line
+  says the row is unavailable and the hero falls back to automatic.
+
+[IMAGEM: 09c-rows-spotlight.png]
+- **The "Card" and "Size" columns of that same sheet draw the shape.** Six card
+  names and three size names, and nothing said what any of them do — two of the
+  six are the same landscape art at different sizes. There is now a strip of
+  silhouettes at the measurements the code actually uses (212×322, 568×320,
+  480×270, 360×203), at one scale and on one baseline, which is what lets you
+  compare heights at all. Only the selected one is named, with a sentence
+  underneath saying what it is.
+
+[IMAGEM: 09d-rows-card-shapes.png]
+- **Full-screen art asks for the full-size file.** The hero draws 1920 px wide
+  and was being handed the URL sized for a card — TMDB's backdrop path arrives
+  as w1280, so it was blown up 1.5×, which is what "the hero looks pixelated"
+  actually was: the file is whole, it is just small for where it is being used.
+  Measured with curl: TMDB w1280 (1280×720) has an `original` at 3840×2160;
+  Trakt's `/medium/` (1280×720, 70 KB) has a `/full/` at 1920×1080, 155 KB;
+  metahub's background is already 1920×1080, and medium, big, large and original
+  are the same file byte for byte. When a title has no backdrop at all but has
+  an IMDb id, that metahub URL can be built without asking anyone — the
+  alternative there was a stretched poster, which is not lighter, only uglier.
+- **A hero that is an episode shows that episode's still.** A "Continue
+  watching" entry for a series is an episode, and the series art is the same for
+  all ten seasons. The URL is deterministic and costs no lookup —
+  `episodes.metahub.space/<tt>/<season>/<episode>/original.jpg`, measured at
+  1920×1080. Not every episode has one; the TV log was already full of 404s from
+  it, so a miss falls back to the title's art, once, without flickering. The
+  Home screenshot above is one of these: that background is the still from S1
+  E1, not the series backdrop.
+- **Three picture settings: Low, Default and High.** What changes is the decode
+  ceiling — how much source pixel a piece of artwork carries for the same
+  drawing on screen — and the ceiling for full-screen art: 1280 on Low, 1920 on
+  the other two. Measured here: the same cards that decode at 352/576/832/1056
+  on Default go to 448/704/1056/1344 on High.
+
+[IMAGEM: 07c-settings-image-quality.png]
 - **A schedule.** Every show you follow, on a vertical time axis with today
   anchored at the top: weekday, day numeral, how long the wait is, and what the
   episode actually is. TMDB already returns the next air date, the episode
@@ -268,7 +328,7 @@ has also never talked to a real server, and says so where it appears.)*
   Live channels stay out of it — a sheet between one zap and the next is the
   opposite of what live TV wants.
 
-[IMAGEM: falta captura — Ajustes › Reprodução com a opção nova]
+[IMAGEM: 08-settings-categories.png]
 - **Switching profiles actually switches Continue Watching.** It did not. The
   row is rebuilt by one function called from exactly two places, one of them
   guarded by "did the sync bring anything new?". Returning to an already-synced
@@ -282,6 +342,19 @@ has also never talked to a real server, and says so where it appears.)*
   signal was already arriving and being written to a log line nobody reads: the
   player pipeline reports buffering start and end. Twelve seconds of that on a
   live channel and it moves on.
+- **Three things that were wrong on screen.** Two Settings options — "Corner
+  radius" and "Memory used by images" — belonged to no category, so nothing drew
+  them, while they still took focus and still drew their own help panel on the
+  right. That is what the photo of my TV shows: a panel on the right and no row
+  beside it on the left. The size of each category was written by hand and had
+  drifted from the enum by one; it is read from the enum now. Second, drawing
+  the value of an option whose value fell outside its own list read past the end
+  of that list and crashed — the screenshot harness found that one. Third, more
+  Portuguese leaked into the English interface: the month and the genre on the
+  Profile page, the type label that comes from Trakt ("Programa de TV · 2025 ·
+  51 min", under the hero) and two of the D-pad hints in Settings. Same cause
+  every time — a string composed from a function's return value never matches a
+  translation key, and the check that catches these only sees literals.
 - **IPTV portals (Stalker/Ministra), and a plain warning about it.** Several
   people asked. It speaks the set-top-box protocol directly — MAC handshake,
   session token, channel list paged by genre — and the channels land in the
@@ -339,9 +412,12 @@ no button.
 
 Only my own set is rooted. Installs through Developer Mode or the Homebrew
 Channel are reported working, including video, but I have not measured an
-unrooted install myself. The `.ipk` is 35 MB, all bundled artwork so the home
-screen has something before you sign in. GPLv3, unofficial, not affiliated
-with NuvioMedia.
+unrooted install myself. The `.ipk` is 35 MB and the `.wgt` 23 MB, nearly all of
+it bundled artwork so the home
+screen has something before you sign in. It is called **Nuvio** on the TV now —
+it used to install as "Nuvio Legacy Native" on webOS — and the id inside the
+package did not change, so 1.1 updates over what you already have. GPLv3,
+unofficial, not affiliated with NuvioMedia.
 
 If you run it on something I do not have — webOS 3, webOS 6, any Samsung —
 the red button opens the log panel, and a photo of it is worth more than a
@@ -352,20 +428,24 @@ description.
 ## Primeiro comentário (links)
 
 - Code: https://github.com/iqui27/nuvio-native-legacy
-- Latest release — LG `.ipk` (webOS 4, 5, 6 and the 2024 sets) and Samsung `.wgt`: https://github.com/iqui27/nuvio-native-legacy/releases/latest
-- **webOS 3 (2016/2017 sets) is a separate experimental build**, from its own branch: https://github.com/iqui27/nuvio-native-legacy/releases/tag/native-webos3-exp.4
-- High-cache builds (300 MB ceiling, for sets with RAM to spare): same release page, files with `altocache` in the name
+- Latest release — one LG `.ipk` (webOS 3 through the 2024 sets) and one Samsung `.wgt`: https://github.com/iqui27/nuvio-native-legacy/releases/latest
+- High-cache builds (300 MB ceiling, for sets with RAM to spare): same release page, the two files with `highcache` in the name
 - Install guide: https://github.com/iqui27/nuvio-native-legacy/blob/master/INSTALL.md
 - Web (JavaScript) fork, for anything else: https://github.com/iqui27/NuvioTVSmart-legacy-webos
 
 ## Imagens (`~/Desktop/nuvio-post-2/`) e legendas
 
-★ = as 14 que eu poria na galeria, nesta ordem (o Reddit aceita 20).
+★ = as que eu poria na galeria, nesta ordem. **Atenção: são 24 e o Reddit aceita
+20** — o texto dizia "14" mas a tabela já vinha com 20 marcadas antes de eu
+mexer, e eu marquei mais quatro (01-home, 07c, 09c, 09d), que são a cara da 1.1.
+Quatro têm de sair e a escolha é sua; se for para eu chutar, tiraria
+12c-detail-down2, 15-saved, 16-social-mock e 23-watched-badge — as quatro que
+menos dependem de estar em tamanho grande.
 
 | arquivo | legenda sugerida |
 |---|---|
-| ★ 01b-home-rows.png | Home: hero, rows, focused card grows — no ring |
-| 01-home.png | Home top: Continue Watching and friends on Trakt |
+| ★ 01-home.png | Home as it opens: the spotlight in focus, "3 / 10", "View title", rows pushed down — and the art is that episode's still (C9) |
+| ★ 01b-home-rows.png | The same Home after pressing down: rows back where they always were, focused card grows — no ring (C9) |
 | ★ 02-menu.png | Side menu, focus as a filled button in the accent colour |
 | ★ 03c-guide-focus.png | TV Guide: 768 channels in 35 categories, EPG on now / up next for the focused channel |
 | 03-guide.png | Guide at the top: category sections |
@@ -374,9 +454,12 @@ description.
 | 05-library.png | Library: Saved and Collection tabs, type/sort filters |
 | ★ 06-profile.png | Profile & Stats from Trakt: hours, rhythm, most watched, genres |
 | 07-settings.png | Settings: focused row filled, categories on the left |
-| 08-settings-categories.png | Settings with focus on the category column |
+| ★ 07c-settings-image-quality.png | Settings → Posters and cards: "Image quality — Default", with what the three levels do on the right |
+| 08-settings-categories.png | Settings with focus on the category column — "Choose the source on Play" is the last row of Playback |
 | ★ 09-home-rows.png | Home rows sheet: order, enable, card shape, where each row comes from |
 | 09b-home-rows-out.png | Rows not on Home, grouped by add-on |
+| ★ 09c-rows-spotlight.png | "Spotlight on top" is the first line of the sheet: ← → change what the Home spotlight shows |
+| ★ 09d-rows-card-shapes.png | The Card column in focus, with the silhouettes at the bottom right: each card shape at its real measurements |
 | ★ 10-settings-images.png | Image cache panel: used vs ceiling, on-screen set, 2-minute graph in pressure colour (green) |
 | 10c-settings-images-pressure.png | The same panel with the cache pinned at the ceiling (amber → red) — what the old builds looked like all the time |
 | 11-addons.png | Add-ons: what each provides, read from its manifest |
@@ -419,12 +502,9 @@ Se quiser mostrar reprodução, é foto da TV.
 25, 25b, 26, 26b, 26c, 28, 28b e 29 — 1920×1080, interface em inglês, geradas
 pelos harnesses de captura do repositório.
 
-Duas ainda faltam, e por motivos diferentes:
-
-- **27 e 27b (Social)**: a tela do consentimento e a das sugestões estão sendo
-  mexidas agora (o botão de "aparecer para outras pessoas" tinha a mesma forma
-  de um botão de ação). Capturo quando o desenho parar de mudar.
-- **20-update.png**: continua dependendo da TV, ver a nota logo abaixo.
+As duas que faltavam já estão na pasta: **27 e 27b (Social)**, de 17/09 11:34 —
+depois que o botão de "aparecer para outras pessoas" virou interruptor — e
+**20-update.png**, de 17/09 08:53.
 
 **Duas coisas que a geração destas capturas descobriu**, e as duas viraram
 conserto no app, não só na foto:
@@ -442,37 +522,35 @@ também passou para inglês. Não é interface: é DADO, e numa lista pública d
 Trakt o nome vem de quem a criou. Com a interface em inglês e o conteúdo em
 português a captura parece defeito para quem lê o álbum.
 
-**FALTAM AS CAPTURAS DAS QUATRO ÚLTIMAS COISAS DA 1.1** (escolha de fonte,
-troca de perfil, canal travado, portal IPTV). Duas delas são visuais:
+**AS CAPTURAS DA 1.1 ENTRARAM.** `01-home.png` e `01b-home-rows.png` foram
+refeitas na C9 com a build final e são o par do gesto (destaque em foco → baixo,
+fileiras no lugar); `09c` e `09d` são a folha de fileiras; `07c` é o "Image
+quality". A escolha de fonte já aparecia em `07-settings.png` e
+`08-settings-categories.png`.
 
-- **Ajustes › Reprodução com "Escolher a fonte ao reproduzir"** — a linha nova
-  na lista, com o painel de ajuda à direita.
+**O que continua sem foto:**
+
 - **Ajustes › Conta com o portal IPTV** — as três linhas, com o portal e o MAC
   já mascarados. **Confira a máscara na própria captura antes de postar**: a
   tela mostra só os dois últimos octetos, mas se a captura sair de uma TV com
   um portal real configurado, é o endereço dele que aparece ali.
 - O guia com canais de portal misturados aos dos addons, se você chegar a
   configurar um.
+- A arte de tela cheia em resolução nova: só vale como par antes/depois, e o
+  "antes" não existe mais no binário. (O still do episódio já está mostrado —
+  é o fundo de `01-home.png`.)
 
-As outras duas (troca de perfil e o travamento do canal) não rendem captura —
-são defeitos que sumiram, e a única imagem possível seria a do defeito.
-
-**Falta uma imagem antiga: `20-update.png`, o cartão de atualização.** Ele só abre
-quando há release mais nova que a instalada, e no Mac eu não consegui fazer o
-cartão abrir mesmo com a checagem dando `instalada 1.0.50, no GitHub 1.0.56 --
-NOVA` e o arquivo `atualizacao-vista.txt` apagado — alguma guarda da home não
-deixou. **Na TV ele aparece** (foi de lá que veio a versão em português), e a
-TV está com a interface em inglês agora, então é uma captura de 30 s quando
-ela estiver livre: abrir o app, o cartão sobe sozinho na home, tecla vermelha
-não, só a captura.
+Três coisas da 1.1 não rendem captura — troca de perfil, travamento de canal e o
+segfault de Ajustes são defeitos que sumiram, e a única imagem possível seria a
+do defeito.
 
 Também não capturado: o PiP de canal (precisa de vídeo, que não existe no
 build do Mac).
 
 ## Números usados no texto, e de onde vieram
 
-- 280 commits / 56 releases: `git log v1.0.2..HEAD` (280 em 17/09, fim do dia), `gh release list` (v1.0.2 → v1.0.56)
-- 58 issues, 55 fechadas, 3 abertas: `gh issue list --state open|closed|all` em 17/09
+- 291 commits / 57 releases: `git rev-list --count v1.0.2..HEAD` = 291 e `gh release list` = 57 linhas, ja com a v1.1.0 (cinco delas sao pre-release, as exp. de webOS 3). Eram 280/56 no rascunho de ontem
+- 59 issues, 55 fechadas, 4 abertas: `gh issue list --state all|closed|open` em 17/09, depois da v1.1.0. Eram 58/55/3 no rascunho
 - 363 KB / 48 KB por arte (cap de 320 px contra 128 px) e 8,3 MB / 3,7 MB (backdrop 1920 contra 1280): medidos por `tex_estatisticas` e pelas contas em src/tex_cache.c
 - Degraus 48/128/192 MB: orcamentoMB() em src/tex_cache.c, com o comentario dizendo qual foi medido e qual foi escolhido
 - Degraus do Tizen: NAO medidos, nao ha Samsung aqui — esta escrito assim no post
@@ -482,7 +560,15 @@ build do Mac).
 - "60 fps, pior quadro < 20 ms": linha FPS do log da C9 hoje
 - "dezenas por segundo → zero": `tex-despejos=46(q=…)` antes, `q=0` depois, mesmo log
 - 48/128/192 MB: orcamentoMB() em src/tex_cache.c; 624 MB é o relato de RAM de uma webOS 3 no README
-- 35 MB: `space.nuvio.native.legacy_1.0.56_arm.ipk` gerado hoje
-- webOS 3: `webosbrew-ipk-verify -S -d -r ">=3,<4"` All OK, exit 0, no 1.0.56 da branch webos3 hoje
-- Escolha manual de fonte, troca de perfil e travamento de canal: commits 9d06940, 1adc7fa e 6dc4ece na master, 17/09 — compilam no Mac e no ARM. Entram na 1.1, que ainda NAO foi publicada
+- 35 MB / 23 MB: os quatro pacotes da 1.1.0, medidos em 17/09 — `space.nuvio.native.legacy_1.1.0_arm.ipk` 36.519.936 bytes e o `-highcache.ipk` 36.519.820 (~34,8 MB cada); `NuvioTV-1.1.0-tizen.wgt` 23.640.074 bytes e o `-highcache-tizen.wgt` 23.639.603 (~22,5 MB cada). O corpo arredonda para cima, que e o que a pessoa ve na pagina da release
+- webOS 3: `webosbrew-ipk-verify -S -d -r ">=3,<4"` All OK contra os dumps de firmware retail da webosbrew, no `space.nuvio.native.legacy_1.1.0_arm.ipk`. Isso prova que CARREGA (todo simbolo usado existe naquele firmware), nao que alguem assistiu algo numa TV de 2016 — o relato do testador e das 1.0.x. O post diz as duas coisas separadas
+- Pacotes da 1.1.0: `space.nuvio.native.legacy_1.1.0_arm.ipk`, `...-highcache.ipk`, `NuvioTV-1.1.0-tizen.wgt`, `NuvioTV-1.1.0-highcache-tizen.wgt`. Os dois `.wgt` estao na raiz do repo, de hoje 11:52 e 12:24
+- Nome "Nuvio" na TV e id inalterado: `deploy/app/appinfo.json` — `"title": "Nuvio"`, `"id": "space.nuvio.native.legacy"`, `"version": "1.1.0"`
+- Escolha manual de fonte, troca de perfil e travamento de canal: commits 9d06940, 1adc7fa e 6dc4ece na master, 17/09 — compilam no Mac e no ARM. Entram na 1.1, publicada hoje
+- Destaque como fileira, "3 / 10" e os 281 titulos do catalogo: commit 5941ddb, 17/09; `HOME_HERO_LISTA 10` em src/home.c
+- Destaque configuravel na folha de fileiras (Automatico / Aleatorio / uma fileira) e as medidas das silhuetas 212x322, 568x320, 480x270, 360x203: commit 9e4d9bb, 17/09 — as medidas sao as de home.c
+- Arte de tela cheia: medidas com curl em 17/09, anotadas em src/artehero.c — TMDB w1280 1280x720 -> original 3840x2160; Trakt /medium/ 1280x720 70 KB -> /full/ 1920x1080 155 KB; metahub background 1920x1080 e medium/big/large/original byte a byte iguais
+- Still do episodio em 1920x1080: `episodes.metahub.space/<tt>/<T>/<E>/original.jpg`, medido em 17/09 (w780 da 780x439, w1280 da 1280x720). Nem todo episodio tem: o 404 ja aparecia no log da TV
+- Tetos de decodificacao 352/576/832/1056 (Padrao) contra 448/704/1056/1344 (Alta): medidos no Mac nas mesmas telas, commit 28918f5 — a razao 1,28 e a das folgas 1,25 e 1,60
+- Duas opcoes de Ajustes sem categoria, segfault do valor fora da lista e os vazamentos de portugues: commits af57a7b, a9b251f, d4e01b3, bce8e6f, 81216de e 28918f5, 17/09. As duas opcoes sem categoria vieram de uma FOTO da TV, nao de teste
 - Portal IPTV (Stalker): commit fbf8027, 17/09. Entra na 1.1. Protocolo implementado do handshake ao create_link; compila nos dois alvos; a suite de testes do repo passa. NUNCA foi exercitado contra um portal real — nao ha um aqui. Isso esta escrito no corpo do post, e tem de continuar escrito.
