@@ -177,11 +177,15 @@ int main(int argc, char **argv) {
     for (i = 0; i < 12; i++) tecla(SDLK_UP);
     for (i = 0; i < conta; i++) tecla(SDLK_DOWN);
     tecla(SDLK_RETURN);
-    // TREZE PASSOS, e nao doze: a categoria tem 14 linhas e a ultima e
-    // justamente esta. Com doze a captura parava na penultima ("Atualizar o
-    // app") e a linha que a foto existe para provar ficava fora do quadro —
-    // que foi como a ausencia dela passou despercebida por uma versao inteira.
-    for (i = 0; i < 13; i++) tecla(SDLK_DOWN); }
+    // QUANTOS PASSOS ATE A ULTIMA LINHA DA CATEGORIA. Era 13 cravado, quando
+    // "Interface e conta" tinha 14 linhas. A categoria cresceu (hoje sao 17) e
+    // o numero cravado passou a parar em "Sair da conta": a captura saia sem o
+    // painel que ela existe para mostrar, exatamente o defeito que o comentario
+    // anterior ja descrevia com outro numero. Agora e argumento, com o valor
+    // certo de hoje como padrao — quem crescer a categoria conserta a chamada,
+    // nao o codigo.
+    { int fundo = argc > 5 ? atoi(argv[5]) : 16;
+      for (i = 0; i < fundo; i++) tecla(SDLK_DOWN); } }
   snprintf(nome, sizeof nome, "%s-imagens.bmp", saida);
   captura(nome, w);
 
