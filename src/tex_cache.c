@@ -985,6 +985,7 @@ static int threadDecode(void *arg) {
       if (garantirLocal(caminho, local, sizeof local))
         snprintf(caminho, sizeof caminho, "%s", local);
     }
+    Uint32 t0 = SDL_GetTicks();
     SDL_Surface *bruta = IMG_Load(caminho);
     int srcW = 0, srcH = 0;
     SDL_Surface *conv = NULL;
@@ -1086,6 +1087,16 @@ static int threadDecode(void *arg) {
     // pixelada" tem tres explicacoes possiveis (URL pequena, teto baixo, ou a
     // promocao que nao aconteceu) e nenhuma medicao para separar. Atras de uma
     // variavel de ambiente porque sao centenas de linhas por sessao.
+    // DECODE LENTO SEMPRE APARECE, sem variavel de ambiente. 250 ms num fio de
+    // prioridade baixa ja e arte que a pessoa espera; e o unico numero que
+    // separa "a internet esta lenta" de "esta imagem tem pixels demais para
+    // este nucleo". Sem ele, a resposta a "por que a arte demora" e opiniao.
+    { Uint32 dt = SDL_GetTicks() - t0;
+      if (conv && dt >= 250) {
+        printf("[tex] decode lento: %u ms para %dx%d (saiu %dx%d) %s\n",
+               (unsigned)dt, srcW, srcH, conv->w, conv->h, urlOrig);
+        fflush(stdout);
+      } }
     if (getenv("NUVIO_TEX_LOG") && conv)
       printf("[tex-nitidez] fonte=%dx%d teto=%d final=%dx%d %s\n",
              srcW, srcH, limite, conv->w, conv->h, urlOrig);

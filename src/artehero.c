@@ -33,6 +33,12 @@ static const char *idLimpo(const char *imdb, char *dst, size_t tam) {
   return dst;
 }
 
+static int (*jaFalhou)(const char *) = NULL;
+void artehero_definir_falhou(int (*falhou)(const char *caminho)) {
+  jaFalhou = falhou;
+}
+static int falhou(const char *u) { return u && jaFalhou && jaFalhou(u); }
+
 static int qualidadeImg = 1;
 void artehero_qualidade(int nivel) {
   if (nivel >= 0 && nivel <= 2) qualidadeImg = nivel;
@@ -78,6 +84,24 @@ const char *artehero_url(const CatItem *item) {
   // caso "nao ha fundo nenhum") continua valendo — ali a alternativa e o cartaz
   // esticado, que nao e mais leve, e sim mais feio.
   if (qualidadeImg == 0 && item->backdrop[0]) return item->backdrop;
+  // METAHUB PRIMEIRO, QUANDO HA ID DO IMDB. Medido: o fundo do metahub e
+  // 1920x1080 e pesa ~850 KB; o `original` do TMDB para o mesmo titulo e
+  // 3840x2160. Os dois terminam desenhados a 1920 — o teto do cache reduz o
+  // segundo — entao o TMDB custa QUATRO VEZES os pixels de decodificacao para
+  // chegar ao mesmo lugar. Numa Mali-G71 isso e a diferenca entre a arte
+  // aparecer e a arte demorar, e foi o que o dono viu depois da primeira
+  // versao desta politica ("ta demorando bem mais para carregar as artes").
+  //
+  // Nem todo tt tem fundo no metahub; quando o cache disser que falhou, a
+  // proxima chamada cai na url guardada (e no `original`, se for TMDB).
+  if (!strncmp(item->imdb, "tt", 2)) {
+    char id[32];
+    idLimpo(item->imdb, id, sizeof id);
+    snprintf(buf, sizeof buf,
+             "https://images.metahub.space/background/medium/%s/img", id);
+    if (!falhou(buf)) return buf;
+  }
+
   b = item->backdrop;
 
   // TMDB em w1280: sobe para `original`. A troca e textual e so acontece no

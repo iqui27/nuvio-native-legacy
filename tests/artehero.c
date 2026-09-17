@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 
+// Duble: "toda arte ja falhou", para exercitar a reserva.
+static int falhouSempre(const char *u) { (void)u; return 1; }
+
 static CatItem item(const char *backdrop, const char *poster, const char *imdb) {
   static CatItem c;
   memset(&c, 0, sizeof c);
@@ -14,12 +17,29 @@ static CatItem item(const char *backdrop, const char *poster, const char *imdb) 
 }
 
 int main(void) {
-  // TMDB w1280 (1280x720) sobe para original (3840x2160); o teto do cache
-  // reduz para 1920 no decode.
+  // METAHUB PRIMEIRO quando ha id do IMDb: 1920x1080 por ~850 KB contra
+  // 3840x2160 do `original` do TMDB. Os dois terminam a 1920 na tela; o
+  // segundo custa quatro vezes os pixels de decodificacao.
   { CatItem c = item("https://image.tmdb.org/t/p/w1280/abc.jpg", "", "tt1");
     assert(!strcmp(artehero_url(&c),
+                   "https://images.metahub.space/background/medium/tt1/img")); }
+  puts("ok  com id do IMDb: metahub, que ja e 1920");
+
+  // SEM id do IMDb (item de addon), o TMDB w1280 sobe para original — ali nao
+  // ha alternativa de 1920.
+  { CatItem c = item("https://image.tmdb.org/t/p/w1280/abc.jpg", "", "kitsu:9");
+    assert(!strcmp(artehero_url(&c),
                    "https://image.tmdb.org/t/p/original/abc.jpg")); }
-  puts("ok  TMDB w1280 -> original");
+  puts("ok  sem tt: TMDB w1280 -> original");
+
+  // O METAHUB QUE JA FALHOU SAI DA FRENTE. Nem todo titulo tem fundo la; o
+  // cache responde e a politica passa para a reserva, sem pedir de novo.
+  { CatItem c = item("https://image.tmdb.org/t/p/w1280/abc.jpg", "", "tt1");
+    artehero_definir_falhou(falhouSempre);
+    assert(!strcmp(artehero_url(&c),
+                   "https://image.tmdb.org/t/p/original/abc.jpg"));
+    artehero_definir_falhou(NULL); }
+  puts("ok  metahub que falhou cai na reserva");
 
   { CatItem c = item("https://image.tmdb.org/t/p/w780/abc.jpg", "", "");
     assert(!strcmp(artehero_url(&c),

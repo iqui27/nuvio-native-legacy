@@ -23,6 +23,7 @@
 #include "marco.h"
 #include "rede.h"
 #include "tex_cache.h"
+#include "artehero.h"
 #include "home.h"
 #include "text.h"
 #include "detail.h"
@@ -551,6 +552,10 @@ int main(int argc, char **argv) {
   // Isso tambem dobra o teto de itens EM VOO, que e nMax/3 em slotLivre: a
   // fileira que entra na tela pede tudo de uma vez em vez de pedir aos poucos.
   tex_iniciar(192);
+  // A POLITICA DE ARTE PERGUNTA AO CACHE o que ja falhou: e assim que ela sabe
+  // passar do metahub (1920, barato) para a reserva do TMDB sem pedir duas
+  // vezes a mesma arte que nao existe. Ver artehero.h.
+  artehero_definir_falhou(tex_falhou);
   // A conta vem ANTES da UI: app_iniciar decide entre abrir na home e abrir no
   // login, e para decidir ele precisa saber se ha sessao gravada. (dados_iniciar
   // ja rodou la em cima, antes da janela — ver a nota do 4K.)

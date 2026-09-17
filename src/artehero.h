@@ -22,6 +22,18 @@
 
 // Melhor url de FUNDO para desenho de tela cheia. Devolve NULL quando o item
 // não tem arte nenhuma. O ponteiro é estático: use antes da próxima chamada.
+// COMO SABER QUE UMA ARTE NÃO VEM.
+//
+// A política prefere a url MAIS BARATA que chega em 1920 — e a mais barata nem
+// sempre existe para aquele título. Sem uma resposta a "essa falhou?", a única
+// saída seria pedir sempre a mais cara, que é o que fez o destaque baixar
+// 3840x2160 do TMDB quando o metahub já servia 1920 a um quarto do decode.
+//
+// Recebe a função em vez de incluir tex_cache.h de propósito: assim este módulo
+// continua sendo política de url, testável sem SDL e sem GL. Sem ninguém
+// registrar nada, nada falhou — que é o comportamento certo para um teste.
+void artehero_definir_falhou(int (*falhou)(const char *caminho));
+
 // QUALIDADE DA IMAGEM: 0 baixa, 1 padrão, 2 alta (vem da tela de Ajustes).
 // Na baixa, a arte de tela cheia é a url que o catálogo guarda — sem subir para
 // a versão grande. É a diferença entre baixar 3840 px e baixar 1280.
