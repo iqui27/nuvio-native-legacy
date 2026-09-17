@@ -284,6 +284,38 @@ IGNORAR = {
     "CASOU — nao engoliu porque o grupo esta oculto",
 }
 
+def sem_corpo_em_js(txt):
+    """Apaga o corpo dos EM_JS/EM_ASM, trocando por espaco e mantendo o \n.
+
+    O corpo de um EM_JS e JAVASCRIPT escrito dentro de um arquivo .c, e esta
+    varredura le C. As aspas simples do JS ("don't", 'texto') nao sao literais
+    de caractere, e os literais de string que estao la sao codigo de ponte —
+    nunca texto de tela, porque quem desenha e o lado C.
+
+    Sem isto, cada comentario ou string nova dentro do EM_JS de video_tizen.c
+    virava um "literal desenhado sem chave na tabela". Aconteceu em 17/09 com
+    nove achados de uma vez, todos falsos, e o sinal verdadeiro se perde no meio
+    de ruido assim.
+
+    Troca por espacos em vez de remover para que os deslocamentos — e portanto
+    os numeros de linha de todo o resto do arquivo — continuem valendo.
+    """
+    saida = list(txt)
+    for m in re.finditer(r"(?<![A-Za-z0-9_])EM_(?:JS|ASM|ASM_INT|ASM_DOUBLE)\s*\(", txt):
+        i = m.end() - 1          # no "(" de abertura
+        nivel, j = 0, i
+        while j < len(txt):
+            if txt[j] == "(": nivel += 1
+            elif txt[j] == ")":
+                nivel -= 1
+                if nivel == 0: break
+            j += 1
+        for k in range(m.start(), min(j + 1, len(txt))):
+            if saida[k] != "\n":
+                saida[k] = " "
+    return "".join(saida)
+
+
 def varrer():
     chaves = chaves_da_tabela()
     faltando_tabela, faltando_i18n = {}, {}
@@ -292,6 +324,7 @@ def varrer():
         if arq.name == "idioma.c":
             continue
         txt = arq.read_text(encoding="utf-8")
+        txt = sem_corpo_em_js(txt)
         # numero da linha por deslocamento
         quebras = [0]
         for k, c in enumerate(txt):
