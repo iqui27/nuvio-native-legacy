@@ -177,7 +177,11 @@ int main(int argc, char **argv) {
     for (i = 0; i < 12; i++) tecla(SDLK_UP);
     for (i = 0; i < conta; i++) tecla(SDLK_DOWN);
     tecla(SDLK_RETURN);
-    for (i = 0; i < 12; i++) tecla(SDLK_DOWN); }
+    // TREZE PASSOS, e nao doze: a categoria tem 14 linhas e a ultima e
+    // justamente esta. Com doze a captura parava na penultima ("Atualizar o
+    // app") e a linha que a foto existe para provar ficava fora do quadro —
+    // que foi como a ausencia dela passou despercebida por uma versao inteira.
+    for (i = 0; i < 13; i++) tecla(SDLK_DOWN); }
   snprintf(nome, sizeof nome, "%s-imagens.bmp", saida);
   captura(nome, w);
 

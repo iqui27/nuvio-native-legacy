@@ -498,19 +498,40 @@ typedef char conferi_uma_chave_por_opcao[
 // assistindo" nao cabe la em corpo legivel do sofa, e cortar justamente o nome
 // da categoria e o pior corte possivel. `titulo` continua sendo o nome inteiro,
 // usado no cabecalho da lista, na linha de contexto e na area de ajuda.
+// O TAMANHO DA CATEGORIA NAO SE ESCREVE: ele e a distancia ate a proxima.
+//
+// Aqui havia uma coluna com a contagem de cada faixa, escrita a mao. Ela
+// DESCASOU do enum: "Pôsteres e cards" dizia 14 e a faixa tem 15, "Interface e
+// conta" dizia 13 e tem 14. O efeito nao foi um erro visivel — foram DUAS
+// opcoes que deixaram de existir na tela, "Arredondamento do cartaz" e
+// "Memória usada por imagens": nenhuma categoria as continha, entao nenhum laco
+// de desenho chegava nelas. O painel do cache de imagens continuava sendo
+// desenhado quando o foco caia na opcao orfa, o que dava a cena que o dono
+// fotografou — o painel a direita e nenhuma linha correspondente a esquerda.
+//
+// Com `n` derivado do `ini` da categoria seguinte, inserir uma opcao no enum
+// passa a ser suficiente: ela entra na categoria em que foi escrita e ninguem
+// precisa lembrar de somar um numero noutro lugar. A ultima categoria vai ate
+// AJ_N, que o compilador mantem certo sozinho.
 static const struct {
   const char *titulo, *curto, *icone;
-  int ini, n;
+  int ini;
 } SECOES[] = {
-  { "Reprodução",           "Reprodução", "play",         AJ_QUALIDADE,            6 },
-  { "Home",                 "Home",       "menu_home",    AJ_LANDSCAPE,           16 },
-  { "Continuar assistindo", "Retomar",    "avancar",      AJ_CW_LIGADO,            8 },
-  { "Página de detalhes",   "Detalhes",   "episodios",    AJ_DET_BLUR_NAO_VISTOS,  4 },
-  { "Pôsteres e cards",     "Cartazes",   "aspecto",      AJ_EXPANDIR,            14 },
-  { "Interface e conta",    "Conta",      "menu_profile", AJ_IDIOMA,              13 },
-  { "Integrações",          "Integrações","addon",        AJ_TMDB_LIGADO,         24 },
+  { "Reprodução",           "Reprodução", "play",         AJ_QUALIDADE },
+  { "Home",                 "Home",       "menu_home",    AJ_LANDSCAPE },
+  { "Continuar assistindo", "Retomar",    "avancar",      AJ_CW_LIGADO },
+  { "Página de detalhes",   "Detalhes",   "episodios",    AJ_DET_BLUR_NAO_VISTOS },
+  { "Pôsteres e cards",     "Cartazes",   "aspecto",      AJ_EXPANDIR },
+  { "Interface e conta",    "Conta",      "menu_profile", AJ_IDIOMA },
+  { "Integrações",          "Integrações","addon",        AJ_TMDB_LIGADO },
 };
 #define AJ_N_SECOES (int)(sizeof SECOES / sizeof *SECOES)
+
+// Quantas opcoes a categoria tem: ate onde a proxima comeca, e a ultima ate o
+// fim do enum.
+static int secN(int s) {
+  return (s + 1 < AJ_N_SECOES ? SECOES[s + 1].ini : (int)AJ_N) - SECOES[s].ini;
+}
 
 // O QUE A CATEGORIA CONTEM, em uma frase. Aparece na area de ajuda quando o
 // foco esta na coluna de categorias: sem ela, escolher categoria e adivinhar
@@ -1119,7 +1140,7 @@ static void conferirSecoes(void) {
     if (SECOES[s].ini != esperado)
       printf("[ajustes] SECOES[%d] \"%s\" comeca em %d, esperado %d\n",
              s, SECOES[s].titulo, SECOES[s].ini, esperado);
-    esperado = SECOES[s].ini + SECOES[s].n;
+    esperado = SECOES[s].ini + secN(s);
   }
   if (esperado != AJ_N)
     printf("[ajustes] SECOES cobre %d de %d opcoes: %d linha(s) nao seriam "
@@ -1288,7 +1309,7 @@ static int mutavel(int op)   { return OPCOES[op].tipo != OP_LEITURA &&
 
 static int secaoAtual(void) {
   for (int s = 0; s < AJ_N_SECOES; s++)
-    if (focoOp < SECOES[s].ini + SECOES[s].n) return s;
+    if (focoOp < SECOES[s].ini + secN(s)) return s;
   return AJ_N_SECOES - 1;
 }
 
@@ -1475,7 +1496,7 @@ static float yDaOpcao(int op) {
   float y = 0.0f;
   for (int s = 0; s < AJ_N_SECOES; s++) {
     y += (s ? AJ_SEC_GAP : 0.0f) + AJ_SEC_CABEC;
-    for (int k = 0; k < SECOES[s].n; k++) {
+    for (int k = 0; k < secN(s); k++) {
       int o = SECOES[s].ini + k;
       y += alturaSub(o);
       if (o == op) return y;
@@ -2666,7 +2687,7 @@ void ajustes_desenhar(Uint32 agora) {
   int sec = secaoAtual();
   char pos[120];
   snprintf(pos, sizeof pos, i18n("%s  ·  %d de %d"), i18n(SECOES[sec].titulo),
-           focoOp - SECOES[sec].ini + 1, SECOES[sec].n);
+           focoOp - SECOES[sec].ini + 1, secN(sec));
   // AO LADO DO TITULO, e nao abaixo dele. Abaixo, esta linha caia exatamente
   // sobre o topo da primeira categoria — texto por cima de texto, visivel na
   // captura de 1080p. Alinhada pela base do titulo ela fica no espaco vazio a
@@ -2747,7 +2768,7 @@ void ajustes_desenhar(Uint32 agora) {
     if (aC > 0.005f && y < AJ_BASE)
       txt_desenhar_alpha(ts, AJ_LISTA_X + AJ_PAD, y + AJ_SEC_CABEC - ts.h - 6.0f, aC);
     y += AJ_SEC_CABEC;
-    for (int k = 0; k < SECOES[s].n; k++) {
+    for (int k = 0; k < secN(s); k++) {
       int op = SECOES[s].ini + k;
       const char *sub = subsecaoDe(op);
       if (sub) {
