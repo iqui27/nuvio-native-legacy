@@ -1410,9 +1410,9 @@ static const char *ajudaOpcao(int op) {
     case AJ_LEG_LINGUA: return "Idioma procurado primeiro na lista de legendas de cada título. \"Da conta\" segue o que está no seu perfil.";
     case AJ_AUD_LINGUA: return "Faixa de áudio escolhida quando o arquivo tem mais de uma. Se o idioma não existir no arquivo, o player usa a primeira.";
     case AJ_PAUSA_OVERLAY: return "Ao pausar, sobe uma ficha com a sinopse e os dados do que você está vendo.";
-    case AJ_STALKER_PORTAL: return "Endereço do portal IPTV, sem http:// e sem barra no fim. Exemplo: meu-portal.exemplo.tv:8080";
+    case AJ_STALKER_PORTAL: return "Os canais do portal entram no Guia de TV, junto com os dos addons. Endereço sem http:// e sem barra no fim: meu-portal.exemplo.tv:8080";
     case AJ_STALKER_MAC: return "O MAC que o provedor cadastrou para você. É credencial: vale como senha, e só aparece nesta tela mascarado.";
-    case AJ_STALKER_LIMPAR: return "Apaga o portal e o MAC deste perfil. Sair da conta também apaga.";
+    case AJ_STALKER_LIMPAR: return "Apaga o portal e o MAC deste perfil, e os canais dele somem do Guia. Sair da conta também apaga.";
     case AJ_FONTE_MANUAL: return "Ao mandar reproduzir, abre a lista de fontes em vez de escolher sozinho. Canal ao vivo não pergunta.";
 
     // --- Home

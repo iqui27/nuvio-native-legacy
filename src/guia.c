@@ -1077,7 +1077,7 @@ void guia_desenhar(Uint32 agora) {
                i18n("Os addons de canais não responderam."));
     else if (estado == G_FALHOU || (fontesOk && !nFontes))
       snprintf(sub, sizeof sub, "%s",
-               i18n("Nenhum catálogo de canais nos addons instalados."));
+               i18n("Nenhum canal: sem addon de canais e sem portal IPTV."));
     else
       snprintf(sub, sizeof sub, i18n("%d canais · %d categorias · segure %s para pular seção"),
                nCanais, nCats, "\xe2\x86\x91\xe2\x86\x93");
@@ -1119,9 +1119,14 @@ void guia_desenhar(Uint32 agora) {
     // DUAS FRASES, e a diferenca entre elas e a diferenca entre acusar a
     // pessoa e contar o que houve. `falhas` diz que alguem foi tentado e nao
     // respondeu; sem ele, a lista vazia e mesmo falta de addon.
+    // DUAS PORTAS, e a mensagem tem de citar as duas. Ela dizia so "instale um
+    // addon de canais" desde que o guia existe; com o portal IPTV entrando pela
+    // mesma tela, quem configurou um portal e nao viu canal nenhum leria uma
+    // frase que fala de outra coisa — e quem nao tem addon nem sabe que a
+    // segunda porta existe.
     const char *msg = falhas
       ? i18n("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.")
-      : i18n("O guia precisa de um addon de canais (como o FrostView TV) instalado na conta.");
+      : i18n("O guia se enche por dois caminhos: um addon de canais (como o FrostView TV) instalado na conta, ou um portal IPTV cadastrado em Ajustes › Conta.");
     TxtLinha t = txt_linha_corta(TXT_BODY, msg, 200, 202, 210, 255,
                                  NV_TELA_W - 2 * NV_MARGEM_X);
     txt_desenhar_alpha(t, G_AREA_X, 300.0f, a);
