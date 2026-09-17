@@ -1,4 +1,6 @@
 #include "tex_cache.h"
+#include <dirent.h>
+#include <sys/stat.h>
 #include "sdlcompat.h"
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -672,6 +674,38 @@ void tex_cache_dir(const char *dir) {
     printf("[tex] PASTA DE CACHE SEM ESCRITA: %s — toda imagem baixada sera"
            " descartada (confira o dono, o deploy carimba o uid do Mac)\n",
            dirCache);
+
+  // O QUE JA ESTA NO DISCO TAMBEM CONTA. cacheDiscoBytes nascia em 0 a cada
+  // arranque e so somava o que a sessao acrescentava, entao o teto de
+  // NV_CACHE_DISCO_MAX nunca enxergava o acumulado das sessoes anteriores: a
+  // pasta crescia sem limite ao longo dos dias e o log dizia "cache-disco=0.0MB"
+  // com arte gravada la dentro.
+  //
+  // MEDIDO em 17/09 na QN85Q70AAGXZD: 147 arquivos e 23,3 MB em /nuvio/cache
+  // enquanto o relatorio da sessao inteira imprimia 0.0MB. O teto e de 48 MB —
+  // ou seja, faltava pouco para o contador estar errado por mais do que ele
+  // mede.
+  //
+  // A varredura e uma vez por arranque, com a pasta ja aberta, e o que ela
+  // custa e um stat por arquivo.
+  { DIR *d = opendir(dirCache);
+    struct dirent *e;
+    long total = 0;
+    int n = 0;
+    if (d) {
+      while ((e = readdir(d)) != NULL) {
+        char caminho[768];
+        struct stat st;
+        if (e->d_name[0] == '.') continue;
+        snprintf(caminho, sizeof caminho, "%s/%s", dirCache, e->d_name);
+        if (stat(caminho, &st) == 0 && S_ISREG(st.st_mode)) { total += st.st_size; n++; }
+      }
+      closedir(d);
+      cacheDiscoBytes = total;
+      if (n)
+        printf("[tex] cache de disco ja tinha %d arquivo(s), %.1f MB\n",
+               n, total / 1048576.0);
+    } }
   fflush(stdout);
 }
 
@@ -1333,6 +1367,35 @@ static int orcamentoMB(void) {
   const char *porque;
 #ifdef NV_TEX_MB_FIXO
   mb = NV_TEX_MB_FIXO; porque = "NV_TEX_MB_FIXO"; orcFixo = 1;
+#  ifdef __EMSCRIPTEN__
+  // O TETO FIXO NAO VALE NO TIZEN, e este limite existe por MEDICAO.
+  //
+  // 17/09, QN85Q70AAGXZD (2 GB): a variante de cache grande pede 300 MB e ficou
+  // MAIS LENTA que a normal de 96 MB. Mesma arte, mesma saida — o fundo do
+  // metahub 1920x1080 reduzido para 1280x720 levou 1481 ms na normal e 3575 ms
+  // na de 300 MB. O pior quadro foi de 465 ms para 1475 ms.
+  //
+  // NAO E DESPEJO: com 300 MB o contador de despejos fica em ZERO a sessao
+  // inteira, enquanto a normal despeja (180, 68, 48...). E NAO E O HEAP: o
+  // [mem] das duas mostra malloc em 22-31 MiB com 32-40 MiB livres dentro dos
+  // 256 MiB. O mecanismo eu NAO PROVEI — o que esta provado e que o numero
+  // maior piora, e que ninguem mediu um numero maior que ajude nesta TV.
+  //
+  // Na LG o teto fixo continua valendo: la sao 2,2 GB de RAM nativa e a medicao
+  // foi a favor. Aqui a textura vive no processo de GPU do navegador, dentro
+  // dos mesmos 2 GB que a TV inteira usa, e 300 MB e um palpite.
+  //
+  // O limite e o proprio valor que a regra automatica escolheria: quem passar
+  // -DNV_TEX_MB_FIXO alto no alvo Tizen cai nele e o log diz por que.
+  { int aut = !mem ? NV_TEX_ORCAMENTO_MB
+            : mem <= 1024 ? 64
+            : mem <  4096 ? 96 : 128;
+    if (mb > aut) {
+      printf("[tex] NV_TEX_MB_FIXO=%d ignorado no Tizen: %d MB e o que a TV "
+             "suporta (medido: teto maior decodifica mais devagar)\n", mb, aut);
+      mb = aut; porque = "NV_TEX_MB_FIXO > teto Tizen"; orcFixo = 0;
+    } }
+#  endif
 #elif defined(__EMSCRIPTEN__)
   if (!mem)            { mb = NV_TEX_ORCAMENTO_MB; porque = "deviceMemory indisponivel: NV_TEX_ORCAMENTO_MB"; }
   else if (mem <= 1024) { mb = 64;  porque = "deviceMemory <= 1 GB"; }
