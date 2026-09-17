@@ -1046,6 +1046,7 @@
   { "Séries", "TV Shows" },
   { "Só letras e números, nada de símbolo — dá para ditar por telefone. Ele fica na aba Social.", "Letters and digits only, no symbols — you can read it out over the phone. It lives in the Social tab." },
   { "Só quem já te conhece", "Only people who already know you" },
+  { "T%d:E%d", "S%d E%d" },
   { "T%dE%d", "S%dE%d" },
   { "T%dE%d  ·  %s%s%.22s", "S%dE%d  ·  %s%s%.22s" },
   { "T%dE%d foi ao ar em %s", "S%dE%d aired on %s" },
