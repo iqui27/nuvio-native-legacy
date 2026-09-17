@@ -218,6 +218,14 @@ RE_I18N = re.compile(r"(?<![A-Za-z0-9_])i18n\s*\(\s*$")
 RE_NAO_E_TELA = re.compile(
     r"(?<![A-Za-z0-9_])(" + "|".join(re.escape(f) for f in NAO_E_TELA) + r")")
 
+# CABECALHO DE HTTP NAO E TELA, e a forma dele e inconfundivel: "Nome: valor",
+# com o nome em ASCII e hifen. Foi preciso porque a heuristica de portugues casa
+# com pedacos de User-Agent — o MAG250 do stalker.c manda "... ver: 2 rev: 250",
+# e `ver` esta na lista de palavras de interface. Um cabecalho marcado como
+# texto de tela faria a suite acusar uma traducao que nao existe, e teste que
+# acusa o que nao e defeito ensina a ignorar o teste.
+RE_CABECALHO_HTTP = re.compile(r"^[A-Za-z][A-Za-z0-9-]{1,40}: ")
+
 def contexto(txt, i):
     """O trecho de codigo que antecede o literal, ate o comeco da instrucao."""
     j = i
@@ -346,6 +354,8 @@ def varrer():
             # telas da foto do #12 — passou batido nesta propria ferramenta.
             # Todo texto montado com snprintf estava sendo descartado calado.
             if RE_NAO_E_TELA.search(ctx):
+                continue
+            if RE_CABECALHO_HTTP.match(s):
                 continue
             onde = f"{arq.name}:{linha_de(ini)}"
             # MONTAGEM: o formato tem de ser envolvido na origem, porque a

@@ -16,14 +16,27 @@
 // Dubles: o teste nao sobe dados.c nem toca disco. O caminho devolve NULL de
 // proposito — assim carregar() sai cedo e a lista comeca vazia, que e o estado
 // de quem nunca abriu o app.
+static int usaArquivo;
 int dados_gravar(const char *nome, const char *conteudo) {
+  // COM ARQUIVO LIGADO, GRAVA DE VERDADE. Sem isto nao da para testar o par
+  // gravar/carregar: a escrita virava um no-op e a releitura devolvia sempre o
+  // arquivo anterior — um teste que passaria com a gravacao quebrada.
+  if (usaArquivo) {
+    char caminho[600];
+    FILE *f;
+    snprintf(caminho, sizeof caminho, "/tmp/%s", nome);
+    f = fopen(caminho, "w");
+    if (!f) return 0;
+    fputs(conteudo, f);
+    fclose(f);
+    return 1;
+  }
   (void)nome; (void)conteudo; return 1;
 }
 // NULL ate o teste da tabela cheia escrever o arquivo de verdade: linha lida
 // do disco nasce com vista=0, que e o que separa "morta" de "ainda nao montou"
 // no resgate de fileiras.c. Registrar pela API marcaria vista=1 e o teste
 // mediria outra coisa.
-static int usaArquivo = 0;
 char *dados_caminho(char *dst, unsigned tam, const char *nome) {
   if (!usaArquivo) { (void)dst; (void)tam; (void)nome; return NULL; }
   snprintf(dst, tam, "/tmp/%s", nome);
@@ -495,6 +508,31 @@ int main(void) {
     assert(fil_n() == FIL_MAX);
     for (j = 0; j < fil_n(); j++) assert(strcmp(fil_chave(j), "nao_cabe") != 0); }
   puts("ok  tabela cheia nao despeja o que a pessoa configurou");
+
+  // FONTE DO DESTAQUE: sobrevive ao arquivo, e um arquivo escrito por uma
+  // versao que nao a conhece continua valendo.
+  fil_esquecer();
+  usaArquivo = 1;
+  remove("/tmp/fileirasui.txt");
+  fil_teste_recarregar();
+  assert(!strcmp(fil_hero_fonte(), ""));          // padrao: automatico
+  fil_registrar("continuar", "Continuar assistindo", "", "", 5);
+  fil_definir_hero_fonte("*");
+  assert(!strcmp(fil_hero_fonte(), "*"));
+  fil_teste_recarregar();
+  assert(!strcmp(fil_hero_fonte(), "*"));         // veio do arquivo
+  fil_definir_hero_fonte("continuar");
+  fil_teste_recarregar();
+  assert(!strcmp(fil_hero_fonte(), "continuar"));
+  // Arquivo de uma versao ANTERIOR (sem a linha `hero`): le sem reclamar e o
+  // destaque volta ao automatico, em vez de herdar lixo.
+  { FILE *f = fopen("/tmp/fileirasui.txt", "w");
+    assert(f);
+    fputs("limite 7\nordem 1\nlinha continuar\t0\t0\t1\t0\tContinuar assistindo\n", f);
+    fclose(f); }
+  fil_teste_recarregar();
+  assert(!strcmp(fil_hero_fonte(), ""));
+  puts("ok  fonte do destaque grava, le e tolera arquivo antigo");
 
   puts("fileiras: tudo ok");
   return 0;

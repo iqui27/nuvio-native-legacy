@@ -51,6 +51,15 @@ static const char *arquivoDoPerfil(void) {
 static int   ordemLocal;      // 1 = a pessoa MOVEU algo; ver fil_tem_ordem
 static int   carregado;
 static int   registroSujo;   // ver fil_gravar_registro
+// FONTE DO DESTAQUE. "" = automatico (os primeiros titulos do catalogo, que e
+// o que a home sempre fez), "*" = sorteio do catalogo, qualquer outra coisa = a
+// chave da fileira que alimenta o destaque.
+//
+// Mora aqui e nao em ajustes.txt porque o valor E UMA CHAVE DE FILEIRA: quem
+// sabe se ela ainda existe, quem a renomeia e quem a poda quando o addon sai da
+// conta e este arquivo. Em ajustes.txt seria um texto solto que ninguem
+// revisita.
+static char  heroFonte[FIL_CHAVE];
 static unsigned revisao;
 // A leitura acontece no fio da DESCOBERTA (montar) e a escrita no fio de
 // desenho (tela de Ajustes). Sao os dois unicos, e a secao critica e uma varredura
@@ -172,6 +181,11 @@ static void gravar(void) {
         "# Fileiras da Home, escolha DESTE aparelho. Nunca e enviada para\n"
         "# a conta: ver o cabecalho de src/fileiras.h.\n"
         "limite %d\nordem %d\n", limite, ordemLocal);
+  // Linha propria e com prefixo, como `limite` e `ordem`: o leitor ignora
+  // prefixo que nao conhece, entao um arquivo escrito por esta versao continua
+  // valendo numa anterior (ela so nao ve o destaque) e vice-versa.
+  if (heroFonte[0] && k < cap)
+    k += (size_t)snprintf(txt + k, cap - k, "hero %s\n", heroFonte);
   for (i = 0; i < nLinhas && k < cap; i++)
     // Tabulacao e nao espaco: titulo de catalogo tem espaco dentro ("For You -
     // Filme") e a chave do Xperience carrega o id inteiro do addon.
@@ -187,6 +201,15 @@ static void carregar(void) {
   char caminho[600], buf[900];
   FILE *f;
   carregado = 1;
+  // ZERA A FONTE DO DESTAQUE ANTES DE LER, e nao so ao achar a linha.
+  //
+  // `heroFonte` e estatico e carregar() roda de novo na TROCA DE PERFIL. Sem
+  // isto, um perfil cuja escolha e o automatico (arquivo sem a linha `hero`)
+  // herdava a fileira escolhida pelo perfil anterior — e o destaque do Gustavo
+  // apareceria na home do Henrique sem ninguem ter escolhido nada. O teste que
+  // pegou isso usa um arquivo de versao anterior, que e o mesmo caso: linha
+  // ausente tem de significar "automatico", nunca "o que estava na memoria".
+  heroFonte[0] = 0;
   if (!dados_caminho(caminho, sizeof caminho, arquivoDoPerfil())) return;
   f = fopen(caminho, "r");
   // Perfil sem arquivo proprio ainda: comeca do arquivo antigo do aparelho,
@@ -202,6 +225,8 @@ static void carregar(void) {
       limite = limita(atoi(buf + 7), FIL_LIMITE_MIN, FIL_LIMITE_MAX);
     } else if (!strncmp(buf, "ordem ", 6)) {
       ordemLocal = atoi(buf + 6) ? 1 : 0;
+    } else if (!strncmp(buf, "hero ", 5)) {
+      snprintf(heroFonte, sizeof heroFonte, "%s", buf + 5);
     } else if (!strncmp(buf, "linha ", 6) && nLinhas < FIL_MAX) {
       char *p = buf + 6, *campo[4];
       int c;
@@ -252,6 +277,27 @@ int fil_limite(void) {
   v = limite;
   pthread_mutex_unlock(&trava);
   return v;
+}
+
+// ----------------------------------------------------------------- destaque
+
+const char *fil_hero_fonte(void) {
+  static char copia[FIL_CHAVE];
+  pthread_mutex_lock(&trava);
+  garantir();
+  snprintf(copia, sizeof copia, "%s", heroFonte);
+  pthread_mutex_unlock(&trava);
+  return copia;
+}
+
+void fil_definir_hero_fonte(const char *chave) {
+  pthread_mutex_lock(&trava);
+  garantir();
+  if (strcmp(heroFonte, chave ? chave : "")) {
+    snprintf(heroFonte, sizeof heroFonte, "%s", chave ? chave : "");
+    gravar();
+  }
+  pthread_mutex_unlock(&trava);
 }
 
 // As primeiras `limite` linhas LIGADAS, na ordem local, sao a home; as ligadas

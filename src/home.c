@@ -324,11 +324,97 @@ static float larguraDe(TipoFileira t) {
 }
 // Quantos titulos o hero percorre. Vem do catalogo quando existe.
 static int nAcervoHero(void) { int n = cat_n(); if (n) return n; return nBd ? nBd : 1; }
-// Quantos titulos o destaque oferece: o teto da lista, ou o acervo quando ele e
-// menor (conta nova, cache frio).
+// O CONJUNTO DE TITULOS QUE O DESTAQUE PERCORRE.
+//
+// Tres fontes, escolhidas na folha de fileiras (fil_hero_fonte):
+//   ""   os primeiros do catalogo, que e o que a home sempre fez
+//   "*"  um sorteio do catalogo
+//   ...  a chave de uma fileira: o destaque mostra os titulos dela
+//
+// GUARDA OS INDICES, e nao um intervalo: a fileira escolhida pode encolher, o
+// catalogo pode ser republicado e o sorteio nao e contiguo por definicao. Um
+// intervalo sobreviveria a nenhum dos tres.
+static int heroSet[HOME_HERO_LISTA];
+static int heroSetN;
+// Assinatura do que a lista depende. Refazer a lista a cada quadro custaria o
+// strcmp da preferencia e uma varredura das fileiras; refazer so quando algo
+// mudou custa tres comparacoes de inteiro.
+static unsigned heroSetRev, heroSetFilRev;
+static int heroSetCat, heroSetNFil;
+
+// Sorteio ESTAVEL dentro da sessao: o embaralhamento usa uma semente propria
+// que so muda quando a lista e refeita. Sortear a cada quadro daria um destaque
+// diferente por quadro; sortear uma vez por arranque e o que "lista aleatoria"
+// quer dizer para quem esta no sofa.
+static unsigned heroSemente;
+
+static void heroMontarSet(void) {
+  const char *fonte = fil_hero_fonte();
+  int total = nAcervoHero();
+  int i;
+  heroSetN = 0;
+  if (fonte[0] == '*' && !fonte[1]) {
+    // Sorteio sem repeticao: embaralha os `total` indices por Fisher-Yates
+    // parcial, usando so os HOME_HERO_LISTA primeiros passos.
+    int n = total < HOME_HERO_LISTA ? total : HOME_HERO_LISTA;
+    static int baralho[512];
+    int m = total < (int)(sizeof baralho / sizeof *baralho)
+          ? total : (int)(sizeof baralho / sizeof *baralho);
+    unsigned x = heroSemente ? heroSemente : (heroSemente = (unsigned)SDL_GetTicks() | 1u);
+    for (i = 0; i < m; i++) baralho[i] = i;
+    for (i = 0; i < n && i < m; i++) {
+      int j;
+      x = x * 1103515245u + 12345u;
+      j = i + (int)((x >> 16) % (unsigned)(m - i));
+      { int t = baralho[i]; baralho[i] = baralho[j]; baralho[j] = t; }
+      heroSet[heroSetN++] = baralho[i];
+    }
+    return;
+  }
+  if (fonte[0]) {
+    // FILEIRA ESCOLHIDA. Nao existir nao apaga a escolha: o addon pode voltar,
+    // e ate la o destaque cai no automatico — que e o comportamento de quem
+    // nunca escolheu nada, nao um estado de erro.
+    for (i = 0; i < nFileiras; i++) {
+      if (strcmp(fileiras[i].chave, fonte)) continue;
+      { int k;
+        for (k = 0; k < fileiras[i].n && heroSetN < HOME_HERO_LISTA; k++) {
+          int idx = fileiras[i].ini + k;
+          if (idx >= 0 && idx < cat_n()) heroSet[heroSetN++] = idx;
+        } }
+      break;
+    }
+    if (heroSetN) return;
+  }
+  for (i = 0; i < total && heroSetN < HOME_HERO_LISTA; i++) heroSet[heroSetN++] = i;
+}
+
+static void heroSetGarantir(void) {
+  unsigned fr = fil_revisao();
+  int cn = cat_n(), nf = nFileiras;
+  if (heroSetRev && fr == heroSetFilRev && cn == heroSetCat && nf == heroSetNFil)
+    return;
+  heroSetFilRev = fr; heroSetCat = cn; heroSetNFil = nf; heroSetRev = 1;
+  heroMontarSet();
+}
+
+// Quantos titulos o destaque oferece.
 static int heroNLista(void) {
-  int n = nAcervoHero();
-  return n < HOME_HERO_LISTA ? n : HOME_HERO_LISTA;
+  heroSetGarantir();
+  return heroSetN;
+}
+
+// Posicao do titulo `idx` (indice de catalogo) dentro do conjunto, ou -1.
+static int heroPosDe(int idx) {
+  int i;
+  heroSetGarantir();
+  for (i = 0; i < heroSetN; i++) if (heroSet[i] == idx) return i;
+  return -1;
+}
+// O indice de catalogo na posicao `pos`, ou -1.
+static int heroIdxEm(int pos) {
+  heroSetGarantir();
+  return (pos >= 0 && pos < heroSetN) ? heroSet[pos] : -1;
 }
 // O indice que a seta move. `heroAtual` so muda quando a arte nova esta pronta
 // (ver a troca em desenhaHero), entao ele NAO serve de ponto de partida para o
@@ -460,8 +546,15 @@ static const char *arte_por_identidade(int indice, int deitado) {
 // resposta visual que a troca sozinha ja tinha, sem um segundo caminho.
 static void heroPasso(int d) {
   int n = heroNLista();
-  int alvo = heroIntencao() + d;
-  if (n <= 0 || alvo < 0 || alvo >= n) return;
+  // O PASSO E NA POSICAO DENTRO DO CONJUNTO, e a arte vem do indice de
+  // catalogo que mora nela: com a fonte "fileira escolhida" ou "sorteio" os
+  // indices nao sao contiguos, e somar 1 ao indice andaria para um titulo que
+  // nao esta na lista — e o contador da tela deixaria de bater com a arte.
+  int pos = heroPosDe(heroIntencao());
+  int alvo;
+  if (pos < 0) pos = 0;
+  alvo = heroIdxEm(pos + d);
+  if (n <= 0 || alvo < 0) return;
   heroPendente = alvo;
   // Sem repouso: aqui a pessoa DISSE qual titulo quer. O repouso de
   // NV_HERO_REPOUSO_MS existe para o foco que atravessa uma fileira, onde cada
@@ -1102,7 +1195,7 @@ void home_evento(const SDL_Event *e) {
       // Mesma regra do resto da home: esquerda na PRIMEIRA posicao chama o menu
       // lateral. O destaque nao da a volta justamente para que essa saida
       // exista sempre no mesmo lugar.
-      if (heroIntencao() <= 0) { pedidoMenu = 1; return; }
+      if (heroPosDe(heroIntencao()) <= 0) { pedidoMenu = 1; return; }
       heroPasso(-1); return;
     }
     if (k == SDLK_DOWN) { focoHero = 0; return; }
@@ -1491,6 +1584,13 @@ void home_atualizar(float dt, Uint32 agora) {
   // carrossel evita que um estado stale caia no wrap de cat_item().
   { int total = nAcervoHero();
     if (heroAtual < 0 || heroAtual >= total) heroAtual = 0;
+    // COMECAR DENTRO DO CONJUNTO. Com a fonte trocada (ou no primeiro quadro
+    // depois de o catalogo chegar), `heroAtual` pode ser um titulo que a lista
+    // nao contem — e ai o contador diria "1 / 8" com a arte de um nono titulo.
+    if (heroNLista() > 0 && heroPosDe(heroAtual) < 0) {
+      int primeiro = heroIdxEm(0);
+      if (primeiro >= 0) heroAtual = heroAnterior = heroPendente = primeiro;
+    }
     if (heroAnterior < 0 || heroAnterior >= total) heroAnterior = heroAtual;
     if (heroPendente < 0 || heroPendente >= total) heroPendente = heroAtual;
   }
@@ -1554,7 +1654,9 @@ void home_atualizar(float dt, Uint32 agora) {
       // inteiro; com o contador na tela isso viraria um "3 / 281" que ninguem
       // atravessa e que contradiz o que a seta faz.
       int total = heroNLista();
-      int proximo = total > 0 ? (heroAtual + 1) % total : 0;
+      int pos = heroPosDe(heroAtual);
+      int proximo = total > 0 ? heroIdxEm(((pos < 0 ? 0 : pos) + 1) % total) : 0;
+      if (proximo < 0) proximo = 0;
       heroPendente = proximo;
       heroPendenteEm = agora - NV_HERO_REPOUSO_MS;
       // O carrossel tambem ganha o arquivo quente: o proximo item ja e
@@ -2208,7 +2310,8 @@ static void desenhaHero(Uint32 agora, float saida) {
                          aBotao);
 
       { char pos[24];
-        snprintf(pos, sizeof pos, "%d / %d", heroIntencao() + 1, n);
+        int p = heroPosDe(heroIntencao());
+        snprintf(pos, sizeof pos, "%d / %d", (p < 0 ? 0 : p) + 1, n);
         TxtLinha lp = txt_linha(TXT_HERO_META, pos, 196, 199, 208, 255);
         txt_desenhar_alpha(lp, x + bw + 28.0f, by + (bh - lp.h) * 0.5f,
                            aBotao * 0.92f); }

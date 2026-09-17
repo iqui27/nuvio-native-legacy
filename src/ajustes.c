@@ -12,6 +12,8 @@
 // (js/ui/screens/settings/settingsScreen.js), inclusive os rotulos em portugues
 // lidos da tela rodando.
 #include "ajustes.h"
+#include "stalker.h"
+#include "teclado.h"
 #include "descoberta.h"
 #include "extras.h"
 #include "fileiras.h"
@@ -116,7 +118,9 @@ typedef enum {
   // Interface
   AJ_IDIOMA, AJ_ANIM, AJ_RESOLUCAO, AJ_TEMA,
   // Conta
-  AJ_PERFIL_ATIVO, AJ_SYNC, AJ_ADDONS, AJ_SALVOS_DEST, AJ_TRAKT, AJ_SIMKL, AJ_SAIR,
+  AJ_PERFIL_ATIVO, AJ_SYNC, AJ_ADDONS,
+  AJ_STALKER_PORTAL, AJ_STALKER_MAC, AJ_STALKER_LIMPAR,
+  AJ_SALVOS_DEST, AJ_TRAKT, AJ_SIMKL, AJ_SAIR,
   // Sobre
   AJ_VERSAO_I, AJ_ATUALIZAR, AJ_ESPACO,
   // Integracoes — TMDB (tmdb_settings do blob da conta, ver
@@ -268,6 +272,17 @@ typedef struct {
 #define LER(rot)            { rot, OP_LEITURA, NULL, 0, 0, 0, 0, NULL }
 #define ACAO(rot)           { rot, OP_ACAO,    NULL, 0, 0, 0, 0, NULL }
 
+// Qual campo do portal esta sendo digitado: 0 = nenhum, AJ_STALKER_PORTAL ou
+// AJ_STALKER_MAC. A modal e uma so; o destino do que sair dela e isto.
+static int stCampo;
+
+// Alfabetos da modal. Sao diferentes porque os campos sao diferentes: endereco
+// precisa de ponto, dois pontos e hifen; MAC so de hexadecimal e dois pontos, e
+// oferecer o resto so daria chance de digitar um MAC invalido.
+static const char *ST_ALFA_PORTAL =
+  "abcdefghijklmnopqrstuvwxyz0123456789.:-";
+static const char *ST_ALFA_MAC = "0123456789abcdef:";
+
 static const Opcao OPCOES[AJ_N] = {
   ESC("Qualidade máxima",           V_QUALIDADE, 4),
   ESC("Dolby Vision",               V_LIGA, 2),
@@ -344,6 +359,9 @@ static const Opcao OPCOES[AJ_N] = {
   LER("Perfil"),
   LER("Sincronização"),
   ACAO("Addons"),
+  ACAO("Portal IPTV"),
+  ACAO("MAC do portal"),
+  ACAO("Remover o portal IPTV"),
   ESC("Onde o + salva",             V_SALVOS, 2),
   ACAO("Trakt"),
   ACAO("Simkl"),
@@ -442,7 +460,12 @@ static const char *CHAVE[] = {
   // oficial nao tem esta escolha, entao nao ha campo dela no blob da conta —
   // mas ela precisa sobreviver ao fechamento, e gravar() pula toda chave
   // iniciada por "-".
-  "-perfil", "-sync", "-addons", "salvosDestino", "-trakt", "-simkl", "-sair",
+  "-perfil", "-sync", "-addons",
+  // Portal IPTV: os VALORES moram em stalker-p<N>.txt, por perfil, porque um
+  // deles e credencial (ver stalker.h). Aqui sao so linhas de tela, e por isso
+  // levam "-": nada delas entra no ajustes.txt nem no blob da conta.
+  "-stalkerPortal", "-stalkerMac", "-stalkerLimpar",
+  "salvosDestino", "-trakt", "-simkl", "-sair",
   "-versao", "-atualizar", "-espaco",
   // Integracoes: os nomes sao exatamente os que profileSettingsSyncService.js
   // exporta dentro de tmdb_settings / mdblist_settings — a conta aplica e a
@@ -1174,6 +1197,14 @@ int ajustes_quer_sair(void) { return sair; }
 // aparelho — um numero fixo aqui seria mentira e nunca mudaria.
 static const char *textoLeitura(int op) {
   static char buf[64];
+  // MASCARADO, sempre. Esta tela e fotografada e colada em issue — foi assim
+  // que chegou o relato do painel de Tracking. O portal sai sem esquema e o MAC
+  // so com os dois ultimos octetos: o bastante para a pessoa reconhecer QUAL
+  // cadastro esta ali, insuficiente para alguem usar o acesso dela.
+  if (op == AJ_STALKER_PORTAL)
+    return stalker_configurado() ? stalker_portal_curto() : i18n("Não configurado");
+  if (op == AJ_STALKER_MAC)
+    return stalker_configurado() ? stalker_mac_mascarado() : i18n("Não configurado");
   if (op == AJ_VERSAO_I) {
     // Com release mais nova no GitHub, a linha diz as duas.
     if (atualizacao_nova()[0]) {
@@ -1354,6 +1385,9 @@ static const char *ajudaOpcao(int op) {
     case AJ_LEG_LINGUA: return "Idioma procurado primeiro na lista de legendas de cada título. \"Da conta\" segue o que está no seu perfil.";
     case AJ_AUD_LINGUA: return "Faixa de áudio escolhida quando o arquivo tem mais de uma. Se o idioma não existir no arquivo, o player usa a primeira.";
     case AJ_PAUSA_OVERLAY: return "Ao pausar, sobe uma ficha com a sinopse e os dados do que você está vendo.";
+    case AJ_STALKER_PORTAL: return "Endereço do portal IPTV, sem http:// e sem barra no fim. Exemplo: meu-portal.exemplo.tv:8080";
+    case AJ_STALKER_MAC: return "O MAC que o provedor cadastrou para você. É credencial: vale como senha, e só aparece nesta tela mascarado.";
+    case AJ_STALKER_LIMPAR: return "Apaga o portal e o MAC deste perfil. Sair da conta também apaga.";
     case AJ_FONTE_MANUAL: return "Ao mandar reproduzir, abre a lista de fontes em vez de escolher sozinho. Canal ao vivo não pergunta.";
 
     // --- Home
@@ -1602,10 +1636,22 @@ static int filCmpFora(const void *pa, const void *pb) {
   return a - b;
 }
 
+// O DESTAQUE E UMA LINHA DA LISTA, com indice proprio.
+//
+// Ele nao e uma fileira (nao tem catalogo, nao entra na fila, nao se move), mas
+// a pessoa o procura onde procura as fileiras — foi o pedido: "no reorder tem
+// que ter o hero para poder substituir e colocar o que quiser lá". Entrar como
+// SENTINELA dentro de filLista, em vez de deslocar as posicoes de todo mundo,
+// mantem a navegacao, a rolagem, o salto por letra e o arrastar exatamente
+// como estavam: tudo isso ja passa por filIdx, e todo caminho que age sobre uma
+// fileira ja tinha o `if (idx < 0) return` que o botao do rodape exigia.
+#define AJ_FIL_DESTAQUE (-2)
+
 static void filMontarLista(void) {
   int i, n = fil_n();
   filListaN = 0; filSep = -1;
   if (filAba == 0) {
+    filLista[filListaN++] = AJ_FIL_DESTAQUE;
     for (i = 0; i < n; i++) {
       int e = fil_estado(i);
       if (e == FIL_FORA) continue;
@@ -1633,6 +1679,40 @@ static char filLetra(int i) {
   if (c >= 'a' && c <= 'z') c -= 32;
   if (c >= 'A' && c <= 'Z') return (char)c;
   return '#';
+}
+
+// Rotulo da fonte do destaque, para a coluna de valor.
+static const char *heroFonteRotulo(void) {
+  const char *f = fil_hero_fonte();
+  int i, n;
+  if (!f[0]) return i18n("Automático");
+  if (f[0] == '*' && !f[1]) return i18n("Aleatório do catálogo");
+  n = fil_n();
+  for (i = 0; i < n; i++)
+    if (!strcmp(fil_chave(i), f)) return fil_titulo(i);
+  // A fileira saiu (addon removido). A escolha NAO e apagada aqui — ver
+  // fileiras.h —, entao o rotulo tem de dizer o que esta acontecendo em vez de
+  // mostrar "Automático" e fingir que ninguem escolheu nada.
+  return i18n("Fileira indisponível");
+}
+
+// Percorre as fontes possiveis: automatico, sorteio, e cada fileira que esta na
+// home, na ordem em que ela aparece. As fileiras FORA da home nao entram: o
+// destaque mostraria titulos de uma fileira que a pessoa desligou.
+static void heroFonteCiclar(int dir) {
+  char ops[FIL_MAX + 2][FIL_CHAVE];
+  int n = 0, i, atual = 0, total = fil_n();
+  snprintf(ops[n++], FIL_CHAVE, "%s", "");
+  snprintf(ops[n++], FIL_CHAVE, "%s", "*");
+  for (i = 0; i < total && n < (int)(sizeof ops / sizeof *ops); i++)
+    if (fil_estado(i) == FIL_NA_HOME)
+      snprintf(ops[n++], FIL_CHAVE, "%s", fil_chave(i));
+  { const char *f = fil_hero_fonte();
+    for (i = 0; i < n; i++) if (!strcmp(ops[i], f)) { atual = i; break; } }
+  atual += dir;
+  if (atual < 0) atual = n - 1;
+  if (atual >= n) atual = 0;
+  fil_definir_hero_fonte(ops[atual]);
 }
 
 static void eventoFileiras(SDL_Keycode k) {
@@ -1717,6 +1797,12 @@ static void eventoFileiras(SDL_Keycode k) {
       filPegou = (filPegou == 1) ? 2 : 1;
       return;
     }
+    if (filIdx(filFoco) == AJ_FIL_DESTAQUE) {
+      // A linha do destaque nao tem colunas: ela tem um valor, e as setas o
+      // trocam — a mesma gramatica das linhas de escolha da lista principal.
+      heroFonteCiclar(k == SDLK_RIGHT ? 1 : -1);
+      return;
+    }
     if (filAba == 1 || filFoco >= n) return;   // uma coluna so; os botoes nao tem colunas
     filCampo += (k == SDLK_RIGHT) ? 1 : -1;
     if (filCampo < 0) filCampo = 0;
@@ -1736,6 +1822,7 @@ static void eventoFileiras(SDL_Keycode k) {
       filAvisar(i18n("Atualizando: addons, coleções e fileiras — a Home se refaz uma vez, no fim"));
       return;
     }
+    if (filIdx(filFoco) == AJ_FIL_DESTAQUE) { heroFonteCiclar(1); return; }
     if (n < 1) return;
     if (filAba == 1 && filFoco == n) {
       // AGRUPAR POR ADDON e uma alternancia desta aba: agrupado (padrao) ou
@@ -1783,6 +1870,10 @@ static void eventoFileiras(SDL_Keycode k) {
 }
 
 void ajustes_evento(const SDL_Event *e) {
+  // A MODAL DE DIGITACAO VEM ANTES DE TUDO, como em biblioteca.c e recenviar.c:
+  // enquanto ela esta em pe, nenhuma tecla pertence a lista de opcoes atras.
+  // Sem esta linha, o D-pad moveria o foco da lista por baixo da modal.
+  if (teclado_aberto()) { teclado_evento(e); return; }
   if (e->type != SDL_KEYDOWN) return;
   SDL_Keycode k = e->key.keysym.sym;
 
@@ -1864,6 +1955,22 @@ void ajustes_evento(const SDL_Event *e) {
     }
     if (focoOp == AJ_ATUALIZAR) { atualizacao_abrir(); return; }
     if (focoOp == AJ_ADDONS) { pediuAddons = 1; return; }
+    if (focoOp == AJ_STALKER_PORTAL || focoOp == AJ_STALKER_MAC) {
+      int mac = focoOp == AJ_STALKER_MAC;
+      stCampo = focoOp;
+      // O valor atual volta para o campo: trocar a porta de um portal nao pode
+      // obrigar a redigitar o endereco inteiro no D-pad. O MAC e a excecao —
+      // ele nunca e devolvido em claro, nem para o proprio dono, porque a
+      // modal fica na tela e a tela vira foto.
+      teclado_abrir_com(mac ? "MAC do portal" : "Portal IPTV",
+                        mac ? "Formato 00:1a:79:xx:xx:xx"
+                            : "Endereço e porta, sem http://",
+                        mac ? 17 : 48,
+                        mac ? ST_ALFA_MAC : ST_ALFA_PORTAL,
+                        (!mac && stalker_configurado()) ? stalker_portal_curto() : NULL);
+      return;
+    }
+    if (focoOp == AJ_STALKER_LIMPAR) { stalker_esquecer(); return; }
     if (focoOp == AJ_TRAKT) { traktauth_comecar(); return; }
     if (focoOp == AJ_SIMKL) { simklauth_comecar(); return; }
     if (focoOp == AJ_SAIR) {
@@ -1934,6 +2041,17 @@ void ajustes_evento(const SDL_Event *e) {
 
 void ajustes_atualizar(float dt, Uint32 agora) {
   (void)agora;
+  if (teclado_aberto()) teclado_atualizar(dt, agora);
+  // O resultado e CONSUMIDO NA LEITURA (ver teclado.h): ler duas vezes daria
+  // TECLADO_NADA na segunda, e por isso a gravacao acontece aqui, uma vez.
+  { int r = teclado_resultado();
+    if (r == TECLADO_PRONTO && stCampo) {
+      if (stCampo == AJ_STALKER_MAC) stalker_definir_mac(teclado_texto());
+      else                           stalker_definir_portal(teclado_texto());
+      stCampo = 0;
+    } else if (r == TECLADO_CANCELOU) {
+      stCampo = 0;
+    } }
   // Repouso da escolha de idioma de legenda: ver aplicarIdioma.
   if (legendaEspera > 0.0f) {
     legendaEspera -= dt;
@@ -2265,6 +2383,70 @@ static const char *motivoFormaFixa(const char *chave) {
   return "A forma desta fileira não é escolhida aqui.";
 }
 
+// PREVIA DAS FORMAS DE CARD, desenhada com as MEDIDAS DE VERDADE.
+//
+// As colunas "Card" e "Tamanho" ofereciam seis nomes e tres nomes, e nada dizia
+// o que cada um faz com a fileira — "Coleção" e "Serviço" sao os dois arte
+// deitada, e a diferenca entre eles e so tamanho. Pedido do dono: "coloque mais
+// informacoes, imagens e svg sobre cada tipo de card na fileira que nao tem
+// info sobre, e do tamanho tambem".
+//
+// Os numeros abaixo sao os MESMOS de home.c (larguraDe/alturaDe), reduzidos por
+// um fator unico — e por isso a previa mostra a proporcao E a diferenca de
+// tamanho entre as formas, que e justamente o que o nome nao diz. Se home.c
+// mudar uma medida, esta previa passa a mentir; a tabela cita a fonte para que
+// quem mexer la saiba que ha um segundo lugar.
+static const struct { float w, h; } AJ_FIL_FORMA[FIL_TIPO_N] = {
+  { 212.0f, 322.0f },   // AUTO     — desenhado como fantasma, ver abaixo
+  { 212.0f, 322.0f },   // CARTAZ   — NV_CARD_W x NV_CARD_H
+  { 568.0f, 320.0f },   // DESTAQUE — larguraDe/alturaDe(FILEIRA_DESTAQUE)
+  { 480.0f, 270.0f },   // COLECAO
+  { 360.0f, 203.0f },   // SERVICO
+  { 212.0f, 320.0f },   // TOP10
+};
+
+// Uma frase por forma. Diz o que a forma E e para que serve, nao como se chama.
+static const char *aj_fil_forma_ajuda(int t) {
+  switch (t) {
+    case FIL_TIPO_CARTAZ:   return "Cartaz em pé 2:3, o mesmo das fileiras de catálogo.";
+    case FIL_TIPO_DESTAQUE: return "Arte deitada grande, como a de \"Continuar assistindo\".";
+    case FIL_TIPO_COLECAO:  return "Arte deitada média: cabe mais que a grande e ainda mostra o cenário.";
+    case FIL_TIPO_SERVICO:  return "Arte deitada compacta: a que cabe mais títulos por fileira.";
+    case FIL_TIPO_TOP10:    return "Cartaz com o número do ranking ao lado, como no Top 10.";
+    default:                return "O app escolhe pela fileira: retomada e coleções já têm forma própria.";
+  }
+}
+
+// O desenho de UMA forma, na escala dada. `foco` acende; `fantasma` e o
+// AUTOMATICO, que nao tem forma propria — duas silhuetas sobrepostas dizem
+// "depende" melhor que um retangulo qualquer com um rotulo.
+static void desenhaForma(float x, float yBase, int tipo, float esc, int aceso,
+                         float ar, float ag, float ab) {
+  float w = AJ_FIL_FORMA[tipo].w * esc, h = AJ_FIL_FORMA[tipo].h * esc;
+  float raio = 10.0f * esc;
+  GfxRect r = { x, yBase - h, w, h };
+  if (tipo == FIL_TIPO_AUTO) {
+    GfxRect deitado = { x, yBase - AJ_FIL_FORMA[FIL_TIPO_SERVICO].h * esc,
+                        AJ_FIL_FORMA[FIL_TIPO_SERVICO].w * esc,
+                        AJ_FIL_FORMA[FIL_TIPO_SERVICO].h * esc };
+    gfx_cor(deitado, raio / deitado.h, 0.62f, 0.65f, 0.72f, aceso ? 0.45f : 0.22f);
+    r.w = AJ_FIL_FORMA[FIL_TIPO_CARTAZ].w * esc * 0.7f;
+    gfx_cor(r, raio / r.h, aceso ? ar : 0.72f, aceso ? ag : 0.74f,
+            aceso ? ab : 0.80f, aceso ? 0.9f : 0.5f);
+    return;
+  }
+  gfx_cor(r, raio / h, aceso ? ar : 0.55f, aceso ? ag : 0.57f, aceso ? ab : 0.63f,
+          aceso ? 1.0f : 0.55f);
+  if (tipo == FIL_TIPO_TOP10) {
+    // O numeral E a forma: o Top 10 desenha o cartaz deslocado com o numero
+    // atras. Sem ele a previa do Top 10 e igual a do cartaz.
+    TxtLinha num = txt_linha(TXT_TITULO1, "1", aceso ? 250 : 170,
+                             aceso ? 250 : 172, aceso ? 252 : 180, 255);
+    txt_desenhar_alpha(num, x - num.w * 0.42f, yBase - h * 0.58f,
+                       aceso ? 0.95f : 0.5f);
+  }
+}
+
 static void desenhaFileiras(void) {
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
   GfxRect cartao = { (NV_TELA_W - AJ_FIL_W) * 0.5f, AJ_FIL_Y, AJ_FIL_W, AJ_FIL_H };
@@ -2394,11 +2576,36 @@ static void desenhaFileiras(void) {
 
     if (foco) {
       // O ANEL MARCA A COLUNA, nao a linha: e a coluna que diz o que OK vai
-      // fazer. Na aba "Fora" ha uma acao so, e o anel toma a linha inteira.
-      GfxRect cel = (filAba == 0)
+      // fazer. Na aba "Fora" ha uma acao so, e o anel toma a linha inteira — e
+      // no DESTAQUE tambem, que nao tem colunas e sim um valor.
+      GfxRect cel = (filAba == 0 && idx != AJ_FIL_DESTAQUE)
         ? (GfxRect){ cx + AJ_FIL_COL[filCampo].x - 12.0f, y, AJ_FIL_COL[filCampo].w + 24.0f, AJ_FIL_LINHA }
         : linha;
       gfx_rect(cel, 0, GFX_ANEL, 0, NV_ANEL_FOCO / AJ_FIL_LINHA, 0, raio, ar, ag, ab, 1.0f);
+    }
+
+    // A LINHA DO DESTAQUE. Nome a esquerda, fonte a direita, e a dica das setas
+    // so quando ela esta em foco — a gramatica das linhas de escolha da lista
+    // principal, que e onde a pessoa aprendeu que ← → trocam um valor.
+    if (idx == AJ_FIL_DESTAQUE) {
+      { GfxRect ic = { cx + AJ_FIL_COL[0].x, y + (AJ_FIL_LINHA - 26.0f) * 0.5f, 26.0f, 26.0f };
+        gfx_icone(ic, "aspecto", 0.78f, 0.80f, 0.85f, 0.9f); }
+      l = txt_linha_corta(TXT_CALLOUT, i18n("Destaque do topo"), 234, 234, 234, 255,
+                          AJ_FIL_COL[0].w - 38.0f);
+      txt_desenhar(l, cx + AJ_FIL_COL[0].x + 38.0f, y + 8.0f);
+      { TxtLinha sub = txt_linha_corta(TXT_MINI,
+            i18n("O que aparece no destaque da Home"), 148, 151, 160, 255,
+            AJ_FIL_COL[0].w - 38.0f);
+        txt_desenhar_alpha(sub, cx + AJ_FIL_COL[0].x + 38.0f, y + 8.0f + l.h + 4.0f, 0.85f); }
+      { float vw = AJ_FIL_COL[2].w + AJ_FIL_COL[3].w;
+        l = txt_linha_corta(TXT_CALLOUT, heroFonteRotulo(), 220, 220, 220, 255, vw);
+        txt_desenhar(l, cx + AJ_FIL_COL[2].x, y + (AJ_FIL_LINHA - l.h) * 0.5f); }
+      if (foco) {
+        l = txt_linha(TXT_MINI, i18n("← →  trocar"), 150, 214, 158, 255);
+        txt_desenhar(l, cx + AJ_FIL_COL[1].x, y + (AJ_FIL_LINHA - l.h) * 0.5f);
+      }
+      y += AJ_FIL_LINHA + AJ_FIL_LGAP;
+      continue;
     }
 
     { float tx = cx + AJ_FIL_COL[0].x;
@@ -2461,8 +2668,14 @@ static void desenhaFileiras(void) {
 
   // Posicao na lista: com 200 linhas a barra de rolagem teria 6 px.
   if (n > 0) {
-    if (filFoco >= n) snprintf(buf, sizeof buf, "%s", i18n("Botão"));
-    else snprintf(buf, sizeof buf, i18n("%d de %d"), filFoco + 1, n);
+    // O DESTAQUE NAO ENTRA NA CONTAGEM. Ele esta na lista, mas nao e fileira:
+    // dizer "1 de 8" com a aba mostrando "7 de 7" seriam dois numeros do mesmo
+    // conjunto que nao batem, e quem le acredita no que estiver mais perto.
+    int fileirasN = n - (filAba == 0 ? 1 : 0);
+    if (filAba == 0 && filFoco == 0) snprintf(buf, sizeof buf, "%s", i18n("Destaque"));
+    else if (filFoco >= n) snprintf(buf, sizeof buf, "%s", i18n("Botão"));
+    else snprintf(buf, sizeof buf, i18n("%d de %d"),
+                  filFoco + (filAba == 0 ? 0 : 1), fileirasN);
     l = txt_linha(TXT_CAPTION, buf, 156, 159, 168, 255);
     txt_desenhar(l, cx + AJ_FIL_W - 40.0f - l.w, filCabecY);
   }
@@ -2492,7 +2705,16 @@ static void desenhaFileiras(void) {
   // A FICHA DA FILEIRA EM FOCO: de qual addon veio, filme ou serie, e quantos
   // titulos ela tem AGORA (omitido antes de a Home montar — "0 titulos" seria
   // mentira sobre uma fileira talvez cheia).
-  if (n > 0 && filFoco >= 0 && filFoco < n && !filNaBarra) {
+  if (n > 0 && filFoco >= 0 && filFoco < n && !filNaBarra &&
+      filLista[filFoco] == AJ_FIL_DESTAQUE) {
+    l = txt_linha_corta(TXT_CALLOUT, heroFonteRotulo(), 232, 234, 241, 255,
+                        AJ_FIL_W - 80.0f);
+    txt_desenhar(l, cx + 40.0f, cartao.y + AJ_FIL_H - 232.0f);
+    l = txt_linha_corta(TXT_MINI,
+        i18n("Automático usa os primeiros títulos do catálogo; o sorteio troca a cada abertura; uma fileira mostra os títulos dela."),
+        170, 173, 182, 255, AJ_FIL_W - 80.0f);
+    txt_desenhar(l, cx + 40.0f, cartao.y + AJ_FIL_H - 200.0f);
+  } else if (n > 0 && filFoco >= 0 && filFoco < n && !filNaBarra) {
     int idx = filLista[filFoco];
     int orig = fil_linha_origem(idx);
     const char *addon = fil_linha_addon(idx);
@@ -2507,8 +2729,81 @@ static void desenhaFileiras(void) {
                itens == 1 ? i18n("  ·  %d título") : i18n("  ·  %d títulos"), itens);
     l = txt_linha_corta(TXT_CALLOUT, ficha, 232, 234, 241, 255, AJ_FIL_W - 80.0f);
     txt_desenhar(l, cx + 40.0f, cartao.y + AJ_FIL_H - 232.0f);
-    l = txt_linha_corta(TXT_MINI, fil_origem_ajuda(orig), 170, 173, 182, 255, AJ_FIL_W - 80.0f);
+    // A SEGUNDA LINHA E DA COLUNA EM FOCO quando ela tem o que explicar. A
+    // origem da fileira ja foi dita na linha de cima (o rotulo e o addon); com
+    // o foco em "Card" ou "Tamanho" a pergunta de quem esta ali e outra.
+    { const char *frase = fil_origem_ajuda(orig);
+      if (filAba == 0 && !filPegou) {
+        if (filCampo == 2)
+          frase = fil_aceita_tipo(idx)
+                ? aj_fil_forma_ajuda(fil_linha_tipo(idx))
+                : "Esta fileira tem forma própria: ver a frase abaixo do nome.";
+        else if (filCampo == 3)
+          frase = "O fator vale sobre a medida do tipo, então a proporção do card não muda.";
+      }
+      l = txt_linha_corta(TXT_MINI, frase, 170, 173, 182, 255, AJ_FIL_W - 760.0f); }
     txt_desenhar(l, cx + 40.0f, cartao.y + AJ_FIL_H - 200.0f);
+  }
+
+  // A PREVIA DA COLUNA EM FOCO, no espaco livre a direita das instrucoes.
+  //
+  // So aparece nas colunas "Card" e "Tamanho", que sao as que oferecem uma
+  // escolha sem dizer o que ela faz. Nas outras o espaco fica vazio de
+  // proposito: desenhar sempre alguma coisa ali ensinaria a ignorar o canto.
+  if (filAba == 0 && !filPegou && !filNaBarra &&
+      filFoco >= 0 && filFoco < n && filLista[filFoco] >= 0 &&
+      (filCampo == 2 || filCampo == 3)) {
+    int idx = filLista[filFoco];
+    int aceita = fil_aceita_tipo(idx);
+    int tipo = aceita ? fil_linha_tipo(idx) : FIL_TIPO_AUTO;
+    int tam = fil_linha_tam(idx);
+    // A tira comeca depois da coluna de instrucoes (que ocupa ~700px) e assenta
+    // as formas sobre uma linha de base comum: e a base que deixa comparar
+    // altura entre elas, que e metade da informacao.
+    // CANTO INFERIOR DIREITO, que e o unico retangulo livre do cartao: a ficha
+    // ocupa a esquerda logo acima, e das quatro linhas de instrucao a mais
+    // comprida termina a 788px da borda esquerda do cartao. MEDIDO na captura,
+    // nao estimado — foi assim que as duas primeiras tentativas sairam por
+    // cima do texto.
+    float px = cx + 850.0f, base = cartao.y + AJ_FIL_H - 24.0f;
+    float esc = 0.19f;   // 322 (o card mais alto) x 0,19 = 61px
+    int t;
+    // SO A ESCOLHIDA E NOMEADA. Seis rotulos lado a lado nao cabem sem
+    // reticencia, e reticencia em rotulo de 9 caracteres nao ensina nada — as
+    // formas se explicam pelo desenho, e o nome da escolhida ja esta na coluna.
+    if (filCampo == 2) {
+      float x = px;
+      for (t = 0; t < FIL_TIPO_N; t++) {
+        float w = AJ_FIL_FORMA[t].w * esc;
+        desenhaForma(x, base, t, esc, t == tipo, ar, ag, ab);
+        if (t == tipo) {
+          TxtLinha rot = txt_linha(TXT_MINI, fil_tipo_rotulo(t), 236, 238, 243, 255);
+          txt_desenhar(rot, x + (w - rot.w) * 0.5f,
+                       base - AJ_FIL_FORMA[t].h * esc - rot.h - 6.0f);
+        }
+        x += w + 22.0f;
+      }
+    } else {
+      // TAMANHO: a MESMA forma tres vezes, nos tres fatores. O que muda e o
+      // tamanho, entao mostrar tres formas diferentes seria mudar duas coisas.
+      float x = px;
+      int formaBase = (aceita && tipo != FIL_TIPO_AUTO) ? tipo : FIL_TIPO_CARTAZ;
+      for (t = 0; t < FIL_TAM_N; t++) {
+        float e = esc * fil_tam_escala(t);
+        float w = AJ_FIL_FORMA[formaBase].w * e;
+        desenhaForma(x, base, formaBase, e, t == tam, ar, ag, ab);
+        if (t == tam) {
+          char rot[48];
+          TxtLinha lr;
+          snprintf(rot, sizeof rot, "%s  %.0f%%", i18n(fil_tam_rotulo(t)),
+                   (double)(fil_tam_escala(t) * 100.0f));
+          lr = txt_linha(TXT_MINI, rot, 236, 238, 243, 255);
+          txt_desenhar(lr, x + (w - lr.w) * 0.5f,
+                       base - AJ_FIL_FORMA[formaBase].h * e - lr.h - 6.0f);
+        }
+        x += w + 46.0f;
+      }
+    }
   }
 
   // A INSTRUCAO, escrita na tela: o gesto de pegar e mover nao se descobre
@@ -2525,6 +2820,12 @@ static void desenhaFileiras(void) {
   } else if (filNaBarra) {
     txt_bloco(TXT_CAPTION, "← →  Trocar de aba\n↓  Voltar à lista\nVoltar  Fechar",
               206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 3);
+  } else if (filFoco >= 0 && filFoco < n && filLista[filFoco] == AJ_FIL_DESTAQUE) {
+    txt_bloco(TXT_CAPTION,
+              "← →  Trocar o que aparece no destaque\n"
+              "OK  Avançar para a próxima fonte\n"
+              "↑ no topo  Abas\nVoltar  Fechar",
+              206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 4);
   } else if (filAba == 1 && filFoco < n) {
     txt_bloco(TXT_CAPTION,
               "↑ ↓  Escolher fileira · segure para pular por letra\n"
@@ -2674,7 +2975,6 @@ static float desenhaPainelImagens(float x, float y, float w) {
 }
 
 void ajustes_desenhar(Uint32 agora) {
-  (void)agora;
   // Fundo opaco proprio: a tela cobre tudo e nao pode depender de quem desenhou
   // antes dela — sem isto a home aparece entre as linhas da lista.
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
@@ -2840,4 +3140,8 @@ void ajustes_desenhar(Uint32 agora) {
     else if (sa == SMK_PEDINDO || sa == SMK_AGUARDANDO || sa == SMK_ERRO)
       desenhaVinculo("o Simkl", simklauth_codigo(), simklauth_url(),
                      simklauth_erro(), sa == SMK_AGUARDANDO); }
+
+  // A modal de digitacao e a ultima: ela e sempre a pergunta mais recente da
+  // tela, e tem de ficar por cima ate do cartao de vinculo.
+  if (teclado_aberto()) teclado_desenhar(agora);
 }

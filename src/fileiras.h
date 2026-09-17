@@ -112,6 +112,19 @@ const char *fil_origem_icone(int origem);
 // Frase que explica a origem na area de ajuda, ja em portugues.
 const char *fil_origem_ajuda(int origem);
 
+// --- destaque ----------------------------------------------------------------
+// O QUE ALIMENTA O DESTAQUE da home. Tres respostas, e a terceira e a que o
+// dono pediu ("poder substituir e colocar o que quiser la"):
+//   ""   automatico — os primeiros titulos do catalogo, como sempre foi
+//   "*"  sorteio do catalogo
+//   ...  a chave de UMA fileira: o destaque passa a mostrar os titulos dela
+//
+// A chave pode apontar para uma fileira que nao existe mais (addon removido).
+// Quem le trata isso como "automatico" em vez de apagar a escolha: o addon pode
+// voltar, e apagar em silencio faria a preferencia sumir sem ninguem pedir.
+const char *fil_hero_fonte(void);
+void        fil_definir_hero_fonte(const char *chave);
+
 // --- limite ------------------------------------------------------------------
 int  fil_limite(void);
 // Ao BAIXAR o limite, as ligadas que ficaram alem dele viram "fora da home"
