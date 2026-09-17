@@ -2789,7 +2789,20 @@ void home_desenhar(Uint32 agora) {
                                         tipo == FILEIRA_CONTINUE ||
                                         tipo == FILEIRA_RETORNO || deitado);
 
-          if (focus_indice(&foco, r, c)) {
+          // `!focoHero` E A CONDICAO QUE FALTAVA AQUI, e e o mesmo defeito que
+          // o anel de foco ja tinha resolvido dez linhas acima (linha 1747).
+          //
+          // Com o destaque focado, `foco` continua apontando para a fileira 0,
+          // coluna 0 — ele nao e zerado, para que descer devolva a pessoa ao
+          // lugar de onde ela saiu. Este bloco roda DEPOIS do destaque no mesmo
+          // quadro (cards sao desenhados abaixo dele), entao ele sobrescrevia
+          // o itemFoco que o destaque tinha acabado de preencher.
+          //
+          // Efeito relatado pelo dono: "o hero sempre seleciona o primeiro
+          // filme, nao importa qual apareca". Era literal — o OK abria sempre
+          // o primeiro card da primeira fileira, porque foi ele o ultimo a
+          // escrever em itemFoco antes de app.c ler.
+          if (!focoHero && focus_indice(&foco, r, c)) {
             GfxRect aqui = { px, py, w, h };
             itemFoco.indice = idxCat;
             itemFoco.rect   = aqui;
@@ -3068,7 +3081,9 @@ void home_desenhar(Uint32 agora) {
           // Feedback progressivo do gesto, sem duplicar o menu contextual. A
           // barra aparece somente enquanto o mesmo item esta sob pressao;
           // atingido o limiar, ctxmenu ja foi aberto e a soltura e consumida.
-          if (okPressionando && okHold > 0.0f &&
+          // Mesma guarda: segurar o OK no destaque desenhava a barra de
+          // progresso no primeiro card, que nao e o item sob pressao.
+          if (!focoHero && okPressionando && okHold > 0.0f &&
               foco_pode_pressao_longa() && focus_indice(&foco, r, c)) {
             float bx = px + NV_HOME_TEXT_GUTTER;
             float bw = w - NV_HOME_TEXT_GUTTER * 2.0f;
