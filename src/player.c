@@ -857,7 +857,28 @@ void player_encerrar(void) {
   // Salvar ANTES de parar: video_parar descarrega o pipeline e a posicao some
   // junto. Titulo quase no fim conta como visto por inteiro — voltar a um card
   // marcando "2 min restantes" que na verdade acabou e pior que arredondar.
-  if (comVideo && video_pronto() && duracaoSeg > 1.0f && !ehCanal()) {
+  // CLIPE DE ERRO NAO E PROGRESSO. Em 17/09 o scraper do Debridio caiu e passou
+  // a responder 302 para https://static.debridio.com/scraperV2/500.mp4 — um mp4
+  // de 26 KB, 1280x720, 30 s e ZERO faixas de audio. Eles tem um clipe por
+  // codigo de erro (400/401/403/404/429/500), entao isto nao e um acidente de
+  // um provedor so: e como a familia toda avisa que falhou.
+  //
+  // O webOS carrega esse arquivo sem reclamar — loadCompleted, playing, tudo
+  // "No Error" — e o clipe termina em 30 s. O app leu isso como "acabou o
+  // episodio" e mandou /scrobble/stop com 100%: TRES episodios do dono foram
+  // marcados como assistidos no Trakt de verdade sem ninguem ter visto nada.
+  //
+  // O limiar e de duracao porque e o unico sinal que chega aqui sem depender do
+  // provedor. Dois minutos nao descartam nada que este catalogo toque: filme e
+  // episodio de serie. Canal ao vivo ja sai pelo ehCanal() logo abaixo, e a
+  // duracao dele nem e comparavel.
+  if (comVideo && video_pronto() && duracaoSeg > 1.0f && duracaoSeg < 120.0f &&
+      !ehCanal()) {
+    printf("[player] fluxo de %.0f s: curto demais para ser o titulo, "
+           "progresso NAO gravado (clipe de erro do provedor?)\n", duracaoSeg);
+    fflush(stdout);
+  }
+  if (comVideo && video_pronto() && duracaoSeg >= 120.0f && !ehCanal()) {
     // CANAL nao grava progresso: uma transmissao ao vivo nao tem "onde parou" —
     // guardar posSeg contra a duracao reserva colocaria "Globo 68%" em
     // Continuar assistindo, que e justamente o que nao pode acontecer.
