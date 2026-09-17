@@ -702,6 +702,9 @@ static PlrRect destinoComRecuo(PlrRect d) {
 // pedaco MENOR da FONTE. O retangulo virtual continua sendo o mesmo do web —
 // ele so deixa de ser o que se manda e passa a ser o que se USA PARA CALCULAR
 // que fatia do quadro cai dentro da tela.
+// Definida abaixo, junto do ciclo de modos: quem aplica precisa dela antes.
+static int modoPrecisaRecorte(int modo);
+
 static void aplicarAspecto(void) {
   PlrRect r, d;
   float qw, qh;
@@ -715,6 +718,13 @@ static void aplicarAspecto(void) {
               video_janela((int)(o.x + 0.5f), (int)(o.y + 0.5f),
                            (int)(o.w + 0.5f), (int)(o.h + 0.5f));
               return; }
+
+  // VALOR HERDADO. `aspecto` e gravado por aparelho, mas um arquivo copiado —
+  // ou um modo que existia numa versao anterior — pode trazer um modo que esta
+  // TV nao honra. Cair no ORIGINAL e melhor que esticar a imagem: esticar muda
+  // a proporcao das pessoas na tela e ninguem pediu isso.
+  if (!video_recorte_fonte() && modoPrecisaRecorte(aspecto))
+    aspecto = PLR_ASP_ORIGINAL;
 
   r = aspectoRect(aspecto);
   d = aspectoVisivel(aspecto);
@@ -762,8 +772,39 @@ void player_aspecto_definir(int modo) {
   aplicarAspecto();
 }
 
+// O MODO PRECISA RECORTAR? Depende do modo E do quadro.
+//
+// "Fit Width" num filme 2.39:1 cabe na tela inteira e nao recorta nada; no
+// mesmo modo com um 4:3 a altura estoura e vira recorte. Por isso a pergunta e
+// feita com o retangulo JA calculado, e nao por uma lista de modos.
+static int modoPrecisaRecorte(int modo) {
+  PlrRect r = aspectoRect(modo);
+  return r.x < -0.5f || r.y < -0.5f ||
+         r.x + r.w > NV_TELA_W + 0.5f || r.y + r.h > NV_TELA_H + 0.5f;
+}
+
+// ONDE O ALVO NAO RECORTA, O MODO NAO ENTRA NO CICLO.
+//
+// O Tizen so tem encaixar e esticar (ver a nota em video.h: as tres APIs foram
+// testadas na TV). Sem esta guarda o botao oferecia os oito modos, escrevia o
+// nome do modo na tela e a imagem ou nao mudava ou esticava — o dono viu isso
+// como "escala funcionou mas nao parece estar recortando, parece que ta
+// esticando". Oferecer dois modos que fazem o que dizem e melhor que oito em
+// que seis mentem.
+static int modoDisponivel(int modo) {
+  if (video_recorte_fonte()) return 1;
+  return !modoPrecisaRecorte(modo);
+}
+
 void player_aspecto_ciclar(void) {
-  player_aspecto_definir((aspecto + 1) % PLR_ASP_N);
+  int m = aspecto, i;
+  // No maximo uma volta: se nada mais estiver disponivel, fica onde esta em vez
+  // de girar para sempre.
+  for (i = 0; i < PLR_ASP_N; i++) {
+    m = (m + 1) % PLR_ASP_N;
+    if (modoDisponivel(m)) break;
+  }
+  player_aspecto_definir(m);
   toastAte = SDL_GetTicks() + PLR_TOAST_MS;
 }
 

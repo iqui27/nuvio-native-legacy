@@ -181,6 +181,9 @@ const char *video_hdr(void) { return "none"; }
 int  video_largura(void) { return 0; }
 int  video_altura(void) { return 0; }
 int  video_pode_forcar_sdr(void) { return 0; }
+// No Mac nao ha plano de video: 1 para que a tela de aspecto ofereca todos os
+// modos ao desenvolver, que e o mesmo que a LG faz.
+int  video_recorte_fonte(void) { return 1; }
 void video_forcar_sdr(void) {}
 void video_encerrar(void) {}
 #else
@@ -1629,6 +1632,10 @@ int  video_altura(void)           { return vidH; }
 // maquinaria de `recuperando`, que ja sabe recarregar a fonte e voltar para a
 // posicao — reimplementar o recarregar aqui seria um segundo caminho para a
 // mesma coisa, e o load precisa acontecer no fio principal.
+// O tv.display do webOS tem o par sourceInput/displayOutput: pedir um pedaco
+// MENOR do quadro para o mesmo destino e recorte de verdade.
+int  video_recorte_fonte(void) { return 1; }
+
 int  video_pode_forcar_sdr(void) { return urlAtual[0] != 0; }
 void video_forcar_sdr(void) {
   if (!urlAtual[0]) return;

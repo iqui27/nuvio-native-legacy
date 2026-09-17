@@ -46,6 +46,23 @@ void video_janela(int x, int y, int w, int h);
 void video_janela_fonte(int sx, int sy, int sw, int sh,
                         int dx, int dy, int dw, int dh);
 
+// 1 quando o alvo CONSEGUE recortar a fonte; 0 quando so sabe encaixar e
+// esticar. Quem oferece os modos de aspecto pergunta antes, para nao anunciar
+// um zoom que nao vai acontecer.
+//
+// MEDIDO na QN85Q70AAGXZD (Tizen 6.0), testando a API na propria TV:
+//   * setVideoRoi EXISTE mas so vale para video 360. Valores fora de 0..1 dao
+//     InvalidValuesError e valores DENTRO de 0..1 dao NotSupportedErr — a troca
+//     de erro e a prova: 0..1 passa na validacao e a implementacao recusa.
+//   * setDisplayRect aceita retangulo MAIOR que a tela, mas exige x e y >= 0.
+//     "-521,-79 2966x1242" -> InvalidValuesError; "0,0,2966x1242" -> OK. Sem
+//     origem negativa nao ha como centralizar o recorte.
+//   * setDisplayMethod so tem LETTER_BOX, FULL_SCREEN e AUTO_ASPECT_RATIO.
+//     CROPPED_FULL, ORIGIN_SIZE, DST_ROI e ORIGIN_OR_LETTER: InvalidValuesError.
+//
+// Com essas tres, encaixar e esticar saem; recortar e ampliar nao saem.
+int  video_recorte_fonte(void);
+
 double video_pos(void);      // segundos decorridos
 double video_duracao(void);  // 0 enquanto desconhecida
 

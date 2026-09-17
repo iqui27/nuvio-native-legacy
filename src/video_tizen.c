@@ -636,6 +636,71 @@ int video_tocar(const char *url) {
   return 1;
 }
 
+// O IDIOMA DAS FAIXAS VEM DO CONTAINER, porque o AVPlay nao o entrega.
+//
+// MEDIDO em 17/09 na QN85Q70AAGXZD, em dois filmes diferentes, lendo
+// getTotalTrackInfo ao vivo pelo inspector:
+//   AUDIO #1 {"language":"","channels":"6","fourCC":"audio/x-eac3"}
+//   TEXT  #3 {"track_num":"0","track_lang":"","subtitle_type":"-1"}
+// `language` e `track_lang` vem SEMPRE vazios. Por isso a tela mostrava
+// "Audio 1", "Audio 2", "Legenda 1"... — nao era parse errado deste lado, e o
+// firmware que nao le a etiqueta do MKV.
+//
+// A sonda de MKV ja rodava aqui e ja lia as faixas para `fx`, mas o porte
+// aproveitava SO OS CAPITULOS (creditos) e descartava o vetor. A metade que
+// faltava e esta.
+//
+// CASAMENTO POR ORDINAL DENTRO DO TIPO, e nao por TrackNumber. Na LG o
+// sourceInfo entrega o TrackNumber do Matroska e video.c casa por ele, com uma
+// nota dizendo que casar por ordem trocaria os idiomas de lugar. Aqui nao ha
+// essa chave: o getTotalTrackInfo da o `index` da lista dele (1,2 para audio;
+// 3,4,5,6 para legenda) e um `track_num` que e 0,1,2,3 — ordinal entre as
+// legendas, nao o TrackNumber do container.
+//
+// A GUARDA QUE TORNA ISSO ACEITAVEL: so aplica quando a QUANTIDADE de faixas
+// daquele tipo bate entre o container e o AVPlay. Se as duas listas tem
+// tamanhos diferentes, uma delas filtrou algo e o ordinal ja nao alinha —
+// nesse caso nao escreve nada. Idioma errado e pior que idioma nenhum: a
+// pessoa escolhe "Portugues" e ouve ingles, e nao tem como saber que foi o app
+// que mentiu.
+static void aplicarIdiomasDoMkv(const MkvFaixa *fx, int n) {
+  int j, kA = 0, kL = 0, nA = 0, nL = 0, casou = 0;
+  const int TIPO_AUDIO = 2, TIPO_LEG = 17;   // TrackType do Matroska
+
+  for (j = 0; j < n; j++) {
+    if (fx[j].tipo == TIPO_AUDIO) nA++;
+    else if (fx[j].tipo == TIPO_LEG) nL++;
+  }
+  if (nA != nAudio && nL != nLeg) {
+    printf("[mkv] contagem nao bate (container %d audio / %d legenda; player "
+           "%d / %d): idioma NAO aplicado\n", nA, nL, nAudio, nLeg);
+    fflush(stdout);
+    return;
+  }
+
+  for (j = 0; j < n; j++) {
+    VideoFaixa *f = NULL;
+    if (fx[j].tipo == TIPO_AUDIO && nA == nAudio && kA < nAudio)
+      f = &faixaAudio[kA++];
+    else if (fx[j].tipo == TIPO_LEG && nL == nLeg && kL < nLeg)
+      f = &faixaLeg[kL++];
+    if (!f) continue;
+    if (f->idioma[0]) continue;                 // o player ja sabia: nao mexer
+    if (!fx[j].idioma[0] || !strcmp(fx[j].idioma, "und")) continue;
+    snprintf(f->idioma, sizeof f->idioma, "%s", fx[j].idioma);
+    casou++;
+    // O rotulo por ULTIMO, depois do idioma, e de uma vez so — a mesma regra do
+    // lerFaixas: e ele que a tela desenha e este arquivo nao tem mutex.
+    if (fx[j].nome[0])
+      snprintf(f->rotulo, sizeof f->rotulo, "%s  \xc2\xb7  %s",
+               i18n(ling_nome(f->idioma)), fx[j].nome);
+    else
+      snprintf(f->rotulo, sizeof f->rotulo, "%s", i18n(ling_nome(f->idioma)));
+  }
+  printf("[mkv] %d faixa(s) ganharam idioma do container\n", casou);
+  fflush(stdout);
+}
+
 // DESPEJA O getCurrentStreamInfo NO LOG, uma vez por titulo.
 //
 // Nao interpreta nada de proposito. O dono relatou em 17/09 que na Samsung o
@@ -737,6 +802,7 @@ static void *lerMkv(void *arg) {
     fflush(stdout);
   }
   if (n < 1) marco("mkv: nenhuma faixa lida (nao e MKV, ou Range falhou)");
+  else aplicarIdiomasDoMkv(fx, n);
   fioMkvVivo = 0;
   return NULL;
 }
@@ -1015,6 +1081,10 @@ int  video_altura(void)           { return vidH; }
 // quem decide o pipeline de HDR e o AVPlay do firmware, a partir do proprio
 // fluxo — nao ha campo que este lado possa contradizer. A interface le
 // video_pode_forcar_sdr justamente para nao oferecer um botao inerte.
+// Ver a nota em video.h: as tres APIs foram testadas nesta TV e nenhuma
+// recorta a fonte de video comum.
+int  video_recorte_fonte(void) { return 0; }
+
 int  video_pode_forcar_sdr(void) { return 0; }
 void video_forcar_sdr(void) { }
 
