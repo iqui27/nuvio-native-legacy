@@ -664,33 +664,65 @@ static void traco(float x0, float dx, int n, float esp,
   }
 }
 
-// A AREA ENTRE A CURVA E OS 100% EXISTIU AQUI, e foi trocada por HASTES.
+// A AREA ENTRE A CURVA E A REFERENCIA — e a volta dela, agora sem costura.
 //
-// A ideia era boa e continua valendo: o que interessa neste painel nao e a
-// altura da linha, e a DISTANCIA dela ate os 100%, porque essa distancia E a
-// gente que foi embora. Pintar essa distancia responde a pergunta do painel
-// sem que ninguem precise medir nada com os olhos.
+// Esta area ja existiu, virou HASTE (uma por episodio) e voltou. Vale registrar
+// o caminho inteiro, porque cada volta corrigiu um defeito diferente:
 //
-// O que nao funcionou foi a area cheia. Ela so pode existir onde ha dado, e
-// uma temporada com dois buracos (DS9 T1) virava tres blocos de aresta viva
-// dentro da caixa — a mesma "coluna quebrada" que este painel ja tinha levado
-// bronca por ter. Medido na captura v3: o degrau vertical na retomada de um
-// trecho tinha 55 px de altura e lia como borda de objeto, nao como sombra de
-// curva.
+//   1. AREA ATE A BASE da caixa. Rejeitada e com razao: com o eixo cortado ela
+//      vira um bloco solido da altura do painel, que le como barra.
+//   2. AREA ATE OS 100%, translucida. Certa na ideia — ela nasce em zero no E1
+//      e cresce exatamente com quem foi embora —, mas os retangulos vizinhos se
+//      sobrepunham 1 px e o veu pintado duas vezes deixava uma LISTRA CLARA em
+//      cada emenda. Uma fileira de lajes riscadas.
+//   3. Cor ja misturada com a superficie, em alfa 1. Matou a listra, mas so
+//      funcionava porque havia uma caixa opaca embaixo para misturar. Com o veu
+//      transparente no lugar da caixa nao ha mais cor de fundo conhecida.
+//   4. HASTE por episodio. Sem emenda nenhuma, mas e um pente vertical forte —
+//      o oposto de "seamless" — e com a folga proporcional do eixo a queda ja
+//      se le sozinha na curva.
 //
-// HASTE resolve os tres problemas de uma vez. Ela mede a mesma distancia, uma
-// por episodio; nao tem aresta horizontal para formar bloco; num buraco ela
-// simplesmente nao existe, sem deixar borda; e custa UM desenho por episodio
-// em vez de uma centena por trecho — o painel inteiro caiu de ~100 desenhos de
-// area para 12 ou 24 de haste.
-static void haste(float x, float yRef, float yPonto, float r, float g, float b,
-                  float a) {
-  float topo = yRef < yPonto ? yRef : yPonto;
-  float alt  = fabsf(yPonto - yRef);
-  GfxRect s;
-  if (alt < 1.0f) return;
-  s.x = x - 1.25f; s.y = topo; s.w = 2.5f; s.h = alt;
-  gfx_cor(s, 0.0f, r, g, b, a);
+// A volta e a area do caso 2 com o defeito dele resolvido na RAIZ: os
+// retangulos sao encaixados em COLUNA DE PIXEL INTEIRA. Cada um comeca onde o
+// anterior acaba, exatamente, sem o `+1` de sobreposicao que o traco opaco
+// precisa. Sem sobreposicao nao ha dupla pintura, e o veu translucido fica
+// uniforme — entao a area pode voltar a ser transparente e deixar a arte da
+// pagina passar por baixo dela, que e o que o painel inteiro passou a fazer.
+//
+// `lado` +1 pinta o que esta ABAIXO de yRef na tela, -1 o que esta acima. Sao
+// dois porque significam coisas opostas no painel 2 (perdeu gente / ganhou
+// gente) e levam cores diferentes.
+static void banda(float x0, float dx, int n, float yRef, int lado,
+                  float r, float g, float b, float a) {
+  int i = 0;
+  if (n < 2) return;
+  while (i < n - 1) {
+    float lo = saY[i], hi = saY[i], topo, alt;
+    float xa, xb;
+    int j = i;
+    while (j < n - 1) {
+      float l = saY[j + 1] < lo ? saY[j + 1] : lo;
+      float h = saY[j + 1] > hi ? saY[j + 1] : hi;
+      // A banda aceita o dobro do erro do traco: ela e regiao cheia, nao
+      // contorno, e a borda dela fica DEBAIXO do traco de 5 px desenhado por
+      // cima. Um degrau de 3 px mal aparece dali; no traco engordaria a linha.
+      if (j > i && h - l > 3.0f) break;
+      lo = l; hi = h; j++;
+    }
+    // Do lado que nao interessa a curva e grampeada NA referencia e o
+    // retangulo sai com altura zero — o cruzamento nao vaza para o outro lado.
+    if (lado > 0) { topo = yRef; alt = (hi < yRef ? yRef : hi) - yRef; }
+    else          { topo = (lo > yRef ? yRef : lo); alt = yRef - topo; }
+    // AQUI ESTA O ENCAIXE: as duas bordas verticais caem em pixel inteiro, e a
+    // proxima coluna comeca no mesmo inteiro em que esta acabou.
+    xa = floorf(x0 + dx * (float)i + 0.5f);
+    xb = floorf(x0 + dx * (float)j + 0.5f);
+    if (alt > 0.5f && xb > xa) {
+      GfxRect s = { xa, topo, xb - xa, alt };
+      gfx_cor(s, 0.0f, r, g, b, a);
+    }
+    i = j;
+  }
 }
 
 static void ponto(float x, float y, float d, float r, float g, float b, float a) {
@@ -736,25 +768,101 @@ static void tracejada(float x, float y, float w, float r, float g, float b,
   }
 }
 
-// A CAIXA DO GRAFICO, e por que ela existe.
+// O CHAO DO PAINEL — e por que ele deixou de ser uma caixa.
 //
-// Os tres paineis eram desenhados direto sobre o fundo da pagina (#0D0D0D) com
-// traco cinza e rotulo cinza: "cinza sobre cinza, sem estilo e sem
-// hierarquia", nas palavras do dono. O conserto nao e pintar a curva de uma
-// cor mais forte — e dar a ela uma SUPERFICIE, que e como o resto desta base
-// separa camadas (ver a escada de superficies em DESIGN.md; a profundidade
-// aqui e tonal, nao por sombra).
+// Havia aqui uma CAIXA: um retangulo arredondado de #1B1C1F, opaco, atras de
+// cada grafico. Ela resolveu o problema certo (o painel era "cinza sobre
+// cinza, sem estilo e sem hierarquia") e criou outro, que so apareceu quando a
+// captura passou a pintar o chao de verdade desta pagina.
 //
-// #1B1C1F e a mesma superficie de painel que novidades11.c ja usa nos graficos
-// miniatura, copiada e nao escolhida, para que os dois tamanhos do mesmo
-// grafico sejam o mesmo objeto.
+// O CHAO DE VERDADE NAO E PRETO CHAPADO. detail.c desenha estas secoes sobre o
+// BACKDROP DA OBRA apagado a 15% (medido: `.detail-scrolled` leva o backdrop a
+// opacity 0.15 na folha do web). Sobre arte, um retangulo opaco nao le como
+// "uma camada acima": le como uma PLACA COLADA POR CIMA DA ARTE, com a arte
+// aparecendo em volta e no vao entre os dois paineis. Era literalmente o que a
+// captura mostrava — dois cartoes grudados na tela —, e e o que o dono viu na
+// TV: "mais seamless, fundo mais transparente".
 //
-// CUSTO: 1 desenho por painel, e ~0,15 tela de preenchimento. Cabe: gfx.h
-// registra a tela de detalhe em 2,2-3,5 telas e o limite medido desta Mali e
-// nas DUAS telas cheias empilhadas, que isto nao chega perto.
-static void caixa(GfxRect r) {
-  gfx_cor(r, raioPx(r.w, r.h, 18.0f), 0.105f, 0.108f, 0.122f, 1.0f);
+// A troca e um VEU, nao uma caixa. Tres propriedades, e cada uma resolve uma
+// coisa:
+//
+//   TRANSPARENTE — preto a 55%, entao a arte continua visivel atraves dele. E
+//     o "fundo mais transparente" pedido, e nao a ausencia de fundo.
+//
+//   SEM ARESTA NENHUMA — a rampa e vertical e por pixel (GFX_VEU_BAIXO na
+//     metade de cima, GFX_VEU_TOPO na de baixo, que e o par deles), e a
+//     largura e a TELA INTEIRA. Sem borda lateral e sem borda horizontal, nao
+//     ha retangulo para o olho reconhecer. E o que "seamless" quer dizer.
+//
+//   E ELE PRECISA EXISTIR, nao e enfeite: a escada de cinzas desta base foi
+//     calibrada UM A UM contra #0D0D0D (esta escrito em layout.h e em
+//     DESIGN.md). Sobre arte a 15% a luminancia local chega perto de 0,3, e ali
+//     o #9699A2 da linha de procedencia cai para ~2:1. Sem o veu eu teria de
+//     clarear todos os cinzas deste arquivo e sair da escada; com ele a
+//     calibragem do resto do app continua valendo aqui dentro.
+//
+// CUSTO: 2 desenhos por painel (era 1) e ~0,3 tela de preenchimento (era
+// ~0,15). E o preco do "seamless", e ele cabe: gfx.h mede a tela de detalhe em
+// 2,2-3,5 telas e o limite desta Mali esta nas DUAS telas cheias empilhadas.
+//
+// Passar de mais na altura nao custa nada visivelmente, porque as duas pontas
+// do veu sao transparentes — por isso quem chama nao precisa saber a altura
+// exata do painel antes de desenhar.
+// A RAMPA E LONGA DE PROPOSITO, e a altura pedida passa dos dois lados.
+//
+// Os tres paineis sao independentes: cada um desenha o seu veu e nenhum sabe se
+// o vizinho esta na tela. Com rampa curta (72 px) e altura justa, sobrava entre
+// um painel e o outro uma FAIXA CLARA de arte crua — e dois trechos escuros
+// separados por uma faixa clara e outra vez "dois cartoes", so que com a borda
+// desfocada. Com 130 px de rampa e o veu passando ~90 px do conteudo para cada
+// lado, a rampa de um painel cai dentro da rampa do outro: o que era faixa
+// clara vira a soma de duas meias rampas, e a pagina fica escura de ponta a
+// ponta com variacao suave em vez de degrau.
+//
+// Passar de mais nunca custa aparencia, porque as pontas sao transparentes.
+#define SA_CHAO_RAMPA 130.0f
+#define SA_CHAO_ALFA   0.62f
+
+static void chao(float topo, float alt) {
+  // RAMPA - PLANALTO - RAMPA, e nao duas metades em degrade.
+  //
+  // A primeira versao era so duas metades (GFX_VEU_BAIXO em cima,
+  // GFX_VEU_TOPO embaixo): sem trecho reto, o alfa cheio so acontecia numa
+  // linha no meio do painel e o resto ficava quase transparente. Na captura
+  // sobre a arte o veu praticamente nao existia, e a linha de procedencia em
+  // #9699A2 ficava por cima da arte crua — o defeito que este veu existe para
+  // impedir.
+  //
+  // Agora o miolo e CHEIO (e o pedaco onde moram titulo, grafico e rodape) e
+  // as duas rampas de 72 px so escondem onde ele comeca e acaba. A aresta
+  // continua nao existindo; o que existe agora e o escuro que os cinzas desta
+  // base precisam para continuar valendo.
+  float r = SA_CHAO_RAMPA;
+  if (alt <= 2.0f) return;
+  if (alt < r * 2.0f + 2.0f) r = (alt - 2.0f) * 0.5f;
+  { GfxRect cima  = { 0.0f, topo, NV_TELA_W, r };
+    GfxRect meio  = { 0.0f, topo + r, NV_TELA_W, alt - r * 2.0f };
+    GfxRect baixo = { 0.0f, topo + alt - r, NV_TELA_W, r };
+    gfx_rect(cima,  0, GFX_VEU_BAIXO, 0, 0, 0, 0.0f, 0, 0, 0, SA_CHAO_ALFA);
+    gfx_cor(meio, 0.0f, 0.0f, 0.0f, 0.0f, SA_CHAO_ALFA);
+    gfx_rect(baixo, 0, GFX_VEU_TOPO,  0, 0, 0, 0.0f, 0, 0, 0, SA_CHAO_ALFA); }
 }
+
+// AS DUAS CALHAS, e por que elas sao constantes compartilhadas.
+//
+// O arco escrevia os extremos do eixo numa calha de 78 px e o radar numa de 88;
+// os dois escreviam o valor da linha de referencia a 18 px da borda de uma
+// CAIXA que tinha largura propria em cada painel. Resultado: quatro posicoes de
+// rotulo diferentes em dois graficos que deviam ser a mesma familia — e sem a
+// caixa para disfarcar, isso fica obvio.
+//
+// Agora sao DUAS posicoes, definidas aqui e usadas identicas pelos dois:
+// extremo do eixo na calha esquerda, alinhado a direita; valor da referencia na
+// calha direita, alinhado a esquerda, na altura da propria linha tracejada. Os
+// dois paineis passam a ter as mesmas margens e as mesmas colunas de leitura.
+#define SA_CALHA_ESQ  88.0f
+#define SA_CALHA_DIR 186.0f
+#define SA_FOLGA_ROT  18.0f
 
 // Marca da coluna sem dado, dentro da caixa: diz QUAL episodio faltou, ja que
 // o pontilhado da curva so diz que faltou algum.
@@ -767,7 +875,10 @@ static void caixa(GfxRect r) {
 // onde, e o pontilhado da curva ja diz o que.
 static void colunaVazia(float cx, float y, float h) {
   GfxRect s = { cx - 1.0f, y, 2.0f, h };
-  gfx_cor(s, 0.0f, 1.0f, 1.0f, 1.0f, 0.13f);
+  // 10% e nao 13%: contra o veu escuro do painel o fio ficou mais visivel do
+  // que era contra a caixa, e comecou a ler como linha de grade — que e o
+  // oposto do que ele diz. Ele marca UMA coluna, nao divide o grafico.
+  gfx_cor(s, 0.0f, 1.0f, 1.0f, 1.0f, 0.10f);
 }
 
 // Numero grande em forma curta. "388 mil", "24.1 mi".
@@ -786,7 +897,16 @@ static void curto(char *dst, unsigned tam, long v) {
 // o rotulo do teto do eixo e o rotulo do extremo do E1 no mesmo lugar.
 static float cabecalho(GfxRect r, const char *titulo, const char *fonte) {
   TxtLinha t = txt_linha(TXT_HEADLINE, i18n(titulo), 255, 255, 255, 255);
-  TxtLinha f = txt_linha_corta(TXT_DET_META2, i18n(fonte), 150, 153, 162, 255, r.w);
+  // A PROCEDENCIA SUBIU UM DEGRAU NA ESCADA DE CINZAS: de #9699A2 para #BEC0C8.
+  //
+  // Nao e para dar mais destaque a ela — a hierarquia continua a mesma (titulo
+  // branco, procedencia abaixo dele, resposta do painel em #ECEEF4 no rodape).
+  // E porque o CHAO MUDOU. O #9699A2 e o piso de contraste da escada, e esse
+  // piso foi medido contra #0D0D0D; aqui embaixo agora ha arte a 15% sob um
+  // veu, e a luminancia local varia de quadro a quadro conforme a obra. Na
+  // reducao que imita 3 m a linha "não é o IMDb" ficou no limite de sumir — e
+  // ela e justamente a frase que serieaud.h proibe enfraquecer.
+  TxtLinha f = txt_linha_corta(TXT_DET_META2, i18n(fonte), 190, 192, 200, 255, r.w);
   txt_desenhar(t, r.x, r.y);
   txt_desenhar(f, r.x, r.y + t.h + 2.0f);
   return t.h + f.h + 30.0f;
@@ -826,9 +946,9 @@ static float vazio(GfxRect r, float y) {
 float serieaud_arco(GfxRect r) {
   float y = r.y + cabecalho(r, "Arco de qualidade",
                             "Nota do Trakt por episódio — não é o IMDb");
-  float bx = r.x + 78.0f, bw = r.w - 78.0f - 196.0f;
-  float gx = bx + 26.0f, gw = bw - 52.0f, gh = 206.0f;
-  float py = y + 24.0f;               // topo da area de plotagem
+  float gx = r.x + SA_CALHA_ESQ, gw = r.w - SA_CALHA_ESQ - SA_CALHA_DIR;
+  float gh = 206.0f;
+  float py = y + 10.0f;               // topo da area de plotagem
   int i, n = 0, semNota = 0;
   int melhor = serieaud_melhor(), pior = serieaud_pior();
   int med = serieaud_nota_media();
@@ -856,8 +976,11 @@ float serieaud_arco(GfxRect r) {
 
 #define SA_ARCO_Y(nota) (py + gh - gh * (float)((nota) - lo) / (float)(hi - lo))
 
-  { GfxRect box = { bx, y, bw, gh + 48.0f };
-    caixa(box); }
+  // O veu passa de mais para os dois lados de proposito: as pontas dele sao
+  // transparentes, entao sobrar e invisivel e faltar deixaria texto sobre arte
+  // crua. 150 acima cobre titulo e procedencia; 150 abaixo cobre o eixo de
+  // episodios e a linha de episodios sem nota.
+  chao(r.y - 110.0f, (py - r.y) + gh + 280.0f);
 
   // Colunas sem nota, antes de tudo: elas sao fundo, nao dado.
   for (i = 0; i < nEps; i++)
@@ -865,20 +988,25 @@ float serieaud_arco(GfxRect r) {
       colunaVazia(gx + passo * (float)i, py - 8.0f, gh + 16.0f);
 
   // Piso do eixo e os dois extremos, na calha.
-  { GfxRect base = { gx - 14.0f, py + gh, gw + 28.0f, 1.0f };
-    gfx_cor(base, 0.0f, 1.0f, 1.0f, 1.0f, 0.16f); }
+  // A LINHA DE BASE E A MOLDURA QUE SOBROU. Sem a caixa, sao ela, a tracejada
+  // da referencia e o ritmo dos rotulos que dizem onde o grafico comeca e
+  // acaba — que e como um grafico se enquadra quando nao esta dentro de um
+  // retangulo. Subiu de 16% para 22% de branco: sobre o veu ela precisa
+  // aguentar o que a arte deixa passar por baixo.
+  { GfxRect base = { gx, py + gh, gw, 1.0f };
+    gfx_cor(base, 0.0f, 1.0f, 1.0f, 1.0f, 0.22f); }
   snprintf(txt, sizeof txt, "%.1f", hi / 10.0);
-  rotuloEixo(bx - 18.0f, py, txt);
+  rotuloEixo(gx - SA_FOLGA_ROT, py, txt);
   snprintf(txt, sizeof txt, "%.1f", lo / 10.0);
-  rotuloEixo(bx - 18.0f, py + gh, txt);
+  rotuloEixo(gx - SA_FOLGA_ROT, py + gh, txt);
 
   // A MEDIA, tracejada, com o valor na ponta direita, FORA da caixa.
   if (med > 0 && hi > lo) {
     float ym = SA_ARCO_Y(med);
-    tracejada(gx - 14.0f, ym, gw + 28.0f, 0.94f, 0.94f, 0.96f, 0.22f);
+    tracejada(gx, ym, gw, 0.94f, 0.94f, 0.96f, 0.26f);
     snprintf(txt, sizeof txt, i18n("média %.1f"), med / 10.0);
     { TxtLinha l = txt_linha(TXT_CAPTION, txt, 190, 192, 200, 255);
-      txt_desenhar(l, bx + bw + 18.0f, ym - l.h * 0.5f); }
+      txt_desenhar(l, gx + gw + SA_FOLGA_ROT, ym - l.h * 0.5f); }
   }
 
   // A CURVA, por TRECHOS CONTIGUOS, e o PONTILHADO no vao entre eles.
@@ -910,15 +1038,35 @@ float serieaud_arco(GfxRect r) {
       m = 0;
     } }
 
-  // OS PONTOS, e os dois que tem nome: melhor em verde, pior em vermelho.
+  // OS PONTOS — e quais deles MERECEM ser desenhados.
+  //
+  // Eram todos: 11 px em cada episodio, mais 22 px nos dois com nome. Na
+  // reducao que imita 3 m os de 11 px somem dentro dos 5 px do proprio traco —
+  // ou seja, pagavam um desenho cada para nao serem vistos justamente na
+  // distancia em que esta interface e usada; de perto eles serrilhavam a curva
+  // e brigavam com o "seamless" que o dono pediu.
+  //
+  // A regra que ficou: DESENHA-SE O PONTO QUE A LINHA NAO CONSEGUE MOSTRAR.
+  // Sao dois casos, e so dois:
+  //
+  //   1. o melhor e o pior da temporada, que tem nome escrito ao lado e sao a
+  //      unica leitura que este painel faz por quem olha;
+  //   2. o episodio ISOLADO entre dois buracos, que nao entra em trecho de
+  //      curva nenhum — sem o ponto ele simplesmente nao existiria na tela.
+  //
+  // Um episodio comum no meio de um trecho continua marcado: pela curva que
+  // passa exatamente por ele (a Hermite e monotona e interpola, nao aproxima).
   for (i = 0; i < nEps; i++) {
     float x, yy;
+    int isolado;
     if (eps[i].nota <= 0) continue;
+    isolado = (i == 0 || eps[i - 1].nota <= 0) &&
+              (i == nEps - 1 || eps[i + 1].nota <= 0);
     x  = gx + passo * (float)i;
     yy = SA_ARCO_Y(eps[i].nota);
     if (i == melhor)     ponto(x, yy, 22.0f, 0.24f, 0.86f, 0.52f, 1.0f);
     else if (i == pior)  ponto(x, yy, 22.0f, 0.93f, 0.30f, 0.30f, 1.0f);
-    else                 ponto(x, yy, 11.0f, 0.96f, 0.96f, 0.98f, 1.0f);
+    else if (isolado)    ponto(x, yy, 13.0f, 0.96f, 0.96f, 0.98f, 1.0f);
   }
   // Os rotulos dos extremos vao DEPOIS de todos os pontos para nao ficarem por
   // baixo do ponto do episodio vizinho.
@@ -940,8 +1088,8 @@ float serieaud_arco(GfxRect r) {
       GfxRect chapa;
       if (ly < py) ly = yy + 20.0f;
       if (ly + l.h > py + gh + 22.0f) ly = yy - 20.0f - l.h;
-      if (lx < bx + 12.0f) lx = bx + 12.0f;
-      if (lx + l.w > bx + bw - 12.0f) lx = bx + bw - 12.0f - l.w;
+      if (lx < gx) lx = gx;
+      if (lx + l.w > gx + gw) lx = gx + gw - l.w;
       // CHAPA ATRAS DO ROTULO. Sem ela a curva passa POR DENTRO do texto e
       // some com um digito: na captura de 24 episodios o rotulo do melhor
       // episodio lia "E?4 · 8.8", porque o traco branco cruzava o "2" na
@@ -950,17 +1098,22 @@ float serieaud_arco(GfxRect r) {
       // proibido (text.c:159). A chapa resolve sempre, custa um desenho por
       // rotulo, e le como pastilha de legenda e nao como falha da curva: ela
       // e um degrau ACIMA da superficie da caixa, nao igual a ela.
-      chapa.x = lx - 10.0f; chapa.y = ly - 3.0f;
-      chapa.w = l.w + 20.0f; chapa.h = l.h + 6.0f;
-      gfx_cor(chapa, raioPx(chapa.w, chapa.h, 8.0f),
-              0.137f, 0.141f, 0.157f, 1.0f);
+      // A CHAPA E PRETA TRANSLUCIDA, e nao uma superficie opaca. Sobre a
+      // arte da pagina um retangulo opaco vira mais uma placa colada; preto a
+      // 62% le como sombra atras do texto, que e o recurso que o resto do app
+      // ja usa para por texto sobre imagem (GFX_VEU_CARD e companhia). E como
+      // e capsula cheia, ela nao tem aresta reta para virar cartao.
+      chapa.x = lx - 14.0f; chapa.y = ly - 4.0f;
+      chapa.w = l.w + 28.0f; chapa.h = l.h + 8.0f;
+      gfx_cor(chapa, raioPx(chapa.w, chapa.h, chapa.h * 0.5f),
+              0.0f, 0.0f, 0.0f, 0.62f);
       txt_desenhar(l, lx, ly); }
   }
 
   // Eixo X: primeiro e ultimo episodio. Um rotulo por episodio a 22px nao cabe
   // em 24 episodios, e abaixar a fonte para caber e o erro que a nota de
   // text.c:159 proibe.
-  y += gh + 48.0f + 12.0f;
+  y += 10.0f + gh + 26.0f;
   snprintf(txt, sizeof txt, "E%d", eps[0].ep);
   { TxtLinha l = txt_linha(TXT_CAPTION, txt, 150, 153, 162, 255);
     txt_desenhar(l, gx - l.w * 0.5f, y); }
@@ -996,20 +1149,16 @@ float serieaud_arco(GfxRect r) {
 // FORMA: a mesma curva do painel 1 seria a mesma imagem duas vezes, e a
 // pergunta e outra. Aqui o que interessa nao e a altura da linha — e a
 // DISTANCIA dela ate os 100%, porque essa distancia E a gente que foi embora.
-// Entao o painel desenha essa distancia explicitamente, com uma HASTE por
-// episodio pendurada na linha dos 100%, e a curva por cima ligando os pontos.
-// Ver a nota de `haste` para por que nao e area cheia.
-//
-// A area ate a BASE da caixa ja tinha sido rejeitada antes, e com razao: com o
-// eixo cortado ela vira um bloco solido da altura do painel, que le como
-// barra.
+// Entao o painel PREENCHE essa distancia, e o arco fica vazado: um mede
+// episodios um a um, o outro mede uma quantidade que se acumula. Ver a nota de
+// `banda` para o caminho que essa area percorreu ate parar de costurar.
 
 float serieaud_radar(GfxRect r) {
   float y = r.y + cabecalho(r, "Radar de desistência",
                             "Quem marcou o episódio no Trakt, sobre quem marcou o E1 — não é a audiência geral");
-  float bx = r.x + 88.0f, bw = r.w - 88.0f - 196.0f;
-  float gx = bx + 26.0f, gw = bw - 52.0f, gh = 200.0f;
-  float py = y + 24.0f;
+  float gx = r.x + SA_CALHA_ESQ, gw = r.w - SA_CALHA_ESQ - SA_CALHA_DIR;
+  float gh = 200.0f;
+  float py = y + 10.0f;
   int fora[SA_EP_MAX];
   int i, n = 0, topo = 1000, piso = 1000, quedaI = -1, queda = 0, nFora = 0;
   float passo, y100 = 0.0f;
@@ -1110,8 +1259,7 @@ float serieaud_radar(GfxRect r) {
 
 #define SA_RAD_Y(v) (py + gh - gh * (float)((v) - piso) / (float)(topo - piso))
 
-  { GfxRect box = { bx, y, bw, gh + 48.0f };
-    caixa(box); }
+  chao(r.y - 110.0f, (py - r.y) + gh + 330.0f);
 
   for (i = 0; i < nEps; i++)
     if (serieaud_retencao(i) < 0)
@@ -1119,27 +1267,26 @@ float serieaud_radar(GfxRect r) {
 
   if (piso < 1000 && topo >= 1000) y100 = SA_RAD_Y(1000);
 
-  // AS HASTES, uma por episodio, da linha dos 100% ate o ponto. Vao ANTES da
-  // curva e da tracejada para ficarem por baixo das duas: a haste e medida, a
-  // curva e o dado e a tracejada e a referencia — nessa ordem de leitura.
+  // A FORMA DESTE PAINEL E DIFERENTE DA DO ARCO, e a diferenca e a pergunta.
+  //
+  // O arco pergunta "quais episodios foram bons?" — a resposta e sobre
+  // episodios INDIVIDUAIS, entao la ha linha e dois pontos com nome, e nada
+  // preenchido. Aqui a pergunta e "quanta gente foi embora?" — a resposta e uma
+  // QUANTIDADE que se acumula, e a area entre a curva e os 100% E essa
+  // quantidade, desenhada. Por isso um painel e vazado e o outro e cheio: nao e
+  // variacao de estilo, e a forma seguindo o que cada um mede.
   //
   // COR: o reflexo da categoria aqui e "retencao -> azul", e era azul. Alem de
-  // ser o primeiro palpite de qualquer um, azul sobre a superficie fria desta
-  // base e a combinacao que menos separa. A regra que ficou: a haste NORMAL e
-  // quase-branca e discreta, sem alarme nenhum, porque perder 3% de quem
-  // marcou o E1 nao e emergencia; a unica coisa colorida e a EXCECAO — o
-  // episodio ACIMA dos 100%, em verde, que e o caso raro (E2 com mais gente
-  // que o E1) e que antes era um ressalto de tres pixels que ninguem via.
-  if (y100 > 0.0f)
-    for (i = 0; i < nEps; i++) {
-      int v = serieaud_retencao(i);
-      if (v < 0 || fora[i]) continue;
-      if (v > 1000) haste(gx + passo * (float)i, y100, SA_RAD_Y(v),
-                          0.24f, 0.86f, 0.52f, 0.85f);
-      else          haste(gx + passo * (float)i, y100, SA_RAD_Y(v),
-                          0.94f, 0.94f, 0.96f, 0.20f);
-    }
-
+  // ser o primeiro palpite de qualquer um, azul sobre o fundo frio desta base e
+  // a combinacao que menos separa. A regra que ficou: o lado NORMAL e um veu
+  // quase-branco, sem alarme, porque perder 3% de quem marcou o E1 nao e
+  // emergencia; a unica coisa com cor e a EXCECAO — o trecho ACIMA dos 100%,
+  // em verde, que e o caso raro (E2 com mais gente que o E1) e que sem isto e
+  // um ressalto de tres pixels que ninguem ve.
+  //
+  // O verde e o mesmo verde de "melhor episodio" do arco, de proposito: nos
+  // dois paineis ele quer dizer a mesma coisa — este ponto e melhor do que a
+  // referencia. Trocar o tom faria duas linguagens de cor na mesma tela.
   // A CURVA, por trechos contiguos — mesmo tratamento de buraco do painel 1.
   { float ys[SA_EP_MAX];
     int m = 0, inicio = 0, fimAnt = -1;
@@ -1160,8 +1307,24 @@ float serieaud_radar(GfxRect r) {
         if (m >= 2) {
           float dx;
           int na = amostrar(passo, ys, m, &dx);
-          traco(gx + passo * (float)inicio, dx, na, 5.0f,
-                0.96f, 0.96f, 0.98f, 1.0f);
+          float x0 = gx + passo * (float)inicio;
+          if (y100 > 0.0f) {
+            // QUEM FOI EMBORA E DESENHADO COMO SOMBRA, e nao como veu claro.
+            //
+            // Primeiro tentei branco a 10%. Sobre o fundo escuro de antes
+            // funcionava; sobre a arte da pagina virou uma MANCHA PALIDA de
+            // aresta reta por cima da foto — o mesmo defeito de placa colada
+            // que a caixa tinha, agora em claro. Preto e o contrario: ele
+            // AFUNDA a regiao em vez de cobri-la, e a arte continua visivel
+            // atraves dele, so que mais escura. E a semantica bate — o que
+            // esta ali e a plateia que apagou.
+            banda(x0, dx, na, y100,  1, 0.0f, 0.0f, 0.0f, 0.45f);
+            // A EXCECAO continua em cor, e e a unica cor desta caixa: verde,
+            // o mesmo de "melhor episodio" no arco, porque quer dizer a mesma
+            // coisa nos dois — este ponto esta acima da referencia.
+            banda(x0, dx, na, y100, -1, 0.24f, 0.86f, 0.52f, 0.40f);
+          }
+          traco(x0, dx, na, 5.0f, 0.96f, 0.96f, 0.98f, 1.0f);
         }
         fimAnt = inicio + m - 1;
       }
@@ -1170,16 +1333,16 @@ float serieaud_radar(GfxRect r) {
 
   // A LINHA DOS 100%: a referencia de onde a temporada comecou.
   if (y100 > 0.0f) {
-    tracejada(gx - 14.0f, y100, gw + 28.0f, 0.94f, 0.94f, 0.96f, 0.30f);
+    tracejada(gx, y100, gw, 0.94f, 0.94f, 0.96f, 0.34f);
     { TxtLinha l = txt_linha(TXT_CAPTION, "100%", 190, 192, 200, 255);
-      txt_desenhar(l, bx + bw + 18.0f, y100 - l.h * 0.5f); }
+      txt_desenhar(l, gx + gw + SA_FOLGA_ROT, y100 - l.h * 0.5f); }
   }
-  { GfxRect base = { gx - 14.0f, py + gh, gw + 28.0f, 1.0f };
-    gfx_cor(base, 0.0f, 1.0f, 1.0f, 1.0f, 0.16f); }
+  { GfxRect base = { gx, py + gh, gw, 1.0f };
+    gfx_cor(base, 0.0f, 1.0f, 1.0f, 1.0f, 0.22f); }
   snprintf(txt, sizeof txt, "%d%%", piso / 10);
-  rotuloEixo(bx - 18.0f, py + gh, txt);
+  rotuloEixo(gx - SA_FOLGA_ROT, py + gh, txt);
   snprintf(txt, sizeof txt, "%d%%", topo / 10);
-  rotuloEixo(bx - 18.0f, py, txt);
+  rotuloEixo(gx - SA_FOLGA_ROT, py, txt);
 
   // Os pontos, e os excluidos da escala como traco ambar abaixo do eixo.
   for (i = 0; i < nEps; i++) {
@@ -1194,7 +1357,14 @@ float serieaud_radar(GfxRect r) {
       gfx_cor(t2, raioPx(5.0f, 24.0f, 2.5f), 0.96f, 0.78f, 0.30f, 0.95f);
       continue;
     }
-    ponto(x, SA_RAD_Y(v), 11.0f, 0.96f, 0.96f, 0.98f, 1.0f);
+    // Mesma regra do arco: so o episodio que a linha nao consegue mostrar, ou
+    // seja o ISOLADO entre dois buracos. Os outros ja estao na curva.
+    { int ant = (i > 0) ? serieaud_retencao(i - 1) : -1;
+      int pro = (i < nEps - 1) ? serieaud_retencao(i + 1) : -1;
+      int soAnt = (i == 0) || ant < 0 || fora[i - 1];
+      int soPro = (i == nEps - 1) || pro < 0 || fora[i + 1];
+      if (soAnt && soPro) ponto(x, SA_RAD_Y(v), 13.0f, 0.96f, 0.96f, 0.98f, 1.0f);
+    }
   }
 
   // A MAIOR QUEDA entre dois episodios seguidos. E um FATO da serie medida, e
@@ -1223,7 +1393,7 @@ float serieaud_radar(GfxRect r) {
     ponto(x, yy, 20.0f, 0.96f, 0.78f, 0.30f, 1.0f);
   }
 
-  y += gh + 48.0f + 18.0f;
+  y += 10.0f + gh + 40.0f;
   // O RODAPE E A RESPOSTA EM UMA FRASE, e depois os numeros absolutos. Com o
   // eixo cortado a curva quase plana nao "conta" nada a distancia; a frase
   // conta. E sem os absolutos "93%" nao diz se sao trezentas mil pessoas ou
@@ -1378,8 +1548,11 @@ float serieaud_digital(GfxRect r) {
   larg  = passo * 0.66f;
   if (larg > 72.0f) larg = 72.0f;
 
-  { GfxRect box = { bx, y, bw, gh + 44.0f + 38.0f };
-    caixa(box); }
+  // O MESMO VEU DOS OUTROS DOIS. Este painel tambem tinha caixa opaca, e
+  // deixa-lo com caixa enquanto os vizinhos ganham veu faria tres graficos na
+  // mesma pagina com dois chaos diferentes — que e pior do que o defeito que a
+  // caixa resolvia.
+  chao(r.y - 110.0f, (py - r.y) + gh + 350.0f);
 
   // A COLUNA DO EPISODIO ESCOLHIDO, atras de tudo. E ela que liga as quatro
   // fileiras numa leitura vertical — sem ela cada fileira e um grafico

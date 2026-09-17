@@ -172,6 +172,31 @@ static void gravar(const char *nome, SDL_Window *win) {
 // quadro (o teto existe para nao engasgar a TV ao abrir tela), entao a primeira
 // passada sai com quase todo o texto faltando. Repetir ate o cache encher e
 // exatamente o que o aparelho faz nos primeiros quadros da secao.
+// O CHAO DE VERDADE DESTA PAGINA, e nao um preto chapado.
+//
+// A captura limpava o quadro com NV_COR_FUNDO e desenhava os paineis por cima.
+// Isso NAO e o que a TV mostra: detail.c desenha estas secoes sobre o BACKDROP
+// DA OBRA APAGADO A 15% (medido na folha do web, `.detail-scrolled` leva o
+// backdrop a opacity 0.15), e e por isso que uma caixa de cor chapada atras do
+// grafico aparece la como uma placa colada por cima da arte — defeito que a
+// captura em preto chapado nao mostrava, porque nao havia arte para tapar.
+//
+// Entao a captura agora pinta o mesmo chao: a mesma arte, o mesmo GFX_DETALHE,
+// o mesmo 0.15. Sem isto nao da para julgar "fundo mais transparente".
+static GLuint fundoTex;
+static const char *fundoArte;
+
+static void chaoDaPagina(void) {
+  GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+  if (!fundoTex) return;
+  gfx_tex_aspect_atual = tex_aspecto(fundoArte);
+  // 4o parametro = forca da vinheta; 0 = pagina ja rolada, que e o estado em
+  // que estas secoes sao vistas. alpha 0.15 = 1.0 * (1 - 0.85), a conta de
+  // detail.c com pg = 1.
+  gfx_rect(tela, fundoTex, GFX_DETALHE, 0.0f, 0, 0, 0.0f, 0, 0, 0, 0.15f);
+  gfx_tex_aspect_atual = 0.0f;
+}
+
 static void desenharVarias(void (*f)(void), SDL_Window *win) {
   int i;
   for (i = 0; i < 40; i++) {
@@ -181,6 +206,7 @@ static void desenharVarias(void (*f)(void), SDL_Window *win) {
     gfx_novo_quadro();
     glClearColor(NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
+    chaoDaPagina();
     f();
     if (i < 39) SDL_GL_SwapWindow(win);
   }
@@ -222,6 +248,13 @@ int main(int argc, char **argv) {
   assert(gfx_iniciar());
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(16);
+  // Uma arte qualquer do pacote serve: o que se testa e se o grafico convive
+  // com um chao NAO UNIFORME e um pouco mais claro que o preto, nao qual obra.
+  fundoArte = "deploy/app/art/00.jpg";
+  fundoTex = tex_obter_hero(fundoArte);
+  { int n; for (n = 0; n < 200 && !fundoTex; n++) { tex_bombear(8);
+      fundoTex = tex_obter_hero(fundoArte); SDL_Delay(5); } }
+  printf("chao da pagina: %s (tex %u)\n", fundoArte, (unsigned)fundoTex);
 
   // breaking-bad T2: 24126034 reproducoes / 404730 espectadores da serie.
   carregar(BB, (int)(sizeof BB / sizeof BB[0]), "tt0903747", 2,
