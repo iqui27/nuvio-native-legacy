@@ -50,6 +50,19 @@ typedef struct {
   // hero era decodificado com metade da resolucao e esticado para 1920 na tela,
   // que e o borrao que o dono viu.
   int limite;
+  // O teto com que a TEXTURA ATUAL foi de fato decodificada, e a largura da
+  // FONTE que a produziu.
+  //
+  // `limite` sozinho nao servia para decidir promocao: ele e escrito no PEDIDO
+  // e a re-decodificacao pode nao acontecer (a fila de decode pode estar cheia
+  // no instante do pedido, ou o item ja estar sendo decodificado com o teto
+  // antigo). Quando isso acontecia, `limite` ficava em 1920 com a textura ainda
+  // em 544 e a condicao `limite > itens[i].limite` NUNCA mais era verdadeira:
+  // o heroi herdava a miniatura do cartaz pelo resto da sessao, esticada 3,5x.
+  // Com o teto REALMENTE USADO guardado a parte, o proximo pedido tenta de
+  // novo sozinho, sem ninguem precisar notar.
+  int tetoUsado;
+  int fonteW;
   unsigned long uso;  // contador LRU
   // Luminancia media dos pixels OPACOS, 0..255; -1 enquanto nao se sabe.
   // Medida uma vez, na thread de decode. Serve ao logo do titulo: o TMDB nao
@@ -309,6 +322,15 @@ static void desistir(int idx) {
   if (itens[idx].tex) {
     itens[idx].estado = PRONTO;
     itens[idx].urgente = 0;
+    // A PROMOCAO FOI TENTADA E NAO DEU: nao se tenta de novo a cada quadro.
+    //
+    // `tetoUsado` normalmente so muda quando um decode termina — e e isso que
+    // faz o pedido do proximo quadro insistir quando a fila estava cheia. Aqui
+    // e o caso oposto: a re-decodificacao ACONTECEU e nao pode ser publicada
+    // (pedido obsoleto, sem slot, sem memoria). Insistir seria decodificar em
+    // laco para jogar fora em laco. A versao pequena continua servindo, e o
+    // proximo pedido com teto AINDA MAIOR volta a tentar.
+    itens[idx].tetoUsado = itens[idx].limite;
     return;
   }
   itens[idx].estado = VAZIO;
@@ -920,6 +942,9 @@ static int threadDecode(void *arg) {
     int limite;
     strncpy(caminho, itens[idx].caminho, sizeof caminho - 1);
     caminho[sizeof caminho - 1] = 0;
+    char urlOrig[512];
+    strncpy(urlOrig, caminho, sizeof urlOrig - 1);
+    urlOrig[sizeof urlOrig - 1] = 0;
     // Copiado SOB O MUTEX: o item pode ser promovido a hero enquanto este fio
     // decodifica, e ler o campo depois daria uma leitura sem trava.
     limite = itens[idx].limite > 0 ? itens[idx].limite : NV_TEX_LARG_MAX;
@@ -932,9 +957,11 @@ static int threadDecode(void *arg) {
         snprintf(caminho, sizeof caminho, "%s", local);
     }
     SDL_Surface *bruta = IMG_Load(caminho);
+    int srcW = 0, srcH = 0;
     SDL_Surface *conv = NULL;
     // O SDL2_image desta TV nao le WebP; a libwebp do sistema le (webp.c).
     if (!bruta) bruta = webp_carregar(caminho);
+    if (bruta) { srcW = bruta->w; srcH = bruta->h; }
     if (bruta) {
       // REDUZ DIRETO DA BRUTA quando ela e maior que o teto, em vez de
       // converter em tamanho cheio e so depois reduzir.
@@ -1023,6 +1050,17 @@ static int threadDecode(void *arg) {
       }
     }
 
+    // DE ONDE VEM A NITIDEZ, quando alguem reclama que a arte esta borrada.
+    //
+    // Tres numeros e uma URL por decode: a fonte que o servidor mandou, o teto
+    // que o pedido impos e o tamanho que virou textura. Sem eles, "a arte esta
+    // pixelada" tem tres explicacoes possiveis (URL pequena, teto baixo, ou a
+    // promocao que nao aconteceu) e nenhuma medicao para separar. Atras de uma
+    // variavel de ambiente porque sao centenas de linhas por sessao.
+    if (getenv("NUVIO_TEX_LOG") && conv)
+      printf("[tex-nitidez] fonte=%dx%d teto=%d final=%dx%d %s\n",
+             srcW, srcH, limite, conv->w, conv->h, urlOrig);
+
     // MEDIDA DE LUMINANCIA, aqui e nao no desenho: esta thread ja tem os pixels
     // na mao e roda em prioridade baixa. Amostra de 4 em 4 nos dois eixos —
     // 1/16 dos pixels bastam para dizer se uma arte e escura, e a conta inteira
@@ -1097,6 +1135,9 @@ static int threadDecode(void *arg) {
       if (conv) {
         itens[idx].estado = DECODIFICADO;
         itens[idx].falhas = 0;
+        // O QUE SAIU, e nao o que foi pedido: e este par que a promocao le.
+        itens[idx].tetoUsado = limite;
+        itens[idx].fonteW = srcW;
       } else {
         // MANTEM o caminho: e ele que identifica o slot na proxima consulta e
         // permite responder "ainda nao, tente depois" em vez de reenfileirar.
@@ -1419,20 +1460,38 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
     // hero (1920). Se o teto novo e maior e a textura pronta ficou menor que
     // ele, refaz — senao o hero herda para sempre a versao pequena que o card
     // pediu primeiro, e o borrao volta sem explicacao aparente.
-    if (limite > itens[i].limite) {
-      int fonteMenor = (itens[i].estado == PRONTO && itens[i].w < itens[i].limite);
-      itens[i].limite = limite;
-      // `w < limite` NAO basta: um poster da Cinemeta tem 250px de origem, e
-      // pedi-lo a 320 refaz o decode para devolver os mesmos 250 — trabalho
-      // puro, mais o cinza enquanto refaz. Se a textura pronta ja e MENOR que o
-      // teto que ela mesma tinha, a fonte acabou; nao ha o que ganhar.
-      if (itens[i].estado == PRONTO && itens[i].w < limite && !fonteMenor) {
-        int prox = (filaFim + 1) % MAX_FILA;
-        if (prox != filaIni) {
-          itens[i].estado = PENDENTE;
-          fila[filaFim] = i; filaFim = prox; SDL_CondSignal(cond);
-        }
+    if (limite > itens[i].limite) itens[i].limite = limite;
+    // PROMOCAO PELO TETO REALMENTE USADO, e nao pelo pedido.
+    //
+    // `w < limite` NAO basta: um poster da Cinemeta tem 250px de origem, e
+    // pedi-lo a 320 refaz o decode para devolver os mesmos 250 — trabalho puro,
+    // mais o cinza enquanto refaz. `fonteW` responde isso com o numero medido
+    // no decode: so vale re-decodificar se a FONTE tem mais pixels do que a
+    // textura atual.
+    //
+    // E a condicao e reavaliada em TODO pedido enquanto a textura estiver
+    // abaixo do teto. Antes ela dependia de `limite` subir, e `limite` subia
+    // mesmo quando o enfileiramento falhava: bastava a fila de decode estar
+    // cheia naquele quadro — o que no arranque, com 32 itens em voo, e o caso
+    // comum — para o heroi ficar presturado na miniatura do cartaz ate o item
+    // ser despejado. Com o orcamento de 128 MB e a arte da tela protegida do
+    // despejo, "ate ser despejado" pode ser a sessao inteira.
+    //
+    // `fonteW` DESCONHECIDO (0) NAO BLOQUEIA. So se bloqueia a promocao quando
+    // se SABE que a fonte acabou — fonte medida menor ou igual a textura que ja
+    // esta na mao. Ha textura publicada por caminhos que nao passam pelo decode
+    // (o quadro de GIF que sobe GPU->GPU, e qualquer item montado a mao), e
+    // tratar "nao sei" como "acabou" congelaria essas na primeira versao
+    // pequena que aparecesse.
+    if (itens[i].estado == PRONTO && itens[i].tetoUsado < limite &&
+        (itens[i].fonteW <= 0 || itens[i].fonteW > itens[i].w)) {
+      int prox = (filaFim + 1) % MAX_FILA;
+      if (prox != filaIni) {
+        itens[i].estado = PENDENTE;
+        fila[filaFim] = i; filaFim = prox; SDL_CondSignal(cond);
       }
+      // Fila cheia: nada a fazer aqui. `tetoUsado` continua no valor antigo,
+      // entao o pedido do quadro seguinte volta a este mesmo ponto.
     }
     // A TEXTURA ANTIGA SERVE DURANTE A PROMOCAO — quando ela tem pelo menos
     // METADE da largura pedida. O card que abre em 16:9 e pede 544 ja tem o

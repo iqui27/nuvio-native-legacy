@@ -139,6 +139,46 @@ int main(void) {
     assert(c >= 0 && itens[c].passageiro == 0); }
   puts("ok  passageira marca o slot; cartaz nao");
 
+  // 10. PROMOCAO COM A FILA CHEIA TENTA DE NOVO NO PEDIDO SEGUINTE.
+  //
+  // O DEFEITO que este caso prende: `limite` era escrito no PEDIDO e a
+  // re-decodificacao so era enfileirada se houvesse vaga na fila naquele
+  // instante. Sem vaga, o pedido caia no chao com `limite` ja em 1920 — e a
+  // condicao de promocao (`limite > itens[i].limite`) nunca mais era
+  // verdadeira. O heroi ficava com a textura do cartaz esticada ate o item ser
+  // despejado, o que numa home que nao despeja e a sessao inteira.
+  limpar();
+  mtx = SDL_CreateMutex(); cond = SDL_CreateCond();
+  pronto(0, 1, 100); itens[0].tex = 91;
+  itens[0].w = 544; itens[0].limite = 544; itens[0].tetoUsado = 544;
+  itens[0].fonteW = 1920;   // a fonte tem mais pixels: promover vale a pena
+  itens[0].hash = hashCaminho(itens[0].caminho);
+  filaIni = 0; filaFim = MAX_FILA - 1;   // cheia: (filaFim+1)%MAX_FILA == filaIni
+  // Sem vaga: o desenho segue com a textura pequena (melhor que cinza) e o
+  // item continua PRONTO — nada foi enfileirado.
+  assert(tex_obter_limite("a0", 1920, 1, 0) == 91);
+  assert(itens[0].estado == PRONTO);
+  filaIni = 0; filaFim = 0;              // fila vazia de novo
+  // Com vaga, o MESMO pedido enfileira. O retorno vira 0 porque 544 nao chega a
+  // metade de 1920: ver o caso 7 — miniatura esticada a tela cheia e pior que
+  // esperar o crossfade.
+  assert(tex_obter_limite("a0", 1920, 1, 0) == 0);
+  assert(itens[0].estado == PENDENTE);
+  puts("ok  promocao com fila cheia tenta de novo no pedido seguinte");
+
+  // 11. FONTE ESGOTADA NAO E RE-DECODIFICADA. Cartaz da Cinemeta com 250px de
+  //     origem pedido a 320: refazer devolveria os mesmos 250.
+  limpar();
+  mtx = SDL_CreateMutex(); cond = SDL_CreateCond();
+  pronto(1, 1, 100); itens[1].tex = 92;
+  itens[1].w = 250; itens[1].limite = 250; itens[1].tetoUsado = 250;
+  itens[1].fonteW = 250;
+  itens[1].hash = hashCaminho(itens[1].caminho);
+  filaIni = 0; filaFim = 0;
+  assert(tex_obter_limite("a1", 320, 0, 0) == 92);
+  assert(itens[1].estado == PRONTO);
+  puts("ok  fonte esgotada nao vira decode novo");
+
   puts("texquente: tudo ok");
   return 0;
 }
