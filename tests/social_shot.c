@@ -334,6 +334,77 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-social-aparecer.bmp", saida);
   captura(nome, w);
 
+  // --- O INTERRUPTOR NOS QUATRO ESTADOS -------------------------------------
+  //
+  // A LISTA ENCOLHE PARA TRES RECOMENDACOES E ZERO SUGESTOES, e nao por
+  // comodidade: com a lista cheia a rolagem SO mostra o interruptor quando ele
+  // esta em foco, porque o alvo da rolagem e a linha focada. Medido com a lista
+  // cheia — topo do interruptor em 1214 px de lista, base em 1318, janela de
+  // 832: com o foco em "Adicionar um amigo" a rolagem para em 340 e o
+  // interruptor nasce em 1074, fora da janela. As duas capturas SEM FOCO
+  // sairiam vazias, e uma captura vazia se parece com um defeito.
+  //
+  // Com tres recomendacoes: interruptor em 598..702 e "Adicionar" em 480..556,
+  // ambos dentro dos 832 — rolagem zero, foco em qualquer lugar.
+  nSugestoes = 0;
+  nItens = 3;
+  { int lig;
+    for (lig = 1; lig >= 0; lig--) {
+      aparecer = lig ? REC_APARECER_SIM : REC_APARECER_NAO;
+      spainel_fechar();
+      spainel_abrir();
+      tecla(SDLK_UP); tecla(SDLK_RIGHT);
+      // Cinco descidas: tres recomendacoes, "Adicionar um amigo" e o
+      // interruptor. A primeira leva o foco da linha de abas para a linha 0.
+      tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+      tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+      snprintf(nome, sizeof nome, "%s-sw-%s-foco.bmp", saida,
+               lig ? "on" : "off");
+      captura(nome, w);
+      // Sobe para "Adicionar um amigo": o interruptor fica EM REPOUSO e a
+      // linha-acao logo acima dele fica em foco. E a captura que prova que os
+      // dois deixaram de ter a mesma silhueta.
+      tecla(SDLK_UP);
+      snprintf(nome, sizeof nome, "%s-sw-%s-repouso.bmp", saida,
+               lig ? "on" : "off");
+      captura(nome, w);
+    } }
+
+  // --- O MESMO INTERRUPTOR COM ANIMACOES REDUZIDAS --------------------------
+  //
+  // O estado tem de continuar legivel sem movimento nenhum: com "animacoes 1" o
+  // foco e a bola SALTAM para o valor final em vez de assentarem na mola. Se a
+  // leitura dependesse do deslize, esta captura sairia diferente das de cima —
+  // e e justamente por isso que ela existe.
+  { char caminho[700]; FILE *fa;
+    snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dados_dir());
+    fa = fopen(caminho, "w");
+    assert(fa);
+    fprintf(fa, "idioma 0\nselected_theme 2\nanimacoes 1\n");
+    fclose(fa);
+    ajustes_dir(dados_dir()); }
+  printf("animacoes reduzidas: %d\n", ajustes_animacoes_reduzidas());
+  aparecer = REC_APARECER_SIM;
+  spainel_fechar();
+  spainel_abrir();
+  tecla(SDLK_UP); tecla(SDLK_RIGHT);
+  tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+  tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-sw-reduzida.bmp", saida);
+  captura(nome, w);
+  { char caminho[700]; FILE *fa;
+    snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dados_dir());
+    fa = fopen(caminho, "w");
+    assert(fa);
+    fprintf(fa, "idioma 0\nselected_theme 2\n");
+    fclose(fa);
+    ajustes_dir(dados_dir()); }
+
+  // A lista volta ao que era para as capturas seguintes.
+  nItens = 4;
+  nSugestoes = 3;
+  spainel_fechar();
+
   // --- AS DUAS TELAS DE ENVIO, no menu de contexto do cartaz ---------------
   //
   // Os contatos sao semeados DENTRO do modulo: a lista so existe depois de um

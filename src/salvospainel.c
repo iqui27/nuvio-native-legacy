@@ -157,9 +157,43 @@ static int consentEstado = -1;
 #define SPS_CONSENT_TOPO 400.0f
 #define SPS_VAZIO_TOPO   320.0f
 
+// O INTERRUPTOR DE "APARECER". As medidas sao para TRES METROS, e nao copiadas
+// de um telefone.
+//
+// A conta: numa TV de 55" o painel de 1920 px cobre ~1218 mm, ou seja 0,63 mm
+// por pixel; a 3 m um minuto de arco mede 0,87 mm. Da 0,73' por pixel. Com
+// isso a trilha de 96 px mede ~70' (1,2 grau) e o PERCURSO da bola, 48 px,
+// mede ~35'. O interruptor do iOS (51x31 pt) daria 37' de trilha e 13' de
+// percurso: perfeito na mao, e a 3 m o deslocamento vira um tremor.
+//
+// A bola e 36 px com 6 px de folga de cada lado — os 6 px vem do percurso, e
+// nao de gosto: a folga sai duas vezes da largura (12 px dos 96), entao cada
+// pixel a mais de folga custa um de deslocamento, que e o canal que carrega o
+// estado. Menos que isso nao foi testado.
+#define SPS_SW_W        96.0f
+#define SPS_SW_H        48.0f
+#define SPS_SW_PAD       6.0f
+#define SPS_SW_BOLA    (SPS_SW_H - SPS_SW_PAD * 2.0f)
+#define SPS_SW_GAP      28.0f   // do fim do texto ate a trilha
+// ESPESSURA DO ANEL da trilha vazia. 4 px sao 2,9' de arco a 3 m, acima do
+// minuto de arco que e o limite de resolucao; 1 px (0,73') sumiria.
+#define SPS_SW_ANEL      4.0f
+// VAO EXTRA ANTES DO INTERRUPTOR. Os 22 px de SPS_GAP separam linhas do MESMO
+// tipo; aqui a lista de gente e de acoes acaba e comeca um ajuste que fica.
+// Sao 20 px, e nao um cabecalho de secao: um rotulo ali repetiria o titulo da
+// propria linha, que e exatamente o ar de formulario que se quer evitar.
+#define SPS_SEP_APARECER 20.0f
+
 static int aberto, foco, marcaCatN = -1;
 static float entrada, scrollY;
 static float animFoco[SP_MAX];
+// POSICAO DA BOLA DO INTERRUPTOR, 0 = desligado, 1 = ligado. E estado PROPRIO
+// e nao uma leitura direta de recomenda_aparecer() por um motivo que e a razao
+// de ser desta linha inteira: o deslize e a unica coisa na tela que responde
+// "o OK MUDOU alguma coisa" em vez de "o OK ABRIU alguma coisa". Sem ele o
+// desenho pularia entre dois retratos e voltaria a ser um botao.
+// -1 = ainda nao lido; a primeira atualizacao assenta sem deslizar do nada.
+static float animSw = -1.0f;
 static char  pedido[24];
 static int   temPedido;
 
@@ -307,11 +341,18 @@ static float socialAlt(int i) {
   }
 }
 
-// Cabecalho de secao ANTES da linha `i`, quando houver. So existe um: o que
-// separa as recomendacoes das sugestoes. Sem ele, um nome desconhecido
-// apareceria logo abaixo de uma recomendacao de um amigo e leria como remetente.
+// Espaco ANTES da linha `i`, quando houver. Sao dois casos, e so um deles
+// carrega texto:
+//   SPS_SUG  o cabecalho que separa as recomendacoes das sugestoes. Sem ele,
+//            um nome desconhecido apareceria logo abaixo de uma recomendacao
+//            de um amigo e leria como remetente.
+//   SPS_APARECER  vao mudo. Ver SPS_SEP_APARECER.
+// Quem desenha tem de olhar o tipo para saber se escreve o rotulo — um vao
+// mudo com o cabecalho das sugestoes por cima seria pior que vao nenhum.
 static float socialAntes(int i) {
-  if (i < 0 || i >= nSocial || social[i].tipo != SPS_SUG) return 0.0f;
+  if (i < 0 || i >= nSocial) return 0.0f;
+  if (social[i].tipo == SPS_APARECER) return SPS_SEP_APARECER;
+  if (social[i].tipo != SPS_SUG) return 0.0f;
   return (i == 0 || social[i - 1].tipo != SPS_SUG) ? SP_SECAO_H : 0.0f;
 }
 
@@ -406,6 +447,11 @@ void spainel_abrir(void) {
   aba = SP_ABA_SALVOS;
   scrollY = 0.0f;
   memset(animFoco, 0, sizeof animFoco);
+  // O INTERRUPTOR ABRE NO ESTADO, e nao deslizando ate ele. A resposta pode ter
+  // sido reconciliada com o servidor (respondida em OUTRA TV) com o painel
+  // fechado; sem isto a pessoa abriria o painel e veria a bola andar sozinha,
+  // que le como "alguem acabou de mexer aqui".
+  animSw = -1.0f;
   reconstruir();
   reconstruirSocial();
 }
@@ -581,6 +627,18 @@ void spainel_atualizar(float dt, Uint32 agora) {
       : anim_mola(animFoco[i], a, dt,
                   a > animFoco[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
   }
+  // A BOLA DO INTERRUPTOR, na mesma mola do foco (NV_MOLA_FOCO, 95% em 120 ms):
+  // as duas coisas acontecem no mesmo OK e tempos diferentes leriam como bug.
+  //
+  // COM ANIMACOES REDUZIDAS ELE SALTA, e continua legivel — o estado esta na
+  // POSICAO e no preenchimento, nunca no movimento. O deslize so acrescenta a
+  // leitura de "isto MUDOU", que e um ganho para quem pode ve-lo e nao uma
+  // condicao para entender o controle.
+  { float alvoSw = (temAbas() && recomenda_aparecer() == REC_APARECER_SIM)
+                   ? 1.0f : 0.0f;
+    if (animSw < 0.0f) animSw = alvoSw;   // primeira leitura: assenta sem deslizar
+    animSw = ajustes_animacoes_reduzidas()
+           ? alvoSw : anim_mola(animSw, alvoSw, dt, NV_MOLA_FOCO); }
   // Rola o MINIMO para a linha focada caber inteira, como a grade da
   // Biblioteca. Alinhar a focada ao topo joga o cabecalho para fora na primeira
   // descida e a pessoa perde de vista em que painel esta.
@@ -997,6 +1055,170 @@ static void desenhaBotaoLinha(int i, float dx, float y, float alt, float a,
     txt_desenhar_alpha(t, r.x + 32.0f, y + (alt - t.h) * 0.5f, a); }
 }
 
+// O INTERRUPTOR DE "APARECER PARA OUTRAS PESSOAS", e por que ele deixou de ser
+// mais uma desenhaBotaoLinha.
+//
+// O DEFEITO: ele era a MESMA pilula, do MESMO tamanho, com o MESMO foco
+// invertido de "Adicionar um amigo" e das duas respostas do consentimento. Mas
+// "Adicionar um amigo" e uma ACAO — o OK abre um teclado e alguma coisa
+// acontece — e isto aqui e um ESTADO que fica, o interruptor de privacidade da
+// aba inteira. Duas especies de coisa com a mesma silhueta significa que, do
+// sofa, nao da para saber se o OK vai FAZER ou vai MUDAR. Num controle de
+// privacidade esse e o pior lugar possivel para ficar ambiguo.
+//
+// O QUE FOI REJEITADO, e por que:
+//
+// 1. A CONVENCAO DE AJUSTES — rotulo a esquerda e o valor em texto a direita
+//    ("Ligado"/"Desligado", V_LIGA em ajustes.c:135). Rejeitada por tres
+//    razoes, e a primeira e a que decide: la o valor a direita e uma COLUNA —
+//    TODA linha da tela tem uma, e e a coluna que faz uma palavra ser lida como
+//    valor. Aqui seria uma palavra solta na margem direita de uma lista de
+//    posteres e de rostos, sem nenhuma outra na mesma prumada; ela leria como
+//    um pedaco do subtitulo. Segunda: em Ajustes o OK ENTRA EM EDICAO e sao
+//    ESQUERDA/DIREITA que trocam o valor (o bloco `emEdicao` em ajustes.c:2051).
+//    Aqui o OK inverte na hora. Vestir a roupa de Ajustes com outro gesto e
+//    defeito pior que o que se esta corrigindo. Terceira: "Ligado" nao diz o
+//    que esta ligado.
+// 2. TRILHA NA COR DE REALCE quando ligado, como num telefone. Rejeitada: o
+//    foco desta lista PREENCHE a linha com superficie clara, e um realce claro
+//    dentro de uma linha clara some — e exatamente a armadilha que a pilula
+//    "Adicionar" de desenhaSugLinha ja documenta logo abaixo. E cor nao pode
+//    ser o sinal, porque o estado tem de ser legivel sem cor.
+// 3. ESQUERDA = desligar, DIREITA = ligar. Rejeitada: ESQUERDA ja significa
+//    "sair do painel" nesta camada (ver spainel_evento), gesto herdado de
+//    perfil.c. Um interruptor em que um lado inverte e o outro fecha a tela
+//    inteira e pior que interruptor sem lados.
+// 4. UMA PALAVRA AO LADO DA BOLA ("Sim"/"Nao"). Rejeitada: se o controle diz o
+//    estado, a palavra e a segunda coisa dizendo a mesma coisa — e duas coisas
+//    dizendo o mesmo e o que da cara de formulario a uma linha.
+//
+// COMO O ESTADO E LIDO SEM FOCO E SEM COR. Tres canais redundantes, nenhum
+// deles matiz: a POSICAO da bola (48 px de percurso, ~35' de arco a 3 m), o
+// PREENCHIMENTO da trilha (anel vazio / capsula cheia) e a POLARIDADE da bola
+// (clara dentro do anel vazio, cor da propria linha sobre a capsula cheia).
+// MEDIDO em bytes sRGB na captura, nas quatro combinacoes:
+//
+//   linha em repouso (45)   desligado: anel 152, miolo 45,  bola 240
+//                           ligado:    capsula 240,         bola 45
+//   linha em foco   (245)   desligado: anel 120, miolo 245, bola 18
+//                           ligado:    capsula 18,          bola 245
+//
+// Contraste da bola contra o que esta atras dela: 12:1, 12:1, 17:1 e 17:1. O
+// canal que carrega o estado nunca desce de 12:1 em nenhuma das quatro.
+//
+// QUAL LADO E O SEGURO, sem sermao. O padrao — e a resposta que o produto
+// defende — e NAO aparecer, e esse e o lado da trilha VAZIA. Ligar acende
+// alguma coisa; desligado nao ha nada aceso. A assimetria esta na fisica do
+// interruptor, e nao num aviso, num alerta ou numa cor de perigo: o dono ja
+// recusou copy moralista neste app e um interruptor que repreende e a mesma
+// coisa desenhada.
+static void desenhaAparecer(int i, float dx, float y, float alt, float a) {
+  GfxRect r = { SP_X + dx + SP_PAD, y, SP_INTERNO, alt };
+  GfxRect trilho, bola;
+  float f = (i >= 0 && i < SP_MAX) ? animFoco[i] : 0.0f;
+  float lum = anim_mistura(0.176f, 0.961f, f);
+  int esc = f >= 0.5f;
+  int c1 = esc ? 17 : 240, c2 = esc ? 74 : 168;
+  // Clamp de seguranca: animSw nasce em -1 e so assenta na primeira
+  // atualizacao. Um quadro desenhado antes dela (o painel abre e desenha no
+  // mesmo quadro) deslocaria a bola para fora da capsula.
+  float lig = animSw < 0.0f ? 0.0f : anim_clamp(animSw, 0.0f, 1.0f);
+  // A TINTA CONTRARIA A DA LINHA. O foco inverte a linha inteira, entao o
+  // interruptor tem de inverter junto — desenhar sempre claro deixaria a bola
+  // branca sumida dentro da pilula branca do foco.
+  float tinta = esc ? 0.07f : 0.94f;
+  float largTexto = SP_INTERNO - 64.0f - SPS_SW_W - SPS_SW_GAP;
+  const char *sub = recomenda_aparecer() == REC_APARECER_SIM
+      // O SUBTITULO PAROU DE REPETIR O ESTADO. Ele dizia "Sim, voce aparece
+      // nas sugestoes de quem te conhece" / "Nao, voce nao aparece na lista de
+      // ninguem", que era a unica coisa na linha dizendo ligado ou desligado —
+      // agora quem diz isso e o interruptor. Sobrou para o subtitulo o que o
+      // interruptor NAO consegue dizer: ligado, QUEM passa a te achar; e
+      // desligado, o que voce NAO perde por recusar (nada) — que e a mesma
+      // promessa que a pergunta de primeira entrada ja faz, nas mesmas
+      // palavras, e a duvida real de quem esta com o dedo em cima.
+      //
+      // AS DUAS TEM 36 CARACTERES, e isso foi medido e nao estimado: a coluna
+      // de texto tem 500 px (688 - 32 - 32 - 96 de trilha - 28 de vao) e o
+      // TXT_CAPTION de 22 px gasta ~10,8 px por caractere aqui. "Voce continua
+      // recebendo e enviando recomendacoes" pedia ~511 px e saiu da PRIMEIRA
+      // captura como "Voce continua recebendo e enviando…", com a palavra que
+      // importa cortada fora. "Trocando" diz os dois sentidos numa palavra e
+      // guarda o substantivo.
+      ? "Quem te conhece te acha nas sugestões"
+      : "Você continua trocando recomendações";
+
+  // Raio de 14 px em fracao da ALTURA, como as outras linhas desta camada: em
+  // 104 px de altura sao 0,135, longe dos dois tetos do gfx_cor (0,5 e
+  // 0,5*w/h = 3,3). Dividir por min(w,h) daria 0,020 aqui e canto vivo.
+  gfx_cor(r, 14.0f / alt, lum, lum, lum, a);
+
+  { TxtLinha t = txt_linha_corta(TXT_PLR_CORPO, "Aparecer para outras pessoas",
+                                 c1, c1, c1, 255, largTexto);
+    TxtLinha s = txt_linha_corta(TXT_CAPTION, sub, c2, c2 + 4, c2 + 14, 255,
+                                 largTexto);
+    float h = t.h + 8.0f + s.h;
+    txt_desenhar_alpha(t, r.x + 32.0f, y + (alt - h) * 0.5f, a);
+    txt_desenhar_alpha(s, r.x + 32.0f, y + (alt - h) * 0.5f + t.h + 8.0f,
+                       a * 0.95f); }
+
+  // A TRILHA. Raio 0,5 numa caixa 96x48: o teto 0,5*w/h vale 1,0, entao os
+  // 0,5 passam inteiros e as pontas saem em semicirculo de 24 px. Capsula de
+  // verdade, e nao "quase".
+  //
+  // OS 32 px DE RECUO SAO OS MESMOS DO TEXTO. Sem eles a capsula encostava na
+  // borda da pilula — apareceu na primeira captura e parecia a linha cortada.
+  trilho.x = r.x + SP_INTERNO - 32.0f - SPS_SW_W;
+  trilho.y = y + (alt - SPS_SW_H) * 0.5f;
+  trilho.w = SPS_SW_W;
+  trilho.h = SPS_SW_H;
+  //
+  // DESLIGADA A TRILHA E UM ANEL, e nao uma capsula chapada de alfa baixo. A
+  // primeira versao pintava tinta a 16% e MEDI o resultado na captura: a
+  // capsula saia em 76 sobre uma linha de 45, ou seja 1,56:1 — e em foco, 209
+  // sobre 245, 1,41:1. Nos dois casos a capsula praticamente nao existia, e
+  // sem ela a bola clara a esquerda flutua sem dizer que ha um percurso.
+  //
+  // O ANEL E EXATO, e nao GFX_ANEL: aquele modo sai losangudo (squircle) em
+  // diametro pequeno, em todo tamanho que ja se tentou nesta base. Duas
+  // formas CONCENTRICAS preenchidas dao um anel exato — com raio
+  // 0,5 o centro da tampa fica a h/2 da borda, entao a de fora tem centro em
+  // x+24 (h=48) e a de dentro, recuada 4, tem centro em x+4+20 = x+24. Mesmo
+  // centro, raios 24 e 20: anel de 4 px uniforme, sem emenda.
+  //
+  // Medido depois: 152 sobre 45 (4,77:1) em repouso e 120 sobre 245 (3,97:1)
+  // em foco, com a bola mantendo 12:1 e 17:1 contra o miolo — que e o ponto,
+  // porque quem carrega o ESTADO e a bola e nao a trilha.
+  gfx_cor(trilho, 0.5f, tinta, tinta, tinta, anim_mistura(0.55f, 1.0f, lig) * a);
+  if (lig < 0.999f) {
+    GfxRect furo = { trilho.x + SPS_SW_ANEL, trilho.y + SPS_SW_ANEL,
+                     SPS_SW_W - SPS_SW_ANEL * 2.0f,
+                     SPS_SW_H - SPS_SW_ANEL * 2.0f };
+    // O miolo e a COR DA PROPRIA LINHA e vai sumindo: ligar nao troca de
+    // desenho, TAMPA o buraco. Vazio vira cheio, que e a leitura que se quer.
+    gfx_cor(furo, 0.5f, lum, lum, lum, (1.0f - lig) * a);
+  }
+
+  // A BOLA. Quadrada com raio 0,5 = circulo EXATO pelo SDF (com asp = 1 a
+  // funcao vira length(p) - 0,5). Nao e GFX_ANEL: aquele sai losangudo em
+  // diametro pequeno, e aqui nem ha anel — sao dois discos preenchidos, que e
+  // a saida que gfx.h ja recomenda.
+  bola.w = SPS_SW_BOLA;
+  bola.h = SPS_SW_BOLA;
+  bola.x = trilho.x + SPS_SW_PAD +
+           (SPS_SW_W - SPS_SW_PAD * 2.0f - SPS_SW_BOLA) * lig;
+  bola.y = trilho.y + SPS_SW_PAD;
+  // A COR DA BOLA TROCA EM DEGRAU no meio do percurso, e nao interpolada.
+  // Interpolando, no meio do caminho ela valeria 142 em bytes sRGB enquanto o
+  // miolo da trilha, meio tampado, vale 120: 1,1:1, ou seja a bola SOME no
+  // meio do movimento. Em degrau ela vira ao cruzar o centro — que e o que um
+  // interruptor de verdade faz — e nunca chega perto do valor do miolo.
+  // (E o mesmo degrau em f > 0.5 que o texto desta linha ja usa, so que aqui
+  // a razao e optica e nao o cache de text.c.)
+  { float cb = lig > 0.5f ? lum : tinta;
+    gfx_cor(bola, 0.5f, cb, cb, cb, a); }
+}
+
 // Uma sugestao: a cara, o nome, POR ONDE ela chegou, e a pilula que diz o que
 // o OK faz.
 //
@@ -1123,7 +1345,9 @@ void spainel_desenhar(Uint32 agora) {
       float alt = socialAlt(i);
       float cab = socialAntes(i);
       if (cab > 0.0f) {
-        if (y + cab >= listaTopo() && y <= SP_LISTA_BASE) {
+        // So a secao das sugestoes tem rotulo; o vao do interruptor e mudo.
+        if (social[i].tipo == SPS_SUG &&
+            y + cab >= listaTopo() && y <= SP_LISTA_BASE) {
           TxtLinha t = txt_linha(TXT_CAPTION2, "Pessoas que você talvez conheça",
                                  150, 154, 165, 255);
           txt_desenhar_alpha(t, SP_X + x + SP_PAD, y + cab - t.h - 12.0f, a * 0.9f);
@@ -1143,10 +1367,9 @@ void spainel_desenhar(Uint32 agora) {
             desenhaBotaoLinha(i, x, y, alt, a, "Adicionar um amigo", NULL);
             break;
           case SPS_APARECER:
-            desenhaBotaoLinha(i, x, y, alt, a, "Aparecer para outras pessoas",
-                              recomenda_aparecer() == REC_APARECER_SIM
-                                ? "Sim, você aparece nas sugestões de quem te conhece"
-                                : "Não, você não aparece na lista de ninguém");
+            // NAO e desenhaBotaoLinha, e a diferenca e o ponto todo desta
+            // linha. Ver a nota longa em desenhaAparecer.
+            desenhaAparecer(i, x, y, alt, a);
             break;
           case SPS_CONSENT_SIM:
             desenhaBotaoLinha(i, x, y, alt, a, "Sim, pode me mostrar", NULL);
