@@ -692,7 +692,18 @@ static void traco(float x0, float dx, int n, float esp,
 // `lado` +1 pinta o que esta ABAIXO de yRef na tela, -1 o que esta acima. Sao
 // dois porque significam coisas opostas no painel 2 (perdeu gente / ganhou
 // gente) e levam cores diferentes.
-static void banda(float x0, float dx, int n, float yRef, int lado,
+// `tol` e a folga vertical com que amostras vizinhas sao juntadas num retangulo
+// so. Ela e PARAMETRO e nao constante porque as duas bandas deste arquivo tem
+// precisoes diferentes por natureza:
+//
+//   a MASSA do radar (preto 45%) tem a borda de baixo encostada na curva, e um
+//   degrau ali aparece de baixo do traco de 5 px — 3,0 px e o limite;
+//
+//   a TINTA do arco (verde 11%) tem a mesma borda, so que a 11% de alfa: um
+//   degrau de 12 px numa fronteira quase transparente nao e visivel a olho
+//   nenhum, muito menos a tres metros. Com a tolerancia da massa ela custava
+//   90 desenhos; com a dela custa um terco disso, para a mesma imagem.
+static void banda(float x0, float dx, int n, float yRef, int lado, float tol,
                   float r, float g, float b, float a) {
   int i = 0;
   if (n < 2) return;
@@ -703,10 +714,7 @@ static void banda(float x0, float dx, int n, float yRef, int lado,
     while (j < n - 1) {
       float l = saY[j + 1] < lo ? saY[j + 1] : lo;
       float h = saY[j + 1] > hi ? saY[j + 1] : hi;
-      // A banda aceita o dobro do erro do traco: ela e regiao cheia, nao
-      // contorno, e a borda dela fica DEBAIXO do traco de 5 px desenhado por
-      // cima. Um degrau de 3 px mal aparece dali; no traco engordaria a linha.
-      if (j > i && h - l > 3.0f) break;
+      if (j > i && h - l > tol) break;
       lo = l; hi = h; j++;
     }
     // Do lado que nao interessa a curva e grampeada NA referencia e o
@@ -969,25 +977,44 @@ static void curto(char *dst, unsigned tam, long v) {
 // Cabecalho comum aos tres: titulo grande e, LOGO ABAIXO, a procedencia do
 // numero. A segunda linha nao e enfeite — e a unica coisa que impede o grafico
 // de virar uma afirmacao sem dono.
-// A folga de 30 no fim e o respiro ate o topo da CAIXA. Os rotulos do eixo
-// ficam agora na calha da esquerda, alinhados a direita, e nao mais centrados
-// na primeira linha do grafico: era dali que vinha o "7.8E1 · 7.6" da captura,
-// o rotulo do teto do eixo e o rotulo do extremo do E1 no mesmo lugar.
-static float cabecalho(GfxRect r, const char *titulo, const char *fonte) {
+//
+// --- POR QUE ISTO ESTA PARTIDO EM MEDIR E DESENHAR ------------------------
+//
+// O dono fotografou a TV e disse "o titulo ficou escuro, tem ser o branco
+// igual dos outros": "Arco de qualidade" saia cinza ao lado dos nomes do
+// elenco, algumas centenas de pixels acima, que sao brancos limpos.
+//
+// A tinta nao era o problema. O titulo sempre foi txt_linha(..., 255,255,255)
+// em alfa cheio, a mesma coisa que detail.c usa nos cabecalhos dele. A ORDEM
+// DE DESENHO era: `float y = r.y + cabecalho(...)` roda no inicializador da
+// variavel, ou seja ANTES do corpo da funcao — e `chao()`, o veu, so era
+// chamado dezenas de linhas depois. O veu era pintado POR CIMA do titulo.
+//
+// A conta fecha exatamente com o que a foto mostra: preto a 0,62 sobre branco
+// 255 da 255 * 0,38 = 97, que e #616161. Cinza medio. Todo o resto do painel —
+// eixo, rodape, curva — e desenhado DEPOIS do veu e por isso nunca teve o
+// problema; so o cabecalho estava do lado errado da camada.
+//
+// Medir primeiro e desenhar depois e o que permite pintar o veu no meio: a
+// altura do cabecalho decide onde a caixa do grafico comeca, e a caixa decide
+// onde o veu tem de ser reforcado. As duas chamadas de txt_linha se repetem,
+// e isso e de graca: text.c guarda a linha rasterizada por chave de conteudo e
+// cor, entao a segunda e um acerto de cache.
+//
+// A REGRA, para nao se perder de novo: em qualquer um destes tres paineis,
+// `chao()` vem antes de QUALQUER texto ou geometria. Nada e desenhado antes do
+// chao.
+static float cabecalhoAltura(GfxRect r, const char *titulo, const char *fonte) {
   TxtLinha t = txt_linha(TXT_HEADLINE, i18n(titulo), 255, 255, 255, 255);
-  // A PROCEDENCIA SUBIU UM DEGRAU NA ESCADA DE CINZAS: de #9699A2 para #BEC0C8.
-  //
-  // Nao e para dar mais destaque a ela — a hierarquia continua a mesma (titulo
-  // branco, procedencia abaixo dele, resposta do painel em #ECEEF4 no rodape).
-  // E porque o CHAO MUDOU. O #9699A2 e o piso de contraste da escada, e esse
-  // piso foi medido contra #0D0D0D; aqui embaixo agora ha arte a 15% sob um
-  // veu, e a luminancia local varia de quadro a quadro conforme a obra. Na
-  // reducao que imita 3 m a linha "não é o IMDb" ficou no limite de sumir — e
-  // ela e justamente a frase que serieaud.h proibe enfraquecer.
+  TxtLinha f = txt_linha_corta(TXT_DET_META2, i18n(fonte), 190, 192, 200, 255, r.w);
+  return t.h + f.h + 30.0f;
+}
+
+static void cabecalho(GfxRect r, const char *titulo, const char *fonte) {
+  TxtLinha t = txt_linha(TXT_HEADLINE, i18n(titulo), 255, 255, 255, 255);
   TxtLinha f = txt_linha_corta(TXT_DET_META2, i18n(fonte), 190, 192, 200, 255, r.w);
   txt_desenhar(t, r.x, r.y);
   txt_desenhar(f, r.x, r.y + t.h + 2.0f);
-  return t.h + f.h + 30.0f;
 }
 
 // Rotulo de eixo na calha ESQUERDA, alinhado a direita e centrado na altura
@@ -1033,8 +1060,8 @@ static float vazio(GfxRect r, float y) {
 // tem destaque a tres metros.
 
 float serieaud_arco(GfxRect r) {
-  float y = r.y + cabecalho(r, "Arco de qualidade",
-                            "Nota do Trakt por episódio — não é o IMDb");
+  float y = r.y + cabecalhoAltura(r, "Arco de qualidade",
+                                  "Nota do Trakt por episódio — não é o IMDb");
   float gx = r.x + SA_CALHA_ESQ, gw = r.w - SA_CALHA_ESQ - SA_CALHA_DIR;
   float gh = 206.0f;
   float py = y + 10.0f;               // topo da area de plotagem
@@ -1051,6 +1078,12 @@ float serieaud_arco(GfxRect r) {
     n++;
   }
   semNota = nEps - n;
+
+  // O CHAO VEM PRIMEIRO, e antes ate do caminho vazio: um painel que diz
+  // "sem dados desta temporada" tambem esta sobre a arte da pagina e tambem
+  // precisa de chao para ser lido.
+  chao(r.y - 110.0f, (py - r.y) + gh + 280.0f, py, gh);
+  cabecalho(r, "Arco de qualidade", "Nota do Trakt por episódio — não é o IMDb");
   if (n < 2 || gw < 120.0f) return vazio(r, y);
 
   // A ESCALA NAO COMECA EM ZERO, DE PROPOSITO. Nota de episodio de serie vive
@@ -1064,12 +1097,6 @@ float serieaud_arco(GfxRect r) {
   passo = nEps > 1 ? gw / (float)(nEps - 1) : gw;
 
 #define SA_ARCO_Y(nota) (py + gh - gh * (float)((nota) - lo) / (float)(hi - lo))
-
-  // O veu passa de mais para os dois lados de proposito: as pontas dele sao
-  // transparentes, entao sobrar e invisivel e faltar deixaria texto sobre arte
-  // crua. 150 acima cobre titulo e procedencia; 150 abaixo cobre o eixo de
-  // episodios e a linha de episodios sem nota.
-  chao(r.y - 110.0f, (py - r.y) + gh + 280.0f, py, gh);
 
   // Colunas sem nota, antes de tudo: elas sao fundo, nao dado.
   for (i = 0; i < nEps; i++)
@@ -1123,8 +1150,30 @@ float serieaud_arco(GfxRect r) {
         if (m >= 2) {
           float dx;
           int na = amostrar(passo, ys, m, &dx);
-          traco(gx + passo * (float)inicio, dx, na, 5.0f,
-                0.96f, 0.96f, 0.98f, 1.0f);
+          float x0 = gx + passo * (float)inicio;
+          // O TRECHO ACIMA DA MEDIA, em verde muito fraco.
+          //
+          // E a unica cor que este painel ganha, e ela nao e nova: e o MESMO
+          // verde do ponto do melhor episodio aqui, e o mesmo do trecho acima
+          // dos 100% no radar. Com ela os dois paineis passam a dizer a mesma
+          // frase com o mesmo sinal — VERDE E O QUE ESTA ACIMA DA LINHA DE
+          // REFERENCIA —, e a tracejada da media deixa de ser um enfeite para
+          // virar a fronteira de alguma coisa.
+          //
+          // No radar essa regra quase nunca aparece (passar de 100% e o caso
+          // raro do E2 com mais gente que o E1); aqui ela aparece em toda
+          // temporada, e e o que torna a regra visivel o bastante para ser
+          // lida como regra.
+          //
+          // ALFA 0.11 E O PONTO DE "DELICADO": acima disso vira uma area
+          // preenchida e o arco perde a diferenca de forma que ele tem com o
+          // radar de proposito (um mede episodios um a um e e vazado, o outro
+          // mede uma quantidade que se acumula e e cheio). Aqui e tinta no ar,
+          // nao massa.
+          if (med > 0 && hi > lo)
+            banda(x0, dx, na, SA_ARCO_Y(med), -1, 12.0f,
+                  0.24f, 0.86f, 0.52f, 0.11f);
+          traco(x0, dx, na, 5.0f, 0.96f, 0.96f, 0.98f, 1.0f);
         }
         fimAnt = inicio + m - 1;
       }
@@ -1247,8 +1296,8 @@ float serieaud_arco(GfxRect r) {
 // `banda` para o caminho que essa area percorreu ate parar de costurar.
 
 float serieaud_radar(GfxRect r) {
-  float y = r.y + cabecalho(r, "Radar de desistência",
-                            "Quem marcou o episódio no Trakt, sobre quem marcou o E1 — não é a audiência geral");
+  float y = r.y + cabecalhoAltura(r, "Radar de desistência",
+                                  "Quem marcou o episódio no Trakt, sobre quem marcou o E1 — não é a audiência geral");
   float gx = r.x + SA_CALHA_ESQ, gw = r.w - SA_CALHA_ESQ - SA_CALHA_DIR;
   float gh = 200.0f;
   float py = y + 10.0f;
@@ -1258,6 +1307,11 @@ float serieaud_radar(GfxRect r) {
   char txt[140];
 
   for (i = 0; i < nEps; i++) { fora[i] = 0; if (serieaud_retencao(i) >= 0) n++; }
+
+  // O chao antes de tudo. Ver a nota de `cabecalho`.
+  chao(r.y - 110.0f, (py - r.y) + gh + 330.0f, py, gh);
+  cabecalho(r, "Radar de desistência",
+            "Quem marcou o episódio no Trakt, sobre quem marcou o E1 — não é a audiência geral");
   if (n < 2 || gw < 120.0f) return vazio(r, y);
 
   // O EIXO NAO COMECA EM ZERO, E ISSO PRECISA DE JUSTIFICATIVA — grafico de
@@ -1352,7 +1406,6 @@ float serieaud_radar(GfxRect r) {
 
 #define SA_RAD_Y(v) (py + gh - gh * (float)((v) - piso) / (float)(topo - piso))
 
-  chao(r.y - 110.0f, (py - r.y) + gh + 330.0f, py, gh);
 
   for (i = 0; i < nEps; i++)
     if (serieaud_retencao(i) < 0)
@@ -1411,11 +1464,11 @@ float serieaud_radar(GfxRect r) {
             // AFUNDA a regiao em vez de cobri-la, e a arte continua visivel
             // atraves dele, so que mais escura. E a semantica bate — o que
             // esta ali e a plateia que apagou.
-            banda(x0, dx, na, y100,  1, 0.0f, 0.0f, 0.0f, 0.45f);
+            banda(x0, dx, na, y100,  1, 3.0f, 0.0f, 0.0f, 0.0f, 0.45f);
             // A EXCECAO continua em cor, e e a unica cor desta caixa: verde,
             // o mesmo de "melhor episodio" no arco, porque quer dizer a mesma
             // coisa nos dois — este ponto esta acima da referencia.
-            banda(x0, dx, na, y100, -1, 0.24f, 0.86f, 0.52f, 0.40f);
+            banda(x0, dx, na, y100, -1, 3.0f, 0.24f, 0.86f, 0.52f, 0.40f);
           }
           traco(x0, dx, na, 5.0f, 0.96f, 0.96f, 0.98f, 1.0f);
         }
@@ -1596,8 +1649,8 @@ static void eixoTexto(char *dst, unsigned tam, int i, int eixo) {
 }
 
 float serieaud_digital(GfxRect r) {
-  float y = r.y + cabecalho(r, "Impressão digital do episódio",
-                            "Nota, retenção, reproduções por pessoa e comentários+votos — tudo do Trakt, relativo à temporada");
+  float y = r.y + cabecalhoAltura(r, "Impressão digital do episódio",
+                                  "Nota, retenção, reproduções por pessoa e comentários+votos — tudo do Trakt, relativo à temporada");
   // Calha ESQUERDA para o nome da grandeza e calha DIREITA para o valor cru do
   // episodio escolhido. As duas larguras sao fixas porque as fileiras tem de
   // comecar e acabar alinhadas — e o alinhamento que faz quatro fileiras
@@ -1625,6 +1678,10 @@ float serieaud_digital(GfxRect r) {
     }
     if (algum) n++;
   }
+  // O chao antes de tudo. Ver a nota de `cabecalho`.
+  chao(r.y - 110.0f, (py - r.y) + gh + 350.0f, py, gh);
+  cabecalho(r, "Impressão digital do episódio",
+            "Nota, retenção, reproduções por pessoa e comentários+votos — tudo do Trakt, relativo à temporada");
   if (n < 1 || gw < 260.0f) return vazio(r, y);
 
   // LARGURA DA BARRA: dois tercos do passo, com teto. O teto existe para a
@@ -1640,11 +1697,6 @@ float serieaud_digital(GfxRect r) {
   larg  = passo * 0.66f;
   if (larg > 72.0f) larg = 72.0f;
 
-  // O MESMO VEU DOS OUTROS DOIS. Este painel tambem tinha caixa opaca, e
-  // deixa-lo com caixa enquanto os vizinhos ganham veu faria tres graficos na
-  // mesma pagina com dois chaos diferentes — que e pior do que o defeito que a
-  // caixa resolvia.
-  chao(r.y - 110.0f, (py - r.y) + gh + 350.0f, py, gh);
 
   // A COLUNA DO EPISODIO ESCOLHIDO, atras de tudo. E ela que liga as quatro
   // fileiras numa leitura vertical — sem ela cada fileira e um grafico
