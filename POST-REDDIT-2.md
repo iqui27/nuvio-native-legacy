@@ -31,11 +31,9 @@ de 14 marcada com ★ é a que eu usaria.
    Ou você publica a v1.1.0 antes de postar, ou apaga a seção. Anunciar o que
    ninguém consegue instalar é o jeito mais rápido de queimar um post nesses
    subreddits.
-1c. **O bloco novo "What landed after that" é o mais arriscado do post, e por
-   dois motivos diferentes.** O primeiro é o mesmo do 1b, dobrado: nada daquilo
-   está em release nenhuma. O segundo é só do portal IPTV — **eu nunca o testei
+1c. **O portal IPTV é o item mais arriscado do bloco da 1.1: eu nunca o testei
    contra um servidor de verdade**, não tenho um. O texto diz isso com todas as
-   letras, e essa frase não é humildade, é o que separa "anunciei uma
+   letras, e essa frase não é humildade — é o que separa "anunciei uma
    funcionalidade" de "anunciei uma funcionalidade que não funciona". Se você
    conseguir testar com um portal antes de postar, troca o parágrafo. Se não,
    ou deixa a frase como está ou tira o item.
@@ -44,7 +42,7 @@ de 14 marcada com ★ é a que eu usaria.
    forjado é, na prática esmagadora, revenda de assinatura pirata, e o post
    passa a descrever o app também como cliente de IPTV — é assim que ele vai
    ser lido em r/webos e r/LGOLED, e é assim que a LG leria. Você decidiu
-   fazer, está feito e está no post. Mas a decisão de **anunciar** é separada
+   fazer, está feito e entra na 1.1. Mas a decisão de **anunciar** é separada
    da de construir, e essa ainda está aberta. Tirar o item do post não desfaz
    nada do código.
 2. **Links fora do corpo**, no primeiro comentário — mesma razão do post
@@ -202,7 +200,8 @@ so you can tell whether your set needs the other build instead of guessing.
 
 *(Everything above is installable today. Everything in this block is version
 1.1, which is built and running but has no GitHub release yet. Delete this
-whole section if you post before it ships.)*
+whole section if you post before it ships. One item in it — the IPTV portal —
+has also never talked to a real server, and says so where it appears.)*
 
 - **A schedule.** Every show you follow, on a vertical time axis with today
   anchored at the top: weekday, day numeral, how long the wait is, and what the
@@ -260,12 +259,6 @@ whole section if you post before it ships.)*
 
 [IMAGEM: 27-social-consent.png]
 [IMAGEM: 27b-social-suggestions.png]
-
-**What landed after that — NOT published either, and one piece is untested**
-
-*(Same warning as above, doubled: none of this is in a release, and the last
-item has never talked to a real server. Delete anything here you are not ready
-to stand behind.)*
 
 - **You can choose the source now.** A tester made the argument better than I
   would have: two sources for the same title differ in resolution, video codec
@@ -449,8 +442,8 @@ também passou para inglês. Não é interface: é DADO, e numa lista pública d
 Trakt o nome vem de quem a criou. Com a interface em inglês e o conteúdo em
 português a captura parece defeito para quem lê o álbum.
 
-**FALTAM AS CAPTURAS DO BLOCO NOVO.** Nenhuma das quatro coisas do
-"What landed after that" tem imagem, e duas delas são visuais:
+**FALTAM AS CAPTURAS DAS QUATRO ÚLTIMAS COISAS DA 1.1** (escolha de fonte,
+troca de perfil, canal travado, portal IPTV). Duas delas são visuais:
 
 - **Ajustes › Reprodução com "Escolher a fonte ao reproduzir"** — a linha nova
   na lista, com o painel de ajuda à direita.
@@ -491,5 +484,5 @@ build do Mac).
 - 48/128/192 MB: orcamentoMB() em src/tex_cache.c; 624 MB é o relato de RAM de uma webOS 3 no README
 - 35 MB: `space.nuvio.native.legacy_1.0.56_arm.ipk` gerado hoje
 - webOS 3: `webosbrew-ipk-verify -S -d -r ">=3,<4"` All OK, exit 0, no 1.0.56 da branch webos3 hoje
-- Escolha manual de fonte, troca de perfil e travamento de canal: commits 9d06940, 1adc7fa e 6dc4ece na master, 17/09 — compilam no Mac e no ARM, NAO estao em release
-- Portal IPTV (Stalker): commit fbf8027, 17/09. Protocolo implementado do handshake ao create_link; compila nos dois alvos; a suite de testes do repo passa. NUNCA foi exercitado contra um portal real — nao ha um aqui. Isso esta escrito no corpo do post, e tem de continuar escrito.
+- Escolha manual de fonte, troca de perfil e travamento de canal: commits 9d06940, 1adc7fa e 6dc4ece na master, 17/09 — compilam no Mac e no ARM. Entram na 1.1, que ainda NAO foi publicada
+- Portal IPTV (Stalker): commit fbf8027, 17/09. Entra na 1.1. Protocolo implementado do handshake ao create_link; compila nos dois alvos; a suite de testes do repo passa. NUNCA foi exercitado contra um portal real — nao ha um aqui. Isso esta escrito no corpo do post, e tem de continuar escrito.
