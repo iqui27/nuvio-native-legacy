@@ -703,8 +703,34 @@ static void traco(float x0, float dx, int n, float esp,
 //   degrau de 12 px numa fronteira quase transparente nao e visivel a olho
 //   nenhum, muito menos a tres metros. Com a tolerancia da massa ela custava
 //   90 desenhos; com a dela custa um terco disso, para a mesma imagem.
+// `rampaAlfa` > 0 faz o alfa de cada retangulo cair com a ALTURA dele: cheio a
+// partir de `rampaAlfa` px, proporcional abaixo disso. Zero = alfa uniforme.
+//
+// E o conserto de "a tinta acaba numa parede vertical de canto vivo", que o
+// dono fotografou. Duas coisas produziam a parede, e esta ramp resolve as
+// duas:
+//
+//   1. onde a curva CRUZA a referencia, o ultimo retangulo antes do
+//      cruzamento tinha a altura inteira da tolerancia de juncao e acabava de
+//      um golpe — um degrau de ate 12 px de canto reto;
+//   2. um trecho que ATRAVESSA a referencia e desenhado com a altura do ponto
+//      mais alto dele ao longo de toda a largura, entao a tinta ainda
+//      ultrapassava o cruzamento antes de parar.
+//
+// Ligando o alfa a altura, os dois viram a mesma coisa: perto do cruzamento a
+// altura tende a zero, entao o alfa tende a zero junto. A tinta MORRE COM O
+// QUE ELA SIGNIFICA, e a forma do apagamento e a inclinacao da propria curva
+// naquele ponto — cruzamento ingreme apaga rapido, cruzamento raso apaga
+// devagar. Uma rampa de largura fixa nao teria essa propriedade.
+//
+// De quebra ela diz mais do que dizia: a intensidade passa a ser "quanto acima
+// da media", que e informacao e nao enfeite.
+//
+// A MASSA PRETA DO RADAR NAO USA ISTO (passa 0). La a area significa "esta
+// gente foi embora", e apagar a borda onde a queda e pequena subestimaria
+// justamente o inicio da temporada. Massa e tinta sao coisas diferentes.
 static void banda(float x0, float dx, int n, float yRef, int lado, float tol,
-                  float r, float g, float b, float a) {
+                  float rampaAlfa, float r, float g, float b, float a) {
   int i = 0;
   if (n < 2) return;
   while (i < n - 1) {
@@ -727,7 +753,9 @@ static void banda(float x0, float dx, int n, float yRef, int lado, float tol,
     xb = floorf(x0 + dx * (float)j + 0.5f);
     if (alt > 0.5f && xb > xa) {
       GfxRect s = { xa, topo, xb - xa, alt };
-      gfx_cor(s, 0.0f, r, g, b, a);
+      float av = a;
+      if (rampaAlfa > 0.0f && alt < rampaAlfa) av = a * (alt / rampaAlfa);
+      gfx_cor(s, 0.0f, r, g, b, av);
     }
     i = j;
   }
@@ -1020,10 +1048,17 @@ static void cabecalho(GfxRect r, const char *titulo, const char *fonte) {
 // Rotulo de eixo na calha ESQUERDA, alinhado a direita e centrado na altura
 // dada. Alinhar a direita e o que faz "105%" e "90%" formarem uma coluna em
 // vez de duas larguras soltas.
-static void rotuloEixo(float dir, float ycentro, const char *s) {
+// DEVOLVE A CHAPA QUE DESENHOU. Nao e capricho: o rotulo do extremo com nome
+// ("E1 · 7.5") precisa saber ONDE este esta para nao pousar em cima dele, e a
+// unica medida confiavel e a que acabou de ser usada para desenhar. A largura
+// de "7.7", "101%" e "100.3%" nao e a mesma, e nenhuma constante cobre as tres.
+static GfxRect rotuloEixo(float dir, float ycentro, const char *s) {
   TxtLinha l = txt_linha(TXT_CAPTION, s, 190, 192, 200, 255);
-  chapaTexto(dir - l.w, ycentro - l.h * 0.5f, l.w, l.h);
-  txt_desenhar(l, dir - l.w, ycentro - l.h * 0.5f);
+  float x = dir - l.w, y = ycentro - l.h * 0.5f;
+  GfxRect c = { x - 12.0f, y - 4.0f, l.w + 24.0f, l.h + 8.0f };
+  chapaTexto(x, y, l.w, l.h);
+  txt_desenhar(l, x, y);
+  return c;
 }
 
 // Valor da linha de referencia, na calha DIREITA, na altura da propria
@@ -1071,6 +1106,7 @@ float serieaud_arco(GfxRect r) {
   int lo = 1000, hi = 0;
   float passo;
   char txt[64];
+  GfxRect chapaEixo[2];
 
   for (i = 0; i < nEps; i++) if (eps[i].nota > 0) {
     if (eps[i].nota < lo) lo = eps[i].nota;
@@ -1112,9 +1148,9 @@ float serieaud_arco(GfxRect r) {
   { GfxRect base = { gx, py + gh, gw, 1.0f };
     gfx_cor(base, 0.0f, 1.0f, 1.0f, 1.0f, 0.22f); }
   snprintf(txt, sizeof txt, "%.1f", hi / 10.0);
-  rotuloEixo(gx - SA_FOLGA_ROT, py, txt);
+  chapaEixo[0] = rotuloEixo(gx - SA_FOLGA_ROT, py, txt);
   snprintf(txt, sizeof txt, "%.1f", lo / 10.0);
-  rotuloEixo(gx - SA_FOLGA_ROT, py + gh, txt);
+  chapaEixo[1] = rotuloEixo(gx - SA_FOLGA_ROT, py + gh, txt);
 
   // A MEDIA, tracejada, com o valor na ponta direita, FORA da caixa.
   if (med > 0 && hi > lo) {
@@ -1171,7 +1207,11 @@ float serieaud_arco(GfxRect r) {
           // mede uma quantidade que se acumula e e cheio). Aqui e tinta no ar,
           // nao massa.
           if (med > 0 && hi > lo)
-            banda(x0, dx, na, SA_ARCO_Y(med), -1, 12.0f,
+            // Tolerancia 7 e nao 12: a rampa de alfa precisa de degraus para
+            // ser rampa. A 7 px o apagamento tem ~6 passos de 0,018 de alfa
+            // cada, que e menos do que o olho separa; a 12 px eram 3 passos e
+            // dava para contar.
+            banda(x0, dx, na, SA_ARCO_Y(med), -1, 7.0f, 46.0f,
                   0.24f, 0.86f, 0.52f, 0.11f);
           traco(x0, dx, na, 5.0f, 0.96f, 0.96f, 0.98f, 1.0f);
         }
@@ -1231,6 +1271,33 @@ float serieaud_arco(GfxRect r) {
       if (ly < py) ly = yy + 20.0f;
       if (ly + l.h > py + gh + 22.0f) ly = yy - 20.0f - l.h;
       if (lx < gx) lx = gx;
+      // AGORA O GRAMPO OLHA O ROTULO DO EIXO, e nao um numero escolhido a mao.
+      //
+      // O `gx - 40` original ja tinha sido apontado como numero inventado; o
+      // `gx` que entrou no lugar tambem era, so que mais discreto. Ele grampeia
+      // o TEXTO na borda da plotagem, mas a chapa do texto avanca 14 px mais
+      // para a esquerda, e a chapa do rotulo do eixo avanca 12 px para a
+      // direita do texto dele — as duas se encontram fora da vista de quem
+      // escreveu qualquer uma das duas contas.
+      //
+      // O caso que quebrou (fotografado na C9, family-guy T1): quando o
+      // PRIMEIRO episodio e o melhor da temporada, o rotulo dele nasce colado
+      // na borda esquerda, que e exatamente onde mora o rotulo do teto do eixo,
+      // e "7.7" e "E1 · 7.5" viram uma coisa so. O espelho e o E1 como PIOR,
+      // que desce para o canto de baixo e encontra o rotulo do piso.
+      //
+      // Entao o teste e o unico honesto: a chapa deste rotulo INTERSECTA a
+      // chapa de algum rotulo de eixo? Se sim, empurra para a direita ate
+      // limpar. Mede as duas, nao supoe nenhuma.
+      { int k;
+        for (k = 0; k < 2; k++) {
+          float cx0 = lx - 14.0f, cx1 = lx + l.w + 14.0f;
+          float cy0 = ly - 4.0f,  cy1 = ly + l.h + 4.0f;
+          GfxRect e = chapaEixo[k];
+          if (cx1 <= e.x || cx0 >= e.x + e.w) continue;
+          if (cy1 <= e.y || cy0 >= e.y + e.h) continue;
+          lx = e.x + e.w + 10.0f + 14.0f;
+        } }
       if (lx + l.w > gx + gw) lx = gx + gw - l.w;
       // CHAPA ATRAS DO ROTULO. Sem ela a curva passa POR DENTRO do texto e
       // some com um digito: na captura de 24 episodios o rotulo do melhor
@@ -1464,11 +1531,11 @@ float serieaud_radar(GfxRect r) {
             // AFUNDA a regiao em vez de cobri-la, e a arte continua visivel
             // atraves dele, so que mais escura. E a semantica bate — o que
             // esta ali e a plateia que apagou.
-            banda(x0, dx, na, y100,  1, 3.0f, 0.0f, 0.0f, 0.0f, 0.45f);
+            banda(x0, dx, na, y100,  1, 3.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.45f);
             // A EXCECAO continua em cor, e e a unica cor desta caixa: verde,
             // o mesmo de "melhor episodio" no arco, porque quer dizer a mesma
             // coisa nos dois — este ponto esta acima da referencia.
-            banda(x0, dx, na, y100, -1, 3.0f, 0.24f, 0.86f, 0.52f, 0.40f);
+            banda(x0, dx, na, y100, -1, 3.0f, 0.0f, 0.24f, 0.86f, 0.52f, 0.40f);
           }
           traco(x0, dx, na, 5.0f, 0.96f, 0.96f, 0.98f, 1.0f);
         }

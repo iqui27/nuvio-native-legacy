@@ -127,6 +127,41 @@ static const Fix LONGA[] = {
   { 23, 83, 43100, 45600, 22, 1120 }, { 24, 88, 43000, 46900, 39, 1310 }
 };
 
+// --- OS DOIS CASOS QUE SO A TV MOSTROU ---------------------------------------
+//
+// Nenhuma das temporadas acima tem o PRIMEIRO episodio como extremo com nome, e
+// nenhuma cruza a media no meio. Foram justamente esses dois buracos de
+// cobertura que o dono fotografou na C9.
+//
+// PRIMEIRO_MELHOR reproduz a captura de family-guy T1 numero a numero: sete
+// episodios, media 7,4, eixo 7,1-7,7, e o E1 como MELHOR da temporada com 7,5.
+// O rotulo "E1 · 7.5" nasce grampeado na borda esquerda da plotagem, que e
+// exatamente onde mora o rotulo do teto do eixo — e os dois se sobrepunham.
+// Ela tambem cruza a media a cerca de um terco da largura, que e o segundo
+// defeito: a tinta verde acabava numa parede vertical de canto vivo.
+static const Fix PRIMEIRO_MELHOR[] = {
+  {  1, 75, 31000, 33800, 18, 720 },
+  {  2, 74, 30100, 32400, 11, 664 },
+  {  3, 73, 29500, 31600,  9, 631 },
+  {  4, 73, 29000, 31000,  8, 618 },
+  {  5, 74, 28700, 30800, 12, 640 },
+  {  6, 73, 28300, 30100,  7, 602 },
+  {  7, 74, 28100, 30200, 14, 655 }
+};
+
+// O ESPELHO: o E1 como PIOR da temporada. Ai o rotulo vai para BAIXO do ponto,
+// no canto inferior esquerdo, que e onde mora o rotulo do PISO do eixo. Se o
+// conserto so olhasse o topo, este caso continuaria quebrado.
+static const Fix PRIMEIRO_PIOR[] = {
+  {  1, 69, 22000, 23100,  6, 410 },
+  {  2, 71, 21600, 22900,  9, 432 },
+  {  3, 72, 21300, 22800, 11, 448 },
+  {  4, 71, 21000, 22400,  8, 430 },
+  {  5, 73, 20800, 22500, 15, 466 },
+  {  6, 72, 20600, 22100, 10, 451 },
+  {  7, 75, 20500, 22600, 22, 498 }
+};
+
 static void carregar(const Fix *f, int n, const char *imdb, int temp,
                      long plSerie, long wtSerie, int sel) {
   int i;
@@ -345,6 +380,18 @@ int main(int argc, char **argv) {
   gravar(nome, w);
   desenharVarias(telaDigital, w);
   snprintf(nome, sizeof nome, "%s-longa-digital.bmp", saida);
+  gravar(nome, w);
+
+  carregar(PRIMEIRO_MELHOR, (int)(sizeof PRIMEIRO_MELHOR / sizeof PRIMEIRO_MELHOR[0]),
+           "tt9000005", 1, 210000L, 31000L, 0);
+  desenharVarias(telaArcoRadar, w);
+  snprintf(nome, sizeof nome, "%s-e1melhor.bmp", saida);
+  gravar(nome, w);
+
+  carregar(PRIMEIRO_PIOR, (int)(sizeof PRIMEIRO_PIOR / sizeof PRIMEIRO_PIOR[0]),
+           "tt9000006", 1, 150000L, 22000L, 0);
+  desenharVarias(telaArcoRadar, w);
+  snprintf(nome, sizeof nome, "%s-e1pior.bmp", saida);
   gravar(nome, w);
 
   // A MESMA TEMPORADA NOS TRES CHAOS. E a comparacao que decide se o veu
