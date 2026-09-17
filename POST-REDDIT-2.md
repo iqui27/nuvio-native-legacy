@@ -25,10 +25,12 @@ de 14 marcada com ★ é a que eu usaria.
    links separados como estão no primeiro comentário. Isso é o que eu vou
    resolver com o merge da webos3.
 1b. **O que deste post ainda NÃO existe numa release.** A seção
-   "What landed since" descreve trabalho que está na árvore e **não foi
-   publicado**. Ou você publica a 1.0.57 antes de postar, ou apaga a seção.
-   Anunciar o que ninguém consegue instalar é o jeito mais rápido de queimar
-   um post nesses subreddits.
+   "What landed since" descreve a **1.1.0**, que está commitada e instalada na
+   sua C9 — e **não publicada**. Enquanto não houver release no GitHub com o
+   `.ipk` e o `.wgt`, ninguém que ler o post consegue instalar nada daquilo.
+   Ou você publica a v1.1.0 antes de postar, ou apaga a seção. Anunciar o que
+   ninguém consegue instalar é o jeito mais rápido de queimar um post nesses
+   subreddits.
 2. **Links fora do corpo**, no primeiro comentário — mesma razão do post
    anterior (filtro do Reddit). Lista no fim.
 2b. **Imagem embaixo de cada trecho**: dá, mas só no editor novo do Reddit
@@ -47,15 +49,15 @@ de 14 marcada com ★ é a que eu usaria.
 
 - Native C port of a webOS streaming app, twelve days later: 2016 sets through the 2024 ones, Samsung Tizen, and a build that sizes its own memory to the TV it lands on
 - Update on the native (C/SDL2) webOS streaming app: a 2016 set is running it, there is a Samsung build, and it remembers which source you picked
-- What 251 commits and 57 issues taught me about writing a TV app in C
+- What 263 commits and 58 issues taught me about writing a TV app in C
 
 ---
 
 ## Corpo
 
 Twelve days ago I posted a native C/SDL2 port of a webOS streaming app, tested
-on one rooted 2019 C9. Since then: 251 commits, 56 releases, 57 issues opened
-by people here and 55 of them closed — two still open. This is what changed, with screenshots,
+on one rooted 2019 C9. Since then: 263 commits, 56 releases, 58 issues opened
+by people here and 55 of them closed. This is what changed, with screenshots,
 and what I learned along the way. Links in the first comment.
 
 **Where it runs now — one build, every generation**
@@ -180,11 +182,11 @@ so you can tell whether your set needs the other build instead of guessing.
 
 [IMAGEM: 21-intro-guide.png]
 
-**What landed since — NOT in a release yet, see note 1b**
+**What landed in 1.1 — NOT published yet, see note 1b**
 
-*(Everything above is installable today. Everything in this block is in the
-tree and goes out with the next release. Delete this whole section if you post
-before it ships.)*
+*(Everything above is installable today. Everything in this block is version
+1.1, which is built and running but has no GitHub release yet. Delete this
+whole section if you post before it ships.)*
 
 - **A schedule.** Every show you follow, on a vertical time axis with today
   anchored at the top: weekday, day numeral, how long the wait is, and what the
@@ -364,29 +366,32 @@ sai em captura nenhuma (nem na TV); a imagem mostra só os controles, e no Mac
 não há pipeline de vídeo, por isso o aviso "Could not open the source" no meio.
 Se quiser mostrar reprodução, é foto da TV.
 
-**AS 11 IMAGENS DAS FEATURES NOVAS AINDA NÃO EXISTEM** (25, 25b, 26, 26b, 26c,
-27, 27b, 28, 28b, 29 — e a 20). Os marcadores já estão no corpo e as legendas
-na tabela; falta rodar as capturas. Cada tela nova tem harness próprio, então
-é mecânico:
+**AS IMAGENS DAS FEATURES NOVAS JÁ ESTÃO EM `~/Desktop/nuvio-post-2/`**:
+25, 25b, 26, 26b, 26c, 28, 28b e 29 — 1920×1080, interface em inglês, geradas
+pelos harnesses de captura do repositório.
 
-```
-tests/agenda_shot.sh        agenda (25, 25b)
-tests/biblioteca_shot.sh    listas (26, 26b, 26c)
-tests/social_shot.sh        consentimento e sugestões (27, 27b)
-tests/serieaud_shot.sh      gráficos (28, 28b)
-tests/seriefrases_shot.sh   frases e ficha (29)
-```
+Duas ainda faltam, e por motivos diferentes:
 
-**Não capturei ainda de propósito, e o motivo é tempo perdido, não preguiça:**
-dois agentes estão mudando exatamente duas dessas telas neste momento — o
-ícone do lembrete e o pôster da Agenda numa, o painel de frases na outra.
-Capturar agora é jogar fora.
+- **27 e 27b (Social)**: a tela do consentimento e a das sugestões estão sendo
+  mexidas agora (o botão de "aparecer para outras pessoas" tinha a mesma forma
+  de um botão de ação). Capturo quando o desenho parar de mudar.
+- **20-update.png**: continua dependendo da TV, ver a nota logo abaixo.
 
-**Duas coisas a acertar na hora de capturar**, porque as capturas dos testes
-não servem como estão: elas saem com a **interface em português** e algumas
-são recorte, e o resto do álbum é 1920×1080 em inglês. O harness escreve um
-`ajustes.txt` dentro de `NUVIO_DADOS` — é ali que se troca o idioma. Capturar
-em inglês, tela cheia, e gravar direto em `~/Desktop/nuvio-post-2/`.
+**Duas coisas que a geração destas capturas descobriu**, e as duas viraram
+conserto no app, não só na foto:
+
+1. Os harnesses escreviam a interface em **português** e não havia como trocar
+   sem recompilar. Agora `NUVIO_SHOT_EN=1` troca para inglês — recompilar para
+   mudar de língua é o tipo de atrito que faz alguém publicar a captura errada.
+2. A nota do IMDb saía com **vírgula decimal cravada** nos três lugares que a
+   desenham (`biblioteca.c`, `detail.c`, `recomenda.c`). Em inglês "8,4" não
+   lê como um número com uma casa: lê como milhar interrompido. Agora segue o
+   idioma. Só apareceu porque o álbum foi gerado em inglês.
+
+O conteúdo de ensaio dos harnesses (nomes de lista, títulos de filme, sinopse)
+também passou para inglês. Não é interface: é DADO, e numa lista pública do
+Trakt o nome vem de quem a criou. Com a interface em inglês e o conteúdo em
+português a captura parece defeito para quem lê o álbum.
 
 **Falta uma imagem antiga: `20-update.png`, o cartão de atualização.** Ele só abre
 quando há release mais nova que a instalada, e no Mac eu não consegui fazer o
@@ -402,8 +407,8 @@ build do Mac).
 
 ## Números usados no texto, e de onde vieram
 
-- 251 commits / 56 releases: `git log v1.0.2..HEAD`, `gh release list` (v1.0.2 → v1.0.56), conferido 16/09 ao fim do dia
-- 57 issues, 55 fechadas, 2 abertas: `gh issue list --state open|closed|all` em 16/09
+- 263 commits / 56 releases: `git log v1.0.2..HEAD`, `gh release list` (v1.0.2 → v1.0.56), conferido 17/09
+- 58 issues, 55 fechadas, 3 abertas: `gh issue list --state open|closed|all` em 17/09
 - 363 KB / 48 KB por arte (cap de 320 px contra 128 px) e 8,3 MB / 3,7 MB (backdrop 1920 contra 1280): medidos por `tex_estatisticas` e pelas contas em src/tex_cache.c
 - Degraus 48/128/192 MB: orcamentoMB() em src/tex_cache.c, com o comentario dizendo qual foi medido e qual foi escolhido
 - Degraus do Tizen: NAO medidos, nao ha Samsung aqui — esta escrito assim no post

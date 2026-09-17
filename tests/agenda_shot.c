@@ -63,9 +63,17 @@ enum { DES_AGENDA = 0, DES_AVISO, DES_MENU, DES_DETALHE };
 // Ajustes gravados em disco e lidos por ajustes_dir: e o caminho publico para
 // escolher idioma e "reduzir animacoes" sem setter de teste. As chaves sao as
 // mesmas de ajustes.txt no aparelho.
+// IDIOMA POR VARIAVEL DE AMBIENTE, com o padrao em portugues.
+//
+// As capturas deste harness servem a DOIS publicos: a conferencia do trabalho,
+// que e feita em portugues como o resto do repositorio, e o album do post em
+// ingles. Recompilar para trocar a lingua e o tipo de atrito que faz alguem
+// publicar a captura errada — NUVIO_SHOT_EN=1 resolve sem tocar no codigo.
 static void ajustesDeTeste(int idiomaIngles, int animReduzidas) {
   char caminho[600];
   FILE *f;
+  { const char *en = getenv("NUVIO_SHOT_EN");
+    if (en && *en && *en != '0') idiomaIngles = 1; }
   snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dados_dir());
   f = fopen(caminho, "w");
   if (!f) return;
@@ -219,12 +227,12 @@ int main(int argc, char **argv) {
   // As sinopses sao INVENTADAS, e so podem ser aqui: o corpo do TMDB nao entra
   // no teste (nao ha rede) e o que a foto precisa provar e que duas linhas de
   // sinopse cabem e cortam. Nenhuma delas chega perto do aparelho.
-  poeLinha(cache, sizeof cache, "tt10255564", "Fundação",
+  poeLinha(cache, sizeof cache, "tt10255564", "Foundation",
            "deploy/app/art/00.jpg", AG_VOLTANDO, 3, 9, "The Last Empress",
            "2026-09-16", "2026-09-12",
-           "Gaal e Salvor chegam a Trantor no dia em que o Império anuncia o fim "
-           "da dinastia genética, e a Fundação precisa decidir se o Plano ainda "
-           "vale alguma coisa depois de trezentos anos.",
+           "Gaal and Salvor reach Trantor on the day the Empire announces the "
+           "end of the genetic dynasty, and the Foundation has to decide whether "
+           "the Plan is still worth anything after three hundred years.",
            "finale", "Apple TV+", 58, 3);
   poeLinha(cache, sizeof cache, "tt1520211", "The Last of Us",
            "deploy/app/art/01.jpg", AG_VOLTANDO, 2, 4, "Day One",
@@ -269,7 +277,7 @@ int main(int argc, char **argv) {
     static const char *ID[7] = { "tt10255564", "tt1520211", "tt2661044",
                                  "tt7366338", "tt0944947", "tt0903747",
                                  "tt9999991" };
-    static const char *TIT[7] = { "Fundação", "The Last of Us", "Severance",
+    static const char *TIT[7] = { "Foundation", "The Last of Us", "Severance",
                                   "Andor", "Succession", "Breaking Bad",
                                   "Uma Série Cancelada" };
     int i;
@@ -353,14 +361,14 @@ int main(int argc, char **argv) {
   // O registro de tt10255564 no cache ganha data FUTURA, que e a condicao do
   // botao: com a data de hoje ele apareceria tambem, mas a foto ficaria sem o
   // caso mais comum ("em 3 dias").
-  agenda_registrar("tt10255564", "Fundação", "", "Returning Series", 3, 9,
+  agenda_registrar("tt10255564", "Foundation", "", "Returning Series", 3, 9,
                    "The Last Empress", "2026-09-19", "2026-09-12");
   oQue = DES_DETALHE;
   { HomeItem it;
     memset(&it, 0, sizeof it);
     it.indice = 0;
     it.rect = (GfxRect){ 760.0f, 340.0f, 248.0f, 372.0f };
-    it.titulo = "Fundação";
+    it.titulo = "Foundation";
     it.arte = "deploy/app/art/00.jpg";
     detail_abrir(&it); }
 

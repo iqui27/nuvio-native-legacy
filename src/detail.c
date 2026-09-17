@@ -2196,7 +2196,12 @@ static void partirMeta(const char *meta, char *ano, size_t na, char *resto, size
 static float desenhaSeloImdb(float x, float yCentro, int nota, float a) {
   if (nota <= 0) return 0.0f;
   char txt[8];
-  snprintf(txt, sizeof txt, "%d,%d", nota / 10, nota % 10);
+  // SEPARADOR DECIMAL PELO IDIOMA. Estava VIRGULA cravada nos tres pontos que
+  // desenham nota, e em ingles "8,4" nao e um numero com uma casa: le como
+  // milhar interrompido. Apareceu ao gerar o album do post em ingles.
+  snprintf(txt, sizeof txt,
+           ajustes_idioma_ingles() ? "%d.%d" : "%d,%d",
+           nota / 10, nota % 10);
   TxtLinha l = txt_linha(TXT_DET_SIN, txt, 179, 179, 179, 255);
   GfxRect marca = { x, yCentro - NV_DETW2_IMDB_H * 0.5f,
                     NV_DETW2_IMDB_W, NV_DETW2_IMDB_H };

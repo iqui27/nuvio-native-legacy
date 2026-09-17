@@ -1123,7 +1123,12 @@ static void desenhaNota(const CatItem *ci, float xDir, float yCentro,
   { char txt[8];
     TxtLinha l;
     GfxRect marca;
-    snprintf(txt, sizeof txt, "%d,%d", ci->nota / 10, ci->nota % 10);
+    // SEPARADOR DECIMAL PELO IDIOMA. Estava VIRGULA cravada nos tres pontos que
+    // desenham nota, e em ingles "8,4" nao e um numero com uma casa: le como
+    // milhar interrompido. Apareceu ao gerar o album do post em ingles.
+    snprintf(txt, sizeof txt,
+           ajustes_idioma_ingles() ? "%d.%d" : "%d,%d",
+           ci->nota / 10, ci->nota % 10);
     l = txt_linha(TXT_BODY, txt, tinta, tinta, tinta, 255);
     marca.w = NV_DETW2_IMDB_W; marca.h = NV_DETW2_IMDB_H;
     marca.x = xDir - l.w - NV_DETW2_IMDB_GAP - marca.w;

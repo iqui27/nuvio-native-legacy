@@ -24,6 +24,7 @@
 #include "anim.h"
 #include "layout.h"
 #include "idioma.h"
+#include "ajustes.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1591,7 +1592,12 @@ float rec_selo_imdb(float x, float y, int nota, int escuro, float alfa) {
   if (nota <= 0) return 0.0f;
   // VIRGULA DECIMAL, como detail.c e como a linha de meta da aba Salvos: o
   // "%.1f" do C escreve ponto e a interface inteira e em portugues.
-  snprintf(txt, sizeof txt, "%d,%d", nota / 10, nota % 10);
+  // SEPARADOR DECIMAL PELO IDIOMA. Estava VIRGULA cravada nos tres pontos que
+  // desenham nota, e em ingles "8,4" nao e um numero com uma casa: le como
+  // milhar interrompido. Apareceu ao gerar o album do post em ingles.
+  snprintf(txt, sizeof txt,
+           ajustes_idioma_ingles() ? "%d.%d" : "%d,%d",
+           nota / 10, nota % 10);
   l = txt_linha(TXT_CAPTION2, txt, escuro ? 40 : 214, escuro ? 42 : 218,
                 escuro ? 48 : 228, 255);
   marca.x = x; marca.y = y; marca.w = REC_IMDB_W; marca.h = REC_SELO_H;

@@ -114,19 +114,19 @@ static const struct {
   const char *titulo, *meta, *genero;
   int serie, nota, progresso;
 } AMOSTRA[] = {
-  { "CODA", "2021 · 1 temporada", "Programa de TV · Drama · Música", 1, 84, 42 },
-  { "Assassinos da Lua das Flores e o Resto de um Nome Longo Demais Para Caber Numa Linha Só de Jeito Nenhum",
+  { "CODA", "2021 · 1 season", "TV Show · Drama · Music", 1, 84, 42 },
+  { "Killers of the Flower Moon and the Rest of a Name Far Too Long to Fit on One Single Line No Matter What",
     "2023", "Movie · Crime · Drama · History · Western", 0, 79, 0 },
-  { "Duna: Parte Dois", "", "Filme", 0, 0, 0 },
+  { "Dune: Part Two", "", "Movie", 0, 0, 0 },
   { "Aftersun", "2022", "Movie · Drama", 0, 0, 68 },
-  { "Tudo em Todo Lugar ao Mesmo Tempo", "2022 · 3 temporadas",
-    "Programa de TV · Ficção científica · Aventura", 1, 79, 0 },
-  { "O Brutalista", "2024", "Movie · Drama", 0, 82, 0 },
-  { "Pobres Criaturas", "2023", "Movie · Comedy · Romance", 0, 78, 12 },
-  { "A Substância", "2024", "Movie · Horror", 0, 71, 0 },
-  { "Anatomia de uma Queda", "2023", "Movie · Crime · Drama", 0, 79, 0 },
-  { "Ilha de Cachorros", "2018", "Movie · Animation", 0, 78, 0 },
-  { "Guerra Civil", "2024", "Movie · Action · Drama", 0, 71, 0 },
+  { "Everything Everywhere All at Once", "2022 · 3 seasons",
+    "TV Show · Science Fiction · Adventure", 1, 79, 0 },
+  { "The Brutalist", "2024", "Movie · Drama", 0, 82, 0 },
+  { "Poor Things", "2023", "Movie · Comedy · Romance", 0, 78, 12 },
+  { "The Substance", "2024", "Movie · Horror", 0, 71, 0 },
+  { "Anatomy of a Fall", "2023", "Movie · Crime · Drama", 0, 79, 0 },
+  { "Isle of Dogs", "2018", "Movie · Animation", 0, 78, 0 },
+  { "Civil War", "2024", "Movie · Action · Drama", 0, 71, 0 },
   { "Bacurau", "2019", "Movie · Mystery · Thriller", 0, 74, 0 },
   { "Cidade de Deus", "2002", "Movie · Crime · Drama", 0, 86, 0 },
   { "O Agente Secreto", "", "Programa de TV", 1, 0, 0 },
@@ -178,13 +178,19 @@ static char *lerArquivo(const char *caminho) {
 // reais: curtos, um que ocupa duas linhas e um que nem em duas cabe.
 static void injetarMuitasListas(void) {
   static const char *NOMES[] = {
-    "A24 — tudo", "Sci-fi dos anos 80",
-    "Harry Potter e o Prisioneiro de Azkaban e os Outros Todos",
-    "Cult", "Oscar 2025", "Terror japonês", "Noir",
-    "Documentários que valem a noite inteira", "Kurosawa",
-    "Comédia britânica", "Animação adulta", "Faroeste",
-    "As melhores estreias do ano passado segundo a crítica",
-    "Studio Ghibli", "Neo-noir", "Slow cinema", "Musicais", "Giallo",
+    // NOMES EM INGLES porque isto e DADO, e nao interface: numa lista publica
+    // do Trakt o nome vem de quem a criou. Em ingles a mesma captura serve a
+    // conferencia daqui e ao album do post, sem a mistura de linguas que so
+    // parece defeito para quem le o album. O que importa para o layout e o
+    // comprimento, e ele foi preservado: um curto, um que ocupa duas linhas e
+    // um que nem em duas cabe.
+    "Everything A24", "80s sci-fi",
+    "Harry Potter and the Prisoner of Azkaban and All the Others",
+    "Cult", "Oscars 2025", "Japanese horror", "Noir",
+    "Documentaries worth a whole evening", "Kurosawa",
+    "British comedy", "Adult animation", "Westerns",
+    "Last year's best releases according to the critics",
+    "Studio Ghibli", "Neo-noir", "Slow cinema", "Musicals", "Giallo",
   };
   char json[8000];
   size_t k = 0, i;
@@ -193,7 +199,7 @@ static void injetarMuitasListas(void) {
     k += (size_t)snprintf(json + k, sizeof json - k,
         "%s{\"type\":\"list\",\"list\":{\"name\":\"%s\",\"item_count\":%d,"
         "\"likes\":%d,\"ids\":{\"trakt\":%d},"
-        "\"user\":{\"username\":\"curador%d\",\"ids\":{\"slug\":\"c%d\"}}}}",
+        "\"user\":{\"username\":\"curator%d\",\"ids\":{\"slug\":\"c%d\"}}}}",
         i ? "," : "", NOMES[i], 12 + (int)i * 7, (int)i, 900000 + (int)i,
         (int)i, (int)i);
   snprintf(json + k, sizeof json - k, "]");
