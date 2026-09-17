@@ -72,6 +72,31 @@ rm -f "$NOME.wgt"
 ( cd "$ESTAGIO" && zip -q -r -X "../../$NOME.wgt" . )
 echo "tizen-wgt.sh: $NOME.wgt ($(du -h "$NOME.wgt" | cut -f1)) — SEM ASSINATURA"
 
+# ROTACAO DOS PACOTES ANTIGOS.
+#
+# Cada entrega usa um NUVIO_WGT_NOME novo ("NuvioTV-1.0.57-tizen"), entao nada
+# aqui sobrescreve nada: os .wgt so se EMPILHAM na raiz do repositorio. Em
+# 17/09 eram 49 deles, 1,1 GB, e o disco do Mac encheu — com o disco cheio o
+# harness nao conseguia nem abrir o arquivo de saida de um comando, ou seja,
+# nenhuma ferramenta rodava. O arm.sh ja fazia o equivalente para os .ipk
+# ("rm -f ./*.ipk"); aqui faltava.
+#
+# CONSERVADOR DE PROPOSITO, porque *.wgt esta no .gitignore e apagar aqui e
+# irreversivel — nao ha copia no git, so refazendo o build daquela tag:
+#   - so mexe em nome COM VERSAO (NuvioTV-<n>.<n>.<n>...), nunca nos batizados a
+#     mao como NuvioTV-native.wgt ou NuvioTV-teste-samsung.wgt;
+#   - guarda os NUVIO_WGT_MANTER mais recentes (5 por padrao; 0 desliga);
+#   - imprime cada arquivo que apaga, para aparecer no log da entrega.
+MANTER="${NUVIO_WGT_MANTER:-5}"
+if [ "$MANTER" -gt 0 ] 2>/dev/null; then
+  # -t ordena por mtime (mais novo primeiro); o tail corta a cauda velha. O
+  # `|| true` cobre o caso de nao haver nenhum, em que o ls falha.
+  VELHOS=$(ls -t NuvioTV-[0-9]*.[0-9]*.[0-9]*.wgt 2>/dev/null | tail -n +$((MANTER + 1)) || true)
+  for v in $VELHOS; do
+    rm -f "$v" && echo "tizen-wgt.sh: rotacao — apagado $v"
+  done
+fi
+
 if command -v tizen >/dev/null && [ -n "${TIZEN_PERFIL:-}" ]; then
   echo "tizen-wgt.sh: assinando tambem com o perfil '$TIZEN_PERFIL' (so serve nas SUAS TVs)"
   tizen package -t wgt -s "$TIZEN_PERFIL" -- "$ESTAGIO"
