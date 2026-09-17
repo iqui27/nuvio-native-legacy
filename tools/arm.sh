@@ -282,7 +282,16 @@ echo "==> carimbando titulo com a build"
 STAMP=$(md5 -q nuvio-proto.arm 2>/dev/null || md5sum nuvio-proto.arm | cut -d' ' -f1)
 STAMP=${STAMP:0:8}
 [ -n "$VARIANTE" ] && STAMP="$STAMP high cache"
-sed "s/(BUILD)/($STAMP)/" deploy/app/appinfo.json > /tmp/appinfo.stamped.json
+# CARIMBO POR ACRESCIMO, e nao por substituicao de "(BUILD)".
+#
+# O titulo do pacote publicado e so "Nuvio" — e o nome que a pessoa ve na TV, e
+# nele nao cabe nome de build. Mas a INSTALACAO DE DESENVOLVIMENTO precisa dizer
+# qual binario esta ali, entao o carimbo entra ao lado do nome so no caminho do
+# deploy por ssh: "Nuvio (08cd72a3)". O pacote de release nunca passa por aqui.
+#
+# A conferencia de verdade continua sendo /proc/<pid>/exe: o app manager cacheia
+# o appinfo ate reinstalar, e ja aconteceu de o titulo mostrar a build anterior.
+sed "s/\(\"title\": \"[^\"]*\)\"/\1 ($STAMP)\"/" deploy/app/appinfo.json > /tmp/appinfo.stamped.json
 cp /tmp/appinfo.stamped.json deploy/app/appinfo.json.stamped
 
 $SCP /tmp/appinfo.stamped.json "root@$TV_IP:$APPDIR/appinfo.json"
