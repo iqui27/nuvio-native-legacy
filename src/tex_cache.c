@@ -147,14 +147,21 @@ static int noCache(const char *caminho) {
 // Sem este numero nao da para dizer se a travada depois de muito uso e o cache
 // de disco crescendo ou outra coisa.
 static long cacheDiscoBytes = 0;
-// TETO DO CACHE DE DISCO, so no alvo Tizen. La o "disco" e MEMFS, ou seja RAM:
-// medido na TV, chegou a 280 MB so navegando, mais do que o heap inteiro do
-// app (256 MiB) e invisivel a todos os outros contadores. No LG o cache e disco
-// de verdade e nao precisa de teto nenhum.
+// TETO DO CACHE DE DISCO, so no alvo Tizen.
 //
-// 48 MB e o que cabe sem competir com o heap e ainda segura algumas telas de
-// arte ja baixada. NAO e numero medido: e o teto que falta ser calibrado com o
-// cache-disco= do relatorio, e por isso ele continua no log.
+// CORRECAO DE 17/09, e ela importa porque este comentario me levou a um erro:
+// a pasta do cache NAO e MEMFS. Medido na QN85Q70AAGXZD pelo inspector,
+// `FS.lookupPath('/nuvio/cache').node.mount` responde **IDBFS** — IndexedDB,
+// armazenamento de verdade, com cota propria, FORA do heap de 256 MiB. Os
+// "280 MB de RAM" que justificavam este teto eram de outra pasta, ou de antes
+// de /nuvio existir; a arte nunca competiu com o heap. O proprio texto antigo
+// admitia que 48 MB "NAO e numero medido".
+//
+// O teto continua existindo porque IndexedDB tambem tem cota, e estourar a dela
+// faz a gravacao FALHAR — o sintoma seria "card sem arte", que e pior que arte
+// que demora. Mas o numero segue sem medicao, e por isso o que foi consertado
+// aqui foi a POLITICA, que estava errada independente do numero: ver a nota em
+// podarCacheDisco.
 #ifdef __EMSCRIPTEN__
 #define NV_CACHE_DISCO_MAX (48L * 1024L * 1024L)
 #else
@@ -709,6 +716,67 @@ void tex_cache_dir(const char *dir) {
   fflush(stdout);
 }
 
+#ifdef __EMSCRIPTEN__
+// PODA O MAIS ANTIGO, e nao o recem-chegado.
+//
+// A versao anterior fazia o contrario: passado o teto, apagava o arquivo que
+// ACABOU de ser baixado ("o mais novo nao fica"). Essa e a pior politica
+// possivel — garante que justamente a arte que esta na tela agora nunca fique
+// em cache, e que ela seja baixada de novo na proxima vez que aparecer. O
+// conjunto "quente" que ela pretendia preservar e exatamente o que ela
+// descartava.
+//
+// O defeito so ficou VISIVEL em 17/09, quando cacheDiscoBytes passou a contar o
+// que ja estava no disco (antes nascia em 0 a cada arranque, o teto nunca era
+// atingido e o ramo nunca rodava). Consertar o contador ligou um caminho que
+// estava errado desde que foi escrito.
+//
+// Agora: ordena por data de modificacao e apaga do mais velho para o mais novo
+// ate voltar a caber, com uma folga de 25% para nao podar a cada arquivo novo.
+static void podarCacheDisco(void) {
+  struct { char nome[64]; long tam; time_t quando; } lista[512];
+  int n = 0, i, j;
+  long alvo = NV_CACHE_DISCO_MAX - NV_CACHE_DISCO_MAX / 4;
+  DIR *d = opendir(dirCache);
+  struct dirent *e;
+  if (!d) return;
+  while ((e = readdir(d)) != NULL && n < (int)(sizeof lista / sizeof *lista)) {
+    char caminho[768];
+    struct stat st;
+    if (e->d_name[0] == '.') continue;
+    snprintf(caminho, sizeof caminho, "%s/%s", dirCache, e->d_name);
+    if (stat(caminho, &st) != 0 || !S_ISREG(st.st_mode)) continue;
+    snprintf(lista[n].nome, sizeof lista[n].nome, "%s", e->d_name);
+    lista[n].tam = (long)st.st_size;
+    lista[n].quando = st.st_mtime;
+    n++;
+  }
+  closedir(d);
+  // Insercao: sao centenas de entradas e isto roda quando o teto estoura, nao
+  // por quadro. Um qsort aqui so acrescentaria um comparador para ler.
+  for (i = 1; i < n; i++) {
+    int k = i;
+    while (k > 0 && lista[k - 1].quando > lista[k].quando) {
+      char nm[64]; long tm; time_t qd;
+      snprintf(nm, sizeof nm, "%s", lista[k - 1].nome); tm = lista[k - 1].tam; qd = lista[k - 1].quando;
+      lista[k - 1] = lista[k];
+      snprintf(lista[k].nome, sizeof lista[k].nome, "%s", nm); lista[k].tam = tm; lista[k].quando = qd;
+      k--;
+    }
+  }
+  for (j = 0; j < n && cacheDiscoBytes > alvo; j++) {
+    char caminho[768];
+    snprintf(caminho, sizeof caminho, "%s/%s", dirCache, lista[j].nome);
+    if (remove(caminho) != 0) continue;
+    cacheDiscoBytes -= lista[j].tam;
+    if (cacheDiscoBytes < 0) cacheDiscoBytes = 0;
+  }
+  printf("[tex] cache de disco podado: %d arquivo(s) antigos, agora %.1f MB\n",
+         j, cacheDiscoBytes / 1048576.0);
+  fflush(stdout);
+}
+#endif
+
 // Nome de arquivo estavel a partir da URL. Hash simples (FNV-1a) e nao o nome
 // da URL porque elas trazem barra, query e caracteres que nao cabem em nome de
 // arquivo — e porque duas URLs diferentes precisam de arquivos diferentes.
@@ -1101,17 +1169,10 @@ static int threadDecode(void *arg) {
     // troca boa.
     //
     // O defeito real nunca foi guardar: era guardar SEM TETO. Agora guarda ate
-    // NV_CACHE_DISCO_MAX e, passando disso, o mais novo nao fica — o conjunto
-    // quente que ja esta em disco continua servindo.
-    if (conv && cacheDiscoBytes > NV_CACHE_DISCO_MAX && noCache(caminho)) {
-      long tam = 0;
-      { FILE *g = fopen(caminho, "rb");
-        if (g) { fseek(g, 0, SEEK_END); tam = ftell(g); fclose(g); } }
-      if (remove(caminho) == 0) {
-        cacheDiscoBytes -= tam;
-        if (cacheDiscoBytes < 0) cacheDiscoBytes = 0;
-      }
-    }
+    // NV_CACHE_DISCO_MAX e, passando disso, poda os MAIS ANTIGOS ate voltar a
+    // caber — o recem-baixado, que e o que esta na tela, e justamente o que
+    // fica. A politica anterior descartava ele; ver a nota em podarCacheDisco.
+    if (conv && cacheDiscoBytes > NV_CACHE_DISCO_MAX) podarCacheDisco();
 #endif
     // TETO DE LARGURA. Antes a arte vinha do pacote ja reduzida; agora vem da
     // rede no tamanho que o servidor tiver, e um backdrop de 1920 custa 8 MB
