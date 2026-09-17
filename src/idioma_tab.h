@@ -1073,6 +1073,7 @@
   { "Ver perfil completo", "View full profile" },
   { "Ver tudo", "See all" },
   { "Ver tudo em Agenda", "See everything in Schedule" },
+  { "Ver título", "View title" },
   { "Verde", "Green" },
   { "Vermelho", "Red" },
   { "Versão", "Version" },
