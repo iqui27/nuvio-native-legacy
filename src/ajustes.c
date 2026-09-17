@@ -2900,9 +2900,13 @@ static void desenhaFileiras(void) {
               "Voltar  Fechar",
               206, 209, 218, cx + 40.0f, y, AJ_FIL_W - 80.0f, 36, 1, 4);
     if (filFoco < n && filCampo == 2 && !fil_aceita_tipo(filLista[filFoco])) {
+      // LARGURA ATE A TIRA DE FORMAS, e nao a do cartao. A nota fica na mesma
+      // altura da ultima linha de instrucao ("Voltar Fechar", que e curta) e,
+      // com a largura cheia, as duas se sobrepunham — visivel na captura do
+      // album. 800 px param antes da tira e depois do texto da instrucao.
       l = txt_linha_corta(TXT_MINI, motivoFormaFixa(fil_chave(filLista[filFoco])),
-                          176, 179, 188, 255, AJ_FIL_W - 80.0f);
-      txt_desenhar(l, cx + 40.0f, cartao.y + AJ_FIL_H - 42.0f);
+                          176, 179, 188, 255, 800.0f);
+      txt_desenhar(l, cx + 40.0f, cartao.y + AJ_FIL_H - 24.0f);
     }
   }
 
