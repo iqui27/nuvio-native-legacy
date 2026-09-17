@@ -195,6 +195,19 @@ static void captura(const char *nome, SDL_Window *win) {
 //   4 — ja lida, em formato v1: o cache que a versao instalada na TV do dono
 //       gravou. Ela tem de aparecer inteira, sem nota e sem foto, e nao sumir
 //       nem sair com o titulo no lugar da nota.
+// TITULO DO ACERVO NA LINGUA DA CAPTURA. Nao e detalhe: o album do post e em
+// ingles, e um cartao dizendo "Um Sonho de Liberdade" no meio dele denuncia que
+// a foto veio de um teste em portugues. O titulo e CONTEUDO (vem do catalogo,
+// nao da tabela de traducao), entao trocar a lingua da interface nao o alcanca —
+// tem de ser a semente.
+static int shotIngles(void) {
+  const char *en = getenv("NUVIO_SHOT_EN");
+  return (en && *en && *en != '0');
+}
+static const char *tituloFixo(const char *pt, const char *en) {
+  return shotIngles() ? en : pt;
+}
+
 static void semear(const char *dir) {
   char caminho[700];
   long long agora = (long long)time(NULL);
@@ -205,13 +218,16 @@ static void semear(const char *dir) {
   fprintf(f, "# nuvio recomendacoes v2\n");
   fprintf(f, "7\t%lld\t0\t2\tmovie\t1994\ttrakt:gustavo\tGustavo\ttt0111161\t"
              "deploy/app/art/00.jpg\t\t93\tdeploy/app/art/elenco/00_0.jpg\t"
-             "Um Sonho de Liberdade\n", agora - 900);
+             "%s\n", agora - 900, tituloFixo("Um Sonho de Liberdade",
+                                                "The Shawshank Redemption"));
   fprintf(f, "6\t%lld\t0\t-1\tseries\t2008\tnuvio:9a1c\tMarina\ttt0903747\t"
-             "deploy/app/art/01.jpg\tisso e melhor que tudo\t95\t\t"
-             "Breaking Bad\n", agora - 9000);
+             "deploy/app/art/01.jpg\t%s\t95\t\t"
+             "Breaking Bad\n", agora - 9000,
+          tituloFixo("isso e melhor que tudo", "this beats everything"));
   fprintf(f, "5\t%lld\t1\t4\tmovie\t2014\ttrakt:gustavo\tGustavo\ttt2582802\t"
              "deploy/app/art/02.jpg\t\t85\tdeploy/app/art/elenco/00_0.jpg\t"
-             "Whiplash: Em Busca da Perfeição\n", agora - 200000);
+             "%s\n", agora - 200000,
+          tituloFixo("Whiplash: Em Busca da Perfeição", "Whiplash"));
   fprintf(f, "4\t%lld\t1\t0\tseries\t2016\tnuvio:3b2d\tCarolina Menezes\t"
              "tt4574334\tdeploy/app/art/03.jpg\t\tStranger Things\n",
           agora - 400000);
@@ -257,13 +273,20 @@ int main(int argc, char **argv) {
   // aba sai "SAVED" e a frase do modelo sai "Trust me". "selected_theme 2" e
   // o acento OCEANO: o anel da linha de abas tem de sair AZUL, provando que
   // ele veio de ajustes_acento e nao de um branco cravado.
+  // NUVIO_SHOT_EN=1 TROCA PARA O INGLES, como no agenda_shot: estas capturas
+  // servem a dois publicos — a conferencia do trabalho, feita em portugues, e o
+  // album do post, que e em ingles. Recompilar para trocar a lingua e o atrito
+  // que faz publicar a captura no idioma errado.
   { char caminho[700]; FILE *f;
+    const char *en = getenv("NUVIO_SHOT_EN");
+    int ingles = (en && *en && *en != '0');
     snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dados_dir());
     f = fopen(caminho, "w");
     assert(f);
-    fprintf(f, "idioma 0\nselected_theme 2\n");
+    fprintf(f, "idioma %d\nselected_theme 2\n", ingles);
     fclose(f);
-    ajustes_dir(dados_dir()); }
+    ajustes_dir(dados_dir());
+    printf("idioma: %s\n", ajustes_idioma_ingles() ? "en" : "pt"); }
 
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
@@ -439,10 +462,12 @@ int main(int argc, char **argv) {
   // leitura dependesse do deslize, esta captura sairia diferente das de cima —
   // e e justamente por isso que ela existe.
   { char caminho[700]; FILE *fa;
+    const char *en = getenv("NUVIO_SHOT_EN");
+    int ingles = (en && *en && *en != '0');
     snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dados_dir());
     fa = fopen(caminho, "w");
     assert(fa);
-    fprintf(fa, "idioma 0\nselected_theme 2\nanimacoes 1\n");
+    fprintf(fa, "idioma %d\nselected_theme 2\nanimacoes 1\n", ingles);
     fclose(fa);
     ajustes_dir(dados_dir()); }
   printf("animacoes reduzidas: %d\n", ajustes_animacoes_reduzidas());

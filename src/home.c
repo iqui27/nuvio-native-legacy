@@ -200,6 +200,13 @@ static float okHold = 0.0f;
 // nada disso — ele tem um item por vez e ocupa a tela. Um bit de estado ao lado
 // do foco descreve melhor o que a tela faz: existe um degrau ACIMA da fileira 0.
 static int focoHero = 1;
+// Quando a ultima tecla foi vista. O carrossel do destaque so anda depois de o
+// controle ficar QUIETO: com o destaque em foco ha um contador na tela ("3 / 10")
+// e uma arte que a pessoa escolheu — trocar por baixo dela a cada sete segundos
+// le como a TV desobedecendo, e cada troca custa uma textura de 1920 (~8 MB),
+// que na C9 (teto de 128 MB) despeja os cartazes visiveis.
+static Uint32 heroUltTecla;
+#define HOME_HERO_OCIO_MS 12000
 // Quantos titulos o destaque percorre com a seta. O carrossel automatico
 // atravessava o catalogo inteiro (281 titulos na conta do dono) — invisivel
 // enquanto ninguem contava, mentira assim que aparece um "3 / 281" na tela e a
@@ -1187,6 +1194,7 @@ void home_evento(const SDL_Event *e) {
   // navega assume a posicao; o disco passa a seguir esta sessao.
   if (k == SDLK_RIGHT || k == SDLK_LEFT || k == SDLK_DOWN || k == SDLK_UP)
     posDiscoPendente = 0;
+  heroUltTecla = SDL_GetTicks();
   // O DESTAQUE E UM DEGRAU ACIMA DA FILEIRA 0, e nao uma fileira do vetor: as
   // setas dele sao tratadas aqui e nao chegam ao focus_mover.
   if (focoHero) {
@@ -1584,10 +1592,19 @@ void home_atualizar(float dt, Uint32 agora) {
   // carrossel evita que um estado stale caia no wrap de cat_item().
   { int total = nAcervoHero();
     if (heroAtual < 0 || heroAtual >= total) heroAtual = 0;
-    // COMECAR DENTRO DO CONJUNTO. Com a fonte trocada (ou no primeiro quadro
-    // depois de o catalogo chegar), `heroAtual` pode ser um titulo que a lista
-    // nao contem — e ai o contador diria "1 / 8" com a arte de um nono titulo.
-    if (heroNLista() > 0 && heroPosDe(heroAtual) < 0) {
+    // COMECAR DENTRO DO CONJUNTO — E SO QUANDO O DESTAQUE ESTA NO COMANDO.
+    //
+    // `focoHero` e a condicao que faltava, e a falta dela foi um defeito de
+    // tela inteira: nas fileiras o heroi segue o CARD em foco, e o card quase
+    // nunca esta entre os dez do conjunto. Sem esta guarda, o quadro seguinte a
+    // cada movimento via `heroAtual` "fora da lista" e o devolvia para o
+    // primeiro item — a arte voltava para o mesmo titulo a cada passo, que e o
+    // "travado no Tenet e piscando mesmo movendo" que o dono relatou.
+    //
+    // Com o destaque em foco a regra continua valendo e continua necessaria:
+    // ali o contador "3 / 10" tem de corresponder a arte, e um `heroAtual`
+    // fora do conjunto nao tem posicao para mostrar.
+    if (focoHero && heroNLista() > 0 && heroPosDe(heroAtual) < 0) {
       int primeiro = heroIdxEm(0);
       if (primeiro >= 0) heroAtual = heroAnterior = heroPendente = primeiro;
     }
@@ -1647,7 +1664,8 @@ void home_atualizar(float dt, Uint32 agora) {
       // da arte nova estiver pronta — ver heroDesejado.
       if (heroDesejado != heroPendente) heroDesejadoEm = agora;
       heroDesejado = heroPendente;
-    } else if (alvo < 0 && agora >= heroTrocaEm) {
+    } else if (alvo < 0 && agora >= heroTrocaEm &&
+               (!focoHero || agora - heroUltTecla >= HOME_HERO_OCIO_MS)) {
       // Sem card em foco, agenda o proximo item e deixa o desenho efetivar a
       // troca somente quando a textura ou o placeholder ja estiver pronto.
       // A MESMA LISTA QUE A SETA PERCORRE. O carrossel andava pelo catalogo
