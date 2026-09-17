@@ -63,11 +63,10 @@
 //     o resultado certo: selo ausente e honesto, selo inventado mente para o
 //     dono justamente no ponto em que ele confia para saber se pegou a versao
 //     boa do arquivo.
-//   * recorte de FONTE (video_janela_fonte): o AVPlay tem setDisplayRect, que e
-//     so o retangulo de DESTINO, e setDisplayMethod, que escolhe entre encaixar
-//     e preencher. Nao ha o par sourceInput/displayOutput do tv.display da LG.
-//     Aqui o recorte de fonte e ignorado e vale o destino — o zoom que tira a
-//     barra preta embutida no quadro nao acontece nesta TV.
+//   * recorte de FONTE (video_janela_fonte): FEITO com setVideoRoi. Esta nota
+//     dizia o contrario ate 17/09, quando listar webapis.avplay na TV mostrou
+//     os 46 metodos que ela tem de verdade — setVideoRoi entre eles. O que
+//     faltava era ler o objeto em vez da documentacao.
 //   * legenda externa por URL: ver video_legenda_externa.
 //   * fim do buffer (video_buffer_fim): o AVPlay so informa PORCENTAGEM de
 //     buffering (onbufferingprogress), nunca um instante. Devolve 0, que
@@ -274,6 +273,29 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     return 1;
   }
 
+  // RECORTE DE FONTE DE VERDADE: setVideoRoi.
+  //
+  // Este arquivo afirmava em tres lugares que o AVPlay "nao recorta a FONTE" e
+  // que so havia setDisplayRect. Errado. Listando webapis.avplay na propria
+  // QN85Q70AAGXZD em 17/09 aparecem 46 metodos, e entre eles setVideoRoi — o
+  // equivalente Samsung do par sourceInput/displayOutput do tv.display da LG.
+  //
+  // A afirmacao nasceu de ler a documentacao, nao o objeto. O aparelho estava a
+  // um Object.keys de distancia o tempo todo.
+  //
+  // Devolve 1 so quando a chamada passou: quem chama precisa saber, porque a
+  // alternativa (aumentar o destino para fora da tela) nao funciona aqui.
+  if (op === "roi") {
+    var p8 = pl();
+    if (!p8 || !S.aberto) return 0;
+    try { p8.setVideoRoi(a, b, c, d); } catch (e) {
+      if (!S.avisouRoi) { S.avisouRoi = 1;
+        try { console.log("[video] setVideoRoi recusou: " + e); } catch (e2) {} }
+      return 0;
+    }
+    return 1;
+  }
+
   if (op === "rect") {
     S.rect = [a, b, c, d];
     var p5 = pl();
@@ -308,6 +330,32 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     return 1;
   }
 
+  // O QUE O DECODER ESTA REALMENTE RECEBENDO: getCurrentStreamInfo.
+  //
+  // Descoberto junto com setVideoRoi, listando webapis.avplay na TV. Este
+  // arquivo dizia que "o AVPlay nao publica hdrType" e que getTotalTrackInfo
+  // traz "codec e idioma, nada sobre HDR" — as duas afirmacoes saem da
+  // documentacao, nao do objeto.
+  //
+  // getCurrentStreamInfo descreve a faixa EM USO, que e a diferenca que importa
+  // para o selo: a afirmacao do addon mente (a LG ja provou isso com um arquivo
+  // anunciado como DV que chegava HDR10), e isto aqui e o que chegou.
+  //
+  // Devolve o JSON cru. Quem interpreta e o C, uma vez por titulo. Enquanto o
+  // formato exato nao estiver visto numa TV, isto serve de DIAGNOSTICO: a linha
+  // sai no log e o proximo passo e escrito com o dado na mao, nao com palpite.
+  if (op === "infofluxo") {
+    var p9 = pl();
+    if (!p9 || !S.pronto || !dst || dstTam < 8) return 0;
+    var info;
+    try { info = p9.getCurrentStreamInfo(); } catch (e) { return 0; }
+    if (!info) return 0;
+    var txt;
+    try { txt = JSON.stringify(info); } catch (e) { txt = "" + info; }
+    stringToUTF8(txt, dst, dstTam);
+    return 1;
+  }
+
   if (op === "faixas") {
     var p7 = pl();
     if (!p7 || !S.pronto || !dst || dstTam < 4) return 0;
@@ -323,10 +371,52 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
       var t = ("" + lista[i].type).toUpperCase();
       if (t !== "AUDIO" && t !== "TEXT") continue;
       var x = lista[i].extra_info;
-      if (typeof x === "string") { try { x = JSON.parse(x); } catch (e) { x = {}; } }
+      var cru = typeof x === "string" ? x : "";
+      if (typeof x === "string") { try { x = JSON.parse(x); } catch (e) { x = null; } }
+      // O EXTRA_INFO NEM SEMPRE E JSON. O dono reportou em 17/09 que na
+      // QN85Q70AAGXZD as faixas de audio saem como "Audio 1", "Audio 2" — ou
+      // seja, idioma E rotulo vazios. Se o firmware entrega uma string que nao
+      // e JSON, o catch de cima transformava tudo num objeto vazio e o conteudo
+      // era descartado sem deixar rastro.
+      //
+      // Duas saidas, nesta ordem: continua preferindo o objeto quando ele
+      // existe, e cai numa busca por texto na string crua quando nao existe. A
+      // busca cobre os nomes que o proprio firmware usa nas duas formas que ja
+      // se viu em campo (JSON e "chave=valor").
       if (!x) x = {};
-      var lang = x.language || x.lang || x.track_lang || "";
-      if (lang === "und" || lang === "(null)") lang = "";
+      var lang = x.language || x.lang || x.track_lang || x.Language || "";
+      // SEM REGEX AQUI, de proposito: o corpo de um EM_JS e ARGUMENTO DE MACRO
+      // do pre-processador C, e ele separa argumentos por virgula olhando so
+      // PARENTESES. Um quantificador como {2,3} tem virgula fora de parenteses
+      // e parte a macro ao meio — o erro sai como "unterminated function-like
+      // macro invocation" apontando para a linha do EM_JS, dezenas de linhas
+      // acima do culpado. Ja custou um build.
+      if (!lang && cru) {
+        var bx = cru.toLowerCase().indexOf("lang");
+        if (bx >= 0) {
+          var q = bx + 4, ac = "";
+          while (q < cru.length && ac.length < 3) {
+            var ch = cru.charAt(q);
+            if ((ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z")) ac += ch;
+            else if (ac.length) break;
+            q++;
+          }
+          // "uag" e o resto da palavra "language", nao o valor.
+          if (ac.length >= 2 && ac.toLowerCase() !== "uag") lang = ac;
+        }
+      }
+      if (lang === "und" || lang === "(null)" || lang === "null") lang = "";
+      // DIAGNOSTICO, uma vez por sessao e so quando nao houve idioma: sem o
+      // extra_info CRU nao da para saber se o firmware nao manda o idioma ou se
+      // manda com outro nome. Adivinhar nome de chave sem ver o dado foi o que
+      // deixou este defeito de pe.
+      if (!lang && !S.avisouFaixa) {
+        S.avisouFaixa = 1;
+        try {
+          console.log("[video] faixa sem idioma, extra_info cru = " +
+                      (cru || JSON.stringify(lista[i].extra_info)));
+        } catch (e) {}
+      }
       // Rotulo cru do firmware, quando houver. O nome legivel do idioma e
       // montado do lado C, que ja tem a tabela (linguas.c) — duplicar aqui
       // criaria uma segunda lista de idiomas para divergir da primeira.
@@ -546,6 +636,24 @@ int video_tocar(const char *url) {
   return 1;
 }
 
+// DESPEJA O getCurrentStreamInfo NO LOG, uma vez por titulo.
+//
+// Nao interpreta nada de proposito. O dono relatou em 17/09 que na Samsung o
+// HDR nao aparece e que as faixas de audio saem como "Audio 1"/"Audio 2"; as
+// duas coisas dependem de campos cujo NOME este lado nunca viu. Escrever o
+// parse agora seria adivinhar pela terceira vez no mesmo arquivo — as duas
+// primeiras (nao ha recorte de fonte; nao ha informacao de HDR) sairam da
+// documentacao e as duas estavam erradas.
+//
+// Com a linha no log, o proximo passo e escrito a partir do dado.
+static void lerInfoFluxo(void) {
+  char buf[2048];
+  if (avChamar("infofluxo", NULL, 0, 0, 0, 0, buf, (int)sizeof buf) < 1) return;
+  buf[sizeof buf - 1] = 0;
+  printf("[video] getCurrentStreamInfo = %s\n", buf);
+  fflush(stdout);
+}
+
 // Le do JS as faixas de audio e legenda e monta os rotulos. Chamada uma vez por
 // sessao, quando o prepare termina — antes disso getTotalTrackInfo devolve
 // vazio.
@@ -664,6 +772,7 @@ void video_bombear(void) {
   if (pronto && !estavaPronto) {
     marco("avplay prepared");
     lerFaixas();
+    lerInfoFluxo();
   }
   if (pronto && !faixasLidas) lerFaixas();
 
@@ -709,13 +818,25 @@ void video_buscar(double segundos) {
 // AVPlay e que lembra o que ja esta valendo — a lembranca importa porque quem
 // pede a janela antes de haver sessao (main.c faz isso) precisa que ela seja
 // reenviada no open.
-static void aplicarRect(int x, int y, int w, int h) {
-  if (w < 1 || h < 1) return;
-  if (x == janX && y == janY && w == janW && h == janH) return;
-  janX = x; janY = y; janW = w; janH = h;
-  if (!temAvplay || !ativo) return;
+static int aplicarRect(int x, int y, int w, int h) {
+  if (w < 1 || h < 1) return 0;
+  if (x == janX && y == janY && w == janW && h == janH) return 1;
+  if (!temAvplay || !ativo) { janX = x; janY = y; janW = w; janH = h; return 1; }
   printf("[video] plano %d,%d %dx%d\n", x, y, w, h); fflush(stdout);
-  avChamar("rect", NULL, x, y, w, h, NULL, 0);
+  // O RETORNO IMPORTA, e era jogado fora. A op "rect" do JS devolve 0 quando o
+  // setDisplayRect levanta excecao, e este lado ja tinha gravado janX/janY/
+  // janW/janH ANTES de chamar. Resultado: o plano continuava onde estava, o C
+  // passava a acreditar que estava no lugar novo, e a proxima chamada com o
+  // mesmo retangulo saia pelo `return` de igualdade sem tentar de novo. O
+  // fracasso era silencioso nos dois sentidos — nem log, nem nova tentativa.
+  if (avChamar("rect", NULL, x, y, w, h, NULL, 0) < 1) {
+    printf("[video] o setDisplayRect RECUSOU %d,%d %dx%d (a tela e 1920x1080)\n",
+           x, y, w, h);
+    fflush(stdout);
+    return 0;
+  }
+  janX = x; janY = y; janW = w; janH = h;
+  return 1;
 }
 
 void video_janela(int x, int y, int w, int h) {
@@ -730,7 +851,7 @@ void video_janela(int x, int y, int w, int h) {
   aplicarRect(x, y, w, h);
 }
 
-// SEM EQUIVALENTE: o AVPlay nao recorta a FONTE.
+// RECORTE DE FONTE: setVideoRoi (ver a op "roi" no JS).
 //
 // No webOS o zoom de verdade e o par sourceInput/displayOutput do tv.display
 // (via AcbAPI_setCustomDisplayWindow): pedir um pedaco MENOR do quadro
@@ -798,7 +919,43 @@ void video_janela_fonte(int sx, int sy, int sw, int sh,
   printf("[video] recorte %d,%d %dx%d de %.0fx%.0f -> plano %d,%d %dx%d\n",
          sx, sy, sw, sh, qw, qh, X, Y, W, H);
   fflush(stdout);
-  aplicarRect(X, Y, W, H);
+
+  // PRIMEIRO O CAMINHO CERTO: setVideoRoi recorta a FONTE, que e exatamente o
+  // que sx/sy/sw/sh descrevem. Com ele o destino continua sendo o retangulo
+  // GRAMPEADO, sempre valido, e nao ha aposta nenhuma sobre o que o plano faz
+  // com coordenadas fora da tela.
+  //
+  // A Samsung documenta o ROI junto do PLAYER_DISPLAY_MODE_FULL_SCREEN, que e
+  // o modo que este arquivo ja seleciona no open (ver a nota la em cima).
+  if (avChamar("roi", NULL, sx, sy, sw, sh, NULL, 0) >= 1) {
+    printf("[video] roi %d,%d %dx%d de %.0fx%.0f (recorte na fonte)\n",
+           sx, sy, sw, sh, qw, qh);
+    fflush(stdout);
+    video_janela(dx, dy, dw, dh);
+    return;
+  }
+
+  // SE O PLANO NAO ACEITAR, VOLTA PARA UM RETANGULO VALIDO.
+  //
+  // O recorte aqui e emulado: o AVPlay nao recorta a FONTE, entao a unica saida
+  // e aumentar o DESTINO para alem da tela e contar que o excedente seja
+  // descartado. Isso e uma APOSTA sobre o comportamento do plano, e no webOS a
+  // mesma aposta se provou errada (ver player.c: retangulo invalido nao vira
+  // recorte, o plano apaga). Este arquivo nunca rodou numa TV Samsung quando
+  // foi escrito.
+  //
+  // O dono reportou em 17/09 que o botao de recorte "nao funciona" nesta TV.
+  // Sem este ramo, um setDisplayRect recusado deixava o video parado no
+  // retangulo anterior para sempre — que e exatamente "o botao nao faz nada".
+  //
+  // Agora: tenta o recorte; se o plano recusar, cai no destino GRAMPEADO, que e
+  // sempre valido. O zoom nao acontece — o AVPlay nao tem como — mas a imagem
+  // continua na tela e o log diz qual dos dois aconteceu.
+  if (!aplicarRect(X, Y, W, H)) {
+    printf("[video] recorte nao suportado nesta TV: usando o destino inteiro\n");
+    fflush(stdout);
+    video_janela(dx, dy, dw, dh);
+  }
 }
 
 double video_pos(void)        { return posSeg; }
