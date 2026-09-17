@@ -1050,6 +1050,86 @@ static void desenharRailCategorias(float a) {
   }
 }
 
+
+// DE ONDE VEM CANAL: as duas portas, desenhadas em codigo.
+//
+// EM CODIGO E NAO NUM PNG, e a razao e uma so: rotulo dentro de imagem nao
+// passa por i18n. A primeira versao disto era um diagrama inteiro rasterizado,
+// e para nao mentir em ingles ele tinha de ser MUDO — dois pictogramas e uma
+// seta, sem dizer o que era nenhum dos dois. Desenhado aqui, cada cartao tem
+// titulo e explicacao na lingua da pessoa, ganha a cor de realce do tema e
+// continua nitido em qualquer resolucao de interface.
+//
+// Os icones seguem sendo arquivo (addon.png, portal.png, menu_guide.png): a
+// forma mora no alpha e a cor vem daqui, que e o contrato de gfx_icone.
+static void desenharDuasPortas(float x, float y, float a) {
+  const float CW = 470.0f, CH = 152.0f, GAP = 24.0f;
+  const float AR = 104.0f;                /* faixa da seta entre as colunas */
+  float ac_r, ac_g, ac_b;
+  float x2 = x + CW + AR;
+  int i;
+  ajustes_acento(&ac_r, &ac_g, &ac_b);
+
+  for (i = 0; i < 2; i++) {
+    float cy = y + (float)i * (CH + GAP);
+    GfxRect c = { x, cy, CW, CH };
+    const char *ic  = i ? "portal" : "addon";
+    const char *tit = i ? i18n("Portal IPTV") : i18n("Addon de canais");
+    const char *sub = i ? i18n("Cadastrado em Ajustes › Conta")
+                        : i18n("Instalado na sua conta");
+    /* DUAS COR FIXAS NAS ORIGENS, e a de realce so no destino.
+       O acento e BRANCO por padrao (ver NV_COR_FOCO em layout.h), entao pintar
+       tudo com ele nao daria cor nenhuma na configuracao que a maioria usa. Um
+       azul e um ambar separam as duas portas de relance, sobrevivem em todos os
+       temas (nenhum deles é azul ou ambar) e tem contraste de sobra sobre
+       #141414. */
+    float ir = i ? 1.00f : 0.51f, ig = i ? 0.78f : 0.71f, ib = i ? 0.44f : 1.00f;
+    gfx_cor(c, 0.12f, 1.0f, 1.0f, 1.0f, 0.05f * a);
+    /* Disco atras do icone na mesma cor, bem apagado: e o que faz o icone
+       parecer pousado no cartao em vez de solto sobre ele. */
+    { GfxRect disco = { c.x + 30.0f, c.y + (CH - 72.0f) * 0.5f, 72.0f, 72.0f };
+      gfx_cor(disco, 0.5f, ir, ig, ib, 0.14f * a); }
+    { GfxRect gi = { c.x + 46.0f, c.y + (CH - 40.0f) * 0.5f, 40.0f, 40.0f };
+      gfx_icone(gi, ic, ir, ig, ib, a); }
+    /* TXT_HEADLINE e nao TXT_TITULO2: "Channel addon" estourava os 340 px
+       uteis no titulo maior e saia "Channel…". As duas linhas ficam a 56 px
+       uma da outra — TITULO2 a 52 encostava a descida do "g" na linha de
+       baixo. */
+    { TxtLinha t = txt_linha_corta(TXT_HEADLINE, tit, 240, 242, 248, 255,
+                                   CW - 136.0f);
+      txt_desenhar_alpha(t, c.x + 122.0f, c.y + 38.0f, a); }
+    { TxtLinha t = txt_linha_corta(TXT_CAPTION, sub, 150, 153, 162, 255,
+                                   CW - 136.0f);
+      txt_desenhar_alpha(t, c.x + 122.0f, c.y + 94.0f, a * 0.95f); }
+
+    /* A SETA E UM ARQUIVO INTEIRO (fluxo.png), haste e ponta juntas. Montar a
+       ponta com retangulos em diagonal leu como um "x" — gfx_cor nao gira, e
+       diagonal ali vira escada; e emendar haste de gfx_cor com ponta de icone
+       deixava degrau na junta. */
+    { float sy = cy + CH * 0.5f;
+      GfxRect f = { x + CW + 16.0f, sy - 12.0f, AR - 32.0f, 24.0f };
+      gfx_icone(f, "fluxo", 1.0f, 1.0f, 1.0f, 0.42f * a); }
+  }
+
+  /* O DESTINO, alto o bastante para abracar as duas origens: e a figura que
+     diz "as duas enchem a MESMA tela", que e a informacao toda. */
+  { float dh = CH * 2.0f + GAP;
+    GfxRect d = { x2, y, CW - 90.0f, dh };
+    gfx_cor(d, 0.09f, 1.0f, 1.0f, 1.0f, 0.08f * a);
+    { GfxRect disco = { d.x + (d.w - 104.0f) * 0.5f, y + dh * 0.5f - 112.0f,
+                        104.0f, 104.0f };
+      gfx_cor(disco, 0.5f, ac_r, ac_g, ac_b, 0.12f * a); }
+    { GfxRect gi = { d.x + (d.w - 56.0f) * 0.5f, y + dh * 0.5f - 88.0f,
+                     56.0f, 56.0f };
+      gfx_icone(gi, "menu_guide", ac_r, ac_g, ac_b, a); }
+    { TxtLinha t = txt_linha(TXT_HEADLINE, i18n("Guia de TV"), 240, 242, 248, 255);
+      txt_desenhar_alpha(t, d.x + (d.w - t.w) * 0.5f, y + dh * 0.5f + 6.0f, a); }
+    { TxtLinha t = txt_linha_corta(TXT_CAPTION,
+          i18n("As duas enchem a mesma grade"), 150, 153, 162, 255, d.w - 36.0f);
+      txt_desenhar_alpha(t, d.x + (d.w - t.w) * 0.5f, y + dh * 0.5f + 56.0f,
+                         a * 0.95f); } }
+}
+
 void guia_desenhar(Uint32 agora) {
   time_t agoraT = time(NULL);
   float a = entrada;
@@ -1115,6 +1195,7 @@ void guia_desenhar(Uint32 agora) {
         } }
     }
     gfx_sem_recorte();
+
   } else if (estado == G_FALHOU || (fontesOk && !nFontes && estado != G_BAIXANDO)) {
     // DUAS FRASES, e a diferenca entre elas e a diferenca entre acusar a
     // pessoa e contar o que houve. `falhas` diz que alguem foi tentado e nao
@@ -1127,9 +1208,24 @@ void guia_desenhar(Uint32 agora) {
     const char *msg = falhas
       ? i18n("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.")
       : i18n("O guia se enche por dois caminhos: um addon de canais (como o FrostView TV) instalado na conta, ou um portal IPTV cadastrado em Ajustes › Conta.");
+    float msgY = 300.0f;
+    // O DESENHO SO NO CASO DE "FALTA FONTE", e nao no de "nao responderam".
+    //
+    // Ele explica de ONDE vem canal — resposta util para quem nao tem nenhuma
+    // das duas portas, e resposta nenhuma para quem tem um addon que esta fora
+    // do ar neste minuto. Ali a frase ja diz tudo, e um diagrama por cima dela
+    // seria decoracao a atrapalhar a leitura.
+    if (!falhas) {
+      // ALINHADO A MARGEM, e nao centralizado: neste estado o painel da direita
+      // NAO e desenhado, entao o "centro da area de conteudo" nao e o centro de
+      // nada que a pessoa veja, e o desenho nascia deslocado em relacao ao
+      // titulo e a frase. Na margem, a tela le como uma coluna.
+      desenharDuasPortas(G_AREA_X, 196.0f, a);
+      msgY = 560.0f;
+    }
     TxtLinha t = txt_linha_corta(TXT_BODY, msg, 200, 202, 210, 255,
                                  NV_TELA_W - 2 * NV_MARGEM_X);
-    txt_desenhar_alpha(t, G_AREA_X, 300.0f, a);
+    txt_desenhar_alpha(t, G_AREA_X, msgY, a);
   }
 
   desenharPainel(a, agoraT);

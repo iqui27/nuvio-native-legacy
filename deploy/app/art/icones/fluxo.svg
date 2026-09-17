@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SETA DE FLUXO ("vem daqui, vai para ali"). Lucide "move-right" (lucide.dev,
+  licenca ISC). Nao da para reusar avancar.png: aquele e o "pular para o fim" do
+  player e desenha uma barra no fim da seta, que num diagrama le como parede.
+
+  Haste inteira no proprio arquivo, e nao haste em gfx_cor mais ponta em icone:
+  emendar os dois deixava um degrau visivel onde o retangulo encontra o traco
+  arredondado do SVG.
+
+  BRANCO SOBRE NADA: a forma mora no alpha, a cor vem de gfx_icone.
+-->
+<svg width="192" height="64" viewBox="0 0 24 8" fill="none"
+     xmlns="http://www.w3.org/2000/svg" stroke="#ffffff" stroke-width="1.6"
+     stroke-linecap="round" stroke-linejoin="round">
+  <path d="M19 1.4 L22.2 4 L19 6.6" />
+  <path d="M1.6 4 H22" />
+</svg>
