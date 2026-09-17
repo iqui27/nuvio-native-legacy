@@ -1126,6 +1126,7 @@
   { "atividade recente", "recent activity" },
   { "ausente", "missing" },
   { "autorizacao negada no Trakt", "authorization denied by Trakt" },
+  { "avaliou", "rated" },
   { "conectado", "connected" },
   { "conectar", "connect" },
   { "conferindo o manifesto…", "checking the manifest…" },

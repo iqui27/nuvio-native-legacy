@@ -1,4 +1,5 @@
 #include "streams.h"
+#include "idioma.h"
 #include "badges.h"
 #include <pthread.h>
 #include "rede.h"
@@ -52,7 +53,13 @@ static const char *containerDa(const Stream *s) {
   if (s->mp4 || strstr(s->url, ".mp4") || strstr(s->rotulo, ".mp4")) return "MP4";
   if (strstr(s->url, ".mkv") || strstr(s->arquivo, ".mkv") || strstr(s->descricao, ".mkv")) return "MKV";
   if (strstr(s->url, ".m3u8") || strstr(s->rotulo, "HLS")) return "HLS";
-  return "ARQUIVO";
+  // A CHAVE PASSA POR i18n AQUI, e nao no chamador. As outras tres devolucoes
+  // sao siglas iguais nas duas linguas (MP4, MKV, HLS) e nao tem o que
+  // traduzir; so esta e palavra. Ficava crua porque o chamador monta a linha
+  // com snprintf e a varredura de i18n nao cobre valor de retorno de funcao —
+  // apareceu na foto do album em ingles, com "ARQUIVO" no meio de "Sources",
+  // "Reload" e "Automatic pick".
+  return i18n("ARQUIVO");
 }
 
 static Uint32 recebidaEm;

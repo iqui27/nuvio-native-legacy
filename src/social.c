@@ -58,16 +58,26 @@ static void horarioLocal(const char *iso, char *dst, size_t tam) {
   if (stamp==(time_t)-1 || !localtime_r(&stamp,&local)) { dst[0]=0; return; }
   strftime(dst,tam,"%d/%m/%Y · %H:%M",&local);
 }
+// O VERBO DA ATIVIDADE PASSA POR i18n AQUI, e nao em quem desenha.
+//
+// O resultado e copiado para `a->acao` com snprintf e so muito depois vira
+// texto na tela — a varredura de i18n nao cobre valor de retorno de funcao, e
+// por isso estas cinco frases atravessaram a tabela sem ninguem notar. Apareceu
+// na foto: "Kevin · assistiu" no meio de uma home inteira em ingles.
+//
+// A traducao acontece na LEITURA e nao no desenho porque o feed e montado num
+// fio de rede e a linha ja e guardada pronta; traduzir no desenho obrigaria a
+// guardar a chave e a traduzir a cada quadro.
 static const char *rotuloAcao(const char *acao, const char *timestamp) {
   if (!strcmp(acao,"watching")) {
     time_t stamp=isoParaTime(timestamp);
-    if (stamp!=(time_t)-1 && difftime(time(NULL),stamp)<=10.0*60.0) return "assistindo agora";
-    return "assistiu";
+    if (stamp!=(time_t)-1 && difftime(time(NULL),stamp)<=10.0*60.0) return i18n("assistindo agora");
+    return i18n("assistiu");
   }
-  if (!strcmp(acao,"watch")||!strcmp(acao,"watched")||!strcmp(acao,"scrobble")) return "assistiu";
-  if (!strcmp(acao,"rating")||!strcmp(acao,"rated")) return "avaliou";
-  if (!strcmp(acao,"checkin")||!strcmp(acao,"check-in")) return "fez check-in";
-  return "atividade recente";
+  if (!strcmp(acao,"watch")||!strcmp(acao,"watched")||!strcmp(acao,"scrobble")) return i18n("assistiu");
+  if (!strcmp(acao,"rating")||!strcmp(acao,"rated")) return i18n("avaliou");
+  if (!strcmp(acao,"checkin")||!strcmp(acao,"check-in")) return i18n("fez check-in");
+  return i18n("atividade recente");
 }
 static int extrairAtividades(const char *corpo, SocialDados *d, const char *acaoPadrao) {
   const char *p=strchr(corpo?corpo:"",'['); int n=0; p=p?p+1:NULL;
