@@ -31,6 +31,22 @@ de 14 marcada com ★ é a que eu usaria.
    Ou você publica a v1.1.0 antes de postar, ou apaga a seção. Anunciar o que
    ninguém consegue instalar é o jeito mais rápido de queimar um post nesses
    subreddits.
+1c. **O bloco novo "What landed after that" é o mais arriscado do post, e por
+   dois motivos diferentes.** O primeiro é o mesmo do 1b, dobrado: nada daquilo
+   está em release nenhuma. O segundo é só do portal IPTV — **eu nunca o testei
+   contra um servidor de verdade**, não tenho um. O texto diz isso com todas as
+   letras, e essa frase não é humildade, é o que separa "anunciei uma
+   funcionalidade" de "anunciei uma funcionalidade que não funciona". Se você
+   conseguir testar com um portal antes de postar, troca o parágrafo. Se não,
+   ou deixa a frase como está ou tira o item.
+1d. **Sobre anunciar o portal IPTV em público, que é decisão sua e não minha.**
+   Eu te disse antes de implementar que não faria: portal Stalker com MAC
+   forjado é, na prática esmagadora, revenda de assinatura pirata, e o post
+   passa a descrever o app também como cliente de IPTV — é assim que ele vai
+   ser lido em r/webos e r/LGOLED, e é assim que a LG leria. Você decidiu
+   fazer, está feito e está no post. Mas a decisão de **anunciar** é separada
+   da de construir, e essa ainda está aberta. Tirar o item do post não desfaz
+   nada do código.
 2. **Links fora do corpo**, no primeiro comentário — mesma razão do post
    anterior (filtro do Reddit). Lista no fim.
 2b. **Imagem embaixo de cada trecho**: dá, mas só no editor novo do Reddit
@@ -49,14 +65,14 @@ de 14 marcada com ★ é a que eu usaria.
 
 - Native C port of a webOS streaming app, twelve days later: 2016 sets through the 2024 ones, Samsung Tizen, and a build that sizes its own memory to the TV it lands on
 - Update on the native (C/SDL2) webOS streaming app: a 2016 set is running it, there is a Samsung build, and it remembers which source you picked
-- What 263 commits and 58 issues taught me about writing a TV app in C
+- What 280 commits and 58 issues taught me about writing a TV app in C
 
 ---
 
 ## Corpo
 
 Twelve days ago I posted a native C/SDL2 port of a webOS streaming app, tested
-on one rooted 2019 C9. Since then: 263 commits, 56 releases, 58 issues opened
+on one rooted 2019 C9. Since then: 280 commits, 56 releases, 58 issues opened
 by people here and 55 of them closed. This is what changed, with screenshots,
 and what I learned along the way. Links in the first comment.
 
@@ -245,6 +261,46 @@ whole section if you post before it ships.)*
 [IMAGEM: 27-social-consent.png]
 [IMAGEM: 27b-social-suggestions.png]
 
+**What landed after that — NOT published either, and one piece is untested**
+
+*(Same warning as above, doubled: none of this is in a release, and the last
+item has never talked to a real server. Delete anything here you are not ready
+to stand behind.)*
+
+- **You can choose the source now.** A tester made the argument better than I
+  would have: two sources for the same title differ in resolution, video codec
+  and audio track, and that choice belongs to whoever is watching. Resume
+  already opened the source sheet; Play never did. It is now a setting, off by
+  default, because being asked on *every* playback is its own kind of tiring.
+  Live channels stay out of it — a sheet between one zap and the next is the
+  opposite of what live TV wants.
+
+[IMAGEM: falta captura — Ajustes › Reprodução com a opção nova]
+- **Switching profiles actually switches Continue Watching.** It did not. The
+  row is rebuilt by one function called from exactly two places, one of them
+  guarded by "did the sync bring anything new?". Returning to an already-synced
+  profile brings no news, so the guard was never true and the previous
+  profile's titles stayed on screen. Reported by a tester who thought he was
+  describing a sync bug; it was a refresh that never fired.
+- **A live channel that freezes now gets replaced.** The watchdog only ever
+  noticed a source that failed to *open* — its deadline stops counting the
+  moment playback starts. A source that opens and then stops delivering raises
+  neither an error nor a pause, so the picture froze and nothing noticed. The
+  signal was already arriving and being written to a log line nobody reads: the
+  player pipeline reports buffering start and end. Twelve seconds of that on a
+  live channel and it moves on.
+- **IPTV portals (Stalker/Ministra), and a plain warning about it.** Several
+  people asked. It speaks the set-top-box protocol directly — MAC handshake,
+  session token, channel list paged by genre — and the channels land in the
+  same TV guide as everything else, with the same EPG matching and the same
+  CH+/- zapping. Two details decided the design: the playback link a portal
+  hands out is good for minutes, so it is never stored anywhere and every
+  playback asks for a new one; and the MAC is a credential, so it lives in a
+  per-profile file, is masked on screen, never reaches a log, and is erased
+  when you sign out. **I have not tested it against a real portal — I do not
+  have one.** It compiles and the protocol is implemented end to end, and that
+  is all I can honestly claim until someone runs it.
+
 *One thing I tried and threw away:* linking a famous line to its timestamp so
 you could jump straight to that moment. The pieces exist — the app already
 parses subtitles into cue/timecode pairs — so I measured it: matching
@@ -393,6 +449,21 @@ também passou para inglês. Não é interface: é DADO, e numa lista pública d
 Trakt o nome vem de quem a criou. Com a interface em inglês e o conteúdo em
 português a captura parece defeito para quem lê o álbum.
 
+**FALTAM AS CAPTURAS DO BLOCO NOVO.** Nenhuma das quatro coisas do
+"What landed after that" tem imagem, e duas delas são visuais:
+
+- **Ajustes › Reprodução com "Escolher a fonte ao reproduzir"** — a linha nova
+  na lista, com o painel de ajuda à direita.
+- **Ajustes › Conta com o portal IPTV** — as três linhas, com o portal e o MAC
+  já mascarados. **Confira a máscara na própria captura antes de postar**: a
+  tela mostra só os dois últimos octetos, mas se a captura sair de uma TV com
+  um portal real configurado, é o endereço dele que aparece ali.
+- O guia com canais de portal misturados aos dos addons, se você chegar a
+  configurar um.
+
+As outras duas (troca de perfil e o travamento do canal) não rendem captura —
+são defeitos que sumiram, e a única imagem possível seria a do defeito.
+
 **Falta uma imagem antiga: `20-update.png`, o cartão de atualização.** Ele só abre
 quando há release mais nova que a instalada, e no Mac eu não consegui fazer o
 cartão abrir mesmo com a checagem dando `instalada 1.0.50, no GitHub 1.0.56 --
@@ -407,7 +478,7 @@ build do Mac).
 
 ## Números usados no texto, e de onde vieram
 
-- 263 commits / 56 releases: `git log v1.0.2..HEAD`, `gh release list` (v1.0.2 → v1.0.56), conferido 17/09
+- 280 commits / 56 releases: `git log v1.0.2..HEAD` (280 em 17/09, fim do dia), `gh release list` (v1.0.2 → v1.0.56)
 - 58 issues, 55 fechadas, 3 abertas: `gh issue list --state open|closed|all` em 17/09
 - 363 KB / 48 KB por arte (cap de 320 px contra 128 px) e 8,3 MB / 3,7 MB (backdrop 1920 contra 1280): medidos por `tex_estatisticas` e pelas contas em src/tex_cache.c
 - Degraus 48/128/192 MB: orcamentoMB() em src/tex_cache.c, com o comentario dizendo qual foi medido e qual foi escolhido
@@ -420,3 +491,5 @@ build do Mac).
 - 48/128/192 MB: orcamentoMB() em src/tex_cache.c; 624 MB é o relato de RAM de uma webOS 3 no README
 - 35 MB: `space.nuvio.native.legacy_1.0.56_arm.ipk` gerado hoje
 - webOS 3: `webosbrew-ipk-verify -S -d -r ">=3,<4"` All OK, exit 0, no 1.0.56 da branch webos3 hoje
+- Escolha manual de fonte, troca de perfil e travamento de canal: commits 9d06940, 1adc7fa e 6dc4ece na master, 17/09 — compilam no Mac e no ARM, NAO estao em release
+- Portal IPTV (Stalker): commit fbf8027, 17/09. Protocolo implementado do handshake ao create_link; compila nos dois alvos; a suite de testes do repo passa. NUNCA foi exercitado contra um portal real — nao ha um aqui. Isso esta escrito no corpo do post, e tem de continuar escrito.
