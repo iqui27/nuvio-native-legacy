@@ -53,6 +53,7 @@
 #include "ajustes.h"
 #include "player.h"
 #include "streams.h"
+#include "stalker.h"
 #include "fontepref.h"
 #include "video.h"
 #include "addons.h"
@@ -84,6 +85,11 @@ static _Atomic int fonteEscolhida = -2;   // release/acquire entre verificacao e
 // Sem isto, sair da folha com Voltar deixaria a tela em "carregando" para
 // sempre — o pedido de fonte ja tinha sido consumido e ninguem mais viria.
 static int    folhaParaTocar;
+// Quantas renovacoes de link seguidas um canal de portal ganha antes de virar
+// erro. Tres: um link que expirou renova na primeira; um portal fora do ar
+// falha nas tres e para de tentar em ~36 s em vez de nunca.
+#define CANAL_STALKER_TENTATIVAS 3
+static int    stalkerTentativas;
 static int    canalFonteIdx = -1;         // indice na lista de streams, -1 = fora
 static Uint32 canalFonteDesde;            // quando a fonte atual foi pedida
 #define CANAL_FONTE_PRAZO_MS 12000
@@ -283,6 +289,29 @@ static void episodioDoDetalhe(void) {
   player_definir_episodio(t,e);
 }
 
+// Canal de portal Stalker: a fonte NAO vem de addon, e o link e de uso unico.
+//
+// Cada reproducao pede um `create_link` novo. Guardar a URL seria o unico erro
+// que este caminho nao perdoa: ela vale minutos, e o que sobrevive a pausa, ao
+// zap e a reabertura do app e o `cmd`, que mora em stalker.c.
+//
+// Bloqueia ~200-600 ms na TV, no fio de desenho. E o mesmo custo que o ramo de
+// addon ao lado ja paga: stream_canal_primeira_viva cria fios e os JOINTA
+// aqui, gastando ate meio segundo por fonte morta. Uma requisicao e menos que
+// isso, e o canal nao abre sem ela de qualquer jeito.
+static int resolverCanalStalker(void) {
+  Stream s;
+  char url[4096];
+  if (!stalker_resolver(player_id_canal(), url, sizeof url)) return -1;
+  memset(&s, 0, sizeof s);
+  snprintf(s.url, sizeof s.url, "%s", url);
+  snprintf(s.rotulo, sizeof s.rotulo, "%s", "Portal IPTV");
+  snprintf(s.provedor, sizeof s.provedor, "%s", "stalker");
+  s.fileIdx = -1;
+  stream_definir_lista(&s, 1);
+  return 0;
+}
+
 // TOCAR UM CANAL, direto — o "OK assiste" do guia e o zap do CH+/-.
 //
 // O guia entrega um CatItem pronto (id completo do addon, tipo "channel"):
@@ -304,7 +333,10 @@ static void tocarCanal(const CatItem *it) {
   // atravessou os dois, ni ja nao e o canal. A marca garante a sessao.
   player_marcar_canal(it);
   canalFonteIdx = -1;             // canal novo: watchdog arma de novo no fim da busca
-  addons_buscar(it->imdb, "channel");
+  stalkerTentativas = 0;          // canal novo: o teto de renovacao recomeca
+  // Canal de portal nao esta em addon nenhum: perguntar seria esperar o prazo
+  // de todos eles para receber lista vazia, com a pessoa olhando "carregando".
+  if (!stalker_e_id(it->imdb)) addons_buscar(it->imdb, "channel");
   aguardandoFonte = 1;
   marco("guia: buscando fontes do canal");
 }
@@ -1021,15 +1053,24 @@ void app_atualizar(float dt, Uint32 agora) {
       // Nenhuma viva NAO e motivo para desistir: pode ter sido lentidao de
       // rede, e a primeira da lista com o watchdog de sempre e melhor que uma
       // tela de erro. Por isso o fallback.
-      fonteEscolhida = stream_canal_primeira_viva(8);
-      // 3 = muda (ver streams.h): entrou por falta de opcao, entao o watchdog
-      // dela e curto.
-      canalFontePrazo = stream_canal_classe_escolhida() == 3
-                      ? CANAL_FONTE_PRAZO_MUDA_MS : CANAL_FONTE_PRAZO_MS;
-      // -1 so acontece quando TODAS responderam dizendo que nao tem segmento.
-      // Ai nao ha o que tentar, mas a primeira da lista com o watchdog ainda e
-      // melhor que uma tela de erro sem nenhuma tentativa.
-      if (fonteEscolhida < 0) fonteEscolhida = stream_automatico();
+      if (stalker_e_id(player_id_canal())) {
+        // UMA fonte, e ela acabou de nascer: nao ha lista para conferir nem
+        // ranking para aplicar. Sem `return` de proposito — quem liga o video e
+        // o bloco de `aguardandoFonte == 2` logo abaixo, o mesmo dos outros
+        // caminhos, e sair daqui cedo pularia o resto do quadro.
+        fonteEscolhida = resolverCanalStalker();
+        canalFontePrazo = CANAL_FONTE_PRAZO_MS;
+      } else {
+        fonteEscolhida = stream_canal_primeira_viva(8);
+        // 3 = muda (ver streams.h): entrou por falta de opcao, entao o watchdog
+        // dela e curto.
+        canalFontePrazo = stream_canal_classe_escolhida() == 3
+                        ? CANAL_FONTE_PRAZO_MUDA_MS : CANAL_FONTE_PRAZO_MS;
+        // -1 so acontece quando TODAS responderam dizendo que nao tem segmento.
+        // Ai nao ha o que tentar, mas a primeira da lista com o watchdog ainda e
+        // melhor que uma tela de erro sem nenhuma tentativa.
+        if (fonteEscolhida < 0) fonteEscolhida = stream_automatico();
+      }
       canalFonteDesde = SDL_GetTicks();
     } else {
       // A FONTE LEMBRADA DESTE TITULO ENTRA NA FRENTE DA FILA (issues #56/#57).
@@ -1114,7 +1155,33 @@ void app_atualizar(float dt, Uint32 agora) {
         video_bufferando_ms() > CANAL_TRAVA_MS;
     if (morta) {
       int prox = canalFonteIdx + 1;
-      const Stream *s = prox < stream_n() ? stream_item(prox) : NULL;
+      const Stream *s;
+      // PORTAL STALKER: nao existe "proxima fonte" — cada canal tem uma so, e
+      // o que morre nao e o canal, e o LINK, que vale minutos. Avancar o indice
+      // aqui cairia direto no ramo de desistir, entao o conserto e pedir um
+      // link novo para o MESMO canal.
+      //
+      // Com teto: `stalkerTentativas` impede que um portal fora do ar vire um
+      // laco de create_link a cada 12 s para sempre. O teto zera quando o canal
+      // troca (canalFonteIdx = -1 em tocarCanal).
+      if (stalker_e_id(player_id_canal())) {
+        if (stalkerTentativas < CANAL_STALKER_TENTATIVAS &&
+            resolverCanalStalker() == 0) {
+          stalkerTentativas++;
+          printf("[stalker] link do canal expirou; renovando (%d/%d)\n",
+                 stalkerTentativas, CANAL_STALKER_TENTATIVAS);
+          marco("canal: link renovado");
+          canalFonteIdx = 0;
+          canalFonteDesde = SDL_GetTicks();
+          player_definir_fonte(stream_item(0)->url);
+        } else {
+          canalFonteIdx = -1;
+          if (player_mini_ativo()) player_fechar_mini();
+          else player_erro_fonte();
+        }
+        return;
+      }
+      s = prox < stream_n() ? stream_item(prox) : NULL;
       if (s) {
         printf("[guia] fonte %d nao abriu; tentando %d\n", canalFonteIdx, prox);
         marco("canal: fonte morta, proxima");

@@ -6,6 +6,7 @@
 #include "dados.h"
 #include "addons.h"
 #include "debrid.h"
+#include "stalker.h"
 #include "colecoes.h"
 #include "contalib.h"
 #include "salvos.h"
@@ -756,6 +757,10 @@ void sync_esquecer_usuario(void) {
   free(colBlob);    colBlob = NULL;    temColBlob = 0;
   addons_esquecer();
   debrid_esquecer();
+  // O portal IPTV vai junto, e tem de ir: o MAC autentica a assinatura de
+  // QUEM SAIU. Deixar o arquivo no aparelho entregaria o acesso pago dessa
+  // pessoa para a proxima que logasse nesta TV.
+  stalker_esquecer();
   trakt_esquecer();
   perfis_esquecer();
   prog_esquecer_tudo();

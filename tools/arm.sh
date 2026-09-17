@@ -130,7 +130,16 @@ rm -f ./*.ipk
 # ajustes.txt sai pelo mesmo motivo, com dano menor: e a preferencia de LAYOUT
 # de quem montou, e ela chegaria como se fosse a de quem instalou.
 ARQ_DE_PESSOA="trakt.txt addons.txt tmdb.txt mdblist.txt ajustes.txt
-               progresso.txt nuvem.txt sessao.txt perfil.txt cliente.txt"
+               progresso.txt nuvem.txt sessao.txt perfil.txt cliente.txt
+               listas.txt guia-fav.txt"
+
+# UM POR PERFIL, entao o nome nao e fixo: stalker-p1.txt, stalker-p2.txt...
+# Estes guardam o MAC do portal IPTV, que autentica a assinatura de quem
+# configurou — credencial, do mesmo grau do trakt.txt. A lista acima e por NOME
+# e por isso nao os alcanca; um glob proprio alcanca. Ver a licao registrada
+# quando o collections.json vazou: lista de exclusao por nome envelhece, e a
+# conferencia tem de ser sobre o que NAO PODE SAIR.
+GLOB_DE_PESSOA="stalker-p*.txt listas-p*.txt"
 
 # O ACERVO DE QUEM EMPACOTOU, que nao e credencial de login e vaza igual.
 #
@@ -181,6 +190,7 @@ if [ "$1" = "--ipk" ]; then
   # baixada que o app rebaixa sozinho.
   rm -rf "$PALCO/app/art/cache"
   for f in $ARQ_DE_PESSOA $ACERVO_DE_PESSOA; do rm -f "$PALCO/app/art/$f"; done
+  for g in $GLOB_DE_PESSOA; do rm -f "$PALCO"/app/art/$g; done
   for d in $DIR_DE_PESSOA; do rm -rf "$PALCO/app/art/$d"; done
 
   "$ARES" "$PALCO/app" -o .
@@ -210,6 +220,12 @@ if [ "$1" = "--ipk" ]; then
   for f in $ARQ_DE_PESSOA $ACERVO_DE_PESSOA; do
     printf '%s\n' "$LISTA" | grep -q "art/$f$" && VAZOU="$VAZOU $f"
   done
+  # POR PREFIXO, e nao por nome: os arquivos por perfil sao stalker-p1.txt,
+  # stalker-p2.txt e assim por diante, e a lista acima so casa nome exato. Um
+  # prefixo cobre qualquer numero de perfil, inclusive os que ainda nao existem.
+  for pre in stalker-p listas-p; do
+    printf '%s\n' "$LISTA" | grep -qE "art/$pre[0-9]+\.txt$" && VAZOU="$VAZOU $pre*.txt"
+  done
   # Diretorio: qualquer caminho DENTRO dele conta como vazamento, nao so a
   # entrada da pasta — o tar pode listar os arquivos sem listar o diretorio.
   for d in $DIR_DE_PESSOA; do
@@ -220,7 +236,7 @@ if [ "$1" = "--ipk" ]; then
     rm -f "$IPK"
     exit 1
   fi
-  echo "    $IPK ($(du -h "$IPK" | cut -f1)) — sem art/{$(echo $ARQ_DE_PESSOA $ACERVO_DE_PESSOA $DIR_DE_PESSOA | tr ' ' ',')}"
+  echo "    $IPK ($(du -h "$IPK" | cut -f1)) — sem art/{$(echo $ARQ_DE_PESSOA $GLOB_DE_PESSOA $ACERVO_DE_PESSOA $DIR_DE_PESSOA | tr ' ' ',')}"
 fi
 
 if [ "$1" = "--build" ] || [ "$2" = "--build" ]; then exit 0; fi

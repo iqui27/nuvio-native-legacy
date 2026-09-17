@@ -47,3 +47,8 @@ appinfo.json.stamped  # carimbo de build do tools/arm.sh, nao e fonte
 
 # Cache local do wrangler (D1 do servidor de recomendacoes)
 .wrangler/
+
+# Credencial por perfil: MAC do portal IPTV (ver src/stalker.h) e listas
+# fixadas. Nunca versionar.
+stalker-p*.txt
+listas-p*.txt

@@ -18,6 +18,7 @@
 #include "epg.h"
 #include "rede.h"
 #include "addons.h"
+#include "stalker.h"
 #include "dados.h"
 #include "js.h"
 #include "gfx.h"
@@ -350,6 +351,34 @@ static void *fioGuia(void *u) {
       ok = 1;
       if (n < G_PAGINA) break;    // ultima pagina veio curta
     }
+  }
+  // PORTAL STALKER, quando houver um configurado neste perfil. Entra DEPOIS
+  // dos addons de proposito: quem tem as duas coisas espera ver primeiro o que
+  // ja via, e a ordem das categorias no guia e a ordem de chegada.
+  //
+  // Nao mexe em sFalhas: portal ausente nao e falha, e portal que nao responde
+  // ja se anuncia pela ausencia das categorias dele. Somar aqui faria a
+  // mensagem "nenhum catalogo de canais" aparecer para quem tem addons bons e
+  // um portal errado.
+  if (stalker_configurado()) {
+    // MALLOC e nao `static`: sao ~670 KB que so servem durante a carga. Como
+    // vetor estatico eles ficariam residentes para sempre, inclusive em quem
+    // nunca configurou portal nenhum — e este app ja disputa memoria com o
+    // cache de texturas numa TV de 2016.
+    StalkerCanal *st = malloc(sizeof *st * G_MAX_CANAL);
+    int n = st ? stalker_canais(st, G_MAX_CANAL) : 0, i;
+    for (i = 0; i < n && sNCanais < G_MAX_CANAL; i++) {
+      GCanal c;
+      if (sCanalPorId(st[i].id) >= 0) continue;
+      memset(&c, 0, sizeof c);
+      c.epg = -1;
+      snprintf(c.id,   sizeof c.id,   "%s", st[i].id);
+      snprintf(c.nome, sizeof c.nome, "%s", st[i].nome);
+      snprintf(c.logo, sizeof c.logo, "%s", st[i].logo);
+      c.cat = sCatDe(st[i].categoria[0] ? st[i].categoria : "Outros");
+      if (c.cat >= 0) { sCanais[sNCanais++] = c; ok = 1; }
+    }
+    free(st);
   }
   // FONTE ACHADA E NENHUMA PAGINA RESPONDEU tambem e "nao respondeu", e nao
   // "nao existe": e o caso do catalogo de canais que estoura o prazo com o

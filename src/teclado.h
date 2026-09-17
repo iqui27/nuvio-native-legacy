@@ -24,12 +24,25 @@
 // Os 36 caracteres da grade, em ordem de leitura (6 fileiras de 6).
 const char *teclado_alfabeto(void);
 
-#define TECLADO_MAX 24
+// 64 e nao 24: o endereco de um portal IPTV ("meu-portal.exemplo.tv:8080") nao
+// cabe em 24, e o campo de texto que a modal ja usa quando as caixas ficam
+// estreitas rola pelo fim — texto longo sempre foi desenhavel aqui.
+#define TECLADO_MAX 64
 
 // Abre a modal. `titulo` e a linha de cima ("Código do amigo"), `dica` a linha
 // de apoio logo abaixo, e `max` o teto de caracteres (limitado a TECLADO_MAX).
 // As duas frases passam por i18n no desenho, como todo texto do app.
 void teclado_abrir(const char *titulo, const char *dica, int max);
+
+// Mesma modal com ALFABETO proprio e valor inicial. `alfabeto` NULL cai no
+// padrao a-z0-9; um alfabeto maior que 36 ganha fileiras (ate 7 de caractere),
+// e um menor encolhe a grade. `inicial` NULL comeca vazio.
+//
+// Existe porque endereco de portal precisa de ponto, dois pontos e hifen, e
+// MAC precisa so de 0-9a-f e dois pontos — grades diferentes, uma modal so. Ver
+// a nota no topo: a saida errada seria uma segunda modal.
+void teclado_abrir_com(const char *titulo, const char *dica, int max,
+                       const char *alfabeto, const char *inicial);
 int  teclado_aberto(void);
 void teclado_evento(const SDL_Event *e);
 void teclado_atualizar(float dt, Uint32 agora);
