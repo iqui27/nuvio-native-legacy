@@ -338,9 +338,23 @@ static void desistir(int idx) {
 }
 
 static void amostrar(void);
+// PEDIDO VELHO: ninguem desenhou este item por 8 quadros E 200 ms. Serve para o
+// cartaz que saiu da tela enquanto o decode acontecia — publicar aquilo seria
+// gastar vaga e memoria com arte que ninguem vai ver.
+//
+// A ARTE JA DECODIFICADA NAO CAI NESTA REGRA, e isto foi medido na C9: um still
+// de episodio em 3840x2160 leva 1,6 a 2,0 s para decodificar, e a espera do
+// destaque e de 400 ms (NV_HERO_ESPERA_MS). Ou seja, o desenho desistia ANTES
+// de o decode terminar, o resultado era descartado por "pedido velho", e na
+// volta do carrossel a MESMA arte era decodificada de novo — duas vezes dois
+// segundos, para nada. O log mostrava toda arte pesada decodificada em dobro.
+//
+// Quem ja pagou o decode publica. Guardar uma superficie pronta custa uma vaga
+// no cache, e o LRU sabe despejar; jogar fora custa o decode inteiro outra vez.
 static int pedidoObsoleto(const Item *it) {
   Uint32 agora;
   if (!it->ultimoPedido || !it->ultimoQuadro) return 0;
+  if (it->sup) return 0;   /* ja decodificado: nao se joga fora o que custou */
   agora = SDL_GetTicks();
   return quadroAtual > it->ultimoQuadro + NV_TEX_STALE_FRAMES &&
          agora - it->ultimoPedido >= NV_TEX_STALE_MS;
@@ -1157,11 +1171,17 @@ static int threadDecode(void *arg) {
     // metahub passou despercebido.
     int falhou = 0;
     SDL_LockMutex(mtx);
-    if (itens[idx].estado == PENDENTE && pedidoObsoleto(&itens[idx])) {
-      // A imagem terminou depois de o card sair da tela. Nao a publique e nao
-      // a transforme em falha: outro card pode reutilizar o slot frio.
+    if (itens[idx].estado == PENDENTE && !conv && pedidoObsoleto(&itens[idx])) {
+      // A imagem terminou depois de o card sair da tela E NAO DECODIFICOU: nao
+      // a transforme em falha, outro card pode reutilizar o slot frio.
+      //
+      // ANTES ISTO TAMBEM JOGAVA FORA DECODE PRONTO, e era o defeito caro. Um
+      // still de 3840x2160 leva 1,6 a 2,0 s nesta TV (medido) e a espera do
+      // destaque e de 400 ms: o desenho desistia, a superficie pronta ia para
+      // o lixo e a mesma arte era decodificada de novo na volta do carrossel.
+      // O log mostrava cada arte pesada decodificada em dobro. Quem ja pagou o
+      // decode publica; o LRU despeja depois se ninguem usar.
       desistir(idx);
-      if (conv) { SDL_FreeSurface(conv); conv = NULL; }
     } else if (itens[idx].estado == PENDENTE && !conv && itens[idx].tex) {
       // Promocao que nao decodificou: fica a versao pequena, sem FALHOU — o
       // FALHOU devolveria 0 ao desenho e a arte sumiria da tela.
