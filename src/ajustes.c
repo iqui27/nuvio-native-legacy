@@ -2736,18 +2736,28 @@ void ajustes_desenhar(Uint32 agora) {
     hy += 34.0f;
     // O RODAPE DE AJUDA DIZ O QUE FUNCIONA NO CONTROLE, e nao o que funciona no
     // teclado do Mac. Uma linha por dica, desenhada a mao: ver desenhaDicas.
-    { const char *dIdx[] = { "↑ ↓   Escolher categoria",
-                             "OK ou →   Entrar na categoria",
-                             "Voltar   Sair dos ajustes" };
-      const char *dAcao[] = { "↑ ↓   Navegar",
-                              "OK   Abrir",
-                              "Voltar   Ir para as categorias" };
-      const char *dVal[] = { "↑ ↓   Navegar",
-                             "OK   Alterar o valor",
-                             "Voltar   Ir para as categorias" };
-      const char *dEdi[] = { "← →   Alterar o valor",
-                             "OK   Confirmar",
-                             "Voltar   Confirmar" };
+    //
+    // i18n() AQUI, embora text.c ja traduza tudo o que desenha. Estas linhas
+    // vivem num VETOR e chegam ao desenho por ponteiro, entao a varredura nao
+    // as ve como argumento de funcao de desenho e cai na heuristica de
+    // portugues — que nao reconheceu "Escolher categoria" nem "Entrar na
+    // categoria" (sem acento e sem nenhuma das palavras da lista). Resultado:
+    // duas linhas em portugues no meio da interface em ingles, na foto do
+    // dono. Escrever i18n( e a declaracao de que aquilo e tela, e a varredura
+    // cobra a chave sem adivinhar idioma. A traducao dupla e inofensiva: a
+    // segunda busca nao acha a frase em ingles e devolve o que recebeu.
+    { const char *dIdx[] = { i18n("↑ ↓   Escolher categoria"),
+                             i18n("OK ou →   Entrar na categoria"),
+                             i18n("Voltar   Sair dos ajustes") };
+      const char *dAcao[] = { i18n("↑ ↓   Navegar"),
+                              i18n("OK   Abrir"),
+                              i18n("Voltar   Ir para as categorias") };
+      const char *dVal[] = { i18n("↑ ↓   Navegar"),
+                             i18n("OK   Alterar o valor"),
+                             i18n("Voltar   Ir para as categorias") };
+      const char *dEdi[] = { i18n("← →   Alterar o valor"),
+                             i18n("OK   Confirmar"),
+                             i18n("Voltar   Confirmar") };
       const char *const *d = focoIndice ? dIdx
                            : emEdicao ? dEdi
                            : OPCOES[focoOp].tipo == OP_ACAO ? dAcao : dVal;
