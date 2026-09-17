@@ -96,6 +96,12 @@ int  detail_pediu_do_inicio(void);
 #define NV_DETP_TEMP_H        83.0f   // MEDIDO na referencia (era 80)
 #define NV_DETP_TEMP_PADX     40.0f
 #define NV_DETP_TEMP_GAP      52.0f
+// Base do resumo da temporada ("12 episódios · 5 assistidos") ao TOPO das
+// pilulas. A folga vive na vaga do cabecalho "Temporadas" que foi retirado: o
+// grupo comeca em NV_DETP_G_TEMP (1080) e a pilula so em 1160, entao ha 80 px
+// livres e uma linha de 23 cabe com 20 acima e 22 abaixo. Menos que isto e a
+// linha gruda na pilula e le como parte dela.
+#define NV_DETP_TEMP_RESUMO_DY 22.0f
 
 // Episodio: card 640x422 em x=96, passo 726, raio 32. A diferenca estrutural
 // com o port anterior (que era do app da Apple TV) e que o TEXTO FICA DENTRO da
@@ -120,6 +126,11 @@ int  detail_pediu_do_inicio(void);
 #define NV_DETP_EP_SELO_Y    124.0f
 #define NV_DETP_EP_SELO_H     38.0f
 #define NV_DETP_EP_SELO_PADX  18.0f
+// Folga entre o selo do numero e o selo de "ainda nao foi ao ar", quando ele
+// existe. 12 e a mesma distancia que separa o relogio da duracao no rodape do
+// card (8) mais a meia-folga de um selo — abaixo disso os dois preenchimentos
+// leem como uma peca so a 3 metros, e acima deles o par se descola do canto.
+#define NV_DETP_EP_SELO_GAP   12.0f
 // Os tres offsets abaixo sao o TOPO DA CAIXA da linha, nao o topo da tinta: a
 // tinta medida (caixa alta do titulo em +221, sinopse em +274, rodape em +349)
 // fica alguns pixels abaixo do topo da caixa que o SDL_ttf devolve, e o

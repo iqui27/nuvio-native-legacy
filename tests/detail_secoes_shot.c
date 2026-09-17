@@ -218,6 +218,21 @@ static void montarCatalogo(void) {
            "base da tela, como acontece num titulo de verdade.");
   snprintf(itens[0].classificacao, sizeof itens[0].classificacao, "16");
   snprintf(itens[0].pais, sizeof itens[0].pais, "Brasil");
+  // O CHAO DE VERDADE DESTA PAGINA, e nao um preto chapado.
+  //
+  // Sem `backdrop` o arteDe() devolve NULL, desenhaArteDetalhe pinta #0D0D0D
+  // chapado e a captura valida os cards contra um fundo que a TV NUNCA mostra:
+  // la eles caem sobre a ARTE DA OBRA apagada a 15% (detail_desenhar, o
+  // `1 - 0.85 * pg`). A diferenca nao e sutil — sobre arte, um veu fraco deixa
+  // passar rosto e lettering justo onde o texto do card fica, e um selo
+  // translucido que parecia opaco no preto vira uma janela para a imagem.
+  //
+  // Esta e a mesma correcao que tests/serieaud_shot.c ja tinha feito por conta
+  // propria (o chaoDaPagina de la); aqui sai mais barato e mais fiel: em vez de
+  // pintar a arte por fora, DA a arte ao item e deixa detail.c seguir o caminho
+  // de verdade — mesmo GFX_DETALHE, mesma vinheta, mesmo 0,15.
+  snprintf(itens[0].backdrop, sizeof itens[0].backdrop,
+           "deploy/app/art/03.jpg");
   itens[0].nota = 89;
   itens[0].temporadas[0] = 1; itens[0].temporadas[1] = 2;
   itens[0].nTemporadas = 2;
@@ -244,6 +259,10 @@ static void montarCatalogo(void) {
            "verdade.");
   snprintf(itens[1].classificacao, sizeof itens[1].classificacao, "14");
   snprintf(itens[1].pais, sizeof itens[1].pais, "Estados Unidos");
+  // Arte DIFERENTE da serie, de proposito: se as duas fossem a mesma, uma
+  // captura trocada passaria despercebida.
+  snprintf(itens[1].backdrop, sizeof itens[1].backdrop,
+           "deploy/app/art/07.jpg");
   itens[1].nota = 87;
   for (i = 0; i < 6; i++) {
     snprintf(itens[1].elenco[i].nome, sizeof itens[1].elenco[i].nome,
@@ -309,6 +328,11 @@ static void quadros(int n) {
   int i;
   for (i = 0; i < n; i++) {
     SDL_PumpEvents();
+    // BOMBEAR ANTES DE TUDO, como main.c faz. Sem isto nada decodifica: a fila
+    // de texturas so anda dentro do tex_bombear, e a captura sairia com a arte
+    // do backdrop e as miniaturas dos episodios em cinza — de volta ao chao
+    // chapado que este arquivo existe para nao ter.
+    tex_bombear(3);
     if (!parado) detail_atualizar(1.0f / 60.0f, SDL_GetTicks());
     txt_novo_quadro();
     tex_novo_quadro();

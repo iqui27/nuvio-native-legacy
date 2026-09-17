@@ -69,4 +69,35 @@ if rg -q 'foco\.fileira = r; foco\.coluna = 0; nivel = 1;' src/detail.c; then
 fi
 rg -q 'alvo = foco\.colunaLembrada\[r\];' src/detail.c
 
+# --- EPISODIO QUE AINDA NAO FOI AO AR ---------------------------------------
+#
+# A lista desenhava um episodio nao exibido exatamente como um que voce so nao
+# viu — o unico sinal era a AUSENCIA do selo de nota do Trakt, que e tambem o
+# estado de uma serie que ninguem avaliou. Duas coisas diferentes com o mesmo
+# desenho, e o card convidava a abrir o que nao existe.
+#
+# A fonte tem de continuar sendo a agenda do TMDB, que ja vem no corpo que a
+# pagina baixa. Qualquer tentativa de deduzir pela DATA do episodio volta a
+# esbarrar no CatEp.data, que chega formatado por extenso e passa por i18n.
+rg -q 'static int epNaoExibido\(const CatEp \*ep\)' src/detail.c
+rg -q 'extras_agenda_temporada\(\).*extras_agenda_episodio\(\)' src/detail.c
+# SEM AGENDA NAO SE AFIRMA NADA: 0 e "nao sabemos", e ai o episodio e comum.
+if ! rg -q 'if \(!ep \|\| t <= 0 \|\| e <= 0\) return 0;' src/detail.c; then
+  echo 'detail: epNaoExibido afirma "nao exibido" sem a agenda do TMDB' >&2
+  exit 1
+fi
+
+# --- RESUMO DA TEMPORADA -----------------------------------------------------
+#
+# A contagem de assistidos so pode sair quando o mapa DESTA serie existe.
+# vistoep separa "nao viu" de "nao sabemos" (vistoep.h), e escrever "0
+# assistidos" enquanto o Trakt nao respondeu e afirmar sobre o que ninguem
+# contou — o mesmo defeito que o card ja evita ao nao desenhar selo de "nao
+# assistido" durante a consulta.
+rg -q 'vistoep_conhecido\(ci->imdb\)' src/detail.c
+if ! rg -q 'if \(sabe\)' src/detail.c; then
+  echo 'detail: o resumo da temporada conta assistidos sem saber se ha mapa' >&2
+  exit 1
+fi
+
 echo 'detail eps: PASS'

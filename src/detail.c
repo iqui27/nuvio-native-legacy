@@ -129,6 +129,9 @@ static int  pedAbrir = -1;
 static int  relFoco;
 // Temporada escolhida no painel de notas por episodio (indice em extras).
 static int  ratTemp;
+// 1 depois que ratTemp foi conciliado com a temporada da PAGINA usando a lista
+// do Trakt ja carregada. Zero enquanto a lista nao chegou — ver detail_atualizar.
+static int  ratSinc;
 #define PES_FOTO_W   280.0f
 #define PES_FOTO_H   420.0f
 #define PES_COL_X    (NV_DETP_X + PES_FOTO_W + 56.0f)
@@ -683,7 +686,7 @@ void detail_abrir(const HomeItem *it) {
   item = *it;
   aberto = 1; saindo = 0; nivel = 0; botao = 0;
   t = 0.0f; pg = 0.0f; scrollY = 0.0f; abaInfo = 0; pessoaAberta = 0;
-  relFoco = 0; pedAbrir = -1; ratTemp = 0;
+  relFoco = 0; pedAbrir = -1; ratTemp = 0; ratSinc = 0;
   idx = it->indice;
   revistaVista = cat_revisao();
   // Guarda identidade e copia ANTES de qualquer republicacao. Ver revalidarIdx.
@@ -1831,14 +1834,31 @@ void detail_atualizar(float dt, Uint32 agora) {
   //    captura como "T1" aceso na grade e "E1..E13 da T2" no arco. As pilulas do
   //    topo sao a escolha da PAGINA; quem estiver dentro da aba continua livre
   //    para espiar outra temporada com esquerda/direita.
+  //
+  // E A CONCILIACAO NAO PODE DEPENDER SO DA TROCA. O `agoraT != audTempVista`
+  // dispara uma vez, no primeiro quadro da pagina — e nesse instante a lista do
+  // Trakt quase sempre AINDA NAO CHEGOU (extras_n_temporadas() = 0), entao
+  // audTemp() devolve -1, ratTemp fica em 0 e, como o numero da temporada nao
+  // muda mais, a conciliacao nunca mais roda. Com uma serie cuja lista do Trakt
+  // comeca em "Especiais" (temporada 0) — ou que simplesmente nao tem a T1 —, o
+  // indice 0 aponta para outra temporada, e a grade volta a discordar das
+  // pilulas exatamente como antes da correcao acima. A captura escondia isso
+  // porque o duble de extras responde no quadro zero; a rede nao.
+  //
+  // `ratSinc` marca que a conciliacao chegou a acontecer com dado na mao. Quem
+  // entra na aba e anda com esquerda/direita continua livre: aquilo escreve
+  // ratTemp sem mexer nesta marca, e ela so e rearmada quando a PAGINA troca de
+  // temporada.
   if (ehSerie()) {
     int agoraT = temporadaEm(temporada);
     if (agoraT != audTempVista) {
-      int t;
       audTempVista = agoraT;
       if (audTempAberta != agoraT) audAberta = 0;
-      t = audTemp();
-      if (t >= 0) ratTemp = t;
+      ratSinc = 0;
+    }
+    if (!ratSinc) {
+      int t = audTemp();
+      if (t >= 0) { ratTemp = t; ratSinc = 1; }
     }
   }
   if (nivel >= 1 && foco.fileira == SEC_FRASES) {
@@ -2709,6 +2729,125 @@ static float larguraAbaInfo(int i) {
   return l.w;
 }
 
+// ESTE EPISODIO AINDA NAO FOI AO AR?
+//
+// O `videos` do Cinemeta lista a temporada INTEIRA, incluindo o que ainda vai
+// estrear — e ate agora a lista desenhava esses episodios exatamente como um
+// que voce so nao viu. O card convidava a abrir o que nao existe: OK levava a
+// uma busca de fontes que nunca acha nada, e o unico sinal na tela era a
+// AUSENCIA do selo de nota do Trakt, que e o mesmo estado de uma serie obscura
+// que ninguem avaliou. Dois estados diferentes desenhados igual, que e o
+// defeito que este arquivo ja corrigiu tres vezes noutros lugares.
+//
+// A FONTE E `next_episode_to_air` DO TMDB, e ela nao custa pedido nenhum: vem
+// no mesmo corpo /tv/<id> que a pagina ja baixa para redes, temporadas e "mais
+// como este" (ver a nota de agenda em extras.h). O que ela diz e a POSICAO do
+// proximo episodio a estrear; dai para a frente, na ordem (temporada,
+// episodio), nada foi ao ar.
+//
+// POR QUE NAO PELA DATA DO PROPRIO EPISODIO, que seria o caminho obvio:
+// CatEp.data ja chega FORMATADA por extenso ("24 de setembro de 2026") porque
+// e assim que a referencia a mostra, e o ISO e descartado no parse. Voltar dela
+// para uma data exigiria reconhecer nome de mes — em portugues E em ingles,
+// porque a formatacao passa por i18n. Comparar posicao de episodio e exato e
+// nao depende de idioma.
+//
+// SEM AGENDA NAO SE AFIRMA NADA. Serie encerrada, TMDB sem o campo ou resposta
+// que ainda nao chegou devolvem 0, e ai todo episodio volta a ser um episodio
+// comum. Dizer "nao exibido" sem fonte seria inventar metadado, que e o que o
+// PRODUCT.md proibe e o que ja tirou daqui a classificacao "14" cravada.
+static int epNaoExibido(const CatEp *ep) {
+  int t = extras_agenda_temporada(), e = extras_agenda_episodio();
+  if (!ep || t <= 0 || e <= 0) return 0;
+  if (ep->temporada != t) return ep->temporada > t;
+  return ep->episodio >= e;
+}
+
+// O QUE A FILEIRA DE TEMPORADAS NAO DIZIA.
+//
+// As pilulas eram "Temporada 1 | Temporada 2 | Temporada 3" e mais nada. Quem
+// chega numa serie de cinco temporadas nao tem como saber, sem descer e contar
+// cards, quantos episodios cada uma tem, quanto ja viu de cada uma, nem que a
+// atual ainda esta no ar. As tres respostas ja estao NA MEMORIA — o catalogo de
+// episodios, o mapa do vistoep e a agenda do TMDB —, e nenhuma custa pedido.
+//
+// POR QUE UMA LINHA E NAO UM SEGUNDO ANDAR DENTRO DA PILULA: a pilula e 269x83
+// MEDIDA na referencia, com uma linha de 32; enfiar um segundo texto la dentro
+// obrigaria a crescer a peca (e a fileira inteira com ela) para dizer de cinco
+// temporadas o que so interessa da escolhida. E o resumo mudaria de largura a
+// cada temporada, fazendo as pilulas vizinhas dancarem quando o foco andasse.
+//
+// POR QUE ACIMA DAS PILULAS E NAO ENTRE ELAS E OS CARDS: entre as duas fileiras
+// sobram 43 px (1243 -> 1286) e o anel de foco do card come 4 deles; uma linha
+// de 23 px ali fica a 5 px do anel, espremida entre dois blocos grandes. Acima
+// sobram ~130 px — e a vaga do cabecalho "Temporadas" que foi removido por
+// repetir o rotulo das pilulas. Este texto nao repete nada.
+//
+// E ELE ACOMPANHA O FOCO, nao o OK: `temporada` e reescrita a partir da coluna
+// focada a cada quadro (detail_atualizar), entao varrer a fileira com o D-pad
+// vai contando cada temporada enquanto passa. Era exatamente a informacao que
+// faltava na hora de escolher.
+static void contarTemporada(int *total, int *vistos, int *futuros, int *sabe) {
+  const CatItem *ci = cat_item(idx);
+  int alvo = temporadaEm(temporada), n = cat_n_episodios(idx), i;
+  *total = *vistos = *futuros = 0;
+  // TRI-ESTADO, e e o ponto todo: vistoep separa "nao viu" de "nao sabemos"
+  // (ver vistoep.h). Sem mapa desta serie a linha NAO escreve "0 assistidos" —
+  // ela omite a clausula, porque zero seria uma afirmacao sobre o que ninguem
+  // nos contou. O mesmo motivo pelo qual o card nao desenha um selo de "nao
+  // assistido" enquanto o Trakt nao responde.
+  *sabe = ci && ci->imdb[0] && vistoep_conhecido(ci->imdb);
+  for (i = 0; i < n; i++) {
+    const CatEp *e = cat_episodio(idx, i);
+    if (!e || e->temporada != alvo) continue;
+    (*total)++;
+    // Nao exibido GANHA de visto: um episodio que ainda vai ao ar nao pode
+    // entrar na conta do que voce assistiu, mesmo que o mapa diga que sim (o
+    // Trakt aceita marcar qualquer coisa). Sem esta ordem o mesmo episodio
+    // seria contado duas vezes e a soma das clausulas passaria do total.
+    if (epNaoExibido(e)) { (*futuros)++; continue; }
+    if (*sabe && vistoep_estado(ci->imdb, e->temporada, e->episodio) == 1)
+      (*vistos)++;
+  }
+}
+
+static void resumoTemporada(float x, float yPilulas, float a) {
+  char linha[192];
+  int total = 0, vistos = 0, futuros = 0, sabe = 0;
+  size_t k = 0;
+  contarTemporada(&total, &vistos, &futuros, &sabe);
+  if (total <= 0) return;
+  // O formato passa por i18n ANTES do snprintf, como a linha de progresso do
+  // heroi ja faz: a string montada nunca casaria com uma chave da tabela.
+  //
+  // COM HISTORICO A LINHA E UMA FRACAO, e nao dois numeros soltos. "24
+  // episódios · 11 assistidos" obriga o olho a subtrair para saber onde a
+  // pessoa esta; "11 de 24 assistidos" ja E a resposta, e e a MESMA forma que a
+  // linha de progresso do heroi usa para a serie inteira ("%d de %d") — a
+  // mesma ideia escrita do mesmo jeito nos dois lugares da tela.
+  //
+  // Sem historico nao ha fracao possivel e sobra o total, que continua sendo
+  // informacao nova: quantos episodios esta temporada tem.
+  if (sabe)
+    k += (size_t)snprintf(linha + k, sizeof linha - k,
+                          i18n("%d de %d assistidos"), vistos, total);
+  else
+    k += (size_t)snprintf(linha + k, sizeof linha - k,
+                          i18n(total == 1 ? "%d episódio" : "%d episódios"),
+                          total);
+  if (futuros > 0)
+    snprintf(linha + k, sizeof linha - k,
+             i18n(futuros == 1 ? " · %d ainda não exibido"
+                               : " · %d ainda não exibidos"), futuros);
+  // #BEC0C8: o degrau de "rotulo, legenda, valor de referencia" da escada de
+  // texto (DESIGN.md secao 2). Nao e o piso de rodape (#9699A2) porque isto e
+  // a informacao que a fileira passou a dar, e nao uma nota de procedencia; e
+  // nao e branco porque branco aqui competiria com o titulo da obra logo acima
+  // e com o rotulo das proprias pilulas logo abaixo.
+  { TxtLinha l = txt_linha(TXT_DET_META2, linha, 190, 192, 200, 255);
+    txt_desenhar_alpha(l, x, yPilulas - NV_DETP_TEMP_RESUMO_DY - l.h, a); }
+}
+
 // Aba de temporada: 80 de altura, raio 40 (pilula), borda de 1px
 // rgba(255,255,255,0.16). Tres estados MEDIDOS, e nao dois:
 //   normal      #222     texto rgb(179,179,179)
@@ -2781,11 +2920,21 @@ static void desenhaTemporada(GfxRect r, int c, float f, float a) {
 // passou a ser avaliada no fragmento. Ver GFX_VEU_CARD em gfx.h. De quebra sao
 // 14 passadas de preenchimento a menos por card, numa Mali-G71 que ja e o
 // gargalo desta tela.
+//
+// O RAIO SAI DA ALTURA, e nao de min(w,h). O shader normaliza por
+// `p = (uv - 0.5) * vec2(w/h, 1.0)`: a meia-extensao VERTICAL e sempre 0,5,
+// entao `raio * h` e o raio em pixels e a largura nao entra na conta (ver
+// gfx.h). Aqui os dois davam no mesmo por acaso — a miniatura e 640x414, e o
+// menor lado E a altura —, mas o idioma errado ja produziu quatro defeitos
+// fotografados neste repositorio, e um card mais estreito que alto (se um dia
+// a fileira mudar de forma) sairia com a ponta em capsula.
 static void veuEpisodio(GfxRect th, float a) {
-  float raio = NV_DETP_EP_RAIO / (th.w < th.h ? th.w : th.h);
+  float raio = NV_DETP_EP_RAIO / th.h;
   if (raio > 0.5f) raio = 0.5f;
+  if (raio > 0.5f * th.w / th.h) raio = 0.5f * th.w / th.h;
   gfx_rect(th, 0, GFX_VEU_CARD, 0, 0, 0, raio, 0, 0, 0, a);
 }
+
 
 // Card de episodio: 640x422, com a miniatura de 640x414 e TODO o texto dentro
 // dela, sobre o degrade. E a diferenca estrutural com o que estava aqui antes
@@ -2879,13 +3028,45 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
   // nao se sustenta: o card so aparece dentro da aba da temporada escolhida,
   // que esta desenhada logo acima dele.
   { char cab[24];
+    float xs = tx;
     snprintf(cab, sizeof cab, i18n("EPISÓDIO %d"), epNum);
-    TxtLinha l = txt_linha(TXT_CAPTION2, cab, 255, 255, 255, 255);
-    float w = l.w + NV_DETP_EP_SELO_PADX * 2;
-    GfxRect s = { tx, r.y + NV_DETP_EP_SELO_Y, w, NV_DETP_EP_SELO_H };
-    gfx_cor(s, 12.0f / NV_DETP_EP_SELO_H, 0.05f, 0.05f, 0.06f, 0.78f * a);
-    txt_peso(l, s.x + NV_DETP_EP_SELO_PADX,
-             s.y + (NV_DETP_EP_SELO_H - l.h) * 0.5f, a, 1.0f); }
+    { TxtLinha l = txt_linha(TXT_CAPTION2, cab, 255, 255, 255, 255);
+      float w = l.w + NV_DETP_EP_SELO_PADX * 2;
+      GfxRect s = { xs, r.y + NV_DETP_EP_SELO_Y, w, NV_DETP_EP_SELO_H };
+      gfx_cor(s, 12.0f / NV_DETP_EP_SELO_H, 0.05f, 0.05f, 0.06f, 0.78f * a);
+      txt_peso(l, s.x + NV_DETP_EP_SELO_PADX,
+               s.y + (NV_DETP_EP_SELO_H - l.h) * 0.5f, a, 1.0f);
+      xs += w + NV_DETP_EP_SELO_GAP; }
+
+    // AINDA NAO FOI AO AR: um segundo selo, colado no primeiro.
+    //
+    // POR QUE UM SELO PREENCHIDO EM AMBAR e nao um card apagado: a 3 metros uma
+    // diferenca de opacidade entre cards vizinhos nao se le — e nesta tela ela
+    // ainda brigaria com o anel de foco, que e a outra coisa que muda o brilho
+    // de um card. Superficie preenchida com texto escuro e o mesmo vocabulario
+    // de foco desta base (DESIGN.md secao 5), e o ambar #F5C74D e a posicao que
+    // a paleta de dado reserva para "atencao sem alarme" — nao e vermelho, que
+    // diria erro, nem verde, que diria pronto.
+    //
+    // A PALAVRA DEPENDE DO QUE HA PARA LER. Com data, o selo diz so "ESTREIA" e
+    // quem carrega o quando e a data ja desenhada na direita do rodape, na
+    // MESMA coluna de todos os outros cards — repetir a data aqui dentro seria
+    // escrever a mesma coisa duas vezes no mesmo card, e a versao longa
+    // ("ESTREIA 24 DE SETEMBRO DE 2026") passa de 350 px e briga com o selo do
+    // numero dentro dos 576 de texto. Sem data nao ha nada na direita para o
+    // "ESTREIA" apontar, e ai o selo precisa se bastar: "NÃO EXIBIDO".
+    if (epNaoExibido(ep)) {
+      const char *rot = epData ? i18n("ESTREIA") : i18n("NÃO EXIBIDO");
+      TxtLinha l = txt_linha(TXT_CAPTION2, rot, 20, 20, 20, 255);
+      float w = l.w + NV_DETP_EP_SELO_PADX * 2;
+      GfxRect s = { xs, r.y + NV_DETP_EP_SELO_Y, w, NV_DETP_EP_SELO_H };
+      gfx_cor(s, 12.0f / NV_DETP_EP_SELO_H, 0.961f, 0.780f, 0.302f, a);
+      // Mesmo peso extra do selo vizinho: sao a mesma peca tipografica, e o
+      // texto escuro sobre superficie clara ja parece mais grosso do que e
+      // (a regra optica de text.c), entao 1.0 e o teto aqui.
+      txt_peso(l, s.x + NV_DETP_EP_SELO_PADX,
+               s.y + (NV_DETP_EP_SELO_H - l.h) * 0.5f, a, 1.0f);
+    } }
 
   // Titulo: 32/800. O 800 nao existe na familia embarcada e o 32 so existe em
   // Regular na tabela de estilos, entao vem de tres passadas.
@@ -3883,6 +4064,12 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     } }
   { float alt = alturaSecao(r);
     if (y > NV_TELA_H || y + alt < -40.0f) return; }
+
+  // O resumo da temporada ESCOLHIDA, acima das pilulas. Depois do culling (ele
+  // desenha acima de `y`, dentro da mesma faixa) e antes do laco de colunas,
+  // porque nao pertence a nenhuma pilula: e uma linha por FILEIRA. Em filme
+  // secaoN(SEC_TEMPORADAS) ja devolveu 0 e nao se chega aqui.
+  if (r == SEC_TEMPORADAS) resumoTemporada(NV_DETP_X, y, a);
 
   // Na serie a secao de estudios/redes nao tem cabecalho externo — o titulo
   // sai aqui, como o "trakt Comentarios" sai dentro da secao de comentarios.
