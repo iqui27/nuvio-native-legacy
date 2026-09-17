@@ -90,6 +90,13 @@ static Uint32 canalFonteDesde;            // quando a fonte atual foi pedida
 // Os 12 s continuam valendo para a fonte VIVA, que e onde eles existem para
 // servir: um canal 4K pesado legitimamente demora isso para abrir.
 #define CANAL_FONTE_PRAZO_MUDA_MS 4000
+// TRAVA DEPOIS DE ABRIR. Um canal ao vivo com 12 s de imagem congelada ja
+// perdeu — ao contrario de um filme, nao ha nada para recuperar esperando: o
+// que passou, passou. O numero e o mesmo do prazo de abertura de proposito, e
+// pelo mesmo motivo de escala: um pico de rede que enche o buffer de novo
+// termina MUITO antes disso, entao o que sobrevive a 12 s nao e pico, e fonte
+// morta. Baixar mais arrisca trocar de fonte num engasgo que ia passar.
+#define CANAL_TRAVA_MS 12000
 static Uint32 canalFontePrazo = CANAL_FONTE_PRAZO_MS;
 
 static PerfilDados perfilPendente;
@@ -1072,8 +1079,20 @@ void app_atualizar(float dt, Uint32 agora) {
   // Vale no PiP tambem: a miniatura com a fonte morta tenta a proxima.
   if (canalFonteIdx >= 0 && (player_aberto() || player_mini_ativo()) &&
       !player_quer_sair() && player_id_canal()[0]) {
+    // TRAVOU DEPOIS DE ABRIR conta como morta, e sem isto nao contava.
+    //
+    // O prazo acima so corre enquanto player_carregando(), que e
+    // `esperandoFonte || (comVideo && !video_pronto())` — depois do
+    // loadCompleted ele e 0 e o ramo do prazo morre junto. Uma fonte que abre
+    // e para de entregar no meio (upstream caindo, link de canal que expira)
+    // nao dispara `paused` nem erro: fica imagem congelada com video_falhou()
+    // em 0 para sempre, e o watchdog olhava para o outro lado.
+    //
+    // video_bufferando_ms() e o par bufferingStart/bufferingEnd do uMS, que o
+    // video.c ja recebia e so registrava em marco.
     int morta = player_fonte_falhou() || video_falhou() ||
-        (player_carregando() && SDL_GetTicks() - canalFonteDesde > canalFontePrazo);
+        (player_carregando() && SDL_GetTicks() - canalFonteDesde > canalFontePrazo) ||
+        video_bufferando_ms() > CANAL_TRAVA_MS;
     if (morta) {
       int prox = canalFonteIdx + 1;
       const Stream *s = prox < stream_n() ? stream_item(prox) : NULL;

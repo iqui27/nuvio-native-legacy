@@ -163,6 +163,7 @@ int  video_tocando(void) { return 0; }
 int  video_pronto(void) { return 0; }
 int  video_ativo(void) { return 0; }
 int  video_falhou(void) { return 0; }
+unsigned video_bufferando_ms(void) { return 0; }
 int  video_n_audio(void) { return 0; }
 int  video_n_legenda(void) { return 0; }
 const VideoFaixa *video_audio(int i) { (void)i; return 0; }
@@ -380,6 +381,12 @@ static long msDesdePedido(void) {
 }
 // Ate onde o buffer do pipeline ja cobre (segundos), do evento bufferRange.
 static double bufferSeg;
+// Instante do bufferingStart que AINDA nao teve bufferingEnd; 0 = nao esta
+// bufferizando. Escrito no fio do LS2 e lido no de desenho: um Uint32 que so
+// alterna entre 0 e um carimbo, e o mesmo grau de descuido que posSeg e
+// bufferSeg ja tem aqui — a leitura errada custa um quadro de decisao, nunca
+// um estado invalido.
+static Uint32 bufferandoDesde;
 
 static void esperar(int ms) { struct timespec t; t.tv_sec = ms / 1000;
   t.tv_nsec = (long)(ms % 1000) * 1000000L; nanosleep(&t, NULL); }
@@ -796,12 +803,17 @@ static int aoEvento(LSHandle *h, LSMessage *m, void *u) {
   // nao entrega" de "o decoder engasgou".
   if (strstr(p, "bufferingStart")) {
     char m[64];
+    // So o PRIMEIRO de uma sequencia carimba. O uMS repete o bufferingStart
+    // enquanto nao enche; reiniciar o relogio a cada repeticao daria um "faz
+    // 0 ms que travou" eterno, que e exatamente o caso que se quer detectar.
+    if (!bufferandoDesde) bufferandoDesde = SDL_GetTicks();
     snprintf(m, sizeof m, "buffering INICIO (buffer %+.1fs a frente)",
              bufferSeg - posSeg);
     marco(m);
   }
   if (strstr(p, "bufferingEnd")) {
     char m[64];
+    bufferandoDesde = 0;
     snprintf(m, sizeof m, "buffering FIM (buffer %+.1fs a frente)",
              bufferSeg - posSeg);
     marco(m);
@@ -1259,6 +1271,7 @@ static int tocarInterno(const char *url, int comDV) {
   // entender no titulo seguinte, e insistir so arrisca a imagem de novo.)
   fonX = -1; dstX = dstY = dstW = dstH = -1;
   posSeg = durSeg = bufferSeg = 0; tocando = pronto = 0; midia[0] = 0;
+  bufferandoDesde = 0;
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; vidAtmos = 0;
   legUrlAtual[0] = 0; mkvPendente = 0;
   snprintf(vidHdr, sizeof vidHdr, "none");
@@ -1574,6 +1587,14 @@ int    video_ativo(void)    { return midia[0] != 0; }
 // sem a flag, um pipeline que carrega e morre em seguida nunca dispara a
 // proxima da lista.
 int    video_falhou(void)   { return falhou; }
+unsigned video_bufferando_ms(void) {
+  Uint32 d = bufferandoDesde;
+  if (!d) return 0;
+  // 1 e nao 0 quando o carimbo acabou de sair: 0 e a resposta reservada para
+  // "nao esta bufferizando", e devolve-lo no primeiro milissegundo diria o
+  // contrario do que aconteceu.
+  { Uint32 v = SDL_GetTicks() - d; return v ? (unsigned)v : 1u; }
+}
 
 int  video_n_audio(void)   { return nAudio; }
 int  video_n_legenda(void) { return nLeg; }

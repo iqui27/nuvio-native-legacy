@@ -55,6 +55,14 @@ double video_duracao(void);  // 0 enquanto desconhecida
 // capitulos; quem chama precisa de um plano B.
 double video_creditos(void);
 double video_buffer_fim(void); // ate onde o buffer cobre (s); 0 se desconhecido
+// Ha quanto tempo (ms) o pipeline esta parado esperando dados, do par de
+// eventos bufferingStart/bufferingEnd do uMS; 0 quando NAO esta bufferizando.
+//
+// Existe porque encher e esvaziar o buffer nao passa por `paused` nem por
+// erro: uma fonte que morre no meio da reproducao deixa o app com imagem
+// congelada e video_falhou() em 0 para sempre. Quem vigia fonte de canal
+// (app.c) precisa deste numero para saber que a fonte morreu sem dizer.
+unsigned video_bufferando_ms(void);
 // Afirmacao de Dolby Vision da FONTE escolhida (o addon descreve o arquivo).
 // Chamar ANTES de video_tocar/definir_fonte: e o que decide o hdrType que o
 // ACB descreve ao tv.display.

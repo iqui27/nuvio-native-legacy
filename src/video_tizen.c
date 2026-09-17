@@ -806,6 +806,8 @@ double video_duracao(void)    { return durSeg; }
 // O AVPlay so informa PORCENTAGEM de buffering (onbufferingprogress), nunca um
 // instante. 0 e o que video.h define como "desconhecido"; quem chama ja trata.
 double video_buffer_fim(void) { return 0; }
+// O AVPlay nao expoe o par bufferingStart/End; sem sinal, nunca afirma travo.
+unsigned video_bufferando_ms(void) { return 0; }
 int    video_tocando(void)    { return tocando; }
 int    video_pronto(void)     { return pronto; }
 int    video_ativo(void)      { return ativo; }
