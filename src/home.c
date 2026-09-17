@@ -1881,11 +1881,12 @@ static void desenhaHero(Uint32 agora, float saida) {
       else snprintf(autoria,sizeof autoria,"%s",p->socialAcao);
       txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,autoria,210,210,221,255,680),x,146,a);
 
-      GLuint tl=p->logo[0]?tex_obter_larg(p->logo,520):0;
-      if(tl&&tex_aspecto(p->logo)>0){
-        float ap=tex_aspecto(p->logo),w=520,h=w/ap;
+      const char *urlPl=p->logo[0]?artehero_url_logo(p->logo):NULL;
+      GLuint tl=urlPl?tex_obter_larg(urlPl,520):0;
+      if(tl&&tex_aspecto(urlPl)>0){
+        float ap=tex_aspecto(urlPl),w=520,h=w/ap;
         if(h>104){h=104;w=h*ap;}
-        gfx_rect((GfxRect){x,208,w,h},tl,tex_marca_escura(p->logo)?GFX_MARCA:GFX_TEXTO,
+        gfx_rect((GfxRect){x,208,w,h},tl,tex_marca_escura(urlPl)?GFX_MARCA:GFX_TEXTO,
                  0,0,0,0,1,1,1,a);
       } else if(p->titulo[0]) {
         txt_desenhar_alpha(txt_linha_corta(TXT_TITULO1,p->titulo,244,243,247,255,680),x,208,a);
@@ -1988,15 +1989,16 @@ static void desenhaHero(Uint32 agora, float saida) {
       // As logos de colecao sao arte, nao texto rasterizado. O limite de
       // decode fica acima do tamanho desenhado para preservar nitidez quando
       // a proporcao da logo pede a altura maxima.
-      GLuint logo=(!ehDiretor && folder->logo[0])
-        ?tex_obter_larg(folder->logo,NV_COLLECTION_HERO_LOGO_MAX_W+40.0f):0;
-      float ap=logo?tex_aspecto(folder->logo):0;
+      const char *urlFl=(!ehDiretor && folder->logo[0])
+        ?artehero_url_logo(folder->logo):NULL;
+      GLuint logo=urlFl?tex_obter_larg(urlFl,NV_COLLECTION_HERO_LOGO_MAX_W+40.0f):0;
+      float ap=logo?tex_aspecto(urlFl):0;
       float fimTitulo=NV_COLLECTION_HERO_LOGO_Y+NV_COLLECTION_HERO_LOGO_MAX_H;
       if(logo&&ap>0){
         float w=NV_COLLECTION_HERO_LOGO_MAX_W,h=w/ap;
         if(h>NV_COLLECTION_HERO_LOGO_MAX_H){h=NV_COLLECTION_HERO_LOGO_MAX_H;w=h*ap;}
         gfx_rect((GfxRect){x,NV_COLLECTION_HERO_LOGO_Y,w,h},logo,
-                 tex_marca_escura(folder->logo)?GFX_MARCA:GFX_TEXTO,
+                 tex_marca_escura(urlFl)?GFX_MARCA:GFX_TEXTO,
                  0,0,0,0,.96f,.97f,.98f,a);
         fimTitulo=NV_COLLECTION_HERO_LOGO_Y+h;
       } else {
@@ -2234,9 +2236,14 @@ static void desenhaHero(Uint32 agora, float saida) {
 
   // Logo do titulo, ou o nome em texto quando nao ha logo
   // (.home-hero-title-text, 56/600 no modern — nao os 76 do TXT_TITULO1).
-  GLuint tlogo = (ci && ci->logo[0]) ? tex_obter(ci->logo) : 0;
+  // O catalogo guarda o logo do TMDB em `original` (4127 px de largura medidos
+  // na C9, 1,3 a 1,6 s de decodificacao) e aqui ele nunca passa de
+  // NV_LOGO_HERO_CHEIO_MAX_W. A politica de tamanho e a mesma do fundo e mora
+  // em artehero.c; url que nao e do TMDB passa intacta.
+  const char *urlLogo = (ci && ci->logo[0]) ? artehero_url_logo(ci->logo) : NULL;
+  GLuint tlogo = urlLogo ? tex_obter(urlLogo) : 0;
   if (tlogo) {
-    float ap = tex_aspecto(ci->logo);
+    float ap = tex_aspecto(urlLogo);
     if (ap <= 0.0f) ap = 4.0f;
     float hTit = NV_LOGO_HERO_H, wTit = hTit * ap;
     float maxW = cheio ? NV_LOGO_HERO_CHEIO_MAX_W : NV_LOGO_HERO_MAX_W;
@@ -2247,7 +2254,7 @@ static void desenhaHero(Uint32 agora, float saida) {
     // Logo escuro vira branco. Mesma regra da tela de detalhe: o TMDB nao marca
     // claro/escuro, entao a decisao sai da luminancia MEDIDA (tex_luminancia).
     // Logo claro ou colorido passa intacto; -1 (ainda carregando) nao tinge.
-    { GfxModo m = tex_marca_escura(ci->logo) ? GFX_MARCA : GFX_TEXTO;
+    { GfxModo m = tex_marca_escura(urlLogo) ? GFX_MARCA : GFX_TEXTO;
       // O LOGO DO TITULO acompanha a ARTE, nao o texto. MEDIDO: 205 ms depois
       // da tecla a arte antiga ainda estava a 85% e o logo JA tinha sumido por
       // inteiro; ele so reaparece no mesmo quadro em que a arte nova entra.
@@ -2962,10 +2969,11 @@ void home_desenhar(Uint32 agora) {
             // Largura pedida pela tela, nao o teto generico de 640: o logo
             // nunca passa de ~65% do card, e decodificar o arquivo inteiro
             // so para encolher depois era cache e tempo jogados fora.
-            GLuint tl = tex_obter_larg(cItem->logo, w * 0.65f);
+            const char *urlL = artehero_url_logo(cItem->logo);
+            GLuint tl = tex_obter_larg(urlL, w * 0.65f);
             if (tl) {
               float pad = 34.0f * esc;
-              float ap = tex_aspecto(cItem->logo);
+              float ap = tex_aspecto(urlL);
               float hL, wL, maxW;
               GfxRect veu = { px, py, w, h };
               gfx_rect(veu, 0, GFX_VEU, 0, 0, 0, NV_RAIO_CARD, 0, 0, 0, 0.72f * abre);
@@ -2993,7 +3001,7 @@ void home_desenhar(Uint32 agora) {
               // tex_marca_escura decide se a forma vem do alfa (logo claro) ou
               // do desenho (logo escuro). Reusado aqui em vez de reinventado.
               if (tl) { GfxRect rl = { px + pad, py + h - pad - hL, wL, hL };
-                GfxModo m = tex_marca_escura(cItem->logo) ? GFX_MARCA : GFX_TEXTO;
+                GfxModo m = tex_marca_escura(urlL) ? GFX_MARCA : GFX_TEXTO;
                 gfx_tex_aspect_atual = 0.0f;
                 gfx_rect(rl, tl, m, 0, 0, 0, 0.0f, 1, 1, 1, abre); }
             }
@@ -3007,7 +3015,8 @@ void home_desenhar(Uint32 agora) {
             // Logo do titulo, como no aparelho: cada producao tem tipografia
             // propria, e escrever o nome com a fonte da interface apaga isso.
             const CatItem *ci = cItem;
-            GLuint tlogo = (ci && ci->logo[0]) ? tex_obter_larg(ci->logo, w * .65f) : 0;
+            const char *urlCl = (ci && ci->logo[0]) ? artehero_url_logo(ci->logo) : NULL;
+            GLuint tlogo = urlCl ? tex_obter_larg(urlCl, w * .65f) : 0;
             // Sem dado, sem texto — nao a lista de demonstracao que ficava
             // aqui e carimbava nome e genero de outro titulo no card.
             const char *nome   = (ci && ci->titulo[0]) ? ci->titulo : NULL;
@@ -3022,14 +3031,14 @@ void home_desenhar(Uint32 agora) {
             float yMeta = base - tg.h;
             float hTit;
             if (tlogo) {
-              float ap = tex_aspecto(ci->logo);
+              float ap = tex_aspecto(urlCl);
               if (ap <= 0.0f) ap = 4.0f;
               hTit = h * .22f;
               float wTit = hTit * ap, maxW = w * .65f;
               if (wTit > maxW) { wTit = maxW; hTit = wTit / ap; }
               GfxRect rl = { px + pad, yMeta - hTit - 10.0f, wTit, hTit };
               gfx_tex_aspect_atual = 0.0f;
-              { GfxModo m = tex_marca_escura(ci->logo) ? GFX_MARCA : GFX_TEXTO;
+              { GfxModo m = tex_marca_escura(urlCl) ? GFX_MARCA : GFX_TEXTO;
               gfx_rect(rl, tlogo, m, 0, 0, 0, 0.0f, 1, 1, 1, 1.0f); }
             } else if (nome) {
               TxtLinha tn = txt_linha_corta(TXT_CW_TITULO, nome, 245, 246, 249, 255, w - pad*2);

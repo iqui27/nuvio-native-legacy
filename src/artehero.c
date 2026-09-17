@@ -190,8 +190,18 @@ const char *artehero_url(const CatItem *item) {
 //
 // Na alta a interface e desenhada em 2x, entao o logo pode ocupar 2000 px e so
 // `original` tem pixel para isso.
+// POR QUE UM ANEL DE BUFFERS e nao um estatico so, como o resto deste arquivo:
+// o fundo de tela cheia e UM por quadro, mas o logo nao. A home desenha o do
+// destaque, o da colecao e o do card focado no MESMO quadro, e cada um chama
+// tex_obter, tex_aspecto e tex_marca_escura com a string — se todos
+// compartilhassem um buffer, o segundo desenho reescreveria a url que o
+// primeiro ainda esta usando e as texturas sairiam trocadas. Quatro cobre os
+// desenhos simultaneos que existem hoje com folga.
+#define LOGO_ANEL 4
 const char *artehero_url_logo(const char *logo) {
-  static char buf[512];
+  static char anel[LOGO_ANEL][512];
+  static int vez;
+  char *buf;
   const char *p, *nome;
   const char *tam = qualidadeImg == 0 ? "w500"
                   : qualidadeImg == 2 ? "original" : "w1280";
@@ -200,8 +210,10 @@ const char *artehero_url_logo(const char *logo) {
   if (!p) return logo;                       // metahub, arquivo local, etc.
   nome = strchr(p + 5, '/');                 // pula o tamanho que veio
   if (!nome || !nome[1]) return logo;
+  buf = anel[vez];
+  vez = (vez + 1) % LOGO_ANEL;
   { size_t pre = (size_t)(p - logo);
-    if (pre >= sizeof buf) return logo;
-    snprintf(buf, sizeof buf, "%.*s/t/p/%s%s", (int)pre, logo, tam, nome); }
+    if (pre >= sizeof anel[0]) return logo;
+    snprintf(buf, sizeof anel[0], "%.*s/t/p/%s%s", (int)pre, logo, tam, nome); }
   return buf;
 }
