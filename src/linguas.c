@@ -123,6 +123,9 @@ void ling_conta_audio(const char *v)    { guardar(contaAud,  sizeof contaAud,  v
 // volta na preferencia da conta — ou seja, o ajuste nao obedecia.
 static void guardarLocal(char *dest, size_t n, const char *v) {
   if (v && !strcmp(v, "*")) { snprintf(dest, n, "*"); return; }
+  // "~" pelo mesmo motivo do "*": e uma DECISAO ("o original deste titulo"), e
+  // deixar a conta sobrescrever faria o ajuste nao obedecer.
+  if (v && !strcmp(v, "~")) { snprintf(dest, n, "~"); return; }
   guardar(dest, n, v);
 }
 void ling_local_legenda(const char *v)  { guardarLocal(localLeg, sizeof localLeg, v); }
@@ -131,9 +134,27 @@ void ling_local_audio(const char *v)    { guardarLocal(localAud, sizeof localAud
 // A escolha desta TV ganha da conta. Quem mexeu no aparelho quis mexer AQUI, e
 // ver a proxima sincronizacao desfazer isso e o tipo de comportamento que faz a
 // pessoa parar de confiar no ajuste.
+// O IDIOMA ORIGINAL DO TITULO QUE ESTA ABERTO AGORA.
+//
+// Quem sabe disso e a ficha do TMDB (extras_idioma_original), e quem abre o
+// titulo e quem avisa. Este arquivo nao consulta ninguem de proposito: ele e a
+// politica de idioma e nao a fonte do dado — fazer linguas.c incluir extras.h
+// amarraria a tabela de idiomas ao pedido de rede da tela de titulo.
+static char origAtual[8];
+void ling_definir_original(const char *cod) {
+  if (!cod || !*cod) { origAtual[0] = 0; return; }
+  snprintf(origAtual, sizeof origAtual, "%s", cod);
+}
+const char *ling_original(void) { return origAtual; }
+
 static const char *emVigor(const char *local, const char *conta) {
   if (!local[0]) return conta;      // sem escolha local: a conta manda
   if (local[0] == '*') return "";   // "Todas": sem filtro, e a conta nao volta
+  // "Original": vale o idioma DESTE titulo. Sem ele — titulo aberto direto da
+  // home, ou TMDB que nao respondeu — devolve "" e o comportamento e o de
+  // sempre: nao trocar de faixa. Chutar um idioma aqui seria pior que nao
+  // trocar, porque a pessoa nao teria como saber que foi o app que escolheu.
+  if (local[0] == '~') return origAtual;
   return local;
 }
 const char *ling_legenda(void)  { return emVigor(localLeg, contaLeg); }
@@ -158,7 +179,10 @@ const char *ling_audio(void)    { return emVigor(localAud, contaAud); }
 // poria "Alemão" na frente de "Português" numa lista de trinta itens navegada
 // tecla por tecla.
 static const char *OPCOES_COD[] = {
-  "", "*",
+  // "~" = ORIGINAL DO TITULO. Nao e um idioma: e "descubra qual e o idioma
+  // deste filme e toque esse". Quem resolve e ling_definir_original(), chamado
+  // por quem abre o titulo; aqui so mora o marcador.
+  "", "*", "~",
   "pt", "en", "es",
   "de", "ar", "zh", "da", "ko", "fr", "el", "he", "nl", "hi", "hu", "id",
   "it", "ja", "no", "pl", "ro", "ru", "sv", "th", "cs", "tr", "uk", "vi", "fi"

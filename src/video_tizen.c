@@ -636,6 +636,42 @@ int video_tocar(const char *url) {
   return 1;
 }
 
+// Definida bem abaixo (API publica): escolherAudioPreferido a usa.
+void video_escolher_audio(int i);
+
+// APLICA A PREFERENCIA DE AUDIO. Esta metade tambem nao tinha sido portada: o
+// video.c (LG) escolhe a faixa que casa com ling_audio() e este arquivo nunca
+// escolheu nada, entao no Tizen o ajuste de idioma de audio nao fazia efeito
+// nenhum.
+//
+// RODA DEPOIS DO IDIOMA CHEGAR, e por isso e chamada de dois lugares: do
+// lerFaixas (caso o player ja soubesse o idioma) e do fim de
+// aplicarIdiomasDoMkv (o caso real nesta TV, em que o idioma so existe depois
+// da sonda). Chamar so no primeiro nunca acertaria aqui.
+//
+// SEM PREFERENCIA, OU SEM FAIXA QUE CASE, NAO SE MEXE: a escolha do pipeline e
+// melhor que uma trocada por chute, e quem quer outra abre a folha de faixas.
+// Mesma regra do video.c, palavra por palavra.
+static void escolherAudioPreferido(void) {
+  const char *pref = ling_audio();
+  int i;
+  if (!pref[0] || nAudio < 2) return;
+  if (audioAtual >= 0 && audioAtual < nAudio &&
+      faixaAudio[audioAtual].idioma[0] &&
+      ling_casa(faixaAudio[audioAtual].idioma, pref)) return;   // ja esta boa
+  for (i = 0; i < nAudio; i++) {
+    if (!faixaAudio[i].idioma[0] || !ling_casa(faixaAudio[i].idioma, pref)) continue;
+    printf("[video] audio preferido: %s (faixa %d de %d)\n",
+           ling_nome(faixaAudio[i].idioma), i + 1, nAudio);
+    fflush(stdout);
+    video_escolher_audio(i);
+    return;
+  }
+  printf("[video] nenhuma faixa de audio em '%s' entre as %d: fica a do arquivo\n",
+         pref, nAudio);
+  fflush(stdout);
+}
+
 // O IDIOMA DAS FAIXAS VEM DO CONTAINER, porque o AVPlay nao o entrega.
 //
 // MEDIDO em 17/09 na QN85Q70AAGXZD, em dois filmes diferentes, lendo
@@ -699,6 +735,7 @@ static void aplicarIdiomasDoMkv(const MkvFaixa *fx, int n) {
   }
   printf("[mkv] %d faixa(s) ganharam idioma do container\n", casou);
   fflush(stdout);
+  if (casou) escolherAudioPreferido();
 }
 
 // DESPEJA O getCurrentStreamInfo NO LOG, uma vez por titulo.
@@ -781,6 +818,7 @@ static void lerFaixas(void) {
   }
   printf("[video] faixas: %d audio, %d legenda\n", nAudio, nLeg);
   fflush(stdout);
+  escolherAudioPreferido();
 }
 
 // Le o cabecalho do Matroska pela rede para descobrir onde comecam os creditos.

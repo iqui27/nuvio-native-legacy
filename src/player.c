@@ -25,6 +25,7 @@
 //      esta pausado. Pausado sem controles o usuario fica olhando um quadro
 //      congelado sem saber o que houve.
 #include "player.h"
+#include "linguas.h"
 #include "idioma.h"
 #include "posplay.h"
 #include "extras.h"
@@ -809,6 +810,14 @@ void player_aspecto_ciclar(void) {
 }
 
 void player_abrir(int indiceCatalogo, const char *url) {
+  // QUAL E O IDIOMA ORIGINAL DESTE TITULO. A escolha "Original" em Ajustes
+  // resolve para isto; sem aviso ela se comporta como "nao trocar de faixa".
+  //
+  // A ficha e do titulo que a tela de detalhe abriu, que e por onde a
+  // reproducao passa. Quem manda tocar direto da home sem abrir o detalhe
+  // chega aqui com a ficha vazia — e ai o certo e mesmo nao trocar nada.
+  ling_definir_original(extras_idioma_original());
+
   int ficaMini = querMini; querMini = 0;
   int n = cat_n(); if (n < 1) n = 1;
   idx = ((indiceCatalogo % n) + n) % n;

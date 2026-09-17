@@ -125,6 +125,11 @@ long extras_colecao_tmdb(int i);
 // logo e URL absoluta (image.tmdb.org w185) e fica "" quando o logo e .svg —
 // o pacote nao decoda svg; quem desenha cai no nome.
 int         extras_n_estudios(void);
+// IDIOMA ORIGINAL do titulo ("it", "ja", "en"...), ou "" quando nao se sabe.
+// Sai do `original_language` do TMDB, no mesmo corpo que a ficha ja baixa.
+// Serve ao ajuste "Áudio: Original" — ver linguas.h.
+const char *extras_idioma_original(void);
+
 const char *extras_estudio_nome(int i);
 const char *extras_estudio_logo(int i);
 long        extras_estudio_tmdb(int i);

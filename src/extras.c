@@ -146,6 +146,16 @@ static int  nTemps;
 static char colNome[80];
 // Ficha tecnica e trailers: mesma viagem /movie/<id> da colecao.
 static char fichaStatus[32], fichaPaises[160], fichaCert[12], fichaLanc[16];
+// IDIOMA ORIGINAL do titulo, do `original_language` do TMDB. Vem no MESMO
+// corpo de /movie/<id> e /tv/<id> que este arquivo ja baixa — nenhuma viagem a
+// mais. Vazio quando o TMDB nao responde, e vazio e um estado a tratar, nao um
+// erro: quem le cai no comportamento de antes.
+//
+// O Cinemeta NAO tem esse campo. Conferido em 17/09 em tt0118799 (La vita e
+// bella): ele devolve `country` = "Italy", que e o pais de PRODUCAO. Deduzir
+// idioma de pais erra em toda co-producao e em todo pais multilingue, entao a
+// deducao nao existe aqui.
+static char fichaIdiomaOrig[8];
 static int  fichaDur;
 // AGENDA DA SERIE — proximo episodio e situacao, do MESMO corpo /tv/<id>.
 // Ver agenda.h para o porque de nao ser o Trakt. Os campos sempre estiveram
@@ -576,6 +586,10 @@ static void *buscar(void *arg) {
           return NULL;
         }
         const char *fimC = corpo + strlen(corpo);
+        // Uma linha, no corpo que ja esta na mao. Ver a nota em
+        // fichaIdiomaOrig.
+        js_texto(corpo, fimC, "original_language",
+                 fichaIdiomaOrig, sizeof fichaIdiomaOrig);
         // --- AGENDA DA SERIE (nenhuma viagem a mais) ----------------------
         //
         // `status`, `next_episode_to_air` e `last_episode_to_air` ja vinham
@@ -1049,6 +1063,7 @@ void extras_pedir(const char *imdb, int serie, long tmdbId) {
   colNome[0] = 0;
   nTrailer = fichaDur = nEstudio = 0;
   fichaStatus[0] = fichaPaises[0] = fichaCert[0] = fichaLanc[0] = 0;
+  fichaIdiomaOrig[0] = 0;
   agStatus[0] = agDataProx[0] = agDataUlt[0] = agNomeEp[0] = 0;
   agTemp = agEp = 0;
   memset(vistos, 0, sizeof vistos);
@@ -1262,6 +1277,9 @@ long extras_colecao_tmdb(int i) { return (i >= 0 && i < nCol) ? col[i].tmdb : 0;
 
 // PRODUTORAS/REDES — ver a declaracao de `estudio` la em cima.
 int extras_n_estudios(void) { return nEstudio; }
+// O idioma original do titulo que esta na ficha, ou "" quando nao se sabe.
+const char *extras_idioma_original(void) { return fichaIdiomaOrig; }
+
 const char *extras_estudio_nome(int i) {
   return (i >= 0 && i < nEstudio) ? estudio[i].nome : "";
 }

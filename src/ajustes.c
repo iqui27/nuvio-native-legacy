@@ -251,7 +251,10 @@ static void rotulosDeIdioma(void) {
     // a cada quadro (text.c aplica i18n() no que for desenhado, sempre com o
     // idioma CORRENTE) — o mesmo motivo por que os demais rotulos desta tabela
     // (V_QUALIDADE etc.) tambem ficam em portugues aqui.
-    V_LINGUA[i] = !c[0] ? "Da conta" : (!strcmp(c, "*") ? "Todas" : ling_nome(c));
+    V_LINGUA[i] = !c[0] ? "Da conta"
+                : !strcmp(c, "*") ? "Todas"
+                : !strcmp(c, "~") ? "Original do título"
+                : ling_nome(c);
   }
   nLingua = n;
 }
@@ -632,7 +635,17 @@ static float legendaEspera;
 
 static int valor[AJ_N] = {
   0, 0, 0,          /* qualidade, DV, Atmos */
-  0, 0,             /* idioma de legenda e de audio: 0 = seguir a conta */
+  0,                /* idioma de legenda: 0 = seguir a conta */
+  // AUDIO NO ORIGINAL POR PADRAO (indice 2 = "~", ver OPCOES_COD em linguas.c).
+  // Pedido do dono: "o que eu quero que seja padrao e tocar o audio na
+  // linguagem original". Antes era 0 = "Da conta", e uma conta com "Portugues"
+  // salvo fazia o app pular para a dublagem sem ninguem ter pedido naquele
+  // filme.
+  //
+  // SO VALE PARA INSTALACAO NOVA: quem ja tem ajustes.txt continua com o que
+  // esta gravado la, porque o arquivo ganha do padrao — de proposito, senao
+  // toda atualizacao desfaria escolha de usuario.
+  2,                /* idioma de audio: Original do titulo */
   0,                /* painel ao pausar: ligado (o default do web) */
   1,                /* escolher a fonte ao reproduzir: DESLIGADO (V_LIGA: 1 = Desligado) */
 

@@ -49,6 +49,16 @@ void ling_local_audio(const char *v);
 
 // Lista fixa oferecida em Ajustes. O indice 0 e "seguir a conta" e o 1 e "sem
 // filtro"; do 2 em diante sao codigos ISO.
+// IDIOMA ORIGINAL DO TITULO ABERTO. Quem abre um titulo avisa qual e (vem de
+// extras_idioma_original, que le o `original_language` do TMDB); a opcao
+// "Original" da tela de Ajustes resolve para ele.
+//
+// Sem aviso, ou com aviso vazio, "Original" se comporta como "nao trocar de
+// faixa" — que e o que o app sempre fez. Chutar um idioma seria pior: a pessoa
+// ouviria dublagem sem saber que foi o app que escolheu.
+void        ling_definir_original(const char *cod);
+const char *ling_original(void);
+
 int         ling_opcao_n(void);
 const char *ling_opcao_codigo(int i);   // "" para conta, "*" para sem filtro
 
