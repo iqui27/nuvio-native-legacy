@@ -31,6 +31,13 @@ GLuint tex_obter_hero(const char *caminho);
 // Escala entre o pixel do BUFFER e o pixel de layout (1 na TV, 2 no Mac
 // retina). Definir uma vez no arranque, junto com a do texto.
 void tex_escala(float e);
+
+// QUALIDADE DA IMAGEM: 0 baixa, 1 padrão, 2 alta. Vem da tela de Ajustes.
+//
+// Muda o TETO DE DECODIFICAÇÃO de cada pedido — quanto pixel de origem a arte
+// carrega para o mesmo desenho — e o teto da arte de tela cheia. Vale para o
+// que entrar daqui para frente; o que já está decodificado continua como está.
+void tex_qualidade(int nivel);
 // Reduz uma superficie por media de area para lw x lh, em ABGR8888. Publica
 // para tests/reduzir.c; o decode usa a mesma funcao.
 struct SDL_Surface *tex_reduzir(struct SDL_Surface *src, int lw, int lh);
@@ -67,6 +74,15 @@ const char *tex_arquivo(const char *url);
 // Proporcao (w/h) da textura ja carregada; 0 se ainda nao esta pronta.
 // Necessaria para o "cover" do shader — sem ela a arte estica.
 float tex_aspecto(const char *caminho);
+
+// ESTA ARTE JA FALHOU? 1 quando o cache tentou e nao conseguiu (404, corpo
+// vazio, formato que nenhum leitor aceita).
+//
+// Existe para quem tem UMA RESERVA e precisa decidir entre esperar e trocar: o
+// still do episodio nao existe para toda serie, e o destaque tem de cair na
+// arte do titulo em vez de ficar cinza. Sem isto, "ainda carregando" e "nunca
+// vai vir" sao o mesmo 0 devolvido por tex_obter_*.
+int tex_falhou(const char *caminho);
 
 // 1 quando a arte e uma marca ESCURA E ACROMATICA — o caso do logo preto — e
 // portanto deve ser desenhada tingida (GFX_MARCA) em vez de com as cores dela.

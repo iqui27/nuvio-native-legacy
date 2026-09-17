@@ -43,6 +43,7 @@
 #include "anim.h"
 #include "layout.h"
 #include "catalogo.h"
+#include "artehero.h"
 #include "recomenda.h"
 #include "recenviar.h"
 #include "serieaud.h"
@@ -616,7 +617,15 @@ static const char *arteDe(int i) {
   // Um detalhe nunca pode herdar a arte de outra posicao do catalogo. Quando
   // o backdrop do proprio titulo falta, o renderer mostra o estado neutro e
   // preserva o layout, aguardando eventual enriquecimento do mesmo item.
-  if (c && c->backdrop[0]) return c->backdrop;
+  // TELA CHEIA PEDE A ARTE GRANDE. O backdrop guardado no catalogo foi
+  // dimensionado para o CARD (o caminho do TMDB entra como w1280); desenhar
+  // isso a 1920 amplia 1,5x. artehero_url sobe para a versao grande da mesma
+  // arte e, quando nao ha fundo nenhum e o titulo tem id do IMDb, monta a url
+  // do metahub — que e fundo de verdade em vez do cartaz esticado.
+  if (c && (c->backdrop[0] || c->imdb[0])) {
+    const char *grande = artehero_url(c);
+    if (grande) return grande;
+  }
   // Poster do próprio título é a reserva segura. O desenho trata-o como arte
   // contida, não como cover 16:9, para preservar rosto, lettering e proporção.
   if (c && c->poster[0]) return c->poster;

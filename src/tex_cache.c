@@ -600,6 +600,35 @@ static void podar(void) {
 // A FOLGA de 1,25 cobre o card que cresce ao receber foco (escala ~1,08) e
 // evita reamostrar no limite exato, que serrilha.
 #define NV_TEX_FOLGA 1.25f
+// QUALIDADE DA IMAGEM, escolhida na tela de Ajustes: 0 baixa, 1 padrao, 2 alta.
+//
+// O QUE ELA MUDA E O TETO DE DECODIFICACAO, e so isso — o desenho e o mesmo em
+// qualquer nivel. A folga sobre a largura de desenho existe para o card que
+// cresce no foco e para a arte que sobe de tamanho numa tela maior; subir a
+// folga e pedir mais pixel de origem para o MESMO desenho, que e literalmente
+// a definicao de qualidade de imagem aqui.
+//
+//   baixa  1,00  a arte chega no tamanho do desenho; e a que carrega antes e a
+//                que cabe numa TV de 2016 com 624 MB de RAM
+//   padrao 1,25  o que sempre foi
+//   alta   1,60  ~64% mais pixel por arte; a memoria sobe junto (area)
+//
+// O TETO DO HEROI acompanha: na baixa ele cai para 1280, que e o que a maioria
+// das fontes entrega, e a arte de tela cheia deixa de custar 8 MB por troca.
+//
+// Nao ha recarga: vale para a arte que ENTRAR daqui para frente. Re-decodificar
+// o cache inteiro na troca seria um engasgo de segundos na tela de Ajustes, e o
+// que ja esta decodificado nao fica errado — so nao melhora ate ser despejado.
+static int qualidadeImg = 1;
+void tex_qualidade(int nivel) {
+  if (nivel >= 0 && nivel <= 2) qualidadeImg = nivel;
+}
+static float folgaDaQualidade(void) {
+  return qualidadeImg == 0 ? 1.00f : qualidadeImg == 2 ? 1.60f : NV_TEX_FOLGA;
+}
+static int tetoDoHeroi(void) {
+  return qualidadeImg == 0 ? 1280 : NV_TEX_HERO_LARG_MAX;
+}
 static float escalaBuf = 1.0f;
 
 void tex_escala(float e) {
@@ -1536,13 +1565,13 @@ GLuint tex_obter(const char *caminho) {
 // dois caminhos caia no mesmo teto e nao seja promovido a toa.
 static int capDeLargura(float largLayout) {
   int cap;
-  cap = (int)(largLayout * escalaBuf * NV_TEX_FOLGA + 0.5f);
+  cap = (int)(largLayout * escalaBuf * folgaDaQualidade() + 0.5f);
   // Arredonda para multiplo de 32: sem isso cada largura de desenho vira um
   // teto proprio, e a mesma arte pedida por dois lugares com poucos pixels de
   // diferenca era promovida e RE-DECODIFICADA sem ganho visivel.
   cap = ((cap + 31) / 32) * 32;
   if (cap < 128) cap = 128;
-  if (cap > NV_TEX_HERO_LARG_MAX) cap = NV_TEX_HERO_LARG_MAX;
+  if (cap > tetoDoHeroi()) cap = tetoDoHeroi();
   return cap;
 }
 
@@ -1563,7 +1592,7 @@ GLuint tex_obter_passageira(const char *caminho, float largLayout) {
 // player. 1920 e a largura do painel — pedir mais so gastaria memoria, pedir
 // menos e ampliar depois.
 GLuint tex_obter_hero(const char *caminho) {
-  return tex_obter_limite(caminho, NV_TEX_HERO_LARG_MAX, 1, 0);
+  return tex_obter_limite(caminho, tetoDoHeroi(), 1, 0);
 }
 
 // O ARQUIVO, e nao a textura. Ver a nota em tex_cache.h.
@@ -1598,6 +1627,18 @@ const char *tex_arquivo(const char *url) {
   // interessa e o efeito colateral, que e o arquivo no disco.
   tex_obter_limite(url, 128, 0, 0);
   return NULL;
+}
+
+int tex_falhou(const char *caminho) {
+  int falhou = 0;
+  unsigned long h;
+  int i;
+  if (!caminho || !*caminho) return 0;
+  h = hashCaminho(caminho);
+  BUSCA_MEDIDA(i, caminho, h);
+  if (i >= 0) falhou = (itens[i].estado == FALHOU);
+  SDL_UnlockMutex(mtx);
+  return falhou;
 }
 
 float tex_aspecto(const char *caminho) {

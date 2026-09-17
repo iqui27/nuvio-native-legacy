@@ -11,7 +11,7 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 # nasceu. A lista e escrita a mao, entao ela nao acompanha sozinha: o teste
 # ficou sem linkar ("_fil_unir referenced from _sincronizarFileiras") e o
 # script morria antes de rodar um caso sequer.
-cc ${flags[@]+"${flags[@]}"} src/catalogo.c src/progresso.c src/focus.c src/ajustes.c src/colecoes.c src/js.c src/catordem.c src/fileiras.c tests/home_layout.c \
+cc ${flags[@]+"${flags[@]}"} src/catalogo.c src/progresso.c src/focus.c src/ajustes.c src/colecoes.c src/js.c src/catordem.c src/fileiras.c src/artehero.c tests/home_layout.c \
   -Isrc -o /tmp/nuvio-home-tests -O1 -g -ffunction-sections -fdata-sections \
   -Wl,-dead_strip -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -Wno-deprecated-declarations -Wno-macro-redefined

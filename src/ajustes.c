@@ -114,7 +114,7 @@ typedef enum {
   AJ_PROF, AJ_PROF_BORDA, AJ_PROF_BRILHO, AJ_PROF_COBERTURA,
   AJ_PROF_POSTERS, AJ_PROF_CW, AJ_PROF_EPS, AJ_PROF_ELENCO, AJ_PROF_TRAILERS,
   // Tamanho do item
-  AJ_LARGURA_DP, AJ_RAIO_DP,
+  AJ_LARGURA_DP, AJ_RAIO_DP, AJ_QUALIDADE_IMG,
   // Interface
   AJ_IDIOMA, AJ_ANIM, AJ_RESOLUCAO, AJ_TEMA,
   // Conta
@@ -137,6 +137,10 @@ typedef enum {
 
 static const char *V_QUALIDADE[] = { "Automática", "4K", "1080p", "720p" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
+// TRES PADROES DE IMAGEM. O nome diz o que a pessoa ganha, nao o que o cache
+// faz: "Alta" e mais pixel de arte e mais memoria; "Baixa" e arte que chega
+// antes e cabe em TV com pouca RAM.
+static const char *V_QUALIMG[]   = { "Baixa", "Padrão", "Alta" };
 static const char *V_IDIOMA[]    = { "Português", "English" };
 static const char *V_ANIM[]      = { "Completas", "Reduzidas" };
 // A ORDEM IMPORTA: o indice 0 e o padrao (ver a lista de padroes, que e
@@ -350,6 +354,7 @@ static const Opcao OPCOES[AJ_N] = {
 
   NUM("Largura do item",            72, 200, 2, " dp"), // posterCardWidthDp
   NUM("Arredondamento",             0, 40, 1, " dp"),   // posterCardCornerRadiusDp
+  ESC("Qualidade da imagem",        V_QUALIMG, 3),
 
   ESC("Idioma",                     V_IDIOMA, 2),
   ESC("Animações",                  V_ANIM, 2),
@@ -447,7 +452,7 @@ static const char *CHAVE[] = {
   "cardDepthEdgeCoverage", "cardDepthPostersEnabled",
   "cardDepthContinueWatchingEnabled", "cardDepthEpisodeCardsEnabled",
   "cardDepthCastEnabled", "cardDepthTrailersEnabled",
-  "posterCardWidthDp", "posterCardCornerRadiusDp",
+  "posterCardWidthDp", "posterCardCornerRadiusDp", "qualidadeImagem",
   "idioma", "animacoes", "resolucao_ui",
   // A conta JA MANDAVA esta chave e o app a jogava fora: ela vem dentro de
   // theme_settings no blob de ajustes (profileSettingsSyncService.js), e o
@@ -680,6 +685,7 @@ static int valor[AJ_N] = {
 
   126,              /* largura do item, dp (fabrica; o perfil do dono usa 120) */
   12,               /* arredondamento, dp */
+  1,                /* qualidade da imagem: Padrão (0 Baixa, 1 Padrão, 2 Alta) */
 
   // Idioma 1 = English. O padrao NAO e o do dono do pacote: quem instala vem
   // do release publico, e ler uma interface em portugues sem ter escolhido e
@@ -848,6 +854,9 @@ int   ajustes_profundidade_trailers(void)  { return lig(AJ_PROF_TRAILERS); }
 
 int   ajustes_largura_poster_dp(void) { return valor[AJ_LARGURA_DP]; }
 int   ajustes_raio_poster_dp(void)    { return valor[AJ_RAIO_DP]; }
+// 0 baixa, 1 padrao, 2 alta. Quem consome sao tex_cache (teto de decodificacao)
+// e artehero (qual url pedir para a arte de tela cheia).
+int   ajustes_qualidade_imagem(void)  { return valor[AJ_QUALIDADE_IMG]; }
 // dpToPx = 2 em buildModernHomeSizingStyle. 12dp -> 24px, que e o raio medido.
 float ajustes_raio_poster_px(void)    { return (float)valor[AJ_RAIO_DP] * 2.0f; }
 
@@ -1462,6 +1471,7 @@ static const char *ajudaOpcao(int op) {
       return "Onde o relevo é aplicado. Desligar em alguns lugares alivia o desenho sem perder o efeito onde ele importa.";
     case AJ_LARGURA_DP: return "Ajusta a largura dos pôsteres nas fileiras que usam o tamanho personalizável.";
     case AJ_RAIO_DP: return "Controla o arredondamento dos cantos dos pôsteres.";
+    case AJ_QUALIDADE_IMG: return "Quanto de pixel a arte carrega. Alta pede a versão grande de cada imagem e gasta mais memória; Baixa pede a menor, carrega antes e cabe em TV com pouca RAM.";
 
     // --- Interface e conta
     case AJ_IDIOMA: return "Idioma de toda a interface. Não muda o idioma das legendas nem do áudio.";

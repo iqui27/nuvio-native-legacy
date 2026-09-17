@@ -145,6 +145,12 @@ int   ajustes_profundidade_trailers(void);
 // preferencia e so o RAIO.
 int   ajustes_largura_poster_dp(void);
 int   ajustes_raio_poster_dp(void);
+// QUALIDADE DA IMAGEM: 0 baixa, 1 padrão, 2 alta.
+//
+// Vale para a arte que ENTRAR daqui para frente — o que já está decodificado
+// continua como está até ser despejado. Quem consome é tex_cache (o teto de
+// decodificação de cada pedido) e artehero (qual versão da url pedir).
+int   ajustes_qualidade_imagem(void);
 float ajustes_raio_poster_px(void);   // raio em px (dp x 2)
 
 // --- INTEGRACOES --------------------------------------------------------------

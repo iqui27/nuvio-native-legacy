@@ -206,7 +206,14 @@ NAO_E_TELA = ("printf", "fprintf", "puts", "fputs", "perror", "marco",
               "mkdir", "system", "dlopen", "dlsym", "js_", "jsw_", "rede_",
               "curl_", "SDL_Log", "addons_buscar", "cat_indice_por",
               "idioma_registrar", "assert", "_Static_assert",
-              "EM_ASM", "MAIN_THREAD")
+              "EM_ASM", "MAIN_THREAD",
+              # NOME DE ICONE NAO E TEXTO. gfx_icone recebe o basename do SVG
+              # rasterizado ("guia-fontes", "menu_home"), e a heuristica de
+              # portugues casou com "fontes" — a ferramenta pedia traducao para
+              # um nome de arquivo. Acusar o que nao e defeito ensina a ignorar
+              # o teste, que e como esta classe de defeito sobrevive.
+              "gfx_icone", "gfx_icones_dir", "extras_caminho_marca_nome",
+              "tex_obter", "tex_arquivo")
 
 RE_DESENHO = re.compile(
     r"(?<![A-Za-z0-9_])(" + "|".join(DESENHO) + r")\s*\(")

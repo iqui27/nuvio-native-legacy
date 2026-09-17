@@ -235,8 +235,12 @@ static void doBlocoTrakt(CatItem *d, const char *bloco, const char *fim,
     else if (d->progresso == 0)
       d->restanteMin = minutos;
   }
+  // ROTULO DE TIPO PASSA PELA TABELA. Este campo vai direto para a tela (a
+  // linha "Programa de TV · 2025 · 51 min" do destaque), e composto ele nunca
+  // casa com chave — o mesmo motivo que ja esta escrito em contalib.c, que
+  // corrigiu a metade dele. Com o app em ingles a linha saia em portugues.
   snprintf(d->genero, sizeof d->genero, "%s",
-           (tipo && !strcmp(tipo, "series")) ? "Programa de TV" : "Filme");
+           i18n((tipo && !strcmp(tipo, "series")) ? "Programa de TV" : "Filme"));
   if (!d->classificacao[0]) snprintf(d->classificacao, sizeof d->classificacao, "14");
 }
 
@@ -324,7 +328,7 @@ static int enfeitar(CatItem *d, const char *tipo) {
       d->restanteMin = atoi(r);
     } }
   snprintf(d->genero, sizeof d->genero, "%s",
-           strcmp(tipo, "series") ? "Filme" : "Programa de TV");
+           i18n(strcmp(tipo, "series") ? "Filme" : "Programa de TV"));
   snprintf(d->classificacao, sizeof d->classificacao, "14");
   free(corpo);
   return ok;
@@ -886,7 +890,11 @@ int trakt_perfil(PerfilDados *d) {
   memset(d,0,sizeof *d);
   if (!trakt_cabecalhos(cab,aut,sizeof aut,chave,sizeof chave)) return 0;
   static const char *meses[]={"Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"};
-  snprintf(d->periodo,sizeof d->periodo,"%s %d",meses[tmv.tm_mon],tmv.tm_year+1900);
+  // O MES PASSA PELA TABELA AQUI, na composicao: "Setembro 2026" e uma string
+  // montada, e a traducao de text.c casa a string inteira — ela nunca acharia
+  // chave para isso. A foto 06-profile.png mostrava "Setembro 2026" no meio de
+  // uma tela em ingles.
+  snprintf(d->periodo,sizeof d->periodo,"%s %d",i18n(meses[tmv.tm_mon]),tmv.tm_year+1900);
   struct tm primeiro=tmv;
   primeiro.tm_mday=1;primeiro.tm_hour=primeiro.tm_min=primeiro.tm_sec=0;primeiro.tm_isdst=-1;
   time_t limite=mktime(&primeiro);struct tm utc;
@@ -1027,7 +1035,7 @@ int trakt_lista(const char *qual, CatItem *saida, int max) {
           snprintf(d->logo, sizeof d->logo,
                    "https://images.metahub.space/logo/medium/%s/img", imdb);
           snprintf(d->genero, sizeof d->genero, "%s",
-                   passo ? "Programa de TV" : "Filme");
+                   i18n(passo ? "Programa de TV" : "Filme"));
           snprintf(d->classificacao, sizeof d->classificacao, "14");
           n++;
         }

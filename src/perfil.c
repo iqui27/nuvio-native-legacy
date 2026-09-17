@@ -474,7 +474,12 @@ static void desenharGeneros(float a) {
     char rot[80];
     rgb(dados.generos[i].cor?dados.generos[i].cor:PALETA[i],&r,&g,&bl);
     gfx_cor((GfxRect){xx,yy+6,14,14},NV_RAIO_BADGE,r,g,bl,a);
-    snprintf(rot,sizeof(rot),"%s · %d",dados.generos[i].nome,dados.generos[i].quantidade);
+    // i18n NO NOME, ANTES DE COMPOR. A tradução acontece dentro de txt_linha,
+    // sobre a string INTEIRA — e "Comédia · 32" nunca casa com chave nenhuma.
+    // Era o defeito da foto 06-profile.png: a tela toda em inglês com
+    // "Comédia", "Mistério" e "Terror" no meio. Mesma família do commit 81216de.
+    snprintf(rot,sizeof(rot),"%s · %d",i18n(dados.generos[i].nome),
+             dados.generos[i].quantidade);
     corta(TXT_CAPTION,rot,PF_MEDIO,xx+26,yy,w-46,a);
   }
 }

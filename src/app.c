@@ -23,6 +23,8 @@
 #include "simklauth.h"
 #include "listas.h"
 #include "text.h"
+#include "tex_cache.h"
+#include "artehero.h"
 #include "vertudo.h"
 #include "guia.h"
 #include "epg.h"
@@ -598,6 +600,17 @@ static void trocaDeTituloSeSolicitada(void) {
 }
 
 void app_atualizar(float dt, Uint32 agora) {
+  // A QUALIDADE DA IMAGEM CHEGA AOS DOIS MODULOS QUE A CONSOMEM, e so quando
+  // muda. tex_cache e artehero nao incluem ajustes.h de proposito: o cache de
+  // texturas e a politica de url nao tem por que saber que existe uma tela de
+  // Ajustes — quem sabe as duas coisas e o roteador.
+  { static int qualAplicada = -1;
+    int q = ajustes_qualidade_imagem();
+    if (q != qualAplicada) {
+      qualAplicada = q;
+      tex_qualidade(q);
+      artehero_qualidade(q);
+    } }
   // O backend precisa progredir mesmo no login, perfis e transicoes que
   // retornam cedo: seek pendente no Tizen e prazo de recuo DV no webOS.
   video_bombear();

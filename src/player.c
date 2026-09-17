@@ -36,6 +36,7 @@
 #include "anim.h"
 #include "layout.h"
 #include "catalogo.h"
+#include "artehero.h"
 
 // A CASCA DO TIZEN PRECISA SABER SE O PLAYER ESTA NA TELA. tools/tizen-shell.html
 // traduz as teclas de midia do controle Samsung (play/pause, stop, avancar,
@@ -1677,8 +1678,10 @@ void player_desenhar(Uint32 agora) {
     // interface, que foi o que o dono viu e pediu para tirar: "deixe o fundo
     // preto ao inves do logo no background". A marca passa a ser desenhada no
     // tamanho dela, no centro, onde antes ficava o nome em texto.
+    // A MESMA POLITICA DE TELA CHEIA do destaque e do detalhe: o fundo guardado
+    // no catalogo e o do card, e aqui ele ocupa 1920.
     const char *arte = (c && c->backdrop[0] && !player_id_canal()[0])
-                     ? c->backdrop : NULL;
+                     ? artehero_url(c) : NULL;
     GLuint tex = arte ? tex_obter_hero(arte) : 0;   // ocupa a tela inteira
     if (tex) {
       gfx_tex_aspect_atual = tex_aspecto(arte);

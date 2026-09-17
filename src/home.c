@@ -17,6 +17,7 @@
 #include "layout.h"
 #include "ajustes.h"
 #include "catalogo.h"
+#include "artehero.h"
 #include "colecoes.h"
 #include "addons.h"   /* addons_nome_por_id: o addon de um grupo de colecoes */
 #include "gif.h"
@@ -517,12 +518,29 @@ static void desenhaArteAusente(GfxRect r, float raio, const CatItem *item,
 
 // Escolha de formato para cards. O helper arteDoItem acima informa se precisou
 // usar poster como fallback; aqui a ordem visual do card continua explicita.
+// ARTE DO CARD. A url que o catalogo guarda ja foi dimensionada para ele —
+// subir para a versao grande aqui seria baixar 3840 px para desenhar 419.
 static const char *arte_por_formato(const CatItem *item, int deitado) {
   if (!item) return NULL;
   if (deitado) return item->backdrop[0] ? item->backdrop
                                       : (item->poster[0] ? item->poster : NULL);
   return item->poster[0] ? item->poster
                          : (item->backdrop[0] ? item->backdrop : NULL);
+}
+
+// ARTE DE TELA CHEIA, que e outra pergunta: o destaque desenha 1920 e por isso
+// pede a versao grande da mesma arte (artehero.h).
+//
+// EPISODIO PRIMEIRO. Um item de "Continuar assistindo" de serie e um episodio,
+// e o still dele e a unica imagem que diz onde a pessoa parou — a arte da serie
+// e a mesma para as dez temporadas. Nem todo episodio tem still (o log da TV ja
+// mostrou 404), entao a escolha e feita com tex_falhou: enquanto nao se sabe,
+// pede-se o still; quando o cache diz que ele nao vem, cai na arte do titulo,
+// uma vez e sem piscar.
+static const char *arte_hero_do_item(const CatItem *item) {
+  const char *ep = artehero_url_episodio(item);
+  if (ep && !tex_falhou(ep)) return ep;
+  return artehero_url(item);
 }
 
 // `cat_item()` faz wrap para telas que percorrem listas circulares. A home nao
@@ -536,9 +554,11 @@ static const CatItem *cat_item_exato(int i) {
 
 // A pasta art/ e acervo de reserva apenas no modo sem catalogo. Quando a rede
 // publicou itens, nenhum arquivo generico pode ocupar o lugar de outro titulo.
+// `deitado` 2 quer dizer TELA CHEIA (o destaque). 1 e o card deitado.
 static const char *arte_por_identidade(int indice, int deitado) {
   const CatItem *item = cat_item_exato(indice);
-  const char *arte = arte_por_formato(item, deitado);
+  const char *arte = (deitado == 2) ? arte_hero_do_item(item)
+                                    : arte_por_formato(item, deitado);
   if (arte) return arte;
   if (cat_n() == 0 && indice >= 0) {
     if (!deitado && indice < nPst) return pst[indice];
@@ -572,7 +592,7 @@ static void heroPasso(int d) {
   // O carrossel automatico so volta a contar depois do intervalo inteiro: uma
   // troca sozinha logo depois do toque leria como "a TV ignorou o que eu fiz".
   heroTrocaEm = SDL_GetTicks() + NV_HERO_INTERVALO_MS;
-  { const char *quente = arte_por_identidade(alvo, 1);
+  { const char *quente = arte_por_identidade(alvo, 2);
     if (quente) tex_arquivo(quente); }
 }
 
@@ -1652,7 +1672,7 @@ void home_atualizar(float dt, Uint32 agora) {
       // hero — e quem atravessa a fileira rapido tem o decode descartado por
       // pedidoObsoleto antes de virar textura. Quando a troca enfim acontece,
       // garantirLocal acha o arquivo no disco e so resta o decode.
-      { const char *quente = arte_por_identidade(alvo, 1);
+      { const char *quente = arte_por_identidade(alvo, 2);
         if (quente) tex_arquivo(quente); }
       // Voltou para a arte que ja esta no ar: cancela a troca que ainda nao
       // aconteceu, senao ela dispararia depois sem ninguem ter pedido.
@@ -1679,7 +1699,7 @@ void home_atualizar(float dt, Uint32 agora) {
       heroPendenteEm = agora - NV_HERO_REPOUSO_MS;
       // O carrossel tambem ganha o arquivo quente: o proximo item ja e
       // conhecido aqui, muito antes de o prazo de espera comecar a contar.
-      { const char *quente = arte_por_identidade(proximo, 1);
+      { const char *quente = arte_por_identidade(proximo, 2);
         if (quente) tex_arquivo(quente); }
       if (heroDesejado != proximo) heroDesejadoEm = agora;
       heroDesejado = proximo;
@@ -1845,7 +1865,7 @@ static void desenhaHero(Uint32 agora, float saida) {
     const CatItem *p=(s->ini>=0&&foco.coluna<s->n)
                     ?cat_item_exato(s->ini+foco.coluna):NULL;
     if(p) {
-      const char *arte=arte_por_formato(p, 1);
+      const char *arte=arte_hero_do_item(p);   // tela cheia: arte grande
       GLuint ta=arte?tex_obter_hero(arte):0;
       // A atividade continua com um ambiente discreto, mas quando o Trakt
       // trouxe arte real ela vira o assunto do hero. A pessoa fica apenas na
@@ -2018,7 +2038,7 @@ static void desenhaHero(Uint32 agora, float saida) {
   // cache nao devolve textura, heroAtual nao muda e a tela segue com a arte que
   // ja estava — que e exatamente o que o dono pediu ao andar depressa.
   if (heroDesejado >= 0 && heroDesejado != heroAtual) {
-    const char *arteD = arte_por_identidade(heroDesejado, 1);
+    const char *arteD = arte_por_identidade(heroDesejado, 2);
     // Ausencia de arte tambem e um estado pronto: o placeholder pertence ao
     // item e pode entrar sem apagar o hero anterior primeiro.
     int artePronta = !arteD || tex_obter_hero(arteD);
@@ -2084,9 +2104,9 @@ static void desenhaHero(Uint32 agora, float saida) {
   }
 
   const CatItem *ci = cat_item_exato(heroAtual);
-  const char *arteA = arte_por_identidade(heroAtual, 1);
+  const char *arteA = arte_por_identidade(heroAtual, 2);
   const CatItem *cAnt = cat_item_exato(heroAnterior);
-  const char *arteB = arte_por_identidade(heroAnterior, 1);
+  const char *arteB = arte_por_identidade(heroAnterior, 2);
 
   // Teto de 1920: o hero ocupa a tela e a 960 saia esticado ao dobro.
   // O ANTERIOR so e pedido ENQUANTO a mistura acontece. Estava sendo pedido em
