@@ -68,11 +68,27 @@ const char *artehero_url_episodio(const CatItem *item) {
   }
   if (item->temporada <= 0 || item->episodio <= 0) return NULL;
   if (strncmp(item->imdb, "tt", 2)) return NULL;
+  // O TAMANHO DO STILL SEGUE A QUALIDADE ESCOLHIDA, e aqui o motivo e MEDIDO na
+  // C9 com a linha de decode lento:
+  //
+  //   fundo do metahub   1920x1080  ->   348, 379, 348 ms
+  //   still `original`   3840x2160  ->  1596, 1627, 1966 ms
+  //
+  // Dois segundos e a arte chegando depois de a pessoa ter passado por ela, e
+  // foi isso que o dono viu ("demorando bem mais para carregar as artes"). O
+  // metahub nao tem um tamanho fixo para still: `original` e o que a fonte
+  // tiver, e para varias series isso e 3840.
+  //
+  // No PADRAO o still vem em w1280 (1280x720, ~0,9 MP, da ordem de 150 ms) e o
+  // desenho amplia 1,5x — a mesma conta que o fundo do TMDB fazia antes, e que
+  // num still de episodio custa menos do que esperar dois segundos por ele. Na
+  // ALTA vale a espera: e para isso que o nivel existe.
   { char id[32];
+    const char *tam = (qualidadeImg == 2) ? "original" : "w1280";
     idLimpo(item->imdb, id, sizeof id);
     snprintf(buf, sizeof buf,
-             "https://episodes.metahub.space/%s/%d/%d/original.jpg",
-             id, item->temporada, item->episodio); }
+             "https://episodes.metahub.space/%s/%d/%d/%s.jpg",
+             id, item->temporada, item->episodio, tam); }
   return buf;
 }
 

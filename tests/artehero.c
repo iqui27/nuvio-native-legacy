@@ -93,8 +93,24 @@ int main(void) {
   { CatItem c = item("https://b/back.jpg", "", "tt26545992:1:1");
     c.temporada = 1; c.episodio = 6;
     assert(!strcmp(artehero_url_episodio(&c),
-                   "https://episodes.metahub.space/tt26545992/1/6/original.jpg")); }
+                   "https://episodes.metahub.space/tt26545992/1/6/w1280.jpg")); }
   puts("ok  id de episodio: o :S:E nao entra na url");
+
+  // O TAMANHO DO STILL SEGUE O NIVEL. Medido na C9: `original` chega a
+  // 3840x2160 em varias series e custa 1,6 a 2,0 s de decodificacao; w1280
+  // custa da ordem de 150 ms. So a Alta paga a espera.
+  { CatItem c = item("", "", "tt1");
+    c.temporada = 2; c.episodio = 3;
+    artehero_qualidade(2);
+    assert(!strcmp(artehero_url_episodio(&c),
+                   "https://episodes.metahub.space/tt1/2/3/original.jpg"));
+    artehero_qualidade(0);
+    assert(!strcmp(artehero_url_episodio(&c),
+                   "https://episodes.metahub.space/tt1/2/3/w780.jpg"));
+    artehero_qualidade(1);
+    assert(!strcmp(artehero_url_episodio(&c),
+                   "https://episodes.metahub.space/tt1/2/3/w1280.jpg")); }
+  puts("ok  still: w780 na baixa, w1280 no padrao, original na alta");
 
   // Mesmo corte no fundo montado por id.
   { CatItem c = item("", "", "tt26545992:1:1");
