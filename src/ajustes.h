@@ -33,6 +33,20 @@ int ajustes_dolby_atmos(void);
 // pauseOverlayEnabled: o painel de ficha que sobe alguns segundos depois de
 // pausar o video. Ver pausao.h.
 int ajustes_pausa_overlay(void);
+// 1 = ao mandar Reproduzir, ABRIR A FOLHA DE FONTES em vez de escolher
+// sozinho. Padrao 0: quem nunca entrou em Ajustes continua com a escolha
+// automatica de sempre.
+//
+// Pedido de um testador com o argumento certo: as fontes de um mesmo titulo
+// diferem em resolucao, codec de video e faixa de audio, e essa escolha e de
+// quem assiste. O automatico continua existindo porque tambem e verdade que
+// perguntar em TODA reproducao cansa — por isso e opcao, e nao troca de
+// comportamento.
+//
+// NAO VALE PARA CANAL AO VIVO: la a folha entraria entre um zap e outro, e o
+// proprio fluxo do guia ja escolhe pela playlist que responde (ver tocarCanal).
+int ajustes_fonte_manual(void);
+
 int ajustes_idioma_ingles(void);
 
 // COR DO ANEL DE FOCO, escolhida em "Cor de destaque" ou herdada da conta

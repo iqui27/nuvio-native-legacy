@@ -79,6 +79,11 @@ static _Atomic int fonteEscolhida = -2;   // release/acquire entre verificacao e
 // addon ja vem curada (FrostView manda FHD/HD/SD na ordem), entao o canal vai
 // DIRETO para a primeira fonte e este par vigia: nao abriu em ~12 s ou o
 // player marcou erro, tenta a proxima da lista sem pedir nada ao dono.
+// A folha foi aberta com um player ESPERANDO fonte (ajustes_fonte_manual).
+// Serve para uma pergunta so: se ela fechar sem escolha, quem avisa o player?
+// Sem isto, sair da folha com Voltar deixaria a tela em "carregando" para
+// sempre — o pedido de fonte ja tinha sido consumido e ninguem mais viria.
+static int    folhaParaTocar;
 static int    canalFonteIdx = -1;         // indice na lista de streams, -1 = fora
 static Uint32 canalFonteDesde;            // quando a fonte atual foi pedida
 #define CANAL_FONTE_PRAZO_MS 12000
@@ -1042,7 +1047,21 @@ void app_atualizar(float dt, Uint32 agora) {
       char base[24];
       idBaseDoTitulo(base, sizeof base);
       stream_preferir(base[0] ? fontepref_escolher(base) : -1);
-      if (pthread_create(&fioFonte, NULL, escolherFonte, NULL) != 0) {
+      // QUEM ESCOLHE E A PESSOA, quando ela pediu isso em Ajustes.
+      //
+      // A folha abre AQUI e nao no botao pelo mesmo motivo que a fonte
+      // lembrada e aplicada aqui: antes desta linha a lista nao existe — os
+      // addons acabaram de responder. Abrir no botao mostraria uma folha
+      // vazia.
+      //
+      // O ramo do canal fica de fora de proposito (ele esta no `if` acima):
+      // uma folha entre um zap e outro e o oposto do que se quer de TV ao
+      // vivo, e la a escolha ja e feita pela playlist que responde.
+      if (ajustes_fonte_manual() && stream_n() > 0) {
+        aguardandoFonte = 0;
+        folhaParaTocar = 1;
+        stream_folha_abrir();
+      } else if (pthread_create(&fioFonte, NULL, escolherFonte, NULL) != 0) {
         aguardandoFonte = 0; player_erro_fonte();
       } else fioFonteVivo = 1;
     }
@@ -1118,6 +1137,7 @@ void app_atualizar(float dt, Uint32 agora) {
   int fonte;
   if (aguardandoFonte != 2 && stream_folha_escolheu(&fonte)) {
     const Stream *s = stream_item(fonte);
+    folhaParaTocar = 0;
     printf("fonte escolhida: %s\n", s ? s->rotulo : "?");
     // GUARDAR A ESCOLHA, e SO a manual. O que o automatico escolhe nao vira
     // preferencia: quem nunca abriu esta folha continua com a regra da
@@ -1207,6 +1227,14 @@ void app_atualizar(float dt, Uint32 agora) {
     if (q) faixas_abrir_em(q == 2 ? 1 : 0); }
   faixas_atualizar(dt, agora);
   stream_folha_atualizar(dt, agora);
+  // FOLHA FECHADA SEM ESCOLHER, com o player esperando por ela. Voltar na
+  // folha e "desisti", nao "tente sozinho": abrir a fonte que a pessoa acabou
+  // de recusar seria contradizer o gesto. O player mostra o erro de fonte, que
+  // ja tem saida pela mesma tecla.
+  if (folhaParaTocar && !stream_folha_aberta()) {
+    folhaParaTocar = 0;
+    if (player_aberto()) player_erro_fonte();
+  }
 
   // SAIR DO PLAYER PODE PRECISAR REFAZER "CONTINUAR ASSISTINDO".
   //

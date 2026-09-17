@@ -92,7 +92,7 @@
 typedef enum {
   // Reproducao
   AJ_QUALIDADE, AJ_DV, AJ_ATMOS, AJ_LEG_LINGUA, AJ_AUD_LINGUA,
-  AJ_PAUSA_OVERLAY,
+  AJ_PAUSA_OVERLAY, AJ_FONTE_MANUAL,
   // Layout da Home
   AJ_LANDSCAPE, AJ_HERO_CHEIO,
   // Fileiras da Home
@@ -279,6 +279,7 @@ static const Opcao OPCOES[AJ_N] = {
   // `playback_pause_overlay` (settingsScreen.js:6320). Liga o painel que
   // sobe cinco segundos depois de pausar; ver pausao.h.
   ESC("Painel ao pausar",           V_LIGA, 2),   // pauseOverlayEnabled
+  ESC("Escolher a fonte ao reproduzir", V_LIGA, 2), // local: ver ajustes_fonte_manual
 
   ESC("Pôsteres horizontais",       V_LIGA, 2),   // modernLandscapePostersEnabled
   ESC("Fundo em tela cheia",        V_LIGA, 2),   // modernHeroFullScreenBackdropEnabled
@@ -396,6 +397,10 @@ static const Opcao OPCOES[AJ_N] = {
 static const char *CHAVE[] = {
   "qualidade", "dolbyVision", "dolbyAtmos",
   "legendaIdioma", "audioIdioma", "pauseOverlayEnabled",
+  // Sem "-": grava no ajustes.txt como qualquer outra. Nao tem equivalente na
+  // conta (o app web nao expoe esta escolha), entao o blob simplesmente nao
+  // traz a chave e o valor local fica de pe.
+  "escolherFonteManual",
   "modernLandscapePostersEnabled", "modernHeroFullScreenBackdropEnabled",
   // "-": local, nao vem da conta e nao vai para ajustes.txt. Os dois vivem em
   // fileirasui.txt (fileiras.c) e a conta nao tem chave equivalente — o teto do
@@ -741,6 +746,7 @@ int ajustes_4k(void)                  { return valor[AJ_RESOLUCAO] == 1; }
 int ajustes_dolby_vision(void)        { return lig(AJ_DV); }
 int ajustes_dolby_atmos(void)         { return lig(AJ_ATMOS); }
 int ajustes_pausa_overlay(void)       { return lig(AJ_PAUSA_OVERLAY); }
+int ajustes_fonte_manual(void)        { return lig(AJ_FONTE_MANUAL); }
 int ajustes_idioma_ingles(void)       { return valor[AJ_IDIOMA] == 1; }
 
 // Cor do ANEL DE FOCO. Ver TEMA_ACENTO: um tema aqui e so isto.
@@ -1348,6 +1354,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_LEG_LINGUA: return "Idioma procurado primeiro na lista de legendas de cada título. \"Da conta\" segue o que está no seu perfil.";
     case AJ_AUD_LINGUA: return "Faixa de áudio escolhida quando o arquivo tem mais de uma. Se o idioma não existir no arquivo, o player usa a primeira.";
     case AJ_PAUSA_OVERLAY: return "Ao pausar, sobe uma ficha com a sinopse e os dados do que você está vendo.";
+    case AJ_FONTE_MANUAL: return "Ao mandar reproduzir, abre a lista de fontes em vez de escolher sozinho. Canal ao vivo não pergunta.";
 
     // --- Home
     case AJ_LANDSCAPE: return "Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.";
