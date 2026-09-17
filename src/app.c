@@ -644,6 +644,25 @@ void app_atualizar(float dt, Uint32 agora) {
       if (perfis_ativo() != perfilAntes) {
         invalidarPerfil();
         sync_reaplicar_ajustes();
+        // E A FILEIRA DE CONTINUAR, que invalidarPerfil() nao alcanca.
+        //
+        // invalidarPerfil() so zera a tela de Perfil/Stats. Quem refaz o
+        // "Continuar assistindo" e desc_refazer_continuar(), chamada em apenas
+        // dois lugares: o fim de uma reproducao (player.c) e sync.c, sob
+        // `if (syncprog_aplicar(NULL) > 0)`. E ai esta o defeito: progresso.txt
+        // guarda TODOS os perfis num arquivo so, e prog_aplicar_remoto devolve
+        // 0 quando o registro que veio nao e mais novo que o que ja esta em
+        // disco. Voltar para um perfil JA SINCRONIZADO nao traz novidade
+        // nenhuma -> 0 -> a fileira nunca era refeita e continuava mostrando a
+        // do perfil anterior. Relatado por um testador na exp.4: abriu no
+        // perfil 2, trocou para o 1, e o "Continuar assistindo" seguiu sendo o
+        // do 2.
+        //
+        // Aqui NAO se pergunta se o sync trouxe algo: o perfil mudou, e isso
+        // por si so ja torna a fileira na tela a fileira errada. A leitura em
+        // si sempre esteve certa (prog_ler filtra por perfis_ativo()); o que
+        // faltava era o pedido de refazer.
+        desc_refazer_continuar();
       }
       sync_iniciar();
       tela = TELA_HOME;
