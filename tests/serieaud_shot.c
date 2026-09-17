@@ -183,8 +183,41 @@ static void gravar(const char *nome, SDL_Window *win) {
 //
 // Entao a captura agora pinta o mesmo chao: a mesma arte, o mesmo GFX_DETALHE,
 // o mesmo 0.15. Sem isto nao da para julgar "fundo mais transparente".
+// TRES CHAOS, e nao um. Um veu ajustado contra UMA arte e o mesmo erro de
+// classe que um harness limpado com preto: valida o desenho com confianca
+// total contra a unica imagem que nao o desafia.
+//
+// 00.jpg e o caso facil (deserto, escuro e de baixo contraste no meio da tela).
+// 03 e 07 vieram do harness de secoes de outro agente, e pelo menos uma delas
+// poe um ROSTO CLARO dentro da area de plotagem — que e onde o veu de 0.62
+// falhou: a tracejada da media cruzava a cara e os rotulos "8.7"/"7.6"
+// disputavam espaco com traco de sobrancelha.
+static const char *const FUNDOS[] = {
+  "deploy/app/art/00.jpg",
+  "deploy/app/art/03.jpg",
+  "deploy/app/art/07.jpg"
+};
+#define N_FUNDOS (int)(sizeof FUNDOS / sizeof FUNDOS[0])
 static GLuint fundoTex;
 static const char *fundoArte;
+
+// tex_bombear NAO E OPCIONAL. A fila de decode so anda quando alguem a bombeia,
+// e main.c:757 e o unico lugar do app que faz isso. Um harness que esquece essa
+// chamada mostra TODA textura cinza e continua parecendo que funcionou — foi o
+// segundo defeito de chao encontrado no harness de secoes.
+static void carregarFundo(int k) {
+  int n;
+  fundoArte = FUNDOS[k % N_FUNDOS];
+  fundoTex = tex_obter_hero(fundoArte);
+  for (n = 0; n < 400 && !fundoTex; n++) {
+    tex_bombear(8);
+    fundoTex = tex_obter_hero(fundoArte);
+    SDL_Delay(5);
+  }
+  for (n = 0; n < 40; n++) tex_bombear(8);
+  printf("chao: %s (tex %u, luminancia media %d/255)\n",
+         fundoArte, (unsigned)fundoTex, tex_luminancia(fundoArte));
+}
 
 static void chaoDaPagina(void) {
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
@@ -203,6 +236,7 @@ static void desenharVarias(void (*f)(void), SDL_Window *win) {
     SDL_PumpEvents();
     txt_novo_quadro();
     tex_novo_quadro();
+    tex_bombear(8);
     gfx_novo_quadro();
     glClearColor(NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -250,11 +284,7 @@ int main(int argc, char **argv) {
   tex_iniciar(16);
   // Uma arte qualquer do pacote serve: o que se testa e se o grafico convive
   // com um chao NAO UNIFORME e um pouco mais claro que o preto, nao qual obra.
-  fundoArte = "deploy/app/art/00.jpg";
-  fundoTex = tex_obter_hero(fundoArte);
-  { int n; for (n = 0; n < 200 && !fundoTex; n++) { tex_bombear(8);
-      fundoTex = tex_obter_hero(fundoArte); SDL_Delay(5); } }
-  printf("chao da pagina: %s (tex %u)\n", fundoArte, (unsigned)fundoTex);
+  carregarFundo(0);
 
   // breaking-bad T2: 24126034 reproducoes / 404730 espectadores da serie.
   carregar(BB, (int)(sizeof BB / sizeof BB[0]), "tt0903747", 2,
@@ -316,6 +346,19 @@ int main(int argc, char **argv) {
   desenharVarias(telaDigital, w);
   snprintf(nome, sizeof nome, "%s-longa-digital.bmp", saida);
   gravar(nome, w);
+
+  // A MESMA TEMPORADA NOS TRES CHAOS. E a comparacao que decide se o veu
+  // aguenta arte qualquer ou so a que eu escolhi.
+  { int k;
+    carregar(BB, (int)(sizeof BB / sizeof BB[0]), "tt0903747", 2,
+             24126034L, 404730L, 7);
+    for (k = 0; k < N_FUNDOS; k++) {
+      carregarFundo(k);
+      desenharVarias(telaArcoRadar, w);
+      snprintf(nome, sizeof nome, "%s-chao%d.bmp", saida, k);
+      gravar(nome, w);
+    }
+    carregarFundo(0); }
 
   SDL_GL_DeleteContext(gl);
   SDL_DestroyWindow(w);

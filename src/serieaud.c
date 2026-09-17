@@ -822,22 +822,80 @@ static void tracejada(float x, float y, float w, float r, float g, float b,
 // Passar de mais nunca custa aparencia, porque as pontas sao transparentes.
 #define SA_CHAO_RAMPA 130.0f
 #define SA_CHAO_ALFA   0.62f
+// Reforco SOBRE a area de plotagem, e as rampas curtas dele. Ver `chao`.
+#define SA_CHAO_PLOT   0.50f
+// A rampa do reforco e LONGA pelo mesmo motivo que a do envelope, so que entre
+// PAINEIS: com 44 px, as areas de plotagem do arco e do radar viravam duas
+// faixas escuras separadas por uma clara — "dois cartoes" de novo, agora em
+// degrade. O vao entre as duas plotagens tem ~230 px, entao 100 px de rampa de
+// cada lado deixa so o miolo dele no nivel do envelope.
+#define SA_CHAO_PRAMPA 100.0f
 
-static void chao(float topo, float alt) {
-  // RAMPA - PLANALTO - RAMPA, e nao duas metades em degrade.
-  //
-  // A primeira versao era so duas metades (GFX_VEU_BAIXO em cima,
-  // GFX_VEU_TOPO embaixo): sem trecho reto, o alfa cheio so acontecia numa
-  // linha no meio do painel e o resto ficava quase transparente. Na captura
-  // sobre a arte o veu praticamente nao existia, e a linha de procedencia em
-  // #9699A2 ficava por cima da arte crua — o defeito que este veu existe para
-  // impedir.
-  //
-  // Agora o miolo e CHEIO (e o pedaco onde moram titulo, grafico e rodape) e
-  // as duas rampas de 72 px so escondem onde ele comeca e acaba. A aresta
-  // continua nao existindo; o que existe agora e o escuro que os cinzas desta
-  // base precisam para continuar valendo.
-  float r = SA_CHAO_RAMPA;
+// O CHAO DO PAINEL — e por que ele tem DOIS niveis.
+//
+// Havia aqui uma CAIXA: um retangulo arredondado de #1B1C1F, opaco, atras de
+// cada grafico. Ela resolveu o problema certo (o painel era "cinza sobre
+// cinza, sem estilo e sem hierarquia") e criou outro: o chao de verdade desta
+// pagina NAO E PRETO CHAPADO. detail.c desenha estas secoes sobre o BACKDROP
+// DA OBRA apagado a 15% (medido: `.detail-scrolled` leva o backdrop a opacity
+// 0.15 na folha do web). Sobre arte, retangulo opaco nao le como "uma camada
+// acima": le como PLACA COLADA POR CIMA DA ARTE, com a arte aparecendo em
+// volta e no vao entre os paineis. Era o que o dono via na TV.
+//
+// O veu que entrou no lugar acertou a forma — preto translucido, rampa por
+// pixel, largura da tela inteira, entao sem aresta nenhuma para o olho
+// reconhecer. Mas ele tinha UMA FORCA SO, e ela foi ajustada contra UMA arte.
+//
+// O QUE ISSO CUSTOU, medido: com 00.jpg (deserto, escuro e de baixo contraste
+// no meio) o veu de 0,62 ficava perfeito. Com 03.jpg um ROSTO ILUMINADO cai
+// dentro da area de plotagem: a curva cruza a testa, a tracejada da media
+// cruza o cabelo, e os rotulos de eixo disputam espaco com traco de
+// sobrancelha. Mesmo veu, mesma pagina, duas leituras — ou seja, ajustar uma
+// constante contra uma imagem e o mesmo erro de classe que julgar o desenho
+// num harness limpado com preto.
+//
+// NAO DA PARA ADAPTAR A ARTE, e isto foi verificado e nao suposto:
+//   - serieaud.c nao tem como saber QUAL arte a pagina esta desenhando; nada
+//     em detail.h expoe o caminho, e detail.c nao e meu.
+//   - e ainda que expusesse, tex_luminancia() devolve a MEDIA DA IMAGEM
+//     INTEIRA. MEDIDO nas tres artes do teste: 151, 156 e 158 de 255 — 4% de
+//     diferenca entre a arte que o veu aguenta e a que ele nao aguenta. O
+//     sinal existe, e cego para este problema: o que quebra o painel e a
+//     luminancia LOCAL debaixo da caixa do grafico, e um rosto claro no meio
+//     de uma foto escura quase nao move a media.
+//   - medir a luminancia local de verdade exigiria ler o framebuffer por
+//     quadro, que e exatamente o tipo de trabalho por pixel que o cabecalho
+//     deste arquivo rejeita com numero.
+//
+// ENTAO O VEU E ROBUSTO POR CONSTRUCAO, em dois niveis:
+//
+//   ENVELOPE (SA_CHAO_ALFA) — cobre o painel inteiro com rampa longa. E ele
+//     que faz a pagina ser continua: os tres paineis sao independentes e
+//     nenhum sabe se o vizinho esta na tela, entao cada um passa ~110 px do
+//     conteudo e a rampa de um cai dentro da do outro. Com rampa curta sobrava
+//     entre eles uma faixa de arte crua e voltavam "dois cartoes", so que com
+//     a borda desfocada.
+//
+//   REFORCO (SA_CHAO_PLOT) — so sobre a AREA DE PLOTAGEM, onde moram a curva,
+//     a tracejada e os rotulos de eixo. Aqui a legibilidade nao e negociavel e
+//     a transparencia e; em cima e embaixo, onde ela e so decoracao, o
+//     envelope mais fraco continua deixando a arte passar. E o contrario de
+//     escurecer tudo: a transparencia sobrevive onde ela enfeita e a leitura
+//     ganha onde ela importa. Sobre o plot os dois somam ~0,78, o que poe um
+//     rosto iluminado em ~4% de luminancia de tela.
+//
+//   As rampas do reforco sao CURTAS (44 px) de proposito: ele pousa sobre um
+//   envelope ja escuro, entao o degrau a esconder e pequeno e uma rampa longa
+//   so gastaria preenchimento.
+//
+// CUSTO: 6 desenhos por painel (eram 3) e ~0,6 tela de preenchimento (eram
+// ~0,3). E caro e esta contado: gfx.h mede a tela de detalhe em 2,2-3,5 telas,
+// mas esse pico e o do HERO — quando a pagina rolou ate estas secoes o proprio
+// detail.c ja tirou o veu de tela cheia e a arte esta a 15%, entao aqui embaixo
+// sobra orcamento. Se um dia faltar, o lugar de cortar e a largura do reforco:
+// ele so precisa cobrir de r.x a r.x+r.w, e nao a tela toda.
+static void chao(float topo, float alt, float plotoTopo, float plotoAlt) {
+  float r = SA_CHAO_RAMPA, pr = SA_CHAO_PRAMPA;
   if (alt <= 2.0f) return;
   if (alt < r * 2.0f + 2.0f) r = (alt - 2.0f) * 0.5f;
   { GfxRect cima  = { 0.0f, topo, NV_TELA_W, r };
@@ -846,6 +904,26 @@ static void chao(float topo, float alt) {
     gfx_rect(cima,  0, GFX_VEU_BAIXO, 0, 0, 0, 0.0f, 0, 0, 0, SA_CHAO_ALFA);
     gfx_cor(meio, 0.0f, 0.0f, 0.0f, 0.0f, SA_CHAO_ALFA);
     gfx_rect(baixo, 0, GFX_VEU_TOPO,  0, 0, 0, 0.0f, 0, 0, 0, SA_CHAO_ALFA); }
+  if (plotoAlt <= 2.0f) return;
+  { GfxRect pc = { 0.0f, plotoTopo - pr, NV_TELA_W, pr };
+    GfxRect pm = { 0.0f, plotoTopo, NV_TELA_W, plotoAlt };
+    GfxRect pb = { 0.0f, plotoTopo + plotoAlt, NV_TELA_W, pr };
+    gfx_rect(pc, 0, GFX_VEU_BAIXO, 0, 0, 0, 0.0f, 0, 0, 0, SA_CHAO_PLOT);
+    gfx_cor(pm, 0.0f, 0.0f, 0.0f, 0.0f, SA_CHAO_PLOT);
+    gfx_rect(pb, 0, GFX_VEU_TOPO,  0, 0, 0, 0.0f, 0, 0, 0, SA_CHAO_PLOT); }
+}
+
+// CHAPA ATRAS DE TEXTO PEQUENO. Preto translucido em capsula, o mesmo recurso
+// que ja protege os rotulos dos dois episodios com nome.
+//
+// Os tres rotulos menores do painel — os dois extremos do eixo e o valor da
+// linha de referencia — sao TXT_CAPTION, o piso de 22 px, e sao os primeiros a
+// perder quando a arte por tras deles tem detalhe. Eles tambem estao FORA da
+// area de plotagem, nas calhas, onde so o envelope mais fraco alcanca. Tres
+// desenhos por painel compram a garantia de que eles nunca dependem da obra.
+static void chapaTexto(float x, float y, float w, float h) {
+  GfxRect c = { x - 12.0f, y - 4.0f, w + 24.0f, h + 8.0f };
+  gfx_cor(c, raioPx(c.w, c.h, c.h * 0.5f), 0.0f, 0.0f, 0.0f, 0.55f);
 }
 
 // AS DUAS CALHAS, e por que elas sao constantes compartilhadas.
@@ -916,8 +994,19 @@ static float cabecalho(GfxRect r, const char *titulo, const char *fonte) {
 // dada. Alinhar a direita e o que faz "105%" e "90%" formarem uma coluna em
 // vez de duas larguras soltas.
 static void rotuloEixo(float dir, float ycentro, const char *s) {
-  TxtLinha l = txt_linha(TXT_CAPTION, s, 150, 153, 162, 255);
+  TxtLinha l = txt_linha(TXT_CAPTION, s, 190, 192, 200, 255);
+  chapaTexto(dir - l.w, ycentro - l.h * 0.5f, l.w, l.h);
   txt_desenhar(l, dir - l.w, ycentro - l.h * 0.5f);
+}
+
+// Valor da linha de referencia, na calha DIREITA, na altura da propria
+// tracejada. E o par de rotuloEixo, e existe para que os dois paineis nao
+// escrevam essa linha cada um do seu jeito — era assim que quatro posicoes de
+// rotulo diferentes apareciam em dois graficos da mesma familia.
+static void rotuloRef(float esq, float ycentro, const char *s) {
+  TxtLinha l = txt_linha(TXT_CAPTION, s, 190, 192, 200, 255);
+  chapaTexto(esq, ycentro - l.h * 0.5f, l.w, l.h);
+  txt_desenhar(l, esq, ycentro - l.h * 0.5f);
 }
 
 // Texto de "ainda nao chegou" / "nao ha". Dois estados diferentes e dizer um
@@ -980,7 +1069,7 @@ float serieaud_arco(GfxRect r) {
   // transparentes, entao sobrar e invisivel e faltar deixaria texto sobre arte
   // crua. 150 acima cobre titulo e procedencia; 150 abaixo cobre o eixo de
   // episodios e a linha de episodios sem nota.
-  chao(r.y - 110.0f, (py - r.y) + gh + 280.0f);
+  chao(r.y - 110.0f, (py - r.y) + gh + 280.0f, py, gh);
 
   // Colunas sem nota, antes de tudo: elas sao fundo, nao dado.
   for (i = 0; i < nEps; i++)
@@ -1003,10 +1092,14 @@ float serieaud_arco(GfxRect r) {
   // A MEDIA, tracejada, com o valor na ponta direita, FORA da caixa.
   if (med > 0 && hi > lo) {
     float ym = SA_ARCO_Y(med);
-    tracejada(gx, ym, gw, 0.94f, 0.94f, 0.96f, 0.26f);
+    // 0.45 e nao 0.26: MEDIDO sobre 07.jpg, onde quatro rostos iluminados caem
+    // dentro da caixa do arco. A curva (branca cheia, 5 px) atravessa isso sem
+    // esforco; a tracejada tem 2 px e era o primeiro elemento a se perder. Ela
+    // continua subordinada a curva — traco fino e interrompido contra linha
+    // grossa e continua —, so que agora existe em qualquer obra.
+    tracejada(gx, ym, gw, 0.94f, 0.94f, 0.96f, 0.45f);
     snprintf(txt, sizeof txt, i18n("média %.1f"), med / 10.0);
-    { TxtLinha l = txt_linha(TXT_CAPTION, txt, 190, 192, 200, 255);
-      txt_desenhar(l, gx + gw + SA_FOLGA_ROT, ym - l.h * 0.5f); }
+    rotuloRef(gx + gw + SA_FOLGA_ROT, ym, txt);
   }
 
   // A CURVA, por TRECHOS CONTIGUOS, e o PONTILHADO no vao entre eles.
@@ -1259,7 +1352,7 @@ float serieaud_radar(GfxRect r) {
 
 #define SA_RAD_Y(v) (py + gh - gh * (float)((v) - piso) / (float)(topo - piso))
 
-  chao(r.y - 110.0f, (py - r.y) + gh + 330.0f);
+  chao(r.y - 110.0f, (py - r.y) + gh + 330.0f, py, gh);
 
   for (i = 0; i < nEps; i++)
     if (serieaud_retencao(i) < 0)
@@ -1333,9 +1426,8 @@ float serieaud_radar(GfxRect r) {
 
   // A LINHA DOS 100%: a referencia de onde a temporada comecou.
   if (y100 > 0.0f) {
-    tracejada(gx, y100, gw, 0.94f, 0.94f, 0.96f, 0.34f);
-    { TxtLinha l = txt_linha(TXT_CAPTION, "100%", 190, 192, 200, 255);
-      txt_desenhar(l, gx + gw + SA_FOLGA_ROT, y100 - l.h * 0.5f); }
+    tracejada(gx, y100, gw, 0.94f, 0.94f, 0.96f, 0.45f);
+    rotuloRef(gx + gw + SA_FOLGA_ROT, y100, "100%");
   }
   { GfxRect base = { gx, py + gh, gw, 1.0f };
     gfx_cor(base, 0.0f, 1.0f, 1.0f, 1.0f, 0.22f); }
@@ -1552,7 +1644,7 @@ float serieaud_digital(GfxRect r) {
   // deixa-lo com caixa enquanto os vizinhos ganham veu faria tres graficos na
   // mesma pagina com dois chaos diferentes — que e pior do que o defeito que a
   // caixa resolvia.
-  chao(r.y - 110.0f, (py - r.y) + gh + 350.0f);
+  chao(r.y - 110.0f, (py - r.y) + gh + 350.0f, py, gh);
 
   // A COLUNA DO EPISODIO ESCOLHIDO, atras de tudo. E ela que liga as quatro
   // fileiras numa leitura vertical — sem ela cada fileira e um grafico
