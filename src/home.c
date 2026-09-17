@@ -189,6 +189,22 @@ static int okConsumirSoltura = 0;
 static float okHold = 0.0f;
 
 // --- hero-carrossel ---
+// O DESTAQUE E A PRIMEIRA FILEIRA DA HOME, e nao um cabecalho decorativo.
+//
+// Pedido do dono: "o hero ficar uma fileira que a gente pode ir trocando para o
+// lado e com o botao de reproduzir; quando descer fica normal como ja ta".
+//
+// A alternativa era transformar o destaque na fileira 0 de verdade, dentro de
+// `fileiras[]`. Nao serve: aquele vetor e a lista de CATALOGOS (cada fileira
+// tem base, catId, cards e rolagem horizontal propria), e o destaque nao tem
+// nada disso — ele tem um item por vez e ocupa a tela. Um bit de estado ao lado
+// do foco descreve melhor o que a tela faz: existe um degrau ACIMA da fileira 0.
+static int focoHero = 1;
+// Quantos titulos o destaque percorre com a seta. O carrossel automatico
+// atravessava o catalogo inteiro (281 titulos na conta do dono) — invisivel
+// enquanto ninguem contava, mentira assim que aparece um "3 / 281" na tela e a
+// pessoa tenta chegar ao fim.
+#define HOME_HERO_LISTA 10
 static int heroAtual = 0, heroAnterior = 0;
 // Candidato a heroi e desde quando ele e o candidato. Ver NV_HERO_REPOUSO_MS.
 static int    heroPendente = 0;
@@ -308,6 +324,19 @@ static float larguraDe(TipoFileira t) {
 }
 // Quantos titulos o hero percorre. Vem do catalogo quando existe.
 static int nAcervoHero(void) { int n = cat_n(); if (n) return n; return nBd ? nBd : 1; }
+// Quantos titulos o destaque oferece: o teto da lista, ou o acervo quando ele e
+// menor (conta nova, cache frio).
+static int heroNLista(void) {
+  int n = nAcervoHero();
+  return n < HOME_HERO_LISTA ? n : HOME_HERO_LISTA;
+}
+// O indice que a seta move. `heroAtual` so muda quando a arte nova esta pronta
+// (ver a troca em desenhaHero), entao ele NAO serve de ponto de partida para o
+// passo seguinte: dois toques rapidos na direita voltariam ao mesmo titulo. A
+// intencao mora em `heroDesejado`, que muda no toque.
+static int heroIntencao(void) {
+  return heroDesejado >= 0 ? heroDesejado : heroAtual;
+}
 
 // Arte de um titulo nunca pode ser preenchida por uma posição equivalente de
 // outro vetor. O catalogo chega em lotes, e a ordem dos backdrops do pacote não
@@ -425,7 +454,32 @@ static const char *arte_por_identidade(int indice, int deitado) {
   return NULL;
 }
 
+// UM PASSO DO DESTAQUE, pela seta. Anuncia o desejo do mesmo jeito que o
+// carrossel automatico: quem efetiva a troca continua sendo o desenho, quando a
+// arte estiver pronta (ou quando a espera estourar). Assim o gesto tem a mesma
+// resposta visual que a troca sozinha ja tinha, sem um segundo caminho.
+static void heroPasso(int d) {
+  int n = heroNLista();
+  int alvo = heroIntencao() + d;
+  if (n <= 0 || alvo < 0 || alvo >= n) return;
+  heroPendente = alvo;
+  // Sem repouso: aqui a pessoa DISSE qual titulo quer. O repouso de
+  // NV_HERO_REPOUSO_MS existe para o foco que atravessa uma fileira, onde cada
+  // passo e caminho e nao destino.
+  heroPendenteEm = SDL_GetTicks() - NV_HERO_REPOUSO_MS;
+  if (heroDesejado != alvo) heroDesejadoEm = SDL_GetTicks();
+  heroDesejado = alvo;
+  // O carrossel automatico so volta a contar depois do intervalo inteiro: uma
+  // troca sozinha logo depois do toque leria como "a TV ignorou o que eu fiz".
+  heroTrocaEm = SDL_GetTicks() + NV_HERO_INTERVALO_MS;
+  { const char *quente = arte_por_identidade(alvo, 1);
+    if (quente) tex_arquivo(quente); }
+}
+
 static int foco_pode_pressao_longa(void) {
+  // No destaque ha sempre um titulo do catalogo por tras, entao o menu do
+  // cartaz vale ali como vale num card.
+  if (focoHero) return cat_n() > 0;
   if (foco.fileira < 0 || foco.fileira >= nFileiras) return 0;
   const Fileira *s = &fileiras[foco.fileira];
   if (s->tipo == FILEIRA_CATALOGOS || s->tipo == FILEIRA_SOCIAL ||
@@ -734,6 +788,16 @@ static int posAplicarTabela(const HomePos *t, int n,
     foco.fileira = achou;
     foco.coluna  = c;
     foco.colunaLembrada[achou] = c;
+    // A POSICAO DE ONTEM CONTINUA GRAVADA, E O DESTAQUE CONTINUA ABRINDO.
+    //
+    // Cheguei a desligar `focoHero` aqui, achando que restaurar a posicao de
+    // ontem devia ganhar. Esta errado por dois motivos. O primeiro e que a home
+    // do dono SEMPRE tem posicao gravada, entao a home nunca abriria no
+    // destaque — a tela nova existiria so na primeira execucao de cada
+    // instalacao. O segundo e que nada se perde: `foco` fica exatamente onde
+    // posLer() o pos, e o primeiro toque para baixo cai la, com a fileira ja
+    // rolada. A restauracao deixa de ser o que a tela MOSTRA e passa a ser o
+    // que ela oferece a um toque — que e o que ela sempre foi por dentro.
   }
   return achou;
 }
@@ -853,8 +917,12 @@ int home_iniciar(const char *dirArte) {
   if (!nBd) { printf("home: nenhum backdrop em %s\n", dirArte); return 0; }
   if (!nPst) { printf("home: sem posters retrato, Top 10 usara backdrop\n"); }
 
-  // No layout moderno legacy o hero é informativo; a navegação começa na
-  // primeira fileira de conteúdo (como buildModernNavigationRows()).
+  // A HOME ABRE NO DESTAQUE. Era aqui que morava a nota dizendo que o hero e
+  // informativo e que a navegacao comeca na primeira fileira — deixou de ser
+  // verdade: ele recebe foco, anda para o lado e tem botao. A fileira 0
+  // continua sendo o primeiro degrau ABAIXO dele, e posAplicarTabela desliga
+  // este estado quando ha posicao de ontem para restaurar.
+  focoHero = 1;
   int cols[MAX_FIL];
   for (int i = 0; i < nFileiras; i++)
     cols[i] = fileiras[i].n + (fileiras[i].verTudo ? 1 : 0);
@@ -912,6 +980,14 @@ void home_evento(const SDL_Event *e) {
         return;
       }
       Uint32 dur = okDesde ? SDL_GetTicks() - okDesde : 0;
+      // O DESTAQUE RESPONDE AO OK ANTES DAS FILEIRAS. Toque curto abre a pagina
+      // do titulo; segurar abre o menu do cartaz, como em qualquer card.
+      if (focoHero) {
+        okDesde = 0; okPressionando = 0; okLongDisparado = 0; okHold = 0.0f;
+        if (dur >= NV_HOLD_MS) ctx_abrir(heroAtual);
+        else pedidoAbrir = 1;
+        return;
+      }
       int noVerTudo = (foco.fileira >= 0 && foco.fileira < nFileiras &&
                        fileiras[foco.fileira].verTudo &&
                        foco.coluna == fileiras[foco.fileira].n);
@@ -983,7 +1059,12 @@ void home_evento(const SDL_Event *e) {
     //      (estava no meio da home e queria voltar ao topo).
     //   2. Ja no canto, o primeiro Voltar so PERGUNTA, por 3 s. So o segundo
     //      dentro da janela sai.
-    if (foco.fileira > 0 || foco.coluna > 0) {
+    if (!focoHero) {
+      // O canto superior esquerdo passou a ser o DESTAQUE: subir ate a fileira
+      // 0 e parar ali deixaria um degrau invisivel entre "o topo" e "o topo de
+      // verdade", e o segundo Voltar fecharia o app com a pessoa achando que
+      // ainda tinha para onde subir.
+      focoHero = 1;
       foco.fileira = 0;
       foco.coluna = 0;
       foco.colunaLembrada[0] = 0;
@@ -1013,6 +1094,23 @@ void home_evento(const SDL_Event *e) {
   // navega assume a posicao; o disco passa a seguir esta sessao.
   if (k == SDLK_RIGHT || k == SDLK_LEFT || k == SDLK_DOWN || k == SDLK_UP)
     posDiscoPendente = 0;
+  // O DESTAQUE E UM DEGRAU ACIMA DA FILEIRA 0, e nao uma fileira do vetor: as
+  // setas dele sao tratadas aqui e nao chegam ao focus_mover.
+  if (focoHero) {
+    if (k == SDLK_RIGHT) { heroPasso(1); return; }
+    if (k == SDLK_LEFT) {
+      // Mesma regra do resto da home: esquerda na PRIMEIRA posicao chama o menu
+      // lateral. O destaque nao da a volta justamente para que essa saida
+      // exista sempre no mesmo lugar.
+      if (heroIntencao() <= 0) { pedidoMenu = 1; return; }
+      heroPasso(-1); return;
+    }
+    if (k == SDLK_DOWN) { focoHero = 0; return; }
+    if (k == SDLK_UP) return;
+  } else if (k == SDLK_UP && foco.fileira == 0) {
+    focoHero = 1;
+    return;
+  }
   if (k == SDLK_RIGHT) {
     // O `&&` aqui era um curto-circuito com efeito colateral: escrito como
     // `if (fileira == 0 && !focus_mover(...))`, o focus_mover so era chamado
@@ -1386,7 +1484,7 @@ void home_atualizar(float dt, Uint32 agora) {
     okDesde = 0;
     // O menu contextual continua sendo o dono das acoes e da UI. A home so
     // dispara uma vez no limiar e consome o KEYUP seguinte.
-    ctx_abrir(fileiras[foco.fileira].ini + foco.coluna);
+    ctx_abrir(focoHero ? heroAtual : fileiras[foco.fileira].ini + foco.coluna);
   }
 
   // O catalogo pode encolher entre duas respostas. Normalizar os indices do
@@ -1408,7 +1506,9 @@ void home_atualizar(float dt, Uint32 agora) {
   // mexendo na mesma arte dariam trocas em cima da escolha do usuario.
   {
     int alvo = -1;
-    if (foco.fileira >= 0 && foco.fileira < nFileiras) {
+    // COM O DESTAQUE EM FOCO, a arte e escolhida por ele — pela seta ou pelo
+    // carrossel — e nao pelo card que ficou para tras nas fileiras.
+    if (!focoHero && foco.fileira >= 0 && foco.fileira < nFileiras) {
       int i = fileiras[foco.fileira].ini + foco.coluna;
       if (fileiras[foco.fileira].tipo == FILEIRA_CATALOGOS)
         i = -1;
@@ -1450,7 +1550,10 @@ void home_atualizar(float dt, Uint32 agora) {
     } else if (alvo < 0 && agora >= heroTrocaEm) {
       // Sem card em foco, agenda o proximo item e deixa o desenho efetivar a
       // troca somente quando a textura ou o placeholder ja estiver pronto.
-      int total = nAcervoHero();
+      // A MESMA LISTA QUE A SETA PERCORRE. O carrossel andava pelo catalogo
+      // inteiro; com o contador na tela isso viraria um "3 / 281" que ninguem
+      // atravessa e que contradiz o que a seta faz.
+      int total = heroNLista();
       int proximo = total > 0 ? (heroAtual + 1) % total : 0;
       heroPendente = proximo;
       heroPendenteEm = agora - NV_HERO_REPOUSO_MS;
@@ -1497,7 +1600,11 @@ void home_atualizar(float dt, Uint32 agora) {
     int nAnim = fileiras[r].n + (fileiras[r].verTudo ? 1 : 0);
     if (nAnim > MAX_CARDS) nAnim = MAX_CARDS;
     for (int c = 0; c < nAnim; c++) {
-      float alvo = focus_indice(&foco, r, c) ? 1.0f : 0.0f;
+      // UM FOCO POR VEZ. Com o destaque em foco, o card que ficou para tras
+      // continuava com o anel aceso: a tela mostrava dois lugares selecionados
+      // e o D-pad so obedecia a um deles. O `foco` nao e zerado — ele guarda
+      // onde a pessoa estava, e e para la que o baixo devolve.
+      float alvo = (!focoHero && focus_indice(&foco, r, c)) ? 1.0f : 0.0f;
       animFoco[r][c] = motionReduzido
                      ? alvo
                      : anim_mola(animFoco[r][c], alvo, dt,
@@ -1541,7 +1648,14 @@ void home_atualizar(float dt, Uint32 agora) {
   // focada cai exatamente em NV_SHELF_TOP. Continua com mola: o salto seco
   // entre fileiras de alturas diferentes le como corte, nao como navegacao.
   float alvoY = 0.0f;
-  { int r = foco.fileira;
+  if (focoHero) {
+    // ROLAGEM NEGATIVA: as fileiras sao desenhadas em NV_SHELF_TOP - scrollY,
+    // entao empurra-las para baixo e o mesmo movimento de sempre com o sinal
+    // trocado — a mola que ja existe faz a ida e a volta, e nao ha um segundo
+    // relogio para descasar do primeiro.
+    alvoY = -NV_HOME_HERO_EMPURRA;
+  } else {
+    int r = foco.fileira;
     for (int i = 0; i < r && i < nFileiras; i++)
       alvoY += NV_LEGACY_ROW_HEAD_H + alturaTotalFil(i) + fileiraGap();
   }
@@ -1950,7 +2064,23 @@ static void desenhaHero(Uint32 agora, float saida) {
   const char *sinopse = (ci && ci->sinopse[0]) ? ci->sinopse : "";
 
   // --- empilhamento de baixo para cima, como o flex-end do CSS ---
-  float base = NV_SHELF_TOP - NV_HERO_COPY_GAP + descidaCopy;
+  //
+  // O BLOCO DESCE JUNTO COM AS FILEIRAS. Pedido do dono: "deixar as informacoes
+  // mais para baixo e subir so quando descer para a fileira". Ele nao ganha uma
+  // animacao propria: anda exatamente o que `scrollY` empurrou, entao a
+  // distancia entre a ultima linha do texto e o titulo da primeira fileira e a
+  // mesma nos dois estados — e nao ha duas molas para descasar.
+  //
+  // A RESERVA e o que impede o botao de cair em cima do titulo da fileira. O
+  // bloco e ancorado pela BASE (flex-end), entao pendurar o botao abaixo dele
+  // sem descontar a altura seria desenhar 94px para dentro do espaco da fileira
+  // — e a colisao so apareceria no estado empurrado, que e justamente o que a
+  // foto do sofa mostra primeiro.
+  float empurra = scrollY < 0.0f ? -scrollY : 0.0f;
+  float aBotao = anim_clamp(empurra / NV_HOME_HERO_EMPURRA, 0.0f, 1.0f);
+  float reservaBotao = aBotao * (NV_HOME_HERO_BOTAO_GAP + NV_HERO_BOTAO_H + 24.0f);
+  float base = NV_SHELF_TOP - NV_HERO_COPY_GAP + descidaCopy
+             + empurra - reservaBotao;
   float hSin = sinopse[0] ? txt_bloco(TXT_HERO_SIN, sinopse, 255, 255, 255, -1, 0,
                                       NV_HERO_SIN_W, NV_LD_HERO_SIN, 0.0f, 3)
                           : 0.0f;
@@ -2049,6 +2179,54 @@ static void desenhaHero(Uint32 agora, float saida) {
   if (sinopse[0])
     txt_bloco(TXT_HERO_SIN, sinopse, 255, 255, 255, x, ySin, NV_HERO_SIN_W,
               NV_LD_HERO_SIN, aTexto, 3);
+
+  // O BOTAO E A POSICAO, que so existem enquanto o destaque tem o foco.
+  //
+  // A opacidade vem da ROLAGEM, e nao de uma mola propria: `scrollY` ja e
+  // negativo na medida exata do empurrao das fileiras, entao o botao aparece e
+  // some EXATAMENTE junto com o movimento que o trouxe. Duas molas para o mesmo
+  // gesto descasariam, e o olho le descasamento como defeito.
+  { int n = heroNLista();
+    if (aBotao > 0.004f && n > 0) {
+      float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+      // OK ABRE A PAGINA DO TITULO — e o rotulo diz isso. "Reproduzir" seria a
+      // promessa de comecar o filme, e quem aperta acaba numa pagina: o rotulo
+      // tem de descrever o que a tecla FAZ, nao o que seria bonito escrever.
+      const char *rot = i18n("Ver título");
+      TxtLinha lb = txt_linha(TXT_CALLOUT, rot, 16, 16, 18, 255);
+      float bh = NV_HERO_BOTAO_H;
+      float bw = lb.w + 96.0f;
+      float by = base + NV_HOME_HERO_BOTAO_GAP;
+      GfxRect bt = { x, by, bw, bh };
+      // Raio = metade da ALTURA: o raio do gfx_cor e fracao da altura do
+      // retangulo, entao 0,5 e a pilula exata em qualquer largura.
+      gfx_cor(bt, 0.5f, ar, ag, ab, aBotao);
+      // O TRIANGULO DE REPRODUZIR NAO ENTRA AQUI. Ele e a marca universal de
+      // "comeca agora" e este botao nao comeca nada; desenha-lo seria a mesma
+      // mentira do rotulo, so que em forma.
+      txt_desenhar_alpha(lb, x + (bw - lb.w) * 0.5f, by + (bh - lb.h) * 0.5f,
+                         aBotao);
+
+      { char pos[24];
+        snprintf(pos, sizeof pos, "%d / %d", heroIntencao() + 1, n);
+        TxtLinha lp = txt_linha(TXT_HERO_META, pos, 196, 199, 208, 255);
+        txt_desenhar_alpha(lp, x + bw + 28.0f, by + (bh - lp.h) * 0.5f,
+                           aBotao * 0.92f); }
+
+      // CONTINUIDADE DA ABERTURA: a pagina de titulo cresce a partir do
+      // retangulo que o item ocupava. Com o foco no destaque esse retangulo e a
+      // arte do proprio destaque, e sem isto o OK abriria o ULTIMO card que
+      // recebeu foco — o titulo errado, com a animacao vindo de fora da tela.
+      if (focoHero && ci) {
+        itemFoco.indice = heroAtual;
+        itemFoco.rect   = heroArteRect;
+        itemFoco.arte   = arteDoItem(ci, NULL);
+        itemFoco.titulo = ci->titulo;
+        itemFoco.genero = ci->genero;
+        itemFoco.meta   = ci->meta;
+        temItemFoco = 1;
+      }
+    } }
 }
 
 // Fundo CINZA, e so. Eu tinha posto aqui a arte do titulo em destaque
@@ -2293,7 +2471,7 @@ void home_desenhar(Uint32 agora) {
         TxtLinha ai=txt_linha(TXT_HERO_META,"AI-powered",183,192,219,255);
         txt_desenhar(ai,ajustes_conteudo_x()+tl.w+22,y+(tl.h-ai.h)*.5f);
       }
-      if (foco.fileira == r) {
+      if (foco.fileira == r && !focoHero) {
         char pos[32];
         if (foco.coluna < fileiras[r].n)
           snprintf(pos, sizeof pos, "%d / %d", foco.coluna + 1, fileiras[r].n);

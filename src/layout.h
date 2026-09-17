@@ -209,6 +209,23 @@
 // tvOS, e nao e a nossa: no web as fileiras sobem por cima da parte de baixo da
 // arte do hero (que vai ate 670), em vez de comecarem depois dela.
 #define NV_SHELF_TOP     518.0f   // topo do cabecalho da primeira fileira
+// QUANTO AS FILEIRAS DESCEM ENQUANTO O FOCO ESTA NO DESTAQUE.
+//
+// O destaque deixou de ser decoracao e virou a primeira "fileira" da home: ele
+// recebe foco, anda para o lado e tem botao. Enquanto esta em foco, as fileiras
+// descem — nao somem — porque o que esta em foco tem de ser o assunto da tela e
+// ainda assim precisa ficar claro que ha conteudo abaixo.
+//
+// 260 vem da conta, nao do olho: a fileira de "Continuar assistindo" mede 46 de
+// cabecalho + 236 de card = 282, entao empurrada ela ocupa de 778 a 1060 e
+// sobra folga de 20px ate a borda. Ela aparece INTEIRA: cortar o card pela
+// metade daria a leitura de "isto esta quebrado", e quem quiser ve-la de perto
+// aperta baixo — que e o gesto que traz as fileiras de volta ao lugar de
+// sempre.
+#define NV_HOME_HERO_EMPURRA 260.0f
+// Altura e respiro do botao do destaque (o "Ver titulo"), e a mesma medida do
+// NV_HERO_BOTAO_H que o layout do hero ja usava para a linha de acoes.
+#define NV_HOME_HERO_BOTAO_GAP 26.0f
 #define NV_LEGACY_ROW_HEAD_H 46.0f // titulo + margem ate os cards (564 - 518)
 
 // As quatro secoes visuais que a home do Apple TV usa, cada uma com proporcao
