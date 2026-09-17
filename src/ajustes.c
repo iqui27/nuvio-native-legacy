@@ -629,6 +629,7 @@ static int valor[AJ_N] = {
   0, 0, 0,          /* qualidade, DV, Atmos */
   0, 0,             /* idioma de legenda e de audio: 0 = seguir a conta */
   0,                /* painel ao pausar: ligado (o default do web) */
+  1,                /* escolher a fonte ao reproduzir: DESLIGADO (V_LIGA: 1 = Desligado) */
 
   0,                /* posteres deitados: LIGADO (perfil do dono; fabrica: desligado) */
   0,                /* fundo em tela cheia: LIGADO (perfil; fabrica: desligado) */
@@ -1177,8 +1178,32 @@ static void conferirSecoes(void) {
   fflush(stdout);
 }
 
+// TODO PADRAO CABE NA LISTA DELE. `valor[]` e posicional e escrito a mao, e
+// uma opcao inserida no meio do enum sem o inicializador correspondente desloca
+// todos os padroes seguintes — foi assim que o 7 do limite de fileiras foi
+// parar numa lista de dois itens e a tela quebrou ao desenhar o valor.
+//
+// Conferir custa 91 comparacoes uma vez por arranque, e o que ela encontra e
+// CORRIGIDO na hora: um padrao fora da lista vira o primeiro item. A linha no
+// log diz qual opcao, para o conserto de verdade (o inicializador que falta)
+// acontecer no lugar certo.
+static void conferirPadroes(void) {
+  int i;
+  for (i = 0; i < AJ_N; i++) {
+    const Opcao *o = &OPCOES[i];
+    if (o->tipo == OP_ESCOLHA && o->n > 0 && (valor[i] < 0 || valor[i] >= o->n)) {
+      printf("[ajustes] padrao fora da lista em %d (\"%s\"): %d de %d valores"
+             " — vetor `valor[]` desalinhado; usando o primeiro\n",
+             i, o->rotulo, valor[i], o->n);
+      valor[i] = 0;
+    }
+  }
+  fflush(stdout);
+}
+
 int ajustes_iniciar(void) {
   conferirSecoes();
+  conferirPadroes();
   focoOp = 0; scrollY = 0.0f; sair = 0;
   focoIndice = 0;
   filAberta = 0; filFoco = 0; filCampo = 0; filPegou = 0; filTopo = 0;
@@ -1602,7 +1627,10 @@ static void fileirasReagir(void) {
 // fil_estado em fileiras.h). Tudo continua no mesmo arquivo, agora por perfil.
 static int filAba;                    // 0 = Na Home, 1 = Fora da Home
 static int filNaBarra;                // foco na barra de abas
-static int filLista[FIL_MAX];         // indices fil_* da aba corrente, na ordem da tela
+// FIL_MAX + 1: a aba "Na Home" escreve o DESTAQUE antes das fileiras, e com a
+// tabela cheia (320) a lista teria 321 entradas. Um a mais aqui custa 4 bytes e
+// tira do caminho um estouro que so apareceria na TV de quem tem addon demais.
+static int filLista[FIL_MAX + 1];     // indices fil_* da aba corrente, na ordem da tela
 static int filListaN;
 static int filSep;                    // posicao na lista onde comeca a fila (-1 = nao ha)
 static char   filAviso[120];          // "Home cheia..." por alguns segundos
@@ -2123,7 +2151,23 @@ static const char *textoValor(int op) {
     int v = valor[op];
     return (v >= 0 && v < nLingua && V_LINGUA[v]) ? V_LINGUA[v] : "Da conta";
   }
-  return o->valores[valor[op]];
+  // FORA DO INTERVALO NAO LE FORA DO VETOR.
+  //
+  // Esta linha era `return o->valores[valor[op]]`, sem conferir nada, e foi o
+  // segfault que o harness de Ajustes pegou: `valor[]` e um vetor POSICIONAL
+  // inicializado a mao, e uma opcao nova inserida no meio do enum desloca todos
+  // os padroes seguintes — o 7 do limite de fileiras foi parar numa lista de
+  // dois itens, e `valores[7]` e lixo que vira ponteiro de string.
+  //
+  // O deslocamento e um defeito a parte e esta consertado logo abaixo; ESTA
+  // guarda fica de qualquer jeito, porque `valor[]` tambem vem do DISCO: um
+  // ajustes.txt de outra versao, ou editado a mao, derruba o app na primeira
+  // vez que a linha aparece na tela. Valor invalido tem de ler como "o
+  // primeiro", nunca como um endereco qualquer da memoria.
+  if (!o->valores || o->n <= 0) return "";
+  { int v = valor[op];
+    if (v < 0 || v >= o->n) v = 0;
+    return o->valores[v] ? o->valores[v] : ""; }
 }
 
 static void desenhaLinha(int op, float y, float f) {
