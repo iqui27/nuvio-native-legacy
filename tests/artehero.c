@@ -126,6 +126,42 @@ int main(void) {
     assert(artehero_url_episodio(&c) == NULL); }
   puts("ok  sem episodio ou sem tt: nao ha still a pedir");
 
+  // LOGO. O Cinemeta manda em `original`, que no TMDB e 4127x2000 para um
+  // desenho de no maximo 1000 px — 1,3 a 1,5 s de decodificacao, medidos na C9.
+  // Conferido com curl em 17/09: w500 e 499x242, w780 e 780x378, w1280 e
+  // 1279x620 e `original` e 4127x2000. A escada publicada do TMDB para logo
+  // para em w500, mas o CDN responde w780 e w1280 com o tamanho pedido.
+  { const char *o = "https://image.tmdb.org/t/p/original/xSj9.png";
+    artehero_qualidade(1);
+    assert(!strcmp(artehero_url_logo(o),
+                   "https://image.tmdb.org/t/p/w1280/xSj9.png"));
+    artehero_qualidade(0);
+    assert(!strcmp(artehero_url_logo(o),
+                   "https://image.tmdb.org/t/p/w500/xSj9.png"));
+    // Na alta a interface e desenhada em 2x: o logo chega a 2000 px e so
+    // `original` tem pixel para isso.
+    artehero_qualidade(2);
+    assert(!strcmp(artehero_url_logo(o),
+                   "https://image.tmdb.org/t/p/original/xSj9.png"));
+    artehero_qualidade(1); }
+  puts("ok  logo: w500 na baixa, w1280 no padrao, original na alta");
+
+  // Um logo que ja veio pequeno tambem e normalizado — o catalogo do pacote e
+  // o extras.c usam w92/w185 e nao ha motivo de o detalhe herdar w92 num
+  // desenho de 1000 px.
+  { assert(!strcmp(artehero_url_logo("https://image.tmdb.org/t/p/w92/a.png"),
+                   "https://image.tmdb.org/t/p/w1280/a.png")); }
+  puts("ok  logo: tamanho antigo na url e trocado, nao concatenado");
+
+  // QUEM NAO E TMDB PASSA INTACTO: metahub, arquivo do pacote e url vazia.
+  { const char *m = "https://images.metahub.space/logo/medium/tt1/img";
+    assert(artehero_url_logo(m) == m);
+    const char *l = "/media/developer/apps/.../arte/logo/0007.png";
+    assert(artehero_url_logo(l) == l);
+    assert(artehero_url_logo("") != NULL);
+    assert(artehero_url_logo(NULL) == NULL); }
+  puts("ok  logo: so o caminho do TMDB e reescrito");
+
   puts("artehero: tudo ok");
   return 0;
 }

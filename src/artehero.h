@@ -60,4 +60,10 @@ const char *artehero_url_card(const CatItem *item);
 // url de quem tem id do IMDb e episódio conhecido.
 const char *artehero_url_episodio(const CatItem *item);
 
+// O LOGO DO TITULO no tamanho do desenho. Devolve a url recebida quando ela
+// nao e do TMDB (metahub e arquivo do pacote passam intactos). O `original`
+// que o Cinemeta manda tem 4127 px de largura para um desenho de 1000 — a
+// medicao esta no .c.
+const char *artehero_url_logo(const char *logo);
+
 #endif

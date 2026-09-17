@@ -173,3 +173,35 @@ const char *artehero_url(const CatItem *item) {
   if (item->poster[0]) return item->poster;
   return NULL;
 }
+
+// O LOGO DO TITULO. Mesmo problema do fundo, numa escada diferente.
+//
+// O Cinemeta devolve o logo do TMDB em `/t/p/original/`, e o desenho maior que
+// existe para ele tem 1000 px de largura (NV_DETW_LOGO_MAXW). MEDIDO em 17/09
+// com curl no logo de um titulo real (xSj9QrjsR8fZnSuEt6e7QZvrqSy.png):
+// `original` e 4127x2000 e 11,9 MB, `w1280` e 1279x620 e 828 KB, `w780` e
+// 780x378 e 321 KB, `w500` e 499x242 e 144 KB. Sao dez vezes menos pixels para
+// decodificar chegando ao mesmo desenho — no log da C9 esse `original` levou
+// 1303, 1464 e 1480 ms, tres vezes, para sair a 480, 512 e 640 px de largura.
+//
+// A escada documentada do TMDB para logo para em w500, mas o CDN responde a
+// w780 e w1280 (conferido acima, os dois com 200 e PNG do tamanho pedido) — o
+// redimensionador e o mesmo para todos os tipos.
+//
+// Na alta a interface e desenhada em 2x, entao o logo pode ocupar 2000 px e so
+// `original` tem pixel para isso.
+const char *artehero_url_logo(const char *logo) {
+  static char buf[512];
+  const char *p, *nome;
+  const char *tam = qualidadeImg == 0 ? "w500"
+                  : qualidadeImg == 2 ? "original" : "w1280";
+  if (!logo || !logo[0]) return logo;
+  p = strstr(logo, "/t/p/");
+  if (!p) return logo;                       // metahub, arquivo local, etc.
+  nome = strchr(p + 5, '/');                 // pula o tamanho que veio
+  if (!nome || !nome[1]) return logo;
+  { size_t pre = (size_t)(p - logo);
+    if (pre >= sizeof buf) return logo;
+    snprintf(buf, sizeof buf, "%.*s/t/p/%s%s", (int)pre, logo, tam, nome); }
+  return buf;
+}

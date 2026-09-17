@@ -610,7 +610,11 @@ static const char *sinopseDe(int i) {
 }
 static const char *logoDe(int i) {
   const CatItem *c = cat_item(i);
-  return (c && c->logo[0]) ? c->logo : NULL;
+  // O CATALOGO GUARDA O LOGO EM `original`, que no TMDB e 4127 px de largura
+  // para um desenho de no maximo 1000 (NV_DETW_LOGO_MAXW). Igual ao fundo:
+  // quem sabe o tamanho do desenho e quem desenha, entao a politica fica em
+  // artehero.c e a url do catalogo nao muda.
+  return (c && c->logo[0]) ? artehero_url_logo(c->logo) : NULL;
 }
 static const char *arteDe(int i) {
   const CatItem *c = cat_item(i);
