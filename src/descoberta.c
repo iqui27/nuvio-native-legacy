@@ -646,6 +646,15 @@ static int deMeta(const char *ini, const char *fim, const char *tipo, CatItem *d
   if (!js_texto(ini, fim, "poster", d->poster, sizeof d->poster)) return 0;
   js_texto(ini, fim, "background", d->backdrop, sizeof d->backdrop);
   js_texto(ini, fim, "logo", d->logo, sizeof d->logo);
+  // LOGO IGUAL AO POSTER NAO E LOGO. MEDIDO no catalogo gravado da C9 em 18/09:
+  // o Xperience manda, para "O Fim da Rua", o MESMO arquivo do TMDB
+  // (4kfDP13cYwCx55YP2gLGtcUFZlC.jpg) em `poster` e em `logo` — e um addon
+  // preenchendo o campo com o que tem quando nao tem logo. O app confiava e
+  // desenhava o poster onde vai a arte do titulo: no hero da home e na pagina
+  // do titulo aparecia uma capa pequena no lugar do logo. O dono viu e
+  // perguntou por que. Sem logo, o hero escreve o NOME em texto (ver home.c),
+  // que e o comportamento certo e ja existia — so nao era alcancado.
+  if (d->logo[0] && !strcmp(d->logo, d->poster)) d->logo[0] = 0;
   // O TMDB serve o backdrop em /original/, que e 3840x2160. O download nem e o
   // problema (268 KB contra 201 KB do w1280) — o problema e o DECODIFICADO:
   // 8,3 MP viram 33 MB em RAM, mais outros 33 MB na conversao de formato, antes

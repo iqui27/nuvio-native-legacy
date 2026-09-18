@@ -422,6 +422,21 @@ void app_evento(const SDL_Event *e) {
   // do toque que o abriu ou fechou (ver a nota da armadilha em registro.c).
   if (registro_evento(e)) return;
 
+  // PORTA DE TESTE: F10 abre o Guia de TV de onde quer que o app esteja.
+  //
+  // Existe pelo mesmo motivo que "log" (F9) e "azul" (S) em main.c: exercitar
+  // uma tela por injecao de tecla (/tmp/nuvio-key) sem depender de ONDE o foco
+  // esta. Em 18/09 eu naveguei as cegas ate o guia tres vezes; nas tres o foco
+  // caiu num card de filme e o OK marcou "A Captura" como assistido na conta
+  // do dono. Uma tecla que vai direto elimina a classe inteira de acidente.
+  // Nao ha F10 em controle de TV, entao isto nao muda nada para quem usa.
+  if (e->type == SDL_KEYDOWN && e->key.keysym.sym == SDLK_F10 &&
+      login_concluido() && perfilsel_concluido() && !player_aberto()) {
+    trocarTela(TELA_GUIA);
+    menu_definir_destino(MENU_GUIA);
+    return;
+  }
+
   // O login vem antes de tudo, inclusive do player: enquanto nao ha conta o
   // resto do app nao tem dado nenhum para operar. A escolha de perfil vem logo
   // depois, porque e ela que define para QUEM o resto do app vai sincronizar.
