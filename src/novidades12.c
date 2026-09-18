@@ -39,7 +39,7 @@
 #define N12_X        ((NV_TELA_W - N12_W) * 0.5f)
 #define N12_Y        ((NV_TELA_H - N12_H) * 0.5f)
 #define N12_PAD        64.0f
-#define N12_FIG_W     560.0f
+#define N12_FIG_W     620.0f
 #define N12_TXT_X     (N12_X + N12_PAD + N12_FIG_W + 56.0f)
 #define N12_TXT_W     (N12_X + N12_W - N12_PAD - N12_TXT_X)
 #define N12_FEAT_H    124.0f
@@ -166,7 +166,7 @@ static void figGuiaLista(float x, float y, float a, Uint32 agora) {
     } }
 
   // Regua de horario e a linha "agora".
-  { float ry = y + 56.0f;
+  { float ry = y + 78.0f;
     const char *H[4] = { "16:30", "17:00", "17:30", "18:00" };
     for (i = 0; i < 4; i++) {
       float hx = FAIXA_X + (float)i * (FAIXA_W / 3.6f);
@@ -176,11 +176,14 @@ static void figGuiaLista(float x, float y, float a, Uint32 agora) {
     }
     barra(FAIXA_X, ry + 30.0f, FAIXA_W, 1.0f, 0.22f, a);
     // "agora" anda devagar: a linha viva e o que diz que isto e TV, nao lista.
-    { float nx = FAIXA_X + 40.0f + (float)((agora / 90) % 60);
+    { float nx = FAIXA_X + 96.0f + (float)((agora / 90) % 60);
       gfx_cor((GfxRect){ nx, ry + 16.0f, 2.0f, LIN_H * 3.0f + 30.0f },
               0.0f, ar, ag, ab, a * 0.9f);
+      // O rotulo "AGORA" fica num degrau ACIMA das horas, como no guia real —
+      // na mesma linha ele pisa em cima do horario que a linha atravessa
+      // (viu-se "NOW" sobre "16:30" e depois sobre "17:00" na C9).
       { TxtLinha t = txt_linha(TXT_CAPTION2, i18n("AGORA"), 90, 160, 255, 255);
-        txt_desenhar_alpha(t, nx - t.w * 0.5f, ry - 4.0f, a); } } }
+        txt_desenhar_alpha(t, nx - t.w * 0.5f, ry - 26.0f, a); } } }
 
   // Tres linhas de canal, a primeira em foco.
   { const char *N[3] = { "PREMIERE", "SPORTV", "ESPN" };
@@ -188,7 +191,7 @@ static void figGuiaLista(float x, float y, float a, Uint32 agora) {
                                 { 0.10f, 0.35f, 0.40f },
                                 { 0.00f, 0.55f, 0.25f } };
     for (i = 0; i < 3; i++) {
-      float ly = y + 96.0f + (float)i * (LIN_H + 8.0f);
+      float ly = y + 118.0f + (float)i * (LIN_H + 8.0f);
       int f = (i == 0);
       GfxRect fundo = { x, ly, N12_FIG_W, LIN_H };
       if (f) focoPilula(fundo, 8.0f, a);
@@ -351,12 +354,12 @@ void novidades12_desenhar(Uint32 agora) {
     ap = a * (0.30f + 0.70f * s); }
 
   // --- coluna da figura ------------------------------------------------------
-  { float fx = N12_X + N12_PAD + dx, fy = N12_Y + dy + 160.0f;
+  { float fx = N12_X + N12_PAD + dx, fy = N12_Y + dy + 176.0f;
     { TxtLinha t = txt_linha(TXT_CAPTION2, i18n("NOVO NA 1.2"),
                              150, 154, 165, 255);
       txt_desenhar_alpha(t, fx, N12_Y + dy + 64.0f, ap * 0.92f); }
     { TxtLinha t = txt_linha_corta(TXT_TITULO3, i18n(tituloPagina(pagina)),
-                                   246, 247, 252, 255, N12_FIG_W);
+                                   246, 247, 252, 255, N12_FIG_W + 40.0f);
       txt_desenhar_alpha(t, fx, N12_Y + dy + 96.0f, ap); }
     switch (pagina) {
       case 0:  figGuiaLista(fx, fy, ap, agora); break;
@@ -369,30 +372,30 @@ void novidades12_desenhar(Uint32 agora) {
   { float fx = N12_TXT_X + dx, fw = N12_TXT_W;
     switch (pagina) {
       case 0:
-        y += feature(fx, y, fw, "lista",
+        y += feature(fx, y, fw, "menu_guide",
               "Modo lista",
               "Um canal por linha e a faixa de horário ao lado, como um guia "
               "de TV. Cartões continuam no seletor do topo.", ap);
         y += feature(fx, y, fw, "aspecto",
               "Cartões ou lista, você escolhe",
               "O seletor no cabeçalho troca. O app lembra a sua escolha.", ap);
-        y += feature(fx, y, fw, "menu_guide",
+        y += feature(fx, y, fw, "avancar",
               "← → andam na grade",
               "Meia hora por toque, até três horas à frente. Segurar ↑↓ "
               "continua pulando de categoria.", ap);
         break;
       case 1:
-        y += feature(fx, y, fw, "canal",
+        y += feature(fx, y, fw, "fluxo",
               "Os vizinhos ficam prontos",
               "Com o foco parado num canal, o app já procura as fontes do de "
               "cima e do de baixo.", ap);
-        y += feature(fx, y, fw, "tv",
+        y += feature(fx, y, fw, "play",
               "OK toca sem a espera",
               "Se você for para um deles, a fonte já está à mão. Se for para "
               "outro, funciona como antes.", ap);
         break;
       default:
-        y += feature(fx, y, fw, "addons",
+        y += feature(fx, y, fw, "addon",
               "Ligar e desligar sem sair do guia",
               "O botão Addons no cabeçalho lista os da sua conta. Um OK "
               "liga ou desliga, e vale para o app inteiro.", ap);

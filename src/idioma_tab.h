@@ -115,7 +115,7 @@
   { "Addon de canais", "Channel addon" },
   { "Addons", "Add-ons" },
   { "Addons de canais", "Channel add-ons" },
-  { "Addons de canal, no lugar certo", "Channel add-ons, where they belong" },
+  { "Addons de canal, no lugar certo", "Add-ons, inside the guide" },
   { "Adicionada à Home", "Added to Home" },
   { "Adicionando à biblioteca...", "Adding to library..." },
   { "Adicionar", "Add" },
