@@ -72,8 +72,15 @@
 // --- POR QUE A PREFERENCIA VENCE --------------------------------------------
 //
 // Ver FONTEPREF_VALIDADE_S. Uma preferencia de meses atras aponta para um
-// provedor que talvez nem esteja mais instalado, e faz isso escondendo a folha
-// de fontes (detail.c consulta fontepref_tem para decidir se pergunta ou toca).
+// provedor que talvez nem esteja mais instalado.
+//
+// CORRECAO DE 17/09: este trecho dizia que a preferencia "esconde a folha de
+// fontes, porque detail.c consulta fontepref_tem para decidir se pergunta ou
+// toca". Nao consulta mais. O toque curto no card de episodio hoje TOCA
+// SEMPRE, com ou sem preferencia — a folha continua no hold do card (menu do
+// episodio) e no hold do botao primario. Amarrar "tocar direto" a ter
+// preferencia gravada era o proprio defeito da issue #57: so a escolha manual
+// grava, entao quem nunca abriu a folha nunca tocava direto.
 //
 // SO A ESCOLHA MANUAL E GRAVADA. O que o automatico escolhe nao vira
 // preferencia: quem nunca abriu a folha continua com a regra da pontuacao,
@@ -116,11 +123,13 @@
 //     link nao tem o que fazer neste arquivo.
 //
 // Entao o que 180 dias protege e outra coisa: um provedor que sumiu, um addon
-// desinstalado, uma assinatura de debrid que acabou. O dano de uma preferencia
-// velha nao e tocar errado — e detail.c NAO PERGUNTAR (issue #57): com
-// fontepref_tem verdadeiro o toque curto no episodio reproduz direto, e se a
-// fonte lembrada nao existe mais a pessoa recebe o que a pontuacao escolher,
-// calada. Passado meio ano, perguntar de novo e o certo.
+// desinstalado, uma assinatura de debrid que acabou. Passado meio ano, a
+// preferencia provavelmente aponta para nada, e insistir nela so atrasa a
+// verificacao — fontepref_escolher poe a lembrada na FRENTE da fila, entao uma
+// lembrada morta e a primeira a gastar timeout.
+//
+// (Este paragrafo dizia que o dano era "detail.c NAO PERGUNTAR". Nao e mais:
+// o toque curto toca sempre, independente de preferencia. Ver acima.)
 //
 // POR QUE NAO MENOS: uma temporada de lancamento semanal com 24 episodios leva
 // ~168 dias do primeiro ao ultimo. Um prazo mais curto expiraria NO MEIO da

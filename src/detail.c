@@ -1509,24 +1509,33 @@ void detail_evento(const SDL_Event *e) {
       const CatItem *ci = cat_item(idx);
       if (dur >= NV_HOLD_MS && ep)
         episodios_menu_visto(idx, ep->temporada, ep->episodio, ep->nome);
-      else if (ci && fontepref_tem(ci->imdb))
-        // ISSUE #57. O toque curto no card do episodio abria a folha de fontes
-        // SEMPRE — e este e o card em que uma pessoa aperta OK para retomar uma
-        // serie. "Retomar" acabava em "escolha um link de novo", que e a
-        // descricao do relator palavra por palavra.
-        //
-        // Com uma fonte lembrada para este titulo nao ha o que perguntar:
-        // toca, e o roteador manda a lembrada para a frente da fila de
-        // verificacao (app.c). `episodioAlvo` ja devolve ESTE episodio, porque
-        // o foco esta nele.
-        pedReproduzir = 1;
       else
-        // SEM NADA LEMBRADO, O COMPORTAMENTO DE HOJE, INTACTO. No web e
-        // `openEpisodeStreams`; aqui a folha de fontes ainda e a do titulo
-        // (`stream_folha_abrir()` nao recebe episodio). Melhor abrir a folha
-        // que existe do que nao responder ao OK — e, sem preferencia gravada,
-        // abrir a folha e tambem a unica forma de criar uma.
-        pedFontes = 1;
+        // ISSUE #57, SEGUNDA VOLTA. O toque curto no card do episodio abria a
+        // folha de fontes SEMPRE — e este e o card em que uma pessoa aperta OK
+        // para retomar uma serie. "Retomar" acabava em "escolha um link de
+        // novo", que e a descricao do relator palavra por palavra.
+        //
+        // A PRIMEIRA CORRECAO SO VALEU PARA METADE DAS PESSOAS, e o relator
+        // voltou dizendo que o defeito continuava. Ela tocava direto apenas
+        // quando havia fonte LEMBRADA (fontepref_tem), e fontepref_guardar() e
+        // chamado num unico lugar: quando a pessoa escolhe a fonte NA MAO, na
+        // folha (app.c, em stream_folha_escolheu). O que o automatico escolhe
+        // nao vira preferencia, de proposito. Ou seja: quem nunca abriu a folha
+        // nunca tinha preferencia, caia no `else` e via a folha de novo — a
+        // condicao da correcao excluia exatamente quem mais reclamava.
+        //
+        // Agora toca sempre, que e o que "Retomar" quer dizer. Se o app sabe
+        // escolher fonte sozinho na PRIMEIRA reproducao, sabe escolher na
+        // retomada; nao ha nada a perguntar aqui. A lembrada, quando existe,
+        // continua indo para a frente da fila de verificacao em app.c.
+        //
+        // A FOLHA NAO FICOU INALCANCAVEL, que era a razao de ela estar neste
+        // toque: o hold neste mesmo card abre o menu do episodio, que tem
+        // "Fontes deste episodio" (episodios.c), e o hold no botao primario
+        // abre a folha do titulo (ver o ramo de NV_HOLD_MS acima). Quem quer
+        // trocar de fonte tem dois caminhos; quem quer continuar vendo tem o
+        // toque curto, que e o caso comum.
+        pedReproduzir = 1;
     }
     return;
   }
