@@ -28,6 +28,7 @@ const CatEp *player_proximo_episodio(void);
 // cartao deve estar no ar.
 int player_regra_proximo(double posSeg, double durSeg, double cred);
 void player_erro_fonte(void);
+void player_limpar_erro_fonte(void);   // fonte "morta" que voltou a entregar
 // 1 quando a fonte atual falhou. O app usa no watchdog de canal: stream de TV
 // ao vivo que nao abre troca sozinho para o proximo da lista.
 int  player_fonte_falhou(void);

@@ -1164,6 +1164,25 @@ void app_atualizar(float dt, Uint32 agora) {
     //
     // video_bufferando_ms() e o par bufferingStart/bufferingEnd do uMS, que o
     // video.c ja recebia e so registrava em marco.
+    // O CARTAO DE ERRO SAI SE O VIDEO VOLTOU A ANDAR.
+    //
+    // MEDIDO na C9 em 18/09, com um canal que tem UMA fonte so: o load demorou
+    // mais que canalFontePrazo, o watchdog abaixo declarou a fonte morta, nao
+    // havia proxima e ele chamou player_erro_fonte(). So que o pipeline
+    // continuou e comecou a tocar — o log mostrava o buffer subindo
+    // (endTime 5, 11, 17, 23 s) enquanto a tela dizia "nao foi possivel abrir
+    // a fonte", com o video correndo atras do cartao.
+    //
+    // Nada limpava o erro porque player_definir_fonte(), que o zera, so roda em
+    // fonte NOVA — e aqui nao havia outra para tentar. O buffer andando e a
+    // prova de que a fonte esta viva, entao ela desmente o cartao.
+    if (player_fonte_falhou() && video_buffer_fim() > 0.5 && !video_falhou()) {
+      printf("[guia] a fonte voltou a entregar (buffer %.1fs): tirando o erro da tela\n",
+             video_buffer_fim());
+      fflush(stdout);
+      player_limpar_erro_fonte();
+      canalFonteDesde = SDL_GetTicks();
+    }
     int morta = player_fonte_falhou() || video_falhou() ||
         (player_carregando() && SDL_GetTicks() - canalFonteDesde > canalFontePrazo) ||
         video_bufferando_ms() > CANAL_TRAVA_MS;

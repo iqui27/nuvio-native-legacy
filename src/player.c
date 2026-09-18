@@ -334,6 +334,9 @@ const CatEp *player_proximo_episodio(void) {
   return melhor;
 }
 void player_erro_fonte(void) { esperandoFonte = 0; erroFonte = 1; visivel = 1; tocando = 0; }
+// Desfaz o de cima quando a fonte que parecia morta volta a entregar. Ver a
+// nota no watchdog de canal em app.c.
+void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; } }
 // Leitura do estado para o watchdog de canal do app.c: uma fonte ao vivo que
 // falhou (ou nao abre no prazo) deve trocar para a proxima da lista sozinha.
 int  player_fonte_falhou(void) { return erroFonte; }
