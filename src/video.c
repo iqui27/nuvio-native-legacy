@@ -1310,21 +1310,36 @@ static void montarHttpHeader(char *dst, unsigned tam) {
     // inventar campo no payload e o tipo de coisa que o uMS ignora calado.
   }
   if (!ref[0] && !ua[0] && !ck[0]) return;
-  // STRING, E NAO OBJETO. Na tabela de media_option de libcbe, "bufferControl"
-  // e seguida de "userBufferCtrl", que e a sub-chave dela; depois de
-  // "httpHeader" nao vem sub-chave nenhuma — vem "bufferControl". E o formato
-  // de objeto {"referer":...} foi TESTADO na C9 e o uMS o ignorou calado: o
-  // load respondeu "No Error" e depois vieram errorCode 100 ("Playing error")
-  // e 203 ("AV Type Not Founded"), com bufferRange parado em 0 — a assinatura
-  // de quem buscou a pagina de 403 em vez do video.
+  // A FORMA CERTA E O ANINHAMENTO, e ela foi MEDIDA na C9 em 18/09 — nao ha
+  // documentacao publica disto.
   //
-  // Cabecalhos separados por \r\n, que e a forma do protocolo e a que
-  // souphttpsrc espera em extra-headers.
-  { int u = snprintf(dst, tam, "\"httpHeader\":\"");
-    if (ref[0]) { u += snprintf(dst + u, tam - u, "%sReferer: %s", algum++ ? "\\r\\n" : "", ref); }
-    if (ua[0])  { u += snprintf(dst + u, tam - u, "%sUser-Agent: %s", algum++ ? "\\r\\n" : "", ua); }
-    if (ck[0])  { u += snprintf(dst + u, tam - u, "%sCookie: %s", algum++ ? "\\r\\n" : "", ck); }
-    snprintf(dst + u, tam - u, "\",");
+  // O que funciona e  option.transmission.httpHeader.referer . Testei seis
+  // formas no aparelho, todas com o mesmo canal e o mesmo Referer, e so esta
+  // faz o pipeline tocar:
+  //
+  //   {"httpHeader":{"referer":...}}                  -> errorCode 203
+  //   {"httpHeader":"Referer: ..."}                   -> errorCode 203
+  //   {"httpHeader":{"Referer":...}}  (maiusculo)     -> errorCode 203
+  //   {"referer":...} solto em option                 -> errorCode 203
+  //   {"option":{"httpHeader":{...}}}                 -> errorCode 203
+  //   {"transmission":{"httpHeader":{"referer":...}}} -> errorCode 0, TOCA
+  //
+  // "errorCode 203" e "AV Type Not Founded": o pipeline buscou a pagina de 403
+  // em vez do video. Com a forma certa o log mostra o buffer subindo
+  // (endTime 0 -> 5 -> 11 -> 17 -> 23 s) e nenhuma linha de erro depois do load.
+  //
+  // O nome "httpHeader" saiu da tabela de media_option de libcbe.so e os campos
+  // de PF_HTTP_HEADER_REFERRER/_USER_AGENT/_COOKIES de libpf-1.0.so. O que
+  // faltava era o pai: "transmission", que esta na mesma tabela.
+  //
+  // MEDIDO: so o "referer" foi provado tocando. "userAgent" e "cookies" vao
+  // junto porque libpf os consome com o mesmo prefixo, mas nao ha aqui um caso
+  // que dependa deles — se um dia um addon exigir, confira antes de assumir.
+  { int u = snprintf(dst, tam, "\"transmission\":{\"httpHeader\":{");
+    if (ref[0]) { u += snprintf(dst + u, tam - u, "%s\"referer\":\"%s\"", algum++ ? "," : "", ref); }
+    if (ua[0])  { u += snprintf(dst + u, tam - u, "%s\"userAgent\":\"%s\"", algum++ ? "," : "", ua); }
+    if (ck[0])  { u += snprintf(dst + u, tam - u, "%s\"cookies\":\"%s\"", algum++ ? "," : "", ck); }
+    snprintf(dst + u, tam - u, "}},");
   }
   printf("[video] httpHeader no load: %s\n", dst); fflush(stdout);
 }
