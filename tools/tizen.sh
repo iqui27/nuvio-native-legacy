@@ -210,12 +210,51 @@ eval emcc src/*.c -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} \
 #
 # Os workers de pthread nascem DESTE MESMO arquivo, entao rebaixa-lo cobre o
 # fio principal e os workers de uma vez.
+# CHROME69, E NAO CHROME76. O config.xml declara required_version 5.5, e a
+# tabela oficial de motores da Samsung diz que Tizen 5.5 (todos os modelos 2020)
+# e Chromium M69 — 6.0 que e M76. Rebaixar para 76 deixava o pacote incompativel
+# com o minimo que ele proprio anuncia.
+#
+# MEDIDO em 18/09, comparando as duas saidas do esbuild sobre o MESMO glue: a de
+# chrome69 sai 600 B maior, e o diff mostra o que sobrevivia ao 76 — CLASS
+# FIELDS, que chegaram no Chrome 72:
+#
+#   class ExitStatus { name = "ExitStatus" }      <- M72+
+#   class FS         { shared = {} }
+#
+# Eles vem do glue gerado pelo PROPRIO Emscripten (ExitStatus, ErrnoError, as
+# classes do FS), entao estavam em toda build. Numa TV 2020 isso nao degrada:
+# e erro de sintaxe no parse, o script inteiro morre e a tela fica PRETA — o
+# mesmo sintoma que este rebaixamento existe para evitar no caso do "?.".
+#
+# A CONFERENCIA ABAIXO TAMBEM ESTAVA CURTA: ela contava so ?. ?? e ||=, que sao
+# sintaxe pos-M76, e por isso dizia "0" enquanto os class fields passavam. Agora
+# procura tambem campo de classe.
 if command -v npx >/dev/null 2>&1; then
-  npx --yes esbuild@0.25.0 "$SAIDA/index.js" --target=chrome76 \
-      --outfile="$SAIDA/index.chrome76.js" --log-level=warning
-  mv "$SAIDA/index.chrome76.js" "$SAIDA/index.js"
+  npx --yes esbuild@0.25.0 "$SAIDA/index.js" --target=chrome69 \
+      --outfile="$SAIDA/index.chrome69.js" --log-level=warning
+  mv "$SAIDA/index.chrome69.js" "$SAIDA/index.js"
   RESTO=$(grep -oE '\?\.|\?\?|\|\|=' "$SAIDA/index.js" | wc -l | tr -d ' ')
-  echo "tizen.sh: glue rebaixado para chrome76 (sintaxe nova restante: $RESTO)"
+  # CONFERENCIA POR IDEMPOTENCIA, e nao por grep.
+  #
+  # Contar construcoes a mao nao serve: a primeira versao desta linha procurava
+  # so "?.", "??" e "||=" e dizia "0" com CENTENAS de class fields intactos no
+  # arquivo — sintaxe M72 passando por um alvo que se dizia M69. E um grep de
+  # class field casa atribuicao comum e acusa 417 num arquivo limpo.
+  #
+  # Rebaixar de novo o que ja foi rebaixado nao pode mudar NADA. Se mudar,
+  # sobrou algo que o alvo transforma, e a TV 2020 daria tela preta no parse.
+  npx --yes esbuild@0.25.0 "$SAIDA/index.js" --target=chrome69 \
+      --outfile="$SAIDA/index.conferencia.js" --log-level=error
+  if cmp -s "$SAIDA/index.conferencia.js" "$SAIDA/index.js"; then
+    rm -f "$SAIDA/index.conferencia.js"
+    echo "tizen.sh: glue rebaixado para chrome69 (sintaxe pos-M76: $RESTO, idempotente)"
+  else
+    rm -f "$SAIDA/index.conferencia.js"
+    echo "tizen.sh: ERRO — o glue ainda muda ao ser rebaixado de novo." >&2
+    echo "  Sobrou sintaxe que o Chromium M69 (Tizen 5.5) nao entende." >&2
+    exit 1
+  fi
 else
   echo "tizen.sh: AVISO — npx ausente, glue NAO rebaixado; a TV vai dar tela preta" >&2
 fi
