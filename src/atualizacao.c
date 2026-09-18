@@ -144,8 +144,33 @@ static int textoJson(const char *corpo, const char *chave, char *dst, size_t tam
 // e serve para "tag_name"/"body", que sao da raiz; aqui a chave se repete uma
 // vez por anexo (o .ipk e o .wgt) e o que decide e o SUFIXO. Por isso o laco:
 // varre todas as ocorrencias e fica com a que termina em ".ipk".
+// SUFIXO DO ANEXO QUE ESTA BUILD DEVE BAIXAR.
+//
+// Desde a v1.1.0 a release traz DOIS .ipk — o normal e o "-highcache", que so
+// muda o teto de textura (NV_TEX_MB_FIXO). O id do pacote e a versao sao
+// IGUAIS nos dois, entao instalar um por cima do outro troca a variante sem
+// dizer nada.
+//
+// E era isso que acontecia: acharIpk devolvia o PRIMEIRO anexo terminado em
+// ".ipk", e o GitHub lista em ordem alfabetica, onde "_arm-highcache.ipk" vem
+// antes de "_arm.ipk" ('-' e menor que '.'). Ou seja, "Atualizar agora"
+// instalava a highcache em TODA LG, inclusive em quem nunca a escolheu.
+#ifdef NV_TEX_MB_FIXO
+#  define AT_SUFIXO "-highcache.ipk"
+#else
+#  define AT_SUFIXO "_arm.ipk"
+#endif
+
+static int terminaEm(const char *s, size_t n, const char *sufixo) {
+  size_t k = strlen(sufixo);
+  return n >= k && !strncmp(s + n - k, sufixo, k);
+}
+
+// `sufixo` obrigatorio. NAO ha reserva para "qualquer .ipk": uma release sem o
+// anexo desta variante e motivo para NAO oferecer o botao e mandar a pessoa
+// para a pagina — trocar de variante calada e justamente o defeito.
 static int acharIpk(const char *corpo, char *dst, size_t tam,
-                   char *hash, size_t tamHash) {
+                   char *hash, size_t tamHash, const char *sufixo) {
   const char *p = corpo;
   const char *chave = "\"browser_download_url\":";
   dst[0] = 0;
@@ -159,7 +184,7 @@ static int acharIpk(const char *corpo, char *dst, size_t tam,
     ini = ++p;
     while (*p && *p != '"') p++;
     n = (size_t)(p - ini);
-    if (n > 4 && n < tam && !strncmp(ini + n - 4, ".ipk", 4)) {
+    if (n > 4 && n < tam && terminaEm(ini, n, sufixo)) {
       memcpy(dst, ini, n); dst[n] = 0;
       // O SHA-256 DO MESMO ANEXO, e ele e obrigatorio na pratica: sem ele o
       // instalador do Homebrew Channel compara o hash calculado contra
@@ -250,7 +275,9 @@ static int fioConsulta(void *arg) {
   else {
     textoJson(corpo, "tag_name", tag, sizeof tag);
     textoJson(corpo, "body", body, sizeof body);
-    if (AT_INSTALA) acharIpk(corpo, ipkUrl, sizeof ipkUrl, ipkHash, sizeof ipkHash);
+    // Sem anexo da variante desta build, ipkUrl fica vazio e podeInstalar()
+    // devolve 0: o cartao aparece so com a URL da pagina.
+    if (AT_INSTALA) acharIpk(corpo, ipkUrl, sizeof ipkUrl, ipkHash, sizeof ipkHash, AT_SUFIXO);
     free(corpo);
   }
   SDL_LockMutex(mtx);
@@ -471,7 +498,13 @@ void atualizacao_desenhar(Uint32 agora) {
   snprintf(buf, sizeof buf, i18n("Nuvio %s"), tagNova);
   { TxtLinha t = txt_linha(TXT_TITULO1, buf, 246, 247, 252, 255);
     txt_desenhar_alpha(t, x, y, a); y += t.h + 6.0f; }
+  // A VARIANTE NO CARTAO. Sem isto a pessoa le "Você está na 1.1.2" e vai para
+  // uma pagina com dois .ipk sem saber qual e o dela.
+#ifdef NV_TEX_MB_FIXO
+  snprintf(buf, sizeof buf, i18n("Você está na %s · cache grande"), NV_VERSAO);
+#else
   snprintf(buf, sizeof buf, i18n("Você está na %s"), NV_VERSAO);
+#endif
   { TxtLinha t = txt_linha(TXT_CAPTION, buf, 176, 180, 190, 255);
     txt_desenhar_alpha(t, x, y, a * 0.9f); y += t.h + 28.0f; }
 

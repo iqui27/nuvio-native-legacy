@@ -51,22 +51,33 @@ int main(int argc, char **argv) {
       // PRIMEIRO no JSON — que e exatamente o caso em que procurar a primeira
       // ocorrencia da chave (o que textoJson faz) baixaria o pacote do Samsung
       // para instalar numa LG. Quem decide e o sufixo.
+      // A fixture e uma release REAL (v1.0.52), de quando so havia UM .ipk.
+      // Por isso o resultado depende da variante: a build normal acha o anexo
+      // dela; a de cache grande NAO acha, e nao achar e o comportamento certo
+      // — release sem o anexo da variante nao deve instalar nada.
       { char url[512], hash[80];
-        CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash), "achou um .ipk nos assets");
+        int achou = acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO);
+#ifdef NV_TEX_MB_FIXO
+        CONFERE(!achou, "build highcache nao aceita release so com o .ipk normal");
+        CONFERE(url[0] == 0, "e a url fica vazia");
+#else
+        CONFERE(achou, "achou um .ipk nos assets");
         CONFERE(strstr(url, ".ipk") != NULL && strstr(url, ".wgt") == NULL,
                 "e o .ipk, nao o .wgt: [%s]", url);
-        CONFERE(!strncmp(url, "https://", 8), "url absoluta: [%s]", url); }
+        CONFERE(!strncmp(url, "https://", 8), "url absoluta: [%s]", url);
+#endif
+      }
       free(j);
     } }
 
   // Sem anexo nenhum nao ha o que instalar, e isso NAO e erro: release de
   // codigo-fonte apenas, ou alvo que nao instala.
   { char url[64], hash[80];
-    CONFERE(!acharIpk("{\"assets\":[]}", url, sizeof url, hash, sizeof hash),
+    CONFERE(!acharIpk("{\"assets\":[]}", url, sizeof url, hash, sizeof hash, AT_SUFIXO),
             "sem anexo devolve 0");
     CONFERE(url[0] == 0, "e a url fica vazia");
     CONFERE(!acharIpk("{\"assets\":[{\"browser_download_url\":\"https://x/y.wgt\"}]}",
-                      url, sizeof url, hash, sizeof hash), "so .wgt tambem devolve 0"); }
+                      url, sizeof url, hash, sizeof hash, AT_SUFIXO), "so .wgt tambem devolve 0"); }
 
   // O DIGEST DO ANEXO CERTO. Sem ele o instalador do Homebrew Channel recusa
   // com "Invalid file checksum", e o digest do .wgt (que vem ANTES no JSON)
@@ -75,10 +86,52 @@ int main(int argc, char **argv) {
     const char *j =
       "{\"assets\":["
       "{\"digest\":\"sha256:aaaa\",\"browser_download_url\":\"https://x/a.wgt\"},"
-      "{\"digest\":\"sha256:bbbb\",\"browser_download_url\":\"https://x/b.ipk\"}]}";
-    CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash), "achou o ipk");
-    CONFERE(!strcmp(url, "https://x/b.ipk"), "url do ipk: [%s]", url);
-    CONFERE(!strcmp(hash, "bbbb"), "digest do MESMO anexo, sem o prefixo: [%s]", hash); }
+      "{\"digest\":\"sha256:bbbb\",\"browser_download_url\":\"https://x/b_arm.ipk\"}]}";
+    { int achou = acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO);
+#ifdef NV_TEX_MB_FIXO
+      CONFERE(!achou, "sem anexo highcache, nao instala"); }
+#else
+      CONFERE(achou, "achou o ipk");
+      CONFERE(!strcmp(url, "https://x/b_arm.ipk"), "url do ipk: [%s]", url);
+      CONFERE(!strcmp(hash, "bbbb"), "digest do MESMO anexo, sem o prefixo: [%s]", hash); }
+#endif
+  }
+
+  // A VARIANTE CERTA ENTRE OS TRES ANEXOS, NA ORDEM REAL DO GITHUB.
+  //
+  // Este caso e o defeito de 18/09: acharIpk devolvia o primeiro ".ipk", e o
+  // GitHub ordena os anexos alfabeticamente, onde "_arm-highcache.ipk" vem
+  // ANTES de "_arm.ipk" porque '-' e menor que '.'. Toda LG que apertasse
+  // "Atualizar agora" trocava para a build de cache grande sem saber — o id do
+  // pacote e a versao sao iguais nos dois, entao nada denunciava a troca.
+  { char url[160], hash[80];
+    const char *j =
+      "{\"assets\":["
+      "{\"digest\":\"sha256:1111\",\"browser_download_url\":\"https://x/NuvioTV-1.1.3-tizen.wgt\"},"
+      "{\"digest\":\"sha256:2222\",\"browser_download_url\":\"https://x/space.nuvio_1.1.3_arm-highcache.ipk\"},"
+      "{\"digest\":\"sha256:3333\",\"browser_download_url\":\"https://x/space.nuvio_1.1.3_arm.ipk\"}]}";
+    CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "achou o anexo da variante");
+    CONFERE(strstr(url, AT_SUFIXO) != NULL, "e o sufixo desta build (%s): [%s]", AT_SUFIXO, url);
+#ifdef NV_TEX_MB_FIXO
+    CONFERE(!strcmp(hash, "2222"), "digest do anexo highcache: [%s]", hash);
+#else
+    CONFERE(strstr(url, "highcache") == NULL, "build normal NAO leva a highcache: [%s]", url);
+    CONFERE(!strcmp(hash, "3333"), "digest do anexo normal: [%s]", hash);
+#endif
+  }
+
+  // RELEASE SEM O ANEXO DESTA VARIANTE: nao instala, e isso e o certo. Trocar
+  // de variante calada e o defeito; mandar para a pagina e a saida honesta.
+  { char url[160], hash[80];
+    const char *so_outra =
+#ifdef NV_TEX_MB_FIXO
+      "{\"assets\":[{\"browser_download_url\":\"https://x/space.nuvio_1.1.3_arm.ipk\"}]}";
+#else
+      "{\"assets\":[{\"browser_download_url\":\"https://x/space.nuvio_1.1.3_arm-highcache.ipk\"}]}";
+#endif
+    CONFERE(!acharIpk(so_outra, url, sizeof url, hash, sizeof hash, AT_SUFIXO),
+            "so a outra variante devolve 0");
+    CONFERE(url[0] == 0, "e a url fica vazia"); }
 
   // JSON com escapes variados
   { char d[64];

@@ -1140,6 +1140,7 @@
   { "Você continua trocando recomendações", "You keep exchanging recommendations" },
   { "Você está assistindo", "You're watching" },
   { "Você está na %s", "You are on %s" },
+  { "Você está na %s · cache grande", "You are on %s · high cache" },
   { "Você pediu para ser lembrado destes episódios.", "You asked to be reminded about these episodes." },
   { "Você pode mudar isso depois em Ajustes › Interface e conta.", "You can change this later in Settings › Interface and account." },
   { "Você segue no Trakt", "You follow on Trakt" },
