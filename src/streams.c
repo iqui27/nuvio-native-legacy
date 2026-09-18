@@ -200,9 +200,9 @@ static int playlistVazia(const char *url, const char *cabecalhos) {
   // Os cabecalhos que o addon exigiu (behaviorHints.proxyHeaders). Sem eles um
   // CDN que confere Referer devolve 403 — medido: 403 sem, 200 com.
   if (cabecalhos && *cabecalhos) {
-    char *l;
+    char *l, *ctx = NULL;
     snprintf(copia, sizeof copia, "%s", cabecalhos);
-    for (l = strtok(copia, "\n"); l && nc < 7; l = strtok(NULL, "\n"))
+    for (l = strtok_r(copia, "\n", &ctx); l && nc < 7; l = strtok_r(NULL, "\n", &ctx))
       vetor[nc++] = l;
   }
   vetor[nc] = NULL;
@@ -403,9 +403,9 @@ static void *fioCanal(void *u) {
       char copia[512];
       int nc = 0, status = 0;
       if (lista[meu].cabecalhos[0]) {
-        char *l;
+        char *l, *ctx = NULL;
         snprintf(copia, sizeof copia, "%s", lista[meu].cabecalhos);
-        for (l = strtok(copia, "\n"); l && nc < 7; l = strtok(NULL, "\n"))
+        for (l = strtok_r(copia, "\n", &ctx); l && nc < 7; l = strtok_r(NULL, "\n", &ctx))
           vetor[nc++] = l;
       }
       vetor[nc] = NULL;

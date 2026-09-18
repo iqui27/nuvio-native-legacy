@@ -1288,12 +1288,12 @@ void video_definir_cabecalhos(const char *cabs) {
 // TV, nem de getSystemTime, entao tambem nao serve de sonda.
 static void montarHttpHeader(char *dst, unsigned tam) {
   char copia[512], ref[320], ua[320], ck[320];
-  char *l;
+  char *l, *ctx = NULL;
   int algum = 0;
   dst[0] = 0; ref[0] = 0; ua[0] = 0; ck[0] = 0;
   if (!cabsHttp[0]) return;
   snprintf(copia, sizeof copia, "%s", cabsHttp);
-  for (l = strtok(copia, "\n"); l; l = strtok(NULL, "\n")) {
+  for (l = strtok_r(copia, "\n", &ctx); l; l = strtok_r(NULL, "\n", &ctx)) {
     char *d = strchr(l, ':');
     char *v;
     if (!d) continue;
