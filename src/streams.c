@@ -190,13 +190,44 @@ static int enderecoDeAviso(const char *u) {
 // So para .m3u8: o custo e um GET de poucos KB na fonte que ja ia ser usada, e
 // so acontece na candidata que chegou ate aqui. MP4 continua julgado pelo
 // endereco, como antes.
-static int playlistVazia(const char *url) {
+static int playlistVazia(const char *url, const char *cabecalhos) {
   char *corpo;
+  const char *vetor[8];
+  char copia[512];
   long n = 0;
-  int vazia;
+  int vazia, status = 0, nc = 0;
   if (!strstr(url, ".m3u8") && !strstr(url, "m3u8")) return 0;
-  corpo = rede_baixar_bin(url, 8, &n);
+  // Os cabecalhos que o addon exigiu (behaviorHints.proxyHeaders). Sem eles um
+  // CDN que confere Referer devolve 403 — medido: 403 sem, 200 com.
+  if (cabecalhos && *cabecalhos) {
+    char *l;
+    snprintf(copia, sizeof copia, "%s", cabecalhos);
+    for (l = strtok(copia, "\n"); l && nc < 7; l = strtok(NULL, "\n"))
+      vetor[nc++] = l;
+  }
+  vetor[nc] = NULL;
+  corpo = rede_baixar_st(url, 8, nc ? vetor : NULL, &status);
+  if (corpo) n = (long)strlen(corpo);
   if (!corpo) return 0;    // nao baixou: nao e prova de vazia, deixa passar
+  // STATUS FORA DE 2xx NAO E PLAYLIST VAZIA — E RECUSA, E O CORPO E A PAGINA DE
+  // ERRO.
+  //
+  // Este ramo e o defeito do relato de 17/09 no alvo Samsung. La a requisicao
+  // sai por XHR, e o navegador PROIBE definir Referer, Origin e User-Agent:
+  // os cabecalhos acima sao ignorados em silencio e o CDN responde 403. O corpo
+  // do 403 (4,5 KB de HTML) voltava como se fosse a playlist, nao tinha
+  // #EXTINF, e o canal era marcado "fora do ar" ANTES de o AVPlay tentar —
+  // que e quem realmente sabe mandar cabecalho na TV. A tela dizia "nao foi
+  // possivel abrir a fonte" sem nunca ter tentado abrir.
+  //
+  // Deixar passar e o certo: esta funcao existe para descartar canal
+  // comprovadamente morto, e 403 nao prova isso.
+  if (status && (status < 200 || status >= 300)) {
+    printf("[fonte] playlist respondeu HTTP %d, nao julgo (pode ser cabecalho que o player manda)\n",
+           status);
+    free(corpo);
+    return 0;
+  }
   // Um segmento (#EXTINF) ou uma variante (#EXT-X-STREAM-INF) bastam. A lista
   // mestre so tem variantes; a de midia so tem segmentos.
   vazia = !strstr(corpo, "#EXTINF") && !strstr(corpo, "#EXT-X-STREAM-INF");
@@ -252,7 +283,7 @@ static void *fioVerificar(void *u) {
       printf("[fonte] %d e aviso (%.60s)\n", i, fim);
       continue;
     }
-    if (playlistVazia(fim)) {
+    if (playlistVazia(fim, lista[i].cabecalhos)) {
       printf("[fonte] %d tem playlist vazia (canal fora do ar)\n", i);
       continue;
     }
@@ -368,7 +399,45 @@ static void *fioCanal(void *u) {
     meu = canalProx++;
     pthread_mutex_unlock(&canalTrava);
     if (!lista[meu].url[0]) { canalClasse[meu] = 2; continue; }
-    corpo = rede_baixar_bin(lista[meu].url, CANAL_PRAZO_S, &n);
+    { const char *vetor[8];
+      char copia[512];
+      int nc = 0, status = 0;
+      if (lista[meu].cabecalhos[0]) {
+        char *l;
+        snprintf(copia, sizeof copia, "%s", lista[meu].cabecalhos);
+        for (l = strtok(copia, "\n"); l && nc < 7; l = strtok(NULL, "\n"))
+          vetor[nc++] = l;
+      }
+      vetor[nc] = NULL;
+      corpo = rede_baixar_st(lista[meu].url, CANAL_PRAZO_S, nc ? vetor : NULL, &status);
+      if (corpo) n = (long)strlen(corpo);
+      // RECUSA NAO E MORTE, QUANDO O ADDON PEDIU CABECALHO.
+      //
+      // Este e o caminho do relato de 17/09: canal aparece no guia e some ao
+      // abrir, com "nao foi possivel abrir a fonte". Medido contra o addon do
+      // relator: o CDN responde 403 sem Referer/Origin/User-Agent e 200 com
+      // eles. O corpo do 403 — 4,5 KB de HTML — chegava aqui, nao tinha
+      // #EXTINF, e o canal virava classe 2 (MORTA). Todas mortas, nenhuma para
+      // tocar, erro na tela.
+      //
+      // No alvo Samsung isto nao se resolve mandando o cabecalho daqui: a
+      // requisicao sai por XHR e o navegador PROIBE definir Referer, Origin e
+      // User-Agent — sao cabecalhos controlados pelo agente. Quem sabe manda-los
+      // na TV e o AVPlay, que e nativo. Ou seja, esta sonda NAO E AUTORIDADE
+      // sobre esta fonte: ela responde 403 para nos e 200 para o player.
+      //
+      // Entao, quando o addon DECLAROU cabecalhos e a resposta foi recusa, a
+      // fonte entra como VIVA e quem decide e o player. Sem cabecalho
+      // declarado, 403 continua valendo como morta — ali a sonda e o player
+      // veem a mesma coisa.
+      if (corpo && status >= 400 && lista[meu].cabecalhos[0]) {
+        canalClasse[meu] = 1;
+        printf("[fonte] %d respondeu HTTP %d, mas o addon exige cabecalho: quem decide e o player\n",
+               meu, status);
+        free(corpo);
+        continue;
+      }
+    }
     if (!corpo) {
       // MUDA. MEDIDO na LG com o curl do proprio aparelho: estas URLs do proxy
       // do FrostView nao devolvem NADA — `http=000`, 12 s de espera, zero byte.

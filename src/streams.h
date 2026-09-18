@@ -49,6 +49,17 @@ typedef struct {
   // verificacao, por debrid_resolver.
   char infoHash[48];
   int  fileIdx;         // -1 quando o addon nao disse
+  // CABECALHOS QUE O ADDON EXIGE, de behaviorHints.proxyHeaders.request, uma
+  // linha "Nome: valor" por cabecalho (o mesmo formato que rede.h aceita).
+  //
+  // Nao e enfeite: medido em 17/09 contra o addon do relato #, o CDN responde
+  // 403 sem Referer/Origin/User-Agent e 200 com eles. Ate aqui o parser entrava
+  // em behaviorHints so para pegar o bingeGroup e jogava o resto fora, entao
+  // TODO addon que depende de Referer estava quebrado nos dois alvos.
+  //
+  // 512 cobre os tres cabecalhos da convencao com folga; addon que peca mais
+  // que isso perde o excedente em vez de estourar.
+  char cabecalhos[512];
 } Stream;
 
 // Parser sem rede: o chamador libera *saida. Retorna -1 se a alocacao falhar.

@@ -22,6 +22,70 @@ static int token(const char *s, const char *t) {
   return 0;
 }
 
+// CABECALHOS EXIGIDOS PELO ADDON: behaviorHints.proxyHeaders.request.
+//
+// MEDIDO em 17/09 contra o addon de um relato: o CDN devolve 403 sem
+// Referer/Origin/User-Agent e 200 com eles. O parser entrava em behaviorHints
+// so para pegar bingeGroup, entao esses cabecalhos eram descartados e QUALQUER
+// addon que dependa de Referer ficava sem tocar, nos dois alvos.
+//
+// A MAO, e nao com js_texto: os nomes das chaves aqui sao escolhidos pelo
+// ADDON (sao nomes de cabecalho HTTP), entao nao ha lista de chaves conhecidas
+// para procurar — e preciso varrer os pares que existirem. So profundidade 1
+// de "request", que e onde a convencao do Stremio poe os cabecalhos.
+//
+// Saida no formato que rede.h aceita: uma linha "Nome: valor" por cabecalho.
+static void lerProxyHeaders(const char *bh, const char *fim, char *dst, unsigned tam) {
+  const char *ph, *rq, *q;
+  unsigned u = 0;
+  dst[0] = 0;
+  ph = strstr(bh, "\"proxyHeaders\"");
+  if (!ph || ph >= fim) return;
+  rq = strstr(ph, "\"request\"");
+  if (!rq || rq >= fim) return;
+  q = strchr(rq, '{');
+  if (!q || q >= fim) return;
+  q++;
+  // Varre pares "nome":"valor" ate a chave que fecha o objeto. Valor de
+  // cabecalho e string, entao um '{' aqui e coisa que nao se esperava: encerra
+  // em vez de tentar adivinhar.
+  while (q < fim && *q && *q != '}' && *q != '{') {
+    char nome[96], valor[320];
+    unsigned k;
+    const char *f;
+    while (q < fim && *q && *q != '"' && *q != '}') q++;
+    if (q >= fim || *q != '"') break;
+    q++;
+    f = q;
+    while (f < fim && *f && *f != '"') f++;
+    if (f >= fim || *f != '"') break;
+    k = (unsigned)(f - q);
+    if (k >= sizeof nome) k = sizeof nome - 1;
+    memcpy(nome, q, k); nome[k] = 0;
+    q = f + 1;
+    while (q < fim && *q && *q != ':') q++;
+    if (q >= fim || *q != ':') break;
+    q++;
+    while (q < fim && (*q == ' ' || *q == '\t')) q++;
+    if (q >= fim || *q != '"') break;   // valor nao-string: nao e cabecalho
+    q++;
+    f = q;
+    while (f < fim && *f && *f != '"') f++;
+    if (f >= fim || *f != '"') break;
+    k = (unsigned)(f - q);
+    if (k >= sizeof valor) k = sizeof valor - 1;
+    memcpy(valor, q, k); valor[k] = 0;
+    q = f + 1;
+    if (nome[0] && valor[0]) {
+      int esc = snprintf(dst + u, tam - u, "%s%s: %s", u ? "\n" : "", nome, valor);
+      if (esc < 0 || (unsigned)esc >= tam - u) { dst[u] = 0; break; }
+      u += (unsigned)esc;
+    }
+    while (q < fim && (*q == ' ' || *q == '\t' || *q == '\n' || *q == '\r')) q++;
+    if (q < fim && *q == ',') q++;
+  }
+}
+
 int stream_extrair(const char *json, const char *provedor, Stream **saida) {
   const char *p, *fim;
   int n = 0, cap = 0;
@@ -71,8 +135,10 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
       //    que se quer. Nas respostas que deu para inspecionar aqui o js_texto
       //    solto daria o mesmo resultado; ancorar e seguro de graca.
       { const char *bh = strstr(p, "\"behaviorHints\"");
-        if (bh && bh < fim)
-          js_texto_raiz_em(bh, fim, "bingeGroup", s.bingeGroup, sizeof s.bingeGroup); }
+        if (bh && bh < fim) {
+          js_texto_raiz_em(bh, fim, "bingeGroup", s.bingeGroup, sizeof s.bingeGroup);
+          lerProxyHeaders(bh, fim, s.cabecalhos, sizeof s.cabecalhos);
+        } }
       if (!s.descricao[0]) snprintf(s.descricao, sizeof s.descricao, "%s", titulo);
       if (!s.rotulo[0]) snprintf(s.rotulo, sizeof s.rotulo, "%s", provedor);
       snprintf(s.provedor, sizeof s.provedor, "%s", provedor);
