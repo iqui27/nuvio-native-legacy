@@ -6,6 +6,7 @@
 #include "rede.h"
 #include "js.h"
 #include "marco.h"
+#include "fontecache.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,13 +42,15 @@ static int nAddon;
 static _Atomic AddEstado estado = ADD_PARADO;
 static pthread_t fio;
 static char alvoId[64], alvoTipo[16];
-// Segundo nome de tipo a tentar quando o primeiro nao responde. So vale para
-// canal ao vivo ("tv" <-> "channel"); vazio nos demais. Ver fioFontes.
-static char alvoTipoAlt[16];
 static int fioVivo;
 static Stream *resultado;
 static int nResultado;
 static char pendId[64], pendTipo[16];
+// O alvo corrente esta sendo buscado pelo PREFETCH do guia (fontecache.c), e
+// nao por `fio`: addons_buscar o encontrou a caminho e resolveu esperar em vez
+// de repetir. addons_estado e quem colhe. Ver addons_buscar.
+static int adotado;
+static void dispararBusca(void);
 
 // A BASE de um addon a partir da URL guardada (arquivo local ou conta). A URL
 // aponta para o manifesto; a base e ela sem o sufixo, e e dela que saem
@@ -273,8 +276,32 @@ AddEstado addons_estado(void) {
       addons_buscar(id, tipo);
       return ADD_BUSCANDO;
     }
+    e = atomic_load(&estado);
   }
+  // O alvo esta a caminho pelo prefetch: colhe quando chegar. Se o prefetch
+  // cedeu ou nao trouxe nada, a busca real sai daqui — o pedido nunca fica
+  // pendurado em "buscando" por causa de um atalho que nao deu certo.
+  if (adotado && !fioVivo) {
+    Stream *l; int n;
+    int r = fontecache_pegar(alvoId, alvoTipo, &l, &n);
+    if (r == FC_ACERTO) {
+      adotado = 0;
+      printf("[addons] %s: %d fontes do prefetch\n", alvoId, n);
+      stream_definir_lista(l, n);
+      free(l);
+      estado = n ? ADD_PRONTO : ADD_VAZIO;
+      return atomic_load(&estado);
+    }
+    if (r == FC_NADA) { adotado = 0; dispararBusca(); }
+    return ADD_BUSCANDO;
+  }
+  // Busca principal ociosa: e a vez do prefetch pendente, se houver.
+  if (e != ADD_BUSCANDO && !fioVivo) fontecache_avancar();
   return e;
+}
+
+int addons_ocupado(void) {
+  return fioVivo || adotado || atomic_load(&estado) == ADD_BUSCANDO;
 }
 
 // --- leitura tolerante de JSON ----------------------------------------------
@@ -520,6 +547,59 @@ int addons_alternar(int i) {
   return addon[i].ativo;
 }
 
+// ACRESCENTA UM ADDON, sem passar por addons_definir_lista.
+//
+// POR QUE NAO REUSAR addons_definir_lista: ela REFAZ a lista inteira, e com
+// isso zera `sondado` e o `id` de manifesto de TODOS os addons — inclusive dos
+// que ja estavam sondados e nada tinham a ver com a instalacao. O id do
+// manifesto e a chave que as colecoes da conta usam (addons_base_por_id), entao
+// perde-lo faz colecao abrir vazia ate a proxima sonda. Ela tambem registra
+// "[addons] N vindos da conta", que seria mentira para uma lista que veio do
+// guia.
+//
+// Capacidades nascem SUPOSTAS como no carregador do arquivo (fonte e catalogo
+// sim, legenda nao) e `sondado` em 0: a sonda do manifesto corrige depois, e
+// ate la o custo de supor e uma consulta vazia.
+//
+// Devolve 1 se entrou, 0 se a lista esta cheia ou o addon ja existe. Comparacao
+// por base NORMALIZADA, e nao pela URL crua: "<base>", "<base>/" e
+// "<base>/manifest.json" sao o mesmo addon.
+int addons_adicionar(const char *nome, const char *urlManifest) {
+  char nova[600];
+  int i;
+  if (!urlManifest || !*urlManifest) return 0;
+  if (nAddon >= ADD_MAX) {
+    printf("[addons] nao coube: a lista ja tem %d\n", ADD_MAX);
+    fflush(stdout);
+    return 0;
+  }
+  baseNormalizada(urlManifest, nova, sizeof nova);
+  if (!nova[0]) return 0;
+  for (i = 0; i < nAddon; i++) {
+    char base[600];
+    baseNormalizada(addon[i].base, base, sizeof base);
+    if (!strcmp(base, nova)) {
+      printf("[addons] ja instalado: %s\n", addon[i].nome);
+      fflush(stdout);
+      return 0;
+    }
+  }
+  memset(&addon[nAddon], 0, sizeof addon[nAddon]);
+  snprintf(addon[nAddon].nome, sizeof addon[nAddon].nome, "%s",
+           nome && *nome ? nome : nova);
+  snprintf(addon[nAddon].base, sizeof addon[nAddon].base, "%s", nova);
+  addon[nAddon].fonte = 1;
+  addon[nAddon].catalogo = 1;
+  addon[nAddon].legenda = 0;
+  addon[nAddon].ativo = 1;
+  addon[nAddon].sondado = 0;
+  nAddon++;
+  printf("[addons] instalado pelo guia: %s (%s)\n",
+         addon[nAddon - 1].nome, nova);
+  fflush(stdout);
+  return 1;
+}
+
 // SONDA DO MANIFESTO. Ate ela responder, o app assume que todo addon fornece
 // tudo — e essa suposicao custa no maximo uma consulta vazia. O manifesto diz a
 // verdade, e e o que a tela mostra: sem isso a lista so poderia repetir a
@@ -699,22 +779,36 @@ typedef struct {
   int    n;
 } BaldeFonte;
 
-static BaldeFonte *baldes;
-static int nBaldes, proxBalde;
-static pthread_mutex_t addTrava = PTHREAD_MUTEX_INITIALIZER;
+// UMA CONSULTA INTEIRA, com tudo que os fios dela compartilham. Era um punhado
+// de estaticos (baldes, proxBalde, alvoId, alvoTipo), o que amarrava o modulo
+// a UMA consulta por vez: o prefetch dos vizinhos do guia (fontecache.c)
+// precisa consultar sem tocar no alvo da busca real, entao o estado passou a
+// viajar aqui e cada consulta tem o seu. A trava e por consulta tambem: duas
+// consultas ao mesmo tempo nao disputam nada.
+typedef struct {
+  const char *id, *tipo, *tipoAlt;
+  BaldeFonte *baldes;
+  int nBaldes, proxBalde;
+  int (*cancelado)(void *);   // NULL = nunca cancela
+  void *ctx;
+  pthread_mutex_t trava;
+} Consulta;
 
 static void *fioFontes(void *u) {
-  (void)u;
+  Consulta *c = u;
   for (;;) {
     int meu, i;
     char url[900], *corpo;
-    pthread_mutex_lock(&addTrava);
-    if (proxBalde >= nBaldes) { pthread_mutex_unlock(&addTrava); return NULL; }
-    meu = proxBalde++;
-    pthread_mutex_unlock(&addTrava);
-    i = baldes[meu].idx;
+    pthread_mutex_lock(&c->trava);
+    if (c->proxBalde >= c->nBaldes) { pthread_mutex_unlock(&c->trava); return NULL; }
+    meu = c->proxBalde++;
+    pthread_mutex_unlock(&c->trava);
+    // Cancelamento entre um addon e outro: o download em curso nao se
+    // interrompe (libcurl), mas o proximo nem comeca.
+    if (c->cancelado && c->cancelado(c->ctx)) continue;
+    i = c->baldes[meu].idx;
     snprintf(url, sizeof url, "%s/stream/%s/%s.json",
-             addon[i].base, alvoTipo, alvoId);
+             addon[i].base, c->tipo, c->id);
     // 12 s e nao 25: com os addons em paralelo o timeout deixa de ser somado,
     // mas continua sendo o tempo que o dono espera pelo mais lento.
     corpo = rede_baixar(url, 12);
@@ -733,62 +827,101 @@ static void *fioFontes(void *u) {
     // nome, e o app nao guarda os "types" do manifesto para decidir. Entao
     // pergunta-se o SEGUNDO nome APENAS para o addon que nao respondeu nada
     // com o primeiro: custa uma viagem extra so no caminho que hoje ja falha.
-    if (!corpo && alvoTipoAlt[0]) {
+    if (!corpo && c->tipoAlt && c->tipoAlt[0] &&
+        !(c->cancelado && c->cancelado(c->ctx))) {
       snprintf(url, sizeof url, "%s/stream/%s/%s.json",
-               addon[i].base, alvoTipoAlt, alvoId);
+               addon[i].base, c->tipoAlt, c->id);
       corpo = rede_baixar(url, 12);
       if (corpo)
         printf("[addons] %s: respondeu como \"%s\" (nao como \"%s\")\n",
-               addon[i].nome, alvoTipoAlt, alvoTipo);
+               addon[i].nome, c->tipoAlt, c->tipo);
     }
     if (!corpo) { printf("[addons] %s: sem resposta\n", addon[i].nome); continue; }
-    baldes[meu].n = stream_extrair(corpo, addon[i].nome, &baldes[meu].achados);
+    c->baldes[meu].n = stream_extrair(corpo, addon[i].nome, &c->baldes[meu].achados);
     printf("[addons] %s: %d fontes (%u bytes)\n",
-           addon[i].nome, baldes[meu].n, (unsigned)strlen(corpo));
+           addon[i].nome, c->baldes[meu].n, (unsigned)strlen(corpo));
     free(corpo);
   }
 }
 
-static void *buscar(void *u) {
+// O segundo nome de tipo de canal ao vivo; "" para os demais. Ver fioFontes.
+static const char *tipoAlternativo(const char *tipo) {
+  if (!strcmp(tipo, "tv"))      return "channel";
+  if (!strcmp(tipo, "channel")) return "tv";
+  return "";
+}
+
+int addons_consultar(const char *id, const char *tipo, int fios,
+                     int (*cancelado)(void *), void *ctx, Stream **saida) {
+  Consulta c;
   Stream *achados = NULL;
-  int n = 0, i;
-  (void)u;
-  marco("addons: consulta inicio");
-
-  nBaldes = 0; proxBalde = 0;
-  baldes = calloc((size_t)(nAddon > 0 ? nAddon : 1), sizeof(BaldeFonte));
-  if (baldes)
+  int n = 0, i, q;
+  *saida = NULL;
+  if (!id || !*id || !tipo || !*tipo || nAddon <= 0) return 0;
+  memset(&c, 0, sizeof c);
+  c.id = id; c.tipo = tipo; c.tipoAlt = tipoAlternativo(tipo);
+  c.cancelado = cancelado; c.ctx = ctx;
+  pthread_mutex_init(&c.trava, NULL);
+  c.baldes = calloc((size_t)nAddon, sizeof(BaldeFonte));
+  if (c.baldes)
     for (i = 0; i < nAddon; i++)
-      if (addon[i].ativo && addon[i].fonte) baldes[nBaldes++].idx = i;
+      if (addon[i].ativo && addon[i].fonte) c.baldes[c.nBaldes++].idx = i;
 
-  if (baldes && nBaldes > 0) {
-    pthread_t fios[ADD_FIOS];
-    int criados = 0, q;
-    for (q = 0; q < ADD_FIOS && q < nBaldes; q++)
-      if (pthread_create(&fios[criados], NULL, fioFontes, NULL) == 0) criados++;
-    if (!criados) fioFontes(NULL);        // sem fios: em serie, mesmo resultado
-    for (q = 0; q < criados; q++) pthread_join(fios[q], NULL);
+  if (c.baldes && c.nBaldes > 0) {
+    pthread_t f[ADD_FIOS];
+    int criados = 0;
+    if (fios > ADD_FIOS) fios = ADD_FIOS;
+    for (q = 0; q < fios && q < c.nBaldes; q++)
+      if (pthread_create(&f[criados], NULL, fioFontes, &c) == 0) criados++;
+    if (!criados) fioFontes(&c);          // sem fios: em serie, mesmo resultado
+    for (q = 0; q < criados; q++) pthread_join(f[q], NULL);
     // Junta NA ORDEM DOS ADDONS, que e a ordem em que o dono os instalou.
-    for (q = 0; q < nBaldes; q++) {
-      int k = baldes[q].n;
+    for (q = 0; q < c.nBaldes; q++) {
+      int k = c.baldes[q].n;
       if (k > 0) {
         Stream *tmp = realloc(achados, sizeof(Stream) * (size_t)(n + k));
         if (tmp) { achados = tmp;
-          memcpy(achados + n, baldes[q].achados, sizeof(Stream) * (size_t)k);
+          memcpy(achados + n, c.baldes[q].achados, sizeof(Stream) * (size_t)k);
           n += k;
         } else printf("[addons] memoria insuficiente para %d fontes\n", k);
       }
-      free(baldes[q].achados);
+      free(c.baldes[q].achados);
     }
   }
-  free(baldes); baldes = NULL; nBaldes = 0;
+  free(c.baldes);
+  pthread_mutex_destroy(&c.trava);
+  // Cancelada, a lista pode estar pela metade: nao e resposta, e lixo.
+  if (cancelado && cancelado(ctx)) { free(achados); return -1; }
+  *saida = achados;
+  return n;
+}
 
+static void *buscar(void *u) {
+  Stream *achados = NULL;
+  int n;
+  (void)u;
+  marco("addons: consulta inicio");
+  n = addons_consultar(alvoId, alvoTipo, ADD_FIOS, NULL, NULL, &achados);
+  if (n < 0) n = 0;
   marco(n ? "addons: fontes recebidas" : "addons: nenhuma fonte");
+  // O canal que vai ao ar fica no cache para o zap de VOLTA. Filme e serie
+  // nao entram (fontecache_guardar decide pelo tipo).
+  fontecache_guardar(alvoId, alvoTipo, achados, n);
   resultado = achados; nResultado = n;
   printf("[addons] total %d\n", n);
   fflush(stdout);
   atomic_store(&estado, n ? ADD_PRONTO : ADD_VAZIO);
   return NULL;
+}
+
+// A busca real do alvo corrente vai a rede. Chamado com fioVivo == 0.
+static void dispararBusca(void) {
+  // Pedido real tem prioridade: o prefetch em curso (de OUTRO canal — o deste
+  // teria sido adotado em addons_buscar) larga os addons que faltam.
+  fontecache_ceder();
+  estado = ADD_BUSCANDO;
+  fioVivo = 1;
+  if (pthread_create(&fio, NULL, buscar, NULL) != 0) { fioVivo = 0; estado = ADD_PARADO; }
 }
 
 void addons_buscar(const char *imdb, const char *tipo) {
@@ -802,6 +935,9 @@ void addons_buscar(const char *imdb, const char *tipo) {
     }
     return;
   }
+  // Um pedido novo desfaz a espera pelo prefetch do anterior; o prefetch em si
+  // segue ou cede conforme o que vem abaixo.
+  adotado = 0;
   stream_definir_lista(NULL, 0);
   serie = tipo && !strcmp(tipo, "series");
   // Serie SEM episodio devolve lista vazia, com HTTP 200 e sem erro nenhum
@@ -814,19 +950,35 @@ void addons_buscar(const char *imdb, const char *tipo) {
   else
     snprintf(alvoId, sizeof alvoId, "%s", imdb);
   snprintf(alvoTipo, sizeof alvoTipo, "%s", tipo && *tipo ? tipo : "movie");
-  if (!strcmp(alvoTipo, "tv"))            snprintf(alvoTipoAlt, sizeof alvoTipoAlt, "channel");
-  else if (!strcmp(alvoTipo, "channel"))  snprintf(alvoTipoAlt, sizeof alvoTipoAlt, "tv");
-  else                                    alvoTipoAlt[0] = 0;
   { int t = 0, e = 0; const char *dp = strchr(alvoId, ':');
     if (dp) sscanf(dp + 1, "%d:%d", &t, &e);
     debrid_definir_episodio(t, e); }
-  estado = ADD_BUSCANDO;
-  fioVivo = 1;
-  if (pthread_create(&fio, NULL, buscar, NULL) != 0) { fioVivo = 0; estado = ADD_PARADO; }
+  // O CACHE ANTES DA REDE. Canal que o guia engatilhou (ou que acabou de sair
+  // do ar) responde daqui, sem fio nenhum; canal cujo prefetch esta na rede
+  // AGORA e adotado — esperar o que ja esta a caminho e mais curto que repetir
+  // as mesmas requisicoes, e addons_estado publica quando chegar.
+  { Stream *l; int n;
+    int r = fontecache_pegar(alvoId, alvoTipo, &l, &n);
+    if (r == FC_ACERTO) {
+      printf("[addons] %s: %d fontes do cache\n", alvoId, n);
+      stream_definir_lista(l, n);
+      free(l);
+      estado = n ? ADD_PRONTO : ADD_VAZIO;
+      return;
+    }
+    if (r == FC_EM_CURSO) {
+      printf("[addons] %s: prefetch em curso, esperando por ele\n", alvoId);
+      adotado = 1;
+      estado = ADD_BUSCANDO;
+      return;
+    } }
+  dispararBusca();
 }
 
 void addons_encerrar(void) {
   int juntarLeg;
+  fontecache_encerrar();
+  adotado = 0;
   if (fioVivo) pthread_join(fio, NULL);
   fioVivo = 0;
   pthread_mutex_lock(&legTrava);

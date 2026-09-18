@@ -49,7 +49,16 @@ int  addons_tem_catalogo(int i);  // 1 quando o addon fornece catalogo
 
 // Dispara a busca das fontes de `imdb` ("tt1234567", ou "tt1234567:1:2" para
 // episodio). Volta na hora; o resultado chega por stream_definir_lista.
+//
+// CONSULTA O CACHE ANTES DA REDE (fontecache.h): canal que o guia engatilhou
+// responde sem fio nenhum, e canal cujo prefetch esta na rede agora e esperado
+// em vez de repetido. O caminho de rede e o de sempre.
 void addons_buscar(const char *imdb, const char *tipo);
+
+// A mesma consulta, SINCRONA E REENTRANTE, e addons_consultar — declarada em
+// fontecache.h, e nao aqui, porque a assinatura precisa de Stream (streams.h,
+// que puxa SDL) e este cabecalho e incluido por modulos que os testes compilam
+// sem SDL (tests/colecoes.sh). Definida em addons.c.
 
 // --- legendas externas (OpenSubtitles) ---------------------------------------
 // Addon de legenda responde em /subtitles/<tipo>/<id>.json com
@@ -92,6 +101,9 @@ enum { ADD_CATALOGO = 0, ADD_STREAM, ADD_LEGENDA };
 const char *addons_nome(int i);
 int  addons_ativo(int i);
 int  addons_alternar(int i);          // devolve o estado NOVO
+// Acrescenta um addon sem refazer a lista (ver a nota em addons.c). 1 = entrou,
+// 0 = lista cheia ou ja instalado. Quem chama deve chamar sync_sujar_addons().
+int  addons_adicionar(const char *nome, const char *urlManifest);
 // O addon fornece este recurso? Ate a sonda responder e uma suposicao
 // otimista; addons_sondado() diz qual dos dois casos e.
 int  addons_fornece(int i, int oque);
@@ -124,6 +136,12 @@ void addons_sondar_manifestos(void);
 void addons_manifesto_lido(int i, const char *corpo);
 
 AddEstado addons_estado(void);
+// HA BUSCA DE FONTES EM ANDAMENTO? Leitura pura, sem os efeitos de
+// addons_estado (que junta o fio e PUBLICA a lista — app.c evita chama-la
+// durante a verificacao de fonte, e quem so quer saber se pode usar a rede nao
+// deve ter esse efeito por tabela). E o que fontecache.c pergunta antes de
+// arrancar um prefetch.
+int  addons_ocupado(void);
 void addons_encerrar(void);
 
 #endif
