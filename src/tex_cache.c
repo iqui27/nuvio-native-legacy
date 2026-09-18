@@ -1,6 +1,9 @@
 #include "tex_cache.h"
 #include <dirent.h>
 #include <sys/stat.h>
+#ifdef __EMSCRIPTEN__
+#include <utime.h>   // marcarUso(): ver a nota em podarCacheDisco
+#endif
 #include "sdlcompat.h"
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -717,6 +720,18 @@ void tex_cache_dir(const char *dir) {
 }
 
 #ifdef __EMSCRIPTEN__
+// MARCA USO, para que a poda seja mesmo por MENOS USADO.
+//
+// podarCacheDisco ordena por mtime, e sem esta chamada o mtime e a data da
+// ESCRITA. O efeito seria o inverso do pretendido: a arte MAIS lida — a da
+// home, gravada ha semanas e servida do disco desde entao — tem o mtime mais
+// velho e seria a primeira a sair, enquanto um poster aberto uma vez ontem
+// ficaria. Tocar o mtime no acerto de cache transforma "data de escrita" em
+// "data de ultimo uso", que e o que a ordenacao precisa.
+//
+// No IDBFS o mtime e campo em memoria; nao custa viagem a disco.
+static void marcarUso(const char *caminho) { utime(caminho, NULL); }
+
 // PODA O MAIS ANTIGO, e nao o recem-chegado.
 //
 // A versao anterior fazia o contrario: passado o teto, apagava o arquivo que
@@ -804,7 +819,13 @@ static int garantirLocal(const char *url, char *dst, size_t tam) {
   if (!dirCache[0]) return 0;
   nomeDeCache(url, dst, tam);
   f = fopen(dst, "rb");
-  if (f) { fseek(f, 0, SEEK_END); n = ftell(f); fclose(f); if (n > 512) return 1; }
+  if (f) { fseek(f, 0, SEEK_END); n = ftell(f); fclose(f);
+    if (n > 512) {
+#ifdef __EMSCRIPTEN__
+      marcarUso(dst);   // sem isto a poda vira o contrario de LRU; ver a nota
+#endif
+      return 1;
+    } }
   // 8 s e nao 25: isto e uma IMAGEM. Com 25 s, duas URLs mortas seguravam os
   // dois fios de decode por quase um minuto e a tela inteira parava de receber
   // arte — repetidamente, porque nada guarda a falha.
@@ -875,7 +896,18 @@ static int garantirLocal(const char *url, char *dst, size_t tam) {
         free(corpo);
         return 0;
       } }
-    rename(tmp, dst);
+    // CONFERE O RENAME. Se ele falha (cota do IDBFS estourada, por exemplo), o
+    // arquivo nao existe em dst — somar aqui poe no contador bytes que o disco
+    // nao tem, e o contador e o unico criterio de podarCacheDisco. Com bytes
+    // fantasma suficientes a poda apaga o cache inteiro e continua achando que
+    // estourou o teto.
+    if (rename(tmp, dst) != 0) {
+      printf("[tex] rename falhou, nao entra no cache: %.70s\n", dst);
+      fflush(stdout);
+      remove(tmp);
+      free(corpo);
+      return 0;
+    }
     cacheDiscoBytes += n;   // decrementado quando o arquivo e apagado
   }
   free(corpo);
@@ -1352,7 +1384,20 @@ static int threadDecode(void *arg) {
           // mante-lo significa que esta arte NUNCA mais carrega, nem depois de
           // o problema que a truncou passar. Apagando, o proximo pedido baixa
           // de novo. Só apaga o que esta no NOSSO cache.
-          if (noCache(caminho)) remove(caminho);
+          // DESCONTA DO CONTADOR. Sem isto cada decode falho deixava bytes
+          // fantasma em cacheDiscoBytes ate o proximo arranque, e o log ja
+          // registrou series de 91-93 falhas numa navegacao — bastam ~48 MB
+          // delas para a poda passar a apagar tudo e nunca se dar por
+          // satisfeita, deixando o cache vazio de vez.
+          if (noCache(caminho)) {
+            long tamAnt = 0;
+            FILE *g = fopen(caminho, "rb");
+            if (g) { fseek(g, 0, SEEK_END); tamAnt = ftell(g); fclose(g); }
+            if (remove(caminho) == 0) {
+              cacheDiscoBytes -= tamAnt;
+              if (cacheDiscoBytes < 0) cacheDiscoBytes = 0;
+            }
+          }
         } else {
           printf("[tex] e um GIF: fica no disco para gif.c, sem baixar de novo\n");
         }
