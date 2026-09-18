@@ -1,0 +1,66 @@
+# Addons recomendados — CURADORIA DO DONO, não ranking.
+#
+# Esta lista aparece no guia como sugestão de instalação. Ela existe porque NÃO
+# HÁ ranking público de addons Stremio: não há catálogo oficial, não há contagem
+# de instalações acessível, e o que circula são listas de comunidade. Então o
+# app não mede popularidade e não finge medir — ele mostra o que quem mantém o
+# projeto escolheu mostrar.
+#
+# Por isso a tela NÃO deve exibir número de instalações, estrela, "em alta" nem
+# qualquer coisa que afirme popularidade. O rótulo honesto é "recomendados".
+#
+# FORMATO: uma linha por addon, separada por TAB (não por espaço — nome de addon
+# contém espaço, e o "AIOStreams | ElfHosted" já mostrou que também contém "|"):
+#
+#   <nome><TAB><url do manifest.json><TAB><descrição curta>
+#
+# Linha começando com # é comentário. Arquivo vazio ou ausente faz a seção
+# simplesmente não aparecer — isso é comportamento esperado, não erro.
+#
+# CUIDADO AO PREENCHER: url de addon frequentemente EMBUTE CHAVE DE API no
+# caminho (AIOStreams, Debridio, Xperience). Não ponha aqui um manifest que
+# carregue credencial sua — esta lista vai dentro do pacote publicado, e quem
+# baixar o .ipk ou o .wgt lê o arquivo. Só entra addon de URL pública.
+#
+# ---------------------------------------------------------------------------
+# COMO ESTA LISTA FOI FEITA (18/09/2026)
+#
+# 72 candidatos testados com curl no manifest.json: coleção oficial do Stremio
+# (api.strem.io/addonscollection.json, 95 entradas), os built-ins, e ~15 nomes
+# de comunidade. Sobraram 10 de URL pública que respondem conteúdo na raiz sem
+# configuração. O funil é brutal e vale saber por quê: a maior parte dos addons
+# bons hoje é configurada por usuário, e a URL resultante carrega a chave.
+#
+# ACHADO QUE MERECE ATENÇÃO: a própria coleção oficial traz uma entrada "Trakt
+# Tv" cuja URL embute access_token e refresh_token em base64 no caminho. Ou
+# seja, a fonte oficial distribui credencial de alguém. É exatamente o que a
+# regra acima evita.
+#
+# DE LEGENDA SÓ EXISTE UM público: o OpenSubtitles v3. Todo o resto exige
+# configuração ou chave, e a raiz devolve 404, vazio ou erro disfarçado de
+# legenda ("Invalid API key" como se fosse conteúdo). Um deles, o GTSubs,
+# devolve 52 mil entradas-placeholder — pior que não ter.
+#
+# FICARAM DE FORA APESAR DE FUNCIONAREM, e o motivo é deste app:
+#   Trakt Tv   — declara os catálogos com type "trakt"; aqui eles entrariam
+#                rotulados como "Filme" e sem busca. Medido no manifesto.
+#   Anime Kitsu — ids "kitsu:", que o Cinemeta embutido não resolve; a ficha
+#                abriria vazia.
+#   Radios     — catálogos type "music". É rádio num player de vídeo.
+#   Cinemeta   — já é embutido no app; instalar de novo é redundante.
+# Se um dia o app tratar esses tipos, eles voltam a ser candidatos.
+#
+# DEPENDEM DE REAL-DEBRID neste app (streams.c só aceita infoHash com
+# debrid_ativo). Não entraram porque sem conta paga a pessoa instala e não
+# reproduz nada — decisão do dono se quiser incluir:
+#   Torrentio        https://torrentio.strem.fun/manifest.json
+#   Brazuca Torrents https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json
+# ---------------------------------------------------------------------------
+
+OpenSubtitles v3	https://opensubtitles-v3.strem.io/manifest.json	Legendas do OpenSubtitles, com português do Brasil
+Streaming Catalogs	https://7a82163c306e-stremio-netflix-catalog-addon.baby-beamup.club/manifest.json	O que está na Netflix, HBO Max, Disney+, Prime e Apple TV+
+IMDB Catalogs	https://1fe84bc728af-imdb-catalogs.baby-beamup.club/manifest.json	Listas do IMDb de filmes e séries
+Rotten Tomatoes	https://7a82163c306e-rottentomatoes.baby-beamup.club/manifest.json	Filmes Certified Fresh e séries do Rotten Tomatoes
+The Movie Database	https://94c8cb9f702d-tmdb-addon.baby-beamup.club/manifest.json	Catálogos e fichas do TMDB (em inglês)
+Mubi	https://mubi2stremio.adiba.ro/manifest.json	Novidades e acervo da MUBI (só catálogo)
+Torrent Catalogs	https://torrent-catalogs.strem.fun/manifest.json	O que está mais semeado em torrents, como catálogo

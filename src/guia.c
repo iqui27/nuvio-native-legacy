@@ -10,14 +10,41 @@
 //     proprio existe porque SalvoItem.id tem 24 bytes e os ids do FrostView
 //     tem ~45 — eles nao cabem no sistema de "salvos" comum.
 //
+//   - modo de exibicao: guia-modo.txt na pasta de dados ("lista" ou
+//     "cartoes"). Arquivo proprio pelo mesmo motivo do de favoritos: e uma
+//     preferencia DESTE guia, e o sistema de ajustes nao e meu para editar.
+//   - addons recomendados: <pasta art>/addons-recomendados.txt, mantido a mao
+//     pelo dono. Ver a nota em recLer().
+//
+// DOIS MODOS DE EXIBICAO, um estado de foco so:
+//   - CARTOES: fileiras por categoria com cartoes horizontais (o original).
+//   - LISTA: guia tradicional — uma linha por canal, coluna de nome a esquerda
+//     e uma faixa de tempo a direita com os blocos de programa na proporcao
+//     da duracao, regua de meias horas em cima e a linha "agora" em azul.
+//   focoLin/focoCol sao os mesmos nos dois; alternar preserva o canal focado.
+//
+// COMO SE ALTERNA, e por que assim:
+//   - controle segmentado no CABECALHO (Cartoes | Lista | Addons), alcancado
+//     com CIMA a partir da primeira linha. E o caminho primario porque e
+//     VISIVEL: tecla que ninguem ve ninguem descobre.
+//   - botao AMARELO da LG como atalho. Era o unico colorido livre: o AZUL
+//     abre e fecha o overlay, CH+/- pulam secao, e no Tizen a casca ja gasta
+//     vermelho e verde em outras telas (tizen-shell.html). O scancode 488 e
+//     SUPOSTO pela sequencia do SDL_webOS.h (RED..BLUE contiguos, BLUE=489
+//     medido); nao havia TV nesta bancada para confirmar. No Tizen a amarela
+//     NAO e repassada pela casca, entao la so o cabecalho alterna.
+//
 // CONCORRENCIA: o fio escreve em s* (staging); quando termina sobe
 // `pendPronto` e o fio de desenho copia para os vetores publicados. Leitores
 // nunca tocam no staging — mesma disciplina do epg.c.
 #include "guia.h"
+#include "fontecache.h"
 #include "ajustes.h"   /* ajustes_acento: cor do anel de foco */
 #include "epg.h"
 #include "rede.h"
 #include "addons.h"
+#include "sync.h"        /* sync_sujar_addons: ligar/desligar sobe para a conta */
+#include "descoberta.h"  /* desc_repetir: addon novo so entra com ciclo novo */
 #include "stalker.h"
 #include "dados.h"
 #include "js.h"
@@ -65,6 +92,40 @@
 #define G_HOLD_MS    600
 #define G_REP_MS     450
 #define G_CAT_SAIR_MS 2000
+
+// Botao AMARELO do controle da LG. SUPOSTO (ver o cabecalho do arquivo):
+// SDL_webOS.h enumera RED, GREEN, YELLOW, BLUE em sequencia e BLUE e 489.
+#define G_SCANCODE_YELLOW 488
+
+// --- layout do MODO LISTA -----------------------------------------------------
+// Regua de horas em G_TOPO; as linhas comecam 40 px abaixo dela. Coluna de
+// nome com 400 px: logo de 52 + nome em TXT_BODY (25 px) numa linha so, que
+// cabe "Discovery Home & Health" sem cortar. O resto e a faixa de tempo.
+#define G_L_TOPO    (G_TOPO + 40.0f)
+#define G_L_ROW      76.0f     // 52 de logo + 12 de folga em cima e embaixo
+#define G_L_HEAD     56.0f     // cabecalho de categoria (TXT_ROW_TITULO, 33 px)
+#define G_L_COL     400.0f
+#define G_L_FAIXA_X (G_AREA_X + G_L_COL + 16.0f)
+#define G_L_FAIXA_W (G_AREA_W - G_L_COL - 16.0f)
+// Janela de 120 min: a 916 px isso da 7,6 px por minuto, e um bloco de 5 min
+// (o menor que aparece em grade de TV aberta) ainda tem 38 px — visivel,
+// embora sem rotulo. 180 min deixaria o de 5 min com 25 px, um risco.
+#define G_L_JANELA_MIN 120
+#define G_L_PASSO_MIN   30     // regua de meia em meia hora, como toda grade
+#define G_L_DESL_MAX   180     // ate 3 h a frente com DIREITA
+#define G_L_BASE    (NV_TELA_H - 70.0f)   // acima da barra de ajuda
+
+// --- cabecalho: controle segmentado + botao de addons -----------------------
+#define G_TOPO_Y     52.0f
+#define G_TOPO_H     48.0f
+enum { G_TOPO_CARTOES = 0, G_TOPO_LISTA, G_TOPO_ADDONS, G_TOPO_N };
+
+// --- painel de addons ---------------------------------------------------------
+#define G_PA_W      720.0f
+#define G_PA_X      (NV_TELA_W - G_PA_W)
+#define G_PA_MARG    48.0f
+#define G_PA_ROW     92.0f
+#define G_MAX_REC    12
 
 typedef struct {
   char id[80];
@@ -148,6 +209,120 @@ static void favAlternar(GCanal *c) {
   nFavOrd = 0;
   for (i = 0; i < nCanais && nFavOrd < G_MAX_FAV; i++)
     if (canais[i].fav) favOrd[nFavOrd++] = i;
+}
+
+// --- modo de exibicao ------------------------------------------------------------
+// 1 = lista, 0 = cartoes. Persistido em guia-modo.txt: quem escolheu lista
+// espera reabrir em lista, senao a escolha vira um gesto a repetir por sessao.
+static int modoLista, modoLido;
+
+static void modoLer(void) {
+  char *t = dados_ler("guia-modo.txt");
+  modoLido = 1;
+  if (!t) return;
+  modoLista = !strncmp(t, "lista", 5);
+  free(t);
+}
+
+static void modoGravar(void) {
+  dados_gravar("guia-modo.txt", modoLista ? "lista\n" : "cartoes\n");
+}
+
+// --- o que cada addon da conta declara -----------------------------------------
+// "Este addon fornece canal?" e uma pergunta que so o manifesto responde, e a
+// sonda deste guia ja o baixa. Guardar a resposta POR BASE e o que permite ao
+// painel de addons dizer "fornece canais" / "sem catalogo de canais" em vez
+// de listar os dezesseis addons da conta sem distinguir nada. -1 = manifesto
+// nao respondeu (nao e "nao fornece": e "nao se sabe").
+typedef struct { char base[600]; int canal; } GSabe;
+#define G_MAX_SABE 16
+static GSabe sSabe[G_MAX_SABE]; static int sNSabe;   // do fio
+static GSabe sabe[G_MAX_SABE];  static int nSabe;    // publicado
+
+static int sabeCanal(const char *base) {   // 1, 0, ou -1 = desconhecido
+  for (int i = 0; i < nSabe; i++)
+    if (!strcmp(sabe[i].base, base)) return sabe[i].canal;
+  return -1;
+}
+
+// --- addons recomendados ---------------------------------------------------------
+// PREMISSA, escrita aqui porque ela decide o que a tela PODE mostrar: nao
+// existe ranking publico de addons Stremio — nenhum contador de instalacoes,
+// nenhuma nota. "Recomendado" neste guia e CURADORIA DO DONO, um arquivo que
+// ele edita a mao. Por isso a secao nao mostra numero nenhum: qualquer
+// "1.2k instalacoes" ou estrela ali seria dado inventado.
+//
+// Formato de addons-recomendados.txt, uma linha por addon:
+//     <nome>\t<url do manifest>\t<descricao curta>
+// Arquivo ausente ou vazio = a secao nao aparece. Nao e erro.
+typedef struct { char nome[64]; char url[600]; char desc[200]; } GRec;
+static GRec rec[G_MAX_REC]; static int nRec;
+
+// ONDE FICA A PASTA art/. Este modulo nao recebe dirArte (so main.c o tem, e
+// ele nao o publica). Os tres candidatos sao os tres jeitos REAIS de o app
+// ser lancado, na ordem em que aparecem em main.c e tools/mac.sh:
+//   1. <SDL_GetBasePath()>/art — o pacote instalado na LG (SAM passa JSON em
+//      argv[1], e main.c cai neste mesmo calculo);
+//   2. deploy/app/art relativo — tools/mac.sh faz cd para a raiz do repo e
+//      passa esse caminho em argv[1];
+//   3. /app/art — o --preload-file do alvo Tizen.
+// Um getter em main/app (`const char *app_dir_arte(void)`) tiraria esta
+// adivinhacao; ver o relatorio da entrega.
+static FILE *abrirNaArte(const char *nome) {
+  char cam[700];
+  FILE *f = NULL;
+  char *base = SDL_GetBasePath();
+  if (base) {
+    snprintf(cam, sizeof cam, "%sart/%s", base, nome);
+    f = fopen(cam, "r");
+    SDL_free(base);
+  }
+  if (!f) { snprintf(cam, sizeof cam, "deploy/app/art/%s", nome); f = fopen(cam, "r"); }
+  if (!f) { snprintf(cam, sizeof cam, "/app/art/%s", nome); f = fopen(cam, "r"); }
+  return f;
+}
+
+// Relida a cada abertura do painel: o arquivo e pequeno e o dono edita sem
+// reiniciar o app.
+static void recLer(void) {
+  char linha[1000];
+  FILE *f = abrirNaArte("addons-recomendados.txt");
+  nRec = 0;
+  if (!f) return;
+  while (nRec < G_MAX_REC && fgets(linha, sizeof linha, f)) {
+    char *a = linha, *b, *c, *fim;
+    fim = a + strlen(a);
+    while (fim > a && (fim[-1] == '\n' || fim[-1] == '\r')) *--fim = 0;
+    if (!*a || *a == '#') continue;
+    b = strchr(a, '\t'); if (!b) continue; *b++ = 0;
+    c = strchr(b, '\t'); if (c) *c++ = 0;
+    if (!*a || !*b) continue;
+    snprintf(rec[nRec].nome, sizeof rec[nRec].nome, "%s", a);
+    snprintf(rec[nRec].url,  sizeof rec[nRec].url,  "%s", b);
+    snprintf(rec[nRec].desc, sizeof rec[nRec].desc, "%s", c ? c : "");
+    nRec++;
+  }
+  fclose(f);
+}
+
+// A mesma normalizacao de baseNormalizada em addons.c (que e estatica la):
+// sem query, sem /manifest.json, sem barra final. E o que faz "instalado"
+// bater com addons_base(i) para a URL que o dono escreveu no arquivo.
+static void baseDaUrl(const char *url, char *dst, size_t tam) {
+  size_t k; char *q;
+  snprintf(dst, tam, "%s", url);
+  q = strchr(dst, '?'); if (q) *q = 0;
+  k = strlen(dst);
+  if (k > 14 && !strcmp(dst + k - 14, "/manifest.json")) { k -= 14; dst[k] = 0; }
+  while (k && dst[k - 1] == '/') dst[--k] = 0;
+}
+
+static int recInstalado(const GRec *r) {
+  char base[600];
+  baseDaUrl(r->url, base, sizeof base);
+  for (int i = 0; i < addons_n(); i++)
+    if (!strcmp(addons_base(i), base)) return 1;
+  return 0;
 }
 
 // --- linhas -------------------------------------------------------------------
@@ -297,16 +472,38 @@ static int sFalhas, falhas;
 
 static void sondaManifestos(void) {
   int a;
+  sNSabe = 0;
   for (a = 0; a < addons_n() && sNFontes < G_MAX_FONTE; a++) {
     const char *base;
     char url[700];
     char *corpo;
     const char *p, *fim;
-    if (!addons_ativo(a)) continue;
+    int ativo = addons_ativo(a), temCanal = 0;
+    GSabe *sb = sNSabe < G_MAX_SABE ? &sSabe[sNSabe] : NULL;
     base = addons_base(a);
     if (!base || !base[0]) continue;
+    // ADDON DESLIGADO TAMBEM E LIDO, so que nao vira fonte. Custa um GET por
+    // addon desligado (medido: 0 a 3 numa conta tipica) e e o que permite ao
+    // painel dizer se vale a pena religa-lo para o guia.
     snprintf(url, sizeof url, "%s/manifest.json", base);
     corpo = rede_baixar(url, 15);
+    if (sb) { snprintf(sb->base, sizeof sb->base, "%s", base); sb->canal = -1; sNSabe++; }
+    if (!ativo) {
+      if (corpo) {
+        fim = corpo + strlen(corpo);
+        p = js_array(corpo, fim, "catalogs");
+        while (p) {
+          const char *f = js_fim(p);
+          char tipo[16] = "";
+          js_texto(p, f, "type", tipo, sizeof tipo);
+          if (ehCanal(tipo)) { temCanal = 1; break; }
+          p = js_prox(f);
+        }
+        if (sb) sb->canal = temCanal;
+        free(corpo);
+      }
+      continue;
+    }
     // MANIFESTO QUE NAO RESPONDE NAO E "ADDON SEM CANAL". A sonda pulava em
     // silencio, e com isso a tela vazia acusava a conta da pessoa ("instale um
     // addon de canais") justamente quando o addon ESTAVA instalado e era o
@@ -322,6 +519,7 @@ static void sondaManifestos(void) {
       char tipo[16] = "", id[96] = "";
       js_texto(p, f, "type", tipo, sizeof tipo);
       js_texto(p, f, "id", id, sizeof id);
+      if (ehCanal(tipo)) temCanal = 1;
       if (ehCanal(tipo) && id[0] && !fonteJa(base, id)) {
         snprintf(sFontes[sNFontes].base, sizeof sFontes[sNFontes].base, "%s", base);
         snprintf(sFontes[sNFontes].tipo, sizeof sFontes[sNFontes].tipo, "%s", tipo);
@@ -330,6 +528,7 @@ static void sondaManifestos(void) {
       }
       p = js_prox(f);
     }
+    if (sb) sb->canal = temCanal;
     free(corpo);
   }
 }
@@ -400,6 +599,8 @@ static void publicar(void) {
   memcpy(fontes, sFontes, sizeof sFontes);
   nFontes = sNFontes;
   falhas = sFalhas;
+  memcpy(sabe, sSabe, sizeof sSabe);
+  nSabe = sNSabe;
   // Ordena os canais por categoria (estavel na ordem de chegada) para que cada
   // fileira seja uma janela contigua — o mesmo desenho de CatFileira.
   { GCanal tmp[G_MAX_CANAL];
@@ -446,6 +647,7 @@ static void iniciarCarga(void) {
 // troca nada (a lista nao existe ainda), o seguinte ja troca.
 void guia_carregar(void) {
   if (!favLido) favLer();
+  if (!modoLido) modoLer();
   // Sem fonte achada, tenta de novo a cada chamada: a descoberta da home pode
   // nao ter montado as fileiras ainda quando o primeiro CH+/- chega.
   if (!fontesOk) descobrirFontes();
@@ -469,6 +671,27 @@ static Uint32 dirDesde, dirTick, ultNavCat;
 // OK longo = favorito.
 static Uint32 okDesde; static int okLongo;
 
+// Foco no CABECALHO (controle segmentado + Addons). 0 = nas linhas.
+static int   focoTopo, topoCol;
+static float animTopo[G_TOPO_N];
+
+// Modo lista: deslocamento da janela de tempo (min, multiplo de 30) e a
+// rolagem vertical propria — a de cartoes anda em fileiras, esta em linhas de
+// altura diferente, e misturar as duas numa mola so puxava a lista para o
+// lugar errado na troca de modo.
+static int   janelaDesl;
+static float rolL, velL;
+
+// Painel de addons por cima do guia.
+static int   painel, paFoco, paMexeu;
+static float paRol, paVelRol;
+// Linha do painel que falhou ao instalar (-1 = nenhuma) e o motivo, para a
+// frase ser a certa: "a conta esta cheia" e "nao foi possivel" sao coisas
+// diferentes para quem esta no sofa.
+static int   paErro = -1, paErroCheio;
+// Ha um recarregamento do guia esperando o fio de carga atual terminar.
+static int   recarregarPend;
+
 // Quando foi a ultima tentativa de carga com o guia vazio. Ver guia_atualizar.
 #define G_RETENTAR_MS 10000u
 static Uint32 ultTentativa;
@@ -480,17 +703,38 @@ static Uint32 ultTentativa;
 static Uint32 overlayDesde;
 #define G_OVERLAY_REP_MS 400
 
+// ENGATILHA OS VIZINHOS DO FOCO.
+//
+// Zapear no guia esperava a consulta a TODOS os addons a cada canal. O cache de
+// fontes (fontecache.c) busca os vizinhos enquanto a pessoa decide, e so quando
+// a busca principal esta ociosa — pedido real tem prioridade e o prefetch cede.
+//
+// UM DE CADA LADO, e nao a fileira toda: cada canal engatilhado e uma consulta
+// de rede a addon que a pessoa pode nunca abrir. Um vizinho cobre o caso comum
+// (descer/subir um) sem transformar navegar em tempestade de requisicao.
+//
+// ISTO ENCURTA O CASO COMUM, NAO CONSERTA LENTIDAO. Ha relato aberto de fonte
+// que demora minutos; o prefetch esconde parte dele e nao substitui achar a
+// causa.
+static void engatilharVizinhos(void) {
+  GCanal *antes  = linhaItem(focoLin, focoCol - 1);
+  GCanal *depois = linhaItem(focoLin, focoCol + 1);
+  fontecache_engatilhar(antes ? antes->id : NULL, depois ? depois->id : NULL);
+}
+
 static void focoValido(void) {
   int l = nLinhas();
   if (focoLin >= l) focoLin = l - 1;
   if (focoLin < 0) focoLin = 0;
   if (focoCol >= linhaN(focoLin)) focoCol = linhaN(focoLin) - 1;
   if (focoCol < 0) focoCol = 0;
+  engatilharVizinhos();
 }
 
 void guia_abrir(void) {
   guia_carregar();
   aberta = 1; querSair = 0; entrada = 0.0f;
+  focoTopo = 0; painel = 0;
   focoValido();
 }
 
@@ -498,6 +742,7 @@ void guia_overlay_abrir(void) {
   guia_carregar();
   overlay = 1; entrada = 0.0f;
   overlayDesde = SDL_GetTicks();
+  focoTopo = 0; painel = 0;
   focoValido();
 }
 
@@ -588,10 +833,108 @@ static void saltarCat(int dir) {
   focoCol = 0;
 }
 
+// No modo lista a navegacao e canal a canal ATRAVES das categorias: BAIXO no
+// ultimo canal de "Filmes" cai no primeiro de "Esportes". E o que uma lista
+// vertical promete; parar na borda da categoria obrigaria a descobrir que
+// existe um "pular secao" so para continuar descendo.
+static void moverLista(int dir) {
+  if (nLinhas() < 1) return;
+  if (dir > 0) {
+    if (focoCol + 1 < linhaN(focoLin)) focoCol++;
+    else if (focoLin + 1 < nLinhas()) { focoLin++; focoCol = 0; }
+  } else {
+    if (focoCol > 0) focoCol--;
+    else if (focoLin > 0) { focoLin--; focoCol = linhaN(focoLin) - 1; }
+  }
+}
+
+static void alternarModo(void) {
+  modoLista = !modoLista;
+  modoGravar();
+  // O canal focado e o mesmo; so a rolagem recomeca do lugar certo para o
+  // modo novo (as duas molas sao independentes, ver a declaracao).
+  velY = 0.0f; velL = 0.0f;
+  janelaDesl = 0;
+}
+
+// --- painel de addons -------------------------------------------------------------
+// Itens do painel, em ordem: os addons da conta (indice = i em addons.c) e
+// depois os recomendados (indice = n + k). Um vetor de posicoes Y por quadro
+// e mais simples do que dois lacos com a mesma aritmetica de rolagem.
+static int painelN(void) { return addons_n() + nRec; }
+
+static void painelAbrir(void) {
+  recLer();
+  painel = 1; paFoco = 0; paMexeu = 0; paRol = 0.0f; paVelRol = 0.0f;
+  paErro = -1;
+  // O painel mostra o que o manifesto disse; se a sonda de Ajustes nunca
+  // rodou, e barato pedi-la agora (uma vez por lista, ver addons.h).
+  addons_sondar_manifestos();
+}
+
+// FECHAR E QUANDO O RESTO DO APP FICA SABENDO. Mesma regra de addonsui.c:
+// desc_repetir() refaz o ciclo inteiro (~20 s na TV), entao ele roda uma vez
+// por visita e nao uma vez por tecla. O guia tambem se recarrega: a lista de
+// canais depende de quais addons estao ligados, e sem isso o addon recem
+// desligado continuava enchendo a tela ate a proxima abertura.
+static void painelFechar(void) {
+  painel = 0;
+  if (!paMexeu) return;
+  paMexeu = 0;
+  desc_repetir();
+  if (fioVivo) recarregarPend = 1;
+  else { estado = G_PARADO; ultTentativa = 0; iniciarCarga(); }
+}
+
+static void instalar(int k) {
+  // addons_adicionar em vez de exportar-acrescentar-definir.
+  //
+  // O caminho antigo funcionava, com dois efeitos colaterais: addons_definir_lista
+  // REFAZ a lista e com isso zera o `sondado` e o `id` de manifesto de TODOS os
+  // addons — e esse id e a chave que as colecoes da conta usam, entao perde-lo
+  // faz colecao abrir vazia ate a proxima sonda. E o log registrava "vindos da
+  // conta" para uma lista que veio daqui.
+  paErro = -1; paErroCheio = 0;
+  if (k < 0 || k >= nRec) return;
+  if (!addons_adicionar(rec[k].nome, rec[k].url)) {
+    paErro = addons_n() + k;
+    paErroCheio = (addons_n() >= 16);
+    return;
+  }
+  sync_sujar_addons();
+  paMexeu = 1;
+}
+
+static void painelOk(void) {
+  int n = addons_n();
+  if (paFoco < n) {
+    addons_alternar(paFoco);
+    sync_sujar_addons();   // desligar aqui e desligar no celular tambem
+    paMexeu = 1;
+  } else if (paFoco - n < nRec && !recInstalado(&rec[paFoco - n])) {
+    instalar(paFoco - n);
+  }
+}
+
+// OK segurado NAO e varios OK: o firmware repete o KEYDOWN a cada ~130 ms, e
+// sem este repouso segurar a tecla ligava e desligava o addon em sequencia
+// (addonsui.c herda esse comportamento; aqui nao).
+static Uint32 paOkTick;
+static void painelEvento(SDL_Keycode k, Uint32 agora) {
+  int n = painelN();
+  if (k == SDLK_UP)   { if (paFoco > 0) paFoco--; return; }
+  if (k == SDLK_DOWN) { if (paFoco + 1 < n) paFoco++; return; }
+  if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+    if (n > 0 && agora - paOkTick >= G_REP_MS) { paOkTick = agora; painelOk(); }
+    return;
+  }
+}
+
 static void sair(void) {
+  if (painel) { painelFechar(); return; }
   if (overlay) overlay = 0;
   else { aberta = 0; querSair = 1; }
-  modoCat = 0; dirSeg = 0; okDesde = 0;
+  modoCat = 0; dirSeg = 0; okDesde = 0; focoTopo = 0;
 }
 
 void guia_evento(const SDL_Event *e) {
@@ -623,6 +966,17 @@ void guia_evento(const SDL_Event *e) {
     sair(); return;
   }
 
+  // O painel de addons captura tudo que nao e Voltar (tratado acima).
+  if (painel) { painelEvento(k, agora); return; }
+
+  // AMARELO alterna lista e cartoes de qualquer lugar. `l` no teclado do Mac
+  // e o equivalente de bancada, como `s` e do azul.
+  if (e->key.keysym.scancode == G_SCANCODE_YELLOW || k == SDLK_l) {
+    dirSeg = 0; modoCat = 0;
+    alternarModo();
+    return;
+  }
+
   // CH+/- do controle da LG (scancodes 480/481 do SDL_webOS.h): dentro do
   // guia eles pulam CATEGORIA, nao canal — e a mesma leitura do "segurar"
   // sem exigir o gesto. No Tizen o CH+ chega como "s" (tizen-shell.html), e o
@@ -630,20 +984,44 @@ void guia_evento(const SDL_Event *e) {
   if (e->key.keysym.scancode == NV_SCANCODE_CH_UP ||
       e->key.keysym.scancode == NV_SCANCODE_CH_DOWN ||
       (!overlay && k == SDLK_s)) {
+    focoTopo = 0;
     saltarCat(e->key.keysym.scancode == NV_SCANCODE_CH_UP ? -1 : 1);
+    return;
+  }
+
+  // Foco no cabecalho: ESQUERDA/DIREITA entre os tres controles, BAIXO volta
+  // as linhas, OK age. CIMA nao faz nada — nao ha nada acima.
+  if (focoTopo) {
+    dirSeg = 0; modoCat = 0;
+    if (k == SDLK_LEFT)  { if (topoCol > 0) topoCol--; return; }
+    if (k == SDLK_RIGHT) { if (topoCol + 1 < G_TOPO_N) topoCol++; return; }
+    if (k == SDLK_DOWN)  { focoTopo = 0; return; }
+    if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+      if (topoCol == G_TOPO_ADDONS) painelAbrir();
+      else if ((topoCol == G_TOPO_LISTA) != modoLista) alternarModo();
+      return;
+    }
     return;
   }
 
   if (k == SDLK_UP || k == SDLK_DOWN) {
     int dir = (k == SDLK_DOWN) ? 1 : -1;
+    int fresco = !(dirSeg == k && agora - dirTick < G_REP_MS);
     if (modoCat) {
       saltarCat(dir);
       ultNavCat = agora; dirTick = agora;
       return;
     }
+    // CIMA na primeira linha sobe ao cabecalho — so num toque FRESCO: quem
+    // esta segurando CIMA quer o modo salta-categoria, nao o controle.
+    if (dir < 0 && fresco && focoLin == 0 && (!modoLista || focoCol == 0)) {
+      focoTopo = 1; topoCol = modoLista ? G_TOPO_LISTA : G_TOPO_CARTOES;
+      dirSeg = 0;
+      return;
+    }
     // Ainda segurando a mesma direcao? O firmware repete o KEYDOWN a cada
     // ~130 ms; o relogio e quem distingue "toque" de "segurado".
-    if (dirSeg == k && agora - dirTick < G_REP_MS) {
+    if (!fresco) {
       if (agora - dirDesde >= G_HOLD_MS) {
         modoCat = 1;
         saltarCat(dir);
@@ -652,14 +1030,22 @@ void guia_evento(const SDL_Event *e) {
       }
     } else { dirSeg = k; dirDesde = agora; }
     dirTick = agora;
-    moverVertical(dir);
+    if (modoLista) moverLista(dir); else moverVertical(dir);
     return;
   }
   // Qualquer outra tecla desarma os dois estados de direcao segurada.
   dirSeg = 0; modoCat = 0;
 
-  if (k == SDLK_LEFT)  { if (focoCol > 0) focoCol--; return; }
-  if (k == SDLK_RIGHT) { if (focoCol + 1 < linhaN(focoLin)) focoCol++; return; }
+  // No modo lista ESQUERDA/DIREITA andam a JANELA DE TEMPO, meia hora por
+  // toque, ate 3 h a frente — a pergunta "o que passa mais tarde" que a
+  // grade tradicional responde e o cartao nao.
+  if (modoLista) {
+    if (k == SDLK_LEFT)  { if (janelaDesl > 0) janelaDesl -= G_L_PASSO_MIN; return; }
+    if (k == SDLK_RIGHT) { if (janelaDesl < G_L_DESL_MAX) janelaDesl += G_L_PASSO_MIN; return; }
+  } else {
+    if (k == SDLK_LEFT)  { if (focoCol > 0) focoCol--; return; }
+    if (k == SDLK_RIGHT) { if (focoCol + 1 < linhaN(focoLin)) focoCol++; return; }
+  }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
     if (!okDesde) { okDesde = agora; okLongo = 0; }
     return;
@@ -691,10 +1077,66 @@ static void epgPasso(void) {
   epgEraPronto = pronto;
 }
 
+// Posicao vertical (antes da rolagem) do canal `c` da linha `l` no modo
+// lista, e a altura total. Linhas de altura desigual (cabecalho x canal)
+// impedem a conta fechada que o modo cartoes usa.
+static float listaYDe(int l, int c) {
+  float y = 0.0f;
+  for (int i = 0; i < l; i++) y += G_L_HEAD + (float)linhaN(i) * G_L_ROW;
+  return y + G_L_HEAD + (float)c * G_L_ROW;
+}
+static float listaAltura(void) {
+  float y = 0.0f;
+  for (int i = 0; i < nLinhas(); i++) y += G_L_HEAD + (float)linhaN(i) * G_L_ROW;
+  return y;
+}
+
+// Posicao de cada item do painel de addons, relativa ao topo da lista. Os
+// numeros fixos sao a altura do rotulo de secao (36) e, na segunda secao, o
+// respiro (28) + rotulo (36) + a frase de duas linhas sobre curadoria (60).
+// desenharPainelAddons usa as mesmas contas — mude aqui e la.
+static float paItemY(int i) {
+  int n = addons_n();
+  if (i < n) return 36.0f + (float)i * G_PA_ROW;
+  return 36.0f + (float)n * G_PA_ROW + 28.0f + 36.0f + 60.0f + (float)(i - n) * G_PA_ROW;
+}
+#define G_PA_LISTA_Y 200.0f
+
 void guia_atualizar(float dt, Uint32 agora) {
   entrada = anim_mola(entrada, guia_visivel() ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
   if (pendPronto) { publicar(); estado = G_PRONTO; pendPronto = 0; fioVivo = 0; focoValido(); }
+  // O painel de addons pediu recarga com o fio ainda vivo: agora que ele
+  // acabou, vai.
+  if (recarregarPend && !fioVivo) {
+    recarregarPend = 0; estado = G_PARADO; ultTentativa = 0; iniciarCarga();
+  }
   if (!guia_visivel()) return;
+
+  for (int i = 0; i < G_TOPO_N; i++)
+    animTopo[i] = anim_mola(animTopo[i], focoTopo && topoCol == i ? 1.0f : 0.0f,
+                            dt, NV_MOLA_FOCO);
+
+  // Rolagem do modo lista: a linha focada fica a duas linhas do topo, com o
+  // cabecalho da categoria dela visivel quando ela e a primeira — e o mesmo
+  // criterio de "a anterior inteira como contexto" da rolagem de cartoes.
+  if (modoLista && nLinhas() > 0) {
+    float areaH = G_L_BASE - G_L_TOPO;
+    float alvo = listaYDe(focoLin, focoCol) - G_L_HEAD - 2.0f * G_L_ROW;
+    float maxY = listaAltura() - areaH;
+    if (maxY < 0.0f) maxY = 0.0f;
+    if (alvo > maxY) alvo = maxY;
+    if (alvo < 0.0f) alvo = 0.0f;
+    rolL = anim_mola2(&velL, rolL, alvo, dt, NV_MOLA_SCROLL);
+  }
+  if (painel) {
+    float areaH = NV_TELA_H - 80.0f - G_PA_LISTA_Y;
+    float alvo = paItemY(paFoco) - areaH * 0.4f;
+    float maxY = (painelN() > 0 ? paItemY(painelN() - 1) + G_PA_ROW : 0.0f) - areaH;
+    if (maxY < 0.0f) maxY = 0.0f;
+    if (alvo > maxY) alvo = maxY;
+    if (alvo < 0.0f) alvo = 0.0f;
+    paRol = anim_mola2(&paVelRol, paRol, alvo, dt, NV_MOLA_SCROLL);
+  }
 
   epgPasso();
   // O catalogo pode ter chegado DEPOIS da abertura (descoberta ainda montando
@@ -1130,6 +1572,261 @@ static void desenharDuasPortas(float x, float y, float a) {
                          a * 0.95f); } }
 }
 
+// --- cabecalho: Cartoes | Lista | Addons ---------------------------------------
+// Mesmo vocabulario de botao do resto do app (ver addonsui.c e NV_COR_FOCO):
+// repouso = preenchido no cinza de superficie, foco = preenchido na cor de
+// realce com texto escuro, sem anel. O segmento SELECIONADO sem foco fica no
+// cinza de repouso; o nao selecionado fica so texto, em terciario — e a
+// diferenca entre "onde estou" e "para onde posso ir".
+static void desenharTopo(float a) {
+  const char *rot[G_TOPO_N];
+  float w[G_TOPO_N], x, ar, ag, ab;
+  int i;
+  rot[G_TOPO_CARTOES] = i18n("Cartões");
+  rot[G_TOPO_LISTA]   = i18n("Lista");
+  rot[G_TOPO_ADDONS]  = i18n("Addons");
+  ajustes_acento(&ar, &ag, &ab);
+  for (i = 0; i < G_TOPO_N; i++)
+    w[i] = txt_linha(TXT_BODY, rot[i], 255, 255, 255, 255).w + 44.0f;
+  // Da direita para a esquerda, encostado na borda do painel de detalhe. O
+  // botao Addons fica 20 px separado do par, para ler como outra coisa.
+  x = G_PAN_X - 28.0f;
+  for (i = G_TOPO_N - 1; i >= 0; i--) {
+    float f = animTopo[i];
+    int sel = i < G_TOPO_ADDONS ? ((i == G_TOPO_LISTA) == modoLista) : 1;
+    int escuro = f > 0.5f;
+    GfxRect r;
+    x -= w[i];
+    r.x = x; r.y = G_TOPO_Y; r.w = w[i]; r.h = G_TOPO_H;
+    if (sel) gfx_cor(r, 0.5f, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, a);
+    if (f > 0.01f) gfx_cor(r, 0.5f, ar, ag, ab, f * a);
+    { TxtLinha t = escuro ? txt_linha(TXT_BODY, rot[i], 20, 21, 25, 255)
+                  : sel   ? txt_linha(TXT_BODY, rot[i], 240, 241, 245, 255)
+                          : txt_linha(TXT_BODY, rot[i], 150, 153, 162, 255);
+      txt_desenhar_alpha(t, r.x + (r.w - t.w) * 0.5f, r.y + (r.h - t.h) * 0.5f, a); }
+    x -= (i == G_TOPO_ADDONS) ? 20.0f : 6.0f;
+  }
+}
+
+// --- modo lista ---------------------------------------------------------------------
+// Inicio da janela de tempo: a meia hora cheia anterior a agora, mais o
+// deslocamento pedido com DIREITA. Regua em meias horas porque e assim que a
+// grade de TV sempre foi lida; o olho ja sabe onde procurar.
+static time_t janelaIni(time_t agoraT) {
+  return (agoraT / 1800) * 1800 + (time_t)janelaDesl * 60;
+}
+
+static void desenharRegua(float a, time_t ini) {
+  float ppm = G_L_FAIXA_W / (float)G_L_JANELA_MIN;
+  int i;
+  for (i = 0; i <= G_L_JANELA_MIN / G_L_PASSO_MIN; i++) {
+    char h[8];
+    float x = G_L_FAIXA_X + (float)(i * G_L_PASSO_MIN) * ppm;
+    TxtLinha t;
+    fmtHora(ini + (time_t)i * G_L_PASSO_MIN * 60, h, sizeof h);
+    t = txt_linha(TXT_CAPTION, h, 150, 153, 162, 255);
+    // O ultimo rotulo alinha pela direita para nao vazar da faixa.
+    txt_desenhar_alpha(t, i == G_L_JANELA_MIN / G_L_PASSO_MIN ? x - t.w : x,
+                       G_TOPO + 2.0f, a);
+    { GfxRect tick = { x - (i == G_L_JANELA_MIN / G_L_PASSO_MIN ? 1.0f : 0.0f),
+                       G_TOPO + 30.0f, 1.0f, 8.0f };
+      gfx_cor(tick, 0.0f, 1, 1, 1, 0.22f * a); }
+  }
+  { GfxRect linha = { G_L_FAIXA_X, G_TOPO + 37.0f, G_L_FAIXA_W, 1.0f };
+    gfx_cor(linha, 0.0f, 1, 1, 1, 0.10f * a); }
+}
+
+// A linha de um canal no modo lista. As duas cores do cartao valem aqui
+// (decisao do dono de 16/09: quase preto sem foco, branco com foco). Os
+// blocos de programa seguem a escada de superficies do DESIGN.md: trilho
+// mais claro que a linha, bloco do programa no ar mais claro que o trilho, os
+// seguintes entre os dois. Sobre a linha branca em foco a escada inverte.
+static void desenharLinhaLista(GCanal *c, float y, float foco, float a,
+                               time_t agoraT, time_t ini) {
+  GfxRect r = { G_AREA_X, y, G_AREA_W, G_L_ROW - 6.0f };
+  float lum = 0.075f;
+  float raioL = 10.0f / r.h;           // 10 px, em fracao da ALTURA (gfx.h)
+  int escuro = foco > 0.5f;
+  int epg = epgDo(c);
+  gfx_cor(r, raioL, lum, lum, lum + 0.01f, a);
+  if (foco > 0.01f) gfx_cor(r, raioL, G_LOGO_CLARO, G_LOGO_CLARO,
+                            G_LOGO_CLARO + 0.004f, foco * a);
+
+  { GfxRect cx = { G_AREA_X + 12.0f, y + 9.0f, 52.0f, 52.0f };
+    desenharLogo(c->logo, cx, 44.0f, escuro ? G_LOGO_ESC : G_LOGO_CLARO, a); }
+  { float tw = G_L_COL - 84.0f - (c->fav ? 34.0f : 0.0f);
+    TxtLinha t = escuro ? txt_linha_corta(TXT_BODY, c->nome, 20, 21, 25, 255, tw)
+                        : txt_linha_corta(TXT_BODY, c->nome, 240, 241, 245, 255, tw);
+    txt_desenhar_alpha(t, G_AREA_X + 78.0f, y + (r.h - t.h) * 0.5f, a);
+    if (c->fav) {
+      TxtLinha s = txt_linha(TXT_CAPTION, "\xe2\x98\x85", 255, 214, 90, 255);
+      txt_desenhar_alpha(s, G_AREA_X + G_L_COL - 34.0f, y + (r.h - s.h) * 0.5f, a);
+    } }
+
+  // Faixa de tempo.
+  { GfxRect trilho = { G_L_FAIXA_X, y + 9.0f, G_L_FAIXA_W, 52.0f };
+    float raioB = 8.0f / trilho.h;
+    if (escuro) gfx_cor(trilho, raioB, 0.88f, 0.885f, 0.90f, a);
+    else        gfx_cor(trilho, raioB, 0.125f, 0.13f, 0.14f, a);
+    if (epg >= 0) {
+      time_t fimJ = ini + (time_t)G_L_JANELA_MIN * 60;
+      float ppm = G_L_FAIXA_W / (float)G_L_JANELA_MIN;
+      EpgProg p;
+      int k;
+      // k = -1 e o programa NO AR; 0.. sao os seguintes. Para de pedir quando
+      // um comeca depois do fim da janela — a grade e ordenada por hora.
+      for (k = -1; k < 12; k++) {
+        int ok = k < 0 ? epg_agora(epg, agoraT, &p) : epg_proximo(epg, agoraT, k, &p);
+        time_t i0, i1;
+        float x1, x2;
+        int atual;
+        if (!ok) { if (k < 0) continue; break; }
+        if (p.ini >= fimJ) break;
+        if (p.fim <= ini) continue;
+        i0 = p.ini > ini ? p.ini : ini;
+        i1 = p.fim < fimJ ? p.fim : fimJ;
+        x1 = G_L_FAIXA_X + (float)(i0 - ini) / 60.0f * ppm;
+        x2 = G_L_FAIXA_X + (float)(i1 - ini) / 60.0f * ppm;
+        if (x2 - x1 < 6.0f) continue;
+        atual = p.ini <= agoraT && agoraT < p.fim;
+        { GfxRect b = { x1 + 2.0f, trilho.y, x2 - x1 - 4.0f, trilho.h };
+          if (escuro) { if (atual) gfx_cor(b, raioB, 0.11f, 0.115f, 0.13f, a);
+                        else       gfx_cor(b, raioB, 0.78f, 0.79f, 0.81f, a); }
+          else        { if (atual) gfx_cor(b, raioB, 0.22f, 0.225f, 0.25f, a);
+                        else       gfx_cor(b, raioB, 0.155f, 0.16f, 0.175f, a); }
+          // Bloco estreito NAO recebe rotulo: a regra da casa e desenhar menos
+          // rotulos, nunca fonte menor que 22 px. 72 px cabem "Jornal…".
+          if (b.w > 72.0f) {
+            int ct = escuro ? (atual ? 240 : 30) : (atual ? 240 : 190);
+            TxtLinha t = txt_linha_corta(TXT_CAPTION, p.titulo, ct, ct, ct, 255,
+                                         b.w - 24.0f);
+            txt_desenhar_alpha(t, b.x + 12.0f, b.y + (b.h - t.h) * 0.5f, a);
+          } }
+      }
+    } else {
+      // -2 = sem grade real; -1 = a grade ainda nao chegou. Dizer qual dos
+      // dois e o que separa "nao tem" de "espere".
+      int ct = escuro ? 90 : 120;
+      TxtLinha t = txt_linha(TXT_CAPTION,
+                             epg == -2 ? i18n("Sem grade de programação")
+                                       : i18n("Carregando programação…"),
+                             ct, ct + 2, ct + 8, 255);
+      txt_desenhar_alpha(t, trilho.x + 16.0f, trilho.y + (trilho.h - t.h) * 0.5f, a);
+    } }
+}
+
+// --- painel de addons -------------------------------------------------------------
+static void desenharPainelAddons(float a) {
+  float x = G_PA_X + G_PA_MARG, w = G_PA_W - 2.0f * G_PA_MARG;
+  float ar, ag, ab, y0 = G_PA_LISTA_Y;
+  int n = addons_n(), i;
+  ajustes_acento(&ar, &ag, &ab);
+
+  { GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+    gfx_cor(tela, 0.0f, 0, 0, 0, 0.45f * a); }
+  { GfxRect p = { G_PA_X, 0, G_PA_W, NV_TELA_H };
+    gfx_cor(p, 0.0f, 0.106f, 0.110f, 0.122f, 0.98f * a); }   /* #1B1C1F */
+
+  { TxtLinha t = txt_linha(TXT_HEADLINE, i18n("Addons de canais"), 240, 242, 248, 255);
+    txt_desenhar_alpha(t, x, 64.0f, a); }
+  txt_bloco(TXT_CAPTION,
+            i18n("Ligar ou desligar aqui vale para o app inteiro, não só para o guia."),
+            150, 153, 162, x, 118.0f, w, 28.0f, a, 2);
+
+  gfx_recorte(G_PA_X, y0 - 8.0f, G_PA_W, NV_TELA_H - 80.0f - y0 + 8.0f);
+
+  { TxtLinha t = txt_linha(TXT_CAPTION, i18n("NA SUA CONTA"), 148, 200, 255, 255);
+    txt_desenhar_alpha(t, x, y0 - paRol, a); }
+  if (n == 0) {
+    TxtLinha t = txt_linha(TXT_CAPTION, i18n("Nenhum addon nesta conta."), 150, 153, 162, 255);
+    txt_desenhar_alpha(t, x, y0 + 36.0f - paRol, a);
+  }
+  for (i = 0; i < painelN(); i++) {
+    float yi = y0 + paItemY(i) - paRol;
+    GfxRect row = { x, yi, w, G_PA_ROW - 8.0f };
+    float raio = 12.0f / row.h;
+    int f = i == paFoco;
+    if (yi + row.h < y0 - 8.0f || yi > NV_TELA_H - 80.0f) continue;
+    // Linha em repouso e linha em foco: as mesmas de addonsui.c.
+    gfx_cor(row, raio, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, 0.34f * a);
+    if (f) gfx_cor(row, raio, ar, ag, ab, a);
+    if (i < n) {
+      int sc = sabeCanal(addons_base(i));
+      int ligado = addons_ativo(i);
+      const char *sub = sc == 1 ? i18n("Fornece canais")
+                      : sc == 0 ? i18n("Sem catálogo de canais")
+                                : i18n("Ainda não conferido pelo guia");
+      GfxRect pill = { x + w - 24.0f - 136.0f, yi + (row.h - 40.0f) * 0.5f, 136.0f, 40.0f };
+      { TxtLinha t = f ? txt_linha_corta(TXT_BODY, addons_nome(i), 20, 21, 25, 255, w - 200.0f)
+                       : txt_linha_corta(TXT_BODY, addons_nome(i), 240, 241, 245, 255, w - 200.0f);
+        txt_desenhar_alpha(t, x + 24.0f, yi + 12.0f, a); }
+      { TxtLinha t = f ? txt_linha_corta(TXT_CAPTION, sub, 60, 62, 70, 255, w - 200.0f)
+                       : txt_linha_corta(TXT_CAPTION, sub, 150, 153, 162, 255, w - 200.0f);
+        txt_desenhar_alpha(t, x + 24.0f, yi + 48.0f, a); }
+      // LIGADO = pilula preenchida; DESLIGADO = so o anel. Preenchimento e o
+      // que o app usa para "e este", e o anel e o que sobra para "poderia
+      // ser" — sem inventar um interruptor de celular que a 3 m nao se le.
+      if (ligado) {
+        if (f) gfx_cor(pill, 0.5f, 0.11f, 0.115f, 0.13f, a);
+        else   gfx_cor(pill, 0.5f, 0.86f, 0.865f, 0.88f, a);
+        { TxtLinha t = f ? txt_linha(TXT_CAPTION, i18n("Ligado"), 240, 241, 245, 255)
+                         : txt_linha(TXT_CAPTION, i18n("Ligado"), 20, 21, 25, 255);
+          txt_desenhar_alpha(t, pill.x + (pill.w - t.w) * 0.5f, pill.y + (pill.h - t.h) * 0.5f, a); }
+      } else {
+        float c = f ? 0.12f : 0.72f;
+        gfx_rect(pill, 0, GFX_ANEL, 0, 0.05f, 0, 0.5f, c, c, c + 0.02f, 0.9f * a);
+        { TxtLinha t = f ? txt_linha(TXT_CAPTION, i18n("Desligado"), 40, 42, 50, 255)
+                         : txt_linha(TXT_CAPTION, i18n("Desligado"), 190, 192, 200, 255);
+          txt_desenhar_alpha(t, pill.x + (pill.w - t.w) * 0.5f, pill.y + (pill.h - t.h) * 0.5f, a); }
+      }
+    } else {
+      const GRec *rc = &rec[i - n];
+      int inst = recInstalado(rc);
+      GfxRect pill = { x + w - 24.0f - 136.0f, yi + (row.h - 40.0f) * 0.5f, 136.0f, 40.0f };
+      { TxtLinha t = f ? txt_linha_corta(TXT_BODY, rc->nome, 20, 21, 25, 255, w - 200.0f)
+                       : txt_linha_corta(TXT_BODY, rc->nome, 240, 241, 245, 255, w - 200.0f);
+        txt_desenhar_alpha(t, x + 24.0f, yi + 12.0f, a); }
+      if (paErro == i) {
+        const char *m = paErroCheio ? i18n("Não coube: a conta já tem o máximo de addons")
+                                    : i18n("Não foi possível instalar");
+        TxtLinha t = txt_linha_corta(TXT_CAPTION, m, 237, 77, 77, 255, w - 200.0f);
+        txt_desenhar_alpha(t, x + 24.0f, yi + 48.0f, a);
+      } else if (rc->desc[0]) {
+        TxtLinha t = f ? txt_linha_corta(TXT_CAPTION, rc->desc, 60, 62, 70, 255, w - 200.0f)
+                       : txt_linha_corta(TXT_CAPTION, rc->desc, 150, 153, 162, 255, w - 200.0f);
+        txt_desenhar_alpha(t, x + 24.0f, yi + 48.0f, a);
+      }
+      if (inst) {
+        TxtLinha t = f ? txt_linha(TXT_CAPTION, i18n("Instalado"), 60, 62, 70, 255)
+                       : txt_linha(TXT_CAPTION, i18n("Instalado"), 150, 153, 162, 255);
+        txt_desenhar_alpha(t, pill.x + pill.w - t.w, pill.y + (pill.h - t.h) * 0.5f, a);
+      } else {
+        float c = f ? 0.12f : 0.72f;
+        gfx_rect(pill, 0, GFX_ANEL, 0, 0.05f, 0, 0.5f, c, c, c + 0.02f, 0.9f * a);
+        { TxtLinha t = f ? txt_linha(TXT_CAPTION, i18n("Instalar"), 20, 21, 25, 255)
+                         : txt_linha(TXT_CAPTION, i18n("Instalar"), 240, 241, 245, 255);
+          txt_desenhar_alpha(t, pill.x + (pill.w - t.w) * 0.5f, pill.y + (pill.h - t.h) * 0.5f, a); }
+      }
+    }
+  }
+  if (nRec > 0) {
+    float yr = y0 + 36.0f + (float)n * G_PA_ROW + 28.0f - paRol;
+    TxtLinha t = txt_linha(TXT_CAPTION, i18n("SUGESTÕES DE QUEM PUBLICA O APP"), 148, 200, 255, 255);
+    txt_desenhar_alpha(t, x, yr, a);
+    // A premissa, na tela e nao so no comentario: quem le "sugestoes" tem
+    // direito de saber que nao ha ranking por tras.
+    txt_bloco(TXT_CAPTION,
+              i18n("Lista mantida à mão. Não é ranking: não existe medição pública de popularidade de addons Stremio."),
+              150, 153, 162, x, yr + 30.0f, w, 28.0f, a, 2);
+  }
+  gfx_sem_recorte();
+
+  { TxtLinha t = txt_linha_corta(TXT_CAPTION,
+        i18n("OK liga, desliga ou instala  ·  Voltar volta ao guia"),
+        140, 142, 150, 255, w);
+    txt_desenhar_alpha(t, x, NV_TELA_H - 54.0f, a); }
+}
+
 void guia_desenhar(Uint32 agora) {
   time_t agoraT = time(NULL);
   float a = entrada;
@@ -1169,8 +1866,50 @@ void guia_desenhar(Uint32 agora) {
     TxtLinha t = txt_linha(TXT_PG_RELOGIO, hora, 255, 255, 255, 255);
     txt_desenhar_alpha(t, G_PAN_X + G_PAN_W - t.w, 48.0f, a); }
 
-  // Fileiras de canais.
-  if (estado == G_PRONTO && nLinhas() > 0) {
+  desenharTopo(a);
+
+  // Fileiras de canais. G_BAIXANDO com linhas publicadas e a RECARGA pedida
+  // pelo painel de addons: a lista antiga fica na tela ate a nova chegar, em
+  // vez de sumir por segundos (o subtitulo ja diz "Carregando canais…").
+  if (modoLista && (estado == G_PRONTO || estado == G_BAIXANDO) && nLinhas() > 0) {
+    time_t ini = janelaIni(agoraT);
+    float y = G_L_TOPO - rolL;
+    desenharRegua(a, ini);
+    gfx_recorte(0.0f, G_L_TOPO - 8.0f, G_PAN_X - 24.0f, G_L_BASE - G_L_TOPO + 8.0f);
+    for (l = 0; l < nLinhas(); l++) {
+      int n = linhaN(l);
+      float dim = modoCat && l != focoLin ? 0.35f : 1.0f;
+      float bloco = G_L_HEAD + (float)n * G_L_ROW;
+      if (y > G_L_BASE) break;
+      if (y + bloco < G_L_TOPO - 8.0f) { y += bloco; continue; }
+      { char cab[140];
+        snprintf(cab, sizeof cab, "%s  \xc2\xb7  %d", linhaNome(l), n);
+        TxtLinha t = txt_linha_corta(TXT_ROW_TITULO, cab,
+                                   modoCat && l == focoLin ? 148 : 220,
+                                   modoCat && l == focoLin ? 200 : 221,
+                                   modoCat && l == focoLin ? 255 : 224, 255,
+                                   G_AREA_W);
+        txt_desenhar_alpha(t, G_AREA_X, y + 10.0f, a * dim); }
+      y += G_L_HEAD;
+      for (i = 0; i < n; i++, y += G_L_ROW) {
+        if (y + G_L_ROW < G_L_TOPO - 8.0f || y > G_L_BASE) continue;
+        desenharLinhaLista(linhaItem(l, i), y,
+                           l == focoLin && i == focoCol ? 1.0f : 0.0f,
+                           a * dim, agoraT, ini);
+      }
+    }
+    gfx_sem_recorte();
+    // A linha "agora", por cima de tudo, so quando agora esta na janela.
+    if (agoraT >= ini && agoraT < ini + (time_t)G_L_JANELA_MIN * 60) {
+      float x = G_L_FAIXA_X + (float)(agoraT - ini) / 60.0f
+                * (G_L_FAIXA_W / (float)G_L_JANELA_MIN);
+      GfxRect ln = { x - 1.0f, G_TOPO + 30.0f, 2.0f, G_L_BASE - G_TOPO - 30.0f };
+      gfx_cor(ln, 0.0f, 0.58f, 0.78f, 1.0f, 0.75f * a);
+      { TxtLinha t = txt_linha(TXT_MINI, i18n("AGORA"), 148, 200, 255, 255);
+        txt_desenhar_alpha(t, x + 6.0f, G_TOPO - 14.0f, a); }
+    }
+
+  } else if ((estado == G_PRONTO || estado == G_BAIXANDO) && nLinhas() > 0) {
     gfx_recorte(0.0f, G_TOPO - 20.0f, G_PAN_X - 24.0f,
                 NV_TELA_H - G_TOPO + 20.0f);
     for (l = 0; l < nLinhas(); l++) {
@@ -1233,10 +1972,19 @@ void guia_desenhar(Uint32 agora) {
 
   // Barra de ajuda — a resposta ao "explicar no componente como abrir o
   // overlay": as teclas que o dono precisa lembrar ficam escritas na tela.
-  { const char *dica = overlay
-      ? i18n("OK troca de canal  ·  segure OK = favorito  ·  segure \xe2\x86\x91\xe2\x86\x93 pula seção  ·  Voltar ou Azul fecha")
-      : i18n("OK assiste  ·  segure OK = favorito  ·  segure \xe2\x86\x91\xe2\x86\x93 pula seção  ·  Voltar sai");
+  // No modo lista ESQUERDA/DIREITA ganharam funcao (a janela de tempo) e a
+  // barra tem de dizer. O amarelo nao aparece aqui de proposito: o controle
+  // segmentado do cabecalho e o caminho que se ve, e a barra ja esta longa.
+  { const char *dica = modoLista
+      ? (overlay
+         ? i18n("OK troca de canal  ·  segure OK = favorito  ·  \xe2\x86\x90\xe2\x86\x92 adianta a grade  ·  segure \xe2\x86\x91\xe2\x86\x93 pula seção  ·  Voltar ou Azul fecha")
+         : i18n("OK assiste  ·  segure OK = favorito  ·  \xe2\x86\x90\xe2\x86\x92 adianta a grade  ·  segure \xe2\x86\x91\xe2\x86\x93 pula seção  ·  Voltar sai"))
+      : (overlay
+         ? i18n("OK troca de canal  ·  segure OK = favorito  ·  segure \xe2\x86\x91\xe2\x86\x93 pula seção  ·  Voltar ou Azul fecha")
+         : i18n("OK assiste  ·  segure OK = favorito  ·  segure \xe2\x86\x91\xe2\x86\x93 pula seção  ·  Voltar sai"));
     TxtLinha t = txt_linha_corta(TXT_CAPTION, dica, 140, 142, 150, 255,
                                  G_AREA_W);
     txt_desenhar_alpha(t, G_AREA_X, NV_TELA_H - 54.0f, a); }
+
+  if (painel) desenharPainelAddons(a);
 }
