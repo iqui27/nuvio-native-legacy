@@ -1128,6 +1128,7 @@ void app_atualizar(float dt, Uint32 agora) {
     // A afirmacao de HDR/DV vai ANTES do tocar: e ela que o bind do ACB
     // descreve ao tv.display. Sem isto o C9 exibe tudo mapeado em SDR.
     if (s) video_definir_dv(s->dolbyVision);
+    if (s) video_definir_cabecalhos(s->cabecalhos);
     // Anuncia o CONTENTOR pelo mesmo caminho: e o que dispensa a sonda de
     // Matroska num arquivo que nunca teria um cabecalho desses.
     if (s) video_definir_mp4(s->mp4 || strstr(s->url, ".mp4") != NULL);
@@ -1233,6 +1234,7 @@ void app_atualizar(float dt, Uint32 agora) {
       stream_preferir(fonte);
     }
     if (s) video_definir_dv(s->dolbyVision);
+    if (s) video_definir_cabecalhos(s->cabecalhos);
     if (s) {
       aguardandoFonte=0;
       int titulo=player_aberto()?player_indice():detail_indice(), t=0,e=0;

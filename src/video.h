@@ -85,6 +85,18 @@ unsigned video_bufferando_ms(void);
 // ACB descreve ao tv.display.
 void video_definir_dv(int dv);
 
+// CABECALHOS QUE O ADDON EXIGE (behaviorHints.proxyHeaders), uma linha
+// "Nome: valor" por cabecalho. Chamar ANTES de video_tocar, junto com
+// video_definir_dv. String vazia limpa.
+//
+// MEDIDO NA C9 em 18/09, com o addon de um relato: o CDN responde 403 sem
+// Referer e 200 com ele — e cobra em CADA SEGMENTO, nao so na playlist, entao
+// nao adianta so buscar a lista com cabecalho e entregar o resto ao pipeline.
+// Provado que a TV sabe faze-lo:
+//   gst-launch-1.0 souphttpsrc location=<url> ! fakesink            -> Forbidden
+//   ... extra-headers="headers,Referer=(string)\"<ref>\"" ! fakesink -> baixa
+void video_definir_cabecalhos(const char *cabs);
+
 // A fonte e MP4? Chamar ANTES de video_tocar, junto com video_definir_dv.
 //
 // Serve para NAO sondar o cabecalho Matroska num arquivo que nunca vai ter um.

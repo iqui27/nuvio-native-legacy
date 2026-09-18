@@ -175,6 +175,9 @@ void video_escolher_legenda(int i) { (void)i; }
 void video_legenda_externa(const char *u) { (void)u; }
 void video_legenda_estilo(const VideoLegendaEstilo *e) { (void)e; }
 void video_definir_mp4(int m) { (void)m; }
+// No Mac quem toca e o pipeline do sistema por outro caminho; os cabecalhos do
+// addon so tem efeito no payload do load da webOS. Stub para o alvo linkar.
+void video_definir_cabecalhos(const char *cabs) { (void)cabs; }
 int  video_tem_atmos(void) { return 0; }
 int  video_tem_dolby_vision(void) { return 0; }
 const char *video_hdr(void) { return "none"; }
@@ -1261,6 +1264,61 @@ void video_bombear(void) {
   (void)msDoLoad; (void)urlAtual; (void)agoraMs; (void)tocarInterno;
 }
 
+// CABECALHOS EXIGIDOS PELO ADDON, ver video.h.
+static char cabsHttp[512];
+void video_definir_cabecalhos(const char *cabs) {
+  snprintf(cabsHttp, sizeof cabsHttp, "%s", cabs ? cabs : "");
+}
+
+// Monta o "httpHeader" do payload do load a partir das linhas "Nome: valor".
+//
+// DE ONDE SAI ESTA CHAVE, porque ela nao esta em documentacao publica: foi
+// lida no proprio aparelho. Em /usr/lib/libcbe.so, a tabela de opcoes de
+// media_option de umediaclient_impl.cc traz "httpHeader" entre
+// "usePipelinePreload" e "bufferControl" — irma de "useSeekableRanges" e
+// "bufferControl", que sao exatamente as que este payload ja usa e que
+// funcionam. E /usr/lib/libpf-1.0.so consome PF_HTTP_HEADER_REFERRER,
+// PF_HTTP_HEADER_USER_AGENT e PF_HTTP_HEADER_COOKIES, que sao os tres campos
+// abaixo.
+//
+// METODO QUE NAO SERVIU, registrado para ninguem repetir: procurar as chaves no
+// binario do umediaserver da ZERO — e da zero tambem para "bufferControl" e
+// "useSeekableRanges", que comprovadamente funcionam. Quem parseia e libcbe, e
+// nao o umediaserver. E `luna-send` por ssh nao imprime resposta NENHUMA nesta
+// TV, nem de getSystemTime, entao tambem nao serve de sonda.
+static void montarHttpHeader(char *dst, unsigned tam) {
+  char copia[512], ref[320], ua[320], ck[320];
+  char *l;
+  int algum = 0;
+  dst[0] = 0; ref[0] = 0; ua[0] = 0; ck[0] = 0;
+  if (!cabsHttp[0]) return;
+  snprintf(copia, sizeof copia, "%s", cabsHttp);
+  for (l = strtok(copia, "\n"); l; l = strtok(NULL, "\n")) {
+    char *d = strchr(l, ':');
+    char *v;
+    if (!d) continue;
+    *d = 0;
+    v = d + 1;
+    while (*v == ' ') v++;
+    if (!strcasecmp(l, "referer") || !strcasecmp(l, "referrer"))
+      snprintf(ref, sizeof ref, "%s", v);
+    else if (!strcasecmp(l, "user-agent"))
+      snprintf(ua, sizeof ua, "%s", v);
+    else if (!strcasecmp(l, "cookie") || !strcasecmp(l, "cookies"))
+      snprintf(ck, sizeof ck, "%s", v);
+    // Origin e qualquer outro ficam de fora: libpf so consome estes tres, e
+    // inventar campo no payload e o tipo de coisa que o uMS ignora calado.
+  }
+  if (!ref[0] && !ua[0] && !ck[0]) return;
+  { int u = snprintf(dst, tam, "\"httpHeader\":{");
+    if (ref[0]) { u += snprintf(dst + u, tam - u, "%s\"referer\":\"%s\"", algum++ ? "," : "", ref); }
+    if (ua[0])  { u += snprintf(dst + u, tam - u, "%s\"userAgent\":\"%s\"", algum++ ? "," : "", ua); }
+    if (ck[0])  { u += snprintf(dst + u, tam - u, "%s\"cookies\":\"%s\"", algum++ ? "," : "", ck); }
+    snprintf(dst + u, tam - u, "},");
+  }
+  printf("[video] httpHeader no load: %s\n", dst); fflush(stdout);
+}
+
 static int tocarInterno(const char *url, int comDV) {
   char carga[2048];
   unsigned minhaSessao;
@@ -1354,19 +1412,21 @@ static int tocarInterno(const char *url, int comDV) {
       dvNaCarga = 1;
     }
   }
+  { char hh[768];
+    montarHttpHeader(hh, sizeof hh);
   snprintf(carga, sizeof carga,
       "{\"payload\":{\"option\":{\"useSeekableRanges\":true,"
       "\"appId\":\"space.nuvio.native.legacy\","
-      "%s"
+      "%s%s"
       "\"bufferControl\":{\"userBufferCtrl\":false},"
       "\"windowId\":\"%s\"}},"
       "\"uri\":\"%s\",\"type\":\"media\"}",
-      dolby,
+      dolby, hh,
       // No caminho do ACB o id e um marcador qualquer (so nao pode ser vazio,
       // ver acima); no da webOS 5 ele e o endereco REAL do plano exportado e um
       // valor errado aqui deixa o video sem para onde ir.
       expWin[0] ? expWin : "window_id_dummy",
-      url);
+      url); }
   printf("[video] URL: %s\n", url); fflush(stdout);
   msDoLoad = agoraMs();
   chamarCtx("load", carga, aoCarregar, (void *)(uintptr_t)minhaSessao);

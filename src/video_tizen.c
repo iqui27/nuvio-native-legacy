@@ -1170,6 +1170,10 @@ void video_forcar_sdr(void) { }
 // Guardado e NAO USADO no AVPlay: nao ha como pedir uma camada de Dolby Vision
 // ao player. Fica registrado para nao parecer esquecimento, e para o dia em que
 // a Samsung expuser algo equivalente.
+// CABECALHOS DO ADDON NO ALVO TIZEN: AINDA NAO IMPLEMENTADO, DE PROPOSITO.
+// Ver a nota longa no fim deste arquivo.
+void video_definir_cabecalhos(const char *cabs) { (void)cabs; }
+
 void video_definir_dv(int dv) { dvPedido = dv ? 1 : 0; (void)dvPedido; }
 void video_definir_mp4(int ehMp4) { fonteMp4 = ehMp4; }
 
