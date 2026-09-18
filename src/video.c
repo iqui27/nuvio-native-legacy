@@ -1310,11 +1310,21 @@ static void montarHttpHeader(char *dst, unsigned tam) {
     // inventar campo no payload e o tipo de coisa que o uMS ignora calado.
   }
   if (!ref[0] && !ua[0] && !ck[0]) return;
-  { int u = snprintf(dst, tam, "\"httpHeader\":{");
-    if (ref[0]) { u += snprintf(dst + u, tam - u, "%s\"referer\":\"%s\"", algum++ ? "," : "", ref); }
-    if (ua[0])  { u += snprintf(dst + u, tam - u, "%s\"userAgent\":\"%s\"", algum++ ? "," : "", ua); }
-    if (ck[0])  { u += snprintf(dst + u, tam - u, "%s\"cookies\":\"%s\"", algum++ ? "," : "", ck); }
-    snprintf(dst + u, tam - u, "},");
+  // STRING, E NAO OBJETO. Na tabela de media_option de libcbe, "bufferControl"
+  // e seguida de "userBufferCtrl", que e a sub-chave dela; depois de
+  // "httpHeader" nao vem sub-chave nenhuma — vem "bufferControl". E o formato
+  // de objeto {"referer":...} foi TESTADO na C9 e o uMS o ignorou calado: o
+  // load respondeu "No Error" e depois vieram errorCode 100 ("Playing error")
+  // e 203 ("AV Type Not Founded"), com bufferRange parado em 0 — a assinatura
+  // de quem buscou a pagina de 403 em vez do video.
+  //
+  // Cabecalhos separados por \r\n, que e a forma do protocolo e a que
+  // souphttpsrc espera em extra-headers.
+  { int u = snprintf(dst, tam, "\"httpHeader\":\"");
+    if (ref[0]) { u += snprintf(dst + u, tam - u, "%sReferer: %s", algum++ ? "\\r\\n" : "", ref); }
+    if (ua[0])  { u += snprintf(dst + u, tam - u, "%sUser-Agent: %s", algum++ ? "\\r\\n" : "", ua); }
+    if (ck[0])  { u += snprintf(dst + u, tam - u, "%sCookie: %s", algum++ ? "\\r\\n" : "", ck); }
+    snprintf(dst + u, tam - u, "\",");
   }
   printf("[video] httpHeader no load: %s\n", dst); fflush(stdout);
 }

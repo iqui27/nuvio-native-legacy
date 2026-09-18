@@ -257,7 +257,7 @@ static void alvoPlayer(char *alvo, size_t tam) {
 static void buscarParaPlayer(void) {
   char alvo[64]; alvoPlayer(alvo,sizeof alvo);
   const char *idC = player_id_canal();
-  if (idC[0]) { addons_buscar(alvo,"channel"); addons_buscar_legendas(alvo,"channel"); return; }
+  if (idC[0]) { addons_buscar(alvo,"tv"); addons_buscar_legendas(alvo,"tv"); return; }
   {
     const CatItem *c = cat_item(player_indice());
     if (c && alvo[0]) {
@@ -338,7 +338,7 @@ static void tocarCanal(const CatItem *it) {
   stalkerTentativas = 0;          // canal novo: o teto de renovacao recomeca
   // Canal de portal nao esta em addon nenhum: perguntar seria esperar o prazo
   // de todos eles para receber lista vazia, com a pessoa olhando "carregando".
-  if (!stalker_e_id(it->imdb)) addons_buscar(it->imdb, "channel");
+  if (!stalker_e_id(it->imdb)) addons_buscar(it->imdb, "tv");
   aguardandoFonte = 1;
   marco("guia: buscando fontes do canal");
 }

@@ -41,6 +41,9 @@ static int nAddon;
 static _Atomic AddEstado estado = ADD_PARADO;
 static pthread_t fio;
 static char alvoId[64], alvoTipo[16];
+// Segundo nome de tipo a tentar quando o primeiro nao responde. So vale para
+// canal ao vivo ("tv" <-> "channel"); vazio nos demais. Ver fioFontes.
+static char alvoTipoAlt[16];
 static int fioVivo;
 static Stream *resultado;
 static int nResultado;
@@ -715,6 +718,29 @@ static void *fioFontes(void *u) {
     // 12 s e nao 25: com os addons em paralelo o timeout deixa de ser somado,
     // mas continua sendo o tempo que o dono espera pelo mais lento.
     corpo = rede_baixar(url, 12);
+    // CANAL AO VIVO TEM DOIS NOMES DE TIPO NO PROTOCOLO, e addons diferentes
+    // usam nomes diferentes.
+    //
+    // MEDIDO em 18/09 contra o addon de um relato ("canal aparece no guia e nao
+    // abre", com "Could not open the source" na tela):
+    //   /stream/tv/meufutebol:premiereclubes.json       -> 200
+    //   /stream/channel/meufutebol:premiereclubes.json  -> 404
+    // O manifesto dele declara "types":["tv"]. O app pedia SEMPRE "channel"
+    // (app.c), entao a resposta era 404, "sem resposta", nenhuma fonte, e o
+    // erro aparecia sem o player nunca ter tentado.
+    //
+    // Trocar "channel" por "tv" e so mover o defeito para quem usa o outro
+    // nome, e o app nao guarda os "types" do manifesto para decidir. Entao
+    // pergunta-se o SEGUNDO nome APENAS para o addon que nao respondeu nada
+    // com o primeiro: custa uma viagem extra so no caminho que hoje ja falha.
+    if (!corpo && alvoTipoAlt[0]) {
+      snprintf(url, sizeof url, "%s/stream/%s/%s.json",
+               addon[i].base, alvoTipoAlt, alvoId);
+      corpo = rede_baixar(url, 12);
+      if (corpo)
+        printf("[addons] %s: respondeu como \"%s\" (nao como \"%s\")\n",
+               addon[i].nome, alvoTipoAlt, alvoTipo);
+    }
     if (!corpo) { printf("[addons] %s: sem resposta\n", addon[i].nome); continue; }
     baldes[meu].n = stream_extrair(corpo, addon[i].nome, &baldes[meu].achados);
     printf("[addons] %s: %d fontes (%u bytes)\n",
@@ -788,6 +814,9 @@ void addons_buscar(const char *imdb, const char *tipo) {
   else
     snprintf(alvoId, sizeof alvoId, "%s", imdb);
   snprintf(alvoTipo, sizeof alvoTipo, "%s", tipo && *tipo ? tipo : "movie");
+  if (!strcmp(alvoTipo, "tv"))            snprintf(alvoTipoAlt, sizeof alvoTipoAlt, "channel");
+  else if (!strcmp(alvoTipo, "channel"))  snprintf(alvoTipoAlt, sizeof alvoTipoAlt, "tv");
+  else                                    alvoTipoAlt[0] = 0;
   { int t = 0, e = 0; const char *dp = strchr(alvoId, ':');
     if (dp) sscanf(dp + 1, "%d:%d", &t, &e);
     debrid_definir_episodio(t, e); }
