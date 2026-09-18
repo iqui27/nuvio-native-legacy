@@ -367,6 +367,11 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     // atravessar isso como vetor de structs obrigaria a combinar o layout dos
     // dois lados por nada — sao doze faixas no maximo, uma vez por titulo.
     var out = "", n = 0;
+    // Letra ASCII, e caractere que pode fazer parte de um NOME de campo. Sao
+    // duas perguntas diferentes: "_" nao e letra mas continua um nome, e e por
+    // isso que "lang" nao pode casar dentro de "track_lang".
+    function ehLetra(c) { return (c >= "a" && c <= "z") || (c >= "A" && c <= "Z"); }
+    function ehNome(c) { return ehLetra(c) || (c >= "0" && c <= "9") || c === "_"; }
     for (var i = 0; i < lista.length; i++) {
       var t = ("" + lista[i].type).toUpperCase();
       if (t !== "AUDIO" && t !== "TEXT") continue;
@@ -391,18 +396,54 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
       // e parte a macro ao meio — o erro sai como "unterminated function-like
       // macro invocation" apontando para a linha do EM_JS, dezenas de linhas
       // acima do culpado. Ja custou um build.
+      //
+      // A VERSAO ANTERIOR DESTA BUSCA LIA O CAMPO SEGUINTE COMO IDIOMA. Ela
+      // procurava "lang" em qualquer lugar e colhia as 3 primeiras letras que
+      // aparecessem depois. Contra o TEXT que esta MEDIDO logo acima
+      // ({"track_num":"0","track_lang":"","subtitle_type":"-1"}) ela achava
+      // "lang" dentro de track_lang, atravessava o valor vazio e devolvia
+      // "sub", de subtitle_type. Toda legenda virava idioma "sub": a tela
+      // mostrava "SUB" e, pior, aplicarIdiomasDoMkv pula faixa que ja tem
+      // idioma, entao o idioma REAL vindo da sonda de MKV nunca era aplicado —
+      // anulando o proprio conserto que esta busca existe para apoiar. De
+      // quebra, "language=eng", a forma que ela dizia cobrir, devolvia vazio:
+      // ao achar "uag" o laco terminava antes do valor.
+      //
+      // Agora a chave tem de casar em FRONTEIRA e tem de vir seguida de
+      // separador (":" ou "="). Valor vazio encerra a busca daquela chave em
+      // vez de seguir colhendo letras do campo seguinte.
       if (!lang && cru) {
-        var bx = cru.toLowerCase().indexOf("lang");
-        if (bx >= 0) {
-          var q = bx + 4, ac = "";
-          while (q < cru.length && ac.length < 3) {
-            var ch = cru.charAt(q);
-            if ((ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z")) ac += ch;
-            else if (ac.length) break;
+        // split(" ") em vez de literal com virgula: o corpo de um EM_JS e
+        // argumento de macro do pre-processador C. Ver a nota logo acima.
+        var chaves = "track_lang language lang".split(" ");
+        var bc = cru.toLowerCase();
+        for (var ni = 0; ni < chaves.length; ni++) {
+          if (lang) break;
+          var k = chaves[ni];
+          var de = 0;
+          for (;;) {
+            var bx = bc.indexOf(k, de);
+            if (bx < 0) break;
+            de = bx + k.length;
+            var antes = bx > 0 ? bc.charAt(bx - 1) : " ";
+            var dps = de < bc.length ? bc.charAt(de) : " ";
+            if (ehNome(antes) || ehNome(dps)) continue;
+            var q = de;
+            while (q < cru.length && (cru.charAt(q) === '"' || cru.charAt(q) === " ")) q++;
+            if (q >= cru.length) break;
+            if (cru.charAt(q) !== ":" && cru.charAt(q) !== "=") continue;
             q++;
+            while (q < cru.length && (cru.charAt(q) === " " || cru.charAt(q) === '"')) q++;
+            var ac = "";
+            while (q < cru.length && ac.length < 3 && ehLetra(cru.charAt(q))) {
+              ac += cru.charAt(q);
+              q++;
+            }
+            if (ac.length >= 2) lang = ac;
+            // Achou a chave: o valor dela e a resposta, mesmo vazio. Seguir
+            // procurando letras adiante e o defeito que se esta consertando.
+            break;
           }
-          // "uag" e o resto da palavra "language", nao o valor.
-          if (ac.length >= 2 && ac.toLowerCase() !== "uag") lang = ac;
         }
       }
       if (lang === "und" || lang === "(null)" || lang === "null") lang = "";
