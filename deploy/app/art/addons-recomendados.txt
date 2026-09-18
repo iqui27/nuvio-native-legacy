@@ -12,7 +12,10 @@
 # FORMATO: uma linha por addon, separada por TAB (não por espaço — nome de addon
 # contém espaço, e o "AIOStreams | ElfHosted" já mostrou que também contém "|"):
 #
-#   <nome><TAB><url do manifest.json><TAB><descrição curta>
+#   <nome><TAB><url do manifest.json><TAB><descrição em português><TAB><descrição em inglês>
+#
+# A quarta coluna é o que a tela em inglês mostra. Sem ela, mostra a portuguesa
+# — é melhor que nada, mas é mistura de língua; preencha as duas.
 #
 # Linha começando com # é comentário. Arquivo vazio ou ausente faz a seção
 # simplesmente não aparecer — isso é comportamento esperado, não erro.
@@ -57,10 +60,10 @@
 #   Brazuca Torrents https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json
 # ---------------------------------------------------------------------------
 
-OpenSubtitles v3	https://opensubtitles-v3.strem.io/manifest.json	Legendas do OpenSubtitles, com português do Brasil
-Streaming Catalogs	https://7a82163c306e-stremio-netflix-catalog-addon.baby-beamup.club/manifest.json	O que está na Netflix, HBO Max, Disney+, Prime e Apple TV+
-IMDB Catalogs	https://1fe84bc728af-imdb-catalogs.baby-beamup.club/manifest.json	Listas do IMDb de filmes e séries
-Rotten Tomatoes	https://7a82163c306e-rottentomatoes.baby-beamup.club/manifest.json	Filmes Certified Fresh e séries do Rotten Tomatoes
-The Movie Database	https://94c8cb9f702d-tmdb-addon.baby-beamup.club/manifest.json	Catálogos e fichas do TMDB (em inglês)
-Mubi	https://mubi2stremio.adiba.ro/manifest.json	Novidades e acervo da MUBI (só catálogo)
-Torrent Catalogs	https://torrent-catalogs.strem.fun/manifest.json	O que está mais semeado em torrents, como catálogo
+OpenSubtitles v3	https://opensubtitles-v3.strem.io/manifest.json	Legendas do OpenSubtitles, com português do Brasil	OpenSubtitles subtitles, with Brazilian Portuguese
+Streaming Catalogs	https://7a82163c306e-stremio-netflix-catalog-addon.baby-beamup.club/manifest.json	O que está na Netflix, HBO Max, Disney+, Prime e Apple TV+	What's on Netflix, HBO Max, Disney+, Prime and Apple TV+
+IMDB Catalogs	https://1fe84bc728af-imdb-catalogs.baby-beamup.club/manifest.json	Listas do IMDb de filmes e séries	IMDb lists of movies and series
+Rotten Tomatoes	https://7a82163c306e-rottentomatoes.baby-beamup.club/manifest.json	Filmes Certified Fresh e séries do Rotten Tomatoes	Certified Fresh movies and series from Rotten Tomatoes
+The Movie Database	https://94c8cb9f702d-tmdb-addon.baby-beamup.club/manifest.json	Catálogos e fichas do TMDB (em inglês)	TMDB catalogs and details (in English)
+Mubi	https://mubi2stremio.adiba.ro/manifest.json	Novidades e acervo da MUBI (só catálogo)	MUBI's new releases and library (catalog only)
+Torrent Catalogs	https://torrent-catalogs.strem.fun/manifest.json	O que está mais semeado em torrents, como catálogo	The most seeded torrents, as a catalog

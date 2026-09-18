@@ -253,9 +253,14 @@ static int sabeCanal(const char *base) {   // 1, 0, ou -1 = desconhecido
 // "1.2k instalacoes" ou estrela ali seria dado inventado.
 //
 // Formato de addons-recomendados.txt, uma linha por addon:
-//     <nome>\t<url do manifest>\t<descricao curta>
-// Arquivo ausente ou vazio = a secao nao aparece. Nao e erro.
-typedef struct { char nome[64]; char url[600]; char desc[200]; } GRec;
+//     <nome>\t<url do manifest>\t<descricao em portugues>\t<descricao em ingles>
+// A quarta coluna e opcional: sem ela, a tela em ingles mostra a portuguesa —
+// e melhor que mostrar nada. Arquivo ausente ou vazio = a secao nao aparece.
+//
+// DUAS COLUNAS E NAO i18n(): descricao e texto livre, nao chave de tabela. A
+// tabela de idioma_tab.h e para o que o app diz de si; o que o addon diz de si
+// vive no arquivo curado, nas duas linguas.
+typedef struct { char nome[64]; char url[600]; char desc[200]; char descEn[200]; } GRec;
 static GRec rec[G_MAX_REC]; static int nRec;
 
 // ONDE FICA A PASTA art/. Este modulo nao recebe dirArte (so main.c o tem, e
@@ -296,10 +301,12 @@ static void recLer(void) {
     if (!*a || *a == '#') continue;
     b = strchr(a, '\t'); if (!b) continue; *b++ = 0;
     c = strchr(b, '\t'); if (c) *c++ = 0;
+    { char *d = c ? strchr(c, '\t') : NULL; if (d) *d++ = 0;
     if (!*a || !*b) continue;
-    snprintf(rec[nRec].nome, sizeof rec[nRec].nome, "%s", a);
-    snprintf(rec[nRec].url,  sizeof rec[nRec].url,  "%s", b);
-    snprintf(rec[nRec].desc, sizeof rec[nRec].desc, "%s", c ? c : "");
+    snprintf(rec[nRec].nome,   sizeof rec[nRec].nome,   "%s", a);
+    snprintf(rec[nRec].url,    sizeof rec[nRec].url,    "%s", b);
+    snprintf(rec[nRec].desc,   sizeof rec[nRec].desc,   "%s", c ? c : "");
+    snprintf(rec[nRec].descEn, sizeof rec[nRec].descEn, "%s", d ? d : ""); }
     nRec++;
   }
   fclose(f);
@@ -1792,8 +1799,11 @@ static void desenharPainelAddons(float a) {
         TxtLinha t = txt_linha_corta(TXT_CAPTION, m, 237, 77, 77, 255, w - 200.0f);
         txt_desenhar_alpha(t, x + 24.0f, yi + 48.0f, a);
       } else if (rc->desc[0]) {
-        TxtLinha t = f ? txt_linha_corta(TXT_CAPTION, rc->desc, 60, 62, 70, 255, w - 200.0f)
-                       : txt_linha_corta(TXT_CAPTION, rc->desc, 150, 153, 162, 255, w - 200.0f);
+        // Em ingles usa a quarta coluna se existir; senao a portuguesa, que e
+        // melhor que linha vazia.
+        const char *desc = (ajustes_idioma_ingles() && rc->descEn[0]) ? rc->descEn : rc->desc;
+        TxtLinha t = f ? txt_linha_corta(TXT_CAPTION, desc, 60, 62, 70, 255, w - 200.0f)
+                       : txt_linha_corta(TXT_CAPTION, desc, 150, 153, 162, 255, w - 200.0f);
         txt_desenhar_alpha(t, x + 24.0f, yi + 48.0f, a);
       }
       if (inst) {
