@@ -359,4 +359,8 @@ echo "==> lancando"
   printf 'luna-send -n 1 -f luna://com.webos.applicationManager/launch '"'"'{"id":"%s"}'"'"'\n' "$APP_ID"
   sleep 3
   printf 'exit\n'
-) | nc -w20 "$TV_IP" 23 | tr -d '\0' | grep returnValue
+) | nc -w20 "$TV_IP" 23 | LC_ALL=C tr -d '\0' | grep -a returnValue
+# LC_ALL=C no tr, e grep -a: a resposta do telnet traz bytes fora de UTF-8 e,
+# com o locale do Mac, o tr morre com "Illegal byte sequence" DEPOIS de o app
+# ja ter sido lancado — o deploy saia como falho com a TV rodando a build nova.
+# Medido em 18/09.
