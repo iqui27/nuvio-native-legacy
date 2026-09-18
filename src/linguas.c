@@ -179,14 +179,31 @@ const char *ling_audio(void)    { return emVigor(localAud, contaAud); }
 // poria "Alemão" na frente de "Português" numa lista de trinta itens navegada
 // tecla por tecla.
 static const char *OPCOES_COD[] = {
+  "", "*",
+  "pt", "en", "es",
+  "de", "ar", "zh", "da", "ko", "fr", "el", "he", "nl", "hi", "hu", "id",
+  "it", "ja", "no", "pl", "ro", "ru", "sv", "th", "cs", "tr", "uk", "vi", "fi",
   // "~" = ORIGINAL DO TITULO. Nao e um idioma: e "descubra qual e o idioma
   // deste filme e toque esse". Quem resolve e ling_definir_original(), chamado
   // por quem abre o titulo; aqui so mora o marcador.
-  "", "*", "~",
-  "pt", "en", "es",
-  "de", "ar", "zh", "da", "ko", "fr", "el", "he", "nl", "hi", "hu", "id",
-  "it", "ja", "no", "pl", "ro", "ru", "sv", "th", "cs", "tr", "uk", "vi", "fi"
+  //
+  // ELE FICA NO FIM, E ISSO NAO E ESTETICA — E COMPATIBILIDADE. O ajustes.txt
+  // grava o INDICE da opcao, nao o codigo ("aud_lingua 2"), entao inserir um
+  // item no meio desta lista REINTERPRETA o arquivo de quem ja atualizou:
+  // na 1.1.2 o "~" entrou no indice 2 e todo mundo que tinha audio "Portugues"
+  // (2) passava a ter "Original", quem tinha "Ingles" (3) passava a ter
+  // "Portugues", e assim por diante nos 28 idiomas — em audio E em legenda,
+  // que leem a MESMA lista. Foi pego na revisao antes de publicar.
+  //
+  // REGRA PARA QUEM MEXER AQUI: item novo entra NO FIM. Reordenar ou inserir no
+  // meio exige migracao do ajustes.txt, que hoje nao tem marca de versao.
+  "~"
 };
+// Se alguem acrescentar idioma depois do "~", o indice gravado deixa de bater
+// com LING_OPC_ORIGINAL e o padrao de audio vira outra coisa em silencio. Isto
+// quebra o build em vez de deixar passar.
+typedef char nv_checa_indice_original[
+  (sizeof OPCOES_COD / sizeof *OPCOES_COD) == LING_OPC_ORIGINAL + 1 ? 1 : -1];
 int ling_opcao_n(void) { return (int)(sizeof OPCOES_COD / sizeof *OPCOES_COD); }
 const char *ling_opcao_codigo(int i) {
   return (i >= 0 && i < ling_opcao_n()) ? OPCOES_COD[i] : "";
