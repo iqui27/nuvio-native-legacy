@@ -44,8 +44,18 @@ int epg_estado(void);
 void epg_iniciar(void);
 
 // Publica o resultado do fio no fio principal e pede re-carga quando a grade
-// envelheceu (o arquivo cobre ~3,5 dias; renovar a cada 12 h basta). Chamar
-// por quadro enquanto o guia ou o overlay de canais estiver vivos.
+// envelheceu. Chamar por quadro enquanto o guia ou o overlay de canais
+// estiver vivos. Cada publicacao TROCA a grade inteira: os indices de
+// epg_match e os `titulo` de EpgProg obtidos antes morrem — quem guarda um
+// EpgProg entre quadros precisa refazer a consulta quando epg_passo publicar
+// (o guia ja faz isso pelo estado voltar a PRONTO).
+//
+// QUANTO A GRADE COBRE (medido em 2026-09-18 nos XML reais do epgshare01):
+// de 3,3 a 3,8 dias A FRENTE do download e ate 1,8 dia para tras, por fonte.
+// Uma semana NAO vem no arquivo — nao e questao de retencao, e o publicador
+// que para ali. O modulo retem tudo que e futuro e ate 48 h de passado; para
+// saber ate onde vai, epg_janela/epg_janela_total, e o guia deve tratar o
+// que esta ALEM da janela como "sem dados", nao como "nada no ar".
 void epg_passo(void);
 
 // Indice do canal da grade que corresponde a `nome` (o nome que o addon da),
@@ -53,12 +63,37 @@ void epg_passo(void);
 // quem chamou deve tentar de novo depois.
 int  epg_match(const char *nome);
 
-// Programa NO AR agora no canal `epg` (indice devolvido por epg_match).
-// Devolve 1 e preenche *p. 0 = sem grade ou fora dela.
+// Programa NO AR no instante `agora` (qualquer instante, nao so o presente:
+// para desenhar a coluna de amanha, passe amanha) no canal `epg` (indice
+// devolvido por epg_match). Devolve 1 e preenche *p. 0 = sem grade, fora da
+// janela, ou buraco entre programas — os tres sao indistinguiveis aqui; use
+// epg_janela para separar "sem dados" de "buraco".
 int  epg_agora(int epg, time_t agora, EpgProg *p);
 
-// k-esimo programa DEPOIS do que esta no ar (k=0 e o proximo). Mesmo retorno.
+// k-esimo programa DEPOIS do que esta no ar em `agora` (k=0 e o proximo).
+// Mesmo retorno.
 int  epg_proximo(int epg, time_t agora, int k, EpgProg *p);
+
+// --- GRADE DE VARIOS DIAS ----------------------------------------------------
+// Janela coberta pela grade do canal: inicio do primeiro programa retido e fim
+// do ultimo. Devolve 0 (e nao toca *ini/*fim) se o canal nao tem grade. E a
+// unica forma de dizer com verdade "a programacao termina aqui".
+int  epg_janela(int epg, time_t *ini, time_t *fim);
+
+// Uniao das janelas de todos os canais. 0 = grade vazia.
+int  epg_janela_total(time_t *ini, time_t *fim);
+
+// Quantos programas a grade retem para o canal (para dimensionar buffers).
+int  epg_total(int epg);
+
+// Programas do canal que TOCAM o intervalo [de, ate) — fim > de e ini < ate —
+// em ordem de inicio. Escreve no maximo `cap` em `out` (out pode ser NULL com
+// cap 0 para so contar) e devolve quantos EXISTEM, que pode ser maior que
+// `cap`: quem chamou sabe que cortou e pode continuar chamando com
+// de = out[cap-1].fim. Um programa que atravessa `de` entra inteiro, com o
+// ini real (anterior a `de`); o guia decide como desenhar a parte de fora.
+// Sem alocacao; O(log n + resultado).
+int  epg_faixa(int epg, time_t de, time_t ate, EpgProg *out, int cap);
 
 // --- SUPERFICIE DE TESTE ----------------------------------------------------
 // epg_xml_processar alimenta o parser sem rede nem disco: os testes chamam

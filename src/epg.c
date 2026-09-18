@@ -7,6 +7,18 @@
 //                        re-carga quando o cache passou de 12 h.
 //   epg_match(nome)   -> nome do addon -> indice do canal na grade, ou -1.
 //   epg_agora/proximo -> programa no ar e os seguintes.
+//   epg_janela/faixa  -> quanto a grade cobre e os programas de um intervalo
+//                        (grade de varios dias no guia).
+//
+// QUANTO A FONTE DA (MEDIDO em 2026-09-18 nos cinco XML em ~/.nuvio, baixados
+// em 2026-09-16): cada arquivo cobre de 3,3 a 3,8 dias A FRENTE do download e
+// de 0,3 a 1,8 dias para tras; as cinco fontes terminavam no MESMO instante
+// (2026-09-20 04:28 UTC) apesar de baixadas em horas diferentes — o horizonte
+// e do publicador, nao do relogio de quem baixa. Uma semana NAO esta no
+// arquivo; o que se pode oferecer ao guia e a janela inteira que vem, e este
+// modulo ja retinha tudo que e futuro. 801 canais e 72257 programas brutos
+// nos cinco arquivos; 797 canais / 59297 programas publicados com arquivo
+// fresco (duplicatas BR1/BR2 e o corte de passado explicam a diferenca).
 //
 // O CASAMENTO POR NOME e o coracao deste arquivo. O addon chama o canal de um
 // jeito ("RecordTV Paulista"), a grade de outro ("Record TV", "RECORD").
@@ -36,8 +48,23 @@
 // A grade fala ~3,5 dias para a frente; renovar duas vezes por dia cobre a
 // virada sem baixar ~1,4 MB a cada abertura do app.
 #define EPG_CACHE_SEG (12 * 3600)
-// Evento que terminou ha mais tempo que isto nao interessa a "agora/a seguir".
-#define EPG_JANELA_PASSADO 7200
+// Evento que terminou ha mais tempo que isto e descartado na carga. Era 2 h
+// quando o guia so mostrava "agora/a seguir"; com a grade de varios dias o
+// dia de ontem interessa. 48 h e um TETO para cache velho de outra sessao
+// (o arquivo em si nunca passou de 1,8 dias para tras — medido), nao um
+// recorte do que a fonte entrega.
+#define EPG_JANELA_PASSADO (48 * 3600)
+// Os vetores da grade CRESCEM sob demanda a partir destes tamanhos e param
+// nestes tetos. Medido com arquivo fresco: ~72 mil insercoes brutas e 1,46 MB
+// de titulos; os tetos dao ~5x de folga e limitam o dano no heap fixo de
+// 256 MiB do Tizen se uma fonte inchar (programa alem do teto e descartado
+// com uma linha de log, nunca estouro). Antes eram 90000 evs e 8 MiB de
+// arena alocados FIXOS por grade — 11,3 MB, duas vezes durante a troca W/P,
+// para ~3 MB de dados.
+#define EPG_EVS_INI   32768
+#define EPG_EVS_MAX   400000
+#define EPG_ARENA_INI (1L << 20)
+#define EPG_ARENA_MAX (16L << 20)
 
 // BR1/BR2 cobrem o FrostView. PT1/MX1/AR1 entram para os OUTROS addons de
 // canal que o dono possa instalar — Portugal e America Latina sao os
@@ -64,10 +91,18 @@ typedef struct {
   long evIni, evN;                    // janela no vetor de eventos
 } EpgCanal;
 
+// `tit` e DESLOCAMENTO na arena, nao ponteiro: a arena cresce por realloc
+// durante a carga e um ponteiro guardado aqui apontaria para o bloco velho.
+// O ponteiro e resolvido na consulta (P.arena + tit), quando a arena ja nao
+// muda. Custo MEDIDO no Mac (64 bits): 32 B por evento, mais 20,2 B de titulo
+// na arena em media (1464717 B / 72257 programas). MEDIDO tambem no wasm32
+// com o emsdk upstream 6.0.9: 32 B (time_t de 8 bytes alinha a 8). NAO
+// medido: o fork Emscripten da Samsung que o tizen.sh usa, e o ARM 32 bits
+// da LG (16 B se o time_t de la for de 4 bytes — suposicao).
 typedef struct {
   int    canal;
   time_t ini, fim;
-  const char *tit;                    // dentro da arena da grade
+  long   tit;
 } EpgEv;
 
 // DOIS CONJUNTOS, e a separacao e o que torna a concorrencia segura:
@@ -329,12 +364,45 @@ static void wChavePorId(EpgGrade *g, int i) {
   wAddChave(g, i, tmp);
 }
 
-static char *wTitulo(EpgGrade *g, const char *s) {
-  long n = (long)strlen(s) + 1;
-  char *d;
-  if (g->arenaN + n >= g->arenaCap) return NULL;
-  d = g->arena + g->arenaN;
-  memcpy(d, s, (size_t)n); g->arenaN += n;
+// Reserva os vetores iniciais de uma grade em construcao. 0 = sem memoria.
+static int wAbrir(EpgGrade *g) {
+  memset(g, 0, sizeof *g);
+  g->capEvs = EPG_EVS_INI;
+  g->evs = malloc(sizeof(EpgEv) * (size_t)g->capEvs);
+  g->arenaCap = EPG_ARENA_INI;
+  g->arena = malloc((size_t)g->arenaCap);
+  if (!g->evs || !g->arena) { free(g->evs); free(g->arena); g->evs = NULL; g->arena = NULL; return 0; }
+  return 1;
+}
+
+// Garante lugar para mais um evento, dobrando ate o teto. 0 = teto ou sem
+// memoria; quem chamou descarta o programa (e a grade continua valida).
+static int wReservarEv(EpgGrade *g) {
+  if (g->nEvs < g->capEvs) return 1;
+  if (g->capEvs >= EPG_EVS_MAX) return 0;
+  { int cap = g->capEvs * 2 > EPG_EVS_MAX ? EPG_EVS_MAX : g->capEvs * 2;
+    EpgEv *no = realloc(g->evs, sizeof(EpgEv) * (size_t)cap);
+    if (!no) return 0;
+    g->evs = no; g->capEvs = cap; }
+  return 1;
+}
+
+// Copia o titulo para a arena e devolve o deslocamento, ou -1 se nao coube
+// (teto ou sem memoria). Dobra a arena quando precisa — por isso quem guarda
+// o resultado guarda deslocamento, nunca ponteiro (ver EpgEv).
+static long wTitulo(EpgGrade *g, const char *s) {
+  long n = (long)strlen(s) + 1, d;
+  if (g->arenaN + n > g->arenaCap) {
+    long cap = g->arenaCap;
+    while (cap < g->arenaN + n && cap < EPG_ARENA_MAX) cap *= 2;
+    if (cap > EPG_ARENA_MAX) cap = EPG_ARENA_MAX;
+    if (cap < g->arenaN + n) return -1;
+    { char *no = realloc(g->arena, (size_t)cap);
+      if (!no) return -1;
+      g->arena = no; g->arenaCap = cap; }
+  }
+  d = g->arenaN;
+  memcpy(g->arena + d, s, (size_t)n); g->arenaN += n;
   return d;
 }
 
@@ -365,7 +433,7 @@ static void wFechar(EpgGrade *g) {
 // BR1 e BR2 passam pelos mesmos vetores). O buffer e escrito no processo.
 static int wProcessar(EpgGrade *g, char *xml) {
   char *p = xml, *fecha;
-  int n = 0;
+  int n = 0, descartados = 0;
   time_t agora = time(NULL);
 
   // PASSO 1: canais.
@@ -422,14 +490,17 @@ static int wProcessar(EpgGrade *g, char *xml) {
     t = strstr(p, "<title");
     if (t && t < fecha) {
       char *a = strchr(t, '>'), *b = strstr(t, "</title>");
-      if (a && b && a < b && g->nEvs < g->capEvs) {
+      if (a && b && a < b) {
+        // Titulo maior que isto nao existe na fonte (maximo medido: 106 B);
+        // o corte e so protecao contra XML malformado.
         char titulo[240]; int tn = (int)(b - (a + 1));
-        const char *copia;
+        long copia;
         if (tn > (int)sizeof titulo - 1) tn = sizeof titulo - 1;
         memcpy(titulo, a + 1, (size_t)tn); titulo[tn] = 0;
         desentidade(titulo);
-        copia = wTitulo(g, titulo);
-        if (copia) {
+        if (!wReservarEv(g) || (copia = wTitulo(g, titulo)) < 0) {
+          descartados++;
+        } else {
           g->evs[g->nEvs].canal = ci;
           g->evs[g->nEvs].ini   = ini;
           g->evs[g->nEvs].fim   = fimp;
@@ -439,6 +510,12 @@ static int wProcessar(EpgGrade *g, char *xml) {
       }
     }
     p = fecha + 12;
+  }
+  if (descartados) {
+    // Bateu no teto (EPG_EVS_MAX/EPG_ARENA_MAX) ou faltou memoria. Uma linha,
+    // nao uma por programa: o sintoma no guia e "grade acaba antes do fim".
+    printf("[epg] %d programas descartados: teto de memoria da grade\n", descartados);
+    fflush(stdout);
   }
   return n;
 }
@@ -520,10 +597,7 @@ static char *obterXml(int i, long *nOut) {
 static void *fioEpg(void *u) {
   int i, ok = 0;
   (void)u;
-  memset(&W, 0, sizeof W);
-  W.capEvs = 90000; W.evs = malloc(sizeof(EpgEv) * (size_t)W.capEvs);
-  W.arenaCap = 8L << 20; W.arena = malloc((size_t)W.arenaCap);
-  if (!W.evs || !W.arena) { pendPronto = 1; pendOk = 0; return NULL; }
+  if (!wAbrir(&W)) { pendPronto = 1; pendOk = 0; return NULL; }
   for (i = 0; i < EPG_N_FONTES; i++) {
     long n = 0;
     char *xml = obterXml(i, &n);
@@ -563,7 +637,15 @@ void epg_passo(void) {
     pendPronto = 0;
     fioVivo = 0;
     pthread_mutex_unlock(&trava);
-    printf("[epg] grade publicada: %d canais, %d programas\n", P.nCanais, P.nEvs);
+    // A cobertura sai no log para a proxima medicao nao depender de script:
+    // "+3,4 d" e o horizonte que a fonte entregou nesta carga.
+    { time_t ji = 0, jf = 0, ag = time(NULL);
+      epg_janela_total(&ji, &jf);
+      printf("[epg] grade publicada: %d canais, %d programas, %ld B de titulo; "
+             "cobre de %+.1f d a %+.1f d\n",
+             P.nCanais, P.nEvs, P.arenaN,
+             jf ? (double)(ji - ag) / 86400.0 : 0.0,
+             jf ? (double)(jf - ag) / 86400.0 : 0.0); }
     fflush(stdout);
     return;
   }
@@ -574,32 +656,52 @@ void epg_passo(void) {
     epg_iniciar();
 }
 
+// A grade lista canais SEM programa: a BR1 real tem 266 <channel> e so 105
+// com <programme> (medido em 2026-09-18). "Globo RJ" casava exato com
+// "São.Paulo/SP..Globo.HD.br", que nao tem grade, enquanto "Globo.br" — a
+// MESMA chave "globo" — tinha 3,5 dias de programacao; o guia mostrava
+// "AO VIVO" para a Globo. Quando a regra devolve um canal vazio, este passo
+// procura outro canal com a mesma chave que tenha programa; se nao ha, fica
+// o vazio (o teste de molde casa canais sem programa de proposito, e um
+// casamento vazio nao e pior que nenhum). Chamar com a trava tomada.
+static int comGrade(int i, const char *chave) {
+  int j, c;
+  if (i < 0 || P.canais[i].evN > 0 || !chave) return i;
+  for (j = 0; j < P.nCanais; j++) {
+    if (P.canais[j].evN <= 0) continue;
+    for (c = 0; c < P.canais[j].nChaves; c++)
+      if (!strcmp(chave, P.canais[j].chaves[c])) return j;
+  }
+  return i;
+}
+
 int epg_match(const char *nome) {
   char k1[96], k2[96], prim[48];
   int i, j, c, melhor = -1;
   long melhorTam = 0, t;
+  const char *chave = NULL;             // a chave da grade que casou
   if (estado != EPG_PRONTO || !nome || !nome[0]) return -1;
   normChave(nome, k1, sizeof k1, 0, NULL, 0);
   normChave(nome, k2, sizeof k2, 1, prim, sizeof prim);
   if (!k1[0]) return -1;
 
   pthread_mutex_lock(&trava);
+  #define DEVOLVE(idx, kv) do { int r_ = comGrade((idx), (kv)); \
+    pthread_mutex_unlock(&trava); return r_; } while (0)
   // 1. exata
   for (i = 0; i < P.nCanais; i++)
     for (j = 0; j < P.canais[i].nChaves; j++)
       if (!strcmp(k1, P.canais[i].chaves[j]) ||
-          (k2[0] && !strcmp(k2, P.canais[i].chaves[j]))) {
-        pthread_mutex_unlock(&trava); return i;
-      }
+          (k2[0] && !strcmp(k2, P.canais[i].chaves[j])))
+        DEVOLVE(i, P.canais[i].chaves[j]);
 
   // 2. apelido
   for (j = 0; j < (int)(sizeof ALIAS / sizeof ALIAS[0]); j++)
     if (!strcmp(k1, ALIAS[j][0]) || (k2[0] && !strcmp(k2, ALIAS[j][0]))) {
       for (i = 0; i < P.nCanais; i++)
         for (c = 0; c < P.canais[i].nChaves; c++)
-          if (!strcmp(ALIAS[j][1], P.canais[i].chaves[c])) {
-            pthread_mutex_unlock(&trava); return i;
-          }
+          if (!strcmp(ALIAS[j][1], P.canais[i].chaves[c]))
+            DEVOLVE(i, ALIAS[j][1]);
     }
 
   // 3. a grade e prefixo do canal ("recordtvpaulista" -> "recordtv")
@@ -609,9 +711,9 @@ int epg_match(const char *nome) {
       long tc = (long)strlen(P.canais[i].chaves[j]);
       if (tc >= 4 && tc < t &&
           !strncmp(k1, P.canais[i].chaves[j], (size_t)tc) && tc > melhorTam)
-        { melhor = i; melhorTam = tc; }
+        { melhor = i; melhorTam = tc; chave = P.canais[i].chaves[j]; }
     }
-  if (melhor >= 0) { pthread_mutex_unlock(&trava); return melhor; }
+  if (melhor >= 0) DEVOLVE(melhor, chave);
 
   // 4. o canal e prefixo de UMA SO chave da grade (ambigua nao casa)
   { int nCand = 0;
@@ -620,9 +722,9 @@ int epg_match(const char *nome) {
         for (j = 0; j < P.canais[i].nChaves; j++)
           if ((long)strlen(P.canais[i].chaves[j]) > t &&
               !strncmp(P.canais[i].chaves[j], k1, (size_t)t) && melhor != i) {
-            melhor = i; nCand++;
+            melhor = i; nCand++; chave = P.canais[i].chaves[j];
           }
-    if (nCand == 1) { pthread_mutex_unlock(&trava); return melhor; } }
+    if (nCand == 1) DEVOLVE(melhor, chave); }
 
   // 5. uma chave comprida da grade aparece INTEIRA dentro do nome do canal:
   // "TV Cidade - RecordTV" carrega "recordtv" no fim. Vence a chave mais
@@ -642,7 +744,7 @@ int epg_match(const char *nome) {
                  !(melhorChave && !strcmp(melhorChave, kv)))
           ambig = 1;
       }
-    if (melhor >= 0 && !ambig) { pthread_mutex_unlock(&trava); return melhor; } }
+    if (melhor >= 0 && !ambig) DEVOLVE(melhor, melhorChave); }
 
   // 6. o primeiro token util do canal E a chave inteira da grade: e a regra
   // da afiliada regional — "SBT RJ"/"SBT Thathi Vale" herdam a grade da
@@ -650,53 +752,113 @@ int epg_match(const char *nome) {
   if (prim[0] && (long)strlen(prim) >= 3)
     for (i = 0; i < P.nCanais; i++)
       for (j = 0; j < P.canais[i].nChaves; j++)
-        if (!strcmp(prim, P.canais[i].chaves[j])) {
-          pthread_mutex_unlock(&trava); return i;
-        }
+        if (!strcmp(prim, P.canais[i].chaves[j]))
+          DEVOLVE(i, P.canais[i].chaves[j]);
+  #undef DEVOLVE
   pthread_mutex_unlock(&trava);
   return -1;
 }
 
+// Copia o evento m da grade publicada para *p, resolvendo o titulo na arena.
+// Chamar com a trava tomada.
+static void pubProg(long m, EpgProg *p) {
+  p->ini = P.evs[m].ini; p->fim = P.evs[m].fim; p->titulo = P.arena + P.evs[m].tit;
+}
+
+// Primeiro evento do canal que ainda nao terminou em `t` (fim > t), ou -1.
+// Os eventos de um canal estao ordenados por inicio e, na pratica, nao se
+// sobrepoem (a fonte emite uma sequencia), entao "fim > t" e monotono e a
+// busca binaria vale. Chamar com a trava tomada.
+static long pubPrimeiroVivo(int epg, time_t t) {
+  long lo = P.canais[epg].evIni, hi = lo + P.canais[epg].evN - 1, m = -1;
+  while (lo <= hi) {
+    long mid = (lo + hi) >> 1;
+    if (P.evs[mid].fim <= t) lo = mid + 1;
+    else { m = mid; hi = mid - 1; }
+  }
+  return m;
+}
+
 int epg_agora(int epg, time_t agora, EpgProg *p) {
-  long lo, hi;
+  long m;
   int ok = 0;
   if (epg < 0 || epg >= P.nCanais) return 0;
   pthread_mutex_lock(&trava);
-  lo = P.canais[epg].evIni; hi = lo + P.canais[epg].evN - 1;
-  while (lo <= hi) {
-    long m = (lo + hi) >> 1;
-    if (P.evs[m].fim <= agora) lo = m + 1;
-    else if (P.evs[m].ini > agora) hi = m - 1;
-    else {
-      p->ini = P.evs[m].ini; p->fim = P.evs[m].fim; p->titulo = P.evs[m].tit;
-      ok = 1; break;
-    }
-  }
+  m = pubPrimeiroVivo(epg, agora);
+  if (m >= 0 && P.evs[m].ini <= agora) { pubProg(m, p); ok = 1; }
   pthread_mutex_unlock(&trava);
   return ok;
 }
 
 int epg_proximo(int epg, time_t agora, int k, EpgProg *p) {
-  long lo, hi, m = -1, topo;
+  long m, topo;
   int ok = 0;
   if (epg < 0 || epg >= P.nCanais || k < 0) return 0;
   pthread_mutex_lock(&trava);
-  lo = P.canais[epg].evIni; topo = lo + P.canais[epg].evN;
-  hi = topo - 1;
-  // primeiro evento que ainda nao terminou
-  while (lo <= hi) {
-    long mid = (lo + hi) >> 1;
-    if (P.evs[mid].fim <= agora) lo = mid + 1;
-    else { m = mid; hi = mid - 1; }
-  }
+  topo = P.canais[epg].evIni + P.canais[epg].evN;
+  m = pubPrimeiroVivo(epg, agora);
   // m = programa no ar (ou o primeiro futuro); o "proximo" pula o que esta no ar
   if (m >= 0 && P.evs[m].ini <= agora) m++;
-  m += k;
-  if (m >= 0 && m < topo) {
-    p->ini = P.evs[m].ini; p->fim = P.evs[m].fim; p->titulo = P.evs[m].tit; ok = 1;
+  if (m >= 0) {
+    m += k;
+    if (m < topo) { pubProg(m, p); ok = 1; }
   }
   pthread_mutex_unlock(&trava);
   return ok;
+}
+
+int epg_janela(int epg, time_t *ini, time_t *fim) {
+  int ok = 0;
+  if (epg < 0 || epg >= P.nCanais) return 0;
+  pthread_mutex_lock(&trava);
+  if (P.canais[epg].evN > 0) {
+    long a = P.canais[epg].evIni, b = a + P.canais[epg].evN - 1;
+    // O ultimo por INICIO e quase sempre o ultimo por fim; se a fonte trouxer
+    // um evento longo antes de um curto, `fim` sai menor do que o real — erro
+    // para o lado conservador ("cobre menos"), nunca afirma cobertura que
+    // nao tem.
+    if (ini) *ini = P.evs[a].ini;
+    if (fim) *fim = P.evs[b].fim;
+    ok = 1;
+  }
+  pthread_mutex_unlock(&trava);
+  return ok;
+}
+
+int epg_janela_total(time_t *ini, time_t *fim) {
+  int i, ok = 0;
+  time_t a = 0, b = 0;
+  pthread_mutex_lock(&trava);
+  for (i = 0; i < P.nCanais; i++) {
+    if (P.canais[i].evN <= 0) continue;
+    { long x = P.canais[i].evIni, y = x + P.canais[i].evN - 1;
+      if (!ok || P.evs[x].ini < a) a = P.evs[x].ini;
+      if (!ok || P.evs[y].fim > b) b = P.evs[y].fim;
+      ok = 1; }
+  }
+  pthread_mutex_unlock(&trava);
+  if (ini) *ini = a;
+  if (fim) *fim = b;
+  return ok;
+}
+
+int epg_total(int epg) {
+  if (epg < 0 || epg >= P.nCanais) return 0;
+  return (int)P.canais[epg].evN;
+}
+
+int epg_faixa(int epg, time_t de, time_t ate, EpgProg *out, int cap) {
+  long m, topo;
+  int n = 0;
+  if (epg < 0 || epg >= P.nCanais || ate <= de) return 0;
+  pthread_mutex_lock(&trava);
+  topo = P.canais[epg].evIni + P.canais[epg].evN;
+  m = pubPrimeiroVivo(epg, de);           // primeiro com fim > de
+  if (m >= 0)
+    for (; m < topo && P.evs[m].ini < ate; m++, n++)
+      if (out && n < cap) pubProg(m, &out[n]);
+  pthread_mutex_unlock(&trava);
+  return n;
 }
 
 // --- teste ----------------------------------------------------------------------------
@@ -711,9 +873,7 @@ void epg_teste_limpar(void) {
 int epg_xml_processar(char *xml) {
   int n;
   epg_teste_limpar();
-  W.capEvs = 90000; W.evs = malloc(sizeof(EpgEv) * (size_t)W.capEvs);
-  W.arenaCap = 8L << 20; W.arena = malloc((size_t)W.arenaCap);
-  if (!W.evs || !W.arena) return -1;
+  if (!wAbrir(&W)) return -1;
   n = wProcessar(&W, xml);
   wFechar(&W);
   pthread_mutex_lock(&trava);
