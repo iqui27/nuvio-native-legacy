@@ -59,6 +59,27 @@ fi
 for f in index.html index.js index.wasm config.xml icon.png; do
   [ -s "$ESTAGIO/$f" ] || { echo "tizen-wgt.sh: FALTA $f no estagio" >&2; exit 1; }
 done
+# O GLUE TEM DE ESTAR REBAIXADO PARA CHROME76.
+#
+# tools/tizen.sh passa o index.js pelo esbuild porque o Chromium da TV nao
+# entende "?.", "??" nem "||=" — com eles a TV instala o pacote, abre e fica
+# PRETA, sem erro em lugar nenhum.
+#
+# Esta guarda existe porque o passo pode falhar SEM derrubar o estagio. Em
+# 17/09 o cache do npm apontava para um SSD desmontado: o tizen.sh abortou
+# certo (set -e, exit 1), mas deixou build/tizen/index.js com 109 ocorrencias
+# de sintaxe nova. Nada aqui reclamaria disso — os arquivos existem e nao estao
+# vazios —, e o .wgt sairia pronto para dar tela preta. Rodar o empacotador
+# depois de um build que falhou e o caminho normal de quem nao viu o erro
+# passar na tela.
+NOVA=$(grep -oE '\?\.|\?\?|\|\|=' "$ESTAGIO/index.js" 2>/dev/null | wc -l | tr -d ' ')
+if [ "${NOVA:-0}" -gt 0 ]; then
+  echo "tizen-wgt.sh: index.js tem $NOVA ocorrencias de sintaxe pos-chrome76 —" >&2
+  echo "  o glue NAO foi rebaixado e este .wgt daria tela preta na TV." >&2
+  echo "  Rode tools/tizen.sh de novo e confira a linha 'glue rebaixado'." >&2
+  exit 1
+fi
+
 # A arte empacotada entra pelo index.data (--preload-file em tools/tizen.sh), que
 # tools/tizen-art.sh ja filtra: sem collections/, sem cache/, sem *.txt de
 # credencial. Aqui so se confere que ninguem contornou aquilo copiando a mao.
@@ -91,9 +112,22 @@ MANTER="${NUVIO_WGT_MANTER:-5}"
 if [ "$MANTER" -gt 0 ] 2>/dev/null; then
   # -t ordena por mtime (mais novo primeiro); o tail corta a cauda velha. O
   # `|| true` cobre o caso de nao haver nenhum, em que o ls falha.
-  VELHOS=$(ls -t NuvioTV-[0-9]*.[0-9]*.[0-9]*.wgt 2>/dev/null | tail -n +$((MANTER + 1)) || true)
-  for v in $VELHOS; do
-    rm -f "$v" && echo "tizen-wgt.sh: rotacao — apagado $v"
+  # `while read`, e nao `for v in $(...)`: o for quebra em ESPACO, entao um
+  # "NuvioTV-1.0.49 beta.wgt" virava dois fragmentos, `rm -f` de fragmento
+  # inexistente devolve 0 e o log imprimia "apagado" duas vezes sem ter apagado
+  # nada. Log que mente sobre o que apagou e pior que nao ter log.
+  #
+  # `rm -f` tambem devolve 0 para arquivo ausente, entao o teste e a AUSENCIA
+  # depois da remocao, nao o codigo de saida.
+  ls -t NuvioTV-[0-9]*.[0-9]*.[0-9]*.wgt 2>/dev/null | tail -n +$((MANTER + 1)) |
+  while IFS= read -r v; do
+    [ -n "$v" ] || continue
+    rm -f -- "$v"
+    if [ -e "$v" ]; then
+      echo "tizen-wgt.sh: rotacao — NAO consegui apagar $v" >&2
+    else
+      echo "tizen-wgt.sh: rotacao — apagado $v"
+    fi
   done
 fi
 
