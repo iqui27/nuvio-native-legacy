@@ -9,6 +9,7 @@
 // Roda por tests/webp-tizen.sh, que serve a pagina com COOP/COEP (sem os dois
 // cabecalhos nao ha SharedArrayBuffer, logo nao ha pthread, logo nao ha teste).
 #include "../src/webp.h"
+#include "../src/jpegrapido.h"
 #include <pthread.h>
 #include <stdio.h>
 
@@ -30,6 +31,24 @@ static void *fioDeDecode(void *arg) {
   // Nao e WebP: NULL sem alarde, o mesmo contrato do teste nativo.
   if (webp_carregar("/nao-e-webp.txt") != NULL) printf("FALHOU: aceitou nao-webp\n");
   else printf("webp: tudo ok\n");
+  // JPEG PELO NAVEGADOR, JA REDUZIDO: um 640 pedido a 320 sai 320 de largura
+  // e diz que o arquivo tinha 640. E o caminho que substitui o IMG_Load em
+  // software no Tizen (ver jpegrapido.c).
+  { int ow = 0, oh = 0;
+    s = jpeg_rapido_carregar("/amostra.jpg", 320, &ow, &oh);
+    if (!s) printf("FALHOU: jpeg_rapido_carregar devolveu NULL\n");
+    else {
+      printf("%s jpeg %dx%d (arquivo %dx%d)\n",
+             (s->w == 320 && ow == 640 && oh > 0 && s->h == (oh * 320 + ow / 2) / ow) ? "ok " : "FALHOU:",
+             s->w, s->h, ow, oh);
+      SDL_FreeSurface(s);
+    }
+    // Pedido maior que o arquivo: sai inteiro.
+    s = jpeg_rapido_carregar("/amostra.jpg", 4000, &ow, &oh);
+    if (!s) printf("FALHOU: jpeg inteiro devolveu NULL\n");
+    else { printf("%s jpeg inteiro %dx%d\n", s->w == 640 ? "ok " : "FALHOU:", s->w, s->h); SDL_FreeSurface(s); }
+    if (jpeg_rapido_carregar("/nao-e-webp.txt", 320, &ow, &oh) != NULL) printf("FALHOU: aceitou nao-imagem\n");
+    else printf("jpeg: tudo ok\n"); }
   return NULL;
 }
 

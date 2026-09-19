@@ -48,10 +48,13 @@ static void     soltar(uint8_t *px);
 
 static int jaContou;
 
-static uint8_t *decodificar(const unsigned char *dados, size_t n, int *lw, int *lh) {
+uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char *mime,
+                               int largMax, int *lw, int *lh, int *ow, int *oh) {
   int32_t *job;
   int esperou = 0, w, h;
   uint8_t *px;
+  if (ow) *ow = 0;
+  if (oh) *oh = 0;
 
   // Chamado do fio principal nao da: ele nao pode bloquear em Atomics.wait, e
   // se pudesse seria ele mesmo quem deixaria de rodar o `then`. Hoje o unico
@@ -63,7 +66,7 @@ static uint8_t *decodificar(const unsigned char *dados, size_t n, int *lw, int *
   // embaixo, esta funcao volta mas o `then` do JS pode escrever DEPOIS — numa
   // pilha ja reaproveitada isso e corrupcao silenciosa. Vazar 16 bytes num
   // caso que nao deve acontecer custa menos.
-  job = (int32_t *)calloc(4, sizeof(int32_t));
+  job = (int32_t *)calloc(6, sizeof(int32_t));
   if (!job) return NULL;
 
   MAIN_THREAD_ASYNC_EM_ASM({
@@ -74,37 +77,52 @@ static uint8_t *decodificar(const unsigned char *dados, size_t n, int *lw, int *
     var pJob = $0 >> 2;
     var pDados = $1;
     var n = $2;
+    var mime = UTF8ToString($3);
+    var largMax = $4;
     // `slice` (e nao `subarray`) de proposito: copia para um ArrayBuffer
     // comum. O Blob nao aceita vista sobre SharedArrayBuffer, e a copia
     // tambem desprende o dado da vida do buffer em C.
     var bytes = HEAPU8.slice(pDados, pDados + n);
-    var fim = function (ptr, w, h) {
+    var fim = function (ptr, w, h, ow, oh) {
       HEAP32[pJob + 1] = w;
       HEAP32[pJob + 2] = h;
       HEAP32[pJob + 3] = ptr;
+      HEAP32[pJob + 4] = ow;
+      HEAP32[pJob + 5] = oh;
       // seq-cst: publica os tres campos acima antes do estado virar 1.
       Atomics.store(HEAP32, pJob, 1);
       Atomics.notify(HEAP32, pJob);
     };
     try {
-      createImageBitmap(new Blob([bytes], { type: 'image/webp' })).then(function (bmp) {
-        var w = bmp.width;
-        var h = bmp.height;
+      createImageBitmap(new Blob([bytes], { type: mime })).then(function (bmp) {
+        var ow = bmp.width;
+        var oh = bmp.height;
+        var w = ow;
+        var h = oh;
         var ptr = 0;
+        // REDUZ NO CANVAS, nao no heap: o bitmap inteiro vive na memoria do
+        // navegador; so o tamanho pedido atravessa para o WASM. Um fundo de
+        // 3840x2160 pedido a 1280 custa 3,7 MB no heap em vez de 33.
+        if (largMax > 0 && ow > largMax) {
+          w = largMax;
+          h = Math.max(1, Math.round(oh * largMax / ow));
+        }
         if (w > 0 && h > 0) {
           var cv = document.createElement('canvas');
           cv.width = w; cv.height = h;
           var cx = cv.getContext('2d');
-          cx.drawImage(bmp, 0, 0);
+          cx.imageSmoothingEnabled = true;
+          if ('imageSmoothingQuality' in cx) cx.imageSmoothingQuality = 'high';
+          cx.drawImage(bmp, 0, 0, w, h);
           var d = cx.getImageData(0, 0, w, h).data;
           ptr = _malloc(w * h * 4);
           if (ptr) HEAPU8.set(d, ptr);
         }
         if (bmp.close) bmp.close();
-        fim(ptr, ptr ? w : 0, ptr ? h : 0);
-      }).catch(function () { fim(0, 0, 0); });
-    } catch (e) { fim(0, 0, 0); }
-  }, (int)(intptr_t)job, (int)(intptr_t)dados, (int)n);
+        fim(ptr, ptr ? w : 0, ptr ? h : 0, ow, oh);
+      }).catch(function () { fim(0, 0, 0, 0, 0); });
+    } catch (e) { fim(0, 0, 0, 0, 0); }
+  }, (int)(intptr_t)job, (int)(intptr_t)dados, (int)n, (int)(intptr_t)mime, (int)largMax);
 
   while (__atomic_load_n(&job[0], __ATOMIC_ACQUIRE) == 0) {
     // Fatias de 250 ms em vez de uma espera longa: o -EWOULDBLOCK da corrida
@@ -122,14 +140,20 @@ static uint8_t *decodificar(const unsigned char *dados, size_t n, int *lw, int *
   w  = job[1];
   h  = job[2];
   px = (uint8_t *)(intptr_t)job[3];
+  if (ow) *ow = job[4];
+  if (oh) *oh = job[5];
   free(job);
   if (!px || w < 1 || h < 1) { free(px); return NULL; }
   if (!jaContou) {
     jaContou = 1;
-    printf("[webp] navegador decodificou o primeiro: %dx%d\n", w, h);
+    printf("[webp] navegador decodificou o primeiro: %dx%d (%s)\n", w, h, mime);
   }
   *lw = w; *lh = h;
   return px;
+}
+
+static uint8_t *decodificar(const unsigned char *dados, size_t n, int *lw, int *lh) {
+  return navegador_decodificar(dados, n, "image/webp", 0, lw, lh, NULL, NULL);
 }
 
 static void soltar(uint8_t *px) { free(px); }   // o _malloc do JS e este malloc

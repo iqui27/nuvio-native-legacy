@@ -255,8 +255,11 @@ if [ "$1" = "--build" ] || [ "$2" = "--build" ]; then exit 0; fi
 # ares-install tambem nao serve aqui: ele espera prisoner@<ip>:9922 do Developer
 # Mode, e esta TV nao roda o Developer Mode — e root na 22 com senha alpine.
 APPDIR=/media/developer/apps/usr/palm/applications/$APP_ID
-SSH="sshpass -p $TV_PASS ssh -o StrictHostKeyChecking=no"
-SCP="sshpass -p $TV_PASS scp -o StrictHostKeyChecking=no -q"
+# NUVIO_SSH_OPTS: o ~/.ssh/config manda a TV por ProxyJump zimaos (Tailscale);
+# com o Tailscale parado o salto morre em "Operation timed out" e a TV parece
+# fora. Na mesma LAN: NUVIO_SSH_OPTS="-o ProxyJump=none" vai direto.
+SSH="sshpass -p $TV_PASS ssh -o StrictHostKeyChecking=no ${NUVIO_SSH_OPTS:-}"
+SCP="sshpass -p $TV_PASS scp -o StrictHostKeyChecking=no -q ${NUVIO_SSH_OPTS:-}"
 
 # O DIRETORIO PODE NAO EXISTIR: o dono pode ter desinstalado o app pela TV, e
 # ai todo scp abaixo falha com "No such file or directory" — que foi exatamente

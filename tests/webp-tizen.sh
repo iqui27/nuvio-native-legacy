@@ -14,6 +14,9 @@
 #   ok  webp 1477x980 formato=ABGR8888
 #       pixel central rgba=229,9,19,255
 #   webp: tudo ok
+#   ok  jpeg 320x180 (arquivo 640x360)
+#   ok  jpeg inteiro 640x360
+#   jpeg: tudo ok
 #
 # Node nao serve: nao tem createImageBitmap nem canvas.
 set -e
@@ -26,13 +29,14 @@ SAIDA=${NUVIO_SAIDA:-build/teste-webp}
 mkdir -p "$SAIDA"
 echo "isto nao e webp" > "$SAIDA/nao-e-webp.txt"
 
-emcc tests/webp_tizen.c src/webp.c -o "$SAIDA/index.html" -O1 \
+emcc tests/webp_tizen.c src/webp.c src/jpegrapido.c -o "$SAIDA/index.html" -O1 \
   -sUSE_SDL=2 -sWASM_BIGINT=0 \
   -pthread -sPTHREAD_POOL_SIZE=2 \
   -sINITIAL_MEMORY=134217728 -sALLOW_MEMORY_GROWTH=0 \
   -sEXPORTED_FUNCTIONS='["_main","_malloc","_free"]' \
   -sEXIT_RUNTIME=0 \
   --preload-file tests/amostra.webp@/amostra.webp \
+  --preload-file tests/amostra.jpg@/amostra.jpg \
   --preload-file "$SAIDA/nao-e-webp.txt"@/nao-e-webp.txt
 
 PORTA=${NUVIO_PORTA:-8791}
