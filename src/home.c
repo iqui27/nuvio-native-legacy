@@ -523,9 +523,11 @@ static void desenhaArteAusente(GfxRect r, float raio, const CatItem *item,
 // subir para a versao grande aqui seria baixar 3840 px para desenhar 419.
 static const char *arte_por_formato(const CatItem *item, int deitado) {
   if (!item) return NULL;
-  // Deitado pede w780 quando a url e do TMDB (artehero_url_card_deitado): o
-  // card desenha 736/768, e o w1280 era 2,7x mais pixels por nada.
-  if (deitado) return artehero_url_card_deitado(item);
+  // Deitado e a url guardada (w1280 no TMDB, 1920 no metahub) — o MESMO
+  // arquivo que o heroi e o detalhe vao promover (artehero_url): um download
+  // por titulo. O decode escalado (jpegrapido.c) faz o card custar pouco.
+  if (deitado) return item->backdrop[0] ? item->backdrop
+                                      : (item->poster[0] ? item->poster : NULL);
   return item->poster[0] ? item->poster
                          : (item->backdrop[0] ? item->backdrop : NULL);
 }

@@ -51,37 +51,6 @@ const char *artehero_url_card(const CatItem *item) {
   return NULL;
 }
 
-// FUNDO DE CARD EM w780, quando a url e do TMDB.
-//
-// A descoberta guarda o fundo como w1280 (1280x720). O card deitado desenha
-// 736 px, 768 no foco: w780 (780x439) cobre os dois 1:1, com 2,7x menos
-// pixels para baixar e decodificar — MEDIDO na C9 em 19/09: cada w1280 custava
-// 300 a 430 ms no fio de decode, e uma fileira sao vinte deles. A url da
-// descoberta nao muda (o heroi e o detalhe continuam subindo dela para a
-// versao grande, ver artehero_url); so o card pede menor. Ponteiro estatico,
-// como artehero_url.
-// ANEL de 64 e nao um buffer so: home.c guarda o ponteiro do card FOCADO em
-// itemFoco.arte e app.c o le depois de a fileira inteira ter sido desenhada —
-// com um buffer, ele apontaria para a url do ultimo card da fileira.
-#define CARD_ANEL 64
-const char *artehero_url_card_deitado(const CatItem *item) {
-  static char anel[CARD_ANEL][512];
-  static int vez;
-  char *buf;
-  const char *b, *p;
-  if (!item) return NULL;
-  b = item->backdrop[0] ? item->backdrop : item->poster[0] ? item->poster : NULL;
-  if (!b) return NULL;
-  if (qualidadeImg == 2) return b;   // alta: o que o catalogo guardou, inteiro
-  p = strstr(b, "/t/p/w1280/");
-  if (!p) return b;
-  buf = anel[vez]; vez = (vez + 1) % CARD_ANEL;
-  { size_t pre = (size_t)(p - b);
-    if (pre >= sizeof anel[0] - 64) return b;
-    snprintf(buf, sizeof anel[0], "%.*s/t/p/w780/%s", (int)pre, b, p + strlen("/t/p/w1280/")); }
-  return buf;
-}
-
 const char *artehero_url_episodio(const CatItem *item) {
   static char buf[512];
   if (!item) return NULL;
@@ -127,20 +96,42 @@ const char *artehero_url(const CatItem *item) {
   static char buf[512];
   const char *b;
   if (!item) return NULL;
-  // BAIXA: a url guardada, sem subir de tamanho. O fundo montado por id (o
-  // caso "nao ha fundo nenhum") continua valendo — ali a alternativa e o cartaz
-  // esticado, que nao e mais leve, e sim mais feio.
-  if (qualidadeImg == 0 && item->backdrop[0]) return item->backdrop;
-  // METAHUB PRIMEIRO, QUANDO HA ID DO IMDB. Medido: o fundo do metahub e
-  // 1920x1080 e pesa ~850 KB; o `original` do TMDB para o mesmo titulo e
-  // 3840x2160. Os dois terminam desenhados a 1920 — o teto do cache reduz o
-  // segundo — entao o TMDB custa QUATRO VEZES os pixels de decodificacao para
-  // chegar ao mesmo lugar. Numa Mali-G71 isso e a diferenca entre a arte
-  // aparecer e a arte demorar, e foi o que o dono viu depois da primeira
-  // versao desta politica ("ta demorando bem mais para carregar as artes").
-  //
-  // Nem todo tt tem fundo no metahub; quando o cache disser que falhou, a
-  // proxima chamada cai na url guardada (e no `original`, se for TMDB).
+  b = item->backdrop;
+  // A MESMA IMAGEM DO CARD, SEMPRE (19/09, pedido do dono): "clicar no card e
+  // as coisas simplesmente se posicionarem, nao uma mudanca de pagina". Ate
+  // aqui o heroi e o detalhe pediam o fundo do METAHUB para todo titulo com
+  // id do IMDb — outra foto, outro download, e quando o metahub nao tinha o
+  // titulo (404) o detalhe abria SEM arte enquanto o card mostrava uma. Agora
+  // heroi e detalhe sao o arquivo que o card ja baixou, decodificado inteiro
+  // (a promocao de tex_cache): zero download novo, zero troca de foto. O
+  // w1280 do TMDB amplia 1,5x na tela cheia; o fundo do metahub (fileiras do
+  // Cinemeta) ja e 1920. Na ALTA o TMDB sobe para `original`, que com o
+  // decode escalado (jpegrapido.c) sai em 1920 sem custar os 3840 inteiros.
+  if (b[0]) {
+    if (qualidadeImg == 2) {
+      const char *p = strstr(b, "/t/p/w1280/");
+      if (!p) p = strstr(b, "/t/p/w780/");
+      if (p) {
+        size_t pre = (size_t)(p - b);
+        const char *resto = strchr(p + 5, '/');   // depois do tamanho
+        if (pre < sizeof buf && resto && resto[1]) {
+          snprintf(buf, sizeof buf, "%.*s/t/p/original/%s", (int)pre, b, resto + 1);
+          return buf;
+        }
+      }
+      { const char *p2 = strstr(b, "/medium/");
+        if (p2 && strstr(b, "media.trakt.tv")) {
+          size_t pre = (size_t)(p2 - b);
+          if (pre < sizeof buf) {
+            snprintf(buf, sizeof buf, "%.*s/full/%s", (int)pre, b, p2 + strlen("/medium/"));
+            return buf;
+          }
+        } }
+    }
+    return b;
+  }
+  // SEM FUNDO NENHUM: o metahub monta um por id do IMDb — fundo de verdade em
+  // vez do cartaz esticado. Se ja falhou, o cartaz.
   if (!strncmp(item->imdb, "tt", 2)) {
     char id[32];
     idLimpo(item->imdb, id, sizeof id);
@@ -148,59 +139,6 @@ const char *artehero_url(const CatItem *item) {
              "https://images.metahub.space/background/medium/%s/img", id);
     if (!falhou(buf)) return buf;
   }
-
-  b = item->backdrop;
-
-  // TMDB em w1280: sobe para `original`. A troca e textual e so acontece no
-  // caminho exato do TMDB — qualquer outra url passa intacta.
-  if (b[0]) {
-    const char *p = strstr(b, "/t/p/w1280/");
-    if (p) {
-      size_t pre = (size_t)(p - b);
-      if (pre < sizeof buf) {
-        snprintf(buf, sizeof buf, "%.*s/t/p/original/%s", (int)pre, b,
-                 p + strlen("/t/p/w1280/"));
-        return buf;
-      }
-    }
-    // w780 aparece em fundo vindo do Trakt antigo; mesma conta.
-    p = strstr(b, "/t/p/w780/");
-    if (p) {
-      size_t pre = (size_t)(p - b);
-      if (pre < sizeof buf) {
-        snprintf(buf, sizeof buf, "%.*s/t/p/original/%s", (int)pre, b,
-                 p + strlen("/t/p/w780/"));
-        return buf;
-      }
-    }
-    // TRAKT: /medium/ -> /full/. Medido em 17/09 com curl na mesma arte:
-    // medium 1280x720 e 70 KB, full 1920x1080 e 155 KB, thumb 853x480. O
-    // caminho tem o tamanho no meio ("/fanarts/medium/"), entao a troca e
-    // textual como a do TMDB.
-    { const char *p2 = strstr(b, "/medium/");
-      if (p2 && strstr(b, "media.trakt.tv")) {
-        size_t pre = (size_t)(p2 - b);
-        if (pre < sizeof buf) {
-          snprintf(buf, sizeof buf, "%.*s/full/%s", (int)pre, b,
-                   p2 + strlen("/medium/"));
-          return buf;
-        }
-      } }
-    return b;
-  }
-
-  // SEM FUNDO, MAS COM ID DO IMDB: o metahub responde por id, e a url e
-  // deterministica. E o caso do titulo que veio de uma lista sem arte — antes
-  // dele o destaque caia no CARTAZ, que e a diferenca que se ve entre "um
-  // poster esticado" e "um fundo de verdade".
-  if (!strncmp(item->imdb, "tt", 2)) {
-    char id[32];
-    idLimpo(item->imdb, id, sizeof id);
-    snprintf(buf, sizeof buf,
-             "https://images.metahub.space/background/medium/%s/img", id);
-    return buf;
-  }
-
   if (item->poster[0]) return item->poster;
   return NULL;
 }

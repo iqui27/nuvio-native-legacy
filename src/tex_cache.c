@@ -1156,7 +1156,13 @@ static int threadDecode(void *arg) {
   // decodifica JPEG e reduz a imagem com SDL_BlitScaled, tudo em CPU, e nesta
   // TV sao quatro nucleos fracos: com prioridade igual, ele rouba o quadro do
   // desenho. Arte que aparece um instante depois ninguem nota; o tranco, sim.
-  SDL_SetThreadPriority(SDL_THREAD_PRIORITY_LOW);
+  // NORMAL e nao LOW desde 19/09, EXPERIMENTO MEDIDO: com LOW (nice 19) o fio
+  // recebia ~1,5% do peso de CFS contra o fio de desenho e os de rede, e um
+  // JPEG de 1920 levava 250 ms para ler numa CPU que o decodifica em ~80. O
+  // jank que justificou o LOW era do decode INTEIRO + media de area; com o
+  // decode escalado e a bilinear o trabalho por arte caiu 5x, e a TV tem
+  // quatro nucleos. Se o pior quadro voltar a 40 ms com pend>0, volta o LOW.
+  SDL_SetThreadPriority(SDL_THREAD_PRIORITY_NORMAL);
   for (;;) {
     SDL_LockMutex(mtx);
     while (rodando && decIni == decFim) SDL_CondWait(condDec, mtx);

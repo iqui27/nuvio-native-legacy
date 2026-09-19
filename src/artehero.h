@@ -43,9 +43,6 @@ const char *artehero_url(const CatItem *item);
 
 // A url que o item guarda, sem política — para quem desenha pequeno.
 const char *artehero_url_card(const CatItem *item);
-// O fundo para um CARD DEITADO (ate ~780 px): url do TMDB em w780 em vez do
-// w1280 que o catalogo guarda. Outras origens voltam como estao.
-const char *artehero_url_card_deitado(const CatItem *item);
 
 // O STILL DO EPISÓDIO EM ANDAMENTO, em tamanho de tela cheia, ou NULL.
 //

@@ -17,41 +17,34 @@ static CatItem item(const char *backdrop, const char *poster, const char *imdb) 
 }
 
 int main(void) {
-  // METAHUB PRIMEIRO quando ha id do IMDb: 1920x1080 por ~850 KB contra
-  // 3840x2160 do `original` do TMDB. Os dois terminam a 1920 na tela; o
-  // segundo custa quatro vezes os pixels de decodificacao.
+  // A MESMA IMAGEM DO CARD (19/09): com fundo guardado, o heroi e esse
+  // arquivo — nem metahub por id, nem `original` — no padrao e na baixa.
   { CatItem c = item("https://image.tmdb.org/t/p/w1280/abc.jpg", "", "tt1");
-    assert(!strcmp(artehero_url(&c),
-                   "https://images.metahub.space/background/medium/tt1/img")); }
-  puts("ok  com id do IMDb: metahub, que ja e 1920");
-
-  // SEM id do IMDb (item de addon), o TMDB w1280 sobe para original — ali nao
-  // ha alternativa de 1920.
+    assert(!strcmp(artehero_url(&c), "https://image.tmdb.org/t/p/w1280/abc.jpg")); }
+  puts("ok  com id do IMDb e fundo do TMDB: o proprio w1280");
   { CatItem c = item("https://image.tmdb.org/t/p/w1280/abc.jpg", "", "kitsu:9");
-    assert(!strcmp(artehero_url(&c),
-                   "https://image.tmdb.org/t/p/original/abc.jpg")); }
-  puts("ok  sem tt: TMDB w1280 -> original");
-
-  // O METAHUB QUE JA FALHOU SAI DA FRENTE. Nem todo titulo tem fundo la; o
-  // cache responde e a politica passa para a reserva, sem pedir de novo.
+    assert(!strcmp(artehero_url(&c), "https://image.tmdb.org/t/p/w1280/abc.jpg")); }
+  puts("ok  sem tt: o proprio w1280");
   { CatItem c = item("https://image.tmdb.org/t/p/w1280/abc.jpg", "", "tt1");
     artehero_definir_falhou(falhouSempre);
-    assert(!strcmp(artehero_url(&c),
-                   "https://image.tmdb.org/t/p/original/abc.jpg"));
+    assert(!strcmp(artehero_url(&c), "https://image.tmdb.org/t/p/w1280/abc.jpg"));
     artehero_definir_falhou(NULL); }
-  puts("ok  metahub que falhou cai na reserva");
-
+  puts("ok  com fundo, metahub nem entra em jogo");
   { CatItem c = item("https://image.tmdb.org/t/p/w780/abc.jpg", "", "");
-    assert(!strcmp(artehero_url(&c),
-                   "https://image.tmdb.org/t/p/original/abc.jpg")); }
-  puts("ok  TMDB w780 -> original");
-
-  // Trakt /medium/ (1280x720) -> /full/ (1920x1080). Medido com curl.
+    assert(!strcmp(artehero_url(&c), "https://image.tmdb.org/t/p/w780/abc.jpg")); }
+  puts("ok  w780 fica w780 no padrao");
+  // NA ALTA o TMDB sobe para `original` e o Trakt para /full/ — com o decode
+  // escalado o 3840 sai em 1920 sem custar inteiro.
+  artehero_qualidade(2);
+  { CatItem c = item("https://image.tmdb.org/t/p/w1280/abc.jpg", "", "tt1");
+    assert(!strcmp(artehero_url(&c), "https://image.tmdb.org/t/p/original/abc.jpg")); }
+  { CatItem c = item("https://image.tmdb.org/t/p/w780/abc.jpg", "", "");
+    assert(!strcmp(artehero_url(&c), "https://image.tmdb.org/t/p/original/abc.jpg")); }
   { CatItem c = item("https://media.trakt.tv/images/shows/000/1/fanarts/medium/x.jpg.webp", "", "");
     assert(!strcmp(artehero_url(&c),
                    "https://media.trakt.tv/images/shows/000/1/fanarts/full/x.jpg.webp")); }
-  puts("ok  Trakt medium -> full");
-
+  artehero_qualidade(1);
+  puts("ok  alta: TMDB -> original, Trakt medium -> full");
   // Metahub ja e 1920 e tem um tamanho so: passa intacta.
   { const char *u = "https://images.metahub.space/background/medium/tt6723592/img";
     CatItem c = item(u, "", "tt6723592");
