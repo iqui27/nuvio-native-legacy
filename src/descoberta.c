@@ -1377,7 +1377,10 @@ static int continuarLocal(CatItem *saida, int max) {
 // relativa que o Trakt lhe deu. Expor `paused_at` em trakt.c troca esta regra
 // por uma comparacao exata; ate la, dado desconhecido ordena DEPOIS do
 // conhecido em vez de virar um instante inventado.
-#define CONT_MAX 8
+// 12 e nao 8 (19/09, issue #66): com os itens "a seguir" do Trakt entrando
+// alem dos pausados, 8 lugares eram todos dos pausados e o "a seguir" nunca
+// aparecia. trakt_continuar ordena por instante antes de entregar.
+#define CONT_MAX 12
 
 // Os limites que o caminho local sempre teve e o do Trakt nao: os mesmos de
 // home_registrar_retorno. Abaixo de 1% nao se comecou, de 90% em diante
@@ -1450,7 +1453,9 @@ static int montarContinuar(CatItem *saida, int max) {
   // 0% e titulos praticamente terminados, que e o "nunca assisti isso" do
   // relato.
   for (i = 0, w = 0; i < nT; i++) {
-    if (!emAndamento(doTrakt[i].progresso)) { fora++; continue; }
+    // "A SEGUIR" (issue #66) entra com 0%: e o proximo episodio de uma serie
+    // cujo ultimo terminou. Nao e "pausado", mas e "continuar".
+    if (!trakt_e_a_seguir(doTrakt[i].imdb) && !emAndamento(doTrakt[i].progresso)) { fora++; continue; }
     // O REGISTRO LOCAL MAIS NOVO VENCE A RESPOSTA DO TRAKT. Sem este cruzamento
     // a refazagem da fileira (issue #38) lia um /sync/playback que ainda nao
     // recebeu o scrobble que acabamos de mandar: o titulo terminado voltava a
@@ -1477,7 +1482,20 @@ static int montarContinuar(CatItem *saida, int max) {
   // syncprog ja reconciliou entre celular e TV). O item do Trakt que fala da
   // mesma obra sai: manter os dois poria a mesma serie duas vezes na fileira,
   // que e o defeito que continuarLocal ja evitava dentro da propria lista.
+  //
+  // EXCETO QUANDO O TRAKT E MAIS NOVO NA MESMA OBRA (issue #66): a conta tinha
+  // S1E1 a 3% de 8/9 e o Trakt dizia "viu S1E1 inteiro em 19/9, a seguir
+  // S1E2"; manter a conta punha na fileira um episodio ja visto, com o selo
+  // "a seguir" do outro. O instante decide, como no resto desta funcao.
+  { static int pularLocal[CONT_MAX];
+    memset(pularLocal, 0, sizeof pularLocal);
+    for (i = 0; i < nT; i++)
+      for (j = 0; j < nL; j++)
+        if (mesmaObra(&doTrakt[i], &daConta[j]) &&
+            instanteDaConta(&doTrakt[i]) > instanteDaConta(&daConta[j]))
+          pularLocal[j] = 1;
   for (i = 0; i < nL && nJ < (int)(sizeof juntos / sizeof *juntos); i++) {
+    if (pularLocal[i]) continue;
     juntos[nJ].item = &daConta[i];
     juntos[nJ].ms   = instanteDaConta(&daConta[i]);
     juntos[nJ].ord  = i;
@@ -1486,7 +1504,7 @@ static int montarContinuar(CatItem *saida, int max) {
   for (i = 0; i < nT && nJ < (int)(sizeof juntos / sizeof *juntos); i++) {
     int repetido = 0;
     for (j = 0; j < nL; j++)
-      if (mesmaObra(&doTrakt[i], &daConta[j])) { repetido = 1; break; }
+      if (!pularLocal[j] && mesmaObra(&doTrakt[i], &daConta[j])) { repetido = 1; break; }
     if (repetido) { repetidos++; continue; }
     juntos[nJ].item = &doTrakt[i];
     juntos[nJ].ms   = instanteDaConta(&doTrakt[i]);
@@ -1496,7 +1514,7 @@ static int montarContinuar(CatItem *saida, int max) {
     // Nesse resto de casos a conta vem antes, cada fonte na ordem que deu.
     juntos[nJ].ord  = 1000 + i;
     nJ++;
-  }
+  } }
 
   // Insercao: estavel, nJ <= 16, e roda uma vez por ciclo de descoberta.
   for (i = 1; i < nJ; i++) {
@@ -1513,7 +1531,13 @@ static int montarContinuar(CatItem *saida, int max) {
   }
 
   if (nJ > max) nJ = max;
-  for (i = 0; i < nJ; i++) saida[i] = *juntos[i].item;
+  for (i = 0; i < nJ; i++) {
+    saida[i] = *juntos[i].item;
+    if (getenv("NUVIO_CW_LOG"))
+      printf("[desc] cw[%d] %s T%dE%d %d%% ms=%lld %s\n", i, saida[i].imdb, saida[i].temporada,
+             saida[i].episodio, saida[i].progresso, juntos[i].ms,
+             juntos[i].item >= daConta && juntos[i].item < daConta + CONT_MAX ? "conta" : "trakt");
+  }
   printf("[desc] continuar assistindo: %d do Trakt (%d fora de 1-90%%), "
          "%d da conta, %d repetido(s); %d na fileira\n",
          nT, fora, nL, repetidos, nJ);
@@ -1590,7 +1614,7 @@ static void *montar(void *u) {
   // vinculado esta fileira ignorava o progresso da conta Nuvio, que e o que
   // chega do celular do dono.
   pthread_mutex_lock(&contTrava);
-  nContinuar = montarContinuar(lote, 8);
+  nContinuar = montarContinuar(lote, CONT_MAX);
   n += nContinuar;
   marco("trakt continuar assistindo");
   // O feed social oficial e uma fileira propria, logo depois do retorno ao

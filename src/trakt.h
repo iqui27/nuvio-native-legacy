@@ -80,6 +80,9 @@ int trakt_playback_remover(const char *imdb);
 int trakt_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd,
                            int visto);
 int  trakt_continuar(CatItem *saida, int max);
+// O id ("tt:S:E") e um item "a seguir" da ultima leitura — proximo episodio de
+// serie cujo ultimo visto terminou. Entra na fileira com progresso 0.
+int trakt_e_a_seguir(const char *id);
 
 // Atividade recente dos AMIGOS do dono. Usa o feed social oficial do Trakt
 // (/users/me/friends/activities), mantendo no CatItem o titulo/arte normais e

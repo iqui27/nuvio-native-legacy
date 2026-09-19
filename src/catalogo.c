@@ -825,6 +825,13 @@ static int aplicarProgressoDoDisco(void) {
     int j;
     for (j = 0; j < m; j++) {
       if (tocado[j] || !itens[j].imdb[0] || !mesmoTitulo(itens[j].imdb, regs[i].contentId)) continue;
+      // O ITEM QUE JA E MAIS NOVO QUE O DISCO NAO VOLTA NO TEMPO. O item do
+      // Trakt (pausado ou "a seguir", issue #66) traz o instante em
+      // retomadoMs; um registro local mais velho — o S1E1 a 3% de 8/9 quando
+      // o Trakt diz "viu o S1E1 inteiro em 19/9, a seguir o S1E2" — punha o
+      // episodio ja visto de volta no card, com o selo do outro. Mesma regra
+      // de montarContinuar: o instante decide.
+      if (itens[j].retomadoMs > 0 && itens[j].retomadoMs > regs[i].lastWatchedMs) { tocado[j] = 1; continue; }
       cat_aplicar_progresso(j, regs[i].posSeg, regs[i].durSeg, regs[i].temporada, regs[i].episodio);
       tocado[j] = 1;
       aplicados++;

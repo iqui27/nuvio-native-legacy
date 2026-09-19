@@ -846,6 +846,21 @@ void app_atualizar(float dt, Uint32 agora) {
   // E o ciclo automatico — nunca com o player aberto: rajada de HTTP no meio
   // do video disputa CPU e rede com o decodificador.
   if (!player_aberto()) sync_periodico((unsigned)agora);
+  // "CONTINUAR ASSISTINDO" ENVELHECE (issue #66, "it's not updating"). A
+  // fileira so era refeita no arranque, ao sair do player e na troca de
+  // perfil; quem assiste no celular via a TV parada no que tinha de manha. A
+  // cada 10 min na home, sem player e sem detalhe, so ESSA fileira e refeita
+  // (desc_refazer_continuar: playback + historico do Trakt e progresso da
+  // conta, num fio; cat_trocar_continuar so mexe nela). Nao e o ciclo inteiro
+  // de descoberta.
+  { static Uint32 ultContinuar;
+    if (!ultContinuar) ultContinuar = agora;
+    if (tela == TELA_HOME && homePronta && !player_aberto() && !player_mini_ativo() &&
+        !detail_aberto() && agora - ultContinuar >= 10u * 60u * 1000u) {
+      ultContinuar = agora;
+      printf("[home] 10 min na home: refazendo Continuar assistindo\n"); fflush(stdout);
+      desc_refazer_continuar();
+    } }
 
   // A LISTA LOCAL TEM DE SOBREVIVER A REPUBLICACAO DO CATALOGO.
   //

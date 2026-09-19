@@ -2,6 +2,7 @@
 // hero no topo, rail fixa à esquerda e fileiras horizontais de posters. A
 // infraestrutura nativa cuida de cache assíncrono, foco e transições.
 #include "home.h"
+#include "trakt.h"
 #include "idioma.h"
 #include "catordem.h"
 #include "fileiras.h"
@@ -2171,6 +2172,7 @@ static void desenhaHero(Uint32 agora, float saida) {
   // O conteudo de cada linha vem de buildModernHeroPresentation
   // (homeScreen.js:2497), que separa o caso "continuar assistindo" do resto.
   int contHero = (ci && ci->progresso > 0 && ci->restanteMin > 0);
+  int seguirHero = (ci && ci->progresso == 0 && trakt_e_a_seguir(ci->imdb));
 
   // Linha de meta. No web sao tokens juntados por "•"; ci->genero ja chega
   // como "Filme · Terror", que e o par (tipo, primeiro genero) do web.
@@ -2197,7 +2199,8 @@ static void desenhaHero(Uint32 agora, float saida) {
   destaque[0] = 0;
   if (contHero) snprintf(destaque, sizeof destaque, i18n("%d MINUTOS RESTANTES"),
                          ci->restanteMin);
-  const char *selo = (ci && ci->classificacao[0] && !contHero) ? ci->classificacao : NULL;
+  else if (seguirHero) snprintf(destaque, sizeof destaque, "%s", i18n("A SEGUIR"));
+  const char *selo = (ci && ci->classificacao[0] && !contHero && !seguirHero) ? ci->classificacao : NULL;
   char nota[8];
   nota[0] = 0;
   if (ci && ci->nota > 0) snprintf(nota, sizeof nota, "%.1f", ci->nota / 10.0f);
