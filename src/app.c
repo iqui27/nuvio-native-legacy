@@ -1266,6 +1266,16 @@ void app_atualizar(float dt, Uint32 agora) {
         }
         return;
       }
+      // A MESMA URL DE NOVO NAO E "PROXIMA". MEDIDO na C9 em 19/09 (Fenix TV,
+      // canal com 4 fontes, duas com a mesma url de proxy): a fonte travou
+      // por 12 s a 600 kbps, o watchdog declarou morta e a "proxima" era a
+      // mesma url — recarregou o mesmo fluxo lento e travou de novo. Pula as
+      // repetidas; a lista continua na ordem do addon.
+      while (prox < stream_n()) {
+        const Stream *cand = stream_item(prox), *atual = stream_item(canalFonteIdx);
+        if (!cand || !atual || strcmp(cand->url, atual->url) != 0) break;
+        prox++;
+      }
       s = prox < stream_n() ? stream_item(prox) : NULL;
       if (s) {
         printf("[guia] fonte %d nao abriu; tentando %d\n", canalFonteIdx, prox);
