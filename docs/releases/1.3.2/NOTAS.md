@@ -71,6 +71,44 @@ Posters, backdrops and episode stills from Cinemeta, the Trakt watchlist and the
 - **Bigger hero on the home**: with the hero focused, only the header and the top 15% of the first row show below it.
   ![Home hero with 15% of the first row](https://raw.githubusercontent.com/iqui27/nuvio-native-legacy/master/docs/releases/1.3.2/home-hero.jpg)
 
+## Everything in this release, item by item
+
+**Notice center**
+- Toast in the corner, one line, with the count and the key that opens it; the timer only starts once the home is on screen (not behind the profile chooser).
+- Notices list: friend recommendation, premiere with reminder, update, maintainer note, crash. New = accent dot next to the icon. OK acts per type; Back closes and marks everything read; read state persists on disk per TV.
+- BLUE (LG) / CH+ (Samsung) open the list while the toast is visible; outside the toast both keys keep their old jobs (Saved panel, guide section jump).
+- **NOTICES** tab in the Saved panel, always present; the SOCIAL tab only when the recommendations service is built in. Count badge on the tab.
+- Maintainer channel: `avisos.json` in the repository, read every 30 minutes, with `desde`/`ate` window, `plataforma` (todas/lg/tizen), `ate_versao`, and English variants of title and text.
+- Crash detection: session marker written at start, removed on clean exit; on the next start, a card offers **Send log** / **Not now**, once per crash. The previous session's log is preserved before the new one truncates it (webOS).
+- Log upload: last 200 KB, credentials already stripped, POST to the recommendations service; the server caps at 200 KB and keeps it 30 days.
+
+**TV Guide**
+- Channel list cached on disk per profile and shown immediately on open; the network refreshes it behind and only republishes when the list actually changed (order-independent signature), so focus and scroll don't reset.
+- Manifests are no longer fetched by the guide: it reuses the channel catalogs the home already parsed at startup, in parallel. A manifest is fetched only if that add-on's hasn't arrived yet.
+- Network returning nothing (all add-ons down) keeps the list you had instead of wiping it.
+- Subtitle says "N channels · M categories · updating…" while the refresh runs.
+- Channel add-ons panel: Spotlight is a tag next to the name (it sat on top of the description); every line's text stops before the pill; suggestions get two-line descriptions.
+
+**Artwork**
+- Backup from TMDB when `images.metahub.space` fails: posters (w342), backdrops (w1280) and episode stills (`/tv/{id}/season/{s}/episode/{e}`), found by IMDb id, cached under the original URL. Logos have no backup.
+- Samsung: JPEG, PNG and WebP are decoded by the browser and shrunk on a canvas to the size that will be shown; only that crosses into the WASM heap. GIF keeps its own path.
+- Memory for images in Settings (Automatic/96/160/240/300/400/512 MB), applied live, capped by RAM (< 1.2 GB: 96; < 2 GB: 160; < 3 GB: 300; ≥ 3 GB: 512; Samsung: automatic). Per TV, never synced. The images panel shows "chosen in Settings" as the ceiling's source.
+
+**Playback sources**
+- MP4 gets priority within the same resolution on LG (never over a higher resolution); Dolby Vision in MP4 still ranks above everything. MP4 pill in the sources sheet. Not applied on Samsung.
+
+**Detail page**
+- Mark as watched: one OK (#70), with a confirmation (check + "N episodes marked/unmarked", or "nothing to change") that closes by itself.
+- Action buttons 94/96 → 72 px, padding 54 → 38, icon 28 → 22, gap 24 → 18; focus still by scale.
+- Drop-off radar: full 0–100 axis when the drop is ≥ 20 pp; the zoomed axis stays for small drops.
+
+**Home**
+- Down from the hero lands on the first row; the restored position keeps each row's column and scroll.
+- With the hero focused, rows sit lower: header of the first row visible and 15% of its cards.
+
+**Under the hood**
+- Recommendations service: `/v1/registro` route and `registro` table (30-day retention). `tools/arm.sh` accepts `NUVIO_SSH_OPTS`; `tools/build-local.sh` fixed (ran from the wrong directory). Tests: `tests/artereserva.sh`, `tests/webp-tizen.sh` (JPEG cases), `tests/episodios_shot.sh` (single-OK), `tests/homepos.sh` updated.
+
 ## Notes
 
 - Guide, Samsung decode and artwork backup were verified on the Mac preview (the backup with a proxy blocking only metahub) and the decode path in a real Chromium; Samsung hardware confirmation is still pending.
