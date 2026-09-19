@@ -139,7 +139,7 @@ ARQ_DE_PESSOA="trakt.txt addons.txt tmdb.txt mdblist.txt ajustes.txt
 # e por isso nao os alcanca; um glob proprio alcanca. Ver a licao registrada
 # quando o collections.json vazou: lista de exclusao por nome envelhece, e a
 # conferencia tem de ser sobre o que NAO PODE SAIR.
-GLOB_DE_PESSOA="stalker-p*.txt listas-p*.txt"
+GLOB_DE_PESSOA="stalker-p*.txt xtream-p*.txt listas-p*.txt"
 
 # O ACERVO DE QUEM EMPACOTOU, que nao e credencial de login e vaza igual.
 #
@@ -223,7 +223,7 @@ if [ "$1" = "--ipk" ]; then
   # POR PREFIXO, e nao por nome: os arquivos por perfil sao stalker-p1.txt,
   # stalker-p2.txt e assim por diante, e a lista acima so casa nome exato. Um
   # prefixo cobre qualquer numero de perfil, inclusive os que ainda nao existem.
-  for pre in stalker-p listas-p; do
+  for pre in stalker-p xtream-p listas-p; do
     printf '%s\n' "$LISTA" | grep -qE "art/$pre[0-9]+\.txt$" && VAZOU="$VAZOU $pre*.txt"
   done
   # Diretorio: qualquer caminho DENTRO dele conta como vazamento, nao so a

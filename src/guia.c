@@ -46,6 +46,7 @@
 #include "sync.h"        /* sync_sujar_addons: ligar/desligar sobe para a conta */
 #include "descoberta.h"  /* desc_repetir: addon novo so entra com ciclo novo */
 #include "stalker.h"
+#include "xtream.h"
 #include "dados.h"
 #include "js.h"
 #include "gfx.h"
@@ -716,6 +717,25 @@ static void *fioGuia(void *u) {
       if (c.cat >= 0) { sCanais[sNCanais++] = c; ok = 1; }
     }
     free(st);
+  }
+  // XTREAM, pela mesma porta e pelas mesmas razoes (ver xtream.h). O epg_id
+  // que o servidor manda nao entra: o EPG do guia casa por nome, e o id do
+  // Xtream e do XMLTV do proprio provedor, que o app nao baixa.
+  if (xtream_configurado()) {
+    XtreamCanal *xt = malloc(sizeof *xt * G_MAX_CANAL);
+    int n = xt ? xtream_canais(xt, G_MAX_CANAL) : 0, i;
+    for (i = 0; i < n && sNCanais < G_MAX_CANAL; i++) {
+      GCanal c;
+      if (sCanalPorId(xt[i].id) >= 0) continue;
+      memset(&c, 0, sizeof c);
+      c.epg = -1;
+      snprintf(c.id,   sizeof c.id,   "%s", xt[i].id);
+      snprintf(c.nome, sizeof c.nome, "%s", xt[i].nome);
+      snprintf(c.logo, sizeof c.logo, "%s", xt[i].logo);
+      c.cat = sCatDe(xt[i].categoria[0] ? xt[i].categoria : "Outros");
+      if (c.cat >= 0) { sCanais[sNCanais++] = c; ok = 1; }
+    }
+    free(xt);
   }
   // FONTE ACHADA E NENHUMA PAGINA RESPONDEU tambem e "nao respondeu", e nao
   // "nao existe": e o caso do catalogo de canais que estoura o prazo com o

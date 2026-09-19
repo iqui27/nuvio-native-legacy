@@ -51,4 +51,5 @@ appinfo.json.stamped  # carimbo de build do tools/arm.sh, nao e fonte
 # Credencial por perfil: MAC do portal IPTV (ver src/stalker.h) e listas
 # fixadas. Nunca versionar.
 stalker-p*.txt
+xtream-p*.txt
 listas-p*.txt

@@ -7,6 +7,7 @@
 #include "addons.h"
 #include "debrid.h"
 #include "stalker.h"
+#include "xtream.h"
 #include "colecoes.h"
 #include "contalib.h"
 #include "salvos.h"
@@ -761,6 +762,7 @@ void sync_esquecer_usuario(void) {
   // QUEM SAIU. Deixar o arquivo no aparelho entregaria o acesso pago dessa
   // pessoa para a proxima que logasse nesta TV.
   stalker_esquecer();
+  xtream_esquecer();   // mesma razao: usuario e senha sao a assinatura de quem saiu
   trakt_esquecer();
   perfis_esquecer();
   prog_esquecer_tudo();

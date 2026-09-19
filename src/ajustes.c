@@ -13,6 +13,7 @@
 // lidos da tela rodando.
 #include "ajustes.h"
 #include "stalker.h"
+#include "xtream.h"
 #include "teclado.h"
 #include "descoberta.h"
 #include "extras.h"
@@ -120,6 +121,7 @@ typedef enum {
   // Conta
   AJ_PERFIL_ATIVO, AJ_SYNC, AJ_ADDONS,
   AJ_STALKER_PORTAL, AJ_STALKER_MAC, AJ_STALKER_LIMPAR,
+  AJ_XTREAM_SERVIDOR, AJ_XTREAM_USUARIO, AJ_XTREAM_SENHA, AJ_XTREAM_LIMPAR,
   AJ_SALVOS_DEST, AJ_TRAKT, AJ_SIMKL, AJ_SAIR,
   // Sobre
   AJ_VERSAO_I, AJ_ATUALIZAR, AJ_ESPACO,
@@ -289,6 +291,10 @@ static int stCampo;
 static const char *ST_ALFA_PORTAL =
   "abcdefghijklmnopqrstuvwxyz0123456789.:-";
 static const char *ST_ALFA_MAC = "0123456789abcdef:";
+// Usuario e senha de Xtream sao o que o provedor gerou: letras dos dois casos,
+// digitos e uns poucos sinais. Sem espaco — nenhum painel Xtream o aceita.
+static const char *XT_ALFA_CONTA =
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-@!#$%&*+=";
 
 static const Opcao OPCOES[AJ_N] = {
   ESC("Qualidade máxima",           V_QUALIDADE, 4),
@@ -367,9 +373,13 @@ static const Opcao OPCOES[AJ_N] = {
   LER("Perfil"),
   LER("Sincronização"),
   ACAO("Addons"),
-  ACAO("Portal IPTV"),
+  ACAO("Portal Stalker (MAC)"),
   ACAO("MAC do portal"),
-  ACAO("Remover o portal IPTV"),
+  ACAO("Remover o portal Stalker"),
+  ACAO("Servidor Xtream"),
+  ACAO("Usuário Xtream"),
+  ACAO("Senha Xtream"),
+  ACAO("Remover o Xtream"),
   ESC("Onde o + salva",             V_SALVOS, 2),
   ACAO("Trakt"),
   ACAO("Simkl"),
@@ -473,6 +483,7 @@ static const char *CHAVE[] = {
   // deles e credencial (ver stalker.h). Aqui sao so linhas de tela, e por isso
   // levam "-": nada delas entra no ajustes.txt nem no blob da conta.
   "-stalkerPortal", "-stalkerMac", "-stalkerLimpar",
+  "-xtreamServidor", "-xtreamUsuario", "-xtreamSenha", "-xtreamLimpar",
   "salvosDestino", "-trakt", "-simkl", "-sair",
   "-versao", "-atualizar", "-espaco",
   // Integracoes: os nomes sao exatamente os que profileSettingsSyncService.js
@@ -1254,6 +1265,12 @@ static const char *textoLeitura(int op) {
     return stalker_configurado() ? stalker_portal_curto() : i18n("Não configurado");
   if (op == AJ_STALKER_MAC)
     return stalker_configurado() ? stalker_mac_mascarado() : i18n("Não configurado");
+  if (op == AJ_XTREAM_SERVIDOR)
+    return strcmp(xtream_servidor_curto(), "-") ? xtream_servidor_curto() : i18n("Não configurado");
+  if (op == AJ_XTREAM_USUARIO)
+    return strcmp(xtream_usuario(), "-") ? xtream_usuario() : i18n("Não configurado");
+  if (op == AJ_XTREAM_SENHA)
+    return strcmp(xtream_senha_mascarada(), "-") ? xtream_senha_mascarada() : i18n("Não configurado");
   if (op == AJ_VERSAO_I) {
     // Com release mais nova no GitHub, a linha diz as duas.
     if (atualizacao_nova()[0]) {
@@ -1437,6 +1454,10 @@ static const char *ajudaOpcao(int op) {
     case AJ_STALKER_PORTAL: return "Os canais do portal entram no Guia de TV, junto com os dos addons. Endereço sem http:// e sem barra no fim: meu-portal.exemplo.tv:8080";
     case AJ_STALKER_MAC: return "O MAC que o provedor cadastrou para você. É credencial: vale como senha, e só aparece nesta tela mascarado.";
     case AJ_STALKER_LIMPAR: return "Apaga o portal e o MAC deste perfil, e os canais dele somem do Guia. Sair da conta também apaga.";
+    case AJ_XTREAM_SERVIDOR: return "Endereço e porta que o provedor mandou, sem http:// e sem barra no fim: meu-servidor.tv:8080. Os canais entram no Guia de TV com usuário e senha preenchidos.";
+    case AJ_XTREAM_USUARIO: return "O usuário da sua assinatura Xtream.";
+    case AJ_XTREAM_SENHA: return "A senha da assinatura. É credencial: vai dentro de cada URL de canal e nunca aparece nesta tela em claro.";
+    case AJ_XTREAM_LIMPAR: return "Apaga servidor, usuário e senha deste perfil, e os canais somem do Guia. Sair da conta também apaga.";
     case AJ_FONTE_MANUAL: return "Ao mandar reproduzir, abre a lista de fontes em vez de escolher sozinho. Canal ao vivo não pergunta.";
 
     // --- Home
@@ -2015,7 +2036,7 @@ void ajustes_evento(const SDL_Event *e) {
       // obrigar a redigitar o endereco inteiro no D-pad. O MAC e a excecao —
       // ele nunca e devolvido em claro, nem para o proprio dono, porque a
       // modal fica na tela e a tela vira foto.
-      teclado_abrir_com(mac ? "MAC do portal" : "Portal IPTV",
+      teclado_abrir_com(mac ? "MAC do portal" : "Portal Stalker (MAC)",
                         mac ? "Formato 00:1a:79:xx:xx:xx"
                             : "Endereço e porta, sem http://",
                         mac ? 17 : 48,
@@ -2024,6 +2045,21 @@ void ajustes_evento(const SDL_Event *e) {
       return;
     }
     if (focoOp == AJ_STALKER_LIMPAR) { stalker_esquecer(); return; }
+    if (focoOp == AJ_XTREAM_SERVIDOR || focoOp == AJ_XTREAM_USUARIO || focoOp == AJ_XTREAM_SENHA) {
+      int srv = focoOp == AJ_XTREAM_SERVIDOR, sen = focoOp == AJ_XTREAM_SENHA;
+      stCampo = focoOp;
+      // Servidor e usuario voltam para o campo (corrigir uma letra nao pode
+      // obrigar a redigitar tudo no D-pad); a senha nao — a modal fica na
+      // tela e a tela vira foto.
+      teclado_abrir_com(srv ? "Servidor Xtream" : sen ? "Senha Xtream" : "Usuário Xtream",
+                        srv ? "Endereço e porta, sem http://" : sen ? "Como o provedor mandou" : "Como o provedor mandou",
+                        srv ? 64 : 48,
+                        srv ? ST_ALFA_PORTAL : XT_ALFA_CONTA,
+                        srv ? (strcmp(xtream_servidor_curto(), "-") ? xtream_servidor_curto() : NULL)
+                            : (!sen && strcmp(xtream_usuario(), "-")) ? xtream_usuario() : NULL);
+      return;
+    }
+    if (focoOp == AJ_XTREAM_LIMPAR) { xtream_esquecer(); return; }
     if (focoOp == AJ_TRAKT) { traktauth_comecar(); return; }
     if (focoOp == AJ_SIMKL) { simklauth_comecar(); return; }
     if (focoOp == AJ_SAIR) {
@@ -2100,6 +2136,9 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   { int r = teclado_resultado();
     if (r == TECLADO_PRONTO && stCampo) {
       if (stCampo == AJ_STALKER_MAC) stalker_definir_mac(teclado_texto());
+      else if (stCampo == AJ_XTREAM_SERVIDOR) xtream_definir_servidor(teclado_texto());
+      else if (stCampo == AJ_XTREAM_USUARIO)  xtream_definir_usuario(teclado_texto());
+      else if (stCampo == AJ_XTREAM_SENHA)    xtream_definir_senha(teclado_texto());
       else                           stalker_definir_portal(teclado_texto());
       stCampo = 0;
     } else if (r == TECLADO_CANCELOU) {

@@ -49,6 +49,7 @@
 #include "novidades.h"
 #include "novidades11.h"
 #include "novidades12.h"
+#include "novidades13.h"
 #include "recintro.h"
 #include "atualizacao.h"
 #include "pipintro.h"
@@ -57,6 +58,7 @@
 #include "player.h"
 #include "streams.h"
 #include "stalker.h"
+#include "xtream.h"
 #include "fontepref.h"
 #include "video.h"
 #include "addons.h"
@@ -316,6 +318,21 @@ static int resolverCanalStalker(void) {
   return 0;
 }
 
+// Canal Xtream: a URL e estavel e nasce do cadastro (ver xtream.h). Nao vai a
+// rede; e o mesmo formato de lista de UMA fonte do portal Stalker.
+static int resolverCanalXtream(void) {
+  Stream s;
+  char url[4096];
+  if (!xtream_url(player_id_canal(), url, sizeof url)) return -1;
+  memset(&s, 0, sizeof s);
+  snprintf(s.url, sizeof s.url, "%s", url);
+  snprintf(s.rotulo, sizeof s.rotulo, "%s", "Xtream");
+  snprintf(s.provedor, sizeof s.provedor, "%s", "xtream");
+  s.fileIdx = -1;
+  stream_definir_lista(&s, 1);
+  return 0;
+}
+
 // TOCAR UM CANAL, direto — o "OK assiste" do guia e o zap do CH+/-.
 //
 // O guia entrega um CatItem pronto (id completo do addon, tipo "channel"):
@@ -340,7 +357,7 @@ static void tocarCanal(const CatItem *it) {
   stalkerTentativas = 0;          // canal novo: o teto de renovacao recomeca
   // Canal de portal nao esta em addon nenhum: perguntar seria esperar o prazo
   // de todos eles para receber lista vazia, com a pessoa olhando "carregando".
-  if (!stalker_e_id(it->imdb)) {
+  if (!stalker_e_id(it->imdb) && !xtream_e_id(it->imdb)) {
     // So o addon que publicou o canal responde por ele; ver alvoBase em
     // addons.c e o que o FrostView fora do ar custava.
     addons_definir_origem(guia_canal_origem());
@@ -498,6 +515,7 @@ void app_evento(const SDL_Event *e) {
   // dele. O OK dele AVANCA e so fecha na ultima pagina — ver novidades11.c.
   if (novidades11_aberto()) { novidades11_evento(e); return; }
   if (novidades12_aberto()) { novidades12_evento(e); return; }
+  if (novidades13_aberto()) { novidades13_evento(e); return; }
   // O explicador do Social e da mesma familia, e come esquerda/direita:
   // deixar a tecla vazar para a home moveria o foco dela debaixo do cartao.
   if (recintro_aberto()) { recintro_evento(e); return; }
@@ -808,12 +826,17 @@ void app_atualizar(float dt, Uint32 agora) {
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
         !novidades11_aberto() && !novidades12_aberto() && !pipintro_aberto())
       novidades12_primeira_vez();
+    // O da 1.3 depois do da 1.2, pela mesma razao.
+    if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() &&
+        !pipintro_aberto())
+      novidades13_primeira_vez();
     // AVISO DE VERSAO NOVA: a consulta ao GitHub so parte quando a home esta
     // de pe (nao disputa a rede com o catalogo), e o cartao so abre quando
     // nenhum outro cartao de primeira vez esta aberto.
     atualizacao_verificar();
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !novidades11_aberto() && !novidades12_aberto() && !pipintro_aberto())
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !pipintro_aberto())
       atualizacao_mostrar_se_houver();
     // RECOMENDACAO DE UM AMIGO: a sondagem parte daqui pelo mesmo motivo que a
     // do GitHub — com a home de pe ela nao disputa a rede com o catalogo. Sem
@@ -822,7 +845,7 @@ void app_atualizar(float dt, Uint32 agora) {
     // aviso de versao: dois cartoes ao mesmo tempo seria um por cima do outro.
     recomenda_verificar();
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !novidades11_aberto() && !novidades12_aberto() && !pipintro_aberto() && !atualizacao_aberta())
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !pipintro_aberto() && !atualizacao_aberta())
       recomenda_mostrar_se_houver();
     // EXPLICADOR DAS TELAS SOCIAIS: mesmas guardas de todos os outros, mais
     // a do cartao de recomendacao recebida — dois cartoes ao mesmo tempo
@@ -830,7 +853,7 @@ void app_atualizar(float dt, Uint32 agora) {
     // NUVIO_REC_URL (recomenda_ativo), e por isso nao ha guarda aqui: um
     // anuncio de recurso que nao esta no pacote e pior que silencio.
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !novidades11_aberto() && !novidades12_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
         !recomenda_aberta())
       recintro_primeira_vez();
     // LEMBRETE VENCIDO: o unico aviso que esta TV consegue dar. Ultimo da fila
@@ -838,7 +861,7 @@ void app_atualizar(float dt, Uint32 agora) {
     // cima do outro —, e sem consulta de rede nenhuma: o que ele mostra ja
     // esta em disco desde que o dono apertou "Lembrar-me".
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !novidades11_aberto() && !novidades12_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
         !recomenda_aberta() && !recintro_aberto())
       agendaviso_mostrar_se_houver();
   }
@@ -1110,7 +1133,10 @@ void app_atualizar(float dt, Uint32 agora) {
       // Nenhuma viva NAO e motivo para desistir: pode ter sido lentidao de
       // rede, e a primeira da lista com o watchdog de sempre e melhor que uma
       // tela de erro. Por isso o fallback.
-      if (stalker_e_id(player_id_canal())) {
+      if (xtream_e_id(player_id_canal())) {
+        fonteEscolhida = resolverCanalXtream();
+        canalFontePrazo = CANAL_FONTE_PRAZO_MS;
+      } else if (stalker_e_id(player_id_canal())) {
         // UMA fonte, e ela acabou de nascer: nao ha lista para conferir nem
         // ranking para aplicar. Sem `return` de proposito — quem liga o video e
         // o bloco de `aguardandoFonte == 2` logo abaixo, o mesmo dos outros
@@ -1582,6 +1608,7 @@ void app_atualizar(float dt, Uint32 agora) {
   novidades_atualizar(dt, agora);
   novidades11_atualizar(dt, agora);
   novidades12_atualizar(dt, agora);
+  novidades13_atualizar(dt, agora);
   recintro_atualizar(dt, agora);
   atualizacao_atualizar(dt, agora);
   agendaviso_atualizar(dt, agora);
@@ -1711,6 +1738,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novidades_desenhar(agora);
   if (!registro_aberto()) novidades11_desenhar(agora);
   if (!registro_aberto()) novidades12_desenhar(agora);
+  if (!registro_aberto()) novidades13_desenhar(agora);
   if (!registro_aberto()) recintro_desenhar(agora);
   if (!registro_aberto()) atualizacao_desenhar(agora);
   if (!registro_aberto()) agendaviso_desenhar(agora);

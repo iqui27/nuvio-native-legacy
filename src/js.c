@@ -38,6 +38,39 @@ static const char *achaChave(const char *ini, const char *fim, const char *chave
   return NULL;
 }
 
+// \uXXXX VIRA UTF-8, e nao espaco. PHP json_encode — o que todo painel Xtream
+// Codes roda — escapa TODO caractere fora do ASCII por padrao, entao
+// "Not\u00edcias" e o caso comum e nao a excecao, e virava "Not cias" na tela.
+// Par de substitutos (emoji, e o que os addons de canal poem no nome) vira um
+// codepoint de 4 bytes. Sequencia invalida vira espaco, como antes. Devolve
+// quantos caracteres de `p` (depois do 'u') foram consumidos: 4 ou 10.
+static int hexVal(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+static int hex4(const char *p, unsigned *v) {
+  int i, h; *v = 0;
+  for (i = 0; i < 4; i++) { h = hexVal(p[i]); if (h < 0) return 0; *v = (*v << 4) | (unsigned)h; }
+  return 1;
+}
+static int escapeU(const char *p, char *dst, size_t *k, size_t tam) {
+  unsigned cp, lo;
+  int usados = 4;
+  if (!hex4(p, &cp)) { if (*k + 1 < tam) dst[(*k)++] = ' '; return 0; }
+  if (cp >= 0xD800 && cp <= 0xDBFF && p[4] == '\\' && p[5] == 'u' && hex4(p + 6, &lo) &&
+      lo >= 0xDC00 && lo <= 0xDFFF) {
+    cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+    usados = 10;
+  }
+  if (cp < 0x80) { if (*k + 1 < tam) dst[(*k)++] = (char)cp; }
+  else if (cp < 0x800) { if (*k + 2 < tam) { dst[(*k)++] = (char)(0xC0 | (cp >> 6)); dst[(*k)++] = (char)(0x80 | (cp & 0x3F)); } }
+  else if (cp < 0x10000) { if (*k + 3 < tam) { dst[(*k)++] = (char)(0xE0 | (cp >> 12)); dst[(*k)++] = (char)(0x80 | ((cp >> 6) & 0x3F)); dst[(*k)++] = (char)(0x80 | (cp & 0x3F)); } }
+  else { if (*k + 4 < tam) { dst[(*k)++] = (char)(0xF0 | (cp >> 18)); dst[(*k)++] = (char)(0x80 | ((cp >> 12) & 0x3F)); dst[(*k)++] = (char)(0x80 | ((cp >> 6) & 0x3F)); dst[(*k)++] = (char)(0x80 | (cp & 0x3F)); } }
+  return usados;
+}
+
 int js_texto(const char *ini, const char *fim, const char *chave,
              char *dst, size_t tam) {
   const char *p = achaChave(ini, fim, chave);
@@ -49,7 +82,7 @@ int js_texto(const char *ini, const char *fim, const char *chave,
   while (*p && *p != '"' && k + 1 < tam) {
     if (*p == '\\' && p[1]) {
       p++;
-      if (*p == 'u') { p += 5; dst[k++] = ' '; continue; }
+      if (*p == 'u') { int u = escapeU(p + 1, dst, &k, tam); p += 1 + u; continue; }   /* invalido: so o "u" sai, o resto e texto */
       if (*p == 'n' || *p == 't' || *p == 'r') { p++; dst[k++] = ' '; continue; }
       if (*p == '/' ) { p++; dst[k++] = '/'; continue; }
     }
@@ -196,9 +229,8 @@ int js_texto_raiz_em(const char *ini, const char *fim, const char *chave,
           for (v++; *v && *v != '"' && k + 1 < tam; v++) {
             if (*v == '\\' && v[1]) {
               v++;
-              // Mesma politica de js_texto: escape vira espaco em vez de
-              // decodificar UTF-16, porque estes textos sao para exibicao.
-              if (*v == 'u') { v += 4; dst[k++] = ' '; continue; }
+              // Mesma politica de js_texto: \uXXXX vira UTF-8 (escapeU).
+              if (*v == 'u') { int u = escapeU(v + 1, dst, &k, tam); v += u; continue; }
               if (*v == 'n' || *v == 't' || *v == 'r') { dst[k++] = ' '; continue; }
               if (*v == '/') { dst[k++] = '/'; continue; }
             }
