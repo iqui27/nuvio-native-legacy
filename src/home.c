@@ -1570,6 +1570,20 @@ static void sincronizarFileiras(void) {
     if (posDiscoPendente && posConjuntoBate(posDisco, nPosDisco)) {
       posDiscoPendente = 0;
       posAplicarTabela(posDisco, nPosDisco, posDiscoFoco, posDiscoCol);
+      // A FILEIRA DE ONTEM NAO VIRA O PRIMEIRO DEGRAU ABAIXO DO DESTAQUE.
+      //
+      // posAplicarTabela deixava `foco.fileira` na fileira gravada, e a nota
+      // dela dizia que "o primeiro toque para baixo cai la, com a fileira ja
+      // rolada". Na TV isso e outra coisa: a home abre no destaque, a pessoa
+      // aperta BAIXO uma vez e a tela salta doze fileiras — "pula varias
+      // fileiras la pro final" (dono, 19/09). Do destaque, baixo e a fileira
+      // 0. O que a posicao de ontem preserva e a COLUNA e a rolagem de cada
+      // fileira (colunaLembrada/scrollX), que continuam aplicadas: quem desce
+      // ate a fileira de ontem a encontra onde a deixou.
+      if (focoHero) {
+        foco.fileira = 0;
+        foco.coluna  = foco.colunaLembrada[0];
+      }
       // O que esta na tela passa a ser exatamente o que esta no disco: nao ha
       // o que gravar, e o repouso nao deve disparar por causa da restauracao.
       posSujo = 0;

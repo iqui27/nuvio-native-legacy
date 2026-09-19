@@ -216,13 +216,15 @@
 // descem — nao somem — porque o que esta em foco tem de ser o assunto da tela e
 // ainda assim precisa ficar claro que ha conteudo abaixo.
 //
-// 260 vem da conta, nao do olho: a fileira de "Continuar assistindo" mede 46 de
-// cabecalho + 236 de card = 282, entao empurrada ela ocupa de 778 a 1060 e
-// sobra folga de 20px ate a borda. Ela aparece INTEIRA: cortar o card pela
-// metade daria a leitura de "isto esta quebrado", e quem quiser ve-la de perto
-// aperta baixo — que e o gesto que traz as fileiras de volta ao lugar de
-// sempre.
-#define NV_HOME_HERO_EMPURRA 260.0f
+// 260 vinha da conta de mostrar a fileira INTEIRA (46 de cabecalho + 236 de
+// card, de 778 a 1060). Em 19/09 o dono pediu o contrario, olhando a TV:
+// "aumentar ainda mais a hero, deixar so 15% da proxima fileira aparecendo".
+// 15% de um card de 236 sao 35 px: o card comeca em 1045, o cabecalho 46
+// acima, em 999, e 999 - 518 = 481. O cabecalho continua inteiro — e o que
+// diz "ha mais embaixo" — e so a borda de cima dos cards espia. O bloco de
+// texto do destaque desce junto (ver desenhaHero), entao a distancia dele ao
+// cabecalho da fileira nao muda.
+#define NV_HOME_HERO_EMPURRA 481.0f
 // Altura e respiro do botao do destaque (o "Ver titulo"), e a mesma medida do
 // NV_HERO_BOTAO_H que o layout do hero ja usava para a linha de acoes.
 #define NV_HOME_HERO_BOTAO_GAP 26.0f

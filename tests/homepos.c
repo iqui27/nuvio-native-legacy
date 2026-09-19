@@ -142,7 +142,13 @@ int main(void) {
   assert(posDiscoPendente);
   montar(itens, ontem, 6);
   alvo = idx("pos_3"); vizinha = idx("pos_1");
-  assert(foco.fileira == alvo && foco.coluna == 2);
+  // A HOME REABRE NO DESTAQUE, e baixo dali e a fileira 0 — nao a de ontem
+  // (19/09: "aperto pra baixo e ele pula varias fileiras la pro final"). O que
+  // volta do disco e a coluna e a rolagem de CADA fileira, inclusive a de
+  // ontem, que espera onde ficou.
+  assert(focoHero);
+  assert(foco.fileira == 0);
+  assert(foco.colunaLembrada[alvo] == 2);
   assert(scrollX[alvo] == 240.0f);
   assert(foco.colunaLembrada[vizinha] == 3);
   assert(!posDiscoPendente);   // consumido uma vez so
@@ -166,9 +172,10 @@ int main(void) {
   assert(idx("pos_0") >= 0);            // uma chave de ontem ja esta na tela
   assert(foco.fileira == 0 && foco.coluna == 0);
   assert(posDiscoPendente);
-  // E quando o resto chega, ai sim.
+  // E quando o resto chega, ai sim: a coluna de ontem em pos_3, com o foco
+  // no destaque e a fileira 0 como primeiro degrau (ver o bloco (a)).
   montar(itens, ontem, 6);
-  assert(foco.fileira == idx("pos_3") && foco.coluna == 2);
+  assert(foco.fileira == 0 && foco.colunaLembrada[idx("pos_3")] == 2);
   assert(!posDiscoPendente);
 
   // --- arquivo de outra versao e ignorado, nao interpretado ----------------

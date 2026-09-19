@@ -183,7 +183,7 @@ int  detail_pediu_do_inicio(void);
 #define NV_DETW_SELO_PADX     10.0f
 // Botao secundario "Reproduzir desde o inicio": 345x96, raio 64, fundo #222,
 // texto branco; focado vira #f5f5f5 com texto #111 e o anel de 4px.
-#define NV_DETW_BTN2_PADX     34.0f
+#define NV_DETW_BTN2_PADX     28.0f   // 34 na medida do web; 28 acompanha a pilula de 72
 
 // --- BLOCO DO HERO, MEDIDO NO APARELHO -------------------------------------
 //
@@ -212,13 +212,23 @@ int  detail_pediu_do_inicio(void);
 // circulos de 96 com 24 de vao entre vizinhos (centros em 488,5 e 608,5, passo
 // 120). A largura da pilula sai do rotulo: 54 + 28 + 21 + texto + 54 = 319 para
 // "Assistir T1:E1", contra os 321 medidos.
-#define NV_DETW2_BTN_H        94.0f
-#define NV_DETW2_BTN_PADX     54.0f
-#define NV_DETW2_BTN_ICONE_W  28.0f   // triangulo 28x30, centrado na vertical
-#define NV_DETW2_BTN_ICONE_H  30.0f
-#define NV_DETW2_BTN_GAPI     21.0f   // fim do triangulo -> tinta do rotulo
-#define NV_DETW2_CIRC         96.0f
-#define NV_DETW2_BTN_GAP      24.0f
+//
+// REDUZIDOS EM 19/09/2026, pedido do dono olhando a TV: "botoes muito grandes
+// perto do restante da UI". A medida do web (94/96) foi feita para uma pagina
+// em que o botao e o unico elemento grande; aqui ele fica a 40 px de uma linha
+// de 22 px e de uma sinopse de 25, e pesava quase quatro vezes o texto ao
+// lado. 72 e a altura que o hero da home ja usa para "Ver titulo" (68 + 4 de
+// respiro do rotulo de 25 px), entao as duas telas passam a ter o mesmo botao.
+// Padding, icone e vao descem na mesma proporcao (~0,75); o rotulo fica em 25,
+// que e o piso de leitura desta interface. O foco continua por ESCALA, com os
+// mesmos fatores medidos: 72 vira 83 focado.
+#define NV_DETW2_BTN_H        72.0f
+#define NV_DETW2_BTN_PADX     38.0f
+#define NV_DETW2_BTN_ICONE_W  22.0f   // triangulo 22x24, centrado na vertical
+#define NV_DETW2_BTN_ICONE_H  24.0f
+#define NV_DETW2_BTN_GAPI     16.0f   // fim do triangulo -> tinta do rotulo
+#define NV_DETW2_CIRC         72.0f
+#define NV_DETW2_BTN_GAP      18.0f
 // Glifo dentro do circular: 32 num circulo de 96 em repouso e 36 num de 110
 // focado — 0,333 do diametro nos dois. Estava 0,45, que vinha de uma captura
 // solta do dono e engordava o "+" ate quase encostar na borda.
