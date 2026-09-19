@@ -164,6 +164,7 @@ static void tirar(const char *id) {
 // na frente, e com o relogio correndo dali ele ja tinha expirado quando a home
 // aparecia (medido na previa do Mac: 32 s de arranque, toast de 6 s).
 static int toastPendente;
+static int demoAviso(const char *id, int tipo, const char *t, const char *x, const char *alvo) { return por(id, tipo, t, x, alvo); }
 static void toast(int novos) {
   if (novos <= 0) return;
   toastN += novos;
@@ -361,15 +362,18 @@ void avisos_iniciar(void) {
     if (demo && demo[0] == '1') {
       int novos = 0;
       pthread_mutex_lock(&trava);
-      novos += por("demo:rec", AV_REC, i18n("Recomendação de amigo"),
+      // DADO DE MENTIRA, nao rotulo: os textos abaixo imitam o que a rede
+      // traria (nome de amigo, titulo, aviso do dono), por isso passam por
+      // demoAviso e nao por i18n — a varredura de i18n sabe disso.
+      novos += demoAviso("demo:rec", AV_REC, i18n("Recomendação de amigo"),
                    "Gustavo recomendou \"The Gentlemen\": \"vale cada minuto\". Abra Salvos para ver.", NULL);
-      novos += por("demo:agenda", AV_AGENDA, i18n("Episódio novo"),
+      novos += demoAviso("demo:agenda", AV_AGENDA, i18n("Episódio novo"),
                    "Outlander — T7E9 · Unfinished Business", "tt3006802");
-      novos += por("demo:update", AV_UPDATE, i18n("Atualização disponível"),
+      novos += demoAviso("demo:update", AV_UPDATE, i18n("Atualização disponível"),
                    "Versão 1.3.2 disponível. Você está na 1.3.1.", "1.3.2");
-      novos += por("demo:canal", AV_CANAL, "Guia de TV demorando",
+      novos += demoAviso("demo:canal", AV_CANAL, "Guia de TV demorando",
                    "Na 1.3.1 o guia espera a rede a cada abertura. A 1.3.2 corrige. — Henrique", NULL);
-      novos += por("demo:crash", AV_CRASH, i18n("O app fechou sozinho"),
+      novos += demoAviso("demo:crash", AV_CRASH, i18n("O app fechou sozinho"),
                    "Em 2026-09-19 18:57 o Nuvio parou sem avisar. Se quiser, envie o registro daquela sessão para ajudar a encontrar a causa.", NULL);
       pthread_mutex_unlock(&trava);
       toast(novos);

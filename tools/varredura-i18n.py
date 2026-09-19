@@ -213,7 +213,10 @@ NAO_E_TELA = ("printf", "fprintf", "puts", "fputs", "perror", "marco",
               # um nome de arquivo. Acusar o que nao e defeito ensina a ignorar
               # o teste, que e como esta classe de defeito sobrevive.
               "gfx_icone", "gfx_icones_dir", "extras_caminho_marca_nome",
-              "tex_obter", "tex_arquivo")
+              "tex_obter", "tex_arquivo",
+              # DADO DE MENTIRA da central de avisos (NUVIO_AVISOS_DEMO): imita
+              # o que a rede traria, nao e rotulo de tela.
+              "demoAviso")
 
 RE_DESENHO = re.compile(
     r"(?<![A-Za-z0-9_])(" + "|".join(DESENHO) + r")\s*\(")
