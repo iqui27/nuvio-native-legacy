@@ -72,9 +72,9 @@ void novidades132_atualizar(float dt, Uint32 agora) {
 // --- ABERTURA ---------------------------------------------------------------
 static void figAbertura(float x, float y, float a) {
   txt_bloco(TXT_BODY,
-            i18n("Quatro coisas que você sente sem procurar: o Guia de TV deixa de esperar a rede, "
-                 "a arte não some quando um servidor cai, o MP4 vem primeiro na LG, e na Samsung "
-                 "as imagens param de pesar."),
+            i18n("O app passa a avisar: recomendações, estreias, versão nova e recados de quem faz o app — "
+                 "e, se ele fechar sozinho, oferece enviar o registro. O Guia abre na hora, a arte tem "
+                 "reserva, e a memória para imagens é sua em Ajustes."),
             200, 203, 210, x, y, N132_FIG_W, 34.0f, a, 6);
 }
 
@@ -116,22 +116,22 @@ void novidades132_desenhar(Uint32 agora) {
 
   y = N132_Y + dy + 96.0f;
   { float fx = N132_TXT_X, fw = N132_TXT_W;
+    y += feature(fx, y, fw, "lembrete",
+          "Central de avisos",
+          "Recomendação de amigo, estreia, versão nova e avisos de quem faz o "
+          "app: um toast quando chega, AZUL abre, e a aba Avisos em Salvos.", a);
     y += feature(fx, y, fw, "menu_guide",
           "O Guia de TV abre na hora",
           "A última lista de canais fica guardada e aparece de imediato; a rede "
           "atualiza por trás e só troca o que mudou.", a);
     y += feature(fx, y, fw, "aspecto",
-          "Arte com reserva",
-          "Se o servidor de imagens do catálogo falha, o mesmo cartaz vem do TMDB. "
-          "Fileira cinza só se os dois caírem.", a);
+          "Arte com reserva, Samsung mais leve",
+          "Se o servidor de imagens cai, o mesmo cartaz vem do TMDB. Na Samsung "
+          "a TV decodifica as imagens já no tamanho certo, fora do heap.", a);
     y += feature(fx, y, fw, "fontes",
           "MP4 na frente, na LG",
-          "Entre fontes da mesma resolução o automático escolhe o MP4 — é o "
-          "container que toca Dolby Vision nesta TV. A folha marca cada um.", a);
-    y += feature(fx, y, fw, "play",
-          "Samsung: imagens leves",
-          "A TV decodifica cartazes e fundos por conta própria, já no tamanho "
-          "certo. Antes um fundo 4K travava a tela por segundos.", a);
+          "Entre fontes da mesma resolução o automático escolhe o MP4, que toca "
+          "Dolby Vision nesta TV. E marcar visto agora é um OK só.", a);
   }
 
   { TxtLinha t = txt_linha_corta(TXT_CAPTION2, i18n("OK para começar"),
