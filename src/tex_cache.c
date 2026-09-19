@@ -17,6 +17,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include "webp.h"
+#include "jpegrapido.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -991,10 +992,62 @@ static int threadRede(void *arg) {
 // a copia intermediaria em tamanho cheio era o que estourava o heap de 256 MiB
 // do Tizen com backdrops de 3840x2160 (33 MB cada). Aqui o pico e a fonte mais
 // uma faixa de poucas linhas.
+// REDUCAO ATE 2x POR BILINEAR, em ponto fixo, direto sobre ABGR8888.
+//
+// MEDIDO na C9 em 19/09: a media de area (abaixo) levava 1.212 ms para
+// trazer 2560x1440 a 1920x1080 — 330 ns por pixel de origem, com
+// acumuladores de 64 bits num ARM de 32 — e 100 a 190 ms para 960x540 -> 544.
+// Com a decodificacao escalada (jpegrapido.c) quase toda reducao passou a ser
+// de menos de 2x, e nessa faixa quatro amostras por pixel de SAIDA dao o
+// mesmo resultado a olho e custam uma fracao: sao 2 milhoes de pixels de
+// saida a ~30 ciclos em vez de 3,7 milhoes de origem a 360. A media de area
+// continua sendo o caminho para razoes maiores (PNG grande, webp), onde a
+// bilinear pularia pixels e serrilharia.
+static SDL_Surface *reduzirBilinear(SDL_Surface *src, int lw, int lh) {
+  SDL_Surface *conv = NULL, *dst;
+  const unsigned char *sp; int spitch, sw = src->w, sh = src->h;
+  unsigned fx, fy, ox, oy;
+  if (src->format->format != SDL_PIXELFORMAT_ABGR8888) {
+    conv = SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_ABGR8888, 0);
+    if (!conv) return NULL;
+    src = conv;
+  }
+  dst = nv_superficie(0, lw, lh, 32, SDL_PIXELFORMAT_ABGR8888);
+  if (!dst) { if (conv) SDL_FreeSurface(conv); return NULL; }
+  if (SDL_MUSTLOCK(src)) SDL_LockSurface(src);
+  sp = src->pixels; spitch = src->pitch;
+  // Passo em 16.16; a amostra cai no CENTRO do pixel de saida mapeado na
+  // origem (o -0.5 dos dois lados), como manda a bilinear.
+  fx = (unsigned)(((unsigned long long)sw << 16) / (unsigned)lw);
+  fy = (unsigned)(((unsigned long long)sh << 16) / (unsigned)lh);
+  for (oy = 0; oy < (unsigned)lh; oy++) {
+    unsigned char *out = (unsigned char *)dst->pixels + (size_t)oy * (size_t)dst->pitch;
+    long long syf = (long long)oy * fy + (fy >> 1) - 32768; if (syf < 0) syf = 0;
+    unsigned sy = (unsigned)(syf >> 16), wy = (unsigned)(syf & 0xFFFF) >> 8;
+    unsigned sy1 = sy + 1 < (unsigned)sh ? sy + 1 : sy;
+    const unsigned char *r0 = sp + (size_t)sy * (size_t)spitch, *r1 = sp + (size_t)sy1 * (size_t)spitch;
+    for (ox = 0; ox < (unsigned)lw; ox++) {
+      long long sxf = (long long)ox * fx + (fx >> 1) - 32768; if (sxf < 0) sxf = 0;
+      unsigned sx = (unsigned)(sxf >> 16), wx = (unsigned)(sxf & 0xFFFF) >> 8;
+      unsigned sx1 = sx + 1 < (unsigned)sw ? sx + 1 : sx;
+      const unsigned char *a = r0 + sx * 4, *b = r0 + sx1 * 4, *c = r1 + sx * 4, *d = r1 + sx1 * 4;
+      unsigned w00 = (256 - wx) * (256 - wy), w10 = wx * (256 - wy), w01 = (256 - wx) * wy, w11 = wx * wy;
+      unsigned k;
+      for (k = 0; k < 4; k++)
+        out[ox * 4 + k] = (unsigned char)((a[k] * w00 + b[k] * w10 + c[k] * w01 + d[k] * w11 + 32768) >> 16);
+    }
+  }
+  if (SDL_MUSTLOCK(src)) SDL_UnlockSurface(src);
+  if (conv) SDL_FreeSurface(conv);
+  return dst;
+}
+
 SDL_Surface *tex_reduzir(SDL_Surface *src, int lw, int lh) {
   SDL_Surface *dst;
   int sw = src->w, sh = src->h;
   if (lw <= 0 || lh <= 0 || sw <= 0 || sh <= 0) return NULL;
+  if (sw <= 2 * lw && sh <= 2 * lh && !SDL_ISPIXELFORMAT_INDEXED(src->format->format))
+    return reduzirBilinear(src, lw, lh);
   if (SDL_ISPIXELFORMAT_INDEXED(src->format->format)) {
     // SDL_ConvertPixels nao carrega a paleta. Imagem indexada e PNG pequeno
     // (logo); converter inteira aqui nao custa.
@@ -1133,13 +1186,19 @@ static int threadDecode(void *arg) {
       if (garantirLocal(caminho, local, sizeof local))
         snprintf(caminho, sizeof caminho, "%s", local);
     }
-    Uint32 t0 = SDL_GetTicks();
-    SDL_Surface *bruta = IMG_Load(caminho);
+    Uint32 t0 = SDL_GetTicks(), tLoad;
     int srcW = 0, srcH = 0;
+    // JPEG SAI DO DECODIFICADOR JA REDUZIDO (jpegrapido.h): 1/2, 1/4 ou 1/8
+    // dentro da DCT, o que cobre o pedido. srcW/srcH ficam com o tamanho do
+    // ARQUIVO — e o que `fonteW` guarda para decidir promocao — e nao com o
+    // do que saiu. NULL cai no IMG_Load de sempre.
+    SDL_Surface *bruta = jpeg_rapido_carregar(caminho, limite, &srcW, &srcH);
     SDL_Surface *conv = NULL;
+    if (!bruta) { srcW = srcH = 0; bruta = IMG_Load(caminho); }
     // O SDL2_image desta TV nao le WebP; a libwebp do sistema le (webp.c).
     if (!bruta) bruta = webp_carregar(caminho);
-    if (bruta) { srcW = bruta->w; srcH = bruta->h; }
+    tLoad = SDL_GetTicks();
+    if (bruta && !srcW) { srcW = bruta->w; srcH = bruta->h; }
     if (bruta) {
       // REDUZ DIRETO DA BRUTA quando ela e maior que o teto, em vez de
       // converter em tamanho cheio e so depois reduzir.
@@ -1234,8 +1293,12 @@ static int threadDecode(void *arg) {
     // este nucleo". Sem ele, a resposta a "por que a arte demora" e opiniao.
     { Uint32 dt = SDL_GetTicks() - t0;
       if (conv && dt >= 250) {
-        printf("[tex] decode lento: %u ms para %dx%d (saiu %dx%d) %s\n",
-               (unsigned)dt, srcW, srcH, conv->w, conv->h, urlOrig);
+        // Em duas partes: ler o arquivo (IMG_Load) e reduzir (tex_reduzir +
+        // conversao). E o que separa "a libjpeg e lenta" de "a media de area
+        // e lenta" — duas respostas com consertos opostos.
+        printf("[tex] decode lento: %u ms (ler %u, reduzir %u) para %dx%d (saiu %dx%d) %s\n",
+               (unsigned)dt, (unsigned)(tLoad - t0), (unsigned)(SDL_GetTicks() - tLoad),
+               srcW, srcH, conv->w, conv->h, urlOrig);
         fflush(stdout);
       } }
     if (getenv("NUVIO_TEX_LOG") && conv)

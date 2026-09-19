@@ -375,7 +375,13 @@
 // 400 ms: com a arte em cache a troca acontece antes disso e o prazo nunca e
 // alcancado; ele so aparece quando ha rede no caminho. Somado ao repouso da
 // 620 ms entre o foco parar e o heroi corresponder.
-#define NV_HERO_ESPERA_MS     400
+//
+// 600 e nao 400 desde 19/09: MEDIDO na C9 depois do decode escalado, a arte
+// do heroi vindo da rede chegava em 405-415 ms — quinze milissegundos DEPOIS
+// do prazo. O marcador neutro entrava por um quadro e a arte por cima dele: a
+// pessoa via um pisca a cada foco. Com 600 a mesma arte entra direto, e o
+// caso "rede lenta de verdade" continua trocando para o marcador.
+#define NV_HERO_ESPERA_MS     600
 #define NV_HERO_DOT           9.0f
 #define NV_HERO_DOT_GAP      14.0f
 

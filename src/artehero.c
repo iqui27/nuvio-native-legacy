@@ -51,6 +51,37 @@ const char *artehero_url_card(const CatItem *item) {
   return NULL;
 }
 
+// FUNDO DE CARD EM w780, quando a url e do TMDB.
+//
+// A descoberta guarda o fundo como w1280 (1280x720). O card deitado desenha
+// 736 px, 768 no foco: w780 (780x439) cobre os dois 1:1, com 2,7x menos
+// pixels para baixar e decodificar — MEDIDO na C9 em 19/09: cada w1280 custava
+// 300 a 430 ms no fio de decode, e uma fileira sao vinte deles. A url da
+// descoberta nao muda (o heroi e o detalhe continuam subindo dela para a
+// versao grande, ver artehero_url); so o card pede menor. Ponteiro estatico,
+// como artehero_url.
+// ANEL de 64 e nao um buffer so: home.c guarda o ponteiro do card FOCADO em
+// itemFoco.arte e app.c o le depois de a fileira inteira ter sido desenhada —
+// com um buffer, ele apontaria para a url do ultimo card da fileira.
+#define CARD_ANEL 64
+const char *artehero_url_card_deitado(const CatItem *item) {
+  static char anel[CARD_ANEL][512];
+  static int vez;
+  char *buf;
+  const char *b, *p;
+  if (!item) return NULL;
+  b = item->backdrop[0] ? item->backdrop : item->poster[0] ? item->poster : NULL;
+  if (!b) return NULL;
+  if (qualidadeImg == 2) return b;   // alta: o que o catalogo guardou, inteiro
+  p = strstr(b, "/t/p/w1280/");
+  if (!p) return b;
+  buf = anel[vez]; vez = (vez + 1) % CARD_ANEL;
+  { size_t pre = (size_t)(p - b);
+    if (pre >= sizeof anel[0] - 64) return b;
+    snprintf(buf, sizeof anel[0], "%.*s/t/p/w780/%s", (int)pre, b, p + strlen("/t/p/w1280/")); }
+  return buf;
+}
+
 const char *artehero_url_episodio(const CatItem *item) {
   static char buf[512];
   if (!item) return NULL;

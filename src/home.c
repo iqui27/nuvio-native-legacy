@@ -523,8 +523,9 @@ static void desenhaArteAusente(GfxRect r, float raio, const CatItem *item,
 // subir para a versao grande aqui seria baixar 3840 px para desenhar 419.
 static const char *arte_por_formato(const CatItem *item, int deitado) {
   if (!item) return NULL;
-  if (deitado) return item->backdrop[0] ? item->backdrop
-                                      : (item->poster[0] ? item->poster : NULL);
+  // Deitado pede w780 quando a url e do TMDB (artehero_url_card_deitado): o
+  // card desenha 736/768, e o w1280 era 2,7x mais pixels por nada.
+  if (deitado) return artehero_url_card_deitado(item);
   return item->poster[0] ? item->poster
                          : (item->backdrop[0] ? item->backdrop : NULL);
 }
