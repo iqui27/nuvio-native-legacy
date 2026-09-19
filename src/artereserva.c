@@ -30,15 +30,62 @@ static int lerMetahub(const char *url, char *tipo, size_t tTipo, char *id, size_
   return 1;
 }
 
+// episodes.metahub.space/<ttNNN>/<temp>/<ep>/<tam>.jpg  ->  id, temporada, episodio.
+static int lerStill(const char *url, char *id, size_t tId, int *temp, int *ep) {
+  static const char PREFIXO[] = "episodes.metahub.space/";
+  const char *p = strstr(url, PREFIXO), *barra;
+  size_t n;
+  if (!p) return 0;
+  p += sizeof PREFIXO - 1;
+  barra = strchr(p, '/');
+  if (!barra) return 0;
+  n = (size_t)(barra - p);
+  if (n < 3 || n + 1 > tId || p[0] != 't' || p[1] != 't') return 0;
+  memcpy(id, p, n); id[n] = 0;
+  if (sscanf(barra + 1, "%d/%d/", temp, ep) != 2 || *temp < 0 || *ep < 1) return 0;
+  return 1;
+}
+
+// Still de episodio: duas viagens (o id do TMDB pela /find, depois o
+// episodio). So depois de o metahub falhar, e o still e o card de Continue
+// Watching inteiro — vale as duas.
+static int reservaStill(const char *chave, const char *id, int temp, int ep,
+                        char *saida, size_t tam) {
+  char api[300], caminho[128] = "";
+  char *resp;
+  const char *v;
+  long idTv = 0;
+  snprintf(api, sizeof api,
+           "https://api.themoviedb.org/3/find/%s?api_key=%s&external_source=imdb_id", id, chave);
+  resp = rede_baixar(api, 8);
+  if (!resp) return 0;
+  v = js_array(resp, NULL, "tv_results");
+  if (v) idTv = (long)js_num(v, js_fim(v), "id", 0.0);
+  free(resp);
+  if (idTv <= 0) return 0;
+  snprintf(api, sizeof api,
+           "https://api.themoviedb.org/3/tv/%ld/season/%d/episode/%d?api_key=%s", idTv, temp, ep, chave);
+  resp = rede_baixar(api, 8);
+  if (!resp) return 0;
+  js_texto_raiz(resp, "still_path", caminho, sizeof caminho);
+  free(resp);
+  if (caminho[0] != '/') return 0;
+  snprintf(saida, tam, "https://image.tmdb.org/t/p/original%s", caminho);
+  printf("[tex] reserva do TMDB para still de %s S%dE%d\n", id, temp, ep);
+  fflush(stdout);
+  return 1;
+}
+
 int arte_reserva_url(const char *url, char *saida, size_t tam) {
   char tipo[16], id[24], api[300], caminho[128] = "";
   const char *chave, *corpo, *v;
   char *resp;
-  int poster;
+  int poster, temp = 0, ep = 0;
   if (!url || !saida || tam < 80) return 0;
-  if (!lerMetahub(url, tipo, sizeof tipo, id, sizeof id)) return 0;
   chave = desc_chave_tmdb();
   if (!chave[0]) return 0;
+  if (lerStill(url, id, sizeof id, &temp, &ep)) return reservaStill(chave, id, temp, ep, saida, tam);
+  if (!lerMetahub(url, tipo, sizeof tipo, id, sizeof id)) return 0;
   poster = !strcmp(tipo, "poster");
   snprintf(api, sizeof api,
            "https://api.themoviedb.org/3/find/%s?api_key=%s&external_source=imdb_id",

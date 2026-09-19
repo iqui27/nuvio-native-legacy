@@ -7,12 +7,16 @@
 #include <string.h>
 
 static const char *chave = "CHAVE";
-static const char *resposta = NULL;
+static const char *resposta = NULL;      // resposta do /find
+static const char *respostaEp = NULL;    // resposta do /tv/.../episode/...
 static char ultimaUrl[400];
+static int pedidos;
 const char *desc_chave_tmdb(void) { return chave; }
 char *rede_baixar(const char *url, int segundos) {
   (void)segundos;
+  pedidos++;
   snprintf(ultimaUrl, sizeof ultimaUrl, "%s", url);
+  if (strstr(url, "/season/")) return respostaEp ? strdup(respostaEp) : NULL;
   return resposta ? strdup(resposta) : NULL;
 }
 
@@ -51,6 +55,20 @@ int main(void) {
   // Rede falhou -> 0.
   chave = "CHAVE"; resposta = NULL;
   OK(arte_reserva_url("https://images.metahub.space/poster/medium/tt0111161/img", s, sizeof s) == 0, "rede falhou");
+  // Still de episodio: /find da o id da serie, /tv/<id>/season/<s>/episode/<e> da o still.
+  resposta = "{\"movie_results\":[],\"tv_results\":[{\"id\":1396,\"poster_path\":\"/bb.jpg\"}]}";
+  respostaEp = "{\"air_date\":\"2008-01-20\",\"name\":\"Pilot\",\"still_path\":\"/pilot.jpg\",\"guest_stars\":[{\"name\":\"x\"}]}";
+  pedidos = 0;
+  OK(arte_reserva_url("https://episodes.metahub.space/tt0903747/1/1/w780.jpg", s, sizeof s) == 1, "still");
+  OK(!strcmp(s, "https://image.tmdb.org/t/p/original/pilot.jpg"), "url do still");
+  OK(pedidos == 2, "still custa duas viagens");
+  OK(strstr(ultimaUrl, "/3/tv/1396/season/1/episode/1?api_key=CHAVE") != NULL, "url do episodio");
+  respostaEp = "{\"still_path\":null}";
+  OK(arte_reserva_url("https://episodes.metahub.space/tt0903747/1/2/w780.jpg", s, sizeof s) == 0, "still nulo");
+  resposta = "{\"movie_results\":[],\"tv_results\":[]}"; pedidos = 0;
+  OK(arte_reserva_url("https://episodes.metahub.space/tt0000001/1/1/w780.jpg", s, sizeof s) == 0, "serie desconhecida");
+  OK(pedidos == 1, "sem id nao pede o episodio");
+  OK(arte_reserva_url("https://episodes.metahub.space/tt0903747/x/1/w780.jpg", s, sizeof s) == 0, "still mal formado");
   printf("%s\n", falhas ? "artereserva: FALHOU" : "artereserva: ok");
   return falhas ? 1 : 0;
 }
