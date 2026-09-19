@@ -37,6 +37,7 @@
 #include "simklauth.h"
 #include "app.h"
 #include "registro.h"
+#include "avisos.h"
 #include "video.h"
 #include "addons.h"
 #include "ajustes.h"
@@ -307,7 +308,11 @@ int main(int argc, char **argv) {
   // para o terminal, e o alvo Tizen, onde nao ha arquivo util) — que e
   // exatamente o que o antigo #ifndef NV_SEM_WEBOS ja fazia.
   { const char *log = registro_arquivo();
-    if (log) { freopen(log, "w", stdout); freopen(log, "a", stderr); } }
+    // O LOG DA SESSAO ANTERIOR SOBREVIVE UMA VOLTA: renomeado antes de o novo
+    // truncar o arquivo. E ele que "Enviar registro" manda quando a sessao
+    // anterior morreu sem se despedir (avisos.h). Custa um rename; o arquivo
+    // e do proprio app, entao o sticky bit do /tmp nao atrapalha.
+    if (log) { rename(log, "/tmp/nuvio-anterior.log"); freopen(log, "w", stdout); freopen(log, "a", stderr); } }
   setvbuf(stdout, NULL, _IOLBF, 0);
   if (!getenv("XDG_RUNTIME_DIR")) setenv("XDG_RUNTIME_DIR", "/tmp/xdg", 1);
 
@@ -402,6 +407,7 @@ int main(int argc, char **argv) {
   // SDL: mexe em getenv/fopen/mkdir, e no Emscripten monta o IDBFS. `dirArte`
   // ja esta resolvido desde o topo do main.
   dados_iniciar(dirArte);
+  avisos_iniciar();   // le a marca da sessao anterior e grava a desta
   // E OS AJUSTES LOGO ATRAS, pelo mesmo motivo: ajustes_4k() le `valor[]`, que
   // so sai do padrao depois desta chamada. Sem ela a opcao existia na tela,
   // gravava no arquivo e nao fazia efeito nenhum — o pior tipo de ajuste.

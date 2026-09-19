@@ -52,6 +52,7 @@
 #include "novidades13.h"
 #include "novidades131.h"
 #include "novidades132.h"
+#include "avisos.h"
 #include "recintro.h"
 #include "atualizacao.h"
 #include "pipintro.h"
@@ -447,6 +448,10 @@ void app_evento(const SDL_Event *e) {
   // mais importa. Enquanto aberto ele engole todo o teclado, incluindo o KEYUP
   // do toque que o abriu ou fechou (ver a nota da armadilha em registro.c).
   if (registro_evento(e)) return;
+  // A CENTRAL DE AVISOS vem logo depois do painel de log: com o toast na tela
+  // AZUL/CH+ abrem a lista, e com a lista aberta ela come o teclado. Fora
+  // desses dois estados ela nao toca em nada (ver avisos.h).
+  if (avisos_evento(e)) return;
 
   // PORTA DE TESTE: F10 abre o Guia de TV de onde quer que o app esteja.
   //
@@ -927,9 +932,15 @@ void app_atualizar(float dt, Uint32 agora) {
   // local, ver salvospainel.c), e um indice para esses nao existe. Sem item no
   // catalogo, pede o titulo a descoberta — o mesmo caminho que perfil.c e
   // social.c ja usam para um id que so eles conhecem.
+  // Acoes pedidas pela central de avisos: abrir Salvos (recomendacao) ou o
+  // cartao de atualizacao. O titulo (agenda) segue pelo contrato de baixo.
+  { int c = avisos_pediu();
+    if (c == AVISOS_ABRIR_SALVOS && !spainel_aberto()) spainel_abrir();
+    else if (c == AVISOS_ABRIR_ATUALIZACAO) atualizacao_abrir(); }
   if (!detail_aberto() && !player_aberto()) {
     const char *alvo = spainel_pediu_abrir();
     if (!alvo) alvo = recomenda_pediu_abrir();   // mesmo contrato, outra origem
+    if (!alvo) alvo = avisos_pediu_abrir();
     if (alvo && alvo[0]) {
       int k = cat_indice_por_imdb(alvo);
       if (k >= 0) abrirPorIndice(k); else desc_pedir_titulo(alvo);
@@ -1626,6 +1637,7 @@ void app_atualizar(float dt, Uint32 agora) {
   recintro_atualizar(dt, agora);
   atualizacao_atualizar(dt, agora);
   agendaviso_atualizar(dt, agora);
+  avisos_atualizar(dt, agora);
   pipintro_atualizar(dt, agora);
   if(tela==TELA_SOCIAL) social_atualizar(dt, agora);
   if(tela==TELA_ADDONS) addonsui_atualizar(dt, agora);
@@ -1758,6 +1770,14 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) recintro_desenhar(agora);
   if (!registro_aberto()) atualizacao_desenhar(agora);
   if (!registro_aberto()) agendaviso_desenhar(agora);
+  // A central so aparece com a pessoa DENTRO do app: no login e na escolha de
+  // perfil nao ha para quem avisar, e o relogio do toast so comeca a contar
+  // no primeiro quadro em que ele pode ser visto (ver avisos.c).
+  // (perfilsel_concluido NAO serve de guarda: "Voltar: continuar como X" sai
+  // da escolha com `sair`, nunca com `concluido`, e a central ficaria muda.)
+  if (!registro_aberto() && !player_aberto() && sessao_logada() &&
+      tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL)
+    avisos_desenhar(agora);
   if (!registro_aberto()) recenviar_desenhar(agora);
   if (!registro_aberto()) recomenda_desenhar(agora);
   if (!registro_aberto()) pipintro_desenhar(agora);
@@ -1767,6 +1787,7 @@ void app_desenhar(Uint32 agora) {
 int app_quer_sair(void) { return sair; }
 
 void app_encerrar(void) {
+  avisos_encerrar();   // saida limpa: apaga a marca de sessao viva
   if (aguardandoFonte == 2 && fioFonteVivo) pthread_join(fioFonte, NULL);
   aguardandoFonte = 0;
   player_encerrar();

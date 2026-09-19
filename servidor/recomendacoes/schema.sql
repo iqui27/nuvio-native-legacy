@@ -65,3 +65,5 @@ CREATE TABLE IF NOT EXISTS sessao (
   nome   TEXT NOT NULL DEFAULT '',
   expira INTEGER NOT NULL
 );
+
+-- Ver migracao-003-registro.sql (registro de sessao que morreu).

@@ -467,6 +467,24 @@ async function rotaVisto(env, quem, corpo) {
   return json({ ok: 1, n: r.meta?.changes || 0 });
 }
 
+// REGISTRO DE UMA SESSAO QUE MORREU (avisos.h no cliente). So chega quando a
+// pessoa aperta "Enviar registro": o app nunca manda sozinho. O texto ja vem
+// sem credencial (rede_url_publica no cliente) e e cortado aqui em 200 KB de
+// qualquer jeito; fica 30 dias e sai na limpeza diaria.
+const REGISTRO_MAX = 200 * 1024;
+const REGISTRO_RETENCAO = 30 * 24 * 3600;
+async function rotaRegistro(env, quem, corpo) {
+  const versao = String(corpo?.versao || "").slice(0, 32);
+  const plataforma = String(corpo?.plataforma || "").slice(0, 16);
+  const quando = String(corpo?.quando || "").slice(0, 40);
+  let texto = String(corpo?.texto || "");
+  if (texto.length > REGISTRO_MAX) texto = texto.slice(texto.length - REGISTRO_MAX);
+  await env.DB.prepare(
+    "INSERT INTO registro (pessoa, versao, plataforma, quando, texto, criado) VALUES (?, ?, ?, ?, ?, ?)"
+  ).bind(quem.id, versao, plataforma, quando, texto, agora()).run();
+  return json({ ok: 1, bytes: texto.length });
+}
+
 async function rotaApagar(env, quem, corpo) {
   const id = parseInt(corpo?.id, 10);
   if (!Number.isInteger(id)) return erro("sem id", 400);
@@ -510,6 +528,7 @@ export default {
     if (rota === "/v1/rec" && req.method === "GET")       return rotaReceber(env, quem, url, req);
     if (rota === "/v1/rec/visto" && req.method === "POST") return rotaVisto(env, quem, corpo);
     if (rota === "/v1/rec/apagar" && req.method === "POST") return rotaApagar(env, quem, corpo);
+    if (rota === "/v1/registro" && req.method === "POST")   return rotaRegistro(env, quem, corpo);
 
     return erro("rota desconhecida", 404);
   },
@@ -519,6 +538,7 @@ export default {
     await env.DB.batch([
       env.DB.prepare("DELETE FROM rec WHERE criado < ?").bind(t - RETENCAO),
       env.DB.prepare("DELETE FROM sessao WHERE expira < ?").bind(t),
+      env.DB.prepare("DELETE FROM registro WHERE criado < ?").bind(t - REGISTRO_RETENCAO),
     ]);
   },
 };

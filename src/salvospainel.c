@@ -16,6 +16,7 @@
 #include "salvospainel.h"
 #include "salvos.h"
 #include "recomenda.h"
+#include "avisos.h"
 #include "recenviar.h"
 #include "catalogo.h"
 #include "gfx.h"
@@ -107,7 +108,10 @@ static int nCont;            // quantas das primeiras linhas sao "Continuar"
 // direita trocam de aba; do zero para baixo o D-pad e o de sempre. Uma linha
 // de foco "fora da lista" em vez de um modo separado porque o resto do painel
 // (rolagem, animacao de foco, recorte) continua valendo sem mudanca nenhuma.
-enum { SP_ABA_SALVOS = 0, SP_ABA_SOCIAL = 1 };
+// A ABA AVISOS e a central de avisos (avisos.h) dentro deste painel, para
+// abrir quando se quiser e nao so no toast. Existe SEMPRE; a Social so com o
+// servico de recomendacoes.
+enum { SP_ABA_SALVOS = 0, SP_ABA_SOCIAL = 1, SP_ABA_AVISOS = 2 };
 #define SP_FOCO_ABAS (-1)
 static int aba;
 static RecItem recs[REC_MAX];
@@ -307,7 +311,16 @@ static void reconstruir(void) {
 
 // 1 quando o pacote tem o servico de recomendacoes. Com 0 nao ha aba, nao ha
 // selo e nao ha uma linha de rede: o dono publica builds sem NUVIO_REC_URL.
-static int temAbas(void) { return recomenda_ativo(); }
+static int temAbas(void) { return 1; }
+// A Social so existe com o servico; sem ele as abas sao Salvos e Avisos.
+static int temSocial(void) { return recomenda_ativo(); }
+static int proximaAba(int de, int dir) {
+  int a = de + dir;
+  if (a == SP_ABA_SOCIAL && !temSocial()) a += dir;
+  if (a < SP_ABA_SALVOS) return de;
+  if (a > SP_ABA_AVISOS) return de;
+  return a;
+}
 
 // Quantas linhas a aba corrente desenha. Uma funcao so para as duas, senao a
 // rolagem e o desenho divergem na primeira mudanca.
@@ -320,6 +333,7 @@ static int nVisiveis(void) {
   // de amigos so seria alcancavel pelo menu de um cartaz — ou seja, para
   // adicionar alguem era preciso escolher um filme primeiro.
   if (aba == SP_ABA_SOCIAL) return nSocial;
+  if (aba == SP_ABA_AVISOS) return avisos_lista_n();
   return nLinhas;
 }
 
@@ -417,6 +431,7 @@ static void reconstruirSocial(void) {
 
 static void trocarAba(int nova) {
   if (!temAbas() || nova == aba) return;
+  if (aba == SP_ABA_AVISOS) avisos_marcar_lidos();
   aba = nova;
   foco = SP_FOCO_ABAS;
   scrollY = 0.0f;
@@ -456,7 +471,10 @@ void spainel_abrir(void) {
   reconstruirSocial();
 }
 
-void spainel_fechar(void) { aberto = 0; }
+void spainel_fechar(void) {
+  if (aberto && aba == SP_ABA_AVISOS) avisos_marcar_lidos();
+  aberto = 0;
+}
 
 // Altura ate o TOPO da linha `i`, contando o cabecalho de cada secao. Nao e
 // `i * SP_PASSO`: o rotulo "Não começados" empurra tudo que vem depois dele, e
@@ -475,6 +493,7 @@ static float topoDe(int i) {
       y += socialAntes(k) + socialAlt(k) + SPS_GAP;
     return y + socialAntes(i);
   }
+  if (aba == SP_ABA_AVISOS) return (float)i * AVISOS_LINHA_H;
   // Rotulo da primeira secao, sempre; mais o de "Não começados" para quem vem
   // depois dele. Com nCont == 0 nao existe segunda secao — a unica que aparece
   // e "Sua lista", e o segundo termo tem de ser zero para todo mundo.
@@ -499,12 +518,12 @@ void spainel_evento(const SDL_Event *e) {
   // perfil.c ja tinha nesta posicao.
   if (k == SDLK_LEFT) {
     if (temAbas() && foco == SP_FOCO_ABAS && aba != SP_ABA_SALVOS) {
-      trocarAba(SP_ABA_SALVOS); return;
+      trocarAba(proximaAba(aba, -1)); return;
     }
     spainel_fechar(); return;
   }
   if (k == SDLK_RIGHT) {
-    if (temAbas() && foco == SP_FOCO_ABAS) trocarAba(SP_ABA_SOCIAL);
+    if (temAbas() && foco == SP_FOCO_ABAS) trocarAba(proximaAba(aba, 1));
     return;
   }
   if (k == SDLK_DOWN) {
@@ -522,7 +541,11 @@ void spainel_evento(const SDL_Event *e) {
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
     if (foco == SP_FOCO_ABAS) {
       // OK na linha de abas alterna, para quem nao descobriu a seta.
-      trocarAba(aba == SP_ABA_SALVOS ? SP_ABA_SOCIAL : SP_ABA_SALVOS);
+      { int p = proximaAba(aba, 1); trocarAba(p == aba ? SP_ABA_SALVOS : p); }
+      return;
+    }
+    if (aba == SP_ABA_AVISOS) {
+      if (avisos_lista_ok(foco)) spainel_fechar();
       return;
     }
     if (aba == SP_ABA_SOCIAL) {
@@ -650,7 +673,7 @@ void spainel_atualizar(float dt, Uint32 agora) {
     // A ALTURA DA LINHA FOCADA, e nao SP_POSTER_H sempre: na aba Social a linha
     // pode ter 84, 112 ou 138px, e usar a maior empurraria a rolagem 54px alem
     // do necessario num interruptor de 104.
-    base = topo + (aba == SP_ABA_SOCIAL ? socialAlt(foco) : SP_POSTER_H);
+    base = topo + (aba == SP_ABA_SOCIAL ? socialAlt(foco) : aba == SP_ABA_AVISOS ? AVISOS_LINHA_H - 10.0f : SP_POSTER_H);
     if (base - alvo > janela) alvo = base - janela;
     if (topo - alvo < 0.0f) alvo = topo;
   }
@@ -902,20 +925,24 @@ static void desenhaRecLinha(int linha, int idx, float dx, float y, float a) {
 // NAO E DESENHADA (ver a nota longa em ctxmenu.c). O foco aparece no anel, que
 // e geometria e nao custa texto.
 static void desenhaAbas(float dx, float a) {
-  const char *rot[2];
+  const char *rot[3];
   float x = SP_X + dx + SP_PAD;
-  int i, novas = recomenda_n_novas();
+  int i, novasRec = recomenda_n_novas(), novasAv = avisos_n_novos();
   rot[SP_ABA_SALVOS] = "SALVOS";
   rot[SP_ABA_SOCIAL] = "SOCIAL";
-  for (i = 0; i < 2; i++) {
+  rot[SP_ABA_AVISOS] = "AVISOS";
+  for (i = 0; i < 3; i++) {
     int ativa = (i == aba);
     int emFoco = (foco == SP_FOCO_ABAS && ativa);
     int cor = emFoco ? 20 : (ativa ? 246 : 176);
-    TxtLinha t = txt_linha(TXT_CALLOUT, i18n(rot[i]), cor, cor, cor, 255);
+    int novas = i == SP_ABA_SOCIAL ? novasRec : i == SP_ABA_AVISOS ? novasAv : 0;
+    TxtLinha t;
+    if (i == SP_ABA_SOCIAL && !temSocial()) continue;
+    t = txt_linha(TXT_CALLOUT, i18n(rot[i]), cor, cor, cor, 255);
     // O selo so aparece na aba que NAO esta aberta. Ele responde "ha algo
     // novo la?"; com a aba Social na tela, a propria lista responde isso, e o
     // numero ficaria repetido a dois centimetros da contagem do cabecalho.
-    float selo = (i == SP_ABA_SOCIAL && !ativa && novas > 0) ? 44.0f : 0.0f;
+    float selo = (!ativa && novas > 0) ? 44.0f : 0.0f;
     GfxRect p = { x, SP_ABAS_Y, t.w + 44.0f + selo, SP_ABAS_H };
     // FOCO EM SUPERFICIE ESCURA, nunca pilula branca com texto preto: a nota
     // de NV_COR_FOCO em layout.h chama isso de o padrao errado, e perfilsel.c
@@ -1312,6 +1339,11 @@ void spainel_desenhar(Uint32 agora) {
     snprintf(buf, sizeof buf, "%d %s", n,
              i18n(n == 1 ? "recomendação" : "recomendações"));
   }
+  else if (aba == SP_ABA_AVISOS) {
+    int n = avisos_lista_n(), nv = avisos_n_novos();
+    if (nv > 0) snprintf(buf, sizeof buf, i18n("%d avisos · %d novos"), n, nv);
+    else snprintf(buf, sizeof buf, "%d %s", n, i18n(n == 1 ? "aviso" : "avisos"));
+  }
   else {
     snprintf(buf, sizeof buf, "%d %s   ·   %d %s", nLinhas,
              i18n(nLinhas == 1 ? "título" : "títulos"),
@@ -1330,6 +1362,13 @@ void spainel_desenhar(Uint32 agora) {
   else {
     TxtLinha t = txt_linha(TXT_TITULO2, "Salvos", 246, 247, 252, 255);
     txt_desenhar_alpha(t, SP_X + x + SP_PAD, SP_Y + 74.0f, a);
+  }
+
+  if (aba == SP_ABA_AVISOS) {
+    gfx_recorte(SP_X + x, listaTopo(), SP_W, SP_LISTA_BASE - listaTopo());
+    avisos_lista_desenhar(SP_X + x + SP_PAD, listaTopo() - scrollY, SP_INTERNO, a, foco);
+    gfx_sem_recorte();
+    return;
   }
 
   if (aba == SP_ABA_SOCIAL) {
