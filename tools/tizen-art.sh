@@ -93,5 +93,13 @@ if [ -d "$DESTINO/collections" ] || [ -d "$DESTINO/cache" ]; then
   exit 1
 fi
 
+# A UNICA EXCECAO A "NENHUM .txt", e ela entra DEPOIS da conferencia de
+# proposito: addons-recomendados.txt e a lista curada que o guia mostra em
+# "Sugestoes" — conteudo de pacote, nao de pessoa, com a regra de nunca conter
+# URL com chave escrita no proprio cabecalho. Sem ele o guia Samsung abria a
+# secao vazia (o 1.2.0 quase saiu assim). Se um dia esta linha for
+# generalizada para "*.txt", o trakt.txt do dono volta a viajar no .wgt.
+cp "$ORIGEM/addons-recomendados.txt" "$DESTINO/" 2>/dev/null || true
+
 echo "tizen-art.sh: $(du -sh "$DESTINO" | cut -f1) em $DESTINO" >&2
 echo "$DESTINO"
