@@ -1,4 +1,5 @@
 #include "episodios.h"
+#include "ajustes.h"   /* ajustes_acento: a cor do check da confirmacao */
 #include "idioma.h"
 #include "catalogo.h"
 #include "descoberta.h"
@@ -38,6 +39,12 @@ enum { VM_ESTE = 0, VM_ATE, VM_TEMP, VM_FONTES, VM_N };
 static int vmAberto, vmFoco, vmVisto;      // vmVisto: o sentido do gesto
 static Uint32 vmDesde;                     // relogio da pressao longa
 static int vmSegurando, vmConsumir;
+// CONFIRMACAO NA TELA DEPOIS DE APLICAR: o menu nao some no mesmo quadro; por
+// FEITO_MS ele mostra um check e "N episodios marcados" e so entao fecha. Sem
+// isto a unica prova de que o OK entrou era procurar o "Visto" na lista, e o
+// #70 mostrou que a pessoa apertava de novo.
+#define FEITO_MS 900
+static int vmFeito, vmFeitoN, vmFeitoVisto; static Uint32 vmFeitoAte;
 
 // O ALVO DO MENU E EXPLICITO, e nao lido do estado da folha.
 //
@@ -76,7 +83,14 @@ static void menuAbrir(int idx, int t, int e, const char *nome, int so) {
   // O SENTIDO SAI DO ESTADO: quem esta olhando um episodio visto quer
   // desmarcar. Desconhecido (-1) conta como nao visto.
   vmVisto = vistoep_estado(ci->imdb, t, e) == 1 ? 0 : 1;
-  vmAberto = 1; vmFoco = 0; vmConsumir = 1; vmFontesPed = 0;
+  // vmConsumir FICA EM ZERO. O menu abre no KEYUP da pressao longa — o OK que
+  // o abriu ja foi SOLTO quando se chega aqui — e com 1 o proximo KEYDOWN, que
+  // e a escolha de verdade, era engolido como se fosse esse soltar. Era o
+  // "precisa apertar duas vezes em toda opcao" do #70, desde o dia em que o
+  // menu nasceu; a regra de ctxmenu.c que isto copiava abre no KEYDOWN, e la
+  // consumir o soltar faz sentido.
+  vmAberto = 1; vmFoco = 0; vmConsumir = 0; vmFontesPed = 0;
+  vmFeito = 0;
 }
 
 // O ENVIO VAI PARA UM FIO. trakt_episodios_marcar e syncep_empurrar sao
@@ -205,6 +219,7 @@ static void menuDesenhar(float x, float larg, float anim) {
          + 22.0f    // respiro antes da dica
          + 26.0f    // a dica
          + PAD;     // rodape
+    if (vmFeito) mh = optTop + 60.0f + PAD;   // so o check e a frase
     { GfxRect m={x+(larg-mw)*.5f,(NV_TELA_H-mh)*.5f,mw,mh};
     // Veu proprio: a lista atras tem texto pequeno em tres colunas.
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,.72f*anim);
@@ -229,6 +244,22 @@ static void menuDesenhar(float x, float larg, float anim) {
                          tx,m.y+PAD+36.0f,anim);
       (void)tw; }
 
+    if (vmFeito) {
+      // A confirmacao ocupa a area das opcoes: check grande na cor de acento
+      // e a frase com o NUMERO que a acao mudou.
+      float ar, ag, ab;
+      char fr[120];
+      GfxRect ck={m.x+PAD,m.y+optTop+8.0f,44.0f,44.0f};
+      ajustes_acento(&ar,&ag,&ab);
+      gfx_cor((GfxRect){ck.x-8.0f,ck.y-8.0f,60.0f,60.0f},0.5f,ar,ag,ab,anim);
+      gfx_icone(ck,"check",0.06f,0.06f,0.08f,anim);
+      if (vmFeitoN < 1) snprintf(fr,sizeof fr,"%s",i18n("Nada a mudar: já estava assim"));
+      else if (vmFeitoVisto) snprintf(fr,sizeof fr,vmFeitoN==1?i18n("%d episódio marcado como assistido"):i18n("%d episódios marcados como assistidos"),vmFeitoN);
+      else snprintf(fr,sizeof fr,vmFeitoN==1?i18n("%d episódio desmarcado"):i18n("%d episódios desmarcados"),vmFeitoN);
+      txt_desenhar_alpha(txt_linha_corta(TXT_PLR_CORPO,fr,240,242,247,255,mw-PAD*2.0f-72.0f),
+                         m.x+PAD+72.0f,m.y+optTop+8.0f+(44.0f-28.0f)*.5f,anim);
+      if (SDL_GetTicks() >= vmFeitoAte) { vmAberto = 0; vmFeito = 0; }
+    } else
     for(i=0;i<vmOpcoes();i++) {
       GfxRect r={m.x+24,m.y+optTop+(float)i*OPT_PASSO,mw-48,OPT_H};
       float f=(i==vmFoco)?1.0f:0.0f;
@@ -290,6 +321,7 @@ static void menuDesenhar(float x, float larg, float anim) {
     // linhas leem como uma coisa so. O deslocamento sai da MESMA conta que
     // dimensionou o cartao, entao mudar o numero de opcoes nao volta a
     // desalinhar (foi assim que o rodape ja passou POR CIMA da terceira linha).
+    if (!vmFeito)
     txt_bloco(TXT_CAPTION,"↑ ↓  Escolher   ·   OK  Aplicar   ·   Voltar  Fechar",
               155,159,169,m.x+28,
               m.y+optTop+(float)(vmOpcoes()-1)*OPT_PASSO+OPT_H+22.0f,
@@ -305,10 +337,12 @@ static void menuEvento(const SDL_Event *ev) {
   if (ehOk && (ev->key.repeat || vmConsumir)) return;
   if (ko == SDLK_UP)   { if (vmFoco > 0) vmFoco--; return; }
   if (ko == SDLK_DOWN) { if (vmFoco < vmOpcoes() - 1) vmFoco++; return; }
+  if (vmFeito) { vmAberto = 0; vmFeito = 0; return; }   // qualquer tecla encerra a confirmacao
   if (ehOk) {
-    if (vmFoco == VM_FONTES) vmFontesPed = 1;
-    else aplicarVisto(vmFoco, vmVisto);
-    vmAberto = 0;
+    if (vmFoco == VM_FONTES) { vmFontesPed = 1; vmAberto = 0; return; }
+    vmFeitoN = aplicarVisto(vmFoco, vmVisto);
+    vmFeitoVisto = vmVisto;
+    vmFeito = 1; vmFeitoAte = SDL_GetTicks() + FEITO_MS;
     return;
   }
   vmAberto = 0;   // qualquer outra tecla fecha
@@ -511,6 +545,7 @@ void episodios_menu_visto(int idxCat, int temporada, int episodio,
   menuAbrir(idxCat, temporada, episodio, nome, 1);
 }
 int  episodios_menu_aberto(void) { return vmAberto && vmSo; }
+int  episodios_menu_aberto_qualquer(void) { return vmAberto; }
 void episodios_menu_evento(const SDL_Event *e) {
   if (vmAberto && vmSo) menuEvento(e);
 }

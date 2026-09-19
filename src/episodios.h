@@ -25,4 +25,8 @@ void episodios_menu_desenhar(void);
 // chamou decide o que abrir — o menu nao conhece a folha de fontes.
 int  episodios_menu_pediu_fontes(void);
 void episodios_fechar(void);
+// O menu de visto esta aberto, venha da folha ou da pagina de detalhe. Para
+// teste; a pagina de detalhe usa episodios_menu_aberto, que so ve o seu.
+int  episodios_menu_aberto_qualquer(void);
+
 #endif

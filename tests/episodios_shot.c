@@ -122,6 +122,21 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-menu-ate.bmp", saida);
   captura(nome, w);
 
+  // UM OK SO APLICA (#70: eram dois, porque o OK que abriu o menu ja tinha
+  // sido solto e mesmo assim era "consumido"). Depois de aplicar o menu fica
+  // na tela com o check e a contagem, e fecha sozinho.
+  tecla(SDLK_RETURN, SDL_KEYDOWN, 0);
+  tecla(SDLK_RETURN, SDL_KEYUP, 0);
+  if (!episodios_menu_aberto_qualquer()) { puts("FALHOU: um OK nao aplicou (menu fechou sem confirmar?)"); return 1; }
+  snprintf(nome, sizeof nome, "%s-menu-feito.bmp", saida);
+  captura(nome, w);
+  { int estado = vistoep_estado("tt14688458", 1, 2);
+    if (estado != 0) { printf("FALHOU: T1E2 deveria estar desmarcado (ate aqui), estado=%d\n", estado); return 1; } }
+  SDL_Delay(1000);
+  snprintf(nome, sizeof nome, "%s-menu-fechado.bmp", saida);
+  captura(nome, w);   // a confirmacao expirou: o desenho fecha o menu
+  if (episodios_menu_aberto_qualquer()) { puts("FALHOU: a confirmacao nao fechou sozinha"); return 1; }
+
   tex_encerrar(); txt_encerrar(); gfx_encerrar();
   SDL_GL_DeleteContext(gl); SDL_DestroyWindow(w); SDL_Quit();
   puts("PASS: capturas da folha de episodios gravadas.");
