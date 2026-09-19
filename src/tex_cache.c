@@ -18,6 +18,7 @@
 #include <SDL2/SDL_image.h>
 #include "webp.h"
 #include "jpegrapido.h"
+#include "artereserva.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -806,6 +807,52 @@ static void nomeDeCache(const char *url, char *dst, size_t tam) {
   snprintf(dst, tam, "%s/%08lx%s", dirCache, h, ext);
 }
 
+// Baixa UMA url e devolve o corpo so se ele for imagem; NULL com a razao no
+// log. Separado de garantirLocal para a reserva do TMDB passar pelo mesmo
+// crivo (assinatura, tamanho) que a url original.
+static char *baixarImagem(const char *url, long *n) {
+  char *corpo;
+  // 8 s e nao 25: isto e uma IMAGEM. Com 25 s, duas URLs mortas seguravam os
+  // dois fios de decode por quase um minuto e a tela inteira parava de receber
+  // arte — repetidamente, porque nada guarda a falha.
+  corpo = rede_baixar_bin(url, 8, n);
+  // ESTE RAMO ERA MUDO. Medido numa navegacao da home: 93 "decode falhou" com
+  // ZERO "[rede] falha" no log — todas as falhas passavam por aqui, com o curl
+  // dizendo sucesso e um corpo curto demais para ser imagem. Sem a linha nao
+  // havia como distinguir "servidor recusou" de "cache sem permissao de
+  // escrita" de "resposta vazia". Nao repete o caso do HTTP >= 400, que agora
+  // o rede.c nomeia sozinho.
+  if (!corpo || *n <= 512) {
+    // O printf ESTAVA DENTRO DE `if (corpo)`, o que calava justamente o caso
+    // mais comum: rede_baixar_bin devolvendo NULL. MEDIDO no alvo Tizen: 151
+    // downloads tentados, ZERO linha de log e zero textura — com o comentario
+    // logo acima afirmando que este ramo ja nao era mudo. Como nada guarda a
+    // falha, cada quadro pedia de novo as mesmas URLs, para sempre.
+    if (corpo) printf("[tex] corpo curto (%ld B): %.70s\n", *n, url);
+    else       printf("[tex] download falhou (sem corpo): %.70s\n", url);
+    fflush(stdout);
+    free(corpo);
+    return NULL;
+  }
+  // ASSINATURA DE IMAGEM. rede.c nao confere status HTTP, entao um 404 com
+  // pagina de erro de mais de 512 bytes era gravado como "imagem" e ficava no
+  // cache de disco PARA SEMPRE — o item nunca mais teria arte, nem depois de o
+  // servidor voltar. Aceita JPEG (FF D8), PNG (89 50 4E 47), GIF e RIFF/WEBP.
+  { const unsigned char *b0 = (const unsigned char *)corpo;
+    int ok = (*n > 4) && (
+       (b0[0] == 0xFF && b0[1] == 0xD8) ||
+       (b0[0] == 0x89 && b0[1] == 0x50 && b0[2] == 0x4E && b0[3] == 0x47) ||
+       (b0[0] == 'G'  && b0[1] == 'I'  && b0[2] == 'F') ||
+       (b0[0] == 'R'  && b0[1] == 'I'  && b0[2] == 'F'  && b0[3] == 'F'));
+    if (!ok) {
+      printf("[tex] resposta nao e imagem (%ld B): %.70s\n", *n, url);
+      fflush(stdout);
+      free(corpo);
+      return NULL;
+    } }
+  return corpo;
+}
+
 // Baixa a URL para o cache, se ainda nao estiver la. Devolve 1 se ha arquivo
 // utilizavel no fim. Roda no fio de decodificacao, entao bloquear aqui nao
 // custa quadro nenhum.
@@ -827,44 +874,15 @@ static int garantirLocal(const char *url, char *dst, size_t tam) {
 #endif
       return 1;
     } }
-  // 8 s e nao 25: isto e uma IMAGEM. Com 25 s, duas URLs mortas seguravam os
-  // dois fios de decode por quase um minuto e a tela inteira parava de receber
-  // arte — repetidamente, porque nada guarda a falha.
-  corpo = rede_baixar_bin(url, 8, &n);
-  // ESTE RAMO ERA MUDO. Medido numa navegacao da home: 93 "decode falhou" com
-  // ZERO "[rede] falha" no log — todas as falhas passavam por aqui, com o curl
-  // dizendo sucesso e um corpo curto demais para ser imagem. Sem a linha nao
-  // havia como distinguir "servidor recusou" de "cache sem permissao de
-  // escrita" de "resposta vazia". Nao repete o caso do HTTP >= 400, que agora
-  // o rede.c nomeia sozinho.
-  if (!corpo || n <= 512) {
-    // O printf ESTAVA DENTRO DE `if (corpo)`, o que calava justamente o caso
-    // mais comum: rede_baixar_bin devolvendo NULL. MEDIDO no alvo Tizen: 151
-    // downloads tentados, ZERO linha de log e zero textura — com o comentario
-    // logo acima afirmando que este ramo ja nao era mudo. Como nada guarda a
-    // falha, cada quadro pedia de novo as mesmas URLs, para sempre.
-    if (corpo) printf("[tex] corpo curto (%ld B): %.70s\n", n, url);
-    else       printf("[tex] download falhou (sem corpo): %.70s\n", url);
-    fflush(stdout);
-    free(corpo);
-    return 0;
+  corpo = baixarImagem(url, &n);
+  // METAHUB FORA DO AR NAO E CARD CINZA: a mesma imagem existe no TMDB pelo id
+  // do IMDb. So depois de a original falhar, e gravada sob a URL original —
+  // para o resto do app e como se o metahub tivesse respondido.
+  if (!corpo) {
+    char alt[400];
+    if (arte_reserva_url(url, alt, sizeof alt)) corpo = baixarImagem(alt, &n);
   }
-  // ASSINATURA DE IMAGEM. rede.c nao confere status HTTP, entao um 404 com
-  // pagina de erro de mais de 512 bytes era gravado como "imagem" e ficava no
-  // cache de disco PARA SEMPRE — o item nunca mais teria arte, nem depois de o
-  // servidor voltar. Aceita JPEG (FF D8), PNG (89 50 4E 47), GIF e RIFF/WEBP.
-  { const unsigned char *b0 = (const unsigned char *)corpo;
-    int ok = (n > 4) && (
-       (b0[0] == 0xFF && b0[1] == 0xD8) ||
-       (b0[0] == 0x89 && b0[1] == 0x50 && b0[2] == 0x4E && b0[3] == 0x47) ||
-       (b0[0] == 'G'  && b0[1] == 'I'  && b0[2] == 'F') ||
-       (b0[0] == 'R'  && b0[1] == 'I'  && b0[2] == 'F'  && b0[3] == 'F'));
-    if (!ok) {
-      printf("[tex] resposta nao e imagem (%ld B): %.70s\n", n, url);
-      fflush(stdout);
-      free(corpo);
-      return 0;
-    } }
+  if (!corpo) return 0;
   { char tmp[600];
     // Grava em temporario e renomeia: outro fio pode estar lendo o mesmo
     // arquivo, e um arquivo pela metade decodifica como imagem quebrada e fica
