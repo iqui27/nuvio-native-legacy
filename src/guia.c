@@ -48,6 +48,8 @@
 #include "stalker.h"
 #include "xtream.h"
 #include "dados.h"
+#include "perfis.h"   /* perfis_ativo: o cache do guia e por perfil */
+#include "marco.h"
 #include "js.h"
 #include "gfx.h"
 #include "text.h"
@@ -132,6 +134,9 @@ enum { G_TOPO_CARTOES = 0, G_TOPO_LISTA, G_TOPO_ADDONS, G_TOPO_N };
 #define G_PA_X      (NV_TELA_W - G_PA_W)
 #define G_PA_MARG    48.0f
 #define G_PA_ROW     92.0f
+// Sugestao tem descricao de DUAS linhas (a de uma linha cortava toda frase
+// em "…", foto do dono em 19/09): a linha e mais alta.
+#define G_PA_ROW_REC 118.0f
 #define G_MAX_REC    12
 
 typedef struct {
@@ -592,12 +597,35 @@ static void sondaManifestos(void) {
     GSabe *sb = sNSabe < G_MAX_SABE ? &sSabe[sNSabe] : NULL;
     base = addons_base(a);
     if (!base || !base[0]) continue;
+    if (sb) { snprintf(sb->base, sizeof sb->base, "%s", base); sb->canal = -1; sNSabe++; }
+    // O MANIFESTO JA FOI LIDO PELA DESCOBERTA, no arranque e em paralelo: o
+    // que ele declara de canal esta em addons.c. Reler aqui era um GET por
+    // addon, em serie, com 15 s de prazo cada — a maior parte da espera para o
+    // guia abrir numa conta com 10-20 addons (a maioria sem canal nenhum).
+    // So cai na rede quando aquele manifesto ainda nao chegou.
+    { AddCatCanal cc[ADD_CANAL_MAX];
+      int nc = addons_catalogos_canal(a, cc, ADD_CANAL_MAX), k;
+      if (nc >= 0) {
+        if (sb) sb->canal = nc > 0;
+        if (!ativo) continue;
+        for (k = 0; k < nc && sNFontes < G_MAX_FONTE; k++) {
+          int ja = fonteJa(base, cc[k].id);
+          if (ja < 0) {
+            ja = sNFontes++;
+            snprintf(sFontes[ja].base, sizeof sFontes[ja].base, "%s", base);
+            snprintf(sFontes[ja].tipo, sizeof sFontes[ja].tipo, "%s", cc[k].tipo);
+            snprintf(sFontes[ja].id,   sizeof sFontes[ja].id,   "%s", cc[k].id);
+            sFontes[ja].nome[0] = 0;
+          }
+          if (cc[k].nome[0]) snprintf(sFontes[ja].nome, sizeof sFontes[ja].nome, "%s", cc[k].nome);
+        }
+        continue;
+      } }
     // ADDON DESLIGADO TAMBEM E LIDO, so que nao vira fonte. Custa um GET por
     // addon desligado (medido: 0 a 3 numa conta tipica) e e o que permite ao
     // painel dizer se vale a pena religa-lo para o guia.
     snprintf(url, sizeof url, "%s/manifest.json", base);
     corpo = rede_baixar(url, 15);
-    if (sb) { snprintf(sb->base, sizeof sb->base, "%s", base); sb->canal = -1; sNSabe++; }
     if (!ativo) {
       if (corpo) {
         fim = corpo + strlen(corpo);
@@ -804,8 +832,149 @@ static void empacotar(void) {
     if (canais[i].fav) favOrd[nFavOrd++] = i;
 }
 
+
+// --- CACHE DO GUIA EM DISCO ---------------------------------------------------
+//
+// POR QUE: o guia so existia depois de UMA volta completa pela rede — um GET
+// por catalogo de canal (o Pluto responde 1.500 canais numa pagina), mais
+// Stalker/Xtream — a cada arranque do app. "Sempre demora muito" (dono,
+// 19/09). A lista muda pouco: os canais de ontem sao os de hoje. Entao a
+// ultima lista publicada fica em disco e e o que a tela mostra NA HORA; a
+// volta pela rede continua, em fundo, e so republica se a lista mudou — a
+// mesma regra da home (cat_assinatura).
+//
+// O arquivo e por perfil (os addons sao por perfil) e carrega o tamanho das
+// structs no cabecalho: uma build que mude GCanal ignora o cache antigo em
+// vez de ler lixo.
+#define GC_MAGIA  0x31474e56u   /* "NVG1" */
+#define GC_VERSAO 1u
+typedef struct {
+  unsigned magia, versao, tamCanal, tamFonte, tamSabe;
+  int nCanais, nCats, nFontes, nSabe, perfil;
+} GCacheCab;
+static int cacheLido;          // ja tentou ler nesta sessao
+static unsigned long assinaturaPublicada;
+
+static const char *cacheNome(void) {
+  static char nome[48];
+  int p = perfis_ativo();
+  if (p <= 0) snprintf(nome, sizeof nome, "guia-cache.bin");
+  else        snprintf(nome, sizeof nome, "guia-cache-p%d.bin", p);
+  return nome;
+}
+
+// Assinatura INDEPENDENTE DA ORDEM (soma de hashes por canal): a copia de
+// trabalho chega na ordem de chegada e a publicada sai ordenada por
+// categoria, e as duas precisam bater quando o conteudo e o mesmo.
+static unsigned long assinaturaDe(const GCanal *c, int n, char cs[][64]) {
+  unsigned long soma = 0;
+  int i;
+  for (i = 0; i < n; i++) {
+    unsigned long h = 2166136261UL;
+    const char *p;
+    for (p = c[i].id; *p; p++) { h ^= (unsigned char)*p; h *= 16777619UL; }
+    if (c[i].cat >= 0) for (p = cs[c[i].cat]; *p; p++) { h ^= (unsigned char)*p; h *= 16777619UL; }
+    soma += h;
+  }
+  return soma ^ (unsigned long)n;
+}
+
+static void cacheGravar(void) {
+  char caminho[600], tmp[620];
+  GCacheCab cab;
+  FILE *f;
+  if (!dados_caminho(caminho, sizeof caminho, cacheNome())) return;
+  snprintf(tmp, sizeof tmp, "%s.tmp", caminho);
+  memset(&cab, 0, sizeof cab);
+  cab.magia = GC_MAGIA; cab.versao = GC_VERSAO;
+  cab.tamCanal = (unsigned)sizeof(GCanal); cab.tamFonte = (unsigned)sizeof(GFonte);
+  cab.tamSabe = (unsigned)sizeof(GSabe);
+  cab.nCanais = nCanais; cab.nCats = nCats; cab.nFontes = nFontes; cab.nSabe = nSabe;
+  cab.perfil = perfis_ativo();
+#ifdef __EMSCRIPTEN__
+  dados_fs_travar();
+#endif
+  f = fopen(tmp, "wb");
+  if (f) {
+    int ok = fwrite(&cab, sizeof cab, 1, f) == 1 &&
+             fwrite(canais, sizeof(GCanal), (size_t)nCanais, f) == (size_t)nCanais &&
+             fwrite(cats, sizeof cats[0], (size_t)nCats, f) == (size_t)nCats &&
+             fwrite(fontes, sizeof(GFonte), (size_t)nFontes, f) == (size_t)nFontes &&
+             fwrite(sabe, sizeof(GSabe), (size_t)nSabe, f) == (size_t)nSabe;
+    ok = (fclose(f) == 0) && ok;
+    if (!ok || rename(tmp, caminho) != 0) remove(tmp);
+    else { printf("[guia] cache gravado: %d canais\n", nCanais); fflush(stdout); }
+  }
+#ifdef __EMSCRIPTEN__
+  dados_fs_liberar();
+  dados_marcar_sujo(0);
+#endif
+}
+
+// Le o cache direto para os vetores PUBLICADOS (roda no fio de desenho, antes
+// de qualquer fio de carga existir). 1 se a tela ja tem lista.
+static int cacheLer(void) {
+  char caminho[600];
+  GCacheCab cab;
+  FILE *f;
+  int ok;
+  if (!dados_caminho(caminho, sizeof caminho, cacheNome())) return 0;
+  f = fopen(caminho, "rb");
+  if (!f) return 0;
+  ok = fread(&cab, sizeof cab, 1, f) == 1 &&
+       cab.magia == GC_MAGIA && cab.versao == GC_VERSAO &&
+       cab.tamCanal == sizeof(GCanal) && cab.tamFonte == sizeof(GFonte) &&
+       cab.tamSabe == sizeof(GSabe) && cab.perfil == perfis_ativo() &&
+       cab.nCanais > 0 && cab.nCanais <= G_MAX_CANAL && cab.nCats > 0 && cab.nCats <= G_MAX_CAT &&
+       cab.nFontes >= 0 && cab.nFontes <= G_MAX_FONTE && cab.nSabe >= 0 && cab.nSabe <= G_MAX_SABE;
+  if (ok) ok = fread(canais, sizeof(GCanal), (size_t)cab.nCanais, f) == (size_t)cab.nCanais &&
+               fread(cats, sizeof cats[0], (size_t)cab.nCats, f) == (size_t)cab.nCats &&
+               fread(fontes, sizeof(GFonte), (size_t)cab.nFontes, f) == (size_t)cab.nFontes &&
+               fread(sabe, sizeof(GSabe), (size_t)cab.nSabe, f) == (size_t)cab.nSabe;
+  fclose(f);
+  if (!ok) { nCanais = nCats = 0; return 0; }
+  nCanais = cab.nCanais; nCats = cab.nCats; nFontes = cab.nFontes; nSabe = cab.nSabe;
+  // Strings vindas do disco terminam em NUL por conta propria.
+  { int i;
+    for (i = 0; i < nCanais; i++) { canais[i].id[sizeof canais[i].id - 1] = 0; canais[i].nome[sizeof canais[i].nome - 1] = 0;
+      canais[i].logo[sizeof canais[i].logo - 1] = 0; canais[i].base[sizeof canais[i].base - 1] = 0;
+      canais[i].epg = -1;
+      if (canais[i].cat < -1 || canais[i].cat >= nCats) canais[i].cat = -1; }
+    for (i = 0; i < nCats; i++) cats[i][sizeof cats[i] - 1] = 0; }
+  empacotar();
+  assinaturaPublicada = assinaturaDe(canais, nCanais, cats);
+  printf("[guia] cache lido: %d canais em %d categorias\n", nCanais, nCats);
+  fflush(stdout);
+  marco("guia: lista do cache na tela");
+  return 1;
+}
+
 static void publicar(void) {
   int i, w;
+  // A MESMA LISTA QUE JA ESTA NA TELA (vinda do cache) nao e republicada:
+  // trocar o vetor reordena e zera foco e rolagem para mostrar o que ja se
+  // mostrava. So o veredito da sonda (`sabe`, para o painel) e as falhas
+  // atualizam.
+  // REDE VAZIA NAO APAGA A LISTA QUE HA: sem resposta nenhuma (todos os addons
+  // fora), a lista de ontem continua valendo mais que uma tela vazia.
+  if (sNCanais == 0 && nCanais > 0) {
+    falhas = sFalhas;
+    memcpy(sabe, sSabe, sizeof sSabe); nSabe = sNSabe;
+    printf("[guia] rede sem canal nenhum: fica a lista que estava\n");
+    fflush(stdout);
+    return;
+  }
+  { unsigned long nova = assinaturaDe(sCanais, sNCanais, sCats);
+    if (nCanais > 0 && nova == assinaturaPublicada) {
+      memcpy(sabe, sSabe, sizeof sSabe); nSabe = sNSabe;
+      memcpy(fontes, sFontes, sizeof sFontes); nFontes = sNFontes;
+      falhas = sFalhas;
+      printf("[guia] lista da rede igual a da tela: nao republicada\n");
+      fflush(stdout);
+      marco("guia: rede igual ao cache");
+      return;
+    }
+    assinaturaPublicada = nova; }
   memcpy(canais, sCanais, sizeof(GCanal) * (size_t)sNCanais);
   memcpy(cats, sCats, sizeof sCats);
   nCanais = sNCanais; nCats = sNCats;
@@ -830,6 +999,8 @@ static void publicar(void) {
   printf("[guia] %d canais em %d categorias (%d favoritos)\n",
          nCanais, nCats, nFavOrd);
   fflush(stdout);
+  marco("guia: lista da rede publicada");
+  if (nCanais > 0) cacheGravar();
 }
 
 static void iniciarCarga(void) {
@@ -852,6 +1023,8 @@ void guia_carregar(void) {
   // Sem fonte achada, tenta de novo a cada chamada: a descoberta da home pode
   // nao ter montado as fileiras ainda quando o primeiro CH+/- chega.
   if (!fontesOk) descobrirFontes();
+  // A lista de ontem NA HORA; a de hoje vem atras. Ver o bloco do cache.
+  if (!cacheLido) { cacheLido = 1; if (estado == G_PARADO && nCanais == 0) cacheLer(); }
   if (estado == G_PARADO || estado == G_FALHOU) iniciarCarga();
   epg_iniciar();
 }
@@ -1357,7 +1530,7 @@ static float listaAltura(void) {
 static float paItemY(int i) {
   int n = paN;
   if (i < n) return 36.0f + (float)i * G_PA_ROW;
-  return 36.0f + (float)n * G_PA_ROW + 28.0f + 36.0f + 60.0f + (float)(i - n) * G_PA_ROW;
+  return 36.0f + (float)n * G_PA_ROW + 28.0f + 36.0f + 60.0f + (float)(i - n) * G_PA_ROW_REC;
 }
 #define G_PA_LISTA_Y 200.0f
 
@@ -1393,7 +1566,7 @@ void guia_atualizar(float dt, Uint32 agora) {
   if (painel) {
     float areaH = NV_TELA_H - 80.0f - G_PA_LISTA_Y;
     float alvo = paItemY(paFoco) - areaH * 0.4f;
-    float maxY = (painelN() > 0 ? paItemY(painelN() - 1) + G_PA_ROW : 0.0f) - areaH;
+    float maxY = (painelN() > 0 ? paItemY(painelN() - 1) + (nRec > 0 ? G_PA_ROW_REC : G_PA_ROW) : 0.0f) - areaH;
     if (maxY < 0.0f) maxY = 0.0f;
     if (alvo > maxY) alvo = maxY;
     if (alvo < 0.0f) alvo = 0.0f;
@@ -2013,7 +2186,7 @@ static void desenharPainelAddons(float a) {
   }
   for (i = 0; i < painelN(); i++) {
     float yi = y0 + paItemY(i) - paRol;
-    GfxRect row = { x, yi, w, G_PA_ROW - 8.0f };
+    GfxRect row = { x, yi, w, (i < n ? G_PA_ROW : G_PA_ROW_REC) - 8.0f };
     float raio = 12.0f / row.h;
     int f = i == paFoco;
     if (yi + row.h < y0 - 8.0f || yi > NV_TELA_H - 80.0f) continue;
@@ -2029,11 +2202,12 @@ static void desenharPainelAddons(float a) {
                       : (fioVivo || recarregarPend) ? i18n("Carregando canais…")
                                 : i18n("Ainda não conferido pelo guia");
       GfxRect pill = { x + w - 24.0f - 136.0f, yi + (row.h - 40.0f) * 0.5f, 136.0f, 40.0f };
-      { TxtLinha t = f ? txt_linha_corta(TXT_BODY, addons_nome(ai), 20, 21, 25, 255, w - 200.0f)
-                       : txt_linha_corta(TXT_BODY, addons_nome(ai), 240, 241, 245, 255, w - 200.0f);
+      float txtW = pill.x - 24.0f - (x + 24.0f);
+      { TxtLinha t = f ? txt_linha_corta(TXT_BODY, addons_nome(ai), 20, 21, 25, 255, txtW)
+                       : txt_linha_corta(TXT_BODY, addons_nome(ai), 240, 241, 245, 255, txtW);
         txt_desenhar_alpha(t, x + 24.0f, yi + 12.0f, a); }
-      { TxtLinha t = f ? txt_linha_corta(TXT_CAPTION, sub, 60, 62, 70, 255, w - 200.0f)
-                       : txt_linha_corta(TXT_CAPTION, sub, 150, 153, 162, 255, w - 200.0f);
+      { TxtLinha t = f ? txt_linha_corta(TXT_CAPTION, sub, 60, 62, 70, 255, txtW)
+                       : txt_linha_corta(TXT_CAPTION, sub, 150, 153, 162, 255, txtW);
         txt_desenhar_alpha(t, x + 24.0f, yi + 48.0f, a); }
       // LIGADO = pilula preenchida; DESLIGADO = so o anel. Preenchimento e o
       // que o app usa para "e este", e o anel e o que sobra para "poderia
@@ -2055,32 +2229,40 @@ static void desenharPainelAddons(float a) {
       const GRec *rc = &rec[i - n];
       int inst = recInstalado(rc);
       GfxRect pill = { x + w - 24.0f - 136.0f, yi + (row.h - 40.0f) * 0.5f, 136.0f, 40.0f };
-      { TxtLinha t = f ? txt_linha_corta(TXT_BODY, rc->nome, 20, 21, 25, 255, w - 200.0f)
-                       : txt_linha_corta(TXT_BODY, rc->nome, 240, 241, 245, 255, w - 200.0f);
-        txt_desenhar_alpha(t, x + 24.0f, yi + 12.0f, a); }
+      // A coluna de texto termina ANTES da pilula, com folga: pill.x - 24.
+      float txtW = pill.x - 24.0f - (x + 24.0f);
+      // O PRIMEIRO DA LISTA E O DESTAQUE — a ordem do arquivo e a curadoria,
+      // e o dono pediu o Fenix TV la em cima (foi o mais rapido a responder
+      // e o unico que ja vem classificado, medido em 18/09).
+      //
+      // O selo vai NA LINHA DO NOME, logo depois dele, como uma etiqueta —
+      // e nao encostado na pilula, onde ficava em cima da descricao (foto do
+      // dono em 19/09: "Spotlight" atravessando "channels,…").
+      int destaque = (i - n == 0);
+      TxtLinha selo = txt_linha(TXT_CAPTION2, i18n("Destaque"), 20, 21, 25, 255);
+      float seloW = destaque ? selo.w + 20.0f : 0.0f;
+      { float nomeW = txtW - (destaque ? seloW + 12.0f : 0.0f);
+        TxtLinha t = f ? txt_linha_corta(TXT_BODY, rc->nome, 20, 21, 25, 255, nomeW)
+                       : txt_linha_corta(TXT_BODY, rc->nome, 240, 241, 245, 255, nomeW);
+        txt_desenhar_alpha(t, x + 24.0f, yi + 12.0f, a);
+        if (destaque) {
+          GfxRect d = { x + 24.0f + t.w + 12.0f, yi + 12.0f + (t.h - 26.0f) * 0.5f, seloW, 26.0f };
+          if (f) gfx_cor(d, 0.5f, 0.11f, 0.115f, 0.13f, a);
+          else   gfx_cor(d, 0.5f, ar, ag, ab, a);
+          { TxtLinha t2 = f ? txt_linha(TXT_CAPTION2, i18n("Destaque"), 240, 241, 245, 255) : selo;
+            txt_desenhar_alpha(t2, d.x + 10.0f, d.y + (d.h - t2.h) * 0.5f, a); }
+        } }
       if (paErro == i) {
         const char *m = paErroCheio ? i18n("Não coube: a conta já tem o máximo de addons")
                                     : i18n("Não foi possível instalar");
-        TxtLinha t = txt_linha_corta(TXT_CAPTION, m, 237, 77, 77, 255, w - 200.0f);
+        TxtLinha t = txt_linha_corta(TXT_CAPTION, m, 237, 77, 77, 255, txtW);
         txt_desenhar_alpha(t, x + 24.0f, yi + 48.0f, a);
       } else if (rc->desc[0]) {
         // Em ingles usa a quarta coluna se existir; senao a portuguesa, que e
         // melhor que linha vazia.
         const char *desc = (ajustes_idioma_ingles() && rc->descEn[0]) ? rc->descEn : rc->desc;
-        TxtLinha t = f ? txt_linha_corta(TXT_CAPTION, desc, 60, 62, 70, 255, w - 200.0f)
-                       : txt_linha_corta(TXT_CAPTION, desc, 150, 153, 162, 255, w - 200.0f);
-        txt_desenhar_alpha(t, x + 24.0f, yi + 48.0f, a);
-      }
-      // O PRIMEIRO DA LISTA E O DESTAQUE — a ordem do arquivo e a curadoria,
-      // e o dono pediu o Fenix TV la em cima (foi o mais rapido a responder
-      // e o unico que ja vem classificado, medido em 18/09).
-      if (i - n == 0) {
-        TxtLinha t = txt_linha(TXT_CAPTION, i18n("Destaque"), 20, 21, 25, 255);
-        GfxRect d = { pill.x - 24.0f - t.w - 28.0f, yi + (row.h - 32.0f) * 0.5f, t.w + 28.0f, 32.0f };
-        if (f) gfx_cor(d, 0.5f, 0.11f, 0.115f, 0.13f, a);
-        else   gfx_cor(d, 0.5f, ar, ag, ab, a);
-        { TxtLinha t2 = f ? txt_linha(TXT_CAPTION, i18n("Destaque"), 240, 241, 245, 255) : t;
-          txt_desenhar_alpha(t2, d.x + 14.0f, d.y + (d.h - t2.h) * 0.5f, a); }
+        if (f) txt_bloco(TXT_CAPTION, desc, 60, 62, 70,     x + 24.0f, yi + 46.0f, txtW, 27.0f, a, 2);
+        else   txt_bloco(TXT_CAPTION, desc, 150, 153, 162,  x + 24.0f, yi + 46.0f, txtW, 27.0f, a, 2);
       }
       if (inst) {
         TxtLinha t = f ? txt_linha(TXT_CAPTION, i18n("Instalado"), 60, 62, 70, 255)
@@ -2133,7 +2315,9 @@ void guia_desenhar(Uint32 agora) {
                            242, 243, 247, 255);
     txt_desenhar_alpha(t, G_AREA_X, 44.0f, a); }
   { char sub[160];
-    if (estado == G_BAIXANDO)
+    if (estado == G_BAIXANDO && nCanais > 0)   // lista do cache na tela, rede atras
+      snprintf(sub, sizeof sub, i18n("%d canais · %d categorias · atualizando…"), nCanais, nCats);
+    else if (estado == G_BAIXANDO)
       snprintf(sub, sizeof sub, "%s", i18n("Carregando canais…"));
     else if (falhas && !nCanais)
       snprintf(sub, sizeof sub, "%s",

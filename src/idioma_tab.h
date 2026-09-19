@@ -13,6 +13,7 @@
   { "%d %s · OK para explorar", "%d %s · OK to explore" },
   { "%d MINUTOS RESTANTES", "%d MINUTES LEFT" },
   { "%d amigo(s) do Trakt entraram na lista", "%d Trakt friend(s) joined your list" },
+  { "%d canais · %d categorias · atualizando…", "%d channels · %d categories · updating…" },
   { "%d canais · %d categorias · segure %s para pular seção", "%d channels · %d categories · hold %s to jump sections" },
   { "%d curtidas", "%d likes" },
   { "%d de %d", "%d of %d" },

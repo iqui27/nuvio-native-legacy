@@ -138,6 +138,17 @@ void addons_sondar_manifestos(void);
 // busca usam, nao e tocado aqui.
 void addons_manifesto_lido(int i, const char *corpo);
 
+// OS CATALOGOS DE CANAL QUE O MANIFESTO DECLARA (type tv/channel/channels/
+// live/iptv), lidos pela mesma passagem de addons_manifesto_lido. Existe para
+// o Guia de TV NAO baixar o manifesto de novo: a descoberta ja leu todos no
+// arranque, em paralelo, e o guia refazia os mesmos GETs em serie — MEDIDO
+// como a maior parte da espera para o guia abrir. Devolve quantos copiou para
+// `saida`; -1 quando o manifesto deste addon ainda nao foi lido (ai o guia
+// baixa ele mesmo, como antes).
+typedef struct { char tipo[16], id[96], nome[96]; } AddCatCanal;
+#define ADD_CANAL_MAX 4
+int addons_catalogos_canal(int i, AddCatCanal *saida, int max);
+
 AddEstado addons_estado(void);
 // HA BUSCA DE FONTES EM ANDAMENTO? Leitura pura, sem os efeitos de
 // addons_estado (que junta o fio e PUBLICA a lista — app.c evita chama-la

@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -37,6 +38,9 @@ static struct {
   int fonte, catalogo, legenda;
   int ativo, sondado;
   char id[96];   // "id" do manifesto; as colecoes da conta apontam para ele
+  // Catalogos de canal do manifesto (ver addons_catalogos_canal). `canalLido`
+  // separa "nao declara nenhum" de "manifesto ainda nao lido".
+  AddCatCanal canal[ADD_CANAL_MAX]; int nCanal, canalLido;
 } addon[ADD_MAX];
 static int nAddon;
 static _Atomic AddEstado estado = ADD_PARADO;
@@ -217,6 +221,7 @@ int addons_definir_lista(const AddonRemoto *nova, int n) {
     addon[aceitos].catalogo = 1;
     addon[aceitos].legenda = 1;
     addon[aceitos].sondado = 0;
+    addon[aceitos].canalLido = 0; addon[aceitos].nCanal = 0;
     addon[aceitos].ativo = nova[i].ativo ? 1 : 0;
     aceitos++;
   }
@@ -549,6 +554,12 @@ static void *buscarLegendas(void *u) {
 
 int addons_ativo(int i)   { return (i >= 0 && i < nAddon) ? addon[i].ativo : 0; }
 int addons_sondado(int i) { return (i >= 0 && i < nAddon) ? addon[i].sondado : 0; }
+int addons_catalogos_canal(int i, AddCatCanal *saida, int max) {
+  int k;
+  if (i < 0 || i >= nAddon || !addon[i].canalLido) return -1;
+  for (k = 0; k < addon[i].nCanal && k < max; k++) saida[k] = addon[i].canal[k];
+  return k;
+}
 const char *addons_nome(int i) {
   return (i >= 0 && i < nAddon) ? addon[i].nome : "";
 }
@@ -612,6 +623,7 @@ int addons_adicionar(const char *nome, const char *urlManifest) {
   addon[nAddon].legenda = 0;
   addon[nAddon].ativo = 1;
   addon[nAddon].sondado = 0;
+  addon[nAddon].canalLido = 0; addon[nAddon].nCanal = 0;
   nAddon++;
   printf("[addons] instalado pelo guia: %s (%s)\n",
          addon[nAddon - 1].nome, nova);
@@ -663,6 +675,24 @@ static void capacidadesDoManifesto(int i, const char *corpo) {
   { char nome[64];
     if (js_texto_raiz(corpo, "name", nome, sizeof nome) && nome[0])
       snprintf(addon[i].nome, sizeof addon[i].nome, "%s", nome); }
+  // CATALOGOS DE CANAL, antes do retorno cedo de "resources": um manifesto
+  // sem resources legivel ainda declara catalogs[], e o guia precisa deles.
+  { const char *p = js_array(corpo, NULL, "catalogs");
+    addon[i].nCanal = 0;
+    while (p && addon[i].nCanal < ADD_CANAL_MAX) {
+      const char *f = js_fim(p);
+      AddCatCanal c;
+      memset(&c, 0, sizeof c);
+      js_texto(p, f, "type", c.tipo, sizeof c.tipo);
+      js_texto(p, f, "id",   c.id,   sizeof c.id);
+      js_texto_raiz_em(p, f, "name", c.nome, sizeof c.nome);
+      if (c.id[0] && (!strcasecmp(c.tipo, "channel") || !strcasecmp(c.tipo, "tv") ||
+                      !strcasecmp(c.tipo, "channels") || !strcasecmp(c.tipo, "live") ||
+                      !strcasecmp(c.tipo, "iptv")))
+        addon[i].canal[addon[i].nCanal++] = c;
+      p = js_prox(f);
+    }
+    addon[i].canalLido = 1; }
   if (!r) {
     printf("[addons] %s: manifesto sem \"resources\" legivel; capacidades ficam supostas\n",
            addon[i].nome);
