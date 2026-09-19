@@ -64,6 +64,8 @@ int   ajustes_rail_moderna(void);       // modernSidebar
 int   ajustes_rail_moderna_blur(void);  // modernSidebarBlur
 int   ajustes_hero_ligado(void);        // heroSectionEnabled
 int   ajustes_hero_cheio(void);         // modernHeroFullScreenBackdropEnabled
+// Teto de memoria para imagens escolhido em Ajustes, em MB; 0 = automatico.
+int   ajustes_tex_mb(void);
 int   ajustes_posteres_deitados(void);  // modernLandscapePostersEnabled
 int   ajustes_gradiente_foco_classico(void); // classicFocusGradientEnabled
 // x onde o conteudo comeca. Nao e constante: o recuo e sempre 104 e a rail

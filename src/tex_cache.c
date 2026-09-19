@@ -1553,7 +1553,8 @@ static long memTotalMB(void) {
 // MiB e MemTotal do navegador nao diz nada sobre ele.
 static int  orcMB = 0;        // o que foi decidido, para tex_orcamento_info
 static long orcMemTotal = 0;
-static int  orcFixo = 0;      // 1 = NV_TEX_MB_FIXO, 2 = NUVIO_TEX_MB
+static int  orcFixo = 0;      // 1 = NV_TEX_MB_FIXO, 2 = NUVIO_TEX_MB, 3 = Ajustes
+static int  orcAuto = 0;      // o que orcamentoMB decidiu, para voltar a ele
 static int orcamentoMB(void) {
   long mem = memTotalMB();
   int mb;
@@ -1609,8 +1610,49 @@ static int orcamentoMB(void) {
     } }
   printf("[tex] orcamento de texturas: %d MB (%s; MemTotal=%ld MB)\n", mb, porque, mem);
   fflush(stdout);
-  orcMB = mb; orcMemTotal = mem;
+  orcMB = mb; orcMemTotal = mem; orcAuto = mb;
   return mb;
+}
+
+// TETO ESCOLHIDO EM AJUSTES (ajustes_tex_mb), aplicado ao vivo. Ver a nota do
+// V_TEX_MB em ajustes.c. `mb` = 0 volta para o que orcamentoMB decidiu.
+//
+// A TRAVA E PELA RAM, e nao pela vontade: uma TV de 1 GB com 300 MB de
+// texturas troca despejo por OOM, e OOM no webOS e o app sumindo sem cartao
+// nenhum. O teto permitido segue a mesma escada de orcamentoMB, um degrau
+// acima do automatico: < 1,2 GB -> 96, < 2 GB -> 160, >= 2 GB -> 300. No
+// Tizen o teto e o proprio automatico (medido: mais e mais lento, ver acima).
+static int tetoPermitidoMB(void) {
+#ifdef __EMSCRIPTEN__
+  return orcAuto;
+#else
+  long mem = orcMemTotal;
+  if (!mem) return 160;
+  if (mem < 1200) return 96;
+  if (mem < 2000) return 160;
+  return 300;
+#endif
+}
+void tex_definir_orcamento_mb(int mb) {
+  int teto = tetoPermitidoMB(), aplicado;
+  if (!mtx) return;
+  if (mb <= 0) { aplicado = orcAuto; }
+  else {
+    aplicado = mb > teto ? teto : mb;
+    if (mb > teto)
+      printf("[tex] teto de %d MB pedido em Ajustes; esta TV suporta %d MB (RAM %ld MB)\n", mb, teto, orcMemTotal);
+  }
+  SDL_LockMutex(mtx);
+  { float e = escalaBuf > 0.1f ? escalaBuf : 1.0f;
+    orcamento = (long)(aplicado * e * e) * 1024L * 1024L; }
+  // Slots so CRESCEM ao vivo: encolher com itens alem do novo nMax deixaria
+  // texturas vivas fora do alcance do LRU. O teto absoluto continua valendo.
+  { int porBytes = aplicado * 3 / 2;
+    if (porBytes > nMax) nMax = porBytes > MAX_ITENS_ABS ? MAX_ITENS_ABS : porBytes; }
+  orcMB = aplicado; orcFixo = mb > 0 ? 3 : (orcFixo == 3 ? 0 : orcFixo);
+  SDL_UnlockMutex(mtx);
+  printf("[tex] orcamento de texturas: %d MB (%s)\n", aplicado, mb > 0 ? "escolhido em Ajustes" : "automatico de novo");
+  fflush(stdout);
 }
 
 void tex_orcamento_info(int *mb, long *memTotal, int *fixo, int *slots) {

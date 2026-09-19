@@ -148,6 +148,9 @@ extern long tex_despejos_quentes_total;
 // total lida (0 sem /proc), como foi decidido (0 = pela RAM, 1 = cravado na
 // build, 2 = NUVIO_TEX_MB) e quantos slots o cache tem.
 void tex_orcamento_info(int *mb, long *memTotal, int *fixo, int *slots);
+// Teto escolhido em Ajustes, em MB, aplicado ao vivo e travado pelo que a RAM
+// da TV suporta; 0 volta ao automatico. `fixo` passa a 3 quando esta em vigor.
+void tex_definir_orcamento_mb(int mb);
 // Ocupacao em bytes, uma amostra por segundo, do mais antigo ao mais novo.
 // Devolve quantas escreveu (ate `max`, no maximo 120).
 int  tex_historico(long *saida, int max);

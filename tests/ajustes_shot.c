@@ -184,7 +184,7 @@ int main(int argc, char **argv) {
     // anterior ja descrevia com outro numero. Agora e argumento, com o valor
     // certo de hoje como padrao — quem crescer a categoria conserta a chamada,
     // nao o codigo.
-    { int fundo = argc > 5 ? atoi(argv[5]) : 16;
+    { int fundo = argc > 5 ? atoi(argv[5]) : 20;   // 22 linhas hoje; "Memoria usada" e a 21a
       for (i = 0; i < fundo; i++) tecla(SDLK_DOWN); } }
   snprintf(nome, sizeof nome, "%s-imagens.bmp", saida);
   captura(nome, w);

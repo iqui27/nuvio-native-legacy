@@ -124,7 +124,7 @@ typedef enum {
   AJ_XTREAM_SERVIDOR, AJ_XTREAM_USUARIO, AJ_XTREAM_SENHA, AJ_XTREAM_LIMPAR,
   AJ_SALVOS_DEST, AJ_TRAKT, AJ_SIMKL, AJ_SAIR,
   // Sobre
-  AJ_VERSAO_I, AJ_ATUALIZAR, AJ_ESPACO,
+  AJ_VERSAO_I, AJ_ATUALIZAR, AJ_ESPACO, AJ_TEX_MB,
   // Integracoes — TMDB (tmdb_settings do blob da conta, ver
   // profileSettingsSyncService.js do web)
   AJ_TMDB_LIGADO, AJ_TMDB_IDIOMA, AJ_TMDB_ARTE, AJ_TMDB_BASICO, AJ_TMDB_FICHA,
@@ -139,6 +139,13 @@ typedef enum {
 
 static const char *V_QUALIDADE[] = { "Automática", "4K", "1080p", "720p" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
+// Teto de memoria para imagens. O indice vira MB em ajustes_tex_mb; 0 e a
+// regra automatica pela RAM (tex_cache.c). Escolha por APARELHO: fica no
+// ajustes.txt e nunca vai para a conta — a TV da sala e a do quarto nao tem
+// a mesma RAM. Relato #71: a linha "Memoria usada por imagens" parecia um
+// ajuste e nao era; este e.
+static const char *V_TEX_MB[]    = { "Automático", "96 MB", "160 MB", "240 MB", "300 MB" };
+static const int   TEX_MB_DE[]   = { 0, 96, 160, 240, 300 };
 // TRES PADROES DE IMAGEM. O nome diz o que a pessoa ganha, nao o que o cache
 // faz: "Alta" e mais pixel de arte e mais memoria; "Baixa" e arte que chega
 // antes e cabe em TV com pouca RAM.
@@ -390,6 +397,7 @@ static const Opcao OPCOES[AJ_N] = {
   // significava "nunca mais nesta versao".
   ACAO("Atualizar o aplicativo"),
   LER("Memória usada por imagens"),
+  ESC("Memória para imagens",       V_TEX_MB, 5),
 
   // Integracoes — TMDB. Os rotulos seguem a pagina integration:tmdb do web
   // (settingsScreen.js): um master + um toggle por recurso que o enriquecimento
@@ -485,7 +493,7 @@ static const char *CHAVE[] = {
   "-stalkerPortal", "-stalkerMac", "-stalkerLimpar",
   "-xtreamServidor", "-xtreamUsuario", "-xtreamSenha", "-xtreamLimpar",
   "salvosDestino", "-trakt", "-simkl", "-sair",
-  "-versao", "-atualizar", "-espaco",
+  "-versao", "-atualizar", "-espaco", "texturasMB",
   // Integracoes: os nomes sao exatamente os que profileSettingsSyncService.js
   // exporta dentro de tmdb_settings / mdblist_settings — a conta aplica e a
   // TV respeita a escolha feita no app web, e vice-versa.
@@ -731,6 +739,7 @@ static int valor[AJ_N] = {
   1,                /* onde o + salva: watchlist do Trakt (ver V_SALVOS) */
   0, 0, 0,          /* trakt, simkl, sair: acoes */
   0, 0, 0,          /* versao, atualizar, espaco */
+  0,                /* memoria para imagens: automatico */
 
   // Integracoes — TMDB. Tudo LIGADO de fabrica neste app: o enriquecimento por
   // TMDB sempre foi incondicional aqui, e nascer desligado removeria da tela
@@ -822,6 +831,10 @@ int ajustes_rail_recolhida(void)      { return ajustes_rail_moderna() ? 0 : lig(
 int ajustes_rail_moderna_blur(void)   { return lig(AJ_RAIL_BLUR); }
 int ajustes_hero_ligado(void)         { return lig(AJ_HERO); }
 int ajustes_hero_cheio(void)          { return lig(AJ_HERO_CHEIO); }
+int ajustes_tex_mb(void) {
+  int i = valor[AJ_TEX_MB];
+  return (i >= 0 && i < 5) ? TEX_MB_DE[i] : 0;
+}
 int ajustes_posteres_deitados(void)   { return lig(AJ_LANDSCAPE); }
 int ajustes_gradiente_foco_classico(void) { return lig(AJ_GRAD_CLASSICO); }
 
@@ -1049,6 +1062,9 @@ void ajustes_dir(const char *dir) {
   rotulosDeIdioma();
   aplicarIdioma(AJ_LEG_LINGUA);
   aplicarIdioma(AJ_AUD_LINGUA);
+  // O teto de imagens escolhido vale desde o arranque, nao so quando a tela
+  // de Ajustes e aberta. tex_iniciar ja rodou (main.c); isto so o corrige.
+  if (valor[AJ_TEX_MB] > 0) tex_definir_orcamento_mb(ajustes_tex_mb());
 }
 
 static void gravar(void) {
@@ -1521,6 +1537,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_SIMKL: return "Conecta a sua conta do Simkl, uma alternativa ao Trakt para acompanhar séries.";
     case AJ_SAIR: return "Sai da conta nesta TV e apaga daqui a sessão, os addons e o progresso guardados.";
     case AJ_ESPACO: return "Uso atual de memória pelo cache de imagens, não espaço ocupado no armazenamento da TV.";
+    case AJ_TEX_MB: return "Quanta memória o cache de imagens pode usar. Automático escolhe pela RAM da TV. Um valor acima do que esta TV suporta é reduzido ao máximo dela — o painel ao lado mostra o teto em vigor.";
     case AJ_VERSAO_I: return "Versão do aplicativo. Esta informação não pode ser alterada.";
     case AJ_ATUALIZAR: return "Abre o cartão da versão nova, com o que mudou e o botão de instalar. Fica apagado quando não há versão nova.";
 
@@ -2123,6 +2140,9 @@ void ajustes_evento(const SDL_Event *e) {
       // fonte so teria efeito no proximo sync, e para quem apertou parece que
       // o ajuste nao faz nada.
       if (focoOp == AJ_CW_FONTE) desc_repetir();
+      // O teto de imagens vale NA HORA: subir e so deixar entrar mais; descer
+      // despeja pelo LRU de sempre no proximo quadro.
+      if (focoOp == AJ_TEX_MB) tex_definir_orcamento_mb(ajustes_tex_mb());
     }
     gravar();   // grava a cada mudanca: nao ha botao de "salvar" nesta tela
   }
@@ -3078,6 +3098,7 @@ static float desenhaPainelImagens(float x, float y, float w) {
   y += linhaStat(x, y, w, i18n("Baixado na sessão"), a);
   if (fixo == 1)      snprintf(b, sizeof b, "%s", i18n("cravado nesta build"));
   else if (fixo == 2) snprintf(b, sizeof b, "%s", "NUVIO_TEX_MB");
+  else if (fixo == 3) snprintf(b, sizeof b, "%s", i18n("escolhido em Ajustes"));
   else if (memTotal > 0) snprintf(b, sizeof b, i18n("pela RAM da TV (%.1f GB)"), memTotal / 1024.0);
   else snprintf(b, sizeof b, "%s", i18n("padrão"));
   // O teto mostrado e o efetivo (no Mac retina e mb x 4; na TV, o mesmo).
