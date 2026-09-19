@@ -144,8 +144,10 @@ static const char *V_LIGA[]      = { "Ligado", "Desligado" };
 // ajustes.txt e nunca vai para a conta — a TV da sala e a do quarto nao tem
 // a mesma RAM. Relato #71: a linha "Memoria usada por imagens" parecia um
 // ajuste e nao era; este e.
-static const char *V_TEX_MB[]    = { "Automático", "96 MB", "160 MB", "240 MB", "300 MB" };
-static const int   TEX_MB_DE[]   = { 0, 96, 160, 240, 300 };
+// 400 e 512 so passam da trava em TV com 3 GB ou mais (C1/C2/C3); a C9 de 2,2
+// GB para em 300, que e o unico valor acima do automatico medido em aparelho.
+static const char *V_TEX_MB[]    = { "Automático", "96 MB", "160 MB", "240 MB", "300 MB", "400 MB", "512 MB" };
+static const int   TEX_MB_DE[]   = { 0, 96, 160, 240, 300, 400, 512 };
 // TRES PADROES DE IMAGEM. O nome diz o que a pessoa ganha, nao o que o cache
 // faz: "Alta" e mais pixel de arte e mais memoria; "Baixa" e arte que chega
 // antes e cabe em TV com pouca RAM.
@@ -397,7 +399,7 @@ static const Opcao OPCOES[AJ_N] = {
   // significava "nunca mais nesta versao".
   ACAO("Atualizar o aplicativo"),
   LER("Memória usada por imagens"),
-  ESC("Memória para imagens",       V_TEX_MB, 5),
+  ESC("Memória para imagens",       V_TEX_MB, 7),
 
   // Integracoes — TMDB. Os rotulos seguem a pagina integration:tmdb do web
   // (settingsScreen.js): um master + um toggle por recurso que o enriquecimento
@@ -833,7 +835,7 @@ int ajustes_hero_ligado(void)         { return lig(AJ_HERO); }
 int ajustes_hero_cheio(void)          { return lig(AJ_HERO_CHEIO); }
 int ajustes_tex_mb(void) {
   int i = valor[AJ_TEX_MB];
-  return (i >= 0 && i < 5) ? TEX_MB_DE[i] : 0;
+  return (i >= 0 && i < 7) ? TEX_MB_DE[i] : 0;
 }
 int ajustes_posteres_deitados(void)   { return lig(AJ_LANDSCAPE); }
 int ajustes_gradiente_foco_classico(void) { return lig(AJ_GRAD_CLASSICO); }

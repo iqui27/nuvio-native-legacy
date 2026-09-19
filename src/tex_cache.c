@@ -1620,7 +1620,9 @@ static int orcamentoMB(void) {
 // A TRAVA E PELA RAM, e nao pela vontade: uma TV de 1 GB com 300 MB de
 // texturas troca despejo por OOM, e OOM no webOS e o app sumindo sem cartao
 // nenhum. O teto permitido segue a mesma escada de orcamentoMB, um degrau
-// acima do automatico: < 1,2 GB -> 96, < 2 GB -> 160, >= 2 GB -> 300. No
+// acima do automatico: < 1,2 GB -> 96, < 2 GB -> 160, < 3 GB -> 300 (o unico
+// valor alto MEDIDO, na C9 de 2,2 GB), >= 3 GB -> 512 (C1/C2/C3: palpite pela
+// RAM, sem aparelho aqui — o `rss=` do relatorio de FPS e quem confirma). No
 // Tizen o teto e o proprio automatico (medido: mais e mais lento, ver acima).
 static int tetoPermitidoMB(void) {
 #ifdef __EMSCRIPTEN__
@@ -1630,7 +1632,8 @@ static int tetoPermitidoMB(void) {
   if (!mem) return 160;
   if (mem < 1200) return 96;
   if (mem < 2000) return 160;
-  return 300;
+  if (mem < 3000) return 300;
+  return 512;
 #endif
 }
 void tex_definir_orcamento_mb(int mb) {
