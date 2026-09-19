@@ -1,4 +1,5 @@
 #include "extras.h"
+#include "marco.h"
 #include "vistoep.h"
 #include "trakt.h"
 #include "rede.h"
@@ -7,6 +8,7 @@
 #include "ajustes.h"
 #include "agenda.h"
 #include <pthread.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -179,6 +181,22 @@ static long tmdbEmCurso;
 
 static char idPedido[24], idEmCurso[24];
 static int  serieEmCurso, seriePedido, fioVivo;
+// DOIS FIOS PERMANENTES, UMA GERACAO POR PEDIDO (19/09).
+//
+// Antes cada titulo aberto criava um fio novo que fazia de 7 a 9 pedidos EM
+// SERIE — Trakt (progresso, notas, ficha, comentarios, temporadas,
+// relacionados) e TMDB (find, ficha com imagens e videos, colecao) — e
+// morria. Fio novo e handle novo da libcurl (rede.c guarda um por fio), ou
+// seja, handshake TLS de novo com o Trakt e com o TMDB a cada titulo: MEDIDO
+// na C9, ~30 s entre "meta basico na tela" e as notas aparecerem. Agora dois
+// fios ficam vivos a sessao inteira, um com a parte do Trakt e outro com a do
+// TMDB, rodando em PARALELO com as conexoes quentes; o ultimo a terminar uma
+// geracao faz os relacionados (que dependem dos dois) e publica. Um pedido
+// novo no meio so sobe a geracao: os fios abandonam o que estavam fazendo
+// nos pontos de conferencia (pedidoAindaAtual) e recomecam.
+static pthread_cond_t cvTrabalho = PTHREAD_COND_INITIALIZER;
+static int gerPedida, gerFeita[2], fiosProntos;
+static void *lacoParte(void *arg);
 static long tmdbPedido;
 static pthread_t fio;
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
@@ -190,28 +208,6 @@ static int pedidoAindaAtual(const char *id) {
   atual = !strcmp(id, idPedido);
   pthread_mutex_unlock(&trava);
   return atual;
-}
-
-// Termina um pedido e, se o usuario abriu outro titulo durante a consulta,
-// inicia imediatamente o pedido mais recente. Antes idPedido era trocado mas
-// nenhum novo fio nascia: a tela seguinte permanecia vazia indefinidamente.
-static void finalizarBusca(const char *id) {
-  int continuar = 0;
-  pthread_mutex_lock(&trava);
-  if (strcmp(idPedido, id)) {
-    snprintf(idEmCurso, sizeof idEmCurso, "%s", idPedido);
-    serieEmCurso = seriePedido;
-    tmdbEmCurso = tmdbPedido;
-    continuar = 1;
-  } else {
-    fioVivo = 0;
-  }
-  pthread_mutex_unlock(&trava);
-  if (continuar) {
-    if (pthread_create(&fio, NULL, buscar, NULL) != 0) {
-      pthread_mutex_lock(&trava); fioVivo = 0; pthread_mutex_unlock(&trava);
-    } else pthread_detach(fio);
-  }
 }
 
 // O Trakt devolve a nota como fracao de 0 a 10 com casas ("7.83521"); o resto
@@ -230,6 +226,10 @@ static void numaLinha(char *s) {
   for (; *s; s++) if (*s == '\n' || *s == '\r' || *s == '\t') *s = ' ';
 }
 
+// `parte` 0 = Trakt, 1 = TMDB/MDBList, 2 = as duas em serie (sem fio). Os
+// relacionados e a publicacao final ficam com quem terminar por ultimo
+// (relacionadosEPublicar), porque dependem das duas partes.
+static void relacionadosEPublicar(const char *id, int serie, int temTrakt);
 static void *buscar(void *arg) {
   const char *cab[4];
   char aut[200], chave[140], url[200], id[24];
@@ -237,7 +237,7 @@ static void *buscar(void *arg) {
   char *corpo;
   int serie;
   long tmdbId;
-  (void)arg;
+  int parte = (int)(intptr_t)arg;
 
   pthread_mutex_lock(&trava);
   snprintf(id, sizeof id, "%s", idEmCurso);
@@ -273,7 +273,7 @@ static void *buscar(void *arg) {
   // ("Retomar"/"Próximo"), entao era exatamente o ultimo a chegar e o primeiro
   // que o dono nota faltando.
   // --- episodios ja assistidos (so serie) ---
-  if (serie && temTrakt) {
+  if (parte != 1 && serie && temTrakt) {
     snprintf(url, sizeof url,
              "https://api.trakt.tv/shows/%s/progress/watched", id);
     corpo = rede_baixar_com(url, 20, cab);
@@ -356,11 +356,10 @@ static void *buscar(void *arg) {
 
   // O usuario ja abriu outro titulo. Nao gastar varias viagens opcionais com
   // uma tela que nao existe mais; entrega o fio ao pedido pendente.
-  if (!pedidoAindaAtual(id)) { finalizarBusca(id); return NULL; }
-
+  if (!pedidoAindaAtual(id)) return NULL;
 
   // --- nota ---
-  if (temTrakt) {
+  if (parte != 1 && temTrakt) {
   snprintf(url, sizeof url, "https://api.trakt.tv/%s/%s/ratings", tipo, id);
   corpo = rede_baixar_com(url, 12, cab);
   if (corpo) {
@@ -384,7 +383,7 @@ static void *buscar(void *arg) {
   }
 
   // --- status da serie (Trakt; o TMDB ja trouxe o seu na ficha) ---
-  if (serie && temTrakt && pedidoAindaAtual(id)) {
+  if (parte != 1 && serie && temTrakt && pedidoAindaAtual(id)) {
     snprintf(url,sizeof url,"https://api.trakt.tv/shows/%s?extended=full",id);
     corpo=rede_baixar_com(url,8,cab);
     if(corpo) {
@@ -403,7 +402,7 @@ static void *buscar(void *arg) {
   // fio ja e proprio, entao nao atrapalha o desenho.
   // mdblist_enabled corta a CONSULTA — as notas que o app tem por conta
   // propria (Trakt direto, IMDb do catalogo) nao dependem desta chave.
-  if (mdbChave[0] && ajustes_mdblist_ligado()) {
+  if (parte != 0 && mdbChave[0] && ajustes_mdblist_ligado()) {
     const char *cabJ[3];
     char kj[64];
     char corpoPost[80];
@@ -430,7 +429,7 @@ static void *buscar(void *arg) {
   }
 
   // --- comentarios, os mais curtidos primeiro ---
-  if (temTrakt) {
+  if (parte != 1 && temTrakt) {
   snprintf(url, sizeof url,
            "https://api.trakt.tv/%s/%s/comments/likes?limit=%d", tipo, id,
            EX_COMENT_MAX);
@@ -477,7 +476,7 @@ static void *buscar(void *arg) {
   // basta para esta chamada, entao a condicao e "ha alguma credencial", e nao
   // "ha token". Com token o cabecalho continua sendo o completo — nao ha
   // motivo para pedir anonimamente quem esta logado.
-  if (serie && (temTrakt || temChave)) {
+  if (parte != 1 && serie && (temTrakt || temChave)) {
     snprintf(url, sizeof url,
              "https://api.trakt.tv/shows/%s/seasons?extended=episodes,full", id);
     corpo = rede_baixar_com(url, 20, temTrakt ? cab : cabPub);
@@ -521,7 +520,7 @@ static void *buscar(void *arg) {
   // endpoint (movie x tv), o /find (movie_results x tv_results) e os extras
   // do append (release_dates so existe em filme; em serie a classificacao e
   // content_ratings, e ainda nao ha onde mostra-la — o Detalhes e so de filme).
-  {
+  if (parte != 0) {
     const char *chave = desc_chave_tmdb();
     long idCol = 0, idT = tmdbId;
     char nome[80] = "";
@@ -582,7 +581,6 @@ static void *buscar(void *arg) {
         if (strcmp(id, idPedido)) {
           pthread_mutex_unlock(&trava);
           free(corpo);
-          finalizarBusca(id);
           return NULL;
         }
         const char *fimC = corpo + strlen(corpo);
@@ -939,10 +937,21 @@ static void *buscar(void *arg) {
     }
   }
 
+  marco(parte == 0 ? "extras: parte trakt pronta" : parte == 1 ? "extras: parte tmdb pronta" : "extras: partes prontas");
+  // As duas partes em serie (sem fio): os relacionados vem aqui mesmo.
+  if (parte == 2) relacionadosEPublicar(id, serie, temTrakt);
+  return NULL;
+}
+
+static void relacionadosEPublicar(const char *id, int serie, int temTrakt) {
+  const char *cab[4];
+  char aut[200], chave[140], url[200];
+  const char *tipo = serie ? "shows" : "movies";
+  char *corpo;
+  if (!trakt_cabecalhos(cab, aut, sizeof aut, chave, sizeof chave)) temTrakt = 0;
   // Relacionados sao opcionais e podem custar mais uma viagem. Se o usuario
-  // ja abriu outra obra, encadeia a mais recente agora em vez de prolongar a
-  // espera com dados que serao descartados.
-  if (!pedidoAindaAtual(id)) { finalizarBusca(id); return NULL; }
+  // ja abriu outra obra, nem comeca.
+  if (!pedidoAindaAtual(id)) return;
 
   // --- relacionados ---
   // "Mais como este": quando o TMDB ja encheu rel[] pelo append
@@ -1030,7 +1039,35 @@ static void *buscar(void *arg) {
   printf("[extras] colecao \"%s\" -> %d | rel[0] poster=%s\n", colNome, nCol,
          nRel ? rel[0].poster : "(sem)"); fflush(stdout);
   fflush(stdout);
-  finalizarBusca(id);
+  marco("extras: publicados");
+}
+
+// O LACO DE CADA FIO PERMANENTE. Espera uma geracao nova, faz a sua parte,
+// marca feita; quem fecha a geracao (as duas partes feitas e nenhuma mais
+// nova pedida) faz os relacionados e solta `fioVivo`.
+static void *lacoParte(void *arg) {
+  int parte = (int)(intptr_t)arg;
+  pthread_mutex_lock(&trava);
+  for (;;) {
+    int g, serie, temTrakt;
+    char id[24];
+    while (gerFeita[parte] == gerPedida) pthread_cond_wait(&cvTrabalho, &trava);
+    g = gerPedida;
+    snprintf(id, sizeof id, "%s", idEmCurso);
+    serie = serieEmCurso;
+    pthread_mutex_unlock(&trava);
+    buscar((void *)(intptr_t)parte);
+    pthread_mutex_lock(&trava);
+    gerFeita[parte] = g;
+    if (gerFeita[0] == g && gerFeita[1] == g && g == gerPedida) {
+      pthread_mutex_unlock(&trava);
+      { const char *cab[4]; char aut[200], chave[140];
+        temTrakt = trakt_cabecalhos(cab, aut, sizeof aut, chave, sizeof chave); }
+      relacionadosEPublicar(id, serie, temTrakt);
+      pthread_mutex_lock(&trava);
+      if (g == gerPedida) fioVivo = 0;
+    }
+  }
   return NULL;
 }
 
@@ -1092,14 +1129,26 @@ void extras_pedir(const char *imdb, int serie, long tmdbId) {
   seriePedido = serie;
   tmdbPedido = tmdbId;
   zerarPublicado();
-  if (fioVivo) { pthread_mutex_unlock(&trava); return; }
   snprintf(idEmCurso, sizeof idEmCurso, "%s", imdb);
   serieEmCurso = serie;
   tmdbEmCurso = tmdbId;
+  if (!fiosProntos) {
+    pthread_t t;
+    int k, ok = 1;
+    for (k = 0; k < 2 && ok; k++)
+      if (pthread_create(&t, NULL, lacoParte, (void *)(intptr_t)k) == 0) pthread_detach(t);
+      else ok = 0;
+    fiosProntos = ok ? 1 : -1;
+  }
   fioVivo = 1;
+  gerPedida++;
+  pthread_cond_broadcast(&cvTrabalho);
   pthread_mutex_unlock(&trava);
-  if (pthread_create(&fio, NULL, buscar, NULL) != 0) fioVivo = 0;
-  else pthread_detach(fio);
+  if (fiosProntos < 0) {
+    // Sem fios: as duas partes em serie num fio descartavel, como antes.
+    if (pthread_create(&fio, NULL, buscar, (void *)(intptr_t)2) == 0) pthread_detach(fio);
+    else { pthread_mutex_lock(&trava); fioVivo = 0; pthread_mutex_unlock(&trava); }
+  }
 }
 
 int extras_nota_trakt(void)  { return notaTrakt; }
