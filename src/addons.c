@@ -42,6 +42,25 @@ static int nAddon;
 static _Atomic AddEstado estado = ADD_PARADO;
 static pthread_t fio;
 static char alvoId[64], alvoTipo[16];
+// BASE DO ADDON QUE PUBLICOU O ALVO, quando se sabe (canal vindo do guia).
+// Com ela, a consulta vai SO a esse addon. Vazia = todos, como sempre foi.
+//
+// POR QUE: um canal do "Meu Futebol" perguntava fonte ao FrostView, ao
+// Debridio, ao AIOStreams — e o FrostView, fora do ar com 408 o dia inteiro,
+// segurava a resposta ate o timeout dele. MEDIDO na C9 em 18/09, dono no
+// controle: FrostView ligado, dezenas de segundos e cartao de erro; desligado,
+// 1,6 s da tecla ate a fonte. O canal nunca foi dele. Nao ha motivo para
+// perguntar a quem nao publicou o canal — o id do canal e do addon que o
+// declarou, e outro addon nao o conhece (o Meu Futebol responde 404 a id
+// alheio, ja se mediu hoje).
+static char alvoBase[600];
+// A COPIA QUE O FIO LE. app.c chama addons_definir_origem(NULL) logo depois de
+// addons_buscar, e o fio so acorda depois disso: lendo alvoBase direto ele
+// achava a origem vazia e perguntava a TODOS os addons — MEDIDO na C9 em
+// 18/09 (Debridio e AIOStreams consultados por canal do Meu Futebol com a
+// origem definida). A busca copia no disparo; o que o app zere depois nao
+// importa mais.
+static char fioBase[600];
 static int fioVivo;
 static Stream *resultado;
 static int nResultado;
@@ -851,7 +870,7 @@ static const char *tipoAlternativo(const char *tipo) {
   return "";
 }
 
-int addons_consultar(const char *id, const char *tipo, int fios,
+int addons_consultar(const char *id, const char *tipo, const char *base, int fios,
                      int (*cancelado)(void *), void *ctx, Stream **saida) {
   Consulta c;
   Stream *achados = NULL;
@@ -863,9 +882,24 @@ int addons_consultar(const char *id, const char *tipo, int fios,
   c.cancelado = cancelado; c.ctx = ctx;
   pthread_mutex_init(&c.trava, NULL);
   c.baldes = calloc((size_t)nAddon, sizeof(BaldeFonte));
-  if (c.baldes)
-    for (i = 0; i < nAddon; i++)
-      if (addon[i].ativo && addon[i].fonte) c.baldes[c.nBaldes++].idx = i;
+  if (c.baldes) {
+    // SO O ADDON DE ORIGEM, quando se sabe qual e. Comparacao por base
+    // normalizada — "<base>" e "<base>/manifest.json" sao o mesmo addon.
+    if (base && *base) {
+      char alvo[600], mine[600];
+      baseNormalizada(base, alvo, sizeof alvo);
+      for (i = 0; i < nAddon; i++) {
+        if (!addon[i].ativo || !addon[i].fonte) continue;
+        baseNormalizada(addon[i].base, mine, sizeof mine);
+        if (!strcmp(mine, alvo)) c.baldes[c.nBaldes++].idx = i;
+      }
+    }
+    // Sem origem conhecida, ou origem que nao esta (mais) na lista: todos,
+    // como sempre. Melhor perguntar a mais do que nao perguntar a ninguem.
+    if (c.nBaldes == 0)
+      for (i = 0; i < nAddon; i++)
+        if (addon[i].ativo && addon[i].fonte) c.baldes[c.nBaldes++].idx = i;
+  }
 
   if (c.baldes && c.nBaldes > 0) {
     pthread_t f[ADD_FIOS];
@@ -901,7 +935,7 @@ static void *buscar(void *u) {
   int n;
   (void)u;
   marco("addons: consulta inicio");
-  n = addons_consultar(alvoId, alvoTipo, ADD_FIOS, NULL, NULL, &achados);
+  n = addons_consultar(alvoId, alvoTipo, fioBase, ADD_FIOS, NULL, NULL, &achados);
   if (n < 0) n = 0;
   marco(n ? "addons: fontes recebidas" : "addons: nenhuma fonte");
   // O canal que vai ao ar fica no cache para o zap de VOLTA. Filme e serie
@@ -921,7 +955,15 @@ static void dispararBusca(void) {
   fontecache_ceder();
   estado = ADD_BUSCANDO;
   fioVivo = 1;
+  snprintf(fioBase, sizeof fioBase, "%s", alvoBase);
+  alvoBase[0] = 0;   // consumida: origem e do pedido, nao de sessao
   if (pthread_create(&fio, NULL, buscar, NULL) != 0) { fioVivo = 0; estado = ADD_PARADO; }
+}
+
+// Diz de que addon o PROXIMO alvo veio. Chamar ANTES de addons_buscar; a
+// busca seguinte consome e zera — origem e do pedido, nao de sessao.
+void addons_definir_origem(const char *base) {
+  snprintf(alvoBase, sizeof alvoBase, "%s", base ? base : "");
 }
 
 void addons_buscar(const char *imdb, const char *tipo) {

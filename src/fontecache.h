@@ -44,7 +44,10 @@
 // CADA addon de fonte por um canal que a pessoa talvez nunca abra; dois por
 // parada de foco e o que cobre CH+ e CH- sem transformar a leitura do guia num
 // rastreador de rede. A fileira inteira custaria N vezes isso por parada.
-void fontecache_engatilhar(const char *idAntes, const char *idDepois);
+// `base*` e o addon que publicou cada canal (GCanal.base no guia): o prefetch
+// pergunta so a ele. NULL/vazio = a todos.
+void fontecache_engatilhar(const char *idAntes, const char *baseAntes,
+                           const char *idDepois, const char *baseDepois);
 
 // --- o lado de addons.c ---------------------------------------------------------
 
@@ -60,7 +63,7 @@ void fontecache_engatilhar(const char *idAntes, const char *idDepois);
 // 1, os addons que faltam nao sao perguntados, o que ja veio e descartado e a
 // funcao devolve -1 com *saida NULL. Devolve o numero de fontes (0 = nenhum
 // addon respondeu com fonte) nos demais casos.
-int  addons_consultar(const char *id, const char *tipo, int fios,
+int  addons_consultar(const char *id, const char *tipo, const char *base, int fios,
                       int (*cancelado)(void *), void *ctx, Stream **saida);
 
 enum { FC_NADA = 0, FC_ACERTO, FC_EM_CURSO };

@@ -56,9 +56,10 @@ static void soltarAddon(int k) {
   pthread_mutex_lock(&redeTrava); solto[k] = 1; pthread_mutex_unlock(&redeTrava);
 }
 
-int addons_consultar(const char *id, const char *tipo, int fios,
+int addons_consultar(const char *id, const char *tipo, const char *base, int fios,
                      int (*cancelado)(void *), void *ctx, Stream **saida) {
   int k, n = 0, i;
+  (void)base;
   Stream *l;
   (void)fios;
   assert(!strcmp(tipo, "tv"));   // o prefetch pede o mesmo tipo que tocarCanal
@@ -126,7 +127,7 @@ static Stream *listaDe(int n, const char *marca) {
 
 // Um engatilhar que ja passou o descanso do foco e ja foi avancado.
 static void engatilharEAvancar(const char *antes, const char *depois) {
-  fontecache_engatilhar(antes, depois);
+  fontecache_engatilhar(antes, NULL, depois, NULL);
   relogio += FONTECACHE_ESPERA_MS;
   fontecache_avancar();
 }
@@ -208,7 +209,7 @@ int main(void) {
 
   // 6. O PREFETCH ESPERA O FOCO DESCANSAR, e busca o de BAIXO primeiro.
   soltarTudo();
-  fontecache_engatilhar("canal:cima", "canal:baixo");
+  fontecache_engatilhar("canal:cima", NULL, "canal:baixo", NULL);
   usleep(20000);
   assert(nConsultas() == 0);                       // 0 ms: segurando a seta
   relogio += FONTECACHE_ESPERA_MS - 1;
@@ -238,9 +239,9 @@ int main(void) {
 
   // 8. NAO ARRANCA com a busca principal ocupada nem com o player carregando.
   buscaOcupada = 1;
-  fontecache_engatilhar("canal:f", NULL);
+  fontecache_engatilhar("canal:f", NULL, NULL, NULL);
   relogio += FONTECACHE_ESPERA_MS;
-  fontecache_engatilhar("canal:f", NULL);          // de novo, ja com o descanso vencido
+  fontecache_engatilhar("canal:f", NULL, NULL, NULL);          // de novo, ja com o descanso vencido
   relogio += FONTECACHE_ESPERA_MS;
   usleep(20000);
   assert(nConsultas() == 2);
@@ -302,12 +303,12 @@ int main(void) {
   esperarDentro();
   assert(!strcmp(ultimoId, "canal:k"));
   { int antes = nConsultas();
-    fontecache_engatilhar("canal:k", "canal:m");   // k ainda e vizinho: segue
+    fontecache_engatilhar("canal:k", NULL, "canal:m", NULL);   // k ainda e vizinho: segue
     relogio += FONTECACHE_ESPERA_MS; fontecache_avancar();
     usleep(20000);
     assert(nConsultas() == antes && fioVivo());
     assert(fontecache_pegar("canal:k", "tv", &l, &n) == FC_EM_CURSO);
-    fontecache_engatilhar("canal:p", "canal:q");   // k saiu da vizinhanca: cede
+    fontecache_engatilhar("canal:p", NULL, "canal:q", NULL);   // k saiu da vizinhanca: cede
     relogio += FONTECACHE_ESPERA_MS; fontecache_avancar();
     usleep(20000);
     assert(nConsultas() == antes);                 // nada novo enquanto k nao sai

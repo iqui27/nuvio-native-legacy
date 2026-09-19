@@ -37,6 +37,11 @@ static Entrada cache[FONTECACHE_MAX];
 // inteiros a cada engatilhar — o foco mudou, os vizinhos de antes nao
 // interessam mais.
 static char   pend[2][64];
+// A base do addon que publicou cada vizinho, para o prefetch perguntar SO a
+// ele (mesma regra de alvoBase em addons.c; sem ela cada prefetch ia a todos
+// os addons de fonte). Vazia = todos.
+static char   pendBase[2][600];
+static char   emCursoBase[600];
 static Uint32 pedidoEm;
 
 // O prefetch em curso. `emCurso` e o id na rede; `cancelar` e lido pelo fio de
@@ -155,14 +160,15 @@ static int cancelado(void *u) {
 
 static void *prefetch(void *u) {
   Stream *lista = NULL;
-  char id[64];
+  char id[64], base[600];
   int n;
   (void)u;
   pthread_mutex_lock(&trava);
   snprintf(id, sizeof id, "%s", emCurso);
+  snprintf(base, sizeof base, "%s", emCursoBase);
   pthread_mutex_unlock(&trava);
 
-  n = addons_consultar(id, FC_TIPO, FONTECACHE_FIOS, cancelado, NULL, &lista);
+  n = addons_consultar(id, FC_TIPO, base, FONTECACHE_FIOS, cancelado, NULL, &lista);
 
   pthread_mutex_lock(&trava);
   if (cancelar) {
@@ -188,7 +194,7 @@ static void *prefetch(void *u) {
 // se nao ha fio no ar e o foco ja descansou. Quem chama ja garantiu que a
 // busca principal esta ociosa e que o player nao esta carregando.
 static void tentar(void) {
-  char id[64] = "";
+  char id[64] = "", base[600] = "";
   int k, juntar;
   Uint32 agora = FC_AGORA();
   pthread_mutex_lock(&trava);
@@ -200,6 +206,7 @@ static void tentar(void) {
     if (!pend[k][0]) continue;
     if (achar(pend[k], FC_TIPO, agora) >= 0) { pend[k][0] = 0; continue; }   // ja tem
     snprintf(id, sizeof id, "%s", pend[k]);
+    snprintf(base, sizeof base, "%s", pendBase[k]);
     pend[k][0] = 0;
   }
   if (!id[0]) { pthread_mutex_unlock(&trava); return; }
@@ -214,12 +221,14 @@ static void tentar(void) {
   cancelar = 0;
   vivo = 1;
   snprintf(emCurso, sizeof emCurso, "%s", id);
+  snprintf(emCursoBase, sizeof emCursoBase, "%s", base);
   if (pthread_create(&fio, NULL, prefetch, NULL) != 0) { vivo = 0; emCurso[0] = 0; }
   else criado = 1;
   pthread_mutex_unlock(&trava);
 }
 
-void fontecache_engatilhar(const char *idAntes, const char *idDepois) {
+void fontecache_engatilhar(const char *idAntes, const char *baseAntes,
+                           const char *idDepois, const char *baseDepois) {
   int mantem = 0;
   if (!addons_n()) return;
   pthread_mutex_lock(&trava);
@@ -227,6 +236,8 @@ void fontecache_engatilhar(const char *idAntes, const char *idDepois) {
   // continua indo, e e o CH+ do controle.
   snprintf(pend[0], sizeof pend[0], "%s", idDepois ? idDepois : "");
   snprintf(pend[1], sizeof pend[1], "%s", idAntes  ? idAntes  : "");
+  snprintf(pendBase[0], sizeof pendBase[0], "%s", baseDepois ? baseDepois : "");
+  snprintf(pendBase[1], sizeof pendBase[1], "%s", baseAntes  ? baseAntes  : "");
   pedidoEm = FC_AGORA();
   // O prefetch que esta na rede continua se ainda e vizinho do foco novo;
   // senao para de pedir aos addons que faltam — era vizinho de um foco que ja

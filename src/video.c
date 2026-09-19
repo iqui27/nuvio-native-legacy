@@ -1345,7 +1345,13 @@ static void montarHttpHeader(char *dst, unsigned tam) {
 }
 
 static int tocarInterno(const char *url, int comDV) {
-  char carga[2048];
+  // 8 KB E NAO 2: a URL de fonte vai ate 4096 (Stream.url) e a do Pluto TV
+  // leva ~1,7 KB de query com JWT. Com 2048 o snprintf CORTAVA o JSON no meio
+  // e o uMS respondia `Method "load" for category "/" was not handled` — que
+  // se le como "o servico sumiu", nao como "mandei JSON pela metade". MEDIDO
+  // na C9 em 18/09 com dois canais do Pluto. A conferencia de tamanho logo
+  // abaixo transforma o proximo estouro em erro com nome.
+  char carga[8192];
   unsigned minhaSessao;
   if (!ligado && !video_iniciar()) return 0;
   video_parar();
@@ -1451,7 +1457,14 @@ static int tocarInterno(const char *url, int comDV) {
       // ver acima); no da webOS 5 ele e o endereco REAL do plano exportado e um
       // valor errado aqui deixa o video sem para onde ir.
       expWin[0] ? expWin : "window_id_dummy",
-      url); }
+      url);
+    if (strlen(carga) >= sizeof carga - 1) {
+      printf("[video] carga do load nao coube em %zu bytes (URL de %zu): recusando\n",
+             sizeof carga, strlen(url));
+      fflush(stdout);
+      falhou = 1;
+      return 0;
+    } }
   printf("[video] URL: %s\n", url); fflush(stdout);
   msDoLoad = agoraMs();
   chamarCtx("load", carga, aoCarregar, (void *)(uintptr_t)minhaSessao);

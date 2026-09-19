@@ -53,6 +53,9 @@ int  addons_tem_catalogo(int i);  // 1 quando o addon fornece catalogo
 // CONSULTA O CACHE ANTES DA REDE (fontecache.h): canal que o guia engatilhou
 // responde sem fio nenhum, e canal cujo prefetch esta na rede agora e esperado
 // em vez de repetido. O caminho de rede e o de sempre.
+// Origem do proximo alvo (base do addon que publicou o canal). Com ela a busca
+// pergunta SO a esse addon; vazia, pergunta a todos. Ver alvoBase em addons.c.
+void addons_definir_origem(const char *base);
 void addons_buscar(const char *imdb, const char *tipo);
 
 // A mesma consulta, SINCRONA E REENTRANTE, e addons_consultar — declarada em

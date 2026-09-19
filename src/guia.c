@@ -68,6 +68,7 @@
 // bastava para um FrostView.
 #define G_MAX_FONTE   24
 #define G_PAGINA     100
+#define G_COTA_MIN   150   // piso da cota por catalogo (ver fioGuia)
 
 // --- layout ---------------------------------------------------------------
 // Painel de detalhe a direita, como a tela "Ver tudo" faz. As fileiras de
@@ -89,7 +90,12 @@
 // Tempos do modo salta-categoria: segurar ~600 ms entra, 2 s parado sai.
 // 450 ms e a folga entre repeticoes de KEYDOWN do firmware (ele manda uma
 // tecla segurada como varios KEYDOWN com repeat=0).
-#define G_HOLD_MS    600
+// 1100 e nao 600, e G_CAT_PASSO_MS: com 600 ms segurar "um pouco" ja saltava
+// de secao, e uma vez no modo cada repeticao do firmware (~130 ms) pulava
+// outra — dez secoes num piscar. Pedido do dono em 18/09: mais lerdo para
+// entrar e mais lerdo para andar.
+#define G_HOLD_MS    1100
+#define G_CAT_PASSO_MS 550
 #define G_REP_MS     450
 #define G_CAT_SAIR_MS 2000
 
@@ -132,6 +138,12 @@ typedef struct {
   char nome[140];
   char logo[480];
   char desc[600];
+  // DE QUE ADDON ESTE CANAL VEIO. Sem isto o player perguntava a fonte a TODOS
+  // os addons — e um addon quebrado (FrostView com 408 o dia inteiro) segurava
+  // o canal de OUTRO addon ate o timeout dele. Medido na C9 em 18/09: com o
+  // FrostView desligado, 1,6 s da tecla ate a fonte; ligado, dezenas de
+  // segundos e "nao foi possivel abrir a fonte" num canal que ele nem fornece.
+  char base[600];
   int  cat;      // indice em cats[]
   int  epg;      // -1 = ainda nao resolvido; -2 = sem grade real
   int  fav;      // espelho do arquivo, para o desenho nao varrer a lista
@@ -152,7 +164,9 @@ static int fioVivo, pendPronto;
 static char focoPend[80];
 
 // Catalogos de canal descobertos na home (tipo "channel"/"tv").
-typedef struct { char base[600], tipo[16], id[96]; } GFonte;
+// `nome` e o nome do catalogo no manifesto (ou o titulo da fileira): vira a
+// categoria do canal que nao traz genero nenhum — ver lerPagina.
+typedef struct { char base[600], tipo[16], id[96], nome[96]; } GFonte;
 static GFonte fontes[G_MAX_FONTE]; static int nFontes, fontesOk;
 // Copia de trabalho do fio: as fileiras sao so o caminho rapido. O manifesto
 // de cada addon ativo declara TODOS os catalogos de canal, montados na home
@@ -243,6 +257,17 @@ static int sabeCanal(const char *base) {   // 1, 0, ou -1 = desconhecido
   for (int i = 0; i < nSabe; i++)
     if (!strcmp(sabe[i].base, base)) return sabe[i].canal;
   return -1;
+}
+
+// A base pertence a um addon da conta que esta DESLIGADO? Base que nenhum
+// addon reivindica (portal Stalker, addon recem-removido) conta como ligada:
+// o painel so manda no que ele lista.
+static int baseLigada(const char *base) {
+  for (int i = 0; i < addons_n(); i++) {
+    const char *b = addons_base(i);
+    if (b && b[0] && !strcmp(b, base)) return addons_ativo(i);
+  }
+  return 1;
 }
 
 // --- addons recomendados ---------------------------------------------------------
@@ -342,7 +367,9 @@ static int linhaN(int l) {
 }
 static const char *linhaNome(int l) {
   if (linhaEhFav(l)) return i18n("Favoritos");
-  return cats[l - (nFavOrd > 0 ? 1 : 0)];
+  // As secoes de categoriaPorNome sao chaves da tabela; genero vindo do
+  // addon nao e, e i18n devolve o texto como veio.
+  return i18n(cats[l - (nFavOrd > 0 ? 1 : 0)]);
 }
 static GCanal *linhaItem(int l, int c) {
   if (c < 0 || c >= linhaN(l)) return NULL;
@@ -382,10 +409,69 @@ static void descobrirFontes(void) {
       snprintf(fontes[nFontes].base, sizeof fontes[nFontes].base, "%s", f->base);
       snprintf(fontes[nFontes].tipo, sizeof fontes[nFontes].tipo, "%s", f->tipo);
       snprintf(fontes[nFontes].id,   sizeof fontes[nFontes].id,   "%s", f->catId);
+      snprintf(fontes[nFontes].nome, sizeof fontes[nFontes].nome, "%s", f->titulo);
       nFontes++;
     }
   }
   fontesOk = 1;
+}
+
+// CATEGORIA PELO NOME DO CANAL, quando o addon nao manda genero nenhum.
+//
+// O Meu Futebol manda 68 canais e o Pluto TV 1.523, todos sem `genres`; so o
+// Fenix classifica. Cair tudo em "Outros" (ou no nome do catalogo) deixava o
+// guia sem secao para o que a pessoa mais usa. O nome do canal carrega a
+// classificacao na maior parte dos casos — "ESPN 4", "GloboNews", "Cartoon
+// Network" — e uma tabela de palavras cobre os canais brasileiros e
+// americanos que esses addons trazem. E HEURISTICA e esta dito aqui: quem
+// nao casa vai para o nome do catalogo, nunca para uma secao errada por
+// palpite fraco. A ORDEM DA TABELA IMPORTA: "BandSports" tem de cair em
+// Esportes antes de "Band" cair em Abertos, "TNT Sports" antes de "TNT".
+//
+// As secoes sao chaves de idioma_tab.h — linhaNome passa cats[] por i18n().
+static int contemSemCaixa(const char *texto, const char *chave) {
+  size_t n = strlen(chave);
+  for (; *texto; texto++)
+    if (!strncasecmp(texto, chave, n)) return 1;
+  return 0;
+}
+static const char *categoriaPorNome(const char *nome) {
+  static const struct { const char *cat; const char *chaves[40]; } tab[] = {
+    { "Esportes", { "espn", "sportv", "sport", "premiere", "combate", "dazn", "ufc",
+                    "nba", "nfl", "nhl", "mlb", "tyc", "futebol", "golf", "tennis",
+                    "motor", "caz", "ge tv", "bein", "fight", "wwe",
+                    "racing", "olymp", "paramount+ esport", "goat", "poker", NULL } },
+    { "Notícias", { "news", "cnn", "jovem pan", "bloomberg", "msnbc", "cnbc",
+                    "euronews", "newsmax", "noticia", "al jazeera",
+                    "weather", "tempo", NULL } },
+    { "Infantil", { "cartoon", "nick", "disney", "gloob", "boomerang", "kids",
+                    "baby", "junior", "tooncast", "cartoonito", "zoomoo",
+                    "discovery kids", "pbs kids", NULL } },
+    { "Documentários", { "discovery", "history", "nat geo", "national geo",
+                    "animal planet", "curta", "investiga", "science", "smithsonian",
+                    "docu", "h2", "planet", "nature", "crime", NULL } },
+    { "Filmes", { "hbo", "telecine", "cine", "megapix", "tcm", "paramount", "amc",
+                  "space", "star channel", "movie", "film", "cinemax", "studio universal",
+                  "sony movies", "canal brasil", "syfy", "arte 1", "arte1", NULL } },
+    { "Séries", { "warner", "sony", "universal", "fx", "axn", "a&e", "ae ", "series",
+                  "tnt", "comedy", "fox", "cw", NULL } },
+    { "Música", { "mtv", "music", "vh1", "bis", "radio", "hits", "trace",
+                  "sertanejo", "pagode", "rock", "jazz", "classic", NULL } },
+    { "Variedades", { "gnt", "multishow", "viva", "off", "tlc", "lifetime", "food",
+                      "hgtv", "e!", "reality", "entertainment", "travel", "cooking",
+                      "shopping", "bravo", "oxygen", "hallmark", "we tv", NULL } },
+    { "Abertos", { "globo", "sbt", "record", "band", "redetv", "rede tv", "cultura",
+                   "tv brasil", "rede vida", "futura", "gazeta", "cnt", "aparecida",
+                   "cancao nova", "rede brasil", "novo tempo",
+                   "abc", "nbc", "cbs", "pbs", "ion", "rede genesis", "rit", "boas novas",
+                   "tv escola", "rbi", NULL } },
+  };
+  int i, k;
+  if (!nome || !*nome) return NULL;
+  for (i = 0; i < (int)(sizeof tab / sizeof tab[0]); i++)
+    for (k = 0; tab[i].chaves[k]; k++)
+      if (contemSemCaixa(nome, tab[i].chaves[k])) return tab[i].cat;
+  return NULL;
 }
 
 static int sCatDe(const char *nome) {
@@ -416,7 +502,11 @@ static int sCanalPorId(const char *id) {
 // Uma pagina de catalogo. Devolve quantos METAS a pagina trouxe — nao quantos
 // entraram: uma fonte pode repetir canais de outra, e contar so os novos
 // encerraria a pagina uma rodada cedo, deixando os exclusivos de tras.
-static int lerPagina(const GFonte *f, int skip) {
+// `teto` e o maximo de canais que ESTE catalogo pode somar a sCanais (ver o
+// laco em fioGuia). Devolve quantos metas a pagina trouxe; `novos` recebe
+// quantos entraram de fato — a diferenca e o que separa "acabou" de
+// "catalogo que ignora skip e repete a mesma pagina".
+static int lerPagina(const GFonte *f, int skip, int teto, int *novos) {
   char url[1200];
   char *corpo;
   const char *p;
@@ -426,10 +516,11 @@ static int lerPagina(const GFonte *f, int skip) {
              f->base, f->tipo, f->id, skip);
   else
     snprintf(url, sizeof url, "%s/catalog/%s/%s.json", f->base, f->tipo, f->id);
+  *novos = 0;
   corpo = rede_baixar(url, 15);
   if (!corpo) return 0;
   p = js_array(corpo, NULL, "metas");
-  while (p && sNCanais < G_MAX_CANAL) {
+  while (p && sNCanais < G_MAX_CANAL && *novos < teto) {
     const char *fim = js_fim(p);
     GCanal c;
     char gen[64] = "";
@@ -450,8 +541,19 @@ static int lerPagina(const GFonte *f, int skip) {
       { const char *g = js_array(p, fim, "genre");
         if (!g) g = js_array(p, fim, "genres");
         lerStrEl(g, gen, sizeof gen); }
-      c.cat = sCatDe(gen[0] ? gen : "Outros");
-      if (c.cat >= 0) sCanais[sNCanais++] = c;
+      // SEM GENERO: primeiro o nome do canal (categoriaPorNome), depois o
+      // nome do catalogo de onde ele veio ("Meu Futebol"), que e a
+      // classificacao que o proprio addon deu. Meu Futebol manda 68 canais
+      // sem `genres` nenhum (medido em 18/09/2026) e todos caiam em "Outros"
+      // — que do sofa se le como "o app nao classificou". "Outros" fica so
+      // para catalogo sem nome, que nao devia existir.
+      if (!gen[0]) {
+        const char *h = categoriaPorNome(c.nome);
+        if (h) snprintf(gen, sizeof gen, "%s", h);
+      }
+      c.cat = sCatDe(gen[0] ? gen : f->nome[0] ? f->nome : "Outros");
+      snprintf(c.base, sizeof c.base, "%s", f->base);
+      if (c.cat >= 0) { sCanais[sNCanais++] = c; (*novos)++; }
     }
     p = js_prox(fim);
   }
@@ -459,10 +561,10 @@ static int lerPagina(const GFonte *f, int skip) {
   return n;
 }
 
-static int fonteJa(const char *base, const char *id) {
+static int fonteJa(const char *base, const char *id) {   // indice ou -1
   for (int i = 0; i < sNFontes; i++)
-    if (!strcmp(sFontes[i].base, base) && !strcmp(sFontes[i].id, id)) return 1;
-  return 0;
+    if (!strcmp(sFontes[i].base, base) && !strcmp(sFontes[i].id, id)) return i;
+  return -1;
 }
 
 // SONDA DE MANIFESTOS, no fio de trabalho. A home monta no maximo
@@ -523,15 +625,24 @@ static void sondaManifestos(void) {
     p = js_array(corpo, fim, "catalogs");
     while (p && sNFontes < G_MAX_FONTE) {
       const char *f = js_fim(p);
-      char tipo[16] = "", id[96] = "";
+      char tipo[16] = "", id[96] = "", nome[96] = "";
+      int ja;
       js_texto(p, f, "type", tipo, sizeof tipo);
       js_texto(p, f, "id", id, sizeof id);
+      js_texto(p, f, "name", nome, sizeof nome);
       if (ehCanal(tipo)) temCanal = 1;
-      if (ehCanal(tipo) && id[0] && !fonteJa(base, id)) {
-        snprintf(sFontes[sNFontes].base, sizeof sFontes[sNFontes].base, "%s", base);
-        snprintf(sFontes[sNFontes].tipo, sizeof sFontes[sNFontes].tipo, "%s", tipo);
-        snprintf(sFontes[sNFontes].id,   sizeof sFontes[sNFontes].id,   "%s", id);
-        sNFontes++;
+      if (ehCanal(tipo) && id[0]) {
+        ja = fonteJa(base, id);
+        if (ja < 0) {
+          ja = sNFontes++;
+          snprintf(sFontes[ja].base, sizeof sFontes[ja].base, "%s", base);
+          snprintf(sFontes[ja].tipo, sizeof sFontes[ja].tipo, "%s", tipo);
+          snprintf(sFontes[ja].id,   sizeof sFontes[ja].id,   "%s", id);
+          sFontes[ja].nome[0] = 0;
+        }
+        // O nome do manifesto e o limpo; o titulo da fileira carrega sufixo
+        // de tipo. Quando os dois existem, fica o do manifesto.
+        if (nome[0]) snprintf(sFontes[ja].nome, sizeof sFontes[ja].nome, "%s", nome);
       }
       p = js_prox(f);
     }
@@ -546,16 +657,36 @@ static void *fioGuia(void *u) {
   sNCanais = 0; sNCats = 0; sFalhas = 0;
   // Fontes das fileiras (descobertas no fio de desenho) primeiro — zero rede
   // extra. A sonda de manifestos completa com o que a home nao montou.
+  // ADDON DESLIGADO NAO ENTRA POR AQUI TAMBEM. As fileiras da home so sao
+  // refeitas pelo desc_repetir (~20 s), entao logo depois de desligar um addon
+  // no painel elas ainda listam o catalogo dele — e sem esta guarda a recarga
+  // "na hora" do painel trazia de volta exatamente o que a pessoa acabou de
+  // tirar.
   sNFontes = 0;
   for (int i = 0; i < nFontes && sNFontes < G_MAX_FONTE; i++)
-    sFontes[sNFontes++] = fontes[i];
+    if (baseLigada(fontes[i].base)) sFontes[sNFontes++] = fontes[i];
   sondaManifestos();
+  // COTA POR CATALOGO. O Pluto TV devolve 1.523 canais numa pagina so;
+  // instalado, ele enchia os 900 lugares sozinho e o Meu Futebol (68 canais,
+  // o que a pessoa realmente assiste) nem era lido — "instalei um addon e o
+  // meu sumiu". MEDIDO na C9 em 18/09. A cota divide o teto entre os
+  // catalogos que ha, com um piso para o catalogo grande nao virar amostra
+  // quando sao muitos; catalogo pequeno nao usa a cota e sobra para os outros
+  // porque a conta e sobre o que ainda cabe, catalogo a catalogo.
   for (int i = 0; i < sNFontes; i++) {
-    for (int skip = 0; sNCanais < G_MAX_CANAL; skip += G_PAGINA) {
-      int n = lerPagina(&sFontes[i], skip);
+    int restantes = sNFontes - i;
+    int cota = (G_MAX_CANAL - sNCanais) / (restantes > 0 ? restantes : 1);
+    int lidos = 0;
+    if (cota < G_COTA_MIN) cota = G_COTA_MIN;
+    for (int skip = 0; sNCanais < G_MAX_CANAL && lidos < cota; skip += G_PAGINA) {
+      int novos = 0;
+      int n = lerPagina(&sFontes[i], skip, cota - lidos, &novos);
       if (n <= 0) break;
       ok = 1;
-      if (n < G_PAGINA) break;    // ultima pagina veio curta
+      lidos += novos;
+      // Pagina cheia que nao trouxe nada novo e catalogo que ignora `skip`:
+      // pedir a proxima e receber a mesma de novo, para sempre.
+      if (n < G_PAGINA || novos == 0) break;
     }
   }
   // PORTAL STALKER, quando houver um configurado neste perfil. Entra DEPOIS
@@ -595,6 +726,64 @@ static void *fioGuia(void *u) {
   return NULL;
 }
 
+// Ordena os canais por categoria (estavel na ordem de chegada) para que cada
+// fileira seja uma janela contigua — o mesmo desenho de CatFileira — e refaz
+// a fileira de favoritos. Roda ao publicar uma carga e ao desligar um addon no
+// painel (que tira canais de `canais[]` sem esperar o fio).
+static void empacotar(void) {
+  int i, w;
+  // Canal de addon desligado nao fica. Cobre a janela em que o painel desliga
+  // um addon com o fio ja no ar: a carga que estava a caminho foi montada com
+  // ele ligado e chegaria inteira; a recarga seguinte (recarregarPend) e que
+  // corrige a lista de fontes, mas a tela nao precisa esperar por ela.
+  for (i = 0, w = 0; i < nCanais; i++)
+    if (!canais[i].base[0] || baseLigada(canais[i].base)) canais[w++] = canais[i];
+  nCanais = w;
+  // Categoria que ficou sem canal sai da lista — senao vira uma fileira so
+  // de cabecalho, com o foco caindo nela.
+  { int mapa[G_MAX_CAT], k;
+    for (i = 0; i < nCats; i++) catN[i] = 0;
+    for (i = 0; i < nCanais; i++) if (canais[i].cat >= 0) catN[canais[i].cat]++;
+    for (i = 0, k = 0; i < nCats; i++) {
+      mapa[i] = catN[i] ? k : -1;
+      if (catN[i]) { if (k != i) memcpy(cats[k], cats[i], sizeof cats[k]); k++; }
+    }
+    for (i = 0; i < nCanais; i++) if (canais[i].cat >= 0) canais[i].cat = mapa[canais[i].cat];
+    nCats = k; }
+  // ORDEM ALFABETICA DAS SECOES, pedido do dono (18/09): a ordem de chegada
+  // muda conforme qual addon respondeu primeiro, e "segurar para pular
+  // secao" sem uma ordem previsivel e pular no escuro. Insercao: sao ate 48
+  // nomes, uma vez por carga.
+  { int a, b, mapa[G_MAX_CAT];
+    for (a = 0; a < nCats; a++) mapa[a] = a;
+    for (a = 1; a < nCats; a++) {
+      char tmpN[64]; int tmpM = mapa[a];
+      memcpy(tmpN, cats[a], sizeof tmpN);
+      for (b = a - 1; b >= 0 && strcasecmp(cats[b], tmpN) > 0; b--) {
+        memcpy(cats[b + 1], cats[b], sizeof cats[b]); mapa[b + 1] = mapa[b];
+      }
+      memcpy(cats[b + 1], tmpN, sizeof tmpN); mapa[b + 1] = tmpM;
+    }
+    // mapa[nova] = antiga; o canal precisa do inverso.
+    { int inv[G_MAX_CAT];
+      for (a = 0; a < nCats; a++) inv[mapa[a]] = a;
+      for (i = 0; i < nCanais; i++) if (canais[i].cat >= 0) canais[i].cat = inv[canais[i].cat]; } }
+  { GCanal tmp[G_MAX_CANAL];
+    int pos[G_MAX_CAT];
+    for (i = 0; i < nCats; i++) catN[i] = 0;
+    for (i = 0; i < nCanais; i++) if (canais[i].cat >= 0) catN[canais[i].cat]++;
+    catIni[0] = 0;
+    for (i = 1; i < nCats; i++) catIni[i] = catIni[i - 1] + catN[i - 1];
+    memcpy(pos, catIni, sizeof pos);
+    for (i = 0; i < nCanais; i++)
+      if (canais[i].cat >= 0) tmp[pos[canais[i].cat]++] = canais[i];
+    memcpy(canais, tmp, sizeof(GCanal) * (size_t)nCanais); }
+  favAplicar();
+  nFavOrd = 0;
+  for (i = 0; i < nCanais && nFavOrd < G_MAX_FAV; i++)
+    if (canais[i].fav) favOrd[nFavOrd++] = i;
+}
+
 static void publicar(void) {
   int i, w;
   memcpy(canais, sCanais, sizeof(GCanal) * (size_t)sNCanais);
@@ -608,23 +797,8 @@ static void publicar(void) {
   falhas = sFalhas;
   memcpy(sabe, sSabe, sizeof sSabe);
   nSabe = sNSabe;
-  // Ordena os canais por categoria (estavel na ordem de chegada) para que cada
-  // fileira seja uma janela contigua — o mesmo desenho de CatFileira.
-  { GCanal tmp[G_MAX_CANAL];
-    int pos[G_MAX_CAT];
-    for (i = 0; i < nCats; i++) catN[i] = 0;
-    for (i = 0; i < nCanais; i++) if (canais[i].cat >= 0) catN[canais[i].cat]++;
-    catIni[0] = 0;
-    for (i = 1; i < nCats; i++) catIni[i] = catIni[i - 1] + catN[i - 1];
-    memcpy(pos, catIni, sizeof pos);
-    for (i = 0; i < nCanais; i++)
-      if (canais[i].cat >= 0) tmp[pos[canais[i].cat]++] = canais[i];
-    memcpy(canais, tmp, sizeof(GCanal) * (size_t)nCanais); }
   (void)w;
-  favAplicar();
-  nFavOrd = 0;
-  for (i = 0; i < nCanais && nFavOrd < G_MAX_FAV; i++)
-    if (canais[i].fav) favOrd[nFavOrd++] = i;
+  empacotar();
   // Foco pedido com a lista vazia (o overlay aberto pelo player, por exemplo)
   // so encontra o canal agora.
   if (focoPend[0]) {
@@ -726,7 +900,8 @@ static Uint32 overlayDesde;
 static void engatilharVizinhos(void) {
   GCanal *antes  = linhaItem(focoLin, focoCol - 1);
   GCanal *depois = linhaItem(focoLin, focoCol + 1);
-  fontecache_engatilhar(antes ? antes->id : NULL, depois ? depois->id : NULL);
+  fontecache_engatilhar(antes  ? antes->id  : NULL, antes  ? antes->base  : NULL,
+                        depois ? depois->id : NULL, depois ? depois->base : NULL);
 }
 
 static void focoValido(void) {
@@ -795,9 +970,16 @@ static void canalParaItem(const GCanal *c, CatItem *dst) {
            i18n("Canal"), c->cat >= 0 ? cats[c->cat] : "");
 }
 
+// A origem do ULTIMO canal pedido, lida por app.c junto com o CatItem. Fica
+// fora do CatItem de proposito: ele e gravado em disco (catalogo-rede.bin) e
+// um campo novo invalidaria o cache de todo mundo por um dado de sessao.
+static char pedidoBase[600];
+const char *guia_canal_origem(void) { return pedidoBase; }
+
 static void pedirCanal(GCanal *c) {
   if (!c || pediuCanal) return;
   canalParaItem(c, &pedido);
+  snprintf(pedidoBase, sizeof pedidoBase, "%s", c->base);
   pediuCanal = 1;
   // No overlay o OK TROCA o canal e volta ao video: ficar aberto por cima da
   // troca deixaria a pessoa assistindo atras de uma grade que ela ja usou.
@@ -865,32 +1047,76 @@ static void alternarModo(void) {
 }
 
 // --- painel de addons -------------------------------------------------------------
-// Itens do painel, em ordem: os addons da conta (indice = i em addons.c) e
-// depois os recomendados (indice = n + k). Um vetor de posicoes Y por quadro
-// e mais simples do que dois lacos com a mesma aritmetica de rolagem.
-static int painelN(void) { return addons_n() + nRec; }
+// Itens do painel, em ordem: os addons de CANAL da conta (paIdx[i] = indice em
+// addons.c) e depois os recomendados (indice = paN + k).
+//
+// SO PROVEDOR DE CANAL ENTRA. Este e o painel do guia, nao a tela de addons
+// dos Ajustes: Cinemeta, TMDB e OpenSubtitles nao tem nada a ver com a lista
+// de canais, e liga-los ou desliga-los daqui so confundia ("desliguei e nada
+// mudou"). O criterio e o manifesto que a sonda deste guia leu (sabe[]):
+// fornece canal = entra; nao fornece = fica de fora; NAO RESPONDEU = entra,
+// porque um addon de canal cujo servidor esta fora (FrostView em 408) e
+// exatamente o que a pessoa quer poder desligar daqui. Antes da primeira
+// sonda todos sao "nao respondeu" e o painel lista todos — por poucos
+// segundos, e dizendo "ainda nao conferido".
+#define G_MAX_PA 16
+static int paIdx[G_MAX_PA], paN;
+static void painelMontar(void) {
+  int i;
+  paN = 0;
+  for (i = 0; i < addons_n() && paN < G_MAX_PA; i++) {
+    const char *b = addons_base(i);
+    if (!b || !b[0]) continue;
+    if (sabeCanal(b) == 0) continue;
+    paIdx[paN++] = i;
+  }
+  if (paFoco >= paN + nRec) paFoco = paN + nRec - 1;
+  if (paFoco < 0) paFoco = 0;
+}
+static int painelN(void) { return paN + nRec; }
 
 static void painelAbrir(void) {
   recLer();
   painel = 1; paFoco = 0; paMexeu = 0; paRol = 0.0f; paVelRol = 0.0f;
   paErro = -1;
+  painelMontar();
   // O painel mostra o que o manifesto disse; se a sonda de Ajustes nunca
   // rodou, e barato pedi-la agora (uma vez por lista, ver addons.h).
   addons_sondar_manifestos();
 }
 
+// LIGAR/DESLIGAR VALE NA HORA, nao ao fechar o painel. Desligar tira os canais
+// daquele addon de `canais[]` neste mesmo quadro (sem rede) e pede a recarga
+// em segundo plano para a lista de fontes ficar coerente; ligar so tem como
+// trazer canal baixando o catalogo, entao pede a recarga e a lista atual fica
+// na tela ate ela chegar (G_BAIXANDO desenha a lista que ha). desc_repetir,
+// que e o ciclo da home (~20 s na TV), continua uma vez por visita, no fechar.
+static void painelAplicar(int i) {
+  const char *b = addons_base(i);
+  if (!addons_ativo(i) && b && b[0]) {
+    int k, w, antes = nCanais;
+    empacotar();   // ja descarta os canais de addon desligado
+    if (nCanais != antes) focoValido();
+    // As fontes desse addon saem daqui tambem: fioGuia copia `fontes[]` antes
+    // de sondar, e baseLigada() ja as barra la — isto e so para o rotulo
+    // "nenhum catalogo" nao contar fonte de addon desligado.
+    for (k = 0, w = 0; k < nFontes; k++)
+      if (strcmp(fontes[k].base, b) != 0) fontes[w++] = fontes[k];
+    nFontes = w;
+  }
+  if (fioVivo) recarregarPend = 1;
+  else { estado = G_PARADO; ultTentativa = 0; iniciarCarga(); }
+}
+
 // FECHAR E QUANDO O RESTO DO APP FICA SABENDO. Mesma regra de addonsui.c:
 // desc_repetir() refaz o ciclo inteiro (~20 s na TV), entao ele roda uma vez
-// por visita e nao uma vez por tecla. O guia tambem se recarrega: a lista de
-// canais depende de quais addons estao ligados, e sem isso o addon recem
-// desligado continuava enchendo a tela ate a proxima abertura.
+// por visita e nao uma vez por tecla. O guia em si ja se atualizou a cada
+// tecla (painelAplicar).
 static void painelFechar(void) {
   painel = 0;
   if (!paMexeu) return;
   paMexeu = 0;
   desc_repetir();
-  if (fioVivo) recarregarPend = 1;
-  else { estado = G_PARADO; ultTentativa = 0; iniciarCarga(); }
 }
 
 static void instalar(int k) {
@@ -904,22 +1130,28 @@ static void instalar(int k) {
   paErro = -1; paErroCheio = 0;
   if (k < 0 || k >= nRec) return;
   if (!addons_adicionar(rec[k].nome, rec[k].url)) {
-    paErro = addons_n() + k;
+    paErro = paN + k;
     paErroCheio = (addons_n() >= 16);
     return;
   }
   sync_sujar_addons();
   paMexeu = 1;
+  // O recem-instalado entra na secao de cima (ainda "nao conferido") e o
+  // foco segue o mesmo item, que desceu uma linha.
+  painelMontar();
+  if (paFoco < paN + nRec - 1) paFoco++;
+  painelAplicar(addons_n() - 1);
 }
 
 static void painelOk(void) {
-  int n = addons_n();
-  if (paFoco < n) {
-    addons_alternar(paFoco);
+  if (paFoco < paN) {
+    int i = paIdx[paFoco];
+    addons_alternar(i);
     sync_sujar_addons();   // desligar aqui e desligar no celular tambem
     paMexeu = 1;
-  } else if (paFoco - n < nRec && !recInstalado(&rec[paFoco - n])) {
-    instalar(paFoco - n);
+    painelAplicar(i);
+  } else if (paFoco - paN < nRec && !recInstalado(&rec[paFoco - paN])) {
+    instalar(paFoco - paN);
   }
 }
 
@@ -1015,8 +1247,8 @@ void guia_evento(const SDL_Event *e) {
     int dir = (k == SDLK_DOWN) ? 1 : -1;
     int fresco = !(dirSeg == k && agora - dirTick < G_REP_MS);
     if (modoCat) {
-      saltarCat(dir);
-      ultNavCat = agora; dirTick = agora;
+      dirTick = agora;
+      if (agora - ultNavCat >= G_CAT_PASSO_MS) { saltarCat(dir); ultNavCat = agora; }
       return;
     }
     // CIMA na primeira linha sobe ao cabecalho — so num toque FRESCO: quem
@@ -1103,7 +1335,7 @@ static float listaAltura(void) {
 // respiro (28) + rotulo (36) + a frase de duas linhas sobre curadoria (60).
 // desenharPainelAddons usa as mesmas contas — mude aqui e la.
 static float paItemY(int i) {
-  int n = addons_n();
+  int n = paN;
   if (i < n) return 36.0f + (float)i * G_PA_ROW;
   return 36.0f + (float)n * G_PA_ROW + 28.0f + 36.0f + 60.0f + (float)(i - n) * G_PA_ROW;
 }
@@ -1111,7 +1343,10 @@ static float paItemY(int i) {
 
 void guia_atualizar(float dt, Uint32 agora) {
   entrada = anim_mola(entrada, guia_visivel() ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
-  if (pendPronto) { publicar(); estado = G_PRONTO; pendPronto = 0; fioVivo = 0; focoValido(); }
+  if (pendPronto) {
+    publicar(); estado = G_PRONTO; pendPronto = 0; fioVivo = 0; focoValido();
+    if (painel) painelMontar();   // sabe[] mudou: quem nao fornece canal sai
+  }
   // O painel de addons pediu recarga com o fio ainda vivo: agora que ele
   // acabou, vai.
   if (recarregarPend && !fioVivo) {
@@ -1726,7 +1961,7 @@ static void desenharLinhaLista(GCanal *c, float y, float foco, float a,
 static void desenharPainelAddons(float a) {
   float x = G_PA_X + G_PA_MARG, w = G_PA_W - 2.0f * G_PA_MARG;
   float ar, ag, ab, y0 = G_PA_LISTA_Y;
-  int n = addons_n(), i;
+  int n = paN, i;
   ajustes_acento(&ar, &ag, &ab);
 
   { GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
@@ -1736,6 +1971,14 @@ static void desenharPainelAddons(float a) {
 
   { TxtLinha t = txt_linha(TXT_HEADLINE, i18n("Addons de canais"), 240, 242, 248, 255);
     txt_desenhar_alpha(t, x, 64.0f, a); }
+  // ENQUANTO O GUIA RECARREGA POR CAUSA DE UMA TECLA DAQUI, o painel diz isso
+  // no lugar da dica. Instalar ou ligar um addon dispara a recarga em fundo
+  // (painelAplicar) e sem aviso a pessoa via o "Instalado" e nenhum canal
+  // novo, por segundos — pedido do dono em 18/09.
+  if (paMexeu && (fioVivo || recarregarPend)) {
+    TxtLinha t = txt_linha(TXT_CAPTION, i18n("Atualizando a lista de canais…"), ar * 255, ag * 255, ab * 255, 255);
+    txt_desenhar_alpha(t, x, 118.0f, a);
+  } else
   txt_bloco(TXT_CAPTION,
             i18n("Ligar ou desligar aqui vale para o app inteiro, não só para o guia."),
             150, 153, 162, x, 118.0f, w, 28.0f, a, 2);
@@ -1745,7 +1988,7 @@ static void desenharPainelAddons(float a) {
   { TxtLinha t = txt_linha(TXT_CAPTION, i18n("NA SUA CONTA"), 148, 200, 255, 255);
     txt_desenhar_alpha(t, x, y0 - paRol, a); }
   if (n == 0) {
-    TxtLinha t = txt_linha(TXT_CAPTION, i18n("Nenhum addon nesta conta."), 150, 153, 162, 255);
+    TxtLinha t = txt_linha(TXT_CAPTION, i18n("Nenhum addon de canais nesta conta."), 150, 153, 162, 255);
     txt_desenhar_alpha(t, x, y0 + 36.0f - paRol, a);
   }
   for (i = 0; i < painelN(); i++) {
@@ -1758,14 +2001,16 @@ static void desenharPainelAddons(float a) {
     gfx_cor(row, raio, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, 0.34f * a);
     if (f) gfx_cor(row, raio, ar, ag, ab, a);
     if (i < n) {
-      int sc = sabeCanal(addons_base(i));
-      int ligado = addons_ativo(i);
+      int ai = paIdx[i];
+      int sc = sabeCanal(addons_base(ai));
+      int ligado = addons_ativo(ai);
       const char *sub = sc == 1 ? i18n("Fornece canais")
                       : sc == 0 ? i18n("Sem catálogo de canais")
+                      : (fioVivo || recarregarPend) ? i18n("Carregando canais…")
                                 : i18n("Ainda não conferido pelo guia");
       GfxRect pill = { x + w - 24.0f - 136.0f, yi + (row.h - 40.0f) * 0.5f, 136.0f, 40.0f };
-      { TxtLinha t = f ? txt_linha_corta(TXT_BODY, addons_nome(i), 20, 21, 25, 255, w - 200.0f)
-                       : txt_linha_corta(TXT_BODY, addons_nome(i), 240, 241, 245, 255, w - 200.0f);
+      { TxtLinha t = f ? txt_linha_corta(TXT_BODY, addons_nome(ai), 20, 21, 25, 255, w - 200.0f)
+                       : txt_linha_corta(TXT_BODY, addons_nome(ai), 240, 241, 245, 255, w - 200.0f);
         txt_desenhar_alpha(t, x + 24.0f, yi + 12.0f, a); }
       { TxtLinha t = f ? txt_linha_corta(TXT_CAPTION, sub, 60, 62, 70, 255, w - 200.0f)
                        : txt_linha_corta(TXT_CAPTION, sub, 150, 153, 162, 255, w - 200.0f);
@@ -1805,6 +2050,17 @@ static void desenharPainelAddons(float a) {
         TxtLinha t = f ? txt_linha_corta(TXT_CAPTION, desc, 60, 62, 70, 255, w - 200.0f)
                        : txt_linha_corta(TXT_CAPTION, desc, 150, 153, 162, 255, w - 200.0f);
         txt_desenhar_alpha(t, x + 24.0f, yi + 48.0f, a);
+      }
+      // O PRIMEIRO DA LISTA E O DESTAQUE — a ordem do arquivo e a curadoria,
+      // e o dono pediu o Fenix TV la em cima (foi o mais rapido a responder
+      // e o unico que ja vem classificado, medido em 18/09).
+      if (i - n == 0) {
+        TxtLinha t = txt_linha(TXT_CAPTION, i18n("Destaque"), 20, 21, 25, 255);
+        GfxRect d = { pill.x - 24.0f - t.w - 28.0f, yi + (row.h - 32.0f) * 0.5f, t.w + 28.0f, 32.0f };
+        if (f) gfx_cor(d, 0.5f, 0.11f, 0.115f, 0.13f, a);
+        else   gfx_cor(d, 0.5f, ar, ag, ab, a);
+        { TxtLinha t2 = f ? txt_linha(TXT_CAPTION, i18n("Destaque"), 240, 241, 245, 255) : t;
+          txt_desenhar_alpha(t2, d.x + 14.0f, d.y + (d.h - t2.h) * 0.5f, a); }
       }
       if (inst) {
         TxtLinha t = f ? txt_linha(TXT_CAPTION, i18n("Instalado"), 60, 62, 70, 255)

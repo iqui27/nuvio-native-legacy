@@ -111,6 +111,7 @@ static Uint32 canalFonteDesde;            // quando a fonte atual foi pedida
 // termina MUITO antes disso, entao o que sobrevive a 12 s nao e pico, e fonte
 // morta. Baixar mais arrisca trocar de fonte num engasgo que ia passar.
 #define CANAL_TRAVA_MS 12000
+#define CANAL_ABRE_TETO_MS 45000   // com buffer cheio e sem quadro; ver o watchdog
 static Uint32 canalFontePrazo = CANAL_FONTE_PRAZO_MS;
 
 static PerfilDados perfilPendente;
@@ -339,7 +340,13 @@ static void tocarCanal(const CatItem *it) {
   stalkerTentativas = 0;          // canal novo: o teto de renovacao recomeca
   // Canal de portal nao esta em addon nenhum: perguntar seria esperar o prazo
   // de todos eles para receber lista vazia, com a pessoa olhando "carregando".
-  if (!stalker_e_id(it->imdb)) addons_buscar(it->imdb, "tv");
+  if (!stalker_e_id(it->imdb)) {
+    // So o addon que publicou o canal responde por ele; ver alvoBase em
+    // addons.c e o que o FrostView fora do ar custava.
+    addons_definir_origem(guia_canal_origem());
+    addons_buscar(it->imdb, "tv");
+    addons_definir_origem(NULL);
+  }
   aguardandoFonte = 1;
   marco("guia: buscando fontes do canal");
 }
@@ -1173,6 +1180,26 @@ void app_atualizar(float dt, Uint32 agora) {
   // dono olhando "carregando" para sempre: passa o prazo ou a fonte falhou,
   // entra a proxima na ORDEM DO ADDON — a ordem dele e o ranking dele.
   // Vale no PiP tambem: a miniatura com a fonte morta tenta a proxima.
+  // O CARTAO DE ERRO SAI SE O VIDEO VOLTOU A ANDAR — e isto roda TODO quadro
+  // com o player aberto, FORA do watchdog de canal abaixo.
+  //
+  // A primeira versao deste conserto (41962e1) morava dentro do watchdog, que
+  // so roda enquanto canalFonteIdx >= 0. Com uma fonte so, o watchdog declara
+  // morta, mostra o erro, poe canalFonteIdx = -1 e SAI DO LACO — e o conserto
+  // saia junto. MEDIDO na C9 em 18/09 com o dono no controle: loadCompleted em
+  // 596 s, primeiro buffer em 622 s (26 s depois), "voltou a entregar" = 0
+  // vezes no log, cartao na tela com audio e currentTime andando por tras.
+  //
+  // Agora a condicao e so "o player esta aberto, marcou erro, e o pipeline
+  // esta entregando". Quem entrega desmente o cartao, seja canal ou filme.
+  if ((player_aberto() || player_mini_ativo()) && player_fonte_falhou() &&
+      video_buffer_fim() > 0.5 && !video_falhou()) {
+    printf("[player] a fonte voltou a entregar (buffer %.1fs): tirando o erro da tela\n",
+           video_buffer_fim());
+    fflush(stdout);
+    player_limpar_erro_fonte();
+    canalFonteDesde = SDL_GetTicks();
+  }
   if (canalFonteIdx >= 0 && (player_aberto() || player_mini_ativo()) &&
       !player_quer_sair() && player_id_canal()[0]) {
     // TRAVOU DEPOIS DE ABRIR conta como morta, e sem isto nao contava.
@@ -1186,27 +1213,19 @@ void app_atualizar(float dt, Uint32 agora) {
     //
     // video_bufferando_ms() e o par bufferingStart/bufferingEnd do uMS, que o
     // video.c ja recebia e so registrava em marco.
-    // O CARTAO DE ERRO SAI SE O VIDEO VOLTOU A ANDAR.
-    //
-    // MEDIDO na C9 em 18/09, com um canal que tem UMA fonte so: o load demorou
-    // mais que canalFontePrazo, o watchdog abaixo declarou a fonte morta, nao
-    // havia proxima e ele chamou player_erro_fonte(). So que o pipeline
-    // continuou e comecou a tocar — o log mostrava o buffer subindo
-    // (endTime 5, 11, 17, 23 s) enquanto a tela dizia "nao foi possivel abrir
-    // a fonte", com o video correndo atras do cartao.
-    //
-    // Nada limpava o erro porque player_definir_fonte(), que o zera, so roda em
-    // fonte NOVA — e aqui nao havia outra para tentar. O buffer andando e a
-    // prova de que a fonte esta viva, entao ela desmente o cartao.
-    if (player_fonte_falhou() && video_buffer_fim() > 0.5 && !video_falhou()) {
-      printf("[guia] a fonte voltou a entregar (buffer %.1fs): tirando o erro da tela\n",
-             video_buffer_fim());
-      fflush(stdout);
-      player_limpar_erro_fonte();
-      canalFonteDesde = SDL_GetTicks();
-    }
+    // ABRIR DEVAGAR NAO E MORRER. MEDIDO na C9 em 18/09 (Meu Futebol, HLS ao
+    // vivo a 5,8 Mbps): o pipeline encheu 39 s de buffer em ~10 s e SO ENTAO
+    // ficou mais 10 s parado antes do primeiro quadro — 20 s da fonte
+    // escolhida ate "hdr do pipeline". O prazo de 12 s declarava a fonte
+    // morta, mostrava o cartao de erro, e o conserto "voltou a entregar"
+    // tirava o cartao logo depois: erro na tela para uma fonte que estava
+    // baixando o tempo inteiro. Buffer que ENCHE e prova de vida; o prazo
+    // curto so vale enquanto nada chegou. Com dados e sem quadro, vale o teto
+    // longo — o uMS que engole 39 s e nao toca em 45 s esta mesmo travado.
+    Uint32 desde = SDL_GetTicks() - canalFonteDesde;
     int morta = player_fonte_falhou() || video_falhou() ||
-        (player_carregando() && SDL_GetTicks() - canalFonteDesde > canalFontePrazo) ||
+        (player_carregando() && desde > canalFontePrazo && video_buffer_fim() <= 0.5) ||
+        (player_carregando() && desde > CANAL_ABRE_TETO_MS) ||
         video_bufferando_ms() > CANAL_TRAVA_MS;
     if (morta) {
       int prox = canalFonteIdx + 1;

@@ -53,6 +53,9 @@ int  guia_quer_sair(void);
 // 1 uma unica vez quando o OK escolheu um canal: `saida` recebe o CatItem
 // pronto para cat_acrescentar/player_abrir (id completo, tipo "channel").
 int  guia_pediu_canal(CatItem *saida);
+// Base do addon que publicou o canal recem-pedido ("" para portal Stalker).
+// app.c passa a addons_definir_origem antes de buscar a fonte.
+const char *guia_canal_origem(void);
 
 // O id do canal em foco, ou "" — o player usa para saber se o overlay esta
 // apontando para o canal que esta no ar.
