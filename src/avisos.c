@@ -76,6 +76,15 @@ static char  crashQuando[40];
 static int   envioEstado;       // 0 nada, 1 enviando, 2 ok, 3 falhou
 static pthread_t fioEnvio;
 
+// O CARTAO DO CRASH, na reabertura: uma pergunta, dois botoes. Abre uma vez
+// por crash (a marca e o id do item, gravada em vistos ao fechar) quando a
+// home esta de pe e nenhum outro cartao esta na frente, como agendaviso.c.
+static int   cartao;            // 1 = aberto
+static int   cartaoFoco;        // 0 = Enviar, 1 = Agora nao
+static float cartaoA;
+static int   cartaoPendente;    // ha crash nao perguntado nesta sessao
+static char  cartaoId[72];
+
 // Canal do dono.
 static pthread_t fioCanal;
 static int   canalVivo;
@@ -339,7 +348,9 @@ void avisos_iniciar(void) {
       snprintf(txt, sizeof txt, i18n("Em %s o Nuvio parou sem avisar. Se quiser, envie o registro daquela sessão para ajudar a encontrar a causa."), crashQuando);
       pthread_mutex_lock(&trava);
       toast(por(id, AV_CRASH, tit, txt, NULL));
-      pthread_mutex_unlock(&trava); }
+      pthread_mutex_unlock(&trava);
+      // O cartao so para quem ainda nao respondeu a ESTE crash.
+      if (!foiVisto(id)) { cartaoPendente = 1; snprintf(cartaoId, sizeof cartaoId, "%s", id); } }
   }
   marcaGravar();
   canalProximo = SDL_GetTicks() + 8000;   // depois da home, nao junto com ela
@@ -362,7 +373,90 @@ void avisos_iniciar(void) {
                    "Em 2026-09-19 18:57 o Nuvio parou sem avisar. Se quiser, envie o registro daquela sessão para ajudar a encontrar a causa.", NULL);
       pthread_mutex_unlock(&trava);
       toast(novos);
+      cartaoPendente = 1; snprintf(cartaoId, sizeof cartaoId, "demo:crash");
+      if (!crashQuando[0]) snprintf(crashQuando, sizeof crashQuando, "2026-09-19 18:57");
     } }
+}
+
+void avisos_mostrar_se_houver(void) {
+  if (!cartaoPendente || cartao || aberto) return;
+  cartaoPendente = 0;
+  cartao = 1; cartaoFoco = 0;
+}
+int avisos_cartao_aberto(void) { return cartao; }
+
+static void cartaoFechar(void) {
+  cartao = 0;
+  pthread_mutex_lock(&trava);
+  marcarVisto(cartaoId);
+  { int i; for (i = 0; i < n; i++) if (!strcmp(itens[i].id, cartaoId)) itens[i].visto = 1; }
+  pthread_mutex_unlock(&trava);
+  vistosSujos = 1;
+}
+
+static void enviarAgora(void) {
+  if (envioEstado == 1) return;
+  if (!NV_REC_URL[0]) { envioEstado = 3; return; }
+  envioEstado = 1;
+  if (pthread_create(&fioEnvio, NULL, enviarRegistro, NULL) == 0) pthread_detach(fioEnvio);
+  else envioEstado = 3;
+}
+
+static int cartaoEvento(const SDL_Event *e) {
+  SDL_Keycode k = e->key.keysym.sym;
+  int sc = e->key.keysym.scancode;
+  if (e->type != SDL_KEYDOWN) return 1;
+  if (e->key.repeat) return 1;
+  if (k == SDLK_LEFT)  { cartaoFoco = 0; return 1; }
+  if (k == SDLK_RIGHT) { cartaoFoco = 1; return 1; }
+  if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE || sc == NV_SCANCODE_BACK) { cartaoFechar(); return 1; }
+  if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
+    if (envioEstado == 2 || envioEstado == 3) { cartaoFechar(); return 1; }   // "Fechar" depois do envio
+    if (cartaoFoco == 0) enviarAgora();
+    else cartaoFechar();
+    return 1;
+  }
+  return 1;
+}
+
+// Botao do cartao: pilula cheia quando em foco, anel quando nao.
+static float botao(float x, float y, const char *rot, int foco, float a, float ar, float ag, float ab) {
+  TxtLinha t = txt_linha(TXT_BODY, rot, foco ? 20 : 240, foco ? 21 : 241, foco ? 25 : 245, 255);
+  GfxRect r = { x, y, t.w + 56.0f, 64.0f };
+  if (foco) gfx_cor(r, 0.5f, ar, ag, ab, a);
+  else      gfx_cor(r, 0.5f, 0.20f, 0.20f, 0.21f, a);
+  txt_desenhar_alpha(t, r.x + 28.0f, r.y + (r.h - t.h) * 0.5f, a);
+  return r.w;
+}
+
+static void cartaoDesenhar(void) {
+  const float W = 980.0f, H = 336.0f;
+  float a = cartaoA, x = (NV_TELA_W - W) * 0.5f, y = (NV_TELA_H - H) * 0.5f + (1.0f - a) * 30.0f;
+  float ar, ag, ab, bx;
+  char txt[300];
+  if (a < 0.01f) return;
+  ajustes_acento(&ar, &ag, &ab);
+  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.70f * a);
+  gfx_cor((GfxRect){ x, y, W, H }, 0.03f, 0.075f, 0.078f, 0.088f, 0.98f * a);
+  gfx_cor((GfxRect){ x + 56.0f, y + 56.0f, 56.0f, 56.0f }, 0.5f, 0.16f, 0.17f, 0.20f, a);
+  gfx_icone((GfxRect){ x + 69.0f, y + 69.0f, 30.0f, 30.0f }, "fluxo", 0.62f, 0.80f, 0.96f, a);
+  { TxtLinha t = txt_linha(TXT_TITULO3, i18n("O app fechou sozinho"), 246, 247, 252, 255);
+    txt_desenhar_alpha(t, x + 136.0f, y + 52.0f, a); }
+  snprintf(txt, sizeof txt, i18n("Em %s o Nuvio parou sem avisar. O registro daquela sessão (os últimos 200 KB do log, sem senhas nem chaves) ajuda a achar a causa. Quer enviar?"), crashQuando);
+  txt_bloco(TXT_BODY, txt, 200, 203, 210, x + 56.0f, y + 132.0f, W - 112.0f, 34.0f, a, 3);
+  bx = x + 56.0f;
+  if (envioEstado == 1) {
+    TxtLinha t = txt_linha(TXT_BODY, i18n("Enviando…"), 200, 203, 210, 255);
+    txt_desenhar_alpha(t, bx, y + H - 56.0f - 64.0f + 18.0f, a);
+  } else if (envioEstado == 2 || envioEstado == 3) {
+    TxtLinha t = txt_linha(TXT_BODY, envioEstado == 2 ? i18n("Registro enviado. Obrigado.") : i18n("Não foi possível enviar agora."),
+                           envioEstado == 2 ? 120 : 237, envioEstado == 2 ? 200 : 77, envioEstado == 2 ? 140 : 77, 255);
+    txt_desenhar_alpha(t, bx, y + H - 56.0f - 64.0f + 18.0f, a);
+    botao(x + W - 56.0f - 160.0f, y + H - 56.0f - 64.0f, i18n("Fechar"), 1, a, ar, ag, ab);
+  } else {
+    bx += botao(bx, y + H - 56.0f - 64.0f, i18n("Enviar registro"), cartaoFoco == 0, a, ar, ag, ab) + 18.0f;
+    botao(bx, y + H - 56.0f - 64.0f, i18n("Agora não"), cartaoFoco == 1, a, ar, ag, ab);
+  }
 }
 
 void avisos_encerrar(void) {
@@ -410,6 +504,7 @@ static void colherLocais(void) {
 void avisos_atualizar(float dt, Uint32 agora) {
   static Uint32 ultColheita;
   entrada = anim_mola(entrada, aberto ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
+  cartaoA = anim_mola(cartaoA, cartao ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
   if (agora - ultColheita > 2000) { ultColheita = agora; colherLocais(); }
   if (agora >= canalProximo && !canalVivo) {
     canalVivo = 1;
@@ -442,6 +537,7 @@ static void fechar(void) {
 int avisos_evento(const SDL_Event *e) {
   SDL_Keycode k;
   int sc;
+  if (cartao) return cartaoEvento(e);
   if (e->type != SDL_KEYDOWN) return aberto;
   k = e->key.keysym.sym; sc = e->key.keysym.scancode;
   if (!aberto) {
@@ -598,9 +694,9 @@ void avisos_marcar_lidos(void) {
 
 void avisos_desenhar(Uint32 agora) {
   float a = anim_clamp(entrada, 0.0f, 1.0f), dx;
-  if (toastPendente && !aberto) { toastPendente = 0; toastAte = (float)agora + AV_TOAST_MS; }
-  desenharToast();
-  if (a < 0.01f) return;
+  if (toastPendente && !aberto && !cartao) { toastPendente = 0; toastAte = (float)agora + AV_TOAST_MS; }
+  if (!cartao) desenharToast();
+  if (a < 0.01f) { cartaoDesenhar(); return; }
   dx = (1.0f - a) * 80.0f;
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.45f * a);
   gfx_cor((GfxRect){ AVP_X + dx, 0, AVP_W, NV_TELA_H }, 0.0f, 0.106f, 0.110f, 0.122f, 0.98f * a);
@@ -617,4 +713,5 @@ void avisos_desenhar(Uint32 agora) {
   { TxtLinha t = txt_linha_corta(TXT_CAPTION2, i18n("↑ ↓ escolher · OK agir · Voltar fecha e marca tudo como lido"),
                                  140, 144, 154, 255, AVP_W - 2 * AVP_MARG);
     txt_desenhar_alpha(t, AVP_X + dx + AVP_MARG, NV_TELA_H - 62.0f, a * 0.85f); }
+  cartaoDesenhar();
 }

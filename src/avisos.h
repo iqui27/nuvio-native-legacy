@@ -49,6 +49,11 @@ int  avisos_evento(const SDL_Event *e);
 int  avisos_aberto(void);
 void avisos_abrir(void);
 int  avisos_n_novos(void);
+// O CARTAO DO CRASH: abre uma vez por crash, quando a home esta de pe e nenhum
+// outro cartao esta na frente (app.c chama como agendaviso_mostrar_se_houver).
+// Enquanto aberto, avisos_evento come todo o teclado.
+void avisos_mostrar_se_houver(void);
+int  avisos_cartao_aberto(void);
 
 // ACOES PEDIDAS PELO PAINEL, entregues a app.c uma vez cada (o mesmo contrato
 // de spainel_pediu_abrir): o IMDb de um titulo a abrir, ou um dos codigos.

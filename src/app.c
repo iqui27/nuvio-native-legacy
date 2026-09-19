@@ -881,6 +881,12 @@ void app_atualizar(float dt, Uint32 agora) {
         !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
         !recomenda_aberta() && !recintro_aberto())
       agendaviso_mostrar_se_houver();
+    // O CARTAO DO CRASH, depois do lembrete e pelas mesmas regras: um cartao
+    // por vez, com a home de pe.
+    if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
+        !recomenda_aberta() && !recintro_aberto() && !agendaviso_aberto())
+      avisos_mostrar_se_houver();
   }
 
   // E o ciclo automatico — nunca com o player aberto: rajada de HTTP no meio
