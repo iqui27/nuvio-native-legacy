@@ -1456,7 +1456,7 @@ float serieaud_radar(GfxRect r) {
   // disso uma variacao de decimos viraria uma montanha. Acima, a faixa real
   // manda. Os dois extremos vao escritos na calha em 22 px, entao quem olha le
   // a amplitude de verdade e nao so a forma.
-  { int faixa = topo - piso;
+  { int faixa = topo - piso, topoReal = topo;
     int folgaT = faixa / 14, folgaP = faixa / 8;
     if (folgaT < 10) folgaT = 10;
     if (folgaP < 10) folgaP = 10;
@@ -1468,7 +1468,17 @@ float serieaud_radar(GfxRect r) {
     topo = ((topo + 9) / 10) * 10;
     piso = (piso / 10) * 10;
     if (piso < 0) piso = 0;
-    if (topo - piso < 50) topo = piso + 50; }
+    if (topo - piso < 50) topo = piso + 50;
+    // QUEDA GRANDE VAI EM ESCALA CHEIA. O corte existe para a temporada que
+    // perde 3 pontos nao virar uma reta — e so para ela. Quando a faixa real
+    // passa de 20 pp, a queda ja e visivel de 0 a 100, e o corte passa a
+    // AMPLIFICAR: 103% -> 65% ocupava a altura inteira e lia como despenca-
+    // mento, quando 69% dos que marcaram o E1 chegaram ao E10 — o normal de
+    // qualquer serie. O dono viu isso na TV em 19/09 ("a queda total e pouca
+    // mas no grafico parece muito mais"). Com o eixo em 0..100 a curva fica
+    // no terco de cima e a proporcao e a de verdade; os extremos continuam
+    // escritos na calha.
+    if (topo - piso >= 200) { piso = 0; topo = topoReal > 1000 ? ((topoReal + 99) / 100) * 100 : 1000; } }
   passo = nEps > 1 ? gw / (float)(nEps - 1) : gw;
 
 #define SA_RAD_Y(v) (py + gh - gh * (float)((v) - piso) / (float)(topo - piso))
