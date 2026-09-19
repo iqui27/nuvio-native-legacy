@@ -608,15 +608,45 @@ static const char *sinopseDe(int i) {
   const CatItem *c = cat_item(i);
   return (c && c->sinopse[0]) ? c->sinopse : NULL;
 }
+// A ARTE COM QUE O DETALHE ABRIU E A ARTE ATE ELE FECHAR.
+//
+// Pedido do dono (19/09): "a arte ta boa quando abre o filme, nao tem
+// necessidade nenhuma de trocar; alem de ficar feio tudo atualizando o tempo
+// todo". O que trocava: a descoberta enriquece o titulo ABERTO num fio (id do
+// TMDB, titulo localizado, logo no idioma configurado, fundo w1280) e escreve
+// no CatItem — e o detalhe, lendo cat_item() por quadro, redesenhava com o
+// logo novo alguns segundos depois de abrir, e com fundo novo quando o
+// catalogo trazia so o cartaz. Do sofa isso e a arte "recarregando".
+//
+// Congelar: no abrir, guarda-se a url do fundo e do logo; enquanto aberto,
+// sao essas. O enriquecimento continua acontecendo e fica no catalogo — a
+// proxima abertura, e a home, ja veem o logo localizado. Sem logo nenhum ao
+// abrir, o que chegar entra (vazio nao e "arte boa").
+static char arteFixa[512], logoFixo[512];
+static int  arteFixaPoster;
+
 static const char *logoDe(int i) {
   const CatItem *c = cat_item(i);
+  if (i == idx && logoFixo[0]) return logoFixo;
   // O CATALOGO GUARDA O LOGO EM `original`, que no TMDB e 4127 px de largura
   // para um desenho de no maximo 1000 (NV_DETW_LOGO_MAXW). Igual ao fundo:
   // quem sabe o tamanho do desenho e quem desenha, entao a politica fica em
   // artehero.c e a url do catalogo nao muda.
-  return (c && c->logo[0]) ? artehero_url_logo(c->logo) : NULL;
+  if (c && c->logo[0]) {
+    const char *u = artehero_url_logo(c->logo);
+    if (i == idx && u) snprintf(logoFixo, sizeof logoFixo, "%s", u);
+    return u;
+  }
+  return NULL;
 }
+static const char *arteDeViva(int i);
 static const char *arteDe(int i) {
+  if (i == idx && arteFixa[0]) return arteFixa;
+  { const char *u = arteDeViva(i);
+    if (i == idx && u) snprintf(arteFixa, sizeof arteFixa, "%s", u);
+    return u; }
+}
+static const char *arteDeViva(int i) {
   const CatItem *c = cat_item(i);
   // Um detalhe nunca pode herdar a arte de outra posicao do catalogo. Quando
   // o backdrop do proprio titulo falta, o renderer mostra o estado neutro e
@@ -638,7 +668,12 @@ static const char *arteDe(int i) {
 
 static int arteDetalheEhPoster(int i) {
   const CatItem *c = cat_item(i);
-  return c && !c->backdrop[0] && c->poster[0];
+  // Congelado junto com a arte: a resposta descreve a url guardada, nao a
+  // que o enriquecimento pode ter posto no catalogo depois.
+  if (i == idx && arteFixa[0]) return arteFixaPoster;
+  { int r = c && !c->backdrop[0] && c->poster[0];
+    if (i == idx) arteFixaPoster = r;
+    return r; }
 }
 
 static void desenhaArteDetalhe(GfxRect alvo, GLuint tex, const char *arte,
@@ -703,6 +738,7 @@ void detail_abrir(const HomeItem *it) {
   idx = it->indice;
   revistaVista = cat_revisao();
   // Guarda identidade e copia ANTES de qualquer republicacao. Ver revalidarIdx.
+  arteFixa[0] = logoFixo[0] = 0; arteFixaPoster = 0;   // arte nova por abertura
   { const CatItem *ci0 = cat_item(idx);
     idxImdb[0] = 0; idxTemCopia = 0;
     if (ci0) {
