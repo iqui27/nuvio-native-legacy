@@ -1881,7 +1881,7 @@ static void desenhaHero(Uint32 agora, float saida) {
       else snprintf(autoria,sizeof autoria,"%s",p->socialAcao);
       txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,autoria,210,210,221,255,680),x,146,a);
 
-      const char *urlPl=p->logo[0]?artehero_url_logo(p->logo):NULL;
+      const char *urlPl=p->logo[0]?artehero_url_logo_larg(p->logo,520):NULL;
       GLuint tl=urlPl?tex_obter_larg(urlPl,520):0;
       if(tl&&tex_aspecto(urlPl)>0){
         float ap=tex_aspecto(urlPl),w=520,h=w/ap;
@@ -1990,7 +1990,7 @@ static void desenhaHero(Uint32 agora, float saida) {
       // decode fica acima do tamanho desenhado para preservar nitidez quando
       // a proporcao da logo pede a altura maxima.
       const char *urlFl=(!ehDiretor && folder->logo[0])
-        ?artehero_url_logo(folder->logo):NULL;
+        ?artehero_url_logo_larg(folder->logo,NV_COLLECTION_HERO_LOGO_MAX_W+40.0f):NULL;
       GLuint logo=urlFl?tex_obter_larg(urlFl,NV_COLLECTION_HERO_LOGO_MAX_W+40.0f):0;
       float ap=logo?tex_aspecto(urlFl):0;
       float fimTitulo=NV_COLLECTION_HERO_LOGO_Y+NV_COLLECTION_HERO_LOGO_MAX_H;
@@ -2982,7 +2982,7 @@ void home_desenhar(Uint32 agora) {
             // Largura pedida pela tela, nao o teto generico de 640: o logo
             // nunca passa de ~65% do card, e decodificar o arquivo inteiro
             // so para encolher depois era cache e tempo jogados fora.
-            const char *urlL = artehero_url_logo(cItem->logo);
+            const char *urlL = artehero_url_logo_larg(cItem->logo, w * 0.65f);
             GLuint tl = tex_obter_larg(urlL, w * 0.65f);
             if (tl) {
               float pad = 34.0f * esc;
@@ -3028,7 +3028,7 @@ void home_desenhar(Uint32 agora) {
             // Logo do titulo, como no aparelho: cada producao tem tipografia
             // propria, e escrever o nome com a fonte da interface apaga isso.
             const CatItem *ci = cItem;
-            const char *urlCl = (ci && ci->logo[0]) ? artehero_url_logo(ci->logo) : NULL;
+            const char *urlCl = (ci && ci->logo[0]) ? artehero_url_logo_larg(ci->logo, w * .65f) : NULL;
             GLuint tlogo = urlCl ? tex_obter_larg(urlCl, w * .65f) : 0;
             // Sem dado, sem texto — nao a lista de demonstracao que ficava
             // aqui e carimbava nome e genero de outro titulo no card.

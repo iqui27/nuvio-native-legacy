@@ -65,5 +65,8 @@ const char *artehero_url_episodio(const CatItem *item);
 // que o Cinemeta manda tem 4127 px de largura para um desenho de 1000 — a
 // medicao esta no .c.
 const char *artehero_url_logo(const char *logo);
+// O mesmo, sabendo a largura em que o logo vai ser desenhado (px de layout):
+// escolhe o menor tamanho do TMDB que cobre o desenho. 0 = como acima.
+const char *artehero_url_logo_larg(const char *logo, float larg);
 
 #endif

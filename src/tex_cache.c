@@ -1712,7 +1712,18 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
     // (o quadro de GIF que sobe GPU->GPU, e qualquer item montado a mao), e
     // tratar "nao sei" como "acabou" congelaria essas na primeira versao
     // pequena que aparecesse.
+    //
+    // COM FOLGA DE 25%, senao a promocao vira o custo dominante da navegacao.
+    // MEDIDO na C9 em 19/09 (log com o dono abrindo um filme): o MESMO jpeg
+    // decodificado a 736 e de novo a 768 (o card focado e 4% maior), o mesmo
+    // logo a 480, 512 e 640 conforme a animacao de entrada do detalhe o
+    // desenhava maior — cada decode de 300 a 500 ms nesta CPU, para uma
+    // diferenca que o olho nao ve a 3 m. A pessoa ve a arte "recarregar"
+    // duas ou tres vezes (o cinza entre uma versao e outra). Promover so
+    // quando o pedido e ao menos um quarto maior: o card (928) que vira hero
+    // (1920) continua promovendo; o foco e a animacao, nao.
     if (itens[i].estado == PRONTO && itens[i].tetoUsado < limite &&
+        limite >= itens[i].tetoUsado + itens[i].tetoUsado / 4 &&
         (itens[i].fonteW <= 0 || itens[i].fonteW > itens[i].w)) {
       int prox = (filaFim + 1) % MAX_FILA;
       if (prox != filaIni) {

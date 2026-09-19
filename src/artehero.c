@@ -199,12 +199,28 @@ const char *artehero_url(const CatItem *item) {
 // desenhos simultaneos que existem hoje com folga.
 #define LOGO_ANEL 4
 const char *artehero_url_logo(const char *logo) {
+  return artehero_url_logo_larg(logo, 0.0f);
+}
+
+// TAMANHO PELO DESENHO. O TMDB serve o mesmo logo em w300, w500, w780, w1280
+// e original; um card de fileira desenha o logo com ~300 px e o detalhe com
+// ate 1000. MEDIDO na C9 em 19/09: logos de 1280x1152 e 1280x1307 (PNG, w1280)
+// levavam 300 a 460 ms para virar 480 a 640 px de textura — o decode de um
+// backdrop inteiro por um logo de card. `larg` 0 = nao se sabe: fica o teto
+// da qualidade, como antes. Qualidade baixa desce um degrau; alta pede sempre
+// o original.
+const char *artehero_url_logo_larg(const char *logo, float larg) {
   static char anel[LOGO_ANEL][512];
   static int vez;
   char *buf;
   const char *p, *nome;
-  const char *tam = qualidadeImg == 0 ? "w500"
-                  : qualidadeImg == 2 ? "original" : "w1280";
+  const char *tam;
+  if (qualidadeImg == 2) tam = "original";
+  else if (larg <= 0.0f) tam = qualidadeImg == 0 ? "w500" : "w1280";
+  else if (larg <= 300.0f) tam = "w300";
+  else if (larg <= 500.0f) tam = qualidadeImg == 0 ? "w300" : "w500";
+  else if (larg <= 780.0f) tam = qualidadeImg == 0 ? "w500" : "w780";
+  else tam = qualidadeImg == 0 ? "w780" : "w1280";
   if (!logo || !logo[0]) return logo;
   p = strstr(logo, "/t/p/");
   if (!p) return logo;                       // metahub, arquivo local, etc.
