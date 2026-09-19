@@ -155,6 +155,15 @@ static long pontos(const Stream *s) {
   if (s->mp4 && s->altura >= 2160 && s->dolbyVision) p += 100000;
   if (s->altura >= 2160)                             p +=  20000;
   if (s->mp4 && s->dolbyVision)                      p +=  10000;
+  // MP4 NA FRENTE DENTRO DA MESMA FAIXA DE RESOLUCAO, pedido do dono (19/09):
+  // na LG o MP4 e o container que toca Dolby Vision de verdade e o que menos
+  // engasga no pipeline; entre um MP4 e um MKV da mesma altura, o MP4. Fica
+  // ABAIXO da faixa de 4K (20000) de proposito: um MP4 1080p nao passa na
+  // frente de um MKV 4K — trocar resolucao por container e outra decisao.
+  // Nao vale no Tizen: la o AVPlay le MKV sem esse rebaixamento.
+#ifndef __EMSCRIPTEN__
+  if (s->mp4)                                        p +=   5000;
+#endif
   if (s->dolbyAtmos)                                 p +=   2000;
   p += s->altura;
   // ACIMA DO TETO vai para o fim da fila, e nao para fora dela: o teto e
@@ -811,10 +820,32 @@ void stream_folha_desenhar(Uint32 agora) {
     // tiraria do centro da linha do provedor, que e onde ela esta ancorada.
     txt_bloco(TXT_PG_FIM,descricao,corDesc,corDesc+3,corDesc+8,lx,y+86,w,25,anim,2);
     char meta[192],qual[24]="";
+    float mx = lx;
+    const char *cont = containerDa(s);
+    int ehMp4 = !strcmp(cont, "MP4");
     if(s->altura) snprintf(qual,sizeof qual," · %dp",s->altura);
-    snprintf(meta,sizeof meta,"%s%s%s%s",containerDa(s),qual,s->dolbyVision?" · Dolby Vision":"",s->dolbyAtmos?" · Atmos":"");
+    // MP4 EM DESTAQUE: pilula cheia na cor de acento no lugar da sigla solta,
+    // porque na LG e o container que vale escolher (ver pontos()). O resto da
+    // linha de meta segue depois dela.
+    if (ehMp4) {
+      float ar, ag, ab;
+      TxtLinha m;
+      GfxRect pil;
+      ajustes_acento(&ar, &ag, &ab);
+      if (sel) { ar = .135f; ag = .135f; ab = .14f; }
+      m = txt_linha(TXT_MINI, "MP4", sel ? 234 : 20, sel ? 236 : 20, sel ? 242 : 24, 255);
+      pil = (GfxRect){ lx, y + 146.0f, (float)m.w + 20.0f, (float)m.h + 8.0f };
+      gfx_cor(pil, NV_RAIO_PILL, ar, ag, ab, anim);
+      txt_desenhar_alpha(m, pil.x + 10.0f, pil.y + 4.0f, anim);
+      mx = lx + pil.w + 10.0f;
+    }
+    snprintf(meta,sizeof meta,"%s%s%s%s",cont,qual,s->dolbyVision?" · Dolby Vision":"",s->dolbyAtmos?" · Atmos":"");
     if(s->tamanhoMB) {size_t p=strlen(meta);snprintf(meta+p,sizeof meta-p," · %.1f GB",s->tamanhoMB/1024.0);}
-    txt_desenhar_alpha(txt_linha_corta(TXT_MINI,meta,corMeta,corMeta+2,corMeta+8,255,w),lx,y+150,anim);
+    { const char *texto = meta;
+      // A sigla ja esta na pilula: o texto comeca depois dela e do " · " (4
+      // bytes: espaco, U+00B7 em dois bytes, espaco).
+      if (ehMp4) { texto += 3; if (!strncmp(texto, " \xc2\xb7 ", 4)) texto += 4; }
+      txt_desenhar_alpha(txt_linha_corta(TXT_MINI,texto,corMeta,corMeta+2,corMeta+8,255,w-(mx-lx)),mx,y+150,anim); }
     // Linha clara pede tinta escura: a arte das badges e branca.
     if(sel) badges_desenhar_escura(s->badges,lx,y+181,w,26,anim);
     else    badges_desenhar(s->badges,lx,y+181,w,26,anim);
