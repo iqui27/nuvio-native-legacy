@@ -1128,8 +1128,10 @@ void app_atualizar(float dt, Uint32 agora) {
       // roda exatamente como rodava antes. Quem nunca abriu a folha de fontes
       // nao ve diferenca nenhuma.
       char base[24];
+      int lembrada;
       idBaseDoTitulo(base, sizeof base);
-      stream_preferir(base[0] ? fontepref_escolher(base) : -1);
+      lembrada = base[0] ? fontepref_escolher(base) : -1;
+      stream_preferir(lembrada);
       // QUEM ESCOLHE E A PESSOA, quando ela pediu isso em Ajustes.
       //
       // A folha abre AQUI e nao no botao pelo mesmo motivo que a fonte
@@ -1140,7 +1142,16 @@ void app_atualizar(float dt, Uint32 agora) {
       // O ramo do canal fica de fora de proposito (ele esta no `if` acima):
       // uma folha entre um zap e outro e o oposto do que se quer de TV ao
       // vivo, e la a escolha ja e feita pela playlist que responde.
-      if (ajustes_fonte_manual() && stream_n() > 0) {
+      //
+      // ISSUE #62: COM "ESCOLHER A FONTE AO REPRODUZIR" LIGADO, "RETOMAR"
+      // ABRIA A FOLHA DE NOVO. A pessoa ja tinha escolhido a fonte deste
+      // titulo na folha — e a escolha esta guardada (fontepref) e presente na
+      // lista de agora. Perguntar de novo e o que o relator chamou de "o bug
+      // antigo": o ajuste quer que a PESSOA escolha, e ela escolheu. So
+      // pergunta quando nao ha escolha lembrada que sirva para esta lista;
+      // trocar de fonte continua a um hold de distancia (menu do episodio,
+      // hold no botao primario).
+      if (ajustes_fonte_manual() && stream_n() > 0 && lembrada < 0) {
         aguardandoFonte = 0;
         folhaParaTocar = 1;
         stream_folha_abrir();

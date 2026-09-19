@@ -22,6 +22,9 @@
 
 static Stream *lista;
 static int n = 0;
+// Trava entre a lista e os fios de verificacao (ver Lote, abaixo): a troca de
+// lista e as leituras/escritas dos fios em `lista[]` passam por ela.
+static pthread_mutex_t verTrava = PTHREAD_MUTEX_INITIALIZER;
 static int atual = -1, recarregar;
 static char contexto[320];
 void stream_definir_atual(int i) { atual = i >= 0 && i < n ? i : -1; }
@@ -78,7 +81,9 @@ void stream_definir_lista(const Stream *l, int qtd) {
   for (i = 0; i < qtd && nova; i++)
     if (l[i].url[0] || debrid_ativo()) nova[k++] = l[i];
   if (nova && qtd - k) printf("[fonte] %d torrents sem debrid descartados\n", qtd - k);
+  pthread_mutex_lock(&verTrava);
   free(lista); lista = nova; n = nova ? k : 0; atual = -1;
+  pthread_mutex_unlock(&verTrava);
   // LISTA NOVA, INDICE VELHO NAO VALE. A preferida e uma posicao na lista
   // ANTERIOR; mantida, ela apontaria para outra fonte do episodio seguinte —
   // o tipo de defeito que toca a coisa errada sem nenhum erro no log.
@@ -249,56 +254,100 @@ static int playlistVazia(const char *url, const char *cabecalhos) {
 // ORDEM DE PONTUACAO, entao a fonte escolhida e exatamente a mesma que a versao
 // em serie escolheria — so que sem esperar as anteriores falharem uma a uma.
 #define VER_FIOS 4
+#define VER_MAX  16
 
-typedef struct { int idx; int ok; } Verificacao;
-static Verificacao *verifs;
-static int nVerifs, proxVerif;
-static pthread_mutex_t verTrava = PTHREAD_MUTEX_INITIALIZER;
+// UM LOTE POR CHAMADA, E OS FIOS PODEM SOBREVIVER A ELA.
+//
+// ISSUE #61: "o proximo episodio as vezes leva MINUTOS para abrir". A
+// verificacao esperava (pthread_join) TODAS as candidatas terminarem antes de
+// olhar o resultado — e uma candidata de torrent passa pelo Real-Debrid:
+// addMagnet, info, selectFiles, ate 3 olhadas com 1 s entre elas, unrestrict,
+// cada chamada com 15 s de prazo. Uma so candidata lenta segurava a resposta
+// mesmo com a preferida ja aprovada em 2 s. Com 8 candidatas em 4 fios, duas
+// lentas em serie passam de um minuto e meio.
+//
+// Agora a chamada decide assim que a PRIMEIRA DA ORDEM que ainda nao tinha
+// veredito recebe um — o resultado e o mesmo que o join daria, so que sem
+// esperar quem vem depois. Os fios que sobram continuam ate o prazo deles e
+// morrem sozinhos: o lote e deles ate o ultimo sair (refcount `vivos`), e um
+// lote ABANDONADO nao escreve mais em `lista[]`, porque a lista pode ja ser a
+// do episodio seguinte. debrid_resolver escreve a url num buffer do proprio
+// fio e so copia para a lista sob trava, se o lote ainda vale.
+typedef struct { int idx; int estado; } Verificacao;   // 0 pendente, 1 ok, 2 falhou
+typedef struct {
+  Verificacao v[VER_MAX];
+  int n, prox, vivos, abandonado;
+} Lote;
+static void loteSoltar(Lote *l) {   // chamar COM a trava
+  if (--l->vivos <= 0 && l->abandonado) free(l);
+}
 
 static void *fioVerificar(void *u) {
-  (void)u;
+  Lote *l = u;
   for (;;) {
-    int meu, i;
-    char fim[900];
+    int meu, i, ok = 0;
+    char fim[900], url[4096], cab[512];
+    int fileIdx; char infoHash[48];
     pthread_mutex_lock(&verTrava);
-    if (proxVerif >= nVerifs) { pthread_mutex_unlock(&verTrava); return NULL; }
-    meu = proxVerif++;
+    if (l->abandonado || l->prox >= l->n) { loteSoltar(l); pthread_mutex_unlock(&verTrava); return NULL; }
+    meu = l->prox++;
+    i = l->v[meu].idx;
+    // Copia do que o fio precisa, sob a trava: fora dela `lista[]` pode ser
+    // trocada por stream_definir_lista a qualquer momento. Lista que ja
+    // encolheu por baixo do lote: a candidata nao existe mais, falhou.
+    if (i >= n) { l->v[meu].estado = 2; pthread_mutex_unlock(&verTrava); continue; }
+    snprintf(url, sizeof url, "%s", lista[i].url);
+    snprintf(cab, sizeof cab, "%s", lista[i].cabecalhos);
+    snprintf(infoHash, sizeof infoHash, "%s", lista[i].infoHash);
+    fileIdx = lista[i].fileIdx;
     pthread_mutex_unlock(&verTrava);
-    i = verifs[meu].idx;
-    if (!lista[i].url[0] && lista[i].infoHash[0]) {
+
+    if (!url[0] && infoHash[0]) {
       // Link recem-saido do unrestrict: nao precisa da segunda viagem abaixo.
-      if (debrid_resolver(lista[i].infoHash, lista[i].fileIdx, lista[i].url, sizeof lista[i].url))
-        verifs[meu].ok = 1;
-      else printf("[fonte] %d torrent nao resolveu no debrid\n", i);
-      continue;
-    }
-    if (!lista[i].url[0]) continue;
+      if (debrid_resolver(infoHash, fileIdx, url, sizeof url)) {
+        pthread_mutex_lock(&verTrava);
+        if (!l->abandonado && i < n) { snprintf(lista[i].url, sizeof lista[i].url, "%s", url); ok = 1; }
+        pthread_mutex_unlock(&verTrava);
+      } else printf("[fonte] %d torrent nao resolveu no debrid\n", i);
+    } else if (!url[0]) {
+      ok = 0;
     // 10 s e nao 20: em paralelo o timeout deixa de ser somado, mas continua
     // sendo o tempo que o dono espera pela mais lenta.
-    if (!rede_url_final(lista[i].url, 10, fim, sizeof fim)) {
+    } else if (!rede_url_final(url, 10, fim, sizeof fim)) {
       printf("[fonte] %d nao resolveu\n", i);
-      continue;
-    }
-    if (enderecoDeAviso(fim)) {
+    } else if (enderecoDeAviso(fim)) {
       printf("[fonte] %d e aviso (%.60s)\n", i, fim);
-      continue;
-    }
-    if (playlistVazia(fim, lista[i].cabecalhos)) {
+    } else if (playlistVazia(fim, cab)) {
       printf("[fonte] %d tem playlist vazia (canal fora do ar)\n", i);
-      continue;
-    }
-    verifs[meu].ok = 1;
+    } else ok = 1;
+
+    pthread_mutex_lock(&verTrava);
+    l->v[meu].estado = ok ? 1 : 2;
+    pthread_mutex_unlock(&verTrava);
   }
+}
+
+// O veredito do lote, COM a trava: indice escolhido, -1 = todas falharam,
+// -2 = ainda ha candidata anterior sem resposta.
+static int loteVeredito(const Lote *l) {
+  int q;
+  for (q = 0; q < l->n; q++) {
+    if (l->v[q].estado == 1) return l->v[q].idx;
+    if (l->v[q].estado == 0) return -2;
+  }
+  return -1;
 }
 
 int stream_primeira_boa(int tentativas) {
   int *usados, nu = 0;
   int total = stream_n();
   int escolhida = -1;
+  Lote *l;
   if (total < 1) return -1;
   if (tentativas < 1) tentativas = 1;
   if (tentativas > total) tentativas = total;
-  usados = calloc((size_t)tentativas, sizeof *usados);
+  if (tentativas > VER_MAX - 1) tentativas = VER_MAX - 1;   // +1 da preferida
+  usados = calloc((size_t)tentativas + 1, sizeof *usados);
   if (!usados) return -1;
 
   // A PREFERIDA ENTRA PRIMEIRO, antes da pontuacao. Ela e a fonte que a pessoa
@@ -329,25 +378,37 @@ int stream_primeira_boa(int tentativas) {
   if (nu < 1) { free(usados); return -1; }
 
   marco("fonte: verificacao inicio");
-  verifs = calloc((size_t)nu, sizeof(Verificacao));
-  if (!verifs) { free(usados); return -1; }
-  { int q;
-    for (q = 0; q < nu; q++) verifs[q].idx = usados[q];
-    nVerifs = nu; proxVerif = 0;
-    { pthread_t fios[VER_FIOS];
-      int criados = 0;
-      for (q = 0; q < VER_FIOS && q < nu; q++)
-        if (pthread_create(&fios[criados], NULL, fioVerificar, NULL) == 0) criados++;
-      if (!criados) fioVerificar(NULL);   // sem fios: em serie, mesmo resultado
-      for (q = 0; q < criados; q++) pthread_join(fios[q], NULL);
+  l = calloc(1, sizeof *l);
+  if (!l) { free(usados); return -1; }
+  { int q, criados = 0;
+    for (q = 0; q < nu; q++) l->v[q].idx = usados[q];
+    l->n = nu; l->prox = 0;
+    pthread_mutex_lock(&verTrava);
+    for (q = 0; q < VER_FIOS && q < nu; q++) {
+      pthread_t t;
+      l->vivos++;
+      if (pthread_create(&t, NULL, fioVerificar, l) == 0) { pthread_detach(t); criados++; }
+      else l->vivos--;
     }
-    // Primeira que passou, NA ORDEM EM QUE FORAM ENFILEIRADAS: a preferida (se
-    // havia uma), depois a pontuacao.
-    for (q = 0; q < nu; q++)
-      if (verifs[q].ok) { escolhida = verifs[q].idx; break; }
+    pthread_mutex_unlock(&verTrava);
+    if (!criados) { l->vivos = 1; fioVerificar(l); }   // sem fios: em serie, mesmo resultado
+    // Espera pelo veredito, nao pelos fios. 50 ms de passo: e o que separa
+    // "respondeu" de "o app viu que respondeu", num caminho que ja custa
+    // segundos de rede.
+    for (;;) {
+      int v;
+      pthread_mutex_lock(&verTrava);
+      v = loteVeredito(l);
+      pthread_mutex_unlock(&verTrava);
+      if (v != -2) { escolhida = v; break; }
+      SDL_Delay(50);
+    }
+    pthread_mutex_lock(&verTrava);
+    if (l->vivos > 0) l->abandonado = 1; else free(l);
+    pthread_mutex_unlock(&verTrava);
   }
   marco(escolhida >= 0 ? "fonte: verificacao ok" : "fonte: verificacao sem resultado");
-  free(verifs); verifs = NULL; nVerifs = 0; free(usados);
+  free(usados);
   if (escolhida >= 0) printf("[fonte] %d ok\n", escolhida);
   return escolhida;
 }

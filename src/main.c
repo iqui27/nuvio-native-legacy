@@ -1,5 +1,6 @@
 // Bootstrap: janela, contexto GL, loop e telemetria. Toda a UI vive nos modulos.
 #include <SDL2/SDL.h>
+#include "sdlcompat.h"
 #include <SDL2/SDL_image.h>
 #include "gl_compat.h"
 #ifdef __EMSCRIPTEN__
@@ -334,6 +335,8 @@ int main(int argc, char **argv) {
 
   if (SDL_Init(SDL_INIT_VIDEO) != 0) { printf("SDL_Init: %s\n", SDL_GetError()); return 1; }
   IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG);
+  // Antes de qualquer fio: ver nv_blindar_formatos em sdlcompat.h (issue #65).
+  nv_blindar_formatos();
 
 #ifdef __APPLE__
   // Perfil de compatibilidade: e o unico do macOS que ainda aceita GLSL 1.20 e

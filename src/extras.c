@@ -1034,17 +1034,49 @@ static void *buscar(void *arg) {
   return NULL;
 }
 
+// ZERA O QUE A TELA MOSTRA, com a trava. E o que cada pedido novo faz antes
+// de buscar — e o que um pedido que NAO VAI BUSCAR tambem tem de fazer.
+static void zerarPublicado(void) {
+  notaTrakt = votosTrakt = nComent = nRel = nTemps = nCol = 0;
+  colNome[0] = 0;
+  nTrailer = fichaDur = nEstudio = 0;
+  fichaStatus[0] = fichaPaises[0] = fichaCert[0] = fichaLanc[0] = 0;
+  fichaIdiomaOrig[0] = 0;
+  agStatus[0] = agDataProx[0] = agDataUlt[0] = agNomeEp[0] = 0;
+  agTemp = agEp = 0;
+  memset(vistos, 0, sizeof vistos);
+  progressoPronto = proximoT = proximoE = 0;
+  epsExibidos = epsVistos = 0;
+  memset(notas, 0, sizeof notas);
+}
+
+// Titulo sem id que estas fontes conhecam: nada a buscar, e NADA A MOSTRAR.
+//
+// ISSUE #60: "trailers de um filme aparecem em outro; recomendacoes, estudios
+// e ficha tambem". Um titulo sem imdb (item de catalogo proprio, id "kitsu:",
+// "xperience:"...) fazia esta funcao voltar na primeira linha SEM zerar o que
+// o titulo anterior deixou publicado — e o detalhe desenhava os trailers, o
+// "Mais como este", as produtoras e a ficha do filme aberto antes. Com o fio
+// ainda no ar, idPedido vazio faz cada bloco de publicacao (strcmp com
+// idPedido) recusar o que chegar.
+static void esquecerPedido(void) {
+  pthread_mutex_lock(&trava);
+  idPedido[0] = 0;
+  zerarPublicado();
+  pthread_mutex_unlock(&trava);
+}
+
 void extras_pedir(const char *imdb, int serie, long tmdbId) {
   char id[24];
   const char *dp;
-  if (!imdb || imdb[0] != 't') return;
+  if (!imdb || imdb[0] != 't' || !strncmp(imdb, "tmdb:", 5)) { esquecerPedido(); return; }
   // Sem nenhuma fonte online nao ha o que buscar: o Trakt alimenta vistos,
   // nota, comentarios e related de sobra; a chave TMDB alimenta ficha,
   // produtoras e "Mais como este"; o MDBList alimenta as notas por fonte.
   // Antes o teste era so trakt_ativo — e uma conta sem Trakt perdia ate o
   // que nao depende dele.
   if (!trakt_ativo() && !desc_chave_tmdb()[0] &&
-      !(mdbChave[0] && ajustes_mdblist_ligado())) return;
+      !(mdbChave[0] && ajustes_mdblist_ligado())) { esquecerPedido(); return; }
   // O campo do catalogo pode vir com episodio ("tt9737326:2:1"), que e o
   // formato que os addons de fonte usam. O Trakt so conhece o id do TITULO —
   // com o sufixo ele responde 404 e as tres abas ficavam vazias em toda serie.
@@ -1059,17 +1091,7 @@ void extras_pedir(const char *imdb, int serie, long tmdbId) {
   snprintf(idPedido, sizeof idPedido, "%s", imdb);
   seriePedido = serie;
   tmdbPedido = tmdbId;
-  notaTrakt = votosTrakt = nComent = nRel = nTemps = nCol = 0;
-  colNome[0] = 0;
-  nTrailer = fichaDur = nEstudio = 0;
-  fichaStatus[0] = fichaPaises[0] = fichaCert[0] = fichaLanc[0] = 0;
-  fichaIdiomaOrig[0] = 0;
-  agStatus[0] = agDataProx[0] = agDataUlt[0] = agNomeEp[0] = 0;
-  agTemp = agEp = 0;
-  memset(vistos, 0, sizeof vistos);
-  progressoPronto = proximoT = proximoE = 0;
-  epsExibidos = epsVistos = 0;
-  memset(notas, 0, sizeof notas);
+  zerarPublicado();
   if (fioVivo) { pthread_mutex_unlock(&trava); return; }
   snprintf(idEmCurso, sizeof idEmCurso, "%s", imdb);
   serieEmCurso = serie;

@@ -712,8 +712,11 @@ void detail_abrir(const HomeItem *it) {
   // Nota do Trakt, comentarios e relacionados. Pedido na ABERTURA e nao no
   // desenho: as abas so aparecem depois que o dado chega, e pedir no desenho
   // faria a barra de abas surgir com o titulo ja na tela.
+  //
+  // SEM `if (imdb[0])`: titulo sem id tambem passa por extras_pedir, que e
+  // quem zera o que o titulo anterior publicou (issue #60, ver extras.c).
   { const CatItem *ci = cat_item(idx);
-    if (ci && ci->imdb[0]) extras_pedir(ci->imdb, ehSerie(), ci->tmdb); }
+    extras_pedir(ci ? ci->imdb : "", ehSerie(), ci ? ci->tmdb : 0); }
   // A aba marcada tem de ser a da temporada de "Continuar assistindo", nao a
   // do primeiro episodio da serie. Issue #43: abrindo pela fileira com S2E2 em
   // andamento a aba acendia sempre "Temporada 1" (o primeiro episodio
