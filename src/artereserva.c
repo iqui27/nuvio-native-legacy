@@ -1,4 +1,5 @@
 #include "artereserva.h"
+#include <pthread.h>
 #include "descoberta.h"
 #include "rede.h"
 #include "js.h"
@@ -76,6 +77,45 @@ static int reservaStill(const char *chave, const char *id, int temp, int ep,
   return 1;
 }
 
+// Tabela (url -> imdb) para arte de host que nao carrega o id na URL. Chave
+// pelo hash FNV da URL; 1024 posicoes cobrem a biblioteca e a home (que sao
+// os lugares onde uma arte de addon aparece), e uma colisao so custa uma
+// reserva errada numa arte que ja tinha falhado.
+#define AR_REG 1024
+static struct { unsigned long h; char imdb[24]; unsigned char poster, usado; } reg[AR_REG];
+static pthread_mutex_t regTrava = PTHREAD_MUTEX_INITIALIZER;
+
+static unsigned long hashUrl(const char *u) {
+  unsigned long h = 2166136261ul;
+  for (; *u; u++) { h ^= (unsigned char)*u; h *= 16777619ul; h &= 0xffffffffUL; }
+  return h;
+}
+
+void arte_reserva_registrar(const char *url, const char *imdb, int poster) {
+  unsigned long h;
+  if (!url || !url[0] || !imdb || strncmp(imdb, "tt", 2)) return;
+  if (strstr(url, "images.metahub.space") || strstr(url, "image.tmdb.org") ||
+      strstr(url, "episodes.metahub.space")) return;   // esses ja se resolvem sozinhos
+  h = hashUrl(url);
+  pthread_mutex_lock(&regTrava);
+  { unsigned i = (unsigned)(h % AR_REG);
+    reg[i].h = h; reg[i].poster = poster ? 1 : 0; reg[i].usado = 1;
+    snprintf(reg[i].imdb, sizeof reg[i].imdb, "%.*s", (int)strcspn(imdb, ":"), imdb); }
+  pthread_mutex_unlock(&regTrava);
+}
+
+static int lerRegistro(const char *url, char *id, size_t nId, int *poster) {
+  unsigned long h = hashUrl(url);
+  unsigned i = (unsigned)(h % AR_REG);
+  int ok = 0;
+  pthread_mutex_lock(&regTrava);
+  if (reg[i].usado && reg[i].h == h) {
+    snprintf(id, nId, "%s", reg[i].imdb); *poster = reg[i].poster; ok = 1;
+  }
+  pthread_mutex_unlock(&regTrava);
+  return ok;
+}
+
 int arte_reserva_url(const char *url, char *saida, size_t tam) {
   char tipo[16], id[24], api[300], caminho[128] = "";
   const char *chave, *corpo, *v;
@@ -91,8 +131,9 @@ int arte_reserva_url(const char *url, char *saida, size_t tam) {
     return 0;
   }
   if (lerStill(url, id, sizeof id, &temp, &ep)) return reservaStill(chave, id, temp, ep, saida, tam);
-  if (!lerMetahub(url, tipo, sizeof tipo, id, sizeof id)) return 0;
-  poster = !strcmp(tipo, "poster");
+  if (lerMetahub(url, tipo, sizeof tipo, id, sizeof id)) poster = !strcmp(tipo, "poster");
+  else if (lerRegistro(url, id, sizeof id, &poster)) snprintf(tipo, sizeof tipo, "%s", poster ? "poster" : "background");
+  else return 0;
   snprintf(api, sizeof api,
            "https://api.themoviedb.org/3/find/%s?api_key=%s&external_source=imdb_id",
            id, chave);

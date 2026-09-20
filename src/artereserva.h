@@ -24,4 +24,12 @@
 // host, TMDB desligado, titulo desconhecido, logo).
 int arte_reserva_url(const char *url, char *saida, size_t tam);
 
+// ARTE DE OUTRO HOST (#67, 20/09/2026): a biblioteca da Owlphibia vinha com
+// cartazes de bingecat.com, que responde 404 — e a URL nao carrega o id do
+// IMDb, entao a reserva acima nao tinha por onde procurar. O catalogo registra
+// aqui, ao publicar, (url do cartaz/fundo -> imdb) para todo host que nao e o
+// metahub nem o TMDB; a reserva consulta esta tabela quando a URL nao e do
+// metahub. `poster` 1 = cartaz, 0 = fundo.
+void arte_reserva_registrar(const char *url, const char *imdb, int poster);
+
 #endif

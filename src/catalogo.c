@@ -1,9 +1,11 @@
 #include "catalogo.h"
 #include "tendencia.h"
+#include "artereserva.h"
 // FRACO: os testes leves compilam catalogo.c sozinho (tests/catcache.sh e
 // cinco irmaos) e nao querem historico de ordem nenhum. No app inteiro
 // tendencia.c define a de verdade e vence esta.
 __attribute__((weak)) void tend_registrar(const CatFileira *f, const CatItem *itens) { (void)f; (void)itens; }
+__attribute__((weak)) void arte_reserva_registrar(const char *url, const char *imdb, int poster) { (void)url; (void)imdb; (void)poster; }
 #include "idioma.h"
 #include "descoberta.h"
 #include "progresso.h"
@@ -1002,6 +1004,9 @@ int cat_acrescentar_lote(const CatItem *v, int qtd, int *saidaIdx) {
   pthread_mutex_lock(&pubTrava);
   memcpy(novo, itens, sizeof(CatItem) * (size_t)n);
   memcpy(&novo[n], v, sizeof(CatItem) * (size_t)qtd);
+  { int k; for (k = 0; k < qtd; k++) {
+      if (v[k].poster[0])   arte_reserva_registrar(v[k].poster,   v[k].imdb, 1);
+      if (v[k].backdrop[0]) arte_reserva_registrar(v[k].backdrop, v[k].imdb, 0); } }
   if (saidaIdx) for (k = 0; k < qtd; k++) saidaIdx[k] = n + k;
   free(lixoLote);
   lixoLote = itens;
@@ -1090,6 +1095,10 @@ void cat_definir_tudo(const CatItem *lista, int qtd,
     // Historico de ORDEM por fileira (tendencia.h), ANTES da troca e sobre os
     // parametros — le e grava arquivo, e depois da troca `novo` pode ser
     // liberado por uma publicacao seguinte.
+    // Arte de host de addon -> imdb, para a reserva de arte (#67).
+    { int k; for (k = 0; k < novoN; k++) {
+        if (novo[k].poster[0])   arte_reserva_registrar(novo[k].poster,   novo[k].imdb, 1);
+        if (novo[k].backdrop[0]) arte_reserva_registrar(novo[k].backdrop, novo[k].imdb, 0); } }
     if (novasFils) {
       int k;
       for (k = 0; k < nNovas && k < CAT_FIL_MAX; k++) {
