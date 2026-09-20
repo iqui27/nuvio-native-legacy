@@ -1686,6 +1686,18 @@ static int orcamentoMB(void) {
              "suporta (medido: teto maior decodifica mais devagar)\n", mb, aut);
       mb = aut; porque = "NV_TEX_MB_FIXO > teto Tizen"; orcFixo = 0;
     } }
+#  else
+  // NA LG O TETO FIXO OBEDECE A RAM (20/09/2026, registro 15 do servico de
+  // avisos): uma TV de 1350 MB (Mali-G31) instalou a highcache e recebeu 300
+  // MB de textura — o dobro do que a regra automatica da a 2 GB. O nome da
+  // variante promete "cache grande para TV com RAM sobrando", nao "300 em
+  // qualquer TV". O teto e o mesmo que Ajustes usa (tetoPermitidoMB): 96 abaixo
+  // de 1,2 GB, 160 abaixo de 2 GB, 300 abaixo de 3 GB, 512 acima.
+  { int teto = !mem ? 160 : mem < 1200 ? 96 : mem < 2000 ? 160 : mem < 3000 ? 300 : 512;
+    if (mb > teto) {
+      printf("[tex] NV_TEX_MB_FIXO=%d acima do que %ld MB de RAM permitem: fica em %d MB\n", mb, mem, teto);
+      mb = teto; porque = "NV_TEX_MB_FIXO limitado pela RAM";
+    } }
 #  endif
 #elif defined(__EMSCRIPTEN__)
   if (!mem)            { mb = NV_TEX_ORCAMENTO_MB; porque = "deviceMemory indisponivel: NV_TEX_ORCAMENTO_MB"; }
