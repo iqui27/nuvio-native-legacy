@@ -53,3 +53,15 @@ appinfo.json.stamped  # carimbo de build do tools/arm.sh, nao e fonte
 stalker-p*.txt
 xtream-p*.txt
 listas-p*.txt
+
+# DOCUMENTOS INTERNOS (planos, medicoes, auditorias, rascunhos de post): ficam
+# no disco e fora do repositorio publico. O que e para quem instala continua:
+# README, INSTALL/INSTALAR, AVISOS (formato do canal) e docs/releases.
+/*.md
+!/README.md
+!/INSTALL.md
+!/INSTALAR.md
+!/AVISOS.md
+/docs/*.md
+/design/**/*.md
+/tests/*.md
