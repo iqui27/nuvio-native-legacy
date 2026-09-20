@@ -190,6 +190,9 @@ eval emcc src/*.c -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} \
   --preload-file deploy/app/fonts@/app/fonts \
   --preload-file "$ARTE"@/app/art \
   --shell-file "$SHELL_USADO"
+# O WORKER DE DECODE (#72) e um arquivo a parte, carregado por index.html como
+# `decodificador.js`; sem ele o app roda, mas cada arte custa fio principal.
+cp tools/decodificador.js "$SAIDA/decodificador.js"
 
 # REBAIXAR O GLUE PARA CHROMIUM 76 — sem isto o app NAO ARRANCA na TV.
 #

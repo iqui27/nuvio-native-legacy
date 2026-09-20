@@ -35,7 +35,7 @@ NOME="${NUVIO_WGT_NOME:-NuvioTV-native}"
 
 rm -rf "$ESTAGIO"
 mkdir -p "$ESTAGIO"
-cp "$ENTRADA"/index.html "$ENTRADA"/index.js "$ENTRADA"/index.wasm "$ESTAGIO"/
+cp "$ENTRADA"/index.html "$ENTRADA"/index.js "$ENTRADA"/index.wasm "$ENTRADA"/decodificador.js "$ESTAGIO"/
 [ -f "$ENTRADA/index.data" ] && cp "$ENTRADA/index.data" "$ESTAGIO"/
 cp tools/tizen-config.xml "$ESTAGIO"/config.xml
 # ICONE OFICIAL DO SAMSUNG, e nao o deploy/app/icon.png do LG.
@@ -56,7 +56,7 @@ fi
 # CONFERE ANTES DE FECHAR. Um .wgt sem o .wasm instala, abre e fica preto — o
 # mesmo tipo de falha muda que ja mordeu o empacotamento Tizen do fork em
 # JavaScript, que saiu sem player.chunk.js e so falhou na TV.
-for f in index.html index.js index.wasm config.xml icon.png; do
+for f in index.html index.js index.wasm decodificador.js config.xml icon.png; do
   [ -s "$ESTAGIO/$f" ] || { echo "tizen-wgt.sh: FALTA $f no estagio" >&2; exit 1; }
 done
 # O GLUE TEM DE ESTAR REBAIXADO PARA CHROME76.
