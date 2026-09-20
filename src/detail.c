@@ -3060,16 +3060,11 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
     GfxRect selo = { th.x + th.w - d - 16.0f, th.y + 16.0f, d, d };
     gfx_cor(th, raioTh, 0.0f, 0.0f, 0.0f, 0.22f * a);
     gfx_cor(selo, 0.5f, 1, 1, 1, 0.92f * a);
-    // O check e feito de dois tracos; sem rotacao no gfx, dois retangulos finos
-    // em degraus dao a mesma leitura no tamanho de um selo.
-    { float cx2 = selo.x + d * 0.5f, cy2 = selo.y + d * 0.5f;
-      int k;
-      for (k = 0; k < 4; k++)
-        gfx_cor((GfxRect){ cx2 - 9.0f + k * 2.0f, cy2 - 1.0f + k * 2.0f, 3, 3 },
-                0.4f, 0.05f, 0.05f, 0.05f, a);
-      for (k = 0; k < 6; k++)
-        gfx_cor((GfxRect){ cx2 - 1.0f + k * 2.0f, cy2 + 5.0f - k * 2.0f, 3, 3 },
-                0.4f, 0.05f, 0.05f, 0.05f, a); }
+    // O check e o icone (art/icones/check.png, o mesmo do card da home), nao
+    // mais dois tracos feitos de quadradinhos em degrau — a 36 px isso era o
+    // "tick de baixa resolucao" do #74.
+    gfx_icone((GfxRect){ selo.x + 7.0f, selo.y + 7.0f, d - 14.0f, d - 14.0f }, "check",
+              0.05f, 0.05f, 0.05f, a);
   }
 
   // NADA DE RESERVA INVENTADA. Aqui as quatro linhas caiam numa tabela de

@@ -2202,9 +2202,15 @@ static void desenhaHero(Uint32 agora, float saida) {
   // como "Filme · Terror", que e o par (tipo, primeiro genero) do web.
   char metaLinha[288];
   metaLinha[0] = 0;
-  if (contHero && ci->temporada > 0) {
-    char cab[64];
-    snprintf(cab, sizeof cab, "S%d E%d", ci->temporada, ci->episodio);
+  // DOIS CASOS, DUAS FRASES (dono, 20/09/2026): "A SEGUIR" e o PROXIMO
+  // episodio, que so faz sentido quando o anterior terminou; quem parou no
+  // meio "continua de onde parou". Os dois dizem QUAL episodio — o item de
+  // "a seguir" ja carrega temporada/episodio do proximo (trakt.c) — e o nome
+  // dele quando o catalogo tem.
+  if ((contHero || seguirHero) && ci->temporada > 0) {
+    char cab[192];
+    snprintf(cab, sizeof cab, "S%d E%d%s%s", ci->temporada, ci->episodio,
+             ci->nomeEpisodio[0] ? "  \xc2\xb7  " : "", ci->nomeEpisodio);
     snprintf(metaLinha, sizeof metaLinha, "%s%s%s", cab,
              (ci->genero[0] ? "  \xc2\xb7  " : ""), ci->genero);
   } else if (ci && ci->genero[0]) {
@@ -2221,7 +2227,7 @@ static void desenhaHero(Uint32 agora, float saida) {
   // no outro caso ele vai para o fim da linha de meta.
   char destaque[64];
   destaque[0] = 0;
-  if (contHero) snprintf(destaque, sizeof destaque, i18n("%d MINUTOS RESTANTES"),
+  if (contHero) snprintf(destaque, sizeof destaque, i18n("CONTINUAR DE ONDE PAROU  \xc2\xb7  %d MIN"),
                          ci->restanteMin);
   else if (seguirHero) snprintf(destaque, sizeof destaque, "%s", i18n("A SEGUIR"));
   const char *selo = (ci && ci->classificacao[0] && !contHero && !seguirHero) ? ci->classificacao : NULL;
