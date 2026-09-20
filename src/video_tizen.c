@@ -269,7 +269,17 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     if (!p4 || !S.aberto) return 0;
     // seekTo quer MILISSEGUNDOS. Os dois callbacks sao obrigatorios em varios
     // firmwares: omitir lanca TypeError e o seek nao sai.
+    // MEDIDO NOS REGISTROS DE 20/09/2026 (muresis, Tizen 6.0; 5ac57481): cada
+    // seek deixa o fio principal parado de 1 a 8,5 s DENTRO de video_bombear
+    // ([quadro] upd=8280 logo depois de "[t] seek para 820s"). Este relogio
+    // diz se e o proprio seekTo que bloqueia (a documentacao o chama de
+    // assincrono, os callbacks existem, mas o firmware pode esperar o demuxer
+    // aqui mesmo) ou outra coisa no mesmo quadro. So depois disso vale
+    // tentar pause/seek/play ou outra estrategia.
+    var t0 = performance.now();
     try { p4.seekTo(a | 0, function () {}, function () {}); } catch (e) { return 0; }
+    var dt = performance.now() - t0;
+    if (dt > 50 && window.__nvDiag) window.__nvDiag("[video] seekTo bloqueou " + (dt | 0) + " ms", 0);
     return 1;
   }
 
