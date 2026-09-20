@@ -69,6 +69,18 @@ igual ao normal — publicá-lo seria vender diferença que não existe.
 pacotes quebra o "Atualizar agora" — ou pior, faz a pessoa trocar de variante
 sem saber, que foi exatamente o defeito de 18/09.
 
+**Aconteceu de novo na 1.3.1 e na 1.3.2**: os anexos subiram como
+`NuvioTV-1.3.N-webos.ipk`, que não termina em `_arm.ipk`, e toda LG normal
+ficou sem o botão por duas versões (a highcache não sentiu). Desde a 1.3.3 o
+app aceita também `-webos.ipk`, mas quem está na 1.3.1/1.3.2 normal só ganha
+o botão se o anexo se chamar `..._arm.ipk`. Então os nomes são:
+
+```
+space.nuvio.native.legacy_1.3.N_arm.ipk
+space.nuvio.native.legacy_1.3.N_arm-highcache.ipk
+NuvioTV-1.3.N-tizen.wgt
+```
+
 ### 4. Conferir credenciais ANTES de subir
 
 A lista de exclusão dos scripts é intenção; isto é fato:

@@ -155,15 +155,28 @@ static int textoJson(const char *corpo, const char *chave, char *dst, size_t tam
 // ".ipk", e o GitHub lista em ordem alfabetica, onde "_arm-highcache.ipk" vem
 // antes de "_arm.ipk" ('-' e menor que '.'). Ou seja, "Atualizar agora"
 // instalava a highcache em TODA LG, inclusive em quem nunca a escolheu.
+//
+// DOIS NOMES POR VARIANTE, desde 20/09/2026. As releases 1.3.1 e 1.3.2 subiram
+// os anexos como "NuvioTV-1.3.N-webos.ipk" / "-webos-highcache.ipk" — nome
+// mais legivel, mas "-webos.ipk" nao termina em "_arm.ipk", entao toda LG
+// normal ficou SEM o botao "Atualizar agora" por duas versoes (a highcache
+// nao sentiu: "-webos-highcache.ipk" ainda termina em "-highcache.ipk"). A
+// 1.3.3 volta ao nome de contrato, e este codigo passa a aceitar os dois para
+// o proximo nome bonito nao quebrar de novo. A regra que nao muda: a normal
+// NUNCA casa com um nome que tenha "highcache".
 #ifdef NV_TEX_MB_FIXO
 #  define AT_SUFIXO "-highcache.ipk"
+#  define AT_SUFIXO2 "-highcache.ipk"
 #else
 #  define AT_SUFIXO "_arm.ipk"
+#  define AT_SUFIXO2 "-webos.ipk"
 #endif
 
 static int terminaEm(const char *s, size_t n, const char *sufixo) {
   size_t k = strlen(sufixo);
-  return n >= k && !strncmp(s + n - k, sufixo, k);
+  if (n >= k && !strncmp(s + n - k, sufixo, k)) return 1;
+  k = strlen(AT_SUFIXO2);
+  return n >= k && !strncmp(s + n - k, AT_SUFIXO2, k);
 }
 
 // `sufixo` obrigatorio. NAO ha reserva para "qualquer .ipk": uma release sem o

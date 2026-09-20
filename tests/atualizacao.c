@@ -120,6 +120,23 @@ int main(int argc, char **argv) {
 #endif
   }
 
+  // OS NOMES DAS RELEASES 1.3.1/1.3.2 ("NuvioTV-1.3.2-webos.ipk"): a LG normal
+  // ficou duas versoes sem botao porque "-webos.ipk" nao termina em "_arm.ipk".
+  // Agora os dois nomes valem, e a normal continua sem pegar a highcache.
+  { char url[160], hash[80];
+    const char *j =
+      "{\"assets\":["
+      "{\"digest\":\"sha256:aaaa\",\"browser_download_url\":\"https://x/NuvioTV-1.3.2-tizen.wgt\"},"
+      "{\"digest\":\"sha256:bbbb\",\"browser_download_url\":\"https://x/NuvioTV-1.3.2-webos-highcache.ipk\"},"
+      "{\"digest\":\"sha256:cccc\",\"browser_download_url\":\"https://x/NuvioTV-1.3.2-webos.ipk\"}]}";
+    CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "nome NuvioTV-*-webos: achou a variante");
+#ifdef NV_TEX_MB_FIXO
+    CONFERE(!strcmp(hash, "bbbb"), "highcache pelo nome novo: [%s]", url);
+#else
+    CONFERE(!strcmp(hash, "cccc") && !strstr(url, "highcache"), "normal pelo nome novo, sem highcache: [%s]", url);
+#endif
+  }
+
   // RELEASE SEM O ANEXO DESTA VARIANTE: nao instala, e isso e o certo. Trocar
   // de variante calada e o defeito; mandar para a pagina e a saida honesta.
   { char url[160], hash[80];
