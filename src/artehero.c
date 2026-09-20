@@ -7,7 +7,9 @@
 //
 // 1. metahub `background`: JA E 1920x1080 e custa 850 KB. Medido em 17/09 com
 //    curl: /background/medium/, /big/, /large/ e /original/ devolvem o MESMO
-//    arquivo, byte a byte — o metahub tem um tamanho so para fundo. Quando o
+//    arquivo, byte a byte. (Medido em 20/09: /background/small/ EXISTE e e
+//    outro arquivo, 480x270 e 12 KB — tex_cache.c usa isso no Tizen para
+//    card.) Quando o
 //    item tem id do IMDb e nao tem fundo melhor, esta url e deterministica e
 //    pode ser montada sem consultar ninguem.
 // 2. TMDB `w1280` -> `original`: a escada do TMDB para backdrop e

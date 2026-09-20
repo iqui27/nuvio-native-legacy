@@ -969,7 +969,27 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam) {
 #ifdef __EMSCRIPTEN__
   if (!strncmp(url, "http://", 7) || !strncmp(url, "https://", 8)) {
     long n = 0;
-    unsigned char *corpo = (unsigned char *)baixarImagem(url, &n);
+    unsigned char *corpo;
+    char menor[600];
+    // O CARD NAO PRECISA DO FUNDO DE 1920 (20/09/2026, #72). O metahub serve
+    // /background/small/ em 480x270 e 12 KB contra 1920x1080 e 600 KB do
+    // /medium/ — o cabecalho de artehero.c mediu medium/big/large/original
+    // iguais, mas nao mediu small. Um card deitado desenha 416 (768 em
+    // foco), e nesta TV cada medium era 600 KB de rede mais um JPEG HD para
+    // decodificar em software. So aqui, so no Tizen, so quando o pedido e de
+    // card (limite <= 640): o item continua com a URL medium como chave, e a
+    // promocao a heroi baixa o medium de novo, que e o que ela ja fazia.
+    { int limite;
+      SDL_LockMutex(mtx); limite = itens[idx].limite; SDL_UnlockMutex(mtx);
+      if (limite > 0 && limite <= 640) {
+        const char *m = strstr(url, "images.metahub.space/background/medium/");
+        if (m) {
+          snprintf(menor, sizeof menor, "%.*simages.metahub.space/background/small/%s",
+                   (int)(m - url), url, m + strlen("images.metahub.space/background/medium/"));
+          url = menor;
+        }
+      } }
+    corpo = (unsigned char *)baixarImagem(url, &n);
     if (!corpo) {
       char alt[400];
       if (arte_reserva_url(url, alt, sizeof alt)) corpo = (unsigned char *)baixarImagem(alt, &n);
