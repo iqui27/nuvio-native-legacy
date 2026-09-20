@@ -491,26 +491,22 @@ static void desenhaCabecalho(Uint32 agora) {
   float raio = 0.5f;
 
   GfxRect campo = { x, BU_HEAD_Y, BU_DIR - x, NV_BUSCA_HEAD_H };
-  gfx_cor(campo, raio, 0.133f, 0.133f, 0.133f, 1.0f);
-  // Contorno do campo — ANEL, nao retangulo cheio.
-  //
-  // Aqui havia um gfx_cor sobre `campo + 2px`, e gfx_cor PREENCHE: o branco a
-  // 22% lavava o campo inteiro. A conta bate com o que se media na tela:
-  // 0,133 x 0,78 + 0,961 x 0,22 = 0,315, ou seja #505050 no lugar do #222222
-  // que a linha de cima acabou de pintar. O campo lia como controle
-  // DESABILITADO, e o texto de exemplo quase sumia dentro dele.
-  //
-  // GFX_ANEL desenha so o contorno (o miolo fica intacto), que era a intencao
-  // escrita no comentario antigo.
-  { GfxRect halo = { campo.x - 2.0f, campo.y - 2.0f,
-                     campo.w + 4.0f, campo.h + 4.0f };
-    gfx_rect(halo, 0, GFX_ANEL, 0, 2.0f / halo.h, 0, raio,
-             0.961f, 0.961f, 0.961f, painel == 0 ? 0.55f : 0.16f); }
+  // SEM CONTORNO (dono, 20/09/2026: "tirar o contorno do input"). O campo e
+  // uma superficie so — #222 em repouso, um degrau mais clara enquanto o
+  // teclado esta ativo — e o cursor e a lupa dizem o resto. O anel era o
+  // unico contorno que sobrava nesta tela depois da regra de NV_COR_FOCO.
+  { float lum = painel == 0 ? 0.165f : 0.125f;
+    gfx_cor(campo, raio, lum, lum, lum + 0.008f, 1.0f); }
+  // A LUPA, dentro do campo: e o que diz "isto e uma busca" sem o placeholder,
+  // que some assim que a primeira letra entra.
+  { float ci = painel == 0 ? 0.62f : 0.42f;
+    gfx_icone((GfxRect){ campo.x + NV_BUSCA_CAMPO_PADX, campo.y + (campo.h - 34.0f) * 0.5f, 34.0f, 34.0f },
+              "menu_search", ci, ci, ci + 0.02f, 1.0f); }
 
-  float tx = campo.x + NV_BUSCA_CAMPO_PADX;
+  float tx = campo.x + NV_BUSCA_CAMPO_PADX + 34.0f + 22.0f;
   if (nConsulta) {
     TxtLinha l = txt_linha_corta(TXT_HEADLINE, consulta, 245, 246, 250, 255,
-                                campo.w - 2 * NV_BUSCA_CAMPO_PADX - 12);
+                                campo.w - 2 * NV_BUSCA_CAMPO_PADX - 12 - 56);
     txt_desenhar(l, tx, campo.y + (campo.h - l.h) * 0.5f);
     tx += l.w + 6.0f;
   } else {
@@ -537,8 +533,12 @@ static void desenhaTeclado(void) {
                     base.w * esc, base.h * esc };
       // A tecla focada INVERTE (fundo claro, glifo escuro) em vez de so acender:
       // a distancia de sofa, a inversao e o unico contraste que se enxerga de
-      // relance numa grade de 38 alvos iguais.
-      gfx_cor(t, NV_RAIO_CARD, 1.0f, 1.0f, 1.0f, anim_mistura(0.09f, 1.0f, k));
+      // relance numa grade de 38 alvos iguais. Na COR DE REALCE, como todo
+      // foco preenchido do app (NV_COR_FOCO em layout.h), e nao num branco
+      // proprio; o repouso e a mesma superficie #303030 das linhas de Ajustes.
+      { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+        gfx_cor(t, NV_RAIO_CARD, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, 0.9f * (1.0f - k));
+        if (k > 0.01f) gfx_cor(t, NV_RAIO_CARD, ar, ag, ab, k); }
       const char *s;
       if (f < BU_KB_FILEIRAS - 1) {
         rotulo[0] = TECLAS[f * BU_KB_COLS + c]; rotulo[1] = 0;
@@ -550,11 +550,15 @@ static void desenhaTeclado(void) {
       txt_desenhar(l, t.x + (t.w - l.w) * 0.5f, t.y + (t.h - l.h) * 0.5f);
     }
   }
-  float y = BU_KB_Y + BU_KB_FILEIRAS * BU_KB_PASSO + 24;
-  TxtLinha hint = txt_linha_corta(TXT_CAPTION2,
-      nFil ? "Direita: resultados   •   Voltar: menu" : "OK: digitar   •   Voltar: menu",
-      179, 183, 190, 255, BU_KB_W);
-  txt_desenhar(hint, BU_KB_X, y);
+  // Dicas do controle, uma por linha, no mesmo tom apagado das de Ajustes —
+  // a linha unica com bolinhas competia com as teclas logo acima.
+  { float y = BU_KB_Y + BU_KB_FILEIRAS * BU_KB_PASSO + 28.0f;
+    const char *d1 = nFil ? i18n("→   Resultados") : i18n("OK   Digitar");
+    const char *d2 = i18n("Voltar   Menu");
+    TxtLinha a1 = txt_linha(TXT_CAPTION2, d1, 150, 154, 163, 255);
+    TxtLinha a2 = txt_linha(TXT_CAPTION2, d2, 150, 154, 163, 255);
+    txt_desenhar_alpha(a1, BU_KB_X, y, 0.9f);
+    txt_desenhar_alpha(a2, BU_KB_X, y + a1.h + 8.0f, 0.9f); }
 }
 
 // Estado vazio do web: titulo 56/600 e apoio 24/400 rgb(179,179,179). Aqui ele
