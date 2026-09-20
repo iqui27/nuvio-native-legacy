@@ -440,7 +440,15 @@ static void themeHeader(float a,float x0) {
     int nAbas=collection->nSources;
     for(int i=0;i<nAbas;i++) {
       const ColSource *s=&collection->sources[i];
-      snprintf(rot[i],sizeof rot[i],"%s · %s",s->title,i18n(!strcmp(s->type,"series")?"Séries":"Filmes"));
+      const char *nome=s->title;
+      // SEM TITULO NA CONTA, o nome vem do manifesto (#76): colecoes.c deixa o
+      // catId no lugar do titulo quando o export nao trouxe um, e "mdblist.13914"
+      // nao e nome de aba. Se o manifesto ainda nao passou, fica o id.
+      if(!nome[0]||!strcmp(nome,s->catId)) {
+        const char *m=desc_nome_catalogo(baseDaFonte(s),s->type,s->catId);
+        if(m[0]) nome=m;
+      }
+      snprintf(rot[i],sizeof rot[i],"%s · %s",nome,i18n(!strcmp(s->type,"series")?"Séries":"Filmes"));
       // Medida com a cor de repouso; a cor certa e reaplicada no desenho (o
       // cache de linhas guarda as duas).
       larg[i]=txt_linha_corta(TXT_HERO_META,rot[i],176,176,176,255,420).w+PAD*2;pos[i]=px;px+=larg[i]+GAP;

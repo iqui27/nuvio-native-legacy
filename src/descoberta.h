@@ -106,6 +106,10 @@ int  desc_busca_item(int i, CatItem *dst);
 int  desc_busca_n_alvos(void);
 const char *desc_busca_alvo_titulo(int alvo);   // "Filmes", "Séries"
 const char *desc_busca_alvo_addon(int alvo);    // "Cinemeta", "Xperience"
+// O NOME que o manifesto da a um catalogo (base sem /manifest.json, tipo, id);
+// "" enquanto o manifesto nao passou pela descoberta. Para a aba da colecao
+// quando a conta manda a fonte sem titulo (#76).
+const char *desc_nome_catalogo(const char *base, const char *tipo, const char *id);
 int  desc_busca_alvo_n(int alvo, const char *termo);
 int  desc_busca_alvo_item(int alvo, int i, CatItem *dst);
 // Sobe a cada termo novo. Quem guarda posicao de foco entre quadros deve

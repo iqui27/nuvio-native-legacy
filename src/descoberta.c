@@ -1141,6 +1141,43 @@ static int exigeBusca(const char *p, const char *f) {
   return 0;
 }
 
+// NOMES DOS CATALOGOS DECLARADOS, por (base, tipo, id) — issue #76. A colecao
+// da conta pode vir SEM o titulo da fonte (o export do Xperience manda so
+// addonId/type/catalogId), e a pagina da colecao mostrava "mdblist.13914 ·
+// Movies" na aba. O manifesto tem o nome; ele passa por aqui a cada volta da
+// descoberta, entao fica guardado para quem perguntar. Anel de 512: o
+// Xperience sozinho declara 605, mas os que a cota deixa passar sao os que a
+// conta pode citar, e o anel gira em vez de recusar.
+#define NOMECAT_MAX 512
+static struct { char base[300], tipo[8], id[96], nome[96]; } nomeCat[NOMECAT_MAX];
+static int nNomeCat, nomeCatProx;
+static pthread_mutex_t nomeCatTrava = PTHREAD_MUTEX_INITIALIZER;
+static void registrarNomeCatalogo(const char *base, const char *tipo, const char *id, const char *nome) {
+  int i;
+  if (!base || !nome || !nome[0]) return;
+  pthread_mutex_lock(&nomeCatTrava);
+  for (i = 0; i < nNomeCat; i++)
+    if (!strcmp(nomeCat[i].base, base) && !strcmp(nomeCat[i].tipo, tipo) && !strcmp(nomeCat[i].id, id)) break;
+  if (i == nNomeCat) { i = nomeCatProx; nomeCatProx = (nomeCatProx + 1) % NOMECAT_MAX; if (nNomeCat < NOMECAT_MAX) nNomeCat++; }
+  snprintf(nomeCat[i].base, sizeof nomeCat[i].base, "%s", base);
+  snprintf(nomeCat[i].tipo, sizeof nomeCat[i].tipo, "%s", tipo);
+  snprintf(nomeCat[i].id, sizeof nomeCat[i].id, "%s", id);
+  snprintf(nomeCat[i].nome, sizeof nomeCat[i].nome, "%s", nome);
+  pthread_mutex_unlock(&nomeCatTrava);
+}
+const char *desc_nome_catalogo(const char *base, const char *tipo, const char *id) {
+  static char saida[96];
+  int i;
+  saida[0] = 0;
+  if (!base || !base[0] || !tipo || !id) return saida;
+  pthread_mutex_lock(&nomeCatTrava);
+  for (i = 0; i < nNomeCat; i++)
+    if (!strcmp(nomeCat[i].base, base) && !strcmp(nomeCat[i].tipo, tipo) && !strcmp(nomeCat[i].id, id)) {
+      snprintf(saida, sizeof saida, "%s", nomeCat[i].nome); break; }
+  pthread_mutex_unlock(&nomeCatTrava);
+  return saida;
+}
+
 static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
                          int *totalReal) {
   char url[900], addonId[96] = "", nome[96], tipo[8], id[96];
@@ -1187,6 +1224,7 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
     if (tipo[0] && id[0]) {
       Decl local, *d;
       total++;
+      registrarNomeCatalogo(base, tipo, id, nome);
       // Vetor cheio: usa um Decl de rascunho so para decidir/registrar a busca.
       d = (n < max) ? &saida[n] : &local;
       memset(d, 0, sizeof *d);
