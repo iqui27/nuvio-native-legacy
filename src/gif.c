@@ -1,6 +1,9 @@
 // GIF animado das capas de colecao (#29) e das fotos de perfil (#45).
 // Ver gif.h para onde anima e por que.
 #include "gif.h"
+#ifndef NV_GIF_ADIANTE
+#define NV_GIF_ADIANTE 3
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -322,7 +325,7 @@ EM_JS(int, gif_js_seq_pronto, (int i), {
 
 // COMPOE O QUADRO `i` E SOBE PARA A TEXTURA. Devolve 0 enquanto o quadro nao
 // decodificou — o chamador segura o que estava na tela.
-EM_JS(int, gif_js_seq_subir, (int i, int nomeTex, int larg, int alt, int mesmoTamanho), {
+EM_JS(int, gif_js_seq_subir, (int i, int nomeTex, int larg, int alt, int mesmoTamanho, int adiante), {
   var s = Module.nvGifSeq;
   if (!s || i < 0 || i >= s.n) return 0;
   var im = s.imgs[i];
@@ -361,11 +364,16 @@ EM_JS(int, gif_js_seq_subir, (int i, int nomeTex, int larg, int alt, int mesmoTa
     // e o quadro seguinte nunca estava pronto na hora — "plays but stutters"
     // (rawldon, #72, 1.3.4-rc1). Uma capa de 90 quadros de 640x360 seriam
     // ~80 MB se todos ficassem vivos; quatro sao ~4 MB.
+    // NV_GIF_ADIANTE quadros em decode a frente (3; a rc1 tinha 1 — a build
+    // de comparacao do #80 usa 1 para isolar se o decode extra no fio
+    // principal e o que voltou a travar).
+    var ad = adiante;
     for (var k = 0; k < s.n; k++) {
-      if (k === i || k === (i + 1) % s.n || k === (i + 2) % s.n || k === (i + 3) % s.n) continue;
-      if (s.imgs[k]) s.imgs[k] = null;
+      var dentro = false;
+      for (var d0 = 0; d0 <= ad; d0++) if (k === (i + d0) % s.n) dentro = true;
+      if (!dentro && s.imgs[k]) s.imgs[k] = null;
     }
-    for (var d = 1; d <= 3; d++) {
+    for (var d = 1; d <= ad; d++) {
       var pk = (i + d) % s.n;
       if (!s.imgs[pk] && s.urls[pk]) { var nk = new Image(); nk.src = s.urls[pk]; s.imgs[pk] = nk; }
     }
@@ -499,7 +507,7 @@ GLuint gif_textura(const char *caminho, int largAlvo) {
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
-    if (gif_js_seq_subir(iSeq, (int)tex, w, h, w == texW && h == texH)) {
+    if (gif_js_seq_subir(iSeq, (int)tex, w, h, w == texW && h == texH, NV_GIF_ADIANTE)) {
       texW = w; texH = h;
       return tex;
     }

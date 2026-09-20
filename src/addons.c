@@ -829,7 +829,13 @@ void addons_buscar_legendas(const char *imdb, const char *tipo) {
 // terceira rodada ("some streams take a very long time to open, especially
 // the first time", rawldon na rc1). O fio de rede passa a vida esperando o
 // socket; nao e ele que custa.
+// NV_ADD_FIOS por -D: a build de comparacao do #80 (rawldon: "v1.3.4, now
+// it's back to freezing") volta a 2 no Tizen para isolar se foi isto.
+#ifdef NV_ADD_FIOS
+#define ADD_FIOS NV_ADD_FIOS
+#else
 #define ADD_FIOS 4
+#endif
 
 typedef struct {
   int    idx;                 // qual addon
