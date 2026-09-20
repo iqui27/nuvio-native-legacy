@@ -210,7 +210,13 @@
         localStorage.setItem('nv-log', t);
       } catch (e) {}
     }
-    setInterval(nvLogGravar, 10000);
+    // 30 s e nao 10: no Tizen 6 de 1 GB (registro 58 de 20/09/2026) o fio
+    // principal parava 1-3 s em repouso, e o setItem de 200 KB no localStorage
+    // (SQLite sincrono na TV) e um dos poucos trabalhos que este shell faz
+    // nesse intervalo. Nao e prova — o longtask acima e quem vai dizer —, mas
+    // e barato: perde-se no maximo 30 s de registro antes de uma morte subita,
+    // e o pagehide continua gravando na hora.
+    setInterval(nvLogGravar, 30000);
     document.addEventListener('visibilitychange', nvLogGravar);
     window.addEventListener('pagehide', nvLogGravar);
     // ARRANQUES SEGUIDOS QUE NAO CHEGARAM AO PRIMEIRO QUADRO. O contador sobe

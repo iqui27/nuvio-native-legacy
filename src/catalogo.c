@@ -1,5 +1,9 @@
 #include "catalogo.h"
 #include "tendencia.h"
+// FRACO: os testes leves compilam catalogo.c sozinho (tests/catcache.sh e
+// cinco irmaos) e nao querem historico de ordem nenhum. No app inteiro
+// tendencia.c define a de verdade e vence esta.
+__attribute__((weak)) void tend_registrar(const CatFileira *f, const CatItem *itens) { (void)f; (void)itens; }
 #include "idioma.h"
 #include "descoberta.h"
 #include "progresso.h"

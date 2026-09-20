@@ -24,6 +24,11 @@
 int ajustes_idioma_ingles(void) { return 0; }
 const char *i18n(const char *s) { return s; }
 const char *dados_dir(void)     { return "/tmp"; }
+// tendencia.c (puxado por catalogo.c) grava o historico de ordem: aqui nao ha
+// disco nem historico — os dubles dizem "sem pasta" e "nada gravado".
+char *dados_caminho(char *dst, unsigned tam, const char *nome) { (void)dst; (void)tam; (void)nome; return 0; }
+int   dados_gravar_leve(const char *nome, const char *conteudo) { (void)nome; (void)conteudo; return 0; }
+char *dados_ler(const char *nome) { (void)nome; return 0; }
 const char *sessao_usuario(void){ return "teste"; }
 int         perfis_ativo(void)  { return 1; }
 const char *desc_genero_pt(const char *g) { return g; }

@@ -42,7 +42,7 @@ void telemetria_primeira_vez(void) {
 static void fechar(int sim) {
   aberto = 0;
   ajustes_definir_envio_auto(sim);
-  dados_gravar(TL_ARQ, sim ? "sim\n" : "nao\n");
+  dados_gravar(TL_ARQ, sim ? "1\n" : "0\n");   /* marca, nao texto de tela */
   printf("[telemetria] envio automatico: %s\n", sim ? "ligado" : "desligado");
   fflush(stdout);
 }
