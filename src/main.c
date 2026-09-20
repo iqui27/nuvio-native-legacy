@@ -858,6 +858,21 @@ int main(int argc, char **argv) {
         printf("[mem] WASM=%.1f MiB malloc=%.1f MiB livre-no-heap=%.1f MiB\n",
                emscripten_get_heap_size() / 1048576.0,
                mi.uordblks / 1048576.0, mi.fordblks / 1048576.0); }
+      // O NAVEGADOR, visto de fora do WASM (20/09/2026, #72, registros 10 e
+      // 11): `swap` de 3-11 s com pend=0 e `[hero] app parado` por 27 s
+      // dizem que o fio principal ficou fora do nosso codigo — mas nao se
+      // foi o runtime da TV que parou ou se e algo que ainda fazemos. Isto
+      // separa: heap JS (performance.memory), o maior buraco entre dois rAF
+      // medidos por um laco JS proprio (tizen-shell.html), quantos passaram
+      // de 500 ms, e se a pagina esteve escondida.
+      { int jsMB = 0, jsLimMB = 0, rafMax = 0, rafLentos = 0, escondida = 0;
+        jsMB = EM_ASM_INT({ try { return (performance.memory.usedJSHeapSize / 1048576) | 0; } catch (e) { return -1; } });
+        jsLimMB = EM_ASM_INT({ try { return (performance.memory.jsHeapSizeLimit / 1048576) | 0; } catch (e) { return -1; } });
+        rafMax = EM_ASM_INT({ var r = window.__nvRaf; if (!r) return -1; var m = r.max | 0; r.max = 0; return m; });
+        rafLentos = EM_ASM_INT({ var r = window.__nvRaf; if (!r) return -1; var n = r.lentos | 0; r.lentos = 0; return n; });
+        escondida = EM_ASM_INT({ return document.hidden ? 1 : 0; });
+        printf("[navegador] js=%d/%d MiB raf-max=%d ms raf-lentos=%d escondida=%d\n",
+               jsMB, jsLimMB, rafMax, rafLentos, escondida); }
 #endif
       // A REPARTICAO DO PIOR QUADRO, NA TELA E NAO SO NO ARQUIVO.
       //

@@ -250,6 +250,18 @@
       d("crossOriginIsolated", (typeof crossOriginIsolated !== "undefined") ? crossOriginIsolated : "indefinido");
       d("SharedArrayBuffer", typeof SharedArrayBuffer);
       d("hardwareConcurrency", navigator.hardwareConcurrency);
+      d("deviceMemory", navigator.deviceMemory);
+      // O NAVEGADOR ENTREGA QUADROS? Um rAF proprio, fora do WASM, mede os
+      // buracos entre quadros do navegador. Se ele para por segundos, nao e
+      // codigo nosso: e o runtime da TV (memoria do sistema, GC, suspensao).
+      // src/main.c le e zera no relato de FPS ([raf] max/lentos).
+      window.__nvRaf = { max: 0, lentos: 0, ultimo: 0 };
+      (function tick(t) {
+        var r = window.__nvRaf;
+        if (r.ultimo) { var g = t - r.ultimo; if (g > r.max) r.max = g; if (g > 500) r.lentos++; }
+        r.ultimo = t;
+        requestAnimationFrame(tick);
+      })(performance.now());
       d("WebAssembly", typeof WebAssembly);
       d("tela", screen.width + "x" + screen.height +
                " / viewport " + window.innerWidth + "x" + window.innerHeight +
