@@ -1552,7 +1552,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_DET_TRAILER: return "Mostra o botão de trailer na tela do título, quando existe um trailer conhecido.";
     case AJ_DET_META_EXT: return "Prefere a ficha do addon de metadados à do Cinemeta. Útil quando o seu addon tem sinopse e elenco melhores.";
     case AJ_DET_DATA_CHEIA: return "Escreve a data de estreia por extenso em vez de só o ano.";
-    case AJ_DET_VEU: return "Quanto a vinheta escura cobre a arte na tela do título. 100% é o padrão; 0% mostra a arte limpa — o texto pode ficar difícil de ler sobre cenas claras.";
+    case AJ_DET_VEU: return "Quanto a vinheta escura cobre a arte na tela do título. Cem por cento é o padrão; zero mostra a arte limpa — o texto pode ficar difícil de ler sobre cenas claras.";
 
     // --- Posteres e cards
     case AJ_EXPANDIR: return "O cartaz em foco cresce e abre a arte deitada atrás dele depois de um instante parado.";

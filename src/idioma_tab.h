@@ -1022,7 +1022,7 @@
   { "Quantas pessoas ainda marcam o episódio N depois de terem marcado o primeiro.", "How many people still tick episode N after ticking the first one." },
   { "Quantidade de catálogos incluídos no destaque. Esta linha é apenas informativa.", "How many catalogs are in the spotlight. This line is informational only." },
   { "Quanto a borda do cartaz em foco acende.", "How brightly the focused poster's edge lights up." },
-  { "Quanto a vinheta escura cobre a arte na tela do título. 100% é o padrão; 0% mostra a arte limpa — o texto pode ficar difícil de ler sobre cenas claras.", "How much the dark vignette covers the artwork on the title page. 100% is the default; 0% shows the art clean — text can get hard to read over bright scenes." },
+  { "Quanto a vinheta escura cobre a arte na tela do título. Cem por cento é o padrão; zero mostra a arte limpa — o texto pode ficar difícil de ler sobre cenas claras.", "How much the dark vignette covers the artwork on the title page. One hundred is the default; zero shows the art clean — text can get hard to read over bright scenes." },
   { "Quanto de pixel a arte carrega. Alta pede a versão grande de cada imagem e gasta mais memória; Baixa pede a menor, carrega antes e cabe em TV com pouca RAM.", "How much pixel the artwork carries. High asks for the large version of each image and uses more memory; Low asks for the small one, loads sooner and fits a TV with little RAM." },
   { "Quanto o reflexo passa por cima da arte do cartaz em foco.", "How much the sheen passes over the focused poster's artwork." },
   { "Quanto tempo o foco precisa ficar parado antes de o cartaz expandir.", "How long the focus must rest before the poster expands." },
