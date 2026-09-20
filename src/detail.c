@@ -80,10 +80,13 @@
 #define EST_GAP       18.0f
 #define EST_TITULO_H  46.0f   // linha do titulo proprio na serie
 // MEDIDO na referencia (TCL, 1920x1080): cartao 722x466, vao 25, canto 20.
-#define COM_CARD_W   722.0f
-#define COM_CARD_H   466.0f
-#define COM_PAD       28.0f
-#define COM_CARD_GAP  25.0f   // MEDIDO
+// 722x466 era o MEDIDO na TCL; o dono, olhando a C9 em 19/09/2026, mandou
+// encolher ("ta gigante") — o mesmo veredito dos botoes do detalhe na 1.3.2.
+// 600x340 mantem a proporcao e as seis linhas de texto com leading de 30.
+#define COM_CARD_W   600.0f
+#define COM_CARD_H   340.0f
+#define COM_PAD       24.0f
+#define COM_CARD_GAP  22.0f
 // Altura da CHAMADA das duas secoes sob demanda: a linha do titulo (TXT_HEADLINE,
 // 38), a da procedencia e a do custo (TXT_DET_META2, 23), com os mesmos vaos
 // que o cabecalho dos proprios modulos usa. Constante e nao medida por txt_linha
@@ -3957,12 +3960,11 @@ static void desenhaComentarios(float x, float y, float a) {
       txt_desenhar_alpha(lu, px, y + COM_PAD, a); }
 
     // O texto para ANTES do rodape: sem o teto de linhas ele passava por cima
-    // das curtidas. 5 linhas e o que cabe entre o nome e o rodape com o leading
-    // de 34.
+    // das curtidas. 6 linhas de 30 terminam em 246; o rodape comeca em 288.
     txt_bloco(TXT_DET_META2, daSerie ? extras_comentario_texto(i)
                                      : extras_comentario_ep_texto(i),
               foc ? 45 : 200, foc ? 47 : 205, foc ? 52 : 214,
-              px, y + COM_PAD + 46.0f, larg, 34.0f, a * 0.95f, 5);
+              px, y + COM_PAD + 42.0f, larg, 30.0f, a * 0.95f, 6);
 
     { int nota = daSerie ? extras_comentario_nota(i)
                          : extras_comentario_ep_nota(i);

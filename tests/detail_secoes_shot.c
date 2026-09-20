@@ -61,6 +61,10 @@
 #define extras_ep_nota          fx_ep_nota
 #define extras_n_comentarios    fx_n_comentarios
 #define extras_n_comentarios_ep fx_n_comentarios_ep
+#define extras_comentario_usuario  fx_com_usuario
+#define extras_comentario_texto    fx_com_texto
+#define extras_comentario_curtidas fx_com_curtidas
+#define extras_comentario_nota     fx_com_nota
 #define extras_n_relacionados   fx_n_relacionados
 #define extras_n_colecao        fx_n_colecao
 #define extras_n_estudios       fx_n_estudios
@@ -104,8 +108,26 @@ void fx_pedir(const char *imdb, int serie, long tmdbId) {
   (void)imdb; (void)serie; (void)tmdbId;
 }
 int fx_carregando(void)       { return 0; }
-int fx_n_comentarios(void)    { return 0; }
+// COMENTARIOS DE ENSAIO, so no filme: a captura 12 e o cartao de comentario
+// no tamanho novo (600x340, 19/09/2026), com um texto que estoura as seis
+// linhas e outro curto — o rodape tem de ficar no mesmo lugar nos dois.
+static int comentariosLigados;
+static const char *const COM_USU[] = { "robertaajr", "demarisp", "kfilms" };
+static const char *const COM_TXT[] = {
+  "And the award for worst lighting in a movie goes to ... 'Do Not Enter'. This might not "
+  "have been so awful if you could actually see anything that's happening. No, you know "
+  "what, this still would've sucked either way. It starts off so darn slow and stupid. The "
+  "movie essentially has no point and it's completely boring. We hardly get to know anyone.",
+  "this movie should have been so good- the story line just wasn't there. Acting and camera "
+  "work are amazing but there is no substance in the movie.",
+  "Fine for a rainy afternoon." };
+static const int COM_NOTA[] = { 2, 5, 7 }, COM_CUR[] = { 6, 3, 1 };
+int fx_n_comentarios(void)    { return comentariosLigados ? 3 : 0; }
 int fx_n_comentarios_ep(void) { return 0; }
+const char *fx_com_usuario(int i)  { return COM_USU[i]; }
+const char *fx_com_texto(int i)    { return COM_TXT[i]; }
+int fx_com_curtidas(int i)         { return COM_CUR[i]; }
+int fx_com_nota(int i)             { return COM_NOTA[i]; }
 int fx_n_relacionados(void)   { return 0; }
 int fx_n_colecao(void)        { return 0; }
 int fx_n_estudios(void)       { return 0; }
@@ -523,6 +545,13 @@ int main(int argc, char **argv) {
   scrollY = conteudoSec[SEC_FRASES] - 260.0f;
   quadros(40);
   snprintf(nome, sizeof nome, "%s-10-filme-chamada.png", saida);
+  gravar(nome);
+
+  // --- 12. FILME, foco nos COMENTARIOS: o cartao no tamanho novo, o segundo
+  //         em foco (superficie clara), texto longo cortado antes do rodape.
+  comentariosLigados = 1;
+  abrir(1, SEC_COMENTARIOS, 1);
+  snprintf(nome, sizeof nome, "%s-12-filme-comentarios.png", saida);
   gravar(nome);
 
   SDL_GL_DeleteContext(gl);
