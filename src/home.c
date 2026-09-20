@@ -2,6 +2,13 @@
 // hero no topo, rail fixa à esquerda e fileiras horizontais de posters. A
 // infraestrutura nativa cuida de cache assíncrono, foco e transições.
 #include "home.h"
+// NV_LEVE (tools/tizen.sh --leve): build de diagnostico sem a animacao do
+// cartaz em foco, um dos suspeitos do travamento de #72.
+#ifdef NV_LEVE
+#  define NV_SEM_GIF 1
+#else
+#  define NV_SEM_GIF 0
+#endif
 #include "trakt.h"
 #include "idioma.h"
 #include "catordem.h"
@@ -2457,7 +2464,7 @@ static void desenhaAtalhos(int r, float y) {
     // webOS gif_textura devolve 0 (nao ha libgif nem IMG_LoadAnimation no
     // aparelho) e o cartaz fica na capa parada, como hoje. Ver gif.h.
     if(gif_pode_animar()&&
-       foco.fileira==r&&foco.coluna==c&&folder->frames<1&&folder->focusGif[0] &&
+       foco.fileira==r&&foco.coluna==c&&folder->frames<1&&folder->focusGif[0] && !NV_SEM_GIF &&
        !ajustes_animacoes_reduzidas()) {
       int id=fileiras[r].folders[c];Uint32 now=SDL_GetTicks();
       // O ARQUIVO E PEDIDO FORA DO ATRASO de 350 ms. Dentro dele, o download so
@@ -2490,7 +2497,7 @@ static void desenhaAtalhos(int r, float y) {
       }
       if(tex&&gifDesenhando)gifTex=tex;
     }
-    if(foco.fileira==r&&foco.coluna==c&&folder->frames>0 &&
+    if(foco.fileira==r&&foco.coluna==c&&folder->frames>0 && !NV_SEM_GIF &&
        !ajustes_animacoes_reduzidas()) {
       int id=fileiras[r].folders[c];Uint32 now=SDL_GetTicks();
       if(ultimo!=id){ultimo=id;desde=now;seqIndice=-1;seqTex=0;}

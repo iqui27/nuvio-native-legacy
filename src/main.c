@@ -407,6 +407,9 @@ int main(int argc, char **argv) {
   // SDL: mexe em getenv/fopen/mkdir, e no Emscripten monta o IDBFS. `dirArte`
   // ja esta resolvido desde o topo do main.
   dados_iniciar(dirArte);
+  #ifdef NV_LEVE
+  printf("[leve] build de diagnostico: pool de fios 12, sem canal de avisos, sem recomendacoes, sem sync periodico, sem GIF de foco\n");
+#endif
   avisos_iniciar();   // le a marca da sessao anterior e grava a desta
   // E OS AJUSTES LOGO ATRAS, pelo mesmo motivo: ajustes_4k() le `valor[]`, que
   // so sai do padrao depois desta chamada. Sem ela a opcao existia na tela,

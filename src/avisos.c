@@ -548,6 +548,9 @@ void avisos_atualizar(float dt, Uint32 agora) {
   entrada = anim_mola(entrada, aberto ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
   cartaoA = anim_mola(cartaoA, cartao ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
   if (agora - ultColheita > 2000) { ultColheita = agora; colherLocais(); }
+#ifdef NV_LEVE
+  canalProximo = agora + AV_CANAL_INTERVALO_MS;   // build de diagnostico: sem canal
+#endif
   if (agora >= canalProximo && !canalVivo) {
     canalVivo = 1;
     canalProximo = agora + AV_CANAL_INTERVALO_MS;

@@ -866,7 +866,9 @@ void app_atualizar(float dt, Uint32 agora) {
     // NUVIO_REC_URL compilada as duas chamadas sao no-op e nenhuma conexao
     // abre. O cartao obedece as MESMAS guardas dos outros, mais a do proprio
     // aviso de versao: dois cartoes ao mesmo tempo seria um por cima do outro.
+#ifndef NV_LEVE
     recomenda_verificar();
+#endif
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
         !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !pipintro_aberto() && !atualizacao_aberta())
       recomenda_mostrar_se_houver();
@@ -897,7 +899,9 @@ void app_atualizar(float dt, Uint32 agora) {
 
   // E o ciclo automatico — nunca com o player aberto: rajada de HTTP no meio
   // do video disputa CPU e rede com o decodificador.
+#ifndef NV_LEVE
   if (!player_aberto()) sync_periodico((unsigned)agora);
+#endif
   // "CONTINUAR ASSISTINDO" ENVELHECE (issue #66, "it's not updating"). A
   // fileira so era refeita no arranque, ao sair do player e na troca de
   // perfil; quem assiste no celular via a TV parada no que tinha de manha. A

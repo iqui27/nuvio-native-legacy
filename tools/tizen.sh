@@ -31,6 +31,21 @@ source "$EMSDK_DIR/emsdk_env.sh" >/dev/null 2>&1
 # no processo da GPU, fora do heap de 256 MiB do wasm — ninguem mediu ate onde
 # o navegador da TV aguenta; e por isso e variante, e nao o padrao.
 VARIANTE=""
+# --leve: BUILD DE DIAGNOSTICO A/B (20/09/2026). Uma Samsung que rodava bem a
+# 1.0.26 travou na 1.3.2 e na 1.3.3, sem log. Entre as duas versoes o pool de
+# fios foi de 12 para 20 e nasceram quatro trabalhos de fundo (canal de
+# avisos, recomendacoes, sync periodico, GIF de foco). Esta variante devolve
+# o pool a 12 e desliga os quatro (NV_LEVE em app.c/avisos.c/home.c) para a
+# pessoa comparar com a 1.0.26 e com a normal. Nao e para publicar.
+POOL=20
+if [ "${1:-}" = "--leve" ]; then
+  VARIANTE="leve"
+  POOL=12
+  export NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-} -DNV_LEVE=1"
+  export NUVIO_SAIDA="${NUVIO_SAIDA:-build/tizen-leve}"
+  export NUVIO_WGT_NOME="${NUVIO_WGT_NOME:-NuvioTV-native-leve}"
+  echo "tizen.sh: variante LEVE (pool 12, sem trabalhos de fundo) -> $NUVIO_SAIDA"
+fi
 if [ "${1:-}" = "--alto-cache" ] || [ "${1:-}" = "--high-cache" ]; then
   VARIANTE="highcache"
   export NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-} -DNV_TEX_MB_FIXO=300"
@@ -179,7 +194,7 @@ eval emcc src/*.c -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} \
   `# mais custam e memoria do NAVEGADOR (cada um instancia os ~3,2 MB de wasm),` \
   `# e e exatamente esse trabalho que sai do caminho critico: com o pool seco` \
   `# ele acontecia no MEIO da sessao e no FIO PRINCIPAL.` \
-  -pthread -sPTHREAD_POOL_SIZE=20 -sPTHREAD_POOL_SIZE_STRICT=0 \
+  -pthread -sPTHREAD_POOL_SIZE=$POOL -sPTHREAD_POOL_SIZE_STRICT=0 \
   -sEXPORTED_FUNCTIONS='["_main","_malloc","_free"]' \
   `# PThread exportado para o medidor de fios de tizen-shell.html. NAO e` \
   `# opcional: sem o export, LER a variavel dispara o abort() do runtime` \
