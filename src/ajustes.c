@@ -802,6 +802,7 @@ static int filTopo;              // primeira linha desenhada (rolagem)
 // "pula o cabecalho da secao" ser uma soma em vez de um mapa de fileiras.
 static float animFoco[AJ_N];
 static float scrollY = 0.0f;
+static float paginaA = 1.0f;   // entrada da pagina da categoria (0..1)
 static int sair = 0;
 
 // Quantos catalogos o destaque usa. 0 = todos, que e o que o web escreve como
@@ -1636,16 +1637,23 @@ static void desenhaDicas(const char *const *linhas, int n, float x, float y,
 // exatamente com o laco de desenho em ajustes_desenhar: duas contas do mesmo
 // layout sao duas chances de discordar, e quando discordam a rolagem para na
 // linha errada.
+// UMA CATEGORIA POR PAGINA (dono, 20/09/2026: "separar por categorias em vez
+// de mostrar tudo de uma vez"). A lista desenha so a categoria da opcao em
+// foco, entao o y de uma opcao e medido do topo da PROPRIA categoria — e
+// trocar de categoria zera a rolagem (ajustes_atualizar).
+static int secaoDe(int op) {
+  for (int s = 0; s < AJ_N_SECOES; s++)
+    if (op < SECOES[s].ini + secN(s)) return s;
+  return AJ_N_SECOES - 1;
+}
 static float yDaOpcao(int op) {
-  float y = 0.0f;
-  for (int s = 0; s < AJ_N_SECOES; s++) {
-    y += (s ? AJ_SEC_GAP : 0.0f) + AJ_SEC_CABEC;
-    for (int k = 0; k < secN(s); k++) {
-      int o = SECOES[s].ini + k;
-      y += alturaSub(o);
-      if (o == op) return y;
-      y += AJ_LINHA_H + AJ_LINHA_GAP;
-    }
+  int s = secaoDe(op);
+  float y = AJ_SEC_CABEC;
+  for (int k = 0; k < secN(s); k++) {
+    int o = SECOES[s].ini + k;
+    y += alturaSub(o);
+    if (o == op) return y;
+    y += AJ_LINHA_H + AJ_LINHA_GAP;
   }
   return y;
 }
@@ -2202,6 +2210,16 @@ void ajustes_atualizar(float dt, Uint32 agora) {
     if (SECOES[s].ini == focoOp) { topo -= AJ_SEC_CABEC; break; }
   float base = yDaOpcao(focoOp) + AJ_LINHA_H;
   float alvo = scrollY;
+  // PAGINA NOVA: a lista passa a ser outra categoria. A rolagem nao anima de
+  // uma lista para a outra — recomeca do topo, e a pagina entra por
+  // `paginaA` (um deslize curto na lista, nao no indice).
+  { static int secVista = -1;
+    int secAgora = secaoDe(focoOp);
+    if (secAgora != secVista) {
+      if (secVista >= 0) paginaA = 0.0f;
+      secVista = secAgora; scrollY = 0.0f; alvo = 0.0f;
+    } }
+  paginaA = ajustes_animacoes_reduzidas() ? 1.0f : anim_rampa(paginaA, 1.0f, dt, 220.0f);
   if (base - alvo > AJ_BASE - AJ_TOPO) alvo = base - (AJ_BASE - AJ_TOPO);
   if (topo - alvo < 0.0f)              alvo = topo;
   if (alvo < 0.0f) alvo = 0.0f;
@@ -2270,16 +2288,54 @@ static const char *textoValor(int op) {
     return o->valores[v] ? o->valores[v] : ""; }
 }
 
-static void desenhaLinha(int op, float y, float f) {
+// O ICONE DE CADA LINHA (dono, 20/09/2026). Nao ha um desenho por opcao — sao
+// 99 — e nem precisa: o icone diz de que FAMILIA a opcao e (reproducao,
+// legenda, audio, cartaz, conta...), e a familia e o que o olho procura numa
+// lista longa. Um icone por subsecao, com excecoes onde a opcao tem cara
+// propria.
+static const char *iconeOpcao(int op) {
+  switch (op) {
+    case AJ_LEG_LINGUA: return "legenda";
+    case AJ_AUD_LINGUA: case AJ_ATMOS: return "audio";
+    case AJ_FONTE_MANUAL: return "fontes";
+    case AJ_PAUSA_OVERLAY: return "pause";
+    case AJ_CW_LIGADO: case AJ_CW_FONTE: case AJ_CW_ESTILO: case AJ_CW_THUMB: case AJ_CW_BLUR_PROX:
+    case AJ_CW_FURTHEST: case AJ_CW_NAO_EXIBIDOS: case AJ_CW_ORDEM: return "avancar";
+    case AJ_DESCOBRIR: return "menu_search";
+    case AJ_FIL_LIMITE: case AJ_FIL_ORDEM: return "menu_library";
+    case AJ_IDIOMA: case AJ_ANIM: case AJ_RESOLUCAO: case AJ_TEMA: return "menu_settings";
+    case AJ_ADDONS: case AJ_STALKER_PORTAL: case AJ_STALKER_MAC: case AJ_STALKER_LIMPAR:
+    case AJ_XTREAM_SERVIDOR: case AJ_XTREAM_USUARIO: case AJ_XTREAM_SENHA: case AJ_XTREAM_LIMPAR: return "portal";
+    case AJ_TRAKT: case AJ_SIMKL: case AJ_SALVOS_DEST: return "recomendar";
+    case AJ_PERFIL_ATIVO: case AJ_SAIR: return "menu_profile";
+    case AJ_SYNC: return "fluxo";
+    case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_ENVIAR_LOG: return "menu_settings";
+    case AJ_ESPACO: case AJ_TEX_MB: return "aspecto";
+    case AJ_DET_TRAILER: case AJ_TMDB_TRAILERS: case AJ_PROF_TRAILERS: return "trailer";
+    case AJ_DET_BLUR_NAO_VISTOS: return "oculto";
+    default: break;
+  }
+  switch (secaoDe(op)) {
+    case 0: return "play";
+    case 1: return "menu_home";
+    case 2: return "avancar";
+    case 3: return "episodios";
+    case 4: return "aspecto";
+    case 5: return "menu_profile";
+    default: return "addon";
+  }
+}
+
+static void desenhaLinha(int op, float y, float f, float dx, float aPag) {
   if (y + AJ_LINHA_H < AJ_TOPO - 40.0f || y > AJ_BASE + 40.0f) return;
   // Some antes de cruzar o titulo da tela, como as secoes da pagina de detalhe:
   // texto passando por baixo de texto se le como borrao.
-  float a = anim_clamp((y - (AJ_TOPO - 70.0f)) / 60.0f, 0.0f, 1.0f);
+  float a = anim_clamp((y - (AJ_TOPO - 70.0f)) / 60.0f, 0.0f, 1.0f) * aPag;
   if (a <= 0.005f) return;
 
   int desligada = inativa(op);
   int podeMudar = mutavel(op);
-  GfxRect linha = { AJ_LISTA_X, y, AJ_LISTA_W, AJ_LINHA_H };
+  GfxRect linha = { AJ_LISTA_X + dx, y, AJ_LISTA_W, AJ_LINHA_H };
   // Mesmo vocabulário do menu: superfície escura, texto claro e foco explícito.
   gfx_cor(linha, AJ_RAIO, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, 0.34f * a);
   // FOCO = A LINHA PREENCHIDA COM A COR DE REALCE E O TEXTO ESCURO, sem anel.
@@ -2300,15 +2356,21 @@ static void desenhaLinha(int op, float y, float f) {
   // informacao, inativa e "isto existe mas depende de outra coisa".
   float aTexto = a * (desligada ? 0.65f : 1.0f);
   int cr = emFoco ? AJ_TEXTO_ESCURO : (podeMudar ? 240 : 192);
+  // O icone da familia, num disco discreto; sobre o foco claro ele escurece
+  // junto com o texto.
+  { float ci = emFoco ? 0.16f : 0.70f;
+    GfxRect disco = { linha.x + AJ_PAD - 6.0f, y + (AJ_LINHA_H - 44.0f) * 0.5f, 44.0f, 44.0f };
+    gfx_cor(disco, 0.5f, emFoco ? 0.0f : 1.0f, emFoco ? 0.0f : 1.0f, emFoco ? 0.0f : 1.0f, (emFoco ? 0.08f : 0.06f) * a);
+    gfx_icone((GfxRect){ disco.x + 10.0f, disco.y + 10.0f, 24.0f, 24.0f }, iconeOpcao(op), ci, ci, ci + 0.02f, aTexto); }
   TxtLinha rot = txt_linha_corta(TXT_CALLOUT, OPCOES[op].rotulo,
-                                cr, cr, cr, 255, AJ_LISTA_W - 420.0f);
-  txt_desenhar_alpha(rot, AJ_LISTA_X + AJ_PAD,
+                                cr, cr, cr, 255, AJ_LISTA_W - 480.0f);
+  txt_desenhar_alpha(rot, linha.x + AJ_PAD + 60.0f,
                      y + (AJ_LINHA_H - rot.h) * 0.5f, aTexto);
 
   const char *v = textoValor(op);
   int cv = emFoco ? AJ_TEXTO_ESCURO + 30 : (podeMudar ? 220 : 176);
   TxtLinha val = txt_linha_corta(TXT_CALLOUT, v, cv, cv, cv, 255, 360.0f);
-  float xDir = AJ_LISTA_X + AJ_LISTA_W - AJ_PAD;
+  float xDir = linha.x + AJ_LISTA_W - AJ_PAD;
   float valorDir = xDir - 36.0f;
   float vy = y + (AJ_LINHA_H - val.h) * 0.5f;
 
@@ -3123,6 +3185,123 @@ static float desenhaPainelImagens(float x, float y, float w) {
   return y - y0;
 }
 
+
+// PREVIA DESENHADA NO PAINEL DE AJUDA (dono, 20/09/2026: "icones e graficos no
+// que faltam"). Nao e imagem: sao as mesmas primitivas da tela, com o VALOR
+// ATUAL da opcao — mexer na opcao mexe no desenho na hora. So para o que tem
+// forma: tamanho e canto do cartaz, estilo do Continuar assistindo, limite de
+// fileiras, layout da home, qualidade maxima. Devolve a altura ocupada.
+static void previaCartaz(float x, float y, float w, float h, float raioPx, float ar, float ag, float ab, float a) {
+  float r = raioPx / (w < h ? w : h);
+  if (r > 0.5f) r = 0.5f;
+  gfx_cor((GfxRect){ x, y, w, h }, r, 0.30f, 0.32f, 0.38f, a);
+  // Um "poster" abstrato: faixa clara em cima, titulo em baixo.
+  gfx_cor((GfxRect){ x + w * 0.18f, y + h * 0.14f, w * 0.64f, h * 0.10f }, 0.5f, 0.86f, 0.87f, 0.90f, 0.35f * a);
+  gfx_cor((GfxRect){ x + w * 0.12f, y + h * 0.78f, w * 0.50f, h * 0.06f }, 0.5f, ar, ag, ab, 0.9f * a);
+}
+static float desenhaPrevia(int op, float x, float y, float w) {
+  float ar, ag, ab, y0 = y;
+  ajustes_acento(&ar, &ag, &ab);
+  switch (op) {
+    case AJ_LARGURA_DP: case AJ_RAIO_DP: {
+      // Tres cartazes no tamanho ESCOLHIDO (dp x 2 = px da tela), lado a lado
+      // como na fileira; o do meio com foco. A escala e 1:1 com a home ate
+      // caber na largura do painel.
+      float cw = (float)valor[AJ_LARGURA_DP] * 2.0f, ch = cw * 1.5f, gap = 18.0f;
+      float esc = (3.0f * cw + 2.0f * gap > w) ? w / (3.0f * cw + 2.0f * gap) : 1.0f;
+      float raio = ajustes_raio_poster_px() * esc;
+      int i;
+      cw *= esc; ch *= esc; gap *= esc;
+      if (ch > 300.0f) { esc = 300.0f / ch; cw *= esc; ch *= esc; gap *= esc; raio *= esc; }
+      for (i = 0; i < 3; i++) {
+        float px = x + (float)i * (cw + gap);
+        if (i == 1) gfx_cor((GfxRect){ px - 4.0f, y - 4.0f, cw + 8.0f, ch + 8.0f }, (raio + 4.0f) / (cw + 8.0f), ar, ag, ab, 0.95f);
+        previaCartaz(px, y, cw, ch, raio, ar, ag, ab, 1.0f);
+      }
+      { char t[80];
+        snprintf(t, sizeof t, i18n("%d px de largura · canto de %d px, como na home"), (int)(valor[AJ_LARGURA_DP] * 2), (int)ajustes_raio_poster_px());
+        TxtLinha l = txt_linha_corta(TXT_MINI, t, 130, 133, 142, 255, w);
+        txt_desenhar(l, x, y + ch + 10.0f);
+        return ch + 10.0f + l.h + 8.0f; }
+    }
+    case AJ_FIL_LIMITE: {
+      // Uma home em miniatura: heroi em cima e N fileiras, N = o limite.
+      int n = valor[AJ_FIL_LIMITE], i;
+      float mh = 300.0f, hero = 70.0f, fil = 22.0f, gap = 8.0f;
+      gfx_cor((GfxRect){ x, y, w, mh }, 12.0f / mh, 0.09f, 0.095f, 0.11f, 1.0f);
+      gfx_cor((GfxRect){ x + 12.0f, y + 12.0f, w - 24.0f, hero }, 8.0f / hero, 0.22f, 0.24f, 0.30f, 1.0f);
+      for (i = 0; i < n; i++) {
+        float fy = y + 12.0f + hero + 12.0f + (float)i * (fil + gap);
+        int k;
+        if (fy + fil > y + mh - 8.0f) break;
+        for (k = 0; k < 7; k++)
+          gfx_cor((GfxRect){ x + 12.0f + (float)k * ((w - 24.0f) / 7.0f), fy, (w - 24.0f) / 7.0f - 6.0f, fil },
+                  4.0f / fil, 0.28f, 0.30f, 0.36f, 1.0f);
+      }
+      { char t[80];
+        snprintf(t, sizeof t, i18n("%d fileiras abaixo do herói"), n);
+        TxtLinha l = txt_linha_corta(TXT_MINI, t, 130, 133, 142, 255, w);
+        txt_desenhar(l, x, y + mh + 10.0f);
+        return mh + 10.0f + l.h + 8.0f; }
+    }
+    case AJ_CW_ESTILO: {
+      // Os tres estilos, o escolhido em destaque: card (16:9 com texto
+      // embaixo), largo (16:9 com texto dentro), poster (2:3).
+      int est = valor[AJ_CW_ESTILO], i;
+      float cw = (w - 2.0f * 18.0f) / 3.0f;
+      for (i = 0; i < 3; i++) {
+        float px = x + (float)i * (cw + 18.0f), ch = i == 2 ? cw * 1.5f : cw * 0.5625f;
+        float al = (i == est) ? 1.0f : 0.35f;
+        if (i == est) gfx_cor((GfxRect){ px - 4.0f, y - 4.0f, cw + 8.0f, ch + 8.0f }, 12.0f / (cw + 8.0f), ar, ag, ab, 0.95f);
+        gfx_cor((GfxRect){ px, y, cw, ch }, 8.0f / (cw < ch ? cw : ch), 0.30f, 0.32f, 0.38f, al);
+        gfx_cor((GfxRect){ px + 10.0f, y + ch - 12.0f, cw * 0.5f, 4.0f }, 0.5f, ar, ag, ab, 0.9f * al);
+        if (i != 2 && i == 0) {
+          TxtLinha l = txt_linha(TXT_MINI, i18n("Título · T1E3"), 200, 203, 210, 255);
+          txt_desenhar_alpha(l, px, y + ch + 8.0f, al);
+        }
+      }
+      return cw * 1.5f + 8.0f + 30.0f;
+    }
+    case AJ_LANDSCAPE: case AJ_HERO_CHEIO: case AJ_HERO: {
+      // A home em miniatura com o heroi em tela cheia ou nao, e cartazes
+      // deitados ou em pe.
+      float mh = 300.0f;
+      int cheio = valor[AJ_HERO_CHEIO] == 0, deitado = valor[AJ_LANDSCAPE] == 0, semHero = valor[AJ_HERO] != 0, k;
+      float hero = semHero ? 0.0f : (cheio ? 150.0f : 96.0f);
+      gfx_cor((GfxRect){ x, y, w, mh }, 12.0f / mh, 0.09f, 0.095f, 0.11f, 1.0f);
+      if (!semHero) gfx_cor((GfxRect){ x + (cheio ? 0.0f : 12.0f), y + (cheio ? 0.0f : 12.0f), w - (cheio ? 0.0f : 24.0f), hero },
+                            (cheio ? 12.0f : 8.0f) / hero, 0.22f, 0.24f, 0.30f, 1.0f);
+      { float cw = deitado ? (w - 24.0f) / 4.0f - 8.0f : (w - 24.0f) / 6.0f - 8.0f;
+        float ch = deitado ? cw * 0.5625f : cw * 1.5f, fy = y + hero + 24.0f;
+        int n = deitado ? 4 : 6;
+        for (k = 0; k < n; k++)
+          if (fy + ch < y + mh - 8.0f)
+            gfx_cor((GfxRect){ x + 12.0f + (float)k * (cw + 8.0f), fy, cw, ch }, 6.0f / (cw < ch ? cw : ch), 0.28f, 0.30f, 0.36f, 1.0f); }
+      { TxtLinha l = txt_linha_corta(TXT_MINI,
+            semHero ? i18n("Sem herói: as fileiras sobem") : cheio ? i18n("Herói em tela cheia, fileiras por cima") : i18n("Herói contido, fileiras abaixo"),
+            130, 133, 142, 255, w);
+        txt_desenhar(l, x, y + mh + 10.0f);
+        return mh + 10.0f + l.h + 8.0f; }
+    }
+    case AJ_QUALIDADE: {
+      // Quatro barras, uma por resolucao; as que o teto deixa passar acesas.
+      static const char *R[] = { "720p", "1080p", "4K" };
+      int teto = valor[AJ_QUALIDADE], i;   // 0 auto, 1 4K, 2 1080p, 3 720p
+      float bw = (w - 2.0f * 14.0f) / 3.0f;
+      for (i = 0; i < 3; i++) {
+        int passa = teto == 0 || (teto == 1) || (teto == 2 && i <= 1) || (teto == 3 && i == 0);
+        float bh = 40.0f + (float)i * 40.0f, px = x + (float)i * (bw + 14.0f);
+        gfx_cor((GfxRect){ px, y + 120.0f - bh, bw, bh }, 6.0f / bw, passa ? ar : 0.30f, passa ? ag : 0.32f, passa ? ab : 0.38f, passa ? 0.9f : 0.6f);
+        { TxtLinha l = txt_linha(TXT_MINI, R[i], 200, 203, 210, 255);
+          txt_desenhar(l, px + (bw - l.w) * 0.5f, y + 128.0f); }
+      }
+      return 128.0f + 30.0f;
+    }
+    default: return 0.0f;
+  }
+  (void)y0;
+}
+
 void ajustes_desenhar(Uint32 agora) {
   // Fundo opaco proprio: a tela cobre tudo e nao pode depender de quem desenhou
   // antes dela — sem isto a home aparece entre as linhas da lista.
@@ -3188,6 +3367,11 @@ void ajustes_desenhar(Uint32 agora) {
     if (!focoIndice && focoOp == AJ_ESPACO) {
       hy += 22.0f;
       hy += desenhaPainelImagens(hx, hy, hw);
+    } else if (!focoIndice) {
+      float ph;
+      hy += 22.0f;
+      ph = desenhaPrevia(focoOp, hx, hy, hw);
+      hy += ph > 0.0f ? ph : -22.0f;
     }
     hy += 34.0f;
     // O RODAPE DE AJUDA DIZ O QUE FUNCIONA NO CONTROLE, e nao o que funciona no
@@ -3223,16 +3407,13 @@ void ajustes_desenhar(Uint32 agora) {
   gfx_recorte(AJ_LISTA_X - NV_ANEL_FOCO, AJ_TOPO,
                AJ_LISTA_W + NV_ANEL_FOCO * 2, AJ_BASE - AJ_TOPO);
   float y = AJ_TOPO - scrollY;
-  for (int s = 0; s < AJ_N_SECOES; s++) {
-    if (s) y += AJ_SEC_GAP;
-    // Cabecalho da secao: agora e o titulo GRANDE do grupo, e nao mais um
-    // rotulo cinza do tamanho de legenda. Com seis categorias no lugar de doze,
-    // cada uma cobre mais linhas e o cabecalho e o unico marco de onde um grupo
-    // comeca — em corpo de legenda ele passava despercebido do sofa.
-    float aC = anim_clamp((y - (AJ_TOPO - 70.0f)) / 60.0f, 0.0f, 1.0f);
+  float aPag = anim_suave(paginaA), dxPag = (1.0f - aPag) * 28.0f;
+  { int s = sec;
+    // Cabecalho da categoria: o titulo GRANDE, e o unico marco do grupo.
+    float aC = anim_clamp((y - (AJ_TOPO - 70.0f)) / 60.0f, 0.0f, 1.0f) * aPag;
     TxtLinha ts = txt_linha(TXT_HEADLINE, SECOES[s].titulo, 226, 228, 236, 255);
     if (aC > 0.005f && y < AJ_BASE)
-      txt_desenhar_alpha(ts, AJ_LISTA_X + AJ_PAD, y + AJ_SEC_CABEC - ts.h - 6.0f, aC);
+      txt_desenhar_alpha(ts, AJ_LISTA_X + AJ_PAD + dxPag, y + AJ_SEC_CABEC - ts.h - 6.0f, aC);
     y += AJ_SEC_CABEC;
     for (int k = 0; k < secN(s); k++) {
       int op = SECOES[s].ini + k;
@@ -3240,26 +3421,26 @@ void ajustes_desenhar(Uint32 agora) {
       if (sub) {
         // Rotulo do bloco mais um fio: sem o fio, um rotulo cinza no meio de
         // linhas escuras se le como mais uma linha desligada.
-        float aS = anim_clamp((y - (AJ_TOPO - 70.0f)) / 60.0f, 0.0f, 1.0f);
+        float aS = anim_clamp((y - (AJ_TOPO - 70.0f)) / 60.0f, 0.0f, 1.0f) * aPag;
         if (aS > 0.005f && y < AJ_BASE) {
           TxtLinha tsub = txt_linha(TXT_CAPTION, sub, 156, 159, 168, 255);
-          GfxRect fio = { AJ_LISTA_X + AJ_PAD + tsub.w + 18.0f,
+          GfxRect fio = { AJ_LISTA_X + AJ_PAD + tsub.w + 18.0f + dxPag,
                           y + AJ_SUB_CABEC - 18.0f,
                           AJ_LISTA_W - AJ_PAD * 2.0f - tsub.w - 18.0f, 1.0f };
-          txt_desenhar_alpha(tsub, AJ_LISTA_X + AJ_PAD,
+          txt_desenhar_alpha(tsub, AJ_LISTA_X + AJ_PAD + dxPag,
                              y + AJ_SUB_CABEC - tsub.h - 8.0f, aS);
           if (fio.w > 20.0f)
             gfx_cor(fio, 0.5f, 0.60f, 0.62f, 0.68f, 0.20f * aS);
         }
         y += AJ_SUB_CABEC;
       }
-      desenhaLinha(op, y, animFoco[op]);
+      desenhaLinha(op, y, animFoco[op], dxPag, aPag);
       y += AJ_LINHA_H + AJ_LINHA_GAP;
     }
   }
   gfx_sem_recorte();
 
-  float total = yDaOpcao(AJ_N - 1) + AJ_LINHA_H;
+  float total = yDaOpcao(SECOES[sec].ini + secN(sec) - 1) + AJ_LINHA_H;
   float janela = AJ_BASE - AJ_TOPO;
   if (total > janela) {
     float altura = janela * janela / total;

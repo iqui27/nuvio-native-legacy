@@ -189,6 +189,24 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-imagens.bmp", saida);
   captura(nome, w);
 
+  // AS PREVIAS DO PAINEL DE AJUDA (20/09/2026): tamanho do cartaz (categoria
+  // "Cartazes", penultima linha... a de largura) e limite de fileiras (Home,
+  // 3a linha). Cada uma desenhada com o valor atual.
+  tecla(SDLK_ESCAPE);
+  for (i = 0; i < 12; i++) tecla(SDLK_UP);
+  for (i = 0; i < 4; i++) tecla(SDLK_DOWN);   // Cartazes
+  tecla(SDLK_RETURN);
+  for (i = 0; i < 13; i++) tecla(SDLK_DOWN);   // Largura do item
+  snprintf(nome, sizeof nome, "%s-previa-cartaz.bmp", saida);
+  captura(nome, w);
+  tecla(SDLK_ESCAPE);
+  for (i = 0; i < 12; i++) tecla(SDLK_UP);
+  tecla(SDLK_DOWN);                            // Home
+  tecla(SDLK_RETURN);
+  tecla(SDLK_DOWN); tecla(SDLK_DOWN);          // Limite de fileiras
+  snprintf(nome, sizeof nome, "%s-previa-fileiras.bmp", saida);
+  captura(nome, w);
+
   tex_encerrar();
   txt_encerrar();
   gfx_encerrar();
