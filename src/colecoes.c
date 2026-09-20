@@ -407,8 +407,19 @@ static void lerColecaoWeb(const char *c, const char *ce) {
   }
 }
 
+// URL de fundo do Xperience com estilo escolhido: covers/<estilo>/ que nao e
+// o default. So o host e o sufixo importam; o nome do estilo e do CDN.
+static int xperienceEstilo(const char *url) {
+  const char *c;
+  if (!url || !strstr(url, "cdn.xperience-app.com/")) return 0;
+  c = strstr(url, "/covers/");
+  if (!c || !strstr(c, ".backdrop.")) return 0;
+  return strncmp(c, "/covers/default/", 16) != 0;
+}
+
 int col_definir_json(const char *json) {
   char *solto = NULL;
+  int fundosXp = 0;
   const char *arr, *fim;
   int antes = count, novas;
   if (!json || !*json) return 0;
@@ -477,9 +488,26 @@ int col_definir_json(const char *json) {
       //                 Descartar a URL da conta aqui seria jogar fora a unica
       //                 animacao que existe, sem nada no lugar.
       if (!v.frames) snprintf(v.focusGif, sizeof v.focusGif, "%s", folders[i].focusGif);
+      // FUNDO ESCOLHIDO NO XPERIENCE (19/09/2026). O CDN passou a ter 17
+      // estilos de fundo por marca, em covers/<estilo>/<pasta>.backdrop.webp
+      // (3840x2160), e quem escolhe e o dono, no Xperience, por pasta ou por
+      // colecao inteira. A escolha chega aqui como heroBackdropUrl. Ate entao
+      // a versao do pacote ganhava sempre — e o hero.jpg importado E o fundo
+      // "default", o degrade chapado. Estilo escolhido e intencao expressa:
+      // vence o pacote, inclusive o par cinematic, e desliga o modo editorial
+      // para o heroi desenhar full-bleed com a logo da marca por cima, que e
+      // como esses fundos foram feitos para aparecer. "default" nao e escolha:
+      // fica o pacote, que nao precisa baixar nada.
+      if (xperienceEstilo(folders[i].hero)) {
+        snprintf(v.hero, sizeof v.hero, "%s", folders[i].hero);
+        v.editorial = 0;
+        v.detailHero[0] = 0;
+        fundosXp++;
+      }
       folders[i] = v; casadas++; break;
     }
-    printf("[colecoes] %d pastas da conta casaram com a arte do pacote\n", casadas);
+    printf("[colecoes] %d pastas da conta casaram com a arte do pacote, %d com fundo escolhido no Xperience\n",
+           casadas, fundosXp);
   }
   free(antigas);
   if (!novas) {
