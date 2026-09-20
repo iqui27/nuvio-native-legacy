@@ -27,5 +27,9 @@ int  sintro_aberto(void);
 void sintro_evento(const SDL_Event *e);
 void sintro_atualizar(float dt, Uint32 agora);
 void sintro_desenhar(Uint32 agora);
+// O BOTAO QUE ABRE, desenhado: disco azul na LG, metade de cima do rocker de
+// canal na Samsung. O toast de avisos usa o mesmo desenho — a mesma tecla, o
+// mesmo glifo, em todo lugar que a nomeia.
+void sintro_tecla_atalho(float x, float y, float lado, float a);
 
 #endif

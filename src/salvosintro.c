@@ -168,7 +168,7 @@ void sintro_atualizar(float dt, Uint32 agora) {
 // e colorida na fileira de cores; na Samsung e a metade de cima de um rocker
 // retangular. Desenhar um circulo azul para quem tem um One Remote seria
 // mandar a pessoa procurar o que nao existe no controle dela.
-static void desenhaTeclaAtalho(float x, float y, float lado, float a) {
+void sintro_tecla_atalho(float x, float y, float lado, float a) {
 #ifdef __EMSCRIPTEN__
   // Rocker de canal: retangulo alto, com o "+" em cima e "CH" embaixo — que e
   // a leitura de cima para baixo do proprio botao.
@@ -291,7 +291,7 @@ void sintro_desenhar(Uint32 agora) {
   // pilula do Trakt e a linha dos Ajustes saiu cortada pela borda do cartao.
   { const float lado = 46.0f, rec = 62.0f;
     float alturaTexto;
-    desenhaTeclaAtalho(x, y - 2.0f, lado, a);
+    sintro_tecla_atalho(x, y - 2.0f, lado, a);
     alturaTexto = txt_bloco(TXT_CAPTION,
 #ifdef __EMSCRIPTEN__
           "Depois, o botão CANAL + abre sua lista quando quiser.",

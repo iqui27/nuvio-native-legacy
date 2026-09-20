@@ -10,6 +10,8 @@
 #include "ajustes.h"
 #include "recomenda.h"
 #include "atualizacao.h"
+#include "salvosintro.h"
+#include <math.h>
 #include "agenda.h"
 #include "sessao.h"
 #include "trakt.h"
@@ -29,9 +31,16 @@
 
 // O canal do dono: um arquivo no proprio repositorio. Sem servidor novo e sem
 // segredo: qualquer um pode ler, e e essa a intencao de um aviso.
-// -DAV_CANAL_URL=... na compilacao aponta para outro canal: e como se olha um
-// aviso antes de publica-lo para todo mundo (previa no Mac ou na TV do dono).
-#ifndef AV_CANAL_URL
+// -DAV_CANAL_HOST=192.168.1.181:8793 na compilacao aponta para outro canal
+// (http://<host>/avisos.json): e como se olha um aviso antes de publica-lo para
+// todo mundo — previa no Mac ou na TV do dono. Host e nao URL porque a URL
+// inteira nao atravessa o docker do tools/arm.sh (as aspas nao chegam) e um
+// "//" num -D vira comentario para o pre-processador.
+#define NV_STR2(x) #x
+#define NV_STR(x) NV_STR2(x)
+#ifdef AV_CANAL_HOST
+#define AV_CANAL_URL "http://" NV_STR(AV_CANAL_HOST) "/avisos.json"
+#else
 #define AV_CANAL_URL "https://raw.githubusercontent.com/iqui27/nuvio-native-legacy/master/avisos.json"
 #endif
 #define AV_CANAL_INTERVALO_MS (30u * 60u * 1000u)
@@ -40,7 +49,9 @@
 #define AV_MARCA_ARQ  "sessao-viva.txt"
 #define AV_LOG_ANTERIOR "/tmp/nuvio-anterior.log"
 #define AV_REGISTRO_MAX (200 * 1024)
-#define AV_TOAST_MS   6000.0f
+// 20 s, nao 6 (dono, 20/09/2026: "teria que ficar mais tempo"). Quem esta
+// olhando um card do outro lado da tela leva um tempo para notar o canto.
+#define AV_TOAST_MS   20000.0f
 
 enum { AV_REC, AV_AGENDA, AV_UPDATE, AV_CANAL, AV_CRASH };
 typedef struct {
@@ -627,30 +638,36 @@ static const char *icone(int tipo) {
   }
 }
 
-static void desenharToast(void) {
-  // UMA LINHA, sem icone grande: "1 aviso novo · AZUL abre" com um ponto na
-  // cor de acento. A primeira versao tinha um disco de 48 px e duas linhas e
-  // pesava mais que o card ao lado (o dono: "deixa mais elegante").
-  char txt[120], dica[40];
+static void desenharToast(Uint32 agora) {
+  // UMA LINHA: "[•] 1 aviso novo  [tecla] abre". A tecla e DESENHADA (o disco
+  // azul da LG, o rocker CH+ da Samsung), nao escrita — o mesmo glifo do cartao
+  // de Salvos, pelo mesmo motivo: "AZUL" e uma cor a procurar entre quatro.
+  //
+  // PULSA na cor de acento (dono: "meio que piscar com a cor pra chamar
+  // atencao"): um anel de 2 px em volta e o ponto respiram a ~1 Hz. Sem
+  // piscar de verdade — ligar/desligar num canto de TV le como defeito; a
+  // respiracao le como "tem algo aqui".
+  char txt[120];
   TxtLinha t1, t2;
-  float w, h = 58.0f, x, y, ar, ag, ab;
+  float w, h = 58.0f, x, y, ar, ag, ab, pulso, lado = 30.0f;
   if (toastA < 0.01f) return;
   ajustes_acento(&ar, &ag, &ab);
+  pulso = 0.5f + 0.5f * sinf((float)agora * (2.0f * 3.14159265f / 1100.0f));
   snprintf(txt, sizeof txt, toastN == 1 ? i18n("%d aviso novo") : i18n("%d avisos novos"), toastN);
-#ifdef __EMSCRIPTEN__
-  snprintf(dica, sizeof dica, "%s", i18n("CH+ abre"));
-#else
-  snprintf(dica, sizeof dica, "%s", i18n("AZUL abre"));
-#endif
   t1 = txt_linha(TXT_CAPTION, txt, 240, 242, 247, 255);
-  t2 = txt_linha(TXT_CAPTION, dica, 150, 153, 162, 255);
-  w = 24.0f + 10.0f + 14.0f + t1.w + 18.0f + t2.w + 24.0f;
+  t2 = txt_linha(TXT_CAPTION, i18n("abre"), 150, 153, 162, 255);
+  w = 48.0f + t1.w + 22.0f + lado + 10.0f + t2.w + 24.0f;
   x = NV_TELA_W - 80.0f - w;
   y = NV_TELA_H - 72.0f - h + (1.0f - toastA) * 24.0f;
-  gfx_cor((GfxRect){ x, y, w, h }, 0.5f, 0.106f, 0.110f, 0.122f, 0.94f * toastA);
-  gfx_cor((GfxRect){ x + 24.0f, y + (h - 10.0f) * 0.5f, 10.0f, 10.0f }, 0.5f, ar, ag, ab, toastA);
+  // Anel de acento respirando, por fora da pilula.
+  gfx_cor((GfxRect){ x - 2.0f, y - 2.0f, w + 4.0f, h + 4.0f }, 0.5f, ar, ag, ab,
+          (0.25f + 0.55f * pulso) * toastA);
+  gfx_cor((GfxRect){ x, y, w, h }, 0.5f, 0.106f, 0.110f, 0.122f, 0.96f * toastA);
+  { float d = 10.0f + 4.0f * pulso;
+    gfx_cor((GfxRect){ x + 24.0f + (10.0f - d) * 0.5f, y + (h - d) * 0.5f, d, d }, 0.5f, ar, ag, ab, toastA); }
   txt_desenhar_alpha(t1, x + 48.0f, y + (h - t1.h) * 0.5f, toastA);
-  txt_desenhar_alpha(t2, x + 48.0f + t1.w + 18.0f, y + (h - t2.h) * 0.5f, toastA);
+  sintro_tecla_atalho(x + 48.0f + t1.w + 22.0f, y + (h - lado) * 0.5f, lado, toastA);
+  txt_desenhar_alpha(t2, x + 48.0f + t1.w + 22.0f + lado + 10.0f, y + (h - t2.h) * 0.5f, toastA);
 }
 
 // A LISTA, desenhada dentro de qualquer caixa: o painel proprio usa, e a aba
@@ -774,7 +791,7 @@ void avisos_marcar_lidos(void) {
 void avisos_desenhar(Uint32 agora) {
   float a = anim_clamp(entrada, 0.0f, 1.0f), dx;
   if (toastPendente && !aberto && !cartao) { toastPendente = 0; toastAte = (float)agora + AV_TOAST_MS; }
-  if (!cartao) desenharToast();
+  if (!cartao) desenharToast(agora);
   if (a < 0.01f) { cartaoDesenhar(); return; }
   dx = (1.0f - a) * 80.0f;
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.45f * a);
