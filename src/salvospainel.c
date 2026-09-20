@@ -924,6 +924,22 @@ static void desenhaRecLinha(int linha, int idx, float dx, float y, float a) {
 // e uma textura GL por quadro — estourado o orcamento, a linha simplesmente
 // NAO E DESENHADA (ver a nota longa em ctxmenu.c). O foco aparece no anel, que
 // e geometria e nao custa texto.
+// Largura da faixa de abas, para a contagem do cabecalho parar antes dela.
+static float abasLargura(void) {
+  const char *rot[3]; int i; float w = 0.0f;
+  int novasRec = recomenda_n_novas(), novasAv = avisos_n_novos();
+  rot[SP_ABA_SALVOS] = "SALVOS"; rot[SP_ABA_SOCIAL] = "SOCIAL"; rot[SP_ABA_AVISOS] = "AVISOS";
+  for (i = 0; i < 3; i++) {
+    int ativa = (i == aba);
+    int novas = i == SP_ABA_SOCIAL ? novasRec : i == SP_ABA_AVISOS ? novasAv : 0;
+    TxtLinha t;
+    if (i == SP_ABA_SOCIAL && !temSocial()) continue;
+    t = txt_linha(TXT_CALLOUT, i18n(rot[i]), 176, 176, 176, 255);
+    w += t.w + 44.0f + ((!ativa && novas > 0) ? 34.0f : 0.0f) + SP_ABA_GAP;
+  }
+  return w;
+}
+
 static void desenhaAbas(float dx, float a) {
   const char *rot[3];
   float x = SP_X + dx + SP_PAD;
@@ -942,7 +958,11 @@ static void desenhaAbas(float dx, float a) {
     // O selo so aparece na aba que NAO esta aberta. Ele responde "ha algo
     // novo la?"; com a aba Social na tela, a propria lista responde isso, e o
     // numero ficaria repetido a dois centimetros da contagem do cabecalho.
-    float selo = (!ativa && novas > 0) ? 44.0f : 0.0f;
+    // O SELO E PEQUENO E MORA DENTRO DA PILULA (dono, 20/09/2026: "o numero
+    // ta feio, menos amador"): 24 px, numeral TXT_MINI, 10 px depois do
+    // rotulo, e a pilula cresce para ele — antes eram 32 px encostados na
+    // borda, e a contagem do cabecalho vinha logo atras sem folga.
+    float selo = (!ativa && novas > 0) ? 34.0f : 0.0f;
     GfxRect p = { x, SP_ABAS_Y, t.w + 44.0f + selo, SP_ABAS_H };
     // FOCO EM SUPERFICIE ESCURA, nunca pilula branca com texto preto: a nota
     // de NV_COR_FOCO em layout.h chama isso de o padrao errado, e perfilsel.c
@@ -972,9 +992,9 @@ static void desenhaAbas(float dx, float a) {
       // da 2,27:1 de contraste — abaixo dos 3:1 que a propria AA pede ate
       // para texto GRANDE, e este numeral tem 21px a tres metros. Escuro da
       // 7,6:1 e e o que faz o selo ler como um selo, e nao como uma mancha.
-      tn = txt_linha(TXT_CAPTION2, n, 12, 26, 16, 255);
-      b.w = 32.0f; b.h = 32.0f;
-      b.x = x + 22.0f + t.w + 12.0f;
+      tn = txt_linha(TXT_MINI, n, 12, 26, 16, 255);
+      b.w = 24.0f; b.h = 24.0f;
+      b.x = x + 22.0f + t.w + 10.0f;
       b.y = SP_ABAS_Y + (SP_ABAS_H - b.h) * 0.5f;
       // VERDE #66bb6a — o mesmo EMERALD que ja esta na paleta de acentos
       // (ajustes.c:204), e nao um verde novo inventado para este selo.
@@ -1352,10 +1372,18 @@ void spainel_desenhar(Uint32 agora) {
   // COM ABAS a contagem vai para a DIREITA da propria linha de abas, e nao
   // numa linha solta acima delas: sozinha la em cima ela lia como um titulo
   // orfao, que foi a primeira coisa que saltou na foto ampliada.
-  { TxtLinha t = txt_linha(TXT_CAPTION2, buf, 160, 164, 175, 255);
-    if (temAbas())
-      txt_desenhar_alpha(t, SP_X + x + SP_W - SP_PAD - t.w,
-                         SP_ABAS_Y + (SP_ABAS_H - t.h) * 0.5f, a * 0.95f);
+  { // Nunca por cima das abas: o que nao cabe entre a faixa e a borda sai
+    // com reticencias, em vez de a contagem colar no selo (foto de 20/09).
+    float sobra = SP_W - 2.0f * SP_PAD - (temAbas() ? abasLargura() + 24.0f : 0.0f);
+    TxtLinha t = txt_linha(TXT_CAPTION2, buf, 160, 164, 175, 255);
+    // Com tres abas nao sobra lugar para a contagem na mesma linha: ela
+    // SOME em vez de sair cortada ("124 titles · 2 to…" nao diz nada). A
+    // informacao continua na propria lista.
+    if (temAbas()) {
+      if (t.w <= sobra)
+        txt_desenhar_alpha(t, SP_X + x + SP_W - SP_PAD - t.w,
+                           SP_ABAS_Y + (SP_ABAS_H - t.h) * 0.5f, a * 0.95f);
+    }
     else
       txt_desenhar_alpha(t, SP_X + x + SP_PAD, SP_Y + 38.0f, a * 0.95f); }
   if (temAbas()) desenhaAbas(x, a);
