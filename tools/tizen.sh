@@ -143,6 +143,18 @@ if [ -n "${NUVIO_LOG_URL:-}" ]; then
   sed "s|@NUVIO_LOG_URL@|${NUVIO_LOG_URL}|" tools/tizen-shell.html > "$SHELL_USADO"
   echo "tizen.sh: log sera enviado para $NUVIO_LOG_URL"
 fi
+# BUILD DE DIAGNOSTICO: NUVIO_DIAG_TOKEN (o DIAG_TOKEN do worker de
+# recomendacoes) arma no shell o envio automatico do registro para
+# NUVIO_REC_URL/v1/registro. Nunca na release: ver a nota em tizen-shell.html.
+if [ -n "${NUVIO_DIAG_TOKEN:-}" ]; then
+  PROP="${NUVIO_PROPERTIES:-$(cd "$(dirname "$0")/../.." && pwd)/NuvioWeb-0.3.38-beta/local.properties}"
+  REC_URL=$(sed -n 's/^[[:space:]]*NUVIO_REC_URL[[:space:]]*=[[:space:]]*//p' "$PROP" | head -1 | tr -d '\r"')
+  [ -n "$REC_URL" ] || { echo "tizen.sh: NUVIO_REC_URL ausente no local.properties" >&2; exit 1; }
+  DIAG_SHELL="$SAIDA/shell-diag.html"
+  sed -e "s|@NUVIO_DIAG_TOKEN@|${NUVIO_DIAG_TOKEN}|" -e "s|@NUVIO_REC_URL@|${REC_URL}|" "$SHELL_USADO" > "$DIAG_SHELL"
+  SHELL_USADO="$DIAG_SHELL"
+  echo "tizen.sh: BUILD DE DIAGNOSTICO — registro sobe sozinho para $REC_URL"
+fi
 
 eval emcc src/*.c -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} \
   -sWASM_BIGINT=0 \

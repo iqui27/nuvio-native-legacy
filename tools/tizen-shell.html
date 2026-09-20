@@ -226,6 +226,56 @@
       localStorage.setItem('nv-boot-falhas', String(nvFalhas + 1));
     } catch (e) {}
     window.__nvApagarCache = nvFalhas >= 2;
+    // BUILD DE DIAGNOSTICO (dono, 20/09/2026, para o #77: "manda uma build que
+    // ja manda os logs pra gente"). So existe quando tizen.sh recebeu
+    // NUVIO_DIAG_TOKEN: o placeholder fica no arquivo e nada disto arma. Com
+    // ela, o registro da sessao ANTERIOR sobe no arranque (e o da sessao que
+    // travou) e o desta sessao sobe a cada 30 s e ao sair — sem botao, e por
+    // isso so numa build entregue a quem pediu, nunca na release. O token so
+    // serve para gravar registro (ver servidor/recomendacoes, X-Nuvio-Auth:
+    // diagnostico).
+    var DIAG_TOKEN = "@NUVIO_DIAG_TOKEN@", DIAG_URL = "@NUVIO_REC_URL@";
+    var diagLiga = DIAG_TOKEN.charAt(0) !== "@" && DIAG_URL.charAt(0) !== "@";
+    var diagUltimo = "";
+    function nvDiagEnviar(texto, quando) {
+      if (!diagLiga || !texto || texto === diagUltimo) return;
+      diagUltimo = texto;
+      var tv = (navigator.userAgent.match(/Tizen [0-9.]+|SMART-TV[^;)]*/g) || ["tizen"]).join("_").replace(/\s+/g, "");
+      try {
+        fetch(DIAG_URL + "/v1/registro", {
+          method: "POST", keepalive: true,
+          headers: { "Authorization": "Bearer " + DIAG_TOKEN, "X-Nuvio-Auth": "diagnostico",
+                     "Content-Type": "application/json" },
+          body: JSON.stringify({ versao: "1.3.4-diag", plataforma: "tizen", quando: quando,
+                                 texto: texto.slice(-200 * 1024), tv: tv, falhas: nvFalhas })
+        }).catch(function () {});
+      } catch (e) {}
+    }
+    if (diagLiga) {
+      try {
+        var ant = localStorage.getItem('nv-log-anterior') || '';
+        if (ant) nvDiagEnviar(ant, 'anterior ' + new Date().toISOString().slice(0, 16) + ' falhas=' + nvFalhas);
+      } catch (e) {}
+      // PING DE ARRANQUE, antes de o wasm carregar: se a TV travar nos
+      // primeiros segundos, isto e o que chega — UA, memoria e o contador.
+      nvDiagEnviar('arranque ' + navigator.userAgent + ' | deviceMemory=' + (navigator.deviceMemory || '?') +
+                   ' | cores=' + (navigator.hardwareConcurrency || '?') + ' | falhas=' + nvFalhas,
+                   'arranque ' + new Date().toISOString().slice(0, 16));
+      // Aos 5 s vai o comeco do registro desta sessao (as linhas NV-DIAG e o
+      // arranque do C); depois, a cada 20 s, o registro inteiro.
+      setTimeout(function () {
+        nvLogGravar();
+        try { nvDiagEnviar(localStorage.getItem('nv-log') || '', 'inicio ' + new Date().toISOString().slice(0, 16)); } catch (e) {}
+      }, 5000);
+      setInterval(function () {
+        nvLogGravar();
+        try { nvDiagEnviar(localStorage.getItem('nv-log') || '', 'auto ' + new Date().toISOString().slice(0, 16)); } catch (e) {}
+      }, 20000);
+      window.addEventListener('pagehide', function () {
+        nvLogGravar();
+        try { nvDiagEnviar(localStorage.getItem('nv-log') || '', 'saida ' + new Date().toISOString().slice(0, 16)); } catch (e) {}
+      });
+    }
     function pintar() {
       if (painel && !painel.hidden) painel.innerHTML = linhas.join("\n");
     }

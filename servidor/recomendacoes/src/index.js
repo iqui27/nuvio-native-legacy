@@ -24,10 +24,19 @@ const CODIGO_ABC = "abcdefghijkmnpqrstuvwxyz23456789"; // sem l/o/0/1
 
 const agora = () => Math.floor(Date.now() / 1000);
 
+// CORS aberto: o cliente e o app na TV (o .wgt dispensa a checagem, mas o
+// mesmo codigo roda no Chrome de mesa nos testes) e nenhuma rota responde
+// nada sem o Bearer — a origem nao e o que protege aqui.
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "authorization, content-type, x-nuvio-auth, if-none-match",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "cross-origin-resource-policy": "cross-origin",
+};
 function json(dados, status = 200, extra = {}) {
   return new Response(JSON.stringify(dados), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8", ...extra },
+    headers: { "content-type": "application/json; charset=utf-8", ...CORS, ...extra },
   });
 }
 const erro = (msg, status) => json({ erro: msg }, status);
@@ -497,7 +506,24 @@ export default {
     const url = new URL(req.url);
     const rota = url.pathname;
 
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     if (rota === "/v1/saude") return json({ ok: 1, t: agora() });
+
+    // BUILD DE DIAGNOSTICO (#77, 20/09/2026): uma TV que nao chega nem ao
+    // login nao tem sessao nem Trakt para assinar o envio, e o dono pediu uma
+    // build que manda o registro sozinha. Ela vem com o token DIAG_TOKEN
+    // (segredo do worker) e so pode fazer ISTO: gravar registro sob a pessoa
+    // "diag:<marca da TV>". Nenhuma outra rota aceita esse token.
+    if (rota === "/v1/registro" && req.method === "POST" &&
+        (req.headers.get("x-nuvio-auth") || "").toLowerCase() === "diagnostico") {
+      const aut = req.headers.get("authorization") || "";
+      const token = aut.startsWith("Bearer ") ? aut.slice(7).trim() : "";
+      if (!env.DIAG_TOKEN || !token || token !== env.DIAG_TOKEN) return erro("nao autenticado", 401);
+      let corpo = {};
+      try { corpo = JSON.parse((await req.text()).trim() || "{}"); } catch { return erro("json invalido", 400); }
+      const tv = String(corpo?.tv || "?").replace(/[^\w.:-]/g, "").slice(0, 64);
+      return rotaRegistro(env, { id: "diag:" + tv }, corpo);
+    }
 
     const quemBruto = await quemE(req, env);
     if (!quemBruto) return erro("nao autenticado", 401);
