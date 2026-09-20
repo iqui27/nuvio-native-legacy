@@ -73,6 +73,37 @@ static int  pediuCodigo;
 // Crash da sessao anterior e envio do registro.
 static int   crashDetectado;
 static char  crashQuando[40];
+#ifdef __EMSCRIPTEN__
+// O LOG DA SESSAO ANTERIOR NO TIZEN. Nao ha arquivo: tools/tizen-shell.html
+// guarda as linhas do Module.print em localStorage (nv-log) e, no arranque
+// seguinte, gira para nv-log-anterior. E lido AQUI, no fio principal (o
+// unico com localStorage), em avisos_iniciar; enviarRegistro roda num
+// pthread e so pode usar o que ja esta na memoria. Ate a 1.3.3 o crash da
+// Samsung chegava com 0 bytes de texto — os 5 de #72 nao disseram nada.
+static char *logAnterior;
+#include <emscripten.h>
+static void lerLogAnterior(void) {
+  char *js = (char *)EM_ASM_PTR({
+    try {
+      var t = localStorage.getItem('nv-log-anterior') || '';
+      if (t.length > $0) t = t.slice(t.length - $0);
+      // TextEncoder e nao stringToUTF8: os helpers do runtime nao estao
+      // exportados neste build (so PThread), e com ASSERTIONS chamar um
+      // deles aborta.
+      var b = new TextEncoder().encode(t);
+      var p = _malloc(b.length + 1);
+      if (!p) return 0;
+      HEAPU8.set(b, p);
+      HEAPU8[p + b.length] = 0;
+      return p;
+    } catch (e) { return 0; }
+  }, AV_REGISTRO_MAX);
+  logAnterior = js;
+  if (logAnterior && !logAnterior[0]) { free(logAnterior); logAnterior = NULL; }
+  printf("[avisos] log da sessao anterior: %u bytes\n",
+         logAnterior ? (unsigned)strlen(logAnterior) : 0u);
+}
+#endif
 static int   envioEstado;       // 0 nada, 1 enviando, 2 ok, 3 falhou
 static pthread_t fioEnvio;
 
@@ -220,6 +251,9 @@ static void *enviarRegistro(void *u) {
   size_t nTexto = 0;
   int status = 0;
   (void)u;
+#ifdef __EMSCRIPTEN__
+  if (logAnterior) { texto = strdup(logAnterior); if (texto) nTexto = strlen(texto); }
+#else
   { FILE *f = fopen(AV_LOG_ANTERIOR, "rb");
     if (f) {
       long tam;
@@ -229,6 +263,7 @@ static void *enviarRegistro(void *u) {
       if (texto) { nTexto = fread(texto, 1, AV_REGISTRO_MAX, f); texto[nTexto] = 0; }
       fclose(f);
     } }
+#endif
   if (!idHead(cab, aut, sizeof aut, via, sizeof via, chave, sizeof chave)) {
     free(texto); envioEstado = 3; return NULL;
   }
@@ -343,6 +378,9 @@ void avisos_iniciar(void) {
     free(m);
     printf("[avisos] a sessao anterior (%s, %s) nao se despediu: marca presente\n", v, crashQuando);
     fflush(stdout);
+#ifdef __EMSCRIPTEN__
+    lerLogAnterior();
+#endif
     { char id[72], tit[160], txt[420];
       snprintf(id, sizeof id, "crash:%s", crashQuando);
       snprintf(tit, sizeof tit, "%s", i18n("O app fechou sozinho"));

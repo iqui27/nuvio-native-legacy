@@ -184,6 +184,30 @@
     // segundo mecanismo de coleta daria dois logs que discordam.
     var nvLinhas = [];
     window.__nvLinhas = nvLinhas;
+    // O LOG SOBREVIVE AO CRASH, em localStorage. Sem arquivo nesta TV, o
+    // "Enviar registro" da Samsung mandava versao, plataforma e data — e nada
+    // mais (os 5 crashes de #72 chegaram com 0 bytes). Aqui: nv-log recebe as
+    // linhas desta sessao (ultimos 200 KB, gravado a cada 2 s e ao esconder
+    // a pagina); no arranque, o que havia vira nv-log-anterior, que
+    // src/avisos.c le pelo fio principal. Perde-se no maximo 2 s antes de
+    // uma morte subita — o que interessa e o que veio antes.
+    var nvLogTam = 0, nvLogPartes = [], nvLogSujo = false, NV_LOG_MAX = 200 * 1024;
+    try {
+      localStorage.setItem('nv-log-anterior', localStorage.getItem('nv-log') || '');
+      localStorage.setItem('nv-log', '');
+    } catch (e) {}
+    function nvLogGravar() {
+      if (!nvLogSujo) return;
+      nvLogSujo = false;
+      try {
+        var t = nvLogPartes.join('\n');
+        if (t.length > NV_LOG_MAX) { t = t.slice(t.length - NV_LOG_MAX); nvLogPartes = [t]; nvLogTam = t.length; }
+        localStorage.setItem('nv-log', t);
+      } catch (e) {}
+    }
+    setInterval(nvLogGravar, 2000);
+    document.addEventListener('visibilitychange', nvLogGravar);
+    window.addEventListener('pagehide', nvLogGravar);
     function pintar() {
       if (painel && !painel.hidden) painel.innerHTML = linhas.join("\n");
     }
@@ -207,6 +231,8 @@
       // que ninguem le.
       nvLinhas.push(txt);
       if (nvLinhas.length > 200) nvLinhas.splice(0, nvLinhas.length - 200);
+      nvLogPartes.push(txt); nvLogTam += txt.length + 1; nvLogSujo = true;
+      if (nvLogTam > NV_LOG_MAX * 2) { var j = nvLogPartes.join('\n').slice(-NV_LOG_MAX); nvLogPartes = [j]; nvLogTam = j.length; }
       linhas.push(erro ? '<span class="e">' + txt + "</span>" : txt);
       // So as ultimas 34 linhas: a tela da TV nao tem mais que isso e o que
       // importa e o FIM, onde o arranque parou.
