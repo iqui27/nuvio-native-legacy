@@ -10,9 +10,10 @@
 # (createImageBitmap, canvas 2D). O script compila e SERVE; abra a URL e leia o
 # console. Passou quando aparecem, nesta ordem:
 #
-#   [webp] navegador decodificou o primeiro: 1477x980
+#   [webp] navegador decodificou o primeiro: 1477x980 (image/webp), no worker
 #   ok  webp 1477x980 formato=ABGR8888
 #       pixel central rgba=229,9,19,255
+#   ok  webp reduzido 320x212 (arquivo 1477x980)
 #   webp: tudo ok
 #   ok  jpeg 320x180 (arquivo 640x360)
 #   ok  jpeg inteiro 640x360
@@ -38,6 +39,8 @@ emcc tests/webp_tizen.c src/webp.c src/jpegrapido.c -o "$SAIDA/index.html" -O1 \
   --preload-file tests/amostra.webp@/amostra.webp \
   --preload-file tests/amostra.jpg@/amostra.jpg \
   --preload-file "$SAIDA/nao-e-webp.txt"@/nao-e-webp.txt
+
+cp tools/decodificador.js "$SAIDA/decodificador.js"
 
 PORTA=${NUVIO_PORTA:-8791}
 echo "webp-tizen.sh: http://127.0.0.1:$PORTA/  (Ctrl-C para parar)"

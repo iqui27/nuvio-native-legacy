@@ -28,6 +28,16 @@ static void *fioDeDecode(void *arg) {
     printf("    pixel central rgba=%d,%d,%d,%d\n", p[0], p[1], p[2], p[3]);
   }
   SDL_FreeSurface(s);
+  // WEBP REDUZIDO PELO NAVEGADOR: pedido a 320 sai 320 e diz o tamanho do
+  // arquivo. E o caminho dos fundos 3840x2160 do Xperience no Tizen.
+  { int ow = 0, oh = 0;
+    SDL_Surface *r = webp_carregar_larg("/amostra.webp", 320, &ow, &oh);
+    if (!r) printf("FALHOU: webp reduzido devolveu NULL\n");
+    else {
+      printf("%s webp reduzido %dx%d (arquivo %dx%d)\n",
+             (r->w == 320 && ow == 1477 && oh == 980) ? "ok " : "FALHOU:", r->w, r->h, ow, oh);
+      SDL_FreeSurface(r);
+    } }
   // Nao e WebP: NULL sem alarde, o mesmo contrato do teste nativo.
   if (webp_carregar("/nao-e-webp.txt") != NULL) printf("FALHOU: aceitou nao-webp\n");
   else printf("webp: tudo ok\n");

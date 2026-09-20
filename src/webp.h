@@ -8,6 +8,13 @@
 // Superficie ABGR8888 nova (o chamador libera) ou NULL quando nao e WebP, a
 // lib nao existe ou a decodificacao falhou. Nunca imprime em caso "nao e WebP".
 SDL_Surface *webp_carregar(const char *caminho);
+// A mesma coisa JA REDUZIDA a `largMax` de largura quando o arquivo e maior
+// (0 = tamanho cheio). `ow`/`oh` recebem o tamanho do ARQUIVO, que e o que
+// tex_cache guarda em fonteW para decidir promocao. Na LG a reducao acontece
+// dentro da libwebp (use_scaling); no Tizen, no canvas do navegador. Nos dois
+// o bloco RGBA em tamanho cheio nunca existe — e o que importa para um fundo
+// de 3840x2160 (33 MB cheio, 8 MB a 1920).
+SDL_Surface *webp_carregar_larg(const char *caminho, int largMax, int *ow, int *oh);
 
 #ifdef __EMSCRIPTEN__
 // A PONTE PARA O DECODIFICADOR DO NAVEGADOR, para qualquer formato que ele

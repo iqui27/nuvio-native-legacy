@@ -1219,8 +1219,9 @@ static int threadDecode(void *arg) {
     SDL_Surface *bruta = jpeg_rapido_carregar(caminho, limite, &srcW, &srcH);
     SDL_Surface *conv = NULL;
     if (!bruta) { srcW = srcH = 0; bruta = IMG_Load(caminho); }
-    // O SDL2_image desta TV nao le WebP; a libwebp do sistema le (webp.c).
-    if (!bruta) bruta = webp_carregar(caminho);
+    // O SDL2_image desta TV nao le WebP; a libwebp do sistema le (webp.c),
+    // e ja reduz ao limite — os fundos do Xperience sao 3840x2160.
+    if (!bruta) bruta = webp_carregar_larg(caminho, limite, &srcW, &srcH);
     tLoad = SDL_GetTicks();
     if (bruta && !srcW) { srcW = bruta->w; srcH = bruta->h; }
     if (bruta) {
