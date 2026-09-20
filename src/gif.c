@@ -290,6 +290,8 @@ EM_JS(void, gif_js_seq_soltar, (), {
   var s = Module.nvGifSeq;
   if (!s) return;
   for (var i = 0; i < s.urls.length; i++) if (s.urls[i]) URL.revokeObjectURL(s.urls[i]);
+  if (s.wk) { try { s.wk.postMessage({ gifSoltar: { id: s.wid } }); } catch (e) {} }
+  { var pr; for (pr in s.prontos) { if (s.prontos.hasOwnProperty(pr) && s.prontos[pr] && s.prontos[pr].close) s.prontos[pr].close(); } }
   Module.nvGifSeq = null;
 });
 
@@ -301,7 +303,14 @@ EM_JS(void, gif_js_seq_iniciar, (int n, int telaW, int telaH), {
   Module.nvGifSeq = { n: n, w: telaW, h: telaH,
                       urls: new Array(n), imgs: new Array(n), meta: new Array(n),
                       comp: null, cctx: null, salvo: null, posto: -1, subido: -1,
-                      cv: null, cx: null };
+                      cv: null, cx: null,
+                      // caminho pelo Worker (#84): quadros crus, sessao no worker,
+                      // bitmaps prontos e pedidos em voo. `wk` fica null quando
+                      // nao ha Worker (Chromium velho) e o caminho <img> continua.
+                      bufs: new Array(n), wk: null, wid: 0, outW: 0, outH: 0,
+                      prontos: {}, pedidos: {}, falhas: 0 };
+  Module.nvGifId = (Module.nvGifId | 0) + 1;
+  Module.nvGifSeq.wid = Module.nvGifId;
 });
 
 // Um quadro, ja remontado como GIF de um quadro so. So guarda os BYTES (uma
@@ -310,8 +319,71 @@ EM_JS(void, gif_js_seq_quadro, (int i, const unsigned char *d, int n,
                                 int esq, int topo, int larg, int alt, int descarte), {
   var s = Module.nvGifSeq;
   if (!s || i < 0 || i >= s.n) return;
-  s.urls[i] = URL.createObjectURL(new Blob([HEAPU8.slice(d, d + n)], { type: 'image/gif' }));
+  var bytes = HEAPU8.slice(d, d + n);
+  s.bufs[i] = bytes.buffer;
+  s.urls[i] = URL.createObjectURL(new Blob([bytes], { type: 'image/gif' }));
   s.meta[i] = { esq: esq, topo: topo, larg: larg, alt: alt, descarte: descarte };
+});
+
+// LIGA A SESSAO NO WORKER, uma vez por GIF e por tamanho de saida. Reusa o
+// Worker do decode (webp.c cria Module.nvDec); sem ele, ou se o worker
+// falhar, `wk` fica null e tudo cai no caminho <img>.
+EM_JS(int, gif_js_seq_worker, (int outW, int outH), {
+  var s = Module.nvGifSeq;
+  var D = Module.nvDec;
+  if (!s) return 0;
+  if (s.wk && s.outW === outW && s.outH === outH) return 1;
+  // O Worker nasce em webp.c no primeiro WebP; sem WebP nenhum ainda (conta
+  // so com JPEG) ele nao existe — cria aqui com a mesma receita, senao o GIF
+  // cairia no <img> numa sessao inteira.
+  if (D === undefined && typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
+    D = {}; D.w = null; D.morto = false; D.voo = {};
+    Module.nvDec = D;
+    try {
+      D.w = new Worker('decodificador.js');
+      D.w.postMessage({ memoria: wasmMemory.buffer });
+      D.w.onerror = function () { D.morto = true; var k; for (k in D.voo) { if (D.voo.hasOwnProperty(k)) { var f = D.voo[k]; delete D.voo[k]; f(); } } };
+    } catch (e) { D.morto = true; }
+  }
+  if (!D || D.morto || !D.w || typeof OffscreenCanvas === 'undefined') { s.wk = null; return 0; }
+  if (!D.gifOuvinte) {
+    D.gifOuvinte = 1;
+    var antes = D.w.onmessage;
+    D.w.onmessage = function (ev) {
+      var m = ev.data;
+      if (m && m.gifPronto) {
+        var q = Module.nvGifSeq;
+        if (!q || q.wid !== m.gifPronto.id) { if (m.bitmap && m.bitmap.close) m.bitmap.close(); return; }
+        delete q.pedidos[m.gifPronto.i];
+        if (m.gifPronto.falhou) { q.falhas++; if (q.falhas > 3) { q.wk = null; } return; }
+        if (q.prontos[m.gifPronto.i] && q.prontos[m.gifPronto.i].close) q.prontos[m.gifPronto.i].close();
+        q.prontos[m.gifPronto.i] = m.bitmap;
+        return;
+      }
+      if (antes) antes(ev);
+    };
+  }
+  // Sessao nova (ou tamanho novo): manda os quadros crus. Copias, nao
+  // transferencia: os ArrayBuffers ficam aqui para o caminho <img> de reserva.
+  var k, ids = [];
+  for (k = 0; k < s.n; k++) { if (!s.bufs[k]) { s.wk = null; return 0; } ids.push(s.bufs[k].slice(0)); }
+  if (s.wk) D.w.postMessage({ gifSoltar: { id: s.wid } });
+  Module.nvGifId = (Module.nvGifId | 0) + 1;
+  s.wid = Module.nvGifId;
+  var pr; for (pr in s.prontos) { if (s.prontos.hasOwnProperty(pr) && s.prontos[pr] && s.prontos[pr].close) s.prontos[pr].close(); }
+  s.prontos = {}; s.pedidos = {}; s.falhas = 0;
+  s.outW = outW; s.outH = outH;
+  D.w.postMessage({ gif: { id: s.wid, w: s.w, h: s.h, outW: outW, outH: outH, meta: s.meta, frames: ids } }, ids);
+  s.wk = D.w;
+  return 1;
+});
+
+EM_JS(void, gif_js_seq_pedir, (int i), {
+  var s = Module.nvGifSeq;
+  if (!s || !s.wk || i < 0 || i >= s.n) return;
+  if (s.prontos[i] || s.pedidos[i]) return;
+  s.pedidos[i] = 1;
+  s.wk.postMessage({ gifQuadro: { id: s.wid, i: i } });
 });
 
 // O quadro `i` ja esta decodificado? Cria o <img> na primeira pergunta, o que
@@ -320,6 +392,7 @@ EM_JS(void, gif_js_seq_quadro, (int i, const unsigned char *d, int n,
 EM_JS(int, gif_js_seq_pronto, (int i), {
   var s = Module.nvGifSeq;
   if (!s || i < 0 || i >= s.n || !s.urls[i]) return 0;
+  if (s.wk) { if (s.prontos[i]) return 1; if (!s.pedidos[i]) s.wk.postMessage({ gifQuadro: { id: s.wid, i: i } }), s.pedidos[i] = 1; return 0; }
   if (!s.imgs[i]) { var im = new Image(); im.src = s.urls[i]; s.imgs[i] = im; }
   return (s.imgs[i].complete && s.imgs[i].naturalWidth) ? 1 : 0;
 });
@@ -329,6 +402,33 @@ EM_JS(int, gif_js_seq_pronto, (int i), {
 EM_JS(int, gif_js_seq_subir, (int i, int nomeTex, int larg, int alt, int mesmoTamanho, int adiante), {
   var s = Module.nvGifSeq;
   if (!s || i < 0 || i >= s.n) return 0;
+  if (s.wk) {
+    // CAMINHO PELO WORKER: o bitmap chega composto e no tamanho certo; aqui
+    // so o upload. Pede os proximos `adiante` quadros; um bitmap pronto e
+    // descartado logo depois de subir (o worker manda outro quando pedido).
+    var bmp = s.prontos[i];
+    var d2;
+    for (d2 = 1; d2 <= adiante; d2++) {
+      var pk2 = (i + d2) % s.n;
+      if (!s.prontos[pk2] && !s.pedidos[pk2]) { s.pedidos[pk2] = 1; s.wk.postMessage({ gifQuadro: { id: s.wid, i: pk2 } }); }
+    }
+    if (s.subido === i && mesmoTamanho) return 1;
+    if (!bmp) return 0;
+    var ctx2 = (typeof GL !== 'undefined' && GL.currentContext) ? GL.currentContext.GLctx : null;
+    var tex2 = (typeof GL !== 'undefined' && GL.textures) ? GL.textures[nomeTex] : null;
+    if (!ctx2 || !tex2) return 0;
+    ctx2.bindTexture(ctx2.TEXTURE_2D, tex2);
+    try {
+      if (mesmoTamanho && bmp.width === larg && bmp.height === alt)
+        ctx2.texSubImage2D(ctx2.TEXTURE_2D, 0, 0, 0, ctx2.RGBA, ctx2.UNSIGNED_BYTE, bmp);
+      else
+        ctx2.texImage2D(ctx2.TEXTURE_2D, 0, ctx2.RGBA, ctx2.RGBA, ctx2.UNSIGNED_BYTE, bmp);
+    } catch (e) { return 0; }
+    if (bmp.close) bmp.close();
+    delete s.prontos[i];
+    s.subido = i;
+    return 1;
+  }
   var im = s.imgs[i];
   if (!im) {
     if (!s.urls[i]) return 0;
@@ -508,6 +608,9 @@ GLuint gif_textura(const char *caminho, int largAlvo) {
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
+    // Sessao no worker (ou nada, e cai no <img>). `w`/`h` sao o tamanho do
+    // card na tela: e nesse tamanho que o worker devolve os bitmaps.
+    gif_js_seq_worker(w, h);
     if (gif_js_seq_subir(iSeq, (int)tex, w, h, w == texW && h == texH, NV_GIF_ADIANTE)) {
       texW = w; texH = h;
       return tex;
