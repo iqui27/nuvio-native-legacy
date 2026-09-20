@@ -125,7 +125,7 @@ typedef enum {
   AJ_XTREAM_SERVIDOR, AJ_XTREAM_USUARIO, AJ_XTREAM_SENHA, AJ_XTREAM_LIMPAR,
   AJ_SALVOS_DEST, AJ_TRAKT, AJ_SIMKL, AJ_SAIR,
   // Sobre
-  AJ_VERSAO_I, AJ_ATUALIZAR, AJ_ENVIAR_LOG, AJ_ESPACO, AJ_TEX_MB,
+  AJ_VERSAO_I, AJ_ATUALIZAR, AJ_ENVIAR_LOG, AJ_ENVIO_AUTO, AJ_ESPACO, AJ_TEX_MB,
   // Integracoes — TMDB (tmdb_settings do blob da conta, ver
   // profileSettingsSyncService.js do web)
   AJ_TMDB_LIGADO, AJ_TMDB_IDIOMA, AJ_TMDB_ARTE, AJ_TMDB_BASICO, AJ_TMDB_FICHA,
@@ -402,6 +402,11 @@ static const Opcao OPCOES[AJ_N] = {
   // Manda o log DESTA sessao ao servico de recomendacoes (dono, 20/09/2026):
   // ate aqui so o cartao do crash mandava, e so o da sessao anterior.
   ACAO("Enviar registro"),
+  // ENVIO AUTOMATICO (dono, 20/09/2026: "temos que pegar todos os logs para
+  // resolver a Samsung"). Desligado de fabrica; o cartao de primeira vez no
+  // Tizen pergunta (telemetria.c) e grava aqui. Ligado, avisos.c manda o
+  // registro da sessao anterior no arranque e o desta a cada minuto.
+  ESC("Enviar registros sozinho",   V_LIGA, 2),
   LER("Memória usada por imagens"),
   ESC("Memória para imagens",       V_TEX_MB, 7),
 
@@ -499,7 +504,7 @@ static const char *CHAVE[] = {
   "-stalkerPortal", "-stalkerMac", "-stalkerLimpar",
   "-xtreamServidor", "-xtreamUsuario", "-xtreamSenha", "-xtreamLimpar",
   "salvosDestino", "-trakt", "-simkl", "-sair",
-  "-versao", "-atualizar", "-registro", "-espaco", "texturasMB",
+  "-versao", "-atualizar", "-registro", "envioAuto", "-espaco", "texturasMB",
   // Integracoes: os nomes sao exatamente os que profileSettingsSyncService.js
   // exporta dentro de tmdb_settings / mdblist_settings — a conta aplica e a
   // TV respeita a escolha feita no app web, e vice-versa.
@@ -744,7 +749,8 @@ static int valor[AJ_N] = {
   0, 0, 0,          /* perfil, sincronizacao, addons: linhas de leitura/acao */
   1,                /* onde o + salva: watchlist do Trakt (ver V_SALVOS) */
   0, 0, 0,          /* trakt, simkl, sair: acoes */
-  0, 0, 0,          /* versao, atualizar, espaco */
+  0, 0, 0, 1,       /* versao, atualizar, registro, envio sozinho: DESLIGADO */
+  0,                /* espaco */
   0,                /* memoria para imagens: automatico */
 
   // Integracoes — TMDB. Tudo LIGADO de fabrica neste app: o enriquecimento por
@@ -876,6 +882,8 @@ void ajustes_definir_salvos_no_trakt(int noTrakt) {
   gravar();
 }
 int ajustes_data_completa(void)       { return lig(AJ_DET_DATA_CHEIA); }
+int  ajustes_envio_auto(void)         { return lig(AJ_ENVIO_AUTO); }
+void ajustes_definir_envio_auto(int ligado) { valor[AJ_ENVIO_AUTO] = ligado ? 0 : 1; gravar(); }
 int ajustes_notas_home(void)          { return valor[AJ_NOTAS_HOME] == 0; }
 int ajustes_local_descobrir(void)     { return valor[AJ_DESCOBRIR]; }
 int ajustes_descobrir_na_busca(void)  { return valor[AJ_DESCOBRIR] == 0; }
@@ -1272,6 +1280,10 @@ static void conferirPadroes(void) {
 int ajustes_iniciar(void) {
   conferirSecoes();
   conferirPadroes();
+  // Fora do vetor posicional de proposito: aquele vetor ja esta com menos
+  // entradas do que o enum (as ultimas ficam em 0), e um 1 no lugar errado
+  // ligaria outra coisa. O arquivo, lido depois, sobrescreve.
+  valor[AJ_ENVIO_AUTO] = 1;
   focoOp = 0; scrollY = 0.0f; sair = 0;
   focoIndice = 0;
   filAberta = 0; filFoco = 0; filCampo = 0; filPegou = 0; filTopo = 0;
@@ -1566,6 +1578,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_VERSAO_I: return "Versão do aplicativo. Esta informação não pode ser alterada.";
     case AJ_ATUALIZAR: return "Abre o cartão da versão nova, com o que mudou e o botão de instalar. Fica apagado quando não há versão nova.";
     case AJ_ENVIAR_LOG: return "Manda os últimos 200 KB do registro desta sessão (sem senhas nem chaves) para quem faz o app. Use quando algo estiver errado agora.";
+    case AJ_ENVIO_AUTO: return "Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.";
 
     // --- Integracoes
     case AJ_TMDB_LIGADO: return "O TMDB enriquece títulos com sinopse, elenco com foto, ficha técnica e trailers. Desligar corta tudo isso de uma vez.";
@@ -2319,7 +2332,7 @@ static const char *iconeOpcao(int op) {
     case AJ_TRAKT: case AJ_SIMKL: case AJ_SALVOS_DEST: return "recomendar";
     case AJ_PERFIL_ATIVO: case AJ_SAIR: return "menu_profile";
     case AJ_SYNC: return "fluxo";
-    case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_ENVIAR_LOG: return "menu_settings";
+    case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_ENVIAR_LOG: case AJ_ENVIO_AUTO: return "menu_settings";
     case AJ_ESPACO: case AJ_TEX_MB: return "aspecto";
     case AJ_DET_TRAILER: case AJ_TMDB_TRAILERS: case AJ_PROF_TRAILERS: return "trailer";
     case AJ_DET_BLUR_NAO_VISTOS: return "oculto";

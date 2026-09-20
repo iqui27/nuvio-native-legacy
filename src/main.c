@@ -889,8 +889,19 @@ int main(int argc, char **argv) {
         rafMax = EM_ASM_INT({ var r = window.__nvRaf; if (!r) return -1; var m = r.max | 0; r.max = 0; return m; });
         rafLentos = EM_ASM_INT({ var r = window.__nvRaf; if (!r) return -1; var n = r.lentos | 0; r.lentos = 0; return n; });
         escondida = EM_ASM_INT({ return document.hidden ? 1 : 0; });
-        printf("[navegador] js=%d/%d MiB raf-max=%d ms raf-lentos=%d escondida=%d\n",
-               jsMB, jsLimMB, rafMax, rafLentos, escondida); }
+        { static char quem[64];
+          int longMax, longN, longSoma;
+          longMax  = EM_ASM_INT({ var L = window.__nvLong; return L ? (L.max | 0) : -1; });
+          longN    = EM_ASM_INT({ var L = window.__nvLong; return L ? (L.n | 0) : -1; });
+          longSoma = EM_ASM_INT({ var L = window.__nvLong; return L ? (L.soma | 0) : -1; });
+          EM_ASM({ var L = window.__nvLong; if (!L) return;
+                   var q = L.quem || "-"; var i = 0;
+                   for (; i < q.length && i < 62; i++) HEAPU8[$0 + i] = q.charCodeAt(i) & 127;
+                   HEAPU8[$0 + i] = 0;
+                   L.max = 0; L.n = 0; L.soma = 0; L.quem = ""; }, quem);
+          printf("[navegador] js=%d/%d MiB raf-max=%d ms raf-lentos=%d escondida=%d"
+                 " longtask-max=%d ms n=%d soma=%d ms quem=%s\n",
+                 jsMB, jsLimMB, rafMax, rafLentos, escondida, longMax, longN, longSoma, quem); } }
 #endif
       // A REPARTICAO DO PIOR QUADRO, NA TELA E NAO SO NO ARQUIVO.
       //

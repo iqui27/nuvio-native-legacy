@@ -330,6 +330,26 @@
         r.ultimo = t;
         requestAnimationFrame(tick);
       })(performance.now());
+      // TAREFAS LONGAS DO FIO PRINCIPAL, com AUTORIA. O rAF acima diz QUE o
+      // fio parou; isto diz QUEM: o observer 'longtask' entrega cada tarefa
+      // > 50 ms com a atribuicao do navegador (script, layout, gc...). E o
+      // que separa "nosso wasm" de "runtime da TV" sem profiler no aparelho
+      // (registro do Tizen 9 de 20/09/2026: swap de 200-480 ms sem que o C
+      // estivesse fazendo nada). src/main.c le e zera no [navegador].
+      window.__nvLong = { max: 0, n: 0, soma: 0, quem: "" };
+      try {
+        new PerformanceObserver(function (lista) {
+          var L = window.__nvLong;
+          lista.getEntries().forEach(function (e) {
+            L.n++; L.soma += e.duration;
+            if (e.duration > L.max) {
+              L.max = e.duration;
+              var a = e.attribution && e.attribution[0];
+              L.quem = e.name + (a ? "/" + a.containerType + (a.containerSrc ? ":" + a.containerSrc.slice(-24) : "") : "");
+            }
+          });
+        }).observe({ entryTypes: ["longtask"] });
+      } catch (e) { window.__nvLong.quem = "sem-observer"; }
       d("WebAssembly", typeof WebAssembly);
       d("tela", screen.width + "x" + screen.height +
                " / viewport " + window.innerWidth + "x" + window.innerHeight +

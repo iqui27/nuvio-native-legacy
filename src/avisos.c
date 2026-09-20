@@ -265,6 +265,11 @@ static void jsonEsc(char *dst, size_t tam, const char *s) {
 // atual e lido do localStorage no fio principal antes de o fio de envio
 // nascer (avisos_enviar_registro_atual); no LG o arquivo e o de sempre.
 static const int ATUAL = 1;
+// ENVIO AUTOMATICO (ajuste "Enviar registros sozinho", 20/09/2026): os mesmos
+// dois envios, sem botao. Nao mexem em envioEstado ao terminar, para a linha
+// "Enviar registro" dos Ajustes nao dizer "enviado" por algo que a pessoa
+// nao apertou.
+static const int AUTO_ATUAL = 2, AUTO_ANTERIOR = 3;
 static const char *agoraTexto(void) {
   static char buf[40];
   time_t t = time(NULL);
@@ -272,6 +277,19 @@ static const char *agoraTexto(void) {
   localtime_r(&t, &tmv);
   snprintf(buf, sizeof buf, "%04d-%02d-%02d %02d:%02d (manual)", tmv.tm_year + 1900, tmv.tm_mon + 1,
            tmv.tm_mday, tmv.tm_hour, tmv.tm_min);
+  return buf;
+}
+static const char *agoraTextoAuto(const char *marca) {
+  static char buf[48];
+  time_t t = time(NULL);
+  struct tm tmv;
+#ifdef _WIN32
+  localtime_s(&tmv, &t);
+#else
+  localtime_r(&t, &tmv);
+#endif
+  snprintf(buf, sizeof buf, "%04d-%02d-%02d %02d:%02d (%s)", tmv.tm_year + 1900,
+           tmv.tm_mon + 1, tmv.tm_mday, tmv.tm_hour, tmv.tm_min, marca);
   return buf;
 }
 #ifdef __EMSCRIPTEN__
@@ -283,7 +301,8 @@ static void *enviarRegistro(void *u) {
   char *texto = NULL, *corpo, *resp;
   size_t nTexto = 0;
   int status = 0;
-  int manual = (u == &ATUAL);
+  int manual = (u == &ATUAL || u == &AUTO_ATUAL);
+  int automatico = (u == &AUTO_ATUAL || u == &AUTO_ANTERIOR);
 #ifdef __EMSCRIPTEN__
   { const char *fonte = manual ? logAtual : logAnterior;
     if (fonte) { texto = strdup(fonte); if (texto) nTexto = strlen(texto); } }
@@ -317,6 +336,8 @@ static void *enviarRegistro(void *u) {
 #else
              "webos",
 #endif
+             u == &AUTO_ATUAL ? agoraTextoAuto("auto") :
+             u == &AUTO_ANTERIOR ? agoraTextoAuto("anterior") :
              manual ? agoraTexto() : crashQuando, esc);
     free(esc); }
   free(texto);
@@ -325,8 +346,8 @@ static void *enviarRegistro(void *u) {
     resp = rede_postar_st(url, 30, cab, corpo, &status); }
   free(corpo);
   free(resp);
-  envioEstado = (status >= 200 && status < 300) ? 2 : 3;
-  printf("[avisos] registro enviado: HTTP %d\n", status);
+  envioEstado = automatico ? 0 : (status >= 200 && status < 300) ? 2 : 3;
+  printf("[avisos] registro enviado%s: HTTP %d\n", automatico ? " (sozinho)" : "", status);
   fflush(stdout);
   return NULL;
 }
@@ -596,6 +617,7 @@ void avisos_atualizar(float dt, Uint32 agora) {
     toastA = anim_mola(toastA, alvo, dt, NV_MOLA_TELA);
     if (alvo == 0.0f && toastA < 0.01f && toastAte > 0.0f && (float)agora >= toastAte) { toastAte = 0.0f; toastN = 0; } }
   if (vistosSujos && !aberto) vistosGravar();
+  avisos_envio_auto_passo(agora);
 }
 
 int  avisos_aberto(void) { return aberto; }
@@ -838,6 +860,59 @@ void avisos_desenhar(Uint32 agora) {
 
 // --- envio manual (Ajustes) ---------------------------------------------------
 int avisos_envio_estado(void) { return envioEstado; }
+// Le o nv-log do localStorage para logAtual (fio principal; so no Tizen).
+static void lerLogAtual(void) {
+#ifdef __EMSCRIPTEN__
+  free(logAtual);
+  logAtual = (char *)EM_ASM_PTR({
+    try {
+      var t = localStorage.getItem('nv-log') || '';
+      if (t.length > $0) t = t.slice(t.length - $0);
+      var b = new TextEncoder().encode(t);
+      var p = _malloc(b.length + 1);
+      if (!p) return 0;
+      HEAPU8.set(b, p);
+      HEAPU8[p + b.length] = 0;
+      return p;
+    } catch (e) { return 0; }
+  }, AV_REGISTRO_MAX);
+#endif
+}
+
+// PASSO DO ENVIO AUTOMATICO, do laco principal. Com o ajuste ligado: uma vez,
+// o registro da sessao ANTERIOR (e o da sessao que travou, quando travou);
+// depois o desta sessao a cada minuto. Nunca dois envios ao mesmo tempo, e
+// nunca por cima de um envio manual em curso.
+void avisos_envio_auto_passo(Uint32 agora) {
+  static int anteriorFeito;
+  static Uint32 proximo;
+  if (!ajustes_envio_auto() || !NV_REC_URL[0] || envioEstado == 1) return;
+  if (!anteriorFeito) {
+    anteriorFeito = 1;
+    proximo = agora + 60000;
+    { int tem;
+#ifdef __EMSCRIPTEN__
+      if (!logAnterior) lerLogAnterior();
+      tem = logAnterior && logAnterior[0];
+#else
+      { FILE *f = fopen(AV_LOG_ANTERIOR, "rb"); tem = f != NULL; if (f) fclose(f); }
+#endif
+    if (tem) {
+      envioEstado = 1;
+      if (pthread_create(&fioEnvio, NULL, enviarRegistro, (void *)&AUTO_ANTERIOR) == 0) pthread_detach(fioEnvio);
+      else envioEstado = 0;
+    } }
+    return;
+  }
+  if (agora < proximo) return;
+  proximo = agora + 60000;
+  lerLogAtual();
+  fflush(stdout);
+  envioEstado = 1;
+  if (pthread_create(&fioEnvio, NULL, enviarRegistro, (void *)&AUTO_ATUAL) == 0) pthread_detach(fioEnvio);
+  else envioEstado = 0;
+}
+
 void avisos_enviar_registro_atual(void) {
   if (envioEstado == 1) return;
   if (!NV_REC_URL[0]) { envioEstado = 3; return; }

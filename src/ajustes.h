@@ -93,6 +93,9 @@ int   ajustes_data_completa(void);      // showFullReleaseDate
 // nos DOIS valores — ver a nota de V_SALVOS em ajustes.c e a abertura de salvos.h.
 int   ajustes_salvos_no_trakt(void);
 void  ajustes_definir_salvos_no_trakt(int noTrakt);
+// Envio automatico do registro (Sobre). 1 = ligado.
+int   ajustes_envio_auto(void);
+void  ajustes_definir_envio_auto(int ligado);
 // homeImdbRatingsVisibility: 0 SHOW_ALL, 1 HIDE_ALL
 int   ajustes_notas_home(void);
 // discoverLocation: 0 in_search, 1 in_sidebar, 2 off
