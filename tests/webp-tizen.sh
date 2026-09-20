@@ -15,7 +15,7 @@
 #       pixel central rgba=229,9,19,255
 #   ok  webp reduzido 320x212 (arquivo 1477x980)
 #   webp: tudo ok
-#   ok  jpeg 320x180 (arquivo 640x360)
+#   ok  jpeg 320x180 (arquivo 640x360)          <- libjpeg em software, escalado
 #   ok  jpeg inteiro 640x360
 #   jpeg: tudo ok
 #
@@ -31,7 +31,7 @@ mkdir -p "$SAIDA"
 echo "isto nao e webp" > "$SAIDA/nao-e-webp.txt"
 
 emcc tests/webp_tizen.c src/webp.c src/jpegrapido.c -o "$SAIDA/index.html" -O1 \
-  -sUSE_SDL=2 -sWASM_BIGINT=0 \
+  -sUSE_SDL=2 -sUSE_SDL_IMAGE=2 -sSDL2_IMAGE_FORMATS='["png","jpg"]' -sUSE_LIBJPEG=1 -sWASM_BIGINT=0 \
   -pthread -sPTHREAD_POOL_SIZE=2 \
   -sINITIAL_MEMORY=134217728 -sALLOW_MEMORY_GROWTH=0 \
   -sEXPORTED_FUNCTIONS='["_main","_malloc","_free"]' \

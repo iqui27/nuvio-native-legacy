@@ -4,41 +4,118 @@
 #include <string.h>
 
 #ifdef __EMSCRIPTEN__
-// NO TIZEN O DECODIFICADOR E O DO NAVEGADOR — nativo, fora do heap do WASM, e
-// ja reduzido no canvas ao tamanho pedido (webp.c, navegador_decodificar).
-// Antes este alvo caia no IMG_Load em software: MEDIDO nos logs do #69 (AU7000,
-// Tizen 6.0), "decode lento: 13103 ms (ler 10946)" para um 3840x2160 e
-// "livre-no-heap=6.7 MiB" — o mesmo heap de 256 MiB que o player precisa, e o
-// que casa com os crashes do #68 durante a reproducao.
+// ---------------------------------------------------------------- Tizen ----
+//
+// SOFTWARE DE NOVO, DE PROPOSITO (20/09/2026, #72, registro 10 do AU7000).
+//
+// A 1.3.2 mandou o decode ao navegador (createImageBitmap + canvas) e a 1.3.3
+// levou isso a um Worker. Os dois engasgam a tela do mesmo jeito: o log
+// mostra `swap=3279 ms` com CINCO fios vivos e ZERO arquivo — o fio principal
+// preso no SwapWindow do WebGL enquanto artes decodificam. A leitura que
+// fecha com tudo: canvas e getImageData nesta TV passam pelo processo de
+// GPU, o MESMO que o nosso WebGL espera; cada readback de arte serializa
+// com o quadro. A 1.0.26, que a pessoa lembra como "rapida", decodificava
+// em software (IMG_Load) — arte lenta, tela fluida.
+//
+// Entao JPEG volta ao software, mas nao ao IMG_Load de tamanho cheio (13 s
+// num 4K, #69): a libjpeg do port do Emscripten com scale_denom, o mesmo
+// truque do ramo nativo abaixo. PNG vai pelo IMG_Load (libpng, software).
+// So o WebP continua no navegador (webp.c): nao ha port de libwebp, e ele so
+// aparece nas capas do Xperience.
 #include "webp.h"
 #include <stdlib.h>
-// DA MEMORIA, sem arquivo. E o caminho do alvo Tizen desde 20/09/2026 (#72):
-// toda chamada de arquivo feita por um pthread e proxiada ao fio principal,
-// e gravar/ler/apagar cada arte no MEMFS custava tres viagens pelo fio que
-// desenha. O fio de rede entrega os bytes direto ao de decode (tex_cache.c,
-// Item.bruto) e este e o unico decodificador que eles alcancam.
+#include <setjmp.h>
+#include <SDL2/SDL_image.h>
+#include <jpeglib.h>
+
+typedef struct { struct jpeg_error_mgr pub; jmp_buf salto; } ErroSalto;
+static void erroSai(j_common_ptr cinfo) {
+  ErroSalto *e = (ErroSalto *)cinfo->err;
+  { char msg[JMSG_LENGTH_MAX];
+    (*cinfo->err->format_message)(cinfo, msg);
+    printf("[jpeg] %s\n", msg); fflush(stdout); }
+  longjmp(e->salto, 1);
+}
+static void semSaida(j_common_ptr cinfo) { (void)cinfo; }
+
+static SDL_Surface *jpegEscalado(const unsigned char *dados, size_t n, int largMax,
+                                 int *larguraOriginal, int *alturaOriginal) {
+  struct jpeg_decompress_struct cinfo;
+  ErroSalto erro;
+  SDL_Surface * volatile s = NULL;
+  unsigned char * volatile linha = NULL;
+  memset(&cinfo, 0, sizeof cinfo);
+  cinfo.err = jpeg_std_error(&erro.pub);
+  erro.pub.error_exit = erroSai;
+  erro.pub.output_message = semSaida;
+  if (setjmp(erro.salto)) {
+    jpeg_destroy_decompress(&cinfo);
+    free(linha);
+    if (s) SDL_FreeSurface(s);
+    return NULL;
+  }
+  jpeg_create_decompress(&cinfo);
+  jpeg_mem_src(&cinfo, (unsigned char *)dados, (unsigned long)n);
+  jpeg_read_header(&cinfo, TRUE);
+  if (larguraOriginal) *larguraOriginal = (int)cinfo.image_width;
+  if (alturaOriginal) *alturaOriginal = (int)cinfo.image_height;
+  // A maior reducao que ainda cobre o pedido, igual ao ramo nativo.
+  cinfo.scale_num = 1; cinfo.scale_denom = 1;
+  if (largMax > 0)
+    while (cinfo.scale_denom < 8 &&
+           (int)((cinfo.image_width + cinfo.scale_denom * 2 - 1) / (cinfo.scale_denom * 2)) >= largMax)
+      cinfo.scale_denom *= 2;
+  // A libjpeg 9 do port nao tem JCS_EXT_RGBA (e da turbo): sai RGB e a linha
+  // ganha o alfa aqui.
+  cinfo.out_color_space = JCS_RGB;
+  if (cinfo.scale_denom > 1) { cinfo.dct_method = JDCT_IFAST; cinfo.do_fancy_upsampling = FALSE; }
+  jpeg_calc_output_dimensions(&cinfo);
+  s = nv_superficie(0, (int)cinfo.output_width, (int)cinfo.output_height, 32, SDL_PIXELFORMAT_ABGR8888);
+  linha = malloc((size_t)cinfo.output_width * 3);
+  if (!s || !linha) { jpeg_destroy_decompress(&cinfo); free(linha); if (s) SDL_FreeSurface(s); return NULL; }
+  jpeg_start_decompress(&cinfo);
+  if (cinfo.output_components != 3) { jpeg_destroy_decompress(&cinfo); free(linha); SDL_FreeSurface(s); return NULL; }
+  while (cinfo.output_scanline < cinfo.output_height) {
+    unsigned char *dst = (unsigned char *)s->pixels + (size_t)cinfo.output_scanline * (size_t)s->pitch;
+    JSAMPROW l = (JSAMPROW)linha;
+    unsigned x;
+    jpeg_read_scanlines(&cinfo, &l, 1);
+    for (x = 0; x < cinfo.output_width; x++) {
+      dst[x * 4] = linha[x * 3]; dst[x * 4 + 1] = linha[x * 3 + 1];
+      dst[x * 4 + 2] = linha[x * 3 + 2]; dst[x * 4 + 3] = 255;
+    }
+  }
+  jpeg_finish_decompress(&cinfo);
+  jpeg_destroy_decompress(&cinfo);
+  free(linha);
+  return s;
+}
+
 SDL_Surface *jpeg_rapido_carregar_mem(const unsigned char *dados, size_t n, int largMax,
                                       int *larguraOriginal, int *alturaOriginal) {
-  const char *mime = NULL;
-  int w = 0, h = 0, ow = 0, oh = 0; uint8_t *px; SDL_Surface *s;
   if (larguraOriginal) *larguraOriginal = 0;
   if (alturaOriginal) *alturaOriginal = 0;
   if (!dados || n < 16 || n > 32L * 1024 * 1024) return NULL;
-  if (dados[0] == 0xFF && dados[1] == 0xD8) mime = "image/jpeg";
-  else if (dados[0] == 0x89 && dados[1] == 'P' && dados[2] == 'N' && dados[3] == 'G') mime = "image/png";
-  else if (!memcmp(dados, "RIFF", 4) && !memcmp(dados + 8, "WEBP", 4)) mime = "image/webp";
-  if (!mime) return NULL;   // GIF e o resto: IMG_Load de sempre
-  px = navegador_decodificar(dados, n, mime, largMax > 0 ? largMax : 0, &w, &h, &ow, &oh);
-  if (!px) return NULL;
-  s = nv_superficie(0, w, h, 32, SDL_PIXELFORMAT_ABGR8888);
-  if (s) {
-    int y;
-    for (y = 0; y < h; y++) memcpy((char *)s->pixels + y * s->pitch, px + (size_t)y * w * 4, (size_t)w * 4);
+  if (dados[0] == 0xFF && dados[1] == 0xD8)
+    return jpegEscalado(dados, n, largMax, larguraOriginal, alturaOriginal);
+  if (dados[0] == 0x89 && dados[1] == 'P' && dados[2] == 'N' && dados[3] == 'G') {
+    SDL_RWops *rw = SDL_RWFromConstMem(dados, (int)n);
+    SDL_Surface *s = rw ? IMG_Load_RW(rw, 1) : NULL;
+    if (s) { if (larguraOriginal) *larguraOriginal = s->w; if (alturaOriginal) *alturaOriginal = s->h; }
+    return s;
   }
-  free(px);
-  if (larguraOriginal) *larguraOriginal = ow > 0 ? ow : w;
-  if (alturaOriginal) *alturaOriginal = oh > 0 ? oh : h;
-  return s;
+  if (!memcmp(dados, "RIFF", 4) && !memcmp(dados + 8, "WEBP", 4)) {
+    int w = 0, h = 0, ow = 0, oh = 0; uint8_t *px; SDL_Surface *s;
+    px = navegador_decodificar(dados, n, "image/webp", largMax > 0 ? largMax : 0, &w, &h, &ow, &oh);
+    if (!px) return NULL;
+    s = nv_superficie(0, w, h, 32, SDL_PIXELFORMAT_ABGR8888);
+    if (s) { int y; for (y = 0; y < h; y++) memcpy((char *)s->pixels + y * s->pitch, px + (size_t)y * w * 4, (size_t)w * 4); }
+    free(px);
+    if (larguraOriginal) *larguraOriginal = ow > 0 ? ow : w;
+    if (alturaOriginal) *alturaOriginal = oh > 0 ? oh : h;
+    return s;
+  }
+  return NULL;   // GIF e o resto: IMG_Load de sempre
 }
 
 SDL_Surface *jpeg_rapido_carregar(const char *caminho, int largMax,
