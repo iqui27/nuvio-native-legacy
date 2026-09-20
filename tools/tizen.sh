@@ -183,6 +183,10 @@ eval emcc src/*.c -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} \
   -sSTACK_SIZE=8388608 -sDEFAULT_PTHREAD_STACK_SIZE=2097152 \
   `# 32 KB de pilha do asyncify, o mesmo valor da bancada que roda. O laco de` \
   `# quadro desenrola por aqui a cada SwapWindow; 16 KB era aperto sem motivo.` \
+  `# --profiling-funcs: so a secao de NOMES das funcoes no wasm (~5% do` \
+  `# tamanho), sem custo de execucao. Sem ela o profiler (CDP no Mac ou o Web` \
+  `# Inspector da TV) mostra wasm-function[729] e nao diz o que e.` \
+  --profiling-funcs \
   -sASYNCIFY -sASYNCIFY_STACK_SIZE=32768 \
   `# SO main E dados_iniciar SAO INSTRUMENTADOS. Sem esta lista o ASYNCIFY` \
   `# instrumenta toda funcao que possa estar na pilha de uma chamada assincrona` \

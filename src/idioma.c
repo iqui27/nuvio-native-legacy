@@ -63,18 +63,38 @@ static void conferirOrdem(void) {
   }
 }
 
+// CACHE DA BUSCA. text.c chama i18n em TODA linha desenhada, todo quadro;
+// com o ingles ligado cada chamada era uma busca binaria de ~11 strcmp em
+// 1500 entradas. Medido no Mac (perfil CDP, 35 s de home): 268 ms dentro de
+// i18n, a segunda funcao mais cara do fio principal depois de main — e na
+// Samsung o mesmo trabalho custa varias vezes mais. Tabela direta de 1024
+// posicoes chaveada pelo hash FNV-1a do texto: acerto = 1 passada pelo texto
+// + 1 strcmp (positivo) ou 0 strcmp (negativo, confiado pelo hash de 64 bits
+// mais o tamanho). Titulo de filme e fragmento de sinopse tambem entram — sao
+// justamente os negativos que antes pagavam a busca inteira.
+#define I18N_CACHE 1024
+static struct { unsigned long long h; unsigned n; int idx; } cache[I18N_CACHE];
+
 const char *i18n(const char *s) {
   int lo = 0, hi = TAB_N - 1;
+  unsigned long long h = 1469598103934665603ull;
+  unsigned n = 0, slot;
+  const unsigned char *p;
   idioma_registrar(s);
   if (!s || !*s || !ajustes_idioma_ingles()) return s;
   if (ordemOk < 0) conferirOrdem();
   if (!ordemOk) return s;
+  for (p = (const unsigned char *)s; *p; p++, n++) { h ^= *p; h *= 1099511628211ull; }
+  slot = (unsigned)(h % I18N_CACHE);
+  if (cache[slot].h == h && cache[slot].n == n && (cache[slot].idx < 0 || !strcmp(s, TAB[cache[slot].idx].pt)))
+    return cache[slot].idx < 0 ? s : TAB[cache[slot].idx].en;
   while (lo <= hi) {
     int m = (lo + hi) / 2;
     int c = strcmp(s, TAB[m].pt);
-    if (c == 0) return TAB[m].en;
+    if (c == 0) { cache[slot].h = h; cache[slot].n = n; cache[slot].idx = m; return TAB[m].en; }
     if (c < 0) hi = m - 1; else lo = m + 1;
   }
+  cache[slot].h = h; cache[slot].n = n; cache[slot].idx = -1;
   // NAO ADIANTA RECLAMAR AQUI, e eu tentei: text.c chama i18n em cada linha
   // DESENHADA, entao esta funcao ve tambem titulo de filme, sinopse e cada
   // fragmento de quebra de linha. Uma medicao de 25 s no Mac produziu 96
