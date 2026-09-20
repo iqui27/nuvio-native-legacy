@@ -438,20 +438,55 @@ static int porBinge(const FontePref *p) {
 // CAMADA 2: a heuristica da 1.0.55, intacta. Ela atende os addons que nao
 // mandam bingeGroup — que sao muitos — e o episodio em que o addon MUDOU o
 // rotulo de agrupamento.
+// A trilha `t` de hoje CONTEM todas as marcas da lembrada? "BR+DUB" contem
+// "DUB"; "" nao contem nada e e contida por tudo.
+static int contemMarcas(const char *t, const char *lembrada) {
+  const char *p = lembrada;
+  while (*p) {
+    const char *f = strchr(p, '+');
+    size_t n = f ? (size_t)(f - p) : strlen(p);
+    const char *q = t;
+    int achou = 0;
+    while (*q) {
+      const char *g = strchr(q, '+');
+      size_t m = g ? (size_t)(g - q) : strlen(q);
+      if (m == n && !strncmp(q, p, n)) { achou = 1; break; }
+      if (!g) break;
+      q = g + 1;
+    }
+    if (!achou) return 0;
+    if (!f) break;
+    p = f + 1;
+  }
+  return 1;
+}
+
 static int porTrilha(const FontePref *p) {
-  int i, melhor = -1, melhorNota = -1, total = stream_n();
-  for (i = 0; i < total; i++) {
-    const Stream *s = stream_item(i);
-    char t[FONTEPREF_TRILHA];
-    int n;
-    if (!s || !s->provedor[0]) continue;
-    if (strcasecmp(s->provedor, p->provedor)) continue;
-    fontepref_trilha(s, t, sizeof t);
-    // TRILHA IDENTICA OU NADA. Ver a nota de fontepref.h: "mesmo provedor, outro
-    // audio" e a queixa do issue, nao a solucao dele.
-    if (strcmp(t, p->trilha)) continue;
-    n = nota(s, p);
-    if (n > melhorNota) { melhorNota = n; melhor = i; }
+  int i, melhor = -1, melhorNota = -1, total = stream_n(), passo;
+  // DOIS PASSOS. 1: provedor E trilha iguais (o casamento estrito de
+  // sempre). 2: mesmo provedor e a trilha de hoje CONTEM as marcas da
+  // lembrada — o episodio seguinte do mesmo addon costuma vir com uma marca
+  // a mais no rotulo ("Dual Audio" hoje, "BR DUB" amanha), e o estrito
+  // falhava; com "escolher a fonte ao reproduzir" ligado isso reabria a folha
+  // em Retomar (rawldon, #72 na rc1: "sometimes pressing Resume opens the
+  // source list"). A regra de fontepref.h continua: nenhuma marca lembrada
+  // some — quem escolheu DUB nao cai num ORIGINAL.
+  for (passo = 0; passo < 2 && melhor < 0; passo++) {
+    for (i = 0; i < total; i++) {
+      const Stream *s = stream_item(i);
+      char t[FONTEPREF_TRILHA];
+      int n;
+      if (!s || !s->provedor[0]) continue;
+      if (strcasecmp(s->provedor, p->provedor)) continue;
+      fontepref_trilha(s, t, sizeof t);
+      if (passo == 0 ? strcmp(t, p->trilha) != 0 : !contemMarcas(t, p->trilha)) continue;
+      n = nota(s, p);
+      if (n > melhorNota) { melhorNota = n; melhor = i; }
+    }
+    if (melhor >= 0 && passo == 1) {
+      printf("[fonte] preferida de %s casou por provedor com trilha aproximada\n", p->id);
+      fflush(stdout);
+    }
   }
   return melhor;
 }

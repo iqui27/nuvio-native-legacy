@@ -821,15 +821,15 @@ void addons_buscar_legendas(const char *imdb, const char *tipo) {
 // cada um le no proprio. A ORDEM e preservada na juncao: ela decide qual fonte
 // o automatico ve primeiro, e trocar a ordem trocaria a fonte escolhida.
 //
-// NO TIZEN SAO 2, nao 4 (20/09/2026, #72). La cada fio e um Worker cujo fetch,
-// arquivo e printf sao proxiados ao fio principal, e o log do AU7000 mostrou
-// esse fio preso enquanto 15 fios trabalhavam. Dois em paralelo ainda cortam
-// a serie; quatro so mudam quem espera quem.
-#ifdef __EMSCRIPTEN__
-#define ADD_FIOS 2
-#else
+// QUATRO TAMBEM NO TIZEN. Na 1.3.4-rc1 eram 2 la (#72): a hipotese era que
+// os fios/Workers travavam o fio principal. Os dados a derrubaram — a causa
+// era o decode de imagem, e com ele fora do fio principal a rc1 ficou fluida
+// com os mesmos addons. O que sobrou de 2 fios foi o efeito colateral: com
+// seis addons e um deles preso nos 25 s, a lista de fontes so fechava na
+// terceira rodada ("some streams take a very long time to open, especially
+// the first time", rawldon na rc1). O fio de rede passa a vida esperando o
+// socket; nao e ele que custa.
 #define ADD_FIOS 4
-#endif
 
 typedef struct {
   int    idx;                 // qual addon

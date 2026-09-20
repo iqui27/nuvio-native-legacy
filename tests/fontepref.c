@@ -262,6 +262,23 @@ int main(void) {
   // issue #56, nao a solucao dele.
   CONFERE(k != 1, "casar por provedor sozinho nao pode devolver a legendada");
 
+  // ---------------------------- 2b. MESMA MARCA E UMA A MAIS: ainda e a mesma
+  // O episodio seguinte vem "BR DUB 5.1 Dual" no mesmo addon: a trilha de hoje
+  // ("BR+DUAL+DUB") CONTEM a lembrada ("BR+DUB"). Casar aqui e o que evita a
+  // folha reabrir em Retomar com "escolher a fonte" ligado (rawldon, #72).
+  n = listaDoEpisodio(v, 2, 1);
+  snprintf(v[3].descricao, sizeof v[3].descricao,
+           "Serie.S01E02.1080p.DUBLADO.DUAL.mkv\n\xf0\x9f\x87\xa7\xf0\x9f\x87\xb7 Dublado Dual Audio");
+  stream_definir_lista(v, n);
+  k = fontepref_escolher("tt1000001:1:2");
+  CONFERE(k == 3, "trilha de hoje que contem a lembrada casa (%d)", k);
+  // E COM UMA MARCA A MENOS, NAO: "Dual Audio" sozinho nao promete o DUB.
+  n = listaDoEpisodio(v, 2, 1);
+  snprintf(v[3].descricao, sizeof v[3].descricao, "Serie.S01E02.1080p.DUAL.mkv\nDual Audio");
+  stream_definir_lista(v, n);
+  k = fontepref_escolher("tt1000001:1:2");
+  CONFERE(k == -1, "trilha de hoje sem a marca lembrada nao casa (%d)", k);
+
   // ------------------------------------------ 3. a lembrada sumiu: cai calado
   n = listaDoEpisodio(v, 3, 0);
   stream_definir_lista(v, n);
