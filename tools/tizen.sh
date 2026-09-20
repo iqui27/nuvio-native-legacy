@@ -184,6 +184,17 @@ eval emcc src/*.c -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} \
   `# 32 KB de pilha do asyncify, o mesmo valor da bancada que roda. O laco de` \
   `# quadro desenrola por aqui a cada SwapWindow; 16 KB era aperto sem motivo.` \
   -sASYNCIFY -sASYNCIFY_STACK_SIZE=32768 \
+  `# SO main E dados_iniciar SAO INSTRUMENTADOS. Sem esta lista o ASYNCIFY` \
+  `# instrumenta toda funcao que possa estar na pilha de uma chamada assincrona` \
+  `# — e como nv_ceder_quadro e chamada do laco em main, isso era o app` \
+  `# INTEIRO: cada funcao de desenho, decode e rede ganhava o codigo de` \
+  `# desenrolar/reenrolar pilha (custo em toda chamada, e wasm maior). As duas` \
+  `# unicas chamadas assincronas (nv_idbfs_montar em dados_iniciar e` \
+  `# nv_ceder_quadro em main) so tem main e dados_iniciar acima delas. Se` \
+  `# alguem puser outra EM_ASYNC_JS mais fundo, a TV aborta com "unreachable"` \
+  `# no desenrolar — e a lista aqui que precisa crescer. NUVIO_ASYNCIFY_TUDO=1` \
+  `# volta ao comportamento antigo para comparar.` \
+  $( [ -n "${NUVIO_ASYNCIFY_TUDO:-}" ] || printf -- "-sASYNCIFY_ONLY=[main,dados_iniciar]" ) \
   `# POOL DE 12. Ja esteve em 4, por um palpite meu que a evidencia derrubou:` \
   `# cortei supondo que o arranque estava LENTO por causa dos doze workers, e os` \
   `# marcos de tempo mostraram depois que ele estava CONGELADO, no WASM_BIGINT.` \

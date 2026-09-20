@@ -351,6 +351,16 @@ int main(int argc, char **argv) {
   // entregue, e o codigo que ela usa tambem nao era o que eu procurava.
   SDL_SetHint("SDL_WEBOS_ACCESS_POLICY_KEYS_BACK", "true");
 
+#ifdef __EMSCRIPTEN__
+  // SDL_Delay NUNCA via emscripten_sleep. Com -sASYNCIFY o SDL2 troca o
+  // SDL_Delay por emscripten_sleep, que so existe no fio principal; os nossos
+  // SDL_Delay estao todos em fios de trabalho (descoberta, streams,
+  // recomenda, atualizacao) e, com ASYNCIFY_ONLY (tizen.sh), um deles aborta
+  // o worker com "invalid state: 1". Com o hint em 0 o SDL_Delay vira o
+  // nanosleep dos pthreads, que e o que sempre se quis ali. O laco de quadro
+  // nao usa SDL_Delay: cede pelo rAF (nv_ceder_quadro).
+  SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
+#endif
   if (SDL_Init(SDL_INIT_VIDEO) != 0) { printf("SDL_Init: %s\n", SDL_GetError()); return 1; }
   IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG);
   // Antes de qualquer fio: ver nv_blindar_formatos em sdlcompat.h (issue #65).

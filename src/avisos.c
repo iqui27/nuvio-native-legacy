@@ -905,7 +905,14 @@ void avisos_envio_auto_passo(Uint32 agora) {
     return;
   }
   if (agora < proximo) return;
+  // 1 min no Tizen (e la que falta dado); 5 min no LG — o registro do LG com
+  // o player aberto enche os 200 KB em menos de um minuto (haylereader,
+  // 20/09: 200 KB por minuto de eventos [video]).
+#ifdef __EMSCRIPTEN__
   proximo = agora + 60000;
+#else
+  proximo = agora + 300000;
+#endif
   lerLogAtual();
   fflush(stdout);
   envioEstado = 1;
