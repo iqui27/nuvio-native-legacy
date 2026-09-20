@@ -1,8 +1,9 @@
 // GIF animado das capas de colecao (#29) e das fotos de perfil (#45).
 // Ver gif.h para onde anima e por que.
 #include "gif.h"
+// 1 quadro a frente (o da rc1) — ver a nota de ADD_FIOS em addons.c (#80).
 #ifndef NV_GIF_ADIANTE
-#define NV_GIF_ADIANTE 3
+#define NV_GIF_ADIANTE 1
 #endif
 #include <stdio.h>
 #include <stdlib.h>
