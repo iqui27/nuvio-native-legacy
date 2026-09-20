@@ -128,12 +128,22 @@ static void consome(const char *caminho) {
 // funciona e nada disto entra em jogo.
 static int pedidoNovo(const char *caminho, time_t *bloqueado) {
   struct stat st;
+#ifdef __EMSCRIPTEN__
+  // NAO HA /tmp/nuvio-* NO TIZEN — ninguem injeta tecla nem pede captura por
+  // arquivo la — e cada stat que falha custa um FS.ErrnoError do Emscripten
+  // (Error com pilha capturada + varredura de ERRNO_CODES), no fio principal,
+  // tres vezes por quadro. MEDIDO no Chrome com a build do Tizen: 8,3% do
+  // fio principal em ErrnoError, mais que todo o WASM junto (20/09, #72).
+  (void)caminho; (void)bloqueado; (void)st;
+  return 0;
+#else
   if (stat(caminho, &st) != 0 || st.st_size <= 0) return 0;
   // Pedido que ja foi atendido e nao pode ser esvaziado: ignora enquanto nao
   // mudar. Sem isto ele vale para sempre e o trabalho e refeito por quadro.
   if (*bloqueado && st.st_mtime == *bloqueado) return 0;
   *bloqueado = 0;
   return 1;
+#endif
 }
 
 // Esvazia e confere. Devolve 0 quando NAO conseguiu — dono diferente, sticky

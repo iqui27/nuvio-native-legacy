@@ -201,7 +201,11 @@ eval emcc src/*.c -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} \
   `# ("'PThread' was not exported"), ou seja, o proprio medidor mataria o app.` \
   -sEXPORTED_RUNTIME_METHODS='["PThread"]' \
   -lidbfs.js \
-  -sEXIT_RUNTIME=0 -sASSERTIONS="${NUVIO_ASSERTS:-1}" \
+  `# ASSERTIONS=0 NA BUILD DE ENTREGA (20/09/2026, #72). Com 1 o glue confere` \
+  `# pilha e assinatura a cada chamada JS<->wasm e cada erro de FS monta um` \
+  `# ErrnoError com pilha. O que ele dava — morrer falando em vez de calado —` \
+  `# hoje o registro em localStorage (tizen-shell.html) da. NUVIO_ASSERTS=1 liga.` \
+  -sEXIT_RUNTIME=0 -sASSERTIONS="${NUVIO_ASSERTS:-0}" \
   --preload-file deploy/app/fonts@/app/fonts \
   --preload-file "$ARTE"@/app/art \
   --shell-file "$SHELL_USADO"
