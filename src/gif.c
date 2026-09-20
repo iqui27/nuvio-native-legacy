@@ -355,14 +355,20 @@ EM_JS(int, gif_js_seq_subir, (int i, int nomeTex, int larg, int alt, int mesmoTa
     // o resto transparente: por isso 0,0 e nao esq,topo.
     s.cctx.drawImage(im, 0, 0);
     s.posto = i;
-    // SO TRES QUADROS DECODIFICADOS DE CADA VEZ. Uma capa de 90 quadros de
-    // 640x360 seriam ~80 MB de bitmap numa TV que ja vive no limite.
+    // JANELA DE QUATRO QUADROS decodificados (este e os tres seguintes), e os
+    // tres seguintes ja em decode. Eram tres com so o proximo em decode: na
+    // Samsung o decode de um quadro leva mais que o atraso do GIF (60-100 ms)
+    // e o quadro seguinte nunca estava pronto na hora — "plays but stutters"
+    // (rawldon, #72, 1.3.4-rc1). Uma capa de 90 quadros de 640x360 seriam
+    // ~80 MB se todos ficassem vivos; quatro sao ~4 MB.
     for (var k = 0; k < s.n; k++) {
-      if (k === i || k === (i + 1) % s.n || k === (i + 2) % s.n) continue;
+      if (k === i || k === (i + 1) % s.n || k === (i + 2) % s.n || k === (i + 3) % s.n) continue;
       if (s.imgs[k]) s.imgs[k] = null;
     }
-    var p1 = (i + 1) % s.n;
-    if (!s.imgs[p1] && s.urls[p1]) { var n1 = new Image(); n1.src = s.urls[p1]; s.imgs[p1] = n1; }
+    for (var d = 1; d <= 3; d++) {
+      var pk = (i + d) % s.n;
+      if (!s.imgs[pk] && s.urls[pk]) { var nk = new Image(); nk.src = s.urls[pk]; s.imgs[pk] = nk; }
+    }
   }
   // MESMO QUADRO E MESMO TAMANHO: nao ha o que subir de novo. Quem chama
   // pergunta a 15 fps e o GIF pode estar a 8.
@@ -467,7 +473,11 @@ GLuint gif_textura(const char *caminho, int largAlvo) {
       // ainda nao chegou seria um piscar; segurar o atual e invisivel.
       if (gif_js_seq_pronto(prox)) {
         iSeq = prox;
-        proxTroca = agora + seq[iSeq].atraso;
+        // Relogio ancorado no vencimento ANTERIOR, nao em `agora`: chegar
+        // 20 ms atrasado num quadro nao empurra todos os seguintes. Se o
+        // atraso acumulado passou de um quadro inteiro, realinha.
+        proxTroca += seq[iSeq].atraso;
+        if (proxTroca < agora) proxTroca = agora + seq[iSeq].atraso;
         if (!iSeq && !contouVolta) {
           contouVolta = 1;
           printf("[gif] deu a volta nos %d quadros em %.0f ms\n", nSeq, agora - inicioVolta);
