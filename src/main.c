@@ -836,7 +836,12 @@ int main(int argc, char **argv) {
     // Bandeira PROPRIA e nao `if (!quadros)`: `quadros` zera a cada relatorio
     // de 3 s, entao aquilo carimbaria "primeiro quadro" tres vezes por minuto.
     { static int jaCarimbou;
-      if (!jaCarimbou) { jaCarimbou = 1; marco("primeiro quadro na tela"); } }
+      if (!jaCarimbou) { jaCarimbou = 1; marco("primeiro quadro na tela");
+#ifdef __EMSCRIPTEN__
+        // Chegou: zera o contador de arranques falhados (tizen-shell.html).
+        EM_ASM({ try { localStorage.setItem('nv-boot-falhas', '0'); } catch (e) {} });
+#endif
+      } }
     quadros++;
 
     if (agora - ultRelato >= 3000) {

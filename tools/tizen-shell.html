@@ -213,6 +213,19 @@
     setInterval(nvLogGravar, 10000);
     document.addEventListener('visibilitychange', nvLogGravar);
     window.addEventListener('pagehide', nvLogGravar);
+    // ARRANQUES SEGUIDOS QUE NAO CHEGARAM AO PRIMEIRO QUADRO. O contador sobe
+    // aqui e o C zera no primeiro quadro (main.c). Dois seguidos = a TV nao
+    // consegue abrir o app (#77: "cant even enter the app", tambem depois de
+    // reinstalar). O que sobrevive a reinstalacao e a cache no IndexedDB
+    // (IDBFS carrega TUDO na memoria no arranque), entao no terceiro arranque
+    // ela e apagada antes de montar (dados.c le Module.nvApagarCache). Perde a
+    // sessao — login por QR de novo —, mas o app abre e o registro conta.
+    var nvFalhas = 0;
+    try {
+      nvFalhas = parseInt(localStorage.getItem('nv-boot-falhas') || '0', 10) || 0;
+      localStorage.setItem('nv-boot-falhas', String(nvFalhas + 1));
+    } catch (e) {}
+    window.__nvApagarCache = nvFalhas >= 2;
     function pintar() {
       if (painel && !painel.hidden) painel.innerHTML = linhas.join("\n");
     }

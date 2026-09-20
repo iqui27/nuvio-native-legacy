@@ -503,12 +503,38 @@ void fil_registrar(const char *chave, const char *titulo,
     //
     // SAI A ULTIMA ELEGIVEL, e nao a primeira: a posicao na tabela carrega a
     // ordem da home, e tirar do fim e o que menos mexe no que ja esta em cima.
+    //
+    // CORRIGIDO em 20/09/2026, na C9 do dono: o arquivo tinha 320 linhas, 283
+    // delas do Xperience (que declara 605 catalogos) com FORMA escolhida
+    // (tipo 2/3/4) e o resto oculto — NADA dispensavel pela regra acima. Duas
+    // consequencias: (1) canais, AICat e colecoes que a home desenhava ficaram
+    // fora da folha ("varias fileiras nao aparecem no reorder"); (2) PIOR:
+    // antes de lotar, a regra despejou "Continuar assistindo" e "Amigos
+    // assistindo" — sao AUTO/padrao e no arranque ainda nao estao naHome nem
+    // vista — e elas voltaram a entrar NO FIM da lista ("desceram"). Portanto:
+    //   a. fileira do APP (continue_watching, social_activity) NUNCA sai;
+    //   b. segunda passada: sem dispensavel puro, sai a ultima que nao esta
+    //      na home, nao foi vista e nao esta oculta MESMO com forma/tamanho
+    //      escolhidos — a forma de uma fileira que nem aparece vale menos do
+    //      que a pessoa poder mexer na que aparece. Oculta continua protegida:
+    //      despeja-la faria a fileira voltar.
+    //   c. as primeiras `limite` LIGADAS tambem nao saem: sao a home por
+    //      definicao (fil_unir emite nesta ordem e a home corta em `limite`),
+    //      mesmo que naHome ainda nao tenha sido marcado neste arranque —
+    //      e no arranque que a descoberta registra centenas de chaves.
     if (nLinhas >= FIL_MAX) {
-      int v = -1, k;
-      for (k = nLinhas - 1; k >= 0 && v < 0; k--)
-        if (!linhas[k].naHome && !linhas[k].vista && !linhas[k].oculta &&
-            linhas[k].tipo == FIL_TIPO_AUTO && linhas[k].tam == FIL_TAM_PADRAO)
-          v = k;
+      int v = -1, k, passo, ligadas = 0, topo[FIL_MAX];
+      for (k = 0; k < nLinhas; k++) {
+        topo[k] = !linhas[k].oculta && ligadas < limite;
+        if (!linhas[k].oculta) ligadas++;
+      }
+      for (passo = 0; passo < 2 && v < 0; passo++)
+        for (k = nLinhas - 1; k >= 0 && v < 0; k--)
+          if (!linhas[k].naHome && !linhas[k].vista && !linhas[k].oculta &&
+              !topo[k] && fil_origem_de(linhas[k].chave) != FIL_ORIGEM_APP &&
+              (passo == 1 || (linhas[k].tipo == FIL_TIPO_AUTO &&
+                              linhas[k].tam == FIL_TAM_PADRAO)))
+            v = k;
       if (v < 0) {
         pthread_mutex_unlock(&trava);
         printf("[fileiras] tabela cheia (%d) e nada dispensavel: \"%s\" ficou "

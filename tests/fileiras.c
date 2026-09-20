@@ -340,6 +340,44 @@ int main(void) {
         assert(tem10 && tem20); } } }
   puts("ok  tabela cheia: chave viva toma a vaga de linha morta sem escolha");
 
+  // TABELA CHEIA SO DE LINHAS COM FORMA ESCOLHIDA (a C9 do dono, 20/09/2026:
+  // 283 do Xperience com tipo 2/3/4, o resto oculto). Antes: "nada
+  // dispensavel", a chave nova ficava fora — e, pior, "Continuar assistindo"
+  // (AUTO/padrao, no arranque nem naHome nem vista) tinha sido despejada e
+  // voltado NO FIM. Agora: (a) fileira do app nunca sai; (b) as primeiras
+  // `limite` ligadas nao saem; (c) sem dispensavel puro, sai a ultima fora da
+  // home MESMO com forma escolhida.
+  fil_esquecer();
+  { int j;
+    FILE *arq = fopen("/tmp/fileirasui.txt", "w");
+    assert(arq);
+    fprintf(arq, "limite 7\nordem 1\n");
+    fprintf(arq, "linha continue_watching\t0\t0\t1\tContinuar assistindo\n");
+    fprintf(arq, "linha social_activity\t0\t0\t1\tAmigos assistindo\n");
+    for (j = 2; j < FIL_MAX; j++)
+      fprintf(arq, "linha xp_%d\t0\t2\t1\tXperience %d\n", j, j);
+    fclose(arq);
+    usaArquivo = 1;
+    fil_teste_recarregar();
+    assert(fil_n() == FIL_MAX);
+    fil_registrar("canal_novo", "Canais", "addon", "tv", 12);
+    assert(fil_n() == FIL_MAX);
+    { int v = -1, cw = -1, so = -1, ult = -1;
+      for (j = 0; j < fil_n(); j++) {
+        if (!strcmp(fil_chave(j), "canal_novo")) v = j;
+        if (!strcmp(fil_chave(j), "continue_watching")) cw = j;
+        if (!strcmp(fil_chave(j), "social_activity")) so = j;
+        if (!strcmp(fil_chave(j), "xp_319")) ult = j;
+      }
+      assert(v == fil_n() - 1);        // a nova entrou, no fim
+      assert(cw == 0 && so == 1);      // as do app ficaram onde estavam
+      assert(ult < 0);                 // saiu a ULTIMA com forma, nao uma do topo
+      for (j = 2; j < 7; j++) {        // as primeiras `limite` ligadas ficaram
+        char k[16]; snprintf(k, sizeof k, "xp_%d", j);
+        assert(!strcmp(fil_chave(j), k));
+      } } }
+  puts("ok  tabela cheia so de escolhidas: fileira do app e topo da home nunca saem");
+
   // MOVER PULA LINHA FORA DA HOME. A fantasma no meio nao come o movimento:
   // a fileira troca com a proxima VIVA, e a home muda junto.
   fil_esquecer();

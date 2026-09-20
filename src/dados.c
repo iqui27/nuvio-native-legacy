@@ -24,6 +24,17 @@
 // gravar de volta depois das mudancas (syncfs(false)).
 EM_ASYNC_JS(int, nv_idbfs_montar, (const char *ponto), {
   var caminho = UTF8ToString(ponto);
+  // Ver nv-boot-falhas em tools/tizen-shell.html: dois arranques seguidos sem
+  // primeiro quadro apagam o banco inteiro antes de montar.
+  if (window.__nvApagarCache) {
+    await new Promise(function (r) {
+      var req;
+      try { req = indexedDB.deleteDatabase(caminho); } catch (e) { r(0); return; }
+      req.onsuccess = req.onerror = req.onblocked = function () { r(1); };
+    });
+    if (window.__nvDiag) window.__nvDiag("[arranque] IndexedDB apagado: dois arranques seguidos sem chegar ao primeiro quadro", 1);
+    else console.log('[arranque] IndexedDB apagado apos dois arranques sem primeiro quadro');
+  }
   try {
     FS.mkdirTree(caminho);
     FS.mount(IDBFS, {}, caminho);
