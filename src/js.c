@@ -23,14 +23,33 @@ const char *js_fim(const char *p) {
 }
 
 // Acha `"chave"` dentro da faixa, ignorando ocorrencias dentro de textos.
+//
+// BUSCA LIMITADA A [ini,fim), e nao strstr. Medido no registro de uma Samsung
+// (Tizen 9, 2 GB, 20/09/2026): 256 pastas de colecao vindas da conta custavam
+// 12,4 s de fio principal parado — `upd=12737` no [quadro] — e 157 pastas,
+// 1,2 s. O strstr procurava a chave ate o FIM DO DOCUMENTO inteiro e so
+// depois a faixa recusava o achado: cada chave ausente numa pasta
+// (heroBackdropUrl, focusGifUrl, genre...) era uma varredura do blob inteiro,
+// e sao oito chaves assim por pasta. Quadratico no numero de pastas, e a
+// escolha de perfil e o sync pagavam por ele. Agora a varredura para em `fim`.
+static const char *achaChaveEm(const char *ini, const char *fim, const char *busca, size_t n) {
+  const char *p = ini;
+  if (!fim) fim = ini + strlen(ini);
+  while (p + n <= fim && (p = memchr(p, '"', (size_t)(fim - p))) != NULL) {
+    if (p + n > fim) return NULL;
+    if (!memcmp(p, busca, n)) return p;
+    p++;
+  }
+  return NULL;
+}
 static const char *achaChave(const char *ini, const char *fim, const char *chave) {
   char busca[64];
   const char *p = ini;
   size_t n;
   snprintf(busca, sizeof busca, "\"%s\"", chave);
   n = strlen(busca);
-  while ((p = strstr(p, busca)) != NULL) {
-    if (fim && p >= fim) return NULL;
+  if (!fim) fim = ini + strlen(ini);
+  while ((p = achaChaveEm(p, fim, busca, n)) != NULL) {
     { const char *q = pula(p + n);
       if (*q == ':') return q + 1; }
     p += n;
@@ -98,9 +117,9 @@ double js_num(const char *ini, const char *fim, const char *chave, double padrao
   size_t n;
   snprintf(busca, sizeof busca, "\"%s\"", chave);
   n = strlen(busca);
-  while ((p = strstr(p, busca)) != NULL) {
+  if (!fim) fim = ini + strlen(ini);
+  while ((p = achaChaveEm(p, fim, busca, n)) != NULL) {
     const char *q;
-    if (fim && p >= fim) break;
     q = pula(p + n);
     if (*q == ':') {
       q = pula(q + 1);
