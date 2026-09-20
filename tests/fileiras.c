@@ -367,7 +367,8 @@ int main(void) {
         if (!strcmp(fil_chave(j), "canal_novo")) v = j;
         if (!strcmp(fil_chave(j), "continue_watching")) cw = j;
         if (!strcmp(fil_chave(j), "social_activity")) so = j;
-        if (!strcmp(fil_chave(j), "xp_319")) ult = j;
+        { char u[16]; snprintf(u, sizeof u, "xp_%d", FIL_MAX - 1);
+          if (!strcmp(fil_chave(j), u)) ult = j; }
       }
       assert(v == fil_n() - 1);        // a nova entrou, no fim
       assert(cw == 0 && so == 1);      // as do app ficaram onde estavam

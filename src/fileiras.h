@@ -47,7 +47,10 @@
 // sozinho nunca resolve: o Xperience declara 605 catalogos por conta propria.
 // Por isso fil_registrar passou a DESPEJAR uma entrada dispensavel quando a
 // tabela enche, em vez de recusar a nova em silencio — a regra esta la.
-#define FIL_MAX      320
+// 768 desde 20/09/2026: a C9 do dono lotou os 320 so com o Xperience (283
+// linhas, todas com forma vinda da conta e por isso "escolhidas"), e o
+// despejo nao tinha o que despejar. ~230 KB de tabela; cabe nos dois alvos.
+#define FIL_MAX      768
 #define FIL_CHAVE   192
 #define FIL_TITULO   96
 

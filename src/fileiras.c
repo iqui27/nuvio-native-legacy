@@ -522,17 +522,23 @@ void fil_registrar(const char *chave, const char *titulo,
     //      definicao (fil_unir emite nesta ordem e a home corta em `limite`),
     //      mesmo que naHome ainda nao tenha sido marcado neste arranque —
     //      e no arranque que a descoberta registra centenas de chaves.
+    //   d. terceira passada, ultimo recurso: `vista` deixa de proteger. Na C9
+    //      TODAS as 283 do Xperience sao declaradas em todo arranque (vista=1)
+    //      e nenhuma esta na home — sem esta passada a fileira que a pessoa
+    //      VE continuava fora da folha. Sai a ultima que nao esta na home,
+    //      nao e do app, nao e do topo e nao esta oculta.
     if (nLinhas >= FIL_MAX) {
       int v = -1, k, passo, ligadas = 0, topo[FIL_MAX];
       for (k = 0; k < nLinhas; k++) {
         topo[k] = !linhas[k].oculta && ligadas < limite;
         if (!linhas[k].oculta) ligadas++;
       }
-      for (passo = 0; passo < 2 && v < 0; passo++)
+      for (passo = 0; passo < 3 && v < 0; passo++)
         for (k = nLinhas - 1; k >= 0 && v < 0; k--)
-          if (!linhas[k].naHome && !linhas[k].vista && !linhas[k].oculta &&
-              !topo[k] && fil_origem_de(linhas[k].chave) != FIL_ORIGEM_APP &&
-              (passo == 1 || (linhas[k].tipo == FIL_TIPO_AUTO &&
+          if (!linhas[k].naHome && (passo == 2 || !linhas[k].vista) &&
+              !linhas[k].oculta && !topo[k] &&
+              fil_origem_de(linhas[k].chave) != FIL_ORIGEM_APP &&
+              (passo >= 1 || (linhas[k].tipo == FIL_TIPO_AUTO &&
                               linhas[k].tam == FIL_TAM_PADRAO)))
             v = k;
       if (v < 0) {
