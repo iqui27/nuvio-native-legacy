@@ -493,7 +493,7 @@ static float topoDe(int i) {
       y += socialAntes(k) + socialAlt(k) + SPS_GAP;
     return y + socialAntes(i);
   }
-  if (aba == SP_ABA_AVISOS) return (float)i * AVISOS_LINHA_H;
+  if (aba == SP_ABA_AVISOS) return avisos_lista_y(i, foco);
   // Rotulo da primeira secao, sempre; mais o de "Não começados" para quem vem
   // depois dele. Com nCont == 0 nao existe segunda secao — a unica que aparece
   // e "Sua lista", e o segundo termo tem de ser zero para todo mundo.
@@ -673,7 +673,7 @@ void spainel_atualizar(float dt, Uint32 agora) {
     // A ALTURA DA LINHA FOCADA, e nao SP_POSTER_H sempre: na aba Social a linha
     // pode ter 84, 112 ou 138px, e usar a maior empurraria a rolagem 54px alem
     // do necessario num interruptor de 104.
-    base = topo + (aba == SP_ABA_SOCIAL ? socialAlt(foco) : aba == SP_ABA_AVISOS ? AVISOS_LINHA_H - 10.0f : SP_POSTER_H);
+    base = topo + (aba == SP_ABA_SOCIAL ? socialAlt(foco) : aba == SP_ABA_AVISOS ? avisos_lista_altura_linha(foco, foco) - 10.0f : SP_POSTER_H);
     if (base - alvo > janela) alvo = base - janela;
     if (topo - alvo < 0.0f) alvo = topo;
   }

@@ -64,10 +64,14 @@ int  avisos_pediu(void);
 // A LISTA COMO COMPONENTE, para a aba AVISOS do painel de Salvos: quem hospeda
 // desenha na caixa que tem, guarda o proprio foco e chama _ok no OK. _ok
 // devolve 1 quando a linha abre outra coisa (o hospedeiro fecha); _marcar_lidos
-// ao fechar. Uma linha mede AVISOS_LINHA_H.
+// ao fechar. Uma linha mede AVISOS_LINHA_H, EXCETO a linha em foco de um aviso
+// do canal, que cresce para o texto inteiro: o hospedeiro posiciona por
+// avisos_lista_y / avisos_lista_altura_linha, que sabem disso.
 #define AVISOS_LINHA_H 164.0f
 int   avisos_lista_n(void);
 float avisos_lista_altura(void);
+float avisos_lista_altura_linha(int linha, int focoLinha);
+float avisos_lista_y(int linha, int focoLinha);
 void  avisos_lista_desenhar(float x, float y, float w, float a, int focoLinha);
 int   avisos_lista_ok(int linha);
 void  avisos_marcar_lidos(void);

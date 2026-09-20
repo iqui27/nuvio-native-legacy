@@ -29,7 +29,11 @@
 
 // O canal do dono: um arquivo no proprio repositorio. Sem servidor novo e sem
 // segredo: qualquer um pode ler, e e essa a intencao de um aviso.
+// -DAV_CANAL_URL=... na compilacao aponta para outro canal: e como se olha um
+// aviso antes de publica-lo para todo mundo (previa no Mac ou na TV do dono).
+#ifndef AV_CANAL_URL
 #define AV_CANAL_URL "https://raw.githubusercontent.com/iqui27/nuvio-native-legacy/master/avisos.json"
+#endif
 #define AV_CANAL_INTERVALO_MS (30u * 60u * 1000u)
 #define AV_MAX        40
 #define AV_VISTOS_ARQ "avisos-vistos.txt"
@@ -653,6 +657,27 @@ static void desenharToast(void) {
 // AVISOS do painel de Salvos tambem (pedido do dono: abrir quando quiser, sem
 // depender do toast). `foco` e de quem chama; -1 = nenhuma linha em foco.
 #define AVL_ROW 164.0f
+// A LINHA EM FOCO DE UM AVISO DO CANAL CRESCE para o texto inteiro (20/09/2026,
+// visto na previa do aviso da 1.3.4-rc1: duas linhas cortavam justamente o
+// "onde baixar"). As outras ficam em AVL_ROW. A altura expandida e medida no
+// desenho (txt_bloco devolve o que ocupou) e vale a partir do quadro seguinte —
+// a mola do hospedeiro engole o quadro de diferenca.
+#define AVL_LINHAS_CANAL 8
+static float alturaCanalFoco = AVL_ROW + 4.0f * 27.0f;
+static int ehCanalExpansivel(int i) { return i >= 0 && i < n && itens[i].tipo == AV_CANAL; }
+float avisos_lista_altura_linha(int linha, int focoLinha) {
+  float h = AVL_ROW;
+  pthread_mutex_lock(&trava);
+  if (linha == focoLinha && ehCanalExpansivel(linha)) h = alturaCanalFoco;
+  pthread_mutex_unlock(&trava);
+  return h;
+}
+float avisos_lista_y(int linha, int focoLinha) {
+  float y = 0.0f;
+  int i;
+  for (i = 0; i < linha; i++) y += avisos_lista_altura_linha(i, focoLinha);
+  return y;
+}
 float avisos_lista_altura(void) {
   pthread_mutex_lock(&trava);
   { float h = n > 0 ? (float)n * AVL_ROW : 60.0f; pthread_mutex_unlock(&trava); return h; }
@@ -668,11 +693,13 @@ void avisos_lista_desenhar(float x, float y0, float w, float a, int focoLinha) {
     TxtLinha t = txt_linha(TXT_CAPTION, i18n("Nada por enquanto."), 150, 153, 162, 255);
     txt_desenhar_alpha(t, x, y0, a);
   }
+  { float y = y0;
   for (i = 0; i < n; i++) {
     const Aviso *av = &itens[i];
-    float y = y0 + (float)i * AVL_ROW;
     int f = (i == focoLinha);
-    GfxRect row = { x, y, w, AVL_ROW - 10.0f };
+    int expande = f && av->tipo == AV_CANAL;
+    float rowH = expande ? alturaCanalFoco : AVL_ROW;
+    GfxRect row = { x, y, w, rowH - 10.0f };
     const char *acao = NULL;
     gfx_cor(row, 14.0f / row.h, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, 0.34f * a);
     if (f) gfx_cor(row, 14.0f / row.h, ar, ag, ab, a);
@@ -685,8 +712,14 @@ void avisos_lista_desenhar(float x, float y0, float w, float a, int focoLinha) {
     if (!av->visto && !f) gfx_cor((GfxRect){ x + 62.0f, y + 18.0f, 14.0f, 14.0f }, 0.5f, ar, ag, ab, a);
     { TxtLinha t = txt_linha_corta(TXT_BODY, av->titulo, f ? 20 : 240, f ? 21 : 241, f ? 25 : 245, 255, w - 116.0f);
       txt_desenhar_alpha(t, x + 92.0f, y + 16.0f, a); }
-    if (f) txt_bloco(TXT_CAPTION, av->texto, 60, 62, 70, x + 92.0f, y + 50.0f, w - 116.0f, 27.0f, a, 2);
-    else   txt_bloco(TXT_CAPTION, av->texto, 150, 153, 162, x + 92.0f, y + 50.0f, w - 116.0f, 27.0f, a, 2);
+    if (expande) {
+      float h = txt_bloco(TXT_CAPTION, av->texto, 60, 62, 70, x + 92.0f, y + 50.0f, w - 116.0f, 27.0f, a, AVL_LINHAS_CANAL);
+      float nova = 50.0f + h + 34.0f;
+      if (nova < AVL_ROW) nova = AVL_ROW;
+      alturaCanalFoco = nova;
+    }
+    else if (f) txt_bloco(TXT_CAPTION, av->texto, 60, 62, 70, x + 92.0f, y + 50.0f, w - 116.0f, 27.0f, a, 2);
+    else        txt_bloco(TXT_CAPTION, av->texto, 150, 153, 162, x + 92.0f, y + 50.0f, w - 116.0f, 27.0f, a, 2);
     switch (av->tipo) {
       case AV_REC:    acao = i18n("OK abre Salvos"); break;
       case AV_AGENDA: acao = i18n("OK abre o título"); break;
@@ -699,7 +732,8 @@ void avisos_lista_desenhar(float x, float y0, float w, float a, int focoLinha) {
       TxtLinha t = txt_linha(TXT_CAPTION2, acao, f ? 40 : 120, f ? 42 : 124, f ? 50 : 134, 255);
       txt_desenhar_alpha(t, x + 92.0f, y + row.h - 34.0f, a * 0.95f);
     }
-  }
+    y += rowH;
+  } }
   pthread_mutex_unlock(&trava);
 }
 
@@ -751,7 +785,8 @@ void avisos_desenhar(Uint32 agora) {
             150, 153, 162, AVP_X + dx + AVP_MARG, 118.0f, AVP_W - 2 * AVP_MARG, 28.0f, a, 2);
   gfx_recorte(AVP_X + dx, AVP_TOPO - 8.0f, AVP_W, NV_TELA_H - 80.0f - AVP_TOPO + 8.0f);
   { float areaH = NV_TELA_H - 80.0f - AVP_TOPO;
-    float alvo = (foco + 1) * AVL_ROW > areaH ? (foco + 1) * AVL_ROW - areaH : 0.0f;
+    float fim = avisos_lista_y(foco, foco) + avisos_lista_altura_linha(foco, foco);
+    float alvo = fim > areaH ? fim - areaH : 0.0f;
     rol += (alvo - rol) * 0.25f; }
   avisos_lista_desenhar(AVP_X + dx + AVP_MARG, AVP_TOPO - rol, AVP_W - 2 * AVP_MARG, a, foco);
   gfx_sem_recorte();
