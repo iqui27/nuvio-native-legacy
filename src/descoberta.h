@@ -63,6 +63,7 @@ const char *desc_tmdb_idioma(void);
 // O modulo `pessoa` precisa dela para a filmografia, e ler o arquivo duas vezes
 // daria duas fontes de verdade para o mesmo segredo.
 const char *desc_chave_tmdb(void);
+const char *desc_chave_tmdb_reserva(void);   // para artereserva.c: ignora o ajuste "TMDB"
 
 // "2026-07-29" -> "29 de julho de 2026". Vive aqui porque a descoberta ja
 // precisava dela para a data de episodio; a tabela "Detalhes do Filme" e o

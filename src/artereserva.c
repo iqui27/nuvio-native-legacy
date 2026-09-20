@@ -82,8 +82,14 @@ int arte_reserva_url(const char *url, char *saida, size_t tam) {
   char *resp;
   int poster, temp = 0, ep = 0;
   if (!url || !saida || tam < 80) return 0;
-  chave = desc_chave_tmdb();
-  if (!chave[0]) return 0;
+  chave = desc_chave_tmdb_reserva();
+  if (!chave[0]) {
+    // UMA VEZ: e o unico jeito de saber pelo log que a reserva existe e nao
+    // pode agir (#67: "the fallback didn't help" sem uma linha para provar).
+    static int avisou;
+    if (!avisou) { avisou = 1; printf("[tex] reserva do TMDB indisponivel: sem chave do TMDB neste pacote\n"); fflush(stdout); }
+    return 0;
+  }
   if (lerStill(url, id, sizeof id, &temp, &ep)) return reservaStill(chave, id, temp, ep, saida, tam);
   if (!lerMetahub(url, tipo, sizeof tipo, id, sizeof id)) return 0;
   poster = !strcmp(tipo, "poster");

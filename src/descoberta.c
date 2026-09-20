@@ -94,6 +94,13 @@ void desc_tmdb(const char *dirArte) {
 const char *desc_chave_tmdb(void) {
   return ajustes_tmdb_ligado() ? tmdbChave : "";
 }
+// A RESERVA DE ARTE NAO E INTEGRACAO (#67, 20/09/2026): o ajuste "TMDB" liga
+// elenco, ficha, notas — enriquecimento. A reserva so busca a MESMA imagem
+// que o metahub nao entregou, e quem chega do app web tem esse ajuste
+// desligado por padrao (la e opt-in): com a reserva atras do ajuste, a
+// biblioteca do relator continuava sem cartaz depois da 1.3.2. Chave crua,
+// sem passar pelo ajuste.
+const char *desc_chave_tmdb_reserva(void) { return tmdbChave; }
 
 // strstr que NAO passa de `fim`. O objeto da regiao BR termina antes das
 // outras regioes na resposta do TMDB; procurar rent/buy no corpo inteiro

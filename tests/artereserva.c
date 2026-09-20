@@ -12,6 +12,7 @@ static const char *respostaEp = NULL;    // resposta do /tv/.../episode/...
 static char ultimaUrl[400];
 static int pedidos;
 const char *desc_chave_tmdb(void) { return chave; }
+const char *desc_chave_tmdb_reserva(void) { return chave; }
 char *rede_baixar(const char *url, int segundos) {
   (void)segundos;
   pedidos++;
