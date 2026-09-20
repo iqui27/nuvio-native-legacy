@@ -95,6 +95,8 @@ int   ajustes_salvos_no_trakt(void);
 void  ajustes_definir_salvos_no_trakt(int noTrakt);
 // Envio automatico do registro (Sobre). 1 = ligado.
 int   ajustes_envio_auto(void);
+// Forca da vinheta do fundo do titulo, 0..1 (1 = a medida do web).
+float ajustes_detalhe_veu(void);
 void  ajustes_definir_envio_auto(int ligado);
 // homeImdbRatingsVisibility: 0 SHOW_ALL, 1 HIDE_ALL
 int   ajustes_notas_home(void);

@@ -50,6 +50,8 @@ struct SDL_Surface *tex_reduzir(struct SDL_Surface *src, int lw, int lh);
 //
 // Prefira esta a tex_obter em qualquer arte de lista: e onde o cache estoura.
 GLuint tex_obter_larg(const char *caminho, float largLayout);
+// Entrega a textura menor ja existente enquanto a maior e reprocessada.
+GLuint tex_obter_larg_qualquer(const char *caminho, float largLayout);
 
 // Como tex_obter_larg, para arte QUE SO VALE POR UM INSTANTE: o quadro de uma
 // sequencia animada, que a tela mostra por 67 ms e troca. O cache a despeja

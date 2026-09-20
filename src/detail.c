@@ -718,7 +718,9 @@ static void desenhaArteDetalhe(GfxRect alvo, GLuint tex, const char *arte,
   }
   gfx_tex_aspect_atual = tex_aspecto(arte);
   if (!poster) {
-    gfx_rect(alvo, tex, GFX_DETALHE, 1.0f - pg, 0, 0, 0.0f, 0, 0, 0,
+    // uFoco = forca da vinheta: cai com a rolagem (pg) e pelo ajuste
+    // "Escurecimento do fundo" (0 = arte limpa).
+    gfx_rect(alvo, tex, GFX_DETALHE, (1.0f - pg) * ajustes_detalhe_veu(), 0, 0, 0.0f, 0, 0, 0,
              alpha);
   } else {
     float ap = gfx_tex_aspect_atual > 0.05f ? gfx_tex_aspect_atual : (2.0f / 3.0f);
@@ -2491,7 +2493,13 @@ static void heroWeb(float a, float desloc) {
   // O logo e desenhado com 261 de largura mas a arte de origem costuma vir bem
   // maior; o teto de 960 ja bastaria, mas quando a mesma arte tambem serve ao
   // hero o item e promovido — por isso passa pelo mesmo caminho.
-  GLuint texLogo = arqLogo ? tex_obter(arqLogo) : 0;
+  // tex_obter_larg com a largura que o logo OCUPA, e nao tex_obter (teto
+  // generico): com a URL unica de artehero_url_logo_larg o card aberto ja
+  // decodificou este mesmo arquivo em ~370 px, e o cache so entrega uma
+  // textura menor enquanto reprocessa se ela tiver ao menos metade do
+  // pedido. Pedindo o teto, o logo sumia por um instante ao abrir o titulo;
+  // pedindo a largura real, aparece na hora e troca pela nitida em seguida.
+  GLuint texLogo = arqLogo ? tex_obter_larg_qualquer(arqLogo, NV_DETW_LOGO_MAXW) : 0;
   if (texLogo) {
     float asp = tex_aspecto(arqLogo);
     if (asp <= 0.0f) asp = 2.5f;

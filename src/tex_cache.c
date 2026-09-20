@@ -1873,6 +1873,9 @@ void tex_encerrar(void) {
   SDL_DestroyCond(cond); SDL_DestroyMutex(mtx);
 }
 
+// Ver tex_obter_larg_qualquer: 1 durante essa chamada, e a textura menor que
+// ja existe e entregue enquanto a maior e reprocessada.
+static int aceitaMenor;
 static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
                                int passageiro) {
   if (!caminho || !*caminho) return 0;
@@ -1985,7 +1988,7 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
     // receberia essa miniatura esticada a 1920 — um borrao de tela cheia por
     // ~100 ms a cada troca — em vez de esperar a grande, que e o que o
     // crossfade dele ja sabe fazer.
-    saida = (itens[i].estado == PRONTO || itens[i].w * 2 >= limite)
+    saida = (itens[i].estado == PRONTO || itens[i].w * 2 >= limite || aceitaMenor)
               ? itens[i].tex : 0;
   } else {
     int novo = slotLivre();
@@ -2033,6 +2036,19 @@ GLuint tex_obter_larg(const char *caminho, float largLayout) {
   cap = capDeLargura(largLayout);
   // Tela cheia fura a fila; card de fileira, nao (ver `urgente` no Item).
   return tex_obter_limite(caminho, cap, cap > NV_TEX_LARG_MAX, 0);
+}
+
+// Como tex_obter_larg, mas ENTREGA O QUE JA EXISTE: se o arquivo foi
+// decodificado menor (o logo do card aberto, ~370 px) e o pedido e maior, a
+// textura pequena volta ja, ampliada, enquanto a grande e reprocessada — em
+// vez de um buraco ate ela chegar. Para arte que e a mesma em dois lugares
+// (logo do titulo no card e no detalhe).
+GLuint tex_obter_larg_qualquer(const char *caminho, float largLayout) {
+  GLuint t;
+  aceitaMenor = 1;
+  t = tex_obter_larg(caminho, largLayout);
+  aceitaMenor = 0;
+  return t;
 }
 
 GLuint tex_obter_passageira(const char *caminho, float largLayout) {

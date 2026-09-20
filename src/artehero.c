@@ -186,12 +186,18 @@ const char *artehero_url_logo_larg(const char *logo, float larg) {
   char *buf;
   const char *p, *nome;
   const char *tam;
+  // UM TAMANHO SO, para todo lugar (dono, 20/09/2026: "a arte do titulo
+  // demora muito pra carregar e ja temos a arte no card — nao da para usar
+  // uma em alta para tudo?"). Antes a escada w300/w500/w780/w1280 seguia a
+  // largura pedida: o card aberto pedia w500, o heroi e o detalhe w1280 — tres
+  // ARQUIVOS diferentes da mesma logo, e abrir o titulo baixava a w1280 do
+  // zero mesmo com a w500 ja na tela. Agora a URL e a mesma em todos: o
+  // primeiro a mostrar baixa uma vez, os outros reaproveitam o arquivo (a
+  // decodificacao sobe de tamanho localmente, sem rede). O card paga um PNG
+  // maior (~150 KB contra ~60), uma vez por titulo.
+  (void)larg;
   if (qualidadeImg == 2) tam = "original";
-  else if (larg <= 0.0f) tam = qualidadeImg == 0 ? "w500" : "w1280";
-  else if (larg <= 300.0f) tam = "w300";
-  else if (larg <= 500.0f) tam = qualidadeImg == 0 ? "w300" : "w500";
-  else if (larg <= 780.0f) tam = qualidadeImg == 0 ? "w500" : "w780";
-  else tam = qualidadeImg == 0 ? "w780" : "w1280";
+  else tam = qualidadeImg == 0 ? "w500" : "w1280";
   if (!logo || !logo[0]) return logo;
   p = strstr(logo, "/t/p/");
   if (!p) return logo;                       // metahub, arquivo local, etc.
