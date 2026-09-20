@@ -133,14 +133,18 @@ static int nRecs;
 // uma tela separada com laco proprio: o D-pad, a rolagem, a animacao de foco e
 // o recorte do painel ja funcionam para linhas, e uma segunda maquina de estado
 // para duas pilulas divergiria da primeira na primeira correcao.
+//   SPS_AMIGO               um contato ja adicionado (foto + nome), sob o
+//                           cabecalho "Seus amigos" (dono, 20/09/2026)
 enum { SPS_CONSENT_NAO = 0, SPS_CONSENT_SIM, SPS_REC, SPS_SUG,
-       SPS_ADICIONAR, SPS_APARECER };
+       SPS_ADICIONAR, SPS_APARECER, SPS_AMIGO };
 typedef struct { unsigned char tipo; short idx; } SPSocial;
-#define SP_SOCIAL_MAX (REC_MAX + REC_SUGESTOES_MAX + 4)
+#define SP_SOCIAL_MAX (REC_MAX + REC_SUGESTOES_MAX + REC_CONTATOS_MAX + 4)
 static SPSocial social[SP_SOCIAL_MAX];
 static int nSocial;
 static RecSugestao sugs[REC_SUGESTOES_MAX];
 static int nSugs;
+static RecContato ctts[REC_CONTATOS_MAX];
+static int nCtts;
 // Retrato do estado do consentimento na ultima reconstrucao. O fio de rede pode
 // adotar um "sim" respondido em OUTRA TV no meio de um ciclo (ver a
 // reconciliacao em recomenda.c), e sem esta marca a pergunta continuaria na
@@ -349,6 +353,7 @@ static float socialAlt(int i) {
   switch (social[i].tipo) {
     case SPS_REC:       return SP_POSTER_H;
     case SPS_SUG:       return SPS_H_SUG;
+    case SPS_AMIGO:     return SPS_H_SUG;
     case SPS_ADICIONAR: return SPS_H_ACAO;
     case SPS_APARECER:  return SPS_H_APARECER;
     default:            return SPS_H_CONSENT;
@@ -366,8 +371,8 @@ static float socialAlt(int i) {
 static float socialAntes(int i) {
   if (i < 0 || i >= nSocial) return 0.0f;
   if (social[i].tipo == SPS_APARECER) return SPS_SEP_APARECER;
-  if (social[i].tipo != SPS_SUG) return 0.0f;
-  return (i == 0 || social[i - 1].tipo != SPS_SUG) ? SP_SECAO_H : 0.0f;
+  if (social[i].tipo != SPS_SUG && social[i].tipo != SPS_AMIGO) return 0.0f;
+  return (i == 0 || social[i - 1].tipo != social[i].tipo) ? SP_SECAO_H : 0.0f;
 }
 
 // Altura do bloco de texto que abre a lista e nao recebe foco.
@@ -385,6 +390,7 @@ static void reconstruirSocial(void) {
   int i;
   nRecs = 0;
   nSugs = 0;
+  nCtts = 0;
   nSocial = 0;
   consentEstado = -1;
   if (!temAbas()) return;
@@ -416,6 +422,13 @@ static void reconstruirSocial(void) {
   }
   for (i = 0; i < nSugs && nSocial < SP_SOCIAL_MAX; i++) {
     social[nSocial].tipo = SPS_SUG; social[nSocial].idx = (short)i; nSocial++;
+  }
+  // OS AMIGOS JA ADICIONADOS, com foto, antes de "Adicionar um amigo": a aba
+  // dizia o codigo e oferecia adicionar, mas nunca mostrava QUEM ja estava
+  // na lista.
+  nCtts = recomenda_contatos(ctts, REC_CONTATOS_MAX);
+  for (i = 0; i < nCtts && nSocial < SP_SOCIAL_MAX; i++) {
+    social[nSocial].tipo = SPS_AMIGO; social[nSocial].idx = (short)i; nSocial++;
   }
   if (nSocial < SP_SOCIAL_MAX) {
     social[nSocial].tipo = SPS_ADICIONAR; social[nSocial].idx = 0; nSocial++;
@@ -577,6 +590,11 @@ void spainel_evento(const SDL_Event *e) {
           // por cima dele e Voltar devolve o foco aqui, em vez de jogar a
           // pessoa de volta na home.
           recenviar_abrir_amigos();
+          return;
+        case SPS_AMIGO:
+          // Sem acao por enquanto: a linha existe para mostrar quem ja esta
+          // na lista. Cair no `default` abriria o titulo de uma recomendacao
+          // pelo indice do contato.
           return;
         case SPS_APARECER:
           // MUDAR DE IDEIA CUSTA UM OK, nos dois sentidos. Sem confirmacao de
@@ -1318,6 +1336,57 @@ static void desenhaSugLinha(int i, int idx, float dx, float y, float a) {
                          p.y + (REC_SELO_H - acao.h) * 0.5f, a); } }
 }
 
+// Linha de um AMIGO JA ADICIONADO: foto (ou inicial), nome e de onde veio
+// (Trakt ou codigo). Mesma caixa e mesmo foco da sugestao, sem o botao —
+// nao ha acao aqui alem de reconhecer quem esta na lista.
+static void desenhaAmigoLinha(int i, int idx, float dx, float y, float a) {
+  const RecContato *c = &ctts[idx];
+  float f = (i >= 0 && i < SP_MAX) ? animFoco[i] : 0.0f;
+  float px = SP_X + dx + SP_PAD;
+  int esc = f > 0.5f;
+  if (f > 0.01f) {
+    GfxRect p = { px - 12.0f, y - 10.0f, SP_INTERNO + 24.0f, SPS_H_SUG + 20.0f };
+    float fr, fg, fb; esc = ajustes_acento_tinta(&fr, &fg, &fb) < 0.5f;
+    gfx_cor(p, 0.06f, fr, fg, fb, f * a);
+  }
+  { GfxRect av = { px, y + (SPS_H_SUG - SPS_SUG_AV) * 0.5f, SPS_SUG_AV, SPS_SUG_AV };
+    rec_avatar(av, c->avatar, c->nome, c->id, a); }
+  { float tx = px + SPS_SUG_AV + SPS_SUG_GAP;
+    float larg = SP_INTERNO - (SPS_SUG_AV + SPS_SUG_GAP) - 20.0f;
+    int c1 = esc ? 20 : 245, c2 = esc ? 74 : 168;
+    const char *origem = !strcmp(c->origem, "trakt") ? "Amigo do Trakt" : "Adicionado pelo código";
+    char linha2[220];
+    // O QUE ELE VIU POR ULTIMO (dono, 20/09/2026): a fileira "Amigos
+    // assistindo" da home ja carrega a ultima atividade de cada seguido do
+    // Trakt (socialSlug/socialAcao/titulo); o contato do Trakt tem id
+    // "trakt:<slug>". Sem atividade, fica a origem.
+    snprintf(linha2, sizeof linha2, "%s", i18n(origem));
+    if (!strncmp(c->id, "trakt:", 6)) {
+      int r, k;
+      for (r = 0; r < cat_n_fileiras(); r++) {
+        const CatFileira *f = cat_fileira(r);
+        if (!f || strcmp(f->chave, "social_activity")) continue;
+        for (k = 0; k < f->n; k++) {
+          const CatItem *it = cat_item(f->ini + k);
+          if (!it || strcmp(it->socialSlug, c->id + 6)) continue;
+          if (it->temporada > 0 && it->episodio > 0) {
+            char te[24];
+            snprintf(te, sizeof te, i18n("T%dE%d"), it->temporada, it->episodio);
+            snprintf(linha2, sizeof linha2, "%s  \xc2\xb7  %s  %s", i18n(it->socialAcao),
+                     it->titulo, te);
+          }
+          else
+            snprintf(linha2, sizeof linha2, "%s  \xc2\xb7  %s", i18n(it->socialAcao), it->titulo);
+          r = cat_n_fileiras(); break;
+        }
+      }
+    }
+    { TxtLinha t = txt_linha_corta(TXT_CALLOUT, c->nome, c1, c1 + 1, c1 + 5, 255, larg);
+      txt_desenhar_alpha(t, tx, y + 26.0f, a); }
+    { TxtLinha t = txt_linha_corta(TXT_CAPTION2, linha2, c2, c2 + 4, c2 + 14, 255, larg);
+      txt_desenhar_alpha(t, tx, y + 62.0f, a * 0.95f); } }
+}
+
 static void desenhaVazio(float dx, float a) {
   float cx = SP_X + dx + SP_W * 0.5f;
   TxtLinha t1 = txt_linha(TXT_CALLOUT, "Nada salvo por enquanto", 240, 242, 248, 255);
@@ -1416,9 +1485,11 @@ void spainel_desenhar(Uint32 agora) {
       float cab = socialAntes(i);
       if (cab > 0.0f) {
         // So a secao das sugestoes tem rotulo; o vao do interruptor e mudo.
-        if (social[i].tipo == SPS_SUG &&
+        if ((social[i].tipo == SPS_SUG || social[i].tipo == SPS_AMIGO) &&
             y + cab >= listaTopo() && y <= SP_LISTA_BASE) {
-          TxtLinha t = txt_linha(TXT_CAPTION2, "Pessoas que você talvez conheça",
+          TxtLinha t = txt_linha(TXT_CAPTION2,
+                                 social[i].tipo == SPS_SUG ? "Pessoas que você talvez conheça"
+                                                           : "Seus amigos",
                                  150, 154, 165, 255);
           txt_desenhar_alpha(t, SP_X + x + SP_PAD, y + cab - t.h - 12.0f, a * 0.9f);
         }
@@ -1430,6 +1501,7 @@ void spainel_desenhar(Uint32 agora) {
         switch (social[i].tipo) {
           case SPS_REC: desenhaRecLinha(i, social[i].idx, x, y, a); break;
           case SPS_SUG: desenhaSugLinha(i, social[i].idx, x, y, a); break;
+          case SPS_AMIGO: desenhaAmigoLinha(i, social[i].idx, x, y, a); break;
           case SPS_ADICIONAR:
             // A linha de "Adicionar um amigo" fecha a lista, e nao um botao
             // solto no rodape: ela rola com o resto e recebe foco como qualquer

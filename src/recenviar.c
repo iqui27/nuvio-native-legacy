@@ -460,16 +460,38 @@ static float desenhaCodigo(float x, float y, float larg, float a) {
 // claro e texto escuro, em DEGRAU e nao interpolado — a cor faz parte da chave
 // do cache de linhas de text.c e uma cor por quadro apaga o texto (ver a nota
 // longa em ctxmenu.c).
+// O contato da linha `i` desta pagina, ou NULL quando a linha e uma acao.
+static const RecContato *contatoDaLinha(int i) {
+  if (pagina == RE_PAG_CONTATOS) return (i >= 0 && i < nCtts) ? &ctts[i] : NULL;
+  if (pagina == RE_PAG_AMIGOS)   return (i >= 2 && i - 2 < nCtts) ? &ctts[i - 2] : NULL;
+  return NULL;
+}
+
+// Cabecalho "Seus amigos" entre as duas acoes e a lista, na tela de amigos
+// (dono, 20/09/2026: "separar com o titulo que sao amigos ja adicionados").
+#define RE_SECAO 44.0f
+static float secaoAntes(int i) {
+  return (pagina == RE_PAG_AMIGOS && i == 2 && nCtts > 0) ? RE_SECAO : 0.0f;
+}
+
 static void desenhaLinha(float x, float y, const char *rot, int focada,
-                         float a) {
+                         float a, const RecContato *c) {
   GfxRect r = { x, y, RE_INTERNO, RE_LINHA };
-  float fr = 0.176f, fg = 0.176f, fb = 0.176f;
+  float fr = 0.176f, fg = 0.176f, fb = 0.176f, tx = r.x + 44.0f;
   int cor = 240;
   if (focada) cor = (int)(ajustes_acento_tinta(&fr, &fg, &fb) * 255.0f + 0.5f);
   gfx_cor(r, 14.0f / RE_LINHA, fr, fg, fb, a);
+  // FOTO DO AMIGO (ou a inicial), como na aba Social: a linha so com o nome
+  // nao dizia quem era.
+  if (c) {
+    float d = RE_LINHA - 24.0f;
+    GfxRect av = { r.x + 22.0f, y + 12.0f, d, d };
+    rec_avatar(av, c->avatar, c->nome, c->id, a);
+    tx = av.x + d + 18.0f;
+  }
   { TxtLinha t = txt_linha_corta(TXT_PLR_CORPO, rot, cor, cor, cor, 255,
-                                 r.w - 88.0f);
-    txt_desenhar_alpha(t, r.x + 44.0f, y + (RE_LINHA - t.h) * 0.5f, a); }
+                                 r.x + r.w - 24.0f - tx);
+    txt_desenhar_alpha(t, tx, y + (RE_LINHA - t.h) * 0.5f, a); }
   if (focada) {
     TxtLinha seta = txt_linha(TXT_CAPTION2, "▸", cor, cor, cor, 255);
     txt_desenhar_alpha(seta, r.x + 16.0f, y + (RE_LINHA - seta.h) * 0.5f, a);
@@ -503,6 +525,7 @@ void recenviar_desenhar(Uint32 agora) {
 
   alt = RE_PAD * 2.0f + cab + (float)vis * (RE_LINHA + RE_GAP) - RE_GAP
         + RE_RODAPE;
+  { int k; for (k = topo; k < n && k - topo < RE_JANELA; k++) alt += secaoAntes(k); }
   x = (NV_TELA_W - RE_W) * 0.5f;
   y = (NV_TELA_H - alt) * 0.5f;
   y += (1.0f - a) * 40.0f;
@@ -655,10 +678,18 @@ void recenviar_desenhar(Uint32 agora) {
         30.0f, a * 0.9f, 2);
   }
 
-  for (i = topo; i < n && i - topo < RE_JANELA; i++) {
-    float by = y + RE_PAD + cab + (float)(i - topo) * (RE_LINHA + RE_GAP);
-    desenhaLinha(x + RE_PAD, by, rotulo(i), i == foco, a);
-  }
+  { float extra = 0.0f;
+    for (i = topo; i < n && i - topo < RE_JANELA; i++) {
+      float by;
+      if (secaoAntes(i) > 0.0f) {
+        TxtLinha t = txt_linha(TXT_CAPTION2, "Seus amigos", 150, 154, 165, 255);
+        extra += secaoAntes(i);
+        by = y + RE_PAD + cab + (float)(i - topo) * (RE_LINHA + RE_GAP) + extra;
+        txt_desenhar_alpha(t, x + RE_PAD, by - t.h - 10.0f, a * 0.9f);
+      } else
+        by = y + RE_PAD + cab + (float)(i - topo) * (RE_LINHA + RE_GAP) + extra;
+      desenhaLinha(x + RE_PAD, by, rotulo(i), i == foco, a, contatoDaLinha(i));
+    } }
 
   if (aviso[0]) {
     TxtLinha t = txt_linha_corta(TXT_CAPTION, aviso, 214, 218, 228, 255,
