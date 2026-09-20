@@ -287,9 +287,33 @@ static float baseDaAbaAtiva(void);
 static int audTemp(void) {
   int alvo, t, n = extras_n_temporadas();
   if (!ehSerie() || n <= 0) return -1;
+  // A TEMPORADA DOS GRAFICOS E A DA ABA "AVALIACOES" (dono, 20/09/2026: "ao
+  // mexer no rating logo acima do grafico ele tem que mudar junto"). A aba
+  // segue a pagina quando a pagina troca (conciliacao mais abaixo) e pode
+  // andar sozinha com esquerda/direita; os graficos seguem a aba, que e o
+  // que esta logo acima deles.
+  if (ratSinc && ratTemp >= 0 && ratTemp < n) return ratTemp;
   alvo = temporadaEm(temporada);
   for (t = 0; t < n; t++) if (extras_temporada_numero(t) == alvo) return t;
   return -1;
+}
+// Abre (ou troca) a audiencia para a temporada de audTemp(). As notas ja
+// estao em memoria; serieaud_abrir na mesma temporada e barato.
+static void abrirAudiencia(void) {
+  int t = audTemp();
+  const CatItem *ci = cat_item(idx);
+  if (ci && ci->imdb[0] && t >= 0) {
+    int numeros[EX_EP_MAX], notas[EX_EP_MAX];
+    int i, n = extras_n_eps(t);
+    if (n > EX_EP_MAX) n = EX_EP_MAX;
+    for (i = 0; i < n; i++) {
+      numeros[i] = extras_ep_numero(t, i);
+      notas[i]   = extras_ep_nota(t, i);
+    }
+    serieaud_abrir(ci->imdb, extras_temporada_numero(t), numeros, notas, n);
+    audAberta = 1;
+    audTempAberta = extras_temporada_numero(t);
+  }
 }
 // A fileira de comentarios e definida junto do desenho dela, la embaixo, mas a
 // contagem de colunas e a largura de item — que ficam aqui em cima — precisam
@@ -1358,8 +1382,9 @@ void detail_evento(const SDL_Event *e) {
       abaIdDe(abaInfo) == ABA_AVALIACOES && ehSerie() &&
       extras_n_temporadas() > 0) {
     int nt = extras_n_temporadas();
-    if (e->key.keysym.sym == SDLK_RIGHT && ratTemp + 1 < nt) { ratTemp++; return; }
-    if (e->key.keysym.sym == SDLK_LEFT  && ratTemp > 0)      { ratTemp--; return; }
+    // Os graficos abaixo trocam junto, na hora, se ja estavam abertos.
+    if (e->key.keysym.sym == SDLK_RIGHT && ratTemp + 1 < nt) { ratTemp++; if (audAberta) abrirAudiencia(); return; }
+    if (e->key.keysym.sym == SDLK_LEFT  && ratTemp > 0)      { ratTemp--; if (audAberta) abrirAudiencia(); return; }
   }
 
   // "Mais como este" e "Colecao" sao a MESMA lista vertical, so muda a fonte.
@@ -1859,23 +1884,9 @@ void detail_atualizar(float dt, Uint32 agora) {
   // chamar por quadro enquanto o foco esta aqui e a forma mais simples de nao
   // precisar de uma borda de "entrou agora" que erra quando o catalogo remonta.
   if (nivel >= 1 && EH_AUD(foco.fileira)) {
-    int t = audTemp();
-    const CatItem *ci = cat_item(idx);
-    if (ci && ci->imdb[0] && t >= 0) {
-      int numeros[EX_EP_MAX], notas[EX_EP_MAX];
-      int i, n = extras_n_eps(t);
-      if (n > EX_EP_MAX) n = EX_EP_MAX;
-      // AS NOTAS JA ESTAO NA MAO. Vem do mesmo
-      // `seasons?extended=episodes,full` que desenha as pastilhas da aba
-      // "Avaliações"; o arco de qualidade nao custa pedido nenhum por isso.
-      for (i = 0; i < n; i++) {
-        numeros[i] = extras_ep_numero(t, i);
-        notas[i]   = extras_ep_nota(t, i);
-      }
-      serieaud_abrir(ci->imdb, extras_temporada_numero(t), numeros, notas, n);
-      audAberta = 1;
-      audTempAberta = extras_temporada_numero(t);
-    }
+    // AS NOTAS JA ESTAO NA MAO. Vem do mesmo `seasons?extended=episodes,full`
+    // que desenha as pastilhas da aba "Avaliações"; o arco nao custa pedido.
+    abrirAudiencia();
     // O episodio em destaque no painel 3 e a COLUNA focada — e so na banda da
     // impressao digital, que e a unica com uma coluna por episodio. Nas outras
     // duas a coluna e sempre 0 e mexer na selecao por causa dela apagaria o
