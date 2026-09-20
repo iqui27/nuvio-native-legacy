@@ -191,6 +191,11 @@
     // a pagina); no arranque, o que havia vira nv-log-anterior, que
     // src/avisos.c le pelo fio principal. Perde-se no maximo 2 s antes de
     // uma morte subita — o que interessa e o que veio antes.
+    // A CADA 10 s, NAO 2: setItem de 200 KB e uma escrita sincrona em flash
+    // pela IPC do navegador, no fio principal. A 2 s isso caia dentro de
+    // quase toda janela de 3 s do relato de FPS e podia ser parte do `swap`
+    // que estava sendo medido (registro 13). Perde-se no maximo 10 s de log
+    // antes de uma morte subita.
     var nvLogTam = 0, nvLogPartes = [], nvLogSujo = false, NV_LOG_MAX = 200 * 1024;
     try {
       localStorage.setItem('nv-log-anterior', localStorage.getItem('nv-log') || '');
@@ -205,7 +210,7 @@
         localStorage.setItem('nv-log', t);
       } catch (e) {}
     }
-    setInterval(nvLogGravar, 2000);
+    setInterval(nvLogGravar, 10000);
     document.addEventListener('visibilitychange', nvLogGravar);
     window.addEventListener('pagehide', nvLogGravar);
     function pintar() {
