@@ -269,11 +269,11 @@ static void figEnviar(float x, float y, float a) {
     float d = foco ? 62.0f : 50.0f;
     float cx = bx + (float)i * 72.0f + 25.0f, cy = by + 25.0f;
     GfxRect c = { cx - d * 0.5f, cy - d * 0.5f, d, d };
-    float lum = foco ? 0.961f : 0.133f;    // #f5f5f5 / #222, como detail.c
-    float ic  = foco ? 0.067f : 1.0f;
+    float fr = 0.133f, fg = 0.133f, fb = 0.133f, ic = 1.0f;
     float g   = d * 0.333f;                // proporcao MEDIDA no aparelho
     GfxRect ig = { cx - g * 0.5f, cy - g * 0.5f, g, g };
-    gfx_cor(c, NV_RAIO_PILL, lum, lum, lum, a);
+    if (foco) ic = ajustes_acento_tinta(&fr, &fg, &fb);   // como detail.c
+    gfx_cor(c, NV_RAIO_PILL, fr, fg, fb, a);
     gfx_icone(ig, ICO[i], ic, ic, ic, a);
   }
 
@@ -335,13 +335,14 @@ static void figCodigo(float x, float y, float a) {
     GfxRect l = { x + 40.0f, y + 204.0f + (float)k * 68.0f,
                   RI_FIG_W - 80.0f, 56.0f };
     int foco = (k == 0);
-    float lum = foco ? 0.961f : 0.176f;
-    int cor = foco ? 17 : 240;
+    float fr = 0.176f, fg = 0.176f, fb = 0.176f;
+    int cor = 240;
+    if (foco) cor = (int)(ajustes_acento_tinta(&fr, &fg, &fb) * 255.0f + 0.5f);
     TxtLinha t = txt_linha_corta(TXT_CAPTION2,
         i18n(k == 0 ? "Procurar amigos do Trakt agora"
                     : "Digitar o código de um amigo"),
         cor, cor, cor, 255, l.w - 60.0f);
-    gfx_cor(l, 14.0f / l.h, lum, lum, lum, a);
+    gfx_cor(l, 14.0f / l.h, fr, fg, fb, a);
     txt_desenhar_alpha(t, l.x + 30.0f, l.y + (l.h - (float)t.h) * 0.5f, a);
   }
 }

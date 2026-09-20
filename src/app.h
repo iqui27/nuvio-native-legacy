@@ -31,4 +31,6 @@ void app_desenhar(Uint32 agora);
 int  app_quer_sair(void);
 void app_encerrar(void);
 
+// Porta de teste: abre o titulo (imdb) como se viesse de uma recomendacao.
+void app_abrir_titulo(const char *imdb);
 #endif

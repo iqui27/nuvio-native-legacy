@@ -457,6 +457,30 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-10-filme.png", saida);
   gravar(nome);
 
+  // --- 11. BOTOES DO HERO NA COR DE REALCE (20/09/2026: "nenhum botao ta
+  //         ficando com a cor do accent"). Violeta e ESCURO: a tinta sobre ele
+  //         tem de sair BRANCA; no 12, carmesim claro, tinta escura.
+  { char cam[600]; FILE *f;
+    snprintf(cam, sizeof cam, "%s/ajustes.txt", dados_dir());
+    f = fopen(cam, "w"); assert(f);
+    fprintf(f, "idioma 0\nselected_theme 3\n"); fclose(f);
+    ajustes_dir(dados_dir()); }
+  abrir(0, 0);
+  nivel = 0; botao = 0; quadros(120);
+  snprintf(nome, sizeof nome, "%s-11-hero-violeta-primario.png", saida);
+  gravar(nome);
+  botao = 1; quadros(120);
+  snprintf(nome, sizeof nome, "%s-11-hero-violeta-circular.png", saida);
+  gravar(nome);
+  { char cam[600]; FILE *f;
+    snprintf(cam, sizeof cam, "%s/ajustes.txt", dados_dir());
+    f = fopen(cam, "w"); assert(f);
+    fprintf(f, "idioma 0\nselected_theme 7\n"); fclose(f);
+    ajustes_dir(dados_dir()); }
+  botao = 0; quadros(60);
+  snprintf(nome, sizeof nome, "%s-12-hero-dourado-primario.png", saida);
+  gravar(nome);
+
   SDL_GL_DeleteContext(gl);
   SDL_DestroyWindow(janela);
   SDL_Quit();

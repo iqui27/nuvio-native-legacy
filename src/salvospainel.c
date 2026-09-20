@@ -1083,9 +1083,12 @@ static void desenhaBotaoLinha(int i, float dx, float y, float alt, float a,
                               const char *titulo, const char *sub) {
   GfxRect r = { SP_X + dx + SP_PAD, y, SP_INTERNO, alt };
   float f = (i >= 0 && i < SP_MAX) ? animFoco[i] : 0.0f;
-  float lum = anim_mistura(0.176f, 0.961f, f);
-  int c1 = f >= 0.5f ? 17 : 240, c2 = f >= 0.5f ? 74 : 168;
-  gfx_cor(r, 14.0f / alt, lum, lum, lum, a);
+  // Fundo do repouso a COR DE REALCE (layout.h); tinta pelo degrau em 0,5.
+  float fr, fg, fb, ti = ajustes_acento_tinta(&fr, &fg, &fb);
+  int t1 = (int)(ti * 255.0f + 0.5f);
+  int c1 = f >= 0.5f ? t1 : 240, c2 = f >= 0.5f ? (ti < 0.5f ? 74 : 214) : 168;
+  gfx_cor(r, 14.0f / alt, anim_mistura(0.176f, fr, f),
+          anim_mistura(0.176f, fg, f), anim_mistura(0.176f, fb, f), a);
   if (sub && sub[0]) {
     TxtLinha t = txt_linha_corta(TXT_PLR_CORPO, titulo, c1, c1, c1, 255,
                                  SP_INTERNO - 64.0f);

@@ -53,6 +53,7 @@
 #include "novidades131.h"
 #include "novidades132.h"
 #include "novidades133.h"
+#include "novidades134.h"
 #include "avisos.h"
 #include "recintro.h"
 #include "atualizacao.h"
@@ -77,6 +78,15 @@
 // Link de debrid expira em minutos; um minuto e folga suficiente para o usuario
 // apertar Reproduzir logo depois de abrir o titulo sem pagar uma busca a mais.
 #define NV_LINK_VALIDO_MS 60000
+
+// PORTA DE TESTE: "abrir:tt0121955" em /tmp/nuvio-key (main.c) abre o titulo
+// pelo mesmo caminho de uma recomendacao ou aviso — sem navegar ate ele por
+// setas. Chegar em South Park pela busca com o teclado da tela sao dezenas de
+// teclas; aqui e uma linha.
+static char abrirTeste[64];
+void app_abrir_titulo(const char *imdb) {
+  snprintf(abrirTeste, sizeof abrirTeste, "%s", imdb ? imdb : "");
+}
 
 static int aguardandoFonte;
 static pthread_t fioFonte;
@@ -195,7 +205,26 @@ static int perfilAntes = 1;
 // dali. Cada tela que abre um titulo entrega o seu; quando nenhuma entrega
 // (caso do menu ou de um indice vindo de fora), cai para a tela inteira.
 static void abrirTitulo(const HomeItem *it) {
-  if (it && it->arte) detail_abrir(it);
+  const CatItem *c;
+  if (!it || !it->arte) return;
+  // ITEM COM ID "tmdb:<n>" — resultado de busca de um addon do TMDB (o dono,
+  // 20/09/2026: "tem titulos da busca que quando abre nao vem com as artes e
+  // informacoes nenhuma"). O detalhe pede tudo ao Cinemeta por imdb, e
+  // /meta/series/tmdb:456.json responde 404: sem temporadas, sem episodios,
+  // addons sem fonte. O vertudo ja resolvia esse id pelo caminho da
+  // filmografia (external_ids -> imdb -> meta); a busca e a home entravam por
+  // aqui e nao. Um so lugar para os dois: o titulo resolvido entra no catalogo
+  // e trocaDeTituloSeSolicitada abre ele.
+  c = cat_item(it->indice);
+  if (c && !strncmp(c->imdb, "tmdb:", 5) && desc_chave_tmdb() &&
+      desc_chave_tmdb()[0] && !desc_titulo_buscando()) {
+    // Sem chave do TMDB nao ha como resolver: abre como dava (arte e sinopse,
+    // sem episodios) em vez de nao abrir nada.
+    desc_pedir_titulo_tmdb(atol(c->imdb + 5),
+                           !strcmp(c->tipo, "series") ? "tv" : "movie");
+    return;
+  }
+  detail_abrir(it);
 }
 
 static void abrirPorIndice(int i) {
@@ -527,6 +556,7 @@ void app_evento(const SDL_Event *e) {
   if (novidades131_aberto()) { novidades131_evento(e); return; }
   if (novidades132_aberto()) { novidades132_evento(e); return; }
   if (novidades133_aberto()) { novidades133_evento(e); return; }
+  if (novidades134_aberto()) { novidades134_evento(e); return; }
   // O explicador do Social e da mesma familia, e come esquerda/direita:
   // deixar a tecla vazar para a home moveria o foco dela debaixo do cartao.
   if (recintro_aberto()) { recintro_evento(e); return; }
@@ -854,6 +884,11 @@ void app_atualizar(float dt, Uint32 agora) {
         !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() &&
         !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !pipintro_aberto())
       novidades133_primeira_vez();
+    if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() &&
+        !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() &&
+        !novidades134_aberto() && !pipintro_aberto())
+      novidades134_primeira_vez();
     // AVISO DE VERSAO NOVA: a consulta ao GitHub so parte quando a home esta
     // de pe (nao disputa a rede com o catalogo), e o cartao so abre quando
     // nenhum outro cartao de primeira vez esta aberto.
@@ -870,7 +905,7 @@ void app_atualizar(float dt, Uint32 agora) {
     recomenda_verificar();
 #endif
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !pipintro_aberto() && !atualizacao_aberta())
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !novidades134_aberto() && !pipintro_aberto() && !atualizacao_aberta())
       recomenda_mostrar_se_houver();
     // EXPLICADOR DAS TELAS SOCIAIS: mesmas guardas de todos os outros, mais
     // a do cartao de recomendacao recebida — dois cartoes ao mesmo tempo
@@ -878,7 +913,7 @@ void app_atualizar(float dt, Uint32 agora) {
     // NUVIO_REC_URL (recomenda_ativo), e por isso nao ha guarda aqui: um
     // anuncio de recurso que nao esta no pacote e pior que silencio.
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !novidades134_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
         !recomenda_aberta())
       recintro_primeira_vez();
     // LEMBRETE VENCIDO: o unico aviso que esta TV consegue dar. Ultimo da fila
@@ -886,13 +921,13 @@ void app_atualizar(float dt, Uint32 agora) {
     // cima do outro —, e sem consulta de rede nenhuma: o que ele mostra ja
     // esta em disco desde que o dono apertou "Lembrar-me".
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !novidades134_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
         !recomenda_aberta() && !recintro_aberto())
       agendaviso_mostrar_se_houver();
     // O CARTAO DO CRASH, depois do lembrete e pelas mesmas regras: um cartao
     // por vez, com a home de pe.
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !novidades134_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
         !recomenda_aberta() && !recintro_aberto() && !agendaviso_aberto())
       avisos_mostrar_se_houver();
   }
@@ -957,6 +992,7 @@ void app_atualizar(float dt, Uint32 agora) {
     const char *alvo = spainel_pediu_abrir();
     if (!alvo) alvo = recomenda_pediu_abrir();   // mesmo contrato, outra origem
     if (!alvo) alvo = avisos_pediu_abrir();
+    if (!alvo && abrirTeste[0]) { alvo = abrirTeste; abrirTeste[0] = 0; }
     if (alvo && alvo[0]) {
       int k = cat_indice_por_imdb(alvo);
       if (k >= 0) abrirPorIndice(k); else desc_pedir_titulo(alvo);
@@ -1651,6 +1687,7 @@ void app_atualizar(float dt, Uint32 agora) {
   novidades131_atualizar(dt, agora);
   novidades132_atualizar(dt, agora);
   novidades133_atualizar(dt, agora);
+  novidades134_atualizar(dt, agora);
   recintro_atualizar(dt, agora);
   atualizacao_atualizar(dt, agora);
   agendaviso_atualizar(dt, agora);
@@ -1785,6 +1822,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novidades131_desenhar(agora);
   if (!registro_aberto()) novidades132_desenhar(agora);
   if (!registro_aberto()) novidades133_desenhar(agora);
+  if (!registro_aberto()) novidades134_desenhar(agora);
   if (!registro_aberto()) recintro_desenhar(agora);
   if (!registro_aberto()) atualizacao_desenhar(agora);
   if (!registro_aberto()) agendaviso_desenhar(agora);

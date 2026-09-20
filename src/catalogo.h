@@ -18,6 +18,7 @@
 //
 // CAT_MAX sobrevive so como teto de seguranca contra resposta absurda.
 #define CAT_MAX 2000
+#define CAT_TEMP_MAX 64
 
 typedef struct {
   char backdrop[512];
@@ -69,7 +70,13 @@ typedef struct {
   // Temporadas que a serie tem, na ordem. Sai do campo `videos` do Cinemeta,
   // buscado quando o titulo abre. 0 = ainda nao se sabe (ou e filme), e as
   // abas caem no padrao de 3 que existia fixo.
-  int  temporadas[12];
+  //
+  // 64 E NAO 12 (#79, Owlphibia: South Park e Os Simpsons paravam na T12).
+  // 12 era o que cabia na fileira de abas sem rolar; South Park tem 27
+  // temporadas, Os Simpsons 37, SNL 50. A fileira rola; o teto so precisa
+  // caber na struct. Mudar o tamanho invalida o cache em disco sozinho (ver
+  // a nota sobre sizeof(CatItem) abaixo).
+  int  temporadas[CAT_TEMP_MAX];
   int  nTemporadas;
   // Vem do Trakt: 1 se esta na watchlist do dono, 1 se esta na colecao dele.
   // Ficam no item e nao numa tabela a parte da biblioteca porque o catalogo e

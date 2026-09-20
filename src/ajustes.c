@@ -830,6 +830,16 @@ void ajustes_acento(float *r, float *g, float *b) {
   if (b) *b = TEMA_ACENTO[i].b;
 }
 
+float ajustes_acento_tinta(float *r, float *g, float *b) {
+  float cr, cg, cb, lum;
+  ajustes_acento(&cr, &cg, &cb);
+  if (r) *r = cr;
+  if (g) *g = cg;
+  if (b) *b = cb;
+  lum = 0.2126f * cr + 0.7152f * cg + 0.0722f * cb;
+  return lum > 0.55f ? 0.067f : 1.0f;
+}
+
 // `collapseSidebar: modernSidebar ? false : Boolean(collapseSidebar)` — a barra
 // moderna DESLIGA o recolhimento, e nao o contrario. Copiado de
 // normalizeLayoutPreferences para nao inventar precedencia.

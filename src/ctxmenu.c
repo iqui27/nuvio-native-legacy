@@ -540,8 +540,13 @@ void ctx_desenhar(Uint32 agora) {
     // Duas chaves por rotulo, e o degrau cai em f=0,5, onde o fundo esta em
     // 0,57 de luminancia: ali as duas cores sao legiveis, entao a troca nao
     // tem instante ruim.
-    int cor = f >= 0.5f ? 17 : 240;
-    gfx_cor(r, 14.0f / CTX_LINHA, lum, lum, lum, a);
+    // O fundo vai do repouso a COR DE REALCE (regra de layout.h), e a tinta
+    // do degrau e a que contrasta com ela.
+    float fr, fg, fb, ti = ajustes_acento_tinta(&fr, &fg, &fb);
+    int cor = f >= 0.5f ? (int)(ti * 255.0f + 0.5f) : 240;
+    (void)lum;
+    gfx_cor(r, 14.0f / CTX_LINHA, anim_mistura(0.176f, fr, f),
+            anim_mistura(0.176f, fg, f), anim_mistura(0.176f, fb, f), a);
     { TxtLinha t = txt_linha(TXT_PLR_CORPO, ops[i].rot, cor, cor, cor, 255);
       txt_desenhar_alpha(t, r.x + 44.0f,
                          by + (CTX_LINHA - t.h) * 0.5f, a); }

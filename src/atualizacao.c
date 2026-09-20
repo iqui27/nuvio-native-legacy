@@ -585,13 +585,14 @@ void atualizacao_desenhar(Uint32 agora) {
       int fc = (i == foco);
       // Pilula clara com texto escuro no foco, como o menu de cartaz e a folha
       // de envio — e o vocabulario dos modais deste app, e o cartao e um.
-      int cor = fc ? 17 : 236;
-      TxtLinha t = txt_linha(TXT_CALLOUT, rot[i], cor, cor, cor, 255);
+      float fr = 0.176f, fg = 0.176f, fb = 0.176f;
+      int cor = 236;
+      if (fc) cor = (int)(ajustes_acento_tinta(&fr, &fg, &fb) * 255.0f + 0.5f);
+      { TxtLinha t = txt_linha(TXT_CALLOUT, rot[i], cor, cor, cor, 255);
       GfxRect b = { bx, y, t.w + 64.0f, 64.0f };
-      float lum = fc ? 0.961f : 0.176f;
-      gfx_cor(b, NV_RAIO_PILL, lum, lum, lum, a);
+      gfx_cor(b, NV_RAIO_PILL, fr, fg, fb, a);
       txt_desenhar_alpha(t, bx + 32.0f, y + (64.0f - t.h) * 0.5f, a);
-      bx += b.w + 16.0f;
+      bx += b.w + 16.0f; }
     }
   } else {
     TxtLinha t = txt_linha(TXT_CAPTION,

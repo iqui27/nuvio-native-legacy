@@ -2663,7 +2663,7 @@ static void *buscarEps(void *u) {
           int j, achou = 0;
           for (j = 0; j < edit.nTemporadas; j++)
             if (edit.temporadas[j] == t2) { achou = 1; break; }
-          if (!achou && edit.nTemporadas < 12) edit.temporadas[edit.nTemporadas++] = t2;
+          if (!achou && edit.nTemporadas < CAT_TEMP_MAX) edit.temporadas[edit.nTemporadas++] = t2;
         }
         v = js_prox(fv);
       }

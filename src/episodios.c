@@ -463,17 +463,19 @@ void episodios_desenhar(void) {
   gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.02f,.02f,.025f,.35f*anim);
   gfx_cor((GfxRect){x,0,EP_W,NV_TELA_H},.025f,.095f,.095f,.10f,anim);
   txt_desenhar_alpha(txt_linha(TXT_PAINEL_TITULO,"Episódios",240,241,243,255),x+40,44,anim);
-  gfx_cor((GfxRect){x+EP_W-146,44,110,50},.3f,grupo==-1?.94f:.14f,grupo==-1?.94f:.14f,grupo==-1?.95f:.15f,anim);
-  int cor = grupo == -1 ? 25 : 230;
-  txt_desenhar_alpha(txt_linha(TXT_PG_ROTULO,"Fechar",cor,cor,cor,255),x+EP_W-130,55,anim);
+  { float fr=.14f,fg=.14f,fb=.15f; int cor=230;
+    if (grupo==-1) cor=(int)(ajustes_acento_tinta(&fr,&fg,&fb)*255.0f+0.5f);
+    gfx_cor((GfxRect){x+EP_W-146,44,110,50},.3f,fr,fg,fb,anim);
+  txt_desenhar_alpha(txt_linha(TXT_PG_ROTULO,"Fechar",cor,cor,cor,255),x+EP_W-130,55,anim); }
   gfx_recorte(x+36,120,EP_W-72,64);
   int primeira = temporada > 1 ? temporada - 1 : 0;
   for (int i = primeira; i < nTemporadas() && i < primeira+3; i++) {
     float tx = x+40+(i-primeira)*212;
     int sel = i == temporada;
-    gfx_cor((GfxRect){tx,126,196,52},.5f,sel?.94f:.14f,sel?.94f:.14f,sel?.95f:.15f,anim);
+    float fr=.14f,fg=.14f,fb=.15f; int b=210;
+    if (sel) b=(int)(ajustes_acento_tinta(&fr,&fg,&fb)*255.0f+0.5f);
+    gfx_cor((GfxRect){tx,126,196,52},.5f,fr,fg,fb,anim);
     char s[48]; snprintf(s,sizeof s,i18n("Temporada %d"),numTemporada(i));
-    int b=sel?24:210;
     TxtLinha l=txt_linha(TXT_PG_ROTULO,s,b,b,b,255);
     txt_desenhar_alpha(l,tx+(196-l.w)*.5f,138,anim);
     if (sel && grupo==0) gfx_cor((GfxRect){tx+30,184,136,2},0,.94f,.94f,.95f,anim);

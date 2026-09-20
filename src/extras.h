@@ -98,7 +98,9 @@ int  extras_comentario_ep_nota(int i);
 // Vem de UMA chamada: /shows/<id>/seasons?extended=episodes,full devolve todas
 // as temporadas com a nota de cada episodio junto. Pedir episodio a episodio
 // seriam dezenas de chamadas para desenhar uma aba.
-#define EX_TEMP_MAX 12
+// 64 e nao 12: em par com CAT_TEMP_MAX (#79) — a aba de notas cortava South
+// Park na T12 tambem.
+#define EX_TEMP_MAX 64
 #define EX_EP_MAX   30
 int  extras_n_temporadas(void);
 int  extras_temporada_numero(int t);

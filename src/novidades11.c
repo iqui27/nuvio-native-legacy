@@ -267,8 +267,12 @@ static void barra(float x, float y, float w, float h, float lum, float a) {
 
 // A pilula de foco desta familia: superficie CLARA preenchida, sem anel. Quem
 // desenha texto por cima usa 17,17,17. Ver a nota de FOCO em agendaui.c.
+// Tinta que contrasta com a pilula de foco (0..255).
+static int tintaFoco(void) { float r,g,b; return (int)(ajustes_acento_tinta(&r,&g,&b)*255.0f+0.5f); }
 static void focoPilula(GfxRect r, float raioPx, float a) {
-  gfx_cor(r, raioPx / (r.w < r.h ? r.w : r.h), 0.961f, 0.961f, 0.961f, a);
+  float fr, fg, fb;
+  ajustes_acento_tinta(&fr, &fg, &fb);
+  gfx_cor(r, raioPx / (r.w < r.h ? r.w : r.h), fr, fg, fb, a);
 }
 
 // --- FIGURA 1: a linha do tempo da Agenda -------------------------------------
@@ -370,14 +374,14 @@ static void figListas(float x, float y, float a) {
   for (i = 0; i < 3; i++) {
     GfxRect p = { x + (float)i * (pw + 12.0f), y, pw, ph };
     int foco = (i == 1);
-    int cor = foco ? 17 : 179;
+    int cor = foco ? tintaFoco() : 179;
     if (foco) focoPilula(p, 14.0f, a);
     else      gfx_cor(p, 14.0f / ph, 1.0f, 1.0f, 1.0f, 0.06f * a);
     { TxtLinha r = txt_linha_corta(TXT_MINI,
         i18n(i == 0 ? "Fonte" : i == 1 ? "Exibição" : "Listas públicas"),
         cor, cor, cor, 255, pw - 32.0f);
       txt_desenhar_alpha(r, p.x + 16.0f, p.y + 10.0f, a * 0.9f); }
-    { int c2 = foco ? 17 : 236;
+    { int c2 = foco ? tintaFoco() : 236;
       TxtLinha v = txt_linha_corta(TXT_CAPTION2,
         i18n(i == 0 ? "Trakt" : i == 1 ? "Lista" : "Procurar"),
         c2, c2, c2, 255, pw - 32.0f);
@@ -537,7 +541,7 @@ static void figSocial(float x, float y, float a) {
   for (i = 0; i < 2; i++) {
     GfxRect l = { px + pad, y + 190.0f + (float)i * 76.0f,
                   pw - pad * 2.0f, 62.0f };
-    int foco = (i == 0), cor = foco ? 17 : 236;
+    int foco = (i == 0), cor = foco ? tintaFoco() : 236;
     TxtLinha t = txt_linha_corta(TXT_CAPTION2,
         i18n(foco ? "Não, não quero aparecer" : "Sim, pode me mostrar"),
         cor, cor, cor, 255, l.w - 56.0f);
@@ -575,7 +579,7 @@ static void figAtualizar(float x, float y, float a) {
         txt_desenhar_alpha(t, trilho.x + trilho.w + 16.0f, y + 86.0f,
                            a * 0.95f); } }
     for (i = 0; i < 2; i++) {
-      int foco = (i == 0), cor = foco ? 17 : 236;
+      int foco = (i == 0), cor = foco ? tintaFoco() : 236;
       TxtLinha t = txt_linha(TXT_MINI,
           i18n(foco ? "Atualizar agora" : "Depois"), cor, cor, cor, 255);
       GfxRect b = { bx, y + 142.0f, (float)t.w + 48.0f, 54.0f };

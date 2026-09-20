@@ -34,6 +34,7 @@
 #include "diretor.h"
 #include "descoberta.h"
 #include "dados.h"
+#include "tendencia.h"
 #include <strings.h>
 // Declarado a mao em vez de incluir detail.h: aquele header inclui ESTE (por
 // causa do HomeItem), e o ciclo so nao explode por causa das guardas. Uma
@@ -684,6 +685,79 @@ static float raioDe(float w, float h) {
 // `--card-depth-sheen` — atravessando a parte alta do cartao. `--card-depth-
 // coverage` engorda a banda da borda: `12 + round(18 * coverage)` px
 // (layoutPreferences.js:181). Sao os mesmos tres numeros da tela de Ajustes.
+// Faixa de informacao do CARD ABERTO — ver a chamada. `esc` e a escala de
+// foco do card (as medidas seguem o card, nao a tela).
+static void desenhaFaixaAberta(const CatItem *ci, int r, float px, float py,
+                               float w, float h, float esc, float abre) {
+  float pad = 34.0f * esc, ch = 34.0f * esc, gap = 10.0f * esc;
+  float cx = px + w - pad, cy = py + h - pad - ch;
+  float a = abre;
+  int delta = 0, novo = 0, temTend;
+  char nota[16] = "";
+  { GfxRect veu = { px, py, w, h };
+    gfx_rect(veu, 0, GFX_VEU, 0, 0, 0, NV_RAIO_CARD, 0, 0, 0, 0.72f * abre); }
+  if (ci->nota > 0) snprintf(nota, sizeof nota, "%d.%d", ci->nota / 10, ci->nota % 10);
+  temTend = (r >= 0 && r < nFileiras)
+          ? tend_delta(fileiras[r].chave, ci->imdb, &delta, &novo) : 0;
+
+  // Da direita para a esquerda, cada chip devolve a largura que ocupou.
+  // 1. Tendencia.
+  if (temTend && (novo || delta != 0)) {
+    char rot[24];
+    float cr, cg, cb;
+    TxtLinha l;
+    if (novo) { ajustes_acento(&cr, &cg, &cb); snprintf(rot, sizeof rot, "%s", i18n("Novo")); }
+    else if (delta > 0) { cr = 0.30f; cg = 0.78f; cb = 0.45f;
+                          snprintf(rot, sizeof rot, "\xe2\x86\x91 %d", delta); }
+    else { cr = 0.90f; cg = 0.36f; cb = 0.36f;
+           snprintf(rot, sizeof rot, "\xe2\x86\x93 %d", -delta); }
+    l = txt_linha(TXT_CAPTION, rot, 255, 255, 255, 255);
+    { float bw = l.w + 22.0f;
+      cx -= bw;
+      gfx_cor((GfxRect){ cx, cy, bw, ch }, 0.5f, cr, cg, cb, 0.92f * a);
+      { float lum = 0.2126f * cr + 0.7152f * cg + 0.0722f * cb;
+        int c = lum > 0.55f ? 17 : 255;
+        TxtLinha lt = txt_linha(TXT_CAPTION, rot, c, c, c, 255);
+        txt_desenhar_alpha(lt, cx + 11.0f, cy + (ch - lt.h) * 0.5f, a); }
+      cx -= gap; }
+  }
+  // 2. Classificacao etaria.
+  if (ci->classificacao[0]) {
+    TxtLinha l = txt_linha(TXT_CAPTION, ci->classificacao, 235, 235, 240, 255);
+    float bw = l.w + 22.0f;
+    cx -= bw;
+    gfx_cor((GfxRect){ cx, cy, bw, ch }, 0.22f, 0.13f, 0.14f, 0.16f, 0.94f * a);
+    gfx_rect((GfxRect){ cx, cy, bw, ch }, 0, GFX_ANEL, 0, 0.006f, 0, 0.22f, 1, 1, 1, 0.35f * a);
+    txt_desenhar_alpha(l, cx + 11.0f, cy + (ch - l.h) * 0.5f, a);
+    cx -= gap;
+  }
+  // 3. Ano · temporadas (o `meta` do catalogo, ja formatado).
+  if (ci->meta[0]) {
+    TxtLinha l = txt_linha(TXT_CAPTION, ci->meta, 226, 228, 233, 255);
+    cx -= l.w;
+    txt_desenhar_alpha(l, cx, cy + (ch - l.h) * 0.5f, 0.95f * a);
+    cx -= gap + 4.0f;
+  }
+  // 4. IMDb + nota (o selo do heroi, na mesma escala).
+  if (nota[0]) {
+    TxtLinha ln = txt_linha(TXT_CAPTION, nota, 255, 255, 255, 255);
+    TxtLinha ls = txt_linha(TXT_MINI, "IMDb", 8, 8, 8, 255);
+    float sw = 40.0f, sh = ls.h + 6.0f;
+    cx -= ln.w;
+    txt_desenhar_alpha(ln, cx, cy + (ch - ln.h) * 0.5f, a);
+    cx -= 8.0f + sw;
+    gfx_cor((GfxRect){ cx, cy + (ch - sh) * 0.5f, sw, sh }, 0.12f, 0.96f, 0.78f, 0.06f, a);
+    txt_desenhar_alpha(ls, cx + (sw - ls.w) * 0.5f, cy + (ch - sh) * 0.5f + 3.0f, a);
+  }
+  // 5. Progresso em andamento: fio na base, dentro do raio do card.
+  if (ci->progresso > 0 && ci->progresso < 90) {
+    float fx = px + pad, fw = w - pad * 2, fy = py + h - 12.0f * esc, fh = 4.0f;
+    float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+    gfx_cor((GfxRect){ fx, fy, fw, fh }, 0.5f, 1, 1, 1, 0.22f * a);
+    gfx_cor((GfxRect){ fx, fy, fw * (float)ci->progresso / 100.0f, fh }, 0.5f, ar, ag, ab, a);
+  }
+}
+
 static void desenhaProfundidade(GfxRect card, float raio, int ligadaAqui) {
   if (!ajustes_profundidade() || !ligadaAqui) return;
   float borda = ajustes_profundidade_borda();
@@ -2714,8 +2788,16 @@ void home_desenhar(Uint32 agora) {
           float abre = (r == expFileira && c == expColuna) ? expAbre : 0.0f;
           float larguraAberta = artH * esc * NV_EXP_ASPECTO;
           float empurra = 0.0f;
-          if (r == expFileira && expAbre > 0.0f && c > expColuna)
-            empurra = (artH * NV_EXP_ASPECTO - lw) * expAbre;
+          // O empurrao e medido no card aberto COM a escala de foco dele, nao
+          // no de escala 1: o aberto mede artH*escF*16/9 e o empurrao contava
+          // artH*16/9 — faltavam (escF-1)*artH*16/9 ≈ 40 px, e o vizinho da
+          // direita ficava por baixo do aberto ("alguns cards quando abrem
+          // ficam por cima do outro", 20/09/2026). Com o vizinho empurrado
+          // pela medida certa sobra so a folga normal de um card focado.
+          if (r == expFileira && expAbre > 0.0f && c > expColuna) {
+            float escF = 1.0f + escalaDe(tipo) * animFoco[r][expColuna];
+            empurra = (artH * escF * NV_EXP_ASPECTO - lw * escF) * expAbre;
+          }
           if (abre > 0.0f) w = lw * esc + (larguraAberta - lw * esc) * abre;
           float cx = ajustes_conteudo_x() + c * passo - scrollX[r] + lw * 0.5f
                    + empurra + (w - lw * esc) * 0.5f;
@@ -3011,6 +3093,15 @@ void home_desenhar(Uint32 agora) {
           // justamente o que faz o titulo ser reconhecido de longe. Sem logo no
           // catalogo o card fica so com a arte — melhor que um nome generico
           // por cima dela.
+          // FAIXA DE DECISAO no card aberto (pedido do dono, 20/09/2026:
+          // "quando abrir o card, mais informacoes — nota, se subiu ou caiu
+          // no trending, coisas uteis para tomada de decisao"). Canto INFERIOR
+          // DIREITO, oposto ao logo, sobre o mesmo veu: selo IMDb + nota,
+          // ano/temporadas, classificacao e a VARIACAO na fileira desde a
+          // ultima visita (tendencia.h): ↑n verde, ↓n vermelho, "Novo" na cor
+          // de realce. Sem historico ainda, sem chip — nada de inventar.
+          // Progresso em andamento vira um fio na base do card.
+          if (abre > 0.01f && cItem) desenhaFaixaAberta(cItem, r, px, py, w, h, esc, abre);
           if (abre > 0.01f && cItem && cItem->logo[0]) {
             // Largura pedida pela tela, nao o teto generico de 640: o logo
             // nunca passa de ~65% do card, e decodificar o arquivo inteiro
@@ -3021,8 +3112,8 @@ void home_desenhar(Uint32 agora) {
               float pad = 34.0f * esc;
               float ap = tex_aspecto(urlL);
               float hL, wL, maxW;
-              GfxRect veu = { px, py, w, h };
-              gfx_rect(veu, 0, GFX_VEU, 0, 0, 0, NV_RAIO_CARD, 0, 0, 0, 0.72f * abre);
+              // O veu ja saiu em desenhaFaixaAberta, o mesmo para o logo e
+              // para a faixa.
               // SEM CHUTE DE ASPECTO. O fallback de 4.0 que estava aqui
               // desenhava um retangulo mais largo que a imagem, e o modo de
               // cartao RECORTA o que sobra — o "REACHER" saia com as duas

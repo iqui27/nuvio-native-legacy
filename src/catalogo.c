@@ -1,4 +1,5 @@
 #include "catalogo.h"
+#include "tendencia.h"
 #include "idioma.h"
 #include "descoberta.h"
 #include "progresso.h"
@@ -1082,6 +1083,18 @@ void cat_definir_tudo(const CatItem *lista, int qtd,
     CatItem *novo = malloc(sizeof(CatItem) * (size_t)novoN);
     if (!novo) return;
     memcpy(novo, lista, sizeof(CatItem) * (size_t)novoN);
+    // Historico de ORDEM por fileira (tendencia.h), ANTES da troca e sobre os
+    // parametros — le e grava arquivo, e depois da troca `novo` pode ser
+    // liberado por uma publicacao seguinte.
+    if (novasFils) {
+      int k;
+      for (k = 0; k < nNovas && k < CAT_FIL_MAX; k++) {
+        CatFileira f = novasFils[k];
+        if (f.ini < 0 || f.ini >= novoN) continue;
+        if (f.ini + f.n > novoN) f.n = novoN - f.ini;
+        if (f.n > 0) tend_registrar(&f, novo);
+      }
+    }
     // As fileiras caem JUNTO com `n`. Elas sao janelas (ini,n) no vetor de
     // itens; deixar as antigas de pe por um quadro enquanto o vetor troca faz o
     // desenho ler fora da faixa.

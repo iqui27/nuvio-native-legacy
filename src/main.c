@@ -194,6 +194,9 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
     int segurar = 0;
     char *dp = strchr(linha, ':');
     if (dp && !strcmp(dp + 1, "hold")) { *dp = 0; segurar = 1; }
+    // "abrir:tt0121955" abre o titulo direto (app.c). Porta de teste, como
+    // "guia".
+    if (dp && !strncmp(linha, "abrir:", 6)) { app_abrir_titulo(dp + 1); continue; }
 
     SDL_Keycode k = codigoDaTecla(linha);
     if (!k) continue;

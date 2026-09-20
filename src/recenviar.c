@@ -463,9 +463,10 @@ static float desenhaCodigo(float x, float y, float larg, float a) {
 static void desenhaLinha(float x, float y, const char *rot, int focada,
                          float a) {
   GfxRect r = { x, y, RE_INTERNO, RE_LINHA };
-  float lum = focada ? 0.961f : 0.176f;
-  int cor = focada ? 17 : 240;
-  gfx_cor(r, 14.0f / RE_LINHA, lum, lum, lum, a);
+  float fr = 0.176f, fg = 0.176f, fb = 0.176f;
+  int cor = 240;
+  if (focada) cor = (int)(ajustes_acento_tinta(&fr, &fg, &fb) * 255.0f + 0.5f);
+  gfx_cor(r, 14.0f / RE_LINHA, fr, fg, fb, a);
   { TxtLinha t = txt_linha_corta(TXT_PLR_CORPO, rot, cor, cor, cor, 255,
                                  r.w - 88.0f);
     txt_desenhar_alpha(t, r.x + 44.0f, y + (RE_LINHA - t.h) * 0.5f, a); }

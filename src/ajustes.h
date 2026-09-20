@@ -54,6 +54,11 @@ int ajustes_idioma_ingles(void);
 // ajustes.c para o motivo de nao ser a paleta inteira. Branco e o padrao, que
 // e exatamente o anel que sempre existiu.
 void ajustes_acento(float *r, float *g, float *b);
+// A MESMA cor mais a TINTA que contrasta com ela: devolve 0.067 (#111) sobre
+// realce claro e 1.0 (branco) sobre realce escuro, luminancia Rec.709 com o
+// degrau em 0,55. E a regra de FOCO de layout.h (preenchimento na cor de
+// realce, sem anel) em uma chamada, para todo botao usar a mesma conta.
+float ajustes_acento_tinta(float *r, float *g, float *b);
 // "Automática", "4K", "1080p" ou "720p" — o rotulo exibido, para quem seleciona
 // a fonte de video mostrar exatamente o que o usuario escolheu.
 const char *ajustes_qualidade(void);

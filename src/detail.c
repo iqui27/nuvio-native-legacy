@@ -166,6 +166,12 @@ static int    epAncora = 0;
 // Comentarios: 0 = da SERIE, 1 = do EPISODIO. E o seletor que a referencia poe
 // sob "Avaliações do Trakt". Em filme nao existe e fica cravado em 0.
 static int comentEp = 0;
+// O EPISODIO DOS COMENTARIOS: o ultimo que o foco pisou na fileira de
+// episodios (temporada/numero), 0 enquanto o foco nao passou por la. O dono
+// (20/09/2026): "nao ta seguindo o episodio selecionado" — episodioAlvo() so
+// le o foco ENQUANTO ele esta na fileira; ao descer ate os cartoes o foco ja
+// saiu de la e a conta caia no "retomar"/"proximo", que e outro episodio.
+static int comEpT = 0, comEpE = 0;
 static int abaInfo = 0;              // aba de informacao escolhida
 
 // AS DUAS SECOES QUE SO CARREGAM QUANDO ALGUEM ENTRA NELAS.
@@ -320,6 +326,7 @@ static void abrirAudiencia(void) {
 // perguntar quantas pilulas e quantos cartoes ela tem.
 #define COM_PILL_GAP  16.0f
 static const char *COM_ROT[2];
+static const char *rotuloPilulaCom(int k);
 static int   nPilulasCom(void);
 static int   nCartoesCom(void);
 static float larguraPilulaCom(const char *rot);
@@ -796,6 +803,7 @@ void detail_abrir(const HomeItem *it) {
   // respondeu neste instante.
   temporada = 0;
   epAncora = 0;
+  comEpT = comEpE = 0;
   { const CatItem *ci0 = cat_item(idx);
     int t = 0, e = 0, achou = 0;
     if (ci0 && ci0->progresso > 0 && ci0->progresso < 90 &&
@@ -914,6 +922,15 @@ static int episodioAlvo(int *temp, int *epis, int *origem) {
   if (temp) *temp = ep->temporada;
   if (epis) *epis = ep->episodio;
   return 1;
+}
+
+// Episodio que os COMENTARIOS seguem: o ultimo pisado pelo foco; antes de o
+// foco passar pela fileira, o mesmo alvo do botao de reproduzir.
+static int episodioDosComentarios(int *temp, int *epis) {
+  if (foco.fileira != SEC_EPISODIOS && comEpT > 0 && comEpE > 0) {
+    *temp = comEpT; *epis = comEpE; return 1;
+  }
+  return episodioAlvo(temp, epis, NULL);
 }
 
 int detail_ep_foco(int *temp, int *epis) {
@@ -1531,6 +1548,10 @@ void detail_evento(const SDL_Event *e) {
       }
     } else if (foco.fileira == SEC_ABAS_INFO) {
       abaInfo = foco.coluna;
+    } else if (foco.fileira == SEC_COMENTARIOS && foco.coluna < nPilulasCom()) {
+      // "Série | Episódio": a pilula escolhe a fonte dos cartoes (ver a nota
+      // em detail_atualizar sobre por que nao e ao passar o foco).
+      comentEp = foco.coluna;
     } else if (foco.fileira == SEC_TRAILERS) {
       // OK num trailer abre o video no app nativo da plataforma (navegador do
       // webOS, aba do Tizen, browser do desktop). O card sempre foi focavel;
@@ -1665,7 +1686,7 @@ static float larguraItem(int r, int c) {
     case SEC_TRAILERS:     return NV_DETF_TR_W;
     case SEC_RELACIONADOS: return REL_CARD_W;
     case SEC_COMENTARIOS:
-      return (c < nPilulasCom()) ? larguraPilulaCom(COM_ROT[c]) : COM_CARD_W;
+      return (c < nPilulasCom()) ? larguraPilulaCom(rotuloPilulaCom(c)) : COM_CARD_W;
     // A tabela e um bloco so, da largura da divisoria. Cair no `default` daria
     // a ela a largura de um avatar de elenco, e o culling horizontal cortaria
     // a tabela fora da tela.
@@ -1696,7 +1717,7 @@ static float xItem(int r, int c) {
       // fileira, e nao ha problema: a rolagem horizontal so consulta a coluna
       // FOCADA, nunca a sequencia inteira.
       int np = nPilulasCom();
-      if (c <= np) x += larguraPilulaCom(COM_ROT[k]) + COM_PILL_GAP;
+      if (c <= np) x += larguraPilulaCom(rotuloPilulaCom(k)) + COM_PILL_GAP;
       else if (k >= np) x = NV_DETP_X + (float)(c - np) * (COM_CARD_W + COM_CARD_GAP);
       continue;
     }
@@ -1861,17 +1882,27 @@ void detail_atualizar(float dt, Uint32 agora) {
     // Andar pelos episodios move a ancora junto: voltando para as abas, a
     // fileira nao pula de volta para o episodio de onde a aba a deixou.
     epAncora = foco.coluna;
+    { const CatEp *ep = cat_episodio(idx, epAbsoluto(foco.coluna));
+      if (ep) { comEpT = ep->temporada; comEpE = ep->episodio; } }
   }
 
-  // SELETOR DE COMENTARIOS, pela mesma regra: mover o foco ja troca a fonte.
-  // Sem repouso — sao duas pilulas, e a da serie ja esta em memoria; so a do
-  // episodio custa uma viagem, e ela e disparada uma vez por episodio.
+  // SELETOR DE COMENTARIOS: a fonte troca no OK, NAO ao passar o foco.
+  //
+  // Trocava ao passar (#78, Owlphibia: "the TV Show option not being able to
+  // scroll through"): as pilulas e os cartoes sao UMA fileira, entao chegar
+  // aos cartoes da serie obrigava a atravessar a pilula "Episódio" — que ja
+  // trocava a fonte no caminho. Os cartoes da serie eram inalcancaveis. Pior:
+  // `comentEp = foco.coluna` tambem corria nos cartoes (coluna 2, 3...) e
+  // qualquer valor nao-zero le como "episodio".
+  //
+  // O pedido do episodio continua saindo a cada quadro em que a fonte e a do
+  // episodio: e barato (o modulo sai na hora quando ja tem aquele T/E) e segue
+  // o episodio em foco na fileira la de cima sem borda de "mudou".
   if (nivel >= 1 && foco.fileira == SEC_COMENTARIOS && ehSerie()) {
-    if (foco.coluna != comentEp) comentEp = foco.coluna;
     if (comentEp) {
       const CatItem *ci = cat_item(idx);
       int t = 0, ep = 0;
-      if (ci && detail_ep_foco(&t, &ep) && t > 0 && ep > 0)
+      if (ci && episodioDosComentarios(&t, &ep) && t > 0 && ep > 0)
         extras_pedir_comentarios_ep(ci->imdb, t, ep);
     }
   }
@@ -2046,6 +2077,18 @@ static int progressoDe(int i) {
   return c ? c->progresso : 0;
 }
 
+// COR DE FOCO dos botoes do hero: a cor de realce dos Ajustes, e a tinta do
+// texto/glifo por cima dela — escura sobre realce claro, branca sobre realce
+// escuro (luminancia Rec.709, o mesmo degrau das pilulas de comentario). O
+// dono (20/09/2026): "nenhum botao ta ficando com a cor do accent; o texto
+// tem que ser branco ou preto dependendo da cor". Os botoes estavam cravados
+// em #f5f5f5/#111, a regra de layout.h (foco = preenchimento na cor de
+// realce) nao chegava aqui.
+static float tintaBotao;   // tinta do rotulo do primario, decidida junto do fundo
+static float focoAcento(float *r, float *g, float *b) {
+  return ajustes_acento_tinta(r, g, b);
+}
+
 static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, float a) {
   // FOCO E TAMANHO, NAO ANEL.
   //
@@ -2067,13 +2110,14 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
     r.x = cx - r.w * 0.5f; r.y = cy - r.h * 0.5f;
   }
   if (circular) {
-    float lum = focado ? 0.961f : 0.133f;   // #f5f5f5 / #222
-    gfx_cor(r, NV_RAIO_PILL, lum, lum, lum, a);
+    float ic;
+    if (focado) { float fr, fg, fb; ic = focoAcento(&fr, &fg, &fb);
+                  gfx_cor(r, NV_RAIO_PILL, fr, fg, fb, a); }
+    else { ic = 1.0f; gfx_cor(r, NV_RAIO_PILL, 0.133f, 0.133f, 0.133f, a); }
     // Os tres glifos do web: biblioteca (+), assistido (olho) e trailer
     // (placa do YouTube). Sao SVG la e nao existem na familia embarcada, entao
     // vem do shader — ver GFX_OLHO e GFX_FONTES. Antes eram "+" e dois "...",
     // que nao diziam o que os botoes faziam.
-    float ic = focado ? 0.067f : 1.0f;      // #111 com foco, branco sem
     float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
     // ICONES DE VERDADE, do art/icones (SVG do app web rasterizados). Antes
     // cada glifo era desenhado a mao no shader — um "+" de dois retangulos, um
@@ -2124,7 +2168,12 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
   // LINHA DE TEXTO logo acima, que este arquivo ja desenha ("Retomada
   // disponivel  16%  Episodio T2E1"). O veu era redundante alem de feio —
   // dizia com tinta o que a linha ja diz com palavra.
-  gfx_cor(r, NV_RAIO_PILL, 1, 1, 1, a);
+  // Em repouso branco com tinta preta (a referencia); em FOCO a cor de realce
+  // com a tinta que contrasta com ela (focoAcento).
+  { float tinta = 0.0f, fr = 1, fg = 1, fb = 1;
+    if (focado) tinta = focoAcento(&fr, &fg, &fb);
+    gfx_cor(r, NV_RAIO_PILL, fr, fg, fb, a);
+    tintaBotao = tinta; }
 
   // Triangulo 28x30 e vao de 21 ate a tinta do rotulo, medidos no aparelho
   // (x=150..177 e rotulo em 200, dentro da pilula 96..417).
@@ -2136,11 +2185,12 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
   // centro no estado focado; centrado, a folga sobra igual dos dois lados.
   { float s = r.h / NV_DETW2_BTN_H;
     float iw = NV_DETW2_BTN_ICONE_W * s, ih = NV_DETW2_BTN_ICONE_H * s;
-    TxtLinha l = txt_linha(TXT_DET_BOTAO, rot, 0, 0, 0, 255);
+    int c = (int)(tintaBotao * 255.0f + 0.5f);
+    TxtLinha l = txt_linha(TXT_DET_BOTAO, rot, c, c, c, 255);
     float grupo = iw + NV_DETW2_BTN_GAPI * s + l.w;
     float x = r.x + (r.w - grupo) * 0.5f;
     GfxRect tri = { x, r.y + (r.h - ih) * 0.5f, iw, ih };
-    gfx_rect(tri, 0, GFX_PLAY, 0, 0, 0, 0.0f, 0, 0, 0, a);
+    gfx_rect(tri, 0, GFX_PLAY, 0, 0, 0, 0.0f, tintaBotao, tintaBotao, tintaBotao, a);
     txt_desenhar_alpha(l, x + iw + NV_DETW2_BTN_GAPI * s,
                        r.y + (r.h - l.h) * 0.5f, a); }
 }
@@ -2150,14 +2200,12 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
 // rotulo, e por isso a largura sai de `texto + 2 x 34` e nao da conta do
 // primario.
 static void desenhaSecundario(GfxRect r, const char *rot, int focado, float a) {
-  if (focado) {
-    GfxRect anel = { r.x - NV_DETW_ANEL, r.y - NV_DETW_ANEL,
-                     r.w + NV_DETW_ANEL * 2, r.h + NV_DETW_ANEL * 2 };
-    gfx_cor(anel, NV_RAIO_PILL, 1, 1, 1, a);
-  }
-  float lum = focado ? 0.961f : 0.133f;
-  gfx_cor(r, NV_RAIO_PILL, lum, lum, lum, a);
-  int cor = focado ? 17 : 255;
+  // Sem anel (regra de layout.h): foco = preenchimento na cor de realce.
+  int cor = 255;
+  if (focado) { float fr, fg, fb, t = focoAcento(&fr, &fg, &fb);
+                gfx_cor(r, NV_RAIO_PILL, fr, fg, fb, a);
+                cor = (int)(t * 255.0f + 0.5f); }
+  else gfx_cor(r, NV_RAIO_PILL, 0.133f, 0.133f, 0.133f, a);
   TxtLinha l = txt_linha(TXT_DET_BOTAO, rot, cor, cor, cor, 255);
   txt_desenhar_alpha(l, r.x + (r.w - l.w) * 0.5f, r.y + (r.h - l.h) * 0.5f, a);
 }
@@ -2226,13 +2274,21 @@ static void desenhaLembrete(GfxRect r, int ligado, int focado, float a) {
     r.w *= NV_DETW2_FOCO_SY; r.h *= NV_DETW2_FOCO_SY;
     r.x = cx - r.w * 0.5f; r.y = cy - r.h * 0.5f;
   }
-  if (focado) gfx_cor(r, NV_RAIO_PILL, 0.961f, 0.961f, 0.961f, a);
-  else if (ligado) {
+  if (focado) {
+    // Cor de realce, como os vizinhos. `claro` passa a dizer se a SUPERFICIE
+    // e clara — e disso que agendaui_cor_lembrete escolhe o verde escurecido
+    // ou o cheio; sem lembrete armado o glifo e a tinta de contraste.
+    float fr, fg, fb, t = focoAcento(&fr, &fg, &fb);
+    gfx_cor(r, NV_RAIO_PILL, fr, fg, fb, a);
+    claro = t < 0.5f;
+    if (!ligado) { cr = cg = cb = t; goto glifo; }
+  } else if (ligado) {
     float vr, vg, vb;
     agendaui_cor_lembrete(1, 0, &vr, &vg, &vb);
     gfx_cor(r, NV_RAIO_PILL, vr, vg, vb, a);
   } else gfx_cor(r, NV_RAIO_PILL, 0.133f, 0.133f, 0.133f, a);
   agendaui_cor_lembrete(ligado, claro, &cr, &cg, &cb);
+glifo:
   g = r.w * NV_DETW2_CIRC_GLIFO;
   { GfxRect ic = { r.x + (r.w - g) * 0.5f, r.y + (r.h - g) * 0.5f, g, g };
     agendaui_despertador(ic, ligado, cr, cg, cb, a, SDL_GetTicks(), lembreteEm); }
@@ -2962,16 +3018,16 @@ static void desenhaTemporada(GfxRect r, int c, float f, float a) {
   // Biblioteca e o seletor Serie|Episodio: #222 na que nao e nada, 60% da
   // superficie de foco (#939393) na escolhida em repouso, #F5F5F5 na focada.
   // Tres degraus bem separados a 3 metros, e nenhum deles e um contorno.
-  { float base = sel ? 0.577f : 0.133f;        // 0.577 = 60% de 0.961
-    float lum  = base + (0.961f - base) * f;   // -> #F5F5F5 no foco
-    gfx_cor(r, raio, lum, lum, lum, a); }
-  // Texto: cinza claro na que nao e nada, ESCURO assim que ela e escolhida —
-  // #111 sobre #939393 da 6,1:1, e branco sobre o mesmo cinza daria 2,4:1.
-  // Interpolado por `f` para acompanhar a mola em vez de estalar; na escolhida
-  // os dois extremos ja sao escuros, entao a interpolacao nao muda nada.
-  { float claro = sel ? 17.0f : 179.0f;
-    float v = claro + (17.0f - claro) * f;     // -> #111 no foco
-    int cor = (int)(v + 0.5f);
+  // Os tres degraus na COR DE REALCE (layout.h): cheia na focada, 60% na
+  // escolhida em repouso, #222 na que nao e nada.
+  float fr, fg, fb, ti = ajustes_acento_tinta(&fr, &fg, &fb);
+  { float br = sel ? fr * 0.6f : 0.133f, bg = sel ? fg * 0.6f : 0.133f,
+          bb = sel ? fb * 0.6f : 0.133f;
+    gfx_cor(r, raio, br + (fr - br) * f, bg + (fg - bg) * f, bb + (fb - bb) * f, a); }
+  // Texto: cinza claro na que nao e nada; sobre o realce, a tinta que
+  // contrasta com ele (ti), em degrau no meio da mola.
+  { int t = (int)(ti * 255.0f + 0.5f);
+    int cor = (sel || f > 0.5f) ? t : 179;
     TxtLinha l = txt_linha(TXT_PLR_CORPO, rot, cor, cor, cor, 255);
     // 500 de peso na Inter Regular: uma segunda passada meio pixel a direita.
     txt_peso(l, r.x + (r.w - l.w) * 0.5f, r.y + (r.h - l.h) * 0.5f, a, 0.5f); }
@@ -3496,11 +3552,21 @@ static void corDaNota(int notaDec, float *r, float *g, float *b, float *tx) {
 // E o renderSeriesRatingsPanel do web, que ate agora nao tinha fonte aqui — a
 // aba de serie caia nos mesmos cartoes do filme.
 static void desenhaNotasEpisodio(float x, float y, float a) {
-  int nt = extras_n_temporadas(), t, i, ne;
+  int nt = extras_n_temporadas(), t, i, ne, primeira = 0, cabem;
   if (ratTemp >= nt) ratTemp = 0;
-  for (t = 0; t < nt; t++) {
+  // JANELA: com mais temporadas do que cabem na faixa (South Park tem 27,
+  // #79) a fileira mostra um trecho com a escolhida dentro, em vez de
+  // desenhar chips fora da tela.
+  cabem = (int)((NV_TELA_W - NV_DETP_X * 2 + RAT_TEMP_GAP) / (58.0f + RAT_TEMP_GAP));
+  if (cabem < 1) cabem = 1;
+  if (nt > cabem) {
+    primeira = ratTemp - cabem / 2;
+    if (primeira > nt - cabem) primeira = nt - cabem;
+    if (primeira < 0) primeira = 0;
+  }
+  for (t = primeira; t < nt && t < primeira + cabem; t++) {
     char rot[8];
-    float bx = x + t * (58.0f + RAT_TEMP_GAP);
+    float bx = x + (t - primeira) * (58.0f + RAT_TEMP_GAP);
     GfxRect r = { bx, y, 58.0f, RAT_TEMP_H };
     int sel = (t == ratTemp);
     snprintf(rot, sizeof rot, "T%d", extras_temporada_numero(t));
@@ -3771,6 +3837,22 @@ static float alturaCabComentarios(void) {
 // Rotulos do seletor, em escopo de arquivo: a contagem de colunas e a largura
 // de item precisam deles fora do desenho.
 static const char *COM_ROT[2] = { "Série", "Episódio" };
+// A pilula do episodio DIZ qual episodio: "Episódio · T1E3". Sem isso a pessoa
+// nao tem como saber que os cartoes seguem o episodio em foco na fileira la de
+// cima (pedido do dono, #78). O texto ja sai traduzido pedaco a pedaco porque
+// a linha montada nao esta na tabela de idioma.
+static const char *rotuloPilulaCom(int k) {
+  static char buf[64];
+  int t = 0, ep = 0;
+  if (k != 1) return COM_ROT[0];
+  if (episodioDosComentarios(&t, &ep) && t > 0 && ep > 0) {
+    char te[24];
+    snprintf(te, sizeof te, i18n("T%dE%d"), t, ep);
+    snprintf(buf, sizeof buf, "%s  \xc2\xb7  %s", i18n(COM_ROT[1]), te);
+    return buf;
+  }
+  return COM_ROT[1];
+}
 
 // A fileira de comentarios tem DUAS naturezas em sequencia: as pilulas do
 // seletor (so em serie) e, depois delas, os CARTOES.
@@ -3848,7 +3930,7 @@ static float cabecalhoComentarios(float x, float y, float a) {
     int k;
     int fileira = SEC_COMENTARIOS;
     for (k = 0; k < 2; k++) {
-      float w = larguraPilulaCom(COM_ROT[k]);
+      float w = larguraPilulaCom(rotuloPilulaCom(k));
       GfxRect r = { px, yy, w, COM_PILL_H };
       // MEDIDO na referencia: a pilula ESCOLHIDA e BRANCA com texto escuro, e a
       // outra e #2D2D2D com texto branco. E o oposto das pilulas de temporada,
@@ -3906,7 +3988,7 @@ static float cabecalhoComentarios(float x, float y, float a) {
         else if (sel)   ls = (0.2126f*ar + 0.7152f*ag + 0.0722f*ab) * 0.6f;
         else            ls = 0.176f;
         cor = (ls > 0.55f) ? 17 : 255;
-        { TxtLinha l = txt_linha(TXT_PLR_CORPO, COM_ROT[k], cor, cor, cor, 255);
+        { TxtLinha l = txt_linha(TXT_PLR_CORPO, rotuloPilulaCom(k), cor, cor, cor, 255);
           txt_peso(l, r.x + (r.w - l.w) * 0.5f, r.y + (r.h - l.h) * 0.5f, a, 0.5f); } }
       px += w + COM_PILL_GAP;
     }
@@ -3954,22 +4036,24 @@ static void desenhaComentarios(float x, float y, float a) {
     // rasterizada na cor pedida, entao uma cor que varia por quadro seria uma
     // entrada nova de cache por quadro.
     moldura(card, 20.0f, a);
-    if (foc) gfx_cor(card, 20.0f / (COM_CARD_W < COM_CARD_H ? COM_CARD_W
-                                                            : COM_CARD_H),
-                     0.961f, 0.961f, 0.961f, a);
+    int tintaEsc = 1;   // tinta escura sobre o foco (realce claro); 0 = clara
+    if (foc) { float fr, fg, fb; tintaEsc = ajustes_acento_tinta(&fr, &fg, &fb) < 0.5f;
+      gfx_cor(card, 20.0f / (COM_CARD_W < COM_CARD_H ? COM_CARD_W
+                                                     : COM_CARD_H),
+              fr, fg, fb, a); }
 
     { TxtLinha lu = txt_linha_corta(TXT_ROW_TITULO,
                                     daSerie ? extras_comentario_usuario(i)
                                             : extras_comentario_ep_usuario(i),
-                                    foc ? 17 : 245, foc ? 17 : 248,
-                                    foc ? 20 : 255, 255, larg);
+                                    foc ? (tintaEsc ? 17 : 255) : 245, foc ? (tintaEsc ? 17 : 255) : 248,
+                                    foc ? (tintaEsc ? 20 : 255) : 255, 255, larg);
       txt_desenhar_alpha(lu, px, y + COM_PAD, a); }
 
     // O texto para ANTES do rodape: sem o teto de linhas ele passava por cima
     // das curtidas. 6 linhas de 30 terminam em 246; o rodape comeca em 288.
     txt_bloco(TXT_DET_META2, daSerie ? extras_comentario_texto(i)
                                      : extras_comentario_ep_texto(i),
-              foc ? 45 : 200, foc ? 47 : 205, foc ? 52 : 214,
+              foc ? (tintaEsc ? 45 : 235) : 200, foc ? (tintaEsc ? 47 : 236) : 205, foc ? (tintaEsc ? 52 : 240) : 214,
               px, y + COM_PAD + 42.0f, larg, 30.0f, a * 0.95f, 6);
 
     { int nota = daSerie ? extras_comentario_nota(i)
@@ -3981,8 +4065,8 @@ static void desenhaComentarios(float x, float y, float a) {
       else
         snprintf(rodape, sizeof rodape, i18n("%d curtidas"), cur);
       { TxtLinha lr = txt_linha(TXT_CAPTION2, rodape,
-                                foc ? 88 : 150, foc ? 90 : 154,
-                                foc ? 96 : 163, 255);
+                                foc ? (tintaEsc ? 88 : 215) : 150, foc ? (tintaEsc ? 90 : 216) : 154,
+                                foc ? (tintaEsc ? 96 : 222) : 163, 255);
         txt_desenhar_alpha(lr, px, y + COM_CARD_H - COM_PAD - lr.h, a * 0.9f); } }
   }
 }

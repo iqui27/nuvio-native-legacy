@@ -1221,6 +1221,13 @@ static void *buscarEpComent(void *arg) {
       epTempAtual = t; epNumAtual = e;
     }
     pthread_mutex_unlock(&trava);
+  } else {
+    // Falhou: marca o episodio como respondido (lista vazia) pelo mesmo
+    // motivo do teste em extras_pedir_comentarios_ep — senao seria um pedido
+    // por quadro ate a rede voltar.
+    pthread_mutex_lock(&trava);
+    if (t == epPedTemp && e == epPedNum) { epTempAtual = t; epNumAtual = e; }
+    pthread_mutex_unlock(&trava);
   }
   pthread_mutex_lock(&trava); epFioVivo = 0; pthread_mutex_unlock(&trava);
   return NULL;
@@ -1231,8 +1238,10 @@ void extras_pedir_comentarios_ep(const char *imdbSerie, int temporada, int episo
   if (!imdbSerie || !imdbSerie[0] || temporada <= 0 || episodio <= 0) return;
   pthread_mutex_lock(&trava);
   // Mesmo episodio ja carregado (ou em voo): nao repete a viagem.
-  if (epFioVivo ||
-      (temporada == epTempAtual && episodio == epNumAtual && nComentEp > 0)) {
+  // Sem o `nComentEp > 0` que havia aqui: um episodio SEM comentario
+  // (t/e publicados, lista vazia) era pedido de novo a cada quadro, um fio
+  // por quadro contra o Trakt, enquanto o foco ficasse na secao.
+  if (epFioVivo || (temporada == epTempAtual && episodio == epNumAtual)) {
     pthread_mutex_unlock(&trava);
     return;
   }

@@ -178,9 +178,11 @@ void agendaviso_desenhar(Uint32 agora) {
     // Um botao so, sempre em foco: nao ha escolha a fazer aqui. Pilula clara
     // com texto escuro, o vocabulario de modal deste app.
     { const char *rot = i18n("Entendi");
-      TxtLinha t = txt_linha(TXT_CALLOUT, rot, 17, 17, 17, 255);
+      float fr, fg, fb, ti = ajustes_acento_tinta(&fr, &fg, &fb);
+      int c = (int)(ti * 255.0f + 0.5f);
+      TxtLinha t = txt_linha(TXT_CALLOUT, rot, c, c, c, 255);
       GfxRect b = { tx, y + h - 96.0f, (float)t.w + 64.0f, 64.0f };
-      gfx_cor(b, NV_RAIO_PILL, 0.961f, 0.961f, 0.961f, a);
+      gfx_cor(b, NV_RAIO_PILL, fr, fg, fb, a);
       txt_desenhar_alpha(t, b.x + 32.0f, b.y + (64.0f - (float)t.h) * 0.5f, a); }
     { TxtLinha t = txt_linha(TXT_CAPTION2, i18n("Ver tudo em Agenda"),
                              150, 154, 165, 255);
