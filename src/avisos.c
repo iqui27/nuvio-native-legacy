@@ -657,8 +657,11 @@ static void desenharToast(Uint32 agora) {
   t1 = txt_linha(TXT_CAPTION, txt, 240, 242, 247, 255);
   t2 = txt_linha(TXT_CAPTION, i18n("abre"), 150, 153, 162, 255);
   w = 48.0f + t1.w + 22.0f + lado + 10.0f + t2.w + 24.0f;
+  // CANTO SUPERIOR DIREITO (dono, 20/09): embaixo ele disputava com a fileira
+  // de Continuar Assistindo e com o "Ver titulo"; em cima nao ha nada a
+  // direita, e desce 24 px ao entrar em vez de subir.
   x = NV_TELA_W - 80.0f - w;
-  y = NV_TELA_H - 72.0f - h + (1.0f - toastA) * 24.0f;
+  y = 64.0f - (1.0f - toastA) * 24.0f;
   // Anel de acento respirando, por fora da pilula.
   gfx_cor((GfxRect){ x - 2.0f, y - 2.0f, w + 4.0f, h + 4.0f }, 0.5f, ar, ag, ab,
           (0.25f + 0.55f * pulso) * toastA);
