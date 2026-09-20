@@ -185,7 +185,7 @@ eval emcc src/*.c -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} \
   `# Emscripten logo antes — que e o quadro descrito acima, o de pool seco.` \
   `# A CONTA explica: os orcamentos de fios simultaneos somam mais de 20 quando` \
   `# as fases se sobrepoem (ADD_FIOS 4, BUSCA_FIOS 3, CAT_FIOS 3, VER_FIOS 4,` \
-  `# NV_TEX_FIOS 2 + NV_TEX_FIOS_REDE 4, TK_FIOS 3, mais os avulsos de sync,` \
+  `# NV_TEX_FIOS 2 + NV_TEX_FIOS_REDE 2 (4 no LG), TK_FIOS 3, mais os avulsos de sync,` \
   `# video e extras). Com 12 o pool seca em qualquer arranque com conta.` \
   `# 20 cobre o pico observado com folga. CUSTO MEDIDO no navegador, e ele NAO` \
   `# e o que eu supus: com 12 e com 20 o heap fica igual (malloc=18,9 MiB,` \

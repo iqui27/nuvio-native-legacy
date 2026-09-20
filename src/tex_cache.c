@@ -105,13 +105,40 @@ typedef struct {
   // ARTE DE PASSAGEM: quadro de sequencia animada, que vale por 67 ms e nunca
   // mais. Ver tex_obter_passageira e a nota em despejar().
   int passageiro;
+#ifdef __EMSCRIPTEN__
+  // OS BYTES BAIXADOS, no lugar do arquivo de cache (20/09/2026, #72). No
+  // Emscripten toda chamada de arquivo feita por um pthread e PROXIADA ao fio
+  // principal — fopen/fwrite/rename/fread/remove de cada arte eram viagens
+  // sincronas pelo fio que desenha, e o log do AU7000 mostrava esse fio preso
+  // fora do nosso codigo (FPS=2 com pior=0) enquanto 15 fios trabalhavam. O
+  // fio de rede deixa os bytes aqui; o de decode os consome e libera. Nada
+  // sobrevive ao decode: quem serve a re-decodificacao e o cache HTTP do
+  // proprio navegador, que ja existia. So o GIF continua indo a arquivo,
+  // porque gif.c le por caminho.
+  unsigned char *bruto;
+  long nBruto;
+#endif
 } Item;
 
 #define NV_TEX_FIOS 2
+// Fios de rede: 4 no LG; 2 no Tizen, onde o fetch de cada um passa pelo fio
+// principal (ver Item.bruto e a nota de ADD_FIOS em addons.c).
+#ifdef __EMSCRIPTEN__
+#define NV_TEX_FIOS_REDE 2
+#else
 #define NV_TEX_FIOS_REDE 4
+#endif
 static SDL_Thread *thrs[NV_TEX_FIOS];
 static SDL_Thread *thrsRede[NV_TEX_FIOS_REDE];
 static Item itens[MAX_ITENS_ABS];
+// Bytes baixados que ainda nao foram consumidos (Tizen). No LG e vazio.
+static void soltarBruto(Item *it) {
+#ifdef __EMSCRIPTEN__
+  free(it->bruto); it->bruto = NULL; it->nBruto = 0;
+#else
+  (void)it;
+#endif
+}
 static int nMax = 64;
 static unsigned long relogio = 1;
 
@@ -469,6 +496,7 @@ static int slotLivre(void) {
   // antes de despejar arte que esta na tela.
   for (int i = 0; i < nMax; i++)
     if (itens[i].estado == FALHOU && itens[i].falhas >= 3) {
+      soltarBruto(&itens[i]);
       memset(&itens[i], 0, sizeof(Item));
       itens[i].lum = -1; itens[i].corR = -1;
       return i;
@@ -546,6 +574,7 @@ sai:
   if (itens[melhor].tex) { gfx_tex_esquecer(itens[melhor].tex); glDeleteTextures(1, &itens[melhor].tex); }
   bytesUsados -= bytesTextura(itens[melhor].w, itens[melhor].h);
   if (bytesUsados < 0) bytesUsados = 0;
+  soltarBruto(&itens[melhor]);
   memset(&itens[melhor], 0, sizeof(Item));
   itens[melhor].lum = -1;   // 0 seria "preto"; o desconhecido e -1
   itens[melhor].corR = -1;
@@ -933,6 +962,38 @@ static int garantirLocal(const char *url, char *dst, size_t tam) {
   return 1;
 }
 
+// O QUE O FIO DE REDE ENTREGA AO DE DECODE. No LG, um arquivo no cache de
+// disco (garantirLocal). No Tizen, os bytes no proprio item (Item.bruto) —
+// exceto GIF e caminho local, que seguem pelo arquivo.
+static int baixarParaItem(int idx, const char *url, char *dst, size_t tam) {
+#ifdef __EMSCRIPTEN__
+  if (!strncmp(url, "http://", 7) || !strncmp(url, "https://", 8)) {
+    long n = 0;
+    unsigned char *corpo = (unsigned char *)baixarImagem(url, &n);
+    if (!corpo) {
+      char alt[400];
+      if (arte_reserva_url(url, alt, sizeof alt)) corpo = (unsigned char *)baixarImagem(alt, &n);
+    }
+    if (!corpo) return 0;
+    if (n >= 6 && !memcmp(corpo, "GIF8", 4)) {
+      // gif.c le por caminho: este continua indo a arquivo.
+      free(corpo);
+      return garantirLocal(url, dst, tam);
+    }
+    SDL_LockMutex(mtx);
+    free(itens[idx].bruto);
+    itens[idx].bruto = corpo;
+    itens[idx].nBruto = n;
+    SDL_UnlockMutex(mtx);
+    snprintf(dst, tam, "%s", url);
+    return 1;
+  }
+#else
+  (void)idx;
+#endif
+  return garantirLocal(url, dst, tam);
+}
+
 // FIO DE REDE: tira da fila, garante o arquivo no cache de disco e passa para a
 // decodificacao. Nao toca em pixel nenhum, entao pode rodar em prioridade
 // normal e em varios — o que ele faz e ESPERAR.
@@ -963,7 +1024,7 @@ static int threadRede(void *arg) {
     }
     SDL_UnlockMutex(mtx);
 
-    if (!garantirLocal(caminho, local, sizeof local)) {
+    if (!baixarParaItem(idx, caminho, local, sizeof local)) {
       // Falhou o download. Marca como falha AQUI para o recuo valer — antes o
       // decode e que marcava, e ate la o item ficava PENDENTE ocupando slot.
       SDL_LockMutex(mtx);
@@ -1202,26 +1263,41 @@ static int threadDecode(void *arg) {
     // Copiado SOB O MUTEX: o item pode ser promovido a hero enquanto este fio
     // decodifica, e ler o campo depois daria uma leitura sem trava.
     limite = itens[idx].limite > 0 ? itens[idx].limite : NV_TEX_LARG_MAX;
+#ifdef __EMSCRIPTEN__
+    // OS BYTES SAEM DO ITEM AQUI, sob o mutex, e passam a ser deste fio.
+    unsigned char *bruto = itens[idx].bruto;
+    long nBruto = itens[idx].nBruto;
+    itens[idx].bruto = NULL; itens[idx].nBruto = 0;
+#endif
     SDL_UnlockMutex(mtx);
 
+    Uint32 t0 = SDL_GetTicks(), tLoad;
+    int srcW = 0, srcH = 0;
+    SDL_Surface *bruta = NULL;
+    SDL_Surface *conv = NULL;
+#ifdef __EMSCRIPTEN__
+    if (bruto) {
+      bruta = jpeg_rapido_carregar_mem(bruto, (size_t)nBruto, limite, &srcW, &srcH);
+      free(bruto);
+    } else
+#endif
+    {
     // O download JA ACONTECEU no fio de rede; aqui garantirLocal so traduz a
     // URL para o caminho do cache, sem tocar a rede.
     { char local[600];
       if (garantirLocal(caminho, local, sizeof local))
         snprintf(caminho, sizeof caminho, "%s", local);
     }
-    Uint32 t0 = SDL_GetTicks(), tLoad;
-    int srcW = 0, srcH = 0;
     // JPEG SAI DO DECODIFICADOR JA REDUZIDO (jpegrapido.h): 1/2, 1/4 ou 1/8
     // dentro da DCT, o que cobre o pedido. srcW/srcH ficam com o tamanho do
     // ARQUIVO — e o que `fonteW` guarda para decidir promocao — e nao com o
     // do que saiu. NULL cai no IMG_Load de sempre.
-    SDL_Surface *bruta = jpeg_rapido_carregar(caminho, limite, &srcW, &srcH);
-    SDL_Surface *conv = NULL;
+    bruta = jpeg_rapido_carregar(caminho, limite, &srcW, &srcH);
     if (!bruta) { srcW = srcH = 0; bruta = IMG_Load(caminho); }
     // O SDL2_image desta TV nao le WebP; a libwebp do sistema le (webp.c),
     // e ja reduz ao limite — os fundos do Xperience sao 3840x2160.
     if (!bruta) bruta = webp_carregar_larg(caminho, limite, &srcW, &srcH);
+    }
     tLoad = SDL_GetTicks();
     if (bruta && !srcW) { srcW = bruta->w; srcH = bruta->h; }
     if (bruta) {

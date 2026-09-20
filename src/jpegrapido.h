@@ -30,4 +30,11 @@
 SDL_Surface *jpeg_rapido_carregar(const char *caminho, int largMax,
                                   int *larguraOriginal, int *alturaOriginal);
 
+#ifdef __EMSCRIPTEN__
+// So no Tizen: os mesmos formatos (JPEG, PNG, WebP), a partir de bytes ja na
+// memoria. NULL para GIF e o resto. Ver a nota em jpegrapido.c.
+#include <stddef.h>
+SDL_Surface *jpeg_rapido_carregar_mem(const unsigned char *dados, size_t n, int largMax,
+                                      int *larguraOriginal, int *alturaOriginal);
+#endif
 #endif

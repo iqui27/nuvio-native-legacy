@@ -820,7 +820,16 @@ void addons_buscar_legendas(const char *imdb, const char *tipo) {
 // Os addons sao independentes e `extrair` so escreve no balde que recebe, entao
 // cada um le no proprio. A ORDEM e preservada na juncao: ela decide qual fonte
 // o automatico ve primeiro, e trocar a ordem trocaria a fonte escolhida.
+//
+// NO TIZEN SAO 2, nao 4 (20/09/2026, #72). La cada fio e um Worker cujo fetch,
+// arquivo e printf sao proxiados ao fio principal, e o log do AU7000 mostrou
+// esse fio preso enquanto 15 fios trabalhavam. Dois em paralelo ainda cortam
+// a serie; quatro so mudam quem espera quem.
+#ifdef __EMSCRIPTEN__
+#define ADD_FIOS 2
+#else
 #define ADD_FIOS 4
+#endif
 
 typedef struct {
   int    idx;                 // qual addon
