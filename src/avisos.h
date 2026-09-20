@@ -61,6 +61,12 @@ const char *avisos_pediu_abrir(void);
 enum { AVISOS_NADA = 0, AVISOS_ABRIR_SALVOS, AVISOS_ABRIR_ATUALIZACAO };
 int  avisos_pediu(void);
 
+// ENVIO MANUAL DO REGISTRO DESTA SESSAO, pela linha "Enviar registro" dos
+// Ajustes. Mesmo destino e mesmo teto (200 KB) do cartao de crash; o estado
+// e o mesmo contador: 0 nada, 1 enviando, 2 enviado, 3 falhou.
+void avisos_enviar_registro_atual(void);
+int  avisos_envio_estado(void);
+
 // A LISTA COMO COMPONENTE, para a aba AVISOS do painel de Salvos: quem hospeda
 // desenha na caixa que tem, guarda o proprio foco e chama _ok no OK. _ok
 // devolve 1 quando a linha abre outra coisa (o hospedeiro fecha); _marcar_lidos

@@ -34,6 +34,7 @@
 #include "simklauth.h"
 #include "qr.h"
 #include "atualizacao.h"
+#include "avisos.h"
 #include "js.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -124,7 +125,7 @@ typedef enum {
   AJ_XTREAM_SERVIDOR, AJ_XTREAM_USUARIO, AJ_XTREAM_SENHA, AJ_XTREAM_LIMPAR,
   AJ_SALVOS_DEST, AJ_TRAKT, AJ_SIMKL, AJ_SAIR,
   // Sobre
-  AJ_VERSAO_I, AJ_ATUALIZAR, AJ_ESPACO, AJ_TEX_MB,
+  AJ_VERSAO_I, AJ_ATUALIZAR, AJ_ENVIAR_LOG, AJ_ESPACO, AJ_TEX_MB,
   // Integracoes — TMDB (tmdb_settings do blob da conta, ver
   // profileSettingsSyncService.js do web)
   AJ_TMDB_LIGADO, AJ_TMDB_IDIOMA, AJ_TMDB_ARTE, AJ_TMDB_BASICO, AJ_TMDB_FICHA,
@@ -398,6 +399,9 @@ static const Opcao OPCOES[AJ_N] = {
   // versao (a marca em atualizacao-vista.txt), e sem esta linha "Depois"
   // significava "nunca mais nesta versao".
   ACAO("Atualizar o aplicativo"),
+  // Manda o log DESTA sessao ao servico de recomendacoes (dono, 20/09/2026):
+  // ate aqui so o cartao do crash mandava, e so o da sessao anterior.
+  ACAO("Enviar registro"),
   LER("Memória usada por imagens"),
   ESC("Memória para imagens",       V_TEX_MB, 7),
 
@@ -495,7 +499,7 @@ static const char *CHAVE[] = {
   "-stalkerPortal", "-stalkerMac", "-stalkerLimpar",
   "-xtreamServidor", "-xtreamUsuario", "-xtreamSenha", "-xtreamLimpar",
   "salvosDestino", "-trakt", "-simkl", "-sair",
-  "-versao", "-atualizar", "-espaco", "texturasMB",
+  "-versao", "-atualizar", "-registro", "-espaco", "texturasMB",
   // Integracoes: os nomes sao exatamente os que profileSettingsSyncService.js
   // exporta dentro de tmdb_settings / mdblist_settings — a conta aplica e a
   // TV respeita a escolha feita no app web, e vice-versa.
@@ -1289,6 +1293,14 @@ static const char *textoLeitura(int op) {
     return strcmp(xtream_usuario(), "-") ? xtream_usuario() : i18n("Não configurado");
   if (op == AJ_XTREAM_SENHA)
     return strcmp(xtream_senha_mascarada(), "-") ? xtream_senha_mascarada() : i18n("Não configurado");
+  if (op == AJ_ENVIAR_LOG) {
+    switch (avisos_envio_estado()) {
+      case 1:  return i18n("enviando…");
+      case 2:  return i18n("enviado. Obrigado.");
+      case 3:  return i18n("não foi possível enviar");
+      default: return i18n("OK envia");
+    }
+  }
   if (op == AJ_VERSAO_I) {
     // Com release mais nova no GitHub, a linha diz as duas.
     if (atualizacao_nova()[0]) {
@@ -1542,6 +1554,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_TEX_MB: return "Quanta memória o cache de imagens pode usar. Automático escolhe pela RAM da TV. Um valor acima do que esta TV suporta é reduzido ao máximo dela — o painel ao lado mostra o teto em vigor.";
     case AJ_VERSAO_I: return "Versão do aplicativo. Esta informação não pode ser alterada.";
     case AJ_ATUALIZAR: return "Abre o cartão da versão nova, com o que mudou e o botão de instalar. Fica apagado quando não há versão nova.";
+    case AJ_ENVIAR_LOG: return "Manda os últimos 200 KB do registro desta sessão (sem senhas nem chaves) para quem faz o app. Use quando algo estiver errado agora.";
 
     // --- Integracoes
     case AJ_TMDB_LIGADO: return "O TMDB enriquece títulos com sinopse, elenco com foto, ficha técnica e trailers. Desligar corta tudo isso de uma vez.";
@@ -2047,6 +2060,7 @@ void ajustes_evento(const SDL_Event *e) {
       return;
     }
     if (focoOp == AJ_ATUALIZAR) { atualizacao_abrir(); return; }
+    if (focoOp == AJ_ENVIAR_LOG) { avisos_enviar_registro_atual(); return; }
     if (focoOp == AJ_ADDONS) { pediuAddons = 1; return; }
     if (focoOp == AJ_STALKER_PORTAL || focoOp == AJ_STALKER_MAC) {
       int mac = focoOp == AJ_STALKER_MAC;

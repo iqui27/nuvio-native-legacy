@@ -11,6 +11,7 @@
 #include "recomenda.h"
 #include "atualizacao.h"
 #include "salvosintro.h"
+#include "registro.h"
 #include <math.h>
 #include "agenda.h"
 #include "sessao.h"
@@ -259,17 +260,36 @@ static void jsonEsc(char *dst, size_t tam, const char *s) {
   dst[u] = 0;
 }
 
+// ENVIO MANUAL, pelos Ajustes (dono, 20/09/2026): o mesmo caminho do crash,
+// com o log DESTA sessao. `u` == &ATUAL escolhe a origem. No Tizen o log
+// atual e lido do localStorage no fio principal antes de o fio de envio
+// nascer (avisos_enviar_registro_atual); no LG o arquivo e o de sempre.
+static const int ATUAL = 1;
+static const char *agoraTexto(void) {
+  static char buf[40];
+  time_t t = time(NULL);
+  struct tm tmv;
+  localtime_r(&t, &tmv);
+  snprintf(buf, sizeof buf, "%04d-%02d-%02d %02d:%02d (manual)", tmv.tm_year + 1900, tmv.tm_mon + 1,
+           tmv.tm_mday, tmv.tm_hour, tmv.tm_min);
+  return buf;
+}
+#ifdef __EMSCRIPTEN__
+static char *logAtual;
+#endif
 static void *enviarRegistro(void *u) {
   static char aut[2200], via[40], chave[160];
   const char *cab[5];
   char *texto = NULL, *corpo, *resp;
   size_t nTexto = 0;
   int status = 0;
-  (void)u;
+  int manual = (u == &ATUAL);
 #ifdef __EMSCRIPTEN__
-  if (logAnterior) { texto = strdup(logAnterior); if (texto) nTexto = strlen(texto); }
+  { const char *fonte = manual ? logAtual : logAnterior;
+    if (fonte) { texto = strdup(fonte); if (texto) nTexto = strlen(texto); } }
 #else
-  { FILE *f = fopen(AV_LOG_ANTERIOR, "rb");
+  { const char *arq = manual ? registro_arquivo() : AV_LOG_ANTERIOR;
+    FILE *f = arq ? fopen(arq, "rb") : NULL;
     if (f) {
       long tam;
       fseek(f, 0, SEEK_END); tam = ftell(f);
@@ -297,7 +317,7 @@ static void *enviarRegistro(void *u) {
 #else
              "webos",
 #endif
-             crashQuando, esc);
+             manual ? agoraTexto() : crashQuando, esc);
     free(esc); }
   free(texto);
   { char url[300];
@@ -814,4 +834,32 @@ void avisos_desenhar(Uint32 agora) {
                                  140, 144, 154, 255, AVP_W - 2 * AVP_MARG);
     txt_desenhar_alpha(t, AVP_X + dx + AVP_MARG, NV_TELA_H - 62.0f, a * 0.85f); }
   cartaoDesenhar();
+}
+
+// --- envio manual (Ajustes) ---------------------------------------------------
+int avisos_envio_estado(void) { return envioEstado; }
+void avisos_enviar_registro_atual(void) {
+  if (envioEstado == 1) return;
+  if (!NV_REC_URL[0]) { envioEstado = 3; return; }
+#ifdef __EMSCRIPTEN__
+  // Fio principal: e o unico com localStorage. O shell grava nv-log a cada
+  // 10 s, entao o que vai e o log ate a ultima gravacao.
+  free(logAtual);
+  logAtual = (char *)EM_ASM_PTR({
+    try {
+      var t = localStorage.getItem('nv-log') || '';
+      if (t.length > $0) t = t.slice(t.length - $0);
+      var b = new TextEncoder().encode(t);
+      var p = _malloc(b.length + 1);
+      if (!p) return 0;
+      HEAPU8.set(b, p);
+      HEAPU8[p + b.length] = 0;
+      return p;
+    } catch (e) { return 0; }
+  }, AV_REGISTRO_MAX);
+#endif
+  fflush(stdout);   // o que este fio ja imprimiu entra no arquivo antes da leitura
+  envioEstado = 1;
+  if (pthread_create(&fioEnvio, NULL, enviarRegistro, (void *)&ATUAL) == 0) pthread_detach(fioEnvio);
+  else envioEstado = 3;
 }
