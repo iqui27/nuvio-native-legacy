@@ -463,7 +463,7 @@ int main(int argc, char **argv) {
   { char cam[600]; FILE *f;
     snprintf(cam, sizeof cam, "%s/ajustes.txt", dados_dir());
     f = fopen(cam, "w"); assert(f);
-    fprintf(f, "idioma 0\nselected_theme 3\n"); fclose(f);
+    fprintf(f, "idioma 1\nselected_theme 3\n"); fclose(f);   // em ingles: e a captura das notas da release
     ajustes_dir(dados_dir()); }
   abrir(0, 0);
   nivel = 0; botao = 0; quadros(120);
@@ -475,7 +475,7 @@ int main(int argc, char **argv) {
   { char cam[600]; FILE *f;
     snprintf(cam, sizeof cam, "%s/ajustes.txt", dados_dir());
     f = fopen(cam, "w"); assert(f);
-    fprintf(f, "idioma 0\nselected_theme 7\n"); fclose(f);
+    fprintf(f, "idioma 1\nselected_theme 7\n"); fclose(f);
     ajustes_dir(dados_dir()); }
   botao = 0; quadros(60);
   snprintf(nome, sizeof nome, "%s-12-hero-dourado-primario.png", saida);
