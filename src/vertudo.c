@@ -425,26 +425,47 @@ static void themeHeader(float a,float x0) {
   else snprintf(caption,sizeof caption,i18n("%d títulos%s  ·  %s"),n,desc_vertudo_fim()?"":i18n(" carregados"),i18n(legendaGrupo()));
   TxtLinha sub=txt_linha_corta(TXT_DET_META2,caption,196,202,213,255,960);txt_desenhar_alpha(sub,x0,192,a);
   if(collection&&collection->nSources>1) {
-    int first=tabCursor>3?tabCursor-3:0;
-    gfx_recorte(x0-6,244,NV_TELA_W-x0-90,72);
-    for(int i=first;i<collection->nSources&&i<first+6;i++) {
-      float x=x0+(i-first)*322.0f;const ColSource *s=&collection->sources[i];
-      int f=tabFocus&&tabCursor==i, selecionada=source==i;
-      float fa=tabAnim[i], escala=1.0f+.025f*fa;
-      GfxRect pill={x-(304*escala-304)*.5f,250-(58*escala-58)*.5f,
-                    304*escala,58*escala};
-      gfx_cor(pill,.28f,f?.94f:selecionada?r*.82f:.09f,
-              f?.95f:selecionada?g*.82f:.10f,
-              f?.97f:selecionada?b*.82f:.12f,a);
-      if(!f) gfx_rect(pill,0,GFX_ANEL,0,1.5f/pill.h,0,.28f,
-                      selecionada?.86f:.36f,selecionada?.88f:.38f,
-                      selecionada?.92f:.43f,a*(selecionada?.72f:.35f));
-      if(selecionada&&!f)
-        gfx_cor((GfxRect){pill.x+18,pill.y+pill.h-4,pill.w-36,3},.5f,
-                .84f+r*.16f,.84f+g*.16f,.84f+b*.16f,a);
-      char label[180];snprintf(label,sizeof label,"%s · %s",s->title,i18n(!strcmp(s->type,"series")?"Séries":"Filmes"));
-      TxtLinha t=txt_linha_corta(TXT_HERO_META,label,f?22:238,f?24:240,f?28:245,255,276);
-      txt_desenhar_alpha(t,pill.x+(pill.w-t.w)*.5f,pill.y+(pill.h-t.h)*.5f,a);
+    // ABAS NO PADRAO DO APP (19/09/2026, "deixar mais parecido com o restante").
+    // Antes: pilula de 304x58 fixa com anel, sublinhado e escala no foco —
+    // tres sinais que o resto do app ja abandonou (ver NV_COR_FOCO em
+    // layout.h e as abas do painel de Salvos). Agora e a mesma gramatica das
+    // abas de Salvos: largura pelo texto, 52 de altura, FOCO = preenchimento
+    // na cor de realce com texto escuro e sem anel; ABERTA sem foco =
+    // superficie clara; as outras, quase transparentes. `tabAnim` cruza o
+    // repouso e o foco em vez de escalar.
+    const float H=52.0f,PAD=22.0f,GAP=12.0f,W=NV_TELA_W-x0-90;
+    float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);
+    float larg[COL_SOURCE_MAX],pos[COL_SOURCE_MAX],px=0;
+    static char rot[COL_SOURCE_MAX][180];
+    int nAbas=collection->nSources;
+    for(int i=0;i<nAbas;i++) {
+      const ColSource *s=&collection->sources[i];
+      snprintf(rot[i],sizeof rot[i],"%s · %s",s->title,i18n(!strcmp(s->type,"series")?"Séries":"Filmes"));
+      // Medida com a cor de repouso; a cor certa e reaplicada no desenho (o
+      // cache de linhas guarda as duas).
+      larg[i]=txt_linha_corta(TXT_HERO_META,rot[i],176,176,176,255,420).w+PAD*2;pos[i]=px;px+=larg[i]+GAP;
+    }
+    // ROLAGEM PELO CURSOR, nao por indice: as abas tem larguras diferentes,
+    // entao "seis por vez" nao existe mais. A aba com o cursor (ou a aberta,
+    // quando o cursor esta na grade) entra inteira; a rolagem so anda o que
+    // precisa, e o resto da faixa fica onde estava.
+    static float rol; int alvo=tabFocus?tabCursor:source;
+    float ini=pos[alvo],fim=pos[alvo]+larg[alvo];
+    if(fim-rol>W)rol=fim-W; if(ini-rol<0)rol=ini;
+    if(rol<0)rol=0;
+    gfx_recorte(x0-6,244,W+12,H+12);
+    for(int i=0;i<nAbas;i++) {
+      float x=x0+pos[i]-rol;
+      if(x+larg[i]<x0-6||x>x0+W+6)continue;
+      int f=tabFocus&&tabCursor==i,selecionada=source==i;
+      float fa=tabAnim[i];
+      GfxRect pill={x,253,larg[i],H};
+      if(selecionada)gfx_cor(pill,NV_RAIO_PILL,.26f,.26f,.27f,a*(1-fa));
+      else gfx_cor(pill,NV_RAIO_PILL,1,1,1,.04f*a*(1-fa));
+      if(fa>.001f)gfx_cor(pill,NV_RAIO_PILL,ar,ag,ab,a*fa);
+      int cor=f?20:selecionada?246:176;
+      TxtLinha t=txt_linha_corta(TXT_HERO_META,rot[i],cor,cor,cor,255,420);
+      txt_desenhar_alpha(t,x+PAD,pill.y+(H-t.h)*.5f,a);
     }gfx_sem_recorte();
   }
 }
