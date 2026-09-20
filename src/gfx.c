@@ -262,6 +262,11 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // entao a opacidade da vinheta precisa entrar como uniforme. Sem isto ela
   // ficava em forca TOTAL sobre uma arte ja a 15%, e os 78% da esquerda — que e
   // exatamente onde o texto se apoia — viravam preto solido.
+  // uPar.x > 0.5 = SO A VINHETA, como veu com alpha, sem textura. E o que a
+  // pagina desenha por cima do trailer (trailer.h): o video e um plano ATRAS
+  // do canvas, visto por um furo, e o texto do titulo precisa do mesmo
+  // escuro a esquerda que teria sobre a arte. Mesmo perfil, mesma uFoco.
+  "  if (uPar.x > 0.5) { gl_FragColor = vec4(bg, clamp(a,0.0,1.0) * uFoco * uCor.a); return; }\n"
   "  c = mix(c, bg, clamp(a,0.0,1.0) * uFoco);\n"
   "  gl_FragColor = vec4(c, uCor.a);\n"
   "}\n",

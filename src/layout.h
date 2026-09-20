@@ -545,6 +545,16 @@
 #define NV_MOLA_FOCO     25.0f    // entrando no foco  (95% em 120ms)
 #define NV_MOLA_DESFOCO  25.0f    // saindo dele       (mesmo tempo: ver acima)
 #define NV_MOLA_SCROLL    8.0f
+// Quanto a pagina de titulo espera, assentada e no topo, antes de trocar a
+// arte pelo trailer mudo (trailer.h). Tempo de ler o titulo e a sinopse.
+#define NV_TRAILER_ESPERA_MS 2500
+// Ampliacao do trailer dentro do furo, em volta do centro. O player do YouTube
+// e 16:9 e a maioria dos trailers e 2.39:1: sem ampliar, o fundo ganha duas
+// tarjas pretas de 138 px. Dono (20/09/2026): "fill screen sem barras
+// pretas" — 2.39/1.78 = 1.344 tira a tarja inteira; um trailer 16:9 perde 13%
+// de cada lado, como o "fill" de qualquer TV. Vale para o fundo e para a
+// tela cheia.
+#define NV_TRAILER_ZOOM 1.344f
 // Frequencia (rad/s) da mola de 2a ordem que rola as fileiras da home. Vale o
 // k da CAUDA medida no deslize da referencia (~12,5 /s); 11,5 e o valor que
 // faz a curva inteira bater, porque nessa mola a cauda e so metade do ajuste:

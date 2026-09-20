@@ -28,6 +28,8 @@
 #include "ajustes.h"
 #include "home.h"
 #include "extras.h"
+#include "trailer.h"
+#include "player.h"
 #include "agenda.h"
 #include "agendaui.h"
 #include "vistoep.h"
@@ -155,6 +157,13 @@ static Foco foco;
 static float animFoco[N_SECOES][N_ITENS];
 static float scrollSec[N_SECOES];    // rolagem HORIZONTAL de cada fileira
 static float scrollY = 0.0f;         // rolagem VERTICAL do documento
+// TRAILER NO FUNDO (trailer.h). `trailerDesde` e o instante em que a pagina
+// assentou, para o autoplay esperar a pessoa ler antes de a arte virar
+// video; `trailerTentado` garante uma tentativa por abertura (o video acaba,
+// a arte volta e fica); `trailerFade` e a mistura arte -> video.
+static Uint32 trailerDesde = 0;
+static int    trailerTentado = 0;
+static float  trailerFade = 0.0f;
 static int temporada = 0;            // temporada ESCOLHIDA (nao a focada)
 // Repouso do foco sobre a fileira de temporadas, para trocar de temporada ao
 // PARAR numa pilula em vez de a cada pilula por que se passa.
@@ -720,8 +729,18 @@ static void desenhaArteDetalhe(GfxRect alvo, GLuint tex, const char *arte,
   if (!poster) {
     // uFoco = forca da vinheta: cai com a rolagem (pg) e pelo ajuste
     // "Escurecimento do fundo" (0 = arte limpa).
-    gfx_rect(alvo, tex, GFX_DETALHE, (1.0f - pg) * ajustes_detalhe_veu(), 0, 0, 0.0f, 0, 0, 0,
-             alpha);
+    float veu = (1.0f - pg) * ajustes_detalhe_veu();
+    // TRAILER TOCANDO ATRAS DO CANVAS: abre o furo, a arte se apaga por cima
+    // dele (trailerFade) e a vinheta fica como veu com alpha, para o texto
+    // continuar apoiado no mesmo escuro. Poster reserva nao entra aqui: o
+    // furo e a area toda, e o cartaz contido nao a cobre.
+    if (trailerFade > 0.005f && trailer_aberto() && !trailer_cheia()) {
+      gfx_furo(alvo);
+      if (trailerFade < 0.995f)
+        gfx_rect(alvo, tex, GFX_DETALHE, veu, 0, 0, 0.0f, 0, 0, 0, alpha * (1.0f - trailerFade));
+      gfx_rect(alvo, 0, GFX_DETALHE, veu, 1.0f, 0, 0.0f, 0, 0, 0, alpha * trailerFade);
+    } else
+      gfx_rect(alvo, tex, GFX_DETALHE, veu, 0, 0, 0.0f, 0, 0, 0, alpha);
   } else {
     float ap = gfx_tex_aspect_atual > 0.05f ? gfx_tex_aspect_atual : (2.0f / 3.0f);
     float h = alvo.h * 0.90f, w = h * ap, maxW = alvo.w * 0.42f;
@@ -771,6 +790,7 @@ void detail_abrir(const HomeItem *it) {
   aberto = 1; saindo = 0; nivel = 0; botao = 0;
   t = 0.0f; pg = 0.0f; scrollY = 0.0f; abaInfo = 0; pessoaAberta = 0;
   relFoco = 0; pedAbrir = -1; ratTemp = 0; ratSinc = 0;
+  trailer_fechar(); trailerDesde = 0; trailerTentado = 0; trailerFade = 0.0f;
   idx = it->indice;
   revistaVista = cat_revisao();
   // Guarda identidade e copia ANTES de qualquer republicacao. Ver revalidarIdx.
@@ -1327,6 +1347,10 @@ static int acaoEm(int n) {
 
 void detail_evento(const SDL_Event *e) {
   if (saindo) return;
+  // TRAILER EM TELA CHEIA come o teclado: OK pausa, Voltar fecha. O autoplay
+  // no fundo nao passa por aqui — ele nao tem teclado, a pagina continua a
+  // dela, e qualquer coisa que tire a pagina do topo o fecha (detail_atualizar).
+  if (trailer_cheia() && trailer_evento(e)) return;
 
   // O MENU DE VISTO COME OS EVENTOS. Mesma regra da ficha da pessoa logo
   // abaixo: e a coisa mais recente na tela e e para ela que a pessoa olha.
@@ -1555,10 +1579,15 @@ void detail_evento(const SDL_Event *e) {
       // em detail_atualizar sobre por que nao e ao passar o foco).
       comentEp = foco.coluna;
     } else if (foco.fileira == SEC_TRAILERS) {
-      // OK num trailer abre o video no app nativo da plataforma (navegador do
-      // webOS, aba do Tizen, browser do desktop). O card sempre foi focavel;
-      // agora o OK faz algo em vez de ficar mudo.
-      extras_trailer_abrir(foco.coluna);
+      // OK num trailer. Onde ha pagina (Samsung), o trailer toca AQUI, em
+      // tela cheia e com som, atras do canvas (trailer.h) — era o #82: o
+      // navegador da TV abria por cima e a pessoa nao sabia voltar. Na LG
+      // continua o navegador do webOS: o app nativo nao tem onde embutir um
+      // player do YouTube.
+      if (trailer_suportado()) {
+        GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+        trailer_abrir(extras_trailer_yt(foco.coluna), tela, 1, 1);
+      } else extras_trailer_abrir(foco.coluna);
     } else if (foco.fileira == SEC_ESTUDIOS) {
       // OK num logo abre o browse daquela produtora/rede no vertudo — e a
       // mesma pasta sintetica TMDB que as colecoes usam (issue #44), montada
@@ -1830,6 +1859,31 @@ void detail_atualizar(float dt, Uint32 agora) {
   // OK num estudio, que abre o vertudo e deixa esta tela para tras.
   if (saindo) { serieaud_fechar(); seriefrases_fechar(); }
   revalidarIdx();
+  // TRAILER AUTOMATICO, mudo, no lugar da arte (dono, 20/09/2026: "trailer
+  // autoplay direto na interface"). Comeca NV_TRAILER_ESPERA_MS depois de a
+  // pagina assentar, uma vez por abertura, e so enquanto a pagina esta no
+  // topo com o heroi a mostra: rolar, abrir uma ficha, um menu ou sair fecha
+  // o video e a arte volta. Em tela cheia (botao) a regra e outra: so o
+  // teclado fecha.
+  if (trailer_suportado()) {
+    int topo = !saindo && nivel == 0 && !pessoaAberta && !episodios_menu_aberto() &&
+               !pedReproduzir && !pedFontes && !player_aberto() &&
+               pg < 0.05f && scrollY < 1.0f;
+    if (!detail_assentado() || !topo) { if (!trailer_cheia()) trailerDesde = 0; }
+    else if (!trailerDesde) trailerDesde = agora;
+    if (trailer_aberto() && !trailer_cheia() && !topo) trailer_fechar();
+    if (saindo && trailer_aberto()) trailer_fechar();
+    if (!trailer_aberto() && !trailerTentado && trailerDesde && topo &&
+        agora - trailerDesde >= NV_TRAILER_ESPERA_MS &&
+        ajustes_trailer_auto() && extras_n_trailers() > 0) {
+      GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+      trailerTentado = 1;
+      trailer_abrir(extras_trailer_yt(0), tela, 0, 0);
+    }
+    trailer_atualizar(agora);
+    { float alvo = (trailer_aberto() && trailer_tocando()) ? 1.0f : 0.0f;
+      trailerFade = anim_mola(trailerFade, alvo, dt, NV_MOLA_SCROLL); }
+  }
   // O CATALOGO TROCOU: OS EPISODIOS FORAM JUNTO, E NINGUEM OS REPEDIA.
   //
   // cat_definir_tudo zera as faixas de episodio de proposito — os indices
@@ -1983,7 +2037,7 @@ void detail_atualizar(float dt, Uint32 agora) {
   // Rigidez propria: o web leva 0.8s para apagar o backdrop (cubic-bezier
   // .4,0,.2,1), e a mola de NV_MOLA_TELA assenta em ~330ms.
   pg = anim_mola(pg, nivel >= 1 ? 1.0f : 0.0f, dt, NV_MOLA_PAGINA);
-  if (saindo && t < 0.02f) { aberto = 0; saindo = 0; t = 0.0f; return; }
+  if (saindo && t < 0.02f) { aberto = 0; saindo = 0; t = 0.0f; trailer_fechar(); return; }
 
   for (int r = 0; r < N_SECOES; r++)
     for (int c = 0; c < secaoN(r) && c < N_ITENS; c++) {
@@ -4489,6 +4543,12 @@ void detail_desenhar(Uint32 agora) {
   // ganhando opacidade sobre a arte identica que ja estava la, o que dava um
   // clarao no meio da transicao.
   GfxRect alvo; float aEntrada;
+  // TRAILER EM TELA CHEIA: a tela inteira e furo, nada da pagina por cima.
+  if (trailer_cheia()) {
+    GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+    gfx_furo(tela);
+    return;
+  }
   backdropRect(&alvo, &aEntrada);
   const char *arte = arteDe(idx);
   int artePoster = arteDetalheEhPoster(idx);

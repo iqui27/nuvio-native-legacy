@@ -110,7 +110,7 @@ typedef enum {
   AJ_CW_FURTHEST, AJ_CW_NAO_EXIBIDOS, AJ_CW_ORDEM,
   // Pagina de detalhe
   AJ_DET_BLUR_NAO_VISTOS, AJ_DET_TRAILER, AJ_DET_META_EXT, AJ_DET_DATA_CHEIA,
-  AJ_DET_VEU,
+  AJ_DET_VEU, AJ_DET_TRAILER_AUTO,
   // Foco no poster
   AJ_EXPANDIR, AJ_EXPANDIR_ATRASO, AJ_NAV_RAPIDA, AJ_BORDA_FOCO,
   // Profundidade
@@ -360,6 +360,10 @@ static const Opcao OPCOES[AJ_N] = {
   // na opacidade desse layer escuro, ate tirar"). 100 = a vinheta medida no
   // web; 0 = arte limpa. Local, sem chave no blob da conta.
   NUM("Escurecimento do fundo",     0, 100, 10, "%"),
+  // Trailer mudo no lugar da arte, depois de a pagina assentar (dono,
+  // 20/09/2026). So faz algo onde o app e uma pagina (Samsung): na LG nao ha
+  // onde embutir o player, e o ajuste fica sem efeito — a ajuda diz isso.
+  ESC("Trailer automático",         V_LIGA, 2),
 
   ESC("Expandir pôster ao focar",   V_LIGA, 2),   // focusedPosterBackdropExpandEnabled
   NUM("Atraso da expansão",         0, 10, 1, " s"), // ...ExpandDelaySeconds
@@ -481,7 +485,7 @@ static const char *CHAVE[] = {
   "useEpisodeThumbnailsInCw", "blurContinueWatchingNextUp",
   "nextUpFromFurthestEpisode", "showUnairedNextUp", "continueWatchingSortMode",
   "blurUnwatchedEpisodes", "detailPageTrailerButtonEnabled",
-  "preferExternalMetaAddonDetail", "showFullReleaseDate", "detalheVeu",
+  "preferExternalMetaAddonDetail", "showFullReleaseDate", "detalheVeu", "trailerAuto",
   "focusedPosterBackdropExpandEnabled", "focusedPosterBackdropExpandDelaySeconds",
   "fastHorizontalNavigationEnabled",
   "bordaFocoCartaz",
@@ -722,6 +726,7 @@ static int valor[AJ_N] = {
   0,                /* metadados externos: ligado */
   0,                /* data completa: ligada */
   100,              /* escurecimento do fundo do titulo: vinheta inteira */
+  0,                /* trailer automatico: ligado (so Samsung) */
 
   0,                /* expandir poster ao focar: ligado (DEFAULT do web) */
   3,                /* atraso: 3s */
@@ -889,6 +894,7 @@ void ajustes_definir_salvos_no_trakt(int noTrakt) {
 }
 int ajustes_data_completa(void)       { return lig(AJ_DET_DATA_CHEIA); }
 float ajustes_detalhe_veu(void)       { int v = valor[AJ_DET_VEU]; return (v < 0 ? 0 : v > 100 ? 100 : v) / 100.0f; }
+int   ajustes_trailer_auto(void)      { return lig(AJ_DET_TRAILER_AUTO); }
 int  ajustes_envio_auto(void)         { return lig(AJ_ENVIO_AUTO); }
 void ajustes_definir_envio_auto(int ligado) { valor[AJ_ENVIO_AUTO] = ligado ? 0 : 1; gravar(); }
 int ajustes_notas_home(void)          { return valor[AJ_NOTAS_HOME] == 0; }
@@ -1553,6 +1559,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_DET_META_EXT: return "Prefere a ficha do addon de metadados à do Cinemeta. Útil quando o seu addon tem sinopse e elenco melhores.";
     case AJ_DET_DATA_CHEIA: return "Escreve a data de estreia por extenso em vez de só o ano.";
     case AJ_DET_VEU: return "Quanto a vinheta escura cobre a arte na tela do título. Cem por cento é o padrão; zero mostra a arte limpa — o texto pode ficar difícil de ler sobre cenas claras.";
+    case AJ_DET_TRAILER_AUTO: return "Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte. Só na Samsung; na LG o trailer abre no navegador da TV.";
 
     // --- Posteres e cards
     case AJ_EXPANDIR: return "O cartaz em foco cresce e abre a arte deitada atrás dele depois de um instante parado.";
@@ -2344,6 +2351,7 @@ static const char *iconeOpcao(int op) {
     case AJ_ESPACO: case AJ_TEX_MB: return "aspecto";
     case AJ_DET_TRAILER: case AJ_TMDB_TRAILERS: case AJ_PROF_TRAILERS: return "trailer";
     case AJ_DET_VEU: return "aspecto";
+    case AJ_DET_TRAILER_AUTO: return "trailer";
     case AJ_DET_BLUR_NAO_VISTOS: return "oculto";
     default: break;
   }
