@@ -325,44 +325,41 @@ EM_JS(void, gif_js_seq_quadro, (int i, const unsigned char *d, int n,
   s.meta[i] = { esq: esq, topo: topo, larg: larg, alt: alt, descarte: descarte };
 });
 
-// LIGA A SESSAO NO WORKER, uma vez por GIF e por tamanho de saida. Reusa o
-// Worker do decode (webp.c cria Module.nvDec); sem ele, ou se o worker
-// falhar, `wk` fica null e tudo cai no caminho <img>.
+// LIGA A SESSAO NO WORKER, uma vez por GIF e por tamanho de saida.
+//
+// WORKER PROPRIO DO GIF (21/09/2026), e nao o do decode de imagem. Na 1.3.8
+// o GIF dividia o Worker com os JPEG/WebP, e aquele Worker BLOQUEIA
+// (Atomics.wait ate 8 s) enquanto espera o fio de decode do C alocar o
+// bloco de cada imagem. Numa TV de 2 GB com muitas artes chegando, os
+// quadros do GIF ficavam na fila atras dessas esperas: medido nos registros
+// da 1.3.8/1.3.9, "deu a volta nos 90 quadros em 200745 ms" (pokaz) e "83
+// quadros em 845400 ms" (cudz007) — 2 a 10 s por quadro. Este Worker so
+// compoe GIF, nunca espera ninguem, e nao precisa da memoria compartilhada.
+// Sem Worker ou OffscreenCanvas (ou depois de 3 falhas) tudo cai no <img>.
 EM_JS(int, gif_js_seq_worker, (int outW, int outH), {
   var s = Module.nvGifSeq;
-  var D = Module.nvDec;
+  var D = Module.nvDecGif;
   if (!s) return 0;
   if (s.wk && s.outW === outW && s.outH === outH) return 1;
-  // O Worker nasce em webp.c no primeiro WebP; sem WebP nenhum ainda (conta
-  // so com JPEG) ele nao existe — cria aqui com a mesma receita, senao o GIF
-  // cairia no <img> numa sessao inteira.
   if (D === undefined && typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
-    D = {}; D.w = null; D.morto = false; D.voo = {};
-    Module.nvDec = D;
+    D = {}; D.w = null; D.morto = false;
+    Module.nvDecGif = D;
     try {
       D.w = new Worker('decodificador.js');
-      D.w.postMessage({ memoria: wasmMemory.buffer });
-      D.w.onerror = function () { D.morto = true; var k; for (k in D.voo) { if (D.voo.hasOwnProperty(k)) { var f = D.voo[k]; delete D.voo[k]; f(); } } };
-    } catch (e) { D.morto = true; }
-  }
-  if (!D || D.morto || !D.w || typeof OffscreenCanvas === 'undefined') { s.wk = null; return 0; }
-  if (!D.gifOuvinte) {
-    D.gifOuvinte = 1;
-    var antes = D.w.onmessage;
-    D.w.onmessage = function (ev) {
-      var m = ev.data;
-      if (m && m.gifPronto) {
+      D.w.onerror = function () { D.morto = true; };
+      D.w.onmessage = function (ev) {
+        var m = ev.data;
+        if (!m || !m.gifPronto) return;
         var q = Module.nvGifSeq;
         if (!q || q.wid !== m.gifPronto.id) { if (m.bitmap && m.bitmap.close) m.bitmap.close(); return; }
         delete q.pedidos[m.gifPronto.i];
         if (m.gifPronto.falhou) { q.falhas++; if (q.falhas > 3) { q.wk = null; } return; }
         if (q.prontos[m.gifPronto.i] && q.prontos[m.gifPronto.i].close) q.prontos[m.gifPronto.i].close();
         q.prontos[m.gifPronto.i] = m.bitmap;
-        return;
-      }
-      if (antes) antes(ev);
-    };
+      };
+    } catch (e) { D.morto = true; }
   }
+  if (!D || D.morto || !D.w || typeof OffscreenCanvas === 'undefined') { s.wk = null; return 0; }
   // Sessao nova (ou tamanho novo): manda os quadros crus. Copias, nao
   // transferencia: os ArrayBuffers ficam aqui para o caminho <img> de reserva.
   var k, ids = [];

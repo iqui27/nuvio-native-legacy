@@ -2392,11 +2392,18 @@ static void desenhaLembrete(GfxRect r, int ligado, int focado, float a) {
     float fr, fg, fb, t = focoAcento(&fr, &fg, &fb);
     gfx_cor(r, NV_RAIO_PILL, fr, fg, fb, a);
     claro = t < 0.5f;
-    if (!ligado) { cr = cg = cb = t; goto glifo; }
+    // Glifo na tinta que contrasta com o realce, armado ou nao: o estado vai
+    // pelas ondas e pelo tremor, nao pela cor.
+    cr = cg = cb = t; goto glifo;
   } else if (ligado) {
-    float vr, vg, vb;
-    agendaui_cor_lembrete(1, 0, &vr, &vg, &vb);
-    gfx_cor(r, NV_RAIO_PILL, vr, vg, vb, a);
+    // ARMADO SEM FOCO: o mesmo disco escuro dos vizinhos com um ANEL branco
+    // fino e o glifo branco — em vez do disco verde, que nao conversava com
+    // nenhuma outra cor da tela (dono, 21/09/2026). As ondas e o tremor do
+    // despertador continuam dizendo o estado.
+    gfx_cor(r, NV_RAIO_PILL, 0.133f, 0.133f, 0.133f, a);
+    gfx_rect(r, 0, GFX_ANEL, 0, 0.045f, 0, 0.5f, 1, 1, 1, 0.85f * a);
+    cr = cg = cb = 1.0f;
+    goto glifo;
   } else gfx_cor(r, NV_RAIO_PILL, 0.133f, 0.133f, 0.133f, a);
   agendaui_cor_lembrete(ligado, claro, &cr, &cg, &cb);
 glifo:
@@ -2774,14 +2781,13 @@ static void heroWeb(float a, float desloc) {
     if (emFoco) {
       snprintf(leg, sizeof leg, "%s \xc2\xb7 %s", rotuloLembrar(),
                i18n("o aviso aparece quando você abrir o app no dia"));
-      // Verde quando armado, para amarrar a legenda ao circulo verde logo
-      // abaixo dela; cor de realce quando nao.
-      if (ligado) agendaui_cor_lembrete(1, 0, &ar, &ag, &ab);
-      else ajustes_acento(&ar, &ag, &ab);
     } else {
       snprintf(leg, sizeof leg, "%s", agLinha);
-      ajustes_acento(&ar, &ag, &ab);
     }
+    // SEMPRE BRANCA (dono, 21/09/2026: "mantenha o texto sempre em branco").
+    // Era a cor de realce — rosa sobre cascalho laranja nao se le.
+    ar = ag = ab = 1.0f;
+    (void)ligado;
     { TxtLinha l = txt_linha_corta(TXT_CAPTION, leg, (int)(ar * 255.0f + 0.5f),
                                    (int)(ag * 255.0f + 0.5f),
                                    (int)(ab * 255.0f + 0.5f), 255,

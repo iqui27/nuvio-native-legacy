@@ -269,13 +269,13 @@ static void desenhaRodape(float px, float w, float alpha, float foco) {
     if (aTexto > 0.01f) {
       // Texto ja rasterizado nao muda de cor: troca no meio da mola.
       int emFoco = foco > 0.5f;
-      int c = emFoco ? NV_MENU_TEXTO_ESCURO : 184;
+      float tinta = ajustes_acento_tinta(NULL, NULL, NULL);
+      int c = emFoco ? (int)(tinta * 255.0f + 0.5f) : 184;
+      int c2 = emFoco ? (tinta > 0.5f ? 225 : 60) : 150;
       TxtLinha nome = txt_linha_corta(TXT_BODY, p ? p->nome : "Sua conta",
                                       c, c, c, 255,
                                       NV_MENU_W_ABERTO - NV_MENU_ROTULO_X - 28.0f);
-      TxtLinha acao = emFoco
-        ? txt_linha(TXT_CAPTION, "Trocar de usuário", 60, 62, 70, 255)
-        : txt_linha(TXT_CAPTION, "Trocar de usuário", 150, 152, 160, 255);
+      TxtLinha acao = txt_linha(TXT_CAPTION, "Trocar de usuário", c2, c2, c2 + (emFoco ? 0 : 10), 255);
       txt_desenhar_alpha(nome, px + NV_MENU_ROTULO_X, cy - nome.h - 2.0f, aTexto);
       txt_desenhar_alpha(acao, px + NV_MENU_ROTULO_X, cy + 4.0f, aTexto);
     } }
@@ -349,7 +349,10 @@ void menu_desenhar(Uint32 agora) {
     // branco sobre a pilula branca por meio caminho.
     int atual = (i == destino);
     int emFoco = f > 0.5f;
-    float lum = emFoco ? NV_MENU_TEXTO_ESCURO / 255.0f : (atual ? 1.0f : 0.62f);
+    // Em foco, a TINTA que contrasta com a cor de realce (branca sobre realce
+    // escuro como o rosa, escura sobre realce claro) — a mesma conta de todo
+    // botao do app; era escuro fixo, e ficava preto sobre rosa (dono, 21/09).
+    float lum = emFoco ? ajustes_acento_tinta(NULL, NULL, NULL) : (atual ? 1.0f : 0.62f);
     float alpha = desliza * anim_mistura(atual ? 1.0f : 0.85f, 1.0f, f);
 
     icone(i, px + NV_MENU_ICONE_CX, cy, NV_MENU_ICONE, lum, lum, lum, alpha);

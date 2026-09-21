@@ -1111,6 +1111,22 @@ void ajustes_dir(const char *dir) {
     }
   }
   fclose(f);
+#if defined(__EMSCRIPTEN__) && !defined(NV_TRAILER_AUTO_TIZEN)
+  // MIGRACAO UNICA (1.3.10): o .wgt da 1.3.9 saiu de uma build com
+  // NV_TRAILER_AUTO_TIZEN (a das fotos das notas), entao na Samsung o
+  // autoplay do trailer nasceu LIGADO — e qualquer gravacao de ajustes
+  // naquela versao escreveu "trailerAuto 0" no arquivo, o que o padrao novo
+  // acima nao alcanca. Uma vez, marcada em disco, os dois voltam a
+  // desligado; quem quiser liga de novo e a escolha fica.
+  { char *m = dados_ler("trailer-1310.txt");
+    if (m) free(m);
+    else {
+      valor[AJ_DET_TRAILER_AUTO] = 1;
+      valor[AJ_HERO_TRAILER] = 1;
+      dados_gravar("trailer-1310.txt", "1\n");
+      gravar();
+    } }
+#endif
   // O limite mora em fileiras.c; esta linha e so o espelho dele. Ler daqui em
   // vez de gravar evita a divergencia: o arquivo de ajustes nao guarda o
   // numero, entao nao ha como os dois discordarem.
