@@ -183,6 +183,9 @@ static void fotosDoElenco(CatItem *d, const char *imdbSerie, int serie) {
   char url[400], *corpo;
   const char *chave;
   long idTmdb = 0;
+  char logoAntes[512];
+  logoAntes[0] = 0;
+  if (d->logo[0]) snprintf(logoAntes, sizeof logoAntes, "%s", d->logo);
   if (!d->nElenco) return;
   chave = desc_chave_tmdb();            // "" com a integracao desligada
   if (!chave[0]) return;
@@ -277,6 +280,11 @@ static void fotosDoElenco(CatItem *d, const char *imdbSerie, int serie) {
         // entrado com logo .svg (desta funcao antes do filtro, ou de um addon
         // que mande svg em `logo` — ver deMeta). Sem uso possivel, fora.
         if (ehSvg(d->logo)) d->logo[0] = 0;
+        if (d->logo[0] && d->poster[0] && !strcmp(d->logo, d->poster) &&
+            logoAntes[0] && strcmp(logoAntes, d->poster))
+          snprintf(d->logo, sizeof d->logo, "%s", logoAntes);
+        else if (!d->logo[0] && logoAntes[0] && !ehSvg(logoAntes))
+          snprintf(d->logo, sizeof d->logo, "%s", logoAntes);
       }
       free(corpo);
     }
@@ -3153,12 +3161,18 @@ static void *fioVerTudo(void *u) {
 
 static void vtDisparar(void) {
   pthread_t t;
+  pthread_attr_t at;
   pthread_mutex_lock(&vtTrava);
   if (vtFioVivo || vtFim || (!vtBase[0] && !vtProvedor)) {pthread_mutex_unlock(&vtTrava);return;}
   vtFioVivo = 1;
   vtErro=0;
-  if (pthread_create(&t, NULL, fioVerTudo, NULL) != 0) vtFioVivo = 0;
+  // fioVerTudo empilha buffers grandes; no macOS o stack padrao do pthread
+  // estoura (collections.sh: Bus error em ___chkstk_darwin).
+  pthread_attr_init(&at);
+  pthread_attr_setstacksize(&at, 2u * 1024u * 1024u);
+  if (pthread_create(&t, &at, fioVerTudo, NULL) != 0) vtFioVivo = 0;
   else pthread_detach(t);
+  pthread_attr_destroy(&at);
   pthread_mutex_unlock(&vtTrava);
 }
 

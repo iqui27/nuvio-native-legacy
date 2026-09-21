@@ -1099,7 +1099,7 @@ int video_iniciar(void) {
   if (!lsRegister("com.webos.media.client.nuvio", &bus, ERRO)) {
     char alt[64];
     logErroLs("LSRegister nome fixo recusado");
-    snprintf(alt, sizeof alt, "com.webos.media.client.nuvio.%d", (int)getpid());
+    snprintf(alt, sizeof alt, "%s.%d", "com.webos.media.client.nuvio", (int)getpid());
     printf("[video] tentando %s\n", alt);
     bus = NULL;
     memset(ERRO, 0, sizeof ERRO);

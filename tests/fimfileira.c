@@ -34,7 +34,10 @@ const char *addons_nome_por_id(const char *id) { (void)id; return ""; }
 // textura, menu contextual, "Ver tudo". Eles registram a chamada e nada mais.
 static int nCtx, nVerTudo, nVerTudoCol;
 int  tex_falhou(const char *u) { (void)u; return 0; }
+int  tex_largura_fonte(const char *u) { (void)u; return 0; }
 const char *tex_arquivo(const char *u) { (void)u; return NULL; }
+int  trailer_aberto(void) { return 0; }
+int  trailer_tocando(void) { return 0; }
 void ctx_abrir(int indice) { (void)indice; nCtx++; }
 void vertudo_abrir(const char *b, const char *t, const char *c, const char *ti) {
   (void)b; (void)t; (void)c; (void)ti; nVerTudo++;

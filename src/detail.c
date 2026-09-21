@@ -704,7 +704,7 @@ static const char *sinopseDe(int i) {
 // sao essas. O enriquecimento continua acontecendo e fica no catalogo — a
 // proxima abertura, e a home, ja veem o logo localizado. Sem logo nenhum ao
 // abrir, o que chegar entra (vazio nao e "arte boa").
-static char arteFixa[512], logoFixo[512];
+static char arteFixa[512], logoFixo[512], logoCatalogoFixo[512];
 static int  arteFixaPoster;
 
 static const char *logoDe(int i) {
@@ -716,7 +716,10 @@ static const char *logoDe(int i) {
   // artehero.c e a url do catalogo nao muda.
   if (c && c->logo[0]) {
     const char *u = artehero_url_logo(c->logo);
-    if (i == idx && u) snprintf(logoFixo, sizeof logoFixo, "%s", u);
+    if (i == idx && u) {
+      snprintf(logoFixo, sizeof logoFixo, "%s", u);
+      snprintf(logoCatalogoFixo, sizeof logoCatalogoFixo, "%s", c->logo);
+    }
     return u;
   }
   return NULL;
@@ -836,7 +839,8 @@ void detail_abrir(const HomeItem *it) {
   idx = it->indice;
   revistaVista = cat_revisao();
   // Guarda identidade e copia ANTES de qualquer republicacao. Ver revalidarIdx.
-  arteFixa[0] = logoFixo[0] = 0; arteFixaPoster = 0;   // arte nova por abertura
+  arteFixa[0] = logoFixo[0] = logoCatalogoFixo[0] = 0;
+  arteFixaPoster = 0;   // arte nova por abertura
   { const CatItem *ci0 = cat_item(idx);
     idxImdb[0] = 0; idxTemCopia = 0;
     if (ci0) {
@@ -2104,7 +2108,28 @@ void detail_atualizar(float dt, Uint32 agora) {
   // Rigidez propria: o web leva 0.8s para apagar o backdrop (cubic-bezier
   // .4,0,.2,1), e a mola de NV_MOLA_TELA assenta em ~330ms.
   pg = anim_mola(pg, nivel >= 1 ? 1.0f : 0.0f, dt, NV_MOLA_PAGINA);
-  if (saindo && t < 0.02f) { aberto = 0; saindo = 0; t = 0.0f; trailer_fechar(); return; }
+  if (saindo && t < 0.02f) {
+    // O fio do TMDB pode trocar ou limpar o logo no catalogo enquanto o detalhe
+    // mostra logoFixo; ao voltar, o hero lia o catalogo novo (vazio ou FALHOU)
+    // e caia no nome escrito. Restaura o caminho que funcionou na abertura.
+    if (logoCatalogoFixo[0] && idxImdb[0]) {
+      int i = cat_indice_por_imdb(idxImdb);
+      if (i >= 0) {
+        const CatItem *c = cat_item(i);
+        int ruim = !c || !c->logo[0];
+        if (!ruim) {
+          const char *u = artehero_url_logo(c->logo);
+          ruim = !u || tex_falhou(u);
+        }
+        if (ruim && c) {
+          CatItem e = *c;
+          snprintf(e.logo, sizeof e.logo, "%s", logoCatalogoFixo);
+          cat_atualizar_item(i, &e);
+        }
+      }
+    }
+    aberto = 0; saindo = 0; t = 0.0f; trailer_fechar(); return;
+  }
 
   for (int r = 0; r < N_SECOES; r++)
     for (int c = 0; c < secaoN(r) && c < N_ITENS; c++) {

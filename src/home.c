@@ -2399,13 +2399,17 @@ static void desenhaHero(Uint32 agora, float saida) {
   // NV_LOGO_HERO_CHEIO_MAX_W. A politica de tamanho e a mesma do fundo e mora
   // em artehero.c; url que nao e do TMDB passa intacta.
   const char *urlLogo = (ci && ci->logo[0]) ? artehero_url_logo(ci->logo) : NULL;
-  GLuint tlogo = urlLogo ? tex_obter(urlLogo) : 0;
+  float maxWLogo = cheio ? NV_LOGO_HERO_CHEIO_MAX_W : NV_LOGO_HERO_MAX_W;
+  GLuint tlogo = urlLogo ? tex_obter_larg(urlLogo, maxWLogo) : 0;
+  // Igual ao detalhe: nome escrito so quando nao ha logo ou o cache ja falhou.
+  // Antes, qualquer decode pendente caia no ramo de texto — ao voltar do
+  // detalhe (catalogo com url nova do TMDB) parecia "sumiu a arte do titulo".
+  int mostraNomeLogo = !tlogo && (!urlLogo || tex_falhou(urlLogo));
   if (tlogo) {
     float ap = tex_aspecto(urlLogo);
     if (ap <= 0.0f) ap = 4.0f;
     float hTit = NV_LOGO_HERO_H, wTit = hTit * ap;
-    float maxW = cheio ? NV_LOGO_HERO_CHEIO_MAX_W : NV_LOGO_HERO_MAX_W;
-    if (wTit > maxW) { wTit = maxW; hTit = wTit / ap; }
+    if (wTit > maxWLogo) { wTit = maxWLogo; hTit = wTit / ap; }
     // object-position: left top — a arte encosta no TOPO da caixa.
     GfxRect rl = { x, logoY, wTit, hTit };
     gfx_tex_aspect_atual = 0.0f;
@@ -2417,7 +2421,7 @@ static void desenhaHero(Uint32 agora, float saida) {
       // da tecla a arte antiga ainda estava a 85% e o logo JA tinha sumido por
       // inteiro; ele so reaparece no mesmo quadro em que a arte nova entra.
       gfx_rect(rl, tlogo, m, 0, 0, 0, 0.0f, 1, 1, 1, aTexto * heroEntra); }
-  } else {
+  } else if (mostraNomeLogo) {
     // .legacy-webos .home-hero-title-text: 76px (components.css:19164), nao os
     // 56 do tema padrao.
     // Sem titulo NAO se inventa titulo. Aqui havia uma lista de demonstracao
