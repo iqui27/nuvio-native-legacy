@@ -1026,6 +1026,7 @@ void app_atualizar(float dt, Uint32 agora) {
     const char *alvo = spainel_pediu_abrir();
     if (!alvo) alvo = recomenda_pediu_abrir();   // mesmo contrato, outra origem
     if (!alvo) alvo = avisos_pediu_abrir();
+    if (!alvo && tela == TELA_AGENDA) alvo = agendaui_pediu_abrir();
     if (!alvo && abrirTeste[0]) { alvo = abrirTeste; abrirTeste[0] = 0; }
     if (alvo && alvo[0]) {
       int k = cat_indice_por_imdb(alvo);

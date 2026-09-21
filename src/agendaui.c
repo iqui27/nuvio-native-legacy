@@ -121,6 +121,7 @@
 #include "layout.h"
 #include "ajustes.h"
 #include "idioma.h"
+#include "noticias.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -400,6 +401,13 @@ static int   foco;
 static float animFoco[AG_MAX];
 static float scrollY;
 static int   sair;
+// MENU DE CONTEXTO (segurar OK numa linha): abrir o titulo, ver as ultimas
+// noticias, ligar/desligar o lembrete. Toque curto continua sendo o lembrete,
+// que e a acao da tela. `ctxAberto` 1 = menu, 2 = painel de noticias.
+static int    ctxAberto, ctxFoco, ctxItem, notFoco;
+static float  ctxA;
+static Uint32 okDesde;
+static char   pediuAbrir[40];
 
 // Onde a lista comeca a rolar, e onde ela termina. O cabecalho ocupa o topo e
 // nao rola junto: numa TV perder o titulo da tela ao descer uma linha faz a
@@ -470,6 +478,7 @@ int agendaui_iniciar(void) {
   sair = 0;
   foco = 0;
   scrollY = 0.0f;
+  ctxAberto = 0; ctxFoco = 0; ctxA = 0.0f; okDesde = 0; notFoco = 0;
   for (i = 0; i < AG_MAX; i++) animFoco[i] = 0.0f;
   agenda_iniciar();
   agenda_montar();
@@ -482,27 +491,78 @@ int agendaui_iniciar(void) {
 
 int agendaui_quer_sair(void) { int s = sair; sair = 0; return s; }
 
+static void alternarLembrete(void) {
+  const AgItem *it = agenda_lista(foco);
+  if (it && it->imdb[0]) {
+    agenda_alternar_lembrete(it->imdb);
+    trocaEm = SDL_GetTicks();
+    // Remonta para o estado do lembrete voltar na linha no mesmo quadro. A
+    // ordem nao muda (a chave e a data), entao o foco continua onde estava.
+    agenda_montar();
+  }
+}
+
+#define CTX_N 3
+static int ctxOpcoes(const AgItem *it) { return (it && agenda_pode_lembrar(it->imdb)) ? CTX_N : CTX_N - 1; }
+
 void agendaui_evento(const SDL_Event *e) {
   SDL_Keycode k;
   int n = agenda_n();
-  if (e->type != SDL_KEYDOWN) return;
+  int volta = 0;
   k = e->key.keysym.sym;
-  if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
-      k == SDLK_DELETE) { sair = 1; return; }
+  volta = (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE || k == SDLK_DELETE);
+  // SEGURAR OK abre o menu de contexto; o toque curto e decidido no KEYUP,
+  // como na home (NV_HOLD_MS): so ali se sabe quanto durou.
+  if (e->type == SDL_KEYUP && (k == SDLK_RETURN || k == SDLK_KP_ENTER)) {
+    Uint32 dur = okDesde ? SDL_GetTicks() - okDesde : 0;
+    int era = okDesde != 0;
+    okDesde = 0;
+    if (!era || ctxAberto) return;
+    if (dur >= NV_HOLD_MS) {
+      const AgItem *it = agenda_lista(foco);
+      if (!it) return;
+      ctxAberto = 1; ctxFoco = 0; ctxItem = foco;
+      noticias_pedir(it->imdb, it->titulo, 1);
+    } else alternarLembrete();
+    return;
+  }
+  if (e->type != SDL_KEYDOWN) return;
+  if (ctxAberto == 2) {
+    int nn = noticias_n(agenda_lista(ctxItem) ? agenda_lista(ctxItem)->imdb : "");
+    if (volta) { ctxAberto = 1; return; }
+    if (k == SDLK_DOWN && notFoco < nn - 1) notFoco++;
+    else if (k == SDLK_UP && notFoco > 0) notFoco--;
+    return;
+  }
+  if (ctxAberto == 1) {
+    const AgItem *it = agenda_lista(ctxItem);
+    int no = ctxOpcoes(it);
+    if (volta) { ctxAberto = 0; return; }
+    if (k == SDLK_DOWN && ctxFoco < no - 1) ctxFoco++;
+    else if (k == SDLK_UP && ctxFoco > 0) ctxFoco--;
+    else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+      if (e->key.repeat) return;
+      if (ctxFoco == 0 && it) { snprintf(pediuAbrir, sizeof pediuAbrir, "%s", it->imdb); ctxAberto = 0; }
+      else if (ctxFoco == 1) { ctxAberto = 2; notFoco = 0; }
+      else { foco = ctxItem; alternarLembrete(); ctxAberto = 0; }
+    }
+    return;
+  }
+  if (volta) { sair = 1; return; }
   if (k == SDLK_DOWN && foco < n - 1) foco++;
   else if (k == SDLK_UP && foco > 0)  foco--;
-  else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
-    const AgItem *it = agenda_lista(foco);
-    if (it && it->imdb[0]) {
-      agenda_alternar_lembrete(it->imdb);
-      trocaEm = SDL_GetTicks();
-      // Remonta para o estado do lembrete voltar na linha no mesmo quadro. A
-      // ordem nao muda (a chave e a data), entao o foco continua onde estava.
-      agenda_montar();
-    }
-  }
+  else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && !e->key.repeat) okDesde = SDL_GetTicks();
   // ESQUERDA cai fora daqui e chega ao menu lateral, como nas outras telas.
 }
+
+const char *agendaui_pediu_abrir(void) {
+  static char s[40];
+  if (!pediuAbrir[0]) return NULL;
+  snprintf(s, sizeof s, "%s", pediuAbrir);
+  pediuAbrir[0] = 0;
+  return s;
+}
+int agendaui_menu_aberto(void) { return ctxAberto != 0; }
 
 void agendaui_atualizar(float dt, Uint32 agora) {
   int i, n = agenda_n();
@@ -514,6 +574,7 @@ void agendaui_atualizar(float dt, Uint32 agora) {
   // cresce mais: o que a mola ainda move e a ROLAGEM, e e ela que quem liga o
   // ajuste pediu para nao deslizar.
   int reduz = ajustes_animacoes_reduzidas();
+  ctxA = reduz ? (ctxAberto ? 1.0f : 0.0f) : anim_mola(ctxA, ctxAberto ? 1.0f : 0.0f, dt, 18.0f);
   if (foco >= n) foco = n > 0 ? n - 1 : 0;
   for (i = 0; i < n && i < AG_MAX; i++) {
     float a = (i == foco) ? 1.0f : 0.0f;
@@ -1035,6 +1096,88 @@ static void desenhaEixo(float xEixo, float y0, float y1, int tracejado) {
     } }
 }
 
+// --- menu de contexto e noticias ----------------------------------------------
+//
+// Cartao central com tres linhas (abrir o titulo / ultimas noticias / lembrete)
+// e, atras dele, um painel de manchetes do Google News (noticias.h): so
+// manchete, veiculo e dia — a TV nao abre link, entao e leitura, nao indice.
+#define AGC_W     760.0f
+#define AGC_LINHA  84.0f
+#define AGN_W    1180.0f
+#define AGN_LINHA 108.0f
+static void desenhaContexto(float a) {
+  const AgItem *it = agenda_lista(ctxItem);
+  GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+  float ar, ag, ab, tinta = ajustes_acento_tinta(&ar, &ag, &ab);
+  int tf = ajustes_tinta_foco(), tf2 = ajustes_tinta_foco2();
+  if (!it) return;
+  gfx_cor(tela, 0.0f, 0.0f, 0.0f, 0.0f, 0.62f * a);
+  if (ctxAberto == 2) {
+    int n = noticias_n(it->imdb), i;
+    int resp = noticias_respondeu(it->imdb);
+    float h = 150.0f + (float)(n > 0 ? n : 1) * AGN_LINHA + 40.0f;
+    float maxH = NV_TELA_H - 2.0f * NV_MARGEM_Y;
+    GfxRect r;
+    TxtLinha t;
+    float y;
+    if (h > maxH) h = maxH;
+    r = (GfxRect){ (NV_TELA_W - AGN_W) * 0.5f, (NV_TELA_H - h) * 0.5f + (1.0f - a) * 24.0f, AGN_W, h };
+    gfx_cor(r, 28.0f / r.h, 0.075f, 0.078f, 0.09f, 0.98f * a);
+    t = txt_linha_corta(TXT_TITULO2, it->titulo, 246, 247, 250, 255, AGN_W - 96.0f);
+    txt_desenhar_alpha(t, r.x + 48.0f, r.y + 40.0f, a);
+    t = txt_linha(TXT_CAPTION, i18n("Últimas notícias · Google News"), 150, 153, 162, 255);
+    txt_desenhar_alpha(t, r.x + 48.0f, r.y + 40.0f + 58.0f, a);
+    y = r.y + 150.0f;
+    if (!resp) {
+      t = txt_linha(TXT_BODY, i18n("Procurando…"), 170, 174, 184, 255);
+      txt_desenhar_alpha(t, r.x + 48.0f, y + 30.0f, a);
+    } else if (n == 0) {
+      t = txt_linha(TXT_BODY, i18n("Nada publicado recentemente sobre este título."), 170, 174, 184, 255);
+      txt_desenhar_alpha(t, r.x + 48.0f, y + 30.0f, a);
+    }
+    gfx_recorte(r.x, y, r.w, r.y + r.h - 24.0f - y);
+    { int vis = (int)((r.y + r.h - 24.0f - y) / AGN_LINHA);
+      int ini = notFoco - vis + 1; if (ini < 0) ini = 0;
+      for (i = ini; i < n; i++) {
+        const Noticia *nt = noticias_item(it->imdb, i);
+        float ly = y + (float)(i - ini) * AGN_LINHA;
+        int f = (i == notFoco);
+        GfxRect lr = { r.x + 32.0f, ly, r.w - 64.0f, AGN_LINHA - 10.0f };
+        if (!nt) continue;
+        if (ly > r.y + r.h) break;
+        if (f) gfx_cor(lr, 16.0f / lr.h, ar, ag, ab, a);
+        t = txt_linha_corta(TXT_CALLOUT, nt->titulo, f ? tf : 238, f ? tf : 240, f ? tf : 244, 255, lr.w - 40.0f);
+        txt_desenhar_alpha(t, lr.x + 20.0f, ly + 14.0f, a);
+        { char sub[140];
+          if (nt->data[0] && nt->fonte[0]) snprintf(sub, sizeof sub, "%s · %s", nt->data, nt->fonte);
+          else snprintf(sub, sizeof sub, "%s%s", nt->data, nt->fonte);
+          t = txt_linha_corta(TXT_CAPTION, sub, f ? tf2 : 150, f ? tf2 : 153, f ? tf2 : 162, 255, lr.w - 40.0f);
+          txt_desenhar_alpha(t, lr.x + 20.0f, ly + 14.0f + 40.0f, a); }
+      } }
+    gfx_sem_recorte();
+    (void)tinta;
+    return;
+  }
+  { int no = ctxOpcoes(it), i;
+    const char *rot[CTX_N];
+    float h = 118.0f + (float)no * AGC_LINHA + 24.0f;
+    GfxRect r = { (NV_TELA_W - AGC_W) * 0.5f, (NV_TELA_H - h) * 0.5f + (1.0f - a) * 24.0f, AGC_W, h };
+    TxtLinha t;
+    rot[0] = i18n("Abrir o título");
+    rot[1] = i18n("Últimas notícias");
+    rot[2] = it->lembrete ? i18n("Desligar o lembrete") : i18n("Lembrar-me");
+    gfx_cor(r, 28.0f / r.h, 0.075f, 0.078f, 0.09f, 0.98f * a);
+    t = txt_linha_corta(TXT_TITULO3, it->titulo, 246, 247, 250, 255, AGC_W - 96.0f);
+    txt_desenhar_alpha(t, r.x + 48.0f, r.y + 36.0f, a);
+    for (i = 0; i < no; i++) {
+      int f = (i == ctxFoco);
+      GfxRect lr = { r.x + 24.0f, r.y + 118.0f + (float)i * AGC_LINHA, r.w - 48.0f, AGC_LINHA - 10.0f };
+      if (f) gfx_cor(lr, 16.0f / lr.h, ar, ag, ab, a);
+      t = txt_linha(TXT_CALLOUT, rot[i], f ? tf : 238, f ? tf : 240, f ? tf : 244, 255);
+      txt_desenhar_alpha(t, lr.x + 28.0f, lr.y + (lr.h - t.h) * 0.5f, a);
+    } }
+}
+
 void agendaui_desenhar(Uint32 agora) {
   float x = ajustes_conteudo_x();
   float xDir = NV_TELA_W - NV_MARGEM_X;
@@ -1117,4 +1260,5 @@ void agendaui_desenhar(Uint32 agora) {
     desenhaConteudo(it, xCont, y, xDir - xCont, animFoco[i]);
   }
   gfx_sem_recorte();
+  if (ctxA > 0.01f) desenhaContexto(ctxA);
 }
