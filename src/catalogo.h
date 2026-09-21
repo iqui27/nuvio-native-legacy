@@ -19,6 +19,12 @@
 // CAT_MAX sobrevive so como teto de seguranca contra resposta absurda.
 #define CAT_MAX 2000
 #define CAT_TEMP_MAX 64
+// Elenco guardado por titulo. O Cinemeta traz 3-5 nomes no `cast` do meta e era
+// isso que a tela mostrava (issue #94); quem completa a fileira e o TMDB, que
+// fotosDoElenco acrescenta depois de enriquecer os que ja vieram. A pagina de
+// detalhe desenha ate NV_DETF_EL_MAX (18), entao 12 ainda nao enche a fileira
+// inteira — e o teto que cabe sem inchar o CatItem que o cache grava em disco.
+#define CAT_ELENCO_MAX 12
 
 typedef struct {
   char backdrop[512];
@@ -36,7 +42,7 @@ typedef struct {
   // filmografia dela (/person/<id>?append_to_response=combined_credits), que e
   // o que o web faz no `openCastDetail`. Sem ele o unico caminho seria procurar
   // por nome, que erra em homonimo e em nome com acento.
-  struct { char nome[64]; char papel[64]; char foto[512]; long tmdb; } elenco[6];
+  struct { char nome[64]; char papel[64]; char foto[512]; long tmdb; } elenco[CAT_ELENCO_MAX];
   int nElenco;
   char direcao[128];
   // Nota da critica em porcentagem e o logo do servico onde o titulo esta. Sao

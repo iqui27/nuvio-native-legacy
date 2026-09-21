@@ -311,7 +311,7 @@ int cat_carregar(const char *dirArte) {
         snprintf(itens[i].direcao, sizeof itens[i].direcao, "%s", d);
       }
       char *p2 = linha;
-      while (*p2 && itens[i].nElenco < 6) {
+      while (*p2 && itens[i].nElenco < CAT_ELENCO_MAX) {
         char *pv = strchr(p2, ';');
         if (pv) *pv = 0;
         char *t1 = strchr(p2, '~');
@@ -447,7 +447,11 @@ int ajustes_idioma_ingles(void);
 // gravada em portugues continuava dizendo "Programa de TV" e "Filme" depois de
 // a pessoa mudar para ingles, para sempre, enquanto o resto da tela (que passa
 // por i18n a cada desenho) ja estava traduzido. Relatado numa OLED48A2PUA.
-#define CACHE_VERSAO 3
+// VERSAO 4: CatItem.elenco cresceu de 6 para CAT_ELENCO_MAX (12) no issue #94.
+// O cabecalho ja grava sizeof(CatItem) e recusaria o arquivo por tamanho — a
+// versao sobe mesmo assim para o motivo da recusa ser o campo novo, e nao um
+// "tamanho diferente" que ninguem lembra de onde veio.
+#define CACHE_VERSAO 4
 
 typedef struct {
   unsigned magia, versao, tamItem, tamFileira;

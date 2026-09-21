@@ -288,6 +288,26 @@ static void fotosDoElenco(CatItem *d, const char *imdbSerie, int serie) {
         k++;
         p = js_prox(f);
       }
+      // E A LISTA CRESCE: o Cinemeta para em 3-5 nomes no `cast` e era isso que
+      // a fileira mostrava (issue #94: "so 3 pessoas no elenco"). `p` ja esta
+      // na entrada seguinte a ultima enriquecida; daqui em diante cada entrada
+      // do cast do TMDB vira um NOME NOVO, ate o teto do vetor. Sem o TMDB
+      // ligado este bloco nem roda — nada muda para quem nao o configurou.
+      while (p && d->nElenco < CAT_ELENCO_MAX) {
+        const char *f = js_fim(p);
+        int k2 = d->nElenco;
+        char caminhoFoto[128] = "";
+        js_texto(p, f, "name", d->elenco[k2].nome, sizeof d->elenco[k2].nome);
+        js_texto(p, f, "character", d->elenco[k2].papel, sizeof d->elenco[k2].papel);
+        d->elenco[k2].tmdb = (long)js_num(p, f, "id", 0.0);
+        if (js_texto(p, f, "profile_path", caminhoFoto, sizeof caminhoFoto) &&
+            caminhoFoto[0] == '/')
+          snprintf(d->elenco[k2].foto, sizeof d->elenco[k2].foto,
+                   "https://image.tmdb.org/t/p/w185%s", caminhoFoto);
+        // Entrada sem nome nao vira pessoa na fileira: pula sem contar.
+        if (d->elenco[k2].nome[0]) d->nElenco++;
+        p = js_prox(f);
+      }
       free(corpo);
     }
   }
@@ -2597,7 +2617,7 @@ static void *buscarEps(void *u) {
     CatItem edit = *it;
     const char *c = js_array(corpo, NULL, "cast");
     int k = 0;
-    while (c && k < 6) {
+    while (c && k < CAT_ELENCO_MAX) {
       size_t n2 = 0;
       const char *p2 = c;
       if (*p2 != '"') break;
