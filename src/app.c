@@ -1115,13 +1115,21 @@ void app_atualizar(float dt, Uint32 agora) {
     // nao repetia a busca e a lista continuava a do episodio anterior — meia
     // correcao seria pior que nenhuma, porque a tela mostraria fontes de um
     // episodio com o nome de outro.
+    // E DE NOVO QUANDO A LISTA DE ADDONS MUDA. Medido na C9 (20/09/2026): o
+    // titulo aberto 3 s depois do arranque consultava os 4 addons do pacote
+    // ("total 0"), a lista da conta chegava aos 5 s com 12, e ninguem repetia
+    // a consulta — a folha de fontes ficava vazia ate trocar de titulo.
     { static char ultimoAlvo[32] = "";
+      static unsigned ultimaVersao = 0;
       int i = detail_indice();
       const CatItem *ci = cat_item(i);
       char alvo[32];
       idDoAlvo(ci, alvo, sizeof alvo);
-      if (!player_aberto() && aguardandoFonte != 2 && ci && ci->imdb[0] && strcmp(alvo, ultimoAlvo)) {
+      if (!player_aberto() && aguardandoFonte != 2 && ci && ci->imdb[0] &&
+          (strcmp(alvo, ultimoAlvo) || (detail_aberto() && ultimaVersao != addons_versao()))) {
+        if (!strcmp(alvo, ultimoAlvo)) printf("[addons] lista mudou: refazendo a busca de fontes de %s\n", alvo);
         snprintf(ultimoAlvo, sizeof ultimoAlvo, "%s", alvo);
+        ultimaVersao = addons_versao();
         { addons_buscar(alvo, ci->tipo); }
         // Episodios do titulo aberto, na temporada onde o dono parou. Sai da
         // rede na hora: guardar a lista de episodios de 40 titulos no pacote

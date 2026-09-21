@@ -551,13 +551,7 @@
 // No destaque da home a espera e maior: o foco passa pelo hero a caminho das
 // fileiras, e trocar a arte por video a cada parada curta cansaria.
 #define NV_TRAILER_HERO_ESPERA_MS 4000
-// Ampliacao do trailer dentro do furo, em volta do centro. O player do YouTube
-// e 16:9 e a maioria dos trailers e 2.39:1: sem ampliar, o fundo ganha duas
-// tarjas pretas de 138 px. Dono (20/09/2026): "fill screen sem barras
-// pretas" — 2.39/1.78 = 1.344 tira a tarja inteira; um trailer 16:9 perde 13%
-// de cada lado, como o "fill" de qualquer TV. Vale para o fundo e para a
-// tela cheia.
-#define NV_TRAILER_ZOOM 1.344f
+// A ampliacao do trailer virou ajuste ("Proporção do trailer", ajustes_trailer_zoom).
 // Frequencia (rad/s) da mola de 2a ordem que rola as fileiras da home. Vale o
 // k da CAUDA medida no deslize da referencia (~12,5 /s); 11,5 e o valor que
 // faz a curva inteira bater, porque nessa mola a cauda e so metade do ajuste:

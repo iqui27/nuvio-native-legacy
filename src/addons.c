@@ -43,6 +43,7 @@ static struct {
   AddCatCanal canal[ADD_CANAL_MAX]; int nCanal, canalLido;
 } addon[ADD_MAX];
 static int nAddon;
+static unsigned versaoLista;   // ver addons_versao
 static _Atomic AddEstado estado = ADD_PARADO;
 static pthread_t fio;
 static char alvoId[64], alvoTipo[16];
@@ -238,6 +239,7 @@ int addons_definir_lista(const AddonRemoto *nova, int n) {
     if (uteis > aceitos)
       printf("[addons] %d da conta ficaram de fora: o app guarda no maximo %d\n",
              uteis - aceitos, ADD_MAX); }
+  versaoLista++;
   return 1;
 }
 
@@ -255,10 +257,14 @@ int addons_exportar(AddonRemoto *saida, int max) {
 void addons_esquecer(void) {
   memset(addon, 0, sizeof addon);
   nAddon = 0;
+  versaoLista++;
   printf("[addons] lista esquecida (saiu da conta)\n");
 }
 
 int addons_n(void) { return nAddon; }
+// Sobe a cada mudanca na LISTA (conta, liga/desliga, adicao, esquecer). Quem
+// ja consultou fontes com a lista antiga refaz a consulta ao ver mudar.
+unsigned addons_versao(void) { return versaoLista; }
 
 // O id do manifesto ("com.frostview"), ou "" enquanto a sonda nao o leu. E o
 // prefixo da homeCatalogKey dos catalogos deste addon — e por isso a poda de
@@ -572,6 +578,7 @@ int addons_fornece(int i, int oque) {
 int addons_alternar(int i) {
   if (i < 0 || i >= nAddon) return 0;
   addon[i].ativo = !addon[i].ativo;
+  versaoLista++;
   printf("[addons] %s: %s\n", addon[i].nome, addon[i].ativo ? "ligado" : "desligado");
   fflush(stdout);
   return addon[i].ativo;
@@ -625,6 +632,7 @@ int addons_adicionar(const char *nome, const char *urlManifest) {
   addon[nAddon].sondado = 0;
   addon[nAddon].canalLido = 0; addon[nAddon].nCanal = 0;
   nAddon++;
+  versaoLista++;
   printf("[addons] instalado pelo guia: %s (%s)\n",
          addon[nAddon - 1].nome, nova);
   fflush(stdout);

@@ -110,7 +110,7 @@ typedef enum {
   AJ_CW_FURTHEST, AJ_CW_NAO_EXIBIDOS, AJ_CW_ORDEM,
   // Pagina de detalhe
   AJ_DET_BLUR_NAO_VISTOS, AJ_DET_TRAILER, AJ_DET_META_EXT, AJ_DET_DATA_CHEIA,
-  AJ_DET_VEU, AJ_DET_TRAILER_AUTO, AJ_TRAILER_QUAL,
+  AJ_DET_VEU, AJ_DET_TRAILER_AUTO, AJ_TRAILER_QUAL, AJ_TRAILER_ASPECTO,
   // Foco no poster
   AJ_EXPANDIR, AJ_EXPANDIR_ATRASO, AJ_NAV_RAPIDA, AJ_BORDA_FOCO,
   // Profundidade
@@ -155,6 +155,7 @@ static const int   TEX_MB_DE[]   = { 0, 96, 160, 240, 300, 400, 512 };
 // antes e cabe em TV com pouca RAM.
 static const char *V_QUALIMG[]   = { "Baixa", "Padrão", "Alta" };
 static const char *V_QUALTRAIL[] = { "Máxima", "1080p", "720p", "480p" };
+static const char *V_ASPTRAIL[]  = { "Zoom cinema", "Zoom leve", "Zoom ultra", "Original" };
 static const char *V_IDIOMA[]    = { "Português", "English" };
 static const char *V_ANIM[]      = { "Completas", "Reduzidas" };
 // A ORDEM IMPORTA: o indice 0 e o padrao (ver a lista de padroes, que e
@@ -371,6 +372,9 @@ static const Opcao OPCOES[AJ_N] = {
   // Definicao do MP4 do IMDb (trailerimdb.h): "Máxima" pega a maior que o
   // IMDb tem (1080p hoje); as outras sao tetos.
   ESC("Qualidade do trailer",       V_QUALTRAIL, 4),
+  // Mesmos zooms do player (player.h): o trailer do IMDb vem 16:9 com a
+  // tarja do 2.39:1 embutida, e "Zoom cinema" (1,34) e o que a tira.
+  ESC("Proporção do trailer",       V_ASPTRAIL, 4),
 
   ESC("Expandir pôster ao focar",   V_LIGA, 2),   // focusedPosterBackdropExpandEnabled
   NUM("Atraso da expansão",         0, 10, 1, " s"), // ...ExpandDelaySeconds
@@ -492,7 +496,7 @@ static const char *CHAVE[] = {
   "useEpisodeThumbnailsInCw", "blurContinueWatchingNextUp",
   "nextUpFromFurthestEpisode", "showUnairedNextUp", "continueWatchingSortMode",
   "blurUnwatchedEpisodes", "detailPageTrailerButtonEnabled",
-  "preferExternalMetaAddonDetail", "showFullReleaseDate", "detalheVeu", "trailerAuto", "trailerQualidade",
+  "preferExternalMetaAddonDetail", "showFullReleaseDate", "detalheVeu", "trailerAuto", "trailerQualidade", "trailerAspecto",
   "focusedPosterBackdropExpandEnabled", "focusedPosterBackdropExpandDelaySeconds",
   "fastHorizontalNavigationEnabled",
   "bordaFocoCartaz",
@@ -736,6 +740,7 @@ static int valor[AJ_N] = {
   100,              /* escurecimento do fundo do titulo: vinheta inteira */
   0,                /* trailer automatico na pagina de titulo: ligado */
   0,                /* qualidade do trailer: maxima */
+  0,                /* proporcao do trailer: zoom cinema */
 
   0,                /* expandir poster ao focar: ligado (DEFAULT do web) */
   3,                /* atraso: 3s */
@@ -905,6 +910,7 @@ int ajustes_data_completa(void)       { return lig(AJ_DET_DATA_CHEIA); }
 float ajustes_detalhe_veu(void)       { int v = valor[AJ_DET_VEU]; return (v < 0 ? 0 : v > 100 ? 100 : v) / 100.0f; }
 int   ajustes_trailer_auto(void)      { return lig(AJ_DET_TRAILER_AUTO); }
 int   ajustes_trailer_hero(void)      { return lig(AJ_HERO_TRAILER); }
+float ajustes_trailer_zoom(void)      { static const float z[] = { 1.34f, 1.15f, 1.55f, 1.0f }; int v = valor[AJ_TRAILER_ASPECTO]; return (v >= 0 && v < 4) ? z[v] : 1.34f; }
 // Teto de definicao do trailer: 0 = a maior que houver.
 int   ajustes_trailer_qualidade(void) { static const int t[] = { 0, 1080, 720, 480 }; int v = valor[AJ_TRAILER_QUAL]; return (v >= 0 && v < 4) ? t[v] : 0; }
 int  ajustes_envio_auto(void)         { return lig(AJ_ENVIO_AUTO); }
@@ -1574,6 +1580,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_DET_VEU: return "Quanto a vinheta escura cobre a arte na tela do título. Cem por cento é o padrão; zero mostra a arte limpa — o texto pode ficar difícil de ler sobre cenas claras.";
     case AJ_DET_TRAILER_AUTO: return "Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.";
     case AJ_TRAILER_QUAL: return "Definição do vídeo do trailer. Máxima usa a maior que existir para o título; as outras são um teto, para conexões mais lentas.";
+    case AJ_TRAILER_ASPECTO: return "Quanto o trailer é ampliado para encher a tela. Zoom cinema tira a tarja preta de um trailer de cinema; Original mostra o quadro inteiro, com tarja.";
 
     // --- Posteres e cards
     case AJ_EXPANDIR: return "O cartaz em foco cresce e abre a arte deitada atrás dele depois de um instante parado.";
@@ -2365,7 +2372,7 @@ static const char *iconeOpcao(int op) {
     case AJ_ESPACO: case AJ_TEX_MB: return "aspecto";
     case AJ_DET_TRAILER: case AJ_TMDB_TRAILERS: case AJ_PROF_TRAILERS: return "trailer";
     case AJ_DET_VEU: return "aspecto";
-    case AJ_DET_TRAILER_AUTO: case AJ_TRAILER_QUAL: case AJ_HERO_TRAILER: return "trailer";
+    case AJ_DET_TRAILER_AUTO: case AJ_TRAILER_QUAL: case AJ_TRAILER_ASPECTO: case AJ_HERO_TRAILER: return "trailer";
     case AJ_DET_BLUR_NAO_VISTOS: return "oculto";
     default: break;
   }

@@ -65,6 +65,10 @@ void video_janela_fonte(int sx, int sy, int sw, int sh,
 //
 // Com essas tres, encaixar e esticar saem; recortar e ampliar nao saem.
 int  video_recorte_fonte(void);
+// Manda de novo ao plano o ultimo par fonte/destino, sem o dedup. Existe para
+// o trailer (trailer.c): o pipeline prende o plano em mais de um ponto depois
+// do load e pode engolir um recorte pedido cedo.
+void video_recorte_reaplicar(void);
 
 double video_pos(void);      // segundos decorridos
 double video_duracao(void);  // 0 enquanto desconhecida

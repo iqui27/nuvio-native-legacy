@@ -954,6 +954,7 @@ void video_parar(void) {
 // Trailer mudo no fundo nao passa pelo AVPlay neste alvo (trailer.c usa o
 // embed do YouTube); o volume fica por conta da TV.
 void video_volume(int pct) { (void)pct; }
+void video_recorte_reaplicar(void) {}
 
 void video_pausar(int pausado) {
   if (!temAvplay || !ativo) return;

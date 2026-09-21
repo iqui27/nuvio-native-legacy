@@ -41,6 +41,10 @@ int  addons_exportar(AddonRemoto *saida, int max);
 // comportamento correto de "ninguem logado".
 void addons_esquecer(void);
 int  addons_n(void);
+// Numero que sobe a cada mudanca na lista de addons (conta, liga/desliga,
+// adicao). app.c refaz a busca de fontes do titulo aberto quando ele muda —
+// era o titulo aberto antes de a lista da conta chegar ficando sem fonte.
+unsigned addons_versao(void);
 const char *addons_base(int i);   // URL base, sem /manifest.json
 const char *addons_id_manifesto(int i);   // "id" do manifesto; "" ate a sonda ler
 const char *addons_nome_por_id(const char *id);   // nome de exibicao; "" se nao ha

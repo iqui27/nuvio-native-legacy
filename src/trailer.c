@@ -1,6 +1,8 @@
 #include "trailer.h"
 #include "layout.h"
+#include "ajustes.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -120,6 +122,11 @@ int trailer_suportado(void) { return 1; }
 // o quadro ter tamanho — os dois ficam pendentes e trailer_atualizar aplica.
 #include "video.h"
 static int volumePendente, recortePendente, pausado;
+// O recorte e REPETIDO nos primeiros segundos (ver reaplicarAte): o pipeline
+// desta TV prende o plano em mais de um ponto depois do load (bind do ACB,
+// `playing`), e um recorte pedido cedo demais pode ser engolido por um deles.
+static Uint32 reaplicarAte, reaplicarEm, tocandoDesde;
+static int quadroInteiroEnviado;
 int trailer_suportado(void) {
 #ifdef __APPLE__
   return 0;
@@ -131,14 +138,40 @@ int trailer_suportado(void) {
 }
 static void nativoAplicar(void) {
   if (!aberto) return;
+  // O uMS setVolume funciona nesta TV (provado ao contrario: sem ele o
+  // trailer tocou com som).
   if (volumePendente && video_ativo()) { video_volume(comSom ? 100 : 0); volumePendente = 0; }
-  if (recortePendente && video_pronto() && video_largura() > 0 && video_altura() > 0) {
+  // O RECORTE SO DEPOIS DE `playing` + um respiro. E a ordem do player, a
+  // unica em que o recorte comprovadamente pega nesta TV: la o modo salvo vai
+  // ao plano no videoInfo como quadro INTEIRO e o zoom de verdade so e pedido
+  // pela pessoa com o filme ja tocando. Pedido antes de tocar, o recorte era
+  // aceito (-> 1) e ignorado (20/09/2026, meia noite de tentativas).
+  if (recortePendente && video_pronto() && video_largura() > 0 && video_altura() > 0 &&
+      !video_tocando() && !quadroInteiroEnviado) {
+    video_janela_fonte(0, 0, video_largura(), video_altura(),
+                       (int)rect.x, (int)rect.y, (int)rect.w, (int)rect.h);
+    quadroInteiroEnviado = 1;
+  }
+  if (recortePendente && video_tocando() && !tocandoDesde) tocandoDesde = SDL_GetTicks();
+  if (recortePendente && video_pronto() && video_largura() > 0 && video_altura() > 0 &&
+      tocandoDesde && SDL_GetTicks() - tocandoDesde >= 800) {
     int vw = video_largura(), vh = video_altura();
-    int sw = (int)(vw / NV_TRAILER_ZOOM), sh = (int)(vh / NV_TRAILER_ZOOM);
+    int sw = (int)(vw / ajustes_trailer_zoom()), sh = (int)(vh / ajustes_trailer_zoom());
+    int sx, sy;
+    // PAR, como o player faz (player.c, aplicarAspecto): o escalonador
+    // trabalha em 4:2:0 e origem ou tamanho impar da meio pixel de croma na
+    // borda — e 803 de altura era o que saia daqui.
+    sw &= ~1; sh &= ~1;
+    sx = ((vw - sw) / 2) & ~1; sy = ((vh - sh) / 2) & ~1;
     if (video_recorte_fonte())
-      video_janela_fonte((vw - sw) / 2, (vh - sh) / 2, sw, sh,
+      video_janela_fonte(sx, sy, sw, sh,
                          (int)rect.x, (int)rect.y, (int)rect.w, (int)rect.h);
     recortePendente = 0;
+    if (!reaplicarAte) { reaplicarAte = SDL_GetTicks() + 6000; reaplicarEm = SDL_GetTicks() + 1500; }
+  }
+  if (reaplicarAte && SDL_GetTicks() >= reaplicarEm) {
+    if (SDL_GetTicks() >= reaplicarAte) reaplicarAte = 0;
+    else { reaplicarEm = SDL_GetTicks() + 1500; video_recorte_reaplicar(); }
   }
 }
 #endif
@@ -148,11 +181,12 @@ void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
   if (!trailer_suportado() || !fonte || !fonte[0]) return;
   nova = strcmp(fonteAtual, fonte) != 0;
 #ifdef __EMSCRIPTEN__
-  if (!trailer_js_abrir(fonte, r.x, r.y, r.w, r.h, som, NV_TRAILER_ZOOM)) return;
+  if (!trailer_js_abrir(fonte, r.x, r.y, r.w, r.h, som, ajustes_trailer_zoom())) return;
 #else
   if (nova) {
     if (!video_tocar(fonte)) return;
-    volumePendente = 1; recortePendente = 1; pausado = 0;
+    volumePendente = 1; recortePendente = 1; pausado = 0; reaplicarAte = 0;
+    tocandoDesde = 0; quadroInteiroEnviado = 0;
   } else if (comSom != som) volumePendente = 1;
   video_janela((int)r.x, (int)r.y, (int)r.w, (int)r.h);
   if (!nova) recortePendente = 1;
@@ -172,7 +206,7 @@ void trailer_rect(GfxRect r) {
   if (!aberto) return;
   rect = r;
 #ifdef __EMSCRIPTEN__
-  trailer_js_abrir(fonteAtual, r.x, r.y, r.w, r.h, comSom, NV_TRAILER_ZOOM);
+  trailer_js_abrir(fonteAtual, r.x, r.y, r.w, r.h, comSom, ajustes_trailer_zoom());
 #else
   video_janela((int)r.x, (int)r.y, (int)r.w, (int)r.h);
   recortePendente = 1;

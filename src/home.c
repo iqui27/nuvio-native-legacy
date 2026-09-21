@@ -2277,7 +2277,9 @@ static void desenhaHero(Uint32 agora, float saida) {
                            aArte * (heroEntra > 0.0f ? 1.0f : heroEntra),
                            arteA != NULL && arteA[0] != 0);
   }
-  if (aTrailer > 0.0f) gfx_rect(r, 0, modoHero, 0, 1.0f, 0, 0.0f, 0, 0, 0, aTrailer);
+  // SEM VEU SOBRE O TRAILER (dono, 20/09/2026: "quando tocar o trailer do
+  // hero tirar o overlay, so voltar quando tiver so a arte"): as rampas vao
+  // embora junto com a arte e voltam com ela.
   gfx_tex_aspect_atual = 0.0f;
   heroArteRect = r;
 

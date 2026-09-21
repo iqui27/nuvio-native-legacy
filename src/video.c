@@ -152,6 +152,7 @@ void video_janela(int x,int y,int w,int h) { (void)x;(void)y;(void)w;(void)h; }
 void video_janela_fonte(int sx,int sy,int sw,int sh,int dx,int dy,int dw,int dh) {
   (void)sx;(void)sy;(void)sw;(void)sh;(void)dx;(void)dy;(void)dw;(void)dh;
 }
+void video_recorte_reaplicar(void) {}
 double video_pos(void) { return 0; }
 double video_duracao(void) { return 0; }
 // Sem pipeline nao ha arquivo para ler capitulos: no Mac o pos-reproducao cai
@@ -549,10 +550,18 @@ static void *prenderPlano(void *u) {
     esperar(300);
     if (strcmp(midia, minha)) goto fora;
   }
-  acbJanela(acb, janX, janY, janW, janH,
-          (janX == 0 && janY == 0 && janW == 1920 && janH == 1080), &tarefa);
+  // COM RECORTE DE FONTE JA PEDIDO, prende o plano com o recorte — a janela
+  // lisa aqui era o que desfazia o zoom do trailer (trailer.c pede o recorte
+  // assim que o videoInfo chega, e este bind termina depois disso).
+  if (fonX >= 0 && acbJanelaCustom)
+    acbJanelaCustom(acb, fonX, fonY, fonW, fonH, dstX, dstY, dstW, dstH,
+                    (dstX == 0 && dstY == 0 && dstW == 1920 && dstH == 1080), &tarefa);
+  else
+    acbJanela(acb, janX, janY, janW, janH,
+              (janX == 0 && janY == 0 && janW == 1920 && janH == 1080), &tarefa);
   acbEstado(acb, NV_ACB_FOREGROUND, estTocando, &tarefa);
-  printf("[video] plano preso em %d,%d %dx%d\n", janX, janY, janW, janH);
+  printf("[video] plano preso em %d,%d %dx%d%s\n", janX, janY, janW, janH,
+         fonX >= 0 ? " (com recorte)" : "");
   fflush(stdout);
 fora:
   if (strcmp(midia, minha)) printf("[video] bind abortado: a midia trocou no meio\n");
@@ -1633,6 +1642,16 @@ static int aoJanela(LSHandle *h, LSMessage *m, void *u) {
 // que calculada do lado certo do escalonador.
 //
 // Mantem o acbJanela para o caso de tela cheia sem recorte, que ja funcionava.
+void video_recorte_reaplicar(void) {
+  long tarefa = 0;
+  if (fonX < 0 || !ligado || !midia[0] || !acb || !acbJanelaCustom) return;
+  printf("[video] recorte repetido: fonte %d,%d %dx%d -> destino %d,%d %dx%d -> %d\n",
+         fonX, fonY, fonW, fonH, dstX, dstY, dstW, dstH,
+         acbJanelaCustom(acb, fonX, fonY, fonW, fonH, dstX, dstY, dstW, dstH,
+                         (dstX == 0 && dstY == 0 && dstW == 1920 && dstH == 1080), &tarefa));
+  fflush(stdout);
+}
+
 void video_janela_fonte(int sx, int sy, int sw, int sh,
                         int dx, int dy, int dw, int dh) {
   char b[420];

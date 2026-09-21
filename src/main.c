@@ -93,6 +93,8 @@ static SDL_Keycode codigoDaTecla(const char *nome) {
   // nao existe em teclado nenhum. app.c ja aceita o S como equivalente dela; e
   // esse S que sai daqui, entao o caminho exercitado e o mesmo.
   if (!strcmp(nome, "azul"))  return SDLK_s;
+  // "zero" cicla o modo de aspecto no player (tecla 0 do controle).
+  if (!strcmp(nome, "zero"))  return SDLK_0;
   // "guia" abre o Guia de TV de qualquer lugar (F10, roteado em app.c). Ver la
   // por que uma porta direta vale mais que navegar ate ele por setas.
   if (!strcmp(nome, "guia"))  return SDLK_F10;
