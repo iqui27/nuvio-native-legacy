@@ -3031,7 +3031,14 @@ void home_desenhar(Uint32 agora) {
             GfxRect borda = { px - NV_ANEL_FOCO, py - NV_ANEL_FOCO,
                               w + NV_ANEL_FOCO * 2, h + NV_ANEL_FOCO * 2 };
             float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-            gfx_cor(borda, raio, ar, ag, ab, f);
+            // RAIO DE FORA = raio do cartaz + espessura do anel, em pixels,
+            // normalizado pelo lado menor DA BORDA. Passar o `raio` do cartaz
+            // direto dava um canto de fora mais fechado que o de dentro — as
+            // "pontas feias" da foto do dono (21/09/2026); e a conta que a
+            // fileira de colecoes ja fazia.
+            { float menor = w < h ? w : h;
+              gfx_cor(borda, (raio * menor + NV_ANEL_FOCO) / (menor + 2 * NV_ANEL_FOCO),
+                      ar, ag, ab, f); }
           }
           GfxRect card = { px, py, w, h };
           // CARD SEM ARTE: superficie solida, nao o vazio. Sem isto o card

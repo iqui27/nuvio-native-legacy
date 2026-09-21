@@ -1471,11 +1471,18 @@ void guia_evento(const SDL_Event *e) {
   // No modo lista ESQUERDA/DIREITA andam a JANELA DE TEMPO, meia hora por
   // toque, ate 3 h a frente — a pergunta "o que passa mais tarde" que a
   // grade tradicional responde e o cartao nao.
+  //
+  // ESQUERDA SEM PARA ONDE IR (primeira coluna, ou janela de tempo ja no
+  // "agora") SOBE AO CABECALHO — Cartoes/Lista/Addons — de qualquer linha.
+  // Pedido do dono (21/09/2026): "se quiser trocar algo tem que subir a lista
+  // toda". BAIXO no cabecalho volta para a linha em que estava.
   if (modoLista) {
-    if (k == SDLK_LEFT)  { if (janelaDesl > 0) janelaDesl -= G_L_PASSO_MIN; return; }
+    if (k == SDLK_LEFT)  { if (janelaDesl > 0) janelaDesl -= G_L_PASSO_MIN;
+                           else { focoTopo = 1; topoCol = G_TOPO_LISTA; } return; }
     if (k == SDLK_RIGHT) { if (janelaDesl < G_L_DESL_MAX) janelaDesl += G_L_PASSO_MIN; return; }
   } else {
-    if (k == SDLK_LEFT)  { if (focoCol > 0) focoCol--; return; }
+    if (k == SDLK_LEFT)  { if (focoCol > 0) focoCol--;
+                           else { focoTopo = 1; topoCol = G_TOPO_CARTOES; } return; }
     if (k == SDLK_RIGHT) { if (focoCol + 1 < linhaN(focoLin)) focoCol++; return; }
   }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
