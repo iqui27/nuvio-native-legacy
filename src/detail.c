@@ -30,6 +30,7 @@
 #include "extras.h"
 #include "trailer.h"
 #include "trailerimdb.h"
+#include "trailerapple.h"
 #include "player.h"
 #include "agenda.h"
 #include "agendaui.h"
@@ -172,9 +173,16 @@ static const char *trailerFonte(int k) {
 #ifdef __EMSCRIPTEN__
   return k < extras_n_trailers() ? extras_trailer_yt(k) : NULL;
 #else
+  // LG: Apple primeiro (HLS matted, sem tarja), IMDb depois — e so depois de
+  // a Apple RESPONDER, senao o IMDb ganharia sempre por chegar antes.
   const CatItem *ci = cat_item(idx);
+  const char *u;
   (void)k;
-  return ci ? trailerimdb_url(ci->imdb, NULL) : NULL;
+  if (!ci) return NULL;
+  u = trailerapple_url(ci->imdb);
+  if (u) return u;
+  if (!trailerapple_respondeu(ci->imdb)) return NULL;
+  return trailerimdb_url(ci->imdb, NULL);
 #endif
 }
 static int temporada = 0;            // temporada ESCOLHIDA (nao a focada)
@@ -825,7 +833,10 @@ void detail_abrir(const HomeItem *it) {
 #ifndef __EMSCRIPTEN__
     // LG: o trailer e o MP4 do IMDb; pedir agora e o que o deixa pronto
     // quando a pagina assentar.
-    if (trailer_suportado() && ci && ci->imdb[0]) trailerimdb_pedir(ci->imdb);
+    if (trailer_suportado() && ci && ci->imdb[0]) {
+      trailerapple_pedir(ci->imdb, ci->titulo, ci->meta, ehSerie());
+      trailerimdb_pedir(ci->imdb);
+    }
 #endif
   }
   // A aba marcada tem de ser a da temporada de "Continuar assistindo", nao a

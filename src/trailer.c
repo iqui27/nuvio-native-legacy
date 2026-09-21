@@ -156,8 +156,16 @@ static void nativoAplicar(void) {
   if (recortePendente && video_pronto() && video_largura() > 0 && video_altura() > 0 &&
       tocandoDesde && SDL_GetTicks() - tocandoDesde >= 800) {
     int vw = video_largura(), vh = video_altura();
-    int sw = (int)(vw / ajustes_trailer_zoom()), sh = (int)(vh / ajustes_trailer_zoom());
-    int sx, sy;
+    float z = ajustes_trailer_zoom();
+    int sw, sh, sx, sy;
+    // QUADRO MATTED (Apple: 1920x804, 3836x1606) nao tem tarja embutida — a
+    // tarja e o proprio plano encaixando 2.39 em 16:9. Encher a tela e
+    // recortar as LATERAIS ate 16:9, sem o zoom fixo. Quadro 16:9 (IMDb, com
+    // a tarja dentro da imagem) leva o zoom do ajuste. "Original" (1.0) nao
+    // recorta nada em nenhum dos dois.
+    if (z <= 1.001f) { sw = vw; sh = vh; }
+    else if ((float)vw / (float)vh > 1.85f) { sh = vh; sw = (int)(vh * 16.0f / 9.0f); if (sw > vw) sw = vw; }
+    else { sw = (int)(vw / z); sh = (int)(vh / z); }
     // PAR, como o player faz (player.c, aplicarAspecto): o escalonador
     // trabalha em 4:2:0 e origem ou tamanho impar da meio pixel de croma na
     // borda — e 803 de altura era o que saia daqui.

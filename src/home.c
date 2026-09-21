@@ -48,6 +48,7 @@ float detail_progresso(void);
 #include <ctype.h>
 #include "trailer.h"
 #include "trailerimdb.h"
+#include "trailerapple.h"
 
 #define MAX_ARTE   64
 // 16, o teto do web para ESTE runtime: HOME_MAX_ROWS_LEGACY_TV em
@@ -2679,10 +2680,20 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
   } else if (heroTrailerItem != heroAtual) {
     if (trailer_aberto() && !trailer_cheia()) trailer_fechar();
     heroTrailerItem = heroAtual; heroTrailerDesde = agora; heroTrailerTentado = 0;
+#ifndef __EMSCRIPTEN__
+    trailerapple_pedir(ci->imdb, ci->titulo, ci->meta, ci->tipo[0] ? !strcmp(ci->tipo, "series") : 0);
+#endif
     trailerimdb_pedir(ci->imdb);
   } else if (!trailer_aberto() && !heroTrailerTentado &&
              agora - heroTrailerDesde >= NV_TRAILER_HERO_ESPERA_MS) {
-    const char *u = trailerimdb_url(ci->imdb, NULL);
+    // Apple (HLS matted) antes do IMDb (MP4 com tarja), e so depois de a Apple
+    // responder. No Tizen o <video> nao toca HLS: fica o MP4.
+    const char *u = NULL;
+#ifndef __EMSCRIPTEN__
+    u = trailerapple_url(ci->imdb);
+    if (!u && !trailerapple_respondeu(ci->imdb)) return;
+#endif
+    if (!u) u = trailerimdb_url(ci->imdb, NULL);
     if (u) { heroTrailerTentado = 1; trailer_abrir(u, heroArteRect, 0, 0); }
     else if (trailerimdb_respondeu(ci->imdb)) heroTrailerTentado = 1;
   }
