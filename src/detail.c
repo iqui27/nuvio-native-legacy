@@ -29,6 +29,7 @@
 #include "home.h"
 #include "extras.h"
 #include "trailer.h"
+#include "trailerimdb.h"
 #include "player.h"
 #include "agenda.h"
 #include "agendaui.h"
@@ -164,6 +165,18 @@ static float scrollY = 0.0f;         // rolagem VERTICAL do documento
 static Uint32 trailerDesde = 0;
 static int    trailerTentado = 0;
 static float  trailerFade = 0.0f;
+// A FONTE do trailer `k` desta pagina, no formato que trailer_abrir espera na
+// plataforma: id do YouTube (Samsung, lista do TMDB) ou URL do MP4 do IMDb
+// (LG, um so por titulo — trailerimdb.h). NULL quando ainda nao ha.
+static const char *trailerFonte(int k) {
+#ifdef __EMSCRIPTEN__
+  return k < extras_n_trailers() ? extras_trailer_yt(k) : NULL;
+#else
+  const CatItem *ci = cat_item(idx);
+  (void)k;
+  return ci ? trailerimdb_url(ci->imdb, NULL) : NULL;
+#endif
+}
 static int temporada = 0;            // temporada ESCOLHIDA (nao a focada)
 // Repouso do foco sobre a fileira de temporadas, para trocar de temporada ao
 // PARAR numa pilula em vez de a cada pilula por que se passa.
@@ -808,7 +821,13 @@ void detail_abrir(const HomeItem *it) {
   // SEM `if (imdb[0])`: titulo sem id tambem passa por extras_pedir, que e
   // quem zera o que o titulo anterior publicou (issue #60, ver extras.c).
   { const CatItem *ci = cat_item(idx);
-    extras_pedir(ci ? ci->imdb : "", ehSerie(), ci ? ci->tmdb : 0); }
+    extras_pedir(ci ? ci->imdb : "", ehSerie(), ci ? ci->tmdb : 0);
+#ifndef __EMSCRIPTEN__
+    // LG: o trailer e o MP4 do IMDb; pedir agora e o que o deixa pronto
+    // quando a pagina assentar.
+    if (trailer_suportado() && ci && ci->imdb[0]) trailerimdb_pedir(ci->imdb);
+#endif
+  }
   // A aba marcada tem de ser a da temporada de "Continuar assistindo", nao a
   // do primeiro episodio da serie. Issue #43: abrindo pela fileira com S2E2 em
   // andamento a aba acendia sempre "Temporada 1" (o primeiro episodio
@@ -1584,9 +1603,9 @@ void detail_evento(const SDL_Event *e) {
       // navegador da TV abria por cima e a pessoa nao sabia voltar. Na LG
       // continua o navegador do webOS: o app nativo nao tem onde embutir um
       // player do YouTube.
-      if (trailer_suportado()) {
+      if (trailer_suportado() && trailerFonte(foco.coluna)) {
         GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
-        trailer_abrir(extras_trailer_yt(foco.coluna), tela, 1, 1);
+        trailer_abrir(trailerFonte(foco.coluna), tela, 1, 1);
       } else extras_trailer_abrir(foco.coluna);
     } else if (foco.fileira == SEC_ESTUDIOS) {
       // OK num logo abre o browse daquela produtora/rede no vertudo — e a
@@ -1875,10 +1894,10 @@ void detail_atualizar(float dt, Uint32 agora) {
     if (saindo && trailer_aberto()) trailer_fechar();
     if (!trailer_aberto() && !trailerTentado && trailerDesde && topo &&
         agora - trailerDesde >= NV_TRAILER_ESPERA_MS &&
-        ajustes_trailer_auto() && extras_n_trailers() > 0) {
+        ajustes_trailer_auto() && trailerFonte(0)) {
       GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
       trailerTentado = 1;
-      trailer_abrir(extras_trailer_yt(0), tela, 0, 0);
+      trailer_abrir(trailerFonte(0), tela, 0, 0);
     }
     trailer_atualizar(agora);
     { float alvo = (trailer_aberto() && trailer_tocando()) ? 1.0f : 0.0f;

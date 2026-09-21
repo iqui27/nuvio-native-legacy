@@ -32,6 +32,9 @@ int  video_tocar(const char *url);
 void video_bombear(void);
 void video_parar(void);
 void video_pausar(int pausado);
+// Volume do pipeline, 0..100 (uMS setVolume). Existe para o trailer mudo no
+// fundo da pagina de titulo (trailer.h); a reproducao normal nao mexe nisto.
+void video_volume(int pct);
 void video_buscar(double segundos);
 
 // Retangulo do plano de video, em coordenadas de tela 1920x1080. Fica preso a
@@ -108,6 +111,7 @@ int    video_tocando(void);
 int    video_pronto(void);   // 1 depois do loadCompleted
 int    video_ativo(void);    // 1 assim que ha mediaId — e o que abre o furo
 int    video_falhou(void);   // 1 depois de um errorText real na fonte atual
+int    video_terminou(void); // 1 depois do fim de fluxo (endOfStream) da fonte atual
 
 // --- faixas -----------------------------------------------------------------
 // Tudo isto sai do evento sourceInfo da assinatura do uMS: o addon nao informa

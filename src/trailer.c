@@ -8,7 +8,7 @@
 
 static int    aberto, cheia, comSom;
 static GfxRect rect;
-static char   ytAtual[24];
+static char   fonteAtual[1024];
 
 #ifdef __EMSCRIPTEN__
 // O iframe fica ATRAS do canvas (z-index 0 contra 1 do canvas), no mesmo
@@ -85,27 +85,69 @@ EM_JS(int, trailer_js_estado, (), {
 });
 int trailer_suportado(void) { return 1; }
 #else
-int trailer_suportado(void) { return 0; }
+// LG (e Mac, onde video_iniciar devolve 0 e nada disto acontece): o trailer
+// e um MP4 no plano de video da TV. O volume so pode ser mexido depois de o
+// pipeline existir (mediaId), e o recorte que tira a tarja preta so depois de
+// o quadro ter tamanho — os dois ficam pendentes e trailer_atualizar aplica.
+#include "video.h"
+static int volumePendente, recortePendente, pausado;
+int trailer_suportado(void) {
+#ifdef __APPLE__
+  return 0;
+#else
+  static int sabe = -1;
+  if (sabe < 0) sabe = video_iniciar() ? 1 : 0;
+  return sabe;
+#endif
+}
+static void nativoAplicar(void) {
+  if (!aberto) return;
+  if (volumePendente && video_ativo()) { video_volume(comSom ? 100 : 0); volumePendente = 0; }
+  if (recortePendente && video_pronto() && video_largura() > 0 && video_altura() > 0) {
+    int vw = video_largura(), vh = video_altura();
+    int sw = (int)(vw / NV_TRAILER_ZOOM), sh = (int)(vh / NV_TRAILER_ZOOM);
+    if (video_recorte_fonte())
+      video_janela_fonte((vw - sw) / 2, (vh - sh) / 2, sw, sh,
+                         (int)rect.x, (int)rect.y, (int)rect.w, (int)rect.h);
+    recortePendente = 0;
+  }
+}
 #endif
 
-void trailer_abrir(const char *yt, GfxRect r, int som, int modoCheia) {
-  if (!trailer_suportado() || !yt || !yt[0]) return;
+void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
+  int nova;
+  if (!trailer_suportado() || !fonte || !fonte[0]) return;
+  nova = strcmp(fonteAtual, fonte) != 0;
 #ifdef __EMSCRIPTEN__
-  if (!trailer_js_abrir(yt, r.x, r.y, r.w, r.h, som, NV_TRAILER_ZOOM)) return;
+  if (!trailer_js_abrir(fonte, r.x, r.y, r.w, r.h, som, NV_TRAILER_ZOOM)) return;
+#else
+  if (nova) {
+    if (!video_tocar(fonte)) return;
+    volumePendente = 1; recortePendente = 1; pausado = 0;
+  } else if (comSom != som) volumePendente = 1;
+  video_janela((int)r.x, (int)r.y, (int)r.w, (int)r.h);
+  if (!nova) recortePendente = 1;
 #endif
-  if (strcmp(ytAtual, yt)) {
-    snprintf(ytAtual, sizeof ytAtual, "%s", yt);
-    printf("[trailer] %s %s%s\n", yt, modoCheia ? "tela cheia" : "no fundo", som ? " com som" : " mudo");
+  if (nova) {
+    snprintf(fonteAtual, sizeof fonteAtual, "%s", fonte);
+    printf("[trailer] %.60s %s%s\n", fonte, modoCheia ? "tela cheia" : "no fundo", som ? " com som" : " mudo");
     fflush(stdout);
   }
   rect = r; aberto = 1; cheia = modoCheia; comSom = som;
+#ifndef __EMSCRIPTEN__
+  nativoAplicar();
+#endif
 }
 
 void trailer_rect(GfxRect r) {
   if (!aberto) return;
   rect = r;
 #ifdef __EMSCRIPTEN__
-  trailer_js_abrir(ytAtual, r.x, r.y, r.w, r.h, comSom, NV_TRAILER_ZOOM);
+  trailer_js_abrir(fonteAtual, r.x, r.y, r.w, r.h, comSom, NV_TRAILER_ZOOM);
+#else
+  video_janela((int)r.x, (int)r.y, (int)r.w, (int)r.h);
+  recortePendente = 1;
+  nativoAplicar();
 #endif
 }
 
@@ -113,8 +155,10 @@ void trailer_fechar(void) {
   if (!aberto) return;
 #ifdef __EMSCRIPTEN__
   trailer_js_fechar();
+#else
+  video_parar();
 #endif
-  aberto = 0; cheia = 0; ytAtual[0] = 0;
+  aberto = 0; cheia = 0; fonteAtual[0] = 0;
 }
 
 int trailer_aberto(void)  { return aberto; }
@@ -125,7 +169,7 @@ int trailer_tocando(void) {
   int e = aberto ? trailer_js_estado() : -2;
   return e == 1 || e == 3;
 #else
-  return 0;
+  return aberto && video_pronto() && !video_falhou() && !video_terminou();
 #endif
 }
 GfxRect trailer_retangulo(void) { return rect; }
@@ -139,6 +183,9 @@ int trailer_evento(const SDL_Event *e) {
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
 #ifdef __EMSCRIPTEN__
     trailer_js_cmd(trailer_js_estado() == 1 ? "pauseVideo" : "playVideo");
+#else
+    pausado = !pausado;
+    video_pausar(pausado);
 #endif
     return 1;
   }
@@ -150,5 +197,11 @@ void trailer_atualizar(Uint32 agora) {
 #ifdef __EMSCRIPTEN__
   // Acabou (0 = ENDED): fecha e a pagina volta a arte.
   if (aberto && trailer_js_estado() == 0) trailer_fechar();
+#else
+  if (!aberto) return;
+  video_bombear();
+  nativoAplicar();
+  // Acabou ou a fonte falhou: fecha e a pagina volta a arte.
+  if (video_terminou() || video_falhou()) trailer_fechar();
 #endif
 }

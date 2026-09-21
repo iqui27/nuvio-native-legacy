@@ -361,8 +361,7 @@ static const Opcao OPCOES[AJ_N] = {
   // web; 0 = arte limpa. Local, sem chave no blob da conta.
   NUM("Escurecimento do fundo",     0, 100, 10, "%"),
   // Trailer mudo no lugar da arte, depois de a pagina assentar (dono,
-  // 20/09/2026). So faz algo onde o app e uma pagina (Samsung): na LG nao ha
-  // onde embutir o player, e o ajuste fica sem efeito — a ajuda diz isso.
+  // 20/09/2026). Samsung: embed do YouTube; LG: MP4 do IMDb (trailer.h).
   ESC("Trailer automático",         V_LIGA, 2),
 
   ESC("Expandir pôster ao focar",   V_LIGA, 2),   // focusedPosterBackdropExpandEnabled
@@ -1559,7 +1558,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_DET_META_EXT: return "Prefere a ficha do addon de metadados à do Cinemeta. Útil quando o seu addon tem sinopse e elenco melhores.";
     case AJ_DET_DATA_CHEIA: return "Escreve a data de estreia por extenso em vez de só o ano.";
     case AJ_DET_VEU: return "Quanto a vinheta escura cobre a arte na tela do título. Cem por cento é o padrão; zero mostra a arte limpa — o texto pode ficar difícil de ler sobre cenas claras.";
-    case AJ_DET_TRAILER_AUTO: return "Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte. Só na Samsung; na LG o trailer abre no navegador da TV.";
+    case AJ_DET_TRAILER_AUTO: return "Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.";
 
     // --- Posteres e cards
     case AJ_EXPANDIR: return "O cartaz em foco cresce e abre a arte deitada atrás dele depois de um instante parado.";

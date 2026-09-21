@@ -140,6 +140,7 @@ int  video_tocar(const char *u) { (void)u; return 0; }
 void video_bombear(void) {}
 void video_parar(void) {}
 void video_pausar(int p) { (void)p; }
+void video_volume(int pct) { (void)pct; }
 void video_buscar(double s) { (void)s; }
 void video_janela(int x,int y,int w,int h) { (void)x;(void)y;(void)w;(void)h; }
 // Coto que FALTAVA: a funcao existia so no ramo do aparelho, entao o build do
@@ -163,6 +164,7 @@ int  video_tocando(void) { return 0; }
 int  video_pronto(void) { return 0; }
 int  video_ativo(void) { return 0; }
 int  video_falhou(void) { return 0; }
+int  video_terminou(void) { return 0; }
 unsigned video_bufferando_ms(void) { return 0; }
 int  video_n_audio(void) { return 0; }
 int  video_n_legenda(void) { return 0; }
@@ -313,7 +315,7 @@ static int dvPedido;
 
 static char      midia[64];
 static double    posSeg, durSeg;
-static int       tocando, pronto, ligado, falhou;
+static int       tocando, pronto, ligado, falhou, terminou;
 
 // PLAYER_TYPE_MSE. O ACB usa isto para saber que a fonte e um pipeline de
 // midia e nao um sintonizador.
@@ -839,7 +841,7 @@ static int aoEvento(LSHandle *h, LSMessage *m, void *u) {
     if (tocando && !pausaPedida) marco("pausado PELO PIPELINE");
     tocando = 0;
   }
-  if (strstr(p, "endOfStream")) { tocando = 0; marco("endOfStream"); }
+  if (strstr(p, "endOfStream")) { tocando = 0; terminou = 1; marco("endOfStream"); }
 
   // ERRO DO PIPELINE. Nao havia tratamento nenhum: quando o uMS recusava um
   // seek ou perdia a fonte, o app simplesmente parava e ninguem sabia por que —
@@ -1198,7 +1200,7 @@ static int tocarInterno(const char *url, int comDV);
 
 int video_tocar(const char *url) {
   dvRecuado = 0;
-  falhou = 0;
+  falhou = 0; terminou = 0;
   // FONTE NOVA, decisao nova: o "sem HDR" era sobre o arquivo anterior.
   semDVForcado = 0;
   // Titulo novo: o marcador do anterior nao vale. Sem isto um filme sem
@@ -1498,6 +1500,14 @@ void video_pausar(int pausado) {
   pausaPedida = pausado;
 }
 
+void video_volume(int pct) {
+  char b[128];
+  if (!ligado || !midia[0]) return;
+  if (pct < 0) pct = 0; else if (pct > 100) pct = 100;
+  snprintf(b, sizeof b, "{\"mediaId\":\"%s\",\"volume\":%d}", midia, pct);
+  chamar("setVolume", b, soLog);
+}
+
 // AVANCO COM REPOUSO.
 //
 // Medido na TV: segurar a seta produzia QUATRO seeks em 0,8 s (16 s, 26 s, 36 s,
@@ -1688,6 +1698,7 @@ int    video_ativo(void)    { return midia[0] != 0; }
 // sem a flag, um pipeline que carrega e morre em seguida nunca dispara a
 // proxima da lista.
 int    video_falhou(void)   { return falhou; }
+int    video_terminou(void) { return terminou; }
 unsigned video_bufferando_ms(void) {
   Uint32 d = bufferandoDesde;
   if (!d) return 0;

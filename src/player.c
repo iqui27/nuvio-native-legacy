@@ -25,6 +25,7 @@
 //      esta pausado. Pausado sem controles o usuario fica olhando um quadro
 //      congelado sem saber o que houve.
 #include "player.h"
+#include "trailer.h"
 #include "linguas.h"
 #include "idioma.h"
 #include "posplay.h"
@@ -813,6 +814,9 @@ void player_aspecto_ciclar(void) {
 }
 
 void player_abrir(int indiceCatalogo, const char *url) {
+  // O trailer usa o mesmo plano de video (LG) — solta antes de o player
+  // carregar a fonte, senao o load novo pisa no mediaId do trailer.
+  trailer_fechar();
   // QUAL E O IDIOMA ORIGINAL DESTE TITULO. A escolha "Original" em Ajustes
   // resolve para isto; sem aviso ela se comporta como "nao trocar de faixa".
   //

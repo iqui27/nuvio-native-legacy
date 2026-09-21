@@ -162,7 +162,7 @@
   { "Aleatório do catálogo", "Random from the catalog" },
   { "Alemão", "German" },
   { "Alfabética · OK: agrupar por addon", "Alphabetical · OK: group by add-on" },
-  { "Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte. Só na Samsung; na LG o trailer abre no navegador da TV.", "A few seconds after you open a title, its trailer plays muted in place of the backdrop. Scrolling the page or leaving it brings the art back. Samsung only; on LG the trailer opens in the TV browser." },
+  { "Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "A few seconds after you open a title, its trailer plays muted in place of the backdrop. Scrolling the page or leaving it brings the art back." },
   { "Alta", "High" },
   { "Amarelo", "Yellow" },
   { "Ambas", "Both" },

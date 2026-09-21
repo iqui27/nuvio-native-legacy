@@ -951,6 +951,10 @@ void video_parar(void) {
   urlAtual[0] = 0;
 }
 
+// Trailer mudo no fundo nao passa pelo AVPlay neste alvo (trailer.c usa o
+// embed do YouTube); o volume fica por conta da TV.
+void video_volume(int pct) { (void)pct; }
+
 void video_pausar(int pausado) {
   if (!temAvplay || !ativo) return;
   AVN("pausar", pausado ? 1 : 0);
@@ -1127,6 +1131,9 @@ int    video_ativo(void)      { return ativo; }
 // video.c (webOS): app.c usa isto no watchdog de canal para pular a fonte
 // morta sem esperar o prazo. Sem esta definicao o alvo Tizen nem linkava.
 int    video_falhou(void)     { return houveErro; }
+// O trailer deste alvo nao passa pelo AVPlay (ver trailer.c); nao ha fim a
+// contar aqui.
+int    video_terminou(void)   { return 0; }
 
 double video_creditos(void) {
   double dur;
