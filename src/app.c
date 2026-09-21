@@ -71,12 +71,14 @@
 #include "video.h"
 #include "addons.h"
 #include "descoberta.h"
+#include "proximo.h"
 #include "trakt.h"
 #include "faixas.h"
 #include "episodios.h"
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdlib.h>
+#include <time.h>
 
 // Link de debrid expira em minutos; um minuto e folga suficiente para o usuario
 // apertar Reproduzir logo depois de abrir o titulo sem pagar uma busca a mais.
@@ -92,6 +94,12 @@ void app_abrir_titulo(const char *imdb) {
 }
 
 static int aguardandoFonte;
+// Episodio que o card de "Continuar assistindo" ANUNCIAVA quando o OK pediu
+// para tocar (issue #93). Armado no ramo home_pediu_tocar e consumido pelo
+// ramo de detail_pediu_reproduzir, no lugar do episodioAlvo — que neste
+// instante ainda nao tem a lista de episodios nem o "proximo" que
+// continuar_desenhar calculou para desenhar o card.
+static int cwTocarT, cwTocarE;
 static pthread_t fioFonte;
 static int fioFonteVivo;                  // 0 = canal escolheu sem o fio
 static _Atomic int fonteEscolhida = -2;   // release/acquire entre verificacao e UI
@@ -1122,6 +1130,30 @@ void app_atualizar(float dt, Uint32 agora) {
     HomeItem it;
     if (tela == TELA_HOME && home_pediu_abrir()) {
       if (home_item_focado(&it)) abrirTitulo(&it);
+    } else if (tela == TELA_HOME && home_pediu_tocar()) {
+      // OK no card da retomada com "OK no card" = Retomar (issue #93): abre a
+      // pagina do titulo E pede reproducao no mesmo passe. A pagina fica
+      // aberta por baixo — Voltar do player cai nela, como o dono espera.
+      if (home_item_focado(&it)) {
+        // O episodio a tocar e o que o CARD mostrava, nao o que o detalhe
+        // adivinharia: para serie o card pode anunciar o PROXIMO episodio
+        // (continuar_desenhar troca T/E pelo prox_para_item quando o semeado
+        // ja terminou), e episodioAlvo chegaria a outro numero — ou a nenhum,
+        // porque a lista de episodios ainda nao chegou da rede.
+        const CatItem *cw = cat_item(it.indice);
+        cwTocarT = cwTocarE = 0;
+        if (cw && !strcmp(cw->tipo, "series")) {
+          ProxSugestao prox;
+          cwTocarT = cw->temporada; cwTocarE = cw->episodio;
+          if (prox_para_item(cw, cat_episodio(it.indice, 0),
+                             cat_n_episodios(it.indice),
+                             (long long)time(NULL) * 1000LL, &prox)) {
+            cwTocarT = prox.temporada; cwTocarE = prox.episodio;
+          }
+        }
+        abrirTitulo(&it);
+        detail_pedir_reproduzir();
+      }
     } else if (tela == TELA_BUSCA && busca_pediu_abrir(&idx)) {
       if (busca_item_focado(&it)) abrirTitulo(&it); else abrirPorIndice(idx);
     } else if (tela == TELA_BIBLIOTECA && biblioteca_pediu_abrir(&idx)) {
@@ -1195,6 +1227,13 @@ void app_atualizar(float dt, Uint32 agora) {
       const CatItem *ci = cat_item(detail_indice());
       player_abrir(detail_indice(), NULL);
       episodioDoDetalhe();
+      // CW direto (issue #93): o episodio que o card anunciava vale sobre o
+      // que episodioAlvo resolveu — ele e a unica copia fiel do "T/E do card"
+      // quando a lista de episodios ainda esta a caminho.
+      if (cwTocarT > 0 && cwTocarE > 0) {
+        player_definir_episodio(cwTocarT, cwTocarE);
+        cwTocarT = cwTocarE = 0;
+      }
       if (doInicio) player_do_inicio();
       // O episodio so fica definitivo DEPOIS de abrir o player. Refaça sempre
       // o pedido de legenda nesse ponto; a busca de prefetch pode ter comecado

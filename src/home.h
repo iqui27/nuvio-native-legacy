@@ -57,6 +57,7 @@ void home_encerrar(void);
 void home_registrar_retorno(int indice, double posSeg, double durSeg);
 int  home_quer_sair(void);
 int  home_pediu_abrir(void);   // OK pressionado: consome o pedido
+int  home_pediu_tocar(void);   // OK num card de retomada com "OK no card" = Retomar
 int  home_pediu_menu(void);    // ESQUERDA na primeira coluna: chama o menu
 int home_pediu_social(void);
 int home_pediu_pessoa_social(CatItem *saida);

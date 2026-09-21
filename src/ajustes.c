@@ -112,7 +112,7 @@ typedef enum {
   AJ_DESCOBRIR, AJ_ROTULOS, AJ_NOME_ADDON, AJ_SUFIXO_TIPO,
   AJ_OCULTAR_NLANC, AJ_NOTAS_HOME, AJ_GRAD_CLASSICO,
   // Continuar assistindo
-  AJ_CW_LIGADO, AJ_CW_FONTE, AJ_CW_ESTILO, AJ_CW_THUMB, AJ_CW_BLUR_PROX,
+  AJ_CW_LIGADO, AJ_CW_OK, AJ_CW_FONTE, AJ_CW_ESTILO, AJ_CW_THUMB, AJ_CW_BLUR_PROX,
   AJ_CW_FURTHEST, AJ_CW_NAO_EXIBIDOS, AJ_CW_ORDEM,
   // Pagina de detalhe
   AJ_DET_BLUR_NAO_VISTOS, AJ_DET_TRAILER, AJ_DET_META_EXT, AJ_DET_DATA_CHEIA,
@@ -182,6 +182,10 @@ static const char *V_CW[]        = { "Card", "Largo", "P\xc3\xb4ster" };
 static const char *V_CW_FONTE[]  = { "Ambas", "Conta Nuvio", "Trakt" };
 // `continueWatchingSortMode`, normalizado em normalizeContinueWatchingSortMode.
 static const char *V_CW_ORDEM[]  = { "Padrão", "Estilo streaming", "Separar futuros" };
+// O que o toque curto de OK faz num card da retomada (issue #93): abre o
+// episodio direto no player, ou abre a pagina do titulo como sempre fez.
+// Local, como cwFonteLocal — o app oficial nao tem esta escolha.
+static const char *V_CW_OK[]     = { "Retomar", "Abrir página" };
 // `discoverLocation`, validado contra estes tres.
 static const char *V_DESCOBRIR[] = { "Mostrar na Busca", "Na barra lateral", "Desligado" };
 // `homeImdbRatingsVisibility` — normalizeHomeImdbRatingsVisibility so aceita
@@ -356,6 +360,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Gradiente de foco clássico", V_LIGA, 2),   // classicFocusGradientEnabled
 
   ESC("Mostrar \"Continuar assistindo\"", V_LIGA, 2), // continueWatchingEnabled
+  ESC("OK no card",                     V_CW_OK, 2),  // local, ver V_CW_OK
   ESC("Fonte do \"Continuar assistindo\"", V_CW_FONTE, 3),   // local, ver V_CW_FONTE
   ESC("Estilo do \"Continuar assistindo\"", V_CW, 3), // continueWatchingCardStyle
   ESC("Miniatura do episódio",      V_LIGA, 2),   // useEpisodeThumbnailsInCw
@@ -494,6 +499,10 @@ static const char *CHAVE[] = {
   "catalogTypeSuffixEnabled", "hideUnreleasedContent",
   "homeImdbRatingsVisibility", "classicFocusGradientEnabled",
   "continueWatchingEnabled",
+  // LOCAL, e nao do web: o app oficial nao tem esta escolha, entao nao ha
+  // campo dela no blob da conta. Chave propria para nao colidir com um nome
+  // que o servidor possa criar depois.
+  "cwOkLocal",
   // LOCAL, e nao do web: o app oficial nao tem esta escolha, entao nao ha
   // campo dela no blob da conta. Chave propria para nao colidir com um nome
   // que o servidor possa criar depois.
@@ -931,6 +940,7 @@ int ajustes_local_descobrir(void)     { return valor[AJ_DESCOBRIR]; }
 int ajustes_descobrir_na_busca(void)  { return valor[AJ_DESCOBRIR] == 0; }
 
 int ajustes_cw_ligado(void)           { return lig(AJ_CW_LIGADO); }
+int ajustes_cw_ok_toca(void)          { return valor[AJ_CW_OK] == 0; }
 int ajustes_cw_estilo(void)           { return valor[AJ_CW_ESTILO]; }
 int ajustes_cw_fonte(void)            { return valor[AJ_CW_FONTE]; }
 int ajustes_cw_thumb_episodio(void)   { return lig(AJ_CW_THUMB); }
@@ -1503,7 +1513,7 @@ static int inativa(int op) {
     case AJ_RAIL:         return ajustes_rail_moderna();
     case AJ_RAIL_BLUR:    return !ajustes_rail_moderna();
     case AJ_HERO_CATALOGOS: return !ajustes_hero_ligado();
-    case AJ_CW_FONTE:
+    case AJ_CW_OK: case AJ_CW_FONTE:
     case AJ_CW_ESTILO: case AJ_CW_THUMB: case AJ_CW_FURTHEST:
     case AJ_CW_NAO_EXIBIDOS: case AJ_CW_ORDEM:
       return !ajustes_cw_ligado();
@@ -1563,7 +1573,7 @@ static const char *ajudaOpcao(int op) {
     if (op == AJ_RAIL) return "Desative a barra lateral moderna para escolher entre recolhida e fixa.";
     if (op == AJ_RAIL_BLUR) return "Ative a barra lateral moderna para usar o desfoque.";
     if (op == AJ_HERO_CATALOGOS) return "Ative Mostrar destaque para exibir os catálogos no topo da Home.";
-    if (op >= AJ_CW_FONTE && op <= AJ_CW_ORDEM)
+    if (op >= AJ_CW_OK && op <= AJ_CW_ORDEM)
       return op == AJ_CW_BLUR_PROX && ajustes_cw_ligado()
         ? "Ative Miniatura do episódio para desfocar a imagem do próximo episódio."
         : "Ative Continuar assistindo para ajustar os cards de retomada.";
@@ -1611,6 +1621,7 @@ static const char *ajudaOpcao(int op) {
 
     // --- Continuar assistindo
     case AJ_CW_LIGADO: return "A fileira de retomada, com o que você deixou pela metade e o próximo episódio das séries que acompanha.";
+    case AJ_CW_OK: return "O que o OK faz no card da retomada: toca de onde parou, ou abre a página do título. Segurar OK abre o menu nos dois casos.";
     case AJ_CW_FONTE: return "De onde vem a fileira de retomada. \"Ambas\" usa a conta Nuvio e completa com o Trakt.";
     case AJ_CW_ESTILO: return "A forma do card da retomada: quadrado com a arte, deitado largo, ou o cartaz em pé.";
     case AJ_CW_THUMB: return "Usa a imagem do próprio episódio no card, em vez da arte da série.";
@@ -1699,6 +1710,8 @@ static const char *efeitoOpcao(int op) {
     case AJ_FIL_LIMITE:
       return "Vale só nesta TV. Cada fileira a mais é um pedido a mais pela rede quando a Home monta.";
     case AJ_FIL_ORDEM:
+      return "Vale só nesta TV: não altera a Home dos seus outros aparelhos.";
+    case AJ_CW_OK:
       return "Vale só nesta TV: não altera a Home dos seus outros aparelhos.";
     case AJ_CW_FONTE:
       return "Vale só nesta TV. Ao mudar, a fileira é remontada na hora.";
@@ -2404,7 +2417,7 @@ static const char *iconeOpcao(int op) {
     case AJ_AUD_LINGUA: case AJ_ATMOS: return "audio";
     case AJ_FONTE_MANUAL: return "fontes";
     case AJ_PAUSA_OVERLAY: return "pause";
-    case AJ_CW_LIGADO: case AJ_CW_FONTE: case AJ_CW_ESTILO: case AJ_CW_THUMB: case AJ_CW_BLUR_PROX:
+    case AJ_CW_LIGADO: case AJ_CW_OK: case AJ_CW_FONTE: case AJ_CW_ESTILO: case AJ_CW_THUMB: case AJ_CW_BLUR_PROX:
     case AJ_CW_FURTHEST: case AJ_CW_NAO_EXIBIDOS: case AJ_CW_ORDEM: return "avancar";
     case AJ_DESCOBRIR: return "menu_search";
     case AJ_FIL_LIMITE: case AJ_FIL_ORDEM: return "menu_library";

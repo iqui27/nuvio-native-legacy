@@ -190,7 +190,7 @@ static float velX[MAX_FIL];
 // comentario no corte, em remontar().
 static int   cortadasPeloLimite;
 static float velY = 0.0f;
-static int sair = 0, pedidoAbrir = 0, pedidoMenu = 0;
+static int sair = 0, pedidoAbrir = 0, pedidoTocar = 0, pedidoMenu = 0;
 // VOLTAR NA HOME PEDE CONFIRMACAO. Ver home_evento; o aviso e desenhado em
 // home_desenhar enquanto a janela esta aberta.
 #define HOME_SAIR_MS 3000
@@ -1255,7 +1255,20 @@ void home_evento(const SDL_Event *e) {
         pedidoGuia = 1;
         snprintf(guiaId, sizeof guiaId, "%s", ci ? ci->imdb : "");
       } else {
-        pedidoAbrir = 1;
+        // OK num card da retomada TOCA de onde parou quando o ajuste pede
+        // (issue #93): abrirTitulo seguido de detail_pedir_reproduzir cai no
+        // mesmo caminho do botao Reproduzir. Com o estilo "poster" a fileira
+        // de CW vira FILEIRA_NORMAL, entao a CHAVE e o que a identifica; a
+        // "Retomar agora" (FILEIRA_RETORNO) sempre responde assim, porque o
+        // card dela ja e um convite a tocar. Segurar OK continua abrindo o
+        // menu — o ramo NV_HOLD_MS acima nem chega aqui.
+        const Fileira *fl = &fileiras[foco.fileira];
+        if (ajustes_cw_ok_toca() &&
+            (fl->tipo == FILEIRA_CONTINUE || fl->tipo == FILEIRA_RETORNO ||
+             !strcmp(fl->chave, "continue_watching")))
+          pedidoTocar = 1;
+        else
+          pedidoAbrir = 1;
       }
       return;
     } }
@@ -3400,6 +3413,7 @@ const char *home_arte(int i) { return (nBd && i >= 0 && i < nBd) ? bd[i] : NULL;
 // Consome o pedido de abrir: quem le, zera. Assim o OK vale uma vez so, mesmo
 // que o quadro demore.
 int home_pediu_abrir(void) { int v = pedidoAbrir; pedidoAbrir = 0; return v; }
+int home_pediu_tocar(void) { int v = pedidoTocar; pedidoTocar = 0; return v; }
 
 // Consome o pedido de abrir o menu lateral: quem le, zera.
 int home_pediu_menu(void) { int v = pedidoMenu; pedidoMenu = 0; return v; }

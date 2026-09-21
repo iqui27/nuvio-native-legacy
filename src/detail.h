@@ -28,6 +28,7 @@ int  detail_indice(void);
 // Temporada e episodio em foco (1 = ha episodio; 0 = titulo sem episodios).
 int  detail_ep_foco(int *temporada, int *episodio);
 int  detail_pediu_reproduzir(void);   // consome o pedido
+void detail_pedir_reproduzir(void);   // arma o pedido (OK no card de retomada)
 
 // Indice do titulo que a tela pediu para ABRIR no lugar do atual, ou -1.
 // Consome o pedido. Nasce de dois lugares: um credito na filmografia de um ator

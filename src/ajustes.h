@@ -119,6 +119,7 @@ int   ajustes_descobrir_na_busca(void); // searchDiscoverEnabled (derivado)
 // respondeu. Ver a nota em main.c.
 int   ajustes_4k(void);
 int   ajustes_cw_ligado(void);          // continueWatchingEnabled
+int   ajustes_cw_ok_toca(void);         // OK no card: 1 = toca direto (cwOkLocal)
 int   ajustes_cw_estilo(void);          // 0 card, 1 largo (wide), 2 poster
 int   ajustes_cw_thumb_episodio(void);  // useEpisodeThumbnailsInCw
 // 0 = as duas fontes (conta primeiro, Trakt completando), 1 = so a conta

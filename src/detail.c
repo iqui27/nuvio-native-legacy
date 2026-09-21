@@ -4724,6 +4724,10 @@ void detail_desenhar(Uint32 agora) {
 
 int detail_indice(void) { return idx; }
 int detail_pediu_reproduzir(void) { int v = pedReproduzir; pedReproduzir = 0; return v; }
+// Pedido de reproducao vindo de FORA da tela (OK no card de "Continuar
+// assistindo", issue #93): o quadro seguinte cai no mesmo ramo de
+// detail_pediu_reproduzir do app.c, com a pagina ja aberta por baixo.
+void detail_pedir_reproduzir(void) { pedReproduzir = 1; }
 int detail_pediu_abrir(void) { int v = pedAbrir; pedAbrir = -1; return v; }
 int detail_pediu_assistido(void) { int v = pedAssistido; pedAssistido = 0; return v; }
 int detail_pediu_marcar(void)     { int v = pedMarcar;     pedMarcar = 0;     return v; }
