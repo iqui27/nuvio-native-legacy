@@ -199,6 +199,14 @@ const char *artehero_url_logo_larg(const char *logo, float larg) {
   if (qualidadeImg == 2) tam = "original";
   else tam = qualidadeImg == 0 ? "w500" : "w1280";
   if (!logo || !logo[0]) return logo;
+  // SVG NAO DECODIFICA. Item com logo .svg pode ja estar gravado no cache do
+  // catalogo (entrado antes do filtro da descoberta); devolver a url faria o
+  // desenho pedir uma textura que morre em "resposta nao e imagem" e fica
+  // FALHOU para sempre — e enquanto isso a caixa do logo ficava vazia em vez
+  // de cair no nome escrito, porque para quem desenha "svg" e "carregando"
+  // sao indistinguiveis. NULL devolve o fallback de sempre.
+  { size_t n = strlen(logo);
+    if (n > 4 && !strcmp(logo + n - 4, ".svg")) return NULL; }
   p = strstr(logo, "/t/p/");
   if (!p) return logo;                       // metahub, arquivo local, etc.
   nome = strchr(p + 5, '/');                 // pula o tamanho que veio

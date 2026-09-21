@@ -150,6 +150,14 @@ static const char *ate(const char *ini, const char *fim, const char *agulha) {
   return NULL;
 }
 
+// O decodificador de textura so trabalha com raster (png/jpg/webp/gif); um
+// caminho .svg baixa e morre em "resposta nao e imagem". Sufixo basta: TMDB
+// e os addons mandam o nome do arquivo limpo, sem query.
+static int ehSvg(const char *s) {
+  size_t n = s ? strlen(s) : 0;
+  return n > 4 && !strcmp(s + n - 4, ".svg");
+}
+
 // Primeiro provedor do array `chave` dentro de [ini,fim): nome e logo no
 // formato w92 do TMDB. flatrate/rent/buy sao arrays de provedores; o primeiro
 // e o principal na pratica (o TMDB ordena por relevancia local).
@@ -162,7 +170,8 @@ static int provedorEntre(const char *ini, const char *fim, const char *chave,
   if (fi > fim) fi = fim;
   char caminho[128] = "";
   if (!js_texto(item, fi, "provider_name", nome, nNome)) return 0;
-  if (js_texto(item, fi, "logo_path", caminho, sizeof caminho) && caminho[0] == '/')
+  if (js_texto(item, fi, "logo_path", caminho, sizeof caminho) &&
+      caminho[0] == '/' && !ehSvg(caminho))
     snprintf(logo, nLogo, "https://image.tmdb.org/t/p/w92%s", caminho);
   return 1;
 }
@@ -236,6 +245,11 @@ static void fotosDoElenco(CatItem *d, const char *imdbSerie, int serie) {
         // images.logos[]: prefere o do idioma configurado; na falta, o sem
         // idioma (iso_639_1 null le como "") ou o ingles. Vazio nao substitui
         // — mesma regra do titulo, um logo que nao veio nao apaga o atual.
+        // SVG TAMBEM NAO SUBSTITUI: o TMDB tem logos em .svg e o
+        // decodificador so trabalha com raster — um file_path svg gravado em
+        // d->logo vira "resposta nao e imagem" no tex e o titulo fica sem a
+        // arte para sempre (o FALHOU e lembrado). Visto no log da TV em
+        // 21/09 com /f91b8uWsSaeGRYCj8k73uIFj9pu.svg.
         const char *im = strstr(corpo, "\"images\"");
         const char *imObj = im ? strchr(im, '{') : NULL;
         const char *imFim = imObj ? js_fim(imObj) : NULL;
@@ -248,7 +262,7 @@ static void fotosDoElenco(CatItem *d, const char *imdbSerie, int serie) {
           char iso[8] = "", fp[160] = "";
           js_texto(p, f, "iso_639_1", iso, sizeof iso);
           js_texto(p, f, "file_path", fp, sizeof fp);
-          if (fp[0] == '/') {
+          if (fp[0] == '/' && !ehSvg(fp)) {
             if      (!strcmp(iso, base)) snprintf(local,  sizeof local,  "%s", fp);
             else if (!iso[0] && !neutro[0]) snprintf(neutro, sizeof neutro, "%s", fp);
             else if (!strcmp(iso, "en") && !en[0]) snprintf(en, sizeof en, "%s", fp);
@@ -259,6 +273,10 @@ static void fotosDoElenco(CatItem *d, const char *imdbSerie, int serie) {
           if (esc[0])
             snprintf(d->logo, sizeof d->logo,
                      "https://image.tmdb.org/t/p/w500%s", esc); }
+        // LIMPA O QUE JA ESTAVA ENVENENADO: item do cache do catalogo pode ter
+        // entrado com logo .svg (desta funcao antes do filtro, ou de um addon
+        // que mande svg em `logo` — ver deMeta). Sem uso possivel, fora.
+        if (ehSvg(d->logo)) d->logo[0] = 0;
       }
       free(corpo);
     }
@@ -682,6 +700,10 @@ static int deMeta(const char *ini, const char *fim, const char *tipo, CatItem *d
   // perguntou por que. Sem logo, o hero escreve o NOME em texto (ver home.c),
   // que e o comportamento certo e ja existia — so nao era alcancado.
   if (d->logo[0] && !strcmp(d->logo, d->poster)) d->logo[0] = 0;
+  // LOGO EM SVG TAMBEM NAO ENTRA — o decodificador nao rasteriza vetor, e o
+  // FALHOU gravado no tex deixava o titulo sem arte para sempre. Sem logo o
+  // hero escreve o nome, que e o fallback certo e ja existente.
+  if (ehSvg(d->logo)) d->logo[0] = 0;
   // O TMDB serve o backdrop em /original/, que e 3840x2160. O download nem e o
   // problema (268 KB contra 201 KB do w1280) — o problema e o DECODIFICADO:
   // 8,3 MP viram 33 MB em RAM, mais outros 33 MB na conversao de formato, antes
