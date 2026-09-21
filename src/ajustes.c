@@ -12,6 +12,7 @@
 // (js/ui/screens/settings/settingsScreen.js), inclusive os rotulos em portugues
 // lidos da tela rodando.
 #include "ajustes.h"
+#include "dados.h"
 #include "stalker.h"
 #include "xtream.h"
 #include "teclado.h"
@@ -1142,6 +1143,14 @@ static void gravar(void) {
   }
   fclose(f);
   rename(tmp, caminho);
+  // SAMSUNG (#85, 21/09/2026): o arquivo fica no IDBFS, e o IDBFS so vai ao
+  // IndexedDB quando alguem marca o sistema de arquivos como sujo. Este
+  // gravador escreve por fora de dados_gravar e nunca marcava: qualquer
+  // ajuste local (borda do cartaz, tamanho do poster, profundidade, cor de
+  // destaque, fonte ao reproduzir) sobrevivia so ate a proxima descarga que
+  // OUTRO modulo pedisse — e num app que so navegou, ate o proximo arranque,
+  // onde voltava ao padrao. Na LG o disco e real e nada disto acontecia.
+  dados_marcar_sujo(0);
 }
 
 

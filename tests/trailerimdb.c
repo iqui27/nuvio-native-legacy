@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 char *dados_caminho(char *dst, unsigned tam, const char *nome) { (void)dst; (void)tam; (void)nome; return NULL; }
+void dados_marcar_sujo(int leve) { (void)leve; }
 const char *dados_dir(void) { return NULL; }
 int qualidade = 0;
 int ajustes_trailer_qualidade(void) { return qualidade; }

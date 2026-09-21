@@ -76,6 +76,10 @@ const char *tex_arquivo(const char *url);
 // Proporcao (w/h) da textura ja carregada; 0 se ainda nao esta pronta.
 // Necessaria para o "cover" do shader — sem ela a arte estica.
 float tex_aspecto(const char *caminho);
+// Largura da IMAGEM DE ORIGEM (o arquivo, antes de reduzir), 0 se desconhecida
+// ou ainda nao decodificada. Serve para recusar uma arte pequena demais para o
+// lugar (still de episodio de 400 px esticado no destaque, #85).
+int   tex_largura_fonte(const char *caminho);
 
 // ESTA ARTE JA FALHOU? 1 quando o cache tentou e nao conseguiu (404, corpo
 // vazio, formato que nenhum leitor aceita).

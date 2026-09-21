@@ -563,7 +563,14 @@ static const char *arte_por_formato(const CatItem *item, int deitado) {
 // uma vez e sem piscar.
 static const char *arte_hero_do_item(const CatItem *item) {
   const char *ep = artehero_url_episodio(item);
-  if (ep && !tex_falhou(ep)) return ep;
+  // STILL PEQUENO NAO VAI AO DESTAQUE (#85, pokazideia: "backdrop pixelado
+  // em alguns titulos de Continuar assistindo"). O metahub serve o still no
+  // tamanho que a fonte tiver, e para varios episodios isso e 400 px — a
+  // 1920 vira mosaico. Abaixo de 900 px de origem, o fundo do titulo.
+  if (ep && !tex_falhou(ep)) {
+    int w = tex_largura_fonte(ep);
+    if (w == 0 || w >= 900) return ep;
+  }
   return artehero_url(item);
 }
 

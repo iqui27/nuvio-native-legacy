@@ -93,6 +93,7 @@ static void gravarDisco(const Entrada *e) {
   fprintf(f, "%ld %s\n", e->expira, e->nome);
   for (i = 0; i < e->n; i++) fprintf(f, "%d %s\n", e->alt[i], e->url[i]);
   fclose(f);
+  dados_marcar_sujo(1);   // IDBFS (Samsung): cache re-obtivel, descarga leve
 }
 
 static int valido(const Entrada *e) {

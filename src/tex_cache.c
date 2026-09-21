@@ -2109,6 +2109,17 @@ int tex_falhou(const char *caminho) {
   return falhou;
 }
 
+int tex_largura_fonte(const char *caminho) {
+  int w = 0, i;
+  unsigned long h;
+  if (!caminho || !*caminho) return 0;
+  h = hashCaminho(caminho);
+  BUSCA_MEDIDA(i, caminho, h);
+  if (i >= 0 && itens[i].tex) w = itens[i].fonteW > 0 ? itens[i].fonteW : itens[i].w;
+  SDL_UnlockMutex(mtx);
+  return w;
+}
+
 float tex_aspecto(const char *caminho) {
   if (!caminho || !*caminho) return 0.0f;
   float a = 0.0f;

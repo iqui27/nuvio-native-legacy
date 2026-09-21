@@ -131,7 +131,6 @@ static Uint32 canalFonteDesde;            // quando a fonte atual foi pedida
 // morta. Baixar mais arrisca trocar de fonte num engasgo que ia passar.
 #define CANAL_TRAVA_MS 12000
 #define CANAL_ABRE_TETO_MS 45000   // com buffer cheio e sem quadro; ver o watchdog
-static Uint32 canalFontePrazo = CANAL_FONTE_PRAZO_MS;
 
 static PerfilDados perfilPendente;
 static int perfilSucesso;
@@ -186,6 +185,26 @@ static void *escolherFonte(void *u) {
   // provedor e falham juntas quando o arquivo nao esta em cache. Testar poucas
   // devolvia "nenhuma fonte serve" com fontes boas logo adiante.
   fonteEscolhida = stream_primeira_boa(8);
+  return NULL;
+}
+// O MESMO PARA CANAL, fora do fio de desenho. stream_canal_primeira_viva
+// cria os fios da sonda e os JOINTA — e era chamada direto do laco de
+// desenho: cada canal aberto no guia custava ate CANAL_PRAZO_S (3 s) de tela
+// parada, medido na C9 do dono (21/09/2026: `upd=3012` em todo canal, "o
+// guia fica travando"). O prazo do watchdog e decidido aqui tambem, com a
+// classe da escolhida, e lido pelo laco quando fonteEscolhida deixa de ser -2.
+static Uint32 canalFontePrazo;
+static void *escolherFonteCanal(void *u) {
+  int e;
+  (void)u;
+  e = stream_canal_primeira_viva(8);
+  canalFontePrazo = stream_canal_classe_escolhida() == 3
+                  ? CANAL_FONTE_PRAZO_MUDA_MS : CANAL_FONTE_PRAZO_MS;
+  // -1 so acontece quando TODAS responderam dizendo que nao tem segmento.
+  // Ai nao ha o que tentar, mas a primeira da lista com o watchdog ainda e
+  // melhor que uma tela de erro sem nenhuma tentativa.
+  if (e < 0) e = stream_automatico();
+  fonteEscolhida = e;
   return NULL;
 }
 #include "catalogo.h"
@@ -1241,16 +1260,12 @@ void app_atualizar(float dt, Uint32 agora) {
         // caminhos, e sair daqui cedo pularia o resto do quadro.
         fonteEscolhida = resolverCanalStalker();
         canalFontePrazo = CANAL_FONTE_PRAZO_MS;
+      } else if (pthread_create(&fioFonte, NULL, escolherFonteCanal, NULL) == 0) {
+        // Em fio proprio (ver escolherFonteCanal); o laco espera -2 mudar.
+        fioFonteVivo = 1;
       } else {
-        fonteEscolhida = stream_canal_primeira_viva(8);
-        // 3 = muda (ver streams.h): entrou por falta de opcao, entao o watchdog
-        // dela e curto.
-        canalFontePrazo = stream_canal_classe_escolhida() == 3
-                        ? CANAL_FONTE_PRAZO_MUDA_MS : CANAL_FONTE_PRAZO_MS;
-        // -1 so acontece quando TODAS responderam dizendo que nao tem segmento.
-        // Ai nao ha o que tentar, mas a primeira da lista com o watchdog ainda e
-        // melhor que uma tela de erro sem nenhuma tentativa.
-        if (fonteEscolhida < 0) fonteEscolhida = stream_automatico();
+        fonteEscolhida = stream_automatico();
+        canalFontePrazo = CANAL_FONTE_PRAZO_MS;
       }
       canalFonteDesde = SDL_GetTicks();
     } else {

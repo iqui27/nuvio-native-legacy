@@ -7,6 +7,7 @@
 // sem ele trailerapple_url devolve NULL de proposito.
 #include <stdlib.h>
 char *dados_caminho(char *dst, unsigned tam, const char *nome) { snprintf(dst, tam, "/tmp/nuvio-trailerapple-teste/%s", nome); return dst; }
+void dados_marcar_sujo(int leve) { (void)leve; }
 const char *dados_dir(void) { return "/tmp/nuvio-trailerapple-teste"; }
 int qualidade = 0;
 int ajustes_trailer_qualidade(void) { return qualidade; }

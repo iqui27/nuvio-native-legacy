@@ -25,6 +25,7 @@
 //      esta pausado. Pausado sem controles o usuario fica olhando um quadro
 //      congelado sem saber o que houve.
 #include "player.h"
+#include "dados.h"
 #include "trailer.h"
 #include "linguas.h"
 #include "idioma.h"
@@ -556,6 +557,7 @@ static void prefsGravar(void) {
   fprintf(f, "leg_opacidade %d\n", legEstilo.opacidade);
   fprintf(f, "leg_familia %d\n", legEstilo.familia);
   fclose(f);
+  dados_marcar_sujo(0);   // IDBFS (Samsung): ver o gravador de ajustes.c
 }
 
 // Lidos pela folha de faixas, que e quem desenha os controles.
