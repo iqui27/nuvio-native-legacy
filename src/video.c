@@ -204,6 +204,7 @@ typedef int (*Filtro)(LSHandle *, LSMessage *, void *);
 static char ERRO[256];
 
 static int         (*lsRegister)(const char *, LSHandle **, void *);
+static int         (*lsUnregister)(LSHandle *, void *);
 static int         (*lsAttach)(LSHandle *, void *, void *);
 static int         (*lsCall)(LSHandle *, const char *, const char *, Filtro, void *, unsigned long *, void *);
 static const char *(*lsPayload)(LSMessage *);
@@ -1047,6 +1048,9 @@ int video_iniciar(void) {
   SIM(L, lsAttach,   "LSGmainAttach");
   SIM(L, lsCall,     "LSCall");
   SIM(L, lsPayload,  "LSMessageGetPayload");
+  // Soft como acbJanelaCustom: so e usado na limpeza de um registro a meio
+  // caminho; faltar numa lib nao pode custar o video inteiro.
+  *(void **)(&lsUnregister) = dlsym(L, "LSUnregister");
   SIM(G, loopNovo,   "g_main_loop_new");
   SIM(G, loopRodar,  "g_main_loop_run");
   SIM(G, loopParar,  "g_main_loop_quit");
@@ -1080,7 +1084,14 @@ int video_iniciar(void) {
     printf("[video] LSRegister recusado\n"); return 0;
   }
   laco = loopNovo(NULL, 0);
-  if (!lsAttach(bus, laco, ERRO)) { printf("[video] attach falhou\n"); return 0; }
+  if (!lsAttach(bus, laco, ERRO)) {
+    printf("[video] attach falhou\n");
+    // Devolve o nome ao hub: sem isto o registro fica preso e a PROXIMA
+    // tentativa de video_iniciar cai no "LSRegister recusado" para sempre.
+    if (lsUnregister) lsUnregister(bus, ERRO);
+    bus = NULL;
+    return 0;
+  }
   // Laco proprio: o LS2 exige um GMainLoop girando, e girar isso no laco de
   // desenho custaria quadros. As respostas chegam neste fio e so mexem em
   // variaveis simples, lidas pelo desenho sem trava.

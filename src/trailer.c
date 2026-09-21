@@ -131,8 +131,19 @@ int trailer_suportado(void) {
 #ifdef __APPLE__
   return 0;
 #else
+  // O FRACASSO NAO TRAVA. O deploy mata o processo e relanca em seguida, e o
+  // hub LS2 demora um instante para soltar o nome do registro anterior — um
+  // video_iniciar() nessa janela volta com "LSRegister recusado" mesmo estando
+  // tudo certo. Guardar esse resultado condenava o trailer pela sessao
+  // inteira; so o SUCESSO e definitivo. O recuo de 3 s impede o LSRegister de
+  // rodar a cada quadro enquanto o hub nao solta o nome.
   static int sabe = -1;
-  if (sabe < 0) sabe = video_iniciar() ? 1 : 0;
+  static Uint32 tentarEm = 0;
+  if (sabe == 1) return 1;
+  Uint32 agora = SDL_GetTicks();
+  if (agora < tentarEm) return 0;
+  tentarEm = agora + 3000;
+  sabe = video_iniciar() ? 1 : 0;
   return sabe;
 #endif
 }
