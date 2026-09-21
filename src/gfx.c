@@ -153,6 +153,10 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "                 - clamp((t-0.46)/0.30,0.0,1.0)*0.40\n"
   "                 - clamp((t-0.76)/0.24,0.0,1.0)*0.16;\n"
   "  ah *= step(vUv.x, 0.45);\n"
+  // uPar.x > 0.5 = SO AS RAMPAS, como veu com alpha: por cima do trailer que
+  // toca atras do canvas no lugar da arte (trailer.h). Mesma regra do
+  // GFX_DETALHE.
+  "  if (uPar.x > 0.5) { gl_FragColor = vec4(bg, clamp(ah + av - ah*av, 0.0, 1.0) * uCor.a); return; }\n"
   "  c = mix(c, bg, clamp(ah + av - ah*av, 0.0, 1.0));\n"
   "  gl_FragColor = vec4(c, uCor.a);\n"
   "}\n",
@@ -297,6 +301,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "                 - clamp((t-0.46)/0.30,0.0,1.0)*0.38\n"
   "                 - clamp((t-0.76)/0.24,0.0,1.0)*0.42;\n"
   "  ah *= step(vUv.x, 0.65);\n"
+  "  if (uPar.x > 0.5) { gl_FragColor = vec4(bg, clamp(ah + av - ah*av, 0.0, 1.0) * uCor.a); return; }\n"
   "  c = mix(c, bg, clamp(ah + av - ah*av, 0.0, 1.0));\n"
   "  gl_FragColor = vec4(c, uCor.a);\n"
   "}\n",

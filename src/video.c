@@ -830,9 +830,20 @@ static int aoEvento(LSHandle *h, LSMessage *m, void *u) {
     tocando = 1;
     if (acb && midia[0]) {
       long tarefa = 0;
-      acbJanela(acb, janX, janY, janW, janH,
-                (janX == 0 && janY == 0 && janW == 1920 && janH == 1080), &tarefa);
-      printf("[video] janela reaplicada com o fluxo ja tocando\n"); fflush(stdout);
+      // COM RECORTE DE FONTE, reaplicar o recorte — e nao a janela lisa. A
+      // janela lisa por cima do recorte devolvia o quadro inteiro: o trailer
+      // (trailer.c) pedia o zoom antes do `playing`, esta linha desfazia, e a
+      // tarja preta voltava (dono, 20/09/2026: "mas ta com a barra").
+      if (fonX >= 0 && acbJanelaCustom) {
+        acbJanelaCustom(acb, fonX, fonY, fonW, fonH, dstX, dstY, dstW, dstH,
+                        (dstX == 0 && dstY == 0 && dstW == 1920 && dstH == 1080), &tarefa);
+        printf("[video] recorte reaplicado com o fluxo ja tocando\n");
+      } else {
+        acbJanela(acb, janX, janY, janW, janH,
+                  (janX == 0 && janY == 0 && janW == 1920 && janH == 1080), &tarefa);
+        printf("[video] janela reaplicada com o fluxo ja tocando\n");
+      }
+      fflush(stdout);
     }
   }
   if (strstr(p, "paused")) {

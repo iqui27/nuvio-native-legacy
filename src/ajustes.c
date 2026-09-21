@@ -98,7 +98,7 @@ typedef enum {
   AJ_QUALIDADE, AJ_DV, AJ_ATMOS, AJ_LEG_LINGUA, AJ_AUD_LINGUA,
   AJ_PAUSA_OVERLAY, AJ_FONTE_MANUAL,
   // Layout da Home
-  AJ_LANDSCAPE, AJ_HERO_CHEIO,
+  AJ_LANDSCAPE, AJ_HERO_CHEIO, AJ_HERO_TRAILER,
   // Fileiras da Home
   AJ_FIL_LIMITE, AJ_FIL_ORDEM,
   // Conteudo da Home
@@ -110,7 +110,7 @@ typedef enum {
   AJ_CW_FURTHEST, AJ_CW_NAO_EXIBIDOS, AJ_CW_ORDEM,
   // Pagina de detalhe
   AJ_DET_BLUR_NAO_VISTOS, AJ_DET_TRAILER, AJ_DET_META_EXT, AJ_DET_DATA_CHEIA,
-  AJ_DET_VEU, AJ_DET_TRAILER_AUTO,
+  AJ_DET_VEU, AJ_DET_TRAILER_AUTO, AJ_TRAILER_QUAL,
   // Foco no poster
   AJ_EXPANDIR, AJ_EXPANDIR_ATRASO, AJ_NAV_RAPIDA, AJ_BORDA_FOCO,
   // Profundidade
@@ -154,6 +154,7 @@ static const int   TEX_MB_DE[]   = { 0, 96, 160, 240, 300, 400, 512 };
 // faz: "Alta" e mais pixel de arte e mais memoria; "Baixa" e arte que chega
 // antes e cabe em TV com pouca RAM.
 static const char *V_QUALIMG[]   = { "Baixa", "Padrão", "Alta" };
+static const char *V_QUALTRAIL[] = { "Máxima", "1080p", "720p", "480p" };
 static const char *V_IDIOMA[]    = { "Português", "English" };
 static const char *V_ANIM[]      = { "Completas", "Reduzidas" };
 // A ORDEM IMPORTA: o indice 0 e o padrao (ver a lista de padroes, que e
@@ -322,6 +323,10 @@ static const Opcao OPCOES[AJ_N] = {
 
   ESC("Pôsteres horizontais",       V_LIGA, 2),   // modernLandscapePostersEnabled
   ESC("Fundo em tela cheia",        V_LIGA, 2),   // modernHeroFullScreenBackdropEnabled
+  // Trailer mudo no destaque do topo, alguns segundos depois de o foco parar
+  // nele (dono, 20/09/2026: "coloca para tocar no hero tb", "nos ajustes o de
+  // tocar no hero separadamente"). Separado do da pagina de titulo.
+  ESC("Trailer no destaque",        V_LIGA, 2),
 
   // O limite NAO tem valor proprio em valor[]: ele mora em fileiras.c, que e
   // quem grava fileirasui.txt e quem a descoberta e a home consultam. A linha
@@ -363,6 +368,9 @@ static const Opcao OPCOES[AJ_N] = {
   // Trailer mudo no lugar da arte, depois de a pagina assentar (dono,
   // 20/09/2026). Samsung: embed do YouTube; LG: MP4 do IMDb (trailer.h).
   ESC("Trailer automático",         V_LIGA, 2),
+  // Definicao do MP4 do IMDb (trailerimdb.h): "Máxima" pega a maior que o
+  // IMDb tem (1080p hoje); as outras sao tetos.
+  ESC("Qualidade do trailer",       V_QUALTRAIL, 4),
 
   ESC("Expandir pôster ao focar",   V_LIGA, 2),   // focusedPosterBackdropExpandEnabled
   NUM("Atraso da expansão",         0, 10, 1, " s"), // ...ExpandDelaySeconds
@@ -464,7 +472,7 @@ static const char *CHAVE[] = {
   // conta (o app web nao expoe esta escolha), entao o blob simplesmente nao
   // traz a chave e o valor local fica de pe.
   "escolherFonteManual",
-  "modernLandscapePostersEnabled", "modernHeroFullScreenBackdropEnabled",
+  "modernLandscapePostersEnabled", "modernHeroFullScreenBackdropEnabled", "trailerHero",
   // "-": local, nao vem da conta e nao vai para ajustes.txt. Os dois vivem em
   // fileirasui.txt (fileiras.c) e a conta nao tem chave equivalente — o teto do
   // web para este runtime e uma CONSTANTE (HOME_MAX_ROWS_LEGACY_TV), nao uma
@@ -484,7 +492,7 @@ static const char *CHAVE[] = {
   "useEpisodeThumbnailsInCw", "blurContinueWatchingNextUp",
   "nextUpFromFurthestEpisode", "showUnairedNextUp", "continueWatchingSortMode",
   "blurUnwatchedEpisodes", "detailPageTrailerButtonEnabled",
-  "preferExternalMetaAddonDetail", "showFullReleaseDate", "detalheVeu", "trailerAuto",
+  "preferExternalMetaAddonDetail", "showFullReleaseDate", "detalheVeu", "trailerAuto", "trailerQualidade",
   "focusedPosterBackdropExpandEnabled", "focusedPosterBackdropExpandDelaySeconds",
   "fastHorizontalNavigationEnabled",
   "bordaFocoCartaz",
@@ -691,6 +699,7 @@ static int valor[AJ_N] = {
 
   0,                /* posteres deitados: LIGADO (perfil do dono; fabrica: desligado) */
   0,                /* fundo em tela cheia: LIGADO (perfil; fabrica: desligado) */
+  0,                /* trailer no destaque: ligado */
 
   FIL_LIMITE_PADRAO,/* limite de fileiras: 7, o pedido do dono (espelho de fileiras.c) */
   0,                /* ordenar fileiras: acao */
@@ -725,7 +734,8 @@ static int valor[AJ_N] = {
   0,                /* metadados externos: ligado */
   0,                /* data completa: ligada */
   100,              /* escurecimento do fundo do titulo: vinheta inteira */
-  0,                /* trailer automatico: ligado (so Samsung) */
+  0,                /* trailer automatico na pagina de titulo: ligado */
+  0,                /* qualidade do trailer: maxima */
 
   0,                /* expandir poster ao focar: ligado (DEFAULT do web) */
   3,                /* atraso: 3s */
@@ -894,6 +904,9 @@ void ajustes_definir_salvos_no_trakt(int noTrakt) {
 int ajustes_data_completa(void)       { return lig(AJ_DET_DATA_CHEIA); }
 float ajustes_detalhe_veu(void)       { int v = valor[AJ_DET_VEU]; return (v < 0 ? 0 : v > 100 ? 100 : v) / 100.0f; }
 int   ajustes_trailer_auto(void)      { return lig(AJ_DET_TRAILER_AUTO); }
+int   ajustes_trailer_hero(void)      { return lig(AJ_HERO_TRAILER); }
+// Teto de definicao do trailer: 0 = a maior que houver.
+int   ajustes_trailer_qualidade(void) { static const int t[] = { 0, 1080, 720, 480 }; int v = valor[AJ_TRAILER_QUAL]; return (v >= 0 && v < 4) ? t[v] : 0; }
 int  ajustes_envio_auto(void)         { return lig(AJ_ENVIO_AUTO); }
 void ajustes_definir_envio_auto(int ligado) { valor[AJ_ENVIO_AUTO] = ligado ? 0 : 1; gravar(); }
 int ajustes_notas_home(void)          { return valor[AJ_NOTAS_HOME] == 0; }
@@ -1528,6 +1541,7 @@ static const char *ajudaOpcao(int op) {
     // --- Home
     case AJ_LANDSCAPE: return "Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.";
     case AJ_HERO_CHEIO: return "O destaque do topo ocupa a tela inteira atrás das fileiras, em vez de ficar num bloco.";
+    case AJ_HERO_TRAILER: return "Com o foco parado no destaque do topo, o trailer do título toca sem som no lugar da arte. Mover o foco volta para a arte.";
     case AJ_FIL_LIMITE: return "Quantas fileiras a Home monta. Menos fileiras também significam menos catálogos pedidos pela rede, e não fileiras invisíveis.";
     case AJ_FIL_ORDEM: return "Abre a lista de fileiras para reordenar, ligar, desligar e escolher o card de cada uma. É lá que dá para ver de onde cada fileira vem.";
     case AJ_RAIL: return "A barra de navegação da esquerda fica sempre aberta, ou recolhida até você ir até ela.";
@@ -1559,6 +1573,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_DET_DATA_CHEIA: return "Escreve a data de estreia por extenso em vez de só o ano.";
     case AJ_DET_VEU: return "Quanto a vinheta escura cobre a arte na tela do título. Cem por cento é o padrão; zero mostra a arte limpa — o texto pode ficar difícil de ler sobre cenas claras.";
     case AJ_DET_TRAILER_AUTO: return "Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.";
+    case AJ_TRAILER_QUAL: return "Definição do vídeo do trailer. Máxima usa a maior que existir para o título; as outras são um teto, para conexões mais lentas.";
 
     // --- Posteres e cards
     case AJ_EXPANDIR: return "O cartaz em foco cresce e abre a arte deitada atrás dele depois de um instante parado.";
@@ -2350,7 +2365,7 @@ static const char *iconeOpcao(int op) {
     case AJ_ESPACO: case AJ_TEX_MB: return "aspecto";
     case AJ_DET_TRAILER: case AJ_TMDB_TRAILERS: case AJ_PROF_TRAILERS: return "trailer";
     case AJ_DET_VEU: return "aspecto";
-    case AJ_DET_TRAILER_AUTO: return "trailer";
+    case AJ_DET_TRAILER_AUTO: case AJ_TRAILER_QUAL: case AJ_HERO_TRAILER: return "trailer";
     case AJ_DET_BLUR_NAO_VISTOS: return "oculto";
     default: break;
   }

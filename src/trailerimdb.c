@@ -2,6 +2,7 @@
 #include "rede.h"
 #include "js.h"
 #include "dados.h"
+#include "ajustes.h"
 #include <SDL2/SDL.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -11,9 +12,14 @@
 #include <sys/stat.h>
 
 #define TR_MAX 32
+// Ate quatro definicoes por titulo (o IMDb serve 1080p, 720p, 480p e SD);
+// quem le escolhe pelo teto dos Ajustes.
+#define DEF_MAX 4
 typedef struct {
   char imdb[16];
-  char url[1024];
+  int  n;
+  int  alt[DEF_MAX];
+  char url[DEF_MAX][1024];
   char nome[64];
   long expira;        // epoch; 0 = sem trailer (resposta negativa)
   int  emVoo, respondeu;
@@ -54,26 +60,38 @@ static void caminhoDisco(const char *imdb, char *dst, unsigned tam) {
   snprintf(dst, tam, "%s/%s", pasta, imdb);
 }
 
+// Formato: linha 1 "expira nome", depois uma linha "altura url" por definicao.
 static int lerDisco(Entrada *e) {
   char c[600], linha[1200];
   FILE *f;
   caminhoDisco(e->imdb, c, sizeof c);
   if (!c[0] || !(f = fopen(c, "r"))) return 0;
-  // linha 1: url (ou "-" para "sem trailer" com validade de 1 dia), linha 2: nome, linha 3: expira
   if (!fgets(linha, sizeof linha, f)) { fclose(f); return 0; }
   linha[strcspn(linha, "\r\n")] = 0;
-  snprintf(e->url, sizeof e->url, "%s", strcmp(linha, "-") ? linha : "");
-  if (fgets(linha, sizeof linha, f)) { linha[strcspn(linha, "\r\n")] = 0; snprintf(e->nome, sizeof e->nome, "%s", linha); }
-  if (fgets(linha, sizeof linha, f)) e->expira = atol(linha);
+  e->expira = atol(linha);
+  { const char *sp = strchr(linha, ' ');
+    snprintf(e->nome, sizeof e->nome, "%s", sp ? sp + 1 : ""); }
+  e->n = 0;
+  while (e->n < DEF_MAX && fgets(linha, sizeof linha, f)) {
+    const char *sp;
+    linha[strcspn(linha, "\r\n")] = 0;
+    sp = strchr(linha, ' ');
+    if (!sp || atoi(linha) <= 0) continue;
+    e->alt[e->n] = atoi(linha);
+    snprintf(e->url[e->n], sizeof e->url[e->n], "%s", sp + 1);
+    e->n++;
+  }
   fclose(f);
   return 1;
 }
 static void gravarDisco(const Entrada *e) {
   char c[600];
   FILE *f;
+  int i;
   caminhoDisco(e->imdb, c, sizeof c);
   if (!c[0] || !(f = fopen(c, "w"))) return;
-  fprintf(f, "%s\n%s\n%ld\n", e->url[0] ? e->url : "-", e->nome, e->expira);
+  fprintf(f, "%ld %s\n", e->expira, e->nome);
+  for (i = 0; i < e->n; i++) fprintf(f, "%d %s\n", e->alt[i], e->url[i]);
   fclose(f);
 }
 
@@ -82,38 +100,44 @@ static int valido(const Entrada *e) {
   return e->respondeu && e->expira > (long)time(NULL) + 3600;
 }
 
-// Escolhe o MP4 de maior definicao ate 1080p dentro de playbackURLs.
-static int escolher(const char *json, char *url, unsigned tamUrl, char *nome, unsigned tamNome) {
+// Recolhe todos os MP4 de playbackURLs (uma URL por definicao) em `e`, em
+// ordem decrescente de altura. Devolve a maior altura, 0 sem MP4.
+static int escolher(const char *json, Entrada *e) {
   const char *no = strstr(json, "\"node\"");
   const char *fim = json + strlen(json);
   const char *p;
-  int melhor = 0;
-  url[0] = 0;
+  e->n = 0;
   if (!no) return 0;
   { const char *n2 = strstr(no, "\"name\"");
-    if (n2 && n2 < fim) js_texto(n2, fim, "value", nome, tamNome); }
+    if (n2 && n2 < fim) js_texto(n2, fim, "value", e->nome, sizeof e->nome); }
   p = js_array(no, fim, "playbackURLs");
   for (; p; p = js_prox(js_fim(p))) {
     const char *pe = js_fim(p);
     char mime[16], def[16], u[1024];
-    int alt;
+    int alt, i, j;
     js_texto(p, pe, "videoMimeType", mime, sizeof mime);
     js_texto(p, pe, "videoDefinition", def, sizeof def);
     if (strcmp(mime, "MP4")) continue;
-    alt = atoi(def + (strncmp(def, "DEF_", 4) ? 0 : 4));
-    if (alt <= 0 || alt > 1080 || alt <= melhor) continue;
+    // "DEF_1080p", "DEF_720p", "DEF_480p"; "DEF_SD" conta como 360.
+    alt = !strcmp(def, "DEF_SD") ? 360 : atoi(def + (strncmp(def, "DEF_", 4) ? 0 : 4));
+    if (alt <= 0) continue;
     if (!js_texto(p, pe, "url", u, sizeof u)) continue;
-    // js_texto troca "\/" por "/"; a URL assinada tem "~" e "_", que passam.
-    snprintf(url, tamUrl, "%s", u);
-    melhor = alt;
+    for (i = 0; i < e->n && e->alt[i] > alt; i++) ;
+    if (i < e->n && e->alt[i] == alt) continue;
+    if (e->n >= DEF_MAX) { if (i >= DEF_MAX) continue; e->n = DEF_MAX - 1; }
+    for (j = e->n; j > i; j--) { e->alt[j] = e->alt[j - 1]; memcpy(e->url[j], e->url[j - 1], sizeof e->url[j]); }
+    e->alt[i] = alt;
+    snprintf(e->url[i], sizeof e->url[i], "%s", u);
+    e->n++;
   }
-  return melhor;
+  return e->n ? e->alt[0] : 0;
 }
 
 static void *buscar(void *arg) {
   char imdb[16];
-  char consulta[512], url[1024], nome[64] = "Trailer";
+  char consulta[512];
   char *corpo;
+  Entrada lida;
   static const char *const cabs[] = {
     "Accept: application/json",
     "Content-Type: application/json",
@@ -127,20 +151,22 @@ static void *buscar(void *arg) {
     "https://api.graphql.imdb.com/?query=%%7Btitle%%28id%%3A%%22%s%%22%%29%%7BprimaryVideos%%28first%%3A1%%29%%7Bedges%%7Bnode%%7Bname%%7Bvalue%%7DplaybackURLs%%7Burl%%20videoMimeType%%20videoDefinition%%7D%%7D%%7D%%7D%%7D%%7D",
     imdb);
   corpo = rede_baixar_com(consulta, 15, cabs);
-  url[0] = 0;
-  { int alt = corpo ? escolher(corpo, url, sizeof url, nome, sizeof nome) : 0;
-    printf("[trailer] imdb %s: %s%s\n", imdb,
-           !corpo ? "sem resposta" : alt ? "MP4 " : "sem trailer",
-           alt ? (alt >= 1080 ? "1080p" : "720p") : "");
+  memset(&lida, 0, sizeof lida);
+  snprintf(lida.nome, sizeof lida.nome, "Trailer");
+  { int alt = corpo ? escolher(corpo, &lida) : 0;
+    printf("[trailer] imdb %s: %s%dp (%d definicoes)\n", imdb,
+           !corpo ? "sem resposta " : alt ? "MP4 ate " : "sem trailer ", alt, lida.n);
     fflush(stdout); }
   trancar();
   e = reservar(imdb);
   e->emVoo = 0; e->respondeu = 1;
-  snprintf(e->url, sizeof e->url, "%s", url);
-  snprintf(e->nome, sizeof e->nome, "%s", nome);
+  e->n = lida.n;
+  memcpy(e->alt, lida.alt, sizeof e->alt);
+  memcpy(e->url, lida.url, sizeof e->url);
+  snprintf(e->nome, sizeof e->nome, "%s", lida.nome);
   // Sem resposta: nao grava (tenta de novo na proxima abertura). Sem trailer:
   // vale um dia. Com trailer: vale ate a assinatura vencer.
-  e->expira = !corpo ? 0 : url[0] ? expiraDe(url) : (long)time(NULL) + 86400;
+  e->expira = !corpo ? 0 : e->n ? expiraDe(e->url[0]) : (long)time(NULL) + 86400;
   if (corpo) gravarDisco(e);
   destrancar();
   free(corpo);
@@ -170,7 +196,14 @@ const char *trailerimdb_url(const char *imdb, const char **nome) {
   if (!imdb || !imdb[0]) return NULL;
   trancar();
   e = achar(imdb);
-  if (e && valido(e) && e->url[0]) { r = e->url; if (nome) *nome = e->nome; }
+  if (e && valido(e) && e->n) {
+    // O teto dos Ajustes: a maior definicao que nao passa dele; sem nenhuma
+    // abaixo do teto, a menor que ha.
+    int teto = ajustes_trailer_qualidade(), i, k = e->n - 1;
+    for (i = 0; i < e->n; i++) if (!teto || e->alt[i] <= teto) { k = i; break; }
+    r = e->url[k];
+    if (nome) *nome = e->nome;
+  }
   destrancar();
   return r;
 }

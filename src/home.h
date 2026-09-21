@@ -42,6 +42,9 @@ const char *home_arte(int i);
 const char *home_backdrop(int i);   // arte do titulo i do catalogo
 void home_evento(const SDL_Event *e);
 void home_atualizar(float dt, Uint32 agora);
+// Trailer no destaque: `topo` = 1 quando a home e o que esta na frente (sem
+// detalhe, player, painel, menu ou cartao por cima). app.c chama por quadro.
+void home_trailer_passo(int topo, float dt, Uint32 agora);
 void home_desenhar(Uint32 agora);
 
 // Onde a ARTE do hero foi desenhada no ultimo quadro. A tela de detalhe usa

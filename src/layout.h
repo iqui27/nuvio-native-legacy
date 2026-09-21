@@ -548,6 +548,9 @@
 // Quanto a pagina de titulo espera, assentada e no topo, antes de trocar a
 // arte pelo trailer mudo (trailer.h). Tempo de ler o titulo e a sinopse.
 #define NV_TRAILER_ESPERA_MS 2500
+// No destaque da home a espera e maior: o foco passa pelo hero a caminho das
+// fileiras, e trocar a arte por video a cada parada curta cansaria.
+#define NV_TRAILER_HERO_ESPERA_MS 4000
 // Ampliacao do trailer dentro do furo, em volta do centro. O player do YouTube
 // e 16:9 e a maioria dos trailers e 2.39:1: sem ampliar, o fundo ganha duas
 // tarjas pretas de 138 px. Dono (20/09/2026): "fill screen sem barras

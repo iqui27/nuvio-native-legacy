@@ -33,6 +33,7 @@
 #include "marco.h"
 #include <string.h>
 #include "home.h"
+#include "trailer.h"
 #include "detail.h"
 #include "menu.h"
 #include "busca.h"
@@ -1682,6 +1683,22 @@ void app_atualizar(float dt, Uint32 agora) {
     case TELA_AJUSTES:    ajustes_atualizar(dt, agora);    break;
     default:              home_atualizar(dt, agora);       break;
   }
+  // TRAILER NO DESTAQUE: so com a home na frente de tudo. A lista e a mesma
+  // ordem de app_evento — o que come tecla antes da home tambem esta na
+  // frente dela na tela.
+  home_trailer_passo(tela == TELA_HOME && homePronta && login_concluido() && perfilsel_concluido() &&
+                     !player_aberto() && !player_mini_ativo() && !detail_aberto() && !spainel_aberto() &&
+                     !menu_aberto() && !ctx_aberto() && !vertudo_aberta() && !avisos_aberto() &&
+                     !avisos_cartao_aberto() && !sintro_aberto() && !pipintro_aberto() &&
+                     !novidades_aberto() && !novidades11_aberto() && !novidades12_aberto() &&
+                     !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() &&
+                     !novidades133_aberto() && !novidades134_aberto() && !telemetria_aberto() &&
+                     !recintro_aberto() && !atualizacao_aberta() && !agendaviso_aberto() &&
+                     !recomenda_aberta() && !recenviar_aberto() && !faixas_aberta() &&
+                     !episodios_aberto() && !stream_folha_aberta() && !guia_overlay_aberta() &&
+                     !registro_aberto(),
+                     dt, agora);
+  trailer_atualizar(agora);
   perfil_atualizar(dt, agora);
   spainel_atualizar(dt, agora);
   recomenda_atualizar(dt, agora);

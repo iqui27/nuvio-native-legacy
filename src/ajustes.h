@@ -97,7 +97,9 @@ void  ajustes_definir_salvos_no_trakt(int noTrakt);
 int   ajustes_envio_auto(void);
 // Forca da vinheta do fundo do titulo, 0..1 (1 = a medida do web).
 float ajustes_detalhe_veu(void);
-int   ajustes_trailer_auto(void);   // trailer mudo no fundo da pagina de titulo (Samsung)
+int   ajustes_trailer_auto(void);      // trailer mudo no fundo da pagina de titulo
+int   ajustes_trailer_hero(void);      // trailer mudo no destaque da home
+int   ajustes_trailer_qualidade(void); // teto em linhas (1080/720/480); 0 = a maior
 void  ajustes_definir_envio_auto(int ligado);
 // homeImdbRatingsVisibility: 0 SHOW_ALL, 1 HIDE_ALL
 int   ajustes_notas_home(void);

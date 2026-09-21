@@ -46,6 +46,8 @@ float detail_progresso(void);
 #include <stdlib.h>
 #include <math.h>
 #include <ctype.h>
+#include "trailer.h"
+#include "trailerimdb.h"
 
 #define MAX_ARTE   64
 // 16, o teto do web para ESTE runtime: HOME_MAX_ROWS_LEGACY_TV em
@@ -279,6 +281,15 @@ static Uint32 heroTrocaEm = 0;
 //             quadro em que a textura fica pronta E o esvanecimento acabou.
 static float heroSai   = 0.0f;
 static float heroEntra = 1.0f;
+// TRAILER NO DESTAQUE (trailer.h; dono, 20/09/2026: "coloca para tocar no
+// hero tb"). Com o foco parado no hero e a arte assentada, espera
+// NV_TRAILER_HERO_ESPERA_MS e troca a arte pelo trailer mudo do titulo, no
+// mesmo retangulo. Mover o foco, sair da home ou abrir qualquer coisa por
+// cima (app.c diz, por `topo`) volta para a arte. Uma tentativa por titulo
+// por parada de foco: o trailer que acabou nao recomeca.
+static Uint32 heroTrailerDesde = 0;
+static int    heroTrailerItem = -1, heroTrailerTentado = 0;
+static float  heroTrailerFade = 0.0f;
 
 static void carregaDir(const char *dir, char destino[][512], int *n, const char *sub) {
   char caminho[512];
@@ -1784,7 +1795,11 @@ void home_atualizar(float dt, Uint32 agora) {
       if (heroDesejado != heroPendente) heroDesejadoEm = agora;
       heroDesejado = heroPendente;
     } else if (alvo < 0 && agora >= heroTrocaEm &&
-               (!focoHero || agora - heroUltTecla >= HOME_HERO_OCIO_MS)) {
+               (!focoHero || agora - heroUltTecla >= HOME_HERO_OCIO_MS) &&
+               // Com o trailer deste item tocando, o carrossel espera ele
+               // acabar: trocar de titulo no meio cortaria o video e
+               // recomecaria outro quatro segundos depois, sem parar.
+               !(heroTrailerItem == heroAtual && trailer_aberto() && trailer_tocando())) {
       // Sem card em foco, agenda o proximo item e deixa o desenho efetivar a
       // troca somente quando a textura ou o placeholder ja estiver pronto.
       // A MESMA LISTA QUE A SETA PERCORRE. O carrossel andava pelo catalogo
@@ -2232,6 +2247,18 @@ static void desenhaHero(Uint32 agora, float saida) {
       heroTardeItem = -1;
     }
   }
+  // TRAILER TOCANDO ATRAS DO CANVAS no lugar da arte: furo no retangulo do
+  // hero, a arte se apaga por cima dele (heroTrailerFade) e as rampas do
+  // hero ficam como veu com alpha, para o texto seguir apoiado no mesmo
+  // escuro. So no hero de titulo (colecao e social nao chegam aqui com
+  // trailer: ver home_trailer_passo).
+  float aTrailer = (heroTrailerFade > 0.005f && heroTrailerItem == heroAtual) ? heroTrailerFade : 0.0f;
+  if (aTrailer > 0.0f) {
+    GfxRect furo = r;
+    if (furo.y + furo.h > NV_TELA_H) furo.h = NV_TELA_H - furo.y;
+    gfx_furo(furo);
+    aArte *= (1.0f - aTrailer);
+  }
   if (tAnt) {
     // Esvanecimento com aceleracao e desaceleracao: o medido fica ~25% do
     // percurso quase parado no comeco, entao rampa reta le como corte na saida.
@@ -2243,13 +2270,14 @@ static void desenhaHero(Uint32 agora, float saida) {
   if (tAtu && heroEntra > 0.0f) {
     (void)desenhaArteHero(r, modoHero, ci, arteA,
                           anim_suave(heroEntra) * aArte);
-  } else if (!tAtu) {
+  } else if (!tAtu && aTrailer <= 0.0f) {
     // ESPERANDO quando ha caminho de arte e ela ainda nao decodificou; ausente
     // quando o titulo nao tem arte nenhuma para pedir.
     desenhaPlaceholderHero(r, ci,
                            aArte * (heroEntra > 0.0f ? 1.0f : heroEntra),
                            arteA != NULL && arteA[0] != 0);
   }
+  if (aTrailer > 0.0f) gfx_rect(r, 0, modoHero, 0, 1.0f, 0, 0.0f, 0, 0, 0, aTrailer);
   gfx_tex_aspect_atual = 0.0f;
   heroArteRect = r;
 
@@ -2631,6 +2659,34 @@ static void desenhaAtalhos(int r, float y) {
     // Titulo de fileira continua no cabecalho; dentro do card fica somente a
     // arte, sem veu, badge ou logo auxiliar.
   }
+}
+
+void home_trailer_passo(int topo, float dt, Uint32 agora) {
+  const CatItem *ci = NULL;
+  int pronto;
+  if (!trailer_suportado()) return;
+  pronto = topo && focoHero && ajustes_hero_ligado() && ajustes_trailer_hero() &&
+           heroDesejado < 0 && heroAtual >= 0 && heroEntra >= 0.999f && heroSai <= 0.001f &&
+           !(foco.fileira >= 0 && foco.fileira < nFileiras &&
+             (fileiras[foco.fileira].tipo == FILEIRA_CATALOGOS ||
+              fileiras[foco.fileira].tipo == FILEIRA_SOCIAL));
+  if (pronto) ci = cat_item_exato(heroAtual);
+  if (!pronto || !ci || !ci->imdb[0]) {
+    if (heroTrailerItem >= 0 && trailer_aberto() && !trailer_cheia()) trailer_fechar();
+    heroTrailerItem = -1; heroTrailerDesde = 0;
+  } else if (heroTrailerItem != heroAtual) {
+    if (trailer_aberto() && !trailer_cheia()) trailer_fechar();
+    heroTrailerItem = heroAtual; heroTrailerDesde = agora; heroTrailerTentado = 0;
+    trailerimdb_pedir(ci->imdb);
+  } else if (!trailer_aberto() && !heroTrailerTentado &&
+             agora - heroTrailerDesde >= NV_TRAILER_HERO_ESPERA_MS) {
+    const char *u = trailerimdb_url(ci->imdb, NULL);
+    if (u) { heroTrailerTentado = 1; trailer_abrir(u, heroArteRect, 0, 0); }
+    else if (trailerimdb_respondeu(ci->imdb)) heroTrailerTentado = 1;
+  }
+  { float alvo = (heroTrailerItem >= 0 && heroTrailerItem == heroAtual &&
+                  trailer_aberto() && !trailer_cheia() && trailer_tocando()) ? 1.0f : 0.0f;
+    heroTrailerFade = anim_mola(heroTrailerFade, alvo, dt, NV_MOLA_SCROLL); }
 }
 
 void home_desenhar(Uint32 agora) {

@@ -1899,7 +1899,6 @@ void detail_atualizar(float dt, Uint32 agora) {
       trailerTentado = 1;
       trailer_abrir(trailerFonte(0), tela, 0, 0);
     }
-    trailer_atualizar(agora);
     { float alvo = (trailer_aberto() && trailer_tocando()) ? 1.0f : 0.0f;
       trailerFade = anim_mola(trailerFade, alvo, dt, NV_MOLA_SCROLL); }
   }
