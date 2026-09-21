@@ -20,27 +20,79 @@
 //      indices mudaram de verdade — o contrario dos casos acima.
 //
 //   bash tests/cateps.sh
-#include "../src/catalogo.h"
+// Alem das faixas, o teste da NOTA DE EPISODIO do TMDB (issue #87) vive aqui:
+// desc_tmdb_notas_temporada e pura sobre JSON + CatEp, e o jeito de linka-la e
+// o mesmo de tests/colfileiras.c — descoberta.c INTEIRO entra por #include e
+// os simbolos que ele pede (addons, rede, trakt...) viram dubles abaixo. Os
+// cat_* NAO viram duble: este arquivo existe exatamente para exercitar os de
+// verdade do catalogo.c.
+#include "../src/descoberta.c"
 #include "../src/progresso.h"
 #include <assert.h>
 #include <stdio.h>
-#include <string.h>
+#include <unistd.h>
 
-// --- DUBLES: nenhum participa da regra, so fazem catalogo.c linkar ----------
+// --- DUBLES: nenhum participa da regra, so fazem descoberta.c linkar ---------
+// (o conjunto e o de tests/colfileiras.c, menos os cat_* — que catalogo.c ja
+// traz — e mais os que este teste ja tinha)
 int         ajustes_idioma_ingles(void) { return 0; }
 const char *i18n(const char *s)         { return s; }
 const char *dados_dir(void)             { return ""; }
 const char *sessao_usuario(void)        { return ""; }
 int         perfis_ativo(void)          { return 1; }
-const char *desc_genero_pt(const char *g) { return g; }
 int prog_ler(ProgRegistro *saida, int max) { (void)saida; (void)max; return 0; }
 int prog_gravar_local(const char *imdb, int t, int e, double p, double d) {
   (void)imdb; (void)t; (void)e; (void)p; (void)d; return 0;
 }
 
+void  SDL_Delay(Uint32 ms)                 { usleep(ms * 1000); }
+int   ajustes_cw_fonte(void)               { return 0; }
+int   ajustes_tmdb_ligado(void)            { return 1; }
+int   ajustes_tmdb_basico(void)            { return 0; }
+int   ajustes_tmdb_arte(void)              { return 0; }
+int   ajustes_tmdb_elenco(void)            { return 0; }
+int   ajustes_tmdb_cw(void)                { return 0; }
+const char *ajustes_tmdb_idioma(void)      { return "pt-BR"; }
+const char *ajustes_tmdb_chave(void)       { return ""; }
+void  fil_gravar_registro(void)            { }
+int   fil_podar_catalogos(const char *const *ids, const char *const *bases, int n) {
+  (void)ids; (void)bases; (void)n; return 0; }
+int   fil_limite(void)                     { return 16; }
+int   fil_oculta(const char *c)            { (void)c; return 0; }
+void  fil_registrar(const char *c, const char *t, const char *a,
+                    const char *tp, int itens) {
+  (void)c; (void)t; (void)a; (void)tp; (void)itens;
+}
+int   fil_tem_ordem(void)                  { return 0; }
+int   fil_unir(const char *const *c, int n, int *s, int m) {
+  int i; (void)c; for (i = 0; i < n && i < m; i++) s[i] = i; return i;
+}
+void  marco(const char *n)                 { (void)n; }
+void  prog_chave(char *d, unsigned n, const char *c, int t, int e) {
+  (void)c; (void)t; (void)e; if (n) d[0] = 0;
+}
+void  prog_content_id(char *d, unsigned n, const char *i, int *t, int *e) {
+  (void)i; (void)t; (void)e; if (n) d[0] = 0;
+}
+int   prog_por_chave(const char *c, ProgRegistro *s) { (void)c; (void)s; return 0; }
+int   trakt_continuar(CatItem *s, int m)   { (void)s; (void)m; return 0; }
+int   trakt_enfeitar_lote(CatItem *s, int n) { (void)s; (void)n; return 0; }
+int   trakt_lista(const char *q, CatItem *s, int m) { (void)q; (void)s; (void)m; return 0; }
+int   trakt_social(CatItem *s, int m)      { (void)s; (void)m; return 0; }
+const char *nuvem_trakt_cliente(void)      { return ""; }
+int   addons_n(void)                       { return 0; }
+const char *addons_base(int i)             { (void)i; return ""; }
+const char *addons_id_manifesto(int i)     { (void)i; return ""; }
+const char *addons_nome(int i)             { (void)i; return "addon"; }
+const char *addons_base_por_id(const char *id) { (void)id; return ""; }
+void  addons_manifesto_lido(int i, const char *corpo) { (void)i; (void)corpo; }
+char *rede_baixar(const char *u, int t)    { (void)u; (void)t; return NULL; }
+char *rede_baixar_com(const char *u, int t, const char *const *c) {
+  (void)c; return rede_baixar(u, t); }
+
 static CatItem itens[3];
 
-static void montar(void) {
+static void montarCatalogo(void) {
   int i;
   memset(itens, 0, sizeof itens);
   for (i = 0; i < 3; i++) {
@@ -85,7 +137,7 @@ int main(void) {
   // A) UM TITULO ACRESCENTADO no fim nao apaga os episodios de quem ja estava.
   //    Este e o caso que a TV mostrava: a serie aberta perdia a secao inteira
   //    quando a descoberta trazia mais um titulo.
-  montar();
+  montarCatalogo();
   publicar(0, "A", 3);
   publicar(2, "C", 2);
   assert(temEpisodios(0, "A", 3));
@@ -101,7 +153,7 @@ int main(void) {
   puts("ok  acrescentar um titulo preserva as faixas e o novo nasce vazio");
 
   // B) O MESMO PARA O LOTE, que e outro caminho de codigo.
-  montar();
+  montarCatalogo();
   publicar(1, "B", 4);
   memset(lote, 0, sizeof lote);
   snprintf(lote[0].titulo, sizeof lote[0].titulo, "L0");
@@ -114,7 +166,7 @@ int main(void) {
 
   // C) DOIS APPENDS SEGUIDOS. A cauda zerada da primeira vez nao pode ser
   //    zerada de novo por cima de episodios publicados depois dela.
-  montar();
+  montarCatalogo();
   { int i = cat_acrescentar(&novo);
     publicar(i, "D", 2);
     assert(cat_acrescentar(&novo) >= 0);
@@ -124,12 +176,39 @@ int main(void) {
   // D) TROCAR O CATALOGO INTEIRO INVALIDA, e tem de invalidar: os indices
   //    passam a apontar para outros titulos. E o oposto exato de (A), e por
   //    isso os dois estao no mesmo arquivo — quem mexer num vai ler o outro.
-  montar();
+  montarCatalogo();
   publicar(0, "A", 3);
   assert(temEpisodios(0, "A", 3));
   cat_definir_tudo(itens, 3, NULL, 0);
   assert(cat_n_episodios(0) == 0);
   puts("ok  trocar o catalogo inteiro invalida as faixas");
+
+  // E) NOTA TMDB POR EPISODIO (issue #87). JSON de temporada sintetico com
+  //    tres episodios — um SEM vote_average — mais um de OUTRA temporada na
+  //    lista, que nao pode ser tocado. Casa por episode_number; devolve
+  //    quantos ganharam nota.
+  { CatEp eps2[4];
+    const char *json =
+      "{\"episodes\":["
+      "{\"episode_number\":1,\"vote_average\":8.3},"
+      "{\"episode_number\":2},"
+      "{\"episode_number\":3,\"vote_average\":7.0}]}";
+    memset(eps2, 0, sizeof eps2);
+    eps2[0].temporada = 1; eps2[0].episodio = 1;
+    eps2[1].temporada = 1; eps2[1].episodio = 2;
+    eps2[2].temporada = 1; eps2[2].episodio = 3;
+    eps2[3].temporada = 2; eps2[3].episodio = 1;
+    assert(desc_tmdb_notas_temporada(json, eps2, 4, 1) == 2);
+    assert(eps2[0].nota == 83);          // 8.3 x10
+    assert(eps2[1].nota == 0);           // sem vote_average: continua zero
+    assert(eps2[2].nota == 70);
+    assert(eps2[3].nota == 0);           // temporada 2 nao e da resposta
+    // Pedindo a temporada errada nao preenche nada — e nao devolve nada.
+    memset(eps2, 0, sizeof eps2);
+    eps2[0].temporada = 1; eps2[0].episodio = 1;
+    assert(desc_tmdb_notas_temporada(json, eps2, 1, 2) == 0);
+    assert(eps2[0].nota == 0); }
+  puts("ok  nota TMDB por episodio casa numero/temporada e ignora o que falta");
 
   puts("cateps: tudo ok");
   return 0;

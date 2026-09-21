@@ -376,6 +376,16 @@ static int enfeitar(CatItem *d, const char *tipo) {
   snprintf(d->genero, sizeof d->genero, "%s",
            i18n(strcmp(tipo, "series") ? "Filme" : "Programa de TV"));
   snprintf(d->classificacao, sizeof d->classificacao, "14");
+  // A NOTA VEM DA RAIZ, como poster/background/logo acima: em serie o meta tem
+  // videos[] embaixo, mas imdbRating so existe no objeto de fora (e e o mesmo
+  // campo que descoberta.c le no catalogo). js_num aceita "8.1" em string ou
+  // numero; guarda-se x10, como todo o resto de CatItem.nota (issue #87).
+  { double nota = js_num(corpo, NULL, "imdbRating", 0.0);
+    if (nota > 0.0) {
+      int n10 = (int)(nota * 10.0 + 0.5);
+      if (n10 > 99) n10 /= 10;    // ja veio multiplicado
+      d->nota = n10;
+    } }
   free(corpo);
   return ok;
 }

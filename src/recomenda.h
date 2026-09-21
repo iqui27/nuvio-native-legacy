@@ -268,6 +268,11 @@ void rec_avatar(GfxRect a, const char *url, const char *nome, const char *id,
 // desenha a linha precisa deles para centrar o texto ao lado.
 #define REC_SELO_H    30.0f
 #define REC_SELO_GAP  12.0f
+// Largura da marca amarela do IMDb e o vao ate o numero. Tambem no header
+// porque quem ancora o selo pela DIREITA (o card de Continuar assistindo,
+// issue #87) precisa da largura total antes de desenhar.
+#define REC_IMDB_W    52.0f
+#define REC_IMDB_GAP   8.0f
 
 // Selo de tipo ("Filme" / "Série") em `x,y`. Devolve a largura desenhada.
 // `escuro` inverte as cores para o fundo claro do foco.

@@ -3441,6 +3441,20 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
       txt_desenhar_alpha(ln, x + 8, y, a);
       x += selo.w + 16;
     }
+    // O voto do TMDB entra AO LADO do do Trakt, no mesmo selo escuro do mesmo
+    // tamanho (issue #87). Sao fontes diferentes — o rotulo diz qual e qual,
+    // e um episodio pode ter uma, a outra ou as duas.
+    if (ep && ep->nota > 0) {
+      char valor[32];
+      snprintf(valor, sizeof valor,
+               ajustes_idioma_ingles() ? "TMDB %d.%d" : "TMDB %d,%d",
+               ep->nota / 10, ep->nota % 10);
+      TxtLinha ln = txt_linha(TXT_CAPTION2, valor, 229, 231, 236, 255);
+      GfxRect selo = { x, y - 3, ln.w + 16, NV_DETP_EP_ICONE + 6 };
+      gfx_cor(selo, 0.18f, 0.15f, 0.15f, 0.17f, 0.94f * a);
+      txt_desenhar_alpha(ln, x + 8, y, a);
+      x += selo.w + 16;
+    }
     // A DATA vai para a direita do card, como na referencia: a esquerda fica so
     // a duracao, e as duas deixam de disputar a mesma linha corrida.
     if (epData) {

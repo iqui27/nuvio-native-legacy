@@ -135,6 +135,12 @@ typedef struct {
   char data[40];
   char sinopse[420];
   char thumb[512];     // still do episodio; vazio cai na arte do titulo
+  // Nota do episodio x10 (83 = 8,3), 0 = desconhecida. O Cinemeta nao tem voto
+  // por episodio; quem preenche e o TMDB (/tv/<id>/season/<n>), uma viagem por
+  // temporada, no fio de desc_episodios (issue #87). O campo NAO invalida
+  // cache nenhum: o unico dump binario e o do CatItem (catalogo-rede.bin) e
+  // episodios.txt e texto, campo a campo — ambos leem o que sabem ler.
+  int  nota;
 } CatEp;
 
 // Le <dir>/catalogo.txt. Devolve quantos itens carregou (0 = nenhum, e quem

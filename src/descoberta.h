@@ -166,6 +166,10 @@ void desc_episodios(int indiceItem, int temporada);
 // pendurada e a lista nunca chega na temporada escolhida.
 void desc_episodios_pendente(void);
 int desc_episodios_carregando(int indiceItem);
+// Preenche `nota` (x10) dos eps da temporada dada a partir do JSON de
+// /tv/<id>/season/<n> do TMDB. Pura; devolve quantos ganharam nota.
+int  desc_tmdb_notas_temporada(const char *json, CatEp *eps, int n,
+                               int temporada);
 
 // Busca o meta de um titulo que o catalogo NAO tem e o acrescenta ao fim.
 // Nao bloqueia. Serve ao credito de um ator e ao item de "Mais como este":

@@ -1,6 +1,8 @@
 #include "continuar.h"
+#include "ajustes.h"
 #include "idioma.h"
 #include "layout.h"
+#include "recomenda.h"
 #include "text.h"
 #include "anim.h"
 #include "proximo.h"
@@ -62,15 +64,38 @@ void continuar_desenhar(const CatItem *ci, GfxRect r) {
     }
   }
 
+  // O selo do IMDb, no CANTO INFERIOR DIREITO (issue #87): o card ja tinha a
+  // nota no CatItem — quem nao a lia era o enfeite do Trakt — e a fileira e o
+  // unico lugar da home onde ela nao aparecia. O desenho e o mesmo selo da
+  // aba Salvos (rec_selo_imdb), pela base da linha do titulo e com o mesmo
+  // `pad` lateral do badge de "restam". A largura dele e medida ANTES do
+  // texto e sai da pista das linhas, que encurtam em vez de passar por baixo.
+  float seloLarg = 0.0f;
+  if (ci->nota > 0 && ajustes_notas_home()) {
+    char notaTxt[8];
+    snprintf(notaTxt, sizeof notaTxt,
+             ajustes_idioma_ingles() ? "%d.%d" : "%d,%d",
+             ci->nota / 10, ci->nota % 10);
+    TxtLinha m = txt_linha(TXT_CAPTION2, notaTxt, 0, 0, 0, 0);
+    seloLarg = REC_IMDB_W + REC_IMDB_GAP + m.w;
+  }
+  // Quando o selo existe as linhas de texto perdem seloLarg + uma folga de
+  // 16*esc — e o preco ja sai na largura, porque rec_selo_imdb ancora pela
+  // esquerda e so devolve a medida depois de desenhar.
+  float livre = largura - (seloLarg > 0 ? seloLarg + 16.0f * esc : 0.0f);
+  if (livre < 40.0f) livre = 40.0f;   // texto sempre ganha um minimo de pista
+
   float base = r.y + r.h - 30*esc;
   int serie = !strcmp(ci->tipo, "series") && ci->temporada > 0 && ci->episodio > 0;
   if (serie && ci->nomeEpisodio[0]) {
-    TxtLinha ep = txt_linha_corta(TXT_CW_META, ci->nomeEpisodio, 230, 232, 238, 255, largura);
+    TxtLinha ep = txt_linha_corta(TXT_CW_META, ci->nomeEpisodio, 230, 232, 238, 255, livre);
     base -= ep.h;
     txt_desenhar_alpha(ep, r.x + pad, base, 1);
     base -= 4*esc;
   }
-  TxtLinha titulo = txt_linha_corta(TXT_CW_TITULO, ci->titulo, 247, 248, 250, 255, largura);
+  if (seloLarg > 0)
+    rec_selo_imdb(r.x + r.w - pad - seloLarg, base - REC_SELO_H, ci->nota, 0, 1.0f);
+  TxtLinha titulo = txt_linha_corta(TXT_CW_TITULO, ci->titulo, 247, 248, 250, 255, livre);
   base -= titulo.h;
   txt_desenhar_alpha(titulo, r.x + pad, base, 1);
   if (serie) {

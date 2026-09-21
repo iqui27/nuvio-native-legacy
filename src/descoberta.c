@@ -2523,6 +2523,34 @@ static void metaCacheGuardar(const char *id, const char *corpo) {
 // Publica a parte critica antes de qualquer enriquecimento opcional. Assim a
 // fileira de episodios aparece depois da primeira resposta, sem esperar pelas
 // duas viagens ao TMDB usadas para foto e personagem do elenco.
+// NOTAS DE EPISODIO vindas do TMDB (issue #87). O Cinemeta nao tem voto por
+// episodio; o TMDB tem, na resposta de /tv/<id>/season/<n> — episodes[] com
+// episode_number e vote_average (0..10). Funcao PURA, chamada tambem pelo
+// teste (tests/cateps.c): casa por numero e so escreve nos eps da temporada
+// pedida; voto ausente ou zero deixa nota=0, que na tela simplesmente nao
+// desenha selo. Devolve quantos episodios ganharam nota.
+int desc_tmdb_notas_temporada(const char *json, CatEp *eps, int n,
+                              int temporada) {
+  const char *p;
+  int feitos = 0, i;
+  if (!json || !eps || n < 1) return 0;
+  p = js_array(json, NULL, "episodes");
+  while (p) {
+    const char *f = js_fim(p);
+    int num = (int)js_num(p, f, "episode_number", -1);
+    if (num >= 0) {
+      for (i = 0; i < n; i++)
+        if (eps[i].temporada == temporada && eps[i].episodio == num) {
+          double v = js_num(p, f, "vote_average", 0.0);
+          if (v > 0.0) { eps[i].nota = (int)(v * 10.0 + 0.5); feitos++; }
+          break;
+        }
+    }
+    p = js_prox(f);
+  }
+  return feitos;
+}
+
 static int publicarEpisodios(const char *corpo, int alvoItem, const char *titulo) {
 // Em par com CAT_EP_MAX (catalogo.c): um titulo que caiba no store nao pode
 // truncar no parse, e um que nao caiba trunca aqui em vez de zerar os outros.
@@ -2708,6 +2736,66 @@ static void *buscarEps(void *u) {
     printf("[desc] %s: %d atores, dir='%s', %d temporadas\n",
            edit.titulo, edit.nElenco, edit.direcao, edit.nTemporadas);
     fflush(stdout);
+
+    // NOTA POR EPISODIO (issue #87): o Cinemeta nao tem voto por episodio, o
+    // TMDB tem — uma viagem por temporada presente na lista, nao uma por
+    // episodio. edit.tmdb ja foi resolvido por fotosDoElenco quando a serie
+    // tem elenco; sem elenco (fotosDoElenco sai mais cedo) resolve-se aqui
+    // pelo mesmo /find. "Titulo e sinopse" e a porta: quem desligou o TMDB
+    // nao quer este trafego. Republica so se alguma nota entrou.
+    if (!ehFilme && ajustes_tmdb_basico()) {
+      const char *chave2 = desc_chave_tmdb();
+      long tmdbId = edit.tmdb;
+      if (chave2[0] && tmdbId <= 0) {
+        char u2[400];
+        char *c3;
+        snprintf(u2, sizeof u2,
+                 "%s/find/%s?api_key=%s&external_source=imdb_id",
+                 TMDB, serie, chave2);
+        c3 = rede_baixar(u2, 20);
+        if (c3) {
+          const char *p3 = js_array(c3, NULL, "tv_results");
+          if (p3) tmdbId = (long)js_num(p3, js_fim(p3), "id", 0.0);
+          free(c3);
+        }
+      }
+      if (chave2[0] && tmdbId > 0) {
+        int neps = cat_n_episodios(alvoItem);
+        if (neps > 0) {
+          CatEp *tmp = malloc(sizeof(CatEp) * (size_t)neps);
+          if (tmp) {
+            int preenchidas = 0, i2;
+            for (i2 = 0; i2 < neps; i2++) {
+              const CatEp *e0 = cat_episodio(alvoItem, i2);
+              if (e0) tmp[i2] = *e0; else memset(&tmp[i2], 0, sizeof tmp[i2]);
+            }
+            for (i2 = 0; i2 < neps; i2++) {
+              int s = tmp[i2].temporada, j2, jaFoi = 0;
+              for (j2 = 0; j2 < i2; j2++)
+                if (tmp[j2].temporada == s) { jaFoi = 1; break; }
+              if (jaFoi) continue;
+              { char u3[400];
+                char *c4;
+                snprintf(u3, sizeof u3,
+                         "%s/tv/%ld/season/%d?api_key=%s&language=%s",
+                         TMDB, tmdbId, s, chave2, desc_tmdb_idioma());
+                c4 = rede_baixar(u3, 15);
+                if (c4) {
+                  preenchidas += desc_tmdb_notas_temporada(c4, tmp, neps, s);
+                  free(c4);
+                } }
+            }
+            if (preenchidas > 0) {
+              cat_definir_episodios(alvoItem, tmp, neps);
+              printf("[desc] %s: notas TMDB em %d episodios\n",
+                     edit.titulo, preenchidas);
+              fflush(stdout);
+            }
+            free(tmp);
+          }
+        }
+      }
+    }
   }
 
   free(corpo);

@@ -515,7 +515,18 @@ void episodios_desenhar(void) {
     if(atual) snprintf(estado,sizeof estado,"Reproduzindo agora");
     else if(visto==1) snprintf(estado,sizeof estado,i18n("✓ Assistido%s%s"),ep->duracao[0]?" · ":"",ep->duracao);
     else snprintf(estado,sizeof estado,"%s%s%s",ep->data,ep->data[0]&&ep->duracao[0]?" · ":"",ep->duracao);
-    txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,estado,atual?236:180,atual?237:182,atual?240:188,255,w),tx,y+48,anim);
+    { TxtLinha le=txt_linha_corta(TXT_PG_FIM,estado,atual?236:180,atual?237:182,atual?240:188,255,w);
+      txt_desenhar_alpha(le,tx,y+48,anim);
+      // Voto do TMDB por episodio (issue #87), no mesmo selo escuro que o card
+      // de episodio da pagina de detalhe usa para Trakt e TMDB.
+      if(ep->nota>0){
+        char valor[32];
+        snprintf(valor,sizeof valor,ajustes_idioma_ingles()?"TMDB %d.%d":"TMDB %d,%d",ep->nota/10,ep->nota%10);
+        TxtLinha ln=txt_linha(TXT_PG_FIM,valor,229,231,236,255);
+        GfxRect selo={tx+le.w+10,y+45,ln.w+14,26};
+        gfx_cor(selo,.18f,.15f,.15f,.17f,.94f*anim);
+        txt_desenhar_alpha(ln,selo.x+7,y+48,anim);
+      } }
     txt_bloco(TXT_PG_FIM,ep->sinopse,186,188,194,tx,y+78,w,25,anim,3);
   }
   if(!n) txt_bloco(TXT_PG_FIM,desc_episodios_carregando(titulo)?

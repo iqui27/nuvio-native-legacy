@@ -81,9 +81,8 @@
 // para posicionar a linha dos selos.
 #define REC_SELO_PADX  14.0f
 // A marca amarela do IMDb, na mesma proporcao do selo de detail.c (60x30)
-// reduzida para caber na coluna de 568px do painel.
-#define REC_IMDB_W     52.0f
-#define REC_IMDB_GAP    8.0f
+// reduzida para caber na coluna de 568px do painel. As medidas moram em
+// recomenda.h — ver o comentario la.
 
 // Os modelos prontos. O TEXTO FINAL passa por i18n na hora de desenhar, como
 // todo o resto; o que viaja ao servidor e o INDICE, nao a frase — assim a
