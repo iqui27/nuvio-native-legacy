@@ -92,11 +92,26 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  float d = sdf(vUv, uRaio, uAspect);\n"
   "  float m = smoothstep(0.006,-0.006,d);\n"
   "  if (m <= 0.001) discard;\n"
+  // COVER VIRA CONTAIN quando a arte foge muito da moldura (issue #89):
+  // catalogo como o Xperience declara fileira deitada mas serve o poster
+  // retrato de sempre — cover num card 16:9 cortava ~60% da altura. Aqui
+  // a amostragem abre no eixo oposto e a faixa recebe a cor do esqueleto,
+  // a mesma do card vazio. Dentro de +/-25% de proporcao segue cover.
+  "  float ra = uAspect / max(uTexAsp, 0.01);\n"
+  "  float contem = (uTexAsp > 0.05 && (ra < 0.80 || ra > 1.25)) ? 1.0 : 0.0;\n"
+  "  vec2 uv = cover(vUv);\n"
+  "  if (contem > 0.5) {\n"
+  "    uv = vUv;\n"
+  "    if (ra > 1.0) uv.x = (uv.x - 0.5) * ra + 0.5;\n"
+  "    else          uv.y = (uv.y - 0.5) / ra + 0.5;\n"
+  "  }\n"
   // Over-scan de 3%: a Apple reserva essa margem em todas as bordas para que o
   // parallax nunca revele borda vazia (diferenca entre "actual size" e "safe
   // zone" nas tabelas do Top Shelf). Sem ela o clamp estica o pixel da borda.
-  "  vec2 uv = clamp((cover(vUv)-0.5)*(0.94-0.05*uFoco)+0.5+uPar, 0.0, 1.0);\n"
-  "  vec3 cor = texture2D(uTex, uv).rgb;\n"
+  "  uv = (uv - 0.5) * (0.94 - 0.05*uFoco) + 0.5 + uPar;\n"
+  "  vec3 cor = (contem > 0.5 && (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0))\n"
+  "    ? vec3(0.173)\n"
+  "    : texture2D(uTex, clamp(uv, 0.0, 1.0)).rgb;\n"
   "  if (uFoco > 0.004) {\n"
   "    float e = (dot(vUv-0.5, vec2(0.5029,-0.8644)) + uPar.x*3.0) * 3.0;\n"
   "    cor += exp(-e*e) * 0.16 * uFoco;\n"
