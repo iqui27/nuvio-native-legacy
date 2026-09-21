@@ -178,6 +178,17 @@ static int    trailerCopyOculta = 0;   // a intencao; trailerCopy e a mola
 // (LG, um so por titulo — trailerimdb.h). NULL quando ainda nao ha.
 static const char *trailerFonte(int k) {
 #ifdef __EMSCRIPTEN__
+  // Samsung: Apple primeiro (HLS no <video>, como o hero ja faz), YouTube
+  // como reserva — e so depois de a Apple RESPONDER. O embed do YouTube na
+  // TV cai em "Video player configuration error" (o wgt roda de file://,
+  // sem Referer para o YouTube; #82/#86 na AU7000), entao ele fica para os
+  // titulos que a Apple nao tem.
+  { const CatItem *ci = cat_item(idx);
+    if (ci && ci->imdb[0]) {
+      const char *u = trailerapple_url(ci->imdb);
+      if (u) return u;
+      if (!trailerapple_respondeu(ci->imdb)) return NULL;
+    } }
   return k < extras_n_trailers() ? extras_trailer_yt(k) : NULL;
 #else
   // LG: Apple primeiro (HLS matted, sem tarja), IMDb depois — e so depois de
@@ -840,14 +851,15 @@ void detail_abrir(const HomeItem *it) {
   // quem zera o que o titulo anterior publicou (issue #60, ver extras.c).
   { const CatItem *ci = cat_item(idx);
     extras_pedir(ci ? ci->imdb : "", ehSerie(), ci ? ci->tmdb : 0);
-#ifndef __EMSCRIPTEN__
-    // LG: o trailer e o MP4 do IMDb; pedir agora e o que o deixa pronto
-    // quando a pagina assentar.
+    // Pedir agora e o que deixa o trailer pronto quando a pagina assentar.
+    // Apple nos dois alvos; IMDb so na LG (exige Referer, que o navegador
+    // nao deixa por, e o CORS dele so aceita imdb.com).
     if (trailer_suportado() && ci && ci->imdb[0]) {
       trailerapple_pedir(ci->imdb, ci->titulo, ci->meta, ehSerie());
+#ifndef __EMSCRIPTEN__
       trailerimdb_pedir(ci->imdb);
-    }
 #endif
+    }
   }
   // A aba marcada tem de ser a da temporada de "Continuar assistindo", nao a
   // do primeiro episodio da serie. Issue #43: abrindo pela fileira com S2E2 em

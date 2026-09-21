@@ -1121,6 +1121,7 @@ void ajustes_dir(const char *dir) {
   { char *m = dados_ler("trailer-1310.txt");
     if (m) free(m);
     else {
+      // V_LIGA e { Ligado, Desligado }: 1 e DESLIGADO (ver lig()).
       valor[AJ_DET_TRAILER_AUTO] = 1;
       valor[AJ_HERO_TRAILER] = 1;
       dados_gravar("trailer-1310.txt", "1\n");
@@ -1340,16 +1341,16 @@ int ajustes_iniciar(void) {
   // entradas do que o enum (as ultimas ficam em 0), e um 1 no lugar errado
   // ligaria outra coisa. O arquivo, lido depois, sobrescreve.
   valor[AJ_ENVIO_AUTO] = 1;
-#if defined(__EMSCRIPTEN__) && !defined(NV_TRAILER_AUTO_TIZEN)
-  // SAMSUNG: trailer automatico DESLIGADO de fabrica, nos dois lugares. O
-  // embed do YouTube e o <video> do IMDb sao mais uma coisa a decodificar
-  // numa TV de 2 GB que ja engasga (registro do pokaz na 1.3.8: paradas de
-  // 9 s com 16 fileiras e GIFs). O botao de trailer continua abrindo dentro
-  // do app; quem quiser o autoplay liga em Ajustes. Uma mudanca por build
-  // na Samsung — esta release nao e a de medir isso la.
-  valor[AJ_DET_TRAILER_AUTO] = 1;
-  valor[AJ_HERO_TRAILER] = 1;
-#endif
+  // BUG (#82/#86, 1.3.9 e 1.3.10): havia aqui um bloco Samsung escrevendo
+  // AJ_DET_TRAILER_AUTO = AJ_HERO_TRAILER = 1 (desligado) como "padrao de
+  // fabrica". So que ajustes_iniciar() roda TODA VEZ que a tela de Ajustes
+  // abre (app.c, TELA_AJUSTES), depois de ajustes_dir() ja ter lido o
+  // arquivo — e nada o relê. Quem ligava o trailer, saia e voltava
+  // encontrava os dois desligados de novo, e a proxima gravacao levava o
+  // desligado ao disco: e o "the settings aren't retained" do rawldon. O
+  // padrao de fabrica e o valor[] posicional (1 = desligado nas duas
+  // linhas), e quem veio da 1.3.9 com o autoplay nascido ligado recebe o
+  // reset unico em ajustes_dir() (marca trailer-1310.txt).
   focoOp = 0; scrollY = 0.0f; sair = 0;
   focoIndice = 0;
   filAberta = 0; filFoco = 0; filCampo = 0; filPegou = 0; filTopo = 0;
