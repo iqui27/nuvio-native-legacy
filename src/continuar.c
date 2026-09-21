@@ -99,11 +99,13 @@ void continuar_desenhar(const CatItem *ci, GfxRect r) {
   base -= titulo.h;
   txt_desenhar_alpha(titulo, r.x + pad, base, 1);
   if (serie) {
-    // O FORMATO PASSA PELA TABELA, porque "T" e "E" sao portugues: numa
-    // interface em ingles o card dizia "T1:E1" com o destaque logo acima
-    // dizendo "S1 E1" — dois nomes para a mesma coisa na mesma tela, e na foto
-    // que abre o post. A chave carrega os dois marcadores de posicao.
-    char te[24]; snprintf(te, sizeof te, i18n("T%d:E%d"), ci->temporada, ci->episodio);
+    // Sem sigla "T1:E2": quem ve o card nao sabe o que T e E querem dizer.
+    // Sao duas chaves prontas da tabela ("Temporada %d", "Episodio %d")
+    // compostas aqui — em ingles sai "Season 1 · Episode 2".
+    char tmpT[24], tmpE[24], te[64];
+    snprintf(tmpT, sizeof tmpT, i18n("Temporada %d"), ci->temporada);
+    snprintf(tmpE, sizeof tmpE, i18n("Episódio %d"), ci->episodio);
+    snprintf(te, sizeof te, "%s · %s", tmpT, tmpE);
     TxtLinha ep = txt_linha(TXT_CW_META, te, 230, 232, 238, 255);
     txt_desenhar_alpha(ep, r.x + pad, base - ep.h - 4*esc, 1);
   }
