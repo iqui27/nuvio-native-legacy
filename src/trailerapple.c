@@ -335,14 +335,18 @@ static void *buscar(void *arg) {
     if (r < 0) semResposta = 1;
     else if (r == 1) { r = hlsDe(id, serie, url, sizeof url); if (r < 0) semResposta = 1; }
   }
+#ifndef __EMSCRIPTEN__
   if (url[0]) {
     // O master vai para o disco: e dele que sai o reduzido de uma variante.
+    // (Na Samsung o <video> do navegador toca o master inteiro com ABR e
+    // object-fit:cover absorve a troca de tamanho; nao ha reduzido.)
     char cm[600];
     char *m = rede_baixar_com(url, 12, CABS);
     caminhoMaster(p->imdb, cm, sizeof cm, ".m3u8");
     if (m && cm[0]) { FILE *g = fopen(cm, "w"); if (g) { fputs(m, g); fclose(g); } }
     free(m);
   }
+#endif
   printf("[trailer] apple %s (%s %d): %s\n", p->imdb, p->titulo, ano,
          semResposta ? "sem resposta" : url[0] ? "HLS" : !ano ? "sem ano" : "sem trailer");
   fflush(stdout);
@@ -372,7 +376,11 @@ void trailerapple_pedir(const char *imdb, const char *titulo, const char *meta, 
     char cm[600];
     struct stat st;
     caminhoMaster(imdb, cm, sizeof cm, ".m3u8");
+#ifdef __EMSCRIPTEN__
+    (void)st; (void)cm; e->respondeu = 1;
+#else
     e->respondeu = !e->url[0] || (cm[0] && stat(cm, &st) == 0);
+#endif
   }
   if (e->emVoo || valido(e)) { destrancar(); return; }
   e->emVoo = 1; e->respondeu = 0;
@@ -394,6 +402,9 @@ const char *trailerapple_url(const char *imdb) {
   trancar();
   e = achar(imdb);
   if (e && valido(e) && e->url[0]) {
+#ifdef __EMSCRIPTEN__
+    r = e->url;
+#else
     int teto = ajustes_trailer_qualidade();
     if (e->tocaQual != teto) {
       e->tocaQual = teto;
@@ -401,6 +412,7 @@ const char *trailerapple_url(const char *imdb) {
     }
     // Sem reduzido, sem Apple: quem chama cai no IMDb.
     r = e->toca[0] ? e->toca : NULL;
+#endif
   }
   destrancar();
   return r;

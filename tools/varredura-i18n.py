@@ -256,6 +256,9 @@ IGNORAR = {
     "crédit", "crédito",            # palavra procurada no capitulo do MKV
     # Nome proprio e sigla: iguais nos dois idiomas.
     "IMDb", "Trakt", "YouTube", "PIN", "AI-powered",
+    # Tabela de acentos -> letra base da normalizacao de titulo (trailerapple.c):
+    # dado, nao rotulo.
+    "ÀÁÂÃÄÅàáâãäåÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÝýÿÑñÇç",
     # ISO 639-2 do portugues (linguas.c). Virou candidato quando "por" entrou
     # na lista de palavras de portugues; e codigo de idioma, nao rotulo.
     "por",

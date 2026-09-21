@@ -1315,6 +1315,16 @@ int ajustes_iniciar(void) {
   // entradas do que o enum (as ultimas ficam em 0), e um 1 no lugar errado
   // ligaria outra coisa. O arquivo, lido depois, sobrescreve.
   valor[AJ_ENVIO_AUTO] = 1;
+#if defined(__EMSCRIPTEN__) && !defined(NV_TRAILER_AUTO_TIZEN)
+  // SAMSUNG: trailer automatico DESLIGADO de fabrica, nos dois lugares. O
+  // embed do YouTube e o <video> do IMDb sao mais uma coisa a decodificar
+  // numa TV de 2 GB que ja engasga (registro do pokaz na 1.3.8: paradas de
+  // 9 s com 16 fileiras e GIFs). O botao de trailer continua abrindo dentro
+  // do app; quem quiser o autoplay liga em Ajustes. Uma mudanca por build
+  // na Samsung — esta release nao e a de medir isso la.
+  valor[AJ_DET_TRAILER_AUTO] = 1;
+  valor[AJ_HERO_TRAILER] = 1;
+#endif
   focoOp = 0; scrollY = 0.0f; sair = 0;
   focoIndice = 0;
   filAberta = 0; filFoco = 0; filCampo = 0; filPegou = 0; filTopo = 0;

@@ -8,7 +8,8 @@
 #include <stdlib.h>
 char *dados_caminho(char *dst, unsigned tam, const char *nome) { snprintf(dst, tam, "/tmp/nuvio-trailerapple-teste/%s", nome); return dst; }
 const char *dados_dir(void) { return "/tmp/nuvio-trailerapple-teste"; }
-int ajustes_trailer_qualidade(void) { return 0; }
+int qualidade = 0;
+int ajustes_trailer_qualidade(void) { return qualidade; }
 static int esperar(const char *id) { int i; for (i = 0; i < 300 && !trailerapple_respondeu(id); i++) usleep(100000); return trailerapple_respondeu(id); }
 int main(void) {
   const char *u;
@@ -23,6 +24,15 @@ int main(void) {
     fclose(f);
     if (inf != 1 || uri != 1) { printf("FALHOU: reduzido com %d variantes e %d uris\n", inf, uri); return 1; }
     printf("ok  reduzido com uma variante\n"); }
+  // Teto de 720p: a variante escolhida tem de caber em 1280 de largura.
+  qualidade = 720;
+  u = trailerapple_url("tt26581740");
+  { FILE *f = u ? fopen(u + 7, "r") : NULL; char l[2048]; int w = 0;
+    while (f && fgets(l, sizeof l, f)) { char *r = strstr(l, "RESOLUTION="); if (r) w = atoi(r + 11); }
+    if (f) fclose(f);
+    if (w <= 0 || w > 1280) { printf("FALHOU: teto 720 escolheu %dpx\n", w); return 1; }
+    printf("ok  teto 720p -> %dpx\n", w); }
+  qualidade = 0;
   printf("ok  Weapons 2025 -> %.80s\n", u);
   // Titulo com acento e '&': normalizacao. "Tom & Jerry" (2021).
   trailerapple_pedir("tt1361336", "Tom & Jerry", "2021", 0);

@@ -2680,22 +2680,27 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
   } else if (heroTrailerItem != heroAtual) {
     if (trailer_aberto() && !trailer_cheia()) trailer_fechar();
     heroTrailerItem = heroAtual; heroTrailerDesde = agora; heroTrailerTentado = 0;
-#ifndef __EMSCRIPTEN__
     trailerapple_pedir(ci->imdb, ci->titulo, ci->meta, ci->tipo[0] ? !strcmp(ci->tipo, "series") : 0);
-#endif
+#ifndef __EMSCRIPTEN__
+    // O IMDb exige Referer, que navegador nenhum deixa por (e o CORS dele so
+    // aceita imdb.com): na Samsung nem pedir.
     trailerimdb_pedir(ci->imdb);
+#endif
   } else if (!trailer_aberto() && !heroTrailerTentado &&
              agora - heroTrailerDesde >= NV_TRAILER_HERO_ESPERA_MS) {
     // Apple (HLS matted) antes do IMDb (MP4 com tarja), e so depois de a Apple
-    // responder. No Tizen o <video> nao toca HLS: fica o MP4.
-    const char *u = NULL;
-#ifndef __EMSCRIPTEN__
-    u = trailerapple_url(ci->imdb);
+    // responder. Na Samsung so a Apple existe (o <video> toca o HLS).
+    const char *u = trailerapple_url(ci->imdb);
     if (!u && !trailerapple_respondeu(ci->imdb)) return;
-#endif
+#ifndef __EMSCRIPTEN__
     if (!u) u = trailerimdb_url(ci->imdb, NULL);
+#endif
     if (u) { heroTrailerTentado = 1; trailer_abrir(u, heroArteRect, 0, 0); }
+#ifndef __EMSCRIPTEN__
     else if (trailerimdb_respondeu(ci->imdb)) heroTrailerTentado = 1;
+#else
+    else heroTrailerTentado = 1;
+#endif
   }
   { float alvo = (heroTrailerItem >= 0 && heroTrailerItem == heroAtual &&
                   trailer_aberto() && !trailer_cheia() && trailer_tocando()) ? 1.0f : 0.0f;
