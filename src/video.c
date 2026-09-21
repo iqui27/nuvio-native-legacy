@@ -12,6 +12,7 @@
 #include <time.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <unistd.h>
 
 // Nomes que o uMS aceita em charColor, e os rotulos que a folha mostra.
 //
@@ -202,6 +203,13 @@ typedef int (*Filtro)(LSHandle *, LSMessage *, void *);
 // LSError e struct por valor e nao ha header C no SDK. Um buffer folgado evita
 // corromper a pilha quando a lib escreve o erro dentro dele.
 static char ERRO[256];
+
+static void logErroLs(const char *onde) {
+  const unsigned *w = (const unsigned *)ERRO;
+  printf("[video] %s: lsError code=%u msg=%s\n", onde, w[0],
+         ((const char *)ERRO)[4] ? (const char *)ERRO + 4 : "(vazio)");
+  fflush(stdout);
+}
 
 static int         (*lsRegister)(const char *, LSHandle **, void *);
 static int         (*lsUnregister)(LSHandle *, void *);
@@ -1080,8 +1088,25 @@ int video_iniciar(void) {
   // O nome PRECISA casar com o padrao do papel LS2 do app
   // (allowedNames: "com.webos.media.client.*"). Qualquer outro nome e recusado
   // pelo hub e nada depois disso acontece.
+  //
+  // O nome fixo e o que o uMS espera no dia a dia. Depois de um deploy que mata
+  // o processo sem video_encerrar(), o hub ainda segura esse nome por um tempo
+  // e o novo arranque cai em "LSRegister recusado" para sempre no nome fixo.
+  // O sufixo com o PID e o mesmo padrao permitido e libera o trailer/player sem
+  // esperar o hub soltar o cadastro fantasma.
+  bus = NULL;
+  memset(ERRO, 0, sizeof ERRO);
   if (!lsRegister("com.webos.media.client.nuvio", &bus, ERRO)) {
-    printf("[video] LSRegister recusado\n"); return 0;
+    char alt[64];
+    logErroLs("LSRegister nome fixo recusado");
+    snprintf(alt, sizeof alt, "com.webos.media.client.nuvio.%d", (int)getpid());
+    printf("[video] tentando %s\n", alt);
+    bus = NULL;
+    memset(ERRO, 0, sizeof ERRO);
+    if (!lsRegister(alt, &bus, ERRO)) {
+      logErroLs("LSRegister recusado");
+      return 0;
+    }
   }
   laco = loopNovo(NULL, 0);
   if (!lsAttach(bus, laco, ERRO)) {
@@ -1918,6 +1943,10 @@ void video_encerrar(void) {
   if (acb) { acbDestruir(acb); acb = 0; }
   if (expWin[0] && sdlExpDestruir) { sdlExpDestruir(expWin); expWin[0] = 0; }
   if (laco) loopParar(laco);
+  if (bus && lsUnregister) {
+    lsUnregister(bus, ERRO);
+    bus = NULL;
+  }
   ligado = 0;
 }
 #endif

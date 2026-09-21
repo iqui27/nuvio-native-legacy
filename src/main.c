@@ -19,6 +19,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifndef NV_SEM_WEBOS
+#include <signal.h>
+#include <unistd.h>
+#endif
 #include "gfx.h"
 #include "text.h"
 #include "marco.h"
@@ -44,8 +48,17 @@
 #include "descoberta.h"
 #include "trakt.h"
 #include "player.h"
+#include "trailer.h"
 #ifndef NV_SEM_WEBOS
 #include <dlfcn.h>
+
+static void aoSinalTerminar(int sig) {
+  (void)sig;
+  trailer_fechar();
+  video_encerrar();
+  fflush(stdout);
+  _exit(0);
+}
 #include <SDL2/SDL_syswm.h>
 #endif
 #include "layout.h"
@@ -322,6 +335,9 @@ int main(int argc, char **argv) {
   // motivo. NULL = esta compilacao nao redireciona nada (o Mac, onde o log vai
   // para o terminal, e o alvo Tizen, onde nao ha arquivo util) — que e
   // exatamente o que o antigo #ifndef NV_SEM_WEBOS ja fazia.
+#ifndef NV_SEM_WEBOS
+  signal(SIGTERM, aoSinalTerminar);
+#endif
   { const char *log = registro_arquivo();
     // O LOG DA SESSAO ANTERIOR SOBREVIVE UMA VOLTA: renomeado antes de o novo
     // truncar o arquivo. E ele que "Enviar registro" manda quando a sessao

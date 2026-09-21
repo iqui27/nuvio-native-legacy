@@ -1958,6 +1958,7 @@ void app_encerrar(void) {
   if (aguardandoFonte == 2 && fioFonteVivo) pthread_join(fioFonte, NULL);
   aguardandoFonte = 0;
   player_encerrar();
+  video_encerrar();    // solta o nome LS2 antes do processo sumir (deploy mata sem aviso)
   ajustes_encerrar();
   biblioteca_encerrar();
   perfil_encerrar();

@@ -356,7 +356,16 @@ echo "    ok ($LOCAL)"
 # FERRAMENTAS.md). Dois deploys desta tarde foram lidos no log de um processo
 # antigo por isso. Matar antes; o SAM relanca o binario novo.
 PID=$($SSH "root@$TV_IP" "pidof nuvio-proto" 2>/dev/null | tr -d "\r")
-if [ -n "$PID" ]; then echo "==> encerrando processo antigo ($PID)"; $SSH "root@$TV_IP" "kill $PID"; sleep 2; fi
+if [ -n "$PID" ]; then
+  echo "==> encerrando processo antigo ($PID)"
+  $SSH "root@$TV_IP" "kill $PID"
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    sleep 1
+    NPID=$($SSH "root@$TV_IP" "pidof nuvio-proto" 2>/dev/null | tr -d "\r")
+    [ -z "$NPID" ] && break
+  done
+  sleep 4
+fi
 echo "==> lancando"
 ( sleep 2
   printf 'luna-send -n 1 -f luna://com.webos.applicationManager/launch '"'"'{"id":"%s"}'"'"'\n' "$APP_ID"

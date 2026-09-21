@@ -139,11 +139,18 @@ int trailer_suportado(void) {
   // rodar a cada quadro enquanto o hub nao solta o nome.
   static int sabe = -1;
   static Uint32 tentarEm = 0;
+  static int falhas = 0;
   if (sabe == 1) return 1;
   Uint32 agora = SDL_GetTicks();
   if (agora < tentarEm) return 0;
-  tentarEm = agora + 3000;
-  sabe = video_iniciar() ? 1 : 0;
+  // Recuo crescente: martelar LSRegister a cada 3 s (5134788) piorava hub
+  // preso apos deploy; 1.3.10 so tentava uma vez por sessao.
+  { unsigned espera = 3000u;
+    if (falhas >= 2) espera = 15000u;
+    else if (falhas >= 1) espera = 8000u;
+    tentarEm = agora + espera; }
+  if (video_iniciar()) { sabe = 1; falhas = 0; }
+  else { falhas++; sabe = 0; }
   return sabe;
 #endif
 }

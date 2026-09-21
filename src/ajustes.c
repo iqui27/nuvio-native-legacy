@@ -740,6 +740,7 @@ static int valor[AJ_N] = {
   1,                /* gradiente de foco classico: desligado */
 
   0,                /* continuar assistindo: ligado */
+  0,                /* OK no card: retomar (cwOkLocal; 1 = abrir pagina) */
   0,                /* fonte do continuar: ambas (o comportamento de sempre) */
   0,                /* estilo: card */
   0,                /* miniatura do episodio: ligada */
