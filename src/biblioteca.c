@@ -570,7 +570,7 @@ static void eventoAberta(SDL_Keycode k) {
     return;
   }
   if (k == SDLK_RIGHT)     focus_mover_grade(&foco, 1, 0);
-  else if (k == SDLK_LEFT) focus_mover_grade(&foco, -1, 0);
+  else if (k == SDLK_LEFT) { if (!focus_mover_grade(&foco, -1, 0)) sair = 1; }
   else if (k == SDLK_DOWN) {
     focus_mover_grade(&foco, 0, 1);
     // Chegou ao fim do que baixou: pede a proxima pagina. O modulo recusa
@@ -660,7 +660,7 @@ void biblioteca_evento(const SDL_Event *e) {
   // A grade da biblioteca e uma GRADE: manter a coluna ao subir e descer, e
   // nao voltar para a coluna onde o cursor esteve por ultimo naquela linha.
   if (k == SDLK_RIGHT)     focus_mover_grade(&foco, 1, 0);
-  else if (k == SDLK_LEFT) focus_mover_grade(&foco, -1, 0);
+  else if (k == SDLK_LEFT) { if (!focus_mover_grade(&foco, -1, 0)) sair = 1; }
   else if (k == SDLK_DOWN) focus_mover_grade(&foco, 0, 1);
   else if (k == SDLK_UP) {
     if (foco.fileira == BIB_FIL_GRADE) { foco.fileira = BIB_FIL_PICK; foco.coluna = pickSel; }

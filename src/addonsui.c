@@ -67,7 +67,7 @@ void addonsui_evento(const SDL_Event *e) {
         sync_sujar_addons();
       }
       break;
-    case SDLK_AC_BACK: sair = 1; break;
+    case SDLK_AC_BACK: case SDLK_LEFT: sair = 1; break;
     default: break;
   }
 }

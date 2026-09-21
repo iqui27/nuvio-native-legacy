@@ -548,7 +548,7 @@ void agendaui_evento(const SDL_Event *e) {
     }
     return;
   }
-  if (volta) { sair = 1; return; }
+  if (volta || k == SDLK_LEFT) { sair = 1; return; }
   if (k == SDLK_DOWN && foco < n - 1) foco++;
   else if (k == SDLK_UP && foco > 0)  foco--;
   else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && !e->key.repeat) okDesde = SDL_GetTicks();

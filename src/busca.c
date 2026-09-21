@@ -371,7 +371,7 @@ void busca_evento(const SDL_Event *e) {
     }
     if (k == SDLK_TAB && nFil > 0) { painel = 1; return; }
     switch (k) {
-      case SDLK_LEFT:  focus_mover_grade(&focoKb, -1, 0); break;
+      case SDLK_LEFT:  if (!focus_mover_grade(&focoKb, -1, 0)) sair = 1; break;
       case SDLK_RIGHT:
         // Passar da ULTIMA coluna do teclado entra nos resultados. E a unica
         // ponte entre os dois paineis, e por isso ela nao pode falhar em

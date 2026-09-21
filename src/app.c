@@ -215,6 +215,7 @@ static void *escolherFonteCanal(void *u) {
 
 static Tela tela = TELA_HOME;
 static int sair = 0;
+static int saiuPorEsquerda;   // a ultima tecla foi ESQUERDA (ver app_evento)
 // perfis_ativo() no instante em que a tela de escolha abriu. So serve para uma
 // pergunta: a pessoa TROCOU de perfil, ou confirmou o mesmo? Agora que a tela
 // aparece a cada arranque, confirmar o mesmo perfil e o caso comum — e recarga
@@ -627,6 +628,12 @@ void app_evento(const SDL_Event *e) {
       return;
     }
   }
+  // A BARRA LATERAL VEM DE QUALQUER TELA (dono, 21/09/2026: "hoje ela so
+  // funciona na home"), menos do guia e com o PiP aberto. Cada tela sai com
+  // ESQUERDA quando nao ha mais para onde ir a esquerda; aqui, se a saida foi
+  // por essa tecla, a home volta JA com a barra aberta em vez de exigir um
+  // segundo ESQUERDA. `saiuPorEsquerda` e o que o bloco de sair le.
+  if (e->type == SDL_KEYDOWN) saiuPorEsquerda = (e->key.keysym.sym == SDLK_LEFT);
   if (player_aberto()) { player_evento(e); return; }
   if (detail_aberto()) { detail_evento(e); return; }
   if (spainel_aberto()) { spainel_evento(e); return; }
@@ -1054,7 +1061,9 @@ void app_atualizar(float dt, Uint32 agora) {
   // A lista de addons foi aberta DE Ajustes, entao o Back dela volta para
   // Ajustes. Cair na home aqui faria a pessoa refazer o caminho inteiro so
   // para ligar dois addons seguidos.
-  if (tela == TELA_ADDONS && addonsui_quer_sair()) {
+  if (tela == TELA_ADDONS && addonsui_quer_sair() && saiuPorEsquerda && !player_mini_ativo()) {
+    saiuPorEsquerda = 0; trocarTela(TELA_HOME); menu_definir_destino(MENU_INICIO); menu_abrir();
+  } else if (tela == TELA_ADDONS && addonsui_quer_sair()) {
     trocarTela(TELA_AJUSTES); menu_definir_destino(MENU_AJUSTES);
   }
   if (tela == TELA_AJUSTES && ajustes_pediu_addons()) {
@@ -1071,7 +1080,11 @@ void app_atualizar(float dt, Uint32 agora) {
               || (tela == TELA_PERFIL      && perfil_quer_sair())
               || (tela == TELA_SOCIAL      && social_quer_sair())
               || (tela == TELA_AJUSTES    && ajustes_quer_sair());
-    if (fechar) { trocarTela(TELA_HOME); menu_definir_destino(MENU_INICIO); }
+    if (fechar) {
+      trocarTela(TELA_HOME); menu_definir_destino(MENU_INICIO);
+      if (saiuPorEsquerda && !player_mini_ativo()) menu_abrir();
+      saiuPorEsquerda = 0;
+    }
   } else if (home_quer_sair()) {
     sair = 1;
   }
