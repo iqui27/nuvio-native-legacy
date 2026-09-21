@@ -19,11 +19,12 @@ typedef struct {
   char titulo[240];   // manchete, ja sem " - Veiculo" no fim
   char fonte[80];     // veiculo
   char data[16];      // "20 set" / "20 Sep", pronta para desenhar
+  long chave;         // AAAAMMDD, para ordenar da mais nova para a mais velha
 } Noticia;
 
 // Dispara a busca (uma vez por imdb; repetir e gratis). `serie` so muda a
 // palavra de apoio na consulta ("serie"/"filme") para desambiguar titulos.
-void noticias_pedir(const char *imdb, const char *titulo, int serie);
+void noticias_pedir(const char *imdb, const char *titulo, const char *rede, int serie);
 // 1 quando a rede ja respondeu (com ou sem manchetes).
 int  noticias_respondeu(const char *imdb);
 int  noticias_n(const char *imdb);

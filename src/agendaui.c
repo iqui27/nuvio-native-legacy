@@ -223,7 +223,6 @@
 // e a mesma palavra nos dois estados. "Lembrete ativo" em TXT_CAPTION2 mede
 // ~153px; 178 deixa a folga do corte e ainda centra o icone na faixa.
 #define AG_SINO_FAIXA  (AG_SINO + 124.0f)
-#define AG_TEXTO_ESCURO 20
 
 // EMERALD #66bb6a — o MESMO da paleta de acentos (ajustes.c:204) e do selo do
 // Social (salvospainel.c:708). Nao ha verde novo neste arquivo.
@@ -232,17 +231,16 @@
 #define AG_VERDE_B 0.416f
 // Sobre superficie clara o esmeralda cheio da 2,2:1 e some. Escurecido a 42% da
 // 8:1 contra #f5f5f5 e continua sendo o mesmo matiz — escurecer nao inventa cor.
-#define AG_VERDE_ESC 0.42f
 
 void agendaui_cor_lembrete(int ligado, int sobreClaro,
                            float *r, float *g, float *b) {
-  float k = ligado ? (sobreClaro ? AG_VERDE_ESC : 1.0f) : 0.0f;
-  if (!ligado) {
-    float t = sobreClaro ? (AG_TEXTO_ESCURO / 255.0f) : 0.94f;
-    *r = *g = *b = t;
-    return;
-  }
-  *r = AG_VERDE_R * k; *g = AG_VERDE_G * k; *b = AG_VERDE_B * k;
+  // SOBRE O REALCE (linha em foco) o despertador vai na tinta do realce,
+  // armado ou nao: o verde escurecido "nao orna com nada" (dono, 21/09/2026)
+  // e sobre o rosa vira lama. As ondas e o tremor continuam dizendo o
+  // estado. Fora do foco, armado = verde, desarmado = quase branco.
+  if (sobreClaro) { *r = *g = *b = ajustes_acento_tinta(NULL, NULL, NULL); return; }
+  if (!ligado) { *r = *g = *b = 0.94f; return; }
+  *r = AG_VERDE_R; *g = AG_VERDE_G; *b = AG_VERDE_B;
 }
 
 // --- O DESPERTADOR ANIMADO ---------------------------------------------------
@@ -486,6 +484,13 @@ int agendaui_iniciar(void) {
   // registro faltando ou velho. Ver a nota longa em agenda.c: este e o unico
   // pedido do recurso que nao vem de graca.
   agenda_atualizar_seguidas();
+  // As manchetes de cada titulo, em fio proprio e com cache de 6 h: e o que a
+  // citacao da linha e o painel do menu de contexto mostram.
+  { int i, n = agenda_n();
+    for (i = 0; i < n && i < 16; i++) {
+      const AgItem *it = agenda_lista(i);
+      if (it && it->imdb[0] && it->titulo[0]) noticias_pedir(it->imdb, it->titulo, it->rede, 1);
+    } }
   return 1;
 }
 
@@ -522,7 +527,7 @@ void agendaui_evento(const SDL_Event *e) {
       const AgItem *it = agenda_lista(foco);
       if (!it) return;
       ctxAberto = 1; ctxFoco = 0; ctxItem = foco;
-      noticias_pedir(it->imdb, it->titulo, 1);
+      noticias_pedir(it->imdb, it->titulo, it->rede, 1);
     } else alternarLembrete();
     return;
   }
@@ -944,16 +949,34 @@ static void desenhaConteudo(const AgItem *it, float x, float y, float larg,
       // isso seria enchimento, e enchimento e o que esta coluna nao pode ter.
       agenda_quando(it->dataProx, ant, sizeof ant);
     }
-    if (ant[0]) la = txt_linha_corta(TXT_CAPTION2, ant, ca, ca, ca, 255, wDir);
-    altD = (la.h ? (float)la.h + 10.0f : 0.0f)
-         + (nSin ? AG_SIN_LD * (float)(nSin - 1) + 26.0f : 0.0f);
-    if (altD > 0.0f) {
-      float yd = y + (AG_LINHA_H - altD) * 0.5f;
-      if (la.h) { txt_desenhar_alpha(la, xDirCol, yd, f); yd += (float)la.h + 10.0f; }
-      if (nSin)
-        agendaui_sinopse(TXT_CAPTION, it->sinopse, xDirCol, yd, wDir,
-                         AG_SIN_LD, AG_SIN_MAX, cs, cs, cs, f);
-    }
+    // A ULTIMA NOTICIA, como citacao, no lugar da sinopse quando existe
+    // (dono, 21/09/2026: "embaixo, em forma de citacao, a ultima noticia e
+    // escrito hold to read more"). Duas linhas no maximo e a dica de segurar
+    // OK, que abre o painel com todas.
+    { const Noticia *nt = noticias_item(it->imdb, 0);
+      char cit[300];
+      TxtLinha dica = { 0, 0, 0 };
+      int nCit = 0;
+      if (nt) {
+        snprintf(cit, sizeof cit, "\xe2\x80\x9c%s\xe2\x80\x9d", nt->titulo);
+        nCit = agendaui_sinopse_linhas(TXT_CAPTION, cit, wDir, 2, cs, cs, cs);
+        dica = txt_linha(TXT_CAPTION2, i18n("Segure OK para ler mais"), ca, ca, ca, 255);
+      }
+      if (ant[0]) la = txt_linha_corta(TXT_CAPTION2, ant, ca, ca, ca, 255, wDir);
+      altD = (la.h ? (float)la.h + 10.0f : 0.0f)
+           + (nCit ? AG_SIN_LD * (float)(nCit - 1) + 26.0f + 8.0f + (float)dica.h
+                   : (nSin ? AG_SIN_LD * (float)(nSin - 1) + 26.0f : 0.0f));
+      if (altD > 0.0f) {
+        float yd = y + (AG_LINHA_H - altD) * 0.5f;
+        if (la.h) { txt_desenhar_alpha(la, xDirCol, yd, f); yd += (float)la.h + 10.0f; }
+        if (nCit) {
+          agendaui_sinopse(TXT_CAPTION, cit, xDirCol, yd, wDir, AG_SIN_LD, 2, cs, cs, cs, f);
+          yd += AG_SIN_LD * (float)(nCit - 1) + 26.0f + 8.0f;
+          txt_desenhar_alpha(dica, xDirCol, yd, f);
+        } else if (nSin)
+          agendaui_sinopse(TXT_CAPTION, it->sinopse, xDirCol, yd, wDir,
+                           AG_SIN_LD, AG_SIN_MAX, cs, cs, cs, f);
+      } }
   }
 
   // ESTADO DO LEMBRETE, encostado na direita: o DESPERTADOR, e nao uma

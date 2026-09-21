@@ -41,6 +41,8 @@
 // arquivo — se ele mudar e a leitura nao acompanhar, a tela sai vazia.
 #include "agenda.h"
 #include "agendaui.h"
+#include "noticias.h"
+#include "layout.h"
 #include "agendaviso.h"
 #include "menu.h"
 #include "detail.h"
@@ -89,7 +91,18 @@ static void tecla(SDL_Keycode k) {
   e.type = SDL_KEYDOWN;
   e.key.keysym.sym = k;
   if (oQue == DES_MENU) menu_evento(&e);
-  else agendaui_evento(&e);
+  else { agendaui_evento(&e); e.type = SDL_KEYUP; agendaui_evento(&e); }
+}
+// OK SEGURADO na Agenda: KEYDOWN, espera passar NV_HOLD_MS, KEYUP — e no
+// KEYUP que agendaui decide entre lembrete (toque) e menu de contexto.
+static void segurarOk(void) {
+  SDL_Event e;
+  memset(&e, 0, sizeof e);
+  e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RETURN;
+  agendaui_evento(&e);
+  SDL_Delay(NV_HOLD_MS + 100);
+  e.type = SDL_KEYUP;
+  agendaui_evento(&e);
 }
 
 static void teclaDet(SDL_Keycode k) {
@@ -297,6 +310,21 @@ int main(int argc, char **argv) {
   agendaui_iniciar();
   snprintf(nome, sizeof nome, "%s-hoje.bmp", saida);
   captura(nome, w);
+
+  // --- 2b. A ULTIMA NOTICIA como citacao, o menu de contexto e o painel ------
+  // Rede de verdade (Google News): espera ate 8 s pela resposta da primeira
+  // linha. Sem rede a foto sai com a sinopse, que e o comportamento certo.
+  { int i; for (i = 0; i < 80 && !noticias_respondeu("tt10255564"); i++) SDL_Delay(100); }
+  printf("noticias Foundation: %d manchete(s)\n", noticias_n("tt10255564"));
+  snprintf(nome, sizeof nome, "%s-noticia.bmp", saida);
+  captura(nome, w);
+  segurarOk();
+  snprintf(nome, sizeof nome, "%s-ctx.bmp", saida);
+  captura(nome, w);
+  tecla(SDLK_DOWN); tecla(SDLK_RETURN);
+  snprintf(nome, sizeof nome, "%s-ctx-noticias.bmp", saida);
+  captura(nome, w);
+  tecla(SDLK_ESCAPE); tecla(SDLK_ESCAPE);
 
   // --- 3. UMA LINHA DE SINOPSE: The Last of Us --------------------------------
   // O caso que o pedido do dono nomeia. Com a sinopse embaixo, uma frase curta

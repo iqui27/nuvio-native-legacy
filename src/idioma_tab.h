@@ -6,6 +6,7 @@
   { " · %d ainda não exibido", " · %d not aired yet" },
   { " · %d ainda não exibidos", " · %d not aired yet" },
   { " · Nascido em %s", " · Born %s" },
+  { "Segure OK para ler mais", "Hold OK to read more" },
   { "\"Mais como este\"", "\"More like this\"" },
   { "%.1f MB · %d imagens", "%.1f MB · %d images" },
   { "%.1f de %d MB · %d%%", "%.1f of %d MB · %d%%" },

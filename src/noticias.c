@@ -72,7 +72,7 @@ static void desentidar(char *s) {
       if (!strncmp(r, "&gt;", 4))        { *w++ = '>';  r += 4; continue; }
       if (r[1] == '#') {
         long v = strtol(r + 2 + (r[2] == 'x' || r[2] == 'X'), NULL, (r[2] == 'x' || r[2] == 'X') ? 16 : 10);
-        const char *fim = strchr(r, ';');
+        char *fim = strchr(r, ';');
         if (fim && v > 0) {
           // UTF-8 de ate 3 bytes: o que uma manchete usa.
           if (v < 0x80) *w++ = (char)v;
@@ -111,16 +111,24 @@ static const char *campo(const char *de, const char *fim, const char *tag, char 
 }
 
 // "Sat, 20 Sep 2026 12:00:00 GMT" -> "20 Sep" / "20 set".
-static void dataCurta(const char *rfc, char *dst, size_t cap) {
+static long dataCurta(const char *rfc, char *dst, size_t cap) {
   static const char *EN[] = { "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec" };
   static const char *PT[] = { "jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez" };
-  int d = 0, m = -1, i;
+  int d = 0, m = -1, i, ano = 0;
   char mes[8] = "";
   dst[0] = 0;
-  if (sscanf(rfc, "%*[^,], %d %7s", &d, mes) != 2) return;
+  if (sscanf(rfc, "%*[^,], %d %7s %d", &d, mes, &ano) < 2) return 0;
   for (i = 0; i < 12; i++) if (!strncmp(mes, EN[i], 3)) m = i;
-  if (m < 0) return;
-  snprintf(dst, cap, "%d %s", d, ajustes_idioma_ingles() ? EN[m] : PT[m]);
+  if (m < 0) return 0;
+  // O ANO so quando nao e o corrente: "25 set 2025" ao lado de "19 set" diz
+  // que uma e velha sem gastar a largura da linha nas novas.
+  { time_t agora = time(NULL); struct tm *tmp = gmtime(&agora);
+    int anoAtual = tmp ? tmp->tm_year + 1900 : 0;
+    if (ano && ano != anoAtual)
+      snprintf(dst, cap, "%d %s %d", d, ajustes_idioma_ingles() ? EN[m] : PT[m], ano);
+    else
+      snprintf(dst, cap, "%d %s", d, ajustes_idioma_ingles() ? EN[m] : PT[m]); }
+  return (long)ano * 10000L + (long)(m + 1) * 100L + d;
 }
 
 static void interpretar(Entrada *e, const char *xml) {
@@ -146,10 +154,17 @@ static void interpretar(Entrada *e, const char *xml) {
             !strncmp(nt->titulo + lt - lf - 3, " - ", 3))
           nt->titulo[lt - lf - 3] = 0; }
     }
-    if (campo(p, fim, "pubDate", buf, sizeof buf)) dataCurta(buf, nt->data, sizeof nt->data);
+    if (campo(p, fim, "pubDate", buf, sizeof buf)) nt->chave = dataCurta(buf, nt->data, sizeof nt->data);
     if (nt->titulo[0]) e->n++;
     p = fim + 7;
   }
+  // DA MAIS NOVA PARA A MAIS VELHA. O RSS de busca vem por relevancia, e a
+  // linha da Agenda mostra so a primeira: tem de ser a ultima noticia.
+  { int i, j;
+    for (i = 1; i < e->n; i++)
+      for (j = i; j > 0 && e->itens[j].chave > e->itens[j - 1].chave; j--) {
+        Noticia t = e->itens[j]; e->itens[j] = e->itens[j - 1]; e->itens[j - 1] = t;
+      } }
 }
 
 // --- disco -------------------------------------------------------------------
@@ -165,7 +180,7 @@ static void gravar(const Entrada *e) {
   if (!txt) return;
   k += (size_t)snprintf(txt + k, cap - k, "%ld\n", e->quando);
   for (i = 0; i < e->n && k < cap; i++)
-    k += (size_t)snprintf(txt + k, cap - k, "%s\t%s\t%s\n", e->itens[i].data, e->itens[i].fonte, e->itens[i].titulo);
+    k += (size_t)snprintf(txt + k, cap - k, "%ld\t%s\t%s\t%s\n", e->itens[i].chave, e->itens[i].data, e->itens[i].fonte, e->itens[i].titulo);
   nomeDisco(e->imdb, nome, sizeof nome);
   dados_gravar_leve(nome, txt);
   free(txt);
@@ -182,13 +197,16 @@ static int lerDisco(Entrada *e) {
   l = strchr(txt, '\n');
   while (l && *++l && e->n < NOT_MAX) {
     Noticia *nt = &e->itens[e->n];
-    char *t1, *t2;
+    char *t0, *t1, *t2;
     prox = strchr(l, '\n'); if (prox) *prox = 0;
-    t1 = strchr(l, '\t'); if (!t1) { l = prox; continue; }
+    t0 = strchr(l, '\t'); if (!t0) { l = prox; continue; }
+    *t0++ = 0;
+    t1 = strchr(t0, '\t'); if (!t1) { l = prox; continue; }
     *t1++ = 0;
     t2 = strchr(t1, '\t'); if (!t2) { l = prox; continue; }
     *t2++ = 0;
-    snprintf(nt->data, sizeof nt->data, "%s", l);
+    nt->chave = atol(l);
+    snprintf(nt->data, sizeof nt->data, "%s", t0);
     snprintf(nt->fonte, sizeof nt->fonte, "%s", t1);
     snprintf(nt->titulo, sizeof nt->titulo, "%s", t2);
     e->n++;
@@ -200,7 +218,7 @@ static int lerDisco(Entrada *e) {
 
 // --- rede --------------------------------------------------------------------
 
-typedef struct { char imdb[40]; char titulo[200]; int serie; } Pedido;
+typedef struct { char imdb[40]; char titulo[200]; char rede[64]; int serie; } Pedido;
 
 static void *buscar(void *arg) {
   Pedido *p = arg;
@@ -209,8 +227,11 @@ static void *buscar(void *arg) {
   int en = ajustes_idioma_ingles();
   // Titulo entre aspas mais a palavra de apoio: "Silo" serie acha a serie e
   // nao o armazem.
-  snprintf(q, sizeof q, "\"%s\" %s", p->titulo,
-           p->serie ? (en ? "series" : "s\xc3\xa9rie") : (en ? "movie" : "filme"));
+  // A REDE entra entre aspas quando se sabe ("Foundation" "Apple TV+"): sem
+  // ela a busca por "Foundation" trazia a Wikimedia Foundation.
+  if (p->rede[0]) snprintf(q, sizeof q, "\"%s\" \"%s\"", p->titulo, p->rede);
+  else snprintf(q, sizeof q, "\"%s\" %s", p->titulo,
+                p->serie ? (en ? "series" : "s\xc3\xa9rie") : (en ? "movie" : "filme"));
   { char qc[900]; codificar(q, qc, sizeof qc);
     snprintf(url, sizeof url, "https://news.google.com/rss/search?q=%s&hl=%s&gl=%s&ceid=%s",
              qc, en ? "en-US" : "pt-BR", en ? "US" : "BR", en ? "US:en" : "BR:pt-419"); }
@@ -232,7 +253,7 @@ static void *buscar(void *arg) {
   return NULL;
 }
 
-void noticias_pedir(const char *imdb, const char *titulo, int serie) {
+void noticias_pedir(const char *imdb, const char *titulo, const char *rede, int serie) {
   Entrada *e;
   Pedido *p;
   pthread_t f;
@@ -247,6 +268,7 @@ void noticias_pedir(const char *imdb, const char *titulo, int serie) {
   if (!p) return;
   snprintf(p->imdb, sizeof p->imdb, "%s", imdb);
   snprintf(p->titulo, sizeof p->titulo, "%s", titulo);
+  snprintf(p->rede, sizeof p->rede, "%s", rede ? rede : "");
   p->serie = serie;
   if (pthread_create(&f, NULL, buscar, p) == 0) pthread_detach(f);
   else { free(p); pthread_mutex_lock(&trava); e->emVoo = 0; pthread_mutex_unlock(&trava); }

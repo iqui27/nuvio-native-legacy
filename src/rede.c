@@ -489,16 +489,22 @@ static int abrir(void) {
   // Leitura rapida sem trava para o caso comum (ja carregado). Escrita de int
   // e atomica nas arquiteturas em que este app roda; o que precisa de trava e a
   // SEQUENCIA dlopen+global_init, nao a bandeira.
-  if (pronto) return pronto > 0;
+  // So o RESULTADO (1 carregou, -1 falhou de vez) passa sem trava. Enquanto
+  // um fio ainda esta no dlopen+global_init a bandeira vale -2, e quem chega
+  // nesse instante ESPERA na trava em vez de voltar "sem rede": era o que
+  // acontecia — sete fios de noticias partindo juntos, o primeiro carregava a
+  // libcurl e os outros cinco falhavam na hora (medido em tests/agenda_shot).
+  // No arranque do aparelho os quatro fios de arte partem do mesmo jeito.
+  if (pronto == 1 || pronto == -1) return pronto > 0;
   pthread_mutex_lock(&abrirTrava);
-  if (pronto) { r = pronto > 0; pthread_mutex_unlock(&abrirTrava); return r; }
-  pronto = -1;
+  if (pronto == 1 || pronto == -1) { r = pronto > 0; pthread_mutex_unlock(&abrirTrava); return r; }
+  pronto = -2;
   h = dlopen("libcurl.so.5", RTLD_NOW);
   if (!h) h = dlopen("libcurl.so.4", RTLD_NOW);
   if (!h) h = dlopen("libcurl.4.dylib", RTLD_NOW);   // Mac
   if (!h) h = dlopen("libcurl.dylib", RTLD_NOW);
   if (!h) { printf("[rede] sem libcurl: %s\n", dlerror());
-            pthread_mutex_unlock(&abrirTrava); return 0; }
+            pronto = -1; pthread_mutex_unlock(&abrirTrava); return 0; }
   *(void **)(&curl_init)    = dlsym(h, "curl_easy_init");
   *(void **)(&curl_setopt)  = dlsym(h, "curl_easy_setopt");
   *(void **)(&curl_perform) = dlsym(h, "curl_easy_perform");
@@ -509,6 +515,7 @@ static int abrir(void) {
   *(void **)(&curl_getinfo) = dlsym(h, "curl_easy_getinfo");
   if (!curl_init || !curl_setopt || !curl_perform) {
     printf("[rede] libcurl sem os simbolos esperados\n");
+    pronto = -1;
     pthread_mutex_unlock(&abrirTrava);
     return 0;
   }
