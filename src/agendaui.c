@@ -773,9 +773,9 @@ static void linhaApoio(const AgItem *it, char *dst, size_t tam) {
 static void desenhaConteudo(const AgItem *it, float x, float y, float larg,
                             float f) {
   char ep[220], apoio[220], ant[120];
-  int c  = f > 0.5f ? AG_TEXTO_ESCURO : 246;
-  int c2 = f > 0.5f ? 62 : 158;
-  int c3 = f > 0.5f ? 88 : 126;
+  int c  = f > 0.5f ? ajustes_tinta_foco() : 246;
+  int c2 = f > 0.5f ? ajustes_tinta_foco2() : 158;
+  int c3 = f > 0.5f ? ajustes_tinta_foco2() : 126;
   float tx, util, wEsq, wDir, xDirCol, yb, blocoH;
   TxtLinha t, l2, l3;
 
@@ -849,8 +849,8 @@ static void desenhaConteudo(const AgItem *it, float x, float y, float larg,
   // espaco. A linha continua com 177px de altura, que e o tamanho do que ela
   // tem a dizer — a laje de 254px com metade vazia era exatamente a queixa.
   if (f > 0.02f) {
-    int cs = f > 0.5f ? 52 : 168;
-    int ca = f > 0.5f ? 92 : 132;
+    int cs = f > 0.5f ? ajustes_tinta_foco2() : 168;
+    int ca = f > 0.5f ? ajustes_tinta_foco2() : 132;
     int nSin = it->sinopse[0]
              ? agendaui_sinopse_linhas(TXT_CAPTION, it->sinopse, wDir,
                                        AG_SIN_MAX, cs, cs, cs)
@@ -917,7 +917,7 @@ static void desenhaConteudo(const AgItem *it, float x, float y, float larg,
       TxtLinha leg = { 0, 0, 0 };
       if (f > 0.5f && pode) {
         const char *s = it->lembrete ? i18n("Lembrete ativo") : i18n("Lembrar-me");
-        int cl = AG_TEXTO_ESCURO + 40;
+        int cl = ajustes_tinta_foco2();
         leg = txt_linha_corta(TXT_CAPTION2, s, cl, cl, cl, 255, AG_SINO_FAIXA);
         altP += 6.0f + (float)leg.h;
       }

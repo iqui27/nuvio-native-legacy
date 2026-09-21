@@ -1082,8 +1082,8 @@ float seriefrases_desenhar(GfxRect r) {
     // que a Agenda usa na linha secundaria da linha focada (AG_TEXTO_ESCURO e
     // 20, o secundario dela e 62) — aguenta o tema mais escuro e continua um
     // degrau claro abaixo do 18 da fala.
-    int cr = sel ? 18 : 232, cg = sel ? 18 : 234, cb = sel ? 22 : 240;
-    int ar = sel ? 62 : 150, ag = sel ? 62 : 153, ab = sel ? 68 : 162;
+    int cr = sel ? ajustes_tinta_foco() : 232, cg = sel ? ajustes_tinta_foco() : 234, cb = sel ? ajustes_tinta_foco() : 240;
+    int ar = sel ? ajustes_tinta_foco2() : 150, ag = sel ? ajustes_tinta_foco2() : 153, ab = sel ? ajustes_tinta_foco2() : 162;
     float largTexto = r.w - SF_VAO - 24.0f;
     float alturaTexto, conteudoH;
     float xTexto = r.x + SF_VAO;

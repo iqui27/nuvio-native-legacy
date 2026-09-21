@@ -228,7 +228,7 @@ static void desenhaOpcao(float x, float y, float f, int vigor,
                    gfx_cor(r, 0.16f, ar, ag, ab, f * a); }
   else if (vigor)
     gfx_rect(r, 0, GFX_ANEL, 0, 1.5f / r.w, 0, 0.16f, 0.55f, 0.56f, 0.60f, a);
-  { int c = emFoco ? 20 : 245;
+  { int c = emFoco ? ajustes_tinta_foco() : 245;
     TxtLinha t = txt_linha_corta(TXT_CALLOUT, tit, c, c + 1, c + 5, 255, SI_INT - 44.0f);
     txt_desenhar_alpha(t, x + 22.0f, y + 14.0f, a); }
   if (emFoco) txt_bloco(TXT_CAPTION, desc, 60, 62, 70, x + 22.0f, y + 50.0f,

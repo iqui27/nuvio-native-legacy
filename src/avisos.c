@@ -519,7 +519,7 @@ static int cartaoEvento(const SDL_Event *e) {
 
 // Botao do cartao: pilula cheia quando em foco, anel quando nao.
 static float botao(float x, float y, const char *rot, int foco, float a, float ar, float ag, float ab) {
-  TxtLinha t = txt_linha(TXT_BODY, rot, foco ? 20 : 240, foco ? 21 : 241, foco ? 25 : 245, 255);
+  TxtLinha t = txt_linha(TXT_BODY, rot, foco ? ajustes_tinta_foco() : 240, foco ? ajustes_tinta_foco() : 241, foco ? ajustes_tinta_foco() : 245, 255);
   GfxRect r = { x, y, t.w + 56.0f, 64.0f };
   if (foco) gfx_cor(r, 0.5f, ar, ag, ab, a);
   else      gfx_cor(r, 0.5f, 0.20f, 0.20f, 0.21f, a);
@@ -749,7 +749,10 @@ int avisos_lista_n(void) { int k; pthread_mutex_lock(&trava); k = n; pthread_mut
 void avisos_lista_desenhar(float x, float y0, float w, float a, int focoLinha) {
   float ar, ag, ab;
   int i;
-  ajustes_acento(&ar, &ag, &ab);
+  // Tinta sobre o realce: branca, a nao ser que o realce seja branco
+  // (ajustes_acento_tinta). `tf` e o texto principal, `ts` o secundario.
+  float tinta = ajustes_acento_tinta(&ar, &ag, &ab);
+  int tf = (int)(tinta * 255.0f + 0.5f), ts = tinta > 0.5f ? 225 : 45;
   pthread_mutex_lock(&trava);
   if (n == 0) {
     TxtLinha t = txt_linha(TXT_CAPTION, i18n("Nada por enquanto."), 150, 153, 162, 255);
@@ -772,7 +775,7 @@ void avisos_lista_desenhar(float x, float y0, float w, float a, int focoLinha) {
     // palavra: a palavra competia com o titulo e o ponto e o vocabulario que
     // a aba Social ja usa para "qual delas e nova".
     if (!av->visto && !f) gfx_cor((GfxRect){ x + 62.0f, y + 18.0f, 14.0f, 14.0f }, 0.5f, ar, ag, ab, a);
-    { TxtLinha t = txt_linha_corta(TXT_BODY, av->titulo, f ? 20 : 240, f ? 21 : 241, f ? 25 : 245, 255, w - 116.0f);
+    { TxtLinha t = txt_linha_corta(TXT_BODY, av->titulo, f ? tf : 240, f ? tf : 241, f ? tf : 245, 255, w - 116.0f);
       txt_desenhar_alpha(t, x + 92.0f, y + 16.0f, a); }
     if (expande) {
       float h = txt_bloco(TXT_CAPTION, av->texto, 60, 62, 70, x + 92.0f, y + 50.0f, w - 116.0f, 27.0f, a, AVL_LINHAS_CANAL);
@@ -791,7 +794,7 @@ void avisos_lista_desenhar(float x, float y0, float w, float a, int focoLinha) {
       default: break;
     }
     if (acao) {
-      TxtLinha t = txt_linha(TXT_CAPTION2, acao, f ? 40 : 120, f ? 42 : 124, f ? 50 : 134, 255);
+      TxtLinha t = txt_linha(TXT_CAPTION2, acao, f ? ts : 120, f ? ts : 124, f ? ts : 134, 255);
       txt_desenhar_alpha(t, x + 92.0f, y + row.h - 34.0f, a * 0.95f);
     }
     y += rowH;

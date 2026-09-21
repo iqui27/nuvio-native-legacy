@@ -50,10 +50,15 @@
 #endif
 #define AJ_VERSAO       NV_VERSAO
 
-// TEXTO SOBRE A COR DE REALCE. Todas as cores de TEMA_ACENTO sao claras (a
-// mais escura, o violeta #ab47bc, da 6,6:1 contra #141414), entao o texto do
-// item em foco e sempre escuro — nao ha por que medir por cor.
-#define AJ_TEXTO_ESCURO  20
+// TEXTO SOBRE A COR DE REALCE: BRANCO, a nao ser que o realce seja branco (ou
+// quase). Regra do dono (21/09/2026): "se nao for branco o accent, a cor de
+// texto tem que ser branca". Antes era 20 cravado, do tempo em que o realce
+// era sempre branco; com o rosa o texto escuro ficava sujo. A medida mora em
+// ajustes_acento_tinta, que todos os modulos usam.
+#define AJ_TEXTO_ESCURO  (tintaFoco())
+#define AJ_TEXTO_ESCURO2 (tintaFoco() > 128 ? 232 : 50)   // valor, um degrau abaixo
+static int tintaFoco(void) { return ajustes_acento_tinta(NULL, NULL, NULL) > 0.5f ? 255 : 20; }
+static int focoEscuro(void) { return tintaFoco() < 128; }   // superficie do foco e clara?
 #define AJ_LINHA_H       88.0f
 #define AJ_LINHA_GAP      8.0f
 #define AJ_SEC_GAP       46.0f    // fim de uma secao ao cabecalho da proxima
@@ -869,8 +874,13 @@ float ajustes_acento_tinta(float *r, float *g, float *b) {
   if (g) *g = cg;
   if (b) *b = cb;
   lum = 0.2126f * cr + 0.7152f * cg + 0.0722f * cb;
-  return lum > 0.55f ? 0.067f : 1.0f;
+  // So o realce BRANCO (ou quase) leva tinta escura; qualquer cor leva
+  // branco. Regra do dono (21/09/2026), no lugar do corte a 0,55 que punha
+  // texto escuro sobre o rosa e o amarelo.
+  return lum > 0.88f ? 0.067f : 1.0f;
 }
+int ajustes_tinta_foco(void)  { return ajustes_acento_tinta(NULL, NULL, NULL) > 0.5f ? 255 : 20; }
+int ajustes_tinta_foco2(void) { return ajustes_acento_tinta(NULL, NULL, NULL) > 0.5f ? 225 : 60; }
 
 // `collapseSidebar: modernSidebar ? false : Boolean(collapseSidebar)` — a barra
 // moderna DESLIGA o recolhimento, e nao o contrario. Copiado de
@@ -2455,9 +2465,10 @@ static void desenhaLinha(int op, float y, float f, float dx, float aPag) {
   int cr = emFoco ? AJ_TEXTO_ESCURO : (podeMudar ? 240 : 192);
   // O icone da familia, num disco discreto; sobre o foco claro ele escurece
   // junto com o texto.
-  { float ci = emFoco ? 0.16f : 0.70f;
+  { int esc = emFoco && focoEscuro();
+    float ci = esc ? 0.16f : (emFoco ? 1.0f : 0.70f), cd = esc ? 0.0f : 1.0f;
     GfxRect disco = { linha.x + AJ_PAD - 6.0f, y + (AJ_LINHA_H - 44.0f) * 0.5f, 44.0f, 44.0f };
-    gfx_cor(disco, 0.5f, emFoco ? 0.0f : 1.0f, emFoco ? 0.0f : 1.0f, emFoco ? 0.0f : 1.0f, (emFoco ? 0.08f : 0.06f) * a);
+    gfx_cor(disco, 0.5f, cd, cd, cd, (emFoco ? 0.08f : 0.06f) * a);
     gfx_icone((GfxRect){ disco.x + 10.0f, disco.y + 10.0f, 24.0f, 24.0f }, iconeOpcao(op), ci, ci, ci + 0.02f, aTexto); }
   TxtLinha rot = txt_linha_corta(TXT_CALLOUT, OPCOES[op].rotulo,
                                 cr, cr, cr, 255, AJ_LISTA_W - 480.0f);
@@ -2465,7 +2476,7 @@ static void desenhaLinha(int op, float y, float f, float dx, float aPag) {
                      y + (AJ_LINHA_H - rot.h) * 0.5f, aTexto);
 
   const char *v = textoValor(op);
-  int cv = emFoco ? AJ_TEXTO_ESCURO + 30 : (podeMudar ? 220 : 176);
+  int cv = emFoco ? AJ_TEXTO_ESCURO2 : (podeMudar ? 220 : 176);
   TxtLinha val = txt_linha_corta(TXT_CALLOUT, v, cv, cv, cv, 255, 360.0f);
   float xDir = linha.x + AJ_LISTA_W - AJ_PAD;
   float valorDir = xDir - 36.0f;
@@ -2484,7 +2495,7 @@ static void desenhaLinha(int op, float y, float f, float dx, float aPag) {
     GfxRect trilho = { bx, by, bw, bh };
     GfxRect cheio  = { bx, by, bw * anim_clamp(t, 0.0f, 1.0f), bh };
     // Sobre o preenchimento claro do foco a barra tem de ser escura.
-    float cb = emFoco ? 0.08f : 0.94f;
+    float cb = (emFoco && focoEscuro()) ? 0.08f : 0.94f;
     gfx_cor(trilho, 0.5f, cb, cb, cb + 0.02f, 0.22f * aTexto);
     if (cheio.w > 0.5f)
       gfx_cor(cheio, 0.5f, cb, cb, cb + 0.02f, 0.92f * aTexto);

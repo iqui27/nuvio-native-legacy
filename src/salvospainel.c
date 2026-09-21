@@ -968,7 +968,7 @@ static void desenhaAbas(float dx, float a) {
   for (i = 0; i < 3; i++) {
     int ativa = (i == aba);
     int emFoco = (foco == SP_FOCO_ABAS && ativa);
-    int cor = emFoco ? 20 : (ativa ? 246 : 176);
+    int cor = emFoco ? ajustes_tinta_foco() : (ativa ? 246 : 176);
     int novas = i == SP_ABA_SOCIAL ? novasRec : i == SP_ABA_AVISOS ? novasAv : 0;
     TxtLinha t;
     if (i == SP_ABA_SOCIAL && !temSocial()) continue;

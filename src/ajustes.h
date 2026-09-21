@@ -59,6 +59,11 @@ void ajustes_acento(float *r, float *g, float *b);
 // degrau em 0,55. E a regra de FOCO de layout.h (preenchimento na cor de
 // realce, sem anel) em uma chamada, para todo botao usar a mesma conta.
 float ajustes_acento_tinta(float *r, float *g, float *b);
+// A MESMA TINTA EM 0..255, para quem monta txt_linha: principal (255 ou 20)
+// e secundaria (um degrau abaixo: 225 ou 60). Toda superficie pintada de
+// ajustes_acento() escreve com estas duas — nunca com um 20 cravado.
+int   ajustes_tinta_foco(void);
+int   ajustes_tinta_foco2(void);
 // "Automática", "4K", "1080p" ou "720p" — o rotulo exibido, para quem seleciona
 // a fonte de video mostrar exatamente o que o usuario escolheu.
 const char *ajustes_qualidade(void);

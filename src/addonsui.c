@@ -143,8 +143,8 @@ void addonsui_desenhar(Uint32 agora) {
     // Addon desligado fica apagado, e o estado vai ESCRITO na direita: cor
     // sozinha nao diz se aquilo esta ligado ou so sem foco.
     { float aT = a * (ligado ? 1.0f : 0.55f);
-      int c1 = emFoco ? 20 : 240, c2 = emFoco ? 60 : 168;
-      int c3 = emFoco ? 40 : (ligado ? 220 : 150);
+      int c1 = emFoco ? ajustes_tinta_foco() : 240, c2 = emFoco ? ajustes_tinta_foco2() : 168;
+      int c3 = emFoco ? ajustes_tinta_foco2() : (ligado ? 220 : 150);
       TxtLinha nome = txt_linha_corta(TXT_CALLOUT, addons_nome(i),
                                       c1, c1, c1, 255, LISTA_W - 300.0f);
       TxtLinha cap  = txt_linha_corta(TXT_CAPTION, capacidades(i),

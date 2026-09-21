@@ -2035,7 +2035,8 @@ static void desenharTopo(float a) {
     r.x = x; r.y = G_TOPO_Y; r.w = w[i]; r.h = G_TOPO_H;
     if (sel) gfx_cor(r, 0.5f, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, a);
     if (f > 0.01f) gfx_cor(r, 0.5f, ar, ag, ab, f * a);
-    { TxtLinha t = escuro ? txt_linha(TXT_BODY, rot[i], 20, 21, 25, 255)
+    { int tf = ajustes_tinta_foco();
+      TxtLinha t = escuro ? txt_linha(TXT_BODY, rot[i], tf, tf, tf, 255)
                   : sel   ? txt_linha(TXT_BODY, rot[i], 240, 241, 245, 255)
                           : txt_linha(TXT_BODY, rot[i], 150, 153, 162, 255);
       txt_desenhar_alpha(t, r.x + (r.w - t.w) * 0.5f, r.y + (r.h - t.h) * 0.5f, a); }
@@ -2203,7 +2204,8 @@ static void desenharPainelAddons(float a) {
                                 : i18n("Ainda não conferido pelo guia");
       GfxRect pill = { x + w - 24.0f - 136.0f, yi + (row.h - 40.0f) * 0.5f, 136.0f, 40.0f };
       float txtW = pill.x - 24.0f - (x + 24.0f);
-      { TxtLinha t = f ? txt_linha_corta(TXT_BODY, addons_nome(ai), 20, 21, 25, 255, txtW)
+      { int tf = ajustes_tinta_foco();
+        TxtLinha t = f ? txt_linha_corta(TXT_BODY, addons_nome(ai), tf, tf, tf, 255, txtW)
                        : txt_linha_corta(TXT_BODY, addons_nome(ai), 240, 241, 245, 255, txtW);
         txt_desenhar_alpha(t, x + 24.0f, yi + 12.0f, a); }
       { TxtLinha t = f ? txt_linha_corta(TXT_CAPTION, sub, 60, 62, 70, 255, txtW)
@@ -2242,7 +2244,7 @@ static void desenharPainelAddons(float a) {
       TxtLinha selo = txt_linha(TXT_CAPTION2, i18n("Destaque"), 20, 21, 25, 255);
       float seloW = destaque ? selo.w + 20.0f : 0.0f;
       { float nomeW = txtW - (destaque ? seloW + 12.0f : 0.0f);
-        TxtLinha t = f ? txt_linha_corta(TXT_BODY, rc->nome, 20, 21, 25, 255, nomeW)
+        TxtLinha t = f ? txt_linha_corta(TXT_BODY, rc->nome, ajustes_tinta_foco(), ajustes_tinta_foco(), ajustes_tinta_foco(), 255, nomeW)
                        : txt_linha_corta(TXT_BODY, rc->nome, 240, 241, 245, 255, nomeW);
         txt_desenhar_alpha(t, x + 24.0f, yi + 12.0f, a);
         if (destaque) {
@@ -2265,13 +2267,13 @@ static void desenharPainelAddons(float a) {
         else   txt_bloco(TXT_CAPTION, desc, 150, 153, 162,  x + 24.0f, yi + 46.0f, txtW, 27.0f, a, 2);
       }
       if (inst) {
-        TxtLinha t = f ? txt_linha(TXT_CAPTION, i18n("Instalado"), 60, 62, 70, 255)
+        TxtLinha t = f ? txt_linha(TXT_CAPTION, i18n("Instalado"), ajustes_tinta_foco2(), ajustes_tinta_foco2(), ajustes_tinta_foco2(), 255)
                        : txt_linha(TXT_CAPTION, i18n("Instalado"), 150, 153, 162, 255);
         txt_desenhar_alpha(t, pill.x + pill.w - t.w, pill.y + (pill.h - t.h) * 0.5f, a);
       } else {
-        float c = f ? 0.12f : 0.72f;
+        float c = f ? ajustes_tinta_foco() / 255.0f : 0.72f;
         gfx_rect(pill, 0, GFX_ANEL, 0, 0.05f, 0, 0.5f, c, c, c + 0.02f, 0.9f * a);
-        { TxtLinha t = f ? txt_linha(TXT_CAPTION, i18n("Instalar"), 20, 21, 25, 255)
+        { TxtLinha t = f ? txt_linha(TXT_CAPTION, i18n("Instalar"), ajustes_tinta_foco(), ajustes_tinta_foco(), ajustes_tinta_foco(), 255)
                          : txt_linha(TXT_CAPTION, i18n("Instalar"), 240, 241, 245, 255);
           txt_desenhar_alpha(t, pill.x + (pill.w - t.w) * 0.5f, pill.y + (pill.h - t.h) * 0.5f, a); }
       }

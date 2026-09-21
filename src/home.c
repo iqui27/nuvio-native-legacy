@@ -2485,7 +2485,8 @@ static void desenhaHero(Uint32 agora, float saida) {
       // promessa de comecar o filme, e quem aperta acaba numa pagina: o rotulo
       // tem de descrever o que a tecla FAZ, nao o que seria bonito escrever.
       const char *rot = i18n("Ver título");
-      TxtLinha lb = txt_linha(TXT_CALLOUT, rot, 16, 16, 18, 255);
+      int tb = ajustes_tinta_foco();
+      TxtLinha lb = txt_linha(TXT_CALLOUT, rot, tb, tb, tb, 255);
       float bh = NV_HERO_BOTAO_H;
       float bw = lb.w + 96.0f;
       float by = base + NV_HOME_HERO_BOTAO_GAP;

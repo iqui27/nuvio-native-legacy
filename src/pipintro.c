@@ -147,8 +147,8 @@ static void desenhaBotao(GfxRect r, const char *txt, int foco, int prim, float a
               gfx_cor(r, 0.28f, ar, ag, ab, a); }
   else gfx_cor(r, 0.28f, lum, lum + 0.01f, lum + 0.03f, a);
   { TxtLinha t = txt_linha(TXT_CALLOUT, i18n(txt),
-        foco ? 20 : (prim ? 252 : 226), foco ? 20 : (prim ? 253 : 228),
-        foco ? 24 : (prim ? 255 : 234), 255);
+        foco ? ajustes_tinta_foco() : (prim ? 252 : 226), foco ? ajustes_tinta_foco() : (prim ? 253 : 228),
+        foco ? ajustes_tinta_foco() : (prim ? 255 : 234), 255);
     txt_desenhar_alpha(t, r.x + (r.w - t.w) * 0.5f,
                        r.y + (r.h - t.h) * 0.5f, a); }
 }

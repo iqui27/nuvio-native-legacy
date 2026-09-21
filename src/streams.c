@@ -801,7 +801,7 @@ void stream_folha_desenhar(Uint32 agora) {
       // Sobre linha clara a pilula veste a superficie de repouso da linha
       // (.135,.135,.14) com o texto claro das demais linhas nao selecionadas.
       if (sel) { ar = .135f; ag = .135f; ab = .14f; }
-      m = txt_linha(TXT_MINI, rot, sel ? 234 : 20, sel ? 236 : 20, sel ? 242 : 24, 255);
+      m = txt_linha(TXT_MINI, rot, sel ? 234 : ajustes_tinta_foco(), sel ? 236 : ajustes_tinta_foco(), sel ? 242 : ajustes_tinta_foco(), 255);
       pil = (GfxRect){ lx + w - (float)m.w - 24.0f, y + 44.0f, (float)m.w + 24.0f, (float)m.h + 10.0f };
       gfx_cor(pil, NV_RAIO_PILL, ar, ag, ab, anim);
       txt_desenhar_alpha(m, pil.x + 12.0f, pil.y + 5.0f, anim);
@@ -833,7 +833,7 @@ void stream_folha_desenhar(Uint32 agora) {
       GfxRect pil;
       ajustes_acento(&ar, &ag, &ab);
       if (sel) { ar = .135f; ag = .135f; ab = .14f; }
-      m = txt_linha(TXT_MINI, "MP4", sel ? 234 : 20, sel ? 236 : 20, sel ? 242 : 24, 255);
+      m = txt_linha(TXT_MINI, "MP4", sel ? 234 : ajustes_tinta_foco(), sel ? 236 : ajustes_tinta_foco(), sel ? 242 : ajustes_tinta_foco(), 255);
       pil = (GfxRect){ lx, y + 146.0f, (float)m.w + 20.0f, (float)m.h + 8.0f };
       gfx_cor(pil, NV_RAIO_PILL, ar, ag, ab, anim);
       txt_desenhar_alpha(m, pil.x + 10.0f, pil.y + 4.0f, anim);

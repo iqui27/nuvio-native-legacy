@@ -2408,13 +2408,14 @@ static void desenhaLembrete(GfxRect r, int ligado, int focado, float a) {
     // pelas ondas e pelo tremor, nao pela cor.
     cr = cg = cb = t; goto glifo;
   } else if (ligado) {
-    // ARMADO SEM FOCO: o mesmo disco escuro dos vizinhos com um ANEL branco
-    // fino e o glifo branco — em vez do disco verde, que nao conversava com
-    // nenhuma outra cor da tela (dono, 21/09/2026). As ondas e o tremor do
-    // despertador continuam dizendo o estado.
-    gfx_cor(r, NV_RAIO_PILL, 0.133f, 0.133f, 0.133f, a);
-    gfx_rect(r, 0, GFX_ANEL, 0, 0.045f, 0, 0.5f, 1, 1, 1, 0.85f * a);
-    cr = cg = cb = 1.0f;
+    // ARMADO SEM FOCO: disco CHEIO na cor de realce, sem contorno, glifo na
+    // tinta de contraste — igual ao foco, so que no tamanho de repouso. O
+    // anel branco fino que esteve aqui um dia "ficou feio" (dono, 21/09/2026),
+    // e o disco verde anterior nao conversava com nenhuma cor da tela. As
+    // ondas e o tremor do despertador continuam dizendo o estado.
+    float fr, fg, fb, t = focoAcento(&fr, &fg, &fb);
+    gfx_cor(r, NV_RAIO_PILL, fr, fg, fb, a);
+    cr = cg = cb = t;
     goto glifo;
   } else gfx_cor(r, NV_RAIO_PILL, 0.133f, 0.133f, 0.133f, a);
   agendaui_cor_lembrete(ligado, claro, &cr, &cg, &cb);
@@ -2654,6 +2655,23 @@ static void heroWeb(float a, float desloc) {
   // pedido. Pedindo o teto, o logo sumia por um instante ao abrir o titulo;
   // pedindo a largura real, aparece na hora e troca pela nitida em seguida.
   GLuint texLogo = arqLogo ? tex_obter_larg_qualquer(arqLogo, NV_DETW_LOGO_MAXW) : 0;
+  // O NOME ESCRITO E SO RESERVA. Enquanto o logo ainda esta a caminho a caixa
+  // fica vazia, e o logo entra num fade curto — em vez de o nome aparecer e
+  // ser trocado pelo logo um instante depois, a cada abertura ("nao ta suave
+  // como o fundo do hero", dono, 21/09/2026). O nome so sai quando NAO ha logo
+  // para esperar: o titulo nao tem, ou o cache ja tentou e falhou.
+  static char  logoVisto[600];
+  static Uint32 logoDesde;
+  float aLogo = a;
+  if (texLogo) {
+    if (!arqLogo || strcmp(logoVisto, arqLogo)) {
+      snprintf(logoVisto, sizeof logoVisto, "%s", arqLogo ? arqLogo : "");
+      logoDesde = SDL_GetTicks();
+    }
+    { float f = (float)(SDL_GetTicks() - logoDesde) / 260.0f;
+      if (f < 1.0f) aLogo *= f < 0.0f ? 0.0f : f; }
+  } else logoVisto[0] = 0;
+  int mostraNome = !texLogo && (!arqLogo || tex_falhou(arqLogo));
   if (texLogo) {
     float asp = tex_aspecto(arqLogo);
     if (asp <= 0.0f) asp = 2.5f;
@@ -2691,8 +2709,8 @@ static void heroWeb(float a, float desloc) {
     // -1 = ainda carregando: trata como clara e nao tinge. Errar para o lado de
     // nao mexer na arte e o certo enquanto nao se sabe.
     { GfxModo m = tex_marca_escura(arqLogo) ? GFX_MARCA : GFX_TEXTO;
-      gfx_rect(r, texLogo, m, 0, 0, 0, 0.0f, 1, 1, 1, a); }
-  } else {
+      gfx_rect(r, texLogo, m, 0, 0, 0, 0.0f, 1, 1, 1, aLogo); }
+  } else if (mostraNome) {
     // Sem logo, o NOME. A altura da caixa continua sendo a do logo, para que a
     // linha de botoes nao pule entre um titulo com logo e outro sem.
     const char *nome = tituloDe(idx);

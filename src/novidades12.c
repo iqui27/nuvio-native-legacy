@@ -196,8 +196,8 @@ static void figGuiaLista(float x, float y, float a, Uint32 agora) {
       GfxRect fundo = { x, ly, N12_FIG_W, LIN_H };
       if (f) focoPilula(fundo, 8.0f, a);
       else   gfx_cor(fundo, 0.16f, 0.11f, 0.12f, 0.14f, a * 0.9f);
-      { TxtLinha t = txt_linha(TXT_CAPTION, N[i], f ? 20 : 230, f ? 21 : 232,
-                               f ? 25 : 238, 255);
+      { TxtLinha t = txt_linha(TXT_CAPTION, N[i], f ? ajustes_tinta_foco() : 230, f ? ajustes_tinta_foco() : 232,
+                               f ? ajustes_tinta_foco() : 238, 255);
         txt_desenhar_alpha(t, x + 14.0f, ly + 11.0f, a); }
       // Dois blocos de programa por linha, largura = duracao.
       { float bx = FAIXA_X + BLOCO[i][0] * FAIXA_W;
@@ -224,8 +224,8 @@ static void figVizinhos(float x, float y, float a, Uint32 agora) {
     GfxRect fundo = { x, ly, N12_FIG_W, LIN_H };
     if (f) focoPilula(fundo, 10.0f, a);
     else   gfx_cor(fundo, 0.18f, 0.11f, 0.12f, 0.14f, a * 0.9f);
-    { TxtLinha t = txt_linha(TXT_BODY, N[i], f ? 20 : 230, f ? 21 : 232,
-                             f ? 25 : 238, 255);
+    { TxtLinha t = txt_linha(TXT_BODY, N[i], f ? ajustes_tinta_foco() : 230, f ? ajustes_tinta_foco() : 232,
+                             f ? ajustes_tinta_foco() : 238, 255);
       txt_desenhar_alpha(t, x + 18.0f, ly + 14.0f, a); }
     if (f) {
       TxtLinha t = txt_linha(TXT_CAPTION2, i18n("ASSISTINDO"), 20, 21, 25, 255);
@@ -260,11 +260,11 @@ static void figAddons(float x, float y, float a) {
     GfxRect fundo = { x, ly, N12_FIG_W, LIN_H };
     if (f) focoPilula(fundo, 10.0f, a);
     else   gfx_cor(fundo, 0.16f, 0.11f, 0.12f, 0.14f, a * 0.9f);
-    { TxtLinha t = txt_linha(TXT_BODY, N[i], f ? 20 : 230, f ? 21 : 232,
-                             f ? 25 : 238, 255);
+    { TxtLinha t = txt_linha(TXT_BODY, N[i], f ? ajustes_tinta_foco() : 230, f ? ajustes_tinta_foco() : 232,
+                             f ? ajustes_tinta_foco() : 238, 255);
       txt_desenhar_alpha(t, x + 18.0f, ly + 10.0f, a); }
     { TxtLinha t = txt_linha(TXT_CAPTION2, i18n("Fornece canais"),
-                             f ? 80 : 150, f ? 82 : 154, f ? 90 : 165, 255);
+                             f ? ajustes_tinta_foco2() : 150, f ? ajustes_tinta_foco2() : 154, f ? ajustes_tinta_foco2() : 165, 255);
       txt_desenhar_alpha(t, x + 18.0f, ly + 38.0f, a * 0.9f); }
     // A pilula: preenchida = ligado, anel = desligado. Mesmo desenho do
     // painel de verdade.
@@ -277,8 +277,8 @@ static void figAddons(float x, float y, float a) {
                 f ? 0.96f : 0.11f, f ? 0.96f : 0.12f, f ? 0.97f : 0.14f, a);
       }
       { TxtLinha t = txt_linha(TXT_CAPTION2, i18n(L[i] ? "Ligado" : "Desligado"),
-                               L[i] ? 240 : (f ? 20 : 200), L[i] ? 241 : (f ? 21 : 203),
-                               L[i] ? 245 : (f ? 25 : 212), 255);
+                               L[i] ? 240 : (f ? ajustes_tinta_foco() : 200), L[i] ? 241 : (f ? ajustes_tinta_foco() : 203),
+                               L[i] ? 245 : (f ? ajustes_tinta_foco() : 212), 255);
         txt_desenhar_alpha(t, p.x + (p.w - t.w) * 0.5f, p.y + 6.0f, a); } }
   }
   // Recomendados: um so, com Instalar.
