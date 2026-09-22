@@ -1024,6 +1024,25 @@ void cat_definir_na_lista(int i, int naLista) {
   itens[i].naLista = naLista ? 1 : 0;
 }
 
+// O MESMO TITULO VIVE EM VARIAS FILEIRAS, cada uma com a sua copia do CatItem
+// (a watchlist do Trakt, "Trending", uma colecao). Marcar so a copia do cartao
+// segurado deixava as outras dizendo o contrario: salvar pelo Trending nao
+// acendia o da watchlist, e remover pelo Trending deixava a copia da watchlist
+// marcada — o menu seguinte voltava a oferecer "Remover" para algo ja removido.
+int cat_definir_na_lista_imdb(const char *imdb, int naLista) {
+  int i, k = 0;
+  if (!itens || n <= 0 || !imdb || !imdb[0]) return 0;
+  for (i = 0; i < n; i++)
+    if (!strcmp(itens[i].imdb, imdb)) { itens[i].naLista = naLista ? 1 : 0; k++; }
+  return k;
+}
+int cat_imdb_na_lista(const char *imdb) {
+  int i;
+  if (!itens || n <= 0 || !imdb || !imdb[0]) return 0;
+  for (i = 0; i < n; i++) if (itens[i].naLista && !strcmp(itens[i].imdb, imdb)) return 1;
+  return 0;
+}
+
 // Atualiza um espelho de item somente quando o indice ainda pertence ao bloco
 // atualmente publicado. A modal pode receber a resposta do worker depois que
 // a descoberta trocou o catalogo; nesse caso ignorar e seguro, escrever por um

@@ -248,6 +248,9 @@ int cat_acrescentar_lote(const CatItem *v, int qtd, int *saidaIdx);
 // esperar o proximo ciclo de descoberta para o botao mudar de cara faria o
 // toque parecer sem efeito.
 void cat_definir_na_lista(int i, int naLista);
+// Por TITULO, em todas as copias do catalogo (ver catalogo.c).
+int  cat_definir_na_lista_imdb(const char *imdb, int naLista);
+int  cat_imdb_na_lista(const char *imdb);   // alguma copia do titulo esta salva
 
 // Grava onde o dono parou NESTE app: escreve em progresso.c (pendente, com a
 // chave do web) e atualiza o item. E o caminho do player.

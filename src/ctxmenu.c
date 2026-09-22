@@ -40,6 +40,19 @@ enum { CTX_PENDENTE = 1, CTX_CONFIRMADA = 2, CTX_FALHA = 3 };
 #define CTX_CAB    158.0f     // titulo, estados e rotulo do grupo
 #define CTX_RODAPE  70.0f
 
+// SALVO E UM FATO DO TITULO, NAO DO CARTAO. Segurar OK num cartao do
+// "Trending" de um titulo que esta nos Salvos oferecia "Salvar", porque aquela
+// copia do CatItem nao tem a marca — so a da watchlist tem. Pergunta a todas as
+// fontes que sabem: a copia do cartao, a lista local, qualquer outra copia do
+// catalogo (watchlist do Trakt) e o Plan to Watch do Simkl.
+static int tituloSalvo(const CatItem *ci) {
+  if (!ci) return 0;
+  if (ci->naLista) return 1;
+  if (!ci->imdb[0]) return 0;
+  return salvos_tem(ci->imdb) || cat_imdb_na_lista(ci->imdb) ||
+         (simkl_ativo() && simkl_na_plantowatch(ci->imdb));
+}
+
 static int   aberto, idx = -1, foco, pedDetalhes = -1;
 static float anim;
 static int   operacao, intencao, estadoOperacao;
@@ -170,7 +183,7 @@ static void montar(void) {
     // da tecla AZUL) usam a palavra "salvar", e todas escrevem no mesmo lugar.
     juntar(estadoOperacao == CTX_PENDENTE && operacao == CTX_OP_LISTA
              ? (intencao ? "Salvando..." : "Removendo dos Salvos...")
-             : (ci->naLista ? "Remover dos Salvos" : "Salvar"),
+             : (tituloSalvo(ci) ? "Remover dos Salvos" : "Salvar"),
            OP_LISTA);
   }
   // O web so oferece "assistido" em filme e serie — nao em canal nem evento,
@@ -260,7 +273,7 @@ static void aplicar(void) {
     case OP_LISTA:
       // Captura a intencao ANTES de qualquer escrita. O mesmo valor segue para
       // o POST e so chega ao espelho local depois de uma resposta 2xx.
-      intencao = !ci->naLista;
+      intencao = !tituloSalvo(ci);
       snprintf(operacaoImdb, sizeof operacaoImdb, "%s", ci->imdb);
       operacao = CTX_OP_LISTA;
       opSimkl = 0;
@@ -295,6 +308,7 @@ static void aplicar(void) {
         estadoOperacao = CTX_CONFIRMADA;
         espelhoAplicado = 1;
         cat_definir_na_lista(atual, intencao);
+        cat_definir_na_lista_imdb(operacaoImdb, intencao);
         desc_remontar_fileiras();
       }
       montar();
@@ -419,6 +433,7 @@ void ctx_atualizar(float dt, Uint32 agora) {
         if (ci && novo == CTX_CONFIRMADA) {
           if (operacao == CTX_OP_LISTA) {
             cat_definir_na_lista(atual, intencao);
+            cat_definir_na_lista_imdb(operacaoImdb, intencao);
           } else {
             cat_historico_definir_id(ci->imdb, ci->tipo, intencao);
             // MARCAR COMO ASSISTIDO APAGA A POSICAO DE RETOMADA.
@@ -502,7 +517,7 @@ void ctx_desenhar(Uint32 agora) {
   if (estadoOperacao == CTX_CONFIRMADA && operacao == CTX_OP_LISTA && avisoOp)
     mensagem = avisoOp;
 
-  estados[0] = ci->naLista ? "Na biblioteca" : "Fora da biblioteca";
+  estados[0] = tituloSalvo(ci) ? "Na biblioteca" : "Fora da biblioteca";
   if (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series")) {
     { int historico = cat_historico_estado_item(indiceAtual());
       estados[1] = historico == 1 ? "Assistido"
@@ -552,9 +567,9 @@ void ctx_desenhar(Uint32 agora) {
     float sy = y + CTX_PAD + 106.0f;
     int historico = cat_historico_estado_item(indiceAtual());
     for (i = 0; i < nEstados; i++) {
-      int positivo = i == 0 ? ci->naLista : historico == 1;
+      int positivo = i == 0 ? tituloSalvo(ci) : historico == 1;
       // "Progresso salvo" e o unico estado nem positivo nem negativo: neutro.
-      int fraco = i == 0 ? !ci->naLista : !(historico < 0 && ci->progresso > 0);
+      int fraco = i == 0 ? !tituloSalvo(ci) : !(historico < 0 && ci->progresso > 0);
       sx += badge_desenhar(sx, sy, estados[i],
                            positivo ? BADGE_REALCE : fraco ? BADGE_APAGADO : BADGE_NEUTRO,
                            a) + BADGE_GAP;
@@ -575,7 +590,7 @@ void ctx_desenhar(Uint32 agora) {
     // recomendar.
     const char *icone = "avancar";
     switch (ops[i].acao) {
-      case OP_LISTA:     icone = ci->naLista ? "visto" : "mais"; break;
+      case OP_LISTA:     icone = tituloSalvo(ci) ? "visto" : "mais"; break;
       case OP_ASSISTIDO: icone = cat_historico_estado_item(indiceAtual()) == 1
                                  ? "naovisto" : "visto"; break;
       case OP_TIRAR_CONTINUAR: icone = "oculto"; break;
