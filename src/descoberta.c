@@ -1915,6 +1915,21 @@ static int montarContinuar(CatItem *saida, int max) {
     nJ++;
   } }
 
+  // O QUE A PESSOA TIROU NAO VOLTA COM O REMOTO VELHO. O DELETE do Trakt, do
+  // Simkl e da conta sai em fio (ctxmenu.c), e ate cada servidor refletir, o
+  // /sync/playback ainda devolve o item — com o paused_at de ANTES da remocao.
+  // prog_removido_vence compara esse instante com o da remocao: mais velho
+  // fica fora; mais novo (assistiu de novo em outro aparelho, ou aqui) volta.
+  { int w = 0, tirados = 0;
+    for (i = 0; i < nJ; i++) {
+      if (prog_removido_vence(juntos[i].item->imdb, juntos[i].ms)) { tirados++; continue; }
+      juntos[w++] = juntos[i];
+    }
+    nJ = w;
+    if (tirados)
+      printf("[desc] continuar assistindo: %d tirado(s) pela pessoa, remoto ainda nao refletiu\n",
+             tirados); }
+
   // Insercao: estavel, nJ <= 36, e roda uma vez por ciclo de descoberta.
   for (i = 1; i < nJ; i++) {
     int k = i;
@@ -1983,6 +1998,25 @@ void desc_refazer_continuar(void) {
   cwVivo = 1;
   if (pthread_create(&t, NULL, fioContinuar, NULL) != 0) cwVivo = 0;
   else pthread_detach(t);
+}
+
+// A METADE LOCAL DE "TIRAR DE CONTINUAR ASSISTINDO", toda no fio de quem
+// chama e sem rede: apaga a linha de progresso.c, carimba a remocao (a
+// refacao seguinte nao traz o item de volta com o remoto mais velho) e tira o
+// card da fileira publicada por identidade, bumpando a revisao — a home ve no
+// mesmo quadro. A ORDEM importa: o carimbo vem ANTES de tirar, para uma
+// cat_trocar_continuar concorrente ou ja enxergar o carimbo (e podar) ou
+// publicar antes da remocao (e ser corrigida por ela). Os DELETE remotos sao
+// de quem chama. Devolve quantos cards sairam.
+int desc_tirar_continuar(const char *imdb, int temporada, int episodio) {
+  char chave[192];
+  if (!imdb || !imdb[0]) return 0;
+  // A chave e montada do mesmo jeito que progresso.c monta ao gravar — com
+  // temporada e episodio quando ha —, senao a linha apagada seria outra.
+  prog_chave(chave, sizeof chave, imdb, temporada, episodio);
+  prog_remover(chave);
+  prog_marcar_removido(imdb);
+  return cat_tirar_continuar(imdb);
 }
 
 static void *montar(void *u) {

@@ -18,7 +18,9 @@
 #include "botoes.h"
 #include "badges.h"
 #include "idioma.h"
+#include <pthread.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // Mantem o header publico de Trakt estavel: estas leituras sao o contrato
@@ -147,6 +149,18 @@ enum { OP_DETALHES, OP_LISTA, OP_ASSISTIDO, OP_TIRAR_CONTINUAR, OP_RECOMENDAR };
 // pedida: o pareamento por codigo e o estado vazio honesto. As telas viraram
 // recenviar.c, e este arquivo faz o que a tela de detalhe tambem faz: abre a
 // modal compartilhada e sai da frente.
+
+// Os DELETE remotos de "Tirar de Continuar assistindo", fora do fio de
+// desenho. Nenhum dos dois e obrigatorio: sem Trakt nao ha id de playback, sem
+// conta nao ha RPC. Os dois dizem no log o que fizeram.
+typedef struct { char imdb[64]; char chave[192]; } TirarRemoto;
+static void *fioTirarRemoto(void *u) {
+  TirarRemoto *tr = (TirarRemoto *)u;
+  trakt_playback_remover(tr->imdb);
+  syncprog_remover(tr->chave);
+  free(tr);
+  return NULL;
+}
 
 static int indiceAtual(void) {
   int n = cat_n();
@@ -335,36 +349,46 @@ static void aplicar(void) {
       if (recenviar_abrir(ci)) aberto = 0;
       break;
     case OP_TIRAR_CONTINUAR: {
-      // A chave e montada do mesmo jeito que progresso.c monta ao gravar —
-      // com temporada e episodio quando ha —, senao a linha apagada seria
-      // outra e o card continuaria na fileira.
-      char chave[192];
-      prog_chave(chave, sizeof chave, ci->imdb, ci->temporada, ci->episodio);
-      prog_remover(chave);
+      // COPIA ANTES: `ci` aponta para dentro do bloco do catalogo, e
+      // desc_tirar_continuar desloca esse bloco (o item seguinte ocupa o
+      // lugar). Depois dela `ci->imdb` ja e OUTRO titulo.
+      TirarRemoto *tr = (TirarRemoto *)calloc(1, sizeof *tr);
+      char imdb[sizeof ci->imdb];
+      int temp = ci->temporada, ep = ci->episodio;
+      pthread_t t;
+      snprintf(imdb, sizeof imdb, "%s", ci->imdb);
+      // Efeito local e imediato, ANTES da rede: zera o que a legenda desenha
+      // neste indice (o card pode estar numa fileira de catalogo com barra) e
+      // desc_tirar_continuar apaga o registro, carimba a remocao e tira o card
+      // de "Continuar assistindo" por identidade, subindo a revisao — a home
+      // remonta neste mesmo quadro. Antes a revisao nao subia e a home (guarda
+      // curto da 1.4) seguia com a contagem velha: o card era coberto pelo
+      // vizinho e o ultimo aparecia repetido ate a proxima republicacao
+      // (medido em tests/cwremover.sh; ver tirarDaJanela em catalogo.c).
+      cat_zerar_progresso(atual);
+      desc_tirar_continuar(imdb, temp, ep);
       // AS TRES FONTES, e nao so a local — issue #22.
       //
-      // A fileira de retomada e a fusao de tres coisas: o registro local, o
-      // /sync/playback do Trakt e o progresso da conta Nuvio. Apagar so a
+      // A fileira de retomada e a fusao do registro local, do /sync/playback
+      // do Trakt (e do Simkl, #110) e do progresso da conta Nuvio. Apagar so a
       // local fazia a entrada voltar no ciclo seguinte, vinda de qualquer uma
-      // das outras duas: "seleciono remover, o prompt some e nada e removido...
-      // nao consigo remover".
+      // das outras: "seleciono remover, o prompt some e nada e removido".
       //
-      // Nenhuma das duas remotas e obrigatoria: quem nao tem Trakt nao tem id
-      // de playback, quem nao tem conta nao tem RPC. As duas dizem no log o que
-      // fizeram, e a local acontece de qualquer jeito.
-      trakt_playback_remover(ci->imdb);
-      // O Simkl tambem guarda o pausado (issue #110). Em fio proprio; sem id
-      // conhecido (item que nao veio do Simkl) nao faz nada.
-      simkl_playback_remover(ci->imdb);
-      syncprog_remover(chave);
-      // Efeito local e imediato: sem zerar o campo, o card so sairia da fileira
-      // na proxima remontagem do catalogo, e para quem apertou parece que nada
-      // aconteceu.
-      cat_zerar_progresso(atual);
-      // E TIRA O CARD DA FILEIRA, que zerar o progresso nao faz: sem isto ele
-      // fica ali sem barra de progresso ate a proxima remontagem do catalogo, e
-      // o relator do #22 via a remocao so depois de fechar e reabrir o app.
-      cat_tirar_item_da_fileira(atual);
+      // EM FIO, e nao aqui: os dois pedidos eram sincronos no fio de DESENHO.
+      // Na Samsung isso e XHR sincrono no fio principal do navegador — a tela
+      // congela ate os dois servidores responderem, e o menu so fechava
+      // depois. Com o carimbo de desc_tirar_continuar a ordem deixou de
+      // importar: uma refacao que leia o Trakt antes do DELETE chegar recebe o
+      // paused_at velho, e a remocao vence (prog_removido_vence).
+      if (tr) {
+        snprintf(tr->imdb, sizeof tr->imdb, "%s", imdb);
+        prog_chave(tr->chave, sizeof tr->chave, imdb, temp, ep);
+        if (pthread_create(&t, NULL, fioTirarRemoto, tr) == 0) pthread_detach(t);
+        else fioTirarRemoto(tr);   // sem fio: faz aqui, como antes
+      }
+      // O Simkl tambem guarda o pausado (issue #110). Ja sai em fio proprio;
+      // sem id conhecido (item que nao veio do Simkl) nao faz nada.
+      simkl_playback_remover(imdb);
       aberto = 0;
       break;
     }

@@ -263,6 +263,11 @@ int  cat_imdb_na_lista(const char *imdb);   // alguma copia do titulo esta salva
 // o progresso apaga a legenda mas deixa o card na fileira, e era isso que fazia
 // a remocao de "Continuar assistindo" so aparecer na proxima abertura (#22).
 int cat_tirar_item_da_fileira(int indice);
+// Tira de "Continuar assistindo" todos os cards da OBRA de `imdb` (composto ou
+// nao), por identidade e sob a trava dos publicadores — o indice guardado pela
+// modal pode ter mudado de dono com uma refacao em voo. Sobe cat_revisao, entao
+// a home remonta no mesmo quadro. Devolve quantos cards sairam.
+int cat_tirar_continuar(const char *imdb);
 void cat_zerar_progresso(int indice);
 
 void cat_salvar_progresso(int indice, double posSeg, double durSeg);

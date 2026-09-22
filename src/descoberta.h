@@ -55,6 +55,9 @@ void desc_repetir(void);
 // #38). Fio proprio: remontar a fileira faz rede. Pedido repetido enquanto um
 // fio ja roda vira UMA rodada a mais no fim, nao uma fila.
 void desc_refazer_continuar(void);
+// A metade LOCAL de "Tirar de Continuar assistindo": progresso, carimbo de
+// remocao e o card fora da fileira no mesmo quadro. Sem rede. Ver descoberta.c.
+int desc_tirar_continuar(const char *imdb, int temporada, int episodio);
 
 // Quantas fileiras A MAIS a home mostraria se o limite fosse ao maximo. 0
 // quando o limite nao esta cortando nada.
