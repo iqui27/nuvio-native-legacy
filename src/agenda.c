@@ -114,10 +114,17 @@ void agenda_definir_hoje(const char *iso) {
 
 const char *agenda_hoje(void) {
   static char hoje[12];
+  static time_t ultimo;
   time_t agora;
   struct tm tmv;
   if (hojeForcado[0]) return hojeForcado;
   agora = time(NULL);
+  // UMA CONVERSAO POR SEGUNDO. A tela Agenda chama agenda_dias/agenda_quando
+  // dezenas de vezes por quadro e cada uma passava por localtime_r, que na
+  // libc da TV consulta o fuso a cada chamada; o dia nao muda dentro do
+  // mesmo segundo.
+  if (agora == ultimo && hoje[0]) return hoje;
+  ultimo = agora;
   // localtime e o certo AQUI e so aqui: "hoje" para quem esta olhando a TV e o
   // dia do relogio dela. A comparacao entre duas datas ja e civil (diasDeIso).
   if (!localtime_r(&agora, &tmv)) { hoje[0] = 0; return hoje; }
@@ -943,11 +950,19 @@ static void lerCorpoTv(const char *imdb, const char *titulo, const char *corpo) 
   }
   // `status` sempre vem no corpo do TMDB; e ele que autoriza apagar uma data
   // velha em agenda_registrar. Sem ele nao se conclui nada.
+  // NOME E CARTAZ DO PROPRIO CORPO quando quem chamou nao tinha (serie
+  // seguida que nao esta no catalogo): sem isto a Agenda desenhava "Serie" e
+  // um retangulo cinza para uma serie com temporada, episodio e rede certos
+  // (foto da C9, 21/09/2026). `name` e `poster_path` sao da raiz do /tv.
+  { char nome[160] = "", cartaz[600] = "", pp[200] = "";
+    if (!titulo || !titulo[0]) js_texto_raiz_em(corpo, fim, "name", nome, sizeof nome);
+    js_texto_raiz_em(corpo, fim, "poster_path", pp, sizeof pp);
+    if (pp[0] == '/') snprintf(cartaz, sizeof cartaz, "https://image.tmdb.org/t/p/w342%s", pp);
   if (status[0] || dataProx[0]) {
-    agenda_registrar(imdb, titulo, NULL, status, temp, ep, nomeEp,
-                     dataProx, dataUlt);
+    agenda_registrar(imdb, (titulo && titulo[0]) ? titulo : nome, cartaz[0] ? cartaz : NULL,
+                     status, temp, ep, nomeEp, dataProx, dataUlt);
     agenda_registrar_extra(imdb, sinopse, tipoEp, rede, duracao, temporadas);
-  }
+  } }
 }
 
 static void *fioAgenda(void *arg) {

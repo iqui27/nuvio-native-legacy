@@ -70,7 +70,8 @@ static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 // Rotulos em portugues. Passam por i18n em text.c como todo texto de tela; os
 // pares en estao em idioma_tab.h.
 static const char *TIPO_ROT[FIL_TIPO_N] = {
-  "Automático", "Cartaz em pé", "Destaque largo", "Coleção", "Serviço", "Top 10"
+  "Automático", "Cartaz em pé", "Destaque largo", "Coleção", "Serviço", "Top 10",
+  "Destaque 4:3"
 };
 static const char *TAM_ROT[FIL_TAM_N] = { "Compacto", "Padrão", "Grande" };
 // 0,85 e 1,2 e nao 0,5 e 2,0: o card do web mede 212x322 e o passo da fileira

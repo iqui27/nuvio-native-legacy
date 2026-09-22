@@ -167,10 +167,92 @@ static void testar(void) {
   for(int i=0;i<10;i++)teclaPlayer(SDLK_RIGHT);
   teclaPlayer(SDLK_RETURN);assert(player_pediu_fontes() && !episodios_aberto());
   player_encerrar();strcpy(c.tipo,"series");
-  // O menu ganhou o GUIA TV entre Inicio e Busca: um DOWN agora para nele, e
-  // Buscar fica a dois. A ordem e a assercao do item novo.
+
+  // --- ISSUE #101: A LISTA DE FONTES E DE UM EPISODIO --------------------------
+  //
+  // O relato: terminar o T2E4, descer no carrossel para o T2E5, e o player
+  // abrir a fonte do T2E4 — e a folha "Fontes" dentro do player listar as do
+  // T2E4. A lista de streams.c e UMA, global, e ate aqui era ANONIMA: ninguem
+  // conseguia perguntar de que episodio ela era, entao bastava um caminho nao
+  // refazer a busca para o episodio seguinte tocar a fonte do anterior sem
+  // nenhum erro no log.
+  //
+  // As tres assercoes abaixo falham na 1.3.12: a lista sobrevivia intacta a
+  // troca de episodio.
+  strcpy(c.imdb,"tt0000101");cat_definir(&c,1);cat_definir_episodios(0,eps,40);
+  { Stream fs;memset(&fs,0,sizeof fs);
+    snprintf(fs.rotulo,sizeof fs.rotulo,"Fonte do T2E4");
+    snprintf(fs.url,sizeof fs.url,"https://example.invalid/s02e04.mp4");
+    fs.mp4=1;fs.altura=1080;
+    player_abrir(0,NULL);player_definir_episodio(2,4);
+    stream_definir_alvo("tt0000101:2:4");stream_definir_lista(&fs,1);
+    assert(stream_n()==1 && stream_lista_do_alvo("tt0000101:2:4"));
+    // RE-CHAMADA TARDIA com o MESMO episodio nao pode descartar nada:
+    // player_atualizar chama esta funcao por quadro enquanto o nome do
+    // episodio nao chega, e descartar ali custaria uma busca por quadro.
+    player_definir_episodio(2,4);
+    assert(stream_n()==1);
+    // A pessoa desceu para o E5: a lista do E4 nao serve mais.
+    player_definir_episodio(2,5);
+    assert(stream_n()==0 && !stream_lista_do_alvo("tt0000101:2:4"));
+    player_encerrar(); }
+  c.imdb[0]=0;cat_definir(&c,1);cat_definir_episodios(0,eps,40);
+
+  // --- ISSUE #102: A FOLHA ABRE NO EPISODIO ATUAL, E FICA NELE -----------------
+  //
+  // Duas metades do mesmo relato. A primeira: a folha nascia com scroll=0 e a
+  // mola levava ate o episodio — "carrega no E1 e depois salta". A segunda: o
+  // catalogo republicado (cat_definir_tudo zera nEps de proposito) esvazia a
+  // lista por alguns quadros, e o clamp de foco punha a folha no primeiro
+  // episodio da temporada quando ela voltava. E o "volta sozinho para o E1 se
+  // a pessoa demorar" — quem segura a pessoa parada e o menu por cima.
+  //
+  // T2E12 e a 12a linha da temporada 2 (eps[20..39] = T2E1..T2E20), fora da
+  // area visivel: e preciso rolar, e por isso a rolagem serve de prova.
+  episodios_abrir(0,2,12);episodios_atualizar(.016f);
+  assert(episodios_foco_linha()==11);
+  { float r=episodios_rolagem();
+    assert(r>1200.f);                 // ja rolada no PRIMEIRO quadro, sem mola
+    episodios_atualizar(.016f);
+    assert(episodios_rolagem()==r); } // e parada: nao ha salto nenhum a ver
+  cat_definir(&c,1);                  // a descoberta republicou o catalogo
+  episodios_atualizar(.016f);         // a folha fica sem lista por uns quadros
+  assert(cat_n_episodios(0)==0);
+  cat_definir_episodios(0,eps,40);    // e ela volta
+  episodios_atualizar(.016f);
+  assert(episodios_foco_linha()==11);
+  assert(episodios_rolagem()>1200.f);
+  episodios_fechar();
+
+  // --- ISSUE #100: UM SO LIMIAR DE "ASSISTIDO" ---------------------------------
+  //
+  // O app tinha dois numeros para o mesmo acontecimento. Estes casos sao a
+  // distancia entre eles:
+  //
+  //   18 min (1080 s), sem marcador de creditos. O cartao de "proximo
+  //   episodio" sobe aos 960 s (regra dos 2 minutos) = 88,9% do episodio. A
+  //   regra VELHA de player_encerrar so arredondava para o fim dentro dos
+  //   ultimos 60 s, e sem esse arredondamento trakt.c manda /scrobble/pause,
+  //   que nao marca nada. Aceitar o proximo episodio que o proprio app ofereceu
+  //   deixava o episodio por marcar — o relato do #100.
+  assert(player_regra_proximo(960,1080,0));   // o app diz: acabou, toma o proximo
+  assert(!(960 >= 1080 - 60));                // a regra VELHA dizia: nao acabou
+  assert(player_regra_concluiu(960,1080,0));  // agora as duas dizem o mesmo
+  //   Marcador de creditos aceito manda sozinho, aqui como no cartao: 50 min
+  //   com creditos aos 45 (sobram 300 s = a janela de um episodio de 50 min).
+  assert(player_regra_concluiu(2700,3000,2700));
+  assert(!player_regra_concluiu(2600,3000,2700));
+  //   E o que NAO acabou continua nao acabando: metade do episodio nao marca
+  //   nada, com ou sem marcador.
+  assert(!player_regra_concluiu(540,1080,0) && !player_regra_proximo(540,1080,0));
+  assert(!player_regra_concluiu(0,0,0));      // sem duracao nao ha o que concluir
+
+  // Ordem da rail: Inicio, Explorar, Guia TV, Busca. Um DOWN para em Explorar,
+  // o Guia fica a dois e Buscar a tres. A ordem e a assercao dos itens novos.
   menu_iniciar();menu_abrir();teclaMenu(SDLK_DOWN);teclaMenu(SDLK_RETURN);
-  assert(menu_destino()==MENU_GUIA && menu_mudou_destino() && !menu_mudou_destino());
+  assert(menu_destino()==MENU_EXPLORAR && menu_mudou_destino() && !menu_mudou_destino());
+  menu_abrir();teclaMenu(SDLK_DOWN);teclaMenu(SDLK_RETURN);
+  assert(menu_destino()==MENU_GUIA && menu_mudou_destino());
   menu_abrir();teclaMenu(SDLK_DOWN);teclaMenu(SDLK_RETURN);
   assert(menu_destino()==MENU_BUSCAR && menu_mudou_destino());
   menu_abrir();teclaMenu(SDLK_DOWN);teclaMenu(SDLK_ESCAPE);

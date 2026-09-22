@@ -28,6 +28,13 @@
 
 typedef struct {
   char backdrop[512];
+  // Variantes de arte preservadas para o hero. `backdrop` continua sendo a
+  // arte efetiva do catalogo, enquanto estas tres guardam as origens quando
+  // elas chegam separadas — sem obrigar a TV a consultar a rede ao trocar a
+  // fonte no Ajustes.
+  char backdropCatalogo[512]; // background vindo do addon/Cinemeta
+  char backdropTmdb[512];     // backdrop vindo do TMDB
+  char backdropTrakt[512];    // fanart vindo do Trakt
   char poster[512];
   char logo[512];      // vazio quando o titulo nao tem logo
   char titulo[160];
@@ -113,8 +120,9 @@ typedef struct {
   // de quem respondeu primeiro.
   //
   // Precisa morar no CatItem, e nao num vetor paralelo, porque
-  // trakt_enfeitar_lote COMPACTA o lote (tira o que o Cinemeta nao conhece):
-  // um vetor de instantes indexado por posicao dessincroniza ali, em silencio.
+  // trakt_enfeitar_lote COMPACTA o lote (tira quem ficou sem poster ou
+  // "a seguir" sem confirmacao): um vetor de instantes indexado por posicao
+  // dessincroniza ali, em silencio.
   long long retomadoMs;
 } CatItem;
 

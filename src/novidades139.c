@@ -136,9 +136,15 @@ void novidades139_desenhar(Uint32 agora) {
 
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.72f * entrada);
   dy = (1.0f - a) * 36.0f;
+  // CARTAO FLUTUANTE na "cara nova" (menu.c, 21/09/2026): cantos de 28 px
+  // pelo menor lado (a altura), fundo translucido e UMA luz difusa na cor de
+  // realce entrando pelo canto superior esquerdo, presa aos cantos do cartao
+  // (GFX_LUZ). Com o veu de tela cheia ja pago, e a ultima camada grande daqui.
   { GfxRect p = { N139_X, N139_Y + dy, N139_W, N139_H };
-    gfx_cor(p, 0.030f, 0.075f, 0.078f, 0.088f, 0.98f * a); }
-  gfx_recorte(N139_X, N139_Y + dy, N139_W, N139_H);
+    float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+    gfx_cor(p, 28.0f / N139_H, 0.055f, 0.058f, 0.068f, 0.94f * a);
+    gfx_luz_canto(p, 28.0f / N139_H, N139_H * 0.1f, -N139_H * 0.1f, N139_H * 0.65f, ar, ag, ab, 0.22f * a);
+    gfx_recorte(N139_X, N139_Y + dy, N139_W, N139_H); }
 
   { float fx = N139_X + N139_PAD, fy = N139_Y + dy + 168.0f;
     { TxtLinha t = txt_linha(TXT_CAPTION2, i18n("NOVO NA 1.3.9"), 150, 154, 165, 255);

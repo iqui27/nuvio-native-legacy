@@ -107,6 +107,10 @@ int tex_falhou(const char *caminho);
 // Responde 0 enquanto a textura nao carregou: nao tingir e o padrao seguro.
 int  tex_marca_escura(const char *caminho);
 
+// Identificador estável derivado do caminho, usado apenas no trace de uma
+// sessão. Não imprime nem armazena a URL original.
+unsigned long tex_hash_public(const char *caminho);
+
 // A COR DE FUNDO da arte — a media da borda, quando a borda e opaca (logo com
 // fundo proprio, como o quadrado cinza do Disney+). Devolve 1 com a cor; 2
 // quando a borda e transparente (logo recortado: nao ha fundo, quem desenha

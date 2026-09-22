@@ -3,6 +3,7 @@
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
+#include "ajustes.h"
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
@@ -103,4 +104,61 @@ float badges_desenhar(uint64_t mask,float x,float y,float maxW,float h,float a) 
 }
 float badges_desenhar_escura(uint64_t mask,float x,float y,float maxW,float h,float a) {
   return fileira(mask,x,y,maxW,h,a,1);
+}
+
+// --- SELOS DE TEXTO ----------------------------------------------------------
+float badge_largura(const char *texto) {
+  TxtLinha l = txt_linha(TXT_CAPTION2, texto, 0, 0, 0, 255);
+  return (float)l.w + BADGE_PADX * 2.0f;
+}
+float badge_desenhar(float x, float y, const char *texto, BadgeEstilo estilo, float a) {
+  float fr = 0.10f, fg = 0.11f, fb = 0.13f, fa = 0.85f;
+  int c = 235;
+  TxtLinha l;
+  GfxRect p;
+  switch (estilo) {
+    case BADGE_APAGADO: c = 170; break;
+    case BADGE_REALCE:
+      // 18 % da cor de realce sobre o painel escuro: le como "aceso" sem
+      // disputar com a linha em foco, que e realce cheio.
+      ajustes_acento(&fr, &fg, &fb); fa = 0.18f; break;
+    case BADGE_REALCE_CHEIO:
+      c = (int)(ajustes_acento_tinta(&fr, &fg, &fb) * 255.0f + 0.5f); fa = 1.0f; break;
+    case BADGE_SOBRE_REALCE: {
+      float t = ajustes_acento_tinta(NULL, NULL, NULL);
+      fr = fg = fb = t; fa = 0.12f; c = ajustes_tinta_foco2(); break; }
+    default: break;
+  }
+  l = txt_linha(TXT_CAPTION2, texto, c, c, c, 255);
+  p.x = x; p.y = y; p.w = (float)l.w + BADGE_PADX * 2.0f; p.h = BADGE_H;
+  gfx_cor(p, 0.5f, fr, fg, fb, fa * a);
+  txt_desenhar_alpha(l, x + BADGE_PADX, y + (BADGE_H - (float)l.h) * 0.5f, a);
+  return p.w;
+}
+static void notaTexto(char *dst, size_t n, int nota) {
+  // Separador decimal pelo idioma: "8,4" em portugues, "8.4" em ingles — em
+  // ingles a virgula le como milhar interrompido (ver recomenda.c).
+  snprintf(dst, n, ajustes_idioma_ingles() ? "%d.%d" : "%d,%d", nota / 10, nota % 10);
+}
+float badge_imdb_largura(int nota) {
+  char t[8]; TxtLinha l;
+  if (nota <= 0) return 0.0f;
+  notaTexto(t, sizeof t, nota);
+  l = txt_linha(TXT_CAPTION2, t, 0, 0, 0, 255);
+  return BADGE_IMDB_W + BADGE_IMDB_GAP + (float)l.w;
+}
+float badge_imdb(float x, float y, int nota, int escuro, float a) {
+  char t[8]; TxtLinha l, lm; GfxRect m;
+  int c = escuro ? ajustes_tinta_foco() : 235;
+  if (nota <= 0) return 0.0f;
+  notaTexto(t, sizeof t, nota);
+  l = txt_linha(TXT_CAPTION2, t, c, c, c, 255);
+  m.x = x; m.y = y; m.w = BADGE_IMDB_W; m.h = BADGE_H;
+  // #F5C518 e o amarelo da marca; o texto e preto porque e assim que ela
+  // existe — nao segue o realce nem a tinta da linha.
+  gfx_cor(m, BADGE_IMDB_R / BADGE_H, 0.961f, 0.773f, 0.094f, a);
+  lm = txt_linha(TXT_MINI, "IMDb", 10, 10, 10, 255);
+  txt_desenhar_alpha(lm, m.x + (m.w - (float)lm.w) * 0.5f, m.y + (m.h - (float)lm.h) * 0.5f, a);
+  txt_desenhar_alpha(l, x + BADGE_IMDB_W + BADGE_IMDB_GAP, y + (BADGE_H - (float)l.h) * 0.5f, a);
+  return BADGE_IMDB_W + BADGE_IMDB_GAP + (float)l.w;
 }

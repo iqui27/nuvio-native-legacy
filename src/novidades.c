@@ -144,9 +144,15 @@ void novidades_desenhar(Uint32 agora) {
   // Sobe de leve na entrada — cartao central pede movimento vertical, nao o
   // deslize lateral do painel de Salvos.
   dy = (1.0f - a) * 36.0f;
+  // CARTAO FLUTUANTE na "cara nova" (menu.c, 21/09/2026): cantos de 28 px
+  // pelo menor lado (a altura), fundo translucido e UMA luz difusa na cor de
+  // realce entrando pelo canto superior esquerdo, presa aos cantos do cartao
+  // (GFX_LUZ). Com o veu de tela cheia ja pago, e a ultima camada grande daqui.
   { GfxRect p = { ND_X, ND_Y + dy, ND_W, ND_H };
-    gfx_cor(p, 0.030f, 0.075f, 0.078f, 0.088f, 0.98f * a); }
-  gfx_recorte(ND_X, ND_Y + dy, ND_W, ND_H);
+    float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+    gfx_cor(p, 28.0f / ND_H, 0.055f, 0.058f, 0.068f, 0.94f * a);
+    gfx_luz_canto(p, 28.0f / ND_H, ND_H * 0.1f, -ND_H * 0.1f, ND_H * 0.65f, ar, ag, ab, 0.22f * a);
+    gfx_recorte(ND_X, ND_Y + dy, ND_W, ND_H); }
 
   // --- coluna da figura -------------------------------------------------
   { float fx = ND_X + ND_PAD, fy = ND_Y + dy + 178.0f;

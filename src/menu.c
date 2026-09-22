@@ -24,7 +24,7 @@
 // bastante para o rotulo mais comprido ("Biblioteca") nao encostar na borda.
 #define NV_MENU_W_ICONE   NV_LEGACY_RAIL_W
 #define NV_MENU_W_ABERTO  392.0f
-#define NV_MENU_LINHA_H    96.0f
+#define NV_MENU_LINHA_H    88.0f
 #define NV_MENU_ICONE      38.0f
 // O centro do icone e o mesmo nas duas larguras: no aparelho o icone NAO anda
 // quando a barra abre, so o rotulo entra ao lado dele. Se o icone deslizasse
@@ -36,6 +36,12 @@
 // Quanto o conteudo a direita escurece com a barra aberta. Sem isso o menu
 // disputa atencao com a arte do hero, que e clara e ocupa a tela toda.
 #define NV_MENU_VEU        0.58f
+// O acento continua sendo a identidade do foco, mas nao precisa ser pintado
+// em 100% para continuar legivel no sofa. Misturar um pouco da superficie do
+// painel evita que OCEAN/ARCTIC_BLUE virem um bloco eletrico na TV.
+#define NV_MENU_FOCO_MISTURA 0.74f
+#define NV_MENU_FOCO_GLOW    0.16f
+#define NV_MENU_INATIVO      0.72f
 // TEMPO DE ABRIR E DE FECHAR, com relogio proprio.
 //
 // A referencia nao tem barra lateral nenhuma na home — LEFT e UP a partir do
@@ -63,7 +69,7 @@
 // "Inicio" sem acento era erro de portugues NA TELA. E "Busca", nao "Buscar":
 // os outros tres sao substantivos (Biblioteca, Ajustes) e o verbo destoava.
 // Rotulos e ordem conferidos na referencia.
-static const char *ROTULOS[MENU_N] = { "Início", "Guia TV", "Busca", "Biblioteca", "Agenda", "Perfil e Stats", "Ajustes" };
+static const char *ROTULOS[MENU_N] = { "Início", "Explorar", "Guia TV", "Busca", "Biblioteca", "Agenda", "Perfil e Stats", "Ajustes" };
 
 // RODAPE: quem esta usando o app, e a porta para trocar. Ele e um item de
 // FOCO a mais, no indice MENU_N — nao entrou no enum de proposito, porque
@@ -88,19 +94,62 @@ static void icone(int d, float cx, float cy, float s, float r, float g, float b,
 #define NV_MENU_TEXTO_ESCURO 20
 static void desenhaRodape(float px, float w, float alpha, float foco);
 
+// Superficie do foco: acento graduado sobre o mesmo azul-cinza do painel.
+// A cor de texto continua vindo de ajustes_acento_tinta(); so a superficie
+// recebe a reducao de saturacao/luminancia para nao estourar na tela fisica.
+static void corFocoMenu(float *r, float *g, float *b) {
+  float ar, ag, ab, k = NV_MENU_FOCO_MISTURA;
+  ajustes_acento(&ar, &ag, &ab);
+  // Branco/grafite ja sao superficies claras: neles a graduacao e menor para
+  // nao transformar um foco limpo em cinza morto. Nos acentos cromaticos a
+  // reducao de 0.74 e a que segura o excesso de azul/amarelo na TV.
+  if (0.2126f * ar + 0.7152f * ag + 0.0722f * ab > 0.88f) k = 0.88f;
+  *r = 0.055f + (ar - 0.055f) * k;
+  *g = 0.058f + (ag - 0.058f) * k;
+  *b = 0.068f + (ab - 0.068f) * k;
+}
+
+// Uma camada de foco so. O brilho e menor e mais proximo da pilula que o
+// antigo halo de 2,8 alturas; o risco de "painel azul" some sem perder o
+// feedback de movimento do D-pad.
+static void focoMenu(GfxRect pill, float f, float alpha) {
+  float ar, ag, ab, cr, cg, cb;
+  GfxRect luz;
+  if (f <= 0.01f || alpha <= 0.01f) return;
+  ajustes_acento(&ar, &ag, &ab);
+  luz.x = pill.x - pill.h * 0.55f;
+  luz.y = pill.y - pill.h * 0.55f;
+  luz.w = pill.w + pill.h * 1.10f;
+  luz.h = pill.h * 2.10f;
+  gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
+           ar, ag, ab, NV_MENU_FOCO_GLOW * f * alpha);
+  corFocoMenu(&cr, &cg, &cb);
+  gfx_cor(pill, NV_MENU_RAIO_PILL, cr, cg, cb, f * alpha);
+  // Uma luz curta no alto dá acabamento e separa a pilula do painel sem
+  // criar contorno duro ou outra borda azul.
+  gfx_rect(pill, 0, GFX_BRILHO_TOPO, NV_MENU_RAIO_PILL,
+           0.24f, 0, 0.5f, 1, 1, 1, 0.10f * f * alpha);
+}
+
 // O legacy deixa a rail de 144px sempre visível. O menu expandido é uma
 // camada adicional; não deslocamos o conteúdo quando ele fecha.
 static void desenhaRailFixa(void) {
   GfxRect painel = { 0, 0, NV_LEGACY_RAIL_W, NV_TELA_H };
   gfx_cor(painel, 0.0f, 0.055f, 0.058f, 0.064f, 1.0f);
+  float sr, sg, sb;
+  corFocoMenu(&sr, &sg, &sb);
+  float tinta = ajustes_acento_tinta(NULL, NULL, NULL);
   float y = (NV_TELA_H - MENU_N * NV_MENU_LINHA_H) * 0.5f;
   for (int i = 0; i < MENU_N; i++, y += NV_MENU_LINHA_H) {
     int atual = (i == destino);
-    float lum = atual ? 1.0f : 0.60f;
+    float lum = atual ? tinta : NV_MENU_INATIVO;
     if (atual) {
       GfxRect marca = { 18.0f, y + 12.0f, NV_LEGACY_RAIL_W - 36.0f,
                         NV_MENU_LINHA_H - 24.0f };
-      gfx_cor(marca, NV_MENU_RAIO_PILL, 0.20f, 0.22f, 0.25f, 0.70f);
+      // A tela ativa precisa continuar legivel quando a rail esta recolhida:
+      // o realce e o mesmo acento usado pelo foco expandido e pelos demais
+      // controles, em vez de uma pilula cinza que parece inerte.
+      gfx_cor(marca, NV_MENU_RAIO_PILL, sr, sg, sb, 0.92f);
     }
     icone(i, NV_MENU_ICONE_CX, y + NV_MENU_LINHA_H * 0.5f,
           NV_MENU_ICONE, lum, lum, lum, 0.95f);
@@ -192,7 +241,9 @@ void menu_atualizar(float dt, Uint32 agora) {
 
 // Mesmos vetores do sidebar oficial, rasterizados no build e tintados pelo shader.
 static void icone(int d, float cx, float cy, float s, float r, float g, float b, float a) {
-  static const char *nomes[MENU_N] = {"menu_home", "menu_guide", "menu_search", "menu_library", "menu_agenda", "menu_profile", "menu_settings"};
+  // `portal` ja e um SVG embarcado e le como entrada para uma descoberta;
+  // manter o icone real evita inventar um glifo SDF e duplicar o de Busca.
+  static const char *nomes[MENU_N] = {"menu_home", "portal", "menu_guide", "menu_search", "menu_library", "menu_agenda", "menu_profile", "menu_settings"};
   if (d < 0 || d >= MENU_N) return;
   gfx_icone((GfxRect){cx-s*.5f, cy-s*.5f, s, s}, nomes[d], r, g, b, a);
 }
@@ -241,8 +292,7 @@ static void desenhaRodape(float px, float w, float alpha, float foco) {
   if (foco > 0.01f) {
     GfxRect pill = { px + NV_MENU_PILL_PAD, y + 8.0f,
                      w - NV_MENU_PILL_PAD * 2.0f, NV_MENU_RODAPE_H - 16.0f };
-    float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-    gfx_cor(pill, NV_MENU_RAIO_PILL, ar, ag, ab, foco * alpha);
+    focoMenu(pill, foco, alpha);
   }
 
   av.x = cx - NV_MENU_AVATAR * 0.5f;
@@ -271,7 +321,7 @@ static void desenhaRodape(float px, float w, float alpha, float foco) {
       int emFoco = foco > 0.5f;
       float tinta = ajustes_acento_tinta(NULL, NULL, NULL);
       int c = emFoco ? (int)(tinta * 255.0f + 0.5f) : 184;
-      int c2 = emFoco ? (tinta > 0.5f ? 225 : 60) : 150;
+      int c2 = emFoco ? ajustes_tinta_foco2() : 150;
       TxtLinha nome = txt_linha_corta(TXT_BODY, p ? p->nome : "Sua conta",
                                       c, c, c, 255,
                                       NV_MENU_W_ABERTO - NV_MENU_ROTULO_X - 28.0f);
@@ -307,8 +357,17 @@ void menu_desenhar(Uint32 agora) {
   // Painel quase opaco e um pouco mais escuro que NV_COR_FUNDO: encostado no
   // fundo da home ele precisa de uma aresta propria, senao a barra parece um
   // pedaco da tela que escureceu sozinho.
-  GfxRect painel = { px, 0, w, NV_TELA_H };
-  gfx_cor(painel, 0.0f, 0.075f, 0.078f, 0.086f, 0.97f * entrada);
+  // PAINEL FLUTUANTE ("aspecto mais moderno", dono, 21/09/2026): solto das
+  // bordas, cantos arredondados, um pouco translucido, com uma luz difusa na
+  // cor de realce entrando pelo topo. A folga de 24 px em cima e embaixo e a
+  // mesma do rodape; a aresta esquerda continua a 0 para o deslize nao
+  // mostrar fundo por tras.
+  float ar_, ag_, ab_; ajustes_acento(&ar_, &ag_, &ab_);
+  GfxRect painel = { px, 24.0f, w, NV_TELA_H - 48.0f };
+  gfx_cor(painel, 28.0f / painel.h, 0.055f, 0.058f, 0.068f, 0.965f * entrada);
+  // A luz e recortada pelo SDF do proprio painel (gfx_luz_canto): com a
+  // tesoura o canto de cima ficava quadrado.
+  gfx_luz_canto(painel, 28.0f / painel.h, w * 0.34f, 0.0f, w * 0.86f, ar_, ag_, ab_, 0.09f * entrada);
 
   // Tudo daqui para baixo fica preso ao painel. Sem o recorte, o rotulo — que e
   // desenhado no x fixo do texto — vaza para o conteudo enquanto a barra ainda
@@ -321,13 +380,15 @@ void menu_desenhar(Uint32 agora) {
     float cy = y + NV_MENU_LINHA_H * 0.5f;
 
     if (i == destino && f < .99f) {
-      GfxRect atual = {px + NV_MENU_PILL_PAD, y + 9, w - NV_MENU_PILL_PAD*2, NV_MENU_LINHA_H - 18};
-      gfx_cor(atual, NV_MENU_RAIO_PILL, .16f, .17f, .19f, .6f * (1-f) * desliza);
+      // ONDE VOCE ESTA: um traco na cor de realce a esquerda do icone, em vez
+      // da pilula cinza — le como "aba ativa" e nao como um segundo foco.
+      GfxRect traco = { px + 20.0f, cy - 16.0f, 4.0f, 32.0f };
+      gfx_cor(traco, 0.5f, ar_, ag_, ab_, .68f * (1-f) * desliza);
     }
     if (f > 0.01f) {
       GfxRect pill = { px + NV_MENU_PILL_PAD, y + 7.0f,
                        w - NV_MENU_PILL_PAD * 2.0f, NV_MENU_LINHA_H - 14.0f };
-      // PILULA NA COR DE REALCE, com icone e texto ESCUROS, sem anel.
+      // PILULA NA COR DE REALCE GRADUADA, com icone e texto ESCUROS, sem anel.
       //
       // A referencia web mede fundo #303030 e texto branco (--focus-bg), e
       // este menu ja foi assim, com anel na cor de realce por fora. DECISAO
@@ -335,8 +396,7 @@ void menu_desenhar(Uint32 agora) {
       // ficar brancos com o texto preto ... na sidebar quando selecionado
       // ficar assim tambem, e pode tirar o contorno". A cor de realce passa a
       // ser a cor do botao, entao a escolha de tema muda algo que se ve.
-      { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-        gfx_cor(pill, NV_MENU_RAIO_PILL, ar, ag, ab, f * desliza); }
+      focoMenu(pill, f, desliza);
     }
 
     // Tres estados, e os tres precisam existir: em foco (icone e texto
@@ -352,7 +412,7 @@ void menu_desenhar(Uint32 agora) {
     // Em foco, a TINTA que contrasta com a cor de realce (branca sobre realce
     // escuro como o rosa, escura sobre realce claro) — a mesma conta de todo
     // botao do app; era escuro fixo, e ficava preto sobre rosa (dono, 21/09).
-    float lum = emFoco ? ajustes_acento_tinta(NULL, NULL, NULL) : (atual ? 1.0f : 0.62f);
+    float lum = emFoco ? ajustes_acento_tinta(NULL, NULL, NULL) : (atual ? 0.92f : NV_MENU_INATIVO);
     float alpha = desliza * anim_mistura(atual ? 1.0f : 0.85f, 1.0f, f);
 
     icone(i, px + NV_MENU_ICONE_CX, cy, NV_MENU_ICONE, lum, lum, lum, alpha);

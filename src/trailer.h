@@ -37,6 +37,10 @@ int  trailer_cheia(void);
 // 1 quando ha video de fato tocando: so ai a pagina abre o furo — antes
 // disso mostrar um buraco preto seria pior que a arte.
 int  trailer_tocando(void);
+// 1 quando o ultimo elemento fechado pelo atualizador terminou por erro.
+// Permite ao hero tentar a proxima fonte (Apple -> YouTube) uma unica vez,
+// sem confundir fechamento voluntario com falha de rede.
+int  trailer_falhou(void);
 // Retangulo atual, para quem desenha o furo.
 GfxRect trailer_retangulo(void);
 // Teclado do modo de tela cheia. 1 quando consumiu.

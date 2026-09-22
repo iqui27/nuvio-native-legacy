@@ -10,6 +10,19 @@
 #   eval "cc src/*.c $(tools/env.sh) ..."
 set -e
 
+REQUIRE_CORE=0
+ALLOW_UNCONFIGURED=0
+case "${1:-}" in
+  "") ;;
+  --require-core) REQUIRE_CORE=1 ;;
+  --allow-unconfigured) ALLOW_UNCONFIGURED=1 ;;
+  --env-file) ;;
+  *)
+    echo "env.sh: opcao desconhecida: $1" >&2
+    exit 2
+    ;;
+esac
+
 PROP="${NUVIO_PROPERTIES:-$(cd "$(dirname "$0")/../.." && pwd)/NuvioWeb-0.3.38-beta/local.properties}"
 
 valor() {
@@ -46,10 +59,20 @@ if [ "$VER" != "$VERT" ]; then
   echo "env.sh: appinfo.json diz $VER e tizen-config.xml diz $VERT -- alinhe antes de compilar" >&2; exit 2
 fi
 
-if [ -z "$URL" ] || [ -z "$KEY" ]; then
-  # Falhar em silencio produziria um .ipk que abre, mostra a tela de login e
-  # nunca sai dela. O aviso vai para stderr para nao sujar os -D no stdout.
-  echo "env.sh: sem NUVIO_SUPABASE_URL/ANON_KEY em $PROP -- o app vai compilar SEM login" >&2
+MISSING_CORE=()
+[ -n "$URL" ] || MISSING_CORE+=(NUVIO_SUPABASE_URL)
+[ -n "$KEY" ] || MISSING_CORE+=(NUVIO_SUPABASE_ANON_KEY)
+[ -n "$TVB" ] || MISSING_CORE+=(TV_LOGIN_WEB_BASE_URL)
+if [ "${#MISSING_CORE[@]}" -gt 0 ]; then
+  if [ "$REQUIRE_CORE" -eq 1 ]; then
+    # A build produtiva nao pode instalar e so descobrir na tela de login que
+    # recebeu macros vazias. Liste apenas nomes, nunca valores ou caminhos.
+    echo "env.sh: configuracao obrigatoria ausente: ${MISSING_CORE[*]}" >&2
+    exit 3
+  elif [ "$ALLOW_UNCONFIGURED" -eq 0 ]; then
+    # O modo permissivo permanece para harnesses diagnosticos explicitos.
+    echo "env.sh: configuracao de servidor incompleta; use --require-core na release" >&2
+  fi
 fi
 
 # --env-file: escreve as variaveis num arquivo para o `docker run --env-file`.

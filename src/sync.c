@@ -37,7 +37,7 @@ static int fioVivo, fioPronto;
 static SyncEstado estado = SYNC_PARADO;
 static char resumo[220] = "sem sincronizar";
 static unsigned ultimoOk;
-static int sujoProgresso, sujoAddons;
+static int sujoProgresso, sujoAddons, sujoAjustes;
 
 // O fio NAO toca no app: ele so preenche estas caixas, e sync_passo aplica no
 // laco principal. Sem essa separacao, uma resposta de rede reescreveria a lista
@@ -66,7 +66,9 @@ static int  temTmdb, temMdb;
 // de ser SO contagem — ver a nota grande na secao "so leitura".
 static int cVistos, cBiblio, cColecoes, temAjustesPerfil, temCatHome;
 
-// Blob de ajustes do perfil, cru, esperando ser aplicado no fio principal.
+// Blob de ajustes do perfil, cru, esperando ser aplicado no fio principal — e,
+// desde o push de ajustes (#85), GUARDADO depois disso: ele e a BASE da costura
+// que sobe. Ver ajustes_mesclar_blob.
 // `aplicarAjustes` comeca ligado: no arranque nao ha mudanca local para
 // preservar, e e ai que a conta tem de mandar.
 //
@@ -79,6 +81,25 @@ static int cVistos, cBiblio, cColecoes, temAjustesPerfil, temCatHome;
 static char *ajustesBlob;
 static int  temAjustesBlob;
 static int  aplicarAjustes = 1;
+// Flag em disco: a pessoa ja mudou ajustes nesta TV depois do ultimo
+// sync_reaplicar_ajustes. Sem ela, CADA arranque comecava com aplicarAjustes=1
+// e o blob da conta (ainda sem as mudancas locais — a TV nao empurra layout)
+// sobrescrevia ajustes.txt. Ver sync_proteger_ajustes_locais.
+#define SY_AJUSTES_LOCAIS "ajustes-locais.txt"
+
+static void carregarProtecaoAjustes(void) {
+  static int ja = 0;
+  char *t;
+  if (ja) return;
+  ja = 1;
+  t = dados_ler(SY_AJUSTES_LOCAIS);
+  if (t && t[0] == '1') {
+    aplicarAjustes = 0;
+    printf("[sync] ajustes locais protegidos: blob da conta nao reaplica neste arranque\n");
+    fflush(stdout);
+  }
+  free(t);
+}
 
 // A ordem das fileiras da home, crua, tambem esperando o fio principal. Nao e
 // contada como as outras so-leitura: ela e a home da pessoa, e ate agora a
@@ -317,7 +338,12 @@ static int puxarAjustesPerfil(const char *corpo) {
   char *r;
   int st = 0, ok = 0;
   const char *p;
-  if (!aplicarAjustes) return temAjustesPerfil;   // nada a fazer nesta volta
+  carregarProtecaoAjustes();
+  // PUXA SEMPRE, inclusive com a protecao local ligada — e a mudanca desta
+  // versao. O blob e a BASE da costura de subida: sem ele, empurrarAjustes nao
+  // tem o que reescrever e ficaria calado para sempre justamente na TV que
+  // acabou de proteger os ajustes locais. O que a protecao decide agora e so se
+  // o blob e APLICADO (temAjustesBlob abaixo), nao se ele e buscado.
   r = sessao_rpc("sync_pull_profile_settings_blob", corpo, &st);
   if (!ok2xx(r, st)) { free(r); return 0; }
   // A resposta e [{ "settings_json": { ... } }]; o que interessa e o objeto de
@@ -340,7 +366,7 @@ static int puxarAjustesPerfil(const char *corpo) {
             novo[n] = 0;
             free(ajustesBlob);
             ajustesBlob = novo;
-            temAjustesBlob = 1;
+            temAjustesBlob = aplicarAjustes;
             ok = 1;
             printf("[sync] blob de ajustes: %d bytes\n", (int)n);
           }
@@ -355,6 +381,76 @@ static int puxarAjustesPerfil(const char *corpo) {
   }
   free(r);
   return ok;
+}
+
+// AJUSTES DESTA TV -> CONTA (#85). Empurra o blob COSTURADO: o que veio da
+// conta, com os valores locais escritos por cima das chaves que este app
+// conhece. Ver ajustes_mesclar_blob para a regra do que sobe.
+//
+// TRES TRAVAS, todas contra a mesma familia de defeito — o aparelho apagar dado
+// da conta:
+//   1. SEM BASE, SEM PUSH. Se nenhum pull deste perfil trouxe blob (rede fora,
+//      primeiro arranque, perfil sem ajustes salvos), nao ha o que costurar e
+//      nao se manda nada. Montar um blob do zero aqui mandaria as ~40 chaves
+//      deste app e apagaria da conta todas as outras — a "lista vazia apaga
+//      tudo" da secao 1.6, na versao de ajustes.
+//   2. DEPOIS DO PULL DESTE MESMO CICLO. A base e sempre a mais nova que o
+//      servidor deu, entao o que so o web mudou nao e sobrescrito por um blob
+//      velho guardado em memoria.
+//   3. SO CHAVE QUE JA EXISTE, so o valor dela (ajustes_mesclar_blob).
+//
+// A base guardada e trocada pelo que foi ACEITO: sem isso, o ciclo seguinte
+// costuraria sobre um blob que o servidor ja nao tem mais e mandaria a mesma
+// diferenca de novo.
+static void empurrarAjustes(void) {
+  char *mesclado = NULL, *r;
+  Jsw w;
+  int st = 0;
+  if (!sujoAjustes) return;
+  if (jaAusente("sync_push_profile_settings_blob")) return;
+  if (!ajustesBlob) {
+    printf("[sync] ajustes locais pendentes, mas sem blob da conta para costurar: nada enviado\n");
+    return;
+  }
+  if (ajustes_mesclar_blob(ajustesBlob, &mesclado) <= 0 || !mesclado) {
+    // Nada diferente do que a conta ja tem: pendencia resolvida sem viagem.
+    free(mesclado);
+    sujoAjustes = 0;
+    return;
+  }
+  jsw_iniciar(&w);
+  jsw_obj_ini(&w);
+  jsw_ci(&w, "p_profile_id", perfis_ativo());
+  jsw_cs(&w, "p_platform", "tv");
+  jsw_chave(&w, "p_settings_json");
+  jsw_bruto(&w, mesclado);
+  jsw_obj_fim(&w);
+  r = sessao_rpc("sync_push_profile_settings_blob", jsw_texto_final(&w), &st);
+  jsw_livre(&w);
+  if (ok2xx(r, st)) {
+    sujoAjustes = 0;
+    free(ajustesBlob);
+    ajustesBlob = mesclado;
+    // NAO liga temAjustesBlob: o blob agora E o estado local: aplica-lo seria
+    // trabalho para nao mudar nada.
+    printf("[sync] ajustes desta TV guardados na conta\n");
+  } else {
+    free(mesclado);
+    if (r && nuvem_erro_ausente(r)) {
+      // O SERVIDOR NAO TEM A FUNCAO. E o caso que mantem `ajustes-locais.txt`
+      // existindo: sem push, a unica defesa contra o proximo arranque desfazer
+      // a mudanca local continua sendo nao aplicar o blob.
+      printf("[sync] sync_push_profile_settings_blob nao existe neste servidor: "
+             "ajustes ficam locais (ajustes-locais.txt)\n");
+      if (nAusentes < SY_AUSENTES)
+        ausentes[nAusentes++] = "sync_push_profile_settings_blob";
+    } else {
+      // `sujoAjustes` FICA LIGADO: 5xx e rede fora sao para tentar de novo no
+      // proximo ciclo. Um 4xx tambem fica — e barato, e o ciclo e de 5 minutos.
+      printf("[sync] push de ajustes falhou (HTTP %d)\n", st);
+    }
+  }
+  free(r);
 }
 
 // A resposta inteira e guardada, nao interpretada aqui: quem le e catordem.c,
@@ -503,6 +599,9 @@ static void *rodar(void *u) {
   // la a regra e "pendente local vence": o que se assistiu entre o pull e o
   // push nao volta atras.
   if (sujoAddons) empurrarAddons();
+  // DEPOIS de puxarSoLeitura, pelo mesmo motivo dos addons e com um agravante:
+  // a base da costura e o blob que acabou de chegar. Ver empurrarAjustes.
+  empurrarAjustes();
   // Sempre, nao so quando `sujoProgresso`: linhas migradas do formato antigo
   // nascem pendentes sem ninguem ter marcado nada.
   if (syncprog_empurrar() >= 0) sujoProgresso = 0;
@@ -660,8 +759,9 @@ void sync_passo(unsigned agoraMs) {
   else if (soFileiras) desc_remontar_fileiras(); }
   if (temAjustesBlob && ajustesBlob) {
     ajustes_aplicar_blob(ajustesBlob);
-    free(ajustesBlob);
-    ajustesBlob = NULL;
+    // O BLOB NAO E LIBERADO AQUI (mudou em #85): ele e a base da costura que
+    // sobe no proximo ciclo. Quem o libera e o pull seguinte, que o substitui,
+    // e o logout.
     temAjustesBlob = 0;
     aplicarAjustes = 0;   // daqui para frente, o que a pessoa mudar na TV fica
   }
@@ -706,7 +806,32 @@ int sync_empurrar_credencial(const char *provider, const char *credJson) {
   return ok;
 }
 
-void sync_reaplicar_ajustes(void) { aplicarAjustes = 1; }
+void sync_reaplicar_ajustes(void) {
+  aplicarAjustes = 1;
+  // Conta manda de novo: a protecao local deixa de valer ate a pessoa mexer.
+  dados_apagar(SY_AJUSTES_LOCAIS);
+  // E A PENDENCIA DE SUBIDA CAI COM ELA. Esta funcao e chamada ao entrar e ao
+  // TROCAR DE PERFIL: uma pendencia do perfil anterior empurrada depois da troca
+  // escreveria os valores de um perfil no blob do outro. Quem manda agora e a
+  // conta; a pessoa mexer de novo marca de novo.
+  sujoAjustes = 0;
+  // A base velha e do perfil velho. Solta-la aqui tambem evita que um push do
+  // primeiro ciclo costure sobre o blob de outro perfil.
+  free(ajustesBlob);
+  ajustesBlob = NULL;
+  temAjustesBlob = 0;
+}
+
+void sync_proteger_ajustes_locais(void) {
+  aplicarAjustes = 0;
+  dados_gravar(SY_AJUSTES_LOCAIS, "1\n");
+  // E MARCA PARA SUBIR (#85). As duas coisas andam juntas de proposito: a
+  // protecao segura o blob da conta ATE o push acontecer, e o push e o que
+  // resolve a divergencia na origem. Se o push funcionar, as duas dizem a mesma
+  // coisa; se o servidor nao tiver a funcao ou a rede estiver fora, a protecao
+  // continua sendo a unica defesa — e e por isso que ela nao foi removida.
+  sujoAjustes = 1;
+}
 
 void sync_esquecer_usuario(void) {
   // A ordem importa pouco, mas o CONJUNTO nao: cada linha aqui corresponde a
@@ -757,6 +882,7 @@ void sync_esquecer_usuario(void) {
   // as aplicaria na sessao seguinte.
   free(colBlob);    colBlob = NULL;    temColBlob = 0;
   addons_esquecer();
+  desc_esquecer();   // solta a cache de manifestos da conta que saiu
   debrid_esquecer();
   // O portal IPTV vai junto, e tem de ir: o MAC autentica a assinatura de
   // QUEM SAIU. Deixar o arquivo no aparelho entregaria o acesso pago dessa
@@ -779,11 +905,12 @@ void sync_esquecer_usuario(void) {
   temAjustesPerfil = temCatHome = 0;
   estado = SYNC_PARADO;
   ultimoOk = 0;
-  sujoProgresso = 0; sujoAddons = 0;
+  sujoProgresso = 0; sujoAddons = 0; sujoAjustes = 0;
   free(ajustesBlob);
   ajustesBlob = NULL;
   temAjustesBlob = 0;
   aplicarAjustes = 1;
+  dados_apagar(SY_AJUSTES_LOCAIS);
   snprintf(resumo, sizeof resumo, "sem conta");
   printf("[sync] dados do usuario apagados deste aparelho\n");
 }

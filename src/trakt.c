@@ -1,6 +1,7 @@
 #include "trakt.h"
 #include "vistoep.h"
 #include "ajustes.h"
+#include "artemetahub.h"
 #include "descoberta.h"
 #include "jsw.h"
 #include "idioma.h"
@@ -216,6 +217,7 @@ static void doBlocoTrakt(CatItem *d, const char *bloco, const char *fim,
   if (!bloco) return;
   imagemTrakt(bloco, fim, "poster", d->poster, sizeof d->poster);
   imagemTrakt(bloco, fim, "fanart", d->backdrop, sizeof d->backdrop);
+  snprintf(d->backdropTrakt, sizeof d->backdropTrakt, "%s", d->backdrop);
   imagemTrakt(bloco, fim, "logo",   d->logo,     sizeof d->logo);
   if (!d->backdrop[0]) snprintf(d->backdrop, sizeof d->backdrop, "%s", d->poster);
   if (!d->sinopse[0]) js_texto(bloco, fim, "overview", d->sinopse, sizeof d->sinopse);
@@ -280,16 +282,31 @@ static int enfeitar(CatItem *d, const char *tipo) {
   char url[300], *corpo;
   char serie[24];
   const char *dp;
-  int ok = 0;
+  int precisaCinemeta;
+  // Arte PRIMEIRO, sem rede: mesma URL que trakt_lista ja monta. Antes cada
+  // item do historico/local fazia GET ao Cinemeta so para ler poster/logo —
+  // medido 2,1 s no Mac com paralelismo, e pior: se o Cinemeta falhava o
+  // item SUMIA da fileira (compactacao). Metahub e deterministico pelo tt.
+  arte_metahub_preencher(d);
   snprintf(serie, sizeof serie, "%s", d->imdb);
   dp = strchr(serie, ':');
   if (dp) *(char *)dp = 0;
+  // Cinemeta so para o que o metahub nao tem: validar "a seguir", sinopse,
+  // runtime/meta e nota. Arte ja esta; falha la NAO apaga o item.
+  precisaCinemeta = ehProximo(d->imdb) || !d->sinopse[0] ||
+                    !d->meta[0] || d->nota <= 0;
+  if (!precisaCinemeta)
+    return d->poster[0] != 0;
+
   snprintf(url, sizeof url, "%s/meta/%s/%s.json", CINEMETA, tipo, serie);
-  // 8 s e nao 20: sao ate OITO destes em serie (um por item do historico) antes
-  // de a primeira fileira da home existir. Medido no Mac: 2,1 s no caso bom;
-  // com um item lento eram 20 s de tela sem conteudo nenhum.
+  // 8 s e nao 20: ate oito destes em paralelo antes da primeira fileira.
+  // Medido no Mac: 2,1 s no caso bom; com um item lento eram 20 s vazios.
   corpo = rede_baixar(url, 8);
-  if (!corpo) return 0;
+  if (!corpo) {
+    // "A seguir" sem meta: nao da para confirmar que o episodio existe.
+    if (ehProximo(d->imdb)) return 0;
+    return d->poster[0] != 0;
+  }
   // "A SEGUIR" SO ENTRA SE O EPISODIO EXISTE. Depois do ultimo da temporada o
   // proximo e o primeiro da seguinte; depois do ultimo da serie nao ha
   // proximo, e a serie nao entra — nao e "continuar", e "acabou".
@@ -307,13 +324,13 @@ static int enfeitar(CatItem *d, const char *tipo) {
       if (v) { const char *ini = v; while (ini > corpo && *ini != '{') ini--;
                js_texto(ini, js_fim(ini), "name", d->nomeEpisodio, sizeof d->nomeEpisodio); } }
   }
-  ok = js_texto(corpo, NULL, "poster", d->poster, sizeof d->poster);
-  js_texto(corpo, NULL, "background", d->backdrop, sizeof d->backdrop);
-  js_texto(corpo, NULL, "logo", d->logo, sizeof d->logo);
-  // Continuar assistindo SEM arte acontece — o Cinemeta nao cobre tudo. Com a
-  // conta pedindo enriquecimento (`tmdb_enrich_continue_watching`), o TMDB
-  // completa o que faltou: /find resolve o id e a ficha devolve as imagens.
-  // So roda para item carente; no caso comum este bloco nem chega a rede.
+  // So completa buracos: nao trocar metahub por vazio se o Cinemeta omitir.
+  if (!d->poster[0])   js_texto(corpo, NULL, "poster", d->poster, sizeof d->poster);
+  if (!d->backdrop[0]) js_texto(corpo, NULL, "background", d->backdrop, sizeof d->backdrop);
+  if (!d->logo[0])     js_texto(corpo, NULL, "logo", d->logo, sizeof d->logo);
+  // Continuar assistindo SEM arte: ids sem "tt" (ou metahub sem o titulo).
+  // Com `tmdb_enrich_continue_watching`, o TMDB completa. Com tt o metahub
+  // ja preencheu; este bloco quase nao roda mais no caminho quente.
   if (ajustes_tmdb_cw() && (!d->backdrop[0] || !d->poster[0])) {
     const char *chave = desc_chave_tmdb();
     if (chave[0]) {
@@ -356,45 +373,48 @@ static int enfeitar(CatItem *d, const char *tipo) {
     }
   }
   if (!d->titulo[0]) js_texto(corpo, NULL, "name", d->titulo, sizeof d->titulo);
-  js_texto(corpo, NULL, "description", d->sinopse, sizeof d->sinopse);
+  if (!d->sinopse[0]) js_texto(corpo, NULL, "description", d->sinopse, sizeof d->sinopse);
   if (!d->backdrop[0]) snprintf(d->backdrop, sizeof d->backdrop, "%s", d->poster);
-  { char r[24] = "", ano[24] = "";
+  if (!d->meta[0] || d->restanteMin <= 0) {
+    char r[24] = "", ano[24] = "";
     js_texto(corpo, NULL, "runtime", r, sizeof r);
     js_texto(corpo, NULL, "releaseInfo", ano, sizeof ano);
     { char *tr = strstr(ano, "\xe2\x80\x93"); if (tr) *tr = 0; }
-    snprintf(d->meta, sizeof d->meta, "%.20s%s%.20s", ano,
-             (ano[0] && r[0]) ? "  \xc2\xb7  " : "", r);
-    // Minutos que faltam, para a legenda do card. O Trakt da a porcentagem e o
-    // Cinemeta a duracao; o cruzamento das duas e o unico jeito de ter isto
-    // sem baixar o arquivo.
-    if (d->progresso > 0 && d->progresso < 100) {
-      int total = atoi(r);
-      if (total > 0) d->restanteMin = total - (total * d->progresso) / 100;
-    } else if (d->progresso == 0) {
-      d->restanteMin = atoi(r);
-    } }
-  snprintf(d->genero, sizeof d->genero, "%s",
-           i18n(strcmp(tipo, "series") ? "Filme" : "Programa de TV"));
-  snprintf(d->classificacao, sizeof d->classificacao, "14");
-  // A NOTA VEM DA RAIZ, como poster/background/logo acima: em serie o meta tem
-  // videos[] embaixo, mas imdbRating so existe no objeto de fora (e e o mesmo
-  // campo que descoberta.c le no catalogo). js_num aceita "8.1" em string ou
-  // numero; guarda-se x10, como todo o resto de CatItem.nota (issue #87).
-  { double nota = js_num(corpo, NULL, "imdbRating", 0.0);
+    if (!d->meta[0])
+      snprintf(d->meta, sizeof d->meta, "%.20s%s%.20s", ano,
+               (ano[0] && r[0]) ? "  \xc2\xb7  " : "", r);
+    // Minutos que faltam: Trakt da a %, Cinemeta a duracao.
+    if (d->restanteMin <= 0) {
+      if (d->progresso > 0 && d->progresso < 100) {
+        int total = atoi(r);
+        if (total > 0) d->restanteMin = total - (total * d->progresso) / 100;
+      } else if (d->progresso == 0) {
+        d->restanteMin = atoi(r);
+      }
+    }
+  }
+  if (!d->genero[0])
+    snprintf(d->genero, sizeof d->genero, "%s",
+             i18n(strcmp(tipo, "series") ? "Filme" : "Programa de TV"));
+  // A NOTA VEM DA RAIZ: em serie o meta tem videos[] embaixo, mas imdbRating
+  // so existe no objeto de fora (mesmo campo do catalogo). x10, issue #87.
+  if (d->nota <= 0) {
+    double nota = js_num(corpo, NULL, "imdbRating", 0.0);
     if (nota > 0.0) {
       int n10 = (int)(nota * 10.0 + 0.5);
-      if (n10 > 99) n10 /= 10;    // ja veio multiplicado
+      if (n10 > 99) n10 /= 10;
       d->nota = n10;
-    } }
+    }
+  }
   free(corpo);
-  return ok;
+  return d->poster[0] != 0;
 }
 
 // ENFEITAR EM PARALELO.
 //
-// Sao ate 8 GET ao Cinemeta, um por item do historico, e eram feitos EM SERIE
-// dentro do laco de leitura. Medido no Mac: 2,1 s antes de a home ter qualquer
-// conteudo de rede — e essa e a PRIMEIRA fileira, a que o dono ve primeiro.
+// Arte vem do metahub (sem GET). O Cinemeta so entra quando falta sinopse/
+// runtime/nota ou para validar "a seguir". Ate 8 GETs em paralelo no pior
+// caso; quem ja veio do Trakt `extended=full` pula tudo.
 //
 // Cada `enfeitar` so escreve no seu proprio CatItem e nao toca estado
 // compartilhado, entao a paralelizacao e direta. A ordem do historico e
@@ -415,17 +435,17 @@ static void *fioEnfeitar(void *u) {
     meu = enfProx++;
     pthread_mutex_unlock(&enfTrava);
     { CatItem *d = enfTarefas[meu].d;
-      // Pronto = nao ha o que buscar. `ok` fica 1 para ele sobreviver a
-      // compactacao logo abaixo.
+      // Pronto = arte + sinopse. Arte so (metahub) ainda pode querer o
+      // Cinemeta para texto; `ok` 1 sobrevive a compactacao.
       if (d->poster[0] && d->backdrop[0] && d->sinopse[0]) enfTarefas[meu].ok = 1;
       else enfTarefas[meu].ok = enfeitar(d, enfTarefas[meu].tipo); }
   }
 }
 
-// ENFEITAR os n itens em TK_FIOS fios, e so entao compactar: `enfeitar` falha
-// para item que o Cinemeta nao conhece, e antes o `if (enfeitar(...)) n++`
-// simplesmente nao contava — agora o item ja esta na posicao, entao os que
-// falharam saem por compactacao, preservando a ordem do historico.
+// ENFEITAR os n itens em TK_FIOS fios, e so entao compactar. Compacta quem
+// ficou sem poster (id sem tt / sem metahub) ou "a seguir" cujo episodio o
+// Cinemeta nao confirma — NAO compacta mais por falha generica do Cinemeta:
+// a arte ja veio do metahub.
 //
 // Publico porque a fileira "Continuar assistindo" montada do progresso LOCAL
 // (descoberta.c, sem Trakt) precisa exatamente do mesmo enfeite: tem imdb,
@@ -435,8 +455,8 @@ int trakt_enfeitar_lote(CatItem *saida, int n) {
   if (n <= 0) return 0;
   // QUEM JA TEM TUDO NAO VOLTA A REDE. O item vindo do Trakt com
   // `?extended=full` chega com arte e sinopse (ver doBlocoTrakt); o item vindo
-  // do progresso LOCAL chega zerado e continua precisando do Cinemeta. A
-  // guarda e por CONTEUDO e nao por origem, entao serve as duas fontes.
+  // do progresso LOCAL chega zerado — metahub cobre a arte sem Cinemeta, e o
+  // Cinemeta so e tentado para texto. Guarda por CONTEUDO, nao por origem.
   for (q0 = 0; q0 < n; q0++)
     if (saida[q0].poster[0] && saida[q0].backdrop[0] && saida[q0].sinopse[0])
       jaFeitos++;
@@ -1133,32 +1153,9 @@ int trakt_lista(const char *qual, CatItem *saida, int max) {
           snprintf(d->tipo, sizeof d->tipo, "%s", passo ? "series" : "movie");
           if (!strcmp(qual, "watchlist")) d->naLista = 1;
           else                            d->naColecao = 1;
-          // Arte SEM consultar: as URLs do metahub sao deterministicas pelo id
-          // do IMDb (verificado, 200 em todos os testados). Uma consulta por
-          // item custava ~0,3 s e limitava a lista a dez; assim ela pode ter o
-          // tamanho que o dono tem, e a imagem so e baixada quando aparece na
-          // tela — o tex_cache ja faz isso.
-          snprintf(d->poster, sizeof d->poster,
-                   // "medium" e nao "small", e a diferenca NAO e tamanho: o
-                   // metahub serve poster/small como image/WEBP e poster/medium
-                   // como image/jpeg. O libSDL2_image DESTA TV carrega libjpeg,
-                   // libpng16 e libtiff por dlopen e NAO carrega libwebp — a
-                   // unica string de erro de formato dentro dele e "WEBP images
-                   // are not supported". (A libwebp.so.7 existe no sistema; o
-                   // SDL2_image e que nao foi compilado com ela.)
-                   //
-                   // Efeito do small: TODO card vindo do Trakt (watchlist,
-                   // colecao, a Biblioteca inteira) nunca decodificava — e pior,
-                   // o cache nao guarda falha, entao cada quadro tentava de novo
-                   // e queimava uma vaga de decode. Era a maior causa de "nao
-                   // aparecem todos os posteres".
-                   //
-                   // Custo: 105 KB contra 31 KB. Barato pela arte existir.
-                   "https://images.metahub.space/poster/medium/%s/img", imdb);
-          snprintf(d->backdrop, sizeof d->backdrop,
-                   "https://images.metahub.space/background/medium/%s/img", imdb);
-          snprintf(d->logo, sizeof d->logo,
-                   "https://images.metahub.space/logo/medium/%s/img", imdb);
+          // Arte SEM consultar: metahub deterministico pelo IMDb (ver
+          // artemetahub.h). Uma consulta por item limitava a lista a dez.
+          arte_metahub_preencher(d);
           snprintf(d->genero, sizeof d->genero, "%s",
                    i18n(passo ? "Programa de TV" : "Filme"));
           snprintf(d->classificacao, sizeof d->classificacao, "14");

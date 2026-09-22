@@ -6,6 +6,9 @@
 
 // Duble: "toda arte ja falhou", para exercitar a reserva.
 static int falhouSempre(const char *u) { (void)u; return 1; }
+static int falhouLogoAntiga(const char *u) {
+  return u && strstr(u, "logo-old.png") != NULL;
+}
 
 static CatItem item(const char *backdrop, const char *poster, const char *imdb) {
   static CatItem c;
@@ -50,6 +53,18 @@ int main(void) {
     CatItem c = item(u, "", "tt6723592");
     assert(!strcmp(artehero_url(&c), u)); }
   puts("ok  metahub passa intacta");
+
+  // O hero pode escolher uma origem real já preservada no item: catálogo /
+  // Cinemeta, IMDb / Metahub, TMDB ou Trakt. Nenhuma delas usa fundo genérico.
+  { CatItem c = item("https://images.metahub.space/background/medium/tt1/img", "", "tt1");
+    snprintf(c.backdropCatalogo, sizeof c.backdropCatalogo, "%s", "https://catalogo/bg.jpg");
+    snprintf(c.backdropTmdb, sizeof c.backdropTmdb, "%s", "https://image.tmdb.org/t/p/w1280/tmdb.jpg");
+    snprintf(c.backdropTrakt, sizeof c.backdropTrakt, "%s", "https://media.trakt.tv/fanart.jpg");
+    assert(!strcmp(artehero_url_fonte(&c, 1), "https://catalogo/bg.jpg"));
+    assert(!strcmp(artehero_url_fonte(&c, 2), "https://images.metahub.space/background/medium/tt1/img"));
+    assert(!strcmp(artehero_url_fonte(&c, 3), "https://image.tmdb.org/t/p/w1280/tmdb.jpg"));
+    assert(!strcmp(artehero_url_fonte(&c, 4), "https://media.trakt.tv/fanart.jpg")); }
+  puts("ok  fontes reais do hero: catalogo, IMDb, TMDB e Trakt");
 
   // SEM FUNDO E COM ID: monta a url do metahub em vez de cair no cartaz — e a
   // diferenca entre "fundo de verdade" e "poster esticado".
@@ -154,6 +169,75 @@ int main(void) {
     assert(artehero_url_logo("") != NULL);
     assert(artehero_url_logo(NULL) == NULL); }
   puts("ok  logo: so o caminho do TMDB e reescrito");
+
+  // A seleção visual prende a primeira URL canônica do mesmo IMDb/tipo. O
+  // detalhe pode receber w500 e o player original depois, mas os três caminhos
+  // continuam com w1280. O stub abaixo conta mudanças de chave; ele prova o
+  // contrato do seletor, não substitui a telemetria do downloader real.
+  { CatItem a = item("", "", "tt-logo-1");
+    int gets = 0; char ultima[512] = "";
+    snprintf(a.tipo, sizeof a.tipo, "%s", "movie");
+    snprintf(a.logo, sizeof a.logo,
+             "%s", "https://image.tmdb.org/t/p/w500/logo-a.png");
+    { const char *home = artehero_logo_sessao_observar(&a);
+      assert(home && !strcmp(home, "https://image.tmdb.org/t/p/w1280/logo-a.png"));
+      if (strcmp(ultima, home)) { snprintf(ultima, sizeof ultima, "%s", home); gets++; } }
+    { CatItem enriquecido = a;
+      snprintf(enriquecido.logo, sizeof enriquecido.logo,
+               "%s", "https://image.tmdb.org/t/p/original/logo-a.png");
+      const char *detail = artehero_logo_sessao(&enriquecido);
+      const char *player = artehero_logo_sessao(&enriquecido);
+      assert(detail && player && !strcmp(detail, player) && !strcmp(detail, ultima));
+      if (strcmp(ultima, player)) { snprintf(ultima, sizeof ultima, "%s", player); gets++; }
+    }
+    assert(gets == 1);
+    { CatItem b = item("", "", "tt-logo-2");
+      snprintf(b.tipo, sizeof b.tipo, "%s", "movie");
+      snprintf(b.logo, sizeof b.logo,
+               "%s", "https://images.metahub.space/logo/medium/tt-logo-2/img");
+      artehero_logo_sessao_iniciar(&b);
+      assert(!strcmp(artehero_logo_sessao(&b), b.logo));
+      assert(strcmp(artehero_logo_sessao(&a), b.logo));
+    }
+  }
+  puts("ok  logo: sessão compartilha chave; identidade impede vazamento");
+
+  // Contratos de transição: sem logo na abertura, a primeira boa entra; uma
+  // URL enriquecida diferente não troca a arte já escolhida; identidade/tipo
+  // diferentes não herdam a seleção; e falha definitiva libera a nova URL.
+  { CatItem vazio = item("", "", "tt-logo-empty");
+    snprintf(vazio.tipo, sizeof vazio.tipo, "%s", "movie");
+    artehero_logo_sessao_iniciar(&vazio);
+    assert(artehero_logo_sessao(&vazio) == NULL);
+    snprintf(vazio.logo, sizeof vazio.logo,
+             "%s", "https://image.tmdb.org/t/p/w500/logo-first.png");
+    assert(!strcmp(artehero_logo_sessao(&vazio),
+                   "https://image.tmdb.org/t/p/w1280/logo-first.png"));
+    { CatItem enriquecida = vazio;
+      snprintf(enriquecida.logo, sizeof enriquecida.logo,
+               "%s", "https://image.tmdb.org/t/p/original/logo-second.png");
+      assert(!strcmp(artehero_logo_sessao(&enriquecida),
+                     "https://image.tmdb.org/t/p/w1280/logo-first.png")); }
+    { CatItem outroTipo = vazio;
+      snprintf(outroTipo.tipo, sizeof outroTipo.tipo, "%s", "series");
+      snprintf(outroTipo.logo, sizeof outroTipo.logo,
+               "%s", "https://image.tmdb.org/t/p/w500/logo-series.png");
+      assert(!strcmp(artehero_logo_sessao(&outroTipo),
+                     "https://image.tmdb.org/t/p/w1280/logo-series.png")); }
+  }
+  { CatItem falha = item("", "", "tt-logo-fail");
+    snprintf(falha.tipo, sizeof falha.tipo, "%s", "movie");
+    snprintf(falha.logo, sizeof falha.logo,
+             "%s", "https://image.tmdb.org/t/p/w500/logo-old.png");
+    artehero_logo_sessao_iniciar(&falha);
+    artehero_definir_falhou(falhouLogoAntiga);
+    snprintf(falha.logo, sizeof falha.logo,
+             "%s", "https://image.tmdb.org/t/p/w500/logo-new.png");
+    assert(!strcmp(artehero_logo_sessao(&falha),
+                   "https://image.tmdb.org/t/p/w1280/logo-new.png"));
+    artehero_definir_falhou(NULL);
+  }
+  puts("ok  logo: vazio/enriquecimento/identidade/falha definitiva");
 
   puts("artehero: tudo ok");
   return 0;

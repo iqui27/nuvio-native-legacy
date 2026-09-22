@@ -23,6 +23,24 @@ static int aberto, titulo, atualT, atualE, temporada, foco, grupo;
 static int pedidoT, pedidoE;
 static float anim, scroll;
 static int localizarAtual;
+// ONDE O FOCO TEM DE ESTAR, POR NUMERO DE EPISODIO — issue #102.
+//
+// `foco` e uma LINHA, e linha depende da lista existir. Quando o catalogo
+// remonta com a folha aberta (cat_definir_tudo zera nEps de proposito, e a
+// descoberta republica sozinha de tempos em tempos), a lista fica vazia por
+// alguns quadros: o clamp la embaixo puxava `foco` para 0 e, quando os
+// episodios voltavam, a folha estava no primeiro da temporada. E exatamente o
+// "volta sozinho para o E1 se a pessoa demorar" do relato — o que segura a
+// pessoa parada e o menu de visto por cima, nao ele que causa o salto.
+//
+// Guardando o NUMERO do episodio o foco sobrevive ao desaparecimento da lista:
+// quando ela volta, a linha e reencontrada.
+static int alvoE;
+// A ROLAGEM DO PRIMEIRO QUADRO E A FINAL, sem mola — a outra metade do #102.
+// A folha nascia com scroll=0 e a mola levava ate o episodio atual: para quem
+// olha, ela "carrega no E1 e depois salta". Abrir ja no lugar nao e animacao
+// mais rapida, e animacao nenhuma.
+static int semMolaScroll;
 
 // --- MENU DE VISTO -----------------------------------------------------------
 //
@@ -170,12 +188,14 @@ void episodios_abrir(int idx, int t, int e) {
   titulo = idx; atualT = t; atualE = e; aberto = 1;
   temporada = foco = 0; grupo = 1; pedidoE = 0; scroll = 0;
   vmAberto = 0; vmSegurando = 0; vmConsumir = 0;
-  localizarAtual = 1;
+  localizarAtual = 1; alvoE = e; semMolaScroll = 1;
   for (int i = 0; i < nTemporadas(); i++) if (numTemporada(i) == t) temporada = i;
   for (int i = 0; i < nLinhas(); i++) if (epLinha(i)->episodio == e) foco = i;
   desc_episodios(titulo, t);
 }
 int episodios_aberto(void) { return aberto; }
+int   episodios_foco_linha(void) { return foco; }
+float episodios_rolagem(void) { return scroll; }
 void episodios_fechar(void) { aberto = 0; }
 int episodios_escolheu(int *t, int *e) {
   if (!pedidoE) return 0;
@@ -417,7 +437,11 @@ void episodios_evento(const SDL_Event *ev) {
     int nova = temporada + (k == SDLK_RIGHT ? 1 : -1);
     if (nova >= 0 && nova < nt) {
       temporada = nova; foco = 0; scroll = 0;
-      localizarAtual = 0;
+      // TROCAR DE ABA E UM PEDIDO EXPLICITO de recomecar a lista: aqui o topo
+      // e o lugar certo, e o alvo passa a ser o primeiro episodio da temporada
+      // nova (o sincronizador em episodios_atualizar o escreve no proximo
+      // quadro, quando a lista ja e a dela).
+      localizarAtual = 0; semMolaScroll = 1;
       desc_episodios(titulo, numTemporada(temporada));
     }
   }
@@ -443,11 +467,23 @@ void episodios_atualizar(float dt) {
   if(!aberto && anim<.005f) return;
   desc_episodios_pendente();
   int n = nLinhas();
-  if(localizarAtual && n) {
-    for(int i=0;i<n;i++) if(epLinha(i)->episodio==atualE) foco=i;
-    localizarAtual=0;
+  // A LISTA SUMIU: NAO E "VOLTE PARA O COMECO", E "ESPERE" — issue #102.
+  // Rearma a localizacao em vez de deixar o clamp abaixo zerar o foco; quem
+  // sabe onde a pessoa estava e alvoE, e ele nao depende da lista.
+  if (!n) localizarAtual = 1;
+  else if (localizarAtual) {
+    for (int i = 0; i < n; i++) {
+      const CatEp *l = epLinha(i);
+      if (l && l->episodio == alvoE) { foco = i; break; }
+    }
+    // SEM MOLA no quadro em que a linha e encontrada: a lista chegou depois da
+    // folha abrir, e animar daqui e o salto que o relato descreve.
+    localizarAtual = 0; semMolaScroll = 1;
   }
   if (foco >= n) foco = n > 0 ? n - 1 : 0;
+  // O ALVO SEGUE O FOCO enquanto a lista existe — e assim que andar com o
+  // direcional (ou trocar de aba) atualiza o que sera reencontrado depois.
+  if (n) { const CatEp *l = epLinha(foco); if (l) alvoE = l->episodio; }
   float area = NV_TELA_H - EP_TOP - 36;
   float max = n * EP_ROW - area;
   float alvo = scroll;
@@ -455,7 +491,8 @@ void episodios_atualizar(float dt) {
   if((foco+1)*EP_ROW>scroll+area) alvo=(foco+1)*EP_ROW-area;
   if (alvo > max) alvo = max;
   if (alvo < 0) alvo = 0;
-  scroll = anim_mola(scroll, alvo, dt, NV_MOLA_SCROLL);
+  scroll = semMolaScroll ? alvo : anim_mola(scroll, alvo, dt, NV_MOLA_SCROLL);
+  semMolaScroll = 0;
 }
 void episodios_desenhar(void) {
   if (anim < .005f) return;

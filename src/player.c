@@ -61,7 +61,9 @@ static void avisarCascaAberto(int v) { (void)v; }
 #include "streams.h"
 #include "badges.h"
 #include "legenda.h"
+#include "mkvass.h"
 #include "intro.h"
+#include "vistoep.h"   /* o check de "assistido" na lista de episodios (issue #100) */
 #include "pausao.h"
 #include "home.h"
 #include "descoberta.h"
@@ -299,6 +301,9 @@ void player_marcar_canal(const CatItem *it) {
   itemCanal = *it;
 }
 static int epT, epE, pedFontes, erroFonte, pedProxT, pedProxE;
+// Dentro de player_abrir: o episodio ainda e o do progresso, nao o que vai
+// tocar. Ver a nota la — segura a invalidacao da lista de fontes (#101).
+static int abrindoSessao;
 static int pedGuia, pedZap;   // pedidos de canal: overlay do guia / CH+/-
 // Indice EPG do canal no ar, resolvido uma vez por abertura (-2 = sem grade).
 static int epgIdx = -1;
@@ -372,6 +377,30 @@ void player_definir_episodio(int t, int e) {
   }
   if (epT < 1) epT = c->temporada > 0 ? c->temporada : 1;
   if (epE < 1) epE = c->episodio > 0 ? c->episodio : 1;
+  // AS FONTES SAO DESTE EPISODIO, E SO DELE — issue #101.
+  //
+  // A lista de streams.c e uma so, global, e nada a invalidava ao trocar de
+  // episodio: descer do E5 para o E6 no carrossel reproduzia a fonte do E5, e
+  // a folha de "Fontes" dentro do player listava as do E5. O unico caminho que
+  // acertava era o hold-OK no card, que refaz a busca antes de abrir a folha —
+  // e por isso o relator (#101) descreveu esse como o jeito de "confirmar".
+  //
+  // ESTA FUNCAO E O FUNIL: todo caminho que troca de episodio passa por ela
+  // (folha de episodios, proximo automatico, card do detalhe, CW). Descartar
+  // aqui vale para os quatro de uma vez, em vez de uma guarda por chamador.
+  //
+  // SO QUANDO A LISTA E DE OUTRO ALVO. A busca que o detalhe ja fez para ESTE
+  // episodio continua valendo; jogar fora sempre custaria uma busca a mais (e
+  // segundos de tela de carregamento) em toda reproducao que ja estava certa.
+  // E esta funcao e re-chamada por quadro enquanto o nome do episodio nao
+  // chega (player_atualizar), entao "sempre" seria a cada quadro.
+  if (c->imdb[0]) {
+    char alvo[64];
+    snprintf(alvo, sizeof alvo, "%.*s:%d:%d",
+             (int)strcspn(c->imdb, ":"), c->imdb, epT, epE);
+    if (!abrindoSessao && stream_n() > 0 && !stream_lista_do_alvo(alvo))
+      stream_invalidar("episode changed");
+  }
   // T/E vira S/E em ingles, e a frase montada nao casa com chave nenhuma:
   // i18n vai no FORMATO. Ver idioma.h e o issue #12.
   snprintf(linhaEp, sizeof linhaEp, i18n("T%dE%d"), epT, epE);
@@ -518,6 +547,10 @@ static const char *prefsArquivo(void) {
 // ajustes.txt, que espelha as chaves de layout do app web. Padrao: tamanho 2
 // (o do aparelho), branco, sem fundo, posicao central, contorno.
 static VideoLegendaEstilo legEstilo = { 120, 0, 0, 3, 1, 0, 0, TXT_FAMILIA_INTER };
+// Ver player_leg_estilo_tocou, em player.h: o que a pessoa mexeu vence o que o
+// arquivo ASS pede. Persistido junto com o resto — a preferencia nao pode
+// valer so ate desligar a TV.
+static int legTocado = PLR_LEG_NADA;
 
 static void prefsLer(void) {
   FILE *f = fopen(prefsArquivo(), "r");
@@ -540,6 +573,7 @@ static void prefsLer(void) {
     else if (!strcmp(chave, "leg_atraso")  && v > -10000 && v < 10000) legEstilo.atrasoMs = v;
     else if (!strcmp(chave, "leg_opacidade") && v >= 0 && v <= 3) legEstilo.opacidade = v;
     else if (!strcmp(chave, "leg_familia") && v >= 0 && v < TXT_FAMILIA_N) legEstilo.familia = v;
+    else if (!strcmp(chave, "leg_tocado")  && v >= 0) legTocado = v;
   }
   fclose(f);
 }
@@ -556,6 +590,7 @@ static void prefsGravar(void) {
   fprintf(f, "leg_atraso %d\n",  legEstilo.atrasoMs);
   fprintf(f, "leg_opacidade %d\n", legEstilo.opacidade);
   fprintf(f, "leg_familia %d\n", legEstilo.familia);
+  fprintf(f, "leg_tocado %d\n", legTocado);
   fclose(f);
   dados_marcar_sujo(0);   // IDBFS (Samsung): ver o gravador de ajustes.c
 }
@@ -566,6 +601,11 @@ void player_leg_estilo_mudou(void) {
   video_legenda_estilo(&legEstilo);
   prefsGravar();
 }
+void player_leg_estilo_tocou(int campos) {
+  if (campos == PLR_LEG_NADA) legTocado = PLR_LEG_NADA;
+  else legTocado |= campos;
+}
+int player_leg_estilo_tocado(int campo) { return (legTocado & campo) != 0; }
 
 // Proporcao do QUADRO decodificado. Sem videoInfo ainda, 16:9 — que e a
 // proporcao de quase todo arquivo entregue, e a suposicao que faz "Original"
@@ -844,6 +884,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
     // A COPIA e feita AQUI, no unico instante em que o indice e sabidamente o
     // do titulo pedido. Ver item().
     if (ci) { itemFixo = *ci; temFixo = 1; } else temFixo = 0;
+    artehero_logo_sessao_iniciar(temFixo ? &itemFixo : NULL);
     canalSessao = ci && (!strcmp(ci->tipo, "channel") || !strcmp(ci->tipo, "tv"));
     if (canalSessao) itemCanal = *ci;
     // So o CH+/- feito dentro do PiP (player_manter_mini) mantem a miniatura
@@ -880,7 +921,20 @@ void player_abrir(int indiceCatalogo, const char *url) {
   duracaoSeg = d > 1.0f ? d : PLR_DUR_PADRAO;
 
   // Identidade do episodio e independente do foco no painel de navegacao.
+  //
+  // AQUI O EPISODIO AINDA NAO E DEFINITIVO, e por isso esta chamada nao pode
+  // descartar a lista de fontes (issue #101): o que entra e o progresso do
+  // item ("Continuar assistindo"), e quem abriu diz o episodio de verdade na
+  // linha seguinte (episodioDoDetalhe / cwTocar / player_definir_episodio em
+  // app.c). Sem esta trava, tocar o E6 com o progresso no E5 jogaria fora a
+  // busca que o detalhe ja tinha feito para o E6 — correto no resultado, e
+  // alguns segundos de "abrindo fonte" cobrados por nada.
+  //
+  // Nada fica descoberto: app.c confere o dono da lista (stream_lista_do_alvo)
+  // antes de reproduzir e refaz a busca se ela for de outro alvo.
+  abrindoSessao = 1;
   player_definir_episodio(c ? c->temporada : 0, c ? c->episodio : 0);
+  abrindoSessao = 0;
   if (url && *url && !comVideo) player_erro_fonte();
 }
 
@@ -941,7 +995,24 @@ void player_encerrar(void) {
     // CANAL nao grava progresso: uma transmissao ao vivo nao tem "onde parou" —
     // guardar posSeg contra a duracao reserva colocaria "Globo 68%" em
     // Continuar assistindo, que e justamente o que nao pode acontecer.
-    float pos = posSeg >= duracaoSeg - 60.0f ? duracaoSeg : posSeg;
+    // O FIM E O MESMO PARA OS DOIS LADOS DA CASA — issue #100.
+    //
+    // Era `posSeg >= duracaoSeg - 60`: so os ultimos 60 s arredondavam para o
+    // fim, e so com o arredondamento o trakt.c manda /scrobble/stop (ele exige
+    // >= 90%; abaixo disso vira /scrobble/pause, que nao marca nada). Mas o
+    // cartao de "proximo episodio" declara o episodio terminado 120 s antes do
+    // fim, ou no marcador de creditos — e num episodio de 18 min isso da 88,9%.
+    // Quem aceitava o proximo episodio que o PROPRIO APP ofereceu saia abaixo
+    // dos 90% e nada marcava: o relato #100, "tenho de marcar a mao".
+    //
+    // Agora ha um numero so, e e o do cartao (player_regra_concluiu). As duas
+    // fontes de marcador sao lidas na mesma ordem de ofertaProximo: o capitulo
+    // do Matroska descreve ESTA copia, o TheIntroDB descreve o lancamento.
+    double cred = video_creditos();
+    int concluiu;
+    if (cred <= 1.0) cred = intro_creditos_seg();
+    concluiu = player_regra_concluiu(posSeg, duracaoSeg, cred);
+    float pos = concluiu ? duracaoSeg : posSeg;
     // Pelo indice CORRENTE do titulo, nao pelo guardado: depois de uma
     // republicacao o guardado grava o progresso no titulo errado.
     int ia = idxAtual();
@@ -955,6 +1026,20 @@ void player_encerrar(void) {
       if (epT > 0 && epE > 0) snprintf(id, sizeof id, "%.*s:%d:%d", (int)strcspn(ci->imdb,":"),ci->imdb, epT, epE);
       else snprintf(id, sizeof id, "%s", ci->imdb);
       trakt_marcar(id, pos, duracaoSeg);
+      // O CHECK NA LISTA, LOCALMENTE E AGORA — a outra metade do #100.
+      //
+      // O relato e preciso: "mostra a barra de progresso mas nao fica com o
+      // check". Sao dois dados diferentes e o player so escrevia UM. A barra
+      // sai de cat_salvar_progresso_ep, logo acima; o check sai de vistoep, e
+      // ate aqui NADA no player tocava nesse mapa — ele so era preenchido pela
+      // leitura de /shows/<id>/progress/watched, que acontece ao abrir a pagina
+      // de detalhe. Ou seja: mesmo com o Trakt aceitando o scrobble, o check so
+      // aparecia na visita seguinte.
+      //
+      // Otimista de proposito, como o gesto manual da folha ja e ("o efeito
+      // LOCAL ja aconteceu antes de o fio nascer", episodios.c): a proxima
+      // leitura do Trakt corrige se o servidor tiver recusado.
+      if (concluiu && epT > 0 && epE > 0) vistoep_definir(ci->imdb, epT, epE, 1);
       // E para a CONTA. Trakt e conta sao dois destinos diferentes: nem todo
       // usuario liga o Trakt, e o progresso do app oficial vem da conta.
       sync_sujar_progresso();
@@ -983,6 +1068,10 @@ void player_encerrar(void) {
     pausao_fechar();
     episodios_fechar();
     intro_desligar(); introIdx=introT=introE=-1;
+    // Antes do legenda_desligar: o fio do mkvass ainda entregaria um lote ao
+    // overlay depois do desligamento, e o proximo titulo abriria com a legenda
+    // do anterior. mkvass_parar grava o sidecar parcial com o que ja veio.
+    mkvass_parar();
     legenda_desligar();
     printf("[player] saida: video_parar %u ms, resto %u ms\n",
            (unsigned)(tv - t0), (unsigned)(SDL_GetTicks() - tv));
@@ -1161,6 +1250,16 @@ int player_regra_proximo(double posSeg, double durSeg, double cred) {
   if (cred > 1.0 && durSeg - cred <= credJanelaDe(durSeg))
     return posSeg >= cred;   // marcador aceito: ele manda, e so ele
   return durSeg - posSeg <= PLR_CRED_PISO_S;
+}
+
+// Ver a nota longa em player.h. Aqui so a conta: a mesma regra do cartao, mais
+// a folga de 60 s que player_encerrar ja aplicava — ela cobre quem sai por
+// cima do fim num titulo sem marcador e com duracao curta demais para os 120 s
+// valerem alguma coisa.
+int player_regra_concluiu(double posSeg, double durSeg, double cred) {
+  if (durSeg <= 1.0) return 0;
+  if (posSeg >= durSeg - 60.0) return 1;
+  return player_regra_proximo(posSeg, durSeg, cred);
 }
 
 static int ofertaProximo(void) {
@@ -1528,6 +1627,9 @@ void player_atualizar(float dt, Uint32 agora) {
     // AVANCANDO, a posicao e a que o dono escolheu. Ler video_pos() aqui era o
     // que fazia a barra pular de volta a cada repeticao de tecla.
     if (!scrubbing) posSeg = (float)video_pos();
+    // Move a janela de colheita da legenda ASS embutida (#92). Barato: so
+    // acorda o fio quando a posicao andou meio segundo.
+    mkvass_passo(posSeg);
     if (d > 1.0) duracaoSeg = (float)d;
     if (!retomadaAplicada && video_pronto() && d>1.0) {
       retomadaAplicada=1;
@@ -1657,35 +1759,88 @@ static void corLegenda(int i,int *r,int *g,int *b){
   if(i<0||i>=VIDEO_LEG_NCORES)i=0;*r=c[i][0];*g=c[i][1];*b=c[i][2];
 }
 
+// Um bloco ASS na tela: quem manda em cada coisa.
+//   tamanho, fonte, borda, opacidade, fundo -> SEMPRE a pessoa (acessibilidade)
+//   cor  -> o arquivo, a nao ser que a pessoa tenha mexido na cor (PLR_LEG_COR)
+//   lugar -> \pos / \an do arquivo; sem eles, a posicao da folha
+// O \pos vem em PlayResX/PlayResY do cabecalho e vira pixel de tela por regra
+// de tres. A ancora ASS e a do libass: 1-3 base, 4-6 meio, 7-9 topo; 1/4/7
+// esquerda, 2/5/8 centro, 3/6/9 direita.
+typedef struct { TxtLinha cor[4], borda[4]; int n; float w, h; } LegBloco;
+
+static void montarBloco(const LegendaCue *c, TxtEstilo est, int r, int g, int b, LegBloco *bl) {
+  char texto[768], *linha, *salva;
+  TxtFamilia fam = (TxtFamilia)legEstilo.familia;
+  int enf = (c->negrito ? TXT_ENF_NEGRITO : 0) | (c->italico ? TXT_ENF_ITALICO : 0);
+  bl->n = 0; bl->w = 0; bl->h = 0;
+  snprintf(texto, sizeof texto, "%s", c->texto);
+  linha = strtok_r(texto, "\n", &salva);
+  while (linha && bl->n < 4) {
+    bl->cor[bl->n]   = txt_linha_corta_enfase(est, linha, r, g, b, 255, 1660, fam, enf);
+    bl->borda[bl->n] = legEstilo.borda ? txt_linha_corta_enfase(est, linha, 0, 0, 0, 255, 1660, fam, enf) : (TxtLinha){0};
+    if (bl->cor[bl->n].w > bl->w) bl->w = bl->cor[bl->n].w;
+    bl->h += bl->cor[bl->n].h + (bl->n ? 5 : 0);
+    bl->n++; linha = strtok_r(NULL, "\n", &salva);
+  }
+}
+
+static void desenharBloco(const LegBloco *bl, float x0, float y, float alpha, int alinha) {
+  int i;
+  for (i = 0; i < bl->n; i++) {
+    TxtLinha l = bl->cor[i];
+    // alinha: 0 esquerda (x0 e a borda esquerda), 1 centro (x0 e o centro),
+    // 2 direita (x0 e a borda direita).
+    float x = alinha == 0 ? x0 : alinha == 1 ? x0 - l.w * .5f : x0 - l.w;
+    if (legEstilo.fundo) { float fa = legEstilo.fundo * .16f * alpha; gfx_cor((GfxRect){x-18,y-6,l.w+36,l.h+12},.16f,0,0,0,fa); }
+    if (bl->borda[i].tex) { float d = legEstilo.borda == 2 ? 4.f : 2.f;
+      txt_desenhar_alpha(bl->borda[i], x+d, y+d, .82f*alpha);
+      if (legEstilo.borda == 1) { txt_desenhar_alpha(bl->borda[i], x-d, y, .82f*alpha); txt_desenhar_alpha(bl->borda[i], x, y-d, .82f*alpha); }
+    }
+    txt_desenhar_alpha(l, x, y, alpha); y += l.h + 5;
+  }
+}
+
 /* O uMS da C9 limita fonte e escala. OpenSubtitles passa por este overlay
- * SDL/GLES, exatamente como o overlay HTML do app web. */
+ * SDL/GLES, exatamente como o overlay HTML do app web. Desde o #92 tambem
+ * desenha ASS: varios blocos ao mesmo tempo, cada um no seu lugar. */
 static void desenharLegendaExterna(void){
-  char texto[768],*linha,*salva;TxtLinha cor[4],borda[4];int n=0,r,g,b;
-  if(!legenda_texto(posSeg,legEstilo.atrasoMs,texto,sizeof texto))return;
+  LegendaCue cues[LEGENDA_SIMULTANEAS];
+  int n = legenda_cues(posSeg, legEstilo.atrasoMs, cues, LEGENDA_SIMULTANEAS), i, r, g, b;
+  if (n <= 0) return;
   int pct=legEstilo.tamanho;if(pct<50)pct=50;if(pct>200)pct=200;pct=(pct/10)*10;
   TxtEstilo est=(TxtEstilo)(TXT_LEG_50+(pct-50)/10);corLegenda(legEstilo.cor,&r,&g,&b);
   float alpha=(legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:legEstilo.opacidade==1?.75f:1.f)*entrada;
-  linha=strtok_r(texto,"\n",&salva);
-  while(linha&&n<4){
-    TxtFamilia fam=(TxtFamilia)legEstilo.familia;
-    cor[n]=txt_linha_corta_familia(est,linha,r,g,b,255,1660,fam);
-    borda[n]=legEstilo.borda?txt_linha_corta_familia(est,linha,0,0,0,255,1660,fam):(TxtLinha){0};
-    n++;linha=strtok_r(NULL,"\n",&salva);
-  }
-  if(!n)return;
-  float total=0;for(int i=0;i<n;i++)total+=cor[i].h+(i?5:0);
+  // A pilha "normal" (sem \pos e sem \an, ou \an 2): empilha de baixo para
+  // cima a partir da base da folha, como o SRT sempre fez.
   float base=visivel?760.f:1000.f;
   if(ofertaProximo())base=690.f;
   base-=(legEstilo.posicao-3)*48.f;
-  float y=base-total;
-  for(int i=0;i<n;i++){
-    TxtLinha l=cor[i];float x=(NV_TELA_W-l.w)*.5f;
-    if(legEstilo.fundo){float fa=legEstilo.fundo*.16f*alpha;gfx_cor((GfxRect){x-18,y-6,l.w+36,l.h+12},.16f,0,0,0,fa);}
-    if(borda[i].tex){float d=legEstilo.borda==2?4.f:2.f;
-      txt_desenhar_alpha(borda[i],x+d,y+d,.82f*alpha);
-      if(legEstilo.borda==1){txt_desenhar_alpha(borda[i],x-d,y,.82f*alpha);txt_desenhar_alpha(borda[i],x,y-d,.82f*alpha);}
+  float baseTopo = 80.f;             // pilha do \an8 (letreiros), de cima para baixo
+  float baseMeio = NV_TELA_H * .5f;
+  for (i = 0; i < n; i++) {
+    const LegendaCue *c = &cues[i];
+    LegBloco bl;
+    int cr = r, cg = g, cb = b;
+    int an = c->an > 0 && c->an <= 9 ? c->an : 2;
+    int alinha = (an - 1) % 3;        // 0 esq, 1 centro, 2 dir
+    int fila   = (an - 1) / 3;        // 0 base, 1 meio, 2 topo
+    if (c->cor >= 0 && !player_leg_estilo_tocado(PLR_LEG_COR)) { cr = (c->cor >> 16) & 255; cg = (c->cor >> 8) & 255; cb = c->cor & 255; }
+    montarBloco(c, est, cr, cg, cb, &bl);
+    if (!bl.n) continue;
+    if (c->posX >= 0.f && c->posY >= 0.f && c->resX > 0.f && c->resY > 0.f) {
+      // \pos: o ponto e a ANCORA do bloco (libass): x conforme alinha, y a
+      // base/meio/topo do bloco conforme a fila.
+      float x = c->posX * NV_TELA_W / c->resX, y = c->posY * NV_TELA_H / c->resY;
+      float yTopo = fila == 0 ? y - bl.h : fila == 1 ? y - bl.h * .5f : y;
+      if (yTopo < 0) yTopo = 0; if (yTopo + bl.h > NV_TELA_H) yTopo = NV_TELA_H - bl.h;
+      desenharBloco(&bl, x, yTopo, alpha, alinha);
+      continue;
     }
-    txt_desenhar_alpha(l,x,y,alpha);y+=l.h+5;
+    { float margem = 60.f;
+      float x = alinha == 0 ? margem : alinha == 1 ? NV_TELA_W * .5f : NV_TELA_W - margem;
+      if (fila == 2)      { desenharBloco(&bl, x, baseTopo, alpha, alinha); baseTopo += bl.h + 10.f; }
+      else if (fila == 1) { desenharBloco(&bl, x, baseMeio - bl.h * .5f, alpha, alinha); baseMeio += bl.h + 10.f; }
+      else                { base -= bl.h; desenharBloco(&bl, x, base, alpha, alinha); base -= 10.f; } }
   }
 }
 
@@ -1788,10 +1943,11 @@ void player_desenhar(Uint32 agora) {
     // addons de canal em geral) nao preenche `logo`: manda a marca em poster e
     // background. Sem esta linha caia-se no nome em texto — que e justamente o
     // texto que o dono pediu para trocar pela marca.
-    const char *marca = c ? (c->logo[0] ? c->logo
-                          : (player_id_canal()[0] && c->backdrop[0] ? c->backdrop : NULL))
-                        : NULL;
-    GLuint logo = marca ? tex_obter_larg(marca, 520) : 0;
+    const char *marca = c ? artehero_logo_sessao(c) : NULL;
+    if (!marca && c && player_id_canal()[0] && c->backdrop[0]) marca = c->backdrop;
+    // Home/detalhe já normalizam logos TMDB; o player era o único consumidor
+    // que usava c->logo cru e criava uma segunda chave para a mesma arte.
+    GLuint logo = marca ? tex_obter_larg_qualquer(marca, 520) : 0;
     if (logo) {
       float ar = tex_aspecto(marca), w = 520, h = ar > 0 ? w / ar : 120;
       if (h > 160) { h = 160; w = h * ar; }
@@ -1848,8 +2004,6 @@ void player_desenhar(Uint32 agora) {
                        pil.y + (ph - (float)l.h) * 0.5f, at);
   }
 
-  /* Permanecem quando os controles somem: sao conteudo, nao chrome do player. */
-  desenharLegendaExterna();
   // ANTES do corte por `a`: desenha-lo depois do `return` de "tocando limpo"
   // faria dele um painel que so aparece quando ja ha barra na tela.
   //
@@ -1999,7 +2153,13 @@ void player_desenhar(Uint32 agora) {
   // O botao de pular fica POR CIMA dos degrades e dos controles: desenhado
   // antes deles, o veu de 400px do rodape o afogava assim que a barra subia —
   // era o "aparece e some" do relato. Sem controles ele e a unica coisa na tela.
-  if (a <= 0.005f) { desenharAcoesEpisodio(); return; }   // tocando limpo
+  if (a <= 0.005f) {
+    // O chrome pode estar completamente recolhido enquanto a legenda ainda
+    // e conteudo do filme. Desenha-la antes do retorno preserva ASS/SRT/VTT
+    // durante a maior parte da reproducao, quando a barra nao esta na tela.
+    desenharLegendaExterna();
+    desenharAcoesEpisodio(); return;
+  }   // tocando limpo
 
   // Dois degrades, como no web: .player-controls-gradient-top (150px, 0.7 -> 0)
   // e .player-controls-gradient-bottom (200px, 0 -> 0.8). O de baixo sustenta o
@@ -2013,6 +2173,16 @@ void player_desenhar(Uint32 agora) {
   gfx_rect(veu, 0, GFX_VEU_BAIXO, 0, 0, 0, 0.0f, 0, 0, 0, 0.86f * a);
   { GfxRect topo = { 0, 0, NV_TELA_W, PLR_GRAD_TOPO };
     gfx_rect(topo, 0, GFX_VEU_TOPO, 0, 0, 0, 0.0f, 0, 0, 0, 0.70f * a); }
+
+  /*
+   * Legenda e conteudo, enquanto o degrade e chrome do player. Ela precisa
+   * ficar acima dele: caso contrario um ASS amarelo ou vermelho recebe a
+   * opacidade preta dos controles e parece oliva/marrom nas capturas com a
+   * barra aberta. Mantemos esta chamada antes dos textos dos controles para
+   * que a legenda continue abaixo dos botoes quando o usuario os revela;
+   * quando o chrome some, o retorno acima ja desenhou a legenda sozinha.
+   */
+  desenharLegendaExterna();
 
   // O bloco inteiro desliza junto: titulo, barra e icones sao UM objeto que
   // sobe. Animar cada linha por conta propria produz um escalonamento que o

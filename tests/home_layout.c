@@ -14,6 +14,8 @@ char *dados_caminho(char *dst, unsigned tam, const char *nome) {
   (void)dst; (void)tam; (void)nome; return NULL;
 }
 int   dados_apagar(const char *nome) { (void)nome; return 1; }
+void  dados_marcar_sujo(int leve) { (void)leve; }
+void  sync_proteger_ajustes_locais(void) {}
 int   perfis_ativo(void) { return 1; }
 const char *addons_base_por_id(const char *id) { (void)id; return ""; }
 const char *addons_nome_por_id(const char *id) { (void)id; return ""; }
@@ -31,7 +33,20 @@ int main(void) {
   assert(perfilCatalogo("Oscars 2026 - Filme") == FILEIRA_COLECAO);
   assert(perfilCatalogo("NETFLIX - Série") == FILEIRA_SERVICO);
   assert(perfilCatalogo("For You - Filme") == FILEIRA_NORMAL);
-  assert(larguraDe(FILEIRA_DESTAQUE) > larguraDe(FILEIRA_COLECAO));
+  assert(fabsf(larguraDe(FILEIRA_DESTAQUE) /
+               alturaDe(FILEIRA_DESTAQUE) - 16.0f / 9.0f) < 0.01f);
+  assert(alturaDe(FILEIRA_DESTAQUE) > alturaDe(FILEIRA_COLECAO));
+  assert(fabsf(larguraDe(FILEIRA_DESTAQUE_QUADRADO) /
+               alturaDe(FILEIRA_DESTAQUE_QUADRADO) - 4.0f / 3.0f) < 0.01f);
+  assert(alturaDe(FILEIRA_DESTAQUE_QUADRADO) > alturaDe(FILEIRA_DESTAQUE));
+  assert(larguraDe(FILEIRA_DESTAQUE_QUADRADO) * alturaDe(FILEIRA_DESTAQUE_QUADRADO) >
+         larguraDe(FILEIRA_DESTAQUE) * alturaDe(FILEIRA_DESTAQUE));
+  assert(tipoDaEscolha(FIL_TIPO_DESTAQUE) == FILEIRA_DESTAQUE);
+  assert(tipoDaEscolha(FIL_TIPO_DESTAQUE_QUADRADO) == FILEIRA_DESTAQUE_QUADRADO);
+  assert(!strcmp(fil_tipo_rotulo(FIL_TIPO_DESTAQUE_QUADRADO), "Destaque 4:3"));
+  assert(gapDe(FILEIRA_DESTAQUE) == NV_CARD_GAP_GRANDE);
+  assert(gapDe(FILEIRA_DESTAQUE_QUADRADO) == NV_CARD_GAP_GRANDE);
+  assert(gapDe(FILEIRA_NORMAL) == NV_CARD_GAP);
   assert(larguraDe(FILEIRA_COLECAO) > larguraDe(FILEIRA_SERVICO));
   assert(!temRotulo(FILEIRA_DESTAQUE));
   assert(!temRotulo(FILEIRA_CATALOGOS));
@@ -140,6 +155,35 @@ int main(void) {
   assert(sociais==1); // dados reais substituem vazio, nunca duplicam a fileira
   assert(fileiras[9].stackN==0 && fileiras[9].n==3 && fileiras[9].verTudo);
 
+  // O destaque continua mostrando uma terceira alternativa quando a primeira
+  // fonte entrega só dois títulos: o item extra vem de um catálogo já carregado
+  // e mantém seu índice real, sem fallback de arte de outro título.
+  { CatFileira curtas[2] = {0};
+    snprintf(curtas[0].chave, sizeof curtas[0].chave, "curated_movies");
+    snprintf(curtas[0].titulo, sizeof curtas[0].titulo, "Destaques");
+    snprintf(curtas[0].base, sizeof curtas[0].base, "https://example.invalid/addon");
+    snprintf(curtas[0].tipo, sizeof curtas[0].tipo, "movie");
+    snprintf(curtas[0].catId, sizeof curtas[0].catId, "curated");
+    curtas[0].ini = 0; curtas[0].n = 2;
+    snprintf(curtas[1].chave, sizeof curtas[1].chave, "more_movies");
+    snprintf(curtas[1].titulo, sizeof curtas[1].titulo, "Mais filmes");
+    snprintf(curtas[1].base, sizeof curtas[1].base, "https://example.invalid/addon");
+    snprintf(curtas[1].tipo, sizeof curtas[1].tipo, "movie");
+    snprintf(curtas[1].catId, sizeof curtas[1].catId, "more");
+    curtas[1].ini = 2; curtas[1].n = 2;
+    cat_definir_tudo(itensTeste, 4, curtas, 2);
+    sincronizarFileiras();
+    { int destaque = -1;
+      for (int r = 0; r < nFileiras; r++)
+        if (fileiras[r].tipo == FILEIRA_DESTAQUE) { destaque = r; break; }
+      assert(destaque >= 0);
+      assert(fileiras[destaque].n == 3);
+      assert(fileiraItemIndice(&fileiras[destaque], 0) == 0);
+      assert(fileiraItemIndice(&fileiras[destaque], 1) == 1);
+      assert(fileiraItemIndice(&fileiras[destaque], 2) == 2);
+    }
+  }
+
   // Arte de outro titulo nunca e fallback silencioso, mesmo quando o indice
   // esta alem do acervo local. Sem catalogo, os vetores locais continuam
   // disponiveis apenas na mesma posicao.
@@ -169,7 +213,83 @@ int main(void) {
     assert(x==0.35f && v==0.0f);
   }
   assert(NV_HERO_FADE_MS>=180.0f && NV_HERO_FADE_MS<=250.0f);
+
+  // --- #103: o cartaz EM FOCO cabe inteiro, tambem no fim da fileira -------
+  //
+  // O relato veio com foto: fileira de 12 titulos, foco no 11o, e o cartao
+  // aberto passando por baixo da borda direita da tela ("part of the focused
+  // tile is cut off"). A causa estava no alvo da rolagem — ele media o cartao
+  // EM REPOUSO e somava so metade da escala de foco, entao nem a abertura 16:9
+  // nem o anel de 4 px entravam na conta.
+  //
+  // A asserção refaz, a partir do alvo, a MESMA conta que o desenho faz para
+  // achar a borda direita do cartao focado; e a unica forma de o teste falhar
+  // pelo motivo certo se alguem mexer num dos dois lados sozinho.
+  {
+    fileiras[0].tipo = FILEIRA_NORMAL;
+    fileiras[0].n = 12;
+    fileiras[0].stackN = 0;
+    fileiras[0].verTudo = 0;
+    fileiras[0].escala = 1.0f;
+    if (nFileiras < 1) nFileiras = 1;
+
+    const float lw    = larguraFil(0);
+    const float passo = passoFil(0);
+    const float esc   = 1.0f + escalaDe(FILEIRA_NORMAL);
+    const float anel  = ajustes_borda_foco() ? NV_ANEL_FOCO : 0.0f;
+    const float limite = NV_TELA_W - NV_HOME_SAFE_RIGHT;
+
+    // As duas maneiras de o cartao ficar maior que a caixa em repouso: so a
+    // escala de foco (abre 0) e a abertura em repouso ja completa (abre 1).
+    for (int k = 0; k < 2; k++) {
+      float abre = (float)k;
+      for (int col = 0; col < fileiras[0].n; col++) {
+        float sx = alvoScrollFil(0, col, 0.0f, abre);
+        float w  = lw * esc
+                 + (alturaFil(0) * esc * NV_EXP_ASPECTO - lw * esc) * abre;
+        float cx = ajustes_conteudo_x() + (float)col * passo - sx
+                 + lw * 0.5f + (w - lw * esc) * 0.5f;
+        // Meio pixel de tolerancia: o alvo e float e o corte e visual.
+        assert(cx + w * 0.5f + anel <= limite + 0.5f);
+        // E nada some pela esquerda: a caixa em repouso do cartao focado nunca
+        // comeca antes da margem de conteudo.
+        assert(ajustes_conteudo_x() + (float)col * passo - sx >= -0.5f);
+      }
+    }
+    // A primeira coluna nao rola: a fileira comeca onde sempre comecou.
+    assert(alvoScrollFil(0, 0, 0.0f, 0.0f) == 0.0f);
+    assert(alvoScrollFil(0, 0, 0.0f, 1.0f) == 0.0f);
+    // E o ULTIMO cartaz, que e o da foto, exige rolagem MAIOR que a que a
+    // conta antiga (so meia escala de foco) produzia.
+    { int ult = fileiras[0].n - 1;
+      float antigo = (float)ult * passo + lw
+                   + lw * escalaDe(FILEIRA_NORMAL) * 0.5f
+                   - (NV_TELA_W - ajustes_conteudo_x() - NV_HOME_SAFE_RIGHT);
+      assert(alvoScrollFil(0, ult, 0.0f, 1.0f) > antigo + 1.0f); }
+
+    // AS TRES PARCELAS, cada uma cobrada sozinha — sem isto, uma delas pode
+    // sumir e o teste acima continuar verde porque as outras duas sobram.
+    //
+    // A parcela da ABERTURA e a que mais cresce e a que menos aparece nesta
+    // execucao: com os ajustes de fabrica "Pôsteres horizontais" esta LIGADO,
+    // o cartaz ja mede 16:9 (318x183 medidos aqui) e abrir quase nao o
+    // aumenta. Quem relatou o #103 tem a opcao desligada — cartaz 2:3 — e ai
+    // o aberto mede altura*16/9 contra a largura em pe: o pulo e de centenas
+    // de pixels, e era ele que faltava. A asserção compara com a formula do
+    // desenho para valer nas duas configuracoes.
+    assert(sobraDireitaFoco(0, 1.0f) > sobraDireitaFoco(0, 0.0f));
+    { float e = 1.0f + escalaDe(FILEIRA_NORMAL);
+      float abertura = alturaFil(0) * e * NV_EXP_ASPECTO - lw * e;
+      assert(fabsf(sobraDireitaFoco(0, 1.0f) - sobraDireitaFoco(0, 0.0f)
+                   - abertura) < 0.01f); }
+    // O anel so entra quando existe, e a escala so quando o card cresce: as
+    // duas nunca valem juntas (ver escalaDe).
+    assert(fabsf(sobraDireitaFoco(0, 0.0f)
+                 - (lw * escalaDe(FILEIRA_NORMAL) * 0.5f
+                    + (ajustes_borda_foco() ? NV_ANEL_FOCO : 0.0f))) < 0.01f);
+  }
+
   free(itensTeste);
-  puts("home layout: PASS (fallback, imported collections, requested order, ranks, focus)");
+  puts("home layout: PASS (fallback, colecoes, ordem, ranks, foco, rolagem #103)");
   return 0;
 }

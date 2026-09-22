@@ -9,7 +9,9 @@
 // ONDE ELE ESCREVE E ONDE NAO ESCREVE — a distincao mais importante do arquivo:
 //
 //   PUXA E EMPURRA (o app tem a informacao de verdade):
-//     addons, credenciais (Trakt, TMDB, mdblist), progresso de reproducao.
+//     addons, credenciais (Trakt, TMDB, mdblist), progresso de reproducao e —
+//     desde o #85 — os AJUSTES DO PERFIL, costurados no blob que a conta ja
+//     tinha (ver sync_proteger_ajustes_locais e ajustes_mesclar_blob).
 //
 // MEDIDO na conta do dono: sync_pull_provider_credentials devolve animeskip,
 // debrid:premiumize, debrid:realdebrid, debrid:torbox, introdb, mdblist e tmdb
@@ -17,8 +19,7 @@
 // linha aparece sozinha assim que o app web a escrever; ate la o vinculo Trakt
 // deste app continua saindo de art/trakt.txt, que NAO pode ir no pacote.
 //   SO PUXA (o app le, mas nao tem edicao local para empurrar):
-//     perfis, vistos, biblioteca, colecoes, ajustes do perfil, catalogos da
-//     home.
+//     perfis, vistos, biblioteca, colecoes, catalogos da home.
 //
 // "SO PUXA" NAO QUER DIZER "SO CONTA". Era o que acontecia com a biblioteca e
 // com os vistos: as duas RPC eram chamadas, as linhas contadas para o resumo e
@@ -106,6 +107,26 @@ void sync_esquecer_usuario(void);
 // de perfil), a conta define o ponto de partida e a mudanca local vale pelo
 // resto da sessao.
 void sync_reaplicar_ajustes(void);
+
+// A pessoa mudou um ajuste NESTA TV. Faz duas coisas, e as duas de proposito:
+//
+//   1. MARCA PARA SUBIR. O proximo ciclo costura os valores locais no blob da
+//      conta e empurra (sync_push_profile_settings_blob). E isto que resolve a
+//      divergencia do issue #85 na origem: mudanca feita na TV passa a existir
+//      na conta, e os dois lados convergem em vez de o blob ser so web -> TV.
+//      O que sobe e o que fica esta em ajustes_mesclar_blob.
+//   2. SEGURA O BLOB da conta ate lá. O proximo arranque nao pode reaplicar o
+//      blob por cima — sem isto o restart desfazia largura, arredondamento,
+//      profundidade e cor de destaque. A protecao NAO foi removida com a
+//      chegada do push, e o motivo e concreto: o push pode nao acontecer (sem
+//      rede, 5xx, ou o servidor sem a funcao — medido que varias RPC deste
+//      plano nao existem neste servidor), e nesses casos ela e a unica defesa.
+//      Removê-la exigiria provar que o push sempre chega antes do proximo
+//      arranque, e isso nao se prova numa TV que pode ser desligada da tomada.
+//
+// Limpa-se em sync_reaplicar_ajustes (login / troca de perfil / "Atualizar"),
+// que tambem descarta a pendencia de subida — ela e do perfil anterior.
+void sync_proteger_ajustes_locais(void);
 
 // Manda uma credencial de servico para a CONTA, para os outros aparelhos da
 // pessoa herdarem o vinculo. `credJson` e o objeto pronto (o servidor guarda o

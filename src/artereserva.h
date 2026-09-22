@@ -29,7 +29,10 @@ int arte_reserva_url(const char *url, char *saida, size_t tam);
 // IMDb, entao a reserva acima nao tinha por onde procurar. O catalogo registra
 // aqui, ao publicar, (url do cartaz/fundo -> imdb) para todo host que nao e o
 // metahub nem o TMDB; a reserva consulta esta tabela quando a URL nao e do
-// metahub. `poster` 1 = cartaz, 0 = fundo.
-void arte_reserva_registrar(const char *url, const char *imdb, int poster);
+// metahub. `poster` 1 = cartaz, 0 = fundo. Retorna 1 quando registrou ou
+// atualizou a entrada; retorna 0 para entrada invalida ou quando o limite
+// bounded da tabela/arena foi esgotado. O limite vale pela sessao do processo:
+// nao ha reset da tabela, portanto URLs distintas acumuladas podem esgota-lo.
+int arte_reserva_registrar(const char *url, const char *imdb, int poster);
 
 #endif

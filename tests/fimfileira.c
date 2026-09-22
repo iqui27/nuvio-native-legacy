@@ -36,6 +36,10 @@ static int nCtx, nVerTudo, nVerTudoCol;
 int  tex_falhou(const char *u) { (void)u; return 0; }
 int  tex_largura_fonte(const char *u) { (void)u; return 0; }
 const char *tex_arquivo(const char *u) { (void)u; return NULL; }
+// A home passou a esconder o heroi tambem com o player aberto (home.c:1726);
+// aqui nao ha player nenhum, entao responde sempre fechado.
+int  player_aberto(void) { return 0; }
+int  detail_aberto(void) { return 0; }
 int  trailer_aberto(void) { return 0; }
 int  trailer_tocando(void) { return 0; }
 void ctx_abrir(int indice) { (void)indice; nCtx++; }

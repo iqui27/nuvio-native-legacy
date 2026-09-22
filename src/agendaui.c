@@ -1,6 +1,23 @@
 // Tela AGENDA — a LINHA DO TEMPO das series acompanhadas.
 //
 // ---------------------------------------------------------------------------
+// O PASSO "MENOS TINTA, MAIS AR" (set/2026)
+//
+// A estrutura nao mudou — estacao, eixo, conteudo — porque ela ja era a
+// resposta certa para a pergunta da tela. O que mudou foi o PESO de cada
+// peca, na direcao do pedido "mais elegante, mais minimalista":
+//   - o eixo emagreceu (2px, alfa 0,22) e os nos encolheram (13/21): a linha
+//     do tempo segura a tela sem gritar;
+//   - os rotulos pequenos (dia da semana, meses, "sem data") viraram caps
+//     espacadas — a voz que so o "HOJE" tinha, estendida a tela inteira;
+//   - o canto superior direito, vazio desde sempre, ganhou a data de hoje por
+//     extenso: a unica peca de calendario que a estacao nao da;
+//   - a laje de foco ganhou canto de 26px e mais respiro em volta do cartaz;
+//   - as tres linhas de texto da linha respiram mais (7/6 em vez de 5/4).
+// Nenhuma string nova: a data do cabecalho e composta de pecas que ja existem
+// traduzidas (agenda_semana_nome, desc_data_extenso).
+//
+// ---------------------------------------------------------------------------
 // POR QUE UM EIXO, e nao a lista de pilulas que estava aqui
 //
 // A pergunta da tela e temporal ("o que sai, e quando"). A versao anterior ja
@@ -122,6 +139,9 @@
 #include "ajustes.h"
 #include "idioma.h"
 #include "noticias.h"
+#include "catalogo.h"
+#include "badges.h"
+#include "descoberta.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -131,11 +151,21 @@
 // "em 12 semanas" — medido com a linha mais larga que agenda_falta produz.
 #define AG_CHIP_W      138.0f
 #define AG_EIXO_GAP     34.0f
-#define AG_EIXO_W        3.0f
+// 2px e nao 3: o eixo segura a estrutura da tela inteira, e a 3 m um traco de
+// 2px com alfa baixo le como fio de pauta — 3px lia como regua desenhada.
+#define AG_EIXO_W        2.0f
 #define AG_CONT_GAP     48.0f
-#define AG_NO_D         16.0f
-#define AG_NO_HOJE      25.0f
+// Nos menores (eram 16/25): com o eixo fino, o disco de 16 cobria o fio; 13 e
+// o diametro em que o disco cheio ainda se distingue do anel vazado do "sem
+// data" sem ampliar, e o de hoje desce junto para guardar a proporcao.
+#define AG_NO_D         13.0f
+#define AG_NO_HOJE      21.0f
 #define AG_TRACO        10.0f   // traco e vao do eixo tracejado
+// Vermelho de calendario (#e53935), fixo para que HOJE continue sendo HOJE
+// mesmo quando o usuario troca o tema de foco para branco, azul ou violeta.
+#define AG_HOJE_R        0.898f
+#define AG_HOJE_G        0.224f
+#define AG_HOJE_B        0.208f
 
 // ALTURA DA LINHA — ela sai do CARTAZ, e nao o contrario.
 //
@@ -159,19 +189,26 @@
 // como calendario, e estrutural e nao um literal repetido em tres lugares.
 #define AG_LINHA_H     177.0f
 #define AG_LINHA_GAP    12.0f
-// A SINOPSE, agora na coluna da direita: passo de 30 e ate TRES linhas. Era
-// duas linhas de 32 numa coluna de 1380px; na coluna de 42% (~525px) a mesma
-// frase precisa de tres para nao virar "…" na primeira virgula, e tres linhas
-// de 30 medem 90px — cabem folgadas nos 177 da linha, que e o ponto.
+// O CARTAO (set/2026, dono olhando a captura: "diminuir a largura de cada
+// item da lista"). Ate aqui a linha ia de xCont ate a margem direita, 1620 px
+// de laje para tres linhas de texto que usavam 700. Agora e no maximo 1240 de
+// largura e termina em 1500, o que sobra a direita fica LIVRE: o eixo ja da a
+// data, e a coluna vazia le como respiro, nao como falta. 16 e o recuo do
+// cartao atras do cartaz, o mesmo dos dois lados.
+#define AG_CARTAO_MAX  1240.0f
+#define AG_CARTAO_FIM  1500.0f
+#define AG_CARTAO_PAD    16.0f
+// A QUARTA LINHA (citacao/sinopse) comeca AG_EXTRA_SOBE acima da base dos 177
+// — o bloco de tres linhas e mais baixo que o cartaz e sobra espaco embaixo
+// dele — e no maximo AG_CIT_MAX linhas: a citacao e uma manchete, e uma
+// manchete que precisa de tres linhas e um paragrafo.
+#define AG_EXTRA_SOBE    20.0f
+#define AG_CIT_MAX          2
+// O passo das linhas de texto corrido (citacao, sinopse) e o teto do cache de
+// quebra (AG_SIN_MAX, tambem o tamanho do buffer de agQuebra — quem pede mais
+// linhas que isso recebe AG_SIN_MAX).
 #define AG_SIN_LD       30.0f
 #define AG_SIN_MAX         3
-// O VAO ENTRE AS DUAS COLUNAS DE TEXTO e a fracao que fica com a direita.
-// 44 e o menor vao em que as duas colunas ainda leem como colunas a 3 m: com 24
-// a sinopse parecia continuacao da linha de apoio. A fracao 0,42 foi escolhida
-// pelo TITULO: com 0,50 "Uma Série Cancelada" ja pedia reticencia, com 0,42 a
-// esquerda fica com ~725px e cabe titulo de ~40 caracteres em TXT_HEADLINE.
-#define AG_COL_GAP      44.0f
-#define AG_COL_DIR      0.42f
 #define AG_FAIXA_H      72.0f   // cabecalho de mes / separador
 #define AG_HOJE_H       94.0f   // a faixa de origem do eixo, um pouco maior
 // O cartaz e o que faz reconhecer a serie antes de ler o nome, e a 3 m ele tem
@@ -210,107 +247,37 @@
 // cartaz cresceu: a proporcao canto/altura de antes (10/144) mantida em 153 da
 // 10,6, e 12 e o canto do resto dos cartazes do app a este tamanho.
 #define AG_CARTAZ_RAIO (12.0f / AG_CARTAZ_H)
-#define AG_SINO         54.0f
-// A FAIXA DO DESPERTADOR, reservada em TODA linha e nao so nas marcadas. Custa
-// 178px de largura de texto que quase nenhum titulo usava, e em troca as duas
-// colunas de texto ficam no mesmo x em todas as linhas — que e a disciplina de
-// calendario que esta tela inteira defende. Antes a linha sem lembrete esticava
-// o texto por cima da faixa e as colunas dancavam de linha para linha.
-//
-// 178 E MEDIDO NA LEGENDA, nao no icone. Com AG_SINO + 46 = 100 (o que bastava
-// para o icone) a legenda da linha focada saia "Lembret…" e "Lembrar-…" na
-// captura — uma legenda cortada e pior que legenda nenhuma, porque o que sobra
-// e a mesma palavra nos dois estados. "Lembrete ativo" em TXT_CAPTION2 mede
-// ~153px; 178 deixa a folga do corte e ainda centra o icone na faixa.
-#define AG_SINO_FAIXA  (AG_SINO + 124.0f)
-
-// EMERALD #66bb6a — o MESMO da paleta de acentos (ajustes.c:204) e do selo do
-// Social (salvospainel.c:708). Nao ha verde novo neste arquivo.
-#define AG_VERDE_R 0.400f
-#define AG_VERDE_G 0.733f
-#define AG_VERDE_B 0.416f
-// Sobre superficie clara o esmeralda cheio da 2,2:1 e some. Escurecido a 42% da
-// 8:1 contra #f5f5f5 e continua sendo o mesmo matiz — escurecer nao inventa cor.
+// O DISCO DO SINO e a coluna dele, fixa em toda linha para o texto acabar no
+// mesmo x em todas — a disciplina de calendario desta tela. 120 cabe o disco
+// de 60 com folga e a legenda em duas linhas (ver desenhaConteudo).
+#define AG_SINO         60.0f
+#define AG_SINO_COL    120.0f
 
 void agendaui_cor_lembrete(int ligado, int sobreClaro,
                            float *r, float *g, float *b) {
-  // SOBRE O REALCE (linha em foco) o despertador vai na tinta do realce,
-  // armado ou nao: o verde escurecido "nao orna com nada" (dono, 21/09/2026)
-  // e sobre o rosa vira lama. As ondas e o tremor continuam dizendo o
-  // estado. Fora do foco, armado = verde, desarmado = quase branco.
-  if (sobreClaro) { *r = *g = *b = ajustes_acento_tinta(NULL, NULL, NULL); return; }
-  if (!ligado) { *r = *g = *b = 0.94f; return; }
-  *r = AG_VERDE_R; *g = AG_VERDE_G; *b = AG_VERDE_B;
+  // O relogio deixou de ser disco colorido: a diferenca entre os estados agora
+  // esta no diametro/espessura do anel e na legenda, entao o desenho pode ser
+  // branco e silencioso como a referencia. No foco, a tinta ainda respeita a
+  // regra global para o raro tema de realce branco.
+  if (sobreClaro) {
+    *r = *g = *b = ajustes_acento_tinta(NULL, NULL, NULL);
+    return;
+  }
+  if (ligado) { *r = *g = *b = 1.0f; return; }
+  *r = *g = *b = 170.0f / 255.0f;
 }
-
-// --- O DESPERTADOR ANIMADO ---------------------------------------------------
-//
-// TRES PARTES, e so a primeira e imagem:
-//   1. o icone (art/icones/lembrete.png, forma na alpha, tingido daqui);
-//   2. o TREMOR — deslocamento horizontal em seno de ~9 Hz, com envelope: toca
-//      ~600 ms a cada 2,4 s. Um tremor continuo vira ruido na periferia da
-//      visao a 3 m; um que toca e para le como "esta armado";
-//   3. as ONDAS DE SOM — dois pares de pastilhas saindo das campainhas, com
-//      alfa e tamanho puxados pelo mesmo envelope.
-//
-// AS ONDAS SAO FRACAO DA CAIXA DO GLIFO, e a caixa encolheu de 0,42 para 0,333
-// do circulo junto com o icone — entao a mesma fracao passou a desenhar menos
-// pixel. A primeira tentativa foi 0,075 de largura; na captura as pastilhas
-// sairam com 2,4 px e sumiram. Ficaram em 0,10 por 0,26 e 0,17 de altura, que
-// em pixel da quase o mesmo que as antigas (3,2 contra 3,6 de largura) — o
-// alivio de peso veio do DESENHO, nao de apagar o sinal de estado.
-//
-// Conta fechada dentro do circulo de 96: o botao armado punha 472 px2 de icone
-// mais 117 de onda, 589 no total, numa fileira cujos vizinhos andam entre 118
-// ("+") e 316 (olho). Agora sao 253 de icone mais 88 de onda, 341.
-//
-// NAO APAGAR AS ONDAS: com "reduzir animacoes" ligado elas sao o UNICO sinal de
-// estado que nao e cor. Emagrecer ate sumir troca um defeito de peso por um
-// defeito de acesso.
-//
-// Nada disso existe com o lembrete DESLIGADO: ali e so o icone, mais apagado.
-// E o par de estados que o dono pediu para nao depender de texto — e tambem a
-// razao de o verde nunca ser o unico sinal, ver agendaui_cor_lembrete.
-#define AG_TOQUE_MS   2400
-#define AG_TOQUE_DUR   600.0f
-#define AG_TROCA_MS     700
 
 void agendaui_despertador(GfxRect r, int ligado, float cr, float cg, float cb,
                           float a, Uint32 agora, Uint32 desde) {
-  float env = 0.0f, dx = 0.0f;
-  int reduz = ajustes_animacoes_reduzidas();
-  if (ligado && !reduz) {
-    float ciclo = (float)(agora % AG_TOQUE_MS);
-    env = ciclo < AG_TOQUE_DUR ? (1.0f - ciclo / AG_TOQUE_DUR) : 0.0f;
-    // Acabou de ligar: toca INTEIRO, porque e o unico instante em que o dono
-    // esta olhando para o botao que acabou de apertar.
-    if (desde && agora - desde < AG_TROCA_MS) env = 1.0f;
-    dx = env * (r.w * 0.055f) * sinf((float)agora * 0.055f);
-  }
-  if (ligado) {
-    // As ondas: duas de cada lado, na altura das campainhas. Com movimento
-    // reduzido ficam PARADAS e opacas — o estado nao pode depender de animar.
-    float base = reduz ? 0.85f : (0.30f + 0.70f * env);
-    // NA ALTURA DO SUPORTE DO SINO. O desenho novo poe os dois tracos
-    // inclinados entre 0,128 e 0,226 da caixa (lembrete.svg); 0,20 encosta na
-    // ponta deles, que e de onde o som sairia. Com 0,16, herdado das campainhas
-    // redondas do desenho antigo, as pastilhas flutuavam acima do icone.
-    float cy = r.y + r.h * 0.20f;
-    int k;
-    for (k = 0; k < 2; k++) {
-      float d = r.w * (0.60f + 0.20f * (float)k);
-      float h = r.h * (0.26f - 0.09f * (float)k);
-      float w = r.w * 0.10f;
-      float al = a * base * (k == 0 ? 1.0f : 0.55f);
-      GfxRect esq = { r.x + r.w * 0.5f - d - w * 0.5f + dx, cy - h * 0.5f, w, h };
-      GfxRect dir = { r.x + r.w * 0.5f + d - w * 0.5f + dx, cy - h * 0.5f, w, h };
-      if (h <= 1.5f || w <= 1.0f) continue;
-      gfx_cor(esq, 0.5f, cr, cg, cb, al);
-      gfx_cor(dir, 0.5f, cr, cg, cb, al);
-    }
-  }
-  { GfxRect ic = { r.x + dx, r.y, r.w, r.h };
-    gfx_icone(ic, "lembrete", cr, cg, cb, a * (ligado ? 1.0f : 0.62f)); }
+  float s = r.w < r.h ? r.w : r.h;
+  (void)ligado; (void)agora; (void)desde;
+  if (s <= 0.0f || a <= 0.001f) return;
+  // O relogio feito a mao parecia um simbolo de fonte. O sino Lucide mora em
+  // asset rasterizado, como os demais glifos do app; sem moldura externa ele
+  // respira e nao parece um botao dentro de outro botao. O glifo cresce para
+  // ocupar a presenca que antes vinha do circulo, sem introduzir fill.
+  { GfxRect glifo = { r.x + s * 0.04f, r.y, s * 0.92f, s * 0.92f };
+    gfx_icone(glifo, "sino", cr, cg, cb, a); }
 }
 
 // A QUEBRA POR PALAVRA, num lugar so, para quem MEDE e para quem DESENHA.
@@ -321,9 +288,59 @@ void agendaui_despertador(GfxRect r, int ligado, float cr, float cg, float cb,
 // de txt_linha e indexado por (estilo, texto, cor): medir numa cor que nao vai
 // ser desenhada rasteriza uma segunda copia de cada prefixo de linha. Quem mede
 // passa a MESMA cor de quem desenha.
+// A QUEBRA E LEMBRADA. agQuebra mede palavra por palavra com txt_linha, e a
+// linha em foco a chama duas vezes por quadro (medir e desenhar) para a
+// sinopse ou a citacao — na C9 isso era ~11 ms de CPU por quadro em
+// agendaui_desenhar (des=11,5 com gfx=0,0 no nuvio-fps.txt de 21/09/2026),
+// e a tela parada ficava em 30 fps. Oito entradas bastam: o foco esta numa
+// linha, e o texto/largura/estilo so mudam quando ele anda.
+#define AGQ_CACHE 8
+typedef struct {
+  unsigned hash; float larg; int estilo, max, r, g, b, n;
+  char linhas[AG_SIN_MAX][512];
+  size_t restoOff;   // deslocamento de `resto` dentro de `s`
+  int vivo;
+} AgQuebra;
+static AgQuebra agqCache[AGQ_CACHE];
+static int agqProx;
+static unsigned agqHash(const char *s) {
+  unsigned h = 2166136261u;
+  while (*s) { h ^= (unsigned char)*s++; h *= 16777619u; }
+  return h;
+}
+static int agQuebraCru(TxtEstilo estilo, const char *s, float larg, int max,
+                       char linhas[][512], const char **resto, int r, int g, int b);
 static int agQuebra(TxtEstilo estilo, const char *s, float larg, int max,
                     char linhas[][512], const char **resto,
                     int r, int g, int b) {
+  unsigned h; int i, n;
+  *resto = "";
+  if (!s || !s[0] || larg <= 0.0f || max <= 0) return 0;
+  if (max > AG_SIN_MAX) max = AG_SIN_MAX;
+  h = agqHash(s);
+  for (i = 0; i < AGQ_CACHE; i++) {
+    AgQuebra *c = &agqCache[i];
+    if (c->vivo && c->hash == h && c->larg == larg && c->estilo == (int)estilo &&
+        c->max == max && c->r == r && c->g == g && c->b == b) {
+      int k;
+      for (k = 0; k < c->n; k++) memcpy(linhas[k], c->linhas[k], strlen(c->linhas[k]) + 1);
+      *resto = s + c->restoOff;
+      return c->n;
+    }
+  }
+  n = agQuebraCru(estilo, s, larg, max, linhas, resto, r, g, b);
+  { AgQuebra *c = &agqCache[agqProx]; int k;
+    agqProx = (agqProx + 1) % AGQ_CACHE;
+    c->vivo = 1; c->hash = h; c->larg = larg; c->estilo = (int)estilo; c->max = max;
+    c->r = r; c->g = g; c->b = b; c->n = n;
+    for (k = 0; k < n; k++) memcpy(c->linhas[k], linhas[k], strlen(linhas[k]) + 1);
+    // `resto` pode ser o literal "" (nada sobrou): guardar o fim de `s`.
+    c->restoOff = (**resto) ? (size_t)(*resto - s) : strlen(s); }
+  return n;
+}
+static int agQuebraCru(TxtEstilo estilo, const char *s, float larg, int max,
+                       char linhas[][512], const char **resto,
+                       int r, int g, int b) {
   const char *p = s;
   int n = 0;
   *resto = "";
@@ -429,6 +446,8 @@ static int temData(const AgItem *it) {
   return it && it->dataProx[0] && agenda_dias(it->dataProx) >= 0;
 }
 
+static float alturaExtra(const AgItem *it);
+
 // A LINHA TEM UMA ALTURA SO, focada ou nao.
 //
 // Era `AG_LINHA_H + animFoco[i] * 86` — a linha focada abria por baixo para a
@@ -441,7 +460,18 @@ static int temData(const AgItem *it) {
 // da linha focada estava correndo junto com a mola, e o resultado a 3 m era a
 // lista inteira deslizando a cada passo do D-pad. Agora o documento tem altura
 // fixa e so o foco anda.
-static float alturaLinha(int i) { (void)i; return AG_LINHA_H; }
+//
+// VOLTOU A CRESCER, e de proposito (set/2026): a citacao da ultima noticia
+// passou para uma QUARTA LINHA por baixo das tres (a coluna da direita que a
+// abrigava colidia com o sino — foto do dono), e a linha em foco abre o que
+// alturaExtra mede para ela caber. O alvo movel da rolagem que a nota acima
+// descreve continua valendo, mas agora e um degrau de 34 a 68 px numa linha
+// so, nao 86 em todas; e a guarda por animFoco poupa a conta nas linhas
+// paradas — sem ela yDe faria n*n chamadas por quadro.
+static float alturaLinha(int i) {
+  if (i < 0 || i >= AG_MAX || animFoco[i] < 0.002f) return AG_LINHA_H;
+  return AG_LINHA_H + animFoco[i] * alturaExtra(agenda_lista(i));
+}
 
 // As FAIXAS que abrem a linha `i`: a de origem ("HOJE"), a de mes quando o mes
 // muda, e a de "sem data prevista". UMA funcao so mede e desenha, para que a
@@ -665,7 +695,6 @@ static float faixas(int i, float xChipDir, float xEixo, float xCont, float xDir,
     float ar, ag, ab, yl = y + AG_HOJE_H - 26.0f;
     ajustes_acento(&ar, &ag, &ab);
     if (desenhar) {
-      TxtLinha t;
       const char *hj = i18n("HOJE");
       // ESPACADO. "HOJE" com 4 letras em corpo 21 e um borrao a tres metros; o
       // espacamento e o que faz quatro maiusculas lerem como rotulo de secao e
@@ -688,17 +717,16 @@ static float faixas(int i, float xChipDir, float xEixo, float xCont, float xDir,
       // anunciar e o rotulo some — o "HOJE" e a regua bastam como origem.
       rot[0] = 0;
       if (temData(it)) rotuloMes(it->dataProx, rot, sizeof rot);
-      txt_tracking(TXT_CAPTION2, hj, (int)(ar * 255.0f + 0.5f),
-                   (int)(ag * 255.0f + 0.5f), (int)(ab * 255.0f + 0.5f),
+      txt_tracking(TXT_CAPTION2, hj, (int)(AG_HOJE_R * 255.0f + 0.5f),
+                   (int)(AG_HOJE_G * 255.0f + 0.5f), (int)(AG_HOJE_B * 255.0f + 0.5f),
                    xChipDir - lw, yl - 26.0f, 1.0f, 2.4f);
-      if (rot[0]) {
-        t = txt_linha(TXT_CAPTION2, rot, 150, 152, 160, 255);
-        txt_desenhar(t, xCont, yl - 26.0f);
-      }
+      if (rot[0])
+        txt_tracking(TXT_CAPTION2, rot, 132, 134, 142, xCont, yl - 26.0f,
+                     1.0f, 2.0f);
       regua(xEixo, xDir, yl, ar * 0.9f, 0.30f);
       { GfxRect no = { xEixo - AG_NO_HOJE * 0.5f, yl - AG_NO_HOJE * 0.5f,
                        AG_NO_HOJE, AG_NO_HOJE };
-        gfx_cor(no, 0.5f, ar, ag, ab, 1.0f); }
+        gfx_cor(no, 0.5f, AG_HOJE_R, AG_HOJE_G, AG_HOJE_B, 1.0f); }
     }
     usado += AG_HOJE_H;
   }
@@ -706,16 +734,18 @@ static float faixas(int i, float xChipDir, float xEixo, float xCont, float xDir,
   if (i == indiceSeparador()) {
     float yl = y + usado + AG_FAIXA_H - 22.0f;
     if (desenhar) {
-      TxtLinha t = txt_linha(TXT_CAPTION2, i18n("Sem data prevista"),
-                             138, 140, 148, 255);
-      txt_desenhar(t, xCont, yl - 26.0f);
+      // Caps espacadas, como os cabecalhos de mes: e um rotulo de secao, nao
+      // uma frase — e uma voz so para todos os rotulos da tela.
+      maiusc(rot, sizeof rot, i18n("Sem data prevista"));
+      txt_tracking(TXT_CAPTION2, rot, 132, 134, 142, xCont, yl - 26.0f,
+                   1.0f, 2.0f);
       // TRACEJADA, como o eixo daqui para baixo: o tempo acaba de ser
       // interrompido, e uma regua continua diria que a contagem segue.
       { float x = xEixo;
         while (x < xDir) {
           float w = AG_TRACO;
           if (x + w > xDir) w = xDir - x;
-          regua(x, x + w, yl, 0.62f, 0.22f);
+          regua(x, x + w, yl, 0.62f, 0.18f);
           x += AG_TRACO * 2.0f;
         } }
     }
@@ -733,11 +763,10 @@ static float faixas(int i, float xChipDir, float xEixo, float xCont, float xDir,
     if (muda) {
       float yl = y + usado + AG_FAIXA_H - 22.0f;
       if (desenhar) {
-        TxtLinha t;
         rotuloMes(it->dataProx, rot, sizeof rot);
-        t = txt_linha(TXT_CAPTION2, rot, 150, 152, 160, 255);
-        txt_desenhar(t, xCont, yl - 26.0f);
-        regua(xEixo, xDir, yl, 0.62f, 0.14f);
+        txt_tracking(TXT_CAPTION2, rot, 132, 134, 142, xCont, yl - 26.0f,
+                     1.0f, 2.0f);
+        regua(xEixo, xDir, yl, 0.62f, 0.10f);
       }
       usado += AG_FAIXA_H;
     }
@@ -776,26 +805,44 @@ static void desenhaEstacao(const AgItem *it, float xDir, float yCentro,
     // tres corpos mudam de altura com a fonte, e empilhar por offset fixo ja
     // pos o subtitulo por cima do "g" do titulo em outro ponto deste arquivo.
     char num[8];
+    char semM[20];
+    float semW;
     TxtLinha sem, dia, fal;
-    int cN = hoje ? (int)(ar * 255.0f + 0.5f) : (f > 0.5f ? 246 : 232);
-    int cNg = hoje ? (int)(ag * 255.0f + 0.5f) : (f > 0.5f ? 246 : 232);
-    int cNb = hoje ? (int)(ab * 255.0f + 0.5f) : (f > 0.5f ? 246 : 232);
+    // O NUMERAL E SEMPRE BRANCO, inclusive no dia de hoje: pedido do dono. O
+    // vermelho ja aparece tres vezes na mesma coluna (o rotulo HOJE, o no do
+    // eixo e o "hoje" embaixo) e tingir tambem o corpo 48 fazia a estacao de
+    // hoje virar um bloco vermelho que puxava mais atencao do que a linha em
+    // foco. O dia continua marcado — pelo no e pelo rotulo, nao pelo numero.
+    int cN = f > 0.5f ? 246 : 232, cNg = cN, cNb = cN;
+    (void)hoje;
     float alt, y;
     snprintf(num, sizeof num, "%d", agenda_dia(it->dataProx));
     agenda_falta(it->dataProx, falta, sizeof falta);
-    sem = txt_linha(TXT_CAPTION2, agenda_semana_nome(agenda_semana(it->dataProx)),
-                    132, 134, 142, 255);
+    // O dia da semana em CAPS ESPACADAS, a voz dos rotulos de mes. A altura
+    // vem de uma sonda ("Hg", com ascendente e descendente): medir a string
+    // real faria a linha de base oscilar entre fileiras ("TER" nao tem
+    // descendente, a caixa de "SAB" difere), e a pilha e centrada pela soma
+    // das tres alturas — altura instavel aqui e numeral fora da reta.
+    maiusc(semM, sizeof semM,
+           i18n(agenda_semana_nome(agenda_semana(it->dataProx))));
+    sem = txt_linha(TXT_CAPTION2, "Hg", 118, 120, 128, 255);
+    semW = txt_tracking(TXT_CAPTION2, semM, 118, 120, 128,
+                        -1.0f, 0.0f, 1.0f, 1.8f);
     dia = txt_linha(TXT_TITULO3, num, cN, cNg, cNb, 255);
     // "hoje" e "amanha" saem na cor de realce: sao as duas unicas respostas que
     // fazem alguem mudar o que ia assistir hoje a noite.
     fal = txt_linha_corta(TXT_CAPTION2, falta,
-                          d <= 1 ? (int)(ar * 255.0f + 0.5f) : 146,
-                          d <= 1 ? (int)(ag * 255.0f + 0.5f) : 148,
-                          d <= 1 ? (int)(ab * 255.0f + 0.5f) : 156, 255,
+                          d == 0 ? (int)(AG_HOJE_R * 255.0f + 0.5f) :
+                          d == 1 ? (int)(ar * 255.0f + 0.5f) : 146,
+                          d == 0 ? (int)(AG_HOJE_G * 255.0f + 0.5f) :
+                          d == 1 ? (int)(ag * 255.0f + 0.5f) : 148,
+                          d == 0 ? (int)(AG_HOJE_B * 255.0f + 0.5f) :
+                          d == 1 ? (int)(ab * 255.0f + 0.5f) : 156, 255,
                           AG_CHIP_W);
     alt = (float)sem.h + 2.0f + (float)dia.h + 2.0f + (float)fal.h;
     y = yCentro - alt * 0.5f;
-    txt_desenhar(sem, xDir - (float)sem.w, y); y += (float)sem.h + 2.0f;
+    txt_tracking(TXT_CAPTION2, semM, 118, 120, 128, xDir - semW, y, 1.0f, 1.8f);
+    y += (float)sem.h + 2.0f;
     txt_desenhar(dia, xDir - (float)dia.w, y); y += (float)dia.h + 2.0f;
     txt_desenhar(fal, xDir - (float)fal.w, y);
   }
@@ -819,42 +866,240 @@ static void linhaEpisodio(const AgItem *it, char *dst, size_t tam) {
   }
 }
 
-// Terceira linha: o MARCO primeiro, depois rede/duracao/temporadas. O marco vem
-// na frente porque e a unica coisa desta linha que muda de um episodio para o
-// seguinte — "Final da temporada" e a razao de alguem marcar o lembrete.
+// --- O QUE O CATALOGO ACRESCENTA A LINHA ------------------------------------
+//
+// O corpo /tv/<id> (agenda.h) da rede, duracao, temporadas, nome e sinopse do
+// episodio. Tres coisas que o dono pediu ("mais informacoes") ele NAO da, mas
+// o catalogo local ja tem para toda serie seguida: o GENERO (CatItem.genero,
+// "Programa de TV · Drama · Misterio"), o ANO (os quatro digitos de
+// CatItem.meta, "2022 · 3 temporadas") e a NOTA (CatItem.nota, 0..100, a mesma
+// que a home e o detalhe mostram com a marca do IMDb). Zero pedido de rede:
+// cat_indice_por_imdb e uma busca em memoria.
+static const CatItem *agendaCatalogoItem(const AgItem *it) {
+  int i;
+  if (!it || !it->imdb[0]) return NULL;
+  i = cat_indice_por_imdb(it->imdb);
+  return i >= 0 ? cat_item(i) : NULL;
+}
+
+// O ANO sao os primeiros quatro digitos seguidos de `meta`. "" quando nao ha —
+// e ai o selo some, nunca "----".
+static void agendaCatalogoAno(const CatItem *ci, char *dst, size_t tam) {
+  const char *p;
+  dst[0] = 0;
+  if (!ci) return;
+  for (p = ci->meta; p[0] && p[1] && p[2] && p[3]; p++)
+    if (p[0] >= '1' && p[0] <= '2' && p[1] >= '0' && p[1] <= '9' &&
+        p[2] >= '0' && p[2] <= '9' && p[3] >= '0' && p[3] <= '9') {
+      snprintf(dst, tam, "%.4s", p); return;
+    }
+}
+
+// O PRIMEIRO GENERO DE VERDADE. O primeiro segmento de `genero` e o tipo
+// ("Programa de TV", "Filme") e nao conta — ver a nota em catalogo.c:1259; o
+// segundo e o genero principal. Um so, porque a linha ja diz rede, duracao e
+// temporadas e a 3 m tres generos viram uma frase que ninguem le.
+static void agendaCatalogoGenero(const CatItem *ci, char *dst, size_t tam) {
+  const char *p, *fim;
+  size_t n = 0;
+  dst[0] = 0;
+  if (!ci || !ci->genero[0]) return;
+  p = strstr(ci->genero, "\xc2\xb7");
+  if (!p) return;
+  p += 2;
+  while (*p == ' ') p++;
+  fim = strstr(p, "\xc2\xb7");
+  if (!fim) fim = p + strlen(p);
+  while (fim > p && fim[-1] == ' ') fim--;
+  while (p < fim && n + 1 < tam) dst[n++] = *p++;
+  dst[n] = 0;
+}
+
+// Terceira linha: o MARCO primeiro, depois rede · duracao · temporadas · genero.
+// O marco vem na frente porque e a unica coisa desta linha que muda de um
+// episodio para o seguinte — "Final da temporada" e a razao de alguem marcar
+// o lembrete. O genero fecha a linha: e o que menos muda.
 static void linhaApoio(const AgItem *it, char *dst, size_t tam) {
-  char marco[64], apoio[160];
+  char marco[64], apoio[240], genero[80];
   dst[0] = 0;
   agenda_marco(it, marco, sizeof marco);
   agenda_apoio(it, apoio, sizeof apoio);
+  agendaCatalogoGenero(agendaCatalogoItem(it), genero, sizeof genero);
+  if (genero[0]) {
+    size_t n = strlen(apoio);
+    if (n) snprintf(apoio + n, sizeof apoio - n, " \xc2\xb7 %s", genero);
+    else   snprintf(apoio, sizeof apoio, "%s", genero);
+  }
   if (marco[0] && apoio[0]) snprintf(dst, tam, "%s \xc2\xb7 %s", marco, apoio);
   else if (marco[0])        snprintf(dst, tam, "%s", marco);
   else                      snprintf(dst, tam, "%s", apoio);
 }
 
-// O CONTEUDO DA LINHA: cartaz, coluna esquerda, coluna direita e a faixa do
-// despertador. As quatro larguras saem de UMA conta, feita aqui e usada por
-// todos os blocos — separadas, elas ja discordaram em outro ponto deste
-// arquivo e o sintoma foi texto passando por baixo do icone.
-static void desenhaConteudo(const AgItem *it, float x, float y, float larg,
-                            float f) {
-  char ep[220], apoio[220], ant[120];
-  int c  = f > 0.5f ? ajustes_tinta_foco() : 246;
-  int c2 = f > 0.5f ? ajustes_tinta_foco2() : 158;
-  int c3 = f > 0.5f ? ajustes_tinta_foco2() : 126;
-  float tx, util, wEsq, wDir, xDirCol, yb, blocoH;
-  TxtLinha t, l2, l3;
+// A QUARTA LINHA, so na linha em foco: a ultima manchete como citacao (dono,
+// 21/09/2026: "embaixo, em forma de citacao, a ultima noticia e escrito hold
+// to read more") ou, sem manchete, a sinopse do proximo episodio. `noticia`
+// diz qual das duas saiu — e o que decide se a dica de segurar OK aparece.
+static int linhaExtra(const AgItem *it, char *dst, size_t tam, int *noticia) {
+  const Noticia *nt;
+  *noticia = 0;
+  dst[0] = 0;
+  if (!it) return 0;
+  nt = noticias_item(it->imdb, 0);
+  if (nt && nt->titulo[0]) {
+    snprintf(dst, tam, "\xe2\x80\x9c%s\xe2\x80\x9d", nt->titulo);
+    *noticia = 1;
+    return 1;
+  }
+  if (it->sinopse[0]) { snprintf(dst, tam, "%s", it->sinopse); return 1; }
+  return 0;
+}
 
+// --- AS MEDIDAS DO CARTAO, num lugar so ------------------------------------
+//
+// O cartao vai de xCont - AG_CARTAO_PAD ate no maximo AG_CARTAO_FIM (1500) e
+// nunca passa de AG_CARTAO_MAX (1240) de largura. Dentro dele, da esquerda
+// para a direita: cartaz, 26 de vao, o TEXTO, 20 de folga e a COLUNA DO SINO
+// (AG_SINO_COL, fixa). Quem mede a altura (alturaLinha, para a rolagem) e
+// quem desenha (desenhaConteudo) chamam a MESMA conta — separadas, elas ja
+// discordaram neste arquivo e o sintoma foi texto passando por baixo do icone.
+typedef struct {
+  float xCartao, wCartao;   // o retangulo pintado
+  float xTexto, wTexto;     // a coluna de texto (titulo, episodio, apoio, citacao)
+  float xSino;              // centro da coluna do sino
+} AgMedidas;
+
+static AgMedidas medidas(float xCont, float xDir) {
+  AgMedidas m;
+  float fim = xDir;
+  if (fim > AG_CARTAO_FIM) fim = AG_CARTAO_FIM;
+  if (fim > xCont - AG_CARTAO_PAD + AG_CARTAO_MAX) fim = xCont - AG_CARTAO_PAD + AG_CARTAO_MAX;
+  m.xCartao = xCont - AG_CARTAO_PAD;
+  m.wCartao = fim - m.xCartao;
+  m.xTexto  = xCont + AG_CARTAZ_W + 26.0f;
+  m.wTexto  = fim - AG_CARTAO_PAD - AG_SINO_COL - 20.0f - m.xTexto;
+  if (m.wTexto < 220.0f) m.wTexto = 220.0f;
+  m.xSino   = fim - AG_CARTAO_PAD - AG_SINO_COL * 0.5f;
+  return m;
+}
+
+// A conta de agendaui_desenhar, repetida aqui para alturaLinha nao precisar
+// de parametro: xCont e xDir saem so de ajustes e de layout.h.
+static AgMedidas medidasDaTela(void) {
+  float x = ajustes_conteudo_x();
+  float xCont = x + AG_CHIP_W + AG_EIXO_GAP + AG_CONT_GAP;
+  return medidas(xCont, NV_TELA_W - NV_MARGEM_X);
+}
+
+// QUANTO A LINHA EM FOCO CRESCE para caber a quarta linha: 0 sem citacao nem
+// sinopse. Medido com a MESMA largura e cor que o desenho usa, para que a
+// entrada do agQuebra seja a mesma (uma medida em cor diferente rasterizaria
+// uma segunda copia de cada prefixo — ver a nota de agQuebra).
+static float alturaExtra(const AgItem *it) {
+  char extra[300];
+  int noticia, n;
+  AgMedidas m;
+  int qc = ajustes_tinta_foco2();
+  if (!linhaExtra(it, extra, sizeof extra, &noticia)) return 0.0f;
+  m = medidasDaTela();
+  n = agendaui_sinopse_linhas(TXT_CAPTION, extra, m.wTexto, AG_CIT_MAX, qc, qc, qc);
+  if (n < 1) n = 1;
+  // 12 de vao acima, as linhas em passo AG_SIN_LD, 8 ate a dica (so com
+  // noticia), 16 de respiro ate a borda do cartao — menos os 20 que a quarta
+  // linha ja ganha ao comecar acima da base dos 177 (ver desenhaConteudo).
+  return 12.0f + AG_SIN_LD * (float)(n - 1) + 26.0f
+       + (noticia ? 8.0f + 26.0f : 0.0f) + 16.0f - AG_EXTRA_SOBE;
+}
+
+// --- O SINO -------------------------------------------------------------------
+//
+// O MESMO DESENHO do botao de lembrete do detalhe (desenhaLembrete em
+// detail.c, 21/09/2026), no tamanho da linha: um DISCO e o glifo do sino por
+// cima, e o estado vai pela cor do disco — nao por ondas, tremor ou orelhas.
+//
+//   DESLIGADO, fora do foco   sem disco; so o contorno do sino em cinza 170,
+//                             o piso de cinza sobre escuro (regra do dono)
+//   LIGADO, fora do foco      disco CHEIO na cor de realce, sino na tinta que
+//                             contrasta com ela (ajustes_acento_tinta) — o
+//                             mesmo "armado" do detalhe
+//   DESLIGADO, em foco        sobre a pilula de realce: o sino na tinta
+//                             secundaria, sem disco
+//   LIGADO, em foco           o disco INVERTIDO: tinta do realce como fundo e
+//                             o sino na cor de realce. Um disco de realce
+//                             sobre a pilula de realce sumiria; invertido ele
+//                             continua sendo "o disco", que e o sinal.
+// Quatro estados, e em nenhum deles o sinal e so cor: ligado tem DISCO,
+// desligado nao tem. E o que sobrevive a "reduzir animacoes" e a quem nao
+// separa verde de cinza.
+//
+// O glifo ocupa 0,54 do disco (32 px em 60): no detalhe e 0,333 de 96, mas la
+// o disco e um botao entre botoes; aqui ele e a unica coisa na coluna e a 3 m
+// um sino de 20 px dentro de 60 lia como ponto.
+static void desenhaSino(float cx, float cy, int ligado, int emFoco, float a) {
+  float ar, ag, ab, tinta = ajustes_acento_tinta(&ar, &ag, &ab);
+  float g = AG_SINO * 0.54f;
+  GfxRect disco = { cx - AG_SINO * 0.5f, cy - AG_SINO * 0.5f, AG_SINO, AG_SINO };
+  GfxRect ic = { cx - g * 0.5f, cy - g * 0.5f, g, g };
+  float cr, cg, cb;
+  if (ligado && emFoco) {
+    gfx_cor(disco, 0.5f, tinta, tinta, tinta, a);
+    cr = ar; cg = ag; cb = ab;
+  } else if (ligado) {
+    gfx_cor(disco, 0.5f, ar, ag, ab, a);
+    cr = cg = cb = tinta;
+  } else if (emFoco) {
+    cr = cg = cb = (float)ajustes_tinta_foco2() / 255.0f;
+  } else {
+    cr = cg = cb = 170.0f / 255.0f;
+  }
+  agendaui_despertador(ic, ligado, cr, cg, cb, a, relogio, trocaEm);
+}
+
+// O CONTEUDO DA LINHA: o cartao, o cartaz, tres linhas de texto (quatro em
+// foco) e a coluna do sino.
+//
+// O CARTAO EXISTE NOS DOIS ESTADOS (dono, 21/09/2026, olhando a captura com
+// as linhas ate a borda: "diminuir a largura de cada item da lista"). Fora do
+// foco e a superficie 0.10/0.11/0.13 dos selos (badges.h), com o mesmo canto
+// da pilula de foco; em foco e a PILULA NA COR DE REALCE com a luz difusa
+// atras (GFX_SOMBRA a 0,35 — a mesma do menu lateral e dos botoes do
+// detalhe). O texto sobre o realce vai na tinta de ajustes_tinta_foco.
+//
+// FILL-RATE: sao quatro cartoes visiveis de 1240x177 (0,42 tela) e uma luz de
+// (1240+212)x(177+212) atras do focado (0,27 tela) — 0,7 tela a mais que a
+// versao sem superficie, dentro do teto de +1 tela desta rodada. A luz usa
+// 0,6 de altura de folga e nao os 0,9 do menu porque a pilula aqui e larga: a
+// mancha do menu numa peca de 1240 px viraria meia tela.
+//
+// AS TRES LINHAS ficam CENTRADAS nos 177 de base, focada ou nao — a quarta
+// linha (citacao) entra POR BAIXO delas, a partir de AG_EXTRA_SOBE acima da
+// base dos 177, e e so ela que faz o cartao crescer. Centrar o bloco inteiro
+// na altura nova faria titulo e cartaz pularem 40 px para cima a cada passo do
+// foco, que e o movimento que mais se ve a 3 m.
+static void desenhaConteudo(const AgItem *it, float xCont, float xDir,
+                            float y, float h, float f) {
+  AgMedidas m = medidas(xCont, xDir);
+  char ep[220], apoio[300], extra[300], ano[8];
+  const CatItem *ci = agendaCatalogoItem(it);
+  int noticia = 0, temExtra;
+  int emFoco = f > 0.5f;
+  int c  = emFoco ? ajustes_tinta_foco()  : 246;
+  int c2 = emFoco ? ajustes_tinta_foco2() : 190;
+  int c3 = emFoco ? ajustes_tinta_foco2() : 170;
+  float x = xCont, tx = m.xTexto, textW = m.wTexto;
+  float yb, blocoH, apoioW, selosW = 0.0f, imdbW = 0.0f, l3h;
+  TxtLinha t, l2, l3;
+  GfxRect card = { m.xCartao, y, m.wCartao, h };
+
+  // A SUPERFICIE. O canto e o dos selos e do menu (20 px sobre a altura
+  // base) e fica em pixels: com a linha crescendo, `20 / h` mantem o raio.
+  gfx_cor(card, 20.0f / h, 0.10f, 0.11f, 0.13f, 1.0f);
   if (f > 0.01f) {
     float ar, ag, ab;
-    GfxRect fundo = { x - 16.0f, y, larg + 16.0f, AG_LINHA_H };
+    GfxRect luz = { card.x - card.h * 0.6f, card.y - card.h * 0.6f,
+                    card.w + card.h * 1.2f, card.h * 2.2f };
     ajustes_acento(&ar, &ag, &ab);
-    // O raio do gfx_cor e FRACAO DA ALTURA (ver FS_SDF em gfx.c): 20 px sobre os
-    // 177 da linha. Era 16 dividido pela altura VIVA, que mudava enquanto a
-    // linha abria; a linha nao abre mais, entao a conta e uma constante e o
-    // canto parou de mudar de curvatura no meio da transicao. 20 e nao 16
-    // porque a laje encolheu: o mesmo canto numa peca menor le mais duro.
-    gfx_cor(fundo, 20.0f / AG_LINHA_H, ar, ag, ab, f);
+    gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, ar, ag, ab, 0.35f * f);
+    gfx_cor(card, 20.0f / h, ar, ag, ab, f);
   }
 
   { GfxRect cz = { x, y + (AG_LINHA_H - AG_CARTAZ_H) * 0.5f,
@@ -870,165 +1115,90 @@ static void desenhaConteudo(const AgItem *it, float x, float y, float larg,
       gfx_cor(cz, AG_CARTAZ_RAIO, 0.18f, 0.19f, 0.21f, 1.0f);
     } }
 
-  // 26 e nao 22: o vao entre arte e texto cresceu junto com a arte. Mantido em
-  // 22 o titulo encostava num cartaz um terco maior.
-  tx = x + AG_CARTAZ_W + 26.0f;
-  // AS DUAS COLUNAS, medidas do que sobra depois do cartaz e da faixa do
-  // despertador — e a faixa e descontada SEMPRE, marcada ou nao (ver
-  // AG_SINO_FAIXA). Com a rail recolhida a conta da 1288 uteis: 725 a esquerda,
-  // 44 de vao, 519 a direita.
-  util = larg - (tx - x) - AG_SINO_FAIXA;
-  if (util < 320.0f) util = 320.0f;
-  wDir = (util - AG_COL_GAP) * AG_COL_DIR;
-  wEsq = util - AG_COL_GAP - wDir;
-  xDirCol = tx + wEsq + AG_COL_GAP;
-
   linhaEpisodio(it, ep, sizeof ep);
   linhaApoio(it, apoio, sizeof apoio);
+  agendaCatalogoAno(ci, ano, sizeof ano);
+  // O ANO fecha o texto de apoio como mais um segmento, e nao como selo: o
+  // selo neutro tem o MESMO fundo 0.10/0.11/0.13 do cartao e sumia na linha
+  // sem foco (captura de 22/09) — um selo que so existe em foco le como
+  // defeito. A MARCA DO IMDb com a nota vem DEPOIS do texto, e o texto e
+  // cortado para ela caber sempre — uma marca cortada nao existe.
+  if (ano[0]) {
+    size_t n = strlen(apoio);
+    if (n) snprintf(apoio + n, sizeof apoio - n, " \xc2\xb7 %s", ano);
+    else   snprintf(apoio, sizeof apoio, "%s", ano);
+  }
+  if (ci && ci->nota > 0) imdbW = badge_imdb_largura(ci->nota);
+  selosW = imdbW > 0.0f ? imdbW + BADGE_GAP : 0.0f;
+  apoioW = textW - selosW;
+  if (apoioW < 180.0f) apoioW = 180.0f;
   t  = txt_linha_corta(TXT_HEADLINE, it->titulo[0] ? it->titulo : i18n("Série"),
-                       c, c, c, 255, wEsq);
-  l2 = ep[0] ? txt_linha_corta(TXT_CAPTION, ep, c2, c2, c2, 255, wEsq)
+                       c, c, c, 255, textW);
+  l2 = ep[0] ? txt_linha_corta(TXT_CAPTION, ep, c2, c2, c2, 255, textW)
              : (TxtLinha){ 0, 0, 0 };
-  l3 = apoio[0] ? txt_linha_corta(TXT_CAPTION2, apoio, c3, c3, c3, 255, wEsq)
+  l3 = apoio[0] ? txt_linha_corta(TXT_CAPTION2, apoio, c3, c3, c3, 255, apoioW)
                 : (TxtLinha){ 0, 0, 0 };
-  blocoH = (float)t.h + (l2.h ? 5.0f + (float)l2.h : 0.0f)
-                      + (l3.h ? 4.0f + (float)l3.h : 0.0f);
+  // A terceira linha tem a altura do SELO quando ha selo: o texto centra nele.
+  l3h = selosW > 0.0f ? BADGE_H : (float)l3.h;
+
+  blocoH = (float)t.h + (l2.h ? 7.0f + (float)l2.h : 0.0f)
+                      + (l3h > 0.0f ? 6.0f + l3h : 0.0f);
   yb = y + (AG_LINHA_H - blocoH) * 0.5f;
   txt_desenhar(t, tx, yb); yb += (float)t.h;
-  if (l2.h) { yb += 5.0f; txt_desenhar(l2, tx, yb); yb += (float)l2.h; }
-  if (l3.h) { yb += 4.0f; txt_desenhar(l3, tx, yb); }
-
-  // --- A COLUNA DA DIREITA, so na linha focada -----------------------------
-  //
-  // Duas coisas, nesta ordem, e nenhuma delas esta na esquerda:
-  //   1. QUANDO FOI O ANTERIOR (`dataUlt`). Ja estava no cache e so era usada
-  //      quando NAO havia proximo episodio; numa linha que tem data futura ela
-  //      responde outra pergunta, que e "eu estou em dia com esta serie?".
-  //   2. A SINOPSE do proximo episodio, ate tres linhas, cortando em "…".
-  //
-  // O bloco e CENTRADO na altura da linha junto com o da esquerda: duas colunas
-  // com topos diferentes leem como dois elementos soltos, nao como uma linha.
-  // Por isso a sinopse e medida antes de desenhar (agendaui_sinopse_linhas).
-  //
-  // VAZIO E VAZIO. Serie sem sinopse e sem episodio anterior deixa esta coluna
-  // em branco; nao entra data por extenso nem rede repetida para tapar o
-  // espaco. A linha continua com 177px de altura, que e o tamanho do que ela
-  // tem a dizer — a laje de 254px com metade vazia era exatamente a queixa.
-  if (f > 0.02f) {
-    int cs = f > 0.5f ? ajustes_tinta_foco2() : 168;
-    int ca = f > 0.5f ? ajustes_tinta_foco2() : 132;
-    int nSin = it->sinopse[0]
-             ? agendaui_sinopse_linhas(TXT_CAPTION, it->sinopse, wDir,
-                                       AG_SIN_MAX, cs, cs, cs)
-             : 0;
-    TxtLinha la = { 0, 0, 0 };
-    float altD;
-    ant[0] = 0;
-    // A CABECA DA COLUNA SO EXISTE NA LINHA COM DATA FUTURA, e a razao esta na
-    // coluna da ESQUERDA: quando nao ha proximo episodio, linhaEpisodio ja gasta
-    // a segunda linha com "Último episódio em ...". Sem esta guarda a captura
-    // -semdata saia com a MESMA frase duas vezes na mesma linha, palavra por
-    // palavra, a 700px de distancia. Numa linha sem data a direita fica com a
-    // sinopse, ou com nada.
-    if (!temData(it)) {
-      /* a esquerda ja disse o que havia a dizer sobre a data */
-    } else if (it->dataUlt[0]) {
-      char q[64];
-      agenda_quando(it->dataUlt, q, sizeof q);
-      if (q[0]) snprintf(ant, sizeof ant, i18n("Último episódio em %s"), q);
-    } else if (agenda_dias(it->dataProx) > 7) {
-      // SEM EPISODIO ANTERIOR NO CACHE, e a estreia esta a mais de uma semana:
-      // entra a DATA POR EXTENSO, sozinha. Nao e a mesma coisa que a estacao diz
-      // a 300px daqui: `agenda_falta` ARREDONDA PARA BAIXO de proposito ("em 7
-      // semanas" cobre de 49 a 55 dias — ver a nota em agenda.c), e o numeral
-      // sozinho depende do cabecalho de mes, que some ao rolar. Aqui vai o dia
-      // exato, que e o que nenhum dos dois diz.
-      //
-      // So acima de 7 dias: dentro da semana agenda_quando devolve "amanhã" /
-      // "em 3 dias", que e literalmente o texto que a estacao ja tem. Repetir
-      // isso seria enchimento, e enchimento e o que esta coluna nao pode ter.
-      agenda_quando(it->dataProx, ant, sizeof ant);
-    }
-    // A ULTIMA NOTICIA, como citacao, no lugar da sinopse quando existe
-    // (dono, 21/09/2026: "embaixo, em forma de citacao, a ultima noticia e
-    // escrito hold to read more"). Duas linhas no maximo e a dica de segurar
-    // OK, que abre o painel com todas.
-    { const Noticia *nt = noticias_item(it->imdb, 0);
-      char cit[300];
-      TxtLinha dica = { 0, 0, 0 };
-      int nCit = 0;
-      if (nt) {
-        snprintf(cit, sizeof cit, "\xe2\x80\x9c%s\xe2\x80\x9d", nt->titulo);
-        nCit = agendaui_sinopse_linhas(TXT_CAPTION, cit, wDir, 2, cs, cs, cs);
-        dica = txt_linha(TXT_CAPTION2, i18n("Segure OK para ler mais"), ca, ca, ca, 255);
-      }
-      if (ant[0]) la = txt_linha_corta(TXT_CAPTION2, ant, ca, ca, ca, 255, wDir);
-      altD = (la.h ? (float)la.h + 10.0f : 0.0f)
-           + (nCit ? AG_SIN_LD * (float)(nCit - 1) + 26.0f + 8.0f + (float)dica.h
-                   : (nSin ? AG_SIN_LD * (float)(nSin - 1) + 26.0f : 0.0f));
-      if (altD > 0.0f) {
-        float yd = y + (AG_LINHA_H - altD) * 0.5f;
-        if (la.h) { txt_desenhar_alpha(la, xDirCol, yd, f); yd += (float)la.h + 10.0f; }
-        if (nCit) {
-          agendaui_sinopse(TXT_CAPTION, cit, xDirCol, yd, wDir, AG_SIN_LD, 2, cs, cs, cs, f);
-          yd += AG_SIN_LD * (float)(nCit - 1) + 26.0f + 8.0f;
-          txt_desenhar_alpha(dica, xDirCol, yd, f);
-        } else if (nSin)
-          agendaui_sinopse(TXT_CAPTION, it->sinopse, xDirCol, yd, wDir,
-                           AG_SIN_LD, AG_SIN_MAX, cs, cs, cs, f);
-      } }
+  if (l2.h) { yb += 7.0f; txt_desenhar(l2, tx, yb); yb += (float)l2.h; }
+  if (l3h > 0.0f) {
+    float sx = tx;
+    yb += 6.0f;
+    if (l3.h) { txt_desenhar(l3, tx, yb + (l3h - (float)l3.h) * 0.5f); sx += (float)l3.w + BADGE_GAP; }
+    if (imdbW > 0.0f) badge_imdb(sx, yb, ci->nota, emFoco, 1.0f);
+    yb += l3h;
   }
 
-  // ESTADO DO LEMBRETE, encostado na direita: o DESPERTADOR, e nao uma
-  // pastilha de texto. Duas razoes, e as duas sao do sofa: a 3 m um icone com
-  // movimento se acha varrendo a coluna, uma palavra de 22 px nao; e a linha
-  // ja tem quatro blocos de texto — um quinto vira cinza.
+  // --- A QUARTA LINHA, so em foco ------------------------------------------
+  temExtra = emFoco && linhaExtra(it, extra, sizeof extra, &noticia);
+  if (temExtra) {
+    int qc = ajustes_tinta_foco2();
+    float yq = y + AG_LINHA_H - AG_EXTRA_SOBE + 12.0f;
+    int n = agendaui_sinopse(TXT_CAPTION, extra, tx, yq, textW, AG_SIN_LD,
+                             AG_CIT_MAX, qc, qc, qc, f);
+    if (noticia) {
+      TxtLinha dica = txt_linha(TXT_CAPTION2, i18n("Segure OK para ler mais"), qc, qc, qc, 255);
+      txt_desenhar_alpha(dica, tx, yq + AG_SIN_LD * (float)(n - 1) + 26.0f + 8.0f, f);
+    }
+  }
+
+  // --- A COLUNA DO SINO -------------------------------------------------------
   //
-  // FORA DO FOCO so aparece LIGADO. Um despertador apagado em toda linha seria
-  // um campo de ruido, e o que interessa de longe e quais poucas linhas estao
-  // marcadas.
+  // FORA DO FOCO so aparece LIGADO: um sino apagado em toda linha seria um
+  // campo de ruido, e o que interessa de longe e quais poucas linhas estao
+  // marcadas. NA LINHA FOCADA aparece nos dois estados com a legenda
+  // ("Lembrete ativo" / "Lembrar-me"): e a linha que o OK vai atingir, e ali
+  // o desligado deixa de ser ruido e passa a ser o alvo do botao.
   //
-  // NA LINHA FOCADA ele aparece nos DOIS estados, com uma legenda embaixo
-  // ("Lembrete ativo" / "Lembrar-me"). Isto nao desfaz a regra acima: e UMA
-  // linha, a que o OK vai atingir, e ali o desligado deixa de ser ruido e passa
-  // a ser o alvo do botao. Era a unica coisa desta tela que so tinha um estado
-  // desenhado — quem chegava numa serie sem lembrete nao via onde o OK agia.
-  // As duas legendas ja existem na tabela de traducao, de detail.c.
+  // A LEGENDA QUEBRA EM DUAS LINHAS dentro da coluna de 120: "Lembrete ativo"
+  // mede ~153 em TXT_CAPTION2, e cortar em "Lembrete a…" deixaria a mesma
+  // palavra nos dois estados. Icone e legenda centrados no MESMO eixo, o da
+  // coluna, e o par inteiro centrado nos 177 de base.
   { int pode = agenda_pode_lembrar(it->imdb);
-    int mostra = it->lembrete || (f > 0.5f && pode);
+    int mostra = it->lembrete || (emFoco && pode);
     if (mostra) {
-      float cr, cg, cb, altP = AG_SINO, yl;
-      TxtLinha leg = { 0, 0, 0 };
-      if (f > 0.5f && pode) {
-        const char *s = it->lembrete ? i18n("Lembrete ativo") : i18n("Lembrar-me");
-        int cl = ajustes_tinta_foco2();
-        leg = txt_linha_corta(TXT_CAPTION2, s, cl, cl, cl, 255, AG_SINO_FAIXA);
-        altP += 6.0f + (float)leg.h;
+      char lin[AG_SIN_MAX][512];
+      const char *resto = "";
+      int nl = 0, k, cl = ajustes_tinta_foco2();
+      float alt = AG_SINO, yl;
+      if (emFoco && pode)
+        nl = agQuebra(TXT_CAPTION2, it->lembrete ? i18n("Lembrete ativo") : i18n("Lembrar-me"),
+                      AG_SINO_COL, 2, lin, &resto, cl, cl, cl) + (resto[0] ? 1 : 0);
+      if (nl) alt += 8.0f + 24.0f * (float)nl;
+      yl = y + (AG_LINHA_H - alt) * 0.5f;
+      desenhaSino(m.xSino, yl + AG_SINO * 0.5f, it->lembrete, emFoco, 1.0f);
+      yl += AG_SINO + 8.0f;
+      for (k = 0; k < nl; k++) {
+        TxtLinha l = (k < nl - 1 || !resto[0])
+                   ? txt_linha(TXT_CAPTION2, lin[k], cl, cl, cl, 255)
+                   : txt_linha_corta(TXT_CAPTION2, resto, cl, cl, cl, 255, AG_SINO_COL);
+        txt_desenhar_alpha(l, m.xSino - (float)l.w * 0.5f, yl + 24.0f * (float)k, f);
       }
-      yl = y + (AG_LINHA_H - altP) * 0.5f;
-      // ICONE E LEGENDA CENTRADOS NO MESMO EIXO, pedido do dono olhando a
-      // captura: "deixa centralizado com o nome abaixo".
-      //
-      // A versao anterior alinhava os dois A DIREITA, cada um com o seu recuo,
-      // e eles fechavam em verticais diferentes — o par lia como desalinhado,
-      // que e justamente o que alinhar deveria evitar. A objecao que levou
-      // aquilo (centrar joga a palavra para fora da laje) continua valendo, e a
-      // resposta certa nao e desistir de centrar: e centrar na FAIXA, nao no
-      // icone. A faixa e o espaco que a linha ja reserva para este par (ver
-      // AG_SINO_FAIXA, descontado da largura util em toda linha), e a legenda
-      // ja e cortada nessa mesma medida — logo nada pode ultrapassar a borda.
-      //
-      // O recuo de 18px continua, agora como margem DA FAIXA: as ondas de som
-      // saem para fora do quadrado do icone, e encostada na margem a onda da
-      // direita caia metade na superficie clara e metade no fundo da tela.
-      { float eixo = x + larg - 18.0f - AG_SINO_FAIXA * 0.5f;
-        { GfxRect ic = { eixo - AG_SINO * 0.5f, yl, AG_SINO, AG_SINO };
-          agendaui_cor_lembrete(it->lembrete, f > 0.5f, &cr, &cg, &cb);
-          agendaui_despertador(ic, it->lembrete, cr, cg, cb, 1.0f,
-                               relogio, trocaEm); }
-        if (leg.h)
-          txt_desenhar_alpha(leg, eixo - (float)leg.w * 0.5f,
-                             yl + AG_SINO + 6.0f, f); }
     } }
 }
 
@@ -1079,7 +1249,7 @@ static void desenhaNo(float xEixo, float y, const AgItem *it, int hoje, float f)
   no.x = xEixo - d * 0.5f;
   no.y = y - d * 0.5f;
   if (!temData(it)) {
-    // 3px de espessura sobre um no de 20 a 25: fino o bastante para ler como
+    // 3px de espessura sobre um no de 17 a 25: fino o bastante para ler como
     // contorno e nao como rosquinha, grosso o bastante para sobreviver ao
     // downscale de uma TV que nao esta em 1080 nativo.
     aneis(xEixo, y, d + 4.0f, 3.0f, lum, lum, lum, 0.9f);
@@ -1092,19 +1262,28 @@ static void desenhaNo(float xEixo, float y, const AgItem *it, int hoje, float f)
     //
     // DESENHADA ANTES DO NO, ao contrario de como estava: o disco de dentro da
     // aura e opaco, entao ele apagaria o no se viesse depois.
-    aneis(xEixo, y, d * 1.9f, 3.0f, ar, ag, ab, 0.38f);
+    aneis(xEixo, y, d * 1.9f, 3.0f,
+          AG_HOJE_R, AG_HOJE_G, AG_HOJE_B, 0.38f);
   }
-  if (hoje || f > 0.5f) gfx_cor(no, 0.5f, ar, ag, ab, 1.0f);
+  if (hoje) gfx_cor(no, 0.5f, AG_HOJE_R, AG_HOJE_G, AG_HOJE_B, 1.0f);
+  else if (f > 0.5f) gfx_cor(no, 0.5f, ar, ag, ab, 1.0f);
   else                  gfx_cor(no, 0.5f, lum, lum, lum, 1.0f);
 }
 
 // O EIXO. Continuo ate o separador, tracejado depois dele — e o tracejado nao e
 // enfeite: dali para baixo nao ha tempo, so situacao.
 static void desenhaEixo(float xEixo, float y0, float y1, int tracejado) {
+  // SO O QUE ESTA NA TELA. O eixo vai do "hoje" ao fim do documento, e o
+  // documento de 32 series tem milhares de pixels; tracejado, isso eram
+  // centenas de retangulos por quadro, quase todos fora do recorte — a tela
+  // parada ficava em 46 fps na C9 (medido 21/09/2026) enquanto a home faz 60.
+  // O recorte de gfx_recorte ja esconde o excesso; aqui e so nao pagar por ele.
+  if (y0 < -AG_TRACO * 2.0f) y0 = -AG_TRACO * 2.0f + fmodf(y0, AG_TRACO * 2.0f);
+  if (y1 > NV_TELA_H + AG_TRACO * 2.0f) y1 = NV_TELA_H + AG_TRACO * 2.0f;
   if (y1 <= y0) return;
   if (!tracejado) {
     GfxRect r = { xEixo - AG_EIXO_W * 0.5f, y0, AG_EIXO_W, y1 - y0 };
-    gfx_cor(r, 0.0f, 0.70f, 0.71f, 0.76f, 0.30f);
+    gfx_cor(r, 0.0f, 0.70f, 0.71f, 0.76f, 0.22f);
     return;
   }
   { float y = y0;
@@ -1114,7 +1293,7 @@ static void desenhaEixo(float xEixo, float y0, float y1, int tracejado) {
       if (y + h > y1) h = y1 - y;
       r.x = xEixo - AG_EIXO_W * 0.5f; r.y = y;
       r.w = AG_EIXO_W; r.h = h;
-      gfx_cor(r, 0.0f, 0.70f, 0.71f, 0.76f, 0.30f);
+      gfx_cor(r, 0.0f, 0.70f, 0.71f, 0.76f, 0.22f);
       y += AG_TRACO * 2.0f;
     } }
 }
@@ -1124,10 +1303,28 @@ static void desenhaEixo(float xEixo, float y0, float y1, int tracejado) {
 // Cartao central com tres linhas (abrir o titulo / ultimas noticias / lembrete)
 // e, atras dele, um painel de manchetes do Google News (noticias.h): so
 // manchete, veiculo e dia — a TV nao abre link, entao e leitura, nao indice.
+//
+// NA LINGUAGEM DOS PAINEIS FLUTUANTES (menu.c, 21/09/2026): superficie
+// 0.055/0.058/0.068 quase opaca com canto de 28, a luz na cor de realce
+// entrando pelo topo (gfx_luz_canto, recortada pelo proprio canto) e a linha
+// em foco como PILULA de realce com a mancha difusa atras (GFX_SOMBRA 0,35).
+// Antes era uma laje 0.075 chapada com uma pilula sem luz — o unico painel do
+// app que ainda nao falava a lingua do menu.
 #define AGC_W     760.0f
 #define AGC_LINHA  84.0f
 #define AGN_W    1180.0f
 #define AGN_LINHA 108.0f
+static void painelFlutuante(GfxRect r, float ar, float ag, float ab, float a) {
+  gfx_cor(r, 28.0f / r.h, 0.055f, 0.058f, 0.068f, 0.96f * a);
+  gfx_luz_canto(r, 28.0f / r.h, r.w * 0.5f, 0.0f, r.w * 0.9f, ar, ag, ab, 0.22f * a);
+}
+// A pilula de foco das linhas dos dois paineis: luz atras, pilula na cor de
+// realce por cima. O raio e 16 px sobre a altura da linha, como era.
+static void pilulaFoco(GfxRect lr, float ar, float ag, float ab, float a) {
+  GfxRect luz = { lr.x - lr.h * 0.9f, lr.y - lr.h * 0.9f, lr.w + lr.h * 1.8f, lr.h * 2.8f };
+  gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, ar, ag, ab, 0.35f * a);
+  gfx_cor(lr, 16.0f / lr.h, ar, ag, ab, a);
+}
 static void desenhaContexto(float a) {
   const AgItem *it = agenda_lista(ctxItem);
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
@@ -1145,7 +1342,7 @@ static void desenhaContexto(float a) {
     float y;
     if (h > maxH) h = maxH;
     r = (GfxRect){ (NV_TELA_W - AGN_W) * 0.5f, (NV_TELA_H - h) * 0.5f + (1.0f - a) * 24.0f, AGN_W, h };
-    gfx_cor(r, 28.0f / r.h, 0.075f, 0.078f, 0.09f, 0.98f * a);
+    painelFlutuante(r, ar, ag, ab, a);
     t = txt_linha_corta(TXT_TITULO2, it->titulo, 246, 247, 250, 255, AGN_W - 96.0f);
     txt_desenhar_alpha(t, r.x + 48.0f, r.y + 40.0f, a);
     t = txt_linha(TXT_CAPTION, i18n("Últimas notícias · Google News"), 150, 153, 162, 255);
@@ -1168,7 +1365,7 @@ static void desenhaContexto(float a) {
         GfxRect lr = { r.x + 32.0f, ly, r.w - 64.0f, AGN_LINHA - 10.0f };
         if (!nt) continue;
         if (ly > r.y + r.h) break;
-        if (f) gfx_cor(lr, 16.0f / lr.h, ar, ag, ab, a);
+        if (f) pilulaFoco(lr, ar, ag, ab, a);
         t = txt_linha_corta(TXT_CALLOUT, nt->titulo, f ? tf : 238, f ? tf : 240, f ? tf : 244, 255, lr.w - 40.0f);
         txt_desenhar_alpha(t, lr.x + 20.0f, ly + 14.0f, a);
         { char sub[140];
@@ -1189,13 +1386,13 @@ static void desenhaContexto(float a) {
     rot[0] = i18n("Abrir o título");
     rot[1] = i18n("Últimas notícias");
     rot[2] = it->lembrete ? i18n("Desligar o lembrete") : i18n("Lembrar-me");
-    gfx_cor(r, 28.0f / r.h, 0.075f, 0.078f, 0.09f, 0.98f * a);
+    painelFlutuante(r, ar, ag, ab, a);
     t = txt_linha_corta(TXT_TITULO3, it->titulo, 246, 247, 250, 255, AGC_W - 96.0f);
     txt_desenhar_alpha(t, r.x + 48.0f, r.y + 36.0f, a);
     for (i = 0; i < no; i++) {
       int f = (i == ctxFoco);
       GfxRect lr = { r.x + 24.0f, r.y + 118.0f + (float)i * AGC_LINHA, r.w - 48.0f, AGC_LINHA - 10.0f };
-      if (f) gfx_cor(lr, 16.0f / lr.h, ar, ag, ab, a);
+      if (f) pilulaFoco(lr, ar, ag, ab, a);
       t = txt_linha(TXT_CALLOUT, rot[i], f ? tf : 238, f ? tf : 240, f ? tf : 244, 255);
       txt_desenhar_alpha(t, lr.x + 28.0f, lr.y + (lr.h - t.h) * 0.5f, a);
     } }
@@ -1217,6 +1414,31 @@ void agendaui_desenhar(Uint32 agora) {
   // POR CIMA do "g" de "Agenda". Um deslocamento fixo so acerta numa fonte.
   { TxtLinha t = txt_linha(TXT_TITULO1, i18n("Agenda"), 255, 255, 255, 255);
     txt_desenhar(t, x, yc);
+    // A DATA DE HOJE no canto superior direito, com a base alinhada a do
+    // titulo. O quadrante era vazio desde sempre, e a data por extenso e a
+    // unica peca de calendario que a estacao nao da: "em 6 dias" nao diz em
+    // que dia da semana HOJE cai. Caps espacadas, a voz dos rotulos de mes;
+    // composta de pecas ja traduzidas (txt_tracking nao traduz a string
+    // inteira — ver text.c), entao nenhuma chave nova de i18n.
+    { const char *hj = agenda_hoje();
+      int ds = agenda_semana(hj);
+      if (ds >= 0) {
+        char sem[24], ext[64], extM[64], rot[120];
+        TxtLinha m;
+        float w;
+        maiusc(sem, sizeof sem, i18n(agenda_semana_nome(ds)));
+        desc_data_extenso(hj, ext, sizeof ext);
+        // `maiusc` limpa o destino antes de escrever; nao passe o mesmo buffer
+        // como origem e destino, ou a data some e sobra apenas "DIA ·".
+        maiusc(extM, sizeof extM, ext);
+        snprintf(rot, sizeof rot, "%s \xc2\xb7 %s", sem, extM);
+        // "Hg" so pela altura da caixa do CAPTION2 (ver desenhaEstacao).
+        m = txt_linha(TXT_CAPTION2, "Hg", 118, 120, 128, 255);
+        w = txt_tracking(TXT_CAPTION2, rot, 118, 120, 128,
+                         -1.0f, 0.0f, 1.0f, 2.0f);
+        txt_tracking(TXT_CAPTION2, rot, 118, 120, 128, xDir - w,
+                     yc + (float)t.h - (float)m.h, 1.0f, 2.0f);
+      } }
     yc += (float)t.h + 6.0f; }
 
   { char sub[200];
@@ -1254,6 +1476,11 @@ void agendaui_desenhar(Uint32 agora) {
     return;
   }
 
+  // As reguas das faixas (HOJE, mes, separador) acabam onde o cartao acaba:
+  // uma regua ate a margem direita, com o cartao parando em 1500, deixava
+  // 300 px de traco sem nada embaixo.
+  { AgMedidas m = medidas(xCont, xDir); xDir = m.xCartao + m.wCartao; }
+
   gfx_recorte(0, topo, NV_TELA_W, base - topo);
 
   // O EIXO PRIMEIRO, atras de tudo. Em duas partes: continua da origem ate o
@@ -1278,9 +1505,12 @@ void agendaui_desenhar(Uint32 agora) {
     if (y - hFaixa > base || y + h < topo) continue;
     faixas(i, xChipDir, xEixo, xCont, xDir, y - hFaixa, 1);
     hoje = temData(it) && agenda_dias(it->dataProx) == 0;
+    // Numeral e no ficam no centro dos 177 DE BASE, nao da altura viva: a
+    // quarta linha abre por baixo e o numeral tem de continuar na altura do
+    // cartaz e do titulo, senao a estacao desce quando o foco chega.
     desenhaEstacao(it, xChipDir, y + AG_LINHA_H * 0.5f, hoje, animFoco[i]);
     desenhaNo(xEixo, y + AG_LINHA_H * 0.5f, it, hoje, animFoco[i]);
-    desenhaConteudo(it, xCont, y, xDir - xCont, animFoco[i]);
+    desenhaConteudo(it, xCont, xDir, y, h, animFoco[i]);
   }
   gfx_sem_recorte();
   if (ctxA > 0.01f) desenhaContexto(ctxA);

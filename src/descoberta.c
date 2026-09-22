@@ -237,6 +237,14 @@ static void fotosDoElenco(CatItem *d, const char *imdbSerie, int serie) {
              incImg);
     corpo = rede_baixar(url, 20);
     if (corpo) {
+      // Guarda o backdrop do proprio TMDB como uma variante separada. O
+      // catalogo continua mandando na arte efetiva por padrao; a escolha do
+      // hero pode pedir esta origem sem fazer outra consulta.
+      { char fundo[160] = "";
+        if (js_texto_raiz(corpo, "backdrop_path", fundo, sizeof fundo) &&
+            fundo[0] == '/')
+          snprintf(d->backdropTmdb, sizeof d->backdropTmdb,
+                   "https://image.tmdb.org/t/p/w1280%s", fundo); }
       if (ajustes_tmdb_basico()) {
         char t[160], sin[900];
         if (js_texto_raiz(corpo, serie ? "name" : "title", t, sizeof t) && t[0])
@@ -698,6 +706,11 @@ static int deMeta(const char *ini, const char *fim, const char *tipo, CatItem *d
   // O poster e o unico obrigatorio: sem ele o card fica um retangulo cinza.
   if (!js_texto(ini, fim, "poster", d->poster, sizeof d->poster)) return 0;
   js_texto(ini, fim, "background", d->backdrop, sizeof d->backdrop);
+  snprintf(d->backdropCatalogo, sizeof d->backdropCatalogo, "%s", d->backdrop);
+  if (strstr(d->backdrop, "image.tmdb.org/t/p/"))
+    snprintf(d->backdropTmdb, sizeof d->backdropTmdb, "%s", d->backdrop);
+  if (strstr(d->backdrop, "media.trakt.tv/"))
+    snprintf(d->backdropTrakt, sizeof d->backdropTrakt, "%s", d->backdrop);
   js_texto(ini, fim, "logo", d->logo, sizeof d->logo);
   // LOGO IGUAL AO POSTER NAO E LOGO. MEDIDO no catalogo gravado da C9 em 18/09:
   // o Xperience manda, para "O Fim da Rua", o MESMO arquivo do TMDB
@@ -730,6 +743,12 @@ static int deMeta(const char *ini, const char *fim, const char *tipo, CatItem *d
       snprintf(d->backdrop, sizeof d->backdrop, "%s", novo);
     } }
   if (!d->backdrop[0]) snprintf(d->backdrop, sizeof d->backdrop, "%s", d->poster);
+  // A variante de catálogo é a mesma arte que alimenta o card, já com a
+  // dimensão segura para a TV. O TMDB/Trakt ficam em campos separados quando
+  // chegam por seus próprios caminhos.
+  snprintf(d->backdropCatalogo, sizeof d->backdropCatalogo, "%s", d->backdrop);
+  if (d->backdropTmdb[0] && strstr(d->backdropTmdb, "image.tmdb.org/t/p/"))
+    snprintf(d->backdropTmdb, sizeof d->backdropTmdb, "%s", d->backdrop);
 
   if (!js_texto(ini, fim, "imdb_id", d->imdb, sizeof d->imdb))
     js_texto(ini, fim, "id", d->imdb, sizeof d->imdb);
@@ -1050,6 +1069,37 @@ static struct {
   char *corpo;
   int   pronto;      // 1 = tentativa terminada (corpo pode ser NULL)
 } mani[MANI_MAX];
+
+// CACHE DE CORPO DE MANIFESTO ENTRE CICLOS.
+//
+// Sem isto, maniLargar() liberava os corpos da volta anterior e re-baixava
+// TODOS os manifestos a cada desc_repetir() — inclusive os de addons
+// desligados, que continuam sendo lidos porque a BUSCA os procura (ver
+// lerManifesto). O custo e N HTTP GET por ciclo, e e o overhead que o dono
+// viu no log como "recarrega tudo de novo, inclusive os desativados".
+//
+// A cache guarda uma COPIA propria (strdup) do corpo, key por URL + versao da
+// lista de addons. A versao sobe a qualquer mudanca na lista (ligar/desligar,
+// instalar, remover, addons_definir_lista), e como a posicao de um addon na
+// lista pode mudar junto com a versao, a invalidacao por versao e a unica
+// que e segura por posicao — e ela cobre o caso comum (sync periodico com a
+// lista identica, desc_repetir disparado por troca de credencial Trakt): ai a
+// versao nao muda, todas as URLs batem, e nenhum manifesto e re-baixado.
+//
+// LIMITE DE MEMORIA: so cacheia corpos menores que MANI_CACHE_BYTES. O
+// Xperience declara 605 catalogos e o manifesto dele passa de 200 KB; num
+// aparelho Samsung com 6,7 MiB de heap livre (medido, issue #69) guardar 12
+// desses seria 2,4 MB persistentes — arriscado. Corpos grandes ficam de fora
+// e re-baixam a cada ciclo, como antes; sao a minoria e o custo de baixa-los
+// e o mesmo de hoje. Com o teto de 128 KB o pior caso e ~1,5 MB (12 x 128 KB),
+// e na pratica ~300 KB (manifestos tipicos tem <30 KB).
+#define MANI_CACHE_BYTES (128 * 1024)
+static struct {
+  char    url[900];
+  unsigned versao;
+  char   *corpo;
+} maniCache[MANI_MAX];
+
 static int  maniN;
 static pthread_mutex_t maniTrava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  maniCond  = PTHREAD_COND_INITIALIZER;
@@ -1060,6 +1110,82 @@ static int  maniProx;
 // addon. Ele descobre que ficou para tras aqui, joga o proprio download fora e
 // sai.
 static unsigned maniGeracao;
+
+// --- cache de corpo de manifesto -------------------------------------------
+// maniPegar/lerManifesto tomam posse do corpo e o liberam. A cache guarda uma
+// COPIA propria (strdup) sob maniTrava, independente do ciclo de vida de
+// mani[] — que e de uma volta so. As duas funcoes abaixo rodam sob maniTrava.
+static int maniCacheAchar(const char *url, unsigned versao) {
+  int i;
+  for (i = 0; i < MANI_MAX; i++)
+    if (maniCache[i].corpo && maniCache[i].versao == versao &&
+        !strcmp(maniCache[i].url, url))
+      return i;
+  return -1;
+}
+
+// Coloca `corpo` (já alocado) na cache, associado a `url`+`versao`. Se a cache
+// estiver cheia, reutiliza a entrada mais antiga (versao diferente ou a primeira
+// com corpo). Devolve 1 se guardou. Nao duplica `corpo`: toma posse dele.
+static int maniCacheColocar(const char *url, unsigned versao, char *corpo) {
+  int i, alvo = -1;
+  if (!corpo) return 0;
+  for (i = 0; i < MANI_MAX; i++) {
+    if (!maniCache[i].corpo) { alvo = i; break; }
+    // Entrada com versao diferente e stale: reutiliza.
+    if (maniCache[i].corpo && maniCache[i].versao != versao) { alvo = i; break; }
+  }
+  if (alvo < 0) alvo = 0;   // todas vivas: sobrescreve a primeira (LRU simples)
+  free(maniCache[alvo].corpo);
+  maniCache[alvo].corpo = corpo;
+  maniCache[alvo].versao = versao;
+  snprintf(maniCache[alvo].url, sizeof maniCache[alvo].url, "%s", url);
+  return 1;
+}
+
+// API PUBLICA (descoberta.h) — unificacao com a sonda de addons.c. Mesma
+// tabela, mesma trava; so a copia que sai/entra muda de dono.
+char *desc_manifesto_cache_obter(const char *url, unsigned versao) {
+  char *copia = NULL;
+  int i;
+  pthread_mutex_lock(&maniTrava);
+  i = maniCacheAchar(url, versao);
+  if (i >= 0) {
+    size_t n = strlen(maniCache[i].corpo);
+    copia = malloc(n + 1);
+    if (copia) memcpy(copia, maniCache[i].corpo, n + 1);
+  }
+  pthread_mutex_unlock(&maniTrava);
+  return copia;
+}
+
+void desc_manifesto_cache_guardar(const char *url, unsigned versao, const char *corpo) {
+  size_t n;
+  char *copia;
+  if (!corpo || !*corpo) return;
+  n = strlen(corpo);
+  if (n >= MANI_CACHE_BYTES) return;   // mesmo teto de memoria do laco interno
+  copia = malloc(n + 1);
+  if (!copia) return;
+  memcpy(copia, corpo, n + 1);
+  pthread_mutex_lock(&maniTrava);
+  maniCacheColocar(url, versao, copia);   // toma posse da copia, nao do `corpo` recebido
+  pthread_mutex_unlock(&maniTrava);
+}
+
+// Libera toda a cache. Chamada no logout (desc_esquecer) para nao vazar entre
+// contas.
+static void maniCacheLimpar(void) {
+  int i;
+  pthread_mutex_lock(&maniTrava);
+  for (i = 0; i < MANI_MAX; i++) {
+    free(maniCache[i].corpo);
+    maniCache[i].corpo = NULL;
+    maniCache[i].url[0] = 0;
+    maniCache[i].versao = 0;
+  }
+  pthread_mutex_unlock(&maniTrava);
+}
 
 static void *fioManifesto(void *u) {
   unsigned minha = (unsigned)(uintptr_t)u;
@@ -1081,6 +1207,16 @@ static void *fioManifesto(void *u) {
     }
     mani[meu].corpo = corpo;
     mani[meu].pronto = 1;
+    // ARMAZENA NA CACHE uma copia propria, se o corpo couber no teto de
+    // memoria. A copia vive enquanto a versao da lista nao mudar; o corpo
+    // original e consumido por maniPegar/lerManifesto e liberado por eles.
+    if (corpo) {
+      size_t n = strlen(corpo);
+      if (n < MANI_CACHE_BYTES) {
+        char *copia = malloc(n + 1);
+        if (copia) { memcpy(copia, corpo, n + 1); maniCacheColocar(url, addons_versao(), copia); }
+      }
+    }
     pthread_cond_broadcast(&maniCond);
     pthread_mutex_unlock(&maniTrava);
   }
@@ -1089,6 +1225,7 @@ static void *fioManifesto(void *u) {
 // Larga o download de todos os manifestos. Volta na hora.
 static void maniLargar(void) {
   int nAd = addons_n(), i, criados = 0;
+  unsigned versao = addons_versao();
   pthread_t fios[MANI_FIOS];
   pthread_mutex_lock(&maniTrava);
   // Sobra da volta anterior (ninguem pediu, addon trocado no meio): nao pode
@@ -1096,8 +1233,24 @@ static void maniLargar(void) {
   for (i = 0; i < maniN; i++) { free(mani[i].corpo); mani[i].corpo = NULL; }
   maniN = nAd > MANI_MAX ? MANI_MAX : nAd;
   for (i = 0; i < maniN; i++) {
+    int cache;
     snprintf(mani[i].url, sizeof mani[i].url, "%s/manifest.json", addons_base(i));
     mani[i].pronto = 0;
+    // CACHE HIT: o manifesto deste addon ja foi baixado numa volta com a
+    // MESMA versao da lista (lista inalterada). Reaproveita sem rede. A
+    // copia da cache e strdup para mani[i].corpo; a cache mantem a sua e
+    // vive para a proxima volta. maniPegar/lerManifesto vao liberar a copia
+    // que sai daqui, nao a da cache.
+    cache = maniCacheAchar(mani[i].url, versao);
+    if (cache >= 0) {
+      size_t n = strlen(maniCache[cache].corpo);
+      char *copia = malloc(n + 1);
+      if (copia) {
+        memcpy(copia, maniCache[cache].corpo, n + 1);
+        mani[i].corpo = copia;
+        mani[i].pronto = 1;
+      }
+    }
   }
   maniProx = 0;
   maniGeracao++;
@@ -1106,12 +1259,16 @@ static void maniLargar(void) {
   { unsigned g = maniGeracao;
     pthread_mutex_unlock(&maniTrava);
   if (maniN < 1) return;
-  for (i = 0; i < MANI_FIOS && i < maniN; i++)
+  // So dispara fios para os slots que NAO vieram da cache. Os outros ja
+  // estao prontos e maniPegar os entrega na hora.
+  for (i = 0; i < MANI_FIOS && i < maniN; i++) {
+    if (mani[i].pronto) continue;
     if (pthread_create(&fios[criados], NULL, fioManifesto,
                        (void *)(uintptr_t)g) == 0) {
       pthread_detach(fios[criados]);
       criados++;
-    } }
+    }
+  }
   // Sem fio nenhum o corpo fica NULL e `pronto` fica 0: maniPegar percebe que
   // ninguem esta baixando e baixa no proprio fio, como sempre foi.
   if (!criados) {
@@ -1120,6 +1277,7 @@ static void maniLargar(void) {
     pthread_cond_broadcast(&maniCond);
     pthread_mutex_unlock(&maniTrava);
   }
+  }   // fecha o bloco `{ unsigned g = maniGeracao;`
 }
 
 // O corpo do manifesto de `url`, esperando o download largado por maniLargar se
@@ -2503,6 +2661,13 @@ void desc_repetir(void) {
   fflush(stdout);
 }
 
+// Logout: solta a cache de manifestos (e da conta que saiu) e zera o estado da
+// descoberta para a proxima sessao comecar limpa. A cache de manifestos e a
+// unica alocacao persistente entre ciclos que pertence a este modulo.
+void desc_esquecer(void) {
+  maniCacheLimpar();
+}
+
 // --- episodios sob demanda ---------------------------------------------------
 
 // CACHE LRU DO /meta DAS SERIES.
@@ -2880,6 +3045,9 @@ static int deMetaTmdb(const char *p, const char *f, const char *tipoPadrao,
     // decodificados por arte no nucleo fraco da TV.
     snprintf(d->backdrop, sizeof d->backdrop, "https://image.tmdb.org/t/p/w1280%s", v);
   else snprintf(d->backdrop, sizeof d->backdrop, "%s", d->poster);
+  if (js_texto(p, f, "backdrop_path", v, sizeof v) && v[0] == '/')
+    snprintf(d->backdropTmdb, sizeof d->backdropTmdb,
+             "https://image.tmdb.org/t/p/w1280%s", v);
   { char mt[12] = "";
     js_texto(p, f, "media_type", mt, sizeof mt);
     snprintf(d->tipo, sizeof d->tipo, "%s",

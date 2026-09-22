@@ -27,6 +27,23 @@ const CatEp *player_proximo_episodio(void);
 // comecam (0 quando nenhuma das duas fontes tem marcador). Devolve 1 quando o
 // cartao deve estar no ar.
 int player_regra_proximo(double posSeg, double durSeg, double cred);
+
+// O EPISODIO CONTA COMO ASSISTIDO AO SAIR? — issue #100.
+//
+// Havia DOIS numeros para o mesmo acontecimento, e eles discordavam:
+//   - o cartao de "proximo episodio" (player_regra_proximo) declara o episodio
+//     terminado no marcador de creditos ou a 120 s do fim;
+//   - o progresso enviado ao Trakt so virava /scrobble/stop ("assisti") com
+//     >= 90% do tempo, porque player_encerrar so arredondava a posicao para o
+//     fim dentro dos ULTIMOS 60 s.
+// Em todo episodio com menos de 20 min os 120 s caem ABAIXO dos 90% — num de
+// 18 min o cartao sobe aos 88,9% —, entao aceitar o proximo episodio que o
+// proprio app ofereceu mandava /scrobble/pause e nada marcava. Era preciso
+// marcar a mao, que e o relato do #100.
+//
+// Um numero so: o mesmo que abre o cartao. Mais os 60 s de folga de sempre,
+// para quem sai por cima do fim sem passar pelo cartao.
+int player_regra_concluiu(double posSeg, double durSeg, double cred);
 void player_erro_fonte(void);
 void player_limpar_erro_fonte(void);   // fonte "morta" que voltou a entregar
 // 1 quando a fonte atual falhou. O app usa no watchdog de canal: stream de TV
@@ -137,6 +154,23 @@ void        player_aspecto_ciclar(void);       // proximo modo + aviso na tela
 // chama player_leg_estilo_mudou(), que aplica no pipeline e grava.
 VideoLegendaEstilo *player_leg_estilo(void);
 void player_leg_estilo_mudou(void);
+
+// QUAIS CAMPOS A PESSOA MEXEU DE FATO.
+//
+// Existe por causa da legenda ASS: o arquivo traz cor propria (o letreiro
+// amarelo, o narrador em azul) e a folha de faixas tambem oferece cor. Quando
+// os dois falam, GANHA A PESSOA — um ajuste que ela mexeu e intencao
+// explicita, e sobrepo-la com o que o arquivo acha seria o app discutindo com
+// quem usa. Enquanto ela nao mexeu, o arquivo fala.
+//
+// "Restaurar padrao" LIMPA a marca (PLR_LEG_NADA): voltar ao padrao e dizer
+// "quero o comportamento normal do app", e o normal do app e respeitar o
+// arquivo. Tamanho, fonte e borda nao entram nesta conta — eles vencem o ASS
+// SEMPRE, porque tamanho de legenda numa TV e acessibilidade, nao estilo.
+#define PLR_LEG_NADA  0
+#define PLR_LEG_COR   1
+void player_leg_estilo_tocou(int campos);  // PLR_LEG_NADA zera
+int  player_leg_estilo_tocado(int campo);
 // Diretorio de DADOS (nao de arte) onde art/player.txt e gravado. Chamada por
 // main.c com o mesmo valor de ajustes_dir — sem isto o arquivo ia parar na
 // pasta de arte, que a TV nao trata como persistente. Ver a nota em

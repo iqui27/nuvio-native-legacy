@@ -20,6 +20,7 @@
 #include "dados.h"
 #include "rede.h"
 #include "gfx.h"
+#include "botoes.h"
 #include "text.h"
 #include "anim.h"
 #include "layout.h"
@@ -498,9 +499,16 @@ void atualizacao_desenhar(Uint32 agora) {
 
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.72f * entrada);
   dy = (1.0f - a) * 36.0f;
+  // CARTAO FLUTUANTE na "cara nova" (menu.c, 21/09/2026): cantos de 28 px
+  // pelo menor lado (a altura), fundo translucido e UMA luz difusa na cor de
+  // realce entrando pelo canto superior esquerdo, presa aos cantos do cartao
+  // (GFX_LUZ). Com o veu de tela cheia ja pago, a luz e a segunda e ultima
+  // camada grande desta tela.
   { GfxRect c = { AT_X, AT_Y + dy, AT_W, AT_H };
-    gfx_cor(c, 0.030f, 0.075f, 0.078f, 0.088f, 0.98f * a); }
-  gfx_recorte(AT_X, AT_Y + dy, AT_W, AT_H);
+    float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+    gfx_cor(c, 28.0f / AT_H, 0.055f, 0.058f, 0.068f, 0.94f * a);
+    gfx_luz_canto(c, 28.0f / AT_H, AT_H * 0.1f, -AT_H * 0.1f, AT_H * 0.65f, ar, ag, ab, 0.22f * a);
+    gfx_recorte(AT_X, AT_Y + dy, AT_W, AT_H); }
 
   x = AT_X + AT_PAD; w = AT_W - 2.0f * AT_PAD;
   y = AT_Y + dy + 56.0f;
@@ -581,18 +589,14 @@ void atualizacao_desenhar(Uint32 agora) {
     int i;
     rot[0] = i18n("Atualizar agora");
     rot[1] = i18n("Depois");
+    // A PILULA DA TABELA (botoes.h): "Atualizar agora" e o primario (72 px,
+    // cheio), "Depois" o secundario (56 px, contorno), alinhados pela base.
     for (i = 0; i < 2; i++) {
-      int fc = (i == foco);
-      // Pilula clara com texto escuro no foco, como o menu de cartaz e a folha
-      // de envio — e o vocabulario dos modais deste app, e o cartao e um.
-      float fr = 0.176f, fg = 0.176f, fb = 0.176f;
-      int cor = 236;
-      if (fc) cor = (int)(ajustes_acento_tinta(&fr, &fg, &fb) * 255.0f + 0.5f);
-      { TxtLinha t = txt_linha(TXT_CALLOUT, rot[i], cor, cor, cor, 255);
-      GfxRect b = { bx, y, t.w + 64.0f, 64.0f };
-      gfx_cor(b, NV_RAIO_PILL, fr, fg, fb, a);
-      txt_desenhar_alpha(t, bx + 32.0f, y + (64.0f - t.h) * 0.5f, a);
-      bx += b.w + 16.0f; }
+      int primario = (i == 0);
+      float h = primario ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO;
+      GfxRect b = { bx, y + (BOTAO_H_PRIMARIO - h), botao_largura(rot[i], NULL, primario), h };
+      botao_pilula(b, rot[i], NULL, i == foco ? 1.0f : 0.0f, primario, 0, a);
+      bx += b.w + BOTAO_GAP;
     }
   } else {
     TxtLinha t = txt_linha(TXT_CAPTION,

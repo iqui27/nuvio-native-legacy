@@ -19,9 +19,18 @@
 //
 // Entao JPEG volta ao software, mas nao ao IMG_Load de tamanho cheio (13 s
 // num 4K, #69): a libjpeg do port do Emscripten com scale_denom, o mesmo
-// truque do ramo nativo abaixo. PNG vai pelo IMG_Load (libpng, software).
-// So o WebP continua no navegador (webp.c): nao ha port de libwebp, e ele so
-// aparece nas capas do Xperience.
+// truque do ramo nativo abaixo. PNG e WebP vao ao navegador (webp.c):
+// createImageBitmap + canvas devolve os pixels JA no tamanho pedido, o
+// bitmap cheio fica fora do heap do WASM. Nao ha port de libpng nem libwebp
+// no Emscripten aqui.
+//
+// PNG ENTROU NO NAVEGADOR EM 21/09/2026 (registro 1106, D1): um PNG de
+// 3840x2160 do CDN de colecoes (cdn.jsdelivr.net/gh/luckynumb3rs/...) ia pelo
+// IMG_Load de tamanho cheio — 33 MB no heap fixo de 256 MiB, decode de 1,5 a
+// 3,5 s repetido 81 vezes na mesma sessao, tela travada enquanto isso. O
+// navegador ja reduzia o WebP assim; faltava so o PNG entrar pela mesma
+// ponte (navegador_decodificar, mime generico — o Worker so repassa ao
+// Blob). Se o Worker nao subir, cai no IMG_Load_RW de sempre.
 #include "webp.h"
 #include <stdlib.h>
 #include <setjmp.h>
@@ -91,6 +100,23 @@ static SDL_Surface *jpegEscalado(const unsigned char *dados, size_t n, int largM
   return s;
 }
 
+// PONTE COMUM PNG/WEBP: manda ao navegador (navegador_decodificar, em
+// webp.c) e monta a SDL_Surface do jeito que os dois formatos precisam —
+// mesma montagem, so muda o mime. NULL quando o Worker nao respondeu (nao
+// subiu, ou os 8 s do futex estouraram): o chamador cai no decoder local.
+static SDL_Surface *viaNavegador(const unsigned char *dados, size_t n, const char *mime, int largMax,
+                                 int *larguraOriginal, int *alturaOriginal) {
+  int w = 0, h = 0, ow = 0, oh = 0; uint8_t *px; SDL_Surface *s;
+  px = navegador_decodificar(dados, n, mime, largMax > 0 ? largMax : 0, &w, &h, &ow, &oh);
+  if (!px) return NULL;
+  s = nv_superficie(0, w, h, 32, SDL_PIXELFORMAT_ABGR8888);
+  if (s) { int y; for (y = 0; y < h; y++) memcpy((char *)s->pixels + y * s->pitch, px + (size_t)y * w * 4, (size_t)w * 4); }
+  free(px);
+  if (larguraOriginal) *larguraOriginal = ow > 0 ? ow : w;
+  if (alturaOriginal) *alturaOriginal = oh > 0 ? oh : h;
+  return s;
+}
+
 SDL_Surface *jpeg_rapido_carregar_mem(const unsigned char *dados, size_t n, int largMax,
                                       int *larguraOriginal, int *alturaOriginal) {
   if (larguraOriginal) *larguraOriginal = 0;
@@ -99,22 +125,17 @@ SDL_Surface *jpeg_rapido_carregar_mem(const unsigned char *dados, size_t n, int 
   if (dados[0] == 0xFF && dados[1] == 0xD8)
     return jpegEscalado(dados, n, largMax, larguraOriginal, alturaOriginal);
   if (dados[0] == 0x89 && dados[1] == 'P' && dados[2] == 'N' && dados[3] == 'G') {
-    SDL_RWops *rw = SDL_RWFromConstMem(dados, (int)n);
-    SDL_Surface *s = rw ? IMG_Load_RW(rw, 1) : NULL;
-    if (s) { if (larguraOriginal) *larguraOriginal = s->w; if (alturaOriginal) *alturaOriginal = s->h; }
-    return s;
+    // Navegador primeiro (ja reduzido, fora do heap do WASM); IMG_Load_RW de
+    // tamanho cheio so quando o Worker nao respondeu.
+    SDL_Surface *s = viaNavegador(dados, n, "image/png", largMax, larguraOriginal, alturaOriginal);
+    if (s) return s;
+    { SDL_RWops *rw = SDL_RWFromConstMem(dados, (int)n);
+      s = rw ? IMG_Load_RW(rw, 1) : NULL;
+      if (s) { if (larguraOriginal) *larguraOriginal = s->w; if (alturaOriginal) *alturaOriginal = s->h; }
+      return s; }
   }
-  if (!memcmp(dados, "RIFF", 4) && !memcmp(dados + 8, "WEBP", 4)) {
-    int w = 0, h = 0, ow = 0, oh = 0; uint8_t *px; SDL_Surface *s;
-    px = navegador_decodificar(dados, n, "image/webp", largMax > 0 ? largMax : 0, &w, &h, &ow, &oh);
-    if (!px) return NULL;
-    s = nv_superficie(0, w, h, 32, SDL_PIXELFORMAT_ABGR8888);
-    if (s) { int y; for (y = 0; y < h; y++) memcpy((char *)s->pixels + y * s->pitch, px + (size_t)y * w * 4, (size_t)w * 4); }
-    free(px);
-    if (larguraOriginal) *larguraOriginal = ow > 0 ? ow : w;
-    if (alturaOriginal) *alturaOriginal = oh > 0 ? oh : h;
-    return s;
-  }
+  if (!memcmp(dados, "RIFF", 4) && !memcmp(dados + 8, "WEBP", 4))
+    return viaNavegador(dados, n, "image/webp", largMax, larguraOriginal, alturaOriginal);
   return NULL;   // GIF e o resto: IMG_Load de sempre
 }
 

@@ -19,6 +19,8 @@
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
+#include "catalogo.h"
+#include "ajustes.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <assert.h>
@@ -27,6 +29,7 @@
 #include <string.h>
 
 static SDL_Window *win;
+static int capturaQuadros = 90;
 
 static void escreverCache(const char *conteudo, int ativo) {
   char linha[16];
@@ -35,11 +38,38 @@ static void escreverCache(const char *conteudo, int ativo) {
   assert(dados_gravar("perfil.txt", linha));
 }
 
+static void semearMuralCatalogo(void) {
+  static CatItem itens[9];
+  int i;
+  memset(itens, 0, sizeof itens);
+  for (i = 0; i < 9; i++) {
+    snprintf(itens[i].imdb, sizeof itens[i].imdb, "tt-mural-%02d", i);
+    snprintf(itens[i].tipo, sizeof itens[i].tipo, "%s", "movie");
+    snprintf(itens[i].titulo, sizeof itens[i].titulo, "Capa de teste %d", i + 1);
+    snprintf(itens[i].poster, sizeof itens[i].poster,
+             "deploy/app/art/poster/%02d.jpg", i);
+  }
+  // O mural precisa receber exatamente os poster URLs do catalogo, como a
+  // Home. Nao ha lista paralela nem download especial neste shot.
+  cat_definir_tudo(itens, 9, NULL, 0);
+}
+
+static void ajustesDeTeste(int reduzidas) {
+  FILE *f;
+  char caminho[700];
+  snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dados_dir());
+  f = fopen(caminho, "w");
+  assert(f);
+  fprintf(f, "animacoes %d\n", reduzidas);
+  fclose(f);
+  ajustes_dir(dados_dir());
+}
+
 // 90 quadros: tempo de sobra para a mola do foco assentar (120 ms medidos) e
 // para o decode das texturas subir para a GPU.
 static void captura(const char *nome) {
   int i;
-  for (i = 0; i < 90; i++) {
+  for (i = 0; i < capturaQuadros; i++) {
     SDL_PumpEvents();
     txt_novo_quadro(); tex_novo_quadro(); tex_bombear(6); gfx_novo_quadro();
     perfilsel_atualizar(1.0f / 60.0f, SDL_GetTicks());
@@ -106,9 +136,14 @@ int main(void) {
     } }
 
   // indice \t temPin \t primario \t usaAddons \t cor \t nome \t avatar \t fundo
+  semearMuralCatalogo();
   escreverCache("1\t0\t1\t0\t#1E88E5\tHenrique\t\tdeploy/app/art/03.jpg\n", 1);
   perfis_carregar_ativo();
+  ajustesDeTeste(0);
   perfilsel_iniciar();
+  assert(!perfilsel_concluido());
+  perfilsel_continuar_ativo();
+  assert(perfilsel_concluido());
   captura("/tmp/nuvio-perfilsel-1.bmp");
 
   escreverCache("1\t0\t1\t0\t#1E88E5\tHenrique\t\tdeploy/app/art/03.jpg\n"
@@ -117,6 +152,7 @@ int main(void) {
   escreverCache("1\t0\t1\t0\t#1E88E5\tHenrique\t\tdeploy/app/art/03.jpg\n"
                 "2\t0\t0\t1\t#E53935\tÁlvaro\t\t\n", 2);
   perfis_carregar_ativo();
+  ajustesDeTeste(0);
   perfilsel_iniciar();
   captura("/tmp/nuvio-perfilsel-2.bmp");
 
@@ -127,6 +163,7 @@ int main(void) {
                 "3\t1\t0\t0\t#43A047\tInfantil\t\tdeploy/app/art/07.jpg\n"
                 "4\t0\t0\t0\t#8E24AA\tVisitas\t\t\n", 1);
   perfis_carregar_ativo();
+  ajustesDeTeste(0);
   perfilsel_iniciar();
   captura("/tmp/nuvio-perfilsel-4.bmp");
 
@@ -155,8 +192,22 @@ int main(void) {
                 "7\t1\t0\t0\t#C0CA33\tCarla\t\t\n"
                 "8\t0\t0\t0\t#5E35B1\tPedro\t\t\n", 5);
   perfis_carregar_ativo();
+  ajustesDeTeste(0);
   perfilsel_iniciar();
   captura("/tmp/nuvio-perfilsel-8.bmp");
+
+  // A primeira captura pega o boom de abertura; esta espera longa prova que
+  // ele se dissipa e deixa somente o campo orbital, sem textura adicional.
+  capturaQuadros = 600;
+  captura("/tmp/nuvio-perfilsel-8-settled.bmp");
+  capturaQuadros = 90;
+
+  // Acessibilidade: a mesma composição com movimento congelado. As capas,
+  // rastros e foco permanecem legíveis, mas nenhuma posição usa delta-time.
+  ajustesDeTeste(1);
+  perfilsel_iniciar();
+  captura("/tmp/nuvio-perfilsel-8-reduzido.bmp");
+  ajustesDeTeste(0);
 
   tex_encerrar(); txt_encerrar(); gfx_encerrar();
   SDL_GL_DeleteContext(gl); SDL_DestroyWindow(win); SDL_Quit();

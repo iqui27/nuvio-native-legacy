@@ -57,6 +57,8 @@
 #include "anim.h"
 #include "layout.h"
 #include "idioma.h"
+#include "video.h"      /* preview do canal focado no canto do guia */
+#include "streams.h"    /* Stream: url do preview vinda do fio */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -127,7 +129,7 @@
 // --- cabecalho: controle segmentado + botao de addons -----------------------
 #define G_TOPO_Y     52.0f
 #define G_TOPO_H     48.0f
-enum { G_TOPO_CARTOES = 0, G_TOPO_LISTA, G_TOPO_ADDONS, G_TOPO_N };
+enum { G_TOPO_CARTOES = 0, G_TOPO_LISTA, G_TOPO_ADDONS, G_TOPO_PREVIEW, G_TOPO_N };
 
 // --- painel de addons ---------------------------------------------------------
 #define G_PA_W      720.0f
@@ -246,6 +248,40 @@ static void modoLer(void) {
 
 static void modoGravar(void) {
   dados_gravar("guia-modo.txt", modoLista ? "lista\n" : "cartoes\n");
+}
+
+// --- preview de video do canal focado ------------------------------------------
+//
+// O QUE E: quando o foco DESCANSA num canal (tela cheia do guia), o pipeline
+// de video toca a fonte dele num retangulo pequeno no canto direito, onde ja
+// fica o painel de detalhe. A pessoa VE o canal antes de apertar OK.
+//
+// PADRAO DESLIGADO: preview gasta rede e CPU numa TV que ja disputa texturas e
+// decode com o resto da interface; o HLS ao vivo demora ~20 s do "fonte
+// escolhida" ao primeiro quadro (ver video.h), e o preview nao e promessa de
+// video instantaneo — e uma janela a mais para quem quer conferir o canal.
+// Quem liga, liga sabendo disto.
+//
+// SO TELA CHEIA, nunca no overlay: no overlay o player ja esta atras do
+// guia, e o pipeline de video e UNICO (um mediaId so no barramento LS2). Usar
+// o pipeline para o preview do canal focado mataria o canal que esta no ar.
+// No overlay a propria tela de fundo ja e o preview do canal atual.
+//
+// PRELOADING DO ADJACENTE: o engatilharVizinhos() ja pre-carrega a lista de
+// fontes do canal de cima e do de baixo (fontecache.c) quando o foco muda. O
+// preview do canal focado nao consume esse cache — ele busca a propria fonte
+// do canal focado num fio separado (addons_consultar, reentrante). Assim o
+// cache fica intacto para quando a pessoa apertar OK num vizinho.
+static int previewLigado, previewLido;
+static void previewLer(void) {
+  char *t = dados_ler("guia-preview.txt");
+  previewLido = 1;
+  if (!t) return;
+  previewLigado = (t[0] == '1');
+  free(t);
+}
+static void previewGravar(void) {
+  dados_gravar("guia-preview.txt", previewLigado ? "1\n" : "0\n");
 }
 
 // --- o que cada addon da conta declara -----------------------------------------
@@ -1020,6 +1056,7 @@ static void iniciarCarga(void) {
 void guia_carregar(void) {
   if (!favLido) favLer();
   if (!modoLido) modoLer();
+  if (!previewLido) previewLer();
   // Sem fonte achada, tenta de novo a cada chamada: a descoberta da home pode
   // nao ter montado as fileiras ainda quando o primeiro CH+/- chega.
   if (!fontesOk) descobrirFontes();
@@ -1036,14 +1073,32 @@ static float rolY, velY;
 static float rolX[G_MAX_CAT + 1];     // por linha (0 = favoritos)
 static float entrada;
 static int   pediuCanal; static CatItem pedido;
-
-// Modo salta-categoria.
 static int    modoCat;
 static int    dirSeg;                 // SDLK_UP/DOWN segurado, 0 = solto
 static Uint32 dirDesde, dirTick, ultNavCat;
 
 // OK longo = favorito.
 static Uint32 okDesde; static int okLongo;
+
+// --- preview de video (estado de fio) -----------------------------------------
+// O fio busca a fonte do canal focado (addons_consultar, reentrante) e
+// entrega a URL; o fio de desenho chama video_tocar + video_janela no canto.
+#define G_PREVIEW_W 320.0f
+#define G_PREVIEW_H 180.0f
+#define G_PREVIEW_X (G_PAN_X + (G_PAN_W - G_PREVIEW_W) * 0.5f)
+#define G_PREVIEW_Y (G_TOPO + 6.0f)
+// Descanso do foco antes de arrancar o preview: mesmo criterio do
+// fontecache (FONTECACHE_ESPERA_MS) — segurar a seta nao dispara nada.
+#define G_PREVIEW_ESPERA_MS 350u
+static int    previewAtivo;          // 1 quando video_tocar ja foi chamado
+static char   previewFocoId[80];     // id do canal em preview ("" = nenhum)
+static Uint32 previewFocoDesde;      // quando o foco parou neste canal
+static int    previewUltLin, previewUltCol;  // foco do ultimo preview arrancado
+static pthread_t previewFio;
+static int    previewFioVivo, previewCancelar;
+static char   previewFioId[80], previewFioBase[600];
+static char   previewUrlPend[4096];   // URL vinda do fio, pendente de aplicar
+static int    previewUrlPronta;       // 1 quando previewUrlPend tem URL
 
 // Foco no CABECALHO (controle segmentado + Addons). 0 = nas linhas.
 static int   focoTopo, topoCol;
@@ -1058,6 +1113,14 @@ static float rolL, velL;
 
 // Painel de addons por cima do guia.
 static int   painel, paFoco, paMexeu;
+// 1 quando nesta visita alguem LIGOU um addon (ou instalou um novo). Ligar so
+// traz catalogo baixando da rede, entao o fechar pede desc_repetir() — o ciclo
+// completo. Desligar nao precisa de rede: as fileiras do addon saem por filtro
+// (desligada() em descoberta.c), e desc_remontar_fileiras() refaz a home em
+// memoria sem refazer Trakt, sem reler manifestos e sem re-baixar catalogos.
+// Sem esta bandeira, desligar um addon no Guia disparava um ciclo de ~20 s
+// que re-baixava TODOS os manifestos (inclusive de addons desligados) por nada.
+static int   paLigou;
 static float paRol, paVelRol;
 // Linha do painel que falhou ao instalar (-1 = nenhuma) e o motivo, para a
 // frase ser a certa: "a conta esta cheia" e "nao foi possivel" sao coisas
@@ -1106,11 +1169,115 @@ static void focoValido(void) {
   engatilharVizinhos();
 }
 
+// --- preview de video: fio e ciclo ----------------------------------------------
+//
+// O fio e leve: uma chamada a addons_consultar (reentrante, nao toca no
+// addons_buscar nem no fontecache) com 1 fio so — o preview e uma janela
+// secundaria, e nao pode roubar a banda do pedido real. cancelado() e lido
+// entre um addon e outro; devolvendo 1, o que faltou nao e perguntado.
+static int previewFioCancelado(void *u) {
+  int c;
+  (void)u;
+  c = previewCancelar;
+  return c;
+}
+
+static void *previewFioMain(void *u) {
+  Stream *lista = NULL;
+  int n = 0;
+  char id[80], base[600];
+  (void)u;
+  // Copia o alvo com a trava do fio de desenho solta; o fio de rede nunca
+  // segura essa trava.
+  snprintf(id,   sizeof id,   "%s", previewFioId);
+  snprintf(base, sizeof base, "%s", previewFioBase);
+  n = addons_consultar(id, "tv", base[0] ? base : NULL, 1,
+                      previewFioCancelado, NULL, &lista);
+  if (!previewCancelar && n > 0 && lista && lista[0].url[0]) {
+    snprintf(previewUrlPend, sizeof previewUrlPend, "%s", lista[0].url);
+    previewUrlPronta = 1;
+  }
+  free(lista);
+  previewFioVivo = 0;
+  return NULL;
+}
+
+// Arranca o fio do preview para o canal `c`. Nao bloqueia. Se um fio ja esta
+// no ar, sinaliza cancelamento e segue: o fio velho termina sozinho e o seu
+// resultado (se chegar) e ignorado — previewCancelar foi 1 na metade.
+static void previewArrancar(GCanal *c) {
+  if (!c || !c->id[0]) return;
+  if (previewFioVivo) {
+    previewCancelar = 1;
+    // Nao chama fontecache_ceder aqui: o preview e uma consulta leve (1 fio)
+    // e nao precisa derrubar o prefetch dos vizinhos, que e o que faz o OK
+    // ser rapido quando a pessoa escolher um canal adjacente.
+    // Nao junta o fio aqui (bloquearia o quadro): ele termina e desapega.
+  }
+  previewCancelar = 0;
+  previewUrlPronta = 0;
+  previewUrlPend[0] = 0;
+  snprintf(previewFioId,   sizeof previewFioId,   "%s", c->id);
+  snprintf(previewFioBase, sizeof previewFioBase, "%s", c->base);
+  previewFioVivo = 1;
+  if (pthread_create(&previewFio, NULL, previewFioMain, NULL) != 0)
+    previewFioVivo = 0;
+  else
+    pthread_detach(previewFio);
+}
+
+// Aplica a URL pendente (vinda do fio) no fio de desenho. Chamado no
+// guia_atualizar: video_tocar + video_janela no canto. Nao pode ser no fio
+// de rede porque o LS2 nao e seguro para chamadas concorrentes.
+static void previewAplicarPend(void) {
+  if (!previewUrlPronta) return;
+  previewUrlPronta = 0;
+  if (previewCancelar || !previewLigado || !aberta) { previewUrlPend[0] = 0; return; }
+  // O LS2 aceita uma mediaId so: parar limpa o anterior antes de tocar.
+  video_parar();
+  if (video_tocar(previewUrlPend)) {
+    previewAtivo = 1;
+    video_janela((int)(G_PREVIEW_X + 0.5f), (int)(G_PREVIEW_Y + 0.5f),
+                 (int)(G_PREVIEW_W + 0.5f), (int)(G_PREVIEW_H + 0.5f));
+  }
+  previewUrlPend[0] = 0;
+}
+
+// Inicia o preview do canal focado, se ligado e em tela cheia.
+static void previewIniciarFoco(void) {
+  GCanal *c;
+  if (!previewLigado || !aberta || overlay) return;
+  c = linhaItem(focoLin, focoCol);
+  if (!c || !c->id[0]) return;
+  // Mesmo canal: nada a fazer (o video ja esta a caminho ou tocando).
+  if (!strcmp(c->id, previewFocoId)) return;
+  snprintf(previewFocoId, sizeof previewFocoId, "%s", c->id);
+  previewFocoDesde = SDL_GetTicks();
+  previewUltLin = focoLin; previewUltCol = focoCol;
+  previewArrancar(c);
+}
+
+// Para o preview: para o pipeline e cancela o fio. Chamado ao sair do guia e
+// ao pedir um canal (OK) — o player assume o pipeline dali para frente.
+static void previewParar(void) {
+  if (previewFioVivo) previewCancelar = 1;
+  previewFioVivo = 0;
+  previewUrlPronta = 0;
+  previewUrlPend[0] = 0;
+  previewAtivo = 0;
+  previewFocoId[0] = 0;
+  // So para se o pipeline estiver ativo: video_parar e uma chamada LS2, e
+  // chama-la sem mediaId e inofensiva mas desnecessaria.
+  if (video_ativo()) video_parar();
+}
+
 void guia_abrir(void) {
   guia_carregar();
+  if (!previewLido) previewLer();
   aberta = 1; querSair = 0; entrada = 0.0f;
   focoTopo = 0; painel = 0;
   focoValido();
+  previewIniciarFoco();
 }
 
 void guia_overlay_abrir(void) {
@@ -1171,6 +1338,10 @@ const char *guia_canal_origem(void) { return pedidoBase; }
 
 static void pedirCanal(GCanal *c) {
   if (!c || pediuCanal) return;
+  // O preview solta o pipeline antes de o player assumi-lo: o LS2 aceita um
+  // mediaId so, e o player_abrir que vem a seguir recarrega a fonte de toda
+  // forma (o preview nao e o player — ele e uma janela de consulta).
+  previewParar();
   canalParaItem(c, &pedido);
   snprintf(pedidoBase, sizeof pedidoBase, "%s", c->base);
   pediuCanal = 1;
@@ -1270,7 +1441,7 @@ static int painelN(void) { return paN + nRec; }
 
 static void painelAbrir(void) {
   recLer();
-  painel = 1; paFoco = 0; paMexeu = 0; paRol = 0.0f; paVelRol = 0.0f;
+  painel = 1; paFoco = 0; paMexeu = 0; paLigou = 0; paRol = 0.0f; paVelRol = 0.0f;
   paErro = -1;
   painelMontar();
   // O painel mostra o que o manifesto disse; se a sonda de Ajustes nunca
@@ -1301,15 +1472,30 @@ static void painelAplicar(int i) {
   else { estado = G_PARADO; ultTentativa = 0; iniciarCarga(); }
 }
 
-// FECHAR E QUANDO O RESTO DO APP FICA SABENDO. Mesma regra de addonsui.c:
-// desc_repetir() refaz o ciclo inteiro (~20 s na TV), entao ele roda uma vez
-// por visita e nao uma vez por tecla. O guia em si ja se atualizou a cada
-// tecla (painelAplicar).
+// FECHAR E QUANDO O RESTO DO APP FICA SABENDO. Mesma regra de addonsui.c no
+// LIGAR: desc_repetir() refaz o ciclo inteiro (~20 s na TV) porque ligar um
+// addon so traz catalogo baixando o manifesto dele. No DESLIGAR, porem, nao ha
+// o que baixar — as fileiras do addon saem por filtro (desligada() em
+// descoberta.c), e desc_remontar_fileiras() refaz a home em memoria, sem
+// rede, sem reler Trakt e sem re-baixar os manifestos dos outros addons (que
+// e o overhead que o dono viu no log como "recarrega tudo de novo, inclusive
+// os desativados"). Roda uma vez por visita, nao por tecla: o guia ja se
+// atualizou a cada tecla em painelAplicar.
 static void painelFechar(void) {
   painel = 0;
   if (!paMexeu) return;
   paMexeu = 0;
-  desc_repetir();
+  if (paLigou) {
+    paLigou = 0;
+    desc_repetir();
+  } else {
+    // So desligou nesta visita: remonta as fileiras sem tocar na rede. Se a
+    // descoberta estiver com um ciclo no ar, desc_remontar_fileiras opera sobre
+    // a ultima montagem concluida e o ciclo que chega depois aplica por cima —
+    // sem race, porque cat_republicar_fileiras e cat_definir_tudo sao os dois
+    // atomicos no fio de desenho.
+    desc_remontar_fileiras();
+  }
 }
 
 static void instalar(int k) {
@@ -1329,6 +1515,7 @@ static void instalar(int k) {
   }
   sync_sujar_addons();
   paMexeu = 1;
+  paLigou = 1;   // instalar e ligar: precisa baixar o manifesto e o catalogo
   // O recem-instalado entra na secao de cima (ainda "nao conferido") e o
   // foco segue o mesmo item, que desceu uma linha.
   painelMontar();
@@ -1339,9 +1526,10 @@ static void instalar(int k) {
 static void painelOk(void) {
   if (paFoco < paN) {
     int i = paIdx[paFoco];
-    addons_alternar(i);
+    int ligado = addons_alternar(i);
     sync_sujar_addons();   // desligar aqui e desligar no celular tambem
     paMexeu = 1;
+    if (ligado) paLigou = 1;   // ligou (ou acabou de instalar): fechar pede ciclo
     painelAplicar(i);
   } else if (paFoco - paN < nRec && !recInstalado(&rec[paFoco - paN])) {
     instalar(paFoco - paN);
@@ -1365,7 +1553,7 @@ static void painelEvento(SDL_Keycode k, Uint32 agora) {
 static void sair(void) {
   if (painel) { painelFechar(); return; }
   if (overlay) overlay = 0;
-  else { aberta = 0; querSair = 1; }
+  else { aberta = 0; querSair = 1; previewParar(); }
   modoCat = 0; dirSeg = 0; okDesde = 0; focoTopo = 0;
 }
 
@@ -1430,6 +1618,12 @@ void guia_evento(const SDL_Event *e) {
     if (k == SDLK_DOWN)  { focoTopo = 0; return; }
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
       if (topoCol == G_TOPO_ADDONS) painelAbrir();
+      else if (topoCol == G_TOPO_PREVIEW) {
+        previewLigado = !previewLigado;
+        previewGravar();
+        if (previewLigado) previewIniciarFoco();
+        else previewParar();
+      }
       else if ((topoCol == G_TOPO_LISTA) != modoLista) alternarModo();
       return;
     }
@@ -1551,6 +1745,16 @@ void guia_atualizar(float dt, Uint32 agora) {
   // acabou, vai.
   if (recarregarPend && !fioVivo) {
     recarregarPend = 0; estado = G_PARADO; ultTentativa = 0; iniciarCarga();
+  }
+  // PREVIEW: aplica a URL que o fio buscou (no fio de desenho, nunca no de
+  // rede) e arranca o preview quando o foco descansa num canal novo.
+  previewAplicarPend();
+  if (aberta && !overlay && previewLigado &&
+      (focoLin != previewUltLin || focoCol != previewUltCol) &&
+      (!previewFocoDesde || agora - previewFocoDesde >= G_PREVIEW_ESPERA_MS)) {
+    GCanal *c = linhaItem(focoLin, focoCol);
+    if (c && c->id[0] && strcmp(c->id, previewFocoId))
+      previewIniciarFoco();
   }
   if (!guia_visivel()) return;
 
@@ -1816,7 +2020,8 @@ static void desenharCard(GCanal *c, float x, float y, float foco, float a,
 }
 
 // Painel da direita: a ficha do canal em foco — logo grande, descricao do
-// addon e os proximos tres programas.
+// addon e os proximos tres programas. Com o preview ligado (tela cheia), o
+// logo grande e substituido pelo VIDEO do canal no mesmo canto.
 static void desenharPainel(float a, time_t agoraT) {
   GCanal *c = linhaItem(focoLin, focoCol);
   float y = G_TOPO + 6.0f;
@@ -1826,12 +2031,51 @@ static void desenharPainel(float a, time_t agoraT) {
                      NV_TELA_W - G_PAN_X + 24.0f, NV_TELA_H };
   gfx_cor(painel, 0.0f, 0.045f, 0.047f, 0.055f, 0.85f * a);
 
-  // Logo grande, na MESMA regra do cartao: sem azulejo, claro sobre o painel
-  // escuro. Duas regras diferentes para o mesmo logo em duas telas vizinhas
-  // era o que fazia o Paramount+ sumir de uma e aparecer na outra.
-  { GfxRect cx = { G_PAN_X + (G_PAN_W - 168.0f) * 0.5f, y, 168.0f, 168.0f };
+  // PREVIEW DE VIDEO no lugar do logo grande. O plano de video vive atras da
+  // superficie GL; furar aqui e o que o deixa aparecer (mesmo mecanismo do
+  // player, ver gfx_furo). So em tela cheia: no overlay o player ja esta atras.
+  if (aberta && !overlay && previewLigado) {
+    GfxRect pv = { G_PREVIEW_X, G_PREVIEW_Y, G_PREVIEW_W, G_PREVIEW_H };
+    // O furo so abre quando o pipeline tem um quadro (video_pronto); antes
+    // disso o plano esta vazio e furar cedo mostrava um retangulo PRETO no
+    // lugar do logo. O logo fica como placeholder ate o video chegar.
+    if (previewAtivo && video_pronto()) {
+      gfx_furo_raio(pv, 0.12f);
+      // Moldura no mesmo tom do anel de foco, para o preview ler como parte
+      // da interface e nao como um buraco solto.
+      gfx_rect(pv, 0, GFX_ANEL, 0, NV_ANEL_FOCO / pv.w, 0, 0.12f,
+               1.0f, 1.0f, 1.0f, 0.55f * a);
+      // Etiqueta AO VIVO sobre o video, dentro do furo (mesma regra do
+      // mini-player: o blend escurece sem tampar a imagem).
+      gfx_cor((GfxRect){ pv.x, pv.y + pv.h - 36.0f, pv.w, 36.0f },
+              0.0f, 0.02f, 0.02f, 0.03f, 0.72f * a);
+      { TxtLinha lv = txt_linha(TXT_MINI, i18n("AO VIVO"), 255, 120, 120, 255);
+        gfx_cor((GfxRect){ pv.x + 14.0f, pv.y + pv.h - 36.0f + (36.0f - 10.0f) * 0.5f,
+                            10.0f, 10.0f }, 0.5f, 0.96f, 0.24f, 0.24f, 1.0f);
+        txt_desenhar_alpha(lv, pv.x + 30.0f,
+                           pv.y + pv.h - 36.0f + (36.0f - lv.h) * 0.5f, 0.96f * a); }
+    } else {
+      // Ainda carregando (ou sem preview): logo como placeholder, igual ao
+      // modo sem preview. Assim o canto nunca fica vazio.
+      GfxRect cx = { G_PAN_X + (G_PAN_W - 168.0f) * 0.5f, y, 168.0f, 168.0f };
+      desenharLogo(c->logo, cx, 148.0f, G_LOGO_CLARO, a);
+      // Selo "carregando" embaixo do logo quando o fio ja saiu e o video
+      // ainda nao chegou — a pessoa sabe que algo esta a caminho.
+      if (previewAtivo && !video_pronto()) {
+        TxtLinha t = txt_linha(TXT_MINI, i18n("carregando canal…"),
+                               148, 200, 255, 255);
+        txt_desenhar_alpha(t, G_PAN_X + (G_PAN_W - t.w) * 0.5f,
+                           y + 168.0f + 6.0f, a);
+      }    }
+    y += G_PREVIEW_H + 16.0f;
+  } else {
+    // Logo grande, na MESMA regra do cartao: sem azulejo, claro sobre o painel
+    // escuro. Duas regras diferentes para o mesmo logo em duas telas vizinhas
+    // era o que fazia o Paramount+ sumir de uma e aparecer na outra.
+    GfxRect cx = { G_PAN_X + (G_PAN_W - 168.0f) * 0.5f, y, 168.0f, 168.0f };
     desenharLogo(c->logo, cx, 148.0f, G_LOGO_CLARO, a);
-    y += 168.0f + 20.0f; }
+    y += 168.0f + 20.0f;
+  }
 
   { TxtLinha t = txt_linha_corta(TXT_PAINEL_TITULO, c->nome, 245, 246, 250, 255,
                                G_PAN_W);
@@ -2027,6 +2271,7 @@ static void desenharTopo(float a) {
   rot[G_TOPO_CARTOES] = i18n("Cartões");
   rot[G_TOPO_LISTA]   = i18n("Lista");
   rot[G_TOPO_ADDONS]  = i18n("Addons");
+  rot[G_TOPO_PREVIEW] = previewLigado ? i18n("Preview: sim") : i18n("Preview: não");
   ajustes_acento(&ar, &ag, &ab);
   for (i = 0; i < G_TOPO_N; i++)
     w[i] = txt_linha(TXT_BODY, rot[i], 255, 255, 255, 255).w + 44.0f;
@@ -2035,19 +2280,28 @@ static void desenharTopo(float a) {
   x = G_PAN_X - 28.0f;
   for (i = G_TOPO_N - 1; i >= 0; i--) {
     float f = animTopo[i];
-    int sel = i < G_TOPO_ADDONS ? ((i == G_TOPO_LISTA) == modoLista) : 1;
+    // Preview e um TOGGLE (nao um seletor como Cartoes/Lista): "selecionado"
+    // significa ligado, independente do foco passar por ele.
+    int sel = i == G_TOPO_PREVIEW ? previewLigado
+            : i < G_TOPO_ADDONS ? ((i == G_TOPO_LISTA) == modoLista) : 1;
     int escuro = f > 0.5f;
     GfxRect r;
     x -= w[i];
     r.x = x; r.y = G_TOPO_Y; r.w = w[i]; r.h = G_TOPO_H;
     if (sel) gfx_cor(r, 0.5f, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, a);
+    // Brilho difuso por tras da pilula em foco (0,9x a altura de folga,
+    // alpha 0,35 x mola), como no menu lateral (21/09/2026).
+    if (f > 0.01f) { GfxRect luz = { r.x - r.h * 0.9f, r.y - r.h * 0.9f, r.w + r.h * 1.8f, r.h * 2.8f };
+                     gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, ar, ag, ab, 0.35f * f * a); }
     if (f > 0.01f) gfx_cor(r, 0.5f, ar, ag, ab, f * a);
     { int tf = ajustes_tinta_foco();
       TxtLinha t = escuro ? txt_linha(TXT_BODY, rot[i], tf, tf, tf, 255)
                   : sel   ? txt_linha(TXT_BODY, rot[i], 240, 241, 245, 255)
                           : txt_linha(TXT_BODY, rot[i], 150, 153, 162, 255);
       txt_desenhar_alpha(t, r.x + (r.w - t.w) * 0.5f, r.y + (r.h - t.h) * 0.5f, a); }
-    x -= (i == G_TOPO_ADDONS) ? 20.0f : 6.0f;
+    // Preview e Addons sao "outra coisa" ao lado do par Cartoes/Lista: 20 px
+    // de respiro os separam do par e um do outro.
+    x -= (i == G_TOPO_ADDONS || i == G_TOPO_PREVIEW) ? 20.0f : 6.0f;
   }
 }
 
@@ -2167,8 +2421,13 @@ static void desenharPainelAddons(float a) {
 
   { GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
     gfx_cor(tela, 0.0f, 0, 0, 0, 0.45f * a); }
-  { GfxRect p = { G_PA_X, 0, G_PA_W, NV_TELA_H };
-    gfx_cor(p, 0.0f, 0.106f, 0.110f, 0.122f, 0.98f * a); }   /* #1B1C1F */
+  // PAINEL FLUTUANTE como o de Salvos e a barra lateral (21/09/2026): solto
+  // 24 px do topo e da base, cantos de 28 px pelo menor lado, translucido,
+  // UMA luz difusa na cor de realce pelo canto superior direito, presa aos
+  // cantos (GFX_LUZ). O veu de tela cheia acima ja e a primeira camada.
+  { GfxRect p = { G_PA_X, 24.0f, G_PA_W, NV_TELA_H - 48.0f };
+    gfx_cor(p, 28.0f / G_PA_W, 0.055f, 0.058f, 0.068f, 0.94f * a);
+    gfx_luz_canto(p, 28.0f / G_PA_W, G_PA_W * 0.9f, -G_PA_W * 0.1f, G_PA_W * 0.65f, ar, ag, ab, 0.22f * a); }
 
   { TxtLinha t = txt_linha(TXT_HEADLINE, i18n("Addons de canais"), 240, 242, 248, 255);
     txt_desenhar_alpha(t, x, 64.0f, a); }
@@ -2198,8 +2457,12 @@ static void desenharPainelAddons(float a) {
     float raio = 12.0f / row.h;
     int f = i == paFoco;
     if (yi + row.h < y0 - 8.0f || yi > NV_TELA_H - 80.0f) continue;
-    // Linha em repouso e linha em foco: as mesmas de addonsui.c.
+    // Linha em repouso e linha em foco: as mesmas de addonsui.c. A em foco
+    // ganha o brilho difuso por tras (0,9x a altura de folga), a luz das
+    // pilulas do menu lateral.
     gfx_cor(row, raio, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, 0.34f * a);
+    if (f) { GfxRect luz = { row.x - row.h * 0.9f, row.y - row.h * 0.9f, row.w + row.h * 1.8f, row.h * 2.8f };
+             gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, ar, ag, ab, 0.35f * a); }
     if (f) gfx_cor(row, raio, ar, ag, ab, a);
     if (i < n) {
       int ai = paIdx[i];

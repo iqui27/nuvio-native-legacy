@@ -293,6 +293,15 @@ int main(int argc, char **argv) {
     static const char *TIT[7] = { "Foundation", "The Last of Us", "Severance",
                                   "Andor", "Succession", "Breaking Bad",
                                   "Uma Série Cancelada" };
+    static const char *GEN[7] = {
+      "Programa de TV \xc2\xb7 Drama \xc2\xb7 Ficcao cientifica",
+      "Programa de TV \xc2\xb7 Drama \xc2\xb7 Aventura",
+      "Programa de TV \xc2\xb7 Drama \xc2\xb7 Misterio",
+      "Programa de TV \xc2\xb7 Drama \xc2\xb7 Ficcao cientifica",
+      "Programa de TV \xc2\xb7 Drama",
+      "Programa de TV \xc2\xb7 Crime \xc2\xb7 Drama",
+      "Programa de TV \xc2\xb7 Drama" };
+    static const int NOTA[7] = { 84, 81, 0, 79, 0, 96, 0 };
     int i;
     memset(ci, 0, sizeof ci);
     for (i = 0; i < 7; i++) {
@@ -300,7 +309,9 @@ int main(int argc, char **argv) {
       snprintf(ci[i].tipo, sizeof ci[i].tipo, "%s", "series");
       snprintf(ci[i].titulo, sizeof ci[i].titulo, "%s", TIT[i]);
       snprintf(ci[i].poster, sizeof ci[i].poster, "deploy/app/art/0%d.jpg", i);
+      snprintf(ci[i].genero, sizeof ci[i].genero, "%s", GEN[i]);
       snprintf(ci[i].meta, sizeof ci[i].meta, "%s", "2026 · 3 temporadas");
+      ci[i].nota = NOTA[i];
       ci[i].naLista = 1;
       ci[i].nTemporadas = 3;
     }

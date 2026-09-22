@@ -4,6 +4,7 @@
 #include "rede.h"
 #include "js.h"
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -77,40 +78,113 @@ static int reservaStill(const char *chave, const char *id, int temp, int ep,
   return 1;
 }
 
-// Tabela (url -> imdb) para arte de host que nao carrega o id na URL. Chave
-// pelo hash FNV da URL; 1024 posicoes cobrem a biblioteca e a home (que sao
-// os lugares onde uma arte de addon aparece), e uma colisao so custa uma
-// reserva errada numa arte que ja tinha falhado.
-#define AR_REG 1024
-static struct { unsigned long h; char imdb[24]; unsigned char poster, usado; } reg[AR_REG];
+// Tabela (url -> imdb) para arte de host que nao carrega o id na URL. O hash
+// e apenas o ponto inicial de um probing linear: a chave completa (bytes e
+// tamanho) continua sendo comparada, portanto uma colisao nunca escolhe a
+// reserva TMDB de outro titulo.
+//
+// A arena guarda somente os bytes das URLs efetivamente registradas, sem
+// duplicar esses bytes em cada celula da tabela. O teto de 2 MiB continua
+// reservado no BSS por desenho (a tabela acrescenta cerca de 144 KiB), para
+// manter o uso previsivel no WASM/Tizen; nao e uma alocacao sob demanda.
+// O registry vive pela sessao do processo e nao tem reset: depois de 4096
+// URLs distintas, ou antes disso se a arena for preenchida por URLs longas,
+// novas reservas sao omitidas de forma explicita.
+#define AR_REG 4096u
+#define AR_URL_MAX 512u
+#define AR_TEXT_MAX (2u * 1024u * 1024u)
+typedef struct {
+  uint32_t h;
+  uint32_t off;
+  uint16_t len;
+  unsigned char poster, usado;
+  char imdb[24];
+} ArteRegistro;
+static ArteRegistro reg[AR_REG];
+static char regTexto[AR_TEXT_MAX];
+static uint32_t regTextoN;
 static pthread_mutex_t regTrava = PTHREAD_MUTEX_INITIALIZER;
+static int regAvisouCheia, regAvisouTexto, regAvisouUrlLonga;
 
-static unsigned long hashUrl(const char *u) {
-  unsigned long h = 2166136261ul;
-  for (; *u; u++) { h ^= (unsigned char)*u; h *= 16777619ul; h &= 0xffffffffUL; }
+static uint32_t hashUrl(const char *u) {
+  uint32_t h = 2166136261u;
+  for (; *u; u++) { h ^= (unsigned char)*u; h *= 16777619u; }
   return h;
 }
 
-void arte_reserva_registrar(const char *url, const char *imdb, int poster) {
-  unsigned long h;
-  if (!url || !url[0] || !imdb || strncmp(imdb, "tt", 2)) return;
+static int regSlot(const char *url, size_t n, uint32_t h, int *achou) {
+  unsigned i = (unsigned)(h % AR_REG), passo;
+  for (passo = 0; passo < AR_REG; passo++) {
+    ArteRegistro *r = &reg[i];
+    if (!r->usado) { *achou = 0; return (int)i; }
+    if (r->h == h && r->len == n && !memcmp(regTexto + r->off, url, n)) {
+      *achou = 1; return (int)i;
+    }
+    i = (i + 1u) % AR_REG;
+  }
+  *achou = 0;
+  return -1;
+}
+
+int arte_reserva_registrar(const char *url, const char *imdb, int poster) {
+  uint32_t h;
+  size_t n;
+  int achou, slot;
+  if (!url || !url[0] || !imdb || strncmp(imdb, "tt", 2)) return 0;
   if (strstr(url, "images.metahub.space") || strstr(url, "image.tmdb.org") ||
-      strstr(url, "episodes.metahub.space")) return;   // esses ja se resolvem sozinhos
+      strstr(url, "episodes.metahub.space")) return 0; // esses ja se resolvem sozinhos
+  n = strlen(url);
+  if (n >= AR_URL_MAX) {
+    pthread_mutex_lock(&regTrava);
+    if (!regAvisouUrlLonga) {
+      regAvisouUrlLonga = 1;
+      fprintf(stderr, "[tex] reserva addon: URL excede limite de %u bytes\n", AR_URL_MAX - 1u);
+    }
+    pthread_mutex_unlock(&regTrava);
+    return 0;
+  }
   h = hashUrl(url);
   pthread_mutex_lock(&regTrava);
-  { unsigned i = (unsigned)(h % AR_REG);
-    reg[i].h = h; reg[i].poster = poster ? 1 : 0; reg[i].usado = 1;
-    snprintf(reg[i].imdb, sizeof reg[i].imdb, "%.*s", (int)strcspn(imdb, ":"), imdb); }
+  slot = regSlot(url, n, h, &achou);
+  if (slot < 0) {
+    if (!regAvisouCheia) {
+      regAvisouCheia = 1;
+      fprintf(stderr, "[tex] reserva addon: tabela cheia (%u entradas), fallback omitido\n", AR_REG);
+    }
+    pthread_mutex_unlock(&regTrava);
+    return 0;
+  }
+  if (!achou) {
+    if (regTextoN + n > AR_TEXT_MAX) {
+      if (!regAvisouTexto) {
+        regAvisouTexto = 1;
+        fprintf(stderr, "[tex] reserva addon: arena de URLs cheia (%u bytes), fallback omitido\n", AR_TEXT_MAX);
+      }
+      pthread_mutex_unlock(&regTrava);
+      return 0;
+    }
+    reg[slot].h = h;
+    reg[slot].off = regTextoN;
+    reg[slot].len = (uint16_t)n;
+    memcpy(regTexto + regTextoN, url, n);
+    regTextoN += (uint32_t)n;
+    reg[slot].usado = 1;
+  }
+  reg[slot].poster = poster ? 1 : 0;
+  snprintf(reg[slot].imdb, sizeof reg[slot].imdb, "%.*s", (int)strcspn(imdb, ":"), imdb);
   pthread_mutex_unlock(&regTrava);
+  return 1;
 }
 
 static int lerRegistro(const char *url, char *id, size_t nId, int *poster) {
-  unsigned long h = hashUrl(url);
-  unsigned i = (unsigned)(h % AR_REG);
+  uint32_t h = hashUrl(url);
+  size_t n = strlen(url);
+  int achou, slot;
   int ok = 0;
   pthread_mutex_lock(&regTrava);
-  if (reg[i].usado && reg[i].h == h) {
-    snprintf(id, nId, "%s", reg[i].imdb); *poster = reg[i].poster; ok = 1;
+  slot = regSlot(url, n, h, &achou);
+  if (slot >= 0 && achou) {
+    snprintf(id, nId, "%s", reg[slot].imdb); *poster = reg[slot].poster; ok = 1;
   }
   pthread_mutex_unlock(&regTrava);
   return ok;

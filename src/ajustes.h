@@ -74,10 +74,13 @@ int   ajustes_rail_moderna(void);       // modernSidebar
 int   ajustes_rail_moderna_blur(void);  // modernSidebarBlur
 int   ajustes_hero_ligado(void);        // heroSectionEnabled
 int   ajustes_hero_cheio(void);         // modernHeroFullScreenBackdropEnabled
+int   ajustes_hero_fonte(void);         // origem local da arte do hero
+int   ajustes_ps_fundo_automatico(void); // #90: fundo da escolha de perfil (psfundo.c)
 // Teto de memoria para imagens escolhido em Ajustes, em MB; 0 = automatico.
 int   ajustes_tex_mb(void);
 int   ajustes_posteres_deitados(void);  // modernLandscapePostersEnabled
 int   ajustes_gradiente_foco_classico(void); // classicFocusGradientEnabled
+// #95: 1 = ao reabrir, fileiras comecam no primeiro tile (ignora home-pos.txt).
 // x onde o conteudo comeca. Nao e constante: o recuo e sempre 104 e a rail
 // soma os 144 dela quando esta fixa.
 float ajustes_conteudo_x(void);
@@ -214,5 +217,22 @@ int         ajustes_mdblist_fonte(int fonte);   // mdblist_show_*
 // reconhece tambem nao: trocar por um padrao seria inventar uma escolha que o
 // usuario nunca fez.
 int ajustes_aplicar_blob(const char *json);
+
+// O CAMINHO DE VOLTA (#85): devolve em *saida uma copia do blob `base` (o mesmo
+// objeto `settings_json` que ajustes_aplicar_blob le) com os valores DESTA TV
+// escritos por cima. Devolve quantas chaves foram reescritas; 0 quando nao havia
+// nada a mudar, e nesse caso *saida fica NULL. Quem chama libera com free().
+//
+// O QUE ELA NAO FAZ, e e o ponto: nao INVENTA chave. So o que ja existe no blob
+// e reescrito, e so o valor. Remontar o objeto aqui mandaria de volta um blob
+// com apenas as chaves que este app conhece — e o servidor guarda o que vier,
+// entao a TV apagaria da conta tudo que so o app web usa.
+//
+// Nao sobem os ajustes de APARELHO (superficie 4K, teto de memoria de imagem,
+// qualidade da arte, idioma da interface, animacoes reduzidas, envio de
+// registro, limite/ordem de fileiras, reset de foco, borda do foco, fonte
+// manual, destino dos salvos): eles descrevem esta TV, nao o gosto da pessoa, e
+// a conta e uma so para a TV da sala e a do quarto. Ver somenteDesteAparelho.
+int ajustes_mesclar_blob(const char *base, char **saida);
 
 #endif

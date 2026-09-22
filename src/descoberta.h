@@ -14,6 +14,36 @@
 #include "catalogo.h"
 #include "colecoes.h"
 
+// Solta a cache de corpos de manifesto entre ciclos e zera o estado da
+// descoberta. Chamar no logout, junto de addons_esquecer/fil_esquecer: a cache
+// e da conta que saiu e nao deve vazar para a proxima.
+void desc_esquecer(void);
+
+// CACHE UNICA DE MANIFESTO (corpo de manifest.json), por url + versao da lista
+// de addons (addons_versao()). Antes havia DOIS caminhos baixando o mesmo
+// manifest.json: a descoberta (aqui) e a sonda de capacidades de addons.c
+// (addons_sondar_manifestos). Cada um tinha a sua copia e nenhum via o que o
+// outro ja tinha baixado — dois GET para o mesmo addon, as vezes na mesma
+// rodada de arranque. Estas duas funcoes sao a cache unica: quem baixa
+// primeiro guarda, quem pede depois reaproveita, os dois lados sem saber nada
+// um do outro.
+//
+// Chamaveis de QUALQUER FIO: a trava e a mesma que protege mani[] internamente
+// (maniTrava em descoberta.c). Nenhuma delas faz rede.
+
+// Devolve uma COPIA (malloc) do corpo cacheado para `url`+`versao`, ou NULL se
+// nao houver entrada valida. Quem chama e dono do retorno e deve free() depois
+// de usar.
+char *desc_manifesto_cache_obter(const char *url, unsigned versao);
+
+// Guarda uma COPIA de `corpo` na cache, associada a `url`+`versao`. NAO toma
+// posse: quem chama continua dono de `corpo` e deve libera-lo como sempre
+// (esta funcao nao muda nada na vida util do ponteiro recebido). Corpos
+// maiores que o teto de memoria da cache (ver MANI_CACHE_BYTES em
+// descoberta.c) sao silenciosamente ignorados — o chamador continua
+// funcionando, so nao ganha cache para aquele manifesto.
+void desc_manifesto_cache_guardar(const char *url, unsigned versao, const char *corpo);
+
 // Dispara a montagem do catalogo num fio proprio. Volta na hora.
 void desc_iniciar(void);
 

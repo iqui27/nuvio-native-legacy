@@ -3,6 +3,7 @@
 #include "idioma.h"
 #include "layout.h"
 #include "recomenda.h"
+#include "badges.h"
 #include "text.h"
 #include "anim.h"
 #include "proximo.h"
@@ -55,13 +56,10 @@ void continuar_desenhar(const CatItem *ci, GfxRect r) {
     else if (h && m) snprintf(selo, sizeof selo, i18n("%dh %dmin Restantes"), h, m);
     else if (h) snprintf(selo, sizeof selo, i18n("%dh Restantes"), h);
     else snprintf(selo, sizeof selo, i18n("%dmin Restantes"), m);
-    float px = NV_CW_BADGE_PAD_X * esc, py = NV_CW_BADGE_PAD_Y * esc;
-    TxtLinha l = txt_linha_corta(TXT_CW_BADGE, selo, 242, 243, 247, 255, largura - 2*px);
-    if (l.tex) {
-      GfxRect b = {r.x + r.w - pad - l.w - 2*px, r.y + pad, l.w + 2*px, l.h + 2*py};
-      gfx_cor(b, NV_CW_BADGE_RADIUS * esc / b.h, .055f, .055f, .065f, .84f);
-      txt_desenhar_alpha(l, b.x + px, b.y + py, 1);
-    }
+    float bw = badge_largura(selo);
+    if (bw <= largura)
+      badge_desenhar(r.x + r.w - pad - bw, r.y + pad, selo,
+                     BADGE_NEUTRO, 1.0f);
   }
 
   // O selo do IMDb, no CANTO INFERIOR DIREITO (issue #87): o card ja tinha a
@@ -71,14 +69,8 @@ void continuar_desenhar(const CatItem *ci, GfxRect r) {
   // `pad` lateral do badge de "restam". A largura dele e medida ANTES do
   // texto e sai da pista das linhas, que encurtam em vez de passar por baixo.
   float seloLarg = 0.0f;
-  if (ci->nota > 0 && ajustes_notas_home()) {
-    char notaTxt[8];
-    snprintf(notaTxt, sizeof notaTxt,
-             ajustes_idioma_ingles() ? "%d.%d" : "%d,%d",
-             ci->nota / 10, ci->nota % 10);
-    TxtLinha m = txt_linha(TXT_CAPTION2, notaTxt, 0, 0, 0, 0);
-    seloLarg = REC_IMDB_W + REC_IMDB_GAP + m.w;
-  }
+  if (ci->nota > 0 && ajustes_notas_home())
+    seloLarg = badge_imdb_largura(ci->nota);
   // Quando o selo existe as linhas de texto perdem seloLarg + uma folga de
   // 16*esc — e o preco ja sai na largura, porque rec_selo_imdb ancora pela
   // esquerda e so devolve a medida depois de desenhar.
@@ -94,7 +86,7 @@ void continuar_desenhar(const CatItem *ci, GfxRect r) {
     base -= 4*esc;
   }
   if (seloLarg > 0)
-    rec_selo_imdb(r.x + r.w - pad - seloLarg, base - REC_SELO_H, ci->nota, 0, 1.0f);
+    badge_imdb(r.x + r.w - pad - seloLarg, base - BADGE_H, ci->nota, 0, 1.0f);
   TxtLinha titulo = txt_linha_corta(TXT_CW_TITULO, ci->titulo, 247, 248, 250, 255, livre);
   base -= titulo.h;
   txt_desenhar_alpha(titulo, r.x + pad, base, 1);

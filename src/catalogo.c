@@ -5,7 +5,7 @@
 // cinco irmaos) e nao querem historico de ordem nenhum. No app inteiro
 // tendencia.c define a de verdade e vence esta.
 __attribute__((weak)) void tend_registrar(const CatFileira *f, const CatItem *itens) { (void)f; (void)itens; }
-__attribute__((weak)) void arte_reserva_registrar(const char *url, const char *imdb, int poster) { (void)url; (void)imdb; (void)poster; }
+__attribute__((weak)) int arte_reserva_registrar(const char *url, const char *imdb, int poster) { (void)url; (void)imdb; (void)poster; return 1; }
 #include "idioma.h"
 #include "descoberta.h"
 #include "progresso.h"
@@ -223,6 +223,7 @@ int cat_carregar(const char *dirArte) {
     // os caminhos no arquivo sao relativos a pasta de arte
     if (rel[0]) snprintf(it->backdrop, sizeof it->backdrop, "%s/%s", dirArte, rel);
     else it->backdrop[0] = 0;
+    snprintf(it->backdropCatalogo, sizeof it->backdropCatalogo, "%s", it->backdrop);
     p = campo(p, rel, sizeof rel);
     if (rel[0]) snprintf(it->poster, sizeof it->poster, "%s/%s", dirArte, rel);
     else it->poster[0] = 0;
@@ -1040,6 +1041,8 @@ int cat_acrescentar(const CatItem *item) {
   nAlocado = novoN;
   n = novoN;
   garantirFaixas(nAlocado);
+  if (novo[novoN - 1].poster[0]) arte_reserva_registrar(novo[novoN - 1].poster, novo[novoN - 1].imdb, 1);
+  if (novo[novoN - 1].backdrop[0]) arte_reserva_registrar(novo[novoN - 1].backdrop, novo[novoN - 1].imdb, 0);
   pthread_mutex_unlock(&pubTrava);
   return novoN - 1;
 }
@@ -1072,6 +1075,13 @@ void cat_republicar_fileiras(const CatFileira *novasFils, int nNovas) {
     fils[v++] = f;
   }
   nFils = v;
+  // BUMPA A REVISAO sempre que as fileiras mudaram. cat_definir_tudo e
+  // cat_trocar_continuar ja fazem isto; sem isto aqui, cat_republicar_fileiras
+  // (usada por desc_remontar_fileiras na mudanca de ordem/colecao/limite sem
+  // rede) trocava fils[] sem avisar ninguem — e a home so percebia na proxima
+  // publicacao da descoberta. Agora cat_revisao() e um guarda correto do
+  // estado das fileiras, usado por sincronizarFileiras em home.c.
+  catRevisao++;
   pthread_mutex_unlock(&pubTrava);
 }
 

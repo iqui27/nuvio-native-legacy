@@ -268,25 +268,28 @@ int main(int argc, char **argv) {
   }
   semear(dir);
 
-  // IDIOMA DO DISCO, pelo caminho real. O padrao de fabrica e o INGLES
+  // IDIOMA E ACENTO DO DISCO, pelo caminho real. O padrao de fabrica e o INGLES
   // (ajustes.c:620) e quem revisa estas capturas le portugues — sem isto a
-  // aba sai "SAVED" e a frase do modelo sai "Trust me". "selected_theme 2" e
-  // o acento OCEANO: o anel da linha de abas tem de sair AZUL, provando que
-  // ele veio de ajustes_acento e nao de um branco cravado.
+  // aba sai "SAVED" e a frase do modelo sai "Trust me". O acento padrao e
+  // OCEANO; NUVIO_SHOT_THEME permite repetir a mesma fixture em AMBAR, BRANCO
+  // ou outro tema para conferir contraste sem editar o teste.
   // NUVIO_SHOT_EN=1 TROCA PARA O INGLES, como no agenda_shot: estas capturas
   // servem a dois publicos — a conferencia do trabalho, feita em portugues, e o
   // album do post, que e em ingles. Recompilar para trocar a lingua e o atrito
   // que faz publicar a captura no idioma errado.
   { char caminho[700]; FILE *f;
     const char *en = getenv("NUVIO_SHOT_EN");
+    const char *temaEnv = getenv("NUVIO_SHOT_THEME");
     int ingles = (en && *en && *en != '0');
+    int tema = temaEnv && *temaEnv ? atoi(temaEnv) : 2;
+    if (tema < 0 || tema >= 12) tema = 2;
     snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dados_dir());
     f = fopen(caminho, "w");
     assert(f);
-    fprintf(f, "idioma %d\nselected_theme 2\n", ingles);
+    fprintf(f, "idioma %d\nselected_theme %d\n", ingles, tema);
     fclose(f);
     ajustes_dir(dados_dir());
-    printf("idioma: %s\n", ajustes_idioma_ingles() ? "en" : "pt"); }
+    printf("idioma: %s, acento: %d\n", ajustes_idioma_ingles() ? "en" : "pt", tema); }
 
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
@@ -313,6 +316,23 @@ int main(int argc, char **argv) {
   printf("semeado: %d salvos, %d recomendacoes (%d novas)\n",
          salvos_n(), recomenda_n(), recomenda_n_novas());
 
+  // FIXTURE DE RETOMADA PARA A BARRA: a lista salva tem uma entrada de
+  // progresso realista no catalogo, com 35% e 65 minutos restantes. O painel
+  // deve derivar "≈35 min assistidos" e manter o restante na linha seguinte;
+  // a captura separada torna esse contrato visual revisavel sem confundir com
+  // as demais telas sociais.
+  { CatItem c;
+    memset(&c, 0, sizeof c);
+    snprintf(c.imdb, sizeof c.imdb, "%s", "tt0110912");
+    snprintf(c.tipo, sizeof c.tipo, "%s", "movie");
+    snprintf(c.titulo, sizeof c.titulo, "%s", "Pulp Fiction: Tempo de Violência");
+    snprintf(c.poster, sizeof c.poster, "%s", "deploy/app/art/poster/00.jpg");
+    snprintf(c.meta, sizeof c.meta, "%s", "1994");
+    c.progresso = 35;
+    c.restanteMin = 65;
+    cat_definir_tudo(&c, 1, NULL, 0);
+  }
+
   // O CARTAO DE ABERTURA PRIMEIRO: ele so aparece com recomendacao NAO VISTA, e
   // abrir a aba Social marca todas como vistas. Na ordem contraria a captura
   // sairia em branco e nao haveria como distinguir isso de um defeito.
@@ -334,6 +354,8 @@ int main(int argc, char **argv) {
   desenharCartao = DES_PAINEL;
 
   spainel_abrir();
+  snprintf(nome, sizeof nome, "%s-salvos-progresso.bmp", saida);
+  captura(nome, w);
   snprintf(nome, sizeof nome, "%s-salvos.bmp", saida);
   captura(nome, w);
 

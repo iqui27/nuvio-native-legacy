@@ -14,6 +14,8 @@
 #include "salvos.h"
 #include "recomenda.h"
 #include "recenviar.h"
+#include "botoes.h"
+#include "badges.h"
 #include "idioma.h"
 #include <stdio.h>
 #include <string.h>
@@ -32,10 +34,9 @@ enum { CTX_PENDENTE = 1, CTX_CONFIRMADA = 2, CTX_FALHA = 3 };
 // MEDIDO no bundle 1.0.4: o dialogo tem 37,5vw de largura (720 px em 1920).
 #define CTX_W      720.0f
 #define CTX_PAD     44.0f
-#define CTX_LINHA   86.0f     // altura de cada botao
-#define CTX_GAP     12.0f
-#define CTX_CAB    148.0f     // titulo, estados e rotulo do grupo
-#define CTX_STATUS_H 34.0f
+#define CTX_LINHA   BOTAO_H_PRIMARIO // mesma altura do botao primario do detalhe
+#define CTX_GAP     BOTAO_GAP         // o mesmo ritmo entre acoes do app
+#define CTX_CAB    158.0f     // titulo, estados e rotulo do grupo
 #define CTX_RODAPE  70.0f
 
 static int   aberto, idx = -1, foco, pedDetalhes = -1;
@@ -491,8 +492,17 @@ void ctx_desenhar(Uint32 agora) {
   // Sobe do fundo enquanto aparece, como as outras folhas do app.
   y += (1.0f - a) * 40.0f;
 
+  // CARTAO FLUTUANTE (a "cara nova" da barra lateral, dono, 21/09/2026):
+  // cantos de 28 px de verdade (raio normalizado pelo menor lado, senao o
+  // canto muda com o numero de opcoes), fundo translucido e UMA luz difusa na
+  // cor de realce entrando pelo canto superior esquerdo, presa aos cantos do
+  // cartao (GFX_LUZ). Com o veu de tela cheia ja pago, e a ultima camada
+  // grande daqui — e mede o cartao, nao a tela.
+  float ar_, ag_, ab_; ajustes_acento(&ar_, &ag_, &ab_);
   { GfxRect p = { x, y, CTX_W, alt };
-    gfx_cor(p, 0.06f, 0.11f, 0.11f, 0.13f, 0.98f * a); }
+    float menor = alt < CTX_W ? alt : CTX_W, raio = 28.0f / menor;
+    gfx_cor(p, raio, 0.055f, 0.058f, 0.068f, 0.94f * a);
+    gfx_luz_canto(p, raio, CTX_W * 0.1f, -CTX_W * 0.1f, CTX_W * 0.65f, ar_, ag_, ab_, 0.22f * a); }
 
   { TxtLinha t = txt_linha(TXT_CAPTION2, "TÍTULO SELECIONADO", 174, 178, 188, 255);
     txt_desenhar_alpha(t, x + CTX_PAD, y + CTX_PAD, a * 0.95f); }
@@ -503,58 +513,46 @@ void ctx_desenhar(Uint32 agora) {
     TxtLinha t = txt_linha(TXT_DET_META2, subtitulo, 150, 154, 163, 255);
     txt_desenhar_alpha(t, x + CTX_PAD, y + CTX_PAD + 70.0f, a * 0.9f); }
 
+  // OS SELOS DE ESTADO SAO DA TABELA (badges.h) e TEM HIERARQUIA: o estado
+  // POSITIVO ("Na biblioteca", "Assistido") acende em realce a 18 %; o
+  // negativo ou desconhecido ("Fora da biblioteca", "Historico nao
+  // consultado") e cinza com texto apagado. Antes eram duas pilulas cinza
+  // iguais e a pessoa tinha de LER para saber se o titulo ja era dela.
   { float sx = x + CTX_PAD;
-    float sy = y + CTX_PAD + 104.0f;
+    float sy = y + CTX_PAD + 106.0f;
+    int historico = cat_historico_estado_item(indiceAtual());
     for (i = 0; i < nEstados; i++) {
-      TxtLinha t = txt_linha(TXT_CAPTION2, estados[i], 215, 218, 225, 255);
-      float sw = t.w + 24.0f;
-      gfx_cor((GfxRect){ sx, sy, sw, CTX_STATUS_H }, 0.5f,
-              0.16f, 0.17f, 0.19f, 0.96f * a);
-      txt_desenhar_alpha(t, sx + 12.0f,
-                         sy + (CTX_STATUS_H - t.h) * 0.5f, a);
-      sx += sw + CTX_GAP;
+      int positivo = i == 0 ? ci->naLista : historico == 1;
+      // "Progresso salvo" e o unico estado nem positivo nem negativo: neutro.
+      int fraco = i == 0 ? !ci->naLista : !(historico < 0 && ci->progresso > 0);
+      sx += badge_desenhar(sx, sy, estados[i],
+                           positivo ? BADGE_REALCE : fraco ? BADGE_APAGADO : BADGE_NEUTRO,
+                           a) + BADGE_GAP;
     } }
 
   for (i = 0; i < nOps; i++) {
     float by = y + CTX_PAD + CTX_CAB + (float)i * (CTX_LINHA + CTX_GAP);
     GfxRect r = { x + CTX_PAD, by, CTX_W - CTX_PAD * 2.0f, CTX_LINHA };
     float f = focoAnim[i];
-    // Mesma linguagem das pilulas: o focado INVERTE (fundo claro, texto
-    // escuro), em vez de anel branco sobre preenchimento claro.
-    float lum = anim_mistura(0.176f, 0.961f, f);
-    // A COR DO TEXTO VIRA COM O FUNDO — MAS EM DEGRAU, e nao interpolada.
-    //
-    // O defeito original: o fundo da pilula e animado (escuro -> claro conforme
-    // `f`), e o texto trocava de claro para escuro no instante em que `foco`
-    // mudava. Nos ~200 ms da mola isso dava texto escuro sobre fundo escuro na
-    // linha que ganhou o foco, e claro sobre claro na que perdeu. Nos dois
-    // casos o texto some — o "quando seguro o botao ele apaga o texto".
-    //
-    // A PRIMEIRA CORRECAO INTERPOLOU A COR, E FOI PIOR. A cor faz parte da
-    // CHAVE DO CACHE de linhas (text.c:563), entao uma cor por quadro criava
-    // uma entrada, uma rasterizacao TTF e uma textura GL por quadro. Estourado
-    // o orcamento de rasterizacao por quadro, linhaFamilia devolve linha vazia
-    // — e a linha simplesmente NAO E DESENHADA. Na foto do dono a opcao em
-    // foco saiu fantasma e a de baixo saiu em branco.
-    //
-    // Duas chaves por rotulo, e o degrau cai em f=0,5, onde o fundo esta em
-    // 0,57 de luminancia: ali as duas cores sao legiveis, entao a troca nao
-    // tem instante ruim.
-    // O fundo vai do repouso a COR DE REALCE (regra de layout.h), e a tinta
-    // do degrau e a que contrasta com ela.
-    float fr, fg, fb, ti = ajustes_acento_tinta(&fr, &fg, &fb);
-    int cor = f >= 0.5f ? (int)(ti * 255.0f + 0.5f) : 240;
-    (void)lum;
-    gfx_cor(r, 14.0f / CTX_LINHA, anim_mistura(0.176f, fr, f),
-            anim_mistura(0.176f, fg, f), anim_mistura(0.176f, fb, f), a);
-    { TxtLinha t = txt_linha(TXT_PLR_CORPO, ops[i].rot, cor, cor, cor, 255);
-      txt_desenhar_alpha(t, r.x + 44.0f,
-                         by + (CTX_LINHA - t.h) * 0.5f, a); }
-    if (f > 0.02f) {
-      TxtLinha seta = txt_linha(TXT_CAPTION2, "▸", cor, cor, cor, 255);
-      txt_desenhar_alpha(seta, r.x + 16.0f,
-                         by + (CTX_LINHA - seta.h) * 0.5f, a * f);
+    // O menu usava uma pilula propria: 86px, cinza fixo, TXT_PLR_CORPO e uma
+    // seta desenhada a mao. Isso fazia as acoes parecerem de outra tela. O
+    // componente comum concentra altura, raio, luz, acento e tinta legivel;
+    // aqui ele so recebe a opcao como uma acao primaria alinhada a esquerda.
+    // O ICONE DIZ O QUE A OPCAO FAZ antes de a pessoa ler — os mesmos PNG
+    // dos botoes redondos da tela de titulo (gfx.h), para o menu e o detalhe
+    // falarem o mesmo vocabulario: seta = abrir, "+"/olho = biblioteca,
+    // olho riscado/aberto = historico, oculto = tirar da fileira, aviao =
+    // recomendar.
+    const char *icone = "avancar";
+    switch (ops[i].acao) {
+      case OP_LISTA:     icone = ci->naLista ? "visto" : "mais"; break;
+      case OP_ASSISTIDO: icone = cat_historico_estado_item(indiceAtual()) == 1
+                                 ? "naovisto" : "visto"; break;
+      case OP_TIRAR_CONTINUAR: icone = "oculto"; break;
+      case OP_RECOMENDAR: icone = "recomendar"; break;
+      default: break;
     }
+    botao_pilula(r, ops[i].rot, icone, f, 1, 1, a);
   }
 
   { const char *rodape = estadoOperacao == CTX_PENDENTE

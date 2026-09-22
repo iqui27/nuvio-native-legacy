@@ -40,6 +40,7 @@
 #include "descoberta.h"
 #include "diretor.h"
 #include "gfx.h"
+#include "botoes.h"
 #include "vertudo.h"
 #include "text.h"
 #include "tex_cache.h"
@@ -165,6 +166,7 @@ static float scrollY = 0.0f;         // rolagem VERTICAL do documento
 // a arte volta e fica); `trailerFade` e a mistura arte -> video.
 static Uint32 trailerDesde = 0;
 static int    trailerTentado = 0;
+static int    pediuMenu = 0;   // ESQUERDA na borda: fechar E abrir a barra (ver app.c)
 static float  trailerFade = 0.0f;
 // MODO CINEMA DO TRAILER (dono, 21/09/2026, com a foto do outro app: "quando
 // comecar a tocar o trailer descer a arte do titulo e deixar assim"). Com o
@@ -710,18 +712,20 @@ static int  arteFixaPoster;
 static const char *logoDe(int i) {
   const CatItem *c = cat_item(i);
   if (i == idx && logoFixo[0]) return logoFixo;
+  if (i == idx) {
+    const char *u = artehero_logo_sessao(c);
+    if (u) {
+      snprintf(logoFixo, sizeof logoFixo, "%s", u);
+      if (c && c->logo[0])
+        snprintf(logoCatalogoFixo, sizeof logoCatalogoFixo, "%s", c->logo);
+    }
+    return u;
+  }
   // O CATALOGO GUARDA O LOGO EM `original`, que no TMDB e 4127 px de largura
   // para um desenho de no maximo 1000 (NV_DETW_LOGO_MAXW). Igual ao fundo:
   // quem sabe o tamanho do desenho e quem desenha, entao a politica fica em
   // artehero.c e a url do catalogo nao muda.
-  if (c && c->logo[0]) {
-    const char *u = artehero_url_logo(c->logo);
-    if (i == idx && u) {
-      snprintf(logoFixo, sizeof logoFixo, "%s", u);
-      snprintf(logoCatalogoFixo, sizeof logoCatalogoFixo, "%s", c->logo);
-    }
-    return u;
-  }
+  if (c && c->logo[0]) return artehero_url_logo(c->logo);
   return NULL;
 }
 static const char *arteDeViva(int i);
@@ -820,6 +824,7 @@ static void txt_peso(TxtLinha l, float x, float y, float a, float grossura) {
 }
 
 void detail_abrir(const HomeItem *it) {
+  pediuMenu = 0;
   marco("detail_abrir");
   // O TITULO ANTERIOR PODE TER DEIXADO FIO NO AR. Trocar de titulo por dentro
   // (um credito de ator, um "Mais como este") reabre esta tela sem passar pelo
@@ -847,6 +852,8 @@ void detail_abrir(const HomeItem *it) {
       snprintf(idxImdb, sizeof idxImdb, "%s", ci0->imdb);
       idxCopia = *ci0; idxTemCopia = 1;
     } }
+  { const CatItem *ci0 = cat_item(idx);
+    artehero_logo_sessao_iniciar(ci0); }
   // Nota do Trakt, comentarios e relacionados. Pedido na ABERTURA e nao no
   // desenho: as abas so aparecem depois que o dado chega, e pedir no desenho
   // faria a barra de abas surgir com o titulo ja na tela.
@@ -1754,7 +1761,12 @@ void detail_evento(const SDL_Event *e) {
         }
     }
     else if (k == SDLK_RIGHT) { if (botao < nBotoes() - 1) botao++; }
-    else if (k == SDLK_LEFT)  { if (botao > 0) botao--; }
+    else if (k == SDLK_LEFT)  {
+      // ESQUERDA no primeiro botao fecha a pagina e pede a barra lateral
+      // (app.c abre quando a mola de saida terminar). Um toque so.
+      if (botao > 0) botao--;
+      else { saindo = 1; pediuMenu = 1; }
+    }
     return;
   }
   // A guarda que existia aqui bloqueava DESCER das abas sempre que a aba
@@ -1766,7 +1778,9 @@ void detail_evento(const SDL_Event *e) {
   // ou tem colunas de verdade (e o foco pousa no que esta desenhado) ou tem
   // zero, e focus_mover pula sozinho.
   if (k == SDLK_RIGHT)      focus_mover(&foco, 1, 0);
-  else if (k == SDLK_LEFT)  focus_mover(&foco, -1, 0);
+  else if (k == SDLK_LEFT)  {
+    if (!focus_mover(&foco, -1, 0)) { saindo = 1; pediuMenu = 1; }
+  }
   else if (k == SDLK_DOWN)  focus_mover(&foco, 0, 1);
   else if (k == SDLK_UP)    { if (!focus_mover(&foco, 0, -1)) nivel = 0; }
 }
@@ -1869,8 +1883,26 @@ static void sincronizarColunas(void) {
     if (foco.nColunas[r] != n) { foco.nColunas[r] = n; mudou = 1; }
   }
   if (!mudou) return;
-  // A coluna corrente pode ter ficado fora da faixa (a lista encolheu ao trocar
-  // de temporada). Puxar para dentro evita desenhar foco em item inexistente.
+  // A LISTA VAZIA E TRANSITORIA, E GRAMPEAR NELA PERDIA O EPISODIO (#102).
+  // cat_definir_tudo zera nEps de proposito a cada republicacao da descoberta,
+  // entao a fileira fica em zero por alguns quadros; grampear a coluna a 0 ai
+  // jogava o foco no primeiro episodio da temporada e epAncora copiava o zero
+  // logo a seguir — e o carrossel "voltava sozinho para o E1" enquanto a pessoa
+  // lia o menu por cima. Enquanto nao ha episodios, a coluna fica onde estava;
+  // quando voltam, ela e RELOCALIZADA pelo numero do episodio guardado em
+  // comEpT/comEpE, que e estavel e sobrevive a troca do bloco do catalogo.
+  if (foco.nColunas[SEC_EPISODIOS] < 1) return;
+  if (comEpT > 0 && comEpE > 0) {
+    int c, n = foco.nColunas[SEC_EPISODIOS];
+    for (c = 0; c < n; c++) {
+      const CatEp *e = cat_episodio(idx, epAbsoluto(c));
+      if (e && e->temporada == comEpT && e->episodio == comEpE) {
+        if (foco.fileira == SEC_EPISODIOS) foco.coluna = c;
+        epAncora = c;
+        break;
+      }
+    }
+  }
   if (foco.coluna >= foco.nColunas[foco.fileira])
     foco.coluna = foco.nColunas[foco.fileira] > 0
                 ? foco.nColunas[foco.fileira] - 1 : 0;
@@ -2237,6 +2269,16 @@ static float focoAcento(float *r, float *g, float *b) {
   return ajustes_acento_tinta(r, g, b);
 }
 
+// BRILHO DIFUSO POR TRAS DO BOTAO EM FOCO: a luz da pilula do menu lateral
+// (21/09/2026) — GFX_SOMBRA na cor de realce com 0,9x a altura de folga e
+// alpha 0,35. So o botao focado a tem, entao e uma mancha por tela; para o
+// Play sao ~0,07 tela de preenchimento, longe de mudar a conta da pagina.
+static void luzFoco(GfxRect r, float a) {
+  // A luz da tabela de botoes (botoes.h), para ser a MESMA do menu do cartaz
+  // e dos cartoes — o Play nao tem luz propria.
+  botao_luz(r, 1.0f, a);
+}
+
 static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, float a) {
   // FOCO E TAMANHO, NAO ANEL.
   //
@@ -2259,9 +2301,13 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
   }
   if (circular) {
     float ic;
+    // A PELE E A DA TABELA (botoes.h, 21/09/2026): repouso 0.14/0.15/0.17 e
+    // nao #222, foco realce + tinta + luz. O tamanho (escala no foco) e o
+    // glifo continuam daqui.
     if (focado) { float fr, fg, fb; ic = focoAcento(&fr, &fg, &fb);
+                  luzFoco(r, a);
                   gfx_cor(r, NV_RAIO_PILL, fr, fg, fb, a); }
-    else { ic = 1.0f; gfx_cor(r, NV_RAIO_PILL, 0.133f, 0.133f, 0.133f, a); }
+    else { ic = 1.0f; gfx_cor(r, NV_RAIO_PILL, 0.14f, 0.15f, 0.17f, a); }
     // Os tres glifos do web: biblioteca (+), assistido (olho) e trailer
     // (placa do YouTube). Sao SVG la e nao existem na familia embarcada, entao
     // vem do shader — ver GFX_OLHO e GFX_FONTES. Antes eram "+" e dois "...",
@@ -2318,8 +2364,12 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
   // dizia com tinta o que a linha ja diz com palavra.
   // Em repouso branco com tinta preta (a referencia); em FOCO a cor de realce
   // com a tinta que contrasta com ela (focoAcento).
-  { float tinta = 0.0f, fr = 1, fg = 1, fb = 1;
-    if (focado) tinta = focoAcento(&fr, &fg, &fb);
+  // A PELE E A DA TABELA (botoes.h, 21/09/2026): o primario em repouso e a
+  // superficie 0.14/0.15/0.17 com texto 235, e nao a pilula branca da
+  // referencia web — branco em repouso e branco em foco (tema padrao) eram
+  // o mesmo botao em dois tamanhos, e o Play brigava com o botao em foco.
+  { float tinta = 235.0f / 255.0f, fr = 0.14f, fg = 0.15f, fb = 0.17f;
+    if (focado) { tinta = focoAcento(&fr, &fg, &fb); luzFoco(r, a); }
     gfx_cor(r, NV_RAIO_PILL, fr, fg, fb, a);
     tintaBotao = tinta; }
 
@@ -2348,14 +2398,10 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
 // rotulo, e por isso a largura sai de `texto + 2 x 34` e nao da conta do
 // primario.
 static void desenhaSecundario(GfxRect r, const char *rot, int focado, float a) {
-  // Sem anel (regra de layout.h): foco = preenchimento na cor de realce.
-  int cor = 255;
-  if (focado) { float fr, fg, fb, t = focoAcento(&fr, &fg, &fb);
-                gfx_cor(r, NV_RAIO_PILL, fr, fg, fb, a);
-                cor = (int)(t * 255.0f + 0.5f); }
-  else gfx_cor(r, NV_RAIO_PILL, 0.133f, 0.133f, 0.133f, a);
-  TxtLinha l = txt_linha(TXT_DET_BOTAO, rot, cor, cor, cor, 255);
-  txt_desenhar_alpha(l, r.x + (r.w - l.w) * 0.5f, r.y + (r.h - l.h) * 0.5f, a);
+  // A PELE DO SECUNDARIO DA TABELA (botoes.h): contorno de 1,5 px a 22 % em
+  // repouso, realce + tinta + luz em foco. A largura e a altura continuam
+  // as medidas desta tela.
+  botao_pilula(r, rot, NULL, focado ? 1.0f : 0.0f, 0, 0, a);
 }
 
 // Largura do botao primario: padding 54 + icone 28 + vao 21 + texto. A conta e
@@ -2427,6 +2473,7 @@ static void desenhaLembrete(GfxRect r, int ligado, int focado, float a) {
     // e clara — e disso que agendaui_cor_lembrete escolhe o verde escurecido
     // ou o cheio; sem lembrete armado o glifo e a tinta de contraste.
     float fr, fg, fb, t = focoAcento(&fr, &fg, &fb);
+    luzFoco(r, a);
     gfx_cor(r, NV_RAIO_PILL, fr, fg, fb, a);
     claro = t < 0.5f;
     // Glifo na tinta que contrasta com o realce, armado ou nao: o estado vai
@@ -2482,24 +2529,7 @@ static void partirMeta(const char *meta, char *ano, size_t na, char *resto, size
 // escreve ponto e a linha inteira e em portugues.
 static float desenhaSeloImdb(float x, float yCentro, int nota, float a) {
   if (nota <= 0) return 0.0f;
-  char txt[8];
-  // SEPARADOR DECIMAL PELO IDIOMA. Estava VIRGULA cravada nos tres pontos que
-  // desenham nota, e em ingles "8,4" nao e um numero com uma casa: le como
-  // milhar interrompido. Apareceu ao gerar o album do post em ingles.
-  snprintf(txt, sizeof txt,
-           ajustes_idioma_ingles() ? "%d.%d" : "%d,%d",
-           nota / 10, nota % 10);
-  TxtLinha l = txt_linha(TXT_DET_SIN, txt, 179, 179, 179, 255);
-  GfxRect marca = { x, yCentro - NV_DETW2_IMDB_H * 0.5f,
-                    NV_DETW2_IMDB_W, NV_DETW2_IMDB_H };
-  gfx_cor(marca, NV_DETW2_IMDB_R / NV_DETW2_IMDB_H,
-          0.965f, 0.780f, 0.0f, a);                       // #f6c700
-  TxtLinha lm = txt_linha(TXT_MINI, "IMDb", 10, 10, 10, 255);
-  txt_peso(lm, marca.x + (marca.w - lm.w) * 0.5f,
-           marca.y + (marca.h - lm.h) * 0.5f, a, 0.8f);
-  txt_desenhar_alpha(l, x + NV_DETW2_IMDB_W + NV_DETW2_IMDB_GAP,
-                     yCentro - l.h * 0.5f, a);
-  return NV_DETW2_IMDB_W + NV_DETW2_IMDB_GAP + l.w;
+  return badge_imdb(x, yCentro - BADGE_H * 0.5f, nota, 0, a);
 }
 
 // Selo de CONTORNO da segunda linha de meta. Ele carrega DUAS coisas dentro da
@@ -2518,6 +2548,12 @@ static float desenhaSeloImdb(float x, float yCentro, int nota, float a) {
 // carimbar "LANÇADO" em tudo seria dado inventado, que ja custou caro aqui.
 static float desenhaSeloMeta(float x, float y, const char *esq, const char *dir,
                              float a) {
+  if (!dir || !dir[0]) {
+    // Classificacao isolada e um badge, nao um contorno de outra altura. O
+    // caso composto (classificacao + status) conserva a divisoria propria.
+    return badge_desenhar(x, y + (NV_DETW2_SELO_H - BADGE_H) * 0.5f, esq,
+                          BADGE_NEUTRO, a);
+  }
   TxtLinha le = txt_linha(TXT_DET_META2, esq, 179, 179, 179, 255);
   TxtLinha ld = { 0, 0, 0 };
   float w = NV_DETW2_SELO_PADX * 2 + le.w;
@@ -3697,15 +3733,15 @@ static void moldura(GfxRect r, float raio, float a) {
   raio = r.h > 0.0f ? raio / r.h : 0.0f;
   if (raio > 0.5f) raio = 0.5f;
   if (raio > teto) raio = teto;
-  // CINZA NEUTRO, o mesmo #2D2D2D das pilulas de temporada e do resto dos
-  // componentes. O azul-escuro que estava aqui (#12171F) era o unico tom da
-  // familia nesta tela: o cartao de comentario lia como peca de outro app.
-  gfx_cor(r, raio, 0.176f, 0.176f, 0.176f, 0.94f * a);
+  // SUPERFICIE ESCURA TINGIDA, um degrau acima do fundo. O cinza #2D2D2D da
+  // primeira versao competia com os graficos e fazia esta aba parecer um modal
+  // separado; o navy quase-preto mantem a hierarquia sem virar uma placa.
+  gfx_cor(r, raio, 0.082f, 0.094f, 0.118f, 0.92f * a);
   // SEM FIO DE CONTORNO. Havia aqui um anel branco a 14% que existia para
   // "fechar" o cartao sobre a arte de fundo — o dono mandou tirar em 16/09
   // ("tirar esse contorno daqui tb"), e ele estava contra a regra: nesta tela
   // contorno so aparece onde preencher e impossivel, e aqui o preenchimento
-  // #2D2D2D ja separa o cartao do fundo sozinho.
+  // #151820 ja separa o cartao do fundo sozinho.
 }
 
 // Cartao de nota: a MARCA em cima e o valor embaixo, como o .movie-rating-card
@@ -4263,15 +4299,15 @@ static void desenhaComentarios(float x, float y, float a) {
     { TxtLinha lu = txt_linha_corta(TXT_ROW_TITULO,
                                     daSerie ? extras_comentario_usuario(i)
                                             : extras_comentario_ep_usuario(i),
-                                    foc ? (tintaEsc ? 17 : 255) : 245, foc ? (tintaEsc ? 17 : 255) : 248,
-                                    foc ? (tintaEsc ? 20 : 255) : 255, 255, larg);
+                                    foc ? (tintaEsc ? 17 : 255) : 238, foc ? (tintaEsc ? 17 : 255) : 241,
+                                    foc ? (tintaEsc ? 20 : 255) : 248, 255, larg);
       txt_desenhar_alpha(lu, px, y + COM_PAD, a); }
 
     // O texto para ANTES do rodape: sem o teto de linhas ele passava por cima
     // das curtidas. 6 linhas de 30 terminam em 246; o rodape comeca em 288.
     txt_bloco(TXT_DET_META2, daSerie ? extras_comentario_texto(i)
                                      : extras_comentario_ep_texto(i),
-              foc ? (tintaEsc ? 45 : 235) : 200, foc ? (tintaEsc ? 47 : 236) : 205, foc ? (tintaEsc ? 52 : 240) : 214,
+              foc ? (tintaEsc ? 45 : 235) : 190, foc ? (tintaEsc ? 47 : 236) : 195, foc ? (tintaEsc ? 52 : 240) : 205,
               px, y + COM_PAD + 42.0f, larg, 30.0f, a * 0.95f, 6);
 
     { int nota = daSerie ? extras_comentario_nota(i)
@@ -4283,8 +4319,8 @@ static void desenhaComentarios(float x, float y, float a) {
       else
         snprintf(rodape, sizeof rodape, i18n("%d curtidas"), cur);
       { TxtLinha lr = txt_linha(TXT_CAPTION2, rodape,
-                                foc ? (tintaEsc ? 88 : 215) : 150, foc ? (tintaEsc ? 90 : 216) : 154,
-                                foc ? (tintaEsc ? 96 : 222) : 163, 255);
+                                foc ? (tintaEsc ? 88 : 215) : 132, foc ? (tintaEsc ? 90 : 216) : 138,
+                                foc ? (tintaEsc ? 96 : 222) : 150, 255);
         txt_desenhar_alpha(lr, px, y + COM_CARD_H - COM_PAD - lr.h, a * 0.9f); } }
   }
 }
@@ -4775,3 +4811,7 @@ int detail_pediu_fontes(void)     { int v = pedFontes;     pedFontes = 0;     re
 // roteador so sabe abrir o player no ponto salvo. Consumir o pedido aqui evita
 // que ele fique pendurado.
 int detail_pediu_do_inicio(void)  { int v = pedDoInicio;   pedDoInicio = 0;   return v; }
+
+// Uma vez por pedido: a pagina saiu por ESQUERDA e quer a barra lateral no
+// lugar. app.c le depois de detail_aberto() virar 0.
+int detail_pediu_menu(void) { int v = pediuMenu; pediuMenu = 0; return v; }

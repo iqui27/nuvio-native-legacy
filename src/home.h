@@ -8,7 +8,8 @@
 typedef enum {
   FILEIRA_CONTINUE,   // card 16:9 com barra de progresso
   FILEIRA_NORMAL,      // poster retrato 2:3
-  FILEIRA_DESTAQUE,    // seleção editorial: arte landscape maior
+  FILEIRA_DESTAQUE,    // seleção editorial: arte landscape panorâmica 16:9
+  FILEIRA_DESTAQUE_QUADRADO, // seleção editorial: arte maior em 4:3
   FILEIRA_TOP10,       // ranking usa poster retrato no legacy
   FILEIRA_COLECAO,     // premiações / coleções: landscape intermediário
   FILEIRA_SERVICO,     // catálogo por serviço: landscape compacto

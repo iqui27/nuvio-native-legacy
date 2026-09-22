@@ -27,6 +27,10 @@ void perfilsel_evento(const SDL_Event *e);
 void perfilsel_atualizar(float dt, Uint32 agora);
 void perfilsel_desenhar(Uint32 agora);
 int  perfilsel_concluido(void);
+// Voltar mantendo o perfil ja gravado encerra a pergunta desta sessao. A
+// regra de poder dispensar continua em perfis_pode_dispensar(); este helper
+// apenas publica a mesma conclusao que uma escolha explicita publica.
+void perfilsel_continuar_ativo(void);
 int  perfilsel_quer_sair(void);
 int  perfilsel_pediu_repetir(void);
 

@@ -103,6 +103,16 @@ TxtLinha txt_linha_corta(TxtEstilo estilo, const char *s, int r, int g, int b,
 TxtLinha txt_linha_corta_familia(TxtEstilo estilo, const char *s, int r, int g,
                                  int b, int a, float maxW, TxtFamilia familia);
 
+// ENFASE, so para a legenda ASS. Negrito e italico aqui sao SINTETICOS (o
+// pacote nao embarca face italica); ver a nota longa em linhaFamilia, em
+// text.c. Para o resto do app o peso continua vindo do estilo, que e um
+// arquivo de fonte de verdade — nao use isto para dar negrito a um titulo.
+#define TXT_ENF_NEGRITO 1
+#define TXT_ENF_ITALICO 2
+TxtLinha txt_linha_corta_enfase(TxtEstilo estilo, const char *s, int r, int g,
+                                int b, int a, float maxW, TxtFamilia familia,
+                                int enfase);
+
 // Desenha no canto superior esquerdo (x,y).
 void txt_desenhar(TxtLinha l, float x, float y);
 void txt_desenhar_alpha(TxtLinha l, float x, float y, float alpha);

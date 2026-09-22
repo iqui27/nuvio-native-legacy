@@ -29,8 +29,10 @@
 #   *.jpg da raiz                  8,1 MB  -> os backdrops da home. Sem eles o
 #                                             log diz "home: nenhum backdrop".
 #   editorial/ logo/ poster/        12 MB  -> arte curada das fileiras.
-#   cinematic/                      24 MB  -> heroi animado. Opcional: ligue com
-#                                             NUVIO_ARTE_CINEMATIC=1.
+#   cinematic/                      24 MB  -> herois curados opcionais. Nao e
+#                                             usado pelo seletor de fonte real
+#                                             do hero e continua fora do pacote
+#                                             padrao.
 set -e
 cd "$(dirname "$0")/.."
 

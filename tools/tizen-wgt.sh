@@ -28,16 +28,56 @@ set -e
 cd "$(dirname "$0")/.."
 
 ENTRADA="${NUVIO_SAIDA:-build/tizen}"
-ESTAGIO="build/wgt-stage"
+ESTAGIO="${NUVIO_WGT_ESTAGIO:-build/wgt-stage}"
 NOME="${NUVIO_WGT_NOME:-NuvioTV-native}"
 
 [ -f "$ENTRADA/index.html" ] || { echo "tizen-wgt.sh: rode tools/tizen.sh antes" >&2; exit 2; }
+
+# Nunca empacote um estagio antigo sem servidor por acidente. O harness ASS usa
+# o opt-out explicito NUVIO_TIZEN_DIAGNOSTIC=1 e tem package/config proprios.
+if [ "${NUVIO_TIZEN_DIAGNOSTIC:-0}" != "1" ]; then
+  tools/env.sh --require-core >/dev/null
+  STAMP="$ENTRADA/.nuvio-build-stamp"
+  [ -s "$STAMP" ] || {
+    echo "tizen-wgt.sh: estagio sem proveniencia de build; rode tools/tizen.sh" >&2
+    exit 1
+  }
+  sha256() {
+    if command -v shasum >/dev/null 2>&1; then
+      shasum -a 256 "$@" | awk '{print $1}'
+    else
+      sha256sum "$@" | awk '{print $1}'
+    fi
+  }
+  fingerprint() {
+    if command -v shasum >/dev/null 2>&1; then
+      shasum -a 256 | awk '{print $1}'
+    else
+      sha256sum | awk '{print $1}'
+    fi
+  }
+  ENV_D_NOW=$(tools/env.sh --require-core)
+  EXPECTED_CONFIG_FP=$(printf '%s' "$ENV_D_NOW" | fingerprint)
+  STAMP_CONFIG_FP=$(sed -n 's/^config-fingerprint=//p' "$STAMP" | head -1)
+  STAMP_WASM_SHA=$(sed -n 's/^wasm-sha256=//p' "$STAMP" | head -1)
+  ACTUAL_WASM_SHA=$(sha256 "$ENTRADA/index.wasm")
+  [ -n "$STAMP_CONFIG_FP" ] && [ "$STAMP_CONFIG_FP" = "$EXPECTED_CONFIG_FP" ] || {
+    echo "tizen-wgt.sh: proveniencia de configuracao nao corresponde ao ambiente atual" >&2
+    exit 1
+  }
+  [ -n "$STAMP_WASM_SHA" ] && [ "$STAMP_WASM_SHA" = "$ACTUAL_WASM_SHA" ] || {
+    echo "tizen-wgt.sh: index.wasm foi alterado apos a compilacao" >&2
+    exit 1
+  }
+fi
 
 rm -rf "$ESTAGIO"
 mkdir -p "$ESTAGIO"
 cp "$ENTRADA"/index.html "$ENTRADA"/index.js "$ENTRADA"/index.wasm "$ENTRADA"/decodificador.js "$ESTAGIO"/
 [ -f "$ENTRADA/index.data" ] && cp "$ENTRADA/index.data" "$ESTAGIO"/
-cp tools/tizen-config.xml "$ESTAGIO"/config.xml
+CONFIG="${NUVIO_TIZEN_CONFIG:-tools/tizen-config.xml}"
+[ -s "$CONFIG" ] || { echo "tizen-wgt.sh: config ausente: $CONFIG" >&2; exit 2; }
+cp "$CONFIG" "$ESTAGIO"/config.xml
 # ICONE OFICIAL DO SAMSUNG, e nao o deploy/app/icon.png do LG.
 #
 # O do LG e 80x80, que e o tamanho que o webOS pede e que na grade de apps da

@@ -56,9 +56,15 @@ fi
 SAIDA="${NUVIO_SAIDA:-build/tizen}"
 mkdir -p "$SAIDA"
 
-# Os mesmos -D de servidor do Mac e da TV LG. Sem eles o app compila e a unica
-# pista e a tela de login dizendo "Este pacote foi montado sem servidor".
-ENV_D=$(tools/env.sh)
+# Os mesmos -D de servidor do Mac e da TV LG. O pacote principal precisa falhar
+# antes do emcc se URL, anon key ou base de login estiverem vazios. Harnesses de
+# diagnostico nao sao release: eles precisam declarar o opt-out explicitamente.
+if [ "${NUVIO_TIZEN_DIAGNOSTIC:-0}" = "1" ]; then
+  ENV_D=$(tools/env.sh --allow-unconfigured)
+  echo "tizen.sh: diagnostico explicito — guarda de configuracao desativada"
+else
+  ENV_D=$(tools/env.sh --require-core)
+fi
 
 # -lidbfs.js NAO E OPCIONAL. Sem ele o objeto IDBFS simplesmente nao existe no
 # JS gerado, FS.mount lanca, e a unica pista e a linha "[dados] IDBFS nao
@@ -137,7 +143,7 @@ ARTE=$(bash tools/tizen-art.sh)
 # padrao porque log de app carrega titulo assistido e URL de fonte.
 #
 #   NUVIO_LOG_URL=http://192.168.1.10:8899/log bash tools/tizen.sh
-SHELL_USADO=tools/tizen-shell.html
+SHELL_USADO="${NUVIO_TIZEN_SHELL:-tools/tizen-shell.html}"
 if [ -n "${NUVIO_LOG_URL:-}" ]; then
   SHELL_USADO="$SAIDA/shell-com-log.html"
   sed "s|@NUVIO_LOG_URL@|${NUVIO_LOG_URL}|" tools/tizen-shell.html > "$SHELL_USADO"
@@ -156,7 +162,15 @@ if [ -n "${NUVIO_DIAG_TOKEN:-}" ]; then
   echo "tizen.sh: BUILD DE DIAGNOSTICO — registro sobe sozinho para $REC_URL"
 fi
 
-eval emcc src/*.c -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} \
+EXTRA_SOURCES="${NUVIO_TIZEN_EXTRA_SOURCES:-}"
+SOURCES="src/*.c"
+if [ -n "${NUVIO_TIZEN_EXCLUDE_MAIN:-}" ]; then
+  SOURCES=""
+  for source in src/*.c; do
+    [ "$source" = "src/main.c" ] || SOURCES="$SOURCES $source"
+  done
+fi
+eval emcc $SOURCES ${EXTRA_SOURCES} -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} \
   -sWASM_BIGINT=0 \
   -sUSE_SDL=2 -sUSE_SDL_IMAGE=2 -sUSE_SDL_TTF=2 -sUSE_LIBJPEG=1 \
   `# zlib do emscripten: epg.c infla o XMLTV .gz do epgshare01 com inflate.` \
@@ -226,7 +240,7 @@ eval emcc src/*.c -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} \
   `# PThread exportado para o medidor de fios de tizen-shell.html. NAO e` \
   `# opcional: sem o export, LER a variavel dispara o abort() do runtime` \
   `# ("'PThread' was not exported"), ou seja, o proprio medidor mataria o app.` \
-  -sEXPORTED_RUNTIME_METHODS='["PThread"]' \
+  -sEXPORTED_RUNTIME_METHODS='["PThread","ccall"]' \
   -lidbfs.js \
   `# ASSERTIONS=0 NA BUILD DE ENTREGA (20/09/2026, #72). Com 1 o glue confere` \
   `# pilha e assinatura a cada chamada JS<->wasm e cada erro de FS monta um` \
@@ -307,5 +321,32 @@ if command -v npx >/dev/null 2>&1; then
 else
   echo "tizen.sh: AVISO — npx ausente, glue NAO rebaixado; a TV vai dar tela preta" >&2
 fi
+
+# Proveniencia minima do artefato. O empacotador pode ser chamado horas depois
+# de uma compilacao, e um build/index.wasm velho com um local.properties valido
+# passaria apenas pela guarda de ambiente. Guardamos somente fingerprints: nem
+# a configuracao nem seus valores entram no arquivo de estagio.
+sha256() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$@" | awk '{print $1}'
+  else
+    sha256sum "$@" | awk '{print $1}'
+  fi
+}
+fingerprint() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+  else
+    sha256sum | awk '{print $1}'
+  fi
+}
+CONFIG_FP=$(printf '%s' "$ENV_D" | fingerprint)
+WASM_SHA=$(sha256 "$SAIDA/index.wasm")
+{
+  printf 'format=1\n'
+  printf 'config-fingerprint=%s\n' "$CONFIG_FP"
+  printf 'wasm-sha256=%s\n' "$WASM_SHA"
+} > "$SAIDA/.nuvio-build-stamp"
+chmod 600 "$SAIDA/.nuvio-build-stamp"
 
 echo "tizen.sh: $SAIDA/index.html  ($(du -h "$SAIDA/index.wasm" | cut -f1) de wasm)"

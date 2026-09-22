@@ -79,7 +79,6 @@
 
 // REC_SELO_H e REC_SELO_GAP moram em recomenda.h: quem desenha precisa deles
 // para posicionar a linha dos selos.
-#define REC_SELO_PADX  14.0f
 // A marca amarela do IMDb, na mesma proporcao do selo de detail.c (60x30)
 // reduzida para caber na coluna de 568px do painel. As medidas moram em
 // recomenda.h — ver o comentario la.
@@ -1560,57 +1559,21 @@ float rec_selo_tipo(float x, float y, const char *tipo, int escuro, float alfa) 
   // "Série" e "Filme" JA SAO CHAVES DA TABELA — as mesmas que metaTexto usa na
   // aba Salvos. Reaproveita-las e o que faz a aba Social e a aba Salvos dizerem
   // "Série" com a mesma palavra em qualquer idioma.
-  int serie = tipo && !strncmp(tipo, "series", 6);
-  TxtLinha t = txt_linha(TXT_CAPTION2, i18n(serie ? "Série" : "Filme"),
-                         escuro ? 32 : 222, escuro ? 34 : 226,
-                         escuro ? 40 : 236, 255);
-  GfxRect p = { x, y, t.w + REC_SELO_PADX * 2.0f, REC_SELO_H };
-  // PREENCHIMENTO, NUNCA CONTORNO. Esta primeira versao era um GFX_ANEL, e o
-  // dono corrigiu olhando a captura: "deixa fill sem contorno". A regra vale
-  // para o app inteiro desde 16/09/2026 (esta escrita em menu.c) — superficie
-  // cheia de baixo contraste com texto claro para a marca discreta, superficie
-  // clara com texto escuro para o que esta realcado. Contorno so onde e
-  // impossivel preencher: cartaz com arte, campo de busca, quadro do PiP.
   //
-  // E POR ISSO QUE ELE TEM DUAS COMBINACOES. Com a linha em foco o fundo vira
-  // a pilula clara, e um preenchimento branco a 0.10 sobre ela desaparece —
-  // a mesma armadilha em que `ajustes_acento()` (branco no tema padrao) faz
-  // cair quem pinta uma pilula de acento sobre superficie clara. `escuro`
-  // inverte: cinza escuro a 0.10 com o texto quase preto.
-  gfx_cor(p, 0.5f,
-          escuro ? 0.06f : 1.0f, escuro ? 0.06f : 1.0f, escuro ? 0.08f : 1.0f,
-          (escuro ? 0.10f : 0.12f) * alfa);
-  txt_desenhar_alpha(t, x + REC_SELO_PADX, y + (REC_SELO_H - t.h) * 0.5f, alfa);
-  return p.w;
+  // O DESENHO E O DA TABELA UNICA (badges.h, 21/09/2026): neutro sobre o
+  // painel, e a variante SOBRE_REALCE quando a linha esta em foco — a pilula
+  // clara do foco engolia um preenchimento branco a 0.10, entao `escuro`
+  // troca o estilo e nao so a cor.
+  int serie = tipo && !strncmp(tipo, "series", 6);
+  return badge_desenhar(x, y, serie ? "Série" : "Filme",
+                        escuro ? BADGE_SOBRE_REALCE : BADGE_NEUTRO, alfa);
 }
 
 float rec_selo_imdb(float x, float y, int nota, int escuro, float alfa) {
-  char txt[8];
-  TxtLinha l, lm;
-  GfxRect marca;
-  if (nota <= 0) return 0.0f;
-  // VIRGULA DECIMAL, como detail.c e como a linha de meta da aba Salvos: o
-  // "%.1f" do C escreve ponto e a interface inteira e em portugues.
-  // SEPARADOR DECIMAL PELO IDIOMA. Estava VIRGULA cravada nos tres pontos que
-  // desenham nota, e em ingles "8,4" nao e um numero com uma casa: le como
-  // milhar interrompido. Apareceu ao gerar o album do post em ingles.
-  snprintf(txt, sizeof txt,
-           ajustes_idioma_ingles() ? "%d.%d" : "%d,%d",
-           nota / 10, nota % 10);
-  l = txt_linha(TXT_CAPTION2, txt, escuro ? 40 : 214, escuro ? 42 : 218,
-                escuro ? 48 : 228, 255);
-  marca.x = x; marca.y = y; marca.w = REC_IMDB_W; marca.h = REC_SELO_H;
-  gfx_cor(marca, 4.0f / REC_SELO_H, 0.965f, 0.780f, 0.0f, alfa);  // #f6c700
-  // TXT_MINI JA E BOLD na tabela de estilos (e o estilo do selo de
-  // classificacao). detail.c engrossa o dele com um txt_peso que e estatico
-  // daquele arquivo; a 52px de largura a diferenca nao se ve, e copiar a funcao
-  // para ca seria terceira copia do mesmo truque.
-  lm = txt_linha(TXT_MINI, "IMDb", 10, 10, 10, 255);
-  txt_desenhar_alpha(lm, marca.x + (marca.w - lm.w) * 0.5f,
-                     marca.y + (marca.h - lm.h) * 0.5f, alfa);
-  txt_desenhar_alpha(l, x + REC_IMDB_W + REC_IMDB_GAP,
-                     y + (REC_SELO_H - l.h) * 0.5f, alfa);
-  return REC_IMDB_W + REC_IMDB_GAP + l.w;
+  // A MARCA da tabela unica: amarelo #F5C518 e "IMDb" preto em todo lugar
+  // (home, card de Continuar, detalhe, aqui). Separador decimal pelo idioma
+  // fica dentro de badge_imdb.
+  return badge_imdb(x, y, nota, escuro, alfa);
 }
 
 void recomenda_desenhar(Uint32 agora) {

@@ -104,11 +104,12 @@ typedef enum {
   AJ_QUALIDADE, AJ_DV, AJ_ATMOS, AJ_LEG_LINGUA, AJ_AUD_LINGUA,
   AJ_PAUSA_OVERLAY, AJ_FONTE_MANUAL,
   // Layout da Home
-  AJ_LANDSCAPE, AJ_HERO_CHEIO, AJ_HERO_TRAILER,
+  AJ_LANDSCAPE, AJ_HERO_CHEIO, AJ_HERO_FUNDO, AJ_HERO_TRAILER,
   // Fileiras da Home
   AJ_FIL_LIMITE, AJ_FIL_ORDEM,
   // Conteudo da Home
   AJ_RAIL, AJ_RAIL_MODERNA, AJ_RAIL_BLUR, AJ_HERO, AJ_HERO_CATALOGOS,
+  AJ_PS_FUNDO,
   AJ_DESCOBRIR, AJ_ROTULOS, AJ_NOME_ADDON, AJ_SUFIXO_TIPO,
   AJ_OCULTAR_NLANC, AJ_NOTAS_HOME, AJ_GRAD_CLASSICO,
   // Continuar assistindo
@@ -147,6 +148,15 @@ typedef enum {
 
 static const char *V_QUALIDADE[] = { "Automática", "4K", "1080p", "720p" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
+// #90: o fundo de arte da tela de escolha de perfil (psfundo.c). "Automático"
+// e o comportamento atual (perfil primeiro, catalogo como reserva, com
+// rotacao); "Desligado" volta a tela ao que era antes da issue — psfundo nao
+// desenha nada e so `profile_background_url` do proprio perfil (se houver)
+// aparece. NAO tem as fontes de fil_hero_fonte() (topo do catalogo / fileira
+// escolhida): aquela preferencia e por PERFIL, e aqui, antes de alguem
+// escolher um perfil, nao ha perfil para ler a preferencia dele (ver a nota em
+// perfilsel.c).
+static const char *V_PS_FUNDO[]  = { "Automático", "Desligado" };
 // Teto de memoria para imagens. O indice vira MB em ajustes_tex_mb; 0 e a
 // regra automatica pela RAM (tex_cache.c). Escolha por APARELHO: fica no
 // ajustes.txt e nunca vai para a conta — a TV da sala e a do quarto nao tem
@@ -191,6 +201,12 @@ static const char *V_DESCOBRIR[] = { "Mostrar na Busca", "Na barra lateral", "De
 // `homeImdbRatingsVisibility` — normalizeHomeImdbRatingsVisibility so aceita
 // SHOW_ALL e HIDE_ALL.
 static const char *V_NOTAS[]     = { "Mostrar", "Ocultar" };
+// Fonte da arte do hero. O valor 0 mantém o comportamento atual, incluindo
+// still de episódio quando a fileira é Continuar assistindo. Os outros valores
+// pedem uma variante real já conhecida do item; não são fundos genéricos.
+static const char *V_HERO_FONTE[] = {
+  "Automático", "Catálogo / Cinemeta", "IMDb / Metahub", "TMDB", "Trakt"
+};
 // ONDE O "+" ESCREVE ALEM DA LISTA LOCAL.
 //
 // A lista local (salvos.c) e escrita SEMPRE, nos dois valores, e isso nao e
@@ -334,6 +350,7 @@ static const Opcao OPCOES[AJ_N] = {
 
   ESC("Pôsteres horizontais",       V_LIGA, 2),   // modernLandscapePostersEnabled
   ESC("Fundo em tela cheia",        V_LIGA, 2),   // modernHeroFullScreenBackdropEnabled
+  ESC("Background do hero",         V_HERO_FONTE, 5), // local: fonte real da arte
   // Trailer mudo no destaque do topo, alguns segundos depois de o foco parar
   // nele (dono, 20/09/2026: "coloca para tocar no hero tb", "nos ajustes o de
   // tocar no hero separadamente"). Separado do da pagina de titulo.
@@ -345,12 +362,15 @@ static const Opcao OPCOES[AJ_N] = {
   // copias do mesmo numero divergem no primeiro caminho que esquecer uma.
   NUM("Limite de fileiras",         FIL_LIMITE_MIN, FIL_LIMITE_MAX, 1, NULL),
   ACAO("Ordenar e ativar fileiras"),
+  // LOCAL (#95): a home grava coluna/rolagem em home-pos.txt. Ligado = ao
+  // reabrir, cada fileira comeca no primeiro tile (o pedido da issue).
 
   ESC("Barra lateral",              V_RAIL, 2),   // collapseSidebar
   ESC("Barra lateral moderna",      V_LIGA, 2),   // modernSidebar
   ESC("Desfoque da barra moderna",  V_LIGA, 2),   // modernSidebarBlur
   ESC("Mostrar destaque",           V_LIGA, 2),   // heroSectionEnabled
   LER("Catálogos do destaque"),                   // heroCatalogKeys (contagem)
+  ESC("Fundo da escolha de perfil", V_PS_FUNDO, 2), // local: ver psfundo.c
   ESC("Local do Descobrir",         V_DESCOBRIR, 3), // discoverLocation
   ESC("Rótulos nos pôsteres",       V_LIGA, 2),   // posterLabelsEnabled
   ESC("Nome do addon no catálogo",  V_LIGA, 2),   // catalogAddonNameEnabled
@@ -487,14 +507,18 @@ static const char *CHAVE[] = {
   // conta (o app web nao expoe esta escolha), entao o blob simplesmente nao
   // traz a chave e o valor local fica de pe.
   "escolherFonteManual",
-  "modernLandscapePostersEnabled", "modernHeroFullScreenBackdropEnabled", "trailerHero",
+  "modernLandscapePostersEnabled", "modernHeroFullScreenBackdropEnabled", "heroFundoLocal", "trailerHero",
   // "-": local, nao vem da conta e nao vai para ajustes.txt. Os dois vivem em
   // fileirasui.txt (fileiras.c) e a conta nao tem chave equivalente — o teto do
   // web para este runtime e uma CONSTANTE (HOME_MAX_ROWS_LEGACY_TV), nao uma
   // preferencia, e a ordem da conta nunca pode ser ESCRITA pela TV.
   "-limiteFileiras", "-ordenarFileiras",
+  // LOCAL (#95): nao ha chave no blob da conta — o app web nao expoe isto.
   "collapseSidebar", "modernSidebar", "modernSidebarBlur",
   "heroSectionEnabled", "-heroCatalogKeys",
+  // LOCAL, e nao do web: o app oficial nao tem tela de escolha de perfil com
+  // fundo de arte, entao nao ha campo equivalente no blob da conta.
+  "perfilFundoLocal",
   "discoverLocation", "posterLabelsEnabled", "catalogAddonNameEnabled",
   "catalogTypeSuffixEnabled", "hideUnreleasedContent",
   "homeImdbRatingsVisibility", "classicFocusGradientEnabled",
@@ -718,16 +742,19 @@ static int valor[AJ_N] = {
 
   0,                /* posteres deitados: LIGADO (perfil do dono; fabrica: desligado) */
   0,                /* fundo em tela cheia: LIGADO (perfil; fabrica: desligado) */
+  0,                /* background do hero: seleção automática */
   0,                /* trailer no destaque: ligado */
 
   FIL_LIMITE_PADRAO,/* limite de fileiras: 7, o pedido do dono (espelho de fileiras.c) */
   0,                /* ordenar fileiras: acao */
+  1,                /* resetar foco ao iniciar: DESLIGADO (lembra posicao — padrao atual) */
 
   0,                /* barra lateral: recolhida (perfil; fabrica: fixa) */
   1,                /* barra lateral moderna: desligada */
   0,                /* desfoque da barra moderna: ligado (perfil) */
   0,                /* mostrar destaque: ligado */
   0,                /* catalogos do destaque: leitura */
+  0,                /* fundo da escolha de perfil: automatico (padrao de fabrica, #90) */
   0,                /* local do descobrir: na busca */
   // DESLIGADO por padrao: o cartaz ja traz o titulo impresso na arte, e repetir
   // o nome logo abaixo e a mesma informacao duas vezes ocupando altura de
@@ -890,7 +917,9 @@ float ajustes_acento_tinta(float *r, float *g, float *b) {
   return lum > 0.88f ? 0.067f : 1.0f;
 }
 int ajustes_tinta_foco(void)  { return ajustes_acento_tinta(NULL, NULL, NULL) > 0.5f ? 255 : 20; }
-int ajustes_tinta_foco2(void) { return ajustes_acento_tinta(NULL, NULL, NULL) > 0.5f ? 225 : 60; }
+// Secundario sobre realce colorido: 238, nao 225 — a 3 m, sobre rosa, 225
+// ja lia como cinza (dono, 21/09/2026).
+int ajustes_tinta_foco2(void) { return ajustes_acento_tinta(NULL, NULL, NULL) > 0.5f ? 238 : 60; }
 
 // `collapseSidebar: modernSidebar ? false : Boolean(collapseSidebar)` — a barra
 // moderna DESLIGA o recolhimento, e nao o contrario. Copiado de
@@ -900,12 +929,21 @@ int ajustes_rail_recolhida(void)      { return ajustes_rail_moderna() ? 0 : lig(
 int ajustes_rail_moderna_blur(void)   { return lig(AJ_RAIL_BLUR); }
 int ajustes_hero_ligado(void)         { return lig(AJ_HERO); }
 int ajustes_hero_cheio(void)          { return lig(AJ_HERO_CHEIO); }
+int ajustes_hero_fonte(void) {
+  int v = valor[AJ_HERO_FUNDO];
+  return v >= 0 && v < (int)(sizeof V_HERO_FONTE / sizeof *V_HERO_FONTE) ? v : 0;
+}
+// #90: "Automático" (indice 0, padrao de fabrica) = psfundo.c continua
+// escolhendo arte do catalogo como reserva; "Desligado" (indice 1) = a tela de
+// perfil volta a nao desenhar nada alem do que o proprio perfil traz.
+int ajustes_ps_fundo_automatico(void) { return lig(AJ_PS_FUNDO); }
 int ajustes_tex_mb(void) {
   int i = valor[AJ_TEX_MB];
   return (i >= 0 && i < 7) ? TEX_MB_DE[i] : 0;
 }
 int ajustes_posteres_deitados(void)   { return lig(AJ_LANDSCAPE); }
 int ajustes_gradiente_foco_classico(void) { return lig(AJ_GRAD_CLASSICO); }
+
 
 int ajustes_rotulos_poster(void)      { return lig(AJ_ROTULOS); }
 int ajustes_nome_addon(void)          { return lig(AJ_NOME_ADDON); }
@@ -1309,6 +1347,192 @@ int ajustes_aplicar_blob(const char *json) {
   return mudou;
 }
 
+// ---------------------------------------------------------------- subir (#85)
+//
+// O CAMINHO DE VOLTA do blob: o que a pessoa mudou NESTA TV entra no objeto
+// `settings_json` da conta e sync.c o empurra. Antes disto a TV so LIA o blob,
+// e a unica defesa contra o proximo arranque desfazer a mudanca local era
+// parar de aplicar a conta (ajustes-locais.txt) — isto e, divergir em silencio.
+//
+// A COSTURA E TEXTUAL, e nao um objeto remontado campo a campo. Duas razoes, as
+// duas medidas neste projeto:
+//   - o blob real tem MUITO mais chaves do que este app conhece (foi o que
+//     estourou o vetor de 4096 bytes da primeira versao do leitor). Remontar o
+//     objeto aqui mandaria de volta um blob com so as ~40 chaves daqui, e o
+//     servidor guarda o que vier: a TV APAGARIA as preferencias que so o app
+//     web tem. E o mesmo defeito da "lista vazia apaga tudo" da secao 1.6.
+//   - a chave e aninhada por feature ("layout_settings", "player_settings",
+//     "theme_settings"...) e este app nao sabe em qual feature cada chave vive.
+//     Reescrevendo no lugar, nao precisa saber.
+//
+// Por isso a regra e estrita: SO CHAVE QUE JA EXISTE NO BLOB e reescrita, e
+// somente o valor dela. Chave que a conta nao tem nao e inventada — inventa-la
+// exigiria adivinhar a feature e o `type`, e um blob com forma errada e pior
+// que uma chave a menos.
+static int somenteDesteAparelho(int op) {
+  switch (op) {
+    // LAYOUT/APARELHO: nao sobem nem que o blob tenha a chave.
+    // A regra que separa: se o valor descreve ESTA TV (RAM, painel, rede,
+    // consentimento de registro) ou uma escolha que so este port tem, ele fica.
+    // A TV da sala e a do quarto nao tem a mesma memoria nem a mesma tela, e a
+    // conta e uma so.
+    case AJ_RESOLUCAO:      /* pedir superficie 4K: depende do painel */
+    case AJ_TEX_MB:         /* teto de memoria de imagem: depende da RAM */
+    case AJ_QUALIDADE_IMG:  /* resolucao da arte decodificada: idem */
+    case AJ_ENVIO_AUTO:     /* consentimento de envio de registro deste aparelho */
+    case AJ_ANIM:           /* animacoes reduzidas: acessibilidade nesta TV */
+    case AJ_IDIOMA:         /* idioma da interface deste aparelho */
+    case AJ_FIL_LIMITE:     /* fileiras da home: por aparelho (fileirasui-p<N>.txt) */
+    case AJ_FIL_ORDEM:
+    case AJ_CW_FONTE:
+    case AJ_BORDA_FOCO:
+    case AJ_FONTE_MANUAL:
+    case AJ_SALVOS_DEST:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+// Onde esta o valor de `chave` dentro de [ini,fim): *vi aponta o primeiro
+// caractere do valor e *vf o seguinte ao ultimo. 1 quando achou.
+//
+// Procura a chave ENTRE ASPAS e exige os dois-pontos: sem isso, "value" casaria
+// com o pedaco de "values" e com qualquer texto que contivesse a palavra.
+static int acharValor(const char *ini, const char *fim, const char *chave,
+                      const char **vi, const char **vf) {
+  char alvo[96];
+  const char *p;
+  size_t n;
+  n = (size_t)snprintf(alvo, sizeof alvo, "\"%s\"", chave);
+  if (n >= sizeof alvo) return 0;
+  for (p = ini; p && (p = strstr(p, alvo)) != NULL && p < fim; p += n) {
+    const char *v = p + n;
+    while (v < fim && (unsigned char)*v <= ' ') v++;
+    if (v >= fim || *v != ':') continue;
+    v++;
+    while (v < fim && (unsigned char)*v <= ' ') v++;
+    if (v >= fim) return 0;
+    if (*v == '{' || *v == '[') { *vf = js_fim(v); }
+    else if (*v == '"') {
+      const char *q = v + 1;
+      while (q < fim && *q != '"') q += (*q == '\\' && q + 1 < fim) ? 2 : 1;
+      *vf = (q < fim) ? q + 1 : fim;
+    } else {
+      const char *q = v;
+      while (q < fim && *q != ',' && *q != '}' && *q != ']' &&
+             (unsigned char)*q > ' ') q++;
+      *vf = q;
+    }
+    if (!*vf || *vf > fim) return 0;
+    *vi = v;
+    return 1;
+  }
+  return 0;
+}
+
+// O valor local de `op` no MESMO formato do que ja esta no blob. 0 quando nao
+// da para escrever com fidelidade — e ai a chave nao e tocada, que e sempre a
+// resposta certa: mandar um tipo diferente do que o servidor guarda faria o app
+// web ler a preferencia errada, ou nenhuma.
+static int textoDoValor(int op, const char *vi, const char *vf,
+                        char *dst, size_t tam) {
+  size_t n = (size_t)(vf - vi);
+  if (n >= 4 && !strncmp(vi, "true", 4))  { snprintf(dst, tam, "%s", valor[op] == 0 ? "true" : "false"); return 1; }
+  if (n >= 5 && !strncmp(vi, "false", 5)) { snprintf(dst, tam, "%s", valor[op] == 0 ? "true" : "false"); return 1; }
+  if (*vi == '"') {
+    const char *const *lit = literaisDe(op);
+    int k, maiuscula = 0, temBaixa = 0;
+    size_t i;
+    if (!lit) return 0;
+    for (k = 0; k <= valor[op]; k++) if (!lit[k]) return 0;   // fora da lista
+    // A CAIXA DO SERVIDOR, e nao a do codigo JS. MEDIDO na TV: a conta guarda
+    // estes enums em MAIUSCULA ("IN_SEARCH", "CARD") enquanto o web os escreve
+    // em minuscula, e a leitura daqui e sem caixa justamente por isso. Na
+    // escrita nao ha essa folga — devolver a caixa que o servidor ja usava e o
+    // unico jeito de nao trocar o valor de forma para todo mundo.
+    for (i = 1; i + 1 < n; i++) {
+      if (vi[i] >= 'a' && vi[i] <= 'z') temBaixa = 1;
+      if (vi[i] >= 'A' && vi[i] <= 'Z') maiuscula = 1;
+    }
+    maiuscula = maiuscula && !temBaixa;
+    snprintf(dst, tam, "\"%s\"", lit[valor[op]]);
+    if (maiuscula) for (i = 0; dst[i]; i++)
+      if (dst[i] >= 'a' && dst[i] <= 'z') dst[i] = (char)(dst[i] - 'a' + 'A');
+    return 1;
+  }
+  if ((*vi >= '0' && *vi <= '9') || *vi == '-' || *vi == '.') {
+    snprintf(dst, tam, "%d", valor[op]);
+    return 1;
+  }
+  return 0;   // null, objeto, array: nao ha o que escrever
+}
+
+typedef struct { const char *vi, *vf; char texto[160]; } Troca;
+
+int ajustes_mesclar_blob(const char *base, char **saida) {
+  Troca troca[AJ_N];
+  int n = 0, i, j;
+  const char *fim, *p;
+  char *out;
+  size_t cap, w = 0;
+
+  if (saida) *saida = NULL;
+  if (!base || !*base || !saida) return 0;
+  fim = base + strlen(base);
+
+  for (i = 0; i < AJ_N; i++) {
+    char snake[80];
+    const char *vi, *vf, *ei, *ef;
+    if (OPCOES[i].tipo == OP_LEITURA || OPCOES[i].tipo == OP_ACAO) continue;
+    if (!CHAVE[i] || CHAVE[i][0] == '-') continue;
+    if (somenteDesteAparelho(i)) continue;
+    camelParaSnake(CHAVE[i], snake, sizeof snake);
+    if (!acharValor(base, fim, snake, &vi, &vf) &&
+        !acharValor(base, fim, CHAVE[i], &vi, &vf)) continue;
+    // Valor embrulhado em {"type":...,"value":X}: o que se reescreve e o X.
+    if (*vi == '{' && acharValor(vi, vf, "value", &ei, &ef)) { vi = ei; vf = ef; }
+    if (!textoDoValor(i, vi, vf, troca[n].texto, sizeof troca[n].texto)) {
+      printf("[ajustes] %s nao tem forma para subir; mantido como esta na conta\n",
+             CHAVE[i]);
+      continue;
+    }
+    // Ja igual: nao entra na costura. Serve tambem de freio — um ciclo em que
+    // nada mudou de verdade nao gera push.
+    if ((size_t)(vf - vi) == strlen(troca[n].texto) &&
+        !strncmp(vi, troca[n].texto, strlen(troca[n].texto))) continue;
+    troca[n].vi = vi; troca[n].vf = vf;
+    n++;
+  }
+  if (!n) return 0;
+
+  // Por posicao, para a costura ser uma passada so. n e pequeno (dezenas) e a
+  // insercao simples e mais curta de conferir que a alternativa.
+  for (i = 1; i < n; i++) {
+    for (j = i; j > 0 && troca[j - 1].vi > troca[j].vi; j--) {
+      Troca t = troca[j - 1];
+      troca[j - 1] = troca[j]; troca[j] = t;
+    }
+  }
+
+  cap = strlen(base) + 1;
+  for (i = 0; i < n; i++) cap += strlen(troca[i].texto);
+  out = (char *)malloc(cap);
+  if (!out) return 0;
+  p = base;
+  for (i = 0; i < n; i++) {
+    size_t pre = (size_t)(troca[i].vi - p), t = strlen(troca[i].texto);
+    memcpy(out + w, p, pre); w += pre;
+    memcpy(out + w, troca[i].texto, t); w += t;
+    p = troca[i].vf;
+  }
+  memcpy(out + w, p, (size_t)(fim - p)); w += (size_t)(fim - p);
+  out[w] = 0;
+  *saida = out;
+  printf("[ajustes] %d ajuste(s) desta TV entram no blob da conta\n", n);
+  return n;
+}
+
 // AS SECOES TEM DE LADRILHAR O ENUM INTEIRO, sem buraco e sem sobreposicao.
 // Nao da para exigir isso do compilador (seria somar `n` a mao num
 // _Static_assert, ou seja, uma terceira copia dos mesmos numeros para
@@ -1596,7 +1820,17 @@ static const char *ajudaOpcao(int op) {
     case AJ_STALKER_MAC: return "O MAC que o provedor cadastrou para você. É credencial: vale como senha, e só aparece nesta tela mascarado.";
     case AJ_STALKER_LIMPAR: return "Apaga o portal e o MAC deste perfil, e os canais dele somem do Guia. Sair da conta também apaga.";
     case AJ_XTREAM_SERVIDOR: return "Endereço e porta que o provedor mandou, sem http:// e sem barra no fim: meu-servidor.tv:8080. Os canais entram no Guia de TV com usuário e senha preenchidos.";
-    case AJ_XTREAM_USUARIO: return "O usuário da sua assinatura Xtream.";
+    case AJ_XTREAM_USUARIO: {
+      // #88: a linha da lista corta em ~360 px; o valor completo mora aqui no
+      // painel de ajuda, onde ha largura de sobra para ler/conferir.
+      static char buf[220];
+      const char *u = xtream_usuario();
+      if (strcmp(u, "-")) {
+        snprintf(buf, sizeof buf, i18n("O usuário da sua assinatura Xtream.\n\nAgora: %s"), u);
+        return buf;
+      }
+      return "O usuário da sua assinatura Xtream.";
+    }
     case AJ_XTREAM_SENHA: return "A senha da assinatura. É credencial: vai dentro de cada URL de canal e nunca aparece nesta tela em claro.";
     case AJ_XTREAM_LIMPAR: return "Apaga servidor, usuário e senha deste perfil, e os canais somem do Guia. Sair da conta também apaga.";
     case AJ_FONTE_MANUAL: return "Ao mandar reproduzir, abre a lista de fontes em vez de escolher sozinho. Canal ao vivo não pergunta.";
@@ -1604,6 +1838,7 @@ static const char *ajudaOpcao(int op) {
     // --- Home
     case AJ_LANDSCAPE: return "Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.";
     case AJ_HERO_CHEIO: return "O destaque do topo ocupa a tela inteira atrás das fileiras, em vez de ficar num bloco.";
+    case AJ_HERO_FUNDO: return "Escolhe a origem da arte do destaque: catálogo/Cinemeta, IMDb/Metahub, TMDB ou Trakt. Automático mantém a escolha atual. MDBList fornece notas, não imagens.";
     case AJ_HERO_TRAILER: return "Com o foco parado no destaque do topo, o trailer do título toca sem som no lugar da arte. Mover o foco volta para a arte.";
     case AJ_FIL_LIMITE: return "Quantas fileiras a Home monta. Menos fileiras também significam menos catálogos pedidos pela rede, e não fileiras invisíveis.";
     case AJ_FIL_ORDEM: return "Abre a lista de fileiras para reordenar, ligar, desligar e escolher o card de cada uma. É lá que dá para ver de onde cada fileira vem.";
@@ -1612,6 +1847,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_RAIL_BLUR: return "Desfoca a arte atrás da barra lateral moderna em vez de usar um fundo sólido.";
     case AJ_HERO: return "O bloco grande no topo da Home, com a arte e o nome de um título em destaque.";
     case AJ_HERO_CATALOGOS: return "Quantidade de catálogos incluídos no destaque. Esta linha é apenas informativa.";
+    case AJ_PS_FUNDO: return "A tela \"Quem está assistindo?\" mostra arte do catálogo atrás dos perfis. Desligado volta à tela lisa de antes.";
     case AJ_DESCOBRIR: return "Onde fica a tela Descobrir: junto da Busca, como item próprio na barra lateral, ou em lugar nenhum.";
     case AJ_ROTULOS: return "Escreve o nome do título abaixo do cartaz. A maior parte da arte já traz o nome impresso.";
     case AJ_NOME_ADDON: return "Acrescenta o nome do addon ao título da fileira, para separar dois catálogos com o mesmo nome.";
@@ -1628,7 +1864,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_CW_THUMB: return "Usa a imagem do próprio episódio no card, em vez da arte da série.";
     case AJ_CW_BLUR_PROX: case AJ_DET_BLUR_NAO_VISTOS: return "Oculta detalhes da miniatura para evitar spoilers de episódios ainda não assistidos.";
     case AJ_CW_FURTHEST: return "Escolhe o próximo episódio a partir do mais avançado marcado como assistido.";
-    case AJ_CW_NAO_EXIBIDOS: return "Mostra na retomada o próximo episódio mesmo antes de ele ir ao ar.";
+    case AJ_CW_NAO_EXIBIDOS: return "A retomada mostra o próximo episódio antes de ir ao ar.";
     case AJ_CW_ORDEM: return "Como a retomada se ordena: pelo mais recente, no estilo dos streamings, ou com os episódios futuros num bloco separado.";
 
     // --- Pagina de detalhe
@@ -2288,6 +2524,12 @@ void ajustes_evento(const SDL_Event *e) {
       if (focoOp == AJ_TEX_MB) tex_definir_orcamento_mb(ajustes_tex_mb());
     }
     gravar();   // grava a cada mudanca: nao ha botao de "salvar" nesta tela
+    // #85 (resto): a TV le o blob de layout da conta mas nao o escreve. Sem
+    // isto, o proximo arranque reaplicava o blob antigo e desfazia largura,
+    // arredondamento, profundidade e cor de destaque mudados so na TV.
+    // NAO vai dentro de gravar(): o blob da conta tambem chama gravar() e
+    // nao pode marcar a TV como "fonte da verdade" por ter recebido a conta.
+    sync_proteger_ajustes_locais();
   }
 }
 
@@ -2471,6 +2713,15 @@ static void desenhaLinha(int op, float y, float f, float dx, float aPag) {
   // rasterizacao por passo da mola encheria o cache de linhas.
   float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
   int emFoco = (f > 0.5f);
+  // Brilho difuso por tras da linha em foco (0,9x a altura de folga em cima
+  // e embaixo, alpha 0,35 x mola): a mesma luz da pilula do menu lateral
+  // (21/09/2026), para o foco acender em vez de so trocar de cor. SEM folga
+  // lateral: a lista e recortada a 4 px da linha (ajustes_desenhar), e uma
+  // luz que vazasse para os lados seria cortada reta no meio do nada.
+  if (f > 0.01f) {
+    GfxRect luz = { linha.x, linha.y - linha.h * 0.9f, linha.w, linha.h * 2.8f };
+    gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, ar, ag, ab, 0.35f * f * a);
+  }
   if (f > 0.01f) gfx_cor(linha, AJ_RAIO, ar, ag, ab, f * a);
 
   // Uma linha inativa fica visivelmente mais apagada QUE a de leitura: leitura e
@@ -2664,6 +2915,10 @@ static void desenhaIndice(void) {
     // mesma regra da lista, sem anel (ver desenhaLinha).
     if (emFoco) {
       float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+      // Brilho difuso atras da categoria em foco, como na lista. O indice
+      // nao tem mola de foco, entao a luz acende com a pilula.
+      GfxRect luz = { r.x - r.h * 0.9f, r.y - r.h * 0.9f, r.w + r.h * 1.8f, r.h * 2.8f };
+      gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, ar, ag, ab, 0.35f);
       gfx_cor(r, raio, ar, ag, ab, 1.0f);
     } else {
       gfx_cor(r, raio, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
@@ -2713,7 +2968,7 @@ static const char *motivoFormaFixa(const char *chave) {
 
 // PREVIA DAS FORMAS DE CARD, desenhada com as MEDIDAS DE VERDADE.
 //
-// As colunas "Card" e "Tamanho" ofereciam seis nomes e tres nomes, e nada dizia
+// A coluna "Card" oferece sete nomes e a de "Tamanho" tres nomes, e nada dizia
 // o que cada um faz com a fileira — "Coleção" e "Serviço" sao os dois arte
 // deitada, e a diferenca entre eles e so tamanho. Pedido do dono: "coloque mais
 // informacoes, imagens e svg sobre cada tipo de card na fileira que nao tem
@@ -2727,21 +2982,24 @@ static const char *motivoFormaFixa(const char *chave) {
 static const struct { float w, h; } AJ_FIL_FORMA[FIL_TIPO_N] = {
   { 212.0f, 322.0f },   // AUTO     — desenhado como fantasma, ver abaixo
   { 212.0f, 322.0f },   // CARTAZ   — NV_CARD_W x NV_CARD_H
-  { 568.0f, 320.0f },   // DESTAQUE — larguraDe/alturaDe(FILEIRA_DESTAQUE)
+  { NV_DESTAQUE_EDITORIAL_W, NV_DESTAQUE_EDITORIAL_H }, // DESTAQUE — 16:9
   { 480.0f, 270.0f },   // COLECAO
   { 360.0f, 203.0f },   // SERVICO
   { 212.0f, 320.0f },   // TOP10
+  { NV_DESTAQUE_QUADRADO_W, NV_DESTAQUE_QUADRADO_H }, // DESTAQUE 4:3
 };
 
 // Uma frase por forma. Diz o que a forma E e para que serve, nao como se chama.
 static const char *aj_fil_forma_ajuda(int t) {
   switch (t) {
-    case FIL_TIPO_CARTAZ:   return "Cartaz em pé 2:3, o mesmo das fileiras de catálogo.";
-    case FIL_TIPO_DESTAQUE: return "Arte deitada grande, como a de \"Continuar assistindo\".";
-    case FIL_TIPO_COLECAO:  return "Arte deitada média: cabe mais que a grande e ainda mostra o cenário.";
-    case FIL_TIPO_SERVICO:  return "Arte deitada compacta: a que cabe mais títulos por fileira.";
-    case FIL_TIPO_TOP10:    return "Cartaz com o número do ranking ao lado, como no Top 10.";
-    default:                return "O app escolhe pela fileira: retomada e coleções já têm forma própria.";
+    case FIL_TIPO_CARTAZ:   return i18n("Cartaz em pé 2:3, o mesmo das fileiras de catálogo.");
+    case FIL_TIPO_DESTAQUE: return i18n("Arte deitada panorâmica 16:9, como a faixa Destaques.");
+    case FIL_TIPO_COLECAO:  return i18n("Arte deitada média: cabe mais que a grande e ainda mostra o cenário.");
+    case FIL_TIPO_SERVICO:  return i18n("Arte deitada compacta: a que cabe mais títulos por fileira.");
+    case FIL_TIPO_TOP10:    return i18n("Cartaz com o número do ranking ao lado, como no Top 10.");
+    case FIL_TIPO_DESTAQUE_QUADRADO:
+      return i18n("Arte maior em 4:3: recorta a capa para preencher todo o card.");
+    default:                return i18n("O app escolhe pela fileira: retomada e coleções já têm forma própria.");
   }
 }
 
@@ -2792,7 +3050,12 @@ static void desenhaFileiras(void) {
   // Veu quase opaco mais cartao solido: a lista de Ajustes atras atravessava o
   // texto do vinculo, e aqui ha texto pequeno em quatro colunas.
   gfx_cor(tela, 0.0f, 0.0f, 0.0f, 0.0f, 0.92f);
-  gfx_cor(cartao, 0.03f, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
+  // CARTAO FLUTUANTE na "cara nova" (menu.c, 21/09/2026): cantos de 28 px
+  // pelo menor lado (a altura), fundo translucido — o veu de 0,92 atras ja
+  // apaga a lista — e UMA luz difusa na cor de realce pelo canto superior
+  // esquerdo, presa aos cantos do cartao (GFX_LUZ).
+  gfx_cor(cartao, 28.0f / AJ_FIL_H, 0.055f, 0.058f, 0.068f, 0.94f);
+  gfx_luz_canto(cartao, 28.0f / AJ_FIL_H, AJ_FIL_H * 0.1f, -AJ_FIL_H * 0.1f, AJ_FIL_H * 0.65f, ar, ag, ab, 0.22f);
 
   // EMPILHADO PELA ALTURA MEDIDA, e nao por deslocamentos fixos: a altura de
   // uma linha depende do estilo, da escala e do idioma, e so txt_linha sabe.
@@ -2822,7 +3085,11 @@ static void desenhaFileiras(void) {
           GfxRect pil = { bx, hy, l.w + 44.0f, bh };
           // Foco = pilula na cor de realce com texto escuro; ativa sem foco =
           // superficie clara; a outra, apagada. Sem anel (ver desenhaLinha).
-          if (emFoco) gfx_cor(pil, NV_RAIO_PILL, ar, ag, ab, 1.0f);
+          if (emFoco) {
+            GfxRect luz = { pil.x - bh * 0.9f, pil.y - bh * 0.9f, pil.w + bh * 1.8f, bh * 2.8f };
+            gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, ar, ag, ab, 0.35f);
+            gfx_cor(pil, NV_RAIO_PILL, ar, ag, ab, 1.0f);
+          }
           else gfx_cor(pil, NV_RAIO_PILL, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
                        ativa ? 0.95f : 0.30f);
           txt_desenhar(l, pil.x + 22.0f, pil.y + (bh - l.h) * 0.5f);

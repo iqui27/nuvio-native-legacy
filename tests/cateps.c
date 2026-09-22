@@ -83,12 +83,30 @@ const char *nuvem_trakt_cliente(void)      { return ""; }
 int   addons_n(void)                       { return 0; }
 const char *addons_base(int i)             { (void)i; return ""; }
 const char *addons_id_manifesto(int i)     { (void)i; return ""; }
-const char *addons_nome(int i)             { (void)i; return "addon"; }
+const char *addons_nome(int i)            { (void)i; return "addon"; }
+unsigned addons_versao(void)             { return 1; }   // estatico no teste
 const char *addons_base_por_id(const char *id) { (void)id; return ""; }
 void  addons_manifesto_lido(int i, const char *corpo) { (void)i; (void)corpo; }
 char *rede_baixar(const char *u, int t)    { (void)u; (void)t; return NULL; }
 char *rede_baixar_com(const char *u, int t, const char *const *c) {
   (void)c; return rede_baixar(u, t); }
+
+// cat_acrescentar publica a reserva junto com o item. Este espião deixa o
+// teste provar os dois campos sem depender de rede ou de uma implementação de
+// TMDB: o registry próprio é exercitado em tests/artereserva.c.
+static int reservaN;
+static char reservaUrls[8][512];
+static char reservaIds[8][24];
+static int reservaTipos[8];
+int arte_reserva_registrar(const char *url, const char *imdb, int poster) {
+  if (reservaN < 8) {
+    snprintf(reservaUrls[reservaN], sizeof reservaUrls[reservaN], "%s", url);
+    snprintf(reservaIds[reservaN], sizeof reservaIds[reservaN], "%s", imdb);
+    reservaTipos[reservaN] = poster;
+  }
+  reservaN++;
+  return 1;
+}
 
 static CatItem itens[3];
 
@@ -183,7 +201,30 @@ int main(void) {
   assert(cat_n_episodios(0) == 0);
   puts("ok  trocar o catalogo inteiro invalida as faixas");
 
-  // E) NOTA TMDB POR EPISODIO (issue #87). JSON de temporada sintetico com
+  // E) APPEND DE ARTE: o caminho unitário precisa registrar poster e fundo
+  // exatamente como o lote e a publicação completa. Repetir o mesmo item é
+  // permitido pelo catálogo, mas deve reusar a mesma chave no registry (a
+  // deduplicação da chave é coberta pelo teste de arte); aqui garantimos que
+  // não existe um caminho unitário que simplesmente esqueça a arte.
+  montarCatalogo();
+  { CatItem arte;
+    int antes;
+    memset(&arte, 0, sizeof arte);
+    snprintf(arte.imdb, sizeof arte.imdb, "tt9000001");
+    snprintf(arte.poster, sizeof arte.poster, "https://addon/poster/one.jpg");
+    snprintf(arte.backdrop, sizeof arte.backdrop, "https://addon/background/one.jpg");
+    reservaN = 0;
+    assert(cat_acrescentar(&arte) == 3);
+    assert(reservaN == 2);
+    assert(!strcmp(reservaUrls[0], arte.poster) && !strcmp(reservaIds[0], arte.imdb) && reservaTipos[0] == 1);
+    assert(!strcmp(reservaUrls[1], arte.backdrop) && !strcmp(reservaIds[1], arte.imdb) && reservaTipos[1] == 0);
+    antes = reservaN;
+    assert(cat_acrescentar(&arte) == 4);
+    assert(reservaN == antes + 2);
+  }
+  puts("ok  append unitario registra poster/fundo em novo e repetido item");
+
+  // F) NOTA TMDB POR EPISODIO (issue #87). JSON de temporada sintetico com
   //    tres episodios — um SEM vote_average — mais um de OUTRA temporada na
   //    lista, que nao pode ser tocado. Casa por episode_number; devolve
   //    quantos ganharam nota.

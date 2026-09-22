@@ -9,13 +9,14 @@
 // shader que usasse a mesma variavel.
 typedef struct {
   GLuint prog;
-  GLint rect, tela, tex, foco, par, raio, cor, asp, texAsp, borda;
+  GLint rect, tela, tex, foco, par, raio, cor, asp, texAsp, forcarCover, borda;
 } Programa;
 static Programa progs[GFX_NMODOS];
 static int progAtual = -1;
 // Proporcao da textura corrente, para o "cover". Fica global porque o desenho e
 // imediato: quem chama define antes de cada rect com textura.
 float gfx_tex_aspect_atual = 0.0f;
+float gfx_card_forcar_cover_atual = 0.0f;
 // 1 = desenhar o rebordo claro que marca o cartaz em foco; 0 = nao desenhar.
 // Vive aqui, e nao num parametro de gfx_rect, pela mesma razao do aspecto da
 // textura: sao dezenas de chamadas e a resposta e a mesma para todas dentro do
@@ -64,7 +65,8 @@ static const char *FS_CABECA =
   "uniform float uRaio;\n"
   "uniform vec4  uCor;\n"
   "uniform float uAspect;\n"
-  "uniform float uTexAsp;   // w/h da TEXTURA; 0 = nao ajustar\n";
+  "uniform float uTexAsp;   // w/h da TEXTURA; 0 = nao ajustar\n"
+  "uniform float uForceCover;\n";
 
 // SDF de retangulo arredondado, corrigido pela proporcao — sem a correcao o
 // canto de um card landscape sai oval.
@@ -98,7 +100,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // a amostragem abre no eixo oposto e a faixa recebe a cor do esqueleto,
   // a mesma do card vazio. Dentro de +/-25% de proporcao segue cover.
   "  float ra = uAspect / max(uTexAsp, 0.01);\n"
-  "  float contem = (uTexAsp > 0.05 && (ra < 0.80 || ra > 1.25)) ? 1.0 : 0.0;\n"
+  "  float contem = (uForceCover < 0.5 && uTexAsp > 0.05 && (ra < 0.80 || ra > 1.25)) ? 1.0 : 0.0;\n"
   "  vec2 uv = cover(vUv);\n"
   "  if (contem > 0.5) {\n"
   "    uv = vUv;\n"
@@ -127,7 +129,13 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // GFX_SOMBRA — mancha difusa atras do item em foco
   "void main(){\n"
   "  float d = sdf(vUv, uRaio, uAspect);\n"
-  "  gl_FragColor = vec4(0.0,0.0,0.0, smoothstep(0.22,-0.03,d)*uFoco*uCor.a);\n"
+  // MANCHA COM QUEDA RADIAL: 1 no centro, 0 na borda do retangulo, com a
+  // curva ao quadrado para a luz morrer devagar. Era smoothstep(0.22,-0.03,d)
+  // — um disco solido com 20% de penumbra, que na tela de perfis saia como
+  // uma laje colorida. A cor vem de uCor (preto = sombra; a cor de um perfil
+  // = luz ambiente em perfilsel.c). Nao havia chamador em src/ antes disso.
+  "  float t = clamp(-d * 2.0, 0.0, 1.0);\n"
+  "  gl_FragColor = vec4(uCor.rgb, t * t * uFoco * uCor.a);\n"
   "}\n",
 
   // GFX_COR — retangulo/pilula de cor solida
@@ -542,6 +550,17 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  vec4 t = texture2D(uTex, vUv);\n"
   "  gl_FragColor = vec4(t.rgb, t.a * uCor.a * m);\n"
   "}\n",
+
+  // GFX_LUZ — a queda radial do GFX_SOMBRA, presa aos cantos do painel. A
+  // distancia e medida em fracao da ALTURA nos dois eixos (o x multiplica por
+  // uAspect), senao a luz sai oval num painel deitado.
+  "void main(){\n"
+  "  float m = smoothstep(0.006,-0.006, sdf(vUv, uRaio, uAspect));\n"
+  "  if (m <= 0.001) discard;\n"
+  "  vec2 p = (vUv - uPar) * vec2(uAspect, 1.0);\n"
+  "  float t = clamp(1.0 - length(p) / max(uFoco, 0.001), 0.0, 1.0);\n"
+  "  gl_FragColor = vec4(uCor.rgb, t * t * uCor.a * m);\n"
+  "}\n",
 };
 
 // Cada corpo declara o que usa; montar so o necessario mantem o shader enxuto.
@@ -560,7 +579,8 @@ static const struct { int sdf, cover; } PRECISA[GFX_NMODOS] = {
   {0,0},   /* GFX_EDITORIAL */
   {1,0},   /* GFX_VEU_CARD — precisa do SDF: o veu segue os cantos do card */
   {1,0},   /* GFX_BRILHO_TOPO — idem, e pelo mesmo motivo */
-  {1,0}    /* GFX_ARTE — SDF para os cantos; sem cover, a arte nao e recortada */
+  {1,0},   /* GFX_ARTE — SDF para os cantos; sem cover, a arte nao e recortada */
+  {1,0}    /* GFX_LUZ — SDF para os cantos do painel */
 };
 
 static GLuint compila(GLenum tipo, const char *src) {
@@ -597,6 +617,7 @@ int gfx_iniciar(void) {
     progs[m].cor  = glGetUniformLocation(p, "uCor");
     progs[m].asp  = glGetUniformLocation(p, "uAspect");
     progs[m].texAsp = glGetUniformLocation(p, "uTexAsp");
+    progs[m].forcarCover = glGetUniformLocation(p, "uForceCover");
     progs[m].borda  = glGetUniformLocation(p, "uBorda");
     glUseProgram(p);
     glUniform2f(progs[m].tela, NV_TELA_W, NV_TELA_H);
@@ -709,6 +730,7 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
   if (P->raio >= 0)   glUniform1f(P->raio, raio);
   if (P->asp >= 0)    glUniform1f(P->asp, r.h > 0 ? r.w / r.h : 1.0f);
   if (P->texAsp >= 0) glUniform1f(P->texAsp, gfx_tex_aspect_atual);
+  if (P->forcarCover >= 0) glUniform1f(P->forcarCover, gfx_card_forcar_cover_atual);
   if (P->borda >= 0)  glUniform1f(P->borda, gfx_borda_foco_atual);
   if (P->cor >= 0)    glUniform4f(P->cor, cr, cg, cb, ca * gfx_opacidade_grupo);
   if (tex && tex != texAtual) {
@@ -725,6 +747,11 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
 
 void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca) {
   gfx_rect(r, 0, GFX_COR, 0, 0, 0, raio, cr, cg, cb, ca);
+}
+void gfx_luz_canto(GfxRect r, float raio, float cx, float cy, float alcance,
+                   float cr, float cg, float cb, float ca) {
+  if (r.w <= 0.0f || r.h <= 0.0f || ca <= 0.001f) return;
+  gfx_rect(r, 0, GFX_LUZ, alcance / r.h, cx / r.w, cy / r.h, raio, cr, cg, cb, ca);
 }
 // Buraco transparente por onde o plano de video do aparelho aparece.
 //

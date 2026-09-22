@@ -41,12 +41,6 @@ static int   nTabela;
 static pthread_mutex_t travaSessao = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t travaTabela = PTHREAD_MUTEX_INITIALIZER;
 
-// COPIAS DO CADASTRO para uso fora da trava. O endereco e o MAC so mudam em
-// stalker_definir_*, que derruba a sessao inteira; uma requisicao em voo
-// continua usando a copia com que nasceu, em vez de ler um global que pode
-// estar sendo reescrito.
-static char portalCopia[256], macCopia[32];
-
 // ---------------------------------------------------------------- utilidades
 
 // Percent-encode do que vai em query. O `cmd` do portal tem espacos e ":" e
@@ -236,14 +230,15 @@ const char *stalker_mac_mascarado(void) {
 
 // Monta os cabecalhos de STB. Mantidos juntos porque so fazem sentido juntos:
 // portal que confere um deles costuma conferir os quatro.
-static void cabecalhos(const char *cab[7], const char *tok,
+static void cabecalhos(const char *portalLocal, const char *macLocal,
+                       const char *cab[7], const char *tok,
                        char *linhaCookie, unsigned tamCookie,
                        char *linhaAuth, unsigned tamAuth, char *linhaRef,
                        unsigned tamRef) {
   int k = 0;
   snprintf(linhaCookie, tamCookie,
-           "Cookie: mac=%s; stb_lang=en; timezone=Europe/Kiev", macCopia);
-  snprintf(linhaRef, tamRef, "Referer: %s/c/", portalCopia);
+           "Cookie: mac=%s; stb_lang=en; timezone=Europe/Kiev", macLocal);
+  snprintf(linhaRef, tamRef, "Referer: %s/c/", portalLocal);
   cab[k++] = linhaCookie;
   cab[k++] = linhaRef;
   cab[k++] = "User-Agent: Mozilla/5.0 (QtEmbedded; U; Linux; C) "
@@ -261,11 +256,12 @@ static void cabecalhos(const char *cab[7], const char *tok,
 // Uma requisicao crua, sem re-handshake. Recebe rota e token POR COPIA de
 // proposito: o HTTP dura segundos e roda FORA da trava, entao ler `token` ou
 // `caminho` globais aqui seria le-los enquanto outro fio os reescreve.
-static char *pedir(const char *rota, const char *tok, const char *consulta) {
+static char *pedir(const char *portalLocal, const char *macLocal,
+                   const char *rota, const char *tok, const char *consulta) {
   const char *cab[7];
   char url[2048], c1[128], c2[192], c3[320];
-  cabecalhos(cab, tok, c1, sizeof c1, c2, sizeof c2, c3, sizeof c3);
-  snprintf(url, sizeof url, "%s%s?%s&JsHttpRequest=1-xml", portalCopia, rota, consulta);
+  cabecalhos(portalLocal, macLocal, cab, tok, c1, sizeof c1, c2, sizeof c2, c3, sizeof c3);
+  snprintf(url, sizeof url, "%s%s?%s&JsHttpRequest=1-xml", portalLocal, rota, consulta);
   return rede_baixar_com(url, ST_PRAZO_S, cab);
 }
 
@@ -291,7 +287,7 @@ static int handshakeTravado(void) {
     // Rota que ja provou funcionar entra primeiro nas vezes seguintes; na
     // primeira, `caminho` esta vazio e a varredura e a ordem acima.
     const char *rota = caminho[0] ? caminho : ROTAS[i];
-    corpo = pedir(rota, "", "type=stb&action=handshake&token=&prehash=0");
+    corpo = pedir(portal, mac, rota, "", "type=stb&action=handshake&token=&prehash=0");
     if (temJs(corpo)) {
       char t[128];
       if (js_texto_raiz(corpo, "token", t, sizeof t) && t[0]) {
@@ -302,8 +298,8 @@ static int handshakeTravado(void) {
         // get_profile confirma o MAC. Portal que recusa a assinatura responde
         // aqui, e nao no handshake — sem esta chamada o app so descobriria no
         // create_link, com a pessoa ja olhando a tela de carregar.
-        corpo = pedir(caminho, token, "type=stb&action=get_profile&hd=1&num_banks=2"
-                               "&stb_type=MAG250&image_version=218&auth_second_step=0");
+        corpo = pedir(portal, mac, caminho, token, "type=stb&action=get_profile&hd=1&num_banks=2"
+                                           "&stb_type=MAG250&image_version=218&auth_second_step=0");
         if (corpo) free(corpo);
         return 1;
       }
@@ -324,6 +320,7 @@ static int handshakeTravado(void) {
 // carrega e um canal que nao abre, alternando, sem erro nenhum no log.
 static char *chamar(const char *consulta, int renovarAntes) {
   char tok[128], rota[64];
+  char portalLocal[256], macLocal[32];
   char *corpo;
 
   // A TRAVA COBRE O TOKEN, NAO A REQUISICAO. Esta foi a correcao mais
@@ -334,8 +331,10 @@ static char *chamar(const char *consulta, int renovarAntes) {
   // HTTP, que dura segundos.
   pthread_mutex_lock(&travaSessao);
   if (!portal[0] || !mac[0]) { pthread_mutex_unlock(&travaSessao); return NULL; }
-  snprintf(portalCopia, sizeof portalCopia, "%s", portal);
-  snprintf(macCopia, sizeof macCopia, "%s", mac);
+  // O pedido conserva o cadastro que encontrou sob a trava. Nao usa copias
+  // globais: o guia pode iniciar outra requisicao enquanto este HTTP espera.
+  snprintf(portalLocal, sizeof portalLocal, "%s", portal);
+  snprintf(macLocal, sizeof macLocal, "%s", mac);
   if (!token[0] ||
       (renovarAntes && tokenEm && time(NULL) - tokenEm > ST_TOKEN_VALIDO_S)) {
     if (!handshakeTravado()) { pthread_mutex_unlock(&travaSessao); return NULL; }
@@ -344,7 +343,7 @@ static char *chamar(const char *consulta, int renovarAntes) {
   snprintf(rota, sizeof rota, "%s", caminho);
   pthread_mutex_unlock(&travaSessao);
 
-  corpo = pedir(rota, tok, consulta);
+  corpo = pedir(portalLocal, macLocal, rota, tok, consulta);
   if (temJs(corpo)) return corpo;
   if (corpo) free(corpo);
 
@@ -365,7 +364,7 @@ static char *chamar(const char *consulta, int renovarAntes) {
   snprintf(rota, sizeof rota, "%s", caminho);
   pthread_mutex_unlock(&travaSessao);
 
-  corpo = pedir(rota, tok, consulta);
+  corpo = pedir(portalLocal, macLocal, rota, tok, consulta);
   if (temJs(corpo)) return corpo;
   if (corpo) free(corpo);
   return NULL;

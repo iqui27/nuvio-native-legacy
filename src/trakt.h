@@ -63,10 +63,11 @@ int  trakt_definir(const char *token, const char *clientId);
 // proxima pessoa assistir.
 void trakt_esquecer(void);
 
-// Completa itens que ja tem imdb, tipo e progresso com arte, sinopse, meta e
-// minutos restantes (Cinemeta), em paralelo; compacta os que o Cinemeta nao
-// conhece e devolve quantos sobraram. Nao depende de credencial Trakt.
-// BLOQUEIA — chamar do fio de descoberta.
+// Completa itens que ja tem imdb, tipo e progresso com arte (metahub, sem
+// rede), sinopse/meta/nota (Cinemeta so se ainda faltarem) e minutos
+// restantes, em paralelo. Compacta quem ficou sem poster ou "a seguir"
+// invalido — falha do Cinemeta sozinha NAO remove o item. Nao depende de
+// credencial Trakt. BLOQUEIA — chamar do fio de descoberta.
 int  trakt_enfeitar_lote(CatItem *saida, int n);
 
 // Preenche ate `max` itens do "continue assistindo", ja com arte resolvida.

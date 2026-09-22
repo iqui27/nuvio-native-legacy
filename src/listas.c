@@ -695,8 +695,8 @@ static void *fioSimkl(void *u) {
     n = lst_ler_simkl_itens(corpo, serie, lote, LST_ITENS_MAX);
     free(corpo);
   }
-  // Arte pelo Cinemeta, em lote e por imdb — o mesmo caminho do "Continuar
-  // assistindo", e ele NAO precisa de credencial do Trakt.
+  // Arte pelo metahub (e Cinemeta so para texto), em lote e por imdb — o
+  // mesmo caminho do "Continuar assistindo", sem credencial do Trakt.
   if (n) n = trakt_enfeitar_lote(lote, n);
   pthread_mutex_lock(&itTrava);
   if (minha == itGeracao) {

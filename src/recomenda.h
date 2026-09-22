@@ -25,6 +25,7 @@
 
 #include "catalogo.h"
 #include "gfx.h"
+#include "badges.h"
 #include <SDL2/SDL.h>
 #include <stddef.h>
 
@@ -266,13 +267,16 @@ void rec_avatar(GfxRect a, const char *url, const char *nome, const char *id,
 
 // Altura unica dos dois selos, e o vao entre eles. Ficam aqui porque quem
 // desenha a linha precisa deles para centrar o texto ao lado.
-#define REC_SELO_H    30.0f
-#define REC_SELO_GAP  12.0f
+// DESDE 21/09/2026 SAO OS DA TABELA UNICA (badges.h): 28 px, e nao 30 — o
+// selo do IMDb da home, do card de Continuar, da aba Social e do detalhe
+// passaram a ser o MESMO desenho (badge_imdb), e as medidas moram la.
+#define REC_SELO_H    BADGE_H
+#define REC_SELO_GAP  BADGE_GAP
 // Largura da marca amarela do IMDb e o vao ate o numero. Tambem no header
 // porque quem ancora o selo pela DIREITA (o card de Continuar assistindo,
 // issue #87) precisa da largura total antes de desenhar.
-#define REC_IMDB_W    52.0f
-#define REC_IMDB_GAP   8.0f
+#define REC_IMDB_W    BADGE_IMDB_W
+#define REC_IMDB_GAP  BADGE_IMDB_GAP
 
 // Selo de tipo ("Filme" / "Série") em `x,y`. Devolve a largura desenhada.
 // `escuro` inverte as cores para o fundo claro do foco.

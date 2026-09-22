@@ -12,6 +12,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
@@ -167,6 +168,28 @@ static char agStatus[32], agDataProx[16], agDataUlt[16], agNomeEp[120];
 static int  agTemp, agEp;
 static struct { char yt[16], nome[80], mini[80]; } trailer[EX_TRAILER_MAX];
 static int  nTrailer;
+// O hero precisa de um trailer antes de a pessoa abrir a pagina de detalhe,
+// mas carregar `extras_pedir` inteiro nesse ponto faria creditos, ficha,
+// relacionados e imagens competirem com a arte. Mantemos uma fila separada
+// que consulta apenas /videos. O fio e unico; pedidos novos substituem a
+// geracao pendente e uma resposta velha e descartada.
+typedef struct { char yt[16]; } HeroTrailer;
+static HeroTrailer heroTrailer[EX_TRAILER_MAX];
+static int nHeroTrailer;
+static char heroTrailerPedido[24];
+static int heroTrailerSerie;
+static long heroTrailerTmdb;
+static unsigned long heroTrailerGer, heroTrailerExecutada;
+static int heroTrailerVivo, heroTrailerFio;
+static int heroTrailerTentativas;
+static time_t heroTrailerTentativaEm;
+static pthread_t heroTrailerThread;
+static pthread_cond_t heroTrailerCv = PTHREAD_COND_INITIALIZER;
+static pthread_mutex_t heroTrailerTrava = PTHREAD_MUTEX_INITIALIZER;
+// Um vazio pode ser uma falha passageira (timeout, 5xx, Wi-Fi acordando).
+// A mesma obra pode tentar de novo depois deste intervalo; resultado valido
+// continua sendo idempotente e nao repete a viagem.
+#define HERO_TRAILER_RETRY_S 30
 static struct { char titulo[120], ano[8]; long tmdb; } col[EX_COL_MAX];
 static int  nCol;
 // PRODUTORAS E REDES, para a fileira de logos da pagina de detalhe. No web sao
@@ -1314,6 +1337,185 @@ const char *extras_trailer_nome(int i) {
 }
 const char *extras_trailer_miniatura(int i) {
   return (i >= 0 && i < nTrailer) ? trailer[i].mini : "";
+}
+
+static void normalizarHeroId(const char *imdb, char *dst, size_t cap) {
+  const char *p;
+  size_t n;
+  if (!dst || !cap) return;
+  dst[0] = 0;
+  if (!imdb || imdb[0] != 't' || !strncmp(imdb, "tmdb:", 5)) return;
+  p = strchr(imdb, ':');
+  n = p ? (size_t)(p - imdb) : strlen(imdb);
+  if (n >= cap) n = cap - 1;
+  memcpy(dst, imdb, n);
+  dst[n] = 0;
+}
+
+static int heroTrailerIdValido(const char *id) {
+  size_t n, i;
+  if (!id) return 0;
+  n = strlen(id);
+  if (n < 6 || n > 15) return 0;
+  for (i = 0; i < n; i++)
+    if (!((id[i] >= 'A' && id[i] <= 'Z') ||
+          (id[i] >= 'a' && id[i] <= 'z') ||
+          (id[i] >= '0' && id[i] <= '9') || id[i] == '_' || id[i] == '-')) return 0;
+  return 1;
+}
+
+// A resposta e a mesma selecao usada pelos extras da pagina: apenas YouTube
+// e Trailer/Teaser. O hero nao precisa de nome ou miniatura, entao nao copia
+// nenhum outro campo do corpo TMDB.
+static int parsearHeroVideos(const char *corpo, HeroTrailer *saida) {
+  const char *v;
+  int n = 0;
+  if (!corpo || !saida) return 0;
+  v = js_array(corpo, NULL, "results");
+  while (v && n < EX_TRAILER_MAX) {
+    const char *vf = js_fim(v);
+    char site[24] = "", tipo[24] = "", chave[16] = "";
+    js_texto(v, vf, "site", site, sizeof site);
+    js_texto(v, vf, "type", tipo, sizeof tipo);
+    js_texto(v, vf, "key", chave, sizeof chave);
+    if (!strcmp(site, "YouTube") &&
+        (!strcmp(tipo, "Trailer") || !strcmp(tipo, "Teaser")) &&
+        heroTrailerIdValido(chave)) {
+      snprintf(saida[n].yt, sizeof saida[n].yt, "%s", chave);
+      n++;
+    }
+    v = js_prox(vf);
+  }
+  return n;
+}
+
+#ifdef NUVIO_TRAILER_TEST
+// Ponto de teste pequeno para o parser usado pelo worker real. O alvo normal
+// nao exporta este auxiliar; o harness compila com NUVIO_TRAILER_TEST e assim
+// exercita o mesmo filtro de site/tipo/chave sem simular o JSON em JavaScript.
+int extras_hero_trailer_parse(const char *corpo, char *dst, unsigned cap) {
+  HeroTrailer encontrados[EX_TRAILER_MAX];
+  int n = parsearHeroVideos(corpo, encontrados);
+  if (dst && cap) {
+    dst[0] = 0;
+    if (n > 0) snprintf(dst, cap, "%s", encontrados[0].yt);
+  }
+  return n;
+}
+#endif
+
+static void *lacoHeroTrailer(void *ignorado) {
+  (void)ignorado;
+  for (;;) {
+    char id[24], chave[140], url[640];
+    int serie;
+    long tmdb;
+    unsigned long ger;
+    HeroTrailer encontrados[EX_TRAILER_MAX];
+    int n = 0;
+    pthread_mutex_lock(&heroTrailerTrava);
+    while (heroTrailerExecutada == heroTrailerGer)
+      pthread_cond_wait(&heroTrailerCv, &heroTrailerTrava);
+    ger = heroTrailerGer;
+    snprintf(id, sizeof id, "%s", heroTrailerPedido);
+    serie = heroTrailerSerie;
+    tmdb = heroTrailerTmdb;
+    heroTrailerExecutada = ger;
+    pthread_mutex_unlock(&heroTrailerTrava);
+
+    snprintf(chave, sizeof chave, "%s", desc_chave_tmdb());
+    if (chave[0]) {
+      long idT = tmdb;
+      if (idT <= 0) {
+        snprintf(url, sizeof url,
+                 "https://api.themoviedb.org/3/find/%s?api_key=%s&external_source=imdb_id",
+                 id, chave);
+        { char *corpo = rede_baixar(url, 4);
+          if (corpo) {
+            const char *v = js_array(corpo, NULL, serie ? "tv_results" : "movie_results");
+            if (v) idT = (long)js_num(v, js_fim(v), "id", 0.0);
+            free(corpo);
+          } }
+      }
+      if (idT > 0) {
+        snprintf(url, sizeof url,
+                 "https://api.themoviedb.org/3/%s/%ld/videos?api_key=%s&language=%s",
+                 serie ? "tv" : "movie", idT, chave, desc_tmdb_idioma());
+        { char *corpo = rede_baixar(url, 4);
+          if (corpo) {
+            n = parsearHeroVideos(corpo, encontrados);
+            free(corpo);
+          } }
+      }
+    }
+
+    pthread_mutex_lock(&heroTrailerTrava);
+    // A pessoa pode ter mudado o destaque durante a rede_baixar. Nesse caso
+    // nao publicar nem mesmo um resultado vazio: o pedido novo continua sendo
+    // processado no proximo ciclo do mesmo fio.
+    if (ger == heroTrailerGer && !strcmp(id, heroTrailerPedido)) {
+      int i;
+      nHeroTrailer = n;
+      for (i = 0; i < n; i++) heroTrailer[i] = encontrados[i];
+      heroTrailerVivo = 0;
+    }
+    pthread_mutex_unlock(&heroTrailerTrava);
+  }
+  return NULL;
+}
+
+void extras_hero_trailer_pedir(const char *imdb, int serie, long tmdbId) {
+  char id[24];
+  time_t agora = time(NULL);
+  normalizarHeroId(imdb, id, sizeof id);
+  if (!id[0] || !desc_chave_tmdb()[0] || !ajustes_tmdb_trailers()) return;
+  pthread_mutex_lock(&heroTrailerTrava);
+  if (!strcmp(heroTrailerPedido, id) && heroTrailerSerie == serie &&
+      heroTrailerTmdb == tmdbId) {
+    if (heroTrailerVivo || nHeroTrailer > 0 ||
+        agora - heroTrailerTentativaEm < HERO_TRAILER_RETRY_S) {
+      pthread_mutex_unlock(&heroTrailerTrava);
+      return;
+    }
+  } else {
+    heroTrailerTentativas = 0;
+  }
+  snprintf(heroTrailerPedido, sizeof heroTrailerPedido, "%s", id);
+  heroTrailerSerie = serie;
+  heroTrailerTmdb = tmdbId;
+  nHeroTrailer = 0;
+  heroTrailerVivo = 1;
+  heroTrailerTentativas++;
+  heroTrailerTentativaEm = agora;
+  heroTrailerGer++;
+  if (!heroTrailerFio) {
+    if (pthread_create(&heroTrailerThread, NULL, lacoHeroTrailer, NULL) == 0) {
+      pthread_detach(heroTrailerThread);
+      heroTrailerFio = 1;
+    } else {
+      heroTrailerVivo = 0;
+      pthread_mutex_unlock(&heroTrailerTrava);
+      return;
+    }
+  }
+  pthread_cond_signal(&heroTrailerCv);
+  pthread_mutex_unlock(&heroTrailerTrava);
+}
+
+int extras_hero_trailer_obter(const char *imdb, char *dst, unsigned cap) {
+  char id[24];
+  int ok = 0;
+  if (dst && cap) dst[0] = 0;
+  normalizarHeroId(imdb, id, sizeof id);
+  if (!id[0] || !dst || cap < 2) return 0;
+  pthread_mutex_lock(&heroTrailerTrava);
+  if (!strcmp(heroTrailerPedido, id) && !heroTrailerVivo &&
+      heroTrailerExecutada == heroTrailerGer && nHeroTrailer > 0) {
+    snprintf(dst, cap, "%s", heroTrailer[0].yt);
+    ok = 1;
+  }
+  pthread_mutex_unlock(&heroTrailerTrava);
+  return ok;
 }
 
 // Abre o trailer no app nativo da plataforma. O app nao tem reprodutor de

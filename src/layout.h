@@ -257,6 +257,10 @@
 // Efeito: de ~6,6 para ~7,8 posteres por tela, e a fileira deixa de parecer
 // rala — que era o defeito oposto ao que o comentario antigo dizia consertar.
 #define NV_CARD_GAP      24.0f
+// Cards editoriais grandes crescem 6% quando focados. O gap comum ficava quase
+// todo consumido pela expansão lateral; este valor preserva cerca de 24px
+// visíveis entre os cards grandes mesmo no foco.
+#define NV_CARD_GAP_GRANDE 40.0f
 // Passo entre fileiras MEDIDO: titulo da fileira 0 em y=518, da fileira 1 em
 // y=934 -> 416. Desses, 46 sao do cabecalho ate os cards (518 -> 564) e 322 do
 // card, sobrando 48 de respiro entre uma fileira e a proxima.
@@ -325,6 +329,16 @@
 #define NV_DESTAQUE_H    236.0f   // continue watching: 419 x 236
                                   // (16:9 -> 3:2 -> 4:3 -> +20%: cada passo foi
                                   //  comparado lado a lado na TV)
+
+// Fileira editorial panorâmica "Destaques". Esta é a opção já existente; o
+// formato 4:3 abaixo é adicional e não substitui este card.
+#define NV_DESTAQUE_EDITORIAL_H 320.0f
+#define NV_DESTAQUE_EDITORIAL_W 568.0f
+
+// Variante editorial maior, observada na fileira "For You - Movie": o card é
+// quase quadrado, mas preserva 4:3. A moldura usa cover para ocupar tudo.
+#define NV_DESTAQUE_QUADRADO_H 405.0f
+#define NV_DESTAQUE_QUADRADO_W (NV_DESTAQUE_QUADRADO_H * 4.0f / 3.0f)
 
 // Hero-carrossel: tempo em cada arte e duracao do crossfade.
 #define NV_HERO_INTERVALO_MS  7000
@@ -548,9 +562,20 @@
 // Quanto a pagina de titulo espera, assentada e no topo, antes de trocar a
 // arte pelo trailer mudo (trailer.h). Tempo de ler o titulo e a sinopse.
 #define NV_TRAILER_ESPERA_MS 2500
-// No destaque da home a espera e maior: o foco passa pelo hero a caminho das
-// fileiras, e trocar a arte por video a cada parada curta cansaria.
-#define NV_TRAILER_HERO_ESPERA_MS 4000
+// No destaque da home a Apple ganha uma janela curta antes do fallback do
+// YouTube. Esperar quatro segundos fazia o hero parecer parado na Samsung;
+// a janela total abaixo continua finita para que a rotacao nunca dependa da
+// rede.
+#define NV_TRAILER_HERO_ESPERA_MS 1200
+#define NV_TRAILER_HERO_MAX_ESPERA_MS 3200
+// Depois de criar o elemento, seguramos o card enquanto ele prepara. Se a
+// rede/browser nao produzir `playing` nesse prazo, a arte volta e o carrossel
+// pode seguir para o proximo titulo.
+#define NV_TRAILER_HERO_PREPARA_MS 3500
+// Cada fonte recebe seu proprio prazo de preparacao. O teto e explicito:
+// resolucao (3,2 s) + Apple (3,5 s) + YouTube (3,5 s) = 10,2 s, mesmo que a
+// Apple falhe no ultimo instante da janela e o fallback precise preparar.
+#define NV_TRAILER_HERO_MAX_TOTAL_ESPERA_MS (NV_TRAILER_HERO_MAX_ESPERA_MS + 2 * NV_TRAILER_HERO_PREPARA_MS)
 // A ampliacao do trailer virou ajuste ("Proporção do trailer", ajustes_trailer_zoom).
 // Frequencia (rad/s) da mola de 2a ordem que rola as fileiras da home. Vale o
 // k da CAUDA medida no deslize da referencia (~12,5 /s); 11,5 e o valor que

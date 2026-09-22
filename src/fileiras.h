@@ -61,10 +61,9 @@
 #define FIL_LIMITE_MAX    16
 #define FIL_LIMITE_PADRAO  7
 
-// Formas de card que a home JA implementa (o enum TipoFileira de home.h). NAO
-// ha tipo novo aqui: a tela de Ajustes so oferece o que o desenho sabe fazer, e
-// a traducao para TipoFileira acontece em home.c, no unico lugar que conhece as
-// medidas de cada forma.
+// Formas de card que a home JA implementa (o enum TipoFileira de home.h). A
+// tela de Ajustes so oferece o que o desenho sabe fazer, e a traducao para
+// TipoFileira acontece em home.c, no unico lugar que conhece as medidas.
 typedef enum {
   FIL_TIPO_AUTO = 0,   // como a home decide hoje (nome do catalogo + prefs)
   FIL_TIPO_CARTAZ,     // FILEIRA_NORMAL   — cartaz em pe 2:3
@@ -72,6 +71,8 @@ typedef enum {
   FIL_TIPO_COLECAO,    // FILEIRA_COLECAO  — deitada intermediaria
   FIL_TIPO_SERVICO,    // FILEIRA_SERVICO  — deitada compacta
   FIL_TIPO_TOP10,      // FILEIRA_TOP10    — ranking
+  // Fica no fim para nao alterar os numeros ja gravados para os tipos acima.
+  FIL_TIPO_DESTAQUE_QUADRADO, // FILEIRA_DESTAQUE_QUADRADO — 4:3 maior
   FIL_TIPO_N
 } FilTipo;
 

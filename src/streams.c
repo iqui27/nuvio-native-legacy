@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 #include "addons.h"
 #include "marco.h"
 #include "debrid.h"
@@ -19,6 +20,13 @@
 #define FOLHA_W       720.0f
 #define FOLHA_LINHA   228.0f
 #define FOLHA_TOPO    272.0f
+#define FOLHA_AUDIO_W  88.0f
+#define FOLHA_AUDIO_N   8
+#define FOLHA_AUDIO_BAR 6.0f
+#define FOLHA_AUDIO_GAP 5.0f
+// Canal 0..255 saturado: as tintas secundarias somam um degrau ao canal, e
+// sobre realce escuro a principal ja e 255.
+#define C8(v) ((v)>255?255:(v))
 
 static Stream *lista;
 static int n = 0;
@@ -27,6 +35,18 @@ static int n = 0;
 static pthread_mutex_t verTrava = PTHREAD_MUTEX_INITIALIZER;
 static int atual = -1, recarregar;
 static char contexto[320];
+// O ALVO DA LISTA — issue #101. Ver a nota longa em streams.h: `alvoPedido` e
+// o carimbo do proximo pedido e `alvoLista` o da lista que esta em memoria.
+// 64 e o mesmo tamanho que app.c usa para montar "tt1234567:99:99" e para os
+// ids de canal do stalker/xtream, que sao os maiores que passam por aqui.
+static char alvoPedido[64], alvoLista[64];
+void stream_definir_alvo(const char *id) {
+  snprintf(alvoPedido, sizeof alvoPedido, "%s", id ? id : "");
+}
+int stream_lista_do_alvo(const char *id) {
+  if (!id || !*id || !alvoLista[0] || n < 1) return 0;
+  return !strcmp(alvoLista, id);
+}
 void stream_definir_atual(int i) { atual = i >= 0 && i < n ? i : -1; }
 int stream_atual(void) { return atual; }
 
@@ -89,6 +109,21 @@ void stream_definir_lista(const Stream *l, int qtd) {
   // o tipo de defeito que toca a coisa errada sem nenhum erro no log.
   preferida = -1;
   foco = 0;
+  // A LISTA HERDA O CARIMBO DO PEDIDO (issue #101). Quem publica e addons.c,
+  // que so conhece o alvo DELE — e o dele pode ja estar obsoleto quando a
+  // resposta chega. O carimbo vem de quem pediu, em app.c, e e ele que permite
+  // a qualquer consumidor perguntar "esta lista e do episodio que eu quero?".
+  snprintf(alvoLista, sizeof alvoLista, "%s", alvoPedido);
+}
+
+void stream_invalidar(const char *porque) {
+  if (n > 0) {
+    printf("[fonte] %d fontes de %s descartadas: %s\n", n,
+           alvoLista[0] ? alvoLista : "(sem alvo)", porque ? porque : "");
+    fflush(stdout);
+  }
+  stream_definir_lista(NULL, 0);
+  alvoLista[0] = 0;
 }
 
 int stream_n(void) {
@@ -591,23 +626,40 @@ int stream_automatico(void) {
 }
 
 
-static int grupo, filtro;
+static int grupo, filtro, soMp4;
 
 // BOTOES DO CABECALHO. "Sem HDR" so existe onde ha o que renegociar (webOS);
 // ver o bloco "TELA PRETA COM AUDIO TOCANDO" em video.h. Oferecer um botao que
 // nao faz nada seria pior que nao oferecer: a pessoa aperta, nada muda, e passa
-// a duvidar dos outros dois.
-enum { BT_RECARREGAR, BT_SEM_HDR, BT_FECHAR };
+// a duvidar dos outros dois. "Só MP4" (#91) filtra a lista — permanece na folha.
+enum { BT_RECARREGAR, BT_SEM_HDR, BT_SO_MP4, BT_FECHAR };
 static int botaoDe(int i) {
-  if (video_pode_forcar_sdr()) return i;          // 0,1,2
-  return i == 0 ? BT_RECARREGAR : BT_FECHAR;      // 0,1
+  // Ordem visivel: Recarregar, [Sem HDR], Só MP4, Fechar.
+  if (video_pode_forcar_sdr()) {
+    if (i == 0) return BT_RECARREGAR;
+    if (i == 1) return BT_SEM_HDR;
+    if (i == 2) return BT_SO_MP4;
+    return BT_FECHAR;
+  }
+  if (i == 0) return BT_RECARREGAR;
+  if (i == 1) return BT_SO_MP4;
+  return BT_FECHAR;
 }
-static int nBotoes(void) { return video_pode_forcar_sdr() ? 3 : 2; }
+static int nBotoes(void) { return video_pode_forcar_sdr() ? 4 : 3; }
 static const char *rotuloBotao(int b) {
-  return b == BT_RECARREGAR ? "Recarregar" : b == BT_SEM_HDR ? "Sem HDR" : "Fechar";
+  if (b == BT_RECARREGAR) return "Recarregar";
+  if (b == BT_SEM_HDR)    return "Sem HDR";
+  if (b == BT_SO_MP4)     return soMp4 ? "MP4 ✓" : "MP4";
+  return "Fechar";
 }
 static char provedores[13][96];
 static int nProvedores;
+
+static int passaFiltro(int i) {
+  if (soMp4 && !lista[i].mp4) return 0;
+  if (filtro && strcmp(lista[i].provedor, provedores[filtro])) return 0;
+  return 1;
+}
 
 static void atualizarProvedores(void) {
   nProvedores = 1;
@@ -622,17 +674,44 @@ static void atualizarProvedores(void) {
 }
 static int filtrado(int linha) {
   for(int i=0,j=0;i<n;i++)
-    if(!filtro || !strcmp(lista[i].provedor,provedores[filtro]))
+    if(passaFiltro(i))
       if(j++==linha) return i;
   return -1;
 }
 static int nFiltrados(void) {
   int k=0;
-  for(int i=0;i<n;i++) if(!filtro || !strcmp(lista[i].provedor,provedores[filtro])) k++;
+  for(int i=0;i<n;i++) if(passaFiltro(i)) k++;
   return k;
 }
+
+// EQUALIZADOR DO "REPRODUZINDO AGORA". O player nativo nao expoe amplitude
+// de audio por quadro, entao isto NAO finge ser medidor: e uma assinatura visual
+// discreta de que a fonte esta ativa. O movimento usa so primitivas ja existentes
+// e o relogio do desenho; sem alocacao, textura ou fio novo.
+static void desenharAudioBars(float x, float y, float alfa, int focado,
+                              Uint32 agora) {
+  static const float parado[FOLHA_AUDIO_N] = { .35f, .58f, .82f, .52f, .72f, .44f, .64f, .48f };
+  float cr, cg, cb;
+  int i;
+  ajustes_acento_tinta(&cr, &cg, &cb);
+  if (focado) {
+    int tinta = ajustes_tinta_foco();
+    cr = cg = cb = (float)tinta / 255.0f;
+  }
+  for (i = 0; i < FOLHA_AUDIO_N; i++) {
+    float nivel = parado[i];
+    float h;
+    if (!ajustes_animacoes_reduzidas())
+      nivel = .22f + .78f * (.5f + .5f * sinf((float)agora * .0042f + i * .82f));
+    h = 10.0f + nivel * 32.0f;
+    gfx_cor((GfxRect){ x + i * (FOLHA_AUDIO_BAR + FOLHA_AUDIO_GAP),
+                       y + 42.0f - h, FOLHA_AUDIO_BAR, h },
+            .5f, cr, cg, cb, alfa * .92f);
+  }
+}
+
 void stream_folha_abrir(void) {
-  aberta=1; escolha=-1; foco=0; grupo=1; filtro=0; recarregar=0;
+  aberta=1; escolha=-1; foco=0; grupo=1; filtro=0; soMp4=0; recarregar=0;
   atualizarProvedores();
   if(atual>=0) foco=atual;
   rolagem=0;
@@ -664,6 +743,7 @@ void stream_folha_evento(const SDL_Event *e) {
         // Fecha a folha junto: a imagem volta (ou nao) na propria tela do
         // player, e deixar a folha aberta em cima esconderia o resultado.
         case BT_SEM_HDR:    video_forcar_sdr(); aberta=0; break;
+        case BT_SO_MP4:     soMp4 = !soMp4; foco=0; rolagem=0; break;
         default:            aberta=0; break;
       }
     }
@@ -693,8 +773,19 @@ void stream_folha_desenhar(Uint32 agora) {
   (void)agora;
   if(anim<.005f) return;
   float x=NV_TELA_W-FOLHA_W+(1-anim)*FOLHA_W;
+  // A COR DE REALCE E A TINTA QUE CONTRASTA COM ELA: toda superficie em foco
+  // desta folha veste as duas (regra do dono, 21/09: texto sobre realce e
+  // branco a nao ser que o realce seja branco — nunca um 24 cravado).
+  float ar,ag,ab; int ti=ajustes_tinta_foco(), ti2=ajustes_tinta_foco2();
+  ajustes_acento_tinta(&ar,&ag,&ab);
   gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.02f,.02f,.025f,.35f*anim);
-  gfx_cor((GfxRect){x,0,FOLHA_W,NV_TELA_H},.025f,.095f,.095f,.10f,anim);
+  // PAINEL FLUTUANTE, como a barra lateral (menu.c, 21/09/2026): solto do
+  // topo e da base em 24 px, cantos de 28 px (raio pelo menor lado, que e a
+  // largura), translucido, com UMA luz difusa na cor de realce entrando pelo
+  // canto superior direito, presa aos cantos do painel (GFX_LUZ). E a unica
+  // mancha grande da folha; o veu de tela cheia ja e a primeira camada.
+  gfx_cor((GfxRect){x,24,FOLHA_W,NV_TELA_H-48},28.0f/FOLHA_W,.055f,.058f,.068f,.94f*anim);
+  gfx_luz_canto((GfxRect){x,24,FOLHA_W,NV_TELA_H-48},28.0f/FOLHA_W,FOLHA_W*.9f,-FOLHA_W*.1f,FOLHA_W*.65f,ar,ag,ab,.22f*anim);
   txt_desenhar_alpha(txt_linha(TXT_PAINEL_TITULO,"Fontes",240,241,243,255),x+40,44,anim);
   int nbt=nBotoes();
   for(int i=0;i<nbt;i++) {
@@ -702,8 +793,12 @@ void stream_folha_desenhar(Uint32 agora) {
     // mesmo ponto, 36 px antes da borda do painel.
     float bx=x+FOLHA_W-36-(nbt-i)*128+8;
     int sel=grupo==-1 && foco==i;
-    gfx_cor((GfxRect){bx,44,120,50},.3f,sel?.94f:.14f,sel?.94f:.14f,sel?.95f:.15f,anim);
-    int c=sel?24:224;
+    // Em foco: brilho difuso por tras (0,9x a altura de folga) e a pilula na
+    // cor de realce.
+    if(sel) gfx_rect((GfxRect){bx-45,44-45,120+90,50+90},0,GFX_SOMBRA,1.0f,0,0,.5f,ar,ag,ab,.35f*anim);
+    if(sel) gfx_cor((GfxRect){bx,44,120,50},.3f,ar,ag,ab,anim);
+    else    gfx_cor((GfxRect){bx,44,120,50},.3f,.14f,.14f,.15f,anim);
+    int c=sel?ti:224;
     TxtLinha l=txt_linha(TXT_PG_FIM,rotuloBotao(botaoDe(i)),c,c,c,255);
     txt_desenhar_alpha(l,bx+(120-l.w)*.5f,58,anim);
   }
@@ -714,16 +809,22 @@ void stream_folha_desenhar(Uint32 agora) {
       ajuda="Imagem preta com o áudio tocando? Recarrega esta fonte sem HDR nem Dolby Vision.";
     else if(grupo==-1 && botaoDe(foco)==BT_RECARREGAR)
       ajuda="Pergunta as fontes de novo a todos os addons.";
+    else if(grupo==-1 && botaoDe(foco)==BT_SO_MP4)
+      ajuda=soMp4
+        ? "Mostrando só containers MP4 (útil para achar Dolby Vision em MP4). OK tira o filtro."
+        : "Filtra a lista para fontes em MP4. OK liga o filtro.";
     txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,ajuda,184,187,193,255,FOLHA_W-80),x+40,126,anim); }
   gfx_recorte(x+40,180,FOLHA_W-80,62);
   int ini=filtro>1?filtro-1:0;
   float tx=x+40;
   for(int i=ini;i<nProvedores && i<ini+3;i++) {
-    float w=i?232:108;int sel=i==filtro,c=sel?24:202;
-    gfx_cor((GfxRect){tx,182,w,50},.5f,sel?.94f:.14f,sel?.94f:.14f,sel?.95f:.15f,anim);
+    float w=i?232:108;int sel=i==filtro,c=sel?ti:202;
+    if(sel && grupo==0) gfx_rect((GfxRect){tx-45,182-45,w+90,50+90},0,GFX_SOMBRA,1.0f,0,0,.5f,ar,ag,ab,.35f*anim);
+    if(sel) gfx_cor((GfxRect){tx,182,w,50},.5f,ar,ag,ab,anim);
+    else    gfx_cor((GfxRect){tx,182,w,50},.5f,.14f,.14f,.15f,anim);
     TxtLinha l=txt_linha_corta(TXT_PG_FIM,provedores[i],c,c,c,255,w-24);
     txt_desenhar_alpha(l,tx+(w-l.w)*.5f,196,anim);
-    if(sel && grupo==0) gfx_cor((GfxRect){tx+16,237,w-32,2},0,.94f,.94f,.95f,anim);
+    if(sel && grupo==0) gfx_cor((GfxRect){tx+16,237,w-32,2},0,ti/255.0f,ti/255.0f,ti/255.0f,anim);
     tx+=w+12;
   }
   gfx_sem_recorte();
@@ -751,11 +852,17 @@ void stream_folha_desenhar(Uint32 agora) {
     // ele fixou para o app inteiro no mesmo dia (ver menu.c) e: selecionado
     // fica CLARO com texto ESCURO.
     GfxRect r={x+40,y,FOLHA_W-80,FOLHA_LINHA-14};
-    if(sel) gfx_cor(r,.10f,.94f,.94f,.95f,anim);
+    // A linha em foco e a COR DE REALCE com um brilho difuso por tras (a
+    // mesma luz do menu lateral; a folga e 0,5x a altura porque a linha tem
+    // 214 px e 0,9x cobriria a folha inteira de uma mancha). O recorte da
+    // lista segura a luz dentro do painel.
+    if(sel) { gfx_rect((GfxRect){r.x-r.h*.5f,r.y-r.h*.5f,r.w+r.h,r.h*2.0f},0,GFX_SOMBRA,1.0f,0,0,.5f,ar,ag,ab,.32f*anim);
+              gfx_cor(r,.10f,ar,ag,ab,anim); }
     else { r.x+=2;r.y+=2;r.w-=4;r.h-=4;
            gfx_cor(r,.09f,.135f,.135f,.14f,anim); }
     // As quatro linhas de texto invertem junto: claro sobre claro nao se le.
-    { int c1=sel?22:240, c2=sel?58:175, c3=sel?54:194, c4=sel?40:224;
+    // Sobre o realce, a tinta principal e a secundaria de ajustes.h.
+    { int c1=sel?ti:240, c2=sel?ti2:175, c3=sel?ti2:194, c4=sel?ti2:224;
       corTitulo=c1; corProv=c2; corDesc=c3; corMeta=c4; }
     float lx=x+62,w=FOLHA_W-124;
     char nome[sizeof s->rotulo],descricao[sizeof s->descricao];
@@ -763,7 +870,7 @@ void stream_folha_desenhar(Uint32 agora) {
     // SDL_ttf nao interpreta quebras de linha; nao renderizar glifos .notdef.
     for(char *p=nome;*p;p++)if((unsigned char)*p<32)*p=' ';
     for(char *p=descricao;*p;p++)if((unsigned char)*p<32)*p=' ';
-    txt_desenhar_alpha(txt_linha_corta(TXT_PAINEL_ITEM,nome,corTitulo,corTitulo+1,corTitulo+3,255,w),lx,y+16,anim);
+    txt_desenhar_alpha(txt_linha_corta(TXT_PAINEL_ITEM,nome,corTitulo,C8(corTitulo+1),C8(corTitulo+3),255,w),lx,y+16,anim);
     // A FONTE LEMBRADA, MARCADA. Sem a marca, quem abre a folha para conferir
     // continua procurando a propria fonte entre dezenas de linhas — que e a
     // queixa literal do issue #56 ("search through many links to find the same
@@ -811,14 +918,21 @@ void stream_folha_desenhar(Uint32 agora) {
       wProv = w - pil.w - 40.0f;
       if (wProv < 120.0f) wProv = 120.0f;
     }
-    txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,i==atual?"Reproduzindo agora":s->provedor,corProv,corProv+3,corProv+10,255,wProv),lx,y+46,anim);
+    // A fonte ativa ganha um respiro para o equalizador. O rotulo continua
+    // sendo texto, entao a traducao de "Reproduzindo agora" permanece na
+    // camada de idioma e nao vira uma badge diferente em cada tela.
+    if (i == atual) wProv -= FOLHA_AUDIO_W + 14.0f;
+    if (wProv < 120.0f) wProv = 120.0f;
+    txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,i==atual?"Reproduzindo agora":s->provedor,corProv,C8(corProv+3),C8(corProv+10),255,wProv),lx,y+46,anim);
+    if (i == atual)
+      desenharAudioBars(lx + w - FOLHA_AUDIO_W, y + 40.0f, anim, sel, agora);
     // AS TRES LINHAS DE BAIXO DESCEM 10 px, EM BLOCO. A pilula acaba em y+69 e
     // a descricao comecava em y+76: 8 px de tinta a tinta, que a 3 m viram
     // zero. Os 10 px saem da sobra do RODAPE da linha (as badges acabavam em
     // y+197 numa linha de 214), entao nenhum vao entre as linhas de baixo
     // muda — so entra ar debaixo da pilula. Mexer na pilula em vez disso a
     // tiraria do centro da linha do provedor, que e onde ela esta ancorada.
-    txt_bloco(TXT_PG_FIM,descricao,corDesc,corDesc+3,corDesc+8,lx,y+86,w,25,anim,2);
+    txt_bloco(TXT_PG_FIM,descricao,corDesc,C8(corDesc+3),C8(corDesc+8),lx,y+86,w,25,anim,2);
     char meta[192],qual[24]="";
     float mx = lx;
     const char *cont = containerDa(s);
@@ -845,9 +959,10 @@ void stream_folha_desenhar(Uint32 agora) {
       // A sigla ja esta na pilula: o texto comeca depois dela e do " · " (4
       // bytes: espaco, U+00B7 em dois bytes, espaco).
       if (ehMp4) { texto += 3; if (!strncmp(texto, " \xc2\xb7 ", 4)) texto += 4; }
-      txt_desenhar_alpha(txt_linha_corta(TXT_MINI,texto,corMeta,corMeta+2,corMeta+8,255,w-(mx-lx)),mx,y+150,anim); }
-    // Linha clara pede tinta escura: a arte das badges e branca.
-    if(sel) badges_desenhar_escura(s->badges,lx,y+181,w,26,anim);
+      txt_desenhar_alpha(txt_linha_corta(TXT_MINI,texto,corMeta,C8(corMeta+2),C8(corMeta+8),255,w-(mx-lx)),mx,y+150,anim); }
+    // Linha clara pede tinta escura: a arte das badges e branca. Sobre um
+    // realce escuro (rosa) a tinta e branca e as badges ficam como estao.
+    if(sel && ti<128) badges_desenhar_escura(s->badges,lx,y+181,w,26,anim);
     else    badges_desenhar(s->badges,lx,y+181,w,26,anim);
   }
   if(!nf) {

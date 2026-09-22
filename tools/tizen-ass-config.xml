@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets"
+        xmlns:tizen="http://tizen.org/ns/widgets"
+        id="http://nuvio.tv/diagnostic-ass"
+        version="0.1.0"
+        viewmodes="maximized">
+  <tizen:application id="NuvioASS01.AssDiag"
+                     package="NuvioASS01"
+                     required_version="5.5"/>
+  <tizen:profile name="tv"/>
+  <name>Nuvio ASS Diagnostic</name>
+  <icon src="icon.png"/>
+  <content src="index.html"/>
+  <tizen:content-security-policy>
+    default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *;
+    connect-src *; img-src * data: blob:; media-src *;
+  </tizen:content-security-policy>
+  <access origin="*" subdomains="true"/>
+  <tizen:allow-navigation>*</tizen:allow-navigation>
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+  <tizen:privilege name="http://tizen.org/privilege/tv.audio"/>
+  <tizen:setting background-support="disable"
+                 screen-orientation="landscape"
+                 context-menu="disable"
+                 background-vibration="disable"
+                 encryption="disable"
+                 hwkey-event="enable"/>
+</widget>

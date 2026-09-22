@@ -71,6 +71,28 @@ int stream_folha_recarregar(void);
 
 // Substitui a lista do titulo corrente. Chamar quando os addons responderem.
 void stream_definir_lista(const Stream *lista, int n);
+
+// DE QUEM E A LISTA QUE ESTA EM MEMORIA — issue #101.
+//
+// Ate a 1.3.12 a lista aqui era global E ANONIMA: um vetor de fontes sem
+// nenhum registro do episodio para o qual foi pedida. Quem a usava (a escolha
+// automatica em app.c e a folha de fontes) so podia confiar que quem trocou de
+// episodio tambem mandou refazer a busca. Bastava UM caminho nao mandar para o
+// E6 reproduzir a fonte do E5 — sem erro nenhum no log, porque nao ha erro: a
+// lista estava la, valida, do episodio errado.
+//
+// O alvo e o mesmo id que vai aos addons ("tt1234567:temporada:episodio", ou o
+// id do canal). stream_definir_alvo carimba o PROXIMO pedido; a lista que
+// chegar herda o carimbo, porque quem publica (addons.c) nao conhece o alvo em
+// que o app esta — ele conhece o dele, que pode ja estar obsoleto.
+//
+// stream_lista_do_alvo devolve 0 tambem quando a lista esta vazia ou sem
+// carimbo: em duvida a resposta e "nao e sua", e o custo de errar para este
+// lado e uma busca a mais.
+void stream_definir_alvo(const char *id);
+int  stream_lista_do_alvo(const char *id);
+// Descarta a lista porque ela e de outro alvo. `porque` so entra no log.
+void stream_invalidar(const char *porque);
 int  stream_n(void);
 const Stream *stream_item(int i);
 

@@ -65,3 +65,8 @@ listas-p*.txt
 /docs/*.md
 /design/**/*.md
 /tests/*.md
+
+# Planos, diagnosticos e saida de ferramenta: internos, como os outros *.md.
+/.planning/
+/docs/diagnosticos/
+/graphify-out/

@@ -135,6 +135,8 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
       fim: 0,
       bufPct: 0,
       larg: 0, alt: 0,
+      trilhas: null,     // cache de getTotalTrackInfo(), ver a nota em "prepareAsync"
+      geracao: 0,        // identidade monotônica da sessão que instalou callbacks
       rect: [0, 0, 1920, 1080]
     };
   }
@@ -173,7 +175,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     return [Math.round(x), Math.round(y), Math.round(w), Math.round(h)];
   }
 
-  function ouvir(p) {
+  function ouvir(p, geracao) {
     // Os quatro eventos que o video.h precisa espelhar. No webOS eles chegam
     // pela assinatura LS2 e caem no aoEvento; aqui chegam por callback e caem
     // neste mesmo objeto S, que o "estado" abaixo entrega ao C uma vez por
@@ -181,15 +183,51 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     // do JS a qualquer momento e como o app trava sem mensagem.
     try {
       p.setListener({
-        onbufferingprogress: function (pct) { S.bufPct = pct | 0; },
-        onbufferingcomplete: function () { S.bufPct = 100; },
-        onstreamcompleted:   function () { S.tocando = 0; S.fim = 1; },
-        oncurrentplaytime:   function (ms) { S.posMs = +ms || 0; },
-        onerror:             function (e) { S.erro = "" + e; S.tocando = 0; },
+        onbufferingprogress: function (pct) {
+          if (S.geracao !== geracao) return;
+          S.bufPct = pct | 0;
+        },
+        onbufferingcomplete: function () {
+          if (S.geracao !== geracao) return;
+          S.bufPct = 100;
+        },
+        onstreamcompleted:   function () {
+          if (S.geracao !== geracao) return;
+          S.tocando = 0; S.fim = 1;
+        },
+        oncurrentplaytime:   function (ms) {
+          if (S.geracao !== geracao) return;
+          S.posMs = +ms || 0;
+        },
+        onerror:             function (e) {
+          if (S.geracao !== geracao) return;
+          S.erro = "" + e; S.tocando = 0;
+        },
         onevent:             function () {},
         onsubtitlechange:    function () {},
         ondrmevent:          function () {}
       });
+    } catch (e) {}
+  }
+
+  // MARCA CADA CHAMADA SINCRONA DO AVPLAY QUE FICA DENTRO DO CALLBACK DE
+  // prepareAsync. O registro D1 1106 mostrou um longtask de 6,4 s antes de
+  // "avplay prepared", mas sem esta separacao nao da para saber se o tempo
+  // veio do firmware em prepareAsync, de setDisplayRect/play ou da leitura de
+  // metadados. O shell ja expõe __nvDiag; em Chrome/contrato ele pode nao
+  // existir, entao o medidor precisa ser inerte fora da build de diagnostico.
+  function avAgora() {
+    try {
+      if (typeof performance !== "undefined" && performance && performance.now)
+        return performance.now();
+    } catch (e) {}
+    return Date.now();
+  }
+  function avMedir(nome, antes) {
+    var dt = avAgora() - antes;
+    try {
+      if (window.__nvDiag)
+        window.__nvDiag("[video] " + nome + " " + (dt | 0) + " ms", 0);
     } catch (e) {}
   }
 
@@ -198,37 +236,85 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
   if (op === "abrir") {
     var p = pl();
     if (!p) return 0;
+    var geracao = ++S.geracao;
     // Fechar antes de abrir. Sem isto o segundo titulo da sessao encontra o
     // player em estado PLAYING e o open() e recusado — o mesmo formato do bug
     // "abrir -> sair -> abrir" que o caminho da LG ja tinha.
     try { if (S.aberto) { p.stop(); p.close(); } } catch (e) {}
     S.aberto = 0; S.tocando = 0; S.pronto = 0; S.posMs = 0;
     S.erro = ""; S.fim = 0; S.bufPct = 0; S.larg = 0; S.alt = 0;
+    S.trilhas = null;   // titulo novo: a lista de faixas do titulo anterior nao vale
     try { p.open(s); } catch (e) { S.erro = "open: " + e; return 0; }
     S.aberto = 1;
-    ouvir(p);
+    ouvir(p, geracao);
     // PLAYER_DISPLAY_MODE_FULL_SCREEN preenche o retangulo pedido, sem
     // letterbox proprio. E o certo aqui: player.c JA calculou o destino a
     // partir da proporcao do quadro (ver player.c:594), e deixar o AVPlay
     // encaixar de novo dentro dele aplicaria a mesma barra preta duas vezes.
     try { p.setDisplayMethod("PLAYER_DISPLAY_MODE_FULL_SCREEN"); } catch (e) {}
+    // Dois tempos diferentes: `retorno` mede se a chamada JS bloqueou antes de
+    // devolver; `ate-callback` inclui a espera normal de rede/demuxer ate o
+    // firmware avisar que terminou. Sem os dois, um callback tardio parece
+    // automaticamente um bloqueio do nosso fio.
+    var tPrepare = avAgora();
     try {
       p.prepareAsync(function () {
-        S.pronto = 1;
+        if (S.geracao !== geracao) return;
+        avMedir("prepareAsync.ate-callback", tPrepare);
+        S.pronto = 0;
         // Reaplica o retangulo apos o preparo. A API tambem permite IDLE;
         // o duble nao prova que uma chamada anterior se perderia na TV.
         // Ordem deste callback:
         // open -> setListener -> setDisplayMethod -> prepareAsync ->
         // setDisplayRect -> play -> getTotalTrackInfo.
         var r = paraTela(S.rect[0], S.rect[1], S.rect[2], S.rect[3]);
-        try { p.setDisplayRect(r[0], r[1], r[2], r[3]); } catch (e) {}
+        var tRect = avAgora();
+        try { p.setDisplayRect(r[0], r[1], r[2], r[3]); }
+        catch (e) {}
+        finally { avMedir("prepare.setDisplayRect", tRect); }
         // READY permite getTotalTrackInfo apenas com prepare SINCRONO.
         // Aqui usamos prepareAsync: entrar em PLAYING antes de ler metadados.
-        try { p.play(); S.tocando = 1; }
-        catch (e) { S.erro = "play: " + e; return; }
+        var tPlay = avAgora();
+        try { p.play(); S.tocando = 1; S.pronto = 1; }
+        catch (e) {
+          S.pronto = 0; S.tocando = 0; S.aberto = 0;
+          S.trilhas = null; S.erro = "play: " + e;
+          ++S.geracao;
+          try { p.stop(); } catch (e2) {}
+          try { p.close(); } catch (e3) {}
+          return;
+        }
+        finally { avMedir("prepare.play", tPlay); }
         // Dimensoes usadas pelos modos de zoom do player.
+        //
+        // A LISTA FICA EM CACHE (S.trilhas), e nao so as dimensoes: getTotalTrackInfo
+        // e uma chamada sincrona do firmware, e ate 21/09/2026 este mesmo prepare
+        // pedia essa lista DUAS VEZES — aqui, so para achar a faixa VIDEO, e de
+        // novo pela op "faixas" (lerFaixas em video_tizen.c), so para AUDIO/TEXT,
+        // a poucos quadros de distancia. Registro 1106 (D1, Tizen 6) mede
+        // raf-max=7508 bem em cima da marca "avplay prepared", que e exatamente
+        // esta janela: prepareAsync -> play -> getTotalTrackInfo (aqui) seguido,
+        // no proximo quadro, de mais getTotalTrackInfo (faixas) e getCurrentStreamInfo
+        // (infofluxo). Nao ha prova de que ESTA chamada sozinha custe segundos —
+        // sem TV Samsung na bancada nao da para medir o firmware — mas chama-la
+        // duas vezes custa o dobro do que uma custaria, e a segunda nao precisa
+        // existir: a "faixas" abaixo agora le S.trilhas em vez de pedir de novo.
+        var tTracks = avAgora();
         try {
           var tr = p.getTotalTrackInfo();
+          if (!tr) tr = [];
+          S.trilhas = tr;
+          // Diagnóstico somente de forma/quantidade: não registra extra_info,
+          // nomes ou qualquer valor que pudesse carregar URL. Esta é a leitura
+          // bruta feita após play; a operação `faixas` abaixo pode reutilizar o
+          // mesmo vetor sem transformar cache vazio em "sem legenda" silencioso.
+          if (window.__nvDiag) {
+            var tiposBrutos = [];
+            for (var ti = 0; ti < (tr || []).length; ti++)
+              tiposBrutos.push(("" + (tr[ti] && tr[ti].type || "?")).toUpperCase());
+            window.__nvDiag("[video] getTotalTrackInfo bruto n=" +
+                            ((tr || []).length | 0) + " tipos=" + tiposBrutos.join(","), 0);
+          }
           for (var i = 0; i < tr.length; i++) {
             if (("" + tr[i].type).toUpperCase() !== "VIDEO") continue;
             var x = tr[i].extra_info;
@@ -237,16 +323,21 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
             S.alt  = parseInt(x.Height || x.height || 0, 10) || 0;
           }
         } catch (e) {}
+        finally { avMedir("prepare.getTotalTrackInfo", tTracks); }
       }, function (e) {
+        if (S.geracao !== geracao) return;
         S.erro = "prepare: " + e;
       });
     } catch (e) { S.erro = "prepareAsync: " + e; return 0; }
+    finally { avMedir("prepareAsync.retorno", tPrepare); }
     return 1;
   }
 
   if (op === "parar") {
     var p2 = pl();
+    ++S.geracao;
     S.tocando = 0; S.pronto = 0; S.fim = 0; S.posMs = 0;
+    S.trilhas = null;
     if (!p2 || !S.aberto) { S.aberto = 0; return 0; }
     S.aberto = 0;
     try { p2.stop(); } catch (e) {}
@@ -369,9 +460,24 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
   if (op === "faixas") {
     var p7 = pl();
     if (!p7 || !S.pronto || !dst || dstTam < 4) return 0;
-    var lista;
-    try { lista = p7.getTotalTrackInfo(); } catch (e) { return 0; }
-    if (!lista || !lista.length) return 0;
+    // Reusa a lista que o prepare ja pediu (ver a nota la em cima, S.trilhas):
+    // so cai em getTotalTrackInfo() de novo se o cache nao existir (prepare
+    // caiu no catch, ou algo limpou S.trilhas antes desta chamada chegar).
+    var lista = S.trilhas;
+    if (!lista) {
+      var tTracksFallback = avAgora();
+      try {
+        lista = p7.getTotalTrackInfo();
+        S.trilhas = lista;
+      }
+      catch (e) { return 0; }
+      finally { avMedir("faixas.getTotalTrackInfo", tTracksFallback); }
+    }
+    if (!lista || !lista.length) {
+      if (window.__nvDiag)
+        window.__nvDiag("[video] getTotalTrackInfo bruto n=0 na leitura de faixas", 1);
+      return 0;
+    }
     // Uma linha por faixa: "<A|T>\t<indice>\t<idioma>\t<rotulo>\n". Texto e nao
     // uma struct porque o numero de faixas e o tamanho dos rotulos variam, e
     // atravessar isso como vetor de structs obrigaria a combinar o layout dos
@@ -510,8 +616,9 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
 
   if (op === "encerrar") {
     var pb = pl();
+    ++S.geracao;
     try { if (pb && S.aberto) { pb.stop(); pb.close(); } } catch (e) {}
-    S.aberto = 0; S.tocando = 0; S.pronto = 0;
+    S.aberto = 0; S.tocando = 0; S.pronto = 0; S.trilhas = null;
     return 1;
   }
 
@@ -604,6 +711,18 @@ static char   urlAtual[1024];
 static int    fonteMp4;
 static int    dvPedido;      // afirmacao do addon; sem uso no AVPlay (ver hdr)
 
+// URLs de addons podem conter credenciais, tokens ou assinaturas na query.
+// O diagnóstico precisa correlacionar duas operações sem despejar a fonte no
+// log, então usa somente um identificador FNV-1a estável e não reversível na
+// prática para este volume de eventos.
+static unsigned video_id_fonte(const char *url) {
+  unsigned h = 2166136261u;
+  const unsigned char *p = (const unsigned char *)url;
+  if (!p) return 0;
+  while (*p) { h ^= *p++; h *= 16777619u; }
+  return h;
+}
+
 static VideoFaixa faixaAudio[NV_FAIXA_MAX], faixaLeg[NV_FAIXA_MAX];
 static int nAudio, nLeg, audioAtual, legAtual = -1;
 static int faixasLidas;
@@ -668,7 +787,7 @@ int video_tocar(const char *url) {
   // "nenhuma faixa lida" toda vez.
   mkvPendente = !fonteMp4;
 
-  printf("[video] URL: %s\n", url); fflush(stdout);
+  printf("[video] fonte id=%08x\n", video_id_fonte(url)); fflush(stdout);
   if (AVS("abrir", url) < 1) {
     marco("avplay: open/prepareAsync falhou");
     ativo = 0;
@@ -1239,7 +1358,8 @@ void video_escolher_legenda(int i) {
 void video_legenda_externa(const char *url) {
   if (!url || !*url) return;
   printf("[video] legenda externa nao vai pelo AVPlay (so aceita caminho local); "
-         "o overlay GL continua sendo o caminho: %.80s\n", url);
+         "o overlay GL continua sendo o caminho; fonte id=%08x\n",
+         video_id_fonte(url));
   fflush(stdout);
   marco("avplay: legenda externa recusada (URL de rede)");
 }

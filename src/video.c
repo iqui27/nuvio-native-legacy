@@ -91,6 +91,7 @@ static void aplicarEstilo(void);
 // Definidos adiante (junto de urlAtual, que e o que o fio consome); declarados
 // aqui porque o parse do sourceInfo, bem acima, e quem dispara o fio.
 static char  urlAtual[1024];   // URL da reproducao corrente
+const char *video_url_atual(void) { return urlAtual; }
 // Recuperacao de pipeline destruido: pedida pelo fio de resposta do luna e
 // executada no fio principal (video_bombear), porque recarregar de dentro do
 // tratador de evento reentra no mesmo caminho que acabou de falhar.
@@ -137,7 +138,7 @@ static unsigned  sessao;
 // No Mac nao existe barramento nem plano de video. Os cotos deixam o resto do
 // app compilar e rodar igual, so sem imagem em movimento.
 int  video_iniciar(void) { return 0; }
-int  video_tocar(const char *u) { (void)u; return 0; }
+int  video_tocar(const char *u) { snprintf(urlAtual, sizeof urlAtual, "%s", u ? u : ""); return 0; }
 void video_bombear(void) {}
 void video_parar(void) {}
 void video_pausar(int p) { (void)p; }
@@ -723,7 +724,14 @@ static int aoEvento(LSHandle *h, LSMessage *m, void *u) {
       // folha de faixas.
       // MP4 nunca tem Tracks de Matroska: sondar e trafego garantidamente
       // perdido, e ele sai da MESMA conexao do video.
-      if (faltando && !fonteMp4) mkvPendente = 1;
+      // A MESMA descida traz os CAPITULOS, e e deles que sai o marcador de
+      // creditos (creditosNomeado -> video_creditos). Prender a sonda ao idioma
+      // da legenda deixava sem marcador todo MKV SEM faixa de legenda (nLeg==0,
+      // `faltando` fica 0): sem marcador, o cartao de proximo episodio cai na
+      // regra dos 2 min finais e sobe antes dos creditos — o #34, de volta como
+      // #73. O Tizen sempre sondou todo MKV (video_tizen.c: mkvPendente =
+      // !fonteMp4), e e por isso que la o cartao acerta.
+      if (!fonteMp4) mkvPendente = 1;
       else if (faltando) marco("mkv: fonte e MP4, sonda dispensada"); }
   }
 
@@ -1215,9 +1223,13 @@ static void *lerMkv(void *arg) {
   // TV comecou em 42, 40, 41, 32...), e casar por posicao trocaria os idiomas
   // de lugar — pior que nao ter idioma nenhum.
   for (i = 0; i < nLeg; i++) {
-    if (faixaLeg[i].idioma[0]) continue;
+    // O codec entra SEMPRE (a folha marca a faixa ASS por ele); idioma e nome
+    // so quando o sourceInfo da TV nao trouxe idioma.
+    int jaTemIdioma = faixaLeg[i].idioma[0] != 0;
     for (j = 0; j < n; j++) {
       if (fx[j].numero != faixaLeg[i].numero) continue;
+      snprintf(faixaLeg[i].codec, sizeof faixaLeg[i].codec, "%s", fx[j].codec);
+      if (jaTemIdioma) break;
       if (fx[j].idioma[0] && strcmp(fx[j].idioma, "und")) {
         snprintf(faixaLeg[i].idioma, sizeof faixaLeg[i].idioma, "%s", fx[j].idioma);
         casou++;

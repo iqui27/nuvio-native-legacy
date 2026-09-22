@@ -123,15 +123,31 @@ static void texto(TxtEstilo e, const char *s, int cor, float x, float y, float a
 static void corta(TxtEstilo e,const char *s,int c,float x,float y,float w,float a) {
   txt_desenhar_alpha(txt_linha_corta(e,s,c,c,c,255,w),x,y,a);
 }
-// Anel de foco. RAIO EXTERNO = raio da caixa + espessura do anel, senao o canto
-// do anel fica mais quadrado que o da caixa (detail.c:3006). A cor vem do tema.
-static void anel(GfxRect r, float raioPx, float a) {
+// O BRILHO DO FOCO e local, nao uma camada decorativa na tela inteira. A
+// folga usa a altura da superficie para manter a mesma leitura em cards e em
+// celulas; uma unica mancha por quadro fica dentro do limite de fill-rate.
+static void brilhoFoco(GfxRect r, float f, float a) {
   float ar, ag, ab;
-  GfxRect e = { r.x-NV_ANEL_FOCO, r.y-NV_ANEL_FOCO,
-                r.w+NV_ANEL_FOCO*2.0f, r.h+NV_ANEL_FOCO*2.0f };
+  GfxRect luz;
+  if (f <= 0.01f) return;
   ajustes_acento(&ar, &ag, &ab);
-  gfx_rect(e, 0, GFX_ANEL, 0, NV_ANEL_FOCO/e.h, 0,
-           (raioPx+NV_ANEL_FOCO)/e.h, ar, ag, ab, a);
+  luz.x = r.x - r.h * 0.9f; luz.y = r.y - r.h * 0.9f;
+  luz.w = r.w + r.h * 1.8f; luz.h = r.h * 2.8f;
+  gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
+           ar, ag, ab, 0.35f * f * a);
+}
+
+// Uma lista de conteudo usa superficie baixa em repouso e preenchimento de
+// realce em foco. O anel antigo deixava a linha com o mesmo cinza pesado das
+// telas legadas e, em foco, parecia um botao sem estado intermediario.
+static int superficieLinha(GfxRect r, float raio, float f, float a) {
+  float ar, ag, ab;
+  ajustes_acento(&ar, &ag, &ab);
+  brilhoFoco(r, f, a);
+  if (f > 0.01f) gfx_cor(r, raio, ar, ag, ab, f * a);
+  if (f < 0.99f)
+    gfx_cor(r, raio, 0.10f, 0.11f, 0.13f, (1.0f - f) * a);
+  return f > 0.5f ? ajustes_tinta_foco() : PF_FORTE;
 }
 static void numero(char *s, size_t n, int v) { snprintf(s, n, "%d", v < 0 ? 0 : v); }
 static void tempo(char *s, size_t n, int minutos) {
@@ -365,10 +381,11 @@ static void desenharVazio(float a) {
   txt_bloco(TXT_BODY, corpo, PF_MEDIO, PF_MEDIO, PF_MEDIO,
             PF_X, 340, 840, NV_LD_BODY, a, 3);
   // Botao unico da tela, sempre em foco: preenchido na cor de realce com
-  // texto escuro (a regra de NV_COR_FOCO, layout.h), sem anel.
+  // texto pela regra do tema, com brilho curto e sem anel.
   { float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
+    brilhoFoco(btn,1.0f,a);
     gfx_cor(btn,NV_RAIO_PILL,ar,ag,ab,a); }
-  texto(TXT_DET_BOTAO,"OK · Tentar novamente",20,PF_X+28,472,a);
+  texto(TXT_DET_BOTAO,"OK · Tentar novamente",ajustes_tinta_foco(),PF_X+28,472,a);
 }
 
 // Banda 2: quem e (esquerda) e os QUATRO numeros que sobraram (direita).
@@ -432,7 +449,9 @@ static void desenharAtividade(float a) {
   char b[96];
 
   tituloSecao("Ritmo de atividade", PF_X, a);
-  gfx_cor(painel,NV_RAIO_CARD,NV_COR_FOCO_R,NV_COR_FOCO_G,NV_COR_FOCO_B,.34f*a);
+  // A grade e uma superficie de leitura, nao um painel cinza legado. O
+  // contraste vem das celulas e do foco, por isso a base fica fria e baixa.
+  gfx_cor(painel,NV_RAIO_CARD,0.10f,0.11f,0.13f,.96f*a);
   for(int c=0;c<7;c++) {
     TxtLinha l=txt_linha(TXT_CAPTION,diasSem[c],PF_FRACO,PF_FRACO,PF_FRACO,255);
     txt_desenhar_alpha(l,x0+c*(PF_CEL+PF_CEL_GAP)+(PF_CEL-l.w)*.5f,
@@ -443,16 +462,30 @@ static void desenharAtividade(float a) {
     int p=dados.primeiroDiaSemana+i, col=p%7, lin=p/7;
     GfxRect c={x0+col*(PF_CEL+PF_CEL_GAP),y0+lin*(PF_CEL+PF_CEL_GAP),PF_CEL,PF_CEL};
     if(lin>=PF_CAL_LINHAS) break;
-    // DUAS intensidades, nao cinco. O comentario da versao anterior ja admitia
-    // que cinco tons de violeta nao se distinguem a 3 m — e mesmo assim havia
-    // uma legenda de cinco quadradinhos para explica-los.
-    if(!dados.atividade[i])
-      gfx_cor(c,NV_RAIO_BADGE,NV_COR_FOCO_R,NV_COR_FOCO_G,NV_COR_FOCO_B,.80f*a);
-    else if(max>1 && dados.atividade[i]*2<=max)
-      gfx_cor(c,NV_RAIO_BADGE,PF_AC_R,PF_AC_G,PF_AC_B,.52f*a);
-    else
-      gfx_cor(c,NV_RAIO_BADGE,PF_AC_R,PF_AC_G,PF_AC_B,a);
-    if(i==dia && focoCal>.02f) anel(c,PF_CEL*NV_RAIO_BADGE,a*focoCal);
+    // DUAS intensidades, nao cinco. O dia selecionado abandona o violeta de
+    // dado e usa o realce do tema, igual ao foco de uma linha; a escala de 6%
+    // cabe no espaco de 10px entre celulas e torna a selecao legivel de longe.
+    { float f = i == dia ? focoCal : 0.0f;
+      float esc = 1.0f + 0.06f * f;
+      GfxRect dc = { c.x - c.w * (esc - 1.0f) * 0.5f,
+                     c.y - c.h * (esc - 1.0f) * 0.5f,
+                     c.w * esc, c.h * esc };
+      float cr, cg, cb, ca;
+      if (!dados.atividade[i]) {
+        cr = 0.145f; cg = 0.15f; cb = 0.17f; ca = 1.0f;
+      } else if (max > 1 && dados.atividade[i] * 2 <= max) {
+        cr = PF_AC_R; cg = PF_AC_G; cb = PF_AC_B; ca = 0.52f;
+      } else {
+        cr = PF_AC_R; cg = PF_AC_G; cb = PF_AC_B; ca = 1.0f;
+      }
+      brilhoFoco(dc, f, a);
+      if (f > 0.01f) {
+        float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+        gfx_cor(dc,NV_RAIO_BADGE,ar,ag,ab,f*a);
+      }
+      if (f < 0.99f)
+        gfx_cor(dc,NV_RAIO_BADGE,cr,cg,cb,ca*(1.0f-f)*a);
+    }
   }
   if(dados.nDias)snprintf(b,sizeof(b),i18n("Dia %d: %u reproduções"),dia+1,dados.atividade[dia]);
   else snprintf(b,sizeof(b),"Atividade diária indisponível");
@@ -492,7 +525,6 @@ static void desenharDestaques(float a) {
   for(int i=0;i<n;i++) {
     float f=focoItem[i];
     GfxRect r={PF_DIR_X,PF_CONT_Y+i*(PF_CARD_H+PF_CARD_GAP),PF_DIR_W,PF_CARD_H};
-    float raio=NV_RAIO_CARD*(r.w<r.h?r.w:r.h);
     float tx0=r.x+PF_CARD_PAD+PF_CARD_ARTE_W+NV_HOME_TEXT_GUTTER;
     float tw=r.x+r.w-PF_CARD_PAD-tx0;
     GfxRect mini={r.x+PF_CARD_PAD,r.y+(PF_CARD_H-PF_CARD_ARTE_H)*.5f,
@@ -501,16 +533,17 @@ static void desenharDestaques(float a) {
                                                   :dados.destaques[i].poster;
     GLuint tex=art[0]?tex_obter_larg(art,mini.w):0;
     char linha[200];
-    // FOCO EM SUPERFICIE: a pilula escura acende e o anel entra JUNTO, os dois
-    // pelo mesmo f. Antes o card subia numa mola e o anel aparecia de uma vez.
-    gfx_cor(r,NV_RAIO_CARD,NV_COR_FOCO_R,NV_COR_FOCO_G,NV_COR_FOCO_B,(.34f+.66f*f)*a);
-    if(f>.02f) anel(r,raio,a*f);
+    // O foco agora e a propria superficie, nao uma borda azul em volta do
+    // cinza antigo. A tinta acompanha a mola para nunca piscar claro sobre
+    // claro no meio da transicao.
+    int tintaTitulo = superficieLinha(r,NV_RAIO_CARD,f,a);
+    int tintaMeta = f > 0.5f ? ajustes_tinta_foco2() : PF_FRACO;
     if(tex){gfx_tex_aspect_atual=tex_aspecto(art);
             gfx_rect(mini,tex,GFX_CARD,f,0,0,NV_RAIO_CARD,1,1,1,a);
             gfx_tex_aspect_atual=0;}
     else gfx_cor(mini,NV_RAIO_CARD,NV_COR_ESQUELETO_R,NV_COR_ESQUELETO_G,
                  NV_COR_ESQUELETO_B,a);
-    corta(TXT_CALLOUT,dados.destaques[i].titulo,PF_FORTE,tx0,r.y+30,tw,a);
+    corta(TXT_CALLOUT,dados.destaques[i].titulo,tintaTitulo,tx0,r.y+30,tw,a);
     // UMA linha de apoio, nao duas encavaladas (as duas anteriores ficavam a 25px
     // uma da outra contra NV_LD_CAPTION 29 — entrelinha NEGATIVA — e a de baixo
     // ainda estourava o card). O "#N" do ranking saiu: a ordem da lista JA e a
@@ -520,8 +553,8 @@ static void desenharDestaques(float a) {
     if(dados.destaques[i].detalhe[0]) {
       char junto[240];
       snprintf(junto,sizeof junto,"%s  ·  %s",dados.destaques[i].detalhe,linha);
-      corta(TXT_CAPTION,junto,PF_FRACO,tx0,r.y+30+NV_LD_CALLOUT,tw,a);
-    } else corta(TXT_CAPTION,linha,PF_FRACO,tx0,r.y+30+NV_LD_CALLOUT,tw,a);
+      corta(TXT_CAPTION,junto,tintaMeta,tx0,r.y+30+NV_LD_CALLOUT,tw,a);
+    } else corta(TXT_CAPTION,linha,tintaMeta,tx0,r.y+30+NV_LD_CALLOUT,tw,a);
   }
 }
 
@@ -562,8 +595,8 @@ void perfil_desenhar(Uint32 agora) {
   } else if(carregando)aviso="Atualizando histórico sem interromper o conteúdo anterior…";
   else aviso=dados.aviso[0]?dados.aviso:dados.parcial?"Histórico parcial: os totais consideram somente os registros carregados.":NULL;
   if(aviso){
-    gfx_cor((GfxRect){PF_X,PF_AVISO_Y,PF_W,PF_AVISO_H},NV_RAIO_CARD,
-            NV_COR_FOCO_R,NV_COR_FOCO_G,NV_COR_FOCO_B,.92f*a);
+    gfx_cor((GfxRect){PF_X,PF_AVISO_Y,PF_W,PF_AVISO_H},NV_RAIO_PILL,
+            0.10f,0.11f,0.13f,.96f*a);
     TxtLinha l=txt_linha_corta(TXT_CAPTION,aviso,PF_MEDIO,PF_MEDIO,PF_MEDIO,255,PF_W-40);
     txt_desenhar_alpha(l,PF_X+20,PF_AVISO_Y+(PF_AVISO_H-l.h)*.5f,a);
   }

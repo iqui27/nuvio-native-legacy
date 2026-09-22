@@ -3,6 +3,7 @@
 #include "rede.h"
 #include "js.h"
 #include "gfx.h"
+#include "botoes.h"
 #include "text.h"
 #include "anim.h"
 #include "layout.h"
@@ -517,13 +518,16 @@ static int cartaoEvento(const SDL_Event *e) {
   return 1;
 }
 
-// Botao do cartao: pilula cheia quando em foco, anel quando nao.
-static float botao(float x, float y, const char *rot, int foco, float a, float ar, float ag, float ab) {
-  TxtLinha t = txt_linha(TXT_BODY, rot, foco ? ajustes_tinta_foco() : 240, foco ? ajustes_tinta_foco() : 241, foco ? ajustes_tinta_foco() : 245, 255);
-  GfxRect r = { x, y, t.w + 56.0f, 64.0f };
-  if (foco) gfx_cor(r, 0.5f, ar, ag, ab, a);
-  else      gfx_cor(r, 0.5f, 0.20f, 0.20f, 0.21f, a);
-  txt_desenhar_alpha(t, r.x + 28.0f, r.y + (r.h - t.h) * 0.5f, a);
+// Botao do cartao: a PILULA DA TABELA (botoes.h). "Enviar registro" e o
+// primario (72 px, superficie cheia), "Agora nao" o secundario (56 px, so
+// contorno) — a hierarquia e escala e peso, nao uma segunda cor. Os dois se
+// alinham pela BASE. `ar/ag/ab` sobraram da assinatura antiga; a tabela le o
+// realce sozinha.
+static float botao(float x, float y, const char *rot, int foco, float a, float ar, float ag, float ab, int primario) {
+  float h = primario ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO;
+  GfxRect r = { x, y + (BOTAO_H_PRIMARIO - h), botao_largura(rot, NULL, primario), h };
+  (void)ar; (void)ag; (void)ab;
+  botao_pilula(r, rot, NULL, foco ? 1.0f : 0.0f, primario, 0, a);
   return r.w;
 }
 
@@ -535,7 +539,11 @@ static void cartaoDesenhar(void) {
   if (a < 0.01f) return;
   ajustes_acento(&ar, &ag, &ab);
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.70f * a);
-  gfx_cor((GfxRect){ x, y, W, H }, 0.03f, 0.075f, 0.078f, 0.088f, 0.98f * a);
+  // CARTAO FLUTUANTE na "cara nova" (menu.c, 21/09/2026): cantos de 28 px
+  // pelo menor lado, fundo translucido e UMA luz difusa na cor de realce
+  // entrando pelo canto superior esquerdo, presa aos cantos (GFX_LUZ).
+  gfx_cor((GfxRect){ x, y, W, H }, 28.0f / H, 0.055f, 0.058f, 0.068f, 0.94f * a);
+  gfx_luz_canto((GfxRect){ x, y, W, H }, 28.0f / H, W * 0.05f, -W * 0.15f, W * 0.5f, ar, ag, ab, 0.22f * a);
   gfx_cor((GfxRect){ x + 56.0f, y + 56.0f, 56.0f, 56.0f }, 0.5f, 0.16f, 0.17f, 0.20f, a);
   gfx_icone((GfxRect){ x + 69.0f, y + 69.0f, 30.0f, 30.0f }, "fluxo", 0.62f, 0.80f, 0.96f, a);
   { TxtLinha t = txt_linha(TXT_TITULO3, i18n("O app fechou sozinho"), 246, 247, 252, 255);
@@ -545,15 +553,15 @@ static void cartaoDesenhar(void) {
   bx = x + 56.0f;
   if (envioEstado == 1) {
     TxtLinha t = txt_linha(TXT_BODY, i18n("Enviando…"), 200, 203, 210, 255);
-    txt_desenhar_alpha(t, bx, y + H - 56.0f - 64.0f + 18.0f, a);
+    txt_desenhar_alpha(t, bx, y + H - 56.0f - BOTAO_H_PRIMARIO + 22.0f, a);
   } else if (envioEstado == 2 || envioEstado == 3) {
     TxtLinha t = txt_linha(TXT_BODY, envioEstado == 2 ? i18n("Registro enviado. Obrigado.") : i18n("Não foi possível enviar agora."),
                            envioEstado == 2 ? 120 : 237, envioEstado == 2 ? 200 : 77, envioEstado == 2 ? 140 : 77, 255);
-    txt_desenhar_alpha(t, bx, y + H - 56.0f - 64.0f + 18.0f, a);
-    botao(x + W - 56.0f - 160.0f, y + H - 56.0f - 64.0f, i18n("Fechar"), 1, a, ar, ag, ab);
+    txt_desenhar_alpha(t, bx, y + H - 56.0f - BOTAO_H_PRIMARIO + 22.0f, a);
+    botao(x + W - 56.0f - botao_largura(i18n("Fechar"), NULL, 1), y + H - 56.0f - BOTAO_H_PRIMARIO, i18n("Fechar"), 1, a, ar, ag, ab, 1);
   } else {
-    bx += botao(bx, y + H - 56.0f - 64.0f, i18n("Enviar registro"), cartaoFoco == 0, a, ar, ag, ab) + 18.0f;
-    botao(bx, y + H - 56.0f - 64.0f, i18n("Agora não"), cartaoFoco == 1, a, ar, ag, ab);
+    bx += botao(bx, y + H - 56.0f - BOTAO_H_PRIMARIO, i18n("Enviar registro"), cartaoFoco == 0, a, ar, ag, ab, 1) + BOTAO_GAP;
+    botao(bx, y + H - 56.0f - BOTAO_H_PRIMARIO, i18n("Agora não"), cartaoFoco == 1, a, ar, ag, ab, 0);
   }
 }
 
@@ -704,10 +712,12 @@ static void desenharToast(Uint32 agora) {
   // direita, e desce 24 px ao entrar em vez de subir.
   x = NV_TELA_W - 80.0f - w;
   y = 64.0f - (1.0f - toastA) * 24.0f;
-  // Anel de acento respirando, por fora da pilula.
-  gfx_cor((GfxRect){ x - 2.0f, y - 2.0f, w + 4.0f, h + 4.0f }, 0.5f, ar, ag, ab,
-          (0.25f + 0.55f * pulso) * toastA);
-  gfx_cor((GfxRect){ x, y, w, h }, 0.5f, 0.106f, 0.110f, 0.122f, 0.96f * toastA);
+  // Luz difusa de acento respirando POR TRAS da pilula, no lugar do anel de
+  // 2 px: a linguagem nova do app nao tem aneis (dono, 21/09/2026), e uma
+  // mancha que cresce e apaga chama tanto quanto o anel sem desenhar borda.
+  gfx_rect((GfxRect){ x - h * 0.9f, y - h * 0.9f, w + h * 1.8f, h * 2.8f }, 0, GFX_SOMBRA,
+           1.0f, 0, 0, 0.5f, ar, ag, ab, (0.18f + 0.30f * pulso) * toastA);
+  gfx_cor((GfxRect){ x, y, w, h }, 0.5f, 0.075f, 0.078f, 0.088f, 0.96f * toastA);
   { float d = 10.0f + 4.0f * pulso;
     gfx_cor((GfxRect){ x + 24.0f + (10.0f - d) * 0.5f, y + (h - d) * 0.5f, d, d }, 0.5f, ar, ag, ab, toastA); }
   txt_desenhar_alpha(t1, x + 48.0f, y + (h - t1.h) * 0.5f, toastA);
@@ -752,7 +762,7 @@ void avisos_lista_desenhar(float x, float y0, float w, float a, int focoLinha) {
   // Tinta sobre o realce: branca, a nao ser que o realce seja branco
   // (ajustes_acento_tinta). `tf` e o texto principal, `ts` o secundario.
   float tinta = ajustes_acento_tinta(&ar, &ag, &ab);
-  int tf = (int)(tinta * 255.0f + 0.5f), ts = tinta > 0.5f ? 225 : 45;
+  int tf = (int)(tinta * 255.0f + 0.5f), ts = ajustes_tinta_foco2();
   pthread_mutex_lock(&trava);
   if (n == 0) {
     TxtLinha t = txt_linha(TXT_CAPTION, i18n("Nada por enquanto."), 150, 153, 162, 255);
@@ -843,7 +853,13 @@ void avisos_desenhar(Uint32 agora) {
   if (a < 0.01f) { cartaoDesenhar(); return; }
   dx = (1.0f - a) * 80.0f;
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.45f * a);
-  gfx_cor((GfxRect){ AVP_X + dx, 0, AVP_W, NV_TELA_H }, 0.0f, 0.106f, 0.110f, 0.122f, 0.98f * a);
+  // PAINEL FLUTUANTE como o de Salvos e a barra lateral (21/09/2026): solto
+  // 24 px do topo e da base, cantos de 28 px, translucido, UMA luz de realce
+  // pelo canto superior direito, presa aos cantos (GFX_LUZ).
+  { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+    GfxRect p = { AVP_X + dx, 24.0f, AVP_W, NV_TELA_H - 48.0f };
+    gfx_cor(p, 28.0f / AVP_W, 0.055f, 0.058f, 0.068f, 0.94f * a);
+    gfx_luz_canto(p, 28.0f / AVP_W, AVP_W * 0.9f, -AVP_W * 0.1f, AVP_W * 0.65f, ar, ag, ab, 0.22f * a); }
   { TxtLinha t = txt_linha(TXT_HEADLINE, i18n("Avisos"), 240, 242, 248, 255);
     txt_desenhar_alpha(t, AVP_X + dx + AVP_MARG, 64.0f, a); }
   txt_bloco(TXT_CAPTION, i18n("Recomendações, estreias, versões novas, avisos de quem faz o app e o que aconteceu com ele."),

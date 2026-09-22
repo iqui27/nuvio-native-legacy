@@ -8,7 +8,7 @@
 
 typedef enum {
   GFX_CARD   = 0,  // textura com cantos, parallax e especular
-  GFX_SOMBRA = 1,  // sombra difusa atras do card focado
+  GFX_SOMBRA = 1,  // mancha difusa (cor de uCor; `foco` = intensidade)
   GFX_COR    = 2,  // retangulo/pill de cor solida
   GFX_HERO   = 3,  // arte com gradiente para o fundo (aceita alpha p/ crossfade)
   GFX_VEU    = 4,  // veu escuro na base do card, sob texto sobreposto
@@ -136,7 +136,22 @@ typedef enum {
   // GFX_MARCA joga fora o RGB e pinta de uma cor so. Aqui o RGB e o alpha vao
   // inteiros, multiplicados so pela mascara do SDF.
   GFX_ARTE = 25,
-  GFX_NMODOS = 26
+  // GFX_LUZ — luz difusa DENTRO de um retangulo arredondado: a queda radial
+  // do GFX_SOMBRA, so que recortada pelos cantos do painel (uRaio) em vez de
+  // pela tesoura. Existe para a "luz entrando pelo canto" dos paineis
+  // flutuantes (menu.c, 21/09/2026): com gfx_recorte a mancha pintava o
+  // canto por fora do arredondado e o cartao saia com um canto QUADRADO — foi
+  // o que a captura do cartao de lembrete mostrou. Aqui um so desenho do
+  // tamanho do painel faz os dois, e ainda custa menos preenchimento que uma
+  // mancha de 1,3x a largura sob a tesoura.
+  //
+  //   uPar.xy = centro da luz, em fracao do retangulo (pode ficar fora dele)
+  //   uFoco   = alcance da luz, em fracao da ALTURA do retangulo
+  //   uCor    = cor e alfa no centro; 1 no centro, 0 no alcance, ao quadrado
+  //
+  // Use gfx_luz_canto, que faz essa conta em pixels.
+  GFX_LUZ = 26,
+  GFX_NMODOS = 27
 } GfxModo;
 
 typedef struct {
@@ -146,6 +161,9 @@ typedef struct {
 // Proporcao (w/h) da textura a desenhar. 0 = mapeia direto (texto, veu).
 // Definir ANTES de gfx_rect para que a arte seja recortada, nunca esticada.
 extern float gfx_tex_aspect_atual;
+// 1 = o GFX_CARD deve sempre preencher a moldura com cover. Usado pela forma
+// editorial 4:3, que nao pode cair no contain quando recebe arte 16:9.
+extern float gfx_card_forcar_cover_atual;
 // 1 = o cartaz em foco ganha o rebordo claro no GFX_CARD; 0 = nao ganha. E um
 // ajuste da pessoa (Ajustes > Foco no cartaz), lido uma vez por quadro pela
 // tela que desenha; o brilho e o especular do foco nao dependem dele.
@@ -252,6 +270,13 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
 
 // Atalhos legiveis para os casos comuns.
 void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca);
+// A luz de realce dos paineis flutuantes (ver GFX_LUZ): `raio` e o dos cantos
+// do painel, na mesma fracao do menor lado que gfx_cor usa; (cx, cy) e o
+// centro da luz em pixels RELATIVOS ao canto superior esquerdo de `r` (pode
+// ser negativo, para a luz entrar de fora); `alcance` e onde ela morre, em
+// pixels. Um desenho do tamanho do painel — conte-o como tal em gfx_fill.
+void gfx_luz_canto(GfxRect r, float raio, float cx, float cy, float alcance,
+                   float cr, float cg, float cb, float ca);
 // Zera cor E alpha do retangulo, com blend desligado, abrindo a superficie para
 // o plano de video que fica atras dela. Ver video.h.
 void gfx_furo(GfxRect r);

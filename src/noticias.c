@@ -9,6 +9,10 @@
 #include <string.h>
 #include <time.h>
 
+#ifndef NV_REC_URL
+#define NV_REC_URL ""
+#endif
+
 #define NOT_ENTRADAS 24
 #define NOT_VALIDADE (6 * 3600)
 
@@ -233,8 +237,21 @@ static void *buscar(void *arg) {
   else snprintf(q, sizeof q, "\"%s\" %s", p->titulo,
                 p->serie ? (en ? "series" : "s\xc3\xa9rie") : (en ? "movie" : "filme"));
   { char qc[900]; codificar(q, qc, sizeof qc);
+#if defined(__EMSCRIPTEN__)
+    // SAMSUNG: o Google News nao manda CORS e o fetch do wgt morre (12 de 12
+    // "rede falhou" no registro de 21/09/2026). O servico de recomendacoes
+    // repassa o mesmo RSS com CORS (rota /v1/noticias, sem sessao). Sem
+    // NV_REC_URL na build nao ha por onde: fica sem noticias, sem erro.
+    if (!NV_REC_URL[0]) { pthread_mutex_lock(&trava); e = achar(p->imdb);
+      if (e) { e->n = 0; e->quando = (long)time(NULL); e->respondeu = 1; e->emVoo = 0; }
+      pthread_mutex_unlock(&trava); free(p); return NULL; }
+    snprintf(url, sizeof url, "%s/v1/noticias?q=%s&hl=%s&gl=%s&ceid=%s", NV_REC_URL,
+             qc, en ? "en-US" : "pt-BR", en ? "US" : "BR", en ? "US:en" : "BR:pt-419");
+#else
     snprintf(url, sizeof url, "https://news.google.com/rss/search?q=%s&hl=%s&gl=%s&ceid=%s",
-             qc, en ? "en-US" : "pt-BR", en ? "US" : "BR", en ? "US:en" : "BR:pt-419"); }
+             qc, en ? "en-US" : "pt-BR", en ? "US" : "BR", en ? "US:en" : "BR:pt-419");
+#endif
+  }
   xml = rede_baixar(url, 12);
   pthread_mutex_lock(&trava);
   e = achar(p->imdb);

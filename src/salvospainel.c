@@ -26,6 +26,8 @@
 #include "layout.h"
 #include "ajustes.h"
 #include "idioma.h"
+#include "badges.h"
+#include "botoes.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -49,19 +51,33 @@
 #define SP_ABAS_Y      (SP_Y + 56.0f)
 #define SP_ABAS_H        52.0f
 #define SP_ABA_GAP       14.0f
-#define SP_LISTA_Y     200.0f
+// 176, e nao 200: a secao ganhou 24 px de ar proprio acima do rotulo (ver
+// SP_SECAO_H), entao a lista sobe para o primeiro rotulo nao ficar a 90 px
+// das abas.
+#define SP_LISTA_Y     176.0f
 #define SP_LISTA_BASE (SP_Y + SP_H - 24.0f)
 #define SP_POSTER_W     92.0f
 #define SP_POSTER_H    138.0f
-#define SP_PASSO       160.0f
-#define SP_SECAO_H      54.0f
+// 12 px entre linhas (dono, 21/09/2026); a pilula de foco tem 6 px de folga
+// vertical, entao duas pilulas vizinhas se tocariam sem se sobrepor.
+#define SP_PASSO       150.0f
+#define SP_FOCO_PADY     6.0f
+// ROTULO DE SECAO: 24 px de ar acima, o texto (26), 8 px, uma linha de 1 px a
+// 8 % de branco e 13 px ate a primeira linha. O ar maior em cima e o que
+// separa "Continuar" da linha anterior sem precisar de caixa nenhuma.
+#define SP_SECAO_AR     24.0f
+#define SP_SECAO_H      72.0f
 // 28, e nao 20: o ponto de "nao lida" mora neste vao, e com 20 ele encostava
 // na primeira letra do titulo — foi o que o dono viu na foto ampliada.
 #define SP_TEXTO_X    (SP_PAD + SP_POSTER_W + 28.0f)
 #define SP_TEXTO_W    (SP_INTERNO - SP_POSTER_W - 28.0f)
 // Barra de progresso do card de retomada: a mesma altura da que a home usa nos
 // cards de "Continuar assistindo", para as duas lerem como a mesma coisa.
-#define SP_BARRA_W     360.0f
+// Trilho de 300 e o resto da coluna para "T3E4 · 43 min restantes", que e o
+// dado que importa e vai em tinta principal ao lado do trilho; o "≈35 min
+// assistidos" e secundario e fica embaixo.
+#define SP_BARRA_W     300.0f
+#define SP_BARRA_LABEL_GAP 16.0f
 #define SP_BARRA_H       6.0f
 // Entrada e saida com o MESMO relogio do menu lateral (menu.c): as duas camadas
 // aparecem no mesmo app e tempos diferentes se leem como bug, nao como estilo.
@@ -153,11 +169,15 @@ static int consentEstado = -1;
 
 // Alturas das linhas novas. A recomendacao mantem SP_POSTER_H + SPS_GAP, que e
 // exatamente o SP_PASSO de antes — a aba nao mudou de ritmo, so ganhou vizinhos.
-#define SPS_GAP         22.0f
+// AMIGO E MAIS COMPACTO: ele nao tem poster, selo nem botao, so identidade e a
+// ultima atividade. Dar a ele os mesmos 112px da sugestao fazia uma linha
+// simples parecer um cartao de destaque.
+#define SPS_GAP         18.0f
 #define SPS_H_CONSENT   84.0f
 #define SPS_H_SUG      112.0f
-#define SPS_H_ACAO      76.0f
-#define SPS_H_APARECER 104.0f
+#define SPS_H_AMIGO     88.0f
+#define SPS_H_ACAO      60.0f
+#define SPS_H_APARECER  88.0f
 // Alturas dos dois blocos de texto que NAO sao linha e por isso nao recebem
 // foco: o enunciado da pergunta e a explicacao do estado vazio. Sao constantes
 // e nao medidas porque a rolagem precisa delas ANTES do desenho — e as duas
@@ -168,29 +188,23 @@ static int consentEstado = -1;
 // O INTERRUPTOR DE "APARECER". As medidas sao para TRES METROS, e nao copiadas
 // de um telefone.
 //
-// A conta: numa TV de 55" o painel de 1920 px cobre ~1218 mm, ou seja 0,63 mm
-// por pixel; a 3 m um minuto de arco mede 0,87 mm. Da 0,73' por pixel. Com
-// isso a trilha de 96 px mede ~70' (1,2 grau) e o PERCURSO da bola, 48 px,
-// mede ~35'. O interruptor do iOS (51x31 pt) daria 37' de trilha e 13' de
-// percurso: perfeito na mao, e a 3 m o deslocamento vira um tremor.
+// A conta: numa TV de 55" a 3 m, 80 px ainda deixam a trilha claramente
+// distinguivel, mas tiram o peso de um controle de telefone ampliado. Como o
+// foco da TV transforma a linha inteira em alvo, o switch pode ser visualmente
+// compacto sem reduzir a area de acao.
 //
-// A bola e 36 px com 6 px de folga de cada lado — os 6 px vem do percurso, e
-// nao de gosto: a folga sai duas vezes da largura (12 px dos 96), entao cada
-// pixel a mais de folga custa um de deslocamento, que e o canal que carrega o
-// estado. Menos que isso nao foi testado.
-#define SPS_SW_W        96.0f
-#define SPS_SW_H        48.0f
-#define SPS_SW_PAD       6.0f
+// A bola e 30 px com 5 px de folga de cada lado: continua legivel e deixa a
+// capsula respirar sem competir com o titulo.
+#define SPS_SW_W        80.0f
+#define SPS_SW_H        40.0f
+#define SPS_SW_PAD       5.0f
 #define SPS_SW_BOLA    (SPS_SW_H - SPS_SW_PAD * 2.0f)
-#define SPS_SW_GAP      28.0f   // do fim do texto ate a trilha
-// ESPESSURA DO ANEL da trilha vazia. 4 px sao 2,9' de arco a 3 m, acima do
-// minuto de arco que e o limite de resolucao; 1 px (0,73') sumiria.
-#define SPS_SW_ANEL      4.0f
-// VAO EXTRA ANTES DO INTERRUPTOR. Os 22 px de SPS_GAP separam linhas do MESMO
+#define SPS_SW_GAP      24.0f   // do fim do texto ate a trilha
+// VAO EXTRA ANTES DO INTERRUPTOR. Os 18 px de SPS_GAP separam linhas do MESMO
 // tipo; aqui a lista de gente e de acoes acaba e comeca um ajuste que fica.
-// Sao 20 px, e nao um cabecalho de secao: um rotulo ali repetiria o titulo da
+// Sao 10 px, e nao um cabecalho de secao: um rotulo ali repetiria o titulo da
 // propria linha, que e exatamente o ar de formulario que se quer evitar.
-#define SPS_SEP_APARECER 20.0f
+#define SPS_SEP_APARECER 10.0f
 
 static int aberto, foco, marcaCatN = -1;
 static float entrada, scrollY;
@@ -353,7 +367,7 @@ static float socialAlt(int i) {
   switch (social[i].tipo) {
     case SPS_REC:       return SP_POSTER_H;
     case SPS_SUG:       return SPS_H_SUG;
-    case SPS_AMIGO:     return SPS_H_SUG;
+    case SPS_AMIGO:     return SPS_H_AMIGO;
     case SPS_ADICIONAR: return SPS_H_ACAO;
     case SPS_APARECER:  return SPS_H_APARECER;
     default:            return SPS_H_CONSENT;
@@ -714,20 +728,110 @@ static void quandoTexto(char *dst, size_t tam, long long quandoS) {
   else                   snprintf(dst, tam, i18n("Salvo há %d dias"),(int)(d / 86400));
 }
 
-// "Série · 2004 · ★ 8,1". As PARTES passam por i18n e a juncao nao: a chave da
-// tabela e o portugues inteiro de uma string, e a frase montada nunca existiria
-// como chave. E a mesma correcao que a biblioteca ja levou (issue #3).
-static void metaTexto(char *dst, size_t tam, const SPLinha *l) {
-  const char *tipo = i18n(l->serie ? "Série" : "Filme");
-  if (l->meta[0] && l->nota > 0)
-    snprintf(dst, tam, "%s · %s · \xe2\x98\x85 %d,%d", tipo, l->meta,
-             l->nota / 10, l->nota % 10);
-  else if (l->meta[0])
-    snprintf(dst, tam, "%s · %s", tipo, l->meta);
-  else if (l->nota > 0)
-    snprintf(dst, tam, "%s · \xe2\x98\x85 %d,%d", tipo, l->nota / 10, l->nota % 10);
+// O catalogo guarda a posicao como percentual e o restante em minutos. Com
+// os dois valores presentes, esta e uma aproximacao honesta da parte ja vista:
+// restante * p / (100 - p). Nao usamos p=100 (divisao por zero) nem inventamos
+// minutos quando a fonte so trouxe o percentual.
+static int minutosAssistidosAprox(const SPLinha *l) {
+  int p = l ? l->progresso : 0;
+  if (p <= 0 || p >= 100 || l->restanteMin <= 0) return 0;
+  return (int)(((float)l->restanteMin * (float)p /
+                (100.0f - (float)p)) + 0.5f);
+}
+
+static void restanteTexto(char *dst, size_t tam, const SPLinha *l) {
+  if (l->temporada > 0 && l->episodio > 0 && l->restanteMin > 0)
+    snprintf(dst, tam, i18n("T%dE%d · %d min restantes"),
+             l->temporada, l->episodio, l->restanteMin);
+  else if (l->temporada > 0 && l->episodio > 0)
+    snprintf(dst, tam, i18n("T%dE%d · retomar"), l->temporada, l->episodio);
+  else if (l->restanteMin > 0)
+    snprintf(dst, tam, i18n("%d min restantes"), l->restanteMin);
   else
-    snprintf(dst, tam, "%s", tipo);
+    snprintf(dst, tam, "%s", i18n("Retomar"));
+}
+
+
+// O foco chega como uma mola, mas a superficie nao precisa obedecer a uma
+// reta. A smoothstep deixa os primeiros pixels assentarem no fundo escuro e
+// segura o ultimo brilho do accent — uma entrada mais "material" sem criar
+// overshoot ou uma animacao mais longa.
+static float focoVisual(float f) {
+  f = anim_clamp(f, 0.0f, 1.0f);
+  return f * f * (3.0f - 2.0f * f);
+}
+
+// As duas cores ja ficam no cache de texto. O que muda por quadro e somente a
+// opacidade, nunca a chave de rasterizacao: o titulo e a meta fazem a mesma
+// travessia que a superficie, sem o estalo claro/escuro no meio da mola.
+static void txt_foco_transicao(TxtLinha repouso, TxtLinha foco,
+                               float x, float y, float f, float a) {
+  if (f < 0.999f)
+    txt_desenhar_alpha(repouso, x, y, a * (1.0f - f));
+  if (f > 0.001f)
+    txt_desenhar_alpha(foco, x, y, a * f);
+}
+
+// Os selos precisam acompanhar o texto principal. O fundo usa a mesma tabela
+// de BADGE_NEUTRO/BADGE_SOBRE_REALCE de badges.c, mas interpolada em uma unica
+// capsula para nao haver uma segunda pilula sobreposta durante o crossfade.
+static float badge_foco_transicao(float x, float y, const char *texto,
+                                  float f, float a) {
+  TxtLinha repouso, foco;
+  GfxRect p;
+  float tinta = ajustes_acento_tinta(NULL, NULL, NULL);
+  // A pilula vira um vidro adaptativo no foco: sobre acentos escuros ela usa
+  // tinta preta, e sobre branco/ouro usa tinta clara. Assim o texto nao
+  // depende de uma capsula branca que estoura contra azul, vermelho ou verde,
+  // nem de uma capsula escura que desaparece sobre um acento luminoso.
+  float vidroFoco = tinta > 0.5f ? 0.035f : 0.965f;
+  float vidroAlpha = tinta > 0.5f ? 0.24f : 0.30f;
+  float bg = anim_mistura(0.10f, vidroFoco, f);
+  float bgA = anim_mistura(0.85f, vidroAlpha, f);
+  repouso = txt_linha(TXT_CAPTION2, texto, 235, 235, 235, 255);
+  foco = txt_linha(TXT_CAPTION2, texto, ajustes_tinta_foco2(),
+                   ajustes_tinta_foco2(), ajustes_tinta_foco2(), 255);
+  p.x = x; p.y = y; p.w = (float)repouso.w + BADGE_PADX * 2.0f; p.h = BADGE_H;
+  gfx_cor(p, 0.5f, bg, bg, bg, bgA * a);
+  txt_foco_transicao(repouso, foco, x + BADGE_PADX,
+                     y + (BADGE_H - (float)repouso.h) * 0.5f, f, a);
+  return p.w;
+}
+
+static void badge_imdb_foco_transicao(float x, float y, int nota,
+                                      float f, float a, int tintaFoco) {
+  char texto[8];
+  TxtLinha repouso, foco, marca;
+  GfxRect p;
+  if (nota <= 0) return;
+  snprintf(texto, sizeof texto, ajustes_idioma_ingles() ? "%d.%d" : "%d,%d",
+           nota / 10, nota % 10);
+  repouso = txt_linha(TXT_CAPTION2, texto, 235, 235, 235, 255);
+  foco = txt_linha(TXT_CAPTION2, texto, tintaFoco, tintaFoco, tintaFoco, 255);
+  p.x = x; p.y = y; p.w = BADGE_IMDB_W; p.h = BADGE_H;
+  // A marca amarela nao troca de estado; somente a nota acompanha o texto da
+  // linha. Assim nao ha um segundo amarelo semitransparente sobre o primeiro.
+  gfx_cor(p, 5.0f / BADGE_H, 0.961f, 0.773f, 0.094f, a);
+  marca = txt_linha(TXT_MINI, "IMDb", 10, 10, 10, 255);
+  txt_desenhar_alpha(marca, p.x + (p.w - (float)marca.w) * 0.5f,
+                     p.y + (p.h - (float)marca.h) * 0.5f, a);
+  txt_foco_transicao(repouso, foco,
+                     x + BADGE_IMDB_W + BADGE_IMDB_GAP,
+                     y + (BADGE_H - (float)repouso.h) * 0.5f, f, a);
+}
+
+// ROTULO DE SECAO ("Continuar", "Nao comecados", "Seus amigos"): CAPTION2 em
+// 165 com SP_SECAO_AR de ar acima e uma linha de 1 px a 8 % de branco por
+// baixo, de borda a borda da coluna. A linha e o que separa a secao da lista
+// anterior sem caixa nem cor — o rotulo colado na primeira linha (foto do
+// dono, 21/09/2026) lia como parte do titulo. `y` e o topo do bloco de
+// SP_SECAO_H que a proxima linha vai ocupar.
+static void desenhaSecao(float x, float y, const char *rotulo, float a) {
+  TxtLinha t = txt_linha(TXT_CAPTION2, rotulo, 165, 168, 178, 255);
+  float ty = y + SP_SECAO_AR;
+  txt_desenhar_alpha(t, x, ty, a * 0.95f);
+  gfx_cor((GfxRect){ x, ty + (float)t.h + 8.0f, SP_INTERNO, 1.0f }, 0.0f,
+          1.0f, 1.0f, 1.0f, 0.08f * a);
 }
 
 // `dx` e o deslocamento da animacao de entrada. Ele PRECISA chegar ate aqui: as
@@ -737,20 +841,44 @@ static void metaTexto(char *dst, size_t tam, const SPLinha *l) {
 static void desenhaLinha(int i, float dx, float y, float a) {
   const SPLinha *l = &linhas[i];
   float f = animFoco[i];
+  float fr, fg, fb;
   float px = SP_X + dx + SP_PAD, tx = SP_X + dx + SP_TEXTO_X;
   char buf[192];
   GfxRect poster = { px, y, SP_POSTER_W, SP_POSTER_H };
+  float v = focoVisual(f);
+  int tintaFoco = ajustes_tinta_foco();
+  int tintaFoco2 = ajustes_tinta_foco2();
 
   if (f > 0.01f) {
-    // PILULA CLARA COM TEXTO ESCURO, e nao anel. Esta nota dizia o contrario
-    // — "anel por fora, e nao pilula clara" — e o dono decidiu o oposto em
-    // 16/09, olhando a TV: "os botoes quando selecionados ficar brancos com o
-    // texto preto ... na sidebar quando selecionado ficar assim tambem, e pode
-    // tirar o contorno". A regra passou a valer para o app inteiro (menu.c,
-    // folha de fontes, e esta camada), entao o comentario antigo fica aqui so
-    // como registro de que a troca foi deliberada.
-    GfxRect r = { px - 12.0f, y - 10.0f, SP_INTERNO + 24.0f, SP_POSTER_H + 20.0f };
-    gfx_cor(r, 0.06f, 0.961f, 0.961f, 0.968f, f * a);
+    // A LINHA EM FOCO USA O ACCENT CONFIGURADO. O preenchimento inteiro deixa
+    // o foco claro a tres metros e evita o branco fixo que apagava a identidade
+    // escolhida em Ajustes. A tinta e calculada pelo mesmo degrau usado no
+    // restante da interface, logo acentos claros e escuros continuam legiveis.
+    GfxRect r = { px - 12.0f, y - SP_FOCO_PADY, SP_INTERNO + 24.0f,
+                  SP_POSTER_H + SP_FOCO_PADY * 2.0f };
+    ajustes_acento(&fr, &fg, &fb);
+    // Brilho difuso por tras da linha em foco (a luz da pilula do menu
+    // lateral, 0,35): so uma linha o tem, e um desenho de ~0,25 tela.
+    { GfxRect luz = { r.x - r.h * 0.5f, r.y - r.h * 0.5f, r.w + r.h, r.h * 2.0f };
+    gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, fr, fg, fb, 0.28f * v * a); }
+    // 14 px de canto (em fracao da altura de 150), e nao 0,06 x 150 = 9: os
+    // cantos redondos "de verdade" do dono.
+    gfx_cor(r, 14.0f / r.h, fr, fg, fb, v * a);
+    // A SUPERFICIE NAO E CHAPADA: um brilho amplo entra pelo alto e uma
+    // sombra curta assenta a linha no painel. As duas luzes sao neutras para
+    // preservar qualquer acento, enquanto o texto continua usando a tinta
+    // adaptativa calculada acima.
+    gfx_luz_canto(r, 14.0f / r.h, r.w * 0.84f, -r.h * 0.10f,
+                  r.h * 1.05f, 1.0f, 1.0f, 1.0f, 0.12f * v * a);
+    gfx_luz_canto(r, 14.0f / r.h, r.w * 0.18f, r.h * 1.08f,
+                  r.h * 0.82f, 0.0f, 0.0f, 0.0f, 0.10f * v * a);
+    // Dois riscos muito finos fecham o recorte visual sem criar uma borda
+    // brilhante pesada. Eles tambem mantem a leitura do card quando o acento
+    // escolhido tem pouca diferenca de luminancia para o fundo.
+    { GfxRect topo = { r.x + 18.0f, r.y + 3.0f, r.w - 36.0f, 2.0f };
+      gfx_cor(topo, 1.0f / topo.h, 1.0f, 1.0f, 1.0f, 0.16f * v * a); }
+    { GfxRect base = { r.x + 20.0f, r.y + r.h - 4.0f, r.w - 40.0f, 2.0f };
+      gfx_cor(base, 1.0f / base.h, 0.0f, 0.0f, 0.0f, 0.13f * v * a); }
   }
 
   { GLuint tex = l->poster[0] ? tex_obter(l->poster) : 0;
@@ -765,47 +893,95 @@ static void desenhaLinha(int i, float dx, float y, float a) {
               NV_COR_ESQUELETO_B, a);
     } }
 
-  // COM A PILULA CLARA, O TEXTO INVERTE. Claro sobre claro nao se le, e a
-  // troca acontece em DEGRAU (f > 0.5) e nao interpolada: a cor faz parte da
-  // chave do cache de linhas de text.c, e uma cor por quadro rasteriza a
-  // linha a cada quadro — a nota longa disso esta em ctxmenu.c.
-  { int esc = f > 0.5f;
-    int c1 = esc ? 20 : 245, c2 = esc ? 74 : 168;
-    { TxtLinha t = txt_linha_corta(TXT_CALLOUT, l->titulo,
-                                   c1, c1 + 1, c1 + 5, 255, SP_TEXTO_W);
-      txt_desenhar_alpha(t, tx, y + 4.0f, a); }
-    metaTexto(buf, sizeof buf, l);
-    { TxtLinha t = txt_linha_corta(TXT_CAPTION2, buf, c2, c2 + 4, c2 + 14, 255,
-                                   SP_TEXTO_W);
-      txt_desenhar_alpha(t, tx, y + 42.0f, a * 0.95f); } }
+  // A TINTA FAZ CROSSFADE entre duas texturas fixas do cache. Antes ela trocava
+  // em degrau no meio da mola: sobre o accent branco isso era exatamente o
+  // "flash" da captura — o cartao ja estava claro, mas o texto ainda parecia
+  // de repouso por um quadro. As duas chaves sao estaveis; so o alpha varia.
+  {
+    // Nao somar canais a 255: o cache aceita bytes e o estouro transforma
+    // branco em vermelho quando o accent pede tinta clara.
+    { TxtLinha repouso = txt_linha_corta(TXT_CALLOUT, l->titulo,
+                                         245, 245, 245, 255, SP_TEXTO_W);
+      TxtLinha foco = txt_linha_corta(TXT_CALLOUT, l->titulo,
+                                      tintaFoco, tintaFoco, tintaFoco, 255, SP_TEXTO_W);
+      txt_foco_transicao(repouso, foco, tx, y + 4.0f, v, a); }
+    // META: tipo, ano e nota sao selos da mesma tabela. A estrela solta que
+    // existia aqui nao dizia de onde vinha a nota e ainda duplicava o IMDb
+    // quando a marca era desenhada ao lado.
+    { float bx = tx, by = y + 42.0f;
+      float w;
+      w = badge_foco_transicao(bx, by, i18n(l->serie ? "Série" : "Filme"), v, a);
+      bx += w + BADGE_GAP;
+      if (l->meta[0]) {
+        w = badge_foco_transicao(bx, by, l->meta, v, a);
+        bx += w + BADGE_GAP;
+      }
+      if (l->nota > 0 && bx + badge_imdb_largura(l->nota) <= tx + SP_TEXTO_W)
+        badge_imdb_foco_transicao(bx, by, l->nota, v, a, tintaFoco); } }
 
   if (l->progresso > 0) {
     float p = anim_clamp(l->progresso / 100.0f, 0.0f, 1.0f);
-    GfxRect trilho = { tx, y + 84.0f, SP_BARRA_W, SP_BARRA_H };
-    GfxRect cheio  = { tx, y + 84.0f, SP_BARRA_W * p, SP_BARRA_H };
-    gfx_cor(trilho, 0.5f, 0.24f, 0.25f, 0.28f, a);
-    if (cheio.w > 1.0f) gfx_cor(cheio, 0.5f, 0.93f, 0.94f, 0.97f, a);
-    // "T1E3 · 29 min restantes" para serie; so o tempo para filme. Formatos
-    // inteiros em i18n: a ordem de "T"/"E" e de "min restantes" nao sobrevive a
-    // uma montagem por pedacos.
-    if (l->temporada > 0 && l->episodio > 0 && l->restanteMin > 0)
-      snprintf(buf, sizeof buf, i18n("T%dE%d · %d min restantes"),
-               l->temporada, l->episodio, l->restanteMin);
-    else if (l->temporada > 0 && l->episodio > 0)
-      snprintf(buf, sizeof buf, i18n("T%dE%d · retomar"), l->temporada, l->episodio);
-    else if (l->restanteMin > 0)
-      snprintf(buf, sizeof buf, i18n("%d min restantes"), l->restanteMin);
-    else
-      snprintf(buf, sizeof buf, "%s", i18n("Retomar"));
-    { int c = f > 0.5f ? 56 : 198;
-      TxtLinha t = txt_linha_corta(TXT_CAPTION, buf, c, c + 4, c + 14, 255, SP_TEXTO_W);
-      txt_desenhar_alpha(t, tx, y + 102.0f, a * 0.95f); }
+    GfxRect trilho = { tx, y + 90.0f, SP_BARRA_W, SP_BARRA_H };
+    GfxRect cheio  = { tx, y + 90.0f, SP_BARRA_W * p, SP_BARRA_H };
+    float pr, pg, pb;
+    ajustes_acento(&pr, &pg, &pb);
+    // TRILHO cinza escuro (branco a 14 % sobre o painel) e PREENCHIMENTO NA
+    // COR DE REALCE (dono, 21/09/2026) — era branco em repouso e a barra nao
+    // dizia que era a mesma coisa que a barra dos cards da home. Sobre a
+    // linha em foco (superficie na cor de realce) o trilho e a tinta a 22 % e
+    // o preenchimento e a tinta cheia: realce sobre realce sumia.
+    // A MESMA tinta do texto da linha (ajustes_acento_tinta), e nao um degrau
+    // proprio: com o degrau em 0,52 a barra saia escura sobre o azul enquanto
+    // o texto ao lado saia branco — dois criterios para a mesma superficie.
+    { float ti = ajustes_acento_tinta(NULL, NULL, NULL);
+      // Duas camadas pequenas, ambas sobre a mesma barra: a leitura da
+      // progressao nunca some enquanto a linha troca de superficie.
+      gfx_cor(trilho, 0.5f, 1.0f, 1.0f, 1.0f, 0.14f * (1.0f - v) * a);
+      gfx_cor(trilho, 0.5f, ti, ti, ti, 0.22f * v * a);
+      if (cheio.w > SP_BARRA_H) {
+        gfx_cor(cheio, 0.5f, pr, pg, pb, (1.0f - v) * a);
+        gfx_cor(cheio, 0.5f, ti, ti, ti, v * a);
+      } }
+    // O tempo ja visto vem da mesma posicao/remaining reais do catalogo. Quando
+    // ha duracao suficiente para derivar minutos, o prefixo "≈" deixa claro o
+    // arredondamento; sem isso, cai para percentual em vez de fabricar tempo.
+    // A etiqueta fica ao lado da barra, em uma largura reservada fixa: assim a
+    // largura do trilho nao muda a cada quadro nem rasteriza uma linha nova.
+    // HIERARQUIA (dono, 21/09/2026): o que FALTA e o dado — "T3E4 · 43 min
+    // restantes" em tinta principal ao lado do trilho; o "≈35 min assistidos"
+    // e contexto e vai embaixo, em secundario. Antes os dois tinham a mesma
+    // cor e o restante ficava em segundo plano.
+      { int c2Repouso = 168;
+        int p = l->progresso;
+        int vistoMin = minutosAssistidosAprox(l);
+        float labelX = tx + SP_BARRA_W + SP_BARRA_LABEL_GAP;
+        restanteTexto(buf, sizeof buf, l);
+      { TxtLinha repouso = txt_linha_corta(TXT_CAPTION, buf, 235, 235, 235, 255,
+                                           SP_TEXTO_W - SP_BARRA_W - SP_BARRA_LABEL_GAP);
+        TxtLinha foco = txt_linha_corta(TXT_CAPTION, buf, tintaFoco, tintaFoco,
+                                        tintaFoco, 255,
+                                        SP_TEXTO_W - SP_BARRA_W - SP_BARRA_LABEL_GAP);
+        txt_foco_transicao(repouso, foco, labelX,
+                           y + 90.0f + (SP_BARRA_H - (float)repouso.h) * 0.5f, v, a); }
+      if (vistoMin > 0) {
+        char mins[96];
+        snprintf(mins, sizeof mins, i18n("%d min assistidos"), vistoMin);
+        snprintf(buf, sizeof buf, "≈%s", mins);
+      } else {
+        snprintf(buf, sizeof buf, i18n("%d%% assistido"), p);
+      }
+      { TxtLinha repouso = txt_linha(TXT_CAPTION2, buf, c2Repouso, c2Repouso + 4,
+                                     c2Repouso + 14, 255);
+        TxtLinha foco = txt_linha(TXT_CAPTION2, buf, tintaFoco2,
+                                  tintaFoco2, tintaFoco2, 255);
+        txt_foco_transicao(repouso, foco, tx, y + 108.0f, v, a * 0.95f); } }
   } else {
     quandoTexto(buf, sizeof buf, l->quandoS);
     if (buf[0]) {
-      int c = f > 0.5f ? 84 : 150;
-      TxtLinha t = txt_linha_corta(TXT_CAPTION, buf, c, c + 4, c + 15, 255, SP_TEXTO_W);
-      txt_desenhar_alpha(t, tx, y + 92.0f, a * 0.9f);
+      TxtLinha repouso = txt_linha_corta(TXT_CAPTION, buf, 168, 172, 183, 255, SP_TEXTO_W);
+      TxtLinha foco = txt_linha_corta(TXT_CAPTION, buf, tintaFoco2,
+                                      tintaFoco2, tintaFoco2, 255, SP_TEXTO_W);
+      txt_foco_transicao(repouso, foco, tx, y + 92.0f, v, a * 0.9f);
     }
   }
 }
@@ -838,6 +1014,8 @@ static void desenhaLinha(int i, float dx, float y, float a) {
 #define SPS_SUG_AV   56.0f
 #define SPS_SUG_GAP  18.0f
 #define SPS_SUG_PADX 14.0f
+#define SPS_AMIGO_AV 48.0f
+#define SPS_AMIGO_GAP 16.0f
 
 // `linha` e a posicao na lista da aba (de onde sai a animacao de foco) e `idx`
 // a posicao na lista de recomendacoes. Os dois coincidem hoje — as
@@ -846,16 +1024,20 @@ static void desenhaLinha(int i, float dx, float y, float a) {
 static void desenhaRecLinha(int linha, int idx, float dx, float y, float a) {
   const RecItem *r = &recs[idx];
   float f = (linha >= 0 && linha < SP_MAX) ? animFoco[linha] : 0.0f;
+  float fr, fg, fb;
   float px = SP_X + dx + SP_PAD, tx = SP_X + dx + SP_TEXTO_X;
   char buf[320], quando[64];
   GfxRect poster = { px, y, SP_POSTER_W, SP_POSTER_H };
 
   if (f > 0.01f) {
-    // Mesma pilula clara da aba Salvos — as duas listas sao a mesma camada e
-    // marcar o foco de dois jeitos dentro dela seria pior que qualquer um dos
-    // dois.
-    GfxRect anel = { px - 12.0f, y - 10.0f, SP_INTERNO + 24.0f, SP_POSTER_H + 20.0f };
-    gfx_cor(anel, 0.06f, 0.961f, 0.961f, 0.968f, f * a);
+    // A mesma superficie de foco da aba Salvos, agora usando o accent
+    // configurado para que recomendacoes nao voltem ao branco fixo.
+    GfxRect anel = { px - 12.0f, y - SP_FOCO_PADY, SP_INTERNO + 24.0f,
+                     SP_POSTER_H + SP_FOCO_PADY * 2.0f };
+    ajustes_acento(&fr, &fg, &fb);
+    { GfxRect luz = { anel.x - anel.h * 0.5f, anel.y - anel.h * 0.5f, anel.w + anel.h, anel.h * 2.0f };
+      gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, fr, fg, fb, 0.28f * f * a); }
+    gfx_cor(anel, 14.0f / anel.h, fr, fg, fb, f * a);
   }
 
   if (!r->visto) {
@@ -896,8 +1078,8 @@ static void desenhaRecLinha(int linha, int idx, float dx, float y, float a) {
     } }
 
   { int esc = f > 0.5f;
-    int c1 = esc ? 20 : 245;
-    TxtLinha t = txt_linha_corta(TXT_CALLOUT, r->titulo, c1, c1 + 1, c1 + 5, 255,
+    int c1 = esc ? ajustes_tinta_foco() : 245;
+    TxtLinha t = txt_linha_corta(TXT_CALLOUT, r->titulo, c1, c1, c1, 255,
                                  SP_TEXTO_W);
     txt_desenhar_alpha(t, tx, y + 2.0f, a); }
 
@@ -911,7 +1093,8 @@ static void desenhaRecLinha(int linha, int idx, float dx, float y, float a) {
   // cinza-claro sobre claro fica ilegivel — foi o que a captura mostrou antes
   // de isto existir.
   { int esc = f > 0.5f;
-    int c2 = esc ? 74 : 168, c3 = esc ? 48 : 214;
+    int c2 = esc ? ajustes_tinta_foco2() : 168;
+    int c3 = esc ? ajustes_tinta_foco2() : 214;
     // O DISCO DA FOTO ANTES DO NOME. Com quatro recomendacoes na tela, a cara
     // e o que distingue uma linha da outra antes de qualquer leitura — era o
     // pedido do dono, e e o unico item da linha que nao depende de ler.
@@ -946,14 +1129,14 @@ static void desenhaRecLinha(int linha, int idx, float dx, float y, float a) {
 static float abasLargura(void) {
   const char *rot[3]; int i; float w = 0.0f;
   int novasRec = recomenda_n_novas(), novasAv = avisos_n_novos();
-  rot[SP_ABA_SALVOS] = "SALVOS"; rot[SP_ABA_SOCIAL] = "SOCIAL"; rot[SP_ABA_AVISOS] = "AVISOS";
+  rot[SP_ABA_SALVOS] = "Salvos"; rot[SP_ABA_SOCIAL] = "Social"; rot[SP_ABA_AVISOS] = "Avisos";
   for (i = 0; i < 3; i++) {
     int ativa = (i == aba);
     int novas = i == SP_ABA_SOCIAL ? novasRec : i == SP_ABA_AVISOS ? novasAv : 0;
     TxtLinha t;
     if (i == SP_ABA_SOCIAL && !temSocial()) continue;
     t = txt_linha(TXT_CALLOUT, i18n(rot[i]), 176, 176, 176, 255);
-    w += t.w + 44.0f + ((!ativa && novas > 0) ? 34.0f : 0.0f) + SP_ABA_GAP;
+    w += t.w + (ativa ? 44.0f : 0.0f) + ((!ativa && novas > 0) ? 34.0f : 0.0f) + SP_ABA_GAP;
   }
   return w;
 }
@@ -962,13 +1145,13 @@ static void desenhaAbas(float dx, float a) {
   const char *rot[3];
   float x = SP_X + dx + SP_PAD;
   int i, novasRec = recomenda_n_novas(), novasAv = avisos_n_novos();
-  rot[SP_ABA_SALVOS] = "SALVOS";
-  rot[SP_ABA_SOCIAL] = "SOCIAL";
-  rot[SP_ABA_AVISOS] = "AVISOS";
+  rot[SP_ABA_SALVOS] = "Salvos";
+  rot[SP_ABA_SOCIAL] = "Social";
+  rot[SP_ABA_AVISOS] = "Avisos";
   for (i = 0; i < 3; i++) {
     int ativa = (i == aba);
     int emFoco = (foco == SP_FOCO_ABAS && ativa);
-    int cor = emFoco ? ajustes_tinta_foco() : (ativa ? 246 : 176);
+    int cor = ativa ? ajustes_tinta_foco() : 176;
     int novas = i == SP_ABA_SOCIAL ? novasRec : i == SP_ABA_AVISOS ? novasAv : 0;
     TxtLinha t;
     if (i == SP_ABA_SOCIAL && !temSocial()) continue;
@@ -981,42 +1164,37 @@ static void desenhaAbas(float dx, float a) {
     // rotulo, e a pilula cresce para ele — antes eram 32 px encostados na
     // borda, e a contagem do cabecalho vinha logo atras sem folga.
     float selo = (!ativa && novas > 0) ? 34.0f : 0.0f;
-    GfxRect p = { x, SP_ABAS_Y, t.w + 44.0f + selo, SP_ABAS_H };
-    // FOCO EM SUPERFICIE ESCURA, nunca pilula branca com texto preto: a nota
-    // de NV_COR_FOCO em layout.h chama isso de o padrao errado, e perfilsel.c
-    // ja tinha sido corrigido pelo mesmo motivo. A primeira versao desta linha
-    // repetiu o erro — pilula 0.94 com texto 17 — e era o que mais pesava na
-    // foto ampliada.
-    // A ativa tem de ser a MAIS clara das duas. O fundo do painel ja e 0.075,
-    // entao um branco a 0.07 por cima dele chega perto de 0.14 — colado nos
-    // 0.188 de NV_COR_FOCO, e na captura a aba fechada parecia a aberta.
-    // (A nota acima sobre "nunca pilula branca com texto preto" ficou velha:
-    // a regra mudou em 16/09/2026, ver NV_COR_FOCO em layout.h.)
-    //
-    // Com o D-pad NA LINHA DE ABAS a aba aberta e preenchida na cor de
-    // realce com texto escuro, sem anel; fora dela, a aberta e a superficie
-    // clara e a outra fica apagada.
-    if (emFoco) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-                  gfx_cor(p, NV_RAIO_PILL, ar, ag, ab, a); }
-    else if (ativa) gfx_cor(p, NV_RAIO_PILL, 0.26f, 0.26f, 0.27f, a);
-    else            gfx_cor(p, NV_RAIO_PILL, 1.0f, 1.0f, 1.0f, 0.04f * a);
-    txt_desenhar_alpha(t, x + 22.0f, SP_ABAS_Y + (SP_ABAS_H - t.h) * 0.5f, a);
+    float margem = ativa ? 44.0f : 0.0f;
+    GfxRect p = { x, SP_ABAS_Y, t.w + margem + selo, SP_ABAS_H };
+    // TRES ESTADOS, e nao duas pilulas cinza (dono, 21/09/2026): a aba ATIVA
+    // e uma pilula na cor de realce com a tinta da regra — sempre cheia, e
+    // nao a 32 %, porque tinta escura sobre realce branco a 32 % virava cinza
+    // sobre cinza; quando o D-pad esta na barra ela ainda ganha o brilho
+    // difuso, que e o que diz "o foco esta aqui" sem uma segunda cor. As
+    // outras sao SO TEXTO em 176, sem caixa: caixa em tudo e o que dava
+    // cara de formulario a linha.
+    if (ativa) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+                 if (emFoco) {
+                   GfxRect luz = { p.x - p.h * 0.9f, p.y - p.h * 0.9f,
+                                   p.w + p.h * 1.8f, p.h * 2.8f };
+                   gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, ar, ag, ab, 0.35f * a);
+                 }
+                 gfx_cor(p, NV_RAIO_PILL, ar, ag, ab, a); }
+    txt_desenhar_alpha(t, x + (ativa ? 22.0f : 0.0f),
+                       SP_ABAS_Y + (SP_ABAS_H - t.h) * 0.5f, a);
     if (selo > 0.0f) {
       char n[16];
       GfxRect b;
       TxtLinha tn;
+      float br, bg, bb;
       snprintf(n, sizeof n, "%d", novas > 99 ? 99 : novas);
-      // NUMERO ESCURO SOBRE O VERDE, e nao branco. Branco 250 sobre #66bb6a
-      // da 2,27:1 de contraste — abaixo dos 3:1 que a propria AA pede ate
-      // para texto GRANDE, e este numeral tem 21px a tres metros. Escuro da
-      // 7,6:1 e e o que faz o selo ler como um selo, e nao como uma mancha.
-      tn = txt_linha(TXT_MINI, n, 12, 26, 16, 255);
+      ajustes_acento(&br, &bg, &bb);
+      { int ink = ajustes_tinta_foco();
+        tn = txt_linha(TXT_MINI, n, ink, ink, ink, 255); }
       b.w = 24.0f; b.h = 24.0f;
-      b.x = x + 22.0f + t.w + 10.0f;
+      b.x = x + t.w + 10.0f;
       b.y = SP_ABAS_Y + (SP_ABAS_H - b.h) * 0.5f;
-      // VERDE #66bb6a — o mesmo EMERALD que ja esta na paleta de acentos
-      // (ajustes.c:204), e nao um verde novo inventado para este selo.
-      gfx_cor(b, 0.5f, 0.400f, 0.733f, 0.416f, a);
+      gfx_rect(b, 0, GFX_DISCO, 0, 0, 0, 0, br, bg, bb, a);
       txt_desenhar_alpha(tn, b.x + (b.w - tn.w) * 0.5f,
                          b.y + (b.h - tn.h) * 0.5f, a);
     }
@@ -1095,32 +1273,26 @@ static void desenhaConsentimento(float dx, float y0, float a) {
       160, 164, 175, x, y, SP_INTERNO, 30.0f, a * 0.85f, 2);
 }
 
-// Uma linha-botao: pilula que inverte no foco, com um subtitulo opcional.
-// Mesma pilula e mesmo foco invertido das outras listas do app.
+// Uma linha-botao compacta: pilula que inverte no foco, com um subtitulo
+// opcional. A altura e menor que a de um card porque isto e uma acao da lista,
+// nao conteudo para consumir a tela.
+// Uma linha-botao: a PILULA DA TABELA (botoes.h) dentro do bloco da linha,
+// e nao mais uma laje da largura do painel. "Adicionar um amigo" e uma acao e
+// tem a cara de acao do resto do app: secundario (contorno fino) em repouso,
+// realce em foco. `primario` para a resposta afirmativa do consentimento, que
+// e o caminho principal daquele cartao. `sub` ficou por compatibilidade:
+// ninguem passa subtitulo hoje, e um botao com subtitulo e uma linha de
+// ajustes, nao um botao.
 static void desenhaBotaoLinha(int i, float dx, float y, float alt, float a,
-                              const char *titulo, const char *sub) {
-  GfxRect r = { SP_X + dx + SP_PAD, y, SP_INTERNO, alt };
+                              const char *titulo, const char *sub,
+                              const char *icone, int primario) {
   float f = (i >= 0 && i < SP_MAX) ? animFoco[i] : 0.0f;
-  // Fundo do repouso a COR DE REALCE (layout.h); tinta pelo degrau em 0,5.
-  float fr, fg, fb, ti = ajustes_acento_tinta(&fr, &fg, &fb);
-  int t1 = (int)(ti * 255.0f + 0.5f);
-  int c1 = f >= 0.5f ? t1 : 240, c2 = f >= 0.5f ? (ti < 0.5f ? 74 : 214) : 168;
-  gfx_cor(r, 14.0f / alt, anim_mistura(0.176f, fr, f),
-          anim_mistura(0.176f, fg, f), anim_mistura(0.176f, fb, f), a);
-  if (sub && sub[0]) {
-    TxtLinha t = txt_linha_corta(TXT_PLR_CORPO, titulo, c1, c1, c1, 255,
-                                 SP_INTERNO - 64.0f);
-    TxtLinha s = txt_linha_corta(TXT_CAPTION, sub, c2, c2 + 4, c2 + 14, 255,
-                                 SP_INTERNO - 64.0f);
-    float h = t.h + 8.0f + s.h;
-    txt_desenhar_alpha(t, r.x + 32.0f, y + (alt - h) * 0.5f, a);
-    txt_desenhar_alpha(s, r.x + 32.0f, y + (alt - h) * 0.5f + t.h + 8.0f,
-                       a * 0.95f);
-    return;
-  }
-  { TxtLinha t = txt_linha_corta(TXT_PLR_CORPO, titulo, c1, c1, c1, 255,
-                                 SP_INTERNO - 64.0f);
-    txt_desenhar_alpha(t, r.x + 32.0f, y + (alt - t.h) * 0.5f, a); }
+  float h = primario ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO;
+  float w = botao_largura(titulo, icone, primario);
+  GfxRect r = { SP_X + dx + SP_PAD, y + (alt - h) * 0.5f, w, h };
+  (void)sub;
+  if (r.w > SP_INTERNO) r.w = SP_INTERNO;
+  botao_pilula(r, titulo, icone, f, primario, 0, a);
 }
 
 // O INTERRUPTOR DE "APARECER PARA OUTRAS PESSOAS", e por que ele deixou de ser
@@ -1147,11 +1319,9 @@ static void desenhaBotaoLinha(int i, float dx, float y, float alt, float a,
 //    Aqui o OK inverte na hora. Vestir a roupa de Ajustes com outro gesto e
 //    defeito pior que o que se esta corrigindo. Terceira: "Ligado" nao diz o
 //    que esta ligado.
-// 2. TRILHA NA COR DE REALCE quando ligado, como num telefone. Rejeitada: o
-//    foco desta lista PREENCHE a linha com superficie clara, e um realce claro
-//    dentro de uma linha clara some — e exatamente a armadilha que a pilula
-//    "Adicionar" de desenhaSugLinha ja documenta logo abaixo. E cor nao pode
-//    ser o sinal, porque o estado tem de ser legivel sem cor.
+// 2. TRILHA SEMPRE EM COR DE ESTADO, como num telefone. A trilha desligada
+//    fica cinza neutro e a ligada usa o accent; a bola branca e a posicao
+//    mantem a leitura mesmo quando o foco altera a luminancia da linha.
 // 3. ESQUERDA = desligar, DIREITA = ligar. Rejeitada: ESQUERDA ja significa
 //    "sair do painel" nesta camada (ver spainel_evento), gesto herdado de
 //    perfil.c. Um interruptor em que um lado inverte e o outro fecha a tela
@@ -1160,19 +1330,9 @@ static void desenhaBotaoLinha(int i, float dx, float y, float alt, float a,
 //    estado, a palavra e a segunda coisa dizendo a mesma coisa — e duas coisas
 //    dizendo o mesmo e o que da cara de formulario a uma linha.
 //
-// COMO O ESTADO E LIDO SEM FOCO E SEM COR. Tres canais redundantes, nenhum
-// deles matiz: a POSICAO da bola (48 px de percurso, ~35' de arco a 3 m), o
-// PREENCHIMENTO da trilha (anel vazio / capsula cheia) e a POLARIDADE da bola
-// (clara dentro do anel vazio, cor da propria linha sobre a capsula cheia).
-// MEDIDO em bytes sRGB na captura, nas quatro combinacoes:
-//
-//   linha em repouso (45)   desligado: anel 152, miolo 45,  bola 240
-//                           ligado:    capsula 240,         bola 45
-//   linha em foco   (245)   desligado: anel 120, miolo 245, bola 18
-//                           ligado:    capsula 18,          bola 245
-//
-// Contraste da bola contra o que esta atras dela: 12:1, 12:1, 17:1 e 17:1. O
-// canal que carrega o estado nunca desce de 12:1 em nenhuma das quatro.
+// COMO O ESTADO E LIDO: a POSICAO da bola (48 px de percurso, ~35' de arco a
+// 3 m) e a diferenca entre a trilha neutra e a trilha accent. A bola permanece
+// branca para que o foco nao troque o significado da cor.
 //
 // QUAL LADO E O SEGURO, sem sermao. O padrao — e a resposta que o produto
 // defende — e NAO aparecer, e esse e o lado da trilha VAZIA. Ligar acende
@@ -1184,17 +1344,13 @@ static void desenhaAparecer(int i, float dx, float y, float alt, float a) {
   GfxRect r = { SP_X + dx + SP_PAD, y, SP_INTERNO, alt };
   GfxRect trilho, bola;
   float f = (i >= 0 && i < SP_MAX) ? animFoco[i] : 0.0f;
-  float lum = anim_mistura(0.176f, 0.961f, f);
+  float ar, ag, ab, ti = ajustes_acento_tinta(&ar, &ag, &ab);
   int esc = f >= 0.5f;
-  int c1 = esc ? 17 : 240, c2 = esc ? 74 : 168;
+  int c1 = esc ? ajustes_tinta_foco() : 240, c2 = esc ? ajustes_tinta_foco2() : 168;
   // Clamp de seguranca: animSw nasce em -1 e so assenta na primeira
   // atualizacao. Um quadro desenhado antes dela (o painel abre e desenha no
   // mesmo quadro) deslocaria a bola para fora da capsula.
   float lig = animSw < 0.0f ? 0.0f : anim_clamp(animSw, 0.0f, 1.0f);
-  // A TINTA CONTRARIA A DA LINHA. O foco inverte a linha inteira, entao o
-  // interruptor tem de inverter junto — desenhar sempre claro deixaria a bola
-  // branca sumida dentro da pilula branca do foco.
-  float tinta = esc ? 0.07f : 0.94f;
   float largTexto = SP_INTERNO - 64.0f - SPS_SW_W - SPS_SW_GAP;
   const char *sub = recomenda_aparecer() == REC_APARECER_SIM
       // O SUBTITULO PAROU DE REPETIR O ESTADO. Ele dizia "Sim, voce aparece
@@ -1207,7 +1363,7 @@ static void desenhaAparecer(int i, float dx, float y, float alt, float a) {
       // palavras, e a duvida real de quem esta com o dedo em cima.
       //
       // AS DUAS TEM 36 CARACTERES, e isso foi medido e nao estimado: a coluna
-      // de texto tem 500 px (688 - 32 - 32 - 96 de trilha - 28 de vao) e o
+      // de texto tem 520 px (688 - 32 - 32 - 80 de trilha - 24 de vao) e o
       // TXT_CAPTION de 22 px gasta ~10,8 px por caractere aqui. "Voce continua
       // recebendo e enviando recomendacoes" pedia ~511 px e saiu da PRIMEIRA
       // captura como "Voce continua recebendo e enviando…", com a palavra que
@@ -1217,11 +1373,18 @@ static void desenhaAparecer(int i, float dx, float y, float alt, float a) {
       : "Você continua trocando recomendações";
 
   // Raio de 14 px em fracao da ALTURA, como as outras linhas desta camada: em
-  // 104 px de altura sao 0,135, longe dos dois tetos do gfx_cor (0,5 e
+  // 88 px de altura sao 0,159, longe dos dois tetos do gfx_cor (0,5 e
   // 0,5*w/h = 3,3). Dividir por min(w,h) daria 0,020 aqui e canto vivo.
-  gfx_cor(r, 14.0f / alt, lum, lum, lum, a);
+  // A LINHA EM FOCO E A COR DE REALCE, como toda linha desta camada — era
+  // branco cravado (0.961) com texto 17, a excecao que sobrou da regra velha.
+  if (f > 0.01f) {
+    GfxRect luz = { r.x - r.h * 0.5f, r.y - r.h * 0.5f, r.w + r.h, r.h * 2.0f };
+    gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, ar, ag, ab, 0.28f * f * a);
+  }
+  gfx_cor(r, 14.0f / alt, anim_mistura(0.14f, ar, f), anim_mistura(0.15f, ag, f),
+          anim_mistura(0.17f, ab, f), a);
 
-  { TxtLinha t = txt_linha_corta(TXT_PLR_CORPO, "Aparecer para outras pessoas",
+  { TxtLinha t = txt_linha_corta(TXT_CALLOUT, "Aparecer para outras pessoas",
                                  c1, c1, c1, 255, largTexto);
     TxtLinha s = txt_linha_corta(TXT_CAPTION, sub, c2, c2 + 4, c2 + 14, 255,
                                  largTexto);
@@ -1230,8 +1393,8 @@ static void desenhaAparecer(int i, float dx, float y, float alt, float a) {
     txt_desenhar_alpha(s, r.x + 32.0f, y + (alt - h) * 0.5f + t.h + 8.0f,
                        a * 0.95f); }
 
-  // A TRILHA. Raio 0,5 numa caixa 96x48: o teto 0,5*w/h vale 1,0, entao os
-  // 0,5 passam inteiros e as pontas saem em semicirculo de 24 px. Capsula de
+  // A TRILHA. Raio 0,5 numa caixa 80x40: o teto 0,5*w/h vale 1,0, entao os
+  // 0,5 passam inteiros e as pontas saem em semicirculo de 20 px. Capsula de
   // verdade, e nao "quase".
   //
   // OS 32 px DE RECUO SAO OS MESMOS DO TEXTO. Sem eles a capsula encostava na
@@ -1248,24 +1411,25 @@ static void desenhaAparecer(int i, float dx, float y, float alt, float a) {
   // sem ela a bola clara a esquerda flutua sem dizer que ha um percurso.
   //
   // O ANEL E EXATO, e nao GFX_ANEL: aquele modo sai losangudo (squircle) em
-  // diametro pequeno, em todo tamanho que ja se tentou nesta base. Duas
-  // formas CONCENTRICAS preenchidas dao um anel exato — com raio
-  // 0,5 o centro da tampa fica a h/2 da borda, entao a de fora tem centro em
-  // x+24 (h=48) e a de dentro, recuada 4, tem centro em x+4+20 = x+24. Mesmo
-  // centro, raios 24 e 20: anel de 4 px uniforme, sem emenda.
-  //
-  // Medido depois: 152 sobre 45 (4,77:1) em repouso e 120 sobre 245 (3,97:1)
-  // em foco, com a bola mantendo 12:1 e 17:1 contra o miolo — que e o ponto,
-  // porque quem carrega o ESTADO e a bola e nao a trilha.
-  gfx_cor(trilho, 0.5f, tinta, tinta, tinta, anim_mistura(0.55f, 1.0f, lig) * a);
-  if (lig < 0.999f) {
-    GfxRect furo = { trilho.x + SPS_SW_ANEL, trilho.y + SPS_SW_ANEL,
-                     SPS_SW_W - SPS_SW_ANEL * 2.0f,
-                     SPS_SW_H - SPS_SW_ANEL * 2.0f };
-    // O miolo e a COR DA PROPRIA LINHA e vai sumindo: ligar nao troca de
-    // desenho, TAMPA o buraco. Vazio vira cheio, que e a leitura que se quer.
-    gfx_cor(furo, 0.5f, lum, lum, lum, (1.0f - lig) * a);
-  }
+  // diametro pequeno. Duas formas CONCENTRICAS preenchidas dao um anel exato,
+  // com 4 px de espessura e centro preservado mesmo depois da compactacao.
+  // A regra assentada e simples: trilho cinza quando desligado, accent quando
+  // ligado. Durante a animacao a mistura evita um salto de luminancia.
+  // O INTERRUPTOR (dono, 21/09/2026): trilho na COR DE REALCE ligado, cinza
+  // desligado, bola clara. A regra que faz isso valer em toda combinacao e
+  // "a bola contrasta com o trilho e o trilho com a linha":
+  //   linha em repouso  desligado: trilho branco a 30 %, bola branca
+  //                     ligado:    trilho realce, bola na TINTA do realce
+  //                                (branca sobre rosa, escura sobre branco)
+  //   linha em foco     desligado: trilho tinta a 25 %, bola tinta
+  //   (superficie=realce) ligado:  trilho tinta cheia, bola na cor de realce
+  // Sem isso, realce sobre realce sumia na linha em foco e bola branca sumia
+  // sobre trilho branco no tema padrao.
+  { float tr, tg, tb, ta;
+    if (esc) { tr = tg = tb = ti; ta = anim_mistura(0.25f, 1.0f, lig); }
+    else { tr = anim_mistura(0.30f, ar, lig); tg = anim_mistura(0.30f, ag, lig);
+           tb = anim_mistura(0.30f, ab, lig); ta = 1.0f; }
+    gfx_cor(trilho, 0.5f, tr, tg, tb, ta * a); }
 
   // A BOLA. Quadrada com raio 0,5 = circulo EXATO pelo SDF (com asp = 1 a
   // funcao vira length(p) - 0,5). Nao e GFX_ANEL: aquele sai losangudo em
@@ -1276,15 +1440,17 @@ static void desenhaAparecer(int i, float dx, float y, float alt, float a) {
   bola.x = trilho.x + SPS_SW_PAD +
            (SPS_SW_W - SPS_SW_PAD * 2.0f - SPS_SW_BOLA) * lig;
   bola.y = trilho.y + SPS_SW_PAD;
-  // A COR DA BOLA TROCA EM DEGRAU no meio do percurso, e nao interpolada.
-  // Interpolando, no meio do caminho ela valeria 142 em bytes sRGB enquanto o
-  // miolo da trilha, meio tampado, vale 120: 1,1:1, ou seja a bola SOME no
-  // meio do movimento. Em degrau ela vira ao cruzar o centro — que e o que um
-  // interruptor de verdade faz — e nunca chega perto do valor do miolo.
-  // (E o mesmo degrau em f > 0.5 que o texto desta linha ja usa, so que aqui
-  // a razao e optica e nao o cache de text.c.)
-  { float cb = lig > 0.5f ? lum : tinta;
-    gfx_cor(bola, 0.5f, cb, cb, cb, a); }
+  // A bola e sempre branca; a sombra curta conserva a leitura sobre a linha
+  // clara quando o foco esta ativo.
+  { GfxRect sombra = { bola.x - 2.0f, bola.y - 2.0f,
+                       bola.w + 4.0f, bola.h + 4.0f };
+    float br, bg, bb;
+    // Em DEGRAU no meio do percurso (um interruptor de verdade vira, nao
+    // esmaece): interpolada, a bola passaria pela cor do trilho e sumiria.
+    if (esc) { if (lig > 0.5f) { br = ar; bg = ag; bb = ab; } else br = bg = bb = ti; }
+    else     { if (lig > 0.5f) br = bg = bb = ti; else br = bg = bb = 0.96f; }
+    gfx_cor(sombra, 0.5f, 0.0f, 0.0f, 0.0f, 0.18f * a);
+    gfx_cor(bola, 0.5f, br, bg, bb, a); }
 }
 
 // Uma sugestao: a cara, o nome, POR ONDE ela chegou, e a pilula que diz o que
@@ -1302,9 +1468,16 @@ static void desenhaSugLinha(int i, int idx, float dx, float y, float a) {
   int esc = f > 0.5f;
 
   if (f > 0.01f) {
-    // Mesma pilula clara das outras linhas desta camada.
-    GfxRect p = { px - 12.0f, y - 10.0f, SP_INTERNO + 24.0f, SPS_H_SUG + 20.0f };
-    gfx_cor(p, 0.06f, 0.961f, 0.961f, 0.968f, f * a);
+    float fr, fg, fb;
+    // Mesma superficie de foco das outras linhas desta camada.
+    GfxRect p = { px - 12.0f, y - SP_FOCO_PADY, SP_INTERNO + 24.0f,
+                  SPS_H_SUG + SP_FOCO_PADY * 2.0f };
+    ajustes_acento(&fr, &fg, &fb);
+    { GfxRect luz = { p.x - p.h * 0.5f, p.y - p.h * 0.5f,
+                      p.w + p.h, p.h * 2.0f };
+      gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
+               fr, fg, fb, 0.28f * f * a); }
+    gfx_cor(p, 14.0f / p.h, fr, fg, fb, f * a);
   }
   { GfxRect av = { px, y + (SPS_H_SUG - SPS_SUG_AV) * 0.5f,
                    SPS_SUG_AV, SPS_SUG_AV };
@@ -1314,26 +1487,29 @@ static void desenhaSugLinha(int i, int idx, float dx, float y, float a) {
     // A PILULA DA ACAO E MEDIDA ANTES DO NOME, e o nome e cortado para caber ao
     // lado dela: sem isso, "Carolina Menezes" passava por baixo de "Adicionar"
     // e as duas ficavam ilegiveis na captura.
-    TxtLinha acao = txt_linha(TXT_CAPTION2, "Adicionar",
-                              esc ? 32 : 222, esc ? 34 : 226, esc ? 40 : 236, 255);
+    int tinta = esc ? ajustes_tinta_foco() : 222;
+    TxtLinha acao = txt_linha(TXT_CAPTION2, "Adicionar", tinta, tinta, tinta, 255);
     float pw = acao.w + SPS_SUG_PADX * 2.0f;
     float larg = SP_INTERNO - (SPS_SUG_AV + SPS_SUG_GAP) - pw - 20.0f;
-    int c1 = esc ? 20 : 245, c2 = esc ? 74 : 168;
-    { TxtLinha t = txt_linha_corta(TXT_CALLOUT, s->nome, c1, c1 + 1, c1 + 5, 255,
+    int c1 = esc ? ajustes_tinta_foco() : 245;
+    int c2 = esc ? ajustes_tinta_foco2() : 168;
+    { TxtLinha t = txt_linha_corta(TXT_CALLOUT, s->nome, c1, c1, c1, 255,
                                    larg);
       txt_desenhar_alpha(t, tx, y + 26.0f, a); }
     { TxtLinha t = txt_linha_corta(TXT_CAPTION2, origem, c2, c2 + 4, c2 + 14,
                                    255, larg);
       txt_desenhar_alpha(t, tx, y + 62.0f, a * 0.95f); }
-    // PREENCHIMENTO E NAO CONTORNO, e com as DUAS combinacoes: sobre a pilula
-    // clara do foco, um preenchimento branco a 0.12 desaparece — a mesma
-    // armadilha de rec_selo_tipo, e a mesma saida.
-    { GfxRect p = { px + SP_INTERNO - pw, y + (SPS_H_SUG - REC_SELO_H) * 0.5f,
-                    pw, REC_SELO_H };
-      gfx_cor(p, 0.5f, esc ? 0.06f : 1.0f, esc ? 0.06f : 1.0f,
-              esc ? 0.08f : 1.0f, (esc ? 0.10f : 0.12f) * a);
+    // PREENCHIMENTO E NAO CONTORNO. A acao acompanha a tinta do accent quando
+    // a linha esta focada; caso contrario conserva a capsula neutra.
+    // A PILULA DA ACAO E CONTORNO FINO (1,5 px a 22 %), a cara do botao
+    // secundario da tabela em miniatura: branco em repouso, tinta sobre a
+    // linha em foco. Preenchida ela disputava com o selo de estado.
+    { GfxRect p = { px + SP_INTERNO - pw, y + (SPS_H_SUG - 36.0f) * 0.5f,
+                    pw, 36.0f };
+      float ti = (float)tinta / 255.0f;
+      gfx_rect(p, 0, GFX_ANEL, 0, 1.5f / p.h, 0, 0.5f, ti, ti, ti, (esc ? 0.55f : 0.22f) * a);
       txt_desenhar_alpha(acao, p.x + SPS_SUG_PADX,
-                         p.y + (REC_SELO_H - acao.h) * 0.5f, a); } }
+                         p.y + (36.0f - acao.h) * 0.5f, a); } }
 }
 
 // Linha de um AMIGO JA ADICIONADO: foto (ou inicial), nome e de onde veio
@@ -1342,18 +1518,25 @@ static void desenhaSugLinha(int i, int idx, float dx, float y, float a) {
 static void desenhaAmigoLinha(int i, int idx, float dx, float y, float a) {
   const RecContato *c = &ctts[idx];
   float f = (i >= 0 && i < SP_MAX) ? animFoco[i] : 0.0f;
+  float v = focoVisual(f);
   float px = SP_X + dx + SP_PAD;
-  int esc = f > 0.5f;
   if (f > 0.01f) {
-    GfxRect p = { px - 12.0f, y - 10.0f, SP_INTERNO + 24.0f, SPS_H_SUG + 20.0f };
-    float fr, fg, fb; esc = ajustes_acento_tinta(&fr, &fg, &fb) < 0.5f;
-    gfx_cor(p, 0.06f, fr, fg, fb, f * a);
+    GfxRect p = { px - 12.0f, y - SP_FOCO_PADY, SP_INTERNO + 24.0f,
+                  SPS_H_AMIGO + SP_FOCO_PADY * 2.0f };
+    float fr, fg, fb;
+    ajustes_acento(&fr, &fg, &fb);
+    { GfxRect luz = { p.x - p.h * 0.5f, p.y - p.h * 0.5f,
+                      p.w + p.h, p.h * 2.0f };
+      gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
+               fr, fg, fb, 0.28f * v * a); }
+    gfx_cor(p, 14.0f / p.h, fr, fg, fb, v * a);
   }
-  { GfxRect av = { px, y + (SPS_H_SUG - SPS_SUG_AV) * 0.5f, SPS_SUG_AV, SPS_SUG_AV };
+  { GfxRect av = { px, y + (SPS_H_AMIGO - SPS_AMIGO_AV) * 0.5f,
+                   SPS_AMIGO_AV, SPS_AMIGO_AV };
     rec_avatar(av, c->avatar, c->nome, c->id, a); }
-  { float tx = px + SPS_SUG_AV + SPS_SUG_GAP;
-    float larg = SP_INTERNO - (SPS_SUG_AV + SPS_SUG_GAP) - 20.0f;
-    int c1 = esc ? 20 : 245, c2 = esc ? 74 : 168;
+  { float tx = px + SPS_AMIGO_AV + SPS_AMIGO_GAP;
+    float larg = SP_INTERNO - (SPS_AMIGO_AV + SPS_AMIGO_GAP) - 20.0f;
+    int tf = ajustes_tinta_foco(), tf2 = ajustes_tinta_foco2();
     const char *origem = !strcmp(c->origem, "trakt") ? "Amigo do Trakt" : "Adicionado pelo código";
     char linha2[220];
     // O QUE ELE VIU POR ULTIMO (dono, 20/09/2026): a fileira "Amigos
@@ -1381,10 +1564,20 @@ static void desenhaAmigoLinha(int i, int idx, float dx, float y, float a) {
         }
       }
     }
-    { TxtLinha t = txt_linha_corta(TXT_CALLOUT, c->nome, c1, c1 + 1, c1 + 5, 255, larg);
-      txt_desenhar_alpha(t, tx, y + 26.0f, a); }
-    { TxtLinha t = txt_linha_corta(TXT_CAPTION2, linha2, c2, c2 + 4, c2 + 14, 255, larg);
-      txt_desenhar_alpha(t, tx, y + 62.0f, a * 0.95f); } }
+    // AS DUAS TINTAS FAZEM CROSSFADE, como nas linhas de Salvos. A troca
+    // anterior por `f > 0,5` dava um estalo no meio da mola — especialmente
+    // visivel quando o branco do foco precisava virar quase preto.
+    { TxtLinha repouso = txt_linha_corta(TXT_BODY, c->nome, 245, 245, 245, 255, larg);
+      TxtLinha foco = txt_linha_corta(TXT_BODY, c->nome, tf, tf, tf, 255, larg);
+      TxtLinha subRepouso = txt_linha_corta(TXT_CAPTION2, linha2,
+                                            168, 172, 182, 255, larg);
+      TxtLinha subFoco = txt_linha_corta(TXT_CAPTION2, linha2,
+                                         tf2, tf2, tf2, 255, larg);
+      float bloco = (float)repouso.h + 6.0f + (float)subRepouso.h;
+      float ty = y + (SPS_H_AMIGO - bloco) * 0.5f;
+      txt_foco_transicao(repouso, foco, tx, ty, v, a);
+      txt_foco_transicao(subRepouso, subFoco, tx, ty + repouso.h + 6.0f,
+                         v, a * 0.95f); } }
 }
 
 static void desenhaVazio(float dx, float a) {
@@ -1414,8 +1607,15 @@ void spainel_desenhar(Uint32 agora) {
   // Entra deslizando da BORDA DIREITA. `x` e o deslocamento: em a=0 o painel
   // esta inteiro fora da tela.
   x = (1.0f - a) * (NV_TELA_W - SP_X);
+  // PAINEL FLUTUANTE na "cara nova" da barra lateral (menu.c, 21/09/2026):
+  // ja era solto das bordas (24 px) e arredondado (28 px = 0,036 de 776);
+  // agora e translucido, mais escuro, com UMA luz difusa na cor de realce
+  // entrando pelo canto superior direito, presa aos cantos (GFX_LUZ). E a
+  // unica mancha grande daqui — o veu de tela cheia ja e a primeira camada.
   { GfxRect p = { SP_X + x, SP_Y, SP_W, SP_H };
-    gfx_cor(p, 0.035f, 0.075f, 0.078f, 0.088f, 0.98f * a); }
+    float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+    gfx_cor(p, 28.0f / SP_W, 0.055f, 0.058f, 0.068f, 0.94f * a);
+    gfx_luz_canto(p, 28.0f / SP_W, SP_W * 0.9f, -SP_W * 0.1f, SP_W * 0.65f, ar, ag, ab, 0.22f * a); }
 
   // Tudo daqui para baixo fica preso ao painel: sem o recorte, a lista rolada
   // desenha por cima do cabecalho e por baixo da borda inferior.
@@ -1487,11 +1687,9 @@ void spainel_desenhar(Uint32 agora) {
         // So a secao das sugestoes tem rotulo; o vao do interruptor e mudo.
         if ((social[i].tipo == SPS_SUG || social[i].tipo == SPS_AMIGO) &&
             y + cab >= listaTopo() && y <= SP_LISTA_BASE) {
-          TxtLinha t = txt_linha(TXT_CAPTION2,
-                                 social[i].tipo == SPS_SUG ? "Pessoas que você talvez conheça"
-                                                           : "Seus amigos",
-                                 150, 154, 165, 255);
-          txt_desenhar_alpha(t, SP_X + x + SP_PAD, y + cab - t.h - 12.0f, a * 0.9f);
+          desenhaSecao(SP_X + x + SP_PAD, y + cab - SP_SECAO_H,
+                       social[i].tipo == SPS_SUG ? "Pessoas que você talvez conheça"
+                                                 : "Seus amigos", a);
         }
         y += cab;
       }
@@ -1506,7 +1704,7 @@ void spainel_desenhar(Uint32 agora) {
             // A linha de "Adicionar um amigo" fecha a lista, e nao um botao
             // solto no rodape: ela rola com o resto e recebe foco como qualquer
             // outra.
-            desenhaBotaoLinha(i, x, y, alt, a, "Adicionar um amigo", NULL);
+            desenhaBotaoLinha(i, x, y, alt, a, "Adicionar um amigo", NULL, "mais", 0);
             break;
           case SPS_APARECER:
             // NAO e desenhaBotaoLinha, e a diferenca e o ponto todo desta
@@ -1514,10 +1712,10 @@ void spainel_desenhar(Uint32 agora) {
             desenhaAparecer(i, x, y, alt, a);
             break;
           case SPS_CONSENT_SIM:
-            desenhaBotaoLinha(i, x, y, alt, a, "Sim, pode me mostrar", NULL);
+            desenhaBotaoLinha(i, x, y, alt, a, "Sim, pode me mostrar", NULL, NULL, 1);
             break;
           default:
-            desenhaBotaoLinha(i, x, y, alt, a, "Não, não quero aparecer", NULL);
+            desenhaBotaoLinha(i, x, y, alt, a, "Não, não quero aparecer", NULL, NULL, 0);
             break;
         }
       }
@@ -1534,15 +1732,12 @@ void spainel_desenhar(Uint32 agora) {
   gfx_recorte(SP_X + x, listaTopo(), SP_W, SP_LISTA_BASE - listaTopo());
   y = listaTopo() - scrollY;
 
-  { TxtLinha t = txt_linha(TXT_CAPTION2,
-        i18n(nCont > 0 ? "Continuar" : "Sua lista"), 150, 154, 165, 255);
-    txt_desenhar_alpha(t, SP_X + x + SP_PAD, y + SP_SECAO_H - t.h - 12.0f, a * 0.9f); }
+  desenhaSecao(SP_X + x + SP_PAD, y, nCont > 0 ? "Continuar" : "Sua lista", a);
   y += SP_SECAO_H;
 
   for (i = 0; i < nLinhas; i++) {
     if (i == nCont && nCont > 0) {
-      TxtLinha t = txt_linha(TXT_CAPTION2, "Não começados", 150, 154, 165, 255);
-      txt_desenhar_alpha(t, SP_X + x + SP_PAD, y + SP_SECAO_H - t.h - 12.0f, a * 0.9f);
+      desenhaSecao(SP_X + x + SP_PAD, y, "Não começados", a);
       y += SP_SECAO_H;
     }
     // Fora da janela nao custa texto nem textura: numa lista de 200 titulos

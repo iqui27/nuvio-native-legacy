@@ -525,6 +525,47 @@ export default {
       return rotaRegistro(env, { id: "diag:" + tv }, corpo);
     }
 
+    // NOTICIAS DE UM TITULO (Agenda, 1.3.11). O RSS de busca do Google News
+    // nao manda CORS, e na Samsung (wgt em file://) o fetch morre antes de
+    // sair — 12 de 12 "rede falhou" no registro de 21/09. Este worker so
+    // repassa o XML com CORS, sem chave e sem sessao: a consulta e um titulo
+    // de serie, nada da pessoa. Cache de 1 h na borda; consulta limitada a
+    // 200 caracteres e so os quatro parametros que o cliente usa.
+    if (rota === "/v1/noticias" && req.method === "GET") {
+      const q = (url.searchParams.get("q") || "").slice(0, 200);
+      if (!q) return erro("sem consulta", 400);
+      const lp = (k, padrao) => (url.searchParams.get(k) || padrao).replace(/[^\w:-]/g, "").slice(0, 12);
+      const alvo = "https://news.google.com/rss/search?q=" + encodeURIComponent(q) +
+        "&hl=" + lp("hl", "pt-BR") + "&gl=" + lp("gl", "BR") + "&ceid=" + lp("ceid", "BR:pt-419");
+      const cache = caches.default;
+      const chave = new Request(alvo);
+      let r = await cache.match(chave);
+      if (!r) {
+        // O Google devolve 503 a rede da Cloudflare (medido no deploy de
+        // 21/09). Tenta com UA de navegador; se recusar, o Bing News tem o
+        // mesmo RSS (title/pubDate; a fonte vem como <News:Source>, que aqui
+        // vira <source> para o cliente ler um formato so).
+        const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36";
+        let xml = null;
+        try {
+          const up = await fetch(alvo, { headers: { "user-agent": UA, "accept": "application/rss+xml,text/xml;q=0.9,*/*;q=0.8" } });
+          if (up.ok) xml = await up.text();
+        } catch {}
+        if (!xml) {
+          const lang = lp("hl", "pt-BR"), cc = lp("gl", "BR");
+          const bing = "https://www.bing.com/news/search?q=" + encodeURIComponent(q) + "&format=rss&setlang=" + lang + "&cc=" + cc;
+          const up2 = await fetch(bing, { headers: { "user-agent": UA } });
+          if (!up2.ok) return erro("noticias indisponiveis (" + up2.status + ")", 502);
+          xml = (await up2.text()).replace(/<News:Source>/g, "<source>").replace(/<\/News:Source>/g, "</source>");
+        }
+        r = new Response(xml, { status: 200, headers: {
+          "content-type": "application/rss+xml; charset=utf-8", "cache-control": "public, max-age=3600" } });
+        await cache.put(chave, r.clone());
+      }
+      return new Response(r.body, { status: 200, headers: {
+        "content-type": "application/rss+xml; charset=utf-8", "cache-control": "public, max-age=3600", ...CORS } });
+    }
+
     const quemBruto = await quemE(req, env);
     if (!quemBruto) return erro("nao autenticado", 401);
 

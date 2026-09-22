@@ -50,13 +50,14 @@
 //
 // Voz e Descobrir nao aparecem como botoes: nao ha captura de audio ou acao
 // de descoberta nesta tela nativa. O campo ocupa toda a largura disponivel.
-#define BU_HEAD_Y     NV_BUSCA_HEAD_Y
-#define BU_HEAD_H     NV_BUSCA_HEAD_H
+#define BU_HEAD_Y      34.0f
+#define BU_HEAD_H      82.0f
 #define BU_DIR       (NV_TELA_W - NV_CONTENT_PAD)   // 1816
+#define BU_CAMPO_PADX 28.0f
 
 // --- Teclado (divergencia deliberada; ver o topo) ----------------------------
 #define BU_TECLA_W     74.0f
-#define BU_TECLA_GAP   12.0f
+#define BU_TECLA_GAP   13.0f
 #define BU_KB_COLS      6
 #define BU_KB_FILEIRAS  7            // 6 fileiras de A-Z/0-9 + 1 de espaco/apagar
 #define BU_KB_PASSO   (BU_TECLA_W + BU_TECLA_GAP)
@@ -64,7 +65,8 @@
 #define BU_KB_Y       NV_BUSCA_VAZIO_Y   // 148: a faixa do estado vazio do web
 // Crescimento da tecla em foco. Menor que o do poster de proposito: a tecla e
 // pequena e vizinha imediata das outras, e com 14% ela invade o gap de 12px.
-#define BU_TECLA_ESCALA 0.10f
+#define BU_TECLA_ESCALA 0.08f
+#define BU_TECLA_RAIO   0.14f
 #define BU_MAX_CONSULTA 48
 
 // --- Fileiras de resultado (geometria do web) --------------------------------
@@ -98,6 +100,7 @@ static float animTecla[BU_KB_FILEIRAS][BU_KB_COLS];
 static float animRes[BU_MAX_FILEIRAS][BU_MAX_POR_FIL];
 static float scrollY = 0.0f, scrollAlvo = 0.0f;
 static float scrollX[BU_MAX_FILEIRAS];
+static float animCampo = 0.0f;
 static HomeItem itemFoco;
 static int   temItemFoco = 0;
 
@@ -321,6 +324,7 @@ int busca_iniciar(void) {
   nConsulta = 0; consulta[0] = 0;
   consultaFiltrada[0] = 0;
   scrollY = scrollAlvo = 0.0f;
+  animCampo = 0.0f;
   temItemFoco = 0;
   memset(animTecla, 0, sizeof animTecla);
   memset(animRes, 0, sizeof animRes);
@@ -445,6 +449,7 @@ void busca_atualizar(float dt, Uint32 agora) {
       animRes[r][c] = anim_mola(animRes[r][c], alvo, dt,
                                 alvo > animRes[r][c] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
     }
+  animCampo = anim_mola(animCampo, painel == 0 ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
 
   // Rola so o necessario para a fileira em foco caber inteira na area util —
   // rolagem proporcional ao indice esconderia a primeira fileira antes de o
@@ -476,37 +481,32 @@ void busca_atualizar(float dt, Uint32 agora) {
 // Campo de consulta: nenhum botao decorativo que nao possa receber foco.
 static void desenhaCabecalho(Uint32 agora) {
   float x = NV_CONTENT_PAD;
-  // PÍLULA INTEIRA, e nao o canto de 22 px que vinha do web.
-  //
-  // 0,5 e o maximo que o SDF aceita: com `r = 0.5` o `b` do FS_SDF vira
-  // `(0.5*asp - 0.5, 0)`, ou seja as duas pontas sao semicirculos exatos e os
-  // lados sao retos — um estadio. O valor antigo (22 px sobre 110 de altura, =
-  // 0,2) desenhava um retangulo de cantos arredondados, e a 3 m o olho le
-  // aquilo como quadrado com defeito. O dono pediu "mais redondo liso".
-  //
-  // O halo acompanha sozinho: com 0,5 nos dois retangulos, o de fora e 4 px
-  // maior em cada dimensao e as duas formas ficam concentricas sem conta
-  // nenhuma — um raio em PIXEIS exigiria somar a espessura no externo, que e
-  // onde as duas curvas costumam descasar.
   float raio = 0.5f;
-
-  GfxRect campo = { x, BU_HEAD_Y, BU_DIR - x, NV_BUSCA_HEAD_H };
-  // SEM CONTORNO (dono, 20/09/2026: "tirar o contorno do input"). O campo e
-  // uma superficie so — #222 em repouso, um degrau mais clara enquanto o
-  // teclado esta ativo — e o cursor e a lupa dizem o resto. O anel era o
-  // unico contorno que sobrava nesta tela depois da regra de NV_COR_FOCO.
-  { float lum = painel == 0 ? 0.165f : 0.125f;
-    gfx_cor(campo, raio, lum, lum, lum + 0.008f, 1.0f); }
+  GfxRect campo = { x, BU_HEAD_Y, BU_DIR - x, BU_HEAD_H };
+  float ar, ag, ab;
+  ajustes_acento(&ar, &ag, &ab);
+  // O campo e uma unica superficie baixa, nao uma caixa que compete com os
+  // resultados. Quando o teclado esta ativo, uma luz curta da cor de realce
+  // substitui a borda e comunica o estado sem acrescentar outro controle.
+  if (animCampo > 0.01f) {
+    GfxRect luz = { campo.x - 38.0f, campo.y - 26.0f,
+                    campo.w + 76.0f, campo.h + 52.0f };
+    gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
+             ar, ag, ab, 0.22f * animCampo);
+  }
+  { float lum = 0.105f + 0.035f * animCampo;
+    gfx_cor(campo, raio, lum, lum + 0.004f, lum + 0.014f, 1.0f); }
   // A LUPA, dentro do campo: e o que diz "isto e uma busca" sem o placeholder,
   // que some assim que a primeira letra entra.
-  { float ci = painel == 0 ? 0.62f : 0.42f;
-    gfx_icone((GfxRect){ campo.x + NV_BUSCA_CAMPO_PADX, campo.y + (campo.h - 34.0f) * 0.5f, 34.0f, 34.0f },
+  { float ci = 0.48f + 0.16f * animCampo;
+    gfx_icone((GfxRect){ campo.x + BU_CAMPO_PADX,
+                         campo.y + (campo.h - 32.0f) * 0.5f, 32.0f, 32.0f },
               "menu_search", ci, ci, ci + 0.02f, 1.0f); }
 
-  float tx = campo.x + NV_BUSCA_CAMPO_PADX + 34.0f + 22.0f;
+  float tx = campo.x + BU_CAMPO_PADX + 32.0f + 20.0f;
   if (nConsulta) {
     TxtLinha l = txt_linha_corta(TXT_HEADLINE, consulta, 245, 246, 250, 255,
-                                campo.w - 2 * NV_BUSCA_CAMPO_PADX - 12 - 56);
+                                campo.w - 2 * BU_CAMPO_PADX - 12 - 56);
     txt_desenhar(l, tx, campo.y + (campo.h - l.h) * 0.5f);
     tx += l.w + 6.0f;
   } else {
@@ -514,10 +514,11 @@ static void desenhaCabecalho(Uint32 agora) {
     TxtLinha l = txt_linha(TXT_HEADLINE, "Buscar filmes e séries", 255, 255, 255, 255);
     txt_desenhar_alpha(l, tx, campo.y + (campo.h - l.h) * 0.5f, 0.40f);
   }
-  // O cursor piscando e o unico sinal de que o campo esta ativo.
-  if (painel == 0 && (agora / 500) % 2 == 0) {
-    GfxRect cur = { tx, campo.y + 24.0f, 3.0f, campo.h - 48.0f };
-    gfx_cor(cur, 0.0f, 1.0f, 1.0f, 1.0f, 0.85f);
+  // O cursor pulsa na mesma cor do realce, e nao em branco fixo. O brilho
+  // pisca so quando a entrada esta ativa, portanto e feedback e nao ornamento.
+  if (painel == 0 && nConsulta > 0 && (agora / 500) % 2 == 0) {
+    GfxRect cur = { tx, campo.y + 18.0f, 3.0f, campo.h - 36.0f };
+    gfx_cor(cur, 0.5f, ar, ag, ab, 0.95f);
   }
 }
 
@@ -531,20 +532,23 @@ static void desenhaTeclado(void) {
       GfxRect t = { base.x - base.w * (esc - 1.0f) * 0.5f,
                     base.y - base.h * (esc - 1.0f) * 0.5f,
                     base.w * esc, base.h * esc };
-      // A tecla focada INVERTE (fundo claro, glifo escuro) em vez de so acender:
-      // a distancia de sofa, a inversao e o unico contraste que se enxerga de
-      // relance numa grade de 38 alvos iguais. Na COR DE REALCE, como todo
-      // foco preenchido do app (NV_COR_FOCO em layout.h), e nao num branco
-      // proprio; o repouso e a mesma superficie #303030 das linhas de Ajustes.
+      // Repouso e uma superficie fria, quase do tom do fundo. Ao ganhar foco,
+      // a tecla recebe a cor do tema, escala pouco e ganha uma unica mancha
+      // difusa; a grade continua leve mesmo com 38 alvos visiveis.
       { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-        gfx_cor(t, NV_RAIO_CARD, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, 0.9f * (1.0f - k));
-        if (k > 0.01f) gfx_cor(t, NV_RAIO_CARD, ar, ag, ab, k); }
+        gfx_cor(t, BU_TECLA_RAIO, 0.105f, 0.112f, 0.130f, 0.96f);
+        if (k > 0.01f) {
+          GfxRect luz = { t.x - 13.0f, t.y - 13.0f, t.w + 26.0f, t.h + 26.0f };
+          gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
+                   ar, ag, ab, 0.28f * k);
+          gfx_cor(t, BU_TECLA_RAIO, ar, ag, ab, k);
+        } }
       const char *s;
       if (f < BU_KB_FILEIRAS - 1) {
         rotulo[0] = TECLAS[f * BU_KB_COLS + c]; rotulo[1] = 0;
         s = rotulo;
-      } else s = (c == 0) ? "espa\xc3\xa7o" : (c == 1 ? "apagar" : "limpar");
-      int tom = (int)anim_mistura(236.0f, 26.0f, k);
+      } else s = (c == 0) ? i18n("espaço") : (c == 1 ? i18n("apagar") : i18n("limpar"));
+      int tom = (int)anim_mistura(224.0f, (float)ajustes_tinta_foco(), k);
       TxtEstilo est = (f < BU_KB_FILEIRAS - 1) ? TXT_TITULO3 : TXT_HEADLINE;
       TxtLinha l = txt_linha(est, s, tom, tom, tom, 255);
       txt_desenhar(l, t.x + (t.w - l.w) * 0.5f, t.y + (t.h - l.h) * 0.5f);
@@ -617,8 +621,15 @@ static void desenhaResultados(Uint32 agora) {
 
         float px = BU_RES_X + c * NV_BUSCA_CARD_PASSO - scrollX[r];
         if (px > BU_DIR || px + NV_BUSCA_CARD_W < BU_RES_X - NV_BUSCA_CARD_W) continue;
-        GfxRect poster = { px, cardY, NV_BUSCA_CARD_W, NV_BUSCA_POSTER_H };
-        // O card do web NAO escala no foco: marca por borda de 2px, como a home.
+        float escala = 1.0f + 0.055f * f;
+        float pw = NV_BUSCA_CARD_W * escala;
+        float ph = NV_BUSCA_POSTER_H * escala;
+        GfxRect poster = { px - (pw - NV_BUSCA_CARD_W) * 0.5f,
+                           cardY - (ph - NV_BUSCA_POSTER_H) * 0.5f - 5.0f * f,
+                           pw, ph };
+        float ar, ag, ab;
+        // O foco e uma aproximacao curta, nao um salto de tamanho: o poster
+        // chega para frente com a cor do tema e a legenda acompanha o movimento.
         //
         // O DIVISOR E A ALTURA. Estava `/ NV_BUSCA_CARD_W`, e num cartaz
         // (retrato) a largura e o MENOR lado — mas o `r` do FS_SDF e medido
@@ -626,9 +637,15 @@ static void desenhaResultados(Uint32 agora) {
         // em vez dos 22 do web. Mesmo erro que estava em home.c e detail.c.
         float raio = NV_BUSCA_RAIO / NV_BUSCA_POSTER_H;
         if (f > 0.01f) {
-          GfxRect b = { poster.x - 2.0f, poster.y - 2.0f,
-                        poster.w + 4.0f, poster.h + 4.0f };
-          gfx_cor(b, raio, 0.961f, 0.961f, 0.961f, f);
+          GfxRect luz = { poster.x - 22.0f, poster.y - 22.0f,
+                          poster.w + 44.0f, poster.h + 44.0f };
+          GfxRect b = { poster.x - 3.0f, poster.y - 3.0f,
+                        poster.w + 6.0f, poster.h + 6.0f };
+          ajustes_acento(&ar, &ag, &ab);
+          gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
+                   ar, ag, ab, 0.24f * f);
+          gfx_rect(b, 0, GFX_ANEL, 0.0f, 0.014f, 0.0f, raio,
+                   ar, ag, ab, f);
         }
 
         const char *arte = ci->poster[0] ? ci->poster
@@ -649,12 +666,12 @@ static void desenhaResultados(Uint32 agora) {
 
         // Nome 28/500 branco a 8 do poster; ano 20/400 rgb(179) a 4 do nome.
         TxtLinha tn = txt_linha_corta(TXT_CALLOUT, ci->titulo, 255, 255, 255, 255,
-                                      NV_BUSCA_CARD_W);
+                                      poster.w);
         float ny = poster.y + poster.h + NV_BUSCA_NOME_GAP;
         txt_desenhar_alpha(tn, poster.x, ny, anim_mistura(0.82f, 1.0f, f));
         if (ci->meta[0]) {
           TxtLinha td = txt_linha_corta(TXT_CAPTION2, ci->meta, 179, 179, 179, 255,
-                                        NV_BUSCA_CARD_W);
+                                        poster.w);
           txt_desenhar_alpha(td, poster.x, ny + tn.h + NV_BUSCA_DATA_GAP, 0.92f);
         }
 

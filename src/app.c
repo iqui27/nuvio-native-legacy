@@ -38,6 +38,7 @@
 #include "menu.h"
 #include "busca.h"
 #include "biblioteca.h"
+#include "explorar.h"
 #include "agendaui.h"
 #include "agenda.h"
 #include "agendaviso.h"
@@ -56,6 +57,7 @@
 #include "novidades133.h"
 #include "novidades134.h"
 #include "novidades139.h"
+#include "novidades1312.h"
 #include "telemetria.h"
 #include "avisos.h"
 #include "recintro.h"
@@ -103,6 +105,28 @@ static int cwTocarT, cwTocarE;
 static pthread_t fioFonte;
 static int fioFonteVivo;                  // 0 = canal escolheu sem o fio
 static _Atomic int fonteEscolhida = -2;   // release/acquire entre verificacao e UI
+// O create_link do Stalker bloqueia a rede. O pedido leva uma copia do id;
+// nenhum fio de rede le player_id_canal(), que pode mudar durante um zap.
+static _Atomic unsigned stalkerGeracao;
+enum { FJOB_IDLE, FJOB_RUNNING, FJOB_DONE };
+enum { FJOB_NONE, FJOB_ADDON, FJOB_CANAL, FJOB_STALKER };
+typedef struct {
+  _Atomic int estado;
+  int tipo;
+  int renovando;
+  int resultado;
+  Uint32 prazo;
+  unsigned geracao;
+  char id[80];
+  char url[4096];
+} FonteJob;
+static FonteJob fonteJob;
+static unsigned fontePedidoGeracao;
+static int fontePendenteTipo;
+static int fontePendenteRenovando;
+static unsigned fontePendenteGeracao;
+static char fontePendenteId[80];
+static int stalkerRenovando;
 
 // WATCHDOG DE CANAL. A verificacao por fonte (stream_primeira_boa) custa ate
 // ~20 s com candidatas mortas — medido no log: 4 delas estouraram o timeout e
@@ -188,11 +212,12 @@ static void pedirPerfil(void) {
 // A verificacao faz uma requisicao por fonte candidata e bloqueia; num fio
 // proprio a tela segue em 60fps mostrando "Abrindo fonte".
 static void *escolherFonte(void *u) {
-  (void)u;
+  FonteJob *job = u;
   // Ate 8: numa lista tipica de 12, as primeiras costumam ser do mesmo
   // provedor e falham juntas quando o arquivo nao esta em cache. Testar poucas
   // devolvia "nenhuma fonte serve" com fontes boas logo adiante.
-  fonteEscolhida = stream_primeira_boa(8);
+  job->resultado = stream_primeira_boa(8);
+  atomic_store_explicit(&job->estado, FJOB_DONE, memory_order_release);
   return NULL;
 }
 // O MESMO PARA CANAL, fora do fio de desenho. stream_canal_primeira_viva
@@ -203,17 +228,77 @@ static void *escolherFonte(void *u) {
 // classe da escolhida, e lido pelo laco quando fonteEscolhida deixa de ser -2.
 static Uint32 canalFontePrazo;
 static void *escolherFonteCanal(void *u) {
+  FonteJob *job = u;
   int e;
-  (void)u;
   e = stream_canal_primeira_viva(8);
-  canalFontePrazo = stream_canal_classe_escolhida() == 3
+  job->prazo = stream_canal_classe_escolhida() == 3
                   ? CANAL_FONTE_PRAZO_MUDA_MS : CANAL_FONTE_PRAZO_MS;
   // -1 so acontece quando TODAS responderam dizendo que nao tem segmento.
   // Ai nao ha o que tentar, mas a primeira da lista com o watchdog ainda e
   // melhor que uma tela de erro sem nenhuma tentativa.
   if (e < 0) e = stream_automatico();
-  fonteEscolhida = e;
+  job->resultado = e;
+  atomic_store_explicit(&job->estado, FJOB_DONE, memory_order_release);
   return NULL;
+}
+static void *escolherFonteStalker(void *u) {
+  FonteJob *job = u;
+  char url[4096];
+  int ok = stalker_resolver(job->id, url, sizeof url);
+  // O worker publica somente no seu job. O consumidor confere a geracao e o
+  // id depois do acquire; nenhuma resposta velha toca o mailbox da sessao
+  // corrente.
+  snprintf(job->url, sizeof job->url, "%s", ok ? url : "");
+  job->resultado = ok ? 0 : -1;
+  atomic_store_explicit(&job->estado, FJOB_DONE, memory_order_release);
+  return NULL;
+}
+static unsigned novaGeracaoFonte(void) {
+  return atomic_fetch_add_explicit(&stalkerGeracao, 1, memory_order_acq_rel) + 1;
+}
+static void limparFontePendente(void) {
+  fontePendenteTipo = FJOB_NONE;
+  fontePendenteRenovando = 0;
+  fontePendenteGeracao = 0;
+  fontePendenteId[0] = 0;
+}
+static int iniciarFonteJob(int tipo, unsigned geracao, const char *id, int renovando) {
+  FonteJob *job = &fonteJob;
+  if (fioFonteVivo || atomic_load_explicit(&job->estado, memory_order_acquire) != FJOB_IDLE)
+    return 1; // single-flight: o chamador agenda e o polling inicia depois
+  job->tipo = FJOB_NONE;
+  job->renovando = 0;
+  job->resultado = -1;
+  job->prazo = 0;
+  job->geracao = 0;
+  job->id[0] = 0;
+  job->url[0] = 0;
+  job->tipo = tipo;
+  job->renovando = renovando;
+  job->geracao = geracao;
+  if (id) snprintf(job->id, sizeof job->id, "%s", id);
+  atomic_store_explicit(&job->estado, FJOB_RUNNING, memory_order_release);
+  if (pthread_create(&fioFonte, NULL,
+                     tipo == FJOB_STALKER ? escolherFonteStalker :
+                     tipo == FJOB_CANAL ? escolherFonteCanal : escolherFonte,
+                     job) != 0) {
+    atomic_store_explicit(&job->estado, FJOB_IDLE, memory_order_release);
+    return -1;
+  }
+  fioFonteVivo = 1;
+  return 0;
+}
+static int pedirFonteJob(int tipo, unsigned geracao, const char *id, int renovando) {
+  int r = iniciarFonteJob(tipo, geracao, id, renovando);
+  if (r == 1) {
+    fontePendenteTipo = tipo;
+    fontePendenteRenovando = renovando;
+    fontePendenteGeracao = geracao;
+    snprintf(fontePendenteId, sizeof fontePendenteId, "%s", id ? id : "");
+    return 1;
+  }
+  if (r < 0) return -1;
+  return 0;
 }
 #include "catalogo.h"
 #include "gfx.h"
@@ -224,6 +309,12 @@ static void *escolherFonteCanal(void *u) {
 static Tela tela = TELA_HOME;
 static int sair = 0;
 static int saiuPorEsquerda;   // a ultima tecla foi ESQUERDA (ver app_evento)
+// A barra e uma camada de navegacao, mas nao pode disputar o Guia de TV nem
+// um canal minimizado. Manter a regra aqui evita que cada tela invente sua
+// propria nocao de PiP/Guia.
+static int sidebar_permitida(void) {
+  return tela != TELA_GUIA && !player_mini_ativo();
+}
 // perfis_ativo() no instante em que a tela de escolha abriu. So serve para uma
 // pergunta: a pessoa TROCOU de perfil, ou confirmou o mesmo? Agora que a tela
 // aparece a cada arranque, confirmar o mesmo perfil e o caso comum — e recarga
@@ -301,6 +392,7 @@ static void trocarTela(Tela nova) {
   // Cada tela zera o proprio estado ao ser aberta: voltar para a busca com o
   // texto de duas navegacoes atras seria lixo, nao memoria util.
   switch (tela) {
+    case TELA_EXPLORAR:   explorar_iniciar();   break;
     case TELA_GUIA:       guia_abrir();         break;
     case TELA_BUSCA:      busca_iniciar();      break;
     case TELA_BIBLIOTECA: biblioteca_iniciar(); break;
@@ -325,6 +417,10 @@ static void alvoPlayer(char *alvo, size_t tam) {
 static void buscarParaPlayer(void) {
   char alvo[64]; alvoPlayer(alvo,sizeof alvo);
   const char *idC = player_id_canal();
+  // CARIMBA O ALVO ANTES DE PEDIR (issue #101). A lista que voltar passa a
+  // saber de que episodio ela e; sem isto ninguem consegue distinguir "a lista
+  // do E6" de "a lista do E5 que ninguem invalidou". Ver streams.h.
+  stream_definir_alvo(alvo);
   if (idC[0]) { addons_buscar(alvo,"tv"); addons_buscar_legendas(alvo,"tv"); return; }
   {
     const CatItem *c = cat_item(player_indice());
@@ -369,10 +465,9 @@ static void episodioDoDetalhe(void) {
 // addon ao lado ja paga: stream_canal_primeira_viva cria fios e os JOINTA
 // aqui, gastando ate meio segundo por fonte morta. Uma requisicao e menos que
 // isso, e o canal nao abre sem ela de qualquer jeito.
-static int resolverCanalStalker(void) {
+static int montarCanalStalker(const char *id, const char *url) {
   Stream s;
-  char url[4096];
-  if (!stalker_resolver(player_id_canal(), url, sizeof url)) return -1;
+  if (!id || !id[0] || !url || !url[0]) return -1;
   memset(&s, 0, sizeof s);
   snprintf(s.url, sizeof s.url, "%s", url);
   snprintf(s.rotulo, sizeof s.rotulo, "%s", "Portal IPTV");
@@ -397,6 +492,97 @@ static int resolverCanalXtream(void) {
   return 0;
 }
 
+// Um unico worker pode existir. O fio de desenho so junta depois de DONE;
+// enquanto RUNNING, uma troca invalida por geracao e agenda o pedido seguinte.
+// Assim Xtream (sincrono) nao espera Stalker e addon nao reutiliza o handle.
+static void processarFonteJob(void) {
+  FonteJob *job = &fonteJob;
+  int tipo, renovando, resultado, estado, mesmoId = 1;
+  Uint32 prazo;
+  unsigned geracao;
+  char id[80], url[4096];
+  int aplicar;
+  if (!fioFonteVivo ||
+      atomic_load_explicit(&job->estado, memory_order_acquire) != FJOB_DONE)
+    return;
+  pthread_join(fioFonte, NULL);
+  fioFonteVivo = 0;
+  estado = atomic_load_explicit(&job->estado, memory_order_relaxed);
+  (void)estado;
+  tipo = job->tipo; renovando = job->renovando; resultado = job->resultado;
+  prazo = job->prazo; geracao = job->geracao;
+  snprintf(id, sizeof id, "%s", job->id);
+  snprintf(url, sizeof url, "%s", job->url);
+  atomic_store_explicit(&job->estado, FJOB_IDLE, memory_order_release);
+  aplicar = geracao == fontePedidoGeracao &&
+            geracao == atomic_load_explicit(&stalkerGeracao, memory_order_acquire);
+  if (tipo == FJOB_STALKER) {
+    const char *idAtual = player_id_canal();
+    mesmoId = idAtual[0] && !strcmp(id, idAtual);
+    if (renovando) {
+      int sessao = (player_aberto() || player_mini_ativo()) && !player_quer_sair();
+      if (aplicar && mesmoId && sessao && resultado == 0 && url[0] &&
+          montarCanalStalker(id, url) == 0) {
+        const Stream *s = stream_item(0);
+        stalkerRenovando = 0;
+        stalkerTentativas++;
+        stream_definir_atual(0);
+        canalFonteIdx = 0;
+        canalFonteDesde = SDL_GetTicks();
+        if (s) player_definir_fonte(s->url);
+        marco("canal: link renovado");
+      } else if (aplicar && mesmoId) {
+        stalkerRenovando = 0;
+        canalFonteIdx = -1;
+        if (sessao) {
+          if (player_mini_ativo()) player_fechar_mini();
+          else player_erro_fonte();
+        }
+      }
+      aplicar = 0; // renovacao ja foi aplicada aqui, nunca no bloco generico
+    } else if (aplicar && mesmoId &&
+               (player_aberto() || player_mini_ativo()) && !player_quer_sair() &&
+               resultado == 0 && url[0] &&
+               montarCanalStalker(id, url) == 0) {
+      fonteEscolhida = 0;
+      canalFontePrazo = CANAL_FONTE_PRAZO_MS;
+    } else if (aplicar) {
+      fonteEscolhida = -1;
+    }
+  } else if (aplicar) {
+    fonteEscolhida = resultado;
+    if (tipo == FJOB_CANAL) canalFontePrazo = prazo;
+  }
+  // O job antigo foi recolhido. Só agora o slot pode receber o pedido que
+  // ficou pendente durante a troca; uma geracao nova torna o pendente obsoleto.
+  if (fontePendenteTipo &&
+      (fontePendenteRenovando || aguardandoFonte == 2) &&
+      fontePendenteGeracao == fontePedidoGeracao &&
+      fontePendenteGeracao == atomic_load_explicit(&stalkerGeracao, memory_order_acquire)) {
+    int pTipo = fontePendenteTipo, pRenovando = fontePendenteRenovando;
+    unsigned pGeracao = fontePendenteGeracao;
+    char pId[80];
+    snprintf(pId, sizeof pId, "%s", fontePendenteId);
+    limparFontePendente();
+    if (iniciarFonteJob(pTipo, pGeracao, pId, pRenovando) < 0) {
+      if (pRenovando) stalkerRenovando = 0;
+      else fonteEscolhida = -1;
+    }
+  }
+}
+static void cancelarFonteSeSaiu(void) {
+  int jobStalker = (fioFonteVivo && fonteJob.tipo == FJOB_STALKER) ||
+                   fontePendenteTipo == FJOB_STALKER;
+  if (jobStalker &&
+      (player_quer_sair() || (!player_aberto() && !player_mini_ativo()))) {
+    novaGeracaoFonte();
+    stalkerRenovando = 0;
+    fonteEscolhida = -1;
+    canalFonteIdx = -1;
+    limparFontePendente();
+  }
+}
+
 // TOCAR UM CANAL, direto — o "OK assiste" do guia e o zap do CH+/-.
 //
 // O guia entrega um CatItem pronto (id completo do addon, tipo "channel"):
@@ -417,8 +603,11 @@ static void tocarCanal(const CatItem *it) {
   // cat_acrescentar e cat_definir_tudo correm juntos: se uma republicacao
   // atravessou os dois, ni ja nao e o canal. A marca garante a sessao.
   player_marcar_canal(it);
+  novaGeracaoFonte();        // invalida qualquer resolver do canal anterior
+  limparFontePendente();
   canalFonteIdx = -1;             // canal novo: watchdog arma de novo no fim da busca
   stalkerTentativas = 0;          // canal novo: o teto de renovacao recomeca
+  stalkerRenovando = 0;            // resposta de renovacao antiga sera descartada
   // Canal de portal nao esta em addon nenhum: perguntar seria esperar o prazo
   // de todos eles para receber lista vazia, com a pessoa olhando "carregando".
   if (!stalker_e_id(it->imdb) && !xtream_e_id(it->imdb)) {
@@ -524,6 +713,7 @@ void app_evento(const SDL_Event *e) {
   // Nao ha F10 em controle de TV, entao isto nao muda nada para quem usa.
   if (e->type == SDL_KEYDOWN && e->key.keysym.sym == SDLK_F10 &&
       login_concluido() && perfilsel_concluido() && !player_aberto()) {
+    menu_fechar();
     trocarTela(TELA_GUIA);
     menu_definir_destino(MENU_GUIA);
     return;
@@ -589,6 +779,7 @@ void app_evento(const SDL_Event *e) {
   if (novidades133_aberto()) { novidades133_evento(e); return; }
   if (novidades134_aberto()) { novidades134_evento(e); return; }
   if (novidades139_aberto()) { novidades139_evento(e); return; }
+  if (novidades1312_aberto()) { novidades1312_evento(e); return; }
   if (telemetria_aberto()) { telemetria_evento(e); return; }
   // O explicador do Social e da mesma familia, e come esquerda/direita:
   // deixar a tecla vazar para a home moveria o foco dela debaixo do cartao.
@@ -615,6 +806,10 @@ void app_evento(const SDL_Event *e) {
   // home, sem nada por cima, Voltar nao tem mais para onde ir e ai ele e do
   // PiP, fechando de vez (o gesto do mini-player do YouTube na TV). AZUL
   // devolve a tela cheia sem rebuscar fonte; CH+/- zapeia sem sair do canto.
+  //
+  // TELA_GUIA (bucket C / PiP no guia): Azul e CH+/- ja caem aqui ANTES de
+  // guia_evento — restaurar e zapar com o guia tela cheia aberto. Voltar
+  // continua com o guia (sair do guia, PiP segue), como um nivel de navegacao.
   if (player_mini_ativo() && e->type == SDL_KEYDOWN) {
     SDL_Keycode mk = e->key.keysym.sym;
     int msc = e->key.keysym.scancode;
@@ -636,6 +831,13 @@ void app_evento(const SDL_Event *e) {
       return;
     }
   }
+  // O PiP continua podendo acompanhar a navegacao, mas a barra nao pode
+  // capturar o D-pad por cima dele. Se um canal foi minimizado enquanto a
+  // barra estava em animacao, fecha a camada antes de devolver as teclas.
+  if (player_mini_ativo() && menu_aberto()) {
+    menu_fechar();
+    return;
+  }
   // A BARRA LATERAL VEM DE QUALQUER TELA (dono, 21/09/2026: "hoje ela so
   // funciona na home"), menos do guia e com o PiP aberto. Cada tela sai com
   // ESQUERDA quando nao ha mais para onde ir a esquerda; aqui, se a saida foi
@@ -653,6 +855,7 @@ void app_evento(const SDL_Event *e) {
   if (vertudo_aberta()) { vertudo_evento(e); return; }
 
   switch (tela) {
+    case TELA_EXPLORAR:   explorar_evento(e);   break;
     case TELA_GUIA:       guia_evento(e);       break;
     case TELA_BUSCA:      busca_evento(e);      break;
     case TELA_BIBLIOTECA: biblioteca_evento(e); break;
@@ -668,7 +871,10 @@ void app_evento(const SDL_Event *e) {
   // app_atualizar. Diferido por um quadro, as teclas que vierem logo depois do
   // ESQUERDA — e num controle elas vem — sao entregues a tela de tras, que
   // ainda acha que e a dona do foco.
-  if (tela == TELA_HOME && home_pediu_menu()) menu_abrir();
+  if (tela == TELA_HOME && home_pediu_menu() && sidebar_permitida()) {
+    menu_abrir();
+    saiuPorEsquerda = 0;
+  }
 }
 
 // A tela de detalhe pode pedir para abrir OUTRO titulo (um credito da
@@ -722,6 +928,8 @@ static void trocaDeTituloSeSolicitada(void) {
 }
 
 void app_atualizar(float dt, Uint32 agora) {
+  cancelarFonteSeSaiu();
+  processarFonteJob();
   // A QUALIDADE DA IMAGEM CHEGA AOS DOIS MODULOS QUE A CONSOMEM, e so quando
   // muda. tex_cache e artehero nao incluem ajustes.h de proposito: o cache de
   // texturas e a politica de url nao tem por que saber que existe uma tela de
@@ -793,6 +1001,10 @@ void app_atualizar(float dt, Uint32 agora) {
       // perfil 1 por acidente, ou seria a chave da fechadura.
       if (perfis_pode_dispensar()) {
         perfis_manter_ativo();
+        perfilsel_continuar_ativo();
+        // A tela de escolha pode ter parado o primeiro ciclo enquanto ainda
+        // aguardava uma resposta. Idempotente quando ele ja esta rodando.
+        sync_iniciar();
         tela = TELA_HOME;
         menu_definir_destino(MENU_INICIO);
       }
@@ -936,7 +1148,13 @@ void app_atualizar(float dt, Uint32 agora) {
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
         !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() &&
         !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() &&
-        !novidades134_aberto() && !novidades139_aberto() && !telemetria_aberto() && !pipintro_aberto())
+        !novidades134_aberto() && !novidades139_aberto() && !novidades1312_aberto() &&
+        !pipintro_aberto())
+      novidades1312_primeira_vez();
+    if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() &&
+        !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() &&
+        !novidades134_aberto() && !novidades139_aberto() && !novidades1312_aberto() && !telemetria_aberto() && !pipintro_aberto())
       telemetria_primeira_vez();
     // AVISO DE VERSAO NOVA: a consulta ao GitHub so parte quando a home esta
     // de pe (nao disputa a rede com o catalogo), e o cartao so abre quando
@@ -954,7 +1172,7 @@ void app_atualizar(float dt, Uint32 agora) {
     recomenda_verificar();
 #endif
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !novidades134_aberto() && !novidades139_aberto() && !telemetria_aberto() && !pipintro_aberto() && !atualizacao_aberta())
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !novidades134_aberto() && !novidades139_aberto() && !novidades1312_aberto() && !telemetria_aberto() && !pipintro_aberto() && !atualizacao_aberta())
       recomenda_mostrar_se_houver();
     // EXPLICADOR DAS TELAS SOCIAIS: mesmas guardas de todos os outros, mais
     // a do cartao de recomendacao recebida — dois cartoes ao mesmo tempo
@@ -962,7 +1180,7 @@ void app_atualizar(float dt, Uint32 agora) {
     // NUVIO_REC_URL (recomenda_ativo), e por isso nao ha guarda aqui: um
     // anuncio de recurso que nao esta no pacote e pior que silencio.
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !novidades134_aberto() && !novidades139_aberto() && !telemetria_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !novidades134_aberto() && !novidades139_aberto() && !novidades1312_aberto() && !telemetria_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
         !recomenda_aberta())
       recintro_primeira_vez();
     // LEMBRETE VENCIDO: o unico aviso que esta TV consegue dar. Ultimo da fila
@@ -970,13 +1188,13 @@ void app_atualizar(float dt, Uint32 agora) {
     // cima do outro —, e sem consulta de rede nenhuma: o que ele mostra ja
     // esta em disco desde que o dono apertou "Lembrar-me".
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !novidades134_aberto() && !novidades139_aberto() && !telemetria_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !novidades134_aberto() && !novidades139_aberto() && !novidades1312_aberto() && !telemetria_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
         !recomenda_aberta() && !recintro_aberto())
       agendaviso_mostrar_se_houver();
     // O CARTAO DO CRASH, depois do lembrete e pelas mesmas regras: um cartao
     // por vez, com a home de pe.
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !novidades134_aberto() && !novidades139_aberto() && !telemetria_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !novidades134_aberto() && !novidades139_aberto() && !novidades1312_aberto() && !telemetria_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
         !recomenda_aberta() && !recintro_aberto() && !agendaviso_aberto())
       avisos_mostrar_se_houver();
   }
@@ -1069,8 +1287,10 @@ void app_atualizar(float dt, Uint32 agora) {
   // A lista de addons foi aberta DE Ajustes, entao o Back dela volta para
   // Ajustes. Cair na home aqui faria a pessoa refazer o caminho inteiro so
   // para ligar dois addons seguidos.
-  if (tela == TELA_ADDONS && addonsui_quer_sair() && saiuPorEsquerda && !player_mini_ativo()) {
-    saiuPorEsquerda = 0; trocarTela(TELA_HOME); menu_definir_destino(MENU_INICIO); menu_abrir();
+  if (tela == TELA_ADDONS && addonsui_quer_sair() && saiuPorEsquerda &&
+      sidebar_permitida()) {
+    saiuPorEsquerda = 0;
+    menu_abrir();
   } else if (tela == TELA_ADDONS && addonsui_quer_sair()) {
     trocarTela(TELA_AJUSTES); menu_definir_destino(MENU_AJUSTES);
   }
@@ -1081,7 +1301,8 @@ void app_atualizar(float dt, Uint32 agora) {
 
   // Fora da home, o Back tem para onde voltar: a home. So nela ele fecha o app.
   if (tela != TELA_HOME) {
-    int fechar = (tela == TELA_GUIA       && guia_quer_sair())
+    int fechar = (tela == TELA_EXPLORAR   && explorar_quer_sair())
+              || (tela == TELA_GUIA       && guia_quer_sair())
               || (tela == TELA_BUSCA      && busca_quer_sair())
               || (tela == TELA_BIBLIOTECA && biblioteca_quer_sair())
               || (tela == TELA_AGENDA     && agendaui_quer_sair())
@@ -1089,8 +1310,15 @@ void app_atualizar(float dt, Uint32 agora) {
               || (tela == TELA_SOCIAL      && social_quer_sair())
               || (tela == TELA_AJUSTES    && ajustes_quer_sair());
     if (fechar) {
-      trocarTela(TELA_HOME); menu_definir_destino(MENU_INICIO);
-      if (saiuPorEsquerda && !player_mini_ativo()) menu_abrir();
+      // ESQUERDA na borda abre a barra SOBRE a tela atual. Voltar continua
+      // sendo a saída normal para a Home; assim o foco da tela não é perdido
+      // só para alcançar a navegação principal.
+      if (saiuPorEsquerda && sidebar_permitida()) {
+        menu_abrir();
+      } else {
+        trocarTela(TELA_HOME);
+        menu_definir_destino(MENU_INICIO);
+      }
       saiuPorEsquerda = 0;
     }
   } else if (home_quer_sair()) {
@@ -1110,7 +1338,18 @@ void app_atualizar(float dt, Uint32 agora) {
 
   if (menu_mudou_destino()) {
     switch (menu_destino()) {
-      case MENU_GUIA:       trocarTela(TELA_GUIA);       break;
+      case MENU_GUIA:
+        // PiP ativo: overlay sobre o mini (recomendacao backlog C) em vez da
+        // tela cheia opaca — zap/Azul/Voltar do PiP continuam coerentes.
+        if (player_mini_ativo()) {
+          const char *id = player_id_canal();
+          guia_overlay_abrir();
+          if (id[0]) guia_focar_id(id);
+        } else {
+          trocarTela(TELA_GUIA);
+        }
+        break;
+      case MENU_EXPLORAR:   trocarTela(TELA_EXPLORAR);   break;
       case MENU_BUSCAR:     trocarTela(TELA_BUSCA);      break;
       case MENU_BIBLIOTECA: trocarTela(TELA_BIBLIOTECA); break;
       case MENU_AGENDA:     trocarTela(TELA_AGENDA);     break;
@@ -1130,6 +1369,8 @@ void app_atualizar(float dt, Uint32 agora) {
     HomeItem it;
     if (tela == TELA_HOME && home_pediu_abrir()) {
       if (home_item_focado(&it)) abrirTitulo(&it);
+    } else if (tela == TELA_EXPLORAR && explorar_pediu_abrir(&idx)) {
+      abrirPorIndice(idx);
     } else if (tela == TELA_HOME && home_pediu_tocar()) {
       // OK no card da retomada com "OK no card" = Retomar (issue #93): abre a
       // pagina do titulo E pede reproducao no mesmo passe. A pagina fica
@@ -1202,7 +1443,7 @@ void app_atualizar(float dt, Uint32 agora) {
         if (!strcmp(alvo, ultimoAlvo)) printf("[addons] lista mudou: refazendo a busca de fontes de %s\n", alvo);
         snprintf(ultimoAlvo, sizeof ultimoAlvo, "%s", alvo);
         ultimaVersao = addons_versao();
-        { addons_buscar(alvo, ci->tipo); }
+        { stream_definir_alvo(alvo); addons_buscar(alvo, ci->tipo); }
         // Episodios do titulo aberto, na temporada onde o dono parou. Sai da
         // rede na hora: guardar a lista de episodios de 40 titulos no pacote
         // envelhecia a cada temporada nova.
@@ -1243,12 +1484,26 @@ void app_atualizar(float dt, Uint32 agora) {
         char alvoLeg[64]; alvoPlayer(alvoLeg, sizeof alvoLeg);
         addons_buscar_legendas(alvoLeg, ci->tipo);
       }
-      if (stream_idade_ms() > NV_LINK_VALIDO_MS && ci && ci->imdb[0]) {
-        char alvo[32]; idDoAlvo(ci, alvo, sizeof alvo);
-        printf("fonte: lista com %ums, renovando (%s)\n",
-               (unsigned)stream_idade_ms(), alvo);
-        addons_buscar(alvo, ci->tipo);
-      }
+      // RENOVA POR IDADE **E POR DONO** (issue #101).
+      //
+      // O alvo tambem mudou: era idDoAlvo(), o episodio EM FOCO na pagina, e
+      // quem toca nem sempre e ele — "Retomar" e o card de Continuar assistindo
+      // abrem outro episodio (cwTocar/episodioDoDetalhe, logo acima), e a busca
+      // saia para um id diferente do que ia reproduzir. alvoPlayer le o
+      // episodio ja definitivo, depois de player_abrir.
+      //
+      // E a condicao deixou de ser so o relogio: a lista podia ter 3 s de vida
+      // e ser do episodio anterior, e ai nada a refazia. Idade cobre o link
+      // assinado que expira; o dono cobre o episodio errado. Sao duas coisas.
+      { char alvoP[64]; alvoPlayer(alvoP, sizeof alvoP);
+        if (ci && ci->imdb[0] && alvoP[0] &&
+            (stream_idade_ms() > NV_LINK_VALIDO_MS || !stream_lista_do_alvo(alvoP))) {
+          printf("fonte: lista com %ums%s, renovando (%s)\n",
+                 (unsigned)stream_idade_ms(),
+                 stream_lista_do_alvo(alvoP) ? "" : " e de outro alvo", alvoP);
+          stream_definir_alvo(alvoP);
+          addons_buscar(alvoP, ci->tipo);
+        } }
       aguardandoFonte = 1;
     }
     if (detail_pediu_marcar()) {
@@ -1291,7 +1546,10 @@ void app_atualizar(float dt, Uint32 agora) {
   // A busca disparada por Reproduzir terminou: agora VERIFICA as fontes, em
   // ordem, ate achar uma que leve ao arquivo — e so entao liga o video.
   if (aguardandoFonte == 1 && addons_estado() != ADD_BUSCANDO) {
+    unsigned geracao = novaGeracaoFonte();
     aguardandoFonte = 2;
+    fontePedidoGeracao = geracao;
+    limparFontePendente();
     fonteEscolhida = -2;
     if (player_id_canal()[0]) {
       // Canal: a playlist de cada candidata e conferida em paralelo (custa
@@ -1308,16 +1566,16 @@ void app_atualizar(float dt, Uint32 agora) {
         canalFontePrazo = CANAL_FONTE_PRAZO_MS;
       } else if (stalker_e_id(player_id_canal())) {
         // UMA fonte, e ela acabou de nascer: nao ha lista para conferir nem
-        // ranking para aplicar. Sem `return` de proposito — quem liga o video e
-        // o bloco de `aguardandoFonte == 2` logo abaixo, o mesmo dos outros
-        // caminhos, e sair daqui cedo pularia o resto do quadro.
-        fonteEscolhida = resolverCanalStalker();
+        // ranking para aplicar. O create_link bloqueia centenas de ms, entao
+        // captura o id e deixa a rede fora do fio de desenho. Sem `return` de
+        // proposito — quem liga o video e o bloco abaixo, o mesmo dos outros
+        // caminhos.
+        if (pedirFonteJob(FJOB_STALKER, geracao, player_id_canal(), 0) < 0)
+          fonteEscolhida = -1;
         canalFontePrazo = CANAL_FONTE_PRAZO_MS;
-      } else if (pthread_create(&fioFonte, NULL, escolherFonteCanal, NULL) == 0) {
-        // Em fio proprio (ver escolherFonteCanal); o laco espera -2 mudar.
-        fioFonteVivo = 1;
       } else {
-        fonteEscolhida = stream_automatico();
+        int r = pedirFonteJob(FJOB_CANAL, geracao, NULL, 0);
+        if (r < 0) fonteEscolhida = stream_automatico();
         canalFontePrazo = CANAL_FONTE_PRAZO_MS;
       }
       canalFonteDesde = SDL_GetTicks();
@@ -1362,13 +1620,12 @@ void app_atualizar(float dt, Uint32 agora) {
         aguardandoFonte = 0;
         folhaParaTocar = 1;
         stream_folha_abrir();
-      } else if (pthread_create(&fioFonte, NULL, escolherFonte, NULL) != 0) {
+      } else if (pedirFonteJob(FJOB_ADDON, geracao, NULL, 0) < 0) {
         aguardandoFonte = 0; player_erro_fonte();
-      } else fioFonteVivo = 1;
+      }
     }
   }
   if (aguardandoFonte == 2 && fonteEscolhida != -2) {
-    if (fioFonteVivo) { pthread_join(fioFonte,NULL); fioFonteVivo = 0; }
     const Stream *s = fonteEscolhida >= 0 ? stream_item(fonteEscolhida) : NULL;
     aguardandoFonte = 0;
     printf("automatico (verificado): %s\n", s ? s->rotulo : "(nenhuma fonte serve)");
@@ -1457,16 +1714,24 @@ void app_atualizar(float dt, Uint32 agora) {
       // laco de create_link a cada 12 s para sempre. O teto zera quando o canal
       // troca (canalFonteIdx = -1 em tocarCanal).
       if (stalker_e_id(player_id_canal())) {
-        if (stalkerTentativas < CANAL_STALKER_TENTATIVAS &&
-            resolverCanalStalker() == 0) {
-          stalkerTentativas++;
-          printf("[stalker] link do canal expirou; renovando (%d/%d)\n",
-                 stalkerTentativas, CANAL_STALKER_TENTATIVAS);
-          marco("canal: link renovado");
-          canalFonteIdx = 0;
+        if (stalkerRenovando) return;
+        if (stalkerTentativas < CANAL_STALKER_TENTATIVAS) {
+          unsigned geracao = novaGeracaoFonte();
+          fontePedidoGeracao = geracao;
+          fonteEscolhida = -2;
+          stalkerRenovando = 1;
+          if (pedirFonteJob(FJOB_STALKER, geracao, player_id_canal(), 1) >= 0) {
+          // A resposta e aplicada no bloco acima depois do join. Enquanto
+          // isso, o watchdog nao dispara outro pedido em paralelo.
+          canalFonteIdx = -2;
           canalFonteDesde = SDL_GetTicks();
-          player_definir_fonte(stream_item(0)->url);
-        } else {
+          printf("[stalker] link do canal expirou; renovando (%d/%d)\n",
+                 stalkerTentativas + 1, CANAL_STALKER_TENTATIVAS);
+          return;
+          }
+          stalkerRenovando = 0;
+        }
+        {
           canalFonteIdx = -1;
           if (player_mini_ativo()) player_fechar_mini();
           else player_erro_fonte();
@@ -1573,7 +1838,7 @@ void app_atualizar(float dt, Uint32 agora) {
     else {
       const CatItem *ci=cat_item(detail_indice()); char id[64];
       idDoAlvo(ci,id,sizeof id);
-      if (ci) addons_buscar(id,ci->tipo);
+      if (ci) { stream_definir_alvo(id); addons_buscar(id,ci->tipo); }
     }
   }
   { int t,e;
@@ -1665,6 +1930,15 @@ void app_atualizar(float dt, Uint32 agora) {
   player_atualizar(dt, agora);
   detail_atualizar(dt, agora);
   menu_atualizar(dt, agora);
+  // A PAGINA DE TITULO saiu por ESQUERDA (detail_pediu_menu): a barra entra
+  // quando a mola de saida terminou e a tela de baixo voltou a ser dona do
+  // foco. Era `saiuPorEsquerda` cru aqui — e isso abria a barra em QUALQUER
+  // ESQUERDA de qualquer tela, inclusive andando numa fileira da home.
+  if (!detail_aberto() && detail_pediu_menu() && sidebar_permitida() &&
+      !menu_aberto()) {
+    menu_abrir();
+    saiuPorEsquerda = 0;
+  }
   // PÓS-REPRODUÇÃO. O proximo episodio reabre a busca de fonte com o id novo;
   // o titulo relacionado sai do player e abre o detalhe, que e onde o dono
   // escolhe se quer mesmo assistir.
@@ -1759,6 +2033,7 @@ void app_atualizar(float dt, Uint32 agora) {
       detail_abrir(&it);
     } }
   switch (tela) {
+    case TELA_EXPLORAR:   explorar_atualizar(dt, agora);   break;
     case TELA_BUSCA:      busca_atualizar(dt, agora);      break;
     case TELA_BIBLIOTECA: biblioteca_atualizar(dt, agora); break;
     case TELA_AGENDA:     agendaui_atualizar(dt, agora);   break;
@@ -1775,7 +2050,7 @@ void app_atualizar(float dt, Uint32 agora) {
                      !avisos_cartao_aberto() && !sintro_aberto() && !pipintro_aberto() &&
                      !novidades_aberto() && !novidades11_aberto() && !novidades12_aberto() &&
                      !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() &&
-                     !novidades133_aberto() && !novidades134_aberto() && !novidades139_aberto() && !telemetria_aberto() &&
+                     !novidades133_aberto() && !novidades134_aberto() && !novidades139_aberto() && !novidades1312_aberto() && !telemetria_aberto() &&
                      !recintro_aberto() && !atualizacao_aberta() && !agendaviso_aberto() &&
                      !recomenda_aberta() && !recenviar_aberto() && !faixas_aberta() &&
                      !episodios_aberto() && !stream_folha_aberta() && !guia_overlay_aberta() &&
@@ -1796,6 +2071,7 @@ void app_atualizar(float dt, Uint32 agora) {
   novidades133_atualizar(dt, agora);
   novidades134_atualizar(dt, agora);
   novidades139_atualizar(dt, agora);
+  novidades1312_atualizar(dt, agora);
   telemetria_atualizar(dt, agora);
   recintro_atualizar(dt, agora);
   atualizacao_atualizar(dt, agora);
@@ -1844,7 +2120,7 @@ static void desenharTelas(Uint32 agora) {
                      : "Se isto não sair daqui, confira seus addons na conta.",
                    160, 162, 170, 255);
     txt_desenhar(sb, (NV_TELA_W - sb.w) * 0.5f, 546.0f);
-    if (menu_visivel()) menu_desenhar(agora);
+    if (menu_visivel() && sidebar_permitida()) menu_desenhar(agora);
     return;
   }
 
@@ -1855,6 +2131,7 @@ static void desenharTelas(Uint32 agora) {
     // nao precisa ser desenhada por baixo — a mesma conta do detail_cobre_tela.
     if (!detail_cobre_tela() && !vertudo_aberta()) {
       switch (tela) {
+        case TELA_EXPLORAR:   explorar_desenhar(agora);   break;
         case TELA_GUIA:       guia_desenhar(agora);       break;
         case TELA_BUSCA:      busca_desenhar(agora);      break;
         case TELA_BIBLIOTECA: biblioteca_desenhar(agora); break;
@@ -1889,7 +2166,7 @@ static void desenharTelas(Uint32 agora) {
     // o defeito relatado como "nao ta mostrando o menu e nao tem os ajustes".
     // Guarda repetida em dois lugares para a mesma regra: no de dentro ela
     // significa "nao pinte a faixa", no de fora significava "nao exista".
-    if (menu_visivel() && !detail_aberto())
+    if (menu_visivel() && sidebar_permitida() && !detail_aberto())
       menu_desenhar(agora);
     // Depois do menu: as duas camadas de "Salvos" escurecem a tela inteira e
     // tem de ficar por cima de tudo que a home desenhou, inclusive da rail.
@@ -1933,6 +2210,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novidades133_desenhar(agora);
   if (!registro_aberto()) novidades134_desenhar(agora);
   if (!registro_aberto()) novidades139_desenhar(agora);
+  if (!registro_aberto()) novidades1312_desenhar(agora);
   if (!registro_aberto()) telemetria_desenhar(agora);
   if (!registro_aberto()) recintro_desenhar(agora);
   if (!registro_aberto()) atualizacao_desenhar(agora);
@@ -1955,12 +2233,27 @@ int app_quer_sair(void) { return sair; }
 
 void app_encerrar(void) {
   avisos_encerrar();   // saida limpa: apaga a marca de sessao viva
-  if (aguardandoFonte == 2 && fioFonteVivo) pthread_join(fioFonte, NULL);
+  if (fioFonteVivo) {
+    // O encerramento acontece depois do laco de desenho: aqui podemos
+    // aguardar o transporte para fechar player/AVPlay e os demais modulos em
+    // ordem segura. Se ainda estiver RUNNING, invalida a resposta antes do
+    // join; o worker so escreve seu proprio slot. A espera pode durar
+    // ST_PRAZO_S quando a rede nao responde, e e uma limitacao de teardown,
+    // nao um join bloqueante no fio de desenho durante a UI.
+    if (atomic_load_explicit(&fonteJob.estado, memory_order_acquire) == FJOB_RUNNING) {
+      novaGeracaoFonte();
+      limparFontePendente();
+    }
+    pthread_join(fioFonte, NULL);
+    fioFonteVivo = 0;
+    atomic_store_explicit(&fonteJob.estado, FJOB_IDLE, memory_order_release);
+  }
   aguardandoFonte = 0;
   player_encerrar();
   video_encerrar();    // solta o nome LS2 antes do processo sumir (deploy mata sem aviso)
   ajustes_encerrar();
   biblioteca_encerrar();
+  explorar_encerrar();
   perfil_encerrar();
   busca_encerrar();
   home_encerrar();

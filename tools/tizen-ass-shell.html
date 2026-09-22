@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920,height=1080,user-scalable=no">
+<title>Nuvio ASS Diagnostic</title>
+<style>
+  html,body { margin:0; width:100%; height:100%; overflow:hidden; background:transparent; }
+  #avPlayerObject { position:absolute; top:0; left:0; width:100%; height:100%; z-index:0; }
+  #canvas { position:absolute; top:0; left:0; width:100%; height:100%; z-index:1; background:transparent; }
+  #assDiag { position:absolute; z-index:10; top:28px; right:28px; width:510px;
+             padding:18px 22px; box-sizing:border-box; color:#d8ffe0;
+             background:rgba(4,10,16,.88); border:2px solid rgba(100,240,160,.7);
+             border-radius:12px; font:20px/1.35 monospace; white-space:pre-wrap;
+             text-shadow:0 1px 1px #000; }
+</style>
+</head>
+<body>
+<object id="avPlayerObject" type="application/avplayer"></object>
+<canvas id="canvas" width="1920" height="1080" tabindex="0"></canvas>
+<pre id="assDiag">Nuvio ASS diagnostic\naguardando runtime…</pre>
+<script>
+  var ASS_VIDEO_URL = @ASS_VIDEO_URL@;
+  var ASS_TEXT_URL = @ASS_TEXT_URL@;
+  var ASS_CONTROL_URL = @ASS_CONTROL_URL@;
+  var assPanel = document.getElementById("assDiag");
+  var assKlog = [], assLastState = "";
+  function assLog(text) {
+    var linha = new Date().toISOString() + " " + text;
+    assKlog.push(linha);
+    if (assKlog.length > 160) assKlog = assKlog.slice(-160);
+    try { localStorage.setItem("emulator.klog", assKlog.join("\n")); } catch (e) {}
+    try { console.log("[ASS-DIAG] " + text); } catch (e) {}
+  }
+  function assRender(text) {
+    if (text !== assLastState) { assLastState = text; assLog(text); }
+    assPanel.textContent = "Nuvio ASS diagnostic\n" + text +
+      "\nlog persistido: emulator.klog";
+  }
+  window.__nvDiag = function (text) { assLog(text); };
+  function assCall(name, ret, args, vals) {
+    try { return Module.ccall(name, ret, args || [], vals || []); }
+    catch (e) { assRender("erro chamando " + name + ": " + e); return 0; }
+  }
+  function assPoll() {
+    var s = assCall("nv_tizen_ass_state", "string");
+    // Uma leitura direta, depois de a segunda sessão ficar pronta/pausada,
+    // distingue ausência no firmware de uma lista antiga no cache do bridge.
+    // A fixture é local e não contém título, faixa ou URL de uma pessoa.
+    if (s && s.indexOf("fase=embedded-text-nao-exposta") >= 0 && !window.__assRawRead) {
+      window.__assRawRead = true;
+      try {
+        window.__assRawTracks = JSON.stringify(webapis.avplay.getTotalTrackInfo());
+        assLog("getTotalTrackInfo direto: " + window.__assRawTracks);
+      } catch (e) {
+        window.__assRawTracks = "erro: " + e;
+        assLog("getTotalTrackInfo direto: " + window.__assRawTracks);
+      }
+    }
+    if (window.__assRawTracks) s += "\nAPI direta: " + window.__assRawTracks;
+    if (s) assRender(s);
+  }
+  function assControlPoll() {
+    if (!window.__assStarted || window.__assAdvanced || !ASS_CONTROL_URL) return;
+    fetch(ASS_CONTROL_URL, { cache: "no-store" }).then(function (r) { return r.text(); })
+      .then(function (cmd) {
+        if (cmd.trim() !== "embedded") return;
+        window.__assAdvanced = true;
+        assLog("controle recebido: embedded");
+        assCall("nv_tizen_ass_embedded", "number");
+        setTimeout(function () { assCall("nv_tizen_ass_seek", "number", ["number"], [2]); }, 4000);
+        setTimeout(function () { assCall("nv_tizen_ass_pause", "number"); assPoll(); }, 11000);
+      }).catch(function () {});
+  }
+  function assHoldExternal(deadline) {
+    if (window.__assAdvanced || window.__assExternalHeld) return;
+    if (assCall("nv_tizen_ass_hold_external", "number")) {
+      window.__assExternalHeld = true;
+      return;
+    }
+    if (Date.now() < deadline) setTimeout(function () { assHoldExternal(deadline); }, 500);
+  }
+  function assStart() {
+    if (!Module || !Module.ccall) { setTimeout(assStart, 500); return; }
+    if (!assCall("nv_tizen_ass_ready", "number")) { setTimeout(assStart, 500); return; }
+    if (!window.__assStarted) {
+      if (!assCall("nv_tizen_ass_start", "number", ["string", "string"],
+                   [ASS_VIDEO_URL, ASS_TEXT_URL])) { setTimeout(assStart, 500); return; }
+      window.__assStarted = true;
+    }
+    assPoll();
+    // A contagem do ciclo começa no loadCompleted do AVPlay. Assim uma rede
+    // lenta não transforma o seek em uma ação durante prepare.
+    if (!window.__assTimers) {
+      if (!assCall("nv_tizen_ass_prepared", "number")) { setTimeout(assStart, 500); return; }
+      window.__assTimers = true;
+      // A primeira janela busca o cue em 2 s e fica pausada indefinidamente;
+      // a segunda abertura só começa quando o coordenador envia o comando
+      // explícito pelo servidor da fixture.
+      setTimeout(function () { assCall("nv_tizen_ass_seek", "number", ["number"], [2]); }, 1000);
+      setTimeout(function () { assHoldExternal(Date.now() + 20000); }, 2500);
+    }
+    // O loop SDL/GL do entrypoint diagnóstico bombeia e desenha a cada rAF;
+    // aqui só atualizamos o painel, para não chamar AVPlay em paralelo.
+    if (!window.__assPanelTimer) {
+      window.__assPanelTimer = true;
+      setInterval(function () { assPoll(); assControlPoll(); }, 250);
+    }
+  }
+  var Module = {
+    arguments: ["/app/art"],
+    canvas: document.getElementById("canvas"),
+    print: function (t) { console.log(t); },
+    printErr: function (t) { console.error(t); },
+    setStatus: function (t) { if (t) assRender(t); }
+  };
+</script>
+{{{ SCRIPT }}}
+<script>
+  setInterval(function () {
+    if (Module && Module.ccall && !window.__assBoot) {
+      window.__assBoot = true; assStart();
+    }
+  }, 500);
+</script>
+</body>
+</html>

@@ -111,25 +111,29 @@ static void captura(const char *nome) {
 //   4  serie com temporadas                  -> "Série" derivado, nao do campo
 //   resto  variacao normal
 static const struct {
-  const char *titulo, *meta, *genero;
-  int serie, nota, progresso;
+  const char *titulo, *meta, *genero, *sinopse;
+  int serie, nota, progresso, restante;
 } AMOSTRA[] = {
-  { "CODA", "2021 · 1 season", "TV Show · Drama · Music", 1, 84, 42 },
+  { "CODA", "2021 · 1 season", "TV Show · Drama · Music",
+    "Uma familia encontra musica, coragem e um novo caminho.", 1, 84, 42, 61 },
   { "Killers of the Flower Moon and the Rest of a Name Far Too Long to Fit on One Single Line No Matter What",
-    "2023", "Movie · Crime · Drama · History · Western", 0, 79, 0 },
-  { "Dune: Part Two", "", "Movie", 0, 0, 0 },
-  { "Aftersun", "2022", "Movie · Drama", 0, 0, 68 },
+    "2023 · 3 h 26 min", "Movie · Crime · Drama · History · Western",
+    "Uma investigacao sobre poder, dinheiro e os crimes de uma cidade inteira.",
+    0, 79, 0, 0 },
+  { "Dune: Part Two", "", "Movie", "", 0, 0, 0, 0 },
+  { "Aftersun", "2022", "Movie · Drama", "Memorias de uma viagem que muda de sentido com o tempo.",
+    0, 0, 68, 24 },
   { "Everything Everywhere All at Once", "2022 · 3 seasons",
-    "TV Show · Science Fiction · Adventure", 1, 79, 0 },
-  { "The Brutalist", "2024", "Movie · Drama", 0, 82, 0 },
-  { "Poor Things", "2023", "Movie · Comedy · Romance", 0, 78, 12 },
-  { "The Substance", "2024", "Movie · Horror", 0, 71, 0 },
-  { "Anatomy of a Fall", "2023", "Movie · Crime · Drama", 0, 79, 0 },
-  { "Isle of Dogs", "2018", "Movie · Animation", 0, 78, 0 },
-  { "Civil War", "2024", "Movie · Action · Drama", 0, 71, 0 },
-  { "Bacurau", "2019", "Movie · Mystery · Thriller", 0, 74, 0 },
-  { "Cidade de Deus", "2002", "Movie · Crime · Drama", 0, 86, 0 },
-  { "O Agente Secreto", "", "Programa de TV", 1, 0, 0 },
+    "TV Show · Science Fiction · Adventure", "", 1, 79, 0, 0 },
+  { "The Brutalist", "2024", "Movie · Drama", "", 0, 82, 0, 0 },
+  { "Poor Things", "2023", "Movie · Comedy · Romance", "", 0, 78, 12, 0 },
+  { "The Substance", "2024", "Movie · Horror", "", 0, 71, 0, 0 },
+  { "Anatomy of a Fall", "2023", "Movie · Crime · Drama", "", 0, 79, 0, 0 },
+  { "Isle of Dogs", "2018", "Movie · Animation", "", 0, 78, 0, 0 },
+  { "Civil War", "2024", "Movie · Action · Drama", "", 0, 71, 0, 0 },
+  { "Bacurau", "2019", "Movie · Mystery · Thriller", "", 0, 74, 0, 0 },
+  { "Cidade de Deus", "2002", "Movie · Crime · Drama", "", 0, 86, 0, 0 },
+  { "O Agente Secreto", "", "Programa de TV", "", 1, 0, 0, 0 },
 };
 
 static void povoar(void) {
@@ -143,9 +147,11 @@ static void povoar(void) {
     snprintf(it.tipo, sizeof it.tipo, "%s", AMOSTRA[i].serie ? "series" : "movie");
     snprintf(it.meta, sizeof it.meta, "%s", AMOSTRA[i].meta);
     snprintf(it.genero, sizeof it.genero, "%s", AMOSTRA[i].genero);
+    snprintf(it.sinopse, sizeof it.sinopse, "%s", AMOSTRA[i].sinopse);
     snprintf(it.poster, sizeof it.poster, "deploy/app/art/%02d.jpg", (int)i);
     it.nota = AMOSTRA[i].nota;
     it.progresso = AMOSTRA[i].progresso;
+    it.restanteMin = AMOSTRA[i].restante;
     if (AMOSTRA[i].serie) it.nTemporadas = 1;
     it.naLista = 1;
     it.naColecao = (i % 2) == 0;

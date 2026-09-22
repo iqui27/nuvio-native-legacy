@@ -857,9 +857,9 @@ static void tracejada(float x, float y, float w, float r, float g, float b,
 //
 // Passar de mais nunca custa aparencia, porque as pontas sao transparentes.
 #define SA_CHAO_RAMPA 130.0f
-#define SA_CHAO_ALFA   0.62f
+#define SA_CHAO_ALFA   0.70f
 // Reforco SOBRE a area de plotagem, e as rampas curtas dele. Ver `chao`.
-#define SA_CHAO_PLOT   0.50f
+#define SA_CHAO_PLOT   0.56f
 // A rampa do reforco e LONGA pelo mesmo motivo que a do envelope, so que entre
 // PAINEIS: com 44 px, as areas de plotagem do arco e do radar viravam duas
 // faixas escuras separadas por uma clara — "dois cartoes" de novo, agora em
@@ -959,7 +959,7 @@ static void chao(float topo, float alt, float plotoTopo, float plotoAlt) {
 // desenhos por painel compram a garantia de que eles nunca dependem da obra.
 static void chapaTexto(float x, float y, float w, float h) {
   GfxRect c = { x - 12.0f, y - 4.0f, w + 24.0f, h + 8.0f };
-  gfx_cor(c, raioPx(c.w, c.h, c.h * 0.5f), 0.0f, 0.0f, 0.0f, 0.55f);
+  gfx_cor(c, raioPx(c.w, c.h, c.h * 0.5f), 0.0f, 0.0f, 0.0f, 0.42f);
 }
 
 // AS DUAS CALHAS, e por que elas sao constantes compartilhadas.
@@ -1143,10 +1143,10 @@ float serieaud_arco(GfxRect r) {
   // A LINHA DE BASE E A MOLDURA QUE SOBROU. Sem a caixa, sao ela, a tracejada
   // da referencia e o ritmo dos rotulos que dizem onde o grafico comeca e
   // acaba — que e como um grafico se enquadra quando nao esta dentro de um
-  // retangulo. Subiu de 16% para 22% de branco: sobre o veu ela precisa
-  // aguentar o que a arte deixa passar por baixo.
+  // retangulo. Agora fica em 15% de branco: a base organiza a leitura sem
+  // virar mais uma faixa visivel competindo com a curva.
   { GfxRect base = { gx, py + gh, gw, 1.0f };
-    gfx_cor(base, 0.0f, 1.0f, 1.0f, 1.0f, 0.22f); }
+    gfx_cor(base, 0.0f, 1.0f, 1.0f, 1.0f, 0.15f); }
   snprintf(txt, sizeof txt, "%.1f", hi / 10.0);
   chapaEixo[0] = rotuloEixo(gx - SA_FOLGA_ROT, py, txt);
   snprintf(txt, sizeof txt, "%.1f", lo / 10.0);
@@ -1155,12 +1155,12 @@ float serieaud_arco(GfxRect r) {
   // A MEDIA, tracejada, com o valor na ponta direita, FORA da caixa.
   if (med > 0 && hi > lo) {
     float ym = SA_ARCO_Y(med);
-    // 0.45 e nao 0.26: MEDIDO sobre 07.jpg, onde quatro rostos iluminados caem
+    // 0.34 e nao 0.26: a referencia segue visivel sem disputar com a curva
     // dentro da caixa do arco. A curva (branca cheia, 5 px) atravessa isso sem
     // esforco; a tracejada tem 2 px e era o primeiro elemento a se perder. Ela
     // continua subordinada a curva — traco fino e interrompido contra linha
     // grossa e continua —, so que agora existe em qualquer obra.
-    tracejada(gx, ym, gw, 0.94f, 0.94f, 0.96f, 0.45f);
+    tracejada(gx, ym, gw, 0.90f, 0.91f, 0.94f, 0.34f);
     snprintf(txt, sizeof txt, i18n("média %.1f"), med / 10.0);
     rotuloRef(gx + gw + SA_FOLGA_ROT, ym, txt);
   }
@@ -1182,7 +1182,7 @@ float serieaud_arco(GfxRect r) {
         if (fimAnt >= 0)
           pontilhada(gx + passo * (float)fimAnt, SA_ARCO_Y(eps[fimAnt].nota),
                      gx + passo * (float)inicio, ys[0],
-                     5.0f, 0.94f, 0.94f, 0.96f, 0.34f);
+                     5.0f, 0.92f, 0.93f, 0.96f, 0.30f);
         if (m >= 2) {
           float dx;
           int na = amostrar(passo, ys, m, &dx);
@@ -1201,7 +1201,7 @@ float serieaud_arco(GfxRect r) {
           // temporada, e e o que torna a regra visivel o bastante para ser
           // lida como regra.
           //
-          // ALFA 0.11 E O PONTO DE "DELICADO": acima disso vira uma area
+          // ALFA 0.10 E O PONTO DE "DELICADO": acima disso vira uma area
           // preenchida e o arco perde a diferenca de forma que ele tem com o
           // radar de proposito (um mede episodios um a um e e vazado, o outro
           // mede uma quantidade que se acumula e e cheio). Aqui e tinta no ar,
@@ -1212,8 +1212,8 @@ float serieaud_arco(GfxRect r) {
             // cada, que e menos do que o olho separa; a 12 px eram 3 passos e
             // dava para contar.
             banda(x0, dx, na, SA_ARCO_Y(med), -1, 7.0f, 46.0f,
-                  0.24f, 0.86f, 0.52f, 0.11f);
-          traco(x0, dx, na, 5.0f, 0.96f, 0.96f, 0.98f, 1.0f);
+                  0.20f, 0.72f, 0.45f, 0.10f);
+          traco(x0, dx, na, 5.0f, 0.92f, 0.93f, 0.96f, 1.0f);
         }
         fimAnt = inicio + m - 1;
       }
@@ -1246,9 +1246,9 @@ float serieaud_arco(GfxRect r) {
               (i == nEps - 1 || eps[i + 1].nota <= 0);
     x  = gx + passo * (float)i;
     yy = SA_ARCO_Y(eps[i].nota);
-    if (i == melhor)     ponto(x, yy, 22.0f, 0.24f, 0.86f, 0.52f, 1.0f);
-    else if (i == pior)  ponto(x, yy, 22.0f, 0.93f, 0.30f, 0.30f, 1.0f);
-    else if (isolado)    ponto(x, yy, 13.0f, 0.96f, 0.96f, 0.98f, 1.0f);
+    if (i == melhor)     ponto(x, yy, 22.0f, 0.20f, 0.72f, 0.45f, 1.0f);
+    else if (i == pior)  ponto(x, yy, 22.0f, 0.88f, 0.28f, 0.28f, 1.0f);
+    else if (isolado)    ponto(x, yy, 13.0f, 0.92f, 0.93f, 0.96f, 1.0f);
   }
   // Os rotulos dos extremos vao DEPOIS de todos os pontos para nao ficarem por
   // baixo do ponto do episodio vizinho.
@@ -1526,7 +1526,7 @@ float serieaud_radar(GfxRect r) {
           pontilhada(gx + passo * (float)fimAnt,
                      SA_RAD_Y(serieaud_retencao(fimAnt)),
                      gx + passo * (float)inicio, ys[0],
-                     5.0f, 0.94f, 0.94f, 0.96f, 0.34f);
+                     5.0f, 0.92f, 0.93f, 0.96f, 0.30f);
         if (m >= 2) {
           float dx;
           int na = amostrar(passo, ys, m, &dx);
@@ -1541,13 +1541,13 @@ float serieaud_radar(GfxRect r) {
             // AFUNDA a regiao em vez de cobri-la, e a arte continua visivel
             // atraves dele, so que mais escura. E a semantica bate — o que
             // esta ali e a plateia que apagou.
-            banda(x0, dx, na, y100,  1, 3.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.45f);
+            banda(x0, dx, na, y100,  1, 3.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.34f);
             // A EXCECAO continua em cor, e e a unica cor desta caixa: verde,
             // o mesmo de "melhor episodio" no arco, porque quer dizer a mesma
             // coisa nos dois — este ponto esta acima da referencia.
-            banda(x0, dx, na, y100, -1, 3.0f, 0.0f, 0.24f, 0.86f, 0.52f, 0.40f);
+            banda(x0, dx, na, y100, -1, 3.0f, 0.0f, 0.18f, 0.68f, 0.42f, 0.32f);
           }
-          traco(x0, dx, na, 5.0f, 0.96f, 0.96f, 0.98f, 1.0f);
+          traco(x0, dx, na, 5.0f, 0.92f, 0.93f, 0.96f, 1.0f);
         }
         fimAnt = inicio + m - 1;
       }
@@ -1556,11 +1556,11 @@ float serieaud_radar(GfxRect r) {
 
   // A LINHA DOS 100%: a referencia de onde a temporada comecou.
   if (y100 > 0.0f) {
-    tracejada(gx, y100, gw, 0.94f, 0.94f, 0.96f, 0.45f);
+    tracejada(gx, y100, gw, 0.90f, 0.91f, 0.94f, 0.34f);
     rotuloRef(gx + gw + SA_FOLGA_ROT, y100, "100%");
   }
   { GfxRect base = { gx, py + gh, gw, 1.0f };
-    gfx_cor(base, 0.0f, 1.0f, 1.0f, 1.0f, 0.22f); }
+    gfx_cor(base, 0.0f, 1.0f, 1.0f, 1.0f, 0.15f); }
   snprintf(txt, sizeof txt, "%d%%", piso / 10);
   rotuloEixo(gx - SA_FOLGA_ROT, py + gh, txt);
   snprintf(txt, sizeof txt, "%d%%", topo / 10);
@@ -1576,7 +1576,7 @@ float serieaud_radar(GfxRect r) {
       // continua para baixo, alem do que a caixa mostra" sem desenhar um valor
       // falso dentro dela. O rodape diz o numero.
       GfxRect t2 = { x - 2.5f, py + gh + 5.0f, 5.0f, 24.0f };
-      gfx_cor(t2, raioPx(5.0f, 24.0f, 2.5f), 0.96f, 0.78f, 0.30f, 0.95f);
+      gfx_cor(t2, raioPx(5.0f, 24.0f, 2.5f), 0.92f, 0.68f, 0.22f, 0.90f);
       continue;
     }
     // Mesma regra do arco: so o episodio que a linha nao consegue mostrar, ou
@@ -1585,7 +1585,7 @@ float serieaud_radar(GfxRect r) {
       int pro = (i < nEps - 1) ? serieaud_retencao(i + 1) : -1;
       int soAnt = (i == 0) || ant < 0 || fora[i - 1];
       int soPro = (i == nEps - 1) || pro < 0 || fora[i + 1];
-      if (soAnt && soPro) ponto(x, SA_RAD_Y(v), 13.0f, 0.96f, 0.96f, 0.98f, 1.0f);
+      if (soAnt && soPro) ponto(x, SA_RAD_Y(v), 13.0f, 0.92f, 0.93f, 0.96f, 1.0f);
     }
   }
 
@@ -1611,8 +1611,8 @@ float serieaud_radar(GfxRect r) {
     float x = gx + passo * (float)quedaI;
     float yy = SA_RAD_Y(serieaud_retencao(quedaI));
     GfxRect fio = { x - 1.0f, yy, 2.0f, py + gh - yy };
-    gfx_cor(fio, 0.0f, 0.96f, 0.78f, 0.30f, 0.45f);
-    ponto(x, yy, 20.0f, 0.96f, 0.78f, 0.30f, 1.0f);
+    gfx_cor(fio, 0.0f, 0.92f, 0.68f, 0.22f, 0.40f);
+    ponto(x, yy, 20.0f, 0.92f, 0.68f, 0.22f, 1.0f);
   }
 
   y += 10.0f + gh + 40.0f;
@@ -1694,10 +1694,10 @@ float serieaud_radar(GfxRect r) {
 enum { SA_NOTA, SA_RET, SA_REVER, SA_CONV, SA_NEIXOS };
 
 static const struct { float r, g, b; const char *nome; } EIXO[SA_NEIXOS] = {
-  { 0.94f, 0.94f, 0.96f, "Nota" },
-  { 0.24f, 0.86f, 0.52f, "Retenção" },
-  { 0.96f, 0.78f, 0.30f, "Rever" },
-  { 0.55f, 0.65f, 1.00f, "Conversa" }
+  { 0.88f, 0.89f, 0.93f, "Nota" },
+  { 0.20f, 0.72f, 0.45f, "Retenção" },
+  { 0.92f, 0.68f, 0.22f, "Rever" },
+  { 0.48f, 0.58f, 0.90f, "Conversa" }
 };
 
 // Valor bruto do eixo para um episodio; -1 quando nao ha dado.
@@ -1798,7 +1798,7 @@ float serieaud_digital(GfxRect r) {
     TxtLinha l;
     // Linha de base da fileira: fina, e ela que diz "as barras crescem daqui".
     { GfxRect base = { gx, yb, gw, 1.0f };
-      gfx_cor(base, 0.0f, 1.0f, 1.0f, 1.0f, 0.13f); }
+      gfx_cor(base, 0.0f, 1.0f, 1.0f, 1.0f, 0.09f); }
     for (i = 0; i < nEps; i++) {
       float cx = gx + passo * ((float)i + 0.5f);
       int v = eixoBruto(i, e);
@@ -1826,7 +1826,7 @@ float serieaud_digital(GfxRect r) {
       // o `0.18` fixo que estava aqui a barra alta saia com 8 px de canto e a
       // baixa com 1 — mesma fileira, duas formas.
       gfx_cor(barra, raioPx(larg, h, 6.0f), EIXO[e].r, EIXO[e].g, EIXO[e].b,
-              sel ? 1.0f : 0.72f);
+              sel ? 1.0f : 0.66f);
     }
     // Nome da grandeza, na calha esquerda, alinhado a direita contra as barras.
     l = txt_linha(TXT_CAPTION, i18n(EIXO[e].nome), 190, 192, 200, 255);

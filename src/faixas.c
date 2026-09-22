@@ -8,6 +8,7 @@
 #include "anim.h"
 #include "layout.h"
 #include "legenda.h"
+#include "mkvass.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -44,10 +45,40 @@ static float anim;
 // mentia sobre qual era.
 static int legExterna = -1;
 
+// LEGENDA EMBUTIDA ASS PELO OVERLAY (#92, fase 3). `legOverlay` e o indice da
+// faixa embutida cujo texto o mkvass.c esta colhendo do MKV por Range para o
+// overlay do app desenhar — o pipeline da TV fica com a legenda DESLIGADA
+// (video_escolher_legenda(-1)), entao video_legenda_atual() diz -1 e, sem
+// esta variavel, a folha marcaria "Nenhuma" como ativa. Mesmo motivo do
+// legExterna acima.
+//
+// `legOverlayNoGo` e a faixa em que o mkvass DESISTIU (arquivo sem indice da
+// legenda, servidor sem Range): a folha voltou a entregar a faixa ao pipeline
+// e mostra o motivo; escolher a mesma faixa de novo vai direto ao pipeline,
+// sem tentar outra vez.
+//
+// So no webOS. No Tizen o mkvass.c e um coto e estas duas ficam em -1: la o
+// AVPlay desenha a legenda embutida como sempre desenhou.
+static int legOverlay = -1, legOverlayNoGo = -1;
+
+static int ehAss(const VideoFaixa *f) {
+  return f && (!strncmp(f->codec, "S_TEXT/ASS", 10) || !strncmp(f->codec, "S_TEXT/SSA", 10));
+}
+
 // Chamada quando uma sessao de reproducao nova comeca: a legenda externa e da
 // sessao, nao do aparelho. Sem isto o titulo seguinte abriria a folha marcando
 // como ativa uma legenda que nao foi escolhida para ele.
-void faixas_reiniciar(void) { legExterna = -1; aberta = 0; legenda_desligar(); }
+void faixas_reiniciar(void) {
+  legExterna = -1; legOverlay = legOverlayNoGo = -1; aberta = 0;
+  mkvass_parar(); legenda_desligar();
+}
+
+// Indice da legenda que a folha deve marcar como ATIVA.
+static int legendaAtiva(void) {
+  if (legExterna >= 0) return legExterna;
+  if (legOverlay >= 0) return legOverlay;
+  return video_legenda_atual();
+}
 
 // FOLHAS SEPARADAS: 0 = so AUDIO, 1 = LEGENDA (lista + estilo).
 //
@@ -79,7 +110,7 @@ void faixas_abrir_em(int col) {
   foco[0] = video_audio_atual();
   // A legenda pode estar desligada (-1); a primeira linha da coluna e sempre
   // "Desativada", entao o indice da lista e deslocado em um.
-  foco[1] = (legExterna >= 0 ? legExterna : video_legenda_atual()) + 1;
+  foco[1] = legendaAtiva() + 1;
   // Clamp nas duas colunas. A lista de legendas CRESCE durante a sessao (as do
   // OpenSubtitles chegam depois) e a de audio so existe apos o sourceInfo:
   // guardar um indice de antes e reabrir sem conferir poe o foco fora do vetor.
@@ -144,7 +175,9 @@ static void ciclarEstilo(int linha) {
   switch (linha) {
     case 0: e->tamanho += 10; if (e->tamanho > 200) e->tamanho = 50; break;
     case 1: e->familia = (e->familia + 1) % TXT_FAMILIA_N; break;
-    case 2: e->cor     = (e->cor + 1) % VIDEO_LEG_NCORES; break;
+    // COR: marca que a pessoa mexeu — dai em diante ela vence a cor que o
+    // arquivo ASS pede (ver player_leg_estilo_tocou em player.h).
+    case 2: e->cor     = (e->cor + 1) % VIDEO_LEG_NCORES; player_leg_estilo_tocou(PLR_LEG_COR); break;
     case 3: e->opacidade = (e->opacidade + 1) % 4; break;
     case 4: e->fundo   = (e->fundo + 1) % 5; break;
     case 5: e->posicao = (e->posicao + 1) % 8; break;
@@ -157,6 +190,8 @@ static void ciclarEstilo(int linha) {
       break;
     default:
       *e = (VideoLegendaEstilo){ 120, 0, 0, 3, 1, 0, 0, TXT_FAMILIA_INTER };
+      // Restaurar e voltar ao normal do app, e o normal e respeitar o arquivo.
+      player_leg_estilo_tocou(PLR_LEG_NADA);
       break;
   }
   player_leg_estilo_mudou();
@@ -169,6 +204,24 @@ static const char *rotuloLegenda(int i, const char **marca) {
   *marca = NULL;
   if (i < emb) {
     const VideoFaixa *f = video_legenda(i);
+    // SELO "ASS" (#92): a faixa S_TEXT/ASS e a que o pipeline da TV desenha
+    // sem posicao e comendo eventos simultaneos. Dizer isso na folha e o que
+    // permite a pessoa preferir uma legenda externa enquanto a faixa
+    // embutida nao passa pelo overlay proprio.
+    if (ehAss(f)) {
+      if (i == legOverlay) {
+        int e = mkvass_estado();
+        *marca = e == MKVASS_PREPARANDO
+               ? i18n("Incorporada \xc2\xb7 ASS (lendo o \xc3\xadndice do arquivo\xe2\x80\xa6)")
+               : i18n("Incorporada \xc2\xb7 ASS (desenhada pelo app)");
+      } else if (i == legOverlayNoGo) {
+        int e = mkvass_estado();
+        *marca = (e == MKVASS_NOGO_SEM_RANGE || e == MKVASS_NOGO_REDE)
+               ? i18n("ASS: a TV desenha (servidor sem Range)")
+               : i18n("ASS: a TV desenha (arquivo sem \xc3\xadndice)");
+      } else
+        *marca = i18n("Incorporada \xc2\xb7 ASS (a TV pode cortar falas)");
+    }
     return f ? f->rotulo : "";
   }
   { const Legenda *l = addons_legenda(i - emb);
@@ -183,8 +236,27 @@ static void aplicar(void) {
   } else {
     int i = foco[1] - 1;
     int emb = video_n_legenda();
+    // Qualquer escolha encerra a colheita anterior: o fio do mkvass nao pode
+    // continuar entregando ao overlay uma faixa que a pessoa acabou de trocar.
+    mkvass_parar(); legOverlay = -1;
     if (i < 0)        { video_escolher_legenda(-1); legenda_desligar(); legExterna = -1; }
-    else if (i < emb) { video_escolher_legenda(i);  legenda_desligar(); legExterna = -1; }
+    else if (i < emb) {
+      const VideoFaixa *f = video_legenda(i);
+      legenda_desligar(); legExterna = -1;
+      (void)f;   // no Tizen o ramo abaixo nao existe
+#ifndef __EMSCRIPTEN__
+      // FAIXA ASS: o overlay do app assume (#92). O pipeline fica com a legenda
+      // desligada e o mkvass colhe o texto do MKV a frente do playhead; se ele
+      // declarar no-go, faixas_atualizar devolve a faixa ao pipeline. Uma
+      // faixa em que ja desistimos vai direto ao pipeline.
+      if (ehAss(f) && i != legOverlayNoGo && video_url_atual()[0]) {
+        video_escolher_legenda(-1);
+        mkvass_iniciar(video_url_atual(), f->numero);
+        legOverlay = i;
+      } else
+#endif
+      video_escolher_legenda(i);
+    }
     else {
       const Legenda *l = addons_legenda(i - emb);
       // So marca como ativa se houve o que aplicar: sem a URL o uMS nao recebe
@@ -223,6 +295,15 @@ void faixas_evento(const SDL_Event *e) {
 void faixas_atualizar(float dt, Uint32 agora) {
   (void)agora;
   anim = anim_mola(anim, aberta ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
+  // O mkvass desistiu (sem indice, sem Range): devolve a faixa ao pipeline da
+  // TV, que desenha como sempre desenhou, e a folha passa a dizer por que.
+  // Polling por quadro e o que ha: o no-go nasce num fio de rede e este
+  // modulo nao tem callback — e uma comparacao de inteiro.
+  if (legOverlay >= 0 && mkvass_nogo()) {
+    int i = legOverlay;
+    legOverlay = -1; legOverlayNoGo = i;
+    video_escolher_legenda(i);
+  }
 }
 
 // Traz a linha focada para dentro da janela visivel, mexendo o MINIMO: so
@@ -254,7 +335,7 @@ static void coluna_desenhar(int col, float x, float larg, float y0, float a) {
       rot=f?f->rotulo:""; marca=f?f->idioma:NULL;
     } else {
       rot=i==0?"Nenhuma":rotuloLegenda(i-1,&marca);
-      if(i && !marca) marca="Incorporada";
+      if(i && !marca) marca=i18n("Incorporada");
     }
     if(sel) gfx_cor((GfxRect){x-20,y-14,larg+20,92},.18f,.95f,.95f,.96f,a);
     int c=sel?25:230, sub=sel?70:174;
@@ -262,7 +343,7 @@ static void coluna_desenhar(int col, float x, float larg, float y0, float a) {
     if(marca && *marca)
       txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,marca,sub,sub,sub,255,larg-72),x,y+34,a);
     int ativo=col==0?i==video_audio_atual():
-      col==1?(legExterna>=0?i-1==legExterna:i-1==video_legenda_atual()):0;
+      col==1?i-1==legendaAtiva():0;
     if(ativo) txt_desenhar_alpha(txt_linha(TXT_BODY,"✓",c,c,c,255),x+larg-44,y+12,a);
   }
   if(!n) txt_bloco(TXT_PG_FIM,"Nenhuma faixa disponível nesta fonte.",178,180,186,x,y0+68,larg,28,a,2);

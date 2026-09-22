@@ -12,10 +12,75 @@
 #include "../src/jpegrapido.h"
 #include <pthread.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <SDL2/SDL_image.h>
+
+typedef struct {
+  int zero;
+  int opaque;
+  int max;
+} AlphaStats;
+
+/* Read alpha through SDL's format masks, so this covers both the browser
+ * ABGR8888 surface and the legacy IMG_Load_RW result. */
+static AlphaStats alphaStats(const SDL_Surface *s) {
+  AlphaStats a = { 0, 0, 0 };
+  int x, y;
+  if (!s || !s->format || !s->format->Amask) return a;
+  if (SDL_MUSTLOCK((SDL_Surface *)s)) SDL_LockSurface((SDL_Surface *)s);
+  for (y = 0; y < s->h; y++) for (x = 0; x < s->w; x++) {
+    Uint32 p = 0;
+    Uint8 r, g, b, al;
+    memcpy(&p, (const Uint8 *)s->pixels + y * s->pitch + x * s->format->BytesPerPixel,
+           s->format->BytesPerPixel);
+    SDL_GetRGBA(p, s->format, &r, &g, &b, &al);
+    if (al == 0) a.zero++;
+    if (al == 255) a.opaque++;
+    if (al > a.max) a.max = al;
+  }
+  if (SDL_MUSTLOCK((SDL_Surface *)s)) SDL_UnlockSurface((SDL_Surface *)s);
+  return a;
+}
+
+static SDL_Surface *legacyPng(const unsigned char *dados, long n) {
+  SDL_RWops *rw = SDL_RWFromConstMem(dados, (int)n);
+  return rw ? IMG_Load_RW(rw, 1) : NULL;
+}
 
 static void *fioDeDecode(void *arg) {
   SDL_Surface *s;
   (void)arg;
+  // PNG 4K pelo navegador. Este e o primeiro decode de proposito: webp.c
+  // imprime a origem do primeiro pedido, permitindo ao console provar
+  // "image/png, no worker"; uma execucao sem decodificador.js deve registrar
+  // "image/png, no fio principal".
+  { unsigned char *dados; long n; FILE *f = fopen("/amostra-4k.png", "rb");
+    Uint32 inicio;
+    if (!f) { printf("FALHOU: amostra-4k.png nao preloadado\n"); return NULL; }
+    fseek(f, 0, SEEK_END); n = ftell(f); rewind(f);
+    dados = malloc((size_t)n);
+    if (!dados || fread(dados, 1, (size_t)n, f) != (size_t)n) {
+      printf("FALHOU: leitura de amostra-4k.png\n"); fclose(f); free(dados); return NULL;
+    }
+    fclose(f);
+    inicio = SDL_GetTicks();
+    { int ow = 0, oh = 0;
+      s = jpeg_rapido_carregar_mem(dados, (size_t)n, 1280, &ow, &oh);
+      if (!s) printf("FALHOU: png 4K reduzido devolveu NULL\n");
+      else {
+        unsigned char *p = (unsigned char *)s->pixels + (s->h / 4) * s->pitch + (s->w / 4) * 4;
+        int dimensoes = s->w == 1280 && s->h == 720 && ow == 3840 && oh == 2160;
+        int pixel = abs((int)p[0] - 220) <= 2 && abs((int)p[1] - 30) <= 2 &&
+                    abs((int)p[2] - 40) <= 2 && p[3] == 255;
+        printf("%s png 4K reduzido %dx%d (arquivo %dx%d, pixel=%d,%d,%d,%d, ms=%u)\n",
+               dimensoes && pixel ? "ok " : "FALHOU:", s->w, s->h, ow, oh,
+               p[0], p[1], p[2], p[3], (unsigned)(SDL_GetTicks() - inicio));
+        SDL_FreeSurface(s);
+      }
+    }
+    free(dados);
+  }
   s = webp_carregar("/amostra.webp");
   if (!s) { printf("FALHOU: webp_carregar devolveu NULL\n"); return NULL; }
   printf("ok  webp %dx%d formato=%s\n", s->w, s->h,
@@ -59,6 +124,97 @@ static void *fioDeDecode(void *arg) {
     else { printf("%s jpeg inteiro %dx%d\n", s->w == 640 ? "ok " : "FALHOU:", s->w, s->h); SDL_FreeSurface(s); }
     if (jpeg_rapido_carregar("/nao-e-webp.txt", 320, &ow, &oh) != NULL) printf("FALHOU: aceitou nao-imagem\n");
     else printf("jpeg: tudo ok\n"); }
+  // PNG PELO NAVEGADOR (21/09/2026, registro 1106): o caso pequeno preserva
+  // a regressao original, mas o caso 4K acima e a prova de que a reducao nao
+  // depende de um fixture pequeno.
+  { unsigned char *dados; long n; FILE *f = fopen("/amostra.png", "rb");
+    if (!f) { printf("FALHOU: amostra.png nao preloadado\n"); return NULL; }
+    fseek(f, 0, SEEK_END); n = ftell(f); rewind(f);
+    dados = malloc((size_t)n);
+    if (fread(dados, 1, (size_t)n, f) != (size_t)n) { printf("FALHOU: leitura de amostra.png\n"); }
+    fclose(f);
+    { int ow = 0, oh = 0;
+      s = jpeg_rapido_carregar_mem(dados, (size_t)n, 64, &ow, &oh);
+      if (!s) printf("FALHOU: png reduzido devolveu NULL\n");
+      else {
+        printf("%s png reduzido %dx%d (arquivo %dx%d)\n",
+               (s->w == 64 && ow == 160 && oh == 160) ? "ok " : "FALHOU:", s->w, s->h, ow, oh);
+        SDL_FreeSurface(s);
+      } }
+    { int ow = 0, oh = 0;
+      s = jpeg_rapido_carregar_mem(dados, (size_t)n, 4000, &ow, &oh);
+      if (!s) printf("FALHOU: png inteiro devolveu NULL\n");
+      else { printf("%s png inteiro %dx%d\n", s->w == 160 ? "ok " : "FALHOU:", s->w, s->h); SDL_FreeSurface(s); } }
+    free(dados);
+    printf("png: tudo ok\n"); }
+  // PNG transparente: sao os mesmos tres icones que a tela de menu usa.
+  // O teste 4K acima so tem alpha=255 e, portanto, nao detecta a regressao
+  // em que a ponte browser entregava um quadrado opaco. Medimos a superficie
+  // depois de jpeg_rapido_carregar_mem, isto e, depois da rota PNG do Tizen.
+  // Tambem repetimos a rota legada IMG_Load_RW -> SDL_ConvertSurfaceFormat;
+  // assim o resultado separa uma mudanca no arquivo de uma mudanca na ponte.
+  { const char *nomes[] = { "/icone-home.png", "/icone-guide.png", "/icone-search.png", NULL };
+    int i;
+    for (i = 0; nomes[i]; i++) {
+      unsigned char *dados = NULL; long n; FILE *f = fopen(nomes[i], "rb");
+      AlphaStats direto = {0, 0, 0}, convertido = {0, 0, 0};
+      AlphaStats legado = {0, 0, 0}, legadoConvertido = {0, 0, 0};
+      int ow = 0, oh = 0, mesmaPonte = 0, mesmaRota = 0, mesmaFonte = 0;
+      SDL_BlendMode bm = SDL_BLENDMODE_NONE; Uint8 am = 0; Uint32 key = 0;
+      int chaveAusente = 0;
+      SDL_Surface *ic = NULL, *cv = NULL, *old = NULL, *oldCv = NULL;
+      if (!f) { printf("FALHOU: %s nao preloadado\n", nomes[i]); continue; }
+      fseek(f, 0, SEEK_END); n = ftell(f); rewind(f);
+      dados = malloc((size_t)n);
+      if (!dados || fread(dados, 1, (size_t)n, f) != (size_t)n) {
+        printf("FALHOU: leitura de %s\n", nomes[i]); fclose(f); free(dados); continue;
+      }
+      fclose(f);
+      ic = jpeg_rapido_carregar_mem(dados, (size_t)n, 256, &ow, &oh);
+      old = legacyPng(dados, n);
+      if (ic) {
+        SDL_GetSurfaceBlendMode(ic, &bm); SDL_GetSurfaceAlphaMod(ic, &am);
+        chaveAusente = SDL_GetColorKey(ic, &key) == -1;
+        direto = alphaStats(ic);
+        // Este e o ponto que o caminho de decode antigo fazia antes do
+        // upload. O resultado precisa conservar alpha0 e alpha255.
+        cv = SDL_ConvertSurfaceFormat(ic, SDL_PIXELFORMAT_ABGR8888, 0);
+        convertido = alphaStats(cv);
+      }
+      if (old) {
+        oldCv = SDL_ConvertSurfaceFormat(old, SDL_PIXELFORMAT_ABGR8888, 0);
+        legado = alphaStats(old);
+        legadoConvertido = alphaStats(oldCv);
+      }
+      mesmaPonte = cv && direto.zero > 0 && direto.opaque > 0 && direto.max == 255 &&
+                   convertido.zero == direto.zero && convertido.opaque == direto.opaque &&
+                   convertido.max == direto.max;
+      mesmaRota = oldCv && legado.zero > 0 && legado.opaque > 0 && legado.max == 255 &&
+                  legadoConvertido.zero == legado.zero && legadoConvertido.opaque == legado.opaque &&
+                  legadoConvertido.max == legado.max;
+      mesmaFonte = mesmaPonte && mesmaRota && convertido.zero == legadoConvertido.zero &&
+                   convertido.opaque == legadoConvertido.opaque && convertido.max == legadoConvertido.max;
+      // Formato e metadata tambem fazem parte do contrato da ponte: gfx sobe
+      // o buffer como RGBA e o shader GFX_MARCA usa a alpha da textura.
+      printf("%s png transparente %s %dx%d arquivo %dx%d ponte=%d/%d/%d->%d/%d/%d legado=%d/%d/%d->%d/%d/%d formato=%s->%s old=%s->%s blend=%d alphaMod=%u colorkey=%s\n",
+             mesmaFonte && ic->format->Amask != 0 && cv->format->Amask != 0 &&
+             old->format->Amask != 0 && oldCv->format->Amask != 0 &&
+             bm == SDL_BLENDMODE_BLEND && am == 255 && chaveAusente ? "ok " : "FALHOU:",
+             nomes[i], ic ? ic->w : 0, ic ? ic->h : 0, ow, oh,
+             direto.zero, direto.opaque, direto.max, convertido.zero, convertido.opaque, convertido.max,
+             legado.zero, legado.opaque, legado.max, legadoConvertido.zero, legadoConvertido.opaque, legadoConvertido.max,
+             ic ? SDL_GetPixelFormatName(ic->format->format) : "NULL",
+             cv ? SDL_GetPixelFormatName(cv->format->format) : "NULL",
+             old ? SDL_GetPixelFormatName(old->format->format) : "NULL",
+             oldCv ? SDL_GetPixelFormatName(oldCv->format->format) : "NULL", (int)bm, am,
+             chaveAusente ? "off" : "on");
+      SDL_FreeSurface(oldCv);
+      SDL_FreeSurface(old);
+      SDL_FreeSurface(cv);
+      SDL_FreeSurface(ic);
+      free(dados);
+    }
+  }
   return NULL;
 }
 

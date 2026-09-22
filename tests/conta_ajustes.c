@@ -9,6 +9,7 @@
 //   - `true` do web vira INDICE 0 ("Ligado"), nao 1;
 //   - `collapseSidebar: true` vira "Recolhida", que tambem e o indice 0.
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "ajustes.h"
 
@@ -104,6 +105,72 @@ int main(void) {
                          "\"hero_section_enabled\":{\"type\":\"boolean\",\"value\":true}}}}");
     confere("largura preservada por blob parcial", ajustes_largura_poster_dp(), antes);
     confere("a chave que veio foi aplicada",       ajustes_hero_ligado(), 1); }
+
+  // --- O CAMINHO DE VOLTA (#85) ---------------------------------------------
+  //
+  // O defeito que estes casos cercam e o pior desta area: um push de ajustes
+  // mal formado nao da erro, ele APAGA da conta o que so o app web usa. Cada
+  // caso abaixo e uma das travas de ajustes_mesclar_blob.
+  printf("\ncostura de subida (#85):\n");
+  { static const char *BASE =
+      "{\"version\":1,\"features\":{\"layout_settings\":{"
+      "\"hero_section_enabled\":{\"type\":\"boolean\",\"value\":false},"
+      "\"poster_card_width_dp\":{\"type\":\"int\",\"value\":150},"
+      "\"continue_watching_card_style\":{\"type\":\"string\",\"value\":\"POSTER\"},"
+      "\"chave_que_este_app_nao_conhece\":{\"type\":\"string\",\"value\":\"x\"}"
+      "},\"outra_feature\":{\"coisa_do_web\":{\"type\":\"int\",\"value\":7}}}}";
+    char *saida = NULL;
+    int n;
+    // Estado local diferente da base nas tres chaves conhecidas.
+    ajustes_aplicar_blob("{\"features\":{\"layout_settings\":{"
+      "\"hero_section_enabled\":{\"type\":\"boolean\",\"value\":true},"
+      "\"poster_card_width_dp\":{\"type\":\"int\",\"value\":132},"
+      "\"continue_watching_card_style\":{\"type\":\"string\",\"value\":\"WIDE\"}}}}");
+    n = ajustes_mesclar_blob(BASE, &saida);
+    confere("tres chaves reescritas", n, 3);
+    if (saida) {
+      confere("booleano local sobe",
+              strstr(saida, "\"hero_section_enabled\":{\"type\":\"boolean\",\"value\":true}") != NULL, 1);
+      confere("numero local sobe",
+              strstr(saida, "\"poster_card_width_dp\":{\"type\":\"int\",\"value\":132}") != NULL, 1);
+      // CAIXA DO SERVIDOR: a base guardava "POSTER" em maiuscula, entao o valor
+      // novo tambem sai em maiuscula — o web guarda estes enums assim.
+      confere("enum sobe na caixa que a conta usava",
+              strstr(saida, "\"value\":\"WIDE\"") != NULL, 1);
+      // O QUE ESTE APP NAO CONHECE FICA INTACTO. E a trava que impede a TV de
+      // apagar da conta as preferencias que so o app web tem.
+      confere("chave desconhecida preservada",
+              strstr(saida, "\"chave_que_este_app_nao_conhece\":{\"type\":\"string\",\"value\":\"x\"}") != NULL, 1);
+      confere("feature inteira desconhecida preservada",
+              strstr(saida, "\"coisa_do_web\":{\"type\":\"int\",\"value\":7}") != NULL, 1);
+      // E NADA E INVENTADO: chave que a conta nao tem nao aparece no blob.
+      confere("chave ausente na conta nao e criada",
+              strstr(saida, "card_depth_enabled") == NULL, 1);
+      free(saida);
+    } else falhas++;
+
+    // Segunda costura, agora com o local IGUAL a base: nada a mandar. Serve de
+    // freio no sync — um ciclo sem diferenca real nao gera push.
+    saida = NULL;
+    n = ajustes_mesclar_blob(
+      "{\"features\":{\"layout_settings\":{"
+      "\"hero_section_enabled\":{\"type\":\"boolean\",\"value\":true}}}}", &saida);
+    confere("sem diferenca -> nada a subir", n, 0);
+    confere("e sem saida alocada", saida == NULL, 1);
+
+    // Blob vazio/ausente: sem base nao ha costura (a trava 1 do empurrarAjustes).
+    confere("sem base -> 0", ajustes_mesclar_blob(NULL, &saida), 0);
+    confere("base vazia -> 0", ajustes_mesclar_blob("", &saida), 0);
+
+    // AJUSTE DE APARELHO NAO SOBE, nem que a conta tenha a chave: a TV da sala
+    // e a do quarto nao tem a mesma RAM nem a mesma tela.
+    saida = NULL;
+    n = ajustes_mesclar_blob(
+      "{\"features\":{\"layout_settings\":{"
+      "\"resolucao_ui\":{\"type\":\"int\",\"value\":0},"
+      "\"texturas_mb\":{\"type\":\"int\",\"value\":0}}}}", &saida);
+    confere("ajuste de aparelho fica local", n, 0);
+    free(saida); }
 
   printf("\n%s\n", falhas ? "TEM FALHA" : "TODOS OS AJUSTES CHEGARAM CERTOS");
   return falhas ? 1 : 0;

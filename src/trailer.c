@@ -9,6 +9,7 @@
 #endif
 
 static int    aberto, cheia, comSom;
+static int    falhouUltima;
 static GfxRect rect;
 static char   fonteAtual[1024];
 
@@ -28,25 +29,32 @@ EM_JS(int, trailer_js_abrir, (const char *fonte, float x, float y, float w, floa
   // Sem regex com "//" aqui: o pre-processador C le como comentario.
   var ehVideo = (id.indexOf('http://') === 0 || id.indexOf('https://') === 0);
   if (!ehVideo && !/^[A-Za-z0-9_-]{6,20}$/.test(id)) return 0;
-  var T = Module.nvTrailer || (Module.nvTrailer = { f: null, id: '', estado: -1, som: 0, ehVideo: 0 });
+  var T = Module.nvTrailer || (Module.nvTrailer = {
+    f: null, id: '', estado: -1, som: 0, ehVideo: 0, geracao: 0
+  });
   var cv = document.getElementById('canvas');
   if (!cv) return 0;
   var r = cv.getBoundingClientRect();
   var sx = r.width / 1920, sy = r.height / 1080;
   if (!T.f || T.id !== id) {
+    var geracao = (T.geracao || 0) + 1;
     if (T.f && T.f.parentNode) { try { if (T.ehVideo) { T.f.pause(); T.f.removeAttribute('src'); T.f.load(); } } catch (e) {} T.f.parentNode.removeChild(T.f); }
     var f;
     if (ehVideo) {
       f = document.createElement('video');
       f.muted = !som; f.autoplay = true; f.playsInline = true; f.preload = 'auto';
-      f.addEventListener('playing', function () { T.estado = 1; });
-      f.addEventListener('waiting', function () { if (T.estado === 1) T.estado = 3; });
-      f.addEventListener('ended', function () { T.estado = 0; });
-      f.addEventListener('error', function () { T.estado = -3; });
+      // O elemento anterior pode emitir `error`/`ended` depois de ser
+      // removido. Publicar esse estado no objeto global fazia a sessao nova
+      // fechar ou ficar em buffering assim que A -> B -> A acontecia.
+      f.addEventListener('playing', function () { if (T.f === f && T.geracao === geracao) T.estado = 1; });
+      f.addEventListener('waiting', function () { if (T.f === f && T.geracao === geracao && T.estado === 1) T.estado = 3; });
+      f.addEventListener('ended', function () { if (T.f === f && T.geracao === geracao) T.estado = 0; });
+      f.addEventListener('error', function () { if (T.f === f && T.geracao === geracao) T.estado = -3; });
+      T.f = f; T.id = id; T.estado = -1; T.som = som; T.ehVideo = 1; T.geracao = geracao;
       f.src = id;
       f.style.cssText = 'position:absolute;border:0;z-index:0;background:#000;pointer-events:none;object-fit:cover;';
       (document.body || document.documentElement).appendChild(f);
-      var pr = f.play(); if (pr && pr.catch) pr.catch(function () { T.estado = -3; });
+      var pr = f.play(); if (pr && pr.catch) pr.catch(function () { if (T.f === f && T.geracao === geracao) T.estado = -3; });
     } else {
       f = document.createElement('iframe');
       var org = (location.origin && location.origin !== 'null' && location.origin.indexOf('http') === 0) ? '&origin=' + encodeURIComponent(location.origin) : '';
@@ -56,11 +64,15 @@ EM_JS(int, trailer_js_abrir, (const char *fonte, float x, float y, float w, floa
       f.setAttribute('frameborder', '0');
       f.tabIndex = -1;
       f.style.cssText = 'position:absolute;border:0;z-index:0;background:#000;pointer-events:none;';
+      f.nvGeracao = geracao;
+      T.f = f; T.id = id; T.estado = -1; T.som = som; T.ehVideo = 0; T.geracao = geracao;
       (document.body || document.documentElement).appendChild(f);
       if (!T.ouvinte) {
         T.ouvinte = 1;
         window.addEventListener('message', function (ev) {
-          if (T.ehVideo || typeof ev.data !== 'string' || ev.origin.indexOf('youtube.com') < 0) return;
+          if (T.ehVideo || !T.f || !T.f.contentWindow || ev.source !== T.f.contentWindow ||
+              T.f.nvGeracao !== T.geracao ||
+              typeof ev.data !== 'string' || ev.origin.indexOf('youtube.com') < 0) return;
           var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
           if (!m) return;
           if (m.event === 'onReady' && T.f) {
@@ -72,10 +84,10 @@ EM_JS(int, trailer_js_abrir, (const char *fonte, float x, float y, float w, floa
       }
       // A IFrame API so fala depois de "listening"; mandamos ao carregar.
       f.addEventListener('load', function () {
+        if (T.f !== f || T.geracao !== geracao) return;
         try { f.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1 }), '*'); } catch (e) {}
       });
     }
-    T.f = f; T.id = id; T.estado = -1; T.som = som; T.ehVideo = ehVideo ? 1 : 0;
   }
   // `zoom` > 1 amplia o elemento em volta do centro do retangulo: o furo do
   // canvas so deixa ver o retangulo, entao o que sobra e cortado — e o que
@@ -103,7 +115,7 @@ EM_JS(void, trailer_js_fechar, (), {
   var T = Module.nvTrailer;
   if (!T) return;
   if (T.f) { try { if (T.ehVideo) { T.f.pause(); T.f.removeAttribute('src'); T.f.load(); } } catch (e) {} if (T.f.parentNode) T.f.parentNode.removeChild(T.f); }
-  T.f = null; T.id = ''; T.estado = -1;
+  T.f = null; T.id = ''; T.estado = -1; T.geracao = (T.geracao || 0) + 1;
 });
 EM_JS(int, trailer_js_estado, (), {
   var T = Module.nvTrailer;
@@ -206,6 +218,7 @@ void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
   int nova;
   if (!trailer_suportado() || !fonte || !fonte[0]) return;
   nova = strcmp(fonteAtual, fonte) != 0;
+  if (nova) falhouUltima = 0;
 #ifdef __EMSCRIPTEN__
   if (!trailer_js_abrir(fonte, r.x, r.y, r.w, r.h, som, ajustes_trailer_zoom())) return;
 #else
@@ -285,12 +298,20 @@ void trailer_atualizar(Uint32 agora) {
   (void)agora;
 #ifdef __EMSCRIPTEN__
   // Acabou (0 = ENDED) ou falhou (-3, so o <video>): fecha e a arte volta.
-  if (aberto && (trailer_js_estado() == 0 || trailer_js_estado() == -3)) trailer_fechar();
+  if (aberto && trailer_js_estado() == -3) {
+    falhouUltima = 1;
+    trailer_fechar();
+  } else if (aberto && trailer_js_estado() == 0) trailer_fechar();
 #else
   if (!aberto) return;
   video_bombear();
   nativoAplicar();
   // Acabou ou a fonte falhou: fecha e a pagina volta a arte.
-  if (video_terminou() || video_falhou()) trailer_fechar();
+  if (video_terminou() || video_falhou()) {
+    falhouUltima = video_falhou() ? 1 : 0;
+    trailer_fechar();
+  }
 #endif
 }
+
+int trailer_falhou(void) { return falhouUltima; }

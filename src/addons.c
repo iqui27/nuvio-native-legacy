@@ -7,6 +7,9 @@
 #include "js.h"
 #include "marco.h"
 #include "fontecache.h"
+// So para a cache UNICA de manifesto (desc_manifesto_cache_obter/guardar): ver
+// a nota grande em sondar(), mais abaixo.
+#include "descoberta.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -146,6 +149,15 @@ int addons_carregar(const char *dirArte) {
         }
         addon[nAddon].fonte = atoi(tab2 + 1);
       } }
+    // LIGADO. O arquivo nao tem coluna de ligado/desligado — quem o escreve
+    // esta dizendo "use estes". Faltava esta linha, e a entrada nascia com
+    // ativo=0 (o vetor e estatico, nasce zerado): addons_consultar exige
+    // `ativo && fonte`, entao NENHUM addon do arquivo era consultado por
+    // fonte, por legenda (laco de buscarLegendas) nem por catalogo
+    // (addons_tem_catalogo) — apareciam na lista e nao serviam para nada. So
+    // nao deu relato porque a lista da conta chega logo depois e substitui a
+    // do arquivo em quase todo aparelho; quem nao tem conta ficava sem nada.
+    addon[nAddon].ativo = 1;
     snprintf(addon[nAddon].nome, sizeof addon[nAddon].nome, "%s", linha);
     baseNormalizada(tab + 1, addon[nAddon].base, sizeof addon[nAddon].base);
     nAddon++;
@@ -718,12 +730,18 @@ static void capacidadesDoManifesto(int i, const char *corpo) {
   // O campo aceita duas formas no protocolo Stremio: lista de strings
   // ("catalog") e lista de objetos ({"name":"stream",...}). Procurar o NOME
   // solto cobre as duas sem escrever dois analisadores.
+  //
+  // SEM CAIXA (#83): alguns manifestos usam "Stream"/"Catalog". strstr
+  // case-sensitive marcava stream=0 e o addon sumia da folha de fontes.
   { const char *fim = js_fim(r);
     if (!fim) fim = corpo + strlen(corpo);
     { size_t n = (size_t)(fim - r);
       char *trecho = malloc(n + 1);
+      size_t k;
       if (!trecho) return;
       memcpy(trecho, r, n); trecho[n] = 0;
+      for (k = 0; k < n; k++)
+        trecho[k] = (char)tolower((unsigned char)trecho[k]);
       cat = strstr(trecho, "catalog")   != NULL;
       str = strstr(trecho, "stream")    != NULL;
       leg = strstr(trecho, "subtitles") != NULL;
@@ -737,19 +755,43 @@ static void capacidadesDoManifesto(int i, const char *corpo) {
   fflush(stdout);
 }
 
+// UNIFICACAO COM O CACHE DE MANIFESTO DA DESCOBERTA (descoberta.c: maniCache).
+//
+// Antes esta sonda baixava manifest.json por conta propria, sem saber que a
+// descoberta (desc_iniciar/desc_repetir) muitas vezes ja tinha acabado de
+// baixar o MESMO manifesto na mesma versao de lista — dois GET identicos, as
+// vezes na mesma rodada de arranque. `desc_manifesto_cache_obter` primeiro
+// evita o download quando a descoberta ja fez o trabalho; `_guardar` no fim
+// deixa o corpo disponivel para a descoberta reaproveitar, se ela pedir depois
+// (mesma url + mesma addons_versao()).
+//
+// FIO: continua sendo o fio proprio da sonda (fioSonda). A cache em si e
+// protegida por uma trava dentro de descoberta.c (maniTrava) — as duas
+// funcoes publicas tomam e soltam essa trava sozinhas, entao chamar daqui, de
+// um fio diferente do da descoberta, e seguro por construcao. Nenhuma rede
+// nasce dentro da trava: so memcpy de um buffer pequeno.
 static void *sondar(void *u) {
   int i;
+  unsigned versao = addons_versao();
   (void)u;
   for (i = 0; i < nAddon; i++) {
     char url[700], *corpo;
     if (addon[i].sondado) continue;
     snprintf(url, sizeof url, "%s/manifest.json", addon[i].base);
-    corpo = rede_baixar(url, 12);
-    if (!corpo) {
-      // Sem resposta NAO vira "nao fornece nada": ficaria um addon bom apagado
-      // da lista por uma falha de rede. Fica como estava, por sondar.
-      printf("[addons] manifesto sem resposta: %s\n", addon[i].nome);
-      continue;
+    corpo = desc_manifesto_cache_obter(url, versao);
+    if (corpo) {
+      printf("[addons] %s: manifesto do cache da descoberta (sem rede)\n", addon[i].nome);
+    } else {
+      corpo = rede_baixar(url, 12);
+      if (!corpo) {
+        // Sem resposta NAO vira "nao fornece nada": ficaria um addon bom apagado
+        // da lista por uma falha de rede. Fica como estava, por sondar.
+        printf("[addons] manifesto sem resposta: %s\n", addon[i].nome);
+        continue;
+      }
+      // Deixa a copia para a descoberta, se ela pedir depois. Nao toma posse
+      // de `corpo`: a sonda continua dona dele e libera embaixo, como sempre.
+      desc_manifesto_cache_guardar(url, versao, corpo);
     }
     capacidadesDoManifesto(i, corpo);
     free(corpo);
@@ -959,6 +1001,42 @@ int addons_consultar(const char *id, const char *tipo, const char *base, int fio
       for (i = 0; i < nAddon; i++)
         if (addon[i].ativo && addon[i].fonte) c.baldes[c.nBaldes++].idx = i;
   }
+
+  // QUEM FICOU DE FORA, E POR QUE (issue #83).
+  //
+  // Um addon nao consultado nao imprime NADA: nem "N fontes", nem "sem
+  // resposta". No log do usuario ele some, e "desligado na conta" fica
+  // indistinguivel de "consultado e nao respondeu" — que e exatamente a
+  // duvida do #83 ("either the addons aren't being searched or frostview
+  // might be overriding the two others"). MEDIDO nos registros 1.3.12 do D1:
+  // no id 1383 o manifesto do PenguPlay diz stream=1 e ele nao aparece em
+  // NENHUMA das sete consultas da sessao; nao ha como dizer, pelo log, se foi
+  // `ativo` ou `fonte` que o barrou.
+  //
+  // UMA VEZ POR VERSAO DE LISTA, e nao por consulta: a mesma resposta em toda
+  // abertura de titulo seria ruido, e a lista so muda quando muda.
+  //
+  // SO NA BUSCA AMPLA. Com origem conhecida (canal do guia) a consulta vai de
+  // proposito a um addon so, e contar "1 de 16" ali seria alarme falso.
+  //
+  // Os dois estaticos ficam sem trava de proposito: o prefetch e a busca real
+  // podem entrar aqui ao mesmo tempo, e o pior que acontece e a folha sair
+  // duas vezes. Uma trava para nao repetir uma linha de log custaria mais do
+  // que vale.
+  { static unsigned ultimaFolha;
+    static int folhaFeita;
+    if (!(base && *base) && (!folhaFeita || ultimaFolha != versaoLista)) {
+      ultimaFolha = versaoLista; folhaFeita = 1;
+      for (i = 0; i < nAddon; i++) {
+        if (addon[i].ativo && addon[i].fonte) continue;
+        printf("[addons] fora da busca de fontes: %s (%s)\n", addon[i].nome,
+               !addon[i].ativo ? "desligado" :
+               addon[i].sondado ? "o manifesto nao declara stream"
+                                : "ainda sem manifesto");
+      }
+      printf("[addons] %d de %d consultados por fonte\n", c.nBaldes, nAddon);
+      fflush(stdout);
+    } }
 
   if (c.baldes && c.nBaldes > 0) {
     pthread_t f[ADD_FIOS];

@@ -70,6 +70,12 @@ int  video_recorte_fonte(void);
 // do load e pode engolir um recorte pedido cedo.
 void video_recorte_reaplicar(void);
 
+// URL da reproducao corrente ("" quando nao ha). Existe para a folha de
+// faixas mandar o mkvass.c ler a legenda ASS de dentro do MESMO arquivo que
+// esta tocando — e a unica coisa que identifica o arquivo. So no webOS: no
+// Tizen (video_tizen.c) o AVPlay desenha a legenda embutida e ninguem precisa
+// da URL.
+const char *video_url_atual(void);
 double video_pos(void);      // segundos decorridos
 double video_duracao(void);  // 0 enquanto desconhecida
 
@@ -127,6 +133,10 @@ typedef struct {
   char rotulo[48];   // "Ingles · Atmos 5.1" ou "Legenda 3"
   char idioma[8];    // "en"; vazio quando o arquivo nao etiqueta
   int  numero;       // indice que o selectTrack espera
+  // CodecID do Matroska ("S_TEXT/ASS", "S_TEXT/UTF8", "S_HDMV/PGS"), lido do
+  // cabecalho do MKV; vazio fora de MKV. A folha de faixas marca a legenda
+  // ASS com isto (#92): e a faixa que o pipeline da TV desenha mal.
+  char codec[24];
 } VideoFaixa;
 
 int  video_n_audio(void);

@@ -145,6 +145,65 @@ const char *artehero_url(const CatItem *item) {
   return NULL;
 }
 
+const char *artehero_url_fonte(const CatItem *item, int fonte) {
+  // O hero pede a arte atual e a anterior no mesmo quadro durante a mistura.
+  // Um buffer único faria IMDb/Metahub trocar as duas para a última URL
+  // montada. O anel cobre também o prefetch do próximo destaque.
+  static char buf[8][512];
+  static int vez;
+  char *saida = buf[vez++ % 8];
+  const char *b = NULL;
+  if (!item) return NULL;
+  if (fonte <= 0) return artehero_url(item);
+  switch (fonte) {
+    case 1: b = item->backdropCatalogo[0] ? item->backdropCatalogo : NULL; break;
+    case 2:
+      if (!strncmp(item->imdb, "tt", 2)) {
+        char id[32];
+        idLimpo(item->imdb, id, sizeof id);
+        snprintf(saida, sizeof buf[0],
+                 "https://images.metahub.space/background/medium/%s/img", id);
+        b = saida;
+      }
+      break;
+    case 3:
+      b = item->backdropTmdb[0] ? item->backdropTmdb :
+          strstr(item->backdrop, "image.tmdb.org/t/p/") ? item->backdrop : NULL;
+      break;
+    case 4:
+      b = item->backdropTrakt[0] ? item->backdropTrakt :
+          strstr(item->backdrop, "media.trakt.tv/") ? item->backdrop : NULL;
+      break;
+    default: return artehero_url(item);
+  }
+  if (!b || !b[0]) return NULL;
+  // A fonte selecionada segue a mesma subida para o original que o caminho
+  // automático já fazia para TMDB/Trakt na qualidade alta.
+  if (qualidadeImg == 2) {
+    const char *p = strstr(b, "/t/p/w1280/");
+    if (!p) p = strstr(b, "/t/p/w780/");
+    if (p) {
+      size_t pre = (size_t)(p - b);
+      const char *resto = strchr(p + 5, '/');
+      if (pre < sizeof buf[0] && resto && resto[1]) {
+        snprintf(saida, sizeof buf[0], "%.*s/t/p/original/%s",
+                 (int)pre, b, resto + 1);
+        return saida;
+      }
+    }
+    { const char *p2 = strstr(b, "/medium/");
+      if (p2 && strstr(b, "media.trakt.tv/")) {
+        size_t pre = (size_t)(p2 - b);
+        if (pre < sizeof buf[0]) {
+          snprintf(saida, sizeof buf[0], "%.*s/full/%s",
+                   (int)pre, b, p2 + strlen("/medium/"));
+          return saida;
+        }
+      } }
+  }
+  return b;
+}
+
 // O LOGO DO TITULO. Mesmo problema do fundo, numa escada diferente.
 //
 // O Cinemeta devolve o logo do TMDB em `/t/p/original/`, e o desenho maior que
@@ -217,4 +276,86 @@ const char *artehero_url_logo_larg(const char *logo, float larg) {
     if (pre >= sizeof anel[0]) return logo;
     snprintf(buf, sizeof anel[0], "%.*s/t/p/%s%s", (int)pre, logo, tam, nome); }
   return buf;
+}
+
+typedef struct {
+  char imdb[sizeof(((CatItem *)0)->imdb)];
+  char tipo[sizeof(((CatItem *)0)->tipo)];
+  char url[512];
+  int ativo;
+} LogoSessao;
+
+static LogoSessao logoSessao;
+
+static int logo_sessao_mesma(const CatItem *item) {
+  return item && item->imdb[0] && logoSessao.ativo &&
+         !strcmp(logoSessao.imdb, item->imdb) &&
+         !strcmp(logoSessao.tipo, item->tipo);
+}
+
+static void logo_sessao_guardar(const char *url) {
+  if (url && url[0]) snprintf(logoSessao.url, sizeof logoSessao.url, "%s", url);
+}
+
+void artehero_logo_sessao_iniciar(const CatItem *item) {
+  const char *url;
+  if (!item || !item->imdb[0]) {
+    memset(&logoSessao, 0, sizeof logoSessao);
+    return;
+  }
+  if (logo_sessao_mesma(item)) {
+    // Só uma falha definitiva libera a seleção. Enquanto está pendente, a
+    // tela continua apontando para a arte que já estava escolhida.
+    if (logoSessao.url[0] && falhou(logoSessao.url)) logoSessao.url[0] = 0;
+  } else {
+    memset(&logoSessao, 0, sizeof logoSessao);
+    logoSessao.ativo = 1;
+    snprintf(logoSessao.imdb, sizeof logoSessao.imdb, "%s", item->imdb);
+    snprintf(logoSessao.tipo, sizeof logoSessao.tipo, "%s", item->tipo);
+  }
+  if (!logoSessao.url[0] && item->logo[0]) {
+    url = artehero_url_logo(item->logo);
+    if (url && !falhou(url)) logo_sessao_guardar(url);
+  }
+}
+
+const char *artehero_logo_sessao(const CatItem *item) {
+  const char *url;
+  if (!item || !item->logo[0])
+    return logo_sessao_mesma(item) && logoSessao.url[0] &&
+                   !falhou(logoSessao.url) ? logoSessao.url : NULL;
+  if (logo_sessao_mesma(item)) {
+    if (logoSessao.url[0] && !falhou(logoSessao.url)) return logoSessao.url;
+    logoSessao.url[0] = 0;
+    url = artehero_url_logo(item->logo);
+    if (url && !falhou(url)) logo_sessao_guardar(url);
+    return url;
+  }
+  // A Home sem uma sessão aberta apenas normaliza o item corrente; não o
+  // transforma em snapshot, para um card vizinho nunca roubar a identidade.
+  return artehero_url_logo(item->logo);
+}
+
+const char *artehero_logo_sessao_observar(const CatItem *item) {
+  if (!item || !item->imdb[0])
+    return item && item->logo[0] ? artehero_url_logo(item->logo) : NULL;
+  if (!logo_sessao_mesma(item)) {
+    memset(&logoSessao, 0, sizeof logoSessao);
+    logoSessao.ativo = 1;
+    snprintf(logoSessao.imdb, sizeof logoSessao.imdb, "%s", item->imdb);
+    snprintf(logoSessao.tipo, sizeof logoSessao.tipo, "%s", item->tipo);
+  }
+  if (logoSessao.url[0] && !falhou(logoSessao.url)) return logoSessao.url;
+  logoSessao.url[0] = 0;
+  if (item->logo[0]) {
+    const char *url = artehero_url_logo(item->logo);
+    if (url && !falhou(url)) logo_sessao_guardar(url);
+    return url;
+  }
+  return NULL;
+}
+
+const char *artehero_logo_sessao_larg(const CatItem *item, float larg) {
+  if (logo_sessao_mesma(item)) return artehero_logo_sessao(item);
+  return item && item->logo[0] ? artehero_url_logo_larg(item->logo, larg) : NULL;
 }

@@ -17,11 +17,12 @@
 
 // Os destinos do app, na ordem em que aparecem na barra. MENU_N fecha o enum
 // para quem quiser dimensionar vetor por destino sem repetir o numero 4.
-// ORDEM DA REFERENCIA: Inicio primeiro, depois Busca. Estava Busca antes de
-// Inicio, que poe a acao secundaria acima do destino padrao — e no D-pad
-// significa que voltar para a home custa um passo a mais que ir buscar.
+// ORDEM DA REFERENCIA: Inicio primeiro, depois Explorar e os destinos de
+// catalogo. A descoberta fica perto da Home porque e uma porta de entrada,
+// enquanto Biblioteca e Perfil continuam mais abaixo, como no shell legado.
 typedef enum {
   MENU_INICIO,
+  MENU_EXPLORAR,
   MENU_GUIA,
   MENU_BUSCAR,
   MENU_BIBLIOTECA,

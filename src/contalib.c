@@ -231,6 +231,9 @@ static void montarItem(CatItem *d, const ContaLibItem *s) {
   d->naLista = 1;
   if (s->poster[0]) snprintf(d->poster, sizeof d->poster, "%s", s->poster);
   if (s->backdrop[0]) snprintf(d->backdrop, sizeof d->backdrop, "%s", s->backdrop);
+  snprintf(d->backdropCatalogo, sizeof d->backdropCatalogo, "%s", d->backdrop);
+  if (strstr(d->backdrop, "image.tmdb.org/t/p/"))
+    snprintf(d->backdropTmdb, sizeof d->backdropTmdb, "%s", d->backdrop);
   // Arte de reserva pelo id do IMDb, do mesmo jeito que trakt_lista faz — e
   // pelo mesmo motivo, com o mesmo tamanho: "medium" e nao "small", porque o
   // metahub serve poster/small como WEBP e o libSDL2_image DESTA TV nao carrega

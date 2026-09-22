@@ -8,6 +8,13 @@ void episodios_atualizar(float dt);
 void episodios_desenhar(void);
 int episodios_escolheu(int *temporada, int *episodio);
 
+// PARA TESTE: a linha em foco e a rolagem ja aplicada. O issue #102 — a folha
+// abrindo no primeiro episodio da temporada e voltando para ele sozinha — nao
+// tinha como ser provado por assercao sem estes dois: o unico observavel era a
+// captura de tela, que nao falha por conta propria.
+int   episodios_foco_linha(void);
+float episodios_rolagem(void);
+
 // O MENU DE VISTO, SOZINHO, sobre a tela de quem chamar.
 //
 // Ele nasceu dentro da folha de episodios e so podia ser usado la — e a folha

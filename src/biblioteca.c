@@ -9,9 +9,9 @@
 //
 //   .library-page-title    "Biblioteca" 56/600, letter-spacing 1, em (96,48)
 //   .library-page-source   selo "NUVIO" 28/500 rgb(128,128,128) ls 4, a DIREITA
-//   .library-view-mode-row y=136: pilulas 150x56 raio 999, 21/400
-//   .library-picker-row    y=212: seletores 110 de altura, raio 36, cada um com
-//                          rotulo 19/500 rgb(128) e valor 30/500 branco embaixo
+//   .library-view-mode-row y=136: abas, a ativa em destaque e as outras so texto
+//   .library-picker-row    y=212: pilulas compactas em linha, 56 de altura, com
+//                          rotulo e valor na mesma linha
 //   .library-grid          6 colunas de 268 (auto-fill com minimo 252 sobre os
 //                          1728 uteis, gutter 24), poster 2:3 = 268x402 raio 24
 //                          com borda de 4px POR DENTRO, titulo 32/500 a 16 do
@@ -65,6 +65,7 @@
 #include "contalib.h"
 #include "extras.h"
 #include "detail.h"
+#include "badges.h"
 #include "listas.h"
 #include "teclado.h"
 #include "trakt.h"
@@ -97,38 +98,69 @@
 // de tesoura resolveria, mas gfx_recorte assume alvo 1:1 com a tela e o Mac em
 // retina entrega o dobro; o esmaecimento nao depende do drawable.
 #define BIB_FADE       90.0f
-#define BIB_TEXTO_ESCURO 20      // o mesmo de menu.c: texto sobre pilula clara
 
-// TRES SELETORES onde havia dois. As medidas do web (840 de largura, passo 888)
-// eram para dois; com "Exibição" no fim dos tres, 1728 uteis dividem em
-// (1728 - 2*24)/3 = 560. O resto da folha — altura, raio, recuo — nao muda.
-#define BIB_PICK_W     560.0f
-#define BIB_PICK_PASSO 584.0f
+// SELETORES COMPACTOS (21/09/2026, foto do dono da aba Salvos em lista:
+// "aumentar o tamanho dos cards, diminuir a largura do botao, usar o espaco
+// para enriquecer com informacoes").
+//
+// Eram TRES CAIXAS de 560x110 ocupando a largura toda, cada uma com rotulo em
+// cima, valor embaixo e "OK: alterar" repetido tres vezes. Um seletor e um
+// botao de uma linha: "Tipo · Todos" numa pilula de 56 de altura cuja largura
+// SAI DO TEXTO (mais 2x24 de recuo), encostadas a esquerda uma apos a outra. A
+// dica de OK deixou de ser repetida: ela vai UMA vez para a linha de resumo, a
+// direita, so enquanto o foco esta nesta faixa. A faixa cai de 110 para 56 e a
+// grade sobe de 354 para BIB_GRADE_Y_TITULOS.
+#define BIB_PICK_H      56.0f
+#define BIB_PICK_RAIO   28.0f
+#define BIB_PICK_PADX   24.0f
+#define BIB_PICK_GAP    12.0f
+// Folga explicita nos dois lados do ponto: o espaco da fonte sozinho some a
+// tres metros, e "Display·Artwork" vira uma palavra colada. O ponto continua
+// sendo o separador visual, nao uma virgula nem um segundo rotulo.
+#define BIB_PICK_SEP_GAP 7.0f
+// Onde a grade de titulos/listas comeca com os seletores compactos: 212 + 56 +
+// 32 de respiro. NV_BIB_GRADE_Y (354) era o valor com as caixas de 110.
+#define BIB_GRADE_Y_TITULOS 300.0f
 
-// LISTA (a exibicao alternativa): uma linha por titulo, miniatura 2:3 a
-// esquerda e uma COLUNA A DIREITA com a nota.
+// LISTA (a exibicao alternativa): uma linha por titulo, cartaz 2:3 a
+// esquerda, titulo + meta rica no meio e a COLUNA DA NOTA a direita.
 //
-// A ALTURA CAIU DE 108 PARA 96, e a razao e a que o dono deu olhando a tela:
-// "a linha em foco e grande demais para o pouco que diz". Ela carregava duas
-// linhas curtas encostadas na esquerda e METADE DA LARGURA VAZIA. A resposta
-// nao foi so encolher — foi dar trabalho ao lado direito (nota e progresso) e
-// so entao apertar a altura. Miniatura 60x90 dentro de 96 deixa 3 px de folga.
+// A ALTURA SUBIU DE 96 PARA 168 (foto do dono, 21/09/2026). A linha de 96 tinha
+// um cartaz de 60x90 que a 3 m e uma mancha, e o subtitulo dizia so "Filme"
+// para quem veio da watchlist. Com 168 cabe um cartaz de 96x144 (2:3, ainda
+// legivel como cartaz e nao como icone), o titulo em TXT_HEADLINE e uma linha
+// de meta montada de tudo o que o CatItem ja carrega — e, so na linha em foco,
+// a sinopse em uma linha. Separacao de 12 px entre linhas: as linhas viraram
+// superficies com cor propria e precisam de fresta para nao virar uma tabela.
 //
-// MEMORIA: 60 px de largura de desenho continua caindo no MESMO teto de decode
-// que os 64 de antes. capDeLargura e ceil32(larg * escala * 1.25) com piso de
-// 128, entao qualquer largura ate 102 custa o mesmo — MEDIDO em 48 KB por arte
-// contra 363 KB do cartaz. Diminuir o cartaz aqui nao economizaria nada, e por
-// isso a decisao foi tomada por legibilidade, nao por bytes.
-#define BIB_LIN_H        96.0f
-#define BIB_LIN_PASSO   112.0f
-#define BIB_LIN_MINI_W   60.0f
-#define BIB_LIN_MINI_H   90.0f
-#define BIB_LIN_PAD      14.0f
+// MEMORIA: o cartaz pede tex_obter_larg com os 96 REAIS. capDeLargura e
+// ceil32(larg * escala * 1.25) com piso de 128, entao 96 (-> 120, piso 128)
+// custa o MESMO que os 60 de antes: MEDIDO em 48 KB por arte contra 363 KB do
+// cartaz da grade. A linha cresceu sem custar um byte a mais.
+#define BIB_LIN_H       168.0f
+#define BIB_LIN_GAP      12.0f
+#define BIB_LIN_PASSO   (BIB_LIN_H + BIB_LIN_GAP)
+#define BIB_LIN_MINI_W   96.0f
+#define BIB_LIN_MINI_H  144.0f
+#define BIB_LIN_PAD      12.0f
+#define BIB_LIN_TX_GAP   24.0f    // do cartaz ao texto
+// A linha de uma LISTA (modo Listas em exibicao de lista) nao tem cartaz nem
+// meta: continua nos 96 de antes. Crescer junto so por simetria deixaria uma
+// linha de texto so boiando em 168 px.
+#define BIB_LL_H         96.0f
+#define BIB_LL_PASSO    112.0f
 // A COLUNA DA NOTA, ancorada na direita da linha. Largura fixa: e ela que faz o
 // olho descer a coluna de numeros em vez de cacar a nota em cada linha. O grupo
 // e o mesmo selo do detalhe (NV_DETW2_IMDB_*), reaproveitado medida por medida.
-#define BIB_COL_NOTA_W   48.0f    // largura reservada ao numero, alinhado a direita
-#define BIB_COL_DIR      30.0f    // folga entre o numero e a borda da linha
+#define BIB_COL_DIR      30.0f    // folga entre a coluna e a borda da linha
+// O CHEVRON "›" no canto direito da linha EM FOCO, no lugar do travessao que
+// ficava em toda linha sem nota. O travessao segurava a coluna, mas o dono o
+// leu como "um – perdido": um sinal de ausencia repetido em metade das linhas
+// vira ruido. A coluna continua alinhada porque o espaco do chevron e
+// RESERVADO em toda linha; ele so e desenhado na focada, onde responde "OK
+// abre". Sem nota a coluna fica vazia — com 168 px de linha e a meta cheia,
+// vazio ali le como "sem nota", nao mais como buraco.
+#define BIB_CHEV_W       22.0f
 // Barra de progresso da retomada. Aparece SO quando ha progresso — ver a nota
 // no desenho sobre por que ela nao reserva coluna e a nota reserva.
 #define BIB_COL_PROG_W  132.0f
@@ -300,19 +332,23 @@ static int colunas(void) {
 static float passoColuna(void) {
   return estado() == EST_LISTAS ? BIB_LC_PASSO : (NV_BIB_CARD_W + NV_BIB_CARD_GAP);
 }
+// A ALTURA DA LINHA E A DA ROLAGEM: alturaLinha/passoLinha sao a UNICA fonte
+// para o laco de desenho e para o calculo de scrollY em biblioteca_atualizar.
+// Uma linha de titulo (168) e uma linha de lista (96) nao tem a mesma altura,
+// e e por isso que a exibicao de lista pergunta o estado.
 static float alturaLinha(void) {
-  if (exibicao == VIS_LISTA) return BIB_LIN_H;
+  if (exibicao == VIS_LISTA) return estado() == EST_LISTAS ? BIB_LL_H : BIB_LIN_H;
   if (estado() == EST_LISTAS) return BIB_LC_H;
   // poster + gap + titulo (32/500, lh 1.18 -> 37.8)
   return NV_BIB_POSTER_H + NV_BIB_TIT_GAP + 37.8f;
 }
 static float passoLinha(void) {
-  if (exibicao == VIS_LISTA) return BIB_LIN_PASSO;
+  if (exibicao == VIS_LISTA) return estado() == EST_LISTAS ? BIB_LL_PASSO : BIB_LIN_PASSO;
   if (estado() == EST_LISTAS) return BIB_LC_LINHA;
   return NV_BIB_LINHA_PASSO;
 }
 static float gradeY(void) {
-  return estado() == EST_ITENS ? BIB_GRADE_Y_ABERTA : NV_BIB_GRADE_Y;
+  return estado() == EST_ITENS ? BIB_GRADE_Y_ABERTA : BIB_GRADE_Y_TITULOS;
 }
 static int nLinhas(void) { return (nCelulas + colunas() - 1) / colunas(); }
 
@@ -746,14 +782,17 @@ void biblioteca_atualizar(float dt, Uint32 agora) {
 // (~5,6:1) e e a grafia que o documento manda usar em codigo novo — este
 // arquivo tinha 179,179,179 e 168 cinza puro, que e deriva.
 //
-// Sobre a superficie CLARA do foco a mesma intencao precisa de outro valor:
-// 96,98,106 mantem a familia fria e da ~5,9:1 contra branco. Cinza claro ali
-// seria o light-on-light de sempre.
+// Sobre a superficie DE REALCE a tinta secundaria vem de ajustes_tinta_foco2():
+// 238 sobre realce colorido (a 3 m, 225 ja lia como cinza sobre rosa — dono,
+// 21/09) e 60 sobre realce branco. A principal e ajustes_tinta_foco(), 255 ou
+// 20 — e so ela chega aqui como 255 ou 20: as superficies de repouso escrevem
+// em 235/200, entao o valor da principal diz em que superficie o texto esta.
 static void tintaSecundaria(int principal, int *r, int *g, int *b) {
-  int claro = principal > 128;
-  *r = claro ? 150 : 96;
-  *g = claro ? 153 : 98;
-  *b = claro ? 162 : 106;
+  if (principal == ajustes_tinta_foco()) {
+    *r = *g = *b = ajustes_tinta_foco2();
+    return;
+  }
+  *r = 150; *g = 153; *b = 162;
 }
 
 // NAO HA ANEL AQUI, e essa e a correcao de 16/09 (segunda passada). O dono
@@ -769,41 +808,79 @@ static void tintaSecundaria(int principal, int *r, int *g, int *b) {
 //   escolhido sem foco -> a mesma cor a 60%, misturada com o fundo da pagina
 //   nao escolhido      -> #222, como sempre foi
 //
-// A TINTA DO TEXTO E CALCULADA, e nao cravada em "escuro". A cor de realce e
-// escolha da pessoa (Ajustes): com um realce claro os dois estados escolhidos
-// pedem texto escuro, mas com um realce escuro o 60% dele fica escuro demais e
-// texto preto ali seria o mesmo defeito de contraste ao contrario. A luminancia
-// decide — e ela e a de verdade (Rec.709), nao a media dos canais, porque o
-// verde pesa sete vezes o azul para o olho.
-static int tintaSobre(float r, float g, float b) {
-  float lum = 0.2126f * r + 0.7152f * g + 0.0722f * b;
-  return lum > 0.42f ? BIB_TEXTO_ESCURO : 235;
-}
+// A TINTA DO TEXTO SOBRE O REALCE E ajustes_tinta_foco(), e nao uma conta
+// local. Este arquivo tinha a sua propria luminancia com degrau em 0,42, que
+// punha texto PRETO sobre rosa e sobre amarelo; a regra do dono (21/09/2026)
+// e uma so para o app inteiro — branco sobre qualquer realce, escuro so sobre
+// realce branco — e mora em ajustes.c para nao haver duas versoes dela.
+//
+// Sobre o realce a 60% (escolhida sem foco) a mesma tinta continua certa: 60%
+// de uma cor e mais escuro que a cor, entao branco ganha contraste; e 60% de
+// branco e cinza 153, onde o escuro que ajustes_tinta_foco devolve para o
+// realce branco ainda le.
 
 // Quanto do realce sobra no estado "escolhido, mas o foco esta noutro lugar".
 // 0.60 medido na captura: abaixo disso ele se aproxima demais do #222 dos nao
 // escolhidos a 3 m; acima, fica perto demais do focado.
 #define BIB_ESCOLHIDA_DIM 0.60f
 
+// O BRILHO ATRAS DO FOCO: a mancha difusa na cor de realce que faz a pilula
+// "acender" em vez de so trocar de cor — a mesma medida do menu lateral e do
+// topo do guia (0,9x a altura de folga por lado, 2,8x a altura no total, alfa
+// 0,35 x mola). GFX_SOMBRA e uma mancha radial, entao numa pilula larga e
+// baixa ela sai mais forte nas pontas do que no meio, e e assim no menu
+// tambem. FILL-RATE: a mancha de uma linha de 1728x168 mede ~2030x470, quase
+// meia tela — e so UMA linha esta em foco por vez, o que cabe na regra de
+// gfx.h de no maximo uma tela cheia a mais por quadro.
+//
+// `folga` e quanto a mancha ultrapassa a pilula, em fracao da altura dela: 0,9
+// para as pilulas de 56 (a medida do menu) e 0,3 para as linhas de 168 — com
+// 0,9 a mancha de uma linha subia 150 px pela vizinha de cima e descia outros
+// 150 pela de baixo, e as duas saiam com uma faixa clara atravessada no meio,
+// visto na captura. 0,3 (50 px) para em cima da fresta de 12 e do rebordo.
+static void brilhoFoco(GfxRect r, float folga, float f, float a) {
+  float ar, ag, ab;
+  GfxRect luz;
+  if (f <= 0.01f) return;
+  ajustes_acento(&ar, &ag, &ab);
+  luz.x = r.x - r.h * folga; luz.y = r.y - r.h * folga;
+  luz.w = r.w + r.h * folga * 2.0f; luz.h = r.h * (1.0f + folga * 2.0f);
+  gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, ar, ag, ab, 0.35f * f * a);
+}
+
 static int pilula(GfxRect r, float raio, float f, int escolhida) {
   float ar, ag, ab;
   ajustes_acento(&ar, &ag, &ab);
+  brilhoFoco(r, 0.9f, f, 1.0f);
   if (escolhida) {
     // Uma unica pilula, com a cor interpolando entre o realce a 60% e o realce
     // cheio conforme a mola do foco. Sem duas camadas sobrepostas: a de baixo
     // aparecia pelas bordas do anti-aliasing enquanto a de cima subia.
     float m = anim_clamp(f, 0.0f, 1.0f);
     float k = BIB_ESCOLHIDA_DIM + (1.0f - BIB_ESCOLHIDA_DIM) * m;
-    float cr = ar * k, cg = ag * k, cb = ab * k;
-    gfx_cor(r, raio, cr, cg, cb, 1.0f);
-    return tintaSobre(cr, cg, cb);
+    gfx_cor(r, raio, ar * k, ag * k, ab * k, 1.0f);
+    return ajustes_tinta_foco();
   }
   if (f > 0.01f) gfx_cor(r, raio, ar, ag, ab, f);
   gfx_cor(r, raio, 0.133f, 0.133f, 0.133f, 1.0f - f);
   // A troca claro -> escuro e no MEIO da mola: texto ja rasterizado nao muda de
   // cor, e virar no fim deixaria texto claro sobre pilula clara por meio
   // caminho — que e o defeito "light-on-light" ja visto neste app.
-  return f > 0.5f ? tintaSobre(ar, ag, ab) : 200;
+  return f > 0.5f ? ajustes_tinta_foco() : 200;
+}
+
+// A SUPERFICIE DE UMA LINHA DA LISTA: em repouso 0.10/0.11/0.13 (um azul-cinza
+// um degrau acima do fundo #0D0D0D, e nao o #222 dos botoes — a linha e
+// conteudo, nao controle, e o #222 em 168 px de altura pesava como uma
+// prateleira); em foco a cor de realce cheia com o brilho atras. Devolve a
+// tinta principal do texto, pela mesma regra de pilula().
+static int superficieLinha(GfxRect r, float raio, float f, float a) {
+  float ar, ag, ab;
+  ajustes_acento(&ar, &ag, &ab);
+  brilhoFoco(r, 0.3f, f, a);
+  if (f > 0.01f) gfx_cor(r, raio, ar, ag, ab, f * a);
+  if (f < 0.99f) gfx_cor(r, raio, 0.10f, 0.11f, 0.13f, (1.0f - f) * a);
+  return f > 0.5f ? ajustes_tinta_foco() : 235;
 }
 
 // O WORDMARK DO TRAKT, no lugar da palavra "TRAKT" composta com a fonte da
@@ -851,48 +928,79 @@ static float marcaTrakt(float x, float y, float h, int tinta, float alpha) {
 }
 
 static void desenhaModo(int a, float f) {
-  GfxRect r = { NV_BIB_X + a * NV_BIB_MODO_PASSO, NV_BIB_MODO_Y,
-                NV_BIB_MODO_W, NV_BIB_MODO_H };
+  float centro = NV_BIB_X + a * NV_BIB_MODO_PASSO + NV_BIB_MODO_W * 0.5f;
   int sel = (a == modo);
-  int cor = pilula(r, NV_RAIO_PILL, f, sel);
-  TxtLinha l = txt_linha(TXT_CAPTION2, ROT_MODO[a], cor, cor, cor, 255);
-  txt_desenhar_alpha(l, r.x + (r.w - l.w) * 0.5f, r.y + (r.h - l.h) * 0.5f,
-                     sel || f > 0.5f ? 1.0f : 0.82f);
+  TxtLinha l = txt_linha(TXT_CALLOUT, ROT_MODO[a], 235, 235, 235, 255);
+  if (sel) {
+    float ar, ag, ab, k = 0.60f + 0.40f * anim_clamp(f, 0.0f, 1.0f);
+    GfxRect r = { centro - ((float)l.w + 40.0f) * 0.5f, NV_BIB_MODO_Y,
+                  (float)l.w + 40.0f, NV_BIB_MODO_H };
+    ajustes_acento(&ar, &ag, &ab);
+    brilhoFoco(r, 0.9f, f, 1.0f);
+    gfx_cor(r, 0.5f, ar * k, ag * k, ab * k, 1.0f);
+    l = txt_linha(TXT_CALLOUT, ROT_MODO[a], ajustes_tinta_foco(),
+                  ajustes_tinta_foco(), ajustes_tinta_foco(), 255);
+    txt_desenhar_alpha(l, r.x + (r.w - l.w) * 0.5f,
+                       r.y + (r.h - l.h) * 0.5f, 1.0f);
+  } else {
+    // Aba inativa e texto solto: nenhuma pilula cinza compete com a ativa.
+    txt_desenhar_alpha(l, centro - l.w * 0.5f,
+                       NV_BIB_MODO_Y + (NV_BIB_MODO_H - l.h) * 0.5f, 0.92f);
+  }
 }
 
-// Seletor: rotulo pequeno em cinza e valor grande, com a dica encostada na
-// direita. Em foco os TRES textos escurecem juntos — deixar so o valor escuro
-// sobre a pilula clara e o mesmo erro de contraste de sempre.
-static void desenhaPicker(int p, float f) {
-  GfxRect r = { NV_BIB_X + p * BIB_PICK_PASSO, NV_BIB_PICK_Y,
-                BIB_PICK_W, NV_BIB_PICK_H };
-  float raio = raioPx(NV_BIB_PICK_RAIO, BIB_PICK_W, NV_BIB_PICK_H);
-  const char *rot, *val, *dica = "OK: alterar";
-  int cor = pilula(r, raio, f, 0);
-  int escuro = (cor == BIB_TEXTO_ESCURO);
+static void pickerTexto(int p, const char **rot, const char **val) {
   if (modo == MODO_LISTAS) {
-    rot = p == 0 ? "Fonte" : p == 1 ? "Exibição" : "Listas públicas";
-    val = p == 0 ? ROT_FONTE[fonte] : p == 1 ? ROT_VIS[exibicao] : "Procurar";
-    if (p == 2) dica = "OK: digitar";
+    *rot = p == 0 ? "Fonte" : p == 1 ? "Exibição" : "Listas públicas";
+    *val = p == 0 ? ROT_FONTE[fonte] : p == 1 ? ROT_VIS[exibicao] : "Procurar";
   } else {
-    rot = p == 0 ? "Tipo" : p == 1 ? "Ordenar" : "Exibição";
-    val = p == 0 ? ROT_TIPO[tipo] : p == 1 ? ROT_ORD[ordem] : ROT_VIS[exibicao];
+    *rot = p == 0 ? "Tipo" : p == 1 ? "Ordenar" : "Exibição";
+    *val = p == 0 ? ROT_TIPO[tipo] : p == 1 ? ROT_ORD[ordem] : ROT_VIS[exibicao];
   }
-  { int sr, sg, sb;
-    tintaSecundaria(cor, &sr, &sg, &sb);
-    // TXT_CAPTION2 e nao TXT_MINI: o rotulo do seletor ("Fonte", "Exibição") e
-    // PALAVRA PARA LER, e o DESIGN.md define TXT_MINI (15 px) como tamanho de
-    // SELO, abaixo do piso de leitura desta base. Era deriva silenciosa.
-    TxtLinha tr = txt_linha(TXT_CAPTION2, rot, sr, sg, sb, 255);
-    TxtLinha tv = txt_linha_corta(TXT_CALLOUT, val, cor, cor, cor, 255,
-                                  BIB_PICK_W - NV_BIB_PICK_PADX * 2.0f - 120.0f);
-    TxtLinha td = txt_linha(TXT_CAPTION2, dica, sr, sg, sb, 255);
-    float tx = r.x + NV_BIB_PICK_PADX;
-    float ty = r.y + NV_BIB_PICK_PADY;
-    txt_desenhar_alpha(tr, tx, ty, escuro ? 0.85f : 0.95f);
-    txt_desenhar_alpha(tv, tx, ty + tr.h + 4.0f, 1.0f);
-    txt_desenhar_alpha(td, r.x + r.w - NV_BIB_PICK_PADX - td.w,
-                       r.y + (r.h - td.h) * 0.5f, 0.85f); }
+}
+
+static float pickerLargura(int p) {
+  const char *rot, *val;
+  TxtLinha tr, tv, sep;
+  pickerTexto(p, &rot, &val);
+  tr = txt_linha(TXT_CAPTION2, rot, 0, 0, 0, 255);
+  tv = txt_linha(TXT_CALLOUT, val, 0, 0, 0, 255);
+  sep = txt_linha(TXT_CAPTION2, "·", 0, 0, 0, 255);
+  return (float)tr.w + (float)sep.w + (float)tv.w + BIB_PICK_PADX * 2.0f
+       + BIB_PICK_SEP_GAP * 2.0f;
+}
+
+static float pickerX(int p) {
+  float x = NV_BIB_X;
+  int i;
+  for (i = 0; i < p; i++) x += pickerLargura(i) + BIB_PICK_GAP;
+  return x;
+}
+
+// Seletor: largura real do rotulo + separador + valor + 48 px de respiro.
+// Os dois textos dividem a mesma linha; a dica de OK fica uma unica vez abaixo
+// da faixa, e nao dentro de cada pilula.
+static void desenhaPicker(int p, float f) {
+  const char *rot, *val;
+  float w = pickerLargura(p);
+  GfxRect r = { pickerX(p), NV_BIB_PICK_Y, w, BIB_PICK_H };
+  (void)pilula(r, raioPx(BIB_PICK_RAIO, r.w, r.h), f, 0);
+  { int valor = f > 0.5f ? ajustes_tinta_foco() : 235;
+    int rotulo = f > 0.5f ? ajustes_tinta_foco2() : 150;
+    int sepCor = f > 0.5f ? ajustes_tinta_foco2() : 150;
+    TxtLinha tr, tv, sep;
+    float x, y;
+    pickerTexto(p, &rot, &val);
+    tr = txt_linha(TXT_CAPTION2, rot, rotulo, rotulo, rotulo, 255);
+    sep = txt_linha(TXT_CAPTION2, "·", sepCor, sepCor, sepCor, 255);
+    tv = txt_linha(TXT_CALLOUT, val, valor, valor, valor, 255);
+    x = r.x + BIB_PICK_PADX;
+    y = r.y + (r.h - (float)tv.h) * 0.5f;
+    txt_desenhar_alpha(tr, x, r.y + (r.h - (float)tr.h) * 0.5f, 1.0f);
+    x += tr.w + BIB_PICK_SEP_GAP;
+    txt_desenhar_alpha(sep, x, r.y + (r.h - (float)sep.h) * 0.5f, 1.0f);
+    x += sep.w + BIB_PICK_SEP_GAP;
+    txt_desenhar_alpha(tv, x, y, 1.0f); }
 }
 
 // Barra de acoes de uma lista aberta. Tres pilulas largas: fixar, levar para a
@@ -977,7 +1085,7 @@ static void desenhaVazio(void) {
   { TxtLinha t1 = txt_linha(TXT_TITULO2, l1, 255, 255, 255, 255);
     TxtLinha t2 = txt_linha_corta(TXT_CALLOUT, l2, 150, 153, 162, 255, NV_BIB_W);
     float cx = NV_BIB_X + NV_BIB_W * 0.5f;
-    float y = NV_BIB_VAZIO_Y + 190.0f;
+    float y = gradeY() + 190.0f;
     gfx_icone((GfxRect){cx - 32.0f, y - 100.0f, 64.0f, 64.0f},
                "menu_library", 0.70f, 0.70f, 0.72f, 1.0f);
     txt_desenhar_alpha(t1, cx - t1.w * 0.5f, y, 0.96f);
@@ -1054,91 +1162,133 @@ static int ehPalavraDeTipo(const char *seg) {
   return 0;
 }
 
-static void linhaMeta(const CatItem *ci, char *dst, size_t n) {
-  char ano[8] = "";
-  int nGen = 0;
-  size_t k = 0;
+// Os separadores dos metadados sao o ponto medio UTF-8. Nao usar strtok: ele
+// trata os dois bytes de "·" como delimitadores separados e pode cortar um
+// caractere acentuado no meio.
+static int proximoMeta(const char **cursor, char *dst, size_t n) {
+  const char *p = *cursor, *sep, *fim;
+  size_t m = 0;
+  if (!p || !*p || !n) return 0;
+  sep = p;
+  while (*sep && !((unsigned char)sep[0] == 0xC2 &&
+                   (unsigned char)sep[1] == 0xB7)) sep++;
+  // O cursor avanca a partir do SEPARADOR, nao do fim aparado: aparar o espaco
+  // antes do "·" recuava `fim` um byte, e `fim + 2` caia no B7 — todo segmento
+  // depois do primeiro saia com um byte de continuacao solto na frente, que a
+  // fonte desenha como tofu. Visto na captura ("▯ Drama").
+  fim = sep;
+  while (p < fim && *p == ' ') p++;
+  while (fim > p && fim[-1] == ' ') fim--;
+  while (p < fim && m + 1 < n) dst[m++] = *p++;
+  dst[m] = 0;
+  *cursor = *sep ? sep + 2 : sep;
+  return dst[0] != 0;
+}
+
+static int ehAnoMeta(const char *s) {
+  int i;
+  if (!s || strlen(s) != 4) return 0;
+  for (i = 0; i < 4; i++) if (s[i] < '0' || s[i] > '9') return 0;
+  return s[0] == '1' || s[0] == '2';
+}
+
+static int ehTemporadasMeta(const char *s) {
+  return s && (strstr(s, "season") || strstr(s, "temporada"));
+}
+
+static int numeroMeta(const char *s) {
   const char *p;
+  if (!s) return 0;
+  for (p = s; *p; p++)
+    if (*p >= '0' && *p <= '9') return atoi(p);
+  return 0;
+}
+
+static void acrescentarMeta(char *dst, size_t n, size_t *k, const char *s) {
+  int escreveu;
+  if (!s || !s[0] || !n || *k >= n - 1) return;
+  if (*k) {
+    escreveu = snprintf(dst + *k, n - *k, "   ·   ");
+    *k += (size_t)(escreveu > 0 ? escreveu : 0);
+    if (*k >= n - 1) { *k = n - 1; dst[*k] = 0; return; }
+  }
+  escreveu = snprintf(dst + *k, n - *k, "%s", s);
+  *k += (size_t)(escreveu > 0 ? escreveu : 0);
+  if (*k >= n) *k = n - 1;
+  dst[*k] = 0;
+}
+
+static void linhaMeta(const CatItem *ci, char *dst, size_t n) {
+  char ano[8] = "", complemento[96] = "", item[96], temporadas[64];
+  int nGen = 0, nTemporadas = 0;
+  size_t k = 0;
+  const char *p, *g;
   if (!n) return;
   dst[0] = 0;
   if (!ci) return;
-  for (p = ci->meta; p[0] && p[1] && p[2] && p[3]; p++)
-    if ((p[0] == '1' || p[0] == '2') && p[1] >= '0' && p[1] <= '9' &&
-        p[2] >= '0' && p[2] <= '9' && p[3] >= '0' && p[3] <= '9') {
-      snprintf(ano, sizeof ano, "%.4s", p); break; }
-  if (ano[0]) k += (size_t)snprintf(dst + k, n - k, "%s   ·   ", ano);
-  k += (size_t)snprintf(dst + k, n - k, "%s", i18n(ehSerie(ci) ? "Série" : "Filme"));
-  // O SEPARADOR E PROCURADO COMO SEQUENCIA DE DOIS BYTES, e nao por strtok.
-  //
-  // "·" e U+00B7, que em UTF-8 sao os bytes C2 B7. strtok trata o conjunto de
-  // delimitadores como BYTES SOLTOS: ele cortaria em C2 OU em B7, e B7 e byte de
-  // continuacao de outros caracteres (U+00F7 "÷" e C3 B7). Num genero que
-  // trouxesse um deles a linha partiria no meio de um caractere e sairia com
-  // lixo. Funcionava por sorte com os generos de hoje; e o tipo de defeito que
-  // so aparece com o dado de outra pessoa.
-  { const char *seg = ci->genero;
-    while (*seg && nGen < 2) {
-      const char *fim = seg;
-      char item[64];
-      size_t m = 0;
-      while (*fim && !((unsigned char)fim[0] == 0xC2 && (unsigned char)fim[1] == 0xB7))
-        fim++;
-      while (seg < fim && *seg == ' ') seg++;
-      while (fim > seg && fim[-1] == ' ') fim--;
-      for (; seg < fim && m + 1 < sizeof item; seg++) item[m++] = *seg;
-      item[m] = 0;
-      if (m && !ehPalavraDeTipo(item) && k + m + 10 < n)
-        { k += (size_t)snprintf(dst + k, n - k, "   ·   %s", i18n(item)); nGen++; }
-      seg = fim;
-      while (*seg && !((unsigned char)seg[0] == 0xC2 && (unsigned char)seg[1] == 0xB7)) seg++;
-      if (*seg) seg += 2;
-    } }
+  // Primeiro le o que o catalogo ja trouxe: ano, temporadas e uma duracao real
+  // quando existir. O campo e opcional; nao inventar "1 h" quando so temos
+  // progresso ou restanteMin.
+  for (p = ci->meta; proximoMeta(&p, item, sizeof item); ) {
+    if (ehAnoMeta(item)) snprintf(ano, sizeof ano, "%s", item);
+    else if (ehTemporadasMeta(item) && !nTemporadas) nTemporadas = numeroMeta(item);
+    else if (!ehPalavraDeTipo(item) && !complemento[0])
+      snprintf(complemento, sizeof complemento, "%s", item);
+  }
+  if (!nTemporadas && ci->nTemporadas > 0) nTemporadas = ci->nTemporadas;
+
+  acrescentarMeta(dst, n, &k, i18n(ehSerie(ci) ? "Série" : "Filme"));
+  if (ano[0]) acrescentarMeta(dst, n, &k, ano);
+  if (nTemporadas > 0) {
+    snprintf(temporadas, sizeof temporadas, i18n(nTemporadas == 1
+                                                  ? "%d temporada"
+                                                  : "%d temporadas"),
+             nTemporadas);
+    acrescentarMeta(dst, n, &k, temporadas);
+  } else if (complemento[0]) acrescentarMeta(dst, n, &k, complemento);
+
+  // Generos entram depois da parte tecnica, no maximo dois para a linha
+  // continuar escaneavel. O primeiro segmento do Trakt costuma repetir o tipo.
+  g = ci->genero;
+  while (proximoMeta(&g, item, sizeof item) && nGen < 2) {
+    if (!ehPalavraDeTipo(item)) {
+      acrescentarMeta(dst, n, &k, i18n(item));
+      nGen++;
+    }
+  }
+  // RestanteMin so entra com o rotulo certo. Progresso sem restante vira uma
+  // porcentagem, nunca uma duracao inventada.
+  if (ci->restanteMin > 0 && ci->progresso > 0 && ci->progresso < 100) {
+    snprintf(item, sizeof item, i18n("%d min restantes"), ci->restanteMin);
+    acrescentarMeta(dst, n, &k, item);
+  } else if (ci->progresso > 0 && ci->progresso < 100) {
+    snprintf(item, sizeof item, i18n("%d%% assistido"), ci->progresso);
+    acrescentarMeta(dst, n, &k, item);
+  }
 }
 
-// A NOTA, no mesmo selo que a tela de detalhe usa — as medidas sao as dela
-// (NV_DETW2_IMDB_*, em detail.h), nao numeros novos. Reimplementar o desenho e
-// inevitavel porque `desenhaSeloImdb` e static em detail.c, que nao e meu; o
-// que da para garantir e que as MEDIDAS venham do mesmo lugar e andem juntas.
-//
-// PROCEDENCIA, que o DESIGN.md exige escrita junto do numero: `CatItem.nota` e
-// o `imdbRating` do Cinemeta multiplicado por 10 (descoberta.c), e o selo diz
-// "IMDb" por isso. 84 e 8,4 — nao 84%.
-//
-// SEM NOTA NAO DEIXA BURACO E NAO DESLOCA NADA: sai um travessao na MESMA
-// posicao do numero. Zero seria mentira (DESIGN.md: ausencia nunca se desenha
-// como zero) e espaco em branco quebraria a coluna que o olho esta descendo.
+// O selo IMDb e o mesmo helper usado nas outras telas. Sem nota, a coluna nao
+// ganha um travessao decorativo: a linha focada recebe apenas um chevron, que
+// responde visualmente ao OK de abrir; em repouso o espaco fica limpo.
+static float larguraNota(const CatItem *ci) {
+  return ci && ci->nota > 0 ? badge_imdb_largura(ci->nota) : BIB_CHEV_W;
+}
+
 static void desenhaNota(const CatItem *ci, float xDir, float yCentro,
-                        int tinta, float a) {
-  int sr, sg, sb;
-  tintaSecundaria(tinta, &sr, &sg, &sb);
-  if (!ci || ci->nota <= 0) {
-    // Alfa CHEIO, e nao 0,8: o travessao e o que segura a coluna quando falta
-    // nota, e a 0,8 sobre a tinta secundaria ele quase sumia na captura. Ele
-    // precisa ser visto para dizer "nao se sabe" — apagado ele vira buraco, que
-    // e exatamente o que ele existe para evitar.
-    TxtLinha t = txt_linha(TXT_BODY, "–", sr, sg, sb, 255);
-    txt_desenhar_alpha(t, xDir - t.w, yCentro - t.h * 0.5f, a);
+                        int tinta, float f, float a) {
+  if (ci && ci->nota > 0) {
+    float w = badge_imdb_largura(ci->nota);
+    badge_imdb(xDir - w, yCentro - BADGE_H * 0.5f, ci->nota,
+               f > 0.5f, a);
     return;
   }
-  { char txt[8];
-    TxtLinha l;
-    GfxRect marca;
-    // SEPARADOR DECIMAL PELO IDIOMA. Estava VIRGULA cravada nos tres pontos que
-    // desenham nota, e em ingles "8,4" nao e um numero com uma casa: le como
-    // milhar interrompido. Apareceu ao gerar o album do post em ingles.
-    snprintf(txt, sizeof txt,
-           ajustes_idioma_ingles() ? "%d.%d" : "%d,%d",
-           ci->nota / 10, ci->nota % 10);
-    l = txt_linha(TXT_BODY, txt, tinta, tinta, tinta, 255);
-    marca.w = NV_DETW2_IMDB_W; marca.h = NV_DETW2_IMDB_H;
-    marca.x = xDir - l.w - NV_DETW2_IMDB_GAP - marca.w;
-    marca.y = yCentro - marca.h * 0.5f;
-    gfx_cor(marca, raioPx(NV_DETW2_IMDB_R, marca.w, marca.h),
-            0.965f, 0.780f, 0.0f, a);                       // #f6c700
-    { TxtLinha lm = txt_linha(TXT_MINI, "IMDb", 10, 10, 10, 255);
-      txt_desenhar_alpha(lm, marca.x + (marca.w - lm.w) * 0.5f,
-                         marca.y + (marca.h - lm.h) * 0.5f, a); }
-    txt_desenhar_alpha(l, xDir - l.w, yCentro - l.h * 0.5f, a); }
+  if (f > 0.5f) {
+    int c = ajustes_tinta_foco2();
+    TxtLinha t = txt_linha(TXT_HEADLINE, "›", c, c, c, 255);
+    txt_desenhar_alpha(t, xDir - t.w, yCentro - t.h * 0.5f, a);
+  } else {
+    (void)tinta;
+  }
 }
 
 // Um TITULO, na exibicao de lista. Linha inteira preenchida, miniatura a
@@ -1177,15 +1327,15 @@ static void desenhaNota(const CatItem *ci, float xDir, float yCentro,
 // progresso e um estado de poucos itens; reservar 132 px em toda linha para
 // mostrar nada na maioria delas seria o vazio que esta correcao veio tirar.
 //
-// MEMORIA: a miniatura pede tex_obter_larg(60), nao tex_obter — o teto de
+// MEMORIA: a miniatura pede tex_obter_larg(96), nao tex_obter — o teto de
 // decodificacao sai da largura desenhada, e so a linha VISIVEL chega aqui.
 static void desenhaLinhaTitulo(const CatItem *ci, float y, float f, float a) {
   GfxRect r = { NV_BIB_X, y, NV_BIB_W, BIB_LIN_H };
-  int cor = pilula(r, raioPx(16.0f, r.w, r.h), f, 0);
+  int cor = superficieLinha(r, raioPx(18.0f, r.w, r.h), f, a);
   int sr, sg, sb;
   float yc = y + BIB_LIN_H * 0.5f;
   float xNotaDir = r.x + NV_BIB_W - BIB_COL_DIR;
-  float xNotaIni = xNotaDir - BIB_COL_NOTA_W - NV_DETW2_IMDB_GAP - NV_DETW2_IMDB_W;
+  float xNotaIni = xNotaDir - larguraNota(ci);
   float xProgDir = xNotaIni - BIB_COL_PROG_GAP;
   GfxRect mini = { r.x + BIB_LIN_PAD, y + (BIB_LIN_H - BIB_LIN_MINI_H) * 0.5f,
                    BIB_LIN_MINI_W, BIB_LIN_MINI_H };
@@ -1226,21 +1376,28 @@ static void desenhaLinhaTitulo(const CatItem *ci, float y, float f, float a) {
     gfx_cor(ativo, raioPx(BIB_COL_PROG_H * 0.5f, ativo.w, ativo.h), c, c, c, a);
   }
 
-  desenhaNota(ci, xNotaDir, yc, cor, a);
+  desenhaNota(ci, xNotaDir, yc, cor, f, a);
 
-  { float tx = mini.x + mini.w + 22.0f;
+  { float tx = mini.x + mini.w + BIB_LIN_TX_GAP;
     float larg = xProgDir - BIB_COL_PROG_W - 28.0f - tx;
     char sub[220];
-    TxtLinha t = txt_linha_corta(TXT_CALLOUT, ci->titulo, cor, cor, cor, 255, larg);
+    TxtLinha t, sl, ss = { 0, 0, 0 };
     linhaMeta(ci, sub, sizeof sub);
-    { TxtLinha sl = txt_linha_corta(TXT_CAPTION2, sub, sr, sg, sb, 255, larg);
-      // As duas linhas CENTRADAS no eixo da linha, e nao ancoradas no topo: com
-      // a altura em 96 um bloco colado em cima deixava a base oca e devolvia a
-      // sensacao de linha grande demais.
-      float hBloco = (float)t.h + 6.0f + (float)sl.h;
+    if (larg < 80.0f) larg = 80.0f;
+    t = txt_linha_corta(TXT_HEADLINE, ci->titulo, cor, cor, cor, 255, larg);
+    sl = txt_linha_corta(TXT_CAPTION2, sub, sr, sg, sb, 255, larg);
+    if (f > 0.5f && ci->sinopse[0])
+      ss = txt_linha_corta(TXT_CAPTION, ci->sinopse, sr, sg, sb, 255, larg);
+    { float hBloco = (float)t.h + 7.0f + (float)sl.h;
+      if (ss.h) hBloco += 6.0f + (float)ss.h;
+      // O bloco fica centrado na linha: a sinopse so aparece quando a linha
+      // ja esta realmente em foco, sem roubar altura das linhas em repouso.
       float ty = yc - hBloco * 0.5f;
       txt_desenhar_alpha(t, tx, ty, a);
-      txt_desenhar_alpha(sl, tx, ty + (float)t.h + 6.0f, a * 0.95f); } }
+      txt_desenhar_alpha(sl, tx, ty + (float)t.h + 7.0f, a * 0.95f);
+      if (ss.h)
+        txt_desenhar_alpha(ss, tx, ty + (float)t.h + 7.0f + (float)sl.h + 6.0f,
+                           a * 0.90f); } }
 }
 
 static const char *rotuloFonte(int f) {
@@ -1326,27 +1483,27 @@ static void desenhaCartaoLista(const LstLista *l, GfxRect r, float f, float a) {
 }
 
 static void desenhaLinhaLista(const LstLista *l, float y, float f, float a) {
-  GfxRect r = { NV_BIB_X, y, NV_BIB_W, BIB_LIN_H };
-  int cor = pilula(r, raioPx(16.0f, r.w, r.h), f, 0);
+  GfxRect r = { NV_BIB_X, y, NV_BIB_W, BIB_LL_H };
+  int cor = superficieLinha(r, raioPx(14.0f, r.w, r.h), f, a);
   int sr, sg, sb;
   char sub[220];
   float tx = r.x + 24.0f;
   if (!l) return;
   tintaSecundaria(cor, &sr, &sg, &sb);
   subtituloLista(l, sub, sizeof sub);
-  { float w = seloFonte(l, tx, y + (BIB_LIN_H - 26.0f) * 0.5f, 26.0f, cor, a);
+  { float w = seloFonte(l, tx, y + (BIB_LL_H - 26.0f) * 0.5f, 26.0f, cor, a);
     if (w > 0.0f) tx += w + 26.0f; }
   { TxtLinha s2 = txt_linha_corta(TXT_CAPTION2, sub, sr, sg, sb, 255, 340.0f);
     float xDir = r.x + NV_BIB_W - 24.0f;
     TxtLinha t = txt_linha_corta(TXT_CALLOUT, l->titulo, cor, cor, cor, 255,
                                  xDir - (float)s2.w - 60.0f - tx);
-    txt_desenhar_alpha(t, tx, y + (BIB_LIN_H - (float)t.h) * 0.5f, a);
+    txt_desenhar_alpha(t, tx, y + (BIB_LL_H - (float)t.h) * 0.5f, a);
     txt_desenhar_alpha(s2, xDir - (float)s2.w,
-                       y + (BIB_LIN_H - (float)s2.h) * 0.5f, a * 0.95f);
+                       y + (BIB_LL_H - (float)s2.h) * 0.5f, a * 0.95f);
     if (lst_fixada(l)) {
       TxtLinha fx = txt_linha(TXT_CAPTION2, i18n("FIXADA"), cor, cor, cor, 255);
       txt_desenhar_alpha(fx, xDir - (float)s2.w - (float)fx.w - 32.0f,
-                         y + (BIB_LIN_H - (float)fx.h) * 0.5f, a * 0.95f);
+                         y + (BIB_LL_H - (float)fx.h) * 0.5f, a * 0.95f);
     } }
 }
 
@@ -1428,9 +1585,22 @@ static void desenhaResumo(void) {
              i18n(modo == MODO_SALVOS ? "Sua lista para assistir"
                                       : "Sua coleção no Trakt"));
   }
-  { TxtLinha info = txt_linha_corta(TXT_CAPTION2, txt, 150, 153, 162, 255, 560.0f);
+  // A DICA DE OK, UMA VEZ SO. Ela era repetida dentro das tres caixas dos
+  // seletores; agora entra na frente do resumo, e SO enquanto o foco esta na
+  // faixa de seletores — que e quando ela responde alguma coisa. Uma linha
+  // propria abaixo da faixa (tentada primeiro) caia em cima do topo da grade.
+  if (!temAberta && foco.fileira == BIB_FIL_PICK && txt == resumo) {
+    char comDica[260];
+    snprintf(comDica, sizeof comDica, "%s   ·   %s",
+             i18n(modo == MODO_LISTAS && pickSel == 2 ? "OK: digitar" : "OK: alterar"),
+             resumo);
+    snprintf(resumo, sizeof resumo, "%s", comDica);
+  }
+  { float linhaY = temAberta ? NV_BIB_MODO_Y : NV_BIB_PICK_Y;
+    float linhaH = temAberta ? 72.0f : BIB_PICK_H;
+    TxtLinha info = txt_linha_corta(TXT_CAPTION2, txt, 150, 153, 162, 255, 760.0f);
     txt_desenhar(info, NV_BIB_DIR - info.w,
-                 NV_BIB_MODO_Y + (NV_BIB_MODO_H - info.h) * 0.5f); }
+                 linhaY + (linhaH - info.h) * 0.5f); }
 }
 
 void biblioteca_desenhar(Uint32 agora) {

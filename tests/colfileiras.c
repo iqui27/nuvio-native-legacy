@@ -52,6 +52,7 @@ int   addons_n(void)              { return 1; }
 const char *addons_base(int i)    { (void)i; return BASE; }
 const char *addons_id_manifesto(int i) { (void)i; return ""; }
 const char *addons_nome(int i)              { (void)i; return "addon"; }
+unsigned addons_versao(void)        { return 1; }   // estatico no teste: sem troca de lista
 const char *addons_base_por_id(const char *id) {
   if (!sondaLeu) return "";       // exatamente o que addons.c faz antes da sonda
   return id && !strcmp(id, AID) ? BASE : "";

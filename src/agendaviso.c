@@ -2,6 +2,7 @@
 #include "agenda.h"
 #include "agendaui.h"
 #include "gfx.h"
+#include "botoes.h"
 #include "text.h"
 #include "tex_cache.h"
 #include "anim.h"
@@ -102,9 +103,15 @@ void agendaviso_desenhar(Uint32 agora) {
 
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.72f * entrada);
   { GfxRect c = { x, y, AV_W, h };
-    // O raio do gfx_cor e FRACAO DA ALTURA. 24 px sobre a altura do cartao.
-    gfx_cor(c, 24.0f / h, 0.075f, 0.078f, 0.088f, 0.98f * a); }
-  gfx_recorte(x, y, AV_W, h);
+    // CARTAO FLUTUANTE na "cara nova" (menu.c, 21/09/2026): o raio do gfx_cor
+    // e FRACAO DO MENOR LADO — 28 px sobre ele —, fundo translucido e UMA luz
+    // difusa na cor de realce entrando pelo canto superior esquerdo, presa
+    // aos cantos do cartao (GFX_LUZ; com a tesoura o canto saia quadrado).
+    float ar, ag, ab, menor = h < AV_W ? h : AV_W;
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_cor(c, 28.0f / menor, 0.055f, 0.058f, 0.068f, 0.94f * a);
+    gfx_luz_canto(c, 28.0f / menor, AV_W * 0.05f, -AV_W * 0.15f, AV_W * 0.5f, ar, ag, ab, 0.22f * a);
+    gfx_recorte(x, y, AV_W, h); }
 
   { float tx = x + AV_PAD, ty = y + 44.0f;
     // O DESPERTADOR abre o cartao, com o mesmo desenho e a mesma animacao da
@@ -177,13 +184,11 @@ void agendaviso_desenhar(Uint32 agora) {
 
     // Um botao so, sempre em foco: nao ha escolha a fazer aqui. Pilula clara
     // com texto escuro, o vocabulario de modal deste app.
+    // A PILULA DA TABELA (botoes.h), primaria e em foco: 72 px, realce,
+    // tinta da regra e brilho difuso.
     { const char *rot = i18n("Entendi");
-      float fr, fg, fb, ti = ajustes_acento_tinta(&fr, &fg, &fb);
-      int c = (int)(ti * 255.0f + 0.5f);
-      TxtLinha t = txt_linha(TXT_CALLOUT, rot, c, c, c, 255);
-      GfxRect b = { tx, y + h - 96.0f, (float)t.w + 64.0f, 64.0f };
-      gfx_cor(b, NV_RAIO_PILL, fr, fg, fb, a);
-      txt_desenhar_alpha(t, b.x + 32.0f, b.y + (64.0f - (float)t.h) * 0.5f, a); }
+      GfxRect b = { tx, y + h - 32.0f - BOTAO_H_PRIMARIO, botao_largura(rot, NULL, 1), BOTAO_H_PRIMARIO };
+      botao_pilula(b, rot, NULL, 1.0f, 1, 0, a); }
     { TxtLinha t = txt_linha(TXT_CAPTION2, i18n("Ver tudo em Agenda"),
                              150, 154, 165, 255);
       txt_desenhar_alpha(t, x + AV_W - AV_PAD - (float)t.w, y + h - 72.0f,

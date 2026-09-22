@@ -41,6 +41,12 @@ void artehero_qualidade(int nivel);
 
 const char *artehero_url(const CatItem *item);
 
+// Fonte escolhida para o background do hero:
+// 0 automático, 1 catálogo/Cinemeta, 2 IMDb/Metahub, 3 TMDB, 4 Trakt.
+// A variante precisa ter chegado com o item; quando não existir, devolve NULL
+// para o chamador cair na política automática.
+const char *artehero_url_fonte(const CatItem *item, int fonte);
+
 // A url que o item guarda, sem política — para quem desenha pequeno.
 const char *artehero_url_card(const CatItem *item);
 
@@ -68,5 +74,17 @@ const char *artehero_url_logo(const char *logo);
 // O mesmo, sabendo a largura em que o logo vai ser desenhado (px de layout):
 // escolhe o menor tamanho do TMDB que cobre o desenho. 0 = como acima.
 const char *artehero_url_logo_larg(const char *logo, float larg);
+
+// Seleção visual da sessão: detalhe/player e Home compartilham a primeira URL
+// canônica do mesmo IMDb/tipo. Outra identidade nunca herda esse snapshot.
+// Sem logo na abertura, a primeira logo que chegar pode preenchê-lo.
+void artehero_logo_sessao_iniciar(const CatItem *item);
+const char *artehero_logo_sessao(const CatItem *item);
+// Registra o logo do hero que a Home está efetivamente desenhando. Cards
+// vizinhos não chamam esta função e, portanto, não substituem a seleção.
+const char *artehero_logo_sessao_observar(const CatItem *item);
+// Usa o snapshot quando ele pertence ao item; fora dele mantém a política de
+// largura do desenho do card.
+const char *artehero_logo_sessao_larg(const CatItem *item, float larg);
 
 #endif

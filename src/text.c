@@ -552,8 +552,21 @@ void txt_encerrar(void) {
   TTF_Quit();
 }
 
+// `enfase` e a combinacao TXT_ENF_* pedida pela LEGENDA ASS, e so por ela.
+//
+// NEGRITO E ITALICO AQUI SAO SINTETICOS, e isso e uma escolha e nao um
+// descuido: o pacote embarca Regular, Medium e Bold da Inter Display e NENHUM
+// italico (ver a nota de ESTILOS la em cima — acrescentar arquivo de fonte
+// esta fora de questao com o ipk em 166 MB). O SDL_ttf inclina e engorda o
+// glifo por conta propria, que e pior do que uma face desenhada e melhor do
+// que perder a distincao: num ASS de anime o italico e o que separa o
+// pensamento da fala, e o negrito e o que separa o letreiro do dialogo.
+//
+// A ENFASE ENTRA NA CHAVE DO CACHE. Sem isso a mesma frase em italico e em
+// redondo dividiriam a mesma textura, e qual das duas a tela mostra dependeria
+// de quem rasterizou primeiro.
 static TxtLinha linhaFamilia(TxtEstilo estilo, const char *s, int r, int g,
-                             int b, int a, TxtFamilia familia) {
+                             int b, int a, TxtFamilia familia, int enfase) {
   TxtLinha vazia = {0, 0, 0};
   char limpo[1024];
   if (!s || !*s || estilo < 0 || estilo >= TXT_NFONTES || !fontes[estilo]) return vazia;
@@ -574,8 +587,8 @@ static TxtLinha linhaFamilia(TxtEstilo estilo, const char *s, int r, int g,
   }
 
   char chave[288];
-  snprintf(chave, sizeof chave, "%d:%d|%02x%02x%02x|%.236s", (int)familia,
-           (int)estilo, r & 255, g & 255, b & 255, s);
+  snprintf(chave, sizeof chave, "%d:%d:%d|%02x%02x%02x|%.234s", (int)familia,
+           (int)estilo, enfase & 3, r & 255, g & 255, b & 255, s);
 
   // Hash da chave para evitar o strcmp em quase todas as entradas: a busca
   // roda para CADA linha de CADA quadro, e comparar 288 bytes centenas de
@@ -631,8 +644,19 @@ static TxtLinha linhaFamilia(TxtEstilo estilo, const char *s, int r, int g,
 
   Uint64 t0 = SDL_GetPerformanceCounter();
   SDL_Color cor = { (Uint8)r, (Uint8)g, (Uint8)b, (Uint8)a };
-  SDL_Surface *sf = TTF_RenderUTF8_Blended(
-      fonteLegendaDe(estilo, s, familia), s, cor);
+  TTF_Font *fonte = fonteLegendaDe(estilo, s, familia);
+  // SOMA ao estilo que a fonte ja tem, e RESTAURA depois. As familias de
+  // reserva nascem com TTF_STYLE_BOLD ligado (ver txt_iniciar); zerar aqui
+  // tiraria delas o peso que o app inteiro conta com.
+  int estiloAnt = TTF_GetFontStyle(fonte);
+  if (enfase) {
+    int novo = estiloAnt;
+    if (enfase & TXT_ENF_NEGRITO) novo |= TTF_STYLE_BOLD;
+    if (enfase & TXT_ENF_ITALICO) novo |= TTF_STYLE_ITALIC;
+    if (novo != estiloAnt) TTF_SetFontStyle(fonte, novo);
+  }
+  SDL_Surface *sf = TTF_RenderUTF8_Blended(fonte, s, cor);
+  if (enfase) TTF_SetFontStyle(fonte, estiloAnt);
   if (!sf) return vazia;
   SDL_Surface *cv = SDL_ConvertSurfaceFormat(sf, SDL_PIXELFORMAT_ABGR8888, 0);
   SDL_FreeSurface(sf);
@@ -662,12 +686,12 @@ static TxtLinha linhaFamilia(TxtEstilo estilo, const char *s, int r, int g,
 }
 
 TxtLinha txt_linha(TxtEstilo estilo, const char *s, int r, int g, int b, int a) {
-  return linhaFamilia(estilo, i18n(s), r, g, b, a, TXT_FAMILIA_INTER);
+  return linhaFamilia(estilo, i18n(s), r, g, b, a, TXT_FAMILIA_INTER, 0);
 }
 
 TxtLinha txt_linha_familia(TxtEstilo estilo, const char *s, int r, int g,
                            int b, int a, TxtFamilia familia) {
-  return linhaFamilia(estilo, i18n(s), r, g, b, a, familia);
+  return linhaFamilia(estilo, i18n(s), r, g, b, a, familia, 0);
 }
 
 void txt_desenhar(TxtLinha l, float x, float y) { txt_desenhar_alpha(l, x, y, 1.0f); }
@@ -735,15 +759,15 @@ TxtLinha txt_linha_corta(TxtEstilo estilo, const char *s, int r, int g, int b,
                                  TXT_FAMILIA_INTER);
 }
 
-TxtLinha txt_linha_corta_familia(TxtEstilo estilo, const char *s, int r, int g,
-                                 int b, int a, float maxW,
-                                 TxtFamilia familia) {
+static TxtLinha cortaFamilia(TxtEstilo estilo, const char *s, int r, int g,
+                             int b, int a, float maxW, TxtFamilia familia,
+                             int enfase) {
   // Traduzir ANTES de cortar: o corte mede a largura e insere as reticencias,
   // e medir o portugues para desenhar o ingles poe as reticencias no lugar
   // errado — ou corta um texto que caberia inteiro.
   TxtLinha l;
   s = i18n(s);
-  l = txt_linha_familia(estilo, s, r, g, b, a, familia);
+  l = linhaFamilia(estilo, s, r, g, b, a, familia, enfase);
   if (!s || !*s || (float)l.w <= maxW) return l;
   char buf[512];
   size_t n = strlen(s);
@@ -762,10 +786,22 @@ TxtLinha txt_linha_corta_familia(TxtEstilo estilo, const char *s, int r, int g,
     if (!n) break;
     char t[520];
     snprintf(t, sizeof t, "%s\xe2\x80\xa6", buf);
-    l = txt_linha_familia(estilo, t, r, g, b, a, familia);
+    l = linhaFamilia(estilo, t, r, g, b, a, familia, enfase);
     if ((float)l.w <= maxW) return l;
   }
-  return txt_linha_familia(estilo, "\xe2\x80\xa6", r, g, b, a, familia);
+  return linhaFamilia(estilo, "\xe2\x80\xa6", r, g, b, a, familia, enfase);
+}
+
+TxtLinha txt_linha_corta_familia(TxtEstilo estilo, const char *s, int r, int g,
+                                 int b, int a, float maxW,
+                                 TxtFamilia familia) {
+  return cortaFamilia(estilo, s, r, g, b, a, maxW, familia, 0);
+}
+
+TxtLinha txt_linha_corta_enfase(TxtEstilo estilo, const char *s, int r, int g,
+                                int b, int a, float maxW, TxtFamilia familia,
+                                int enfase) {
+  return cortaFamilia(estilo, s, r, g, b, a, maxW, familia, enfase);
 }
 
 float txt_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,

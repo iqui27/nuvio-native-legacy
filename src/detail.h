@@ -11,6 +11,7 @@
 
 void detail_abrir(const HomeItem *item);
 int  detail_aberto(void);
+int  detail_pediu_menu(void);   // ESQUERDA na borda fechou a pagina pedindo a barra
 // 0..1 de quanto o detalhe tomou a tela; a home usa para descer as fileiras.
 float detail_progresso(void);        // 1 enquanto a tela existe, inclusive saindo
 // 1 quando o cartao ja cobre a tela inteira e desenhar a home por baixo e
@@ -265,16 +266,9 @@ int  detail_pediu_do_inicio(void);
 #define NV_DETW2_GAP_ACOES    37.0f
 
 // META LINHA 1: generos, data e o selo do IMDb, tudo em rgb(179,179,179).
-// A altura da linha e a do selo (30), que e o item mais alto dela.
+// A altura do selo vem da tabela unica em badges.h (28 px).
 #define NV_DETW2_M1_H         30.0f
 #define NV_DETW2_META_GAP     31.0f   // 999 - 968
-// Selo do IMDb: retangulo amarelo #f6c700 de 60x30, raio ~4, com "IMDb" preto
-// dentro; a nota vem 8px depois, no mesmo cinza do resto da linha. NAO e o
-// 109x60 do web — este e menor e a marca ocupa o selo inteiro.
-#define NV_DETW2_IMDB_W       60.0f
-#define NV_DETW2_IMDB_H       30.0f
-#define NV_DETW2_IMDB_R        4.0f
-#define NV_DETW2_IMDB_GAP      8.0f
 // Ponto separador. Sao DOIS pontos diferentes e a diferenca e so a cor: entre
 // generos ele e rgb(179,179,179) com 11 de folga de cada lado, e entre GRUPOS
 // (generos | data | nota) e rgb(128,128,128) com 30. Os dois medem 6x7.
@@ -334,6 +328,24 @@ int  detail_pediu_do_inicio(void);
 // Medido no web (.movie-cast-card / .movie-cast-track).
 #define NV_DETF_EL_ALT        193.0f
 #define NV_DETF_EL_MAX           18    // .slice(0, 18) do web
+// QUANTOS CABEM NA LINHA, medido na captura tests/detail_secoes_shot.sh
+// (/tmp/nuvio-detsec-10-filme-chamada.png): a fileira comeca no gutter
+// NV_DETP_X=96, o passo e NV_DETP_EL_PASSO=270 e o card mede NV_DETP_EL_W=220,
+// entao o avatar `c` termina em 96+270c+220. Cabem SEIS inteiros dentro dos
+// 1920 (c=5 termina em 1666) e o setimo comeca em 1716 e terminaria em 1936:
+// aparece cortado pela borda. A captura confirma: seis rostos e a fatia do
+// setimo.
+//
+// Por isso este teto de 18 NAO e o que decide o que o dono ve: sao TRES telas
+// de rolagem horizontal. Quem limita hoje e o dado — CAT_ELENCO_MAX (12,
+// catalogo.h), e antes dele o proprio Cinemeta, que manda 3-5 nomes no `cast`
+// e so cresce para 12 quando a integracao TMDB esta ligada (issue #94).
+//
+// O CUSTO DE IMAGEM JA ESTA CONTIDO e nao depende deste numero: o laco de
+// colunas de desenhaSecao recorta em x (`if (x > NV_TELA_W || x + w < -w)
+// continue;`) ANTES de chamar desenhaElenco, e o tex_obter_larg da foto mora
+// dentro de desenhaElenco. Rosto fora da tela nao pede textura; a foto entra
+// quando a coluna entra. Subir o teto nao baixa mais fotos de uma vez.
 
 // TRAILERS. Card 520 de largura, miniatura 520x292 raio 24, passo 582.
 // O selo de play e um circulo de 96 a rgba(0,0,0,.48) com o triangulo de 44.
