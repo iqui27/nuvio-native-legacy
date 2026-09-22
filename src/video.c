@@ -167,6 +167,7 @@ int  video_tocando(void) { return 0; }
 int  video_pronto(void) { return 0; }
 int  video_ativo(void) { return 0; }
 int  video_falhou(void) { return 0; }
+int  video_audio_nao_suportado(void) { return 0; }
 int  video_terminou(void) { return 0; }
 unsigned video_bufferando_ms(void) { return 0; }
 int  video_n_audio(void) { return 0; }
@@ -327,6 +328,9 @@ static int dvPedido;
 static char      midia[64];
 static double    posSeg, durSeg;
 static int       tocando, pronto, ligado, falhou, terminou;
+// errorCode 200 "Audio Codec Not Supported": o VIDEO segue tocando e so o
+// audio morre. Ver o tratamento em lerEvento.
+static int       audioNaoSup;
 
 // PLAYER_TYPE_MSE. O ACB usa isto para saber que a fonte e um pipeline de
 // midia e nao um sintonizador.
@@ -903,6 +907,17 @@ static int aoEvento(LSHandle *h, LSMessage *m, void *u) {
     // Recarrega a mesma fonte e volta para onde estava. Nao e conserto da
     // CAUSA (o pipeline morre por algo entre o seek e a fonte do debrid, que
     // este lado nao enxerga), e sim de nao deixar o dono na tela parada.
+    // AUDIO NAO SUPORTADO NAO E FONTE MORTA. MEDIDO no registro 1545 (webOS
+    // 5, 1.4.0, MKV 2160p HDR10 com EAC3 6ch): o uMS manda errorCode 200
+    // "Audio Codec Not Supported" e segue — loadCompleted, currentTime
+    // andando ate 1946 s. Marcar `falhou` aqui fazia o watchdog de canal
+    // pular a fonte e o trailer se dar por morto com a imagem tocando; e a
+    // pessoa, sem som, nao recebia nenhuma explicacao. Agora e um aviso: o
+    // player mostra que o audio desta fonte nao toca nesta TV.
+    if (strstr(p, "\"errorCode\":200")) {
+      audioNaoSup = 1;
+      marco("audio nao suportado pela TV (errorCode 200): video segue");
+    } else
     if (strstr(p, "is not running") && urlAtual[0] && !recuperando) {
       recuperando = 1;
       retomarEm = posSeg;
@@ -1268,7 +1283,7 @@ static int tocarInterno(const char *url, int comDV);
 
 int video_tocar(const char *url) {
   dvRecuado = 0;
-  falhou = 0; terminou = 0;
+  falhou = 0; terminou = 0; audioNaoSup = 0;
   // FONTE NOVA, decisao nova: o "sem HDR" era sobre o arquivo anterior.
   semDVForcado = 0;
   // Titulo novo: o marcador do anterior nao vale. Sem isto um filme sem
@@ -1556,7 +1571,7 @@ void video_parar(void) {
     snprintf(b, sizeof b, "{\"mediaId\":\"%s\"}", midia);
     chamar("unload", b, soLog);
   }
-  midia[0] = 0; tocando = pronto = 0; falhou = 0;
+  midia[0] = 0; tocando = pronto = 0; falhou = 0; audioNaoSup = 0;
 }
 
 void video_pausar(int pausado) {
@@ -1776,6 +1791,7 @@ int    video_ativo(void)    { return midia[0] != 0; }
 // sem a flag, um pipeline que carrega e morre em seguida nunca dispara a
 // proxima da lista.
 int    video_falhou(void)   { return falhou; }
+int    video_audio_nao_suportado(void) { return audioNaoSup; }
 int    video_terminou(void) { return terminou; }
 unsigned video_bufferando_ms(void) {
   Uint32 d = bufferandoDesde;

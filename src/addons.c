@@ -897,7 +897,31 @@ typedef struct {
   int    idx;                 // qual addon
   Stream *achados;
   int    n;
+  int    respondeu;           // 1 = veio corpo (mesmo com 0 fontes)
 } BaldeFonte;
+
+// O QUE A ULTIMA BUSCA REAL VIU, para a folha de fontes vazia dizer a causa
+// (B6/#107 e D5). A folha so dizia "Nenhuma fonte direta disponivel", e tres
+// situacoes diferentes davam essa mesma frase:
+//   - id 1504 (#107): 4 addons de fonte consultados, os 4 responderam
+//     {"streams":[]} (14 bytes) — o titulo nao existe neles;
+//   - id 1220 (rel. 22 §2): a conta tem 2 addons e NENHUM declara stream — nao
+//     havia a quem perguntar;
+//   - addon fora do ar (FrostView com 408, 18/09): "sem resposta".
+// Cada uma pede uma acao diferente de quem esta no sofa (esperar, instalar
+// um addon, recarregar), e a frase unica nao dizia qual.
+//
+// Escrito pelo fio de `buscar` ANTES do atomic_store de `estado`, lido pela UI
+// depois de ver o estado mudar: a mesma ordem que ja publica `resultado`.
+// `valido` = 0 quando a lista veio do cache/prefetch (nao se sabe quem
+// respondeu) — ai a folha cai na frase generica.
+typedef struct {
+  int valido;
+  int instalados, comFonte, ligadosComFonte;   // da lista
+  int consultados, responderam, semResposta, comFontes;   // da consulta
+  char mudo[64], vazio[64];   // um nome de exemplo de cada, para o singular
+} Resumo;
+static Resumo resumo;
 
 // UMA CONSULTA INTEIRA, com tudo que os fios dela compartilham. Era um punhado
 // de estaticos (baldes, proxBalde, alvoId, alvoTipo), o que amarrava o modulo
@@ -957,9 +981,26 @@ static void *fioFontes(void *u) {
                addon[i].nome, c->tipoAlt, c->tipo);
     }
     if (!corpo) { printf("[addons] %s: sem resposta\n", addon[i].nome); continue; }
+    c->baldes[meu].respondeu = 1;
     c->baldes[meu].n = stream_extrair(corpo, addon[i].nome, &c->baldes[meu].achados);
     printf("[addons] %s: %d fontes (%u bytes)\n",
            addon[i].nome, c->baldes[meu].n, (unsigned)strlen(corpo));
+    // RESPOSTA CURTA SEM FONTE VAI PARA O LOG. No registro 1504 havia
+    // "Torrentio TB: 0 fontes (75 bytes)": 75 bytes nao sao {"streams":[]}
+    // (14), e provavelmente e o addon dizendo por que (chave de debrid
+    // invalida, limite) — mas o log nao guardava o texto. Ate 200 bytes
+    // porque acima disso e lista de verdade que o parser recusou, e o que
+    // falta ali e outra coisa; 80 bytes cabem numa mensagem de erro de addon.
+    // Corpo de addon nao leva a chave dele (ela vai no caminho da URL, que
+    // aqui nao se imprime); quebra de linha vira espaco para ficar numa linha.
+    if (c->baldes[meu].n == 0 && strlen(corpo) <= 200) {
+      char amostra[81];
+      size_t k;
+      snprintf(amostra, sizeof amostra, "%s", corpo);
+      for (k = 0; amostra[k]; k++)
+        if ((unsigned char)amostra[k] < ' ') amostra[k] = ' ';
+      printf("[addons] %s: resposta sem fonte: %s\n", addon[i].nome, amostra);
+    }
     free(corpo);
   }
 }
@@ -971,8 +1012,9 @@ static const char *tipoAlternativo(const char *tipo) {
   return "";
 }
 
-int addons_consultar(const char *id, const char *tipo, const char *base, int fios,
-                     int (*cancelado)(void *), void *ctx, Stream **saida) {
+static int consultar(const char *id, const char *tipo, const char *base, int fios,
+                     int (*cancelado)(void *), void *ctx, Stream **saida,
+                     Resumo *rs) {
   Consulta c;
   Stream *achados = NULL;
   int n = 0, i, q;
@@ -1049,6 +1091,14 @@ int addons_consultar(const char *id, const char *tipo, const char *base, int fio
     // Junta NA ORDEM DOS ADDONS, que e a ordem em que o dono os instalou.
     for (q = 0; q < c.nBaldes; q++) {
       int k = c.baldes[q].n;
+      if (rs) {
+        const char *nome = addon[c.baldes[q].idx].nome;
+        rs->consultados++;
+        if (!c.baldes[q].respondeu) {
+          if (!rs->semResposta++) snprintf(rs->mudo, sizeof rs->mudo, "%s", nome);
+        } else if (k > 0) rs->comFontes++;
+        else if (!rs->responderam++) snprintf(rs->vazio, sizeof rs->vazio, "%s", nome);
+      }
       if (k > 0) {
         Stream *tmp = realloc(achados, sizeof(Stream) * (size_t)(n + k));
         if (tmp) { achados = tmp;
@@ -1067,13 +1117,61 @@ int addons_consultar(const char *id, const char *tipo, const char *base, int fio
   return n;
 }
 
+int addons_consultar(const char *id, const char *tipo, const char *base, int fios,
+                     int (*cancelado)(void *), void *ctx, Stream **saida) {
+  return consultar(id, tipo, base, fios, cancelado, ctx, saida, NULL);
+}
+
+// Contagens da LISTA (nao da consulta), para "nao ha a quem perguntar".
+static void resumoDaLista(Resumo *rs) {
+  int i;
+  memset(rs, 0, sizeof *rs);
+  rs->valido = 1;
+  rs->instalados = nAddon;
+  for (i = 0; i < nAddon; i++) {
+    if (!addon[i].fonte) continue;
+    rs->comFonte++;
+    if (addon[i].ativo) rs->ligadosComFonte++;
+  }
+}
+
+// Frases curtas, uma por causa. `responderam` conta so quem respondeu SEM
+// fonte: quem trouxe fonte nao explica lista vazia (se ha fonte e a lista
+// esta vazia, a causa e o descarte de torrent sem debrid, e quem diz isso e
+// streams.c).
+int addons_motivo_vazio(char *dst, unsigned n) {
+  const Resumo *r = &resumo;
+  if (!dst || !n || !r->valido) return 0;
+  if (!r->instalados || !r->comFonte)
+    snprintf(dst, n, "%s", i18n("Nenhum add-on de fontes instalado"));
+  else if (!r->ligadosComFonte)
+    snprintf(dst, n, "%s", i18n("Os add-ons de fontes estão desligados"));
+  else if (!r->consultados || r->comFontes)
+    return 0;
+  else if (!r->semResposta)
+    r->responderam == 1
+      ? snprintf(dst, n, i18n("%s respondeu: não tem este título"), r->vazio)
+      : snprintf(dst, n, i18n("%d add-ons responderam: nenhum tem este título"), r->responderam);
+  else if (!r->responderam)
+    r->semResposta == 1
+      ? snprintf(dst, n, i18n("%s não respondeu"), r->mudo)
+      : snprintf(dst, n, i18n("%d add-ons não responderam"), r->semResposta);
+  else
+    snprintf(dst, n, i18n("%d sem este título · %d sem resposta"),
+             r->responderam, r->semResposta);
+  return 1;
+}
+
 static void *buscar(void *u) {
   Stream *achados = NULL;
   int n;
   (void)u;
+  Resumo rs;
   marco("addons: consulta inicio");
-  n = addons_consultar(alvoId, alvoTipo, fioBase, ADD_FIOS, NULL, NULL, &achados);
+  resumoDaLista(&rs);
+  n = consultar(alvoId, alvoTipo, fioBase, ADD_FIOS, NULL, NULL, &achados, &rs);
   if (n < 0) n = 0;
+  resumo = rs;
   marco(n ? "addons: fontes recebidas" : "addons: nenhuma fonte");
   // O canal que vai ao ar fica no cache para o zap de VOLTA. Filme e serie
   // nao entram (fontecache_guardar decide pelo tipo).
@@ -1106,7 +1204,10 @@ void addons_definir_origem(const char *base) {
 void addons_buscar(const char *imdb, const char *tipo) {
   int serie;
   if (!imdb || !*imdb) return;
-  if (!nAddon) { stream_definir_lista(NULL, 0); estado = ADD_VAZIO; return; }
+  resumo.valido = 0;
+  // Recusa de conta do debrid vale por busca: a nova volta a tentar todos.
+  debrid_nova_busca();
+  if (!nAddon) { stream_definir_lista(NULL, 0); resumoDaLista(&resumo); estado = ADD_VAZIO; return; }
   if (fioVivo) {
     if (strcmp(imdb, alvoId) || strcmp(tipo ? tipo : "movie", alvoTipo)) {
       snprintf(pendId, sizeof pendId, "%s", imdb);

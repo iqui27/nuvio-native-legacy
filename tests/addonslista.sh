@@ -13,5 +13,16 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 # rede, SDL nem descoberta. -dead_strip com secoes por funcao descarta o resto
 # do modulo, entao nenhum dos vizinhos precisa de stub (mesma receita de
 # tests/manifesto_cache.sh).
+#
+# A busca de fontes tambem roda aqui (a causa da folha vazia, B6/D5), com rede,
+# parser, cache e i18n dublados no proprio teste — ver tests/addonslista.c.
 cc "${flags[@]}" src/addons.c tests/addonslista.c -o /tmp/nuvio-addonslista-tests
-/tmp/nuvio-addonslista-tests
+saida=$(/tmp/nuvio-addonslista-tests)
+echo "$saida" | grep -v '^\[addons\]' || true
+echo "$saida" | grep -q 'addonslista: ok'
+# resposta curta sem fonte vai para o log com o texto (os 75 bytes do id 1504)
+echo "$saida" | grep -qF '[addons] Formato antigo: resposta sem fonte: {"err":"Invalid debrid key"}' \
+  || { echo "FALHOU: amostra da resposta sem fonte fora do log"; exit 1; }
+echo "$saida" | grep -qF '[addons] Fonte e catalogo: resposta sem fonte: {"streams":[]}' \
+  || { echo "FALHOU: amostra de {\"streams\":[]} fora do log"; exit 1; }
+echo "addonslista.sh: ok"

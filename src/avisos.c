@@ -226,14 +226,46 @@ int avisos_n_novos(void) {
 }
 
 // --- crash e registro ---------------------------------------------------------
+// A MARCA TEM DUAS LINHAS. A primeira ("1.4.1 2026-09-22 18:40") e a de
+// sempre: existir na abertura seguinte quer dizer que a sessao nao passou por
+// avisos_encerrar. A segunda e o ULTIMO SINAL DE VIDA — evento de janela,
+// segundos de sessao e rss — e existe porque "nao se despediu" sozinho nao
+// separava nada: 17 registros de 6 pessoas na 1.4.0 e nenhuma linha dizendo se
+// a TV matou o app em segundo plano (ultimo=oculto), se ele caiu no meio do uso
+// (ultimo=vivo com rss alto) ou se a TV foi desligada. O relatorio 22b pedia
+// exatamente isto.
+static char marcaCab[64];
+static char marcaSinal[96];
+static void marcaEscrever(int leve) {
+  char buf[180];
+  snprintf(buf, sizeof buf, "%s\n%s\n", marcaCab, marcaSinal);
+  if (leve) dados_gravar_leve(AV_MARCA_ARQ, buf);
+  else      dados_gravar(AV_MARCA_ARQ, buf);
+}
 static void marcaGravar(void) {
-  char buf[96];
   time_t t = time(NULL);
   struct tm tmv;
   localtime_r(&t, &tmv);
-  snprintf(buf, sizeof buf, "%s %04d-%02d-%02d %02d:%02d\n", NV_VERSAO,
+  snprintf(marcaCab, sizeof marcaCab, "%s %04d-%02d-%02d %02d:%02d", NV_VERSAO,
            tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday, tmv.tm_hour, tmv.tm_min);
-  dados_gravar(AV_MARCA_ARQ, buf);
+  snprintf(marcaSinal, sizeof marcaSinal, "ultimo=arranque t=0s");
+  marcaEscrever(0);
+}
+// `evento` NULL = batida periodica: so reescreve a cada 60 s e pela gravacao
+// LEVE (no Tizen, o relogio de 15 s do IDBFS em vez do de 700 ms). Evento de
+// janela grava na hora e pela gravacao normal: e o sinal que mais importa e o
+// que tem menos tempo para chegar ao disco antes de a TV matar o processo.
+void avisos_sinal(const char *evento, float rssMb) {
+  static Uint32 ultBatida;
+  Uint32 agora = SDL_GetTicks();
+  if (!marcaCab[0]) return;                    // antes de avisos_iniciar
+  if (!evento) {
+    if (ultBatida && agora - ultBatida < 60000) return;
+    ultBatida = agora;
+  }
+  snprintf(marcaSinal, sizeof marcaSinal, "ultimo=%s t=%us rss=%.0fMB",
+           evento ? evento : "vivo", (unsigned)(agora / 1000), rssMb);
+  marcaEscrever(evento == NULL);
 }
 
 static int idHead(const char **cab, char *aut, size_t nAut, char *via, size_t nVia, char *chave, size_t nChave) {
@@ -492,12 +524,17 @@ void avisos_iniciar(void) {
   vistosLer();
   m = dados_ler(AV_MARCA_ARQ);
   if (m) {
-    char v[24] = "";
-    // "1.3.1 2026-09-19 18:40"
+    char v[24] = "", sinal[96] = "";
+    const char *nl;
+    // "1.3.1 2026-09-19 18:40" e, desde a 1.4.1, uma segunda linha com o
+    // ultimo sinal de vida (ver marcaGravar). Marca antiga nao tem a segunda.
     sscanf(m, "%23s %39[^\n]", v, crashQuando);
+    nl = strchr(m, '\n');
+    if (nl && nl[1]) sscanf(nl + 1, "%95[^\n]", sinal);
     crashDetectado = 1;
     free(m);
-    printf("[avisos] a sessao anterior (%s, %s) nao se despediu: marca presente\n", v, crashQuando);
+    printf("[avisos] a sessao anterior (%s, %s) nao se despediu: marca presente; %s\n",
+           v, crashQuando, sinal[0] ? sinal : "no last signal (old mark)");
     fflush(stdout);
 #ifdef __EMSCRIPTEN__
     lerLogAnterior();

@@ -277,6 +277,11 @@ IGNORAR = {
     # e entregue a marco() na SEGUINTE, entao marco — que ja esta em
     # NAO_E_TELA — fica fora do contexto que a varredura le. Sao log.
     "pipeline erro: %.60s",
+    # Marcador de cabecalho do sidecar de fontes do mkvass (arquivo em disco) e
+    # a linha de estado do assrender, que so vai para o log. "fontes" casou
+    # com a lista de palavras de portugues; nenhum dos dois chega na tela.
+    "NVASS-FONTES-1\n",
+    "%s; eventos=%d fontes=%d fontselect=%d cobertura=%lld-%lldms render=%lluus quadro=%zuB",
     "mkv: %d faixas lidas, %d legendas com idioma",
     "seek para %ds",
     # Os quatro motivos do diagnostico [col] (descoberta.c). Sao DADOS DE UM

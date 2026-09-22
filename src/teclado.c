@@ -17,6 +17,27 @@
 #define TE_TECLA     74.0f
 #define TE_GAP       12.0f
 #define TE_COLS       6
+// ALFABETO LONGO GANHA COLUNAS, NAO FILEIRAS (#88). O de usuario/senha Xtream
+// tem 73 simbolos: em 6 colunas pedia 13 fileiras, o teto e 7 de caractere
+// (8 com apagar/limpar/pronto = 1080 px de modal, a tela inteira), e tudo
+// depois do indice 42 — 'Q' em diante, TODOS os digitos — ficava fora da grade,
+// nem desenhado nem alcancavel. O usuario fotografou o teclado cortado em "P".
+//
+// 13 e metade do alfabeto latino: a grade le a-m / n-z / A-M / N-Z /
+// 0-9._- / @!#$%&*+=, cada fileira uma metade de algo que a pessoa ja conhece,
+// e cabe em 6 fileiras — a MESMA altura do teclado padrao (994 px). Largura:
+// 13 x 74 + 12 x 12 = 1106 de grade, 1194 de modal, folga de 363 de cada lado
+// em 1920. Rolagem foi descartada: com tudo a vista nao ha "tem mais embaixo"
+// para a pessoa adivinhar, e cada tecla a mais de distancia no D-pad custa o
+// mesmo que numa grade rolada.
+//
+// So entra acima de 42 (7 x 6): padrao (36), portal (39) e MAC (17) continuam
+// em 6 colunas, pixel por pixel o layout de antes.
+#define TE_COLS_LONGO 13
+// Teto de colunas: alfabeto que nem em 13 x 7 coubesse (91+) alarga ate aqui,
+// 20 x 74 + 19 x 12 = 1708 + 88 = 1796 < 1920. Acima de 140 simbolos o resto
+// fica de fora, como ficava antes — nenhum chamador chega perto.
+#define TE_COLS_MAX  20
 // TETO das fileiras de caractere + a de apagar/limpar/pronto. O alfabeto
 // PADRAO ocupa 6 (36 caracteres); o do portal IPTV precisa de ponto, dois
 // pontos e hifen alem de a-z0-9, e nao cabe em 36. Quem abre escolhe o
@@ -24,12 +45,11 @@
 #define TE_FILEIRAS_MAX 8
 #define TE_FILEIRAS_PAD 7          // 6 de a-z0-9 + 1 de apagar/limpar/pronto
 #define TE_PASSO     (TE_TECLA + TE_GAP)
-#define TE_GRADE_W   (TE_COLS * TE_TECLA + (TE_COLS - 1) * TE_GAP)   // 504
 
 #define TE_ESCALA     0.10f
 
 // Caixa de um caractere digitado. 6 delas com vao de 12 cabem nos 504 da
-// grade, e a caixa por caractere e o que torna o codigo DITAVEL ao telefone:
+// grade de 6 colunas, e a caixa por caractere e o que torna o codigo DITAVEL ao telefone:
 // separada, ninguem confunde "rn" com "m" nem conta letra errada.
 #define TE_CX        76.0f
 #define TE_CY        92.0f
@@ -55,7 +75,7 @@
 // SETIMA FILEIRA do teclado em vez de "o que voce ja digitou".
 #define TE_CAB       (TE_CAIXA_Y + TE_CY + 44.0f)
 #define TE_RODAPE    64.0f
-#define TE_W        (TE_GRADE_W + TE_PAD * 2.0f)
+#define TE_W        (gradeW() + TE_PAD * 2.0f)
 
 #define TE_X        ((NV_TELA_W - TE_W) * 0.5f)
 
@@ -63,9 +83,18 @@
 static const char *ALFABETO = "abcdefghijklmnopqrstuvwxyz0123456789";
 
 static int   aberto, fileira, coluna;
-static float anim, focoAnim[TE_FILEIRAS_MAX][TE_COLS];
+// Coluna de caractere de onde o foco desceu para apagar/limpar/pronto. Sem ela,
+// subir de "pronto" (coluna 2) numa grade de 13 caia no 'c', a dez teclas de
+// onde a pessoa estava; com ela, volta para a mesma tecla.
+static int   colunaAntes;
+static float anim, focoAnim[TE_FILEIRAS_MAX][TE_COLS_MAX];
 static const char *alfabetoAtual = NULL;   // NULL = o padrao
 static int   nFileiras = TE_FILEIRAS_PAD;
+static int   nCols = TE_COLS;
+
+static float gradeW(void) {
+  return (float)nCols * TE_TECLA + (float)(nCols - 1) * TE_GAP;   // 504 com 6
+}
 
 // A altura da modal depende de quantas fileiras o alfabeto pediu, entao as tres
 // medidas que dela dependem viraram funcao. Continuam sendo a mesma conta.
@@ -98,14 +127,23 @@ void teclado_abrir_com(const char *titulo, const char *dica, int max,
   int letras;
   alfabetoAtual = (alfabeto && *alfabeto) ? alfabeto : NULL;
   letras = (int)strlen(alfa());
+  // Colunas: 6, ou 13 quando 7 fileiras de 6 nao bastam (ver TE_COLS_LONGO),
+  // ou o que fizer caber em 7 fileiras, ate TE_COLS_MAX.
+  nCols = TE_COLS;
+  if (letras > (TE_FILEIRAS_MAX - 1) * TE_COLS) {
+    nCols = TE_COLS_LONGO;
+    if (letras > (TE_FILEIRAS_MAX - 1) * nCols)
+      nCols = (letras + TE_FILEIRAS_MAX - 2) / (TE_FILEIRAS_MAX - 1);
+    if (nCols > TE_COLS_MAX) nCols = TE_COLS_MAX;
+  }
   // Fileiras de caractere = quantas o alfabeto pede, arredondando para cima,
   // mais a de apagar/limpar/pronto. O teto existe porque `focoAnim` e vetor
   // fixo e porque uma grade mais alta que isto nao cabe na tela.
-  nFileiras = (letras + TE_COLS - 1) / TE_COLS + 1;
+  nFileiras = (letras + nCols - 1) / nCols + 1;
   if (nFileiras > TE_FILEIRAS_MAX) nFileiras = TE_FILEIRAS_MAX;
   if (nFileiras < 2) nFileiras = 2;
   aberto = 1;
-  fileira = 0; coluna = 0;
+  fileira = 0; coluna = 0; colunaAntes = 0;
   resultado = TECLADO_NADA;
   maxN = max > 0 && max <= TECLADO_MAX ? max : TECLADO_MAX;
   // TEXTO INICIAL: editar um portal ja cadastrado nao pode obrigar a redigitar
@@ -125,8 +163,8 @@ static int colunasDe(int f) {
   // A ULTIMA FILEIRA DE CARACTERE PODE SER PARCIAL: um alfabeto de 39 enche
   // seis colunas em seis fileiras e deixa tres na setima. Sem isto o foco
   // entraria em celula vazia e "digitaria" o byte depois do fim da string.
-  n = (int)strlen(alfa()) - f * TE_COLS;
-  return n > TE_COLS ? TE_COLS : (n > 0 ? n : 1);
+  n = (int)strlen(alfa()) - f * nCols;
+  return n > nCols ? nCols : (n > 0 ? n : 1);
 }
 
 static GfxRect retangulo(int f, int c) {
@@ -137,7 +175,7 @@ static GfxRect retangulo(int f, int c) {
     r.x = TE_X + TE_PAD + (float)c * TE_PASSO;
     r.w = TE_TECLA;
   } else {
-    r.w = (TE_GRADE_W - 2.0f * TE_GAP) / 3.0f;
+    r.w = (gradeW() - 2.0f * TE_GAP) / 3.0f;
     r.x = TE_X + TE_PAD + (float)c * (r.w + TE_GAP);
   }
   return r;
@@ -151,7 +189,7 @@ static const char *rotuloExtra(int c) {
 
 static void aplicar(void) {
   if (fileira < nFileiras - 1) {
-    if (n < maxN) { texto[n++] = alfa()[fileira * TE_COLS + coluna]; texto[n] = 0; }
+    if (n < maxN) { texto[n++] = alfa()[fileira * nCols + coluna]; texto[n] = 0; }
     return;
   }
   if (coluna == 0) { if (n > 0) texto[--n] = 0; return; }
@@ -175,12 +213,18 @@ void teclado_evento(const SDL_Event *e) {
     return;
   }
   if (k == SDLK_UP) {
-    if (fileira > 0) fileira--;
+    if (fileira > 0) {
+      if (fileira == nFileiras - 1) coluna = colunaAntes;
+      fileira--;
+    }
     if (coluna >= colunasDe(fileira)) coluna = colunasDe(fileira) - 1;
     return;
   }
   if (k == SDLK_DOWN) {
-    if (fileira + 1 < nFileiras) fileira++;
+    if (fileira + 1 < nFileiras) {
+      if (fileira + 1 == nFileiras - 1) colunaAntes = coluna;
+      fileira++;
+    }
     if (coluna >= colunasDe(fileira)) coluna = colunasDe(fileira) - 1;
     return;
   }
@@ -201,7 +245,7 @@ void teclado_atualizar(float dt, Uint32 agora) {
            ? (aberto ? 1.0f : 0.0f)
            : anim_mola(anim, aberto ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
   for (f = 0; f < nFileiras; f++)
-    for (c = 0; c < TE_COLS; c++) {
+    for (c = 0; c < nCols; c++) {
       float alvo = (aberto && f == fileira && c == coluna) ? 1.0f : 0.0f;
       focoAnim[f][c] = ajustes_animacoes_reduzidas()
         ? alvo : anim_mola(focoAnim[f][c], alvo, dt, NV_MOLA_FOCO);
@@ -226,7 +270,7 @@ void teclado_desenhar(Uint32 agora) {
   // ela saiu terminando em "...que ele te...".
   if (dicaAtual[0])
     txt_bloco(TXT_CAPTION2, dicaAtual, 160, 164, 175,
-              x, teY() + dy + TE_DICA_Y, TE_GRADE_W, 28.0f, a * 0.9f, 2);
+              x, teY() + dy + TE_DICA_Y, gradeW(), 28.0f, a * 0.9f, 2);
 
   // O QUE FOI DIGITADO — em CAIXAS ou em LINHA, e quem decide e a conta, nao
   // quem chamou.
@@ -243,8 +287,8 @@ void teclado_desenhar(Uint32 agora) {
   // com cursor, que e a forma certa para texto livre de qualquer tamanho. E a
   // fileira de casas vazias nao faz falta aqui — numa busca nao ha numero de
   // caracteres a completar.
-  if ((TE_GRADE_W - (float)(maxN - 1) * TE_CGAP) / (float)maxN >= TE_CX_MIN) {
-    float bw = (TE_GRADE_W - (float)(maxN - 1) * TE_CGAP) / (float)maxN;
+  if ((gradeW() - (float)(maxN - 1) * TE_CGAP) / (float)maxN >= TE_CX_MIN) {
+    float bw = (gradeW() - (float)(maxN - 1) * TE_CGAP) / (float)maxN;
     float bx, by = teY() + dy + TE_CAIXA_Y;
     if (bw > TE_CX) bw = TE_CX;
     bx = TE_X + (TE_W - ((float)maxN * bw + (float)(maxN - 1) * TE_CGAP)) * 0.5f;
@@ -268,7 +312,7 @@ void teclado_desenhar(Uint32 agora) {
     }
   } else {
     GfxRect campo = { TE_X + TE_PAD, teY() + dy + TE_CAIXA_Y,
-                      TE_GRADE_W, TE_CY };
+                      gradeW(), TE_CY };
     float tx = campo.x + TE_CAMPO_PAD, cursorX = tx;
     gfx_cor(campo, NV_RAIO_CARD, 1.0f, 1.0f, 1.0f, 0.07f * a);
     if (n) {
@@ -311,7 +355,7 @@ void teclado_desenhar(Uint32 agora) {
       // 39 alvos iguais, a inversao e o unico contraste que se ve de relance.
       gfx_cor(t, NV_RAIO_CARD, 1.0f, 1.0f, 1.0f, anim_mistura(0.09f, 1.0f, k) * a);
       if (f < nFileiras - 1) {
-        ch[0] = alfa()[f * TE_COLS + c]; ch[1] = 0;
+        ch[0] = alfa()[f * nCols + c]; ch[1] = 0;
         s = ch;
       } else {
         s = rotuloExtra(c);

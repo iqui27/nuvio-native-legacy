@@ -32,4 +32,18 @@ void debrid_definir_episodio(int temporada, int episodio);
 // BLOQUEIA. Devolve 1 e grava em `url` um link direto que toca; 0 se nao deu.
 int  debrid_resolver(const char *infoHash, int fileIdx, char *url, unsigned n);
 
+// UMA BUSCA DE FONTES COMECOU (addons_buscar). Esquece as recusas de CONTA da
+// busca anterior: a proxima busca volta a tentar todo servico com chave.
+//
+// Por que existe (registro 1541, webOS 1.4.0): o TorBox devolveu HTTP 403 no
+// createtorrent para 8 torrents seguidos da MESMA busca. Erro de conta (plano,
+// limite, chave) nao muda de um torrent para o outro — cada tentativa a mais
+// era uma viagem de ate 15 s e a mesma linha no log. Ver debrid.c.
+void debrid_nova_busca(void);
+
+// O servico que recusou pela CONTA nesta busca, como texto curto
+// ("TorBox 403"). Devolve 1 e escreve em `dst` quando houve; 0 se nao. Serve a
+// quem mostra "nenhuma fonte serve" dizer a causa em vez da frase generica.
+int  debrid_recusa(char *dst, unsigned n);
+
 #endif

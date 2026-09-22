@@ -162,6 +162,20 @@ static void testar(void) {
   teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RETURN);
   assert(player_pediu_fontes());
   assert(player_carregando());player_encerrar();
+  // #109: a tecla que revela os controles decide o foco. Com o foco em
+  // Legendas e os controles escondidos, OK pausa e os controles sobem NO PLAY
+  // — o OK seguinte alterna de novo em vez de abrir a folha de legendas.
+  // Sessao sem URL tambem nao tem video proprio (registro 1518).
+  player_abrir(0,NULL);assert(!player_tem_video());player_definir_episodio(2,4);
+  teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);      // foco em Legendas
+  teclaPlayer(SDLK_DOWN);assert(!player_controles_visiveis());
+  teclaPlayer(SDLK_RETURN);assert(player_controles_visiveis());
+  teclaPlayer(SDLK_RETURN);assert(player_pediu_faixas()==0);
+  // A tecla fisica Play/Pause (SDLK_PAUSE, traduzida pela casca da Samsung)
+  // com os controles EM PE e o foco em Legendas: alterna, nao abre a folha.
+  teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);
+  teclaPlayer(SDLK_PAUSE);teclaPlayer(SDLK_RETURN);assert(player_pediu_faixas()==0);
+  player_encerrar();
   strcpy(c.tipo,"movie");cat_definir(&c,1);player_abrir(0,NULL);
   player_definir_episodio(2,4);assert(!player_linha_episodio()[0]);
   for(int i=0;i<10;i++)teclaPlayer(SDLK_RIGHT);

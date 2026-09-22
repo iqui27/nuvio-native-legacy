@@ -114,6 +114,10 @@ static const char *containerDa(const Stream *s) {
 }
 
 static Uint32 recebidaEm;
+// Torrents que a ultima lista jogou fora por falta de debrid: com 0 na lista e
+// isto > 0, a causa da folha vazia e "falta conta de debrid", nao "os addons
+// nao tem" (1.3.12: "145 torrents sem debrid descartados" e folha vazia).
+static int descartadosSemDebrid;
 
 Uint32 stream_idade_ms(void) {
   return recebidaEm ? SDL_GetTicks() - recebidaEm : 0xFFFFFFFFu;
@@ -129,6 +133,7 @@ void stream_definir_lista(const Stream *l, int qtd) {
   for (i = 0; i < qtd && nova; i++)
     if (l[i].url[0] || debrid_ativo()) nova[k++] = l[i];
   if (nova && qtd - k) printf("[fonte] %d torrents sem debrid descartados\n", qtd - k);
+  descartadosSemDebrid = nova ? qtd - k : 0;
   pthread_mutex_lock(&verTrava);
   free(lista); lista = nova; n = nova ? k : 0; atual = -1;
   pthread_mutex_unlock(&verTrava);
@@ -1033,7 +1038,21 @@ void stream_folha_desenhar(Uint32 agora) {
     else    badges_desenhar(s->badges,lx,y+181,w,26,anim);
   }
   if(!nf) {
+    // A FOLHA VAZIA DIZ A CAUSA (B6/#107, D5). So quando a lista esta vazia
+    // de verdade (n == 0): lista cheia com filtro de provedor que nao casa
+    // nada fica na frase generica, porque ali a causa e o filtro na tela.
+    // Ordem: torrent descartado por falta de debrid primeiro (se havia fonte,
+    // "os addons nao tem" seria falso), depois o resumo da consulta.
+    char causa[160], frase[320];
     const char *s=addons_estado()==ADD_BUSCANDO?"Buscando fontes nos addons…":"Nenhuma fonte direta disponível. Use Recarregar para tentar novamente.";
+    if (addons_estado()!=ADD_BUSCANDO && n==0) {
+      int tem = 0;
+      if (descartadosSemDebrid > 0) {
+        snprintf(causa,sizeof causa,i18n("%d fontes precisam de uma conta de debrid, e nenhuma está ligada"),descartadosSemDebrid);
+        tem = 1;
+      } else tem = addons_motivo_vazio(causa,sizeof causa);
+      if (tem) { snprintf(frase,sizeof frase,"%s. %s",causa,i18n("Use Recarregar para tentar novamente.")); s=frase; }
+    }
     txt_bloco(TXT_PG_FIM,s,196,199,204,x+56,FOLHA_TOPO+40,FOLHA_W-112,28,anim,3);
   }
   gfx_sem_recorte();

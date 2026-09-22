@@ -46,6 +46,23 @@ void artehero_qualidade(int nivel) {
   if (nivel >= 0 && nivel <= 2) qualidadeImg = nivel;
 }
 
+// FUNDO EM `original` SO ONDE O DECODE E ESCALADO. Na LG o JPEG passa por
+// jpegrapido.c (libjpeg da TV, reducao na DCT): um backdrop 3840x2160 sai em
+// 1920 sem nunca existir inteiro na memoria. Na Samsung o decode e do
+// NAVEGADOR (createImageBitmap) e devolve os 3840x2160 cheios — 33 MB em
+// ABGR8888 — dentro de um heap WASM de 256 MiB. MEDIDO no registro 1450
+// (Tizen 6, 2 GB, 1.4.0): tres fundos `original` decodificados em 3 s, malloc
+// de 21 para 68 MiB, 5,7 MiB livres no heap e `Aborted(OOM)` nove segundos
+// depois — o unico abort fatal da 1.4.0. No Tizen a ALTA fica em w1280 para
+// fundo e still; o logo (PNG pequeno) continua subindo.
+static int fundoOriginal(void) {
+#ifdef __EMSCRIPTEN__
+  return 0;
+#else
+  return qualidadeImg == 2;
+#endif
+}
+
 const char *artehero_url_card(const CatItem *item) {
   if (!item) return NULL;
   if (item->backdrop[0]) return item->backdrop;
@@ -86,7 +103,7 @@ const char *artehero_url_episodio(const CatItem *item) {
   // num still de episodio custa menos do que esperar dois segundos por ele. Na
   // ALTA vale a espera: e para isso que o nivel existe.
   { char id[32];
-    const char *tam = (qualidadeImg == 2) ? "original" : "w1280";
+    const char *tam = fundoOriginal() ? "original" : "w1280";
     idLimpo(item->imdb, id, sizeof id);
     snprintf(buf, sizeof buf,
              "https://episodes.metahub.space/%s/%d/%d/%s.jpg",
@@ -110,7 +127,7 @@ const char *artehero_url(const CatItem *item) {
   // Cinemeta) ja e 1920. Na ALTA o TMDB sobe para `original`, que com o
   // decode escalado (jpegrapido.c) sai em 1920 sem custar os 3840 inteiros.
   if (b[0]) {
-    if (qualidadeImg == 2) {
+    if (fundoOriginal()) {
       const char *p = strstr(b, "/t/p/w1280/");
       if (!p) p = strstr(b, "/t/p/w780/");
       if (p) {
@@ -179,7 +196,7 @@ const char *artehero_url_fonte(const CatItem *item, int fonte) {
   if (!b || !b[0]) return NULL;
   // A fonte selecionada segue a mesma subida para o original que o caminho
   // automático já fazia para TMDB/Trakt na qualidade alta.
-  if (qualidadeImg == 2) {
+  if (fundoOriginal()) {
     const char *p = strstr(b, "/t/p/w1280/");
     if (!p) p = strstr(b, "/t/p/w780/");
     if (p) {

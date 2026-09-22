@@ -589,9 +589,13 @@
   // tem um alternarTocando(), sem estado de "play" e "pause" pedidos
   // separadamente pelo controle.
   var MEDIA_TECLA = {
-    10252: { key: "Enter", code: "Enter", keyCode: 13 },  // MediaPlayPause
-    415:   { key: "Enter", code: "Enter", keyCode: 13 },   // MediaPlay
-    19:    { key: "Enter", code: "Enter", keyCode: 13 },   // MediaPause
+    // Play/Pause viram a tecla Pause do teclado (SDLK_PAUSE no SDL), e NAO
+    // Enter: com os controles em pe o Enter aperta o botao em foco, e com o
+    // foco em Legendas o "pause" abria a folha de legendas (#109). O C trata
+    // SDLK_PAUSE em player_evento: alterna e poe o foco no Play.
+    10252: { key: "Pause", code: "Pause", keyCode: 19 },  // MediaPlayPause
+    415:   { key: "Pause", code: "Pause", keyCode: 19 },  // MediaPlay
+    19:    { key: "Pause", code: "Pause", keyCode: 19 },  // MediaPause
     413:   { key: "Escape", code: "Escape", keyCode: 27 }, // MediaStop
     412:   { key: "ArrowLeft", code: "ArrowLeft", keyCode: 37 },  // MediaRewind
     417:   { key: "ArrowRight", code: "ArrowRight", keyCode: 39 } // MediaFastForward
@@ -602,6 +606,10 @@
   // menu tem "marcar como visto". Fora do player a tecla e engolida, nao
   // repassada: o app nao tem nada util para fazer com ela ali.
   window.addEventListener("keydown", function (ev) {
+    // O evento que ESTE listener despacha tambem passa por aqui (captura no
+    // window), e o Pause traduzido tem o mesmo keyCode 19 da tecla MediaPause:
+    // sem esta guarda ele se redespacharia para sempre.
+    if (!ev.isTrusted) return;
     var alvoTecla = MEDIA_TECLA[ev.keyCode];
     if (!alvoTecla) return;
     if (!window.nvPlayerAberto) { ev.preventDefault(); ev.stopPropagation(); return; }
