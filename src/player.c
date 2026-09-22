@@ -1947,7 +1947,11 @@ static void desenharAcoesEpisodio(void){
     int sel=skipFoco&&visivel;
     int tinta = ajustes_tinta_foco();
     TxtLinha t=sel?txt_linha(TXT_BODY,rot,tinta,tinta,tinta,255):txt_linha(TXT_BODY,rot,250,250,252,255);
-    float w=t.w+116, y=(NV_TELA_H-60.0f-88.0f)-anim*(NV_TELA_H-60.0f-88.0f-730.0f);
+    // Elevado para 664 e nao 730: a 730 a pilula (88 de altura) terminava em
+    // 818 e cortava o topo do titulo, que comeca em ~808 (captura da C9 em
+    // 22/09) — nunca se via porque o botao nao era desenhado com os controles
+    // em pe. 664 deixa ~56 px de ar sobre o titulo.
+    float w=t.w+116, y=(NV_TELA_H-60.0f-88.0f)-anim*(NV_TELA_H-60.0f-88.0f-664.0f);
     GfxRect p={64,y,w,88};
     if(sel) superficieFocoPlayer(p,.27f,1.0f,.96f*entrada);
     else gfx_cor(p,.27f,.118f,.118f,.118f,.85f*entrada);
@@ -2549,4 +2553,13 @@ void player_desenhar(Uint32 agora) {
 
   // POR CIMA DE TUDO: o painel de pos-reproducao e o mais recente na tela.
   // Ancorado pela MESMA base do painel de pausa, para nao cair sobre a barra.
+
+  // O BOTAO DE PULAR TAMBEM COM OS CONTROLES EM PE. Ate aqui ele so era
+  // desenhado no ramo "tocando limpo" (a <= 0.005, acima) — com os controles na
+  // tela ele sumia, mas CONTINUAVA COM O FOCO: qualquer seta dentro da abertura
+  // sobe os controles com skipFoco = 1, e o OK seguinte pulava a abertura sem
+  // botao nenhum a vista. Visto na C9 em 22/09 (S1E2 de Imperfect Women: o OK
+  // que devia pausar deu "seek para 149s", o fim da abertura). A posicao ja
+  // acompanha `anim` (sobe acima dos controles), era so a chamada que faltava.
+  desenharAcoesEpisodio();
 }

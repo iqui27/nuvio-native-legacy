@@ -2010,9 +2010,15 @@ static void desenhaHero(Uint32 agora, float saida) {
 
       const char *nome=p->socialNome[0]&&strcmp(p->socialNome,"Amigo")?p->socialNome:NULL;
       char autoria[240];
-      if(nome&&p->socialAcao[0])snprintf(autoria,sizeof autoria,"%s  ·  %s",nome,p->socialAcao);
+      // A ACAO VEM EM PORTUGUES DO trakt.c ("assistiu", "assistindo agora") e
+      // e montada aqui numa frase so: sem i18n() na peca, o txt_linha traduzia
+      // a frase inteira — que nao e chave — e o "Pedro · assistiu" saia em
+      // portugues numa home em ingles (C9, 22/09). Mesmo defeito que social.c
+      // ja tinha corrigido no cartao.
+      const char *acaoTr=p->socialAcao[0]?i18n(p->socialAcao):"";
+      if(nome&&acaoTr[0])snprintf(autoria,sizeof autoria,"%s  ·  %s",nome,acaoTr);
       else if(nome)snprintf(autoria,sizeof autoria,"%s",nome);
-      else snprintf(autoria,sizeof autoria,"%s",p->socialAcao);
+      else snprintf(autoria,sizeof autoria,"%s",acaoTr);
       txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,autoria,210,210,221,255,680),x,146,a);
 
       const char *urlPl=p->logo[0]?artehero_url_logo_larg(p->logo,520):NULL;
@@ -2967,8 +2973,18 @@ void home_desenhar(Uint32 agora) {
         if (foco.coluna < fileiras[r].n)
           snprintf(pos, sizeof pos, "%d / %d", foco.coluna + 1, fileiras[r].n);
         else snprintf(pos, sizeof pos, "Ver tudo");
-        TxtLinha lp = txt_linha(TXT_HERO_META, pos, 186, 191, 202, 255);
-        txt_desenhar(lp, NV_TELA_W - NV_HOME_SAFE_RIGHT - lp.w, y + (tl.h - lp.h)*.5f);
+        // PILULA ESCURA ATRAS DO CONTADOR. A fileira de baixo corre sobre a arte
+        // do destaque, e cinza 186 direto sobre um fundo claro sumia — o "See
+        // all" do fim da fileira virou um "all" solto na C9 (22/09, arte clara
+        // de One Night Only). O veu so escurece a esquerda, onde mora o titulo;
+        // a direita a arte chega quase crua.
+        char posTr[32];
+        snprintf(posTr, sizeof posTr, "%s", foco.coluna < fileiras[r].n ? pos : i18n(pos));
+        TxtLinha lp = txt_linha(TXT_HERO_META, posTr, 238, 240, 245, 255);
+        float px = NV_TELA_W - NV_HOME_SAFE_RIGHT - lp.w, py = y + (tl.h - lp.h)*.5f;
+        gfx_cor((GfxRect){ px - 16.0f, py - 6.0f, lp.w + 32.0f, lp.h + 12.0f }, 0.5f,
+                0.04f, 0.045f, 0.055f, 0.62f);
+        txt_desenhar(lp, px, py);
       }
       if (tipo == FILEIRA_CATALOGOS) {
         desenhaAtalhos(r, cardY);
@@ -3125,7 +3141,7 @@ void home_desenhar(Uint32 agora) {
             float tx=ax+d+24.0f,tw=thumbPath?arteX-tx-24.0f:w-192.0f;
             TxtLinha nome=txt_linha_corta(TXT_CW_TITULO,cItem->socialNome[0]?cItem->socialNome:cItem->pais,245,245,247,255,tw);
             txt_desenhar(nome,tx,conteudoTopo);
-            TxtLinha acao=txt_linha_corta(TXT_MINI,cItem->socialAcao[0]?cItem->socialAcao:cItem->provNome,181,185,196,255,tw);
+            TxtLinha acao=txt_linha_corta(TXT_MINI,cItem->socialAcao[0]?i18n(cItem->socialAcao):cItem->provNome,181,185,196,255,tw);
             txt_desenhar(acao,tx,conteudoTopo+38.0f);
             TxtLinha titulo=txt_linha_corta(TXT_CW_META,cItem->titulo,228,231,239,255,tw);
             txt_desenhar(titulo,tx,conteudoTopo+92.0f);
