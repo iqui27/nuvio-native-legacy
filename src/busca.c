@@ -38,6 +38,8 @@
 #include "ajustes.h"
 #include "catalogo.h"
 #include "descoberta.h"
+#include "buscasrec.h"
+#include "botoes.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -78,10 +80,27 @@
 
 #define BU_KB_X        NV_CONTENT_PAD
 
+// --- Buscas recentes (campo vazio; regras em buscasrec.h) ---------------------
+// Pilulas de 56 (a altura do SECUNDARIO de botoes.h e das pilulas da Biblioteca)
+// com o corpo TXT_DET_BOTAO 25/500 dos botoes: a 3 m e o menor corpo que este
+// app usa em controle, e o termo e um controle, nao legenda. Correm em LINHAS
+// que quebram na borda direita (BU_DIR), porque dez termos de tamanho livre nao
+// cabem numa fileira rolavel sem esconder o "Limpar" no fim.
+//   titulo "Buscas recentes" TXT_TITULO3 em BU_RES_Y (o topo das fileiras de
+//   resultado, entao a tela nao pula quando a primeira letra entra);
+//   pilulas a partir de +84, passo vertical 56 + 20, gap horizontal 16.
+#define BU_REC_Y       (BU_RES_Y + 84.0f)
+#define BU_REC_H       BOTAO_H_SECUNDARIO
+#define BU_REC_PADX    BOTAO_PAD_X2
+#define BU_REC_GAP     BOTAO_GAP
+#define BU_REC_LINHA   (BU_REC_H + 20.0f)
+#define BU_REC_ITENS   (BUSCASREC_MAX + 1)   // termos + "Limpar"
+
 // --- Estado ------------------------------------------------------------------
 static Foco  focoKb;
 static Foco  focoRes;
-static int   painel = 0;            // 0 = teclado, 1 = resultados
+// 0 = teclado, 1 = resultados, 2 = buscas recentes (so com o campo vazio).
+static int   painel = 0;
 static char  consulta[BU_MAX_CONSULTA];
 static int   nConsulta = 0;
 static char consultaFiltrada[BU_MAX_CONSULTA];
@@ -103,6 +122,23 @@ static float scrollX[BU_MAX_FILEIRAS];
 static float animCampo = 0.0f;
 static HomeItem itemFoco;
 static int   temItemFoco = 0;
+
+// Buscas recentes. focoRec vai de 0 a n (n = o "Limpar"). recRect/recLin sao
+// preenchidos pelo DESENHO (a largura de cada pilula depende do texto
+// rasterizado) e lidos pela navegacao: cima/baixo procuram a pilula de x mais
+// proximo na linha vizinha, e isso so se sabe com a geometria real.
+static int     focoRec = 0;
+static float   animRec[BU_REC_ITENS];
+static GfxRect recRect[BU_REC_ITENS];
+static int     recLin[BU_REC_ITENS];
+static int     nRecLayout = 0;
+// Pressao longa na pilula: o tempo corre do KEYDOWN e a remocao DISPARA em
+// busca_atualizar ao cruzar NV_HOLD_MS, com o dedo ainda no botao — como no
+// guia (guia.c). Esperar o KEYUP deixaria o dono segurando sem saber se ja
+// pode soltar. okLongo faz o KEYUP daquela pressao nao virar tambem um OK
+// curto.
+static int     okPress = 0, okLongo = 0;
+static Uint32  okDesde = 0;
 
 static const int KB_COLUNAS[BU_KB_FILEIRAS] = { 6, 6, 6, 6, 6, 6, 3 };
 // Minusculas como no aparelho: o campo mostra o que foi digitado, e uma consulta
@@ -170,7 +206,9 @@ static void refiltrar(void) {
   nFil = 0;
   // Menos de 2 caracteres = estado vazio, como o web ("Digite ao menos 2
   // caracteres"). Buscar com uma letra devolve o acervo inteiro e nao ajuda.
-  if ((int)strlen(alvo) < 2) { painel = 0; return; }
+  // So derruba o painel de RESULTADOS: o de buscas recentes vive justamente
+  // com o campo vazio.
+  if ((int)strlen(alvo) < 2) { if (painel == 1) painel = 0; return; }
 
   // BUSCA NA REDE. A tela so filtrava o que ja estava em memoria — as ~12
   // primeiras linhas de cada catalogo da home — entao qualquer titulo fora
@@ -286,6 +324,81 @@ static void refiltrar(void) {
   }
 }
 
+// --- Buscas recentes --------------------------------------------------------
+// QUANDO UMA BUSCA CONTA COMO FEITA. Nao a cada letra: refiltrar roda por
+// tecla, e gravar ali encheria a lista de "ma", "mat", "matr". Conta quando o
+// dono DEMONSTRA que a busca serviu — entrou nos resultados, abriu um titulo,
+// saiu da tela ou apagou o campo com resultado na tela (viu e desistiu; o que
+// viu ainda e o que ele buscou), ou refez pela pilula. O limite de 2
+// caracteres e o dedupe ficam em buscasrec.c.
+static void registrarConsulta(void) {
+  if (nConsulta >= 2 && nFil > 0) buscasrec_registrar(consulta);
+}
+
+static int recentesVisiveis(void) { return nConsulta == 0 && buscasrec_n() > 0; }
+
+static void recentesAjustarFoco(void) {
+  int n = buscasrec_n();
+  if (focoRec > n) focoRec = n;
+  if (focoRec < 0) focoRec = 0;
+  if (n == 0 && painel == 2) painel = 0;
+}
+
+// Entrar na lista vindo do teclado: a pilula da linha mais proxima, na altura,
+// da tecla em foco — a mesma continuidade que a ponte teclado->resultados tem.
+// Sem geometria ainda (primeiro quadro), a primeira pilula.
+static void recentesEntrar(void) {
+  float ky = BU_KB_Y + focoKb.fileira * BU_KB_PASSO + BU_TECLA_W * 0.5f;
+  float melhor = 1e9f;
+  int i;
+  painel = 2;
+  focoRec = 0;
+  for (i = 0; i < nRecLayout; i++) {
+    float d = recRect[i].y + recRect[i].h * 0.5f - ky;
+    if (d < 0) d = -d;
+    if (d < melhor - 0.5f) { melhor = d; focoRec = i; }
+  }
+  recentesAjustarFoco();
+}
+
+// Cima/baixo: a pilula da linha vizinha cujo CENTRO em x esta mais perto.
+static void recentesVertical(int dy) {
+  int alvoLin, i, melhorI = -1;
+  float cx, melhor = 1e9f;
+  if (focoRec >= nRecLayout) return;
+  alvoLin = recLin[focoRec] + dy;
+  cx = recRect[focoRec].x + recRect[focoRec].w * 0.5f;
+  for (i = 0; i < nRecLayout; i++) {
+    float d;
+    if (recLin[i] != alvoLin) continue;
+    d = recRect[i].x + recRect[i].w * 0.5f - cx;
+    if (d < 0) d = -d;
+    if (d < melhor) { melhor = d; melhorI = i; }
+  }
+  if (melhorI >= 0) focoRec = melhorI;
+}
+
+// OK curto: refaz a busca com o termo (e ele sobe para o topo), ou, no
+// "Limpar", apaga tudo. O foco volta ao TECLADO depois de refazer: os
+// resultados chegam da rede em seguida e a ponte -> e a mesma de sempre;
+// deixar o foco numa lista que acabou de sumir o poria em lugar nenhum.
+static void recentesAcionar(void) {
+  int n = buscasrec_n();
+  if (focoRec >= n) { buscasrec_limpar(); recentesAjustarFoco(); return; }
+  snprintf(consulta, sizeof consulta, "%s", buscasrec_termo(focoRec));
+  nConsulta = (int)strlen(consulta);
+  buscasrec_registrar(consulta);
+  painel = 0;
+  refiltrar();
+}
+
+// Pressao longa: remove o termo em foco; no "Limpar", o mesmo que o OK curto.
+static void recentesRemover(void) {
+  if (focoRec >= buscasrec_n()) buscasrec_limpar();
+  else buscasrec_remover(focoRec);
+  recentesAjustarFoco();
+}
+
 // --- Teclas ------------------------------------------------------------------
 static void aplicarTecla(void) {
   if (focoKb.fileira < BU_KB_FILEIRAS - 1) {
@@ -297,6 +410,7 @@ static void aplicarTecla(void) {
   } else if (focoKb.coluna == 1) {
     if (nConsulta > 0) nConsulta--;
   } else {
+    registrarConsulta();
     nConsulta = 0;
   }
   consulta[nConsulta] = 0;
@@ -329,6 +443,9 @@ int busca_iniciar(void) {
   memset(animTecla, 0, sizeof animTecla);
   memset(animRes, 0, sizeof animRes);
   memset(scrollX, 0, sizeof scrollX);
+  memset(animRec, 0, sizeof animRec);
+  focoRec = 0; nRecLayout = 0;
+  okPress = okLongo = 0; okDesde = 0;
   refiltrar();
   return 1;
 }
@@ -351,8 +468,27 @@ int busca_item_focado(HomeItem *out) {
 
 void busca_evento(const SDL_Event *e) {
   if (e->type == SDL_QUIT) { sair = 1; return; }
-  if (e->type != SDL_KEYDOWN) return;
   SDL_Keycode k = e->key.keysym.sym;
+
+  // OK NA PILULA DECIDE NA SOLTURA: so ali se sabe se foi toque ou pressao
+  // longa. KEYUP sem KEYDOWN visto aqui nao e clique (a barra lateral decide no
+  // KEYDOWN e o KEYUP do mesmo toque cai nesta tela — o issue #8 da home).
+  if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && painel == 2) {
+    if (e->type == SDL_KEYDOWN) {
+      if (!okPress) { okPress = 1; okLongo = 0; okDesde = SDL_GetTicks(); }
+    } else if (e->type == SDL_KEYUP && okPress) {
+      Uint32 dur = SDL_GetTicks() - okDesde;
+      okPress = 0; okDesde = 0;
+      if (okLongo) okLongo = 0;
+      else if (dur >= NV_HOLD_MS) recentesRemover();
+      else recentesAcionar();
+    }
+    return;
+  }
+  if (e->type == SDL_KEYUP && (k == SDLK_RETURN || k == SDLK_KP_ENTER)) {
+    okPress = 0; okLongo = 0; okDesde = 0;
+  }
+  if (e->type != SDL_KEYDOWN) return;
 
   if (k == SDLK_BACKSPACE && painel == 0) {
     if (nConsulta > 0) { consulta[--nConsulta] = 0; refiltrar(); }
@@ -361,8 +497,39 @@ void busca_evento(const SDL_Event *e) {
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE) {
     // Nos resultados, o Back volta ao teclado: e o movimento inverso do que
     // levou ate la. So do teclado ele fecha a tela.
-    if (painel == 1) painel = 0; else sair = 1;
+    if (painel != 0) painel = 0;
+    else { registrarConsulta(); sair = 1; }
     return;
+  }
+
+  if (painel == 2) {
+    // Letra do teclado FISICO com o foco nas pilulas: vai para o teclado da
+    // tela e digita — o dono comecou uma busca nova, nao quer escolher pilula.
+    if (!(e->key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_GUI)) &&
+        ((k >= SDLK_a && k <= SDLK_z) || (k >= SDLK_0 && k <= SDLK_9))) {
+      painel = 0;
+    } else {
+      switch (k) {
+        case SDLK_TAB: painel = 0; break;
+        case SDLK_LEFT:
+          // Primeira pilula da LINHA devolve ao teclado, como a primeira coluna
+          // dos resultados. Nas outras, anda para a anterior.
+          if (focoRec == 0 || focoRec >= nRecLayout || focoRec - 1 >= nRecLayout ||
+              recLin[focoRec - 1] != recLin[focoRec]) painel = 0;
+          else focoRec--;
+          break;
+        case SDLK_RIGHT:
+          // Fim da linha para: pular para a linha de baixo pela direita
+          // desencontra do ESQUERDA, que no comeco da linha volta ao teclado.
+          if (focoRec + 1 < nRecLayout && recLin[focoRec + 1] == recLin[focoRec])
+            focoRec++;
+          break;
+        case SDLK_UP:   recentesVertical(-1); break;
+        case SDLK_DOWN: recentesVertical(1);  break;
+        default: break;
+      }
+      return;
+    }
   }
 
   if (painel == 0) {
@@ -373,15 +540,21 @@ void busca_evento(const SDL_Event *e) {
       }
       return;
     }
-    if (k == SDLK_TAB && nFil > 0) { painel = 1; return; }
+    if (k == SDLK_TAB && nFil > 0) { registrarConsulta(); painel = 1; return; }
+    if (k == SDLK_TAB && recentesVisiveis()) { recentesEntrar(); return; }
     switch (k) {
-      case SDLK_LEFT:  if (!focus_mover_grade(&focoKb, -1, 0)) sair = 1; break;
+      case SDLK_LEFT:
+        if (!focus_mover_grade(&focoKb, -1, 0)) { registrarConsulta(); sair = 1; }
+        break;
       case SDLK_RIGHT:
         // Passar da ULTIMA coluna do teclado entra nos resultados. E a unica
         // ponte entre os dois paineis, e por isso ela nao pode falhar em
         // silencio: sem resultado nenhum, o foco fica onde esta.
+        // Com o campo vazio a ponte leva as buscas recentes, que ocupam o
+        // mesmo lugar das fileiras.
         if (focoKb.coluna >= KB_COLUNAS[focoKb.fileira] - 1) {
-          if (nFil > 0) painel = 1;
+          if (nFil > 0) { registrarConsulta(); painel = 1; }
+          else if (recentesVisiveis()) recentesEntrar();
         } else focus_mover_grade(&focoKb, 1, 0);
         break;
       // GRADE, e nao fileiras: ver focus_mover_grade. Era daqui que saia o
@@ -414,15 +587,16 @@ void busca_evento(const SDL_Event *e) {
     case SDLK_UP:   focus_mover(&focoRes, 0, -1); break;
     case SDLK_DOWN: focus_mover(&focoRes, 0,  1); break;
     case SDLK_RETURN: case SDLK_KP_ENTER:
-      if (focoRes.fileira < nFil && focoRes.coluna < fil[focoRes.fileira].n)
+      if (focoRes.fileira < nFil && focoRes.coluna < fil[focoRes.fileira].n) {
+        registrarConsulta();
         pedido = fil[focoRes.fileira].itens[focoRes.coluna];
+      }
       break;
     default: break;
   }
 }
 
 void busca_atualizar(float dt, Uint32 agora) {
-  (void)agora;
   // O RESULTADO DA REDE CHEGA DEPOIS DA TECLA. refiltrar() so roda quando o
   // dono digita, entao sem isto a resposta do Cinemeta chegava, ficava guardada
   // e NUNCA aparecia — a tela seguia mostrando o filtro local do momento em que
@@ -450,6 +624,16 @@ void busca_atualizar(float dt, Uint32 agora) {
                                 alvo > animRes[r][c] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
     }
   animCampo = anim_mola(animCampo, painel == 0 ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
+  if (painel == 2 && okPress && !okLongo && agora - okDesde >= NV_HOLD_MS) {
+    okLongo = 1;
+    recentesRemover();
+  }
+  if (painel != 2) { okPress = 0; okLongo = 0; }
+  for (int i = 0; i < BU_REC_ITENS; i++) {
+    float alvo = (painel == 2 && i == focoRec) ? 1.0f : 0.0f;
+    animRec[i] = anim_mola(animRec[i], alvo, dt,
+                           alvo > animRec[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+  }
 
   // Rola so o necessario para a fileira em foco caber inteira na area util —
   // rolagem proporcional ao indice esconderia a primeira fileira antes de o
@@ -557,7 +741,9 @@ static void desenhaTeclado(void) {
   // Dicas do controle, uma por linha, no mesmo tom apagado das de Ajustes —
   // a linha unica com bolinhas competia com as teclas logo acima.
   { float y = BU_KB_Y + BU_KB_FILEIRAS * BU_KB_PASSO + 28.0f;
-    const char *d1 = nFil ? i18n("→   Resultados") : i18n("OK   Digitar");
+    const char *d1 = nFil ? i18n("→   Resultados")
+                   : recentesVisiveis() ? i18n("→   Buscas recentes")
+                   : i18n("OK   Digitar");
     const char *d2 = i18n("Voltar   Menu");
     TxtLinha a1 = txt_linha(TXT_CAPTION2, d1, 150, 154, 163, 255);
     TxtLinha a2 = txt_linha(TXT_CAPTION2, d2, 150, 154, 163, 255);
@@ -585,9 +771,65 @@ static void desenhaVazio(void) {
   }
 }
 
+// Buscas recentes, no lugar do estado vazio. Termo: superficie de repouso
+// 0.10/0.11/0.13 (a das linhas da Biblioteca — e conteudo do dono, nao um
+// comando) e realce cheio no foco, com a luz difusa de botoes.h por tras e a
+// tinta de ajustes_tinta_foco(). "Limpar": o SECUNDARIO de botoes.h (so
+// contorno em repouso), para nao ser lido como mais um termo a um metro dele.
+// A dica embaixo diz o que o OK e o OK segurado fazem — sem ela a remocao e
+// invisivel. Durante a pressao, um filete na base da pilula enche ate
+// NV_HOLD_MS: e o aviso de "solte agora e nao apaga".
+static void desenhaRecentes(Uint32 agora) {
+  int n = buscasrec_n(), i, lin = 0;
+  float x = BU_RES_X, y = BU_REC_Y, maxW = BU_DIR - BU_RES_X;
+  const char *limpar = i18n("Limpar");
+  TxtLinha tt = txt_linha(TXT_TITULO3, i18n("Buscas recentes"), 255, 255, 255, 255);
+  txt_desenhar(tt, BU_RES_X, BU_RES_Y);
+  nRecLayout = 0;
+  for (i = 0; i <= n && i < BU_REC_ITENS; i++) {
+    float f = animRec[i];
+    int tinta = f > 0.5f ? ajustes_tinta_foco() : 235;
+    float w;
+    TxtLinha l = { 0 };
+    if (i < n) {
+      l = txt_linha_corta(TXT_DET_BOTAO, buscasrec_termo(i), tinta, tinta, tinta, 255,
+                          maxW - 2.0f * BU_REC_PADX);
+      w = (float)l.w + 2.0f * BU_REC_PADX;
+    } else {
+      w = botao_largura(limpar, NULL, 0);
+    }
+    if (x > BU_RES_X && x + w > BU_DIR) { x = BU_RES_X; y += BU_REC_LINHA; lin++; }
+    recRect[i] = (GfxRect){ x, y, w, BU_REC_H };
+    recLin[i] = lin;
+    nRecLayout = i + 1;
+    if (i < n) {
+      float ar, ag, ab;
+      ajustes_acento(&ar, &ag, &ab);
+      botao_luz(recRect[i], f, 1.0f);
+      if (f > 0.01f) gfx_cor(recRect[i], NV_RAIO_PILL, ar, ag, ab, f);
+      if (f < 0.99f) gfx_cor(recRect[i], NV_RAIO_PILL, 0.10f, 0.11f, 0.13f, 1.0f - f);
+      txt_desenhar(l, x + BU_REC_PADX, y + (BU_REC_H - l.h) * 0.5f);
+    } else {
+      botao_pilula(recRect[i], limpar, NULL, f, 0, 0, 1.0f);
+    }
+    if (painel == 2 && i == focoRec && okPress && !okLongo) {
+      float p = anim_clamp((agora - okDesde) / (float)NV_HOLD_MS, 0.0f, 1.0f);
+      int t = ajustes_tinta_foco();
+      GfxRect barra = { x + BU_REC_PADX, y + BU_REC_H - 10.0f,
+                        (w - 2.0f * BU_REC_PADX) * p, 4.0f };
+      if (barra.w > 1.0f) gfx_cor(barra, 0.5f, t / 255.0f, t / 255.0f, t / 255.0f, 0.9f);
+    }
+    x += w + BU_REC_GAP;
+  }
+  { TxtLinha d = txt_linha(TXT_CAPTION2, i18n("OK   Buscar de novo      Segure OK   Remover"),
+                           150, 153, 162, 255);
+    txt_desenhar_alpha(d, BU_RES_X, y + BU_REC_H + 32.0f, 0.9f); }
+}
+
 static void desenhaResultados(Uint32 agora) {
-  (void)agora;
   temItemFoco = 0;
+  if (nFil == 0 && recentesVisiveis()) { desenhaRecentes(agora); return; }
+  nRecLayout = 0;
   if (nFil == 0) { desenhaVazio(); return; }
 
   gfx_recorte(BU_RES_X - 8.0f, BU_RES_Y - 30.0f,

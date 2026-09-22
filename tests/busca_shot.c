@@ -4,6 +4,7 @@
 // cursor e estado vazio depois de duas letras. A lista real e assincrona e fica
 // para o teste manual do aparelho; aqui o importante e a casca da interacao.
 #include "busca.h"
+#include "buscasrec.h"
 #include "dados.h"
 #include "ajustes.h"
 #include "gfx.h"
@@ -94,6 +95,31 @@ int main(int argc, char **argv) {
   tecla(SDLK_a);
   tecla(SDLK_g);
   snprintf(nome, sizeof nome, "%s-digitado.bmp", saida);
+  captura(nome);
+
+  // COM HISTORICO: campo vazio mostra as pilulas no lugar do estado vazio.
+  // Termos de tamanhos diferentes e um longo, para a quebra de linha e o
+  // "Limpar" no fim aparecerem; registrados do mais antigo para o mais novo.
+  { static const char *termos[] = {
+      "up", "interestelar", "the office", "dune", "o senhor dos aneis",
+      "breaking bad", "matrix", "fundacao", "stranger things", "cidade de deus" };
+    int i;
+    for (i = 0; i < 10; i++) buscasrec_registrar(termos[i]); }
+  busca_iniciar();
+  snprintf(nome, sizeof nome, "%s-recentes.bmp", saida);
+  captura(nome);
+  // Da tecla "a" (coluna 0) ate a ultima coluna e mais um: a ponte leva as
+  // pilulas. Depois desce uma linha, para o foco cair no meio da lista.
+  { int i; for (i = 0; i < 6; i++) tecla(SDLK_RIGHT); }
+  snprintf(nome, sizeof nome, "%s-recentes-foco.bmp", saida);
+  captura(nome);
+  tecla(SDLK_DOWN);
+  tecla(SDLK_RIGHT);
+  snprintf(nome, sizeof nome, "%s-recentes-foco2.bmp", saida);
+  captura(nome);
+  // Ate o "Limpar": fim da ultima linha.
+  { int i; tecla(SDLK_DOWN); for (i = 0; i < 10; i++) tecla(SDLK_RIGHT); }
+  snprintf(nome, sizeof nome, "%s-recentes-limpar.bmp", saida);
   captura(nome);
   puts("PASS: capturas da Busca gravadas.");
   return 0;

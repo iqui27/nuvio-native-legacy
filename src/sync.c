@@ -13,6 +13,7 @@
 #include "salvos.h"
 #include "recomenda.h"
 #include "fontepref.h"
+#include "buscasrec.h"
 #include "trakt.h"
 #include "traktauth.h"
 #include "catalogo.h"
@@ -898,6 +899,10 @@ void sync_esquecer_usuario(void) {
   // sobreviveria ao logout em disco e passaria a mandar na reproducao da
   // proxima pessoa.
   fontepref_esquecer();
+  // E AS BUSCAS RECENTES. Nao sobem para a conta (sao deste aparelho), mas sao
+  // o que a pessoa procurou — a proxima a entrar abriria a Busca com a lista
+  // de quem saiu nas pilulas, a um OK de refazer cada uma.
+  buscasrec_esquecer();
   free(bibBlob);    bibBlob = NULL;    temBibBlob = 0;
   free(vistosBlob); vistosBlob = NULL; temVistosBlob = 0;
   // colBlob estava de fora desta lista desde que foi criado, ao lado de um
