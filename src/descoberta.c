@@ -3,6 +3,7 @@
 #include "ajustes.h"
 #include "catordem.h"
 #include "fileiras.h"
+#include "homeestado.h"
 #include "colecoes.h"
 #include "marco.h"
 #include <SDL2/SDL.h>
@@ -644,6 +645,9 @@ int desc_busca_n(const char *termo) {
 
 
 static int buscando;
+// Identidade da montagem em voo. Troca de conta/perfil/config invalida o fio
+// antigo antes que ele publique ou grave um snapshot privado no contexto novo.
+static volatile unsigned montagemGeracao;
 // Lido pelo fio de montagem no fim do ciclo e escrito pelo laco principal.
 // `volatile` porque sao fios diferentes; nao ha corrida real de valor — o pior
 // caso e uma remontagem a mais, que e barata perto de perder o pedido.
@@ -1525,6 +1529,82 @@ typedef struct {
   int  pronto;
 } TarefaCat;
 
+// Recupera a ultima resposta boa da mesma fileira. O catalogo publicado pode
+// ser o snapshot do arranque anterior; manter a janela por CHAVE evita que um
+// timeout transforme uma resposta parcial em uma reordenacao visual. A copia e
+// feita antes da proxima publicacao, quando os indices ainda apontam para o
+// bloco atualmente desenhado.
+static int linhaAnterior(const char *chave, CatItem *saida, int max,
+                         CatFileira *meta) {
+  // The live catalogue can belong to a previous profile even while that
+  // profile's add-on URL remains configured. Without the accepted snapshot
+  // for the current owner/profile/config, none of its item bodies are safe to
+  // reuse.
+  if (!homeestado_contexto_valido() || !homeestado_tem_fileira(chave)) return 0;
+  return cat_copiar_fileira(chave, saida, max, meta);
+}
+
+static int fileiraMontada(const CatFileira *v, int n, const char *chave) {
+  int i;
+  for (i = 0; i < n; i++) if (!strcmp(v[i].chave, chave)) return 1;
+  return 0;
+}
+
+static int fileiraPodeSerPreservada(const CatFileira *f) {
+  return f && f->chave[0] && homeestado_contexto_valido() &&
+         homeestado_tem_fileira(f->chave);
+}
+
+static void ordenarPorSnapshot(CatFileira *fil, int n) {
+  int i;
+  if (!fil || n < 2 || !homeestado_contexto_valido()) return;
+  for (i = 1; i < n; i++) {
+    CatFileira atual = fil[i];
+    int rank = homeestado_ordem_fileira(atual.chave), j = i;
+    while (j > 0) {
+      int anterior = homeestado_ordem_fileira(fil[j - 1].chave);
+      if (anterior < 0 || (rank >= 0 && anterior <= rank)) break;
+      fil[j] = fil[j - 1];
+      j--;
+    }
+    fil[j] = atual;
+  }
+}
+
+// Manifesto ausente/timeout nao e uma ordem para apagar a estrutura anterior.
+// Reanexa as linhas ainda nao produzidas nesta rodada, mantendo a chave e os
+// itens bons do snapshot. Linhas novas continuam entrando apenas quando foram
+// declaradas e responderam nesta rodada.
+static void preservarFileirasAusentes(CatItem **lote, int *n, int *cap,
+                                       CatFileira *fil, int *nFil) {
+  int r;
+  CatItem tmp[MAX_POR_FILEIRA];
+  if (!lote || !*lote || !n || !cap || !fil || !nFil) return;
+  for (r = 0; r < cat_n_fileiras() && *nFil < CAT_FIL_MAX; r++) {
+    const CatFileira *old = cat_fileira(r);
+    int got, need;
+    if (!old || !old->chave[0] || fileiraMontada(fil, *nFil, old->chave)) continue;
+    // Reuse bytes only from the accepted snapshot for this exact owner,
+    // profile, and configuration. A still-configured URL does not make items
+    // from the previous profile safe to copy.
+    if (!fileiraPodeSerPreservada(old)) continue;
+    got = linhaAnterior(old->chave, tmp, MAX_POR_FILEIRA, NULL);
+    if (!got && !old->estado) continue;
+    need = *n + got;
+    if (need > *cap) {
+      int alvo = *cap ? *cap * 2 : 128;
+      while (alvo < need) alvo *= 2;
+      CatItem *novo = realloc(*lote, sizeof(CatItem) * (size_t)alvo);
+      if (!novo) return;
+      *lote = novo; *cap = alvo;
+    }
+    if (got) memcpy(*lote + *n, tmp, sizeof(CatItem) * (size_t)got);
+    fil[*nFil] = *old;
+    fil[*nFil].ini = *n; fil[*nFil].n = got;
+    (*n) += got; (*nFil)++;
+  }
+}
+
 static TarefaCat *tarefas;
 static int  nTarefas, proximaTarefa;
 static pthread_mutex_t catTrava = PTHREAD_MUTEX_INITIALIZER;
@@ -1901,6 +1981,8 @@ static void *montar(void *u) {
   CatItem *lote = malloc(sizeof(CatItem) * (size_t)cap);
   int n = 0, i;
   int nContinuar = 0, nSocial = 0;
+  unsigned minhaGeracao = montagemGeracao;
+  unsigned meuEstado = homeestado_geracao();
   // PUBLICAR EM PARTES SO COM A TELA VAZIA.
   //
   // A publicacao fileira a fileira existe para a PRIMEIRA home aparecer cedo.
@@ -2280,6 +2362,33 @@ static void *montar(void *u) {
                  addons_nome(i3), ceder, decls[ordem[ceder]].titulo);
         } }
 
+      // Uma resposta nova de manifesto nao muda a estrutura que a pessoa ja
+      // aceitou. Enquanto a assinatura owner/perfil/idioma/config continuar
+      // valida, pedimos apenas chaves presentes no snapshot; o usuario pode
+      // acrescentar uma fileira explicitamente em Ajustes, o que invalida a
+      // assinatura e libera a proxima montagem. Ainda registramos todas as
+      // declaracoes em fileiras.c acima para permitir essa escolha depois.
+      if (homeestado_contexto_valido()) {
+        int w = 0;
+        for (k = 0; k < nOrdem; k++) {
+          const Decl *d = &decls[ordem[k]];
+          if (homeestado_tem_fileira(d->chave)) ordem[w++] = ordem[k];
+        }
+        nOrdem = w;
+        // O snapshot aceito define a ordem estável. O manifesto pode reordenar
+        // suas declarações entre ciclos sem representar uma escolha do usuário.
+        for (k = 1; k < nOrdem; k++) {
+          int atual = ordem[k];
+          int rank = homeestado_ordem_fileira(decls[atual].chave), j = k;
+          while (j > 0) {
+            int anterior = homeestado_ordem_fileira(decls[ordem[j - 1]].chave);
+            if (anterior < 0 || (rank >= 0 && anterior <= rank)) break;
+            ordem[j] = ordem[j - 1]; j--;
+          }
+          ordem[j] = atual;
+        }
+      }
+
       int marcouPrimeira = 0;
       // Instrumentacao do arranque. Antes dava para ver o TOTAL de fileiras e
       // nada mais: catalogo que nao respondeu, catalogo vazio e catalogo
@@ -2347,6 +2456,7 @@ static void *montar(void *u) {
           for (k = 0; k < nTarefas && nFil < teto; k++) {
             const Decl *d = tarefas[k].d;
             int got;
+            int estadoLinha = 0;
             for (;;) {
               int pr;
               pthread_mutex_lock(&catTrava);
@@ -2363,9 +2473,12 @@ static void *montar(void *u) {
               // pede outro no lugar dele.
               vazios++;
               printf("[desc] catalogo vazio: %s\n", d->titulo);
-              continue;
+              // Vazio valido: conserva a chave da fileira na estrutura. A
+              // proxima fileira nao muda de identidade por causa de um feed
+              // que respondeu corretamente sem itens.
+              estadoLinha = 1;
             }
-            if (!got) {
+            if (!tarefas[k].respondeu && !got) {
               // ISSUE #42(a): antes disto o log so tinha o resumo do fim da
               // rodada ("N pedidos, M responderam") — quem quisesse saber QUAL
               // fileira sumiu tinha de adivinhar por subtracao. Nomear o
@@ -2374,12 +2487,16 @@ static void *montar(void *u) {
               // pedida, e nao so por total.
               printf("[desc] catalogo sem resposta a tempo: %s (%s)\n",
                      d->titulo, d->nomeAddon);
-              continue;   // sem resposta; a rodada seguinte pede outro
+              // Timeout preserva o ultimo lote bom desta chave. No primeiro
+              // arranque, sem snapshot, segue omitida de forma segura.
+              got = linhaAnterior(d->chave, tarefas[k].itens,
+                                  MAX_POR_FILEIRA, NULL);
+              if (!got) continue;
             }
             GARANTE(MAX_POR_FILEIRA + 2);
             if (got > cap - n) got = cap - n;
-            if (got <= 0) continue;
-            memcpy(lote + n, tarefas[k].itens, sizeof(CatItem) * (size_t)got);
+            if (got > 0)
+              memcpy(lote + n, tarefas[k].itens, sizeof(CatItem) * (size_t)got);
           {
             CatFileira *f = &fil[nFil++];
             memset(f, 0, sizeof *f);
@@ -2388,7 +2505,7 @@ static void *montar(void *u) {
             snprintf(f->tipo,   sizeof f->tipo,   "%s", d->tipo);
             snprintf(f->base,   sizeof f->base,   "%s", d->base ? d->base : "");
             snprintf(f->catId,  sizeof f->catId,  "%s", d->id);
-            f->ini = n; f->n = got;
+            f->ini = n; f->n = got; f->estado = estadoLinha;
           }
           n += got;
           printf("[desc] fileira %d: %s (%d)\n", nFil - 1, d->titulo, got);
@@ -2408,7 +2525,7 @@ static void *montar(void *u) {
           // So publica em partes com a tela VAZIA. Sobre o cache — ou sobre a
           // home da volta anterior — seria um retrocesso visivel: 16 fileiras
           // viram 1. Ver `progressivo` no inicio de montar().
-          if (progressivo)
+          if (progressivo && minhaGeracao == montagemGeracao && meuEstado == homeestado_geracao())
             cat_definir_tudo(lote, n, filsMontadas, nFileirasMontadas);
           // Bandeira propria: `nFil == 1` nunca acontece aqui porque a fileira
           // "Continuar assistindo" ja ocupou a posicao 0 antes do laco.
@@ -2498,15 +2615,23 @@ static void *montar(void *u) {
     n = w;
     if (np) printf("[desc] plantowatch do Simkl: %d, %d novo(s) no catalogo\n", np, novos);
   }
+  preservarFileirasAusentes(&lote, &n, &cap, filsMontadas, &nFileirasMontadas);
+  // Reanexar linhas sem resposta acontece depois das chamadas de rede; aplicar
+  // a ordem salva ao conjunto inteiro impede que uma resposta parcial desloque
+  // essas linhas para o fim da Home.
+  ordenarPorSnapshot(filsMontadas, nFileirasMontadas);
 #undef GARANTE
 
-  if (n) {
+  if (n || nFileirasMontadas > 0) {
     // SO PUBLICA SE MUDOU. A mesma home montada de novo (ciclo de 5 min, sync
     // sem novidade) tem a mesma assinatura que a da tela; republicar seria
     // trocar o vetor, subir a revisao e a home se remontar — foco, rolagem e
     // arte de volta a zero — para mostrar exatamente o que ja mostrava.
     unsigned long antes = cat_assinatura();
     unsigned long depois = cat_assinatura_de(lote, n, filsMontadas, nFileirasMontadas);
+    if (minhaGeracao != montagemGeracao || meuEstado != homeestado_geracao()) {
+      free(lote); buscando = 0; return NULL;
+    }
     if (depois != antes || cat_do_cache()) {
       cat_definir_tudo(lote, n, filsMontadas, nFileirasMontadas);
       marco("catalogo da rede publicado");
@@ -2516,6 +2641,7 @@ static void *montar(void *u) {
       printf("[desc] catalogo montado com %d titulos, igual ao que esta na tela; mantido\n", n);
     }
     cat_cache_substituido();
+    homeestado_salvar_se_geracao(filsMontadas, nFileirasMontadas, meuEstado);
 
     // A ULTIMA PALAVRA SOBRE AS COLECOES E AQUI. Issue #18, terceira tentativa,
     // e desta vez o problema nao era a REGRA e sim QUANDO ela roda.
@@ -2546,7 +2672,13 @@ static void *montar(void *u) {
     // com tres fileiras faria a proxima abertura nascer pela metade e so
     // completar quando a rede respondesse — exatamente o que o cache existe
     // para evitar.
-    cat_gravar_cache(dirArteDesc);
+    { char donoEsperado[64]; int perfilEsperado;
+      if (homeestado_identidade_geracao(meuEstado, donoEsperado,
+                                       sizeof donoEsperado, &perfilEsperado))
+        cat_gravar_cache_se_identidade(dirArteDesc, donoEsperado, perfilEsperado);
+      else
+        printf("[desc] cache descartado: conta/perfil/config mudou durante a montagem\n");
+    }
   } else {
     printf("[desc] nada veio da rede; segue o catalogo do pacote\n");
   }
@@ -2571,6 +2703,7 @@ static void *montar(void *u) {
 void desc_iniciar(void) {
   if (buscando) { printf("[desc] ja montando; pedido ignorado\n"); fflush(stdout); return; }
   buscando = 1;
+  montagemGeracao++;
   if (pthread_create(&fio, NULL, montar, NULL) != 0) {
     // NAO FALHAR CALADO. No webOS um pthread_create nunca falhou e o caminho de
     // erro era so uma bandeira; no alvo WASM o fio e um Worker do navegador,
@@ -2741,6 +2874,7 @@ void desc_remontar_fileiras(void) {
 }
 
 void desc_repetir(void) {
+  montagemGeracao++;
   geracaoPedida++;
   if (!buscando) { desc_iniciar(); return; }
   repetirAoFim = 1;

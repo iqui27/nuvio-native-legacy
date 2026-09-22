@@ -18,6 +18,10 @@ int  tex_iniciar(int max_itens);
 // tex_obter com http(s) simplesmente nao carrega — o app nao quebra, so fica
 // sem arte.
 void tex_cache_dir(const char *dir);
+/* Marca a variante que a política de decode realmente pedirá para esta
+ * largura de layout (inclui escala/qualidade e o corte small do Metahub). */
+void tex_cache_marcar_larg(int grupo, const char *url, float largLayout,
+                           int essencial, int emUso);
 void tex_encerrar(void);
 
 // Devolve a textura se ja estiver pronta; senao 0 e enfileira o decode.

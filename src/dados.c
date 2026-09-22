@@ -7,6 +7,10 @@
 #include <unistd.h>
 #include <pthread.h>
 
+#if defined(__EMSCRIPTEN__) || defined(NV_DADOS_TEST)
+static volatile int sujo, sujoLeve;
+#endif
+
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 
@@ -22,18 +26,51 @@
 // IDBFS guarda em IndexedDB, que sobrevive a recarga e a reinicio da TV. Nao e
 // automatico: e preciso montar, carregar UMA vez na abertura (syncfs(true)) e
 // gravar de volta depois das mudancas (syncfs(false)).
-EM_ASYNC_JS(int, nv_idbfs_montar, (const char *ponto), {
+EM_ASYNC_JS(int, nv_idbfs_limpar_cache_arte, (const char *ponto), {
+  var dbName = UTF8ToString(ponto);
+  return await new Promise(function (resolve) {
+    var req;
+    try { req = indexedDB.open(dbName); } catch (e) { resolve(0); return; }
+    req.onerror = function () { resolve(0); };
+    req.onblocked = function () { resolve(0); };
+    req.onsuccess = function () {
+      var db = req.result;
+      if (!db.objectStoreNames || !db.objectStoreNames.contains("FILE_DATA")) {
+        db.close(); resolve(0); return;
+      }
+      var removidos = 0, tx;
+      try {
+        tx = db.transaction(["FILE_DATA"], "readwrite");
+        var store = tx.objectStore("FILE_DATA");
+        var cursorReq = store.openKeyCursor();
+        cursorReq.onsuccess = function () {
+          var cursor = cursorReq.result;
+          if (!cursor) return;
+          var path = cursor.key;
+          // Guarda literal de diretorio e arquivo direto em cache/. Este DB
+          // tambem guarda sessao e preferencias; nenhuma outra chave e tocada.
+          if (typeof path === "string" && path.indexOf("/nuvio/cache/") === 0 &&
+              path.indexOf("/", 13) < 0 && /[.](jpe?g|png|webp|gif|avif)$/i.test(path)) {
+            store.delete(path); removidos++;
+          }
+          cursor.continue();
+        };
+        tx.oncomplete = function () { db.close(); resolve(removidos); };
+        tx.onerror = tx.onabort = function () { db.close(); resolve(0); };
+      } catch (e) { db.close(); resolve(0); }
+    };
+  });
+});
+
+EM_ASYNC_JS(int, nv_idbfs_montar, (const char *ponto, int nArte), {
   var caminho = UTF8ToString(ponto);
-  // Ver nv-boot-falhas em tools/tizen-shell.html: dois arranques seguidos sem
-  // primeiro quadro apagam o banco inteiro antes de montar.
-  if (window.__nvApagarCache) {
-    await new Promise(function (r) {
-      var req;
-      try { req = indexedDB.deleteDatabase(caminho); } catch (e) { r(0); return; }
-      req.onsuccess = req.onerror = req.onblocked = function () { r(1); };
-    });
-    if (window.__nvDiag) window.__nvDiag("[arranque] IndexedDB apagado: dois arranques seguidos sem chegar ao primeiro quadro", 1);
-    else console.log('[arranque] IndexedDB apagado apos dois arranques sem primeiro quadro');
+  // Falhas repetidas mudam a sessao para recovery, mas nunca apagam o banco
+  // /nuvio: ele contem conta, configuracao, catalogo e progresso do usuario.
+  Module.nvRecoveryMode = !!window.__nvModoRecuperacao;
+  if (Module.nvRecoveryMode) {
+    var msg = "[arranque] recovery ativo; " + nArte +
+              " legacy art file(s) removed, personal data kept";
+    if (window.__nvDiag) window.__nvDiag(msg); else console.log(msg);
   }
   try {
     FS.mkdirTree(caminho);
@@ -64,17 +101,45 @@ EM_ASYNC_JS(int, nv_idbfs_montar, (const char *ponto), {
 // A bandeira em voo existe porque duas syncfs simultaneas reconciliam a mesma
 // arvore contra o mesmo banco: a segunda enxerga um estado que a primeira ainda
 // esta gravando.
-EM_JS(void, nv_idbfs_gravar, (), {
+EM_JS(void, nv_idbfs_gravar, (int tipo), {
   Module.nvSyncEmVoo = 1;
+  Module.nvSyncTipo = tipo;
+  Module.nvSyncResultado = 0;
   try {
     FS.syncfs(false, function (err) {
       Module.nvSyncEmVoo = 0;
-      if (err) { out("[dados] syncfs falhou: " + err); }
+      Module.nvSyncResultado = err ? -1 : 1;
+      (Module.nvSyncResultados || (Module.nvSyncResultados = [])).push({ resultado: err ? -1 : 1, tipo: tipo });
+      if (err) {
+        Module.nvSyncFalhasTentativa = (Module.nvSyncFalhasTentativa || 0) + 1;
+        var atraso = Math.min(30000, 500 * Math.pow(2, Math.min(6, Module.nvSyncFalhasTentativa - 1)));
+        Module.nvSyncPodeEm = Date.now() + atraso;
+        out("[dados] syncfs falhou; nova tentativa em " + atraso + " ms: " + err);
+      } else {
+        Module.nvSyncFalhasTentativa = 0;
+        Module.nvSyncPodeEm = 0;
+      }
     });
-  } catch (e) { Module.nvSyncEmVoo = 0; out("[dados] syncfs lancou: " + e); }
+  } catch (e) {
+    Module.nvSyncEmVoo = 0;
+    Module.nvSyncResultado = -1;
+    (Module.nvSyncResultados || (Module.nvSyncResultados = [])).push({ resultado: -1, tipo: tipo });
+    Module.nvSyncFalhasTentativa = (Module.nvSyncFalhasTentativa || 0) + 1;
+    var atraso = Math.min(30000, 500 * Math.pow(2, Math.min(6, Module.nvSyncFalhasTentativa - 1)));
+    Module.nvSyncPodeEm = Date.now() + atraso;
+    out("[dados] syncfs lancou; nova tentativa em " + atraso + " ms: " + e);
+  }
 });
 
 EM_JS(int, nv_idbfs_em_voo, (), { return Module.nvSyncEmVoo ? 1 : 0; });
+EM_JS(int, nv_idbfs_pode_gravar, (), { return !Module.nvSyncPodeEm || Date.now() >= Module.nvSyncPodeEm; });
+EM_JS(int, nv_idbfs_resultado, (), {
+  var fila = Module.nvSyncResultados || [], r = fila.shift();
+  if (!r) return 0;
+  Module.nvSyncTipoResultado = r.tipo;
+  Module.nvSyncResultado = fila.length ? fila[fila.length - 1].resultado : 0;
+  return r.resultado;
+});
 
 // REDE DE SEGURANCA DE SAIDA. A descarga periodica cobre o app rodando; ela nao
 // cobre o quadro que nunca vai existir. Quando a pagina e escondida o
@@ -97,10 +162,8 @@ EM_JS(void, nv_idbfs_rede_de_seguranca, (int *ocupado), {
     while (Atomics.load(HEAP32, idx) !== 0 && Date.now() - t < 50) {}
     // Ja ha uma descarga em voo: os dados dela ja foram entregues ao IndexedDB
     // e comecar outra por cima e o caso que a bandeira existe para impedir.
-    if (Module.nvSyncEmVoo) return;
-    Module.nvSyncEmVoo = 1;
-    try { FS.syncfs(false, function () { Module.nvSyncEmVoo = 0; }); }
-    catch (e) { Module.nvSyncEmVoo = 0; }
+    if (Module.nvSyncEmVoo || Atomics.load(HEAP32, idx) !== 0) return;
+    nv_idbfs_gravar(1);
   };
   addEventListener("pagehide", descarregar);
   // 'hidden' e o que chega ao sair do app na TV; 'pagehide' pode nem vir.
@@ -119,7 +182,6 @@ EM_JS(void, nv_idbfs_rede_de_seguranca, (int *ocupado), {
 // home rola, e com uma bandeira so ele arrastaria a cadencia da sessao para a
 // dele — ou o contrario, uma descarga por quadro, que e justamente o defeito
 // que esta funcao existe para remover.
-static volatile int sujo, sujoLeve;
 static int idbfsMontado = 0;
 
 // Espera minima entre duas descargas de dado do USUARIO. A varredura sincrona
@@ -164,6 +226,19 @@ static volatile int fsOcupado;
 int    dados_desc_n;
 double dados_desc_ms;
 void dados_desc_zerar(void) { dados_desc_n = 0; dados_desc_ms = 0.0; }
+int    dados_sync_sucessos;
+int    dados_sync_falhas;
+
+#if defined(__EMSCRIPTEN__) || defined(NV_DADOS_TEST)
+static void dados_sync_aplicar_resultado(int resultado, int tipo) {
+  if (resultado > 0) dados_sync_sucessos++;
+  else if (resultado < 0) {
+    dados_sync_falhas++;
+    if (tipo == 2) sujoLeve = 1;
+    else sujo = 1;
+  }
+}
+#endif
 
 void dados_fs_travar(void)  { NV_FS_TRAVAR(); }
 void dados_fs_liberar(void) { NV_FS_LIBERAR(); }
@@ -208,7 +283,10 @@ void dados_iniciar(const char *dirArte) {
   // caminhos existem e aceitam escrita (MEMFS aceita tudo), entao qualquer um
   // deles "venceria" a sonda e a escrita seria perdida na recarga seguinte sem
   // uma linha de log sequer.
-  if (nv_idbfs_montar("/nuvio")) {
+  int nArte = 0;
+  if (EM_ASM_INT({ return !!window.__nvModoRecuperacao; }))
+    nArte = nv_idbfs_limpar_cache_arte("/nuvio");
+  if (nv_idbfs_montar("/nuvio", nArte)) {
     candidatos[n++] = "/nuvio";
     idbfsMontado = 1;
     nv_idbfs_rede_de_seguranca((int *)&fsOcupado);
@@ -255,24 +333,58 @@ void dados_iniciar(const char *dirArte) {
 
 const char *dados_dir(void) { return dir; }
 
+int dados_modo_recuperacao(void) {
+#ifdef __EMSCRIPTEN__
+  return EM_ASM_INT({ return Module.nvRecoveryMode ? 1 : 0; });
+#else
+  return 0;
+#endif
+}
+
+int dados_sync_pendente(void) {
+#ifdef __EMSCRIPTEN__
+  return nv_idbfs_em_voo();
+#else
+  return 0;
+#endif
+}
+
+int dados_sync_em_recuo(void) {
+#ifdef __EMSCRIPTEN__
+  return EM_ASM_INT({ return Module.nvSyncFalhasTentativa && Module.nvSyncPodeEm && Date.now() < Module.nvSyncPodeEm; });
+#else
+  return 0;
+#endif
+}
+
 void dados_sincronizar(void) {
 #ifdef __EMSCRIPTEN__
   double agora, espera, custo;
+  int resultado, tipo;
+  if (!idbfsMontado) return;
+  while ((resultado = nv_idbfs_resultado()) != 0) {
+    // Callback concluido: sucesso e falha so entram na telemetria agora. Em
+    // caso de falha, rearmar a classe que estava em voo.
+    int tipoResultado = EM_ASM_INT({ return Module.nvSyncTipoResultado || 0; });
+    dados_sync_aplicar_resultado(resultado, tipoResultado);
+  }
   if (!sujo && !sujoLeve) return;
   agora = emscripten_get_now();
   espera = sujo ? NV_DESC_MIN_MS : NV_DESC_LEVE_MS;
   if (agora - ultimaDesc < espera) return;
   if (nv_idbfs_em_voo()) return;
+  if (!nv_idbfs_pode_gravar()) return;
   // Limpar ANTES de chamar, e nao depois, e o que garante que nenhuma escrita
   // se perde: quem gravar durante a varredura ou ja entrou nela (e a bandeira
   // volta a 1 para uma descarga extra, inofensiva) ou esta bloqueado na trava
   // e sera pego na proxima. O caro seria o contrario — limpar depois apagaria a
   // marca de uma escrita que a varredura nao viu.
+  tipo = sujo ? 1 : 2;
   sujo = 0; sujoLeve = 0;
   ultimaDesc = agora;
   // A trava cobre a parte SINCRONA do syncfs, que e onde a arvore e lida.
   NV_FS_TRAVAR();
-  nv_idbfs_gravar();
+  nv_idbfs_gravar(tipo);
   NV_FS_LIBERAR();
   custo = emscripten_get_now() - agora;
   dados_desc_n++;
@@ -408,6 +520,6 @@ int dados_persistente(void) {
 #ifdef __EMSCRIPTEN__
   return idbfsMontado;
 #else
-  return 1;   /* disco de verdade */
+  return dir[0] != 0;
 #endif
 }

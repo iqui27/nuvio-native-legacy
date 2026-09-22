@@ -13,6 +13,8 @@
 #include "simkl.h"
 #include "idioma.h"
 #include "catordem.h"
+#include "homeestado.h"
+#include "cachearte.h"
 #include "fileiras.h"
 #include "continuar.h"
 #include "vertudo.h"
@@ -1026,7 +1028,7 @@ static TipoFileira tipoDaEscolha(int t) {
 // Uma fileira, do jeito que a posicao a conhece. `scrollX` em INTEIRO de
 // proposito: sub-pixel de rolagem nao e informacao — e o que sobreviveu do
 // formato de texto que o arquivo tinha.
-typedef struct { char chave[192]; int coluna; int scrollX; } HomePos;
+typedef struct { char chave[192]; char itemId[64]; char itemTipo[8]; int coluna; int scrollX; } HomePos;
 
 // INSTANTANEO VIVO: tirado no comeco de sincronizarFileiras, devolvido no fim.
 // E o que conserta o defeito acima. static e nao pilha pelo mesmo motivo do
@@ -1054,7 +1056,11 @@ static int posIgnora(const char *chave) {
 }
 
 static void posCapturar(void) {
-  int r;
+  int r, antigoN = nPosViva;
+  HomePos antigo[MAX_FIL];
+  char antigoFoco[192];
+  memcpy(antigo, posViva, sizeof antigo);
+  snprintf(antigoFoco, sizeof antigoFoco, "%s", posVivaFoco);
   nPosViva = 0;
   posVivaFoco[0] = 0;
   posVivaCol = 0;
@@ -1067,6 +1073,25 @@ static void posCapturar(void) {
     // quando o foco SAI da fileira r, entao para a fileira em foco ela esta
     // atrasada de uma travessia inteira.
     p->coluna  = (r == foco.fileira) ? foco.coluna : foco.colunaLembrada[r];
+    // Para uma fileira que nao esta em foco, o ultimo ID conhecido e mais
+    // confiavel que o indice: a publicacao incremental pode ja ter trocado o
+    // bloco do catalogo quando este snapshot for capturado.
+    { int a, idx = fileiraItemIndice(&fileiras[r], p->coluna);
+      const CatItem *it = cat_item(idx);
+      p->itemId[0] = p->itemTipo[0] = 0;
+      for (a = 0; a < antigoN; a++)
+        if (!strcmp(antigo[a].chave, p->chave) && antigo[a].itemId[0]) {
+          if (r != foco.fileira || !strcmp(antigoFoco, p->chave)) {
+            snprintf(p->itemId, sizeof p->itemId, "%s", antigo[a].itemId);
+            snprintf(p->itemTipo, sizeof p->itemTipo, "%s", antigo[a].itemTipo);
+            break;
+          }
+        }
+      if (!p->itemId[0] && it) {
+        snprintf(p->itemId, sizeof p->itemId, "%s", it->imdb);
+        snprintf(p->itemTipo, sizeof p->itemTipo, "%s", it->tipo);
+      }
+    }
     p->scrollX = (int)(scrollX[r] + 0.5f);
   }
   if (foco.fileira >= 0 && foco.fileira < nFileiras
@@ -1088,6 +1113,19 @@ static int posAplicarTabela(const HomePos *t, int n,
     int c;
     if (!p) continue;
     c = p->coluna;
+    // Durante a sessao o item e a identidade primaria: uma resposta
+    // incremental pode inserir/remover cards dentro da mesma chave sem
+    // deslocar o foco para outro titulo. Coluna continua sendo fallback para
+    // o caso de o item ter saído legitimamente do catalogo.
+    if (p->itemId[0]) {
+      int q;
+      for (q = 0; q < fileiras[r].n; q++) {
+        int idx = fileiraItemIndice(&fileiras[r], q);
+        const CatItem *it = cat_item(idx);
+        if (it && !strcmp(it->imdb, p->itemId) &&
+            !strcmp(it->tipo, p->itemTipo)) { c = q; break; }
+      }
+    }
     // A fileira pode ter encolhido entre uma publicacao e outra, ou entre
     // ontem e hoje.
     if (c >= foco.nColunas[r]) c = foco.nColunas[r] - 1;
@@ -1100,6 +1138,16 @@ static int posAplicarTabela(const HomePos *t, int n,
       if (!strcmp(fileiras[r].chave, chFoco)) { achou = r; break; }
   if (achou >= 0) {
     int c = colFoco;
+    const HomePos *pf = posAchar(t, n, chFoco);
+    if (pf && pf->itemId[0]) {
+      int q;
+      for (q = 0; q < fileiras[achou].n; q++) {
+        int idx = fileiraItemIndice(&fileiras[achou], q);
+        const CatItem *it = cat_item(idx);
+        if (it && !strcmp(it->imdb, pf->itemId) &&
+            !strcmp(it->tipo, pf->itemTipo)) { c = q; break; }
+      }
+    }
     if (c >= foco.nColunas[achou]) c = foco.nColunas[achou] - 1;
     if (c < 0) c = 0;
     foco.fileira = achou;
@@ -1112,6 +1160,34 @@ static int posAplicarTabela(const HomePos *t, int n,
     // pos, e o primeiro toque para baixo cai la, com a fileira ja rolada.
   }
   return achou;
+}
+
+static void homeMarcarURL(const char *url, float largura) {
+  if (!url || (strncmp(url, "http://", 7) && strncmp(url, "https://", 8))) return;
+  tex_cache_marcar_larg(NV_CACHE_ARTE_GRUPO_HOME, url, largura, 1, 0);
+}
+
+static void homeAtualizarReferenciasArte(void) {
+  int r, i;
+  cachearte_limpar_referencias_grupo(NV_CACHE_ARTE_GRUPO_HOME);
+  for (r = 0; r < nFileiras; r++) {
+    int limite = fileiras[r].n < 8 ? fileiras[r].n : 8;
+    float largura = larguraFil(r);
+    for (i = 0; i < limite; i++) {
+      int idx = fileiraItemIndice(&fileiras[r], i);
+      const CatItem *it = cat_item(idx);
+      if (!it) continue;
+      homeMarcarURL(it->poster, largura);
+      homeMarcarURL(it->logo, largura * 0.65f);
+      homeMarcarURL(it->backdrop, largura);
+    }
+  }
+  // Pin the actual source selected for the large hero request, which can use a
+  // different backdrop URL and resolution from the row card.
+  heroSetGarantir();
+  for (i = 0; i < heroSetN; i++)
+    homeMarcarURL(arte_por_identidade(heroSet[i], 2), NV_TELA_W);
+  cachearte_estatisticas_pedir();
 }
 
 int home_iniciar(const char *dirArte) {
@@ -1407,6 +1483,14 @@ static void sincronizarFileiras(void) {
       revisao = (revisao ^ *s) * 16777619u;
     revisao = (revisao ^ (unsigned)cf->ini) * 16777619u;
     revisao = (revisao ^ (unsigned)cf->n) * 16777619u;
+    // A fileira pode manter a mesma chave/janela enquanto o feed incremental
+    // insere ou substitui itens. A identidade exibida tambem participa da
+    // revisao para que o foco seja remapeado pelo ID, e nao pela coluna velha.
+    for (int ci = 0; ci < cf->n; ci++) {
+      const CatItem *it = cat_item(cf->ini + ci);
+      if (it) for (const unsigned char *s = (const unsigned char *)it->imdb; *s; s++)
+        revisao = (revisao ^ *s) * 16777619u;
+    }
   }
   if (nCat < 1 || (nCat == filsAplicadas && assin == prefsAplicadas
       && revisao == ultimaRevisao && retomarAplicada == retomarRev)) return;
@@ -1427,7 +1511,6 @@ static void sincronizarFileiras(void) {
   for (r = 0; r < nCat && destino < MAX_FIL - 1; r++) {
     const CatFileira *cf = cat_fileira(r);
     if (!cf) break;
-    if (cf->n < 1) continue;
     // `continueWatchingEnabled: false` tira a fileira da home inteira — nao a
     // esvazia, tira. E o que renderModernHomeLayout faz quando
     // computeContinueWatchingRenderState devolve a fileira desligada.
@@ -1447,7 +1530,7 @@ static void sincronizarFileiras(void) {
                            ? FILEIRA_CONTINUE : perfilCatalogo(cf->titulo);
     if (!strcmp(cf->chave, "continue_watching")) {
       if (ajustes_cw_estilo() == 2) fileiras[destino].tipo = FILEIRA_NORMAL;
-    } else if (!temDestaque && cf->base[0] && cf->catId[0]) {
+    } else if (!temDestaque && cf->n > 0 && cf->base[0] && cf->catId[0]) {
       fileiras[destino].tipo = FILEIRA_DESTAQUE;
       temDestaque = 1;
       destaqueIndice = destino;
@@ -1458,7 +1541,10 @@ static void sincronizarFileiras(void) {
     // UMA COLUNA A MAIS: o card "Ver tudo" no fim. So em fileira que veio de um
     // CATALOGO de addon — "Continuar assistindo" e as listas do Trakt nao tem
     // continuacao para pedir (o base fica vazio nelas).
-    fileiras[destino].verTudo = (cf->base[0] && cf->catId[0]) ? 1 : 0;
+    // Um catalogo pode responder vazio validamente. Mantemos o titulo da
+    // fileira como estado visivel, mas nao inventamos um card "Ver tudo" sem
+    // nenhum item para representar a consulta.
+    fileiras[destino].verTudo = (cf->n > 0 && cf->base[0] && cf->catId[0]) ? 1 : 0;
     snprintf(fileiras[destino].base,  sizeof fileiras[destino].base,  "%s", cf->base);
     snprintf(fileiras[destino].catId, sizeof fileiras[destino].catId, "%s", cf->catId);
     snprintf(fileiras[destino].catTipo, sizeof fileiras[destino].catTipo, "%s", cf->tipo);
@@ -1687,6 +1773,7 @@ static void sincronizarFileiras(void) {
         break;
       }
   expFileira = expColuna = -1; expAbre = 0.0f;
+  homeAtualizarReferenciasArte();
   if (nFileiras < 1) return;
   {
     int cols[MAX_FIL], k;
@@ -1956,6 +2043,12 @@ void home_atualizar(float dt, Uint32 agora) {
   }
   scrollY = anim_mola2_reduzida(&velY, scrollY, alvoY, dt,
                                 NV_MOLA2_SCROLL, motionReduzido);
+
+  // Mantem um snapshot vivo para a proxima publicacao incremental. O
+  // sincronizador ainda usa posCapturar como fallback nos testes/caminhos que
+  // nao passam por este loop, mas no arranque normal este snapshot e tomado
+  // antes de um worker trocar o bloco de catalogo.
+  posCapturar();
 
 }
 

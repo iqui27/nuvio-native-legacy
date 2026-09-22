@@ -24,12 +24,39 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static SDL_Window *win;
 static int capturaQuadros = 90;
+
+static const char *shotPath(const char *nome) {
+  static char caminho[768];
+  const char *prefixo = getenv("NUVIO_PERFILSEL_SHOT_PREFIX");
+  const char *base;
+  if (!prefixo || !*prefixo) return nome;
+  base = strrchr(nome, '/');
+  base = base ? base + 1 : nome;
+  snprintf(caminho, sizeof caminho, "%s-%s", prefixo, base);
+  return caminho;
+}
+
+static void salvarTela(const char *nome) {
+  unsigned char *pix = malloc(1920 * 1080 * 4);
+  SDL_Surface *s;
+  int y;
+  assert(pix);
+  glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);
+  s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
+  assert(s);
+  for (y = 0; y < 1080; y++)
+    memcpy((char *)s->pixels + y * s->pitch,
+           pix + (1079 - y) * 1920 * 4, 1920 * 4);
+  assert(SDL_SaveBMP(s, nome) == 0);
+  SDL_FreeSurface(s); free(pix);
+}
 
 static void escreverCache(const char *conteudo, int ativo) {
   char linha[16];
@@ -75,28 +102,87 @@ static void captura(const char *nome) {
     perfilsel_atualizar(1.0f / 60.0f, SDL_GetTicks());
     glClearColor(0.051f, 0.051f, 0.051f, 1); glClear(GL_COLOR_BUFFER_BIT);
     perfilsel_desenhar(SDL_GetTicks());
-    if (i == 89) {
-      unsigned char *pix = malloc(1920 * 1080 * 4);
-      SDL_Surface *s;
-      int y;
-      assert(pix);
-      glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);
-      s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
-      assert(s);
-      for (y = 0; y < 1080; y++)
-        memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
-      assert(SDL_SaveBMP(s, nome) == 0);
-      SDL_FreeSurface(s); free(pix);
-    }
+    // GL_BACK ainda e valido neste ponto. Depois do SwapWindow o back buffer
+    // pode ser descartado, portanto a captura do frame final fica aqui.
+    if (i == capturaQuadros - 1) salvarTela(shotPath(nome));
     SDL_GL_SwapWindow(win); SDL_Delay(4);
   }
-  printf("  %s  (preenchimento %.2f telas, %d desenhos)\n", nome, gfx_fill, gfx_n_rect);
+  // Captura o quadro realmente final da simulação. O antigo `if (i == 89)`
+  // fazia a captura cair no quadro 89 mesmo quando o settled tinha 600.
+  printf("  %s  (preenchimento %.2f telas, %d desenhos)\n",
+         shotPath(nome), gfx_fill, gfx_n_rect);
 }
 
 static void tecla(SDL_Keycode k) {
   SDL_Event e = {0};
   e.type = SDL_KEYDOWN; e.key.keysym.sym = k;
   perfilsel_evento(&e);
+}
+
+static void verificaAnimacoes(void) {
+  PerfilSelTesteEstado antes, depois;
+  int i;
+  perfilsel_teste_estado(&antes);
+  tecla(SDLK_RIGHT);
+  perfilsel_atualizar(10.0f, SDL_GetTicks()); /* resume longo precisa ser limitado */
+  perfilsel_teste_estado(&depois);
+  assert(depois.foco[0] < antes.foco[0]);
+  assert(depois.foco[1] > antes.foco[1] && depois.foco[1] < 1.0f);
+  assert(depois.mural_tempo - antes.mural_tempo <= 0.0501f);
+  /* #1E88E5 -> #E53935: a luz tem de passar pelo meio, nao saltar no foco. */
+  assert(depois.luz[0] > antes.luz[0] && depois.luz[0] < depois.luz_alvo[0]);
+  for (i = 0; i < 6; i++) perfilsel_atualizar(0.05f, SDL_GetTicks());
+  perfilsel_teste_estado(&depois);
+  assert(fabsf(depois.luz[0] - depois.luz_alvo[0]) < 0.002f);
+  tecla(SDLK_LEFT);
+  for (i = 0; i < 6; i++) perfilsel_atualizar(0.05f, SDL_GetTicks());
+}
+
+static void verificaRevisaoSemTrocaDeUrl(void) {
+  CatItem itens[9];
+  PerfilSelTesteEstado antes, depois;
+  int i;
+  for (i = 0; i < 9; i++) {
+    const CatItem *item = cat_item(i);
+    assert(item);
+    itens[i] = *item;
+    snprintf(itens[i].titulo, sizeof itens[i].titulo, "Revisao %d", i);
+  }
+  perfilsel_teste_estado(&antes);
+  assert(antes.mural_n == 9 && antes.fade[0] > 0.95f);
+  cat_definir_tudo(itens, 9, NULL, 0);
+  perfilsel_atualizar(1.0f / 60.0f, SDL_GetTicks());
+  perfilsel_teste_estado(&depois);
+  assert(fabsf(depois.fade[0] - antes.fade[0]) < 0.0001f);
+}
+
+static void verificaPressaoSustentada(void) {
+  PerfilSelTesteEstado e;
+  int i;
+  perfilsel_teste_estado(&e);
+  assert(e.particulas == 32 || e.particulas == 20);
+  if (e.particulas == 32) {
+    for (i = 0; i < 30; i++) perfilsel_atualizar(0.04f, SDL_GetTicks());
+    perfilsel_teste_estado(&e);
+    assert(e.particulas == 20 && e.burst == 18);
+    /* The downgrade is latched for this screen session. */
+    for (i = 0; i < 30; i++) perfilsel_atualizar(1.0f / 60.0f, SDL_GetTicks());
+    perfilsel_teste_estado(&e);
+    assert(e.particulas == 20 && e.burst == 18);
+  }
+}
+
+static void verificaReducedMotion(void) {
+  PerfilSelTesteEstado e;
+  perfilsel_teste_estado(&e);
+  tecla(SDLK_RIGHT);
+  perfilsel_atualizar(0.04f, SDL_GetTicks());
+  perfilsel_teste_estado(&e);
+  assert(e.foco[5] == 1.0f);
+  for (int i = 0; i < 6; i++) assert(fabsf(e.luz[i] - e.luz_alvo[i]) < 0.0001f);
+  assert(e.mural_tempo == 0.0f && e.burst_tempo == 0.0f);
+  tecla(SDLK_LEFT);
+  perfilsel_atualizar(0.04f, SDL_GetTicks());
 }
 
 int main(void) {
@@ -166,6 +252,8 @@ int main(void) {
   ajustesDeTeste(0);
   perfilsel_iniciar();
   captura("/tmp/nuvio-perfilsel-4.bmp");
+  verificaAnimacoes();
+  verificaRevisaoSemTrocaDeUrl();
 
   // O terceiro perfil e o travado: tres DIREITA e a tela do selo de PIN em foco.
   tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);
@@ -174,6 +262,12 @@ int main(void) {
   // OK sobre ele abre o teclado. Depois, quatro digitos e um erro de rede
   // fabricado nao — este e o estado normal de digitacao.
   tecla(SDLK_RETURN);
+  { PerfilSelTesteEstado antes, depois;
+    perfilsel_teste_estado(&antes);
+    perfilsel_atualizar(10.0f, SDL_GetTicks());
+    perfilsel_teste_estado(&depois);
+    assert(depois.pin > antes.pin && depois.pin < 1.0f);
+    assert(depois.mural_tempo == antes.mural_tempo); }
   tecla(SDLK_UP); tecla(SDLK_UP); tecla(SDLK_UP);   // sobe para a linha do "1"
   tecla(SDLK_RETURN);                               // 1
   tecla(SDLK_RIGHT); tecla(SDLK_RETURN);            // 2
@@ -201,12 +295,17 @@ int main(void) {
   capturaQuadros = 600;
   captura("/tmp/nuvio-perfilsel-8-settled.bmp");
   capturaQuadros = 90;
+  verificaPressaoSustentada();
 
   // Acessibilidade: a mesma composição com movimento congelado. As capas,
   // rastros e foco permanecem legíveis, mas nenhuma posição usa delta-time.
   ajustesDeTeste(1);
   perfilsel_iniciar();
+  verificaReducedMotion();
   captura("/tmp/nuvio-perfilsel-8-reduzido.bmp");
+  { PerfilSelTesteEstado e;
+    perfilsel_teste_estado(&e);
+    assert(e.burst_desenhado == 0); }
   ajustesDeTeste(0);
 
   tex_encerrar(); txt_encerrar(); gfx_encerrar();

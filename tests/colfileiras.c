@@ -23,6 +23,7 @@
 
 static int sondaLeu;          // addons_manifesto_lido ja passou?
 static int limiteFileiras = 16;
+static int addonAtivo = 1;
 
 // Seis catalogos: quatro dentro da colecao, dois soltos. A ordem coloca os da
 // colecao PRIMEIRO de proposito — e assim que o Xperience declara os dele, e e
@@ -48,7 +49,7 @@ static const char *COLECAO_DA_CONTA =
   "{\"provider\":\"addon\",\"addonId\":\"" AID "\",\"type\":\"movie\",\"catalogId\":\"col_d\"}]}"
   "]}]}";
 
-int   addons_n(void)              { return 1; }
+int   addons_n(void)              { return addonAtivo; }
 const char *addons_base(int i)    { (void)i; return BASE; }
 const char *addons_id_manifesto(int i) { (void)i; return ""; }
 const char *addons_nome(int i)              { (void)i; return "addon"; }
@@ -61,6 +62,7 @@ void addons_manifesto_lido(int i, const char *corpo) { (void)i; (void)corpo; son
 
 // ------------------------------------------------------------------ a rede
 static int pedidosDeCatalogo;
+static int snapshotValido, snapshotTem;
 char *rede_baixar(const char *url, int t) {
   (void)t;
   if (strstr(url, "/manifest.json")) return strdup(MANIFESTO);
@@ -89,6 +91,24 @@ void cat_republicar_fileiras(const CatFileira *f, int n) { guardar(f, n); }
 void  SDL_Delay(Uint32 ms)                 { usleep(ms * 1000); }
 int   ajustes_cw_fonte(void)               { return 0; }
 int   ajustes_idioma_ingles(void)          { return 0; }
+unsigned homeestado_geracao(void) { return 1; }
+int homeestado_contexto_valido(void) { return snapshotValido; }
+int homeestado_tem_fileira(const char *chave) { return snapshotTem && chave && !strcmp(chave, "old-row"); }
+int homeestado_ordem_fileira(const char *chave) { (void)chave; return -1; }
+void homeestado_salvar(const CatFileira *f, int n) { (void)f; (void)n; }
+int homeestado_salvar_se_geracao(const CatFileira *f, int n, unsigned g) { (void)f; (void)n; return g == 1; }
+int homeestado_identidade_geracao(unsigned g, char *d, unsigned z, int *p) {
+  if (g != 1) return 0;
+  if (d && z) snprintf(d, z, ""); if (p) *p = 1; return 1;
+}
+const CatFileira *cat_fileira(int i) { (void)i; return NULL; }
+int cat_n_fileiras(void) { return 0; }
+int cat_copiar_fileira(const char *k, CatItem *o, int m, CatFileira *meta) {
+  (void)k; (void)o; (void)m; (void)meta; return 0;
+}
+int cat_gravar_cache_se_identidade(const char *d, const char *u, int p) {
+  (void)d; (void)u; (void)p; return 1;
+}
 // Integracao TMDB ligada por padrao, como no app de verdade — o portao
 // desc_chave_tmdb consulta estes stubs pelo caminho inteiro.
 int   ajustes_tmdb_ligado(void)            { return 1; }
@@ -180,6 +200,22 @@ static void zerarColecoes(void) {
 }
 
 int main(void) {
+  {
+    CatFileira antiga = {0};
+    snprintf(antiga.chave, sizeof antiga.chave, "old-row");
+    snprintf(antiga.base, sizeof antiga.base, "%s", BASE);
+    // Same configured add-on URL after a profile switch is not evidence that
+    // the live CatItems belong to this profile.
+    addonAtivo = 1; snapshotValido = snapshotTem = 0;
+    assert(!fileiraPodeSerPreservada(&antiga));
+    // A matching snapshot proves that these rows belong to the current
+    // owner/profile/config, even if the source disappeared from the add-on list.
+    addonAtivo = 0;
+    snapshotValido = snapshotTem = 1;
+    assert(fileiraPodeSerPreservada(&antiga));
+    puts("ok  same-source rows are rejected without the current-profile snapshot");
+    addonAtivo = 1; snapshotValido = snapshotTem = 0;
+  }
   // ---------------------------------------------------------------- caso 1
   // A colecao chega ANTES do ciclo (o caminho normal: sync em ~2 s, manifestos
   // em ~7 s) e a sonda ainda nao passou. Os quatro catalogos da colecao NAO
