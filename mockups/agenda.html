@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nuvio — Agenda (mockup do redesign)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  /* Palco 2560x1600 (a tela da TV) escalado para caber na janela */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; background: #000; overflow: hidden;
+               font-family: 'Inter', system-ui, sans-serif; }
+  #palco { position: absolute; left: 50%; top: 50%; width: 2560px; height: 1600px;
+           transform-origin: center center; background: #0B0B0D; color: #F5F5F7; }
+
+  /* ---------- cabeçalho ---------- */
+  header { position: relative; padding: 96px 140px 0 140px; }
+  h1 { font-size: 104px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
+  .sub { margin-top: 26px; font-size: 34px; font-weight: 500; color: rgba(255,255,255,.55); }
+  .dica { margin-top: 18px; font-size: 30px; color: rgba(255,255,255,.38); }
+
+  /* NOVO: a data de hoje por extenso, caps espaçadas, base alinhada ao título */
+  .hoje-extenso { position: absolute; right: 140px; top: 176px;
+                  font-size: 26px; font-weight: 500; letter-spacing: .22em;
+                  color: rgba(255,255,255,.46); }
+
+  /* ---------- corpo: estação | eixo | conteúdo ---------- */
+  .corpo { position: relative; margin-top: 120px; padding: 0 140px; display: flex; }
+  .estacoes { width: 260px; flex: none; }
+  .eixo { position: absolute; left: 440px; top: 0; bottom: 0; width: 2px;
+          background: rgba(255,255,255,.22); }          /* era 3px @ .30 */
+  .conteudo { flex: 1; margin-left: 88px; position: relative; }
+
+  /* rótulos pequenos: a voz de caps espaçadas, agora na tela inteira */
+  .caps { font-size: 26px; font-weight: 500; letter-spacing: .20em;
+          color: rgba(255,255,255,.46); text-transform: uppercase; }
+
+  .linha-mes { display: flex; align-items: center; gap: 36px; margin: 64px 0 40px;
+               width: calc(100% - 480px); height: 34px; }
+  .linha-mes .regua { flex: 1; height: 1px; background: rgba(255,255,255,.10); }
+
+  /* estação (dia da semana / número / falta) */
+  .estacao { position: relative; height: 340px; display: flex; flex-direction: column;
+             align-items: flex-end; justify-content: center; text-align: right; }
+  .estacao .sem { font-size: 24px; font-weight: 500; letter-spacing: .20em;
+                  color: rgba(255,255,255,.46); text-transform: uppercase; }
+  .estacao .num { font-size: 72px; font-weight: 700; line-height: 1.06; }
+  .estacao .falta { font-size: 26px; color: rgba(255,255,255,.42); margin-top: 6px; }
+  .estacao.hoje .num { color: #fff; }
+
+  /* nós do eixo: 13px (era 16), hoje 21px (era 25) */
+  .no { position: absolute; left: 434px; width: 13px; height: 13px; border-radius: 50%;
+        background: rgba(255,255,255,.85); }
+  .no.hoje { left: 430px; width: 21px; height: 21px; background: #fff;
+             box-shadow: 0 0 0 5px rgba(255,255,255,.18); }
+  .no.vazado { background: #0B0B0D; border: 3px solid rgba(255,255,255,.55); }
+
+  /* ---------- linhas (cartões) ---------- */
+  .linha { position: relative; height: 340px; border-radius: 26px;   /* era 20px */
+           display: flex; align-items: center; padding: 0 56px; gap: 44px;
+           width: calc(100% - 480px); }
+  .linha + .linha { margin-top: 8px; }
+  .linha.foco { background: #F5F5F7; color: #141416; }
+  .linha .poster { width: 176px; height: 264px; border-radius: 14px; object-fit: cover;
+                   flex: none; box-shadow: 0 8px 30px rgba(0,0,0,.35); }
+  .linha .textos { min-width: 0; }
+  .linha .titulo { font-size: 52px; font-weight: 700; letter-spacing: -0.01em; }
+  .linha .ep { margin-top: 10px; font-size: 30px; font-weight: 500;
+               color: rgba(255,255,255,.60); }
+  .linha .meta { margin-top: 8px; font-size: 28px; color: rgba(255,255,255,.42); }
+  .linha .noticia { margin-top: 14px; font-size: 28px; font-style: italic;
+                    color: rgba(255,255,255,.50); }
+  .linha.foco .ep { color: rgba(20,20,22,.62); }
+  .linha.foco .meta { color: rgba(20,20,22,.45); }
+  .linha.foco .noticia { color: rgba(20,20,22,.55); }
+
+  .linha .lado { margin-left: auto; text-align: right; flex: none;
+                 display: flex; flex-direction: column; align-items: flex-end; gap: 14px; }
+  .linha .segure { font-size: 26px; color: rgba(20,20,22,.45); }
+  .lembrete { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .lembrete .rot { font-size: 26px; color: rgba(255,255,255,.45); }
+  .linha.foco .lembrete .rot { color: rgba(20,20,22,.55); }
+  .relogio { width: 64px; height: 64px; border-radius: 50%;
+             border: 3px solid currentColor; position: relative; opacity: .85; }
+  .relogio::before, .relogio::after { content: ''; position: absolute; left: 50%;
+             background: currentColor; transform-origin: bottom center; }
+  .relogio::before { top: 12px; width: 3px; height: 20px; margin-left: -1.5px; }
+  .relogio::after { top: 30px; width: 3px; height: 15px; margin-left: -1.5px;
+                    transform: rotate(125deg); }
+  .relogio.ativo { background: currentColor; }
+  .relogio.ativo::before, .relogio.ativo::after { background: #0B0B0D; }
+
+  .pontuacao { display: flex; align-items: center; gap: 18px; font-size: 28px;
+               color: rgba(255,255,255,.55); }
+  .imdb { background: #F5C518; color: #141416; font-weight: 700; font-size: 22px;
+          padding: 4px 10px; border-radius: 6px; }
+
+  /* cartão flutuante de notícias */
+  .flutuante { position: absolute; right: 0; top: 96px; width: 440px;
+               background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.10);
+               border-radius: 22px; padding: 34px 38px; }
+  .flutuante .rot { font-size: 24px; letter-spacing: .18em; text-transform: uppercase;
+                    color: rgba(255,255,255,.42); margin-bottom: 18px; }
+  .flutuante .t { font-size: 40px; font-weight: 700; }
+  .flutuante .s { margin-top: 8px; font-size: 26px; color: rgba(255,255,255,.55); }
+  .flutuante .n { margin-top: 12px; font-size: 26px; font-style: italic;
+                  color: rgba(255,255,255,.48); }
+</style>
+</head>
+<body>
+<div id="palco">
+  <header>
+    <h1>Agenda</h1>
+    <p class="sub">5 séries com data confirmada · 31 acompanhadas</p>
+    <p class="dica">OK marca o lembrete. A TV não avisa sozinha: o aviso aparece quando você abrir o app no dia.</p>
+    <p class="hoje-extenso">TER · 22 DE SETEMBRO DE 2026</p>
+  </header>
+
+  <div class="corpo">
+    <div class="eixo"></div>
+
+    <div class="estacoes">
+      <div class="estacao" style="height:74px"></div>
+      <div class="estacao hoje">
+        <span class="sem">TER</span><span class="num">22</span><span class="falta">amanhã</span>
+      </div>
+      <div class="estacao" style="margin-top:8px">
+        <span class="sem">DOM</span><span class="num">27</span><span class="falta">em 6 dias</span>
+      </div>
+      <div class="estacao" style="height:138px"></div>
+      <div class="estacao">
+        <span class="sem">SEX</span><span class="num">16</span><span class="falta">em 24 dias</span>
+      </div>
+    </div>
+
+    <div class="conteudo">
+      <div class="linha-mes" style="margin-top:0">
+        <span class="caps" style="color:#fff">HOJE</span>
+        <span class="caps">SETEMBRO 2026</span>
+        <span class="regua"></span>
+      </div>
+
+      <div class="flutuante">
+        <p class="rot">Últimas notícias</p>
+        <p class="t">Brothers</p>
+        <p class="s">T1E1 · On the Road</p>
+        <p class="s">Apple TV · 33 min · 1…</p>
+        <p class="n">“5 New Shows to Stream…</p>
+      </div>
+
+      <div class="linha foco">
+        <img class="poster" src="posters/brothers.png" alt="Pôster de Brothers">
+        <div class="textos">
+          <p class="titulo">Brothers</p>
+          <p class="ep">T1E1 · On the Road</p>
+          <p class="meta">Apple TV · 33 min · 1 temporada</p>
+          <p class="noticia">“5 New Shows to Stream This Week on Apple TV, Hulu and More”</p>
+        </div>
+        <div class="lado">
+          <span class="segure">Segure OK para ler mais</span>
+          <div class="lembrete"><span class="relogio"></span><span class="rot">Lembrar-me</span></div>
+        </div>
+      </div>
+
+      <div class="linha">
+        <img class="poster" src="posters/lanterns.png" alt="Pôster de Lanterns">
+        <div class="textos">
+          <p class="titulo">Lanterns</p>
+          <p class="ep">T1E7 · The Jordan Boys Legacy</p>
+          <p class="meta">HBO · 54 min · 1 temporada</p>
+        </div>
+        <div class="lado">
+          <div class="pontuacao">2026 <span class="imdb">IMDb</span> 8.4</div>
+          <div class="lembrete" style="color:#F5F5F7"><span class="relogio ativo"></span><span class="rot">Lembrete ativo</span></div>
+        </div>
+      </div>
+
+      <div class="linha-mes">
+        <span class="caps">OUTUBRO 2026</span>
+        <span class="regua"></span>
+      </div>
+
+      <div class="linha">
+        <img class="poster" src="posters/tulsa-king.png" alt="Pôster de Tulsa King">
+        <div class="textos">
+          <p class="titulo">Tulsa King</p>
+          <p class="ep">T4E1 · Episódio 1</p>
+          <p class="meta">Paramount+ · 42 min · 4 temporadas</p>
+        </div>
+        <div class="lado">
+          <div class="lembrete" style="color:#F5F5F7"><span class="relogio"></span><span class="rot">Lembrar-me</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- nós sobre o eixo -->
+    <span class="no hoje" style="top:233px"></span>
+    <span class="no" style="top:585px"></span>
+    <span class="no vazado" style="top:1063px"></span>
+  </div>
+</div>
+
+<script>
+  const palco = document.getElementById('palco');
+  function ajustar() {
+    const s = Math.min(innerWidth / 2560, innerHeight / 1600);
+    palco.style.transform = `translate(-50%, -50%) scale(${s})`;
+  }
+  addEventListener('resize', ajustar);
+  ajustar();
+</script>
+</body>
+</html>
