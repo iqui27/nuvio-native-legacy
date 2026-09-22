@@ -520,12 +520,14 @@ void episodios_desenhar(void) {
   // A hierarquia vem de tipografia e superfícies, nao de um halo no topo:
   // a luz colorida lavava o fundo e competia com a temporada e a linha focadas.
   txt_desenhar_alpha(txt_linha(TXT_PAINEL_TITULO,"Episódios",240,241,243,255),x+40,44,anim);
-  { int cor=230;
-    if (grupo==-1) cor=focoTxt;
-    gfx_cor((GfxRect){x+EP_W-146,44,110,50},.3f,
-            grupo==-1?(tinta>.5f?.15f+ar*.10f:.78f):.11f,
-            grupo==-1?(tinta>.5f?.065f+ag*.03f:.79f):.115f,
-            grupo==-1?(tinta>.5f?.09f+ab*.045f:.82f):.13f,anim);
+  { int cor=grupo==-1?focoTxt:190;
+    // Acao ghost: sem caixa permanente, a superficie aparece apenas quando
+    // recebe foco, com o mesmo tom contido usado pela selecao da temporada.
+    if (grupo==-1)
+      gfx_cor((GfxRect){x+EP_W-146,44,110,50},.3f,
+              tinta>.5f?.15f+ar*.10f:.78f,
+              tinta>.5f?.065f+ag*.03f:.79f,
+              tinta>.5f?.09f+ab*.045f:.82f,anim);
     txt_desenhar_alpha(txt_linha(TXT_PG_ROTULO,"Fechar",cor,cor,cor,255),x+EP_W-130,55,anim); }
   gfx_recorte(x+36,120,EP_W-72,64);
   int primeira = temporada > 1 ? temporada - 1 : 0;
@@ -566,10 +568,9 @@ void episodios_desenhar(void) {
         gfx_cor(row,.12f,.088f+ar*.055f,.075f+ag*.035f,
                 .09f+ab*.045f,.98f*anim);
       }
+    } else {
+      gfx_cor(row,.12f,.062f,.066f,.079f,.92f*anim);
     }
-    if (i+1<n)
-      gfx_cor((GfxRect){row.x+12,y+EP_ROW-8,row.w-24,1},0,
-              .16f,.17f,.19f,.62f*anim);
     r.x+=3; r.y+=3; r.w-=6; r.h-=6;
     const CatItem *ci=cat_item(titulo);
     const char *arte=ep->thumb[0]?ep->thumb:(ci?ci->backdrop:"");
