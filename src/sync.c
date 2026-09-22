@@ -22,6 +22,8 @@
 #include "ajustes.h"
 #include "catordem.h"
 #include "descoberta.h"
+#include "homeestado.h"
+#include "cachearte.h"
 #include "extras.h"
 #include "js.h"
 #include "jsw.h"
@@ -807,6 +809,9 @@ int sync_empurrar_credencial(const char *provider, const char *credJson) {
 }
 
 void sync_reaplicar_ajustes(void) {
+  // A conta ou o perfil ativo mudou: solta pins dos dois grupos para que cada
+  // superfície publique em seguida o conjunto pertencente ao novo contexto.
+  cachearte_limpar_referencias();
   aplicarAjustes = 1;
   // Conta manda de novo: a protecao local deixa de valer ate a pessoa mexer.
   dados_apagar(SY_AJUSTES_LOCAIS);
@@ -837,6 +842,8 @@ void sync_esquecer_usuario(void) {
   // A ordem importa pouco, mas o CONJUNTO nao: cada linha aqui corresponde a
   // uma coisa que sobrevivia ao logout.
   catordem_esquecer();
+  homeestado_esquecer();
+  cachearte_limpar_referencias();
   // O CACHE DO CATALOGO TAMBEM. Ele guarda o catalogo montado da conta que
   // saiu — watchlist, continuar assistindo, feed de amigos com nome e avatar —
   // e, pior, a `base` de cada fileira, que no Xperience carrega um JWT dentro

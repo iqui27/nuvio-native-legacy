@@ -117,6 +117,21 @@ int main(void) {
   // E o leitor tem de achar o que o escritor deixou, recebendo o MESMO dirArte.
   confere("cat_ler_cache acha o que foi gravado", cat_ler_cache(dirPacote) == 1);
   confere("catalogo do cache na memoria", cat_n() == 4 && cat_do_cache());
+  {
+    CatFileira vazio = *cat_fileira(0);
+    CatItem estadoItens[4];
+    unsigned long antes, depois;
+    for (int i = 0; i < 4; i++) estadoItens[i] = *cat_item(i);
+    vazio.n = 0; vazio.estado = 1;
+    cat_definir_tudo(estadoItens, 4, &vazio, 1);
+    confere("resposta vazia preserva a chave da fileira",
+            cat_n_fileiras() == 1 && cat_fileira(0)->estado == 1 &&
+            cat_fileira(0)->n == 0);
+    antes = cat_assinatura_de(estadoItens, 4, &vazio, 1);
+    estadoItens[0].poster[0] = 'p'; estadoItens[0].poster[1] = 0;
+    depois = cat_assinatura_de(estadoItens, 4, &vazio, 1);
+    confere("arte alterada no mesmo ID invalida assinatura", antes != depois);
+  }
 
   // (a2) SEM PASTA GRAVAVEL, VOLTA A SER COMO ERA.
   //
@@ -158,6 +173,16 @@ int main(void) {
   confere("perfil 2 NAO recebe o do 1",     cat_ler_cache(dirPacote) == 0);
   confere("arquivo apagado",               !cacheEmDisco(dirDados, dirPacote));
   perfilAtual = 1;
+
+  // (b4) A publication can finish under Alice and reach persistence only
+  // after the active owner changes. The caller must pass its captured identity.
+  printf("\n==> gravacao atrasada nao assume a identidade nova\n");
+  snprintf(usuarioAtual, sizeof usuarioAtual, "uuid-da-alice");
+  semearCatalogo("alice-atrasada");
+  snprintf(usuarioAtual, sizeof usuarioAtual, "uuid-do-bob");
+  confere("gravacao rejeitada para o dono capturado",
+          cat_gravar_cache_se_identidade(dirPacote, "uuid-da-alice", 1) == 0);
+  confere("nenhum cache privado foi criado", !cacheEmDisco(dirDados, dirPacote));
 
   // (b3) O MESMO DONO CONTINUA SENDO ACEITO — a regra nao pode virar "nunca ha
   // cache", que passaria em (b) e desligaria a funcionalidade inteira.

@@ -181,6 +181,8 @@ int  cat_carregar(const char *dirArte);
 // nos chamadores, porque quem le (home.c) e quem grava (descoberta.c) sao
 // arquivos diferentes e tem de concordar. Ver a nota longa em caminhoCache.
 int  cat_gravar_cache(const char *dirArte);
+int  cat_gravar_cache_se_identidade(const char *dirArte, const char *donoEsperado,
+                                    int perfilEsperado);
 // Devolve 1 se carregou. Chamar DEPOIS de cat_carregar: ele substitui o
 // catalogo do pacote quando o cache existe e e valido.
 int  cat_ler_cache(const char *dirArte);
@@ -315,10 +317,15 @@ typedef struct {
   // o catalogo unico, que e o que a biblioteca e a busca varrem. Duplicar os
   // itens por fileira custaria ~3,5 KB por titulo repetido.
   int  ini, n;
+  // 1 = resposta valida explicitamente vazia. A linha permanece na
+  // estrutura para que uma resposta parcial nao desloque as seguintes.
+  int estado;
 } CatFileira;
 
 int cat_n_fileiras(void);
 const CatFileira *cat_fileira(int r);   // NULL fora da faixa
+int cat_copiar_fileira(const char *chave, CatItem *itens, int max,
+                       CatFileira *meta);
 
 // Refaz SO a fileira "continue_watching" (issue #38): os itens novos tomam o
 // lugar da janela dela no vetor unico, as demais fileiras deslizam no `ini` e

@@ -50,6 +50,12 @@ int dados_apagar(const char *nome);
 // uma leitura de dois inteiros e volta. Ver a politica em dados.c.
 void dados_sincronizar(void);
 
+// Arranque apos duas aberturas sem primeiro quadro: modo conservador, sem
+// apagar IndexedDB. A busca de arte sob demanda continua disponivel.
+int dados_modo_recuperacao(void);
+int dados_sync_pendente(void);
+int dados_sync_em_recuo(void);
+
 // Diz que alguem gravou no sistema de arquivos por FORA de dados_gravar.
 // `leve` = 1 para conteudo re-obtivel (o cache de imagens de tex_cache.c), que
 // nao merece pagar uma descarga por si so: perder o ultimo poster baixado custa
@@ -72,6 +78,8 @@ void dados_fs_liberar(void);
 // ha como distinguir "o pico sumiu" de "o pico mudou de lugar".
 extern int    dados_desc_n;
 extern double dados_desc_ms;
+extern int    dados_sync_sucessos;
+extern int    dados_sync_falhas;
 void dados_desc_zerar(void);
 
 // Identificador ESTAVEL desta instalacao, gerado na primeira execucao e
@@ -87,7 +95,7 @@ void dados_uuid(char *dst, unsigned tam);
 
 #endif
 
-// 0 quando NADA do que o app grava sobrevive ao fechamento. So acontece no
-// alvo Tizen, quando o IDBFS nao monta — e sem ele Trakt, progresso e sync
-// gravam na RAM e somem. Aparece no relatorio de 3 s por isso.
+// Indica backend configurado: IDBFS montado no Tizen; nos alvos nativos,
+// diretorio que passou por sonda real de escrita. Os resultados de flush do
+// IDBFS sao telemetria separada (dados_sync_sucessos/falhas).
 int dados_persistente(void);

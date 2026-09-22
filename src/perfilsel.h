@@ -34,4 +34,21 @@ void perfilsel_continuar_ativo(void);
 int  perfilsel_quer_sair(void);
 int  perfilsel_pediu_repetir(void);
 
+#ifdef NV_PERFILSEL_TEST
+typedef struct {
+  float foco[8];
+  float pin;
+  float luz[6];
+  float luz_alvo[6];
+  float fade[9];
+  float mural_tempo;
+  float burst_tempo;
+  int mural_n;
+  int particulas;
+  int burst;
+  int burst_desenhado;
+} PerfilSelTesteEstado;
+void perfilsel_teste_estado(PerfilSelTesteEstado *estado);
+#endif
+
 #endif

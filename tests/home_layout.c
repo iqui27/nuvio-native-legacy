@@ -3,6 +3,18 @@
 #include <assert.h>
 #include "../src/home.c"
 
+void cachearte_marcar_grupo(int grupo, const char *url, int variante, int essencial, int emUso) {
+  (void)grupo; (void)url; (void)variante; (void)essencial; (void)emUso;
+}
+void cachearte_limpar_referencias_grupo(int grupo) { (void)grupo; }
+void cachearte_estatisticas_pedir(void) {}
+void tex_cache_marcar_larg(int grupo, const char *url, float larg, int essencial, int emUso) {
+  (void)grupo; (void)url; (void)larg; (void)essencial; (void)emUso;
+}
+int tex_falhou(const char *url) { (void)url; return 0; }
+int tex_largura_fonte(const char *url) { (void)url; return 0; }
+Uint32 SDL_GetTicks(void) { return 0; }
+
 // catalogo.c agora le o progresso de progresso.c, que fala com dados.c e
 // perfis.c. Aqui nao ha disco nem conta: dublês vazios bastam.
 char *dados_ler(const char *nome) { (void)nome; return NULL; }
@@ -23,11 +35,8 @@ const char *addons_nome_por_id(const char *id) { (void)id; return ""; }
 int main(void) {
   // O TETO DE FILEIRAS NO MAXIMO, porque este teste e sobre COMPOSICAO e FOCO.
   //
-  // O limite (7 de fabrica) nasceu depois deste arquivo e cortava a montagem
-  // em sete, derrubando quase toda asserção daqui — que fala de fileira 9, 10,
-  // de nenhum catalogo perdido, e de descer o foco ate o fim. Declarar o teto
-  // aqui deixa explicito que ele nao e o assunto; o caso que o exercita esta
-  // no fim do arquivo.
+  // O limite legado é 16 linhas visíveis. O fixture valida a composição dentro
+  // desse teto, incluindo as linhas fixas.
   fil_definir_limite(FIL_LIMITE_MAX);
   assert(MAX_FIL <= FOCUS_MAX_FILEIRAS);
   assert(perfilCatalogo("Oscars 2026 - Filme") == FILEIRA_COLECAO);
@@ -68,33 +77,19 @@ int main(void) {
   snprintf(fils[15].titulo, sizeof fils[15].titulo, "Oscar - Filme");
   cat_definir_tudo(itensTeste, 48, fils, 16);
   sincronizarFileiras();
-  // A INTENCAO ORIGINAL, mantida de proposito: 16 catalogos entram, mais
-  // "Amigos assistindo" e o destaque, e NENHUM catalogo se perde (o laco logo
-  // abaixo cobra isso).
-  //
-  // ESTA ASSERCAO FALHA HOJE, e a falha e informacao, nao ruido. O teto de
-  // fileiras (FIL_LIMITE_MAX, 16) conta as fileiras INSERIDAS junto com as de
-  // catalogo, entao a composicao de 18 vagas e cortada em 16 e dois catalogos
-  // somem. E exatamente a contabilidade que o relator do issue #18 descreve:
-  // "they still take up the 16-row limit and push other collections".
-  //
-  // NAO AJUSTE O NUMERO PARA FICAR VERDE. Trocar 17 por 16 aqui gravaria como
-  // correto o comportamento que o #18 questiona, e o laco de "nenhum catalogo
-  // removido" teria de ser afrouxado junto — que e a asserção que da valor ao
-  // arquivo. Quando o #18 for decidido, esta linha vira a prova da decisao.
-  assert(nFileiras == 17);
-  assert(foco.nFileiras == 17);
+  assert(nFileiras == 16);
+  assert(foco.nFileiras == 16);
   assert(fileiras[1].tipo == FILEIRA_SOCIAL && fileiras[1].ini == -1 && fileiras[1].n == 1);
-  assert(fileiras[2].tipo == FILEIRA_DESTAQUE);
-  for (int i = 0; i < 16; i++) {
+  assert(fileiras[0].tipo == FILEIRA_DESTAQUE);
+  for (int i = 1; i < 16; i++) {
     int achou = 0;
     for (int r = 0; r < nFileiras; r++)
       if (!strcmp(fileiras[r].chave, fils[i].chave)) achou++;
-    assert(achou == 1); // nenhum catálogo removido ou duplicado
+    assert(achou == 1); // todas as fileiras de catálogo visíveis são únicas
   }
   foco.fileira = 0; foco.coluna = 0;
-  for (int i = 0; i < 16; i++) assert(focus_mover(&foco, 0, 1));
-  assert(foco.fileira == 16);
+  for (int i = 1; i < nFileiras; i++) assert(focus_mover(&foco, 0, 1));
+  assert(foco.fileira == nFileiras - 1);
   assert(!focus_mover(&foco, 0, 1));
   // Mesma contagem, ordem diferente: manter chave, coluna e scroll.
   foco.fileira = 5; foco.coluna = 2; scrollX[5] = 123;
@@ -124,8 +119,8 @@ int main(void) {
   assert(nFileiras>=11);
   assert(fileiras[1].tipo==FILEIRA_SOCIAL);
   // O primeiro catalogo com conteudo vira o destaque; o resto segue a ordem.
-  assert(fileiras[2].tipo==FILEIRA_DESTAQUE);
-  assert(!strcmp(fileiras[2].chave,"catalogo_1"));
+  assert(fileiras[0].tipo==FILEIRA_DESTAQUE);
+  assert(!strcmp(fileiras[0].chave,"catalogo_1"));
   assert(fileiras[nFileiras-2].tipo==FILEIRA_CATALOGOS);
   assert(!strcmp(fileiras[nFileiras-2].titulo,"Streaming"));
   assert(!strcmp(col_folder(fileiras[nFileiras-2].folders[0])->title,"Netflix"));

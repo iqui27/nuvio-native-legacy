@@ -15,6 +15,7 @@ extern void NV_TEX_TEST_AFTER_POP(void);
 #endif
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#include "dados.h"
 #endif
 #include "rede.h"
 #include "gfx.h"
@@ -27,6 +28,7 @@ extern void NV_TEX_TEST_AFTER_POP(void);
 #include "webp.h"
 #include "jpegrapido.h"
 #include "artereserva.h"
+#include "cachearte.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -144,6 +146,8 @@ typedef struct {
   // porque gif.c le por caminho.
   unsigned char *bruto;
   long nBruto;
+  int varianteCache;
+  char urlCache[512];
 #endif
 } Item;
 
@@ -161,7 +165,7 @@ static Item itens[MAX_ITENS_ABS];
 // Bytes baixados que ainda nao foram consumidos (Tizen). No LG e vazio.
 static void soltarBruto(Item *it) {
 #ifdef __EMSCRIPTEN__
-  free(it->bruto); it->bruto = NULL; it->nBruto = 0;
+  free(it->bruto); it->bruto = NULL; it->nBruto = 0; it->urlCache[0] = 0;
 #else
   (void)it;
 #endif
@@ -761,6 +765,14 @@ static int tetoDoHeroi(void) {
 }
 static float escalaBuf = 1.0f;
 
+static int arquivoCacheImagem(const char *nome) {
+  const char *p = nome;
+  while (isxdigit((unsigned char)*p)) p++;
+  if (p - nome < 8 || p - nome > 16) return 0;
+  return !strcmp(p, ".jpg") || !strcmp(p, ".jpeg") || !strcmp(p, ".png") ||
+         !strcmp(p, ".webp") || !strcmp(p, ".gif");
+}
+
 void tex_escala(float e) {
   if (e > 0.1f && e < 8.0f) escalaBuf = e;
 }
@@ -770,6 +782,15 @@ void tex_cache_dir(const char *dir) {
   if (!dir || !*dir) return;
   snprintf(dirCache, sizeof dirCache, "%s", dir);
   mkdir(dirCache, 0777);
+#ifndef __EMSCRIPTEN__
+  cachearte_nativo_configurar_diretorio(dirCache);
+#endif
+#ifdef __EMSCRIPTEN__
+  /* Artwork has its own lazy IndexedDB database. Do not put these bodies in
+   * /nuvio IDBFS: syncfs would hydrate the complete image collection at boot. */
+  cachearte_iniciar();
+  cachearte_limite_bytes(NV_CACHE_DISCO_MAX);
+#endif
   // A PASTA PODE EXISTIR E NAO SER GRAVAVEL, e isso ja aconteceu: o tools/arm.sh
   // manda art/ num tar feito no Mac, e o tar extraido como root na TV carimba
   // o dono com o uid do Mac (13888160) e modo 755. O app roda como uid 5152,
@@ -810,13 +831,16 @@ void tex_cache_dir(const char *dir) {
       while ((e = readdir(d)) != NULL) {
         char caminho[768];
         struct stat st;
-        if (e->d_name[0] == '.') continue;
+        if (!arquivoCacheImagem(e->d_name)) continue;
         snprintf(caminho, sizeof caminho, "%s/%s", dirCache, e->d_name);
-        if (stat(caminho, &st) == 0 && S_ISREG(st.st_mode)) { total += st.st_size; n++; }
+        if (lstat(caminho, &st) == 0 && S_ISREG(st.st_mode)) { total += st.st_size; n++; }
       }
       closedir(d);
       cacheDiscoBytes = total;
       publicarCacheDisco();
+#ifndef __EMSCRIPTEN__
+      cachearte_nativo_inventario(n, total, 0);
+#endif
       if (n)
         printf("[tex] cache de disco ja tinha %d arquivo(s), %.1f MB\n",
                n, total / 1048576.0);
@@ -825,6 +849,7 @@ void tex_cache_dir(const char *dir) {
   pthread_mutex_lock(&discoMtx);
   prepararDisco(0, 0);
   pthread_mutex_unlock(&discoMtx);
+  cachearte_estatisticas_pedir();
 #endif
   fflush(stdout);
 }
@@ -916,11 +941,33 @@ static void nomeDeCache(const char *url, char *dst, size_t tam) {
 }
 
 #ifndef __EMSCRIPTEN__
+static void atualizarInventarioNativo(void) {
+  DIR *d = opendir(dirCache);
+  struct dirent *e;
+  long itens = 0, bytes = 0, essenciais = 0;
+  if (d) {
+    while ((e = readdir(d)) != NULL) {
+      char caminho[768]; struct stat st;
+      if (!arquivoCacheImagem(e->d_name)) continue;
+      snprintf(caminho, sizeof caminho, "%s/%s", dirCache, e->d_name);
+      if (lstat(caminho, &st) == 0 && S_ISREG(st.st_mode)) {
+        itens++; bytes += st.st_size;
+        if (cachearte_nativo_essencial(caminho)) essenciais++;
+      }
+    }
+    closedir(d);
+  }
+  cacheDiscoBytes = bytes;
+  publicarCacheDisco();
+  cachearte_nativo_inventario(itens, bytes, essenciais);
+}
+
 /* Nunca remove o arquivo entre a entrega da rede e a leitura pelo decoder.
  * Ordem de locks: discoMtx -> mtx. Nenhum caminho faz a ordem inversa. */
 static int discoProtegido(const char *caminho, void *ctx) {
   int i, protegido = 0;
   (void)ctx;
+  if (cachearte_nativo_protegido(caminho)) return 1;
   if (!mtx) return 0;
   SDL_LockMutex(mtx);
   for (i = 0; i < nMax; i++) {
@@ -936,6 +983,7 @@ static void prepararDisco(long entrada, int forcar) {
   nv_cache_podar(dirCache, &cacheDiscoBytes, entrada, NV_CACHE_DISCO_MAX,
                  NV_CACHE_DISCO_RESERVA, forcar, discoProtegido, NULL);
   publicarCacheDisco();
+  atualizarInventarioNativo();
 }
 #endif
 
@@ -1023,19 +1071,41 @@ static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
   f = fopen(dst, "rb");
   if (f) { fseek(f, 0, SEEK_END); n = ftell(f); fclose(f);
     if (n > 512) {
+      unsigned char sig[12] = {0};
+      FILE *check = fopen(dst, "rb");
+      size_t got = check ? fread(sig, 1, sizeof sig, check) : 0;
+      if (check) fclose(check);
+      { int valid = got >= 4 && (
+          (sig[0] == 0xFF && sig[1] == 0xD8) ||
+          (sig[0] == 0x89 && sig[1] == 0x50 && sig[2] == 0x4E && sig[3] == 0x47) ||
+          (sig[0] == 'G' && sig[1] == 'I' && sig[2] == 'F') ||
+          (sig[0] == 'R' && sig[1] == 'I' && sig[2] == 'F' && sig[3] == 'F' &&
+           got >= 12 && sig[8] == 'W' && sig[9] == 'E' && sig[10] == 'B' && sig[11] == 'P'));
+        if (valid) {
 #ifdef __EMSCRIPTEN__
-      marcarUso(dst);   // sem isto a poda vira o contrario de LRU; ver a nota
+          marcarUso(dst);   // sem isto a poda vira o contrario de LRU; ver a nota
 #else
-      /* Evita uma escrita de metadados a cada card/quadro. */
-      { struct stat st;
-        if (!stat(dst, &st) && time(NULL) - st.st_mtime >= 60) utime(dst, NULL); }
-      pthread_mutex_unlock(&discoMtx);
+          cachearte_nativo_hit();
+          /* Evita uma escrita de metadados a cada card/quadro. */
+          { struct stat st;
+            if (!stat(dst, &st) && time(NULL) - st.st_mtime >= 60) utime(dst, NULL); }
+          pthread_mutex_unlock(&discoMtx);
 #endif
-      if (trace) trace->cacheMs += SDL_GetTicks() - cacheEm;
-      return 1;
+          if (trace) trace->cacheMs += SDL_GetTicks() - cacheEm;
+          return 1;
+        }
+      }
+#ifndef __EMSCRIPTEN__
+      remove(dst);
+      cacheDiscoBytes -= n;
+      if (cacheDiscoBytes < 0) cacheDiscoBytes = 0;
+      publicarCacheDisco();
+      cachearte_nativo_miss();
+#endif
     } }
 #ifndef __EMSCRIPTEN__
   pthread_mutex_unlock(&discoMtx);
+  if (!f || n <= 512) cachearte_nativo_miss();
 #endif
   if (trace) trace->cacheMs += SDL_GetTicks() - cacheEm;
   if (foiRede) *foiRede = 1;
@@ -1093,6 +1163,8 @@ static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
       publicarCacheDisco();
     }
 #ifndef __EMSCRIPTEN__
+    cachearte_nativo_gravacao(ok);
+    if (ok) atualizarInventarioNativo();
     pthread_mutex_unlock(&discoMtx);
 #endif
     if (trace) trace->persistMs += SDL_GetTicks() - persistEm;
@@ -1112,6 +1184,7 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
     long n = 0;
     unsigned char *corpo;
     char menor[600];
+    int variante = NV_CACHE_ARTE_MEDIUM;
     // O CARD NAO PRECISA DO FUNDO DE 1920 (20/09/2026, #72). O metahub serve
     // /background/small/ em 480x270 e 12 KB contra 1920x1080 e 600 KB do
     // /medium/ — o cabecalho de artehero.c mediu medium/big/large/original
@@ -1123,6 +1196,7 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
     { int limite;
       SDL_LockMutex(mtx); limite = itens[idx].limite; SDL_UnlockMutex(mtx);
       if (limite > 0 && limite <= 640) {
+        variante = NV_CACHE_ARTE_SMALL;
         const char *m = strstr(url, "images.metahub.space/background/medium/");
         if (m) {
           snprintf(menor, sizeof menor, "%.*simages.metahub.space/background/small/%s",
@@ -1130,8 +1204,15 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
           url = menor;
         }
       } }
-    if (foiRede) *foiRede = 1;
-    corpo = (unsigned char *)baixarImagem(url, &n, trace);
+    /* The exact URL, including its query string, remains the key. `variante`
+     * is a second dimension so a small response can never satisfy a hero. */
+    corpo = NULL;
+    if (cachearte_buscar(url, variante, &corpo, &n)) {
+      if (foiRede) *foiRede = 0;
+    } else {
+      if (foiRede) *foiRede = 1;
+      corpo = (unsigned char *)baixarImagem(url, &n, trace);
+    }
     if (!corpo) {
       char alt[400];
       if (resolverReserva(url, alt, sizeof alt, trace)) corpo = (unsigned char *)baixarImagem(alt, &n, trace);
@@ -1142,10 +1223,15 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
       free(corpo);
       return garantirLocal(url, dst, tam, foiRede, trace);
     }
+    /* JPEG/PNG/WebP bytes are already compressed. Persist the response as-is;
+     * decoding remains the existing worker path and no raw RGBA is stored. */
+    if (foiRede && *foiRede) cachearte_salvar(url, variante, corpo, n, 0);
     SDL_LockMutex(mtx);
     free(itens[idx].bruto);
     itens[idx].bruto = corpo;
     itens[idx].nBruto = n;
+    itens[idx].varianteCache = variante;
+    snprintf(itens[idx].urlCache, sizeof itens[idx].urlCache, "%s", url);
     SDL_UnlockMutex(mtx);
     snprintf(dst, tam, "%s", url);
     return 1;
@@ -1462,7 +1548,11 @@ static int threadDecode(void *arg) {
     // OS BYTES SAEM DO ITEM AQUI, sob o mutex, e passam a ser deste fio.
     unsigned char *bruto = itens[idx].bruto;
     long nBruto = itens[idx].nBruto;
+    int varianteCache = itens[idx].varianteCache;
+    char urlCache[512];
+    snprintf(urlCache, sizeof urlCache, "%s", itens[idx].urlCache);
     itens[idx].bruto = NULL; itens[idx].nBruto = 0;
+    itens[idx].urlCache[0] = 0;
 #endif
     SDL_UnlockMutex(mtx);
     if (filaEm) {
@@ -1767,6 +1857,12 @@ static int threadDecode(void *arg) {
       // continua FALHOU, sem baixar de novo.
       { int ehGif = (mag[0] == 'G' && mag[1] == 'I' && mag[2] == 'F' && mag[3] == '8');
         if (!ehGif) {
+#ifdef __EMSCRIPTEN__
+          /* The decoder is authoritative: signature checks cannot detect a
+           * truncated JPEG with a valid SOI. Remove that exact persistent
+           * variant so the retry can refill it from HTTP. */
+          if (bruto && urlCache[0]) cachearte_invalidar(urlCache, varianteCache);
+#endif
           // APAGA o arquivo que nao decodifica. Ele so pode ter chegado ao
           // cache corrompido — a assinatura foi conferida no download —, e
           // mante-lo significa que esta arte NUNCA mais carrega, nem depois de
@@ -2015,6 +2111,11 @@ int tex_historico(long *saida, int max) {
 
 int tex_iniciar(int max_itens) {
   int mb = orcamentoMB();
+  int fiosDecode = NV_TEX_FIOS, fiosRede = NV_TEX_FIOS_REDE;
+#ifdef __EMSCRIPTEN__
+  /* Recover IDBFS/account data before spending bandwidth on speculative art. */
+  if (dados_modo_recuperacao()) fiosDecode = fiosRede = 1;
+#endif
   nMax = max_itens > 0 && max_itens <= MAX_ITENS_ABS ? max_itens : 64;
   // OS SLOTS ACOMPANHAM O ORCAMENTO. 192 slots foram dimensionados para 96-128
   // MB (~660 KB por cartaz da C9): com 300 MB o cache encheria de slots muito
@@ -2051,13 +2152,13 @@ int tex_iniciar(int max_itens) {
   // com `pend>0`. Quatro fios competiriam com o desenho mesmo em prioridade
   // baixa.
   { int k;
-    for (k = 0; k < NV_TEX_FIOS; k++)
+    for (k = 0; k < fiosDecode; k++)
       thrs[k] = SDL_CreateThread(threadDecode, "nv-decode", NULL);
     // QUATRO fios de REDE, e eles NAO sao como os de decode: nao tocam pixel,
     // so esperam I/O. Podem rodar em prioridade normal e em maior numero sem
     // competir com o desenho — o custo de um fio parado num socket e zero de
     // CPU. Quatro cobre os quatro cartazes que entram na tela de uma vez.
-    for (k = 0; k < NV_TEX_FIOS_REDE; k++)
+    for (k = 0; k < fiosRede; k++)
       thrsRede[k] = SDL_CreateThread(threadRede, "nv-rede", NULL);
     thr = thrs[0]; }
   return thr != NULL;
@@ -2272,6 +2373,27 @@ static int capDeLargura(float largLayout) {
   if (cap < 128) cap = 128;
   if (cap > tetoDoHeroi()) cap = tetoDoHeroi();
   return cap;
+}
+
+void tex_cache_marcar_larg(int grupo, const char *url, float largLayout,
+                           int essencial, int emUso) {
+  char urlReal[600];
+  int cap = largLayout <= 1.0f ? NV_TEX_LARG_MAX : capDeLargura(largLayout);
+  int variante = NV_CACHE_ARTE_MEDIUM;
+  if (!url || !*url) return;
+  snprintf(urlReal, sizeof urlReal, "%s", url);
+#ifdef __EMSCRIPTEN__
+  if (cap <= 640) {
+    variante = NV_CACHE_ARTE_SMALL;
+    const char *m = strstr(url, "images.metahub.space/background/medium/");
+    if (m) {
+      snprintf(urlReal, sizeof urlReal, "%.*simages.metahub.space/background/small/%s",
+               (int)(m - url), url,
+               m + strlen("images.metahub.space/background/medium/"));
+    }
+  }
+#endif
+  cachearte_marcar_grupo(grupo, urlReal, variante, essencial, emUso);
 }
 
 GLuint tex_obter_larg(const char *caminho, float largLayout) {
