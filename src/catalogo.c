@@ -873,6 +873,46 @@ static int aplicarProgressoDoDisco(void) {
 // com o conteudo ainda antigo — um quadro com o card repetido no pior caso —,
 // nunca um indice fora da janela. Na ordem inversa ele leria o slot orfao.
 //
+// A REVISAO SOBE AQUI TAMBEM (medido em 22/09, tests/cwremover.sh). A home
+// (sincronizarFileiras) ganhou na 1.4 um guarda curto por contadores: com
+// cat_revisao, fil_revisao, col_revisao e o numero de fileiras iguais ela sai
+// sem olhar as janelas. Esta funcao encolhia `n` sem bumpar nada, entao a home
+// seguia com a contagem VELHA: o card tirado era coberto pelo vizinho e o
+// ultimo aparecia duas vezes (o slot orfao), e so a proxima republicacao
+// acertava a fileira. So quando a fileira esvaziava — nFils mudava — a home
+// via na hora. E o mesmo contrato de cat_trocar_continuar, que faz a mesma
+// operacao por troca de bloco e sempre bumpou.
+//
+// AS FAIXAS DE EPISODIO ANDAM JUNTO com os itens: epIni/epQtd sao por indice,
+// e deslocar so os itens deixava cada titulo apos o tirado com os episodios do
+// vizinho na pagina de detalhe.
+//
+// Chamar com pubTrava tomada. `r` e a fileira que contem `indice`.
+static void tirarDaJanela(int r, int indice) {
+  CatFileira *f = &fils[r];
+  int quantos, orfao;
+  f->n--;
+  quantos = f->ini + f->n - indice;
+  orfao = f->ini + f->n;
+  if (quantos > 0) {
+    memmove(&itens[indice], &itens[indice + 1], sizeof(CatItem) * (size_t)quantos);
+    if (epIni && epQtd && orfao < nFaixas) {
+      memmove(&epIni[indice], &epIni[indice + 1], sizeof(int) * (size_t)quantos);
+      memmove(&epQtd[indice], &epQtd[indice + 1], sizeof(int) * (size_t)quantos);
+    }
+  }
+  if (epQtd && orfao < nFaixas) epQtd[orfao] = 0;
+  // Fileira que esvaziou sai da lista, senao a home desenha um titulo com
+  // nada embaixo. Mesmo protocolo: zera a contagem antes de mexer no vetor.
+  if (f->n < 1) {
+    int k, total = nFils;
+    nFils = 0;
+    for (k = r; k + 1 < total; k++) fils[k] = fils[k + 1];
+    nFils = total - 1;
+  }
+  catRevisao++;
+}
+
 // Devolve 1 se achou e tirou.
 int cat_tirar_item_da_fileira(int indice) {
   int r;
@@ -880,28 +920,14 @@ int cat_tirar_item_da_fileira(int indice) {
   pthread_mutex_lock(&pubTrava);
   for (r = 0; r < nFils; r++) {
     CatFileira *f = &fils[r];
-    int quantos;
     char nome[sizeof f->chave];
     if (indice < f->ini || indice >= f->ini + f->n) continue;
-    // COPIA O NOME ANTES, porque a compactacao la embaixo sobrescreve fils[r]
-    // com a fileira seguinte — ler f->chave depois dela imprime o nome ERRADO.
-    // O teste pegou: tirando os tres itens da "retomada", a terceira linha
-    // dizia "populares". A logica estava certa e so o log mentia, que e o tipo
-    // de coisa que custa uma sessao inteira de depuracao mais tarde.
+    // COPIA O NOME ANTES, porque a compactacao em tirarDaJanela sobrescreve
+    // fils[r] com a fileira seguinte — ler f->chave depois dela imprime o nome
+    // ERRADO. O teste pegou: tirando os tres itens da "retomada", a terceira
+    // linha dizia "populares".
     snprintf(nome, sizeof nome, "%s", f->chave);
-    f->n--;
-    quantos = f->ini + f->n - indice;
-    if (quantos > 0)
-      memmove(&itens[indice], &itens[indice + 1],
-              sizeof(CatItem) * (size_t)quantos);
-    // Fileira que esvaziou sai da lista, senao a home desenha um titulo com
-    // nada embaixo. Mesmo protocolo: zera a contagem antes de mexer no vetor.
-    if (f->n < 1) {
-      int k, total = nFils;
-      nFils = 0;
-      for (k = r; k + 1 < total; k++) fils[k] = fils[k + 1];
-      nFils = total - 1;
-    }
+    tirarDaJanela(r, indice);
     printf("[cat] item %d tirado da fileira \"%s\"\n", indice, nome);
     fflush(stdout);
     pthread_mutex_unlock(&pubTrava);
@@ -909,6 +935,68 @@ int cat_tirar_item_da_fileira(int indice) {
   }
   pthread_mutex_unlock(&pubTrava);
   return 0;
+}
+
+// FRACO pelo mesmo motivo de tend_registrar no topo: os testes leves compilam
+// catalogo.c sem progresso.c. No app progresso.c define a de verdade.
+__attribute__((weak)) int prog_removido_vence(const char *imdb, long long instanteMs) {
+  (void)imdb; (void)instanteMs; return 0;
+}
+
+static int fileiraContinuar(void) {
+  int r;
+  for (r = 0; r < nFils; r++) if (!strcmp(fils[r].chave, "continue_watching")) return r;
+  return -1;
+}
+
+// Tira da janela de "Continuar assistindo" os itens para os quais `quer`
+// responde 1. Do fim para o comeco, para o indice seguinte nao andar debaixo
+// do laco. pubTrava tomada. Devolve quantos saíram.
+static int podarContinuar(int (*quer)(const CatItem *, const void *), const void *u) {
+  int r = fileiraContinuar(), i, tirados = 0;
+  if (r < 0) return 0;
+  for (i = fils[r].ini + fils[r].n - 1; r >= 0 && i >= fils[r].ini; i--) {
+    if (!quer(&itens[i], u)) continue;
+    { int era = nFils;
+      tirarDaJanela(r, i);
+      tirados++;
+      if (nFils != era) break; }   // esvaziou: a fileira nao existe mais
+  }
+  return tirados;
+}
+
+static int mesmaObraQue(const CatItem *c, const void *u) {
+  char a[32], b[32];
+  id_base(c->imdb, a, sizeof a);
+  id_base((const char *)u, b, sizeof b);
+  return a[0] && !strcmp(a, b);
+}
+
+// A remocao vence o item: ver prog_removido_vence. retomadoMs e o paused_at do
+// Trakt/Simkl ou o lastWatched da conta; 0 perde, e a propria funcao consulta o
+// registro local para o caso "assistiu de novo aqui".
+static int removidoVence(const CatItem *c, const void *u) {
+  (void)u;
+  return c->imdb[0] && prog_removido_vence(c->imdb, c->retomadoMs);
+}
+
+// "TIRAR DE CONTINUAR ASSISTINDO", NA HORA E POR IDENTIDADE.
+//
+// Por imdb, e nao pelo indice que a modal guardou: o fio de
+// desc_refazer_continuar troca o bloco (cat_trocar_continuar) a qualquer
+// instante, e um indice de antes da troca tiraria OUTRO titulo. Sob pubTrava a
+// busca e a remocao enxergam o mesmo bloco. Tira TODOS os cards da mesma obra
+// na janela — episodios diferentes da mesma serie sao um card so para quem
+// esta olhando.
+int cat_tirar_continuar(const char *imdb) {
+  int k;
+  if (!imdb || !imdb[0]) return 0;
+  pthread_mutex_lock(&pubTrava);
+  k = podarContinuar(mesmaObraQue, imdb);
+  pthread_mutex_unlock(&pubTrava);
+  printf("[cat] %s tirado de Continuar assistindo: %d card(s)\n", imdb, k);
+  fflush(stdout);
+  return k;
 }
 
 void cat_zerar_progresso(int indice) {
@@ -1056,6 +1144,36 @@ void cat_republicar_fileiras(const CatFileira *novasFils, int nNovas) {
   if (!novasFils || nNovas < 1 || n < 1) return;
   q = nNovas > CAT_FIL_MAX ? CAT_FIL_MAX : nNovas;
   pthread_mutex_lock(&pubTrava);
+  // A JANELA QUE ESTA PUBLICADA VENCE A DA MONTAGEM, para a mesma chave. Quem
+  // chama (desc_remontar_fileiras) republica o retrato da ultima montagem
+  // completa, e ele nao sabe do que mudou depois SEM REDE: um card tirado de
+  // "Continuar assistindo" (cat_tirar_continuar) ou uma refacao da fileira
+  // (cat_trocar_continuar, que desliza o `ini` das seguintes). Sem isto o
+  // proximo sync que remonta as fileiras devolvia n=3 a uma janela que ja era
+  // n=2 — o card "voltava" como o primeiro item da fileira de baixo.
+  { static CatFileira ajust[CAT_FIL_MAX];
+    int r;
+    for (k = 0; k < q; k++) {
+      ajust[k] = novasFils[k];
+      for (r = 0; r < nFils; r++)
+        if (!strcmp(fils[r].chave, ajust[k].chave)) {
+          ajust[k].ini = fils[r].ini; ajust[k].n = fils[r].n; break;
+        }
+      // Chave que saiu da lista publicada porque ESVAZIOU (o ultimo card de
+      // "Continuar assistindo" tirado) nao volta com a janela velha.
+      if (r == nFils && !strcmp(ajust[k].chave, "continue_watching")) ajust[k].n = 0;
+    }
+    // E a que NASCEU depois da montagem (cat_trocar_continuar cria a fileira
+    // quando o primeiro titulo entra em progresso) nao some: entra na frente,
+    // onde montar() e cat_trocar_continuar a poem.
+    { int cw = fileiraContinuar(), tem = 0;
+      for (k = 0; k < q; k++) if (!strcmp(ajust[k].chave, "continue_watching")) tem = 1;
+      if (cw >= 0 && !tem && q < CAT_FIL_MAX) {
+        memmove(ajust + 1, ajust, sizeof *ajust * (size_t)q);
+        ajust[0] = fils[cw];
+        q++;
+      } }
+    novasFils = ajust; }
   // IGUAL AO QUE ESTA: nao mexe. A remontagem sem rede roda a cada sync e a
   // cada ajuste de fileira; quando o resultado e o mesmo conjunto na mesma
   // ordem, zerar e reescrever as fileiras faz a home se reconstruir por nada.
@@ -1148,6 +1266,12 @@ void cat_definir_tudo(const CatItem *lista, int qtd,
       }
       nFils = v;
     }
+    // O CICLO COMPLETO TAMBEM NAO TRAZ DE VOLTA. montar() chama
+    // montarContinuar no comeco e publica aqui dezenas de segundos depois (os
+    // manifestos): uma remocao feita nesse meio passaria. Ver a mesma poda em
+    // cat_trocar_continuar. As faixas de episodio que ela desloca sao zeradas
+    // logo abaixo de qualquer jeito.
+    podarContinuar(removidoVence, NULL);
     pthread_mutex_unlock(&pubTrava);
   }
   // Episodios do catalogo anterior nao valem para o novo: os indices mudaram.
@@ -1226,6 +1350,12 @@ void cat_trocar_continuar(const CatItem *lista, int qtd) {
   n = novoN;
   memcpy(fils, novas, sizeof *novas * (size_t)nv);
   nFils = nv;
+  // A REFACAO NAO TRAZ DE VOLTA O QUE FOI TIRADO. montarContinuar ja filtra,
+  // mas um fio que montou ANTES da remocao e publica DEPOIS dela passaria o
+  // item velho; sob a mesma trava de cat_tirar_continuar, ou a remocao ja
+  // marcou (e a poda pega aqui) ou ela vem depois (e tira por imdb).
+  { int podados = podarContinuar(removidoVence, NULL);
+    qtd -= podados; }
   pthread_mutex_unlock(&pubTrava);
   // Os indices andaram: nenhuma faixa de episodio vale para o item novo.
   nEps = 0;

@@ -131,6 +131,11 @@ void  prog_content_id(char *d, unsigned n, const char *i, int *t, int *e) {
 }
 int   prog_ler(ProgRegistro *s, int m)     { (void)s; (void)m; return 0; }
 int   prog_por_chave(const char *c, ProgRegistro *s) { (void)c; (void)s; return 0; }
+// "Tirar de Continuar assistindo" (desc_tirar_continuar, tests/cwremover.sh).
+void  prog_remover(const char *c)          { (void)c; }
+void  prog_marcar_removido(const char *i)  { (void)i; }
+int   prog_removido_vence(const char *i, long long ms) { (void)i; (void)ms; return 0; }
+int   cat_tirar_continuar(const char *i)   { (void)i; return 0; }
 int   trakt_continuar(CatItem *s, int m)   { (void)s; (void)m; return 0; }
 // Simkl (issue #110): sem vinculo nos testes de fileira, como o Trakt acima.
 int   simkl_ativo(void)                    { return 0; }
