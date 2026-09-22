@@ -1,6 +1,23 @@
 // Tela AGENDA — a LINHA DO TEMPO das series acompanhadas.
 //
 // ---------------------------------------------------------------------------
+// O PASSO "MENOS TINTA, MAIS AR" (set/2026)
+//
+// A estrutura nao mudou — estacao, eixo, conteudo — porque ela ja era a
+// resposta certa para a pergunta da tela. O que mudou foi o PESO de cada
+// peca, na direcao do pedido "mais elegante, mais minimalista":
+//   - o eixo emagreceu (2px, alfa 0,22) e os nos encolheram (13/21): a linha
+//     do tempo segura a tela sem gritar;
+//   - os rotulos pequenos (dia da semana, meses, "sem data") viraram caps
+//     espacadas — a voz que so o "HOJE" tinha, estendida a tela inteira;
+//   - o canto superior direito, vazio desde sempre, ganhou a data de hoje por
+//     extenso: a unica peca de calendario que a estacao nao da;
+//   - a laje de foco ganhou canto de 26px e mais respiro em volta do cartaz;
+//   - as tres linhas de texto da linha respiram mais (7/6 em vez de 5/4).
+// Nenhuma string nova: a data do cabecalho e composta de pecas que ja existem
+// traduzidas (agenda_semana_nome, desc_data_extenso).
+//
+// ---------------------------------------------------------------------------
 // POR QUE UM EIXO, e nao a lista de pilulas que estava aqui
 //
 // A pergunta da tela e temporal ("o que sai, e quando"). A versao anterior ja
@@ -122,6 +139,7 @@
 #include "ajustes.h"
 #include "idioma.h"
 #include "noticias.h"
+#include "descoberta.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -131,10 +149,15 @@
 // "em 12 semanas" — medido com a linha mais larga que agenda_falta produz.
 #define AG_CHIP_W      138.0f
 #define AG_EIXO_GAP     34.0f
-#define AG_EIXO_W        3.0f
+// 2px e nao 3: o eixo segura a estrutura da tela inteira, e a 3 m um traco de
+// 2px com alfa baixo le como fio de pauta — 3px lia como regua desenhada.
+#define AG_EIXO_W        2.0f
 #define AG_CONT_GAP     48.0f
-#define AG_NO_D         16.0f
-#define AG_NO_HOJE      25.0f
+// Nos menores (eram 16/25): com o eixo fino, o disco de 16 cobria o fio; 13 e
+// o diametro em que o disco cheio ainda se distingue do anel vazado do "sem
+// data" sem ampliar, e o de hoje desce junto para guardar a proporcao.
+#define AG_NO_D         13.0f
+#define AG_NO_HOJE      21.0f
 #define AG_TRACO        10.0f   // traco e vao do eixo tracejado
 
 // ALTURA DA LINHA — ela sai do CARTAZ, e nao o contrario.
@@ -665,7 +688,6 @@ static float faixas(int i, float xChipDir, float xEixo, float xCont, float xDir,
     float ar, ag, ab, yl = y + AG_HOJE_H - 26.0f;
     ajustes_acento(&ar, &ag, &ab);
     if (desenhar) {
-      TxtLinha t;
       const char *hj = i18n("HOJE");
       // ESPACADO. "HOJE" com 4 letras em corpo 21 e um borrao a tres metros; o
       // espacamento e o que faz quatro maiusculas lerem como rotulo de secao e
@@ -691,10 +713,9 @@ static float faixas(int i, float xChipDir, float xEixo, float xCont, float xDir,
       txt_tracking(TXT_CAPTION2, hj, (int)(ar * 255.0f + 0.5f),
                    (int)(ag * 255.0f + 0.5f), (int)(ab * 255.0f + 0.5f),
                    xChipDir - lw, yl - 26.0f, 1.0f, 2.4f);
-      if (rot[0]) {
-        t = txt_linha(TXT_CAPTION2, rot, 150, 152, 160, 255);
-        txt_desenhar(t, xCont, yl - 26.0f);
-      }
+      if (rot[0])
+        txt_tracking(TXT_CAPTION2, rot, 132, 134, 142, xCont, yl - 26.0f,
+                     1.0f, 2.0f);
       regua(xEixo, xDir, yl, ar * 0.9f, 0.30f);
       { GfxRect no = { xEixo - AG_NO_HOJE * 0.5f, yl - AG_NO_HOJE * 0.5f,
                        AG_NO_HOJE, AG_NO_HOJE };
@@ -706,16 +727,18 @@ static float faixas(int i, float xChipDir, float xEixo, float xCont, float xDir,
   if (i == indiceSeparador()) {
     float yl = y + usado + AG_FAIXA_H - 22.0f;
     if (desenhar) {
-      TxtLinha t = txt_linha(TXT_CAPTION2, i18n("Sem data prevista"),
-                             138, 140, 148, 255);
-      txt_desenhar(t, xCont, yl - 26.0f);
+      // Caps espacadas, como os cabecalhos de mes: e um rotulo de secao, nao
+      // uma frase — e uma voz so para todos os rotulos da tela.
+      maiusc(rot, sizeof rot, i18n("Sem data prevista"));
+      txt_tracking(TXT_CAPTION2, rot, 132, 134, 142, xCont, yl - 26.0f,
+                   1.0f, 2.0f);
       // TRACEJADA, como o eixo daqui para baixo: o tempo acaba de ser
       // interrompido, e uma regua continua diria que a contagem segue.
       { float x = xEixo;
         while (x < xDir) {
           float w = AG_TRACO;
           if (x + w > xDir) w = xDir - x;
-          regua(x, x + w, yl, 0.62f, 0.22f);
+          regua(x, x + w, yl, 0.62f, 0.18f);
           x += AG_TRACO * 2.0f;
         } }
     }
@@ -733,11 +756,10 @@ static float faixas(int i, float xChipDir, float xEixo, float xCont, float xDir,
     if (muda) {
       float yl = y + usado + AG_FAIXA_H - 22.0f;
       if (desenhar) {
-        TxtLinha t;
         rotuloMes(it->dataProx, rot, sizeof rot);
-        t = txt_linha(TXT_CAPTION2, rot, 150, 152, 160, 255);
-        txt_desenhar(t, xCont, yl - 26.0f);
-        regua(xEixo, xDir, yl, 0.62f, 0.14f);
+        txt_tracking(TXT_CAPTION2, rot, 132, 134, 142, xCont, yl - 26.0f,
+                     1.0f, 2.0f);
+        regua(xEixo, xDir, yl, 0.62f, 0.10f);
       }
       usado += AG_FAIXA_H;
     }
@@ -776,6 +798,8 @@ static void desenhaEstacao(const AgItem *it, float xDir, float yCentro,
     // tres corpos mudam de altura com a fonte, e empilhar por offset fixo ja
     // pos o subtitulo por cima do "g" do titulo em outro ponto deste arquivo.
     char num[8];
+    char semM[20];
+    float semW;
     TxtLinha sem, dia, fal;
     int cN = hoje ? (int)(ar * 255.0f + 0.5f) : (f > 0.5f ? 246 : 232);
     int cNg = hoje ? (int)(ag * 255.0f + 0.5f) : (f > 0.5f ? 246 : 232);
@@ -783,8 +807,16 @@ static void desenhaEstacao(const AgItem *it, float xDir, float yCentro,
     float alt, y;
     snprintf(num, sizeof num, "%d", agenda_dia(it->dataProx));
     agenda_falta(it->dataProx, falta, sizeof falta);
-    sem = txt_linha(TXT_CAPTION2, agenda_semana_nome(agenda_semana(it->dataProx)),
-                    132, 134, 142, 255);
+    // O dia da semana em CAPS ESPACADAS, a voz dos rotulos de mes. A altura
+    // vem de uma sonda ("Hg", com ascendente e descendente): medir a string
+    // real faria a linha de base oscilar entre fileiras ("TER" nao tem
+    // descendente, a caixa de "SAB" difere), e a pilha e centrada pela soma
+    // das tres alturas — altura instavel aqui e numeral fora da reta.
+    maiusc(semM, sizeof semM,
+           i18n(agenda_semana_nome(agenda_semana(it->dataProx))));
+    sem = txt_linha(TXT_CAPTION2, "Hg", 118, 120, 128, 255);
+    semW = txt_tracking(TXT_CAPTION2, semM, 118, 120, 128,
+                        -1.0f, 0.0f, 1.0f, 1.8f);
     dia = txt_linha(TXT_TITULO3, num, cN, cNg, cNb, 255);
     // "hoje" e "amanha" saem na cor de realce: sao as duas unicas respostas que
     // fazem alguem mudar o que ia assistir hoje a noite.
@@ -795,7 +827,8 @@ static void desenhaEstacao(const AgItem *it, float xDir, float yCentro,
                           AG_CHIP_W);
     alt = (float)sem.h + 2.0f + (float)dia.h + 2.0f + (float)fal.h;
     y = yCentro - alt * 0.5f;
-    txt_desenhar(sem, xDir - (float)sem.w, y); y += (float)sem.h + 2.0f;
+    txt_tracking(TXT_CAPTION2, semM, 118, 120, 128, xDir - semW, y, 1.0f, 1.8f);
+    y += (float)sem.h + 2.0f;
     txt_desenhar(dia, xDir - (float)dia.w, y); y += (float)dia.h + 2.0f;
     txt_desenhar(fal, xDir - (float)fal.w, y);
   }
@@ -847,14 +880,14 @@ static void desenhaConteudo(const AgItem *it, float x, float y, float larg,
 
   if (f > 0.01f) {
     float ar, ag, ab;
-    GfxRect fundo = { x - 16.0f, y, larg + 16.0f, AG_LINHA_H };
+    GfxRect fundo = { x - 22.0f, y, larg + 22.0f, AG_LINHA_H };
     ajustes_acento(&ar, &ag, &ab);
-    // O raio do gfx_cor e FRACAO DA ALTURA (ver FS_SDF em gfx.c): 20 px sobre os
-    // 177 da linha. Era 16 dividido pela altura VIVA, que mudava enquanto a
-    // linha abria; a linha nao abre mais, entao a conta e uma constante e o
-    // canto parou de mudar de curvatura no meio da transicao. 20 e nao 16
-    // porque a laje encolheu: o mesmo canto numa peca menor le mais duro.
-    gfx_cor(fundo, 20.0f / AG_LINHA_H, ar, ag, ab, f);
+    // O raio do gfx_cor e FRACAO DA ALTURA (ver FS_SDF em gfx.c): 26 px sobre
+    // os 177 da linha. Era 20 com 16 de respiro; o canto maior e a margem
+    // extra em volta do cartaz tiram da laje a cara de botao — ela cobre a
+    // linha inteira, e peca larga com canto duro le como painel, nao como
+    // realce.
+    gfx_cor(fundo, 26.0f / AG_LINHA_H, ar, ag, ab, f);
   }
 
   { GfxRect cz = { x, y + (AG_LINHA_H - AG_CARTAZ_H) * 0.5f,
@@ -891,12 +924,12 @@ static void desenhaConteudo(const AgItem *it, float x, float y, float larg,
              : (TxtLinha){ 0, 0, 0 };
   l3 = apoio[0] ? txt_linha_corta(TXT_CAPTION2, apoio, c3, c3, c3, 255, wEsq)
                 : (TxtLinha){ 0, 0, 0 };
-  blocoH = (float)t.h + (l2.h ? 5.0f + (float)l2.h : 0.0f)
-                      + (l3.h ? 4.0f + (float)l3.h : 0.0f);
+  blocoH = (float)t.h + (l2.h ? 7.0f + (float)l2.h : 0.0f)
+                      + (l3.h ? 6.0f + (float)l3.h : 0.0f);
   yb = y + (AG_LINHA_H - blocoH) * 0.5f;
   txt_desenhar(t, tx, yb); yb += (float)t.h;
-  if (l2.h) { yb += 5.0f; txt_desenhar(l2, tx, yb); yb += (float)l2.h; }
-  if (l3.h) { yb += 4.0f; txt_desenhar(l3, tx, yb); }
+  if (l2.h) { yb += 7.0f; txt_desenhar(l2, tx, yb); yb += (float)l2.h; }
+  if (l3.h) { yb += 6.0f; txt_desenhar(l3, tx, yb); }
 
   // --- A COLUNA DA DIREITA, so na linha focada -----------------------------
   //
@@ -1079,7 +1112,7 @@ static void desenhaNo(float xEixo, float y, const AgItem *it, int hoje, float f)
   no.x = xEixo - d * 0.5f;
   no.y = y - d * 0.5f;
   if (!temData(it)) {
-    // 3px de espessura sobre um no de 20 a 25: fino o bastante para ler como
+    // 3px de espessura sobre um no de 17 a 25: fino o bastante para ler como
     // contorno e nao como rosquinha, grosso o bastante para sobreviver ao
     // downscale de uma TV que nao esta em 1080 nativo.
     aneis(xEixo, y, d + 4.0f, 3.0f, lum, lum, lum, 0.9f);
@@ -1104,7 +1137,7 @@ static void desenhaEixo(float xEixo, float y0, float y1, int tracejado) {
   if (y1 <= y0) return;
   if (!tracejado) {
     GfxRect r = { xEixo - AG_EIXO_W * 0.5f, y0, AG_EIXO_W, y1 - y0 };
-    gfx_cor(r, 0.0f, 0.70f, 0.71f, 0.76f, 0.30f);
+    gfx_cor(r, 0.0f, 0.70f, 0.71f, 0.76f, 0.22f);
     return;
   }
   { float y = y0;
@@ -1114,7 +1147,7 @@ static void desenhaEixo(float xEixo, float y0, float y1, int tracejado) {
       if (y + h > y1) h = y1 - y;
       r.x = xEixo - AG_EIXO_W * 0.5f; r.y = y;
       r.w = AG_EIXO_W; r.h = h;
-      gfx_cor(r, 0.0f, 0.70f, 0.71f, 0.76f, 0.30f);
+      gfx_cor(r, 0.0f, 0.70f, 0.71f, 0.76f, 0.22f);
       y += AG_TRACO * 2.0f;
     } }
 }
@@ -1217,6 +1250,29 @@ void agendaui_desenhar(Uint32 agora) {
   // POR CIMA do "g" de "Agenda". Um deslocamento fixo so acerta numa fonte.
   { TxtLinha t = txt_linha(TXT_TITULO1, i18n("Agenda"), 255, 255, 255, 255);
     txt_desenhar(t, x, yc);
+    // A DATA DE HOJE no canto superior direito, com a base alinhada a do
+    // titulo. O quadrante era vazio desde sempre, e a data por extenso e a
+    // unica peca de calendario que a estacao nao da: "em 6 dias" nao diz em
+    // que dia da semana HOJE cai. Caps espacadas, a voz dos rotulos de mes;
+    // composta de pecas ja traduzidas (txt_tracking nao traduz a string
+    // inteira — ver text.c), entao nenhuma chave nova de i18n.
+    { const char *hj = agenda_hoje();
+      int ds = agenda_semana(hj);
+      if (ds >= 0) {
+        char sem[24], ext[64], rot[100];
+        TxtLinha m;
+        float w;
+        maiusc(sem, sizeof sem, i18n(agenda_semana_nome(ds)));
+        desc_data_extenso(hj, ext, sizeof ext);
+        maiusc(ext, sizeof ext, ext);
+        snprintf(rot, sizeof rot, "%s \xc2\xb7 %s", sem, ext);
+        // "Hg" so pela altura da caixa do CAPTION2 (ver desenhaEstacao).
+        m = txt_linha(TXT_CAPTION2, "Hg", 118, 120, 128, 255);
+        w = txt_tracking(TXT_CAPTION2, rot, 118, 120, 128,
+                         -1.0f, 0.0f, 1.0f, 2.0f);
+        txt_tracking(TXT_CAPTION2, rot, 118, 120, 128, xDir - w,
+                     yc + (float)t.h - (float)m.h, 1.0f, 2.0f);
+      } }
     yc += (float)t.h + 6.0f; }
 
   { char sub[200];
