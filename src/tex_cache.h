@@ -158,6 +158,9 @@ extern long tex_despejos_quentes_total;
 // total lida (0 sem /proc), como foi decidido (0 = pela RAM, 1 = cravado na
 // build, 2 = NUVIO_TEX_MB) e quantos slots o cache tem.
 void tex_orcamento_info(int *mb, long *memTotal, int *fixo, int *slots);
+// Fios que participam do caminho de artes. O diagnostico mostra estes
+// limites reais do build, em vez de pedir que a pessoa configure threads.
+void tex_threads_info(int *usadas, int *disponiveis);
 // Teto escolhido em Ajustes, em MB, aplicado ao vivo e travado pelo que a RAM
 // da TV suporta; 0 volta ao automatico. `fixo` passa a 3 quando esta em vigor.
 void tex_definir_orcamento_mb(int mb);

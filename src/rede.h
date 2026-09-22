@@ -6,6 +6,19 @@
 #ifndef NV_REDE_H
 #define NV_REDE_H
 
+typedef struct {
+  int status;          // 0 = transporte sem resposta
+  long bytes;          // corpo recebido; -1 quando nao medido
+  unsigned long ms;    // tempo total da requisicao
+  int limitado;        // 1 = o teto por requisicao foi atingido
+  int cancelado;       // 1 = o cancelamento interrompeu a transferencia
+} RedeMedida;
+
+typedef struct {
+  long max_bytes;             // 0 = sem teto adicional
+  volatile int *cancelado;    // opcional; lido durante o recebimento
+} RedeControle;
+
 // Baixa `url` inteiro para um buffer novo (terminado em NUL) e devolve-o; o
 // chamador libera com free(). NULL em qualquer falha. BLOQUEIA — chamar de um
 // fio proprio, nunca do laco de desenho.
@@ -36,7 +49,11 @@ char *rede_baixar_trecho(const char *url, int segundos, long ini, long fim,
 
 // Teto de bytes da transferencia corrente (0 = sem teto). E interno ao modulo;
 // esta exposto so porque rede_baixar_trecho o usa. Nao mexer de fora.
+#if defined(__GNUC__)
+extern _Thread_local long rede_teto;
+#else
 extern long rede_teto;
+#endif
 
 // Segue os redirecionamentos e devolve o endereco FINAL, sem baixar o corpo.
 // Serve para saber se um link de debrid leva ao arquivo ou a um video de aviso
@@ -74,6 +91,20 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cabecalho
 // O corpo de erro e justamente o que o chamador quer ler.
 char *rede_baixar_st(const char *url, int segundos, const char *const *cabecalhos,
                      int *status);
+
+// GET com medicao por requisicao. Nao partilha teto, estado ou acumuladores
+// com outros pedidos; a sonda de diagnostico pode chamar isto em serie ou em
+// fios diferentes sem misturar os numeros.
+char *rede_baixar_medido(const char *url, int segundos,
+                         const char *const *cabecalhos, RedeMedida *medida);
+char *rede_baixar_medido_controle(const char *url, int segundos,
+                                  const char *const *cabecalhos,
+                                  const RedeControle *controle,
+                                  RedeMedida *medida);
+char *rede_baixar_bin_medido_controle(const char *url, int segundos,
+                                      const char *const *cabecalhos,
+                                      const RedeControle *controle,
+                                      long *tam, RedeMedida *medida);
 
 // O mesmo, e ainda COPIA O ETag DA RESPOSTA para `etag` (vazio quando o
 // servidor nao mandou nenhum).

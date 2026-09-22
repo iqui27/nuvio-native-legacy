@@ -65,6 +65,11 @@ int  avisos_pediu(void);
 // Ajustes. Mesmo destino e mesmo teto (200 KB) do cartao de crash; o estado
 // e o mesmo contador: 0 nada, 1 enviando, 2 enviado, 3 falhou.
 void avisos_enviar_registro_atual(void);
+// Envia somente o relatorio estruturado de uma sessao de diagnostico. O
+// sucesso exige HTTP 2xx e um identificador de registro retornado pelo
+// servidor; o log geral nao e capturado nem misturado a esta operacao.
+int  avisos_enviar_diagnostico(const char *execucao_id, const char *relatorio,
+                               char *registro_id, unsigned tam_registro_id);
 // Envio automatico (ajuste "Enviar registros sozinho"): chamado por quadro.
 void avisos_envio_auto_passo(Uint32 agora);
 int  avisos_envio_estado(void);

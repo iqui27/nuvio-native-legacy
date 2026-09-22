@@ -21,6 +21,7 @@ void ajustes_desenhar(Uint32 agora);
 int  ajustes_quer_sair(void);
 // 1 quando a linha "Addons" foi acionada. Lido e zerado na chamada.
 int  ajustes_pediu_addons(void);   // 1 quando o Back deve fechar a tela
+int  ajustes_pediu_diagnostico(void);
 void ajustes_encerrar(void);
 
 // Leitura pelo resto do app. "Animacoes reduzidas" e a que mais importa: com

@@ -98,6 +98,9 @@ const Stream *stream_item(int i);
 
 // Indice do stream que o modo automatico escolhe, ou -1 se a lista esta vazia.
 int  stream_automatico(void);
+// Exclui uma candidata que ja foi entregue ao player e travou no pipeline.
+// A exclusao vale so para a lista atual; uma resposta nova limpa a memoria.
+int  stream_automatico_excluir(int indice);
 
 // A FONTE LEMBRADA DESTE TITULO, quando ela existe nesta lista. Quem decide
 // qual e (provedor + trilha de audio) e fontepref.c; aqui ela e um indice que

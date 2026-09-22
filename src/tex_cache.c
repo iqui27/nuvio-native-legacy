@@ -1984,6 +1984,19 @@ void tex_orcamento_info(int *mb, long *memTotal, int *fixo, int *slots) {
   if (slots) *slots = nMax;
 }
 
+void tex_threads_info(int *usadas, int *disponiveis) {
+  int u = 0;
+  int i;
+  if (mtx) {
+    SDL_LockMutex(mtx);
+    for (i = 0; i < NV_TEX_FIOS; i++) if (thrs[i]) u++;
+    for (i = 0; i < NV_TEX_FIOS_REDE; i++) if (thrsRede[i]) u++;
+    SDL_UnlockMutex(mtx);
+  }
+  if (usadas) *usadas = u;
+  if (disponiveis) *disponiveis = NV_TEX_FIOS + NV_TEX_FIOS_REDE;
+}
+
 // HISTORICO DE OCUPACAO, uma amostra por segundo, para o grafico de Ajustes.
 // Anel de NV_TEX_HIST amostras; quem le recebe do mais antigo ao mais novo.
 #define NV_TEX_HIST 120

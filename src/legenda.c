@@ -1,4 +1,5 @@
 #include "legenda.h"
+#include "assrender.h"
 #include "rede.h"
 #include <pthread.h>
 #include <stdlib.h>
@@ -108,8 +109,6 @@ int legenda_extrair_srt(const char *corpo, LegendaCue **saida) {
 
 // --- ASS / SSA ---------------------------------------------------------------
 //
-// SUBSET DELIBERADO, e a lista do que fica de fora esta no fim deste bloco.
-//
 // O que um ASS de fansub tem e um SRT nao tem: POSICAO (a fala embaixo, o
 // letreiro traduzido em cima do cartaz), ESTILO por fala (o italico do
 // pensamento), COR por estilo e varios eventos AO MESMO TEMPO. Sao essas
@@ -117,20 +116,13 @@ int legenda_extrair_srt(const char *corpo, LegendaCue **saida) {
 // metade das falas": o pipeline da TV ve um formato posicionado e desenha
 // como se fosse texto corrido.
 //
-// NAO ha libass aqui, e nao e por preguica: o sysroot ARM do webOS (o SDK de
-// tools/Dockerfile) tem freetype e fontconfig mas NAO tem fribidi nem
-// harfbuzz, entao libass obrigaria a vendorizar duas bibliotecas novas; e no
-// alvo Tizen o mesmo codigo entraria no .wasm que cada um dos 20 workers
-// instancia — o eixo exato de #72/#84. O renderizador de legenda ja existe
-// (player.c), funciona e e nosso; o que faltava era ALGUEM QUE ENTENDESSE O
-// ARQUIVO.
-//
-// FICA DE FORA, de proposito: karaoke (\k e parentes viram texto normal),
-// animacao (\t e \fad ignorados, \move usa a posicao inicial), rotacao e
-// escala (\frx, \fscx), recorte (\clip), desenho vetorial (\p1 — o evento
-// inteiro e DESCARTADO, porque o "texto" dele sao coordenadas e imprimi-las e
-// pior do que nao desenhar nada), contorno e sombra do arquivo (quem manda e
-// a preferencia da pessoa) e o tamanho de fonte do arquivo (idem).
+// O caminho de producao completo esta em assrender.c e usa libass quando
+// NV_ASS_LIBASS foi ligado no alvo (as dependencias estaticas sao preparadas
+// por tools/Dockerfile e tools/build-ass-wasm.sh). Este parser permanece como
+// fallback verificavel para SRT/VTT e para diagnostico quando uma faixa ASS
+// chega incompleta ou o backend nao esta presente. Nesse fallback o subconjunto
+// abaixo e intencionalmente pequeno; ele nao e usado quando libass aceitou o
+// documento original.
 
 #define ASS_MAX_ESTILOS 96
 
@@ -482,12 +474,26 @@ static void *baixar(void *u) {
   int ass=corpo?legenda_eh_ass(corpo):0;
   int n=corpo?legenda_extrair(corpo,&v):0;
   double dur=0;
+  int aceitarAss=0;
   int i;
-  free(corpo);
   for(i=0;i<n;i++){ double d=v[i].fim-v[i].inicio; if(d>dur)dur=d; }
   pthread_mutex_lock(&trava);
-  if(p->g==geracao&&ligada){free(cues);cues=v;nCues=n;maiorDur=dur;v=NULL;}
+  if(p->g==geracao&&ligada){
+    free(cues);cues=v;nCues=n;maiorDur=dur;v=NULL;
+    aceitarAss=ass;
+    assrender_geracao(geracao);
+  }
   pthread_mutex_unlock(&trava);
+  /* O parser legado continua preenchendo cues para SRT/VTT e para o
+   * diagnostico. Quando o documento ASS chegou inteiro, libass recebe o
+   * corpo original, sem passar pelo limite de 768 bytes de uma cue. */
+  if (aceitarAss) {
+    assrender_carregar(corpo, strlen(corpo), p->g);
+    fprintf(stderr, "[legenda] %s\n", assrender_diagnostico());
+  } else if (ass) {
+    assrender_limpar();
+  }
+  free(corpo);
   free(v);
   printf("[legenda] %s: %d blocos%s\n",ass?"ASS/SSA":"SubRip",n,n?"":" (falha)");
   fflush(stdout);
@@ -501,6 +507,8 @@ void legenda_carregar(const char *url) {
   pthread_mutex_lock(&trava);
   ligada=1;p->g=++geracao;free(cues);cues=NULL;nCues=0;maiorDur=0;
   pthread_mutex_unlock(&trava);
+  assrender_geracao(p->g);
+  assrender_limpar_fontes();
   snprintf(p->url,sizeof p->url,"%s",url);
   if(pthread_create(&fio,NULL,baixar,p)==0)pthread_detach(fio);else free(p);
 }
@@ -509,19 +517,28 @@ void legenda_carregar(const char *url) {
 // teste de captura (tests/legenda_ass_shot.c) e a quem um dia entregar cues
 // vindos de dentro do MKV (#92, fase 3).
 void legenda_definir_corpo(const char *corpo) {
-  LegendaCue *v=NULL; int n, i; double dur=0;
+  LegendaCue *v=NULL; int n, i; double dur=0; int ass; unsigned g;
   if(!corpo)return;
+  ass=legenda_eh_ass(corpo);
   n=legenda_extrair(corpo,&v);
   for(i=0;i<n;i++){ double d=v[i].fim-v[i].inicio; if(d>dur)dur=d; }
   pthread_mutex_lock(&trava);
-  ligada=1;geracao++;free(cues);cues=v;nCues=n;maiorDur=dur;
+  ligada=1;geracao++;g=geracao;free(cues);cues=v;nCues=n;maiorDur=dur;
   pthread_mutex_unlock(&trava);
+  assrender_geracao(g);
+  assrender_limpar();
+  if (ass) {
+    assrender_carregar(corpo, strlen(corpo), g);
+    fprintf(stderr, "[legenda] %s\n", assrender_diagnostico());
+  }
 }
 
 void legenda_desligar(void) {
   pthread_mutex_lock(&trava);
   ligada=0;geracao++;free(cues);cues=NULL;nCues=0;maiorDur=0;
   pthread_mutex_unlock(&trava);
+  assrender_geracao(geracao);
+  assrender_limpar_fontes();
 }
 
 // Primeiro bloco cujo INICIO passa de `t`. Com o vetor ordenado, tudo o que

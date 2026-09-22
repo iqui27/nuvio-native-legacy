@@ -43,6 +43,16 @@
 // PASSO entre linhas, nao vao: txt_bloco poe a linha i em y + i*leading.
 #define PP_LD_SIN     28.0f
 
+static void corFocoPosplay(float *r, float *g, float *b) {
+  float ar, ag, ab, lum, k = 0.74f;
+  ajustes_acento(&ar, &ag, &ab);
+  lum = 0.2126f * ar + 0.7152f * ag + 0.0722f * ab;
+  if (lum > 0.88f) k = 0.88f;
+  *r = 0.055f + (ar - 0.055f) * k;
+  *g = 0.058f + (ag - 0.058f) * k;
+  *b = 0.068f + (ab - 0.068f) * k;
+}
+
 static int    visivel, serie, idx = -1, foco;
 // DISPENSADO GRUDA. Sem isto o Voltar fechava o painel e o quadro seguinte o
 // reabria na hora, porque a condicao de aparecer (passar de 90% do filme)
@@ -343,8 +353,10 @@ void posplay_desenhar(Uint32 agora, float baseY) {
     // nao se le como algo que responde ao OK — o "nao ta pra clicar" do
     // relatorio era metade dado (o OK ja funcionava) e metade aparencia.
     card.x = x; card.y = cy; card.w = cardW; card.h = cardH;
-    { GfxRect anel = { card.x - 3, card.y - 3, card.w + 6, card.h + 6 };
-      gfx_cor(anel, PP_EP_RAIO / anel.h, .94f, .94f, .95f, a); }
+    { float fr, fg, fb;
+      GfxRect anel = { card.x - 3, card.y - 3, card.w + 6, card.h + 6 };
+      corFocoPosplay(&fr, &fg, &fb);
+      gfx_cor(anel, PP_EP_RAIO / anel.h, fr, fg, fb, a); }
     gfx_cor(card, PP_EP_RAIO / cardH, .085f, .085f, .095f, a);
 
     tr.x = card.x + PP_EP_PAD; tr.y = card.y + PP_EP_PAD;
@@ -417,8 +429,10 @@ void posplay_desenhar(Uint32 agora, float baseY) {
       int sel = (i == foco);
       GfxRect r = { cx, y, PP_CARD_W, PP_CARD_H };
       if (sel) {
+        float fr, fg, fb;
         GfxRect anel = { cx - 4, y - 4, PP_CARD_W + 8, PP_CARD_H + 8 };
-        gfx_cor(anel, ajustes_raio_poster_px() / (PP_CARD_W + 8.0f), 1, 1, 1, a);
+        corFocoPosplay(&fr, &fg, &fb);
+        gfx_cor(anel, ajustes_raio_poster_px() / (PP_CARD_W + 8.0f), fr, fg, fb, a);
       }
       if (t) {
         gfx_tex_aspect_atual = tex_aspecto(po);

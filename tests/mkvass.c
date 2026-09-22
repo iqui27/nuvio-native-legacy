@@ -116,12 +116,33 @@ static int contarDialogue(const char *s) {
   return n;
 }
 
+static const char *maiorTextoDialogue(const char *s, size_t *tamanho) {
+  const char *p = s, *maior = NULL;
+  size_t maiorN = 0;
+  while ((p = strstr(p, "Dialogue:"))) {
+    const char *fim = strchr(p, '\n'), *q, *texto = NULL;
+    size_t n;
+    if (!fim) fim = p + strlen(p);
+    for (q = p; q + 1 < fim; q++)
+      if (q[0] == ',' && q[1] == ',') texto = q + 2;
+    if (texto) {
+      n = (size_t)(fim - texto);
+      if (n > maiorN) { maior = texto; maiorN = n; }
+    }
+    p = fim;
+  }
+  if (tamanho) *tamanho = maiorN;
+  return maior;
+}
+
 int main(int argc, char **argv) {
-  char url[600], urlSrt[600], urlNoRange[600], urlAss[600], urlLento[600], urlCurto[600];
-  char sidecar[64], sidecarLento[64], sidecarCurto[64], cam[600];
+  char url[600], urlSrt[600], urlNoRange[600], urlAss[600], urlLento[600], urlCurto[600], urlCurtoCues[600];
+  char sidecar[64], sidecarFontes[80], sidecarOrdinal[64], sidecarLento[64], sidecarCurto[64], sidecarCurtoCues[64], cam[600];
+  char caminhoSidecar[600];
   LegendaCue *esp = NULL; int nEsp; long tamMkv = 0, tamAss = 0;
   long ped, bytes, ped1; int colhidos, total, maxSeg, r;
   char *corpo;
+  char *eventoLongo = NULL; size_t eventoLongoN = 0;
 
   if (argc < 6) { fprintf(stderr, "uso: %s base mkv ass srtmkv assnome\n", argv[0]); return 2; }
   snprintf(base, sizeof base, "%s", argv[1]);
@@ -131,6 +152,7 @@ int main(int argc, char **argv) {
   snprintf(urlAss, sizeof urlAss, "%s/%s", base, argv[5]);
   snprintf(urlLento, sizeof urlLento, "%s/lento/%s", base, argv[2]);
   snprintf(urlCurto, sizeof urlCurto, "%s/curto/%s", base, argv[2]);
+  snprintf(urlCurtoCues, sizeof urlCurtoCues, "%s/curtocues/%s", base, argv[2]);
   rede_preparar();
   dados_iniciar(".");
   ok(dados_dir()[0] != 0, "dados_dir() (NUVIO_DADOS do .sh)");
@@ -138,6 +160,12 @@ int main(int argc, char **argv) {
   { struct stat st; ok(stat(argv[3], &st) == 0, "o .ass de referencia existe");
     corpo = lerArquivo(argv[3], &tamAss);
     nEsp = corpo ? legenda_extrair_ass(corpo, &esp) : 0;
+    { const char *texto = corpo ? maiorTextoDialogue(corpo, &eventoLongoN) : NULL;
+      if (texto && eventoLongoN > 1024) {
+        eventoLongo = malloc(eventoLongoN);
+        if (eventoLongo) memcpy(eventoLongo, texto, eventoLongoN);
+      }
+      ok(eventoLongo != NULL, "referencia inclui evento ASS com mais de 1 KiB"); }
     free(corpo);
     ok(nEsp >= 30, "referencia: >= 30 Dialogue no .ass"); }
   { char *r0 = rede_baixar_trecho(url, 5, 0, 3, &tamMkv);
@@ -147,7 +175,9 @@ int main(int argc, char **argv) {
     { struct stat st; tamMkv = stat(cam, &st) == 0 ? (long)st.st_size : 0; }
     ok(tamMkv > 1000000, "MKV gerado tem mais de 1 MB"); }
   nomeSidecar(url, 3, sidecar, sizeof sidecar);
+  snprintf(sidecarFontes, sizeof sidecarFontes, "%s.fonts", sidecar);
   dados_apagar(sidecar);
+  dados_apagar(sidecarFontes);
 
   printf("\n[1] primeira abertura: colhe pela rede\n");
   zerarServidor();
@@ -172,10 +202,36 @@ int main(int argc, char **argv) {
   corpo = dados_ler(sidecar);
   ok(corpo && !strncmp(corpo, "; mkvass-estado: completo", 25), "sidecar gravado como completo");
   ok(corpo && contarDialogue(corpo) == nEsp, "sidecar tem todos os Dialogue");
+  { size_t sidecarLongoN = 0;
+    const char *texto = corpo ? maiorTextoDialogue(corpo, &sidecarLongoN) : NULL;
+    ok(texto && sidecarLongoN == eventoLongoN && eventoLongo &&
+       !memcmp(texto, eventoLongo, eventoLongoN),
+       "sidecar preserva integralmente o evento acima de 1 KiB"); }
+  { struct stat fonteOriginal, fonteCache;
+    dados_caminho(caminhoSidecar, sizeof caminhoSidecar, sidecarFontes);
+    ok(stat("deploy/app/fonts/InterDisplay-Regular.ttf", &fonteOriginal) == 0 &&
+       stat(caminhoSidecar, &fonteCache) == 0 && fonteCache.st_size > fonteOriginal.st_size,
+       "fontes anexadas salvas no cache versionado"); }
   { LegendaCue *v = NULL; int n = corpo ? legenda_extrair_ass(corpo, &v) : 0;
     ok(n == nEsp, "sidecar parseia com o mesmo numero de cues"); free(v); }
   free(corpo);
+  free(eventoLongo);
   ped1 = ped;
+
+  printf("\n[1b] selecao por ordinal do Tizen\n");
+  mkvass_parar(); esperarFio(); legenda_desligar();
+  nomeSidecar(url, -1, sidecarOrdinal, sizeof sidecarOrdinal);
+  dados_apagar(sidecarOrdinal);
+  zerarServidor();
+  mkvass_iniciar_ordinal(url, 0);
+  rodarAte(4.0, 90000, 0.0);
+  ok(mkvass_estado() == MKVASS_COMPLETO, "ordinal Tizen resolve a primeira faixa de texto");
+  mkvass_estatisticas(&ped, NULL, &colhidos, &total);
+  ok(total == nEsp && colhidos == nEsp, "ordinal entrega todos os eventos ASS esperados");
+  ok(ped == contagemServidor(), "Ranges do ordinal contabilizados");
+  r = conferirCues(esp, nEsp);
+  ok(r == nEsp, "ordinal preserva textos e tempos dos eventos");
+  esperarFio(); legenda_desligar();
 
   printf("\n[2] segunda abertura: sidecar, zero rede\n");
   mkvass_parar(); esperarFio(); legenda_desligar();
@@ -295,15 +351,29 @@ int main(int argc, char **argv) {
     while (mkvass_ocupado() && agoraMs() - t0 < 30000) {
       mkvass_passo(voltou ? 0.0 : 60.0);
       mkvass_estatisticas(NULL, NULL, &c, &n);
-      // Em 60 s a janela [52,150] cobre 22 dos 40 Dialogues desta fixture;
+      // Em 60 s a janela [52,150] cobre a maior parte dos Dialogues desta fixture;
       // so volte ao inicio depois de esvaziar essa janela, senao os ultimos
       // cues ficam fora tanto da janela de 60 s quanto da de zero.
-      if (!voltou && n == 40 && c >= n - 18) { mkvass_passo(0.0); voltou = 1; }
+      if (!voltou && n == nEsp && c >= n - 18) { mkvass_passo(0.0); voltou = 1; }
       if (mkvass_estado() >= MKVASS_NOGO) viuNogo = 1;
       usleep(20 * 1000);
     }
     ok(!viuNogo, "troca durante Range nao publica no-go do worker antigo");
     ok(mkvass_estado() == MKVASS_COMPLETO, "pedido novo termina COMPLETO"); }
+
+  mkvass_parar(); esperarFio(); legenda_desligar();
+  nomeSidecar(urlCurtoCues, 3, sidecarCurtoCues, sizeof sidecarCurtoCues);
+  dados_apagar(sidecarCurtoCues);
+  zerarServidor();
+  mkvass_iniciar(urlCurtoCues, 3);
+  rodarAte(1.0, 30000, 0.0);
+  ok(mkvass_estado() == MKVASS_NOGO_REDE, "Range curto nos CuePoints vira NOGO_REDE");
+  mkvass_estatisticas(NULL, NULL, &colhidos, &total);
+  ok(colhidos == 0 && total == 0, "CuePoints truncados nao inventam blocos ASS");
+  corpo = dados_ler(sidecarCurtoCues);
+  ok(!corpo || strncmp(corpo, "; mkvass-estado: completo", 25),
+     "CuePoints truncados nao gravam sidecar completo");
+  free(corpo);
 
   mkvass_parar(); esperarFio(); legenda_desligar();
   nomeSidecar(urlCurto, 3, sidecarCurto, sizeof sidecarCurto);

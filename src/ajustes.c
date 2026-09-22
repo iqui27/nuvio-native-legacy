@@ -143,6 +143,7 @@ typedef enum {
   // Integracoes — MDBList (mdblist_settings do blob)
   AJ_MDB_LIGADO, AJ_MDB_CHAVE, AJ_MDB_TRAKT, AJ_MDB_IMDB, AJ_MDB_TMDB,
   AJ_MDB_LETTER, AJ_MDB_TOMATES, AJ_MDB_AUDIENCIA, AJ_MDB_META, AJ_MDB_MAL,
+  AJ_DIAGNOSTICO,
   AJ_N
 } OpcaoId;
 
@@ -493,6 +494,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Nota da audiência",          V_LIGA, 2),   // mdblist_show_audience
   ESC("Notas do Metacritic",        V_LIGA, 2),   // mdblist_show_metacritic
   ESC("Notas do MyAnimeList",       V_LIGA, 2),   // mdblist_show_mal
+  ACAO("Diagnóstico e otimização"),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -579,6 +581,7 @@ static const char *CHAVE[] = {
   "mdblist_show_trakt", "mdblist_show_imdb", "mdblist_show_tmdb",
   "mdblist_show_letterboxd", "mdblist_show_tomatoes", "mdblist_show_audience",
   "mdblist_show_metacritic", "mdblist_show_mal",
+  "-diagnostico",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -649,6 +652,7 @@ static const struct {
   { "Pôsteres e cards",     "Cartazes",   "aspecto",      AJ_EXPANDIR },
   { "Interface e conta",    "Conta",      "menu_profile", AJ_IDIOMA },
   { "Integrações",          "Integrações","addon",        AJ_TMDB_LIGADO },
+  { "Diagnóstico",          "Diagnóstico", "aspecto",       AJ_DIAGNOSTICO },
 };
 #define AJ_N_SECOES (int)(sizeof SECOES / sizeof *SECOES)
 
@@ -670,6 +674,7 @@ static const char *SECAO_AJUDA[AJ_N_SECOES] = {
   "A aparência dos cartazes em toda a interface: foco, profundidade, largura e arredondamento.",
   "Idioma da interface, animações, sua conta, addons, serviços conectados e informações do app.",
   "Serviços de metadados: o que o TMDB enriquece na interface e quais fontes de nota o MDBList mostra.",
+  "Mede addons, artes e fontes nesta TV e aplica o perfil de Qualidade ou Desempenho.",
 };
 
 // SUBSECAO: rotula um bloco DENTRO da categoria. Existe porque juntar doze
@@ -836,6 +841,7 @@ static int valor[AJ_N] = {
   0,                /* chave: leitura */
   0, 0, 0, 0, 0, 0, 0, 0, /* trakt, imdb, tmdb, letterboxd, tomatoes,
                            audiencia, metacritic, mal */
+  0,                /* diagnostico */
 };
 
 // Pedido de abrir a lista de addons, lido e zerado pelo app.c. A tela nao e
@@ -843,6 +849,8 @@ static int valor[AJ_N] = {
 // outras telas, e ganhar essa dependencia agora era o comeco de um no.
 static int pediuAddons;
 int ajustes_pediu_addons(void) { int v = pediuAddons; pediuAddons = 0; return v; }
+static int pediuDiagnostico;
+int ajustes_pediu_diagnostico(void) { int v = pediuDiagnostico; pediuDiagnostico = 0; return v; }
 
 static int focoOp = 0;
 // 1 = o foco esta na COLUNA DE SECOES, e nao na lista de opcoes. Nao ha um
@@ -1909,6 +1917,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_ATUALIZAR: return "Abre o cartão da versão nova, com o que mudou e o botão de instalar. Fica apagado quando não há versão nova.";
     case AJ_ENVIAR_LOG: return "Manda os últimos 200 KB do registro desta sessão (sem senhas nem chaves) para quem faz o app. Use quando algo estiver errado agora.";
     case AJ_ENVIO_AUTO: return "Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.";
+    case AJ_DIAGNOSTICO: return "Testa manifestos, fontes e artes dos addons, mede os tempos e aplica um perfil seguro de Qualidade ou Desempenho. O teste não marca títulos como assistidos.";
 
     // --- Integracoes
     case AJ_TMDB_LIGADO: return "O TMDB enriquece títulos com sinopse, elenco com foto, ficha técnica e trailers. Desligar corta tudo isso de uma vez.";
@@ -2425,6 +2434,7 @@ void ajustes_evento(const SDL_Event *e) {
     if (focoOp == AJ_ATUALIZAR) { atualizacao_abrir(); return; }
     if (focoOp == AJ_ENVIAR_LOG) { avisos_enviar_registro_atual(); return; }
     if (focoOp == AJ_ADDONS) { pediuAddons = 1; return; }
+    if (focoOp == AJ_DIAGNOSTICO) { pediuDiagnostico = 1; return; }
     if (focoOp == AJ_STALKER_PORTAL || focoOp == AJ_STALKER_MAC) {
       int mac = focoOp == AJ_STALKER_MAC;
       stCampo = focoOp;
@@ -2671,6 +2681,7 @@ static const char *iconeOpcao(int op) {
     case AJ_PERFIL_ATIVO: case AJ_SAIR: return "menu_profile";
     case AJ_SYNC: return "fluxo";
     case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_ENVIAR_LOG: case AJ_ENVIO_AUTO: return "menu_settings";
+    case AJ_DIAGNOSTICO: return "aspecto";
     case AJ_ESPACO: case AJ_TEX_MB: return "aspecto";
     case AJ_DET_TRAILER: case AJ_TMDB_TRAILERS: case AJ_PROF_TRAILERS: return "trailer";
     case AJ_DET_VEU: return "aspecto";

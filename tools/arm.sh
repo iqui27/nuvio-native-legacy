@@ -74,9 +74,18 @@ tools/env.sh --env-file "$ENVF"
 # guarda funcionando sobre a coisa errada.
 docker run --rm --platform linux/arm64 --env-file "$ENVF" \
   -e NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-}" \
+  -e NUVIO_ASS_LIBASS="${NUVIO_ASS_LIBASS:-1}" \
   -v "$PWD":/work nuvio-webos-sdk sh -c '
   SR=$NUVIO_SYSROOT
-  arm-webos-linux-gnueabi-gcc src/*.c -o nuvio-proto.arm -O2 $NUVIO_EXTRA_CFLAGS \
+  ASS=$NUVIO_ASS_ROOT
+  ASS_CFLAGS=""
+  ASS_LIBS=""
+  if [ "${NUVIO_ASS_LIBASS:-1}" = "1" ]; then
+    [ -f "$ASS/include/ass/ass.h" ] || { echo "libass ARM ausente na imagem; reconstrua tools/Dockerfile ou use NUVIO_ASS_LIBASS=0" >&2; exit 2; }
+    ASS_CFLAGS="-DNV_ASS_LIBASS -I$ASS/include"
+    ASS_LIBS="-L$ASS/lib -Wl,--start-group -lass -lharfbuzz -lfribidi -lfreetype -Wl,--end-group"
+  fi
+  arm-webos-linux-gnueabi-gcc src/*.c -o nuvio-proto.arm -O2 $NUVIO_EXTRA_CFLAGS $ASS_CFLAGS \
     -DNV_SUPABASE_URL="\"$NV_SUPABASE_URL\"" \
     -DNV_SUPABASE_ANON_KEY="\"$NV_SUPABASE_ANON_KEY\"" \
     -DNV_TV_LOGIN_BASE="\"$NV_TV_LOGIN_BASE\"" \
@@ -88,7 +97,7 @@ docker run --rm --platform linux/arm64 --env-file "$ENVF" \
     -DNV_REC_URL="\"$NV_REC_URL\"" \
     -DNV_VERSAO="\"$NV_VERSAO\"" \
     -I$SR/usr/include -I$SR/usr/include/SDL2 \
-    -lSDL2 -lSDL2_image -lSDL2_ttf -lGLESv2 -lEGL -ldl -lpthread -lz -lm'
+    -lSDL2 -lSDL2_image -lSDL2_ttf -lGLESv2 -lEGL -ldl -lpthread -lz -lm $ASS_LIBS'
 
 # CONFERE que a configuracao entrou MESMO no binario. Sem isto o unico sintoma
 # e a tela de login dizendo que o pacote saiu sem servidor, ja na TV.

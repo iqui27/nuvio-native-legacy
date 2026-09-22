@@ -1,23 +1,8 @@
 #include "mkvass.h"
 
-#ifdef __EMSCRIPTEN__
-// Coto do alvo Tizen: o AVPlay desenha a legenda embutida e nao entrega o
-// texto; nada a colher. Ver a nota no cabecalho. Manter o coto aqui (e nao
-// #ifdef em cada chamador) e o que deixa faixas.c e player.c iguais nos dois
-// alvos.
-void mkvass_iniciar(const char *url, int numeroFaixa) { (void)url; (void)numeroFaixa; }
-void mkvass_passo(double posSeg) { (void)posSeg; }
-void mkvass_parar(void) {}
-int  mkvass_estado(void) { return MKVASS_OCIOSO; }
-int  mkvass_nogo(void) { return 0; }
-int  mkvass_ocupado(void) { return 0; }
-void mkvass_estatisticas(long *p, long *b, int *c, int *t) {
-  if (p) *p = 0; if (b) *b = 0; if (c) *c = 0; if (t) *t = 0;
-}
-#else
-
 #include "rede.h"
 #include "legenda.h"
+#include "assrender.h"
 #include "dados.h"
 #include <pthread.h>
 #include <stdio.h>
@@ -27,6 +12,7 @@ void mkvass_estatisticas(long *p, long *b, int *c, int *t) {
 #include <time.h>
 #include <unistd.h>
 #include <math.h>
+#include <limits.h>
 
 // --- parametros --------------------------------------------------------------
 
@@ -61,7 +47,7 @@ void mkvass_estatisticas(long *p, long *b, int *c, int *t) {
 // Teto de blocos e de corpo. O mesmo teto de legenda.c (LEG_MAX_CUES): mais
 // do que isto o overlay nao aceita de qualquer forma.
 #define MKVASS_MAX_PONTOS  8000
-#define MKVASS_CORPO_MAX   (2L * 1024 * 1024)
+#define MKVASS_CORPO_MAX   (16L * 1024 * 1024)
 // Falhas de Range seguidas antes de desistir (NOGO_REDE).
 #define MKVASS_FALHAS_MAX  5
 // Duracao quando o bloco nao traz BlockDuration (SimpleBlock). Raro em
@@ -153,6 +139,7 @@ static int proximo(Iter *it, unsigned long *id, const unsigned char **dados, lon
 #define ID_TRACKS      0x1654AE6BUL
 #define ID_TRACKENTRY  0xAEUL
 #define ID_TRACKNUMBER 0xD7UL
+#define ID_TRACKTYPE   0x83UL
 #define ID_CODECID     0x86UL
 #define ID_CODECPRIV   0x63A2UL
 #define ID_CUES        0x1C53BB6BUL
@@ -168,6 +155,11 @@ static int proximo(Iter *it, unsigned long *id, const unsigned char **dados, lon
 #define ID_BLOCK       0xA1UL
 #define ID_BLOCKDUR    0x9BUL
 #define ID_SIMPLEBLOCK 0xA3UL
+#define ID_ATTACHMENTS 0x1941A469UL
+#define ID_ATTACHEDFILE 0x61A7UL
+#define ID_FILENAME     0x466EUL
+#define ID_FILEMIMETYPE 0x4660UL
+#define ID_FILEDATA     0x465CUL
 
 // --- estado ------------------------------------------------------------------
 
@@ -183,6 +175,12 @@ typedef struct {
 // Clusters repetem-se em sequencia — um anel pequeno resolve.
 #define CL_CACHE 16
 typedef struct { long pos; int hdr; unsigned long ts; int temTs; } ClCache;
+
+typedef struct {
+  char *nome;
+  unsigned char *dados;
+  long tam;
+} FonteMkv;
 
 static struct {
   pthread_mutex_t trava;
@@ -207,6 +205,8 @@ typedef struct {
   long     segIni;         // onde comecam os dados do Segment
   unsigned long escala;    // TimestampScale (ns por unidade)
   long     posTracks, posCues, posInfo;   // absolutas; -1 = SeekHead nao disse
+  long     posAttachments;
+  int      seekHeadVisto;
   Ponto   *pontos;
   int      nPontos, nColhidos;
   char    *corpo;          // cabecalho ASS + linhas Dialogue: colhidas
@@ -214,8 +214,12 @@ typedef struct {
   ClCache  cl[CL_CACHE];
   int      clProx;
   char     sidecar[64];
+  char     sidecarFontes[80];
   int      falhas;         // Ranges falhados seguidos
   int      sujo;           // corpo mudou desde a ultima entrega ao overlay
+  FonteMkv *fontes;
+  int      nFontes;
+  int      fontesCompletas;
 } Fio;
 
 static int minhaVez(const Fio *f) {
@@ -316,6 +320,56 @@ static int montarCabecalho(Fio *f, const unsigned char *priv, long n) {
     return corpoAnexar(f, EV, sizeof EV - 1); }
 }
 
+static int extensaoFonte(const char *nome, const char *mime) {
+  const char *p = nome ? strrchr(nome, '.') : NULL;
+  if (mime && (!strncasecmp(mime, "font/", 5) || !strncasecmp(mime, "application/x-font", 18))) return 1;
+  if (!p) return 0;
+  return !strcasecmp(p, ".ttf") || !strcasecmp(p, ".otf") ||
+         !strcasecmp(p, ".ttc") || !strcasecmp(p, ".otc");
+}
+
+static void liberarFontes(Fio *f) {
+  int i;
+  for (i = 0; i < f->nFontes; i++) { free(f->fontes[i].nome); free(f->fontes[i].dados); }
+  free(f->fontes); f->fontes = NULL; f->nFontes = 0;
+}
+
+static int lerAttachments(Fio *f, const unsigned char *p, long n) {
+  Iter it = { p, n, 0 }; unsigned long id; const unsigned char *d; long t;
+  while (proximo(&it, &id, &d, &t)) {
+    Iter j; unsigned long fid; const unsigned char *fd; long ft;
+    const unsigned char *dados = NULL; long dadosN = 0;
+    char nome[256] = {0}, mime[128] = {0};
+    if (id != ID_ATTACHEDFILE) continue;
+    j.p = d; j.n = t; j.o = 0;
+    while (proximo(&j, &fid, &fd, &ft)) {
+      if (fid == ID_FILENAME) {
+        size_t z = (size_t)ft < sizeof nome - 1 ? (size_t)ft : sizeof nome - 1;
+        memcpy(nome, fd, z); nome[z] = 0;
+      } else if (fid == ID_FILEMIMETYPE) {
+        size_t z = (size_t)ft < sizeof mime - 1 ? (size_t)ft : sizeof mime - 1;
+        memcpy(mime, fd, z); mime[z] = 0;
+      } else if (fid == ID_FILEDATA) { dados = fd; dadosN = ft; }
+    }
+    if (!dados || dadosN <= 0 || !extensaoFonte(nome, mime)) continue;
+    if (f->nFontes >= 32) continue;
+    {
+      FonteMkv *nv = realloc(f->fontes, (size_t)(f->nFontes + 1) * sizeof *nv);
+      if (!nv) return 0;
+      f->fontes = nv;
+      f->fontes[f->nFontes].nome = strdup(nome[0] ? nome : "attachment.ttf");
+      f->fontes[f->nFontes].dados = malloc((size_t)dadosN);
+      if (!f->fontes[f->nFontes].nome || !f->fontes[f->nFontes].dados) {
+        free(f->fontes[f->nFontes].nome); free(f->fontes[f->nFontes].dados); return 0;
+      }
+      memcpy(f->fontes[f->nFontes].dados, dados, (size_t)dadosN);
+      f->fontes[f->nFontes].tam = dadosN;
+      f->nFontes++;
+    }
+  }
+  return 1;
+}
+
 static void tempoAss(double s, char *dst, size_t tam) {
   int h, m; double r;
   if (s < 0) s = 0;
@@ -330,10 +384,11 @@ static void tempoAss(double s, char *dst, size_t tam) {
 // "Dialogue: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text".
 static int anexarEvento(Fio *f, const unsigned char *dados, long n,
                         double ini, double fim) {
-  char linha[1024], a[24], b[24];
+  char a[24], b[24];
+  char *linha;
   const char *p = (const char *)dados;
   long i = 0, layerIni, layerFim, k;
-  size_t w;
+  size_t w, capacidade;
   // Pula ReadOrder; guarda Layer.
   while (i < n && p[i] != ',') i++;
   if (i >= n) return 0;
@@ -342,18 +397,26 @@ static int anexarEvento(Fio *f, const unsigned char *dados, long n,
   if (i >= n) return 0;
   layerFim = i++;
   tempoAss(ini, a, sizeof a); tempoAss(fim, b, sizeof b);
-  w = (size_t)snprintf(linha, sizeof linha, "Dialogue: %.*s,%s,%s,",
+  /* O texto ASS e um campo sem limite pratico (desenhos vetoriais e algumas
+   * falas de karaoke passam facilmente de 1 KiB). A versao antiga usava uma
+   * linha[1024] e silenciosamente cortava o evento no meio de uma tag. */
+  capacidade = (size_t)n + 64u;
+  linha = malloc(capacidade);
+  if (!linha) return 0;
+  w = (size_t)snprintf(linha, capacidade, "Dialogue: %.*s,%s,%s,",
                        (int)(layerFim - layerIni), p + layerIni, a, b);
   // O resto (Style ate Text) vai como esta. Quebra de linha crua dentro do
   // bloco viraria fim de linha do corpo e partiria o evento em dois; a quebra
   // do ASS e \N e essa passa intacta.
-  for (k = i; k < n && w < sizeof linha - 2; k++) {
+  for (k = i; k < n && w + 2 < capacidade; k++) {
     char c = p[k];
     if (c == '\r' || c == '\n') c = ' ';
     linha[w++] = c;
   }
   linha[w++] = '\n'; linha[w] = 0;
-  return corpoAnexar(f, linha, w);
+  k = corpoAnexar(f, linha, w);
+  free(linha);
+  return (int)k;
 }
 
 // --- sidecar -----------------------------------------------------------------
@@ -370,8 +433,131 @@ static void nomeSidecar(const char *url, int faixa, char *dst, size_t tam) {
   snprintf(dst, tam, "mkvass-%016llx-%d.ass", h, faixa);
 }
 
-#define MARCA_COMPLETO "; mkvass-estado: completo\n"
+#define MARCA_COMPLETO "; mkvass-estado: completo-v2\n"
 #define MARCA_PARCIAL  "; mkvass-estado: parcial "
+#define MARCA_FONTES   "NVASS-FONTES-1\n"
+
+static const char B64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static size_t b64_tamanho(size_t n) { return ((n + 2u) / 3u) * 4u; }
+
+static void b64_codificar(char *dst, const unsigned char *src, size_t n) {
+  size_t i = 0, o = 0;
+  while (i < n) {
+    size_t resto = n - i;
+    unsigned a = src[i++], b = resto > 1u ? src[i++] : 0, c = resto > 2u ? src[i++] : 0;
+    dst[o++] = B64[a >> 2]; dst[o++] = B64[((a & 3u) << 4) | (b >> 4)];
+    dst[o++] = resto > 1u ? B64[((b & 15u) << 2) | (c >> 6)] : '=';
+    dst[o++] = resto > 2u ? B64[c & 63u] : '=';
+  }
+  dst[o] = 0;
+}
+
+static int b64_valor(unsigned char c) {
+  if (c >= 'A' && c <= 'Z') return c - 'A';
+  if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+  if (c >= '0' && c <= '9') return c - '0' + 52;
+  if (c == '+') return 62;
+  if (c == '/') return 63;
+  return -1;
+}
+
+static unsigned char *b64_decodificar(const char *src, size_t n, size_t *tam) {
+  unsigned char *dst; size_t i, o = 0;
+  if (!src || !tam || n % 4u || n > 24u * 1024u * 1024u) return NULL;
+  dst = malloc(n / 4u * 3u + 1u);
+  if (!dst) return NULL;
+  for (i = 0; i < n; i += 4u) {
+    int a = b64_valor((unsigned char)src[i]), b = b64_valor((unsigned char)src[i + 1]);
+    int c = src[i + 2] == '=' ? 0 : b64_valor((unsigned char)src[i + 2]);
+    int d = src[i + 3] == '=' ? 0 : b64_valor((unsigned char)src[i + 3]);
+    if (a < 0 || b < 0 || c < 0 || d < 0 ||
+        (src[i + 2] == '=' && src[i + 3] != '=') ||
+        ((src[i + 2] == '=' || src[i + 3] == '=') && i + 4u != n)) {
+      free(dst); return NULL;
+    }
+    dst[o++] = (unsigned char)((a << 2) | (b >> 4));
+    if (src[i + 2] != '=') dst[o++] = (unsigned char)((b << 4) | (c >> 2));
+    if (src[i + 3] != '=') dst[o++] = (unsigned char)((c << 6) | d);
+  }
+  *tam = o;
+  return dst;
+}
+
+static const char *linhaCache(const char **p, size_t *n) {
+  const char *ini = *p, *fim = strchr(ini, '\n');
+  if (!fim) return NULL;
+  *n = (size_t)(fim - ini); *p = fim + 1;
+  return ini;
+}
+
+static int lerFontesSidecar(Fio *f) {
+  char *cache = dados_ler(f->sidecarFontes);
+  const char *p; size_t linhaN, cacheN; long count, i, total = 0;
+  if (!cache) return 0;
+  cacheN = strlen(cache);
+  if (cacheN > 24u * 1024u * 1024u || strncmp(cache, MARCA_FONTES, strlen(MARCA_FONTES))) {
+    free(cache); return 0;
+  }
+  p = cache + strlen(MARCA_FONTES);
+  { const char *l = linhaCache(&p, &linhaN); char tmp[16];
+    if (!l || !linhaN || linhaN >= sizeof tmp) { free(cache); return 0; }
+    memcpy(tmp, l, linhaN); tmp[linhaN] = 0; count = strtol(tmp, NULL, 10);
+    if (count < 0 || count > 32) { free(cache); return 0; } }
+  liberarFontes(f);
+  for (i = 0; i < count; i++) {
+    size_t nome64N = 0, nomeN = 0;
+    const char *nome64 = linhaCache(&p, &nome64N);
+    unsigned char *nome = nome64 ? b64_decodificar(nome64, nome64N, &nomeN) : NULL;
+    const char *dados64; size_t dados64N, dadosN = 0;
+    unsigned char *dados;
+    FonteMkv *nv;
+    if (!nome || nomeN == 0 || nomeN >= 256 || memchr(nome, 0, nomeN)) { free(nome); goto falha; }
+    dados64 = linhaCache(&p, &dados64N);
+    dados = dados64 ? b64_decodificar(dados64, dados64N, &dadosN) : NULL;
+    if (!dados || dadosN == 0 || dadosN > MKVASS_CORPO_MAX || total > MKVASS_CORPO_MAX - (long)dadosN) {
+      free(nome); free(dados); goto falha;
+    }
+    nv = realloc(f->fontes, (size_t)(f->nFontes + 1) * sizeof *nv);
+    if (!nv) { free(nome); free(dados); goto falha; }
+    f->fontes = nv;
+    f->fontes[f->nFontes].nome = malloc(nomeN + 1u);
+    if (!f->fontes[f->nFontes].nome) { free(nome); free(dados); goto falha; }
+    memcpy(f->fontes[f->nFontes].nome, nome, nomeN); f->fontes[f->nFontes].nome[nomeN] = 0;
+    f->fontes[f->nFontes].dados = dados; f->fontes[f->nFontes].tam = (long)dadosN;
+    f->nFontes++; total += (long)dadosN;
+    free(nome);
+  }
+  if (p != cache + cacheN) goto falha;
+  f->fontesCompletas = 1;
+  free(cache); return 1;
+falha:
+  liberarFontes(f); free(cache); return 0;
+}
+
+static int gravarFontesSidecar(Fio *f) {
+  size_t cap = strlen(MARCA_FONTES) + 8u, usado;
+  char *cache, *p;
+  int i, ok;
+  if (!f->fontesCompletas || f->nFontes < 0 || f->nFontes > 32) return 0;
+  for (i = 0; i < f->nFontes; i++) {
+    size_t nn = strlen(f->fontes[i].nome), dn = (size_t)f->fontes[i].tam;
+    if (nn > 255 || dn == 0 || dn > MKVASS_CORPO_MAX) return 0;
+    cap += b64_tamanho(nn) + b64_tamanho(dn) + 2u;
+  }
+  if (cap > 24u * 1024u * 1024u) return 0;
+  cache = malloc(cap + 1u); if (!cache) return 0;
+  p = cache; usado = strlen(MARCA_FONTES); memcpy(p, MARCA_FONTES, usado); p += usado;
+  p += sprintf(p, "%d\n", f->nFontes);
+  for (i = 0; i < f->nFontes; i++) {
+    size_t nn = strlen(f->fontes[i].nome), dn = (size_t)f->fontes[i].tam;
+    b64_codificar(p, (const unsigned char *)f->fontes[i].nome, nn); p += b64_tamanho(nn); *p++ = '\n';
+    b64_codificar(p, f->fontes[i].dados, dn); p += b64_tamanho(dn); *p++ = '\n';
+  }
+  *p = 0;
+  ok = dados_gravar_leve(f->sidecarFontes, cache);
+  free(cache); return ok;
+}
 
 // Grava o corpo com a marca de estado na PRIMEIRA linha (';' e comentario em
 // ASS, e antes de qualquer secao o parser de legenda.c ignora a linha). No
@@ -380,6 +566,10 @@ static void nomeSidecar(const char *url, int faixa, char *dst, size_t tam) {
 static void gravarSidecar(Fio *f, int completo) {
   char *tudo; size_t n, i; int gravou = 0;
   if (!f->corpo || !f->corpoTam || !f->sidecar[0]) return;
+  if (completo && !gravarFontesSidecar(f)) {
+    fprintf(stderr, "[mkvass] cache completo adiado: fontes Matroska nao foram confirmadas\n");
+    return;
+  }
   n = f->corpoTam + 64 + (completo ? 0 : (size_t)f->nPontos);
   tudo = malloc(n + 1);
   if (!tudo) return;
@@ -421,9 +611,10 @@ static void lerSeekHead(Fio *f, const unsigned char *p, long n) {
         if (sid == ID_SEEKPOS) pos  = (long)lerUint(sd, st);
       }
       if (pos < 0) continue;
-      if (alvo == ID_TRACKS) f->posTracks = f->segIni + pos;
-      if (alvo == ID_CUES)   f->posCues   = f->segIni + pos;
-      if (alvo == ID_INFO)   f->posInfo   = f->segIni + pos; }
+      if (alvo == ID_TRACKS)      f->posTracks = f->segIni + pos;
+      if (alvo == ID_CUES)        f->posCues = f->segIni + pos;
+      if (alvo == ID_INFO)        f->posInfo = f->segIni + pos;
+      if (alvo == ID_ATTACHMENTS) f->posAttachments = f->segIni + pos; }
   }
 }
 
@@ -436,19 +627,24 @@ static void lerInfo(Fio *f, const unsigned char *p, long n) {
 // Devolve: 1 achou a faixa e e ASS; 0 nao achou; -1 achou e NAO e ASS.
 static int lerTracks(Fio *f, const unsigned char *p, long n) {
   Iter it = { p, n, 0 }; unsigned long id; const unsigned char *d; long t;
+  int ordinalLeg = 0;
   while (proximo(&it, &id, &d, &t)) {
     Iter j; unsigned long fid; const unsigned char *fd; long ft;
-    int numero = 0, ehAss = 0; const unsigned char *priv = NULL; long privN = 0;
+    int numero = 0, tipo = 0, ehAss = 0; const unsigned char *priv = NULL; long privN = 0;
     if (id != ID_TRACKENTRY) continue;
     j.p = d; j.n = t; j.o = 0;
     while (proximo(&j, &fid, &fd, &ft)) {
       if (fid == ID_TRACKNUMBER) numero = (int)lerUint(fd, ft);
+      else if (fid == ID_TRACKTYPE) tipo = (int)lerUint(fd, ft);
       else if (fid == ID_CODECID)
         ehAss = ft >= 10 && (!strncmp((const char *)fd, "S_TEXT/ASS", 10) ||
                              !strncmp((const char *)fd, "S_TEXT/SSA", 10));
       else if (fid == ID_CODECPRIV) { priv = fd; privN = ft; }
     }
-    if (numero != f->faixa) continue;
+    if (f->faixa < 0) {
+      if (tipo != 17 || ordinalLeg++ != -f->faixa - 1) continue;
+      f->faixa = numero;
+    } else if (numero != f->faixa) continue;
     if (!ehAss || !priv) return -1;
     return montarCabecalho(f, priv, privN) ? 1 : -1;
   }
@@ -459,7 +655,7 @@ static int lerTracks(Fio *f, const unsigned char *p, long n) {
 // primeira janela. O que o SeekHead apontar para fora e buscado depois.
 static int lerCabecalho(Fio *f) {
   long n = 0, o = 0; int ui = 0, ut = 0; unsigned long id; long tam;
-  int achouTracks = 0, achouInfo = 0, tracksVisto = 0;
+  int achouTracks = 0, achouInfo = 0, achouAttachments = 0, tracksVisto = 0;
   unsigned char *p = range(f, 0, MKVASS_CAB, &n);
   if (!p) return MKVASS_NOGO_REDE;
   if (n < 64 || lerId(p, n, &ui) != ID_EBML) { free(p); return MKVASS_NOGO_NAO_MKV; }
@@ -472,7 +668,7 @@ static int lerCabecalho(Fio *f) {
   o += ui + ut;
   f->segIni = o;
   f->escala = 1000000UL;
-  f->posTracks = f->posCues = f->posInfo = -1;
+  f->posTracks = f->posCues = f->posInfo = f->posAttachments = -1;
   while (o < n) {
     id = lerId(p + o, n - o, &ui);
     if (!id) break;
@@ -480,12 +676,17 @@ static int lerCabecalho(Fio *f) {
     if (tam < 0) break;
     o += ui + ut;
     if (o + tam > n) break;        // elemento passa da janela: o SeekHead resolve
-    if (id == ID_SEEKHEAD) lerSeekHead(f, p + o, tam);
+    if (id == ID_SEEKHEAD) { f->seekHeadVisto = 1; lerSeekHead(f, p + o, tam); }
     else if (id == ID_INFO) { lerInfo(f, p + o, tam); achouInfo = 1; }
     else if (id == ID_TRACKS) {
       tracksVisto = 1;
       achouTracks = lerTracks(f, p + o, tam);
       if (achouTracks < 0) { free(p); return MKVASS_NOGO_FAIXA; }
+    }
+    else if (id == ID_ATTACHMENTS) {
+      achouAttachments = lerAttachments(f, p + o, tam);
+      if (!achouAttachments) { free(p); return MKVASS_NOGO_REDE; }
+      f->fontesCompletas = 1;
     }
     else if (id == ID_CLUSTER) break;
     o += tam;
@@ -498,6 +699,31 @@ static int lerCabecalho(Fio *f) {
                if (tam > 0 && ui + ut + tam <= n) lerInfo(f, p + ui + ut, tam); }
              free(p); }
   }
+  /* Attachments costumam ficar depois de Tracks e fora da primeira janela.
+   * O SeekHead da maioria dos muxers aponta para eles; lemos o tamanho do
+   * elemento primeiro e so entao buscamos os bytes, sem baixar o video. */
+  if (!achouAttachments && !f->fontesCompletas && f->posAttachments >= 0) {
+    long cabTam = 0, dadosN = 0; unsigned char *cab = range(f, f->posAttachments, 64, &cabTam);
+    if (!cab) return MKVASS_NOGO_REDE;
+    if (cabTam > 0) {
+      int ai = larguraDe(cab[0]), at = 0; long an;
+      an = ai > 0 && ai < cabTam ? lerTam(cab + ai, cabTam - ai, &at) : -1;
+      if (an > 0 && an <= MKVASS_CORPO_MAX) {
+        long inicio = ai + at;
+        unsigned char *dados = NULL;
+        int dadosAlocados = 0;
+        if (inicio + an <= cabTam) { dados = cab + inicio; dadosN = an; }
+        else { dados = range(f, f->posAttachments + inicio, an, &dadosN); dadosAlocados = 1; }
+        if (dados && dadosN >= an) achouAttachments = lerAttachments(f, dados, an);
+        if (dadosAlocados) free(dados);
+      }
+    }
+    free(cab);
+    if (!achouAttachments) return MKVASS_NOGO_REDE;
+    f->fontesCompletas = 1;
+  }
+  if (achouAttachments) f->fontesCompletas = 1;
+  else if (f->posAttachments < 0 && f->seekHeadVisto) f->fontesCompletas = 1;
   if (!achouTracks) {
     // Tracks inteiro na janela e a faixa nao esta la: nao ha o que buscar.
     if (tracksVisto || f->posTracks < 0) return MKVASS_NOGO_FAIXA;
@@ -543,7 +769,7 @@ static int lerCues(Fio *f) {
   if (tam <= 0 || tam > MKVASS_CUES_MAX) return MKVASS_NOGO_SEM_INDICE;
   p = range(f, f->posCues + ui + ut, tam, &n);
   if (!p) return MKVASS_NOGO_REDE;
-  if (n < tam) { free(p); return MKVASS_NOGO_SEM_INDICE; }
+  if (n < tam) { free(p); return MKVASS_NOGO_REDE; }
   f->pontos = calloc((size_t)cap, sizeof *f->pontos);
   if (!f->pontos) { free(p); return MKVASS_NOGO_REDE; }
   it.p = p; it.n = tam; it.o = 0;
@@ -615,6 +841,61 @@ static const ClCache *cluster(Fio *f, long pos) {
   return c;
 }
 
+/* Tamanhos dos frames de um Block laced. O primeiro byte do payload e o
+ * numero de frames menos um; os formatos Xiph, fixed e EBML diferem apenas
+ * na forma de escrever os N-1 primeiros tamanhos. */
+static int tamanhosLace(const unsigned char *p, long n, unsigned flags,
+                        long **saida, int *nFrames, long *cab) {
+  long *tam = NULL, pos = 0, soma = 0;
+  int i, nf;
+  if (!(flags & 0x06)) {
+    tam = calloc(1, sizeof *tam);
+    if (!tam) return 0;
+    tam[0] = n; *saida = tam; *nFrames = 1; *cab = 0; return 1;
+  }
+  if (n < 1) return 0;
+  nf = (int)p[pos++] + 1;
+  if (nf < 1 || nf > 256) return 0;
+  tam = calloc((size_t)nf, sizeof *tam);
+  if (!tam) return 0;
+  if ((flags & 0x06) == 0x02) {             /* Xiph lacing */
+    for (i = 0; i < nf - 1; i++) {
+      long v = 0;
+      do {
+        if (pos >= n) { free(tam); return 0; }
+        v += p[pos++];
+      } while (p[pos - 1] == 255);
+      tam[i] = v; soma += v;
+    }
+  } else if ((flags & 0x06) == 0x04) {      /* fixed-size lacing */
+    long resto = n - pos;
+    if (resto < 0 || resto % nf) { free(tam); return 0; }
+    for (i = 0; i < nf - 1; i++) tam[i] = resto / nf;
+    soma = tam[0] * (nf - 1);
+  } else {                                  /* EBML lacing */
+    int w = 0; long v;
+    v = lerVint(p + pos, n - pos, &w);
+    if (v < 0) { free(tam); return 0; }
+    tam[0] = v; soma = v; pos += w;
+    for (i = 1; i < nf - 1; i++) {
+      unsigned long raw; long delta, bias;
+      raw = (unsigned long)lerVint(p + pos, n - pos, &w);
+      if (!w) { free(tam); return 0; }
+      /* EBML signed integer: bias = 2^(7*w-1)-1. */
+      if (w >= 8) bias = LONG_MAX;
+      else bias = (1L << (7 * w - 1)) - 1L;
+      delta = (long)raw - bias;
+      tam[i] = tam[i - 1] + delta;
+      if (tam[i] < 0) { free(tam); return 0; }
+      soma += tam[i]; pos += w;
+    }
+  }
+  if (pos > n || soma > n - pos) { free(tam); return 0; }
+  tam[nf - 1] = n - pos - soma;
+  *saida = tam; *nFrames = nf; *cab = pos;
+  return 1;
+}
+
 // Interpreta UM bloco (BlockGroup ou SimpleBlock) em p[0..n). Devolve os bytes
 // que ele ocupa (para andar ate o proximo), 0 quando nao e da faixa ou nao
 // fecha, e -k quando faltam k bytes para o bloco caber na janela.
@@ -641,13 +922,6 @@ static long lerBloco(Fio *f, const unsigned char *p, long n, const ClCache *cl,
     if (trk != f->faixa || vt + 3 > blN) return total;
     rel = (int)(short)((bl[vt] << 8) | bl[vt + 1]);
     flags = bl[vt + 2];
-    // LACING (bits 0x06): varios quadros num bloco. Em legenda nao acontece
-    // na pratica (ffmpeg e mkvmerge nunca lacam texto) e desfazer o lacing
-    // Xiph/EBML e codigo que nunca rodaria; o bloco e pulado, e o log diz.
-    if (flags & 0x06) {
-      printf("[mkvass] bloco com lacing (flags 0x%02x) pulado\n", flags);
-      return total;
-    }
     // Start = Timestamp do Cluster + relativo do bloco. Sem Timestamp no
     // Cluster (nao deveria acontecer), o CueTime e a mesma coisa vista do
     // indice.
@@ -655,8 +929,18 @@ static long lerBloco(Fio *f, const unsigned char *p, long n, const ClCache *cl,
                     : segundosDe(f, cueTempo);
     fim = ini + (temDur ? segundosDe(f, dur) : MKVASS_DUR_PADRAO);
     if (fim <= ini) fim = ini + 0.5;
-    anexarEvento(f, bl + vt + 3, blN - vt - 3, ini, fim);
-    f->sujo = 1;
+    {
+      const unsigned char *frames = bl + vt + 3;
+      long framesN = blN - vt - 3, cab, *tams = NULL, off = 0;
+      int nf = 0, fi;
+      if (!tamanhosLace(frames, framesN, flags, &tams, &nf, &cab)) return total;
+      for (fi = 0; fi < nf; fi++) {
+        if (tams[fi] > 0 && anexarEvento(f, frames + cab + off, tams[fi], ini, fim))
+          f->sujo = 1;
+        off += tams[fi];
+      }
+      free(tams);
+    }
     return total;
   }
 }
@@ -722,6 +1006,11 @@ static int entregarCorpoSeAtual(Fio *f, const char *corpo) {
   int ok = 0;
   pthread_mutex_lock(&S.trava);
   if (f->g == S.geracao && !S.parar) {
+    int i;
+    assrender_limpar_fontes();
+    for (i = 0; i < f->nFontes; i++)
+      assrender_adicionar_fonte(f->fontes[i].nome, f->fontes[i].dados,
+                                (size_t)f->fontes[i].tam);
     legenda_definir_corpo(corpo);
     ok = 1;
   }
@@ -773,15 +1062,19 @@ static void *trabalhar(void *arg) {
   if (!minhaVez(f)) goto fim;
 
   nomeSidecar(f->url, f->faixa, f->sidecar, sizeof f->sidecar);
+  snprintf(f->sidecarFontes, sizeof f->sidecarFontes, "%s.fonts", f->sidecar);
   sc = dados_ler(f->sidecar);
   if (sc && !strncmp(sc, MARCA_COMPLETO, strlen(MARCA_COMPLETO))) {
-    // De graca: nenhum Range.
-    if (!entregarCorpoSeAtual(f, sc + strlen(MARCA_COMPLETO))) { free(sc); goto fim; }
-    if (!definirEstadoSeAtual(f, MKVASS_COMPLETO)) { free(sc); goto fim; }
-    printf("[mkvass] sidecar completo %s: sem rede\n", f->sidecar);
-    fflush(stdout);
-    free(sc);
-    goto fim;
+    // Os eventos e anexos usam versoes/provas separadas. Um marcador de corpo
+    // sem cache de fontes correspondente nao pode virar cache completo.
+    if (lerFontesSidecar(f)) {
+      if (!entregarCorpoSeAtual(f, sc + strlen(MARCA_COMPLETO))) { free(sc); goto fim; }
+      if (!definirEstadoSeAtual(f, MKVASS_COMPLETO)) { free(sc); goto fim; }
+      printf("[mkvass] sidecar completo %s: sem rede\n", f->sidecar);
+      fflush(stdout);
+      free(sc);
+      goto fim;
+    }
   }
 
   r = lerCabecalho(f);
@@ -898,15 +1191,15 @@ fim:
   S.vivos--;
   pthread_cond_broadcast(&S.sinal);
   pthread_mutex_unlock(&S.trava);
-  free(f->pontos); free(f->corpo); free(f);
+  free(f->pontos); free(f->corpo); liberarFontes(f); free(f);
   return NULL;
 }
 
 // --- API ---------------------------------------------------------------------------
 
-void mkvass_iniciar(const char *url, int numeroFaixa) {
+static void iniciarFaixa(const char *url, int numeroFaixa) {
   Fio *f; pthread_t t;
-  if (!url || !*url || numeroFaixa <= 0) return;
+  if (!url || !*url || numeroFaixa == 0) return;
   f = calloc(1, sizeof *f);
   if (!f) return;
   snprintf(f->url, sizeof f->url, "%s", url);
@@ -930,6 +1223,16 @@ void mkvass_iniciar(const char *url, int numeroFaixa) {
     pthread_mutex_unlock(&S.trava);
     free(f);
   }
+}
+
+void mkvass_iniciar(const char *url, int numeroFaixa) {
+  if (numeroFaixa <= 0) return;
+  iniciarFaixa(url, numeroFaixa);
+}
+
+void mkvass_iniciar_ordinal(const char *url, int ordinalFaixa) {
+  if (ordinalFaixa < 0 || ordinalFaixa >= 64) return;
+  iniciarFaixa(url, -ordinalFaixa - 1);
 }
 
 void mkvass_passo(double posSeg) {
@@ -973,5 +1276,3 @@ void mkvass_estatisticas(long *pedidos, long *bytes, int *colhidos, int *total) 
   if (total)    *total    = S.nPontos;
   pthread_mutex_unlock(&S.trava);
 }
-
-#endif  /* __EMSCRIPTEN__ */

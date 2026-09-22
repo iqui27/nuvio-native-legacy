@@ -1790,6 +1790,7 @@ int  video_n_audio(void)   { return nAudio; }
 int  video_n_legenda(void) { return nLeg; }
 const VideoFaixa *video_audio(int i)   { return (i >= 0 && i < nAudio) ? &faixaAudio[i] : NULL; }
 const VideoFaixa *video_legenda(int i) { return (i >= 0 && i < nLeg) ? &faixaLeg[i] : NULL; }
+int video_legenda_ordinal_mkv(int i) { (void)i; return -1; }
 int  video_audio_atual(void)   { return audioAtual; }
 int  video_legenda_atual(void) { return legAtual; }
 int  video_tem_atmos(void)        { return vidAtmos; }

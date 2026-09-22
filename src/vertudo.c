@@ -61,6 +61,34 @@ static void corColecao(float *r,float *g,float *b) {
   else if (grupo("Film Collections") || grupo("TV Collections"))
     {*r=.12f;*g=.27f;*b=.40f;}
 }
+
+// As abas de fonte pertencem ao mesmo fluxo de selecao da folha de fontes.
+// Mantem o acento reconhecivel, mas o mistura ao fundo para nao virar uma
+// faixa azul/branca solta sobre a arte. A excecao para tons quase brancos
+// preserva a leitura da tinta escura nos temas Branco e Grafite.
+static void corFocoFonte(float *r, float *g, float *b) {
+  float ar, ag, ab, k = 0.74f;
+  ajustes_acento(&ar, &ag, &ab);
+  if (0.2126f * ar + 0.7152f * ag + 0.0722f * ab > 0.88f) k = 0.88f;
+  *r = 0.055f + (ar - 0.055f) * k;
+  *g = 0.058f + (ag - 0.058f) * k;
+  *b = 0.068f + (ab - 0.068f) * k;
+}
+
+static void focoAbaFonte(GfxRect r, float f, float a) {
+  float ar, ag, ab, sr, sg, sb;
+  GfxRect luz;
+  if (f <= 0.01f) return;
+  ajustes_acento(&ar, &ag, &ab);
+  luz = (GfxRect){r.x - r.h * 0.45f, r.y - r.h * 0.45f,
+                  r.w + r.h * 0.90f, r.h * 2.0f};
+  gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
+           ar, ag, ab, 0.16f * f * a);
+  corFocoFonte(&sr, &sg, &sb);
+  gfx_cor(r, NV_RAIO_PILL, sr, sg, sb, f * a);
+  gfx_rect(r, 0, GFX_BRILHO_TOPO, NV_RAIO_PILL, 0.24f, 0, 0.5f,
+           1, 1, 1, 0.10f * f * a);
+}
 static const char *rotuloGrupo(void) {
   if (grupo("Directors")) return "FILMOGRAFIA";
   if (grupo("Awards")) return "PRÊMIOS E CÂNONE";
@@ -430,11 +458,11 @@ static void themeHeader(float a,float x0) {
     // tres sinais que o resto do app ja abandonou (ver NV_COR_FOCO em
     // layout.h e as abas do painel de Salvos). Agora e a mesma gramatica das
     // abas de Salvos: largura pelo texto, 52 de altura, FOCO = preenchimento
-    // na cor de realce com texto escuro e sem anel; ABERTA sem foco =
-    // superficie clara; as outras, quase transparentes. `tabAnim` cruza o
-    // repouso e o foco em vez de escalar.
+    // na cor de realce graduada, com tinta contrastante e sem anel; ABERTA sem
+    // foco conserva uma marca mais baixa da mesma familia; as outras ficam
+    // quase transparentes. `tabAnim` cruza o repouso e o foco em vez de
+    // escalar.
     const float H=52.0f,PAD=22.0f,GAP=12.0f,W=NV_TELA_W-x0-90;
-    float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);
     float larg[COL_SOURCE_MAX],pos[COL_SOURCE_MAX],px=0;
     static char rot[COL_SOURCE_MAX][180];
     int nAbas=collection->nSources;
@@ -468,10 +496,13 @@ static void themeHeader(float a,float x0) {
       int f=tabFocus&&tabCursor==i,selecionada=source==i;
       float fa=tabAnim[i];
       GfxRect pill={x,253,larg[i],H};
-      if(selecionada)gfx_cor(pill,NV_RAIO_PILL,.26f,.26f,.27f,a*(1-fa));
-      else gfx_cor(pill,NV_RAIO_PILL,1,1,1,.04f*a*(1-fa));
-      if(fa>.001f)gfx_cor(pill,NV_RAIO_PILL,ar,ag,ab,a*fa);
-      int cor=f?20:selecionada?246:176;
+      if (selecionada) {
+        float sr, sg, sb; corFocoFonte(&sr, &sg, &sb);
+        gfx_cor(pill, NV_RAIO_PILL, sr, sg, sb,
+                a * (0.62f + 0.38f * fa));
+      } else gfx_cor(pill,NV_RAIO_PILL,1,1,1,.04f*a*(1-fa));
+      if(fa>.001f) focoAbaFonte(pill, fa, a);
+      int cor=f?ajustes_tinta_foco():selecionada?ajustes_tinta_foco2():176;
       TxtLinha t=txt_linha_corta(TXT_HERO_META,rot[i],cor,cor,cor,255,420);
       txt_desenhar_alpha(t,x+PAD,pill.y+(H-t.h)*.5f,a);
     }gfx_sem_recorte();

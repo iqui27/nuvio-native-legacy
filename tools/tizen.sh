@@ -170,7 +170,37 @@ if [ -n "${NUVIO_TIZEN_EXCLUDE_MAIN:-}" ]; then
     [ "$source" = "src/main.c" ] || SOURCES="$SOURCES $source"
   done
 fi
-eval emcc $SOURCES ${EXTRA_SOURCES} -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} \
+ASS_ROOT_REAL="${NUVIO_ASS_ROOT:-$PWD/build/ass-wasm}"
+ASS_ROOT="$ASS_ROOT_REAL"
+ASS_CFLAGS=""
+ASS_LIBS=""
+if [ "${NUVIO_ASS_LIBASS:-1}" = "1" ]; then
+  if [ ! -f "$ASS_ROOT_REAL/include/ass/ass.h" ] || [ ! -f "$ASS_ROOT_REAL/lib/libass.a" ]; then
+    echo "tizen.sh: libass WASM ausente em $ASS_ROOT_REAL" >&2
+    echo "  rode tools/build-ass-wasm.sh apos ativar o emsdk, ou use NUVIO_ASS_LIBASS=0 apenas para diagnostico" >&2
+    exit 2
+  fi
+  # As flags do emcc entram no eval abaixo; um caminho do checkout com espacos
+  # vira dois argumentos mesmo dentro de ASS_CFLAGS. O symlink fica fora do
+  # repositorio e nunca substitui um caminho preexistente que nao controlamos.
+  ASS_ROOT_SHORT="${TMPDIR:-/tmp}/nuvio-ass-wasm-root-$(id -u)"
+  ASS_ROOT_CANON=$(cd "$ASS_ROOT_REAL" && pwd -P)
+  if [ -L "$ASS_ROOT_SHORT" ]; then
+    [ "$(readlink "$ASS_ROOT_SHORT")" = "$ASS_ROOT_CANON" ] || {
+      echo "tizen.sh: symlink libass inesperado em $ASS_ROOT_SHORT" >&2
+      exit 2
+    }
+  elif [ -e "$ASS_ROOT_SHORT" ]; then
+    echo "tizen.sh: caminho temporario libass ja existe e nao e symlink: $ASS_ROOT_SHORT" >&2
+    exit 2
+  else
+    ln -s "$ASS_ROOT_CANON" "$ASS_ROOT_SHORT"
+  fi
+  ASS_ROOT="$ASS_ROOT_SHORT"
+  ASS_CFLAGS="-DNV_ASS_LIBASS -I$ASS_ROOT/include"
+  ASS_LIBS="-L$ASS_ROOT/lib -Wl,--start-group -lass -lharfbuzz -lfribidi -lfreetype -Wl,--end-group"
+fi
+eval emcc $SOURCES ${EXTRA_SOURCES} -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} $ASS_CFLAGS $ASS_LIBS \
   -sWASM_BIGINT=0 \
   -sUSE_SDL=2 -sUSE_SDL_IMAGE=2 -sUSE_SDL_TTF=2 -sUSE_LIBJPEG=1 \
   `# zlib do emscripten: epg.c infla o XMLTV .gz do epgshare01 com inflate.` \

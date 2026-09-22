@@ -30,13 +30,15 @@ class H(http.server.BaseHTTPRequestHandler):
         if semRange: nome = nome[len("norange/"):]
         lento = nome.startswith("lento/")
         if lento: nome = nome[len("lento/"):]
+        curtoCues = nome.startswith("curtocues/")
+        if curtoCues: nome = nome[len("curtocues/"):]
         curto = nome.startswith("curto/")
         if curto: nome = nome[len("curto/"):]
         cam = os.path.join(PASTA, os.path.basename(nome))
-        return cam, semRange, lento, curto
+        return cam, semRange, lento, curto, curtoCues
 
     def do_HEAD(self):
-        cam, _, _, _ = self._arquivo()
+        cam, _, _, _, _ = self._arquivo()
         if not os.path.isfile(cam): self.send_error(404); return
         self.send_response(200)
         self.send_header("Content-Length", str(os.path.getsize(cam)))
@@ -55,7 +57,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 curtoPedidos = 0
             self.send_response(200); self.send_header("Content-Length", "2")
             self.end_headers(); self.wfile.write(b"ok"); return
-        cam, semRange, lento, curto = self._arquivo()
+        cam, semRange, lento, curto, curtoCues = self._arquivo()
         if not os.path.isfile(cam): self.send_error(404); return
         with trava:
             contagem += 1
@@ -75,6 +77,9 @@ class H(http.server.BaseHTTPRequestHandler):
                 self.send_response(416); self.send_header("Content-Range", "bytes */%d" % total)
                 self.send_header("Content-Length", "0"); self.end_headers(); return
             parcial = True
+        if curto and os.environ.get("NUVIO_RANGE_TRACE") == "1":
+            print("range-trace curto #%d %s bytes=%d-%d" %
+                  (curtoN, self.path, ini, fim), file=sys.stderr, flush=True)
         if lento:
             import time
             time.sleep(1.2)
@@ -83,7 +88,9 @@ class H(http.server.BaseHTTPRequestHandler):
         # exercita a resposta 206 curta no ponto em que ela realmente deixa
         # cues ausentes, em vez de transformar o MKV inteiro em um cabecalho
         # incompleto.
-        if curto and parcial and curtoN >= 4:
+        if curto and parcial and curtoN >= 6:
+            fim = min(fim, ini + 31)
+        if curtoCues and parcial and ini > total - 16 * 1024 and fim - ini + 1 > 32:
             fim = min(fim, ini + 31)
         n = fim - ini + 1
         self.send_response(206 if parcial else 200)

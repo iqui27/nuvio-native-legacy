@@ -561,6 +561,25 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  float t = clamp(1.0 - length(p) / max(uFoco, 0.001), 0.0, 1.0);\n"
   "  gl_FragColor = vec4(uCor.rgb, t * t * uCor.a * m);\n"
   "}\n",
+
+  // GFX_SINO — contorno de sino pequeno e resolvido no fragmento. E usado
+  // pelo toast porque uma textura nova poderia ainda estar no fio de decode
+  // quando o aviso entra; um glifo nativo precisa estar presente no primeiro
+  // frame e continua limpo quando a TV reduz a escala.
+  "void main(){\n"
+  "  vec2 p = (vUv - 0.5) * vec2(uAspect, 1.0);\n"
+  "  float dome = length((p - vec2(0.0, 0.035)) / vec2(0.275, 0.285)) - 1.0;\n"
+  "  float shell = 1.0 - smoothstep(0.008, 0.045, abs(dome));\n"
+  "  shell *= 1.0 - step(0.225, p.y);\n"
+  "  vec2 qb = abs(p - vec2(0.0, 0.225)) - vec2(0.31, 0.035);\n"
+  "  float bd = length(max(qb, 0.0)) + min(max(qb.x, qb.y), 0.0) - 0.035;\n"
+  "  float base = 1.0 - smoothstep(0.008, 0.026, bd);\n"
+  "  float top = 1.0 - smoothstep(0.010, 0.028, length((p - vec2(0.0, -0.285)) / vec2(0.045, 0.045)) - 1.0);\n"
+  "  float clapper = 1.0 - smoothstep(0.010, 0.028, length((p - vec2(0.0, 0.300)) / vec2(0.055, 0.040)) - 1.0);\n"
+  "  float m = max(max(shell, base), max(top, clapper));\n"
+  "  if (m <= 0.002) discard;\n"
+  "  gl_FragColor = vec4(uCor.rgb, uCor.a * m);\n"
+  "}\n",
 };
 
 // Cada corpo declara o que usa; montar so o necessario mantem o shader enxuto.
@@ -580,7 +599,8 @@ static const struct { int sdf, cover; } PRECISA[GFX_NMODOS] = {
   {1,0},   /* GFX_VEU_CARD — precisa do SDF: o veu segue os cantos do card */
   {1,0},   /* GFX_BRILHO_TOPO — idem, e pelo mesmo motivo */
   {1,0},   /* GFX_ARTE — SDF para os cantos; sem cover, a arte nao e recortada */
-  {1,0}    /* GFX_LUZ — SDF para os cantos do painel */
+  {1,0},   /* GFX_LUZ — SDF para os cantos do painel */
+  {0,0}    /* GFX_SINO — glifo vetorial, sem textura nem SDF de retangulo */
 };
 
 static GLuint compila(GLenum tipo, const char *src) {

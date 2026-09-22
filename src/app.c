@@ -65,6 +65,7 @@
 #include "pipintro.h"
 #include "social.h"
 #include "ajustes.h"
+#include "diagnostico.h"
 #include "player.h"
 #include "streams.h"
 #include "stalker.h"
@@ -85,6 +86,13 @@
 // Link de debrid expira em minutos; um minuto e folga suficiente para o usuario
 // apertar Reproduzir logo depois de abrir o titulo sem pagar uma busca a mais.
 #define NV_LINK_VALIDO_MS 60000
+// Uma URL pode responder bem a sonda e ainda assim travar quando o player
+// abre o conteudo real. Filme nao passa pelo watchdog de canal, entao sem este
+// prazo a tela fica em "carregando" para sempre e a pessoa precisa abrir a
+// folha para escolher outra fonte na mao.
+#define VOD_FONTE_PRAZO_MS 30000
+#define VOD_FONTE_BUFFER_MS 30000
+#define VOD_FONTE_MAX_TENTATIVAS 8
 
 // PORTA DE TESTE: "abrir:tt0121955" em /tmp/nuvio-key (main.c) abre o titulo
 // pelo mesmo caminho de uma recomendacao ou aviso — sem navegar ate ele por
@@ -146,6 +154,12 @@ static int    folhaParaTocar;
 static int    stalkerTentativas;
 static int    canalFonteIdx = -1;         // indice na lista de streams, -1 = fora
 static Uint32 canalFonteDesde;            // quando a fonte atual foi pedida
+// So o automatico usa o fallback. Uma escolha manual e uma decisao explicita
+// do dono e nao pode ser trocada por outra fonte por tras da tela.
+static int    fonteVODAutomatica;
+static int    fonteVODTentativas;
+static Uint32 fonteVODDesde;
+static void limparFonteVOD(void);
 #define CANAL_FONTE_PRAZO_MS 12000
 // PRAZO CURTO para fonte que JA PROVOU estar ruim. A conferencia de playlist
 // (stream_canal_primeira_viva) classifica cada candidata antes de tocar; quando
@@ -261,6 +275,11 @@ static void limparFontePendente(void) {
   fontePendenteRenovando = 0;
   fontePendenteGeracao = 0;
   fontePendenteId[0] = 0;
+}
+static void limparFonteVOD(void) {
+  fonteVODAutomatica = 0;
+  fonteVODTentativas = 0;
+  fonteVODDesde = 0;
 }
 static int iniciarFonteJob(int tipo, unsigned geracao, const char *id, int renovando) {
   FonteJob *job = &fonteJob;
@@ -399,6 +418,7 @@ static void trocarTela(Tela nova) {
     case TELA_AGENDA:     agendaui_iniciar();   break;
     case TELA_PERFIL:     perfil_abrir(); pedirPerfil(); break;
     case TELA_AJUSTES:    ajustes_iniciar();    break;
+    case TELA_DIAGNOSTICO: diagnostico_iniciar(); break;
     default: break;
   }
 }
@@ -417,6 +437,9 @@ static void alvoPlayer(char *alvo, size_t tam) {
 static void buscarParaPlayer(void) {
   char alvo[64]; alvoPlayer(alvo,sizeof alvo);
   const char *idC = player_id_canal();
+  // Episodio novo abre um ciclo novo de fontes. A fonte automatica do
+  // episodio anterior nao pode contaminar o watchdog nem a lista de exclusao.
+  limparFonteVOD();
   // CARIMBA O ALVO ANTES DE PEDIR (issue #101). A lista que voltar passa a
   // saber de que episodio ela e; sem isto ninguem consegue distinguir "a lista
   // do E6" de "a lista do E5 que ninguem invalidou". Ver streams.h.
@@ -583,6 +606,48 @@ static void cancelarFonteSeSaiu(void) {
   }
 }
 
+// Filme/serie nao tem o watchdog de canal porque nao ha troca de emissora.
+// Ainda assim a sonda de URL nao prova que o decoder vai aceitar o arquivo:
+// alguns links respondem HTTP 200 e o uMS fica em load sem erro. Se o
+// automatico caiu nesse caso, tira a candidata da fila e verifica a proxima;
+// escolha manual fica intacta.
+static void tentarProximaFonteVOD(void) {
+  Uint32 desde;
+  int atual, motivo = 0;
+  unsigned geracao;
+  if (!fonteVODAutomatica || player_id_canal()[0] || !player_aberto() ||
+      player_quer_sair() || aguardandoFonte != 0 || !fonteVODDesde) return;
+  desde = SDL_GetTicks() - fonteVODDesde;
+  if (video_falhou() || player_fonte_falhou()) motivo = 1;
+  else if (player_carregando() && desde > VOD_FONTE_PRAZO_MS) motivo = 2;
+  else if (video_bufferando_ms() > VOD_FONTE_BUFFER_MS) motivo = 3;
+  if (!motivo) return;
+
+  atual = stream_atual();
+  if (atual >= 0) stream_automatico_excluir(atual);
+  if (fonteVODTentativas >= VOD_FONTE_MAX_TENTATIVAS ||
+      stream_automatico() < 0) {
+    printf("[fonte] automatico VOD sem proxima candidata (motivo=%d)\n", motivo);
+    fonteVODAutomatica = 0;
+    player_erro_fonte();
+    return;
+  }
+
+  geracao = novaGeracaoFonte();
+  aguardandoFonte = 2;
+  fontePedidoGeracao = geracao;
+  fonteEscolhida = -2;
+  limparFontePendente();
+  if (pedirFonteJob(FJOB_ADDON, geracao, NULL, 0) < 0) {
+    limparFonteVOD();
+    player_erro_fonte();
+    return;
+  }
+  printf("[fonte] automatico VOD descartou %d; verificando proxima (%d/%d)\n",
+         atual, fonteVODTentativas + 1, VOD_FONTE_MAX_TENTATIVAS);
+  marco("fonte VOD travou; tentando proxima");
+}
+
 // TOCAR UM CANAL, direto — o "OK assiste" do guia e o zap do CH+/-.
 //
 // O guia entrega um CatItem pronto (id completo do addon, tipo "channel"):
@@ -598,6 +663,7 @@ static void tocarCanal(const CatItem *it) {
   ni = cat_indice_por_imdb(it->imdb);
   if (ni < 0) ni = cat_acrescentar(it);
   if (ni < 0) return;
+  limparFonteVOD();
   if (player_aberto()) player_encerrar();
   player_abrir(ni, NULL);
   // cat_acrescentar e cat_definir_tudo correm juntos: se uma republicacao
@@ -630,6 +696,7 @@ static void tocarCanal(const CatItem *it) {
 static int homePronta;
 
 int app_iniciar(const char *dirArte) {
+  diagnostico_recuperar_checkpoint();
   homePronta = home_iniciar(dirArte);
   if (!homePronta)
     printf("[app] sem arte no pacote: a home so aparece depois do primeiro sync\n");
@@ -688,6 +755,14 @@ int app_iniciar(const char *dirArte) {
 
 void app_evento(const SDL_Event *e) {
   if (e->type == SDL_QUIT) { sair = 1; return; }
+
+  // A explicacao de primeira abertura bloqueia o restante da interface ate
+  // ser reconhecida ou fechada. Ela aparece na Home, mas pertence ao fluxo de
+  // Diagnostico e por isso precisa vir antes de qualquer atalho global.
+  if (diagnostico_intro_aberto()) {
+    diagnostico_intro_evento(e);
+    return;
+  }
 
   // O PAINEL DE LOG VEM ANTES DE TUDO, inclusive do login.
   //
@@ -864,6 +939,7 @@ void app_evento(const SDL_Event *e) {
     case TELA_SOCIAL:     social_evento(e);     break;
     case TELA_ADDONS:     addonsui_evento(e);   break;
     case TELA_AJUSTES:    ajustes_evento(e);    break;
+    case TELA_DIAGNOSTICO: diagnostico_evento(e); break;
     default:              home_evento(e);       break;
   }
 
@@ -928,6 +1004,7 @@ static void trocaDeTituloSeSolicitada(void) {
 }
 
 void app_atualizar(float dt, Uint32 agora) {
+  diagnostico_intro_atualizar(dt, agora);
   cancelarFonteSeSaiu();
   processarFonteJob();
   // A QUALIDADE DA IMAGEM CHEGA AOS DOIS MODULOS QUE A CONSOMEM, e so quando
@@ -1091,6 +1168,11 @@ void app_atualizar(float dt, Uint32 agora) {
   // Chamar em todo quadro nao custa: a decisao acontece uma vez e o modulo a
   // guarda — a leitura do arquivo de bandeira nao se repete.
   if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto()) {
+    // Esta e a primeira explicacao da versao: aparece antes dos demais
+    // cartoes de onboarding. Depois de OK, o bloco abaixo continua a fila
+    // antiga no quadro seguinte.
+    diagnostico_intro_primeira_vez();
+    if (!diagnostico_intro_aberto()) {
     registro_aviso_primeira_vez();
     // Mesmo lugar e mesma razao: o explicador de "Salvos" fala de uma tecla do
     // controle, e ensinar tecla enquanto a pessoa enquadra um QR no celular nao
@@ -1197,6 +1279,7 @@ void app_atualizar(float dt, Uint32 agora) {
         !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !novidades134_aberto() && !novidades139_aberto() && !novidades1312_aberto() && !telemetria_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
         !recomenda_aberta() && !recintro_aberto() && !agendaviso_aberto())
       avisos_mostrar_se_houver();
+    }
   }
 
   // E o ciclo automatico — nunca com o player aberto: rajada de HTTP no meio
@@ -1298,6 +1381,15 @@ void app_atualizar(float dt, Uint32 agora) {
     addonsui_abrir();
     trocarTela(TELA_ADDONS);
   }
+  if (tela == TELA_AJUSTES && ajustes_pediu_diagnostico()) {
+    trocarTela(TELA_DIAGNOSTICO);
+  }
+  // O diagnóstico nasce em Ajustes; voltar deve devolver a pessoa ao mesmo
+  // ponto do menu para que ela possa conferir ou alterar o restante do perfil.
+  if (tela == TELA_DIAGNOSTICO && diagnostico_quer_sair()) {
+    trocarTela(TELA_AJUSTES);
+    menu_definir_destino(MENU_AJUSTES);
+  }
 
   // Fora da home, o Back tem para onde voltar: a home. So nela ele fecha o app.
   if (tela != TELA_HOME) {
@@ -1308,7 +1400,8 @@ void app_atualizar(float dt, Uint32 agora) {
               || (tela == TELA_AGENDA     && agendaui_quer_sair())
               || (tela == TELA_PERFIL      && perfil_quer_sair())
               || (tela == TELA_SOCIAL      && social_quer_sair())
-              || (tela == TELA_AJUSTES    && ajustes_quer_sair());
+              || (tela == TELA_AJUSTES    && ajustes_quer_sair())
+              || (tela == TELA_DIAGNOSTICO && diagnostico_quer_sair());
     if (fechar) {
       // ESQUERDA na borda abre a barra SOBRE a tela atual. Voltar continua
       // sendo a saída normal para a Home; assim o foco da tela não é perdido
@@ -1466,6 +1559,7 @@ void app_atualizar(float dt, Uint32 agora) {
       // sem verificar entregava o video de aviso do debrid — que toca normal e
       // por isso passa por sucesso.
       const CatItem *ci = cat_item(detail_indice());
+      limparFonteVOD();
       player_abrir(detail_indice(), NULL);
       episodioDoDetalhe();
       // CW direto (issue #93): o episodio que o card anunciava vale sobre o
@@ -1643,11 +1737,16 @@ void app_atualizar(float dt, Uint32 agora) {
       stream_definir_atual(fonteEscolhida);
       if (s) {
         player_definir_fonte(s->url);
+        if (!player_id_canal()[0]) {
+          fonteVODAutomatica = 1;
+          fonteVODTentativas++;
+          fonteVODDesde = SDL_GetTicks();
+        }
         // Armado so em sessao de canal: o indice passa a responder ao
         // watchdog de fonte morta ate a lista acabar ou o canal trocar.
         if (player_id_canal()[0]) { canalFonteIdx = fonteEscolhida; canalFonteDesde = SDL_GetTicks(); }
       }
-      else player_erro_fonte();
+      else { limparFonteVOD(); player_erro_fonte(); }
     }
   }
 
@@ -1667,8 +1766,15 @@ void app_atualizar(float dt, Uint32 agora) {
   //
   // Agora a condicao e so "o player esta aberto, marcou erro, e o pipeline
   // esta entregando". Quem entrega desmente o cartao, seja canal ou filme.
+  //
+  // E O VIDEO TEM DE SER DESTA SESSAO. MEDIDO no registro 1518 (webOS 1.4.0):
+  // a busca terminou em "nenhuma fonte serve" — nenhum video aberto — e no
+  // mesmo quadro o cartao saiu com "buffer 5596.0s". O buffer era do pipeline
+  // compartilhado (o trailer HLS do detalhe acabara de tocar), nao de fonte
+  // nenhuma do player. Sem player_tem_video() a pessoa ficava numa tela preta
+  // sem erro e sem fonte.
   if ((player_aberto() || player_mini_ativo()) && player_fonte_falhou() &&
-      video_buffer_fim() > 0.5 && !video_falhou()) {
+      player_tem_video() && video_buffer_fim() > 0.5 && !video_falhou()) {
     printf("[player] a fonte voltou a entregar (buffer %.1fs): tirando o erro da tela\n",
            video_buffer_fim());
     fflush(stdout);
@@ -1768,6 +1874,8 @@ void app_atualizar(float dt, Uint32 agora) {
     }
   }
 
+  tentarProximaFonteVOD();
+
   int fonte;
   if (aguardandoFonte != 2 && stream_folha_escolheu(&fonte)) {
     const Stream *s = stream_item(fonte);
@@ -1790,6 +1898,7 @@ void app_atualizar(float dt, Uint32 agora) {
     if (s) video_definir_cabecalhos(s->cabecalhos);
     if (s) {
       aguardandoFonte=0;
+      limparFonteVOD();
       int titulo=player_aberto()?player_indice():detail_indice(), t=0,e=0;
       if (player_aberto()) { player_episodio_atual(&t,&e); player_encerrar(); }
       else detail_ep_foco(&t,&e);
@@ -2039,6 +2148,7 @@ void app_atualizar(float dt, Uint32 agora) {
     case TELA_AGENDA:     agendaui_atualizar(dt, agora);   break;
     case TELA_PERFIL:     break;
     case TELA_AJUSTES:    ajustes_atualizar(dt, agora);    break;
+    case TELA_DIAGNOSTICO: diagnostico_atualizar(dt, agora); break;
     default:              home_atualizar(dt, agora);       break;
   }
   // TRAILER NO DESTAQUE: so com a home na frente de tudo. A lista e a mesma
@@ -2140,6 +2250,7 @@ static void desenharTelas(Uint32 agora) {
         case TELA_SOCIAL:     social_desenhar(agora);     break;
         case TELA_ADDONS:     addonsui_desenhar(agora);   break;
         case TELA_AJUSTES:    ajustes_desenhar(agora);    break;
+        case TELA_DIAGNOSTICO: diagnostico_desenhar(agora); break;
         default:              home_desenhar(agora);       break;
       }
     }
@@ -2226,6 +2337,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) recenviar_desenhar(agora);
   if (!registro_aberto()) recomenda_desenhar(agora);
   if (!registro_aberto()) pipintro_desenhar(agora);
+  if (!registro_aberto()) diagnostico_intro_desenhar(agora);
   registro_desenhar();
 }
 
@@ -2252,6 +2364,7 @@ void app_encerrar(void) {
   player_encerrar();
   video_encerrar();    // solta o nome LS2 antes do processo sumir (deploy mata sem aviso)
   ajustes_encerrar();
+  diagnostico_encerrar();
   biblioteca_encerrar();
   explorar_encerrar();
   perfil_encerrar();

@@ -3311,6 +3311,36 @@ static void veuEpisodio(GfxRect th, float a) {
   gfx_rect(th, 0, GFX_VEU_CARD, 0, 0, 0, raio, 0, 0, 0, a);
 }
 
+// Nota de episodio: provedor pequeno, valor em primeiro plano e um ponto na
+// cor de accent. A versao anterior era um retangulo cinza com toda a frase na
+// mesma hierarquia; parecia uma legenda solta e nao um dado do card.
+static float desenhaNotaEpisodio(float x, float y, const char *fonte,
+                                 int nota, float a) {
+  char valor[12];
+  float ar, ag, ab;
+  TxtLinha lf, lv;
+  GfxRect selo;
+  float ponto = 6.0f, pad = 10.0f, gap = 7.0f;
+  if (nota <= 0) return 0.0f;
+  snprintf(valor, sizeof valor, ajustes_idioma_ingles() ? "%d.%d" : "%d,%d",
+           nota / 10, nota % 10);
+  lf = txt_linha(TXT_MINI, fonte, 154, 159, 172, 255);
+  lv = txt_linha(TXT_CAPTION2, valor, 242, 245, 250, 255);
+  selo = (GfxRect){ x, y, pad + ponto + gap + lf.w + gap + lv.w + pad, 28.0f };
+  ajustes_acento(&ar, &ag, &ab);
+  // Fundo quase-preto com uma lavagem mínima do accent: a marca continua
+  // discreta sobre a foto e deixa de parecer um bloco cinza genérico.
+  gfx_cor(selo, 0.5f, .055f + ar * .06f, .062f + ag * .06f,
+          .078f + ab * .07f, .94f * a);
+  gfx_cor((GfxRect){x + pad, y + (selo.h - ponto) * .5f, ponto, ponto},
+          0.5f, ar, ag, ab, a);
+  txt_desenhar_alpha(lf, x + pad + ponto + gap,
+                     y + (selo.h - lf.h) * .5f + 1.0f, a);
+  txt_desenhar_alpha(lv, x + pad + ponto + gap + lf.w + gap,
+                     y + (selo.h - lv.h) * .5f, a);
+  return selo.w + 12.0f;
+}
+
 
 // Card de episodio: 640x422, com a miniatura de 640x414 e TODO o texto dentro
 // dela, sobre o degrade. E a diferenca estrutural com o que estava aqui antes
@@ -3321,12 +3351,16 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
   GfxRect th = { r.x, r.y, r.w, NV_DETP_EP_THUMB_H };
   float raioTh = NV_DETP_EP_RAIO / NV_DETP_EP_THUMB_H;
 
-  // Anel de foco: no web e um box-shadow na MINIATURA, nao no card, e nao ha
-  // escala nenhuma (`transform: none`).
+  // Foco: no web e um box-shadow na MINIATURA, nao no card, e nao ha escala
+  // nenhuma (`transform: none`). A cor acompanha o accent escolhido — o anel
+  // branco fixo fazia esta fileira destoar justamente quando o resto da tela
+  // ja seguia o tema.
   if (f > 0.01f) {
     GfxRect anel = { th.x - NV_DETP_ANEL, th.y - NV_DETP_ANEL,
                      th.w + NV_DETP_ANEL * 2, th.h + NV_DETP_ANEL * 2 };
-    gfx_cor(anel, raioTh, 1, 1, 1, f * a);
+    float ar, ag, ab;
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_cor(anel, raioTh, ar, ag, ab, f * a);
   }
 
   const CatItem *serie = cat_item(idx);
@@ -3494,28 +3528,13 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
         }
       break;
     }
-    if (nota > 0) {
-      char valor[32]; snprintf(valor, sizeof valor, "Trakt %d.%d", nota / 10, nota % 10);
-      TxtLinha ln = txt_linha(TXT_CAPTION2, valor, 229, 231, 236, 255);
-      GfxRect selo = { x, y - 3, ln.w + 16, NV_DETP_EP_ICONE + 6 };
-      gfx_cor(selo, 0.18f, 0.15f, 0.15f, 0.17f, 0.94f * a);
-      txt_desenhar_alpha(ln, x + 8, y, a);
-      x += selo.w + 16;
-    }
-    // O voto do TMDB entra AO LADO do do Trakt, no mesmo selo escuro do mesmo
-    // tamanho (issue #87). Sao fontes diferentes — o rotulo diz qual e qual,
-    // e um episodio pode ter uma, a outra ou as duas.
-    if (ep && ep->nota > 0) {
-      char valor[32];
-      snprintf(valor, sizeof valor,
-               ajustes_idioma_ingles() ? "TMDB %d.%d" : "TMDB %d,%d",
-               ep->nota / 10, ep->nota % 10);
-      TxtLinha ln = txt_linha(TXT_CAPTION2, valor, 229, 231, 236, 255);
-      GfxRect selo = { x, y - 3, ln.w + 16, NV_DETP_EP_ICONE + 6 };
-      gfx_cor(selo, 0.18f, 0.15f, 0.15f, 0.17f, 0.94f * a);
-      txt_desenhar_alpha(ln, x + 8, y, a);
-      x += selo.w + 16;
-    }
+    if (nota > 0)
+      x += desenhaNotaEpisodio(x, y - 3, "Trakt", nota, a);
+    // O voto do TMDB entra AO LADO do do Trakt, no mesmo selo compacto
+    // (issue #87). Sao fontes diferentes — o rotulo diz qual e qual, e um
+    // episodio pode ter uma, a outra ou as duas.
+    if (ep && ep->nota > 0)
+      x += desenhaNotaEpisodio(x, y - 3, "TMDB", ep->nota, a);
     // A DATA vai para a direita do card, como na referencia: a esquerda fica so
     // a duracao, e as duas deixam de disputar a mesma linha corrida.
     if (epData) {
@@ -3649,12 +3668,17 @@ static void desenhaElenco(float x, float y, int c, float f, float a) {
   if (f > 0.01f) {
     GfxRect anel = { av.x - NV_DETP_ANEL, av.y - NV_DETP_ANEL,
                      av.w + NV_DETP_ANEL * 2, av.h + NV_DETP_ANEL * 2 };
-    gfx_cor(anel, 0.5f, 1, 1, 1, f * a);
+    float ar, ag, ab;
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_cor(anel, 0.5f, ar, ag, ab, f * a);
   }
   GLuint t2 = foto ? tex_obter_larg(foto, NV_DETP_EL_AVATAR) : 0;
   if (t2) {
     gfx_tex_aspect_atual = tex_aspecto(foto);
-    gfx_rect(av, t2, GFX_CARD, 0, 0, 0, 0.5f, 0, 0, 0, a);
+    // GFX_AVATAR faz o cover e a mascara radial no mesmo passe. GFX_CARD
+    // arredondava o retangulo, mas preservava a logica de enquadramento de
+    // cartaz — sobravam faixas e a foto nao ocupava o circulo inteiro.
+    gfx_rect(av, t2, GFX_AVATAR, 0, 0, 0, 0.0f, 0, 0, 0, a);
     gfx_tex_aspect_atual = 0.0f;
   } else {
     // Sem foto, a inicial sobre #222 (#303030 com foco) — e o que o web faz

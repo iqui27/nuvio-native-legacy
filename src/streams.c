@@ -30,6 +30,10 @@
 
 static Stream *lista;
 static int n = 0;
+#define AUTO_EXCL_MAX 32
+static int automaticasExcluidas[AUTO_EXCL_MAX];
+static int nAutomaticasExcluidas;
+static pthread_mutex_t autoExclTrava = PTHREAD_MUTEX_INITIALIZER;
 // Trava entre a lista e os fios de verificacao (ver Lote, abaixo): a troca de
 // lista e as leituras/escritas dos fios em `lista[]` passam por ela.
 static pthread_mutex_t verTrava = PTHREAD_MUTEX_INITIALIZER;
@@ -61,6 +65,30 @@ int stream_atual(void) { return atual; }
 static int preferida = -1;
 void stream_preferir(int i) { preferida = (i >= 0 && i < n) ? i : -1; }
 int stream_preferida(void) { return preferida; }
+static int automaticaExcluidaSemTrava(int indice) {
+  int i;
+  for (i = 0; i < nAutomaticasExcluidas; i++)
+    if (automaticasExcluidas[i] == indice) return 1;
+  return 0;
+}
+static int automaticaExcluida(int indice) {
+  int resultado;
+  pthread_mutex_lock(&autoExclTrava);
+  resultado = automaticaExcluidaSemTrava(indice);
+  pthread_mutex_unlock(&autoExclTrava);
+  return resultado;
+}
+int stream_automatico_excluir(int indice) {
+  int resultado = 0;
+  pthread_mutex_lock(&autoExclTrava);
+  if (indice >= 0 && indice < n && !automaticaExcluidaSemTrava(indice) &&
+      nAutomaticasExcluidas < AUTO_EXCL_MAX) {
+    automaticasExcluidas[nAutomaticasExcluidas++] = indice;
+    resultado = 1;
+  }
+  pthread_mutex_unlock(&autoExclTrava);
+  return resultado;
+}
 void stream_folha_contexto(const char *s) { snprintf(contexto, sizeof contexto, "%s", s ? s : ""); }
 int stream_folha_recarregar(void) { int r = recarregar; recarregar = 0; return r; }
 
@@ -104,6 +132,9 @@ void stream_definir_lista(const Stream *l, int qtd) {
   pthread_mutex_lock(&verTrava);
   free(lista); lista = nova; n = nova ? k : 0; atual = -1;
   pthread_mutex_unlock(&verTrava);
+  pthread_mutex_lock(&autoExclTrava);
+  nAutomaticasExcluidas = 0;
+  pthread_mutex_unlock(&autoExclTrava);
   // LISTA NOVA, INDICE VELHO NAO VALE. A preferida e uma posicao na lista
   // ANTERIOR; mantida, ela apontaria para outra fonte do episodio seguinte —
   // o tipo de defeito que toca a coisa errada sem nenhum erro no log.
@@ -402,7 +433,8 @@ int stream_primeira_boa(int tentativas) {
   // Entra como CANDIDATA, nao como decisao: ela passa pela mesma verificacao
   // de link que todas as outras, e se nao resolver a ordem por pontuacao
   // continua logo atras. Fonte lembrada que sumiu nao pode travar reproducao.
-  if (preferida >= 0 && preferida < total) usados[nu++] = preferida;
+  if (preferida >= 0 && preferida < total && !automaticaExcluida(preferida))
+    usados[nu++] = preferida;
 
   // Seleciona as `tentativas` melhores, EM ORDEM DE PONTUACAO — a mesma ordem
   // que o laco em serie percorria.
@@ -412,7 +444,7 @@ int stream_primeira_boa(int tentativas) {
     for (i = 0; i < total; i++) {
       int visto = 0;
       for (j = 0; j < nu; j++) if (usados[j] == i) { visto = 1; break; }
-      if (visto) continue;
+      if (visto || automaticaExcluida(i)) continue;
       { long p = pontos(&lista[i]);
         if (melhor < 0 || p > maiorP) { melhor = i; maiorP = p; } }
     }
@@ -614,14 +646,17 @@ int stream_canal_classe_escolhida(void) { return classeEscolhida; }
 
 int stream_automatico(void) {
   if (!stream_n()) return -1;
-  int melhor = 0;
-  long maior = pontos(&lista[0]);
+  int melhor = -1;
+  long maior = 0;
   for (int i = 1; i < n; i++) {
+    if (automaticaExcluida(i)) continue;
     long p = pontos(&lista[i]);
     // `>` e nao `>=`: em empate fica o PRIMEIRO da lista, que e a ordem em que
     // o addon devolveu — e ele costuma saber algo que a pontuacao nao ve.
-    if (p > maior) { maior = p; melhor = i; }
+    if (melhor < 0 || p > maior) { maior = p; melhor = i; }
   }
+  if (!automaticaExcluida(0) && (melhor < 0 || pontos(&lista[0]) > maior))
+    melhor = 0;
   return melhor;
 }
 
@@ -682,6 +717,36 @@ static int nFiltrados(void) {
   int k=0;
   for(int i=0;i<n;i++) if(passaFiltro(i)) k++;
   return k;
+}
+
+// A folha de fontes usa o mesmo fundo da sidebar, mas tinha conservado o
+// acento puro e o halo largo da primeira versao. Em uma TV isso fazia o card
+// focado saltar para branco/ciano e o painel parecer outra tela do app.
+#define FONTE_FOCO_MISTURA 0.74f
+#define FONTE_FOCO_GLOW    0.16f
+
+static void corFocoFonte(float *r, float *g, float *b) {
+  float ar, ag, ab, k = FONTE_FOCO_MISTURA;
+  ajustes_acento(&ar, &ag, &ab);
+  if (0.2126f * ar + 0.7152f * ag + 0.0722f * ab > 0.88f) k = 0.88f;
+  *r = 0.055f + (ar - 0.055f) * k;
+  *g = 0.058f + (ag - 0.058f) * k;
+  *b = 0.068f + (ab - 0.068f) * k;
+}
+
+static void focoFonte(GfxRect r, float raio, float alfa) {
+  float ar, ag, ab, sr, sg, sb;
+  GfxRect luz;
+  if (alfa <= 0.01f) return;
+  ajustes_acento(&ar, &ag, &ab);
+  luz = (GfxRect){ r.x - r.h * 0.45f, r.y - r.h * 0.45f,
+                   r.w + r.h * 0.90f, r.h * 2.0f };
+  gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
+           ar, ag, ab, FONTE_FOCO_GLOW * alfa);
+  corFocoFonte(&sr, &sg, &sb);
+  gfx_cor(r, raio, sr, sg, sb, alfa);
+  gfx_rect(r, 0, GFX_BRILHO_TOPO, raio, 0.24f, 0, 0.5f,
+           1, 1, 1, 0.10f * alfa);
 }
 
 // EQUALIZADOR DO "REPRODUZINDO AGORA". O player nativo nao expoe amplitude
@@ -775,7 +840,9 @@ void stream_folha_desenhar(Uint32 agora) {
   float x=NV_TELA_W-FOLHA_W+(1-anim)*FOLHA_W;
   // A COR DE REALCE E A TINTA QUE CONTRASTA COM ELA: toda superficie em foco
   // desta folha veste as duas (regra do dono, 21/09: texto sobre realce e
-  // branco a nao ser que o realce seja branco — nunca um 24 cravado).
+  // branco a nao ser que o realce seja branco — nunca um 24 cravado). O
+  // preenchimento passa antes por focoFonte(), que deixa a cor reconhecivel
+  // sem repetir o branco/ciano agressivo do tratamento antigo.
   float ar,ag,ab; int ti=ajustes_tinta_foco(), ti2=ajustes_tinta_foco2();
   ajustes_acento_tinta(&ar,&ag,&ab);
   gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.02f,.02f,.025f,.35f*anim);
@@ -784,8 +851,8 @@ void stream_folha_desenhar(Uint32 agora) {
   // largura), translucido, com UMA luz difusa na cor de realce entrando pelo
   // canto superior direito, presa aos cantos do painel (GFX_LUZ). E a unica
   // mancha grande da folha; o veu de tela cheia ja e a primeira camada.
-  gfx_cor((GfxRect){x,24,FOLHA_W,NV_TELA_H-48},28.0f/FOLHA_W,.055f,.058f,.068f,.94f*anim);
-  gfx_luz_canto((GfxRect){x,24,FOLHA_W,NV_TELA_H-48},28.0f/FOLHA_W,FOLHA_W*.9f,-FOLHA_W*.1f,FOLHA_W*.65f,ar,ag,ab,.22f*anim);
+  gfx_cor((GfxRect){x,24,FOLHA_W,NV_TELA_H-48},28.0f/FOLHA_W,.055f,.058f,.068f,.965f*anim);
+  gfx_luz_canto((GfxRect){x,24,FOLHA_W,NV_TELA_H-48},28.0f/FOLHA_W,FOLHA_W*.78f,0.0f,FOLHA_W*.78f,ar,ag,ab,.09f*anim);
   txt_desenhar_alpha(txt_linha(TXT_PAINEL_TITULO,"Fontes",240,241,243,255),x+40,44,anim);
   int nbt=nBotoes();
   for(int i=0;i<nbt;i++) {
@@ -795,8 +862,7 @@ void stream_folha_desenhar(Uint32 agora) {
     int sel=grupo==-1 && foco==i;
     // Em foco: brilho difuso por tras (0,9x a altura de folga) e a pilula na
     // cor de realce.
-    if(sel) gfx_rect((GfxRect){bx-45,44-45,120+90,50+90},0,GFX_SOMBRA,1.0f,0,0,.5f,ar,ag,ab,.35f*anim);
-    if(sel) gfx_cor((GfxRect){bx,44,120,50},.3f,ar,ag,ab,anim);
+    if(sel) focoFonte((GfxRect){bx,44,120,50},.3f,anim);
     else    gfx_cor((GfxRect){bx,44,120,50},.3f,.14f,.14f,.15f,anim);
     int c=sel?ti:224;
     TxtLinha l=txt_linha(TXT_PG_FIM,rotuloBotao(botaoDe(i)),c,c,c,255);
@@ -819,9 +885,11 @@ void stream_folha_desenhar(Uint32 agora) {
   float tx=x+40;
   for(int i=ini;i<nProvedores && i<ini+3;i++) {
     float w=i?232:108;int sel=i==filtro,c=sel?ti:202;
-    if(sel && grupo==0) gfx_rect((GfxRect){tx-45,182-45,w+90,50+90},0,GFX_SOMBRA,1.0f,0,0,.5f,ar,ag,ab,.35f*anim);
-    if(sel) gfx_cor((GfxRect){tx,182,w,50},.5f,ar,ag,ab,anim);
-    else    gfx_cor((GfxRect){tx,182,w,50},.5f,.14f,.14f,.15f,anim);
+    if(sel && grupo==0) focoFonte((GfxRect){tx,182,w,50},.5f,anim);
+    else if(sel) {
+      float sr, sg, sb; corFocoFonte(&sr, &sg, &sb);
+      gfx_cor((GfxRect){tx,182,w,50},.5f,sr,sg,sb,.62f*anim);
+    } else gfx_cor((GfxRect){tx,182,w,50},.5f,.14f,.14f,.15f,anim);
     TxtLinha l=txt_linha_corta(TXT_PG_FIM,provedores[i],c,c,c,255,w-24);
     txt_desenhar_alpha(l,tx+(w-l.w)*.5f,196,anim);
     if(sel && grupo==0) gfx_cor((GfxRect){tx+16,237,w-32,2},0,ti/255.0f,ti/255.0f,ti/255.0f,anim);
@@ -838,7 +906,8 @@ void stream_folha_desenhar(Uint32 agora) {
   //
   // Calculado UMA vez por quadro, fora do laco: stream_automatico percorre a
   // lista inteira, e chama-lo por linha seria n^2 a cada quadro.
-  int automatica = preferida >= 0 ? preferida : stream_automatico();
+  int automatica = preferida >= 0 && !automaticaExcluida(preferida)
+                     ? preferida : stream_automatico();
   for(int row=0;row<nf;row++) {
     float y=FOLHA_TOPO+row*FOLHA_LINHA-rolagem;
     if(y+FOLHA_LINHA<FOLHA_TOPO || y>NV_TELA_H-32) continue;
@@ -848,16 +917,14 @@ void stream_folha_desenhar(Uint32 agora) {
     // PREENCHIMENTO, E NAO CONTORNO. O desenho antigo pintava a linha clara e
     // desenhava a escura 2 px por dentro — o que sobrava era um contorno de
     // 2 px. Relato do dono (16/09): "tem lugar como a biblioteca, as fontes e
-    // a sidebar que ainda tao usando o contorno ao inves do fill". A regra que
-    // ele fixou para o app inteiro no mesmo dia (ver menu.c) e: selecionado
-    // fica CLARO com texto ESCURO.
+    // a sidebar que ainda tao usando o contorno ao inves do fill". A regra nova
+    // e uma superficie cheia, graduada pelo acento e com tinta contrastante.
     GfxRect r={x+40,y,FOLHA_W-80,FOLHA_LINHA-14};
     // A linha em foco e a COR DE REALCE com um brilho difuso por tras (a
     // mesma luz do menu lateral; a folga e 0,5x a altura porque a linha tem
     // 214 px e 0,9x cobriria a folha inteira de uma mancha). O recorte da
     // lista segura a luz dentro do painel.
-    if(sel) { gfx_rect((GfxRect){r.x-r.h*.5f,r.y-r.h*.5f,r.w+r.h,r.h*2.0f},0,GFX_SOMBRA,1.0f,0,0,.5f,ar,ag,ab,.32f*anim);
-              gfx_cor(r,.10f,ar,ag,ab,anim); }
+    if(sel) focoFonte(r,.10f,anim);
     else { r.x+=2;r.y+=2;r.w-=4;r.h-=4;
            gfx_cor(r,.09f,.135f,.135f,.14f,anim); }
     // As quatro linhas de texto invertem junto: claro sobre claro nao se le.

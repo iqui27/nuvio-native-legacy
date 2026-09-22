@@ -151,7 +151,11 @@ typedef enum {
   //
   // Use gfx_luz_canto, que faz essa conta em pixels.
   GFX_LUZ = 26,
-  GFX_NMODOS = 27
+  // GFX_SINO — glifo vetorial do toast de avisos. O toast aparece antes que o
+  // cache de texturas tenha necessariamente terminado de carregar, entao o
+  // sino nao pode depender de PNG assincrono para existir no primeiro quadro.
+  GFX_SINO = 27,
+  GFX_NMODOS = 28
 } GfxModo;
 
 typedef struct {

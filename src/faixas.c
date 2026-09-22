@@ -9,6 +9,7 @@
 #include "layout.h"
 #include "legenda.h"
 #include "mkvass.h"
+#include "ajustes.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -33,6 +34,24 @@ static int rolagem[3];
 static int visiveis = 8;
 static void ajustarRolagem(void);
 static float anim;
+
+static void corFocoFaixa(float *r, float *g, float *b) {
+  float ar, ag, ab, lum, k = 0.74f;
+  ajustes_acento(&ar, &ag, &ab);
+  lum = 0.2126f * ar + 0.7152f * ag + 0.0722f * ab;
+  if (lum > 0.88f) k = 0.88f;
+  *r = 0.055f + (ar - 0.055f) * k;
+  *g = 0.058f + (ag - 0.058f) * k;
+  *b = 0.068f + (ab - 0.068f) * k;
+}
+
+static void superficieFocoFaixa(GfxRect r, float a) {
+  float fr, fg, fb;
+  corFocoFaixa(&fr, &fg, &fb);
+  gfx_cor(r, 0.18f, fr, fg, fb, a);
+  gfx_rect(r, 0, GFX_BRILHO_TOPO, 0.18f, 0.18f, 0, 0.5f,
+           1, 1, 1, 0.10f * a);
+}
 // Qual legenda EXTERNA (OpenSubtitles) esta valendo, em indice da lista
 // combinada — ou -1 quando a ativa e embutida ou nao ha nenhuma.
 //
@@ -57,8 +76,8 @@ static int legExterna = -1;
 // e mostra o motivo; escolher a mesma faixa de novo vai direto ao pipeline,
 // sem tentar outra vez.
 //
-// So no webOS. No Tizen o mkvass.c e um coto e estas duas ficam em -1: la o
-// AVPlay desenha a legenda embutida como sempre desenhou.
+// Nos dois alvos o player nativo e silenciado enquanto o app coleta e compoe
+// a faixa; em no-go, a selecao volta ao AVPlay/uMS.
 static int legOverlay = -1, legOverlayNoGo = -1;
 
 static int ehAss(const VideoFaixa *f) {
@@ -243,18 +262,23 @@ static void aplicar(void) {
     else if (i < emb) {
       const VideoFaixa *f = video_legenda(i);
       legenda_desligar(); legExterna = -1;
-      (void)f;   // no Tizen o ramo abaixo nao existe
-#ifndef __EMSCRIPTEN__
       // FAIXA ASS: o overlay do app assume (#92). O pipeline fica com a legenda
       // desligada e o mkvass colhe o texto do MKV a frente do playhead; se ele
       // declarar no-go, faixas_atualizar devolve a faixa ao pipeline. Uma
       // faixa em que ja desistimos vai direto ao pipeline.
-      if (ehAss(f) && i != legOverlayNoGo && video_url_atual()[0]) {
+      if (ehAss(f) && i != legOverlayNoGo && video_url_atual()[0]
+#ifdef __EMSCRIPTEN__
+          && video_legenda_ordinal_mkv(i) >= 0
+#endif
+      ) {
         video_escolher_legenda(-1);
+#ifdef __EMSCRIPTEN__
+        mkvass_iniciar_ordinal(video_url_atual(), video_legenda_ordinal_mkv(i));
+#else
         mkvass_iniciar(video_url_atual(), f->numero);
+#endif
         legOverlay = i;
       } else
-#endif
       video_escolher_legenda(i);
     }
     else {
@@ -337,14 +361,21 @@ static void coluna_desenhar(int col, float x, float larg, float y0, float a) {
       rot=i==0?"Nenhuma":rotuloLegenda(i-1,&marca);
       if(i && !marca) marca=i18n("Incorporada");
     }
-    if(sel) gfx_cor((GfxRect){x-20,y-14,larg+20,92},.18f,.95f,.95f,.96f,a);
-    int c=sel?25:230, sub=sel?70:174;
+    float fr, fg, fb;
+    corFocoFaixa(&fr, &fg, &fb);
+    if(sel) superficieFocoFaixa((GfxRect){x-20,y-14,larg+20,92},a);
+    int c=sel?ajustes_tinta_foco():230, sub=sel?ajustes_tinta_foco2():174;
     txt_desenhar_alpha(txt_linha_corta(TXT_PAINEL_ITEM,rot,c,c,c,255,larg-72),x,y,a);
     if(marca && *marca)
       txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,marca,sub,sub,sub,255,larg-72),x,y+34,a);
     int ativo=col==0?i==video_audio_atual():
       col==1?i-1==legendaAtiva():0;
-    if(ativo) txt_desenhar_alpha(txt_linha(TXT_BODY,"✓",c,c,c,255),x+larg-44,y+12,a);
+    if(ativo) {
+      int cr = sel ? c : (int)(fr * 255.0f + 0.5f);
+      int cg = sel ? c : (int)(fg * 255.0f + 0.5f);
+      int cb = sel ? c : (int)(fb * 255.0f + 0.5f);
+      txt_desenhar_alpha(txt_linha(TXT_BODY,"✓",cr,cg,cb,255),x+larg-44,y+12,a);
+    }
   }
   if(!n) txt_bloco(TXT_PG_FIM,"Nenhuma faixa disponível nesta fonte.",178,180,186,x,y0+68,larg,28,a,2);
   if(n>visiveis) {

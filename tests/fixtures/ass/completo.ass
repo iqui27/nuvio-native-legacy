@@ -1,0 +1,21 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1280
+PlayResY: 720
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, TertiaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, AlphaLevel, Encoding
+Style: Default,Arial,34,&H00FFFFFF,&H0000FFFF,&H000000FF,&H80000000,-1,0,1,3,2,2,40,40,35,0,1
+Style: Signs,Arial,28,&H0000FFFF,&H0000FFFF,&H00000000,&H00000000,0,0,1,2,1,8,30,30,25,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,{\k20}Ka{\K20}ra{\kf20}o{\ko20}ke
+Dialogue: 1,0:00:00.00,0:00:05.00,Signs,,0,0,0,,{\move(100,90,1000,90,0,5000)}Movimento {\t(0,5000,\fscx180\frz12)}animado
+Dialogue: 2,0:00:00.00,0:00:05.00,Default,,0,0,0,,{\fad(300,400)\t(0,2000,\bord8\blur3)}Transparência e transição
+Dialogue: 3,0:00:00.00,0:00:05.00,Signs,,0,0,0,,{\an7\p1\clip(0,0,1200,600)}m 0 0 l 120 0 l 120 40 l 0 40
+Dialogue: 4,0:00:00.00,0:00:05.00,Default,,0,0,0,,Texto longo: 0123456789 abcdefghijklmnopqrstuvwxyz 0123456789 abcdefghijklmnopqrstuvwxyz 0123456789 abcdefghijklmnopqrstuvwxyz 0123456789 abcdefghijklmnopqrstuvwxyz 0123456789 abcdefghijklmnopqrstuvwxyz
+Dialogue: 5,0:00:00.00,0:00:05.00,Default,,0,0,0,,العربية العربية العربية / 日本語 日本語 / ação coração órgão
+Dialogue: 6,0:00:00.00,0:00:05.00,Default,,0,0,0,,Normal {\1c&H0000FF&\b1}azul negrito {\rDefault}volta ao estilo

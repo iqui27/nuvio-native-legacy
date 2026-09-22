@@ -583,8 +583,11 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
       // QUEBRA DE LINHA de verdade dentro do literal JS — que e erro de sintaxe,
       // e o build morre no acorn com "Unterminated regular expression", a
       // dezenas de milhares de colunas de distancia do culpado. Ja aconteceu.
+      var ordinalMkv = parseInt(x.track_num, 10);
+      if (isNaN(ordinalMkv) || ordinalMkv < 0) ordinalMkv = -1;
       out += (t === "AUDIO" ? "A" : "T") + "\\t" + (lista[i].index | 0) +
-             "\\t" + lang + "\\t" + ("" + rot).replace(/[\\t\\n]/g, " ") + "\\n";
+             "\\t" + lang + "\\t" + ("" + rot).replace(/[\\t\\n]/g, " ") +
+             "\\t" + ordinalMkv + "\\n";
       n++;
     }
     stringToUTF8(out, dst, dstTam);
@@ -940,7 +943,7 @@ static void lerFaixas(void) {
   nAudio = nLeg = 0;
   for (linha = buf; *linha; linha = fim) {
     char tipo;
-    int idx = 0;
+    int idx = 0, ordinalMkv = -1;
     char idioma[8] = "", rot[48] = "";
     VideoFaixa *f;
     fim = strchr(linha, '\n');
@@ -951,11 +954,13 @@ static void lerFaixas(void) {
       char *p1 = strchr(linha, '\t');
       char *p2 = p1 ? strchr(p1 + 1, '\t') : NULL;
       char *p3 = p2 ? strchr(p2 + 1, '\t') : NULL;
-      if (!p1 || !p2 || !p3) continue;
-      *p1 = *p2 = *p3 = 0;
+      char *p4 = p3 ? strchr(p3 + 1, '\t') : NULL;
+      if (!p1 || !p2 || !p3 || !p4) continue;
+      *p1 = *p2 = *p3 = *p4 = 0;
       idx = atoi(p1 + 1);
       snprintf(idioma, sizeof idioma, "%s", p2 + 1);
       snprintf(rot, sizeof rot, "%s", p3 + 1);
+      ordinalMkv = atoi(p4 + 1);
     }
     if (tipo == 'A') {
       if (nAudio >= NV_FAIXA_MAX) continue;
@@ -966,6 +971,7 @@ static void lerFaixas(void) {
     }
     memset(f, 0, sizeof *f);
     f->numero = idx;
+    f->ordinalMkv = tipo == 'T' ? ordinalMkv : -1;
     snprintf(f->idioma, sizeof f->idioma, "%s", idioma);
     // O rotulo e escrito por ULTIMO, depois do idioma, e de uma vez so: e o
     // campo que a tela desenha, e este arquivo — como o da LG — nao tem mutex
@@ -1237,6 +1243,7 @@ void video_janela_fonte(int sx, int sy, int sw, int sh,
   }
 }
 
+const char *video_url_atual(void) { return urlAtual; }
 double video_pos(void)        { return posSeg; }
 double video_duracao(void)    { return durSeg; }
 // O AVPlay so informa PORCENTAGEM de buffering (onbufferingprogress), nunca um
@@ -1268,6 +1275,7 @@ int  video_n_audio(void)   { return nAudio; }
 int  video_n_legenda(void) { return nLeg; }
 const VideoFaixa *video_audio(int i)   { return (i >= 0 && i < nAudio) ? &faixaAudio[i] : NULL; }
 const VideoFaixa *video_legenda(int i) { return (i >= 0 && i < nLeg) ? &faixaLeg[i] : NULL; }
+int video_legenda_ordinal_mkv(int i) { return i >= 0 && i < nLeg ? faixaLeg[i].ordinalMkv : -1; }
 int  video_audio_atual(void)   { return audioAtual; }
 int  video_legenda_atual(void) { return legAtual; }
 

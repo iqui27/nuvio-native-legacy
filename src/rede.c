@@ -6,6 +6,20 @@
 #include <string.h>
 #include <strings.h>
 #include <dlfcn.h>
+#include <time.h>
+
+/* Controle local da requisicao corrente. O estado nunca e compartilhado
+ * entre sondagens: cada fio recebe seu teto e seu cancel token. */
+static _Thread_local long redeLimiteLocal;
+static _Thread_local volatile int *redeCancelLocal;
+static _Thread_local int redeLimitouLocal;
+static _Thread_local int redeCancelouLocal;
+static _Thread_local long redeBytesLocal;
+
+static long redeLimiteAtual(void) {
+  if (redeLimiteLocal > 0) return redeLimiteLocal;
+  return rede_teto > 0 ? rede_teto : 0;
+}
 
 #ifdef __EMSCRIPTEN__
 // ---------------------------------------------------------------- EMSCRIPTEN
@@ -94,7 +108,7 @@ EM_JS(char *, nv_http, (const char *metodo, const char *url, const char *cabs,
   return p;
 });
 
-long rede_teto = 0;
+_Thread_local long rede_teto = 0;
 
 void rede_preparar(void) { }   // nao ha biblioteca para carregar
 
@@ -136,6 +150,12 @@ static char *pedir2(const char *metodo, const char *url, const char *const *cab,
     printf("[rede] falhou em %s\n", rede_url_publica(url, seg, sizeof seg));
     return NULL; }
 
+  if (redeCancelLocal && *redeCancelLocal) {
+    redeCancelouLocal = 1;
+    free(corpoResp);
+    return NULL;
+  }
+
   // TETO: aqui ele so CORTA, nao interrompe.
   //
   // Na libcurl o teto abortava a conexao de dentro do recebedor, entao um
@@ -148,6 +168,12 @@ static char *pedir2(const char *metodo, const char *url, const char *const *cab,
     n = (int)rede_teto;
     corpoResp[n] = 0;
   }
+  if (redeLimiteAtual() > 0 && (long)n > redeLimiteAtual()) {
+    n = (int)redeLimiteAtual();
+    corpoResp[n] = 0;
+    redeLimitouLocal = 1;
+  }
+  redeBytesLocal = n;
 
   // Mesma regra do caminho da libcurl: 4xx vira NULL para quem NAO pediu
   // status, e corpo devolvido para quem pediu — o corpo do erro do PostgREST e
@@ -380,15 +406,25 @@ static size_t receberCab(void *dados, size_t tam, size_t qtd, void *u) {
 // Teto opcional de bytes para a proxima transferencia; 0 = sem teto. Existe
 // porque servidor que IGNORA o cabecalho Range responde 200 com o arquivo
 // inteiro, e nesse caso o cabecalho pedido nao limita nada.
-long rede_teto = 0;
+_Thread_local long rede_teto = 0;
 
 static size_t receber(void *dados, size_t tam, size_t qtd, void *u) {
   Balde *b = (Balde *)u;
   size_t bytes = tam * qtd;
+  long limite = redeLimiteAtual();
   char *novo;
-  if (rede_teto > 0 && b->n >= (size_t)rede_teto) return 0;   // corta a conexao
-  if (rede_teto > 0 && b->n + bytes > (size_t)rede_teto)
-    bytes = (size_t)rede_teto - b->n;
+  if (redeCancelLocal && *redeCancelLocal) {
+    redeCancelouLocal = 1;
+    return 0;
+  }
+  if (limite > 0 && b->n >= (size_t)limite) {
+    redeLimitouLocal = 1;
+    return 0;
+  }
+  if (limite > 0 && b->n + bytes > (size_t)limite) {
+    bytes = (size_t)limite - b->n;
+    redeLimitouLocal = 1;
+  }
   novo = realloc(b->p, b->n + bytes + 1);
   if (!novo) return 0;              // devolver 0 aborta a transferencia
   b->p = novo;
@@ -656,10 +692,15 @@ static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
   // recebedor devolve menos bytes de proposito para cortar a conexao assim que
   // enche. Nesse caso o que ja veio e exatamente o que se queria — tratar como
   // falha jogaria fora o cabecalho inteiro que acabamos de baixar.
-  if (r == 23 && rede_teto > 0 && b.n > 0) r = 0;
+  if (redeCancelouLocal) {
+    free(b.p);
+    return NULL;
+  }
+  if (r == 23 && redeLimiteAtual() > 0 && b.n > 0) r = 0;
   if (r != 0) { char seg[120]; free(b.p);
     printf("[rede] falha %d em %s\n", r, rede_url_publica(url, seg, sizeof seg));
     return NULL; }
+  redeBytesLocal = (long)b.n;
   if (tam) *tam = (long)b.n;
   return b.p;
 }
@@ -794,3 +835,75 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cab,
 }
 
 #endif  /* __EMSCRIPTEN__ */
+
+static unsigned long redeAgoraMs(void) {
+  struct timespec ts;
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
+  return (unsigned long)ts.tv_sec * 1000UL + (unsigned long)ts.tv_nsec / 1000000UL;
+}
+
+char *rede_baixar_medido(const char *url, int segundos,
+                         const char *const *cabecalhos, RedeMedida *medida) {
+  return rede_baixar_medido_controle(url, segundos, cabecalhos, NULL, medida);
+}
+
+char *rede_baixar_medido_controle(const char *url, int segundos,
+                                  const char *const *cabecalhos,
+                                  const RedeControle *controle,
+                                  RedeMedida *medida) {
+  int status = 0;
+  unsigned long inicio = redeAgoraMs();
+  char *corpo;
+  long limite = controle ? controle->max_bytes : 0;
+  volatile int *cancel = controle ? controle->cancelado : NULL;
+  redeLimiteLocal = limite > 0 ? limite : 0;
+  redeCancelLocal = cancel;
+  redeLimitouLocal = 0;
+  redeCancelouLocal = 0;
+  redeBytesLocal = 0;
+  corpo = rede_baixar_st(url, segundos, cabecalhos, &status);
+  if (medida) {
+    medida->status = status;
+    medida->bytes = redeBytesLocal;
+    medida->ms = redeAgoraMs() - inicio;
+    medida->limitado = redeLimitouLocal;
+    medida->cancelado = redeCancelouLocal;
+  }
+  redeLimiteLocal = 0;
+  redeCancelLocal = NULL;
+  redeLimitouLocal = 0;
+  redeCancelouLocal = 0;
+  redeBytesLocal = 0;
+  return corpo;
+}
+
+char *rede_baixar_bin_medido_controle(const char *url, int segundos,
+                                      const char *const *cabecalhos,
+                                      const RedeControle *controle,
+                                      long *tam, RedeMedida *medida) {
+  int status = 0;
+  unsigned long inicio = redeAgoraMs();
+  char *corpo;
+  long limite = controle ? controle->max_bytes : 0;
+  volatile int *cancel = controle ? controle->cancelado : NULL;
+  redeLimiteLocal = limite > 0 ? limite : 0;
+  redeCancelLocal = cancel;
+  redeLimitouLocal = 0;
+  redeCancelouLocal = 0;
+  redeBytesLocal = 0;
+  corpo = rede_baixar_st(url, segundos, cabecalhos, &status);
+  if (tam) *tam = redeBytesLocal;
+  if (medida) {
+    medida->status = status;
+    medida->bytes = redeBytesLocal;
+    medida->ms = redeAgoraMs() - inicio;
+    medida->limitado = redeLimitouLocal;
+    medida->cancelado = redeCancelouLocal;
+  }
+  redeLimiteLocal = 0;
+  redeCancelLocal = NULL;
+  redeLimitouLocal = 0;
+  redeCancelouLocal = 0;
+  redeBytesLocal = 0;
+  return corpo;
+}

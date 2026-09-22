@@ -261,6 +261,70 @@ static void jsonEsc(char *dst, size_t tam, const char *s) {
   dst[u] = 0;
 }
 
+static int extrairRegistroId(const char *json, char *dst, unsigned tam) {
+  const char *p, *q;
+  size_t n;
+  if (!dst || tam < 2) return 0;
+  dst[0] = 0;
+  if (!json) return 0;
+  p = strstr(json, "registro_id");
+  if (!p) p = strstr(json, "registroId");
+  if (!p) p = strstr(json, "\\\"id\\\"");
+  if (!p) return 0;
+  p = strchr(p, ':');
+  if (!p) return 0;
+  p++;
+  while (*p == ' ' || *p == '\t' || *p == '"') p++;
+  q = p;
+  while (*q && *q != '"' && *q != ',' && *q != '}' &&
+         (unsigned char)*q > 0x20) q++;
+  n = (size_t)(q - p);
+  if (!n || n >= tam) return 0;
+  memcpy(dst, p, n);
+  dst[n] = 0;
+  return 1;
+}
+
+int avisos_enviar_diagnostico(const char *execucao_id, const char *relatorio,
+                              char *registro_id, unsigned tam_registro_id) {
+  char aut[2200], via[40], chave[160], *esc = NULL, *corpo = NULL, *resp = NULL;
+  const char *cab[5];
+  char url[300];
+  int status = 0, ok = 0;
+  size_t n;
+  if (registro_id && tam_registro_id) registro_id[0] = 0;
+  if (!execucao_id || !*execucao_id || !relatorio || !NV_REC_URL[0]) return 0;
+  if (!idHead(cab, aut, sizeof aut, via, sizeof via, chave, sizeof chave)) return 0;
+  n = strlen(relatorio);
+  esc = malloc(n * 2 + 8);
+  corpo = malloc(n * 2 + 640);
+  if (!esc || !corpo) goto fim;
+  jsonEsc(esc, n * 2 + 8, relatorio);
+  snprintf(corpo, n * 2 + 640,
+           "{\"versao\":\"%s\",\"plataforma\":\"%s\",\"execucao_id\":\"%s\",\"texto\":\"%s\"}",
+           NV_VERSAO,
+#ifdef __EMSCRIPTEN__
+           "tizen",
+#elif defined(__APPLE__)
+           "mac",
+#else
+           "webos",
+#endif
+           execucao_id, esc);
+  snprintf(url, sizeof url, "%s/v1/registro", NV_REC_URL);
+  resp = rede_postar_st(url, 30, cab, corpo, &status);
+  if (status >= 200 && status < 300 && resp &&
+      extrairRegistroId(resp, registro_id, tam_registro_id)) ok = 1;
+  printf("[diagnostico] envio %s: HTTP %d%s\n", ok ? "confirmado" : "falhou", status,
+         ok ? "" : " (sem recibo desta execucao)");
+  fflush(stdout);
+fim:
+  free(resp);
+  free(corpo);
+  free(esc);
+  return ok;
+}
+
 // ENVIO MANUAL, pelos Ajustes (dono, 20/09/2026): o mesmo caminho do crash,
 // com o log DESTA sessao. `u` == &ATUAL escolhe a origem. No Tizen o log
 // atual e lido do localStorage no fio principal antes de o fio de envio
@@ -689,40 +753,60 @@ static const char *icone(int tipo) {
 }
 
 static void desenharToast(Uint32 agora) {
-  // UMA LINHA: "[•] 1 aviso novo  [tecla] abre". A tecla e DESENHADA (o disco
-  // azul da LG, o rocker CH+ da Samsung), nao escrita — o mesmo glifo do cartao
-  // de Salvos, pelo mesmo motivo: "AZUL" e uma cor a procurar entre quatro.
+  // AVISO COM HIERARQUIA: icone + contexto + contagem + acao. A versao de uma
+  // linha era funcional, mas parecia uma legenda pequena perdida no canto da
+  // TV. O bloco agora tem uma leitura em dois tempos: "Central de avisos" como
+  // contexto, depois a contagem em corpo maior, e por fim a tecla desenhada.
+  // A tecla continua sendo o disco azul da LG ou o rocker CH+ da Samsung, nao
+  // texto — "AZUL" e uma cor a procurar entre quatro.
   //
   // PULSA na cor de acento (dono: "meio que piscar com a cor pra chamar
-  // atencao"): um anel de 2 px em volta e o ponto respiram a ~1 Hz. Sem
-  // piscar de verdade — ligar/desligar num canto de TV le como defeito; a
-  // respiracao le como "tem algo aqui".
+  // atencao"): a luz difusa e o ponto respiram a ~1 Hz. Sem piscar de verdade
+  // — ligar/desligar num canto de TV le como defeito; a respiracao le como
+  // "tem algo aqui".
   char txt[120];
-  TxtLinha t1, t2;
-  float w, h = 58.0f, x, y, ar, ag, ab, pulso, lado = 30.0f;
+  TxtLinha cab, t1, t2;
+  float w, h = 104.0f, x, y, ar, ag, ab, pulso, lado = 42.0f;
+  float tinta;
+  GfxRect bloco;
   if (toastA < 0.01f) return;
-  ajustes_acento(&ar, &ag, &ab);
+  tinta = ajustes_acento_tinta(&ar, &ag, &ab);
   pulso = 0.5f + 0.5f * sinf((float)agora * (2.0f * 3.14159265f / 1100.0f));
   snprintf(txt, sizeof txt, toastN == 1 ? i18n("%d aviso novo") : i18n("%d avisos novos"), toastN);
-  t1 = txt_linha(TXT_CAPTION, txt, 240, 242, 247, 255);
-  t2 = txt_linha(TXT_CAPTION, i18n("abre"), 150, 153, 162, 255);
-  w = 48.0f + t1.w + 22.0f + lado + 10.0f + t2.w + 24.0f;
-  // CANTO SUPERIOR DIREITO (dono, 20/09): embaixo ele disputava com a fileira
-  // de Continuar Assistindo e com o "Ver titulo"; em cima nao ha nada a
-  // direita, e desce 24 px ao entrar em vez de subir.
-  x = NV_TELA_W - 80.0f - w;
-  y = 64.0f - (1.0f - toastA) * 24.0f;
+  cab = txt_linha(TXT_CAPTION2, i18n("Central de avisos"), 156, 160, 172, 255);
+  t1 = txt_linha(TXT_BODY, txt, (int)(tinta * 255.0f + 0.5f),
+                 (int)(tinta * 255.0f + 0.5f), (int)(tinta * 255.0f + 0.5f), 255);
+  t2 = txt_linha(TXT_CAPTION2, i18n("abre"), 178, 181, 190, 255);
+  w = 24.0f + 56.0f + 18.0f + (cab.w > t1.w ? cab.w : t1.w) +
+      30.0f + lado + 10.0f + t2.w + 24.0f;
+  // CANTO SUPERIOR DIREITO: o aviso sai da cena e nao compete com as fileiras
+  // de conteudo. A entrada vem de cima, com distancia suficiente para ser lida
+  // como um componente e nao como texto que piscou no canto.
+  x = NV_TELA_W - 64.0f - w;
+  y = 40.0f - (1.0f - toastA) * 32.0f;
+  bloco = (GfxRect){ x, y, w, h };
   // Luz difusa de acento respirando POR TRAS da pilula, no lugar do anel de
   // 2 px: a linguagem nova do app nao tem aneis (dono, 21/09/2026), e uma
   // mancha que cresce e apaga chama tanto quanto o anel sem desenhar borda.
-  gfx_rect((GfxRect){ x - h * 0.9f, y - h * 0.9f, w + h * 1.8f, h * 2.8f }, 0, GFX_SOMBRA,
-           1.0f, 0, 0, 0.5f, ar, ag, ab, (0.18f + 0.30f * pulso) * toastA);
-  gfx_cor((GfxRect){ x, y, w, h }, 0.5f, 0.075f, 0.078f, 0.088f, 0.96f * toastA);
-  { float d = 10.0f + 4.0f * pulso;
-    gfx_cor((GfxRect){ x + 24.0f + (10.0f - d) * 0.5f, y + (h - d) * 0.5f, d, d }, 0.5f, ar, ag, ab, toastA); }
-  txt_desenhar_alpha(t1, x + 48.0f, y + (h - t1.h) * 0.5f, toastA);
-  sintro_tecla_atalho(x + 48.0f + t1.w + 22.0f, y + (h - lado) * 0.5f, lado, toastA);
-  txt_desenhar_alpha(t2, x + 48.0f + t1.w + 22.0f + lado + 10.0f, y + (h - t2.h) * 0.5f, toastA);
+  gfx_rect((GfxRect){ x - h * 0.7f, y - h * 0.7f, w + h * 1.4f, h * 2.4f }, 0, GFX_SOMBRA,
+           1.0f, 0, 0, 0.5f, ar, ag, ab, (0.07f + 0.13f * pulso) * toastA);
+  gfx_cor(bloco, 28.0f / h, 0.045f, 0.048f, 0.058f, 0.98f * toastA);
+  gfx_rect(bloco, 0, GFX_BRILHO_TOPO, 28.0f / h, 0.18f, 0, 0.5f,
+           1, 1, 1, 0.10f * toastA);
+  // Icone grande de notificacao: uma âncora visual mais rapida de reconhecer
+  // que o ponto sozinho, com a mesma cor de destaque do restante do app.
+  { GfxRect ic = { x + 24.0f, y + 24.0f, 56.0f, 56.0f };
+    float d = 5.0f + 3.0f * pulso;
+    gfx_cor(ic, 0.5f, ar, ag, ab, 0.92f * toastA);
+    gfx_rect((GfxRect){ ic.x + 8.0f, ic.y + 8.0f, 40.0f, 40.0f }, 0, GFX_SINO,
+             0, 0, 0, 0, tinta, tinta, tinta, toastA);
+    gfx_cor((GfxRect){ ic.x + ic.w - d - 1.0f, ic.y - d * 0.5f, d, d },
+            0.5f, 1, 1, 1, 0.90f * toastA); }
+  txt_desenhar_alpha(cab, x + 98.0f, y + 18.0f, toastA);
+  txt_desenhar_alpha(t1, x + 98.0f, y + 48.0f, toastA);
+  { float ax = x + w - 24.0f - lado - 10.0f - t2.w;
+    sintro_tecla_atalho(ax, y + 25.0f, lado, toastA);
+    txt_desenhar_alpha(t2, ax + lado + 10.0f, y + 25.0f + (lado - t2.h) * 0.5f, toastA); }
 }
 
 // A LISTA, desenhada dentro de qualquer caixa: o painel proprio usa, e a aba

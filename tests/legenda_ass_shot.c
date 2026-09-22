@@ -29,6 +29,7 @@ static int captura(const char *nome, SDL_Window *win) {
     glClearColor(.10f, .12f, .16f, 1); glClear(GL_COLOR_BUFFER_BIT);
     player_desenhar(SDL_GetTicks());
     SDL_GL_SwapWindow(win);
+    SDL_Delay(2); /* cede tempo ao worker de bitmaps libass */
   }
   { SDL_Surface *s = SDL_CreateRGBSurface(0, 1920, 1080, 24, 0xff, 0xff00, 0xff0000, 0);
     glReadPixels(0, 0, 1920, 1080, GL_RGB, GL_UNSIGNED_BYTE, s->pixels);

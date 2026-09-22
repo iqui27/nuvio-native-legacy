@@ -61,6 +61,7 @@ static void avisarCascaAberto(int v) { (void)v; }
 #include "streams.h"
 #include "badges.h"
 #include "legenda.h"
+#include "assrender.h"
 #include "mkvass.h"
 #include "intro.h"
 #include "vistoep.h"   /* o check de "assistido" na lista de episodios (issue #100) */
@@ -69,6 +70,7 @@ static void avisarCascaAberto(int v) { (void)v; }
 #include "descoberta.h"
 #include "guia.h"
 #include "epg.h"
+#include "ajustes.h"
 #include <time.h>
 #include <stdio.h>
 #include <string.h>
@@ -223,6 +225,35 @@ static Uint32 ultimoInput = 0;
 // trecho no ar o foco ja nasce nele — e o que a mao faz: "pra cima" e OK.
 static int skipFoco = 0;
 static int trechoPulavel(double *fim);
+
+// O player fica sobre a imagem e precisa de um foco que sobreviva tanto a uma
+// cena clara quanto a uma escura. A cor configurada continua sendo a fonte,
+// mas o miolo recebe a mesma mistura suave usada nos outros paineis: assim o
+// controle e reconhecivel sem virar um adesivo neon sobre o filme.
+static void corFocoPlayer(float *r, float *g, float *b) {
+  float ar, ag, ab, lum, k = 0.74f;
+  ajustes_acento(&ar, &ag, &ab);
+  lum = 0.2126f * ar + 0.7152f * ag + 0.0722f * ab;
+  if (lum > 0.88f) k = 0.88f;
+  *r = 0.055f + (ar - 0.055f) * k;
+  *g = 0.058f + (ag - 0.058f) * k;
+  *b = 0.068f + (ab - 0.068f) * k;
+}
+
+static void superficieFocoPlayer(GfxRect r, float raio, float mola, float a) {
+  float fr, fg, fb;
+  GfxRect luz;
+  corFocoPlayer(&fr, &fg, &fb);
+  if (mola > 0.01f) {
+    luz.x = r.x - r.h * 0.85f; luz.y = r.y - r.h * 0.85f;
+    luz.w = r.w + r.h * 1.7f; luz.h = r.h + r.h * 1.7f;
+    gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
+             fr, fg, fb, 0.16f * mola * a);
+  }
+  gfx_cor(r, raio, fr, fg, fb, a);
+  gfx_rect(r, 0, GFX_BRILHO_TOPO, raio, 0.20f, 0, 0.5f,
+           1, 1, 1, 0.10f * a);
+}
 // Instante em que a IMAGEM comecou (nao a abertura da tela: entre uma coisa e
 // outra ha a busca de fonte, que pode levar segundos). Zero enquanto nao houve.
 // A guia parental se apoia nisto para aparecer UMA vez, no comeco, e sumir.
@@ -347,6 +378,10 @@ void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 
 // Leitura do estado para o watchdog de canal do app.c: uma fonte ao vivo que
 // falhou (ou nao abre no prazo) deve trocar para a proxima da lista sozinha.
 int  player_fonte_falhou(void) { return erroFonte; }
+// O pipeline de video e COMPARTILHADO: o trailer do detalhe toca por ele
+// tambem. "O video esta entregando" so desmente o cartao de erro se o video
+// que entrega foi aberto POR ESTA SESSAO do player — ver app.c.
+int  player_tem_video(void) { return comVideo; }
 // Arma DEPOIS de player_abrir + player_definir_episodio: daqui em diante a
 // sessao ignora o ponto salvo, inclusive nas re-chamadas tardias de
 // player_definir_episodio. O progresso gravado NAO e apagado — comecar do
@@ -1153,6 +1188,7 @@ void player_fechar_mini(void) {
 void player_mini_desenhar(Uint32 agora) {
   static float lx = -1.0f, ly, lw, lh;
   PlrRect r; GfxRect f;
+  float fr, fg, fb;
   (void)agora;
   if (!mini) { lx = -1.0f; return; }
   r = miniDestino();
@@ -1162,11 +1198,12 @@ void player_mini_desenhar(Uint32 agora) {
     lx = r.x; ly = r.y; lw = r.w; lh = r.h;
   }
   f = (GfxRect){ r.x, r.y, r.w, r.h };
+  corFocoPlayer(&fr, &fg, &fb);
   // Furo com o MESMO raio do anel: sem ele o plano de video e retangular e
   // os cantos do quadro escapam por fora da moldura arredondada.
   gfx_furo_raio(f, 0.14f);
   gfx_rect(f, 0, GFX_ANEL, 0, NV_ANEL_FOCO / f.w, 0, 0.14f,
-           1.0f, 1.0f, 1.0f, 0.85f);
+           fr, fg, fb, 0.85f);
   // A etiqueta e UMA linha so dentro do furo: ponto vermelho + AO VIVO +
   // canal + programa do ar, cortada na borda direita do quadro para nomes
   // longos nao vazarem por cima do anel.
@@ -1744,12 +1781,12 @@ static void iconeAspecto(float cx, float cy, float a, float lum) {
   iconeArquivo(cx, cy, a, lum, "aspecto", PLR_ICONE_H * 1.15f);
 }
 
-// Um botao circular do transporte: translucido quando solto, branco quando em
-// foco, e o glifo sempre com o contraste certo contra o fundo dele.
+// Um botao circular do transporte: translucido quando solto, na cor do tema
+// quando em foco, e o glifo sempre com o contraste certo contra o fundo dele.
 static void botaoCirculo(float cx, float cy, float f, float a, int sel) {
   float d = PLR_BTN_D * (1.0f + 0.09f * f);
   GfxRect r = { cx - d * 0.5f, cy - d * 0.5f, d, d };
-  if (sel) gfx_cor(r, 0.5f, 0.97f, 0.97f, 0.98f, 0.96f * a);
+  if (sel) superficieFocoPlayer(r, 0.5f, f, 0.96f * a);
   else     gfx_cor(r, 0.5f, 0.05f, 0.05f, 0.06f, 0.42f * a);
 }
 
@@ -1804,8 +1841,23 @@ static void desenharBloco(const LegBloco *bl, float x0, float y, float alpha, in
  * SDL/GLES, exatamente como o overlay HTML do app web. Desde o #92 tambem
  * desenha ASS: varios blocos ao mesmo tempo, cada um no seu lugar. */
 static void desenharLegendaExterna(void){
+  /* ASS completo: libass devolve uma lista de bitmaps por camada, preservando
+   * karaoke, movimento, desenho vetorial, fontes e todas as tags do arquivo.
+   * A preferencia de cor do app e a unica sobrescrita explicita nesta fase;
+   * com o padrao intocado, a fonte continua sendo a do proprio ASS. */
+  int r, g, b;
+  assrender_aplicar_invalidacao();
+  corLegenda(legEstilo.cor, &r, &g, &b);
+  assrender_definir_cor(player_leg_estilo_tocado(PLR_LEG_COR), r, g, b);
+  if (assrender_ativo()) {
+    float alpha = (legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:
+                   legEstilo.opacidade==1?.75f:1.f) * entrada;
+    assrender_desenhar(posSeg, legEstilo.atrasoMs, alpha,
+                        0, 0, NV_TELA_W, NV_TELA_H);
+    return;
+  }
   LegendaCue cues[LEGENDA_SIMULTANEAS];
-  int n = legenda_cues(posSeg, legEstilo.atrasoMs, cues, LEGENDA_SIMULTANEAS), i, r, g, b;
+  int n = legenda_cues(posSeg, legEstilo.atrasoMs, cues, LEGENDA_SIMULTANEAS), i;
   if (n <= 0) return;
   int pct=legEstilo.tamanho;if(pct<50)pct=50;if(pct>200)pct=200;pct=(pct/10)*10;
   TxtEstilo est=(TxtEstilo)(TXT_LEG_50+(pct-50)/10);corLegenda(legEstilo.cor,&r,&g,&b);
@@ -1864,13 +1916,15 @@ static void desenharAcoesEpisodio(void){
                     tipo==INTRO_CREDITOS?i18n("Pular créditos"):
                     i18n("Pular abertura");
     int sel=skipFoco&&visivel;
-    TxtLinha t=sel?txt_linha(TXT_BODY,rot,20,20,24,255):txt_linha(TXT_BODY,rot,250,250,252,255);
+    int tinta = ajustes_tinta_foco();
+    TxtLinha t=sel?txt_linha(TXT_BODY,rot,tinta,tinta,tinta,255):txt_linha(TXT_BODY,rot,250,250,252,255);
     float w=t.w+116, y=(NV_TELA_H-60.0f-88.0f)-anim*(NV_TELA_H-60.0f-88.0f-730.0f);
     GfxRect p={64,y,w,88};
-    if(sel){gfx_cor(p,.27f,.97f,.97f,.98f,.96f*entrada);
-      GfxRect anel={p.x-4,p.y-4,p.w+8,p.h+8};gfx_rect(anel,0,GFX_ANEL,0,4.0f/anel.h,0.0f,.27f,1,1,1,.55f*entrada);}
+    if(sel) superficieFocoPlayer(p,.27f,1.0f,.96f*entrada);
     else gfx_cor(p,.27f,.118f,.118f,.118f,.85f*entrada);
-    gfx_icone((GfxRect){88,y+22,44,44},"avancar",sel?.1f:1,sel?.1f:1,sel?.1f:1,entrada);txt_desenhar_alpha(t,148,y+22,entrada);
+    { float ic = sel ? ajustes_acento_tinta(NULL, NULL, NULL) : 1.0f;
+      gfx_icone((GfxRect){88,y+22,44,44},"avancar",ic,ic,ic,entrada); }
+    txt_desenhar_alpha(t,148,y+22,entrada);
   }
 }
 
@@ -1958,12 +2012,15 @@ void player_desenhar(Uint32 agora) {
       txt_desenhar_alpha(t,(NV_TELA_W-t.w)*.5f,NV_TELA_H*.5f-150,entrada);
     }
     // Anel com cauda luminosa, animado sem novas texturas por quadro.
-    for (k = 0; k < 12; k++) {
+    { float fr, fg, fb;
+      corFocoPlayer(&fr, &fg, &fb);
+      for (k = 0; k < 12; k++) {
       float ang = k * 6.2831853f / 12.0f + agora * .006f;
       float br = .18f + .82f * k / 11.0f;
       GfxRect pt = {NV_TELA_W*.5f + cosf(ang)*24 - 4,
                     NV_TELA_H*.5f + sinf(ang)*24 - 4,8,8};
-      gfx_cor(pt,.5f,.95f,.95f,.97f,br*entrada);
+      gfx_cor(pt,.5f,fr,fg,fb,br*entrada);
+      }
     }
     { TxtLinha lc = txt_linha(TXT_CALLOUT, "Abrindo fonte", 236, 237, 242, 255);
       txt_desenhar_alpha(lc, NV_TELA_W * 0.5f - lc.w * 0.5f,
@@ -1994,12 +2051,17 @@ void player_desenhar(Uint32 agora) {
     // bloco de TV. Aparecer e sumir de estalo le como falha de desenho.
     float resta = (float)(toastAte - agora);
     float at = (resta < 200.0f ? resta / 200.0f : 1.0f) * entrada;
+    int tinta = ajustes_tinta_foco();
+    float fr, fg, fb;
+    corFocoPlayer(&fr, &fg, &fb);
     TxtLinha l = txt_linha(TXT_PLR_TITULO, player_aspecto_rotulo(aspecto),
-                           243, 248, 255, 242);
+                           tinta, tinta, tinta, 242);
     float pw = (float)l.w + 128.0f, ph = 128.0f;
     GfxRect pil = { (NV_TELA_W - pw) * 0.5f, 160.0f, pw, ph };
     // Raio e FRACAO do menor lado (ver gfx.h): 0.5 e a pilula completa.
-    gfx_cor(pil, 0.5f, 9.0f / 255.0f, 13.0f / 255.0f, 20.0f / 255.0f, 0.88f * at);
+    gfx_cor(pil, 0.5f, fr, fg, fb, 0.88f * at);
+    gfx_rect(pil, 0, GFX_BRILHO_TOPO, 0.5f, 0.20f, 0, 0.5f,
+             1, 1, 1, 0.10f * at);
     txt_desenhar_alpha(l, pil.x + (pw - l.w) * 0.5f,
                        pil.y + (ph - (float)l.h) * 0.5f, at);
   }
@@ -2123,10 +2185,12 @@ void player_desenhar(Uint32 agora) {
       // sozinha apontando para o vazio.
       float eB = anim_clamp((tg - 0.10f) / 0.34f, 0.0f, 1.0f);
       eB = 1.0f - (1.0f - eB) * (1.0f - eB);
+      float fr, fg, fb;
+      corFocoPlayer(&fr, &fg, &fb);
       { GfxRect barra = { PLR_PAD_X, y0, PG_BARRA_W, alt * eB };
         if (eB > 0.01f)
           gfx_cor(barra, 0.5f * (PG_BARRA_W / (alt * eB)),
-                  PLR_FILL_C, PLR_FILL_C, PLR_FILL_C, entrada * saida); }
+                  fr, fg, fb, entrada * saida); }
       float xt = PLR_PAD_X + PG_BARRA_W + PG_LISTA_PADX;
       for (int i = 0; i < np; i++) {
         float yl = y0 + i * (lin + gap);
@@ -2138,7 +2202,10 @@ void player_desenhar(Uint32 agora) {
         float cy, x;
         if (ag <= 0.004f) continue;
         lr = txt_linha(TXT_PG_ROTULO, parental_rotulo(i), 255, 255, 255, 255);
-        ls = txt_linha(TXT_PG_GRAV, "\xc2\xb7", 255, 255, 255, 255);
+        ls = txt_linha(TXT_PG_GRAV, "\xc2\xb7",
+                       (int)(fr * 255.0f + 0.5f),
+                       (int)(fg * 255.0f + 0.5f),
+                       (int)(fb * 255.0f + 0.5f), 255);
         lg = txt_linha(TXT_PG_GRAV, parental_gravidade(i), 255, 255, 255, 255);
         cy = yl + (lin - lr.h) * 0.5f;
         x  = xt - dx;
@@ -2241,6 +2308,8 @@ void player_desenhar(Uint32 agora) {
   float hTrilho = barraFoco ? PLR_TRILHO_H_FOCO : PLR_TRILHO_H;
   GfxRect trilho = { bx, yBarra, bw, hTrilho };
   GfxRect andado = { bx, yBarra, bw * frac, hTrilho };
+  float fr, fg, fb;
+  corFocoPlayer(&fr, &fg, &fb);
   gfx_cor(trilho, PLR_TRILHO_R, 1, 1, 1, (barraFoco ? 0.34f : 0.22f) * a);
   // O buffer do pipeline, entre o andado e o fim: e o que mostra que o video
   // esta a frente do relogio. Sem dado do pipeline o segmento nao existe —
@@ -2254,7 +2323,7 @@ void player_desenhar(Uint32 agora) {
   // Meio pixel ja conta: com o teste em 1.0 o inicio do filme nao desenhava
   // nada, e a barra parecia so comecar a andar depois de um tempo.
   if (andado.w > 0.5f)
-    gfx_cor(andado, PLR_TRILHO_R, PLR_FILL_C, PLR_FILL_C, PLR_FILL_C, a);
+    gfx_cor(andado, PLR_TRILHO_R, fr, fg, fb, a);
 
   // Filme: somente nome. Serie: nome seguido de T/E e titulo do episodio.
   // O arquivo e o provedor pertencem a folha de fontes, nao ao transporte.
@@ -2314,7 +2383,7 @@ void player_desenhar(Uint32 agora) {
       float f = focoB[i];
       int sel = (botao == i && !barraFoco);
       botaoCirculo(cxs[i], cyBotoes, f, a, sel);
-      float lum = sel ? 0.13f : 0.94f;
+      float lum = sel ? ajustes_acento_tinta(NULL, NULL, NULL) : 0.94f;
       switch (i) {
         case PLR_PLAY:    iconePlayPause(cxs[i], cyBotoes, a, tocando, lum); break;
         case PLR_CC:      iconeLegendas(cxs[i], cyBotoes, a, lum); break;

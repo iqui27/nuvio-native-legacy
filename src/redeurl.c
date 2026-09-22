@@ -19,7 +19,7 @@
 // Quem linka src/*.c (Mac, ARM, Tizen — os tres fazem glob) nao percebe
 // diferenca: e a mesma funcao, no mesmo cabecalho.
 const char *rede_url_publica(const char *url, char *dst, unsigned tam) {
-  const char *e, *h;
+  const char *e, *h, *at = NULL, *p;
   unsigned n;
   if (!dst || tam == 0) return "";
   dst[0] = 0;
@@ -28,10 +28,23 @@ const char *rede_url_publica(const char *url, char *dst, unsigned tam) {
   if (!e) { snprintf(dst, tam, "%.*s", (int)tam - 1, url); return dst; }
   h = e + 3;
   while (*h && *h != '/' && *h != '?' && *h != '#') h++;
-  n = (unsigned)(h - url);
-  if (n >= tam) n = tam - 1;
-  memcpy(dst, url, n);
-  dst[n] = 0;
+  // A autoridade tambem pode trazer userinfo (comum em addons IPTV). O
+  // caminho ja era cortado, mas deixar `usuario:senha@` antes do host ainda
+  // vazaria uma credencial no log. Conservamos esquema, host e porta.
+  for (p = e + 3; p < h; p++) if (*p == '@') at = p;
+  { const char *inicio = at ? at + 1 : e + 3;
+    n = (unsigned)(inicio - url);
+    if (n >= tam) n = tam - 1;
+    memcpy(dst, url, n);
+    if (n < tam - 1) {
+      unsigned restante = tam - 1 - n;
+      unsigned autoridade = (unsigned)(h - inicio);
+      if (autoridade > restante) autoridade = restante;
+      memcpy(dst + n, inicio, autoridade);
+      n += autoridade;
+    }
+    dst[n] = 0;
+  }
   // O "/..." avisa que havia caminho: sem ele, um log com host nu parece um
   // pedido a raiz do servidor, que e uma leitura errada.
   if (*h && n + 4 < tam) { memcpy(dst + n, "/...", 4); dst[n + 4] = 0; }

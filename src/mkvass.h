@@ -32,9 +32,10 @@
 // Cluster com Timestamp != 0 e o uMS reportar 0 ali, o desvio aparece igual
 // para o SRT externo, e o ajuste de "Atraso" da folha e o remedio.
 //
-// SAMSUNG (Tizen): este modulo e um coto vazio. La quem toca e o AVPlay, que
-// desenha as legendas embutidas por conta propria e nao expoe o texto; o
-// comportamento atual fica como esta.
+// SAMSUNG (Tizen): a URL do AVPlay tambem alimenta este coletor. O overlay usa
+// Range via XHR do rede.c; enquanto coleta, a faixa nativa fica em silencio.
+// Se o servidor/arquivo nao permitir extracao recuperavel, o modulo devolve a
+// faixa ao AVPlay como fallback.
 #ifndef NV_MKVASS_H
 #define NV_MKVASS_H
 
@@ -58,6 +59,9 @@ enum {
 // `numero` do VideoFaixa) de `url`, em fio proprio. Substitui qualquer
 // colheita anterior. NAO bloqueia.
 void mkvass_iniciar(const char *url, int numeroFaixa);
+// Variante Tizen: usa o ordinal de subtitleTrack publicado pelo AVPlay e o
+// resolve para TrackNumber lendo Tracks antes de consultar os CuePoints.
+void mkvass_iniciar_ordinal(const char *url, int ordinalFaixa);
 
 // Chamar UMA VEZ POR QUADRO com a posicao do player: e o que move a janela de
 // colheita. Barato — so compara e acorda o fio quando a posicao andou.

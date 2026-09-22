@@ -21,6 +21,7 @@
 #include "syncprog.h"
 #include "ajustes.h"
 #include "catordem.h"
+#include "catordemcache.h"
 #include "descoberta.h"
 #include "extras.h"
 #include "js.h"
@@ -106,6 +107,10 @@ static void carregarProtecaoAjustes(void) {
 // resposta chegava, virava um numero no resumo e era jogada fora.
 static char *catHomeBlob;
 static int   temCatHomeBlob;
+// O cache da ordem e por perfil. Quando a pessoa troca de perfil, a ordem
+// anterior precisa sair antes de a nova entrar; quando o app atualiza, ela
+// entra antes da primeira resposta de rede.
+static int catordemCachePerfil = -1;
 static char *colBlob;        // sync_pull_collections, lido por colecoes.c no fio principal
 static int   temColBlob;
 // sync_pull_library e sync_pull_watched_items, crus, lidos por contalib.c no
@@ -617,7 +622,16 @@ static void *rodar(void *u) {
 }
 
 void sync_iniciar(void) {
+  int cacheMudou;
   if (fioVivo || !sessao_logada()) return;
+  // A ordem local nao depende de rede. Restaurar antes do freio e importante:
+  // justamente num boot apos update, sem internet ou com o servidor em pausa,
+  // a Home ainda precisa abrir com a escolha que ja estava no aparelho.
+  if (catordemCachePerfil != perfis_ativo()) {
+    cacheMudou = catordem_cache_carregar(perfis_ativo(), sessao_usuario());
+    catordemCachePerfil = perfis_ativo();
+    if (cacheMudou) desc_remontar_fileiras();
+  }
   if (nuvem_freio_ativo()) return;
   estado = SYNC_RODANDO;
   fioPronto = 0;
@@ -699,6 +713,7 @@ void sync_passo(unsigned agoraMs) {
   // quadro (addons e ordem) custariam o dobro por nada.
   if (temCatHomeBlob && catHomeBlob) {
     if (catordem_ler(catHomeBlob)) {
+      catordem_cache_gravar(perfis_ativo(), sessao_usuario(), catHomeBlob);
       if (catordem_tem_ocultar_nao_lancados())
         ajustes_definir_ocultar_nao_lancados(catordem_ocultar_nao_lancados());
       // `hide_catalog_underline` e lido e NAO aplicado: nao ha sublinhado de
@@ -837,6 +852,8 @@ void sync_esquecer_usuario(void) {
   // A ordem importa pouco, mas o CONJUNTO nao: cada linha aqui corresponde a
   // uma coisa que sobrevivia ao logout.
   catordem_esquecer();
+  catordem_cache_esquecer();
+  catordemCachePerfil = -1;
   // O CACHE DO CATALOGO TAMBEM. Ele guarda o catalogo montado da conta que
   // saiu — watchlist, continuar assistindo, feed de amigos com nome e avatar —
   // e, pior, a `base` de cada fileira, que no Xperience carrega um JWT dentro
