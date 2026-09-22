@@ -49,6 +49,7 @@ void player_limpar_erro_fonte(void);   // fonte "morta" que voltou a entregar
 // 1 quando a fonte atual falhou. O app usa no watchdog de canal: stream de TV
 // ao vivo que nao abre troca sozinho para o proximo da lista.
 int  player_fonte_falhou(void);
+int  player_tem_video(void);   // esta sessao abriu um video (nao o trailer)
 
 // 1 quando ha video de verdade por tras desta sessao. O desenho usa isto para
 // nao pintar a arte-chave por cima do plano de video.

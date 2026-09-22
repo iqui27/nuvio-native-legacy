@@ -42,6 +42,10 @@
 
 void avisos_iniciar(void);   // depois de dados_iniciar; grava a marca de sessao
 void avisos_encerrar(void);  // saida limpa: apaga a marca
+// Ultimo sinal de vida na marca de sessao: evento de janela ("oculto",
+// "visivel", "foco-perdido"...) grava na hora; NULL e a batida periodica
+// (no maximo 1 a cada 60 s). Ver marcaGravar em avisos.c.
+void avisos_sinal(const char *evento, float rssMb);
 void avisos_atualizar(float dt, Uint32 agora);
 void avisos_desenhar(Uint32 agora);
 // 1 quando consumiu o evento (toast na tela com AZUL/CH+, ou painel aberto).

@@ -347,6 +347,10 @@ void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 
 // Leitura do estado para o watchdog de canal do app.c: uma fonte ao vivo que
 // falhou (ou nao abre no prazo) deve trocar para a proxima da lista sozinha.
 int  player_fonte_falhou(void) { return erroFonte; }
+// O pipeline de video e COMPARTILHADO: o trailer do detalhe toca por ele
+// tambem. "O video esta entregando" so desmente o cartao de erro se o video
+// que entrega foi aberto POR ESTA SESSAO do player — ver app.c.
+int  player_tem_video(void) { return comVideo; }
 // Arma DEPOIS de player_abrir + player_definir_episodio: daqui em diante a
 // sessao ignora o ponto salvo, inclusive nas re-chamadas tardias de
 // player_definir_episodio. O progresso gravado NAO e apagado — comecar do
@@ -499,6 +503,10 @@ static void frasePrimeira(char *dst, size_t n, const char *src, size_t maxBytes)
 // so quem olhou a TV viu. Conferir zoom exige olhar o aparelho.
 static int    aspecto = PLR_ASP_ORIGINAL;
 static Uint32 toastAte = 0;      // ate quando o aviso de modo fica de pe
+// Texto do aviso quando NAO e o modo de proporcao (vazio = rotulo do modo).
+// Hoje so o audio nao suportado usa: um aviso por fonte, ver player_atualizar.
+static char   toastTexto[160];
+static int    avisouAudio;
 static char   dirPrefs[512];
 
 // Rotulos em portugues. Os do web sao "Fit (Original)", "Crop", "Stretch",
@@ -852,6 +860,7 @@ void player_aspecto_ciclar(void) {
     if (modoDisponivel(m)) break;
   }
   player_aspecto_definir(m);
+  toastTexto[0] = 0;
   toastAte = SDL_GetTicks() + PLR_TOAST_MS;
 }
 
@@ -912,7 +921,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   // O modo de proporcao e do APARELHO, nao da sessao: reler aqui e o que faz
   // "Zoom cinema" continuar valendo no filme seguinte, como no web.
   prefsLer();
-  toastAte = 0;
+  toastAte = 0; toastTexto[0] = 0; avisouAudio = 0;
   comVideo = (url && *url && video_tocar(url));
   aplicarAspecto();
 
@@ -1437,6 +1446,17 @@ void player_evento(const SDL_Event *e) {
   // ramo `if (this.pauseOverlayVisible)` engole o evento inteiro
   // (playerScreen.js:22191). Um painel que cobre a informacao da tela e nao
   // responde ao primeiro toque le como travamento.
+  // TECLA FISICA DE PLAY/PAUSE (#109): alterna e poe o foco no Play, em
+  // qualquer estado dos controles. Antes a Samsung traduzia Play/Pause em
+  // Enter (tools/tizen-shell.html) — com os controles em pe e o foco em
+  // Legendas, Audio ou Proporcao, "Pause" abria a folha daquele botao em vez
+  // de pausar. Agora a casca manda a tecla Pause do teclado (keyCode 19 ->
+  // SDLK_PAUSE) e o C trata como o que e. SDLK_AUDIOPLAY/STOP cobrem o SDL que
+  // mapeia teclas de midia (Mac; LG, se o firmware entregar — nao verificado).
+  if (k == SDLK_PAUSE || k == SDLK_AUDIOPLAY) {
+    alternarTocando(); botao = PLR_PLAY; barraFoco = 0; skipFoco = 0;
+    acordar(); return;
+  }
   if (pausao_visivel()) {
     int r = pausao_evento(e);
     if (r == PAUSAO_RETOMAR) { alternarTocando(); acordar(); return; }
@@ -1474,6 +1494,10 @@ void player_evento(const SDL_Event *e) {
       // ar. Manter esta linha faria o OK disparar a troca duas vezes.
       { double fim;if(trechoPulavel(&fim)){
           posSeg=(float)puloDestino(fim);if(comVideo)video_buscar(posSeg);return; } }
+      // O OK com os controles escondidos e o Play/Pause: os controles sobem
+      // com o foco NO PLAY, nao onde ficou da ultima vez (Legendas, Audio,
+      // Proporcao). Sem isto o OK seguinte abria aquela folha (#109).
+      botao = PLR_PLAY; barraFoco = 0;
       alternarTocando(); acordar(); return;
     }
     if (k == SDLK_UP || k == SDLK_DOWN || k == SDLK_LEFT || k == SDLK_RIGHT) {
@@ -1576,6 +1600,15 @@ void player_evento(const SDL_Event *e) {
 }
 
 void player_atualizar(float dt, Uint32 agora) {
+  // AUDIO QUE A TV NAO TOCA (uMS errorCode 200, registro 1545): o video segue
+  // mudo, e sem isto a pessoa nao tinha como saber que era a fonte e nao o
+  // volume. Um aviso por sessao, 6 s, no lugar do de proporcao.
+  if (comVideo && !avisouAudio && video_audio_nao_suportado()) {
+    avisouAudio = 1;
+    snprintf(toastTexto, sizeof toastTexto, "%s",
+             i18n("Esta TV não toca o áudio desta fonte. Troque a fonte ou o áudio."));
+    toastAte = agora + 6000;
+  }
   if (!aberto) return;
 
   entrada = anim_mola(entrada, saindo ? 0.0f : 1.0f, dt, NV_MOLA_TELA);
@@ -1994,8 +2027,11 @@ void player_desenhar(Uint32 agora) {
     // bloco de TV. Aparecer e sumir de estalo le como falha de desenho.
     float resta = (float)(toastAte - agora);
     float at = (resta < 200.0f ? resta / 200.0f : 1.0f) * entrada;
-    TxtLinha l = txt_linha(TXT_PLR_TITULO, player_aspecto_rotulo(aspecto),
-                           243, 248, 255, 242);
+    TxtLinha l = toastTexto[0]
+        ? txt_linha_corta(TXT_PLR_TITULO, toastTexto, 243, 248, 255, 242,
+                          NV_TELA_W - 256.0f)
+        : txt_linha(TXT_PLR_TITULO, player_aspecto_rotulo(aspecto),
+                    243, 248, 255, 242);
     float pw = (float)l.w + 128.0f, ph = 128.0f;
     GfxRect pil = { (NV_TELA_W - pw) * 0.5f, 160.0f, pw, ph };
     // Raio e FRACAO do menor lado (ver gfx.h): 0.5 e a pilula completa.

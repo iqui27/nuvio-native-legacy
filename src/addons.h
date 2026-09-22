@@ -153,6 +153,14 @@ typedef struct { char tipo[16], id[96], nome[96]; } AddCatCanal;
 #define ADD_CANAL_MAX 4
 int addons_catalogos_canal(int i, AddCatCanal *saida, int max);
 
+// POR QUE A ULTIMA BUSCA NAO TROUXE FONTE, em frase curta ja traduzida
+// ("4 add-ons responderam: nenhum tem este título", "Comet não respondeu",
+// "Nenhum add-on de fontes instalado"). Devolve 1 e escreve em `dst`; 0
+// quando a causa nao e conhecida (lista do cache, busca em curso, ou algum
+// addon trouxe fonte). Chamar do fio da UI, depois de addons_estado() sair de
+// ADD_BUSCANDO.
+int addons_motivo_vazio(char *dst, unsigned n);
+
 AddEstado addons_estado(void);
 // HA BUSCA DE FONTES EM ANDAMENTO? Leitura pura, sem os efeitos de
 // addons_estado (que junta o fio e PUBLICA a lista — app.c evita chama-la

@@ -35,8 +35,9 @@ const char *teclado_alfabeto(void);
 void teclado_abrir(const char *titulo, const char *dica, int max);
 
 // Mesma modal com ALFABETO proprio e valor inicial. `alfabeto` NULL cai no
-// padrao a-z0-9; um alfabeto maior que 36 ganha fileiras (ate 7 de caractere),
-// e um menor encolhe a grade. `inicial` NULL comeca vazio.
+// padrao a-z0-9; um alfabeto maior que 36 ganha fileiras (ate 7 de caractere)
+// e, passando de 42, colunas (13, depois ate 20 — ver TE_COLS_LONGO em
+// teclado.c e a #88); um menor encolhe a grade. `inicial` NULL comeca vazio.
 //
 // Existe porque endereco de portal precisa de ponto, dois pontos e hifen, e
 // MAC precisa so de 0-9a-f e dois pontos — grades diferentes, uma modal so. Ver

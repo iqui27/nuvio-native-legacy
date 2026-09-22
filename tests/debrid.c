@@ -36,6 +36,9 @@ static char  corpoCacheCheckPM[600], corpoDirectdlPM[600];
 static int   bateuTB[4];        // checkcached, createtorrent, mylist, requestdl
 static int   bateuPM[2];        // cache/check, directdl
 static int   bateuRDUnrestrict;
+// createtorrent do TorBox: 0 = 201 normal, 1 = 403 de CONTA (plano), 2 = 403
+// que diz "nao esta em cache" (do torrent, nao da conta)
+static int   tbCriar403;
 
 static char *dup2s(const char *s) { return strdup(s); }
 
@@ -65,7 +68,16 @@ char *rede_postar_st(const char *url, int s, const char *const *cab,
     assert(strstr(corpo, "name=\"magnet\""));
     assert(strstr(corpo, "magnet:?xt=urn:btih:deadbeef"));
     assert(strstr(corpo, "name=\"add_only_if_cached\""));
-    bateuTB[1]++; *st = 201;
+    bateuTB[1]++;
+    // O corpo de conta traz a PROPRIA CHAVE de proposito: a API real nao
+    // deveria ecoa-la, e o teste prova que, se ecoar, o log nao a leva.
+    if (tbCriar403 == 1) { *st = 403;
+      return dup2s("{\"success\":false,\"error\":\"PLAN_RESTRICTED_FEATURE\","
+                   "\"detail\":\"Your plan does not allow this. key=" K_TB "\",\"data\":null}"); }
+    if (tbCriar403 == 2) { *st = 403;
+      return dup2s("{\"success\":false,\"error\":\"DOWNLOAD_NOT_CACHED\","
+                   "\"detail\":\"Torrent is not cached.\",\"data\":null}"); }
+    *st = 201;
     return dup2s("{\"success\":true,\"error\":null,\"detail\":\"Found cached torrent\","
                  "\"data\":{\"hash\":\"deadbeef\",\"torrent_id\":77,\"auth_id\":\"z\"}}");
   }
@@ -214,6 +226,55 @@ static void torbox(void) {
   tbEmCache = 1;
 }
 
+// B3, registro 1541: TorBox com createtorrent 403 x8 na mesma busca, e o
+// Premiumize so perguntado depois de cada um.
+static void torbox403(void) {
+  char url[4096] = "", rec[64] = "";
+  debrid_esquecer();
+  debrid_definir_chave("torbox", K_TB);
+  debrid_definir_chave("premiumize", K_PM);
+  debrid_definir_episodio(2, 5);
+  debrid_nova_busca();
+
+  // 403 de CONTA: o primeiro torrent tenta TorBox, recebe 403, e cai no
+  // Premiumize na mesma chamada
+  memset(bateuTB, 0, sizeof bateuTB); memset(bateuPM, 0, sizeof bateuPM);
+  tbCriar403 = 1; pmEmCache = 1;
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  assert(strstr(url, "a.pm.me"));
+  assert(bateuTB[1] == 1 && bateuPM[0] == 1);
+  assert(debrid_recusa(rec, sizeof rec));
+  assert(!strcmp(rec, "TorBox 403"));
+  // os torrents seguintes da MESMA busca nem perguntam ao TorBox
+  url[0] = 0;
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  assert(bateuTB[0] == 1 && bateuTB[1] == 1);
+  assert(bateuPM[0] == 3);
+  OK("TorBox 403 de conta: para nesta busca e passa ao Premiumize");
+
+  // busca nova: o TorBox volta a ser tentado (a conta pode ter sido acertada)
+  debrid_nova_busca();
+  assert(!debrid_recusa(rec, sizeof rec));
+  tbCriar403 = 0;
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  assert(strstr(url, "torbox.app"));
+  assert(bateuTB[1] == 2);
+  OK("debrid_nova_busca esquece a recusa");
+
+  // 403 que diz "nao esta em cache" e do TORRENT: o seguinte tenta de novo
+  debrid_nova_busca();
+  memset(bateuTB, 0, sizeof bateuTB);
+  tbCriar403 = 2; pmEmCache = 0;
+  assert(!debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  assert(!debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  assert(bateuTB[1] == 2);
+  assert(!debrid_recusa(rec, sizeof rec));
+  OK("403 de 'not cached' nao bloqueia o servico");
+  tbCriar403 = 0; pmEmCache = 1;
+  debrid_esquecer();
+}
+
 static void premiumize(void) {
   char url[4096] = "";
   debrid_esquecer();
@@ -306,6 +367,7 @@ int main(void) {
   semChaves();
   realDebrid();
   torbox();
+  torbox403();
   premiumize();
   ordem();
   parser();
@@ -337,6 +399,15 @@ int main(void) {
   assert(strstr(capt, "store-1.torbox.app"));
   assert(strstr(capt, "a.pm.me"));
   OK("nenhuma chave e nenhum caminho de link sai no stdout do app");
+
+  // O CORPO DO 403 ESTA NO LOG, com a linha no formato que se procura no D1,
+  // e a chave que ele trazia virou ***.
+  assert(strstr(capt, "[debrid] TorBox createtorrent: HTTP 403 ("));
+  assert(strstr(capt, "PLAN_RESTRICTED_FEATURE"));
+  assert(strstr(capt, "key=***"));
+  assert(strstr(capt, "Torrent is not cached."));
+  assert(strstr(capt, "[debrid] TorBox: recusa da conta (HTTP 403)"));
+  OK("corpo do 403 no log, sem a chave");
 
   puts("debrid: tudo ok");
   return 0;

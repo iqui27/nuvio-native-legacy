@@ -72,7 +72,14 @@ static int reservaStill(const char *chave, const char *id, int temp, int ep,
   js_texto_raiz(resp, "still_path", caminho, sizeof caminho);
   free(resp);
   if (caminho[0] != '/') return 0;
+  // Na Samsung nunca `original`: o decode do navegador devolve o still inteiro
+  // (3840 px em varias series) e foi um fundo desses que zerou o heap no
+  // registro 1450 — ver fundoOriginal() em artehero.c.
+#ifdef __EMSCRIPTEN__
+  snprintf(saida, tam, "https://image.tmdb.org/t/p/w1280%s", caminho);
+#else
   snprintf(saida, tam, "https://image.tmdb.org/t/p/original%s", caminho);
+#endif
   printf("[tex] reserva do TMDB para still de %s S%dE%d\n", id, temp, ep);
   fflush(stdout);
   return 1;

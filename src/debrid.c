@@ -7,6 +7,7 @@
 #include <strings.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <stdatomic.h>
 
 // As tres bases. A versao esta EMBUTIDA no caminho de proposito: o TorBox pede
 // /v1/ antes de /api/ (api.torbox.app/v1/api/...), e deixar isso implicito na
@@ -25,6 +26,21 @@ static const char *nomeServ[SN] = { "Real-Debrid", "TorBox", "Premiumize" };
 // devolve as linhas — o pior tipo de defeito, porque muda sozinho.
 static char chave[SN][200];
 static int  alvoT, alvoE;
+
+// RECUSA DE CONTA POR BUSCA. recusado[q] guarda o status HTTP da recusa (0 =
+// nenhuma); `geracao` sobe a cada debrid_nova_busca. Atomicos porque
+// debrid_resolver roda em ate VER_FIOS (4) fios da verificacao ao mesmo tempo.
+//
+// A GERACAO e o que impede um fio da busca ANTERIOR — lote abandonado em
+// streams.c, que continua ate o prazo dele — de marcar recusa na busca nova:
+// ele guardou a geracao ao entrar e so escreve se ela nao mudou.
+//
+// LIMITE ACEITO: com 4 fios, ate 4 createtorrent podem sair antes de o
+// primeiro 403 voltar e marcar a recusa. Sao 4 chamadas no lugar das 8 do
+// registro 1541 (e de ate 26, o tamanho do lote); travar o servico antes da
+// resposta custaria serializar os fios.
+static _Atomic unsigned geracao;
+static _Atomic int recusado[SN];
 
 static int idServico(const char *s) {
   if (!strcasecmp(s, "realdebrid") || !strcasecmp(s, "real-debrid")) return SRD;
@@ -50,7 +66,26 @@ int debrid_ativo(void) {
   for (q = 0; q < SN; q++) if (chave[q][0]) return 1;
   return 0;
 }
-void debrid_esquecer(void) { memset(chave, 0, sizeof chave); alvoT = alvoE = 0; }
+void debrid_esquecer(void) {
+  int q;
+  memset(chave, 0, sizeof chave); alvoT = alvoE = 0;
+  for (q = 0; q < SN; q++) atomic_store(&recusado[q], 0);
+}
+void debrid_nova_busca(void) {
+  int q;
+  atomic_fetch_add(&geracao, 1u);
+  for (q = 0; q < SN; q++) atomic_store(&recusado[q], 0);
+}
+int debrid_recusa(char *dst, unsigned n) {
+  int q;
+  for (q = 0; q < SN; q++) {
+    int st = atomic_load(&recusado[q]);
+    if (!st) continue;
+    if (dst && n) snprintf(dst, n, "%s %d", nomeServ[q], st);
+    return 1;
+  }
+  return 0;
+}
 void debrid_definir_episodio(int t, int e) { alvoT = t; alvoE = e; }
 
 // ---------------------------------------------------------------- http
@@ -88,6 +123,109 @@ static char *post_form(const char *base, const char *rota, int qual,
   return rede_postar_st(url, 15, cab, corpo, st);
 }
 static int ok2xx(const char *r, int st) { return r && st >= 200 && st < 300; }
+
+// ---------------------------------------------------------------- diagnostico
+//
+// O CORPO DA RESPOSTA DE ERRO VAI PARA O LOG. No registro 1541 (webOS 1.4.0)
+// o TorBox respondeu `createtorrent: HTTP 403` oito vezes e o log so tinha o
+// numero: o JSON do TorBox traz `error` (codigo) e `detail` (frase), e era ali
+// que estava a diferenca entre "chave sem plano", "limite de torrents ativos"
+// e "add_only_if_cached recusado". Sem o corpo nao da para escolher.
+//
+// 160 BYTES: cabe o {"success":false,"error":"...","detail":"..."} do TorBox
+// e o {"error":"...","error_code":N} do Real-Debrid inteiros, e uma pagina
+// HTML de WAF mostra o <title>, que e o que a identifica.
+//
+// A CHAVE E CORTADA DO TEXTO mesmo nao devendo estar la: ela vai no cabecalho
+// Authorization (ou na query do requestdl), nao no corpo — mas uma API que
+// ecoa o pedido no erro a poria no log, e o log sai da TV. O corte roda numa
+// janela de 160 + 200 bytes (200 = o maior tamanho de chave) ANTES de truncar,
+// para que uma chave atravessando o byte 160 nao deixe o comeco dela no log.
+//
+// SO RESPOSTA NAO-2xx VAI CRUA. Corpo 2xx pode trazer link direto (o `links`
+// do torrents/info do RD e credencial, ver rede_url_publica); de 2xx que nao
+// serviu saem so os campos de erro (error/detail/message), passados pelo
+// mesmo corte.
+#define CORPO_LOG 160
+
+static void corpoSeguro(const char *r, char *dst, unsigned n) {
+  char jan[CORPO_LOG + sizeof chave[0] + 1];
+  size_t L = strlen(r), i;
+  int q;
+  if (L > sizeof jan - 1) L = sizeof jan - 1;
+  memcpy(jan, r, L); jan[L] = 0;
+  // quebra de linha e tab viram espaco: uma linha de log por falha
+  for (i = 0; i < L; i++) if ((unsigned char)jan[i] < ' ') jan[i] = ' ';
+  for (q = 0; q < SN; q++) {
+    size_t K = strlen(chave[q]);
+    char *p;
+    if (!K) continue;
+    while ((p = strstr(jan, chave[q])) != NULL) {
+      memcpy(p, "***", 3);
+      memmove(p + 3, p + K, strlen(p + K) + 1);
+    }
+  }
+  if (strlen(jan) > CORPO_LOG) jan[CORPO_LOG] = 0;
+  snprintf(dst, n, "%s", jan);
+}
+
+// strcasestr nao e C padrao e o conjunto de ferramentas do webOS nao o declara
+// sem _GNU_SOURCE; sao tres usos, nao vale o define.
+static int contem(const char *r, const char *s) {
+  size_t L = strlen(s);
+  for (; r && *r; r++) if (!strncasecmp(r, s, L)) return 1;
+  return 0;
+}
+
+// ERRO DA CONTA OU DO TORRENT? A regra:
+//   - o corpo diz que o item nao esta em cache -> do TORRENT: o proximo
+//     torrent da mesma busca pode estar, segue tentando o servico;
+//   - 401, 403 ou 429 -> da CONTA: chave, plano ou limite valem igual para
+//     todo torrent, e repetir so gasta ate 15 s por tentativa;
+//   - os codigos de erro de conta do TorBox em qualquer status (ACTIVE_LIMIT,
+//     MONTHLY_LIMIT, COOLDOWN_LIMIT, PLAN_RESTRICTED_FEATURE, BAD_TOKEN,
+//     AUTH_ERROR, NO_AUTH — lista da documentacao/SDK do TorBox, NAO
+//     conferida contra uma resposta real ainda: o log novo e que vai mostrar
+//     qual deles o 403 do registro 1541 traz);
+//   - o resto (400, 404, 5xx, sem resposta) -> do torrent.
+// Vale para os tres servicos: o 403 "permission_denied" do Real-Debrid tambem
+// e da conta.
+static int erroDeConta(int st, const char *r) {
+  if (r && (contem(r, "not cached") || contem(r, "not_cached")
+            || contem(r, "uncached")))
+    return 0;
+  if (st == 401 || st == 403 || st == 429) return 1;
+  if (r && (strstr(r, "ACTIVE_LIMIT") || strstr(r, "MONTHLY_LIMIT")
+            || strstr(r, "COOLDOWN_LIMIT") || strstr(r, "PLAN_RESTRICTED")
+            || strstr(r, "BAD_TOKEN") || strstr(r, "AUTH_ERROR")
+            || strstr(r, "NO_AUTH")))
+    return 1;
+  return 0;
+}
+
+// Registra a falha de uma chamada e devolve o que o resolvedor devolve: 0
+// (falhou este torrent) ou -st (falhou pela CONTA; debrid_resolver para de
+// usar o servico nesta busca). `rota` e o nome da chamada, NUNCA a URL — a do
+// requestdl leva o token.
+static int falha(int q, const char *rota, int st, const char *r) {
+  char txt[CORPO_LOG + 1];
+  if (!r) {
+    printf("[debrid] %s %s: HTTP %d sem corpo\n", nomeServ[q], rota, st);
+  } else if (st < 200 || st >= 300) {
+    corpoSeguro(r, txt, sizeof txt);
+    printf("[debrid] %s %s: HTTP %d (%u bytes) %s\n", nomeServ[q], rota, st,
+           (unsigned)strlen(r), txt);
+  } else {
+    char campo[CORPO_LOG + 1], e[64] = "", d[CORPO_LOG + 1] = "";
+    if (js_texto(r, NULL, "error", campo, sizeof campo)) corpoSeguro(campo, e, sizeof e);
+    if (js_texto(r, NULL, "detail", campo, sizeof campo)
+        || js_texto(r, NULL, "message", campo, sizeof campo))
+      corpoSeguro(campo, d, sizeof d);
+    printf("[debrid] %s %s: HTTP %d sem o esperado; error=%s detail=%s\n",
+           nomeServ[q], rota, st, e[0] ? e : "-", d[0] ? d : "-");
+  }
+  return erroDeConta(st, r) ? -(st > 0 ? st : 1) : 0;
+}
 
 static void minusc(char *s) { for (; *s; s++) *s = (char)tolower((unsigned char)*s); }
 
@@ -160,14 +298,14 @@ static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n) 
   snprintf(corpo, sizeof corpo, "magnet=%s", enc);
   r = post_form(RD, "torrents/addMagnet", SRD, corpo, &st);
   if (!ok2xx(r, st) || !js_texto(r, NULL, "id", tid, sizeof tid)) {
-    printf("[debrid] addMagnet: HTTP %d\n", st); free(r); return 0;
+    int v = falha(SRD, "addMagnet", st, r); free(r); return v;
   }
   free(r);
 
   snprintf(rota, sizeof rota, "torrents/info/%s", tid);
   r = get_auth(RD, rota, SRD, &st);
   if (!ok2xx(r, st) || !(files = js_array(r, NULL, "files"))) {
-    printf("[debrid] info: HTTP %d\n", st); free(r); return 0;
+    int v = falha(SRD, "info", st, r); free(r); return v;
   }
   el = escolherArquivo(files, fileIdx, "path", "bytes");
   id = el ? (int)js_num(el, js_fim(el), "id", -1) : -1;
@@ -177,10 +315,10 @@ static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n) 
   snprintf(rota, sizeof rota, "torrents/selectFiles/%s", tid);
   snprintf(corpo, sizeof corpo, "files=%d", id);
   r = post_form(RD, rota, SRD, corpo, &st);
-  free(r);
   if (!(st == 204 || st == 202 || (st >= 200 && st < 300))) {
-    printf("[debrid] selectFiles: HTTP %d\n", st); return 0;
+    int v = falha(SRD, "selectFiles", st, r); free(r); return v;
   }
+  free(r);
 
   // Em cache o RD marca "downloaded" quase na hora; fora de cache ele
   // comecaria a BAIXAR — e isso nao e "tocar agora". Tres olhadas e desiste.
@@ -195,6 +333,9 @@ static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n) 
       if (fim && (size_t)(fim - links - 1) < sizeof link) {
         memcpy(link, links + 1, (size_t)(fim - links - 1)); link[fim - links - 1] = 0;
       }
+    } else if (r && !ok2xx(r, st)) {
+      // so o nao-2xx para: 2xx "ainda nao baixou" e o caso das tres olhadas
+      int v = falha(SRD, "info", st, r); free(r); return v;
     }
     free(r);
     if (!link[0]) sleep(1);
@@ -212,7 +353,7 @@ static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n) 
   snprintf(corpo, sizeof corpo, "link=%s", enc);
   r = post_form(RD, "unrestrict/link", SRD, corpo, &st);
   if (!ok2xx(r, st) || !js_texto(r, NULL, "download", url, n)) {
-    printf("[debrid] unrestrict: HTTP %d\n", st); free(r); return 0;
+    int v = falha(SRD, "unrestrict", st, r); free(r); return v;
   }
   free(r);
   return 1;
@@ -265,7 +406,10 @@ static int resolverTB(const char *infoHash, int fileIdx, char *url, unsigned n) 
   //    nao se pede nada ao servico.
   snprintf(rota, sizeof rota, "torrents/checkcached?hash=%s&format=list", h);
   r = get_auth(TB, rota, STB, &st);
-  if (!ok2xx(r, st) || !js_array(r, NULL, "data")) {
+  // Nao-2xx aqui NAO e "fora de cache": era como o 1.4.0 escrevia, e uma chave
+  // recusada (401/403) aparecia no log como se o conteudo so nao estivesse la.
+  if (!ok2xx(r, st)) { int v = falha(STB, "checkcached", st, r); free(r); return v; }
+  if (!js_array(r, NULL, "data")) {
     printf("[debrid] TorBox: %s fora de cache (HTTP %d)\n", h, st);
     free(r); return 0;
   }
@@ -273,9 +417,19 @@ static int resolverTB(const char *infoHash, int fileIdx, char *url, unsigned n) 
 
   snprintf(magnet, sizeof magnet, "magnet:?xt=urn:btih:%s", h);
   r = tb_criar(magnet, &st);
-  tid = r ? (int)js_num(r, NULL, "torrent_id", -1) : -1;
+  tid = ok2xx(r, st) ? (int)js_num(r, NULL, "torrent_id", -1) : -1;
+  // O 403 DO REGISTRO 1541 SAI AQUI. A linha continua comecando por
+  // "TorBox createtorrent: HTTP" (o que se procura no D1), agora com o corpo.
+  //
+  // HIPOTESE DESCARTADA ANTES DE ESCREVER ISTO: "a libcurl do app nao manda
+  // User-Agent e o WAF do TorBox recusa cliente sem UA" (medido com o Trakt:
+  // 401 com UA, 403 sem). Nao se aplica — rede.c:617 (GET) e rede.c:768
+  // (POST com status) poem "Nuvio/1.0 (webOS)" em TODA requisicao da libcurl,
+  // e no Tizen o XHR nao deixa definir UA e o navegador manda o dele. Se o
+  // corpo novo vier como pagina HTML de WAF em vez do JSON do TorBox, a
+  // pergunta volta a ser o UA (o valor, nao a ausencia).
+  if (tid < 0) { int v = falha(STB, "createtorrent", st, r); free(r); return v; }
   free(r);
-  if (tid < 0) { printf("[debrid] TorBox createtorrent: HTTP %d\n", st); return 0; }
 
   // 3) Os campos aqui sao "name"/"size", e nao "path"/"bytes" do RD — por isso
   //    escolherArquivo recebe os nomes. Tres olhadas de 1 s, como no RD: em
@@ -286,6 +440,9 @@ static int resolverTB(const char *infoHash, int fileIdx, char *url, unsigned n) 
     if (ok2xx(r, st) && (files = js_array(r, NULL, "files"))
         && (el = escolherArquivo(files, fileIdx, "name", "size")) != NULL)
       fid = (int)js_num(el, js_fim(el), "id", -1);
+    else if (r && !ok2xx(r, st)) {
+      int v = falha(STB, "mylist", st, r); free(r); return v;
+    }
     free(r);
     if (fid < 0) sleep(1);
   }
@@ -301,7 +458,8 @@ static int resolverTB(const char *infoHash, int fileIdx, char *url, unsigned n) 
              chave[STB], tid, fid);
     r = rede_baixar_st(u, 15, cab, &st); }
   if (!ok2xx(r, st) || !js_texto_raiz(r, "data", url, n)) {
-    printf("[debrid] TorBox requestdl: HTTP %d\n", st); free(r); return 0;
+    // "requestdl" e nao a URL: a URL leva o token (ver acima)
+    int v = falha(STB, "requestdl", st, r); free(r); return v;
   }
   free(r);
   return 1;
@@ -330,10 +488,16 @@ static int resolverPM(const char *infoHash, int fileIdx, char *url, unsigned n) 
   // cache" e "me da o link" falem de coisas diferentes.
   snprintf(corpo, sizeof corpo, "items%%5B%%5D=%s", enc);
   r = post_form(PM, "cache/check", SPM, corpo, &st);
+  // O Premiumize responde erro de conta como 200 {"status":"error",
+  // "message":...}, sem "response": falha() cobre os dois (nao-2xx cru, 2xx so
+  // com a mensagem).
+  if (!ok2xx(r, st) || !js_bruto(r, NULL, "response", bruto, sizeof bruto)) {
+    int v = falha(SPM, "cache/check", st, r); free(r); return v;
+  }
   // O array de "response" e de BOOLEANOS, e js_array so sabe abrir array de
   // objeto ou de texto — dai a leitura crua.
-  emCache = ok2xx(r, st) && js_bruto(r, NULL, "response", bruto, sizeof bruto);
-  if (emCache) {
+  emCache = 1;
+  {
     const char *q = bruto;
     if (*q == '[') q++;
     while (*q && (unsigned char)*q <= ' ') q++;
@@ -348,7 +512,7 @@ static int resolverPM(const char *infoHash, int fileIdx, char *url, unsigned n) 
   snprintf(corpo, sizeof corpo, "src=%s", enc);
   r = post_form(PM, "transfer/directdl", SPM, corpo, &st);
   if (!ok2xx(r, st) || !(cont = js_array(r, NULL, "content"))) {
-    printf("[debrid] Premiumize directdl: HTTP %d\n", st); free(r); return 0;
+    int v = falha(SPM, "directdl", st, r); free(r); return v;
   }
   el = escolherArquivo(cont, fileIdx, "path", "size");
   // "link" e nao "stream_link": o segundo e a versao transcodificada, que nem
@@ -365,6 +529,7 @@ static int resolverPM(const char *infoHash, int fileIdx, char *url, unsigned n) 
 
 int debrid_resolver(const char *infoHash, int fileIdx, char *url, unsigned n) {
   int q;
+  unsigned g = atomic_load(&geracao);
   if (!infoHash || !*infoHash || !url || n == 0) return 0;
 
   // ORDEM FIXA: Real-Debrid, TorBox, Premiumize; ganha o PRIMEIRO QUE
@@ -375,10 +540,25 @@ int debrid_resolver(const char *infoHash, int fileIdx, char *url, unsigned n) {
   for (q = 0; q < SN; q++) {
     int deu;
     if (!chave[q][0]) continue;
+    // Recusado pela conta nesta busca: nem tenta, passa ao proximo servico.
+    // E o que faltava no registro 1541 — o Premiumize so era perguntado
+    // depois de cada 403 do TorBox, torrent por torrent.
+    if (atomic_load(&recusado[q])) continue;
     url[0] = 0;
     deu = (q == SRD) ? resolverRD(infoHash, fileIdx, url, n)
         : (q == STB) ? resolverTB(infoHash, fileIdx, url, n)
                      : resolverPM(infoHash, fileIdx, url, n);
+    if (deu < 0) {
+      int zero = 0;
+      // so o primeiro fio a ver a recusa escreve a linha, e so se a busca
+      // ainda e a mesma (ver `geracao`)
+      if (atomic_load(&geracao) == g
+          && atomic_compare_exchange_strong(&recusado[q], &zero, -deu))
+        printf("[debrid] %s: recusa da conta (HTTP %d), fora do resto desta busca\n",
+               nomeServ[q], -deu);
+      url[0] = 0;
+      continue;
+    }
     if (deu && url[0]) {
       // O CAMINHO DESTA URL E A CREDENCIAL: e o link direto que o servico
       // devolve, e quem o tem baixa usando a conta de quem pediu. Ver

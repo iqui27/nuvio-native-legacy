@@ -65,6 +65,7 @@
 #include "pipintro.h"
 #include "social.h"
 #include "ajustes.h"
+#include "debrid.h"
 #include "player.h"
 #include "streams.h"
 #include "stalker.h"
@@ -1637,6 +1638,11 @@ void app_atualizar(float dt, Uint32 agora) {
     // Matroska num arquivo que nunca teria um cabecalho desses.
     if (s) video_definir_mp4(s->mp4 || strstr(s->url, ".mp4") != NULL);
     marco(s ? "fonte escolhida" : "nenhuma fonte serve");
+    // Nenhuma fonte e um debrid recusou a CONTA (403 de plano/limite, registro
+    // 1541): diz qual no log, que e onde se separa "o addon nao tinha" de "o
+    // TorBox nao deixou". Ver debrid_recusa em debrid.h.
+    if (!s) { char rec[64];
+      if (debrid_recusa(rec, sizeof rec)) printf("[fonte] o debrid recusou (%s)\n", rec); }
     // PiP conta como sessao viva: o zap dentro da miniatura depende desta
     // fonte chegar — com a guarda antiga ela seria descartada.
     if ((player_aberto() || player_mini_ativo()) && !player_quer_sair()) {
@@ -1667,8 +1673,15 @@ void app_atualizar(float dt, Uint32 agora) {
   //
   // Agora a condicao e so "o player esta aberto, marcou erro, e o pipeline
   // esta entregando". Quem entrega desmente o cartao, seja canal ou filme.
+  //
+  // E O VIDEO TEM DE SER DESTA SESSAO. MEDIDO no registro 1518 (webOS 1.4.0):
+  // a busca terminou em "nenhuma fonte serve" — nenhum video aberto — e no
+  // mesmo quadro o cartao saiu com "buffer 5596.0s". O buffer era do pipeline
+  // compartilhado (o trailer HLS do detalhe acabara de tocar), nao de fonte
+  // nenhuma do player. Sem player_tem_video() a pessoa ficava numa tela preta
+  // sem erro e sem fonte.
   if ((player_aberto() || player_mini_ativo()) && player_fonte_falhou() &&
-      video_buffer_fim() > 0.5 && !video_falhou()) {
+      player_tem_video() && video_buffer_fim() > 0.5 && !video_falhou()) {
     printf("[player] a fonte voltou a entregar (buffer %.1fs): tirando o erro da tela\n",
            video_buffer_fim());
     fflush(stdout);

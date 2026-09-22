@@ -704,7 +704,22 @@ int main(int argc, char **argv) {
     // Enquanto o detalhe existe ele fica com o teclado inteiro: a home
     // continua desenhada por baixo, mas nao deve reagir ao D-pad.
     while (SDL_PollEvent(&e)) {
-      if (e.type == SDL_WINDOWEVENT) continue;
+      if (e.type == SDL_WINDOWEVENT) {
+        // Ultimo sinal de vida na marca de sessao (avisos_sinal): e o que diz,
+        // na abertura seguinte, se a sessao que "nao se despediu" tinha ido
+        // para segundo plano antes de morrer.
+        const char *ev = NULL;
+        switch (e.window.event) {
+          case SDL_WINDOWEVENT_HIDDEN:       ev = "oculto"; break;
+          case SDL_WINDOWEVENT_SHOWN:        ev = "visivel"; break;
+          case SDL_WINDOWEVENT_MINIMIZED:    ev = "minimizado"; break;
+          case SDL_WINDOWEVENT_FOCUS_LOST:   ev = "foco-perdido"; break;
+          case SDL_WINDOWEVENT_FOCUS_GAINED: ev = "foco-voltou"; break;
+          default: break;
+        }
+        if (ev) avisos_sinal(ev, (float)rssMB());
+        continue;
+      }
       // O BACK do webOS chega com scancode proprio (482), nao como AC_BACK, e
       // com KEYDOWN e KEYUP quase juntos — so o KEYDOWN conta. Isto ja tinha
       // sido resolvido uma vez e voltou a quebrar quando limpei os remendos
@@ -897,6 +912,7 @@ int main(int argc, char **argv) {
              tex_cache_disco_bytes() / 1048576.0,
              rssMB(),
              dados_persistente() ? "" : "  <<< SEM PERSISTENCIA");
+      avisos_sinal(NULL, (float)rssMB());   // batida: no maximo 1 a cada 60 s
 #ifdef __EMSCRIPTEN__
       // Heap linear, nao RAM total do processo: GPU e memoria JS ficam fora.
       // uordblks inclui pilhas dos pthreads e dados alocados pelo malloc.

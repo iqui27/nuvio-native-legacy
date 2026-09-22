@@ -1251,6 +1251,8 @@ int    video_ativo(void)      { return ativo; }
 // video.c (webOS): app.c usa isto no watchdog de canal para pular a fonte
 // morta sem esperar o prazo. Sem esta definicao o alvo Tizen nem linkava.
 int    video_falhou(void)     { return houveErro; }
+// O AVPlay nao separa "audio nao suportado" de erro geral; sem sinal proprio.
+int    video_audio_nao_suportado(void) { return 0; }
 // O trailer deste alvo nao passa pelo AVPlay (ver trailer.c); nao ha fim a
 // contar aqui.
 int    video_terminou(void)   { return 0; }

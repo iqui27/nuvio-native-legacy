@@ -14,6 +14,54 @@
 #include <string.h>
 #include <unistd.h>
 #include "addons.h"
+#include "fontecache.h"
+
+// ---------------------------------------------------------------- duble
+//
+// A BUSCA DE FONTES DE VERDADE (addons_buscar -> fio -> addons_estado), com a
+// rede e o parser trocados por dubles. O que se confere e o RESUMO que a folha
+// de fontes vazia usa para dizer a causa (B6/#107, D5): quem foi consultado,
+// quem respondeu vazio, quem nao respondeu.
+//
+// resp[0] e o corpo de exemplo.test, resp[1] o de antigo.test; NULL = sem
+// resposta (rede_baixar devolve NULL em falha e em 4xx).
+static const char *resp[2];
+static int nDebridNovaBusca;
+
+char *rede_baixar(const char *url, int s) {
+  const char *r = strstr(url, "exemplo.test") ? resp[0]
+                : strstr(url, "antigo.test")  ? resp[1] : NULL;
+  (void)s;
+  return r ? strdup(r) : NULL;
+}
+// conta um "url" por fonte; o bastante para distinguir lista vazia de cheia
+int stream_extrair(const char *json, const char *prov, Stream **saida) {
+  int n = 0; const char *p = json;
+  (void)prov;
+  while ((p = strstr(p, "\"url\"")) != NULL) { n++; p += 5; }
+  *saida = n ? calloc((size_t)n, sizeof(Stream)) : NULL;
+  return n;
+}
+void stream_definir_lista(const Stream *l, int n) { (void)l; (void)n; }
+void debrid_definir_episodio(int t, int e) { (void)t; (void)e; }
+void debrid_nova_busca(void) { nDebridNovaBusca++; }
+const char *i18n(const char *s) { return s; }
+void marco(const char *s) { (void)s; }
+int  fontecache_pegar(const char *id, const char *tipo, Stream **l, int *n) {
+  (void)id; (void)tipo; *l = NULL; *n = 0; return FC_NADA; }
+void fontecache_guardar(const char *id, const char *tipo, const Stream *l, int n) {
+  (void)id; (void)tipo; (void)l; (void)n; }
+void fontecache_ceder(void) {}
+void fontecache_avancar(void) {}
+
+// Uma busca inteira, esperando o fio acabar, e a frase da folha.
+static const char *buscarMotivo(const char *id) {
+  static char m[200];
+  addons_buscar(id, "movie");
+  while (addons_estado() == ADD_BUSCANDO) usleep(1000);
+  if (!addons_motivo_vazio(m, sizeof m)) snprintf(m, sizeof m, "(sem causa)");
+  return m;
+}
 
 static int falhas;
 
@@ -67,6 +115,32 @@ int main(void) {
   // A base sai sem "/manifest.json" — a mesma regra de baseNormalizada.
   conferirTexto("base[1]", addons_base(1), "https://exemplo.test");
   conferirTexto("nome[1]", addons_nome(1), "Fonte e catalogo");
+
+  // ---- a causa da folha vazia
+  // 1) id 1504 (#107): todos responderam {"streams":[]}
+  resp[0] = "{\"streams\":[]}"; resp[1] = "{\"streams\":[]}";
+  conferirTexto("todos vazios", buscarMotivo("tt0000001"),
+                "2 add-ons responderam: nenhum tem este título");
+  conferir("debrid_nova_busca por busca", nDebridNovaBusca, 1);
+  // 2) um vazio, um mudo
+  resp[1] = NULL;
+  conferirTexto("vazio + mudo", buscarMotivo("tt0000002"),
+                "1 sem este título · 1 sem resposta");
+  // 3) algum trouxe fonte: a lista nao esta vazia por culpa dos addons
+  resp[0] = "{\"streams\":[{\"url\":\"https://x/a.mp4\"}]}";
+  conferir("com fonte nao explica vazio",
+           strcmp(buscarMotivo("tt0000003"), "(sem causa)"), 0);
+  // 4) so um consultado, e ele nao responde
+  addons_alternar(1);                       // "Fonte e catalogo" desligado
+  conferirTexto("um mudo", buscarMotivo("tt0000004"), "Formato antigo não respondeu");
+  // 5) so um, e responde vazio
+  resp[1] = "{\"err\":\"Invalid debrid key\"}";
+  conferirTexto("um vazio", buscarMotivo("tt0000005"),
+                "Formato antigo respondeu: não tem este título");
+  // 6) D5: os de fonte desligados
+  addons_alternar(2);
+  conferirTexto("desligados", buscarMotivo("tt0000006"),
+                "Os add-ons de fontes estão desligados");
 
   remove(caminho);
   rmdir(dir);
