@@ -14,13 +14,17 @@
 // com o token daqui. O Simkl nao tem listas nomeadas na API — nao existe
 // equivalente a /users/me/lists do Trakt —, entao "listas do Simkl" quer dizer
 // esses cinco estados, e a tela diz isso em vez de fingir outra coisa.
+// Desde o issue #110 o token tambem alimenta src/simkl.c: a fileira
+// "Continuar assistindo" (fonte "Simkl", ou "Ambas" com vinculo) e o "+" com
+// "Onde o + salva" em "Plan to Watch do Simkl".
 // Vincular aqui continua servindo tambem para a CREDENCIAL CHEGAR NA CONTA, e
 // dali para o app web e o celular.
 // LIMITE CONHECIDO, e diferente do Trakt: aqui o pedido pendente NAO sobrevive
 // a um reinicio do app — o PIN vive so na memoria. No Trakt isso foi corrigido
 // porque mordeu de verdade (o dono autorizou e o app tinha reiniciado no meio);
-// aqui fica anotado em vez de implementado sem uso, ja que nada neste app
-// consome Simkl ainda. Se virar problema, e o mesmo remendo do traktauth.c.
+// aqui fica anotado em vez de implementado — quando foi escrito, nada neste
+// app consumia Simkl; hoje ha consumidores (ver acima), mas o PIN pendente
+// continua raro. Se virar problema, e o mesmo remendo do traktauth.c.
 #ifndef NV_SIMKLAUTH_H
 #define NV_SIMKLAUTH_H
 

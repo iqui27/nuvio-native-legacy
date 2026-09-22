@@ -102,6 +102,14 @@ int   ajustes_data_completa(void);      // showFullReleaseDate
 // nos DOIS valores — ver a nota de V_SALVOS em ajustes.c e a abertura de salvos.h.
 int   ajustes_salvos_no_trakt(void);
 void  ajustes_definir_salvos_no_trakt(int noTrakt);
+// 1 = o "+" tambem publica no Plan to Watch do Simkl (#110).
+int   ajustes_salvos_no_simkl(void);
+// Os INDICES GRAVADOS de "Onde o + salva" (salvosDestino) e da fonte do
+// "Continuar assistindo" (cwFonteLocal). Sao contrato com o ajustes.txt de quem
+// ja usa o app: valor novo entra no fim, nunca no meio. tests/simkl_cw.sh
+// confere cada um contra o rotulo em ajustes.c.
+enum { AJ_SALVOS_LOCAL = 0, AJ_SALVOS_TRAKT = 1, AJ_SALVOS_SIMKL = 2 };
+enum { AJ_CWF_AMBAS = 0, AJ_CWF_CONTA = 1, AJ_CWF_TRAKT = 2, AJ_CWF_SIMKL = 3 };
 // Envio automatico do registro (Sobre). 1 = ligado.
 int   ajustes_envio_auto(void);
 // Forca da vinheta do fundo do titulo, 0..1 (1 = a medida do web).
@@ -126,8 +134,9 @@ int   ajustes_cw_ligado(void);          // continueWatchingEnabled
 int   ajustes_cw_ok_toca(void);         // OK no card: 1 = toca direto (cwOkLocal)
 int   ajustes_cw_estilo(void);          // 0 card, 1 largo (wide), 2 poster
 int   ajustes_cw_thumb_episodio(void);  // useEpisodeThumbnailsInCw
-// 0 = as duas fontes (conta primeiro, Trakt completando), 1 = so a conta
-// Nuvio, 2 = so o Trakt. Local: o app oficial nao tem esta escolha.
+// AJ_CWF_*: 0 = todas (conta primeiro, Trakt e — com vinculo — Simkl
+// completando), 1 = so a conta Nuvio, 2 = so o Trakt, 3 = so o Simkl. Local: o
+// app oficial nao tem esta escolha.
 int   ajustes_cw_fonte(void);
 int   ajustes_cw_desfocar_proximo(void);// blurContinueWatchingNextUp
 int   ajustes_cw_do_episodio_mais_alto(void); // nextUpFromFurthestEpisode

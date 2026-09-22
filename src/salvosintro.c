@@ -103,6 +103,9 @@ void sintro_primeira_vez(void) {
   decidido = 1;
   s = dados_ler(SI_ARQ);
   if (s) { free(s); return; }
+  // QUEM JA ESCOLHEU O SIMKL em Ajustes (#110) nao ve este cartao: ele so
+  // oferece Nuvio e Trakt, e o OK gravaria um dos dois por cima da escolha.
+  if (ajustes_salvos_no_simkl()) return;
   aberto = 1;
   // O foco NASCE na opcao em vigor, e nao sempre na primeira: o cartao e um
   // mapa de onde a pessoa esta, e comecar em outra linha faria ela ler que a

@@ -15,6 +15,7 @@
 // liga, que e justamente quando alguem aperta.
 #include "salvospainel.h"
 #include "salvos.h"
+#include "simkl.h"
 #include "recomenda.h"
 #include "avisos.h"
 #include "recenviar.h"
@@ -1582,9 +1583,14 @@ static void desenhaAmigoLinha(int i, int idx, float dx, float y, float a) {
 
 static void desenhaVazio(float dx, float a) {
   float cx = SP_X + dx + SP_W * 0.5f;
-  TxtLinha t1 = txt_linha(TXT_CALLOUT, "Nada salvo por enquanto", 240, 242, 248, 255);
+  // DESTINO SIMKL SEM VINCULO (issue #110): a lista vazia muda seria lida como
+  // "o Plan to Watch esta vazio". O que falta e o vinculo, e e isso que sai.
+  const char *semSimkl = simkl_aviso_sem_vinculo(ajustes_salvos_no_simkl());
+  TxtLinha t1 = txt_linha(TXT_CALLOUT, semSimkl ? semSimkl : "Nada salvo por enquanto",
+                          240, 242, 248, 255);
   TxtLinha t2 = txt_linha_corta(TXT_CAPTION,
-      "Aperte + em um filme ou série e ele aparece aqui.",
+      semSimkl ? "O + salva no Plan to Watch do Simkl, e ele ainda não está vinculado nesta TV."
+               : "Aperte + em um filme ou série e ele aparece aqui.",
       168, 172, 182, 255, SP_INTERNO);
   gfx_icone((GfxRect){ cx - 30.0f, listaTopo() + 140.0f, 60.0f, 60.0f },
             "mais", 0.55f, 0.57f, 0.62f, a);

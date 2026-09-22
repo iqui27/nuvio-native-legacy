@@ -33,6 +33,7 @@
 #include "perfis.h"
 #include "traktauth.h"
 #include "simklauth.h"
+#include "simkl.h"
 #include "qr.h"
 #include "atualizacao.h"
 #include "avisos.h"
@@ -187,10 +188,17 @@ static const char *V_RAIL[]      = { "Recolhida", "Fixa" };
 static const char *V_CW[]        = { "Card", "Largo", "P\xc3\xb4ster" };
 // FONTE do "Continuar assistindo". As duas ja existem e ja sao fundidas em
 // montarContinuar (descoberta.c); isto so escolhe quais entram.
-//   Ambas  = conta primeiro, Trakt preenchendo o que falta (o de sempre)
+//   Ambas  = conta primeiro, Trakt e Simkl preenchendo o que falta
 //   Conta  = so o progresso da conta Nuvio (syncprog.c)
 //   Trakt  = so o /sync/playback do Trakt
-static const char *V_CW_FONTE[]  = { "Ambas", "Conta Nuvio", "Trakt" };
+//   Simkl  = so o /sync/playback e o "watching" do Simkl (simkl.c, #110)
+// O INDICE E O QUE ESTA GRAVADO em ajustes.txt ("cwFonteLocal N"), entao a
+// ordem e contrato: "Simkl" entrou NO FIM para quem ja tinha 1 ou 2 continuar
+// lendo Conta e Trakt. Os numeros tem nome em ajustes.h (AJ_CWF_*), e
+// tests/simkl_cw.sh confere rotulo por indice. "Ambas" continua com o nome
+// antigo mesmo sendo tres: e o rotulo que quem ja usa conhece, o Simkl so
+// entra nela com vinculo feito, e a ajuda da linha diz a regra inteira.
+static const char *V_CW_FONTE[]  = { "Ambas", "Conta Nuvio", "Trakt", "Simkl" };
 // `continueWatchingSortMode`, normalizado em normalizeContinueWatchingSortMode.
 static const char *V_CW_ORDEM[]  = { "Padrão", "Estilo streaming", "Separar futuros" };
 // O que o toque curto de OK faz num card da retomada (issue #93): abre o
@@ -219,7 +227,13 @@ static const char *V_HERO_FONTE[] = {
 // Padrao "Watchlist do Trakt" = o comportamento que o app ja tinha. Trocar o
 // padrao para a lista local faria o "+" de quem usa Trakt parar de publicar la
 // depois de uma atualizacao, sem ninguem ter pedido.
-static const char *V_SALVOS[]    = { "Lista do Nuvio", "Watchlist do Trakt" };
+//
+// "Plan to Watch do Simkl" (#110) entrou NO FIM pelo mesmo motivo de
+// V_CW_FONTE: o indice e o gravado ("salvosDestino N"), e 1 tem de continuar
+// sendo o Trakt. Com ele o "+" publica no Plan to Watch, e o Plan to Watch
+// passa a entrar nos Salvos (descoberta.c). Nomes em ajustes.h (AJ_SALVOS_*).
+static const char *V_SALVOS[]    = { "Lista do Nuvio", "Watchlist do Trakt",
+                                     "Plan to Watch do Simkl" };
 // `tmdb_language` no blob da conta guarda so o idioma BASE ("pt", "en") —
 // normalizeTmdbLanguageForAndroid corta a regiao. A lista aqui e curta de
 // proposito: a do web e gerada de AVAILABLE_LANGUAGES inteiro, e atravessar
@@ -382,7 +396,7 @@ static const Opcao OPCOES[AJ_N] = {
 
   ESC("Mostrar \"Continuar assistindo\"", V_LIGA, 2), // continueWatchingEnabled
   ESC("OK no card",                     V_CW_OK, 2),  // local, ver V_CW_OK
-  ESC("Fonte do \"Continuar assistindo\"", V_CW_FONTE, 3),   // local, ver V_CW_FONTE
+  ESC("Fonte do \"Continuar assistindo\"", V_CW_FONTE, 4),   // local, ver V_CW_FONTE
   ESC("Estilo do \"Continuar assistindo\"", V_CW, 3), // continueWatchingCardStyle
   ESC("Miniatura do episódio",      V_LIGA, 2),   // useEpisodeThumbnailsInCw
   ESC("Desfocar próximo episódio",  V_LIGA, 2),   // blurContinueWatchingNextUp
@@ -442,7 +456,7 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Usuário Xtream"),
   ACAO("Senha Xtream"),
   ACAO("Remover o Xtream"),
-  ESC("Onde o + salva",             V_SALVOS, 2),
+  ESC("Onde o + salva",             V_SALVOS, 3),
   ACAO("Trakt"),
   ACAO("Simkl"),
   ACAO("Sair da conta"),
@@ -965,7 +979,8 @@ void ajustes_definir_ocultar_nao_lancados(int ligado) {
 }
 // 1 = o "+" tambem publica na watchlist do Trakt. A lista LOCAL e escrita nos
 // dois casos; ver a nota de V_SALVOS e a de abertura de salvos.h.
-int ajustes_salvos_no_trakt(void)     { return valor[AJ_SALVOS_DEST] == 1; }
+int ajustes_salvos_no_trakt(void)     { return valor[AJ_SALVOS_DEST] == AJ_SALVOS_TRAKT; }
+int ajustes_salvos_no_simkl(void)     { return valor[AJ_SALVOS_DEST] == AJ_SALVOS_SIMKL; }
 // Setter para o explicador de primeira vez (salvosintro.c), que faz esta
 // pergunta antes de a pessoa chegar em Ajustes. Grava na hora: quem respondeu e
 // desligou a TV nao deve ser perguntado de novo.
@@ -1141,7 +1156,11 @@ static const char *const *literaisDe(int op) {
   switch (op) {
     case AJ_DESCOBRIR:  return W_DESCOBRIR;
     case AJ_NOTAS_HOME: return W_NOTAS;
-    case AJ_CW_FONTE:   return W_CW;
+    // AJ_CW_FONTE NAO TEM LITERAIS DO WEB, e devolvia W_CW ("card", "wide",
+    // "poster") — copia da linha de baixo. Nao mordia porque a chave e local
+    // (cwFonteLocal nunca esta no blob) e somenteDesteAparelho a barra na
+    // subida; mas com o "Simkl" no indice 3 um blob com "cw_fonte_local":
+    // "poster" viraria Simkl. Sem literais, texto desconhecido e "mantido".
     case AJ_CW_ESTILO:  return W_CW;
     case AJ_CW_ORDEM:   return W_CW_ORDEM;
     case AJ_TMDB_IDIOMA: return W_TMDB_LING;
@@ -1867,7 +1886,7 @@ static const char *ajudaOpcao(int op) {
     // --- Continuar assistindo
     case AJ_CW_LIGADO: return "A fileira de retomada, com o que você deixou pela metade e o próximo episódio das séries que acompanha.";
     case AJ_CW_OK: return "O que o OK faz no card da retomada: toca de onde parou, ou abre a página do título. Segurar OK abre o menu nos dois casos.";
-    case AJ_CW_FONTE: return "De onde vem a fileira de retomada. \"Ambas\" usa a conta Nuvio e completa com o Trakt.";
+    case AJ_CW_FONTE: return "De onde vem a fileira de retomada. \"Ambas\" usa a conta Nuvio e completa com o Trakt e, se estiver vinculado, com o Simkl.";
     case AJ_CW_ESTILO: return "A forma do card da retomada: quadrado com a arte, deitado largo, ou o cartaz em pé.";
     case AJ_CW_THUMB: return "Usa a imagem do próprio episódio no card, em vez da arte da série.";
     case AJ_CW_BLUR_PROX: case AJ_DET_BLUR_NAO_VISTOS: return "Oculta detalhes da miniatura para evitar spoilers de episódios ainda não assistidos.";
@@ -1960,6 +1979,11 @@ static const char *efeitoOpcao(int op) {
     case AJ_CW_OK:
       return "Vale só nesta TV: não altera a Home dos seus outros aparelhos.";
     case AJ_CW_FONTE:
+      // SEM VINCULO, "Simkl" e uma fileira vazia. Dizer isso aqui, na linha
+      // onde a escolha e feita, e o que impede a Home de so perder a fileira
+      // sem explicacao. Mesma frase de simkl.h, que as outras telas usam.
+      if (valor[op] == AJ_CWF_SIMKL && !simklauth_token()[0])
+        return "Vincule o Simkl em Ajustes: sem o vínculo, a fileira fica vazia.";
       return "Vale só nesta TV. Ao mudar, a fileira é remontada na hora.";
     case AJ_IDIOMA:
       return "Ao mudar, as fileiras são remontadas para os títulos saírem no idioma novo.";
@@ -1970,7 +1994,9 @@ static const char *efeitoOpcao(int op) {
     case AJ_SAIR:
       return "Não pede confirmação: OK sai na hora. Para voltar é preciso entrar de novo pelo QR.";
     case AJ_SALVOS_DEST:
-      return "A lista desta TV recebe o título nos dois casos. Isto decide se ele também vai para o Trakt.";
+      if (valor[op] == AJ_SALVOS_SIMKL && !simklauth_token()[0])
+        return "Vincule o Simkl em Ajustes: sem o vínculo, o + guarda só na lista desta TV.";
+      return "A lista desta TV recebe o título em todos os casos. Isto decide se ele também vai para o Trakt ou para o Simkl.";
     case AJ_ADDONS: case AJ_TRAKT: case AJ_SIMKL:
       return "OK abre. As setas laterais não fazem nada nesta linha.";
     default: return NULL;
@@ -2475,6 +2501,7 @@ void ajustes_evento(const SDL_Event *e) {
       sessao_sair();
       traktauth_esquecer();
       simklauth_esquecer();
+      simkl_esquecer();
       // A ordem e o liga/desliga das fileiras sao da home de QUEM SAIU, como a
       // ordem que vem da conta (ver catordem_esquecer). Sem isto, a proxima
       // pessoa herda a home montada pela anterior.
@@ -2529,6 +2556,10 @@ void ajustes_evento(const SDL_Event *e) {
       // fonte so teria efeito no proximo sync, e para quem apertou parece que
       // o ajuste nao faz nada.
       if (focoOp == AJ_CW_FONTE) desc_repetir();
+      // O DESTINO DO "+" tambem: com "Plan to Watch do Simkl" o Plan to Watch
+      // entra nos Salvos pela descoberta (descoberta.c), e sem o ciclo ele so
+      // apareceria no proximo sync.
+      if (focoOp == AJ_SALVOS_DEST) desc_repetir();
       // O teto de imagens vale NA HORA: subir e so deixar entrar mais; descer
       // despeja pelo LRU de sempre no proximo quadro.
       if (focoOp == AJ_TEX_MB) tex_definir_orcamento_mb(ajustes_tex_mb());

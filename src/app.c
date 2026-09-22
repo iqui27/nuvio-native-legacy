@@ -21,6 +21,7 @@
 #include "sync.h"
 #include "traktauth.h"
 #include "simklauth.h"
+#include "simkl.h"
 #include "listas.h"
 #include "text.h"
 #include "tex_cache.h"
@@ -1624,6 +1625,13 @@ void app_atualizar(float dt, Uint32 agora) {
       // padrao e ligado, entao para quem ja usava o app nada muda.
       if (c && c->imdb[0] && ajustes_salvos_no_trakt())
         trakt_watchlist(c->imdb, entrar);
+      // O SIMKL, pelo mesmo criterio (issue #110). Sem vinculo nao sai nada e o
+      // log diz — a Biblioteca e o painel de Salvos dizem "Vincule o Simkl em
+      // Ajustes" (simkl.h), e o titulo ficou na lista desta TV de qualquer jeito.
+      if (c && c->imdb[0] && ajustes_salvos_no_simkl()) {
+        if (!simkl_ativo()) printf("[simkl] + sem vinculo: so na lista desta TV\n");
+        else simkl_lista_tipo(c->imdb, c->tipo, entrar);
+      }
       if (c) cat_definir_na_lista(i, entrar);
     }
     if (detail_pediu_fontes()) {

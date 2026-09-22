@@ -69,6 +69,7 @@
 #include "listas.h"
 #include "teclado.h"
 #include "trakt.h"
+#include "simkl.h"
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
@@ -1074,9 +1075,16 @@ static void desenhaVazio(void) {
     else                  { l1 = "Nada para mostrar aqui";
                             l2 = "Escolha outra fonte no seletor acima."; }
   } else {
-    l1 = totalModo ? "Nenhum título neste filtro"
+    // "Salvos" com o "+" apontado para o Simkl e sem vinculo (issue #110): a
+    // aba vazia diz o que falta, e nao "sua proxima sessao comeca aqui".
+    const char *semSimkl = modo == MODO_SALVOS && !totalModo
+        ? simkl_aviso_sem_vinculo(ajustes_salvos_no_simkl()) : NULL;
+    l1 = semSimkl ? semSimkl
+        : totalModo ? "Nenhum título neste filtro"
         : modo == MODO_NUVEM ? "Sua coleção aparece aqui" : "Sua próxima sessão começa aqui";
-    l2 = totalModo
+    l2 = semSimkl
+        ? "O + salva no Plan to Watch do Simkl, e ele ainda não está vinculado nesta TV."
+        : totalModo
         ? "Em Tipo, escolha Todos. Confira também os filtros em Ajustes."
         : modo == MODO_NUVEM
           ? "Os filmes e séries da sua coleção no Trakt ficam reunidos nesta aba."
@@ -1538,6 +1546,7 @@ static void desenhaCabecalho(void) {
                              : "TRAKT")
       : modo == MODO_NUVEM ? (trakt_ativo() ? "TRAKT" : "LOCAL")
       : (contalib_tem_conta() ? seloCaixaAlta("Conta")
+                              : ajustes_salvos_no_simkl() && simkl_ativo() ? "SIMKL"
                               : trakt_ativo() ? "TRAKT" : "LOCAL");
     // TRAKT SAI COMO LOGO, nao como palavra. As outras origens continuam texto
     // espacado porque nao ha wordmark delas no pacote — "SIMKL" e "NUVIO"

@@ -76,6 +76,12 @@ void  prog_content_id(char *d, unsigned n, const char *i, int *t, int *e) {
 }
 int   prog_por_chave(const char *c, ProgRegistro *s) { (void)c; (void)s; return 0; }
 int   trakt_continuar(CatItem *s, int m)   { (void)s; (void)m; return 0; }
+// Simkl (issue #110): sem vinculo nos testes de fileira, como o Trakt acima.
+int   simkl_ativo(void)                    { return 0; }
+int   simkl_continuar(CatItem *s, int m)   { (void)s; (void)m; return 0; }
+int   simkl_e_a_seguir(const char *id)     { (void)id; return 0; }
+int   simkl_plantowatch(CatItem *s, int m) { (void)s; (void)m; return 0; }
+int   ajustes_salvos_no_simkl(void)        { return 0; }
 int   trakt_enfeitar_lote(CatItem *s, int n) { (void)s; (void)n; return 0; }
 int   trakt_lista(const char *q, CatItem *s, int m) { (void)q; (void)s; (void)m; return 0; }
 int   trakt_social(CatItem *s, int m)      { (void)s; (void)m; return 0; }

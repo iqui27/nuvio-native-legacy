@@ -3,6 +3,7 @@
 #include "descoberta.h"
 #include "syncprog.h"
 #include "trakt.h"
+#include "simkl.h"
 #include "extras.h"
 #include "gfx.h"
 #include "text.h"
@@ -43,6 +44,13 @@ static int   aberto, idx = -1, foco, pedDetalhes = -1;
 static float anim;
 static int   operacao, intencao, estadoOperacao;
 static int   espelhoAplicado;
+// A ESCRITA EM ANDAMENTO E DO SIMKL, e nao do Trakt (issue #110): diz a
+// ctx_atualizar qual estado consultar. Os numeros dos dois estados sao os
+// mesmos (SMK_OP_* = CTX_*), entao o resto do jogo de estados nao muda.
+static int   opSimkl;
+// Frase no lugar de "Biblioteca atualizada" quando o destino e o Simkl e nao
+// ha vinculo: a lista desta TV foi escrita, o Simkl nao — e a tela diz.
+static const char *avisoOp;
 static char  operacaoImdb[16];
 static volatile int holdAtivo, holdCancelado, holdPronto;
 // O OK QUE ABRIU O MODAL AINDA ESTA AFUNDADO.
@@ -255,6 +263,8 @@ static void aplicar(void) {
       intencao = !ci->naLista;
       snprintf(operacaoImdb, sizeof operacaoImdb, "%s", ci->imdb);
       operacao = CTX_OP_LISTA;
+      opSimkl = 0;
+      avisoOp = NULL;
       espelhoAplicado = 0;
       estadoOperacao = CTX_PENDENTE;
       // LOCAL PRIMEIRO E SEMPRE. E sincrono e nao pode falhar por rede, entao
@@ -264,7 +274,19 @@ static void aplicar(void) {
       if (ajustes_salvos_no_trakt()) {
         if (!trakt_watchlist_tipo(ci->imdb, ci->tipo, intencao))
           estadoOperacao = CTX_FALHA;
+      } else if (ajustes_salvos_no_simkl() && simkl_ativo() &&
+                 (intencao || simkl_na_plantowatch(ci->imdb))) {
+        // PLAN TO WATCH DO SIMKL. O "-" so vai ao Simkl quando o titulo esta
+        // no Plan to Watch conhecido: /sync/history/remove apaga o historico
+        // do titulo inteiro (ver simkl.h). Fora dele o "-" e so local, pelo
+        // ramo de baixo — o mesmo de quem salva na lista do Nuvio.
+        opSimkl = 1;
+        if (!simkl_lista_tipo(ci->imdb, ci->tipo, intencao))
+          estadoOperacao = CTX_FALHA;
       } else {
+        // Simkl escolhido e sem vinculo: a lista local ja foi escrita, e o
+        // modal diz por que o Simkl nao recebeu.
+        avisoOp = simkl_aviso_sem_vinculo(ajustes_salvos_no_simkl());
         // SEM TRAKT NAO HA O QUE ESPERAR, e deixar CTX_PENDENTE aqui seria um
         // modal travado para sempre: ctx_atualizar so sai da espera consultando
         // trakt_operacao_estado, e nenhuma operacao foi aberta la. A escrita
@@ -283,6 +305,8 @@ static void aplicar(void) {
       intencao = cat_historico_estado_item(atual) == 1 ? 0 : 1;
       snprintf(operacaoImdb, sizeof operacaoImdb, "%s", ci->imdb);
       operacao = CTX_OP_HISTORICO;
+      opSimkl = 0;
+      avisoOp = NULL;
       espelhoAplicado = 0;
       estadoOperacao = CTX_PENDENTE;
       if (!trakt_assistido_tipo(ci->imdb, ci->tipo, intencao))
@@ -315,6 +339,9 @@ static void aplicar(void) {
       // de playback, quem nao tem conta nao tem RPC. As duas dizem no log o que
       // fizeram, e a local acontece de qualquer jeito.
       trakt_playback_remover(ci->imdb);
+      // O Simkl tambem guarda o pausado (issue #110). Em fio proprio; sem id
+      // conhecido (item que nao veio do Simkl) nao faz nada.
+      simkl_playback_remover(ci->imdb);
       syncprog_remover(chave);
       // Efeito local e imediato: sem zerar o campo, o card so sairia da fileira
       // na proxima remontagem do catalogo, e para quem apertou parece que nada
@@ -384,7 +411,7 @@ void ctx_atualizar(float dt, Uint32 agora) {
   if (aberto && atual < 0) { aberto = 0; return; }
 
   if (operacao != CTX_OP_NENHUMA && estadoOperacao == CTX_PENDENTE) {
-    int novo = trakt_operacao_estado(operacao);
+    int novo = opSimkl ? simkl_lista_estado() : trakt_operacao_estado(operacao);
     if (novo == CTX_CONFIRMADA || novo == CTX_FALHA) {
       estadoOperacao = novo;
       if (!espelhoAplicado && atual >= 0) {
@@ -415,6 +442,7 @@ void ctx_atualizar(float dt, Uint32 agora) {
               // marcou como visto tambem nao quer o card de retomada de volta
               // no proximo ciclo.
               trakt_playback_remover(ci->imdb);
+              simkl_playback_remover(ci->imdb);
               syncprog_remover(chave);
               cat_zerar_progresso(atual);
             }
@@ -471,6 +499,8 @@ void ctx_desenhar(Uint32 agora) {
                                                     : "Desmarcado como assistido");
   else if (estadoOperacao == CTX_FALHA)
     mensagem = "Não foi possível atualizar. Tente novamente.";
+  if (estadoOperacao == CTX_CONFIRMADA && operacao == CTX_OP_LISTA && avisoOp)
+    mensagem = avisoOp;
 
   estados[0] = ci->naLista ? "Na biblioteca" : "Fora da biblioteca";
   if (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series")) {
