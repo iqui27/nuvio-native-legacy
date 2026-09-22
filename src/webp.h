@@ -18,7 +18,8 @@ SDL_Surface *webp_carregar_larg(const char *caminho, int largMax, int *ow, int *
 
 #ifdef __EMSCRIPTEN__
 // A PONTE PARA O DECODIFICADOR DO NAVEGADOR, para qualquer formato que ele
-// leia (`mime`: image/jpeg, image/png, image/webp). Bloqueia o fio chamador
+// leia (`mime`: image/png, image/webp — o tamanho sai do cabecalho, entao
+// so esses dois; JPEG devolve NULL). Bloqueia o fio chamador
 // (nunca o principal). Devolve RGBA de malloc com largura <= largMax quando
 // largMax > 0 — a reducao acontece no canvas, com o bitmap inteiro FORA do
 // heap do WASM; `ow`/`oh` recebem o tamanho original. Ver jpegrapido.c para
@@ -28,5 +29,9 @@ SDL_Surface *webp_carregar_larg(const char *caminho, int largMax, int *ow, int *
 #include <stddef.h>
 uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char *mime,
                                int largMax, int *lw, int *lh, int *ow, int *oh);
+// Pedidos que passaram do prazo e cujo Worker ainda nao terminou: o C nao
+// libera nada deles ate la. Libera os ja largados e devolve quantos sobram
+// (tests/decodefila-tizen.sh confere que chega a zero).
+int navegador_abandonados_vivos(void);
 #endif
 #endif

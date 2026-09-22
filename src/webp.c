@@ -25,14 +25,38 @@ static void     soltar(uint8_t *px);
 //
 // 52494646 e "RIFF": WebP puro, vindo do addon de posters.
 //
-// COMO A PONTE FUNCIONA. O fio de decode monta um bloco de 8 int32 no heap
-// (estado, largura, altura, ponteiro, tamanho original, origem), manda um
-// pedaco de JS para o FIO PRINCIPAL e dorme num futex. O fio principal so
-// REPASSA o pedido a um Worker proprio (tools/decodificador.js) e volta para o
-// laco de quadro. La, createImageBitmap decodifica, um OffscreenCanvas reduz,
-// o worker pede a este fio um bloco do tamanho certo (estado 2 -> malloc
-// aqui -> estado 3), escreve os pixels direto na memoria compartilhada e
-// acorda o futex (estado 1). O fio principal nao toca em pixel nenhum.
+// COMO A PONTE FUNCIONA (protocolo novo, 22/09/2026). O fio de decode le o
+// tamanho no CABECALHO do arquivo (PNG IHDR, WebP VP8/VP8L/VP8X), calcula o
+// tamanho de saida com a mesma conta do Worker e ALOCA TUDO ANTES: um bloco
+// de job, uma COPIA dos bytes comprimidos e o bloco de pixels. Manda um
+// pedaco de JS ao FIO PRINCIPAL, que so REPASSA o pedido a um Worker proprio
+// (tools/decodificador.js), e dorme num futex. O Worker decodifica
+// (createImageBitmap), reduz (OffscreenCanvas), escreve os pixels no bloco
+// que ja existe e fecha o job com um compareExchange. Ninguem espera ninguem
+// do lado do Worker.
+//
+// POR QUE MUDOU (logs da Samsung 1.4.1): icone de 128x128 levando 8 a 17 s,
+// `decode lento: 17702 ms ... menu_home.png`, `8047 ms ... play.png`. O
+// protocolo antigo pedia o malloc DEPOIS do decode (estado 2 -> o C aloca ->
+// estado 3) e o Worker, que e um fio so, ficava em Atomics.wait ate 8 s por
+// esse malloc. Quando o C ja tinha desistido do pedido (o prazo dele conta
+// desde o envio, fila incluida), o Worker esperava os 8 s inteiros por
+// ninguem, e a fila INTEIRA atras dele estourava o prazo tambem — cada
+// estouro gerava outro abandono e outra espera de 8 s. tests/decodefila-tizen.sh
+// reproduz: com prazo de 300 ms e 1 pedido lento em 7, o protocolo antigo
+// perdeu 44 de 60 pedidos RAPIDOS (5 ms); o novo perde 0.
+//
+// POSSE DO JOB. job[J_EST]:
+//   0 ABERTO      o C espera; Worker (ou fio principal) trabalha
+//   1 PRONTO      quem decodificou escreveu J_W/J_H e os pixels; o C consome
+//   4 ABANDONADO  o C passou do prazo e desistiu (CAS 0 -> 4); nada e liberado
+//   5 LARGADO     o Worker terminou um job abandonado (CAS 4 -> 5): so agora o
+//                 C pode liberar job, copia e pixels (varrer(), no proximo pedido)
+// O C NUNCA libera nada que o Worker ainda pode tocar, e um job so volta ao
+// allocator depois de 1 (consumido) ou 5 (largado) — entao nenhuma resposta
+// atrasada pode cair na memoria de outro pedido. J_SEQ e um numero unico por
+// pedido: o Worker confere antes de tocar no job, o que descarta tambem um
+// pedido reencaminhado pelo onerror depois de o job ter sido liberado.
 //
 // POR QUE SAIU DO FIO PRINCIPAL (#72, AU7000, 1.3.2): a versao anterior fazia
 // drawImage + getImageData no `then`, no fio principal, e no AU7000 cada arte
@@ -42,7 +66,8 @@ static void     soltar(uint8_t *px);
 //
 // O CAMINHO PELO FIO PRINCIPAL CONTINUA COMO RESERVA: e o que roda se o Worker
 // nao subir (Chromium sem OffscreenCanvas, arquivo nao servido). O pedido em
-// voo e devolvido a ele pelo onerror, em vez de vencer os 8 s aqui.
+// voo e devolvido a ele pelo onerror, em vez de vencer o prazo aqui. Segue o
+// mesmo protocolo de posse.
 //
 // POR QUE NAO ASYNCIFY AQUI, que seria mais curto: o laco de quadro em main.c
 // ja desenrola por asyncify a cada rAF, e por-lo tambem nos fios de decode
@@ -56,14 +81,82 @@ static void     soltar(uint8_t *px);
 // espera pedidos.
 #include <emscripten.h>
 #include <emscripten/threading.h>
-#include <errno.h>
+#include <math.h>
+#include <pthread.h>
+
+// Prazo do fio de decode, em tempo de relogio desde o envio. O teste da fila
+// compila com um prazo curto para forcar abandono.
+#ifndef NV_NAV_PRAZO_MS
+#define NV_NAV_PRAZO_MS 8000
+#endif
+// Layout do job (int32 cada). Espelhado em tools/decodificador.js e no JS
+// logo abaixo — mudar aqui e mudar la.
+enum { J_EST, J_W, J_H, J_PTR, J_OW, J_OH, J_ORIGEM, J_SEQ, J_CAP, J_DADOS, J_N, J_PROX, J_INTS };
+enum { EST_ABERTO = 0, EST_PRONTO = 1, EST_ABANDONADO = 4, EST_LARGADO = 5 };
 
 static int jaContou;
+static int seqGlobal;   // __atomic_*: o C89 do projeto nao usa stdatomic
+// Jobs abandonados que o Worker ainda nao largou. Lista encadeada por J_PROX.
+static pthread_mutex_t lixoMtx = PTHREAD_MUTEX_INITIALIZER;
+static int32_t *lixo;
+static int nLixo;
+
+static void soltarJob(int32_t *job) {
+  free((void *)(intptr_t)job[J_DADOS]);
+  free((void *)(intptr_t)job[J_PTR]);
+  free(job);
+}
+
+// Libera os abandonados que o Worker ja largou (estado 5). Barato: a lista so
+// tem o que passou do prazo, e o Worker novo termina cada um em milissegundos.
+static int varrer(void) {
+  int32_t *j, *ant = NULL, *prox;
+  int vivos;
+  pthread_mutex_lock(&lixoMtx);
+  for (j = lixo; j; j = prox) {
+    prox = (int32_t *)(intptr_t)j[J_PROX];
+    if (__atomic_load_n(&j[J_EST], __ATOMIC_ACQUIRE) == EST_LARGADO) {
+      if (ant) ant[J_PROX] = (int32_t)(intptr_t)prox; else lixo = prox;
+      soltarJob(j);
+      nLixo--;
+    } else ant = j;
+  }
+  vivos = nLixo;
+  pthread_mutex_unlock(&lixoMtx);
+  return vivos;
+}
+
+int navegador_abandonados_vivos(void) { return varrer(); }
+
+static unsigned le32be(const unsigned char *p) { return ((unsigned)p[0] << 24) | ((unsigned)p[1] << 16) | ((unsigned)p[2] << 8) | p[3]; }
+static unsigned le24le(const unsigned char *p) { return p[0] | ((unsigned)p[1] << 8) | ((unsigned)p[2] << 16); }
+
+// Tamanho da imagem pelo CABECALHO, sem decodificar. So PNG e WebP passam por
+// esta ponte (JPEG e software, jpegrapido.c). 0 quando nao reconhece.
+static int dimensoes(const unsigned char *d, size_t n, int *w, int *h) {
+  *w = *h = 0;
+  if (n >= 24 && d[0] == 0x89 && !memcmp(d + 1, "PNG", 3) && !memcmp(d + 12, "IHDR", 4)) {
+    *w = (int)le32be(d + 16); *h = (int)le32be(d + 20);
+  } else if (n >= 30 && !memcmp(d, "RIFF", 4) && !memcmp(d + 8, "WEBP", 4)) {
+    if (!memcmp(d + 12, "VP8X", 4)) {
+      *w = (int)le24le(d + 24) + 1; *h = (int)le24le(d + 27) + 1;
+    } else if (!memcmp(d + 12, "VP8L", 4) && d[20] == 0x2f) {
+      unsigned b = d[21] | ((unsigned)d[22] << 8) | ((unsigned)d[23] << 16) | ((unsigned)d[24] << 24);
+      *w = (int)(b & 0x3fff) + 1; *h = (int)((b >> 14) & 0x3fff) + 1;
+    } else if (!memcmp(d + 12, "VP8 ", 4) && d[23] == 0x9d && d[24] == 0x01 && d[25] == 0x2a) {
+      *w = (d[26] | (d[27] << 8)) & 0x3fff; *h = (d[28] | (d[29] << 8)) & 0x3fff;
+    }
+  }
+  return *w > 0 && *h > 0 && *w <= 32768 && *h <= 32768;
+}
 
 uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char *mime,
                                int largMax, int *lw, int *lh, int *ow, int *oh) {
   int32_t *job;
-  int esperou = 0, w, h, noWorker;
+  int fw, fh, sw, sh, w, h, noWorker, seq;
+  size_t cap;
+  double limite;
+  unsigned char *copia;
   uint8_t *px;
   if (ow) *ow = 0;
   if (oh) *oh = 0;
@@ -73,13 +166,33 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
   // chamador e o fio de decode do tex_cache; esta guarda existe para que
   // amanha isto vire NULL em vez de travar o app.
   if (emscripten_is_main_browser_thread()) return NULL;
-
-  // NO HEAP, e nao na pilha desta funcao. Se o navegador estourar o prazo la
-  // embaixo, esta funcao volta mas o `then` do JS pode escrever DEPOIS — numa
-  // pilha ja reaproveitada isso e corrupcao silenciosa. Vazar 16 bytes num
-  // caso que nao deve acontecer custa menos.
-  job = (int32_t *)calloc(8, sizeof(int32_t));
-  if (!job) return NULL;
+  varrer();
+  if (!dimensoes(dados, n, &fw, &fh)) return NULL;
+  // A MESMA CONTA do Worker (Math.round = floor(x + 0.5)); a linha a mais no
+  // teto cobre um arredondamento diferente sem abrir espaco para estouro: o
+  // Worker so escreve se w*h*4 <= J_CAP.
+  sw = fw; sh = fh;
+  if (largMax > 0 && fw > largMax) {
+    sw = largMax;
+    sh = (int)floor((double)fh * largMax / fw + 0.5);
+    if (sh < 1) sh = 1;
+  }
+  cap = (size_t)sw * (size_t)(sh + 1) * 4;
+  if (cap > 64u * 1024 * 1024) return NULL;   // 4K cheio e 33 MB; mais que isso nao e arte
+  job = (int32_t *)calloc(J_INTS, sizeof(int32_t));
+  copia = (unsigned char *)malloc(n);
+  px = (uint8_t *)malloc(cap);
+  if (!job || !copia || !px) { free(job); free(copia); free(px); return NULL; }
+  // COPIA dos bytes: `dados` e do chamador e morre quando esta funcao volta;
+  // num abandono o Worker ainda vai le-los. A copia morre com o job.
+  memcpy(copia, dados, n);
+  seq = __atomic_add_fetch(&seqGlobal, 1, __ATOMIC_RELAXED) & 0x7fffffff;
+  if (!seq) seq = __atomic_add_fetch(&seqGlobal, 1, __ATOMIC_RELAXED) & 0x7fffffff;
+  job[J_SEQ] = seq;
+  job[J_CAP] = (int32_t)cap;
+  job[J_DADOS] = (int32_t)(intptr_t)copia;
+  job[J_N] = (int32_t)n;
+  job[J_PTR] = (int32_t)(intptr_t)px;
 
   MAIN_THREAD_ASYNC_EM_ASM({
     // UMA DECLARACAO POR LINHA, sem `var a = 1, b = 2`: o bloco do EM_ASM
@@ -87,64 +200,66 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
     // parentese protege. Uma virgula solta aqui parte o bloco em dois
     // argumentos de macro e o build morre em "undeclared identifier '$1'".
     var pJob = $0 >> 2;
-    var pDados = $1;
-    var n = $2;
-    var mime = UTF8ToString($3);
-    var largMax = $4;
-    var fim = function (ptr, w, h, ow, oh) {
+    var seq = $1;
+    var mime = UTF8ToString($2);
+    var largMax = $3;
+    // So toca no job se ele ainda e ESTE pedido e ainda esta em aberto ou
+    // abandonado; um reencaminhamento tardio (onerror) de job ja liberado
+    // cai aqui e nao escreve nada.
+    var vivo = function () {
+      var e = Atomics.load(HEAP32, pJob);
+      return HEAP32[pJob + 7] === seq && (e === 0 || e === 4);
+    };
+    var fim = function (w, h, ow, oh) {
       HEAP32[pJob + 1] = w;
       HEAP32[pJob + 2] = h;
-      HEAP32[pJob + 3] = ptr;
       HEAP32[pJob + 4] = ow;
       HEAP32[pJob + 5] = oh;
-      // seq-cst: publica os tres campos acima antes do estado virar 1.
-      Atomics.store(HEAP32, pJob, 1);
+      // 0 -> 1 entrega ao C; se o C ja desistiu (4), 4 -> 5 larga o job.
+      if (Atomics.compareExchange(HEAP32, pJob, 0, 1) === 4) Atomics.compareExchange(HEAP32, pJob, 4, 5);
       Atomics.notify(HEAP32, pJob);
     };
     // CAMINHO ANTIGO, no fio principal. Fica como reserva: e o que roda
     // quando o Worker nao sobe (sem OffscreenCanvas, arquivo ausente, CSP).
     var noFioPrincipal = function () {
+      if (!vivo()) return;
       HEAP32[pJob + 6] = 0;
       // `slice` (e nao `subarray`) de proposito: copia para um ArrayBuffer
-      // comum. O Blob nao aceita vista sobre SharedArrayBuffer, e a copia
-      // tambem desprende o dado da vida do buffer em C.
-      var bytes = HEAPU8.slice(pDados, pDados + n);
+      // comum. O Blob nao aceita vista sobre SharedArrayBuffer.
+      var bytes = HEAPU8.slice(HEAP32[pJob + 9], HEAP32[pJob + 9] + HEAP32[pJob + 10]);
       try {
         createImageBitmap(new Blob([bytes], { type: mime })).then(function (bmp) {
           var ow = bmp.width;
           var oh = bmp.height;
           var w = ow;
           var h = oh;
-          var ptr = 0;
+          if (!vivo()) { if (bmp.close) bmp.close(); return; }
+          if (Atomics.load(HEAP32, pJob) === 4) { if (bmp.close) bmp.close(); fim(0, 0, 0, 0); return; }
           // REDUZ NO CANVAS, nao no heap: o bitmap inteiro vive na memoria do
-          // navegador; so o tamanho pedido atravessa para o WASM. Um fundo de
-          // 3840x2160 pedido a 1280 custa 3,7 MB no heap em vez de 33.
+          // navegador; so o tamanho pedido atravessa para o WASM.
           if (largMax > 0 && ow > largMax) {
             w = largMax;
             h = Math.max(1, Math.round(oh * largMax / ow));
           }
-          if (w > 0 && h > 0) {
+          if (w > 0 && h > 0 && w * h * 4 <= HEAP32[pJob + 8]) {
             var cv = document.createElement('canvas');
             cv.width = w; cv.height = h;
             var cx = cv.getContext('2d');
             cx.imageSmoothingEnabled = true;
             if ('imageSmoothingQuality' in cx) cx.imageSmoothingQuality = 'high';
             cx.drawImage(bmp, 0, 0, w, h);
-            var d = cx.getImageData(0, 0, w, h).data;
-            ptr = _malloc(w * h * 4);
-            if (ptr) HEAPU8.set(d, ptr);
-          }
+            HEAPU8.set(cx.getImageData(0, 0, w, h).data, HEAP32[pJob + 3]);
+          } else { w = 0; h = 0; }
           if (bmp.close) bmp.close();
-          fim(ptr, ptr ? w : 0, ptr ? h : 0, ow, oh);
-        }).catch(function () { fim(0, 0, 0, 0, 0); });
-      } catch (e) { fim(0, 0, 0, 0, 0); }
+          fim(w, h, ow, oh);
+        }).catch(function () { if (vivo()) fim(0, 0, 0, 0); });
+      } catch (e) { fim(0, 0, 0, 0); }
     };
     // CAMINHO NOVO (#72): um Worker proprio, tools/decodificador.js, faz o
-    // decode, a reducao e a copia para o heap. O fio principal so repassa o
-    // pedido. `Module.nvDec` guarda o worker e os pedidos em voo, para que um
-    // worker que morre (arquivo nao servido, OffscreenCanvas ausente no
-    // Chromium velho) devolva cada pedido ao caminho antigo em vez de
-    // deixa-lo vencer os 8 s no C.
+    // decode, a reducao e a copia para o heap. `Module.nvDec` guarda o
+    // worker e os pedidos em voo POR NUMERO DE PEDIDO; o Worker avisa
+    // `feito` e o pedido sai da lista. Se o worker morre, o que ainda esta
+    // na lista volta ao caminho antigo.
     var D = Module.nvDec;
     if (D === undefined) {
       // Sem virgula em nivel de chave (ver a nota do EM_ASM la em cima).
@@ -158,6 +273,9 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
         try {
           D.w = new Worker('decodificador.js');
           D.w.postMessage({ memoria: wasmMemory.buffer });
+          D.w.onmessage = function (ev) {
+            if (ev.data && ev.data.feito !== undefined) delete D.voo[ev.data.feito];
+          };
           D.w.onerror = function (e) {
             D.morto = true;
             console.log('[webp] decodificador.js nao subiu (' + (e && e.message ? e.message : '?') + '); decode volta ao fio principal');
@@ -169,46 +287,48 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
     }
     if (D.morto || !D.w) { noFioPrincipal(); }
     else {
-      D.voo[pJob] = noFioPrincipal;
+      D.voo[seq] = noFioPrincipal;
       HEAP32[pJob + 6] = 1;
-      D.w.postMessage(({ job: $0, dados: pDados, n: n, mime: mime, largMax: largMax }));
+      D.w.postMessage({ job: $0, seq: seq, mime: mime, largMax: largMax });
     }
-  }, (int)(intptr_t)job, (int)(intptr_t)dados, (int)n, (int)(intptr_t)mime, (int)largMax);
+  }, (int)(intptr_t)job, seq, (int)(intptr_t)mime, (int)largMax);
 
-  // Estados de job[0]: 0 em aberto; 2 o Worker decodificou e pede um bloco de
-  // job[1]*job[2]*4 bytes (so este fio sabe fazer malloc); 3 bloco entregue em
-  // job[3]; 1 terminado. O caminho pelo fio principal faz o malloc ele mesmo e
-  // vai de 0 a 1 direto. Ver tools/decodificador.js.
+  // Prazo em TEMPO DE RELOGIO desde o envio. A versao antiga somava so as
+  // fatias que venciam por timeout, e um futex acordado cedo nao contava:
+  // o log mostrou pedido de 17 s com "prazo" de 8.
+  limite = emscripten_get_now() + NV_NAV_PRAZO_MS;
   for (;;) {
-    int32_t est = __atomic_load_n(&job[0], __ATOMIC_ACQUIRE);
-    if (est == 1) break;
-    if (est == 2) {
-      size_t tam = (size_t)job[1] * (size_t)job[2] * 4;
-      job[3] = (int32_t)(intptr_t)(tam ? malloc(tam) : NULL);
-      __atomic_store_n(&job[0], 3, __ATOMIC_RELEASE);
-      emscripten_futex_wake(&job[0], 1);
-      continue;
-    }
-    // Fatias de 250 ms em vez de uma espera longa: o -EWOULDBLOCK da corrida
-    // (o JS terminou antes de chegarmos aqui) volta pelo laco, e um prazo
-    // curto mantem o teto de 8 s legivel.
-    if (emscripten_futex_wait(&job[0], est, 250.0) == -ETIMEDOUT) {
-      esperou += 250;
-      if (esperou >= 8000) {
-        printf("[webp] navegador nao respondeu em 8 s; bloco de 32 B vazado\n");
-        return NULL;   // job fica vivo de proposito, ver acima
+    double resta;
+    if (__atomic_load_n(&job[J_EST], __ATOMIC_ACQUIRE) == EST_PRONTO) break;
+    resta = limite - emscripten_get_now();
+    if (resta <= 0) {
+      int32_t esperado = EST_ABERTO;
+      if (__atomic_compare_exchange_n(&job[J_EST], &esperado, EST_ABANDONADO, 0,
+                                      __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        // DESISTE SEM LIBERAR: job, copia e pixels ficam com o Worker ate
+        // ele largar (estado 5); varrer() devolve tudo depois.
+        pthread_mutex_lock(&lixoMtx);
+        job[J_PROX] = (int32_t)(intptr_t)lixo;
+        lixo = job;
+        nLixo++;
+        pthread_mutex_unlock(&lixoMtx);
+        printf("[webp] navegador nao respondeu em %d ms; pedido %d abandonado (%d no aguardo)\n",
+               NV_NAV_PRAZO_MS, seq, nLixo);
+        return NULL;
       }
+      continue;   // perdeu a corrida para o 0 -> 1: o resultado chegou agora
     }
+    emscripten_futex_wait(&job[J_EST], EST_ABERTO, resta < 250.0 ? resta : 250.0);
   }
 
-  w  = job[1];
-  h  = job[2];
-  px = (uint8_t *)(intptr_t)job[3];
-  if (ow) *ow = job[4];
-  if (oh) *oh = job[5];
-  noWorker = job[6];
+  w  = job[J_W];
+  h  = job[J_H];
+  if (ow) *ow = job[J_OW];
+  if (oh) *oh = job[J_OH];
+  noWorker = job[J_ORIGEM];
+  free(copia);
   free(job);
-  if (!px || w < 1 || h < 1) { free(px); return NULL; }
+  if (w < 1 || h < 1 || (size_t)w * (size_t)h * 4 > cap) { free(px); return NULL; }
   if (!jaContou) {
     jaContou = 1;
     printf("[webp] navegador decodificou o primeiro: %dx%d (%s), %s\n", w, h, mime,
