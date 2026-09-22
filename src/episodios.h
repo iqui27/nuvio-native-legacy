@@ -1,6 +1,7 @@
 #ifndef NV_EPISODIOS_H
 #define NV_EPISODIOS_H
 #include <SDL2/SDL.h>
+#include "vistoep.h"
 void episodios_abrir(int titulo, int temporada, int episodio);
 int episodios_aberto(void);
 void episodios_evento(const SDL_Event *e);
@@ -31,6 +32,16 @@ void episodios_menu_desenhar(void);
 // 1 uma vez, quando a pessoa escolheu "Fontes deste episodio" no menu. Quem
 // chamou decide o que abrir — o menu nao conhece a folha de fontes.
 int  episodios_menu_pediu_fontes(void);
+// O MENU DA TEMPORADA (issue #108), sozinho sobre a tela de quem chamar — a
+// pagina de detalhe abre com a pressao longa na aba. Duas linhas: "Marcar
+// temporada como assistida" e "Desmarcar temporada". `temporada` e o NUMERO.
+// Eventos e desenho pelas mesmas episodios_menu_evento/desenhar.
+void episodios_menu_temporada(int idxCat, int temporada);
+// 1 com o menu aberto no modo temporada (para teste).
+int  episodios_menu_modo_temporada(void);
+// O lote que "temporada inteira" aplica: catalogo + mapa, sem o que nao foi ao
+// ar. `saida` nula conta. Publico para o teste.
+int  episodios_lote(int idxCat, int temporada, VistoPar *saida, int max);
 void episodios_fechar(void);
 // O menu de visto esta aberto, venha da folha ou da pagina de detalhe. Para
 // teste; a pagina de detalhe usa episodios_menu_aberto, que so ve o seu.

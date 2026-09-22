@@ -17,7 +17,16 @@
 //   GET  /sync/all-items/{movies|shows}/plantowatch
 //   POST /sync/add-to-list                {"movies":[{"to":"plantowatch",
 //                                          "ids":{"imdb":".."}}]}
-//   POST /sync/history/remove             tira o titulo da biblioteca do Simkl;
+//   POST /sync/history                    marcar visto (conferido em 22/09 em
+//                                         api.simkl.org/api-reference/simkl/
+//                                         add-to-history e guides/mark-as-
+//                                         watched): shows[{ids,seasons[{number,
+//                                         episodes[{number}]}]}]; filme em
+//                                         movies[{ids}]; serie so com ids marca
+//                                         todos os episodios
+//   POST /sync/history/remove             desmarcar, MESMA forma (remove-from-
+//                                         history). Sem seasons tira o titulo
+//                                         da biblioteca do Simkl;
 //                                         a doc nova diz que e o caminho
 //                                         canonico de "Remove from list" (o
 //                                         `to:"remove"` do add-to-list existe
@@ -45,6 +54,7 @@
 #ifndef NV_SIMKL_H
 #define NV_SIMKL_H
 #include "catalogo.h"
+#include "vistoep.h"
 #include <stddef.h>
 
 // 1 quando ha token do Simkl nesta TV (vinculo feito em Ajustes).
@@ -113,6 +123,29 @@ int simkl_lista_estado(void);
 // composta da fileira ("tt:S:E" ou "tt"). 0 quando nao ha id conhecido — o
 // item nao veio do Simkl.
 int simkl_playback_remover(const char *imdb);
+
+// --- historico ("marcar como assistido") --------------------------------------
+
+// Teto do lote por pedido. Uma temporada de anime passa de 64; 256 cobre
+// qualquer temporada real e ainda cabe num corpo de ~5 KB.
+#define SMK_LOTE_MAX 256
+
+// Corpo de /sync/history (e /remove, mesma forma) para um lote de episodios,
+// agrupado por temporada. 0 para id que nao e tt, lote vazio ou buffer curto.
+int simkl_corpo_historico_eps(char *dst, size_t tam, const char *imdb,
+                              const VistoPar *pares, int qtd);
+// Corpo do titulo inteiro. Filme: movies[{ids}]. Serie marcada: shows[{ids}].
+// Serie DESMARCADA precisa de `temporadas` (numeros), senao 0 — ver simkl.c.
+int simkl_corpo_historico_titulo(char *dst, size_t tam, const char *imdb,
+                                 const char *tipo, const int *temporadas,
+                                 int nt, int visto);
+const char *simkl_rota_historico(int visto);
+
+// SINCRONAS, bloqueiam ate 20 s: so de um fio (visto.c). 1 = 2xx sem
+// not_found; 0 sem vinculo, sem corpo ou recusado.
+int simkl_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd, int visto);
+int simkl_titulo_marcar(const char *imdb, const char *tipo, const int *temporadas,
+                        int nt, int visto);
 
 // Esquece caches e tabelas (logout, desvincular). O token e de simklauth.c.
 void simkl_esquecer(void);

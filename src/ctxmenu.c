@@ -2,6 +2,7 @@
 #include "catalogo.h"
 #include "descoberta.h"
 #include "syncprog.h"
+#include "visto.h"
 #include "trakt.h"
 #include "simkl.h"
 #include "extras.h"
@@ -238,6 +239,38 @@ void ctx_abrir(int indice) {
 int ctx_aberto(void) { return aberto; }
 int ctx_pediu_detalhes(void) { int v = pedDetalhes; pedDetalhes = -1; return v; }
 
+// O ESPELHO LOCAL DE "ASSISTIDO", separado de quem confirma: com Trakt ele
+// roda depois do 2xx (ctx_atualizar); sem Trakt roda na hora (aplicar), porque
+// nao ha resposta nenhuma a esperar.
+static void espelharAssistido(int atual, const CatItem *ci, int intencao) {
+  cat_historico_definir_id(ci->imdb, ci->tipo, intencao);
+  // MARCAR COMO ASSISTIDO APAGA A POSICAO DE RETOMADA.
+  //
+  // cat_historico_definir_id so escreve numa tabela lateral de
+  // historico, e a fileira "Continuar assistindo" nao le dela: ela
+  // le progresso/restanteMin/temporada/episodio do proprio item. Sem
+  // isto o card continuava ali com a barra cheia depois de o titulo
+  // ter sido marcado como visto — o "removo do watch e o card nao
+  // sai" do relato.
+  //
+  // E o MESMO par que "Tirar de Continuar assistindo" faz logo
+  // abaixo, e pelo mesmo motivo: quem terminou nao tem o que
+  // retomar. So na direcao "assistido"; desmarcar nao inventa uma
+  // posicao que ninguem gravou.
+  if (intencao) {
+    char chave[192];
+    prog_chave(chave, sizeof chave, ci->imdb, ci->temporada, ci->episodio);
+    prog_remover(chave);
+    // As mesmas tres fontes de "Tirar de Continuar assistindo": quem
+    // marcou como visto tambem nao quer o card de retomada de volta
+    // no proximo ciclo.
+    trakt_playback_remover(ci->imdb);
+    simkl_playback_remover(ci->imdb);
+    syncprog_remover(chave);
+    cat_zerar_progresso(atual);
+  }
+}
+
 static void aplicar(void) {
   int atual = indiceAtual();
   const CatItem *ci = atual >= 0 ? cat_item(atual) : NULL;
@@ -309,8 +342,28 @@ static void aplicar(void) {
       avisoOp = NULL;
       espelhoAplicado = 0;
       estadoOperacao = CTX_PENDENTE;
-      if (!trakt_assistido_tipo(ci->imdb, ci->tipo, intencao))
-        estadoOperacao = CTX_FALHA;
+      // SIMKL E CONTA NUVIO, em fio (visto.c), com ou sem Trakt. Antes daqui
+      // so havia o Trakt, e sem ele esta acao era "[trakt] historico recusado:
+      // Trakt desligado" e CTX_FALHA — o "sem o traktv nao ta dando o watched"
+      // do dono. As temporadas vao junto porque desmarcar serie no Simkl sem
+      // elas apagaria a serie da biblioteca de la (ver simkl.c).
+      visto_titulo(ci->imdb, ci->tipo, ci->temporadas, ci->nTemporadas, intencao,
+                   visto_destinos());
+      if (trakt_ativo()) {
+        // O caminho do Trakt NAO MUDOU: mesmo pedido, mesma espera, espelho so
+        // depois do 2xx em ctx_atualizar.
+        if (!trakt_assistido_tipo(ci->imdb, ci->tipo, intencao))
+          estadoOperacao = CTX_FALHA;
+      } else {
+        // SEM TRAKT NAO HA RESPOSTA A ESPERAR (o mesmo raciocinio do "+" na
+        // Lista do Nuvio, acima): o local e a verdade desta TV, aplicado agora,
+        // e a conta o devolve no proximo pull (sync.c aplica os vistos da
+        // conta justamente quando o Trakt esta desligado).
+        espelharAssistido(atual, ci, intencao);
+        estadoOperacao = CTX_CONFIRMADA;
+        espelhoAplicado = 1;
+        desc_remontar_fileiras();
+      }
       montar();
       break;
     case OP_RECOMENDAR:
@@ -420,32 +473,7 @@ void ctx_atualizar(float dt, Uint32 agora) {
           if (operacao == CTX_OP_LISTA) {
             cat_definir_na_lista(atual, intencao);
           } else {
-            cat_historico_definir_id(ci->imdb, ci->tipo, intencao);
-            // MARCAR COMO ASSISTIDO APAGA A POSICAO DE RETOMADA.
-            //
-            // cat_historico_definir_id so escreve numa tabela lateral de
-            // historico, e a fileira "Continuar assistindo" nao le dela: ela
-            // le progresso/restanteMin/temporada/episodio do proprio item. Sem
-            // isto o card continuava ali com a barra cheia depois de o titulo
-            // ter sido marcado como visto — o "removo do watch e o card nao
-            // sai" do relato.
-            //
-            // E o MESMO par que "Tirar de Continuar assistindo" faz logo
-            // abaixo, e pelo mesmo motivo: quem terminou nao tem o que
-            // retomar. So na direcao "assistido"; desmarcar nao inventa uma
-            // posicao que ninguem gravou.
-            if (intencao) {
-              char chave[192];
-              prog_chave(chave, sizeof chave, ci->imdb, ci->temporada, ci->episodio);
-              prog_remover(chave);
-              // As mesmas tres fontes de "Tirar de Continuar assistindo": quem
-              // marcou como visto tambem nao quer o card de retomada de volta
-              // no proximo ciclo.
-              trakt_playback_remover(ci->imdb);
-              simkl_playback_remover(ci->imdb);
-              syncprog_remover(chave);
-              cat_zerar_progresso(atual);
-            }
+            espelharAssistido(atual, ci, intencao);
           }
         }
         espelhoAplicado = 1;

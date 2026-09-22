@@ -247,6 +247,97 @@ const char *simkl_rota_lista(int adicionar) {
   return adicionar ? "/sync/add-to-list" : "/sync/history/remove";
 }
 
+// ------------------------------------------------------------ historico (visto)
+//
+// Corpos de /sync/history e /sync/history/remove. Ver simkl.h para as rotas e a
+// fonte; aqui so a montagem, pura, para o teste conferir texto contra texto.
+
+// Anexa com snprintf e diz se coube. `*u` avanca; estourou, o corpo inteiro e
+// recusado (0) em vez de sair cortado — JSON pela metade o servidor le como
+// 400, ou pior, como outro titulo.
+static int anexar(char *dst, size_t tam, size_t *u, const char *fmt, int a, int b) {
+  int w;
+  if (*u >= tam) return 0;
+  w = snprintf(dst + *u, tam - *u, fmt, a, b);
+  if (w < 0 || (size_t)w >= tam - *u) return 0;
+  *u += (size_t)w;
+  return 1;
+}
+
+static int baseImdb(const char *imdb, char *id, size_t tam) {
+  size_t k;
+  if (!imdbValido(imdb)) return 0;
+  k = strcspn(imdb, ":");
+  if (k >= tam) return 0;
+  memcpy(id, imdb, k); id[k] = 0;
+  return 1;
+}
+
+int simkl_corpo_historico_eps(char *dst, size_t tam, const char *imdb,
+                              const VistoPar *pares, int qtd) {
+  char id[24], feita[SMK_LOTE_MAX];
+  size_t u = 0;
+  int i, j, prim = 1;
+  if (!dst || !tam || !pares || qtd < 1 || !baseImdb(imdb, id, sizeof id)) return 0;
+  if (qtd > SMK_LOTE_MAX) qtd = SMK_LOTE_MAX;
+  memset(feita, 0, sizeof feita);
+  { int w = snprintf(dst, tam, "{\"shows\":[{\"ids\":{\"imdb\":\"%s\"},\"seasons\":[", id);
+    if (w < 0 || (size_t)w >= tam) return 0;
+    u = (size_t)w; }
+  // AGRUPA POR TEMPORADA sem assumir ordem, como trakt_episodios_marcar: o
+  // lote "ate aqui" atravessa temporadas e cada uma tem de aparecer UMA vez.
+  // Sem watched_at: a doc diz que o servidor usa a hora do pedido.
+  for (i = 0; i < qtd; i++) {
+    int primEp = 1;
+    if (feita[i]) continue;
+    if (!anexar(dst, tam, &u, prim ? "{\"number\":%d,\"episodes\":[" : ",{\"number\":%d,\"episodes\":[",
+                pares[i].temporada, 0)) return 0;
+    prim = 0;
+    for (j = i; j < qtd; j++) {
+      if (feita[j] || pares[j].temporada != pares[i].temporada) continue;
+      feita[j] = 1;
+      if (!anexar(dst, tam, &u, primEp ? "{\"number\":%d}" : ",{\"number\":%d}",
+                  pares[j].episodio, 0)) return 0;
+      primEp = 0;
+    }
+    if (!anexar(dst, tam, &u, "]}", 0, 0)) return 0;
+  }
+  return anexar(dst, tam, &u, "]}]}", 0, 0);
+}
+
+int simkl_corpo_historico_titulo(char *dst, size_t tam, const char *imdb,
+                                 const char *tipo, const int *temporadas,
+                                 int nt, int visto) {
+  char id[24];
+  size_t u = 0;
+  int i, serie = tipo && !strcmp(tipo, "series");
+  if (!dst || !tam || !baseImdb(imdb, id, sizeof id)) return 0;
+  if (!serie || visto) {
+    // Filme (os dois sentidos) e serie marcada: o objeto so com ids. Para
+    // serie, a guia mark-as-watched: "Drop both seasons and episodes" marca
+    // todo episodio.
+    int w = snprintf(dst, tam, "{\"%s\":[{\"ids\":{\"imdb\":\"%s\"}}]}",
+                     serie ? "shows" : "movies", id);
+    return w > 0 && (size_t)w < tam;
+  }
+  // DESMARCAR SERIE SEM TEMPORADAS APAGA A SERIE DA BIBLIOTECA do Simkl (aviso
+  // da pagina remove-from-history). Com a lista de temporadas, cada entrada sem
+  // `episodes` e expandida pelo servidor e a serie fica na biblioteca. Sem
+  // temporada conhecida nao ha corpo seguro: 0, e nada e mandado.
+  if (!temporadas || nt < 1) return 0;
+  { int w = snprintf(dst, tam, "{\"shows\":[{\"ids\":{\"imdb\":\"%s\"},\"seasons\":[", id);
+    if (w < 0 || (size_t)w >= tam) return 0;
+    u = (size_t)w; }
+  for (i = 0; i < nt; i++)
+    if (!anexar(dst, tam, &u, i ? ",{\"number\":%d}" : "{\"number\":%d}", temporadas[i], 0))
+      return 0;
+  return anexar(dst, tam, &u, "]}]}", 0, 0);
+}
+
+const char *simkl_rota_historico(int visto) {
+  return visto ? "/sync/history" : "/sync/history/remove";
+}
+
 // ------------------------------------------------------------ transporte
 
 // Um pedido a api. `consulta` vai DEPOIS dos tres parametros obrigatorios.
@@ -582,6 +673,56 @@ int simkl_lista_tipo(const char *imdb, const char *tipo, int adicionar) {
 }
 
 int simkl_lista_estado(void) { return listaEstado; }
+
+// POST do historico, SINCRONO (quem chama ja esta num fio: visto.c). 2xx
+// sozinho nao prova nada: a doc manda olhar `not_found`, que volta com os
+// objetos que o servidor nao resolveu. Um `"ids"` dentro dele e titulo que o
+// Simkl nao achou pelo imdb — conta como falha, e o log diz.
+// `qtd` > 0: lote de episodios; 0: titulo inteiro (`serie` diz qual).
+static int postarHistorico(const char *corpo, int visto, const char *id, int qtd, int serie) {
+  char *r;
+  int st = 0, ok;
+  const char *nf;
+  r = pedir('P', simkl_rota_historico(visto), NULL, corpo, &st);
+  ok = st >= 200 && st < 300;
+  nf = r ? strstr(r, "\"not_found\"") : NULL;
+  if (ok && nf && strstr(nf, "\"ids\"")) ok = 0;
+  if (qtd > 0) printf("[simkl] historico %s %d eps de %s", visto ? "add" : "del", qtd, id);
+  else printf("[simkl] historico %s %s %s", visto ? "add" : "del", serie ? "serie" : "filme", id);
+  printf(" -> %s (HTTP %d)%s\n", ok ? "ok" : "falhou", st,
+         nf && strstr(nf, "\"ids\"") ? " [nao encontrado no Simkl]" : "");
+  fflush(stdout);
+  free(r);
+  return ok;
+}
+
+int simkl_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd, int visto) {
+  static char corpo[SMK_LOTE_MAX * 20 + 200];
+  static pthread_mutex_t travaCorpo = PTHREAD_MUTEX_INITIALIZER;
+  int ok;
+  if (!simkl_ativo() || !imdb) return 0;
+  pthread_mutex_lock(&travaCorpo);
+  if (!simkl_corpo_historico_eps(corpo, sizeof corpo, imdb, pares, qtd)) {
+    pthread_mutex_unlock(&travaCorpo);
+    return 0;
+  }
+  ok = postarHistorico(corpo, visto, imdb, qtd > SMK_LOTE_MAX ? SMK_LOTE_MAX : qtd, 1);
+  pthread_mutex_unlock(&travaCorpo);
+  return ok;
+}
+
+int simkl_titulo_marcar(const char *imdb, const char *tipo, const int *temporadas,
+                        int nt, int visto) {
+  char corpo[1200];
+  if (!simkl_ativo() || !imdb) return 0;
+  if (!simkl_corpo_historico_titulo(corpo, sizeof corpo, imdb, tipo, temporadas, nt, visto)) {
+    printf("[simkl] historico %s %s: sem corpo seguro (serie sem temporadas?); nada mandado\n",
+           visto ? "add" : "del", imdb);
+    fflush(stdout);
+    return 0;
+  }
+  return postarHistorico(corpo, visto, imdb, 0, tipo && !strcmp(tipo, "series"));
+}
 
 static void *fioApagar(void *u) {
   long long id = *(long long *)u;

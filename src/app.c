@@ -78,6 +78,7 @@
 #include "descoberta.h"
 #include "proximo.h"
 #include "trakt.h"
+#include "visto.h"
 #include "faixas.h"
 #include "episodios.h"
 #include <pthread.h>
@@ -963,6 +964,7 @@ void app_evento(const SDL_Event *e) {
 // app e avisa o Trakt, que e a fonte que o dono usa nos outros aparelhos. Fica
 // no roteador pelo mesmo motivo de tudo mais: e ele que conhece catalogo e
 // Trakt, e a tela de detalhe nao precisa conhecer nenhum dos dois.
+extern void cat_historico_definir_id(const char *imdb, const char *tipo, int visto);
 static void marcarAssistidoSeSolicitado(void) {
   const CatItem *c;
   int i;
@@ -986,7 +988,17 @@ static void marcarAssistidoSeSolicitado(void) {
   { int visto = (c->progresso >= 90);
     const double dur = 3600.0;
     cat_salvar_progresso(i, visto ? 0.0 : dur, dur);
-    if (c->imdb[0]) trakt_assistido(c->imdb, !visto);
+    if (c->imdb[0]) {
+      trakt_assistido(c->imdb, !visto);
+      // SIMKL E CONTA NUVIO tambem (visto.c), cada um se vinculado. O Trakt
+      // segue pela linha acima, que nao mudou; sem ele a unica marca era o
+      // progresso de 100% (que a conta ja entende como concluido), e o
+      // historico do titulo — o que o menu do cartaz le para dizer "Desmarcar"
+      // — nunca era escrito. Com Trakt quem escreve o historico e o 2xx dele.
+      visto_titulo(c->imdb, c->tipo, c->temporadas, c->nTemporadas, !visto,
+                   visto_destinos());
+      if (!trakt_ativo()) cat_historico_definir_id(c->imdb, c->tipo, !visto);
+    }
     printf("[app] assistido %s: %s\n", visto ? "desmarcado" : "marcado",
            c->titulo); fflush(stdout); }
 }

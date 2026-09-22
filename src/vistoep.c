@@ -11,6 +11,8 @@
 // especial. Estourado, o mapa PARA DE CRESCER e diz no log — o que ja entrou
 // continua valendo, porque meio mapa e melhor que nenhum.
 #define VE_MAX 8000
+// Teto de um lote de gesto (ver vistoep_lote): o SMK_LOTE_MAX do Simkl.
+#define VE_LOTE 256
 
 typedef struct { char id[16]; short temp, ep; unsigned char visto; } Marca;
 static Marca *mapa;
@@ -150,6 +152,34 @@ int vistoep_temporada(const char *imdb, int temporada, VistoPar *saida, int max)
       saida[k].episodio = mapa[i].ep;
     }
     k++;
+  }
+  return k;
+}
+
+int vistoep_lote(const char *imdb, int ateAqui, int temporada, int episodio,
+                 const VistoPar *cat, int nCat, int agT, int agE,
+                 VistoPar *saida, int max) {
+  static VistoPar buf[VE_LOTE];
+  int k, i, j;
+  k = ateAqui ? vistoep_ate_aqui(imdb, temporada, episodio, buf, VE_LOTE)
+              : vistoep_temporada(imdb, temporada, buf, VE_LOTE);
+  for (i = 0; cat && i < nCat && k < VE_LOTE; i++) {
+    int t = cat[i].temporada, e = cat[i].episodio, dentro;
+    if (e < 1) continue;
+    // Nao foi ao ar: a partir de (agT, agE), o proximo episodio da agenda.
+    if (agT > 0 && agE > 0 && (t != agT ? t > agT : e >= agE)) continue;
+    dentro = ateAqui ? t > 0 && antesOuIgual(t, e, temporada, episodio)
+                     : t == temporada;
+    if (!dentro) continue;
+    for (j = 0; j < k; j++) if (buf[j].temporada == t && buf[j].episodio == e) break;
+    if (j < k) continue;
+    buf[k].temporada = (short)t;
+    buf[k].episodio = (short)e;
+    k++;
+  }
+  if (saida) {
+    if (k > max) k = max;
+    memcpy(saida, buf, sizeof(VistoPar) * (size_t)(k > 0 ? k : 0));
   }
   return k;
 }
