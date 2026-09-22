@@ -12,6 +12,7 @@
 #include "nuvem.h"
 #include "js.h"
 #include "trakt.h"
+#include "simkl.h"
 #include "progresso.h"
 #include <stdint.h>   /* uintptr_t: a geracao viaja no argumento do fio */
 #include <stdio.h>
@@ -1685,42 +1686,28 @@ typedef struct { CatItem *item; long long ms; int ord; } Cand;
 // montadores ao mesmo tempo, entao a trava cobre os DOIS usos em montar().
 static pthread_mutex_t contTrava = PTHREAD_MUTEX_INITIALIZER;
 
-static int montarContinuar(CatItem *saida, int max) {
-  // static: dois lotes de 8 CatItem passam de 50 KB e montar() roda uma vez,
-  // num fio so — a mesma razao do vetor de Decl mais abaixo.
-  static CatItem doTrakt[CONT_MAX], daConta[CONT_MAX];
-  static Cand juntos[CONT_MAX * 2];
-  int nT, nL, nJ = 0, i, j, w, fora = 0, repetidos = 0;
-
-  // FONTE ESCOLHIDA EM AJUSTES. 0 = as duas, 1 = so a conta Nuvio, 2 = so o
-  // Trakt. As duas sempre existiram e sempre foram fundidas aqui; o ajuste so
-  // decide quais entram. Existe porque quem usa a conta Nuvio e tambem tem
-  // Trakt ligado via um outro cliente via o "Continuar" do outro aparelho
-  // aparecer aqui sem ter pedido.
-  int fonte = ajustes_cw_fonte();
-
-  if (max > CONT_MAX) max = CONT_MAX;
-  nT = fonte == 1 ? 0 : trakt_continuar(doTrakt, CONT_MAX);
-  // Os limites AGORA valem para as duas fontes. Sem isto, o /sync/playback
-  // devolve o que qualquer cliente Trakt pausou uma vez — inclusive titulos em
-  // 0% e titulos praticamente terminados, que e o "nunca assisti isso" do
-  // relato.
-  for (i = 0, w = 0; i < nT; i++) {
+// Aplica a um lote REMOTO (Trakt ou Simkl) os limites de 1% a 90% e o
+// cruzamento com o registro local mais novo. Compacta no lugar; devolve quantos
+// ficaram. `aSeguir` diz quais itens sao "a seguir" (entram com 0%).
+static int filtrarRemoto(CatItem *v, int n, int (*aSeguir)(const char *),
+                         int *fora) {
+  int i, w;
+  for (i = 0, w = 0; i < n; i++) {
     // "A SEGUIR" (issue #66) entra com 0%: e o proximo episodio de uma serie
     // cujo ultimo terminou. Nao e "pausado", mas e "continuar".
-    if (!trakt_e_a_seguir(doTrakt[i].imdb) && !emAndamento(doTrakt[i].progresso)) { fora++; continue; }
-    // O REGISTRO LOCAL MAIS NOVO VENCE A RESPOSTA DO TRAKT. Sem este cruzamento
+    if (!aSeguir(v[i].imdb) && !emAndamento(v[i].progresso)) { (*fora)++; continue; }
+    // O REGISTRO LOCAL MAIS NOVO VENCE A RESPOSTA REMOTA. Sem este cruzamento
     // a refazagem da fileira (issue #38) lia um /sync/playback que ainda nao
     // recebeu o scrobble que acabamos de mandar: o titulo terminado voltava a
     // aparecer como "em andamento" por alguns minutos. O desempate e por
-    // instante — um registro local mais VELHO que o paused_at do Trakt nao
+    // instante — um registro local mais VELHO que o paused_at remoto nao
     // manda em nada.
     { ProgRegistro r; char id[24], chave[48];
-      int tt = doTrakt[i].temporada, ee = doTrakt[i].episodio;
-      prog_content_id(id, sizeof id, doTrakt[i].imdb, &tt, &ee);
+      int tt = v[i].temporada, ee = v[i].episodio;
+      prog_content_id(id, sizeof id, v[i].imdb, &tt, &ee);
       prog_chave(chave, sizeof chave, id, tt, ee);
       if (prog_por_chave(chave, &r) && r.durSeg > 1.0 &&
-          r.lastWatchedMs > doTrakt[i].retomadoMs) {
+          r.lastWatchedMs > v[i].retomadoMs) {
         int pct = (int)(100.0 * r.posSeg / r.durSeg);
         // "A SEGUIR" ABERTO E LARGADO NO COMECO NAO SAI DA FILEIRA. Visto na
         // C9 em 22/09: abrir o "Up next" de Adolescence (S1E2) e voltar aos 30 s
@@ -1728,32 +1715,93 @@ static int montarContinuar(CatItem *saida, int max) {
         // de 1-90% e a serie SUMIA do Continuar assistindo — o proximo
         // episodio que o app acabara de oferecer. Abaixo de 1% ele continua
         // sendo "a seguir" (progresso 0); do fim para cima (>90%) sai, como
-        // antes, porque ai terminou.
-        if (pct < 1 && trakt_e_a_seguir(doTrakt[i].imdb)) pct = 0;
-        else if (!emAndamento(pct)) { fora++; continue; }
-        doTrakt[i].progresso = pct;
+        // antes, porque ai terminou. Vale para Trakt e Simkl (aSeguir).
+        if (pct < 1 && aSeguir(v[i].imdb)) pct = 0;
+        else if (!emAndamento(pct)) { (*fora)++; continue; }
+        v[i].progresso = pct;
       } }
-    if (w != i) doTrakt[w] = doTrakt[i];
+    if (w != i) v[w] = v[i];
     w++;
   }
-  nT = w;
-  nL = fonte == 2 ? 0 : continuarLocal(daConta, CONT_MAX);
+  return w;
+}
+
+static int montarContinuar(CatItem *saida, int max) {
+  // static: dois lotes de 12 CatItem passam de 350 KB e montar() roda uma vez,
+  // num fio so — a mesma razao do vetor de Decl mais abaixo.
+  static CatItem doTrakt[CONT_MAX], daConta[CONT_MAX];
+  // Tres fontes: conta, Trakt e Simkl, cada uma com ate CONT_MAX.
+  static Cand juntos[CONT_MAX * 3];
+  // Os REMOTOS numa lista so (Trakt e Simkl), por ponteiro. E ela que a conta
+  // enfrenta abaixo: para a regra "a mesma obra entra uma vez, a mais recente
+  // ganha", Trakt e Simkl sao a mesma pergunta feita a dois servicos.
+  static CatItem *remotos[CONT_MAX * 2];
+  // O lote do Simkl vai no HEAP e so quando e pedido: 12 CatItem sao ~190 KB,
+  // e na Samsung (teto de 128 MiB do WebAssembly) nao se paga isso em BSS para
+  // quem nunca vinculou o Simkl.
+  CatItem *doSimkl = NULL;
+  int nT, nS = 0, nR = 0, nL, nJ = 0, i, j, fora = 0, repetidos = 0;
+
+  // FONTE ESCOLHIDA EM AJUSTES (AJ_CWF_*). 0 = todas, 1 = so a conta Nuvio,
+  // 2 = so o Trakt, 3 = so o Simkl. Existe porque quem usa a conta Nuvio e
+  // tambem tem Trakt ligado via um outro cliente via o "Continuar" do outro
+  // aparelho aparecer aqui sem ter pedido.
+  //
+  // "AMBAS" INCLUI O SIMKL QUANDO HA VINCULO (issue #110). Quem vinculou o
+  // Simkl nesta TV disse que acompanha por ele; deixa-lo de fora do padrao
+  // repetiria o defeito do #5 — uma fonte vinculada e ignorada em silencio.
+  // Quem nao vinculou nao paga nada: sem token, nenhum pedido sai.
+  int fonte = ajustes_cw_fonte();
+  int querConta = fonte == AJ_CWF_AMBAS || fonte == AJ_CWF_CONTA;
+  int querTrakt = fonte == AJ_CWF_AMBAS || fonte == AJ_CWF_TRAKT;
+  int querSimkl = (fonte == AJ_CWF_AMBAS || fonte == AJ_CWF_SIMKL) && simkl_ativo();
+
+  if (max > CONT_MAX) max = CONT_MAX;
+  nT = querTrakt ? trakt_continuar(doTrakt, CONT_MAX) : 0;
+  // Os limites AGORA valem para todas as fontes. Sem isto, o /sync/playback
+  // devolve o que qualquer cliente pausou uma vez — inclusive titulos em 0% e
+  // titulos praticamente terminados, que e o "nunca assisti isso" do relato.
+  nT = filtrarRemoto(doTrakt, nT, trakt_e_a_seguir, &fora);
+  if (querSimkl) {
+    doSimkl = (CatItem *)malloc(sizeof(CatItem) * CONT_MAX);
+    if (doSimkl) {
+      nS = simkl_continuar(doSimkl, CONT_MAX);
+      nS = filtrarRemoto(doSimkl, nS, simkl_e_a_seguir, &fora);
+    }
+  }
+  if (fonte == AJ_CWF_SIMKL && !simkl_ativo())
+    printf("[desc] continuar assistindo: fonte Simkl sem vinculo; fileira vazia\n");
+
+  // TRAKT E SIMKL NA MESMA OBRA: fica o de instante mais novo. Os dois
+  // costumam concordar (muita gente sincroniza um no outro), e dois cards da
+  // mesma serie seriam o defeito que continuarLocal ja evita.
+  for (i = 0; i < nT; i++) remotos[nR++] = &doTrakt[i];
+  for (i = 0; i < nS; i++) {
+    int k, achou = -1;
+    for (k = 0; k < nR && achou < 0; k++)
+      if (mesmaObra(remotos[k], &doSimkl[i])) achou = k;
+    if (achou < 0) { remotos[nR++] = &doSimkl[i]; continue; }
+    repetidos++;
+    if (instanteDaConta(&doSimkl[i]) > instanteDaConta(remotos[achou]))
+      remotos[achou] = &doSimkl[i];
+  }
+  nL = querConta ? continuarLocal(daConta, CONT_MAX) : 0;
 
   // A CONTA ENTRA PRIMEIRO porque ela e a fonte DATADA (lastWatchedMs, que o
-  // syncprog ja reconciliou entre celular e TV). O item do Trakt que fala da
+  // syncprog ja reconciliou entre celular e TV). O item remoto que fala da
   // mesma obra sai: manter os dois poria a mesma serie duas vezes na fileira,
   // que e o defeito que continuarLocal ja evitava dentro da propria lista.
   //
-  // EXCETO QUANDO O TRAKT E MAIS NOVO NA MESMA OBRA (issue #66): a conta tinha
+  // EXCETO QUANDO O REMOTO E MAIS NOVO NA MESMA OBRA (issue #66): a conta tinha
   // S1E1 a 3% de 8/9 e o Trakt dizia "viu S1E1 inteiro em 19/9, a seguir
   // S1E2"; manter a conta punha na fileira um episodio ja visto, com o selo
   // "a seguir" do outro. O instante decide, como no resto desta funcao.
   { static int pularLocal[CONT_MAX];
     memset(pularLocal, 0, sizeof pularLocal);
-    for (i = 0; i < nT; i++)
+    for (i = 0; i < nR; i++)
       for (j = 0; j < nL; j++)
-        if (mesmaObra(&doTrakt[i], &daConta[j]) &&
-            instanteDaConta(&doTrakt[i]) > instanteDaConta(&daConta[j]))
+        if (mesmaObra(remotos[i], &daConta[j]) &&
+            instanteDaConta(remotos[i]) > instanteDaConta(&daConta[j]))
           pularLocal[j] = 1;
   for (i = 0; i < nL && nJ < (int)(sizeof juntos / sizeof *juntos); i++) {
     if (pularLocal[i]) continue;
@@ -1762,22 +1810,21 @@ static int montarContinuar(CatItem *saida, int max) {
     juntos[nJ].ord  = i;
     nJ++;
   }
-  for (i = 0; i < nT && nJ < (int)(sizeof juntos / sizeof *juntos); i++) {
+  for (i = 0; i < nR && nJ < (int)(sizeof juntos / sizeof *juntos); i++) {
     int repetido = 0;
     for (j = 0; j < nL; j++)
-      if (!pularLocal[j] && mesmaObra(&doTrakt[i], &daConta[j])) { repetido = 1; break; }
+      if (!pularLocal[j] && mesmaObra(remotos[i], &daConta[j])) { repetido = 1; break; }
     if (repetido) { repetidos++; continue; }
-    juntos[nJ].item = &doTrakt[i];
-    juntos[nJ].ms   = instanteDaConta(&doTrakt[i]);
+    juntos[nJ].item = remotos[i];
+    juntos[nJ].ms   = instanteDaConta(remotos[i]);
     // Ordem BASE alta: SO decide quando os dois instantes sao desconhecidos ou
-    // iguais. Com o paused_at lido em trakt.c isso ficou raro — antes era o
-    // caso comum, porque todo item do Trakt chegava sem instante.
+    // iguais. Com o paused_at lido em trakt.c e simkl.c isso ficou raro.
     // Nesse resto de casos a conta vem antes, cada fonte na ordem que deu.
     juntos[nJ].ord  = 1000 + i;
     nJ++;
   } }
 
-  // Insercao: estavel, nJ <= 16, e roda uma vez por ciclo de descoberta.
+  // Insercao: estavel, nJ <= 36, e roda uma vez por ciclo de descoberta.
   for (i = 1; i < nJ; i++) {
     int k = i;
     while (k > 0) {
@@ -1797,12 +1844,16 @@ static int montarContinuar(CatItem *saida, int max) {
     if (getenv("NUVIO_CW_LOG"))
       printf("[desc] cw[%d] %s T%dE%d %d%% ms=%lld %s\n", i, saida[i].imdb, saida[i].temporada,
              saida[i].episodio, saida[i].progresso, juntos[i].ms,
-             juntos[i].item >= daConta && juntos[i].item < daConta + CONT_MAX ? "conta" : "trakt");
+             juntos[i].item >= daConta && juntos[i].item < daConta + CONT_MAX ? "conta"
+             : doSimkl && juntos[i].item >= doSimkl && juntos[i].item < doSimkl + CONT_MAX ? "simkl"
+             : "trakt");
   }
-  printf("[desc] continuar assistindo: %d do Trakt (%d fora de 1-90%%), "
+  printf("[desc] continuar assistindo: %d do Trakt, %d do Simkl (%d fora de 1-90%%), "
          "%d da conta, %d repetido(s); %d na fileira\n",
-         nT, fora, nL, repetidos, nJ);
+         nT, nS, fora, nL, repetidos, nJ);
   fflush(stdout);
+  // O lote do Simkl ja foi COPIADO para `saida` acima; nada mais aponta nele.
+  free(doSimkl);
   return nJ;
 }
 
@@ -2419,6 +2470,34 @@ static void *montar(void *u) {
   n += trakt_lista("watchlist",  lote + n, cap - n);
   GARANTE(400);
   n += trakt_lista("collection", lote + n, cap - n);
+  // PLAN TO WATCH DO SIMKL (issue #110), SO QUANDO O "+" SALVA LA. E a mesma
+  // marca naLista da watchlist do Trakt, entao o painel de Salvos e a aba
+  // Salvos da Biblioteca mostram o Plan to Watch sem saber de onde ele veio.
+  // Quem so vinculou o Simkl para a aba Listas nao ve o Plan to Watch
+  // misturado nos Salvos sem ter pedido — e nao paga os dois GETs.
+  //
+  // TITULO QUE JA ESTA NO LOTE (na watchlist do Trakt, ou numa fileira) SO
+  // GANHA A MARCA, nao entra de novo: dois CatItem com o mesmo imdb poriam o
+  // titulo duas vezes na Biblioteca.
+  if (ajustes_salvos_no_simkl() && simkl_ativo()) {
+    // DIRETO NO LOTE, e nao num vetor a parte: 300 CatItem sao 4,7 MB, e a
+    // Samsung roda com teto de 128 MiB. O lote ja cresce por GARANTE; os
+    // repetidos saem na compactacao logo abaixo.
+    int k, w, np, novos;
+    GARANTE(300);
+    np = simkl_plantowatch(lote + n, cap - n < 300 ? cap - n : 300);
+    for (k = n, w = n; k < n + np; k++) {
+      int jj, ja = 0;
+      for (jj = 0; jj < n; jj++)
+        if (!strcmp(lote[jj].imdb, lote[k].imdb)) { lote[jj].naLista = 1; ja = 1; break; }
+      if (ja) continue;
+      if (w != k) lote[w] = lote[k];
+      w++;
+    }
+    novos = w - n;
+    n = w;
+    if (np) printf("[desc] plantowatch do Simkl: %d, %d novo(s) no catalogo\n", np, novos);
+  }
 #undef GARANTE
 
   if (n) {

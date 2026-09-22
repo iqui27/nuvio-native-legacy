@@ -8,6 +8,7 @@
 #include "anim.h"
 #include "proximo.h"
 #include "trakt.h"
+#include "simkl.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -45,13 +46,13 @@ void continuar_desenhar(const CatItem *ci, GfxRect r) {
   gfx_rect(r, 0, GFX_VEU, 0, 0, 0, NV_RAIO_CARD, 0, 0, 0, .85f);
 
   // Um retangulo compacto, nao uma pilula. Nunca inventar status de estreia.
-  if (ci->restanteMin > 0 || (ci->progresso == 0 && trakt_e_a_seguir(ci->imdb))) {
+  if (ci->restanteMin > 0 || (ci->progresso == 0 && (trakt_e_a_seguir(ci->imdb) || simkl_e_a_seguir(ci->imdb)))) {
     char selo[48];
     int h = ci->restanteMin / 60, m = ci->restanteMin % 60;
     // "A SEGUIR" e nao "53min Restantes": o item de progresso 0 e o proximo
     // episodio de uma serie cujo ultimo terminou (issue #66) — ninguem
     // comecou a ve-lo, entao "restantes" seria mentira.
-    if (ci->progresso == 0 && trakt_e_a_seguir(ci->imdb))
+    if (ci->progresso == 0 && (trakt_e_a_seguir(ci->imdb) || simkl_e_a_seguir(ci->imdb)))
       snprintf(selo, sizeof selo, "%s", i18n("A seguir"));
     else if (h && m) snprintf(selo, sizeof selo, i18n("%dh %dmin Restantes"), h, m);
     else if (h) snprintf(selo, sizeof selo, i18n("%dh Restantes"), h);

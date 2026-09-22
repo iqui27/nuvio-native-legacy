@@ -10,6 +10,7 @@
 #  define NV_SEM_GIF 0
 #endif
 #include "trakt.h"
+#include "simkl.h"
 #include "idioma.h"
 #include "catordem.h"
 #include "fileiras.h"
@@ -2327,7 +2328,7 @@ static void desenhaHero(Uint32 agora, float saida) {
   // O conteudo de cada linha vem de buildModernHeroPresentation
   // (homeScreen.js:2497), que separa o caso "continuar assistindo" do resto.
   int contHero = (ci && ci->progresso > 0 && ci->restanteMin > 0);
-  int seguirHero = (ci && ci->progresso == 0 && trakt_e_a_seguir(ci->imdb));
+  int seguirHero = (ci && ci->progresso == 0 && (trakt_e_a_seguir(ci->imdb) || simkl_e_a_seguir(ci->imdb)));
 
   // Linha de meta. No web sao tokens juntados por "•"; ci->genero ja chega
   // como "Filme · Terror", que e o par (tipo, primeiro genero) do web.

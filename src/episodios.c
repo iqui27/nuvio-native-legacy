@@ -532,17 +532,17 @@ void episodios_desenhar(void) {
   for (int i = primeira; i < nTemporadas() && i < primeira+3; i++) {
     float tx = x+40+(i-primeira)*212;
     int sel = i == temporada;
-    int b=sel?focoTxt:210;
-    float sr=sel?(tinta>.5f?.15f+ar*.10f:.78f):.105f;
-    float sg=sel?(tinta>.5f?.065f+ag*.03f:.79f):.11f;
-    float sb=sel?(tinta>.5f?.09f+ab*.045f:.82f):.125f;
-    gfx_cor((GfxRect){tx,126,196,52},.5f,
-            sr,sg,sb,anim);
+    int br=sel?focoTxt:210, bg=sel?focoTxt:210, bb=sel?focoTxt:210;
+    // A temporada e uma tab, nao um botao preenchido: o acento no texto e o
+    // traço curto mostram a selecao sem competir com as miniaturas da lista.
     char s[48]; snprintf(s,sizeof s,i18n("Temporada %d"),numTemporada(i));
-    TxtLinha l=txt_linha(TXT_PG_ROTULO,s,b,b,b,255);
+    TxtLinha l=txt_linha(TXT_PG_ROTULO,s,br,bg,bb,255);
     txt_desenhar_alpha(l,tx+(196-l.w)*.5f,138,anim);
-    if (sel && grupo==0)
-      gfx_cor((GfxRect){tx+30,184,136,3},0,tinta,tinta,tinta,anim);
+    if (sel) {
+      float trilho = l.w + 16.0f;
+      gfx_cor((GfxRect){tx+(196-trilho)*.5f,180,trilho,3},1.5f,ar,ag,ab,
+              anim*(grupo==0?1.0f:.62f));
+    }
   }
   gfx_sem_recorte();
   gfx_recorte(x+36,EP_TOP,EP_W-72,NV_TELA_H-EP_TOP-32);
@@ -554,8 +554,9 @@ void episodios_desenhar(void) {
     int sel=grupo==1 && i==foco;
     GfxRect row={x+40,y,EP_W-80,EP_ROW-14};
     GfxRect r=row;
-    // A selecao fica numa superficie de tom rosado, nao num halo nem numa
-    // borda: a diferenca tonal segura o foco a distancia sem cobrir a miniatura.
+    // As linhas inativas compartilham o fundo do painel; so o foco ganha uma
+    // superficie propria. Evita a pilha de cartoes repetidos e da mais respiro
+    // a arte. O divisor fino preserva o alinhamento sem desenhar contorno.
     if (sel) {
       if (tinta < .5f) {
         // Acento branco pede uma superficie clara: a tinta escura devolvida
@@ -565,9 +566,10 @@ void episodios_desenhar(void) {
         gfx_cor(row,.12f,.088f+ar*.055f,.075f+ag*.035f,
                 .09f+ab*.045f,.98f*anim);
       }
-    } else {
-      gfx_cor(row,.12f,.072f,.075f,.09f,.94f*anim);
     }
+    if (i+1<n)
+      gfx_cor((GfxRect){row.x+12,y+EP_ROW-8,row.w-24,1},0,
+              .16f,.17f,.19f,.62f*anim);
     r.x+=3; r.y+=3; r.w-=6; r.h-=6;
     const CatItem *ci=cat_item(titulo);
     const char *arte=ep->thumb[0]?ep->thumb:(ci?ci->backdrop:"");
