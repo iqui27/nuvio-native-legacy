@@ -875,8 +875,19 @@ static int lerCatalogo(const char *base, const char *tipo, const char *id,
 // buscar mais e trafego que ninguem ve.
 #define MAX_POR_FILEIRA 12
 
+// filsMontadas = as janelas do bloco QUE ESTA PUBLICADO, e nada alem disso.
+// desc_remontar_fileiras republica este vetor por cima do bloco da tela sem
+// trocar os itens, entao um `ini` daqui que foi calculado sobre OUTRO lote
+// aponta para itens alheios. Medido na LG C9 (log da integracao com o Codex):
+// a montagem descartada pela troca de geracao deixava aqui as janelas do lote
+// que foi para o free(); o sync remontava por cima do catalogo do PACOTE e
+// "Amigos assistindo" (ini=12 n=2) virava "The Martian"/"Project Hail Mary"
+// sem nome. Por isso montar() monta em filsLote e so copia para ca junto com
+// o cat_definir_tudo que publica aquele mesmo lote. tests/homejanelas.sh.
 static CatFileira filsMontadas[CAT_FIL_MAX];
 static int nFileirasMontadas;
+static CatFileira filsLote[CAT_FIL_MAX];
+static int nFilsLote;
 
 typedef struct {
   char chave[192];      // homeCatalogKey:        <addonId>_<tipo>_<catalogoId>
@@ -2520,13 +2531,15 @@ static void *montar(void *u) {
           // publicar N vezes e seguro para quem esta desenhando; o custo e uma
           // copia do vetor por fileira, que acontece no fio da descoberta e nao
           // no de desenho.
-          nFileirasMontadas = nFil;
-          memcpy(filsMontadas, fil, sizeof(CatFileira) * (size_t)nFil);
           // So publica em partes com a tela VAZIA. Sobre o cache — ou sobre a
           // home da volta anterior — seria um retrocesso visivel: 16 fileiras
-          // viram 1. Ver `progressivo` no inicio de montar().
-          if (progressivo && minhaGeracao == montagemGeracao && meuEstado == homeestado_geracao())
+          // viram 1. Ver `progressivo` no inicio de montar(). filsMontadas so
+          // muda JUNTO com a publicacao: sem ela o bloco da tela e outro.
+          if (progressivo && minhaGeracao == montagemGeracao && meuEstado == homeestado_geracao()) {
+            nFileirasMontadas = nFil;
+            memcpy(filsMontadas, fil, sizeof(CatFileira) * (size_t)nFil);
             cat_definir_tudo(lote, n, filsMontadas, nFileirasMontadas);
+          }
           // Bandeira propria: `nFil == 1` nunca acontece aqui porque a fileira
           // "Continuar assistindo" ja ocupou a posicao 0 antes do laco.
           if (!marcouPrimeira) { marcouPrimeira = 1;
@@ -2558,8 +2571,8 @@ static void *montar(void *u) {
         // certo para o convite da home, inutil para saber se houve catalogo que
         // o teto impediu de PEDIR. Quem precisa disso e desc_remontar_fileiras.
         catalogosNaoPedidos = sobraram; }
-      nFileirasMontadas = nFil;
-      memcpy(filsMontadas, fil, sizeof(CatFileira) * (size_t)nFil);
+      nFilsLote = nFil;
+      memcpy(filsLote, fil, sizeof(CatFileira) * (size_t)nFil);
       // UMA LINHA QUE RESPONDE "o que falhou no arranque". As quatro contagens
       // sao as quatro respostas possiveis de um catalogo, e sem separa-las o
       // unico numero disponivel era o total de fileiras — que fica igual quer o
@@ -2615,23 +2628,39 @@ static void *montar(void *u) {
     n = w;
     if (np) printf("[desc] plantowatch do Simkl: %d, %d novo(s) no catalogo\n", np, novos);
   }
-  preservarFileirasAusentes(&lote, &n, &cap, filsMontadas, &nFileirasMontadas);
+  preservarFileirasAusentes(&lote, &n, &cap, filsLote, &nFilsLote);
   // Reanexar linhas sem resposta acontece depois das chamadas de rede; aplicar
   // a ordem salva ao conjunto inteiro impede que uma resposta parcial desloque
   // essas linhas para o fim da Home.
-  ordenarPorSnapshot(filsMontadas, nFileirasMontadas);
+  ordenarPorSnapshot(filsLote, nFilsLote);
 #undef GARANTE
 
-  if (n || nFileirasMontadas > 0) {
+  if (n || nFilsLote > 0) {
     // SO PUBLICA SE MUDOU. A mesma home montada de novo (ciclo de 5 min, sync
     // sem novidade) tem a mesma assinatura que a da tela; republicar seria
     // trocar o vetor, subir a revisao e a home se remontar — foco, rolagem e
     // arte de volta a zero — para mostrar exatamente o que ja mostrava.
     unsigned long antes = cat_assinatura();
-    unsigned long depois = cat_assinatura_de(lote, n, filsMontadas, nFileirasMontadas);
+    unsigned long depois = cat_assinatura_de(lote, n, filsLote, nFilsLote);
     if (minhaGeracao != montagemGeracao || meuEstado != homeestado_geracao()) {
-      free(lote); buscando = 0; return NULL;
+      // DESCARTADA SEM PUBLICAR, e por isso RECOMECA. A geracao muda sozinha
+      // no arranque (perfil escolhido, catordem/colecoes/addons da conta
+      // chegando — tudo entra na assinatura do homeestado), e no log da LG as
+      // DUAS montagens da sessao morreram aqui: sem recomecar, ninguem mais
+      // montava e a home ficava com o pacote. O pedido de desc_repetir que
+      // trocou montagemGeracao tambem passava por aqui e se perdia
+      // (repetirAoFim nunca era lido). A volta nova le o contexto atual; ela
+      // so descarta de novo se o contexto mudar DE NOVO, entao nao ha laco.
+      printf("[desc] montagem descartada: conta/perfil/config mudou no meio; recomecando\n");
+      fflush(stdout);
+      free(lote); repetirAoFim = 0; buscando = 0;
+      desc_iniciar();
+      return NULL;
     }
+    // A partir daqui filsMontadas descreve o bloco da tela nos dois ramos:
+    // publicado agora, ou igual (mesma assinatura) ao que ja estava.
+    nFileirasMontadas = nFilsLote;
+    memcpy(filsMontadas, filsLote, sizeof(CatFileira) * (size_t)nFilsLote);
     if (depois != antes || cat_do_cache()) {
       cat_definir_tudo(lote, n, filsMontadas, nFileirasMontadas);
       marco("catalogo da rede publicado");
