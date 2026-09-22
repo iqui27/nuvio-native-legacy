@@ -1627,6 +1627,16 @@ void detail_evento(const SDL_Event *e) {
         if (alvo >= 0) pedAbrir = alvo;
         else if (id[0]) desc_pedir_titulo(id);
       }
+    } else if (foco.fileira == SEC_TEMPORADAS && dur >= NV_HOLD_MS) {
+      // PRESSAO LONGA NA ABA: o menu da temporada (issue #108, "Pressing
+      // 'Season' brings up option to mark all as watched"). O toque curto
+      // continua trocando de aba — e o gesto de todo dia, e o de marcar a
+      // temporada inteira nao pode sair por engano num OK comum. A aba
+      // segurada passa a ser a escolhida, para os checks que mudarem estarem
+      // na lista que aparece por tras.
+      temporada = foco.coluna;
+      irParaTemporada(temporada, 0);
+      episodios_menu_temporada(idx, temporadaEm(foco.coluna));
     } else if (foco.fileira == SEC_TEMPORADAS) {
       // Trocar de aba BUSCA a temporada. Antes so mudava o realce e a lista
       // continuava a mesma, o que fazia a aba parecer quebrada.

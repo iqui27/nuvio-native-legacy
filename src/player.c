@@ -64,6 +64,7 @@ static void avisarCascaAberto(int v) { (void)v; }
 #include "assrender.h"
 #include "mkvass.h"
 #include "intro.h"
+#include "visto.h"     /* fim de episodio/filme para Simkl e conta */
 #include "vistoep.h"   /* o check de "assistido" na lista de episodios (issue #100) */
 #include "pausao.h"
 #include "home.h"
@@ -1079,6 +1080,23 @@ void player_encerrar(void) {
       // Otimista de proposito, como o gesto manual da folha ja e ("o efeito
       // LOCAL ja aconteceu antes de o fio nascer", episodios.c): a proxima
       // leitura do Trakt corrige se o servidor tiver recusado.
+      // CONCLUIU TAMBEM E "VISTO" NO SIMKL E NA CONTA, e so quando concluiu:
+      // um episodio largado aos 0,8% gera `[trakt] pause ... 0.8%` (scrobble,
+      // "parei aqui") e nao pode virar historico em lugar nenhum. O Trakt fica
+      // de fora da mascara porque o scrobble acima ja fecha o visto la. Um
+      // pedido por conclusao, e so quando o check local ainda nao existia —
+      // rever um episodio ja visto nao reescreve historico.
+      if (concluiu) {
+        int dest = visto_destinos() & ~VISTO_TRAKT;
+        if (epT > 0 && epE > 0) {
+          if (vistoep_estado(ci->imdb, epT, epE) != 1) {
+            VistoPar par = { (short)epT, (short)epE };
+            visto_episodios(ci->imdb, "series", &par, 1, 1, dest);
+          }
+        } else if (strcmp(ci->tipo, "series")) {
+          visto_titulo(ci->imdb, ci->tipo, NULL, 0, 1, dest);
+        }
+      }
       if (concluiu && epT > 0 && epE > 0) vistoep_definir(ci->imdb, epT, epE, 1);
       // E para a CONTA. Trakt e conta sao dois destinos diferentes: nem todo
       // usuario liga o Trakt, e o progresso do app oficial vem da conta.
