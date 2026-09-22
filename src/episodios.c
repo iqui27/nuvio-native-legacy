@@ -517,17 +517,15 @@ void episodios_desenhar(void) {
   int focoTxt = (int)(tinta * 255.0f + 0.5f);
   gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.02f,.02f,.025f,.35f*anim);
   gfx_cor((GfxRect){x,0,EP_W,NV_TELA_H},.025f,.038f,.041f,.052f,anim);
-  // CABECALHO MAIS PROFUNDO: a folha deixa de parecer um cartao cinza solto
-  // sobre a pagina. A luz de acento e curta e localizada, apenas para dar
-  // continuidade ao tema sem transformar o painel inteiro em uma mancha neon.
-  gfx_luz_canto((GfxRect){x,0,EP_W,EP_TOP},.025f,EP_W*.82f,0,420.0f,
-                ar,ag,ab,.08f*anim);
+  // A hierarquia vem de tipografia e superfícies, nao de um halo no topo:
+  // a luz colorida lavava o fundo e competia com a temporada e a linha focadas.
   txt_desenhar_alpha(txt_linha(TXT_PAINEL_TITULO,"Episódios",240,241,243,255),x+40,44,anim);
   { int cor=230;
     if (grupo==-1) cor=focoTxt;
     gfx_cor((GfxRect){x+EP_W-146,44,110,50},.3f,
-            grupo==-1?ar*.92f:.11f, grupo==-1?ag*.92f:.115f,
-            grupo==-1?ab*.92f:.13f,anim);
+            grupo==-1?(tinta>.5f?.15f+ar*.10f:.78f):.11f,
+            grupo==-1?(tinta>.5f?.065f+ag*.03f:.79f):.115f,
+            grupo==-1?(tinta>.5f?.09f+ab*.045f:.82f):.13f,anim);
     txt_desenhar_alpha(txt_linha(TXT_PG_ROTULO,"Fechar",cor,cor,cor,255),x+EP_W-130,55,anim); }
   gfx_recorte(x+36,120,EP_W-72,64);
   int primeira = temporada > 1 ? temporada - 1 : 0;
@@ -535,8 +533,11 @@ void episodios_desenhar(void) {
     float tx = x+40+(i-primeira)*212;
     int sel = i == temporada;
     int b=sel?focoTxt:210;
+    float sr=sel?(tinta>.5f?.15f+ar*.10f:.78f):.105f;
+    float sg=sel?(tinta>.5f?.065f+ag*.03f:.79f):.11f;
+    float sb=sel?(tinta>.5f?.09f+ab*.045f:.82f):.125f;
     gfx_cor((GfxRect){tx,126,196,52},.5f,
-            sel?ar*.92f:.105f, sel?ag*.92f:.11f, sel?ab*.92f:.125f,anim);
+            sr,sg,sb,anim);
     char s[48]; snprintf(s,sizeof s,i18n("Temporada %d"),numTemporada(i));
     TxtLinha l=txt_linha(TXT_PG_ROTULO,s,b,b,b,255);
     txt_desenhar_alpha(l,tx+(196-l.w)*.5f,138,anim);
@@ -553,18 +554,16 @@ void episodios_desenhar(void) {
     int sel=grupo==1 && i==foco;
     GfxRect row={x+40,y,EP_W-80,EP_ROW-14};
     GfxRect r=row;
-    // A LINHA FOCADA NAO E MAIS UMA PILULA BRANCA coberta por outra camada
-    // escura. Ela recebe uma base neutra com lavagem de acento e luz curta;
-    // o preenchimento faz o foco aparecer sem um contorno competir com a arte.
+    // A selecao fica numa superficie de tom rosado, nao num halo nem numa
+    // borda: a diferenca tonal segura o foco a distancia sem cobrir a miniatura.
     if (sel) {
       if (tinta < .5f) {
         // Acento branco pede uma superficie clara: a tinta escura devolvida
         // por ajustes_acento_tinta passa a ter contraste real, nao so teorico.
         gfx_cor(row,.12f,.78f,.79f,.82f,.98f*anim);
       } else {
-        gfx_cor(row,.12f,.075f+ar*.045f,.078f+ag*.045f,.092f+ab*.055f,.98f*anim);
-        gfx_luz_canto(row,.12f,row.w*.66f,row.h*.30f,row.h*1.65f,
-                      ar,ag,ab,.26f*anim);
+        gfx_cor(row,.12f,.088f+ar*.055f,.075f+ag*.035f,
+                .09f+ab*.045f,.98f*anim);
       }
     } else {
       gfx_cor(row,.12f,.072f,.075f,.09f,.94f*anim);

@@ -1722,7 +1722,15 @@ static int montarContinuar(CatItem *saida, int max) {
       if (prog_por_chave(chave, &r) && r.durSeg > 1.0 &&
           r.lastWatchedMs > doTrakt[i].retomadoMs) {
         int pct = (int)(100.0 * r.posSeg / r.durSeg);
-        if (!emAndamento(pct)) { fora++; continue; }
+        // "A SEGUIR" ABERTO E LARGADO NO COMECO NAO SAI DA FILEIRA. Visto na
+        // C9 em 22/09: abrir o "Up next" de Adolescence (S1E2) e voltar aos 30 s
+        // gravou 0,8% local, mais novo que o Trakt; o pct virava 0, caia fora
+        // de 1-90% e a serie SUMIA do Continuar assistindo — o proximo
+        // episodio que o app acabara de oferecer. Abaixo de 1% ele continua
+        // sendo "a seguir" (progresso 0); do fim para cima (>90%) sai, como
+        // antes, porque ai terminou.
+        if (pct < 1 && trakt_e_a_seguir(doTrakt[i].imdb)) pct = 0;
+        else if (!emAndamento(pct)) { fora++; continue; }
         doTrakt[i].progresso = pct;
       } }
     if (w != i) doTrakt[w] = doTrakt[i];
