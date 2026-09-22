@@ -125,9 +125,30 @@ SDL_Surface *jpeg_rapido_carregar_mem(const unsigned char *dados, size_t n, int 
   if (dados[0] == 0xFF && dados[1] == 0xD8)
     return jpegEscalado(dados, n, largMax, larguraOriginal, alturaOriginal);
   if (dados[0] == 0x89 && dados[1] == 'P' && dados[2] == 'N' && dados[3] == 'G') {
-    // Navegador primeiro (ja reduzido, fora do heap do WASM); IMG_Load_RW de
-    // tamanho cheio so quando o Worker nao respondeu.
-    SDL_Surface *s = viaNavegador(dados, n, "image/png", largMax, larguraOriginal, alturaOriginal);
+    // PNG PEQUENO NAO VAI AO NAVEGADOR (22/09/2026). A ponte existe para o
+    // PNG de 3840x2160 (33 MB cheio no heap); um icone de 128x128 e 64 KB e o
+    // libpng do SDL_image o decodifica em 0,07 a 0,21 ms (medido no Node/WASM,
+    // audio/menu_home/play/legenda.png, 50 rodadas). Pela ponte, na Samsung
+    // 1.4.1, os mesmos icones levaram 8 a 17 s na fila do Worker, e foi com
+    // eles nesse caminho que o player mostrou quadrado branco e o logo da NBC
+    // no lugar de icone — a ponte C/JS nao troca pixel sob teste
+    // (tests/decodefila-tizen.sh), o que sobra de suspeito e o proprio canvas
+    // do navegador da TV. Ate 256x256 (IHDR) fica aqui: sem fila, sem canvas,
+    // sem prazo, identico ao LG.
+    SDL_Surface *s;
+    if (n >= 24 && !memcmp(dados + 12, "IHDR", 4)) {
+      unsigned long w = ((unsigned long)dados[16] << 24) | ((unsigned long)dados[17] << 16) | ((unsigned long)dados[18] << 8) | dados[19];
+      unsigned long h = ((unsigned long)dados[20] << 24) | ((unsigned long)dados[21] << 16) | ((unsigned long)dados[22] << 8) | dados[23];
+      if (w > 0 && h > 0 && w <= 256 && h <= 256) {
+        SDL_RWops *rw = SDL_RWFromConstMem(dados, (int)n);
+        s = rw ? IMG_Load_RW(rw, 1) : NULL;
+        if (s) { if (larguraOriginal) *larguraOriginal = s->w; if (alturaOriginal) *alturaOriginal = s->h; }
+        return s;
+      }
+    }
+    // Grande: navegador primeiro (ja reduzido, fora do heap do WASM);
+    // IMG_Load_RW de tamanho cheio so quando o Worker nao respondeu.
+    s = viaNavegador(dados, n, "image/png", largMax, larguraOriginal, alturaOriginal);
     if (s) return s;
     { SDL_RWops *rw = SDL_RWFromConstMem(dados, (int)n);
       s = rw ? IMG_Load_RW(rw, 1) : NULL;

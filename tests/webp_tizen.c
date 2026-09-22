@@ -137,8 +137,11 @@ static void *fioDeDecode(void *arg) {
       s = jpeg_rapido_carregar_mem(dados, (size_t)n, 64, &ow, &oh);
       if (!s) printf("FALHOU: png reduzido devolveu NULL\n");
       else {
-        printf("%s png reduzido %dx%d (arquivo %dx%d)\n",
-               (s->w == 64 && ow == 160 && oh == 160) ? "ok " : "FALHOU:", s->w, s->h, ow, oh);
+        // 160x160 e PNG PEQUENO (<= 256): desde 22/09/2026 decodifica local,
+        // em tamanho de arquivo; a reducao a 64 fica para o tex_reduzir do
+        // tex_cache, como no LG. Ver jpegrapido.c.
+        printf("%s png pequeno local %dx%d (arquivo %dx%d, pedido 64)\n",
+               (s->w == 160 && ow == 160 && oh == 160) ? "ok " : "FALHOU:", s->w, s->h, ow, oh);
         SDL_FreeSurface(s);
       } }
     { int ow = 0, oh = 0;
