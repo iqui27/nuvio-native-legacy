@@ -27,14 +27,38 @@ static const char *respStreams =
   " {\"num\":4,\"name\":\"Sem categoria\",\"stream_id\":404}]";
 static const char *respAuth0 = "{\"user_info\":{\"auth\":0,\"status\":\"Disabled\"}}";
 static int recusar, mudo;
-static char ultimaUrl[1200];
+static char ultimaUrl[1200];      // a url DO PAINEL (desfeito o proxy)
+static char ultimaPedida[4000];   // o endereco que a rede recebeu de fato
+static char ultimoCorpo[1200];    // o corpo do POST ao proxy (Tizen)
+static int ultimoPost;
+// Build do teste do Tizen (-DNV_XTREAM_PROXY_TESTE): a chamada chega como
+// POST <NV_REC_URL>/v1/xtream com a url do painel crua no corpo.
+static char *responder(const char *url);
 char *rede_baixar(const char *url, int segundos) {
   (void)segundos;
+  ultimoPost = 0;
+  snprintf(ultimaPedida, sizeof ultimaPedida, "%s", url);
   snprintf(ultimaUrl, sizeof ultimaUrl, "%s", url);
+  return responder(url);
+}
+char *rede_postar_st(const char *url, int segundos, const char *const *cab,
+                     const char *corpo, int *status) {
+  (void)segundos;
+  ultimoPost = 1;
+  assert(cab && !strcmp(cab[0], "Content-Type: text/plain"));
+  snprintf(ultimaPedida, sizeof ultimaPedida, "%s", url);
+  snprintf(ultimoCorpo, sizeof ultimoCorpo, "%s", corpo);
+  snprintf(ultimaUrl, sizeof ultimaUrl, "%s", corpo);
+  if (status) *status = mudo ? 504 : 200;
+  if (mudo) return strdup("{\"erro\":\"painel nao respondeu no prazo\"}");
+  return responder(corpo);
+}
+static char *responder(const char *url) {
+  (void)url;
   if (mudo) return NULL;
   if (recusar) return strdup(respAuth0);
-  if (strstr(url, "action=get_live_categories")) return strdup(respCats);
-  if (strstr(url, "action=get_live_streams")) return strdup(respStreams);
+  if (strstr(ultimaUrl, "action=get_live_categories")) return strdup(respCats);
+  if (strstr(ultimaUrl, "action=get_live_streams")) return strdup(respStreams);
   return NULL;
 }
 
@@ -68,6 +92,18 @@ int main(void) {
   assert(!strcmp(c[2].id, "xtream:404") && !strcmp(c[2].categoria, "Outros"));
   assert(strstr(ultimaUrl, "username=joao%40x&password=s%26nha%201&action=get_live_streams"));
   puts("ok  canais: id numero ou texto, categoria por id, sem categoria = Outros");
+#ifdef NV_XTREAM_PROXY_TESTE
+  // Tizen: painel http vai pelo worker, com a url INTEIRA escapada num
+  // parametro so (o & da senha nao pode virar outro parametro do worker).
+  // Tizen: painel http vai pelo worker, com a url no CORPO e o endereco de
+  // entrada sem nada da pessoa (o que a plataforma registra).
+  assert(ultimoPost && !strcmp(ultimaPedida, "https://rec.teste/v1/xtream"));
+  assert(!strcmp(ultimoCorpo, "http://meu.servidor.tv:8080/player_api.php?username=joao%40x&password=s%26nha%201&action=get_live_streams"));
+  puts("ok  tizen: lista http por POST NV_REC_URL/v1/xtream, url no corpo");
+#else
+  assert(!ultimoPost && !strncmp(ultimaPedida, "http://meu.servidor.tv:8080/player_api.php?", 43));
+  puts("ok  lg: lista direto no painel");
+#endif
 
   assert(xtream_e_id("xtream:101") && !xtream_e_id("stalker:1") && !xtream_e_id(NULL));
   assert(xtream_url("xtream:101", url, sizeof url));
@@ -99,6 +135,15 @@ int main(void) {
   assert(!strcmp(xtream_servidor_curto(), "seguro.tv"));
   assert(strstr(disco, "servidor\thttps://seguro.tv\n"));
   puts("ok  https preservado quando digitado");
+  // https nao tem o bloqueio: vai direto nos dois alvos, sem terceiro no meio.
+  xtream_definir_usuario("u"); xtream_definir_senha("p");
+  assert(xtream_canais(c, 16) == 3);
+  assert(!ultimoPost && !strncmp(ultimaPedida, "https://seguro.tv/player_api.php?username=u&password=p&action=", 62));
+  // O video nunca passa pelo proxy: e a url do painel, que vai ao AVPlay.
+  assert(xtream_url("xtream:9", url, sizeof url) && !strcmp(url, "https://seguro.tv/live/u/p/9.m3u8"));
+  xtream_definir_servidor("http://meu.servidor.tv:8080");
+  assert(xtream_url("xtream:9", url, sizeof url) && !strcmp(url, "http://meu.servidor.tv:8080/live/u/p/9.m3u8"));
+  puts("ok  https direto; url de video sempre direta");
   puts("xtream: tudo ok");
   return 0;
 }

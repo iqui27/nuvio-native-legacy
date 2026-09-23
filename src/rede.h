@@ -28,6 +28,15 @@ char *rede_baixar(const char *url, int segundos);
 // termina em NUL e serve para JSON; imagem tem zeros no meio e strlen mentiria.
 char *rede_baixar_bin(const char *url, int segundos, long *n);
 
+#ifdef __EMSCRIPTEN__
+// POST de corpo text/plain com resposta BINARIA (tamanho em *n; 4xx/5xx viram
+// NULL, como em rede_baixar_bin). So existe no Tizen, para o proxy do Xtream
+// (#112): a url do icone vai no CORPO, que a plataforma do worker nao
+// registra, e volta uma imagem com zeros no meio — rede_postar_st nao da o
+// tamanho. Ver tex_cache.c e servidor/recomendacoes/src/xtream.js.
+char *rede_postar_bin(const char *url, int segundos, const char *corpo, long *n);
+#endif
+
 // Com cabecalhos. `cabecalhos` e um vetor terminado em NULL de linhas prontas
 // ("Authorization: Bearer x"). Existe por causa do Trakt, que exige token e
 // chave de aplicativo em cabecalho — nao ha como passar por URL.
