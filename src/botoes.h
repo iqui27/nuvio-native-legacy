@@ -48,6 +48,12 @@ float botao_largura(const char *rotulo, const char *icone, int primario);
 void botao_pilula(GfxRect r, const char *rotulo, const char *icone,
                   float foco, int primario, int alinhar, float a);
 
+// So a SUPERFICIE do primario (luz + preenchimento repouso->realce), para uma
+// linha que leva mais que icone e rotulo — a do amigo, com a foto dele. Devolve
+// a cor do texto em 0..255 para ESSE foco: a tinta do realce a partir de 0,5,
+// o 235 de repouso antes. Assim a linha custom e a pilula nunca divergem.
+int  botao_superficie(GfxRect r, float foco, float a);
+
 // Botao redondo so com icone. `r` e o quadrado do disco.
 void botao_disco(GfxRect r, const char *icone, float foco, float a);
 
