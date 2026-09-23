@@ -78,6 +78,7 @@ static void avisarCascaAberto(int v) { (void)v; }
 #include <string.h>
 #include <strings.h>   // strcasecmp, para comparar o hdrType do pipeline
 #include <math.h>
+#include "ponteiro.h"
 
 // Quanto tempo os controles ficam de pe sem receber tecla. Medido a olho no
 // aparelho: perto de 4s. Menos que isso e o usuario perde a barra no meio de
@@ -2001,6 +2002,40 @@ static void desenharLegendaExterna(void){
   }
 }
 
+// PONTEIRO (#99). Os alvos mexem nas MESMAS variaveis das setas (botao,
+// barraFoco, skipFoco) e todos acordam os controles: mexer a mao sobre o
+// video e o "toque" que faz a barra subir. Clicar no video (fora dos
+// controles) e o OK dos controles escondidos: Play/Pause.
+static float barraPtrX, barraPtrW = NV_TELA_W;
+static int ponteiroNoPlayer(void) {
+  return ponteiro_ativo() && aberto && !saindo &&
+         !posplay_visivel() && !pausao_visivel();
+}
+static void ponteiroAcordar(int a, int b) { (void)a; (void)b; acordar(); }
+static void ponteiroPlayPause(int a, int b) {
+  (void)a; (void)b;
+  botao = PLR_PLAY; barraFoco = 0; skipFoco = 0;
+  alternarTocando(); acordar();
+}
+static void ponteiroBotao(int i, int b) {
+  (void)b;
+  if (i < 0 || i >= PLR_NBTNS) return;
+  botao = i; barraFoco = 0; skipFoco = 0; acordar();
+}
+static void ponteiroBarra(int a, int b) { (void)a; (void)b; barraFoco = 1; skipFoco = 0; acordar(); }
+// Clique na barra PROCURA ali — o que o mouse faz em qualquer player. Canal ao
+// vivo nao tem para onde ir.
+static void ponteiroBuscar(int a, int b) {
+  float f;
+  (void)a; (void)b;
+  acordar();
+  if (ehCanal() || duracaoSeg <= 0.0f || barraPtrW <= 0.0f) return;
+  f = anim_clamp((ponteiro_x() - barraPtrX) / barraPtrW, 0.0f, 1.0f);
+  posSeg = f * duracaoSeg;
+  if (comVideo) video_buscar(posSeg);
+}
+static void ponteiroSkip(int a, int b) { (void)a; (void)b; skipFoco = 1; barraFoco = 1; acordar(); }
+
 static void desenharAcoesEpisodio(void){
   const CatEp *prox=player_proximo_episodio();double fim;int tipo=0;
   int trecho=intro_ativo(posSeg,&fim,&tipo);
@@ -2029,6 +2064,7 @@ static void desenharAcoesEpisodio(void){
     float w=t.w+lado*2.0f+ladoIcone+intervalo;
     float y=(NV_TELA_H-60.0f-h)-anim*(NV_TELA_H-60.0f-h-664.0f);
     GfxRect p={64,y,w,h};
+    if (ponteiroNoPlayer()) ponteiro_alvo(p.x, p.y, p.w, p.h, ponteiroSkip, NULL, 0, 0);
     if(sel) superficieFocoPlayer(p,.27f,1.0f,.96f*entrada);
     else gfx_cor(p,.27f,.118f,.118f,.118f,.85f*entrada);
     { float tintaIcone = sel ? ajustes_acento_tinta(NULL, NULL, NULL) : 1.0f;
@@ -2334,6 +2370,8 @@ void player_desenhar(Uint32 agora) {
   }
 
   float a = anim * entrada;
+  if (ponteiroNoPlayer())
+    ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, ponteiroAcordar, ponteiroPlayPause, 0, 0);
   // O botao de pular fica POR CIMA dos degrades e dos controles: desenhado
   // antes deles, o veu de 400px do rodape o afogava assim que a barra subia —
   // era o "aparece e some" do relato. Sem controles ele e a unica coisa na tela.
@@ -2428,6 +2466,11 @@ void player_desenhar(Uint32 agora) {
   float fr, fg, fb;
   corFocoPlayer(&fr, &fg, &fb);
   gfx_cor(trilho, PLR_TRILHO_R, 1, 1, 1, (barraFoco ? 0.34f : 0.22f) * a);
+  // A area clicavel da barra e mais alta que o trilho de 4-8 px: um fio desse
+  // tamanho nao se acerta com a mao no ar.
+  barraPtrX = bx; barraPtrW = bw;
+  if (ponteiroNoPlayer() && a > 0.3f)
+    ponteiro_alvo(bx, yBarra - 14.0f, bw, hTrilho + 28.0f, ponteiroBarra, ponteiroBuscar, 0, 0);
   // O buffer do pipeline, entre o andado e o fim: e o que mostra que o video
   // esta a frente do relogio. Sem dado do pipeline o segmento nao existe —
   // inventar "quase todo carregado" seria pior que a barra simples. No web ele
@@ -2500,6 +2543,9 @@ void player_desenhar(Uint32 agora) {
       float f = focoB[i];
       int sel = (botao == i && !barraFoco);
       botaoCirculo(cxs[i], cyBotoes, f, a, sel);
+      if (ponteiroNoPlayer() && a > 0.3f)
+        ponteiro_alvo(cxs[i] - PLR_BTN_D * 0.5f, cyBotoes - PLR_BTN_D * 0.5f,
+                      PLR_BTN_D, PLR_BTN_D, ponteiroBotao, NULL, i, 0);
       float lum = sel ? ajustes_acento_tinta(NULL, NULL, NULL) : 0.94f;
       switch (i) {
         case PLR_PLAY:    iconePlayPause(cxs[i], cyBotoes, a, tocando, lum); break;
