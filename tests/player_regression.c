@@ -183,6 +183,10 @@ static void testar(void) {
     player_limpar_legenda_nativa(t);assert(!strcmp(t,"Olá\nmundo"));
     snprintf(t,sizeof t,"{\\an8}{\\i1}Letreiro\\Nsegunda\\hlinha{\\i0}");
     player_limpar_legenda_nativa(t);assert(!strcmp(t,"Letreiro\nsegunda linha"));
+    // Como o AVPlay do Tizen 10 entregou de verdade (emulador, MKV com SRT):
+    // "Primeira fala\r\u0000" — o NUL corta a string, o \r sobra.
+    snprintf(t,sizeof t,"Primeira fala\r");
+    player_limpar_legenda_nativa(t);assert(!strcmp(t,"Primeira fala"));
     snprintf(t,sizeof t,"Tom &amp; Jerry &lt;3");
     player_limpar_legenda_nativa(t);assert(!strcmp(t,"Tom & Jerry <3"));
     // Fora da Samsung nao ha legenda embutida para o app desenhar.
