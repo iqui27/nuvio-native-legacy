@@ -7,6 +7,7 @@
 #include "../src/trailerapple.h"
 #include "../src/extras.h"
 #include "../src/anim.h"
+#include "../src/trailerfonte.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -16,6 +17,10 @@
 
 static CatItem item;
 static int trailerSetting = 1;
+// "Fonte do trailer" (trailerfonte.h). A regra e a de producao
+// (src/trailerfonte.c entra na linha do emcc); so o valor gravado e do teste.
+static int fonteSetting = TRF_AUTO;
+static int lastSom = -1;
 static int appleReady;
 static int appleOpenFails;
 static int youtubeReady;
@@ -31,6 +36,7 @@ const CatItem *cat_item(int i) { return i == 0 ? &item : NULL; }
 int ajustes_hero_ligado(void) { return 1; }
 int ajustes_trailer_hero(void) { return trailerSetting; }
 int ajustes_tmdb_trailers(void) { return 1; }
+int ajustes_trailer_fonte(void) { return fonteSetting; }
 
 int trailer_suportado(void) { return 1; }
 int trailer_aberto(void) { return opened; }
@@ -44,7 +50,8 @@ int trailer_falhou(void) {
 void trailer_fechar(void) { opened = 0; playing = 0; }
 int trailer_estado(void) { return opened ? (playing ? 1 : -1) : -2; }
 void trailer_abrir(const char *source, GfxRect r, int som, int cheia) {
-  (void)r; (void)som; (void)cheia;
+  (void)r; (void)cheia;
+  lastSom = som;
   snprintf(lastSource, sizeof lastSource, "%s", source);
   openedCount++;
   if (appleOpenFails && strstr(source, "apple")) {
@@ -103,6 +110,8 @@ static void resetState(const char *id) {
   heroTrailerAppleFalhou = 0;
   heroTrailerFade = 0.0f;
   trailerSetting = 1;
+  fonteSetting = TRF_AUTO;
+  lastSom = -1;
   appleReady = 0;
   appleOpenFails = 0;
   youtubeReady = 0;
@@ -195,6 +204,49 @@ int main(void) {
   snprintf(item.imdb, sizeof item.imdb, "%s", "tt0000004");
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_MAX_ESPERA_MS + 1);
   rc |= check("troca de identidade reseta fade", heroTrailerFade == 0.0f);
+
+  // --- "Fonte do trailer" no hero da Samsung (este binario e -D__EMSCRIPTEN__).
+  // Apple fixa: erro da Apple NAO cai no YouTube, mesmo com id em maos.
+  resetState("tt0000010");
+  fonteSetting = TRF_APPLE;
+  youtubeReady = 1;
+  appleReady = 1;
+  appleOpenFails = 1;
+  home_trailer_passo(1, 0.016f, start);
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS + 1);
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS + 2);
+  rc |= check("Apple fixa: erro fica a arte, sem YouTube", openedCount == 1 && !opened &&
+              heroTrailerFonte == 3 && strstr(lastSource, "apple"));
+
+  // YouTube fixo: abre o YouTube na janela, sem esperar nem abrir a Apple.
+  resetState("tt0000011");
+  fonteSetting = TRF_YOUTUBE;
+  youtubeReady = 1;
+  appleReady = 1;
+  home_trailer_passo(1, 0.016f, start);
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
+  rc |= check("YouTube fixo: so YouTube, Apple ignorada", openedCount == 1 && opened &&
+              !strcmp(lastSource, "dQw4w9WgXcQ"));
+  rc |= check("hero da Samsung abre mudo", lastSom == 0);
+
+  // IMDb fixo na Samsung: o IMDb nao toca nesta TV -> nada, com prazo finito.
+  resetState("tt0000012");
+  fonteSetting = TRF_IMDB;
+  youtubeReady = 1;
+  appleReady = 1;
+  home_trailer_passo(1, 0.016f, start);
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
+  rc |= check("IMDb fixo na Samsung: nada abre", openedCount == 0 && heroTrailerTentado &&
+              !heroTrailerSegurando(start + NV_TRAILER_HERO_ESPERA_MS));
+
+  // Automatico mantem a ordem: com as duas prontas, a Apple.
+  resetState("tt0000013");
+  youtubeReady = 1;
+  appleReady = 1;
+  home_trailer_passo(1, 0.016f, start);
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
+  rc |= check("Automatico: Apple antes do YouTube", openedCount == 1 && strstr(lastSource, "apple"));
 
   puts(rc ? "home-trailer-timer: FALHOU" : "home-trailer-timer: tudo ok");
   return rc ? 1 : 0;

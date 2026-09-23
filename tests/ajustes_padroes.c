@@ -22,6 +22,15 @@ int main(void) {
   assert(valor[AJ_ROTULOS] == 1);             // rotulos desligados
   assert(valor[AJ_CW_LIGADO] == 0);
   assert(valor[AJ_DET_VEU] == 100);
+  // Fonte do trailer (trailerfonte.h): nasce Automatica, e deste aparelho,
+  // e a chave nao colide com nada da conta.
+  assert(valor[AJ_TRAILER_FONTE] == 0);
+  assert(OPCOES[AJ_TRAILER_FONTE].n == 4);
+  assert(!strcmp(CHAVE[AJ_TRAILER_FONTE], "trailerFonteLocal"));
+  assert(!strcmp(CHAVE[AJ_TRAILER_ASPECTO], "trailerAspecto"));
+  assert(!strcmp(CHAVE[AJ_TRAILER_FONTE + 1], "focusedPosterBackdropExpandEnabled"));
+  assert(somenteDesteAparelho(AJ_TRAILER_FONTE));
+  assert(valor[AJ_EXPANDIR] == 0);
   assert(valor[AJ_EXPANDIR_ATRASO] == 3);
   assert(valor[AJ_PROF] == 1);                // profundidade desligada
   assert(valor[AJ_PROF_BORDA] == 28);         // cardDepthEdgeStrength

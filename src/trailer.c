@@ -1,6 +1,7 @@
 #include "trailer.h"
 #include "layout.h"
 #include "ajustes.h"
+#include "trailerfonte.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -236,6 +237,11 @@ static void nativoAplicar(void) {
 void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
   int nova;
   if (!trailer_suportado() || !fonte || !fonte[0]) return;
+  // SAMSUNG E SEMPRE MUDO, tambem em tela cheia (dono, 22/09/2026: "trailer
+  // fica mudo"). A trava fica AQUI, no unico caminho ate o elemento, e nao so
+  // em quem chama: um `som` 1 esquecido num chamador novo desmutaria o embed
+  // do YouTube (mute=0) e voltaria a prometer som onde a Apple nao tem.
+  if (!trailerfonte_com_som(trailerfonte_tizen())) som = 0;
   nova = strcmp(fonteAtual, fonte) != 0;
 #ifdef __EMSCRIPTEN__
   // O ESTADO DE SESSAO a cada tentativa (dono: "tocou um trailer e depois
