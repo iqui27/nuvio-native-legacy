@@ -25,6 +25,7 @@
 #include "tex_cache.h"
 #include "focus.h"
 #include "anim.h"
+#include "revela.h"
 #include "layout.h"
 #include "ajustes.h"
 #include "catalogo.h"
@@ -204,6 +205,17 @@ static Foco foco;
 static HomeItem itemFoco;      // preenchido durante o desenho, lido pela transicao
 static int  temItemFoco = 0;
 static float animFoco[MAX_FIL][MAX_CARDS];
+// MICRO-ANIMACOES DE CARD (revela.h). Um registro por lugar da grade para a
+// arte chegando; um so para a luz do foco, porque so ha um card em foco; e o
+// instante em que cada fileira comecou a entrar (0 = ja entrou).
+static RevelaArte  revArte[MAX_FIL][MAX_CARDS];
+static RevelaVarre revVarre = { -1, 0, 0 };
+static Uint32      filEntraEm[MAX_FIL];
+static int         filNAntes[MAX_FIL];
+// Ultimo quadro em que as fileiras foram desenhadas. Uma ausencia longa (a
+// home escondida atras do player, de Ajustes, da selecao de perfil) faz as
+// fileiras visiveis entrarem de novo, em cascata, na volta.
+static Uint32      fileirasVistasEm;
 static float scrollX[MAX_FIL];
 static float scrollY = 0.0f;
 // Velocidades das molas de 2a ordem do deslize. Ficam ao lado da posicao
@@ -597,6 +609,20 @@ static void desenhaArteAusente(GfxRect r, float raio, const CatItem *item,
                                     160, 165, 178, 255, r.w - 32.0f);
     txt_desenhar_alpha(nome, r.x + (r.w - nome.w) * 0.5f,
                        centro + 12.0f, alpha * 0.78f);
+  }
+}
+
+// CARD CARREGANDO: a mesma superficie do esqueleto, com a luz passando
+// (gfx_esqueleto) e so o nome do titulo — sem o aviso de indisponivel, que
+// leria como quebrado algo que ainda esta a caminho.
+static void desenhaCarregando(GfxRect r, float raio, const CatItem *item) {
+  gfx_esqueleto(r, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
+                NV_COR_ESQUELETO_B, 1.0f);
+  if (item && item->titulo[0]) {
+    TxtLinha nome = txt_linha_corta(TXT_MINI, item->titulo,
+                                    160, 165, 178, 255, r.w - 32.0f);
+    txt_desenhar_alpha(nome, r.x + (r.w - nome.w) * 0.5f,
+                       r.y + (r.h - nome.h) * 0.5f, 0.78f);
   }
 }
 
@@ -1781,6 +1807,7 @@ static void sincronizarFileiras(void) {
   filsAplicadas = nCat;
   prefsAplicadas = assin;
   memset(animFoco, 0, sizeof animFoco);
+  memset(revArte, 0, sizeof revArte);
   memset(velX, 0, sizeof velX);
   memset(scrollX, 0, sizeof scrollX);
   for (r = 0; r < nFileiras; r++)
@@ -3079,10 +3106,37 @@ void home_desenhar(Uint32 agora) {
               183, 186, 194, tx, NV_SHELF_TOP + t.h + 14.0f,
               NV_TELA_W - tx - NV_HOME_SAFE_RIGHT, 34, 1, 2);
   }
+  // ENTRADA EM CASCATA. Reentra quando as fileiras ficaram fora da tela por
+  // um tempo — MAS NAO na volta do detalhe: ali elas ja sobem de volta pela
+  // mola do proprio detalhe (`descida`), e duas animacoes no mesmo gesto
+  // descasariam.
+  int reentra = (!fileirasVistasEm || agora - fileirasVistasEm > 1500u) && pd <= 0.001f;
+  int ordemFil = 0;
+  fileirasVistasEm = agora ? agora : 1u;
+  // A LUZ DO FOCO: uma varredura por foco novo, nenhuma com a tecla presa.
+  float varreFoco = revela_varre(&revVarre,
+                                 focoHero ? -1 : foco.fileira * 64 + foco.coluna, agora);
   for (int r = 0; r < nFileiras; r++) {
     TipoFileira tipo = fileiras[r].tipo;
     float fade=anim_clamp((y-(NV_SHELF_TOP-80))/80,0,1);
     gfx_opacidade_grupo=fade*fade*(3-2*fade);
+    const float grupoFil = gfx_opacidade_grupo;
+    { int n = fileiras[r].n;
+      int visivel = y < NV_TELA_H && y + NV_LEGACY_ROW_HEAD_H + alturaFil(r) > NV_SHELF_TOP - 96;
+      // Fileira que acabou de ganhar itens (o catalogo chegou) ou a volta
+      // depois de uma ausencia. So as VISIVEIS: as de baixo ja estarao
+      // assentadas quando o foco descer ate elas.
+      if (n > 0 && visivel && (reentra || filNAntes[r] == 0))
+        filEntraEm[r] = agora + (Uint32)(ordemFil * NV_ENTRA_FIL_MS);
+      else if (!visivel)
+        filEntraEm[r] = 0;
+      if (visivel && n > 0) ordemFil++;
+      filNAntes[r] = n;
+      // Assentou de vez: zera para o card perguntar de graca.
+      if (filEntraEm[r] && (Sint32)(agora - filEntraEm[r]) >
+          (Sint32)(NV_ENTRA_MS + NV_ENTRA_PASSO_MS * NV_ENTRA_MAX_COL + 40))
+        filEntraEm[r] = 0;
+      gfx_opacidade_grupo = grupoFil * revela_entra(filEntraEm[r], 0.0f, agora); }
     float lw = larguraFil(r);
     float lh = alturaFil(r), passo = passoFil(r);
     float artH = lh;
@@ -3203,6 +3257,17 @@ void home_desenhar(Uint32 agora) {
           // cresce so para a direita a partir de uma borda esquerda parada.
           float abre = (r == expFileira && c == expColuna) ? expAbre : 0.0f;
           float larguraAberta = artH * esc * NV_EXP_ASPECTO;
+          // Cascata: atraso pela coluna VISIVEL, nao pela absoluta — a
+          // fileira rolada ate a coluna 20 entra pelo primeiro card da tela.
+          float entra = 1.0f;
+          if (filEntraEm[r]) {
+            int c0 = passo > 0.0f ? (int)(scrollX[r] / passo) : 0;
+            int ordem = c - c0;
+            if (ordem < 0) ordem = 0;
+            if (ordem > NV_ENTRA_MAX_COL) ordem = NV_ENTRA_MAX_COL;
+            entra = revela_entra(filEntraEm[r], ordem * NV_ENTRA_PASSO_MS, agora);
+          }
+          gfx_opacidade_grupo = grupoFil * entra;
           float empurra = 0.0f;
           // O empurrao e medido no card aberto COM a escala de foco dele, nao
           // no de escala 1: o aberto mede artH*escF*16/9 e o empurrao contava
@@ -3217,8 +3282,9 @@ void home_desenhar(Uint32 agora) {
           if (abre > 0.0f) w = lw * esc + (larguraAberta - lw * esc) * abre;
           float cx = ajustes_conteudo_x() + c * passo - scrollX[r] + lw * 0.5f
                    + empurra + (w - lw * esc) * 0.5f;
-          // Sem levantamento: no web o card focado nao sai do lugar.
-          float cy = cardY + artH * 0.5f;
+          // Sem levantamento: no web o card focado nao sai do lugar. O que
+          // desloca aqui e so a cascata de entrada, e so enquanto ela dura.
+          float cy = cardY + artH * 0.5f + (1.0f - entra) * NV_ENTRA_DY;
           if (cx < -lw * 1.5f || cx > NV_TELA_W + lw) continue;
           float px = cx - w * 0.5f, py = cy - h * 0.5f;
           // O foco pode aumentar o card. No 4:3 ele nao pode subir sobre o
@@ -3351,6 +3417,8 @@ void home_desenhar(Uint32 agora) {
           // Com o teto unico de 640 cada poster custava 2,4 MB e o cache
           // estourava com ~40 texturas, despejando o que ainda estava na tela.
           GLuint t = caminho ? tex_obter_larg(caminho, w) : 0;
+          // ARTE CHEGANDO: so esvanece quem foi visto esperando (revela.h).
+          float aArte = revela_arte(&revArte[r][c], t != 0, agora);
           // ANEL DE FOCO: 4 px de #FFFFFF, POR FORA da arte.
           //
           // Era 2 px de #f5f5f5, tirado do `box-shadow` do app WEB. MEDIDO no
@@ -3403,8 +3471,15 @@ void home_desenhar(Uint32 agora) {
             // cover é intencional e fica limitado a esta opção.
             gfx_card_forcar_cover_atual = tipo == FILEIRA_DESTAQUE_QUADRADO ? 1.0f : 0.0f;
             gfx_tex_aspect_atual = tex_aspecto(caminho);
+            // O esqueleto fica por baixo so enquanto a arte esvanece: um
+            // desenho do tamanho do card por ~220 ms, e depois nenhum.
+            if (aArte < 0.999f)
+              gfx_cor(card, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
+                      NV_COR_ESQUELETO_B, 1.0f);
+            if (!focoHero && focus_indice(&foco, r, c)) gfx_varre_atual = varreFoco;
             gfx_rect(card, t, GFX_CARD, f, 0.0f, 0.0f,
-                     raio, 0, 0, 0, 1);
+                     raio, 0, 0, 0, aArte);
+            gfx_varre_atual = 0.0f;
             gfx_tex_aspect_atual = 0.0f;
             gfx_card_forcar_cover_atual = 0.0f;
           } else {
@@ -3419,7 +3494,12 @@ void home_desenhar(Uint32 agora) {
             //
             // A referencia usa #2C2C2C sobre #0D0D0D: luminancia ~22x a do
             // fundo, impossivel nao ver.
-            desenhaArteAusente(card, raio, cItem, 1.0f);
+            //
+            // CARREGANDO NAO E INDISPONIVEL. Enquanto o cache nao disse que a
+            // arte falhou, o card mostra o esqueleto com a luz passando e o
+            // nome; "Arte indisponivel" fica para quando ela nao vem mesmo.
+            if (caminho && !tex_falhou(caminho)) desenhaCarregando(card, raio, cItem);
+            else desenhaArteAusente(card, raio, cItem, 1.0f);
           }
           // SELO DE ASSISTIDO: disco branco com um "v" escuro, no canto
           // superior direito do poster. A referencia o tem e nos nao tinhamos
