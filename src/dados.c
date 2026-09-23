@@ -216,6 +216,21 @@ static volatile int fsOcupado;
                               __atomic_add_fetch(&fsOcupado, 1, __ATOMIC_SEQ_CST); } while (0)
 #define NV_FS_LIBERAR()  do { __atomic_sub_fetch(&fsOcupado, 1, __ATOMIC_SEQ_CST); \
                               pthread_mutex_unlock(&dadosTrava); } while (0)
+#elif defined(NV_DADOS_TRAVA_TESTE)
+// A MESMA TRAVA NO MAC, para teste: sem ela, travar duas vezes no mesmo fio
+// (dados_fs_travar + dados_gravar, que ja trava por dentro) passa no host e
+// congela so a Samsung — issue #113, diagnostico da 1.4.2. Aqui o segundo
+// lock no mesmo fio aborta em vez de esperar para sempre.
+#include <errno.h>
+static pthread_mutex_t dadosTrava = PTHREAD_ERRORCHECK_MUTEX_INITIALIZER;
+static void nvTravaTeste(void) {
+  if (pthread_mutex_lock(&dadosTrava) == EDEADLK) {
+    fprintf(stderr, "[dados] TRAVA DUPLA no mesmo fio: no Tizen isto congela o app\n");
+    abort();
+  }
+}
+#define NV_FS_TRAVAR()   nvTravaTeste()
+#define NV_FS_LIBERAR()  pthread_mutex_unlock(&dadosTrava)
 #else
 #define NV_FS_TRAVAR()   ((void)0)
 #define NV_FS_LIBERAR()  ((void)0)
