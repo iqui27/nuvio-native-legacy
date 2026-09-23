@@ -103,6 +103,35 @@ static void poster(char *dst, size_t n, const char *id) {
   snprintf(dst, n, "deploy/app/art/poster/%s.jpg", id);
 }
 
+// Com NUVIO_SHOT_EN=1 a captura vai para as notas da release em ingles: uma
+// frase curta por titulo (texto nosso, nao do TMDB) no lugar do texto de
+// medida em portugues. Sem a variavel, o texto de medida continua.
+static const char *SINOPSE_EN[] = {
+  "Two rival stage magicians push their obsession to a dangerous limit.",
+  "A son talks to his late father through an old radio across thirty years.",
+  "A father takes the law into his own hands after two girls go missing.",
+  "Stranded on Mars, an astronaut has to science his way back home.",
+  "A choice made decades ago reaches across space and time to the present.",
+  "Survivors of a plane crash find the island is far from deserted.",
+  "A strange fog rolls into a small town, and something moves inside it.",
+  "Two strangers join a drug trial that promises to fix the mind.",
+  "A lone astronaut wakes up far from Earth with no memory of why.",
+  "A town no one can leave, and whatever comes out after dark.",
+  "A physicist bends time and has to live with the loops he creates.",
+  "A photographer checks into a hotel that refuses to let him go.",
+  "Three siblings find keys in their family home that unlock magic.",
+  "A perfect sitcom suburb starts to crack at the edges.",
+  "Two centuries after the bombs, a vault dweller steps outside.",
+  "Linked stories of families living through a warming world.",
+  "Estranged adopted siblings reunite to stop the end of the world.",
+  "A small town in Maine learns what lives beneath its streets.",
+};
+static const char *sinopseEn(int i) {
+  const char *en = getenv("NUVIO_SHOT_EN");
+  if (!en || *en != '1') return NULL;
+  return i >= 0 && i < (int)(sizeof SINOPSE_EN / sizeof SINOPSE_EN[0]) ? SINOPSE_EN[i] : NULL;
+}
+
 static void semearCatalogo(void) {
   static CatItem itens[NCAT];
   int i;
@@ -118,6 +147,7 @@ static void semearCatalogo(void) {
     snprintf(c->sinopse, sizeof c->sinopse, "%s",
              "Uma historia de exemplo para medir o corte da sinopse no painel lateral, "
              "com o comprimento de uma sinopse real do TMDB.");
+    if (sinopseEn(i)) snprintf(c->sinopse, sizeof c->sinopse, "%s", sinopseEn(i));
     c->nota = CAT[i].nota;
     // As oito primeiras sao o "historico": progresso visto ou em andamento.
     if (i < 8) c->progresso = (i % 3 == 0) ? 45 : 96;
@@ -139,6 +169,7 @@ static MapaObra obra(int i, long tmdb) {
   snprintf(o.sinopse, sizeof o.sinopse, "%s",
            "Sinopse de exemplo com o tamanho de uma real, para conferir quantas linhas "
            "cabem no painel e onde o texto corta sem invadir a acao.");
+  if (sinopseEn(i)) snprintf(o.sinopse, sizeof o.sinopse, "%s", sinopseEn(i));
   o.ano = atoi(CAT[i].meta);
   o.nota = CAT[i].nota;
   o.votos = 5000 + i * 700;

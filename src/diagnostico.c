@@ -1335,6 +1335,12 @@ void diagnostico_intro_primeira_vez(void) {
 
 int diagnostico_intro_aberto(void) { return introGlobal; }
 
+void diagnostico_intro_dispensar(int marcarVista) {
+  introDecidido = 1;
+  introGlobal = 0;
+  if (marcarVista) marcarApresentacaoVista();
+}
+
 void diagnostico_intro_evento(const SDL_Event *e) {
   SDL_Keycode k;
   if (!introGlobal || !e || e->type != SDL_KEYDOWN) return;
