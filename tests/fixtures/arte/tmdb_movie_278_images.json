@@ -1,0 +1,96 @@
+{
+ "adult": false,
+ "backdrop_path": "/pNjh59JSxChQktamG3LMp9ZoQzp.jpg",
+ "belongs_to_collection": null,
+ "id": 278,
+ "imdb_id": "tt0111161",
+ "title": "The Shawshank Redemption",
+ "images": {
+  "backdrops": [
+   {
+    "aspect_ratio": 1.778,
+    "height": 1080,
+    "iso_3166_1": null,
+    "iso_639_1": null,
+    "file_path": "/pNjh59JSxChQktamG3LMp9ZoQzp.jpg",
+    "vote_average": 6.608,
+    "vote_count": 14,
+    "width": 1920
+   },
+   {
+    "aspect_ratio": 1.778,
+    "height": 2160,
+    "iso_3166_1": "US",
+    "iso_639_1": "en",
+    "file_path": "/xXXFdqV965crlxCO3dj3PhtcCAf.jpg",
+    "vote_average": 1.434,
+    "vote_count": 5,
+    "width": 3840
+   },
+   {
+    "aspect_ratio": 1.778,
+    "height": 2160,
+    "iso_3166_1": null,
+    "iso_639_1": null,
+    "file_path": "/zfbjgQE1uSd9wiPTX4VzsLi0rGG.jpg",
+    "vote_average": 6.5,
+    "vote_count": 19,
+    "width": 3840
+   },
+   {
+    "aspect_ratio": 1.778,
+    "height": 1440,
+    "iso_3166_1": null,
+    "iso_639_1": null,
+    "file_path": "/kXfqcdQKsToO0OUXHcrrNCHDBzO.jpg",
+    "vote_average": 6.346,
+    "vote_count": 26,
+    "width": 2560
+   },
+   {
+    "aspect_ratio": 1.778,
+    "height": 2160,
+    "iso_3166_1": null,
+    "iso_639_1": null,
+    "file_path": "/v8xVDqt8uCul3c3mgx4VpGCwxJC.jpg",
+    "vote_average": 6.346,
+    "vote_count": 13,
+    "width": 3840
+   },
+   {
+    "aspect_ratio": 1.78,
+    "height": 1180,
+    "iso_3166_1": null,
+    "iso_639_1": null,
+    "file_path": "/avedvodAZUcwqevBfm8p4G2NziQ.jpg",
+    "vote_average": 5.844,
+    "vote_count": 16,
+    "width": 2100
+   }
+  ],
+  "logos": [
+   {
+    "aspect_ratio": 5.29,
+    "height": 945,
+    "iso_3166_1": "US",
+    "iso_639_1": "en",
+    "file_path": "/1K53E8WXQW76Scg8upBObXSrbgN.png",
+    "vote_average": 3.334,
+    "vote_count": 2,
+    "width": 4999
+   }
+  ],
+  "posters": [
+   {
+    "aspect_ratio": 0.667,
+    "height": 3000,
+    "iso_3166_1": "US",
+    "iso_639_1": "en",
+    "file_path": "/9cqNxx0GxF0bflZmeSMuL5tnGzr.jpg",
+    "vote_average": 6.438,
+    "vote_count": 32,
+    "width": 2000
+   }
+  ]
+ }
+}

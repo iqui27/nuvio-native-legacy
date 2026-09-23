@@ -51,9 +51,21 @@ int arte_reserva_registrar(const char *url, const char *imdb, int poster);
 // `.invalid` (RFC 2606) garante que um caminho que nao passe por aqui morre
 // no DNS em vez de pedir coisa a um host de verdade.
 //
-// `tamanho`: TMDB w1280|original, Trakt medium|full. No Tizen o resolvedor
+// `tamanho`: TMDB w780|w1280|original, Trakt medium|full. No Tizen o resolvedor
 // rebaixa `original` para w1280 e `full` para medium qualquer que seja o pedido — ver
 // fundoOriginal() em artehero.c (OOM do registro 1450).
+//
+// AS FONTES E O QUE VEM DEPOIS DO ID (23/09/2026):
+//   tmdb/<tam>/<tt>[/m278|/t1399]    backdrop padrao; com o id do TMDB (o
+//                                    `moviedb_id` do Cinemeta) pula o /find
+//   tmdbalt/<tam>/<tt>[/m278]        OUTRO backdrop, sem texto, que nao e o
+//                                    padrao (af_tmdb_fundos) — "destaque com
+//                                    outra arte" com TMDB
+//   trakt/<medium|full>/<tt>
+//   apple/<1920|1280>/<tt>/<m|s>/<ano>/<titulo>   arte-chave da Apple TV
+//   fanart/full/<tt>/<m|s>/<id tmdb>              so com a chave pessoal
+//   anime/large/<tt|kitsu:N|mal:N|anilist:N>/<m|s>/<ano>/<titulo>
+// O titulo vai codificado por af_codificar (artefontes.h).
 #define ARTE_VIRTUAL_PREFIXO "https://nuvio.invalid/arte/"
 
 // 0 = `url` nao e virtual (baixe como esta); 1 = `saida` tem a url real;
@@ -63,6 +75,29 @@ int arte_reserva_registrar(const char *url, const char *imdb, int poster);
 // Com MEMORIA em RAM (tabela fixa, LRU, thread-safe): a mesma fonte e titulo
 // nao voltam a rede na sessao; "a API respondeu sem fundo" vale 5 min.
 int arte_fonte_resolver(const char *url, char *saida, size_t tam);
+
+// A url real de uma virtual JA RESOLVIDA nesta sessao, sem rede. 1 = `saida`
+// preenchida; 0 = nao e virtual ou ainda nao se sabe.
+int arte_fonte_resolvida(const char *url, char *saida, size_t tam);
+
+// A Apple TV busca pelo titulo+ano (trailerapple.c) e devolve o MODELO da url
+// do mzstatic ("...{w}x{h}.{f}"). 1 achou, 0 a Apple nao tem, -1 sem resposta.
+// Registrado pelo main; sem registro, a fonte Apple nao existe.
+void arte_fonte_definir_apple(int (*buscar)(const char *imdb, const char *titulo,
+                                            int ano, int serie, char *modelo, size_t n));
+
+// A chave PESSOAL do fanart.tv (Ajustes). "" = sem chave: a fonte nao existe.
+// Copiada; nunca vai para log.
+void arte_fonte_chave_fanart(const char *chave);
+
+// MESMA IMAGEM? `tex_cache` registra a assinatura (FNV-1a 64 + tamanho) de
+// todo corpo de imagem que baixa; arte_mesma_imagem responde 1 quando as duas
+// urls (virtuais resolvidas para a real) sao a mesma url ou tem os mesmos
+// bytes. 0 = diferentes OU nao se sabe ainda. Nao ve a mesma foto reencodada.
+#include <stdint.h>
+uint64_t arte_bytes_hash(const void *b, long n);
+void arte_bytes_registrar(const char *url, const void *b, long n);
+int  arte_mesma_imagem(const char *a, const char *b);
 
 // So para teste: esvazia a memoria do resolvedor / troca o relogio (ms
 // monotonico; NULL volta ao do sistema).

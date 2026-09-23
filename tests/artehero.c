@@ -7,10 +7,22 @@
 // Duble: "toda arte ja falhou", para exercitar a reserva.
 __attribute__((unused)) static int falhouSempre(const char *u) { (void)u; return 1; }
 __attribute__((unused)) static int falhouTmdbVirtual(const char *u) {
-  return u && strstr(u, "nuvio.invalid/arte/tmdb/") != NULL;
+  return u && strstr(u, "nuvio.invalid/arte/tmdb") != NULL;   // tmdb e tmdbalt
+}
+// Duble de artereserva: "estas duas urls sao o mesmo arquivo".
+static const char *igualA, *igualB;
+__attribute__((unused)) static int igualDuble(const char *a, const char *b) {
+  return igualA && a && b && ((!strcmp(a, igualA) && !strcmp(b, igualB)) ||
+                              (!strcmp(a, igualB) && !strcmp(b, igualA)));
 }
 __attribute__((unused)) static int falhouLogoAntiga(const char *u) {
   return u && strstr(u, "logo-old.png") != NULL;
+}
+
+__attribute__((unused)) static int resolvidaDuble(const char *u, char *s, size_t n) {
+  if (!u || !strstr(u, "arte/tmdbalt/")) return 0;
+  snprintf(s, n, "https://image.tmdb.org/t/p/original/abc.jpg");
+  return 1;
 }
 
 static CatItem item(const char *backdrop, const char *poster, const char *imdb) {
@@ -118,14 +130,47 @@ int main(void) {
     assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 0), tm));
     assert(!strcmp(artehero_url_card_fonte(&c, ARTEHERO_AUTO, 0), mh));
     assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 0), mh));
-    // "OUTRA ARTE" LIGADO: card no catalogo, destaque noutra foto.
+    // "OUTRA ARTE" LIGADO: card no catalogo, destaque noutra foto — e com
+    // TMDB o OUTRO backdrop (23/09: o padrao do TMDB e o fundo do metahub
+    // costumam ser a mesma foto). Sem ano no item nao ha busca na Apple.
+    { const char *alt = "https://nuvio.invalid/arte/tmdbalt/w1280/tt0111161";
     assert(!strcmp(artehero_url_card_fonte(&c, ARTEHERO_TMDB, 1), mh));
-    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 1), tm));
-    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 1), tm));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 1), alt));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 1), alt));
     // A fonte escolhida repete o card (metahub = o proprio Cinemeta): pula
-    // para a primeira outra, TMDB.
-    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_METAHUB, 1), tm));
-    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_CATALOGO, 1), tm));
+    // para a primeira outra.
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_METAHUB, 1), alt));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_CATALOGO, 1), alt));
+    // Com ano, a Apple vem primeiro (busca pelo titulo, codificado).
+    snprintf(c.meta, sizeof c.meta, "1994 · 142 min");
+    snprintf(c.titulo, sizeof c.titulo, "The Shawshank Redemption");
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 1),
+                   "https://nuvio.invalid/arte/apple/1920/tt0111161/m/1994/The%20Shawshank%20Redemption"));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_APPLE, 0),
+                   "https://nuvio.invalid/arte/apple/1920/tt0111161/m/1994/The%20Shawshank%20Redemption"));
+    // Com o id do TMDB no item (moviedb_id do Cinemeta) a virtual o carrega
+    // e o resolvedor pula o /find.
+    c.tmdb = 278; snprintf(c.tipo, sizeof c.tipo, "movie");
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 1),
+                   "https://nuvio.invalid/arte/tmdbalt/w1280/tt0111161/m278"));
+    assert(!strcmp(artehero_url_fonte(&c, ARTEHERO_TMDB),
+                   "https://nuvio.invalid/arte/tmdb/w1280/tt0111161/m278"));
+    // A MESMA IMAGEM POR BYTES: se o outro do TMDB baixou igual ao card, a
+    // proxima diferente da ordem (Apple).
+    igualA = "https://nuvio.invalid/arte/tmdbalt/w1280/tt0111161/m278"; igualB = mh;
+    artehero_definir_igual(igualDuble);
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 1),
+                   "https://nuvio.invalid/arte/apple/1920/tt0111161/m/1994/The%20Shawshank%20Redemption"));
+    artehero_definir_igual(NULL);
+    // fanart.tv so com chave.
+    assert(artehero_url_fonte(&c, ARTEHERO_FANART) == NULL);
+    artehero_fanart_disponivel(1);
+    assert(!strcmp(artehero_url_fonte(&c, ARTEHERO_FANART),
+                   "https://nuvio.invalid/arte/fanart/full/tt0111161/m/278"));
+    artehero_fanart_disponivel(0);
+    // Anime so para anime: nao e.
+    assert(artehero_url_fonte(&c, ARTEHERO_ANIME) == NULL);
+    c.meta[0] = 0; c.titulo[0] = 0; c.tmdb = 0; c.tipo[0] = 0; }
     // Com o TMDB ja FALHADO no cache, o Trakt; nunca preso num 404.
     artehero_definir_falhou(falhouTmdbVirtual);
     assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 1), tr));
@@ -140,8 +185,15 @@ int main(void) {
   // "outra arte" na Alta — seria a mesma foto maior.
   { CatItem c = item("https://image.tmdb.org/t/p/w1280/abc.jpg", "", "tt7");
     artehero_qualidade(2);
+    // Com outra arte o TMDB e o OUTRO backdrop, por definicao outro arquivo.
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 1),
+                   "https://nuvio.invalid/arte/tmdbalt/original/tt7"));
+    // ...mas se ele RESOLVEU para a foto do card (abc.jpg noutro tamanho), e
+    // a mesma foto: vale a proxima, Trakt.
+    artehero_definir_resolvida(resolvidaDuble);
     assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 1),
                    "https://nuvio.invalid/arte/trakt/full/tt7"));
+    artehero_definir_resolvida(NULL);
     assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 0),
                    "https://image.tmdb.org/t/p/original/abc.jpg"));
     assert(!strcmp(artehero_url_fonte(&c, ARTEHERO_TMDB),
@@ -155,11 +207,30 @@ int main(void) {
   puts("ok  outra arte: o original da propria foto do card nao conta");
 
   // Sem id do IMDb nao ha como montar metahub nem virtual: fica a do card.
-  { CatItem c = item("https://addon/bg.jpg", "", "kitsu:1");
+  { CatItem c = item("https://addon/bg.jpg", "", "cs:channel:globo");
     assert(artehero_url_fonte(&c, ARTEHERO_TMDB) == NULL);
+    assert(artehero_url_fonte(&c, ARTEHERO_ANIME) == NULL);
     assert(!strcmp(artehero_url_card_fonte(&c, ARTEHERO_TMDB, 0), "https://addon/bg.jpg"));
     assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 1), "https://addon/bg.jpg")); }
   puts("ok  sem tt: nenhuma fonte inventada, fica a do card");
+
+  // ANIME: id do addon de anime (kitsu:) vira a fonte Kitsu/AniList mesmo sem
+  // tt; um tt so e anime com genero Animacao E pais Japao.
+  { CatItem c = item("https://addon/bg.jpg", "", "kitsu:7442");
+    snprintf(c.titulo, sizeof c.titulo, "Attack on Titan");
+    snprintf(c.meta, sizeof c.meta, "2013");
+    snprintf(c.tipo, sizeof c.tipo, "series");
+    assert(!strcmp(artehero_url_fonte(&c, ARTEHERO_ANIME),
+                   "https://nuvio.invalid/arte/anime/large/kitsu:7442/s/2013/Attack%20on%20Titan"));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 1),
+                   "https://nuvio.invalid/arte/anime/large/kitsu:7442/s/2013/Attack%20on%20Titan")); }
+  { CatItem c = item("https://images.metahub.space/background/medium/tt2560140/img", "", "tt2560140");
+    snprintf(c.titulo, sizeof c.titulo, "Attack on Titan");
+    snprintf(c.genero, sizeof c.genero, "Programa de TV  ·  Animação  ·  Ação");
+    assert(artehero_url_fonte(&c, ARTEHERO_ANIME) == NULL);     // sem pais: Pixar tambem e Animacao
+    snprintf(c.pais, sizeof c.pais, "Japan");
+    assert(artehero_url_fonte(&c, ARTEHERO_ANIME) != NULL); }
+  puts("ok  anime: id de addon de anime, ou Animacao + Japao");
 #endif
 
 

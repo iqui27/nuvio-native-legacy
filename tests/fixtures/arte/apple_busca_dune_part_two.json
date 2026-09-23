@@ -1,0 +1,230 @@
+{
+ "data": {
+  "canvas": {
+   "shelves": [
+    {
+     "id": "uts.col.search.TR",
+     "items": [
+      {
+       "genres": [
+        {
+         "id": "umc.gnr.mov.scifi",
+         "name": "Sci-Fi",
+         "type": "Genre",
+         "url": "https://tv.apple.com/us/genre/sci-fi/umc.gnr.mov.scifi"
+        }
+       ],
+       "id": "umc.cmc.363aycnv6vy9qgekvew6fveb9",
+       "type": "Movie",
+       "title": "Dune: Part Two",
+       "releaseDate": 1709251200000,
+       "images": {
+        "shelfImage": {
+         "height": 2160,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/Video211/v4/78/b1/52/78b15200-df9f-624c-75b9-d586d9801c9c/cd6db9a4-7489-4ea3-a5c6-012d3512a3e0_DUNE_PART2_H_DD_KA_TT_CVRART_3840x2160_300dpi_EN-p3.lsr/{w}x{h}.{f}",
+         "width": 3840
+        },
+        "shelfImageBackground": {
+         "height": 2160,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/CjKP9J_FPtPin1VBVU4-mg/{w}x{h}.{f}",
+         "width": 3840
+        },
+        "transitionImage": {
+         "height": 3240,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/Features211/v4/c7/43/cc/c743cccc-c379-d0a4-95a5-a5ec076b2fdc/mzl.eozakhdw.png/{w}x{h}ta.{f}",
+         "width": 4320
+        }
+       }
+      },
+      {
+       "id": "umc.cmr.its.bun.7823kvoxm0hg3q5rxzq71ci3x",
+       "type": "MovieBundle",
+       "title": "Dune 2-Film Collection",
+       "releaseDate": 1713250800000,
+       "images": {
+        "shelfImage": {
+         "height": 2160,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/Video211/v4/77/06/b6/7706b696-c84e-a37d-4a6b-f8286b8dd9fa/cfa75f03-2888-4420-8b3c-e02aeac4618a_DUNE_2FILM_APO_H_DD_KA_TT_CVRART_3840x2160_300dpi_EN-p3.lsr/{w}x{h}.{f}",
+         "width": 3840
+        }
+       }
+      },
+      {
+       "genres": [
+        {
+         "id": "umc.gnr.mov.scifi",
+         "name": "Sci-Fi",
+         "type": "Genre",
+         "url": "https://tv.apple.com/us/genre/sci-fi/umc.gnr.mov.scifi"
+        }
+       ],
+       "id": "umc.cmc.2l7qj9p33t3jww1roxi8cgiw5",
+       "type": "Movie",
+       "title": "Dune",
+       "releaseDate": 1634860800000,
+       "images": {
+        "shelfImage": {
+         "height": 2160,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/Video116/v4/b0/a4/8d/b0a48d98-9362-dabc-50ca-d75cd0b6ff2f/pr_source.lsr/{w}x{h}.{f}",
+         "width": 3840
+        },
+        "shelfImageBackground": {
+         "height": 2160,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/oYA7X4qfGYv2Mgr1tqNlzg/{w}x{h}.{f}",
+         "width": 3840
+        },
+        "transitionImage": {
+         "height": 3240,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/Features116/v4/b5/54/96/b55496e4-ff14-0afa-6a62-acab63e2bdb8/mzl.zjumtovg.png/{w}x{h}ta.{f}",
+         "width": 4320
+        }
+       }
+      },
+      {
+       "genres": [
+        {
+         "id": "umc.gnr.mov.scifi",
+         "name": "Sci-Fi",
+         "type": "Genre",
+         "url": "https://tv.apple.com/us/genre/sci-fi/umc.gnr.mov.scifi"
+        }
+       ],
+       "id": "umc.cmc.7edgw5obp2gwx0xsyhla10zbc",
+       "type": "Movie",
+       "title": "Dune",
+       "releaseDate": 471830400000,
+       "images": {
+        "shelfImage": {
+         "height": 2160,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/Video114/v4/d8/da/8b/d8da8b12-81ca-0e56-50af-5e42353f474a/9850004LGINT_169.png/{w}x{h}.{f}",
+         "width": 3840
+        },
+        "shelfImageBackground": {
+         "height": 1080,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/3PLzKi40X457Kce0jDUi8Q/{w}x{h}.{f}",
+         "width": 1920
+        },
+        "transitionImage": {
+         "height": 3240,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/xV2k3akPBBi5A5i9J5OwEw/{w}x{h}ta.{f}",
+         "width": 4320
+        }
+       }
+      }
+     ]
+    },
+    {
+     "id": "uts.col.search.MV",
+     "items": [
+      {
+       "genres": [
+        {
+         "id": "umc.gnr.mov.scifi",
+         "name": "Sci-Fi",
+         "type": "Genre",
+         "url": "https://tv.apple.com/us/genre/sci-fi/umc.gnr.mov.scifi"
+        }
+       ],
+       "id": "umc.cmc.363aycnv6vy9qgekvew6fveb9",
+       "type": "Movie",
+       "title": "Dune: Part Two",
+       "releaseDate": 1709251200000,
+       "images": {
+        "shelfImage": {
+         "height": 2160,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/Video211/v4/78/b1/52/78b15200-df9f-624c-75b9-d586d9801c9c/cd6db9a4-7489-4ea3-a5c6-012d3512a3e0_DUNE_PART2_H_DD_KA_TT_CVRART_3840x2160_300dpi_EN-p3.lsr/{w}x{h}.{f}",
+         "width": 3840
+        },
+        "shelfImageBackground": {
+         "height": 2160,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/CjKP9J_FPtPin1VBVU4-mg/{w}x{h}.{f}",
+         "width": 3840
+        },
+        "transitionImage": {
+         "height": 3240,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/Features211/v4/c7/43/cc/c743cccc-c379-d0a4-95a5-a5ec076b2fdc/mzl.eozakhdw.png/{w}x{h}ta.{f}",
+         "width": 4320
+        }
+       }
+      },
+      {
+       "id": "umc.cmr.its.bun.7823kvoxm0hg3q5rxzq71ci3x",
+       "type": "MovieBundle",
+       "title": "Dune 2-Film Collection",
+       "releaseDate": 1713250800000,
+       "images": {
+        "shelfImage": {
+         "height": 2160,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/Video211/v4/77/06/b6/7706b696-c84e-a37d-4a6b-f8286b8dd9fa/cfa75f03-2888-4420-8b3c-e02aeac4618a_DUNE_2FILM_APO_H_DD_KA_TT_CVRART_3840x2160_300dpi_EN-p3.lsr/{w}x{h}.{f}",
+         "width": 3840
+        }
+       }
+      },
+      {
+       "genres": [
+        {
+         "id": "umc.gnr.mov.scifi",
+         "name": "Sci-Fi",
+         "type": "Genre",
+         "url": "https://tv.apple.com/us/genre/sci-fi/umc.gnr.mov.scifi"
+        }
+       ],
+       "id": "umc.cmc.2l7qj9p33t3jww1roxi8cgiw5",
+       "type": "Movie",
+       "title": "Dune",
+       "releaseDate": 1634860800000,
+       "images": {
+        "shelfImage": {
+         "height": 2160,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/Video116/v4/b0/a4/8d/b0a48d98-9362-dabc-50ca-d75cd0b6ff2f/pr_source.lsr/{w}x{h}.{f}",
+         "width": 3840
+        },
+        "shelfImageBackground": {
+         "height": 2160,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/oYA7X4qfGYv2Mgr1tqNlzg/{w}x{h}.{f}",
+         "width": 3840
+        },
+        "transitionImage": {
+         "height": 3240,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/Features116/v4/b5/54/96/b55496e4-ff14-0afa-6a62-acab63e2bdb8/mzl.zjumtovg.png/{w}x{h}ta.{f}",
+         "width": 4320
+        }
+       }
+      },
+      {
+       "genres": [
+        {
+         "id": "umc.gnr.mov.scifi",
+         "name": "Sci-Fi",
+         "type": "Genre",
+         "url": "https://tv.apple.com/us/genre/sci-fi/umc.gnr.mov.scifi"
+        }
+       ],
+       "id": "umc.cmc.7edgw5obp2gwx0xsyhla10zbc",
+       "type": "Movie",
+       "title": "Dune",
+       "releaseDate": 471830400000,
+       "images": {
+        "shelfImage": {
+         "height": 2160,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/Video114/v4/d8/da/8b/d8da8b12-81ca-0e56-50af-5e42353f474a/9850004LGINT_169.png/{w}x{h}.{f}",
+         "width": 3840
+        },
+        "shelfImageBackground": {
+         "height": 1080,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/3PLzKi40X457Kce0jDUi8Q/{w}x{h}.{f}",
+         "width": 1920
+        },
+        "transitionImage": {
+         "height": 3240,
+         "url": "https://is1-ssl.mzstatic.com/image/thumb/xV2k3akPBBi5A5i9J5OwEw/{w}x{h}ta.{f}",
+         "width": 4320
+        }
+       }
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

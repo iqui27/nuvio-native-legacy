@@ -47,6 +47,27 @@ char *rede_baixar_com(const char *url, int segundos, const char *const *cab) {
   return respostaTrakt ? strdup(respostaTrakt) : NULL;
 }
 
+// AniList e POST (GraphQL). Duble como os outros.
+static const char *respostaPost = NULL;
+static char ultimoCorpoPost[600];
+char *rede_postar(const char *url, int segundos, const char *const *cab, const char *corpo) {
+  (void)url; (void)segundos; (void)cab;
+  snprintf(ultimoCorpoPost, sizeof ultimoCorpoPost, "%s", corpo ? corpo : "");
+  return respostaPost ? strdup(respostaPost) : NULL;
+}
+
+// Apple: o main registra trailerapple_arte; aqui um duble que conta.
+static char appleTitulo[200];
+static int appleAno, appleSerie, appleChamadas;
+static int appleDuble(const char *imdb, const char *titulo, int ano, int serie, char *m, size_t n) {
+  (void)imdb;
+  appleChamadas++;
+  snprintf(appleTitulo, sizeof appleTitulo, "%s", titulo);
+  appleAno = ano; appleSerie = serie;
+  snprintf(m, n, "https://is1-ssl.mzstatic.com/image/thumb/X/{w}x{h}.{f}");
+  return 1;
+}
+
 static int falhas = 0;
 #define OK(cond, msg) do { if (!(cond)) { printf("FALHOU: %s\n", msg); falhas++; } } while (0)
 
@@ -239,11 +260,11 @@ int main(void) {
   OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt5555555", s, sizeof s) == -1 && pedidos == 0, "sem chave nao pede");
   chave = "CHAVE";
   OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt5555555", s, sizeof s) == 1 && pedidos == 1, "sem chave nao fica guardado");
-  // Limite: 192 celulas, sai a usada ha mais tempo. tt0111161 e tocado no
+  // Limite: 384 celulas, sai a usada ha mais tempo. tt0111161 e tocado no
   // meio e sobrevive; tt6666666 (o mais antigo intocado) sai.
   { int i;
     char url[96];
-    for (i = 0; i < 300; i++) {
+    for (i = 0; i < 500; i++) {
       snprintf(url, sizeof url, "https://nuvio.invalid/arte/tmdb/w1280/tt%07d", 1000000 + i);
       arte_fonte_resolver(url, s, sizeof s);
       if (i % 50 == 0) arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt0111161", s, sizeof s);
@@ -251,7 +272,7 @@ int main(void) {
     resposta = NULL; pedidos = 0;
     OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt0111161", s, sizeof s) == 1 && pedidos == 0, "LRU guarda o usado");
     OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt6666666", s, sizeof s) == -1 && pedidos == 1, "LRU tira o antigo");
-    OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt1000299", s, sizeof s) == 1 && pedidos == 1, "LRU guarda o recente");
+    OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt1000499", s, sizeof s) == 1 && pedidos == 1, "LRU guarda o recente");
   }
   // Varios fios ao mesmo tempo (os dois de rede do tex_cache): sem corrida.
   { pthread_t f[4];
@@ -262,6 +283,87 @@ int main(void) {
     for (i = 0; i < 4; i++) pthread_join(f[i], NULL);
     OK(erros == 0, "fios concorrentes resolvem certo");
   }
+  // ---- 23/09: TMDB pelo id, o OUTRO backdrop, Apple, fanart.tv e anime.
+  arte_fonte_cache_limpar();
+  chave = "CHAVE";
+  // Com o id do TMDB na virtual: UM pedido, sem /find, e ele enche padrao e
+  // outro de uma vez (append_to_response=images).
+  resposta = "{\"backdrop_path\":\"/pad.jpg\",\"id\":278,\"images\":{\"backdrops\":["
+             "{\"file_path\":\"/pad.jpg\",\"iso_639_1\":null,\"vote_average\":7}," 
+             "{\"file_path\":\"/txt.jpg\",\"iso_639_1\":\"en\",\"vote_average\":9},"
+             "{\"file_path\":\"/alt.jpg\",\"iso_639_1\":null,\"vote_average\":6}]}}";
+  pedidos = 0;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt0111161/m278", s, sizeof s) == 1 &&
+     !strcmp(s, "https://image.tmdb.org/t/p/w1280/pad.jpg") && pedidos == 1, "tmdb com id: um pedido");
+  OK(strstr(ultimaUrl, "/3/movie/278?append_to_response=images&include_image_language=null,en&api_key=CHAVE") != NULL &&
+     !strstr(ultimaUrl, "/find/"), "tmdb com id: /movie/{id}, sem /find");
+  resposta = NULL;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdbalt/w780/tt0111161/m278", s, sizeof s) == 1 &&
+     !strcmp(s, "https://image.tmdb.org/t/p/w780/alt.jpg") && pedidos == 1, "tmdb outro: veio no mesmo pedido, sem texto");
+  OK(arte_fonte_resolvida("https://nuvio.invalid/arte/tmdbalt/w1280/tt0111161", s, sizeof s) == 1 &&
+     !strcmp(s, "https://image.tmdb.org/t/p/w1280/alt.jpg"), "resolvida: sem rede, da memoria");
+  OK(arte_fonte_resolvida("https://nuvio.invalid/arte/tmdb/w1280/tt0000042", s, sizeof s) == 0, "resolvida: nao sabe = 0");
+  // Serie sem id: /find (padrao + id), depois /tv/{id}/images para o outro.
+  resposta = "{\"movie_results\":[],\"tv_results\":[{\"id\":1396,\"backdrop_path\":\"/bb.jpg\"}],"
+             "\"backdrops\":[{\"file_path\":\"/bb.jpg\"},{\"file_path\":\"/bb2.jpg\"}]}";
+  pedidos = 0;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdbalt/w1280/tt0903747", s, sizeof s) == 1 &&
+     !strcmp(s, "https://image.tmdb.org/t/p/w1280/bb2.jpg") && pedidos == 2, "tmdb outro sem id: /find + /images");
+  OK(strstr(ultimaUrl, "/3/tv/1396/images?include_image_language=null,en&api_key=CHAVE") != NULL, "tmdb outro: /tv/{id}/images");
+  resposta = NULL;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt0903747", s, sizeof s) == 1 &&
+     !strcmp(s, "https://image.tmdb.org/t/p/w1280/bb.jpg") && pedidos == 2, "o /find ja guardou o padrao");
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w500/tt0903747", s, sizeof s) == -1, "w500 nao e tamanho de fundo");
+  // Apple: pelo registro do main (trailerapple_arte), com titulo e ano.
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/apple/1920/tt15239678/m/2024/Dune%3A%20Part%20Two", s, sizeof s) == -1,
+     "apple sem registro: nao existe");
+  arte_fonte_definir_apple(appleDuble);
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/apple/1920/tt15239678/m/2024/Dune%3A%20Part%20Two", s, sizeof s) == 1 &&
+     !strcmp(s, "https://is1-ssl.mzstatic.com/image/thumb/X/1920x1080.jpg"), "apple -> mzstatic 1920x1080");
+  OK(!strcmp(appleTitulo, "Dune: Part Two") && appleAno == 2024 && !appleSerie, "apple recebe titulo decodificado, ano e tipo");
+  appleChamadas = 0;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/apple/1280/tt15239678/m/2024/Dune%3A%20Part%20Two", s, sizeof s) == 1 &&
+     strstr(s, "/1280x720.jpg") && appleChamadas == 0, "apple 1280 sai da memoria");
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/apple/1920/tt1/m/0/X", s, sizeof s) == -1, "apple sem ano: malformada");
+  // fanart.tv: sem chave nao pergunta; com chave, filme pelo tt.
+  pedidos = 0;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/fanart/full/tt0111161/m/278", s, sizeof s) == -1 && pedidos == 0,
+     "fanart sem chave: nada");
+  arte_fonte_chave_fanart("PESSOAL");
+  resposta = "{\"moviebackground\":[{\"url\":\"https://assets.fanart.tv/fanart/movies/278/moviebackground/a.jpg\",\"lang\":\"\",\"likes\":\"3\"}]}";
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/fanart/full/tt0111161/m/278", s, sizeof s) == 1 &&
+     !strcmp(s, "https://assets.fanart.tv/fanart/movies/278/moviebackground/a.jpg"), "fanart filme");
+  OK(strstr(ultimaUrl, "webservice.fanart.tv/v3/movies/tt0111161?api_key=PESSOAL") != NULL, "fanart: v3/movies pelo tt");
+  // Serie: o tvdb vem do TMDB (external_ids); com o id do TMDB, sem /find.
+  resposta = "{\"tvdb_id\":81189,\"showbackground\":[{\"url\":\"https://assets.fanart.tv/fanart/tv/81189/showbackground/b.jpg\",\"lang\":\"\"}]}";
+  pedidos = 0;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/fanart/full/tt0903747/s/1396", s, sizeof s) == 1 &&
+     strstr(s, "/showbackground/b.jpg") && pedidos == 2, "fanart serie: external_ids + v3/tv");
+  OK(strstr(ultimaUrl, "webservice.fanart.tv/v3/tv/81189?api_key=PESSOAL") != NULL, "fanart serie pelo tvdb");
+  arte_fonte_chave_fanart("");
+  // Anime: kitsu:N direto; tt pela busca do Kitsu, AniList se ela nao casar.
+  resposta = "{\"data\":{\"id\":\"7442\",\"attributes\":{\"subtype\":\"TV\",\"coverImage\":{\"large\":\"https://media.kitsu.app/anime/cover_images/7442/large.jpg\"}}}}";
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/anime/large/kitsu:7442/s/2013/Attack%20on%20Titan", s, sizeof s) == 1 &&
+     strstr(s, "/7442/large.jpg") && strstr(ultimaUrl, "kitsu.io/api/edge/anime/7442?"), "anime kitsu:N");
+  resposta = "{\"data\":[]}";
+  respostaPost = "{\"data\":{\"Media\":{\"bannerImage\":\"https:\\/\\/s4.anilist.co\\/b.jpg\",\"startDate\":{\"year\":2013}}}}";
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/anime/large/tt2560140/s/2013/Attack%20on%20Titan", s, sizeof s) == 1 &&
+     !strcmp(s, "https://s4.anilist.co/b.jpg") && strstr(ultimoCorpoPost, "Attack on Titan"), "anime tt: Kitsu vazio, AniList");
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/anime/large/mal:1/s/0/", s, sizeof s) == 1 &&
+     strstr(ultimoCorpoPost, "idMal:1"), "anime mal:N pelo AniList");
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/kitsu:1", s, sizeof s) == -1, "kitsu: so vale no anime");
+  respostaPost = NULL;
+  // MESMA IMAGEM: url real igual (virtual resolvida) ou mesmos bytes.
+  arte_bytes_registrar("https://images.metahub.space/background/medium/tt0111161/img", "ABCDEFGH", 8);
+  arte_bytes_registrar("https://catalogo/bg.jpg", "ABCDEFGH", 8);
+  arte_bytes_registrar("https://image.tmdb.org/t/p/w1280/alt.jpg", "OUTRA", 5);
+  OK(arte_mesma_imagem("https://catalogo/bg.jpg", "https://images.metahub.space/background/medium/tt0111161/img"),
+     "mesma imagem: bytes iguais em urls diferentes");
+  OK(!arte_mesma_imagem("https://nuvio.invalid/arte/tmdbalt/w1280/tt0111161", "https://catalogo/bg.jpg"),
+     "mesma imagem: virtual resolvida com bytes diferentes");
+  OK(arte_mesma_imagem("https://nuvio.invalid/arte/tmdbalt/w1280/tt0111161", "https://image.tmdb.org/t/p/w1280/alt.jpg"),
+     "mesma imagem: virtual resolvida para a mesma url");
+  OK(!arte_mesma_imagem("https://nao/sei.jpg", "https://catalogo/bg.jpg"), "mesma imagem: sem assinatura = nao sabe");
   arte_fonte_cache_relogio(NULL);
   printf("%s\n", falhas ? "artereserva: FALHOU" : "artereserva: ok");
   return falhas ? 1 : 0;

@@ -19,6 +19,7 @@
 #define NV_ARTEHERO_H
 
 #include "catalogo.h"
+#include <stddef.h>
 
 // Melhor url de FUNDO para desenho de tela cheia. Devolve NULL quando o item
 // não tem arte nenhuma. O ponteiro é estático: use antes da próxima chamada.
@@ -48,6 +49,27 @@ const char *artehero_url(const CatItem *item);
 #define ARTEHERO_METAHUB  2   // images.metahub.space pelo id do IMDb
 #define ARTEHERO_TMDB     3   // backdrop do TMDB (virtual por id quando falta)
 #define ARTEHERO_TRAKT    4   // fanart do Trakt (idem)
+// 23/09/2026, NO FIM (o indice e o gravado):
+#define ARTEHERO_APPLE    5   // arte-chave da Apple TV (busca do trailer)
+#define ARTEHERO_FANART   6   // fanart.tv, so com a chave pessoal (Ajustes)
+#define ARTEHERO_ANIME    7   // Kitsu/AniList, so para anime
+#define ARTEHERO_N_ESCOLHAS 8 // quantas aparecem em "Background do hero"
+// INTERNO, fora dos Ajustes: o OUTRO backdrop do TMDB (/images, sem texto,
+// que nao e o padrao). E o que "TMDB" vira com "Destaque com outra arte"
+// ligado — medido em 23/09, o padrao do TMDB e o fanart do Trakt costumam ser
+// a MESMA foto do fundo do metahub (o card do Cinemeta), so reencodada.
+#define ARTEHERO_TMDB_OUTRO 8
+
+// fanart.tv so existe com chave: sem ela a fonte devolve NULL e o destaque
+// cai na seguinte. Chamado por Ajustes ao ler/trocar a chave.
+void artehero_fanart_disponivel(int sim);
+
+// "Estas duas urls sao a MESMA imagem?" alem da comparacao por caminho —
+// o main registra arte_mesma_imagem (bytes baixados, artereserva.h). Sem
+// registro, so o caminho conta (o teste roda assim).
+void artehero_definir_igual(int (*igual)(const char *a, const char *b));
+// A url real de uma virtual ja resolvida, sem rede (arte_fonte_resolvida).
+void artehero_definir_resolvida(int (*f)(const char *url, char *saida, size_t tam));
 
 // Fundo de TELA CHEIA da fonte pedida, ou NULL quando o item nao tem como ter
 // essa fonte (sem id do IMDb e sem a url dela). TMDB/Trakt sem url no item
@@ -63,9 +85,11 @@ const char *artehero_url_fonte(const CatItem *item, int fonte);
 //   dele; no padrao de qualidade e o mesmo arquivo (zero download novo).
 //
 //   Outra arte LIGADO: o card fica com a arte do CATALOGO; destaque e detalhe
-//   usam a fonte escolhida. Se ela for Automatico, nao existir para o titulo,
-//   ja tiver falhado ou for a mesma foto do card, vale a primeira OUTRA foto
-//   na ordem TMDB, Trakt, IMDb/Metahub, catalogo. Sem nenhuma, a do card.
+//   usam a fonte escolhida (TMDB vira o OUTRO backdrop do TMDB). Se ela for
+//   Automatico, nao existir para o titulo, ja tiver falhado ou for a mesma
+//   foto do card (mesmo caminho ou mesmos bytes), vale a primeira OUTRA foto
+//   na ordem Apple TV, TMDB outro, fanart.tv, anime, Trakt, TMDB,
+//   IMDb/Metahub, catalogo. Sem nenhuma, a do card.
 //
 // Cartaz em pe nao muda: a escolha e de FUNDO, e o retrato nao tem par nas
 // fontes de fundo. Uma url que ja falhou (tex_falhou) nunca e devolvida

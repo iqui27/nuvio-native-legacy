@@ -329,20 +329,33 @@ static const char *chaveTopo(const char *obj, const char *fim, const char *chave
   return NULL;
 }
 
+// A ARTE QUE A MESMA BUSCA JA TRAZ (23/09/2026). Cada item da busca vem com
+// images.shelfImageBackground: a arte-chave do titulo, 3840x2160, SEM o nome
+// escrito (conferido em Dune: Part Two — duas figuras contra o por do sol,
+// nada de letreiro), servida pelo mzstatic em qualquer tamanho pelo modelo
+// "{w}x{h}.{f}". MEDIDO na C9: 1920x1080.jpg = 300 KB em 0,25-0,29 s com
+// conexao nova (o mzstatic esta a 30 ms; o TMDB a 150). E a fonte "Apple TV"
+// do destaque: nenhum pedido a mais quando o trailer ja buscou o titulo.
+static void arteDoItem(const char *it, const char *ie, char *arte, unsigned tam) {
+  const char *b = strstr(it, "\"shelfImageBackground\"");
+  if (!arte || !tam) return;
+  arte[0] = 0;
+  if (!b || b > ie) return;
+  if (!js_texto(b, ie, "url", arte, tam) || !strstr(arte, "{w}x{h}") ||
+      strncmp(arte, "https://", 8)) arte[0] = 0;
+}
+
 // Busca: um unico id com tipo certo, titulo normalizado igual e ano +-1.
 // Dois candidatos distintos = nenhum (remake do mesmo ano e o caso em que
-// adivinhar erra).
-static int buscarId(const char *titulo, int ano, int serie, char *id, unsigned tam) {
-  char norm[256], enc[768], url[1100], achado[80] = "";
-  char *corpo;
+// adivinhar erra). Sem rede: `corpo` e a resposta de /search.
+static int escolherNaBusca(const char *corpo, const char *titulo, int ano, int serie,
+                           char *id, unsigned tam, char *arte, unsigned tamArte) {
+  char norm[256], achado[80] = "", arteAchada[600] = "";
   const char *fim, *shelves, *sh;
   int n = 0;
+  if (arte && tamArte) arte[0] = 0;
   normalizar(titulo, norm, sizeof norm);
-  if (!norm[0]) return 0;
-  urlEncode(titulo, enc, sizeof enc);
-  snprintf(url, sizeof url, UTS_HOST "/search?" UTS_QUERY "&searchTerm=%s", enc);
-  corpo = rede_baixar_com(url, 12, CABS);
-  if (!corpo) return -1;
+  if (!norm[0] || !corpo) return 0;
   fim = corpo + strlen(corpo);
   shelves = js_array(corpo, fim, "shelves");
   for (sh = shelves; sh; sh = js_prox(js_fim(sh))) {
@@ -361,14 +374,73 @@ static int buscarId(const char *titulo, int ano, int serie, char *id, unsigned t
       a = kd ? anoDeEpoca(js_num(kd, ie, "releaseDate", 0)) : 0;
       if (!a || abs(a - ano) > 1) continue;
       if (achado[0] && strcmp(achado, iid)) { n = 2; break; }
-      if (!achado[0]) { snprintf(achado, sizeof achado, "%s", iid); n = 1; }
+      if (!achado[0]) {
+        snprintf(achado, sizeof achado, "%s", iid); n = 1;
+        arteDoItem(it, ie, arteAchada, sizeof arteAchada);
+      }
     }
     if (n > 1) break;
   }
-  free(corpo);
   if (n != 1) return 0;
   snprintf(id, tam, "%s", achado);
+  if (arte && tamArte) snprintf(arte, tamArte, "%s", arteAchada);
   return 1;
+}
+
+static int buscarId(const char *titulo, int ano, int serie, char *id, unsigned tam,
+                    char *arte, unsigned tamArte) {
+  char norm[256], enc[768], url[1100];
+  char *corpo;
+  int r;
+  normalizar(titulo, norm, sizeof norm);
+  if (!norm[0]) return 0;
+  urlEncode(titulo, enc, sizeof enc);
+  snprintf(url, sizeof url, UTS_HOST "/search?" UTS_QUERY "&searchTerm=%s", enc);
+  corpo = rede_baixar_com(url, 12, CABS);
+  if (!corpo) return -1;
+  r = escolherNaBusca(corpo, titulo, ano, serie, id, tam, arte, tamArte);
+  free(corpo);
+  return r;
+}
+
+// ARTE POR IMDb, preenchida pela busca do trailer (sem custo) ou por
+// trailerapple_arte (uma busca, sem a pagina do filme nem o master HLS).
+#define TA_ARTE_MAX 64
+typedef struct { char imdb[16]; char modelo[600]; int sabida; } ArteApple;
+static ArteApple tabArte[TA_ARTE_MAX];
+static int proxArte;
+static void guardarArte(const char *imdb, const char *modelo) {
+  int i;
+  ArteApple *a = NULL;
+  for (i = 0; i < TA_ARTE_MAX; i++) if (tabArte[i].sabida && !strcmp(tabArte[i].imdb, imdb)) { a = &tabArte[i]; break; }
+  if (!a) { a = &tabArte[proxArte]; proxArte = (proxArte + 1) % TA_ARTE_MAX; }
+  snprintf(a->imdb, sizeof a->imdb, "%s", imdb);
+  snprintf(a->modelo, sizeof a->modelo, "%s", modelo ? modelo : "");
+  a->sabida = 1;
+}
+
+int trailerapple_arte(const char *imdb, const char *titulo, int ano, int serie,
+                      char *modelo, size_t n) {
+  char id[80], arte[600] = "";
+  int i, r;
+  if (!imdb || !imdb[0] || !titulo || !titulo[0] || ano <= 0 || !modelo || !n) return 0;
+  trancar();
+  for (i = 0; i < TA_ARTE_MAX; i++)
+    if (tabArte[i].sabida && !strcmp(tabArte[i].imdb, imdb)) {
+      snprintf(modelo, n, "%s", tabArte[i].modelo);
+      destrancar();
+      return modelo[0] ? 1 : 0;
+    }
+  destrancar();
+  r = buscarId(titulo, ano, serie, id, sizeof id, arte, sizeof arte);
+  // Sem etiqueta de tipo o catalogo erra (ver buscar): tenta o outro.
+  if (r == 0) r = buscarId(titulo, ano, !serie, id, sizeof id, arte, sizeof arte);
+  if (r < 0) return -1;
+  trancar();
+  guardarArte(imdb, r > 0 ? arte : "");
+  destrancar();
+  snprintf(modelo, n, "%s", r > 0 ? arte : "");
+  return modelo[0] ? 1 : 0;
 }
 
 // backgroundVideo primeiro (e o loop que a propria Apple toca atras do titulo
@@ -406,12 +478,14 @@ static void *buscar(void *arg) {
   Entrada *e;
   if (ano) {
     int serie = p->serie;
-    r = buscarId(p->titulo, ano, serie, id, sizeof id);
+    char arte[600] = "";
+    r = buscarId(p->titulo, ano, serie, id, sizeof id, arte, sizeof arte);
     // O catalogo nem sempre etiqueta o tipo (item de "continuar assistindo"
     // sem `tipo`, colecao): sem casar como pedido, tenta o outro tipo. Um
     // filme e uma serie com o mesmo nome e ano e caso raro; nao achar o
     // trailer de uma serie da Apple por falta de etiqueta era o caso comum.
-    if (r == 0) { serie = !serie; r = buscarId(p->titulo, ano, serie, id, sizeof id); }
+    if (r == 0) { serie = !serie; r = buscarId(p->titulo, ano, serie, id, sizeof id, arte, sizeof arte); }
+    if (r >= 0) { trancar(); guardarArte(p->imdb, r > 0 ? arte : ""); destrancar(); }
     if (r < 0) semResposta = 1;
     else if (r == 1) { r = hlsDe(id, serie, url, sizeof url); if (r < 0) semResposta = 1; }
   }

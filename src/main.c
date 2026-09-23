@@ -30,6 +30,8 @@
 #include "tex_cache.h"
 #include "cachearte.h"
 #include "artehero.h"
+#include "artereserva.h"
+#include "trailerapple.h"
 #include "home.h"
 #include "homeestado.h"
 #include "text.h"
@@ -614,6 +616,12 @@ int main(int argc, char **argv) {
   // passar do metahub (1920, barato) para a reserva do TMDB sem pedir duas
   // vezes a mesma arte que nao existe. Ver artehero.h.
   artehero_definir_falhou(tex_falhou);
+  // "Destaque com outra arte" confere se a outra arte nao e o MESMO arquivo
+  // do card (mesma url real ou mesmos bytes) — artereserva.h.
+  artehero_definir_igual(arte_mesma_imagem);
+  artehero_definir_resolvida(arte_fonte_resolvida);
+  // Fonte "Apple TV" do destaque: a arte-chave que a busca do trailer traz.
+  arte_fonte_definir_apple(trailerapple_arte);
   // A conta vem ANTES da UI: app_iniciar decide entre abrir na home e abrir no
   // login, e para decidir ele precisa saber se ha sessao gravada. (dados_iniciar
   // ja rodou la em cima, antes da janela — ver a nota do 4K.)
