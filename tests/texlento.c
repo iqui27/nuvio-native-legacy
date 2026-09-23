@@ -51,6 +51,12 @@ static void *leitor(void *a) {
 static int existe(const char *p) { return access(p, F_OK) == 0; }
 static int protegido(const char *p, void *ctx) { return discoProtegido(p, ctx); }
 
+/* O download so grava no slot que ainda e o mesmo pedido (mesmoPedido). */
+static void pedido(int idx, const char *url) {
+  itens[idx].estado = PENDENTE;
+  snprintf(itens[idx].caminho, sizeof itens[idx].caminho, "%s", url);
+}
+
 int main(void) {
   char dir[] = "/tmp/nuvio-texlento-XXXXXX", dst[600], arq[600], cmd[700];
   FILE *f; int i; pthread_t th; double t, entrega, superficie;
@@ -92,7 +98,8 @@ int main(void) {
   pthread_create(&th, NULL, leitor, NULL);
   { TexFetchTrace tr = {0, 0, 0, 0, 0}; int foi = 0;
     t = agora();
-    assert(baixarParaItem(0, "https://teste/nova.jpg", dst, sizeof dst, &foi, &tr));
+    pedido(0, "https://teste/nova.jpg");
+    assert(baixarParaItem(0, "https://teste/nova.jpg", dst, sizeof dst, &foi, &tr) == 1);
     entrega = agora() - t;
     assert(foi == 1 && itens[0].bruto && itens[0].nBruto == njpg);
     nomeDeCache("https://teste/nova.jpg", arq, sizeof arq);
@@ -109,7 +116,8 @@ int main(void) {
 
   /* 2. Mesmo pedido com a gravacao ainda na fila: sem rede. */
   { int foi = 1, antes = downloads;
-    assert(baixarParaItem(1, "https://teste/nova.jpg", dst, sizeof dst, &foi, NULL));
+    pedido(1, "https://teste/nova.jpg");
+    assert(baixarParaItem(1, "https://teste/nova.jpg", dst, sizeof dst, &foi, NULL) == 1);
     if (!existe(arq)) assert(foi == 0 && downloads == antes && itens[1].bruto);
     puts("ok  bytes ainda na fila servem o mesmo pedido sem voltar a rede"); }
   soltarBruto(&itens[0]); soltarBruto(&itens[1]);
@@ -127,7 +135,8 @@ int main(void) {
       char u[128]; int foi = 0;
       snprintf(u, sizeof u, "https://teste/rajada-%02d.jpg", i);
       t = agora();
-      assert(baixarParaItem(2, u, dst, sizeof dst, &foi, NULL) && foi == 1);
+      pedido(2, u);
+      assert(baixarParaItem(2, u, dst, sizeof dst, &foi, NULL) == 1 && foi == 1);
       if (agora() - t > pior) pior = agora() - t;
       soltarBruto(&itens[2]);
     }
@@ -146,6 +155,16 @@ int main(void) {
     printf("ok  poda pelo indice: %ld apagados, essenciais preservados\n", apagados); }
 
   snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir); assert(system(cmd) == 0);
+  /* 4. #116: o slot virou OUTRO pedido durante o download (um icone local).
+   * Os bytes da arte antiga nao podem entrar nele: o decode desenharia a
+   * imagem errada no lugar do icone. */
+  { int foi = 0;
+    free(itens[3].bruto); itens[3].bruto = NULL; itens[3].nBruto = 0;
+    pedido(3, "art/icones/menu_home.png");
+    assert(baixarParaItem(3, "https://teste/outra.jpg", dst, sizeof dst, &foi, NULL) == -1);
+    assert(itens[3].bruto == NULL && itens[3].nBruto == 0);
+    assert(!strcmp(itens[3].caminho, "art/icones/menu_home.png"));
+    puts("ok  slot reaproveitado durante o download: bytes descartados, icone intacto"); }
   puts("texlento: tudo ok");
   return 0;
 }

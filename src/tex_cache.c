@@ -1453,8 +1453,20 @@ static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
 // O QUE O FIO DE REDE ENTREGA AO DE DECODE. Arte baixada agora: os bytes no
 // proprio item (Item.bruto), nas duas plataformas. No LG, arte que ja estava
 // no cache de disco: o arquivo. GIF e caminho local seguem pelo arquivo.
+// OS BYTES SO ENTRAM NO ITEM SE ELE AINDA E O MESMO PEDIDO (23/09/2026, #116).
+// O download roda sem a trava por segundos; se nesse meio tempo o slot for
+// esquecido e reaproveitado por outro caminho (um icone local, por exemplo),
+// gravar os bytes antigos nele faria o decode desenhar a imagem ERRADA no lugar
+// do icone — e ela ficaria no cache de texturas com o nome do icone. Chamada
+// com o mutex travado. `pedido` e o caminho que o fio tirou da fila.
+static int mesmoPedido(int idx, const char *pedido) {
+  return itens[idx].estado == PENDENTE && pedido &&
+         !strcmp(itens[idx].caminho, pedido);
+}
+
 static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *foiRede,
                           TexFetchTrace *trace) {
+  const char *pedido = url;   // o caminho do item; `url` pode virar a variante
 #ifdef __EMSCRIPTEN__
   if (!strncmp(url, "http://", 7) || !strncmp(url, "https://", 8)) {
     long n = 0;
@@ -1503,6 +1515,12 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
      * decoding remains the existing worker path and no raw RGBA is stored. */
     if (foiRede && *foiRede) cachearte_salvar(url, variante, corpo, n, 0);
     SDL_LockMutex(mtx);
+    if (!mesmoPedido(idx, pedido)) {
+      SDL_UnlockMutex(mtx); free(corpo);
+      printf("[tex] bytes descartados: o slot virou outro pedido durante o download (%.60s)\n", pedido);
+      fflush(stdout);
+      return -1;
+    }
     free(itens[idx].bruto);
     itens[idx].bruto = corpo;
     itens[idx].nBruto = n;
@@ -1549,6 +1567,12 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
         if (trace) trace->persistMs += SDL_GetTicks() - persistEm; }
     }
     SDL_LockMutex(mtx);
+    if (!mesmoPedido(idx, pedido)) {
+      SDL_UnlockMutex(mtx); free(corpo);
+      printf("[tex] bytes descartados: o slot virou outro pedido durante o download (%.60s)\n", pedido);
+      fflush(stdout);
+      return -1;
+    }
     free(itens[idx].bruto);
     itens[idx].bruto = corpo;
     itens[idx].nBruto = n;
@@ -1612,6 +1636,9 @@ static int threadRede(void *arg) {
                (unsigned)redeMs, (unsigned)trace.netMs, (unsigned)trace.resolveMs,
                (unsigned)trace.cacheMs, (unsigned)trace.persistMs, trace.netCalls,
                baixou, urgente);
+      // -1: o slot deixou de ser deste pedido durante o download (mesmoPedido);
+      // os bytes ja foram descartados e o item novo nao e tocado.
+      if (baixou < 0) continue;
       if (!baixou) {
       // Falhou o download. Marca como falha AQUI para o recuo valer — antes o
       // decode e que marcava, e ate la o item ficava PENDENTE ocupando slot.
