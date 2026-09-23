@@ -203,6 +203,11 @@ int desc_episodios_carregando(int indiceItem);
 // /tv/<id>/season/<n> do TMDB. Pura; devolve quantos ganharam nota.
 int  desc_tmdb_notas_temporada(const char *json, CatEp *eps, int n,
                                int temporada);
+// Tipo(s) em que perguntar o /meta do Cinemeta, na ordem (1 ou 2). Tipo
+// incerto ("anime" etc.) tenta serie e depois filme. Puras.
+int  desc_meta_tipos(const char *tipo, const char *saida[2]);
+void desc_meta_chave(char *dst, size_t n, const char *tipo, const char *id);
+int  desc_meta_tem_temporadas(const char *corpo);
 
 // Busca o meta de um titulo que o catalogo NAO tem e o acrescenta ao fim.
 // Nao bloqueia. Serve ao credito de um ator e ao item de "Mais como este":

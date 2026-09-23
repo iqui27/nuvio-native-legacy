@@ -758,6 +758,19 @@ static int deMeta(const char *ini, const char *fim, const char *tipo, CatItem *d
   if (!js_texto(ini, fim, "imdb_id", d->imdb, sizeof d->imdb))
     js_texto(ini, fim, "id", d->imdb, sizeof d->imdb);
   snprintf(d->tipo, sizeof d->tipo, "%s", tipo);
+  // O TIPO DO PROPRIO ITEM VENCE O DO CATALOGO. Catalogo de anime do
+  // AIOMetadata declara `type: "anime"` (simkl.trending.anime, mal.*), e o app
+  // inteiro decide filme x serie por `tipo == "series"`: "anime" virava filme,
+  // o /meta ia ao Cinemeta como /meta/movie/tt13293588 e voltava "My Way Home"
+  // (1965, dir. Miklos Jancso) — o detalhe do Mushoku Tensei sem episodios e
+  // com o diretor de outro titulo (relato do Mizikashi1, v1.4.2). Cada meta do
+  // Stremio traz o proprio `type`; quando ele e filme ou serie, e ele que vale.
+  // Na raiz do item: `trailers[]` tambem tem "type" ("Trailer").
+  { char proprio[16];
+    if (js_texto_raiz_em(ini, fim, "type", proprio, sizeof proprio) &&
+        (!strcmp(proprio, "movie") || !strcmp(proprio, "series")))
+      snprintf(d->tipo, sizeof d->tipo, "%s", proprio);
+    tipo = d->tipo; }
   // O ID DO TMDB QUE O CATALOGO JA TRAZ (23/09/2026). O Cinemeta manda
   // `moviedb_id` em cada item do catalogo — 49 de 49 filmes e 49 de 50 series
   // do topo, e nos 29 conferidos ele e o mesmo id que o /find devolve. Com ele
@@ -2979,7 +2992,7 @@ void desc_esquecer(void) {
 // transferencia inteira. Quatro respostas cobrem a navegacao normal de ida e
 // volta sem deixar o uso de memoria crescer sem limite.
 #define META_CACHE_N 4
-static struct { char id[24]; char *corpo; unsigned uso; } metaCache[META_CACHE_N];
+static struct { char id[40]; char *corpo; unsigned uso; } metaCache[META_CACHE_N];   // "series/tt..."
 static unsigned metaRelogio;
 static pthread_mutex_t metaTrava = PTHREAD_MUTEX_INITIALIZER;
 
@@ -3041,6 +3054,35 @@ int desc_tmdb_notas_temporada(const char *json, CatEp *eps, int n,
     p = js_prox(f);
   }
   return feitos;
+}
+
+// Em que tipo(s) perguntar o /meta do Cinemeta, na ordem. Filme e serie sao
+// certos: um pedido so. Qualquer outro ("anime" dos catalogos do AIOMetadata,
+// vazio de fonte que nao disse) e incerto: serie primeiro — anime e quase
+// sempre serie, e so a resposta de serie tem como PROVAR o tipo (temporadas);
+// a de filme e aceita sem prova, e foi assim que um anime virou "My Way Home".
+int desc_meta_tipos(const char *tipo, const char *saida[2]) {
+  if (tipo && !strcmp(tipo, "series")) { saida[0] = "series"; return 1; }
+  if (tipo && !strcmp(tipo, "movie"))  { saida[0] = "movie";  return 1; }
+  saida[0] = "series";
+  saida[1] = "movie";
+  return 2;
+}
+
+// Chave do cache de /meta: tipo + id, nunca so o id.
+void desc_meta_chave(char *dst, size_t n, const char *tipo, const char *id) {
+  snprintf(dst, n, "%s/%s", tipo ? tipo : "", id ? id : "");
+}
+
+// A resposta do /meta tem ao menos um video com temporada > 0?
+int desc_meta_tem_temporadas(const char *corpo) {
+  const char *v = corpo ? js_array(corpo, NULL, "videos") : NULL;
+  while (v) {
+    const char *f = js_fim(v);
+    if ((int)js_num(v, f, "season", -1) > 0) return 1;
+    v = js_prox(f);
+  }
+  return 0;
 }
 
 static int publicarEpisodios(const char *corpo, int alvoItem, const char *titulo) {
@@ -3107,23 +3149,54 @@ static void *buscarEps(void *u) {
   // nota — antes so os titulos enriquecidos no catalogo tinham elenco, e a
   // pagina do filme abria sem a fileira. O que e so de serie (episodios,
   // temporadas) e pulado abaixo.
-  int ehFilme = strcmp(orig->tipo, "series") != 0;
+  //
+  // O Cinemeta so conhece id do IMDb. "kitsu:123"/"mal:456" (addons de anime)
+  // eram cortados no ':' e pedidos como /meta/movie/kitsu.json — e "kitsu"
+  // virava a chave de cache de TODOS eles, o mesmo vazamento do #37.
+  if (strncmp(orig->imdb, "tt", 2)) { fioEpVivo = 0; return NULL; }
+  // TIPO INCERTO ("anime" de catalogo do AIOMetadata, ou qualquer outro que
+  // nao seja filme nem serie) NAO VIRA FILME POR PADRAO: pergunta como serie
+  // e, sem temporada nenhuma, como filme. O que o /meta responder decide, e
+  // o tipo resolvido e gravado no item (a pagina, os extras e o TMDB leem
+  // dele). Ver desc_meta_tipos.
+  const char *tipos[2];
+  int nTipos = desc_meta_tipos(orig->tipo, tipos), ti, ehFilme = 1;
   base = *orig;
   it = &base;
   { const char *dp;
     snprintf(serie, sizeof serie, "%s", it->imdb);
     dp = strchr(serie, ':');
-    if (dp) *(char *)dp = 0;
-    snprintf(url, sizeof url, "%s/meta/%s/%s.json", CINEMETA,
-             ehFilme ? "movie" : "series", serie); }
+    if (dp) *(char *)dp = 0; }
 
-  corpo = metaCacheObter(serie);
-  marco(corpo ? "episodios: meta do cache" : "episodios: baixando meta");
-
-  if (!corpo) {
-    corpo = rede_baixar(url, 25);
-    if (!corpo) { fioEpVivo = 0; return NULL; }
-    metaCacheGuardar(serie, corpo);
+  for (ti = 0; ti < nTipos; ti++) {
+    char chave[40];
+    int ultimo = ti == nTipos - 1;
+    // A CHAVE DO CACHE LEVA O TIPO. Era so o id, e /meta/movie/tt13293588 e
+    // /meta/series/tt13293588 sao titulos DIFERENTES no Cinemeta: aberto uma
+    // vez como filme, o corpo errado ficava no cache e a abertura seguinte,
+    // ja como serie, lia "meta do cache" com 0 episodios (log 2043).
+    desc_meta_chave(chave, sizeof chave, tipos[ti], serie);
+    snprintf(url, sizeof url, "%s/meta/%s/%s.json", CINEMETA, tipos[ti], serie);
+    free(corpo);
+    corpo = metaCacheObter(chave);
+    marco(corpo ? "episodios: meta do cache" : "episodios: baixando meta");
+    if (!corpo) {
+      corpo = rede_baixar(url, 25);
+      if (!corpo) { if (ultimo) break; continue; }
+      metaCacheGuardar(chave, corpo);
+    }
+    ehFilme = strcmp(tipos[ti], "series") != 0;
+    if (ultimo || desc_meta_tem_temporadas(corpo)) break;
+  }
+  if (!corpo) { fioEpVivo = 0; return NULL; }
+  if (nTipos > 1) {
+    const char *resolvido = ehFilme ? "movie" : "series";
+    printf("[desc] %s: tipo '%s' do catalogo resolvido como '%s' pelo /meta\n",
+           it->titulo, orig->tipo, resolvido);
+    snprintf(base.tipo, sizeof base.tipo, "%s", resolvido);
+    // Id do TMDB so vale com o tipo certo (/movie/94664 e /tv/94664 sao
+    // obras diferentes); o /find abaixo o resolve de novo pelo tipo novo.
+    base.tmdb = 0;
   }
   if (!ehFilme) publicarEpisodios(corpo, alvoItem, it->titulo);
   // O MAPA DE EPISODIOS VISTOS NAO E PEDIDO AQUI, e essa linha existe para dizer

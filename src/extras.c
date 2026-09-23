@@ -1147,7 +1147,11 @@ void extras_pedir(const char *imdb, int serie, long tmdbId) {
   else snprintf(id, sizeof id, "%s", imdb);
   imdb = id;
   pthread_mutex_lock(&trava);
-  if (!strcmp(idPedido, imdb)) { pthread_mutex_unlock(&trava); return; }
+  // Mesmo id com OUTRO tipo e outro pedido: um titulo de tipo incerto
+  // ("anime") abre como filme e o /meta o resolve como serie — ai os extras
+  // tem de ser refeitos por /tv e /shows (detail.c repede).
+  if (!strcmp(idPedido, imdb) && seriePedido == serie) {
+    pthread_mutex_unlock(&trava); return; }
   snprintf(idPedido, sizeof idPedido, "%s", imdb);
   seriePedido = serie;
   tmdbPedido = tmdbId;
