@@ -623,7 +623,15 @@ static void cancelarFonteSeSaiu(void) {
 static void erroSemFonte(void) {
   char motivo[160];
   int canal = player_id_canal()[0] != 0;
-  if (addons_motivo_vazio(motivo, sizeof motivo))
+  int semPlano = debrid_sem_plano();
+  // CONTA DE DEBRID SEM PLANO vem antes de tudo: e a causa que a pessoa pode
+  // resolver, e "nenhuma fonte serve" sozinho a mandava procurar outra fonte
+  // do mesmo servico (registros 1731-1774). O aviso fica marcado como dado.
+  if (semPlano && !canal) {
+    (void)debrid_sem_plano_novo();
+    player_erro_fonte_motivo(i18n(debrid_sem_plano_frase(semPlano)),
+        i18n("Abra Fontes para escolher uma fonte direta."));
+  } else if (addons_motivo_vazio(motivo, sizeof motivo))
     player_erro_fonte_motivo(motivo, canal
         ? i18n("Escolha outro canal no guia ou tente de novo mais tarde.")
         : i18n("Abra Fontes para escolher outra opção ou recarregar."));
@@ -1790,6 +1798,10 @@ void app_atualizar(float dt, Uint32 agora) {
       stream_definir_atual(fonteEscolhida);
       if (s) {
         player_definir_fonte(s->url);
+        // Tocou por outra fonte, mas um servico de debrid ficou de fora por
+        // conta sem plano: diz uma vez por sessao, sem bloquear nada.
+        { int novo = debrid_sem_plano_novo();
+          if (novo) player_toast(i18n(debrid_sem_plano_frase(novo)), 7000); }
         if (!player_id_canal()[0]) {
           fonteVODAutomatica = 1;
           fonteVODTentativas++;

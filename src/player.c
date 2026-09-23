@@ -403,6 +403,16 @@ void player_erro_fonte_motivo(const char *titulo, const char *dica) {
   snprintf(erroTitulo, sizeof erroTitulo, "%s", titulo ? titulo : "");
   snprintf(erroDica, sizeof erroDica, "%s", dica ? dica : "");
 }
+// O VIDEO NAO ABRIU. Quase sempre e a fonte; mas quando o hub LS2 negou o
+// registro (registros 1720-1774: PERMISSION em toda sessao) nenhuma fonte
+// abriria, e "nao foi possivel abrir a fonte" mandava a pessoa trocar de fonte
+// a toa. A dica diz "pode": que reiniciar/reinstalar resolve nao foi provado.
+static void erroSemVideo(void) {
+  if (video_registro_negado())
+    player_erro_fonte_motivo(i18n("A TV não deixou o app usar o player de vídeo"),
+        i18n("Reiniciar a TV ou reinstalar o app pode resolver."));
+  else player_erro_fonte();
+}
 // Desfaz o de cima quando a fonte que parecia morta volta a entregar. Ver a
 // nota no watchdog de canal em app.c.
 void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; } }
@@ -913,6 +923,12 @@ static int modoDisponivel(int modo) {
   return !modoPrecisaRecorte(modo);
 }
 
+void player_toast(const char *texto, unsigned ms) {
+  if (!texto || !*texto) return;
+  snprintf(toastTexto, sizeof toastTexto, "%s", texto);
+  toastAte = SDL_GetTicks() + ms;
+}
+
 void player_aspecto_ciclar(void) {
   int m = aspecto, i;
   // No maximo uma volta: se nada mais estiver disponivel, fica onde esta em vez
@@ -1007,7 +1023,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   abrindoSessao = 1;
   player_definir_episodio(c ? c->temporada : 0, c ? c->episodio : 0);
   abrindoSessao = 0;
-  if (url && *url && !comVideo) player_erro_fonte();
+  if (url && *url && !comVideo) erroSemVideo();
 }
 
 int player_aberto(void)    { return aberto; }
@@ -1020,7 +1036,7 @@ void player_definir_fonte(const char *url) {
   esperandoFonte = 0;
   erroFonte = 0;
   comVideo = video_tocar(url);
-  if (!comVideo) player_erro_fonte();
+  if (!comVideo) erroSemVideo();
   // No PiP a fonte nova retoca o mesmo canto — o destino de tela cheia do
   // aplicarAspecto so vale com a tela aberta.
   if (mini) { PlrRect r = miniDestino();
