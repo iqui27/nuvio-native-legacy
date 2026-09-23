@@ -314,6 +314,10 @@ int main(void) {
   OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt0903747", s, sizeof s) == 1 &&
      !strcmp(s, "https://image.tmdb.org/t/p/w1280/bb.jpg") && pedidos == 2, "o /find ja guardou o padrao");
   OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w500/tt0903747", s, sizeof s) == -1, "w500 nao e tamanho de fundo");
+  // Titulo que o TMDB nao conhece: o outro vira negativa e nao repete o /find.
+  resposta = "{\"movie_results\":[],\"tv_results\":[]}"; pedidos = 0;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdbalt/w1280/tt0000404", s, sizeof s) == -1 && pedidos == 1, "outro desconhecido: um /find");
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdbalt/w1280/tt0000404", s, sizeof s) == -1 && pedidos == 1, "outro desconhecido: negativa guardada");
   // Apple: pelo registro do main (trailerapple_arte), com titulo e ano.
   OK(arte_fonte_resolver("https://nuvio.invalid/arte/apple/1920/tt15239678/m/2024/Dune%3A%20Part%20Two", s, sizeof s) == -1,
      "apple sem registro: nao existe");

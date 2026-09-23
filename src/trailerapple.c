@@ -409,6 +409,10 @@ static int buscarId(const char *titulo, int ano, int serie, char *id, unsigned t
 typedef struct { char imdb[16]; char modelo[600]; int sabida; } ArteApple;
 static ArteApple tabArte[TA_ARTE_MAX];
 static int proxArte;
+// Trava PROPRIA e estatica: trailerapple_arte roda nos fios de rede do
+// tex_cache, que podem chegar antes de qualquer trailerapple_pedir — e o
+// SDL_mutex de trancar() nasce preguicoso, sem protecao contra dois fios.
+static pthread_mutex_t arteTrava = PTHREAD_MUTEX_INITIALIZER;
 static void guardarArte(const char *imdb, const char *modelo) {
   int i;
   ArteApple *a = NULL;
@@ -424,21 +428,21 @@ int trailerapple_arte(const char *imdb, const char *titulo, int ano, int serie,
   char id[80], arte[600] = "";
   int i, r;
   if (!imdb || !imdb[0] || !titulo || !titulo[0] || ano <= 0 || !modelo || !n) return 0;
-  trancar();
+  pthread_mutex_lock(&arteTrava);
   for (i = 0; i < TA_ARTE_MAX; i++)
     if (tabArte[i].sabida && !strcmp(tabArte[i].imdb, imdb)) {
       snprintf(modelo, n, "%s", tabArte[i].modelo);
-      destrancar();
+      pthread_mutex_unlock(&arteTrava);
       return modelo[0] ? 1 : 0;
     }
-  destrancar();
+  pthread_mutex_unlock(&arteTrava);
   r = buscarId(titulo, ano, serie, id, sizeof id, arte, sizeof arte);
   // Sem etiqueta de tipo o catalogo erra (ver buscar): tenta o outro.
   if (r == 0) r = buscarId(titulo, ano, !serie, id, sizeof id, arte, sizeof arte);
   if (r < 0) return -1;
-  trancar();
+  pthread_mutex_lock(&arteTrava);
   guardarArte(imdb, r > 0 ? arte : "");
-  destrancar();
+  pthread_mutex_unlock(&arteTrava);
   snprintf(modelo, n, "%s", r > 0 ? arte : "");
   return modelo[0] ? 1 : 0;
 }
@@ -485,7 +489,7 @@ static void *buscar(void *arg) {
     // filme e uma serie com o mesmo nome e ano e caso raro; nao achar o
     // trailer de uma serie da Apple por falta de etiqueta era o caso comum.
     if (r == 0) { serie = !serie; r = buscarId(p->titulo, ano, serie, id, sizeof id, arte, sizeof arte); }
-    if (r >= 0) { trancar(); guardarArte(p->imdb, r > 0 ? arte : ""); destrancar(); }
+    if (r >= 0) { pthread_mutex_lock(&arteTrava); guardarArte(p->imdb, r > 0 ? arte : ""); pthread_mutex_unlock(&arteTrava); }
     if (r < 0) semResposta = 1;
     else if (r == 1) { r = hlsDe(id, serie, url, sizeof url); if (r < 0) semResposta = 1; }
   }

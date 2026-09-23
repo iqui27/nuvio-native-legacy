@@ -1,6 +1,5 @@
 #include "artehero.h"
 #include "artereserva.h"
-#include "artefontes.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -211,6 +210,21 @@ static int anoDoItem(const CatItem *item) {
 
 static int ehSerie(const CatItem *item) { return !strcmp(item->tipo, "series"); }
 
+// O titulo num segmento da url virtual: o mesmo codigo de af_codificar
+// (artefontes.c, que o resolvedor usa para decodificar), repetido aqui para
+// este modulo continuar sem dependencia — varios testes o compilam sozinho.
+static void codificar(const char *s, char *dst, size_t n) {
+  static const char hex[] = "0123456789ABCDEF";
+  size_t k = 0;
+  for (; s && *s && k + 4 < n; s++) {
+    unsigned char c = (unsigned char)*s;
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+        c == '-' || c == '_' || c == '.' || c == '~') dst[k++] = (char)c;
+    else { dst[k++] = '%'; dst[k++] = hex[c >> 4]; dst[k++] = hex[c & 15]; }
+  }
+  if (n) dst[k] = 0;
+}
+
 // ANIME: id de addon de anime (kitsu:, mal:, anilist:) ou, para um tt,
 // genero Animacao/Anime E pais Japao. So o genero pegaria Pixar e Disney,
 // e cada um custaria duas buscas (Kitsu e AniList) para nada.
@@ -268,7 +282,7 @@ static const char *urlDaFonte(const CatItem *item, int fonte, int grande,
       const char *t = qualidadeImg == 0 ? "1280" : "1920";
 #endif
       if (!temTt || !ano || !item->titulo[0]) return NULL;
-      af_codificar(item->titulo, enc, sizeof enc);
+      codificar(item->titulo, enc, sizeof enc);
       snprintf(saida, tam, "%s" "apple/%s/%s/%c/%d/%s", ARTE_VIRTUAL_PREFIXO,
                t, id, ehSerie(item) ? 's' : 'm', ano, enc);
       return saida;
@@ -290,7 +304,7 @@ static const char *urlDaFonte(const CatItem *item, int fonte, int grande,
         if (n >= sizeof aid) return NULL;
         memcpy(aid, item->imdb, n); aid[n] = 0;
       }
-      af_codificar(item->titulo, enc, sizeof enc);
+      codificar(item->titulo, enc, sizeof enc);
       snprintf(saida, tam, "%s" "anime/large/%s/%c/%d/%s", ARTE_VIRTUAL_PREFIXO,
                aid, ehSerie(item) ? 's' : 'm', anoDoItem(item), enc);
       return saida;

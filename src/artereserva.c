@@ -504,7 +504,13 @@ static int consultarTmdb(ArfPedido *p, int alt, char *valor, size_t n) {
       snprintf(valor, n, "%s", padrao);
       return 1;
     }
-    if (id <= 0) return -1;
+    if (id <= 0) {
+      // O TMDB nao conhece o titulo: a negativa vale para o outro tambem
+      // (arte_fonte_resolver nao grava as celulas do tmdb por conta propria).
+      snprintf(chaveMem, sizeof chaveMem, "tmdbalt/%s", p->id);
+      arfGravar(chaveMem, NULL);
+      return -1;
+    }
     snprintf(api, sizeof api,
              "https://api.themoviedb.org/3/%s/%ld/images?include_image_language=null,en&api_key=%s",
              tipo == 't' ? "tv" : "movie", id, chave);
