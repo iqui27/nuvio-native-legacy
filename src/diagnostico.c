@@ -1,10 +1,31 @@
-// Diagnostico sob demanda dos addons e do caminho de artes.
+// Diagnostico sob demanda dos addons e do caminho de artes, e o OTIMIZADOR que
+// aplica um perfil so depois de provar que ele nao piora.
 //
 // Este modulo mede o que esta sob controle do Nuvio e deixa claro quando um
 // defeito esta no servidor externo. Nenhuma URL completa, token ou titulo
 // pessoal entra no relatorio enviado.
+//
+// O FLUXO, na ordem em que acontece:
+//   1. fio do diagnostico: manifestos, catalogos, fontes de video e os assets
+//      dos manifestos (como sempre foi);
+//   2. fio do diagnostico: CADA FONTE DE ARTE que o app sabe usar para fundo e
+//      logo (catalogo, Metahub, TMDB via /find, Trakt via /search/imdb, logo),
+//      na mesma amostra de ate 3 titulos: resolucao, download, bytes, tamanho;
+//   3. fio de desenho: a amostra de artes pelo CACHE DE TEXTURAS, tres vezes —
+//      frio (enche o disco), ANTES (perfil atual, disco quente) e DEPOIS (o
+//      candidato aplicado, a mesma amostra esquecida e pedida de novo). E o
+//      fio de desenho porque tex_obter e tex_esquecer mexem em textura GL;
+//   4. comparacao (ptv_depois_pior): pior -> o anterior volta SOZINHO e a tela
+//      diz o motivo; igual ou melhor -> o perfil fica e vai para o disco;
+//   5. fio do diagnostico: relatorio e envio.
+//
+// A FONTE DO DESTAQUE (ajuste do usuario) NUNCA muda sozinha: a medicao por
+// fonte vira uma PROPOSTA escrita na tela, e so o botao "Aplicar sugestao"
+// troca o ajuste — com o mesmo reteste e a mesma volta automatica.
 #include "diagnostico.h"
 #include "addons.h"
+#include "artehero.h"
+#include "artereserva.h"
 #include "catalogo.h"
 #include "avisos.h"
 #include "dados.h"
@@ -12,6 +33,7 @@
 #include "idioma.h"
 #include "ajustes.h"
 #include "layout.h"
+#include "perfiltv.h"
 #include "rede.h"
 #include "tex_cache.h"
 #include "text.h"
@@ -26,10 +48,12 @@
 #define NV_VERSAO "dev"
 #endif
 #ifndef NV_DIAG_AUTO_OPT
-/* A aplicação automática só entra em builds depois da matriz física de cada
- * plataforma. O diagnóstico e o relatório seguem disponíveis sem inventar
- * um ganho que ainda não foi comparado no aparelho. */
-#define NV_DIAG_AUTO_OPT 0
+/* LIGADA desde 22/09/2026. Ficou desligada enquanto nao havia reteste: aplicar
+ * um perfil sem comparar era inventar ganho. Agora o candidato so fica se a
+ * MESMA amostra, medida antes e depois pelo cache de texturas, nao piorou; se
+ * piorou, o anterior volta sozinho (concluirComparacao). -DNV_DIAG_AUTO_OPT=0
+ * volta ao modo so-relatorio para um build de medicao. */
+#define NV_DIAG_AUTO_OPT 1
 #endif
 
 #define DIAG_MAX_ADDONS 16
@@ -39,12 +63,41 @@
 #define DIAG_MANIFEST_MAX (512L * 1024L)
 #define DIAG_STREAM_MAX   (1024L * 1024L)
 #define DIAG_ASSET_MAX    (12L * 1024L * 1024L)
+// Amostra: 3 titulos (os mesmos das fontes de video) e ate 10 artes pelo cache.
+#define DIAG_MAX_TITULOS 3
+#define DIAG_MAX_ARTES   10
+// Largura do cartaz pedido na amostra: a do card em pe da home (212 dp) com a
+// folga de decode. O numero exato nao importa, importa ser o MESMO nos passes.
+#define DIAG_LARG_CARTAZ 240.0f
+// Prazo de UM passe pelo cache. 12 s cobrem 10 artes com disco quente mesmo
+// na Samsung (fundo de 1280 decodificado em ~1,5 s, medido em 17/09); o que
+// passar disso conta como falha do passe, nao trava o diagnostico.
+#define DIAG_PASSE_PRAZO_MS 12000u
+// Se a tela sair de cena no meio dos passes (a barra lateral abre por cima),
+// o fio do diagnostico desiste em 90 s e desfaz o experimento sozinho.
+#define DIAG_PASSES_MAX_MS 90000u
 
 typedef enum {
   DR_UNUSED = 0, DR_OK, DR_DESATIVADO, DR_OFFLINE, DR_AUTH,
   DR_NOT_FOUND, DR_RATE_LIMIT, DR_INVALIDO, DR_VAZIO, DR_SERVIDOR,
   DR_INCOMPATIVEL
 } DiagResultado;
+
+// O que a aplicacao automatica fez, para a tela e para o relatorio.
+typedef enum {
+  DA_NENHUM = 0,
+  DA_MANTIDO,          // candidato aplicado, reteste nao piorou
+  DA_RESTAURADO_AUTO,  // reteste piorou: o anterior voltou sozinho
+  DA_IGUAL,            // o candidato e o que ja vale
+  DA_SEM_AMOSTRA,      // nenhuma arte para comparar
+  DA_SEM_CHECKPOINT,   // nao deu para gravar o checkpoint: nada aplicado
+  DA_DESLIGADO,        // build com NV_DIAG_AUTO_OPT=0
+  DA_CANCELADO,        // Voltar no meio: o anterior voltou
+  DA_RESTAURADO_MANUAL // a pessoa pediu o anterior
+} DiagAplicacao;
+
+// O botao "Aplicar sugestao" da arte do destaque.
+typedef enum { DS_NENHUMA = 0, DS_PROPOSTA, DS_TESTANDO, DS_MANTIDA, DS_DESFEITA } DiagSugEstado;
 
 typedef struct {
   char nome[64];
@@ -66,12 +119,23 @@ typedef struct {
 } DiagAddon;
 
 typedef struct {
+  char url[512];
+  int heroi;
+  int feito, ok, ms;
+} DiagArte;
+
+typedef struct {
   _Atomic int estado; // 0 parado, 1 rodando, 2 pronto, 3 cancelado, 4 falhou
-  _Atomic int fase;
+  _Atomic int fase;   // 1 addons, 2 fontes de arte, 3 frio, 4 antes, 5 depois, 6 envio
   _Atomic int total;
   _Atomic int feitos;
   _Atomic int cancelado;
-  SDL_Thread *fio;
+  _Atomic int sondasProntas;   // fio -> desenho: fases 1 e 2 acabaram
+  _Atomic int passesProntos;   // desenho -> fio: comparacao decidida
+  _Atomic int experimento;     // candidato no ar, ainda sem veredito
+  _Atomic int enviando;
+  _Atomic int sugPronta;       // fio da sugestao terminou a medida
+  SDL_Thread *fio, *fioEnvio, *fioSug;
   DiagnosticoModo modo;
   char id[40];
   DiagAddon addon[DIAG_MAX_ADDONS];
@@ -81,6 +145,7 @@ typedef struct {
   int imagensFalhas;
   int assetsMs;
   int assetsBytes;
+  char assetUrl[DIAG_MAX_ASSETS][512];
   int manifestMs;
   int catalogMs;
   int streamMs;
@@ -90,18 +155,43 @@ typedef struct {
   int catalogFalhas;
   int streamOk;
   int streamFalhas;
-  int aplicado;
-  int orcamentoAntes;
-  int orcamentoAntesFixo;
-  int restaurado;
+  // Amostra de titulos, COPIADA no fio de desenho: artehero devolve buffer
+  // estatico e cat_item muda quando o catalogo recarrega.
+  CatItem titulo[DIAG_MAX_TITULOS];
+  int nTitulo;
+  char fonteUrl[DIAG_MAX_TITULOS][PTV_N_FONTES][512];
+  PtvFonte fonte[PTV_N_FONTES];
+  int fontesMs;
+  // Passes pelo cache de texturas.
+  DiagArte arte[DIAG_MAX_ARTES];
+  int nArte;
+  int passe;              // 0 nenhum, 1 frio, 2 antes, 3 depois
+  Uint32 passeIni;
+  int passePior;
+  long passeDesp0;
+  PtvMedida medFrio, medAntes, medDepois;
+  PtvPerfil perfAntes, perfCand;
+  int travadoMb;
+  char *cfgAntes;         // o perfil aprovado que valia antes (ou NULL)
+  DiagAplicacao aplicacao;
+  const char *motivo;
+  // Sugestao de arte do destaque.
+  PtvSugestao sug;
+  DiagSugEstado sugEstado;
+  int sugCalculada;
+  int sugFonteAntes, sugDifAntes;
+  char sugUrlA[DIAG_MAX_TITULOS][512], sugUrlB[DIAG_MAX_TITULOS][512];
+  PtvMedida sugA, sugB;
+  const char *sugMotivo;
   int enviado;
   int envioFalhou;
   char registroId[96];
   int intro;
+  int botao;
   Uint32 inicioMs;
   int coberturaParcial;
   char erro[128];
-  char relatorio[18000];
+  char relatorio[20000];
 } Diagnostico;
 
 static Diagnostico d;
@@ -163,6 +253,20 @@ static const char *resultadoNome(DiagResultado r) {
   }
 }
 
+static const char *aplicacaoNome(DiagAplicacao a) {
+  switch (a) {
+    case DA_MANTIDO: return "aplicada";
+    case DA_RESTAURADO_AUTO: return "restaurada_auto";
+    case DA_IGUAL: return "ja_no_perfil";
+    case DA_SEM_AMOSTRA: return "sem_amostra";
+    case DA_SEM_CHECKPOINT: return "sem_checkpoint";
+    case DA_DESLIGADO: return "padrao_mantido";
+    case DA_CANCELADO: return "cancelada";
+    case DA_RESTAURADO_MANUAL: return "restaurada_manual";
+    default: return "sem_acao";
+  }
+}
+
 static int jsonValido(const char *corpo) {
   const char *fim;
   if (!corpo || (corpo[0] != '{' && corpo[0] != '[')) return 0;
@@ -183,10 +287,6 @@ static DiagResultado classificar(int status, const char *corpo) {
   return DR_OK;
 }
 
-static int tem(const char *s, const char *key) {
-  return s && strstr(s, key) != NULL;
-}
-
 static void urlJoin(char *dst, size_t cap, const char *base, const char *path) {
   size_t n;
   if (!dst || !cap) return;
@@ -196,13 +296,10 @@ static void urlJoin(char *dst, size_t cap, const char *base, const char *path) {
   snprintf(dst + n, cap - n, "/%s", path ? path : "");
 }
 
+// Id do titulo da amostra `ordem`. Le a COPIA feita no fio de desenho: o
+// catalogo pode recarregar enquanto o fio do diagnostico roda.
 static const char *amostraTitulo(int ordem) {
-  int i, vistos = 0;
-  for (i = 0; i < cat_n(); i++) {
-    const CatItem *c = cat_item(i);
-    if (!c || strncmp(c->imdb, "tt", 2)) continue;
-    if (vistos++ == ordem % 3) return c->imdb;
-  }
+  if (d.nTitulo > 0) return d.titulo[ordem % d.nTitulo].imdb;
   return "tt0111161";
 }
 
@@ -238,6 +335,7 @@ static void medirAsset(const char *url) {
   RedeControle controle = controleDiagnostico(DIAG_ASSET_MAX);
   if (!url || !*url || d.nAssets >= DIAG_MAX_ASSETS || atomic_load(&d.cancelado)) return;
   if (sessaoExpirada()) { d.coberturaParcial = 1; return; }
+  snprintf(d.assetUrl[d.nAssets], sizeof d.assetUrl[d.nAssets], "%s", url);
   inicio = SDL_GetTicks();
   corpo = rede_baixar_bin_medido_controle(url, DIAG_TIMEOUT_S, NULL, &controle, &n, &medida);
   d.assetsMs += (int)(SDL_GetTicks() - inicio);
@@ -250,57 +348,446 @@ static void medirAsset(const char *url) {
   free(corpo);
 }
 
-static int aplicarPerfil(void) {
-  // O cache ja possui limite dinamico e aplica o teto permitido pela RAM da
-  // TV. O otimizador escolhe apenas dentro desse contrato.
-  int mb = d.modo == DIAG_DESEMPENHO ? 160 : 300;
-#if !NV_DIAG_AUTO_OPT
-  (void)mb;
-  printf("[diagnostico] perfil mantido: comparação de candidatos ainda não habilitada neste build\n");
-  return 0;
-#else
-  tex_orcamento_info(&d.orcamentoAntes, NULL, &d.orcamentoAntesFixo, NULL);
-  { char checkpoint[256];
-    int ok;
-    snprintf(checkpoint, sizeof checkpoint,
-             "versao=1\nestado=experiment_pending\nantes_mb=%d\nantes_fixo=%d\n",
-             d.orcamentoAntes, d.orcamentoAntesFixo);
-    dados_fs_travar();
-    ok = dados_gravar("diagnostico-otimizacao.checkpoint", checkpoint);
-    dados_fs_liberar();
-    if (!ok) {
-      snprintf(d.erro, sizeof d.erro, "%s", i18n("Não foi possível salvar o checkpoint"));
-      return 0;
+// UMA ARTE DE UMA FONTE: resolucao (so url virtual: TMDB /find ou Trakt
+// /search/imdb, sem cache — e o custo que o fio de rede do tex_cache paga uma
+// vez por titulo) e download, com bytes e o tamanho lido do cabecalho.
+// Fora do fio de desenho: so rede e aritmetica.
+static int medirUrlArte(const char *url, int *resolveMs, int *downloadMs,
+                        long *bytes, int *w, int *h) {
+  char real[600];
+  const char *alvo = url;
+  Uint32 t0;
+  long n = 0;
+  char *corpo;
+  RedeMedida medida;
+  RedeControle controle = controleDiagnostico(DIAG_ASSET_MAX);
+  *resolveMs = *downloadMs = 0; *bytes = 0; *w = *h = 0;
+  if (!url || !*url) return 0;
+  t0 = SDL_GetTicks();
+  { int r = arte_fonte_resolver(url, real, sizeof real);
+    *resolveMs = (int)(SDL_GetTicks() - t0);
+    if (r < 0) return 0;
+    if (r > 0) alvo = real; }
+  corpo = rede_baixar_bin_medido_controle(alvo, DIAG_TIMEOUT_S, NULL, &controle, &n, &medida);
+  *downloadMs = (int)medida.ms;
+  if (medida.cancelado) atomic_store(&d.cancelado, 1);
+  if (!corpo || n <= 0 || medida.status >= 400) { free(corpo); return 0; }
+  *bytes = n;
+  ptv_dimensoes((const unsigned char *)corpo, n, w, h);
+  free(corpo);
+  return 1;
+}
+
+static void medirFontesDeArte(void) {
+  int t, f;
+  for (t = 0; t < d.nTitulo; t++)
+    for (f = 1; f < PTV_N_FONTES; f++) {
+      PtvFonte *s = &d.fonte[f];
+      int rMs, dMs, w, h;
+      long b;
+      if (!d.fonteUrl[t][f][0]) continue;
+      if (atomic_load(&d.cancelado)) return;
+      if (sessaoExpirada()) { d.coberturaParcial = 1; return; }
+      if (medirUrlArte(d.fonteUrl[t][f], &rMs, &dMs, &b, &w, &h)) {
+        s->ok++;
+        s->bytes += b;
+        if (w > 0) { s->largura = w; s->altura = h; }
+      } else s->falhas++;
+      s->resolveMs += rMs;
+      s->downloadMs += dMs;
+      d.fontesMs += rMs + dMs;
+      atomic_fetch_add(&d.feitos, 1);
     }
+}
+
+// ---------------------------------------------------------------------------
+// PERFIL: aplicar, restaurar, persistir.
+
+static void aplicarPerfilTex(const PtvPerfil *pf, int travado) {
+  // O orcamento so muda quando nao ha escolha manual (Ajustes, NV_TEX_MB_FIXO
+  // do alto-cache, NUVIO_TEX_MB): o perfil troca o que "Automatico" significa.
+  if (!travado) tex_definir_orcamento_auto_mb(pf->texMb);
+  tex_definir_fios_rede(pf->fiosRede);
+  tex_definir_teto_heroi(pf->heroiLarg);
+}
+
+static void perfilAtual(PtvPerfil *pf, int *travado, long *mem) {
+  int mb = 0, fixo = 0;
+  long m = 0;
+  tex_orcamento_info(&mb, &m, &fixo, NULL);
+  pf->texMb = mb;
+  pf->fiosRede = tex_fios_rede();
+  pf->heroiLarg = tex_teto_heroi_perfil();
+  if (pf->heroiLarg <= 0) pf->heroiLarg = ptv_heroi_max(ptv_plataforma(), m);
+  if (travado) *travado = fixo ? mb : 0;
+  if (mem) *mem = m;
+}
+
+static const char *modoNome(void) {
+  return d.modo == DIAG_DESEMPENHO ? "desempenho" : "qualidade";
+}
+
+static void restaurarAntes(void) {
+  aplicarPerfilTex(&d.perfAntes, d.travadoMb);
+  printf("[diagnostico] perfil anterior restaurado: %d MB, %d fios, heroi %d\n",
+         d.perfAntes.texMb, d.perfAntes.fiosRede, d.perfAntes.heroiLarg);
+  fflush(stdout);
+}
+
+// Quem pega o experimento o desfaz. Fio de desenho (Voltar, reteste pior) ou
+// fio do diagnostico (tela fora de cena): a troca atomica garante uma vez so.
+static int desfazerExperimento(void) {
+  if (atomic_exchange(&d.experimento, 0) != 1) return 0;
+  restaurarAntes();
+  dados_fs_travar();
+  dados_apagar("diagnostico-otimizacao.checkpoint");
+  dados_fs_liberar();
+  return 1;
+}
+
+// Candidato no ar. 0 = nada aplicado (d.aplicacao diz por que).
+static int aplicarCandidato(void) {
+  long mem = 0;
+  char ck[256];
+  int ok;
+  perfilAtual(&d.perfAntes, &d.travadoMb, &mem);
+  ptv_candidato(ptv_plataforma(), mem,
+                d.modo == DIAG_DESEMPENHO ? PTV_DESEMPENHO : PTV_QUALIDADE,
+                d.travadoMb, &d.perfCand);
+#if !NV_DIAG_AUTO_OPT
+  d.aplicacao = DA_DESLIGADO;
+  return 0;
+#endif
+  if (!memcmp(&d.perfCand, &d.perfAntes, sizeof d.perfCand)) {
+    d.aplicacao = DA_IGUAL;
+    return 0;
   }
-  tex_definir_orcamento_mb(mb);
-  d.aplicado = 1;
-  { char cfg[256];
-    snprintf(cfg, sizeof cfg,
-             "versao=1\nmodo=%s\nantes_mb=%d\naddons=%d\nassets=%d\n",
-             d.modo == DIAG_DESEMPENHO ? "desempenho" : "qualidade",
-             d.orcamentoAntes, d.nAddon, d.nAssets);
+  // CHECKPOINT ANTES DE MEXER: o candidato vive so em memoria ate o veredito,
+  // entao um desligamento no meio nao o deixa gravado. O arquivo existe para o
+  // arranque seguinte saber que o experimento foi interrompido e apagar o
+  // rastro, e para o relatorio contar isso. Sem conseguir grava-lo, nada muda.
+  snprintf(ck, sizeof ck,
+           "versao=2\nestado=experiment_pending\ntex_mb=%d\nfios_rede=%d\nheroi=%d\ntravado=%d\n",
+           d.perfAntes.texMb, d.perfAntes.fiosRede, d.perfAntes.heroiLarg, d.travadoMb);
+  dados_fs_travar();
+  ok = dados_gravar("diagnostico-otimizacao.checkpoint", ck);
+  free(d.cfgAntes);
+  d.cfgAntes = dados_ler("diagnostico-otimizacao.cfg");
+  dados_fs_liberar();
+  if (!ok) {
+    snprintf(d.erro, sizeof d.erro, "%s", "Não foi possível salvar o checkpoint");
+    d.aplicacao = DA_SEM_CHECKPOINT;
+    return 0;
+  }
+  aplicarPerfilTex(&d.perfCand, d.travadoMb);
+  atomic_store(&d.experimento, 1);
+  printf("[diagnostico] candidato %s no ar: %d MB, %d fios, heroi %d (antes %d/%d/%d)\n",
+         modoNome(), d.perfCand.texMb, d.perfCand.fiosRede, d.perfCand.heroiLarg,
+         d.perfAntes.texMb, d.perfAntes.fiosRede, d.perfAntes.heroiLarg);
+  fflush(stdout);
+  return 1;
+}
+
+static void concluirComparacao(void) {
+  const char *m = NULL;
+  if (atomic_load(&d.experimento) != 1) return;
+  if (ptv_depois_pior(&d.medAntes, &d.medDepois, &m)) {
+    desfazerExperimento();
+    d.aplicacao = DA_RESTAURADO_AUTO;
+    d.motivo = m;
+  } else {
+    char cfg[256];
+    atomic_store(&d.experimento, 0);
+    ptv_serializar(&d.perfCand, modoNome(), cfg, sizeof cfg);
     dados_fs_travar();
     dados_gravar("diagnostico-otimizacao.cfg", cfg);
-    dados_apagar("diagnostico-otimizacao.checkpoint"); }
+    dados_apagar("diagnostico-otimizacao.checkpoint");
+    dados_fs_liberar();
+    d.aplicacao = DA_MANTIDO;
+  }
+  printf("[diagnostico] reteste: antes %d ms/%d falhas/pior %d ms, depois %d ms/%d falhas/pior %d ms -> %s%s%s\n",
+         d.medAntes.artesMs, d.medAntes.falhas, d.medAntes.piorQuadroMs,
+         d.medDepois.artesMs, d.medDepois.falhas, d.medDepois.piorQuadroMs,
+         aplicacaoNome(d.aplicacao), m ? ": " : "", m ? m : "");
+  fflush(stdout);
+}
+
+// "Restaurar anterior", depois de um perfil mantido.
+static void restaurarManual(void) {
+  if (d.aplicacao != DA_MANTIDO) return;
+  restaurarAntes();
+  dados_fs_travar();
+  if (d.cfgAntes) dados_gravar("diagnostico-otimizacao.cfg", d.cfgAntes);
+  else dados_apagar("diagnostico-otimizacao.cfg");
   dados_fs_liberar();
-  printf("[diagnostico] perfil aplicado: %s, texturas=%dMB\n",
-         d.modo == DIAG_DESEMPENHO ? "desempenho" : "qualidade", mb);
+  d.aplicacao = DA_RESTAURADO_MANUAL;
+}
+
+// ---------------------------------------------------------------------------
+// PASSES PELO CACHE DE TEXTURAS (fio de desenho).
+
+static void montarAmostraArtes(void) {
+  int i, t, fonte = ajustes_hero_fonte(), dif = ajustes_hero_arte_diferente();
+  d.nArte = 0;
+  // O FUNDO DO DESTAQUE com os ajustes em vigor: e a arte mais cara que o app
+  // pede (1920 na LG) e a que depende do teto do heroi.
+  for (t = 0; t < d.nTitulo && d.nArte < DIAG_MAX_ARTES; t++) {
+    const char *u = artehero_url_destaque(&d.titulo[t], fonte, dif);
+    if (!u || !*u) continue;
+    snprintf(d.arte[d.nArte].url, sizeof d.arte[d.nArte].url, "%s", u);
+    d.arte[d.nArte++].heroi = 1;
+  }
+  for (i = 0; i < cat_n() && d.nArte < DIAG_MAX_ARTES; i++) {
+    const CatItem *c = cat_item(i);
+    int j, repetido = 0;
+    if (!c || !c->poster[0]) continue;
+    for (j = 0; j < d.nArte; j++) if (!strcmp(d.arte[j].url, c->poster)) repetido = 1;
+    if (repetido) continue;
+    snprintf(d.arte[d.nArte].url, sizeof d.arte[d.nArte].url, "%s", c->poster);
+    d.arte[d.nArte++].heroi = 0;
+  }
+  // Sem catalogo (primeira abertura, conta vazia): os assets dos manifestos.
+  for (i = 0; i < d.nAssets && d.nArte < DIAG_MAX_ARTES; i++) {
+    if (!d.assetUrl[i][0]) continue;
+    snprintf(d.arte[d.nArte].url, sizeof d.arte[d.nArte].url, "%s", d.assetUrl[i]);
+    d.arte[d.nArte++].heroi = 0;
+  }
+}
+
+static void esquecerAmostra(void) {
+  int i;
+  for (i = 0; i < d.nArte; i++) tex_esquecer(d.arte[i].url);
+}
+
+static void passeIniciar(int qual) {
+  int i;
+  d.passe = qual;
+  d.passeIni = SDL_GetTicks();
+  d.passePior = 0;
+  d.passeDesp0 = tex_despejos_quentes_total;
+  for (i = 0; i < d.nArte; i++) { d.arte[i].feito = 0; d.arte[i].ok = 0; d.arte[i].ms = 0; }
+  atomic_store(&d.fase, 2 + qual);
+}
+
+// 1 quando o passe terminou, com `m` preenchida.
+static int passePasso(PtvMedida *m) {
+  Uint32 agora = SDL_GetTicks(), dt = agora - d.passeIni;
+  int i, pend = 0, maior = 0;
+  for (i = 0; i < d.nArte; i++) {
+    DiagArte *a = &d.arte[i];
+    GLuint t;
+    if (a->feito) continue;
+    t = a->heroi ? tex_obter_hero(a->url) : tex_obter_larg(a->url, DIAG_LARG_CARTAZ);
+    if (t) { a->feito = 1; a->ok = 1; a->ms = (int)dt; }
+    else if (tex_falhou(a->url)) { a->feito = 1; a->ok = 0; }
+    else pend++;
+  }
+  if (pend && dt < DIAG_PASSE_PRAZO_MS) return 0;
+  memset(m, 0, sizeof *m);
+  for (i = 0; i < d.nArte; i++) {
+    if (d.arte[i].ok) { m->prontas++; if (d.arte[i].ms > maior) maior = d.arte[i].ms; }
+    else m->falhas++;
+  }
+  m->artesMs = pend ? (int)dt : maior;
+  m->piorQuadroMs = d.passePior;
+  m->despejosQuentes = (int)(tex_despejos_quentes_total - d.passeDesp0);
   return 1;
-#endif
+}
+
+static void passesAvancar(void) {
+  PtvMedida m;
+  if (!d.passe) {
+    montarAmostraArtes();
+    if (!d.nArte) {
+      d.aplicacao = DA_SEM_AMOSTRA;
+      atomic_store(&d.passesProntos, 1);
+      return;
+    }
+    passeIniciar(1);
+    return;
+  }
+  if (!passePasso(&m)) return;
+  if (d.passe == 1) {
+    d.medFrio = m;
+    esquecerAmostra();
+    passeIniciar(2);
+  } else if (d.passe == 2) {
+    d.medAntes = m;
+    if (!aplicarCandidato()) { d.passe = 0; atomic_store(&d.passesProntos, 1); return; }
+    esquecerAmostra();
+    passeIniciar(3);
+  } else {
+    d.medDepois = m;
+    concluirComparacao();
+    d.passe = 0;
+    atomic_store(&d.passesProntos, 1);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SUGESTAO PARA A ARTE DO DESTAQUE.
+
+// Qual das fontes medidas e esta url, para o titulo `t`. Casa pela url exata
+// que foi medida; sem casamento, pelo host.
+static int fonteDaUrl(int t, const char *u) {
+  int f;
+  if (!u) return 0;
+  for (f = 1; f <= 4; f++) if (d.fonteUrl[t][f][0] && !strcmp(d.fonteUrl[t][f], u)) return f;
+  return ptv_fonte_da_url(u);
+}
+
+static void calcularSugestao(void) {
+  int fonte = ajustes_hero_fonte(), dif = ajustes_hero_arte_diferente();
+  int hero, card, t;
+  d.sugEstado = DS_NENHUMA;
+  if (!d.nTitulo) return;
+  hero = fonteDaUrl(0, artehero_url_destaque(&d.titulo[0], fonte, dif));
+  card = dif ? PTV_FONTE_CATALOGO
+             : fonteDaUrl(0, artehero_url_card_fonte(&d.titulo[0], fonte, dif));
+  if (!ptv_sugerir_destaque(d.fonte, hero, card, fonte, dif, &d.sug)) return;
+  // A MESMA FOTO DO CARD NAO CONTA COMO OUTRA ARTE (artehero_url_destaque): a
+  // fonte proposta pode cair de volta na lenta para algum titulo. Confere na
+  // amostra inteira; se cair, a proposta vira desligar a outra arte.
+  if (d.sug.diferente)
+    for (t = 0; t < d.nTitulo; t++)
+      if (fonteDaUrl(t, artehero_url_destaque(&d.titulo[t], d.sug.fonte, 1)) == d.sug.lenta) {
+        d.sug.diferente = 0;
+        d.sug.fonte = fonte;
+        break;
+      }
+  d.sugEstado = DS_PROPOSTA;
+}
+
+static int sugestaoWorker(void *arg) {
+  int rep, t;
+  (void)arg;
+  memset(&d.sugA, 0, sizeof d.sugA);
+  memset(&d.sugB, 0, sizeof d.sugB);
+  // A e B INTERCALADOS, duas voltas: a rede da TV oscila no tempo, e medir
+  // todos os A e depois todos os B atribuiria a oscilacao a fonte.
+  for (rep = 0; rep < 2; rep++)
+    for (t = 0; t < d.nTitulo; t++) {
+      int k;
+      for (k = 0; k < 2; k++) {
+        const char *u = k ? d.sugUrlB[t] : d.sugUrlA[t];
+        PtvMedida *m = k ? &d.sugB : &d.sugA;
+        int rMs, dMs, w, h;
+        long b;
+        if (!u[0] || atomic_load(&d.cancelado)) continue;
+        if (medirUrlArte(u, &rMs, &dMs, &b, &w, &h)) m->prontas++;
+        else m->falhas++;
+        m->artesMs += rMs + dMs;
+      }
+    }
+  atomic_store(&d.sugPronta, 1);
+  return 0;
+}
+
+static void aplicarSugestao(void) {
+  int t;
+  if (d.sugEstado != DS_PROPOSTA || d.fioSug) return;
+  d.sugFonteAntes = ajustes_hero_fonte();
+  d.sugDifAntes = ajustes_hero_arte_diferente();
+  for (t = 0; t < d.nTitulo; t++) {
+    const char *a = artehero_url_destaque(&d.titulo[t], d.sugFonteAntes, d.sugDifAntes);
+    snprintf(d.sugUrlA[t], sizeof d.sugUrlA[t], "%s", a ? a : "");
+  }
+  for (t = 0; t < d.nTitulo; t++) {
+    const char *b = artehero_url_destaque(&d.titulo[t], d.sug.fonte, d.sug.diferente);
+    snprintf(d.sugUrlB[t], sizeof d.sugUrlB[t], "%s", b ? b : "");
+  }
+  ajustes_definir_destaque(d.sug.fonte, d.sug.diferente);
+  atomic_store(&d.cancelado, 0);
+  atomic_store(&d.sugPronta, 0);
+  d.sugEstado = DS_TESTANDO;
+  d.fioSug = SDL_CreateThread(sugestaoWorker, "nuvio-diag-arte", NULL);
+  if (!d.fioSug) {
+    ajustes_definir_destaque(d.sugFonteAntes, d.sugDifAntes);
+    d.sugEstado = DS_DESFEITA;
+    d.sugMotivo = "Não foi possível iniciar o teste";
+  }
+}
+
+static void concluirSugestao(void) {
+  const char *m = NULL;
+  if (d.fioSug) { SDL_WaitThread(d.fioSug, NULL); d.fioSug = NULL; }
+  if (ptv_depois_pior(&d.sugA, &d.sugB, &m) || atomic_load(&d.cancelado)) {
+    ajustes_definir_destaque(d.sugFonteAntes, d.sugDifAntes);
+    d.sugEstado = DS_DESFEITA;
+    d.sugMotivo = m ? m : "O teste foi cancelado.";
+  } else d.sugEstado = DS_MANTIDA;
+  printf("[diagnostico] sugestao de destaque: antes %d ms/%d falhas, depois %d ms/%d falhas -> %s\n",
+         d.sugA.artesMs, d.sugA.falhas, d.sugB.artesMs, d.sugB.falhas,
+         d.sugEstado == DS_MANTIDA ? "mantida" : "desfeita");
+  fflush(stdout);
+}
+
+// ---------------------------------------------------------------------------
+// RELATORIO E FIO DO DIAGNOSTICO.
+
+static void montarRelatorio(void) {
+  int texItens = 0, texPend = 0, texQuentes = 0, texSlots = 0;
+  int texMb = 0, fios = 0, fiosMax = 0, i;
+  long texBytes = 0, texLimite = 0, memTotal = 0;
+  char *p = d.relatorio;
+  size_t left = sizeof d.relatorio;
+  int wrote;
+  tex_estatisticas(&texItens, &texPend, &texBytes, &texQuentes, NULL);
+  tex_orcamento_info(&texMb, &memTotal, NULL, &texSlots);
+  texLimite = tex_orcamento_bytes();
+  tex_threads_info(&fios, &fiosMax);
+  d.relatorio[0] = 0;
+#define ACRESCENTA(...) do { wrote = snprintf(p, left, __VA_ARGS__); \
+    if (wrote > 0 && (size_t)wrote < left) { p += wrote; left -= (size_t)wrote; } } while (0)
+  ACRESCENTA("diagnostico=v2\nid=%s\nversao=%s\nmodo=%s\naddons=%d\nmanifest_ok=%d\nmanifest_falhas=%d\nmanifest_ms=%d\ncatalog_ok=%d\ncatalog_falhas=%d\ncatalog_ms=%d\nassets=%d\nassets_ok=%d\nassets_falhas=%d\nassets_ms=%d\nassets_bytes=%d\nstreams_ok=%d\nstreams_falhas=%d\nstreams_ms=%d\ntex_itens=%d\ntex_pendentes=%d\ntex_quentes=%d\ntex_bytes=%ld\ntex_limite=%ld\ntex_orcamento_mb=%d\nmem_total_mb=%ld\nthreads_usadas=%d\nthreads_disponiveis=%d\ngargalo=%s\naplicacao=%s\ncobertura=%s\n",
+    d.id, NV_VERSAO, modoNome(), d.nAddon, d.manifestOk, d.manifestFalhas, d.manifestMs,
+    d.catalogOk, d.catalogFalhas, d.catalogMs, d.nAssets, d.imagensOk,
+    d.imagensFalhas, d.assetsMs, d.assetsBytes, d.streamOk, d.streamFalhas,
+    d.streamMs, texItens, texPend, texQuentes, texBytes, texLimite, texMb,
+    memTotal, fios, fiosMax, gargaloPrincipal(), aplicacaoNome(d.aplicacao),
+    d.coberturaParcial ? "parcial" : "completa");
+  ACRESCENTA("perfil_antes=%d|%d|%d\nperfil_candidato=%d|%d|%d\ntravado_mb=%d\n",
+             d.perfAntes.texMb, d.perfAntes.fiosRede, d.perfAntes.heroiLarg,
+             d.perfCand.texMb, d.perfCand.fiosRede, d.perfCand.heroiLarg, d.travadoMb);
+  ACRESCENTA("amostra_artes=%d\nartes_frio_ms=%d\nartes_antes_ms=%d\nartes_depois_ms=%d\nartes_falhas_antes=%d\nartes_falhas_depois=%d\npior_quadro_antes_ms=%d\npior_quadro_depois_ms=%d\ndespejos_quentes_depois=%d\nmotivo=%s\n",
+             d.nArte, d.medFrio.artesMs, d.medAntes.artesMs, d.medDepois.artesMs,
+             d.medAntes.falhas, d.medDepois.falhas, d.medAntes.piorQuadroMs,
+             d.medDepois.piorQuadroMs, d.medDepois.despejosQuentes, d.motivo ? d.motivo : "");
+  ACRESCENTA("destaque_fonte=%d\ndestaque_diferente=%d\n", ajustes_hero_fonte(),
+             ajustes_hero_arte_diferente());
+  for (i = 1; i < PTV_N_FONTES; i++) {
+    const PtvFonte *f = &d.fonte[i];
+    ACRESCENTA("arte_fonte=%s|ok=%d|falhas=%d|resolve_ms=%d|download_ms=%d|bytes=%ld|largura=%d|altura=%d\n",
+               ptv_fonte_nome(i), f->ok, f->falhas, f->resolveMs, f->downloadMs,
+               f->bytes, f->largura, f->altura);
+  }
+  if (d.sugEstado == DS_PROPOSTA)
+    ACRESCENTA("sugestao_destaque=alvo:%s|diferente:%d|lenta:%s|ms_lenta=%d|base:%s|ms_base=%d\n",
+               ptv_fonte_nome(d.sug.fonte), d.sug.diferente, ptv_fonte_nome(d.sug.lenta),
+               d.sug.msLenta, ptv_fonte_nome(d.sug.base), d.sug.msBase);
+  else ACRESCENTA("sugestao_destaque=-\n");
+  for (i = 0; i < d.nAddon && left > 40; i++) {
+    DiagAddon *a = &d.addon[i];
+    ACRESCENTA("addon=%s|host=%s|active=%d|result=%s|http=%d|bytes=%d|manifest_ms=%d|catalog_http=%d|catalog_ms=%d|catalog_ok=%d|stream_ms=%d|asset_ms=%d|catalog=%d|stream=%d|subtitle=%d\n",
+               a->nome, a->host, a->ativo, a->resultado, a->http,
+               a->bytes, a->manifest_ms, a->catalog_http, a->catalog_ms,
+               a->catalog_ok, a->stream_ms, a->asset_ms,
+               a->catalogo, a->stream, a->legenda);
+  }
+#undef ACRESCENTA
 }
 
 static int diagnosticoWorker(void *arg) {
   int i;
   int catalogTestados = 0, streamTestados = 0;
-  int texItens = 0, texPend = 0, texQuentes = 0, texSlots = 0;
-  int texMb = 0, fios = 0, fiosMax = 0;
-  long texBytes = 0, texLimite = 0, memTotal = 0;
   RedeControle controle;
   (void)arg;
   d.nAddon = addons_n();
   if (d.nAddon > DIAG_MAX_ADDONS) d.nAddon = DIAG_MAX_ADDONS;
-  atomic_store(&d.total, d.nAddon);
+  { int urls = 0, t, f;
+    for (t = 0; t < d.nTitulo; t++)
+      for (f = 1; f < PTV_N_FONTES; f++) if (d.fonteUrl[t][f][0]) urls++;
+    atomic_store(&d.total, d.nAddon + urls); }
   atomic_store(&d.fase, 1);
   controle = controleDiagnostico(DIAG_MANIFEST_MAX);
   for (i = 0; i < d.nAddon; i++) {
@@ -333,9 +820,6 @@ static int diagnosticoWorker(void *arg) {
       snprintf(a->resultado, sizeof a->resultado, "%s", resultadoNome(r));
       if (corpo && jsonValido(corpo) && corpo[0] == '{') {
         addons_manifesto_lido(i, corpo);
-        a->catalogo = tem(corpo, "catalog");
-        a->stream = tem(corpo, "stream");
-        a->legenda = tem(corpo, "subtitle") || tem(corpo, "subtitles");
         a->catalogo = addons_fornece(i, ADD_CATALOGO);
         a->stream = addons_fornece(i, ADD_STREAM);
         a->legenda = addons_fornece(i, ADD_LEGENDA);
@@ -395,47 +879,33 @@ static int diagnosticoWorker(void *arg) {
   }
   if (!atomic_load(&d.cancelado)) {
     atomic_store(&d.fase, 2);
-    aplicarPerfil();
-    atomic_store(&d.fase, 3);
-    tex_estatisticas(&texItens, &texPend, &texBytes, &texQuentes, NULL);
-    tex_orcamento_info(&texMb, &memTotal, NULL, &texSlots);
-    texLimite = tex_orcamento_bytes();
-    tex_threads_info(&fios, &fiosMax);
-    { char *p = d.relatorio;
-      size_t left = sizeof d.relatorio;
-      int wrote;
-      d.relatorio[0] = 0;
-      wrote = snprintf(p, left,
-        "diagnostico=v1\nid=%s\nversao=%s\nmodo=%s\naddons=%d\nmanifest_ok=%d\nmanifest_falhas=%d\nmanifest_ms=%d\ncatalog_ok=%d\ncatalog_falhas=%d\ncatalog_ms=%d\nassets=%d\nassets_ok=%d\nassets_falhas=%d\nassets_ms=%d\nassets_bytes=%d\nstreams_ok=%d\nstreams_falhas=%d\nstreams_ms=%d\ntex_itens=%d\ntex_pendentes=%d\ntex_quentes=%d\ntex_bytes=%ld\ntex_limite=%ld\ntex_orcamento_mb=%d\nmem_total_mb=%ld\nthreads_usadas=%d\nthreads_disponiveis=%d\ngargalo=%s\naplicacao=%s\ncobertura=%s\n",
-        d.id, NV_VERSAO, d.modo == DIAG_DESEMPENHO ? "desempenho" : "qualidade",
-        d.nAddon, d.manifestOk, d.manifestFalhas, d.manifestMs,
-        d.catalogOk, d.catalogFalhas, d.catalogMs, d.nAssets, d.imagensOk,
-        d.imagensFalhas, d.assetsMs, d.assetsBytes, d.streamOk, d.streamFalhas,
-        d.streamMs, texItens, texPend, texQuentes, texBytes, texLimite, texMb,
-        memTotal, fios, fiosMax, gargaloPrincipal(),
-        d.aplicado ? "aplicada" : "padrao_mantido",
-        d.coberturaParcial ? "parcial" : "completa");
-      if (wrote > 0 && (size_t)wrote < left) { p += wrote; left -= (size_t)wrote; }
-      for (i = 0; i < d.nAddon && left > 40; i++) {
-        DiagAddon *a = &d.addon[i];
-        wrote = snprintf(p, left, "addon=%s|host=%s|active=%d|result=%s|http=%d|bytes=%d|manifest_ms=%d|catalog_http=%d|catalog_ms=%d|catalog_ok=%d|stream_ms=%d|asset_ms=%d|catalog=%d|stream=%d|subtitle=%d\n",
-                         a->nome, a->host, a->ativo, a->resultado, a->http,
-                         a->bytes, a->manifest_ms, a->catalog_http, a->catalog_ms,
-                         a->catalog_ok, a->stream_ms, a->asset_ms,
-                         a->catalogo, a->stream, a->legenda);
-        if (wrote <= 0 || (size_t)wrote >= left) break;
-        p += wrote; left -= (size_t)wrote;
+    medirFontesDeArte();
+  }
+  // Passa a vez ao fio de desenho (passes pelo cache e comparacao) e espera.
+  atomic_store(&d.sondasProntas, 1);
+  { Uint32 ini = SDL_GetTicks();
+    while (!atomic_load(&d.passesProntos) && !atomic_load(&d.cancelado)) {
+      if (SDL_GetTicks() - ini > DIAG_PASSES_MAX_MS) {
+        // A tela saiu de cena no meio: sem veredito, o candidato nao fica.
+        atomic_store(&d.cancelado, 1);
+        if (desfazerExperimento()) d.aplicacao = DA_CANCELADO;
+        break;
       }
-    }
+      SDL_Delay(30);
+    } }
+  if (!atomic_load(&d.cancelado)) {
+    atomic_store(&d.fase, 6);
+    montarRelatorio();
     dados_fs_travar();
     dados_gravar("diagnostico-otimizacao.txt", d.relatorio);
     dados_fs_liberar();
-    printf("[diagnostico] relatorio inicio id=%s addons=%d assets=%d streams_ok=%d streams_falhas=%d\n",
-           d.id, d.nAddon, d.nAssets, d.streamOk, d.streamFalhas);
+    printf("[diagnostico] relatorio inicio id=%s addons=%d assets=%d streams_ok=%d streams_falhas=%d aplicacao=%s\n",
+           d.id, d.nAddon, d.nAssets, d.streamOk, d.streamFalhas, aplicacaoNome(d.aplicacao));
     printf("[diagnostico] relatorio fim\n");
     fflush(stdout);
     // O relatorio segue por um envio proprio, com a execucao correlacionada.
-    // O log geral da sessao nao entra neste caminho.
+    // O log geral da sessao nao entra neste caminho. So conta como enviado
+    // com o `registro_id` da resposta (avisos.c: extrairRegistroId).
     d.enviado = avisos_enviar_diagnostico(d.id, d.relatorio,
                                           d.registroId, sizeof d.registroId);
     d.envioFalhou = !d.enviado;
@@ -445,82 +915,159 @@ static int diagnosticoWorker(void *arg) {
   return 0;
 }
 
+static int envioWorker(void *arg) {
+  (void)arg;
+  d.enviado = avisos_enviar_diagnostico(d.id, d.relatorio,
+                                        d.registroId, sizeof d.registroId);
+  d.envioFalhou = !d.enviado;
+  atomic_store(&d.enviando, 0);
+  return 0;
+}
+
+static void juntarFios(int esperarTodos) {
+  if (d.fio && (esperarTodos || atomic_load(&d.estado) != 1)) {
+    SDL_WaitThread(d.fio, NULL); d.fio = NULL;
+  }
+  if (d.fioEnvio && (esperarTodos || !atomic_load(&d.enviando))) {
+    SDL_WaitThread(d.fioEnvio, NULL); d.fioEnvio = NULL;
+  }
+}
+
 void diagnostico_iniciar(void) {
+  // VOLTAR A TELA NO MEIO DE UM TESTE nao pode zerar o estado: o fio ainda
+  // escreve em `d`. A barra lateral deixa sair durante o teste.
+  if (atomic_load(&d.estado) == 1 || d.fioSug || atomic_load(&d.enviando)) {
+    sairTela = 0;
+    return;
+  }
+  juntarFios(1);
+  free(d.cfgAntes);
   memset(&d, 0, sizeof d);
-  atomic_store(&d.estado, 0);
-  atomic_store(&d.fase, 0);
   focoModo = 0;
   sairTela = 0;
   d.intro = !apresentacaoVista();
   dados_uuid(d.id, sizeof d.id);
 }
 
+// ARRANQUE: o perfil aprovado volta a valer, e um experimento interrompido
+// (checkpoint pendente) so e apagado — o candidato nunca foi gravado como
+// aprovado, entao o que vale e o .cfg de antes dele.
 void diagnostico_recuperar_checkpoint(void) {
-  char *cfg = dados_ler("diagnostico-otimizacao.checkpoint");
-  int mb = 0, fixo = 0;
-  if (!cfg) return;
-  if (strstr(cfg, "estado=experiment_pending")) {
-    const char *p = strstr(cfg, "antes_mb=");
-    const char *f = strstr(cfg, "antes_fixo=");
-    if (p) mb = atoi(p + 9);
-    if (f) fixo = atoi(f + 11);
-    tex_definir_orcamento_mb(fixo == 3 ? mb : 0);
+  char *ck = dados_ler("diagnostico-otimizacao.checkpoint");
+  char *cfg;
+  if (ck) {
+    printf("[diagnostico] experimento interrompido na sessao anterior: candidato descartado\n");
     dados_fs_travar();
     dados_apagar("diagnostico-otimizacao.checkpoint");
     dados_fs_liberar();
-    printf("[diagnostico] checkpoint restaurado: %s (%d MB)\n",
-           fixo == 3 ? "fixo" : "automatico", fixo == 3 ? mb : 0);
+    free(ck);
   }
-  free(cfg);
+  cfg = dados_ler("diagnostico-otimizacao.cfg");
+  if (cfg) {
+    PtvPerfil pf;
+    long mem = 0;
+    int fixo = 0;
+    tex_orcamento_info(NULL, &mem, &fixo, NULL);
+    if (ptv_ler(cfg, &pf)) {
+      ptv_limitar(ptv_plataforma(), mem, &pf);
+      aplicarPerfilTex(&pf, fixo);
+      printf("[diagnostico] perfil aprovado aplicado: %d MB, %d fios, heroi %d\n",
+             pf.texMb, pf.fiosRede, pf.heroiLarg);
+    }
+    free(cfg);
+  }
 }
 
 static void iniciarTeste(void) {
-  int intro = d.intro;
-  if (atomic_load(&d.estado) == 1) return;
-  memset(&d.addon, 0, sizeof d.addon);
-  d.nAddon = 0;
-  d.nAssets = 0;
-  d.imagensOk = 0;
-  d.imagensFalhas = 0;
-  d.assetsMs = 0;
-  d.assetsBytes = 0;
-  d.manifestMs = 0;
-  d.catalogMs = 0;
-  d.streamMs = 0;
-  d.manifestOk = 0;
-  d.manifestFalhas = 0;
-  d.catalogOk = 0;
-  d.catalogFalhas = 0;
-  d.streamOk = 0;
-  d.streamFalhas = 0;
-  d.aplicado = 0;
-  d.restaurado = 0;
-  d.enviado = 0;
-  d.envioFalhou = 0;
-  d.registroId[0] = 0;
-  d.relatorio[0] = 0;
-  d.erro[0] = 0;
-  d.coberturaParcial = 0;
+  int intro = d.intro, i, t, f;
+  if (atomic_load(&d.estado) == 1 || d.fioSug || atomic_load(&d.enviando)) return;
+  juntarFios(1);
+  free(d.cfgAntes);
+  memset(&d, 0, sizeof d);
+  d.intro = intro;
   d.inicioMs = SDL_GetTicks();
   dados_uuid(d.id, sizeof d.id);
-  d.intro = intro;
-  atomic_store(&d.cancelado, 0);
-  atomic_store(&d.feitos, 0);
-  atomic_store(&d.estado, 1);
   d.modo = focoModo ? DIAG_DESEMPENHO : DIAG_QUALIDADE;
+  // AMOSTRA COPIADA AQUI, no fio de desenho: os tres primeiros titulos com id
+  // do IMDb, e para cada um a url de cada fonte de arte (artehero devolve
+  // buffer estatico, e o desenho da home o reutiliza a cada quadro).
+  for (i = 0; i < cat_n() && d.nTitulo < DIAG_MAX_TITULOS; i++) {
+    const CatItem *c = cat_item(i);
+    if (!c || strncmp(c->imdb, "tt", 2)) continue;
+    d.titulo[d.nTitulo++] = *c;
+  }
+  for (t = 0; t < d.nTitulo; t++) {
+    for (f = 1; f <= 4; f++) {
+      const char *u = artehero_url_fonte(&d.titulo[t], f);
+      snprintf(d.fonteUrl[t][f], sizeof d.fonteUrl[t][f], "%s", u ? u : "");
+    }
+    if (d.titulo[t].logo[0]) {
+      const char *u = artehero_url_logo(d.titulo[t].logo);
+      snprintf(d.fonteUrl[t][PTV_FONTE_LOGO], sizeof d.fonteUrl[t][PTV_FONTE_LOGO], "%s", u ? u : "");
+    }
+  }
+  atomic_store(&d.estado, 1);
   d.fio = SDL_CreateThread(diagnosticoWorker, "nuvio-diagnostico", NULL);
   if (!d.fio) {
-    snprintf(d.erro, sizeof d.erro, "%s", "não foi possível iniciar o teste");
+    snprintf(d.erro, sizeof d.erro, "%s", "Não foi possível iniciar o teste");
     atomic_store(&d.estado, 4);
   }
 }
 
+// ---------------------------------------------------------------------------
+// BOTOES DA TELA DE RESULTADO. O controle da TV nao tem letra nenhuma, e as
+// coloridas ja tem dono (vermelha = painel de registro, verde = painel DOM no
+// Tizen, azul = Salvos): a acao vira botao navegavel por esquerda/direita.
+
+enum { B_RETESTAR, B_RESTAURAR, B_SUGESTAO, B_REENVIAR, B_OBJETIVO, B_N };
+static const char *const BOTAO_ROTULO[B_N] = {
+  "Testar de novo", "Restaurar anterior", "Aplicar sugestão", "Enviar de novo", "Trocar objetivo"
+};
+
+static int botaoVisivel(int b) {
+  switch (b) {
+    case B_RESTAURAR: return d.aplicacao == DA_MANTIDO;
+    case B_SUGESTAO: return d.sugEstado == DS_PROPOSTA;
+    case B_REENVIAR: return d.envioFalhou && d.relatorio[0] && !atomic_load(&d.enviando);
+    default: return 1;
+  }
+}
+
+static int botoesVisiveis(int *lista) {
+  int b, n = 0;
+  for (b = 0; b < B_N; b++) if (botaoVisivel(b)) lista[n++] = b;
+  return n;
+}
+
+static void acionarBotao(int b) {
+  switch (b) {
+    case B_RETESTAR: iniciarTeste(); break;
+    case B_RESTAURAR: restaurarManual(); break;
+    case B_SUGESTAO: aplicarSugestao(); break;
+    case B_REENVIAR:
+      atomic_store(&d.enviando, 1);
+      d.fioEnvio = SDL_CreateThread(envioWorker, "nuvio-diag-envio", NULL);
+      if (!d.fioEnvio) atomic_store(&d.enviando, 0);
+      break;
+    case B_OBJETIVO: atomic_store(&d.estado, 0); break;
+  }
+  d.botao = 0;
+}
+
+static int teclaVoltar(const SDL_Event *e) {
+  SDL_Keycode k = e->key.keysym.sym;
+  return k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
+         e->key.keysym.scancode == NV_SCANCODE_BACK;
+}
+
 void diagnostico_evento(const SDL_Event *e) {
   SDL_Keycode k;
+  int estado;
   if (!e || e->type != SDL_KEYDOWN) return;
   k = e->key.keysym.sym;
+  estado = atomic_load(&d.estado);
   if (d.intro) {
-    if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE) {
+    if (teclaVoltar(e)) {
       sairTela = 1;
     } else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
       marcarApresentacaoVista();
@@ -528,42 +1075,47 @@ void diagnostico_evento(const SDL_Event *e) {
     }
     return;
   }
-  if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE) {
-    if (atomic_load(&d.estado) == 1) atomic_store(&d.cancelado, 1);
+  if (teclaVoltar(e)) {
+    if (estado == 1 || d.sugEstado == DS_TESTANDO) atomic_store(&d.cancelado, 1);
     else sairTela = 1;
     return;
   }
-  if (k == SDLK_r && atomic_load(&d.estado) == 2 && d.aplicado) {
-    tex_definir_orcamento_mb(d.orcamentoAntesFixo == 3 ? d.orcamentoAntes : 0);
-    dados_fs_travar();
-    dados_apagar("diagnostico-otimizacao.cfg");
-    dados_fs_liberar();
-    d.restaurado = 1;
-    d.aplicado = 0;
+  if (estado == 1 || d.sugEstado == DS_TESTANDO) return;
+  if (estado == 2) {
+    int lista[B_N], n = botoesVisiveis(lista);
+    if (d.botao >= n) d.botao = n - 1;
+    if (k == SDLK_LEFT && d.botao > 0) { d.botao--; return; }
+    if (k == SDLK_RIGHT && d.botao < n - 1) { d.botao++; return; }
+    if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && n > 0) acionarBotao(lista[d.botao]);
     return;
   }
-  if (k == SDLK_e && atomic_load(&d.estado) == 2 && d.envioFalhou && d.relatorio[0]) {
-    d.enviado = avisos_enviar_diagnostico(d.id, d.relatorio,
-                                          d.registroId, sizeof d.registroId);
-    d.envioFalhou = !d.enviado;
-    return;
-  }
-  if (atomic_load(&d.estado) == 1) return;
   if (k == SDLK_LEFT || k == SDLK_RIGHT) { focoModo = !focoModo; return; }
-  if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
-    if (atomic_load(&d.estado) == 0 || atomic_load(&d.estado) == 3 || atomic_load(&d.estado) == 4)
-      iniciarTeste();
-    else if (atomic_load(&d.estado) == 2) iniciarTeste();
-  }
+  if (k == SDLK_RETURN || k == SDLK_KP_ENTER) iniciarTeste();
 }
 
 void diagnostico_atualizar(float dt, Uint32 agora) {
-  (void)dt; (void)agora;
-  if (d.fio && atomic_load(&d.estado) != 1) {
-    SDL_WaitThread(d.fio, NULL);
-    d.fio = NULL;
+  (void)agora;
+  juntarFios(0);
+  if (d.passe) {
+    int ms = (int)(dt * 1000.0f + 0.5f);
+    if (ms > d.passePior) d.passePior = ms;
   }
+  if (atomic_load(&d.estado) == 1) {
+    if (atomic_load(&d.cancelado)) {
+      // Voltar no meio: o candidato sai antes de qualquer outra coisa.
+      if (desfazerExperimento()) d.aplicacao = DA_CANCELADO;
+      d.passe = 0;
+      atomic_store(&d.passesProntos, 1);
+    } else if (atomic_load(&d.sondasProntas) && !atomic_load(&d.passesProntos)) {
+      if (!d.sugCalculada) { d.sugCalculada = 1; calcularSugestao(); }
+      passesAvancar();
+    }
+  }
+  if (d.sugEstado == DS_TESTANDO && atomic_load(&d.sugPronta)) concluirSugestao();
 }
+
+// ---------------------------------------------------------------------------
+// DESENHO.
 
 static void miniCartao(GfxRect r, int tipo, const char *rotulo) {
   TxtLinha t;
@@ -588,8 +1140,8 @@ static void miniCartao(GfxRect r, int tipo, const char *rotulo) {
               5.0f / r.h, i == 3 ? 0.75f : 0.28f, i == 3 ? 0.58f : 0.34f,
               i == 3 ? 0.38f : 0.42f, 1.0f);
   }
-  t = txt_linha(TXT_CAPTION, i18n(rotulo), 206, 210, 220, 255);
-  txt_desenhar(t, r.x, r.y + r.h + 16.0f);
+  t = txt_linha_corta(TXT_CAPTION, i18n(rotulo), 206, 210, 220, 255, r.w);
+  txt_desenhar(t, r.x, r.y + r.h + 14.0f);
 }
 
 /* A tela usa as mesmas primitivas vetoriais do restante do app. Elas sao
@@ -602,11 +1154,11 @@ static void painel(GfxRect r, float ar, float ag, float ab) {
 }
 
 static void painelTitulo(GfxRect r, const char *titulo, const char *subtitulo) {
-  txt_desenhar(txt_linha(TXT_BODY, i18n(titulo), 238, 242, 248, 255),
+  txt_desenhar(txt_linha_corta(TXT_BODY, i18n(titulo), 238, 242, 248, 255, r.w - 56.0f),
                r.x + 28.0f, r.y + 22.0f);
   if (subtitulo)
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n(subtitulo), 154, 164, 178, 255),
-                 r.x + 28.0f, r.y + 56.0f);
+    txt_desenhar(txt_linha_corta(TXT_CAPTION, i18n(subtitulo), 154, 164, 178, 255, r.w - 56.0f),
+                 r.x + 28.0f, r.y + 58.0f);
 }
 
 static float limitePct(float n) {
@@ -628,33 +1180,44 @@ static void barraProgresso(GfxRect r, float pct, float ar, float ag, float ab,
   }
 }
 
-static void graficoBarras(GfxRect r, const int *valores, int n, int maior,
-                          float ar, float ag, float ab) {
-  int i;
+// Barras com o ROTULO DE CADA UMA embaixo dela, centrado. O rotulo unico com
+// espacos ("Manifestos   Catalogos...") nao casava com as barras em ingles.
+static void graficoBarras(GfxRect r, const int *valores, const char *const *rotulos,
+                          int n, float ar, float ag, float ab) {
+  int i, maior = 1;
   float largura;
   if (n < 1) return;
-  if (maior < 1) maior = 1;
-  largura = (r.w - (float)(n - 1) * 14.0f) / (float)n;
-  gfx_cor((GfxRect){ r.x, r.y + r.h - 2.0f, r.w, 2.0f }, 1.0f,
-          0.25f, 0.29f, 0.36f, 0.85f);
+  for (i = 0; i < n; i++) if (valores[i] > maior) maior = valores[i];
+  largura = (r.w - (float)(n - 1) * 24.0f) / (float)n;
+  gfx_cor((GfxRect){ r.x, r.y + r.h - 2.0f, r.w, 2.0f }, 1.0f, 0.25f, 0.29f, 0.36f, 0.85f);
   for (i = 0; i < n; i++) {
     float h = (r.h - 12.0f) * (float)valores[i] / (float)maior;
+    float x = r.x + i * (largura + 24.0f);
+    TxtLinha l = txt_linha_corta(TXT_CAPTION, i18n(rotulos[i]), 150, 160, 174, 255, largura);
     if (h < 3.0f && valores[i] > 0) h = 3.0f;
-    gfx_cor((GfxRect){ r.x + i * (largura + 14.0f), r.y + r.h - h,
-                       largura, h }, 7.0f / r.h, ar, ag, ab,
-            i == n - 1 ? 0.98f : 0.58f);
+    gfx_cor((GfxRect){ x, r.y + r.h - h, largura, h }, 7.0f / (h > 7.0f ? h : 7.0f), ar, ag, ab,
+            valores[i] == maior ? 0.98f : 0.58f);
+    txt_desenhar(l, x + (largura - l.w) * 0.5f, r.y + r.h + 10.0f);
   }
 }
 
+// ROTULO A ESQUERDA, VALOR ALINHADO A DIREITA DO PAINEL, e cada um com a sua
+// largura maxima. O valor antes comecava num x fixo (r.w - 290) e crescia para
+// a direita: "300 MB · 0 pendentes · 0 quentes · 450 slots" atravessava a
+// borda e encavalava no painel vizinho (captura da C9, 22/09).
 static void metrica(GfxRect r, float y, const char *rotulo, const char *valor,
-                    float cr, float cg, float cb) {
-  txt_desenhar(txt_linha(TXT_CAPTION, i18n(rotulo), 154, 164, 178, 255),
-               r.x + 28.0f, y);
-  txt_desenhar(txt_linha(TXT_BODY, valor, cr, cg, cb, 255), r.x + r.w - 290.0f, y - 3.0f);
+                    int cr, int cg, int cb) {
+  float colValor = r.w * 0.52f - 28.0f;
+  TxtLinha v = txt_linha_corta(TXT_BODY, valor, cr, cg, cb, 255, colValor);
+  txt_desenhar(txt_linha_corta(TXT_CAPTION, i18n(rotulo), 154, 164, 178, 255,
+                               r.w - 56.0f - v.w - 24.0f),
+               r.x + 28.0f, y + 3.0f);
+  txt_desenhar(v, r.x + r.w - 28.0f - v.w, y);
 }
 
 static const char *gargaloPrincipal(void) {
-  int maior = d.assetsMs;
+  int artes = d.assetsMs + d.fontesMs;
+  int maior = artes;
   const char *nome = "Artes, logos e fundos";
   if (d.streamMs > maior) { maior = d.streamMs; nome = "Fontes de vídeo"; }
   if (d.catalogMs > maior) { maior = d.catalogMs; nome = "Catálogos"; }
@@ -727,113 +1290,315 @@ void diagnostico_intro_desenhar(Uint32 agora) {
   if (introGlobal) desenharApresentacao(1);
 }
 
+// "128 → 300 MB": o antes e o depois de um parametro, com a unidade traduzida.
+static void antesDepois(char *v, size_t cap, int a, int b, const char *unidade) {
+  if (a == b) snprintf(v, cap, "%d %s", b, i18n(unidade));
+  else snprintf(v, cap, "%d → %d %s", a, b, i18n(unidade));
+}
+
+static void linhasDoPerfil(GfxRect r, float y, float passo, const PtvPerfil *a,
+                           const PtvPerfil *b) {
+  char v[96];
+  antesDepois(v, sizeof v, a->texMb, b->texMb, "MB");
+  metrica(r, y, "Memória para imagens", v, 220, 226, 236);
+  antesDepois(v, sizeof v, a->fiosRede, b->fiosRede, "fios");
+  metrica(r, y + passo, "Fios de rede das artes", v, 220, 226, 236);
+  antesDepois(v, sizeof v, a->heroiLarg, b->heroiLarg, "px");
+  metrica(r, y + 2.0f * passo, "Largura do fundo em tela cheia", v, 220, 226, 236);
+}
+
+static void desenharBotoes(float y, float ar, float ag, float ab) {
+  int lista[B_N], n = botoesVisiveis(lista), i;
+  float x = NV_MARGEM_X;
+  if (d.botao >= n) d.botao = n > 0 ? n - 1 : 0;
+  for (i = 0; i < n; i++) {
+    int foco = i == d.botao;
+    TxtLinha t = txt_linha(TXT_BODY, i18n(BOTAO_ROTULO[lista[i]]),
+                           foco ? 16 : 232, foco ? 18 : 236, foco ? 22 : 244, 255);
+    float w = (float)t.w + 64.0f;
+    if (foco) gfx_cor((GfxRect){ x, y, w, 60.0f }, 0.5f, ar, ag, ab, 1.0f);
+    else gfx_cor((GfxRect){ x, y, w, 60.0f }, 0.5f, 0.13f, 0.15f, 0.19f, 1.0f);
+    txt_desenhar(t, x + 32.0f, y + (60.0f - (float)t.h) * 0.5f);
+    x += w + 20.0f;
+  }
+}
+
+static const char *textoAplicacao(int *cor) {
+  *cor = 0;
+  switch (d.aplicacao) {
+    case DA_MANTIDO: *cor = 1; return "Perfil aplicado: o reteste não piorou";
+    case DA_RESTAURADO_AUTO: *cor = 2; return "Restaurado sozinho: o reteste piorou";
+    case DA_IGUAL: *cor = 1; return "Esta TV já está no perfil escolhido";
+    case DA_SEM_AMOSTRA: *cor = 2; return "Sem artes para comparar: nada foi aplicado";
+    case DA_SEM_CHECKPOINT: *cor = 2; return "Não foi possível salvar o checkpoint";
+    case DA_DESLIGADO: return "Aplicação automática desligada neste build";
+    case DA_CANCELADO: *cor = 2; return "Cancelado: configuração anterior restaurada";
+    case DA_RESTAURADO_MANUAL: *cor = 1; return "Configuração anterior restaurada";
+    default: return "Nada foi aplicado";
+  }
+}
+
+static const char *nomeFonteAjuste(int f) {
+  return f <= 0 ? "Automático" : ptv_fonte_rotulo(f);
+}
+
+static void desenharFontes(GfxRect r, float ar, float ag, float ab) {
+  int f, maior = 1, lenta = 0, msLenta = -1;
+  char v[96];
+  painelTitulo(r, "Artes por fonte", "Tempo médio por arte: consulta e download");
+  for (f = 1; f < PTV_N_FONTES; f++) {
+    int ms = ptv_fonte_ms(&d.fonte[f]);
+    if (ms > maior) maior = ms;
+    if (ms > msLenta) { msLenta = ms; lenta = f; }
+  }
+  for (f = 1; f < PTV_N_FONTES; f++) {
+    const PtvFonte *s = &d.fonte[f];
+    int ms = ptv_fonte_ms(s);
+    float y = r.y + 90.0f + (float)(f - 1) * 36.0f;
+    float bx = r.x + 190.0f, bw = r.w * 0.34f;
+    int destaque = f == lenta && ms > 0;
+    txt_desenhar(txt_linha_corta(TXT_CAPTION, i18n(ptv_fonte_rotulo(f)), destaque ? 244 : 190,
+                                 destaque ? 206 : 198, destaque ? 150 : 210, 255, 150.0f),
+                 r.x + 28.0f, y + 2.0f);
+    gfx_cor((GfxRect){ bx, y + 8.0f, bw, 12.0f }, 0.5f, 0.10f, 0.12f, 0.15f, 1.0f);
+    if (ms > 0)
+      gfx_cor((GfxRect){ bx, y + 8.0f, bw * (float)ms / (float)maior, 12.0f }, 0.5f,
+              destaque ? 0.95f : ar, destaque ? 0.62f : ag, destaque ? 0.36f : ab, 0.95f);
+    if (!s->ok && !s->falhas) snprintf(v, sizeof v, "%s", i18n("não medida"));
+    else if (ms < 0) snprintf(v, sizeof v, "%s", i18n("falhou"));
+    else if (s->largura > 0)
+      snprintf(v, sizeof v, i18n("%d ms · %d×%d · %d falhas"), ms, s->largura, s->altura, s->falhas);
+    else snprintf(v, sizeof v, i18n("%d ms · %d falhas"), ms, s->falhas);
+    { TxtLinha t = txt_linha_corta(TXT_CAPTION, v, 210, 216, 226, 255, r.w - (bx - r.x) - bw - 48.0f);
+      txt_desenhar(t, r.x + r.w - 28.0f - t.w, y + 2.0f); }
+  }
+  // A PROPOSTA ESCRITA ANTES DE QUALQUER MUDANCA: o que esta lento, quanto, e
+  // o que o botao vai trocar. O ajuste so muda no OK do botao.
+  { float y = r.y + 276.0f, lw = r.w - 56.0f;
+    char a[200], b[200];
+    if (d.sugEstado == DS_PROPOSTA || d.sugEstado == DS_TESTANDO) {
+      snprintf(a, sizeof a, i18n("Destaque em %s: %d ms por arte; %s: %d ms."),
+               i18n(ptv_fonte_rotulo(d.sug.lenta)), d.sug.msLenta,
+               i18n(ptv_fonte_rotulo(d.sug.base)), d.sug.msBase);
+      if (!d.sug.diferente)
+        snprintf(b, sizeof b, "%s", i18n("Vai mudar: Destaque com outra arte, de Ligado para Desligado."));
+      else
+        snprintf(b, sizeof b, i18n("Vai mudar: Background do hero, de %s para %s."),
+                 i18n(nomeFonteAjuste(ajustes_hero_fonte())), i18n(nomeFonteAjuste(d.sug.fonte)));
+      if (d.sugEstado == DS_TESTANDO) snprintf(b, sizeof b, "%s", i18n("Retestando a arte do destaque…"));
+      txt_desenhar(txt_linha_corta(TXT_CAPTION, a, 244, 206, 150, 255, lw), r.x + 28.0f, y);
+      txt_desenhar(txt_linha_corta(TXT_CAPTION, b, 214, 220, 230, 255, lw), r.x + 28.0f, y + 28.0f);
+    } else if (d.sugEstado == DS_MANTIDA) {
+      txt_desenhar(txt_linha_corta(TXT_CAPTION, i18n("Sugestão aplicada: o destaque ficou mais rápido no reteste."),
+                                   170, 220, 190, 255, lw), r.x + 28.0f, y + 14.0f);
+    } else if (d.sugEstado == DS_DESFEITA) {
+      snprintf(a, sizeof a, i18n("Sugestão desfeita sozinha: %s"), i18n(d.sugMotivo ? d.sugMotivo : ""));
+      txt_desenhar(txt_linha_corta(TXT_CAPTION, a, 240, 170, 150, 255, lw), r.x + 28.0f, y + 14.0f);
+    } else {
+      txt_desenhar(txt_linha_corta(TXT_CAPTION, i18n("A fonte do destaque não está mais lenta que a do card."),
+                                   170, 178, 190, 255, lw), r.x + 28.0f, y + 14.0f);
+    }
+  }
+}
+
 void diagnostico_desenhar(Uint32 agora) {
   int estado = atomic_load(&d.estado);
   int feito = atomic_load(&d.feitos), total = atomic_load(&d.total);
-  int itens = 0, pend = 0, quentes = 0, slots = 0, fios = 0, fiosMax = 0;
+  int itens = 0, pend = 0, quentes = 0, fios = 0, fiosMax = 0;
   long bytes = 0, bytesQuentes = 0, memTotal = 0, limite = 0;
-  int orcMb = 0;
-  float ar, ag, ab;
-  char v[96];
-  GfxRect esquerda = { 80.0f, 188.0f, 840.0f, 344.0f };
-  GfxRect direita  = { 1000.0f, 188.0f, 840.0f, 344.0f };
-  GfxRect baixoEsq = { 80.0f, 562.0f, 840.0f, 342.0f };
-  GfxRect baixoDir = { 1000.0f, 562.0f, 840.0f, 342.0f };
+  float ar, ag, ab, yConteudo;
+  char v[160];
   ajustes_acento(&ar, &ag, &ab);
   tex_estatisticas(&itens, &pend, &bytes, &quentes, &bytesQuentes);
-  tex_orcamento_info(&orcMb, &memTotal, NULL, &slots);
+  tex_orcamento_info(NULL, &memTotal, NULL, NULL);
   limite = tex_orcamento_bytes();
   tex_threads_info(&fios, &fiosMax);
-  txt_desenhar(txt_linha(TXT_TITULO1, i18n("Diagnóstico e otimização"), 255,255,255,255), NV_MARGEM_X, NV_MARGEM_Y);
-  txt_desenhar(txt_linha(TXT_BODY, i18n("Teste os addons, artes e fontes desta TV; o relatório é enviado ao suporte."), 178,182,190,255), NV_MARGEM_X, NV_MARGEM_Y + 52.0f);
+  // O SUBTITULO ABAIXO DO TITULO PELA ALTURA MEDIDA, e nao por +52 cravado: o
+  // TITULO1 e mais alto que 52 e a frase era desenhada por cima dele (C9).
+  { TxtLinha tit = txt_linha(TXT_TITULO1, i18n("Diagnóstico e otimização"), 255, 255, 255, 255);
+    TxtLinha sub = txt_linha_corta(TXT_BODY, i18n("Teste os addons, artes e fontes desta TV; o relatório é enviado ao suporte."),
+                                   178, 182, 190, 255, NV_TELA_W - 2.0f * NV_MARGEM_X);
+    txt_desenhar(tit, NV_MARGEM_X, NV_MARGEM_Y);
+    txt_desenhar(sub, NV_MARGEM_X, NV_MARGEM_Y + (float)tit.h + 4.0f);
+    yConteudo = NV_MARGEM_Y + (float)tit.h + 4.0f + (float)sub.h + 28.0f;
+    if (yConteudo < 196.0f) yConteudo = 196.0f; }
 
   if (estado == 0) {
-    painel(esquerda, ar, ag, ab);
-    painel(direita, ar, ag, ab);
-    painelTitulo(esquerda, "Modo", "Esquerda/direita escolhe o objetivo");
-    gfx_cor((GfxRect){ esquerda.x + 28.0f, esquerda.y + 94.0f, 360.0f, 72.0f }, 18.0f / 72.0f,
-            focoModo ? 0.10f : ar, focoModo ? 0.12f : ag, focoModo ? 0.15f : ab, 0.98f);
-    gfx_cor((GfxRect){ esquerda.x + 420.0f, esquerda.y + 94.0f, 360.0f, 72.0f }, 18.0f / 72.0f,
-            focoModo ? ar : 0.10f, focoModo ? ag : 0.12f, focoModo ? ab : 0.15f, 0.98f);
-    txt_desenhar(txt_linha(TXT_BODY, i18n("Qualidade"), 250,250,250,255), esquerda.x + 58.0f, esquerda.y + 116.0f);
-    txt_desenhar(txt_linha(TXT_BODY, i18n("Desempenho"), 250,250,250,255), esquerda.x + 450.0f, esquerda.y + 116.0f);
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n(focoModo ? "Fontes mais leves, menos antecipação e menor pressão de memória" : "Nitidez na resolução exibida e preferências atuais preservadas"), 178,184,194,255), esquerda.x + 30.0f, esquerda.y + 198.0f);
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n("A ferramenta escolhe os limites da plataforma; não é preciso configurar threads ou buffers."), 178,184,194,255), esquerda.x + 30.0f, esquerda.y + 238.0f);
-    barraProgresso((GfxRect){ esquerda.x + 30.0f, esquerda.y + 286.0f, esquerda.w - 60.0f, 12.0f }, 100.0f, ar, ag, ab, 0, agora);
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n("Até 3 títulos, 6 fontes e 12 imagens; limite de 8 minutos"), 160,170,182,255), esquerda.x + 30.0f, esquerda.y + 308.0f);
-    painelTitulo(direita, "Painel de resultado", "O que você verá ao terminar");
-    miniCartao((GfxRect){ direita.x + 28.0f, direita.y + 92.0f, 240.0f, 128.0f }, 1, "Tempos medidos");
-    miniCartao((GfxRect){ direita.x + 296.0f, direita.y + 92.0f, 240.0f, 128.0f }, 2, "Gargalo principal");
-    miniCartao((GfxRect){ direita.x + 564.0f, direita.y + 92.0f, 240.0f, 128.0f }, 0, "Memória disponível");
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n("O relatório compacto é guardado localmente e só fica como enviado após confirmação do servidor."), 170,178,190,255), direita.x + 30.0f, direita.y + 258.0f);
-    txt_desenhar(txt_linha(TXT_BODY, i18n("OK inicia o diagnóstico"), ar * 255.0f, ag * 255.0f, ab * 255.0f, 255), NV_MARGEM_X, 966.0f);
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n("Voltar cancela · a análise não altera assistidos, histórico ou scrobbling"), 172,176,184,255), NV_MARGEM_X + 270.0f, 970.0f);
+    GfxRect esq = { 80.0f, yConteudo, 840.0f, 880.0f - yConteudo };
+    GfxRect dir = { 1000.0f, yConteudo, 840.0f, 880.0f - yConteudo };
+    static const char *const PASSOS[5] = {
+      "Manifestos, catálogos e fontes de vídeo dos add-ons",
+      "Cada fonte de arte: catálogo, Metahub, TMDB, Trakt e logo",
+      "As mesmas artes pelo cache, com o perfil atual",
+      "Aplica o candidato e mede as mesmas artes de novo",
+      "Mantém se não piorou; senão volta sozinho ao anterior",
+    };
+    PtvPerfil atual, cand;
+    int travado, i;
+    long mem;
+    perfilAtual(&atual, &travado, &mem);
+    ptv_candidato(ptv_plataforma(), mem, focoModo ? PTV_DESEMPENHO : PTV_QUALIDADE,
+                  travado, &cand);
+    painel(esq, ar, ag, ab);
+    painel(dir, ar, ag, ab);
+    painelTitulo(esq, "Objetivo", "Esquerda e direita escolhem o objetivo");
+    for (i = 0; i < 2; i++) {
+      GfxRect c = { esq.x + 28.0f + i * 404.0f, esq.y + 100.0f, 380.0f, 196.0f };
+      int foco = focoModo == i;
+      gfx_cor(c, 18.0f / c.h, foco ? ar : 0.10f, foco ? ag : 0.12f, foco ? ab : 0.15f, 0.98f);
+      txt_desenhar(txt_linha(TXT_BODY, i18n(i ? "Desempenho" : "Qualidade"),
+                             foco ? 16 : 244, foco ? 18 : 246, foco ? 22 : 250, 255),
+                   c.x + 24.0f, c.y + 22.0f);
+      txt_bloco(TXT_CAPTION, i18n(i ? "Fontes mais leves, menos antecipação e menor pressão de memória"
+                                    : "Nitidez na resolução exibida e preferências atuais preservadas"),
+                foco ? 24 : 178, foco ? 26 : 184, foco ? 30 : 194,
+                c.x + 24.0f, c.y + 72.0f, c.w - 48.0f, 30.0f, 1, 3);
+    }
+    txt_desenhar(txt_linha(TXT_BODY, i18n("O que muda nesta TV"), 238, 242, 248, 255),
+                 esq.x + 28.0f, esq.y + 326.0f);
+    linhasDoPerfil(esq, esq.y + 372.0f, 40.0f, &atual, &cand);
+    txt_bloco(TXT_CAPTION, i18n("Se o reteste da mesma amostra piorar, o perfil anterior volta sozinho e a tela diz o motivo."),
+              170, 178, 190, esq.x + 28.0f, esq.y + 508.0f, esq.w - 56.0f, 30.0f, 1, 2);
+    if (travado)
+      txt_desenhar(txt_linha_corta(TXT_CAPTION, i18n("A memória para imagens foi escolhida em Ajustes e não muda."),
+                                   244, 218, 152, 255, esq.w - 56.0f), esq.x + 28.0f, esq.y + 580.0f);
+    txt_desenhar(txt_linha_corta(TXT_CAPTION, i18n("Até 3 títulos, 6 fontes e 12 imagens; limite de 8 minutos"),
+                                 160, 170, 182, 255, esq.w - 56.0f), esq.x + 28.0f, esq.h + esq.y - 50.0f);
+    painelTitulo(dir, "Como funciona", "Cinco etapas, nesta ordem");
+    for (i = 0; i < 5; i++) {
+      float y = dir.y + 100.0f + i * 58.0f;
+      char n[4];
+      snprintf(n, sizeof n, "%d", i + 1);
+      gfx_cor((GfxRect){ dir.x + 28.0f, y, 38.0f, 38.0f }, 0.5f, ar, ag, ab, 0.9f);
+      { TxtLinha t = txt_linha(TXT_CAPTION, n, 16, 18, 22, 255);
+        txt_desenhar(t, dir.x + 28.0f + (38.0f - t.w) * 0.5f, y + (38.0f - t.h) * 0.5f); }
+      txt_desenhar(txt_linha_corta(TXT_BODY, i18n(PASSOS[i]), 220, 226, 236, 255, dir.w - 120.0f),
+                   dir.x + 84.0f, y + 2.0f);
+    }
+    txt_bloco(TXT_CAPTION, i18n("O relatório compacto é guardado localmente e só fica como enviado após confirmação do servidor."),
+              170, 178, 190, dir.x + 28.0f, dir.y + 410.0f, dir.w - 56.0f, 30.0f, 1, 2);
+    txt_desenhar(txt_linha_corta(TXT_CAPTION, i18n("Não altera assistidos, histórico, progresso ou scrobbling."),
+                                 160, 170, 182, 255, dir.w - 56.0f), dir.x + 28.0f, dir.h + dir.y - 50.0f);
+    { TxtLinha ok = txt_linha(TXT_BODY, i18n("OK inicia o diagnóstico"), ar * 255.0f, ag * 255.0f, ab * 255.0f, 255);
+      txt_desenhar(ok, NV_MARGEM_X, 930.0f);
+      txt_desenhar(txt_linha(TXT_CAPTION, i18n("Voltar sai"), 172, 176, 184, 255),
+                   NV_MARGEM_X + ok.w + 32.0f, 934.0f); }
   } else if (estado == 1) {
-    GfxRect andamento = { 180.0f, 248.0f, 1560.0f, 500.0f };
-    float pct = total > 0 ? 100.0f * (float)feito / (float)total : 4.0f;
-    painel(andamento, ar, ag, ab);
-    painelTitulo(andamento, "Diagnóstico em andamento", d.fase == 1 ? "Sondando manifestos, catálogos e fontes" : "Testando artes, logos e fundos");
+    GfxRect pn = { 180.0f, yConteudo + 20.0f, 1560.0f, 640.0f };
+    static const char *const ETAPAS[6] = {
+      "Sondando manifestos, catálogos e fontes",
+      "Medindo cada fonte de arte",
+      "Artes com o cache frio",
+      "Artes com o perfil atual",
+      "Artes com o perfil candidato",
+      "Gravando e enviando o relatório",
+    };
+    int fase = atomic_load(&d.fase), i;
+    float pct;
+    if (fase < 1) fase = 1;
+    if (fase > 6) fase = 6;
+    // 60% para as sondagens de rede (o grosso do tempo), o resto por etapa.
+    pct = fase <= 2 ? (total > 0 ? 60.0f * (float)feito / (float)total : 4.0f)
+                    : 60.0f + (float)(fase - 2) * 9.0f;
+    painel(pn, ar, ag, ab);
+    painelTitulo(pn, "Diagnóstico em andamento", ETAPAS[fase - 1]);
     snprintf(v, sizeof v, "%d%%", (int)pct);
-    txt_desenhar(txt_linha(TXT_TITULO2, v, 246,249,255,255), andamento.x + 64.0f, andamento.y + 124.0f);
-    snprintf(v, sizeof v, "%d/%d addons", feito, total);
-    txt_desenhar(txt_linha(TXT_BODY, v, 178,188,202,255), andamento.x + 230.0f, andamento.y + 140.0f);
-    barraProgresso((GfxRect){ andamento.x + 64.0f, andamento.y + 218.0f, andamento.w - 128.0f, 20.0f }, pct, ar, ag, ab, 1, agora);
-    metrica(andamento, andamento.y + 286.0f, "Memória usada por imagens", limite > 0 ? (snprintf(v, sizeof v, "%ld / %ld MB", bytes / (1024L*1024L), limite / (1024L*1024L)), v) : "indisponível", 214,220,230);
-    snprintf(v, sizeof v, "%d / %d", fios, fiosMax);
-    metrica(andamento, andamento.y + 326.0f, "Threads em uso", v, 214,220,230);
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n("Voltar cancela e interrompe as requisições da sessão."), 176,184,194,255), andamento.x + 64.0f, andamento.y + 416.0f);
+    txt_desenhar(txt_linha(TXT_TITULO2, v, 246, 249, 255, 255), pn.x + 64.0f, pn.y + 104.0f);
+    barraProgresso((GfxRect){ pn.x + 64.0f, pn.y + 196.0f, pn.w - 128.0f, 20.0f }, pct, ar, ag, ab, 1, agora);
+    for (i = 0; i < 6; i++) {
+      float y = pn.y + 250.0f + i * 50.0f;
+      int feita = i + 1 < fase, atual = i + 1 == fase;
+      float a = atual ? 0.55f + 0.45f * sinf((float)agora * 0.006f) : 1.0f;
+      gfx_cor((GfxRect){ pn.x + 64.0f, y + 6.0f, 22.0f, 22.0f }, 0.5f,
+              feita || atual ? ar : 0.22f, feita || atual ? ag : 0.24f, feita || atual ? ab : 0.28f,
+              feita ? 1.0f : atual ? a : 0.9f);
+      txt_desenhar(txt_linha_corta(TXT_BODY, i18n(ETAPAS[i]), feita || atual ? 232 : 140,
+                                   feita || atual ? 236 : 146, feita || atual ? 244 : 156, 255, 700.0f),
+                   pn.x + 108.0f, y);
+    }
+    { GfxRect col = { pn.x + 860.0f, pn.y + 230.0f, 640.0f, 300.0f };
+      snprintf(v, sizeof v, i18n("%d de %d"), feito, total);
+      metrica(col, col.y + 20.0f, "Etapas de rede", v, 214, 220, 230);
+      if (limite > 0) snprintf(v, sizeof v, "%ld / %ld MB", bytes / (1024L * 1024L), limite / (1024L * 1024L));
+      else snprintf(v, sizeof v, "%s", i18n("indisponível"));
+      metrica(col, col.y + 64.0f, "Memória usada por imagens", v, 214, 220, 230);
+      snprintf(v, sizeof v, i18n("%d de %d"), fios, fiosMax);
+      metrica(col, col.y + 108.0f, "Fios em uso", v, 214, 220, 230);
+      snprintf(v, sizeof v, "%d px", tex_teto_heroi());
+      metrica(col, col.y + 152.0f, "Largura do fundo em tela cheia", v, 214, 220, 230); }
+    txt_desenhar(txt_linha(TXT_CAPTION, i18n("Voltar cancela e interrompe as requisições da sessão."), 176, 184, 194, 255),
+                 pn.x + 64.0f, pn.y + pn.h - 50.0f);
   } else if (estado == 2) {
-    int tempos[4] = { d.manifestMs, d.catalogMs, d.assetsMs, d.streamMs };
-    int maior = d.manifestMs;
-    int cobertura = coberturaPercentual();
-    if (d.catalogMs > maior) maior = d.catalogMs;
-    if (d.assetsMs > maior) maior = d.assetsMs;
-    if (d.streamMs > maior) maior = d.streamMs;
-    painel(esquerda, ar, ag, ab);
-    painel(direita, ar, ag, ab);
-    painel(baixoEsq, ar, ag, ab);
-    painel(baixoDir, ar, ag, ab);
-    painelTitulo(esquerda, "Resultado geral", d.coberturaParcial ? "Cobertura parcial da amostra" : "Amostra concluída");
+    GfxRect tl = { 80.0f, yConteudo, 840.0f, 356.0f };
+    GfxRect tr = { 1000.0f, yConteudo, 840.0f, 356.0f };
+    GfxRect bl = { 80.0f, yConteudo + 376.0f, 840.0f, 312.0f };
+    GfxRect br = { 1000.0f, yConteudo + 376.0f, 840.0f, 312.0f };
+    static const char *const ETAPA_ROT[4] = { "Manifestos", "Catálogos", "Artes", "Fontes" };
+    int tempos[4];
+    int cobertura = coberturaPercentual(), cor;
+    const char *txtAp;
+    tempos[0] = d.manifestMs; tempos[1] = d.catalogMs;
+    tempos[2] = d.assetsMs + d.fontesMs; tempos[3] = d.streamMs;
+    painel(tl, ar, ag, ab);
+    painel(tr, ar, ag, ab);
+    painel(bl, ar, ag, ab);
+    painel(br, ar, ag, ab);
+    painelTitulo(tl, "Resultado geral", d.coberturaParcial ? "Cobertura parcial da amostra" : "Amostra concluída");
     snprintf(v, sizeof v, "%d%%", cobertura);
-    txt_desenhar(txt_linha(TXT_TITULO2, v, ar * 255.0f, ag * 255.0f, ab * 255.0f, 255), esquerda.x + 32.0f, esquerda.y + 96.0f);
-    barraProgresso((GfxRect){ esquerda.x + 32.0f, esquerda.y + 172.0f, esquerda.w - 64.0f, 16.0f }, cobertura, ar, ag, ab, 0, agora);
-    snprintf(v, sizeof v, "%d / %d / %d", d.nAddon, d.imagensOk + d.imagensFalhas, d.streamOk);
-    metrica(esquerda, esquerda.y + 220.0f, "Cobertura", v, 210,218,230);
-    snprintf(v, sizeof v, "%d ok · %d falhas", d.imagensOk, d.imagensFalhas);
-    metrica(esquerda, esquerda.y + 260.0f, "Artes", v, 210,218,230);
-    snprintf(v, sizeof v, "%s", d.envioFalhou ? "guardado; envio falhou" : d.enviado ? "enviado ao suporte" : "guardado localmente");
-    metrica(esquerda, esquerda.y + 300.0f, "Relatório", v, d.envioFalhou ? 240 : 170, d.envioFalhou ? 170 : 220, d.envioFalhou ? 150 : 190);
-    painelTitulo(direita, "Gargalo principal", gargaloPrincipal());
-    txt_desenhar(txt_linha(TXT_BODY, i18n(gargaloPrincipal()), 244,224,172,255), direita.x + 30.0f, direita.y + 100.0f);
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n("Maior tempo agregado da amostra; indisponibilidade isolada não quebra o addon inteiro."), 174,182,194,255), direita.x + 30.0f, direita.y + 146.0f);
-    graficoBarras((GfxRect){ direita.x + 32.0f, direita.y + 212.0f, direita.w - 64.0f, 92.0f }, tempos, 4, maior, ar, ag, ab);
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n("Manifestos   Catálogos   Artes   Fontes"), 150,160,174,255), direita.x + 34.0f, direita.y + 320.0f);
-    painelTitulo(baixoEsq, "Recursos desta TV", "Medições do cache no momento do resultado");
-    snprintf(v, sizeof v, "%ld / %ld MB", bytes / (1024L*1024L), limite > 0 ? limite / (1024L*1024L) : 0L);
-    metrica(baixoEsq, baixoEsq.y + 100.0f, "Memória usada por imagens", v, 220,226,236);
-    snprintf(v, sizeof v, "%ld MB", memTotal);
-    metrica(baixoEsq, baixoEsq.y + 140.0f, "Memória disponível", memTotal > 0 ? v : "indisponível", 220,226,236);
-    snprintf(v, sizeof v, "%d / %d", fios, fiosMax);
-    metrica(baixoEsq, baixoEsq.y + 180.0f, "Threads em uso", v, 220,226,236);
-    snprintf(v, sizeof v, "%d MB · %d pendentes · %d quentes · %d slots", orcMb, pend, quentes, slots);
-    metrica(baixoEsq, baixoEsq.y + 220.0f, "Memória para imagens", v, 176,188,202);
-    barraProgresso((GfxRect){ baixoEsq.x + 30.0f, baixoEsq.y + 272.0f, baixoEsq.w - 60.0f, 10.0f }, limite > 0 ? 100.0f * (float)bytes / (float)limite : 0.0f, ar, ag, ab, 0, agora);
-    painelTitulo(baixoDir, "O que será aplicado", d.aplicado ? "Comparação aprovada e aplicada" : "Padrão mantido com segurança");
-    txt_desenhar(txt_linha(TXT_BODY, i18n(d.modo == DIAG_DESEMPENHO ? "Desempenho" : "Qualidade"), 240,244,250,255), baixoDir.x + 30.0f, baixoDir.y + 100.0f);
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n(d.modo == DIAG_DESEMPENHO ? "Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado." : "Nitidez na resolução exibida, prioridade do conteúdo visível e transparência preservada."), 176,184,196,255), baixoDir.x + 30.0f, baixoDir.y + 140.0f);
-#if NV_DIAG_AUTO_OPT
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n("Aplicação automática aguardando validação"), 244,218,152,255), baixoDir.x + 30.0f, baixoDir.y + 218.0f);
-#else
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n("Aplicação automática aguardando validação"), 244,218,152,255), baixoDir.x + 30.0f, baixoDir.y + 218.0f);
-#endif
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n("O reteste usa a mesma amostra e compara cache frio e quente."), 176,184,196,255), baixoDir.x + 30.0f, baixoDir.y + 258.0f);
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n(d.restaurado ? "Configuração anterior restaurada" : d.envioFalhou ? "E tenta enviar novamente" : "Reteste da mesma amostra"), 172,176,184,255), NV_MARGEM_X, 952.0f);
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n("OK retesta · R restaura · Voltar sai"), 172,176,184,255), NV_MARGEM_X + 270.0f, 952.0f);
+    txt_desenhar(txt_linha(TXT_TITULO2, v, ar * 255.0f, ag * 255.0f, ab * 255.0f, 255), tl.x + 28.0f, tl.y + 92.0f);
+    barraProgresso((GfxRect){ tl.x + 28.0f, tl.y + 170.0f, tl.w - 56.0f, 14.0f }, (float)cobertura, ar, ag, ab, 0, agora);
+    metrica(tl, tl.y + 206.0f, "Gargalo principal", i18n(gargaloPrincipal()), 244, 224, 172);
+    snprintf(v, sizeof v, i18n("%d ok · %d falhas"), d.imagensOk + d.fonte[1].ok + d.fonte[2].ok + d.fonte[3].ok + d.fonte[4].ok + d.fonte[5].ok,
+             d.imagensFalhas + d.fonte[1].falhas + d.fonte[2].falhas + d.fonte[3].falhas + d.fonte[4].falhas + d.fonte[5].falhas);
+    metrica(tl, tl.y + 250.0f, "Artes", v, 210, 218, 230);
+    snprintf(v, sizeof v, "%s", i18n(atomic_load(&d.enviando) ? "enviando…"
+                                    : d.envioFalhou ? "guardado; envio falhou"
+                                    : d.enviado ? "enviado ao suporte" : "guardado localmente"));
+    metrica(tl, tl.y + 294.0f, "Relatório", v, d.envioFalhou ? 240 : 170, d.envioFalhou ? 170 : 220, d.envioFalhou ? 150 : 190);
+
+    desenharFontes(tr, ar, ag, ab);
+
+    painelTitulo(bl, "Tempo por etapa", "Maior tempo agregado da amostra; falha isolada não derruba o addon.");
+    graficoBarras((GfxRect){ bl.x + 32.0f, bl.y + 94.0f, bl.w - 64.0f, 80.0f }, tempos, ETAPA_ROT, 4, ar, ag, ab);
+    snprintf(v, sizeof v, "%ld / %ld MB", bytes / (1024L * 1024L), limite > 0 ? limite / (1024L * 1024L) : 0L);
+    metrica(bl, bl.y + 218.0f, "Memória usada por imagens", v, 220, 226, 236);
+    snprintf(v, sizeof v, i18n("%d pendentes · %d quentes"), pend, quentes);
+    metrica(bl, bl.y + 254.0f, "Fila de imagens", v, 176, 188, 202);
+
+    txtAp = textoAplicacao(&cor);
+    painelTitulo(br, "O que foi aplicado", d.modo == DIAG_DESEMPENHO ? "Desempenho" : "Qualidade");
+    txt_desenhar(txt_linha_corta(TXT_BODY, i18n(txtAp), cor == 1 ? 170 : cor == 2 ? 244 : 214,
+                                 cor == 1 ? 222 : cor == 2 ? 196 : 220, cor == 1 ? 190 : cor == 2 ? 150 : 230,
+                                 255, br.w - 56.0f),
+                 br.x + 28.0f, br.y + 92.0f);
+    if (d.motivo)
+      txt_desenhar(txt_linha_corta(TXT_CAPTION, i18n(d.motivo), 240, 176, 150, 255, br.w - 56.0f),
+                   br.x + 28.0f, br.y + 128.0f);
+    // O CANDIDATO TESTADO aparece como antes -> depois sempre que ele entrou
+    // no ar, tenha ficado ou nao: o veredito acima diz qual dos dois vale.
+    // Sem candidato (igual, sem amostra), so o que vale agora.
+    { int testado = d.aplicacao == DA_MANTIDO || d.aplicacao == DA_RESTAURADO_AUTO ||
+                    d.aplicacao == DA_RESTAURADO_MANUAL || d.aplicacao == DA_CANCELADO;
+      PtvPerfil atual_;
+      int tr_;
+      long m_;
+      perfilAtual(&atual_, &tr_, &m_);
+      if (testado) linhasDoPerfil(br, br.y + 158.0f, 32.0f, &d.perfAntes, &d.perfCand);
+      else linhasDoPerfil(br, br.y + 158.0f, 32.0f, &atual_, &atual_); }
+    if (d.medAntes.artesMs || d.medDepois.artesMs) {
+      snprintf(v, sizeof v, "%d → %d ms", d.medAntes.artesMs, d.medDepois.artesMs);
+      metrica(br, br.y + 254.0f, "Artes, mesma amostra", v, 214, 220, 230);
+    }
+    desenharBotoes(yConteudo + 708.0f, ar, ag, ab);
+    txt_desenhar(txt_linha(TXT_CAPTION, i18n("Esquerda e direita escolhem · OK confirma · Voltar sai"), 172, 176, 184, 255),
+                 NV_MARGEM_X, yConteudo + 790.0f);
   } else {
+    int cor;
     painel((GfxRect){ 260.0f, 260.0f, 1400.0f, 360.0f }, ar, ag, ab);
-    txt_desenhar(txt_linha(TXT_TITULO2, i18n(d.erro[0] ? d.erro : "O teste foi cancelado."), 240,190,180,255), 320.0f, 340.0f);
-    txt_desenhar(txt_linha(TXT_BODY, i18n("Nenhuma configuração foi alterada."), 182,190,202,255), 320.0f, 420.0f);
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n("OK tenta de novo · Voltar sai"), 172,176,184,255), 320.0f, 540.0f);
+    txt_desenhar(txt_linha(TXT_TITULO2, i18n(d.erro[0] ? d.erro : "O teste foi cancelado."), 240, 190, 180, 255), 320.0f, 340.0f);
+    txt_desenhar(txt_linha(TXT_BODY, i18n(d.aplicacao == DA_CANCELADO ? textoAplicacao(&cor)
+                                          : "Nenhuma configuração foi alterada."), 182, 190, 202, 255), 320.0f, 420.0f);
+    txt_desenhar(txt_linha(TXT_CAPTION, i18n("OK tenta de novo · Voltar sai"), 172, 176, 184, 255), 320.0f, 540.0f);
   }
   if (d.intro) desenharApresentacao(0);
 }
@@ -841,9 +1606,12 @@ void diagnostico_desenhar(Uint32 agora) {
 int diagnostico_quer_sair(void) { return sairTela; }
 
 void diagnostico_encerrar(void) {
-  if (d.fio) {
-    atomic_store(&d.cancelado, 1);
-    SDL_WaitThread(d.fio, NULL);
-    d.fio = NULL;
+  atomic_store(&d.cancelado, 1);
+  if (d.fio) { SDL_WaitThread(d.fio, NULL); d.fio = NULL; }
+  if (d.fioSug) {
+    SDL_WaitThread(d.fioSug, NULL); d.fioSug = NULL;
+    if (d.sugEstado == DS_TESTANDO) ajustes_definir_destaque(d.sugFonteAntes, d.sugDifAntes);
   }
+  if (d.fioEnvio) { SDL_WaitThread(d.fioEnvio, NULL); d.fioEnvio = NULL; }
+  desfazerExperimento();
 }

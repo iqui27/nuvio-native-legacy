@@ -59,6 +59,14 @@ int arte_reserva_registrar(const char *url, const char *imdb, int poster);
 // 0 = `url` nao e virtual (baixe como esta); 1 = `saida` tem a url real;
 // -1 = virtual sem resposta (sem chave, titulo desconhecido, sem fundo): trate
 // como download falho, para quem desenha cair na proxima fonte.
+//
+// Com MEMORIA em RAM (tabela fixa, LRU, thread-safe): a mesma fonte e titulo
+// nao voltam a rede na sessao; "a API respondeu sem fundo" vale 5 min.
 int arte_fonte_resolver(const char *url, char *saida, size_t tam);
+
+// So para teste: esvazia a memoria do resolvedor / troca o relogio (ms
+// monotonico; NULL volta ao do sistema).
+void arte_fonte_cache_limpar(void);
+void arte_fonte_cache_relogio(unsigned long long (*ms)(void));
 
 #endif

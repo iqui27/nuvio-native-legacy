@@ -1,0 +1,183 @@
+// A TABELA POR APARELHO E A REGRA DE RESTAURAR, sem SDL e sem aparelho.
+//
+// POR QUE EXISTE. O otimizador so pode ficar ligado se duas coisas nunca
+// quebrarem em silencio: (1) nenhum perfil passa do que a RAM e a plataforma
+// aguentam — 300 MB de textura numa LG de 1 GB e o app sumindo sem cartao, e
+// `original` ou 300 MB no Tizen ja foram MEDIDOS piores (registro 1450,
+// QN85Q70 de 17/09); (2) um reteste pior SEMPRE restaura. As duas sao
+// aritmetica em perfiltv.c, e e ela que se exercita aqui, nos dois alvos.
+#include "perfiltv.h"
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+
+static const long RAMS[] = { 0, 512, 799, 800, 1024, 1199, 1200, 1350, 1999,
+                             2000, 2048, 2245, 2999, 3000, 4096, 8192 };
+#define N_RAMS (int)(sizeof RAMS / sizeof *RAMS)
+
+static void tabela(void) {
+  PtvPerfil p;
+  // LG, os degraus que ja estavam em tex_cache.c (ver perfiltv.c).
+  assert(ptv_tex_auto_mb(PTV_LG, 0) == 96);
+  assert(ptv_tex_auto_mb(PTV_LG, 624) == 48);
+  assert(ptv_tex_auto_mb(PTV_LG, 1024) == 64);
+  assert(ptv_tex_auto_mb(PTV_LG, 1350) == 96);
+  assert(ptv_tex_auto_mb(PTV_LG, 2245) == 128);   // a C9 do relatorio de 22/09
+  assert(ptv_tex_auto_mb(PTV_LG, 3000) == 192);
+  assert(ptv_tex_teto_mb(PTV_LG, 1024) == 96);
+  assert(ptv_tex_teto_mb(PTV_LG, 1350) == 160);
+  assert(ptv_tex_teto_mb(PTV_LG, 2245) == 300);
+  assert(ptv_tex_teto_mb(PTV_LG, 4096) == 512);
+  ptv_padrao(PTV_LG, 2245, &p);
+  assert(p.texMb == 128 && p.fiosRede == 4 && p.heroiLarg == 1920);
+  ptv_padrao(PTV_LG, 1024, &p);
+  assert(p.texMb == 64 && p.fiosRede == 2 && p.heroiLarg == 1280);
+  // Tizen: deviceMemory; o teto e o proprio automatico.
+  assert(ptv_tex_auto_mb(PTV_TIZEN, 0) == 96);
+  assert(ptv_tex_auto_mb(PTV_TIZEN, 1024) == 64);
+  assert(ptv_tex_auto_mb(PTV_TIZEN, 2048) == 96);
+  assert(ptv_tex_auto_mb(PTV_TIZEN, 4096) == 128);
+  ptv_padrao(PTV_TIZEN, 2048, &p);
+  assert(p.texMb == 96 && p.fiosRede == 2 && p.heroiLarg == 1280);
+  ptv_padrao(PTV_TIZEN, 1024, &p);
+  assert(p.texMb == 64 && p.fiosRede == 2 && p.heroiLarg == 1280);
+  puts("ok  tabela por aparelho (LG MemTotal, Tizen deviceMemory)");
+}
+
+// NENHUM candidato, em nenhuma RAM, em nenhum modo, passa do teto.
+static void limites(void) {
+  int i, plat, modo;
+  for (plat = 0; plat < 2; plat++)
+    for (modo = 0; modo < 2; modo++)
+      for (i = 0; i < N_RAMS; i++) {
+        PtvPerfil c;
+        long m = RAMS[i];
+        ptv_candidato((PtvPlataforma)plat, m, (PtvModo)modo, 0, &c);
+        assert(c.texMb >= 16 && c.texMb <= ptv_tex_teto_mb((PtvPlataforma)plat, m));
+        assert(c.fiosRede >= 1 && c.fiosRede <= ptv_fios_rede_max((PtvPlataforma)plat));
+        assert(c.heroiLarg >= 1280 && c.heroiLarg <= ptv_heroi_max((PtvPlataforma)plat, m));
+        if (plat == PTV_TIZEN) {
+          // A Samsung nunca ganha mais textura que o automatico medido nem os
+          // 300 MB do alto-cache, em modo nenhum.
+          assert(c.texMb <= ptv_tex_auto_mb(PTV_TIZEN, m));
+          assert(c.texMb <= 128);
+          if (m < 2000) assert(c.heroiLarg == 1280);
+        }
+        if (plat == PTV_LG && m && m < 1200) assert(c.texMb <= 96 && c.heroiLarg == 1280);
+      }
+  { PtvPerfil c;
+    ptv_candidato(PTV_LG, 2245, PTV_QUALIDADE, 0, &c);
+    assert(c.texMb == 300 && c.fiosRede == 4 && c.heroiLarg == 1920);
+    ptv_candidato(PTV_LG, 2245, PTV_DESEMPENHO, 0, &c);
+    assert(c.texMb == 128 && c.fiosRede == 2 && c.heroiLarg == 1280);
+    // Escolha manual (ou alto-cache): o orcamento fica, o resto muda.
+    ptv_candidato(PTV_LG, 2245, PTV_DESEMPENHO, 300, &c);
+    assert(c.texMb == 300 && c.fiosRede == 2);
+    // Manual acima do teto (perfil antigo, TV trocada) volta ao teto.
+    ptv_candidato(PTV_LG, 1024, PTV_QUALIDADE, 300, &c);
+    assert(c.texMb == 96); }
+  { PtvPerfil lido = { 999, 9, 3840 };
+    assert(ptv_limitar(PTV_TIZEN, 2048, &lido) == 1);
+    assert(lido.texMb == 96 && lido.fiosRede == 2 && lido.heroiLarg == 1920); }
+  puts("ok  limites por RAM e plataforma em todo candidato");
+}
+
+static void regra(void) {
+  PtvMedida a = { 1886, 10, 0, 33, 0 }, b;
+  const char *m = NULL;
+  // Melhor ou igual: mantem.
+  b = a; b.artesMs = 1500;
+  assert(!ptv_depois_pior(&a, &b, &m) && m == NULL);
+  // Ruido de rede dentro da folga (25% + 150 ms): mantem.
+  b = a; b.artesMs = 1886 + 1886 / 4 + 150;
+  assert(!ptv_depois_pior(&a, &b, &m));
+  // Mais lento que a folga: restaura, com o motivo.
+  b.artesMs++;
+  assert(ptv_depois_pior(&a, &b, &m) && m && strstr(m, "lentas"));
+  // Uma falha a mais: restaura, sem folga.
+  b = a; b.falhas = 1;
+  assert(ptv_depois_pior(&a, &b, &m) && strstr(m, "falharam"));
+  // Arte da tela despejada: restaura.
+  b = a; b.despejosQuentes = 1;
+  assert(ptv_depois_pior(&a, &b, &m) && strstr(m, "descartada"));
+  // Pior quadro: so conta a partir de 50 ms e acima de 1,5x + 20.
+  b = a; b.piorQuadroMs = 49;
+  assert(!ptv_depois_pior(&a, &b, &m));
+  b.piorQuadroMs = 33 + 16 + 20 + 1;
+  assert(ptv_depois_pior(&a, &b, &m) && strstr(m, "quadro"));
+  puts("ok  reteste pior restaura; melhor ou dentro da folga mantem");
+}
+
+static void persistencia(void) {
+  PtvPerfil p = { 300, 4, 1920 }, q;
+  char buf[200];
+  assert(ptv_serializar(&p, "qualidade", buf, sizeof buf));
+  memset(&q, 0, sizeof q);
+  assert(ptv_ler(buf, &q) && !memcmp(&p, &q, sizeof p));
+  // O .cfg da versao 1 nao diz o que foi aprovado: nao vale como perfil.
+  assert(!ptv_ler("versao=1\nmodo=qualidade\nantes_mb=128\n", &q));
+  puts("ok  perfil aprovado grava e le; versao 1 ignorada");
+}
+
+static void sugestao(void) {
+  PtvFonte f[PTV_N_FONTES];
+  PtvSugestao s;
+  memset(f, 0, sizeof f);
+  // O CASO DO DONO (22/09): outra arte ligada, destaque em TMDB (virtual:
+  // /find + download) muito mais lento que o catalogo do card.
+  f[PTV_FONTE_CATALOGO] = (PtvFonte){ 3, 0, 0, 1200, 2500000, 1920, 1080 };  // 400 ms
+  f[PTV_FONTE_METAHUB]  = (PtvFonte){ 3, 0, 0, 1350, 2500000, 1920, 1080 };  // 450 ms
+  f[PTV_FONTE_TMDB]     = (PtvFonte){ 3, 0, 2400, 3300, 900000, 1280, 720 }; // 1900 ms
+  f[PTV_FONTE_TRAKT]    = (PtvFonte){ 2, 1, 3000, 2000, 600000, 1280, 720 }; // 2500 ms
+  assert(ptv_sugerir_destaque(f, PTV_FONTE_TMDB, PTV_FONTE_CATALOGO, 0, 1, &s));
+  // Trakt tambem e lenta; Metahub nao: fica arte diferente, pelo Metahub.
+  assert(s.fonte == PTV_FONTE_METAHUB && s.diferente == 1);
+  assert(s.lenta == PTV_FONTE_TMDB && s.msLenta == 1900 && s.msBase == 400);
+  // Sem nenhuma outra rapida: desligar "Destaque com outra arte".
+  f[PTV_FONTE_METAHUB].downloadMs = 9000;
+  assert(ptv_sugerir_destaque(f, PTV_FONTE_TMDB, PTV_FONTE_CATALOGO, 3, 1, &s));
+  assert(s.diferente == 0 && s.fonte == 3);
+  // Mais lenta mas abaixo de 800 ms por arte: nao e "claramente" (nada).
+  f[PTV_FONTE_TMDB] = (PtvFonte){ 3, 0, 600, 1500, 0, 0, 0 };  // 700 ms > 2x400
+  assert(!ptv_sugerir_destaque(f, PTV_FONTE_TMDB, PTV_FONTE_CATALOGO, 0, 1, &s));
+  // So falhou onde o card respondeu: conta como lenta.
+  f[PTV_FONTE_TMDB] = (PtvFonte){ 0, 3, 900, 0, 0, 0, 0 };
+  assert(ptv_sugerir_destaque(f, PTV_FONTE_TMDB, PTV_FONTE_CATALOGO, 3, 1, &s));
+  // Mesma arte nos dois, fonte escolhida lenta: troca para a mais rapida.
+  f[PTV_FONTE_TMDB] = (PtvFonte){ 3, 0, 2400, 3300, 0, 0, 0 };
+  assert(ptv_sugerir_destaque(f, PTV_FONTE_TMDB, PTV_FONTE_TMDB, 3, 0, &s));
+  assert(s.fonte == PTV_FONTE_CATALOGO && s.diferente == 0);
+  // Automatico com a mesma arte: nao ha o que propor.
+  assert(!ptv_sugerir_destaque(f, PTV_FONTE_CATALOGO, PTV_FONTE_CATALOGO, 0, 0, &s));
+  assert(ptv_fonte_da_url("https://nuvio.invalid/arte/tmdb/w1280/tt1") == PTV_FONTE_TMDB);
+  assert(ptv_fonte_da_url("https://images.metahub.space/background/medium/tt1/img") == PTV_FONTE_METAHUB);
+  assert(ptv_fonte_da_url("https://walter.trakt.tv/images/x.jpg") == PTV_FONTE_TRAKT);
+  puts("ok  sugestao de fonte do destaque (2x e > 800 ms por arte)");
+}
+
+static void dimensoes(void) {
+  static const unsigned char png[24] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n',
+    0, 0, 0, 13, 'I', 'H', 'D', 'R', 0, 0, 0x07, 0x80, 0, 0, 0x04, 0x38 };
+  static const unsigned char jpg[] = { 0xFF, 0xD8, 0xFF, 0xE0, 0, 4, 0, 0,
+    0xFF, 0xC0, 0, 17, 8, 0x02, 0xD0, 0x05, 0x00, 3, 0, 0, 0, 0 };
+  static const unsigned char gif[10] = { 'G', 'I', 'F', '8', '9', 'a', 0x2C, 0x01, 0xC2, 0x01 };
+  unsigned char webp[30] = { 'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E', 'B', 'P', 'V', 'P', '8', 'X' };
+  int w, h;
+  assert(ptv_dimensoes(png, sizeof png, &w, &h) && w == 1920 && h == 1080);
+  assert(ptv_dimensoes(jpg, sizeof jpg, &w, &h) && w == 1280 && h == 720);
+  assert(ptv_dimensoes(gif, sizeof gif, &w, &h) && w == 300 && h == 450);
+  webp[24] = 0x7F; webp[25] = 0x07; webp[27] = 0x37; webp[28] = 0x04;   // 1920x1080
+  assert(ptv_dimensoes(webp, sizeof webp, &w, &h) && w == 1920 && h == 1080);
+  assert(!ptv_dimensoes((const unsigned char *)"<html>", 6, &w, &h));
+  puts("ok  dimensoes pelo cabecalho (PNG, JPEG, GIF, WebP)");
+}
+
+int main(void) {
+  tabela();
+  limites();
+  regra();
+  persistencia();
+  sugestao();
+  dimensoes();
+  return 0;
+}

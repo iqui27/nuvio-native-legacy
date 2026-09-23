@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 // images.metahub.space/<tipo>/<tamanho>/<ttNNN>/img  ->  tipo e id.
 // So poster e background: logo nao tem par no /find.
@@ -262,10 +263,144 @@ static int fanartTrakt(const char *corpo, char *dst, size_t n) {
   return 1;
 }
 
+// MEMORIA DO RESOLVEDOR (22/09/2026). MEDIDO na C9: resolve_ms de 408 a
+// 640 ms em 12% dos downloads — cada url virtual pagava a consulta ao TMDB ou
+// ao Trakt, em serie e dentro do fio de rede, mesmo quando o MESMO titulo ja
+// tinha sido resolvido minutos antes (card w1280 e destaque original sao a
+// mesma foto; a arte que saiu da RAM e do disco volta a ser baixada). Guarda
+// aqui o que a consulta respondeu:
+//
+//   chave = "<fonte>/<ttNNN>", SEM o tamanho: w1280 e original do TMDB sao o
+//           mesmo backdrop_path, medium e full do Trakt a mesma fanart. So
+//           fonte e id do IMDb, nunca chave de API nem cabecalho.
+//   valor = o backdrop_path (TMDB) ou a url medium da fanart (Trakt); o
+//           tamanho pedido e aplicado na saida, como antes.
+//   negativa = a API RESPONDEU e nao ha fundo: vale ARF_NEG_MS e expira, porque
+//           o TMDB ganha arte com o tempo. Falha de rede e falta de chave nao
+//           sao guardadas — sao da conexao/do pacote, nao do titulo.
+//
+// Tabela FIXA de ARF_N entradas no BSS (~60 KiB), sem malloc: cheia, sai a
+// usada ha mais tempo (LRU por contador). A busca linear e sob mutex porque os
+// dois fios de rede do tex_cache resolvem ao mesmo tempo; 192 strcmp nao
+// aparecem perto de uma ida ao TMDB.
+#define ARF_N 192u
+#define ARF_CHAVE 32u
+#define ARF_VALOR 256u
+#define ARF_NEG_MS (5u * 60u * 1000u)
+typedef struct {
+  char chave[ARF_CHAVE];
+  char valor[ARF_VALOR];    // vazio = negativa
+  unsigned long long vence; // so para negativa; 0 = positiva, nao vence
+  unsigned long uso;        // 0 = livre
+} ArteFonteMem;
+static ArteFonteMem arfMem[ARF_N];
+static unsigned long arfUso;
+static pthread_mutex_t arfTrava = PTHREAD_MUTEX_INITIALIZER;
+
+static unsigned long long relogioMonotonico(void) {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return (unsigned long long)t.tv_sec * 1000ull + (unsigned long long)(t.tv_nsec / 1000000);
+}
+static unsigned long long (*arfRelogio)(void) = relogioMonotonico;
+
+void arte_fonte_cache_limpar(void) {
+  pthread_mutex_lock(&arfTrava);
+  memset(arfMem, 0, sizeof arfMem);
+  arfUso = 0;
+  pthread_mutex_unlock(&arfTrava);
+}
+
+void arte_fonte_cache_relogio(unsigned long long (*ms)(void)) {
+  arfRelogio = ms ? ms : relogioMonotonico;
+}
+
+// 1 = positiva (valor copiado), -1 = negativa em vigor, 0 = nao sabe.
+static int arfLer(const char *chave, char *valor, size_t n) {
+  unsigned i;
+  int r = 0;
+  unsigned long long agora = arfRelogio();
+  pthread_mutex_lock(&arfTrava);
+  for (i = 0; i < ARF_N; i++) {
+    ArteFonteMem *m = &arfMem[i];
+    if (!m->uso || strcmp(m->chave, chave)) continue;
+    if (!m->valor[0]) {
+      if (agora >= m->vence) { m->uso = 0; break; }   // negativa vencida: pergunta de novo
+      r = -1;
+    } else {
+      snprintf(valor, n, "%s", m->valor);
+      r = 1;
+    }
+    m->uso = ++arfUso;
+    break;
+  }
+  pthread_mutex_unlock(&arfTrava);
+  return r;
+}
+
+// `valor` NULL/vazio = negativa. Valor maior que a celula nao e guardado (a
+// consulta so se repete; truncar daria url errada).
+static void arfGravar(const char *chave, const char *valor) {
+  unsigned i, alvo = 0;
+  unsigned long menor = (unsigned long)-1;
+  if (valor && strlen(valor) >= ARF_VALOR) return;
+  pthread_mutex_lock(&arfTrava);
+  for (i = 0; i < ARF_N; i++) {
+    ArteFonteMem *m = &arfMem[i];
+    if (m->uso && !strcmp(m->chave, chave)) { alvo = i; break; }
+    if (m->uso < menor) { menor = m->uso; alvo = i; }  // livre (0) ganha de tudo
+  }
+  { ArteFonteMem *m = &arfMem[alvo];
+    snprintf(m->chave, sizeof m->chave, "%s", chave);
+    snprintf(m->valor, sizeof m->valor, "%s", valor ? valor : "");
+    m->vence = (valor && valor[0]) ? 0 : arfRelogio() + ARF_NEG_MS;
+    m->uso = ++arfUso; }
+  pthread_mutex_unlock(&arfTrava);
+}
+
+// A viagem de verdade. 1 = `valor` preenchido; -1 = a API respondeu sem
+// fundo (vira negativa); -2 = nao deu para perguntar (sem chave, rede).
+static int arfConsultar(const char *fonte, const char *id, char *valor, size_t n) {
+  if (!strcmp(fonte, "tmdb")) {
+    char api[300], caminho[128] = "";
+    const char *chave = desc_chave_tmdb_reserva(), *v;
+    char *resp;
+    if (!chave[0]) return -2;
+    snprintf(api, sizeof api,
+             "https://api.themoviedb.org/3/find/%s?api_key=%s&external_source=imdb_id",
+             id, chave);
+    resp = rede_baixar(api, 8);
+    if (!resp) return -2;
+    v = js_array(resp, NULL, "movie_results");
+    if (!v) v = js_array(resp, NULL, "tv_results");
+    if (v) js_texto(v, js_fim(v), "backdrop_path", caminho, sizeof caminho);
+    free(resp);
+    if (caminho[0] != '/') return -1;
+    snprintf(valor, n, "%s", caminho);
+    return 1;
+  } else {
+    // Chave PUBLICA do aplicativo, sem token: a busca por id nao precisa de
+    // conta vinculada, e o fundo do Trakt nao pode depender de login.
+    const char *cab[4];
+    char chave[160], api[200];
+    char *resp;
+    int ok;
+    if (!trakt_cabecalhos_publicos(cab, chave, sizeof chave)) return -2;
+    snprintf(api, sizeof api,
+             "https://api.trakt.tv/search/imdb/%s?type=movie,show&extended=full,images", id);
+    resp = rede_baixar_com(api, 8, cab);
+    if (!resp) return -2;
+    ok = fanartTrakt(resp, valor, n);
+    free(resp);
+    return ok ? 1 : -1;
+  }
+}
+
 int arte_fonte_resolver(const char *url, char *saida, size_t tam) {
   static const char PRE[] = ARTE_VIRTUAL_PREFIXO;
-  char fonte[8], tamanho[12], id[24];
+  char fonte[8], tamanho[12], id[24], chave[ARF_CHAVE], valor[400];
   const char *p;
+  int r, tmdb;
   if (!url || strncmp(url, PRE, sizeof PRE - 1)) return 0;
   if (!saida || tam < 80) return -1;
   p = url + sizeof PRE - 1;
@@ -278,45 +413,27 @@ int arte_fonte_resolver(const char *url, char *saida, size_t tam) {
   if (!strcmp(tamanho, "original")) snprintf(tamanho, sizeof tamanho, "w1280");
   if (!strcmp(tamanho, "full"))     snprintf(tamanho, sizeof tamanho, "medium");
 #endif
-  if (!strcmp(fonte, "tmdb")) {
-    char api[300], caminho[128] = "";
-    const char *chave = desc_chave_tmdb_reserva(), *v;
-    char *resp;
-    if (strcmp(tamanho, "w1280") && strcmp(tamanho, "original")) return -1;
-    if (!chave[0]) return -1;
-    snprintf(api, sizeof api,
-             "https://api.themoviedb.org/3/find/%s?api_key=%s&external_source=imdb_id",
-             id, chave);
-    resp = rede_baixar(api, 8);
-    if (!resp) return -1;
-    v = js_array(resp, NULL, "movie_results");
-    if (!v) v = js_array(resp, NULL, "tv_results");
-    if (v) js_texto(v, js_fim(v), "backdrop_path", caminho, sizeof caminho);
-    free(resp);
-    if (caminho[0] != '/') return -1;
-    snprintf(saida, tam, "https://image.tmdb.org/t/p/%s%s", tamanho, caminho);
-  } else if (!strcmp(fonte, "trakt")) {
-    // Chave PUBLICA do aplicativo, sem token: a busca por id nao precisa de
-    // conta vinculada, e o fundo do Trakt nao pode depender de login.
-    const char *cab[4];
-    char chave[160], api[200], fan[400];
-    char *resp;
-    int ok;
-    if (strcmp(tamanho, "medium") && strcmp(tamanho, "full")) return -1;
-    if (!trakt_cabecalhos_publicos(cab, chave, sizeof chave)) return -1;
-    snprintf(api, sizeof api,
-             "https://api.trakt.tv/search/imdb/%s?type=movie,show&extended=full,images", id);
-    resp = rede_baixar_com(api, 8, cab);
-    if (!resp) return -1;
-    ok = fanartTrakt(resp, fan, sizeof fan);
-    free(resp);
-    if (!ok) return -1;
-    { char *m = strstr(fan, "/medium/");
-      if (m && !strcmp(tamanho, "full") && strlen(fan) + 2 < tam)
-        snprintf(saida, tam, "%.*s/full/%s", (int)(m - fan), fan, m + 8);
-      else snprintf(saida, tam, "%s", fan); }
-  } else return -1;
-  printf("[tex] fundo %s de %s: %.90s\n", fonte, id, saida);
-  fflush(stdout);
+  tmdb = !strcmp(fonte, "tmdb");
+  if (tmdb) { if (strcmp(tamanho, "w1280") && strcmp(tamanho, "original")) return -1; }
+  else if (!strcmp(fonte, "trakt")) { if (strcmp(tamanho, "medium") && strcmp(tamanho, "full")) return -1; }
+  else return -1;
+  snprintf(chave, sizeof chave, "%s/%s", fonte, id);
+  r = arfLer(chave, valor, sizeof valor);
+  if (r < 0) return -1;
+  if (r == 0) {
+    r = arfConsultar(fonte, id, valor, sizeof valor);
+    if (r == -2) return -1;
+    arfGravar(chave, r > 0 ? valor : NULL);
+    if (r < 0) return -1;
+    printf("[tex] fundo %s de %s: %.90s\n", fonte, id, valor);
+    fflush(stdout);
+  }
+  if (tmdb) snprintf(saida, tam, "https://image.tmdb.org/t/p/%s%s", tamanho, valor);
+  else {
+    char *m = strstr(valor, "/medium/");
+    if (m && !strcmp(tamanho, "full") && strlen(valor) + 2 < tam)
+      snprintf(saida, tam, "%.*s/full/%s", (int)(m - valor), valor, m + 8);
+    else snprintf(saida, tam, "%s", valor);
+  }
   return 1;
 }

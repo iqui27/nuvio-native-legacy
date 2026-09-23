@@ -1035,6 +1035,16 @@ int   ajustes_trailer_qualidade(void) { static const int t[] = { 0, 1080, 720, 4
 int   ajustes_trailer_fonte(void)     { int v = valor[AJ_TRAILER_FONTE]; return (v >= 0 && v < 4) ? v : 0; }
 int  ajustes_envio_auto(void)         { return lig(AJ_ENVIO_AUTO); }
 void ajustes_definir_envio_auto(int ligado) { valor[AJ_ENVIO_AUTO] = ligado ? 0 : 1; gravar(); }
+// ARTE DO DESTAQUE ESCOLHIDA PELO DIAGNOSTICO, e so depois de a pessoa ver a
+// proposta na tela e apertar OK no botao (diagnostico.c): nunca sozinho. Os
+// dois ajustes sao locais (ver somenteDesteAparelho), entao nao ha blob de conta para
+// avisar. `fonte` e o indice ARTEHERO_* de V_HERO_FONTE; fora da faixa fica.
+void ajustes_definir_destaque(int fonte, int diferente) {
+  if (fonte >= 0 && fonte < (int)(sizeof V_HERO_FONTE / sizeof *V_HERO_FONTE))
+    valor[AJ_HERO_FUNDO] = fonte;
+  valor[AJ_HERO_ARTE_DIF] = diferente ? 0 : 1;
+  gravar();
+}
 int ajustes_notas_home(void)          { return valor[AJ_NOTAS_HOME] == 0; }
 int ajustes_local_descobrir(void)     { return valor[AJ_DESCOBRIR]; }
 int ajustes_descobrir_na_busca(void)  { return valor[AJ_DESCOBRIR] == 0; }
@@ -3816,7 +3826,12 @@ void ajustes_desenhar(Uint32 agora) {
 
   int sec = secaoAtual();
   char pos[120];
-  snprintf(pos, sizeof pos, i18n("%s  ·  %d de %d"), i18n(SECOES[sec].titulo),
+  // "Reproducao · 1 de 7" era a OPCAO dentro da categoria, e foi lido como
+  // "categoria 1 de 7" quando as categorias ja eram 8 (dono, 22/09, com a
+  // Diagnostico nova). A contagem estava certa; a frase e que nao dizia de
+  // que. Agora diz as duas, e o 8 sai de AJ_N_SECOES, nunca escrito a mao.
+  snprintf(pos, sizeof pos, i18n("Categoria %d de %d · %s · opção %d de %d"),
+           sec + 1, AJ_N_SECOES, i18n(SECOES[sec].titulo),
            focoOp - SECOES[sec].ini + 1, secN(sec));
   // AO LADO DO TITULO, e nao abaixo dele. Abaixo, esta linha caia exatamente
   // sobre o topo da primeira categoria — texto por cima de texto, visivel na

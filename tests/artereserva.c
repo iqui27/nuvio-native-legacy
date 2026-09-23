@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 
 static const char *chave = "CHAVE";
 static const char *resposta = NULL;      // resposta do /find
@@ -32,6 +33,7 @@ char *rede_baixar(const char *url, int segundos) {
 static const char *respostaTrakt = NULL;
 static int temChaveTrakt = 1;
 static char ultimaUrlTrakt[300];
+static int pedidosTrakt;
 int trakt_cabecalhos_publicos(const char **cab, char *k, size_t nK) {
   if (!temChaveTrakt) return 0;
   snprintf(k, nK, "trakt-api-key: X");
@@ -40,12 +42,26 @@ int trakt_cabecalhos_publicos(const char **cab, char *k, size_t nK) {
 }
 char *rede_baixar_com(const char *url, int segundos, const char *const *cab) {
   (void)segundos; (void)cab;
+  pedidosTrakt++;
   snprintf(ultimaUrlTrakt, sizeof ultimaUrlTrakt, "%s", url);
   return respostaTrakt ? strdup(respostaTrakt) : NULL;
 }
 
 static int falhas = 0;
 #define OK(cond, msg) do { if (!(cond)) { printf("FALHOU: %s\n", msg); falhas++; } } while (0)
+
+static unsigned long long agoraFalso;
+static unsigned long long relogioFalso(void) { return agoraFalso; }
+
+static void *resolverEmFio(void *arg) {
+  char s[400], url[96];
+  int i, *erros = arg;
+  for (i = 0; i < 2000; i++) {
+    snprintf(url, sizeof url, "https://nuvio.invalid/arte/tmdb/w1280/tt%07d", i % 300);
+    if (arte_fonte_resolver(url, s, sizeof s) != 1 || strncmp(s, "https://image.tmdb.org/t/p/w1280/", 33)) (*erros)++;
+  }
+  return NULL;
+}
 
 static unsigned fixture_slot(const char *s) {
   unsigned h = 2166136261u;
@@ -180,9 +196,73 @@ int main(void) {
   respostaTrakt = "[{\"type\":\"movie\",\"movie\":{\"images\":{\"fanart\":[]}}}]";
   OK(arte_fonte_resolver("https://nuvio.invalid/arte/trakt/medium/tt1", s, sizeof s) == -1, "fanart vazio falha");
   temChaveTrakt = 0; respostaTrakt = NULL;
+  arte_fonte_cache_limpar();
   OK(arte_fonte_resolver("https://nuvio.invalid/arte/trakt/medium/tt0111161", s, sizeof s) == -1, "sem chave do Trakt falha");
   chave = "";
   OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt0111161", s, sizeof s) == -1, "sem chave do TMDB falha");
+  // MEMORIA DO RESOLVEDOR (resolve_ms de 408-640 ms na C9): a segunda
+  // pergunta pelo mesmo titulo e fonte nao vai a rede — nem em outro tamanho.
+  arte_fonte_cache_limpar();
+  arte_fonte_cache_relogio(relogioFalso);
+  agoraFalso = 1000;
+  chave = "CHAVE"; temChaveTrakt = 1;
+  resposta = "{\"movie_results\":[{\"id\":278,\"backdrop_path\":\"/fundo.jpg\"}],\"tv_results\":[]}";
+  pedidos = 0;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt0111161", s, sizeof s) == 1 && pedidos == 1, "memoria: primeira vai a rede");
+  resposta = NULL;   // rede "caiu": so a memoria pode responder
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt0111161", s, sizeof s) == 1 &&
+     !strcmp(s, "https://image.tmdb.org/t/p/w1280/fundo.jpg") && pedidos == 1, "memoria: repeticao sem rede");
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/original/tt0111161", s, sizeof s) == 1 &&
+     !strcmp(s, "https://image.tmdb.org/t/p/original/fundo.jpg") && pedidos == 1, "memoria: outro tamanho, mesma consulta");
+  respostaTrakt = "[{\"movie\":{\"images\":{\"fanart\":[\"media.trakt.tv/f/medium/a.jpg.webp\"]}}}]";
+  pedidosTrakt = 0;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/trakt/medium/tt0111161", s, sizeof s) == 1 && pedidosTrakt == 1, "memoria: fonte e parte da chave");
+  respostaTrakt = NULL;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/trakt/full/tt0111161", s, sizeof s) == 1 &&
+     !strcmp(s, "https://media.trakt.tv/f/full/a.jpg.webp") && pedidosTrakt == 1, "memoria: Trakt full sai da medium guardada");
+  // Negativa: a API respondeu sem fundo -> vale 5 min, depois pergunta de novo.
+  resposta = "{\"movie_results\":[],\"tv_results\":[]}";
+  pedidos = 0;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt7777777", s, sizeof s) == -1 && pedidos == 1, "negativa: primeira pergunta");
+  agoraFalso += 4 * 60 * 1000;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt7777777", s, sizeof s) == -1 && pedidos == 1, "negativa: em vigor nao pede");
+  agoraFalso += 2 * 60 * 1000;
+  resposta = "{\"movie_results\":[{\"backdrop_path\":\"/novo.jpg\"}],\"tv_results\":[]}";
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt7777777", s, sizeof s) == 1 &&
+     !strcmp(s, "https://image.tmdb.org/t/p/w1280/novo.jpg") && pedidos == 2, "negativa: vencida pergunta de novo");
+  // Falha de rede e falta de chave NAO viram negativa.
+  resposta = NULL; pedidos = 0;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt6666666", s, sizeof s) == -1 && pedidos == 1, "rede falhou");
+  resposta = "{\"movie_results\":[{\"backdrop_path\":\"/volta.jpg\"}],\"tv_results\":[]}";
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt6666666", s, sizeof s) == 1 && pedidos == 2, "rede falha nao fica guardada");
+  chave = ""; pedidos = 0;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt5555555", s, sizeof s) == -1 && pedidos == 0, "sem chave nao pede");
+  chave = "CHAVE";
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt5555555", s, sizeof s) == 1 && pedidos == 1, "sem chave nao fica guardado");
+  // Limite: 192 celulas, sai a usada ha mais tempo. tt0111161 e tocado no
+  // meio e sobrevive; tt6666666 (o mais antigo intocado) sai.
+  { int i;
+    char url[96];
+    for (i = 0; i < 300; i++) {
+      snprintf(url, sizeof url, "https://nuvio.invalid/arte/tmdb/w1280/tt%07d", 1000000 + i);
+      arte_fonte_resolver(url, s, sizeof s);
+      if (i % 50 == 0) arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt0111161", s, sizeof s);
+    }
+    resposta = NULL; pedidos = 0;
+    OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt0111161", s, sizeof s) == 1 && pedidos == 0, "LRU guarda o usado");
+    OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt6666666", s, sizeof s) == -1 && pedidos == 1, "LRU tira o antigo");
+    OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt1000299", s, sizeof s) == 1 && pedidos == 1, "LRU guarda o recente");
+  }
+  // Varios fios ao mesmo tempo (os dois de rede do tex_cache): sem corrida.
+  { pthread_t f[4];
+    int erros = 0, i;
+    resposta = "{\"movie_results\":[{\"backdrop_path\":\"/f.jpg\"}],\"tv_results\":[]}";
+    arte_fonte_cache_limpar();
+    for (i = 0; i < 4; i++) pthread_create(&f[i], NULL, resolverEmFio, &erros);
+    for (i = 0; i < 4; i++) pthread_join(f[i], NULL);
+    OK(erros == 0, "fios concorrentes resolvem certo");
+  }
+  arte_fonte_cache_relogio(NULL);
   printf("%s\n", falhas ? "artereserva: FALHOU" : "artereserva: ok");
   return falhas ? 1 : 0;
 }

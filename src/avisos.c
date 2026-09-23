@@ -312,6 +312,9 @@ static int extrairRegistroId(const char *json, char *dst, unsigned tam) {
          (unsigned char)*q > 0x20) q++;
   n = (size_t)(q - p);
   if (!n || n >= tam) return 0;
+  // `"registro_id": null` NAO e recibo: e o Worker dizendo que nao gravou. Sem
+  // isto o "null" era copiado como id e o diagnostico mostrava "enviado".
+  if (n == 4 && !strncmp(p, "null", 4)) return 0;
   memcpy(dst, p, n);
   dst[n] = 0;
   return 1;
