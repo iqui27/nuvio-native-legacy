@@ -13,6 +13,7 @@
 #include "visto.h"
 #include <stdio.h>
 #include <string.h>
+#include "ponteiro.h"
 
 #define EP_W 720.0f
 #define EP_ROW 172.0f
@@ -253,6 +254,11 @@ int episodios_escolheu(int *t, int *e) {
 // COLUNA dela (centrar em NV_TELA_W poria o menu sobre o vazio da esquerda,
 // longe do episodio a que se refere); aberto sobre a pagina de detalhe, a
 // caixa e a tela inteira. A altura sai do numero de opcoes, que muda com isso.
+// PONTEIRO (#99) no menu de visto: opcao sob o cursor ganha o foco (vmFoco,
+// o mesmo de cima/baixo), clique e o OK, clique fora fecha o menu.
+static void ponteiroVmOpcao(int i, int b) { (void)b; if (i >= 0 && i < vmOpcoes()) vmFoco = i; }
+static void ponteiroVmFora(int a, int b) { (void)a; (void)b; vmAberto = 0; }
+
 static void menuDesenhar(float x, float larg, float anim) {
   if (!vmAberto) return;
   {
@@ -288,6 +294,11 @@ static void menuDesenhar(float x, float larg, float anim) {
          + PAD;     // rodape
     if (vmFeito) mh = optTop + 60.0f + PAD;   // so o check e a frase
     { GfxRect m={x+(larg-mw)*.5f,(NV_TELA_H-mh)*.5f,mw,mh};
+    if (ponteiro_ativo() && anim > .5f) {
+      ponteiro_camada();
+      if (!vmFeito) ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ponteiroVmFora, 0, 0);
+      ponteiro_alvo(m.x, m.y, m.w, m.h, NULL, NULL, 0, 0);
+    }
     // Veu proprio: a lista atras tem texto pequeno em tres colunas.
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,.72f*anim);
     gfx_cor(m,.05f,.052f,.055f,.068f,.99f*anim);
@@ -340,6 +351,7 @@ static void menuDesenhar(float x, float larg, float anim) {
     for(i=0;i<vmOpcoes();i++) {
       GfxRect r={m.x+24,m.y+optTop+(float)i*OPT_PASSO,mw-48,OPT_H};
       float f=(i==vmFoco)?1.0f:0.0f;
+      if (anim > .5f) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroVmOpcao, NULL, i, 0);
       int c=f>.5f?focoTxt:240;
       float ic=f>.5f?0.10f:0.88f;      // o icone acompanha o texto
       const char *nomeIcone;
@@ -599,6 +611,22 @@ void episodios_atualizar(float dt) {
   scroll = semMolaScroll ? alvo : anim_mola(scroll, alvo, dt, NV_MOLA_SCROLL);
   semMolaScroll = 0;
 }
+// PONTEIRO (#99) na folha: linha e "Fechar" focam como as setas; a aba de
+// temporada troca so no CLIQUE (trocar ao passar por cima recarregaria a lista
+// debaixo da mao). Clicar fora do painel fecha.
+static void ponteiroEpLinha(int i, int b) { (void)b; if (i >= 0 && i < nLinhas()) { grupo = 1; foco = i; } }
+static void ponteiroEpFechar(int a, int b) { (void)a; (void)b; grupo = -1; }
+static void ponteiroEpFora(int a, int b) { (void)a; (void)b; aberto = 0; }
+static void ponteiroEpTemporada(int i, int b) {
+  (void)b;
+  if (i < 0 || i >= nTemporadas()) return;
+  grupo = 0;
+  if (i == temporada) return;
+  temporada = i; foco = 0; scroll = 0;
+  localizarAtual = 0; semMolaScroll = 1;
+  desc_episodios(titulo, numTemporada(temporada));
+}
+
 void episodios_desenhar(void) {
   if (anim < .005f) return;
   float x = NV_TELA_W - EP_W + (1 - anim) * EP_W;
@@ -610,6 +638,12 @@ void episodios_desenhar(void) {
   // A hierarquia vem de tipografia e superfícies, nao de um halo no topo:
   // a luz colorida lavava o fundo e competia com a temporada e a linha focadas.
   txt_desenhar_alpha(txt_linha(TXT_PAINEL_TITULO,"Episódios",240,241,243,255),x+40,44,anim);
+  int ptr = aberto && anim > .5f && !vmAberto && ponteiro_ativo();
+  if (ptr) {
+    ponteiro_alvo(0, 0, x, NV_TELA_H, NULL, ponteiroEpFora, 0, 0);
+    ponteiro_alvo(x, 0, EP_W, NV_TELA_H, NULL, NULL, 0, 0);
+    ponteiro_alvo(x+EP_W-146, 44, 110, 50, ponteiroEpFechar, NULL, 0, 0);
+  }
   { int cor=grupo==-1?focoTxt:190;
     // Acao ghost: sem caixa permanente, a superficie aparece apenas quando
     // recebe foco, com o mesmo tom contido usado pela selecao da temporada.
@@ -624,6 +658,7 @@ void episodios_desenhar(void) {
   for (int i = primeira; i < nTemporadas() && i < primeira+3; i++) {
     float tx = x+40+(i-primeira)*212;
     int sel = i == temporada;
+    if (ptr) ponteiro_alvo(tx, 120, 196, 64, NULL, ponteiroEpTemporada, i, 0);
     int br=sel?focoTxt:210, bg=sel?focoTxt:210, bb=sel?focoTxt:210;
     // A temporada e uma tab, nao um botao preenchido: o acento no texto e o
     // traço curto mostram a selecao sem competir com as miniaturas da lista.
@@ -646,6 +681,11 @@ void episodios_desenhar(void) {
     int sel=grupo==1 && i==foco;
     GfxRect row={x+40,y,EP_W-80,EP_ROW-14};
     GfxRect r=row;
+    if (ptr) {
+      float t = y < EP_TOP ? EP_TOP : y;
+      float b = y + row.h > NV_TELA_H - 32 ? NV_TELA_H - 32 : y + row.h;
+      if (b > t) ponteiro_alvo(row.x, t, row.w, b - t, ponteiroEpLinha, NULL, i, 0);
+    }
     // Cada episodio recebe uma base escura, quase fundida ao painel; o foco
     // sobe para ameixa. A diferenca curta preserva o ritmo dos cartoes sem
     // empilhar bordas nem deixar o acento rosa dominar a folha.
