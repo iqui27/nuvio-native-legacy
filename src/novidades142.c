@@ -1,5 +1,11 @@
 // Cartao de NOVIDADES DA 1.4.2.
 //
+// NA BUILD TIZEN 4 (NV_COOP, tools/tizen.sh --tizen4) ESTE MESMO CARTAO VIRA O
+// DA BUILD EXPERIMENTAL: o que ela e, e o que ela NAO faz. Mesmo modulo de
+// proposito — toda a fila de cartoes de app.c ja espera por novidades142_*,
+// e um cartao a mais ali seria mais uma guarda em cada condicao. Magic Remote e
+// diagnostico (os destaques da 1.4.2) nao sao o assunto numa TV de 2018.
+//
 // Mesmo painel e mesma gramatica do cartao da 1.4 (novidades1312.c): coluna
 // da esquerda com titulo e uma ilustracao nativa, coluna da direita com os
 // destaques. A diferenca e o rodape: em vez de um "Continuar" solitario, um
@@ -31,7 +37,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef NV_COOP
+#define N142_ARQ        "novidades-tizen4.txt"
+#else
 #define N142_ARQ        "novidades-142.txt"
+#endif
 #define N142_ARQ_14     "novidades-14-celebracao.txt"   // o de novidades1312.c
 #define N142_W          1536.0f
 #define N142_H           840.0f
@@ -107,6 +117,14 @@ void novidades142_evento(const SDL_Event *e) {
   SDL_Keycode k;
   if (!aberto || e->type != SDL_KEYDOWN) return;
   k = e->key.keysym.sym;
+#ifdef NV_COOP
+  // Um botao so ("Entendi"): OK e Voltar fecham, as setas nao fazem nada.
+  if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE ||
+      k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
+      k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK)
+    fechar(0);
+  return;
+#endif
   if (k == SDLK_LEFT) { foco = B_DEPOIS; return; }
   if (k == SDLK_RIGHT) { foco = B_DIAGNOSTICO; return; }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
@@ -247,8 +265,72 @@ static void desenhaFigura(float x, float y, float w, float h, float a, float t) 
          sy + NOS[2][1] + 26.0f + cosf(t * 1.3f) * 3.0f, 30.0f, a);
 }
 
+#ifdef NV_COOP
+// A ILUSTRACAO DA BUILD TIZEN 4: a mesma TV, e dentro dela UMA faixa so, com
+// tarefas passando uma de cada vez — e o que muda de verdade nesta build (os
+// fios viram fila). O bloco da frente acende com o acento enquanto os outros
+// esperam.
+static void desenhaFiguraT4(float x, float y, float w, float h, float a, float t) {
+  float ar, ag, ab;
+  float cx = x + w * 0.5f;
+  float cy = y + h * 0.52f + sinf(t * 1.4f) * 3.0f;
+  float sx = cx - 6.0f, sy = cy - 10.0f;
+  float passo = fmodf(t / 6.2831853f * 4.0f, 1.0f);   // 0..1, quatro vezes por volta
+  int i;
+  ajustes_acento(&ar, &ag, &ab);
+
+  gfx_cor((GfxRect){ x, y, w, h }, 28.0f / h, 0.035f, 0.055f, 0.105f, a);
+  gfx_rect((GfxRect){ cx - 200.0f, cy - 200.0f, 400.0f, 400.0f },
+           0, GFX_DISCO, 0, 0, 0, 0, ar, ag, ab, 0.075f * a);
+  gfx_cor((GfxRect){ cx - 5.0f, cy - 128.0f, 10.0f, 30.0f }, 0.5f,
+          PALETA[1][0], PALETA[1][1], PALETA[1][2], a);
+  gfx_cor((GfxRect){ cx - 28.0f, cy - 136.0f, 56.0f, 9.0f }, 0.5f,
+          PALETA[1][0], PALETA[1][1], PALETA[1][2], a);
+  gfx_cor((GfxRect){ cx - 158.0f, cy - 106.0f, 316.0f, 196.0f }, 0.10f,
+          PALETA[0][0], PALETA[0][1], PALETA[0][2], a);
+  gfx_cor((GfxRect){ cx - 144.0f, cy - 92.0f, 288.0f, 168.0f }, 0.075f,
+          0.030f, 0.034f, 0.070f, a);
+
+  // A faixa unica e as tarefas nela. A da frente anda ate a saida; as outras
+  // avancam uma posicao quando ela sai.
+  gfx_cor((GfxRect){ sx - 118.0f, sy + 4.0f, 236.0f, 6.0f }, 0.5f, 1, 1, 1, 0.14f * a);
+  for (i = 0; i < 4; i++) {
+    float px = sx - 110.0f + ((float)i - passo) * 58.0f;
+    float al = i == 0 ? (1.0f - passo) : 1.0f;
+    if (px < sx - 118.0f) continue;
+    gfx_cor((GfxRect){ px, sy - 14.0f, 42.0f, 42.0f }, 8.0f / 42.0f,
+            i == 0 ? ar : PALETA[(i + 1) & 3][0], i == 0 ? ag : PALETA[(i + 1) & 3][1],
+            i == 0 ? ab : PALETA[(i + 1) & 3][2], (i == 0 ? 1.0f : 0.55f) * al * a);
+  }
+  { TxtLinha l = txt_linha(TXT_CAPTION2, "2018", 190, 198, 214, 255);
+    txt_desenhar_alpha(l, sx - 118.0f, sy - 70.0f, 0.9f * a); }
+
+  gfx_cor((GfxRect){ cx - 110.0f, cy + 98.0f, 44.0f, 20.0f }, 0.22f,
+          PALETA[3][0], PALETA[3][1], PALETA[3][2], a);
+  gfx_cor((GfxRect){ cx + 66.0f, cy + 98.0f, 44.0f, 20.0f }, 0.22f,
+          PALETA[3][0], PALETA[3][1], PALETA[3][2], a);
+}
+#endif
+
 typedef struct { const char *titulo, *descricao; } N142Destaque;
 
+#ifdef NV_COOP
+// AS LIMITACOES DA BUILD TIZEN 4, cada uma com a causa medida ou conhecida.
+// Nao e texto de marketing: se uma delas deixar de valer (TV 2018 medida,
+// otimizacao feita), a linha sai daqui. Detalhes em docs/tizen4.md.
+static const N142Destaque DESTAQUES[] = {
+  { "Mais lento que o app normal",
+    "Sem WebAssembly nesta TV, o app roda em JavaScript: abrir e montar a home demora mais." },
+  { "Uma tarefa de cada vez",
+    "Não há trabalho em paralelo: carregar catálogos pode segurar a tela por alguns instantes." },
+  { "Artes chegam aos poucos",
+    "Pôsteres são preparados no mesmo fio da tela; a rolagem pode engasgar enquanto chegam." },
+  { "Modo leve sempre ligado",
+    "Sem recomendações, canal de avisos, sincronização periódica e GIF no foco." },
+  { "Vídeo e legendas mais simples",
+    "Sem recorte de vídeo nesta TV; legendas ASS de anime podem pesar." }
+};
+#else
 static const N142Destaque DESTAQUES[] = {
   { "Cursor do Magic Remote",
     "Aponte e clique pelas telas com o controle da LG." },
@@ -261,12 +343,46 @@ static const N142Destaque DESTAQUES[] = {
   { "Diagnóstico e otimização automática",
     "O app mede esta TV e se ajusta a ela." }
 };
+#endif
 
 // Um desenho pequeno por destaque, no disco de realce a 18 % da 1.4.
 static void miniGrafico(float x, float y, int tipo, float ar, float ag, float ab, float a) {
   float xr = 0.93f, xg = 0.95f, xb = 0.99f;
   gfx_rect((GfxRect){ x, y, N142_ICON, N142_ICON }, 0, GFX_DISCO, 0, 0, 0, 0,
            ar, ag, ab, 0.18f * a);
+#ifdef NV_COOP
+  switch (tipo) {
+    case 0:  // ampulheta: mais lento
+      linha(x + 15, y + 12, x + 35, y + 12, 2.0f, 2.0f, xr, xg, xb, a);
+      linha(x + 15, y + 38, x + 35, y + 38, 2.0f, 2.0f, xr, xg, xb, a);
+      linha(x + 16, y + 13, x + 34, y + 37, 1.6f, 2.0f, xr, xg, xb, 0.7f * a);
+      linha(x + 34, y + 13, x + 16, y + 37, 1.6f, 2.0f, xr, xg, xb, 0.7f * a);
+      gfx_cor((GfxRect){ x + 21, y + 31, 8, 5 }, 0.4f, PALETA[1][0], PALETA[1][1], PALETA[1][2], a);
+      break;
+    case 1:  // uma faixa so, tres blocos em fila
+      gfx_cor((GfxRect){ x + 8, y + 23, 34, 4 }, 0.5f, xr, xg, xb, 0.30f * a);
+      gfx_cor((GfxRect){ x + 9, y + 19, 9, 12 }, 0.25f, ar, ag, ab, a);
+      gfx_cor((GfxRect){ x + 21, y + 19, 9, 12 }, 0.25f, xr, xg, xb, 0.45f * a);
+      gfx_cor((GfxRect){ x + 33, y + 19, 9, 12 }, 0.25f, xr, xg, xb, 0.25f * a);
+      break;
+    case 2:  // cartaz pela metade
+      gfx_cor((GfxRect){ x + 15, y + 10, 20, 30 }, 3.0f / 30.0f, xr, xg, xb, 0.18f * a);
+      gfx_cor((GfxRect){ x + 15, y + 10, 20, 17 }, 3.0f / 17.0f, PALETA[3][0], PALETA[3][1], PALETA[3][2], a);
+      break;
+    case 3:  // pena: modo leve
+      linha(x + 14, y + 38, x + 36, y + 12, 1.8f, 2.0f, xr, xg, xb, a);
+      linha(x + 22, y + 29, x + 30, y + 29, 1.6f, 2.0f, xr, xg, xb, 0.7f * a);
+      linha(x + 26, y + 24, x + 34, y + 23, 1.6f, 2.0f, xr, xg, xb, 0.7f * a);
+      linha(x + 30, y + 19, x + 36, y + 17, 1.6f, 2.0f, xr, xg, xb, 0.7f * a);
+      break;
+    default: // tela com duas linhas de legenda
+      gfx_cor((GfxRect){ x + 9, y + 12, 32, 24 }, 3.0f / 24.0f, xr, xg, xb, 0.22f * a);
+      gfx_cor((GfxRect){ x + 14, y + 27, 22, 3 }, 0.5f, xr, xg, xb, a);
+      gfx_cor((GfxRect){ x + 17, y + 32, 16, 3 }, 0.5f, PALETA[1][0], PALETA[1][1], PALETA[1][2], a);
+      break;
+  }
+  return;
+#endif
   switch (tipo) {
     case 0:  // cursor sobre um alvo
       gfx_cor((GfxRect){ x + 10, y + 12, 22, 16 }, 4.0f / 16.0f, ar, ag, ab, 0.45f * a);
@@ -335,6 +451,17 @@ void novidades142_desenhar(Uint32 agora) {
   gfx_recorte(N142_X, N142_Y + dy, N142_W, N142_H);
 
   { float fx = N142_X + N142_PAD;
+#ifdef NV_COOP
+    { TxtLinha t = txt_linha(TXT_CAPTION2, i18n("BUILD EXPERIMENTAL · TIZEN 4"), 155, 166, 185, 255);
+      txt_desenhar_alpha(t, fx, N142_Y + dy + 56.0f, a * 0.92f); }
+    txt_bloco(TXT_TITULO2, i18n("Nuvio para TVs de 2018"), 248, 249, 252,
+              fx, N142_Y + dy + 88.0f, N142_FIG_W, 58.0f, a, 2);
+    txt_bloco(TXT_BODY,
+              i18n("Feita para o navegador das Samsung de 2018, que não roda a versão normal. Funciona, com estes limites."),
+              205, 213, 226, fx, N142_Y + dy + 166.0f, N142_FIG_W, 34.0f, a * 0.98f, 3);
+    desenhaFiguraT4(fx, N142_Y + dy + 290.0f, N142_FIG_W, N142_H - 290.0f - N142_PAD,
+                    a, fase);
+#else
     { TxtLinha t = txt_linha(TXT_CAPTION2, i18n("NOVO NA 1.4.2"), 155, 166, 185, 255);
       txt_desenhar_alpha(t, fx, N142_Y + dy + 56.0f, a * 0.92f); }
     txt_bloco(TXT_TITULO2, i18n("O que há de novo"), 248, 249, 252,
@@ -343,7 +470,9 @@ void novidades142_desenhar(Uint32 agora) {
               i18n("Uma versão para apontar, explorar e deixar o app sob medida para a sua TV."),
               205, 213, 226, fx, N142_Y + dy + 166.0f, N142_FIG_W, 34.0f, a * 0.98f, 3);
     desenhaFigura(fx, N142_Y + dy + 290.0f, N142_FIG_W, N142_H - 290.0f - N142_PAD,
-                  a, fase); }
+                  a, fase);
+#endif
+  }
 
   { int i;
     float y0 = N142_Y + dy + 58.0f;
@@ -353,6 +482,23 @@ void novidades142_desenhar(Uint32 agora) {
   // O RODAPE: um filete, a frase do diagnostico e os dois botoes da tabela
   // (botoes.h) alinhados pela base, o primario a direita e com o foco ao
   // abrir — OK sozinho ja roda o diagnostico.
+#ifdef NV_COOP
+  // Rodape da build Tizen 4: o aviso que mais importa (ninguem mediu ainda numa
+  // TV de 2018) e como mandar o que der errado. Um botao so.
+  { float yBase = N142_Y + dy + N142_H - N142_PAD;
+    float yFilete = N142_Y + dy + 58.0f + 5.0f * N142_FEAT_H + 14.0f;
+    const char *rotP = i18n("Entendi");
+    float wP = botao_largura(rotP, NULL, 1);
+    GfxRect bP = { N142_X + N142_W - N142_PAD - wP, yBase - BOTAO_H_PRIMARIO,
+                   wP, BOTAO_H_PRIMARIO };
+    gfx_cor((GfxRect){ N142_TXT_X, yFilete, N142_TXT_W, 1.5f }, 0.0f,
+            1.0f, 1.0f, 1.0f, 0.08f * a);
+    txt_bloco(TXT_BODY,
+              i18n("Ainda não foi testada numa TV de 2018 de verdade. Se algo travar, aperte o botão vermelho do controle e mande a foto do registro no GitHub."),
+              214, 219, 230, N142_TXT_X, yFilete + 26.0f, N142_TXT_W, 34.0f, a * 0.98f, 3);
+    botao_pilula(bP, rotP, NULL, 1.0f, 1, 0, a);
+    if (aberto) ponteiro_alvo(bP.x, bP.y, bP.w, bP.h, ponteiroFoco, NULL, B_DIAGNOSTICO, 0); }
+#else
   { float yBase = N142_Y + dy + N142_H - N142_PAD;   // base dos botoes
     float yFilete = N142_Y + dy + 58.0f + 5.0f * N142_FEAT_H + 14.0f;
     const char *rotP = i18n("Rodar o diagnóstico");
@@ -373,5 +519,6 @@ void novidades142_desenhar(Uint32 agora) {
       ponteiro_alvo(bS.x, bS.y, bS.w, bS.h, ponteiroFoco, NULL, B_DEPOIS, 0);
       ponteiro_alvo(bP.x, bP.y, bP.w, bP.h, ponteiroFoco, NULL, B_DIAGNOSTICO, 0);
     } }
+#endif
   gfx_sem_recorte();
 }
