@@ -168,6 +168,24 @@ void tex_threads_info(int *usadas, int *disponiveis);
 // Teto escolhido em Ajustes, em MB, aplicado ao vivo e travado pelo que a RAM
 // da TV suporta; 0 volta ao automatico. `fixo` passa a 3 quando esta em vigor.
 void tex_definir_orcamento_mb(int mb);
+// O valor que "Automatico" significa: o perfil aprovado pelo diagnostico, ou
+// o padrao do aparelho com 0. Travado pelo teto da RAM; nao passa por cima de
+// Ajustes, de NV_TEX_MB_FIXO nem de NUVIO_TEX_MB.
+void tex_definir_orcamento_auto_mb(int mb);
+// PARAMETROS DO PERFIL QUE MUDAM AO VIVO, sem reiniciar (ver perfiltv.h):
+// quantos fios de rede de arte ficam ativos (1..criados; o excedente espera)
+// e o teto de decodificacao do heroi (0 = so a regra de qualidade). O teto do
+// heroi vale para o que for decodificado daqui em diante.
+void tex_definir_fios_rede(int n);
+int  tex_fios_rede(void);
+void tex_definir_teto_heroi(int larg);
+// Efetivo (perfil e qualidade juntos) e so o do perfil (0 = sem teto proprio).
+int  tex_teto_heroi(void);
+int  tex_teto_heroi_perfil(void);
+// Esquece uma arte PRONTA (ou falhada) para ela ser pedida de novo do zero —
+// o reteste do diagnostico mede o decode com o perfil novo. Arte em voo nao e
+// tocada. Devolve 1 se esqueceu. So da thread de desenho.
+int  tex_esquecer(const char *caminho);
 // Ocupacao em bytes, uma amostra por segundo, do mais antigo ao mais novo.
 // Devolve quantas escreveu (ate `max`, no maximo 120).
 int  tex_historico(long *saida, int max);

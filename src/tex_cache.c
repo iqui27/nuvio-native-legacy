@@ -28,6 +28,8 @@ extern void NV_TEX_TEST_AFTER_POP(void);
 #include "webp.h"
 #include "jpegrapido.h"
 #include "artereserva.h"
+#include "perfiltv.h"
+#include <stdint.h>
 #include "cachearte.h"
 #include <string.h>
 #include <stdlib.h>
@@ -161,6 +163,20 @@ typedef struct {
 #endif
 static SDL_Thread *thrs[NV_TEX_FIOS];
 static SDL_Thread *thrsRede[NV_TEX_FIOS_REDE];
+// FIOS DE REDE ATIVOS, ajustaveis em execucao (tex_definir_fios_rede). Os
+// NV_TEX_FIOS_REDE sao criados no arranque e o excedente ESPERA na condicao:
+// criar e destruir fio ao vivo exigiria juntar um fio que pode estar no meio
+// de um download de 6 s. Parado na condicao ele custa zero de CPU. O numero
+// inicial sai de ptv_padrao (perfiltv.c): 2 na LG de 1 GB, o maximo nas outras.
+static int fiosRedeAtivos = NV_TEX_FIOS_REDE;
+static int fiosRedeCriados = 0;
+static SDL_cond *cond;
+// Com fios parados na condicao, um Signal pode acordar justamente um deles, que
+// volta a dormir e o pedido fica na fila sem ninguem. Broadcast so nesse caso.
+static void acordarRede(void) {
+  if (fiosRedeAtivos < fiosRedeCriados) SDL_CondBroadcast(cond);
+  else SDL_CondSignal(cond);
+}
 static Item itens[MAX_ITENS_ABS];
 // Bytes baixados que ainda nao foram consumidos (Tizen). No LG e vazio.
 static void soltarBruto(Item *it) {
@@ -174,7 +190,6 @@ static int nMax = 64;
 static unsigned long relogio = 1;
 
 static SDL_mutex *mtx;
-static SDL_cond  *cond;
 static SDL_Thread *thr;
 static int rodando = 0;
 
@@ -613,7 +628,14 @@ static int slotLivre(void) {
 // quadros) ate a vez dele. Com o hero anterior do crossfade e o quadro que
 // acabou de sair, sao tres frios legitimos ao mesmo tempo.
 #define NV_TEX_PASSAGEIROS_FRIOS 3
-static int ehHero(const Item *it) { return it->limite >= NV_TEX_HERO_LARG_MAX; }
+// Heroi e quem foi pedido no teto de tela cheia EM VIGOR. Com o teto do perfil
+// em 1280 na LG (modo Desempenho, TV de 1 GB) um heroi tem limite 1280, e a
+// comparacao crua com 1920 o trataria como cartaz: deixaria de sair antes deles.
+static int tetoDoHeroi(void);
+static int ehHero(const Item *it) {
+  int t = tetoDoHeroi();
+  return it->limite >= (t < NV_TEX_HERO_LARG_MAX ? t : NV_TEX_HERO_LARG_MAX);
+}
 static int dePassagem(const Item *it) { return it->passageiro || ehHero(it); }
 
 static int despejar(int forcar) {
@@ -750,7 +772,16 @@ static float folgaDaQualidade(void) {
   return qualidadeImg == 0 ? 1.00f : qualidadeImg == 2 ? 1.60f : NV_TEX_FOLGA;
 }
 static long orcMemTotal;   // definido mais abaixo (orcamento pela RAM)
+// TETO DO HEROI DO PERFIL (tex_definir_teto_heroi): 0 = sem teto proprio, so a
+// regra de qualidade abaixo. E um TETO, nunca um piso: 1920 aqui nao sobe o
+// Tizen acima de 1280 sem a qualidade Alta, e a qualidade Baixa continua 1280.
+static int tetoHeroiPerfil = 0;
+static int tetoDoHeroiQualidade(void);
 static int tetoDoHeroi(void) {
+  int t = tetoDoHeroiQualidade();
+  return tetoHeroiPerfil >= 640 && tetoHeroiPerfil < t ? tetoHeroiPerfil : t;
+}
+static int tetoDoHeroiQualidade(void) {
   if (qualidadeImg == 0) return 1280;
 #ifdef __EMSCRIPTEN__
   // SAMSUNG: 1280 e o teto de fabrica (heap fixo de 256 MiB, ver a nota das
@@ -1262,14 +1293,14 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
 // decodificacao. Nao toca em pixel nenhum, entao pode rodar em prioridade
 // normal e em varios — o que ele faz e ESPERAR.
 static int threadRede(void *arg) {
-  (void)arg;
+  int meu = (int)(intptr_t)arg;
   for (;;) {
     int idx;
     char caminho[512], local[600];
     Uint32 filaEm = 0, filaWait = 0;
     int urgente = 0;
     SDL_LockMutex(mtx);
-    while (rodando && filaIni == filaFim) SDL_CondWait(cond, mtx);
+    while (rodando && (filaIni == filaFim || meu >= fiosRedeAtivos)) SDL_CondWait(cond, mtx);
     if (!rodando) { SDL_UnlockMutex(mtx); return 0; }
     idx = tirarFila(fila, &filaIni, filaFim);
     if (itens[idx].estado != PENDENTE || pedidoObsoleto(&itens[idx])) {
@@ -2000,9 +2031,7 @@ static int orcamentoMB(void) {
   //
   // O limite e o proprio valor que a regra automatica escolheria: quem passar
   // -DNV_TEX_MB_FIXO alto no alvo Tizen cai nele e o log diz por que.
-  { int aut = !mem ? NV_TEX_ORCAMENTO_MB
-            : mem <= 1024 ? 64
-            : mem <  4096 ? 96 : 128;
+  { int aut = ptv_tex_auto_mb(PTV_TIZEN, mem);
     if (mb > aut) {
       printf("[tex] NV_TEX_MB_FIXO=%d ignorado no Tizen: %d MB e o que a TV "
              "suporta (medido: teto maior decodifica mais devagar)\n", mb, aut);
@@ -2015,24 +2044,17 @@ static int orcamentoMB(void) {
   // variante promete "cache grande para TV com RAM sobrando", nao "300 em
   // qualquer TV". O teto e o mesmo que Ajustes usa (tetoPermitidoMB): 96 abaixo
   // de 1,2 GB, 160 abaixo de 2 GB, 300 abaixo de 3 GB, 512 acima.
-  { int teto = !mem ? 160 : mem < 1200 ? 96 : mem < 2000 ? 160 : mem < 3000 ? 300 : 512;
+  { int teto = ptv_tex_teto_mb(PTV_LG, mem);
     if (mb > teto) {
       printf("[tex] NV_TEX_MB_FIXO=%d acima do que %ld MB de RAM permitem: fica em %d MB\n", mb, mem, teto);
       mb = teto; porque = "NV_TEX_MB_FIXO limitado pela RAM";
     } }
 #  endif
-#elif defined(__EMSCRIPTEN__)
-  if (!mem)            { mb = NV_TEX_ORCAMENTO_MB; porque = "deviceMemory indisponivel: NV_TEX_ORCAMENTO_MB"; }
-  else if (mem <= 1024) { mb = 64;  porque = "deviceMemory <= 1 GB"; }
-  else if (mem < 4096)  { mb = 96;  porque = "deviceMemory 2 GB"; }
-  else                  { mb = 128; porque = "deviceMemory >= 4 GB"; }
 #else
-  if (!mem)          { mb = NV_TEX_ORCAMENTO_MB; porque = "MemTotal indisponivel: NV_TEX_ORCAMENTO_MB"; }
-  else if (mem < 800)  { mb = 48;  porque = "RAM < 800 MB"; }
-  else if (mem < 1200) { mb = 64;  porque = "RAM < 1,2 GB"; }
-  else if (mem < 2000) { mb = 96;  porque = "RAM < 2 GB"; }
-  else if (mem < 3000) { mb = 128; porque = "RAM < 3 GB"; }
-  else                 { mb = 192; porque = "RAM >= 3 GB"; }
+  // A escada mora em perfiltv.c (ptv_tex_auto_mb), junto dos outros padroes
+  // por aparelho; os degraus e os numeros sao os que estavam aqui.
+  mb = ptv_tex_auto_mb(ptv_plataforma(), mem);
+  porque = !mem ? "RAM desconhecida: NV_TEX_ORCAMENTO_MB" : "perfiltv.c (RAM)";
 #endif
   { const char *env = getenv("NUVIO_TEX_MB");
     if (env && *env) {
@@ -2056,16 +2078,7 @@ static int orcamentoMB(void) {
 // RAM, sem aparelho aqui — o `rss=` do relatorio de FPS e quem confirma). No
 // Tizen o teto e o proprio automatico (medido: mais e mais lento, ver acima).
 static int tetoPermitidoMB(void) {
-#ifdef __EMSCRIPTEN__
-  return orcAuto;
-#else
-  long mem = orcMemTotal;
-  if (!mem) return 160;
-  if (mem < 1200) return 96;
-  if (mem < 2000) return 160;
-  if (mem < 3000) return 300;
-  return 512;
-#endif
+  return ptv_tex_teto_mb(ptv_plataforma(), orcMemTotal);
 }
 void tex_definir_orcamento_mb(int mb) {
   int teto = tetoPermitidoMB(), aplicado;
@@ -2089,6 +2102,80 @@ void tex_definir_orcamento_mb(int mb) {
   fflush(stdout);
 }
 
+// O AUTOMATICO PASSA A SER O PERFIL APROVADO pelo diagnostico. Nao e o mesmo
+// que escolher em Ajustes: Ajustes "Automatico" volta para ESTE valor, e um
+// numero escolhido em Ajustes (orcFixo 3), cravado na build (1, alto-cache) ou
+// no ambiente (2) continua mandando — o perfil so troca o padrao por baixo.
+void tex_definir_orcamento_auto_mb(int mb) {
+  int teto = tetoPermitidoMB();
+  if (!mtx) return;
+  if (mb <= 0) mb = ptv_tex_auto_mb(ptv_plataforma(), orcMemTotal);
+  if (mb > teto) mb = teto;
+  if (mb < 16) mb = 16;
+  if (orcFixo == 1 || orcFixo == 2) {
+    printf("[tex] perfil automatico de %d MB ignorado: orcamento cravado (%s)\n",
+           mb, orcFixo == 1 ? "NV_TEX_MB_FIXO" : "NUVIO_TEX_MB");
+    return;
+  }
+  orcAuto = mb;
+  if (orcFixo == 0) tex_definir_orcamento_mb(0);
+}
+
+void tex_definir_fios_rede(int n) {
+  if (!mtx) return;
+  SDL_LockMutex(mtx);
+  if (n < 1) n = 1;
+  if (n > NV_TEX_FIOS_REDE) n = NV_TEX_FIOS_REDE;
+  fiosRedeAtivos = n;
+  // Quem estava parado e agora vale acorda e pega a fila que esperava.
+  SDL_CondBroadcast(cond);
+  SDL_UnlockMutex(mtx);
+  printf("[tex] fios de rede ativos: %d de %d\n", n, fiosRedeCriados);
+  fflush(stdout);
+}
+
+int tex_fios_rede(void) {
+  return fiosRedeAtivos < fiosRedeCriados ? fiosRedeAtivos : fiosRedeCriados;
+}
+
+void tex_definir_teto_heroi(int larg) {
+  // O teto nunca passa do que o build decodifica para tela cheia no Tizen com
+  // Alta (1920) nem desce abaixo do corte de card (640).
+  if (larg > 1920) larg = 1920;
+  tetoHeroiPerfil = larg >= 640 ? larg : 0;
+  printf("[tex] teto do heroi: %d px (perfil %d)\n", tetoDoHeroi(), tetoHeroiPerfil);
+  fflush(stdout);
+}
+
+int tex_teto_heroi(void) { return tetoDoHeroi(); }
+int tex_teto_heroi_perfil(void) { return tetoHeroiPerfil; }
+
+// Esquece UMA arte pronta: textura, bytes e o registro de falha. So da thread
+// de desenho (apaga textura GL). Arte em voo fica: o fio escreveria no slot.
+int tex_esquecer(const char *caminho) {
+  int i, ok = 0;
+  unsigned long h;
+  if (!caminho || !*caminho || !mtx) return 0;
+  h = hashCaminho(caminho);
+  BUSCA_MEDIDA(i, caminho, h);
+  if (i >= 0 && (itens[i].estado == PRONTO || itens[i].estado == FALHOU) &&
+      !itens[i].naFilaDec) {
+    if (itens[i].tex) {
+      gfx_tex_esquecer(itens[i].tex);
+      glDeleteTextures(1, &itens[i].tex);
+      bytesUsados -= bytesTextura(itens[i].w, itens[i].h);
+      if (bytesUsados < 0) bytesUsados = 0;
+    }
+    soltarBruto(&itens[i]);
+    memset(&itens[i], 0, sizeof(Item));
+    itens[i].lum = -1;
+    itens[i].corR = -1;
+    ok = 1;
+  }
+  SDL_UnlockMutex(mtx);
+  return ok;
+}
+
 void tex_orcamento_info(int *mb, long *memTotal, int *fixo, int *slots) {
   if (mb) *mb = orcMB;
   if (memTotal) *memTotal = orcMemTotal;
@@ -2102,7 +2189,7 @@ void tex_threads_info(int *usadas, int *disponiveis) {
   if (mtx) {
     SDL_LockMutex(mtx);
     for (i = 0; i < NV_TEX_FIOS; i++) if (thrs[i]) u++;
-    for (i = 0; i < NV_TEX_FIOS_REDE; i++) if (thrsRede[i]) u++;
+    for (i = 0; i < NV_TEX_FIOS_REDE && i < fiosRedeAtivos; i++) if (thrsRede[i]) u++;
     SDL_UnlockMutex(mtx);
   }
   if (usadas) *usadas = u;
@@ -2141,6 +2228,14 @@ int tex_historico(long *saida, int max) {
 int tex_iniciar(int max_itens) {
   int mb = orcamentoMB();
   int fiosDecode = NV_TEX_FIOS, fiosRede = NV_TEX_FIOS_REDE;
+  // Os outros dois padroes do aparelho (fios ativos e teto do heroi) saem da
+  // MESMA tabela do orcamento. Ver perfiltv.c.
+  { PtvPerfil pf;
+    ptv_padrao(ptv_plataforma(), orcMemTotal, &pf);
+    fiosRedeAtivos = pf.fiosRede;
+    tetoHeroiPerfil = pf.heroiLarg;
+    printf("[tex] padrao do aparelho: %d MB, %d fios de rede, heroi %d px (RAM %ld MB)\n",
+           mb, pf.fiosRede, pf.heroiLarg, orcMemTotal); }
 #ifdef __EMSCRIPTEN__
   /* Recover IDBFS/account data before spending bandwidth on speculative art. */
   if (dados_modo_recuperacao()) fiosDecode = fiosRede = 1;
@@ -2188,7 +2283,8 @@ int tex_iniciar(int max_itens) {
     // competir com o desenho — o custo de um fio parado num socket e zero de
     // CPU. Quatro cobre os quatro cartazes que entram na tela de uma vez.
     for (k = 0; k < fiosRede; k++)
-      thrsRede[k] = SDL_CreateThread(threadRede, "nv-rede", NULL);
+      thrsRede[k] = SDL_CreateThread(threadRede, "nv-rede", (void *)(intptr_t)k);
+    fiosRedeCriados = fiosRede;
     thr = thrs[0]; }
   return thr != NULL;
 }
@@ -2260,7 +2356,7 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
       if (prox != filaIni) {
           fila[filaFim] = i; filaFim = prox;
           itens[i].filaRedeEm = SDL_GetTicks();
-          SDL_CondSignal(cond);
+          acordarRede();
         } else {
           itens[i].estado = FALHOU;
         }
@@ -2332,7 +2428,7 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
           itens[i].estado = PENDENTE;
           fila[filaFim] = i; filaFim = prox;
           itens[i].filaRedeEm = SDL_GetTicks();
-          SDL_CondSignal(cond);
+          acordarRede();
         }
       }
       // Fila cheia: nada a fazer aqui. `tetoUsado` continua no valor antigo,
@@ -2375,7 +2471,7 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
           itens[novo].filaRedeEm = SDL_GetTicks();
           if (urgente)
             printf("[tex-trace] pedido hash=%08lx role=hero limite=%d\n", h, limite);
-          SDL_CondSignal(cond);
+          acordarRede();
         }
         else { itens[novo].estado = VAZIO; itens[novo].caminho[0] = 0; } // fila cheia
       }
