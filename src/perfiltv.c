@@ -181,6 +181,10 @@ const char *ptv_fonte_nome(int f) {
     case PTV_FONTE_METAHUB: return "metahub";
     case PTV_FONTE_TMDB: return "tmdb";
     case PTV_FONTE_TRAKT: return "trakt";
+    case PTV_FONTE_APPLE: return "apple";
+    case PTV_FONTE_FANART: return "fanart";
+    case PTV_FONTE_ANIME: return "anime";
+    case PTV_FONTE_TMDB_OUTRO: return "tmdb_outro";
     case PTV_FONTE_LOGO: return "logo";
     default: return "?";
   }
@@ -192,6 +196,10 @@ const char *ptv_fonte_rotulo(int f) {
     case PTV_FONTE_METAHUB: return "Metahub";
     case PTV_FONTE_TMDB: return "TMDB";
     case PTV_FONTE_TRAKT: return "Trakt";
+    case PTV_FONTE_APPLE: return "Apple TV";
+    case PTV_FONTE_FANART: return "fanart.tv";
+    case PTV_FONTE_ANIME: return "Anime";
+    case PTV_FONTE_TMDB_OUTRO: return "TMDB outro fundo";
     case PTV_FONTE_LOGO: return "Logo";
     default: return "?";
   }
@@ -205,9 +213,23 @@ int ptv_fonte_ms(const PtvFonte *f) {
 int ptv_fonte_da_url(const char *u) {
   if (!u) return 0;
   if (strstr(u, "images.metahub.space")) return PTV_FONTE_METAHUB;
+  if (strstr(u, "nuvio.invalid/arte/tmdbalt/")) return PTV_FONTE_TMDB_OUTRO;
   if (strstr(u, "image.tmdb.org") || strstr(u, "nuvio.invalid/arte/tmdb/")) return PTV_FONTE_TMDB;
   if (strstr(u, "trakt.tv") || strstr(u, "nuvio.invalid/arte/trakt/")) return PTV_FONTE_TRAKT;
+  if (strstr(u, "mzstatic.com") || strstr(u, "nuvio.invalid/arte/apple/")) return PTV_FONTE_APPLE;
+  if (strstr(u, "fanart.tv") || strstr(u, "nuvio.invalid/arte/fanart/")) return PTV_FONTE_FANART;
+  if (strstr(u, "kitsu.") || strstr(u, "anilist.co") || strstr(u, "nuvio.invalid/arte/anime/"))
+    return PTV_FONTE_ANIME;
   return PTV_FONTE_CATALOGO;
+}
+
+int ptv_ajuste_da_fonte(int f, int diferente) {
+  if (f < 1 || f > PTV_FONTE_FUNDO_MAX) return -1;
+  // Com outra arte, "TMDB" ja e o outro backdrop; o padrao do TMDB nao tem
+  // valor de ajuste que o alcance. Sem outra arte e o contrario.
+  if (f == PTV_FONTE_TMDB_OUTRO) return diferente ? PTV_FONTE_TMDB : -1;
+  if (f == PTV_FONTE_TMDB && diferente) return -1;
+  return f;
 }
 
 static int lenta(const PtvFonte *f, int h, int b) {
@@ -222,23 +244,32 @@ int ptv_sugerir_destaque(const PtvFonte f[PTV_N_FONTES], int hero, int card,
   int k, melhor = -1;
   if (!o) return 0;
   memset(o, 0, sizeof *o);
-  if (!f || hero < 1 || hero > 4 || card < 1 || card > 4) return 0;
+  if (!f || hero < 1 || hero > PTV_FONTE_FUNDO_MAX || card < 1 || card > PTV_FONTE_FUNDO_MAX) return 0;
   if (diferente) {
-    if (hero == card || !lenta(f, hero, card)) return 0;
-    for (k = 1; k <= 4; k++) {
-      if (k == card || k == hero || ptv_fonte_ms(&f[k]) < 0 || lenta(f, k, card)) continue;
+    int igual = hero == card || f[hero].iguais > 0;
+    int devagar = !igual && lenta(f, hero, card);
+    if (!igual && !devagar) return 0;
+    for (k = 1; k <= PTV_FONTE_FUNDO_MAX; k++) {
+      int aj = ptv_ajuste_da_fonte(k, 1);
+      if (k == card || k == hero || aj < 0 || aj == ajuste) continue;
+      if (ptv_fonte_ms(&f[k]) < 0 || f[k].iguais > 0 || lenta(f, k, card)) continue;
       if (melhor < 0 || ptv_fonte_ms(&f[k]) < ptv_fonte_ms(&f[melhor])) melhor = k;
     }
     o->base = card;
-    if (melhor > 0) { o->fonte = melhor; o->diferente = 1; }
-    else { o->fonte = ajuste; o->diferente = 0; }
+    o->motivo = igual ? PTV_MOTIVO_IGUAL : PTV_MOTIVO_LENTA;
+    if (melhor > 0) { o->fonte = ptv_ajuste_da_fonte(melhor, 1); o->diferente = 1; o->alvo = melhor; }
+    else if (devagar) { o->fonte = ajuste; o->diferente = 0; o->alvo = card; }
+    else return 0;       // igual ao card e sem outra de verdade: nada a propor
   } else {
     if (ajuste <= 0) return 0;
-    for (k = 1; k <= 4; k++)
-      if (ptv_fonte_ms(&f[k]) >= 0 &&
-          (melhor < 0 || ptv_fonte_ms(&f[k]) < ptv_fonte_ms(&f[melhor]))) melhor = k;
+    for (k = 1; k <= PTV_FONTE_FUNDO_MAX; k++) {
+      int aj = ptv_ajuste_da_fonte(k, 0);
+      if (aj < 0 || aj == ajuste || ptv_fonte_ms(&f[k]) < 0) continue;
+      if (melhor < 0 || ptv_fonte_ms(&f[k]) < ptv_fonte_ms(&f[melhor])) melhor = k;
+    }
     if (melhor < 0 || melhor == hero || !lenta(f, hero, melhor)) return 0;
-    o->base = melhor; o->fonte = melhor; o->diferente = 0;
+    o->base = melhor; o->fonte = melhor; o->diferente = 0; o->alvo = melhor;
+    o->motivo = PTV_MOTIVO_LENTA;
   }
   o->ativa = 1;
   o->lenta = hero;

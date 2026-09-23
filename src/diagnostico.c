@@ -161,6 +161,13 @@ typedef struct {
   int nTitulo;
   char fonteUrl[DIAG_MAX_TITULOS][PTV_N_FONTES][512];
   PtvFonte fonte[PTV_N_FONTES];
+  // O CARD de cada titulo com os ajustes em vigor, e a assinatura do que cada
+  // download devolveu (url real + FNV dos bytes): e o que decide
+  // `igual_ao_card` por fonte (medirFontesDeArte).
+  char cardUrl[DIAG_MAX_TITULOS][512];
+  char realUrl[DIAG_MAX_TITULOS][PTV_N_FONTES][600];
+  unsigned long long hashArte[DIAG_MAX_TITULOS][PTV_N_FONTES];
+  long bytesArte[DIAG_MAX_TITULOS][PTV_N_FONTES];
   int fontesMs;
   // Passes pelo cache de texturas.
   DiagArte arte[DIAG_MAX_ARTES];
@@ -353,7 +360,8 @@ static void medirAsset(const char *url) {
 // vez por titulo) e download, com bytes e o tamanho lido do cabecalho.
 // Fora do fio de desenho: so rede e aritmetica.
 static int medirUrlArte(const char *url, int *resolveMs, int *downloadMs,
-                        long *bytes, int *w, int *h) {
+                        long *bytes, int *w, int *h,
+                        char *final, size_t nFinal, unsigned long long *hash) {
   char real[600];
   const char *alvo = url;
   Uint32 t0;
@@ -374,13 +382,42 @@ static int medirUrlArte(const char *url, int *resolveMs, int *downloadMs,
   if (!corpo || n <= 0 || medida.status >= 400) { free(corpo); return 0; }
   *bytes = n;
   ptv_dimensoes((const unsigned char *)corpo, n, w, h);
+  if (final && nFinal) snprintf(final, nFinal, "%s", alvo);
+  if (hash) *hash = arte_bytes_hash(corpo, n);
   free(corpo);
   return 1;
 }
 
+// A MESMA ARTE DO CARD? Mesma url real (o tamanho do TMDB e o medium/full do
+// Trakt nao contam: e a mesma foto) ou mesmos bytes. O catalogo do Cinemeta e
+// o metahub pelo id caem aqui pelos bytes (1763947 nos dois no relatorio
+// 1669). A mesma foto REENCODADA (metahub x backdrop do TMDB) nao: isso so
+// comparando pixels, e o relatorio diz que a comparacao e por arquivo.
+static void chaveArte(const char *u, char *k, size_t n) {
+  const char *p = strstr(u, "/t/p/");
+  if (p && (p = strchr(p + 5, '/')) != NULL) { snprintf(k, n, "tmdb%s", p); return; }
+  if (strstr(u, "media.trakt.tv/") && ((p = strstr(u, "/medium/")) || (p = strstr(u, "/full/")))) {
+    snprintf(k, n, "trakt%s", strchr(p + 1, '/')); return;
+  }
+  snprintf(k, n, "%s", u);
+}
+static int mesmaArte(int t, int a, int b) {
+  char ka[640], kb[640];
+  if (!d.realUrl[t][a][0] || !d.realUrl[t][b][0]) return 0;
+  chaveArte(d.realUrl[t][a], ka, sizeof ka);
+  chaveArte(d.realUrl[t][b], kb, sizeof kb);
+  if (!strcmp(ka, kb)) return 1;
+  return d.bytesArte[t][a] == d.bytesArte[t][b] && d.hashArte[t][a] == d.hashArte[t][b];
+}
+
+// TODAS as fontes de fundo (catalogo, Metahub, TMDB, Trakt, Apple TV,
+// fanart.tv, anime e o outro do TMDB) e o logo, por titulo; depois o CARD do
+// titulo — que quase sempre e uma das urls ja medidas (a do catalogo) e entao
+// nao custa download — e a comparacao de cada fonte com ele.
 static void medirFontesDeArte(void) {
   int t, f;
-  for (t = 0; t < d.nTitulo; t++)
+  for (t = 0; t < d.nTitulo; t++) {
+    int card = -1;
     for (f = 1; f < PTV_N_FONTES; f++) {
       PtvFonte *s = &d.fonte[f];
       int rMs, dMs, w, h;
@@ -388,9 +425,11 @@ static void medirFontesDeArte(void) {
       if (!d.fonteUrl[t][f][0]) continue;
       if (atomic_load(&d.cancelado)) return;
       if (sessaoExpirada()) { d.coberturaParcial = 1; return; }
-      if (medirUrlArte(d.fonteUrl[t][f], &rMs, &dMs, &b, &w, &h)) {
+      if (medirUrlArte(d.fonteUrl[t][f], &rMs, &dMs, &b, &w, &h,
+                       d.realUrl[t][f], sizeof d.realUrl[t][f], &d.hashArte[t][f])) {
         s->ok++;
         s->bytes += b;
+        d.bytesArte[t][f] = b;
         if (w > 0) { s->largura = w; s->altura = h; }
       } else s->falhas++;
       s->resolveMs += rMs;
@@ -398,6 +437,25 @@ static void medirFontesDeArte(void) {
       d.fontesMs += rMs + dMs;
       atomic_fetch_add(&d.feitos, 1);
     }
+    for (f = 1; f <= PTV_FONTE_FUNDO_MAX && card < 0; f++)
+      if (d.cardUrl[t][0] && !strcmp(d.cardUrl[t], d.fonteUrl[t][f]) && d.realUrl[t][f][0]) card = f;
+    if (card < 0 && d.cardUrl[t][0]) {
+      // Card fora das fontes (still, cartaz, url de addon): baixa uma vez,
+      // fora dos tempos por fonte, na celula 0 (nenhuma fonte usa o 0).
+      int rMs, dMs, w, h;
+      long b;
+      if (medirUrlArte(d.cardUrl[t], &rMs, &dMs, &b, &w, &h,
+                       d.realUrl[t][0], sizeof d.realUrl[t][0], &d.hashArte[t][0])) {
+        d.bytesArte[t][0] = b;
+        card = 0;
+      }
+    }
+    if (card < 0) continue;
+    for (f = 1; f <= PTV_FONTE_FUNDO_MAX; f++)
+      if (f != card && d.realUrl[t][f][0] && mesmaArte(t, f, card)) d.fonte[f].iguais++;
+    // A fonte que E o card conta como igual a ele, por definicao.
+    if (card > 0) d.fonte[card].iguais++;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -632,7 +690,8 @@ static void passesAvancar(void) {
 static int fonteDaUrl(int t, const char *u) {
   int f;
   if (!u) return 0;
-  for (f = 1; f <= 4; f++) if (d.fonteUrl[t][f][0] && !strcmp(d.fonteUrl[t][f], u)) return f;
+  for (f = 1; f <= PTV_FONTE_FUNDO_MAX; f++)
+    if (d.fonteUrl[t][f][0] && !strcmp(d.fonteUrl[t][f], u)) return f;
   return ptv_fonte_da_url(u);
 }
 
@@ -644,6 +703,8 @@ static void calcularSugestao(void) {
   hero = fonteDaUrl(0, artehero_url_destaque(&d.titulo[0], fonte, dif));
   card = dif ? PTV_FONTE_CATALOGO
              : fonteDaUrl(0, artehero_url_card_fonte(&d.titulo[0], fonte, dif));
+  // Com outra arte, o card e o catalogo; o que conta como "igual" ja foi
+  // medido por titulo (PtvFonte.iguais), e a fonte do card o e por definicao.
   if (!ptv_sugerir_destaque(d.fonte, hero, card, fonte, dif, &d.sug)) return;
   // A MESMA FOTO DO CARD NAO CONTA COMO OUTRA ARTE (artehero_url_destaque): a
   // fonte proposta pode cair de volta na lenta para algum titulo. Confere na
@@ -674,7 +735,7 @@ static int sugestaoWorker(void *arg) {
         int rMs, dMs, w, h;
         long b;
         if (!u[0] || atomic_load(&d.cancelado)) continue;
-        if (medirUrlArte(u, &rMs, &dMs, &b, &w, &h)) m->prontas++;
+        if (medirUrlArte(u, &rMs, &dMs, &b, &w, &h, NULL, 0, NULL)) m->prontas++;
         else m->falhas++;
         m->artesMs += rMs + dMs;
       }
@@ -757,14 +818,18 @@ static void montarRelatorio(void) {
              ajustes_hero_arte_diferente());
   for (i = 1; i < PTV_N_FONTES; i++) {
     const PtvFonte *f = &d.fonte[i];
-    ACRESCENTA("arte_fonte=%s|ok=%d|falhas=%d|resolve_ms=%d|download_ms=%d|bytes=%ld|largura=%d|altura=%d\n",
+    // `iguais` = em quantos titulos a arte foi a mesma do card; o logo nao e
+    // fundo e fica sempre 0. Fonte nao medida (sem chave, nao e anime, sem
+    // ano para a Apple) sai com ok=0 e falhas=0.
+    ACRESCENTA("arte_fonte=%s|ok=%d|falhas=%d|resolve_ms=%d|download_ms=%d|bytes=%ld|largura=%d|altura=%d|iguais=%d|igual_ao_card=%d\n",
                ptv_fonte_nome(i), f->ok, f->falhas, f->resolveMs, f->downloadMs,
-               f->bytes, f->largura, f->altura);
+               f->bytes, f->largura, f->altura, f->iguais, f->iguais > 0);
   }
   if (d.sugEstado == DS_PROPOSTA)
-    ACRESCENTA("sugestao_destaque=alvo:%s|diferente:%d|lenta:%s|ms_lenta=%d|base:%s|ms_base=%d\n",
-               ptv_fonte_nome(d.sug.fonte), d.sug.diferente, ptv_fonte_nome(d.sug.lenta),
-               d.sug.msLenta, ptv_fonte_nome(d.sug.base), d.sug.msBase);
+    ACRESCENTA("sugestao_destaque=alvo:%s|diferente:%d|lenta:%s|ms_lenta=%d|base:%s|ms_base=%d|motivo:%s\n",
+               ptv_fonte_nome(d.sug.alvo > 0 ? d.sug.alvo : d.sug.fonte), d.sug.diferente,
+               ptv_fonte_nome(d.sug.lenta), d.sug.msLenta, ptv_fonte_nome(d.sug.base), d.sug.msBase,
+               d.sug.motivo == PTV_MOTIVO_IGUAL ? "igual_ao_card" : "lenta");
   else ACRESCENTA("sugestao_destaque=-\n");
   for (i = 0; i < d.nAddon && left > 40; i++) {
     DiagAddon *a = &d.addon[i];
@@ -997,7 +1062,10 @@ static void iniciarTeste(void) {
     d.titulo[d.nTitulo++] = *c;
   }
   for (t = 0; t < d.nTitulo; t++) {
-    for (f = 1; f <= 4; f++) {
+    const char *c = artehero_url_card_fonte(&d.titulo[t], ajustes_hero_fonte(),
+                                            ajustes_hero_arte_diferente());
+    snprintf(d.cardUrl[t], sizeof d.cardUrl[t], "%s", c ? c : "");
+    for (f = 1; f <= PTV_FONTE_FUNDO_MAX; f++) {
       const char *u = artehero_url_fonte(&d.titulo[t], f);
       snprintf(d.fonteUrl[t][f], sizeof d.fonteUrl[t][f], "%s", u ? u : "");
     }
@@ -1345,16 +1413,26 @@ static const char *nomeFonteAjuste(int f) {
 static void desenharFontes(GfxRect r, float ar, float ag, float ab) {
   int f, maior = 1, lenta = 0, msLenta = -1;
   char v[96];
+  int linhas = 0, linha = 0;
+  float passo;
   painelTitulo(r, "Artes por fonte", "Tempo médio por arte: consulta e download");
   for (f = 1; f < PTV_N_FONTES; f++) {
     int ms = ptv_fonte_ms(&d.fonte[f]);
     if (ms > maior) maior = ms;
     if (ms > msLenta) { msLenta = ms; lenta = f; }
+    if (d.fonte[f].ok || d.fonte[f].falhas) linhas++;
   }
+  // NOVE FONTES NAO CABEM a 36 px nos 180 px acima da proposta: so as que
+  // foram medidas (sem chave do fanart.tv, sem anime, sem ano para a Apple,
+  // a linha nem existe), com o passo encolhendo ate 20 px.
+  passo = linhas > 5 ? 180.0f / (float)linhas : 36.0f;
+  if (passo < 20.0f) passo = 20.0f;
   for (f = 1; f < PTV_N_FONTES; f++) {
     const PtvFonte *s = &d.fonte[f];
     int ms = ptv_fonte_ms(s);
-    float y = r.y + 90.0f + (float)(f - 1) * 36.0f;
+    float y;
+    if (!s->ok && !s->falhas && linhas > 0) continue;
+    y = r.y + 90.0f + (float)(linha++) * passo;
     float bx = r.x + 190.0f, bw = r.w * 0.34f;
     int destaque = f == lenta && ms > 0;
     txt_desenhar(txt_linha_corta(TXT_CAPTION, i18n(ptv_fonte_rotulo(f)), destaque ? 244 : 190,
@@ -1366,6 +1444,8 @@ static void desenharFontes(GfxRect r, float ar, float ag, float ab) {
               destaque ? 0.95f : ar, destaque ? 0.62f : ag, destaque ? 0.36f : ab, 0.95f);
     if (!s->ok && !s->falhas) snprintf(v, sizeof v, "%s", i18n("não medida"));
     else if (ms < 0) snprintf(v, sizeof v, "%s", i18n("falhou"));
+    else if (s->iguais > 0 && f <= PTV_FONTE_FUNDO_MAX)
+      snprintf(v, sizeof v, i18n("%d ms · igual ao card"), ms);
     else if (s->largura > 0)
       snprintf(v, sizeof v, i18n("%d ms · %d×%d · %d falhas"), ms, s->largura, s->altura, s->falhas);
     else snprintf(v, sizeof v, i18n("%d ms · %d falhas"), ms, s->falhas);
@@ -1377,9 +1457,14 @@ static void desenharFontes(GfxRect r, float ar, float ag, float ab) {
   { float y = r.y + 276.0f, lw = r.w - 56.0f;
     char a[200], b[200];
     if (d.sugEstado == DS_PROPOSTA || d.sugEstado == DS_TESTANDO) {
-      snprintf(a, sizeof a, i18n("Destaque em %s: %d ms por arte; %s: %d ms."),
-               i18n(ptv_fonte_rotulo(d.sug.lenta)), d.sug.msLenta,
-               i18n(ptv_fonte_rotulo(d.sug.base)), d.sug.msBase);
+      if (d.sug.motivo == PTV_MOTIVO_IGUAL && d.sug.alvo > 0)
+        snprintf(a, sizeof a, i18n("Destaque em %s repete a imagem do card; %s é outra arte, %d ms."),
+                 i18n(ptv_fonte_rotulo(d.sug.lenta)), i18n(ptv_fonte_rotulo(d.sug.alvo)),
+                 ptv_fonte_ms(&d.fonte[d.sug.alvo]));
+      else
+        snprintf(a, sizeof a, i18n("Destaque em %s: %d ms por arte; %s: %d ms."),
+                 i18n(ptv_fonte_rotulo(d.sug.lenta)), d.sug.msLenta,
+                 i18n(ptv_fonte_rotulo(d.sug.base)), d.sug.msBase);
       if (!d.sug.diferente)
         snprintf(b, sizeof b, "%s", i18n("Vai mudar: Destaque com outra arte, de Ligado para Desligado."));
       else
@@ -1428,7 +1513,7 @@ void diagnostico_desenhar(Uint32 agora) {
     GfxRect dir = { 1000.0f, yConteudo, 840.0f, 880.0f - yConteudo };
     static const char *const PASSOS[5] = {
       "Manifestos, catálogos e fontes de vídeo dos add-ons",
-      "Cada fonte de arte: catálogo, Metahub, TMDB, Trakt e logo",
+      "Cada fonte de arte: catálogo, Metahub, TMDB, Trakt, Apple TV, fanart.tv, anime e logo",
       "As mesmas artes pelo cache, com o perfil atual",
       "Aplica o candidato e mede as mesmas artes de novo",
       "Mantém se não piorou; senão volta sozinho ao anterior",
@@ -1548,8 +1633,9 @@ void diagnostico_desenhar(Uint32 agora) {
     txt_desenhar(txt_linha(TXT_TITULO2, v, ar * 255.0f, ag * 255.0f, ab * 255.0f, 255), tl.x + 28.0f, tl.y + 92.0f);
     barraProgresso((GfxRect){ tl.x + 28.0f, tl.y + 170.0f, tl.w - 56.0f, 14.0f }, (float)cobertura, ar, ag, ab, 0, agora);
     metrica(tl, tl.y + 206.0f, "Gargalo principal", i18n(gargaloPrincipal()), 244, 224, 172);
-    snprintf(v, sizeof v, i18n("%d ok · %d falhas"), d.imagensOk + d.fonte[1].ok + d.fonte[2].ok + d.fonte[3].ok + d.fonte[4].ok + d.fonte[5].ok,
-             d.imagensFalhas + d.fonte[1].falhas + d.fonte[2].falhas + d.fonte[3].falhas + d.fonte[4].falhas + d.fonte[5].falhas);
+    { int ok = d.imagensOk, fal = d.imagensFalhas, k;
+      for (k = 1; k < PTV_N_FONTES; k++) { ok += d.fonte[k].ok; fal += d.fonte[k].falhas; }
+      snprintf(v, sizeof v, i18n("%d ok · %d falhas"), ok, fal); }
     metrica(tl, tl.y + 250.0f, "Artes", v, 210, 218, 230);
     snprintf(v, sizeof v, "%s", i18n(atomic_load(&d.enviando) ? "enviando…"
                                     : d.envioFalhou ? "guardado; envio falhou"
