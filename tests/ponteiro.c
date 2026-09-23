@@ -73,6 +73,7 @@ static void homeComFolha(void) {
   home();
   ponteiro_camada();
   ponteiro_alvo(0, 0, 1920, 1080, NULL, ativar, 99, 0);
+  ponteiro_alvo(1400, 0, 520, 1080, NULL, NULL, 0, 0);   // corpo da folha
   ponteiro_alvo(1500, 100, 300, 80, focar, NULL, 7, 0);
   ponteiro_alvo(1500, 200, 300, 80, focar, NULL, 7, 1);
 }
@@ -194,6 +195,10 @@ int main(void) {
   botao(SDL_MOUSEBUTTONUP, 400, 700, SDL_BUTTON_LEFT);
   CONFERE(nAtivar == 1 && ativA == 99 && nEntregues == 0,
           "fundo da folha: ativar proprio, sem OK");
+  relogio += 300;
+  botao(SDL_MOUSEBUTTONDOWN, 1600, 900, SDL_BUTTON_LEFT);
+  botao(SDL_MOUSEBUTTONUP, 1600, 900, SDL_BUTTON_LEFT);
+  CONFERE(nAtivar == 1 && nEntregues == 0, "vazio do corpo da folha: anteparo, nada");
 
   // Modal que nao registra nada: o clique vira OK puro, para ninguem ficar preso.
   relogio += 300;

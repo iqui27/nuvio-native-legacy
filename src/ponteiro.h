@@ -46,6 +46,7 @@ typedef struct {
   float x, y, w, h;
   PonteiroFn focar;    // hover (e antes do OK do clique). Pode ser NULL.
   PonteiroFn ativar;   // clique proprio no lugar do OK. Pode ser NULL.
+                       // Os dois NULL = anteparo: absorve o clique, nao faz nada.
   int a, b;
 } PonteiroAlvo;
 

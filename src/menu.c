@@ -371,6 +371,7 @@ void menu_desenhar(Uint32 agora) {
   float ar_, ag_, ab_; ajustes_acento(&ar_, &ag_, &ab_);
   if (aberto) {
     ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ponteiroFora, 0, 0);
+    ponteiro_alvo(painel.x, painel.y, painel.w, painel.h, NULL, NULL, 0, 0);
     alvosDasLinhas(px, w);
   }
   gfx_cor(painel, 28.0f / painel.h, 0.055f, 0.058f, 0.068f, 0.965f * entrada);

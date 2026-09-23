@@ -187,6 +187,9 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
         int i = ponteiro_achar(v, n, px, py);
         ativarPendente.ok = 0;
         if (i >= 0 && v[i].ativar) { guardar(&ativarPendente, &v[i]); return 1; }
+        // Alvo sem nenhuma das duas funcoes e um ANTEPARO: o corpo de uma folha
+        // absorve o clique no vazio em vez de deixa-lo cair no fundo que fecha.
+        if (i >= 0 && !v[i].focar) return 1;
         if (i >= 0) {
           if (!mesmo(&hover, &v[i])) guardar(&hover, &v[i]);
           if (v[i].focar) v[i].focar(v[i].a, v[i].b);
