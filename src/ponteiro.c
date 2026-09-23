@@ -78,9 +78,10 @@ void ponteiro_iniciar(void) {
   visivel = 0;
   memset(&hover, 0, sizeof hover);
 #ifdef NV_PONT_WEBOS
-  // RTLD_DEFAULT: o SDL ja esta carregado no processo; o que se quer saber e
-  // se ESTA firmware o exporta.
-  *(void **)(&cursorSistema) = dlsym(RTLD_DEFAULT, "SDL_webOSCursorVisibility");
+  // dlopen(NULL) = o proprio processo: o SDL ja esta carregado, o que se quer
+  // saber e se ESTA firmware o exporta. (RTLD_DEFAULT pediria _GNU_SOURCE.)
+  { void *eu = dlopen(NULL, RTLD_NOW);
+    if (eu) *(void **)(&cursorSistema) = dlsym(eu, "SDL_webOSCursorVisibility"); }
   printf("[ponteiro] SDL_webOSCursorVisibility: %s\n",
          cursorSistema ? "presente" : "ausente");
   fflush(stdout);
@@ -118,8 +119,10 @@ static void converter(Uint32 janelaId, int x, int y) {
   }
   px = (float)x * NV_TELA_W / (float)w;
   py = (float)y * NV_TELA_H / (float)h;
-  if (px < 0) px = 0; if (px > NV_TELA_W - 1) px = NV_TELA_W - 1;
-  if (py < 0) py = 0; if (py > NV_TELA_H - 1) py = NV_TELA_H - 1;
+  if (px < 0) px = 0;
+  if (px > NV_TELA_W - 1) px = NV_TELA_W - 1;
+  if (py < 0) py = 0;
+  if (py > NV_TELA_H - 1) py = NV_TELA_H - 1;
 }
 
 int ponteiro_achar(const PonteiroAlvo *v, int n, float x, float y) {
