@@ -84,8 +84,15 @@ const char *artehero_url_card(const CatItem *item) {
   return NULL;
 }
 
+// BUFFER DO ANEL, e nao estatico unico (issue #118, 1.4.2). O desenho do hero
+// pede a arte do atual e a do anterior no MESMO quadro (home.c, arteA/arteB),
+// e com um `static char buf` so o segundo pedido reescrevia o primeiro: o hero
+// de Continuar assistindo desenhava o still do titulo anterior. fixar() esta
+// mais abaixo e e o mesmo anel das fontes.
+static const char *fixar(const char *u, const char *tmp);
+
 const char *artehero_url_episodio(const CatItem *item) {
-  static char buf[512];
+  char buf[512];
   if (!item) return NULL;
   // NA BAIXA O STILL VEM EM w780: e a mesma imagem, no tamanho que o metahub
   // serve mais rapido. O destaque amplia, e nesse nivel e isso que se pediu.
@@ -97,7 +104,7 @@ const char *artehero_url_episodio(const CatItem *item) {
       snprintf(buf, sizeof buf,
                "https://episodes.metahub.space/%s/%d/%d/w780.jpg",
                id, item->temporada, item->episodio); }
-    return buf;
+    return fixar(buf, buf);
   }
   if (item->temporada <= 0 || item->episodio <= 0) return NULL;
   if (strncmp(item->imdb, "tt", 2)) return NULL;
@@ -122,11 +129,11 @@ const char *artehero_url_episodio(const CatItem *item) {
     snprintf(buf, sizeof buf,
              "https://episodes.metahub.space/%s/%d/%d/%s.jpg",
              id, item->temporada, item->episodio, tam); }
-  return buf;
+  return fixar(buf, buf);
 }
 
 const char *artehero_url(const CatItem *item) {
-  static char buf[512];
+  char buf[512];   // sai pelo anel (fixar): ver artehero_url_episodio
   const char *b;
   if (!item) return NULL;
   b = item->backdrop;
@@ -149,7 +156,7 @@ const char *artehero_url(const CatItem *item) {
         const char *resto = strchr(p + 5, '/');   // depois do tamanho
         if (pre < sizeof buf && resto && resto[1]) {
           snprintf(buf, sizeof buf, "%.*s/t/p/original/%s", (int)pre, b, resto + 1);
-          return buf;
+          return fixar(buf, buf);
         }
       }
       { const char *p2 = strstr(b, "/medium/");
@@ -157,7 +164,7 @@ const char *artehero_url(const CatItem *item) {
           size_t pre = (size_t)(p2 - b);
           if (pre < sizeof buf) {
             snprintf(buf, sizeof buf, "%.*s/full/%s", (int)pre, b, p2 + strlen("/medium/"));
-            return buf;
+            return fixar(buf, buf);
           }
         } }
     }
@@ -170,7 +177,7 @@ const char *artehero_url(const CatItem *item) {
     idLimpo(item->imdb, id, sizeof id);
     snprintf(buf, sizeof buf,
              "https://images.metahub.space/background/medium/%s/img", id);
-    if (!falhou(buf)) return buf;
+    if (!falhou(buf)) return fixar(buf, buf);
   }
   if (item->poster[0]) return item->poster;
   return NULL;
