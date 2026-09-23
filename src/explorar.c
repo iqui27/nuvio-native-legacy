@@ -604,7 +604,7 @@ static void rotuloEspacado(const char *s, float x, float y, float a) {
 
 static void metaObra(const MapaObra *o, char *dst, size_t n) {
   char nota[24] = "";
-  if (o->nota > 0) snprintf(nota, sizeof nota, "   ·   TMDB %d,%d", o->nota / 10, o->nota % 10);
+  if (o->nota > 0) snprintf(nota, sizeof nota, "   ·   TMDB %d.%d", o->nota / 10, o->nota % 10);
   if (o->ano) snprintf(dst, n, "%s   ·   %d%s", i18n(!strcmp(o->tipo, "series") ? "Série" : "Filme"), o->ano, nota);
   else snprintf(dst, n, "%s%s", i18n(!strcmp(o->tipo, "series") ? "Série" : "Filme"), nota);
 }
