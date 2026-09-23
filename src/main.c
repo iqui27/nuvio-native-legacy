@@ -1139,9 +1139,11 @@ int main(int argc, char **argv) {
   // O .wgt fecha pela API do proprio Tizen. Fora dela (Chrome de bancada) o
   // objeto nao existe, e o catch deixa a pagina como estava — que la e o
   // comportamento util.
-  EM_ASM({
-    try { tizen.application.getCurrentApplication().exit(); } catch (e) {}
-  });
+  //
+  // E NAO NA HORA (issue #120): o que app_encerrar gravou ou apagou (a marca de
+  // sessao viva, os avisos vistos) ainda esta so no MEMFS. dados.c descarrega
+  // para o IndexedDB e fecha no callback.
+  dados_descarregar_e_sair();
 #endif
   return 0;
 }

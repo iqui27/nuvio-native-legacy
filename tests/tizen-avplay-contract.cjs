@@ -87,6 +87,39 @@ const call = (op, text = '', a = 0, b = 0, c = 0, d = 0, dst = 0, size = 0) =>
     assert.equal((update.match(/video_bombear\(\);/g) || []).length, 1);
   });
 
+  // #122: embedded text arrives only through onsubtitlechange; AVPlay does not
+  // draw it (Samsung's PlayerAVPlaySubtitle sample sets innerHTML there). The
+  // bridge must keep the text for the C overlay and expire/clear it.
+  const legTexto = () => { outputs.delete(300); const n = call('leg_texto', '', 0, 0, 0, 0, 300, 512); return { n, t: outputs.get(300) }; };
+  call('faixa', 'TEXT', 3);
+  call('leg_mudo', '', 0);
+  check('choosing embedded text unmutes and selects the absolute TEXT index', () => {
+    const reg = context.__avReg();
+    assert.ok(reg.includes('setSelectTrack("TEXT", 3)'));
+    assert.ok(reg.includes('setSilentSubtitle(false)'));
+  });
+  context.__nvav.posMs = 10000;
+  context.__avOuvinte().onsubtitlechange('2000', 'Olá <i>mundo</i>', '0', []);
+  check('onsubtitlechange text is exposed to C while it is valid', () => {
+    const r = legTexto();
+    assert.equal(r.t, 'Olá <i>mundo</i>');
+    assert.ok(r.n >= 2);
+  });
+  context.__nvav.posMs = 12500;
+  check('embedded text expires after its duration', () => assert.equal(legTexto().t, ''));
+  context.__avOuvinte().onsubtitlechange('0', 'Sem prazo', '0', []);
+  call('buscar', '', 60000);
+  check('seek clears the embedded text of the old position', () => assert.equal(legTexto().t, ''));
+  context.__avOuvinte().onsubtitlechange('1000', 'Outra', '0', []);
+  call('leg_mudo', '', 1);
+  check('turning subtitles off clears the embedded text', () => assert.equal(legTexto().t, ''));
+  const velho = context.__avOuvinte();
+  call('parar');
+  call('abrir', 'https://example.invalid/proximo.mkv');
+  await new Promise(resolve => setTimeout(resolve, 30));
+  velho.onsubtitlechange('5000', 'do titulo anterior', '0', []);
+  check('stale onsubtitlechange from a previous open is ignored', () => assert.equal(legTexto().t, ''));
+
   // A failed prepare metadata read must be recoverable through `faixas`, and
   // that fallback must be cached just like the normal prepare path.
   const player = context.webapis.avplay;

@@ -47,6 +47,7 @@
     getDuration:     function ()  { return 7200000; },
     setSelectTrack:  function (t, i) { log("setSelectTrack", arguments); },
     setExternalSubtitlePath: function (p) { log("setExternalSubtitlePath", arguments); },
+    setSilentSubtitle: function (b) { log("setSilentSubtitle", arguments); },
     getTotalTrackInfo: function () {
       log("getTotalTrackInfo", arguments);
       // Samsung permits READY here only after synchronous prepare(). A fake
@@ -63,5 +64,7 @@
     }
   };
   window.__avReg = function () { return reg; };
+  // O listener instalado, para o teste disparar onsubtitlechange (#122).
+  window.__avOuvinte = function () { return ouvinte; };
   window.__avLimpar = function () { reg = []; };
 })();

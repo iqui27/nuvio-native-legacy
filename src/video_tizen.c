@@ -137,6 +137,9 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
       larg: 0, alt: 0,
       trilhas: null,     // cache de getTotalTrackInfo(), ver a nota em "prepareAsync"
       geracao: 0,        // identidade monotônica da sessão que instalou callbacks
+      legTxt: "",        // ultimo texto do onsubtitlechange (issue #122)
+      legAte: 0,         // posMs em que ele vence; 0 = ate o proximo evento
+      legN: 0,           // eventos recebidos nesta sessao (diagnostico)
       rect: [0, 0, 1920, 1080]
     };
   }
@@ -204,7 +207,19 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
           S.erro = "" + e; S.tocando = 0;
         },
         onevent:             function () {},
-        onsubtitlechange:    function () {},
+        // A LEGENDA EMBUTIDA E DO APP (issue #122). O AVPlay entrega o texto
+        // aqui e NAO o desenha: a amostra oficial da Samsung
+        // (SamsungDForum/PlayerAVPlaySubtitle, main.js) faz
+        // innerHTML = text neste callback. Ate a 1.4.2 isto era vazio e a
+        // faixa escolhida nunca aparecia. `duration` em ms a partir de agora;
+        // texto vazio apaga.
+        onsubtitlechange:    function (duration, text) {
+          if (S.geracao !== geracao) return;
+          var d = parseInt(duration, 10) || 0;
+          S.legTxt = text ? "" + text : "";
+          S.legAte = S.legTxt && d > 0 ? S.posMs + d : 0;
+          S.legN = (S.legN | 0) + 1;
+        },
         ondrmevent:          function () {}
       });
     } catch (e) {}
@@ -244,6 +259,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     S.aberto = 0; S.tocando = 0; S.pronto = 0; S.posMs = 0;
     S.erro = ""; S.fim = 0; S.bufPct = 0; S.larg = 0; S.alt = 0;
     S.trilhas = null;   // titulo novo: a lista de faixas do titulo anterior nao vale
+    S.legTxt = ""; S.legAte = 0; S.legN = 0;
     try { p.open(s); } catch (e) { S.erro = "open: " + e; return 0; }
     S.aberto = 1;
     ouvir(p, geracao);
@@ -337,7 +353,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     var p2 = pl();
     ++S.geracao;
     S.tocando = 0; S.pronto = 0; S.fim = 0; S.posMs = 0;
-    S.trilhas = null;
+    S.trilhas = null; S.legTxt = ""; S.legAte = 0;
     if (!p2 || !S.aberto) { S.aberto = 0; return 0; }
     S.aberto = 0;
     try { p2.stop(); } catch (e) {}
@@ -367,6 +383,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     // assincrono, os callbacks existem, mas o firmware pode esperar o demuxer
     // aqui mesmo) ou outra coisa no mesmo quadro. So depois disso vale
     // tentar pause/seek/play ou outra estrategia.
+    S.legTxt = ""; S.legAte = 0;   // a fala de antes do salto nao vale no destino
     var t0 = performance.now();
     try { p4.seekTo(a | 0, function () {}, function () {}); } catch (e) { return 0; }
     var dt = performance.now() - t0;
@@ -597,6 +614,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
   if (op === "faixa") {
     var p8 = pl();
     if (!p8 || !S.aberto) return 0;
+    if (s === "TEXT") { S.legTxt = ""; S.legAte = 0; }
     try { p8.setSelectTrack(s, a | 0); } catch (e) { return 0; }
     return 1;
   }
@@ -606,8 +624,18 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     // manda o player parar de DESENHAR a legenda. E o mais proximo que existe.
     var p9 = pl();
     if (!p9 || !S.aberto) return 0;
+    if (a) { S.legTxt = ""; S.legAte = 0; }
     try { p9.setSilentSubtitle(a ? true : false); } catch (e) { return 0; }
     return 1;
+  }
+
+  // O TEXTO DA LEGENDA EMBUTIDA EM VIGOR, para o player desenhar (#122).
+  // Devolve o numero de eventos recebidos (+1), e o texto em dst quando vale.
+  if (op === "leg_texto") {
+    if (!dst || dstTam < 2) return 0;
+    var vale = S.aberto && S.legTxt && (!S.legAte || S.posMs < S.legAte);
+    stringToUTF8(vale ? S.legTxt : "", dst, dstTam);
+    return (S.legN | 0) + 1;
   }
 
   if (op === "leg_arquivo") {
@@ -1348,6 +1376,23 @@ void video_escolher_legenda(int i) {
     AVN("leg_mudo", 0);
     avChamar("faixa", "TEXT", f->numero, 0, 0, 0, NULL, 0);
     legAtual = i; }
+}
+
+int video_legenda_nativa(char *dst, int tam) {
+  static int avisou;
+  int n;
+  if (!dst || tam < 2) return 0;
+  dst[0] = 0;
+  if (!temAvplay || !ativo || legAtual < 0) return 0;
+  n = (int)avChamar("leg_texto", NULL, 0, 0, 0, 0, dst, tam) - 1;
+  // Uma linha por processo quando o primeiro texto chega: e a prova, nos
+  // registros, de que o firmware entrega a legenda embutida por callback.
+  if (n > 0 && !avisou) {
+    avisou = 1;
+    printf("[video] legenda embutida: onsubtitlechange entregando texto (%d evento(s))\n", n);
+    fflush(stdout);
+  }
+  return dst[0] != 0;
 }
 
 // SEM EQUIVALENTE UTIL: setExternalSubtitlePath so aceita CAMINHO LOCAL.

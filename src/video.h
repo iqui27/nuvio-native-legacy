@@ -158,6 +158,11 @@ int  video_legenda_atual(void);   // -1 = desligada
 
 void video_escolher_audio(int i);
 void video_escolher_legenda(int i);   // -1 desliga
+// Texto da legenda EMBUTIDA em vigor quando o player nativo nao a desenha
+// (Samsung: o AVPlay so entrega o texto no onsubtitlechange, issue #122).
+// Devolve 1 e preenche `dst` quando ha fala na tela agora; 0 no webOS (o uMS
+// desenha) e no Mac.
+int  video_legenda_nativa(char *dst, int tam);
 
 // Legenda de arquivo externo (OpenSubtitles). O uMS baixa e sincroniza
 // sozinho; o app so passa a URL.

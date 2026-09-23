@@ -176,6 +176,44 @@ static void testar(void) {
   teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);
   teclaPlayer(SDLK_PAUSE);teclaPlayer(SDLK_RETURN);assert(player_pediu_faixas()==0);
   player_encerrar();
+  // #122: o texto que o AVPlay entrega no onsubtitlechange vira texto puro
+  // para o overlay (SRT com tags HTML, ASS com {\tags} e \N).
+  { char t[256];
+    snprintf(t,sizeof t,"<i>Olá</i><br/><font color=\"#ff0\">mundo</font>\n");
+    player_limpar_legenda_nativa(t);assert(!strcmp(t,"Olá\nmundo"));
+    snprintf(t,sizeof t,"{\\an8}{\\i1}Letreiro\\Nsegunda\\hlinha{\\i0}");
+    player_limpar_legenda_nativa(t);assert(!strcmp(t,"Letreiro\nsegunda linha"));
+    // Como o AVPlay do Tizen 10 entregou de verdade (emulador, MKV com SRT):
+    // "Primeira fala\r\u0000" — o NUL corta a string, o \r sobra.
+    snprintf(t,sizeof t,"Primeira fala\r");
+    player_limpar_legenda_nativa(t);assert(!strcmp(t,"Primeira fala"));
+    snprintf(t,sizeof t,"Tom &amp; Jerry &lt;3");
+    player_limpar_legenda_nativa(t);assert(!strcmp(t,"Tom & Jerry <3"));
+    // Fora da Samsung nao ha legenda embutida para o app desenhar.
+    assert(!player_texto_legenda_nativa(t,sizeof t)&&!t[0]); }
+  // #121: com os controles ESCONDIDOS, esquerda/direita e busca, como no
+  // YouTube e na Netflix — os controles sobem com o foco NA BARRA e o primeiro
+  // toque ja anda 10 s. Antes subiam com o foco nos botoes e o toque seguinte
+  // trocava de botao em vez de avancar.
+  player_abrir(0,NULL);player_definir_episodio(2,4);
+  teclaPlayer(SDLK_DOWN);assert(!player_controles_visiveis());
+  { float p0=player_posicao_seg();
+    teclaPlayer(SDLK_RIGHT);
+    assert(player_controles_visiveis() && player_foco_na_barra());
+    assert(player_posicao_seg()>p0+5.0f);
+    teclaPlayer(SDLK_RIGHT);assert(player_foco_na_barra()&&player_posicao_seg()>p0+15.0f);
+    teclaPlayer(SDLK_LEFT);assert(player_foco_na_barra()&&player_posicao_seg()<p0+25.0f); }
+  // BAIXO leva o foco a fileira; la esquerda/direita voltam a trocar de botao.
+  teclaPlayer(SDLK_DOWN);assert(!player_foco_na_barra()&&player_controles_visiveis());
+  teclaPlayer(SDLK_RETURN);assert(player_controles_visiveis());   // OK no Play: alterna
+  { float p1=player_posicao_seg();
+    teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);
+    assert(!player_foco_na_barra()&&player_posicao_seg()==p1);
+    teclaPlayer(SDLK_RETURN);assert(player_pediu_faixas()==2); }   // Legendas
+  // Escondido de novo por BAIXO e revelado por BAIXO: fileira, nao barra.
+  teclaPlayer(SDLK_DOWN);assert(!player_controles_visiveis());
+  teclaPlayer(SDLK_DOWN);assert(player_controles_visiveis()&&!player_foco_na_barra());
+  player_encerrar();
   strcpy(c.tipo,"movie");cat_definir(&c,1);player_abrir(0,NULL);
   player_definir_episodio(2,4);assert(!player_linha_episodio()[0]);
   for(int i=0;i<10;i++)teclaPlayer(SDLK_RIGHT);

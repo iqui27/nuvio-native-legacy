@@ -182,6 +182,7 @@ int  video_audio_atual(void) { return 0; }
 int  video_legenda_atual(void) { return -1; }
 void video_escolher_audio(int i) { (void)i; }
 void video_escolher_legenda(int i) { (void)i; }
+int  video_legenda_nativa(char *d, int t) { (void)t; if (d) d[0] = 0; return 0; }
 void video_legenda_externa(const char *u) { (void)u; }
 void video_legenda_estilo(const VideoLegendaEstilo *e) { (void)e; }
 void video_definir_mp4(int m) { (void)m; }
@@ -2147,6 +2148,9 @@ void video_encerrar(void) {
   }
   ligado = 0;
 }
+// O uMS desenha a legenda embutida sozinho: nada para o app pintar.
+int video_legenda_nativa(char *d, int t) { (void)t; if (d) d[0] = 0; return 0; }
+
 #endif
 
 #endif  /* !__EMSCRIPTEN__ */
