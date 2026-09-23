@@ -1,4 +1,5 @@
 #include "artehero.h"
+#include "artereserva.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -162,63 +163,186 @@ const char *artehero_url(const CatItem *item) {
   return NULL;
 }
 
-const char *artehero_url_fonte(const CatItem *item, int fonte) {
-  // O hero pede a arte atual e a anterior no mesmo quadro durante a mistura.
-  // Um buffer único faria IMDb/Metahub trocar as duas para a última URL
-  // montada. O anel cobre também o prefetch do próximo destaque.
-  static char buf[8][512];
-  static int vez;
-  char *saida = buf[vez++ % 8];
+// POR QUE O AJUSTE "BACKGROUND DO HERO" NAO FAZIA NADA (22/09, dono: "a
+// settings de selecionar o source das artes nao ta funcionando").
+//
+// A versao anterior so devolvia TMDB/Trakt quando o item JA trazia a url
+// daquela fonte (backdropTmdb/backdropTrakt), e NULL no resto — e o chamador
+// (home.c, arte_hero_do_item) caia em artehero_url(), a arte automatica. Um
+// item do Cinemeta chega com `background` = metahub/<tt> (curl no top de
+// filmes em 22/09: os tres primeiros, os tres assim) e mais nada:
+//   1 Catalogo  = backdropCatalogo = backdrop = metahub/<tt>
+//   2 Metahub   = metahub/<tt>, montado pelo id: o MESMO arquivo
+//   3 TMDB      = NULL -> automatico -> metahub/<tt>
+//   4 Trakt     = NULL -> automatico -> metahub/<tt>
+// Cinco escolhas, uma imagem. backdropTmdb so nasce quando o titulo e ABERTO
+// (fotosDoElenco, descoberta.c) ou vem de catalogo do TMDB; backdropTrakt so
+// em item vindo de lista do Trakt. E o card nunca lia o ajuste.
+//
+// Agora TMDB e Trakt sem url no item viram url VIRTUAL pelo id do IMDb
+// (artereserva.h), resolvida no fio de rede do tex_cache: uma consulta por
+// titulo, cacheada em disco sob a virtual.
+static const char *urlDaFonte(const CatItem *item, int fonte, int grande,
+                              char *saida, size_t tam) {
   const char *b = NULL;
+  char id[32];
+  int temTt;
   if (!item) return NULL;
-  if (fonte <= 0) return artehero_url(item);
+  temTt = !strncmp(item->imdb, "tt", 2);
+  if (temTt) idLimpo(item->imdb, id, sizeof id);
   switch (fonte) {
-    case 1: b = item->backdropCatalogo[0] ? item->backdropCatalogo : NULL; break;
-    case 2:
-      if (!strncmp(item->imdb, "tt", 2)) {
-        char id[32];
-        idLimpo(item->imdb, id, sizeof id);
-        snprintf(saida, sizeof buf[0],
-                 "https://images.metahub.space/background/medium/%s/img", id);
-        b = saida;
-      }
+    case ARTEHERO_CATALOGO:
+      b = item->backdropCatalogo[0] ? item->backdropCatalogo
+        : item->backdrop[0] ? item->backdrop : NULL;
       break;
-    case 3:
+    case ARTEHERO_METAHUB:
+      // Um tamanho so (medium = 1920, ver regra 1 no topo); o card no Tizen
+      // desce para /small/ dentro do tex_cache.
+      if (!temTt) return NULL;
+      snprintf(saida, tam, "https://images.metahub.space/background/medium/%s/img", id);
+      return saida;
+    case ARTEHERO_TMDB:
       b = item->backdropTmdb[0] ? item->backdropTmdb :
           strstr(item->backdrop, "image.tmdb.org/t/p/") ? item->backdrop : NULL;
+      if (!b && temTt) {
+        snprintf(saida, tam, "%s" "tmdb/%s/%s", ARTE_VIRTUAL_PREFIXO,
+                 grande && fundoOriginal() ? "original" : "w1280", id);
+        return saida;
+      }
       break;
-    case 4:
+    case ARTEHERO_TRAKT:
       b = item->backdropTrakt[0] ? item->backdropTrakt :
           strstr(item->backdrop, "media.trakt.tv/") ? item->backdrop : NULL;
+      if (!b && temTt) {
+        snprintf(saida, tam, "%s" "trakt/%s/%s", ARTE_VIRTUAL_PREFIXO,
+                 grande && fundoOriginal() ? "full" : "medium", id);
+        return saida;
+      }
       break;
-    default: return artehero_url(item);
+    default: return NULL;
   }
   if (!b || !b[0]) return NULL;
-  // A fonte selecionada segue a mesma subida para o original que o caminho
-  // automático já fazia para TMDB/Trakt na qualidade alta.
-  if (fundoOriginal()) {
-    const char *p = strstr(b, "/t/p/w1280/");
+  if (!grande || !fundoOriginal()) return b;
+  // Tela cheia na ALTA: a mesma subida para o original que artehero_url faz.
+  { const char *p = strstr(b, "/t/p/w1280/");
     if (!p) p = strstr(b, "/t/p/w780/");
     if (p) {
       size_t pre = (size_t)(p - b);
       const char *resto = strchr(p + 5, '/');
-      if (pre < sizeof buf[0] && resto && resto[1]) {
-        snprintf(saida, sizeof buf[0], "%.*s/t/p/original/%s",
-                 (int)pre, b, resto + 1);
+      if (pre < tam && resto && resto[1]) {
+        snprintf(saida, tam, "%.*s/t/p/original/%s", (int)pre, b, resto + 1);
         return saida;
       }
-    }
-    { const char *p2 = strstr(b, "/medium/");
-      if (p2 && strstr(b, "media.trakt.tv/")) {
-        size_t pre = (size_t)(p2 - b);
-        if (pre < sizeof buf[0]) {
-          snprintf(saida, sizeof buf[0], "%.*s/full/%s",
-                   (int)pre, b, p2 + strlen("/medium/"));
-          return saida;
-        }
-      } }
-  }
+    } }
+  { const char *p2 = strstr(b, "/medium/");
+    if (p2 && strstr(b, "media.trakt.tv/")) {
+      size_t pre = (size_t)(p2 - b);
+      if (pre < tam) {
+        snprintf(saida, tam, "%.*s/full/%s", (int)pre, b, p2 + strlen("/medium/"));
+        return saida;
+      }
+    } }
   return b;
+}
+
+// O hero pede a arte atual e a anterior no mesmo quadro durante a mistura, e
+// o card e o destaque do mesmo titulo tambem. Um buffer unico faria a ultima
+// url montada sobrescrever as outras. As tentativas montam num buffer LOCAL e
+// so a vencedora ocupa o anel — assim cada chamada gasta UMA posicao, e 16
+// cobre destaque atual/anterior, prefetch e os cards do quadro com folga.
+static const char *fixar(const char *u, const char *tmp) {
+  static char anel[16][512];
+  static int vez;
+  char *b;
+  if (u != tmp) return u;              // url do proprio item: ja e estavel
+  b = anel[vez++ % 16];
+  snprintf(b, sizeof anel[0], "%s", tmp);
+  return b;
+}
+
+const char *artehero_url_fonte(const CatItem *item, int fonte) {
+  char tmp[512];
+  if (!item) return NULL;
+  if (fonte <= ARTEHERO_AUTO) return artehero_url(item);
+  return fixar(urlDaFonte(item, fonte, 1, tmp, sizeof tmp), tmp);
+}
+
+// A MESMA FOTO em tamanhos diferentes conta como igual: TMDB w1280 e
+// original do mesmo arquivo, Trakt medium e full, metahub pelo id. Sem isto o
+// modo "diferente" aceitaria como "outra arte" o original do proprio card.
+static void chaveFoto(const char *u, char *k, size_t n) {
+  const char *p;
+  if (!u) { k[0] = 0; return; }
+  if ((p = strstr(u, "/t/p/")) != NULL && (p = strchr(p + 5, '/')) != NULL) {
+    snprintf(k, n, "tmdb%s", p); return;
+  }
+  if (strstr(u, "media.trakt.tv/") &&
+      ((p = strstr(u, "/medium/")) != NULL || (p = strstr(u, "/full/")) != NULL)) {
+    snprintf(k, n, "trakt%s", strchr(p + 1, '/')); return;
+  }
+  if ((p = strstr(u, "images.metahub.space/background/")) != NULL &&
+      (p = strchr(p + 32, '/')) != NULL) {
+    snprintf(k, n, "metahub%s", p); return;
+  }
+  if (!strncmp(u, ARTE_VIRTUAL_PREFIXO, strlen(ARTE_VIRTUAL_PREFIXO))) {
+    const char *f = u + strlen(ARTE_VIRTUAL_PREFIXO), *t = strchr(f, '/');
+    if (t && (p = strchr(t + 1, '/')) != NULL) {
+      snprintf(k, n, "v%.*s%s", (int)(t - f), f, p); return;
+    }
+  }
+  snprintf(k, n, "%s", u);
+}
+static int mesmaFoto(const char *a, const char *b) {
+  char ka[512], kb[512];
+  if (!a || !b) return 0;
+  chaveFoto(a, ka, sizeof ka);
+  chaveFoto(b, kb, sizeof kb);
+  return !strcmp(ka, kb);
+}
+
+const char *artehero_url_card_fonte(const CatItem *item, int fonte, int diferente) {
+  char tmp[512];
+  const char *u;
+  if (!item) return NULL;
+  // Diferente LIGADO: o card fica com a arte do catalogo, sempre; a fonte
+  // escolhida vai so para o destaque e o detalhe (regra no .h).
+  if (diferente || fonte <= ARTEHERO_AUTO) return artehero_url_card(item);
+  u = urlDaFonte(item, fonte, 0, tmp, sizeof tmp);
+  if (u && !falhou(u)) return fixar(u, tmp);
+  return artehero_url_card(item);
+}
+
+const char *artehero_url_destaque(const CatItem *item, int fonte, int diferente) {
+  // Ordem de busca de "outra arte" quando a escolhida nao serve: TMDB e Trakt
+  // primeiro porque sao as que costumam ser OUTRA foto do metahub/Cinemeta
+  // (o fanart do Trakt vem do fanart.tv); o metahub e o catalogo por ultimo.
+  static const int ORDEM[] = { ARTEHERO_TMDB, ARTEHERO_TRAKT,
+                               ARTEHERO_METAHUB, ARTEHERO_CATALOGO };
+  char tmp[512];
+  const char *card, *u;
+  int i;
+  if (!item) return NULL;
+  if (!diferente) {
+    // PADRAO: a mesma imagem do card (19/09), agora com a fonte escolhida
+    // valendo para os dois. Sem a fonte, a arte automatica.
+    if (fonte <= ARTEHERO_AUTO) return artehero_url(item);
+    u = urlDaFonte(item, fonte, 1, tmp, sizeof tmp);
+    if (u && !falhou(u)) return fixar(u, tmp);
+    return artehero_url(item);
+  }
+  card = artehero_url_card(item);
+  if (fonte > ARTEHERO_AUTO) {
+    u = urlDaFonte(item, fonte, 1, tmp, sizeof tmp);
+    if (u && !falhou(u) && !mesmaFoto(u, card)) return fixar(u, tmp);
+  }
+  for (i = 0; i < (int)(sizeof ORDEM / sizeof *ORDEM); i++) {
+    if (ORDEM[i] == fonte) continue;
+    u = urlDaFonte(item, ORDEM[i], 1, tmp, sizeof tmp);
+    if (u && !falhou(u) && !mesmaFoto(u, card)) return fixar(u, tmp);
+  }
+  // Nenhuma outra existe (sem id do IMDb, tudo falhou): a do card, que e
+  // melhor que tela vazia.
+  return artehero_url(item);
 }
 
 // O LOGO DO TITULO. Mesmo problema do fundo, numa escada diferente.

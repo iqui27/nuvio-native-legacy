@@ -28,6 +28,22 @@ char *rede_baixar(const char *url, int segundos) {
   return resposta ? strdup(resposta) : NULL;
 }
 
+// Trakt: chave publica e busca por id sao dubles, como o /find acima.
+static const char *respostaTrakt = NULL;
+static int temChaveTrakt = 1;
+static char ultimaUrlTrakt[300];
+int trakt_cabecalhos_publicos(const char **cab, char *k, size_t nK) {
+  if (!temChaveTrakt) return 0;
+  snprintf(k, nK, "trakt-api-key: X");
+  cab[0] = "trakt-api-version: 2"; cab[1] = k; cab[2] = NULL;
+  return 1;
+}
+char *rede_baixar_com(const char *url, int segundos, const char *const *cab) {
+  (void)segundos; (void)cab;
+  snprintf(ultimaUrlTrakt, sizeof ultimaUrlTrakt, "%s", url);
+  return respostaTrakt ? strdup(respostaTrakt) : NULL;
+}
+
 static int falhas = 0;
 #define OK(cond, msg) do { if (!(cond)) { printf("FALHOU: %s\n", msg); falhas++; } } while (0)
 
@@ -134,6 +150,39 @@ int main(void) {
     OK(arte_reserva_registrar("https://capacity/0000.jpg", "tt0000000", 0) == 1,
        "re-registro apos tabela cheia ainda atualiza chave existente");
   }
+  // URL VIRTUAL DE FONTE (ajuste "Background do hero"): o fundo do TMDB ou do
+  // Trakt de um titulo que so trouxe o do Cinemeta.
+  resposta = "{\"movie_results\":[{\"id\":278,\"backdrop_path\":\"/fundo.jpg\"}],\"tv_results\":[]}";
+  OK(arte_fonte_resolver("https://image.tmdb.org/t/p/w1280/x.jpg", s, sizeof s) == 0, "url real nao e virtual");
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt0111161", s, sizeof s) == 1 &&
+     !strcmp(s, "https://image.tmdb.org/t/p/w1280/fundo.jpg"), "virtual TMDB -> backdrop w1280");
+  OK(strstr(ultimaUrl, "/3/find/tt0111161?api_key=CHAVE&external_source=imdb_id") != NULL, "virtual TMDB pede o /find");
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/original/tt0111161", s, sizeof s) == 1 &&
+     !strcmp(s, "https://image.tmdb.org/t/p/original/fundo.jpg"), "virtual TMDB original fora do Tizen");
+  resposta = "{\"movie_results\":[],\"tv_results\":[{\"id\":1396,\"backdrop_path\":\"/serie.jpg\"}]}";
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt0903747", s, sizeof s) == 1 &&
+     !strcmp(s, "https://image.tmdb.org/t/p/w1280/serie.jpg"), "virtual TMDB de serie");
+  resposta = "{\"movie_results\":[],\"tv_results\":[]}";
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt9999999", s, sizeof s) == -1, "virtual TMDB desconhecido falha");
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w9999/tt0111161", s, sizeof s) == -1, "tamanho fora da escada");
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/12345", s, sizeof s) == -1, "virtual sem tt");
+  // Formato MEDIDO com curl em 22/09 (/search/imdb/tt0111161?extended=full,images).
+  respostaTrakt = "[{\"type\":\"movie\",\"movie\":{\"ids\":{\"imdb\":\"tt0111161\"},"
+    "\"images\":{\"logo\":[\"media.trakt.tv/images/movies/000/000/234/logos/medium/l.png.webp\"],"
+    "\"fanart\":[\"media.trakt.tv/images/movies/000/000/234/fanarts/medium/d0.jpg.webp\"],"
+    "\"poster\":[]}}}]";
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/trakt/medium/tt0111161", s, sizeof s) == 1 &&
+     !strcmp(s, "https://media.trakt.tv/images/movies/000/000/234/fanarts/medium/d0.jpg.webp"), "virtual Trakt -> fanart");
+  OK(strstr(ultimaUrlTrakt, "api.trakt.tv/search/imdb/tt0111161?") != NULL &&
+     strstr(ultimaUrlTrakt, "images") != NULL, "virtual Trakt pede a busca por id com imagens");
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/trakt/full/tt0111161", s, sizeof s) == 1 &&
+     !strcmp(s, "https://media.trakt.tv/images/movies/000/000/234/fanarts/full/d0.jpg.webp"), "virtual Trakt full");
+  respostaTrakt = "[{\"type\":\"movie\",\"movie\":{\"images\":{\"fanart\":[]}}}]";
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/trakt/medium/tt1", s, sizeof s) == -1, "fanart vazio falha");
+  temChaveTrakt = 0; respostaTrakt = NULL;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/trakt/medium/tt0111161", s, sizeof s) == -1, "sem chave do Trakt falha");
+  chave = "";
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt0111161", s, sizeof s) == -1, "sem chave do TMDB falha");
   printf("%s\n", falhas ? "artereserva: FALHOU" : "artereserva: ok");
   return falhas ? 1 : 0;
 }

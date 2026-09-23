@@ -3,6 +3,7 @@
 #include "descoberta.h"
 #include "rede.h"
 #include "js.h"
+#include "trakt.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -235,6 +236,87 @@ int arte_reserva_url(const char *url, char *saida, size_t tam) {
   // w1280 cobre o heroi e o detalhe pelo mesmo decode escalado do card.
   snprintf(saida, tam, "https://image.tmdb.org/t/p/%s%s", poster ? "w342" : "w1280", caminho);
   printf("[tex] reserva do TMDB para %s de %s\n", tipo, id);
+  fflush(stdout);
+  return 1;
+}
+
+// PRIMEIRA URL DE UMA LISTA DE IMAGENS do Trakt ("fanart":["media.trakt.tv/..."]).
+// Copia curta do imagemTrakt de trakt.c, que e static e vive num modulo que
+// este nao pode arrastar para o teste sem rede. MEDIDO em 22/09 com curl em
+// /search/imdb/tt0111161?extended=full,images: o bloco vem dentro de
+// movie/show, a url vem SEM esquema e em /medium/ (.jpg.webp — webp.c le).
+static int fanartTrakt(const char *corpo, char *dst, size_t n) {
+  const char *p = strstr(corpo, "\"fanart\""), *ini;
+  size_t L;
+  if (!p) return 0;
+  p = strchr(p + 8, '[');
+  if (!p) return 0;
+  while (*++p && (unsigned char)*p <= ' ') { }
+  if (*p != '"') return 0;               // lista vazia: nao inventar arte
+  ini = ++p;
+  while (*p && *p != '"') p++;
+  L = (size_t)(p - ini);
+  if (!L || L + 9 >= n) return 0;
+  if (!strncmp(ini, "http", 4)) snprintf(dst, n, "%.*s", (int)L, ini);
+  else                          snprintf(dst, n, "https://%.*s", (int)L, ini);
+  return 1;
+}
+
+int arte_fonte_resolver(const char *url, char *saida, size_t tam) {
+  static const char PRE[] = ARTE_VIRTUAL_PREFIXO;
+  char fonte[8], tamanho[12], id[24];
+  const char *p;
+  if (!url || strncmp(url, PRE, sizeof PRE - 1)) return 0;
+  if (!saida || tam < 80) return -1;
+  p = url + sizeof PRE - 1;
+  if (sscanf(p, "%7[^/]/%11[^/]/%23[^/]", fonte, tamanho, id) != 3 ||
+      strncmp(id, "tt", 2)) return -1;
+#ifdef __EMSCRIPTEN__
+  // Samsung: nunca o fundo de 3840 (fundoOriginal() em artehero.c). A url
+  // virtual ja nasce pequena la; isto e a segunda trava, para uma url gravada
+  // por outra build ou montada por outro caminho.
+  if (!strcmp(tamanho, "original")) snprintf(tamanho, sizeof tamanho, "w1280");
+  if (!strcmp(tamanho, "full"))     snprintf(tamanho, sizeof tamanho, "medium");
+#endif
+  if (!strcmp(fonte, "tmdb")) {
+    char api[300], caminho[128] = "";
+    const char *chave = desc_chave_tmdb_reserva(), *v;
+    char *resp;
+    if (strcmp(tamanho, "w1280") && strcmp(tamanho, "original")) return -1;
+    if (!chave[0]) return -1;
+    snprintf(api, sizeof api,
+             "https://api.themoviedb.org/3/find/%s?api_key=%s&external_source=imdb_id",
+             id, chave);
+    resp = rede_baixar(api, 8);
+    if (!resp) return -1;
+    v = js_array(resp, NULL, "movie_results");
+    if (!v) v = js_array(resp, NULL, "tv_results");
+    if (v) js_texto(v, js_fim(v), "backdrop_path", caminho, sizeof caminho);
+    free(resp);
+    if (caminho[0] != '/') return -1;
+    snprintf(saida, tam, "https://image.tmdb.org/t/p/%s%s", tamanho, caminho);
+  } else if (!strcmp(fonte, "trakt")) {
+    // Chave PUBLICA do aplicativo, sem token: a busca por id nao precisa de
+    // conta vinculada, e o fundo do Trakt nao pode depender de login.
+    const char *cab[4];
+    char chave[160], api[200], fan[400];
+    char *resp;
+    int ok;
+    if (strcmp(tamanho, "medium") && strcmp(tamanho, "full")) return -1;
+    if (!trakt_cabecalhos_publicos(cab, chave, sizeof chave)) return -1;
+    snprintf(api, sizeof api,
+             "https://api.trakt.tv/search/imdb/%s?type=movie,show&extended=full,images", id);
+    resp = rede_baixar_com(api, 8, cab);
+    if (!resp) return -1;
+    ok = fanartTrakt(resp, fan, sizeof fan);
+    free(resp);
+    if (!ok) return -1;
+    { char *m = strstr(fan, "/medium/");
+      if (m && !strcmp(tamanho, "full") && strlen(fan) + 2 < tam)
+        snprintf(saida, tam, "%.*s/full/%s", (int)(m - fan), fan, m + 8);
+      else snprintf(saida, tam, "%s", fan); }
+  } else return -1;
+  printf("[tex] fundo %s de %s: %.90s\n", fonte, id, saida);
   fflush(stdout);
   return 1;
 }
