@@ -724,6 +724,20 @@ int main(int argc, char **argv) {
 #define NV_T0() (SDL_GetPerformanceCounter())
 #define NV_DT(a) ((SDL_GetPerformanceCounter() - (a)) * 1000.0 / perFreq)
 
+#ifdef __EMSCRIPTEN__
+  // DE QUEM E A TAREFA LONGA (23/09/2026). O [navegador] diz que o fio
+  // principal parou 1 a 31 s (Samsung 1.4.1), mas nao se foi o NOSSO quadro
+  // ou o que roda entre dois quadros (chamadas proxiadas dos pthreads, IDBFS,
+  // timers do shell, o proprio navegador). Com o FPS abaixo de 7 nem o
+  // [quadro] aparecia (o `quadros > 20` abaixo), e era exatamente quando as
+  // tarefas eram maiores. c-max: o maior trecho de C sem ceder (do retorno de
+  // nv_ceder_quadro ate a proxima chamada: uma tarefa do navegador inteira e
+  // nossa). fora-max: a maior espera dentro de nv_ceder_quadro (o que o
+  // navegador fez no meio). longtask-max ~ fora-max com c-max pequeno = nao
+  // e codigo do laco.
+  Uint64 fimCeder = SDL_GetPerformanceCounter();
+  double cMaxMs = 0, foraMaxMs = 0;
+#endif
   while (!app_quer_sair()) {
     SDL_Event e;
     Uint64 tEv = NV_T0();
@@ -832,7 +846,9 @@ int main(int argc, char **argv) {
     // um dt de varios segundos e a animacao daria um salto.
     double dtAnim = dtms > 100.0 ? 100.0 : dtms;
     float dt = (float)(dtAnim / 1000.0);
-    if (quadros > 20) {
+    // Quadro de mais de 1 s entra no pior MESMO nos primeiros 20 da janela:
+    // com FPS de 0,1 a janela inteira tem 1 quadro, e o pior saia 0.0.
+    if (quadros > 20 || dtms > 1000.0) {
       if (dtms > pior) { pior = dtms; piorTxtMs = txtMsQuadro; piorTxtN = txtNQuadro;
                          pEv=fEv; pBomb=fBomb; pUpd=fUpd; pDes=fDes; pSwap=fSwap; pAux=fAux; pClr=fClr;
                          pUplN=fUplN; pUplB=fUplB;
@@ -891,7 +907,13 @@ int main(int argc, char **argv) {
     t0 = NV_T0();
     SDL_GL_SwapWindow(win);
 #ifdef __EMSCRIPTEN__
-    nv_ceder_quadro();
+    { Uint64 c0 = SDL_GetPerformanceCounter();
+      double c = (double)(c0 - fimCeder) * 1000.0 / perFreq, fora;
+      if (c > cMaxMs) cMaxMs = c;
+      nv_ceder_quadro();
+      fimCeder = SDL_GetPerformanceCounter();
+      fora = (double)(fimCeder - c0) * 1000.0 / perFreq;
+      if (fora > foraMaxMs) foraMaxMs = fora; }
     // Oferece ao IDBFS a chance de descarregar. Quase todo quadro isso e a
     // leitura de duas bandeiras e um return: quem decide SE e quando descarregar
     // e a politica em dados.c, porque descarregar a cada escrita era o que
@@ -989,8 +1011,10 @@ int main(int argc, char **argv) {
                    HEAPU8[$0 + i] = 0;
                    L.max = 0; L.n = 0; L.soma = 0; L.quem = ""; }, quem);
           printf("[navegador] js=%d/%d MiB raf-max=%d ms raf-lentos=%d escondida=%d"
-                 " longtask-max=%d ms n=%d soma=%d ms quem=%s\n",
-                 jsMB, jsLimMB, rafMax, rafLentos, escondida, longMax, longN, longSoma, quem); } }
+                 " longtask-max=%d ms n=%d soma=%d ms quem=%s c-max=%d ms fora-max=%d ms\n",
+                 jsMB, jsLimMB, rafMax, rafLentos, escondida, longMax, longN, longSoma, quem,
+                 (int)cMaxMs, (int)foraMaxMs);
+          cMaxMs = 0; foraMaxMs = 0; } }
 #endif
       // A REPARTICAO DO PIOR QUADRO, NA TELA E NAO SO NO ARQUIVO.
       //

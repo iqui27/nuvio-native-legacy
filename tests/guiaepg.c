@@ -27,6 +27,7 @@ void  dados_marcar_sujo(int l)        { (void)l; }
 void  dados_fs_travar(void)           {}
 void  dados_fs_liberar(void)          {}
 char *dados_caminho(char *d, unsigned t, const char *n) { (void)d;(void)t;(void)n; return 0; }
+int   dados_apagar(const char *n)     { (void)n; return 0; }
 const char *dados_dir(void)           { return "/tmp"; }
 
 static int falhas;
