@@ -160,7 +160,24 @@ typedef enum {
   // atravessa a tela (skeleton shimmer). Use gfx_esqueleto, que calcula a onda
   // e cai no GFX_COR parado com animacoes reduzidas.
   GFX_ESQUELETO = 28,
-  GFX_NMODOS = 29
+  // GFX_LINHA — segmento de reta com nucleo e halo, resolvido no fragmento.
+  // Existe para a constelacao da tela Explorar: nao havia primitiva de linha
+  // (so retangulos alinhados), e pontilhar com dezenas de discos custava um
+  // desenho por ponto. O segmento vai de um canto ao oposto do retangulo,
+  // descontada a margem do halo:
+  //   uPar.x = 0 -> do alto-esquerda ao baixo-direita; 1 -> baixo-esq ao alto-dir
+  //   uFoco  = meia espessura do nucleo, em fracao da ALTURA do retangulo
+  //   uRaio  = alcance do halo (e margem), na mesma unidade
+  // O retangulo e o envelope do segmento: quem chama parte linhas longas em
+  // pedacos para o envelope nao virar area de tela cheia (ver explorar.c).
+  GFX_LINHA = 29,
+  // GFX_CEU — ceu procedural da Explorar numa passada: base escura, nebulosa
+  // tingida por uCor e estrelas por celula de grade com cintilacao.
+  //   uPar  = deriva da grade (parallax), em celulas
+  //   uFoco = tempo em segundos (0 = parado, para animacoes reduzidas)
+  // Substitui o preenchimento de fundo da tela, entao nao soma camada cheia.
+  GFX_CEU = 30,
+  GFX_NMODOS = 31
 } GfxModo;
 
 typedef struct {

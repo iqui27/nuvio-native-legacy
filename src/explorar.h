@@ -1,6 +1,7 @@
-// Tela de descoberta cinematografica: uma fileira principal e uma ficha
-// editorial do titulo sob o foco. O modulo nao busca dados; le o catalogo que
-// a Home ja montou, para abrir instantaneo e continuar coerente com o cache.
+// Explorar: o ceu das historias da pessoa. O que ela viu vira estrela, o que
+// as historias tem em comum vira linha, e entre duas estrelas nasce a proxima.
+// Os dados vem de mapa.c (catalogo local na hora, TMDB num fio, com cache);
+// este modulo so desenha e navega.
 #ifndef NV_EXPLORAR_H
 #define NV_EXPLORAR_H
 
