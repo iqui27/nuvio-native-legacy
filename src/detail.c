@@ -161,6 +161,10 @@ static Foco foco;
 static float animFoco[N_SECOES][N_ITENS];
 static float scrollSec[N_SECOES];    // rolagem HORIZONTAL de cada fileira
 static float scrollY = 0.0f;         // rolagem VERTICAL do documento
+// Velocidade da mola de 2a ordem da rolagem (anim_mola2): partida macia e
+// cauda exponencial, a MESMA curva que a home mede. A de 1a ordem que estava
+// aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
+static float velSec[N_SECOES], velY = 0.0f;
 // TRAILER NO FUNDO (trailer.h). `trailerDesde` e o instante em que a pagina
 // assentou, para o autoplay esperar a pessoa ler antes de a arte virar
 // video; `trailerTentado` garante uma tentativa por abertura (o video acaba,
@@ -873,7 +877,7 @@ void detail_abrir(const HomeItem *it) {
   audAberta = 0; audTempAberta = -1; audTempVista = -1; frasesAberta = 0;
   item = *it;
   aberto = 1; saindo = 0; nivel = 0; botao = 0;
-  t = 0.0f; pg = 0.0f; scrollY = 0.0f; abaInfo = 0; pessoaAberta = 0;
+  t = 0.0f; pg = 0.0f; scrollY = 0.0f; velY = 0.0f; abaInfo = 0; pessoaAberta = 0;
   relFoco = 0; pedAbrir = -1; ratTemp = 0; ratSinc = 0;
   trailer_fechar(); trailerDesde = 0; trailerTentado = 0; trailerFade = 0.0f;
   trailerEtapa = 0; trailerPrazo = 0;
@@ -959,7 +963,7 @@ void detail_abrir(const HomeItem *it) {
   foco.colunaLembrada[SEC_TEMPORADAS] = temporada;
   foco.colunaLembrada[SEC_EPISODIOS]  = epAncora;
   memset(animFoco, 0, sizeof animFoco);
-  memset(scrollSec, 0, sizeof scrollSec);
+  memset(scrollSec, 0, sizeof scrollSec); memset(velSec, 0, sizeof velSec);
 }
 
 int detail_aberto(void) { return aberto; }
@@ -2293,7 +2297,7 @@ void detail_atualizar(float dt, Uint32 agora) {
         else if (x < alvo + 24.0f)             alvo = x - 24.0f;
       }
       if (alvo < 0.0f) alvo = 0.0f;
-      scrollSec[r] = anim_mola(scrollSec[r], alvo, dt, NV_MOLA_SCROLL);
+      scrollSec[r] = anim_mola2(&velSec[r], scrollSec[r], alvo, dt, NV_MOLA2_SCROLL);
     }
     // A fileira de episodios rola ATRAS da aba de temporada mesmo sem o foco:
     // e o que da ao seletor a resposta visual que ele perdeu ao deixar de
@@ -2302,8 +2306,9 @@ void detail_atualizar(float dt, Uint32 agora) {
         epAncora < foco.nColunas[SEC_EPISODIOS]) {
       float ax = xItem(SEC_EPISODIOS, epAncora) - NV_DETP_X;
       if (ax < 0.0f) ax = 0.0f;
-      scrollSec[SEC_EPISODIOS] = anim_mola(scrollSec[SEC_EPISODIOS], ax, dt,
-                                           NV_MOLA_SCROLL);
+      scrollSec[SEC_EPISODIOS] = anim_mola2(&velSec[SEC_EPISODIOS],
+                                            scrollSec[SEC_EPISODIOS], ax, dt,
+                                            NV_MOLA2_SCROLL);
     } }
 
   // --- rolagem VERTICAL -----------------------------------------------------
@@ -2336,7 +2341,7 @@ void detail_atualizar(float dt, Uint32 agora) {
     if (alvoY > maxY) alvoY = maxY;
     if (alvoY < 0.0f) alvoY = 0.0f;
   }
-  scrollY = anim_mola(scrollY, alvoY, dt, NV_MOLA_SCROLL);
+  scrollY = anim_mola2(&velY, scrollY, alvoY, dt, NV_MOLA2_SCROLL);
 }
 
 // ---------------------------------------------------------------------------

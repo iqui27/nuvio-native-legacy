@@ -94,6 +94,10 @@ int stream_folha_recarregar(void) { int r = recarregar; recarregar = 0; return r
 
 static int aberta = 0, foco = 0, escolha = -1;
 static float anim = 0.0f, rolagem = 0.0f;
+// Velocidade da mola de 2a ordem da rolagem (anim_mola2): partida macia e
+// cauda exponencial, a MESMA curva que a home mede. A de 1a ordem que estava
+// aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
+static float velRol = 0.0f;
 // Linha do realce, em unidades de ITEM (2.4 = entre o terceiro e o quarto). O
 // realce escorrega entre as linhas em vez de saltar: com o salto seco a folha
 // parecia trocar de conteudo a cada tecla, e num D-pad e a continuidade do
@@ -778,7 +782,7 @@ void stream_folha_abrir(void) {
   aberta=1; escolha=-1; foco=0; grupo=1; filtro=0; soMp4=0; recarregar=0;
   atualizarProvedores();
   if(atual>=0) foco=atual;
-  rolagem=0;
+  rolagem=0;velRol=0;
 }
 int stream_folha_aberta(void) { return aberta; }
 void stream_folha_evento(const SDL_Event *e) {
@@ -793,7 +797,7 @@ void stream_folha_evento(const SDL_Event *e) {
     filtro+=k==SDLK_RIGHT?1:-1;
     if(filtro<0) filtro=0;
     if(filtro>=nProvedores) filtro=nProvedores-1;
-    foco=0;rolagem=0;
+    foco=0;rolagem=0;velRol=0;
   }
   if(grupo==-1 && (k==SDLK_LEFT || k==SDLK_RIGHT)) {
     foco+=k==SDLK_RIGHT?1:-1;
@@ -807,7 +811,7 @@ void stream_folha_evento(const SDL_Event *e) {
         // Fecha a folha junto: a imagem volta (ou nao) na propria tela do
         // player, e deixar a folha aberta em cima esconderia o resultado.
         case BT_SEM_HDR:    video_forcar_sdr(); aberta=0; break;
-        case BT_SO_MP4:     soMp4 = !soMp4; foco=0; rolagem=0; break;
+        case BT_SO_MP4:     soMp4 = !soMp4; foco=0; rolagem=0;velRol=0; break;
         default:            aberta=0; break;
       }
     }
@@ -826,7 +830,7 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
   float alvo=foco*FOLHA_LINHA-(area-FOLHA_LINHA)*.5f;
   if(alvo>max) alvo=max;
   if(alvo<0) alvo=0;
-  rolagem=anim_mola(rolagem,alvo,dt,NV_MOLA_SCROLL);
+  rolagem=anim_mola2(&velRol,rolagem,alvo,dt,NV_MOLA2_SCROLL);
 }
 int stream_folha_escolheu(int *out) {
   if(escolha<0) return 0;

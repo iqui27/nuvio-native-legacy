@@ -20,6 +20,8 @@
 static int aberto, titulo, atualT, atualE, temporada, foco, grupo;
 static int pedidoT, pedidoE;
 static float anim, scroll;
+// Velocidade da rolagem de 2a ordem (anim_mola2): partida macia, como na home.
+static float velScroll;
 static int localizarAtual;
 // ONDE O FOCO TEM DE ESTAR, POR NUMERO DE EPISODIO — issue #102.
 //
@@ -596,7 +598,8 @@ void episodios_atualizar(float dt) {
   if((foco+1)*EP_ROW>scroll+area) alvo=(foco+1)*EP_ROW-area;
   if (alvo > max) alvo = max;
   if (alvo < 0) alvo = 0;
-  scroll = semMolaScroll ? alvo : anim_mola(scroll, alvo, dt, NV_MOLA_SCROLL);
+  if (semMolaScroll) { scroll = alvo; velScroll = 0.0f; }
+  else scroll = anim_mola2(&velScroll, scroll, alvo, dt, NV_MOLA2_SCROLL);
   semMolaScroll = 0;
 }
 void episodios_desenhar(void) {

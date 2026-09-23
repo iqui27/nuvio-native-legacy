@@ -256,6 +256,10 @@ static float animModo[BIB_N_MODOS];
 static float animPick[3];
 static float animFoco[BIB_MAX_LINHAS][NV_BIB_COLUNAS];
 static float scrollY = 0.0f;
+// Velocidade da mola de 2a ordem da rolagem (anim_mola2): partida macia e
+// cauda exponencial, a MESMA curva que a home mede. A de 1a ordem que estava
+// aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
+static float velY = 0.0f;
 static int sair = 0, pedido = -1;
 static int nCelulas = 0;         // celulas da grade do estado atual
 static unsigned buscaAberta;     // 1 enquanto o teclado de busca esta na tela
@@ -398,7 +402,7 @@ static void remapear(int preservar) {
     // enquanto a lista carregava.
     return;
   }
-  scrollY = 0.0f;
+  scrollY = 0.0f; velY = 0.0f;
   memset(animFoco, 0, sizeof animFoco);
 }
 
@@ -758,7 +762,7 @@ void biblioteca_atualizar(float dt, Uint32 agora) {
     alvo = 0.0f;
   }
   if (alvo < 0.0f) alvo = 0.0f;
-  scrollY = anim_mola(scrollY, alvo, dt, NV_MOLA_SCROLL);
+  scrollY = anim_mola2(&velY, scrollY, alvo, dt, NV_MOLA2_SCROLL);
 }
 
 // ---------------------------------------------------------------- desenho

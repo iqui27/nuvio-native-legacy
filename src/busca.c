@@ -119,6 +119,10 @@ static float animTecla[BU_KB_FILEIRAS][BU_KB_COLS];
 static float animRes[BU_MAX_FILEIRAS][BU_MAX_POR_FIL];
 static float scrollY = 0.0f, scrollAlvo = 0.0f;
 static float scrollX[BU_MAX_FILEIRAS];
+// Velocidade da mola de 2a ordem da rolagem (anim_mola2): partida macia e
+// cauda exponencial, a MESMA curva que a home mede. A de 1a ordem que estava
+// aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
+static float velY = 0.0f, velX[BU_MAX_FILEIRAS];
 static float animCampo = 0.0f;
 static HomeItem itemFoco;
 static int   temItemFoco = 0;
@@ -319,8 +323,8 @@ static void refiltrar(void) {
   if (nFil == 0) painel = 0;
   memset(animRes, 0, sizeof animRes);
   if (!mesmaConsulta) {
-    memset(scrollX, 0, sizeof scrollX);
-    scrollY = scrollAlvo = 0.0f;
+    memset(scrollX, 0, sizeof scrollX); memset(velX, 0, sizeof velX);
+    scrollY = scrollAlvo = 0.0f; velY = 0.0f;
   }
 }
 
@@ -437,12 +441,12 @@ int busca_iniciar(void) {
   painel = 0; sair = 0; pedido = -1;
   nConsulta = 0; consulta[0] = 0;
   consultaFiltrada[0] = 0;
-  scrollY = scrollAlvo = 0.0f;
+  scrollY = scrollAlvo = 0.0f; velY = 0.0f;
   animCampo = 0.0f;
   temItemFoco = 0;
   memset(animTecla, 0, sizeof animTecla);
   memset(animRes, 0, sizeof animRes);
-  memset(scrollX, 0, sizeof scrollX);
+  memset(scrollX, 0, sizeof scrollX); memset(velX, 0, sizeof velX);
   memset(animRec, 0, sizeof animRec);
   focoRec = 0; nRecLayout = 0;
   okPress = okLongo = 0; okDesde = 0;
@@ -653,12 +657,12 @@ void busca_atualizar(float dt, Uint32 agora) {
     if (dir - alvoX > util) alvoX = dir - util;
     if (esq - alvoX < 0.0f) alvoX = esq;
     if (alvoX < 0.0f) alvoX = 0.0f;
-    scrollX[r] = anim_mola(scrollX[r], alvoX, dt, NV_MOLA_SCROLL);
+    scrollX[r] = anim_mola2(&velX[r], scrollX[r], alvoX, dt, NV_MOLA2_SCROLL);
   } else {
     scrollAlvo = 0.0f;
   }
   if (scrollAlvo < 0.0f) scrollAlvo = 0.0f;
-  scrollY = anim_mola(scrollY, scrollAlvo, dt, NV_MOLA_SCROLL);
+  scrollY = anim_mola2(&velY, scrollY, scrollAlvo, dt, NV_MOLA2_SCROLL);
 }
 
 // --- Desenho -----------------------------------------------------------------

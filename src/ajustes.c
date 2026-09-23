@@ -933,6 +933,10 @@ static int filTopo;              // primeira linha desenhada (rolagem)
 // "pula o cabecalho da secao" ser uma soma em vez de um mapa de fileiras.
 static float animFoco[AJ_N];
 static float scrollY = 0.0f;
+// Velocidade da mola de 2a ordem da rolagem (anim_mola2): partida macia e
+// cauda exponencial, a MESMA curva que a home mede. A de 1a ordem que estava
+// aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
+static float velY = 0.0f;
 static float paginaA = 1.0f;   // entrada da pagina da categoria (0..1)
 static int sair = 0;
 
@@ -1669,7 +1673,7 @@ int ajustes_iniciar(void) {
   // padrao de fabrica e o valor[] posicional (1 = desligado nas duas
   // linhas), e quem veio da 1.3.9 com o autoplay nascido ligado recebe o
   // reset unico em ajustes_dir() (marca trailer-1310.txt).
-  focoOp = 0; scrollY = 0.0f; sair = 0;
+  focoOp = 0; scrollY = 0.0f; velY = 0.0f; sair = 0;
   focoIndice = 0;
   filAberta = 0; filFoco = 0; filCampo = 0; filPegou = 0; filTopo = 0;
   emEdicao = 0;
@@ -2682,13 +2686,14 @@ void ajustes_atualizar(float dt, Uint32 agora) {
     int secAgora = secaoDe(focoOp);
     if (secAgora != secVista) {
       if (secVista >= 0) paginaA = 0.0f;
-      secVista = secAgora; scrollY = 0.0f; alvo = 0.0f;
+      secVista = secAgora; scrollY = 0.0f; velY = 0.0f; alvo = 0.0f;
     } }
   paginaA = ajustes_animacoes_reduzidas() ? 1.0f : anim_rampa(paginaA, 1.0f, dt, 220.0f);
   if (base - alvo > AJ_BASE - AJ_TOPO) alvo = base - (AJ_BASE - AJ_TOPO);
   if (topo - alvo < 0.0f)              alvo = topo;
   if (alvo < 0.0f) alvo = 0.0f;
-  scrollY = ajustes_animacoes_reduzidas() ? alvo : anim_mola(scrollY, alvo, dt, NV_MOLA_SCROLL);
+  scrollY = anim_mola2_reduzida(&velY, scrollY, alvo, dt, NV_MOLA2_SCROLL,
+                                ajustes_animacoes_reduzidas());
 }
 
 // Leva a escolha da linha para linguas.c. "Da conta" (indice 0) manda string
