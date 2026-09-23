@@ -490,7 +490,9 @@ static void *baixar(void *u) {
   if (aceitarAss) {
     assrender_carregar(corpo, strlen(corpo), p->g);
     fprintf(stderr, "[legenda] %s\n", assrender_diagnostico());
-  } else if (ass) {
+  } else if (ass && p->g == geracao) {
+    // So o dono atual limpa: um download ATRASADO de outra faixa (a pessoa ja
+    // trocou) apagava o libass da faixa nova.
     assrender_limpar();
   }
   free(corpo);
@@ -516,13 +518,14 @@ void legenda_carregar(const char *url) {
 // O MESMO caminho de baixar(), sem rede: o corpo ja esta na mao. Serve ao
 // teste de captura (tests/legenda_ass_shot.c) e a quem um dia entregar cues
 // vindos de dentro do MKV (#92, fase 3).
-void legenda_definir_corpo(const char *corpo) {
+static unsigned definirCorpo(const char *corpo, int checar, unsigned dono) {
   LegendaCue *v=NULL; int n, i; double dur=0; int ass; unsigned g;
-  if(!corpo)return;
+  if(!corpo)return 0;
   ass=legenda_eh_ass(corpo);
   n=legenda_extrair(corpo,&v);
   for(i=0;i<n;i++){ double d=v[i].fim-v[i].inicio; if(d>dur)dur=d; }
   pthread_mutex_lock(&trava);
+  if(checar && geracao!=dono){ pthread_mutex_unlock(&trava); free(v); return 0; }
   ligada=1;geracao++;g=geracao;free(cues);cues=v;nCues=n;maiorDur=dur;
   pthread_mutex_unlock(&trava);
   assrender_geracao(g);
@@ -531,6 +534,42 @@ void legenda_definir_corpo(const char *corpo) {
     assrender_carregar(corpo, strlen(corpo), g);
     fprintf(stderr, "[legenda] %s\n", assrender_diagnostico());
   }
+  return g;
+}
+
+void legenda_definir_corpo(const char *corpo) { definirCorpo(corpo, 0, 0); }
+
+unsigned legenda_definir_corpo_se(const char *corpo, unsigned dono) {
+  return definirCorpo(corpo, 1, dono);
+}
+
+unsigned legenda_geracao(void) {
+  unsigned g;
+  pthread_mutex_lock(&trava); g=geracao; pthread_mutex_unlock(&trava);
+  return g;
+}
+
+int legenda_ligada_em(unsigned dono) {
+  int ok;
+  pthread_mutex_lock(&trava); ok=ligada&&geracao==dono; pthread_mutex_unlock(&trava);
+  return ok;
+}
+
+/* Lote seguinte da faixa `dono`. Diferente de legenda_atualizar_corpo, NUNCA
+ * cai no caminho cheio: legenda desligada ou de outro dono e resposta de uma
+ * faixa que ja saiu, e descarta. */
+int legenda_atualizar_corpo_se(const char *corpo, unsigned dono) {
+  LegendaCue *v=NULL; int n, i; double dur=0; int ass;
+  if(!corpo||!legenda_ligada_em(dono))return 0;
+  ass=legenda_eh_ass(corpo);
+  n=legenda_extrair(corpo,&v);
+  for(i=0;i<n;i++){ double d=v[i].fim-v[i].inicio; if(d>dur)dur=d; }
+  pthread_mutex_lock(&trava);
+  if(!ligada||geracao!=dono){ pthread_mutex_unlock(&trava); free(v); return 0; }
+  free(cues);cues=v;nCues=n;maiorDur=dur;
+  pthread_mutex_unlock(&trava);
+  if (ass) assrender_atualizar(corpo, strlen(corpo), dono);
+  return 1;
 }
 
 /* Lote seguinte da MESMA faixa (#92): troca os cues e o documento do libass

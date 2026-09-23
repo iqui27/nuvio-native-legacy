@@ -74,6 +74,21 @@ void mkvass_passo(double posSeg);
 // disputar a conexao com o video. Chamar junto com mkvass_passo.
 void mkvass_folga(double segundosAFrente);
 
+// Nova tentativa da MESMA url e faixa do ultimo pedido, depois de um no-go
+// passageiro (ver mkvass_recuo_ms). O documento que ja esta no overlay
+// continua em tela: a primeira entrega do fio novo e uma atualizacao, nao uma
+// carga do zero — desde que a legenda ainda seja da mesma geracao.
+void mkvass_retomar(void);
+
+// POLITICA DE QUEDA PARA A TV. Recebe o no-go, quantas tentativas ja foram
+// feitas nesta escolha de faixa e quantas vezes o Range ja foi recusado.
+// Devolve o recuo em ms antes de tentar de novo (falha PASSAGEIRA: rede,
+// timeout, 5xx, Range recusado uma vez), ou 0 quando a faixa deve voltar a TV
+// (DEFINITIVA: nao e MKV, codec nao ASS, sem indice, Range recusado de novo;
+// ou MKVASS_TENTATIVAS falhas).
+#define MKVASS_TENTATIVAS 3
+long mkvass_recuo_ms(int estado, int falhas, int recusasRange);
+
 // Para a colheita e grava o sidecar parcial com o que ja veio. NAO bloqueia:
 // o fio termina sozinho (pode estar no meio de um Range).
 void mkvass_parar(void);

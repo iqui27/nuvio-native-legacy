@@ -306,6 +306,13 @@ IGNORAR = {
     "sonda voltou sem par para esta faixa (ver [mkv] legendas da TV x arquivo)",
     "codec nao e ASS/SSA: a TV desenha bem",
     "sem ordinal no arquivo",
+    # Os de motivoNoGo() (faixas.c): o mesmo caso, para a linha "[legenda]
+    # mkvass no-go N (motivo)". O que vai a TELA sao os avisos com i18n().
+    "nao e MKV",
+    "servidor sem Range",
+    "faixa nao e ASS",
+    "sem indice da faixa",
+    "sem CueRelativePosition",
 }
 
 def sem_corpo_em_js(txt):
