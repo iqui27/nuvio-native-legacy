@@ -63,6 +63,7 @@ static void avisarCascaAberto(int v) { (void)v; }
 #include "legenda.h"
 #include "assrender.h"
 #include "mkvass.h"
+#include "relogio.h"
 #include "intro.h"
 #include "visto.h"     /* fim de episodio/filme para Simkl e conta */
 #include "vistoep.h"   /* o check de "assistido" na lista de episodios (issue #100) */
@@ -267,6 +268,18 @@ static int   comVideo = 0;
 static int   pedFaixas = 0;
 static int   esperandoFonte = 0;   // aberto sem URL, esperando o addon responder
 static float posSeg = 0.0f;
+// Relogio da LEGENDA (#92): posSeg e o ultimo currentTime do pipeline, que na
+// C9 chega a cada ~200 ms. A legenda desenhada com ele andava aos degraus e em
+// media 100 ms atras; relogio.c interpola entre as amostras.
+static Relogio relLeg;
+static double monoSeg(void) {
+  struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double)ts.tv_sec + ts.tv_nsec / 1e9;
+}
+static double posLegenda(void) {
+  if (!relLeg.temAmostra || scrubbing) return posSeg;
+  return relogio_ler(&relLeg, monoSeg());
+}
 // Creditos tambem sao pulaveis — e o "Skip Outro" do web.
 static int trechoPulavel(double *fim) { int tipo; return intro_ativo(posSeg, fim, &tipo); }
 static float duracaoSeg = PLR_DUR_PADRAO;
@@ -963,7 +976,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   retomadaAplicada=0; semRetomada=0;
   botao = PLR_PLAY;
   memset(focoB, 0, sizeof focoB);
-  posSeg = 0.0f;
+  posSeg = 0.0f; relogio_zerar(&relLeg);
   ultimoInput = SDL_GetTicks();
   esperandoFonte = (url == NULL);
   // Legenda externa e da sessao que acabou, nao desta.
@@ -1738,6 +1751,17 @@ void player_atualizar(float dt, Uint32 agora) {
       if(retomarPct>0) video_buscar(d*retomarPct/100.0);
     }
     tocando = video_tocando();
+    relogio_amostra(&relLeg, video_pos(), monoSeg(), tocando && !scrubbing);
+    // A cada 10 s: o numero cru do pipeline e o do relogio da legenda, no
+    // mesmo instante. A diferenca e o que a interpolacao acrescenta (0..~250).
+    { static double ultRel;
+      double m = monoSeg();
+      if (tocando && m - ultRel >= 10.0) {
+        ultRel = m;
+        printf("[relogio] pipeline=%.3f legenda=%.3f (%+.0f ms; amostra de %.0f ms atras)\n",
+               video_pos(), relogio_ler(&relLeg, m), (relogio_ler(&relLeg, m) - video_pos()) * 1000.0,
+               (m - relLeg.ultAgora) * 1000.0);
+      } }
   } else if (tocando && !esperandoFonte && !erroFonte) {
     posSeg += dt;
     // Canal ao vivo nao "termina": o relogio reserva estourar em ~1h54 nao pode
@@ -1917,12 +1941,12 @@ static void desenharLegendaExterna(void){
   if (assrender_ativo()) {
     float alpha = (legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:
                    legEstilo.opacidade==1?.75f:1.f) * entrada;
-    assrender_desenhar(posSeg, legEstilo.atrasoMs, alpha,
+    assrender_desenhar(posLegenda(), legEstilo.atrasoMs, alpha,
                         0, 0, NV_TELA_W, NV_TELA_H);
     return;
   }
   LegendaCue cues[LEGENDA_SIMULTANEAS];
-  int n = legenda_cues(posSeg, legEstilo.atrasoMs, cues, LEGENDA_SIMULTANEAS), i;
+  int n = legenda_cues(posLegenda(), legEstilo.atrasoMs, cues, LEGENDA_SIMULTANEAS), i;
   if (n <= 0) return;
   int pct=legEstilo.tamanho;if(pct<50)pct=50;if(pct>200)pct=200;pct=(pct/10)*10;
   TxtEstilo est=(TxtEstilo)(TXT_LEG_50+(pct-50)/10);corLegenda(legEstilo.cor,&r,&g,&b);

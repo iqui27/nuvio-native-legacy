@@ -14,6 +14,9 @@
 /* Carrega um documento ASS completo. O corpo precisa permanecer em UTF-8 e
  * pode conter qualquer tamanho; o modulo faz a propria copia. */
 int  assrender_carregar(const char *corpo, size_t tamanho, unsigned geracao);
+/* Mesma faixa (mesma geracao), documento maior: troca a faixa do libass SEM
+ * apagar o quadro em tela. Com geracao diferente ou sem faixa, e carregar. */
+int  assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao);
 void assrender_limpar(void);
 void assrender_limpar_fontes(void);
 
@@ -47,5 +50,10 @@ const char *assrender_diagnostico(void);
 /* Cada troca de faixa/seek invalida resultados antigos antes de o worker
  * publicar o proximo quadro. */
 void assrender_geracao(unsigned geracao);
+
+/* Inicia o libass num fio a parte, se ainda nao iniciou. Na C9 o inicio le a
+ * pasta de fontes do sistema e custa ~2,1 s; feito quando a faixa e escolhida,
+ * corre em paralelo com o indice do MKV em vez de atrasar a primeira fala. */
+void assrender_preaquecer(void);
 
 #endif

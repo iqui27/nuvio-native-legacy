@@ -609,7 +609,11 @@ static int aoEvento(LSHandle *h, LSMessage *m, void *u) {
   (void)h;
   if (minhaSessao != sessao) return 1;
   if (!p) return 1;
-  printf("[video] ev %s\n", p); fflush(stdout);
+  // O payload do uMS pode vir com '\n' no fim (medido na C9 em 23/09: 4370
+  // das 4391 linhas "[video] ev" seguidas de uma linha vazia). Corta so no log.
+  { size_t n = strlen(p);
+    while (n && (p[n - 1] == '\n' || p[n - 1] == '\r' || p[n - 1] == ' ')) n--;
+    printf("[video] ev %.*s\n", (int)n, p); fflush(stdout); }
   if (strstr(p, "sourceInfo")) {
     const char *q;
     nAudio = nLeg = 0;

@@ -48,6 +48,8 @@ void legenda_carregar(const char *url);
 void legenda_desligar(void);
 // Liga com um corpo ja em memoria (parser sincrono). Ver a nota em legenda.c.
 void legenda_definir_corpo(const char *corpo);
+/* O mesmo, para o lote seguinte da mesma faixa: sem apagar o quadro. */
+void legenda_atualizar_corpo(const char *corpo);
 int  legenda_texto(double posSeg, int atrasoMs, char *dst, size_t tam);
 
 // Todos os blocos vivos em `posSeg`, ate `max`. Devolve quantos preencheu.
