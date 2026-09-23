@@ -85,6 +85,26 @@
 // dezenas de bytes; um desenho vetorial, alguns KB. Mais que isto e video
 // com o numero da faixa por coincidencia.
 #define MKVASS_VARRE_BLOCO (1L * 1024 * 1024)
+// JANELA da varredura, em segundos de midia a frente do playhead. E o que
+// limita o trafego: sem indice, cada segundo de janela custa um segundo de
+// VIDEO em bytes, nao algumas falas — num MKV de 1,4 GB varrer tudo dobraria
+// o trafego da reproducao. A varredura NUNCA sai da janela: quando ela acaba
+// o fio dorme ate o playhead andar, e um seek recomeca na nova posicao.
+// (Os testes compilam com um valor menor para provar a proporcao.)
+#ifndef MKVASS_VARRE_JANELA_SEG
+#define MKVASS_VARRE_JANELA_SEG 120.0
+#endif
+// Atras do playhead: o Cluster que contem a posicao entra sempre; alem dele,
+// so o que ficou para tras ha pouco (seek curto para tras).
+#define MKVASS_VARRE_ATRAS_SEG 30.0
+// Folga minima do buffer de VIDEO para a varredura pedir bytes. Abaixo disto
+// ela pausa: o video tem prioridade sobre a legenda na mesma conexao.
+// Quem informa e o player (mkvass_folga); sem informacao (Tizen, que so da
+// porcentagem) nao ha pausa.
+#define MKVASS_VARRE_FOLGA_SEG 20.0
+// Trechos ja varridos guardados no modo SEM Cues nenhum (para o salto por
+// bitrate nao reler o que ja veio).
+#define MKVASS_COB 32
 
 // --- EBML --------------------------------------------------------------------
 //
@@ -199,7 +219,16 @@ typedef struct {
   long          rel;       // CueRelativePosition: a partir dos DADOS do Cluster
   unsigned long tempo;     // CueTime, em unidades de TimestampScale
   unsigned char colhido;   // 0 nao; 1 sim; 2 desistiu (bloco nao bate)
+  long          cursor;    // varredura: onde retomar dentro do trecho (0 = do inicio)
+  double        cursorTs;  // tempo do Cluster no cursor (-1 = desconhecido). Enquanto
+                           // ele passa da janela, o fio dorme SEM tocar a rede.
 } Ponto;
+
+// Varredura sem Cues nenhum: trecho ja lido, em bytes e em tempo de midia.
+typedef struct { long b0, b1; double t0, t1; } Cob;
+// Janela de bytes da varredura: [ini, ini+n) do arquivo, num buffer so.
+// `eof`: o servidor devolveu menos do que o pedido sem fim conhecido.
+typedef struct { unsigned char *p; long ini, n; int eof; } Janela;
 
 // Cache do cabecalho dos ultimos Clusters visitados: largura do cabecalho
 // (id + tamanho) e Timestamp. Os blocos vem em ordem de tempo, entao os
@@ -226,8 +255,9 @@ static struct {
   long     pedidos, bytes;
   int      nPontos, nColhidos;
   int      varredura;      // 0 pelo indice; 1 varrendo Clusters (ver MKVASS_VARRE_CH)
+  double   folga;          // buffer de video a frente (s); < 0 = desconhecido
 } S = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, "", 0, 0,
-        MKVASS_OCIOSO, 0.0, 0, 0, 0, 0, 0, 0, 0 };
+        MKVASS_OCIOSO, 0.0, 0, 0, 0, 0, 0, 0, 0, -1.0 };
 
 // Tudo abaixo e DO FIO: so o fio de colheita toca, sem trava.
 typedef struct {
@@ -247,6 +277,15 @@ typedef struct {
   // segue de um ponto ate o Cluster do seguinte; 0 = a lista veio da propria
   // faixa (sem CueRelativePosition) e cada Cluster listado basta.
   int      varredura, varreEncadeia;
+  // Modo SEM Cues nenhum (varreInteira): um trecho so, lido por um cursor
+  // dentro da janela; seek longe salta por bitrate (varreDur vem do Info) e
+  // ressincroniza no proximo Cluster; `cob` guarda o que ja foi lido.
+  int      varreInteira, varreSaltou;
+  double   varreDur;       // Duration do Segment, em segundos (0 = nao veio)
+  double   varreTs;        // tempo do ultimo Cluster visto pela varredura (-1 = nenhum)
+  Cob      cob[MKVASS_COB];
+  int      nCob;
+  Janela   jan;            // janela da varredura, viva entre trechos
   Ponto   *pontos;
   int      nPontos, nColhidos;
   char    *corpo;          // cabecalho ASS + linhas Dialogue: colhidas
@@ -801,10 +840,27 @@ static void lerSeekHead(Fio *f, const unsigned char *p, long n) {
   }
 }
 
+// Float EBML (4 ou 8 bytes, big-endian). Leitura propria de 64 bits: lerUint
+// devolve unsigned long, que no ARM de 32 bits do webOS nao guarda 8 bytes.
+static double lerFloat(const unsigned char *p, long n) {
+  if (n == 4) { union { unsigned int u; float f; } v; v.u = (unsigned int)lerUint(p, 4); return v.f; }
+  if (n == 8) { union { unsigned long long u; double d; } v; long i; v.u = 0;
+                for (i = 0; i < 8; i++) v.u = (v.u << 8) | p[i]; return v.d; }
+  return 0.0;
+}
+
+#define ID_DURATION 0x4489UL
+
 static void lerInfo(Fio *f, const unsigned char *p, long n) {
   Iter it = { p, n, 0 }; unsigned long id; const unsigned char *d; long t;
-  while (proximo(&it, &id, &d, &t))
+  double dur = 0.0;
+  while (proximo(&it, &id, &d, &t)) {
     if (id == ID_TSSCALE) { unsigned long v = lerUint(d, t); if (v) f->escala = v; }
+    else if (id == ID_DURATION) dur = lerFloat(d, t);
+  }
+  // Duration e em unidades de TimestampScale; a escala pode vir depois dela
+  // no mesmo Info, por isso a conversao e feita ao fim.
+  if (dur > 0.0) f->varreDur = dur * (double)f->escala / 1e9;
 }
 
 // Devolve: 1 achou a faixa e e ASS; 0 nao achou; -1 achou e NAO e ASS.
@@ -1026,19 +1082,23 @@ static int armarVarredura(Fio *f, ClVarre *v, int n, int encadeia) {
   for (i = 0; i < n; i++) {
     if (k && f->pontos[k - 1].cluster == v[i].cluster) continue;
     f->pontos[k].cluster = v[i].cluster; f->pontos[k].rel = -1;
-    f->pontos[k].tempo = v[i].tempo; f->pontos[k].colhido = 0; k++;
+    f->pontos[k].tempo = v[i].tempo; f->pontos[k].colhido = 0;
+    f->pontos[k].cursor = 0; f->pontos[k].cursorTs = -1.0; k++;
   }
   f->nPontos = k;
   f->varredura = 1; f->varreEncadeia = encadeia;
   return k > 0;
 }
 
-// Sem Cues nenhum: um trecho so, do primeiro Cluster ao fim do Segment.
+// Sem Cues nenhum: um trecho so, do primeiro Cluster ao fim do Segment —
+// lido pelo cursor, dentro da janela, com salto por bitrate no seek.
 static int armarVarreduraInteira(Fio *f) {
   ClVarre v;
   if (f->primeiroCluster < 0 && !acharPrimeiroCluster(f)) return 0;
   v.cluster = f->primeiroCluster; v.tempo = 0;
-  return armarVarredura(f, &v, 1, 1);
+  if (!armarVarredura(f, &v, 1, 1)) return 0;
+  f->varreInteira = 1; f->varreTs = -1.0;
+  return 1;
 }
 
 static int lerCues(Fio *f) {
@@ -1397,7 +1457,6 @@ static void entregar(Fio *f);
 // Janela de bytes da varredura: [ini, ini+n) do arquivo, num buffer so.
 // `eof`: o servidor devolveu menos do que o pedido sem fim conhecido — nao ha
 // mais arquivo depois da janela.
-typedef struct { unsigned char *p; long ini, n; int eof; } Janela;
 
 // Tamanho do proximo pedido da varredura a partir de `o`, sem passar de `fim`
 // (0 = desconhecido). O MESMO calculo na pre-busca (rangeDoGrupo), senao o
@@ -1441,23 +1500,159 @@ static int garantir(Fio *f, Janela *w, long o, long precisa, long fim,
   return 1;
 }
 
+// --- cobertura (modo sem Cues nenhum) ------------------------------------------
+
+static const Cob *cobQueContem(const Fio *f, long b) {
+  int k;
+  for (k = 0; k < f->nCob; k++) if (b >= f->cob[k].b0 && b < f->cob[k].b1) return &f->cob[k];
+  return NULL;
+}
+
+static const Cob *cobNoTempo(const Fio *f, double t) {
+  int k;
+  for (k = 0; k < f->nCob; k++) if (t >= f->cob[k].t0 && t <= f->cob[k].t1) return &f->cob[k];
+  return NULL;
+}
+
+// Registra [b0,b1) como lido, fundindo com vizinhos que encostam.
+static void cobAdicionar(Fio *f, long b0, long b1, double t0, double t1) {
+  int k;
+  if (b1 <= b0) return;
+  for (k = 0; k < f->nCob; k++) {
+    Cob *c = &f->cob[k];
+    if (b0 <= c->b1 && b1 >= c->b0) {
+      if (b0 < c->b0) { c->b0 = b0; c->t0 = t0; }
+      if (b1 > c->b1) { c->b1 = b1; c->t1 = t1; }
+      // Pode ter encostado no seguinte: funde uma vez.
+      { int m; for (m = 0; m < f->nCob; m++) {
+          Cob *d = &f->cob[m];
+          if (d == c || d->b0 > c->b1 || d->b1 < c->b0) continue;
+          if (d->b0 < c->b0) { c->b0 = d->b0; c->t0 = d->t0; }
+          if (d->b1 > c->b1) { c->b1 = d->b1; c->t1 = d->t1; }
+          f->cob[m] = f->cob[--f->nCob]; break; } }
+      return;
+    }
+  }
+  if (f->nCob < MKVASS_COB) { Cob c = { b0, b1, t0, t1 }; f->cob[f->nCob++] = c; }
+}
+
+// 1 quando um so trecho lido vai do primeiro Cluster ao fim do Segment.
+static int cobCompleta(const Fio *f) {
+  const Cob *c = cobQueContem(f, f->primeiroCluster);
+  return c && f->segFim > 0 && c->b1 >= f->segFim;
+}
+
+// Acha o proximo Cluster a partir de `byte` procurando o id 1F 43 B6 75 e
+// conferindo que o que segue e um tamanho valido e um Timestamp (E7). E a
+// ressincronizacao classica do Matroska. Devolve a posicao e o tempo do
+// Cluster em *ts; -1 se nao achou em ate 4 MB.
+static long ressincronizar(Fio *f, long byte, double *ts) {
+  int tent;
+  for (tent = 0; tent < 8; tent++) {
+    long n = 0, k; unsigned char *p;
+    long len = MKVASS_VARRE_CH;
+    if (f->segFim > 0 && byte + len > f->segFim) len = f->segFim - byte;
+    if (len < 16) return -1;
+    p = range(f, byte, len, &n);
+    if (!p) return -1;
+    for (k = 0; k + 16 <= n; k++) {
+      int ut = 0, ti = 0, tt = 0; long tam, tn; unsigned long v;
+      if (p[k] != 0x1F || p[k + 1] != 0x43 || p[k + 2] != 0xB6 || p[k + 3] != 0x75) continue;
+      tam = lerTam(p + k + 4, n - k - 4, &ut);
+      if (tam == -1 || (tam > 0 && f->segFim > 0 && byte + k + 4 + ut + tam > f->segFim + 1)) continue;
+      if (lerId(p + k + 4 + ut, n - k - 4 - ut, &ti) != ID_TIMESTAMP) continue;
+      tn = lerTam(p + k + 4 + ut + ti, n - k - 4 - ut - ti, &tt);
+      if (tn < 1 || tn > 8 || k + 4 + ut + ti + tt + tn > n) continue;
+      v = lerUint(p + k + 4 + ut + ti + tt, tn);
+      *ts = segundosDe(f, v);
+      free(p);
+      return byte + k;
+    }
+    free(p);
+    // Sem Cluster na janela: segue (a janela e menor que um Cluster de 4K).
+    byte += n > 8 ? n - 8 : n;
+    if (n < len) return -1;
+  }
+  return -1;
+}
+
+// Poe o cursor do modo sem Cues onde a janela [pos - atras, pos + janela]
+// pede. Fica como esta se o cursor ja serve; usa o que ja foi lido quando o
+// playhead voltou para dentro de um trecho coberto; senao SALTA: estima o
+// byte por bitrate (Duration do Info) e ressincroniza no proximo Cluster.
+// Sem Duration nao ha salto: a varredura segue sequencial (limitada pela
+// janela, entao um seek longo espera o playhead... e a rede).
+static void posicionarVarredura(Fio *f, double pos) {
+  Ponto *p = &f->pontos[0];
+  double alvo = pos - MKVASS_VARRE_ATRAS_SEG / 3.0, ts = -1.0;
+  const Cob *c;
+  long byte, b; int tent;
+  if (f->varreTs >= 0.0 && f->varreTs >= pos - MKVASS_VARRE_ATRAS_SEG &&
+      f->varreTs <= pos + MKVASS_VARRE_JANELA_SEG) return;
+  // Ja lemos o tempo do playhead: continua do fim daquele trecho.
+  c = cobNoTempo(f, pos);
+  if (c) { p->cursor = c->b1; p->cursorTs = -1.0; f->varreTs = c->t1; return; }
+  if (alvo <= 0.0) { p->cursor = f->primeiroCluster; p->cursorTs = -1.0; f->varreTs = 0.0; return; }
+  if (f->varreDur <= 1.0 || f->segFim <= f->primeiroCluster) return;
+  byte = f->primeiroCluster + (long)((double)(f->segFim - f->primeiroCluster) * (alvo / f->varreDur));
+  for (tent = 0; tent < 4; tent++) {
+    if (byte < f->primeiroCluster) byte = f->primeiroCluster;
+    if (byte >= f->segFim) byte = f->segFim - MKVASS_VARRE_CH;
+    b = ressincronizar(f, byte, &ts);
+    if (b < 0) return;
+    // Aceita ate 60 s antes do alvo (custa varrer isso) e nunca depois dele.
+    if (ts <= alvo + 2.0 && ts >= alvo - 60.0) break;
+    byte = b + (long)((alvo - ts) * (double)(f->segFim - f->primeiroCluster) / f->varreDur);
+    if (ts > alvo) byte -= MKVASS_VARRE_CH;   // errou para a frente: recua um pouco mais
+  }
+  if (b < 0) return;
+  c = cobQueContem(f, b);
+  if (c) { p->cursor = c->b1; f->varreTs = c->t1; }
+  else   { p->cursor = b; f->varreTs = ts; }
+  p->cursorTs = -1.0;
+  f->varreSaltou = 1;
+  printf("[mkvass] varredura saltou para %.0f s (byte %ld, alvo %.0f s, playhead %.0f s)\n",
+         f->varreTs, p->cursor, alvo, pos);
+  fflush(stdout);
+}
+
 // Varre o trecho do ponto i: do seu Cluster ate o Cluster do ponto seguinte
 // (ou so este Cluster, quando a lista veio da propria faixa). Le em janelas
 // de MKVASS_VARRE_CH e PULA os blocos de outras faixas que passam da janela:
 // o proximo pedido comeca no fim deles, sem baixar o payload de video. Cada
 // bloco da faixa vai para o corpo pelo mesmo lerBloco do caminho indexado.
-// Devolve 1 quando terminou (ou foi interrompido pela troca de faixa), 0 se
-// a rede falhou, -2 numa resposta curta.
-static int varrerTrecho(Fio *f, int i) {
-  Janela w = { NULL, 0, 0, 0 };
-  long o = f->pontos[i].cluster, fim = varreFim(f, i), t0 = agoraMs();
+// PARA quando um Cluster comeca depois de `tLim` (fim da janela de midia),
+// guardando o cursor para retomar dali. Devolve 1 quando terminou o trecho,
+// 3 quando parou na janela (ou a troca de faixa interrompeu), 0 se a rede
+// falhou, -2 numa resposta curta.
+static int varrerTrecho(Fio *f, int i, double tLim) {
+  // A janela VIVE no Fio: o trecho seguinte costuma comecar dentro dela
+  // (cauda do Range anterior), e uma janela local por trecho rebaixava isso.
+  Janela *wp = &f->jan;
+  long ini = f->pontos[i].cursor > 0 ? f->pontos[i].cursor : f->pontos[i].cluster;
+  long o = ini, fim = varreFim(f, i), t0 = agoraMs();
   unsigned long cueTempo = f->pontos[i].tempo;
-  int r = 1, clusters = 0, blocos = 0, terminou = 0;
+  double tsIni = -1.0, tsFim = -1.0;
+  int r = 3, clusters = 0, blocos = 0, terminou = 0;
+  // O Cluster do cursor ja e conhecido e continua fora da janela: nada a
+  // fazer, e sem rede — cada poll ocioso custava uma janela de 512 KB.
+  if (f->pontos[i].cursor > 0 && f->pontos[i].cursorTs >= 0.0 && tLim > 0.0 &&
+      f->pontos[i].cursorTs > tLim) return 3;
   while (fim <= 0 || o < fim) {
     const unsigned char *p; long disp, tam, dados, clFim; int ui = 0, ut = 0, g;
     unsigned long id; ClCache cl;
     if (!minhaVez(f)) goto sair;
-    g = garantir(f, &w, o, 16, fim, &p, &disp);
+    // Modo sem Cues: o que ja foi lido (antes de um salto) e pulado.
+    if (f->varreInteira && f->nCob) {
+      const Cob *c = cobQueContem(f, o);
+      if (c) {
+        if (tsIni >= 0.0) cobAdicionar(f, ini, o, tsIni, tsFim);
+        ini = o = c->b1; tsIni = tsFim = c->t1; f->varreTs = c->t1;
+        if (c->t1 > tLim) goto sair;
+        continue;
+      }
+    }
+    g = garantir(f, wp, o, 16, fim, &p, &disp);
     if (g == 2) break;
     if (g != 1) { r = g; goto sair; }
     id = lerId(p, disp, &ui);
@@ -1472,13 +1667,30 @@ static int varrerTrecho(Fio *f, int i) {
     clFim = tam == -2 ? fim : dados + tam;
     if (fim > 0 && (clFim <= 0 || clFim > fim)) clFim = fim;
     cl.pos = o; cl.hdr = ui + ut; cl.ts = 0; cl.temTs = 0;
+    // O Timestamp e o primeiro filho: decide AQUI se o Cluster ainda esta na
+    // janela. Fora dela, o cursor fica no comeco do Cluster e o fio dorme.
+    { long ctam2, cab2; int cui2 = 0, cut2 = 0;
+      g = garantir(f, wp, dados, 16, clFim > 0 ? clFim : fim, &p, &disp);
+      if (g == 1 && lerId(p, disp, &cui2) == ID_TIMESTAMP) {
+        ctam2 = lerTam(p + cui2, disp - cui2, &cut2); cab2 = cui2 + cut2;
+        if (ctam2 > 0 && ctam2 <= 8 && garantir(f, wp, dados, cab2 + ctam2, clFim > 0 ? clFim : fim, &p, &disp) == 1) {
+          double ts = segundosDe(f, lerUint(p + cab2, ctam2));
+          if (tLim > 0.0 && ts > tLim) {
+            f->pontos[i].cursor = cl.pos; f->pontos[i].cursorTs = ts;
+            goto sair;
+          }
+          f->varreTs = ts;
+          if (tsIni < 0.0) tsIni = ts;
+          tsFim = ts;
+        }
+      } else if (g != 1 && g != 2) { r = g; goto sair; } }
     clusters++;
     o = dados;
     while (clFim <= 0 || o < clFim) {
       long ctam, cfim, cab; int cui = 0, cut = 0; unsigned long cid;
       long lim = clFim > 0 ? clFim : fim;
       if (!minhaVez(f)) goto sair;
-      g = garantir(f, &w, o, 16, lim, &p, &disp);
+      g = garantir(f, wp, o, 16, lim, &p, &disp);
       if (g == 2) { o = clFim > 0 ? clFim : o; if (clFim <= 0) fim = o; break; }
       if (g != 1) { r = g; goto sair; }
       cid = lerId(p, disp, &cui);
@@ -1487,16 +1699,16 @@ static int varrerTrecho(Fio *f, int i) {
       if (ctam < 0) { o = clFim > 0 ? clFim : o; if (clFim <= 0) fim = o; break; }
       cab = cui + cut; cfim = o + cab + ctam;
       if (cid == ID_TIMESTAMP && ctam > 0 && ctam <= 8) {
-        g = garantir(f, &w, o, cab + ctam, lim, &p, &disp);
+        g = garantir(f, wp, o, cab + ctam, lim, &p, &disp);
         if (g == 1) { cl.ts = lerUint(p + cab, ctam); cl.temTs = 1; }
         else if (g != 2) { r = g; goto sair; }
       } else if ((cid == ID_SIMPLEBLOCK || cid == ID_BLOCKGROUP) && ctam > 0) {
         // So o cabecalho do bloco decide se e da faixa; o payload de video
         // fica onde esta.
         long peek = cab + ctam; if (peek > 40) peek = 40;
-        g = garantir(f, &w, o, peek, lim, &p, &disp);
+        g = garantir(f, wp, o, peek, lim, &p, &disp);
         if (g == 1 && ctam <= MKVASS_VARRE_BLOCO && blocoDaFaixa(f, p, disp)) {
-          g = garantir(f, &w, o, cab + ctam, lim, &p, &disp);
+          g = garantir(f, wp, o, cab + ctam, lim, &p, &disp);
           if (g == 1) {
             if (lerBloco(f, p, cab + ctam, &cl, cueTempo) > 0) blocos++;
             // A primeira fala vai ja; as seguintes no ritmo de MKVASS_ENTREGA_MS.
@@ -1507,11 +1719,21 @@ static int varrerTrecho(Fio *f, int i) {
       }
       o = cfim;
     }
+    // Cluster inteiro lido: o cursor avanca (o ponto retoma daqui se parar).
+    f->pontos[i].cursor = o; f->pontos[i].cursorTs = -1.0;
     if (!f->varreEncadeia) break;
   }
-  terminou = 1;
+  // Fim do trecho. No modo sem Cues so conta como terminado se a cobertura
+  // for continua do primeiro Cluster ao fim do Segment (sem buracos de salto).
+  if (f->varreInteira) {
+    if (tsIni >= 0.0) cobAdicionar(f, ini, o, tsIni, tsFim);
+    tsIni = -1.0;
+    f->pontos[i].cursor = fim > 0 ? fim : o;
+    terminou = cobCompleta(f);
+  } else terminou = 1;
+  r = terminou ? 1 : 3;
 sair:
-  free(w.p);
+    if (f->varreInteira && tsIni >= 0.0) cobAdicionar(f, ini, o, tsIni, tsFim);
   if (terminou) {
     f->pontos[i].colhido = 1; f->nColhidos++;
     if (f->nColhidos <= 3 || blocos)
@@ -1521,14 +1743,133 @@ sair:
   return r;
 }
 
+// Proximo trecho da varredura DENTRO da janela: o Cluster que contem o
+// playhead entra sempre; depois os que comecam ate `janela` s a frente; atras,
+// so ate MKVASS_VARRE_ATRAS_SEG. Fora disso: -1, e o fio dorme. E isto que
+// impede a varredura de baixar o arquivo inteiro.
+static int proximoVarre(const Fio *f, double pos) {
+  int i, ult = -1;
+  for (i = 0; i < f->nPontos; i++) {
+    if (segundosDe(f, f->pontos[i].tempo) <= pos) ult = i; else break;
+  }
+  for (i = 0; i < f->nPontos; i++) {
+    double t = segundosDe(f, f->pontos[i].tempo);
+    if (f->pontos[i].colhido) continue;
+    if (t > pos + MKVASS_VARRE_JANELA_SEG) break;
+    if (i != ult && t < pos - MKVASS_VARRE_ATRAS_SEG) continue;
+    return i;
+  }
+  return -1;
+}
+
+static void dormir(Fio *f, long ms) {
+  pthread_mutex_lock(&S.trava);
+  if (f->g == S.geracao && !S.parar) {
+    struct timespec rt; clock_gettime(CLOCK_REALTIME, &rt);
+    rt.tv_nsec += ms * 1000000L;
+    while (rt.tv_nsec >= 1000000000L) { rt.tv_sec++; rt.tv_nsec -= 1000000000L; }
+    pthread_cond_timedwait(&S.sinal, &S.trava, &rt);
+  }
+  pthread_mutex_unlock(&S.trava);
+}
+
+// O laco da VARREDURA (separado do laco indexado de proposito: aquele colhe
+// a faixa inteira em segundo plano porque cada fala custa 1 KB; este NUNCA
+// sai da janela porque cada segundo custa um segundo de video).
+//   - so trechos em [pos - atras, pos + janela]; seek -> a janela muda e o
+//     proximo trecho e o da nova posicao (no modo sem Cues, salto por bitrate);
+//   - PAUSA enquanto o buffer de video a frente < MKVASS_VARRE_FOLGA_SEG
+//     (o player informa por mkvass_folga; sem informacao nao pausa);
+//   - uma linha por minuto com os bytes varridos.
+// Devolve 1 quando fechou COMPLETO; 0 quando saiu (parar, troca, rede).
+static int varrerLaco(Fio *f) {
+  long ultLog = agoraMs(), bytesMarca, pausas = 0;
+  int pausado = 0;
+  pthread_mutex_lock(&S.trava); bytesMarca = S.bytes; pthread_mutex_unlock(&S.trava);
+  while (minhaVez(f)) {
+    double pos, folga; int i, ocioso = 0;
+    pthread_mutex_lock(&S.trava);
+    pos = S.pos; folga = S.folga; S.nColhidos = f->nColhidos;
+    pthread_mutex_unlock(&S.trava);
+    avancarFontes(f, 0);
+    if (folga >= 0.0 && folga < MKVASS_VARRE_FOLGA_SEG) {
+      if (!pausado) {
+        pausado = 1; pausas++;
+        printf("[mkvass] varredura PAUSADA: buffer de video %.0f s a frente (< %.0f s)\n",
+               folga, MKVASS_VARRE_FOLGA_SEG);
+        fflush(stdout);
+      }
+      ocioso = 1;
+    } else {
+      if (pausado) {
+        pausado = 0;
+        printf("[mkvass] varredura retomada: buffer de video %.0f s a frente\n", folga);
+        fflush(stdout);
+      }
+      if (f->varreInteira) posicionarVarredura(f, pos);
+      i = proximoVarre(f, pos);
+      if (i < 0) ocioso = 1;
+      else if (f->pontos[i].cursor > 0 && f->pontos[i].cursorTs >= 0.0 &&
+               f->pontos[i].cursorTs > pos + MKVASS_VARRE_JANELA_SEG) ocioso = 1;
+      else {
+        int r;
+        f->posRef = pos;
+        r = varrerTrecho(f, i, pos + MKVASS_VARRE_JANELA_SEG);
+        if (r == -2) {
+          if (definirEstadoSeAtual(f, MKVASS_NOGO_REDE)) {
+            printf("[mkvass] Range curto na varredura: desistindo\n"); fflush(stdout);
+          }
+          return 0;
+        }
+        if (r == 0) {
+          if (f->falhas >= MKVASS_FALHAS_MAX) {
+            if (definirEstadoSeAtual(f, MKVASS_NOGO_REDE)) {
+              printf("[mkvass] %d Ranges falhados seguidos na varredura: desistindo\n", f->falhas);
+              fflush(stdout);
+            }
+            return 0;
+          }
+          usleep(500 * 1000);
+        }
+        if (r == 3) ocioso = 1;
+      }
+    }
+    if (f->sujo && (!f->primeiraFala || ocioso || agoraMs() - f->ultEntrega >= MKVASS_ENTREGA_MS))
+      entregar(f);
+    if (agoraMs() - ultLog >= 60000L) {
+      long bytes;
+      pthread_mutex_lock(&S.trava); bytes = S.bytes; pthread_mutex_unlock(&S.trava);
+      printf("[mkvass] varredura: %ld KB no ultimo minuto, cursor %.0f s, playhead %.0f s, "
+             "buffer %.0f s, %d/%d trechos, pausas %ld\n",
+             (bytes - bytesMarca) / 1024, f->varreTs, pos, folga, f->nColhidos, f->nPontos, pausas);
+      fflush(stdout);
+      bytesMarca = bytes; ultLog = agoraMs();
+    }
+    if (f->nColhidos >= f->nPontos) {
+      if (avancarFontes(f, 1)) entregar(f);
+      entregar(f);
+      gravarSidecar(f, 1, 0);
+      pthread_mutex_lock(&S.trava);
+      if (f->g == S.geracao) S.nColhidos = f->nColhidos;
+      pthread_mutex_unlock(&S.trava);
+      if (!definirEstadoSeAtual(f, MKVASS_COMPLETO)) return 0;
+      printf("[mkvass] varredura completa: %d trecho(s), %ld Ranges, %ld ms desde a escolha (pausas %ld)\n",
+             f->nPontos, S.pedidos, agoraMs() - f->t0, pausas);
+      fflush(stdout);
+      return 1;
+    }
+    if (ocioso) dormir(f, 250);
+  }
+  return 0;
+}
+
 // Colhe o grupo de pontos [i..j] (mesmo Cluster, proximos) num Range so.
 // Marca cada um como colhido (1) ou desistido (2). Devolve 1 se a rede
 // respondeu.
 static int colherGrupo(Fio *f, int i, int j) {
   const ClCache *cl = NULL;
   long ini, n = 0, fim; unsigned char *p; int k, r;
-  // Na varredura cada ponto e um trecho de Clusters, nunca um grupo.
-  if (f->varredura) return varrerTrecho(f, i);
+  // Na varredura quem colhe e varrerLaco; este caminho e o indexado.
   cl = clusterVisto(f, f->pontos[i].cluster);
   // A pre-busca pediu o palpite antes de outro grupo ensinar o cabecalho
   // deste Cluster: usa o que ja veio em vez de pedir outro Range.
@@ -1776,6 +2117,9 @@ static void *trabalhar(void *arg) {
   entregar(f);
   if (!definirEstadoSeAtual(f, MKVASS_COLHENDO)) goto fim;
 
+  // VARREDURA: laco proprio, preso a janela (ver varrerLaco).
+  if (f->varredura) { if (varrerLaco(f)) goto fim; goto sair; }
+
   // O laco. Cada escolha pega o proximo ponto pendente nesta ordem: a janela
   // [pos - atras, pos + janela] em ordem de tempo; depois o resto A FRENTE; por
   // ultimo o que ficou atras, do mais perto para o mais longe. Assim a faixa
@@ -1883,6 +2227,7 @@ sair:
 
 fim:
   soltarPrebusca(f);
+  free(f->jan.p); f->jan.p = NULL;
   if (f->jobFontes) { long t; free(colherJob(f, f->jobFontes, &t)); f->jobFontes = NULL; }
   pthread_mutex_lock(&S.trava);
   S.vivos--;
@@ -1911,7 +2256,7 @@ static void iniciarFaixa(const char *url, int numeroFaixa) {
   S.estado = MKVASS_PREPARANDO;
   S.parar = 0;
   S.pedidos = S.bytes = 0;
-  S.nPontos = S.nColhidos = 0; S.varredura = 0;
+  S.nPontos = S.nColhidos = 0; S.varredura = 0; S.folga = -1.0;
   S.vivos++;
   pthread_cond_broadcast(&S.sinal);   // acorda o fio antigo para ele ver a geracao nova
   pthread_mutex_unlock(&S.trava);
@@ -1941,6 +2286,16 @@ void mkvass_passo(double posSeg) {
     // avanco nao muda a janela e so custa trocas de contexto.
     if (fabs(posSeg - S.pos) >= 0.5) { S.pos = posSeg; pthread_cond_broadcast(&S.sinal); }
   }
+  pthread_mutex_unlock(&S.trava);
+}
+
+void mkvass_folga(double segundosAFrente) {
+  pthread_mutex_lock(&S.trava);
+  // Acorda o fio so quando cruza o limiar da pausa, nos dois sentidos.
+  { int antes = S.folga >= 0.0 && S.folga < MKVASS_VARRE_FOLGA_SEG;
+    int depois = segundosAFrente >= 0.0 && segundosAFrente < MKVASS_VARRE_FOLGA_SEG;
+    S.folga = segundosAFrente;
+    if (antes != depois) pthread_cond_broadcast(&S.sinal); }
   pthread_mutex_unlock(&S.trava);
 }
 

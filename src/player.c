@@ -1762,6 +1762,10 @@ void player_atualizar(float dt, Uint32 agora) {
     // Move a janela de colheita da legenda ASS embutida (#92). Barato: so
     // acorda o fio quando a posicao andou meio segundo.
     mkvass_passo(posSeg);
+    // Folga do buffer de video para a VARREDURA pausar (webOS informa o fim
+    // do buffer; no Tizen video_buffer_fim e 0 = desconhecido, sem pausa).
+    { double bf = video_buffer_fim();
+      mkvass_folga(bf > 0.5 ? bf - (double)posSeg : -1.0); }
     if (d > 1.0) duracaoSeg = (float)d;
     if (!retomadaAplicada && video_pronto() && d>1.0) {
       retomadaAplicada=1;

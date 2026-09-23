@@ -69,6 +69,10 @@ void mkvass_iniciar_ordinal(const char *url, int ordinalFaixa);
 // Chamar UMA VEZ POR QUADRO com a posicao do player: e o que move a janela de
 // colheita. Barato — so compara e acorda o fio quando a posicao andou.
 void mkvass_passo(double posSeg);
+// Quanto buffer de VIDEO ha a frente do playhead, em segundos; negativo =
+// desconhecido. So a VARREDURA usa: abaixo de 20 s ela pausa, para nao
+// disputar a conexao com o video. Chamar junto com mkvass_passo.
+void mkvass_folga(double segundosAFrente);
 
 // Para a colheita e grava o sidecar parcial com o que ja veio. NAO bloqueia:
 // o fio termina sozinho (pode estar no meio de um Range).
