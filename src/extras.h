@@ -168,8 +168,9 @@ const char *extras_ficha_paises(void);          // "United States of America, Ca
 const char *extras_ficha_classificacao(void);   // "R", "PG-13", "14"
 const char *extras_ficha_lancamento(void);      // "2026-01-15"
 
-// TRAILERS. O id do YouTube, nome e miniatura saem do /movie/<id> do TMDB
-// (append_to_response=videos). O card e focavel e OK abre o video no app
+// TRAILERS. O id do YouTube, nome e miniatura saem do /movie/<id> ou /tv/<id>
+// do TMDB (append_to_response=videos, include_video_language=<ui>,en,null);
+// serie sem video na obra recua para a temporada mais recente. O card e focavel e OK abre o video no app
 // nativo da plataforma: navegador do webOS (luna-send), aba do Tizen
 // (window.open) ou browser do desktop (open).
 #define EX_TRAILER_MAX 6
