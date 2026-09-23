@@ -1506,7 +1506,7 @@ void agendaui_desenhar(Uint32 agora) {
   // "Integracoes", bloco e chave "TMDB"); pacote sem chave nenhuma nao tem, e
   // mandar a pessoa a um ajuste que nao resolve seria mentir.
   // Cabe entre a legenda e a lista: legenda termina em ~200, listaTopo e 262.
-  { const char *chave = desc_chave_tmdb();
+  { const char *chave = desc_chave_tmdb_reserva();   /* ver fioAgenda em agenda.c */
     int falta = 0;
     if (!chave || !chave[0]) {
       for (i = 0; i < n && !falta; i++) {

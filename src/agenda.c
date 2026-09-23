@@ -1338,7 +1338,13 @@ static int  versaoFio;
 
 static void *fioAgenda(void *arg) {
   int i;
-  const char *chave = desc_chave_tmdb();
+  // A AGENDA USA A CHAVE DO TMDB MESMO COM O AJUSTE "TMDB" DESLIGADO (decisao
+  // do dono, 22/09). O ajuste existe para o CATALOGO nao virar TMDB para quem
+  // veio do app web; aqui o TMDB so enriquece a lista de series seguidas —
+  // rede, marco de temporada, data do proximo episodio — e sem ele metade das
+  // linhas ficava sem nada na Samsung. Pacote sem chave nenhuma cai no Trakt e
+  // no Cinemeta como antes.
+  const char *chave = desc_chave_tmdb_reserva();
   (void)arg;
   for (i = 0; i < nFila; i++)
     buscarSerie(filaImdb[i], filaTit[i], filaPoster[i], filaTmdb[i], chave, filaHoje);
