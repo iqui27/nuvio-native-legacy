@@ -46,4 +46,17 @@ void debrid_nova_busca(void);
 // quem mostra "nenhuma fonte serve" dizer a causa em vez da frase generica.
 int  debrid_recusa(char *dst, unsigned n);
 
+// CONTA SEM PLANO (TorBox PLAN_RESTRICTED_FEATURE, Premiumize "Account not
+// premium."): o servico fica fora pela SESSAO, nao so pela busca. Ver debrid.c.
+//   debrid_eh_sem_plano    — a resposta (status + corpo) diz isso?
+//   debrid_sem_plano       — mascara dos servicos com chave nesse estado
+//   debrid_sem_plano_novo  — a mesma mascara, mas so dos que ainda nao foram
+//                            avisados; marca como avisados (um aviso por sessao)
+//   debrid_sem_plano_frase — a frase curta em portugues (chave de i18n) para a
+//                            mascara, ou NULL se ela for 0
+int  debrid_eh_sem_plano(int st, const char *corpo);
+int  debrid_sem_plano(void);
+int  debrid_sem_plano_novo(void);
+const char *debrid_sem_plano_frase(int mascara);
+
 #endif

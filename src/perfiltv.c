@@ -5,8 +5,8 @@
 //
 //   aparelho            textura  teto   fios rede  heroi
 //   LG sem MemTotal       96     160       4       1920
-//   LG  < 800 MB          48      96       2       1280   webOS 3 de 2016
-//   LG  < 1,2 GB          64      96       2       1280   webOS 3/4 de 1 GB
+//   LG  < 800 MB          48      64       2       1280   webOS 3 de 2016
+//   LG  < 1,2 GB          48      64       2       1280   webOS 3/4 de 1 GB
 //   LG  < 2 GB            96     160       4       1920   webOS 4/5 menores
 //   LG  < 3 GB (C9)      128     300       4       1920   medido na C9
 //   LG >= 3 GB           192     512       4       1920   C1/C2/C3
@@ -23,6 +23,14 @@
 //   sessao inteira de diagnostico usou 35 MB e 44 texturas, zero pendentes e
 //   zero quentes despejadas — 128 cobre isso com 3,6x de folga, e 300 fica
 //   como TETO que o modo Qualidade pode pedir, nao como padrao.
+// - LG < 1,2 GB desceu de 64/96 para 48/64 (23/09/2026, registros 1720-1774,
+//   MemTotal=964 MB, 36 sessoes). O rss acompanha o orcamento cheio: sessoes
+//   com texturas em ~25 MB ficaram em rss ~125 MB, e as que encheram os 64 MB
+//   (63,9) ficaram em rss 188-198 MB. Nove sessoes dessa pessoa morreram sem
+//   se despedir com ultimo=vivo e rss 112-195 MB. QUE A TV MATOU POR MEMORIA E
+//   HIPOTESE (nao ha log do sistema); o que e medido e o rss subir com as
+//   texturas. A tela mais cheia do registro usou 26 MB (tela=27/26.2MB), entao
+//   48 ainda cobre a tela com folga, e o preco e redecodificar mais ao voltar.
 // - fios de rede: o build cria 4 na LG e 2 no Tizen (NV_TEX_FIOS_REDE). Na LG
 //   de 1 GB ficam 2 ativos: cada fio segura um corpo baixado ate o decode
 //   (ate 12 MB de fundo), e 4 corpos em voo numa TV com ~300 MB livres e o
@@ -55,8 +63,7 @@ int ptv_tex_auto_mb(PtvPlataforma p, long mem) {
     return 128;
   }
   if (!mem) return NV_TEX_ORCAMENTO_MB;
-  if (mem < 800) return 48;
-  if (mem < 1200) return 64;
+  if (mem < 1200) return 48;
   if (mem < 2000) return 96;
   if (mem < 3000) return 128;
   return 192;
@@ -65,7 +72,7 @@ int ptv_tex_auto_mb(PtvPlataforma p, long mem) {
 int ptv_tex_teto_mb(PtvPlataforma p, long mem) {
   if (p == PTV_TIZEN) return ptv_tex_auto_mb(p, mem);
   if (!mem) return 160;
-  if (mem < 1200) return 96;
+  if (mem < 1200) return 64;
   if (mem < 2000) return 160;
   if (mem < 3000) return 300;
   return 512;

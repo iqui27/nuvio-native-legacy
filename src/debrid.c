@@ -42,6 +42,18 @@ static int  alvoT, alvoE;
 static _Atomic unsigned geracao;
 static _Atomic int recusado[SN];
 
+// CONTA SEM PLANO, e isto nao e "recusa desta busca": vale a SESSAO inteira.
+// Registros 1731-1774 (webOS 1.4.1): o TorBox respondeu 403
+// PLAN_RESTRICTED_FEATURE ("API feature not available on your plan") e o
+// Premiumize 200 com "Account not premium." — conta gratuita nos dois. Um
+// plano nao muda entre uma busca e a outra, e a recusa por busca fazia a mesma
+// pessoa pagar 4 createtorrent a cada titulo aberto; o Premiumize, que nem era
+// reconhecido como erro de conta, foi perguntado torrent por torrent (197
+// linhas). So uma chave nova (debrid_definir_chave) ou o logout limpam.
+// `avisado` e o "ja mostrei o aviso" de cada servico, pelo mesmo tempo.
+static _Atomic int semPlano[SN];
+static _Atomic int avisado[SN];
+
 static int idServico(const char *s) {
   if (!strcasecmp(s, "realdebrid") || !strcasecmp(s, "real-debrid")) return SRD;
   if (!strcasecmp(s, "torbox")     || !strcasecmp(s, "tor-box"))     return STB;
@@ -58,18 +70,26 @@ void debrid_definir_chave(const char *servico, const char *k) {
     printf("[debrid] %s: servico sem resolvedor aqui, ignorado\n", servico);
     return;
   }
+  if (strcmp(chave[q], k)) { atomic_store(&semPlano[q], 0); atomic_store(&avisado[q], 0); }
   snprintf(chave[q], sizeof chave[q], "%s", k);
   printf("[debrid] chave do %s vinda da conta\n", nomeServ[q]);
 }
+// So conta servico que PODE resolver: com todas as chaves em conta sem plano,
+// streams.c descarta os torrents sem url logo na lista (como sem debrid) e a
+// verificacao vai direto as fontes diretas, em vez de gastar o lote nelas.
 int debrid_ativo(void) {
   int q;
-  for (q = 0; q < SN; q++) if (chave[q][0]) return 1;
+  for (q = 0; q < SN; q++) if (chave[q][0] && !atomic_load(&semPlano[q])) return 1;
   return 0;
 }
 void debrid_esquecer(void) {
   int q;
   memset(chave, 0, sizeof chave); alvoT = alvoE = 0;
-  for (q = 0; q < SN; q++) atomic_store(&recusado[q], 0);
+  for (q = 0; q < SN; q++) {
+    atomic_store(&recusado[q], 0);
+    atomic_store(&semPlano[q], 0);
+    atomic_store(&avisado[q], 0);
+  }
 }
 void debrid_nova_busca(void) {
   int q;
@@ -80,11 +100,45 @@ int debrid_recusa(char *dst, unsigned n) {
   int q;
   for (q = 0; q < SN; q++) {
     int st = atomic_load(&recusado[q]);
+    if (!st && atomic_load(&semPlano[q])) {
+      if (dst && n) snprintf(dst, n, "%s free-plan", nomeServ[q]);
+      return 1;
+    }
     if (!st) continue;
     if (dst && n) snprintf(dst, n, "%s %d", nomeServ[q], st);
     return 1;
   }
   return 0;
+}
+
+int debrid_sem_plano(void) {
+  int q, m = 0;
+  for (q = 0; q < SN; q++)
+    if (chave[q][0] && atomic_load(&semPlano[q])) m |= 1 << q;
+  return m;
+}
+
+// Frases FIXAS por servico, uma chave de traducao cada (idioma_tab.h): texto
+// montado com %s nunca casaria com a tabela.
+const char *debrid_sem_plano_frase(int mascara) {
+  int tb = (mascara & (1 << STB)) != 0, pm = (mascara & (1 << SPM)) != 0;
+  int rd = (mascara & (1 << SRD)) != 0;
+  if (tb + pm + rd > 1)
+    return "Suas contas de debrid são gratuitas e não permitem uso pela API — as fontes torrent ficam de fora";
+  if (tb) return "Sua conta TorBox é gratuita e não permite uso pela API — fontes torrent do TorBox ficam de fora";
+  if (pm) return "Sua conta Premiumize é gratuita e não permite uso pela API — fontes torrent do Premiumize ficam de fora";
+  if (rd) return "Sua conta Real-Debrid não é premium e não permite uso pela API — fontes torrent do Real-Debrid ficam de fora";
+  return NULL;
+}
+
+int debrid_sem_plano_novo(void) {
+  int q, m = 0;
+  for (q = 0; q < SN; q++) {
+    int zero = 0;
+    if (!chave[q][0] || !atomic_load(&semPlano[q])) continue;
+    if (atomic_compare_exchange_strong(&avisado[q], &zero, 1)) m |= 1 << q;
+  }
+  return m;
 }
 void debrid_definir_episodio(int t, int e) { alvoT = t; alvoE = e; }
 
@@ -190,11 +244,25 @@ static int contem(const char *r, const char *s) {
 //   - o resto (400, 404, 5xx, sem resposta) -> do torrent.
 // Vale para os tres servicos: o 403 "permission_denied" do Real-Debrid tambem
 // e da conta.
+// CONTA SEM PLANO QUE PERMITA A API. Os textos sao os que os servicos
+// mandaram de verdade (registros 1731-1774): TorBox `"error":
+// "PLAN_RESTRICTED_FEATURE"` com HTTP 403, Premiumize `"Account not
+// premium."` com HTTP 200. Se o Real-Debrid mandar um texto desses, entra pelo
+// mesmo caminho — mas nenhum registro mostrou o RD assim ainda; o 403 dele
+// continua sendo recusa por busca, como antes.
+int debrid_eh_sem_plano(int st, const char *r) {
+  (void)st;
+  if (!r) return 0;
+  return strstr(r, "PLAN_RESTRICTED") != NULL || contem(r, "not premium")
+      || contem(r, "not_premium") || contem(r, "premium account required");
+}
+
 static int erroDeConta(int st, const char *r) {
   if (r && (contem(r, "not cached") || contem(r, "not_cached")
             || contem(r, "uncached")))
     return 0;
   if (st == 401 || st == 403 || st == 429) return 1;
+  if (debrid_eh_sem_plano(st, r)) return 1;
   if (r && (strstr(r, "ACTIVE_LIMIT") || strstr(r, "MONTHLY_LIMIT")
             || strstr(r, "COOLDOWN_LIMIT") || strstr(r, "PLAN_RESTRICTED")
             || strstr(r, "BAD_TOKEN") || strstr(r, "AUTH_ERROR")
@@ -223,6 +291,12 @@ static int falha(int q, const char *rota, int st, const char *r) {
       corpoSeguro(campo, d, sizeof d);
     printf("[debrid] %s %s: HTTP %d sem o esperado; error=%s detail=%s\n",
            nomeServ[q], rota, st, e[0] ? e : "-", d[0] ? d : "-");
+  }
+  if (debrid_eh_sem_plano(st, r)) {
+    int zero = 0;
+    if (atomic_compare_exchange_strong(&semPlano[q], &zero, 1))
+      printf("[debrid] %s: conta sem plano para a API; fora pelo resto da sessao\n",
+             nomeServ[q]);
   }
   return erroDeConta(st, r) ? -(st > 0 ? st : 1) : 0;
 }
@@ -543,7 +617,7 @@ int debrid_resolver(const char *infoHash, int fileIdx, char *url, unsigned n) {
     // Recusado pela conta nesta busca: nem tenta, passa ao proximo servico.
     // E o que faltava no registro 1541 — o Premiumize so era perguntado
     // depois de cada 403 do TorBox, torrent por torrent.
-    if (atomic_load(&recusado[q])) continue;
+    if (atomic_load(&recusado[q]) || atomic_load(&semPlano[q])) continue;
     url[0] = 0;
     deu = (q == SRD) ? resolverRD(infoHash, fileIdx, url, n)
         : (q == STB) ? resolverTB(infoHash, fileIdx, url, n)

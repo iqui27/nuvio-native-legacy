@@ -49,6 +49,9 @@ void player_erro_fonte(void);
 // `titulo` substitui "Nao foi possivel abrir a fonte" e `dica` a linha de
 // baixo. Os dois ja traduzidos; "" ou NULL mantem a frase generica.
 void player_erro_fonte_motivo(const char *titulo, const char *dica);
+// Aviso curto no alto da tela do player (a mesma pilula do modo de aspecto),
+// por `ms`. Some sozinho; a sessao nova do player apaga o que estiver de pe.
+void player_toast(const char *texto, unsigned ms);
 void player_limpar_erro_fonte(void);   // fonte "morta" que voltou a entregar
 // 1 quando a fonte atual falhou. O app usa no watchdog de canal: stream de TV
 // ao vivo que nao abre troca sozinho para o proximo da lista.

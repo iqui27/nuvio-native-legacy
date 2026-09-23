@@ -2328,7 +2328,7 @@ static int orcamentoMB(void) {
   // avisos): uma TV de 1350 MB (Mali-G31) instalou a highcache e recebeu 300
   // MB de textura — o dobro do que a regra automatica da a 2 GB. O nome da
   // variante promete "cache grande para TV com RAM sobrando", nao "300 em
-  // qualquer TV". O teto e o mesmo que Ajustes usa (tetoPermitidoMB): 96 abaixo
+  // qualquer TV". O teto e o mesmo que Ajustes usa (tetoPermitidoMB): 64 abaixo
   // de 1,2 GB, 160 abaixo de 2 GB, 300 abaixo de 3 GB, 512 acima.
   { int teto = ptv_tex_teto_mb(PTV_LG, mem);
     if (mb > teto) {

@@ -163,26 +163,15 @@ int trailer_suportado(void) {
 #ifdef __APPLE__
   return 0;
 #else
-  // O FRACASSO NAO TRAVA. O deploy mata o processo e relanca em seguida, e o
-  // hub LS2 demora um instante para soltar o nome do registro anterior — um
-  // video_iniciar() nessa janela volta com "LSRegister recusado" mesmo estando
-  // tudo certo. Guardar esse resultado condenava o trailer pela sessao
-  // inteira; so o SUCESSO e definitivo. O recuo de 3 s impede o LSRegister de
-  // rodar a cada quadro enquanto o hub nao solta o nome.
-  static int sabe = -1;
-  static Uint32 tentarEm = 0;
-  static int falhas = 0;
-  if (sabe == 1) return 1;
-  Uint32 agora = SDL_GetTicks();
-  if (agora < tentarEm) return 0;
-  // Recuo crescente: martelar LSRegister a cada 3 s (5134788) piorava hub
-  // preso apos deploy; 1.3.10 so tentava uma vez por sessao.
-  { unsigned espera = 3000u;
-    if (falhas >= 2) espera = 15000u;
-    else if (falhas >= 1) espera = 8000u;
-    tentarEm = agora + espera; }
-  if (video_iniciar()) { sabe = 1; falhas = 0; }
-  else { falhas++; sabe = 0; }
+  // O FRACASSO NAO TRAVA, MAS TEM TETO. O deploy mata o processo e relanca
+  // em seguida, e o hub LS2 pode demorar para soltar o nome anterior; so o
+  // SUCESSO e definitivo. O recuo e o teto moram em video_iniciar_auto
+  // (lsregistro.h): sem teto, os registros 1720-1774 chamaram LSRegister a cada
+  // 15 s pela sessao inteira — 1327 recusas de PERMISSION, que nao muda
+  // sozinha. O play continua tentando (video_iniciar, pedido da pessoa).
+  static int sabe = 0;
+  if (sabe) return 1;
+  if (video_iniciar_auto()) sabe = 1;
   return sabe;
 #endif
 }

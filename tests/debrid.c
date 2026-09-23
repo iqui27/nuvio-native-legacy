@@ -39,6 +39,10 @@ static int   bateuRDUnrestrict;
 // createtorrent do TorBox: 0 = 201 normal, 1 = 403 de CONTA (plano), 2 = 403
 // que diz "nao esta em cache" (do torrent, nao da conta)
 static int   tbCriar403;
+// 3 = 403 de conta que PASSA (ACTIVE_LIMIT): recusa so desta busca.
+// Premiumize de conta gratuita: directdl responde 200 "Account not premium."
+// (registros 1731-1774, texto de verdade).
+static int   pmSemPlano;
 
 static char *dup2s(const char *s) { return strdup(s); }
 
@@ -74,6 +78,9 @@ char *rede_postar_st(const char *url, int s, const char *const *cab,
     if (tbCriar403 == 1) { *st = 403;
       return dup2s("{\"success\":false,\"error\":\"PLAN_RESTRICTED_FEATURE\","
                    "\"detail\":\"Your plan does not allow this. key=" K_TB "\",\"data\":null}"); }
+    if (tbCriar403 == 3) { *st = 403;
+      return dup2s("{\"success\":false,\"error\":\"ACTIVE_LIMIT\","
+                   "\"detail\":\"Too many active downloads.\",\"data\":null}"); }
     if (tbCriar403 == 2) { *st = 403;
       return dup2s("{\"success\":false,\"error\":\"DOWNLOAD_NOT_CACHED\","
                    "\"detail\":\"Torrent is not cached.\",\"data\":null}"); }
@@ -96,6 +103,8 @@ char *rede_postar_st(const char *url, int s, const char *const *cab,
     if (strstr(url, "transfer/directdl")) {
       bateuPM[1]++; *st = 200;
       snprintf(corpoDirectdlPM, sizeof corpoDirectdlPM, "%s", corpo);
+      if (pmSemPlano)
+        return dup2s("{\"status\":\"error\",\"message\":\"Account not premium.\"}");
       return dup2s("{\"status\":\"success\",\"content\":["
         "{\"path\":\"Show S02/Show.S02E04.1080p.mkv\",\"size\":2000000000,"
          "\"link\":\"https://a.pm.me/dl/AAA/E04.mkv\",\"stream_link\":\"https://a.pm.me/st/AAA\"},"
@@ -239,7 +248,7 @@ static void torbox403(void) {
   // 403 de CONTA: o primeiro torrent tenta TorBox, recebe 403, e cai no
   // Premiumize na mesma chamada
   memset(bateuTB, 0, sizeof bateuTB); memset(bateuPM, 0, sizeof bateuPM);
-  tbCriar403 = 1; pmEmCache = 1;
+  tbCriar403 = 3; pmEmCache = 1;
   assert(debrid_resolver("DEADBEEF", -1, url, sizeof url));
   assert(strstr(url, "a.pm.me"));
   assert(bateuTB[1] == 1 && bateuPM[0] == 1);
@@ -273,6 +282,59 @@ static void torbox403(void) {
   OK("403 de 'not cached' nao bloqueia o servico");
   tbCriar403 = 0; pmEmCache = 1;
   debrid_esquecer();
+}
+
+// CONTA SEM PLANO, registros 1731-1774: TorBox 403 PLAN_RESTRICTED_FEATURE e
+// Premiumize "Account not premium.". Diferente do 403 de cima, vale a SESSAO:
+// uma busca nova nao volta a perguntar, e com os dois assim o debrid deixa de
+// contar como ativo (streams.c descarta os torrents sem url).
+static void semPlano(void) {
+  char url[4096] = "", rec[64] = "";
+  int i;
+  debrid_esquecer();
+  debrid_definir_chave("torbox", K_TB);
+  debrid_definir_chave("premiumize", K_PM);
+  debrid_nova_busca();
+  memset(bateuTB, 0, sizeof bateuTB); memset(bateuPM, 0, sizeof bateuPM);
+  tbCriar403 = 1; pmEmCache = 1; pmSemPlano = 0;
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url));   // PM ainda serve
+  assert(bateuTB[1] == 1);
+  assert(debrid_sem_plano() == 2);                  // bit do TorBox
+  assert(debrid_ativo());
+  // busca nova NAO devolve o TorBox
+  for (i = 0; i < 3; i++) { debrid_nova_busca(); url[0] = 0;
+    assert(debrid_resolver("DEADBEEF", -1, url, sizeof url)); }
+  assert(bateuTB[0] == 1 && bateuTB[1] == 1);
+  assert(debrid_recusa(rec, sizeof rec) && !strcmp(rec, "TorBox free-plan"));
+  OK("TorBox PLAN_RESTRICTED_FEATURE: fora pela sessao, nao so pela busca");
+
+  // aviso: uma vez so
+  assert(debrid_sem_plano_novo() == 2);
+  assert(debrid_sem_plano_novo() == 0);
+  assert(strstr(debrid_sem_plano_frase(2), "TorBox é gratuita"));
+  OK("aviso de conta sem plano sai uma vez por sessao");
+
+  // Premiumize gratuito: o directdl de 200 "Account not premium." e de CONTA
+  pmSemPlano = 1;
+  debrid_nova_busca();
+  memset(bateuPM, 0, sizeof bateuPM);
+  for (i = 0; i < 5; i++) { url[0] = 0; assert(!debrid_resolver("DEADBEEF", -1, url, sizeof url)); }
+  assert(bateuPM[1] == 1);                          // uma vez, nao cinco
+  assert(debrid_sem_plano() == (2 | 4));
+  assert(!debrid_ativo());
+  assert(strstr(debrid_sem_plano_frase(4), "Premiumize é gratuita"));
+  assert(strstr(debrid_sem_plano_frase(6), "contas de debrid"));
+  assert(debrid_sem_plano_novo() == 4);
+  OK("Premiumize 'Account not premium.': fora pela sessao; sem servico, debrid inativo");
+
+  // chave NOVA do servico volta a valer (a pessoa assinou)
+  debrid_definir_chave("premiumize", "outra-chave-pm");
+  assert(!(debrid_sem_plano() & 4));
+  assert(debrid_ativo());
+  pmSemPlano = 0; tbCriar403 = 0;
+  debrid_esquecer();
+  assert(!debrid_sem_plano());
+  OK("chave nova ou logout limpam a conta sem plano");
 }
 
 static void premiumize(void) {
@@ -368,6 +430,7 @@ int main(void) {
   realDebrid();
   torbox();
   torbox403();
+  semPlano();
   premiumize();
   ordem();
   parser();
@@ -407,6 +470,8 @@ int main(void) {
   assert(strstr(capt, "key=***"));
   assert(strstr(capt, "Torrent is not cached."));
   assert(strstr(capt, "[debrid] TorBox: recusa da conta (HTTP 403)"));
+  assert(strstr(capt, "[debrid] TorBox: conta sem plano para a API; fora pelo resto da sessao"));
+  assert(strstr(capt, "[debrid] Premiumize: conta sem plano para a API; fora pelo resto da sessao"));
   OK("corpo do 403 no log, sem a chave");
 
   puts("debrid: tudo ok");
