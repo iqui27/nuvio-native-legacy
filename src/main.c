@@ -347,6 +347,11 @@ static void capturaSeSolicitado(void) {
 // respeita. EM_ASYNC_JS suspende a funcao C (via ASYNCIFY) ate a promessa
 // resolver, entao o `while` do main continua sendo o laco do app — nada de
 // partir o corpo do quadro num callback.
+#ifdef NV_COOP
+#ifndef NV_COOP_ORCAMENTO_MS
+#define NV_COOP_ORCAMENTO_MS 8.0
+#endif
+#endif
 EM_ASYNC_JS(void, nv_ceder_quadro, (), {
   await new Promise(function (r) { requestAnimationFrame(r); });
 });
@@ -959,6 +964,28 @@ int main(int argc, char **argv) {
     fAux = NV_DT(t0);
     t0 = NV_T0();
     SDL_GL_SwapWindow(win);
+#ifdef NV_COOP
+    // TIZEN 4: os "fios" sao fibras e so andam aqui, depois de o quadro ir para
+    // a tela. Orcamento fixo por quadro; o que sobrar fica para o proximo. Uma
+    // fibra que nao cede (laco de CPU puro) passa do orcamento — o [coop]
+    // abaixo mostra quanto, para achar quem precisa de coop_ceder().
+    { static double coopMax, coopUltimo;
+      double c0 = emscripten_get_now(), cd;
+      coop_rodar(NV_COOP_ORCAMENTO_MS);
+      cd = emscripten_get_now() - c0;
+      if (cd > coopMax) coopMax = cd;
+      if (c0 - coopUltimo > 5000) {
+        int vivas, pico, fila;
+        long trocas;
+        const char *origem = "";
+        double fatia = coop_fatia_max(&origem);
+        coop_estatistica(&vivas, &pico, &trocas, &fila);
+        printf("[coop] vivas=%d pico=%d fila=%d trocas=%ld rodar-max=%.1fms fatia-max=%.1fms %s\n",
+               vivas, pico, fila, trocas, coopMax, fatia, origem);
+        coopMax = 0;
+        coopUltimo = c0;
+      } }
+#endif
 #ifdef __EMSCRIPTEN__
     { Uint64 c0 = SDL_GetPerformanceCounter();
       double c = (double)(c0 - fimCeder) * 1000.0 / perFreq, fora;

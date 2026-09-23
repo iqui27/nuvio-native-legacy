@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets"
+        xmlns:tizen="http://tizen.org/ns/widgets"
+        id="http://nuvio.tv/native-tizen4"
+        version="1.4.2"
+        viewmodes="maximized">
+
+  <!-- VARIANTE EXPERIMENTAL TIZEN 4.0 (TVs 2018, Chromium M56), gerada por
+       tools/tizen.sh (variante tizen4): wasm2js e fibras cooperativas, sem WebAssembly e
+       sem SharedArrayBuffer. PACOTE PROPRIO (NuvioTV004), de proposito: com o
+       id do app normal, uma TV 5.5+ que instalasse isto trocaria o app rapido
+       pelo lento sem saber. required_version 4.0 e o minimo que o pacote
+       anuncia; nao ha aparelho 2018 medido ainda. A versao acompanha
+       tools/tizen-config.xml. -->
+  <tizen:application id="NuvioTV004.NuvioNative4"
+                     package="NuvioTV004"
+                     required_version="4.0"/>
+  <tizen:profile name="tv"/>
+
+  <name>Nuvio (Tizen 4 experimental)</name>
+  <icon src="icon.png"/>
+  <content src="index.html"/>
+  <tizen:content-security-policy>
+    default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *;
+    connect-src *; img-src * data: blob:; media-src *;
+  </tizen:content-security-policy>
+
+  <!-- CORS: e ISTO que faz o app falar com os addons.
+       Os hosts de addon, o TMDB e o Supabase nao mandam
+       Access-Control-Allow-Origin para a origem de um widget. Dentro do .wgt o
+       Tizen dispensa a checagem para o que estiver declarado aqui; no Chrome do
+       desktop nao ha equivalente, e por isso o teste local precisa subir o
+       navegador com a flag disable-web-security. Origem fixa nao serve: cada pessoa
+       instala os addons que quer, em hosts que so ela conhece. -->
+  <access origin="*" subdomains="true"/>
+  <tizen:allow-navigation>*</tizen:allow-navigation>
+
+  <!-- PRIVILEGIOS. Todos de nivel PUBLIC de proposito: partner exige ser
+       parceiro registrado da Samsung e platform e interno. Um privilegio de
+       nivel acima do certificado faz a instalacao falhar inteira com
+       MISMATCHED_PRIVILEGE_LEVEL — nao e degradacao, e recusa. -->
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <!-- tv.inputdevice: sem ele registerKey nao funciona e o firmware engole as
+       teclas coloridas, as de midia e o Return, entregando so setas e OK. E o
+       equivalente Samsung do hint SDL_WEBOS_ACCESS_POLICY_KEYS_BACK. -->
+  <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+  <!-- tv.audio: o player mexe em volume e mudo. -->
+  <tizen:privilege name="http://tizen.org/privilege/tv.audio"/>
+
+  <!-- Sem tela de fundo transparente o plano do AVPlay, que fica ATRAS da
+       pagina, nunca aparece: o furo em alpha que gfx_furo abre no framebuffer
+       existiria e mesmo assim daria preto. E o mesmo problema que no webOS
+       exigiu set_opaque_region(NULL) no Wayland. -->
+  <tizen:setting background-support="disable"
+                 screen-orientation="landscape"
+                 context-menu="disable"
+                 background-vibration="disable"
+                 encryption="disable"
+                 hwkey-event="enable"/>
+</widget>

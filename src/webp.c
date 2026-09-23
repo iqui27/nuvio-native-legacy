@@ -208,6 +208,14 @@ static int dimensoes(const unsigned char *d, size_t n, int *w, int *h) {
 // pthread, pede a si mesmo ao fio principal e volta na hora (o pedido corrente
 // segue pelo caminho antigo).
 void navegador_iniciar(void) {
+#ifdef NV_COOP
+  // TIZEN 4 (NV_COOP): nao ha Worker de decode. Ele precisa de
+  // SharedArrayBuffer, Atomics e OffscreenCanvas, todos M60+, e o M56 nao tem
+  // nenhum. Todo pedido vai por nv_dec_coop, no fio principal.
+  __atomic_store_n(&iniciarPedido, 1, __ATOMIC_RELEASE);
+  __atomic_store_n(&canalEstado, CANAL_MORTO, __ATOMIC_RELEASE);
+  return;
+#endif
   if (!emscripten_is_main_browser_thread()) {
     if (!__atomic_exchange_n(&iniciarPedido, 1, __ATOMIC_ACQ_REL))
       emscripten_async_run_in_main_runtime_thread(EM_FUNC_SIG_V, navegador_iniciar);
@@ -277,6 +285,61 @@ static int mimeCodigo(const char *mime) {
   return 0;
 }
 
+#ifdef NV_COOP
+// O CAMINHO DE RESERVA (noFioPrincipal, mais abaixo) SEM Atomics, para o
+// Tizen 4. Aqui nao ha outro fio: o JS roda entre as voltas das fibras, e a
+// fibra que pediu cede ate J_EST sair de 0. O protocolo de posse e o MESMO
+// (0 aberto, 1 pronto, 4 abandonado, 5 largado); so as operacoes deixam de
+// ser atomicas, porque nada roda ao mesmo tempo que o JS. O custo que o #72
+// mediu (drawImage + getImageData no fio principal) volta aqui, e sem
+// alternativa: o M56 nao tem OffscreenCanvas para levar isto a um Worker.
+EM_JS(void, nv_dec_coop, (int32_t *job, int seq, const char *mimeC, int largMax), {
+  var pJob = job >> 2;
+  var mime = UTF8ToString(mimeC);
+  var vivo = function () {
+    var e = HEAP32[pJob];
+    return HEAP32[pJob + 7] === seq && (e === 0 || e === 4);
+  };
+  var fim = function (w, h, ow, oh) {
+    HEAP32[pJob + 1] = w;
+    HEAP32[pJob + 2] = h;
+    HEAP32[pJob + 4] = ow;
+    HEAP32[pJob + 5] = oh;
+    if (HEAP32[pJob] === 0) HEAP32[pJob] = 1;
+    else if (HEAP32[pJob] === 4) HEAP32[pJob] = 5;
+  };
+  HEAP32[pJob + 6] = 0;
+  try {
+    var bytes = HEAPU8.slice(HEAP32[pJob + 9], HEAP32[pJob + 9] + HEAP32[pJob + 10]);
+    createImageBitmap(new Blob([bytes], { type: mime })).then(function (bmp) {
+      var ow = bmp.width;
+      var oh = bmp.height;
+      var w = ow;
+      var h = oh;
+      if (!vivo()) { if (bmp.close) bmp.close(); return; }
+      if (HEAP32[pJob] === 4) { if (bmp.close) bmp.close(); fim(0, 0, 0, 0); return; }
+      if (largMax > 0 && ow > largMax) {
+        w = largMax;
+        h = Math.max(1, Math.round(oh * largMax / ow));
+      }
+      if (w > 0 && h > 0 && w * h * 4 <= HEAP32[pJob + 8]) {
+        var cv = Module.nvDecCanvas || (Module.nvDecCanvas = document.createElement('canvas'));
+        cv.width = w;
+        cv.height = h;
+        var cx = cv.getContext('2d');
+        cx.imageSmoothingEnabled = true;
+        if ('imageSmoothingQuality' in cx) cx.imageSmoothingQuality = 'high';
+        cx.clearRect(0, 0, w, h);
+        cx.drawImage(bmp, 0, 0, w, h);
+        HEAPU8.set(cx.getImageData(0, 0, w, h).data, HEAP32[pJob + 3]);
+      } else { w = 0; h = 0; }
+      if (bmp.close) bmp.close();
+      fim(w, h, ow, oh);
+    }).catch(function () { if (vivo()) fim(0, 0, 0, 0); });
+  } catch (e) { fim(0, 0, 0, 0); }
+});
+#endif
+
 uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char *mime,
                                int largMax, int *lw, int *lh, int *ow, int *oh) {
   int32_t *job;
@@ -293,7 +356,13 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
   // se pudesse seria ele mesmo quem deixaria de rodar o `then`. Hoje o unico
   // chamador e o fio de decode do tex_cache; esta guarda existe para que
   // amanha isto vire NULL em vez de travar o app.
+#ifdef NV_COOP
+  // No Tizen 4 todo mundo e o "fio principal" do navegador; quem nao pode
+  // esperar e o principal DE VERDADE, fora de fibra.
+  if (!coop_em_fibra()) return NULL;
+#else
   if (emscripten_is_main_browser_thread()) return NULL;
+#endif
   varrer();
   if (!dimensoes(dados, n, &fw, &fh)) return NULL;
   // A MESMA CONTA do Worker (Math.round = floor(x + 0.5)); a linha a mais no
@@ -326,7 +395,13 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
   job[J_LARG] = largMax;
   if (!__atomic_load_n(&iniciarPedido, __ATOMIC_ACQUIRE)) navegador_iniciar();
 
+#ifdef NV_COOP
+  (void)codigo;
+  nv_dec_coop(job, seq, mime, largMax);
+  if (0) {
+#else
   if (codigo && __atomic_load_n(&canalEstado, __ATOMIC_ACQUIRE) == (CANAL_DEC | CANAL_SENT)) {
+#endif
     // CANAL DIRETO: empilha e acorda a sentinela. Sem fio principal.
     int32_t topo = __atomic_load_n(&filaCabeca, __ATOMIC_ACQUIRE);
     job[J_ORIGEM] = 2;
@@ -334,7 +409,9 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
     while (!__atomic_compare_exchange_n(&filaCabeca, &topo, (int32_t)(intptr_t)job, 1,
                                         __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
     emscripten_futex_wake(&filaCabeca, 1);
-  } else MAIN_THREAD_ASYNC_EM_ASM({
+  }
+#ifndef NV_COOP
+  else MAIN_THREAD_ASYNC_EM_ASM({
     // UMA DECLARACAO POR LINHA, sem `var a = 1, b = 2`: o bloco do EM_ASM
     // passa pelo pre-processador de C, e la chave nao protege virgula — so
     // parentese protege. Uma virgula solta aqui parte o bloco em dois
@@ -407,6 +484,7 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
       D.w.postMessage({ job: $0, seq: seq, mime: mime, largMax: largMax });
     }
   }, (int)(intptr_t)job, seq, (int)(intptr_t)mime, (int)largMax);
+#endif
 
   // Prazo em TEMPO DE RELOGIO desde o envio. A versao antiga somava so as
   // fatias que venciam por timeout, e um futex acordado cedo nao contava:
@@ -436,7 +514,11 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
       }
       continue;   // perdeu a corrida para o 0 -> 1: o resultado chegou agora
     }
+#ifdef NV_COOP
+    coop_esperar(&job[J_EST], EST_ABERTO, limite);
+#else
     emscripten_futex_wait(&job[J_EST], EST_ABERTO, resta < 250.0 ? resta : 250.0);
+#endif
   }
 
   w  = job[J_W];

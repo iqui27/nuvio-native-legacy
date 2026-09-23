@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Nuvio - sonda Tizen 4</title>
+<!-- SONDA DO TIZEN 4. Nao roda o app: so pergunta ao navegador da TV o que o
+     build experimental (tools/tizen.sh --tizen4) precisa, e mostra na tela
+     para uma foto. ES5 puro, nada de fora: e o que o Chromium M56 entende. -->
+<style>
+  html, body { margin: 0; background: #050718; color: #e8ecff; font: 26px/1.45 sans-serif; }
+  #t { padding: 40px 60px; }
+  h1 { font-size: 40px; margin: 0 0 18px; }
+  .ok { color: #7ee787; } .nao { color: #ff8b7a; } .info { color: #9aa4c7; }
+  td { padding: 2px 24px 2px 0; vertical-align: top; }
+</style>
+</head>
+<body>
+<div id="t"><h1>Nuvio: sonda do Tizen 4</h1><table id="tab"></table>
+<p class="info">Tire uma foto desta tela e mande na issue. Nada foi enviado pela rede.</p></div>
+<script>
+(function () {
+  var tab = document.getElementById('tab');
+  function linha(nome, valor, bom) {
+    var tr = document.createElement('tr');
+    var a = document.createElement('td');
+    var b = document.createElement('td');
+    a.textContent = nome;
+    b.textContent = String(valor);
+    b.className = bom === true ? 'ok' : bom === false ? 'nao' : 'info';
+    tr.appendChild(a); tr.appendChild(b); tab.appendChild(tr);
+  }
+  function tenta(nome, f, precisa) {
+    var v;
+    try { v = f(); } catch (e) { v = 'erro: ' + (e && e.message ? e.message : e); }
+    linha(nome, v, precisa === undefined ? undefined : !!v === precisa && String(v).indexOf('erro') !== 0);
+  }
+  linha('userAgent', navigator.userAgent);
+  var m = /Chrome\/(\d+)/.exec(navigator.userAgent);
+  linha('Chromium', m ? m[1] : '?', m ? +m[1] >= 56 : undefined);
+  // O que o build Tizen 4 USA (tem de estar verde):
+  tenta('Promise', function () { return typeof Promise !== 'undefined'; }, true);
+  tenta('async/await', function () { return !!new Function('return (async function(){ await 0; })')(); }, true);
+  tenta('XMLHttpRequest assincrono', function () { return typeof XMLHttpRequest !== 'undefined'; }, true);
+  tenta('createImageBitmap', function () { return typeof createImageBitmap === 'function'; }, true);
+  tenta('IndexedDB', function () { return !!window.indexedDB; }, true);
+  tenta('localStorage', function () { localStorage.setItem('nv-sonda', '1'); return localStorage.getItem('nv-sonda') === '1'; }, true);
+  tenta('Math.fround / imul / clz32', function () { return !!(Math.fround && Math.imul && Math.clz32); }, true);
+  tenta('Uint8Array.prototype.slice', function () { return typeof Uint8Array.prototype.slice === 'function'; }, true);
+  tenta('ArrayBuffer de 256 MiB', function () { return new ArrayBuffer(268435456).byteLength === 268435456; }, true);
+  tenta('WebGL 1 com alpha', function () {
+    var c = document.createElement('canvas');
+    var g = c.getContext('webgl', { alpha: true }) || c.getContext('experimental-webgl', { alpha: true });
+    if (!g) return false;
+    var at = g.getContextAttributes ? g.getContextAttributes() : null;
+    return g.getParameter(g.VERSION) + ' | alpha=' + (at ? at.alpha : '?') + ' | tex-max=' + g.getParameter(g.MAX_TEXTURE_SIZE);
+  }, true);
+  tenta('webapis.avplay', function () { return typeof webapis !== 'undefined' && !!webapis.avplay; }, true);
+  tenta('tizen.tvinputdevice', function () { return typeof tizen !== 'undefined' && !!tizen.tvinputdevice; }, true);
+  // O que o build normal usa e o Tizen 4 NAO precisa (so para registro):
+  tenta('WebAssembly', function () { return typeof WebAssembly !== 'undefined'; });
+  tenta('SharedArrayBuffer', function () { return typeof SharedArrayBuffer !== 'undefined'; });
+  tenta('Atomics', function () { return typeof Atomics !== 'undefined'; });
+  tenta('OffscreenCanvas', function () { return typeof OffscreenCanvas !== 'undefined'; });
+  tenta('globalThis', function () { return typeof globalThis !== 'undefined'; });
+  tenta('String.padStart', function () { return typeof ''.padStart === 'function'; });
+  tenta('deviceMemory / cores', function () { return (navigator.deviceMemory || '?') + ' GB / ' + (navigator.hardwareConcurrency || '?'); });
+  tenta('tela', function () { return screen.width + 'x' + screen.height + ' dpr ' + devicePixelRatio; });
+  // Velocidade bruta de JS: o build Tizen 4 e JS puro (wasm2js).
+  tenta('laco JS de 20M (ms)', function () {
+    var t = Date.now(), s = 0, i;
+    for (i = 0; i < 20000000; i++) s = (s + Math.imul(i, 2654435761)) | 0;
+    return (Date.now() - t) + ' ms (Mac M1 Pro: ~100)';
+  });
+})();
+</script>
+</body>
+</html>

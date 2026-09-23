@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets"
+        xmlns:tizen="http://tizen.org/ns/widgets"
+        id="http://nuvio.tv/sonda-tizen4"
+        version="1.0.0"
+        viewmodes="maximized">
+  <!-- Sonda do Tizen 4 (tools/tizen4-sonda.sh). So mostra na tela o que o
+       navegador da TV tem; nao fala com rede nenhuma. Pacote proprio
+       (id de 10 caracteres, regra do Tizen). -->
+  <tizen:application id="NuvioSnd04.Sonda"
+                     package="NuvioSnd04"
+                     required_version="4.0"/>
+  <tizen:profile name="tv"/>
+  <name>Nuvio sonda Tizen 4</name>
+  <icon src="icon.png"/>
+  <content src="index.html"/>
+  <tizen:content-security-policy>
+    default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:;
+  </tizen:content-security-policy>
+  <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+  <tizen:setting screen-orientation="landscape" context-menu="disable"
+                 encryption="disable" hwkey-event="enable"/>
+</widget>

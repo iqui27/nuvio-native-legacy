@@ -53,8 +53,51 @@ if [ "${1:-}" = "--alto-cache" ] || [ "${1:-}" = "--high-cache" ]; then
   export NUVIO_WGT_NOME="${NUVIO_WGT_NOME:-NuvioTV-native-highcache}"
   echo "tizen.sh: variante ALTO CACHE (300 MB de texturas) -> $NUVIO_SAIDA"
 fi
+# --tizen4: VARIANTE EXPERIMENTAL para TVs 2018 (Tizen 4.0, Chromium M56).
+# O M56 nao tem WebAssembly nem SharedArrayBuffer: o build sai em wasm2js
+# (-sWASM=0) e SEM pthreads. Os fios viram fibras cooperativas (src/coop.c),
+# ligadas por -include src/coop_fio.h so nesta variante; o codigo dos fios nao
+# muda. ASYNCIFY vai INTEIRO (sem a lista ASYNCIFY_ONLY), porque qualquer
+# funcao na pilha de uma fibra pode estar no caminho de uma troca. NV_LEVE
+# junto: TV de 2018 e a mais fraca que ja miramos. Pacote com id proprio
+# (tools/tizen4-config.xml), para nunca substituir o app de uma TV 5.5+.
+TIZEN4=""
+if [ "${1:-}" = "--tizen4" ]; then
+  VARIANTE="tizen4"
+  TIZEN4=1
+  export NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-} -DNV_LEVE=1 -DNV_COOP=1 -include src/coop_fio.h"
+  export NUVIO_SAIDA="${NUVIO_SAIDA:-build/tizen4}"
+  export NUVIO_WGT_NOME="${NUVIO_WGT_NOME:-NuvioTV-native-tizen4}"
+  export NUVIO_TIZEN_CONFIG="${NUVIO_TIZEN_CONFIG:-tools/tizen4-config.xml}"
+  echo "tizen.sh: variante TIZEN 4 (wasm2js, fibras, sem pthreads) -> $NUVIO_SAIDA"
+fi
 SAIDA="${NUVIO_SAIDA:-build/tizen}"
 mkdir -p "$SAIDA"
+
+# O que muda entre o alvo normal e o Tizen 4. Ver a nota do --tizen4 acima.
+if [ -n "$TIZEN4" ]; then
+  ALVO_JS=chrome56
+  # O esbuild REFORMATA ao rebaixar, com indentacao: num wasm2js de
+  # blocos aninhados isso sozinho dobrava o arquivo. Aqui sai compacto.
+  ESBUILD_EXTRA="--minify-whitespace"
+  FIOS_FLAGS=""
+  MOTOR_FLAGS="${NUVIO_T4_MOTOR:--sWASM=0}"   # NUVIO_T4_MOTOR=-sWASM=1: so diagnostico
+  ASYNC_FLAGS="-sASYNCIFY -sASYNCIFY_STACK_SIZE=65536"
+  RUNTIME_EXPORTS='["ccall"]'
+  # Sem --profiling-funcs: em wasm2js ele desliga a minificacao do JS, e o
+  # index.js saiu com 44,8 MB (MEDIDO, 23/09) — indentacao e nomes longos.
+  # --emit-symbol-map: index.js.symbols traduz os nomes minificados de volta
+  # (pilha do depurador, longtask). Fica FORA do pacote.
+  PERFIL_FLAGS="--emit-symbol-map"
+else
+  ALVO_JS=chrome69
+  ESBUILD_EXTRA=""
+  FIOS_FLAGS="-pthread -sPTHREAD_POOL_SIZE=$POOL -sPTHREAD_POOL_SIZE_STRICT=0 -sDEFAULT_PTHREAD_STACK_SIZE=2097152"
+  MOTOR_FLAGS="-sWASM_BIGINT=0"
+  ASYNC_FLAGS="-sASYNCIFY -sASYNCIFY_STACK_SIZE=32768 $( [ -n "${NUVIO_ASYNCIFY_TUDO:-}" ] || printf -- "-sASYNCIFY_ONLY=[main,dados_iniciar]" )"
+  RUNTIME_EXPORTS='["PThread","ccall"]'
+  PERFIL_FLAGS="--profiling-funcs"
+fi
 
 # Os mesmos -D de servidor do Mac e da TV LG. O pacote principal precisa falhar
 # antes do emcc se URL, anon key ou base de login estiverem vazios. Harnesses de
@@ -162,6 +205,21 @@ if [ -n "${NUVIO_DIAG_TOKEN:-}" ]; then
   echo "tizen.sh: BUILD DE DIAGNOSTICO — registro sobe sozinho para $REC_URL"
 fi
 
+# TIZEN 4: POLYFILLS ANTES DE QUALQUER SCRIPT. O esbuild rebaixa SINTAXE, nao
+# API: o glue do Emscripten usa globalThis (M71), o shell usa padStart (M57) e
+# dados.c/cachearte.c usam Atomics (M60). No M56 qualquer um deles e
+# ReferenceError no primeiro uso, e a tela fica preta sem log. O arquivo
+# tools/tizen4-polyfill.js entra num <script> logo apos <head>.
+if [ -n "$TIZEN4" ]; then
+  T4_SHELL="$SAIDA/shell-tizen4.html"
+  awk -v pf=tools/tizen4-polyfill.js '
+    { print }
+    /<head>/ && !feito { print "<script>"; while ((getline l < pf) > 0) print l; print "</script>"; feito = 1 }
+  ' "$SHELL_USADO" > "$T4_SHELL"
+  grep -q 'g.globalThis = g' "$T4_SHELL" || { echo "tizen.sh: polyfill do Tizen 4 nao entrou no shell" >&2; exit 1; }
+  SHELL_USADO="$T4_SHELL"
+fi
+
 EXTRA_SOURCES="${NUVIO_TIZEN_EXTRA_SOURCES:-}"
 SOURCES="src/*.c"
 if [ -n "${NUVIO_TIZEN_EXCLUDE_MAIN:-}" ]; then
@@ -201,7 +259,7 @@ if [ "${NUVIO_ASS_LIBASS:-1}" = "1" ]; then
   ASS_LIBS="-L$ASS_ROOT/lib -Wl,--start-group -lass -lharfbuzz -lfribidi -lfreetype -Wl,--end-group"
 fi
 eval emcc $SOURCES ${EXTRA_SOURCES} -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} $ASS_CFLAGS $ASS_LIBS \
-  -sWASM_BIGINT=0 \
+  $MOTOR_FLAGS \
   -sUSE_SDL=2 -sUSE_SDL_IMAGE=2 -sUSE_SDL_TTF=2 -sUSE_LIBJPEG=1 \
   `# zlib do emscripten: epg.c infla o XMLTV .gz do epgshare01 com inflate.` \
   -sUSE_ZLIB=1 \
@@ -224,14 +282,14 @@ eval emcc $SOURCES ${EXTRA_SOURCES} -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_
   `# FIO PRINCIPAL, que segue com 8. Worker daqui faz HTTP e decodifica imagem —` \
   `# 2 MB e o proprio padrao do emscripten e sobra. Libera ~72 MB, que e mais do` \
   `# que o app pedia quando morreu.` \
-  -sSTACK_SIZE=8388608 -sDEFAULT_PTHREAD_STACK_SIZE=2097152 \
+  -sSTACK_SIZE=8388608 \
   `# 32 KB de pilha do asyncify, o mesmo valor da bancada que roda. O laco de` \
   `# quadro desenrola por aqui a cada SwapWindow; 16 KB era aperto sem motivo.` \
   `# --profiling-funcs: so a secao de NOMES das funcoes no wasm (~5% do` \
   `# tamanho), sem custo de execucao. Sem ela o profiler (CDP no Mac ou o Web` \
   `# Inspector da TV) mostra wasm-function[729] e nao diz o que e.` \
-  --profiling-funcs \
-  -sASYNCIFY -sASYNCIFY_STACK_SIZE=32768 \
+  $PERFIL_FLAGS \
+  $ASYNC_FLAGS \
   `# SO main E dados_iniciar SAO INSTRUMENTADOS. Sem esta lista o ASYNCIFY` \
   `# instrumenta toda funcao que possa estar na pilha de uma chamada assincrona` \
   `# — e como nv_ceder_quadro e chamada do laco em main, isso era o app` \
@@ -242,7 +300,6 @@ eval emcc $SOURCES ${EXTRA_SOURCES} -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_
   `# alguem puser outra EM_ASYNC_JS mais fundo, a TV aborta com "unreachable"` \
   `# no desenrolar — e a lista aqui que precisa crescer. NUVIO_ASYNCIFY_TUDO=1` \
   `# volta ao comportamento antigo para comparar.` \
-  $( [ -n "${NUVIO_ASYNCIFY_TUDO:-}" ] || printf -- "-sASYNCIFY_ONLY=[main,dados_iniciar]" ) \
   `# POOL DE 12. Ja esteve em 4, por um palpite meu que a evidencia derrubou:` \
   `# cortei supondo que o arranque estava LENTO por causa dos doze workers, e os` \
   `# marcos de tempo mostraram depois que ele estava CONGELADO, no WASM_BIGINT.` \
@@ -265,12 +322,12 @@ eval emcc $SOURCES ${EXTRA_SOURCES} -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_
   `# mais custam e memoria do NAVEGADOR (cada um instancia os ~3,2 MB de wasm),` \
   `# e e exatamente esse trabalho que sai do caminho critico: com o pool seco` \
   `# ele acontecia no MEIO da sessao e no FIO PRINCIPAL.` \
-  -pthread -sPTHREAD_POOL_SIZE=$POOL -sPTHREAD_POOL_SIZE_STRICT=0 \
+  $FIOS_FLAGS \
   -sEXPORTED_FUNCTIONS='["_main","_malloc","_free"]' \
   `# PThread exportado para o medidor de fios de tizen-shell.html. NAO e` \
   `# opcional: sem o export, LER a variavel dispara o abort() do runtime` \
   `# ("'PThread' was not exported"), ou seja, o proprio medidor mataria o app.` \
-  -sEXPORTED_RUNTIME_METHODS='["PThread","ccall"]' \
+  -sEXPORTED_RUNTIME_METHODS='$RUNTIME_EXPORTS' \
   -lidbfs.js \
   `# ASSERTIONS=0 NA BUILD DE ENTREGA (20/09/2026, #72). Com 1 o glue confere` \
   `# pilha e assinatura a cada chamada JS<->wasm e cada erro de FS monta um` \
@@ -282,7 +339,14 @@ eval emcc $SOURCES ${EXTRA_SOURCES} -o "$SAIDA/index.html" -O2 "$ENV_D" ${NUVIO_
   --shell-file "$SHELL_USADO"
 # O WORKER DE DECODE (#72) e um arquivo a parte, carregado por index.html como
 # `decodificador.js`; sem ele o app roda, mas cada arte custa fio principal.
-cp tools/decodificador.js "$SAIDA/decodificador.js"
+# No Tizen 4 nao ha Worker de decode: ele depende de SharedArrayBuffer,
+# Atomics e OffscreenCanvas (M60+). A arte decodifica no fio principal
+# (src/webp.c, ramo NV_COOP) e o pacote nao leva o arquivo.
+if [ -n "$TIZEN4" ]; then
+  rm -f "$SAIDA/decodificador.js"
+else
+  cp tools/decodificador.js "$SAIDA/decodificador.js"
+fi
 
 # REBAIXAR O GLUE PARA CHROMIUM 76 — sem isto o app NAO ARRANCA na TV.
 #
@@ -323,11 +387,16 @@ cp tools/decodificador.js "$SAIDA/decodificador.js"
 # A CONFERENCIA ABAIXO TAMBEM ESTAVA CURTA: ela contava so ?. ?? e ||=, que sao
 # sintaxe pos-M76, e por isso dizia "0" enquanto os class fields passavam. Agora
 # procura tambem campo de classe.
-if command -v npx >/dev/null 2>&1; then
-  npx --yes esbuild@0.25.0 "$SAIDA/index.js" --target=chrome69 \
-      --outfile="$SAIDA/index.chrome69.js" --log-level=warning
-  mv "$SAIDA/index.chrome69.js" "$SAIDA/index.js"
-  RESTO=$(grep -oE '\?\.|\?\?|\|\|=' "$SAIDA/index.js" | wc -l | tr -d ' ')
+# NUVIO_SEM_REBAIXAR=1: SO DIAGNOSTICO, pula o esbuild (o glue sai como o
+# emcc deixou, que so roda em Chrome moderno). Serve para separar defeito do
+# rebaixamento de defeito do app.
+if [ "${NUVIO_SEM_REBAIXAR:-0}" = "1" ]; then
+  echo "tizen.sh: AVISO — NUVIO_SEM_REBAIXAR=1, glue NAO rebaixado (so diagnostico)" >&2
+elif command -v npx >/dev/null 2>&1; then
+  npx --yes esbuild@0.25.0 "$SAIDA/index.js" --target=$ALVO_JS $ESBUILD_EXTRA \
+      --outfile="$SAIDA/index.rebaixado.js" --log-level=warning
+  mv "$SAIDA/index.rebaixado.js" "$SAIDA/index.js"
+  RESTO=$(grep -oE '\?\.([^0-9]|$)|\?\?|\|\|=' "$SAIDA/index.js" | wc -l | tr -d ' ')
   # CONFERENCIA POR IDEMPOTENCIA, e nao por grep.
   #
   # Contar construcoes a mao nao serve: a primeira versao desta linha procurava
@@ -337,11 +406,11 @@ if command -v npx >/dev/null 2>&1; then
   #
   # Rebaixar de novo o que ja foi rebaixado nao pode mudar NADA. Se mudar,
   # sobrou algo que o alvo transforma, e a TV 2020 daria tela preta no parse.
-  npx --yes esbuild@0.25.0 "$SAIDA/index.js" --target=chrome69 \
+  npx --yes esbuild@0.25.0 "$SAIDA/index.js" --target=$ALVO_JS $ESBUILD_EXTRA \
       --outfile="$SAIDA/index.conferencia.js" --log-level=error
   if cmp -s "$SAIDA/index.conferencia.js" "$SAIDA/index.js"; then
     rm -f "$SAIDA/index.conferencia.js"
-    echo "tizen.sh: glue rebaixado para chrome69 (sintaxe pos-M76: $RESTO, idempotente)"
+    echo "tizen.sh: glue rebaixado para $ALVO_JS (sintaxe pos-M76: $RESTO, idempotente)"
   else
     rm -f "$SAIDA/index.conferencia.js"
     echo "tizen.sh: ERRO — o glue ainda muda ao ser rebaixado de novo." >&2
@@ -371,12 +440,18 @@ fingerprint() {
   fi
 }
 CONFIG_FP=$(printf '%s' "$ENV_D" | fingerprint)
-WASM_SHA=$(sha256 "$SAIDA/index.wasm")
+# O MOTOR e o arquivo com o codigo do app: index.wasm, ou index.js no Tizen 4
+# (wasm2js poe o app inteiro no JS). O carimbo diz qual e, e o tizen-wgt.sh
+# confere o pacote por ele.
+if [ -n "$TIZEN4" ]; then MOTOR=wasm2js; MOTOR_ARQ="$SAIDA/index.js"
+else MOTOR=wasm; MOTOR_ARQ="$SAIDA/index.wasm"; fi
+WASM_SHA=$(sha256 "$MOTOR_ARQ")
 {
   printf 'format=1\n'
   printf 'config-fingerprint=%s\n' "$CONFIG_FP"
+  printf 'motor=%s\n' "$MOTOR"
   printf 'wasm-sha256=%s\n' "$WASM_SHA"
 } > "$SAIDA/.nuvio-build-stamp"
 chmod 600 "$SAIDA/.nuvio-build-stamp"
 
-echo "tizen.sh: $SAIDA/index.html  ($(du -h "$SAIDA/index.wasm" | cut -f1) de wasm)"
+echo "tizen.sh: $SAIDA/index.html  ($(du -h "$MOTOR_ARQ" | cut -f1) de $MOTOR)"

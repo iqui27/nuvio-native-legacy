@@ -60,20 +60,33 @@ if [ "${NUVIO_TIZEN_DIAGNOSTIC:-0}" != "1" ]; then
   EXPECTED_CONFIG_FP=$(printf '%s' "$ENV_D_NOW" | fingerprint)
   STAMP_CONFIG_FP=$(sed -n 's/^config-fingerprint=//p' "$STAMP" | head -1)
   STAMP_WASM_SHA=$(sed -n 's/^wasm-sha256=//p' "$STAMP" | head -1)
-  ACTUAL_WASM_SHA=$(sha256 "$ENTRADA/index.wasm")
+  MOTOR=$(sed -n 's/^motor=//p' "$STAMP" | head -1)
+  # wasm2js (tools/tizen.sh --tizen4): o app inteiro esta no index.js.
+  if [ "$MOTOR" = wasm2js ]; then MOTOR_ARQ=index.js; else MOTOR_ARQ=index.wasm; fi
+  ACTUAL_WASM_SHA=$(sha256 "$ENTRADA/$MOTOR_ARQ")
   [ -n "$STAMP_CONFIG_FP" ] && [ "$STAMP_CONFIG_FP" = "$EXPECTED_CONFIG_FP" ] || {
     echo "tizen-wgt.sh: proveniencia de configuracao nao corresponde ao ambiente atual" >&2
     exit 1
   }
   [ -n "$STAMP_WASM_SHA" ] && [ "$STAMP_WASM_SHA" = "$ACTUAL_WASM_SHA" ] || {
-    echo "tizen-wgt.sh: index.wasm foi alterado apos a compilacao" >&2
+    echo "tizen-wgt.sh: $MOTOR_ARQ foi alterado apos a compilacao" >&2
     exit 1
   }
 fi
 
+# O que o pacote PRECISA ter depende do motor. O Tizen 4 nao tem .wasm nem o
+# Worker de decode (ver tools/tizen.sh --tizen4); os outros tem os dois.
+[ -n "${MOTOR:-}" ] || MOTOR=$(sed -n 's/^motor=//p' "$ENTRADA/.nuvio-build-stamp" 2>/dev/null | head -1)
+if [ "$MOTOR" = wasm2js ]; then
+  EXIGIDOS="index.html index.js config.xml icon.png"
+else
+  EXIGIDOS="index.html index.js index.wasm decodificador.js config.xml icon.png"
+fi
 rm -rf "$ESTAGIO"
 mkdir -p "$ESTAGIO"
-cp "$ENTRADA"/index.html "$ENTRADA"/index.js "$ENTRADA"/index.wasm "$ENTRADA"/decodificador.js "$ESTAGIO"/
+for f in $EXIGIDOS; do
+  case "$f" in config.xml|icon.png) ;; *) cp "$ENTRADA/$f" "$ESTAGIO"/ ;; esac
+done
 [ -f "$ENTRADA/index.data" ] && cp "$ENTRADA/index.data" "$ESTAGIO"/
 CONFIG="${NUVIO_TIZEN_CONFIG:-tools/tizen-config.xml}"
 [ -s "$CONFIG" ] || { echo "tizen-wgt.sh: config ausente: $CONFIG" >&2; exit 2; }
@@ -96,7 +109,7 @@ fi
 # CONFERE ANTES DE FECHAR. Um .wgt sem o .wasm instala, abre e fica preto — o
 # mesmo tipo de falha muda que ja mordeu o empacotamento Tizen do fork em
 # JavaScript, que saiu sem player.chunk.js e so falhou na TV.
-for f in index.html index.js index.wasm decodificador.js config.xml icon.png; do
+for f in $EXIGIDOS; do
   [ -s "$ESTAGIO/$f" ] || { echo "tizen-wgt.sh: FALTA $f no estagio" >&2; exit 1; }
 done
 # O GLUE TEM DE ESTAR REBAIXADO PARA CHROME76.
@@ -112,7 +125,9 @@ done
 # vazios —, e o .wgt sairia pronto para dar tela preta. Rodar o empacotador
 # depois de um build que falhou e o caminho normal de quem nao viu o erro
 # passar na tela.
-NOVA=$(grep -oE '\?\.|\?\?|\|\|=' "$ESTAGIO/index.js" 2>/dev/null | wc -l | tr -d ' ')
+# `?.` seguido de DIGITO nao e encadeamento opcional: e um ternario
+# minificado (`a?.5:1`), que o glue do Tizen 4 (--minify-whitespace) tem.
+NOVA=$(grep -oE '\?\.([^0-9]|$)|\?\?|\|\|=' "$ESTAGIO/index.js" 2>/dev/null | wc -l | tr -d ' ')
 if [ "${NOVA:-0}" -gt 0 ]; then
   echo "tizen-wgt.sh: index.js tem $NOVA ocorrencias de sintaxe pos-chrome76 —" >&2
   echo "  o glue NAO foi rebaixado e este .wgt daria tela preta na TV." >&2

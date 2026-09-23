@@ -110,6 +110,147 @@ EM_JS(char *, nv_http, (const char *metodo, const char *url, const char *cabs,
 
 _Thread_local long rede_teto = 0;
 
+#ifdef NV_COOP
+// ---------------------------------------------------------------- TIZEN 4 ---
+// Sem pthreads (build --tizen4) o XHR SINCRONO acima congelaria o app inteiro
+// a cada pedido: quem chama e uma FIBRA no fio principal do navegador. Ali o
+// pedido vai ASSINCRONO; a fibra cede ate o onloadend escrever 1 em *pronto.
+// Fora de fibra (codigo do laco principal) continua o sincrono de cima, que e
+// o contrato de sempre ("BLOQUEIA").
+//
+// DE BRINDE, o TETO CORTA DE VERDADE aqui: no onprogress, passado o teto, o
+// JS guarda o comeco do corpo e aborta a conexao — a limitacao descrita em
+// pedir2 ("so corta, nao interrompe") nao vale neste caminho.
+//
+// As variaveis _Thread_local deste arquivo viram GLOBAIS num build sem fios, e
+// agora ha troca de fibra NO MEIO do pedido: sem o registro abaixo, o
+// rede_teto de uma fibra vazaria para o pedido da outra.
+#include "coop.h"
+
+__attribute__((constructor)) static void redeLocaisPorFibra(void) {
+  coop_registrar_local(&redeLimiteLocal, sizeof redeLimiteLocal);
+  coop_registrar_local((void *)&redeCancelLocal, sizeof redeCancelLocal);
+  coop_registrar_local(&redeLimitouLocal, sizeof redeLimitouLocal);
+  coop_registrar_local(&redeCancelouLocal, sizeof redeCancelouLocal);
+  coop_registrar_local(&redeBytesLocal, sizeof redeBytesLocal);
+  coop_registrar_local(&rede_teto, sizeof rede_teto);
+}
+
+// Abre o pedido e devolve um numero (0 = nem saiu). `teto` > 0 corta o corpo.
+EM_JS(int, nv_http_abrir, (const char *metodo, const char *url, const char *cabs,
+                           const char *corpo, int *pronto, double teto), {
+  var T = Module.nvHttp || (Module.nvHttp = { n: 0, v: {} });
+  var m = UTF8ToString(metodo);
+  var u = UTF8ToString(url);
+  var xhr = new XMLHttpRequest();
+  try { xhr.open(m, u, true); } catch (e) { return 0; }
+  // O mesmo truque de charset do caminho sincrono: bytes intactos em
+  // responseText, que (ao contrario do arraybuffer) ja existe no meio da
+  // resposta — e o que permite cortar no teto.
+  try { xhr.overrideMimeType("text/plain; charset=x-user-defined"); } catch (e) {}
+  if (cabs) {
+    UTF8ToString(cabs).split("\n").forEach(function (linha) {
+      var i = linha.indexOf(":");
+      if (i <= 0) return;
+      try { xhr.setRequestHeader(linha.slice(0, i).trim(), linha.slice(i + 1).trim()); } catch (e) {}
+    });
+  }
+  var id = ++T.n;
+  var r = { xhr: xhr, feito: 0, texto: null, status: 0, url: "", etag: "", cortou: 0 };
+  T.v[id] = r;
+  var cabecalhos = function () {
+    if (xhr.readyState < 2) return;
+    r.status = xhr.status;
+    r.url = xhr.responseURL || "";
+    r.etag = xhr.getResponseHeader("etag") || "";
+  };
+  var acabar = function () {
+    if (r.feito) return;
+    cabecalhos();
+    if (r.texto === null) { try { r.texto = xhr.responseText || ""; } catch (e) { r.texto = ""; } }
+    r.feito = 1;
+    HEAP32[pronto >> 2] = 1;
+  };
+  xhr.onreadystatechange = cabecalhos;
+  xhr.onprogress = function () {
+    if (teto <= 0 || r.feito) return;
+    var t = "";
+    try { t = xhr.responseText || ""; } catch (e) {}
+    if (t.length <= teto) return;
+    cabecalhos();
+    r.texto = t.slice(0, teto);
+    r.cortou = 1;
+    acabar();
+    try { xhr.abort(); } catch (e) {}
+  };
+  xhr.onloadend = acabar;
+  try { xhr.send(corpo ? UTF8ToString(corpo) : null); }
+  catch (e) { delete T.v[id]; return 0; }
+  return id;
+});
+
+// Entrega o resultado (malloc, NUL no fim) e esquece o pedido. Devolve 0 na
+// falha de transporte — a mesma regra do sincrono, onde o send() lancava.
+EM_JS(char *, nv_http_colher, (int id, int *tam, int *status,
+                               char *urlFinal, int urlFinalTam,
+                               char *etag, int etagTam), {
+  var T = Module.nvHttp;
+  var r = T && T.v[id];
+  if (!r) return 0;
+  delete T.v[id];
+  if (status) HEAP32[status >> 2] = r.status;
+  if (urlFinal && urlFinalTam > 0) stringToUTF8(r.url, urlFinal, urlFinalTam);
+  if (etag && etagTam > 0) stringToUTF8(r.etag, etag, etagTam);
+  if (!r.status && !r.cortou) return 0;
+  var s = r.texto || "";
+  var n = s.length;
+  var p = _malloc(n + 1);
+  if (!p) return 0;
+  for (var i = 0; i < n; i++) HEAPU8[p + i] = s.charCodeAt(i) & 0xff;
+  HEAPU8[p + n] = 0;
+  if (tam) HEAP32[tam >> 2] = n;
+  return p;
+});
+
+EM_JS(void, nv_http_largar, (int id), {
+  var T = Module.nvHttp;
+  var r = T && T.v[id];
+  if (!r) return;
+  delete T.v[id];
+  // feito ANTES do abort: o abort dispara onloadend na hora, e o `pronto` que
+  // acabar() escreveria e um local da fibra que ja esta desistindo.
+  r.feito = 1;
+  try { r.xhr.abort(); } catch (e) {}
+});
+#endif
+
+// A porta unica dos dois caminhos: sincrono (fio principal, ou qualquer fio
+// no build com pthreads) e cooperativo (fibra do build Tizen 4).
+static char *httpPedir(const char *metodo, const char *url, const char *cabs,
+                       const char *corpo, int *tam, int *status,
+                       char *urlFinal, int urlFinalTam, char *etag, int etagTam) {
+#ifdef NV_COOP
+  if (coop_em_fibra()) {
+    volatile int pronto = 0;
+    int id = nv_http_abrir(metodo, url, cabs, corpo, (int *)&pronto,
+                           (double)redeLimiteAtual());
+    if (!id) return NULL;
+    while (!pronto) {
+      // Com token de cancelamento, acorda a cada 100 ms para olhar o token;
+      // sem ele, so quando o JS marcar o fim.
+      if (redeCancelLocal && *redeCancelLocal) {
+        nv_http_largar(id);
+        return NULL;
+      }
+      coop_esperar(&pronto, 0, redeCancelLocal ? emscripten_get_now() + 100 : -1);
+    }
+    return nv_http_colher(id, tam, status, urlFinal, urlFinalTam, etag, etagTam);
+  }
+#endif
+  return nv_http(metodo, url, cabs, corpo, tam, status, urlFinal, urlFinalTam,
+                 etag, etagTam);
+}
+
 void rede_preparar(void) { }   // nao ha biblioteca para carregar
 
 // Junta o vetor de cabecalhos numa string com uma linha por cabecalho.
@@ -141,8 +282,8 @@ static char *pedir2(const char *metodo, const char *url, const char *const *cab,
   if (status) *status = 0;
   if (!url || !*url) return NULL;
   cabs = juntarCabs(cab, extraCab);
-  corpoResp = nv_http(metodo, url, cabs, corpo, &n, &http, NULL, 0,
-                      etag, (int)tamEtag);
+  corpoResp = httpPedir(metodo, url, cabs, corpo, &n, &http, NULL, 0,
+                        etag, (int)tamEtag);
   free(cabs);
   if (status) *status = http;
   if (http == 401 && aviso401) aviso401(url);
@@ -293,7 +434,7 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
   // mas honram Range.
   cab[0] = "Range: bytes=0-64"; cab[1] = NULL;
   cabs = juntarCabs(cab, NULL);
-  corpo = nv_http("GET", url, cabs, NULL, &n, &http, dst, (int)tam, NULL, 0);
+  corpo = httpPedir("GET", url, cabs, NULL, &n, &http, dst, (int)tam, NULL, 0);
   free(cabs);
   free(corpo);
   return dst[0] ? 1 : 0;
