@@ -174,6 +174,7 @@ int  video_n_audio(void) { return 0; }
 int  video_n_legenda(void) { return 0; }
 const VideoFaixa *video_audio(int i) { (void)i; return 0; }
 const VideoFaixa *video_legenda(int i) { (void)i; return 0; }
+int video_legenda_ordinal_mkv(int i) { (void)i; return -1; }
 int  video_audio_atual(void) { return 0; }
 int  video_legenda_atual(void) { return -1; }
 void video_escolher_audio(int i) { (void)i; }
@@ -683,6 +684,9 @@ static int aoEvento(LSHandle *h, LSMessage *m, void *u) {
         VideoFaixa *f = &faixaLeg[nLeg];
         memset(f, 0, sizeof *f);
         f->numero = (int)numeroDe(o, "\"trackNum\":");
+        // Resolvido so quando o cabecalho do MKV chega (lerMkv). O memset
+        // acima deixaria 0, que e um ordinal VALIDO — a primeira legenda.
+        f->ordinalMkv = -1;
         { const char *l = strstr(o, "\"language\":\"");
           if (l && (!fo || l < fo)) {
             size_t k = 0; l += 12;
@@ -732,7 +736,7 @@ static int aoEvento(LSHandle *h, LSMessage *m, void *u) {
     //
     // O jeito de saber e ler o proprio arquivo, que e o que o navegador faz de
     // graca no app web. Dispara um fio que baixa os primeiros 2 MB por Range e
-    // le o elemento Tracks do Matroska; quando volta, casa por trackNum e
+    // le o elemento Tracks do Matroska; quando volta, casa pelo ordinal (mkv_casar_legendas) e
     // reescreve os rotulos. Nao bloqueia a reproducao: se falhar, ou se o
     // arquivo nao for MKV, fica o que ja estava.
     { int faltando = 0, i;
@@ -1260,35 +1264,60 @@ static void *lerMkv(void *arg) {
   // e nao a leitura. O dano possivel e um rotulo lido pela metade em UM quadro;
   // por isso cada campo e preenchido de uma vez, com um snprintf so, e o
   // rotulo (que e o que aparece) e escrito por ULTIMO, depois do idioma.
-  // O trackNum do sourceInfo da LG e o TrackNumber do Matroska: casar por ele,
-  // e nao por ordem. As duas listas nao vem na mesma ordem (o sourceInfo desta
-  // TV comecou em 42, 40, 41, 32...), e casar por posicao trocaria os idiomas
-  // de lugar — pior que nao ter idioma nenhum.
-  for (i = 0; i < nLeg; i++) {
-    // O codec entra SEMPRE (a folha marca a faixa ASS por ele); idioma e nome
-    // so quando o sourceInfo da TV nao trouxe idioma.
-    int jaTemIdioma = faixaLeg[i].idioma[0] != 0;
-    for (j = 0; j < n; j++) {
-      if (fx[j].numero != faixaLeg[i].numero) continue;
-      snprintf(faixaLeg[i].codec, sizeof faixaLeg[i].codec, "%s", fx[j].codec);
-      if (jaTemIdioma) break;
-      if (fx[j].idioma[0] && strcmp(fx[j].idioma, "und")) {
-        snprintf(faixaLeg[i].idioma, sizeof faixaLeg[i].idioma, "%s", fx[j].idioma);
+  //
+  // O trackNum do sourceInfo da LG e o ORDINAL entre as legendas do arquivo,
+  // NAO o TrackNumber do Matroska (#92, medido: ver mkv_casar_legendas). Esta
+  // nota dizia o contrario, e o casamento por TrackNumber deslocava tudo: a
+  // legenda N da TV recebia o codec e o idioma da TrackEntry de numero N — a
+  // primeira nao casava com nada (sem selo ASS, desenhada pela TV), a segunda
+  // virava o video, a terceira o audio, e dai em diante cada uma levava o que
+  // era da legenda tres posicoes antes. O mkvass colhia essa mesma faixa
+  // errada: o "Italian" do relato tocava as falas em ingles.
+  { int tv[NV_FAIXA_MAX], idx[NV_FAIXA_MAX], modo, nt = nLeg;
+    if (nt > NV_FAIXA_MAX) nt = NV_FAIXA_MAX;
+    for (i = 0; i < nt; i++) tv[i] = faixaLeg[i].numero;
+    modo = mkv_casar_legendas(fx, n, tv, nt, idx);
+    // DIAGNOSTICO que faltou no #92: sem as duas listas lado a lado no log, o
+    // deslocamento parecia "a TV desenha mal" e ninguem via que era o app.
+    for (j = 0; j < n; j++)
+      printf("[mkv] faixa num=%d tipo=%d codec=%s idioma=%s nome=%s\n", fx[j].numero,
+             fx[j].tipo, fx[j].codec, fx[j].idioma[0] ? fx[j].idioma : "-",
+             fx[j].nome[0] ? fx[j].nome : "-");
+    printf("[mkv] legendas da TV x arquivo: modo=%s\n",
+           modo == MKV_CASA_ORDINAL ? "ordinal" : modo == MKV_CASA_NUMERO ? "trackNumber" : "nenhum");
+    for (i = 0; i < nt; i++) {
+      VideoFaixa *f = &faixaLeg[i];
+      int jaTemIdioma = f->idioma[0] != 0, ordinal = -1, k;
+      const MkvFaixa *m;
+      j = idx[i];
+      printf("[mkv]   tv[%d] trackNum=%d idiomaTV=%s -> %s%d %s %s\n", i, f->numero,
+             f->idioma[0] ? f->idioma : "-", j >= 0 ? "num=" : "sem par", j >= 0 ? fx[j].numero : 0,
+             j >= 0 ? fx[j].codec : "", j >= 0 && fx[j].idioma[0] ? fx[j].idioma : "");
+      if (j < 0) continue;
+      m = &fx[j];
+      for (k = 0; k < j; k++) if (fx[k].tipo == 17) ordinal++;
+      ordinal++;
+      // O codec e o ordinal entram SEMPRE (a folha marca a faixa ASS pelo codec
+      // e o mkvass colhe pelo ordinal); idioma e nome so quando o sourceInfo da
+      // TV nao trouxe idioma.
+      snprintf(f->codec, sizeof f->codec, "%s", m->codec);
+      f->ordinalMkv = ordinal;
+      if (jaTemIdioma) continue;
+      if (m->idioma[0] && strcmp(m->idioma, "und")) {
+        snprintf(f->idioma, sizeof f->idioma, "%s", m->idioma);
         casou++;
       }
       // O NOME da faixa ("Forced", "SDH", "Full") e o que separa duas legendas
       // do MESMO idioma. Sem ele o dono ve "Portugues" tres vezes e escolhe no
       // escuro — e essa e justamente a lista que ele reclamou.
-      if (fx[j].nome[0])
-        snprintf(faixaLeg[i].rotulo, sizeof faixaLeg[i].rotulo, "%s%s%s",
-                 faixaLeg[i].idioma[0] ? i18n(ling_nome(faixaLeg[i].idioma)) : "",
-                 faixaLeg[i].idioma[0] ? "  \xc2\xb7  " : "", fx[j].nome);
-      else if (faixaLeg[i].idioma[0])
-        snprintf(faixaLeg[i].rotulo, sizeof faixaLeg[i].rotulo, "%s",
-                 i18n(ling_nome(faixaLeg[i].idioma)));
-      break;
+      if (m->nome[0])
+        snprintf(f->rotulo, sizeof f->rotulo, "%s%s%s",
+                 f->idioma[0] ? i18n(ling_nome(f->idioma)) : "",
+                 f->idioma[0] ? "  \xc2\xb7  " : "", m->nome);
+      else if (f->idioma[0])
+        snprintf(f->rotulo, sizeof f->rotulo, "%s", i18n(ling_nome(f->idioma)));
     }
-  }
+    fflush(stdout); }
   { char m[64];
     snprintf(m, sizeof m, "mkv: %d faixas lidas, %d legendas com idioma", n, casou);
     marco(m); }
@@ -1833,7 +1862,7 @@ int  video_n_audio(void)   { return nAudio; }
 int  video_n_legenda(void) { return nLeg; }
 const VideoFaixa *video_audio(int i)   { return (i >= 0 && i < nAudio) ? &faixaAudio[i] : NULL; }
 const VideoFaixa *video_legenda(int i) { return (i >= 0 && i < nLeg) ? &faixaLeg[i] : NULL; }
-int video_legenda_ordinal_mkv(int i) { (void)i; return -1; }
+int video_legenda_ordinal_mkv(int i) { return (i >= 0 && i < nLeg) ? faixaLeg[i].ordinalMkv : -1; }
 int  video_audio_atual(void)   { return audioAtual; }
 int  video_legenda_atual(void) { return legAtual; }
 int  video_tem_atmos(void)        { return vidAtmos; }
