@@ -54,6 +54,9 @@
 #define extras_n_colecao         fx_n_colecao
 #define extras_n_estudios        fx_n_estudios
 #define extras_n_trailers        fx_n_trailers
+#define extras_trailer_yt        fx_trailer_yt
+#define extras_trailer_nome      fx_trailer_nome
+#define extras_trailer_miniatura fx_trailer_miniatura
 #define extras_nota_trakt        fx_nota_trakt
 #define extras_ep_visto          fx_ep_visto
 #define extras_progresso_pronto  fx_progresso_pronto
@@ -105,13 +108,23 @@ int fx_n_comentarios_ep(void) { return 0; }
 int fx_n_relacionados(void)   { return 0; }
 int fx_n_colecao(void)        { return 0; }
 int fx_n_estudios(void)       { return 0; }
-int fx_n_trailers(void)       { return 0; }
 int fx_nota_trakt(void)       { return 82; }
 
 static int ehSerieDeEnsaio(void) {
   const CatItem *ci = cat_item(idx);
   return ci && !strcmp(ci->imdb, IMDB_SERIE);
 }
+// TRAILERS DA SERIE (#123): a fileira que o layout de serie nao tinha. O
+// primeiro e o da temporada mais recente, como extras.c ordena.
+static int trailersLigados;
+static const char *const TR_NOME[] = {
+  "Season 3 Official Trailer", "Season 2 Teaser", "Season 1 Official Trailer" };
+static const char *const TR_MINI[] = {
+  "deploy/app/art/27.jpg", "deploy/app/art/07.jpg", "deploy/app/art/03.jpg" };
+int fx_n_trailers(void) { return trailersLigados && ehSerieDeEnsaio() ? 3 : 0; }
+const char *fx_trailer_yt(int i) { return (i >= 0 && i < fx_n_trailers()) ? "s3TrailerEN" : ""; }
+const char *fx_trailer_nome(int i) { return (i >= 0 && i < fx_n_trailers()) ? TR_NOME[i] : ""; }
+const char *fx_trailer_miniatura(int i) { return (i >= 0 && i < fx_n_trailers()) ? TR_MINI[i] : ""; }
 
 int fx_n_temporadas(void) { return ehSerieDeEnsaio() ? 3 : 0; }
 int fx_temporada_numero(int t) {
@@ -488,6 +501,21 @@ int main(int argc, char **argv) {
   quadros(120);
   snprintf(nome, sizeof nome, "%s-10-filme.png", saida);
   gravar(nome);
+
+  // --- 13. SERIE COM TRAILERS (#123): a fileira empilhada abaixo do elenco,
+  //         com o cabecalho "Trailers", e o foco no primeiro card.
+  trailersLigados = 1;
+  abrir(0, 2);
+  foco.fileira = SEC_TRAILERS; foco.coluna = 0;
+  quadros(150);
+  snprintf(nome, sizeof nome, "%s-13-serie-trailers.png", saida);
+  gravar(nome);
+  // --- 14. A MESMA serie de volta nos episodios: temporadas e episodios no
+  //         lugar de sempre com a fileira nova la embaixo.
+  nosEpisodios(3);
+  snprintf(nome, sizeof nome, "%s-14-serie-trailers-episodios.png", saida);
+  gravar(nome);
+  trailersLigados = 0;
 
   // --- 11. BOTOES DO HERO NA COR DE REALCE (20/09/2026: "nenhum botao ta
   //         ficando com a cor do accent"). Violeta e ESCURO: a tinta sobre ele

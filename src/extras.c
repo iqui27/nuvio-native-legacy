@@ -249,6 +249,183 @@ static void numaLinha(char *s) {
   for (; *s; s++) if (*s == '\n' || *s == '\r' || *s == '\t') *s = ' ';
 }
 
+// --- VIDEOS DO TMDB (trailers da pagina e do hero) --------------------------
+//
+// Id do YouTube: [A-Za-z0-9_-]{6,15}. Vai para URL de miniatura e para o
+// window.open/luna-send; qualquer outra coisa fica de fora.
+static int heroTrailerIdValido(const char *id) {
+  size_t n, i;
+  if (!id) return 0;
+  n = strlen(id);
+  if (n < 6 || n > 15) return 0;
+  for (i = 0; i < n; i++)
+    if (!((id[i] >= 'A' && id[i] <= 'Z') ||
+          (id[i] >= 'a' && id[i] <= 'z') ||
+          (id[i] >= '0' && id[i] <= '9') || id[i] == '_' || id[i] == '-')) return 0;
+  return 1;
+}
+
+typedef struct { char yt[16], nome[80], pub[32]; int peso, ordem, serie; } VideoTmdb;
+
+// IDIOMAS DE VIDEO. Com `language=pt-BR` sozinho o TMDB devolve em /videos
+// SO os videos marcados em portugues — e trailer de serie quase sempre esta
+// em ingles ou sem idioma (iso_639_1 null). Era a lista vazia do #123.
+// `include_video_language` alarga para o idioma da interface, ingles e os
+// sem idioma: "pt,en,null"; em ingles, "en,null".
+static void idiomasDeVideo(const char *idioma, char *dst, size_t cap) {
+  char iso[3] = "";
+  if (idioma && ((idioma[0] | 32) >= 'a' && (idioma[0] | 32) <= 'z') &&
+      ((idioma[1] | 32) >= 'a' && (idioma[1] | 32) <= 'z')) {
+    iso[0] = (char)(idioma[0] | 32); iso[1] = (char)(idioma[1] | 32);
+  }
+  if (!iso[0] || !strcmp(iso, "en")) snprintf(dst, cap, "en,null");
+  else snprintf(dst, cap, "%s,en,null", iso);
+}
+
+// URL da ficha /movie|tv/<id> com o append que os toggles pedem.
+// `videos` vale para os dois tipos: a serie nao pedia (a fileira de trailers
+// nao existia no layout dela) e ficava sem trailer do TMDB — na Samsung, onde
+// o YouTube e a fonte que sobra, sem trailer nenhum (#123).
+static void urlFicha(char *dst, size_t cap, int serie, long idT,
+                     const char *chave, const char *idioma,
+                     int datas, int trailers, int mais) {
+  char append[80] = "", langs[24] = "", extra[48] = "";
+  if (!serie && datas) snprintf(append, sizeof append, "release_dates");
+  if (trailers) {
+    snprintf(append + strlen(append), sizeof append - strlen(append), "%svideos", append[0] ? "," : "");
+    idiomasDeVideo(idioma, langs, sizeof langs);
+    snprintf(extra, sizeof extra, "&include_video_language=%s", langs);
+  }
+  if (mais) snprintf(append + strlen(append), sizeof append - strlen(append), "%srecommendations", append[0] ? "," : "");
+  snprintf(dst, cap, "%s/%s/%ld?api_key=%s&language=%s%s%s%s",
+           "https://api.themoviedb.org/3", serie ? "tv" : "movie", idT,
+           chave, idioma, append[0] ? "&append_to_response=" : "", append, extra);
+}
+
+// /videos solto: o do hero (temporada 0 = da obra) e o recuo da ficha para a
+// temporada mais recente (/tv/<id>/season/<n>/videos).
+static void urlVideos(char *dst, size_t cap, int serie, long idT, int temp,
+                      const char *chave, const char *idioma) {
+  char langs[24], seg[24] = "";
+  idiomasDeVideo(idioma, langs, sizeof langs);
+  if (serie && temp > 0) snprintf(seg, sizeof seg, "/season/%d", temp);
+  snprintf(dst, cap,
+           "https://api.themoviedb.org/3/%s/%ld%s/videos?api_key=%s&language=%s"
+           "&include_video_language=%s",
+           serie ? "tv" : "movie", idT, seg, chave, idioma, langs);
+}
+
+// Promo de episodio nao e trailer da serie ("Episode 4 Preview",
+// "Episódio 3 | Prévia"). Ficam de fora so na serie.
+static int nomeDeEpisodio(const char *nm) {
+  static const char *const M[] = { "episode", "episodio", "episódio", NULL };
+  char low[80];
+  size_t i;
+  int k;
+  for (i = 0; nm[i] && i + 1 < sizeof low; i++)
+    low[i] = (nm[i] >= 'A' && nm[i] <= 'Z') ? (char)(nm[i] | 32) : nm[i];
+  low[i] = 0;
+  for (k = 0; M[k]; k++) if (strstr(low, M[k])) return 1;
+  return 0;
+}
+
+// Ordem: filme — o idioma da interface primeiro, depois a ordem do TMDB (o
+// comportamento de antes, quando so vinha o idioma da interface). Serie — o
+// mais NOVO primeiro: o trailer da temporada mais recente e o que se quer no
+// hero e no autoplay; empate, idioma da interface, depois Trailer > Teaser.
+// O tipo vai em cada elemento, e nao num global: o fio do hero e o da pagina
+// ordenam ao mesmo tempo.
+static int cmpVideo(const void *pa, const void *pb) {
+  const VideoTmdb *a = pa, *b = pb;
+  int c;
+  if (a->serie && (c = strcmp(b->pub, a->pub)) != 0) return c;
+  if (a->peso != b->peso) return b->peso - a->peso;
+  return a->ordem - b->ordem;
+}
+
+// videos.results[] -> so YouTube, so Trailer/Teaser. `v` e o primeiro
+// elemento de results (js_array). Le TODOS antes de cortar em `max`: a
+// ordenacao da serie precisa ver o mais novo, que o TMDB nao poe primeiro.
+#define VIDEOS_LIDOS 40
+static int parsearVideos(const char *v, int serie, const char *idioma,
+                         VideoTmdb *saida, int max) {
+  VideoTmdb todos[VIDEOS_LIDOS];
+  char iso[3] = "";
+  int n = 0, i;
+  if (idioma && idioma[0] && idioma[1]) {
+    iso[0] = (char)(idioma[0] | 32); iso[1] = (char)(idioma[1] | 32);
+  }
+  while (v && n < VIDEOS_LIDOS) {
+    const char *vf = js_fim(v);
+    char site[24] = "", tipo[24] = "", key[16] = "", nm[80] = "", lg[8] = "";
+    js_texto(v, vf, "site", site, sizeof site);
+    js_texto(v, vf, "type", tipo, sizeof tipo);
+    js_texto(v, vf, "key",  key,  sizeof key);
+    js_texto(v, vf, "name", nm,   sizeof nm);
+    js_texto(v, vf, "iso_639_1", lg, sizeof lg);
+    if (heroTrailerIdValido(key) && !strcmp(site, "YouTube") &&
+        (!strcmp(tipo, "Trailer") || !strcmp(tipo, "Teaser")) &&
+        !(serie && nomeDeEpisodio(nm))) {
+      VideoTmdb *o = &todos[n];
+      memset(o, 0, sizeof *o);
+      snprintf(o->yt, sizeof o->yt, "%s", key);
+      snprintf(o->nome, sizeof o->nome, "%s", nm[0] ? nm : "Trailer");
+      js_texto(v, vf, "published_at", o->pub, sizeof o->pub);
+      // peso: 2 idioma da interface, +1 Trailer (desempate da serie).
+      o->peso = (iso[0] && !strcmp(lg, iso) ? 2 : 0) +
+                (serie && !strcmp(tipo, "Trailer") ? 1 : 0);
+      o->ordem = n;
+      o->serie = serie;
+      n++;
+    }
+    v = js_prox(vf);
+  }
+  qsort(todos, (size_t)n, sizeof todos[0], cmpVideo);
+  if (n > max) n = max;
+  for (i = 0; i < n; i++) saida[i] = todos[i];
+  return n;
+}
+
+// Os trailers de dentro do corpo da ficha (append videos).
+static int trailersDaFicha(const char *corpo, const char *fim, int serie,
+                           const char *idioma, VideoTmdb *saida, int max) {
+  const char *vid;
+  if (!corpo) return 0;
+  // `results` aparece mais de uma vez no corpo (release_dates, videos,
+  // recommendations); procura a partir do bloco de videos.
+  vid = strstr(corpo, "\"videos\"");
+  if (!vid) return 0;
+  return parsearVideos(js_array(vid, fim, "results"), serie, idioma, saida, max);
+}
+
+// Copia para a fileira da pagina (chamar com `trava`).
+static void publicarTrailers(const VideoTmdb *vt, int nv) {
+  int k;
+  for (k = 0; k < nv && k < EX_TRAILER_MAX; k++) {
+    snprintf(trailer[k].yt,   sizeof trailer[k].yt,   "%s", vt[k].yt);
+    snprintf(trailer[k].nome, sizeof trailer[k].nome, "%s", vt[k].nome);
+    snprintf(trailer[k].mini, sizeof trailer[k].mini,
+             "https://img.youtube.com/vi/%s/hqdefault.jpg", vt[k].yt);
+  }
+  nTrailer = k;
+}
+
+#ifdef NUVIO_TRAILER_TEST
+void extras_teste_url_ficha(char *dst, unsigned cap, int serie, long id,
+                            const char *idioma, int trailers) {
+  urlFicha(dst, cap, serie, id, "K", idioma, 1, trailers, 1);
+}
+int extras_teste_trailers_ficha(const char *corpo, int serie, const char *idioma,
+                                char yt[][16], int max) {
+  VideoTmdb v[EX_TRAILER_MAX];
+  int n, i;
+  if (max > EX_TRAILER_MAX) max = EX_TRAILER_MAX;
+  n = trailersDaFicha(corpo, corpo ? corpo + strlen(corpo) : NULL, serie, idioma, v, max);
+  for (i = 0; i < n; i++) snprintf(yt[i], 16, "%s", v[i].yt);
+  return n;
+}
+#endif
+
 // `parte` 0 = Trakt, 1 = TMDB/MDBList, 2 = as duas em serie (sem fio). Os
 // relacionados e a publicacao final ficam com quem terminar por ultimo
 // (relacionadosEPublicar), porque dependem das duas partes.
@@ -548,6 +725,7 @@ static void *buscar(void *arg) {
     long idCol = 0, idT = tmdbId;
     char nome[80] = "";
     int tNums[EX_TEMP_MAX], nTNum = 0;
+    int ultTemp = 0;   // > 0: recuo do trailer para esta temporada
     // O id do TMDB so fica no catalogo DEPOIS do enriquecimento do elenco; na
     // PRIMEIRA abertura de um titulo ele ainda e 0, e a aba nao apareceria
     // justamente na visita em que o dono esta olhando. /find resolve na hora.
@@ -586,15 +764,8 @@ static void *buscar(void *arg) {
       // tmdb_use_release_dates, videos a tmdb_use_trailers, recommendations a
       // tmdb_use_more_like_this. O corpo sempre traz status, runtime e as
       // produtoras/redes — ler nao custa viagem nenhuma.
-      char append[80] = "";
-      if (!serie && ajustes_tmdb_datas())    snprintf(append, sizeof append, "release_dates");
-      if (!serie && ajustes_tmdb_trailers()) snprintf(append + strlen(append), sizeof append - strlen(append), "%svideos", append[0] ? "," : "");
-      if (ajustes_tmdb_mais())               snprintf(append + strlen(append), sizeof append - strlen(append), "%srecommendations", append[0] ? "," : "");
-      snprintf(url, sizeof url,
-               "%s/%s/%ld?api_key=%s&language=%s%s%s",
-               "https://api.themoviedb.org/3", serie ? "tv" : "movie", idT,
-               chave, desc_tmdb_idioma(),
-               append[0] ? "&append_to_response=" : "", append);
+      urlFicha(url, sizeof url, serie, idT, chave, desc_tmdb_idioma(),
+               ajustes_tmdb_datas(), ajustes_tmdb_trailers(), ajustes_tmdb_mais());
       corpo = rede_baixar(url, 15);
       if (corpo) {
         // A ficha abaixo escreve varios campos globais. Segura a mesma trava
@@ -712,33 +883,22 @@ static void *buscar(void *arg) {
           snprintf(fichaCert, sizeof fichaCert, "%s",
                    br[0] ? br : us[0] ? us : qq); }
 
-        // Trailers: videos.results[]. So YouTube (o unico host cuja miniatura
-        // e obtivel por URL previsivel) e so o que for Trailer ou Teaser — o
-        // TMDB mistura ali featurette, clipe e cena de bastidor.
-        // Filme apenas: a fileira de trailers nao existe no layout de serie.
-        if (!serie && ajustes_tmdb_trailers())
-        { const char *v = js_array(corpo, fimC, "results");
-          // `results` aparece duas vezes no corpo (release_dates e videos);
-          // procura a partir do bloco de videos para nao pegar o errado.
-          const char *vid = strstr(corpo, "\"videos\"");
-          if (vid) v = js_array(vid, fimC, "results");
-          while (v && nTrailer < EX_TRAILER_MAX) {
-            const char *vf = js_fim(v);
-            char site[24] = "", tipo[24] = "", key[16] = "", nm[80] = "";
-            js_texto(v, vf, "site", site, sizeof site);
-            js_texto(v, vf, "type", tipo, sizeof tipo);
-            js_texto(v, vf, "key",  key,  sizeof key);
-            js_texto(v, vf, "name", nm,   sizeof nm);
-            if (key[0] && !strcmp(site, "YouTube") &&
-                (!strcmp(tipo, "Trailer") || !strcmp(tipo, "Teaser"))) {
-              int k = nTrailer++;
-              snprintf(trailer[k].yt,   sizeof trailer[k].yt,   "%s", key);
-              snprintf(trailer[k].nome, sizeof trailer[k].nome, "%s",
-                       nm[0] ? nm : "Trailer");
-              snprintf(trailer[k].mini, sizeof trailer[k].mini,
-                       "https://img.youtube.com/vi/%s/hqdefault.jpg", key);
+        // Trailers: videos.results[] (trailersDaFicha).
+        if (ajustes_tmdb_trailers())
+        { VideoTmdb vt[EX_TRAILER_MAX];
+          int nv = trailersDaFicha(corpo, fimC, serie, desc_tmdb_idioma(),
+                                      vt, EX_TRAILER_MAX);
+          publicarTrailers(vt, nv);
+          // Serie sem video na obra: o recuo abaixo tenta a temporada mais
+          // recente. `seasons` vem no mesmo corpo; temporada 0 e Especiais.
+          if (serie && !nv) {
+            const char *p2 = js_array(corpo, fimC, "seasons");
+            while (p2) {
+              const char *pf = js_fim(p2);
+              int sn = (int)js_num(p2, pf, "season_number", -1.0);
+              if (sn > ultTemp) ultTemp = sn;
+              p2 = js_prox(pf);
             }
-            v = js_prox(vf);
           } }
 
         // PRODUTORAS E REDES — a fileira de logos da pagina de detalhe. No web
@@ -837,6 +997,25 @@ static void *buscar(void *arg) {
         if (serie && (agStatus[0] || agDataProx[0]))
           agenda_registrar(id, NULL, NULL, agStatus, agTemp, agEp, agNomeEp,
                            agDataProx, agDataUlt);
+        // TRAILER DA TEMPORADA MAIS RECENTE, quando a obra nao tem nenhum
+        // (#123). Um GET a mais so nesse caso; o trailer de temporada e da
+        // serie, nao de episodio.
+        if (ultTemp > 0 && pedidoAindaAtual(id)) {
+          char *cs;
+          urlVideos(url, sizeof url, 1, idT, ultTemp, chave, desc_tmdb_idioma());
+          cs = rede_baixar(url, 15);
+          if (cs) {
+            VideoTmdb vt[EX_TRAILER_MAX];
+            int nv = parsearVideos(js_array(cs, NULL, "results"), 1,
+                                      desc_tmdb_idioma(), vt, EX_TRAILER_MAX);
+            pthread_mutex_lock(&trava);
+            if (!strcmp(id, idPedido) && !nTrailer) {
+              publicarTrailers(vt, nv);
+            }
+            pthread_mutex_unlock(&trava);
+            free(cs);
+          }
+        }
       }
     }
 
@@ -1356,40 +1535,15 @@ static void normalizarHeroId(const char *imdb, char *dst, size_t cap) {
   dst[n] = 0;
 }
 
-static int heroTrailerIdValido(const char *id) {
-  size_t n, i;
-  if (!id) return 0;
-  n = strlen(id);
-  if (n < 6 || n > 15) return 0;
-  for (i = 0; i < n; i++)
-    if (!((id[i] >= 'A' && id[i] <= 'Z') ||
-          (id[i] >= 'a' && id[i] <= 'z') ||
-          (id[i] >= '0' && id[i] <= '9') || id[i] == '_' || id[i] == '-')) return 0;
-  return 1;
-}
-
-// A resposta e a mesma selecao usada pelos extras da pagina: apenas YouTube
-// e Trailer/Teaser. O hero nao precisa de nome ou miniatura, entao nao copia
-// nenhum outro campo do corpo TMDB.
-static int parsearHeroVideos(const char *corpo, HeroTrailer *saida) {
-  const char *v;
-  int n = 0;
+// A resposta e a mesma selecao (e a mesma ordem) usada pelos extras da
+// pagina: parsearVideos. O hero so guarda o id.
+static int parsearHeroVideos(const char *corpo, int serie, const char *idioma,
+                             HeroTrailer *saida) {
+  VideoTmdb v[EX_TRAILER_MAX];
+  int n, i;
   if (!corpo || !saida) return 0;
-  v = js_array(corpo, NULL, "results");
-  while (v && n < EX_TRAILER_MAX) {
-    const char *vf = js_fim(v);
-    char site[24] = "", tipo[24] = "", chave[16] = "";
-    js_texto(v, vf, "site", site, sizeof site);
-    js_texto(v, vf, "type", tipo, sizeof tipo);
-    js_texto(v, vf, "key", chave, sizeof chave);
-    if (!strcmp(site, "YouTube") &&
-        (!strcmp(tipo, "Trailer") || !strcmp(tipo, "Teaser")) &&
-        heroTrailerIdValido(chave)) {
-      snprintf(saida[n].yt, sizeof saida[n].yt, "%s", chave);
-      n++;
-    }
-    v = js_prox(vf);
-  }
+  n = parsearVideos(js_array(corpo, NULL, "results"), serie, idioma, v, EX_TRAILER_MAX);
+  for (i = 0; i < n; i++) snprintf(saida[i].yt, sizeof saida[i].yt, "%s", v[i].yt);
   return n;
 }
 
@@ -1399,12 +1553,22 @@ static int parsearHeroVideos(const char *corpo, HeroTrailer *saida) {
 // exercita o mesmo filtro de site/tipo/chave sem simular o JSON em JavaScript.
 int extras_hero_trailer_parse(const char *corpo, char *dst, unsigned cap) {
   HeroTrailer encontrados[EX_TRAILER_MAX];
-  int n = parsearHeroVideos(corpo, encontrados);
+  int n = parsearHeroVideos(corpo, 0, "", encontrados);
   if (dst && cap) {
     dst[0] = 0;
     if (n > 0) snprintf(dst, cap, "%s", encontrados[0].yt);
   }
   return n;
+}
+int extras_teste_hero_serie(const char *corpo, const char *idioma, char *dst, unsigned cap) {
+  HeroTrailer encontrados[EX_TRAILER_MAX];
+  int n = parsearHeroVideos(corpo, 1, idioma, encontrados);
+  dst[0] = 0;
+  if (n > 0) snprintf(dst, cap, "%s", encontrados[0].yt);
+  return n;
+}
+void extras_teste_url_hero(char *dst, unsigned cap, int serie, long id, const char *idioma) {
+  urlVideos(dst, cap, serie, id, 0, "K", idioma);
 }
 #endif
 
@@ -1442,12 +1606,10 @@ static void *lacoHeroTrailer(void *ignorado) {
           } }
       }
       if (idT > 0) {
-        snprintf(url, sizeof url,
-                 "https://api.themoviedb.org/3/%s/%ld/videos?api_key=%s&language=%s",
-                 serie ? "tv" : "movie", idT, chave, desc_tmdb_idioma());
+        urlVideos(url, sizeof url, serie, idT, 0, chave, desc_tmdb_idioma());
         { char *corpo = rede_baixar(url, 4);
           if (corpo) {
-            n = parsearHeroVideos(corpo, encontrados);
+            n = parsearHeroVideos(corpo, serie, desc_tmdb_idioma(), encontrados);
             free(corpo);
           } }
       }

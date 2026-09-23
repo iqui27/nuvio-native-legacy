@@ -254,6 +254,7 @@ IGNORAR = {
     "abrir", "buscar",              # nomes de operacao do bridge JS (video_tizen.c)
     "fontes", "legenda", "mais", "nao", "poster",  # chaves internas, nao rotulo
     "crédit", "crédito",            # palavra procurada no capitulo do MKV
+    "episodio", "episódio",         # palavra procurada no nome do video TMDB (extras.c)
     # Nome proprio e sigla: iguais nos dois idiomas.
     "IMDb", "Trakt", "YouTube", "PIN", "AI-powered",
     # Tabela de acentos -> letra base da normalizacao de titulo (trailerapple.c):
