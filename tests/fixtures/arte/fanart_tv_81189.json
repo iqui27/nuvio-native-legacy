@@ -1,0 +1,8 @@
+{
+ "name": "Breaking Bad",
+ "thetvdb_id": "81189",
+ "showbackground": [
+  {"id": "20", "url": "https://assets.fanart.tv/fanart/tv/81189/showbackground/bb-a.jpg", "lang": "", "likes": "4", "season": "all"},
+  {"id": "21", "url": "https://assets.fanart.tv/fanart/tv/81189/showbackground/bb-b.jpg", "lang": "", "likes": "8", "season": "all"}
+ ]
+}

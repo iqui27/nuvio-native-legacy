@@ -1,0 +1,46 @@
+[
+ {
+  "results": [
+   {
+    "id": 1,
+    "pessoa": "a",
+    "plataforma": "webos",
+    "versao": "1.4.2",
+    "criado": 0,
+    "texto": "diagnostico=v2\nid=teste-0\nversao=1.4.2\nmodo=qualidade\ntex_bytes=36700160\ntex_limite=134217728\ntex_quentes=0\nmem_total_mb=2245\naplicacao=ja_no_perfil\nperfil_antes=128|4|1920\nperfil_candidato=128|4|1920\nartes_antes_ms=900\nartes_depois_ms=0\npior_quadro_antes_ms=30\ndespejos_quentes_depois=0\ndestaque_fonte=2\ndestaque_diferente=1\narte_fonte=catalog|ok=3|falhas=0|resolve_ms=0|download_ms=900|bytes=1763947|largura=1920|altura=1080|iguais=3|igual_ao_card=1\narte_fonte=metahub|ok=3|falhas=0|resolve_ms=0|download_ms=930|bytes=1763947|largura=1920|altura=1080|iguais=3|igual_ao_card=1\narte_fonte=tmdb|ok=3|falhas=0|resolve_ms=600|download_ms=960|bytes=502709|largura=1280|altura=720|iguais=0|igual_ao_card=0\narte_fonte=trakt|ok=3|falhas=0|resolve_ms=700|download_ms=800|bytes=297678|largura=1280|altura=720|iguais=0|igual_ao_card=0\narte_fonte=apple|ok=3|falhas=0|resolve_ms=1300|download_ms=800|bytes=900000|largura=1920|altura=1080|iguais=0|igual_ao_card=0\narte_fonte=fanart|ok=0|falhas=0|resolve_ms=0|download_ms=0|bytes=0|largura=0|altura=0|iguais=0|igual_ao_card=0\narte_fonte=tmdb_outro|ok=3|falhas=0|resolve_ms=650|download_ms=990|bytes=510000|largura=1280|altura=720|iguais=0|igual_ao_card=0\narte_fonte=logo|ok=3|falhas=0|resolve_ms=0|download_ms=700|bytes=272508|largura=800|altura=310|iguais=0|igual_ao_card=0\nsugestao_destaque=alvo:apple|diferente:1|lenta:metahub|ms_lenta=310|base:catalog|ms_base=300|motivo:igual_ao_card\naddon=Nome Pessoal|host=https://segredo.example/...|active=1\n"
+   },
+   {
+    "id": 2,
+    "pessoa": "b",
+    "plataforma": "webos",
+    "versao": "1.4.2",
+    "criado": 0,
+    "texto": "diagnostico=v2\nid=teste-1\nversao=1.4.2\nmodo=qualidade\ntex_bytes=36700160\ntex_limite=134217728\ntex_quentes=0\nmem_total_mb=2245\naplicacao=ja_no_perfil\nperfil_antes=128|4|1920\nperfil_candidato=128|4|1920\nartes_antes_ms=900\nartes_depois_ms=0\npior_quadro_antes_ms=30\ndespejos_quentes_depois=0\ndestaque_fonte=2\ndestaque_diferente=1\narte_fonte=catalog|ok=3|falhas=0|resolve_ms=0|download_ms=900|bytes=1763947|largura=1920|altura=1080|iguais=3|igual_ao_card=1\narte_fonte=metahub|ok=3|falhas=0|resolve_ms=0|download_ms=930|bytes=1763947|largura=1920|altura=1080|iguais=3|igual_ao_card=1\narte_fonte=tmdb|ok=3|falhas=0|resolve_ms=600|download_ms=960|bytes=502709|largura=1280|altura=720|iguais=0|igual_ao_card=0\narte_fonte=trakt|ok=3|falhas=0|resolve_ms=700|download_ms=800|bytes=297678|largura=1280|altura=720|iguais=0|igual_ao_card=0\narte_fonte=apple|ok=3|falhas=0|resolve_ms=1300|download_ms=800|bytes=900000|largura=1920|altura=1080|iguais=0|igual_ao_card=0\narte_fonte=fanart|ok=0|falhas=0|resolve_ms=0|download_ms=0|bytes=0|largura=0|altura=0|iguais=0|igual_ao_card=0\narte_fonte=tmdb_outro|ok=3|falhas=0|resolve_ms=650|download_ms=990|bytes=510000|largura=1280|altura=720|iguais=0|igual_ao_card=0\narte_fonte=logo|ok=3|falhas=0|resolve_ms=0|download_ms=700|bytes=272508|largura=800|altura=310|iguais=0|igual_ao_card=0\nsugestao_destaque=alvo:apple|diferente:1|lenta:metahub|ms_lenta=310|base:catalog|ms_base=300|motivo:igual_ao_card\naddon=Nome Pessoal|host=https://segredo.example/...|active=1\n"
+   },
+   {
+    "id": 3,
+    "pessoa": "c",
+    "plataforma": "webos",
+    "versao": "1.4.2",
+    "criado": 0,
+    "texto": "diagnostico=v2\nid=teste-2\nversao=1.4.2\nmodo=qualidade\ntex_bytes=36700160\ntex_limite=134217728\ntex_quentes=0\nmem_total_mb=2600\naplicacao=ja_no_perfil\nperfil_antes=128|4|1920\nperfil_candidato=128|4|1920\nartes_antes_ms=900\nartes_depois_ms=0\npior_quadro_antes_ms=30\ndespejos_quentes_depois=0\ndestaque_fonte=2\ndestaque_diferente=1\narte_fonte=catalog|ok=3|falhas=0|resolve_ms=0|download_ms=900|bytes=1763947|largura=1920|altura=1080|iguais=3|igual_ao_card=1\narte_fonte=metahub|ok=3|falhas=0|resolve_ms=0|download_ms=930|bytes=1763947|largura=1920|altura=1080|iguais=3|igual_ao_card=1\narte_fonte=tmdb|ok=3|falhas=0|resolve_ms=600|download_ms=960|bytes=502709|largura=1280|altura=720|iguais=0|igual_ao_card=0\narte_fonte=trakt|ok=3|falhas=0|resolve_ms=700|download_ms=800|bytes=297678|largura=1280|altura=720|iguais=0|igual_ao_card=0\narte_fonte=apple|ok=2|falhas=1|resolve_ms=1300|download_ms=800|bytes=900000|largura=1920|altura=1080|iguais=0|igual_ao_card=0\narte_fonte=fanart|ok=0|falhas=0|resolve_ms=0|download_ms=0|bytes=0|largura=0|altura=0|iguais=0|igual_ao_card=0\narte_fonte=tmdb_outro|ok=3|falhas=0|resolve_ms=650|download_ms=990|bytes=510000|largura=1280|altura=720|iguais=0|igual_ao_card=0\narte_fonte=logo|ok=3|falhas=0|resolve_ms=0|download_ms=700|bytes=272508|largura=800|altura=310|iguais=0|igual_ao_card=0\nsugestao_destaque=alvo:apple|diferente:1|lenta:metahub|ms_lenta=310|base:catalog|ms_base=300|motivo:igual_ao_card\naddon=Nome Pessoal|host=https://segredo.example/...|active=1\n"
+   },
+   {
+    "id": 4,
+    "pessoa": "d",
+    "plataforma": "webos",
+    "versao": "1.4.2",
+    "criado": 0,
+    "texto": "diagnostico=v2\nid=teste-3\nversao=1.4.2\nmodo=qualidade\ntex_bytes=36700160\ntex_limite=134217728\ntex_quentes=0\nmem_total_mb=1024\naplicacao=ja_no_perfil\nperfil_antes=128|4|1920\nperfil_candidato=128|4|1920\nartes_antes_ms=900\nartes_depois_ms=0\npior_quadro_antes_ms=30\ndespejos_quentes_depois=0\ndestaque_fonte=2\ndestaque_diferente=1\narte_fonte=catalog|ok=3|falhas=0|resolve_ms=0|download_ms=900|bytes=1763947|largura=1920|altura=1080|iguais=3|igual_ao_card=1\narte_fonte=metahub|ok=3|falhas=0|resolve_ms=0|download_ms=930|bytes=1763947|largura=1920|altura=1080|iguais=3|igual_ao_card=1\narte_fonte=tmdb|ok=3|falhas=0|resolve_ms=600|download_ms=960|bytes=502709|largura=1280|altura=720|iguais=0|igual_ao_card=0\narte_fonte=trakt|ok=3|falhas=0|resolve_ms=700|download_ms=800|bytes=297678|largura=1280|altura=720|iguais=0|igual_ao_card=0\narte_fonte=apple|ok=3|falhas=0|resolve_ms=1300|download_ms=800|bytes=900000|largura=1920|altura=1080|iguais=0|igual_ao_card=0\narte_fonte=fanart|ok=0|falhas=0|resolve_ms=0|download_ms=0|bytes=0|largura=0|altura=0|iguais=0|igual_ao_card=0\narte_fonte=tmdb_outro|ok=3|falhas=0|resolve_ms=650|download_ms=990|bytes=510000|largura=1280|altura=720|iguais=0|igual_ao_card=0\narte_fonte=logo|ok=3|falhas=0|resolve_ms=0|download_ms=700|bytes=272508|largura=800|altura=310|iguais=0|igual_ao_card=0\nsugestao_destaque=alvo:apple|diferente:1|lenta:metahub|ms_lenta=310|base:catalog|ms_base=300|motivo:igual_ao_card\naddon=Nome Pessoal|host=https://segredo.example/...|active=1\n"
+   },
+   {
+    "id": 9,
+    "pessoa": "e",
+    "plataforma": "webos",
+    "versao": "1.4.1",
+    "criado": 0,
+    "texto": "registro qualquer"
+   }
+  ]
+ }
+]

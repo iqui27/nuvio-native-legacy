@@ -38,6 +38,8 @@
 #include "atualizacao.h"
 #include "avisos.h"
 #include "js.h"
+#include "artehero.h"
+#include "artereserva.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -145,6 +147,8 @@ typedef enum {
   // Integracoes — MDBList (mdblist_settings do blob)
   AJ_MDB_LIGADO, AJ_MDB_CHAVE, AJ_MDB_TRAKT, AJ_MDB_IMDB, AJ_MDB_TMDB,
   AJ_MDB_LETTER, AJ_MDB_TOMATES, AJ_MDB_AUDIENCIA, AJ_MDB_META, AJ_MDB_MAL,
+  // Integracoes — fanart.tv (fonte do destaque, so com chave pessoal)
+  AJ_FANART_CHAVE,
   AJ_DIAGNOSTICO,
   AJ_N
 } OpcaoId;
@@ -220,8 +224,11 @@ static const char *V_NOTAS[]     = { "Mostrar", "Ocultar" };
 // e Trakt, a buscada pelo id do IMDb (url virtual, artereserva.h); nunca um
 // fundo generico. Vale para destaque, detalhe e card deitado (artehero.h).
 // O INDICE e o gravado ("heroFundoLocal N"): ordem e contrato (ARTEHERO_*).
+// 23/09/2026: Apple TV, fanart.tv e Anime entraram NO FIM (5, 6, 7), pelo
+// mesmo contrato — quem ja tinha 1..4 gravado continua lendo a mesma fonte.
 static const char *V_HERO_FONTE[] = {
-  "Automático", "Catálogo / Cinemeta", "IMDb / Metahub", "TMDB", "Trakt"
+  "Automático", "Catálogo / Cinemeta", "IMDb / Metahub", "TMDB", "Trakt",
+  "Apple TV", "fanart.tv", "Anime (Kitsu / AniList)"
 };
 // ONDE O "+" ESCREVE ALEM DA LISTA LOCAL.
 //
@@ -372,7 +379,7 @@ static const Opcao OPCOES[AJ_N] = {
 
   ESC("Pôsteres horizontais",       V_LIGA, 2),   // modernLandscapePostersEnabled
   ESC("Fundo em tela cheia",        V_LIGA, 2),   // modernHeroFullScreenBackdropEnabled
-  ESC("Background do hero",         V_HERO_FONTE, 5), // local: fonte real da arte
+  ESC("Background do hero",         V_HERO_FONTE, 8), // local: fonte real da arte
   // Card e destaque com fotos diferentes (dono, 22/09: "tem que ter um toggle
   // de ter uma versao diferente do que mostra no card do que ta na hero").
   // DESLIGADO por padrao: a mesma foto nos dois e o pedido de 19/09 (ver
@@ -524,6 +531,10 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Nota da audiência",          V_LIGA, 2),   // mdblist_show_audience
   ESC("Notas do Metacritic",        V_LIGA, 2),   // mdblist_show_metacritic
   ESC("Notas do MyAnimeList",       V_LIGA, 2),   // mdblist_show_mal
+  // Chave PESSOAL do fanart.tv (fonte "fanart.tv" do destaque). Nunca vem no
+  // pacote: a chave de projeto do fanart.tv e por aplicativo e nao pode ser
+  // publicada; a pessoal cada um tira em fanart.tv/get-an-api-key.
+  ACAO("Chave do fanart.tv"),
   ACAO("Diagnóstico e otimização"),
 };
 
@@ -619,6 +630,9 @@ static const char *CHAVE[] = {
   "mdblist_show_trakt", "mdblist_show_imdb", "mdblist_show_tmdb",
   "mdblist_show_letterboxd", "mdblist_show_tomatoes", "mdblist_show_audience",
   "mdblist_show_metacritic", "mdblist_show_mal",
+  // "-": o VALOR mora em fanart.txt (dados), por aparelho; e credencial, nao
+  // entra no ajustes.txt nem no blob da conta.
+  "-fanartChave",
   "-diagnostico",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
@@ -736,6 +750,7 @@ static const struct { int op; const char *titulo; } SUBSECOES[] = {
   // bloco e "TMDB" — e sem ele as treze linhas do TMDB liam-se como avulsas.
   { AJ_TMDB_LIGADO,  "TMDB" },
   { AJ_MDB_LIGADO,   "MDBList" },
+  { AJ_FANART_CHAVE, "fanart.tv" },
 };
 #define AJ_N_SUBSECOES (int)(sizeof SUBSECOES / sizeof *SUBSECOES)
 
@@ -890,6 +905,7 @@ static int valor[AJ_N] = {
   0,                /* chave: leitura */
   0, 0, 0, 0, 0, 0, 0, 0, /* trakt, imdb, tmdb, letterboxd, tomatoes,
                            audiencia, metacritic, mal */
+  0,                /* chave do fanart.tv: acao (o valor mora em fanart.txt) */
   0,                /* diagnostico */
 };
 
@@ -1228,11 +1244,52 @@ static int limita(int op, int v) {
   return valor[op];
 }
 
+// CHAVE PESSOAL DO FANART.TV. Mora em fanart.txt na pasta de dados (por
+// aparelho, como o portal IPTV), nunca no ajustes.txt nem na conta, e so
+// aparece mascarada. Quem usa e artereserva.c (fonte "fanart.tv" do destaque).
+static char fanartChave[64];
+static void fanartAplicar(void) {
+  arte_fonte_chave_fanart(fanartChave);
+  artehero_fanart_disponivel(fanartChave[0] != 0);
+}
+static void fanartCarregar(void) {
+  char *t = dados_ler("fanart.txt");
+  size_t i, k = 0;
+  fanartChave[0] = 0;
+  // So hexadecimal: e o formato da chave pessoal, e assim uma linha torta no
+  // arquivo nao vira cabecalho nem pedaco de url.
+  for (i = 0; t && t[i] && k + 1 < sizeof fanartChave; i++)
+    if ((t[i] >= '0' && t[i] <= '9') || (t[i] >= 'a' && t[i] <= 'f')) fanartChave[k++] = t[i];
+  fanartChave[k] = 0;
+  free(t);
+  fanartAplicar();
+}
+static void fanartDefinir(const char *txt) {
+  size_t i, k = 0;
+  char nova[64];
+  for (i = 0; txt && txt[i] && k + 1 < sizeof nova; i++)
+    if ((txt[i] >= '0' && txt[i] <= '9') || (txt[i] >= 'a' && txt[i] <= 'f')) nova[k++] = txt[i];
+  nova[k] = 0;
+  snprintf(fanartChave, sizeof fanartChave, "%s", nova);
+  // Campo vazio = esquecer a chave.
+  if (fanartChave[0]) dados_gravar("fanart.txt", fanartChave);
+  else dados_apagar("fanart.txt");
+  fanartAplicar();
+}
+static const char *fanartMascarada(void) {
+  static char m[24];
+  size_t n = strlen(fanartChave);
+  if (!n) return i18n("Não configurado");
+  snprintf(m, sizeof m, "····%s", n > 4 ? fanartChave + n - 4 : "");
+  return m;
+}
+
 void ajustes_dir(const char *dir) {
   FILE *f;
   char caminho[600], linha[96];
   if (!dir || !*dir) return;
   snprintf(dirAjustes, sizeof dirAjustes, "%s", dir);
+  fanartCarregar();
   snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dirAjustes);
   f = fopen(caminho, "r");
   if (!f) return;
@@ -1715,6 +1772,7 @@ static const char *textoLeitura(int op) {
     return strcmp(xtream_usuario(), "-") ? xtream_usuario() : i18n("Não configurado");
   if (op == AJ_XTREAM_SENHA)
     return strcmp(xtream_senha_mascarada(), "-") ? xtream_senha_mascarada() : i18n("Não configurado");
+  if (op == AJ_FANART_CHAVE) return fanartMascarada();
   if (op == AJ_ENVIAR_LOG) {
     switch (avisos_envio_estado()) {
       case 1:  return i18n("enviando…");
@@ -1925,8 +1983,8 @@ static const char *ajudaOpcao(int op) {
     // --- Home
     case AJ_LANDSCAPE: return "Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.";
     case AJ_HERO_CHEIO: return "O destaque do topo ocupa a tela inteira atrás das fileiras, em vez de ficar num bloco.";
-    case AJ_HERO_FUNDO: return "De onde vem a arte de fundo do destaque, da página do título e dos cards deitados: catálogo/Cinemeta, IMDb/Metahub, TMDB ou Trakt. Automático usa a do catálogo. MDBList fornece notas, não imagens.";
-    case AJ_HERO_ARTE_DIF: return "Desligado: card, destaque e página do título mostram a mesma imagem. Ligado: o card fica com a arte do catálogo e o destaque usa a fonte do Background do hero; em Automático, ou se ela repetir o card, usa outra (TMDB, Trakt ou IMDb/Metahub).";
+    case AJ_HERO_FUNDO: return "De onde vem a arte de fundo do destaque, da página do título e dos cards deitados: catálogo/Cinemeta, IMDb/Metahub, TMDB, Trakt, Apple TV, fanart.tv (com chave) ou Anime (Kitsu/AniList). Automático usa a do catálogo. MDBList fornece notas, não imagens.";
+    case AJ_HERO_ARTE_DIF: return "Desligado: card, destaque e página do título mostram a mesma imagem. Ligado: o card fica com a arte do catálogo e o destaque usa outra foto — TMDB vira outro fundo do TMDB; em Automático, ou se a escolhida repetir o card, usa Apple TV, outro fundo do TMDB, fanart.tv, anime ou Trakt.";
     case AJ_HERO_TRAILER: return "Com o foco parado no destaque do topo, o trailer do título toca sem som no lugar da arte. Mover o foco volta para a arte.";
     case AJ_FIL_LIMITE: return "Quantas fileiras a Home monta. Menos fileiras também significam menos catálogos pedidos pela rede, e não fileiras invisíveis.";
     case AJ_FIL_ORDEM: return "Abre a lista de fileiras para reordenar, ligar, desligar e escolher o card de cada uma. É lá que dá para ver de onde cada fileira vem.";
@@ -2032,6 +2090,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_TMDB_CW: return "Usa o TMDB para preencher os cartazes da fileira de retomada.";
     case AJ_MDB_LIGADO: return "O MDBList junta notas de várias fontes na página do título. Desligar esconde a fileira inteira.";
     case AJ_MDB_CHAVE: return "A chave vem da sua conta Nuvio ou do arquivo do pacote. Não dá para digitar nesta TV.";
+    case AJ_FANART_CHAVE: return "Sua chave pessoal do fanart.tv, gratuita em fanart.tv/get-an-api-key. Com ela a fonte fanart.tv entra no Background do hero. Fica só nesta TV e aparece mascarada.";
     case AJ_MDB_TRAKT: case AJ_MDB_IMDB: case AJ_MDB_TMDB:
     case AJ_MDB_LETTER: case AJ_MDB_TOMATES: case AJ_MDB_AUDIENCIA:
     case AJ_MDB_META: case AJ_MDB_MAL:
@@ -2569,6 +2628,14 @@ void ajustes_evento(const SDL_Event *e) {
       return;
     }
     if (focoOp == AJ_XTREAM_LIMPAR) { xtream_esquecer(); return; }
+    if (focoOp == AJ_FANART_CHAVE) {
+      // A chave NUNCA volta para o campo (a modal fica na tela e a tela vira
+      // foto); confirmar vazio esquece a que estava.
+      stCampo = focoOp;
+      teclado_abrir_com("Chave do fanart.tv", "Chave pessoal: fanart.tv/get-an-api-key. Vazio apaga.",
+                        40, "0123456789abcdef", NULL);
+      return;
+    }
     if (focoOp == AJ_TRAKT) { traktauth_comecar(); return; }
     if (focoOp == AJ_SIMKL) { simklauth_comecar(); return; }
     if (focoOp == AJ_SAIR) {
@@ -2662,6 +2729,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
       else if (stCampo == AJ_XTREAM_SERVIDOR) xtream_definir_servidor(teclado_texto());
       else if (stCampo == AJ_XTREAM_USUARIO)  xtream_definir_usuario(teclado_texto());
       else if (stCampo == AJ_XTREAM_SENHA)    xtream_definir_senha(teclado_texto());
+      else if (stCampo == AJ_FANART_CHAVE)    fanartDefinir(teclado_texto());
       else                           stalker_definir_portal(teclado_texto());
       stCampo = 0;
     } else if (r == TECLADO_CANCELOU) {

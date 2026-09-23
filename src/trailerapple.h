@@ -27,4 +27,12 @@ void        trailerapple_pedir(const char *imdb, const char *titulo, const char 
 const char *trailerapple_url(const char *imdb);
 int         trailerapple_respondeu(const char *imdb);
 
+// ARTE-CHAVE da Apple TV (fonte "Apple TV" do destaque): o modelo da url do
+// mzstatic ("...{w}x{h}.{f}") do item que a busca casou. Reusa a busca do
+// trailer quando ela ja rodou; senao faz UMA busca, SINCRONA — chame so de fio
+// de rede (arte_fonte_resolver). 1 achou, 0 a Apple nao tem, -1 sem resposta.
+#include <stddef.h>
+int trailerapple_arte(const char *imdb, const char *titulo, int ano, int serie,
+                      char *modelo, size_t n);
+
 #endif

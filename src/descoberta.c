@@ -758,6 +758,19 @@ static int deMeta(const char *ini, const char *fim, const char *tipo, CatItem *d
   if (!js_texto(ini, fim, "imdb_id", d->imdb, sizeof d->imdb))
     js_texto(ini, fim, "id", d->imdb, sizeof d->imdb);
   snprintf(d->tipo, sizeof d->tipo, "%s", tipo);
+  // O ID DO TMDB QUE O CATALOGO JA TRAZ (23/09/2026). O Cinemeta manda
+  // `moviedb_id` em cada item do catalogo — 49 de 49 filmes e 49 de 50 series
+  // do topo, e nos 29 conferidos ele e o mesmo id que o /find devolve. Com ele
+  // a arte do TMDB no destaque nao paga o /find (artereserva.c). So filme e
+  // serie: o id e de /movie ou /tv, e um canal nao tem nenhum dos dois.
+  if (!strcmp(tipo, "movie") || !strcmp(tipo, "series")) {
+    long mdb = (long)js_num(ini, fim, "moviedb_id", 0.0);
+    if (mdb > 0) d->tmdb = mdb;
+  }
+  // O PAIS, que o catalogo do Cinemeta tambem traz ("Japan", "United States,
+  // Canada"). O /meta regrava ao abrir; aqui ele serve a fonte "Anime" do
+  // destaque, que so vale para Animacao + Japao (artehero.c).
+  js_texto(ini, fim, "country", d->pais, sizeof d->pais);
 
   { // genero: "Filme · Acao · Drama"
     const char *g = js_array(ini, fim, "genres");

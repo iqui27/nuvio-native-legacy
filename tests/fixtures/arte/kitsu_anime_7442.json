@@ -1,0 +1,35 @@
+{
+ "data": {
+  "id": "7442",
+  "type": "anime",
+  "links": {
+   "self": "https://kitsu.io/api/edge/anime/7442"
+  },
+  "attributes": {
+   "coverImage": {
+    "tiny": "https://media.kitsu.app/anime/cover_images/7442/tiny.jpg",
+    "large": "https://media.kitsu.app/anime/cover_images/7442/large.jpg",
+    "small": "https://media.kitsu.app/anime/cover_images/7442/small.jpg",
+    "original": "https://media.kitsu.app/anime/cover_images/7442/original.png",
+    "meta": {
+     "dimensions": {
+      "tiny": {
+       "width": 840,
+       "height": 200
+      },
+      "large": {
+       "width": 3360,
+       "height": 800
+      },
+      "small": {
+       "width": 1680,
+       "height": 400
+      }
+     }
+    }
+   },
+   "subtype": "TV",
+   "startDate": "2013-04-07"
+  }
+ }
+}

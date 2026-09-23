@@ -1270,6 +1270,9 @@ static char *baixarImagem(const char *url, long *n, TexFetchTrace *trace) {
       free(corpo);
       return NULL;
     } }
+  // Assinatura dos bytes: "o destaque baixou a mesma imagem do card?"
+  // (artereserva.h, arte_mesma_imagem). Um FNV do corpo que ja esta na mao.
+  arte_bytes_registrar(url, corpo, *n);
   return corpo;
 }
 

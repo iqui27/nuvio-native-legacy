@@ -328,6 +328,8 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
 // Cabecalhos de RESPOSTA. So rede_baixar_etag os pede; ver a nota la.
 #define OPT_HEADERFUNCTION  20079
 #define OPT_HEADERDATA      10029
+// CURLOPT_MAXCONNECTS: tamanho do cache de conexoes do handle. Ver pegarHandle.
+#define OPT_MAXCONNECTS        71
 
 // Ouvinte unico dos 401 — ver rede_avisar_401 no cabecalho. (O ramo
 // Emscripten tem a sua propria definicao, porque os dois lados do #ifdef
@@ -368,14 +370,26 @@ static pthread_key_t handleChave;
 static pthread_once_t handleUma = PTHREAD_ONCE_INIT;
 static void handleSoltar(void *c) { if (c && curl_cleanup) curl_cleanup(c); }
 static void handleCriarChave(void) { pthread_key_create(&handleChave, handleSoltar); }
+// QUANTAS CONEXOES CADA FIO GUARDA. O padrao da libcurl e 5, e um fio de
+// arte fala com mais hosts que isso numa volta so: metahub, api e image do
+// TMDB, api e media do Trakt, tv.apple.com e mzstatic, Kitsu, fanart.tv. Com 5
+// o LRU fecha justamente a conexao que vai ser usada no proximo titulo, e o
+// reuso vira conexao nova de novo. 10 cobre os hosts de arte de uma volta;
+// sao 4 fios de arte na LG (40 sockets ociosos no pior caso, alguns KB de
+// estado TLS cada), e o servidor fecha o que ficar parado.
+#define REDE_CONEXOES_POR_FIO 10L
 static void *pegarHandle(void) {
   void *c;
   if (!curl_reset) return curl_init();     // libcurl sem reset: como antes
   pthread_once(&handleUma, handleCriarChave);
   c = pthread_getspecific(handleChave);
-  if (c) { curl_reset(c); return c; }
-  c = curl_init();
-  if (c) pthread_setspecific(handleChave, c);
+  if (c) curl_reset(c);
+  else {
+    c = curl_init();
+    if (c) pthread_setspecific(handleChave, c);
+  }
+  // Depois do reset: curl_easy_reset volta MAXCONNECTS ao padrao.
+  if (c) curl_setopt(c, OPT_MAXCONNECTS, REDE_CONEXOES_POR_FIO);
   return c;
 }
 // Devolve o handle ao fio. So destroi de verdade quando nao ha reuso.
@@ -557,6 +571,15 @@ static int abrir(void) {
   *(void **)(&slist_append) = dlsym(h, "curl_slist_append");
   *(void **)(&slist_free)   = dlsym(h, "curl_slist_free_all");
   *(void **)(&curl_getinfo) = dlsym(h, "curl_easy_getinfo");
+  // O REUSO NUNCA LIGOU ATE AQUI (23/09/2026). pegarHandle e soltarHandle
+  // existem desde 5eb8bd2, mas este dlsym nao: `curl_reset` ficava NULL, e o
+  // ramo "libcurl sem reset: como antes" criava e destruia um handle por
+  // pedido — conexao nova, DNS e handshake TLS completo em TODA imagem e TODA
+  // chamada de API. MEDIDO na C9 com o curl da TV (mesma libcurl 7.53.1):
+  // api.themoviedb.org 650-740 ms com conexao nova x 190-230 ms reusada;
+  // image.tmdb.org w1280 1,14-1,19 s x 0,32 s. O relatorio 1669 batia com o
+  // numero de conexao nova: tmdb resolve 646 ms e download 1116 ms por arte.
+  *(void **)(&curl_reset)   = dlsym(h, "curl_easy_reset");
   if (!curl_init || !curl_setopt || !curl_perform) {
     printf("[rede] libcurl sem os simbolos esperados\n");
     pronto = -1;

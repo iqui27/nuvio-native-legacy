@@ -67,46 +67,69 @@ int ptv_serializar(const PtvPerfil *pf, const char *modo, char *dst, size_t cap)
 int ptv_ler(const char *txt, PtvPerfil *pf);
 
 // FONTES DE ARTE (pedido do dono, 22/09: "Destaque com outra arte" ligado e
-// "esta demorando muito para baixar as artes"). Os indices 1..4 sao os mesmos
-// ARTEHERO_* de artehero.h (e o gravado em "Background do hero"); o logo entra
-// como 5 so para ser medido, nao e fonte de fundo.
-#define PTV_FONTE_CATALOGO 1
-#define PTV_FONTE_METAHUB  2
-#define PTV_FONTE_TMDB     3
-#define PTV_FONTE_TRAKT    4
-#define PTV_FONTE_LOGO     5
-#define PTV_N_FONTES       6
+// "esta demorando muito para baixar as artes"). Os indices 1..7 sao os mesmos
+// ARTEHERO_* de artehero.h (o gravado em "Background do hero"); 8 e o OUTRO
+// backdrop do TMDB (ARTEHERO_TMDB_OUTRO, o que "TMDB" vira com outra arte
+// ligada); o logo entra como 9 so para ser medido, nao e fonte de fundo.
+#define PTV_FONTE_CATALOGO   1
+#define PTV_FONTE_METAHUB    2
+#define PTV_FONTE_TMDB       3
+#define PTV_FONTE_TRAKT      4
+#define PTV_FONTE_APPLE      5
+#define PTV_FONTE_FANART     6
+#define PTV_FONTE_ANIME      7
+#define PTV_FONTE_TMDB_OUTRO 8
+#define PTV_FONTE_LOGO       9
+#define PTV_N_FONTES        10
+#define PTV_FONTE_FUNDO_MAX  8   // 1..8 sao fundo; o resto nao entra em sugestao
 
 typedef struct {
   int ok, falhas;
-  int resolveMs;    // consulta /find do TMDB ou /search/imdb do Trakt (virtual)
+  int resolveMs;    // consulta da url virtual (TMDB, Trakt, Apple, fanart, anime)
   int downloadMs;   // so o download da imagem
   long bytes;
   int largura, altura;  // da ultima imagem que respondeu
+  // Em quantos titulos da amostra a arte foi a MESMA do card (mesma url real
+  // ou mesmos bytes). Qualquer um > 0 e `igual_ao_card=1` no relatorio: com
+  // "outra arte" ligado ela nao e outra arte e nunca e sugerida.
+  int iguais;
 } PtvFonte;
 
-// Nome curto para o relatorio ("catalog", "metahub", "tmdb", "trakt", "logo").
+// Nome curto para o relatorio ("catalog", "metahub", "tmdb", "trakt",
+// "apple", "fanart", "anime", "tmdb_outro", "logo").
 const char *ptv_fonte_nome(int fonte);
 // Chave i18n (portugues) para a tela.
 const char *ptv_fonte_rotulo(int fonte);
 // Custo medio por arte que respondeu (resolucao + download), ms; -1 sem nenhuma.
 int ptv_fonte_ms(const PtvFonte *f);
-// Fonte de fundo pelo HOST da url (metahub, TMDB, Trakt, virtual); o resto e
-// catalogo. So para quando a url nao casa com nenhuma das medidas.
+// Fonte de fundo pelo HOST da url (metahub, TMDB, Trakt, Apple, fanart,
+// anime, virtual); o resto e catalogo. So para quando a url nao casa com
+// nenhuma das medidas.
 int ptv_fonte_da_url(const char *url);
+// O valor de "Background do hero" que faz o destaque usar a fonte medida `f`
+// (o outro do TMDB e "TMDB" com outra arte ligada). -1 = nenhum.
+int ptv_ajuste_da_fonte(int f, int diferente);
 
 // PROPOSTA PARA O DESTAQUE. "Claramente mais lenta" = mais que o DOBRO da base
 // E acima de 800 ms por arte (ou so falhou onde a base respondeu).
-//   diferente ligado: base = a fonte do card. Propoe a fonte de fundo mais
-//     rapida que nao seja lenta frente ao card (mantendo arte diferente); sem
-//     nenhuma, propoe desligar "Destaque com outra arte".
+//   diferente ligado: base = a fonte do card. Dispara quando a do destaque e
+//     LENTA frente ao card ou e a MESMA imagem do card (iguais > 0). Propoe a
+//     fonte de fundo mais rapida que seja realmente diferente (iguais == 0),
+//     nao lenta frente ao card, e que nao seja a do ajuste atual; sem nenhuma
+//     e com a do destaque lenta, propoe desligar "Destaque com outra arte".
 //   diferente desligado com fonte escolhida: base = a fonte mais rapida
-//     medida; propoe trocar para ela.
+//     medida, que nao seja a atual; propoe trocar para ela.
+// NUNCA propoe o valor que o ajuste ja tem (o relatorio 1669 propos
+// "alvo:metahub" com o destaque ja em Metahub).
+#define PTV_MOTIVO_LENTA 0
+#define PTV_MOTIVO_IGUAL 1
 typedef struct {
   int ativa;
   int fonte, diferente;      // o que vai ficar nos Ajustes
   int lenta, base;           // fontes comparadas
   int msLenta, msBase;
+  int alvo;                  // a fonte MEDIDA que o destaque passa a usar (0 = nenhuma)
+  int motivo;                // PTV_MOTIVO_*
 } PtvSugestao;
 int ptv_sugerir_destaque(const PtvFonte f[PTV_N_FONTES], int fonteHero,
                          int fonteCard, int fonteAjuste, int diferente,

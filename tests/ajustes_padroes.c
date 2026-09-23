@@ -44,6 +44,22 @@ int main(void) {
   assert(valor[AJ_TEMA] == 0);
   // Depois do tema o vetor ja estava certo; o "+" salva no Trakt.
   assert(valor[AJ_SALVOS_DEST] == 1);
+  // 23/09: tres fontes novas NO FIM de "Background do hero", com o mesmo
+  // indice do contrato ARTEHERO_* (o gravado em heroFundoLocal).
+  assert(OPCOES[AJ_HERO_FUNDO].n == ARTEHERO_N_ESCOLHAS);
+  assert(!strcmp(V_HERO_FONTE[ARTEHERO_TRAKT], "Trakt"));
+  assert(!strcmp(V_HERO_FONTE[ARTEHERO_APPLE], "Apple TV"));
+  assert(!strcmp(V_HERO_FONTE[ARTEHERO_FANART], "fanart.tv"));
+  assert(!strcmp(V_HERO_FONTE[ARTEHERO_ANIME], "Anime (Kitsu / AniList)"));
+  assert(!strcmp(CHAVE[AJ_HERO_FUNDO], "heroFundoLocal"));
+  // A chave do fanart.tv: linha de acao, fora do ajustes.txt ("-"), e as
+  // vizinhas no mesmo lugar (MDBList antes, Diagnostico depois).
+  assert(OPCOES[AJ_FANART_CHAVE].tipo == OP_ACAO);
+  assert(!strcmp(CHAVE[AJ_FANART_CHAVE], "-fanartChave"));
+  assert(!strcmp(CHAVE[AJ_FANART_CHAVE - 1], "mdblist_show_mal"));
+  assert(!strcmp(CHAVE[AJ_FANART_CHAVE + 1], "-diagnostico"));
+  assert(valor[AJ_FANART_CHAVE] == 0 && valor[AJ_DIAGNOSTICO] == 0);
+  assert(valor[AJ_MDB_MAL] == 0);
   puts("ajustes_padroes: ok");
   return 0;
 }

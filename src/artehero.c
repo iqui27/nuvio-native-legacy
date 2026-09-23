@@ -42,6 +42,19 @@ void artehero_definir_falhou(int (*falhou)(const char *caminho)) {
 }
 static int falhou(const char *u) { return u && jaFalhou && jaFalhou(u); }
 
+static int (*mesmaImagem)(const char *, const char *) = NULL;
+void artehero_definir_igual(int (*igual)(const char *a, const char *b)) {
+  mesmaImagem = igual;
+}
+
+static int (*resolvida)(const char *, char *, size_t) = NULL;
+void artehero_definir_resolvida(int (*f)(const char *url, char *saida, size_t tam)) {
+  resolvida = f;
+}
+
+static int fanartLigado;
+void artehero_fanart_disponivel(int sim) { fanartLigado = sim ? 1 : 0; }
+
 static int qualidadeImg = 1;
 void artehero_qualidade(int nivel) {
   if (nivel >= 0 && nivel <= 2) qualidadeImg = nivel;
@@ -182,15 +195,120 @@ const char *artehero_url(const CatItem *item) {
 // Agora TMDB e Trakt sem url no item viram url VIRTUAL pelo id do IMDb
 // (artereserva.h), resolvida no fio de rede do tex_cache: uma consulta por
 // titulo, cacheada em disco sob a virtual.
+// O ANO do titulo, da linha "2022 · 3 temporadas" do catalogo. 0 = nao ha.
+static int anoDoItem(const CatItem *item) {
+  const char *p = item->meta;
+  for (; p && p[0]; p++)
+    if (p[0] >= '0' && p[0] <= '9' && p[1] >= '0' && p[1] <= '9' &&
+        p[2] >= '0' && p[2] <= '9' && p[3] >= '0' && p[3] <= '9' &&
+        !(p[4] >= '0' && p[4] <= '9')) {
+      int a = atoi(p);
+      if (a > 1880 && a < 2100) return a;
+    }
+  return 0;
+}
+
+static int ehSerie(const CatItem *item) { return !strcmp(item->tipo, "series"); }
+
+// O titulo num segmento da url virtual: o mesmo codigo de af_codificar
+// (artefontes.c, que o resolvedor usa para decodificar), repetido aqui para
+// este modulo continuar sem dependencia — varios testes o compilam sozinho.
+static void codificar(const char *s, char *dst, size_t n) {
+  static const char hex[] = "0123456789ABCDEF";
+  size_t k = 0;
+  for (; s && *s && k + 4 < n; s++) {
+    unsigned char c = (unsigned char)*s;
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+        c == '-' || c == '_' || c == '.' || c == '~') dst[k++] = (char)c;
+    else { dst[k++] = '%'; dst[k++] = hex[c >> 4]; dst[k++] = hex[c & 15]; }
+  }
+  if (n) dst[k] = 0;
+}
+
+// ANIME: id de addon de anime (kitsu:, mal:, anilist:) ou, para um tt,
+// genero Animacao/Anime E pais Japao. So o genero pegaria Pixar e Disney,
+// e cada um custaria duas buscas (Kitsu e AniList) para nada.
+static int ehAnime(const CatItem *item) {
+  if (!strncmp(item->imdb, "kitsu:", 6) || !strncmp(item->imdb, "mal:", 4) ||
+      !strncmp(item->imdb, "anilist:", 8)) return 1;
+  if (strncmp(item->imdb, "tt", 2)) return 0;
+  if (!strstr(item->genero, "Anima") && !strstr(item->genero, "Anime")) return 0;
+  return strstr(item->pais, "Jap") != NULL;
+}
+
+// Tamanho do TMDB por aparelho e qualidade (23/09/2026). MEDIDO na C9 com
+// conexao nova, backdrop de Um Sonho de Liberdade: w780 63 KB 0,84-1,05 s,
+// w1280 208 KB 1,14-1,19 s, original (1920 neste titulo) 446 KB 1,23-1,34 s;
+// com a conexao reusada 0,26 / 0,32 / 0,37 s. A rede quase nao separa os
+// tres: o que separa e o decode (o original de varios titulos e 3840, ~1,6 s
+// na C9). Baixa = w780, Padrao = w1280, Alta na LG = original; Samsung nunca
+// original (fundoOriginal).
+static const char *tamTmdb(int grande) {
+  if (qualidadeImg == 0) return "w780";
+  return grande && fundoOriginal() ? "original" : "w1280";
+}
+
+// "/m278" ou "/t1399" quando o item ja sabe o id do TMDB (moviedb_id do
+// Cinemeta): o resolvedor pula o /find. "" quando nao sabe.
+static const char *sufixoTmdb(const CatItem *item, char *buf, size_t n) {
+  buf[0] = 0;
+  if (item->tmdb > 0 && item->tipo[0])
+    snprintf(buf, n, "/%c%ld", ehSerie(item) ? 't' : 'm', item->tmdb);
+  return buf;
+}
+
 static const char *urlDaFonte(const CatItem *item, int fonte, int grande,
                               char *saida, size_t tam) {
   const char *b = NULL;
-  char id[32];
+  char id[32], suf[24];
   int temTt;
   if (!item) return NULL;
   temTt = !strncmp(item->imdb, "tt", 2);
   if (temTt) idLimpo(item->imdb, id, sizeof id);
   switch (fonte) {
+    case ARTEHERO_TMDB_OUTRO:
+      if (!temTt) return NULL;
+      snprintf(saida, tam, "%s" "tmdbalt/%s/%s%s", ARTE_VIRTUAL_PREFIXO,
+               tamTmdb(grande), id, sufixoTmdb(item, suf, sizeof suf));
+      return saida;
+    case ARTEHERO_APPLE: {
+      // Um tamanho para card e destaque (o mesmo arquivo): 1920 na LG, 1280
+      // na Samsung e na Baixa.
+      char enc[200];
+      int ano = anoDoItem(item);
+#ifdef __EMSCRIPTEN__
+      const char *t = "1280";
+#else
+      const char *t = qualidadeImg == 0 ? "1280" : "1920";
+#endif
+      if (!temTt || !ano || !item->titulo[0]) return NULL;
+      codificar(item->titulo, enc, sizeof enc);
+      snprintf(saida, tam, "%s" "apple/%s/%s/%c/%d/%s", ARTE_VIRTUAL_PREFIXO,
+               t, id, ehSerie(item) ? 's' : 'm', ano, enc);
+      return saida;
+    }
+    case ARTEHERO_FANART:
+      if (!fanartLigado || !temTt) return NULL;
+      snprintf(saida, tam, "%s" "fanart/full/%s/%c/%ld", ARTE_VIRTUAL_PREFIXO,
+               id, ehSerie(item) ? 's' : 'm', item->tmdb > 0 ? item->tmdb : 0L);
+      return saida;
+    case ARTEHERO_ANIME: {
+      char enc[200], aid[40];
+      if (!ehAnime(item)) return NULL;
+      if (temTt) snprintf(aid, sizeof aid, "%s", id);
+      else {
+        // "kitsu:7442" inteiro; um ":<episodio>" depois dele sai.
+        const char *d = strchr(item->imdb, ':');
+        const char *d2 = d ? strchr(d + 1, ':') : NULL;
+        size_t n = d2 ? (size_t)(d2 - item->imdb) : strlen(item->imdb);
+        if (n >= sizeof aid) return NULL;
+        memcpy(aid, item->imdb, n); aid[n] = 0;
+      }
+      codificar(item->titulo, enc, sizeof enc);
+      snprintf(saida, tam, "%s" "anime/large/%s/%c/%d/%s", ARTE_VIRTUAL_PREFIXO,
+               aid, ehSerie(item) ? 's' : 'm', anoDoItem(item), enc);
+      return saida;
+    }
     case ARTEHERO_CATALOGO:
       b = item->backdropCatalogo[0] ? item->backdropCatalogo
         : item->backdrop[0] ? item->backdrop : NULL;
@@ -205,8 +323,8 @@ static const char *urlDaFonte(const CatItem *item, int fonte, int grande,
       b = item->backdropTmdb[0] ? item->backdropTmdb :
           strstr(item->backdrop, "image.tmdb.org/t/p/") ? item->backdrop : NULL;
       if (!b && temTt) {
-        snprintf(saida, tam, "%s" "tmdb/%s/%s", ARTE_VIRTUAL_PREFIXO,
-                 grande && fundoOriginal() ? "original" : "w1280", id);
+        snprintf(saida, tam, "%s" "tmdb/%s/%s%s", ARTE_VIRTUAL_PREFIXO,
+                 tamTmdb(grande), id, sufixoTmdb(item, suf, sizeof suf));
         return saida;
       }
       break;
@@ -297,7 +415,23 @@ static int mesmaFoto(const char *a, const char *b) {
   if (!a || !b) return 0;
   chaveFoto(a, ka, sizeof ka);
   chaveFoto(b, kb, sizeof kb);
-  return !strcmp(ka, kb);
+  if (!strcmp(ka, kb)) return 1;
+  // Uma virtual ja resolvida compara pela url REAL: o outro do TMDB que caiu
+  // no mesmo backdrop do card (em outro tamanho) e a mesma foto.
+  if (resolvida) {
+    char ra[600], rb[600];
+    const char *xa = resolvida(a, ra, sizeof ra) ? ra : a;
+    const char *xb = resolvida(b, rb, sizeof rb) ? rb : b;
+    if (xa != a || xb != b) {
+      chaveFoto(xa, ka, sizeof ka);
+      chaveFoto(xb, kb, sizeof kb);
+      if (!strcmp(ka, kb)) return 1;
+    }
+  }
+  // Caminhos diferentes, mesmo arquivo: catalogo do Cinemeta x metahub pelo
+  // id (1763947 bytes nos dois no relatorio 1669), ou uma virtual que
+  // resolveu para a url do card. So se sabe depois do download.
+  return mesmaImagem && mesmaImagem(a, b);
 }
 
 const char *artehero_url_card_fonte(const CatItem *item, int fonte, int diferente) {
@@ -316,7 +450,13 @@ const char *artehero_url_destaque(const CatItem *item, int fonte, int diferente)
   // Ordem de busca de "outra arte" quando a escolhida nao serve: TMDB e Trakt
   // primeiro porque sao as que costumam ser OUTRA foto do metahub/Cinemeta
   // (o fanart do Trakt vem do fanart.tv); o metahub e o catalogo por ultimo.
-  static const int ORDEM[] = { ARTEHERO_TMDB, ARTEHERO_TRAKT,
+  // (23/09) Apple e o OUTRO do TMDB primeiro: sao as unicas que nao saem da
+  // mesma pilha de backdrops do TMDB que o metahub usa (ver ARTEHERO_TMDB_OUTRO
+  // no .h). A Apple tambem e a mais rapida medida na C9 (busca 0,4-0,5 s +
+  // imagem 0,25-0,29 s, contra 0,7 + 1,2 s do TMDB com conexao nova).
+  static const int ORDEM[] = { ARTEHERO_APPLE, ARTEHERO_TMDB_OUTRO,
+                               ARTEHERO_FANART, ARTEHERO_ANIME,
+                               ARTEHERO_TRAKT, ARTEHERO_TMDB,
                                ARTEHERO_METAHUB, ARTEHERO_CATALOGO };
   char tmp[512];
   const char *card, *u;
@@ -331,6 +471,8 @@ const char *artehero_url_destaque(const CatItem *item, int fonte, int diferente)
     return artehero_url(item);
   }
   card = artehero_url_card(item);
+  // Com outra arte, TMDB e o OUTRO backdrop do TMDB, nao o padrao.
+  if (fonte == ARTEHERO_TMDB) fonte = ARTEHERO_TMDB_OUTRO;
   if (fonte > ARTEHERO_AUTO) {
     u = urlDaFonte(item, fonte, 1, tmp, sizeof tmp);
     if (u && !falhou(u) && !mesmaFoto(u, card)) return fixar(u, tmp);

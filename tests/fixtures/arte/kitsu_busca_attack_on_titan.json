@@ -1,0 +1,153 @@
+{
+ "data": [
+  {
+   "id": "7442",
+   "type": "anime",
+   "links": {
+    "self": "https://kitsu.io/api/edge/anime/7442"
+   },
+   "attributes": {
+    "canonicalTitle": "Attack on Titan",
+    "coverImage": {
+     "tiny": "https://media.kitsu.app/anime/cover_images/7442/tiny.jpg",
+     "large": "https://media.kitsu.app/anime/cover_images/7442/large.jpg",
+     "small": "https://media.kitsu.app/anime/cover_images/7442/small.jpg",
+     "original": "https://media.kitsu.app/anime/cover_images/7442/original.png",
+     "meta": {
+      "dimensions": {
+       "tiny": {
+        "width": 840,
+        "height": 200
+       },
+       "large": {
+        "width": 3360,
+        "height": 800
+       },
+       "small": {
+        "width": 1680,
+        "height": 400
+       }
+      }
+     }
+    },
+    "subtype": "TV",
+    "startDate": "2013-04-07"
+   }
+  },
+  {
+   "id": "8671",
+   "type": "anime",
+   "links": {
+    "self": "https://kitsu.io/api/edge/anime/8671"
+   },
+   "attributes": {
+    "canonicalTitle": "Attack on Titan Season 2",
+    "coverImage": {
+     "tiny": "https://media.kitsu.app/anime/cover_images/8671/tiny.jpg",
+     "large": "https://media.kitsu.app/anime/cover_images/8671/large.jpg",
+     "small": "https://media.kitsu.app/anime/cover_images/8671/small.jpg",
+     "original": "https://media.kitsu.app/anime/cover_images/8671/original.png",
+     "meta": {
+      "dimensions": {
+       "tiny": {
+        "width": 840,
+        "height": 200
+       },
+       "large": {
+        "width": 3360,
+        "height": 800
+       },
+       "small": {
+        "width": 1680,
+        "height": 400
+       }
+      }
+     }
+    },
+    "subtype": "TV",
+    "startDate": "2017-04-01"
+   }
+  },
+  {
+   "id": "13569",
+   "type": "anime",
+   "links": {
+    "self": "https://kitsu.io/api/edge/anime/13569"
+   },
+   "attributes": {
+    "canonicalTitle": "Attack on Titan Season 3",
+    "coverImage": {
+     "tiny": "https://media.kitsu.app/anime/cover_images/13569/tiny.jpg",
+     "large": "https://media.kitsu.app/anime/cover_images/13569/large.jpg",
+     "small": "https://media.kitsu.app/anime/cover_images/13569/small.jpg",
+     "original": "https://media.kitsu.app/anime/cover_images/13569/original.jpg",
+     "meta": {
+      "dimensions": {
+       "tiny": {
+        "width": 840,
+        "height": 200
+       },
+       "large": {
+        "width": 3360,
+        "height": 800
+       },
+       "small": {
+        "width": 1680,
+        "height": 400
+       }
+      }
+     }
+    },
+    "subtype": "TV",
+    "startDate": "2018-07-23"
+   }
+  },
+  {
+   "id": "41982",
+   "type": "anime",
+   "links": {
+    "self": "https://kitsu.io/api/edge/anime/41982"
+   },
+   "attributes": {
+    "canonicalTitle": "Attack on Titan Season 3 Part 2",
+    "coverImage": {
+     "tiny": "https://media.kitsu.app/anime/cover_images/41982/tiny.jpg",
+     "large": "https://media.kitsu.app/anime/cover_images/41982/large.jpg",
+     "small": "https://media.kitsu.app/anime/cover_images/41982/small.jpg",
+     "original": "https://media.kitsu.app/anime/cover_images/41982/original.jpg",
+     "meta": {
+      "dimensions": {
+       "tiny": {
+        "width": 840,
+        "height": 200
+       },
+       "large": {
+        "width": 3360,
+        "height": 800
+       },
+       "small": {
+        "width": 1680,
+        "height": 400
+       }
+      }
+     }
+    },
+    "subtype": "TV",
+    "startDate": "2019-04-29"
+   }
+  },
+  {
+   "id": "41538",
+   "type": "anime",
+   "links": {
+    "self": "https://kitsu.io/api/edge/anime/41538"
+   },
+   "attributes": {
+    "canonicalTitle": "Shingeki no Kyotou",
+    "coverImage": null,
+    "subtype": "special",
+    "startDate": "2017-04-10"
+   }
+  }
+ ]
+}

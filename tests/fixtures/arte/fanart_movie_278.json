@@ -1,0 +1,11 @@
+{
+ "name": "The Shawshank Redemption",
+ "tmdb_id": "278",
+ "imdb_id": "tt0111161",
+ "hdmovielogo": [{"id": "1", "url": "https://assets.fanart.tv/fanart/movies/278/hdmovielogo/logo-1.png", "lang": "en", "likes": "9"}],
+ "moviebackground": [
+  {"id": "10", "url": "https://assets.fanart.tv/fanart/movies/278/moviebackground/texto-en.jpg", "lang": "en", "likes": "12"},
+  {"id": "11", "url": "https://assets.fanart.tv/fanart/movies/278/moviebackground/limpo-poucos.jpg", "lang": "", "likes": "2"},
+  {"id": "12", "url": "https://assets.fanart.tv/fanart/movies/278/moviebackground/limpo-muitos.jpg", "lang": "00", "likes": "7"}
+ ]
+}

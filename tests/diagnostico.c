@@ -125,10 +125,10 @@ static void sugestao(void) {
   memset(f, 0, sizeof f);
   // O CASO DO DONO (22/09): outra arte ligada, destaque em TMDB (virtual:
   // /find + download) muito mais lento que o catalogo do card.
-  f[PTV_FONTE_CATALOGO] = (PtvFonte){ 3, 0, 0, 1200, 2500000, 1920, 1080 };  // 400 ms
-  f[PTV_FONTE_METAHUB]  = (PtvFonte){ 3, 0, 0, 1350, 2500000, 1920, 1080 };  // 450 ms
-  f[PTV_FONTE_TMDB]     = (PtvFonte){ 3, 0, 2400, 3300, 900000, 1280, 720 }; // 1900 ms
-  f[PTV_FONTE_TRAKT]    = (PtvFonte){ 2, 1, 3000, 2000, 600000, 1280, 720 }; // 2500 ms
+  f[PTV_FONTE_CATALOGO] = (PtvFonte){ 3, 0, 0, 1200, 2500000, 1920, 1080, 0 };  // 400 ms
+  f[PTV_FONTE_METAHUB]  = (PtvFonte){ 3, 0, 0, 1350, 2500000, 1920, 1080, 0 };  // 450 ms
+  f[PTV_FONTE_TMDB]     = (PtvFonte){ 3, 0, 2400, 3300, 900000, 1280, 720, 0 }; // 1900 ms
+  f[PTV_FONTE_TRAKT]    = (PtvFonte){ 2, 1, 3000, 2000, 600000, 1280, 720, 0 }; // 2500 ms
   assert(ptv_sugerir_destaque(f, PTV_FONTE_TMDB, PTV_FONTE_CATALOGO, 0, 1, &s));
   // Trakt tambem e lenta; Metahub nao: fica arte diferente, pelo Metahub.
   assert(s.fonte == PTV_FONTE_METAHUB && s.diferente == 1);
@@ -138,13 +138,13 @@ static void sugestao(void) {
   assert(ptv_sugerir_destaque(f, PTV_FONTE_TMDB, PTV_FONTE_CATALOGO, 3, 1, &s));
   assert(s.diferente == 0 && s.fonte == 3);
   // Mais lenta mas abaixo de 800 ms por arte: nao e "claramente" (nada).
-  f[PTV_FONTE_TMDB] = (PtvFonte){ 3, 0, 600, 1500, 0, 0, 0 };  // 700 ms > 2x400
+  f[PTV_FONTE_TMDB] = (PtvFonte){ 3, 0, 600, 1500, 0, 0, 0, 0 };  // 700 ms > 2x400
   assert(!ptv_sugerir_destaque(f, PTV_FONTE_TMDB, PTV_FONTE_CATALOGO, 0, 1, &s));
   // So falhou onde o card respondeu: conta como lenta.
-  f[PTV_FONTE_TMDB] = (PtvFonte){ 0, 3, 900, 0, 0, 0, 0 };
+  f[PTV_FONTE_TMDB] = (PtvFonte){ 0, 3, 900, 0, 0, 0, 0, 0 };
   assert(ptv_sugerir_destaque(f, PTV_FONTE_TMDB, PTV_FONTE_CATALOGO, 3, 1, &s));
   // Mesma arte nos dois, fonte escolhida lenta: troca para a mais rapida.
-  f[PTV_FONTE_TMDB] = (PtvFonte){ 3, 0, 2400, 3300, 0, 0, 0 };
+  f[PTV_FONTE_TMDB] = (PtvFonte){ 3, 0, 2400, 3300, 0, 0, 0, 0 };
   assert(ptv_sugerir_destaque(f, PTV_FONTE_TMDB, PTV_FONTE_TMDB, 3, 0, &s));
   assert(s.fonte == PTV_FONTE_CATALOGO && s.diferente == 0);
   // Automatico com a mesma arte: nao ha o que propor.
@@ -152,7 +152,53 @@ static void sugestao(void) {
   assert(ptv_fonte_da_url("https://nuvio.invalid/arte/tmdb/w1280/tt1") == PTV_FONTE_TMDB);
   assert(ptv_fonte_da_url("https://images.metahub.space/background/medium/tt1/img") == PTV_FONTE_METAHUB);
   assert(ptv_fonte_da_url("https://walter.trakt.tv/images/x.jpg") == PTV_FONTE_TRAKT);
+  assert(ptv_fonte_da_url("https://nuvio.invalid/arte/tmdbalt/w1280/tt1/m2") == PTV_FONTE_TMDB_OUTRO);
+  assert(ptv_fonte_da_url("https://nuvio.invalid/arte/apple/1920/tt1/m/2024/X") == PTV_FONTE_APPLE);
+  assert(ptv_fonte_da_url("https://is1-ssl.mzstatic.com/image/thumb/X/1920x1080.jpg") == PTV_FONTE_APPLE);
+  assert(ptv_fonte_da_url("https://nuvio.invalid/arte/anime/large/kitsu:1/s/0/") == PTV_FONTE_ANIME);
+  assert(ptv_fonte_da_url("https://assets.fanart.tv/fanart/movies/1/moviebackground/a.jpg") == PTV_FONTE_FANART);
   puts("ok  sugestao de fonte do destaque (2x e > 800 ms por arte)");
+
+  // O RELATORIO 1669 (C9, 22/09), com as fontes de 23/09: destaque em
+  // Metahub com outra arte ligada. Metahub baixou os MESMOS bytes do catalogo
+  // (1763947 nos dois) — iguais = 3 — e a sugestao de entao foi "alvo:metahub"
+  // com o ajuste JA em Metahub. Agora: a do destaque e igual ao card, entao
+  // propoe a mais rapida REALMENTE diferente (Apple), nunca Metahub.
+  memset(f, 0, sizeof f);
+  f[PTV_FONTE_CATALOGO]   = (PtvFonte){ 3, 0, 0, 903, 1763947, 1920, 1080, 0 };   // 301 ms
+  f[PTV_FONTE_METAHUB]    = (PtvFonte){ 3, 0, 0, 923, 1763947, 1920, 1080, 3 };   // 307 ms, = card
+  f[PTV_FONTE_TMDB]       = (PtvFonte){ 3, 0, 1939, 3348, 502709, 1280, 720, 1 }; // 1762 ms
+  f[PTV_FONTE_TRAKT]      = (PtvFonte){ 3, 0, 1314, 1109, 297678, 1280, 720, 0 }; // 807 ms
+  f[PTV_FONTE_APPLE]      = (PtvFonte){ 3, 0, 1350, 810, 900000, 1920, 1080, 0 }; // 720 ms
+  f[PTV_FONTE_TMDB_OUTRO] = (PtvFonte){ 3, 0, 1950, 3400, 510000, 1280, 720, 0 }; // 1783 ms
+  assert(ptv_sugerir_destaque(f, PTV_FONTE_METAHUB, PTV_FONTE_CATALOGO, 2, 1, &s));
+  assert(s.motivo == PTV_MOTIVO_IGUAL && s.diferente == 1);
+  assert(s.fonte == PTV_FONTE_APPLE && s.alvo == PTV_FONTE_APPLE);
+  // Ja em Apple: nunca propoe o que o ajuste ja tem; Apple nao e igual nem
+  // lenta frente ao card (720 < 2x301? nao: 720 < 800) -> nada a propor.
+  assert(!ptv_sugerir_destaque(f, PTV_FONTE_APPLE, PTV_FONTE_CATALOGO, 5, 1, &s));
+  // Em TMDB com outra arte (= o outro do TMDB, 1783 ms, lento): a mais rapida
+  // diferente e nao lenta e a Apple; Metahub (igual) e Trakt (807 > 2x301 e >
+  // 800 = lenta) ficam de fora.
+  assert(ptv_sugerir_destaque(f, PTV_FONTE_TMDB_OUTRO, PTV_FONTE_CATALOGO, 3, 1, &s));
+  assert(s.motivo == PTV_MOTIVO_LENTA && s.fonte == PTV_FONTE_APPLE);
+  // Sem Apple: nenhuma diferente e rapida -> desligar outra arte.
+  f[PTV_FONTE_APPLE] = (PtvFonte){ 0 };
+  assert(ptv_sugerir_destaque(f, PTV_FONTE_TMDB_OUTRO, PTV_FONTE_CATALOGO, 3, 1, &s));
+  assert(s.diferente == 0 && s.fonte == 3);
+  // Igual ao card e nenhuma outra de verdade: nao propoe nada (desligar nao
+  // mudaria a foto).
+  assert(!ptv_sugerir_destaque(f, PTV_FONTE_METAHUB, PTV_FONTE_CATALOGO, 2, 1, &s));
+  // O outro do TMDB nao tem valor de ajuste sem outra arte; o padrao nao tem
+  // com ela.
+  assert(ptv_ajuste_da_fonte(PTV_FONTE_TMDB_OUTRO, 1) == PTV_FONTE_TMDB);
+  assert(ptv_ajuste_da_fonte(PTV_FONTE_TMDB_OUTRO, 0) == -1);
+  assert(ptv_ajuste_da_fonte(PTV_FONTE_TMDB, 1) == -1);
+  assert(ptv_ajuste_da_fonte(PTV_FONTE_LOGO, 0) == -1);
+  // Sem outra arte, em Metahub (rapido): nunca propoe a propria Metahub.
+  f[PTV_FONTE_METAHUB].iguais = 0;
+  assert(!ptv_sugerir_destaque(f, PTV_FONTE_METAHUB, PTV_FONTE_METAHUB, 2, 0, &s));
+  puts("ok  sugestao nunca repete o ajuste nem a foto do card (relatorio 1669)");
 }
 
 static void dimensoes(void) {
