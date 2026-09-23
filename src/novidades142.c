@@ -317,7 +317,8 @@ typedef struct { const char *titulo, *descricao; } N142Destaque;
 #ifdef NV_COOP
 // AS LIMITACOES DA BUILD TIZEN 4, cada uma com a causa medida ou conhecida.
 // Nao e texto de marketing: se uma delas deixar de valer (TV 2018 medida,
-// otimizacao feita), a linha sai daqui. Detalhes em docs/tizen4.md.
+// otimizacao feita), a linha sai daqui. A causa de cada uma esta na nota do
+// --tizen4 em tools/tizen.sh e em src/coop.h.
 static const N142Destaque DESTAQUES[] = {
   { "Mais lento que o app normal",
     "Sem WebAssembly nesta TV, o app roda em JavaScript: abrir e montar a home demora mais." },
