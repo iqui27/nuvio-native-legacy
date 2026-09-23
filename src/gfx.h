@@ -147,7 +147,8 @@ typedef enum {
   //
   //   uPar.xy = centro da luz, em fracao do retangulo (pode ficar fora dele)
   //   uFoco   = alcance da luz, em fracao da ALTURA do retangulo
-  //   uCor    = cor e alfa no centro; 1 no centro, 0 no alcance, ao quadrado
+  //   uCor    = cor e alfa no centro; falloff suave usa highp quando disponivel
+  //             e smoothstep cubico elevado ao quadrado para abrir a penumbra.
   //
   // Use gfx_luz_canto, que faz essa conta em pixels.
   GFX_LUZ = 26,

@@ -554,12 +554,22 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // GFX_LUZ — a queda radial do GFX_SOMBRA, presa aos cantos do painel. A
   // distancia e medida em fracao da ALTURA nos dois eixos (o x multiplica por
   // uAspect), senao a luz sai oval num painel deitado.
+  "#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
+  "#define GFX_LUZ_PREC highp\n"
+  "#else\n"
+  "#define GFX_LUZ_PREC mediump\n"
+  "#endif\n"
   "void main(){\n"
   "  float m = smoothstep(0.006,-0.006, sdf(vUv, uRaio, uAspect));\n"
   "  if (m <= 0.001) discard;\n"
-  "  vec2 p = (vUv - uPar) * vec2(uAspect, 1.0);\n"
-  "  float t = clamp(1.0 - length(p) / max(uFoco, 0.001), 0.0, 1.0);\n"
-  "  gl_FragColor = vec4(uCor.rgb, t * t * uCor.a * m);\n"
+  "  GFX_LUZ_PREC vec2 p = (vUv - uPar) * vec2(uAspect, 1.0);\n"
+  // O falloff linear ao quadrado ainda mostrava um limite circular em TVs com
+  // pouca precisao de fragmento. Usar highp quando a GPU oferece evita que
+  // mediump arredonde as faixas de alfa; o easing cubico abre a penumbra e
+  // deixa o falloff no mesmo formato nas TVs GLES2 sem highp.
+  "  GFX_LUZ_PREC float t = clamp(1.0 - length(p) / max(uFoco, 0.001), 0.0, 1.0);\n"
+  "  GFX_LUZ_PREC float suave = t * t * (3.0 - 2.0 * t);\n"
+  "  gl_FragColor = vec4(uCor.rgb, suave * suave * uCor.a * m);\n"
   "}\n",
 
   // GFX_SINO — contorno de sino pequeno e resolvido no fragmento. E usado

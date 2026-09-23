@@ -2421,12 +2421,11 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
     float g = r.w * NV_DETW2_CIRC_GLIFO;
     GfxRect ig = { cx - g * 0.5f, cy - g * 0.5f, g, g };
     if (icone == 1) {
-      // O botao MOSTRA O ESTADO: com o titulo ja na watchlist o "+" some e
-      // entra o olho aberto — nao adianta convidar a adicionar o que ja esta la.
-      // O estado vem de ci->naLista, que a descoberta preenche com a lista de
-      // verdade do Trakt.
+      // O botao de lista troca o + por check quando o titulo ja esta salvo;
+      // olho fica reservado ao controle separado de assistido logo ao lado.
+      // O estado vem de ci->naLista, atualizado pelo mesmo fluxo do botao.
       const CatItem *ci = cat_item(idx);
-      gfx_icone(ig, (ci && ci->naLista) ? "visto" : "mais", ic, ic, ic, a);
+      gfx_icone(ig, (ci && ci->naLista) ? "check" : "mais", ic, ic, ic, a);
     } else if (icone == 2) {
       // ASSISTIDO: olho aberto quando ja viu, olho riscado quando nao. Antes o
       // icone era sempre o mesmo e nao dizia estado nenhum — era so um enfeite

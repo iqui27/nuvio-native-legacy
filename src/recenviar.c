@@ -388,10 +388,8 @@ static float desenhaCodigo(float x, float y, float larg, float a) {
   return RE_COD_H;
 }
 
-// Uma linha da lista, com o mesmo foco invertido do menu de contexto: fundo
-// claro e texto escuro, em DEGRAU e nao interpolado — a cor faz parte da chave
-// do cache de linhas de text.c e uma cor por quadro apaga o texto (ver a nota
-// longa em ctxmenu.c).
+// Foco como o cartao de episodios: lavagem escura, texto claro e ponto de acento.
+// A cor do fundo nao depende do tema, entao o texto nao pisca entre texturas.
 // O contato da linha `i` desta pagina, ou NULL quando a linha e uma acao.
 static const RecContato *contatoDaLinha(int i) {
   if (pagina == RE_PAG_CONTATOS) return (i >= 0 && i < nCtts) ? &ctts[i] : NULL;
@@ -409,10 +407,13 @@ static float secaoAntes(int i) {
 static void desenhaLinha(float x, float y, const char *rot, int focada,
                          float a, const RecContato *c) {
   GfxRect r = { x, y, RE_INTERNO, RE_LINHA };
-  float fr = 0.176f, fg = 0.176f, fb = 0.176f, tx = r.x + 44.0f;
-  int cor = 240;
-  if (focada) cor = (int)(ajustes_acento_tinta(&fr, &fg, &fb) * 255.0f + 0.5f);
+  float fr = 0.062f, fg = 0.066f, fb = 0.079f, tx = r.x + 44.0f;
+  float ar, ag, ab;
+  int cor = focada ? 245 : 220;
+  ajustes_acento(&ar, &ag, &ab);
+  if (focada) { fr = 0.088f + ar * 0.055f; fg = 0.075f + ag * 0.035f; fb = 0.090f + ab * 0.045f; }
   gfx_cor(r, 14.0f / RE_LINHA, fr, fg, fb, a);
+  if (focada) gfx_cor((GfxRect){r.x+8.0f,y+RE_LINHA*.5f-5.0f,10.0f,10.0f},.5f,ar,ag,ab,a);
   // FOTO DO AMIGO (ou a inicial), como na aba Social: a linha so com o nome
   // nao dizia quem era.
   if (c) {
@@ -424,10 +425,6 @@ static void desenhaLinha(float x, float y, const char *rot, int focada,
   { TxtLinha t = txt_linha_corta(TXT_PLR_CORPO, rot, cor, cor, cor, 255,
                                  r.x + r.w - 24.0f - tx);
     txt_desenhar_alpha(t, tx, y + (RE_LINHA - t.h) * 0.5f, a); }
-  if (focada) {
-    TxtLinha seta = txt_linha(TXT_CAPTION2, "▸", cor, cor, cor, 255);
-    txt_desenhar_alpha(seta, r.x + 16.0f, y + (RE_LINHA - seta.h) * 0.5f, a);
-  }
 }
 
 void recenviar_desenhar(Uint32 agora) {

@@ -649,6 +649,15 @@ int main(int argc, char **argv) {
     it.arte = "deploy/app/art/00.jpg";
     detail_abrir(&it); }
   desenharCartao = DES_DETALHE;
+  // O segundo circular e Salvar. Mostra os dois estados do mesmo botao:
+  // + antes e check depois do espelho local confirmar naLista.
+  teclaDet(SDLK_RIGHT);
+  snprintf(nome, sizeof nome, "%s-detalhe-salvar.bmp", saida);
+  captura(nome, w);
+  cat_definir_na_lista(0, 1);
+  snprintf(nome, sizeof nome, "%s-detalhe-salvo-check.bmp", saida);
+  captura(nome, w);
+  cat_definir_na_lista(0, 0);
   teclaDet(SDLK_RIGHT); teclaDet(SDLK_RIGHT);
   teclaDet(SDLK_RIGHT); teclaDet(SDLK_RIGHT);
   snprintf(nome, sizeof nome, "%s-detalhe-botao.bmp", saida);

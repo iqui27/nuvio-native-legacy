@@ -640,9 +640,8 @@ static void cartaoDesenhar(void) {
   if (a < 0.01f) return;
   ajustes_acento(&ar, &ag, &ab);
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.70f * a);
-  // CARTAO FLUTUANTE na "cara nova" (menu.c, 21/09/2026): cantos de 28 px
-  // pelo menor lado, fundo translucido e UMA luz difusa na cor de realce
-  // entrando pelo canto superior esquerdo, presa aos cantos (GFX_LUZ).
+  // Mantem a luz ambiente do cartao para dar profundidade sem tornar o estado
+  // de foco da acao um bloco saturado.
   gfx_cor((GfxRect){ x, y, W, H }, 28.0f / H, 0.055f, 0.058f, 0.068f, 0.94f * a);
   gfx_luz_canto((GfxRect){ x, y, W, H }, 28.0f / H, W * 0.05f, -W * 0.15f, W * 0.5f, ar, ag, ab, 0.22f * a);
   gfx_cor((GfxRect){ x + 56.0f, y + 56.0f, 56.0f, 56.0f }, 0.5f, 0.16f, 0.17f, 0.20f, a);
@@ -883,7 +882,7 @@ void avisos_lista_desenhar(float x, float y0, float w, float a, int focoLinha) {
   // Tinta sobre o realce: branca, a nao ser que o realce seja branco
   // (ajustes_acento_tinta). `tf` e o texto principal, `ts` o secundario.
   float tinta = ajustes_acento_tinta(&ar, &ag, &ab);
-  int tf = (int)(tinta * 255.0f + 0.5f), ts = ajustes_tinta_foco2();
+  int tf = 245, ts = 210;
   pthread_mutex_lock(&trava);
   if (n == 0) {
     TxtLinha t = txt_linha(TXT_CAPTION, i18n("Nada por enquanto."), 150, 153, 162, 255);
@@ -897,20 +896,20 @@ void avisos_lista_desenhar(float x, float y0, float w, float a, int focoLinha) {
     float rowH = expande ? alturaCanalFoco : AVL_ROW;
     GfxRect row = { x, y, w, rowH - 10.0f };
     const char *acao = NULL;
-    // Cartoes em repouso ficam quase grafite; o foco e uma superficie
-    // dessaturada com tinta adaptativa, nunca um bloco de accent saturado.
+    // Cartoes em repouso ficam quase grafite; foco e lavagem escura em todos
+    // os temas, para preservar o contraste da referencia sem bloco saturado.
     { float r = 0.062f, g = 0.066f, b = 0.079f;
       if (f) {
         if (tinta > 0.5f) { r = 0.088f + ar * 0.055f; g = 0.075f + ag * 0.035f; b = 0.090f + ab * 0.045f; }
-        else { r = 0.78f; g = 0.79f; b = 0.82f; }
+        else { r = 0.105f; g = 0.112f; b = 0.132f; }
       }
       gfx_cor(row, 14.0f / row.h, r, g, b, a * (f ? 1.0f : 0.92f)); }
     gfx_cor((GfxRect){ x + 20.0f, y + 22.0f, 52.0f, 52.0f }, 0.5f,
-            f && tinta < 0.5f ? 0.69f : 0.12f,
-            f && tinta < 0.5f ? 0.70f : 0.13f,
-            f && tinta < 0.5f ? 0.73f : 0.15f, a);
+            0.12f, 0.13f, 0.15f, a);
     gfx_icone((GfxRect){ x + 32.0f, y + 34.0f, 28.0f, 28.0f }, icone(av->tipo),
-              f ? tinta : 0.62f, f ? tinta : 0.80f, f ? tinta : 0.96f, a);
+              f ? 0.96f : 0.62f, f ? 0.96f : 0.80f, 0.96f, a);
+    if (f) gfx_cor((GfxRect){ x + 5.0f, y + rowH * 0.5f - 5.0f, 10.0f, 10.0f },
+                   0.5f, ar, ag, ab, a);
     // NOVO = um ponto na cor de acento colado ao icone, e nao uma pilula com
     // palavra: a palavra competia com o titulo e o ponto e o vocabulario que
     // a aba Social ja usa para "qual delas e nova".
@@ -983,9 +982,8 @@ void avisos_desenhar(Uint32 agora) {
   if (a < 0.01f) { cartaoDesenhar(); return; }
   dx = (1.0f - a) * 80.0f;
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.45f * a);
-  // PAINEL FLUTUANTE como o de Salvos e a barra lateral (21/09/2026): solto
-  // 24 px do topo e da base, cantos de 28 px, translucido, UMA luz de realce
-  // pelo canto superior direito, presa aos cantos (GFX_LUZ).
+  // O painel continua com luz ambiente suave; os cartoes e controles adotam
+  // a nova superficie tonal sem retirar a profundidade aprovada da camada.
   { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
     GfxRect p = { AVP_X + dx, 24.0f, AVP_W, NV_TELA_H - 48.0f };
     gfx_cor(p, 28.0f / AVP_W, 0.055f, 0.058f, 0.068f, 0.94f * a);

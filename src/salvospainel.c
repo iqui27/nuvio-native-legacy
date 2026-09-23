@@ -770,7 +770,7 @@ static void superficieItem(GfxRect r, float raio, float f, float a) {
   float rr = 0.062f, rg = 0.066f, rb = 0.079f;
   ajustes_acento(&cr, &cg, &cb);
   if (ajustes_acento_tinta(NULL, NULL, NULL) < 0.5f) {
-    cr = 0.78f; cg = 0.79f; cb = 0.82f;
+    cr = 0.105f; cg = 0.112f; cb = 0.132f;
   } else {
     cr = 0.088f + cr * 0.055f;
     cg = 0.075f + cg * 0.035f;
@@ -865,8 +865,8 @@ static void desenhaLinha(int i, float dx, float y, float a) {
   char buf[192];
   GfxRect poster = { px, y, SP_POSTER_W, SP_POSTER_H };
   float v = focoVisual(f);
-  int tintaFoco = ajustes_tinta_foco();
-  int tintaFoco2 = ajustes_tinta_foco2();
+  int tintaFoco = 245;
+  int tintaFoco2 = 210;
 
   if (f > 0.01f) {
     GfxRect r = { px - 12.0f, y - SP_FOCO_PADY, SP_INTERNO + 24.0f,
@@ -876,6 +876,12 @@ static void desenhaLinha(int i, float dx, float y, float a) {
     GfxRect r = { px - 12.0f, y - SP_FOCO_PADY, SP_INTERNO + 24.0f,
                   SP_POSTER_H + SP_FOCO_PADY * 2.0f };
     superficieItem(r, 14.0f / r.h, 0.0f, a);
+  }
+  if (f > 0.01f) {
+    float ar, ag, ab;
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_cor((GfxRect){ tx - 17.0f, y + SP_POSTER_H * 0.5f - 5.0f, 10.0f, 10.0f },
+            0.5f, ar, ag, ab, f * a);
   }
 
   { GLuint tex = l->poster[0] ? tex_obter(l->poster) : 0;
@@ -1028,6 +1034,12 @@ static void desenhaRecLinha(int linha, int idx, float dx, float y, float a) {
   { GfxRect card = { px - 12.0f, y - SP_FOCO_PADY, SP_INTERNO + 24.0f,
                      SP_POSTER_H + SP_FOCO_PADY * 2.0f };
     superficieItem(card, 14.0f / card.h, f, a); }
+  if (f > 0.01f) {
+    float ar, ag, ab;
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_cor((GfxRect){ tx - 17.0f, y + SP_POSTER_H * 0.5f - 5.0f, 10.0f, 10.0f },
+            0.5f, ar, ag, ab, f * a);
+  }
 
   if (!r->visto) {
     // A MARCA DE "NAO LIDA" E UMA BARRA, e nao mais um ponto de 10px.
@@ -1066,8 +1078,7 @@ static void desenhaRecLinha(int linha, int idx, float dx, float y, float a) {
               NV_COR_ESQUELETO_B, a);
     } }
 
-  { int esc = f > 0.5f;
-    int c1 = esc ? ajustes_tinta_foco() : 245;
+  { int c1 = 245;
     TxtLinha t = txt_linha_corta(TXT_CALLOUT, r->titulo, c1, c1, c1, 255,
                                  SP_TEXTO_W);
     txt_desenhar_alpha(t, tx, y + 2.0f, a); }
@@ -1082,8 +1093,8 @@ static void desenhaRecLinha(int linha, int idx, float dx, float y, float a) {
   // cinza-claro sobre claro fica ilegivel — foi o que a captura mostrou antes
   // de isto existir.
   { int esc = f > 0.5f;
-    int c2 = esc ? ajustes_tinta_foco2() : 168;
-    int c3 = esc ? ajustes_tinta_foco2() : 214;
+    int c2 = esc ? 210 : 168;
+    int c3 = esc ? 218 : 214;
     // O DISCO DA FOTO ANTES DO NOME. Com quatro recomendacoes na tela, a cara
     // e o que distingue uma linha da outra antes de qualquer leitura — era o
     // pedido do dono, e e o unico item da linha que nao depende de ler.
@@ -1139,7 +1150,7 @@ static void desenhaAbas(float dx, float a) {
   rot[SP_ABA_AVISOS] = "Avisos";
   for (i = 0; i < 3; i++) {
     int ativa = (i == aba);
-    int cor = ativa ? ajustes_tinta_foco() : 176;
+    int cor = ativa ? 245 : 176;
     int novas = i == SP_ABA_SOCIAL ? novasRec : i == SP_ABA_AVISOS ? novasAv : 0;
     TxtLinha t;
     if (i == SP_ABA_SOCIAL && !temSocial()) continue;
@@ -1262,7 +1273,7 @@ static void desenhaBotaoLinha(int i, float dx, float y, float alt, float a,
                               const char *titulo, const char *sub,
                               const char *icone, int primario) {
   float f = (i >= 0 && i < SP_MAX) ? animFoco[i] : 0.0f;
-  float v = focoVisual(f), tinta = ajustes_acento_tinta(NULL, NULL, NULL);
+  float v = focoVisual(f), tinta = 0.96f;
   float h = primario ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO;
   float w = botao_largura(titulo, icone, primario);
   GfxRect r = { SP_X + dx + SP_PAD, y + (alt - h) * 0.5f, w, h };
@@ -1272,8 +1283,7 @@ static void desenhaBotaoLinha(int i, float dx, float y, float alt, float a,
   if (r.w > SP_INTERNO) r.w = SP_INTERNO;
   superficieItem(r, 0.5f, f, a);
   repouso = txt_linha(TXT_DET_BOTAO, titulo, 220, 220, 224, 255);
-  foco = txt_linha(TXT_DET_BOTAO, titulo, ajustes_tinta_foco(),
-                   ajustes_tinta_foco(), ajustes_tinta_foco(), 255);
+  foco = txt_linha(TXT_DET_BOTAO, titulo, 245, 245, 245, 255);
   grupo = (float)repouso.w + ((icone && icone[0]) ? BOTAO_ICONE + BOTAO_ICONE_GAP : 0.0f);
   x0 = r.x + (r.w - grupo) * 0.5f;
   if (icone && icone[0]) {
@@ -1338,7 +1348,7 @@ static void desenhaAparecer(int i, float dx, float y, float alt, float a) {
   float f = (i >= 0 && i < SP_MAX) ? animFoco[i] : 0.0f;
   float ar, ag, ab, ti = ajustes_acento_tinta(&ar, &ag, &ab);
   int esc = f >= 0.5f;
-  int c1 = esc ? ajustes_tinta_foco() : 240, c2 = esc ? ajustes_tinta_foco2() : 168;
+  int c1 = esc ? 245 : 240, c2 = esc ? 210 : 168;
   // Clamp de seguranca: animSw nasce em -1 e so assenta na primeira
   // atualizacao. Um quadro desenhado antes dela (o painel abre e desenha no
   // mesmo quadro) deslocaria a bola para fora da capsula.
@@ -1460,12 +1470,12 @@ static void desenhaSugLinha(int i, int idx, float dx, float y, float a) {
     // A PILULA DA ACAO E MEDIDA ANTES DO NOME, e o nome e cortado para caber ao
     // lado dela: sem isso, "Carolina Menezes" passava por baixo de "Adicionar"
     // e as duas ficavam ilegiveis na captura.
-    int tinta = esc ? ajustes_tinta_foco() : 222;
+    int tinta = esc ? 245 : 222;
     TxtLinha acao = txt_linha(TXT_CAPTION2, "Adicionar", tinta, tinta, tinta, 255);
     float pw = acao.w + SPS_SUG_PADX * 2.0f;
     float larg = SP_INTERNO - (SPS_SUG_AV + SPS_SUG_GAP) - pw - 20.0f;
-    int c1 = esc ? ajustes_tinta_foco() : 245;
-    int c2 = esc ? ajustes_tinta_foco2() : 168;
+    int c1 = 245;
+    int c2 = esc ? 210 : 168;
     { TxtLinha t = txt_linha_corta(TXT_CALLOUT, s->nome, c1, c1, c1, 255,
                                    larg);
       txt_desenhar_alpha(t, tx, y + 26.0f, a); }
@@ -1501,7 +1511,7 @@ static void desenhaAmigoLinha(int i, int idx, float dx, float y, float a) {
     rec_avatar(av, c->avatar, c->nome, c->id, a); }
   { float tx = px + SPS_AMIGO_AV + SPS_AMIGO_GAP;
     float larg = SP_INTERNO - (SPS_AMIGO_AV + SPS_AMIGO_GAP) - 20.0f;
-    int tf = ajustes_tinta_foco(), tf2 = ajustes_tinta_foco2();
+    int tf = 245, tf2 = 210;
     const char *origem = !strcmp(c->origem, "trakt") ? "Amigo do Trakt" : "Adicionado pelo código";
     char linha2[220];
     // O QUE ELE VIU POR ULTIMO (dono, 20/09/2026): a fileira "Amigos

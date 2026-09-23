@@ -37,6 +37,10 @@
         "nativeSpec": "Approach A: restrained dark accent wash derived from the active theme, light text, preserved poster ratio; no glow."
       },
       {
+        "name": "focused-content-row",
+        "nativeSpec": "Reuse the episode-row tonal wash across Source, share, saved/social/alerts side panels, and global navigation; add only a small theme-accent marker and keep text light. Preserve the established subtle ambient glow where already used; avoid heavy outlines."
+      },
+      {
         "name": "close-ghost",
         "nativeSpec": "No box at rest; subtle neutral surface and standard focus cue only while selected."
       }

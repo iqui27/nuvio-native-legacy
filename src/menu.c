@@ -96,7 +96,7 @@ static void corFocoMenu(float *r, float *g, float *b) {
   float ar, ag, ab;
   ajustes_acento(&ar, &ag, &ab);
   if (ajustes_acento_tinta(NULL, NULL, NULL) < 0.5f) {
-    *r = 0.78f; *g = 0.79f; *b = 0.82f;
+    *r = 0.105f; *g = 0.112f; *b = 0.132f;
   } else {
     *r = 0.088f + ar * 0.055f;
     *g = 0.075f + ag * 0.035f;
@@ -120,11 +120,10 @@ static void desenhaRailFixa(void) {
   gfx_cor(painel, 0.0f, 0.055f, 0.058f, 0.064f, 1.0f);
   float sr, sg, sb;
   corFocoMenu(&sr, &sg, &sb);
-  float tinta = ajustes_acento_tinta(NULL, NULL, NULL);
   float y = (NV_TELA_H - MENU_N * NV_MENU_LINHA_H) * 0.5f;
   for (int i = 0; i < MENU_N; i++, y += NV_MENU_LINHA_H) {
     int atual = (i == destino);
-    float lum = atual ? tinta : NV_MENU_INATIVO;
+    float lum = atual ? 0.94f : NV_MENU_INATIVO;
     if (atual) {
       GfxRect marca = { 18.0f, y + 12.0f, NV_LEGACY_RAIL_W - 36.0f,
                         NV_MENU_LINHA_H - 24.0f };
@@ -364,31 +363,21 @@ void menu_desenhar(Uint32 agora) {
     if (f > 0.01f) {
       GfxRect pill = { px + NV_MENU_PILL_PAD, y + 7.0f,
                        w - NV_MENU_PILL_PAD * 2.0f, NV_MENU_LINHA_H - 14.0f };
-      // PILULA NA COR DE REALCE GRADUADA, com icone e texto ESCUROS, sem anel.
-      //
-      // A referencia web mede fundo #303030 e texto branco (--focus-bg), e
-      // este menu ja foi assim, com anel na cor de realce por fora. DECISAO
-      // DO DONO (16/09/2026), olhando a TV: "os botoes quando selecionados
-      // ficar brancos com o texto preto ... na sidebar quando selecionado
-      // ficar assim tambem, e pode tirar o contorno". A cor de realce passa a
-      // ser a cor do botao, entao a escolha de tema muda algo que se ve.
+      // A mesma lavagem escura dos cartoes laterais, sem aura ou contorno.
       focoMenu(pill, f, desliza);
     }
 
-    // Tres estados, e os tres precisam existir: em foco (icone e texto
-    // ESCUROS sobre a pilula clara), destino em vigor (branco, para o usuario
-    // achar onde esta sem mover o foco) e o resto (cinza). Com so dois
+    // Tres estados, e os tres precisam existir: em foco, destino em vigor e
+    // o resto (cinza). Com so dois
     // estados, abrir o menu apaga a indicacao de onde voce estava.
     //
-    // A troca claro -> escuro e no meio da mola: texto ja rasterizado nao
-    // muda de cor, e o icone acompanha o texto para nao sobrar um icone
-    // branco sobre a pilula branca por meio caminho.
+    // O estado selecionado mantem a tinta clara porque a superficie tonal
+    // nunca inverte, inclusive quando o tema ativo e branco.
     int atual = (i == destino);
     int emFoco = f > 0.5f;
-    // Em foco, a TINTA que contrasta com a cor de realce (branca sobre realce
-    // escuro como o rosa, escura sobre realce claro) — a mesma conta de todo
-    // botao do app; era escuro fixo, e ficava preto sobre rosa (dono, 21/09).
-    float lum = emFoco ? ajustes_acento_tinta(NULL, NULL, NULL) : (atual ? 0.92f : NV_MENU_INATIVO);
+    // A lavagem tonal e sempre escura; a tinta de foco fica clara inclusive
+    // no tema branco, cujo contraste pertence a botoes com preenchimento cheio.
+    float lum = emFoco ? 0.94f : (atual ? 0.92f : NV_MENU_INATIVO);
     float alpha = desliza * anim_mistura(atual ? 1.0f : 0.85f, 1.0f, f);
 
     icone(i, px + NV_MENU_ICONE_CX, cy, NV_MENU_ICONE, lum, lum, lum, alpha);
