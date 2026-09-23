@@ -580,6 +580,51 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  if (m <= 0.002) discard;\n"
   "  gl_FragColor = vec4(uCor.rgb, uCor.a * m);\n"
   "}\n",
+
+  // GFX_LINHA — distancia ao segmento; nucleo liso e halo quadratico. Tudo em
+  // unidades da altura do retangulo, que e a unica escala que o shader tem.
+  "void main(){\n"
+  "  vec2 p = vUv * vec2(uAspect, 1.0);\n"
+  "  float g = uRaio;\n"
+  "  vec2 a = vec2(g, uPar.x > 0.5 ? 1.0 - g : g);\n"
+  "  vec2 b = vec2(uAspect - g, uPar.x > 0.5 ? g : 1.0 - g);\n"
+  "  vec2 ab = b - a;\n"
+  "  float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 0.000001), 0.0, 1.0);\n"
+  "  float d = length(p - a - ab * t);\n"
+  "  float nucleo = 1.0 - smoothstep(uFoco * 0.5, uFoco * 1.6, d);\n"
+  "  float h = clamp(1.0 - d / max(g, 0.0001), 0.0, 1.0);\n"
+  "  float m = max(nucleo, h * h * 0.32);\n"
+  "  if (m <= 0.003) discard;\n"
+  "  gl_FragColor = vec4(uCor.rgb, uCor.a * m);\n"
+  "}\n",
+
+  // GFX_CEU — hash de celula sem seno (o seno de numero grande em mediump vira
+  // listra na Mali); highp so onde existe.
+  "\n#ifdef GL_ES\n#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#endif\n#endif\n"
+  "float h12(vec2 c){\n"
+  "  vec3 p3 = fract(vec3(c.xyx) * 0.1031);\n"
+  "  p3 += dot(p3, p3.yzx + 33.33);\n"
+  "  return fract((p3.x + p3.y) * p3.z);\n"
+  "}\n"
+  "void main(){\n"
+  "  vec2 q = vUv * vec2(uAspect, 1.0);\n"
+  "  vec2 gr = q * 58.0 + uPar;\n"
+  "  vec2 c = floor(gr);\n"
+  "  vec2 f = fract(gr) - 0.5;\n"
+  "  float h = h12(c);\n"
+  "  float h2 = fract(h * 17.13);\n"
+  "  vec2 o = (vec2(h2, fract(h * 31.7)) - 0.5) * 0.55;\n"
+  "  float d = length(f - o);\n"
+  "  float tw = 0.62 + 0.38 * sin(uFoco * (0.6 + 1.8 * h2) + h * 40.0);\n"
+  "  float s = step(0.972, h) * (1.0 - smoothstep(0.02, 0.07 + 0.10 * h2 * h2, d)) * tw * (0.35 + 0.65 * h2);\n"
+  "  float s2 = step(0.996, h) * (1.0 - smoothstep(0.0, 0.40, d)) * 0.20;\n"
+  // A coluna de leitura (direita) fica com metade das estrelas.
+  "  s *= 1.0 - 0.55 * smoothstep(0.68, 0.72, vUv.x);\n"
+  "  float n1 = 1.0 - smoothstep(0.0, 0.95, length((q - vec2(uAspect * 0.36, 0.50)) * vec2(0.62, 1.0)));\n"
+  "  float n2 = 1.0 - smoothstep(0.0, 0.70, length((q - vec2(uAspect * 0.80, 0.18)) * vec2(0.80, 1.0)));\n"
+  "  vec3 base = vec3(0.018, 0.019, 0.030) + uCor.rgb * (0.20 * n1 * n1) + vec3(0.20, 0.24, 0.42) * (0.07 * n2 * n2);\n"
+  "  gl_FragColor = vec4(base + vec3(0.82, 0.86, 1.0) * (s + s2), 1.0);\n"
+  "}\n",
 };
 
 // Cada corpo declara o que usa; montar so o necessario mantem o shader enxuto.
@@ -600,7 +645,9 @@ static const struct { int sdf, cover; } PRECISA[GFX_NMODOS] = {
   {1,0},   /* GFX_BRILHO_TOPO — idem, e pelo mesmo motivo */
   {1,0},   /* GFX_ARTE — SDF para os cantos; sem cover, a arte nao e recortada */
   {1,0},   /* GFX_LUZ — SDF para os cantos do painel */
-  {0,0}    /* GFX_SINO — glifo vetorial, sem textura nem SDF de retangulo */
+  {0,0},   /* GFX_SINO — glifo vetorial, sem textura nem SDF de retangulo */
+  {0,0},   /* GFX_LINHA — distancia ao segmento, sem SDF de retangulo */
+  {0,0}    /* GFX_CEU — procedural, sem textura */
 };
 
 static GLuint compila(GLenum tipo, const char *src) {
