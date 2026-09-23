@@ -68,6 +68,9 @@ int  player_pediu_faixas(void);   // CIMA no player abre audio/legendas
 int  player_carregando(void);
 // Exposto para regressao de D-pad: BAIXO na fileira deve fechar a barra.
 int  player_controles_visiveis(void);
+// Idem, para #121: foco na barra de tempo e a posicao que ela mostra.
+int   player_foco_na_barra(void);
+float player_posicao_seg(void);
 
 // Liga a fonte numa sessao ja aberta. Existe porque o link so pode ser pedido
 // no ultimo instante (ver stream_idade_ms), entao a tela abre antes de haver

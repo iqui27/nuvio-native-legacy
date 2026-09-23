@@ -1054,6 +1054,8 @@ int  player_com_video(void) { return comVideo && video_pronto(); }
 // Esta abrindo o fluxo: ha video pedido, mas ainda nao ha imagem.
 int  player_carregando(void) { return esperandoFonte || (comVideo && !video_pronto()); }
 int  player_controles_visiveis(void) { return visivel; }
+int   player_foco_na_barra(void) { return barraFoco; }
+float player_posicao_seg(void) { return posSeg; }
 
 void player_encerrar(void) {
   // Salvar ANTES de parar: video_parar descarrega o pipeline e a posicao some
@@ -1599,9 +1601,22 @@ void player_evento(const SDL_Event *e) {
       botao = PLR_PLAY; barraFoco = 0;
       alternarTocando(); acordar(); return;
     }
+    // ESQUERDA/DIREITA ESCONDIDOS SAO BUSCA (#121), o gesto do YouTube e da
+    // Netflix: os controles sobem com o foco NA BARRA e o primeiro toque ja
+    // anda. Antes so acordavam, com o foco nos botoes, e o toque seguinte
+    // trocava de botao — "pressiono para avancar e o foco vai para os botoes".
+    // A fileira continua a um BAIXO (ou um OK, #109). Canal ao vivo nao tem
+    // para onde buscar: la continua so acordando.
+    if ((k == SDLK_LEFT || k == SDLK_RIGHT) && !ehCanal()) {
+      acordar();
+      barraFoco = 1; skipFoco = 0;
+      saltar(k == SDLK_RIGHT ? 1 : -1);
+      return;
+    }
     if (k == SDLK_UP || k == SDLK_DOWN || k == SDLK_LEFT || k == SDLK_RIGHT) {
       acordar();
       if (trechoPulavel(NULL)) { skipFoco = 1; barraFoco = 1; }
+      else if (k == SDLK_DOWN) barraFoco = 0;   // BAIXO revela a fileira
     }
     return;
   }
