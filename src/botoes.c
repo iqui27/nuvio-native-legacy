@@ -49,7 +49,12 @@ void botao_pilula(GfxRect r, const char *rotulo, const char *icone,
     // O miolo so existe na medida do foco; em repouso e o contorno. A
     // espessura do anel esta em fracao da ALTURA (o SDF normaliza por ela):
     // 1,5 px em 56 px.
-    if (foco > 0.01f) gfx_cor(r, raio, fr, fg, fb, foco * a);
+    // (23/09) Em repouso tambem ha miolo: a superficie escura dos circulares
+    // vizinhos (BT_REP), um pouco translucida. So contorno sumia sobre arte
+    // clara e colorida — "Play from beginning" ilegivel sobre o One Piece.
+    gfx_cor(r, raio, anim_mistura(BT_REP_R, fr, foco),
+            anim_mistura(BT_REP_G, fg, foco), anim_mistura(BT_REP_B, fb, foco),
+            (0.82f + 0.18f * foco) * a);
     if (foco < 0.99f)
       gfx_rect(r, 0, GFX_ANEL, 0, 1.5f / r.h, 0, raio, 1, 1, 1, 0.22f * (1.0f - foco) * a);
   }
