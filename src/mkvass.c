@@ -1495,10 +1495,11 @@ static void *trabalhar(void *arg) {
     printf("[mkvass] sidecar parcial: %d/%d blocos ja colhidos\n", f->nColhidos, f->nPontos);
   free(sc);
   printf("[mkvass] faixa %d: %d blocos indexados, escala %lu ns, cabecalho %zu bytes "
-         "(%ld ms desde a escolha, %ld Ranges, medio %ld ms, max %ld; fontes %s)\n",
+         "(%ld ms desde a escolha, %ld Ranges, medio %ld ms, max %ld; fontes=%d)\n",
          f->faixa, f->nPontos, f->escala, f->corpoTam, agoraMs() - f->t0, f->redeN,
          f->redeN ? f->redeMs / f->redeN : 0, f->redeMaxMs,
-         f->fontesPasso == 1 ? "em segundo plano" : f->fontesCompletas ? "prontas" : "nenhuma");
+         // fontes: 1 pedidas ao pool (segundo plano), 3 lidas/sem anexo, 0 nada
+         f->fontesPasso ? f->fontesPasso : f->fontesCompletas ? 3 : 0);
   fflush(stdout);
   entregar(f);
   if (!definirEstadoSeAtual(f, MKVASS_COLHENDO)) goto fim;
