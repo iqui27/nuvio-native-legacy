@@ -50,6 +50,16 @@ void legenda_desligar(void);
 void legenda_definir_corpo(const char *corpo);
 /* O mesmo, para o lote seguinte da mesma faixa: sem apagar o quadro. */
 void legenda_atualizar_corpo(const char *corpo);
+/* GERACAO DA FAIXA ATIVA. Toda troca de dono da legenda (desligar, carregar,
+ * definir) a incrementa. Quem entrega em segundo plano (o mkvass) guarda a
+ * geracao que recebeu e entrega COM ela: se a legenda mudou de dono no meio
+ * (outra faixa, externa, desligada), o lote e descartado em vez de religar a
+ * faixa antiga. definir_se devolve a geracao nova (0 = descartado);
+ * atualizar_se devolve 1 quando publicou (mesma geracao, legenda ligada). */
+unsigned legenda_geracao(void);
+int      legenda_ligada_em(unsigned geracao);
+unsigned legenda_definir_corpo_se(const char *corpo, unsigned geracao);
+int      legenda_atualizar_corpo_se(const char *corpo, unsigned geracao);
 int  legenda_texto(double posSeg, int atrasoMs, char *dst, size_t tam);
 
 // Todos os blocos vivos em `posSeg`, ate `max`. Devolve quantos preencheu.

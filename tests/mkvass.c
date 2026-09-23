@@ -110,6 +110,18 @@ static int conferirCues(const LegendaCue *esp, int n) {
   return casou;
 }
 
+// Quantos blocos esperados estao vivos no overlay agora (mesmo texto, no
+// meio do tempo deles). Sem log: e para amostrar em laco.
+static int vivosDe(const LegendaCue *esp, int n) {
+  int i, vivos = 0;
+  for (i = 0; i < n; i++) {
+    LegendaCue v[LEGENDA_SIMULTANEAS]; int k, m;
+    m = legenda_cues((esp[i].inicio + esp[i].fim) / 2.0, 0, v, LEGENDA_SIMULTANEAS);
+    for (k = 0; k < m; k++) if (!strcmp(v[k].texto, esp[i].texto)) { vivos++; break; }
+  }
+  return vivos;
+}
+
 static int contarDialogue(const char *s) {
   int n = 0; const char *p = s;
   while ((p = strstr(p, "\nDialogue:"))) { n++; p++; }
@@ -482,6 +494,39 @@ int main(int argc, char **argv) {
     } }
   mkvass_folga(-1.0);
 
+  // CuePoint DA FAIXA existe, mas o bloco nao se acha por ele: sem
+  // CueRelativePosition (mkvmerge --engage no_cue_relative_position) ou com
+  // uma posicao que nao cai num bloco da faixa. Antes: varredura (a folha
+  // dizia "varrendo o arquivo") ou o ponto era dado como desistido e a fala
+  // sumia. Agora o Cluster que o CueClusterPosition aponta e lido inteiro.
+  { int caso;
+    for (caso = 0; caso < 2; caso++) {
+      const char *nome = argc > 8 + caso ? argv[8 + caso] : "";
+      char urlR[600], scR[64], scRF[80];
+      if (!nome[0]) { printf("\n[6%c] pulado: fixture nao gerada\n", caso ? 'g' : 'f'); continue; }
+      printf("\n[6%c] %s: le o Cluster do CuePoint inteiro\n", caso ? 'g' : 'f',
+             caso ? "CueRelativePosition invalido" : "sem CueRelativePosition");
+      snprintf(urlR, sizeof urlR, "%s/%s", base, nome);
+      nomeSidecar(urlR, 3, scR, sizeof scR);
+      snprintf(scRF, sizeof scRF, "%s.fonts", scR);
+      dados_apagar(scR); dados_apagar(scRF);
+      mkvass_parar(); esperarFio(); legenda_desligar();
+      zerarServidor();
+      mkvass_iniciar(urlR, 3);
+      maxSeg = rodarAte(4.0, 120000, 0.0);
+      ok(mkvass_estado() == MKVASS_COMPLETO, "termina COMPLETO");
+      ok(mkvass_varredura() == 0, "pelo indice da faixa, sem cair na varredura");
+      mkvass_estatisticas(&ped, &bytes, &colhidos, &total);
+      printf("    %d/%d pontos, %ld Ranges, %ld bytes de %ld (%.1f %%), pico %d/s\n",
+             colhidos, total, ped, bytes, tamMkv, 100.0 * bytes / tamMkv, maxSeg);
+      ok(total == nEsp && colhidos == nEsp, "um ponto por Dialogue, todos colhidos (nenhum desistido)");
+      ok(maxSeg >= 0 && maxSeg <= 8, "teto: no maximo 8 Ranges num mesmo segundo");
+      r = conferirCues(esp, nEsp);
+      printf("    %d/%d cues casaram\n", r, nEsp);
+      ok(r == nEsp, "todos os cues batem com o .ass original");
+      mkvass_parar(); esperarFio(); legenda_desligar();
+    } }
+
   mkvass_parar(); esperarFio(); legenda_desligar();
   nomeSidecar(urlCurto, 3, sidecarCurto, sizeof sidecarCurto);
   dados_apagar(sidecarCurto);
@@ -541,6 +586,114 @@ int main(int argc, char **argv) {
     ok(tIndice >= 0 && tIndice < 3000, "indice com 2 Ranges (cabecalho + Cues de uma vez), sem esperar as fontes");
     ok(tPrimeira >= 0 && tPrimeira < 4500, "primeira fala em < 4,5 s (antes: fontes e Cues em serie, ~7 Ranges)");
     ok(c >= 20, "15 s colhem >= 20 blocos (um Range por vez: ~10)"); }
+
+  // Troca de faixa com colheita EM VOO (servidor lento: sempre ha um Range
+  // no ar). Nenhum lote da faixa anterior pode chegar a tela depois.
+  if (argc > 10 && argv[10][0]) {
+    char urlB[600], scB[64], scA[64], f2[80]; long t0; int viu = 0, voltou = 0, viuA = 0, viuB = 0;
+    LegendaCue v[LEGENDA_SIMULTANEAS];
+    printf("\n[9] troca de faixa com colheita em voo: nada da faixa antiga\n");
+    snprintf(urlB, sizeof urlB, "%s/%s", base, argv[10]);
+    nomeSidecar(urlB, 3, scB, sizeof scB); dados_apagar(scB);
+    snprintf(f2, sizeof f2, "%s.fonts", scB); dados_apagar(f2);
+    nomeSidecar(urlLento, 3, scA, sizeof scA); dados_apagar(scA);
+    snprintf(f2, sizeof f2, "%s.fonts", scA); dados_apagar(f2);
+    mkvass_parar(); esperarFio(); legenda_desligar();
+    mkvass_iniciar(urlLento, 3);
+    t0 = agoraMs();
+    while (agoraMs() - t0 < 15000 && !viu) {
+      mkvass_passo(0.0);
+      viu = legenda_cues(1.2, 0, v, LEGENDA_SIMULTANEAS) > 0;
+      usleep(20 * 1000);
+    }
+    ok(viu, "faixa A entregou a primeira fala");
+    // Outro dono tomou a legenda (desligada, externa) SEM parar o fio: o lote
+    // seguinte de A carrega a geracao antiga e tem de ser descartado.
+    legenda_desligar();
+    t0 = agoraMs();
+    while (agoraMs() - t0 < 6000) {
+      mkvass_passo(0.0);
+      if (vivosDe(esp, nEsp) > 0) voltou = 1;
+      usleep(50 * 1000);
+    }
+    ok(mkvass_estado() == MKVASS_COLHENDO, "faixa A continuou colhendo (o lote e que foi descartado)");
+    ok(!voltou, "lote atrasado de A nao religa a legenda desligada");
+    // Troca de verdade: A com Range no ar, B escolhida.
+    mkvass_parar(); legenda_desligar();
+    mkvass_iniciar(urlB, 3);
+    t0 = agoraMs();
+    while (agoraMs() - t0 < 30000 && mkvass_estado() != MKVASS_COMPLETO && mkvass_estado() < MKVASS_NOGO) {
+      mkvass_passo(0.0);
+      if (vivosDe(esp, nEsp) > 0) viuA = 1;
+      { int m = legenda_cues(1.5, 0, v, LEGENDA_SIMULTANEAS), k;
+        for (k = 0; k < m; k++) if (!strncmp(v[k].texto, "Outra faixa", 11)) viuB = 1; }
+      usleep(20 * 1000);
+    }
+    if (vivosDe(esp, nEsp) > 0) viuA = 1;
+    ok(mkvass_estado() == MKVASS_COMPLETO, "faixa B termina COMPLETO");
+    ok(viuB, "faixa B entregue ao overlay");
+    ok(!viuA, "nenhum texto da faixa A depois da troca");
+  } else printf("\n[9] pulado: segunda faixa nao gerada\n");
+
+  printf("\n[10] no-go passageiro x definitivo: politica de recuo\n");
+  ok(mkvass_recuo_ms(MKVASS_NOGO_REDE, 0, 0) == 2000 && mkvass_recuo_ms(MKVASS_NOGO_REDE, 1, 0) == 5000 &&
+     mkvass_recuo_ms(MKVASS_NOGO_REDE, 2, 0) == 15000, "rede: recuo de 2, 5 e 15 s");
+  ok(mkvass_recuo_ms(MKVASS_NOGO_REDE, MKVASS_TENTATIVAS, 0) == 0, "rede: esgotadas as tentativas, volta a TV");
+  ok(mkvass_recuo_ms(MKVASS_NOGO_SEM_RANGE, 0, 0) > 0, "Range recusado uma vez: passageiro");
+  ok(mkvass_recuo_ms(MKVASS_NOGO_SEM_RANGE, 1, 1) == 0, "Range recusado de novo: definitivo");
+  ok(!mkvass_recuo_ms(MKVASS_NOGO_NAO_MKV, 0, 0) && !mkvass_recuo_ms(MKVASS_NOGO_FAIXA, 0, 0) &&
+     !mkvass_recuo_ms(MKVASS_NOGO_SEM_INDICE, 0, 0), "nao e MKV, codec, sem indice: definitivos");
+
+  // Falha PASSAGEIRA de verdade: o servidor responde 503 a uma rajada de
+  // pedidos no meio da colheita (e, no outro caso, ao primeiro, o cabecalho).
+  // O teste faz o papel de faixas.c: no-go -> mkvass_recuo_ms -> mkvass_retomar,
+  // SEM legenda_desligar. O que ja estava no overlay fica, a geracao da
+  // legenda nao muda (nada recarrega, nada pisca) e a faixa fecha COMPLETA.
+  { int caso;
+    for (caso = 0; caso < 2; caso++) {
+      char urlF[600], scF[64], scFF[80]; long t0; int falhasF = 0, recF = 0, viuNogo = 0, manteve = 1;
+      int antes = 0; unsigned g0 = 0; int e;
+      snprintf(urlF, sizeof urlF, "%s/%s/%s", base, caso ? "falha1a1" : "falha10a16", argv[2]);
+      printf("\n[10%c] 503 %s: tenta de novo sem devolver a TV\n", caso ? 'b' : 'a',
+             caso ? "no primeiro pedido (cabecalho)" : "em rajada no meio da colheita");
+      nomeSidecar(urlF, 3, scF, sizeof scF); dados_apagar(scF);
+      snprintf(scFF, sizeof scFF, "%s.fonts", scF); dados_apagar(scFF);
+      mkvass_parar(); esperarFio(); legenda_desligar();
+      zerarServidor();
+      mkvass_iniciar(urlF, 3);
+      t0 = agoraMs();
+      while (agoraMs() - t0 < 120000) {
+        e = mkvass_estado();
+        mkvass_passo(0.0);
+        if (e == MKVASS_COMPLETO) break;
+        if (e >= MKVASS_NOGO) {
+          long recuo = mkvass_recuo_ms(e, falhasF, recF);
+          if (!viuNogo) {
+            viuNogo = e;
+            antes = vivosDe(esp, nEsp); g0 = legenda_geracao();
+            printf("    no-go %d com %d falas no overlay; recuo %ld ms\n", e, antes, recuo);
+          }
+          if (!recuo) break;
+          falhasF++; if (e == MKVASS_NOGO_SEM_RANGE) recF++;
+          esperarFio();
+          // O overlay nao foi desligado: o que chegou antes continua.
+          if (vivosDe(esp, nEsp) < antes) manteve = 0;
+          usleep(300 * 1000);   // o recuo de verdade e 2 s; aqui so o bastante para o 503 passar
+          mkvass_retomar();
+        }
+        usleep(20 * 1000);
+      }
+      e = mkvass_estado();
+      printf("    %d tentativa(s), estado final %d\n", falhasF, e);
+      ok(viuNogo == MKVASS_NOGO_REDE, "503 vira NOGO_REDE (passageiro)");
+      ok(falhasF >= 1 && falhasF <= MKVASS_TENTATIVAS, "retomou dentro das tentativas");
+      ok(e == MKVASS_COMPLETO, "termina COMPLETO depois de tentar de novo");
+      ok(conferirCues(esp, nEsp) == nEsp, "todos os cues batem apos a retomada");
+      if (!caso) {
+        ok(antes > 0 && manteve, "o que ja estava no overlay ficou durante o recuo");
+        ok(g0 && legenda_geracao() == g0, "retomada nao recarregou a legenda (mesma geracao: sem pisca)");
+      }
+    } }
 
   mkvass_parar(); esperarFio();
   free(esp);

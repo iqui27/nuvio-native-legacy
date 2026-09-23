@@ -10,9 +10,11 @@
 #   GET /<arquivo>            -> 206 com Content-Range quando ha Range; 200 sem
 #   GET /norange/<arquivo>    -> IGNORA o Range e devolve 200 com tudo (o caso
 #                                do servidor que nao sabe Range, para o no-go)
+#   GET /falhaAaB/<arquivo> -> 503 do A-esimo ao B-esimo GET desde /zerar (falha
+#                                PASSAGEIRA: rede/5xx no meio da colheita)
 #   GET /contagem             -> numero de GETs a arquivos ate agora (texto)
 #   GET /zerar                -> zera a contagem
-import http.server, os, socketserver, sys, threading
+import http.server, os, re, socketserver, sys, threading
 
 PASTA = sys.argv[1]
 BIND = os.environ.get("NUVIO_RANGE_BIND", "127.0.0.1")
@@ -34,6 +36,9 @@ class H(http.server.BaseHTTPRequestHandler):
         if curtoCues: nome = nome[len("curtocues/"):]
         curto = nome.startswith("curto/")
         if curto: nome = nome[len("curto/"):]
+        m = re.match(r"falha(\d+)a(\d+)/", nome)
+        self.falha = (int(m.group(1)), int(m.group(2))) if m else None
+        if m: nome = nome[m.end():]
         cam = os.path.join(PASTA, os.path.basename(nome))
         return cam, semRange, lento, curto, curtoCues
 
@@ -64,6 +69,10 @@ class H(http.server.BaseHTTPRequestHandler):
             if curto:
                 curtoPedidos += 1
             curtoN = curtoPedidos
+            k = contagem
+        if self.falha and self.falha[0] <= k <= self.falha[1]:
+            self.send_response(503); self.send_header("Content-Length", "0")
+            self.end_headers(); return
         total = os.path.getsize(cam)
         rng = self.headers.get("Range")
         ini, fim = 0, total - 1
