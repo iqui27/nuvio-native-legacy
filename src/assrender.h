@@ -39,6 +39,9 @@ int  assrender_desenhar(double posSeg, int atrasoMs, float alpha,
 /* 1 quando libass aceitou o documento atual. Sem a biblioteca compilada, o
  * retorno e 0 e legenda.c continua sendo o fallback SRT/VTT/ASS reduzido. */
 int  assrender_ativo(void);
+/* Teste/diagnostico: renderiza o instante no fio de quem chama, sem GL.
+ * Devolve o numero de imagens, ou -1 sem faixa/sem libass. */
+int  assrender_quadro_cpu(double posSeg);
 const char *assrender_diagnostico(void);
 
 /* Cada troca de faixa/seek invalida resultados antigos antes de o worker
