@@ -63,6 +63,10 @@ static int logouTipo[8];
 #ifdef NV_PONT_WEBOS
 static SDL_bool (*cursorSistema)(SDL_bool) = NULL;
 #endif
+// EXPERIMENTO NA TV, lido uma vez no arranque de /tmp/nuvio-ponteiro-exp:
+//   "mostrar" -> SDL_ShowCursor(SDL_ENABLE) (o main.c desliga o cursor)
+//   "semvis"  -> nunca chamar SDL_webOSCursorVisibility
+static int expMostrar, expSemVis;
 
 static Uint32 agoraMs(void) { return relogio ? relogio() : SDL_GetTicks(); }
 
@@ -73,17 +77,104 @@ float ponteiro_x(void) { return px; }
 float ponteiro_y(void) { return py; }
 int ponteiro_ativo(void) { return visivel; }
 
+// DIAGNOSTICO DE ENTRADA (#99, segunda volta). Na C9 chegaram os avisos
+// 484/485 e a rodinha, e NENHUM movimento nem clique. Para saber o que o SDL
+// da LG entrega de fato, todo evento que nao e tecla sai no log por 30 s
+// depois do arranque e por 30 s depois de cada 484 — com teto, para nao afogar.
+static Uint32 diagAte = 30000;
+static int diagN;
+static const char *nomeTipo(Uint32 t) {
+  switch (t) {
+    case SDL_MOUSEMOTION: return "MOUSEMOTION";
+    case SDL_MOUSEBUTTONDOWN: return "MOUSEBUTTONDOWN";
+    case SDL_MOUSEBUTTONUP: return "MOUSEBUTTONUP";
+    case SDL_MOUSEWHEEL: return "MOUSEWHEEL";
+    case SDL_FINGERDOWN: return "FINGERDOWN";
+    case SDL_FINGERUP: return "FINGERUP";
+    case SDL_FINGERMOTION: return "FINGERMOTION";
+    case SDL_WINDOWEVENT: return "WINDOWEVENT";
+    case SDL_SYSWMEVENT: return "SYSWMEVENT";
+    case SDL_TEXTINPUT: return "TEXTINPUT";
+    case SDL_TEXTEDITING: return "TEXTEDITING";
+    case SDL_KEYDOWN: return "KEYDOWN";
+    case SDL_KEYUP: return "KEYUP";
+    default: return "?";
+  }
+}
+void ponteiro_diag(const SDL_Event *e) {
+  Uint32 agora = SDL_GetTicks();
+  if (e->type == SDL_KEYDOWN &&
+      (int)e->key.keysym.scancode == PONT_SC_CURSOR_SHOW) diagAte = agora + 30000;
+  if (agora > diagAte || diagN >= 400) return;
+  if (e->type == SDL_KEYDOWN || e->type == SDL_KEYUP) {
+    int sc = (int)e->key.keysym.scancode;
+    if (sc != PONT_SC_CURSOR_SHOW && sc != PONT_SC_CURSOR_HIDE &&
+        e->key.keysym.sym != SDLK_RETURN) return;
+  }
+  diagN++;
+  switch (e->type) {
+    case SDL_MOUSEMOTION:
+      printf("[ponteiro-diag] t=%u MOUSEMOTION win=%u which=%u x=%d y=%d rel=%d,%d estado=%u\n",
+             agora, e->motion.windowID, e->motion.which, e->motion.x, e->motion.y,
+             e->motion.xrel, e->motion.yrel, e->motion.state); break;
+    case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP:
+      printf("[ponteiro-diag] t=%u %s win=%u which=%u botao=%d x=%d y=%d\n",
+             agora, nomeTipo(e->type), e->button.windowID, e->button.which,
+             e->button.button, e->button.x, e->button.y); break;
+    case SDL_MOUSEWHEEL: {
+      int mx = -1, my = -1; Uint32 b = SDL_GetMouseState(&mx, &my);
+      SDL_Window *f = SDL_GetMouseFocus();
+      printf("[ponteiro-diag] t=%u MOUSEWHEEL win=%u which=%u x=%d y=%d estado_mouse=%d,%d botoes=%u foco=%p\n",
+             agora, e->wheel.windowID, e->wheel.which, e->wheel.x, e->wheel.y,
+             mx, my, b, (void *)f); break; }
+    case SDL_FINGERDOWN: case SDL_FINGERUP: case SDL_FINGERMOTION:
+      printf("[ponteiro-diag] t=%u %s x=%.3f y=%.3f\n", agora, nomeTipo(e->type),
+             e->tfinger.x, e->tfinger.y); break;
+    case SDL_WINDOWEVENT:
+      printf("[ponteiro-diag] t=%u WINDOWEVENT sub=%d d1=%d d2=%d\n", agora,
+             e->window.event, e->window.data1, e->window.data2); break;
+    case SDL_KEYDOWN: case SDL_KEYUP: {
+      int mx = -1, my = -1; SDL_GetMouseState(&mx, &my);
+      printf("[ponteiro-diag] t=%u %s sc=%d sym=%d estado_mouse=%d,%d\n", agora,
+             nomeTipo(e->type), (int)e->key.keysym.scancode, (int)e->key.keysym.sym, mx, my);
+      break; }
+    default:
+      printf("[ponteiro-diag] t=%u tipo=0x%x (%s)\n", agora, e->type, nomeTipo(e->type));
+  }
+  fflush(stdout);
+}
+
 void ponteiro_iniciar(void) {
   nLista[0] = nLista[1] = 0;
   visivel = 0;
   memset(&hover, 0, sizeof hover);
+  { SDL_Window *w = SDL_GL_GetCurrentWindow();
+    int ww = 0, wh = 0, dw = 0, dh = 0;
+    if (w) { SDL_GetWindowSize(w, &ww, &wh); SDL_GL_GetDrawableSize(w, &dw, &dh); }
+    printf("[ponteiro] janela=%dx%d drawable=%dx%d toque=%d\n", ww, wh, dw, dh,
+           SDL_GetNumTouchDevices()); }
 #ifdef NV_PONT_WEBOS
   // dlopen(NULL) = o proprio processo: o SDL ja esta carregado, o que se quer
   // saber e se ESTA firmware o exporta. (RTLD_DEFAULT pediria _GNU_SOURCE.)
   { void *eu = dlopen(NULL, RTLD_NOW);
     if (eu) *(void **)(&cursorSistema) = dlsym(eu, "SDL_webOSCursorVisibility"); }
+  { FILE *f = fopen("/tmp/nuvio-ponteiro-exp", "r");
+    char l[128] = "";
+    if (f) { if (!fgets(l, sizeof l, f)) l[0] = 0; fclose(f); }
+    expMostrar = strstr(l, "mostrar") != NULL;
+    expSemVis  = strstr(l, "semvis") != NULL;
+    if (expSemVis) cursorSistema = NULL;
+    if (expMostrar) SDL_ShowCursor(SDL_ENABLE);
+    printf("[ponteiro] experimento: mostrar=%d semvis=%d ShowCursor=%d\n",
+           expMostrar, expSemVis, SDL_ShowCursor(SDL_QUERY)); }
   printf("[ponteiro] SDL_webOSCursorVisibility: %s\n",
          cursorSistema ? "presente" : "ausente");
+  { SDL_bool (*painel)(int *, int *) = NULL;
+    void *eu = dlopen(NULL, RTLD_NOW);
+    int pw = 0, ph = 0;
+    if (eu) *(void **)(&painel) = dlsym(eu, "SDL_webOSGetPanelResolution");
+    if (painel) painel(&pw, &ph);
+    printf("[ponteiro] painel=%dx%d\n", pw, ph); }
   fflush(stdout);
 #endif
 }
@@ -102,8 +193,8 @@ static void esconder(const char *porque) {
 static void primeiro(int tipo, const char *nome, int x, int y) {
   if (tipo < 0 || tipo >= 8 || logouTipo[tipo]) return;
   logouTipo[tipo] = 1;
-  printf("[ponteiro] primeiro evento tipo=%s x=%d y=%d -> logico %.0f,%.0f "
-         "(janela %dx%d)\n", nome, x, y, px, py, janelaW, janelaH);
+  printf("[ponteiro] primeiro evento tipo=%s x=%d y=%d -> logico %.0f,%.0f\n",
+         nome, x, y, px, py);
   fflush(stdout);
 }
 

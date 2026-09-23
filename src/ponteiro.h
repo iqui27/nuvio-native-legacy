@@ -51,6 +51,8 @@ typedef struct {
 } PonteiroAlvo;
 
 void ponteiro_iniciar(void);
+// Diagnostico: loga eventos que nao sao tecla (ver ponteiro.c). Todo evento.
+void ponteiro_diag(const SDL_Event *e);
 
 // Filtra um evento do SDL. Devolve 1 quando o evento era do ponteiro e ja foi
 // tratado (o chamador nao deve repassa-lo). `entregar` recebe as teclas que o

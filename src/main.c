@@ -541,8 +541,6 @@ int main(int argc, char **argv) {
   // App de TV nao tem ponteiro: o cursor por cima da interface polui a leitura
   // e some sozinho no aparelho, mas nao no Mac.
   SDL_ShowCursor(SDL_DISABLE);
-  // O cursor do Magic Remote e desenhado pelo app (ponteiro.c).
-  ponteiro_iniciar();
 #ifndef NV_SEM_WEBOS
   // Declara a superficie NAO-opaca. Por padrao o compositor trata a janela como
   // opaca e descarta o canal alpha inteiro — o furo do gfx_furo existiria no
@@ -578,6 +576,9 @@ int main(int argc, char **argv) {
   }
 #endif
   SDL_GLContext ctx = SDL_GL_CreateContext(win);
+  // O cursor do Magic Remote e desenhado pelo app (ponteiro.c). Depois do
+  // contexto: o log de arranque dele le a janela corrente.
+  ponteiro_iniciar();
 #ifdef __APPLE__
   // Sem vsync no Mac. O SDL2 do Homebrew virou uma camada sobre o SDL3
   // (sdl2-compat), e nela o SwapWindow fica preso esperando um sinal de vsync
@@ -777,6 +778,7 @@ int main(int argc, char **argv) {
     // Enquanto o detalhe existe ele fica com o teclado inteiro: a home
     // continua desenhada por baixo, mas nao deve reagir ao D-pad.
     while (SDL_PollEvent(&e)) {
+      ponteiro_diag(&e);
       if (e.type == SDL_WINDOWEVENT) {
         // Ultimo sinal de vida na marca de sessao (avisos_sinal): e o que diz,
         // na abertura seguinte, se a sessao que "nao se despediu" tinha ido
