@@ -166,6 +166,13 @@ static float scrollY = 0.0f;         // rolagem VERTICAL do documento
 // a arte volta e fica); `trailerFade` e a mistura arte -> video.
 static Uint32 trailerDesde = 0;
 static int    trailerTentado = 0;
+// ESCADA COM PRAZO do autoplay na Samsung: 1 = Apple aberta, 2 = YouTube
+// aberto, 3 = acabou a escada. Antes a pagina abria a Apple e esperava para
+// sempre — o log 1646 mostra o HLS pedido e nenhuma linha depois. Agora, sem
+// `playing` em NV_TRAILER_PREPARA_MS (ou com erro), fecha, loga e tenta o
+// proximo degrau uma vez.
+static int    trailerEtapa = 0;
+static Uint32 trailerPrazo = 0;
 static int    pediuMenu = 0;   // ESQUERDA na borda: fechar E abrir a barra (ver app.c)
 static float  trailerFade = 0.0f;
 // MODO CINEMA DO TRAILER (dono, 21/09/2026, com a foto do outro app: "quando
@@ -178,21 +185,28 @@ static int    trailerCopyOculta = 0;   // a intencao; trailerCopy e a mola
 // A FONTE do trailer `k` desta pagina, no formato que trailer_abrir espera na
 // plataforma: id do YouTube (Samsung, lista do TMDB) ou URL do MP4 do IMDb
 // (LG, um so por titulo — trailerimdb.h). NULL quando ainda nao ha.
-static const char *trailerFonte(int k) {
+static const char *trailerFonte(int k, int som) {
 #ifdef __EMSCRIPTEN__
-  // Samsung: Apple primeiro (HLS no <video>, como o hero ja faz), YouTube
-  // como reserva — e so depois de a Apple RESPONDER. O embed do YouTube na
-  // TV cai em "Video player configuration error" (o wgt roda de file://,
-  // sem Referer para o YouTube; #82/#86 na AU7000), entao ele fica para os
-  // titulos que a Apple nao tem.
-  { const CatItem *ci = cat_item(idx);
-    if (ci && ci->imdb[0]) {
-      const char *u = trailerapple_url(ci->imdb);
-      if (u) return u;
-      if (!trailerapple_respondeu(ci->imdb)) return NULL;
-    } }
+  // Samsung, MUDO (autoplay): Apple primeiro, YouTube como reserva — e so
+  // depois de a Apple RESPONDER. O embed do YouTube na TV cai em "Video
+  // player configuration error" (o wgt roda de file://, sem Referer para o
+  // YouTube; #82/#86 na AU7000), entao ele fica para os titulos que a Apple
+  // nao tem e para o degrau de reserva do prazo.
+  //
+  // COM SOM (botao, tela cheia): YouTube primeiro. A Apple na Samsung agora
+  // e a playlist de midia de uma variante, SO VIDEO (trailerapple.c,
+  // varianteMidia: o master com audio travava o servidor de midia da TV), e
+  // um trailer mudo em tela cheia depois de apertar "trailer" parece
+  // quebrado. Sem YouTube, a Apple muda ainda e melhor que nada.
+  const CatItem *ci = cat_item(idx);
+  const char *u = NULL;
+  if (ci && ci->imdb[0]) u = trailerapple_url(ci->imdb);
+  if (som && k < extras_n_trailers() && extras_trailer_yt(k)[0]) return extras_trailer_yt(k);
+  if (u) return u;
+  if (ci && ci->imdb[0] && !trailerapple_respondeu(ci->imdb)) return NULL;
   return k < extras_n_trailers() ? extras_trailer_yt(k) : NULL;
 #else
+  (void)som;
   // LG: Apple primeiro (HLS matted, sem tarja), IMDb depois — e so depois de
   // a Apple RESPONDER, senao o IMDb ganharia sempre por chegar antes.
   const CatItem *ci = cat_item(idx);
@@ -840,6 +854,7 @@ void detail_abrir(const HomeItem *it) {
   t = 0.0f; pg = 0.0f; scrollY = 0.0f; abaInfo = 0; pessoaAberta = 0;
   relFoco = 0; pedAbrir = -1; ratTemp = 0; ratSinc = 0;
   trailer_fechar(); trailerDesde = 0; trailerTentado = 0; trailerFade = 0.0f;
+  trailerEtapa = 0; trailerPrazo = 0;
   trailerCopy = 0.0f; trailerCopyOculta = 0;
   idx = it->indice;
   revistaVista = cat_revisao();
@@ -1656,9 +1671,10 @@ void detail_evento(const SDL_Event *e) {
       // navegador da TV abria por cima e a pessoa nao sabia voltar. Na LG
       // continua o navegador do webOS: o app nativo nao tem onde embutir um
       // player do YouTube.
-      if (trailer_suportado() && trailerFonte(foco.coluna)) {
+      if (trailer_suportado() && trailerFonte(foco.coluna, 1)) {
         GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
-        trailer_abrir(trailerFonte(foco.coluna), tela, 1, 1);
+        trailerEtapa = 0; trailerPrazo = 0;   // tela cheia: so o teclado fecha
+        trailer_abrir(trailerFonte(foco.coluna, 1), tela, 1, 1);
       } else extras_trailer_abrir(foco.coluna);
     } else if (foco.fileira == SEC_ESTUDIOS) {
       // OK num logo abre o browse daquela produtora/rede no vertudo — e a
@@ -1972,11 +1988,45 @@ void detail_atualizar(float dt, Uint32 agora) {
     if (saindo && trailer_aberto()) trailer_fechar();
     if (!trailer_aberto() && !trailerTentado && trailerDesde && topo &&
         agora - trailerDesde >= NV_TRAILER_ESPERA_MS &&
-        ajustes_trailer_auto() && trailerFonte(0)) {
+        ajustes_trailer_auto() && trailerFonte(0, 0)) {
       GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+      const char *u = trailerFonte(0, 0);
       trailerTentado = 1;
-      trailer_abrir(trailerFonte(0), tela, 0, 0);
+      trailer_abrir(u, tela, 0, 0);
+#ifdef __EMSCRIPTEN__
+      trailerEtapa = strncmp(u, "http", 4) ? 2 : 1;
+      trailerPrazo = agora + NV_TRAILER_PREPARA_MS;
+#endif
     }
+#ifdef __EMSCRIPTEN__
+    // O PRAZO. Tocou: o prazo morre (buffering depois de `playing` nao e
+    // falha). Nao tocou a tempo, ou o elemento deu erro (trailer_atualizar
+    // ja fechou e marcou trailer_falhou): loga e sobe um degrau — Apple ->
+    // YouTube uma vez; do YouTube, fica a arte. Tela cheia nao entra aqui.
+    if (trailerEtapa == 1 || trailerEtapa == 2) {
+      int venceu = trailer_aberto() && !trailer_cheia() && !trailer_tocando() &&
+                   trailerPrazo && (Sint32)(agora - trailerPrazo) >= 0;
+      int errou = !trailer_aberto() && trailer_falhou();
+      if (trailer_aberto() && trailer_tocando()) trailerPrazo = 0;
+      if ((venceu || errou) && topo) {
+        const char *yt = extras_n_trailers() > 0 ? extras_trailer_yt(0) : "";
+        printf("[trailer] detalhe: %s %d ms (%s, estado %d), %s\n",
+               errou ? "erro em" : "sem playing em", NV_TRAILER_PREPARA_MS,
+               trailerEtapa == 1 ? "apple" : "youtube", trailer_estado(),
+               trailerEtapa == 1 && yt[0] ? "tenta YouTube" : "fica a arte");
+        fflush(stdout);
+        if (trailer_aberto()) trailer_fechar();
+        if (trailerEtapa == 1 && yt[0]) {
+          GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+          trailer_abrir(yt, tela, 0, 0);
+          trailerEtapa = 2;
+          trailerPrazo = agora + NV_TRAILER_PREPARA_MS;
+        } else { trailerEtapa = 3; trailerPrazo = 0; }
+      } else if (!trailer_aberto() && !errou) {
+        trailerEtapa = 0; trailerPrazo = 0;   // fechou por fim ou por navegacao
+      }
+    }
+#endif
     { float alvo = (trailer_aberto() && trailer_tocando()) ? 1.0f : 0.0f;
       static int tocavaAntes;
       int toca = alvo > 0.5f && !trailer_cheia();

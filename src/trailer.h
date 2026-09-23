@@ -41,6 +41,9 @@ int  trailer_tocando(void);
 // Permite ao hero tentar a proxima fonte (Apple -> YouTube) uma unica vez,
 // sem confundir fechamento voluntario com falha de rede.
 int  trailer_falhou(void);
+// Estado cru do elemento, so para LOG: -2 sem elemento, -1 criado, 1 tocando,
+// 3 buffering, 0 fim, -3 erro (Samsung). Na LG devolve -9 (nao ha elemento).
+int  trailer_estado(void);
 // Retangulo atual, para quem desenha o furo.
 GfxRect trailer_retangulo(void);
 // Teclado do modo de tela cheia. 1 quando consumiu.
