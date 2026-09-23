@@ -5,9 +5,14 @@
 #include <errno.h>
 #ifndef __EMSCRIPTEN__
 #include <pthread.h>
+#include <sys/statvfs.h>
+#include <sys/resource.h>
 #include "cachedisco.h"
-static pthread_mutex_t discoMtx = PTHREAD_MUTEX_INITIALIZER;
-static void prepararDisco(long entrada, int forcar);
+#ifdef __linux__
+#include <sys/syscall.h>
+#endif
+static void podarSePreciso(long entrada, int forcar);
+static void iniciarGravador(void);
 #endif
 #include "sdlcompat.h"
 #ifdef NV_TEX_TEST_AFTER_POP
@@ -46,7 +51,7 @@ typedef struct {
   Uint32 netMs;       // somente rede_baixar_bin, incluindo fallback(s)
   Uint32 resolveMs;   // arte_reserva_url (/find) antes de um fallback
   Uint32 cacheMs;     // leitura/lock do cache antes de baixar
-  Uint32 persistMs;   // prepararDisco + escrita/rename do cache
+  Uint32 persistMs;   // LG: so enfileirar a gravacao (fila de fundo); Tizen: escrita/rename
   unsigned int netCalls;
 } TexFetchTrace;
 // Teto de decodificacao das artes de CARD; a nota que justifica o 640 esta
@@ -134,7 +139,6 @@ typedef struct {
   // ARTE DE PASSAGEM: quadro de sequencia animada, que vale por 67 ms e nunca
   // mais. Ver tex_obter_passageira e a nota em despejar().
   int passageiro;
-#ifdef __EMSCRIPTEN__
   // OS BYTES BAIXADOS, no lugar do arquivo de cache (20/09/2026, #72). No
   // Emscripten toda chamada de arquivo feita por um pthread e PROXIADA ao fio
   // principal — fopen/fwrite/rename/fread/remove de cada arte eram viagens
@@ -144,11 +148,16 @@ typedef struct {
   // sobrevive ao decode: quem serve a re-decodificacao e o cache HTTP do
   // proprio navegador, que ja existia. So o GIF continua indo a arquivo,
   // porque gif.c le por caminho.
+  //
+  // NO LG TAMBEM, desde 22/09/2026: o fio de rede deixa o corpo aqui e o decode
+  // o consome da memoria; o arquivo de cache e escrito depois, pela fila de
+  // gravacao (filaGrav). Antes o decode so via o arquivo, entao a entrega
+  // esperava fopen/fwrite/rename e as varreduras da pasta sob discoMtx —
+  // medido na C9: net_ms=397 e persist_ms=4759 no mesmo fetch.
   unsigned char *bruto;
   long nBruto;
   int varianteCache;
   char urlCache[512];
-#endif
 } Item;
 
 #define NV_TEX_FIOS 2
@@ -162,13 +171,9 @@ typedef struct {
 static SDL_Thread *thrs[NV_TEX_FIOS];
 static SDL_Thread *thrsRede[NV_TEX_FIOS_REDE];
 static Item itens[MAX_ITENS_ABS];
-// Bytes baixados que ainda nao foram consumidos (Tizen). No LG e vazio.
+// Bytes baixados que ainda nao foram consumidos pelo decode (LG e Tizen).
 static void soltarBruto(Item *it) {
-#ifdef __EMSCRIPTEN__
   free(it->bruto); it->bruto = NULL; it->nBruto = 0; it->urlCache[0] = 0;
-#else
-  (void)it;
-#endif
 }
 static int nMax = 64;
 static unsigned long relogio = 1;
@@ -214,7 +219,9 @@ static long cacheDiscoBytes = 0;
 // varrendo/podando centenas de arquivos sob discoMtx; o relatorio recebe a
 // ultima amostra publicada em vez de parar esperando I/O de outra thread.
 static long cacheDiscoSnapshot = 0;
-static void publicarCacheDisco(void) {
+/* No LG quem publica e publicarDiscoNativo (bytes do indice); esta fica para
+ * o Tizen e para tests/texdisco.c. */
+__attribute__((unused)) static void publicarCacheDisco(void) {
   __atomic_store_n(&cacheDiscoSnapshot, cacheDiscoBytes, __ATOMIC_RELEASE);
 }
 // TETO DO CACHE DE DISCO, so no alvo Tizen.
@@ -237,6 +244,16 @@ static void publicarCacheDisco(void) {
 #else
 #define NV_CACHE_DISCO_MAX (512L * 1024L * 1024L)
 #define NV_CACHE_DISCO_RESERVA (128UL * 1024UL * 1024UL)
+// TETO PROPORCIONAL AO ESPACO, no LG (22/09/2026). 512 MB fixos era mais da
+// metade do que a C9 tinha: 497 MB de arte em 3309 arquivos numa particao de
+// 4,2 GB 82% cheia, com 772 MB livres. O teto efetivo e o menor entre os 512 MB
+// e 15% do espaco que o cache PODERIA ocupar (livre + o que ele ja ocupa) —
+// somar o proprio cache evita o teto encolher conforme ele cresce e oscilar.
+// Na C9 daquele log: 15% de (772 + 497) = ~190 MB. Piso de 32 MB para uma TV
+// quase cheia ainda guardar a home; a reserva de 128 MB livres continua valendo
+// por cima disso e manda podar antes de o sistema ficar sem espaco.
+#define NV_CACHE_DISCO_FRACAO 15
+#define NV_CACHE_DISCO_PISO (32L * 1024L * 1024L)
 #endif
 static unsigned long quadroAtual = 1;
 
@@ -765,7 +782,7 @@ static int tetoDoHeroi(void) {
 }
 static float escalaBuf = 1.0f;
 
-static int arquivoCacheImagem(const char *nome) {
+__attribute__((unused)) static int arquivoCacheImagem(const char *nome) {
   const char *p = nome;
   while (isxdigit((unsigned char)*p)) p++;
   if (p - nome < 8 || p - nome > 16) return 0;
@@ -823,6 +840,12 @@ void tex_cache_dir(const char *dir) {
   //
   // A varredura e uma vez por arranque, com a pasta ja aberta, e o que ela
   // custa e um stat por arquivo.
+  //
+  // NO LG A VARREDURA SAIU DAQUI (22/09/2026): vira o indice em memoria de
+  // cachearte.c, lido uma vez pelo fio de gravacao ao nascer (iniciarGravador),
+  // sem segurar nada que o desenho ou os fios de rede esperem. Com 3309
+  // arquivos no eMMC ela nao e "um stat por arquivo" barato.
+#ifdef __EMSCRIPTEN__
   { DIR *d = opendir(dirCache);
     struct dirent *e;
     long total = 0;
@@ -838,18 +861,12 @@ void tex_cache_dir(const char *dir) {
       closedir(d);
       cacheDiscoBytes = total;
       publicarCacheDisco();
-#ifndef __EMSCRIPTEN__
-      cachearte_nativo_inventario(n, total, 0);
-#endif
       if (n)
         printf("[tex] cache de disco ja tinha %d arquivo(s), %.1f MB\n",
                n, total / 1048576.0);
     } }
-#ifndef __EMSCRIPTEN__
-  pthread_mutex_lock(&discoMtx);
-  prepararDisco(0, 0);
-  pthread_mutex_unlock(&discoMtx);
-  cachearte_estatisticas_pedir();
+#else
+  iniciarGravador();
 #endif
   fflush(stdout);
 }
@@ -941,29 +958,9 @@ static void nomeDeCache(const char *url, char *dst, size_t tam) {
 }
 
 #ifndef __EMSCRIPTEN__
-static void atualizarInventarioNativo(void) {
-  DIR *d = opendir(dirCache);
-  struct dirent *e;
-  long itens = 0, bytes = 0, essenciais = 0;
-  if (d) {
-    while ((e = readdir(d)) != NULL) {
-      char caminho[768]; struct stat st;
-      if (!arquivoCacheImagem(e->d_name)) continue;
-      snprintf(caminho, sizeof caminho, "%s/%s", dirCache, e->d_name);
-      if (lstat(caminho, &st) == 0 && S_ISREG(st.st_mode)) {
-        itens++; bytes += st.st_size;
-        if (cachearte_nativo_essencial(caminho)) essenciais++;
-      }
-    }
-    closedir(d);
-  }
-  cacheDiscoBytes = bytes;
-  publicarCacheDisco();
-  cachearte_nativo_inventario(itens, bytes, essenciais);
-}
-
 /* Nunca remove o arquivo entre a entrega da rede e a leitura pelo decoder.
- * Ordem de locks: discoMtx -> mtx. Nenhum caminho faz a ordem inversa. */
+ * Ordem de locks: s_native_mtx (cachearte) e mtx sao tomadas separadamente,
+ * nunca uma dentro da outra. */
 static int discoProtegido(const char *caminho, void *ctx) {
   int i, protegido = 0;
   (void)ctx;
@@ -979,11 +976,182 @@ static int discoProtegido(const char *caminho, void *ctx) {
   SDL_UnlockMutex(mtx);
   return protegido;
 }
-static void prepararDisco(long entrada, int forcar) {
-  nv_cache_podar(dirCache, &cacheDiscoBytes, entrada, NV_CACHE_DISCO_MAX,
-                 NV_CACHE_DISCO_RESERVA, forcar, discoProtegido, NULL);
-  publicarCacheDisco();
-  atualizarInventarioNativo();
+static void publicarDiscoNativo(void) {
+  __atomic_store_n(&cacheDiscoSnapshot, cachearte_nativo_indice_bytes(), __ATOMIC_RELEASE);
+}
+/* Ver NV_CACHE_DISCO_FRACAO. Um statvfs, microssegundos: roda por gravacao. */
+static long tetoDisco(void) {
+  struct statvfs fs;
+  long teto = NV_CACHE_DISCO_MAX;
+  if (dirCache[0] && statvfs(dirCache, &fs) == 0) {
+    double possivel = (double)fs.f_bavail * (double)fs.f_frsize +
+                      (double)cachearte_nativo_indice_bytes();
+    double prop = possivel * NV_CACHE_DISCO_FRACAO / 100.0;
+    if (prop < (double)teto) teto = (long)prop;
+  }
+  if (teto < NV_CACHE_DISCO_PISO) teto = NV_CACHE_DISCO_PISO;
+  return teto;
+}
+static void podarSePreciso(long entrada, int forcar) {
+  cachearte_nativo_podar(entrada, tetoDisco(), NV_CACHE_DISCO_RESERVA, forcar,
+                         discoProtegido, NULL);
+  publicarDiscoNativo();
+}
+
+/* Escreve `dst` por temporario + rename, SEM fsync: e cache, e um arquivo
+ * perdido num corte de energia so custa baixar de novo (o rename atomico
+ * garante que nunca fica meio arquivo com o nome final). ENOSPC/EDQUOT na
+ * primeira tentativa poda forcado e tenta de novo com os MESMOS bytes, sem
+ * voltar a rede. Nao segura trava nenhuma durante o I/O. */
+static int gravarArquivo(const char *dst, const char *sufixo,
+                         const unsigned char *corpo, long n) {
+  char tmp[640];
+  int tentativa, ok = 0, erro = 0;
+  FILE *f;
+  snprintf(tmp, sizeof tmp, "%s%s", dst, sufixo);
+  podarSePreciso(n, 0);
+  for (tentativa = 0; tentativa < 2; tentativa++) {
+    size_t esc = 0;
+    int fim = 0;
+    errno = 0;
+    f = fopen(tmp, "wb");
+    if (f) {
+      esc = fwrite(corpo, 1, (size_t)n, f);
+      erro = errno;
+      fim = fclose(f);
+      if (fim != 0 && !erro) erro = errno;
+      if (esc == (size_t)n && fim == 0) {
+        if (rename(tmp, dst) == 0) { ok = 1; break; }
+        erro = errno;
+      }
+    } else erro = errno;
+    if (!erro) erro = EIO;
+    printf("[tex] gravacao incompleta (%zu de %ld B, erro %d: %s): %.70s\n",
+           esc, n, erro, strerror(erro), dst);
+    fflush(stdout);
+    remove(tmp);
+    if (tentativa == 0 && (erro == ENOSPC || erro == EDQUOT)) {
+      podarSePreciso(n, 1);
+      continue;
+    }
+    break;
+  }
+  if (ok) cachearte_nativo_indice_registrar(dst, n);
+  cachearte_nativo_gravacao(ok);
+  publicarDiscoNativo();
+  return ok;
+}
+
+/* FILA DE GRAVACAO DE FUNDO (22/09/2026).
+ *
+ * O download entrega os bytes ao decode NA HORA (Item.bruto) e a copia para o
+ * disco entra aqui. Um fio so, nice 19 no Linux: o eMMC da TV e um recurso
+ * unico e varios escritores so disputariam a mesma fila do controlador.
+ * LIMITADA (entradas e bytes): se o disco nao acompanha, a gravacao nova e
+ * DESCARTADA — o cache e otimizacao, e a pior consequencia de descartar e
+ * baixar de novo numa proxima vez. Bloquear o fio de rede, nunca.
+ *
+ * Enquanto o arquivo nao existe, o mesmo pedido acha os bytes aqui
+ * (gravacaoPendente) e nao volta a rede. */
+#define NV_GRAV_MAX 32
+#define NV_GRAV_BYTES (24L * 1024L * 1024L)
+typedef struct { char dst[600]; unsigned char *b; long n; } Grav;
+static pthread_mutex_t gravMtx = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t gravCond = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t gravVazia = PTHREAD_COND_INITIALIZER;
+static Grav filaGrav[NV_GRAV_MAX];
+static Grav gravAtual;            /* a que esta sendo escrita, ainda consultavel */
+static int gravIni, gravN, gravIniciado;
+static long gravBytes;
+static long gravDescartes;
+
+static void *fioGravador(void *arg) {
+  (void)arg;
+#ifdef __linux__
+  /* Prioridade por fio: no Linux o nice vale por tid. */
+  setpriority(PRIO_PROCESS, (id_t)syscall(SYS_gettid), 19);
+#endif
+  /* A UNICA leitura da pasta na sessao, aqui e fora de qualquer trava que
+   * outro fio espere. A primeira poda (arte acumulada acima do teto novo)
+   * tambem roda aqui, em fundo. */
+  cachearte_nativo_indice_construir();
+  publicarDiscoNativo();
+  cachearte_estatisticas_pedir();
+  podarSePreciso(0, 0);
+  for (;;) {
+    pthread_mutex_lock(&gravMtx);
+    while (!gravN) { pthread_cond_broadcast(&gravVazia); pthread_cond_wait(&gravCond, &gravMtx); }
+    gravAtual = filaGrav[gravIni];
+    filaGrav[gravIni].b = NULL;
+    gravIni = (gravIni + 1) % NV_GRAV_MAX; gravN--;
+    pthread_mutex_unlock(&gravMtx);
+    if (gravAtual.b) gravarArquivo(gravAtual.dst, ".fila", gravAtual.b, gravAtual.n);
+    pthread_mutex_lock(&gravMtx);
+    gravBytes -= gravAtual.n;
+    free(gravAtual.b); gravAtual.b = NULL; gravAtual.dst[0] = 0; gravAtual.n = 0;
+    pthread_mutex_unlock(&gravMtx);
+  }
+  return NULL;
+}
+static void iniciarGravador(void) {
+  pthread_t t;
+  pthread_mutex_lock(&gravMtx);
+  if (!gravIniciado && pthread_create(&t, NULL, fioGravador, NULL) == 0) {
+    pthread_detach(t); gravIniciado = 1;
+  }
+  pthread_mutex_unlock(&gravMtx);
+}
+/* Copia os bytes: o original vai para o decode, que o libera. 1 se entrou. */
+static int enfileirarGravacao(const char *dst, const unsigned char *b, long n) {
+  unsigned char *copia;
+  int ok = 0;
+  if (!dst || !b || n <= 0) return 0;
+  pthread_mutex_lock(&gravMtx);
+  if (gravIniciado && gravN < NV_GRAV_MAX && gravBytes + n <= NV_GRAV_BYTES &&
+      (copia = (unsigned char *)malloc((size_t)n)) != NULL) {
+    Grav *g = &filaGrav[(gravIni + gravN) % NV_GRAV_MAX];
+    memcpy(copia, b, (size_t)n);
+    snprintf(g->dst, sizeof g->dst, "%s", dst);
+    g->b = copia; g->n = n;
+    gravN++; gravBytes += n; ok = 1;
+    pthread_cond_signal(&gravCond);
+  } else {
+    gravDescartes++;
+    if (gravDescartes == 1 || gravDescartes % 50 == 0)
+      printf("[tex] fila de gravacao cheia (%d, %.1f MB): %ld gravacao(oes) descartadas\n",
+             gravN, gravBytes / 1048576.0, gravDescartes);
+  }
+  pthread_mutex_unlock(&gravMtx);
+  return ok;
+}
+/* Copia dos bytes ainda nao gravados de `dst`, se houver. */
+static int gravacaoPendente(const char *dst, unsigned char **b, long *n) {
+  int i, ok = 0;
+  pthread_mutex_lock(&gravMtx);
+  for (i = -1; i < gravN && !ok; i++) {
+    Grav *g = i < 0 ? &gravAtual : &filaGrav[(gravIni + i) % NV_GRAV_MAX];
+    if (g->b && !strcmp(g->dst, dst) && (*b = (unsigned char *)malloc((size_t)g->n)) != NULL) {
+      memcpy(*b, g->b, (size_t)g->n); *n = g->n; ok = 1;
+    }
+  }
+  pthread_mutex_unlock(&gravMtx);
+  return ok;
+}
+/* O decode recusou os bytes: nao deixa a fila gravar veneno no cache. */
+static void cancelarGravacao(const char *dst) {
+  int i;
+  pthread_mutex_lock(&gravMtx);
+  for (i = 0; i < gravN; i++) {
+    Grav *g = &filaGrav[(gravIni + i) % NV_GRAV_MAX];
+    if (g->b && !strcmp(g->dst, dst)) { gravBytes -= g->n; free(g->b); g->b = NULL; g->n = 0; }
+  }
+  pthread_mutex_unlock(&gravMtx);
+}
+/* Testes: espera a fila esvaziar (a gravacao em curso inclusive). */
+void tex_cache_esperar_gravacoes(void) {
+  pthread_mutex_lock(&gravMtx);
+  while (gravIniciado && (gravN || gravAtual.b)) pthread_cond_wait(&gravVazia, &gravMtx);
+  pthread_mutex_unlock(&gravMtx);
 }
 #endif
 
@@ -1066,6 +1234,7 @@ static int resolverReserva(const char *url, char *saida, size_t tam,
 // Baixa a URL para o cache, se ainda nao estiver la. Devolve 1 se ha arquivo
 // utilizavel no fim. Roda no fio de decodificacao, entao bloquear aqui nao
 // custa quadro nenhum.
+#ifdef __EMSCRIPTEN__
 static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
                          TexFetchTrace *trace) {
   FILE *f;
@@ -1078,12 +1247,7 @@ static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
   }
   if (!dirCache[0]) return 0;
   nomeDeCache(url, dst, tam);
-#ifndef __EMSCRIPTEN__
   Uint32 cacheEm = SDL_GetTicks();
-  pthread_mutex_lock(&discoMtx);
-#else
-  Uint32 cacheEm = SDL_GetTicks();
-#endif
   f = fopen(dst, "rb");
   if (f) { fseek(f, 0, SEEK_END); n = ftell(f); fclose(f);
     if (n > 512) {
@@ -1098,31 +1262,12 @@ static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
           (sig[0] == 'R' && sig[1] == 'I' && sig[2] == 'F' && sig[3] == 'F' &&
            got >= 12 && sig[8] == 'W' && sig[9] == 'E' && sig[10] == 'B' && sig[11] == 'P'));
         if (valid) {
-#ifdef __EMSCRIPTEN__
           marcarUso(dst);   // sem isto a poda vira o contrario de LRU; ver a nota
-#else
-          cachearte_nativo_hit();
-          /* Evita uma escrita de metadados a cada card/quadro. */
-          { struct stat st;
-            if (!stat(dst, &st) && time(NULL) - st.st_mtime >= 60) utime(dst, NULL); }
-          pthread_mutex_unlock(&discoMtx);
-#endif
           if (trace) trace->cacheMs += SDL_GetTicks() - cacheEm;
           return 1;
         }
       }
-#ifndef __EMSCRIPTEN__
-      remove(dst);
-      cacheDiscoBytes -= n;
-      if (cacheDiscoBytes < 0) cacheDiscoBytes = 0;
-      publicarCacheDisco();
-      cachearte_nativo_miss();
-#endif
     } }
-#ifndef __EMSCRIPTEN__
-  pthread_mutex_unlock(&discoMtx);
-  if (!f || n <= 512) cachearte_nativo_miss();
-#endif
   if (trace) trace->cacheMs += SDL_GetTicks() - cacheEm;
   if (foiRede) *foiRede = 1;
   corpo = baixarImagem(url, &n, trace);
@@ -1140,10 +1285,6 @@ static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
     long anterior = 0;
     struct stat st;
     snprintf(tmp, sizeof tmp, "%s.parcial", dst);
-#ifndef __EMSCRIPTEN__
-    pthread_mutex_lock(&discoMtx);
-    prepararDisco(n, 0);
-#endif
     if (stat(dst, &st) == 0) anterior = (long)st.st_size;
     for (tentativa = 0; tentativa < 2; tentativa++) {
       size_t esc = 0;
@@ -1165,24 +1306,12 @@ static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
              esc, n, erro, strerror(erro), dst);
       fflush(stdout);
       remove(tmp);
-#ifndef __EMSCRIPTEN__
-      /* Reusa o download: nao volta para a rede em falta de espaco/cota. */
-      if (tentativa == 0 && (erro == ENOSPC || erro == EDQUOT)) {
-        prepararDisco(n, 1);
-        continue;
-      }
-#endif
       break;
     }
     if (ok) {
       cacheDiscoBytes += n - anterior;
       publicarCacheDisco();
     }
-#ifndef __EMSCRIPTEN__
-    cachearte_nativo_gravacao(ok);
-    if (ok) atualizarInventarioNativo();
-    pthread_mutex_unlock(&discoMtx);
-#endif
     if (trace) trace->persistMs += SDL_GetTicks() - persistEm;
     if (!ok) { free(corpo); return 0; }
   }
@@ -1190,9 +1319,87 @@ static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
   return 1;
 }
 
-// O QUE O FIO DE REDE ENTREGA AO DE DECODE. No LG, um arquivo no cache de
-// disco (garantirLocal). No Tizen, os bytes no proprio item (Item.bruto) —
-// exceto GIF e caminho local, que seguem pelo arquivo.
+#else
+// ACERTO DE DISCO SEM TRAVA GLOBAL (22/09/2026). Um fopen, 12 bytes de
+// assinatura e o tamanho. Antes isto pegava discoMtx, a mesma trava que o
+// download de outro fio segurava durante a gravacao e as duas varreduras da
+// pasta; na C9 um acerto chegou a esperar 11719 ms (`phase=disk-cache
+// cache_ms=11719`), e o decode, que chama garantirLocal para traduzir a URL,
+// herdava a espera como `ler 4479`. A poda nao apaga arquivo de item PENDENTE
+// (discoProtegido), entao o arquivo achado aqui continua la ate o decode le-lo.
+static int acertoDisco(const char *dst, TexFetchTrace *trace) {
+  Uint32 cacheEm = SDL_GetTicks();
+  unsigned char sig[12] = {0};
+  size_t got = 0;
+  long n = 0;
+  int valido = 0;
+  FILE *f = fopen(dst, "rb");
+  if (f) {
+    got = fread(sig, 1, sizeof sig, f);
+    if (!fseek(f, 0, SEEK_END)) n = ftell(f);
+    fclose(f);
+    valido = n > 512 && got >= 4 && (
+        (sig[0] == 0xFF && sig[1] == 0xD8) ||
+        (sig[0] == 0x89 && sig[1] == 0x50 && sig[2] == 0x4E && sig[3] == 0x47) ||
+        (sig[0] == 'G' && sig[1] == 'I' && sig[2] == 'F') ||
+        (sig[0] == 'R' && sig[1] == 'I' && sig[2] == 'F' && sig[3] == 'F' &&
+         got >= 12 && sig[8] == 'W' && sig[9] == 'E' && sig[10] == 'B' && sig[11] == 'P'));
+    if (valido) {
+      cachearte_nativo_hit();
+      cachearte_nativo_indice_tocar(dst);
+      /* Evita uma escrita de metadados a cada card/quadro; o mtime e o LRU
+       * entre sessoes, o indice e o LRU desta. */
+      { struct stat st;
+        if (!stat(dst, &st) && time(NULL) - st.st_mtime >= 60) utime(dst, NULL); }
+    } else {
+      remove(dst);
+      cachearte_nativo_indice_remover(dst);
+      publicarDiscoNativo();
+    }
+  }
+  if (!valido) cachearte_nativo_miss();
+  if (trace) trace->cacheMs += SDL_GetTicks() - cacheEm;
+  return valido;
+}
+
+static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
+                         TexFetchTrace *trace) {
+  char *corpo;
+  long n = 0;
+  int ok;
+  if (foiRede) *foiRede = 0;
+  if (strncmp(url, "http://", 7) && strncmp(url, "https://", 8)) {
+    snprintf(dst, tam, "%s", url);
+    return 1;
+  }
+  if (!dirCache[0]) return 0;
+  nomeDeCache(url, dst, tam);
+  if (acertoDisco(dst, trace)) return 1;
+  if (foiRede) *foiRede = 1;
+  corpo = baixarImagem(url, &n, trace);
+  // METAHUB FORA DO AR NAO E CARD CINZA: a mesma imagem existe no TMDB pelo id
+  // do IMDb. So depois de a original falhar, e gravada sob a URL original —
+  // para o resto do app e como se o metahub tivesse respondido.
+  if (!corpo) {
+    char alt[400];
+    if (resolverReserva(url, alt, sizeof alt, trace)) corpo = baixarImagem(alt, &n, trace);
+  }
+  if (!corpo) return 0;
+  // SINCRONO de proposito, e so aqui: este caminho e o do GIF (gif.c le por
+  // caminho, o arquivo tem de existir ao voltar) e o recuo do decode. O
+  // caminho quente do LG e baixarParaItem, que entrega da memoria.
+  { Uint32 persistEm = SDL_GetTicks();
+    ok = gravarArquivo(dst, ".parcial", (const unsigned char *)corpo, n);
+    if (trace) trace->persistMs += SDL_GetTicks() - persistEm; }
+  free(corpo);
+  return ok;
+}
+
+#endif
+
+// O QUE O FIO DE REDE ENTREGA AO DE DECODE. Arte baixada agora: os bytes no
+// proprio item (Item.bruto), nas duas plataformas. No LG, arte que ja estava
+// no cache de disco: o arquivo. GIF e caminho local seguem pelo arquivo.
 static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *foiRede,
                           TexFetchTrace *trace) {
 #ifdef __EMSCRIPTEN__
@@ -1253,7 +1460,48 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
     return 1;
   }
 #else
-  (void)idx;
+  // LG: A ARTE NAO ESPERA O DISCO (22/09/2026). Ordem nova:
+  //   1. arquivo no cache -> o decode le o arquivo (sem trava global);
+  //   2. bytes ainda na fila de gravacao -> copia, sem rede;
+  //   3. rede -> os bytes vao para Item.bruto e o decode comeca ja; a copia
+  //      para o disco entra na fila de fundo (enfileirarGravacao).
+  // Antes o passo 3 gravava, rodava duas varreduras da pasta e so entao
+  // devolvia: na C9, `net_ms=962 persist_ms=8786` num mesmo fetch, e o
+  // destaque desistia aos 613 ms com a imagem ja na memoria.
+  // GIF continua sincrono por garantirLocal: gif.c le por caminho.
+  if (dirCache[0] && (!strncmp(url, "http://", 7) || !strncmp(url, "https://", 8))) {
+    unsigned char *corpo = NULL;
+    long n = 0;
+    nomeDeCache(url, dst, tam);
+    if (foiRede) *foiRede = 0;
+    if (acertoDisco(dst, trace)) return 1;
+    if (!gravacaoPendente(dst, &corpo, &n)) {
+      if (foiRede) *foiRede = 1;
+      corpo = (unsigned char *)baixarImagem(url, &n, trace);
+      if (!corpo) {
+        char alt[400];
+        if (resolverReserva(url, alt, sizeof alt, trace))
+          corpo = (unsigned char *)baixarImagem(alt, &n, trace);
+      }
+      if (!corpo) return 0;
+      if (n >= 6 && !memcmp(corpo, "GIF8", 4)) {
+        Uint32 persistEm = SDL_GetTicks();
+        int ok = gravarArquivo(dst, ".parcial", corpo, n);
+        if (trace) trace->persistMs += SDL_GetTicks() - persistEm;
+        free(corpo);
+        return ok;
+      }
+      { Uint32 persistEm = SDL_GetTicks();
+        enfileirarGravacao(dst, corpo, n);
+        if (trace) trace->persistMs += SDL_GetTicks() - persistEm; }
+    }
+    SDL_LockMutex(mtx);
+    free(itens[idx].bruto);
+    itens[idx].bruto = corpo;
+    itens[idx].nBruto = n;
+    SDL_UnlockMutex(mtx);
+    return 1;
+  }
 #endif
   return garantirLocal(url, dst, tam, foiRede, trace);
 }
@@ -1560,16 +1808,17 @@ static int threadDecode(void *arg) {
     filaEm = itens[idx].filaDecEm;
     itens[idx].filaDecEm = 0;
     localDireto = itens[idx].localDireto;
-#ifdef __EMSCRIPTEN__
     // OS BYTES SAEM DO ITEM AQUI, sob o mutex, e passam a ser deste fio.
     unsigned char *bruto = itens[idx].bruto;
     long nBruto = itens[idx].nBruto;
+    int daMemoria = bruto != NULL;
+#ifdef __EMSCRIPTEN__
     int varianteCache = itens[idx].varianteCache;
     char urlCache[512];
     snprintf(urlCache, sizeof urlCache, "%s", itens[idx].urlCache);
+#endif
     itens[idx].bruto = NULL; itens[idx].nBruto = 0;
     itens[idx].urlCache[0] = 0;
-#endif
     SDL_UnlockMutex(mtx);
     if (filaEm) {
       filaWait = SDL_GetTicks() - filaEm;
@@ -1586,12 +1835,20 @@ static int threadDecode(void *arg) {
     int srcW = 0, srcH = 0;
     SDL_Surface *bruta = NULL;
     SDL_Surface *conv = NULL;
-#ifdef __EMSCRIPTEN__
     if (bruto) {
       bruta = jpeg_rapido_carregar_mem(bruto, (size_t)nBruto, limite, &srcW, &srcH);
+#ifndef __EMSCRIPTEN__
+      // No LG o _mem so faz JPEG; PNG pelo SDL_image e WebP pela libwebp do
+      // sistema, na mesma ordem do caminho por arquivo abaixo.
+      if (!bruta) {
+        SDL_RWops *rw = SDL_RWFromConstMem(bruto, (int)nBruto);
+        srcW = srcH = 0;
+        bruta = rw ? IMG_Load_RW(rw, 1) : NULL;
+      }
+      if (!bruta) bruta = webp_carregar_larg_mem(bruto, (size_t)nBruto, limite, &srcW, &srcH);
+#endif
       free(bruto);
     } else
-#endif
     {
     // O download JA ACONTECEU no fio de rede; aqui garantirLocal so traduz a
     // URL para o caminho do cache, sem tocar a rede.
@@ -1877,7 +2134,16 @@ static int threadDecode(void *arg) {
           /* The decoder is authoritative: signature checks cannot detect a
            * truncated JPEG with a valid SOI. Remove that exact persistent
            * variant so the retry can refill it from HTTP. */
-          if (bruto && urlCache[0]) cachearte_invalidar(urlCache, varianteCache);
+          if (daMemoria && urlCache[0]) cachearte_invalidar(urlCache, varianteCache);
+#else
+          /* Bytes da memoria que o decoder recusou: a copia deles ainda pode
+           * estar na fila de gravacao; nao deixa virar arquivo envenenado. */
+          if (daMemoria) {
+            char local[600];
+            nomeDeCache(urlOrig, local, sizeof local);
+            cancelarGravacao(local);
+            if (remove(local) == 0) { cachearte_nativo_indice_remover(local); publicarDiscoNativo(); }
+          }
 #endif
           // APAGA o arquivo que nao decodifica. Ele so pode ter chegado ao
           // cache corrompido — a assinatura foi conferida no download —, e
@@ -1890,9 +2156,7 @@ static int threadDecode(void *arg) {
           // delas para a poda passar a apagar tudo e nunca se dar por
           // satisfeita, deixando o cache vazio de vez.
           if (noCache(caminho)) {
-#ifndef __EMSCRIPTEN__
-            pthread_mutex_lock(&discoMtx);
-#endif
+#ifdef __EMSCRIPTEN__
             long tamAnt = 0;
             FILE *g = fopen(caminho, "rb");
             if (g) { fseek(g, 0, SEEK_END); tamAnt = ftell(g); fclose(g); }
@@ -1901,8 +2165,8 @@ static int threadDecode(void *arg) {
               if (cacheDiscoBytes < 0) cacheDiscoBytes = 0;
               publicarCacheDisco();
             }
-#ifndef __EMSCRIPTEN__
-            pthread_mutex_unlock(&discoMtx);
+#else
+            if (remove(caminho) == 0) { cachearte_nativo_indice_remover(caminho); publicarDiscoNativo(); }
 #endif
           }
         } else {

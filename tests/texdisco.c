@@ -78,15 +78,15 @@ int main(void) {
   assert(discoProtegido(dst,NULL)); itens[0].estado=PRONTO; assert(!discoProtegido(dst,NULL));
   SDL_DestroyMutex(mtx); mtx=NULL;
   puts("ok: protege arquivos entre rede e decode");
-  // O contador e lido pela thread de desenho a cada relatorio. Segurar o
-  // mutex que envolve a varredura de disco deve continuar permitindo a leitura
-  // da ultima amostra; a versao anterior esperava aqui e travava o quadro.
+  // O contador e lido pela thread de desenho a cada relatorio. Segurar a
+  // trava da fila de gravacao (discoMtx deixou de existir em 22/09/2026) deve
+  // continuar permitindo a leitura da ultima amostra.
   cacheDiscoBytes = 123456;
   publicarCacheDisco();
-  assert(pthread_mutex_lock(&discoMtx) == 0);
+  assert(pthread_mutex_lock(&gravMtx) == 0);
   assert(tex_cache_disco_bytes() == 123456);
-  assert(pthread_mutex_unlock(&discoMtx) == 0);
-  puts("ok: getter de cache nao espera discoMtx");
+  assert(pthread_mutex_unlock(&gravMtx) == 0);
+  puts("ok: getter de cache nao espera a trava de gravacao");
   DIR *d=opendir(dir); struct dirent *e;
   while ((e=readdir(d))) { if(e->d_name[0]=='.')continue; snprintf(tmp,sizeof tmp,"%s/%s",dir,e->d_name); unlink(tmp); }
   closedir(d); assert(!rmdir(dir));

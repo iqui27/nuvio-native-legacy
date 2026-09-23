@@ -15,6 +15,9 @@ SDL_Surface *webp_carregar(const char *caminho);
 // o bloco RGBA em tamanho cheio nunca existe — e o que importa para um fundo
 // de 3840x2160 (33 MB cheio, 8 MB a 1920).
 SDL_Surface *webp_carregar_larg(const char *caminho, int largMax, int *ow, int *oh);
+#include <stddef.h>
+SDL_Surface *webp_carregar_larg_mem(const unsigned char *dados, size_t n, int largMax,
+                                    int *ow, int *oh);
 
 #ifdef __EMSCRIPTEN__
 // A PONTE PARA O DECODIFICADOR DO NAVEGADOR, para qualquer formato que ele

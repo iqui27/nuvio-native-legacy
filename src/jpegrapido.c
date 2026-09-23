@@ -262,19 +262,12 @@ static void erroSai(j_common_ptr cinfo) {
 }
 static void semSaida(j_common_ptr cinfo) { (void)cinfo; }   // avisos: silencio
 
-SDL_Surface *jpeg_rapido_carregar(const char *caminho, int largMax,
-                                  int *larguraOriginal, int *alturaOriginal) {
+static SDL_Surface *carregarDeFILE(FILE *f, int largMax,
+                                   int *larguraOriginal, int *alturaOriginal) {
   struct jpeg_decompress_struct cinfo;
   ErroSalto erro;
-  FILE *f;
   SDL_Surface * volatile s = NULL;   /* volatile: sobrevive ao longjmp */
   unsigned char magia[2];
-  if (larguraOriginal) *larguraOriginal = 0;
-  if (alturaOriginal) *alturaOriginal = 0;
-  if (!caminho || largMax < 1) return NULL;
-  if (!abrir()) return NULL;
-  f = fopen(caminho, "rb");
-  if (!f) return NULL;
   // So JPEG entra: PNG e WebP seguem pelos leitores de sempre.
   if (fread(magia, 1, 2, f) != 2 || magia[0] != 0xFF || magia[1] != 0xD8) { fclose(f); return NULL; }
   rewind(f);
@@ -327,5 +320,35 @@ SDL_Surface *jpeg_rapido_carregar(const char *caminho, int largMax,
   lib.destroy(&cinfo);
   fclose(f);
   return s;
+}
+
+SDL_Surface *jpeg_rapido_carregar(const char *caminho, int largMax,
+                                  int *larguraOriginal, int *alturaOriginal) {
+  FILE *f;
+  if (larguraOriginal) *larguraOriginal = 0;
+  if (alturaOriginal) *alturaOriginal = 0;
+  if (!caminho || largMax < 1) return NULL;
+  if (!abrir()) return NULL;
+  f = fopen(caminho, "rb");
+  if (!f) return NULL;
+  return carregarDeFILE(f, largMax, larguraOriginal, alturaOriginal);
+}
+
+// OS BYTES DO DOWNLOAD, SEM PASSAR PELO DISCO (22/09/2026). No LG o fio de
+// rede agora entrega o corpo ao decode na hora e a gravacao no cache vai para
+// um fio de fundo (tex_cache.c, filaGrav). fmemopen e nao jpeg_mem_src: a
+// .so.62 da TV e ABI 6b, onde jpeg_mem_src nao e garantido; o stdio_src de
+// sempre le do FILE de memoria igual le do arquivo. So JPEG: PNG e WebP tem
+// leitores proprios na memoria (IMG_Load_RW, webp_carregar_larg_mem).
+SDL_Surface *jpeg_rapido_carregar_mem(const unsigned char *dados, size_t n, int largMax,
+                                      int *larguraOriginal, int *alturaOriginal) {
+  FILE *f;
+  if (larguraOriginal) *larguraOriginal = 0;
+  if (alturaOriginal) *alturaOriginal = 0;
+  if (!dados || n < 16 || largMax < 1 || dados[0] != 0xFF || dados[1] != 0xD8) return NULL;
+  if (!abrir()) return NULL;
+  f = fmemopen((void *)dados, n, "rb");
+  if (!f) return NULL;
+  return carregarDeFILE(f, largMax, larguraOriginal, alturaOriginal);
 }
 #endif
