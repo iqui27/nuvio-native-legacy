@@ -34,6 +34,7 @@
 #include "focus.h"
 #include "teclado.h"
 #include "anim.h"
+#include "revela.h"
 #include "layout.h"
 #include "ajustes.h"
 #include "catalogo.h"
@@ -117,8 +118,15 @@ static int sair = 0;
 static int pedido = -1;             // indice de catalogo escolhido, -1 = nenhum
 static float animTecla[BU_KB_FILEIRAS][BU_KB_COLS];
 static float animRes[BU_MAX_FILEIRAS][BU_MAX_POR_FIL];
+// Arte chegando e luz do foco, as mesmas da home (revela.h).
+static RevelaArte  revRes[BU_MAX_FILEIRAS][BU_MAX_POR_FIL];
+static RevelaVarre revVarre = { -1, 0, 0 };
 static float scrollY = 0.0f, scrollAlvo = 0.0f;
 static float scrollX[BU_MAX_FILEIRAS];
+// Velocidade da mola de 2a ordem da rolagem (anim_mola2): partida macia e
+// cauda exponencial, a MESMA curva que a home mede. A de 1a ordem que estava
+// aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
+static float velY = 0.0f, velX[BU_MAX_FILEIRAS];
 static float animCampo = 0.0f;
 static HomeItem itemFoco;
 static int   temItemFoco = 0;
@@ -317,10 +325,10 @@ static void refiltrar(void) {
         }
   }
   if (nFil == 0) painel = 0;
-  memset(animRes, 0, sizeof animRes);
+  memset(animRes, 0, sizeof animRes); memset(revRes, 0, sizeof revRes);
   if (!mesmaConsulta) {
-    memset(scrollX, 0, sizeof scrollX);
-    scrollY = scrollAlvo = 0.0f;
+    memset(scrollX, 0, sizeof scrollX); memset(velX, 0, sizeof velX);
+    scrollY = scrollAlvo = 0.0f; velY = 0.0f;
   }
 }
 
@@ -437,12 +445,12 @@ int busca_iniciar(void) {
   painel = 0; sair = 0; pedido = -1;
   nConsulta = 0; consulta[0] = 0;
   consultaFiltrada[0] = 0;
-  scrollY = scrollAlvo = 0.0f;
+  scrollY = scrollAlvo = 0.0f; velY = 0.0f;
   animCampo = 0.0f;
   temItemFoco = 0;
   memset(animTecla, 0, sizeof animTecla);
-  memset(animRes, 0, sizeof animRes);
-  memset(scrollX, 0, sizeof scrollX);
+  memset(animRes, 0, sizeof animRes); memset(revRes, 0, sizeof revRes);
+  memset(scrollX, 0, sizeof scrollX); memset(velX, 0, sizeof velX);
   memset(animRec, 0, sizeof animRec);
   focoRec = 0; nRecLayout = 0;
   okPress = okLongo = 0; okDesde = 0;
@@ -653,12 +661,12 @@ void busca_atualizar(float dt, Uint32 agora) {
     if (dir - alvoX > util) alvoX = dir - util;
     if (esq - alvoX < 0.0f) alvoX = esq;
     if (alvoX < 0.0f) alvoX = 0.0f;
-    scrollX[r] = anim_mola(scrollX[r], alvoX, dt, NV_MOLA_SCROLL);
+    scrollX[r] = anim_mola2(&velX[r], scrollX[r], alvoX, dt, NV_MOLA2_SCROLL);
   } else {
     scrollAlvo = 0.0f;
   }
   if (scrollAlvo < 0.0f) scrollAlvo = 0.0f;
-  scrollY = anim_mola(scrollY, scrollAlvo, dt, NV_MOLA_SCROLL);
+  scrollY = anim_mola2(&velY, scrollY, scrollAlvo, dt, NV_MOLA2_SCROLL);
 }
 
 // --- Desenho -----------------------------------------------------------------
@@ -827,6 +835,9 @@ static void desenhaRecentes(Uint32 agora) {
 }
 
 static void desenhaResultados(Uint32 agora) {
+  // Uma varredura por foco novo na grade de resultados (revela.h).
+  float varreFoco = revela_varre(&revVarre, painel == 1
+                                 ? focoRes.fileira * 64 + focoRes.coluna : -1, agora);
   temItemFoco = 0;
   if (nFil == 0 && recentesVisiveis()) { desenhaRecentes(agora); return; }
   nRecLayout = 0;
@@ -855,7 +866,7 @@ static void desenhaResultados(Uint32 agora) {
     // Dois passes: o item em foco tem de ficar POR CIMA dos vizinhos, senao a
     // borda do poster ao lado corta o anel de foco.
     for (int passe = 0; passe < 2; passe++)
-      for (int c = 0; c < fil[r].n; c++) {
+      for (int c = 0; c < fil[r].n && c < BU_MAX_POR_FIL; c++) {
         float f = animRes[r][c];
         if ((passe == 1) != (f > 0.01f)) continue;
         const CatItem *ci = cat_item(fil[r].itens[c]);
@@ -893,17 +904,29 @@ static void desenhaResultados(Uint32 agora) {
         const char *arte = ci->poster[0] ? ci->poster
                          : (ci->backdrop[0] ? ci->backdrop : NULL);
         GLuint tex = arte ? tex_obter_larg(arte, poster.w) : 0;
+        float aArte = revela_arte(&revRes[r][c], tex != 0, agora);
         if (tex) {
           // Sem o aspecto a arte 2:3 estica; e o poster e justamente onde isso
           // salta aos olhos, porque todos ficam lado a lado.
+          if (aArte < 0.999f)
+            gfx_cor(poster, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
+                    NV_COR_ESQUELETO_B, 1.0f);
           gfx_tex_aspect_atual = tex_aspecto(arte);
-          gfx_rect(poster, tex, GFX_CARD, f, 0.0f, 0.0f, raio, 0, 0, 0, 1);
+          if (painel == 1 && focoRes.fileira == r && focoRes.coluna == c)
+            gfx_varre_atual = varreFoco;
+          gfx_rect(poster, tex, GFX_CARD, f, 0.0f, 0.0f, raio, 0, 0, 0, aArte);
+          gfx_varre_atual = 0.0f;
           gfx_tex_aspect_atual = 0.0f;
         } else {
           // Esqueleto VISIVEL, o mesmo da home: #2C2C2C. Ver a nota la — placeholder
-            // do tom do fundo le como card quebrado, nao como carregando.
+          // do tom do fundo le como card quebrado, nao como carregando. Com a
+          // luz passando enquanto a arte ainda pode chegar.
+          if (arte && !tex_falhou(arte))
+            gfx_esqueleto(poster, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
+                          NV_COR_ESQUELETO_B, 1.0f);
+          else
             gfx_cor(poster, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
-                  NV_COR_ESQUELETO_B, 1.0f);
+                    NV_COR_ESQUELETO_B, 1.0f);
         }
 
         // Nome 28/500 branco a 8 do poster; ano 20/400 rgb(179) a 4 do nome.

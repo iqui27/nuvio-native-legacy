@@ -77,7 +77,7 @@ void addonsui_atualizar(float dt, Uint32 agora) {
   float alvo;
   (void)agora;
   for (i = 0; i < n && i < 64; i++)
-    animFoco[i] = anim_mola(animFoco[i], i == foco ? 1.0f : 0.0f, dt, 16.0f);
+    animFoco[i] = anim_mola(animFoco[i], i == foco ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
   // Rolagem que mantem a linha focada dentro da area util, como em Ajustes.
   alvo = (float)foco * (LINHA_H + LINHA_GAP);
   if (alvo - scrollY > BASE - TOPO - LINHA_H) scrollY = alvo - (BASE - TOPO - LINHA_H);

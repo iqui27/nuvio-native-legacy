@@ -156,7 +156,11 @@ typedef enum {
   // cache de texturas tenha necessariamente terminado de carregar, entao o
   // sino nao pode depender de PNG assincrono para existir no primeiro quadro.
   GFX_SINO = 27,
-  GFX_NMODOS = 28
+  // GFX_ESQUELETO — superficie de card CARREGANDO com uma faixa de luz que
+  // atravessa a tela (skeleton shimmer). Use gfx_esqueleto, que calcula a onda
+  // e cai no GFX_COR parado com animacoes reduzidas.
+  GFX_ESQUELETO = 28,
+  GFX_NMODOS = 29
 } GfxModo;
 
 typedef struct {
@@ -173,6 +177,9 @@ extern float gfx_card_forcar_cover_atual;
 // ajuste da pessoa (Ajustes > Foco no cartaz), lido uma vez por quadro pela
 // tela que desenha; o brilho e o especular do foco nao dependem dele.
 extern float gfx_borda_foco_atual;
+// Deslocamento da luz do foco no GFX_CARD (revela.h, revela_varre): 0 = faixa
+// especular no repouso. Quem define para um card devolve a 0 logo depois.
+extern float gfx_varre_atual;
 // Opacidade de grupo: deve voltar a 1 ao terminar o grupo.
 extern float gfx_opacidade_grupo;
 
@@ -290,5 +297,7 @@ void gfx_furo(GfxRect r);
 // video so aparece pela area arredondada.
 void gfx_furo_raio(GfxRect r, float raio);
 void gfx_textura(GfxRect r, GLuint tex);
+// Card carregando: a superficie do esqueleto com a luz passando (GFX_ESQUELETO).
+void gfx_esqueleto(GfxRect r, float raio, float cr, float cg, float cb, float ca);
 
 #endif

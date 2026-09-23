@@ -416,6 +416,10 @@ static int   foco;
 static int   versaoVista;   // agenda_versao() da ultima montagem; ver agendaui_atualizar
 static float animFoco[AG_MAX];
 static float scrollY;
+// Velocidade da mola de 2a ordem da rolagem (anim_mola2): partida macia e
+// cauda exponencial, a MESMA curva que a home mede. A de 1a ordem que estava
+// aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
+static float velY;
 static int   sair;
 // MENU DE CONTEXTO (segurar OK numa linha): abrir o titulo, ver as ultimas
 // noticias, ligar/desligar o lembrete. Toque curto continua sendo o lembrete,
@@ -506,7 +510,7 @@ int agendaui_iniciar(void) {
   int i;
   sair = 0;
   foco = 0;
-  scrollY = 0.0f;
+  scrollY = 0.0f; velY = 0.0f;
   ctxAberto = 0; ctxFoco = 0; ctxA = 0.0f; okDesde = 0; notFoco = 0;
   for (i = 0; i < AG_MAX; i++) animFoco[i] = 0.0f;
   agenda_iniciar();
@@ -652,7 +656,7 @@ void agendaui_atualizar(float dt, Uint32 agora) {
     if (maxY < 0.0f) maxY = 0.0f;
     if (alvoY > maxY) alvoY = maxY;
     if (alvoY < 0.0f) alvoY = 0.0f; }
-  scrollY = reduz ? alvoY : anim_mola(scrollY, alvoY, dt, NV_MOLA_SCROLL);
+  scrollY = anim_mola2_reduzida(&velY, scrollY, alvoY, dt, NV_MOLA2_SCROLL, reduz);
 }
 
 // MAIUSCULA que nao quebra acento. O nome do mes vem em minusculas de

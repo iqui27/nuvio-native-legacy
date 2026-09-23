@@ -209,6 +209,8 @@ static int consentEstado = -1;
 
 static int aberto, foco, marcaCatN = -1;
 static float entrada, scrollY;
+// Velocidade da rolagem de 2a ordem (anim_mola2): partida macia, como na home.
+static float velY;
 static float animFoco[SP_MAX];
 // POSICAO DA BOLA DO INTERRUPTOR, 0 = desligado, 1 = ligado. E estado PROPRIO
 // e nao uma leitura direta de recomenda_aparecer() por um motivo que e a razao
@@ -462,7 +464,7 @@ static void trocarAba(int nova) {
   if (aba == SP_ABA_AVISOS) avisos_marcar_lidos();
   aba = nova;
   foco = SP_FOCO_ABAS;
-  scrollY = 0.0f;
+  scrollY = 0.0f; velY = 0.0f;
   memset(animFoco, 0, sizeof animFoco);
   if (aba == SP_ABA_SOCIAL) {
     // CONSULTA IMEDIATA ao entrar, para nao mostrar lista velha; e o selo some
@@ -488,7 +490,7 @@ void spainel_abrir(void) {
   aberto = 1;
   foco = 0;
   aba = SP_ABA_SALVOS;
-  scrollY = 0.0f;
+  scrollY = 0.0f; velY = 0.0f;
   memset(animFoco, 0, sizeof animFoco);
   // O INTERRUPTOR ABRE NO ESTADO, e nao deslizando ate ele. A resposta pode ter
   // sido reconciliada com o servidor (respondida em OUTRA TV) com o painel
@@ -587,7 +589,7 @@ void spainel_evento(const SDL_Event *e) {
           // deixaria o dedo em cima de uma sugestao que a pessoa nem viu
           // aparecer, e o proximo OK a adicionaria como contato.
           foco = 0;
-          scrollY = 0.0f;
+          scrollY = 0.0f; velY = 0.0f;
           memset(animFoco, 0, sizeof animFoco);
           recomenda_marcar_vistas();
           return;
@@ -711,8 +713,8 @@ void spainel_atualizar(float dt, Uint32 agora) {
     if (topo - alvo < 0.0f) alvo = topo;
   }
   if (alvo < 0.0f) alvo = 0.0f;
-  scrollY = ajustes_animacoes_reduzidas()
-    ? alvo : anim_mola(scrollY, alvo, dt, NV_MOLA_SCROLL);
+  scrollY = anim_mola2_reduzida(&velY, scrollY, alvo, dt, NV_MOLA2_SCROLL,
+                                ajustes_animacoes_reduzidas());
 }
 
 // "Salvo há 2 horas". A FRASE INTEIRA passa por i18n como FORMATO, nao montada

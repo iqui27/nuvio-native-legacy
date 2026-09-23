@@ -47,6 +47,7 @@
 #include "tex_cache.h"
 #include "focus.h"
 #include "anim.h"
+#include "revela.h"
 #include "layout.h"
 #include "catalogo.h"
 #include "artehero.h"
@@ -161,6 +162,14 @@ static Foco foco;
 static float animFoco[N_SECOES][N_ITENS];
 static float scrollSec[N_SECOES];    // rolagem HORIZONTAL de cada fileira
 static float scrollY = 0.0f;         // rolagem VERTICAL do documento
+// Velocidade da mola de 2a ordem da rolagem (anim_mola2): partida macia e
+// cauda exponencial, a MESMA curva que a home mede. A de 1a ordem que estava
+// aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
+static float velSec[N_SECOES], velY = 0.0f;
+// Miniatura de episodio e cartaz relacionado chegando: esvanecem sobre o
+// esqueleto em vez de trocar num quadro (revela.h). Um registro por coluna.
+#define DET_REV_EP 64
+static RevelaArte revEp[DET_REV_EP], revRel[8];
 // TRAILER NO FUNDO (trailer.h). `trailerDesde` e o instante em que a pagina
 // assentou, para o autoplay esperar a pessoa ler antes de a arte virar
 // video; `trailerTentado` garante uma tentativa por abertura (o video acaba,
@@ -873,7 +882,7 @@ void detail_abrir(const HomeItem *it) {
   audAberta = 0; audTempAberta = -1; audTempVista = -1; frasesAberta = 0;
   item = *it;
   aberto = 1; saindo = 0; nivel = 0; botao = 0;
-  t = 0.0f; pg = 0.0f; scrollY = 0.0f; abaInfo = 0; pessoaAberta = 0;
+  t = 0.0f; pg = 0.0f; scrollY = 0.0f; velY = 0.0f; abaInfo = 0; pessoaAberta = 0;
   relFoco = 0; pedAbrir = -1; ratTemp = 0; ratSinc = 0;
   trailer_fechar(); trailerDesde = 0; trailerTentado = 0; trailerFade = 0.0f;
   trailerEtapa = 0; trailerPrazo = 0;
@@ -959,7 +968,8 @@ void detail_abrir(const HomeItem *it) {
   foco.colunaLembrada[SEC_TEMPORADAS] = temporada;
   foco.colunaLembrada[SEC_EPISODIOS]  = epAncora;
   memset(animFoco, 0, sizeof animFoco);
-  memset(scrollSec, 0, sizeof scrollSec);
+  memset(scrollSec, 0, sizeof scrollSec); memset(velSec, 0, sizeof velSec);
+  memset(revEp, 0, sizeof revEp); memset(revRel, 0, sizeof revRel);
 }
 
 int detail_aberto(void) { return aberto; }
@@ -2293,7 +2303,7 @@ void detail_atualizar(float dt, Uint32 agora) {
         else if (x < alvo + 24.0f)             alvo = x - 24.0f;
       }
       if (alvo < 0.0f) alvo = 0.0f;
-      scrollSec[r] = anim_mola(scrollSec[r], alvo, dt, NV_MOLA_SCROLL);
+      scrollSec[r] = anim_mola2(&velSec[r], scrollSec[r], alvo, dt, NV_MOLA2_SCROLL);
     }
     // A fileira de episodios rola ATRAS da aba de temporada mesmo sem o foco:
     // e o que da ao seletor a resposta visual que ele perdeu ao deixar de
@@ -2302,8 +2312,9 @@ void detail_atualizar(float dt, Uint32 agora) {
         epAncora < foco.nColunas[SEC_EPISODIOS]) {
       float ax = xItem(SEC_EPISODIOS, epAncora) - NV_DETP_X;
       if (ax < 0.0f) ax = 0.0f;
-      scrollSec[SEC_EPISODIOS] = anim_mola(scrollSec[SEC_EPISODIOS], ax, dt,
-                                           NV_MOLA_SCROLL);
+      scrollSec[SEC_EPISODIOS] = anim_mola2(&velSec[SEC_EPISODIOS],
+                                            scrollSec[SEC_EPISODIOS], ax, dt,
+                                            NV_MOLA2_SCROLL);
     } }
 
   // --- rolagem VERTICAL -----------------------------------------------------
@@ -2336,7 +2347,7 @@ void detail_atualizar(float dt, Uint32 agora) {
     if (alvoY > maxY) alvoY = maxY;
     if (alvoY < 0.0f) alvoY = 0.0f;
   }
-  scrollY = anim_mola(scrollY, alvoY, dt, NV_MOLA_SCROLL);
+  scrollY = anim_mola2(&velY, scrollY, alvoY, dt, NV_MOLA2_SCROLL);
 }
 
 // ---------------------------------------------------------------------------
@@ -3441,7 +3452,6 @@ static float desenhaNotaEpisodio(float x, float y, const char *fonte,
 // dela, sobre o degrade. E a diferenca estrutural com o que estava aqui antes
 // (miniatura em cima, texto embaixo, que e o app da Apple TV).
 static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
-  (void)agora;
   const CatEp *ep = cat_episodio(idx, epAbsoluto(c));
   GfxRect th = { r.x, r.y, r.w, NV_DETP_EP_THUMB_H };
   float raioTh = NV_DETP_EP_RAIO / NV_DETP_EP_THUMB_H;
@@ -3462,11 +3472,15 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
   const char *arte = (ep && ep->thumb[0]) ? ep->thumb
                      : (serie && serie->backdrop[0] ? serie->backdrop : NULL);
   GLuint t2 = arte ? tex_obter_larg(arte, th.w) : 0;
+  float aArte = (c >= 0 && c < DET_REV_EP) ? revela_arte(&revEp[c], t2 != 0, agora) : 1.0f;
   if (t2) {
+    if (aArte < 0.999f) gfx_cor(th, raioTh, 0.133f, 0.133f, 0.133f, a);
     gfx_tex_aspect_atual = tex_aspecto(arte);
-    gfx_rect(th, t2, GFX_CARD, 0, 0, 0, raioTh, 0, 0, 0, a);
+    gfx_rect(th, t2, GFX_CARD, 0, 0, 0, raioTh, 0, 0, 0, a * aArte);
     gfx_tex_aspect_atual = 0.0f;
-  } else gfx_cor(th, raioTh, 0.133f, 0.133f, 0.133f, a);
+  } else if (arte && !tex_falhou(arte))
+    gfx_esqueleto(th, raioTh, 0.133f, 0.133f, 0.133f, a);
+  else gfx_cor(th, raioTh, 0.133f, 0.133f, 0.133f, a);
   veuEpisodio(th, a);
 
   // EPISODIO JA ASSISTIDO, segundo o Trakt: mascara escura sobre a miniatura e
@@ -4034,13 +4048,17 @@ static void desenhaRelacionados(float x, float y, float a) {
       GfxRect anel = { r.x - 4, r.y - 4, r.w + 8, r.h + 8 };
       gfx_cor(anel, raio, 1, 1, 1, a);
     }
-    if (t) {
-      gfx_tex_aspect_atual = tex_aspecto(po);
-      gfx_rect(r, t, GFX_CARD, aceso ? 1.0f : 0.0f, 0, 0, raio, 0, 0, 0, a);
-      gfx_tex_aspect_atual = 0.0f;
-    } else {
-      gfx_cor(r, raio, 0.133f, 0.133f, 0.133f, a);
-    }
+    { float aArte = revela_arte(&revRel[i], t != 0, SDL_GetTicks());
+      if (t) {
+        if (aArte < 0.999f) gfx_cor(r, raio, 0.133f, 0.133f, 0.133f, a);
+        gfx_tex_aspect_atual = tex_aspecto(po);
+        gfx_rect(r, t, GFX_CARD, aceso ? 1.0f : 0.0f, 0, 0, raio, 0, 0, 0, a * aArte);
+        gfx_tex_aspect_atual = 0.0f;
+      } else if (po[0] && !tex_falhou(po)) {
+        gfx_esqueleto(r, raio, 0.133f, 0.133f, 0.133f, a);
+      } else {
+        gfx_cor(r, raio, 0.133f, 0.133f, 0.133f, a);
+      } }
     { int c = aceso ? 255 : 225;
       TxtLinha lt = txt_linha_corta(TXT_DET_META2, extras_relacionado_titulo(i),
                                     c, c, c, 255, REL_CARD_W);

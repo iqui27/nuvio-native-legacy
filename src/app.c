@@ -66,6 +66,7 @@
 #include "pipintro.h"
 #include "social.h"
 #include "ajustes.h"
+#include "anim.h"
 #include "diagnostico.h"
 #include "debrid.h"
 #include "player.h"
@@ -1041,6 +1042,9 @@ static void trocaDeTituloSeSolicitada(void) {
 }
 
 void app_atualizar(float dt, Uint32 agora) {
+  // Animacoes reduzidas valem para TODA mola e rampa do app (anim.h), nao so
+  // para as telas que lembravam de perguntar. Uma leitura por quadro.
+  anim_politica_reduzida = ajustes_animacoes_reduzidas();
   diagnostico_intro_atualizar(dt, agora);
   cancelarFonteSeSaiu();
   processarFonteJob();

@@ -75,6 +75,7 @@
 #include "tex_cache.h"
 #include "focus.h"
 #include "anim.h"
+#include "revela.h"
 #include "layout.h"
 #include "ajustes.h"
 #include "catalogo.h"
@@ -255,7 +256,13 @@ static Foco foco;
 static float animModo[BIB_N_MODOS];
 static float animPick[3];
 static float animFoco[BIB_MAX_LINHAS][NV_BIB_COLUNAS];
+// Arte chegando, a mesma da home (revela.h): um registro por celula da grade.
+static RevelaArte revArte[BIB_MAX_LINHAS][NV_BIB_COLUNAS];
 static float scrollY = 0.0f;
+// Velocidade da mola de 2a ordem da rolagem (anim_mola2): partida macia e
+// cauda exponencial, a MESMA curva que a home mede. A de 1a ordem que estava
+// aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
+static float velY = 0.0f;
 static int sair = 0, pedido = -1;
 static int nCelulas = 0;         // celulas da grade do estado atual
 static unsigned buscaAberta;     // 1 enquanto o teclado de busca esta na tela
@@ -398,8 +405,8 @@ static void remapear(int preservar) {
     // enquanto a lista carregava.
     return;
   }
-  scrollY = 0.0f;
-  memset(animFoco, 0, sizeof animFoco);
+  scrollY = 0.0f; velY = 0.0f;
+  memset(animFoco, 0, sizeof animFoco); memset(revArte, 0, sizeof revArte);
 }
 
 // Refaz a lista visivel de TITULOS (modos Salvos e Coleção).
@@ -758,7 +765,7 @@ void biblioteca_atualizar(float dt, Uint32 agora) {
     alvo = 0.0f;
   }
   if (alvo < 0.0f) alvo = 0.0f;
-  scrollY = anim_mola(scrollY, alvo, dt, NV_MOLA_SCROLL);
+  scrollY = anim_mola2(&velY, scrollY, alvo, dt, NV_MOLA2_SCROLL);
 }
 
 // ---------------------------------------------------------------- desenho
@@ -1104,7 +1111,8 @@ static void desenhaVazio(void) {
 
 // Um TITULO, na exibicao de cartaz. Continua sendo o que a tela sempre
 // desenhou: o contorno de foco e por DENTRO do poster e obedece Ajustes.
-static void desenhaCartaz(const CatItem *ci, GfxRect base, float f, float a) {
+static void desenhaCartaz(const CatItem *ci, GfxRect base, float f, float a,
+                          RevelaArte *rv, Uint32 agora) {
   float esc = 1.0f + NV_BIB_FOCO_ESCALA * f;
   float bw = base.w * esc, bh = base.h * esc;
   GfxRect card = { base.x - (bw - base.w) * 0.5f, base.y, bw, bh };
@@ -1115,15 +1123,25 @@ static void desenhaCartaz(const CatItem *ci, GfxRect base, float f, float a) {
   float raio = raioPx(24.0f, base.w, base.h);
   const char *arte = (ci && ci->poster[0]) ? ci->poster : NULL;
   GLuint tex = arte ? tex_obter_larg(arte, NV_BIB_CARD_W) : 0;
+  // Arte chegando esvanece sobre o esqueleto (revela.h), como na home.
+  float aArte = rv ? revela_arte(rv, tex != 0, agora) : 1.0f;
   if (tex) {
+    if (aArte < 0.999f)
+      gfx_cor(card, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
+              NV_COR_ESQUELETO_B, a);
     gfx_tex_aspect_atual = tex_aspecto(arte);
-    gfx_rect(card, tex, GFX_CARD, f, 0.0f, 0.0f, raio, 0, 0, 0, a);
+    gfx_rect(card, tex, GFX_CARD, f, 0.0f, 0.0f, raio, 0, 0, 0, a * aArte);
     gfx_tex_aspect_atual = 0.0f;
   } else {
     // Esqueleto VISIVEL, o mesmo da home: #2C2C2C. Placeholder do tom do fundo
-    // le como card quebrado, nao como carregando.
-    gfx_cor(card, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
-            NV_COR_ESQUELETO_B, a);
+    // le como card quebrado, nao como carregando. Com a luz passando enquanto
+    // a arte ainda pode chegar.
+    if (arte && !tex_falhou(arte))
+      gfx_esqueleto(card, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
+                    NV_COR_ESQUELETO_B, a);
+    else
+      gfx_cor(card, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
+              NV_COR_ESQUELETO_B, a);
   }
   // A borda de foco do web e de 4px POR DENTRO do poster, e nao um halo por
   // fora. Arte e o unico lugar onde o contorno sobrevive a regra de 16/09: nao
@@ -1681,7 +1699,9 @@ void biblioteca_desenhar(Uint32 agora) {
           else                       ci = cat_item(filtro[i]);
           if (exibicao == VIS_LISTA) desenhaLinhaTitulo(ci, topo, f, a);
           else desenhaCartaz(ci, (GfxRect){ NV_BIB_X + c * passoC, topo,
-                                            NV_BIB_CARD_W, NV_BIB_POSTER_H }, f, a); }
+                                            NV_BIB_CARD_W, NV_BIB_POSTER_H }, f, a,
+                             (r < BIB_MAX_LINHAS && c < NV_BIB_COLUNAS)
+                               ? &revArte[r][c] : NULL, agora); }
       }
     }
   if (teclado_aberto()) teclado_desenhar(agora);
