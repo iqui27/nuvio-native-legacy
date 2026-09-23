@@ -3,13 +3,14 @@
 #include <SDL2/SDL.h>
 #include "layout.h"
 #include <stdio.h>
+#include "anim.h"
 
 // Um programa por modo, e os uniforms de cada um: as posicoes NAO coincidem
 // entre programas, entao guardar um conjunto so devolveria lixo no segundo
 // shader que usasse a mesma variavel.
 typedef struct {
   GLuint prog;
-  GLint rect, tela, tex, foco, par, raio, cor, asp, texAsp, forcarCover, borda;
+  GLint rect, tela, tex, foco, par, raio, cor, asp, texAsp, forcarCover, borda, varre;
 } Programa;
 static Programa progs[GFX_NMODOS];
 static int progAtual = -1;
@@ -22,6 +23,9 @@ float gfx_card_forcar_cover_atual = 0.0f;
 // textura: sao dezenas de chamadas e a resposta e a mesma para todas dentro do
 // mesmo quadro. Quem o define e a tela, a partir do ajuste da pessoa.
 float gfx_borda_foco_atual = 1.0f;
+// Deslocamento da faixa especular do cartaz em foco (revela.h): 0 = no lugar
+// de repouso. Mesmo regime do rebordo: global, e quem mexe devolve a 0.
+float gfx_varre_atual = 0.0f;
 float gfx_opacidade_grupo = 1.0f;
 // Tamanho real do alvo da tela (em retina, maior que 1920x1080). Guardado aqui
 // porque toda volta de FBO precisa restaurar o viewport com ele.
@@ -61,6 +65,7 @@ static const char *FS_CABECA =
   "uniform sampler2D uTex;\n"
   "uniform float uFoco;\n"
   "uniform float uBorda;\n"
+  "uniform float uVarre;\n"
   "uniform vec2  uPar;\n"
   "uniform float uRaio;\n"
   "uniform vec4  uCor;\n"
@@ -115,8 +120,11 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "    ? vec3(0.173)\n"
   "    : texture2D(uTex, clamp(uv, 0.0, 1.0)).rgb;\n"
   "  if (uFoco > 0.004) {\n"
-  "    float e = (dot(vUv-0.5, vec2(0.5029,-0.8644)) + uPar.x*3.0) * 3.0;\n"
-  "    cor += exp(-e*e) * 0.16 * uFoco;\n"
+  // uVarre = a LUZ ENTRANDO (revela.h): a faixa nasce fora do canto
+  // inferior esquerdo e desliza ate o repouso; em 0 e o especular de sempre.
+  // Um pouco mais forte enquanto anda, para o olho seguir a passagem.
+  "    float e = (dot(vUv-0.5, vec2(0.5029,-0.8644)) + uPar.x*3.0 + uVarre) * 3.0;\n"
+  "    cor += exp(-e*e) * (0.16 + 0.10*min(abs(uVarre),1.0)) * uFoco;\n"
   "    cor *= (0.80 + 0.20*uFoco);\n"
   // O REBORDO E OPCIONAL (Ajustes > Borda no cartaz em foco). O resto do
   // bloco de foco fica: o cartaz em foco continua mais claro e com o
@@ -580,6 +588,20 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  if (m <= 0.002) discard;\n"
   "  gl_FragColor = vec4(uCor.rgb, uCor.a * m);\n"
   "}\n",
+
+  // GFX_ESQUELETO — o card CARREGANDO: a superficie #2C2C2C com uma faixa
+  // clara que atravessa a TELA (nao cada card por si). uPar.x = onde a onda
+  // esta, em fracao da largura da tela; uPar.y = x do card, na mesma fracao;
+  // uFoco = largura do card, idem. Assim os cards de uma fileira acendem em
+  // sequencia, como uma so luz passando, e a conta e a mesma do GFX_COR mais
+  // um exp — nenhum desenho a mais.
+  "void main(){\n"
+  "  float m = smoothstep(0.006,-0.006, sdf(vUv, uRaio, uAspect));\n"
+  "  if (m <= 0.001) discard;\n"
+  "  float x = uPar.y + vUv.x * uFoco + (1.0 - vUv.y) * 0.05 - uPar.x;\n"
+  "  float b = exp(-x*x*70.0);\n"
+  "  gl_FragColor = vec4(uCor.rgb + b * 0.05, uCor.a * m);\n"
+  "}\n",
 };
 
 // Cada corpo declara o que usa; montar so o necessario mantem o shader enxuto.
@@ -600,7 +622,8 @@ static const struct { int sdf, cover; } PRECISA[GFX_NMODOS] = {
   {1,0},   /* GFX_BRILHO_TOPO — idem, e pelo mesmo motivo */
   {1,0},   /* GFX_ARTE — SDF para os cantos; sem cover, a arte nao e recortada */
   {1,0},   /* GFX_LUZ — SDF para os cantos do painel */
-  {0,0}    /* GFX_SINO — glifo vetorial, sem textura nem SDF de retangulo */
+  {0,0},   /* GFX_SINO — glifo vetorial, sem textura nem SDF de retangulo */
+  {1,0}    /* GFX_ESQUELETO — SDF para os cantos do card */
 };
 
 static GLuint compila(GLenum tipo, const char *src) {
@@ -639,6 +662,7 @@ int gfx_iniciar(void) {
     progs[m].texAsp = glGetUniformLocation(p, "uTexAsp");
     progs[m].forcarCover = glGetUniformLocation(p, "uForceCover");
     progs[m].borda  = glGetUniformLocation(p, "uBorda");
+    progs[m].varre  = glGetUniformLocation(p, "uVarre");
     glUseProgram(p);
     glUniform2f(progs[m].tela, NV_TELA_W, NV_TELA_H);
     glUniform1i(progs[m].tex, 0);
@@ -752,6 +776,7 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
   if (P->texAsp >= 0) glUniform1f(P->texAsp, gfx_tex_aspect_atual);
   if (P->forcarCover >= 0) glUniform1f(P->forcarCover, gfx_card_forcar_cover_atual);
   if (P->borda >= 0)  glUniform1f(P->borda, gfx_borda_foco_atual);
+  if (P->varre >= 0)  glUniform1f(P->varre, gfx_varre_atual);
   if (P->cor >= 0)    glUniform4f(P->cor, cr, cg, cb, ca * gfx_opacidade_grupo);
   if (tex && tex != texAtual) {
     glActiveTexture(GL_TEXTURE0);
@@ -788,6 +813,18 @@ void gfx_furo_raio(GfxRect r, float raio) {
   glDisable(GL_BLEND);
   gfx_rect(r, 0, GFX_COR, 0, 0, 0, raio, 0, 0, 0, 0);
   glEnable(GL_BLEND);
+}
+
+void gfx_esqueleto(GfxRect r, float raio, float cr, float cg, float cb, float ca) {
+  // Com animacoes reduzidas, a superficie parada: e o mesmo "carregando" sem
+  // nada passando por cima.
+  if (anim_politica_reduzida) { gfx_cor(r, raio, cr, cg, cb, ca); return; }
+  // Ciclo de 1,8 s: 1,35 s atravessando (de -0,25 a 1,35 da tela) e o resto
+  // com a onda fora, para a tela respirar entre uma passada e outra.
+  Uint32 ms = SDL_GetTicks() % 1800u;
+  float onda = -0.25f + 1.60f * ((float)ms / 1350.0f);
+  gfx_rect(r, 0, GFX_ESQUELETO, r.w / NV_TELA_W, onda, r.x / NV_TELA_W, raio,
+           cr, cg, cb, ca);
 }
 
 void gfx_textura(GfxRect r, GLuint tex) {
