@@ -1096,6 +1096,7 @@ static int gravIni, gravN, gravIniciado;
 static long gravBytes;
 static long gravDescartes;
 
+static void limparCacheEnvenenado(void);
 static void *fioGravador(void *arg) {
   (void)arg;
 #ifdef __linux__
@@ -1105,6 +1106,7 @@ static void *fioGravador(void *arg) {
   /* A UNICA leitura da pasta na sessao, aqui e fora de qualquer trava que
    * outro fio espere. A primeira poda (arte acumulada acima do teto novo)
    * tambem roda aqui, em fundo. */
+  limparCacheEnvenenado();
   cachearte_nativo_indice_construir();
   publicarDiscoNativo();
   cachearte_estatisticas_pedir();
@@ -1123,6 +1125,34 @@ static void *fioGravador(void *arg) {
     pthread_mutex_unlock(&gravMtx);
   }
   return NULL;
+}
+// LIMPEZA UNICA DA 1.4.3. Com o reuso de conexao da 1.4.2 a TV podia gravar no
+// cache os bytes de OUTRA imagem com o nome de um cartaz (ver soltarHandleR em
+// rede.c), e o arquivo errado voltava em toda abertura. Na primeira vez, aqui,
+// no fio de fundo e antes do indice, o cache de arte e esvaziado; a marca
+// impede de repetir. Arte e so cache: volta a baixar sob demanda.
+static void limparCacheEnvenenado(void) {
+  char marca[600], cam[1100];
+  DIR *d;
+  struct dirent *e;
+  long n = 0;
+  FILE *f;
+  if (!dirCache[0]) return;
+  snprintf(marca, sizeof marca, "%s/.limpo-143", dirCache);
+  if (access(marca, F_OK) == 0) return;
+  d = opendir(dirCache);
+  if (d) {
+    while ((e = readdir(d)) != NULL) {
+      if (e->d_name[0] == '.') continue;
+      snprintf(cam, sizeof cam, "%s/%s", dirCache, e->d_name);
+      if (remove(cam) == 0) n++;
+    }
+    closedir(d);
+  }
+  f = fopen(marca, "w");
+  if (f) { fputs("1\n", f); fclose(f); }
+  printf("[tex] cache de arte limpo uma vez (1.4.3): %ld arquivo(s)\n", n);
+  fflush(stdout);
 }
 static void iniciarGravador(void) {
   pthread_t t;
@@ -2126,6 +2156,20 @@ static int threadDecode(void *arg) {
     // metahub passou despercebido.
     int falhou = 0;
     SDL_LockMutex(mtx);
+    // O SLOT AINDA E DESTE PEDIDO? (23/09/2026, cards com a arte de OUTRO
+    // titulo.) O decode roda sem a trava; se o slot foi despejado e
+    // reaproveitado por outro caminho nesse meio tempo, ele esta PENDENTE de
+    // novo, mas por OUTRA imagem — publicar `conv` ali punha o fundo horizontal
+    // de um titulo no cartaz de outro ("The Boys" com a cena do Slime), e a
+    // textura ficava no cache com o nome errado. Mesma guarda do download
+    // (mesmoPedido): nao sendo o mesmo caminho, a superficie vai para o lixo.
+    if (strcmp(itens[idx].caminho, urlOrig)) {
+      if (conv) SDL_FreeSurface(conv);
+      printf("[tex] decode descartado: o slot virou outro pedido (%.60s)\n", urlOrig);
+      fflush(stdout);
+      SDL_UnlockMutex(mtx);
+      continue;
+    }
     if (itens[idx].estado == PENDENTE && !conv && pedidoObsoleto(&itens[idx])) {
       // A imagem terminou depois de o card sair da tela E NAO DECODIFICOU: nao
       // a transforme em falha, outro card pode reutilizar o slot frio.
