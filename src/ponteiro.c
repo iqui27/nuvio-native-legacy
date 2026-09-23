@@ -146,13 +146,25 @@ static void tecla(void (*entregar)(const SDL_Event *), Uint32 tipo, SDL_Keycode 
   entregar(&t);
 }
 
+// Rastro para conferir na TV (/tmp/nuvio.log) sem afogar o log: as primeiras
+// trocas de foco e cliques da sessao, com o alvo e quantos havia na lista.
+static int nRastro;
+static void rastro(const char *o_que, const PonteiroAlvo *al, int n) {
+  if (nRastro >= 40) return;
+  nRastro++;
+  if (al) printf("[ponteiro] %s a=%d b=%d em %.0f,%.0f (alvo %.0f,%.0f %.0fx%.0f; %d alvos)\n",
+                 o_que, al->a, al->b, px, py, al->x, al->y, al->w, al->h, n);
+  else    printf("[ponteiro] %s sem alvo em %.0f,%.0f (%d alvos)\n", o_que, px, py, n);
+  fflush(stdout);
+}
+
 static void mover(void) {
   const PonteiroAlvo *v = lista[pronto];
   int i = ponteiro_achar(v, nLista[pronto], px, py);
   if (i < 0 || mesmo(&hover, &v[i])) return;
   if (conteudoMexeuEm && agoraMs() - conteudoMexeuEm < PONT_ASSENTA_MS) return;
   guardar(&hover, &v[i]);
-  if (v[i].focar) v[i].focar(v[i].a, v[i].b);
+  if (v[i].focar) { rastro("foco", &v[i], nLista[pronto]); v[i].focar(v[i].a, v[i].b); }
 }
 
 int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
@@ -185,6 +197,7 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
       { const PonteiroAlvo *v = lista[pronto];
         int n = nLista[pronto];
         int i = ponteiro_achar(v, n, px, py);
+        rastro("clique", i >= 0 ? &v[i] : NULL, n);
         ativarPendente.ok = 0;
         if (i >= 0 && v[i].ativar) { guardar(&ativarPendente, &v[i]); return 1; }
         // Alvo sem nenhuma das duas funcoes e um ANTEPARO: o corpo de uma folha
