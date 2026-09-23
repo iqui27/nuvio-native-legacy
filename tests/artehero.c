@@ -5,8 +5,11 @@
 #include <string.h>
 
 // Duble: "toda arte ja falhou", para exercitar a reserva.
-static int falhouSempre(const char *u) { (void)u; return 1; }
-static int falhouLogoAntiga(const char *u) {
+__attribute__((unused)) static int falhouSempre(const char *u) { (void)u; return 1; }
+__attribute__((unused)) static int falhouTmdbVirtual(const char *u) {
+  return u && strstr(u, "nuvio.invalid/arte/tmdb/") != NULL;
+}
+__attribute__((unused)) static int falhouLogoAntiga(const char *u) {
   return u && strstr(u, "logo-old.png") != NULL;
 }
 
@@ -20,6 +23,34 @@ static CatItem item(const char *backdrop, const char *poster, const char *imdb) 
 }
 
 int main(void) {
+  // SAMSUNG: NUNCA `original` NEM /full/ no fundo, em fonte nenhuma, nem na
+  // Alta (fundoOriginal(), OOM do registro 1450). tests/artehero.sh roda este
+  // mesmo arquivo uma segunda vez com -D__EMSCRIPTEN__.
+#ifdef __EMSCRIPTEN__
+  { CatItem c = item("https://image.tmdb.org/t/p/w1280/abc.jpg", "", "tt7");
+    int f, d;
+    snprintf(c.backdropTrakt, sizeof c.backdropTrakt, "%s",
+             "https://media.trakt.tv/images/movies/000/1/fanarts/medium/x.jpg.webp");
+    artehero_qualidade(2);
+    for (f = 0; f <= ARTEHERO_TRAKT; f++)
+      for (d = 0; d <= 1; d++) {
+        const char *u1 = artehero_url_fonte(&c, f);
+        const char *u2 = artehero_url_destaque(&c, f, d);
+        assert(!u1 || (!strstr(u1, "original") && !strstr(u1, "/full/")));
+        assert(u2 && !strstr(u2, "original") && !strstr(u2, "/full/"));
+      }
+    c.backdropTrakt[0] = 0;
+    assert(!strcmp(artehero_url_fonte(&c, ARTEHERO_TRAKT),
+                   "https://nuvio.invalid/arte/trakt/medium/tt7"));
+    c = item("https://images.metahub.space/background/medium/tt9/img", "", "tt9");
+    assert(!strcmp(artehero_url_fonte(&c, ARTEHERO_TMDB),
+                   "https://nuvio.invalid/arte/tmdb/w1280/tt9"));
+    artehero_qualidade(1); }
+  puts("ok  Tizen: nenhuma fonte pede original/full, nem na Alta");
+  puts("artehero (tizen): tudo ok");
+  return 0;
+#endif
+
   // A MESMA IMAGEM DO CARD (19/09): com fundo guardado, o heroi e esse
   // arquivo — nem metahub por id, nem `original` — no padrao e na baixa.
   { CatItem c = item("https://image.tmdb.org/t/p/w1280/abc.jpg", "", "tt1");
@@ -65,6 +96,72 @@ int main(void) {
     assert(!strcmp(artehero_url_fonte(&c, 3), "https://image.tmdb.org/t/p/w1280/tmdb.jpg"));
     assert(!strcmp(artehero_url_fonte(&c, 4), "https://media.trakt.tv/fanart.jpg")); }
   puts("ok  fontes reais do hero: catalogo, IMDb, TMDB e Trakt");
+
+#ifndef __EMSCRIPTEN__
+  // O AJUSTE QUE NAO FAZIA NADA (22/09). Item do Cinemeta como ele chega de
+  // verdade (curl no top de filmes): `background` = metahub pelo id, e so. No
+  // catalogo gravado do Mac (~/.nuvio/catalogo-rede.bin, 285 titulos) 222
+  // eram assim, e para os 222 as cinco escolhas davam a MESMA url: TMDB e
+  // Trakt devolviam NULL e o chamador caia na automatica.
+  { const char *mh = "https://images.metahub.space/background/medium/tt0111161/img";
+    CatItem c = item(mh, "https://p/poster.jpg", "tt0111161");
+    snprintf(c.backdropCatalogo, sizeof c.backdropCatalogo, "%s", mh);
+    const char *tm = artehero_url_fonte(&c, ARTEHERO_TMDB);
+    const char *tr = artehero_url_fonte(&c, ARTEHERO_TRAKT);
+    assert(tm && strcmp(tm, mh));
+    assert(tr && strcmp(tr, mh));
+    assert(!strcmp(tm, "https://nuvio.invalid/arte/tmdb/w1280/tt0111161"));
+    assert(!strcmp(tr, "https://nuvio.invalid/arte/trakt/medium/tt0111161"));
+    // O CARD SEGUE A FONTE (antes lia item->backdrop cru): mesma foto do
+    // destaque com "outra arte" desligado.
+    assert(!strcmp(artehero_url_card_fonte(&c, ARTEHERO_TMDB, 0), tm));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 0), tm));
+    assert(!strcmp(artehero_url_card_fonte(&c, ARTEHERO_AUTO, 0), mh));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 0), mh));
+    // "OUTRA ARTE" LIGADO: card no catalogo, destaque noutra foto.
+    assert(!strcmp(artehero_url_card_fonte(&c, ARTEHERO_TMDB, 1), mh));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 1), tm));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 1), tm));
+    // A fonte escolhida repete o card (metahub = o proprio Cinemeta): pula
+    // para a primeira outra, TMDB.
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_METAHUB, 1), tm));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_CATALOGO, 1), tm));
+    // Com o TMDB ja FALHADO no cache, o Trakt; nunca preso num 404.
+    artehero_definir_falhou(falhouTmdbVirtual);
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 1), tr));
+    assert(!strcmp(artehero_url_card_fonte(&c, ARTEHERO_TMDB, 0), mh));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 0), mh));
+    artehero_definir_falhou(falhouSempre);
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 1), mh));
+    artehero_definir_falhou(NULL); }
+  puts("ok  fonte do fundo: TMDB/Trakt virtuais pelo id; card e destaque seguem");
+
+  // Card com fundo do TMDB: o `original` do MESMO arquivo nao conta como
+  // "outra arte" na Alta — seria a mesma foto maior.
+  { CatItem c = item("https://image.tmdb.org/t/p/w1280/abc.jpg", "", "tt7");
+    artehero_qualidade(2);
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 1),
+                   "https://nuvio.invalid/arte/trakt/full/tt7"));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 0),
+                   "https://image.tmdb.org/t/p/original/abc.jpg"));
+    assert(!strcmp(artehero_url_fonte(&c, ARTEHERO_TMDB),
+                   "https://image.tmdb.org/t/p/original/abc.jpg"));
+    // O card nao sobe: continua o w1280 que o catalogo dimensionou.
+    assert(!strcmp(artehero_url_card_fonte(&c, ARTEHERO_TMDB, 0),
+                   "https://image.tmdb.org/t/p/w1280/abc.jpg"));
+    assert(!strcmp(artehero_url_card_fonte(&c, ARTEHERO_TRAKT, 0),
+                   "https://nuvio.invalid/arte/trakt/medium/tt7"));
+    artehero_qualidade(1); }
+  puts("ok  outra arte: o original da propria foto do card nao conta");
+
+  // Sem id do IMDb nao ha como montar metahub nem virtual: fica a do card.
+  { CatItem c = item("https://addon/bg.jpg", "", "kitsu:1");
+    assert(artehero_url_fonte(&c, ARTEHERO_TMDB) == NULL);
+    assert(!strcmp(artehero_url_card_fonte(&c, ARTEHERO_TMDB, 0), "https://addon/bg.jpg"));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 1), "https://addon/bg.jpg")); }
+  puts("ok  sem tt: nenhuma fonte inventada, fica a do card");
+#endif
+
 
   // SEM FUNDO E COM ID: monta a url do metahub em vez de cair no cartaz — e a
   // diferenca entre "fundo de verdade" e "poster esticado".

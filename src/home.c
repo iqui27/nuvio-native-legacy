@@ -521,8 +521,21 @@ static const char *arteDoItem(const CatItem *item, int *ehPoster) {
 static int desenhaArteHero(GfxRect r, GfxModo modo, const CatItem *item,
                            const char *path, float alpha) {
   int ehPoster = 0;
-  const char *arte = item ? arteDoItem(item, &ehPoster) : path;
+  // O `path` GANHA (22/09). Aqui era `item ? arteDoItem(item) : path`, e o
+  // arteDoItem devolve item->backdrop cru: o que arte_hero_do_item escolhia
+  // (fonte dos Ajustes, still do episodio, `original` da Alta) era pedido ao
+  // cache e decodificado, mas o que ia para a tela era sempre o backdrop do
+  // catalogo. MEDIDO no tests/heroarte_shot.sh com um printf temporario:
+  // arteA = nuvio.invalid/arte/tmdb/w1280/tt0468569, tAtu = 41 (textura
+  // pronta) e na captura o fundo do metahub. Esta linha e o "a settings de
+  // selecionar o source das artes nao ta funcionando" do destaque. A
+  // identidade continua garantida: `path` sai de arte_por_identidade com o
+  // MESMO indice de `item`; arteDoItem fica para quando nao ha path.
+  const char *arte = (path && path[0]) ? path
+                   : item ? arteDoItem(item, &ehPoster) : NULL;
   GLuint tex;
+  if (item && path && path[0] && item->poster[0] && !strcmp(path, item->poster))
+    ehPoster = 1;
   if (!arte || !arte[0]) return 0;
   tex = tex_obter_hero(arte);
   if (!tex) return 0;
@@ -591,8 +604,14 @@ static const char *arte_por_formato(const CatItem *item, int deitado) {
   // Deitado e a url guardada (w1280 no TMDB, 1920 no metahub) — o MESMO
   // arquivo que o heroi e o detalhe vao promover (artehero_url): um download
   // por titulo. O decode escalado (jpegrapido.c) faz o card custar pouco.
-  if (deitado) return item->backdrop[0] ? item->backdrop
-                                      : (item->poster[0] ? item->poster : NULL);
+  // A FONTE ESCOLHIDA NOS AJUSTES VALE AQUI TAMBEM (22/09): antes o card lia
+  // item->backdrop cru e "Background do hero" nunca chegava nele. Lido a cada
+  // quadro, entao trocar o ajuste muda o card na volta a home, sem reiniciar.
+  if (deitado) {
+    const char *b = artehero_url_card_fonte(item, ajustes_hero_fonte(),
+                                            ajustes_hero_arte_diferente());
+    return b ? b : (item->poster[0] ? item->poster : NULL);
+  }
   return item->poster[0] ? item->poster
                          : (item->backdrop[0] ? item->backdrop : NULL);
 }
@@ -608,14 +627,13 @@ static const char *arte_por_formato(const CatItem *item, int deitado) {
 // uma vez e sem piscar.
 static const char *arte_hero_do_item(const CatItem *item) {
   int fonte = ajustes_hero_fonte();
-  const char *escolhida = artehero_url_fonte(item, fonte);
+  int diferente = ajustes_hero_arte_diferente();
   // Ao escolher uma origem, o usuario esta pedindo a arte do titulo — nao o
   // still automatico do episodio. Automatico mantem o comportamento anterior,
-  // inclusive o still de Continuar assistindo.
-  if (fonte > 0) {
-    if (escolhida && !tex_falhou(escolhida)) return escolhida;
-    return artehero_url(item);
-  }
+  // inclusive o still de Continuar assistindo. A escolha entre fonte, card e
+  // "outra arte" mora em artehero_url_destaque, que o detalhe tambem usa: os
+  // dois tem de concordar, senao abrir o titulo troca a foto.
+  if (fonte > 0) return artehero_url_destaque(item, fonte, diferente);
   const char *ep = artehero_url_episodio(item);
   // STILL PEQUENO NAO VAI AO DESTAQUE (#85, pokazideia: "backdrop pixelado
   // em alguns titulos de Continuar assistindo"). O metahub serve o still no
@@ -625,7 +643,7 @@ static const char *arte_hero_do_item(const CatItem *item) {
     int w = tex_largura_fonte(ep);
     if (w == 0 || w >= 900) return ep;
   }
-  return artehero_url(item);
+  return artehero_url_destaque(item, 0, diferente);
 }
 
 // `cat_item()` faz wrap para telas que percorrem listas circulares. A home nao

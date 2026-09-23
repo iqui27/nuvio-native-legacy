@@ -944,6 +944,22 @@ static void prepararDisco(long entrada, int forcar) {
 // crivo (assinatura, tamanho) que a url original.
 static char *baixarImagem(const char *url, long *n, TexFetchTrace *trace) {
   char *corpo;
+  // URL VIRTUAL DE FONTE (artereserva.h): o fundo do TMDB/Trakt de um item que
+  // so trouxe o do catalogo. Resolve aqui, no fio de rede, e baixa a real; o
+  // chamador continua gravando sob a virtual, entao a consulta nao se repete.
+  // -1 = nao ha essa arte: falha como um 404, e quem desenha cai na seguinte.
+  { char real[512];
+    int r;
+    Uint32 t = SDL_GetTicks();
+    r = arte_fonte_resolver(url, real, sizeof real);
+    if (trace) trace->resolveMs += SDL_GetTicks() - t;
+    if (r < 0) {
+      printf("[tex] fonte sem fundo para: %.70s\n", url);
+      fflush(stdout);
+      return NULL;
+    }
+    if (r > 0) return baixarImagem(real, n, trace);
+  }
   // 8 s e nao 25: isto e uma IMAGEM. Com 25 s, duas URLs mortas seguravam os
   // dois fios de decode por quase um minuto e a tela inteira parava de receber
   // arte — repetidamente, porque nada guarda a falha.

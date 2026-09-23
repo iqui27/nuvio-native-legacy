@@ -105,7 +105,7 @@ typedef enum {
   AJ_QUALIDADE, AJ_DV, AJ_ATMOS, AJ_LEG_LINGUA, AJ_AUD_LINGUA,
   AJ_PAUSA_OVERLAY, AJ_FONTE_MANUAL,
   // Layout da Home
-  AJ_LANDSCAPE, AJ_HERO_CHEIO, AJ_HERO_FUNDO, AJ_HERO_TRAILER,
+  AJ_LANDSCAPE, AJ_HERO_CHEIO, AJ_HERO_FUNDO, AJ_HERO_ARTE_DIF, AJ_HERO_TRAILER,
   // Fileiras da Home
   AJ_FIL_LIMITE, AJ_FIL_ORDEM,
   // Conteudo da Home
@@ -212,7 +212,10 @@ static const char *V_DESCOBRIR[] = { "Mostrar na Busca", "Na barra lateral", "De
 static const char *V_NOTAS[]     = { "Mostrar", "Ocultar" };
 // Fonte da arte do hero. O valor 0 mantém o comportamento atual, incluindo
 // still de episódio quando a fileira é Continuar assistindo. Os outros valores
-// pedem uma variante real já conhecida do item; não são fundos genéricos.
+// pedem a arte daquela fonte PARA O TITULO — a que veio no item ou, para TMDB
+// e Trakt, a buscada pelo id do IMDb (url virtual, artereserva.h); nunca um
+// fundo generico. Vale para destaque, detalhe e card deitado (artehero.h).
+// O INDICE e o gravado ("heroFundoLocal N"): ordem e contrato (ARTEHERO_*).
 static const char *V_HERO_FONTE[] = {
   "Automático", "Catálogo / Cinemeta", "IMDb / Metahub", "TMDB", "Trakt"
 };
@@ -366,6 +369,11 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Pôsteres horizontais",       V_LIGA, 2),   // modernLandscapePostersEnabled
   ESC("Fundo em tela cheia",        V_LIGA, 2),   // modernHeroFullScreenBackdropEnabled
   ESC("Background do hero",         V_HERO_FONTE, 5), // local: fonte real da arte
+  // Card e destaque com fotos diferentes (dono, 22/09: "tem que ter um toggle
+  // de ter uma versao diferente do que mostra no card do que ta na hero").
+  // DESLIGADO por padrao: a mesma foto nos dois e o pedido de 19/09 (ver
+  // artehero_url em artehero.c). A regra inteira esta em artehero.h.
+  ESC("Destaque com outra arte",    V_LIGA, 2),   // local: heroDifferentFromCard
   // Trailer mudo no destaque do topo, alguns segundos depois de o foco parar
   // nele (dono, 20/09/2026: "coloca para tocar no hero tb", "nos ajustes o de
   // tocar no hero separadamente"). Separado do da pagina de titulo.
@@ -523,7 +531,11 @@ static const char *CHAVE[] = {
   // conta (o app web nao expoe esta escolha), entao o blob simplesmente nao
   // traz a chave e o valor local fica de pe.
   "escolherFonteManual",
-  "modernLandscapePostersEnabled", "modernHeroFullScreenBackdropEnabled", "heroFundoLocal", "trailerHero",
+  "modernLandscapePostersEnabled", "modernHeroFullScreenBackdropEnabled", "heroFundoLocal",
+  // LOCAL, e em ingles como pedido: o app web nao tem esta escolha (grep em
+  // NuvioWeb 0.3.38 por hero/backdrop: so buildHeroBackdropSources, sem
+  // preferencia), entao nao ha chave dele para reusar.
+  "heroDifferentFromCard", "trailerHero",
   // "-": local, nao vem da conta e nao vai para ajustes.txt. Os dois vivem em
   // fileirasui.txt (fileiras.c) e a conta nao tem chave equivalente — o teto do
   // web para este runtime e uma CONSTANTE (HOME_MAX_ROWS_LEGACY_TV), nao uma
@@ -762,11 +774,20 @@ static int valor[AJ_N] = {
   0,                /* posteres deitados: LIGADO (perfil do dono; fabrica: desligado) */
   0,                /* fundo em tela cheia: LIGADO (perfil; fabrica: desligado) */
   0,                /* background do hero: seleção automática */
+  1,                /* destaque com outra arte: DESLIGADO (mesma foto do card, 19/09) */
   0,                /* trailer no destaque: ligado */
 
   FIL_LIMITE_PADRAO,/* limite de fileiras: 7, o pedido do dono (espelho de fileiras.c) */
   0,                /* ordenar fileiras: acao */
-  1,                /* resetar foco ao iniciar: DESLIGADO (lembra posicao — padrao atual) */
+  // AQUI HAVIA `1, /* resetar foco ao iniciar */`, UMA OPCAO QUE NAO EXISTE
+  // no enum (entrou em 876742e so neste vetor). Esta lista e POSICIONAL: cada
+  // padrao de AJ_RAIL ate AJ_RESOLUCAO caia na opcao SEGUINTE, e so voltava
+  // a alinhar porque faltava o de AJ_TEMA la embaixo. Quem instalava do zero
+  // nascia com barra fixa, barra moderna ligada, animacoes reduzidas e o
+  // cartao com largura 0 e ARREDONDAMENTO 126 dp — a "pilula" que o dono viu
+  // na janela do tests/heroarte_shot.sh (22/09), que roda sem ajustes.txt.
+  // Quem ja tem ajustes.txt nao muda: o arquivo ganha do padrao.
+  // tests/ajustes_padroes.sh confere os padroes desta faixa um a um.
 
   0,                /* barra lateral: recolhida (perfil; fabrica: fixa) */
   1,                /* barra lateral moderna: desligada */
@@ -824,6 +845,7 @@ static int valor[AJ_N] = {
   // pior do que ler em ingles sem ter escolhido. Quem prefere portugues troca
   // em Ajustes -> Interface, e a escolha fica gravada.
   1, 0, 0,          /* idioma, animacoes, resolucao (0 = 1080p) */
+  0,                /* tema (cor de destaque): o primeiro, o de sempre */
   // O COMENTARIO ANTIGO AQUI ESTAVA ERRADO, e o erro so nao machucou por sorte.
   // Ele dizia `0, 0, /* versao, espaco */` logo depois do idioma, mas esta
   // lista e POSICIONAL: entre AJ_ANIM e AJ_VERSAO_I existem SETE opcoes de
@@ -951,6 +973,7 @@ int ajustes_rail_recolhida(void)      { return ajustes_rail_moderna() ? 0 : lig(
 int ajustes_rail_moderna_blur(void)   { return lig(AJ_RAIL_BLUR); }
 int ajustes_hero_ligado(void)         { return lig(AJ_HERO); }
 int ajustes_hero_cheio(void)          { return lig(AJ_HERO_CHEIO); }
+int ajustes_hero_arte_diferente(void) { return lig(AJ_HERO_ARTE_DIF); }
 int ajustes_hero_fonte(void) {
   int v = valor[AJ_HERO_FUNDO];
   return v >= 0 && v < (int)(sizeof V_HERO_FONTE / sizeof *V_HERO_FONTE) ? v : 0;
@@ -1415,6 +1438,11 @@ static int somenteDesteAparelho(int op) {
     case AJ_BORDA_FOCO:
     case AJ_FONTE_MANUAL:
     case AJ_SALVOS_DEST:
+    // Arte do destaque: o web nao tem as chaves (heroFundoLocal,
+    // heroDifferentFromCard); ficam neste aparelho mesmo que um blob futuro
+    // traga algo com o mesmo nome.
+    case AJ_HERO_FUNDO:
+    case AJ_HERO_ARTE_DIF:
       return 1;
     default:
       return 0;
@@ -1865,7 +1893,8 @@ static const char *ajudaOpcao(int op) {
     // --- Home
     case AJ_LANDSCAPE: return "Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.";
     case AJ_HERO_CHEIO: return "O destaque do topo ocupa a tela inteira atrás das fileiras, em vez de ficar num bloco.";
-    case AJ_HERO_FUNDO: return "Escolhe a origem da arte do destaque: catálogo/Cinemeta, IMDb/Metahub, TMDB ou Trakt. Automático mantém a escolha atual. MDBList fornece notas, não imagens.";
+    case AJ_HERO_FUNDO: return "De onde vem a arte de fundo do destaque, da página do título e dos cards deitados: catálogo/Cinemeta, IMDb/Metahub, TMDB ou Trakt. Automático usa a do catálogo. MDBList fornece notas, não imagens.";
+    case AJ_HERO_ARTE_DIF: return "Desligado: card, destaque e página do título mostram a mesma imagem. Ligado: o card fica com a arte do catálogo e o destaque usa a fonte do Background do hero; em Automático, ou se ela repetir o card, usa outra (TMDB, Trakt ou IMDb/Metahub).";
     case AJ_HERO_TRAILER: return "Com o foco parado no destaque do topo, o trailer do título toca sem som no lugar da arte. Mover o foco volta para a arte.";
     case AJ_FIL_LIMITE: return "Quantas fileiras a Home monta. Menos fileiras também significam menos catálogos pedidos pela rede, e não fileiras invisíveis.";
     case AJ_FIL_ORDEM: return "Abre a lista de fileiras para reordenar, ligar, desligar e escolher o card de cada uma. É lá que dá para ver de onde cada fileira vem.";

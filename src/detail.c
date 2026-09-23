@@ -730,7 +730,10 @@ static const char *logoDe(int i) {
 }
 static const char *arteDeViva(int i);
 static const char *arteDe(int i) {
-  if (i == idx && arteFixa[0]) return arteFixa;
+  // Congelada, MAS NAO PRESA A UM 404: a url da fonte escolhida pode ser
+  // virtual (TMDB/Trakt pelo id, artereserva.h) e so se sabe se ela existe
+  // depois do download. Falhou, solta e escolhe de novo (cai na seguinte).
+  if (i == idx && arteFixa[0] && !tex_falhou(arteFixa)) return arteFixa;
   { const char *u = arteDeViva(i);
     if (i == idx && u) snprintf(arteFixa, sizeof arteFixa, "%s", u);
     return u; }
@@ -745,8 +748,12 @@ static const char *arteDeViva(int i) {
   // isso a 1920 amplia 1,5x. artehero_url sobe para a versao grande da mesma
   // arte e, quando nao ha fundo nenhum e o titulo tem id do IMDb, monta a url
   // do metahub — que e fundo de verdade em vez do cartaz esticado.
+  // A FONTE E A REGRA DO DESTAQUE (artehero_url_destaque): com "Destaque com
+  // outra arte" desligado e a foto do card; ligado, a mesma que o destaque da
+  // home mostrava — abrir o titulo nao troca a foto em nenhum dos dois.
   if (c && (c->backdrop[0] || c->imdb[0])) {
-    const char *grande = artehero_url(c);
+    const char *grande = artehero_url_destaque(c, ajustes_hero_fonte(),
+                                               ajustes_hero_arte_diferente());
     if (grande) return grande;
   }
   // Poster do próprio título é a reserva segura. O desenho trata-o como arte

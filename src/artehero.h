@@ -41,11 +41,37 @@ void artehero_qualidade(int nivel);
 
 const char *artehero_url(const CatItem *item);
 
-// Fonte escolhida para o background do hero:
-// 0 automático, 1 catálogo/Cinemeta, 2 IMDb/Metahub, 3 TMDB, 4 Trakt.
-// A variante precisa ter chegado com o item; quando não existir, devolve NULL
-// para o chamador cair na política automática.
+// FONTE DO FUNDO (ajuste "Background do hero"). Os numeros sao o INDICE
+// gravado em ajustes.txt ("heroFundoLocal N") — ordem e contrato.
+#define ARTEHERO_AUTO     0
+#define ARTEHERO_CATALOGO 1   // o `background` que o addon/Cinemeta mandou
+#define ARTEHERO_METAHUB  2   // images.metahub.space pelo id do IMDb
+#define ARTEHERO_TMDB     3   // backdrop do TMDB (virtual por id quando falta)
+#define ARTEHERO_TRAKT    4   // fanart do Trakt (idem)
+
+// Fundo de TELA CHEIA da fonte pedida, ou NULL quando o item nao tem como ter
+// essa fonte (sem id do IMDb e sem a url dela). TMDB/Trakt sem url no item
+// devolvem uma url virtual (artereserva.h). `fonte` 0 = artehero_url().
 const char *artehero_url_fonte(const CatItem *item, int fonte);
+
+// A REGRA DO CARD E DO DESTAQUE (ajustes "Background do hero" e "Destaque
+// com outra arte", 22/09):
+//
+//   Outra arte DESLIGADO (padrao, o pedido de 19/09): card deitado, destaque
+//   e detalhe mostram A MESMA FOTO — a da fonte escolhida, ou a do catalogo
+//   no Automatico. O destaque pede o tamanho grande da mesma foto, o card o
+//   dele; no padrao de qualidade e o mesmo arquivo (zero download novo).
+//
+//   Outra arte LIGADO: o card fica com a arte do CATALOGO; destaque e detalhe
+//   usam a fonte escolhida. Se ela for Automatico, nao existir para o titulo,
+//   ja tiver falhado ou for a mesma foto do card, vale a primeira OUTRA foto
+//   na ordem TMDB, Trakt, IMDb/Metahub, catalogo. Sem nenhuma, a do card.
+//
+// Cartaz em pe nao muda: a escolha e de FUNDO, e o retrato nao tem par nas
+// fontes de fundo. Uma url que ja falhou (tex_falhou) nunca e devolvida
+// quando existe outra — o desenho nao fica preso num 404.
+const char *artehero_url_card_fonte(const CatItem *item, int fonte, int diferente);
+const char *artehero_url_destaque(const CatItem *item, int fonte, int diferente);
 
 // A url que o item guarda, sem política — para quem desenha pequeno.
 const char *artehero_url_card(const CatItem *item);
