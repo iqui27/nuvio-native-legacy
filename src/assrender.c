@@ -34,6 +34,8 @@ typedef struct {
   int count;
   unsigned generation, serial;
   size_t bytes;
+  long long ms;          // instante (relogio do video) que este quadro mostra
+  long long inicioMax;   // maior Start dos eventos vivos em ms; -1 sem evento
 } AssCpuFrame;
 
 static pthread_mutex_t assTrava = PTHREAD_MUTEX_INITIALIZER;
@@ -63,6 +65,25 @@ static unsigned assGeracao;
 static int assCorAtiva, assCorR, assCorG, assCorB;
 static unsigned long long assUltimoRenderUs;
 static size_t assBytesQuadro;
+/* Quadro PUBLICADO por ultimo (epoch + geracao): com o `changed` do libass em
+ * zero, o quadro novo e identico a ele e nao precisa ser copiado, publicado
+ * nem reenviado a GPU. */
+static unsigned assProduzidoEpoch, assProduzidoGeracao;
+static int assProduziu;
+/* Textura: serial do quadro cujas imagens estao nas texturas e a cor usada.
+ * Reenviar tudo a cada quadro (o que se fazia) custa a conversao RGBA de
+ * todos os glifos 60 vezes por segundo. */
+static unsigned assTexSerial;
+static int assTexCorChave = -1;
+/* Medidas (#92): o dono ve "atrasada e piscando"; o log precisa dizer quanto. */
+static struct {
+  long quadros, trocas, renders, iguais, piscas, vaziosPisca, falas;
+  unsigned long long renderSomaUs, renderMaxUs;
+  long long atrasoSoma, atrasoMax;
+  int textoAnterior, vazios;
+  long long ultimoTextoMs, ultimoInicioLogado;
+  double ultimoRelatorio;
+} assMed;
 static pthread_mutex_t assDiagTrava = PTHREAD_MUTEX_INITIALIZER;
 static char assDiag[160] = "libass pronto";
 
@@ -74,10 +95,13 @@ static void ass_diag(const char *s) {
 
 static void ass_mensagem(int nivel, const char *fmt, va_list args, void *dados) {
   char linha[768];
-  (void)nivel; (void)dados;
+  (void)dados;
   vsnprintf(linha, sizeof linha, fmt, args);
-  fprintf(stderr, "%s\n", linha);
   if (strstr(linha, "fontselect:")) assResolucaoFonte++;
+  /* So ate MSGL_INFO (4), o mesmo corte do callback padrao do libass (que
+   * para em 5). Os niveis 6-7 sao depuracao por quadro e por glifo. */
+  if (nivel > 4) return;
+  fprintf(stderr, "[libass] %s\n", linha);
 }
 
 /* FONTES ANEXADAS JA ENTREGUES AO libass (#92, queda na C9 em 22/09/2026).
@@ -228,7 +252,7 @@ static void *ass_worker_loop(void *unused) {
     double ms;
     struct timespec a, b;
     ASS_Image *images = NULL;
-    int changed = 0, pronto = 0;
+    int changed = 0, pronto = 0, igual = 0;
     memset(&frame, 0, sizeof frame);
     pthread_mutex_lock(&assFilaTrava);
     while (!assWorkerParar && !assPedidoPendente)
@@ -243,22 +267,46 @@ static void *ass_worker_loop(void *unused) {
     if (generation == __atomic_load_n(&assGeracao, __ATOMIC_ACQUIRE) &&
         generation == assTrackGeracao &&
         assTrack && assRenderer) {
-      images = ass_render_frame(assRenderer, assTrack, (long long)llround(ms), &changed);
-      pronto = ass_frame_copiar(images, &frame);
+      long long t = (long long)llround(ms);
+      images = ass_render_frame(assRenderer, assTrack, t, &changed);
+      /* Igual ao publicado: nada a fazer, o quadro em tela continua certo. */
+      pthread_mutex_lock(&assFilaTrava);
+      igual = !changed && assProduziu && assProduzidoEpoch == epoch &&
+              assProduzidoGeracao == generation && epoch == assEpoch;
+      pthread_mutex_unlock(&assFilaTrava);
+      if (!igual) {
+        pronto = ass_frame_copiar(images, &frame);
+        frame.ms = t; frame.inicioMax = -1;
+        { int i;
+          for (i = 0; i < assTrack->n_events; i++) {
+            long long ini = assTrack->events[i].Start;
+            if (ini <= t && ini + assTrack->events[i].Duration > t && ini > frame.inicioMax)
+              frame.inicioMax = ini;
+          } }
+      }
     }
     pthread_mutex_unlock(&assTrava);
     clock_gettime(CLOCK_MONOTONIC, &b);
 
     pthread_mutex_lock(&assFilaTrava);
+    { unsigned long long us = (unsigned long long)((b.tv_sec - a.tv_sec) * 1000000ll +
+                              (b.tv_nsec - a.tv_nsec) / 1000ll);
+      assMed.renders++; assMed.renderSomaUs += us;
+      if (us > assMed.renderMaxUs) assMed.renderMaxUs = us;
+      if (igual) assMed.iguais++;
+      assUltimoRenderUs = us; }
+    /* SEM o antigo "fabs(assPedidoMs - ms) <= 50": com o relogio interpolado o
+     * pedido anda 16 ms por quadro, e um render de mais de 50 ms na C9 jogava
+     * fora TODO quadro — a legenda nunca aparecia. Um quadro de 30 ms atras e
+     * melhor que nenhum; o proximo pedido ja esta na fila. */
     if (pronto && !assWorkerParar && epoch == assEpoch &&
         generation == __atomic_load_n(&assGeracao, __ATOMIC_ACQUIRE) &&
-        generation == assPedidoGeracao && fabs(assPedidoMs - ms) <= 50.0) {
+        generation == assPedidoGeracao) {
       ass_frame_liberar(&assPronto);
       frame.generation = generation; frame.serial = serial;
       assPronto = frame; memset(&frame, 0, sizeof frame);
       assProntoValido = 1;
-      assUltimoRenderUs = (unsigned long long)((b.tv_sec - a.tv_sec) * 1000000ll +
-                          (b.tv_nsec - a.tv_nsec) / 1000ll);
+      assProduziu = 1; assProduzidoEpoch = epoch; assProduzidoGeracao = generation;
       assBytesQuadro = assPronto.bytes;
     }
     ass_frame_liberar(&frame);
@@ -292,6 +340,7 @@ static void ass_apagar_texturas_locked(void) {
     assTex[i].w = assTex[i].h = 0;
   }
   free(assTex); assTex = NULL; assTexCap = 0;
+  assTexSerial = 0;
 }
 
 static int ass_reservar_texturas_locked(int slot) {
@@ -353,7 +402,7 @@ static GLuint ass_textura_locked(int slot, const AssCpuImage *im) {
   return assTex[slot].tex;
 }
 
-int assrender_carregar(const char *corpo, size_t tamanho, unsigned geracao) {
+static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int manter) {
   ASS_Track *track;
   char *copia;
   if (!corpo || !tamanho) return 0;
@@ -403,13 +452,32 @@ int assrender_carregar(const char *corpo, size_t tamanho, unsigned geracao) {
     return 0;
   }
   pthread_mutex_lock(&assFilaTrava);
-  assPedidoPendente = 0; ++assEpoch; ++assSerial; assPedidoSerial = assSerial;
-  ass_frame_liberar(&assPronto); assProntoValido = 0;
-  ass_frame_liberar(&assAtual); assAtualValido = 0;
-  assTemUltimoPedido = 0; assUltimoRenderUs = 0; assBytesQuadro = 0;
-  assTexResetar = 1;
+  if (manter) {
+    /* Mesma faixa, mais eventos (o mkvass entregou um lote). O quadro em tela
+     * CONTINUA: apagar aqui era o outro "pisca", um por lote colhido. So o
+     * pedido e refeito, para o worker ver o documento novo mesmo pausado. */
+    assTemUltimoPedido = 0;
+  } else {
+    assPedidoPendente = 0; ++assEpoch; ++assSerial; assPedidoSerial = assSerial;
+    ass_frame_liberar(&assPronto); assProntoValido = 0;
+    ass_frame_liberar(&assAtual); assAtualValido = 0;
+    assTemUltimoPedido = 0; assUltimoRenderUs = 0; assBytesQuadro = 0;
+    assTexResetar = 1;
+  }
   pthread_mutex_unlock(&assFilaTrava);
   return 1;
+}
+
+int assrender_carregar(const char *corpo, size_t tamanho, unsigned geracao) {
+  return ass_carregar(corpo, tamanho, geracao, 0);
+}
+
+int assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao) {
+  int mesma;
+  pthread_mutex_lock(&assTrava);
+  mesma = assTrack && assTrackGeracao == geracao;
+  pthread_mutex_unlock(&assTrava);
+  return ass_carregar(corpo, tamanho, geracao, mesma);
 }
 
 void assrender_limpar(void) {
@@ -501,10 +569,58 @@ void assrender_aplicar_invalidacao(void) {
   pthread_mutex_unlock(&assFilaTrava);
 }
 
+static double ass_mono(void) {
+  struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double)ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+/* Medidas por quadro desenhado, sob assFilaTrava. `agora` e o relogio do
+ * video em ms (o mesmo que foi pedido ao libass). */
+static void ass_medir_locked(long long agora, int temTexto, long long inicioMax) {
+  double m = ass_mono();
+  assMed.quadros++;
+  if (temTexto) {
+    if (!assMed.textoAnterior && assMed.ultimoTextoMs &&
+        agora - assMed.ultimoTextoMs < 300 && agora >= assMed.ultimoTextoMs) {
+      /* Texto -> vazio -> texto em menos de 300 ms: e o "pisca". Uma fala
+       * que termina e outra que comeca nao passam por aqui, a menos que o
+       * proprio arquivo tenha esse buraco (raro: fansub cola as falas). */
+      assMed.piscas++; assMed.vaziosPisca += assMed.vazios;
+    }
+    if (inicioMax >= 0 && inicioMax > assMed.ultimoInicioLogado) {
+      long long atraso = agora - inicioMax;
+      assMed.ultimoInicioLogado = inicioMax;
+      assMed.falas++; assMed.atrasoSoma += atraso;
+      if (atraso > assMed.atrasoMax) assMed.atrasoMax = atraso;
+      /* Uma linha por fala que entra: Start do evento, quando apareceu no
+       * relogio do video, e a diferenca. E a medida do "atrasada". */
+      printf("[ass] fala %lld.%03lld apareceu em %lld.%03lld (%+lld ms)\n",
+             inicioMax / 1000, inicioMax % 1000, agora / 1000, agora % 1000, atraso);
+    }
+    assMed.ultimoTextoMs = agora; assMed.vazios = 0;
+  } else assMed.vazios++;
+  assMed.textoAnterior = temTexto;
+  if (m - assMed.ultimoRelatorio >= 10.0) {
+    if (assMed.ultimoRelatorio > 0)
+      printf("[ass] 10s: quadros=%ld trocas=%ld renders=%ld iguais=%ld render medio=%.1fms max=%.1fms "
+             "piscas=%ld (vazios=%ld) falas=%ld atraso medio=%lldms max=%lldms eventos=%d\n",
+             assMed.quadros, assMed.trocas, assMed.renders, assMed.iguais,
+             assMed.renders ? assMed.renderSomaUs / 1000.0 / assMed.renders : 0.0,
+             assMed.renderMaxUs / 1000.0, assMed.piscas, assMed.vaziosPisca, assMed.falas,
+             assMed.falas ? assMed.atrasoSoma / assMed.falas : 0, assMed.atrasoMax, assEventos);
+    fflush(stdout);
+    assMed.quadros = assMed.trocas = assMed.renders = assMed.iguais = 0;
+    assMed.piscas = assMed.vaziosPisca = assMed.falas = 0;
+    assMed.renderSomaUs = assMed.renderMaxUs = 0;
+    assMed.atrasoSoma = 0; assMed.atrasoMax = 0;
+    assMed.ultimoRelatorio = m;
+  }
+}
+
 int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
                        float x, float y, float w, float h) {
   unsigned generation;
-  int i, n = 0, reset;
+  int i, n = 0, reset, corChave, reenviar;
   long long agora;
   (void)w; (void)h;
   if (alpha <= 0.001f) return 0;
@@ -512,11 +628,15 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
   agora = (long long)llround(posSeg * 1000.0) + (long long)atrasoMs;
   pthread_mutex_lock(&assFilaTrava);
   if (!assWorkerCriado) { pthread_mutex_unlock(&assFilaTrava); return 0; }
+  /* SALTO de verdade (seek): o quadro velho mostra outra cena e sai. ERA 200
+   * ms — e o currentTime da C9 anda 197..247 ms por evento, 77 % acima de 200
+   * (log de 23/09): a legenda era apagada a cada evento e piscava 2-4 vezes
+   * por segundo. Com o relogio interpolado o passo e de um quadro; 1,5 s so
+   * pega salto. Fora disso o quadro atual fica ate o proximo estar pronto. */
   if (assTemUltimoPedido && assUltimoPedidoGeracao == generation &&
-      fabs((double)agora - assUltimoPedidoMs) > 200.0) {
+      fabs((double)agora - assUltimoPedidoMs) > 1500.0) {
     ass_frame_liberar(&assPronto); assProntoValido = 0;
     ass_frame_liberar(&assAtual); assAtualValido = 0;
-    assTexResetar = 1;
     ++assEpoch;
     ++assSerial;
   }
@@ -533,22 +653,29 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
   }
 
   if (assAtualValido && assAtual.generation != generation) {
-    ass_frame_liberar(&assAtual); assAtualValido = 0; assTexResetar = 1;
+    ass_frame_liberar(&assAtual); assAtualValido = 0;
   }
   if (assProntoValido) {
     if (assPronto.generation == generation) {
       ass_frame_liberar(&assAtual);
       assAtual = assPronto; memset(&assPronto, 0, sizeof assPronto);
       assAtualValido = 1;
+      assMed.trocas++;
     } else ass_frame_liberar(&assPronto);
     assProntoValido = 0;
   }
   reset = assTexResetar; assTexResetar = 0;
   if (reset) ass_apagar_texturas_locked();
-  if (!assAtualValido) { pthread_mutex_unlock(&assFilaTrava); return 0; }
+  if (!assAtualValido) {
+    ass_medir_locked(agora, 0, -1);
+    pthread_mutex_unlock(&assFilaTrava); return 0;
+  }
+  corChave = assCorAtiva ? (int)(((unsigned)assCorR << 16) | ((unsigned)assCorG << 8) | (unsigned)assCorB) : -1;
+  reenviar = assAtual.serial != assTexSerial || corChave != assTexCorChave;
   for (i = 0; i < assAtual.count; i++) {
     const AssCpuImage *im = &assAtual.images[i];
-    GLuint tex = ass_textura_locked(i, im);
+    GLuint tex = reenviar ? ass_textura_locked(i, im)
+                          : (i < assTexCap ? assTex[i].tex : 0);
     if (!tex) continue;
     /* libass trabalha no mesmo sistema de coordenadas do arquivo: o ponto
      * (0,0) e o canto superior esquerdo. A textura contem somente a caixa do
@@ -558,8 +685,10 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
                         (float)im->w, (float)im->h }, tex, GFX_TEXTO,
              0, 0, 0, 0, 1, 1, 1, alpha);
   }
+  if (reenviar) { assTexSerial = assAtual.serial; assTexCorChave = corChave; }
   gfx_tex_aspect_atual = 0.0f;
   n = assAtual.count;
+  ass_medir_locked(agora, n > 0, assAtual.inicioMax);
   pthread_mutex_unlock(&assFilaTrava);
   return n;
 }
@@ -628,6 +757,7 @@ static char assDiag[96] = "libass: backend nao compilado";
 static unsigned assGeracao;
 
 int assrender_carregar(const char *corpo, size_t tamanho, unsigned geracao) { (void)corpo; (void)tamanho; (void)geracao; return 0; }
+int assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao) { (void)corpo; (void)tamanho; (void)geracao; return 0; }
 void assrender_limpar(void) { assGeracao++; }
 void assrender_limpar_fontes(void) {}
 int assrender_adicionar_fonte(const char *nome, const void *dados, size_t tamanho) {

@@ -14,6 +14,9 @@
 /* Carrega um documento ASS completo. O corpo precisa permanecer em UTF-8 e
  * pode conter qualquer tamanho; o modulo faz a propria copia. */
 int  assrender_carregar(const char *corpo, size_t tamanho, unsigned geracao);
+/* Mesma faixa (mesma geracao), documento maior: troca a faixa do libass SEM
+ * apagar o quadro em tela. Com geracao diferente ou sem faixa, e carregar. */
+int  assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao);
 void assrender_limpar(void);
 void assrender_limpar_fontes(void);
 

@@ -533,6 +533,25 @@ void legenda_definir_corpo(const char *corpo) {
   }
 }
 
+/* Lote seguinte da MESMA faixa (#92): troca os cues e o documento do libass
+ * sem mudar a geracao. legenda_definir_corpo a cada lote apagava o quadro em
+ * tela, desligava o libass por alguns quadros (o overlay antigo desenhava a
+ * fala com outra fonte nesse intervalo) e reenviava as fontes: um pisca por
+ * lote. Desligada (primeiro lote, ou apos uma troca), cai no caminho cheio. */
+void legenda_atualizar_corpo(const char *corpo) {
+  LegendaCue *v=NULL; int n, i; double dur=0; int ass, ok; unsigned g=0;
+  if(!corpo)return;
+  ass=legenda_eh_ass(corpo);
+  n=legenda_extrair(corpo,&v);
+  for(i=0;i<n;i++){ double d=v[i].fim-v[i].inicio; if(d>dur)dur=d; }
+  pthread_mutex_lock(&trava);
+  ok=ligada;
+  if(ok){ g=geracao; free(cues);cues=v;nCues=n;maiorDur=dur; v=NULL; }
+  pthread_mutex_unlock(&trava);
+  if(!ok){ free(v); legenda_definir_corpo(corpo); return; }
+  if (ass) assrender_atualizar(corpo, strlen(corpo), g);
+}
+
 void legenda_desligar(void) {
   pthread_mutex_lock(&trava);
   ligada=0;geracao++;free(cues);cues=NULL;nCues=0;maiorDur=0;
