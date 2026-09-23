@@ -20,6 +20,15 @@
 // Registra no barramento e sobe o laco de eventos. 1 se deu certo.
 // Falhar aqui nao e fatal: o app segue sem video.
 int  video_iniciar(void);
+// O MESMO, para quem se oferece sozinho (o trailer do detalhe): segue o recuo
+// de lsregistro.h e desiste depois de poucas recusas, em vez de chamar
+// LSRegister a cada 15 s pela sessao inteira (registros 1720-1774). Onde nao
+// ha hub LS2 e so o video_iniciar.
+int  video_iniciar_auto(void);
+// 1 quando o hub LS2 negou o registro por PERMISSAO (LS_ERROR_CODE_PERMISSION)
+// nesta sessao: nenhum video abre, e o player diz isso em vez de "nao foi
+// possivel abrir a fonte" — a fonte nao tem culpa.
+int  video_registro_negado(void);
 
 // Comeca a tocar. `url` e http(s):// ou file://. NAO mandar mediaTransportType:
 // o transporte sai do prefixo da URL, e mandar o campo faz o load aceitar,

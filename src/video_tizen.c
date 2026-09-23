@@ -773,6 +773,9 @@ int video_iniciar(void) {
   return 1;
 }
 
+int video_iniciar_auto(void) { return video_iniciar(); }
+int video_registro_negado(void) { return 0; }
+
 int video_tocar(const char *url) {
   if (!url || !*url) return 0;
   if (!ligado) video_iniciar();

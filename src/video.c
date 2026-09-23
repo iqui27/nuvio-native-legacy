@@ -5,6 +5,7 @@
 #include "marco.h"
 #include "mkv.h"
 #include "js.h"
+#include "lsregistro.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -138,6 +139,8 @@ static unsigned  sessao;
 // No Mac nao existe barramento nem plano de video. Os cotos deixam o resto do
 // app compilar e rodar igual, so sem imagem em movimento.
 int  video_iniciar(void) { return 0; }
+int  video_iniciar_auto(void) { return 0; }
+int  video_registro_negado(void) { return 0; }
 int  video_tocar(const char *u) { snprintf(urlAtual, sizeof urlAtual, "%s", u ? u : ""); return 0; }
 void video_bombear(void) {}
 void video_parar(void) {}
@@ -203,16 +206,66 @@ typedef struct LSHandle LSHandle;
 typedef struct LSMessage LSMessage;
 typedef int (*Filtro)(LSHandle *, LSMessage *, void *);
 
-// LSError e struct por valor e nao ha header C no SDK. Um buffer folgado evita
-// corromper a pilha quando a lib escreve o erro dentro dele.
-static char ERRO[256];
+// LSError, na forma do luna-service2 (include/public/luna-service2/
+// lunaservice.h). Nao ha header C no SDK, entao a struct e repetida aqui — e a
+// folga de 256 bytes continua, para a lib nunca escrever alem do que alocamos.
+//
+// O CAMPO `message` E UM PONTEIRO. Ate a 1.4.1 o log imprimia ERRO+4 como
+// texto, ou seja, os BYTES DO PONTEIRO: era o `msg=<lixo>` dos registros
+// 1720-1774, e o lixo mudava a cada tentativa porque era o endereco da
+// mensagem nova. E como ninguem chamava LSErrorFree, cada recusa deixava essa
+// mensagem alocada.
+typedef struct {
+  int         code;
+  char       *message;
+  const char *file;
+  int         line;
+  const char *func;
+  void       *padding;
+  unsigned long magic;
+} NvLsErro;
+static union { NvLsErro e; char folga[256]; } ERRO_U;
+#define ERRO ((void *)&ERRO_U)
+
+static int  (*lsErroIniciar)(void *);   // LSErrorInit: poe o `magic`
+static void (*lsErroLiberar)(void *);   // LSErrorFree: solta a `message`
+
+// Antes de CADA chamada que recebe o LSError: solta a mensagem da anterior e
+// reinicia a struct como a lib espera (LSErrorInit), em vez do memset puro.
+static void erroLimpar(void) {
+  if (ERRO_U.e.message && lsErroLiberar) lsErroLiberar(ERRO);
+  memset(&ERRO_U, 0, sizeof ERRO_U);
+  if (lsErroIniciar) lsErroIniciar(ERRO);
+}
 
 static void logErroLs(const char *onde) {
-  const unsigned *w = (const unsigned *)ERRO;
-  printf("[video] %s: lsError code=%u msg=%s\n", onde, w[0],
-         ((const char *)ERRO)[4] ? (const char *)ERRO + 4 : "(vazio)");
+  const char *nome = lsreg_nome_codigo(ERRO_U.e.code);
+  printf("[video] %s: lsError code=%d (%s) msg=%.200s\n", onde, ERRO_U.e.code,
+         nome ? nome : "?", ERRO_U.e.message ? ERRO_U.e.message : "(vazio)");
   fflush(stdout);
 }
+
+// Contexto do processo, UMA vez, na primeira recusa. O papel LS2 do app casa
+// pelo exeName (/var/palm/ls2-dev/roles/*/space.nuvio.native.legacy.json), e
+// nas sessoes recusadas dos registros 1720-1774 faltava a linha
+// "[HLunaServiceBridge::proc]" do inicio e o HOME era /tmp — sinal de que o app
+// nao foi aberto pelo caminho de sempre. Hipotese, nao prova: esta linha e o
+// que vai separar "o papel sumiu" de "o processo nao e quem o papel descreve".
+static void logContextoLs(void) {
+  char exe[256]; ssize_t n;
+  const char *home = getenv("HOME"), *app = getenv("APPID");
+  n = readlink("/proc/self/exe", exe, sizeof exe - 1);
+  exe[n > 0 ? n : 0] = 0;
+  printf("[video] contexto do registro: uid=%d exe=%s HOME=%s APPID=%s papel=%s\n",
+         (int)getuid(), exe[0] ? exe : "?", home ? home : "-", app ? app : "-",
+         access("/var/palm/ls2-dev/roles/pub/space.nuvio.native.legacy.json", F_OK) == 0
+           ? "visivel" : "nao visivel daqui");
+  fflush(stdout);
+}
+
+static LsRegEstado regEstado;
+static int regNegado;          // PERMISSION nesta sessao
+static int regAvisouDesistir;
 
 static int         (*lsRegister)(const char *, LSHandle **, void *);
 static int         (*lsUnregister)(LSHandle *, void *);
@@ -985,11 +1038,30 @@ static int soLog(LSHandle *h, LSMessage *m, void *u) {
   return 1;
 }
 
+// LSCall com LSError PROPRIO, na pilha: assim nenhuma chamada divide o ERRO
+// global com o LSRegister nem com outra chamada em outro fio. A falha agora diz
+// o motivo, e a mensagem e liberada (antes ficava alocada a cada recusa).
+static int lsChamar(const char *uri, const char *carga, Filtro cb, void *ctx,
+                    const char *rotulo) {
+  union { NvLsErro e; char folga[256]; } er;
+  unsigned long tok = 0;
+  int ok;
+  memset(&er, 0, sizeof er);
+  if (lsErroIniciar) lsErroIniciar(&er);
+  ok = lsCall(bus, uri, carga, cb, ctx, &tok, &er);
+  if (!ok) {
+    const char *nome = lsreg_nome_codigo(er.e.code);
+    printf("[video] %s falhou: code=%d (%s) msg=%.200s\n", rotulo, er.e.code,
+           nome ? nome : "?", er.e.message ? er.e.message : "(vazio)");
+  }
+  if (er.e.message && lsErroLiberar) lsErroLiberar(&er);
+  return ok;
+}
+
 static void chamar(const char *metodo, const char *carga, Filtro cb) {
-  char uri[128]; unsigned long tok = 0;
+  char uri[128];
   snprintf(uri, sizeof uri, "luna://com.webos.media/%s", metodo);
-  if (!lsCall(bus, uri, carga, cb, NULL, &tok, ERRO))
-    printf("[video] %s falhou\n", metodo);
+  lsChamar(uri, carga, cb, NULL, metodo);
 }
 
 // Variante para callbacks que precisam saber a qual sessao pertencem. O
@@ -997,10 +1069,9 @@ static void chamar(const char *metodo, const char *carga, Filtro cb) {
 // memoria cujo tempo de vida possa acabar antes da resposta assincrona.
 static void chamarCtx(const char *metodo, const char *carga, Filtro cb,
                       void *ctx) {
-  char uri[128]; unsigned long tok = 0;
+  char uri[128];
   snprintf(uri, sizeof uri, "luna://com.webos.media/%s", metodo);
-  if (!lsCall(bus, uri, carga, cb, ctx, &tok, ERRO))
-    printf("[video] %s falhou\n", metodo);
+  lsChamar(uri, carga, cb, ctx, metodo);
 }
 
 // Chamada a OUTRO servico. O recorte de fonte NAO mora no com.webos.media: ele
@@ -1015,10 +1086,10 @@ static void chamarCtx(const char *metodo, const char *carga, Filtro cb,
 // recorte de que o zoom precisa.
 static void chamarEm(const char *servico, const char *metodo,
                      const char *carga, Filtro cb) {
-  char uri[160]; unsigned long tok = 0;
+  char uri[160], rot[160];
   snprintf(uri, sizeof uri, "luna://%s/%s", servico, metodo);
-  if (!lsCall(bus, uri, carga, cb, NULL, &tok, ERRO))
-    printf("[video] %s/%s falhou\n", servico, metodo);
+  snprintf(rot, sizeof rot, "%s/%s", servico, metodo);
+  lsChamar(uri, carga, cb, NULL, rot);
 }
 
 static int aoCarregar(LSHandle *h, LSMessage *m, void *u) {
@@ -1077,9 +1148,25 @@ static void acbNotificou(long h, long tarefa, long evento,
     if (!v) { printf("[video] falta %s\n", n); return 0; } \
   } while (0)
 
-int video_iniciar(void) {
+static int iniciar(int automatico);
+int video_iniciar(void)      { return iniciar(0); }
+int video_iniciar_auto(void) { return iniciar(1); }
+int video_registro_negado(void) { return regNegado; }
+
+static int iniciar(int automatico) {
   void *L, *G, *A;
   if (ligado) return 1;
+  if (!lsreg_pode_tentar(&regEstado, SDL_GetTicks(), automatico)) {
+    if (lsreg_desistiu(&regEstado) && !regAvisouDesistir) {
+      regAvisouDesistir = 1;
+      printf("[video] registro recusado %d vez(es) (%s): o trailer para de tentar "
+             "nesta sessao; play ainda tenta\n", regEstado.falhas,
+             lsreg_nome_codigo(regEstado.ultimoCodigo)
+               ? lsreg_nome_codigo(regEstado.ultimoCodigo) : "?");
+      fflush(stdout);
+    }
+    return 0;
+  }
   L = dlopen("libluna-service2.so.3", RTLD_NOW);
   if (!L) L = dlopen("libluna-service2.so", RTLD_NOW);
   G = dlopen("libglib-2.0.so.0", RTLD_NOW);
@@ -1114,6 +1201,9 @@ int video_iniciar(void) {
   SIM(L, lsAttach,   "LSGmainAttach");
   SIM(L, lsCall,     "LSCall");
   SIM(L, lsPayload,  "LSMessageGetPayload");
+  // Soft: sem eles o erro so fica sem `magic` e sem liberar, como era antes.
+  *(void **)(&lsErroIniciar) = dlsym(L, "LSErrorInit");
+  *(void **)(&lsErroLiberar) = dlsym(L, "LSErrorFree");
   // Soft como acbJanelaCustom: so e usado na limpeza de um registro a meio
   // caminho; faltar numa lib nao pode custar o video inteiro.
   *(void **)(&lsUnregister) = dlsym(L, "LSUnregister");
@@ -1152,29 +1242,46 @@ int video_iniciar(void) {
   // e o novo arranque cai em "LSRegister recusado" para sempre no nome fixo.
   // O sufixo com o PID e o mesmo padrao permitido e libera o trailer/player sem
   // esperar o hub soltar o cadastro fantasma.
+  //
+  // O nome alternativo continua sendo tentado em qualquer recusa: nao se sabe
+  // com que codigo o caso do deploy (o que motivou o sufixo) recusava, porque o
+  // log nao lia o codigo direito. Quem limita o custo e a politica acima.
   bus = NULL;
-  memset(ERRO, 0, sizeof ERRO);
+  erroLimpar();
   if (!lsRegister("com.webos.media.client.nuvio", &bus, ERRO)) {
     char alt[64];
     logErroLs("LSRegister nome fixo recusado");
     snprintf(alt, sizeof alt, "%s.%d", "com.webos.media.client.nuvio", (int)getpid());
     printf("[video] tentando %s\n", alt);
     bus = NULL;
-    memset(ERRO, 0, sizeof ERRO);
+    erroLimpar();
     if (!lsRegister(alt, &bus, ERRO)) {
+      int cod = ERRO_U.e.code;
       logErroLs("LSRegister recusado");
+      if (!regEstado.falhas) logContextoLs();
+      lsreg_falhou(&regEstado, cod, SDL_GetTicks());
+      if (cod == LSR_PERMISSION) regNegado = 1;
+      erroLimpar();
+      bus = NULL;
       return 0;
     }
   }
-  laco = loopNovo(NULL, 0);
+  if (!laco) laco = loopNovo(NULL, 0);
+  erroLimpar();
   if (!lsAttach(bus, laco, ERRO)) {
-    printf("[video] attach falhou\n");
+    logErroLs("attach falhou");
     // Devolve o nome ao hub: sem isto o registro fica preso e a PROXIMA
     // tentativa de video_iniciar cai no "LSRegister recusado" para sempre.
+    erroLimpar();
     if (lsUnregister) lsUnregister(bus, ERRO);
+    erroLimpar();
     bus = NULL;
+    lsreg_falhou(&regEstado, 0, SDL_GetTicks());
     return 0;
   }
+  erroLimpar();
+  lsreg_deu_certo(&regEstado);
+  regNegado = 0;
   // Laco proprio: o LS2 exige um GMainLoop girando, e girar isso no laco de
   // desenho custaria quadros. As respostas chegam neste fio e so mexem em
   // variaveis simples, lidas pelo desenho sem trava.
@@ -2033,7 +2140,9 @@ void video_encerrar(void) {
   if (expWin[0] && sdlExpDestruir) { sdlExpDestruir(expWin); expWin[0] = 0; }
   if (laco) loopParar(laco);
   if (bus && lsUnregister) {
+    erroLimpar();
     lsUnregister(bus, ERRO);
+    erroLimpar();
     bus = NULL;
   }
   ligado = 0;
