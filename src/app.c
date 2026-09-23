@@ -11,6 +11,7 @@
 //   2. detalhe — camada sobre a tela corrente
 //   3. menu    — camada sobre a tela corrente
 //   4. a tela corrente (home, busca, biblioteca ou ajustes)
+#include "ponteiro.h"
 #include "app.h"
 #include "registro.h"
 #include "addonsui.h"
@@ -2246,6 +2247,12 @@ void app_atualizar(float dt, Uint32 agora) {
 // home) impediam qualquer coisa de ser desenhada DEPOIS deles, e o painel de
 // log tem de aparecer tambem nessas telas — que sao exatamente onde o app ja
 // travou uma vez.
+// CAMADAS DO PONTEIRO (ponteiro.h): cada folha ou modal que tem o teclado
+// descarta, antes de se desenhar, os alvos de quem ficou por baixo — o
+// ponteiro so pode focar o que as setas focariam. A pergunta e a mesma que o
+// roteador de app_evento faz ("esta aberta?"), so que na ordem do desenho.
+#define CAMADA_SE(aberta) do { if (aberta) ponteiro_camada(); } while (0)
+
 static void desenharTelas(Uint32 agora) {
   if (tela == TELA_LOGIN)          { login_desenhar(agora);     return; }
   if (tela == TELA_ESCOLHA_PERFIL) { perfilsel_desenhar(agora); return; }
@@ -2303,8 +2310,11 @@ static void desenharTelas(Uint32 agora) {
         default:              home_desenhar(agora);       break;
       }
     }
+    CAMADA_SE(vertudo_aberta());
     if (!detail_cobre_tela()) vertudo_desenhar(agora);
+    CAMADA_SE(ctx_aberto());
     ctx_desenhar(agora);
+    CAMADA_SE(detail_aberto());
     detail_desenhar(agora);
     // A rail NAO existe na tela de detalhe do app web: ela e full-bleed e a
     // coluna de conteudo comeca em x=72, ou seja, DENTRO do que a rail ocuparia.
@@ -2326,18 +2336,25 @@ static void desenharTelas(Uint32 agora) {
     // o defeito relatado como "nao ta mostrando o menu e nao tem os ajustes".
     // Guarda repetida em dois lugares para a mesma regra: no de dentro ela
     // significa "nao pinte a faixa", no de fora significava "nao exista".
-    if (menu_visivel() && sidebar_permitida() && !detail_aberto())
+    if (menu_visivel() && sidebar_permitida() && !detail_aberto()) {
+      CAMADA_SE(menu_aberto());
       menu_desenhar(agora);
+    }
     // Depois do menu: as duas camadas de "Salvos" escurecem a tela inteira e
     // tem de ficar por cima de tudo que a home desenhou, inclusive da rail.
+    CAMADA_SE(spainel_aberto());
     if (spainel_visivel() && !detail_aberto()) spainel_desenhar(agora);
   }
+  CAMADA_SE(player_aberto());
   player_desenhar(agora);
   // O overlay do guia vai POR CIMA do player — o video continua atras do fundo
   // a 94%, que e o que diz "a TV nao parou" enquanto se troca de canal.
-  if (guia_overlay_aberta()) guia_desenhar(agora);
+  if (guia_overlay_aberta()) { ponteiro_camada(); guia_desenhar(agora); }
+  CAMADA_SE(episodios_aberto());
   episodios_desenhar();
+  CAMADA_SE(stream_folha_aberta());
   stream_folha_desenhar(agora);
+  CAMADA_SE(faixas_aberta());
   faixas_desenhar(agora);
 }
 
@@ -2360,20 +2377,35 @@ void app_desenhar(Uint32 agora) {
   // ferramenta de diagnostico): ele e a primeira coisa que a pessoa ve depois
   // desta atualizacao, e nada pode aparecer por cima dele.
   player_mini_desenhar(agora);
+  CAMADA_SE(sintro_aberto());
   if (!registro_aberto()) sintro_desenhar(agora);
+  CAMADA_SE(novidades_aberto());
   if (!registro_aberto()) novidades_desenhar(agora);
+  CAMADA_SE(novidades11_aberto());
   if (!registro_aberto()) novidades11_desenhar(agora);
+  CAMADA_SE(novidades12_aberto());
   if (!registro_aberto()) novidades12_desenhar(agora);
+  CAMADA_SE(novidades13_aberto());
   if (!registro_aberto()) novidades13_desenhar(agora);
+  CAMADA_SE(novidades131_aberto());
   if (!registro_aberto()) novidades131_desenhar(agora);
+  CAMADA_SE(novidades132_aberto());
   if (!registro_aberto()) novidades132_desenhar(agora);
+  CAMADA_SE(novidades133_aberto());
   if (!registro_aberto()) novidades133_desenhar(agora);
+  CAMADA_SE(novidades134_aberto());
   if (!registro_aberto()) novidades134_desenhar(agora);
+  CAMADA_SE(novidades139_aberto());
   if (!registro_aberto()) novidades139_desenhar(agora);
+  CAMADA_SE(novidades1312_aberto());
   if (!registro_aberto()) novidades1312_desenhar(agora);
+  CAMADA_SE(telemetria_aberto());
   if (!registro_aberto()) telemetria_desenhar(agora);
+  CAMADA_SE(recintro_aberto());
   if (!registro_aberto()) recintro_desenhar(agora);
+  CAMADA_SE(atualizacao_aberta());
   if (!registro_aberto()) atualizacao_desenhar(agora);
+  CAMADA_SE(agendaviso_aberto());
   if (!registro_aberto()) agendaviso_desenhar(agora);
   // A central so aparece com a pessoa DENTRO do app: no login e na escolha de
   // perfil nao ha para quem avisar, e o relogio do toast so comeca a contar
@@ -2383,10 +2415,15 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto() && !player_aberto() && sessao_logada() &&
       tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL)
     avisos_desenhar(agora);
+  CAMADA_SE(recenviar_aberto());
   if (!registro_aberto()) recenviar_desenhar(agora);
+  CAMADA_SE(recomenda_aberta());
   if (!registro_aberto()) recomenda_desenhar(agora);
+  CAMADA_SE(pipintro_aberto());
   if (!registro_aberto()) pipintro_desenhar(agora);
+  CAMADA_SE(diagnostico_intro_aberto());
   if (!registro_aberto()) diagnostico_intro_desenhar(agora);
+  CAMADA_SE(registro_aberto());
   registro_desenhar();
 }
 
