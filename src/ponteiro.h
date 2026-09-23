@@ -12,9 +12,14 @@
 // outro binario que o do SDK, e numa firmware sem ela o app nao pode deixar de
 // abrir.
 //
+// A SETA E A DO SISTEMA NO webOS. O SDL da LG so entrega movimento e clique
+// com SDL_ShowCursor ligado (MEDIDO na C9, ver main.c), entao la a seta que se
+// ve e a do compositor e este modulo nao desenha nenhuma. No Mac o cursor do
+// sistema fica desligado e o modulo desenha um circulo proprio.
+//
 // O QUE ESTE MODULO FAZ. Guarda onde o ponteiro esta (coordenadas LOGICAS,
-// 1920x1080, as mesmas do layout), desenha um cursor proprio por cima de tudo
-// e traduz o ponteiro para o que a interface ja entende:
+// 1920x1080, as mesmas do layout) e traduz o ponteiro para o que a interface
+// ja entende:
 //   - PASSAR POR CIMA foca. Cada tela registra, durante o desenho, os
 //     retangulos focaveis (ponteiro_alvo); no movimento seguinte o de cima sob
 //     o cursor tem o `focar` chamado — que poe o foco la pela MESMA variavel

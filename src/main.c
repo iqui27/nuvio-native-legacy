@@ -538,9 +538,21 @@ int main(int argc, char **argv) {
                                      SDL_WINDOWPOS_CENTERED,
                                      pedeW, pedeH, flags);
   if (!win) { printf("janela: %s\n", SDL_GetError()); return 1; }
-  // App de TV nao tem ponteiro: o cursor por cima da interface polui a leitura
-  // e some sozinho no aparelho, mas nao no Mac.
+  // CURSOR DO SISTEMA LIGADO NO webOS, DESLIGADO NO RESTO (issue #99).
+  //
+  // No webOS o SDL_ShowCursor(SDL_DISABLE) NAO SO ESCONDE a seta do Magic
+  // Remote: o SDL da LG (2.0.5-webos da C9) para de entregar SDL_MOUSEMOTION e
+  // SDL_MOUSEBUTTON. MEDIDO na C9 em 23/09 injetando o ponteiro no evdev do
+  // controle: desligado, chegavam o 484 (cursor apareceu), o ENTER da janela e
+  // a rodinha — e nenhum movimento; ligado, MOUSEMOTION em coordenadas 1920x1080
+  // e MOUSEBUTTONDOWN/UP botao 1 no clique. Por isso aqui ele fica ligado, e a
+  // seta desenhada e a do proprio sistema (ponteiro.c nao desenha outra).
+  // No Mac o cursor do sistema continua escondido e o app desenha o seu.
+#ifdef NV_SEM_WEBOS
   SDL_ShowCursor(SDL_DISABLE);
+#else
+  SDL_ShowCursor(SDL_ENABLE);
+#endif
 #ifndef NV_SEM_WEBOS
   // Declara a superficie NAO-opaca. Por padrao o compositor trata a janela como
   // opaca e descarta o canal alpha inteiro — o furo do gfx_furo existiria no

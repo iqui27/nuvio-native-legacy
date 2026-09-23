@@ -63,10 +63,6 @@ static int logouTipo[8];
 #ifdef NV_PONT_WEBOS
 static SDL_bool (*cursorSistema)(SDL_bool) = NULL;
 #endif
-// EXPERIMENTO NA TV, lido uma vez no arranque de /tmp/nuvio-ponteiro-exp:
-//   "mostrar" -> SDL_ShowCursor(SDL_ENABLE) (o main.c desliga o cursor)
-//   "semvis"  -> nunca chamar SDL_webOSCursorVisibility
-static int expMostrar, expSemVis;
 
 static Uint32 agoraMs(void) { return relogio ? relogio() : SDL_GetTicks(); }
 
@@ -110,6 +106,10 @@ void ponteiro_diag(const SDL_Event *e) {
     int sc = (int)e->key.keysym.scancode;
     if (sc != PONT_SC_CURSOR_SHOW && sc != PONT_SC_CURSOR_HIDE &&
         e->key.keysym.sym != SDLK_RETURN) return;
+  }
+  if (e->type == SDL_MOUSEMOTION) {
+    static int nMov;
+    if (++nMov > 30) return;
   }
   diagN++;
   switch (e->type) {
@@ -158,15 +158,7 @@ void ponteiro_iniciar(void) {
   // saber e se ESTA firmware o exporta. (RTLD_DEFAULT pediria _GNU_SOURCE.)
   { void *eu = dlopen(NULL, RTLD_NOW);
     if (eu) *(void **)(&cursorSistema) = dlsym(eu, "SDL_webOSCursorVisibility"); }
-  { FILE *f = fopen("/tmp/nuvio-ponteiro-exp", "r");
-    char l[128] = "";
-    if (f) { if (!fgets(l, sizeof l, f)) l[0] = 0; fclose(f); }
-    expMostrar = strstr(l, "mostrar") != NULL;
-    expSemVis  = strstr(l, "semvis") != NULL;
-    if (expSemVis) cursorSistema = NULL;
-    if (expMostrar) SDL_ShowCursor(SDL_ENABLE);
-    printf("[ponteiro] experimento: mostrar=%d semvis=%d ShowCursor=%d\n",
-           expMostrar, expSemVis, SDL_ShowCursor(SDL_QUERY)); }
+  printf("[ponteiro] ShowCursor=%d\n", SDL_ShowCursor(SDL_QUERY));
   printf("[ponteiro] SDL_webOSCursorVisibility: %s\n",
          cursorSistema ? "presente" : "ausente");
   { SDL_bool (*painel)(int *, int *) = NULL;
@@ -383,7 +375,13 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
 
 void ponteiro_quadro(Uint32 agora) {
   nLista[escreve] = 0;
+#ifndef NV_PONT_WEBOS
+  // No webOS quem faz o cursor dormir e o sistema, e ele avisa com o 485; um
+  // relogio proprio aqui desligaria o hover com a seta ainda na tela.
   if (visivel && agora - ultimoMov > PONT_DORME_MS && !okPendente) esconder("parado");
+#else
+  (void)agora;
+#endif
 }
 
 // Fecha o quadro: a lista que o desenho acabou de montar passa a ser a que os
@@ -430,6 +428,12 @@ void ponteiro_camada(void) {
 void ponteiro_desenhar(void) {
   float g, d, sobre;
   if (!visivel) { fecharQuadro(); return; }
+#ifdef NV_PONT_WEBOS
+  // A seta no webOS e a do sistema (main.c deixa SDL_ShowCursor ligado: sem
+  // ele o SDL da LG nao entrega movimento). Desenhar outra seria cursor duplo.
+  fecharQuadro();
+  return;
+#endif
   // O cursor nao pode herdar o recorte nem o fade de grupo de quem desenhou
   // por ultimo (as fileiras da home deixam os dois ligados).
   g = gfx_opacidade_grupo;
