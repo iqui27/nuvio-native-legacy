@@ -38,6 +38,13 @@ int main(void) {
   assert(tex_iniciar(64));
   assert(orcamento() == 96 && tex_fios_rede() == 4 && tex_teto_heroi() == 1920);
 
+  // 0. OK NA APRESENTACAO (issue #113): grava a marca de "vista". Com a trava
+  // de verdade (NV_DADOS_TRAVA_TESTE, a do Tizen), a trava dupla abortava aqui.
+  assert(!apresentacaoVista());
+  marcarApresentacaoVista();
+  assert(apresentacaoVista());
+  puts("ok  OK na apresentacao grava a marca sem travar duas vezes");
+
   // 1. QUALIDADE, reteste PIOR: o candidato (160 MB) sai e o anterior volta.
   reset(DIAG_QUALIDADE);
   assert(aplicarCandidato() == 1);

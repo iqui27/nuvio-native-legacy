@@ -227,10 +227,12 @@ static RedeControle controleDiagnostico(long maxBytes) {
   return c;
 }
 
+// SEM dados_fs_travar EM VOLTA de dados_gravar/ler/apagar: cada um ja trava
+// por dentro, e a trava do Tizen nao e recursiva. As duas juntas no fio de
+// desenho congelavam a Samsung no OK da apresentacao (issue #113, 1.4.2); na
+// LG a trava e vazia e nada aparecia. tests/diagnostico.sh liga a trava real.
 static void marcarApresentacaoVista(void) {
-  dados_fs_travar();
   dados_gravar("diagnostico-otimizacao-intro.cfg", "versao=1\n");
-  dados_fs_liberar();
 }
 
 static void campoSeguro(char *dst, size_t cap, const char *src) {
@@ -497,9 +499,7 @@ static void restaurarAntes(void) {
 static int desfazerExperimento(void) {
   if (atomic_exchange(&d.experimento, 0) != 1) return 0;
   restaurarAntes();
-  dados_fs_travar();
   dados_apagar("diagnostico-otimizacao.checkpoint");
-  dados_fs_liberar();
   return 1;
 }
 
@@ -527,11 +527,9 @@ static int aplicarCandidato(void) {
   snprintf(ck, sizeof ck,
            "versao=2\nestado=experiment_pending\ntex_mb=%d\nfios_rede=%d\nheroi=%d\ntravado=%d\n",
            d.perfAntes.texMb, d.perfAntes.fiosRede, d.perfAntes.heroiLarg, d.travadoMb);
-  dados_fs_travar();
   ok = dados_gravar("diagnostico-otimizacao.checkpoint", ck);
   free(d.cfgAntes);
   d.cfgAntes = dados_ler("diagnostico-otimizacao.cfg");
-  dados_fs_liberar();
   if (!ok) {
     snprintf(d.erro, sizeof d.erro, "%s", "Não foi possível salvar o checkpoint");
     d.aplicacao = DA_SEM_CHECKPOINT;
@@ -557,10 +555,8 @@ static void concluirComparacao(void) {
     char cfg[256];
     atomic_store(&d.experimento, 0);
     ptv_serializar(&d.perfCand, modoNome(), cfg, sizeof cfg);
-    dados_fs_travar();
     dados_gravar("diagnostico-otimizacao.cfg", cfg);
     dados_apagar("diagnostico-otimizacao.checkpoint");
-    dados_fs_liberar();
     d.aplicacao = DA_MANTIDO;
   }
   printf("[diagnostico] reteste: antes %d ms/%d falhas/pior %d ms, depois %d ms/%d falhas/pior %d ms -> %s%s%s\n",
@@ -574,10 +570,8 @@ static void concluirComparacao(void) {
 static void restaurarManual(void) {
   if (d.aplicacao != DA_MANTIDO) return;
   restaurarAntes();
-  dados_fs_travar();
   if (d.cfgAntes) dados_gravar("diagnostico-otimizacao.cfg", d.cfgAntes);
   else dados_apagar("diagnostico-otimizacao.cfg");
-  dados_fs_liberar();
   d.aplicacao = DA_RESTAURADO_MANUAL;
 }
 
@@ -961,9 +955,7 @@ static int diagnosticoWorker(void *arg) {
   if (!atomic_load(&d.cancelado)) {
     atomic_store(&d.fase, 6);
     montarRelatorio();
-    dados_fs_travar();
     dados_gravar("diagnostico-otimizacao.txt", d.relatorio);
-    dados_fs_liberar();
     printf("[diagnostico] relatorio inicio id=%s addons=%d assets=%d streams_ok=%d streams_falhas=%d aplicacao=%s\n",
            d.id, d.nAddon, d.nAssets, d.streamOk, d.streamFalhas, aplicacaoNome(d.aplicacao));
     printf("[diagnostico] relatorio fim\n");
@@ -1022,9 +1014,7 @@ void diagnostico_recuperar_checkpoint(void) {
   char *cfg;
   if (ck) {
     printf("[diagnostico] experimento interrompido na sessao anterior: candidato descartado\n");
-    dados_fs_travar();
     dados_apagar("diagnostico-otimizacao.checkpoint");
-    dados_fs_liberar();
     free(ck);
   }
   cfg = dados_ler("diagnostico-otimizacao.cfg");
