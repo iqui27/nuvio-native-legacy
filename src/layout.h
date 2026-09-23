@@ -562,6 +562,12 @@
 // Quanto a pagina de titulo espera, assentada e no topo, antes de trocar a
 // arte pelo trailer mudo (trailer.h). Tempo de ler o titulo e a sinopse.
 #define NV_TRAILER_ESPERA_MS 2500
+// Prazo para o trailer automatico da pagina de titulo produzir `playing` antes
+// de a pagina desistir da fonte e tentar a proxima (Apple -> YouTube). Medido
+// no emulador Tizen 10: a playlist de midia de uma variante da Apple toca em
+// 1,1 a 3,2 s; o master inteiro levava 10,5 s. 8 s cobre o pior caso bom com
+// folga para a rede de uma TV sem esperar para sempre.
+#define NV_TRAILER_PREPARA_MS 8000
 // No destaque da home a Apple ganha uma janela curta antes do fallback do
 // YouTube. Esperar quatro segundos fazia o hero parecer parado na Samsung;
 // a janela total abaixo continua finita para que a rotacao nunca dependa da
@@ -570,10 +576,13 @@
 #define NV_TRAILER_HERO_MAX_ESPERA_MS 3200
 // Depois de criar o elemento, seguramos o card enquanto ele prepara. Se a
 // rede/browser nao produzir `playing` nesse prazo, a arte volta e o carrossel
-// pode seguir para o proximo titulo.
-#define NV_TRAILER_HERO_PREPARA_MS 3500
+// pode seguir para o proximo titulo. 5000 e nao 3500: no emulador Tizen 10 a
+// variante de 1916 px da Apple deu `playing` em 3,3 s e o C so viu o estado
+// 0,7 s depois (+4,0 s do trailer_abrir) — com 3,5 s o hero desistia da Apple
+// que ja estava chegando e caia no YouTube, que na TV falha (#82/#86).
+#define NV_TRAILER_HERO_PREPARA_MS 5000
 // Cada fonte recebe seu proprio prazo de preparacao. O teto e explicito:
-// resolucao (3,2 s) + Apple (3,5 s) + YouTube (3,5 s) = 10,2 s, mesmo que a
+// resolucao (3,2 s) + Apple (5 s) + YouTube (5 s) = 13,2 s, mesmo que a
 // Apple falhe no ultimo instante da janela e o fallback precise preparar.
 #define NV_TRAILER_HERO_MAX_TOTAL_ESPERA_MS (NV_TRAILER_HERO_MAX_ESPERA_MS + 2 * NV_TRAILER_HERO_PREPARA_MS)
 // A ampliacao do trailer virou ajuste ("Proporção do trailer", ajustes_trailer_zoom).

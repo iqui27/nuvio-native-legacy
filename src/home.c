@@ -2865,13 +2865,33 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
               fileiras[foco.fileira].tipo == FILEIRA_SOCIAL));
   if (pronto) ci = cat_item_exato(heroAtual);
   if (!pronto || !ci || !ci->imdb[0]) {
-    if (heroTrailerItem >= 0 && trailer_aberto() && !trailer_cheia()) trailer_fechar();
+    // Hero deixou de estar pronto (foco saiu, transicao da arte, detalhe por
+    // cima): fecha. E o outro caminho de fechamento que o prazo nao ve —
+    // o emulador mostrou "estado -1 -> -2 +8613ms" sem mais nada.
+    if (heroTrailerItem >= 0 && trailer_aberto() && !trailer_cheia()) {
+      printf("[trailer] hero: saiu de cena, fecha o trailer %s (estado %d, +%u ms)\n",
+             trailer_tocando() ? "tocando" : "sem playing", trailer_estado(),
+             heroTrailerDesde ? (unsigned)(agora - heroTrailerDesde) : 0u);
+      fflush(stdout);
+      trailer_fechar();
+    }
     heroTrailerItem = -1; heroTrailerDesde = 0; heroTrailerTentado = 0;
     heroTrailerImdb[0] = 0;
     heroTrailerPreparandoAte = 0; heroTrailerFonte = 0; heroTrailerAppleFalhou = 0;
     heroTrailerFade = 0.0f;
   } else if (heroTrailerItem != heroAtual || strcmp(heroTrailerImdb, ci->imdb) != 0) {
-    if (trailer_aberto() && !trailer_cheia()) trailer_fechar();
+    // A rotacao do carrossel roda ANTES deste passo (home_atualizar): quando
+    // o prazo de preparo vence, heroTrailerSegurando solta e o hero troca de
+    // titulo no mesmo quadro — o fechamento acontece AQUI, nao no ramo do
+    // prazo abaixo. Sem esta linha o registro so mostrava o elemento sumir
+    // (emulador, 22/09/2026: "estado -1 -> -2 +5157ms" e nada mais).
+    if (trailer_aberto() && !trailer_cheia()) {
+      printf("[trailer] hero: troca de titulo fecha o trailer %s (estado %d, +%u ms)\n",
+             trailer_tocando() ? "tocando" : "sem playing", trailer_estado(),
+             heroTrailerDesde ? (unsigned)(agora - heroTrailerDesde) : 0u);
+      fflush(stdout);
+      trailer_fechar();
+    }
     heroTrailerItem = heroAtual; heroTrailerDesde = agora; heroTrailerTentado = 0;
     snprintf(heroTrailerImdb, sizeof heroTrailerImdb, "%s", ci->imdb);
     heroTrailerPreparandoAte = 0; heroTrailerFonte = 0; heroTrailerAppleFalhou = 0;
@@ -2905,6 +2925,10 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
     // aqui tambem invalida a fonte antiga antes de a proxima arte entrar.
     if (trailer_aberto() && !trailer_tocando() && heroTrailerPreparandoAte &&
         (Sint32)(agora - heroTrailerPreparandoAte) >= 0) {
+      printf("[trailer] hero: sem playing em %d ms (%s, estado %d), %s\n",
+             NV_TRAILER_HERO_PREPARA_MS, heroTrailerFonte == 1 ? "apple" : "youtube",
+             trailer_estado(), heroTrailerFonte == 1 ? "tenta YouTube" : "desiste");
+      fflush(stdout);
       trailer_fechar();
       heroTrailerPreparandoAte = 0;
       heroTrailerFade = 0.0f;
@@ -2920,7 +2944,9 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
   // trailer_atualizar fecha o elemento que recebeu erro depois deste passo;
   // consumir a marca no quadro seguinte transforma somente erro de Apple em
   // fallback. Um fechamento normal (ended/Voltar) nunca cai no YouTube.
-  if (heroTrailerFonte == 1 && !trailer_aberto() && trailer_falhou()) {
+  if (heroTrailerFonte == 1 && !trailer_aberto() && trailer_falhou() && !heroTrailerAppleFalhou) {
+    printf("[trailer] hero: apple deu erro, tenta YouTube\n");
+    fflush(stdout);
     heroTrailerAppleFalhou = 1;
     heroTrailerTentado = 0;
     heroTrailerPreparandoAte = 0;
@@ -2936,15 +2962,17 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
     const char *u = heroTrailerAppleFalhou ? NULL : trailerapple_url(ci->imdb);
     const char *yt = NULL;
     int ehYoutube = 0;
+    // A APPLE TEM A JANELA INTEIRA (ate NV_TRAILER_HERO_MAX_ESPERA_MS) antes
+    // do YouTube, tambem na Samsung. Antes, com um id do YouTube em maos, o
+    // hero o abria ja aos 1,2 s se a Apple ainda nao tinha respondido — e a
+    // resposta da Apple agora inclui baixar o master para escolher a variante
+    // (trailerapple.c, varianteMidia), ~0,3 s a mais. No emulador isso deu
+    // YouTube aos 90,1 s e a Apple pronta aos 90,4 s; o embed do YouTube nao
+    // produziu `playing` em 3,5 s (na TV ele cai em "Video player
+    // configuration error", #82/#86), e o trailer bom ficou de fora.
     if (!u && !trailerapple_respondeu(ci->imdb) &&
-        decorrido < NV_TRAILER_HERO_MAX_ESPERA_MS) {
-#ifdef __EMSCRIPTEN__
-      yt = heroTrailerYoutube(ci->imdb);
-      if (!yt) goto trailer_hero_fim;
-#else
+        decorrido < NV_TRAILER_HERO_MAX_ESPERA_MS)
       goto trailer_hero_fim;
-#endif
-    }
 #ifdef __EMSCRIPTEN__
     if (!u) {
       yt = heroTrailerYoutube(ci->imdb);
@@ -2976,6 +3004,9 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
       }
     } else {
       // Sem fonte depois do orçamento, deixa a arte e o carrossel seguirem.
+      printf("[trailer] hero: sem fonte em %u ms (apple %s), fica a arte\n", decorrido,
+             heroTrailerAppleFalhou ? "falhou" : trailerapple_respondeu(ci->imdb) ? "sem trailer" : "sem resposta");
+      fflush(stdout);
       heroTrailerTentado = 1;
       heroTrailerFonte = 3;
       heroTrailerFade = 0.0f;
