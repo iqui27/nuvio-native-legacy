@@ -727,31 +727,25 @@ static int nFiltrados(void) {
 // A folha de fontes usa o mesmo fundo da sidebar, mas tinha conservado o
 // acento puro e o halo largo da primeira versao. Em uma TV isso fazia o card
 // focado saltar para branco/ciano e o painel parecer outra tela do app.
-#define FONTE_FOCO_MISTURA 0.74f
-#define FONTE_FOCO_GLOW    0.16f
-
 static void corFocoFonte(float *r, float *g, float *b) {
-  float ar, ag, ab, k = FONTE_FOCO_MISTURA;
+  float ar, ag, ab;
   ajustes_acento(&ar, &ag, &ab);
-  if (0.2126f * ar + 0.7152f * ag + 0.0722f * ab > 0.88f) k = 0.88f;
-  *r = 0.055f + (ar - 0.055f) * k;
-  *g = 0.058f + (ag - 0.058f) * k;
-  *b = 0.068f + (ab - 0.068f) * k;
+  if (ajustes_acento_tinta(NULL, NULL, NULL) < 0.5f) {
+    // No tema branco, a superficie clara justifica a tinta escura de foco.
+    *r = 0.78f; *g = 0.79f; *b = 0.82f;
+  } else {
+    // Mesma lavagem tonal da lista lateral de episodios, sem acento saturado.
+    *r = 0.088f + ar * 0.055f;
+    *g = 0.075f + ag * 0.035f;
+    *b = 0.090f + ab * 0.045f;
+  }
 }
 
 static void focoFonte(GfxRect r, float raio, float alfa) {
-  float ar, ag, ab, sr, sg, sb;
-  GfxRect luz;
+  float sr, sg, sb;
   if (alfa <= 0.01f) return;
-  ajustes_acento(&ar, &ag, &ab);
-  luz = (GfxRect){ r.x - r.h * 0.45f, r.y - r.h * 0.45f,
-                   r.w + r.h * 0.90f, r.h * 2.0f };
-  gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
-           ar, ag, ab, FONTE_FOCO_GLOW * alfa);
   corFocoFonte(&sr, &sg, &sb);
   gfx_cor(r, raio, sr, sg, sb, alfa);
-  gfx_rect(r, 0, GFX_BRILHO_TOPO, raio, 0.24f, 0, 0.5f,
-           1, 1, 1, 0.10f * alfa);
 }
 
 // EQUALIZADOR DO "REPRODUZINDO AGORA". O player nativo nao expoe amplitude
@@ -843,21 +837,13 @@ void stream_folha_desenhar(Uint32 agora) {
   (void)agora;
   if(anim<.005f) return;
   float x=NV_TELA_W-FOLHA_W+(1-anim)*FOLHA_W;
-  // A COR DE REALCE E A TINTA QUE CONTRASTA COM ELA: toda superficie em foco
-  // desta folha veste as duas (regra do dono, 21/09: texto sobre realce e
-  // branco a nao ser que o realce seja branco — nunca um 24 cravado). O
-  // preenchimento passa antes por focoFonte(), que deixa a cor reconhecivel
-  // sem repetir o branco/ciano agressivo do tratamento antigo.
-  float ar,ag,ab; int ti=ajustes_tinta_foco(), ti2=ajustes_tinta_foco2();
-  ajustes_acento_tinta(&ar,&ag,&ab);
+  // O foco usa a mesma superficie tonal da lista de episodios e tinta de
+  // contraste do tema; o acento nao vira um bloco saturado nem ganha glow.
+  int ti=ajustes_tinta_foco(), ti2=ajustes_tinta_foco2();
   gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.02f,.02f,.025f,.35f*anim);
-  // PAINEL FLUTUANTE, como a barra lateral (menu.c, 21/09/2026): solto do
-  // topo e da base em 24 px, cantos de 28 px (raio pelo menor lado, que e a
-  // largura), translucido, com UMA luz difusa na cor de realce entrando pelo
-  // canto superior direito, presa aos cantos do painel (GFX_LUZ). E a unica
-  // mancha grande da folha; o veu de tela cheia ja e a primeira camada.
+  // Painel flutuante com raio amplo e material neutro. A separacao vem do
+  // veu e da superficie, nao de uma luz decorativa presa ao canto.
   gfx_cor((GfxRect){x,24,FOLHA_W,NV_TELA_H-48},28.0f/FOLHA_W,.055f,.058f,.068f,.965f*anim);
-  gfx_luz_canto((GfxRect){x,24,FOLHA_W,NV_TELA_H-48},28.0f/FOLHA_W,FOLHA_W*.78f,0.0f,FOLHA_W*.78f,ar,ag,ab,.09f*anim);
   txt_desenhar_alpha(txt_linha(TXT_PAINEL_TITULO,"Fontes",240,241,243,255),x+40,44,anim);
   int nbt=nBotoes();
   for(int i=0;i<nbt;i++) {
@@ -868,7 +854,7 @@ void stream_folha_desenhar(Uint32 agora) {
     // Em foco: brilho difuso por tras (0,9x a altura de folga) e a pilula na
     // cor de realce.
     if(sel) focoFonte((GfxRect){bx,44,120,50},.3f,anim);
-    else    gfx_cor((GfxRect){bx,44,120,50},.3f,.14f,.14f,.15f,anim);
+    else    gfx_cor((GfxRect){bx,44,120,50},.3f,.075f,.079f,.092f,anim);
     int c=sel?ti:224;
     TxtLinha l=txt_linha(TXT_PG_FIM,rotuloBotao(botaoDe(i)),c,c,c,255);
     txt_desenhar_alpha(l,bx+(120-l.w)*.5f,58,anim);
@@ -889,15 +875,16 @@ void stream_folha_desenhar(Uint32 agora) {
   int ini=filtro>1?filtro-1:0;
   float tx=x+40;
   for(int i=ini;i<nProvedores && i<ini+3;i++) {
-    float w=i?232:108;int sel=i==filtro,c=sel?ti:202;
+    float w=i?232:108;int sel=i==filtro,c=sel?(grupo==0?ti:224):190;
     if(sel && grupo==0) focoFonte((GfxRect){tx,182,w,50},.5f,anim);
-    else if(sel) {
-      float sr, sg, sb; corFocoFonte(&sr, &sg, &sb);
-      gfx_cor((GfxRect){tx,182,w,50},.5f,sr,sg,sb,.62f*anim);
-    } else gfx_cor((GfxRect){tx,182,w,50},.5f,.14f,.14f,.15f,anim);
+    else gfx_cor((GfxRect){tx,182,w,50},.5f,
+                 sel?.092f:.075f,sel?.096f:.079f,sel?.110f:.092f,anim);
     TxtLinha l=txt_linha_corta(TXT_PG_FIM,provedores[i],c,c,c,255,w-24);
     txt_desenhar_alpha(l,tx+(w-l.w)*.5f,196,anim);
-    if(sel && grupo==0) gfx_cor((GfxRect){tx+16,237,w-32,2},0,ti/255.0f,ti/255.0f,ti/255.0f,anim);
+    if(sel && grupo!=0) {
+      float cr,cg,cb; ajustes_acento(&cr,&cg,&cb);
+      gfx_cor((GfxRect){tx+16,237,w-32,2},1,cr,cg,cb,anim);
+    }
     tx+=w+12;
   }
   gfx_sem_recorte();
@@ -919,19 +906,11 @@ void stream_folha_desenhar(Uint32 agora) {
     int i=filtrado(row),sel=grupo==1 && foco==row;
     int corTitulo,corProv,corDesc,corMeta;
     const Stream *s=&lista[i];
-    // PREENCHIMENTO, E NAO CONTORNO. O desenho antigo pintava a linha clara e
-    // desenhava a escura 2 px por dentro — o que sobrava era um contorno de
-    // 2 px. Relato do dono (16/09): "tem lugar como a biblioteca, as fontes e
-    // a sidebar que ainda tao usando o contorno ao inves do fill". A regra nova
-    // e uma superficie cheia, graduada pelo acento e com tinta contrastante.
+    // Cartao cheio e silencioso. A superficie escura repousa no painel e o
+    // foco recebe a lavagem tonal da lista de episodios, sem aro nem halo.
     GfxRect r={x+40,y,FOLHA_W-80,FOLHA_LINHA-14};
-    // A linha em foco e a COR DE REALCE com um brilho difuso por tras (a
-    // mesma luz do menu lateral; a folga e 0,5x a altura porque a linha tem
-    // 214 px e 0,9x cobriria a folha inteira de uma mancha). O recorte da
-    // lista segura a luz dentro do painel.
     if(sel) focoFonte(r,.10f,anim);
-    else { r.x+=2;r.y+=2;r.w-=4;r.h-=4;
-           gfx_cor(r,.09f,.135f,.135f,.14f,anim); }
+    else gfx_cor(r,.10f,.062f,.066f,.079f,.92f*anim);
     // As quatro linhas de texto invertem junto: claro sobre claro nao se le.
     // Sobre o realce, a tinta principal e a secundaria de ajustes.h.
     { int c1=sel?ti:240, c2=sel?ti2:175, c3=sel?ti2:194, c4=sel?ti2:224;

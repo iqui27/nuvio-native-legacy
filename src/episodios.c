@@ -556,9 +556,9 @@ void episodios_desenhar(void) {
     int sel=grupo==1 && i==foco;
     GfxRect row={x+40,y,EP_W-80,EP_ROW-14};
     GfxRect r=row;
-    // As linhas inativas compartilham o fundo do painel; so o foco ganha uma
-    // superficie propria. Evita a pilha de cartoes repetidos e da mais respiro
-    // a arte. O divisor fino preserva o alinhamento sem desenhar contorno.
+    // Cada episodio recebe uma base escura, quase fundida ao painel; o foco
+    // sobe para ameixa. A diferenca curta preserva o ritmo dos cartoes sem
+    // empilhar bordas nem deixar o acento rosa dominar a folha.
     if (sel) {
       if (tinta < .5f) {
         // Acento branco pede uma superficie clara: a tinta escura devolvida

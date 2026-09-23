@@ -897,11 +897,20 @@ void avisos_lista_desenhar(float x, float y0, float w, float a, int focoLinha) {
     float rowH = expande ? alturaCanalFoco : AVL_ROW;
     GfxRect row = { x, y, w, rowH - 10.0f };
     const char *acao = NULL;
-    gfx_cor(row, 14.0f / row.h, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, 0.34f * a);
-    if (f) gfx_cor(row, 14.0f / row.h, ar, ag, ab, a);
-    gfx_cor((GfxRect){ x + 20.0f, y + 22.0f, 52.0f, 52.0f }, 0.5f, f ? 0.11f : 0.16f, f ? 0.115f : 0.17f, f ? 0.13f : 0.20f, a);
+    // Cartoes em repouso ficam quase grafite; o foco e uma superficie
+    // dessaturada com tinta adaptativa, nunca um bloco de accent saturado.
+    { float r = 0.062f, g = 0.066f, b = 0.079f;
+      if (f) {
+        if (tinta > 0.5f) { r = 0.088f + ar * 0.055f; g = 0.075f + ag * 0.035f; b = 0.090f + ab * 0.045f; }
+        else { r = 0.78f; g = 0.79f; b = 0.82f; }
+      }
+      gfx_cor(row, 14.0f / row.h, r, g, b, a * (f ? 1.0f : 0.92f)); }
+    gfx_cor((GfxRect){ x + 20.0f, y + 22.0f, 52.0f, 52.0f }, 0.5f,
+            f && tinta < 0.5f ? 0.69f : 0.12f,
+            f && tinta < 0.5f ? 0.70f : 0.13f,
+            f && tinta < 0.5f ? 0.73f : 0.15f, a);
     gfx_icone((GfxRect){ x + 32.0f, y + 34.0f, 28.0f, 28.0f }, icone(av->tipo),
-              f ? 0.96f : 0.62f, f ? 0.96f : 0.80f, f ? 0.97f : 0.96f, a);
+              f ? tinta : 0.62f, f ? tinta : 0.80f, f ? tinta : 0.96f, a);
     // NOVO = um ponto na cor de acento colado ao icone, e nao uma pilula com
     // palavra: a palavra competia com o titulo e o ponto e o vocabulario que
     // a aba Social ja usa para "qual delas e nova".
@@ -914,7 +923,7 @@ void avisos_lista_desenhar(float x, float y0, float w, float a, int focoLinha) {
       if (nova < AVL_ROW) nova = AVL_ROW;
       alturaCanalFoco = nova;
     }
-    else if (f) txt_bloco(TXT_CAPTION, av->texto, 60, 62, 70, x + 92.0f, y + 50.0f, w - 116.0f, 27.0f, a, 2);
+    else if (f) txt_bloco(TXT_CAPTION, av->texto, ts, ts, ts, x + 92.0f, y + 50.0f, w - 116.0f, 27.0f, a, 2);
     else        txt_bloco(TXT_CAPTION, av->texto, 150, 153, 162, x + 92.0f, y + 50.0f, w - 116.0f, 27.0f, a, 2);
     switch (av->tipo) {
       case AV_REC:    acao = i18n("OK abre Salvos"); break;

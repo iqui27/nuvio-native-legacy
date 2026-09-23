@@ -36,11 +36,6 @@
 // Quanto o conteudo a direita escurece com a barra aberta. Sem isso o menu
 // disputa atencao com a arte do hero, que e clara e ocupa a tela toda.
 #define NV_MENU_VEU        0.58f
-// O acento continua sendo a identidade do foco, mas nao precisa ser pintado
-// em 100% para continuar legivel no sofa. Misturar um pouco da superficie do
-// painel evita que OCEAN/ARCTIC_BLUE virem um bloco eletrico na TV.
-#define NV_MENU_FOCO_MISTURA 0.74f
-#define NV_MENU_FOCO_GLOW    0.16f
 #define NV_MENU_INATIVO      0.72f
 // TEMPO DE ABRIR E DE FECHAR, com relogio proprio.
 //
@@ -94,41 +89,28 @@ static void icone(int d, float cx, float cy, float s, float r, float g, float b,
 #define NV_MENU_TEXTO_ESCURO 20
 static void desenhaRodape(float px, float w, float alpha, float foco);
 
-// Superficie do foco: acento graduado sobre o mesmo azul-cinza do painel.
-// A cor de texto continua vindo de ajustes_acento_tinta(); so a superficie
-// recebe a reducao de saturacao/luminancia para nao estourar na tela fisica.
+// A mesma superficie tonal usada nas fontes e na lista lateral: acentos
+// cromaticos viram uma lavagem discreta; o branco recebe cinza claro para
+// manter a tinta escura legivel. Sem halo ou aro em volta da pilula.
 static void corFocoMenu(float *r, float *g, float *b) {
-  float ar, ag, ab, k = NV_MENU_FOCO_MISTURA;
+  float ar, ag, ab;
   ajustes_acento(&ar, &ag, &ab);
-  // Branco/grafite ja sao superficies claras: neles a graduacao e menor para
-  // nao transformar um foco limpo em cinza morto. Nos acentos cromaticos a
-  // reducao de 0.74 e a que segura o excesso de azul/amarelo na TV.
-  if (0.2126f * ar + 0.7152f * ag + 0.0722f * ab > 0.88f) k = 0.88f;
-  *r = 0.055f + (ar - 0.055f) * k;
-  *g = 0.058f + (ag - 0.058f) * k;
-  *b = 0.068f + (ab - 0.068f) * k;
+  if (ajustes_acento_tinta(NULL, NULL, NULL) < 0.5f) {
+    *r = 0.78f; *g = 0.79f; *b = 0.82f;
+  } else {
+    *r = 0.088f + ar * 0.055f;
+    *g = 0.075f + ag * 0.035f;
+    *b = 0.090f + ab * 0.045f;
+  }
 }
 
-// Uma camada de foco so. O brilho e menor e mais proximo da pilula que o
-// antigo halo de 2,8 alturas; o risco de "painel azul" some sem perder o
-// feedback de movimento do D-pad.
+// O foco e uma superficie cheia e quieta; a mola continua a cuidar da entrada,
+// mas nenhum efeito difuso aumenta o fill-rate ou disputa com a arte ao fundo.
 static void focoMenu(GfxRect pill, float f, float alpha) {
-  float ar, ag, ab, cr, cg, cb;
-  GfxRect luz;
+  float cr, cg, cb;
   if (f <= 0.01f || alpha <= 0.01f) return;
-  ajustes_acento(&ar, &ag, &ab);
-  luz.x = pill.x - pill.h * 0.55f;
-  luz.y = pill.y - pill.h * 0.55f;
-  luz.w = pill.w + pill.h * 1.10f;
-  luz.h = pill.h * 2.10f;
-  gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
-           ar, ag, ab, NV_MENU_FOCO_GLOW * f * alpha);
   corFocoMenu(&cr, &cg, &cb);
   gfx_cor(pill, NV_MENU_RAIO_PILL, cr, cg, cb, f * alpha);
-  // Uma luz curta no alto dá acabamento e separa a pilula do painel sem
-  // criar contorno duro ou outra borda azul.
-  gfx_rect(pill, 0, GFX_BRILHO_TOPO, NV_MENU_RAIO_PILL,
-           0.24f, 0, 0.5f, 1, 1, 1, 0.10f * f * alpha);
 }
 
 // O legacy deixa a rail de 144px sempre visível. O menu expandido é uma
@@ -357,17 +339,11 @@ void menu_desenhar(Uint32 agora) {
   // Painel quase opaco e um pouco mais escuro que NV_COR_FUNDO: encostado no
   // fundo da home ele precisa de uma aresta propria, senao a barra parece um
   // pedaco da tela que escureceu sozinho.
-  // PAINEL FLUTUANTE ("aspecto mais moderno", dono, 21/09/2026): solto das
-  // bordas, cantos arredondados, um pouco translucido, com uma luz difusa na
-  // cor de realce entrando pelo topo. A folga de 24 px em cima e embaixo e a
-  // mesma do rodape; a aresta esquerda continua a 0 para o deslize nao
-  // mostrar fundo por tras.
-  float ar_, ag_, ab_; ajustes_acento(&ar_, &ag_, &ab_);
+  // Painel flutuante neutro, com o acento reservado a selecao. Assim a cor
+  // do tema nao tinge a tela toda enquanto a pessoa percorre as secoes.
   GfxRect painel = { px, 24.0f, w, NV_TELA_H - 48.0f };
+  float ar_, ag_, ab_; ajustes_acento(&ar_, &ag_, &ab_);
   gfx_cor(painel, 28.0f / painel.h, 0.055f, 0.058f, 0.068f, 0.965f * entrada);
-  // A luz e recortada pelo SDF do proprio painel (gfx_luz_canto): com a
-  // tesoura o canto de cima ficava quadrado.
-  gfx_luz_canto(painel, 28.0f / painel.h, w * 0.34f, 0.0f, w * 0.86f, ar_, ag_, ab_, 0.09f * entrada);
 
   // Tudo daqui para baixo fica preso ao painel. Sem o recorte, o rotulo — que e
   // desenhado no x fixo do texto — vaza para o conteudo enquanto a barra ainda

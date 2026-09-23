@@ -113,14 +113,13 @@ static void medirCartaz(void) {
 // Abre a modal de envio direto, com a obra que a captura quer fotografar. E a
 // MESMA porta que detail.c usa (recenviar_abrir), entao nao e um atalho de
 // teste: e o segundo dos dois caminhos reais.
-static void abrirEnvio(const char *titulo, const char *poster,
-                       const char *meta) {
+static void abrirEnvio(const char *titulo, const char *logo, const char *meta) {
   CatItem ci;
   memset(&ci, 0, sizeof ci);
   snprintf(ci.imdb, sizeof ci.imdb, "%s", "tt0111161");
   snprintf(ci.tipo, sizeof ci.tipo, "%s", "movie");
   snprintf(ci.titulo, sizeof ci.titulo, "%s", titulo);
-  snprintf(ci.poster, sizeof ci.poster, "%s", poster);
+  snprintf(ci.logo, sizeof ci.logo, "%s", logo);
   snprintf(ci.meta, sizeof ci.meta, "%s", meta);
   assert(recenviar_abrir(&ci));
 }
@@ -666,16 +665,13 @@ int main(int argc, char **argv) {
   // cartao ainda se separa do fundo e se o cartaz ainda tem silhueta.
   nContatos = 4;   // foi zerado pela captura do estado vazio
 
-  abrirEnvio("Um Sonho de Liberdade", "deploy/app/art/poster/00.jpg",
-             "1994 · 2h22");
+  abrirEnvio("Fallout", "deploy/app/art/logo/00.png", "2024 · 56 min");
   teclaEnv(SDLK_DOWN);
   snprintf(nome, sizeof nome, "%s-arte-real.bmp", saida);
   captura(nome, w);
 
-  // O PROXIMO PASSO DO MESMO GESTO. E onde o cartaz trabalha mais: o cabecalho
-  // troca o titulo pelo nome do amigo, entao sem ele nada na tela diz QUAL obra
-  // o proximo OK envia. As duas capturas tambem provam a moldura: o cartao tem
-  // de ter a MESMA altura nas duas.
+  // O PROXIMO PASSO DO MESMO GESTO. A arte do titulo identifica a obra ao lado
+  // do nome do amigo sem repetir o texto; ambas as capturas provam a moldura.
   teclaEnv(SDLK_RETURN);
   teclaEnv(SDLK_DOWN); teclaEnv(SDLK_DOWN);
   snprintf(nome, sizeof nome, "%s-arte-modelos.bmp", saida);
@@ -683,38 +679,27 @@ int main(int argc, char **argv) {
   teclaEnv(SDLK_AC_BACK);
   teclaEnv(SDLK_AC_BACK);
 
-  // ARTE DEITADA NO CAMPO DO CARTAZ. Acontece de verdade: canal de addon e obra
-  // vinda de lista alheia chegam com 16:9 em `poster`. GFX_ARTE nao tem "cover"
-  // — sem o encaixe por proporcao, esta captura sairia com a imagem ESTICADA a
-  // 2:3, que e uma cara deformada em tela de 55".
-  abrirEnvio("Breaking Bad", "deploy/app/art/00.jpg",
-             "2008 · 5 temporadas");
+  // SEM LOGO, o nome da obra segue como fallback tipografico.
+  abrirEnvio("Breaking Bad", "", "2008 · 5 temporadas");
   teclaEnv(SDLK_DOWN);
   snprintf(nome, sizeof nome, "%s-arte-deitada.bmp", saida);
   captura(nome, w);
   teclaEnv(SDLK_AC_BACK);
 
-  // ARTE QUE NAO CHEGA. Caminho local que nao existe: o decode falha e a
-  // textura nunca fica pronta, que e o mesmo desenho de "a rede ainda nao
-  // trouxe". Tem de sair ESQUELETO na caixa 2:3, e nao buraco preto.
-  abrirEnvio("Whiplash: Em Busca da Perfeição",
-             "deploy/app/art/poster/nao-existe.jpg", "2014 · 1h47");
+  // SEM LOGO, nao reservar espaco nem substituir a identificacao por um poster.
+  abrirEnvio("Whiplash: Em Busca da Perfeição", "", "2014 · 1h47");
   teclaEnv(SDLK_DOWN);
   snprintf(nome, sizeof nome, "%s-arte-ausente.bmp", saida);
   captura(nome, w);
   teclaEnv(SDLK_AC_BACK);
 
-  // TITULO LONGO. A coluna de texto perdeu 130px para o cartaz; este e o nome
-  // que prova que ela ainda cabe, em duas linhas, sem reticencia.
-  abrirEnvio("O Senhor dos Anéis: A Sociedade do Anel",
-             "deploy/app/art/poster/03.jpg", "2001 · 2h58");
+  // TITULO LONGO sem logo: fallback continua legivel em duas linhas.
+  abrirEnvio("O Senhor dos Anéis: A Sociedade do Anel", "", "2001 · 2h58");
   snprintf(nome, sizeof nome, "%s-titulo-longo.bmp", saida);
   captura(nome, w);
   teclaEnv(SDLK_AC_BACK);
 
-  // SEM CARTAZ NENHUM. `poster` vazio nao reserva espaco: o cabecalho volta a
-  // ser o de antes, em largura cheia. Um retangulo cinza permanente no lugar de
-  // uma arte que nunca vai existir seria pior do que nao ter cartaz.
+  // SEM LOGO, o cabecalho volta a usar o titulo em largura cheia.
   abrirEnvio("Stranger Things", "", "2016 · 4 temporadas");
   teclaEnv(SDLK_DOWN);
   snprintf(nome, sizeof nome, "%s-sem-poster.bmp", saida);

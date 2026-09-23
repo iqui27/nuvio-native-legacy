@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-22T23:01:04Z",
+  "title": "Nuvio TV - Cinema contemporaneo",
+  "extensions": {
+    "northStar": "Cinema contemporaneo",
+    "tone": ["elegante", "discreto", "legivel a distancia"],
+    "productRegister": "product",
+    "colorRoles": {
+      "accent": {
+        "dynamic": true,
+        "source": "ajustes_acento()",
+        "referenceTheme": "rose",
+        "referenceHex": "#EC407A",
+        "rule": "Nunca fixar o tema da captura; tinta clara para acento colorido e tinta escura para branco/quase branco."
+      },
+      "background": {"hex": "#0D0D0D", "dynamic": false},
+      "controlRest": {"hex": "#303030", "dynamic": false},
+      "cardRest": {"hex": "#101114", "dynamic": false},
+      "cardFocusRoseReference": {"hex": "#23151C", "dynamic": true}
+    },
+    "elevation": {
+      "default": "Tonal layering; avoid decorative outlines and generic shadows.",
+      "glow": "Not a default focus treatment. Reserve gfx_luz_canto/GFX_SOMBRA for explicitly approved ambient surfaces."
+    },
+    "motion": {
+      "principle": "Motion clarifies focus and transition; never carries meaning by itself.",
+      "reducedMotion": "Remove transitions while retaining the complete selected state."
+    },
+    "componentExamples": [
+      {
+        "name": "episode-row-rest",
+        "nativeSpec": "Selectable content card; rounded dark surface #101114; clear title and metadata; no decorative border."
+      },
+      {
+        "name": "episode-row-focused",
+        "nativeSpec": "Approach A: restrained dark accent wash derived from the active theme, light text, preserved poster ratio; no glow."
+      },
+      {
+        "name": "close-ghost",
+        "nativeSpec": "No box at rest; subtle neutral surface and standard focus cue only while selected."
+      }
+    ]
+  }
+}

@@ -762,6 +762,25 @@ static float focoVisual(float f) {
   return f * f * (3.0f - 2.0f * f);
 }
 
+// A mesma superficie calma da folha de fontes: repouso quase grafite, foco
+// numa lavagem curta do accent. Sem glow, aro ou gradiente — a geometria e a
+// diferenca de luminancia bastam para localizar o item a distancia.
+static void superficieItem(GfxRect r, float raio, float f, float a) {
+  float v = focoVisual(f), cr, cg, cb;
+  float rr = 0.062f, rg = 0.066f, rb = 0.079f;
+  ajustes_acento(&cr, &cg, &cb);
+  if (ajustes_acento_tinta(NULL, NULL, NULL) < 0.5f) {
+    cr = 0.78f; cg = 0.79f; cb = 0.82f;
+  } else {
+    cr = 0.088f + cr * 0.055f;
+    cg = 0.075f + cg * 0.035f;
+    cb = 0.090f + cb * 0.045f;
+  }
+  gfx_cor(r, raio,
+          anim_mistura(rr, cr, v), anim_mistura(rg, cg, v),
+          anim_mistura(rb, cb, v), a * (v > 0.0f ? 1.0f : 0.92f));
+}
+
 // As duas cores ja ficam no cache de texto. O que muda por quadro e somente a
 // opacidade, nunca a chave de rasterizacao: o titulo e a meta fazem a mesma
 // travessia que a superficie, sem o estalo claro/escuro no meio da mola.
@@ -842,7 +861,6 @@ static void desenhaSecao(float x, float y, const char *rotulo, float a) {
 static void desenhaLinha(int i, float dx, float y, float a) {
   const SPLinha *l = &linhas[i];
   float f = animFoco[i];
-  float fr, fg, fb;
   float px = SP_X + dx + SP_PAD, tx = SP_X + dx + SP_TEXTO_X;
   char buf[192];
   GfxRect poster = { px, y, SP_POSTER_W, SP_POSTER_H };
@@ -851,35 +869,13 @@ static void desenhaLinha(int i, float dx, float y, float a) {
   int tintaFoco2 = ajustes_tinta_foco2();
 
   if (f > 0.01f) {
-    // A LINHA EM FOCO USA O ACCENT CONFIGURADO. O preenchimento inteiro deixa
-    // o foco claro a tres metros e evita o branco fixo que apagava a identidade
-    // escolhida em Ajustes. A tinta e calculada pelo mesmo degrau usado no
-    // restante da interface, logo acentos claros e escuros continuam legiveis.
     GfxRect r = { px - 12.0f, y - SP_FOCO_PADY, SP_INTERNO + 24.0f,
                   SP_POSTER_H + SP_FOCO_PADY * 2.0f };
-    ajustes_acento(&fr, &fg, &fb);
-    // Brilho difuso por tras da linha em foco (a luz da pilula do menu
-    // lateral, 0,35): so uma linha o tem, e um desenho de ~0,25 tela.
-    { GfxRect luz = { r.x - r.h * 0.5f, r.y - r.h * 0.5f, r.w + r.h, r.h * 2.0f };
-    gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, fr, fg, fb, 0.28f * v * a); }
-    // 14 px de canto (em fracao da altura de 150), e nao 0,06 x 150 = 9: os
-    // cantos redondos "de verdade" do dono.
-    gfx_cor(r, 14.0f / r.h, fr, fg, fb, v * a);
-    // A SUPERFICIE NAO E CHAPADA: um brilho amplo entra pelo alto e uma
-    // sombra curta assenta a linha no painel. As duas luzes sao neutras para
-    // preservar qualquer acento, enquanto o texto continua usando a tinta
-    // adaptativa calculada acima.
-    gfx_luz_canto(r, 14.0f / r.h, r.w * 0.84f, -r.h * 0.10f,
-                  r.h * 1.05f, 1.0f, 1.0f, 1.0f, 0.12f * v * a);
-    gfx_luz_canto(r, 14.0f / r.h, r.w * 0.18f, r.h * 1.08f,
-                  r.h * 0.82f, 0.0f, 0.0f, 0.0f, 0.10f * v * a);
-    // Dois riscos muito finos fecham o recorte visual sem criar uma borda
-    // brilhante pesada. Eles tambem mantem a leitura do card quando o acento
-    // escolhido tem pouca diferenca de luminancia para o fundo.
-    { GfxRect topo = { r.x + 18.0f, r.y + 3.0f, r.w - 36.0f, 2.0f };
-      gfx_cor(topo, 1.0f / topo.h, 1.0f, 1.0f, 1.0f, 0.16f * v * a); }
-    { GfxRect base = { r.x + 20.0f, r.y + r.h - 4.0f, r.w - 40.0f, 2.0f };
-      gfx_cor(base, 1.0f / base.h, 0.0f, 0.0f, 0.0f, 0.13f * v * a); }
+    superficieItem(r, 14.0f / r.h, f, a);
+  } else {
+    GfxRect r = { px - 12.0f, y - SP_FOCO_PADY, SP_INTERNO + 24.0f,
+                  SP_POSTER_H + SP_FOCO_PADY * 2.0f };
+    superficieItem(r, 14.0f / r.h, 0.0f, a);
   }
 
   { GLuint tex = l->poster[0] ? tex_obter(l->poster) : 0;
@@ -1025,21 +1021,13 @@ static void desenhaLinha(int i, float dx, float y, float a) {
 static void desenhaRecLinha(int linha, int idx, float dx, float y, float a) {
   const RecItem *r = &recs[idx];
   float f = (linha >= 0 && linha < SP_MAX) ? animFoco[linha] : 0.0f;
-  float fr, fg, fb;
   float px = SP_X + dx + SP_PAD, tx = SP_X + dx + SP_TEXTO_X;
   char buf[320], quando[64];
   GfxRect poster = { px, y, SP_POSTER_W, SP_POSTER_H };
 
-  if (f > 0.01f) {
-    // A mesma superficie de foco da aba Salvos, agora usando o accent
-    // configurado para que recomendacoes nao voltem ao branco fixo.
-    GfxRect anel = { px - 12.0f, y - SP_FOCO_PADY, SP_INTERNO + 24.0f,
+  { GfxRect card = { px - 12.0f, y - SP_FOCO_PADY, SP_INTERNO + 24.0f,
                      SP_POSTER_H + SP_FOCO_PADY * 2.0f };
-    ajustes_acento(&fr, &fg, &fb);
-    { GfxRect luz = { anel.x - anel.h * 0.5f, anel.y - anel.h * 0.5f, anel.w + anel.h, anel.h * 2.0f };
-      gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, fr, fg, fb, 0.28f * f * a); }
-    gfx_cor(anel, 14.0f / anel.h, fr, fg, fb, f * a);
-  }
+    superficieItem(card, 14.0f / card.h, f, a); }
 
   if (!r->visto) {
     // A MARCA DE "NAO LIDA" E UMA BARRA, e nao mais um ponto de 10px.
@@ -1151,7 +1139,6 @@ static void desenhaAbas(float dx, float a) {
   rot[SP_ABA_AVISOS] = "Avisos";
   for (i = 0; i < 3; i++) {
     int ativa = (i == aba);
-    int emFoco = (foco == SP_FOCO_ABAS && ativa);
     int cor = ativa ? ajustes_tinta_foco() : 176;
     int novas = i == SP_ABA_SOCIAL ? novasRec : i == SP_ABA_AVISOS ? novasAv : 0;
     TxtLinha t;
@@ -1167,20 +1154,10 @@ static void desenhaAbas(float dx, float a) {
     float selo = (!ativa && novas > 0) ? 34.0f : 0.0f;
     float margem = ativa ? 44.0f : 0.0f;
     GfxRect p = { x, SP_ABAS_Y, t.w + margem + selo, SP_ABAS_H };
-    // TRES ESTADOS, e nao duas pilulas cinza (dono, 21/09/2026): a aba ATIVA
-    // e uma pilula na cor de realce com a tinta da regra — sempre cheia, e
-    // nao a 32 %, porque tinta escura sobre realce branco a 32 % virava cinza
-    // sobre cinza; quando o D-pad esta na barra ela ainda ganha o brilho
-    // difuso, que e o que diz "o foco esta aqui" sem uma segunda cor. As
-    // outras sao SO TEXTO em 176, sem caixa: caixa em tudo e o que dava
-    // cara de formulario a linha.
-    if (ativa) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-                 if (emFoco) {
-                   GfxRect luz = { p.x - p.h * 0.9f, p.y - p.h * 0.9f,
-                                   p.w + p.h * 1.8f, p.h * 2.8f };
-                   gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, ar, ag, ab, 0.35f * a);
-                 }
-                 gfx_cor(p, NV_RAIO_PILL, ar, ag, ab, a); }
+    // Uma unica pilula baixa identifica a secao atual; sem aro e sem glow.
+    // A superficie segue a mesma tinta adaptativa dos cartoes e nao injeta
+    // uma mancha saturada no cabecalho do painel.
+    if (ativa) superficieItem(p, NV_RAIO_PILL, 1.0f, a);
     txt_desenhar_alpha(t, x + (ativa ? 22.0f : 0.0f),
                        SP_ABAS_Y + (SP_ABAS_H - t.h) * 0.5f, a);
     if (selo > 0.0f) {
@@ -1277,23 +1254,37 @@ static void desenhaConsentimento(float dx, float y0, float a) {
 // Uma linha-botao compacta: pilula que inverte no foco, com um subtitulo
 // opcional. A altura e menor que a de um card porque isto e uma acao da lista,
 // nao conteudo para consumir a tela.
-// Uma linha-botao: a PILULA DA TABELA (botoes.h) dentro do bloco da linha,
-// e nao mais uma laje da largura do painel. "Adicionar um amigo" e uma acao e
-// tem a cara de acao do resto do app: secundario (contorno fino) em repouso,
-// realce em foco. `primario` para a resposta afirmativa do consentimento, que
-// e o caminho principal daquele cartao. `sub` ficou por compatibilidade:
-// ninguem passa subtitulo hoje, e um botao com subtitulo e uma linha de
-// ajustes, nao um botao.
+// Acao compacta da lista. A caixa neutra permanece visivel em repouso e recebe
+// o mesmo foco tonal dos cartoes: sem contorno fino e sem glow, que em 1080p
+// viravam um aro luminoso ao redor de uma acao pequena. `sub` e mantido porque
+// a assinatura atende os dois antigos chamadores.
 static void desenhaBotaoLinha(int i, float dx, float y, float alt, float a,
                               const char *titulo, const char *sub,
                               const char *icone, int primario) {
   float f = (i >= 0 && i < SP_MAX) ? animFoco[i] : 0.0f;
+  float v = focoVisual(f), tinta = ajustes_acento_tinta(NULL, NULL, NULL);
   float h = primario ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO;
   float w = botao_largura(titulo, icone, primario);
   GfxRect r = { SP_X + dx + SP_PAD, y + (alt - h) * 0.5f, w, h };
+  float grupo, x0;
+  TxtLinha repouso, foco;
   (void)sub;
   if (r.w > SP_INTERNO) r.w = SP_INTERNO;
-  botao_pilula(r, titulo, icone, f, primario, 0, a);
+  superficieItem(r, 0.5f, f, a);
+  repouso = txt_linha(TXT_DET_BOTAO, titulo, 220, 220, 224, 255);
+  foco = txt_linha(TXT_DET_BOTAO, titulo, ajustes_tinta_foco(),
+                   ajustes_tinta_foco(), ajustes_tinta_foco(), 255);
+  grupo = (float)repouso.w + ((icone && icone[0]) ? BOTAO_ICONE + BOTAO_ICONE_GAP : 0.0f);
+  x0 = r.x + (r.w - grupo) * 0.5f;
+  if (icone && icone[0]) {
+    float ic = anim_mistura(220.0f / 255.0f, tinta, v);
+    GfxRect ir = { x0, r.y + (r.h - BOTAO_ICONE) * 0.5f,
+                   BOTAO_ICONE, BOTAO_ICONE };
+    gfx_icone(ir, icone, ic, ic, ic, a);
+    x0 += BOTAO_ICONE + BOTAO_ICONE_GAP;
+  }
+  txt_foco_transicao(repouso, foco, x0,
+                     r.y + (r.h - (float)repouso.h) * 0.5f, v, a);
 }
 
 // O INTERRUPTOR DE "APARECER PARA OUTRAS PESSOAS", e por que ele deixou de ser
@@ -1373,17 +1364,7 @@ static void desenhaAparecer(int i, float dx, float y, float alt, float a) {
       ? "Quem te conhece te acha nas sugestões"
       : "Você continua trocando recomendações";
 
-  // Raio de 14 px em fracao da ALTURA, como as outras linhas desta camada: em
-  // 88 px de altura sao 0,159, longe dos dois tetos do gfx_cor (0,5 e
-  // 0,5*w/h = 3,3). Dividir por min(w,h) daria 0,020 aqui e canto vivo.
-  // A LINHA EM FOCO E A COR DE REALCE, como toda linha desta camada — era
-  // branco cravado (0.961) com texto 17, a excecao que sobrou da regra velha.
-  if (f > 0.01f) {
-    GfxRect luz = { r.x - r.h * 0.5f, r.y - r.h * 0.5f, r.w + r.h, r.h * 2.0f };
-    gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, ar, ag, ab, 0.28f * f * a);
-  }
-  gfx_cor(r, 14.0f / alt, anim_mistura(0.14f, ar, f), anim_mistura(0.15f, ag, f),
-          anim_mistura(0.17f, ab, f), a);
+  superficieItem(r, 14.0f / alt, f, a);
 
   { TxtLinha t = txt_linha_corta(TXT_CALLOUT, "Aparecer para outras pessoas",
                                  c1, c1, c1, 255, largTexto);
@@ -1468,18 +1449,9 @@ static void desenhaSugLinha(int i, int idx, float dx, float y, float a) {
   char origem[128];
   int esc = f > 0.5f;
 
-  if (f > 0.01f) {
-    float fr, fg, fb;
-    // Mesma superficie de foco das outras linhas desta camada.
-    GfxRect p = { px - 12.0f, y - SP_FOCO_PADY, SP_INTERNO + 24.0f,
+  { GfxRect p = { px - 12.0f, y - SP_FOCO_PADY, SP_INTERNO + 24.0f,
                   SPS_H_SUG + SP_FOCO_PADY * 2.0f };
-    ajustes_acento(&fr, &fg, &fb);
-    { GfxRect luz = { p.x - p.h * 0.5f, p.y - p.h * 0.5f,
-                      p.w + p.h, p.h * 2.0f };
-      gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
-               fr, fg, fb, 0.28f * f * a); }
-    gfx_cor(p, 14.0f / p.h, fr, fg, fb, f * a);
-  }
+    superficieItem(p, 14.0f / p.h, f, a); }
   { GfxRect av = { px, y + (SPS_H_SUG - SPS_SUG_AV) * 0.5f,
                    SPS_SUG_AV, SPS_SUG_AV };
     rec_avatar(av, s->avatar, s->nome, s->id, a); }
@@ -1521,17 +1493,9 @@ static void desenhaAmigoLinha(int i, int idx, float dx, float y, float a) {
   float f = (i >= 0 && i < SP_MAX) ? animFoco[i] : 0.0f;
   float v = focoVisual(f);
   float px = SP_X + dx + SP_PAD;
-  if (f > 0.01f) {
-    GfxRect p = { px - 12.0f, y - SP_FOCO_PADY, SP_INTERNO + 24.0f,
+  { GfxRect p = { px - 12.0f, y - SP_FOCO_PADY, SP_INTERNO + 24.0f,
                   SPS_H_AMIGO + SP_FOCO_PADY * 2.0f };
-    float fr, fg, fb;
-    ajustes_acento(&fr, &fg, &fb);
-    { GfxRect luz = { p.x - p.h * 0.5f, p.y - p.h * 0.5f,
-                      p.w + p.h, p.h * 2.0f };
-      gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
-               fr, fg, fb, 0.28f * v * a); }
-    gfx_cor(p, 14.0f / p.h, fr, fg, fb, v * a);
-  }
+    superficieItem(p, 14.0f / p.h, f, a); }
   { GfxRect av = { px, y + (SPS_H_AMIGO - SPS_AMIGO_AV) * 0.5f,
                    SPS_AMIGO_AV, SPS_AMIGO_AV };
     rec_avatar(av, c->avatar, c->nome, c->id, a); }
@@ -1613,15 +1577,11 @@ void spainel_desenhar(Uint32 agora) {
   // Entra deslizando da BORDA DIREITA. `x` e o deslocamento: em a=0 o painel
   // esta inteiro fora da tela.
   x = (1.0f - a) * (NV_TELA_W - SP_X);
-  // PAINEL FLUTUANTE na "cara nova" da barra lateral (menu.c, 21/09/2026):
-  // ja era solto das bordas (24 px) e arredondado (28 px = 0,036 de 776);
-  // agora e translucido, mais escuro, com UMA luz difusa na cor de realce
-  // entrando pelo canto superior direito, presa aos cantos (GFX_LUZ). E a
-  // unica mancha grande daqui — o veu de tela cheia ja e a primeira camada.
+  // Painel flutuante escuro e neutro; o veu separa a camada do conteudo sem
+  // uma luz decorativa colorida competindo com posters e selos.
   { GfxRect p = { SP_X + x, SP_Y, SP_W, SP_H };
-    float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
     gfx_cor(p, 28.0f / SP_W, 0.055f, 0.058f, 0.068f, 0.94f * a);
-    gfx_luz_canto(p, 28.0f / SP_W, SP_W * 0.9f, -SP_W * 0.1f, SP_W * 0.65f, ar, ag, ab, 0.22f * a); }
+  }
 
   // Tudo daqui para baixo fica preso ao painel: sem o recorte, a lista rolada
   // desenha por cima do cabecalho e por baixo da borda inferior.
