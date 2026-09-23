@@ -28,6 +28,7 @@
 #include "marco.h"
 #include "rede.h"
 #include "tex_cache.h"
+#include "webp.h"
 #include "cachearte.h"
 #include "artehero.h"
 #include "artereserva.h"
@@ -619,6 +620,12 @@ int main(int argc, char **argv) {
   //
   // Isso tambem dobra o teto de itens EM VOO, que e nMax/3 em slotLivre: a
   // fileira que entra na tela pede tudo de uma vez em vez de pedir aos poucos.
+#ifdef __EMSCRIPTEN__
+  // O DECODIFICADOR DO NAVEGADOR NASCE AQUI, e nao no primeiro pedido: criar
+  // Worker e canal e trabalho do fio principal, e no primeiro pedido ele ja
+  // podia estar preso numa tarefa longa (ver o canal direto em webp.c).
+  navegador_iniciar();
+#endif
   tex_iniciar(192);
   // A POLITICA DE ARTE PERGUNTA AO CACHE o que ja falhou: e assim que ela sabe
   // passar do metahub (1920, barato) para a reserva do TMDB sem pedir duas

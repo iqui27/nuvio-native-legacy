@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <SDL2/SDL_image.h>
+#include <emscripten.h>
 
 typedef struct {
   int zero;
@@ -218,11 +219,45 @@ static void *fioDeDecode(void *arg) {
       free(dados);
     }
   }
+  // WEBP COM O FIO PRINCIPAL OCUPADO (23/09/2026): blocos de 1 s com 20 ms
+  // livres entre eles, o papel das tarefas longas da Samsung 1.4.1. Os bytes
+  // sao lidos ANTES (fopen/fread de pthread tambem sao proxiados ao fio
+  // principal) e nada e impresso durante a medida (printf de pthread idem).
+  // Pelo canal direto o decode nao deve sentir; pela ponte antiga cada
+  // pedido espera o bloco em curso.
+  { unsigned char *dados; long n; FILE *f = fopen("/amostra.webp", "rb");
+    double soma = 0, maxMs = 0; int i, ok = 0;
+    if (!f) { printf("FALHOU: amostra.webp\n"); return NULL; }
+    fseek(f, 0, SEEK_END); n = ftell(f); rewind(f);
+    dados = malloc((size_t)n);
+    if (!dados || fread(dados, 1, (size_t)n, f) != (size_t)n) { fclose(f); free(dados); return NULL; }
+    fclose(f);
+    MAIN_THREAD_ASYNC_EM_ASM({
+      window.__nvOcupado = setInterval(function () { var t = performance.now(); while (performance.now() - t < 1000) {} }, 20);
+    });
+    for (i = 0; i < 10; i++) {
+      double t0 = emscripten_get_now(), ms;
+      int ow = 0, oh = 0;
+      SDL_Surface *r = webp_carregar_larg_mem(dados, (size_t)n, 320, &ow, &oh);
+      ms = emscripten_get_now() - t0;
+      if (r && r->w == 320) ok++;
+      SDL_FreeSurface(r);
+      soma += ms; if (ms > maxMs) maxMs = ms;
+    }
+    MAIN_THREAD_ASYNC_EM_ASM({ clearInterval(window.__nvOcupado); });
+    free(dados);
+    printf("%s webp com fio principal ocupado: %d/10 ok, media=%.0f ms, max=%.0f ms\n",
+           ok == 10 ? "ok " : "FALHOU:", ok, soma / 10, maxMs);
+    printf("fim do teste\n");
+  }
   return NULL;
 }
 
 int main(void) {
   pthread_t t;
+#ifndef NV_SEM_INICIAR
+  navegador_iniciar();   // como em main.c: o decodificador nasce no arranque
+#endif
   // O fio principal PRECISA voltar ao laco de eventos: e nele que a chamada
   // proxiada roda e que a promessa do createImageBitmap resolve. main() retorna
   // e o runtime segue vivo (EXIT_RUNTIME=0), que e o mesmo desenho do app.
