@@ -12,6 +12,17 @@
 #define XT_MAX_CAT   256
 #define XT_PRAZO_S   20
 
+#ifndef NV_REC_URL
+#define NV_REC_URL ""
+#endif
+// Proxy do Xtream so no Tizen (ver chamar). NV_XTREAM_PROXY_TESTE liga o ramo
+// numa build nativa para tests/xtream.sh conferir a url montada sem emcc.
+#if defined(__EMSCRIPTEN__) || defined(NV_XTREAM_PROXY_TESTE)
+#define XT_PROXY 1
+#else
+#define XT_PROXY 0
+#endif
+
 // --- cadastro -------------------------------------------------------------
 // O mesmo desenho de stalker.c: uma trava para o cadastro, lido pelo fio do
 // guia e pelo de desenho (Ajustes mostra o servidor), recarregado quando o
@@ -199,6 +210,32 @@ static char *chamar(const char *acao) {
   if (!srv[0] || !u[0] || !s[0]) return NULL;
   snprintf(url, sizeof url, "%s/player_api.php?username=%s&password=%s&action=%s",
            srv, u, s, acao);
+#if XT_PROXY
+  // SAMSUNG (#112): o Chromium do Tizen barra TODO `http://` que sai do app
+  // (log D1 1647, 1.4.1: a lista morria aqui com o painel respondendo CORS),
+  // e quase todo painel Xtream e http. O servico de recomendacoes (https)
+  // repassa so o player_api.php — ver servidor/recomendacoes/src/xtream.js,
+  // que tambem diz o que ele ve (a credencial em transito, nunca guardada nem
+  // logada). https:// continua direto: nao tem bloqueio e nao precisa de
+  // terceiro no meio. O video NAO passa por la: xtream_url vai direto ao
+  // AVPlay. Sem NV_REC_URL na build fica como antes (direto, e falha).
+  //
+  // POST COM A URL NO CORPO, e nao GET ?u=: com GET o `wrangler tail`
+  // imprimia a url de entrada com usuario e senha (medido no deploy
+  // 748f61f7). text/plain e tipo "simples" do CORS: sem preflight.
+  if (NV_REC_URL[0] && !strncmp(srv, "http://", 7)) {
+    static const char *const cab[] = { "Content-Type: text/plain", NULL };
+    char via[300];
+    int st = 0;
+    char *r;
+    snprintf(via, sizeof via, "%s/v1/xtream", NV_REC_URL);
+    r = rede_postar_st(via, XT_PRAZO_S, cab, url, &st);
+    // O mesmo contrato do GET direto: 4xx/5xx (do painel, repassado, ou do
+    // proprio worker) e "nao respondeu", NULL.
+    if (r && st >= 400) { free(r); r = NULL; }
+    return r;
+  }
+#endif
   return rede_baixar(url, XT_PRAZO_S);
 }
 

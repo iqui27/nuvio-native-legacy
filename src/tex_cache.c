@@ -987,6 +987,12 @@ static void prepararDisco(long entrada, int forcar) {
 }
 #endif
 
+#ifdef __EMSCRIPTEN__
+#ifndef NV_REC_URL
+#define NV_REC_URL ""
+#endif
+#endif
+
 // Baixa UMA url e devolve o corpo so se ele for imagem; NULL com a razao no
 // log. Separado de garantirLocal para a reserva do TMDB passar pelo mesmo
 // crivo (assinatura, tamanho) que a url original.
@@ -1012,6 +1018,19 @@ static char *baixarImagem(const char *url, long *n, TexFetchTrace *trace) {
   // dois fios de decode por quase um minuto e a tela inteira parava de receber
   // arte — repetidamente, porque nada guarda a falha.
   { Uint32 t = SDL_GetTicks();
+#ifdef __EMSCRIPTEN__
+    // SAMSUNG (#112): o Chromium do Tizen barra TODO `http://` que sai do app
+    // (log D1 1647: os icones de canal de 24horas.cc, http, nunca chegavam).
+    // O servico de recomendacoes (https) busca por nos e so devolve se o
+    // servidor disser image/* — ver servidor/recomendacoes/src/xtream.js. A
+    // chave do cache continua sendo `url` (quem grava e o chamador): so o
+    // caminho da rede muda. Sem NV_REC_URL na build, direto como antes. A
+    // url vai no CORPO do POST: ha painel que poe usuario/senha no caminho do
+    // icone, e url de entrada o proprio worker registra (ver xtream.js).
+    if (NV_REC_URL[0] && !strncmp(url, "http://", 7))
+      corpo = rede_postar_bin(NV_REC_URL "/v1/xtream", 8, url, n);
+    else
+#endif
     corpo = rede_baixar_bin(url, 8, n);
     if (trace) {
       trace->netMs += SDL_GetTicks() - t;

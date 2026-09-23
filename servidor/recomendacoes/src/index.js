@@ -9,6 +9,8 @@
 // O QUE ELE NAO GUARDA, de proposito: token (so o SHA-256, e por 10 min),
 // e-mail, IP. A identidade e um identificador estavel e um nome de exibicao.
 
+import { rotaXtream } from "./xtream.js";
+
 const DIA = 86400;
 const RETENCAO = 90 * DIA;
 const SESSAO_TTL = 600;          // 10 min de cache da verificacao de identidade
@@ -488,10 +490,17 @@ async function rotaRegistro(env, quem, corpo) {
   const quando = String(corpo?.quando || "").slice(0, 40);
   let texto = String(corpo?.texto || "");
   if (texto.length > REGISTRO_MAX) texto = texto.slice(texto.length - REGISTRO_MAX);
-  await env.DB.prepare(
+  const res = await env.DB.prepare(
     "INSERT INTO registro (pessoa, versao, plataforma, quando, texto, criado) VALUES (?, ?, ?, ?, ?, ?)"
   ).bind(quem.id, versao, plataforma, quando, texto, agora()).run();
-  return json({ ok: 1, bytes: texto.length });
+  // RECIBO: a TV (avisos_enviar_diagnostico -> extrairRegistroId) so da o
+  // envio por concluido se o corpo trouxer o id da linha gravada; sem ele o
+  // registro dizia "HTTP 200 (sem recibo desta execucao)" com o envio feito.
+  // execucao_id volta ecoado para a TV casar o recibo com a execucao dela.
+  const recibo = { ok: 1, bytes: texto.length, registro_id: res?.meta?.last_row_id ?? null };
+  const exec = String(corpo?.execucao_id ?? "").replace(/[^\w-]/g, "").slice(0, 64);
+  if (exec) recibo.execucao_id = exec;
+  return json(recibo);
 }
 
 async function rotaApagar(env, quem, corpo) {
@@ -524,6 +533,15 @@ export default {
       const tv = String(corpo?.tv || "?").replace(/[^\w.:-]/g, "").slice(0, 64);
       return rotaRegistro(env, { id: "diag:" + tv }, corpo);
     }
+
+    // PROXY DO XTREAM PARA A SAMSUNG (#112): sem sessao, como /v1/noticias,
+    // porque quem autentica e o painel do Xtream com a credencial que passa
+    // na url. Regras (allowlist, SSRF, sem log nem cache de credencial) e o
+    // porque da rota em xtream.js.
+    // O preflight (OPTIONS) ja e respondido acima com CORS * e content-type
+    // permitido; o cliente manda text/plain, que nem pede preflight.
+    if (rota === "/v1/xtream" && (req.method === "POST" || req.method === "GET"))
+      return rotaXtream(req, url);
 
     // NOTICIAS DE UM TITULO (Agenda, 1.3.11). O RSS de busca do Google News
     // nao manda CORS, e na Samsung (wgt em file://) o fetch morre antes de

@@ -216,6 +216,14 @@ char *rede_baixar_com(const char *url, int segundos, const char *const *cab) {
   return pedir("GET", url, cab, NULL, NULL, NULL, NULL);
 }
 
+// Ver rede.h. Sem `status` para pedir2, que entao ja devolve NULL em >= 400
+// e loga so o host (rede_url_publica) — a url do painel vai no corpo e nunca
+// passa por aqui em log.
+char *rede_postar_bin(const char *url, int segundos, const char *corpo, long *tam) {
+  (void)segundos;
+  return pedir("POST", url, NULL, "Content-Type: text/plain", corpo ? corpo : "", tam, NULL);
+}
+
 char *rede_baixar_st(const char *url, int segundos, const char *const *cab,
                      int *status) {
   (void)segundos;
