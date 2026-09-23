@@ -526,6 +526,17 @@ void avisos_iniciar(void) {
   char *m;
   vistosLer();
   m = dados_ler(AV_MARCA_ARQ);
+  // MARCA PRESENTE NAO E CRASH quando a sessao anterior se despediu por fora
+  // do IDBFS (issue #120; ver dados_despedida_ler). No Tizen a remocao da marca
+  // pode nao chegar ao IndexedDB antes de o processo morrer; e a TV fechar o
+  // app escondido (Home, Exit, desligar) nao e o app cair.
+  { int desp = dados_despedida_ler();
+    if (m && desp) {
+      printf("[avisos] marca da sessao anterior presente, mas ela se despediu (%s): nao e crash\n",
+             desp == 1 ? "saida pelo app" : "pagina escondida, a TV fechou em segundo plano");
+      fflush(stdout);
+      free(m); m = NULL;
+    } }
   if (m) {
     char v[24] = "", sinal[96] = "";
     const char *nl;
@@ -669,6 +680,7 @@ static void cartaoDesenhar(void) {
 }
 
 void avisos_encerrar(void) {
+  dados_despedida_fim();   // no Tizen: sincrono, vale mesmo se o apagar abaixo nao chegar ao disco
   dados_apagar(AV_MARCA_ARQ);
   vistosGravar();
 }

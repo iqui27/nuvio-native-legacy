@@ -172,6 +172,62 @@ EM_JS(void, nv_idbfs_rede_de_seguranca, (int *ocupado), {
   });
 });
 
+// SAIR SO DEPOIS DE O IndexedDB CONFIRMAR (issue #120).
+//
+// O Voltar na home terminava assim: app_encerrar apagava a marca de sessao
+// viva (dados_apagar so marca `sujo`), e main.c chamava
+// tizen...exit() NA MESMA TAREFA. Nenhum quadro depois disso roda
+// dados_sincronizar, e mesmo a rede de seguranca acima nao salvaria: o
+// FS.syncfs(false) desta versao do Emscripten le primeiro o conjunto REMOTO por
+// um cursor do IndexedDB (libidbfs.js, getRemoteSet) e so depois grava — tudo
+// assincrono. O processo morria antes, a marca ficava no IndexedDB e a abertura
+// seguinte dizia "a sessao anterior nao se despediu": o cartao de enviar
+// registro em TODO arranque, com o app fechado do jeito certo.
+//
+// Aqui: espera fio nenhum dentro da trava e nenhuma descarga em voo, descarrega,
+// e so no callback sai. 3 s de teto: uma TV que nao responde ainda fecha.
+// `Module.nvSair` existe para o teste trocar a saida da TV por uma bandeira.
+EM_JS(void, nv_idbfs_descarregar_e_sair, (int *ocupado), {
+  var idx = ocupado >> 2, feito = false;
+  var sair = function () {
+    if (feito) return;
+    feito = true;
+    try {
+      if (Module.nvSair) Module.nvSair();
+      else tizen.application.getCurrentApplication().exit();
+    } catch (e) {}
+  };
+  setTimeout(sair, 3000);
+  (function tentar() {
+    if (feito) return;
+    if (Module.nvSyncEmVoo || Atomics.load(HEAP32, idx) !== 0) { setTimeout(tentar, 20); return; }
+    Module.nvSyncEmVoo = 1;
+    try {
+      FS.syncfs(false, function () { Module.nvSyncEmVoo = 0; sair(); });
+    } catch (e) { Module.nvSyncEmVoo = 0; sair(); }
+  })();
+});
+
+// A DESPEDIDA EM localStorage, e nao no IDBFS (issue #120).
+//
+// localStorage.setItem e SINCRONO: quando volta, o valor ja esta com o
+// navegador — nao depende de uma transacao que a TV pode nao deixar terminar.
+// O arranque le e APAGA; a saida limpa grava "fim"; a pagina escondida grava
+// "oculto" e a volta a tela apaga. Nos registros da Samsung com "nao se
+// despediu" nenhuma marca trazia ultimo=oculto: o SDL_WINDOWEVENT_HIDDEN so e
+// tratado no quadro seguinte, e com a pagina escondida esse quadro nao existe.
+EM_JS(void, nv_despedida_armar, (void), {
+  if (Module.nvDespedidaArmada) return;
+  Module.nvDespedidaArmada = 1;
+  document.addEventListener("visibilitychange", function () {
+    try {
+      var v = localStorage.getItem("nv-despedida");
+      if (document.visibilityState === "hidden") { if (v !== "fim") localStorage.setItem("nv-despedida", "oculto"); }
+      else if (v === "oculto") localStorage.removeItem("nv-despedida");
+    } catch (e) {}
+  });
+});
+
 // Marcadas por quem grava, consumidas por dados_sincronizar no laco de desenho.
 //
 // Gravar dentro de dados_gravar seria o obvio e esta ERRADO: dados_gravar e
@@ -529,6 +585,39 @@ const char *dados_cliente_id(void) {
     snprintf(linha, sizeof linha, "%s\n", clienteId);
     dados_gravar("cliente.txt", linha); }
   return clienteId;
+}
+
+int dados_despedida_ler(void) {
+#ifdef __EMSCRIPTEN__
+  // Le e apaga na mesma chamada: a despedida vale para UMA sessao, a anterior.
+  // Esta, se cair, tem de encontrar a chave vazia.
+  int r = EM_ASM_INT({
+    try {
+      var v = localStorage.getItem("nv-despedida") || "";
+      localStorage.removeItem("nv-despedida");
+      return v === "fim" ? 1 : v === "oculto" ? 2 : 0;
+    } catch (e) { return 0; }
+  });
+  nv_despedida_armar();
+  return r;
+#else
+  return 0;
+#endif
+}
+
+void dados_despedida_fim(void) {
+#ifdef __EMSCRIPTEN__
+  EM_ASM({ try { localStorage.setItem("nv-despedida", "fim"); } catch (e) {} });
+#endif
+}
+
+void dados_descarregar_e_sair(void) {
+#ifdef __EMSCRIPTEN__
+  if (idbfsMontado) { nv_idbfs_descarregar_e_sair((int *)&fsOcupado); return; }
+  EM_ASM({
+    try { if (Module.nvSair) Module.nvSair(); else tizen.application.getCurrentApplication().exit(); } catch (e) {}
+  });
+#endif
 }
 
 int dados_persistente(void) {

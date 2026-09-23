@@ -93,6 +93,19 @@ const char *dados_cliente_id(void);
 // nao seja um UUID — um identificador proprio, mesmo unico, nao passa.
 void dados_uuid(char *dst, unsigned tam);
 
+// SAIDA NO TIZEN (issue #120). No webOS e no Mac nada disto faz efeito.
+//
+// dados_despedida_ler: como a sessao ANTERIOR terminou, pelo localStorage
+// (sincrono, sobrevive a morte do processo): 1 = saida limpa pelo app,
+// 2 = a pagina estava escondida (a TV fechou o app em segundo plano),
+// 0 = nenhuma despedida. Apaga ao ler e arma o ouvinte de visibilidade desta
+// sessao. dados_despedida_fim: grava a saida limpa desta sessao.
+int  dados_despedida_ler(void);
+void dados_despedida_fim(void);
+// Descarrega o IDBFS e so fecha o app (tizen...exit) no callback do IndexedDB,
+// com teto de 3 s. Chamar no fim de main, no lugar do exit direto.
+void dados_descarregar_e_sair(void);
+
 #endif
 
 // Indica backend configurado: IDBFS montado no Tizen; nos alvos nativos,
