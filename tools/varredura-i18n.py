@@ -254,6 +254,7 @@ IGNORAR = {
     "abrir", "buscar",              # nomes de operacao do bridge JS (video_tizen.c)
     "fontes", "legenda", "mais", "nao", "poster",  # chaves internas, nao rotulo
     "crédit", "crédito",            # palavra procurada no capitulo do MKV
+    "episodio", "episódio",         # palavra procurada no nome do video TMDB (extras.c)
     # Nome proprio e sigla: iguais nos dois idiomas.
     "IMDb", "Trakt", "YouTube", "PIN", "AI-powered",
     # Tabela de acentos -> letra base da normalizacao de titulo (trailerapple.c):
@@ -306,6 +307,13 @@ IGNORAR = {
     "sonda voltou sem par para esta faixa (ver [mkv] legendas da TV x arquivo)",
     "codec nao e ASS/SSA: a TV desenha bem",
     "sem ordinal no arquivo",
+    # Os de motivoNoGo() (faixas.c): o mesmo caso, para a linha "[legenda]
+    # mkvass no-go N (motivo)". O que vai a TELA sao os avisos com i18n().
+    "nao e MKV",
+    "servidor sem Range",
+    "faixa nao e ASS",
+    "sem indice da faixa",
+    "sem CueRelativePosition",
 }
 
 def sem_corpo_em_js(txt):

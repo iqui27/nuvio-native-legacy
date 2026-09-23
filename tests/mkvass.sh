@@ -56,15 +56,39 @@ EOF
 # legenda 3), a mesma da fixture do ffmpeg, entao a faixa 3 continua sendo a
 # legenda. Sem mkvmerge os dois casos sao pulados, com aviso.
 MKVMERGE=${MKVMERGE:-/opt/homebrew/bin/mkvmerge}
-SEMCUES=""; NOCUES=""
+SEMCUES=""; NOCUES=""; SEMREL=""
 if [ -x "$MKVMERGE" ]; then
   "$MKVMERGE" -q -o "$DIR/semcues.mkv" --cues 2:none "$DIR/t.mkv" >/dev/null 2>&1 || true
   "$MKVMERGE" -q -o "$DIR/nocues.mkv" --no-cues "$DIR/t.mkv" >/dev/null 2>&1 || true
+  # CuePoint da faixa SEM CueRelativePosition (mkvmerge --engage
+  # no_cue_relative_position): o indice diz o Cluster, nao o bloco.
+  "$MKVMERGE" -q -o "$DIR/semrel.mkv" --engage no_cue_relative_position "$DIR/t.mkv" >/dev/null 2>&1 || true
   [ -s "$DIR/semcues.mkv" ] && SEMCUES=semcues.mkv
   [ -s "$DIR/nocues.mkv" ] && NOCUES=nocues.mkv
+  [ -s "$DIR/semrel.mkv" ] && SEMREL=semrel.mkv
 else
   echo "mkvass.sh: mkvmerge nao encontrado em $MKVMERGE; casos de varredura pulados"
 fi
+# CueRelativePosition presente mas INVALIDO (aponta para o meio do Timestamp
+# do Cluster): o bloco nao esta onde o indice diz. Ver tests/mkv_rel_ruim.py.
+python3 tests/mkv_rel_ruim.py "$DIR/t.mkv" "$DIR/relruim.mkv" 3
+# Uma SEGUNDA faixa ASS, com outro texto, para a troca de faixa com colheita
+# em voo: nada da primeira pode aparecer depois da troca.
+python3 - "$DIR/ref2.ass" "$DIR/ref.ass" <<'EOF'
+import sys
+cab=open(sys.argv[2]).read().split("[Events]")[0]
+L=[cab+"[Events]","Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
+def t(s): return "%d:%02d:%05.2f"%(int(s//3600),int(s%3600//60),s%60)
+for i in range(10):
+    a=1.0+i*2.9
+    L.append("Dialogue: 0,%s,%s,Default,,0,0,0,,Outra faixa %d"%(t(a),t(a+1.75),i))
+open(sys.argv[1],"w").write("\n".join(L)+"\n")
+EOF
+"$FFMPEG" -v error -y \
+  -f lavfi -i "testsrc2=size=320x180:rate=24:duration=30" \
+  -f lavfi -i "sine=frequency=440:duration=30" \
+  -i "$DIR/ref2.ass" -map 0:v -map 1:a -map 2:s \
+  -c:v libx264 -preset ultrafast -c:a aac -c:s ass "$DIR/b.mkv"
 ls -la "$DIR"/*.mkv
 
 python3 tests/servidor_range.py "$DIR" > "$DIR/porta.txt" &
@@ -81,11 +105,12 @@ cc -Isrc -DMKVASS_VARRE_JANELA_SEG=30.0 tests/mkvass.c src/mkvass.c src/assrende
 mkdir -p "$DIR/dados"
 if [ "${NUVIO_MKVASS_LLDB:-0}" = "1" ]; then
   NUVIO_DADOS="$DIR/dados" MKV_DIR="$DIR" lldb --batch -k 'bt all' \
-    -o "run http://127.0.0.1:$PORTA t.mkv $DIR/ref.ass srt.mkv ref.ass $SEMCUES $NOCUES" \
+    -o "run http://127.0.0.1:$PORTA t.mkv $DIR/ref.ass srt.mkv ref.ass $SEMCUES $NOCUES $SEMREL relruim.mkv b.mkv" \
     -- /tmp/nuvio-mkvass-tests
 else
   NUVIO_DADOS="$DIR/dados" MKV_DIR="$DIR" /tmp/nuvio-mkvass-tests \
-    "http://127.0.0.1:$PORTA" t.mkv "$DIR/ref.ass" srt.mkv ref.ass "$SEMCUES" "$NOCUES"
+    "http://127.0.0.1:$PORTA" t.mkv "$DIR/ref.ass" srt.mkv ref.ass "$SEMCUES" "$NOCUES" \
+    "$SEMREL" relruim.mkv b.mkv
 fi
 
 # Os mesmos tempos, agora pelo LIBASS (o que a TV desenha). Ver tests/ass_tempos.c.

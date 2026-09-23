@@ -112,7 +112,7 @@ fi
 for f in $EXIGIDOS; do
   [ -s "$ESTAGIO/$f" ] || { echo "tizen-wgt.sh: FALTA $f no estagio" >&2; exit 1; }
 done
-# O GLUE TEM DE ESTAR REBAIXADO PARA CHROME76.
+# O GLUE TEM DE ESTAR REBAIXADO PARA CHROME69 (Tizen 5.5, o required_version).
 #
 # tools/tizen.sh passa o index.js pelo esbuild porque o Chromium da TV nao
 # entende "?.", "??" nem "||=" — com eles a TV instala o pacote, abre e fica
@@ -129,9 +129,19 @@ done
 # minificado (`a?.5:1`), que o glue do Tizen 4 (--minify-whitespace) tem.
 NOVA=$(grep -oE '\?\.([^0-9]|$)|\?\?|\|\|=' "$ESTAGIO/index.js" 2>/dev/null | wc -l | tr -d ' ')
 if [ "${NOVA:-0}" -gt 0 ]; then
-  echo "tizen-wgt.sh: index.js tem $NOVA ocorrencias de sintaxe pos-chrome76 —" >&2
+  echo "tizen-wgt.sh: index.js tem $NOVA ocorrencias de sintaxe pos-chrome69 —" >&2
   echo "  o glue NAO foi rebaixado e este .wgt daria tela preta na TV." >&2
   echo "  Rode tools/tizen.sh de novo e confira a linha 'glue rebaixado'." >&2
+  exit 1
+fi
+# E O POLYFILL DE globalThis TEM DE SER A LINHA 1 (ver tools/tizen.sh). Sem
+# ele o glue morre na linha 6 num Chromium M69 — pagina e pthreads, que carregam
+# este mesmo arquivo. Mesma razao da guarda acima: build velho ou parcial.
+GT_USOS=$(tail -n +2 "$ESTAGIO/index.js" | grep -o 'globalThis' | wc -l | tr -d ' ')
+GT_SENT=$(grep -c 'nuvio:globalThis' "$ESTAGIO/index.js" || true)
+if [ "$GT_USOS" -gt 0 ] && { [ "$GT_SENT" -ne 1 ] || ! head -n 1 "$ESTAGIO/index.js" | grep -q 'nuvio:globalThis'; }; then
+  echo "tizen-wgt.sh: index.js usa globalThis $GT_USOS vezes sem o polyfill na linha 1 —" >&2
+  echo "  a TV 2020 (Tizen 5.5, M69) nao tem globalThis. Rode tools/tizen.sh de novo." >&2
   exit 1
 fi
 

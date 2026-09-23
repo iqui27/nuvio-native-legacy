@@ -1,0 +1,12 @@
+{"id":1399,"name":"Série de Teste","status":"Returning Series","number_of_seasons":3,
+"seasons":[{"season_number":0,"name":"Especiais"},{"season_number":1},{"season_number":2},{"season_number":3}],
+"networks":[{"id":49,"name":"HBO","logo_path":"/tuomPhY2UtuPTqqFnKMVHvSb724.png"}],
+"videos":{"results":[
+{"iso_639_1":"en","iso_3166_1":"US","name":"Season 1 Official Trailer","key":"s1TrailerEN","site":"YouTube","type":"Trailer","official":true,"published_at":"2021-03-01T17:00:00.000Z"},
+{"iso_639_1":"en","iso_3166_1":"US","name":"Episode 4 Preview","key":"ep4Preview1","site":"YouTube","type":"Teaser","official":true,"published_at":"2024-06-20T17:00:00.000Z"},
+{"iso_639_1":"en","iso_3166_1":"US","name":"Behind the Scenes","key":"bastidores1","site":"YouTube","type":"Behind the Scenes","official":true,"published_at":"2024-07-01T17:00:00.000Z"},
+{"iso_639_1":"en","iso_3166_1":"US","name":"Season 3 Official Trailer","key":"s3TrailerEN","site":"YouTube","type":"Trailer","official":true,"published_at":"2024-05-10T17:00:00.000Z"},
+{"iso_639_1":null,"iso_3166_1":null,"name":"Season 2 Teaser","key":"s2TeaserNul","site":"YouTube","type":"Teaser","official":false,"published_at":"2022-09-01T17:00:00.000Z"},
+{"iso_639_1":"en","iso_3166_1":"US","name":"Vimeo Trailer","key":"vimeoTrail1","site":"Vimeo","type":"Trailer","official":true,"published_at":"2024-08-01T17:00:00.000Z"}
+]},
+"recommendations":{"results":[{"id":1402,"name":"Outra","first_air_date":"2010-10-31","poster_path":"/x.jpg"}]}}

@@ -452,7 +452,9 @@ static float docFim = NV_DETP_FIM;
 // pelo caminho antigo, e "Elenco" ficaria repetindo a aba "Criador e elenco"
 // logo acima (ver detail.c:1611).
 static const char *cabecalhoDe(int r) {
-  if (ehSerie()) return NULL;
+  // TRAILERS E A EXCECAO na serie (#123): a fileira entrou empilhada abaixo
+  // das bandas de audiencia e nao ha aba acima dela que diga o que ela e.
+  if (ehSerie()) return r == SEC_TRAILERS ? "Trailers" : NULL;
   switch (r) {
     case SEC_ELENCO:   return "Elenco";
     case SEC_TRAILERS:     return "Trailers";
@@ -583,6 +585,16 @@ static void recalcularLayout(void) {
       topoSec[r] = conteudoSec[r] = y;
       if (secaoN(r) <= 0) continue;
       y += alturaSecao(r) + NV_DETF_SEC_GAP;
+      { float fim = y + NV_DETF_PAD_FIM - NV_DETF_SEC_GAP;
+        if (fim > docFim) docFim = fim; }
+    }
+    // TRAILERS NA SERIE (#123), na posicao que o enum ja dava a eles (depois
+    // da audiencia, antes dos comentarios — a ordem do D-pad). Com cabecalho,
+    // como no filme: o topo do grupo e a linha do titulo, o conteudo abaixo.
+    topoSec[SEC_TRAILERS] = conteudoSec[SEC_TRAILERS] = y;
+    if (secaoN(SEC_TRAILERS) > 0) {
+      conteudoSec[SEC_TRAILERS] = y + NV_DETF_CAB_H + NV_DETF_CAB_GAP;
+      y = conteudoSec[SEC_TRAILERS] + alturaSecao(SEC_TRAILERS) + NV_DETF_SEC_GAP;
       { float fim = y + NV_DETF_PAD_FIM - NV_DETF_SEC_GAP;
         if (fim > docFim) docFim = fim; }
     }
@@ -1263,14 +1275,13 @@ static int secaoN(int r) {
       }
       return n < NV_DETF_EL_MAX ? n : NV_DETF_EL_MAX;
     }
-    // Trailers, Recomendacoes, Comentarios e Detalhes so existem em FILME —
-    // na serie o mesmo conteudo vive atras das ABAS.
+    // Recomendacoes e Detalhes so existem em FILME — na serie o mesmo
+    // conteudo vive atras das ABAS. Trailers existem nos dois (#123).
     //
     // Estas duas ultimas eram justamente o que se perdeu ao tirar as abas do
     // filme: os dados sempre estiveram la (o log mostra "coment=8 rel=12"),
     // mas sem aba e sem secao nao havia como chegar neles.
     case SEC_TRAILERS:
-      if (ehSerie()) return 0;
       return extras_n_trailers();
     case SEC_RELACIONADOS: {
       int n;
@@ -4632,6 +4643,7 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     case SEC_AUD_ARCO:
     case SEC_AUD_RADAR:
     case SEC_AUD_DIGITAL:
+    case SEC_TRAILERS:
     case SEC_FRASES:
     case SEC_COMENTARIOS:
     case SEC_ESTUDIOS:    y = conteudoSec[r]; break;
@@ -4656,7 +4668,7 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
   // que a fileira e, e o rotulo acima dela repetia a palavra duas vezes em
   // linhas seguidas. No FILME cada secao continua carregando o proprio nome,
   // porque la nao existe a barra de abas para dizer o que e o que.
-  { const char *cab = ehSerie() ? NULL : cabecalhoDe(r);
+  { const char *cab = cabecalhoDe(r);   // na serie, so "Trailers"
     if (cab) {
       TxtLinha lc = txt_linha(TXT_HEADLINE, cab, 245, 248, 255, 255);
       txt_desenhar_alpha(lc, NV_DETP_X, y - lc.h - NV_DETF_CAB_GAP, a);

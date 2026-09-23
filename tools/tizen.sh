@@ -421,6 +421,33 @@ else
   echo "tizen.sh: AVISO — npx ausente, glue NAO rebaixado; a TV vai dar tela preta" >&2
 fi
 
+# globalThis NA TV 2020. O esbuild rebaixa SINTAXE, nao poe API que falta, e o
+# glue do Emscripten le globalThis ja na linha 6 (ENVIRONMENT_IS_WEB), antes de
+# qualquer codigo nosso. globalThis e Chrome 71; Tizen 5.5 e M69.
+#
+# MEDIDO em 23/09 com Node 10 (V8 6.8, sem globalThis), tests/tizen-globalthis.sh:
+# o index.js morre com "ReferenceError: globalThis is not defined" na linha 6,
+# tanto como pagina quanto como pthread. Na TV isso NAO foi medido.
+#
+# POR QUE PREPEND AQUI e nao --pre-js nem --banner do esbuild:
+#   * o emcc poe o pre-js DEPOIS do bloco ENVIRONMENT_IS_*, tarde demais;
+#   * o banner seria reimpresso pelo esbuild da conferencia acima e o cmp de
+#     idempotencia deixaria de bater.
+# Os workers de pthread fazem new Worker(<este index.js>), entao a primeira
+# linha deste arquivo vale para a pagina e para cada worker.
+cat tools/tizen-globalthis.js "$SAIDA/index.js" > "$SAIDA/index.polyfill.js"
+mv "$SAIDA/index.polyfill.js" "$SAIDA/index.js"
+# Conferencia: com globalThis no corpo, a linha 1 TEM de ser o polyfill, e ele
+# so uma vez. A mesma guarda roda no tools/tizen-wgt.sh, contra build velho.
+GT_USOS=$(tail -n +2 "$SAIDA/index.js" | grep -o 'globalThis' | wc -l | tr -d ' ')
+GT_SENT=$(grep -c 'nuvio:globalThis' "$SAIDA/index.js" || true)
+if [ "$GT_USOS" -gt 0 ] && { [ "$GT_SENT" -ne 1 ] || ! head -n 1 "$SAIDA/index.js" | grep -q 'nuvio:globalThis'; }; then
+  echo "tizen.sh: ERRO — index.js usa globalThis $GT_USOS vezes sem o polyfill na linha 1" >&2
+  echo "  (sentinela nuvio:globalThis encontrada $GT_SENT vezes). Tizen 5.5/M69 nao tem globalThis." >&2
+  exit 1
+fi
+echo "tizen.sh: globalThis: polyfill na linha 1 ($GT_USOS usos no glue)"
+
 # Proveniencia minima do artefato. O empacotador pode ser chamado horas depois
 # de uma compilacao, e um build/index.wasm velho com um local.properties valido
 # passaria apenas pela guarda de ambiente. Guardamos somente fingerprints: nem

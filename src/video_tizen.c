@@ -121,9 +121,12 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
 
   // Estado da sessao, no escopo da PAGINA. Nao pode viver num var de modulo:
   // este mesmo codigo JS e emitido tambem no bundle dos workers, e cada worker
-  // teria a sua copia. Pendurar em globalThis deixa claro que a unica copia que
-  // vale e a do fio principal — que e o unico que chega ate aqui.
-  var G = globalThis;
+  // teria a sua copia. Pendurar no objeto global deixa claro que a unica copia
+  // que vale e a do fio principal — que e o unico que chega ate aqui.
+  // window, e nao globalThis: globalThis e Chrome 71 e a TV 2020 (Tizen 5.5) e
+  // M69. O polyfill de tools/tizen-globalthis.js ja cobriria, mas este codigo
+  // nao precisa depender da ordem em que o tizen.sh monta o arquivo.
+  var G = (typeof window !== "undefined") ? window : self;
   if (!G.__nvav) {
     G.__nvav = {
       pl: null,          // referencia ao webapis.avplay
