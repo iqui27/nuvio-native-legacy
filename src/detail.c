@@ -3500,6 +3500,16 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
   const char *arte = (ep && ep->thumb[0]) ? ep->thumb
                      : (serie && serie->backdrop[0] ? serie->backdrop : NULL);
   GLuint t2 = arte ? tex_obter_larg(arte, th.w) : 0;
+  // STILL QUE NAO EXISTE NEM NO METAHUB NEM NO TMDB (One Piece da 2a
+  // temporada em diante, 23/09): o card nao fica cinza, leva o fundo da serie
+  // — o numero e o nome do episodio ja estao no texto por cima. O still
+  // continua sendo pedido acima, para o recuo do tex_cache tentar de novo.
+  if (!t2 && ep && ep->thumb[0] && arte == ep->thumb && tex_falhou(arte) && serie) {
+    const char *reserva = serie->backdrop[0] ? serie->backdrop
+                        : (serie->poster[0] ? serie->poster : NULL);
+    GLuint t3 = reserva ? tex_obter_larg(reserva, th.w) : 0;
+    if (t3) { arte = reserva; t2 = t3; }
+  }
   float aArte = (c >= 0 && c < DET_REV_EP) ? revela_arte(&revEp[c], t2 != 0, agora) : 1.0f;
   if (t2) {
     if (aArte < 0.999f) gfx_cor(th, raioTh, 0.133f, 0.133f, 0.133f, a);

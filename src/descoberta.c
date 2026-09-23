@@ -15,6 +15,7 @@
 #include "trakt.h"
 #include "simkl.h"
 #include "progresso.h"
+#include "artereserva.h"
 #include <stdint.h>   /* uintptr_t: a geracao viaja no argumento do fio */
 #include <stdio.h>
 #include <string.h>
@@ -3198,7 +3199,13 @@ static void *buscarEps(void *u) {
     // obras diferentes); o /find abaixo o resolve de novo pelo tipo novo.
     base.tmdb = 0;
   }
-  if (!ehFilme) publicarEpisodios(corpo, alvoItem, it->titulo);
+  if (!ehFilme) {
+    publicarEpisodios(corpo, alvoItem, it->titulo);
+    // Temporada e data de cada episodio para a reserva do still: quando o
+    // TMDB divide a serie em outras temporadas (One Piece), e por elas que o
+    // still do TMDB e achado (artereserva.h).
+    arte_reserva_episodios(serie, corpo);
+  }
   // O MAPA DE EPISODIOS VISTOS NAO E PEDIDO AQUI, e essa linha existe para dizer
   // por que: extras.c JA baixa /shows/<id>/progress/watched ao abrir o titulo,
   // e agora alimenta vistoep de la. Uma versao deste arquivo chegou a pedir de

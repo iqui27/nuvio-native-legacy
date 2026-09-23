@@ -682,6 +682,13 @@ void episodios_desenhar(void) {
     const CatItem *ci=cat_item(titulo);
     const char *arte=ep->thumb[0]?ep->thumb:(ci?ci->backdrop:"");
     GLuint tex=tex_obter_larg(arte,184);
+    // Still que nao existe (nem metahub nem TMDB): o fundo da serie, com o
+    // T%dE%d do selo por cima, em vez do quadro vazio. Ver detail.c.
+    if(!tex&&ep->thumb[0]&&tex_falhou(ep->thumb)&&ci){
+      const char *res=ci->backdrop[0]?ci->backdrop:ci->poster;
+      GLuint t3=res[0]?tex_obter_larg(res,184):0;
+      if(t3){arte=res;tex=t3;}
+    }
     GfxRect tr={x+54,y+14,184,130};
     gfx_cor(tr,.10f,sel?.16f:.145f,sel?.17f:.15f,sel?.20f:.17f,anim);
     if(tex){gfx_tex_aspect_atual=tex_aspecto(arte);gfx_rect(tr,tex,GFX_CARD,0,0,0,.10f,0,0,0,anim);gfx_tex_aspect_atual=0;}

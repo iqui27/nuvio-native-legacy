@@ -24,6 +24,14 @@
 // host, TMDB desligado, titulo desconhecido, logo).
 int arte_reserva_url(const char *url, char *saida, size_t tam);
 
+// EPISODIOS DO CINEMETA PARA O STILL DE RESERVA (One Piece, 23/09/2026): o
+// corpo do /meta/series/<tt>.json. Guarda (temporada, episodio, `released`)
+// de cada video de temporada > 0, para a reserva casar o episodio com o do
+// TMDB pela data de exibicao e pelo numero absoluto quando a divisao em
+// temporadas nao e a mesma — ver reservaStill em artereserva.c. Devolve
+// quantos guardou. Copia; `corpo` pode ser liberado depois.
+int arte_reserva_episodios(const char *imdb, const char *corpo);
+
 // ARTE DE OUTRO HOST (#67, 20/09/2026): a biblioteca da Owlphibia vinha com
 // cartazes de bingecat.com, que responde 404 — e a URL nao carrega o id do
 // IMDb, entao a reserva acima nao tinha por onde procurar. O catalogo registra

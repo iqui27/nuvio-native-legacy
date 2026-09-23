@@ -11,6 +11,10 @@
 #include <string.h>
 #include <time.h>
 
+// Tamanho da chave da memoria do resolvedor (arfMem, mais abaixo): o still de
+// episodio tambem guarda nela.
+#define ARF_CHAVE 32u
+
 // images.metahub.space/<tipo>/<tamanho>/<ttNNN>/img  ->  tipo e id.
 // So poster e background: logo nao tem par no /find.
 static int lerMetahub(const char *url, char *tipo, size_t tTipo, char *id, size_t tId) {
@@ -51,29 +55,326 @@ static int lerStill(const char *url, char *id, size_t tId, int *temp, int *ep) {
   return 1;
 }
 
-// Still de episodio: duas viagens (o id do TMDB pela /find, depois o
-// episodio). So depois de o metahub falhar, e o still e o card de Continue
-// Watching inteiro — vale as duas.
+// ---------------------------------------------------------------------------
+// STILL DE EPISODIO QUANDO A NUMERACAO NAO BATE (23/09/2026, One Piece na C9).
+//
+// MEDIDO com curl em tt0388629: o Cinemeta divide One Piece em 23 temporadas
+// de 8, 22, 17, 13... episodios contados de 1 em cada uma; o TMDB (37854)
+// divide em outras 23 — 61, 16, 14, 39... — e numera PELO ABSOLUTO (a
+// temporada 2 comeca no episodio 62). S2E3 do Cinemeta e o episodio 11 do
+// TMDB; /tv/37854/season/2/episode/3 responde 404, e o metahub tambem nao tem
+// essas imagens (404 em 2/3, 3/1...). So a temporada 1 do Cinemeta cabia na
+// do TMDB, por isso a arte sumia "da 2a temporada em diante".
+//
+// O casamento, nesta ordem (simulado nos 1179 episodios da serie):
+//   1. /tv/{id}/season/{t}/episode/{e} direto — e a conferencia pela data:
+//      com `released` do Cinemeta registrado, um episodio do TMDB exibido
+//      mais de um dia longe dele e OUTRO episodio, nao o pedido.
+//   2. pelo absoluto do Cinemeta (posicao entre os episodios de temporada > 0)
+//      acha-se a temporada do TMDB pelas contagens do /tv/{id}; dentro dela
+//      vence o episodio com a MESMA data de exibicao (ou +-1 dia), o mais
+//      proximo do absoluto quando ha dois no mesmo dia. 1120 de 1179 casam
+//      pelo titulo. So o absoluto daria 556: o Cinemeta pula e junta
+//      especiais, e a diferenca cresce ao longo da serie (S22E1 = absoluto
+//      1085 no Cinemeta, 1086 no TMDB).
+//   3. sem data que case, a posicao pelo absoluto.
+// Sem os episodios registrados (a pagina da serie ainda nao abriu nesta
+// sessao) so o passo 1 existe.
+//
+// Tudo que se aprende fica na memoria do resolvedor (arfMem): o id do TMDB,
+// as contagens das temporadas e o still de cada episodio — positivo para
+// sempre, "o TMDB respondeu e nao ha" por ARF_NEG_MS. Sem isso cada volta do
+// recuo do tex_cache (e cada rolagem que recria o card) repetia a /find e o
+// 404 do episodio: as tres linhas de "HTTP 404 em api.themoviedb.org" do log.
+// ---------------------------------------------------------------------------
+static int arfLer(const char *chave, char *valor, size_t n);
+static void arfGravar(const char *chave, const char *valor);
+
+// Dias desde 1970-01-01 de "AAAA-MM-DD..." (algoritmo civil, sem fuso: e so
+// para comparar datas entre si). 0 = sem data.
+static long diaCivil(const char *s) {
+  int a, m, d;
+  long era, ano, doy, doe;
+  if (!s || sscanf(s, "%4d-%2d-%2d", &a, &m, &d) != 3 || a < 1900 || m < 1 || m > 12 || d < 1 || d > 31)
+    return 0;
+  ano = a - (m <= 2);
+  era = ano / 400;
+  doe = ano - era * 400;
+  doy = (153L * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+  doe = doe * 365 + doe / 4 - doe / 100 + doy;
+  return era * 146097L + doe - 719468L;
+}
+
+// EPISODIOS DO CINEMETA, POR SERIE: (temporada, episodio, dia de exibicao),
+// em ordem; o absoluto e a posicao + 1. Poucas series por sessao importam
+// (a que esta aberta e a de Continuar assistindo): 4 com LRU, ~38 KiB no BSS.
+#define AEP_SERIES 4
+#define AEP_MAX 1200
+typedef struct { uint16_t temp, ep; int32_t dia; } AepItem;
+typedef struct { char imdb[16]; int n; unsigned long uso; AepItem v[AEP_MAX]; } AepSerie;
+static AepSerie aep[AEP_SERIES];
+static unsigned long aepUso;
+static pthread_mutex_t aepTrava = PTHREAD_MUTEX_INITIALIZER;
+
+static int aepCmp(const void *a, const void *b) {
+  const AepItem *x = a, *y = b;
+  if (x->temp != y->temp) return x->temp < y->temp ? -1 : 1;
+  return x->ep < y->ep ? -1 : x->ep > y->ep;
+}
+
+int arte_reserva_episodios(const char *imdb, const char *corpo) {
+  AepItem *tmp;
+  const char *p;
+  int n = 0, i, alvo = 0;
+  unsigned long menor = (unsigned long)-1;
+  char id[16];
+  if (!imdb || strncmp(imdb, "tt", 2) || !corpo) return 0;
+  snprintf(id, sizeof id, "%.*s", (int)strcspn(imdb, ":"), imdb);
+  tmp = malloc(sizeof(AepItem) * AEP_MAX);
+  if (!tmp) return 0;
+  for (p = js_array(corpo, NULL, "videos"); p && n < AEP_MAX; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    char d[32] = "";
+    int t = (int)js_num(p, f, "season", -1), e = (int)js_num(p, f, "episode", -1);
+    if (t <= 0 || e <= 0 || t > 65535 || e > 65535) continue;
+    js_texto(p, f, "released", d, sizeof d);
+    tmp[n].temp = (uint16_t)t; tmp[n].ep = (uint16_t)e; tmp[n].dia = (int32_t)diaCivil(d);
+    n++;
+  }
+  if (n) qsort(tmp, (size_t)n, sizeof *tmp, aepCmp);
+  pthread_mutex_lock(&aepTrava);
+  for (i = 0; i < AEP_SERIES; i++) {
+    if (aep[i].uso && !strcmp(aep[i].imdb, id)) { alvo = i; break; }
+    if (aep[i].uso < menor) { menor = aep[i].uso; alvo = i; }
+  }
+  snprintf(aep[alvo].imdb, sizeof aep[alvo].imdb, "%s", id);
+  memcpy(aep[alvo].v, tmp, sizeof(AepItem) * (size_t)n);
+  aep[alvo].n = n;
+  aep[alvo].uso = ++aepUso;
+  pthread_mutex_unlock(&aepTrava);
+  free(tmp);
+  return n;
+}
+
+// 1 = achou (absoluto e dia); 0 = serie ou episodio nao registrados.
+static int aepLer(const char *id, int temp, int ep, int *absoluto, long *dia) {
+  int i, k, ok = 0;
+  pthread_mutex_lock(&aepTrava);
+  for (i = 0; i < AEP_SERIES && !ok; i++) {
+    if (!aep[i].uso || strcmp(aep[i].imdb, id)) continue;
+    for (k = 0; k < aep[i].n; k++)
+      if (aep[i].v[k].temp == temp && aep[i].v[k].ep == ep) {
+        *absoluto = k + 1; *dia = aep[i].v[k].dia; ok = 1; break;
+      }
+    if (ok) aep[i].uso = ++aepUso;
+  }
+  pthread_mutex_unlock(&aepTrava);
+  return ok;
+}
+
+// UMA TEMPORADA DO TMDB, reduzida a (dia, still). A temporada 21 de One Piece
+// sao 532 KB de JSON e 197 episodios: sem guardar, cada card dela baixaria o
+// arquivo inteiro de novo. 3 celulas com LRU, ~53 KiB no BSS.
+#define ATE_SLOTS 3
+#define ATE_MAX 400
+typedef struct { int32_t dia; char still[40]; } AteEp;
+typedef struct { long idTv; int temp, n; unsigned long uso; AteEp v[ATE_MAX]; } AteTemp;
+static AteTemp ate[ATE_SLOTS];
+static unsigned long ateUso;
+static pthread_mutex_t ateTrava = PTHREAD_MUTEX_INITIALIZER;
+
+// Copia a temporada para `dst` (da memoria ou do TMDB). 1 = ok, -2 = sem
+// resposta (rede ou 404: nada a guardar).
+static int ateTemporada(const char *chave, long idTv, int temp, AteTemp *dst) {
+  char api[300];
+  char *resp;
+  const char *p;
+  int i, alvo = 0;
+  unsigned long menor = (unsigned long)-1;
+  pthread_mutex_lock(&ateTrava);
+  for (i = 0; i < ATE_SLOTS; i++)
+    if (ate[i].uso && ate[i].idTv == idTv && ate[i].temp == temp) {
+      ate[i].uso = ++ateUso;
+      *dst = ate[i];
+      pthread_mutex_unlock(&ateTrava);
+      return 1;
+    }
+  pthread_mutex_unlock(&ateTrava);
+  snprintf(api, sizeof api, "https://api.themoviedb.org/3/tv/%ld/season/%d?api_key=%s", idTv, temp, chave);
+  resp = rede_baixar(api, 8);
+  if (!resp) return -2;
+  memset(dst, 0, sizeof *dst);
+  dst->idTv = idTv; dst->temp = temp;
+  for (p = js_array(resp, NULL, "episodes"); p && dst->n < ATE_MAX; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    char d[24] = "", c[128] = "";
+    js_texto(p, f, "air_date", d, sizeof d);
+    js_texto(p, f, "still_path", c, sizeof c);
+    dst->v[dst->n].dia = (int32_t)diaCivil(d);
+    if (c[0] == '/' && strlen(c) < sizeof dst->v[0].still)
+      snprintf(dst->v[dst->n].still, sizeof dst->v[0].still, "%s", c);
+    dst->n++;
+  }
+  free(resp);
+  pthread_mutex_lock(&ateTrava);
+  for (i = 0; i < ATE_SLOTS; i++) {
+    if (ate[i].uso && ate[i].idTv == idTv && ate[i].temp == temp) { alvo = i; break; }
+    if (ate[i].uso < menor) { menor = ate[i].uso; alvo = i; }
+  }
+  ate[alvo] = *dst;
+  ate[alvo].uso = ++ateUso;
+  pthread_mutex_unlock(&ateTrava);
+  return 1;
+}
+
+// Contagens das temporadas (> 0) do TMDB, "numero:episodios,..." na memoria do
+// resolvedor. Devolve quantas; -2 sem resposta.
+#define AR_TEMPS 128
+static int tmdbTemporadas(const char *chave, const char *id, long idTv, int *num, int *cnt) {
+  char mem[ARF_CHAVE], valor[256], api[300], *resp;
+  const char *p, *s;
+  int n = 0;
+  snprintf(mem, sizeof mem, "tvtemps/%s", id);
+  if (arfLer(mem, valor, sizeof valor) > 0) {
+    for (s = valor; *s && n < AR_TEMPS; ) {
+      int a, b, k;
+      if (sscanf(s, "%d:%d%n", &a, &b, &k) != 2) break;
+      num[n] = a; cnt[n] = b; n++;
+      s += k;
+      if (*s == ',') s++;
+    }
+    if (n) return n;
+  }
+  snprintf(api, sizeof api, "https://api.themoviedb.org/3/tv/%ld?api_key=%s", idTv, chave);
+  resp = rede_baixar(api, 8);
+  if (!resp) return -2;
+  valor[0] = 0;
+  for (p = js_array(resp, NULL, "seasons"); p && n < AR_TEMPS; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    int a = (int)js_num(p, f, "season_number", -1), b = (int)js_num(p, f, "episode_count", 0);
+    size_t L = strlen(valor);
+    if (a <= 0 || b <= 0) continue;
+    num[n] = a; cnt[n] = b; n++;
+    if (L + 16 < sizeof valor) snprintf(valor + L, sizeof valor - L, "%s%d:%d", L ? "," : "", a, b);
+    else valor[0] = 1;             // nao coube: nao guarda (o pedido so se repete)
+  }
+  free(resp);
+  if (n && valor[0] != 1) arfGravar(mem, valor);
+  return n;
+}
+
+// Dentro de uma temporada ja baixada: o indice do episodio exibido em `dia`
+// (exato, senao +-1), o mais perto de `pos` (0-based) quando ha mais de um.
+// -1 = nenhum.
+static int ateCasarDia(const AteTemp *t, long dia, int pos) {
+  int tol, i, melhor = -1, dist = 1 << 30;
+  if (dia <= 0) return -1;
+  for (tol = 0; tol <= 1 && melhor < 0; tol++)
+    for (i = 0; i < t->n; i++) {
+      long d = t->v[i].dia;
+      int di = i > pos ? i - pos : pos - i;
+      if (d <= 0 || (d != dia - tol && d != dia + tol)) continue;
+      if (di < dist) { dist = di; melhor = i; }
+    }
+  return melhor;
+}
+
+// Passos 2 e 3. 1 = `caminho` preenchido; -1 = o TMDB respondeu e nao ha;
+// -2 = sem resposta.
+static int stillPorAbsoluto(const char *chave, const char *id, long idTv, int absoluto,
+                            long dia, char *caminho, size_t n) {
+  int num[AR_TEMPS], cnt[AR_TEMPS], nt, k, antes = 0, i, idx, lado;
+  static AteTemp t;                  // 17 KiB: fora da pilha do fio de rede
+  static pthread_mutex_t tTrava = PTHREAD_MUTEX_INITIALIZER;
+  int r = -1;
+  nt = tmdbTemporadas(chave, id, idTv, num, cnt);
+  if (nt < 0) return -2;
+  if (nt == 0) return -1;
+  for (k = 0; k < nt - 1 && antes + cnt[k] < absoluto; k++) antes += cnt[k];
+  pthread_mutex_lock(&tTrava);
+  if (ateTemporada(chave, idTv, num[k], &t) < 0) { pthread_mutex_unlock(&tTrava); return -2; }
+  idx = ateCasarDia(&t, dia, absoluto - antes - 1);
+  // A data caiu fora desta temporada: a vizinha, uma vez so (o absoluto do
+  // Cinemeta anda um ou dois atras do TMDB, e isso atravessa a divisa).
+  if (idx < 0 && dia > 0 && t.n > 0) {
+    long primeiro = 0, ultimo = 0;
+    for (i = 0; i < t.n; i++) if (t.v[i].dia > 0) { if (!primeiro) primeiro = t.v[i].dia; ultimo = t.v[i].dia; }
+    lado = (primeiro && dia < primeiro - 1) ? -1 : (ultimo && dia > ultimo + 1) ? 1 : 0;
+    if (lado && k + lado >= 0 && k + lado < nt) {
+      int antesV = lado < 0 ? antes - cnt[k - 1] : antes + cnt[k];
+      static AteTemp v;
+      if (ateTemporada(chave, idTv, num[k + lado], &v) == 1) {
+        int j = ateCasarDia(&v, dia, absoluto - antesV - 1);
+        if (j >= 0) {
+          if (v.v[j].still[0]) { snprintf(caminho, n, "%s", v.v[j].still); r = 1; }
+          pthread_mutex_unlock(&tTrava);
+          return r;
+        }
+      }
+    }
+  }
+  if (idx < 0) idx = absoluto - antes - 1;      // passo 3: a posicao
+  if (idx >= 0 && idx < t.n && t.v[idx].still[0]) { snprintf(caminho, n, "%s", t.v[idx].still); r = 1; }
+  pthread_mutex_unlock(&tTrava);
+  return r;
+}
+
+// Still de episodio. So depois de o metahub falhar, e o still e o card de
+// Continue Watching inteiro — vale as viagens (e a memoria as poupa).
 static int reservaStill(const char *chave, const char *id, int temp, int ep,
                         char *saida, size_t tam) {
-  char api[300], caminho[128] = "";
+  char api[300], caminho[128] = "", mem[ARF_CHAVE], tid[24], d[24] = "";
   char *resp;
   const char *v;
-  long idTv = 0;
-  snprintf(api, sizeof api,
-           "https://api.themoviedb.org/3/find/%s?api_key=%s&external_source=imdb_id", id, chave);
-  resp = rede_baixar(api, 8);
-  if (!resp) return 0;
-  v = js_array(resp, NULL, "tv_results");
-  if (v) idTv = (long)js_num(v, js_fim(v), "id", 0.0);
-  free(resp);
-  if (idTv <= 0) return 0;
-  snprintf(api, sizeof api,
-           "https://api.themoviedb.org/3/tv/%ld/season/%d/episode/%d?api_key=%s", idTv, temp, ep, chave);
-  resp = rede_baixar(api, 8);
-  if (!resp) return 0;
-  js_texto_raiz(resp, "still_path", caminho, sizeof caminho);
-  free(resp);
+  long idTv = 0, dia = 0;
+  int absoluto = 0, temInfo, r = -1;
+  snprintf(mem, sizeof mem, "still/%s/%d/%d", id, temp, ep);
+  r = arfLer(mem, caminho, sizeof caminho);
+  if (r < 0) return 0;                               // ja se sabe que nao ha
+  if (r == 0) {
+    char chaveId[ARF_CHAVE];
+    snprintf(chaveId, sizeof chaveId, "tmdbid/%s", id);
+    if (arfLer(chaveId, tid, sizeof tid) > 0 && tid[0] == 't') idTv = atol(tid + 1);
+    if (idTv <= 0) {
+      snprintf(api, sizeof api,
+               "https://api.themoviedb.org/3/find/%s?api_key=%s&external_source=imdb_id", id, chave);
+      resp = rede_baixar(api, 8);
+      if (!resp) return 0;
+      v = js_array(resp, NULL, "tv_results");
+      if (v) idTv = (long)js_num(v, js_fim(v), "id", 0.0);
+      free(resp);
+      if (idTv <= 0) { arfGravar(mem, NULL); return 0; }
+      snprintf(tid, sizeof tid, "t%ld", idTv);
+      arfGravar(chaveId, tid);
+    }
+    temInfo = aepLer(id, temp, ep, &absoluto, &dia);
+    snprintf(api, sizeof api,
+             "https://api.themoviedb.org/3/tv/%ld/season/%d/episode/%d?api_key=%s", idTv, temp, ep, chave);
+    // Com o codigo HTTP: 404 e "o TMDB nao tem este numero" (vale casar e
+    // guardar a negativa); sem resposta nenhuma e a rede, e nada se guarda.
+    { int st = 0;
+      resp = rede_baixar_st(api, 8, NULL, &st);
+      if (resp && (st < 200 || st >= 300)) { free(resp); resp = NULL; }
+      if (!resp && st == 0) return 0; }
+    r = -1;
+    if (resp) {
+      js_texto_raiz(resp, "still_path", caminho, sizeof caminho);
+      js_texto_raiz(resp, "air_date", d, sizeof d);
+      free(resp);
+      if (caminho[0] == '/') r = 1;
+      // Mesmo numero, outro episodio: o TMDB exibiu este longe da data do
+      // Cinemeta. Vale o casamento pela data.
+      if (r > 0 && temInfo && dia > 0 && diaCivil(d) > 0 &&
+          (diaCivil(d) > dia + 1 || diaCivil(d) < dia - 1)) { r = -1; caminho[0] = 0; }
+    }
+    if (r < 0 && temInfo) {
+      r = stillPorAbsoluto(chave, id, idTv, absoluto, dia, caminho, sizeof caminho);
+      if (r > 0) { printf("[tex] still de %s S%dE%d casado pelo absoluto %d / data\n", id, temp, ep, absoluto); fflush(stdout); }
+      if (r == -2) return 0;                          // sem resposta: nao guarda nada
+    }
+    arfGravar(mem, r > 0 ? caminho : NULL);
+    if (r < 0) return 0;
+  }
   if (caminho[0] != '/') return 0;
   // Na Samsung nunca `original`: o decode do navegador devolve o still inteiro
   // (3840 px em varias series) e foi um fundo desses que zerou o heap no
@@ -280,14 +581,16 @@ static int fanartTrakt(const char *corpo, char *dst, size_t n) {
 //           o TMDB ganha arte com o tempo. Falha de rede e falta de chave nao
 //           sao guardadas — sao da conexao/do pacote, nao do titulo.
 //
-// Tabela FIXA de ARF_N entradas no BSS (~115 KiB), sem malloc: cheia, sai a
+// Tabela FIXA de ARF_N entradas no BSS (~150 KiB), sem malloc: cheia, sai a
 // usada ha mais tempo (LRU por contador). A busca linear e sob mutex porque os
 // dois fios de rede do tex_cache resolvem ao mesmo tempo; 192 strcmp nao
 // aparecem perto de uma ida ao TMDB.
 // 384 e nao 192 (23/09): um titulo do TMDB agora ocupa ate tres celulas (o id
 // do TMDB, o padrao e o outro backdrop), mais Apple/fanart/anime.
-#define ARF_N 384u
-#define ARF_CHAVE 32u
+// 512 e nao 384 (23/09, One Piece): o still de episodio casado pela data
+// tambem mora aqui, um por episodio, e rolar uma temporada de 197 empurrava
+// para fora os fundos ja resolvidos.
+#define ARF_N 512u
 #define ARF_VALOR 256u
 #define ARF_NEG_MS (5u * 60u * 1000u)
 typedef struct {
