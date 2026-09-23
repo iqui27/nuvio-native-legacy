@@ -57,6 +57,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include "ponteiro.h"
+static void ponteiroDetalhe(int r, int c);   // ponteiro do Magic Remote (#99)
 
 // Teto de itens por secao. 24 e nao 8: uma temporada de "Silo" tem 10
 // episodios e o vetor de 8 escondia os dois ultimos — a lista parecia menor do
@@ -2921,12 +2923,14 @@ static void heroWeb(float a, float desloc) {
     float bx = NV_DETW2_X;
     GfxRect rp = { bx, yAcoes, larguraPrimario(rot), NV_DETW2_BTN_H };
     desenhaBotao(rp, rot, 0, nivel == 0 && botao == nb, a);
+    if (a > 0.3f) ponteiro_alvo(rp.x, rp.y, rp.w, rp.h, ponteiroDetalhe, NULL, -1, nb);
     bx += rp.w + NV_DETW2_BTN_GAP; nb++;
     if (temInicio()) {
       // "Assistir do comeco" entre o primario e os circulares (issue #46).
       const char *rotIni = i18n("Assistir do começo");
       GfxRect rs = { bx, yAcoes, larguraSecundario(rotIni), NV_DETW2_BTN_H };
       desenhaSecundario(rs, rotIni, nivel == 0 && botao == nb, a);
+      if (a > 0.3f) ponteiro_alvo(rs.x, rs.y, rs.w, rs.h, ponteiroDetalhe, NULL, -1, nb);
       bx += rs.w + NV_DETW2_BTN_GAP; nb++;
     }
     if (temLembrar()) {
@@ -2935,12 +2939,14 @@ static void heroWeb(float a, float desloc) {
                      NV_DETW2_CIRC, NV_DETW2_CIRC };
       desenhaLembrete(rs, ciL && agenda_lembrete(ciL->imdb),
                       nivel == 0 && botao == nb, a);
+      if (a > 0.3f) ponteiro_alvo(rs.x, rs.y, rs.w, rs.h, ponteiroDetalhe, NULL, -1, nb);
       bx += NV_DETW2_CIRC + NV_DETW2_BTN_GAP; nb++;
     }
     for (; nb < n; nb++) {
       GfxRect rc = { bx, cyBtn - NV_DETW2_CIRC * 0.5f,
                      NV_DETW2_CIRC, NV_DETW2_CIRC };
       desenhaBotao(rc, NULL, acaoEm(nb), nivel == 0 && botao == nb, a);
+      if (a > 0.3f) ponteiro_alvo(rc.x, rc.y, rc.w, rc.h, ponteiroDetalhe, NULL, -1, nb);
       bx += NV_DETW2_CIRC + NV_DETW2_BTN_GAP;
     } }
 
@@ -4512,6 +4518,32 @@ static float desenhaFrases(float x, float y, float a) {
   return hq > hf ? hq : hf;
 }
 
+// PONTEIRO (#99). r < 0 = botao `c` do hero (nivel 0); senao secao r, coluna
+// c (nivel 1) — as mesmas variaveis que as setas mexem em detail_evento.
+static void ponteiroDetalhe(int r, int c) {
+  if (r < 0) {
+    if (c < 0 || c >= nBotoes()) return;
+    nivel = 0; botao = c;
+    return;
+  }
+  if (r >= N_SECOES || c < 0 || c >= secaoColunas(r)) return;
+  nivel = 1;
+  foco.fileira = r; foco.coluna = c; foco.colunaLembrada[r] = c;
+}
+// Altura da area clicavel de um item da secao; 0 = secao que o ponteiro nao
+// foca por item (desenho unico, lista interna com foco proprio).
+static float alturaAlvo(int r) {
+  switch (r) {
+    case SEC_TEMPORADAS: return NV_DETP_TEMP_H;
+    case SEC_EPISODIOS:  return NV_DETP_EP_H;
+    case SEC_ABAS_INFO:  return NV_DETP_ABA_H;
+    case SEC_TRAILERS:   return NV_DETF_TR_VIDEO_H;
+    case SEC_ESTUDIOS:   return EST_CARD_H;
+    case SEC_ELENCO:     return NV_DETP_EL_AVATAR + 90.0f;
+    default:             return 0.0f;
+  }
+}
+
 static void desenhaSecao(int r, float a, Uint32 agora) {
   int n = secaoN(r);
   // Aba de informacao que nao seja "Criador e elenco": o web TROCA o conteudo
@@ -4615,6 +4647,9 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     float x = xItem(r, c) - scrollSec[r];
     float w = larguraItem(r, c);
     if (x > NV_TELA_W || x + w < -w) continue;
+    if (ponteiro_ativo() && a > 0.3f && c < secaoColunas(r) && alturaAlvo(r) > 0.0f)
+      ponteiro_alvo(x, r == SEC_ESTUDIOS && ehSerie() ? y + EST_TITULO_H : y,
+                    w, alturaAlvo(r), ponteiroDetalhe, NULL, r, c);
     switch (r) {
       case SEC_TEMPORADAS: {
         GfxRect b = { x, y, w, NV_DETP_TEMP_H };
@@ -4905,15 +4940,18 @@ void detail_desenhar(Uint32 agora) {
 
 
   if (pg <= 0.01f && scrollY < 1.0f) {
-    if (pessoaAberta) desenhaPessoa(s);
+    if (pessoaAberta) { ponteiro_camada(); desenhaPessoa(s); }
+    if (episodios_menu_aberto()) ponteiro_camada();
     return;
   }
   desenhaEsqueletoEpisodios(pg);
   desenhaEsqueletoElenco(pg);
   for (int r = 0; r < N_SECOES; r++) desenhaSecao(r, pg, agora);
   // POR CIMA de tudo: a ficha e outra tela, nao uma secao desta.
-  if (pessoaAberta) desenhaPessoa(s);
+  // O ponteiro (#99) nao alcanca a pagina por baixo de nenhuma das duas.
+  if (pessoaAberta) { ponteiro_camada(); desenhaPessoa(s); }
   // E o menu de visto por cima da ficha tambem: ele e o ultimo a abrir.
+  if (episodios_menu_aberto()) ponteiro_camada();
   episodios_menu_desenhar();
 }
 
