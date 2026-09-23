@@ -620,6 +620,13 @@ static int fonteJa(const char *base, const char *id) {   // indice ou -1
 // com a lista vazia significa mesmo "nenhum addon declara canal". `s` e do fio,
 // `falhas` e a copia publicada, como o resto do estado desta tela.
 static int sFalhas, falhas;
+// O XTREAM, SEPARADO DOS ADDONS (issue #112). Lista do Xtream que nao
+// respondeu somava zero canais em silencio: com um addon de canais junto, o
+// guia enchia com os dele e ninguem ficava sabendo que o portal falhou — no
+// registro 1647 (Samsung) o log dizia "servidor nao respondeu a lista de
+// canais" e a tela "619 canais". XT_OK / XT_SEM_RESPOSTA / XT_RECUSOU de
+// xtream.h; `s` e do fio, o outro e a copia publicada, como `falhas`.
+static int sXtFalha, xtFalha;
 
 static void sondaManifestos(void) {
   int a;
@@ -719,7 +726,7 @@ static void sondaManifestos(void) {
 static void *fioGuia(void *u) {
   int ok = 0;
   (void)u;
-  sNCanais = 0; sNCats = 0; sFalhas = 0;
+  sNCanais = 0; sNCats = 0; sFalhas = 0; sXtFalha = XT_OK;
   // Fontes das fileiras (descobertas no fio de desenho) primeiro — zero rede
   // extra. A sonda de manifestos completa com o que a home nao montou.
   // ADDON DESLIGADO NAO ENTRA POR AQUI TAMBEM. As fileiras da home so sao
@@ -788,6 +795,7 @@ static void *fioGuia(void *u) {
   if (xtream_configurado()) {
     XtreamCanal *xt = malloc(sizeof *xt * G_MAX_CANAL);
     int n = xt ? xtream_canais(xt, G_MAX_CANAL) : 0, i;
+    if (xt) sXtFalha = xtream_ultima_falha();
     for (i = 0; i < n && sNCanais < G_MAX_CANAL; i++) {
       GCanal c;
       if (sCanalPorId(xt[i].id) >= 0) continue;
@@ -994,7 +1002,7 @@ static void publicar(void) {
   // REDE VAZIA NAO APAGA A LISTA QUE HA: sem resposta nenhuma (todos os addons
   // fora), a lista de ontem continua valendo mais que uma tela vazia.
   if (sNCanais == 0 && nCanais > 0) {
-    falhas = sFalhas;
+    falhas = sFalhas; xtFalha = sXtFalha;
     memcpy(sabe, sSabe, sizeof sSabe); nSabe = sNSabe;
     printf("[guia] rede sem canal nenhum: fica a lista que estava\n");
     fflush(stdout);
@@ -1004,7 +1012,7 @@ static void publicar(void) {
     if (nCanais > 0 && nova == assinaturaPublicada) {
       memcpy(sabe, sSabe, sizeof sSabe); nSabe = sNSabe;
       memcpy(fontes, sFontes, sizeof sFontes); nFontes = sNFontes;
-      falhas = sFalhas;
+      falhas = sFalhas; xtFalha = sXtFalha;
       printf("[guia] lista da rede igual a da tela: nao republicada\n");
       fflush(stdout);
       marco("guia: rede igual ao cache");
@@ -1019,7 +1027,7 @@ static void publicar(void) {
   // contagem das fileiras apenas.
   memcpy(fontes, sFontes, sizeof sFontes);
   nFontes = sNFontes;
-  falhas = sFalhas;
+  falhas = sFalhas; xtFalha = sXtFalha;
   memcpy(sabe, sSabe, sizeof sSabe);
   nSabe = sNSabe;
   (void)w;
@@ -2594,9 +2602,21 @@ void guia_desenhar(Uint32 agora) {
     else if (falhas && !nCanais)
       snprintf(sub, sizeof sub, "%s",
                i18n("Os addons de canais não responderam."));
+    else if (xtFalha && !nCanais)
+      snprintf(sub, sizeof sub, "%s", xtFalha == XT_RECUSOU
+               ? i18n("O Xtream recusou o usuário e a senha.")
+               : i18n("A lista do Xtream não respondeu."));
     else if (estado == G_FALHOU || (fontesOk && !nFontes))
       snprintf(sub, sizeof sub, "%s",
                i18n("Nenhum canal: sem addon de canais e sem portal IPTV."));
+    // A falha do Xtream toma o lugar da dica de teclas, e so ela: os canais
+    // dos addons continuam na tela e funcionam, o que falta e o portal.
+    else if (xtFalha == XT_SEM_RESPOSTA)
+      snprintf(sub, sizeof sub, i18n("%d canais · %d categorias · a lista do Xtream não respondeu"),
+               nCanais, nCats);
+    else if (xtFalha == XT_RECUSOU)
+      snprintf(sub, sizeof sub, i18n("%d canais · %d categorias · o Xtream recusou o usuário e a senha"),
+               nCanais, nCats);
     else
       snprintf(sub, sizeof sub, i18n("%d canais · %d categorias · segure %s para pular seção"),
                nCanais, nCats, "\xe2\x86\x91\xe2\x86\x93");
@@ -2686,7 +2706,11 @@ void guia_desenhar(Uint32 agora) {
     // mesma tela, quem configurou um portal e nao viu canal nenhum leria uma
     // frase que fala de outra coisa — e quem nao tem addon nem sabe que a
     // segunda porta existe.
-    const char *msg = falhas
+    const char *msg = xtFalha == XT_SEM_RESPOSTA
+      ? i18n("A lista de canais do Xtream não respondeu agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.")
+      : xtFalha == XT_RECUSOU
+      ? i18n("O Xtream recusou o usuário e a senha. Confira o cadastro em Ajustes › Conta.")
+      : falhas
       ? i18n("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.")
       : i18n("O guia se enche por dois caminhos: um addon de canais (como o FrostView TV) instalado na conta, ou um portal IPTV cadastrado em Ajustes › Conta.");
     float msgY = 300.0f;
@@ -2696,7 +2720,7 @@ void guia_desenhar(Uint32 agora) {
     // das duas portas, e resposta nenhuma para quem tem um addon que esta fora
     // do ar neste minuto. Ali a frase ja diz tudo, e um diagrama por cima dela
     // seria decoracao a atrapalhar a leitura.
-    if (!falhas) {
+    if (!falhas && !xtFalha) {
       // ALINHADO A MARGEM, e nao centralizado: neste estado o painel da direita
       // NAO e desenhado, entao o "centro da area de conteudo" nao e o centro de
       // nada que a pessoa veja, e o desenho nascia deslocado em relacao ao

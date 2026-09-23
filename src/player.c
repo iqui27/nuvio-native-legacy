@@ -372,7 +372,24 @@ const CatEp *player_proximo_episodio(void) {
   }
   return melhor;
 }
-void player_erro_fonte(void) { esperandoFonte = 0; erroFonte = 1; visivel = 1; tocando = 0; }
+// O MOTIVO DO CARTAO DE ERRO (issue #112). O cartao dizia sempre "Nao foi
+// possivel abrir a fonte / Abra Fontes para escolher outra opcao" — e para um
+// canal sem fonte nenhuma as duas frases sao falsas: nada foi aberto, e a
+// folha de Fontes estaria vazia. No log do #112 (Samsung, id 1647) foram oito
+// canais seguidos em "nenhuma fonte serve", e o relato e "tela preta". Com o
+// motivo, o cartao diz QUEM respondeu o que ("FrostView TV nao tem fonte para
+// este canal agora"). Vazio = as frases genericas. Ja traduzido por quem
+// chama; txt_linha tenta traduzir de novo, nao acha chave e deixa como esta.
+static char erroTitulo[160], erroDica[160];
+void player_erro_fonte(void) {
+  esperandoFonte = 0; erroFonte = 1; visivel = 1; tocando = 0;
+  erroTitulo[0] = erroDica[0] = 0;   // erro sem motivo nao herda o do anterior
+}
+void player_erro_fonte_motivo(const char *titulo, const char *dica) {
+  player_erro_fonte();
+  snprintf(erroTitulo, sizeof erroTitulo, "%s", titulo ? titulo : "");
+  snprintf(erroDica, sizeof erroDica, "%s", dica ? dica : "");
+}
 // Desfaz o de cima quando a fonte que parecia morta volta a entregar. Ver a
 // nota no watchdog de canal em app.c.
 void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; } }
@@ -941,6 +958,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
     if (canalSessao) { epg_iniciar(); guia_carregar(); } }
   tocando = 1; visivel = 1; anim = 0.0f; entrada = 0.0f;
   pedFontes = erroFonte = pedFaixas = pedProxT = pedProxE = 0; inicioImagem = 0;
+  erroTitulo[0] = erroDica[0] = 0;
   pedGuia = pedZap = 0;
   retomadaAplicada=0; semRetomada=0;
   botao = PLR_PLAY;
@@ -2083,9 +2101,10 @@ void player_desenhar(Uint32 agora) {
   }
   if (erroFonte) {
     gfx_cor(tela,0,.02f,.02f,.025f,.65f);
-    TxtLinha er=txt_linha(TXT_CALLOUT,"Não foi possível abrir a fonte",240,241,243,255);
+    // Cortadas na largura: o motivo leva o nome do addon, que e da pessoa.
+    TxtLinha er=txt_linha_corta(TXT_CALLOUT,erroTitulo[0]?erroTitulo:"Não foi possível abrir a fonte",240,241,243,255,NV_TELA_W-240);
     txt_desenhar_alpha(er,(NV_TELA_W-er.w)*.5f,400,entrada);
-    TxtLinha aj=txt_linha(TXT_PG_FIM,"Abra Fontes para escolher outra opção ou recarregar.",192,194,200,255);
+    TxtLinha aj=txt_linha_corta(TXT_PG_FIM,erroDica[0]?erroDica:"Abra Fontes para escolher outra opção ou recarregar.",192,194,200,255,NV_TELA_W-240);
     txt_desenhar_alpha(aj,(NV_TELA_W-aj.w)*.5f,448,entrada);
   }
 

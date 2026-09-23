@@ -45,6 +45,10 @@ int player_regra_proximo(double posSeg, double durSeg, double cred);
 // para quem sai por cima do fim sem passar pelo cartao.
 int player_regra_concluiu(double posSeg, double durSeg, double cred);
 void player_erro_fonte(void);
+// O mesmo cartao, com a causa no lugar das frases genericas (issue #112):
+// `titulo` substitui "Nao foi possivel abrir a fonte" e `dica` a linha de
+// baixo. Os dois ja traduzidos; "" ou NULL mantem a frase generica.
+void player_erro_fonte_motivo(const char *titulo, const char *dica);
 void player_limpar_erro_fonte(void);   // fonte "morta" que voltou a entregar
 // 1 quando a fonte atual falhou. O app usa no watchdog de canal: stream de TV
 // ao vivo que nao abre troca sozinho para o proximo da lista.
