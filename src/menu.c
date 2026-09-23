@@ -19,6 +19,7 @@
 #include "anim.h"
 #include "layout.h"
 #include "ajustes.h"
+#include "ponteiro.h"
 
 // Larguras: a recolhida cabe so o icone; a aberta e a da barra do tvOS, larga o
 // bastante para o rotulo mais comprido ("Biblioteca") nao encostar na borda.
@@ -115,6 +116,26 @@ static void focoMenu(GfxRect pill, float f, float alpha) {
 
 // O legacy deixa a rail de 144px sempre visível. O menu expandido é uma
 // camada adicional; não deslocamos o conteúdo quando ele fecha.
+// PONTEIRO (#99). Passar por cima da rail ABRE a barra ja com o destaque na
+// linha sob o cursor — o mesmo que ESQUERDA e depois cima/baixo. O clique e o
+// OK de sempre (escolher). Com a barra aberta, clicar fora dela fecha, como o
+// Voltar.
+static void ponteiroLinha(int i, int b) {
+  (void)b;
+  if (i < 0 || i >= NV_MENU_FOCOS) return;
+  if (!aberto) menu_abrir();
+  linha = i;
+}
+static void ponteiroFora(int a, int b) { (void)a; (void)b; menu_fechar(); }
+static void alvosDasLinhas(float x, float w) {
+  float y = (NV_TELA_H - MENU_N * NV_MENU_LINHA_H) * 0.5f;
+  if (!ponteiro_ativo()) return;
+  for (int i = 0; i < MENU_N; i++, y += NV_MENU_LINHA_H)
+    ponteiro_alvo(x, y, w, NV_MENU_LINHA_H, ponteiroLinha, NULL, i, 0);
+  ponteiro_alvo(x, NV_TELA_H - NV_MARGEM_Y - NV_MENU_RODAPE_H, w, NV_MENU_RODAPE_H,
+                ponteiroLinha, NULL, MENU_RODAPE, 0);
+}
+
 static void desenhaRailFixa(void) {
   GfxRect painel = { 0, 0, NV_LEGACY_RAIL_W, NV_TELA_H };
   gfx_cor(painel, 0.0f, 0.055f, 0.058f, 0.064f, 1.0f);
@@ -323,7 +344,12 @@ void menu_desenhar(Uint32 agora) {
   // (ajustes_conteudo_x), mas continuava pintando os 144px da rail por baixo
   // dele: uma faixa escura sob o primeiro card, sem nada em cima.
   if (!aberto && desliza < .002f && !ajustes_rail_recolhida()) desenhaRailFixa();
-  if (!aberto && desliza < 0.002f) return;
+  if (!aberto && desliza < 0.002f) {
+    // Recolhida, a rail nao existe na tela; uma faixa na borda faz o papel
+    // dela para o ponteiro, como o ESQUERDA na primeira coluna.
+    alvosDasLinhas(0.0f, ajustes_rail_recolhida() ? 28.0f : NV_MENU_W_ICONE);
+    return;
+  }
 
   float w = anim_mistura(NV_MENU_W_ICONE, NV_MENU_W_ABERTO, anim_suave(expande));
   // O VEU usa a rampa CRUA: a medida da referencia e uma reta (ver
@@ -343,6 +369,10 @@ void menu_desenhar(Uint32 agora) {
   // do tema nao tinge a tela toda enquanto a pessoa percorre as secoes.
   GfxRect painel = { px, 24.0f, w, NV_TELA_H - 48.0f };
   float ar_, ag_, ab_; ajustes_acento(&ar_, &ag_, &ab_);
+  if (aberto) {
+    ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ponteiroFora, 0, 0);
+    alvosDasLinhas(px, w);
+  }
   gfx_cor(painel, 28.0f / painel.h, 0.055f, 0.058f, 0.068f, 0.965f * entrada);
 
   // Tudo daqui para baixo fica preso ao painel. Sem o recorte, o rotulo — que e

@@ -55,6 +55,7 @@ int player_aberto(void);
 #include "trailerimdb.h"
 #include "trailerapple.h"
 #include "trailerfonte.h"
+#include "ponteiro.h"
 
 #define MAX_ARTE   64
 // 16, o teto do web para ESTE runtime: HOME_MAX_ROWS_LEGACY_TV em
@@ -2684,6 +2685,32 @@ static void desenhaFundo(void) {
   (void)tela;
 }
 
+// PONTEIRO (#99). Poe o foco pelas MESMAS variaveis que as setas mexem em
+// home_evento — fileira, coluna e a memoria de coluna da fileira —, com os
+// mesmos efeitos colaterais de uma tecla (relogio do destaque, pergunta de
+// sair desarmada). O OK do clique chega depois, pelo caminho de sempre.
+static void ponteiroCard(int r, int c) {
+  if (r < 0 || r >= nFileiras || c < 0 || c >= foco.nColunas[r]) return;
+  focoHero = 0;
+  foco.fileira = r; foco.coluna = c; foco.colunaLembrada[r] = c;
+  heroUltTecla = SDL_GetTicks();
+  sairPerguntadoEm = 0;
+}
+static void ponteiroHero(int a, int b) {
+  (void)a; (void)b;
+  focoHero = 1;
+  heroUltTecla = SDL_GetTicks();
+  sairPerguntadoEm = 0;
+}
+// So a parte VISIVEL do card: acima do viewport das fileiras (o gfx_recorte
+// de home_desenhar) o card esta cortado e por baixo mora o destaque.
+static void alvoCard(float x, float y, float w, float h, int r, int c) {
+  float topo = NV_SHELF_TOP - 96;
+  if (!ponteiro_ativo()) return;
+  if (y < topo) { h -= topo - y; y = topo; }
+  ponteiro_alvo(x, y, w, h, ponteiroCard, NULL, r, c);
+}
+
 static void desenhaAtalhos(int r, float y) {
   float w = larguraFil(r), h = alturaFil(r);
   static int ultimo=-1;static Uint32 desde;
@@ -2701,6 +2728,7 @@ static void desenhaAtalhos(int r, float y) {
     if (x + w < 0 || x > NV_TELA_W) continue;
     float f = animFoco[r][c], raio = raioDe(w, h);
     GfxRect card = {x, y, w, h};
+    alvoCard(x, y, w, h, r, c);
     // O ANEL E OPCIONAL (Ajustes > Foco no cartaz). Sem ele o foco continua
     // dito pelo tamanho e pela animacao do cartaz — o que sai e so a borda.
     if (f > .01f && ajustes_borda_foco()) {
@@ -3043,6 +3071,8 @@ void home_desenhar(Uint32 agora) {
   desenhaFundo();
   float pd = detail_progresso();
   if (ajustes_hero_ligado()) desenhaHero(agora, pd);
+  if (ajustes_hero_ligado())
+    ponteiro_alvo(0, 0, NV_TELA_W, NV_SHELF_TOP - 96, ponteiroHero, NULL, 0, 0);
 
   // ABERTURA DO DETALHE: as fileiras DESCEM e apagam; a arte de fundo fica.
   //
@@ -3173,6 +3203,7 @@ void home_desenhar(Uint32 agora) {
           if (tipo == FILEIRA_DESTAQUE_QUADRADO && py < cardY) py = cardY;
           float raio = raioDe(w, h);
           GfxRect r0 = { px, py, w, h };
+          alvoCard(px, py, w, h, r, c);
           float lum = 0.06f + 0.10f * f;
           gfx_cor(r0, raio, 1, 1, 1, lum);
           gfx_rect(r0, 0, GFX_ANEL, 0, 2.0f / h, 0, raio,
@@ -3233,6 +3264,7 @@ void home_desenhar(Uint32 agora) {
             (void)f;
             continue;
           }
+          alvoCard(px, py, w, h, r, c);
 
           const int idxCat = fileiraItemIndice(&fileiras[r], c);
           if(tipo==FILEIRA_TOP10 && fileiras[r].stackN) {
