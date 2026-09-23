@@ -70,6 +70,9 @@ int main(int argc, char **argv) {
   for (i = 0; i < 50; i++) {
     Uint32 agora = SDL_GetTicks();
     avisos_atualizar(1.0f / 60.0f, agora);
+    tex_novo_quadro();
+    tex_bombear(3);   /* o sino agora e PNG: sobe como as outras texturas */
+    SDL_Delay(20);
     glClearColor(0.025f, 0.025f, 0.03f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     avisos_desenhar(agora);
