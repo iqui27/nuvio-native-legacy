@@ -21,6 +21,12 @@
 // fileira, que cada item veio de quem produziu aquela fileira.
 #include <assert.h>
 #include <unistd.h>
+// Duples da remocao do Continuar assistindo (fix/cw-remover): este teste nao
+// exercita a remocao, e o catalogo aqui e falso.
+void prog_remover(const char *chave) { (void)chave; }
+void prog_marcar_removido(const char *imdb) { (void)imdb; }
+int  prog_removido_vence(const char *imdb, long long instanteMs) { (void)imdb; (void)instanteMs; return 0; }
+int  cat_tirar_continuar(const char *imdb) { (void)imdb; return 0; }
 #include "../src/descoberta.c"
 
 #define BASE "https://addon.example/abc"

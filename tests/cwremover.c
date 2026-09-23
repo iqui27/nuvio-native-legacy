@@ -20,6 +20,16 @@
 //        volta — e tambem quando o registro novo e LOCAL.
 //
 //   bash tests/cwremover.sh
+// Duples do estado da home (merge do Codex): sem snapshot valido aqui, que e
+// o caso de um primeiro arranque — a remocao e o que este teste cobra.
+#include "../src/homeestado.h"
+unsigned homeestado_geracao(void) { return 1; }
+int homeestado_contexto_valido(void) { return 0; }
+int homeestado_tem_fileira(const char *chave) { (void)chave; return 0; }
+int homeestado_ordem_fileira(const char *chave) { (void)chave; return -1; }
+int homeestado_salvar_se_geracao(const CatFileira *fils, int n, unsigned g) { (void)fils; (void)n; (void)g; return 1; }
+int homeestado_identidade_geracao(unsigned g, char *dono, unsigned tamDono, int *perfil) {
+  (void)g; if (dono && tamDono) dono[0] = 0; if (perfil) *perfil = 0; return 0; }
 #include "../src/descoberta.c"
 #include <assert.h>
 #include <stdio.h>

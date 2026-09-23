@@ -10,6 +10,13 @@
 // republicacao acertava. Sem janela, rede ou TV: inclui src/home.c direto,
 // como tests/fimfileira.c.
 #include <assert.h>
+// Duples do cache de arte do Codex (mesmos de tests/home_layout.c).
+void cachearte_marcar_grupo(int grupo, const char *url, int variante, int essencial, int emUso) {
+  (void)grupo; (void)url; (void)variante; (void)essencial; (void)emUso; }
+void cachearte_limpar_referencias_grupo(int grupo) { (void)grupo; }
+void cachearte_estatisticas_pedir(void) {}
+void tex_cache_marcar_larg(int grupo, const char *url, float larg, int essencial, int emUso) {
+  (void)grupo; (void)url; (void)larg; (void)essencial; (void)emUso; }
 #include "../src/home.c"
 
 char *dados_ler(const char *nome) { (void)nome; return NULL; }
