@@ -15,6 +15,10 @@ void diagnostico_atualizar(float dt, Uint32 agora);
 void diagnostico_desenhar(Uint32 agora);
 void diagnostico_intro_primeira_vez(void);
 int  diagnostico_intro_aberto(void);
+// Tira a apresentacao global desta sessao (quem ja falou do diagnostico, o
+// cartao da 1.4.2). marcarVista=1 tambem a grava como vista: a tela abre
+// direto na escolha do objetivo, sem o "Antes de comecar".
+void diagnostico_intro_dispensar(int marcarVista);
 void diagnostico_intro_evento(const SDL_Event *e);
 void diagnostico_intro_atualizar(float dt, Uint32 agora);
 void diagnostico_intro_desenhar(Uint32 agora);
