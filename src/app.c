@@ -1627,7 +1627,10 @@ void app_atualizar(float dt, Uint32 agora) {
         // envelhecia a cada temporada nova.
         // No FILME o mesmo fio busca o /meta/movie quando o catalogo ainda nao
         // tem elenco: e de la que saem atores, direcao e generos da pagina.
-        if (!strcmp(ci->tipo, "series") || ci->nElenco == 0) desc_episodios(i, 0);
+        // Tipo incerto ("anime" do AIOMetadata) tambem: e o /meta que diz se
+        // e serie, mesmo quando o catalogo ja trouxe elenco.
+        if (!strcmp(ci->tipo, "series") || strcmp(ci->tipo, "movie") ||
+            ci->nElenco == 0) desc_episodios(i, 0);
         // Legendas do OpenSubtitles junto: sao dezenas por titulo e a busca
         // leva segundos. Pedir so quando o dono abre a folha de faixas faria
         // ele esperar de olho numa lista vazia.

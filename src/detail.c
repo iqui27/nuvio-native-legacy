@@ -124,6 +124,11 @@ static CatItem idxCopia;
 static int  idxTemCopia;
 // Ultima revisao do catalogo que esta pagina ja tratou. Ver detail_atualizar.
 static unsigned revistaVista;
+// O tipo (serie ou nao) com que os extras foram pedidos nesta abertura. Item
+// de tipo incerto ("anime" de catalogo do AIOMetadata) abre como filme e o
+// /meta o resolve como serie depois (descoberta.c, buscarEps): ai os extras
+// sao repedidos por /tv e /shows. Ver o laco de atualizacao.
+static int extrasSerie;
 static float t = 0.0f;               // 0 = card na home, 1 = tela cheia
 // Dois estados, nao tres: o hero (nivel 0) e a pagina rolada (nivel 1). O
 // nivel intermediario "cartao vira tela cheia" so fazia sentido enquanto havia
@@ -910,7 +915,8 @@ void detail_abrir(const HomeItem *it) {
   // SEM `if (imdb[0])`: titulo sem id tambem passa por extras_pedir, que e
   // quem zera o que o titulo anterior publicou (issue #60, ver extras.c).
   { const CatItem *ci = cat_item(idx);
-    extras_pedir(ci ? ci->imdb : "", ehSerie(), ci ? ci->tmdb : 0);
+    extrasSerie = ehSerie();
+    extras_pedir(ci ? ci->imdb : "", extrasSerie, ci ? ci->tmdb : 0);
     // Pedir agora e o que deixa o trailer pronto quando a pagina assentar.
     // Apple nos dois alvos; IMDb so na LG (exige Referer, que o navegador
     // nao deixa por, e o CORS dele so aceita imdb.com).
@@ -2111,6 +2117,11 @@ void detail_atualizar(float dt, Uint32 agora) {
   //
   // Repedir e barato: a meta ja esta no cache de disco (metaCacheObter), entao
   // isto nao volta a rede. E desc_episodios sai sozinho se a faixa ja existir.
+  { const CatItem *ci = cat_item(idx);
+    if (ci && ehSerie() != extrasSerie) {
+      extrasSerie = ehSerie();
+      extras_pedir(ci->imdb, extrasSerie, ci->tmdb);
+    } }
   { unsigned rev = cat_revisao();
     if (rev != revistaVista) {
       revistaVista = rev;
