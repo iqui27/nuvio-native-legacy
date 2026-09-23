@@ -10,6 +10,7 @@
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
+#include "ajustes.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <assert.h>
@@ -64,6 +65,21 @@ int main(int argc, char **argv) {
   CatItem c;
   CatEp eps[10];
   int i;
+
+  // Mesmo accent Ocean da captura social; o tema e ajustavel pelo ambiente.
+  { const char *dir = getenv("NUVIO_DADOS");
+    if (dir && *dir) {
+      const char *temaEnv = getenv("NUVIO_SHOT_THEME");
+      char caminho[700];
+      FILE *f;
+      int tema = temaEnv && *temaEnv ? atoi(temaEnv) : 2;
+      if (tema < 0 || tema >= 12) tema = 2;
+      snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dir);
+      f = fopen(caminho, "w"); assert(f);
+      fprintf(f, "idioma 0\nselected_theme %d\n", tema);
+      fclose(f);
+      ajustes_dir(dir);
+    } }
 
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);

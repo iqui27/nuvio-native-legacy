@@ -19,6 +19,7 @@
 #include "anim.h"
 #include "layout.h"
 #include "ajustes.h"
+#include "botoes.h"
 
 // Larguras: a recolhida cabe so o icone; a aberta e a da barra do tvOS, larga o
 // bastante para o rotulo mais comprido ("Biblioteca") nao encostar na borda.
@@ -84,14 +85,11 @@ static float desliza = 0.0f;
 static float expande = 0.0f;
 static float animFoco[NV_MENU_FOCOS];
 static void icone(int d, float cx, float cy, float s, float r, float g, float b, float a);
-// Texto e icone sobre a pilula de foco (cor de realce). Todas as cores de
-// TEMA_ACENTO sao claras; ver AJ_TEXTO_ESCURO em ajustes.c para a conta.
-#define NV_MENU_TEXTO_ESCURO 20
+// Tinta de texto e icone sobre o accent vem da mesma regra dos botoes.
 static void desenhaRodape(float px, float w, float alpha, float foco);
 
-// A mesma superficie tonal usada nas fontes e na lista lateral: acentos
-// cromaticos viram uma lavagem discreta; o branco recebe cinza claro para
-// manter a tinta escura legivel. Sem halo ou aro em volta da pilula.
+// A rail mantem o estado atual em tom baixo; o foco navegavel ganha a mesma
+// pilula solida de accent e a mesma luz macia dos botoes primarios.
 static void corFocoMenu(float *r, float *g, float *b) {
   float ar, ag, ab;
   ajustes_acento(&ar, &ag, &ab);
@@ -104,13 +102,16 @@ static void corFocoMenu(float *r, float *g, float *b) {
   }
 }
 
-// O foco e uma superficie cheia e quieta; a mola continua a cuidar da entrada,
-// mas nenhum efeito difuso aumenta o fill-rate ou disputa com a arte ao fundo.
+// Foco solido na cor do tema; so a luz macia do botao primario aparece atras.
 static void focoMenu(GfxRect pill, float f, float alpha) {
   float cr, cg, cb;
   if (f <= 0.01f || alpha <= 0.01f) return;
-  corFocoMenu(&cr, &cg, &cb);
-  gfx_cor(pill, NV_MENU_RAIO_PILL, cr, cg, cb, f * alpha);
+  ajustes_acento_tinta(&cr, &cg, &cb);
+  botao_luz(pill, f, alpha);
+  gfx_cor(pill, NV_MENU_RAIO_PILL,
+          anim_mistura(0.14f, cr, f),
+          anim_mistura(0.15f, cg, f),
+          anim_mistura(0.17f, cb, f), alpha);
 }
 
 // O legacy deixa a rail de 144px sempre visível. O menu expandido é uma
@@ -363,7 +364,7 @@ void menu_desenhar(Uint32 agora) {
     if (f > 0.01f) {
       GfxRect pill = { px + NV_MENU_PILL_PAD, y + 7.0f,
                        w - NV_MENU_PILL_PAD * 2.0f, NV_MENU_LINHA_H - 14.0f };
-      // A mesma lavagem escura dos cartoes laterais, sem aura ou contorno.
+      // Preenchimento accent como no primario, com glow de botao por tras.
       focoMenu(pill, f, desliza);
     }
 
@@ -371,13 +372,11 @@ void menu_desenhar(Uint32 agora) {
     // o resto (cinza). Com so dois
     // estados, abrir o menu apaga a indicacao de onde voce estava.
     //
-    // O estado selecionado mantem a tinta clara porque a superficie tonal
-    // nunca inverte, inclusive quando o tema ativo e branco.
+    // Sobre accent colorido a tinta e branca; so o branco pede tinta escura.
     int atual = (i == destino);
     int emFoco = f > 0.5f;
-    // A lavagem tonal e sempre escura; a tinta de foco fica clara inclusive
-    // no tema branco, cujo contraste pertence a botoes com preenchimento cheio.
-    float lum = emFoco ? 0.94f : (atual ? 0.92f : NV_MENU_INATIVO);
+    float tinta = ajustes_acento_tinta(NULL, NULL, NULL);
+    float lum = emFoco ? tinta : (atual ? 0.92f : NV_MENU_INATIVO);
     float alpha = desliza * anim_mistura(atual ? 1.0f : 0.85f, 1.0f, f);
 
     icone(i, px + NV_MENU_ICONE_CX, cy, NV_MENU_ICONE, lum, lum, lum, alpha);

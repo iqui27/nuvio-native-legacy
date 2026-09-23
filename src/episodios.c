@@ -11,6 +11,7 @@
 #include "anim.h"
 #include "vistoep.h"
 #include "visto.h"
+#include "botoes.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -292,6 +293,8 @@ static void menuDesenhar(float x, float larg, float anim) {
     { GfxRect m={x+(larg-mw)*.5f,(NV_TELA_H-mh)*.5f,mw,mh};
     // Veu proprio: a lista atras tem texto pequeno em tres colunas.
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,.72f*anim);
+    // Cartao opaco e neutro; o accent fica reservado a opcao focada, sem luz
+    // atravessando o painel e tingindo a arte atras.
     gfx_cor(m,.05f,.052f,.055f,.068f,.99f*anim);
 
     // CABECALHO COM A ARTE DO EPISODIO. Sem miniatura o texto ocupa a linha
@@ -331,7 +334,7 @@ static void menuDesenhar(float x, float larg, float anim) {
       GfxRect ck={m.x+PAD,m.y+optTop+8.0f,44.0f,44.0f};
       ajustes_acento(&ar,&ag,&ab);
       gfx_cor((GfxRect){ck.x-8.0f,ck.y-8.0f,60.0f,60.0f},0.5f,ar,ag,ab,anim);
-      gfx_icone(ck,"check",0.06f,0.06f,0.08f,anim);
+      gfx_icone(ck,"check",focoTxt/255.0f,focoTxt/255.0f,focoTxt/255.0f,anim);
       if (vmFeitoN < 1) snprintf(fr,sizeof fr,"%s",i18n("Nada a mudar: já estava assim"));
       else if (vmFeitoVisto) snprintf(fr,sizeof fr,vmFeitoN==1?i18n("%d episódio marcado como assistido"):i18n("%d episódios marcados como assistidos"),vmFeitoN);
       else snprintf(fr,sizeof fr,vmFeitoN==1?i18n("%d episódio desmarcado"):i18n("%d episódios desmarcados"),vmFeitoN);
@@ -342,8 +345,6 @@ static void menuDesenhar(float x, float larg, float anim) {
     for(i=0;i<vmOpcoes();i++) {
       GfxRect r={m.x+24,m.y+optTop+(float)i*OPT_PASSO,mw-48,OPT_H};
       float f=(i==vmFoco)?1.0f:0.0f;
-      int c=f>.5f?focoTxt:240;
-      float ic=f>.5f?0.10f:0.88f;      // o icone acompanha o texto
       const char *nomeIcone;
       char rot[120];
       int quantos;
@@ -358,20 +359,6 @@ static void menuDesenhar(float x, float larg, float anim) {
       // aberto.
       quantos=vmModoTemp?vmQuantos[VM_TEMP]:(i<VM_FONTES?vmQuantos[i]:0);
       (void)ci;
-      if (f > .5f) {
-        if (tinta < .5f) {
-          gfx_cor(r,14.0f/OPT_H,.78f,.79f,.82f,anim);
-          gfx_rect(r,0,GFX_ANEL,0,.014f,0,14.0f/OPT_H,.24f,.26f,.31f,.88f*anim);
-        } else {
-          gfx_cor(r,14.0f/OPT_H,.075f+ar*.045f,.078f+ag*.045f,
-                  .092f+ab*.055f,anim);
-          gfx_luz_canto(r,14.0f/OPT_H,r.w*.68f,r.h*.25f,r.h*1.7f,
-                        ar,ag,ab,.22f*anim);
-          gfx_rect(r,0,GFX_ANEL,0,.014f,0,14.0f/OPT_H,ar,ag,ab,.92f*anim);
-        }
-      } else {
-        gfx_cor(r,14.0f/OPT_H,.105f,.11f,.125f,anim);
-      }
       if(vmModoTemp) {
         // As duas frases do pedido do dono, e o numero junto: e a mesma regra
         // de "Temporada inteira (N episodios)" — a pessoa ve o tamanho do
@@ -401,22 +388,9 @@ static void menuDesenhar(float x, float larg, float anim) {
         snprintf(rot,sizeof rot,"%s",i18n("Fontes deste episódio"));
         nomeIcone="fontes";
       }
-      // ICONE DE ARQUIVO, nao desenhado a mao. Os .png de art/icones/ guardam
-      // a forma no alpha e a cor vem daqui, entao o MESMO arquivo serve escuro
-      // sobre a pilula branca do foco e claro sobre a pilula apagada.
-      { GfxRect gi={r.x+22.0f,r.y+(OPT_H-28.0f)*.5f,28.0f,28.0f};
-        gfx_icone(gi,nomeIcone,ic,ic,ic,anim); }
-      // A LARGURA DE CORTE SAI DA GEOMETRIA, e nao de um numero escolhido a
-      // olho. O texto comeca em r.x+66 e a pilula acaba em r.x+r.w; o que sobra
-      // e r.w-66, menos 22 de respiro na direita. Antes o corte era `mw-96` com
-      // o texto em r.x+28 sobre uma pilula de mw-48 — 8 px a mais do que cabia,
-      // e a ultima letra encostava na borda. E o "ta cortando um pouco o texto".
-      //
-      // A ALTURA TAMBEM E MEDIDA: centrar por 28 fixo (o tamanho do icone) e um
-      // chute sobre a fonte, e um chute errado poe os descendentes por baixo da
-      // borda da pilula.
-      { TxtLinha l=txt_linha_corta(TXT_PLR_CORPO,rot,c,c,c,255,r.w-66.0f-22.0f);
-        txt_desenhar_alpha(l,r.x+66.0f,r.y+(OPT_H-(float)l.h)*.5f,anim); }
+      // O mesmo botao primario do app: accent solido, tinta por contraste e
+      // uma luz curta atras do alvo, sem vidro, aro ou segunda moldura.
+      botao_pilula(r,rot,nomeIcone,f,1,1,anim);
     }
     // A DICA FICA ABAIXO DA ULTIMA OPCAO, com 22 de respiro e nao 8. Com 8 ela
     // encostava na pilula "Fontes deste episódio" — na captura da TV as duas

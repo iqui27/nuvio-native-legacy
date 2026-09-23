@@ -44,7 +44,7 @@ static const char *VS =
   "attribute vec2 aPos;\n"
   "uniform vec4 uRect;\n"
   "uniform vec2 uTela;\n"
-  "varying vec2 vUv;\n"
+  "varying highp vec2 vUv;\n"
   "void main(){\n"
   "  vUv = aPos;\n"
   "  vec2 p = uRect.xy + aPos * uRect.zw;\n"
@@ -61,7 +61,11 @@ static const char *VS =
 // Com um programa enxuto por modo cada desenho usa so o que precisa.
 static const char *FS_CABECA =
   NV_GLSL_PREFIXO
-  "varying vec2 vUv;\n"
+  "#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
+  "varying highp vec2 vUv;\n"
+  "#else\n"
+  "varying mediump vec2 vUv;\n"
+  "#endif\n"
   "uniform sampler2D uTex;\n"
   "uniform float uFoco;\n"
   "uniform float uBorda;\n"
@@ -529,11 +533,19 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "void main(){\n"
   "  float m = smoothstep(0.006,-0.006, sdf(vUv, uRaio, uAspect));\n"
   "  if (m <= 0.001) discard;\n"
-  "  float t = clamp(vUv.y, 0.0, 1.0);\n"
+  "#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
+  "  highp float t = clamp(vUv.y, 0.0, 1.0);\n"
+  "  highp float g = mix(0.06, 0.18, smoothstep(0.00, 0.22, t));\n"
+  "  g = mix(g, 0.62, smoothstep(0.22, 0.52, t));\n"
+  "  g = mix(g, 0.86, smoothstep(0.52, 0.82, t));\n"
+  "  g = mix(g, 0.95, smoothstep(0.82, 1.00, t));\n"
+  "#else\n"
+  "  mediump float t = clamp(vUv.y, 0.0, 1.0);\n"
   "  float g = mix(0.06, 0.18, smoothstep(0.00, 0.22, t));\n"
   "  g = mix(g,   0.62, smoothstep(0.22, 0.52, t));\n"
   "  g = mix(g,   0.86, smoothstep(0.52, 0.82, t));\n"
   "  g = mix(g,   0.95, smoothstep(0.82, 1.00, t));\n"
+  "#endif\n"
   "  gl_FragColor = vec4(uCor.rgb, uCor.a * g * m);\n"
   "}\n",
 
@@ -802,6 +814,36 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
 
 void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca) {
   gfx_rect(r, 0, GFX_COR, 0, 0, 0, raio, cr, cg, cb, ca);
+}
+void gfx_cartao_foco_vidro(GfxRect r, float raio, float foco, float alfa,
+                           float cr, float cg, float cb) {
+  float f, luminancia, lavagem, baseR, baseG, baseB;
+  GfxRect halo;
+  if (r.w <= 0.0f || r.h <= 0.0f || alfa <= 0.001f) return;
+  f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco);
+  luminancia = cr * 0.2126f + cg * 0.7152f + cb * 0.0722f;
+  lavagem = 0.29f * (1.0f - 0.48f * (luminancia > 0.65f ? (luminancia - 0.65f) / 0.35f : 0.0f));
+  baseR = 0.057f + cr * 0.028f;
+  baseG = 0.062f + cg * 0.028f;
+  baseB = 0.078f + cb * 0.032f;
+  if (f > 0.001f) {
+    float folga = 0.38f;
+    halo.x = r.x - r.h * folga;
+    halo.y = r.y - r.h * folga;
+    halo.w = r.w + r.h * folga * 2.0f;
+    halo.h = r.h * (1.0f + folga * 2.0f);
+    gfx_rect(halo, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
+             cr, cg, cb, 0.44f * f * alfa);
+  }
+  // O fundo deixa transparecer o painel de tras; duas passadas leves criam a
+  // lavagem de cor e a reflexao larga de vidro sem contorno nem degraus.
+  gfx_cor(r, raio, baseR, baseG, baseB, alfa * (0.93f - 0.08f * f));
+  if (f > 0.001f) {
+    gfx_rect(r, 0, GFX_VEU_CARD, 0, 0, 0, raio,
+             cr, cg, cb, lavagem * f * alfa);
+    gfx_rect(r, 0, GFX_BRILHO_TOPO, 0, 0.38f, 0, raio,
+             0.88f, 0.92f, 1.0f, 0.13f * f * alfa);
+  }
 }
 void gfx_luz_canto(GfxRect r, float raio, float cx, float cy, float alcance,
                    float cr, float cg, float cb, float ca) {

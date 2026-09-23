@@ -407,13 +407,11 @@ static float secaoAntes(int i) {
 static void desenhaLinha(float x, float y, const char *rot, int focada,
                          float a, const RecContato *c) {
   GfxRect r = { x, y, RE_INTERNO, RE_LINHA };
-  float fr = 0.062f, fg = 0.066f, fb = 0.079f, tx = r.x + 44.0f;
-  float ar, ag, ab;
+  float ar, ag, ab, tx = r.x + 44.0f;
   int cor = focada ? 245 : 220;
   ajustes_acento(&ar, &ag, &ab);
-  if (focada) { fr = 0.088f + ar * 0.055f; fg = 0.075f + ag * 0.035f; fb = 0.090f + ab * 0.045f; }
-  gfx_cor(r, 14.0f / RE_LINHA, fr, fg, fb, a);
-  if (focada) gfx_cor((GfxRect){r.x+8.0f,y+RE_LINHA*.5f-5.0f,10.0f,10.0f},.5f,ar,ag,ab,a);
+  gfx_cartao_foco_vidro(r, 14.0f / RE_LINHA, focada ? 1.0f : 0.0f,
+                        a, ar, ag, ab);
   // FOTO DO AMIGO (ou a inicial), como na aba Social: a linha so com o nome
   // nao dizia quem era.
   if (c) {

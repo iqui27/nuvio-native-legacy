@@ -5,6 +5,9 @@
 #   bash tests/ajustes_shot.sh /tmp/nuvio-ajustes-antes
 set -eu
 cd "$(dirname "$0")/.."
+NUVIO_DADOS=$(mktemp -d /tmp/nuvio-episodios-dados.XXXXXX)
+export NUVIO_DADOS
+trap 'rm -rf "$NUVIO_DADOS"' EXIT
 sources=()
 for source in src/*.c; do
   if [ "$source" != src/main.c ]; then sources+=("$source"); fi

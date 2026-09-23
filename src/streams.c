@@ -16,6 +16,7 @@
 #include "marco.h"
 #include "debrid.h"
 #include "video.h"
+#include "botoes.h"
 
 #define FOLHA_W       720.0f
 #define FOLHA_LINHA   228.0f
@@ -728,28 +729,19 @@ static int nFiltrados(void) {
   return k;
 }
 
-// A folha de fontes usa o mesmo fundo da sidebar, mas tinha conservado o
-// acento puro e o halo largo da primeira versao. Em uma TV isso fazia o card
-// focado saltar para branco/ciano e o painel parecer outra tela do app.
+// O foco da fonte segue o mesmo botao primario do menu: fill accent limpo e
+// halo macio atras do alvo, sem degradê, translucidez ou reflexo de vidro.
 static void corFocoFonte(float *r, float *g, float *b) {
-  float ar, ag, ab;
-  ajustes_acento(&ar, &ag, &ab);
-  if (ajustes_acento_tinta(NULL, NULL, NULL) < 0.5f) {
-    // Mesmo com acento branco, manter a lavagem escura da referencia; o ponto
-    // marca o foco sem transformar a linha inteira num bloco claro.
-    *r = 0.105f; *g = 0.112f; *b = 0.132f;
-  } else {
-    // Mesma lavagem tonal da lista lateral de episodios, sem acento saturado.
-    *r = 0.088f + ar * 0.055f;
-    *g = 0.075f + ag * 0.035f;
-    *b = 0.090f + ab * 0.045f;
-  }
+  ajustes_acento(r, g, b);
 }
 
 static void focoFonte(GfxRect r, float raio, float alfa) {
   float sr, sg, sb;
   if (alfa <= 0.01f) return;
   corFocoFonte(&sr, &sg, &sb);
+  // Retangulos de linha sao altos; metade da intensidade da pilula mantem a
+  // luz visivel sem espalhar uma mancha por varios cartoes vizinhos.
+  botao_luz(r, 0.55f, alfa);
   gfx_cor(r, raio, sr, sg, sb, alfa);
 }
 
@@ -763,9 +755,7 @@ static void desenharAudioBars(float x, float y, float alfa, int focado,
   float cr, cg, cb;
   int i;
   ajustes_acento_tinta(&cr, &cg, &cb);
-  if (focado) {
-    cr = cg = cb = 0.96f;
-  }
+  if (focado) cr = cg = cb = ajustes_acento_tinta(NULL, NULL, NULL);
   for (i = 0; i < FOLHA_AUDIO_N; i++) {
     float nivel = parado[i];
     float h;
@@ -841,8 +831,7 @@ void stream_folha_desenhar(Uint32 agora) {
   (void)agora;
   if(anim<.005f) return;
   float x=NV_TELA_W-FOLHA_W+(1-anim)*FOLHA_W;
-  // O foco usa a mesma superficie tonal da lista de episodios e tinta de
-  // contraste do tema; o acento nao vira um bloco saturado nem ganha glow.
+  // O foco tem fill solido; o painel permanece neutro e so o alvo recebe halo.
   gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.02f,.02f,.025f,.35f*anim);
   // Painel flutuante com raio amplo e material neutro. A separacao vem do
   // veu e da superficie, nao de uma luz decorativa presa ao canto.
@@ -854,11 +843,10 @@ void stream_folha_desenhar(Uint32 agora) {
     // mesmo ponto, 36 px antes da borda do painel.
     float bx=x+FOLHA_W-36-(nbt-i)*128+8;
     int sel=grupo==-1 && foco==i;
-    // Acao focada = superficie tonal como o cartao de episodio; a tinta
-    // permanece clara porque o fundo e escuro mesmo quando o tema e branco.
+    // Acoes seguem o accent solido e a tinta calculada pelo tema.
     if(sel) focoFonte((GfxRect){bx,44,120,50},.3f,anim);
     else    gfx_cor((GfxRect){bx,44,120,50},.3f,.075f,.079f,.092f,anim);
-    int c=sel?245:224;
+    int c=sel?ajustes_tinta_foco():224;
     TxtLinha l=txt_linha(TXT_PG_FIM,rotuloBotao(botaoDe(i)),c,c,c,255);
     txt_desenhar_alpha(l,bx+(120-l.w)*.5f,58,anim);
   }
@@ -878,7 +866,8 @@ void stream_folha_desenhar(Uint32 agora) {
   int ini=filtro>1?filtro-1:0;
   float tx=x+40;
   for(int i=ini;i<nProvedores && i<ini+3;i++) {
-    float w=i?232:108;int sel=i==filtro,c=sel?245:190;
+    float w=i?232:108;int sel=i==filtro;
+    int c=sel&&grupo==0?ajustes_tinta_foco():sel?245:190;
     if(sel && grupo==0) focoFonte((GfxRect){tx,182,w,50},.5f,anim);
     else gfx_cor((GfxRect){tx,182,w,50},.5f,
                  sel?.092f:.075f,sel?.096f:.079f,sel?.110f:.092f,anim);
@@ -909,17 +898,14 @@ void stream_folha_desenhar(Uint32 agora) {
     int i=filtrado(row),sel=grupo==1 && foco==row;
     int corTitulo,corProv,corDesc,corMeta;
     const Stream *s=&lista[i];
-    // Cartao cheio e silencioso. A superficie escura repousa no painel e o
-    // foco recebe a lavagem tonal da lista de episodios, sem aro nem halo.
+    // Cartao cheio e silencioso; o foco solido usa tinta calculada no accent.
     GfxRect r={x+40,y,FOLHA_W-80,FOLHA_LINHA-14};
     if(sel) focoFonte(r,.10f,anim);
     else gfx_cor(r,.10f,.062f,.066f,.079f,.92f*anim);
-    if(sel) {
-      float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
-      gfx_cor((GfxRect){r.x+8.0f,r.y+r.h*.5f-5.0f,10.0f,10.0f},.5f,ar,ag,ab,anim);
-    }
-    // A lavagem tonal continua escura para qualquer tema; a tinta nao inverte.
-    { int c1=sel?245:240, c2=sel?210:175, c3=sel?218:194, c4=sel?228:224;
+    // O proprio material colorido identifica o foco; nao sobrepor outro ponto.
+    { int tinta=ajustes_tinta_foco(), tinta2=ajustes_tinta_foco2();
+      int c1=sel?tinta:240, c2=sel?tinta2:175;
+      int c3=sel?tinta2:194, c4=sel?tinta2:224;
       corTitulo=c1; corProv=c2; corDesc=c3; corMeta=c4; }
     float lx=x+62,w=FOLHA_W-124;
     char nome[sizeof s->rotulo],descricao[sizeof s->descricao];

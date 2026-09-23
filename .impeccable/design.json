@@ -38,7 +38,7 @@
       },
       {
         "name": "focused-content-row",
-        "nativeSpec": "Reuse the episode-row tonal wash across Source, share, saved/social/alerts side panels, and global navigation; add only a small theme-accent marker and keep text light. Preserve the established subtle ambient glow where already used; avoid heavy outlines."
+        "nativeSpec": "Source, episode actions, saved/social/alerts side panels, and the expanded global menu use a solid theme-accent fill on the focused item, contrast-aware ink, and a soft restrained accent halo behind it. Keep inactive surfaces neutral; no glass, gradient, top reflection, or improvised outline. The corner notification toast stays matte neutral with an accent icon and soft halo."
       },
       {
         "name": "close-ghost",

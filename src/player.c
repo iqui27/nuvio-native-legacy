@@ -1983,17 +1983,21 @@ static void desenharAcoesEpisodio(void){
     int sel=skipFoco&&visivel;
     int tinta = ajustes_tinta_foco();
     TxtLinha t=sel?txt_linha(TXT_BODY,rot,tinta,tinta,tinta,255):txt_linha(TXT_BODY,rot,250,250,252,255);
-    // Elevado para 664 e nao 730: a 730 a pilula (88 de altura) terminava em
-    // 818 e cortava o topo do titulo, que comeca em ~808 (captura da C9 em
-    // 22/09) — nunca se via porque o botao nao era desenhado com os controles
-    // em pe. 664 deixa ~56 px de ar sobre o titulo.
-    float w=t.w+116, y=(NV_TELA_H-60.0f-88.0f)-anim*(NV_TELA_H-60.0f-88.0f-664.0f);
-    GfxRect p={64,y,w,88};
+    // Com controles visiveis, ancora em 664: deixa 72 px de ar ate o titulo
+    // (que comeca em ~808) e o botao compacto de 72 px nao invade essa area.
+    const float h=72.0f, lado=28.0f, ladoIcone=36.0f, intervalo=16.0f;
+    float w=t.w+lado*2.0f+ladoIcone+intervalo;
+    float y=(NV_TELA_H-60.0f-h)-anim*(NV_TELA_H-60.0f-h-664.0f);
+    GfxRect p={64,y,w,h};
     if(sel) superficieFocoPlayer(p,.27f,1.0f,.96f*entrada);
     else gfx_cor(p,.27f,.118f,.118f,.118f,.85f*entrada);
-    { float ic = sel ? ajustes_acento_tinta(NULL, NULL, NULL) : 1.0f;
-      gfx_icone((GfxRect){88,y+22,44,44},"avancar",ic,ic,ic,entrada); }
-    txt_desenhar_alpha(t,148,y+22,entrada);
+    { float tintaIcone = sel ? ajustes_acento_tinta(NULL, NULL, NULL) : 1.0f;
+      gfx_icone((GfxRect){64.0f+lado,y+(h-ladoIcone)*0.5f,ladoIcone,ladoIcone},
+                "avancar",tintaIcone,tintaIcone,tintaIcone,entrada); }
+    // O icone e o texto formam um unico grupo: padding simetrico e cada um
+    // centralizado pela propria caixa evitam o aspecto de icone solto na pilula.
+    txt_desenhar_alpha(t,64.0f+lado+ladoIcone+intervalo,
+                       y+(h-t.h)*0.5f,entrada);
   }
 }
 

@@ -74,6 +74,7 @@ enum { DES_AGENDA = 0, DES_AVISO, DES_MENU, DES_DETALHE };
 // Ajustes gravados em disco e lidos por ajustes_dir: e o caminho publico para
 // escolher idioma e "reduzir animacoes" sem setter de teste. As chaves sao as
 // mesmas de ajustes.txt no aparelho.
+// NUVIO_SHOT_THEME e opcional para provar os estados accent sem mudar o padrao.
 // IDIOMA POR VARIAVEL DE AMBIENTE, com o padrao em portugues.
 //
 // As capturas deste harness servem a DOIS publicos: a conferencia do trabalho,
@@ -82,6 +83,7 @@ enum { DES_AGENDA = 0, DES_AVISO, DES_MENU, DES_DETALHE };
 // publicar a captura errada — NUVIO_SHOT_EN=1 resolve sem tocar no codigo.
 static void ajustesDeTeste(int idiomaIngles, int animReduzidas) {
   char caminho[600];
+  const char *temaEnv = getenv("NUVIO_SHOT_THEME");
   FILE *f;
   { const char *en = getenv("NUVIO_SHOT_EN");
     if (en && *en && *en != '0') idiomaIngles = 1; }
@@ -89,6 +91,12 @@ static void ajustesDeTeste(int idiomaIngles, int animReduzidas) {
   f = fopen(caminho, "w");
   if (!f) return;
   fprintf(f, "idioma %d\nanimacoes %d\n", idiomaIngles, animReduzidas);
+  if (temaEnv && *temaEnv) {
+    char *fim;
+    long tema = strtol(temaEnv, &fim, 10);
+    if (*fim == '\0' && tema >= 0 && tema < 12)
+      fprintf(f, "selected_theme %ld\n", tema);
+  }
   fclose(f);
   ajustes_dir(dados_dir());
 }

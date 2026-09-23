@@ -725,7 +725,7 @@ void avisos_atualizar(float dt, Uint32 agora) {
     else canalVivo = 0;
   }
   { float alvo = (toastAte > 0.0f && (float)agora < toastAte && !aberto) ? 1.0f : 0.0f;
-    toastA = anim_mola(toastA, alvo, dt, NV_MOLA_TELA);
+    toastA = ajustes_animacoes_reduzidas() ? alvo : anim_mola(toastA, alvo, dt, NV_MOLA_TELA);
     if (alvo == 0.0f && toastA < 0.01f && toastAte > 0.0f && (float)agora >= toastAte) { toastAte = 0.0f; toastN = 0; } }
   if (vistosSujos && !aberto) vistosGravar();
   avisos_envio_auto_passo(agora);
@@ -810,7 +810,8 @@ static void desenharToast(Uint32 agora) {
   GfxRect bloco;
   if (toastA < 0.01f) return;
   tinta = ajustes_acento_tinta(&ar, &ag, &ab);
-  pulso = 0.5f + 0.5f * sinf((float)agora * (2.0f * 3.14159265f / 1100.0f));
+  pulso = ajustes_animacoes_reduzidas() ? 0.5f :
+          0.5f + 0.5f * sinf((float)agora * (2.0f * 3.14159265f / 1100.0f));
   snprintf(txt, sizeof txt, toastN == 1 ? i18n("%d aviso novo") : i18n("%d avisos novos"), toastN);
   cab = txt_linha(TXT_CAPTION2, i18n("Central de avisos"), 156, 160, 172, 255);
   t1 = txt_linha(TXT_BODY, txt, (int)(tinta * 255.0f + 0.5f),
@@ -829,9 +830,7 @@ static void desenharToast(Uint32 agora) {
   // mancha que cresce e apaga chama tanto quanto o anel sem desenhar borda.
   gfx_rect((GfxRect){ x - h * 0.7f, y - h * 0.7f, w + h * 1.4f, h * 2.4f }, 0, GFX_SOMBRA,
            1.0f, 0, 0, 0.5f, ar, ag, ab, (0.07f + 0.13f * pulso) * toastA);
-  gfx_cor(bloco, 28.0f / h, 0.045f, 0.048f, 0.058f, 0.98f * toastA);
-  gfx_rect(bloco, 0, GFX_BRILHO_TOPO, 28.0f / h, 0.18f, 0, 0.5f,
-           1, 1, 1, 0.10f * toastA);
+  gfx_cor(bloco, 28.0f / h, 0.055f, 0.058f, 0.068f, 0.98f * toastA);
   // Icone grande de notificacao: uma âncora visual mais rapida de reconhecer
   // que o ponto sozinho, com a mesma cor de destaque do restante do app.
   { GfxRect ic = { x + 24.0f, y + 24.0f, 56.0f, 56.0f };
@@ -840,7 +839,7 @@ static void desenharToast(Uint32 agora) {
     gfx_rect((GfxRect){ ic.x + 8.0f, ic.y + 8.0f, 40.0f, 40.0f }, 0, GFX_SINO,
              0, 0, 0, 0, tinta, tinta, tinta, toastA);
     gfx_cor((GfxRect){ ic.x + ic.w - d - 1.0f, ic.y - d * 0.5f, d, d },
-            0.5f, 1, 1, 1, 0.90f * toastA); }
+            0.5f, tinta, tinta, tinta, 0.90f * toastA); }
   txt_desenhar_alpha(cab, x + 98.0f, y + 18.0f, toastA);
   txt_desenhar_alpha(t1, x + 98.0f, y + 48.0f, toastA);
   { float ax = x + w - 24.0f - lado - 10.0f - t2.w;
@@ -884,8 +883,8 @@ void avisos_lista_desenhar(float x, float y0, float w, float a, int focoLinha) {
   int i;
   // Tinta sobre o realce: branca, a nao ser que o realce seja branco
   // (ajustes_acento_tinta). `tf` e o texto principal, `ts` o secundario.
-  float tinta = ajustes_acento_tinta(&ar, &ag, &ab);
-  int tf = 245, ts = 210;
+  ajustes_acento(&ar, &ag, &ab);
+  int tf = ajustes_tinta_foco(), ts = ajustes_tinta_foco2();
   pthread_mutex_lock(&trava);
   if (n == 0) {
     TxtLinha t = txt_linha(TXT_CAPTION, i18n("Nada por enquanto."), 150, 153, 162, 255);
@@ -899,20 +898,19 @@ void avisos_lista_desenhar(float x, float y0, float w, float a, int focoLinha) {
     float rowH = expande ? alturaCanalFoco : AVL_ROW;
     GfxRect row = { x, y, w, rowH - 10.0f };
     const char *acao = NULL;
-    // Cartoes em repouso ficam quase grafite; foco e lavagem escura em todos
-    // os temas, para preservar o contraste da referencia sem bloco saturado.
-    { float r = 0.062f, g = 0.066f, b = 0.079f;
-      if (f) {
-        if (tinta > 0.5f) { r = 0.088f + ar * 0.055f; g = 0.075f + ag * 0.035f; b = 0.090f + ab * 0.045f; }
-        else { r = 0.105f; g = 0.112f; b = 0.132f; }
-      }
-      gfx_cor(row, 14.0f / row.h, r, g, b, a * (f ? 1.0f : 0.92f)); }
+    // O cartao selecionado usa fill accent opaco; o halo reduzido fica atras
+    // dele e nao vaza para os avisos vizinhos.
+    if (f) {
+      botao_luz(row, .4f, a);
+      gfx_cor(row, 14.0f / row.h, ar, ag, ab, a);
+    } else {
+      gfx_cor(row, 14.0f / row.h, .062f, .066f, .079f, .92f * a);
+    }
     gfx_cor((GfxRect){ x + 20.0f, y + 22.0f, 52.0f, 52.0f }, 0.5f,
             0.12f, 0.13f, 0.15f, a);
     gfx_icone((GfxRect){ x + 32.0f, y + 34.0f, 28.0f, 28.0f }, icone(av->tipo),
-              f ? 0.96f : 0.62f, f ? 0.96f : 0.80f, 0.96f, a);
-    if (f) gfx_cor((GfxRect){ x + 5.0f, y + rowH * 0.5f - 5.0f, 10.0f, 10.0f },
-                   0.5f, ar, ag, ab, a);
+              f ? tf / 255.0f : 0.62f, f ? tf / 255.0f : 0.80f,
+              f ? tf / 255.0f : 0.96f, a);
     // NOVO = um ponto na cor de acento colado ao icone, e nao uma pilula com
     // palavra: a palavra competia com o titulo e o ponto e o vocabulario que
     // a aba Social ja usa para "qual delas e nova".
@@ -936,7 +934,8 @@ void avisos_lista_desenhar(float x, float y0, float w, float a, int focoLinha) {
       default: break;
     }
     if (acao) {
-      TxtLinha t = txt_linha(TXT_CAPTION2, acao, f ? ts : 120, f ? ts : 124, f ? ts : 134, 255);
+      TxtLinha t = txt_linha(TXT_CAPTION2, acao, f ? ts : 168,
+                             f ? ts : 172, f ? ts : 182, 255);
       txt_desenhar_alpha(t, x + 92.0f, y + row.h - 34.0f, a * 0.95f);
     }
     y += rowH;

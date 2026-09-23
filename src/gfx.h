@@ -282,6 +282,11 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
 
 // Atalhos legiveis para os casos comuns.
 void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca);
+// Cartao focado com material tipo vidro: mancha de accent atras, base escura
+// translucida, lavagem em degrade por pixel e reflexo de topo muito leve.
+// A area extra fica limitada a um unico item focado, nunca a tela inteira.
+void gfx_cartao_foco_vidro(GfxRect r, float raio, float foco, float alfa,
+                           float cr, float cg, float cb);
 // A luz de realce dos paineis flutuantes (ver GFX_LUZ): `raio` e o dos cantos
 // do painel, na mesma fracao do menor lado que gfx_cor usa; (cx, cy) e o
 // centro da luz em pixels RELATIVOS ao canto superior esquerdo de `r` (pode
