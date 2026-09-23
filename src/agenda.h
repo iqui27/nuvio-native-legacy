@@ -94,6 +94,9 @@ typedef struct {
   char rede[64];          // networks[0].name — "Apple TV+", "HBO"
   int  duracao;           // minutos do episodio; 0 = nao ha
   int  temporadas;        // number_of_seasons
+  // Primeiro genero (TMDB genres[0].name ou Cinemeta genres[0]). A tela so usa
+  // quando o catalogo nao tem o item: com catalogo, o genero dele manda.
+  char genero[48];
 } AgItem;
 
 // Le o cache e os lembretes do perfil ativo. Chamar depois de dados_iniciar.
@@ -117,7 +120,7 @@ void agenda_registrar(const char *imdb, const char *titulo, const char *poster,
 // dois. Campo vazio ou zero nao apaga o que ja estava.
 void agenda_registrar_extra(const char *imdb, const char *sinopse,
                             const char *tipoEp, const char *rede,
-                            int duracao, int temporadas);
+                            const char *genero, int duracao, int temporadas);
 
 // Registro guardado, ou NULL. O ponteiro vale ate a proxima escrita — copie
 // se for atravessar um quadro.
@@ -206,12 +209,32 @@ int agenda_devidos(const AgItem **saida, int max);
 void agenda_marcar_avisado(const char *imdb);
 
 // --- atualizacao das seguidas ----------------------------------------------
-// Sobe um fio que pede /tv/<id> para as series seguidas cujo registro esta
-// faltando ou velho (> 12 h). ISTO E PEDIDO DE REDE NOVO, um por serie, e e o
-// unico do modulo: sem ele o calendario so conhece as series que o dono abriu.
-// Nao faz nada sem chave do TMDB (logo, nada nos testes).
+// Sobe um fio que busca as series seguidas cujo registro esta faltando ou
+// velho (> 12 h). ISTO E PEDIDO DE REDE NOVO, e e o unico do modulo: sem ele o
+// calendario so conhece as series que o dono abriu.
+//
+// TRES FONTES, nesta ordem, e a seguinte so preenche o que a anterior deixou
+// vazio (ver a nota em agenda.c, "AS TRES FONTES"):
+//   1. TMDB /tv/<id>             — so com a chave (ajuste TMDB ligado);
+//   2. Trakt next/last_episode   — so com o Trakt vinculado (trakt_ativo);
+//   3. Cinemeta /meta/series     — sempre: sem chave, e o que sobra para quem
+//                                  chega do app web com o TMDB desligado.
+// Antes desta revisao era so o TMDB, e sem chave a funcao voltava na hora.
 void agenda_atualizar_seguidas(void);
 int  agenda_atualizando(void);
+// Sobe 1 a cada fio que TERMINA. A tela guarda o numero que viu e remonta
+// quando ele muda — contador e nao borda de agenda_atualizando(), porque um
+// fio que acaba antes do primeiro quadro (tudo em cache de rede, ou tudo
+// falhou rapido) nao deixaria borda nenhuma para ver.
+int  agenda_versao(void);
+
+// SO PARA TESTE: troca o GET do fio. Mesma forma de rede_baixar_st (corpo +
+// codigo HTTP em *status). NULL volta para a rede de verdade. Existe porque
+// tests/agenda_shot.c compila src/agenda.c inteiro e abre a tela, que dispara
+// o fio — sem isto a captura sairia para a internet.
+typedef char *(*AgBaixar)(const char *url, int segundos,
+                          const char *const *cab, int *status);
+void agenda_rede_teste(AgBaixar f);
 
 // Apaga cache e lembretes de todos os perfis. Para o logout.
 void agenda_esquecer(void);

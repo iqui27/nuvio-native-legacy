@@ -16,6 +16,7 @@
 #include "perfis.h"
 #include "ajustes.h"
 #include <assert.h>
+#include <unistd.h>
 
 static int falhas = 0;
 #define CONFERE(c, ...) do { if (!(c)) { falhas++; printf("FALHA: " __VA_ARGS__); printf("\n"); } } while (0)
@@ -28,6 +29,48 @@ static char *lerArquivo(const char *nome) {
   if (!s) { fclose(f); return NULL; }
   lido = fread(s, 1, (size_t)n, f); s[lido] = 0; fclose(f);
   return s;
+}
+
+// --- A REDE FALSA -----------------------------------------------------------
+//
+// agenda_rede_teste troca o GET do fio. Cada URL cai numa fixture pelo host e
+// pelo caminho; o resto e 404 — um pedido que o teste nao previu aparece como
+// "fonte=nenhuma" no log e falha as conferencias, em vez de sair para a
+// internet. Os contadores sao a prova de ORDEM: com o TMDB respondendo, o
+// Cinemeta nao pode ter sido chamado.
+static int nCinemeta, nTrakt, nTmdb;
+static int traktSemProximo;   // 1 = /next_episode responde 204
+
+static char *falsoBaixar(const char *url, int segundos, const char *const *cab, int *st) {
+  (void)segundos;
+  *st = 404;
+  if (strstr(url, "v3-cinemeta.strem.io/meta/series/")) {
+    nCinemeta++;
+    if (strstr(url, "tt10986410") || strstr(url, "tt5550001") ||
+        strstr(url, "tt5550002") || strstr(url, "tt5550003")) {
+      *st = 200; return lerArquivo("tests/fixtures/cinemeta_serie_voltando.json"); }
+    if (strstr(url, "tt0944947")) { *st = 200; return lerArquivo("tests/fixtures/cinemeta_serie_encerrada.json"); }
+    return NULL;
+  }
+  if (strstr(url, "api.trakt.tv/shows/")) {
+    nTrakt++;
+    // A CHAVE DO APLICATIVO TEM DE IR. Sem ela o Trakt responde 403 — e o
+    // teste falharia calado na rede de verdade.
+    { int i, tem = 0;
+      for (i = 0; cab && cab[i]; i++) if (strstr(cab[i], "trakt-api-key: ")) tem = 1;
+      if (!tem) { *st = 403; return NULL; } }
+    if (strstr(url, "tt10986410/next_episode")) {
+      if (traktSemProximo) { *st = 204; return strdup(""); }
+      *st = 200; return lerArquivo("tests/fixtures/trakt_next_episode.json"); }
+    if (strstr(url, "tt10986410/last_episode")) {
+      *st = 200; return lerArquivo("tests/fixtures/trakt_last_episode.json"); }
+    return NULL;
+  }
+  if (strstr(url, "api.themoviedb.org/3/find/")) {
+    nTmdb++; *st = 200; return strdup("{\"tv_results\":[{\"id\":93740}]}"); }
+  if (strstr(url, "api.themoviedb.org/3/tv/93740")) {
+    nTmdb++; *st = 200; return lerArquivo("tests/fixtures/tmdb_tv_voltando.json"); }
+  return NULL;
 }
 
 // "Reiniciar o app": esquece o que esta na RAM e obriga a releitura do disco.
@@ -396,6 +439,128 @@ int main(void) {
       CONFERE(pA >= 0 && pD >= 0, "as duas com data entraram");
       CONFERE(pA < pD, "17/09 antes de 20/10 (%d < %d)", pA, pD);
       if (pF >= 0) CONFERE(pD < pF, "sem data depois das com data (%d < %d)", pD, pF); } }
+
+  // =========================================================================
+  // SEM CHAVE DO TMDB: a Agenda da Samsung do dono (22/09/2026)
+  // =========================================================================
+  // O ajuste TMDB vem desligado para quem chega do app web. Antes desta
+  // revisao o fio voltava na hora e a serie ficava sem nome, sem cartaz e sem
+  // data. Agora o Cinemeta responde sozinho.
+  agenda_rede_teste(falsoBaixar);
+  CONFERE(!desc_chave_tmdb()[0], "o teste comeca SEM chave do TMDB");
+  CONFERE(!trakt_ativo(), "e sem Trakt");
+  nCinemeta = nTrakt = nTmdb = 0;
+  buscarSerie("tt10986410", "", "", 0, desc_chave_tmdb(), "2026-09-16");
+  CONFERE(nCinemeta == 1 && nTrakt == 0 && nTmdb == 0,
+          "sem chave e sem Trakt: UM pedido, ao Cinemeta (cm=%d tr=%d tm=%d)", nCinemeta, nTrakt, nTmdb);
+  { const AgItem *r = agenda_registro("tt10986410");
+    CONFERE(r != NULL, "Cinemeta registrou a serie");
+    if (r) {
+      // PROXIMO PELA DATA, e nao pela ordem do vetor: na fixture T4E8 (23/09)
+      // vem ANTES de T4E7 (10/09, passado), e o especial T0E3 (17/09) e mais
+      // cedo que os dois mas e temporada 0.
+      CONFERE(!strcmp(r->dataProx, "2026-09-23"), "proximo pela data: [%s]", r->dataProx);
+      CONFERE(r->temporada == 4 && r->episodio == 8, "T4E8, veio T%dE%d", r->temporada, r->episodio);
+      CONFERE(!strcmp(r->nomeEp, "Follow the Anger"), "nome do episodio: [%s]", r->nomeEp);
+      CONFERE(!strcmp(r->dataUlt, "2026-09-10"), "ultimo = maior data passada: [%s]", r->dataUlt);
+      // O que faltava na tela: nome no lugar de "TV Show" e cartaz no lugar
+      // do retangulo cinza. "small" sobe para "medium", a URL do resto do app.
+      CONFERE(!strcmp(r->titulo, "Ted Lasso"), "nome da serie: [%s]", r->titulo);
+      CONFERE(!strcmp(r->poster, "https://images.metahub.space/poster/medium/tt10986410/img"),
+              "cartaz do Cinemeta: [%s]", r->poster);
+      CONFERE(r->situacao == AG_VOLTANDO, "Continuing = voltando, veio %d", r->situacao);
+      CONFERE(!strcmp(r->genero, "Comedy"), "genero: [%s]", r->genero);
+      CONFERE(r->duracao == 30, "runtime \"30 min\", veio %d", r->duracao);
+      CONFERE(r->temporadas == 4, "temporadas pela maior season, veio %d", r->temporadas);
+      CONFERE(!strcmp(r->sinopse, "As Greyhounds enfrentam um reves."), "sinopse: [%s]", r->sinopse);
+      CONFERE(agenda_pode_lembrar("tt10986410"), "data do Cinemeta permite lembrete");
+    }
+    // O genero atravessa o disco: e o campo NOVO no fim da linha do TSV.
+    reiniciar();
+    r = agenda_registro("tt10986410");
+    CONFERE(r && !strcmp(r->genero, "Comedy") && !strcmp(r->titulo, "Ted Lasso"),
+            "genero e nome sobreviveram ao disco: [%s]", r ? r->genero : "(nulo)"); }
+
+  // Encerrada pelo Cinemeta: nenhum video futuro E a afirmacao de que nao ha
+  // proximo — e a data velha que estivesse no cache tem de sumir.
+  agenda_registrar("tt0944947", "", "", "Returning Series", 9, 1, "Velho", "2026-10-01", "");
+  buscarSerie("tt0944947", "", "", 0, "", "2026-09-16");
+  { const AgItem *r = agenda_registro("tt0944947");
+    char frase[200];
+    CONFERE(r && r->dataProx[0] == 0, "encerrada pelo Cinemeta: sem proximo [%s]", r ? r->dataProx : "");
+    CONFERE(r && r->situacao == AG_ENCERRADA, "Ended = encerrada");
+    CONFERE(r && !strcmp(r->dataUlt, "2019-05-20"), "ultimo: [%s]", r ? r->dataUlt : "");
+    CONFERE(r && !strcmp(r->titulo, "Game of Thrones"), "nome: [%s]", r ? r->titulo : "");
+    CONFERE(agenda_frase("tt0944947", frase, sizeof frase) && strstr(frase, "2019"),
+            "frase de encerrada com o ultimo: [%s]", frase); }
+
+  // Serie que NENHUMA fonte conhece: nada gravado. Sem registro,
+  // precisaBuscar tenta de novo na proxima abertura em vez de congelar 12 h.
+  buscarSerie("tt0000404", "", "", 0, "", "2026-09-16");
+  CONFERE(agenda_registro("tt0000404") == NULL, "fonte nenhuma = nada gravado");
+
+  // O FIO DE VERDADE, ponta a ponta: fila montada no fio principal, busca no
+  // fio, e agenda_atualizando() volta a 0 no fim.
+  nLista = 0;
+  memset(&lista[0], 0, sizeof lista[0]);
+  snprintf(lista[0].imdb, sizeof lista[0].imdb, "tt5550001");
+  nLista = 1;
+  nCinemeta = 0;
+  agenda_atualizar_seguidas();
+  { int k; for (k = 0; k < 500 && agenda_atualizando(); k++) usleep(10000); }
+  CONFERE(!agenda_atualizando(), "o fio terminou");
+  CONFERE(nCinemeta == 1, "o fio pediu ao Cinemeta sem chave (veio %d)", nCinemeta);
+  { const AgItem *r = agenda_registro("tt5550001");
+    CONFERE(r && !strcmp(r->dataProx, "2026-09-23") && r->poster[0] && r->titulo[0],
+            "o fio gravou data, cartaz e nome"); }
+  // Registro fresco = nenhum fio (e nenhum pedido) na abertura seguinte.
+  nCinemeta = 0;
+  agenda_atualizar_seguidas();
+  CONFERE(!agenda_atualizando() && nCinemeta == 0, "fresco: nada pedido");
+
+  // --- TRAKT LIGADO: ele decide as datas, o Cinemeta completa ---------------
+  // TZ cravado: `first_aired` e instante UTC e vira o DIA NO RELOGIO DA TV.
+  // 2026-09-23T01:00Z em Sao Paulo e 22/09 as 22 h — recortar a string daria
+  // 23, e o episodio de hoje a noite apareceria como "amanha".
+  setenv("TZ", "America/Sao_Paulo", 1); tzset();
+  trakt_definir("token-de-teste", "cliente-de-teste");
+  CONFERE(trakt_ativo(), "Trakt ligado para o teste");
+  nCinemeta = nTrakt = nTmdb = 0;
+  buscarSerie("tt10986410", "", "", 0, "", "2026-09-16");
+  CONFERE(nTrakt == 2 && nCinemeta == 1 && nTmdb == 0,
+          "Trakt (next+last) e Cinemeta para completar (tr=%d cm=%d tm=%d)", nTrakt, nCinemeta, nTmdb);
+  { const AgItem *r = agenda_registro("tt10986410");
+    CONFERE(r && !strcmp(r->dataProx, "2026-09-22"), "data do Trakt no fuso da TV: [%s]", r ? r->dataProx : "");
+    CONFERE(r && !strcmp(r->dataUlt, "2026-09-15"), "ultimo do Trakt no fuso da TV: [%s]", r ? r->dataUlt : "");
+    CONFERE(r && !strcmp(r->sinopse, "As Greyhounds enfrentam um reves (Trakt)."), "sinopse do Trakt: [%s]", r ? r->sinopse : "");
+    CONFERE(r && r->duracao == 52, "runtime do Trakt, veio %d", r ? r->duracao : -1);
+    CONFERE(r && !strcmp(r->tipoEp, "finale"), "season_finale vira finale: [%s]", r ? r->tipoEp : "");
+    CONFERE(r && !strcmp(r->titulo, "Ted Lasso") && r->poster[0], "nome e cartaz do Cinemeta"); }
+  // 204 = o Trakt AFIRMA que nao ha proximo, e o Cinemeta nao pode inventar
+  // um com a data dele.
+  traktSemProximo = 1;
+  buscarSerie("tt10986410", "", "", 0, "", "2026-09-16");
+  { const AgItem *r = agenda_registro("tt10986410");
+    CONFERE(r && r->dataProx[0] == 0, "204 do Trakt ganha do Cinemeta: [%s]", r ? r->dataProx : ""); }
+  traktSemProximo = 0;
+  trakt_esquecer();
+
+  // --- COM CHAVE: o TMDB continua mandando --------------------------------
+  desc_tmdb_definir("0123456789abcdef0123456789abcdef");
+  if (!desc_chave_tmdb()[0]) {
+    CONFERE(0, "desc_chave_tmdb() vazio depois de desc_tmdb_definir (ajuste TMDB desligado no teste?)");
+  } else {
+    nCinemeta = nTrakt = nTmdb = 0;
+    buscarSerie("tt10255564", "", "", 0, desc_chave_tmdb(), "2026-09-16");
+    CONFERE(nTmdb == 2 && nCinemeta == 0 && nTrakt == 0,
+            "com chave: so TMDB (find + tv), nenhum Cinemeta (tm=%d cm=%d tr=%d)", nTmdb, nCinemeta, nTrakt);
+    { const AgItem *r = agenda_registro("tt10255564");
+      CONFERE(r && !strcmp(r->dataProx, "2026-09-19"), "data do TMDB: [%s]", r ? r->dataProx : "");
+      CONFERE(r && !strcmp(r->rede, "Apple TV+"), "rede so o TMDB tem: [%s]", r ? r->rede : "");
+      CONFERE(r && !strcmp(r->genero, "Sci-Fi & Fantasy"), "genres[0].name do TMDB: [%s]", r ? r->genero : "");
+      CONFERE(r && strstr(r->poster, "image.tmdb.org"), "cartaz do TMDB: [%s]", r ? r->poster : ""); }
+  }
+  agenda_rede_teste(NULL);
 
   if (falhas) { printf("FALHOU: %d\n", falhas); return 1; }
   puts("PASS: agenda (datas, situacao, parse do TMDB, lembretes, perfis).");
