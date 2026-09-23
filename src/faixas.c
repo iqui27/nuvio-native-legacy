@@ -266,17 +266,16 @@ static void aplicar(void) {
       // desligada e o mkvass colhe o texto do MKV a frente do playhead; se ele
       // declarar no-go, faixas_atualizar devolve a faixa ao pipeline. Uma
       // faixa em que ja desistimos vai direto ao pipeline.
+      //
+      // PELO ORDINAL NOS DOIS ALVOS (#92). Na LG isto passava f->numero — o
+      // trackNum da TV — como se fosse TrackNumber do Matroska, e o overlay
+      // colhia a faixa de outra lingua. O ordinal e resolvido contra as
+      // TrackEntry na sonda do cabecalho; sem ele (sonda nao voltou, contagem
+      // nao bate) nao ha como saber qual faixa colher, e ela fica com a TV.
       if (ehAss(f) && i != legOverlayNoGo && video_url_atual()[0]
-#ifdef __EMSCRIPTEN__
-          && video_legenda_ordinal_mkv(i) >= 0
-#endif
-      ) {
+          && video_legenda_ordinal_mkv(i) >= 0) {
         video_escolher_legenda(-1);
-#ifdef __EMSCRIPTEN__
         mkvass_iniciar_ordinal(video_url_atual(), video_legenda_ordinal_mkv(i));
-#else
-        mkvass_iniciar(video_url_atual(), f->numero);
-#endif
         legOverlay = i;
       } else
       video_escolher_legenda(i);

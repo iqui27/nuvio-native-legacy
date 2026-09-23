@@ -21,7 +21,7 @@
 #define MKV_MAX_FAIXAS 64
 
 typedef struct {
-  int  numero;        // TrackNumber, o mesmo `trackNum` do sourceInfo da LG
+  int  numero;        // TrackNumber (NAO e o `trackNum` da LG: ver mkv_casar_legendas)
   int  tipo;          // 1 video, 2 audio, 17 legenda (TrackType do Matroska)
   char idioma[8];     // "por", "eng"... vazio quando o arquivo nao etiqueta
   char nome[48];      // Name, quando existe ("Forced", "SDH", "Full")
@@ -58,5 +58,32 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
 // chuta pela posicao: quem sabe a duracao do filme e quem chama, e sem ela
 // "ultimo capitulo" nao distingue creditos de cena final.
 double mkv_creditos_nomeados(const MkvCap *caps, int n);
+
+// CASA as legendas que a TV lista com as TrackEntry de legenda do arquivo (#92).
+//
+// O `trackNum` do subtitleTrackInfo da LG NAO e o TrackNumber do Matroska. E o
+// ORDINAL da faixa entre as legendas do arquivo, contado de 0 na ordem das
+// TrackEntry — o mesmo que o AVPlay da Samsung chama de track_num. MEDIDO na
+// C9 (webOS 4.5) em 22/09/2026, num Erai-raws de One Piece com 8 legendas ASS:
+// sourceInfo com trackNum 0..7, e as legendas do arquivo com TrackNumber
+// 3..10 (1 e video, 2 e audio). TrackNumber 0 nem existe no formato. Casar
+// por TrackNumber, como o video.c fazia, dava a legenda 0 a ninguem, a 1 ao
+// VIDEO, a 2 ao AUDIO e da 3 em diante a legenda TRES posicoes antes — era o
+// "Italian" do #92 mostrando falas em ingles, e o "English" sem o selo ASS
+// caindo no desenho da TV, que pisca e come metade das falas.
+//
+// `tvNum[i]` e o trackNum da i-esima legenda da TV; `idxFx[i]` recebe o indice
+// em `fx` da TrackEntry correspondente, ou -1. Devolve o modo usado:
+//   MKV_CASA_ORDINAL  todos os trackNum cabem em [0, legendas do arquivo) e as
+//                     duas contagens batem — o caso medido;
+//   MKV_CASA_NUMERO   todo trackNum e o TrackNumber de uma legenda do arquivo
+//                     (a leitura antiga; fica como segunda tentativa, nunca
+//                     misturada com a primeira);
+//   MKV_CASA_NADA     nenhuma das duas fecha: nada e casado. Idioma errado e
+//                     pior que idioma nenhum, e codec errado manda a faixa
+//                     errada para o overlay.
+enum { MKV_CASA_NADA = 0, MKV_CASA_ORDINAL = 1, MKV_CASA_NUMERO = 2 };
+int mkv_casar_legendas(const MkvFaixa *fx, int n, const int *tvNum, int nTv,
+                       int *idxFx);
 
 #endif

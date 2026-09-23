@@ -308,3 +308,41 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
 int mkv_faixas(const char *url, MkvFaixa *saida, int max) {
   return mkv_faixas_e_caps(url, saida, max, NULL, 0, NULL);
 }
+
+// Ver a nota em mkv.h. Puro: sem rede, sem estado — e o que o teste
+// tests/mkv_legendas.sh exercita com um MKV de varias faixas ASS.
+int mkv_casar_legendas(const MkvFaixa *fx, int n, const int *tvNum, int nTv,
+                       int *idxFx) {
+  int leg[MKV_MAX_FAIXAS], nLeg = 0, i, j, ok;
+  const int TIPO_LEG = 17;
+  if (!fx || !tvNum || !idxFx || nTv < 1) return MKV_CASA_NADA;
+  for (i = 0; i < nTv; i++) idxFx[i] = -1;
+  for (j = 0; j < n && nLeg < MKV_MAX_FAIXAS; j++)
+    if (fx[j].tipo == TIPO_LEG) leg[nLeg++] = j;
+  if (!nLeg) return MKV_CASA_NADA;
+
+  // ORDINAL: a contagem precisa bater. Se a TV escondeu uma faixa (codec que
+  // ela nao le), o ordinal dela ja nao aponta para a mesma TrackEntry, e casar
+  // assim trocaria idiomas em silencio.
+  // Cada ordinal uma vez so: repetido, alguma faixa da TV nao e quem diz ser.
+  ok = nTv == nLeg;
+  { unsigned char visto[MKV_MAX_FAIXAS] = {0};
+    for (i = 0; ok && i < nTv; i++) {
+      if (tvNum[i] < 0 || tvNum[i] >= nLeg || visto[tvNum[i]]) ok = 0;
+      else visto[tvNum[i]] = 1;
+    } }
+  if (ok) {
+    for (i = 0; i < nTv; i++) idxFx[i] = leg[tvNum[i]];
+    return MKV_CASA_ORDINAL;
+  }
+
+  ok = 1;
+  for (i = 0; ok && i < nTv; i++) {
+    int achou = -1;
+    for (j = 0; j < nLeg; j++) if (fx[leg[j]].numero == tvNum[i]) { achou = leg[j]; break; }
+    if (achou < 0) ok = 0; else idxFx[i] = achou;
+  }
+  if (ok) return MKV_CASA_NUMERO;
+  for (i = 0; i < nTv; i++) idxFx[i] = -1;
+  return MKV_CASA_NADA;
+}

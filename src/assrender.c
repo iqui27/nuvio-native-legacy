@@ -80,6 +80,48 @@ static void ass_mensagem(int nivel, const char *fmt, va_list args, void *dados) 
   if (strstr(linha, "fontselect:")) assResolucaoFonte++;
 }
 
+/* FONTES ANEXADAS JA ENTREGUES AO libass (#92, queda na C9 em 22/09/2026).
+ *
+ * O libass NAO aceita esvaziar a lista de fontes e seguir renderizando.
+ * ass_start_frame guarda quantas fontes ja passou ao fontselect
+ * (num_emfonts) e, quando a biblioteca muda de tamanho, afirma que so CRESCEU:
+ *   assert(library->num_fontdata > num_emfonts)
+ * ass_clear_fonts zera num_fontdata e deixa num_emfonts como estava; a proxima
+ * fonte anexada (ou nenhuma) deixa a conta menor, e o quadro seguinte ABORTA o
+ * app. MEDIDO: tests/ass_fontes.sh reproduz com o libass 0.17.5 do Homebrew, e
+ * o log da C9 morre em "ass_render.c:3069: ass_start_frame: Assertion" logo
+ * depois da SEGUNDA entrega do mkvass — que e quem chamava
+ * assrender_limpar_fontes a cada lote.
+ *
+ * O remedio "limpar e chamar ass_set_fonts de novo" zera a conta, mas o
+ * fontselect novo rele a pasta de fontes: na C9 e /usr/share/fonts, 106 MB e
+ * 29 arquivos carregados na memoria — a cada lote do mkvass e a cada troca de
+ * faixa. Entao a lista SO CRESCE: cada fonte entra uma vez (nome + tamanho +
+ * amostra do conteudo) e fica para as proximas faixas. So quando o acumulado
+ * passa do teto e que a biblioteca e reiniciada por inteiro, com ass_set_fonts
+ * logo depois do ass_clear_fonts — o caro fica no caso raro. */
+typedef struct { char nome[96]; size_t tam; unsigned long long amostra; } AssFonteVista;
+#define ASS_FONTES_MAX 192
+#define ASS_FONTES_TETO_BYTES (96u * 1024u * 1024u)
+static AssFonteVista assFontesVistas[ASS_FONTES_MAX];
+static int assNFontesVistas;
+static size_t assBytesFontesVistas;
+static char assFallbackFont[768];
+
+static unsigned long long ass_amostra_fonte(const unsigned char *p, size_t n) {
+  unsigned long long h = 1469598103934665603ULL;
+  size_t i, pedaco = n < 65536u ? n : 65536u;
+  for (i = 0; i < pedaco; i++) { h ^= p[i]; h *= 1099511628211ULL; }
+  for (i = n - pedaco; i < n; i++) { h ^= p[i]; h *= 1099511628211ULL; }
+  return h;
+}
+
+static void ass_aplicar_fontes_locked(void) {
+  if (!assRenderer) return;
+  ass_set_fonts(assRenderer, assFallbackFont[0] ? assFallbackFont : NULL, "Arial",
+                ASS_FONTPROVIDER_AUTODETECT, NULL, 1);
+}
+
 static void ass_iniciar_locked(void) {
   char fontDir[640] = "";
   char fallbackFont[768] = "";
@@ -122,8 +164,9 @@ static void ass_iniciar_locked(void) {
   }
 #endif
   if (fontDir[0]) ass_set_fonts_dir(assLib, fontDir);
-  ass_set_fonts(assRenderer, fallbackFont[0] ? fallbackFont : NULL, "Arial",
-                ASS_FONTPROVIDER_AUTODETECT, NULL, 1);
+  snprintf(assFallbackFont, sizeof assFallbackFont, "%s", fallbackFont);
+  ass_aplicar_fontes_locked();
+  assNFontesVistas = 0; assBytesFontesVistas = 0;
   ass_set_cache_limits(assRenderer, 0, 32);
   assFrameW = 1920; assFrameH = 1080;
   ass_set_frame_size(assRenderer, assFrameW, assFrameH);
@@ -394,7 +437,9 @@ void assrender_limpar_fontes(void) {
   assCoberturaIni = assCoberturaFim = 0;
   __atomic_store_n(&assTrackGeracao, 0, __ATOMIC_RELEASE);
   __atomic_store_n(&assTrackAtivo, 0, __ATOMIC_RELEASE);
-  if (assLib) ass_clear_fonts(assLib);
+  /* SEM ass_clear_fonts: ver a nota de assFontesVistas. As fontes da faixa
+   * anterior ficam na biblioteca; so sao usadas se a proxima pedir o mesmo
+   * nome. assFontes (diagnostico) volta a contar as desta faixa. */
   pthread_mutex_unlock(&assTrava);
   pthread_mutex_lock(&assFilaTrava);
   assPedidoPendente = 0; ++assEpoch; ++assSerial; assPedidoSerial = assSerial;
@@ -409,8 +454,32 @@ int assrender_adicionar_fonte(const char *nome, const void *dados, size_t tamanh
   if (!nome || !*nome || !dados || !tamanho || tamanho > (size_t)INT_MAX) return 0;
   pthread_mutex_lock(&assTrava);
   ass_iniciar_locked();
-  if (assLib) ass_add_font(assLib, nome, (const char *)dados, (int)tamanho);
-  if (assLib) assFontes++;
+  if (assLib) {
+    unsigned long long am = ass_amostra_fonte((const unsigned char *)dados, tamanho);
+    int i, visto = 0;
+    for (i = 0; i < assNFontesVistas; i++)
+      if (assFontesVistas[i].tam == tamanho && assFontesVistas[i].amostra == am &&
+          !strncmp(assFontesVistas[i].nome, nome, sizeof assFontesVistas[i].nome - 1)) { visto = 1; break; }
+    if (!visto) {
+      /* TETO: episodios em sequencia com fontes DIFERENTES fariam a lista
+       * crescer sem fim. Passou dele, reinicia tudo — e ai sim ass_set_fonts
+       * logo apos o ass_clear_fonts, que e o par que mantem a conta do
+       * ass_start_frame coerente. Nao ha faixa sendo desenhada com fonte
+       * velha: adicionar fonte so acontece antes de carregar o documento. */
+      if (assNFontesVistas >= ASS_FONTES_MAX ||
+          assBytesFontesVistas + tamanho > ASS_FONTES_TETO_BYTES) {
+        ass_clear_fonts(assLib);
+        ass_aplicar_fontes_locked();
+        assNFontesVistas = 0; assBytesFontesVistas = 0;
+      }
+      ass_add_font(assLib, nome, (const char *)dados, (int)tamanho);
+      { AssFonteVista *v = &assFontesVistas[assNFontesVistas++];
+        snprintf(v->nome, sizeof v->nome, "%s", nome);
+        v->tam = tamanho; v->amostra = am; }
+      assBytesFontesVistas += tamanho;
+    }
+    assFontes++;
+  }
   { int ok = assLib != NULL; pthread_mutex_unlock(&assTrava); return ok; }
 }
 
@@ -495,6 +564,20 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
   return n;
 }
 
+/* Quadro SINCRONO, sem GL e sem o worker: so para teste e diagnostico
+ * (tests/ass_fontes.sh). Passa pelo mesmo ass_render_frame — e ali, no
+ * ass_start_frame, que mora a asserção que derrubava a C9. */
+int assrender_quadro_cpu(double posSeg) {
+  int n = -1, mudou = 0;
+  pthread_mutex_lock(&assTrava);
+  if (assTrack && assRenderer) {
+    ASS_Image *im = ass_render_frame(assRenderer, assTrack, (long long)llround(posSeg * 1000.0), &mudou);
+    for (n = 0; im; im = im->next) n++;
+  }
+  pthread_mutex_unlock(&assTrava);
+  return n;
+}
+
 int assrender_ativo(void) {
   unsigned geracao = __atomic_load_n(&assGeracao, __ATOMIC_ACQUIRE);
   int ativo = __atomic_load_n(&assTrackAtivo, __ATOMIC_ACQUIRE) &&
@@ -559,6 +642,7 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
   (void)posSeg; (void)atrasoMs; (void)alpha; (void)x; (void)y; (void)w; (void)h; return 0;
 }
 int assrender_ativo(void) { return 0; }
+int assrender_quadro_cpu(double posSeg) { (void)posSeg; return -1; }
 const char *assrender_diagnostico(void) { return assDiag; }
 void assrender_geracao(unsigned geracao) { assGeracao = geracao; }
 
