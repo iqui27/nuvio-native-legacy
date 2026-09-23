@@ -831,15 +831,15 @@ static void desenharToast(Uint32 agora) {
   gfx_rect((GfxRect){ x - h * 0.7f, y - h * 0.7f, w + h * 1.4f, h * 2.4f }, 0, GFX_SOMBRA,
            1.0f, 0, 0, 0.5f, ar, ag, ab, (0.07f + 0.13f * pulso) * toastA);
   gfx_cor(bloco, 28.0f / h, 0.055f, 0.058f, 0.068f, 0.98f * toastA);
-  // Icone grande de notificacao: uma âncora visual mais rapida de reconhecer
-  // que o ponto sozinho, com a mesma cor de destaque do restante do app.
+  // Icone de notificacao: SO O SINO, sem disco (dono, 23/09/2026: "deixar so
+  // o sininho sem fundo"). O sino leva a cor de realce e cresce para ocupar o
+  // lugar do disco; o ponto que pulsa acompanha na mesma cor.
   { GfxRect ic = { x + 24.0f, y + 24.0f, 56.0f, 56.0f };
     float d = 5.0f + 3.0f * pulso;
-    gfx_cor(ic, 0.5f, ar, ag, ab, 0.92f * toastA);
-    gfx_rect((GfxRect){ ic.x + 8.0f, ic.y + 8.0f, 40.0f, 40.0f }, 0, GFX_SINO,
-             0, 0, 0, 0, tinta, tinta, tinta, toastA);
+    gfx_rect((GfxRect){ ic.x + 2.0f, ic.y + 2.0f, 52.0f, 52.0f }, 0, GFX_SINO,
+             0, 0, 0, 0, ar, ag, ab, toastA);
     gfx_cor((GfxRect){ ic.x + ic.w - d - 1.0f, ic.y - d * 0.5f, d, d },
-            0.5f, tinta, tinta, tinta, 0.90f * toastA); }
+            0.5f, ar, ag, ab, 0.90f * toastA); }
   txt_desenhar_alpha(cab, x + 98.0f, y + 18.0f, toastA);
   txt_desenhar_alpha(t1, x + 98.0f, y + 48.0f, toastA);
   { float ax = x + w - 24.0f - lado - 10.0f - t2.w;
