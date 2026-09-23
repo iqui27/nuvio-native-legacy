@@ -31,6 +31,14 @@ float botao_largura(const char *rotulo, const char *icone, int primario) {
   return w;
 }
 
+int botao_superficie(GfxRect r, float foco, float a) {
+  float fr, fg, fb, ti = ajustes_acento_tinta(&fr, &fg, &fb);
+  botao_luz(r, foco, a);
+  gfx_cor(r, 0.5f, anim_mistura(BT_REP_R, fr, foco),
+          anim_mistura(BT_REP_G, fg, foco), anim_mistura(BT_REP_B, fb, foco), a);
+  return foco >= 0.5f ? (int)(ti * 255.0f + 0.5f) : BT_TEXTO_REP;
+}
+
 void botao_pilula(GfxRect r, const char *rotulo, const char *icone,
                   float foco, int primario, int alinhar, float a) {
   float fr, fg, fb, ti = ajustes_acento_tinta(&fr, &fg, &fb);
@@ -41,11 +49,10 @@ void botao_pilula(GfxRect r, const char *rotulo, const char *icone,
   float temIcone = (icone && icone[0]) ? 1.0f : 0.0f;
   float grupo, x0, padx = primario ? BOTAO_PAD_X : BOTAO_PAD_X2;
 
-  botao_luz(r, foco, a);
   if (primario) {
-    gfx_cor(r, raio, anim_mistura(BT_REP_R, fr, foco),
-            anim_mistura(BT_REP_G, fg, foco), anim_mistura(BT_REP_B, fb, foco), a);
+    botao_superficie(r, foco, a);
   } else {
+    botao_luz(r, foco, a);
     // O miolo so existe na medida do foco; em repouso e o contorno. A
     // espessura do anel esta em fracao da ALTURA (o SDF normaliza por ela):
     // 1,5 px em 56 px.
