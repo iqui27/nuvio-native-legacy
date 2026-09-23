@@ -16,7 +16,9 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 #
 # A busca de fontes tambem roda aqui (a causa da folha vazia, B6/D5), com rede,
 # parser, cache e i18n dublados no proprio teste — ver tests/addonslista.c.
-cc "${flags[@]}" src/addons.c tests/addonslista.c -o /tmp/nuvio-addonslista-tests
+# js.c entra pelo caso do #112: o manifesto do addon de canal e lido de
+# verdade (capacidadesDoManifesto), porque e ele que decide o tipo pedido.
+cc "${flags[@]}" src/addons.c src/js.c tests/addonslista.c -o /tmp/nuvio-addonslista-tests
 saida=$(/tmp/nuvio-addonslista-tests)
 echo "$saida" | grep -v '^\[addons\]' || true
 echo "$saida" | grep -q 'addonslista: ok'

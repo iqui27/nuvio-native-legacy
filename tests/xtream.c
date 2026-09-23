@@ -26,11 +26,12 @@ static const char *respStreams =
   " {\"num\":3,\"name\":\"\",\"stream_id\":303,\"category_id\":\"5\"},"
   " {\"num\":4,\"name\":\"Sem categoria\",\"stream_id\":404}]";
 static const char *respAuth0 = "{\"user_info\":{\"auth\":0,\"status\":\"Disabled\"}}";
-static int recusar;
+static int recusar, mudo;
 static char ultimaUrl[1200];
 char *rede_baixar(const char *url, int segundos) {
   (void)segundos;
   snprintf(ultimaUrl, sizeof ultimaUrl, "%s", url);
+  if (mudo) return NULL;
   if (recusar) return strdup(respAuth0);
   if (strstr(url, "action=get_live_categories")) return strdup(respCats);
   if (strstr(url, "action=get_live_streams")) return strdup(respStreams);
@@ -59,6 +60,7 @@ int main(void) {
 
   n = xtream_canais(c, 16);
   assert(n == 3);                              // o de nome vazio fica de fora
+  assert(xtream_ultima_falha() == XT_OK);
   assert(!strcmp(c[0].id, "xtream:101") && !strcmp(c[0].nome, "ESPN HD"));
   assert(!strcmp(c[0].categoria, "Esportes") && !strcmp(c[0].epgId, "espn.br"));
   printf("  c[1]: id=%s cat=%s\n", c[1].id, c[1].categoria);
@@ -75,8 +77,18 @@ int main(void) {
 
   recusar = 1;
   assert(xtream_canais(c, 16) == 0);           // auth 0 nao vira lista
+  assert(xtream_ultima_falha() == XT_RECUSOU);
   recusar = 0;
   puts("ok  credencial recusada: zero canais, sem lixo");
+
+  // #112: servidor que nao responde (o "falhou em http://..." do registro
+  // 1647) e distinto de credencial recusada, e a proxima resposta boa limpa.
+  mudo = 1;
+  assert(xtream_canais(c, 16) == 0);
+  assert(xtream_ultima_falha() == XT_SEM_RESPOSTA);
+  mudo = 0;
+  assert(xtream_canais(c, 16) == 3 && xtream_ultima_falha() == XT_OK);
+  puts("ok  falha da lista: sem resposta, recusada e recuperada sao distintas");
 
   xtream_esquecer();
   assert(!xtream_configurado() && !temDisco);

@@ -75,6 +75,7 @@
 #include "fontepref.h"
 #include "video.h"
 #include "addons.h"
+#include "idioma.h"
 #include "descoberta.h"
 #include "proximo.h"
 #include "trakt.h"
@@ -606,6 +607,28 @@ static void cancelarFonteSeSaiu(void) {
     canalFonteIdx = -1;
     limparFontePendente();
   }
+}
+
+// NENHUMA FONTE, COM A CAUSA NO CARTAO (issue #112). Antes daqui saia sempre
+// o cartao generico: "Nao foi possivel abrir a fonte / Abra Fontes para
+// escolher outra opcao" — num canal cuja lista veio vazia, nada foi aberto e
+// a folha de Fontes estaria vazia, entao as duas frases mandavam a pessoa a
+// um lugar sem saida. No registro 1647 (Samsung) foram oito canais assim e o
+// relato foi "tela preta". A causa ja existia para a folha de fontes
+// (addons_motivo_vazio); aqui ela vira o titulo do cartao. Sem causa
+// conhecida (lista do cache, ou houve fonte e nenhuma serviu) o canal ainda
+// ganha uma frase de canal, e o filme fica com a generica.
+static void erroSemFonte(void) {
+  char motivo[160];
+  int canal = player_id_canal()[0] != 0;
+  if (addons_motivo_vazio(motivo, sizeof motivo))
+    player_erro_fonte_motivo(motivo, canal
+        ? i18n("Escolha outro canal no guia ou tente de novo mais tarde.")
+        : i18n("Abra Fontes para escolher outra opção ou recarregar."));
+  else if (canal)
+    player_erro_fonte_motivo(i18n("Nenhuma fonte deste canal abriu agora"),
+        i18n("Escolha outro canal no guia ou tente de novo mais tarde."));
+  else player_erro_fonte();
 }
 
 // Filme/serie nao tem o watchdog de canal porque nao ha troca de emissora.
@@ -1760,7 +1783,7 @@ void app_atualizar(float dt, Uint32 agora) {
         // watchdog de fonte morta ate a lista acabar ou o canal trocar.
         if (player_id_canal()[0]) { canalFonteIdx = fonteEscolhida; canalFonteDesde = SDL_GetTicks(); }
       }
-      else { limparFonteVOD(); player_erro_fonte(); }
+      else { limparFonteVOD(); erroSemFonte(); }
     }
   }
 

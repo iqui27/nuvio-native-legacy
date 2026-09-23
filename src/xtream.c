@@ -245,16 +245,23 @@ static const char *nomeDaCategoria(const XtCat *cats, int n, const char *id) {
   return "Outros";
 }
 
+// Escrito so pelo fio do guia (o unico que chama xtream_canais) e lido pelo
+// mesmo fio antes de publicar: nao precisa de trava.
+static int ultimaFalha = XT_OK;
+int xtream_ultima_falha(void) { return ultimaFalha; }
+
 int xtream_canais(XtreamCanal *saida, int max) {
   static XtCat cats[XT_MAX_CAT];
   int nCat, n = 0;
   char *corpo;
   const char *p;
+  ultimaFalha = XT_OK;
   if (!xtream_configurado() || !saida || max < 1) return 0;
   nCat = lerCategorias(cats, XT_MAX_CAT);
   corpo = chamar("get_live_streams");
   if (!corpo) {
     printf("[xtream] servidor nao respondeu a lista de canais\n");
+    ultimaFalha = XT_SEM_RESPOSTA;
     return 0;
   }
   // Credencial errada nao e "[]": o servidor responde {"user_info":{"auth":0}}
@@ -262,6 +269,7 @@ int xtream_canais(XtreamCanal *saida, int max) {
   p = strchr(corpo, '[');
   if (!p || (corpo[0] != '[' && strstr(corpo, "\"auth\":0"))) {
     printf("[xtream] servidor recusou a credencial (auth 0)\n");
+    ultimaFalha = XT_RECUSOU;
     free(corpo);
     return 0;
   }
