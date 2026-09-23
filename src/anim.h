@@ -8,8 +8,22 @@
 #define NV_ANIM_H
 #include <math.h>
 
+// POLITICA DE ANIMACOES REDUZIDAS, num lugar so.
+//
+// Metade das telas (busca, biblioteca, detalhe, menu, player, guia, avisos...)
+// chamava anim_mola sem nunca perguntar pelo ajuste — ligar "Reduzidas" nao
+// mudava nada nelas, e o ajuste de acessibilidade valia so para a home. Aqui a
+// primitiva mesma obedece: com a bandeira ligada, mola e rampa vao DIRETO ao
+// alvo. Quem ja testava o ajuste na chamada continua funcionando igual.
+//
+// Quem liga e o roteador (app_atualizar), uma vez por quadro, a partir de
+// ajustes_animacoes_reduzidas(). E `weak` para o cabecalho continuar sem .c:
+// os testes linkam subconjuntos de src/ e nao pode faltar o simbolo em nenhum.
+__attribute__((weak)) int anim_politica_reduzida = 0;
+
 // Independente de framerate: usa exp(-k*dt), nao um passo fixo por quadro.
 static inline float anim_mola(float atual, float alvo, float dt, float rigidez) {
+  if (anim_politica_reduzida) return alvo;
   return atual + (alvo - atual) * (1.0f - expf(-rigidez * dt));
 }
 static inline float anim_clamp(float v, float lo, float hi) {
@@ -45,6 +59,7 @@ static inline float anim_mola2(float *v, float atual, float alvo, float dt, floa
   // Um quadro perdido (aba escondida, decode longo) nao pode virar um passo
   // gigante. A forma fechada evita o overshoot do Euler semi-implicito e
   // continua retargetavel quando o D-pad muda o alvo durante o movimento.
+  if (anim_politica_reduzida) { *v = 0.0f; return alvo; }
   if (dt <= 0.0f || w <= 0.0f) return atual;
   if (dt > 0.05f) dt = 0.05f;
   if ((alvo - atual) * (*v) < 0.0f) *v = 0.0f;
@@ -81,6 +96,7 @@ static inline float anim_suave(float t) {
 // gastando `ms` no percurso inteiro. Usada onde o tempo precisa bater com uma
 // medida (o veu do menu), e nao apenas "assentar rapido".
 static inline float anim_rampa(float p, float alvo, float dt, float ms) {
+  if (anim_politica_reduzida) return alvo;
   float passo = dt * (1000.0f / ms);
   if (alvo > p) { p += passo; if (p > alvo) p = alvo; }
   else          { p -= passo; if (p < alvo) p = alvo; }
