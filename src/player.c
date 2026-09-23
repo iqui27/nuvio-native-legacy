@@ -1958,6 +1958,41 @@ static void desenharBloco(const LegBloco *bl, float x0, float y, float alpha, in
   }
 }
 
+// LIMPA o texto que o AVPlay entrega no onsubtitlechange (#122): SRT vem com
+// <i>, <b>, <font ...> e <br>; ASS com {\\tags} e \\N. O overlay desenha texto
+// puro, linha por linha. Exposto para a regressao.
+void player_limpar_legenda_nativa(char *s) {
+  char *r = s, *w = s;
+  while (*r) {
+    if (*r == '<') {
+      if (!strncasecmp(r, "<br", 3)) *w++ = '\n';
+      while (*r && *r != '>') r++;
+      if (*r) r++;
+    } else if (*r == '{' && r[1] == '\\') {
+      while (*r && *r != '}') r++;
+      if (*r) r++;
+    } else if (*r == '\\' && (r[1] == 'N' || r[1] == 'n')) { *w++ = '\n'; r += 2; }
+    else if (*r == '\\' && r[1] == 'h') { *w++ = ' '; r += 2; }
+    else if (*r == '\r') r++;
+    else if (!strncmp(r, "&amp;", 5)) { *w++ = '&'; r += 5; }
+    else if (!strncmp(r, "&lt;", 4))  { *w++ = '<'; r += 4; }
+    else if (!strncmp(r, "&gt;", 4))  { *w++ = '>'; r += 4; }
+    else if (!strncmp(r, "&quot;", 6)) { *w++ = '"'; r += 6; }
+    else *w++ = *r++;
+  }
+  *w = 0;
+  // Sem linhas vazias nas pontas: um "\n" final viraria um bloco mais alto.
+  while (w > s && (w[-1] == '\n' || w[-1] == ' ')) *--w = 0;
+  r = s; while (*r == '\n' || *r == ' ') r++;
+  if (r != s) memmove(s, r, strlen(r) + 1);
+}
+
+int player_texto_legenda_nativa(char *dst, int tam) {
+  if (!video_legenda_nativa(dst, tam)) return 0;
+  player_limpar_legenda_nativa(dst);
+  return dst[0] != 0;
+}
+
 /* O uMS da C9 limita fonte e escala. OpenSubtitles passa por este overlay
  * SDL/GLES, exatamente como o overlay HTML do app web. Desde o #92 tambem
  * desenha ASS: varios blocos ao mesmo tempo, cada um no seu lugar. */
@@ -1979,6 +2014,14 @@ static void desenharLegendaExterna(void){
   }
   LegendaCue cues[LEGENDA_SIMULTANEAS];
   int n = legenda_cues(posLegenda(), legEstilo.atrasoMs, cues, LEGENDA_SIMULTANEAS), i;
+  // Sem legenda externa, a EMBUTIDA que o player nativo nao desenha (#122):
+  // o mesmo overlay, com a mesma folha de estilo da pessoa.
+  if (n <= 0 && comVideo && player_texto_legenda_nativa(cues[0].texto, sizeof cues[0].texto)) {
+    cues[0].inicio = cues[0].fim = 0; cues[0].an = 0; cues[0].negrito = cues[0].italico = 0;
+    cues[0].cor = -1; cues[0].posX = cues[0].posY = -1.f; cues[0].resX = cues[0].resY = 0.f;
+    cues[0].ordem = 0;
+    n = 1;
+  }
   if (n <= 0) return;
   int pct=legEstilo.tamanho;if(pct<50)pct=50;if(pct>200)pct=200;pct=(pct/10)*10;
   TxtEstilo est=(TxtEstilo)(TXT_LEG_50+(pct-50)/10);corLegenda(legEstilo.cor,&r,&g,&b);

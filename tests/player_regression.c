@@ -176,6 +176,17 @@ static void testar(void) {
   teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);
   teclaPlayer(SDLK_PAUSE);teclaPlayer(SDLK_RETURN);assert(player_pediu_faixas()==0);
   player_encerrar();
+  // #122: o texto que o AVPlay entrega no onsubtitlechange vira texto puro
+  // para o overlay (SRT com tags HTML, ASS com {\tags} e \N).
+  { char t[256];
+    snprintf(t,sizeof t,"<i>Olá</i><br/><font color=\"#ff0\">mundo</font>\n");
+    player_limpar_legenda_nativa(t);assert(!strcmp(t,"Olá\nmundo"));
+    snprintf(t,sizeof t,"{\\an8}{\\i1}Letreiro\\Nsegunda\\hlinha{\\i0}");
+    player_limpar_legenda_nativa(t);assert(!strcmp(t,"Letreiro\nsegunda linha"));
+    snprintf(t,sizeof t,"Tom &amp; Jerry &lt;3");
+    player_limpar_legenda_nativa(t);assert(!strcmp(t,"Tom & Jerry <3"));
+    // Fora da Samsung nao ha legenda embutida para o app desenhar.
+    assert(!player_texto_legenda_nativa(t,sizeof t)&&!t[0]); }
   // #121: com os controles ESCONDIDOS, esquerda/direita e busca, como no
   // YouTube e na Netflix — os controles sobem com o foco NA BARRA e o primeiro
   // toque ja anda 10 s. Antes subiam com o foco nos botoes e o toque seguinte

@@ -76,8 +76,10 @@ static int legExterna = -1;
 // e mostra o motivo; escolher a mesma faixa de novo vai direto ao pipeline,
 // sem tentar outra vez.
 //
-// Nos dois alvos o player nativo e silenciado enquanto o app coleta e compoe
-// a faixa; em no-go, a selecao volta ao AVPlay/uMS.
+// Na LG o player nativo e silenciado enquanto o app coleta e compoe a faixa;
+// em no-go, a selecao volta ao uMS. NA SAMSUNG ESTE RAMO NAO RODA: o
+// video_tizen.c nao preenche `codec`, entao ehAss e sempre falso la e a faixa
+// vai ao AVPlay, cujo texto o player desenha pelo onsubtitlechange (#122).
 static int legOverlay = -1, legOverlayNoGo = -1;
 
 static int ehAss(const VideoFaixa *f) {
