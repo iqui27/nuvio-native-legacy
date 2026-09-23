@@ -235,6 +235,25 @@ static void montarCatalogo(void) {
   }
   itens[1].nElenco = 6;
 
+  // NUVIO_SHOT_EN=1: a captura do heroi vai para as notas da release em
+  // ingles. O titulo passa a ser o da ARTE do pacote (27.jpg e a de Locke &
+  // Key), com sinopse curta escrita aqui, em vez de um nome de ensaio em
+  // portugues por cima da arte de outra obra.
+  { const char *en = getenv("NUVIO_SHOT_EN");
+    if (en && *en == '1') {
+      snprintf(itens[0].titulo, sizeof itens[0].titulo, "Locke & Key");
+      snprintf(itens[0].genero, sizeof itens[0].genero, "TV Show · Drama · Fantasy");
+      snprintf(itens[0].meta, sizeof itens[0].meta, "2020 · 3 seasons");
+      snprintf(itens[0].sinopse, sizeof itens[0].sinopse,
+               "After a family tragedy, three siblings move into their "
+               "ancestral home and find magical keys hidden in its walls, "
+               "each one unlocking a different power and a darker secret.");
+      snprintf(itens[0].classificacao, sizeof itens[0].classificacao, "14");
+      snprintf(itens[0].pais, sizeof itens[0].pais, "United States");
+      snprintf(itens[0].backdrop, sizeof itens[0].backdrop, "deploy/app/art/27.jpg");
+      itens[0].nota = 73;
+    } }
+
   fil.ini = 0; fil.n = 2;
   snprintf(fil.titulo, sizeof fil.titulo, "Ensaio");
   snprintf(fil.tipo, sizeof fil.tipo, "series");
@@ -271,12 +290,17 @@ static void semear(int temporada, int nEps, int ate) {
 // --- CAPTURA -----------------------------------------------------------------
 
 static SDL_Window *janela;
+// Janela escondida e desenho num FBO (padrao de explorar_shot): nada aparece
+// na tela de quem roda.
+static GLuint fbo, fboTex;
 
 static void gravar(const char *nome) {
   unsigned char *pix = (unsigned char *)malloc(1920 * 1080 * 4);
   SDL_Surface *s;
   int y;
   assert(pix);
+  glFinish();
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
   glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);
   s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
   assert(s);
@@ -306,10 +330,11 @@ static void quadros(int n) {
     txt_novo_quadro();
     tex_novo_quadro();
     gfx_novo_quadro();
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glViewport(0, 0, 1920, 1080);
     glClearColor(NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     detail_desenhar(SDL_GetTicks());
-    if (i < n - 1) SDL_GL_SwapWindow(janela);
   }
 }
 
@@ -344,16 +369,23 @@ int main(int argc, char **argv) {
   char nome[600];
   SDL_GLContext gl;
 
+  SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
-  janela = SDL_CreateWindow("Nuvio: temporadas e episodios",
-                            SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                            1920, 1080, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+  janela = SDL_CreateWindow("Nuvio: temporadas e episodios", 0, 0, 64, 64,
+                            SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
   assert(janela);
   gl = SDL_GL_CreateContext(janela);
   assert(gl);
+  glGenTextures(1, &fboTex);
+  glBindTexture(GL_TEXTURE_2D, fboTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1920, 1080, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+  glGenFramebuffers(1, &fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fboTex, 0);
+  assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
   SDL_GL_SetSwapInterval(0);
   glViewport(0, 0, 1920, 1080);
   gfx_tamanho_alvo(1920, 1080);
