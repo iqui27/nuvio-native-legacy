@@ -2567,38 +2567,21 @@ static float larguraSecundario(const char *rot) {
 // vizinhos da 253 px2 — dentro da faixa deles, que vai de 118 ("+") a 316
 // (olho). Um numero a menos, e o que sobrou e o que a fileira ja usava.
 static void desenhaLembrete(GfxRect r, int ligado, int focado, float a) {
+  // SO O SINO, SEM DISCO (dono, 23/09/2026: "deixar so o sininho sem fundo").
+  // O estado vai pela cor do glifo e pelas ondas/tremor do despertador:
+  //   repouso, desligado  glifo claro (agendaui_cor_lembrete)
+  //   armado              glifo na cor de realce
+  //   em foco             glifo na cor de realce, maior (NV_DETW2_FOCO_SY)
+  // Sem superficie o glifo cresce para ocupar o lugar visual do circulo.
   float cr, cg, cb, g;
-  int claro = focado || ligado;
   if (focado) {
     float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
     r.w *= NV_DETW2_FOCO_SY; r.h *= NV_DETW2_FOCO_SY;
     r.x = cx - r.w * 0.5f; r.y = cy - r.h * 0.5f;
   }
-  if (focado) {
-    // Cor de realce, como os vizinhos. `claro` passa a dizer se a SUPERFICIE
-    // e clara — e disso que agendaui_cor_lembrete escolhe o verde escurecido
-    // ou o cheio; sem lembrete armado o glifo e a tinta de contraste.
-    float fr, fg, fb, t = focoAcento(&fr, &fg, &fb);
-    luzFoco(r, a);
-    gfx_cor(r, NV_RAIO_PILL, fr, fg, fb, a);
-    claro = t < 0.5f;
-    // Glifo na tinta que contrasta com o realce, armado ou nao: o estado vai
-    // pelas ondas e pelo tremor, nao pela cor.
-    cr = cg = cb = t; goto glifo;
-  } else if (ligado) {
-    // ARMADO SEM FOCO: disco CHEIO na cor de realce, sem contorno, glifo na
-    // tinta de contraste — igual ao foco, so que no tamanho de repouso. O
-    // anel branco fino que esteve aqui um dia "ficou feio" (dono, 21/09/2026),
-    // e o disco verde anterior nao conversava com nenhuma cor da tela. As
-    // ondas e o tremor do despertador continuam dizendo o estado.
-    float fr, fg, fb, t = focoAcento(&fr, &fg, &fb);
-    gfx_cor(r, NV_RAIO_PILL, fr, fg, fb, a);
-    cr = cg = cb = t;
-    goto glifo;
-  } else gfx_cor(r, NV_RAIO_PILL, 0.133f, 0.133f, 0.133f, a);
-  agendaui_cor_lembrete(ligado, claro, &cr, &cg, &cb);
-glifo:
-  g = r.w * NV_DETW2_CIRC_GLIFO;
+  if (focado || ligado) (void)focoAcento(&cr, &cg, &cb);
+  else agendaui_cor_lembrete(0, 0, &cr, &cg, &cb);
+  g = r.w * 0.5f;
   { GfxRect ic = { r.x + (r.w - g) * 0.5f, r.y + (r.h - g) * 0.5f, g, g };
     agendaui_despertador(ic, ligado, cr, cg, cb, a, SDL_GetTicks(), lembreteEm); }
 }
