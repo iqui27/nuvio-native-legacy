@@ -15,8 +15,42 @@ static char ultimaUrl[400];
 static int pedidos;
 const char *desc_chave_tmdb(void) { return chave; }
 const char *desc_chave_tmdb_reserva(void) { return chave; }
+// ONE PIECE (tt0388629 / TMDB 37854): respostas reais de 23/09/2026,
+// reduzidas aos campos que a reserva le (tests/fixtures/onepiece). O TMDB
+// divide as temporadas de outro jeito e numera pelo absoluto; /episode/ de
+// qualquer temporada >= 2 do Cinemeta responde 404, como na TV.
+static int modoOP, pedidosOP, pedidosTemporadaOP;
+static char *lerArquivo(const char *caminho) {
+  FILE *f = fopen(caminho, "rb");
+  long n;
+  char *b;
+  if (!f) return NULL;
+  fseek(f, 0, SEEK_END); n = ftell(f); fseek(f, 0, SEEK_SET);
+  b = malloc((size_t)n + 1);
+  if (b && fread(b, 1, (size_t)n, f) != (size_t)n) { free(b); b = NULL; }
+  if (b) b[n] = 0;
+  fclose(f);
+  return b;
+}
+static char *respostaOP(const char *url) {
+  char cam[200];
+  int t;
+  pedidosOP++;
+  if (strstr(url, "/find/tt0388629")) return strdup("{\"movie_results\":[],\"tv_results\":[{\"id\":37854}]}");
+  if (strstr(url, "/find/")) return strdup("{\"movie_results\":[],\"tv_results\":[{\"id\":555}]}");
+  if (strstr(url, "/episode/")) return NULL;                     // 404
+  if (sscanf(url, "https://api.themoviedb.org/3/tv/37854/season/%d?", &t) == 1) {
+    pedidosTemporadaOP++;
+    snprintf(cam, sizeof cam, "tests/fixtures/onepiece/tmdb_tv_37854_s%d.json", t);
+    return lerArquivo(cam);
+  }
+  if (strstr(url, "/3/tv/37854?")) return lerArquivo("tests/fixtures/onepiece/tmdb_tv_37854.json");
+  return NULL;
+}
+
 char *rede_baixar(const char *url, int segundos) {
   (void)segundos;
+  if (modoOP) return respostaOP(url);
   pedidos++;
   snprintf(ultimaUrl, sizeof ultimaUrl, "%s", url);
   if (strstr(url, "/season/")) return respostaEp ? strdup(respostaEp) : NULL;
@@ -27,6 +61,18 @@ char *rede_baixar(const char *url, int segundos) {
       return strdup("{\"movie_results\":[{\"poster_path\":\"/two.jpg\",\"backdrop_path\":\"/two-bg.jpg\"}],\"tv_results\":[]}");
   }
   return resposta ? strdup(resposta) : NULL;
+}
+
+// Com codigo HTTP: corpo = 200, sem corpo = 404 (o duble nao simula queda de
+// rede aqui; `redeCaiuSt` faz isso).
+static int redeCaiuSt;
+char *rede_baixar_st(const char *url, int segundos, const char *const *cab, int *st) {
+  char *r;
+  (void)cab;
+  if (redeCaiuSt) { if (st) *st = 0; return NULL; }
+  r = rede_baixar(url, segundos);
+  if (st) *st = r ? 200 : 404;
+  return r;
 }
 
 // Trakt: chave publica e busca por id sao dubles, como o /find acima.
@@ -167,6 +213,9 @@ int main(void) {
   OK(arte_reserva_url("https://episodes.metahub.space/tt0000001/1/1/w780.jpg", s, sizeof s) == 0, "serie desconhecida");
   OK(pedidos == 1, "sem id nao pede o episodio");
   OK(arte_reserva_url("https://episodes.metahub.space/tt0903747/x/1/w780.jpg", s, sizeof s) == 0, "still mal formado");
+  // O still guardou o id do TMDB (tmdbid/tt0903747) na memoria do resolvedor;
+  // os testes abaixo querem o /find de um titulo nunca visto.
+  arte_fonte_cache_limpar();
   // Limite explícito: URLs reais são compactadas na arena; repetir a mesma
   // chave atualiza a entrada e não consome espaço. Depois de encher a tabela,
   // uma nova chave é recusada de forma observável.
@@ -260,11 +309,11 @@ int main(void) {
   OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt5555555", s, sizeof s) == -1 && pedidos == 0, "sem chave nao pede");
   chave = "CHAVE";
   OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt5555555", s, sizeof s) == 1 && pedidos == 1, "sem chave nao fica guardado");
-  // Limite: 384 celulas, sai a usada ha mais tempo. tt0111161 e tocado no
+  // Limite: 512 celulas, sai a usada ha mais tempo. tt0111161 e tocado no
   // meio e sobrevive; tt6666666 (o mais antigo intocado) sai.
   { int i;
     char url[96];
-    for (i = 0; i < 500; i++) {
+    for (i = 0; i < 700; i++) {
       snprintf(url, sizeof url, "https://nuvio.invalid/arte/tmdb/w1280/tt%07d", 1000000 + i);
       arte_fonte_resolver(url, s, sizeof s);
       if (i % 50 == 0) arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt0111161", s, sizeof s);
@@ -272,7 +321,7 @@ int main(void) {
     resposta = NULL; pedidos = 0;
     OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt0111161", s, sizeof s) == 1 && pedidos == 0, "LRU guarda o usado");
     OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt6666666", s, sizeof s) == -1 && pedidos == 1, "LRU tira o antigo");
-    OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt1000499", s, sizeof s) == 1 && pedidos == 1, "LRU guarda o recente");
+    OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdb/w1280/tt1000699", s, sizeof s) == 1 && pedidos == 1, "LRU guarda o recente");
   }
   // Varios fios ao mesmo tempo (os dois de rede do tex_cache): sem corrida.
   { pthread_t f[4];
@@ -368,6 +417,55 @@ int main(void) {
   OK(arte_mesma_imagem("https://nuvio.invalid/arte/tmdbalt/w1280/tt0111161", "https://image.tmdb.org/t/p/w1280/alt.jpg"),
      "mesma imagem: virtual resolvida para a mesma url");
   OK(!arte_mesma_imagem("https://nao/sei.jpg", "https://catalogo/bg.jpg"), "mesma imagem: sem assinatura = nao sabe");
+  // ONE PIECE: a numeracao do Cinemeta nao e a do TMDB (ver respostaOP).
+  {
+    char *cine = lerArquivo("tests/fixtures/onepiece/cinemeta_tt0388629.json");
+    OK(cine != NULL, "fixture do Cinemeta");
+    arte_fonte_cache_limpar();
+    modoOP = 1;
+    OK(arte_reserva_episodios("tt0388629", cine) == 1179, "1179 episodios de temporada > 0 registrados");
+    free(cine);
+    // S2E3 do Cinemeta = absoluto 11 = TMDB S1E11 (mesma data, 2000-01-26).
+    OK(arte_reserva_url("https://episodes.metahub.space/tt0388629/2/3/w780.jpg", s, sizeof s) == 1 &&
+       !strcmp(s, "https://image.tmdb.org/t/p/original/b08je5NHtJwFnU5zXAH242fEuPT.jpg"),
+       "One Piece S2E3 -> TMDB episodio 11");
+    // S22E1: absoluto 1085 no Cinemeta, mas a data (2023-12-03) e a do 1086.
+    OK(arte_reserva_url("https://episodes.metahub.space/tt0388629/22/1/w780.jpg", s, sizeof s) == 1 &&
+       !strcmp(s, "https://image.tmdb.org/t/p/original/iZVtHVlZTwvler8zxIlBuhoPRWN.jpg"),
+       "One Piece S22E1 -> 1086 pela data, nao 1085 pelo absoluto");
+    // S23E1: absoluto 1155 = ultimo da temporada 22 do TMDB; a data
+    // (2026-04-05) passa do fim dela e casa na 23 (episodio 1156).
+    OK(arte_reserva_url("https://episodes.metahub.space/tt0388629/23/1/w780.jpg", s, sizeof s) == 1 &&
+       !strcmp(s, "https://image.tmdb.org/t/p/original/39legAikT7IK7yCWHzYQWHdEFPo.jpg"),
+       "One Piece S23E1 -> temporada vizinha do TMDB");
+    // Rolar de novo: nada volta a rede.
+    pedidosOP = 0;
+    OK(arte_reserva_url("https://episodes.metahub.space/tt0388629/2/3/w780.jpg", s, sizeof s) == 1 &&
+       strstr(s, "/b08je5NHtJwFnU5zXAH242fEuPT.jpg") && pedidosOP == 0, "still casado fica na memoria");
+    // Outro episodio da mesma temporada do TMDB: so o 404 do /episode/, a
+    // temporada ja esta guardada (nem /find, nem /tv, nem /season de novo).
+    pedidosOP = 0; pedidosTemporadaOP = 0;
+    OK(arte_reserva_url("https://episodes.metahub.space/tt0388629/21/11/w780.jpg", s, sizeof s) == 1 &&
+       !strcmp(s, "https://image.tmdb.org/t/p/original/zuwp8uIf5qZ5nXRAjGPBVDVWa9N.jpg"),
+       "One Piece S21E11 -> 902 pela data");
+    OK(pedidosOP == 1 && pedidosTemporadaOP == 0, "temporada do TMDB guardada: um pedido so");
+    // Serie sem episodios registrados e sem o numero no TMDB: 0, e a segunda
+    // vez nao pede nada (antes: /find + 404 a cada volta do recuo).
+    pedidosOP = 0;
+    OK(arte_reserva_url("https://episodes.metahub.space/tt9999998/3/1/w780.jpg", s, sizeof s) == 0, "sem registro e 404: sem still");
+    OK(pedidosOP == 2, "find + episode");
+    pedidosOP = 0;
+    OK(arte_reserva_url("https://episodes.metahub.space/tt9999998/3/1/w780.jpg", s, sizeof s) == 0 && pedidosOP == 0,
+       "404 guardado: a rolagem nao repete o pedido");
+    // Rede fora no /episode/: nada e guardado, a proxima volta pergunta.
+    redeCaiuSt = 1; pedidosOP = 0;
+    OK(arte_reserva_url("https://episodes.metahub.space/tt9999998/3/2/w780.jpg", s, sizeof s) == 0, "rede fora: sem still");
+    redeCaiuSt = 0;
+    OK(arte_reserva_url("https://episodes.metahub.space/tt9999998/3/2/w780.jpg", s, sizeof s) == 0 && pedidosOP == 1,
+       "rede fora nao vira negativa");
+    modoOP = 0;
+    arte_fonte_cache_limpar();
+  }
   arte_fonte_cache_relogio(NULL);
   printf("%s\n", falhas ? "artereserva: FALHOU" : "artereserva: ok");
   return falhas ? 1 : 0;
