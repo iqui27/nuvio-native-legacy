@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "ponteiro.h"
 
 // Mantem o header publico de Trakt estavel: estas leituras sao o contrato
 // interno entre a modal e as escritas assincronas do proprio port.
@@ -533,6 +534,11 @@ void ctx_atualizar(float dt, Uint32 agora) {
   }
 }
 
+// PONTEIRO (#99): passar por cima de uma opcao a foca (a mesma variavel de
+// cima/baixo); o clique e o OK. Clicar fora do cartao fecha, como o Voltar.
+static void ponteiroCtxOpcao(int i, int b) { (void)b; if (i >= 0 && i < nOps) foco = i; }
+static void ponteiroCtxFora(int a, int b) { (void)a; (void)b; aberto = 0; }
+
 void ctx_desenhar(Uint32 agora) {
   const CatItem *ci;
   const char *estados[2];
@@ -586,6 +592,10 @@ void ctx_desenhar(Uint32 agora) {
         (float)nOps * (CTX_LINHA + CTX_GAP) - CTX_GAP + CTX_RODAPE;
   x = (NV_TELA_W - CTX_W) * 0.5f;
   y = (NV_TELA_H - alt) * 0.5f;
+  if (aberto && a > 0.5f && ponteiro_ativo()) {
+    ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ponteiroCtxFora, 0, 0);
+    ponteiro_alvo(x, y, CTX_W, alt, NULL, NULL, 0, 0);
+  }
   // Sobe do fundo enquanto aparece, como as outras folhas do app.
   y += (1.0f - a) * 40.0f;
 
@@ -631,6 +641,8 @@ void ctx_desenhar(Uint32 agora) {
     float by = y + CTX_PAD + CTX_CAB + (float)i * (CTX_LINHA + CTX_GAP);
     GfxRect r = { x + CTX_PAD, by, CTX_W - CTX_PAD * 2.0f, CTX_LINHA };
     float f = focoAnim[i];
+    if (aberto && a > 0.5f)
+      ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroCtxOpcao, NULL, i, 0);
     // O menu usava uma pilula propria: 86px, cinza fixo, TXT_PLR_CORPO e uma
     // seta desenhada a mao. Isso fazia as acoes parecerem de outra tela. O
     // componente comum concentra altura, raio, luz, acento e tinta legivel;

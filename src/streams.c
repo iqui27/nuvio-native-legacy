@@ -17,6 +17,7 @@
 #include "debrid.h"
 #include "video.h"
 #include "botoes.h"
+#include "ponteiro.h"
 
 #define FOLHA_W       720.0f
 #define FOLHA_LINHA   228.0f
@@ -827,6 +828,18 @@ int stream_folha_escolheu(int *out) {
   if(out) *out=escolha;
   escolha=-1;return 1;
 }
+// PONTEIRO (#99): as mesmas variaveis das setas (grupo, foco, filtro). O
+// provedor so troca no CLIQUE — trocar ao passar por cima mudaria a lista
+// debaixo da mao. Clicar fora do painel fecha, como o Voltar.
+static void ponteiroFolhaBotao(int i, int b) { (void)b; grupo = -1; foco = i; }
+static void ponteiroFolhaLinha(int row, int b) { (void)b; grupo = 1; foco = row; }
+static void ponteiroFolhaFiltro(int i, int b) {
+  (void)b;
+  if (i < 0 || i >= nProvedores) return;
+  filtro = i; foco = 0; rolagem = 0; grupo = 1;
+}
+static void ponteiroFolhaFora(int a, int b) { (void)a; (void)b; aberta = 0; }
+
 void stream_folha_desenhar(Uint32 agora) {
   (void)agora;
   if(anim<.005f) return;
@@ -837,6 +850,12 @@ void stream_folha_desenhar(Uint32 agora) {
   // veu e da superficie, nao de uma luz decorativa presa ao canto.
   gfx_cor((GfxRect){x,24,FOLHA_W,NV_TELA_H-48},28.0f/FOLHA_W,.055f,.058f,.068f,.965f*anim);
   txt_desenhar_alpha(txt_linha(TXT_PAINEL_TITULO,"Fontes",240,241,243,255),x+40,44,anim);
+  int ptr = aberta && anim > .5f && ponteiro_ativo();
+  if (ptr) {
+    ponteiro_alvo(0, 0, x, NV_TELA_H, NULL, ponteiroFolhaFora, 0, 0);
+    // O painel em si absorve o clique no vazio (nao fecha, nao da OK).
+    ponteiro_alvo(x, 0, FOLHA_W, NV_TELA_H, NULL, NULL, 0, 0);
+  }
   int nbt=nBotoes();
   for(int i=0;i<nbt;i++) {
     // Ancorado a DIREITA: com dois ou tres botoes a fileira termina sempre no
@@ -844,6 +863,7 @@ void stream_folha_desenhar(Uint32 agora) {
     float bx=x+FOLHA_W-36-(nbt-i)*128+8;
     int sel=grupo==-1 && foco==i;
     // Acoes seguem o accent solido e a tinta calculada pelo tema.
+    if (ptr) ponteiro_alvo(bx, 44, 120, 50, ponteiroFolhaBotao, NULL, i, 0);
     if(sel) focoFonte((GfxRect){bx,44,120,50},.3f,anim);
     else    gfx_cor((GfxRect){bx,44,120,50},.3f,.075f,.079f,.092f,anim);
     int c=sel?ajustes_tinta_foco():224;
@@ -868,6 +888,7 @@ void stream_folha_desenhar(Uint32 agora) {
   for(int i=ini;i<nProvedores && i<ini+3;i++) {
     float w=i?232:108;int sel=i==filtro;
     int c=sel&&grupo==0?ajustes_tinta_foco():sel?245:190;
+    if (ptr) ponteiro_alvo(tx, 182, w, 50, NULL, ponteiroFolhaFiltro, i, 0);
     if(sel && grupo==0) focoFonte((GfxRect){tx,182,w,50},.5f,anim);
     else gfx_cor((GfxRect){tx,182,w,50},.5f,
                  sel?.092f:.075f,sel?.096f:.079f,sel?.110f:.092f,anim);
@@ -900,6 +921,12 @@ void stream_folha_desenhar(Uint32 agora) {
     const Stream *s=&lista[i];
     // Cartao cheio e silencioso; o foco solido usa tinta calculada no accent.
     GfxRect r={x+40,y,FOLHA_W-80,FOLHA_LINHA-14};
+    if (ptr) {
+      // So o que o recorte da lista deixa ver.
+      float t = y < FOLHA_TOPO ? FOLHA_TOPO : y;
+      float b = y + r.h > NV_TELA_H - 32 ? NV_TELA_H - 32 : y + r.h;
+      if (b > t) ponteiro_alvo(r.x, t, r.w, b - t, ponteiroFolhaLinha, NULL, row, 0);
+    }
     if(sel) focoFonte(r,.10f,anim);
     else gfx_cor(r,.10f,.062f,.066f,.079f,.92f*anim);
     // O proprio material colorido identifica o foco; nao sobrepor outro ponto.

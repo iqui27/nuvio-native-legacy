@@ -54,6 +54,7 @@
 #include "trakt.h"
 #include "player.h"
 #include "trailer.h"
+#include "ponteiro.h"
 #ifndef NV_SEM_WEBOS
 #include <dlfcn.h>
 
@@ -193,7 +194,15 @@ static long tamanhoDe(const char *caminho) {
 static Uint32 soltarEm = 0;
 static SDL_Keycode soltarTecla = 0;
 
+// BUTTONUP adiado de um "clicar:x,y:hold".
+static Uint32 soltarMouseEm = 0;
+static SDL_Event soltarMouse;
+
 static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
+  if (soltarMouseEm && SDL_GetTicks() >= soltarMouseEm) {
+    soltarMouseEm = 0;
+    ponteiro_evento(&soltarMouse, entregar);
+  }
   if (soltarEm && SDL_GetTicks() >= soltarEm) {
     SDL_Event up; SDL_zero(up);
     up.type = SDL_KEYUP; up.key.keysym.sym = soltarTecla;
@@ -217,6 +226,28 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
     // "abrir:tt0121955" abre o titulo direto (app.c). Porta de teste, como
     // "guia".
     if (dp && !strncmp(linha, "abrir:", 6)) { app_abrir_titulo(dp + 1); continue; }
+    // "mover:960,540" e "clicar:960,540" (e "clicar:960,540:hold") fazem o
+    // papel do Magic Remote (issue #99), em coordenadas da janela — que na TV
+    // sao as do layout. Passam por ponteiro_evento como um evento de mouse de
+    // verdade, entao o hit-test e o mesmo do controle.
+    if (dp && (!strncmp(linha, "mover:", 6) || !strncmp(linha, "clicar:", 7))) {
+      int mx = 0, my = 0, clicar = linha[0] == 'c';
+      if (sscanf(dp + 1, "%d,%d", &mx, &my) == 2) {
+        SDL_Event m; SDL_zero(m);
+        m.type = SDL_MOUSEMOTION; m.motion.x = mx; m.motion.y = my;
+        ponteiro_evento(&m, entregar);
+        if (clicar) {
+          SDL_zero(m);
+          m.type = SDL_MOUSEBUTTONDOWN; m.button.button = SDL_BUTTON_LEFT;
+          m.button.x = mx; m.button.y = my;
+          ponteiro_evento(&m, entregar);
+          m.type = SDL_MOUSEBUTTONUP;
+          if (strstr(dp + 1, ":hold")) { soltarMouseEm = SDL_GetTicks() + NV_HOLD_MS + 120; soltarMouse = m; }
+          else ponteiro_evento(&m, entregar);
+        }
+      }
+      continue;
+    }
 
     SDL_Keycode k = codigoDaTecla(linha);
     if (!k) continue;
@@ -510,6 +541,8 @@ int main(int argc, char **argv) {
   // App de TV nao tem ponteiro: o cursor por cima da interface polui a leitura
   // e some sozinho no aparelho, mas nao no Mac.
   SDL_ShowCursor(SDL_DISABLE);
+  // O cursor do Magic Remote e desenhado pelo app (ponteiro.c).
+  ponteiro_iniciar();
 #ifndef NV_SEM_WEBOS
   // Declara a superficie NAO-opaca. Por padrao o compositor trata a janela como
   // opaca e descarta o canal alpha inteiro — o furo do gfx_furo existiria no
@@ -760,6 +793,10 @@ int main(int argc, char **argv) {
         if (ev) avisos_sinal(ev, (float)rssMB());
         continue;
       }
+      // PONTEIRO (Magic Remote, issue #99): mouse, rodinha e os avisos 484/485
+      // de cursor do webOS ficam la; o que ele traduz em tecla chega a
+      // app_evento como se viesse do D-pad.
+      if (ponteiro_evento(&e, app_evento)) continue;
       // O BACK do webOS chega com scancode proprio (482), nao como AC_BACK, e
       // com KEYDOWN e KEYUP quase juntos — so o KEYDOWN conta. Isto ja tinha
       // sido resolvido uma vez e voltou a quebrar quando limpei os remendos
@@ -894,7 +931,9 @@ int main(int argc, char **argv) {
     fClr = NV_DT(t0);
     t0 = NV_T0();
     txt_novo_quadro();
+    ponteiro_quadro(agora);
     app_desenhar(agora);
+    ponteiro_desenhar();
     fDes = NV_DT(t0);
     fGfxMs = gfx_ms_rect; fTexMs = tex_ms_busca;
     fNRect = gfx_n_rect; fNProg = gfx_n_prog; fNBind = gfx_n_bind; fNBusca = tex_n_busca;
