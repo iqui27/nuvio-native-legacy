@@ -389,6 +389,28 @@ int main(int argc, char **argv) {
      "Range truncado nao grava sidecar completo");
   free(corpo);
 
+  printf("\n[7] playhead parado: a faixa INTEIRA chega em segundo plano\n");
+  mkvass_parar(); esperarFio(); legenda_desligar();
+  dados_apagar(sidecar); dados_apagar(sidecarFontes);
+  zerarServidor();
+  mkvass_iniciar(url, 3);
+  { long t0 = agoraMs(); LegendaCue v[LEGENDA_SIMULTANEAS]; long tPrimeira = -1;
+    // A primeira fala (1,0 s) precisa estar no overlay logo, sem esperar a
+    // passada; depois o resto, inclusive o que esta alem da janela de 90 s.
+    while (agoraMs() - t0 < 60000 && mkvass_estado() != MKVASS_COMPLETO &&
+           mkvass_estado() < MKVASS_NOGO) {
+      mkvass_passo(0.0);
+      if (tPrimeira < 0 && legenda_cues(1.2, 0, v, LEGENDA_SIMULTANEAS) > 0) tPrimeira = agoraMs() - t0;
+      usleep(10 * 1000);
+    }
+    mkvass_estatisticas(&ped, NULL, &colhidos, &total);
+    printf("    primeira fala no overlay em %ld ms; %d/%d blocos, %ld Ranges\n", tPrimeira, colhidos, total, ped);
+    ok(tPrimeira >= 0 && tPrimeira < 1500, "primeira fala entregue em < 1,5 s (sem esperar a passada)");
+    ok(mkvass_estado() == MKVASS_COMPLETO, "playhead parado em 0: faixa completa (antes: so a janela)");
+    ok(colhidos == nEsp, "todos os blocos, inclusive os alem da janela");
+    ok(ped <= nEsp + 8, "palpite do Cluster: ~1 Range por bloco (antes: 2)");
+    ok(conferirCues(esp, nEsp) == nEsp, "tempos pelo CueTime batem com o .ass (±20 ms)"); }
+
   mkvass_parar(); esperarFio();
   free(esp);
   printf("\n%s\n", falhas ? "FALHOU" : "mkvass: ok");

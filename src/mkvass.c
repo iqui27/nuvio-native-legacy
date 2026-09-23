@@ -54,6 +54,13 @@
 // legenda — ffmpeg e mkvmerge escrevem BlockGroup — mas um valor e melhor que
 // um evento de zero segundos que nunca aparece.
 #define MKVASS_DUR_PADRAO  3.0
+// Fala que comeca ate isto a frente do playhead e URGENTE: o lote vai ao
+// overlay assim que chega, sem esperar a passada (que custa 1-2 s pelo teto
+// de Ranges). Com a entrega sem pisca (legenda_atualizar_corpo) isto e barato.
+#define MKVASS_URGENTE_SEG 20.0
+// Fora do urgente, uma entrega a cada isto no maximo: cada entrega reparseia
+// o corpo inteiro (legenda.c e libass).
+#define MKVASS_ENTREGA_MS  2000L
 
 // --- EBML --------------------------------------------------------------------
 //
@@ -217,6 +224,11 @@ typedef struct {
   char     sidecarFontes[80];
   int      falhas;         // Ranges falhados seguidos
   int      sujo;           // corpo mudou desde a ultima entrega ao overlay
+  int      entregas;       // 0 = a proxima e a primeira (fontes + carga cheia)
+  long     t0, ultEntrega; // ms monotonicos: pedido, ultima entrega
+  int      eventosEntregues, primeiraFala;
+  double   posRef;         // playhead quando o grupo foi pedido (medida)
+  int      atrasados, perdidos, palpites, palpitesFalhos;
   FonteMkv *fontes;
   int      nFontes;
   int      fontesCompletas;
@@ -563,7 +575,7 @@ static int gravarFontesSidecar(Fio *f) {
 // ASS, e antes de qualquer secao o parser de legenda.c ignora a linha). No
 // parcial a marca leva um bit por CuePoint, na ordem do indice: e o que deixa
 // a proxima abertura continuar de onde parou em vez de recomecar.
-static void gravarSidecar(Fio *f, int completo) {
+static void gravarSidecar(Fio *f, int completo, int saindo) {
   char *tudo; size_t n, i; int gravou = 0;
   if (!f->corpo || !f->corpoTam || !f->sidecar[0]) return;
   if (completo && !gravarFontesSidecar(f)) {
@@ -584,8 +596,11 @@ static void gravarSidecar(Fio *f, int completo) {
   // Segura a troca de geracao durante a escrita. O parcial do pedido que esta
   // sendo parado e valido; um fio velho depois de uma troca nao pode tocar o
   // mesmo sidecar e contaminar a nova faixa.
+  // SAINDO (parar ou troca de faixa) pode gravar com a geracao ja nova: o fio
+  // seguinte so le o sidecar depois que este morre (espera S.vivos), entao nao
+  // ha contaminacao — e o parcial deixava de ser salvo justo na troca.
   pthread_mutex_lock(&S.trava);
-  if (f->g == S.geracao) {
+  if (f->g == S.geracao || saindo) {
     dados_gravar_leve(f->sidecar, tudo);
     gravou = 1;
   }
@@ -935,8 +950,18 @@ static long lerBloco(Fio *f, const unsigned char *p, long n, const ClCache *cl,
       int nf = 0, fi;
       if (!tamanhosLace(frames, framesN, flags, &tams, &nf, &cab)) return total;
       for (fi = 0; fi < nf; fi++) {
-        if (tams[fi] > 0 && anexarEvento(f, frames + cab + off, tams[fi], ini, fim))
+        if (tams[fi] > 0 && anexarEvento(f, frames + cab + off, tams[fi], ini, fim)) {
           f->sujo = 1;
+          // A fala chegou quando ja devia estar na tela (ou ja tinha saido).
+          // Antes do seek/escolha e esperado; no meio do filme e o sintoma.
+          if (f->posRef > 0 && fim <= f->posRef) f->perdidos++;
+          else if (f->posRef > 0 && ini < f->posRef) {
+            f->atrasados++;
+            if (f->atrasados <= 20)
+              printf("[mkvass] fala %.3f-%.3f colhida TARDE: playhead %.3f (%+.0f ms)\n",
+                     ini, fim, f->posRef, (f->posRef - ini) * 1000.0);
+          }
+        }
         off += tams[fi];
       }
       free(tams);
@@ -945,12 +970,93 @@ static long lerBloco(Fio *f, const unsigned char *p, long n, const ClCache *cl,
   }
 }
 
+// Interpreta os pontos [i..j] a partir de um buffer que comeca no byte
+// `bufIni` do arquivo. Mesmo contrato de colherGrupo.
+static int colherDoBuffer(Fio *f, int i, int j, unsigned char *p, long n, long bufIni,
+                          const ClCache *cl) {
+  int k;
+  for (k = i; k <= j; k++) {
+    long o = f->pontos[k].cluster + cl->hdr + f->pontos[k].rel - bufIni;
+    long r = (o >= 0 && o < n) ? lerBloco(f, p + o, n - o, cl, f->pontos[k].tempo) : 0;
+    if (r < 0) {
+      // Uma fala maior que a janela: completa com um Range so para ela.
+      long falta = -r, m = 0;
+      unsigned char *q = malloc((size_t)(n - o + falta));
+      unsigned char *resto = q ? range(f, bufIni + n, falta, &m) : NULL;
+      if (q && resto && m >= falta) {
+        memcpy(q, p + o, (size_t)(n - o)); memcpy(q + (n - o), resto, (size_t)falta);
+        r = lerBloco(f, q, n - o + falta, cl, f->pontos[k].tempo);
+      }
+      if (q && (!resto || m < falta)) { free(q); free(resto); return -2; }
+      free(q); free(resto);
+    }
+    f->pontos[k].colhido = r > 0 ? 1 : 2;
+    if (r > 0) f->nColhidos++;
+  }
+  return 1;
+}
+
+// 1 quando p[0..n) comeca com um bloco (BlockGroup com Block primeiro, ou
+// SimpleBlock) desta faixa. So o cabecalho: o bloco pode passar da janela.
+static int blocoDaFaixa(const Fio *f, const unsigned char *p, long n) {
+  int ui = 0, ut = 0, vt = 0; unsigned long id; long tam, blN;
+  const unsigned char *bl;
+  id = lerId(p, n, &ui);
+  if (id != ID_BLOCKGROUP && id != ID_SIMPLEBLOCK) return 0;
+  tam = lerTam(p + ui, n - ui, &ut);
+  if (tam < 4) return 0;
+  bl = p + ui + ut; blN = n - ui - ut; if (blN > tam) blN = tam;
+  if (id == ID_BLOCKGROUP) {
+    int bi = 0, bt = 0; long bn;
+    if (lerId(bl, blN, &bi) != ID_BLOCK) return 0;
+    bn = lerTam(bl + bi, blN - bi, &bt);
+    if (bn < 4 || bi + bt + bn > tam) return 0;
+    bl += bi + bt; blN -= bi + bt;
+  }
+  return lerVint(bl, blN, &vt) == f->faixa && vt > 0;
+}
+
+// PALPITE do cabecalho do Cluster: id (4 bytes) + tamanho (1 a 8). O
+// CueRelativePosition conta a partir dos DADOS do Cluster, entao o bloco esta
+// em cluster + 5..12 + rel. Um Range cobrindo os oito lugares possiveis acha o
+// bloco sem o Range de 24 bytes do cabecalho — METADE dos pedidos, porque na
+// legenda de anime quase toda fala cai num Cluster diferente. O Start vem do
+// CueTime (e o timestamp absoluto do bloco, pela especificacao). So vale com
+// UM lugar que bate; ambiguo ou nenhum, volta ao caminho do cabecalho.
+// Devolve: 1 colheu, 0 rede, -2 resposta curta, 2 palpite nao serviu.
+static int colherPorPalpite(Fio *f, int i, int j) {
+  long cl0 = f->pontos[i].cluster;
+  long base = cl0 + 5 + f->pontos[i].rel;
+  long fim = cl0 + 12 + f->pontos[j].rel + MKVASS_BLOCO;
+  long n = 0; unsigned char *p; int h, achou = 0, bate = 0, r;
+  ClCache *c;
+  p = range(f, base, fim - base, &n);
+  if (!p) return 0;
+  if (n < fim - base) { free(p); return -2; }
+  for (h = 5; h <= 12; h++)
+    if (blocoDaFaixa(f, p + (h - 5), n - (h - 5))) { achou = h; bate++; }
+  if (bate != 1) { free(p); f->palpitesFalhos++; return 2; }
+  c = &f->cl[f->clProx]; f->clProx = (f->clProx + 1) % CL_CACHE;
+  c->pos = cl0; c->hdr = achou; c->temTs = 0; c->ts = 0;
+  f->palpites++;
+  r = colherDoBuffer(f, i, j, p, n, base, c);
+  free(p);
+  return r;
+}
+
 // Colhe o grupo de pontos [i..j] (mesmo Cluster, proximos) num Range so.
 // Marca cada um como colhido (1) ou desistido (2). Devolve 1 se a rede
 // respondeu.
 static int colherGrupo(Fio *f, int i, int j) {
-  const ClCache *cl = cluster(f, f->pontos[i].cluster);
-  long ini, n = 0, fim; unsigned char *p; int k;
+  const ClCache *cl = NULL;
+  long ini, n = 0, fim; unsigned char *p; int k, r;
+  for (k = 0; k < CL_CACHE; k++)
+    if (f->cl[k].hdr && f->cl[k].pos == f->pontos[i].cluster) { cl = &f->cl[k]; break; }
+  if (!cl) {
+    r = colherPorPalpite(f, i, j);
+    if (r != 2) return r;
+    cl = cluster(f, f->pontos[i].cluster);
+  }
   if (!cl) {
     // Range falhou (NULL) ou o cue nao aponta para um Cluster: no segundo
     // caso o indice mente e insistir nao ajuda.
@@ -967,26 +1073,9 @@ static int colherGrupo(Fio *f, int i, int j) {
   // e poderiam fechar um sidecar sem o texto. O worker converte o caso em
   // NOGO_REDE apos a politica de falhas, preservando o fallback nativo.
   if (n < fim - ini) { free(p); return -2; }
-  for (k = i; k <= j; k++) {
-    long o = f->pontos[k].rel - f->pontos[i].rel;
-    long r = (o < n) ? lerBloco(f, p + o, n - o, cl, f->pontos[k].tempo) : 0;
-    if (r < 0) {
-      // Uma fala maior que a janela: completa com um Range so para ela.
-      long falta = -r, m = 0;
-      unsigned char *q = malloc((size_t)(n - o + falta));
-      unsigned char *resto = q ? range(f, ini + n, falta, &m) : NULL;
-      if (q && resto && m >= falta) {
-        memcpy(q, p + o, (size_t)(n - o)); memcpy(q + (n - o), resto, (size_t)falta);
-        r = lerBloco(f, q, n - o + falta, cl, f->pontos[k].tempo);
-      }
-      if (q && (!resto || m < falta)) { free(q); free(resto); free(p); return -2; }
-      free(q); free(resto);
-    }
-    f->pontos[k].colhido = r > 0 ? 1 : 2;
-    if (r > 0) f->nColhidos++;
-  }
+  r = colherDoBuffer(f, i, j, p, n, ini, cl);
   free(p);
-  return 1;
+  return r;
 }
 
 // Entrega o corpo ao overlay. legenda_definir_corpo REFAZ o vetor de cues do
@@ -1002,25 +1091,49 @@ static int colherGrupo(Fio *f, int i, int j) {
 // no meio: o fio velho publicava cues antigos depois que o novo ja era atual.
 // legenda_definir_corpo so toma a trava interna de legenda e nao chama mkvass,
 // portanto esta ordem nao forma ciclo com os chamadores.
+// SO A PRIMEIRA entrega passa fontes e carrega do zero. As seguintes sao o
+// mesmo documento com mais eventos: legenda_atualizar_corpo troca a faixa do
+// libass sem apagar o quadro em tela. Antes, TODA entrega (uma por passada, a
+// cada 1-2 s enquanto colhia) apagava a legenda, desligava o libass e
+// reenviava as fontes — o pisca "por lote".
 static int entregarCorpoSeAtual(Fio *f, const char *corpo) {
   int ok = 0;
   pthread_mutex_lock(&S.trava);
   if (f->g == S.geracao && !S.parar) {
     int i;
-    assrender_limpar_fontes();
-    for (i = 0; i < f->nFontes; i++)
-      assrender_adicionar_fonte(f->fontes[i].nome, f->fontes[i].dados,
-                                (size_t)f->fontes[i].tam);
-    legenda_definir_corpo(corpo);
+    if (!f->entregas) {
+      assrender_limpar_fontes();
+      for (i = 0; i < f->nFontes; i++)
+        assrender_adicionar_fonte(f->fontes[i].nome, f->fontes[i].dados,
+                                  (size_t)f->fontes[i].tam);
+      legenda_definir_corpo(corpo);
+    } else legenda_atualizar_corpo(corpo);
+    f->entregas++;
     ok = 1;
   }
   pthread_mutex_unlock(&S.trava);
   return ok;
 }
 
+static int contarEventos(const Fio *f) {
+  int n = 0; const char *p = f->corpo;
+  while (p && (p = strstr(p, "\nDialogue: ")) != NULL) { n++; p += 11; }
+  return n;
+}
+
 static void entregar(Fio *f) {
+  int n;
   if (!f->sujo || !f->corpo) return;
-  if (entregarCorpoSeAtual(f, f->corpo)) f->sujo = 0;
+  if (!entregarCorpoSeAtual(f, f->corpo)) return;
+  f->sujo = 0; f->ultEntrega = agoraMs();
+  n = contarEventos(f);
+  if (n > 0 && !f->primeiraFala) {
+    f->primeiraFala = 1;
+    printf("[mkvass] primeira entrega com fala: %d eventos, %ld ms desde a escolha (playhead %.1f s, %ld Ranges)\n",
+           n, f->ultEntrega - f->t0, f->posRef, S.pedidos);
+    fflush(stdout);
+  }
+  f->eventosEntregues = n;
 }
 
 // Restaura um sidecar parcial: corpo e bits. Devolve 1 se serviu.
@@ -1045,6 +1158,22 @@ static int contarDesistidos(const Fio *f) {
   int i, n = 0;
   for (i = 0; i < f->nPontos; i++) if (f->pontos[i].colhido == 2) n++;
   return n;
+}
+
+// Proximo ponto pendente pela prioridade do laco (ver trabalhar). -1 quando
+// nao ha nenhum. *noJanela diz se ele esta em [ini, fim].
+static int proximoPendente(const Fio *f, double ini, double fim, int *noJanela) {
+  int i, frente = -1, atras = -1;
+  *noJanela = 0;
+  for (i = 0; i < f->nPontos; i++) {
+    double t;
+    if (f->pontos[i].colhido) continue;
+    t = segundosDe(f, f->pontos[i].tempo);
+    if (t >= ini && t <= fim) { *noJanela = 1; return i; }
+    if (t > fim) { if (frente < 0) frente = i; }
+    else atras = i;               // o ultimo antes de ini: o mais perto
+  }
+  return frente >= 0 ? frente : atras;
 }
 
 // --- o fio -----------------------------------------------------------------------
@@ -1105,28 +1234,40 @@ static void *trabalhar(void *arg) {
   entregar(f);
   if (!definirEstadoSeAtual(f, MKVASS_COLHENDO)) goto fim;
 
-  // O laco: a cada passada colhe o que esta na janela [pos - atras, pos +
-  // janela] em ordem de tempo, ate MKVASS_RANGES_POR_SEG grupos, entrega ao
-  // overlay, e dorme ate a posicao andar (ou 250 ms).
+  // O laco. Cada escolha pega o proximo ponto pendente nesta ordem: a janela
+  // [pos - atras, pos + janela] em ordem de tempo; depois o resto A FRENTE; por
+  // ultimo o que ficou atras, do mais perto para o mais longe. Assim a faixa
+  // inteira chega em segundo plano (e o sidecar fecha completo), mas a fala
+  // da proxima cena e sempre a primeira da fila. Antes so a janela era
+  // colhida, e o fio dormia quando ela acabava.
+  { int janelaCheia = 0; double janelaDe = -1;
   while (minhaVez(f)) {
-    double pos, ini, fim; int i, feitos = 0, pendentes = 0;
+    double pos, ini, fim; int i, feitos = 0, colheuAlgo = 0;
     pthread_mutex_lock(&S.trava);
     if (f->g != S.geracao || S.parar) { pthread_mutex_unlock(&S.trava); goto sair; }
     pos = S.pos; S.nColhidos = f->nColhidos;
     pthread_mutex_unlock(&S.trava);
-    ini = pos - MKVASS_ATRAS_SEG; fim = pos + MKVASS_JANELA_SEG;
-    for (i = 0; i < f->nPontos && feitos < MKVASS_RANGES_POR_SEG && minhaVez(f); i++) {
-      double t = segundosDe(f, f->pontos[i].tempo); int j;
-      if (f->pontos[i].colhido) continue;
-      if (t > fim) break;
-      if (t < ini) continue;
-      pendentes++;
+    while (feitos < MKVASS_RANGES_POR_SEG && minhaVez(f)) {
+      double t; int j, noJanela;
+      ini = pos - MKVASS_ATRAS_SEG; fim = pos + MKVASS_JANELA_SEG;
+      i = proximoPendente(f, ini, fim, &noJanela);
+      if (i < 0) break;
+      if (!noJanela && (!janelaCheia || janelaDe != pos)) {
+        janelaCheia = 1; janelaDe = pos;
+        printf("[mkvass] janela %.0f-%.0f s colhida: %ld ms desde a escolha, %d/%d blocos, %ld Ranges, "
+               "palpites %d (falhos %d), tarde %d, antes do playhead %d\n",
+               ini, fim, agoraMs() - f->t0, f->nColhidos, f->nPontos, S.pedidos,
+               f->palpites, f->palpitesFalhos, f->atrasados, f->perdidos);
+        fflush(stdout);
+      }
+      t = segundosDe(f, f->pontos[i].tempo);
       // Junta os vizinhos do mesmo Cluster que cabem em MKVASS_JUNTAR.
       j = i;
       while (j + 1 < f->nPontos && !f->pontos[j + 1].colhido &&
              f->pontos[j + 1].cluster == f->pontos[i].cluster &&
              f->pontos[j + 1].rel >= f->pontos[i].rel &&
              f->pontos[j + 1].rel - f->pontos[i].rel < MKVASS_JUNTAR) j++;
+      f->posRef = pos;
       { int colheu = colherGrupo(f, i, j);
       if (colheu == -2) {
         if (definirEstadoSeAtual(f, MKVASS_NOGO_REDE)) {
@@ -1144,10 +1285,16 @@ static void *trabalhar(void *arg) {
           goto sair;
         }
         usleep(500 * 1000);
-      }
+      } else colheuAlgo = 1;
       }
       feitos++;
-      i = j;
+      // Fala da cena de agora: ao overlay ja, sem esperar a passada.
+      if (t < pos + MKVASS_URGENTE_SEG || agoraMs() - f->ultEntrega >= MKVASS_ENTREGA_MS)
+        entregar(f);
+      // O playhead pode ter saltado (seek) durante o Range: reprioriza.
+      pthread_mutex_lock(&S.trava);
+      pos = S.pos;
+      pthread_mutex_unlock(&S.trava);
     }
     entregar(f);
     pthread_mutex_lock(&S.trava);
@@ -1157,14 +1304,17 @@ static void *trabalhar(void *arg) {
     if (f->nColhidos + contarDesistidos(f) >= f->nPontos) {
       // Tudo o que o indice tinha. Os desistidos (2) contam como feitos: o
       // indice apontava para algo que nao era um bloco desta faixa.
-      gravarSidecar(f, 1);
+      gravarSidecar(f, 1, 0);
       if (!definirEstadoSeAtual(f, MKVASS_COMPLETO)) goto fim;
-      printf("[mkvass] completo: %d/%d blocos, %ld Ranges\n", f->nColhidos, f->nPontos, S.pedidos);
+      printf("[mkvass] completo: %d/%d blocos, %ld Ranges, %ld ms desde a escolha "
+             "(palpites %d, falhos %d; tarde %d, antes do playhead %d)\n",
+             f->nColhidos, f->nPontos, S.pedidos, agoraMs() - f->t0,
+             f->palpites, f->palpitesFalhos, f->atrasados, f->perdidos);
       fflush(stdout);
       goto fim;
     }
-    if (!pendentes || feitos < MKVASS_RANGES_POR_SEG) {
-      // Nada na janela (ou a janela esvaziou): espera a posicao andar.
+    if (!feitos || !colheuAlgo) {
+      // Nada pendente que a rede devolvesse: espera a posicao andar.
       pthread_mutex_lock(&S.trava);
       if (f->g == S.geracao && !S.parar) {
         // CLOCK_MONOTONIC no cond exigiria pthread_condattr_setclock, que o
@@ -1177,14 +1327,14 @@ static void *trabalhar(void *arg) {
       }
       pthread_mutex_unlock(&S.trava);
     }
-  }
+  } }
 sair:
   // Saiu antes do fim (parar, troca de faixa, rede): guarda o que ha para a
   // proxima abertura nao repetir os Ranges ja pagos.
   pthread_mutex_lock(&S.trava);
   if (f->g == S.geracao) S.nColhidos = f->nColhidos;
   pthread_mutex_unlock(&S.trava);
-  if (f->nColhidos > 0 && mkvass_estado() != MKVASS_COMPLETO) gravarSidecar(f, 0);
+  if (f->nColhidos > 0 && mkvass_estado() != MKVASS_COMPLETO) gravarSidecar(f, 0, 1);
 
 fim:
   pthread_mutex_lock(&S.trava);
@@ -1204,6 +1354,7 @@ static void iniciarFaixa(const char *url, int numeroFaixa) {
   if (!f) return;
   snprintf(f->url, sizeof f->url, "%s", url);
   f->faixa = numeroFaixa;
+  f->t0 = agoraMs();
   pthread_mutex_lock(&S.trava);
   S.geracao++;
   f->g = S.geracao;
