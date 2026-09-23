@@ -325,7 +325,9 @@ int main(int argc, char **argv) {
   ok(mkvass_estado() == MKVASS_NOGO_SEM_RANGE, "servidor sem Range: NOGO_SEM_RANGE");
   mkvass_estatisticas(&ped, &bytes, NULL, NULL);
   printf("    sem Range: %ld Ranges, %ld bytes\n", ped, bytes);
-  ok(bytes < 64L * 1024 + 16L * 1024 + 64, "sem Range: o teto do rede cortou o corpo");
+  // Cabecalho (16 KB) + a primeira leitura do Cues, que desde #92 e de 256 KB
+  // de uma vez (cada ida custa ~1,5 s na C9) + a folga antiga de 64 KB.
+  ok(bytes < 64L * 1024 + 16L * 1024 + 256L * 1024 + 64, "sem Range: o teto do rede cortou o corpo");
 
   mkvass_parar(); esperarFio();
   mkvass_iniciar(urlAss, 3);              // o .ass servido: nao e MKV
@@ -410,6 +412,30 @@ int main(int argc, char **argv) {
     ok(colhidos == nEsp, "todos os blocos, inclusive os alem da janela");
     ok(ped <= nEsp + 8, "palpite do Cluster: ~1 Range por bloco (antes: 2)");
     ok(conferirCues(esp, nEsp) == nEsp, "tempos pelo CueTime batem com o .ass (±20 ms)"); }
+
+  printf("\n[8] servidor lento (1,2 s por Range, o medido na C9): Ranges em paralelo\n");
+  mkvass_parar(); esperarFio(); legenda_desligar();
+  { char scLento[64]; long t0, tIndice = -1, tPrimeira = -1; int c = 0, n = 0;
+    LegendaCue v[LEGENDA_SIMULTANEAS];
+    nomeSidecar(urlLento, 3, scLento, sizeof scLento);
+    dados_apagar(scLento);
+    { char f2[80]; snprintf(f2, sizeof f2, "%s.fonts", scLento); dados_apagar(f2); }
+    zerarServidor();
+    t0 = agoraMs();
+    mkvass_iniciar(urlLento, 3);
+    while (agoraMs() - t0 < 15000 && mkvass_estado() < MKVASS_NOGO) {
+      mkvass_passo(0.0);
+      mkvass_estatisticas(NULL, NULL, &c, &n);
+      if (tIndice < 0 && n > 0) tIndice = agoraMs() - t0;
+      if (tPrimeira < 0 && legenda_cues(1.2, 0, v, LEGENDA_SIMULTANEAS) > 0) tPrimeira = agoraMs() - t0;
+      if (mkvass_estado() == MKVASS_COMPLETO) break;
+      usleep(20 * 1000);
+    }
+    printf("    indice em %ld ms, primeira fala em %ld ms, %d/%d blocos em %ld ms\n",
+           tIndice, tPrimeira, c, n, agoraMs() - t0);
+    ok(tIndice >= 0 && tIndice < 3000, "indice com 2 Ranges (cabecalho + Cues de uma vez), sem esperar as fontes");
+    ok(tPrimeira >= 0 && tPrimeira < 4500, "primeira fala em < 4,5 s (antes: fontes e Cues em serie, ~7 Ranges)");
+    ok(c >= 20, "15 s colhem >= 20 blocos (um Range por vez: ~10)"); }
 
   mkvass_parar(); esperarFio();
   free(esp);

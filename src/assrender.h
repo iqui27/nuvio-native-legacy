@@ -51,4 +51,9 @@ const char *assrender_diagnostico(void);
  * publicar o proximo quadro. */
 void assrender_geracao(unsigned geracao);
 
+/* Inicia o libass num fio a parte, se ainda nao iniciou. Na C9 o inicio le a
+ * pasta de fontes do sistema e custa ~2,1 s; feito quando a faixa e escolhida,
+ * corre em paralelo com o indice do MKV em vez de atrasar a primeira fala. */
+void assrender_preaquecer(void);
+
 #endif

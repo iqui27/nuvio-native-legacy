@@ -748,6 +748,22 @@ const char *assrender_diagnostico(void) {
   return texto;
 }
 
+static void *ass_preaquecer_fio(void *u) {
+  (void)u;
+  pthread_mutex_lock(&assTrava);
+  ass_iniciar_locked();
+  pthread_mutex_unlock(&assTrava);
+  return NULL;
+}
+
+void assrender_preaquecer(void) {
+  static int pedido;
+  pthread_t t;
+  if (__atomic_exchange_n(&pedido, 1, __ATOMIC_ACQ_REL)) return;
+  if (pthread_create(&t, NULL, ass_preaquecer_fio, NULL) == 0) pthread_detach(t);
+  else __atomic_store_n(&pedido, 0, __ATOMIC_RELEASE);
+}
+
 void assrender_geracao(unsigned geracao) {
   __atomic_store_n(&assGeracao, geracao, __ATOMIC_RELEASE);
   pthread_mutex_lock(&assFilaTrava);
@@ -783,5 +799,6 @@ int assrender_ativo(void) { return 0; }
 int assrender_quadro_cpu(double posSeg) { (void)posSeg; return -1; }
 const char *assrender_diagnostico(void) { return assDiag; }
 void assrender_geracao(unsigned geracao) { assGeracao = geracao; }
+void assrender_preaquecer(void) {}
 
 #endif

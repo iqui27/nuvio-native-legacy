@@ -44,6 +44,7 @@
 // Teto do elemento Cues. Um filme de 3 h com cue por bloco de legenda e por
 // quadro-chave de video fica em algumas centenas de KB.
 #define MKVASS_CUES_MAX    (4L * 1024 * 1024)
+#define MKVASS_CUES_1      (256L * 1024)
 // Teto de blocos e de corpo. O mesmo teto de legenda.c (LEG_MAX_CUES): mais
 // do que isto o overlay nao aceita de qualquer forma.
 #define MKVASS_MAX_PONTOS  8000
@@ -281,17 +282,18 @@ static long agoraMs(void) {
 // o teto vale para o instante em que o servidor recebe o pedido.
 static pthread_mutex_t vezTrava = PTHREAD_MUTEX_INITIALIZER;
 static void esperarVez(void) {
-  static long segundo = -1; static int noSegundo;
-  long s;
+  // Janela DESLIZANTE: no maximo MKVASS_RANGES_POR_SEG inicios em qualquer
+  // 1 s (+50 ms de folga para o pedido chegar ao servidor). O corte por
+  // segundo do relogio deixava 8 no fim de um segundo e 8 no comeco do
+  // seguinte — 16 num segundo visto do servidor, com os fios do pool.
+  static long inicios[MKVASS_RANGES_POR_SEG]; static int prox;
+  long agora, espera;
   pthread_mutex_lock(&vezTrava);
-  s = agoraMs() / 1000L;
-  if (s != segundo) { segundo = s; noSegundo = 0; }
-  if (noSegundo >= MKVASS_RANGES_POR_SEG) {
-    long espera = (segundo + 1) * 1000L - agoraMs();
-    if (espera > 0) usleep((useconds_t)(espera * 1000L));
-    segundo = agoraMs() / 1000L; noSegundo = 0;
-  }
-  noSegundo++;
+  agora = agoraMs();
+  espera = inicios[prox] ? inicios[prox] + 1050L - agora : 0;
+  if (espera > 0) { usleep((useconds_t)(espera * 1000L)); agora = agoraMs(); }
+  inicios[prox] = agora ? agora : 1;
+  prox = (prox + 1) % MKVASS_RANGES_POR_SEG;
   pthread_mutex_unlock(&vezTrava);
 }
 
@@ -305,6 +307,7 @@ typedef struct Job {
   long ini, n;
   unsigned char *r; long tam, ms;
   int estado;                 // 0 na fila, 1 baixando, 2 pronto
+  unsigned g;                 // geracao de quem pediu (contabilidade)
   struct Job *prox;
 } Job;
 static pthread_mutex_t PT = PTHREAD_MUTEX_INITIALIZER;
@@ -326,6 +329,11 @@ static void *poolFio(void *u) {
     j->tam = 0;
     j->r = (unsigned char *)rede_baixar_trecho(j->url, 15, j->ini, j->ini + j->n - 1, &j->tam);
     j->ms = agoraMs() - t;
+    // Contado AQUI, quando o servidor respondeu, e nao quando o fio consome:
+    // a pre-busca consumida em rajada parecia 10 pedidos num segundo.
+    pthread_mutex_lock(&S.trava);
+    if (j->g == S.geracao && !S.parar) { S.pedidos++; if (j->r) S.bytes += j->tam; }
+    pthread_mutex_unlock(&S.trava);
     pthread_mutex_lock(&PT);
     j->estado = 2;
     pthread_cond_broadcast(&PFeito);
@@ -338,7 +346,7 @@ static Job *submeter(Fio *f, long ini, long n) {
   Job *j = calloc(1, sizeof *j);
   if (!j) return NULL;
   snprintf(j->url, sizeof j->url, "%s", f->url);
-  j->ini = ini; j->n = n;
+  j->ini = ini; j->n = n; j->g = f->g;
   pthread_mutex_lock(&PT);
   while (poolFios < MKVASS_PARALELOS) {
     pthread_t t;
@@ -375,7 +383,6 @@ static unsigned char *colherJob(Fio *f, Job *j, long *tam) {
   free(j);
   pthread_mutex_lock(&S.trava);
   atual = f->g == S.geracao && !S.parar;
-  if (atual) { S.pedidos++; if (r) S.bytes += *tam; }
   pthread_mutex_unlock(&S.trava);
   if (!atual) { free(r); *tam = 0; return NULL; }
   if (!r) { f->falhas++; return NULL; }
@@ -931,7 +938,10 @@ static int lerCues(Fio *f) {
   Iter it; unsigned long id; const unsigned char *d; long t;
   int semRel = 0, cap = 256;
   if (f->posCues < 0) return MKVASS_NOGO_SEM_INDICE;
-  p = range(f, f->posCues, 16, &n);
+  // UM Range com folga (MKVASS_CUES_1) em vez de "16 bytes para ler o tamanho
+  // e depois o corpo": na C9 cada ida custa ~1,5 s. O Cues de um episodio de
+  // 24 min cabe folgado; maior que isso, o resto vem num segundo pedido.
+  p = range(f, f->posCues, MKVASS_CUES_1, &n);
   if (!p) return MKVASS_NOGO_REDE;
   id = lerId(p, n, &ui);
   if (id != ID_CUES) {
@@ -941,11 +951,20 @@ static int lerCues(Fio *f) {
     free(p); return r;
   }
   tam = lerTam(p + ui, n - ui, &ut);
-  free(p);
-  if (tam <= 0 || tam > MKVASS_CUES_MAX) return MKVASS_NOGO_SEM_INDICE;
-  p = range(f, f->posCues + ui + ut, tam, &n);
-  if (!p) return MKVASS_NOGO_REDE;
-  if (n < tam) { free(p); return MKVASS_NOGO_REDE; }
+  if (tam <= 0 || tam > MKVASS_CUES_MAX) { free(p); return MKVASS_NOGO_SEM_INDICE; }
+  if (ui + ut + tam <= n) {
+    memmove(p, p + ui + ut, (size_t)tam);
+  } else {
+    long falta = ui + ut + tam - n, m = 0;
+    unsigned char *q = realloc(p, (size_t)(ui + ut + tam)), *resto;
+    if (!q) { free(p); return MKVASS_NOGO_REDE; }
+    p = q;
+    resto = range(f, f->posCues + n, falta, &m);
+    if (!resto || m < falta) { free(resto); free(p); return MKVASS_NOGO_REDE; }
+    memcpy(p + n, resto, (size_t)falta); free(resto);
+    memmove(p, p + ui + ut, (size_t)tam);
+  }
+  n = tam;
   f->pontos = calloc((size_t)cap, sizeof *f->pontos);
   if (!f->pontos) { free(p); return MKVASS_NOGO_REDE; }
   it.p = p; it.n = tam; it.o = 0;
@@ -1223,6 +1242,9 @@ static int temPre(const Fio *f, long ini, long n) {
 static void rangeDoGrupo(const Fio *f, int i, int j, long *ini, long *n) {
   const ClCache *cl = clusterVisto(f, f->pontos[i].cluster);
   long cl0 = f->pontos[i].cluster;
+  // Palpite ja no ar para este grupo: e ele que colherGrupo vai usar.
+  if (cl && temPre(f, cl0 + 5 + f->pontos[i].rel,
+                   7 + f->pontos[j].rel - f->pontos[i].rel + MKVASS_BLOCO)) cl = NULL;
   if (cl) { *ini = cl0 + cl->hdr + f->pontos[i].rel;
             *n = f->pontos[j].rel - f->pontos[i].rel + MKVASS_BLOCO; }
   else    { *ini = cl0 + 5 + f->pontos[i].rel;
@@ -1388,6 +1410,17 @@ static void preBuscar(Fio *f, double pos) {
     for (m = ii[n]; m <= jj[n]; m++) f->pontos[m].colhido = 3;
   }
   for (k = 0; k < n; k++) for (m = ii[k]; m <= jj[k]; m++) f->pontos[m].colhido = 0;
+  // Pre-busca que nao serve a nenhum dos proximos grupos (o playhead saltou,
+  // ou o grupo foi colhido por outro caminho) sai, para nao ocupar lugar.
+  for (m = 0; m < MKVASS_PREBUSCA; m++) {
+    int serve = 0;
+    if (!f->pre[m]) continue;
+    for (k = 0; k < n && !serve; k++) {
+      long ini, len; rangeDoGrupo(f, ii[k], jj[k], &ini, &len);
+      serve = f->pre[m]->ini == ini && f->pre[m]->n == len;
+    }
+    if (!serve && jobPronto(f->pre[m])) { long t; Job *j = f->pre[m]; f->pre[m] = NULL; free(colherJob(f, j, &t)); noAr--; }
+  }
   for (k = 0; k < n && noAr < MKVASS_PARALELOS; k++) {
     long ini, len; int slot;
     rangeDoGrupo(f, ii[k], jj[k], &ini, &len);
@@ -1586,6 +1619,7 @@ static void iniciarFaixa(const char *url, int numeroFaixa) {
   snprintf(f->url, sizeof f->url, "%s", url);
   f->faixa = numeroFaixa;
   f->t0 = agoraMs();
+  assrender_preaquecer();
   pthread_mutex_lock(&S.trava);
   S.geracao++;
   f->g = S.geracao;
