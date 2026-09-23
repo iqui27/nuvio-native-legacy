@@ -78,6 +78,21 @@ void cachearte_nativo_configurar_diretorio(const char *dir);
 long cachearte_nativo_essenciais_esperados(void);
 int cachearte_nativo_essencial(const char *path);
 int cachearte_nativo_protegido(const char *url);
+/* Indice em memoria da pasta (nome -> bytes, ultimo uso). Lido do disco uma
+ * vez por sessao (construir, num fio de fundo); depois so muda por estes
+ * registros. Nenhuma destas funcoes faz I/O com trava segurada. */
+#include <stdint.h>
+#include "cachedisco.h"
+void cachearte_nativo_indice_construir(void);
+int cachearte_nativo_indice_pronto(void);
+void cachearte_nativo_indice_registrar(const char *path, long bytes);
+void cachearte_nativo_indice_remover(const char *path);
+void cachearte_nativo_indice_tocar(const char *path);
+long cachearte_nativo_indice_bytes(void);
+/* Mesma politica de nv_cache_podar, sem varrer a pasta. 0 se o indice ainda
+ * nao esta pronto ou outra poda esta rodando. */
+long cachearte_nativo_podar(long entrada, long teto, uint64_t reserva, int forcar,
+                            NvCacheProtegido protegido, void *ctx);
 #endif
 
 #endif

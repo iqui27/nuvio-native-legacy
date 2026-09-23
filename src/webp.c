@@ -472,7 +472,7 @@ static void soltar(uint8_t *px) { if (pFree) pFree(px); else free(px); }
 #endif
 
 SDL_Surface *webp_carregar_larg(const char *caminho, int largMax, int *ow, int *oh) {
-  FILE *f; long n; unsigned char *dados; int w = 0, h = 0; uint8_t *px; SDL_Surface *s;
+  FILE *f; long n; unsigned char *dados; SDL_Surface *s;
   if (ow) *ow = 0;
   if (oh) *oh = 0;
   if (!caminho) return NULL;
@@ -483,9 +483,20 @@ SDL_Surface *webp_carregar_larg(const char *caminho, int largMax, int *ow, int *
   dados = malloc((size_t)n);
   if (!dados || fread(dados, 1, (size_t)n, f) != (size_t)n) { free(dados); fclose(f); return NULL; }
   fclose(f);
-  if (memcmp(dados, "RIFF", 4) || memcmp(dados + 8, "WEBP", 4)) { free(dados); return NULL; }
-  px = decodificar(dados, (size_t)n, largMax, &w, &h, ow, oh);
+  s = webp_carregar_larg_mem(dados, (size_t)n, largMax, ow, oh);
   free(dados);
+  return s;
+}
+
+/* Os bytes do download direto ao decode no LG (ver jpeg_rapido_carregar_mem). */
+SDL_Surface *webp_carregar_larg_mem(const unsigned char *dados, size_t n, int largMax,
+                                    int *ow, int *oh) {
+  int w = 0, h = 0; uint8_t *px; SDL_Surface *s;
+  if (ow) *ow = 0;
+  if (oh) *oh = 0;
+  if (!dados || n < 16 || n > 32L * 1024 * 1024) return NULL;
+  if (memcmp(dados, "RIFF", 4) || memcmp(dados + 8, "WEBP", 4)) return NULL;
+  px = decodificar(dados, n, largMax, &w, &h, ow, oh);
   if (!px) return NULL;
   // ABGR8888 no SDL = bytes R,G,B,A na memoria em little-endian, que e o que
   // os dois decodificadores entregam. Copia para uma superficie propria: a do
