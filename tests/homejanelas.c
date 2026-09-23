@@ -27,6 +27,8 @@ void prog_remover(const char *chave) { (void)chave; }
 void prog_marcar_removido(const char *imdb) { (void)imdb; }
 int  prog_removido_vence(const char *imdb, long long instanteMs) { (void)imdb; (void)instanteMs; return 0; }
 int  cat_tirar_continuar(const char *imdb) { (void)imdb; return 0; }
+int arte_reserva_episodios(const char *imdb, const char *corpo) { (void)imdb; (void)corpo; return 0; }
+
 #include "../src/descoberta.c"
 
 #define BASE "https://addon.example/abc"

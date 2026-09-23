@@ -146,6 +146,7 @@ static int pediu(const char *trecho) {
   for (i = 0; i < nPedidos && i < 16; i++) if (strstr(pedidos[i], trecho)) return 1;
   return 0;
 }
+int arte_reserva_episodios(const char *imdb, const char *corpo) { (void)imdb; (void)corpo; return 0; }
 
 static void limparCacheMeta(void) {
   int i;

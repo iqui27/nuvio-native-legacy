@@ -30,6 +30,8 @@ int homeestado_ordem_fileira(const char *chave) { (void)chave; return -1; }
 int homeestado_salvar_se_geracao(const CatFileira *fils, int n, unsigned g) { (void)fils; (void)n; (void)g; return 1; }
 int homeestado_identidade_geracao(unsigned g, char *dono, unsigned tamDono, int *perfil) {
   (void)g; if (dono && tamDono) dono[0] = 0; if (perfil) *perfil = 0; return 0; }
+int arte_reserva_episodios(const char *imdb, const char *corpo) { (void)imdb; (void)corpo; return 0; }
+
 #include "../src/descoberta.c"
 #include <assert.h>
 #include <stdio.h>
