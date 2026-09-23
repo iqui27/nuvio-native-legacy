@@ -454,9 +454,13 @@ const char *artehero_url_destaque(const CatItem *item, int fonte, int diferente)
   // mesma pilha de backdrops do TMDB que o metahub usa (ver ARTEHERO_TMDB_OUTRO
   // no .h). A Apple tambem e a mais rapida medida na C9 (busca 0,4-0,5 s +
   // imagem 0,25-0,29 s, contra 0,7 + 1,2 s do TMDB com conexao nova).
+  // (23/09) O Trakt SAIU da busca automatica: a fanart dele nao diz idioma
+  // nem se tem letreiro, e na C9 veio cartaz com titulo por cima (The Runner
+  // em polones, Batman Knightfall com o nome gigante atras do nosso logo).
+  // Continua valendo quando o dono escolhe Trakt a mao (`fonte` acima).
   static const int ORDEM[] = { ARTEHERO_APPLE, ARTEHERO_TMDB_OUTRO,
                                ARTEHERO_FANART, ARTEHERO_ANIME,
-                               ARTEHERO_TRAKT, ARTEHERO_TMDB,
+                               ARTEHERO_TMDB,
                                ARTEHERO_METAHUB, ARTEHERO_CATALOGO };
   char tmp[512];
   const char *card, *u;

@@ -171,9 +171,12 @@ int main(void) {
     // Anime so para anime: nao e.
     assert(artehero_url_fonte(&c, ARTEHERO_ANIME) == NULL);
     c.meta[0] = 0; c.titulo[0] = 0; c.tmdb = 0; c.tipo[0] = 0; }
-    // Com o TMDB ja FALHADO no cache, o Trakt; nunca preso num 404.
+    // Com o TMDB ja FALHADO no cache: nunca preso num 404, e o Trakt NAO entra
+    // no automatico (fanart com letreiro, 23/09) — cai na arte do card.
     artehero_definir_falhou(falhouTmdbVirtual);
-    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 1), tr));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 1), mh));
+    // Escolhido a mao, o Trakt continua valendo.
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TRAKT, 1), tr));
     assert(!strcmp(artehero_url_card_fonte(&c, ARTEHERO_TMDB, 0), mh));
     assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 0), mh));
     artehero_definir_falhou(falhouSempre);
@@ -189,10 +192,12 @@ int main(void) {
     assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 1),
                    "https://nuvio.invalid/arte/tmdbalt/original/tt7"));
     // ...mas se ele RESOLVEU para a foto do card (abc.jpg noutro tamanho), e
-    // a mesma foto: vale a proxima, Trakt.
+    // a mesma foto: vale a proxima. O Trakt nao esta mais no automatico
+    // (23/09), entao a proxima diferente e a do IMDb/Metahub.
     artehero_definir_resolvida(resolvidaDuble);
-    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 1),
-                   "https://nuvio.invalid/arte/trakt/full/tt7"));
+    { char mhc[512];
+      snprintf(mhc, sizeof mhc, "%s", artehero_url_fonte(&c, ARTEHERO_METAHUB));
+      assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 1), mhc)); }
     artehero_definir_resolvida(NULL);
     assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 0),
                    "https://image.tmdb.org/t/p/original/abc.jpg"));
