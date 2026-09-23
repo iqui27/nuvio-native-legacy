@@ -1752,6 +1752,16 @@ void player_atualizar(float dt, Uint32 agora) {
     }
     tocando = video_tocando();
     relogio_amostra(&relLeg, video_pos(), monoSeg(), tocando && !scrubbing);
+    // A cada 10 s: o numero cru do pipeline e o do relogio da legenda, no
+    // mesmo instante. A diferenca e o que a interpolacao acrescenta (0..~250).
+    { static double ultRel;
+      double m = monoSeg();
+      if (tocando && m - ultRel >= 10.0) {
+        ultRel = m;
+        printf("[relogio] pipeline=%.3f legenda=%.3f (%+.0f ms; amostra de %.0f ms atras)\n",
+               video_pos(), relogio_ler(&relLeg, m), (relogio_ler(&relLeg, m) - video_pos()) * 1000.0,
+               (m - relLeg.ultAgora) * 1000.0);
+      } }
   } else if (tocando && !esperandoFonte && !erroFonte) {
     posSeg += dt;
     // Canal ao vivo nao "termina": o relogio reserva estourar em ~1h54 nao pode

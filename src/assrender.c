@@ -149,7 +149,9 @@ static void ass_aplicar_fontes_locked(void) {
 static void ass_iniciar_locked(void) {
   char fontDir[640] = "";
   char fallbackFont[768] = "";
+  struct timespec t0, t1;
   if (assLib) return;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
   assLib = ass_library_init();
   if (!assLib) { ass_diag("libass: falha ao iniciar biblioteca"); return; }
   ass_set_message_cb(assLib, ass_mensagem, NULL);
@@ -195,6 +197,12 @@ static void ass_iniciar_locked(void) {
   assFrameW = 1920; assFrameH = 1080;
   ass_set_frame_size(assRenderer, assFrameW, assFrameH);
   ass_set_storage_size(assRenderer, assFrameW, assFrameH);
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  /* Uma vez por sessao; na C9 a pasta tem 106 MB de fontes. */
+  printf("[ass] libass iniciado em %ld ms (fontes de %s)\n",
+         (long)((t1.tv_sec - t0.tv_sec) * 1000L + (t1.tv_nsec - t0.tv_nsec) / 1000000L),
+         fontDir[0] ? fontDir : "-");
+  fflush(stdout);
 }
 
 static void ass_frame_liberar(AssCpuFrame *frame) {

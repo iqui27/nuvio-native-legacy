@@ -61,6 +61,14 @@
 // Fora do urgente, uma entrega a cada isto no maximo: cada entrega reparseia
 // o corpo inteiro (legenda.c e libass).
 #define MKVASS_ENTREGA_MS  2000L
+// Ranges EM PARALELO. Medido na C9 com a fonte Debridio (23/09): ~1,2 s por
+// Range, qualquer tamanho — um por vez colhia uma fala a cada 1,2 s, e a
+// janela de 90 s levou 49 s. Tres conexoes a mais (o pipeline ja usa uma ou
+// duas) triplicam o ritmo sem disputar banda: cada pedido e de ~1 KB.
+#ifndef MKVASS_PARALELOS
+#define MKVASS_PARALELOS   3
+#endif
+#define MKVASS_PREBUSCA    8
 
 // --- EBML --------------------------------------------------------------------
 //
@@ -229,6 +237,11 @@ typedef struct {
   int      eventosEntregues, primeiraFala;
   double   posRef;         // playhead quando o grupo foi pedido (medida)
   int      atrasados, perdidos, palpites, palpitesFalhos;
+  long     redeMs, redeMaxMs, redeN;   // latencia dos Ranges (medida)
+  struct Job *pre[MKVASS_PREBUSCA];     // pre-busca: Ranges ja pedidos ao pool
+  struct Job *jobFontes;               // Attachments, lidos em segundo plano
+  int      fontesPasso;                // 0 nada; 1 cabecalho pedido; 2 dados pedidos; 3 feito
+  long     fontesCabN;
   FonteMkv *fontes;
   int      nFontes;
   int      fontesCompletas;
@@ -261,13 +274,17 @@ static long agoraMs(void) {
   return (long)ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
 }
 
-// Um Range. Conta pedidos e bytes, e SEGURA o fio quando o teto do segundo
-// corrente estourou — e o unico lugar por onde a rede passa, entao o teto
-// vale para tudo (cabecalho, Cues e blocos).
-static unsigned char *range(Fio *f, long ini, long n, long *tam) {
+// Teto de Ranges por segundo: SEGURA o fio quando o segundo corrente
+// estourou. Todo pedido passa por aqui (range e o pool), entao o teto vale
+// para tudo (cabecalho, Cues e blocos).
+// Chamado por quem VAI pedir (o fio no range, o pool antes de cada pedido):
+// o teto vale para o instante em que o servidor recebe o pedido.
+static pthread_mutex_t vezTrava = PTHREAD_MUTEX_INITIALIZER;
+static void esperarVez(void) {
   static long segundo = -1; static int noSegundo;
-  char *r; int atual;
-  long s = agoraMs() / 1000L;
+  long s;
+  pthread_mutex_lock(&vezTrava);
+  s = agoraMs() / 1000L;
   if (s != segundo) { segundo = s; noSegundo = 0; }
   if (noSegundo >= MKVASS_RANGES_POR_SEG) {
     long espera = (segundo + 1) * 1000L - agoraMs();
@@ -275,8 +292,111 @@ static unsigned char *range(Fio *f, long ini, long n, long *tam) {
     segundo = agoraMs() / 1000L; noSegundo = 0;
   }
   noSegundo++;
+  pthread_mutex_unlock(&vezTrava);
+}
+
+// --- pool de Ranges ----------------------------------------------------------
+//
+// Fios fixos, vivos a sessao inteira: cada um guarda o seu handle da libcurl
+// (rede.c: um handle por fio), e a conexao TLS fica aberta entre pedidos. Um
+// fio novo por pedido pagaria o handshake de novo a cada fala.
+typedef struct Job {
+  char url[1400];
+  long ini, n;
+  unsigned char *r; long tam, ms;
+  int estado;                 // 0 na fila, 1 baixando, 2 pronto
+  struct Job *prox;
+} Job;
+static pthread_mutex_t PT = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  PTem = PTHREAD_COND_INITIALIZER, PFeito = PTHREAD_COND_INITIALIZER;
+static Job *filaIni, *filaFim;
+static int poolFios;
+
+static void *poolFio(void *u) {
+  (void)u;
+  for (;;) {
+    Job *j; long t;
+    pthread_mutex_lock(&PT);
+    while (!filaIni) pthread_cond_wait(&PTem, &PT);
+    j = filaIni; filaIni = j->prox; if (!filaIni) filaFim = NULL;
+    j->estado = 1;
+    pthread_mutex_unlock(&PT);
+    esperarVez();
+    t = agoraMs();
+    j->tam = 0;
+    j->r = (unsigned char *)rede_baixar_trecho(j->url, 15, j->ini, j->ini + j->n - 1, &j->tam);
+    j->ms = agoraMs() - t;
+    pthread_mutex_lock(&PT);
+    j->estado = 2;
+    pthread_cond_broadcast(&PFeito);
+    pthread_mutex_unlock(&PT);
+  }
+  return NULL;
+}
+
+static Job *submeter(Fio *f, long ini, long n) {
+  Job *j = calloc(1, sizeof *j);
+  if (!j) return NULL;
+  snprintf(j->url, sizeof j->url, "%s", f->url);
+  j->ini = ini; j->n = n;
+  pthread_mutex_lock(&PT);
+  while (poolFios < MKVASS_PARALELOS) {
+    pthread_t t;
+    if (pthread_create(&t, NULL, poolFio, NULL) != 0) break;
+    pthread_detach(t); poolFios++;
+  }
+  if (!poolFios) { pthread_mutex_unlock(&PT); free(j); return NULL; }
+  if (filaFim) filaFim->prox = j; else filaIni = j;
+  filaFim = j;
+  pthread_cond_signal(&PTem);
+  pthread_mutex_unlock(&PT);
+  return j;
+}
+
+static int jobPronto(Job *j) {
+  int e;
+  pthread_mutex_lock(&PT); e = j->estado; pthread_mutex_unlock(&PT);
+  return e == 2;
+}
+
+static void contarRede(Fio *f, long ms) {
+  f->redeN++; f->redeMs += ms; if (ms > f->redeMaxMs) f->redeMaxMs = ms;
+}
+
+// Espera o job, faz a MESMA contabilidade de range() e devolve o corpo (que
+// passa a ser de quem chamou). O job e liberado.
+static unsigned char *colherJob(Fio *f, Job *j, long *tam) {
+  unsigned char *r; int atual;
+  pthread_mutex_lock(&PT);
+  while (j->estado != 2) pthread_cond_wait(&PFeito, &PT);
+  pthread_mutex_unlock(&PT);
+  r = j->r; *tam = j->tam;
+  contarRede(f, j->ms);
+  free(j);
+  pthread_mutex_lock(&S.trava);
+  atual = f->g == S.geracao && !S.parar;
+  if (atual) { S.pedidos++; if (r) S.bytes += *tam; }
+  pthread_mutex_unlock(&S.trava);
+  if (!atual) { free(r); *tam = 0; return NULL; }
+  if (!r) { f->falhas++; return NULL; }
+  f->falhas = 0;
+  return r;
+}
+
+// Um Range. Conta pedidos e bytes e passa pelo teto. Se o mesmo trecho ja foi
+// pedido ao pool (pre-busca do laco), espera aquele em vez de pedir de novo.
+static unsigned char *range(Fio *f, long ini, long n, long *tam) {
+  char *r; int atual, k; long t;
+  for (k = 0; k < MKVASS_PREBUSCA; k++)
+    if (f->pre[k] && f->pre[k]->ini == ini && f->pre[k]->n == n) {
+      Job *j = f->pre[k]; f->pre[k] = NULL;
+      return colherJob(f, j, tam);
+    }
+  esperarVez();
   *tam = 0;
+  t = agoraMs();
   r = rede_baixar_trecho(f->url, 15, ini, ini + n - 1, tam);
+  contarRede(f, agoraMs() - t);
   pthread_mutex_lock(&S.trava);
   atual = f->g == S.geracao && !S.parar;
   if (atual) {
@@ -288,6 +408,13 @@ static unsigned char *range(Fio *f, long ini, long n, long *tam) {
   if (!r) { f->falhas++; return NULL; }
   f->falhas = 0;
   return (unsigned char *)r;
+}
+
+// Descarta a pre-busca que sobrou (contada como pedido: o servidor a recebeu).
+static void soltarPrebusca(Fio *f) {
+  int k;
+  for (k = 0; k < MKVASS_PREBUSCA; k++)
+    if (f->pre[k]) { long t; Job *j = f->pre[k]; f->pre[k] = NULL; free(colherJob(f, j, &t)); }
 }
 
 // --- corpo ASS ---------------------------------------------------------------
@@ -717,25 +844,14 @@ static int lerCabecalho(Fio *f) {
   /* Attachments costumam ficar depois de Tracks e fora da primeira janela.
    * O SeekHead da maioria dos muxers aponta para eles; lemos o tamanho do
    * elemento primeiro e so entao buscamos os bytes, sem baixar o video. */
+  //
+  // EM SEGUNDO PLANO (#92): na C9 cada Range custa ~1,2 s e as fontes vinham
+  // antes de tudo, em dois pedidos — a primeira fala esperava por elas. Agora
+  // o pedido vai ao pool e o laco segue colhendo; quando as fontes chegam, a
+  // proxima entrega recarrega com elas (avancarFontes).
   if (!achouAttachments && !f->fontesCompletas && f->posAttachments >= 0) {
-    long cabTam = 0, dadosN = 0; unsigned char *cab = range(f, f->posAttachments, 64, &cabTam);
-    if (!cab) return MKVASS_NOGO_REDE;
-    if (cabTam > 0) {
-      int ai = larguraDe(cab[0]), at = 0; long an;
-      an = ai > 0 && ai < cabTam ? lerTam(cab + ai, cabTam - ai, &at) : -1;
-      if (an > 0 && an <= MKVASS_CORPO_MAX) {
-        long inicio = ai + at;
-        unsigned char *dados = NULL;
-        int dadosAlocados = 0;
-        if (inicio + an <= cabTam) { dados = cab + inicio; dadosN = an; }
-        else { dados = range(f, f->posAttachments + inicio, an, &dadosN); dadosAlocados = 1; }
-        if (dados && dadosN >= an) achouAttachments = lerAttachments(f, dados, an);
-        if (dadosAlocados) free(dados);
-      }
-    }
-    free(cab);
-    if (!achouAttachments) return MKVASS_NOGO_REDE;
-    f->fontesCompletas = 1;
+    f->jobFontes = submeter(f, f->posAttachments, 64);
+    f->fontesPasso = f->jobFontes ? 1 : 3;
   }
   if (achouAttachments) f->fontesCompletas = 1;
   else if (f->posAttachments < 0 && f->seekHeadVisto) f->fontesCompletas = 1;
@@ -752,6 +868,51 @@ static int lerCabecalho(Fio *f) {
     free(p);
     if (achouTracks <= 0) return MKVASS_NOGO_FAIXA;
   }
+  return 0;
+}
+
+// Anda o pedido das fontes. `esperar` bloqueia ate o fim (antes do sidecar
+// completo, que exige as fontes). Devolve 1 quando as fontes acabaram de
+// entrar.
+static int avancarFontes(Fio *f, int esperar) {
+  long n = 0; unsigned char *p;
+  if (f->fontesPasso != 1 && f->fontesPasso != 2) return 0;
+  if (!esperar && !jobPronto(f->jobFontes)) return 0;
+  p = colherJob(f, f->jobFontes, &n);
+  f->jobFontes = NULL;
+  if (f->fontesPasso == 1) {
+    int ai, at = 0; long an;
+    if (!p || n < 2) { free(p); f->fontesPasso = 3; goto falhou; }
+    ai = larguraDe(p[0]);
+    an = ai > 0 && ai < n ? lerTam(p + ai, n - ai, &at) : -1;
+    if (an <= 0 || an > MKVASS_CORPO_MAX) { free(p); f->fontesPasso = 3; goto falhou; }
+    if (ai + at + an <= n) {
+      int ok = lerAttachments(f, p + ai + at, an);
+      free(p); f->fontesPasso = 3;
+      if (!ok) goto falhou;
+    } else {
+      free(p);
+      f->jobFontes = submeter(f, f->posAttachments + ai + at, an);
+      f->fontesCabN = an;
+      f->fontesPasso = f->jobFontes ? 2 : 3;
+      if (!f->jobFontes) goto falhou;
+      if (esperar) return avancarFontes(f, 1);
+      return 0;
+    }
+  } else {
+    int ok = p && n >= f->fontesCabN && lerAttachments(f, p, f->fontesCabN);
+    free(p); f->fontesPasso = 3;
+    if (!ok) goto falhou;
+  }
+  f->fontesCompletas = 1;
+  // A proxima entrega e "primeira" de novo: limpa, passa as fontes, recarrega.
+  f->entregas = 0; f->sujo = 1;
+  printf("[mkvass] fontes anexadas: %d, %ld ms desde a escolha\n", f->nFontes, agoraMs() - f->t0);
+  fflush(stdout);
+  return 1;
+falhou:
+  printf("[mkvass] fontes anexadas: falha ao ler (a legenda segue com as da TV)\n");
+  fflush(stdout);
   return 0;
 }
 
@@ -1044,14 +1205,41 @@ static int colherPorPalpite(Fio *f, int i, int j) {
   return r;
 }
 
+static const ClCache *clusterVisto(const Fio *f, long pos) {
+  int k;
+  for (k = 0; k < CL_CACHE; k++) if (f->cl[k].hdr && f->cl[k].pos == pos) return &f->cl[k];
+  return NULL;
+}
+
+static int temPre(const Fio *f, long ini, long n) {
+  int k;
+  for (k = 0; k < MKVASS_PREBUSCA; k++)
+    if (f->pre[k] && f->pre[k]->ini == ini && f->pre[k]->n == n) return 1;
+  return 0;
+}
+
+// O Range que colherGrupo vai pedir para [i..j]: pelo cabecalho conhecido,
+// ou o do palpite.
+static void rangeDoGrupo(const Fio *f, int i, int j, long *ini, long *n) {
+  const ClCache *cl = clusterVisto(f, f->pontos[i].cluster);
+  long cl0 = f->pontos[i].cluster;
+  if (cl) { *ini = cl0 + cl->hdr + f->pontos[i].rel;
+            *n = f->pontos[j].rel - f->pontos[i].rel + MKVASS_BLOCO; }
+  else    { *ini = cl0 + 5 + f->pontos[i].rel;
+            *n = 7 + f->pontos[j].rel - f->pontos[i].rel + MKVASS_BLOCO; }
+}
+
 // Colhe o grupo de pontos [i..j] (mesmo Cluster, proximos) num Range so.
 // Marca cada um como colhido (1) ou desistido (2). Devolve 1 se a rede
 // respondeu.
 static int colherGrupo(Fio *f, int i, int j) {
   const ClCache *cl = NULL;
   long ini, n = 0, fim; unsigned char *p; int k, r;
-  for (k = 0; k < CL_CACHE; k++)
-    if (f->cl[k].hdr && f->cl[k].pos == f->pontos[i].cluster) { cl = &f->cl[k]; break; }
+  cl = clusterVisto(f, f->pontos[i].cluster);
+  // A pre-busca pediu o palpite antes de outro grupo ensinar o cabecalho
+  // deste Cluster: usa o que ja veio em vez de pedir outro Range.
+  if (cl && temPre(f, f->pontos[i].cluster + 5 + f->pontos[i].rel,
+                   7 + f->pontos[j].rel - f->pontos[i].rel + MKVASS_BLOCO)) cl = NULL;
   if (!cl) {
     r = colherPorPalpite(f, i, j);
     if (r != 2) return r;
@@ -1176,6 +1364,41 @@ static int proximoPendente(const Fio *f, double ini, double fim, int *noJanela) 
   return frente >= 0 ? frente : atras;
 }
 
+// Fim do grupo que comeca em i: vizinhos do mesmo Cluster a menos de
+// MKVASS_JUNTAR. O MESMO calculo no laco e na pre-busca, senao o Range
+// pedido de antemao nao casa com o que colherGrupo pede.
+static int grupoFim(const Fio *f, int i) {
+  int j = i;
+  while (j + 1 < f->nPontos && !f->pontos[j + 1].colhido &&
+         f->pontos[j + 1].cluster == f->pontos[i].cluster &&
+         f->pontos[j + 1].rel >= f->pontos[i].rel &&
+         f->pontos[j + 1].rel - f->pontos[i].rel < MKVASS_JUNTAR) j++;
+  return j;
+}
+
+// Mantem ate MKVASS_PARALELOS Ranges no ar: os proximos grupos pela mesma
+// prioridade do laco (reservados com colhido = 3 so durante a escolha).
+static void preBuscar(Fio *f, double pos) {
+  int ii[MKVASS_PARALELOS], jj[MKVASS_PARALELOS], n, k, m, noAr = 0;
+  for (k = 0; k < MKVASS_PREBUSCA; k++) if (f->pre[k]) noAr++;
+  for (n = 0; n < MKVASS_PARALELOS; n++) {
+    int noJ, i = proximoPendente(f, pos - MKVASS_ATRAS_SEG, pos + MKVASS_JANELA_SEG, &noJ);
+    if (i < 0) break;
+    ii[n] = i; jj[n] = grupoFim(f, i);
+    for (m = ii[n]; m <= jj[n]; m++) f->pontos[m].colhido = 3;
+  }
+  for (k = 0; k < n; k++) for (m = ii[k]; m <= jj[k]; m++) f->pontos[m].colhido = 0;
+  for (k = 0; k < n && noAr < MKVASS_PARALELOS; k++) {
+    long ini, len; int slot;
+    rangeDoGrupo(f, ii[k], jj[k], &ini, &len);
+    if (temPre(f, ini, len)) continue;
+    for (slot = 0; slot < MKVASS_PREBUSCA && f->pre[slot]; slot++) {}
+    if (slot >= MKVASS_PREBUSCA) break;
+    f->pre[slot] = submeter(f, ini, len);
+    if (f->pre[slot]) noAr++;
+  }
+}
+
 // --- o fio -----------------------------------------------------------------------
 
 static void *trabalhar(void *arg) {
@@ -1228,8 +1451,11 @@ static void *trabalhar(void *arg) {
   if (sc && !strncmp(sc, MARCA_PARCIAL, strlen(MARCA_PARCIAL)) && restaurarParcial(f, sc))
     printf("[mkvass] sidecar parcial: %d/%d blocos ja colhidos\n", f->nColhidos, f->nPontos);
   free(sc);
-  printf("[mkvass] faixa %d: %d blocos indexados, escala %lu ns, cabecalho %zu bytes\n",
-         f->faixa, f->nPontos, f->escala, f->corpoTam);
+  printf("[mkvass] faixa %d: %d blocos indexados, escala %lu ns, cabecalho %zu bytes "
+         "(%ld ms desde a escolha, %ld Ranges, medio %ld ms, max %ld; fontes %s)\n",
+         f->faixa, f->nPontos, f->escala, f->corpoTam, agoraMs() - f->t0, f->redeN,
+         f->redeN ? f->redeMs / f->redeN : 0, f->redeMaxMs,
+         f->fontesPasso == 1 ? "em segundo plano" : f->fontesCompletas ? "prontas" : "nenhuma");
   fflush(stdout);
   entregar(f);
   if (!definirEstadoSeAtual(f, MKVASS_COLHENDO)) goto fim;
@@ -1254,19 +1480,19 @@ static void *trabalhar(void *arg) {
       if (i < 0) break;
       if (!noJanela && (!janelaCheia || janelaDe != pos)) {
         janelaCheia = 1; janelaDe = pos;
-        printf("[mkvass] janela %.0f-%.0f s colhida: %ld ms desde a escolha, %d/%d blocos, %ld Ranges, "
-               "palpites %d (falhos %d), tarde %d, antes do playhead %d\n",
+        printf("[mkvass] janela %.0f-%.0f s colhida: %ld ms desde a escolha, %d/%d blocos, %ld Ranges "
+               "(medio %ld ms, max %ld), palpites %d (falhos %d), tarde %d, antes do playhead %d\n",
                ini, fim, agoraMs() - f->t0, f->nColhidos, f->nPontos, S.pedidos,
+               f->redeN ? f->redeMs / f->redeN : 0, f->redeMaxMs,
                f->palpites, f->palpitesFalhos, f->atrasados, f->perdidos);
         fflush(stdout);
       }
       t = segundosDe(f, f->pontos[i].tempo);
       // Junta os vizinhos do mesmo Cluster que cabem em MKVASS_JUNTAR.
-      j = i;
-      while (j + 1 < f->nPontos && !f->pontos[j + 1].colhido &&
-             f->pontos[j + 1].cluster == f->pontos[i].cluster &&
-             f->pontos[j + 1].rel >= f->pontos[i].rel &&
-             f->pontos[j + 1].rel - f->pontos[i].rel < MKVASS_JUNTAR) j++;
+      j = grupoFim(f, i);
+      // Os proximos grupos ja vao para o pool enquanto este e lido.
+      preBuscar(f, pos);
+      avancarFontes(f, 0);
       f->posRef = pos;
       { int colheu = colherGrupo(f, i, j);
       if (colheu == -2) {
@@ -1302,6 +1528,9 @@ static void *trabalhar(void *arg) {
     S.nColhidos = f->nColhidos;
     pthread_mutex_unlock(&S.trava);
     if (f->nColhidos + contarDesistidos(f) >= f->nPontos) {
+      soltarPrebusca(f);
+      // O sidecar completo exige as fontes: espera o pedido delas.
+      if (avancarFontes(f, 1)) entregar(f);
       // Tudo o que o indice tinha. Os desistidos (2) contam como feitos: o
       // indice apontava para algo que nao era um bloco desta faixa.
       gravarSidecar(f, 1, 0);
@@ -1337,6 +1566,8 @@ sair:
   if (f->nColhidos > 0 && mkvass_estado() != MKVASS_COMPLETO) gravarSidecar(f, 0, 1);
 
 fim:
+  soltarPrebusca(f);
+  if (f->jobFontes) { long t; free(colherJob(f, f->jobFontes, &t)); f->jobFontes = NULL; }
   pthread_mutex_lock(&S.trava);
   S.vivos--;
   pthread_cond_broadcast(&S.sinal);
