@@ -20,18 +20,19 @@ static void tabela(void) {
   // LG, os degraus que ja estavam em tex_cache.c (ver perfiltv.c).
   assert(ptv_tex_auto_mb(PTV_LG, 0) == 96);
   assert(ptv_tex_auto_mb(PTV_LG, 624) == 48);
-  assert(ptv_tex_auto_mb(PTV_LG, 1024) == 64);
+  assert(ptv_tex_auto_mb(PTV_LG, 1024) == 48);
+  assert(ptv_tex_auto_mb(PTV_LG, 964) == 48);    // registros 1720-1774
   assert(ptv_tex_auto_mb(PTV_LG, 1350) == 96);
   assert(ptv_tex_auto_mb(PTV_LG, 2245) == 128);   // a C9 do relatorio de 22/09
   assert(ptv_tex_auto_mb(PTV_LG, 3000) == 192);
-  assert(ptv_tex_teto_mb(PTV_LG, 1024) == 96);
+  assert(ptv_tex_teto_mb(PTV_LG, 1024) == 64);
   assert(ptv_tex_teto_mb(PTV_LG, 1350) == 160);
   assert(ptv_tex_teto_mb(PTV_LG, 2245) == 300);
   assert(ptv_tex_teto_mb(PTV_LG, 4096) == 512);
   ptv_padrao(PTV_LG, 2245, &p);
   assert(p.texMb == 128 && p.fiosRede == 4 && p.heroiLarg == 1920);
   ptv_padrao(PTV_LG, 1024, &p);
-  assert(p.texMb == 64 && p.fiosRede == 2 && p.heroiLarg == 1280);
+  assert(p.texMb == 48 && p.fiosRede == 2 && p.heroiLarg == 1280);
   // Tizen: deviceMemory; o teto e o proprio automatico.
   assert(ptv_tex_auto_mb(PTV_TIZEN, 0) == 96);
   assert(ptv_tex_auto_mb(PTV_TIZEN, 1024) == 64);
@@ -63,7 +64,7 @@ static void limites(void) {
           assert(c.texMb <= 128);
           if (m < 2000) assert(c.heroiLarg == 1280);
         }
-        if (plat == PTV_LG && m && m < 1200) assert(c.texMb <= 96 && c.heroiLarg == 1280);
+        if (plat == PTV_LG && m && m < 1200) assert(c.texMb <= 64 && c.heroiLarg == 1280);
       }
   { PtvPerfil c;
     ptv_candidato(PTV_LG, 2245, PTV_QUALIDADE, 0, &c);
@@ -75,7 +76,7 @@ static void limites(void) {
     assert(c.texMb == 300 && c.fiosRede == 2);
     // Manual acima do teto (perfil antigo, TV trocada) volta ao teto.
     ptv_candidato(PTV_LG, 1024, PTV_QUALIDADE, 300, &c);
-    assert(c.texMb == 96); }
+    assert(c.texMb == 64); }
   { PtvPerfil lido = { 999, 9, 3840 };
     assert(ptv_limitar(PTV_TIZEN, 2048, &lido) == 1);
     assert(lido.texMb == 96 && lido.fiosRede == 2 && lido.heroiLarg == 1920); }
