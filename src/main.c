@@ -21,8 +21,8 @@
 #include <sys/stat.h>
 #ifndef NV_SEM_WEBOS
 #include <signal.h>
-#include <unistd.h>
 #endif
+#include <unistd.h>   // dup2 (o stderr no mesmo descritor do log)
 #include "gfx.h"
 #include "text.h"
 #include "marco.h"
@@ -345,7 +345,15 @@ int main(int argc, char **argv) {
     // truncar o arquivo. E ele que "Enviar registro" manda quando a sessao
     // anterior morreu sem se despedir (avisos.h). Custa um rename; o arquivo
     // e do proprio app, entao o sticky bit do /tmp nao atrapalha.
-    if (log) { rename(log, "/tmp/nuvio-anterior.log"); freopen(log, "w", stdout); freopen(log, "a", stderr); } }
+    //
+    // stderr e o MESMO descritor do stdout (dup2), nao um segundo freopen. Com
+    // "w" num e "a" no outro, cada um tinha o seu deslocamento: o stdout
+    // escrevia por cima do que o stderr acabara de anexar. Medido na C9 em
+    // 23/09: nenhuma linha de stderr sobrevivia no arquivo (o diagnostico do
+    // libass, "[legenda] libass: ...", nunca aparecia) e sobravam ~1600 linhas
+    // vazias — os restos dos textos sobrescritos.
+    if (log) { rename(log, "/tmp/nuvio-anterior.log");
+               if (freopen(log, "w", stdout)) { fflush(stderr); dup2(fileno(stdout), fileno(stderr)); } } }
   setvbuf(stdout, NULL, _IOLBF, 0);
   if (!getenv("XDG_RUNTIME_DIR")) setenv("XDG_RUNTIME_DIR", "/tmp/xdg", 1);
 
