@@ -65,6 +65,15 @@
     if (url === 'decodificador.js') return new Falso();
     return new Original(url, opts);
   };
+  // NV_SHIM_OCUPADO=<ms>: o FIO PRINCIPAL fica ocupado em blocos de <ms>, com
+  // 20 ms livres entre um e outro — o papel das tarefas longas de 1 a 31 s dos
+  // logs da Samsung 1.4.1. Pedido que depende do fio principal espera o bloco
+  // inteiro; o canal direto (src/webp.c, sentinela) nao deve nem perceber.
+  var ocupado = parseInt(process.env.NV_SHIM_OCUPADO || '0', 10);
+  if (ocupado > 0) {
+    var tOcup = setInterval(function () { var t0 = Date.now(); while (Date.now() - t0 < ocupado) {} }, 20);
+    tOcup.unref();
+  }
   // webp.c so escolhe o Worker quando o fio principal diz ter OffscreenCanvas.
   (0, eval)(codec);
   if (morto) globalThis.document = { createElement: function () { return new globalThis.OffscreenCanvas(0, 0); } };

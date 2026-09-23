@@ -33,7 +33,7 @@
 #define ISCA_B 0xCC
 
 static atomic_int nOk, nNulo, nTrocado, nIsca, nLixo, nLentoRapido, fiosFim;
-static atomic_int maxMsRapido;
+static atomic_int maxMsRapido, maxMsPrintf;
 
 // PNG de verdade ate o IHDR (webp.c tira o tamanho dali) + registro FAKE que o
 // codec falso de tests/decodefila-shim.js entende.
@@ -95,6 +95,15 @@ static void *fio(void *arg) {
       int m = (int)ms, ant = atomic_load(&maxMsRapido);
       while (m > ant && !atomic_compare_exchange_weak(&maxMsRapido, &ant, m)) {}
     }
+    // O QUE UM printf DE pthread CUSTA com o fio principal ocupado: e um
+    // syscall proxiado de forma sincrona. So medida, nao entra no PASS.
+    if (i % 12 == 0) {
+      double tp = emscripten_get_now();
+      int m, ant;
+      printf("printf fio=%d pedido=%d\n", id, i); fflush(stdout);
+      m = (int)(emscripten_get_now() - tp); ant = atomic_load(&maxMsPrintf);
+      while (m > ant && !atomic_compare_exchange_weak(&maxMsPrintf, &ant, m)) {}
+    }
     envenenar();
   }
   atomic_fetch_add(&fiosFim, 1);
@@ -111,18 +120,29 @@ static void fim(void *u) {
   if (!fimEm) fimEm = emscripten_get_now();
   vivos = navegador_abandonados_vivos();
   if (vivos && emscripten_get_now() - fimEm < NV_NAV_PRAZO_MS * 6) { emscripten_async_call(fim, NULL, 50); return; }
-  printf("RESULTADO ok=%d nulos=%d nulos_rapidos=%d trocados=%d isca=%d lixo=%d max_ms_rapido=%d abandonados_vivos=%d prazo=%d\n",
-         nOk, nNulo, nLentoRapido, nTrocado, nIsca, nLixo, maxMsRapido, vivos, NV_NAV_PRAZO_MS);
+  printf("RESULTADO ok=%d nulos=%d nulos_rapidos=%d trocados=%d isca=%d lixo=%d max_ms_rapido=%d abandonados_vivos=%d prazo=%d printf_pthread_max_ms=%d\n",
+         nOk, nNulo, nLentoRapido, nTrocado, nIsca, nLixo, maxMsRapido, vivos, NV_NAV_PRAZO_MS, maxMsPrintf);
   ruim = nTrocado || nIsca || nLixo || nLentoRapido || vivos || maxMsRapido >= NV_NAV_PRAZO_MS;
   printf("%s\n", ruim ? "FALHOU" : "PASS: nenhuma resposta no pedido errado, fila sem trava, abandonados liberados");
   fflush(stdout);
   emscripten_force_exit(ruim ? 2 : 0);
 }
 
-int main(void) {
-  pthread_t t[FIOS];
+// Como no app (main.c): o decodificador nasce no arranque, e os fios de
+// decode so comecam depois — aqui, 300 ms depois, tempo de o Worker e a
+// sentinela subirem.
+static void partir(void *u) {
+  static pthread_t t[FIOS];
   int i;
+  (void)u;
   for (i = 0; i < FIOS; i++) pthread_create(&t[i], NULL, fio, (void *)(intptr_t)i);
   emscripten_async_call(fim, NULL, 50);
+}
+
+int main(void) {
+#ifndef NV_SEM_INICIAR
+  navegador_iniciar();
+#endif
+  emscripten_async_call(partir, NULL, 300);
   return 0;
 }

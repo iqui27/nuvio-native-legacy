@@ -16,15 +16,20 @@ EMCC="$EMSDK_DIR/upstream/emscripten/emcc"
 mkdir -p build/decodefila
 "$EMCC" tests/decodefila_tizen.c src/webp.c -O1 -DNV_NAV_PRAZO_MS=300 \
   -pthread -sPTHREAD_POOL_SIZE=3 -sINITIAL_MEMORY=67108864 -sALLOW_MEMORY_GROWTH=0 \
-  -sENVIRONMENT=node -sEXIT_RUNTIME=0 -sUSE_SDL=2 \
+  -sENVIRONMENT=node -sEXIT_RUNTIME=0 -sUSE_SDL=2 -sEXPORTED_FUNCTIONS='["_main","_malloc","_free"]' \
   --pre-js tests/decodefila-shim.js -o build/decodefila/teste.js
+# Tres rodadas: Worker vivo; Worker morto (reencaminhamento ao fio
+# principal); e Worker vivo com o FIO PRINCIPAL OCUPADO em blocos de 1 s (as
+# tarefas longas da Samsung 1.4.1). A terceira e a do canal direto: pela ponte
+# antiga (via fio principal) ela dava nulos_rapidos=35 e max_ms_rapido=2000.
 ok=0
-for morto in 0 1; do
-  log=build/decodefila/morto$morto.log
-  if NV_RAIZ="$PWD" NV_SHIM_MORTO=$morto timeout 120 node build/decodefila/teste.js >"$log" 2>&1; then
-    echo "worker_morto=$morto $(grep RESULTADO "$log")"
+for rodada in "0 0" "1 0" "0 1000"; do
+  set -- $rodada
+  log=build/decodefila/morto$1-ocupado$2.log
+  if NV_RAIZ="$PWD" NV_SHIM_MORTO=$1 NV_SHIM_OCUPADO=$2 timeout 120 node build/decodefila/teste.js >"$log" 2>&1; then
+    echo "worker_morto=$1 fio_principal_ocupado=${2}ms $(grep RESULTADO "$log")"
   else
-    echo "FALHOU worker_morto=$morto"; tail -20 "$log"; ok=1
+    echo "FALHOU worker_morto=$1 fio_principal_ocupado=${2}ms"; tail -20 "$log"; ok=1
   fi
 done
 exit $ok

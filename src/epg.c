@@ -78,8 +78,12 @@ static const char *FONTE[EPG_N_FONTES] = {
   "https://epgshare01.online/epgshare01/epg_ripper_MX1.xml.gz",
   "https://epgshare01.online/epgshare01/epg_ripper_AR1.xml.gz",
 };
+// CACHE_XML so da nome ao log e apaga o cache antigo (ver gravarGz); o que
+// fica gravado e o .gz, CACHE_GZ.
 static const char *CACHE_XML[EPG_N_FONTES] = {
   "epg-br1.xml", "epg-br2.xml", "epg-pt1.xml", "epg-mx1.xml", "epg-ar1.xml" };
+static const char *CACHE_GZ[EPG_N_FONTES] = {
+  "epg-br1.xml.gz", "epg-br2.xml.gz", "epg-pt1.xml.gz", "epg-mx1.xml.gz", "epg-ar1.xml.gz" };
 static const char *CACHE_TS[EPG_N_FONTES]  = {
   "epg-br1.ts",  "epg-br2.ts",  "epg-pt1.ts",  "epg-mx1.ts",  "epg-ar1.ts"  };
 
@@ -555,42 +559,86 @@ static long arquivoIdade(const char *nome) {
   return velho;
 }
 
-// O XML e grande demais para dados_gravar (feita para strings pequenas):
-// escrita direta no caminho, sob a trava de FS que o Tizen exige.
-static void gravarXml(const char *nome, const char *tsNome,
-                      const char *xml, long n) {
+// O CACHE GUARDA O .gz COMO VEIO DA REDE, e nao o XML aberto (23/09/2026).
+//
+// No Tizen a pasta de dados e IDBFS: a descarga seguinte (dados.c) entrega ao
+// IndexedDB o CONTEUDO INTEIRO de cada arquivo mudado, clonado de uma vez numa
+// tarefa do FIO PRINCIPAL (IDBFS.reconcile -> store.put, no callback do
+// getRemoteSet — fora ate do `idbfs=N/X ms` do log, que so mede a varredura).
+// Com o XML aberto eram as cinco grades inteiras, ~10x o gzip (o comentario do
+// topo fala em ~1,4 MB de gzip). O log da Samsung 1.4.1 (registro 1638) tem a
+// descarga logo depois da grade nova custando 1157 ms so na parte medida, a
+// maior de toda a sessao, e o FPS caindo de 25 para 0,4 em seguida. Gravando
+// o .gz, o fio principal clona o que veio da rede; o custo de abrir o gzip de
+// novo (inflate, ~dezenas de ms) fica no fio da grade, que ja o pagava na
+// primeira carga.
+//
+// Escrita direta no caminho, sob a trava de FS que o Tizen exige.
+static void gravarGz(int i, const char *gz, long n) {
   char cam[640], tbuf[24]; FILE *f;
-  if (!dados_caminho(cam, sizeof cam, nome)) return;
+  int ok = 0;
+  if (!dados_caminho(cam, sizeof cam, CACHE_GZ[i])) return;
   dados_fs_travar();
   f = fopen(cam, "wb");
-  if (f) { fwrite(xml, 1, (size_t)n, f); fclose(f); }
+  if (f) { ok = fwrite(gz, 1, (size_t)n, f) == (size_t)n; ok = (fclose(f) == 0) && ok; }
   dados_fs_liberar();
-  if (!f) return;
+  if (!ok) return;
   snprintf(tbuf, sizeof tbuf, "%ld", (long)time(NULL));
-  dados_gravar_leve(tsNome, tbuf);
+  dados_gravar_leve(CACHE_TS[i], tbuf);
   dados_marcar_sujo(1);
+}
+
+// Le o .gz do cache (binario: dados_ler corta no primeiro NUL).
+static char *lerGz(int i, long *n) {
+  char cam[640]; FILE *f; char *b = NULL; long t;
+  *n = 0;
+  if (!dados_caminho(cam, sizeof cam, CACHE_GZ[i])) return NULL;
+  dados_fs_travar();
+  f = fopen(cam, "rb");
+  if (f) {
+    fseek(f, 0, SEEK_END); t = ftell(f); fseek(f, 0, SEEK_SET);
+    if (t > 0 && (b = malloc((size_t)t)) != NULL) {
+      if ((long)fread(b, 1, (size_t)t, f) == t) *n = t;
+      else { free(b); b = NULL; }
+    }
+    fclose(f);
+  }
+  dados_fs_liberar();
+  return b;
+}
+
+// gzip -> XML com o NUL no fim (o parser trata como texto).
+static char *abrirGz(const char *gz, long ngz, long *nOut) {
+  char *xml = desgzip(gz, ngz, nOut), *c;
+  if (!xml) return NULL;
+  c = realloc(xml, (size_t)*nOut + 1);
+  if (!c) { free(xml); return NULL; }
+  c[*nOut] = 0;
+  return c;
 }
 
 static char *obterXml(int i, long *nOut) {
   char *xml;
   long ngz = 0;
   char *gz;
+  // O cache antigo, de XML aberto, sai: no Tizen ele era a maior descarga do
+  // IDBFS. Sem arquivo, dados_apagar nao faz nada.
+  { static int limpou[EPG_N_FONTES];
+    if (!limpou[i]) { limpou[i] = 1; dados_apagar(CACHE_XML[i]); } }
   // Cache fresco primeiro: a abertura nao paga a rede quando o arquivo do dia
   // ja esta no aparelho.
   if (arquivoIdade(CACHE_TS[i]) < EPG_CACHE_SEG) {
-    xml = dados_ler(CACHE_XML[i]);
-    if (xml && xml[0] == '<') { *nOut = (long)strlen(xml); return xml; }
+    gz = lerGz(i, &ngz);
+    xml = gz ? abrirGz(gz, ngz, nOut) : NULL;
+    free(gz);
+    if (xml && xml[0] == '<') return xml;
     free(xml);
   }
   gz = rede_baixar_bin(FONTE[i], 60, &ngz);
   if (!gz) return NULL;
-  xml = desgzip(gz, ngz, nOut);
+  xml = abrirGz(gz, ngz, nOut);
+  if (xml && xml[0] == '<') gravarGz(i, gz, ngz);
   free(gz);
-  if (!xml) return NULL;
-  { char *c = realloc(xml, (size_t)*nOut + 1);
-    if (!c) { free(xml); return NULL; }
-    xml = c; xml[*nOut] = 0; }
-  gravarXml(CACHE_XML[i], CACHE_TS[i], xml, *nOut);
   return xml;
 }
 

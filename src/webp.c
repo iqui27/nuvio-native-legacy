@@ -79,10 +79,36 @@ static void     soltar(uint8_t *px);
 // bloqueado no futex, e a promessa do createImageBitmap so resolveria quando
 // ele voltasse ao laco de eventos — nunca. O worker proprio nao roda C; so
 // espera pedidos.
+//
+// CANAL DIRETO, SEM O FIO PRINCIPAL (23/09/2026). Ate aqui todo pedido ia ao
+// Worker PASSANDO pelo fio principal (MAIN_THREAD_ASYNC_EM_ASM), e o Worker so
+// nascia no primeiro pedido, tambem pelo fio principal. Os logs da Samsung
+// 1.4.1 tem tarefas longas de 1 a 31 s nesse fio (manifestos, montagem da
+// home): o pedido esperava a tarefa inteira na fila, estourava os 8 s e o
+// icone local de 128 px levou 57 s (registro 1647). Agora:
+//   - navegador_iniciar(), chamado no arranque (main.c), cria o Worker de
+//     decode e uma SENTINELA (o mesmo decodificador.js, outro papel), ligados
+//     por um MessageChannel;
+//   - o fio de decode empilha o job numa pilha na memoria compartilhada
+//     (filaCabeca, CAS; so a sentinela desempilha, e sempre a pilha inteira,
+//     entao nao ha ABA) e acorda a sentinela com um futex;
+//   - a sentinela dorme em Atomics.wait, desempilha, e repassa ao Worker pela
+//     porta. Ela nunca volta ao laco de eventos — nao precisa: postMessage de
+//     uma porta nao depende dele.
+// O fio principal nao participa de nada disso. O caminho antigo (via fio
+// principal) continua para quando o canal nao esta de pe: antes de o Worker e
+// a sentinela confirmarem (canalEstado 1|2), sem MessageChannel, ou depois de
+// um deles morrer (bit 4).
+//
+// E OS printf DESTE ARQUIVO SAO ASSINCRONOS (nvLog): no Emscripten o printf de
+// um pthread e um syscall PROXIADO de forma SINCRONA ao fio principal. Com ele
+// ocupado, o proprio aviso de "abandonado" segurava o fio de decode — medido
+// em tests/decodefila-tizen.sh: 2000 ms num pedido de prazo 300 ms.
 #include <emscripten.h>
 #include <emscripten/threading.h>
 #include <math.h>
 #include <pthread.h>
+#include <stdarg.h>
 
 // Prazo do fio de decode, em tempo de relogio desde o envio. O teste da fila
 // compila com um prazo curto para forcar abandono.
@@ -91,7 +117,11 @@ static void     soltar(uint8_t *px);
 #endif
 // Layout do job (int32 cada). Espelhado em tools/decodificador.js e no JS
 // logo abaixo — mudar aqui e mudar la.
-enum { J_EST, J_W, J_H, J_PTR, J_OW, J_OH, J_ORIGEM, J_SEQ, J_CAP, J_DADOS, J_N, J_PROX, J_INTS };
+// J_ORIGEM: 0 fio principal, 1 Worker via fio principal, 2 Worker pelo canal
+// direto. J_FILA liga os jobs na pilha da sentinela; J_MIME (1 webp, 2 png) e
+// J_LARG sao o que a sentinela repassa ao Worker, que nao le string do C.
+enum { J_EST, J_W, J_H, J_PTR, J_OW, J_OH, J_ORIGEM, J_SEQ, J_CAP, J_DADOS, J_N, J_PROX,
+       J_FILA, J_MIME, J_LARG, J_INTS };
 enum { EST_ABERTO = 0, EST_PRONTO = 1, EST_ABANDONADO = 4, EST_LARGADO = 5 };
 
 static int jaContou;
@@ -100,6 +130,29 @@ static int seqGlobal;   // __atomic_*: o C89 do projeto nao usa stdatomic
 static pthread_mutex_t lixoMtx = PTHREAD_MUTEX_INITIALIZER;
 static int32_t *lixo;
 static int nLixo;
+
+// CANAL DIRETO. filaCabeca: topo da pilha de jobs para a sentinela (0 =
+// vazia). canalEstado: bit 1 o Worker recebeu a porta, bit 2 a sentinela esta
+// no laco, bit 4 um dos dois morreu. So vale o canal com exatamente 1|2.
+static int32_t filaCabeca;
+static int32_t canalEstado;
+static int iniciarPedido;
+enum { CANAL_DEC = 1, CANAL_SENT = 2, CANAL_MORTO = 4 };
+
+// printf SEM ESPERAR O FIO PRINCIPAL. Ver a nota do canal direto: o printf de
+// pthread e sincrono com o fio principal. A linha vai por um pedido assincrono
+// e o fio principal a imprime quando puder, na ordem em que chegou.
+static void nvLog(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+static void nvLog(const char *fmt, ...) {
+  char *b = (char *)malloc(256);
+  va_list ap;
+  if (!b) return;
+  va_start(ap, fmt);
+  vsnprintf(b, 256, fmt, ap);
+  va_end(ap);
+  if (emscripten_is_main_browser_thread()) { printf("%s\n", b); free(b); return; }
+  MAIN_THREAD_ASYNC_EM_ASM({ out(UTF8ToString($0)); _free($0); }, b);
+}
 
 static void soltarJob(int32_t *job) {
   free((void *)(intptr_t)job[J_DADOS]);
@@ -150,9 +203,84 @@ static int dimensoes(const unsigned char *d, size_t n, int *w, int *h) {
   return *w > 0 && *h > 0 && *w <= 32768 && *h <= 32768;
 }
 
+// NO FIO PRINCIPAL, uma vez, no arranque. Cria o Worker de decode e a
+// sentinela e liga os dois por um MessageChannel. Idempotente. Chamado de um
+// pthread, pede a si mesmo ao fio principal e volta na hora (o pedido corrente
+// segue pelo caminho antigo).
+void navegador_iniciar(void) {
+  if (!emscripten_is_main_browser_thread()) {
+    if (!__atomic_exchange_n(&iniciarPedido, 1, __ATOMIC_ACQ_REL))
+      emscripten_async_run_in_main_runtime_thread(EM_FUNC_SIG_V, navegador_iniciar);
+    return;
+  }
+  __atomic_store_n(&iniciarPedido, 1, __ATOMIC_RELEASE);
+  EM_ASM({
+    // `Module.nvDec` guarda o worker e os pedidos em voo que foram PELO FIO
+    // PRINCIPAL, por numero de pedido; o Worker avisa `feito` e o pedido sai
+    // da lista. Se o worker morre, o que ainda esta na lista volta ao caminho
+    // antigo. Os pedidos do canal direto nao entram na lista (ver onerror).
+    // Sem virgula em nivel de chave (ver a nota do EM_ASM mais abaixo).
+    if (Module.nvDec !== undefined) return;
+    var pCanal = $1 >> 2;
+    var D = {};
+    D.w = null;
+    D.s = null;
+    D.morto = false;
+    D.voo = {};
+    Module.nvDec = D;
+    var matarCanal = function (quem, e) {
+      Atomics.or(HEAP32, pCanal, 4);
+      console.log('[webp] ' + quem + ' caiu (' + (e && e.message ? e.message : '?') + '); canal direto desligado');
+    };
+    if (typeof OffscreenCanvas === 'undefined' || typeof Worker === 'undefined') {
+      D.morto = true;
+      Atomics.or(HEAP32, pCanal, 4);
+      return;
+    }
+    try {
+      D.w = new Worker('decodificador.js');
+      D.w.onmessage = function (ev) {
+        if (ev.data && ev.data.feito !== undefined) delete D.voo[ev.data.feito];
+      };
+      // Worker morto: o canal direto sai (os pedidos novos voltam ao fio
+      // principal), e os pedidos que tinham ido pelo fio principal voltam ao
+      // decode no proprio fio principal. Os que estavam no canal direto
+      // vencem o prazo no C e ficam no aguardo para sempre — no maximo um
+      // por fio de decode, e so se o Worker morrer com eles em voo.
+      D.w.onerror = function (e) {
+        D.morto = true;
+        matarCanal('decodificador.js', e);
+        try { if (D.s) D.s.terminate(); } catch (x) {}
+        console.log('[webp] decode volta ao fio principal');
+        var k;
+        for (k in D.voo) { if (D.voo.hasOwnProperty(k)) { var f = D.voo[k]; delete D.voo[k]; f(); } }
+      };
+      if (typeof MessageChannel === 'undefined') {
+        Atomics.or(HEAP32, pCanal, 4);
+        D.w.postMessage({ memoria: wasmMemory.buffer });
+      } else {
+        var mc = new MessageChannel();
+        D.w.postMessage({ memoria: wasmMemory.buffer, porta: mc.port2, canal: $1 }, [mc.port2]);
+        D.s = new Worker('decodificador.js');
+        D.s.onerror = function (e) { matarCanal('sentinela', e); };
+        D.s.postMessage({ sentinela: 1, memoria: wasmMemory.buffer, porta: mc.port1, cab: $0, canal: $1 }, [mc.port1]);
+      }
+    } catch (e) { D.morto = true; matarCanal('criacao', e); }
+  }, (int)(intptr_t)&filaCabeca, (int)(intptr_t)&canalEstado);
+}
+
+// Codigo do mime para a sentinela (0 = so pelo caminho antigo).
+static int mimeCodigo(const char *mime) {
+  if (!mime) return 0;
+  if (!strcmp(mime, "image/webp")) return 1;
+  if (!strcmp(mime, "image/png")) return 2;
+  return 0;
+}
+
 uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char *mime,
                                int largMax, int *lw, int *lh, int *ow, int *oh) {
   int32_t *job;
+  int codigo;
   int fw, fh, sw, sh, w, h, noWorker, seq;
   size_t cap;
   double limite;
@@ -193,8 +321,20 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
   job[J_DADOS] = (int32_t)(intptr_t)copia;
   job[J_N] = (int32_t)n;
   job[J_PTR] = (int32_t)(intptr_t)px;
+  codigo = mimeCodigo(mime);
+  job[J_MIME] = codigo;
+  job[J_LARG] = largMax;
+  if (!__atomic_load_n(&iniciarPedido, __ATOMIC_ACQUIRE)) navegador_iniciar();
 
-  MAIN_THREAD_ASYNC_EM_ASM({
+  if (codigo && __atomic_load_n(&canalEstado, __ATOMIC_ACQUIRE) == (CANAL_DEC | CANAL_SENT)) {
+    // CANAL DIRETO: empilha e acorda a sentinela. Sem fio principal.
+    int32_t topo = __atomic_load_n(&filaCabeca, __ATOMIC_ACQUIRE);
+    job[J_ORIGEM] = 2;
+    do { job[J_FILA] = topo; }
+    while (!__atomic_compare_exchange_n(&filaCabeca, &topo, (int32_t)(intptr_t)job, 1,
+                                        __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
+    emscripten_futex_wake(&filaCabeca, 1);
+  } else MAIN_THREAD_ASYNC_EM_ASM({
     // UMA DECLARACAO POR LINHA, sem `var a = 1, b = 2`: o bloco do EM_ASM
     // passa pelo pre-processador de C, e la chave nao protege virgula — so
     // parentese protege. Uma virgula solta aqui parte o bloco em dois
@@ -255,36 +395,11 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
         }).catch(function () { if (vivo()) fim(0, 0, 0, 0); });
       } catch (e) { fim(0, 0, 0, 0); }
     };
-    // CAMINHO NOVO (#72): um Worker proprio, tools/decodificador.js, faz o
-    // decode, a reducao e a copia para o heap. `Module.nvDec` guarda o
-    // worker e os pedidos em voo POR NUMERO DE PEDIDO; o Worker avisa
-    // `feito` e o pedido sai da lista. Se o worker morre, o que ainda esta
-    // na lista volta ao caminho antigo.
+    // CAMINHO VIA FIO PRINCIPAL PARA O WORKER (#72): so repassa. O Worker e
+    // criado em navegador_iniciar; se ainda nao existe (iniciar pedido agora
+    // por este mesmo fio), este pedido decodifica aqui mesmo.
     var D = Module.nvDec;
-    if (D === undefined) {
-      // Sem virgula em nivel de chave (ver a nota do EM_ASM la em cima).
-      D = {};
-      D.w = null;
-      D.morto = false;
-      D.voo = {};
-      Module.nvDec = D;
-      if (typeof OffscreenCanvas === 'undefined' || typeof Worker === 'undefined') D.morto = true;
-      else {
-        try {
-          D.w = new Worker('decodificador.js');
-          D.w.postMessage({ memoria: wasmMemory.buffer });
-          D.w.onmessage = function (ev) {
-            if (ev.data && ev.data.feito !== undefined) delete D.voo[ev.data.feito];
-          };
-          D.w.onerror = function (e) {
-            D.morto = true;
-            console.log('[webp] decodificador.js nao subiu (' + (e && e.message ? e.message : '?') + '); decode volta ao fio principal');
-            var k;
-            for (k in D.voo) { if (D.voo.hasOwnProperty(k)) { var f = D.voo[k]; delete D.voo[k]; f(); } }
-          };
-        } catch (e) { D.morto = true; }
-      }
-    }
+    if (D === undefined) { noFioPrincipal(); return; }
     if (D.morto || !D.w) { noFioPrincipal(); }
     else {
       D.voo[seq] = noFioPrincipal;
@@ -307,13 +422,16 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
                                       __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
         // DESISTE SEM LIBERAR: job, copia e pixels ficam com o Worker ate
         // ele largar (estado 5); varrer() devolve tudo depois.
+        int origem = job[J_ORIGEM], aguardo;
         pthread_mutex_lock(&lixoMtx);
         job[J_PROX] = (int32_t)(intptr_t)lixo;
         lixo = job;
-        nLixo++;
+        aguardo = ++nLixo;
         pthread_mutex_unlock(&lixoMtx);
-        printf("[webp] navegador nao respondeu em %d ms; pedido %d abandonado (%d no aguardo)\n",
-               NV_NAV_PRAZO_MS, seq, nLixo);
+        // Daqui em diante o job nao e mais deste fio: varrer() de outro fio
+        // pode libera-lo assim que o Worker largar. Nada de job[] abaixo.
+        nvLog("[webp] navegador nao respondeu em %d ms; pedido %d abandonado (%d no aguardo, %s)",
+              NV_NAV_PRAZO_MS, seq, aguardo, origem == 2 ? "canal direto" : "via fio principal");
         return NULL;
       }
       continue;   // perdeu a corrida para o 0 -> 1: o resultado chegou agora
@@ -331,8 +449,8 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
   if (w < 1 || h < 1 || (size_t)w * (size_t)h * 4 > cap) { free(px); return NULL; }
   if (!jaContou) {
     jaContou = 1;
-    printf("[webp] navegador decodificou o primeiro: %dx%d (%s), %s\n", w, h, mime,
-           noWorker ? "no worker" : "no fio principal");
+    nvLog("[webp] navegador decodificou o primeiro: %dx%d (%s), %s", w, h, mime,
+          noWorker == 2 ? "no worker, canal direto" : noWorker ? "no worker" : "no fio principal");
   }
   *lw = w; *lh = h;
   return px;

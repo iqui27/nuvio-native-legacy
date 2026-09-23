@@ -30,6 +30,10 @@ SDL_Surface *webp_carregar_larg_mem(const unsigned char *dados, size_t n, int la
 // 33 MB do heap de 256 MiB (logs do #69/#68).
 #include <stdint.h>
 #include <stddef.h>
+// Cria o Worker de decode e o canal direto (fio de decode -> Worker, sem o
+// fio principal; ver webp.c). Chamar no fio principal, no arranque, antes de
+// o primeiro fio de decode existir. Idempotente; de um pthread, so agenda.
+void navegador_iniciar(void);
 uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char *mime,
                                int largMax, int *lw, int *lh, int *ow, int *oh);
 // Pedidos que passaram do prazo e cujo Worker ainda nao terminou: o C nao
