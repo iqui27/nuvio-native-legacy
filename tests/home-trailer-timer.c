@@ -42,6 +42,7 @@ int trailer_falhou(void) {
   return r;
 }
 void trailer_fechar(void) { opened = 0; playing = 0; }
+int trailer_estado(void) { return opened ? (playing ? 1 : -1) : -2; }
 void trailer_abrir(const char *source, GfxRect r, int som, int cheia) {
   (void)r; (void)som; (void)cheia;
   snprintf(lastSource, sizeof lastSource, "%s", source);
@@ -167,6 +168,18 @@ int main(void) {
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_MAX_ESPERA_MS + 1);
   rc |= check("OFF durante playback reseta trailer e fade", !opened && heroTrailerItem < 0 && heroTrailerFade == 0.0f);
   rc |= check("OFF libera rotacao", !heroTrailerSegurando(start + NV_TRAILER_HERO_MAX_ESPERA_MS + 1));
+
+  // Apple ainda sem resposta e um id do YouTube ja em maos: o hero espera a
+  // Apple a janela inteira em vez de abrir o YouTube aos 1,2 s (o embed falha
+  // na TV; a Apple costuma responder logo depois). So no fim da janela, sem
+  // Apple, o YouTube entra.
+  resetState("tt0000002c");
+  youtubeReady = 1;
+  home_trailer_passo(1, 0.016f, start);
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
+  rc |= check("YouTube nao atropela a Apple sem resposta", !opened && openedCount == 0);
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_MAX_ESPERA_MS);
+  rc |= check("sem Apple no fim da janela, YouTube entra", opened && !strcmp(lastSource, "dQw4w9WgXcQ"));
 
   // Without Apple or YouTube, the source wait is finite and the helper stops
   // holding the hero at the exact configured budget.

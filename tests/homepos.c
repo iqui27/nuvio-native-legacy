@@ -13,6 +13,18 @@
 #include <assert.h>
 #include "../src/home.c"
 
+void cachearte_marcar_grupo(int grupo, const char *url, int variante, int essencial, int emUso) {
+  (void)grupo; (void)url; (void)variante; (void)essencial; (void)emUso;
+}
+void cachearte_limpar_referencias_grupo(int grupo) { (void)grupo; }
+void cachearte_estatisticas_pedir(void) {}
+void tex_cache_marcar_larg(int grupo, const char *url, float larg, int essencial, int emUso) {
+  (void)grupo; (void)url; (void)larg; (void)essencial; (void)emUso;
+}
+int tex_falhou(const char *url) { (void)url; return 0; }
+int tex_largura_fonte(const char *url) { (void)url; return 0; }
+Uint32 SDL_GetTicks(void) { return 0; }
+
 // DUBLE DE DISCO EM MEMORIA, e nao os dubles vazios de home_layout.c: aqui o
 // ciclo gravar/ler E o assunto do teste, entao dados_gravar tem de devolver
 // depois o que recebeu antes. Um arquivo de verdade em /tmp daria a mesma
@@ -103,6 +115,7 @@ int main(void) {
     snprintf(hoje[i].chave, sizeof hoje[i].chave, "outra_%d", i);
     snprintf(hoje[i].catId, sizeof hoje[i].catId, "outra%d", i);
   }
+  for (int i = 0; i < 48; i++) snprintf(itens[i].imdb, sizeof itens[i].imdb, "tt-item-%d", i);
 
   montar(itens, ontem, 6);
   int alvo = idx("pos_3"), vizinha = idx("pos_1");
@@ -132,6 +145,19 @@ int main(void) {
   // devolve a coluna 3, nao a coluna 0.
   foco.fileira = vizinha; foco.coluna = foco.colunaLembrada[vizinha];
   assert(foco.coluna == 3);
+
+  // A resposta incremental da mesma chave insere outro item antes do foco.
+  // A coluna muda, mas o ID que estava focado continua sendo o mesmo.
+  { CatItem *mudam = calloc(48, sizeof *mudam);
+    assert(mudam);
+    memcpy(mudam, itens, sizeof *mudam * 48);
+    { CatItem t = mudam[12]; mudam[12] = mudam[14]; mudam[14] = t; }
+    foco.fileira = idx("pos_3"); foco.coluna = 2;
+    cat_definir_tudo(mudam, 48, ontem, 6);
+    sincronizarFileiras();
+    assert(foco.coluna == 0);
+    free(mudam);
+  }
 
   // --- (b) #95: reabrir comeca no primeiro cartaz --------------------------
   //

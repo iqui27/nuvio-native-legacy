@@ -28,10 +28,23 @@
 static const char *resp[2];
 static int nDebridNovaBusca;
 
+// canal.test imita o FrostView TV medido no #112: 200 {"streams":[]} para
+// /stream/tv/ e a lista de verdade para /stream/channel/. `pedidosCanal`
+// guarda o tipo de cada pedido, na ordem, para conferir quem foi primeiro.
+static const char *respCanalTv, *respCanalChannel;
+static char pedidosCanal[200];
 char *rede_baixar(const char *url, int s) {
-  const char *r = strstr(url, "exemplo.test") ? resp[0]
-                : strstr(url, "antigo.test")  ? resp[1] : NULL;
+  const char *r;
   (void)s;
+  if (strstr(url, "canal.test")) {
+    int tv = strstr(url, "/stream/tv/") != NULL;
+    strncat(pedidosCanal, tv ? "tv," : "channel,",
+            sizeof pedidosCanal - strlen(pedidosCanal) - 1);
+    r = tv ? respCanalTv : respCanalChannel;
+    return r ? strdup(r) : NULL;
+  }
+  r = strstr(url, "exemplo.test") ? resp[0]
+    : strstr(url, "antigo.test")  ? resp[1] : NULL;
   return r ? strdup(r) : NULL;
 }
 // conta um "url" por fonte; o bastante para distinguir lista vazia de cheia
@@ -46,6 +59,8 @@ void stream_definir_lista(const Stream *l, int n) { (void)l; (void)n; }
 void debrid_definir_episodio(int t, int e) { (void)t; (void)e; }
 void debrid_nova_busca(void) { nDebridNovaBusca++; }
 const char *i18n(const char *s) { return s; }
+const char *rede_url_publica(const char *url, char *dst, unsigned tam) {
+  snprintf(dst, tam, "%s", url ? url : ""); return dst; }
 void marco(const char *s) { (void)s; }
 int  fontecache_pegar(const char *id, const char *tipo, Stream **l, int *n) {
   (void)id; (void)tipo; *l = NULL; *n = 0; return FC_NADA; }
@@ -141,6 +156,53 @@ int main(void) {
   addons_alternar(2);
   conferirTexto("desligados", buscarMotivo("tt0000006"),
                 "Os add-ons de fontes estão desligados");
+
+  // ---- canal ao vivo: o segundo nome de tipo (issue #112)
+  // 7) FrostView sem manifesto lido: "tv" responde 200 vazio. Antes o segundo
+  //    nome so saia quando o primeiro NAO respondia, e o canal ficava sem
+  //    fonte com o addon tendo quatro. Agora a lista vazia tambem dispara.
+  conferir("addon de canal entrou", addons_adicionar("Canal TV", "https://canal.test/manifest.json"), 1);
+  respCanalTv = "{\"streams\":[]}";
+  respCanalChannel = "{\"streams\":[{\"url\":\"https://x/axn.m3u8\"}]}";
+  pedidosCanal[0] = 0;
+  addons_definir_origem("https://canal.test");
+  addons_buscar("cs:channel:axn", "tv");
+  addons_definir_origem(NULL);
+  while (addons_estado() == ADD_BUSCANDO) usleep(1000);
+  conferir("tv vazio -> channel traz a fonte", addons_estado(), ADD_PRONTO);
+  conferirTexto("ordem sem manifesto", pedidosCanal, "tv,channel,");
+  // 8) Com o manifesto do FrostView (catalogo "channel"), "channel" vai
+  //    primeiro e sozinho: uma viagem por canal, nao duas.
+  addons_manifesto_lido(3,
+    "{\"id\":\"com.frostview\",\"name\":\"Canal TV\","
+    "\"resources\":[\"catalog\",\"meta\",\"stream\"],\"types\":[\"channel\"],"
+    "\"catalogs\":[{\"id\":\"froststream-channels\",\"type\":\"channel\",\"name\":\"Canais\"}]}");
+  pedidosCanal[0] = 0;
+  addons_definir_origem("https://canal.test");
+  addons_buscar("cs:channel:globo", "tv");
+  addons_definir_origem(NULL);
+  while (addons_estado() == ADD_BUSCANDO) usleep(1000);
+  conferir("channel declarado traz a fonte", addons_estado(), ADD_PRONTO);
+  conferirTexto("ordem com manifesto", pedidosCanal, "channel,");
+  // 9) Os dois nomes vazios: a causa fala de CANAL, e nao de titulo.
+  respCanalChannel = "{\"streams\":[]}";
+  addons_definir_origem("https://canal.test");
+  { static char m[200];
+    addons_buscar("cs:channel:bleach", "tv");
+    addons_definir_origem(NULL);
+    while (addons_estado() == ADD_BUSCANDO) usleep(1000);
+    if (!addons_motivo_vazio(m, sizeof m)) snprintf(m, sizeof m, "(sem causa)");
+    conferirTexto("canal vazio", m, "Canal TV não tem fonte para este canal agora"); }
+  // 10) Segundo nome sem resposta nao apaga o "respondeu vazio" do primeiro.
+  respCanalChannel = NULL;
+  respCanalTv = "{\"streams\":[]}";
+  addons_definir_origem("https://canal.test");
+  { static char m[200];
+    addons_buscar("cs:channel:sbt", "tv");
+    addons_definir_origem(NULL);
+    while (addons_estado() == ADD_BUSCANDO) usleep(1000);
+    if (!addons_motivo_vazio(m, sizeof m)) snprintf(m, sizeof m, "(sem causa)");
+    conferirTexto("channel mudo, tv vazio", m, "Canal TV não tem fonte para este canal agora"); }
 
   remove(caminho);
   rmdir(dir);

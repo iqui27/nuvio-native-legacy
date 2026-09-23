@@ -35,4 +35,30 @@ int arte_reserva_url(const char *url, char *saida, size_t tam);
 // nao ha reset da tabela, portanto URLs distintas acumuladas podem esgota-lo.
 int arte_reserva_registrar(const char *url, const char *imdb, int poster);
 
+// FUNDO DE UMA FONTE QUE O ITEM NAO TROUXE (ajuste "Background do hero").
+//
+// POR QUE EXISTE: o catalogo do Cinemeta manda `background` =
+// images.metahub.space/background/medium/<tt>/img (conferido com curl em
+// 22/09 no top de filmes) e nada do TMDB nem do Trakt. Sem a url dessas duas
+// fontes no item, escolher "TMDB" ou "Trakt" nos Ajustes caia na arte
+// automatica — a MESMA imagem — e o ajuste parecia quebrado.
+//
+// COMO: artehero.c devolve uma url VIRTUAL deterministica pelo id do IMDb,
+//   https://nuvio.invalid/arte/<tmdb|trakt>/<tamanho>/<ttNNN>
+// e tex_cache, no fio de rede, pede aqui a url real (TMDB /find ou Trakt
+// /search/imdb) antes de baixar. O arquivo fica no cache de disco sob a url
+// virtual: a consulta acontece uma vez por titulo e fonte, nao por quadro.
+// `.invalid` (RFC 2606) garante que um caminho que nao passe por aqui morre
+// no DNS em vez de pedir coisa a um host de verdade.
+//
+// `tamanho`: TMDB w1280|original, Trakt medium|full. No Tizen o resolvedor
+// rebaixa `original` para w1280 e `full` para medium qualquer que seja o pedido — ver
+// fundoOriginal() em artehero.c (OOM do registro 1450).
+#define ARTE_VIRTUAL_PREFIXO "https://nuvio.invalid/arte/"
+
+// 0 = `url` nao e virtual (baixe como esta); 1 = `saida` tem a url real;
+// -1 = virtual sem resposta (sem chave, titulo desconhecido, sem fundo): trate
+// como download falho, para quem desenha cair na proxima fonte.
+int arte_fonte_resolver(const char *url, char *saida, size_t tam);
+
 #endif

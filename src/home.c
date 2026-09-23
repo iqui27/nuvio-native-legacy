@@ -13,6 +13,8 @@
 #include "simkl.h"
 #include "idioma.h"
 #include "catordem.h"
+#include "homeestado.h"
+#include "cachearte.h"
 #include "fileiras.h"
 #include "continuar.h"
 #include "vertudo.h"
@@ -521,8 +523,21 @@ static const char *arteDoItem(const CatItem *item, int *ehPoster) {
 static int desenhaArteHero(GfxRect r, GfxModo modo, const CatItem *item,
                            const char *path, float alpha) {
   int ehPoster = 0;
-  const char *arte = item ? arteDoItem(item, &ehPoster) : path;
+  // O `path` GANHA (22/09). Aqui era `item ? arteDoItem(item) : path`, e o
+  // arteDoItem devolve item->backdrop cru: o que arte_hero_do_item escolhia
+  // (fonte dos Ajustes, still do episodio, `original` da Alta) era pedido ao
+  // cache e decodificado, mas o que ia para a tela era sempre o backdrop do
+  // catalogo. MEDIDO no tests/heroarte_shot.sh com um printf temporario:
+  // arteA = nuvio.invalid/arte/tmdb/w1280/tt0468569, tAtu = 41 (textura
+  // pronta) e na captura o fundo do metahub. Esta linha e o "a settings de
+  // selecionar o source das artes nao ta funcionando" do destaque. A
+  // identidade continua garantida: `path` sai de arte_por_identidade com o
+  // MESMO indice de `item`; arteDoItem fica para quando nao ha path.
+  const char *arte = (path && path[0]) ? path
+                   : item ? arteDoItem(item, &ehPoster) : NULL;
   GLuint tex;
+  if (item && path && path[0] && item->poster[0] && !strcmp(path, item->poster))
+    ehPoster = 1;
   if (!arte || !arte[0]) return 0;
   tex = tex_obter_hero(arte);
   if (!tex) return 0;
@@ -591,8 +606,14 @@ static const char *arte_por_formato(const CatItem *item, int deitado) {
   // Deitado e a url guardada (w1280 no TMDB, 1920 no metahub) — o MESMO
   // arquivo que o heroi e o detalhe vao promover (artehero_url): um download
   // por titulo. O decode escalado (jpegrapido.c) faz o card custar pouco.
-  if (deitado) return item->backdrop[0] ? item->backdrop
-                                      : (item->poster[0] ? item->poster : NULL);
+  // A FONTE ESCOLHIDA NOS AJUSTES VALE AQUI TAMBEM (22/09): antes o card lia
+  // item->backdrop cru e "Background do hero" nunca chegava nele. Lido a cada
+  // quadro, entao trocar o ajuste muda o card na volta a home, sem reiniciar.
+  if (deitado) {
+    const char *b = artehero_url_card_fonte(item, ajustes_hero_fonte(),
+                                            ajustes_hero_arte_diferente());
+    return b ? b : (item->poster[0] ? item->poster : NULL);
+  }
   return item->poster[0] ? item->poster
                          : (item->backdrop[0] ? item->backdrop : NULL);
 }
@@ -608,14 +629,13 @@ static const char *arte_por_formato(const CatItem *item, int deitado) {
 // uma vez e sem piscar.
 static const char *arte_hero_do_item(const CatItem *item) {
   int fonte = ajustes_hero_fonte();
-  const char *escolhida = artehero_url_fonte(item, fonte);
+  int diferente = ajustes_hero_arte_diferente();
   // Ao escolher uma origem, o usuario esta pedindo a arte do titulo — nao o
   // still automatico do episodio. Automatico mantem o comportamento anterior,
-  // inclusive o still de Continuar assistindo.
-  if (fonte > 0) {
-    if (escolhida && !tex_falhou(escolhida)) return escolhida;
-    return artehero_url(item);
-  }
+  // inclusive o still de Continuar assistindo. A escolha entre fonte, card e
+  // "outra arte" mora em artehero_url_destaque, que o detalhe tambem usa: os
+  // dois tem de concordar, senao abrir o titulo troca a foto.
+  if (fonte > 0) return artehero_url_destaque(item, fonte, diferente);
   const char *ep = artehero_url_episodio(item);
   // STILL PEQUENO NAO VAI AO DESTAQUE (#85, pokazideia: "backdrop pixelado
   // em alguns titulos de Continuar assistindo"). O metahub serve o still no
@@ -625,7 +645,7 @@ static const char *arte_hero_do_item(const CatItem *item) {
     int w = tex_largura_fonte(ep);
     if (w == 0 || w >= 900) return ep;
   }
-  return artehero_url(item);
+  return artehero_url_destaque(item, 0, diferente);
 }
 
 // `cat_item()` faz wrap para telas que percorrem listas circulares. A home nao
@@ -1026,7 +1046,7 @@ static TipoFileira tipoDaEscolha(int t) {
 // Uma fileira, do jeito que a posicao a conhece. `scrollX` em INTEIRO de
 // proposito: sub-pixel de rolagem nao e informacao — e o que sobreviveu do
 // formato de texto que o arquivo tinha.
-typedef struct { char chave[192]; int coluna; int scrollX; } HomePos;
+typedef struct { char chave[192]; char itemId[64]; char itemTipo[8]; int coluna; int scrollX; } HomePos;
 
 // INSTANTANEO VIVO: tirado no comeco de sincronizarFileiras, devolvido no fim.
 // E o que conserta o defeito acima. static e nao pilha pelo mesmo motivo do
@@ -1054,7 +1074,11 @@ static int posIgnora(const char *chave) {
 }
 
 static void posCapturar(void) {
-  int r;
+  int r, antigoN = nPosViva;
+  HomePos antigo[MAX_FIL];
+  char antigoFoco[192];
+  memcpy(antigo, posViva, sizeof antigo);
+  snprintf(antigoFoco, sizeof antigoFoco, "%s", posVivaFoco);
   nPosViva = 0;
   posVivaFoco[0] = 0;
   posVivaCol = 0;
@@ -1067,6 +1091,25 @@ static void posCapturar(void) {
     // quando o foco SAI da fileira r, entao para a fileira em foco ela esta
     // atrasada de uma travessia inteira.
     p->coluna  = (r == foco.fileira) ? foco.coluna : foco.colunaLembrada[r];
+    // Para uma fileira que nao esta em foco, o ultimo ID conhecido e mais
+    // confiavel que o indice: a publicacao incremental pode ja ter trocado o
+    // bloco do catalogo quando este snapshot for capturado.
+    { int a, idx = fileiraItemIndice(&fileiras[r], p->coluna);
+      const CatItem *it = cat_item(idx);
+      p->itemId[0] = p->itemTipo[0] = 0;
+      for (a = 0; a < antigoN; a++)
+        if (!strcmp(antigo[a].chave, p->chave) && antigo[a].itemId[0]) {
+          if (r != foco.fileira || !strcmp(antigoFoco, p->chave)) {
+            snprintf(p->itemId, sizeof p->itemId, "%s", antigo[a].itemId);
+            snprintf(p->itemTipo, sizeof p->itemTipo, "%s", antigo[a].itemTipo);
+            break;
+          }
+        }
+      if (!p->itemId[0] && it) {
+        snprintf(p->itemId, sizeof p->itemId, "%s", it->imdb);
+        snprintf(p->itemTipo, sizeof p->itemTipo, "%s", it->tipo);
+      }
+    }
     p->scrollX = (int)(scrollX[r] + 0.5f);
   }
   if (foco.fileira >= 0 && foco.fileira < nFileiras
@@ -1088,6 +1131,19 @@ static int posAplicarTabela(const HomePos *t, int n,
     int c;
     if (!p) continue;
     c = p->coluna;
+    // Durante a sessao o item e a identidade primaria: uma resposta
+    // incremental pode inserir/remover cards dentro da mesma chave sem
+    // deslocar o foco para outro titulo. Coluna continua sendo fallback para
+    // o caso de o item ter saído legitimamente do catalogo.
+    if (p->itemId[0]) {
+      int q;
+      for (q = 0; q < fileiras[r].n; q++) {
+        int idx = fileiraItemIndice(&fileiras[r], q);
+        const CatItem *it = cat_item(idx);
+        if (it && !strcmp(it->imdb, p->itemId) &&
+            !strcmp(it->tipo, p->itemTipo)) { c = q; break; }
+      }
+    }
     // A fileira pode ter encolhido entre uma publicacao e outra, ou entre
     // ontem e hoje.
     if (c >= foco.nColunas[r]) c = foco.nColunas[r] - 1;
@@ -1100,6 +1156,16 @@ static int posAplicarTabela(const HomePos *t, int n,
       if (!strcmp(fileiras[r].chave, chFoco)) { achou = r; break; }
   if (achou >= 0) {
     int c = colFoco;
+    const HomePos *pf = posAchar(t, n, chFoco);
+    if (pf && pf->itemId[0]) {
+      int q;
+      for (q = 0; q < fileiras[achou].n; q++) {
+        int idx = fileiraItemIndice(&fileiras[achou], q);
+        const CatItem *it = cat_item(idx);
+        if (it && !strcmp(it->imdb, pf->itemId) &&
+            !strcmp(it->tipo, pf->itemTipo)) { c = q; break; }
+      }
+    }
     if (c >= foco.nColunas[achou]) c = foco.nColunas[achou] - 1;
     if (c < 0) c = 0;
     foco.fileira = achou;
@@ -1112,6 +1178,34 @@ static int posAplicarTabela(const HomePos *t, int n,
     // pos, e o primeiro toque para baixo cai la, com a fileira ja rolada.
   }
   return achou;
+}
+
+static void homeMarcarURL(const char *url, float largura) {
+  if (!url || (strncmp(url, "http://", 7) && strncmp(url, "https://", 8))) return;
+  tex_cache_marcar_larg(NV_CACHE_ARTE_GRUPO_HOME, url, largura, 1, 0);
+}
+
+static void homeAtualizarReferenciasArte(void) {
+  int r, i;
+  cachearte_limpar_referencias_grupo(NV_CACHE_ARTE_GRUPO_HOME);
+  for (r = 0; r < nFileiras; r++) {
+    int limite = fileiras[r].n < 8 ? fileiras[r].n : 8;
+    float largura = larguraFil(r);
+    for (i = 0; i < limite; i++) {
+      int idx = fileiraItemIndice(&fileiras[r], i);
+      const CatItem *it = cat_item(idx);
+      if (!it) continue;
+      homeMarcarURL(it->poster, largura);
+      homeMarcarURL(it->logo, largura * 0.65f);
+      homeMarcarURL(it->backdrop, largura);
+    }
+  }
+  // Pin the actual source selected for the large hero request, which can use a
+  // different backdrop URL and resolution from the row card.
+  heroSetGarantir();
+  for (i = 0; i < heroSetN; i++)
+    homeMarcarURL(arte_por_identidade(heroSet[i], 2), NV_TELA_W);
+  cachearte_estatisticas_pedir();
 }
 
 int home_iniciar(const char *dirArte) {
@@ -1407,6 +1501,14 @@ static void sincronizarFileiras(void) {
       revisao = (revisao ^ *s) * 16777619u;
     revisao = (revisao ^ (unsigned)cf->ini) * 16777619u;
     revisao = (revisao ^ (unsigned)cf->n) * 16777619u;
+    // A fileira pode manter a mesma chave/janela enquanto o feed incremental
+    // insere ou substitui itens. A identidade exibida tambem participa da
+    // revisao para que o foco seja remapeado pelo ID, e nao pela coluna velha.
+    for (int ci = 0; ci < cf->n; ci++) {
+      const CatItem *it = cat_item(cf->ini + ci);
+      if (it) for (const unsigned char *s = (const unsigned char *)it->imdb; *s; s++)
+        revisao = (revisao ^ *s) * 16777619u;
+    }
   }
   if (nCat < 1 || (nCat == filsAplicadas && assin == prefsAplicadas
       && revisao == ultimaRevisao && retomarAplicada == retomarRev)) return;
@@ -1427,7 +1529,6 @@ static void sincronizarFileiras(void) {
   for (r = 0; r < nCat && destino < MAX_FIL - 1; r++) {
     const CatFileira *cf = cat_fileira(r);
     if (!cf) break;
-    if (cf->n < 1) continue;
     // `continueWatchingEnabled: false` tira a fileira da home inteira — nao a
     // esvazia, tira. E o que renderModernHomeLayout faz quando
     // computeContinueWatchingRenderState devolve a fileira desligada.
@@ -1447,7 +1548,7 @@ static void sincronizarFileiras(void) {
                            ? FILEIRA_CONTINUE : perfilCatalogo(cf->titulo);
     if (!strcmp(cf->chave, "continue_watching")) {
       if (ajustes_cw_estilo() == 2) fileiras[destino].tipo = FILEIRA_NORMAL;
-    } else if (!temDestaque && cf->base[0] && cf->catId[0]) {
+    } else if (!temDestaque && cf->n > 0 && cf->base[0] && cf->catId[0]) {
       fileiras[destino].tipo = FILEIRA_DESTAQUE;
       temDestaque = 1;
       destaqueIndice = destino;
@@ -1458,7 +1559,10 @@ static void sincronizarFileiras(void) {
     // UMA COLUNA A MAIS: o card "Ver tudo" no fim. So em fileira que veio de um
     // CATALOGO de addon — "Continuar assistindo" e as listas do Trakt nao tem
     // continuacao para pedir (o base fica vazio nelas).
-    fileiras[destino].verTudo = (cf->base[0] && cf->catId[0]) ? 1 : 0;
+    // Um catalogo pode responder vazio validamente. Mantemos o titulo da
+    // fileira como estado visivel, mas nao inventamos um card "Ver tudo" sem
+    // nenhum item para representar a consulta.
+    fileiras[destino].verTudo = (cf->n > 0 && cf->base[0] && cf->catId[0]) ? 1 : 0;
     snprintf(fileiras[destino].base,  sizeof fileiras[destino].base,  "%s", cf->base);
     snprintf(fileiras[destino].catId, sizeof fileiras[destino].catId, "%s", cf->catId);
     snprintf(fileiras[destino].catTipo, sizeof fileiras[destino].catTipo, "%s", cf->tipo);
@@ -1687,6 +1791,7 @@ static void sincronizarFileiras(void) {
         break;
       }
   expFileira = expColuna = -1; expAbre = 0.0f;
+  homeAtualizarReferenciasArte();
   if (nFileiras < 1) return;
   {
     int cols[MAX_FIL], k;
@@ -1956,6 +2061,12 @@ void home_atualizar(float dt, Uint32 agora) {
   }
   scrollY = anim_mola2_reduzida(&velY, scrollY, alvoY, dt,
                                 NV_MOLA2_SCROLL, motionReduzido);
+
+  // Mantem um snapshot vivo para a proxima publicacao incremental. O
+  // sincronizador ainda usa posCapturar como fallback nos testes/caminhos que
+  // nao passam por este loop, mas no arranque normal este snapshot e tomado
+  // antes de um worker trocar o bloco de catalogo.
+  posCapturar();
 
 }
 
@@ -2754,13 +2865,33 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
               fileiras[foco.fileira].tipo == FILEIRA_SOCIAL));
   if (pronto) ci = cat_item_exato(heroAtual);
   if (!pronto || !ci || !ci->imdb[0]) {
-    if (heroTrailerItem >= 0 && trailer_aberto() && !trailer_cheia()) trailer_fechar();
+    // Hero deixou de estar pronto (foco saiu, transicao da arte, detalhe por
+    // cima): fecha. E o outro caminho de fechamento que o prazo nao ve —
+    // o emulador mostrou "estado -1 -> -2 +8613ms" sem mais nada.
+    if (heroTrailerItem >= 0 && trailer_aberto() && !trailer_cheia()) {
+      printf("[trailer] hero: saiu de cena, fecha o trailer %s (estado %d, +%u ms)\n",
+             trailer_tocando() ? "tocando" : "sem playing", trailer_estado(),
+             heroTrailerDesde ? (unsigned)(agora - heroTrailerDesde) : 0u);
+      fflush(stdout);
+      trailer_fechar();
+    }
     heroTrailerItem = -1; heroTrailerDesde = 0; heroTrailerTentado = 0;
     heroTrailerImdb[0] = 0;
     heroTrailerPreparandoAte = 0; heroTrailerFonte = 0; heroTrailerAppleFalhou = 0;
     heroTrailerFade = 0.0f;
   } else if (heroTrailerItem != heroAtual || strcmp(heroTrailerImdb, ci->imdb) != 0) {
-    if (trailer_aberto() && !trailer_cheia()) trailer_fechar();
+    // A rotacao do carrossel roda ANTES deste passo (home_atualizar): quando
+    // o prazo de preparo vence, heroTrailerSegurando solta e o hero troca de
+    // titulo no mesmo quadro — o fechamento acontece AQUI, nao no ramo do
+    // prazo abaixo. Sem esta linha o registro so mostrava o elemento sumir
+    // (emulador, 22/09/2026: "estado -1 -> -2 +5157ms" e nada mais).
+    if (trailer_aberto() && !trailer_cheia()) {
+      printf("[trailer] hero: troca de titulo fecha o trailer %s (estado %d, +%u ms)\n",
+             trailer_tocando() ? "tocando" : "sem playing", trailer_estado(),
+             heroTrailerDesde ? (unsigned)(agora - heroTrailerDesde) : 0u);
+      fflush(stdout);
+      trailer_fechar();
+    }
     heroTrailerItem = heroAtual; heroTrailerDesde = agora; heroTrailerTentado = 0;
     snprintf(heroTrailerImdb, sizeof heroTrailerImdb, "%s", ci->imdb);
     heroTrailerPreparandoAte = 0; heroTrailerFonte = 0; heroTrailerAppleFalhou = 0;
@@ -2794,6 +2925,10 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
     // aqui tambem invalida a fonte antiga antes de a proxima arte entrar.
     if (trailer_aberto() && !trailer_tocando() && heroTrailerPreparandoAte &&
         (Sint32)(agora - heroTrailerPreparandoAte) >= 0) {
+      printf("[trailer] hero: sem playing em %d ms (%s, estado %d), %s\n",
+             NV_TRAILER_HERO_PREPARA_MS, heroTrailerFonte == 1 ? "apple" : "youtube",
+             trailer_estado(), heroTrailerFonte == 1 ? "tenta YouTube" : "desiste");
+      fflush(stdout);
       trailer_fechar();
       heroTrailerPreparandoAte = 0;
       heroTrailerFade = 0.0f;
@@ -2809,7 +2944,9 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
   // trailer_atualizar fecha o elemento que recebeu erro depois deste passo;
   // consumir a marca no quadro seguinte transforma somente erro de Apple em
   // fallback. Um fechamento normal (ended/Voltar) nunca cai no YouTube.
-  if (heroTrailerFonte == 1 && !trailer_aberto() && trailer_falhou()) {
+  if (heroTrailerFonte == 1 && !trailer_aberto() && trailer_falhou() && !heroTrailerAppleFalhou) {
+    printf("[trailer] hero: apple deu erro, tenta YouTube\n");
+    fflush(stdout);
     heroTrailerAppleFalhou = 1;
     heroTrailerTentado = 0;
     heroTrailerPreparandoAte = 0;
@@ -2825,15 +2962,17 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
     const char *u = heroTrailerAppleFalhou ? NULL : trailerapple_url(ci->imdb);
     const char *yt = NULL;
     int ehYoutube = 0;
+    // A APPLE TEM A JANELA INTEIRA (ate NV_TRAILER_HERO_MAX_ESPERA_MS) antes
+    // do YouTube, tambem na Samsung. Antes, com um id do YouTube em maos, o
+    // hero o abria ja aos 1,2 s se a Apple ainda nao tinha respondido — e a
+    // resposta da Apple agora inclui baixar o master para escolher a variante
+    // (trailerapple.c, varianteMidia), ~0,3 s a mais. No emulador isso deu
+    // YouTube aos 90,1 s e a Apple pronta aos 90,4 s; o embed do YouTube nao
+    // produziu `playing` em 3,5 s (na TV ele cai em "Video player
+    // configuration error", #82/#86), e o trailer bom ficou de fora.
     if (!u && !trailerapple_respondeu(ci->imdb) &&
-        decorrido < NV_TRAILER_HERO_MAX_ESPERA_MS) {
-#ifdef __EMSCRIPTEN__
-      yt = heroTrailerYoutube(ci->imdb);
-      if (!yt) goto trailer_hero_fim;
-#else
+        decorrido < NV_TRAILER_HERO_MAX_ESPERA_MS)
       goto trailer_hero_fim;
-#endif
-    }
 #ifdef __EMSCRIPTEN__
     if (!u) {
       yt = heroTrailerYoutube(ci->imdb);
@@ -2865,6 +3004,9 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
       }
     } else {
       // Sem fonte depois do orçamento, deixa a arte e o carrossel seguirem.
+      printf("[trailer] hero: sem fonte em %u ms (apple %s), fica a arte\n", decorrido,
+             heroTrailerAppleFalhou ? "falhou" : trailerapple_respondeu(ci->imdb) ? "sem trailer" : "sem resposta");
+      fflush(stdout);
       heroTrailerTentado = 1;
       heroTrailerFonte = 3;
       heroTrailerFade = 0.0f;

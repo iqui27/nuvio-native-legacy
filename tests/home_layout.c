@@ -3,6 +3,18 @@
 #include <assert.h>
 #include "../src/home.c"
 
+void cachearte_marcar_grupo(int grupo, const char *url, int variante, int essencial, int emUso) {
+  (void)grupo; (void)url; (void)variante; (void)essencial; (void)emUso;
+}
+void cachearte_limpar_referencias_grupo(int grupo) { (void)grupo; }
+void cachearte_estatisticas_pedir(void) {}
+void tex_cache_marcar_larg(int grupo, const char *url, float larg, int essencial, int emUso) {
+  (void)grupo; (void)url; (void)larg; (void)essencial; (void)emUso;
+}
+int tex_falhou(const char *url) { (void)url; return 0; }
+int tex_largura_fonte(const char *url) { (void)url; return 0; }
+Uint32 SDL_GetTicks(void) { return 0; }
+
 // catalogo.c agora le o progresso de progresso.c, que fala com dados.c e
 // perfis.c. Aqui nao ha disco nem conta: dublês vazios bastam.
 char *dados_ler(const char *nome) { (void)nome; return NULL; }
@@ -23,11 +35,8 @@ const char *addons_nome_por_id(const char *id) { (void)id; return ""; }
 int main(void) {
   // O TETO DE FILEIRAS NO MAXIMO, porque este teste e sobre COMPOSICAO e FOCO.
   //
-  // O limite (7 de fabrica) nasceu depois deste arquivo e cortava a montagem
-  // em sete, derrubando quase toda asserção daqui — que fala de fileira 9, 10,
-  // de nenhum catalogo perdido, e de descer o foco ate o fim. Declarar o teto
-  // aqui deixa explicito que ele nao e o assunto; o caso que o exercita esta
-  // no fim do arquivo.
+  // O limite legado é 16 linhas visíveis. O fixture valida a composição dentro
+  // desse teto, incluindo as linhas fixas.
   fil_definir_limite(FIL_LIMITE_MAX);
   assert(MAX_FIL <= FOCUS_MAX_FILEIRAS);
   assert(perfilCatalogo("Oscars 2026 - Filme") == FILEIRA_COLECAO);
@@ -124,8 +133,8 @@ int main(void) {
   assert(nFileiras>=11);
   assert(fileiras[1].tipo==FILEIRA_SOCIAL);
   // O primeiro catalogo com conteudo vira o destaque; o resto segue a ordem.
-  assert(fileiras[2].tipo==FILEIRA_DESTAQUE);
-  assert(!strcmp(fileiras[2].chave,"catalogo_1"));
+  assert(fileiras[0].tipo==FILEIRA_DESTAQUE);
+  assert(!strcmp(fileiras[0].chave,"catalogo_1"));
   assert(fileiras[nFileiras-2].tipo==FILEIRA_CATALOGOS);
   assert(!strcmp(fileiras[nFileiras-2].titulo,"Streaming"));
   assert(!strcmp(col_folder(fileiras[nFileiras-2].folders[0])->title,"Netflix"));

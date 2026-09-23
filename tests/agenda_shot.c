@@ -30,6 +30,14 @@
 //   -aviso          o cartao do lembrete vencido, que e o unico aviso que uma
 //                   TV sem push consegue dar;
 //   -menu           a barra lateral aberta com o item Agenda e o icone novo;
+//   -semchave       a Agenda SEM chave do TMDB (a Samsung do dono, 22/09):
+//                   series que so o progresso/lembrete conhece, preenchidas
+//                   pelo Cinemeta FALSO desta captura — nome, cartaz, data e
+//                   genero no lugar de "Serie" e do retangulo cinza —, o
+//                   aviso ambar de fonte sob a legenda e "Sem data
+//                   confirmada" na serie que nenhuma fonte datou;
+//   -tmdbdesligado  o mesmo com a chave no pacote e o ajuste TMDB desligado:
+//                   o aviso passa a apontar Ajustes > Integracoes > TMDB;
 //   -lembrete-*     os quatro estados do botao circular do lembrete no hero:
 //                   desligado/ligado, em repouso/em foco. O ligado em repouso e
 //                   o circulo ESMERALDA; o focado e a superficie clara com o
@@ -54,6 +62,7 @@
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
+#include "descoberta.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <assert.h>
@@ -188,6 +197,43 @@ static void poeLinha(char *dst, size_t tam, const char *imdb, const char *titulo
            "%s\t%s\t%s\t%d\t%d\t%d\t%s\t%s\t%s\t%lld\t%s\t%s\t%s\t%d\t%d\n",
            imdb, titulo, poster, sit, t, e, nomeEp, prox, ult, 4000000000LL,
            sinopse, tipoEp, rede, duracao, temporadas);
+}
+
+// O CINEMETA FALSO da captura -semchave. Os cartazes sao arquivos locais: a
+// captura nao tem rede, e tex_obter_larg le caminho de disco do mesmo jeito.
+// tt5550004 nao existe (404): e a serie que fica com o nome de reserva.
+static char *cinemetaFalso(const char *url, int segundos, const char *const *cab, int *st) {
+  static const struct { const char *id, *json; } R[] = {
+    { "tt5550001", "{\"meta\":{\"name\":\"Slow Horses\",\"status\":\"Continuing\","
+      "\"poster\":\"deploy/app/art/07.jpg\",\"genres\":[\"Thriller\"],\"runtime\":\"48 min\","
+      "\"videos\":[{\"season\":5,\"episode\":2,\"name\":\"Missing Persons\",\"released\":\"2026-09-10T05:00:00.000Z\"},"
+      "{\"season\":5,\"episode\":3,\"name\":\"Uncle Sam\",\"released\":\"2026-09-18T05:00:00.000Z\","
+      "\"overview\":\"Lamb descobre quem mandou seguir River.\"}]}}" },
+    { "tt5550002", "{\"meta\":{\"name\":\"The Diplomat\",\"status\":\"Continuing\","
+      "\"poster\":\"deploy/app/art/08.jpg\",\"genres\":[\"Drama\"],\"runtime\":\"50 min\","
+      "\"videos\":[{\"season\":3,\"episode\":1,\"name\":\"Estreia\",\"released\":\"2026-10-02T08:00:00.000Z\"}]}}" },
+    { "tt5550003", "{\"meta\":{\"name\":\"Only Murders in the Building\","
+      "\"poster\":\"deploy/app/art/09.jpg\",\"genres\":[\"Comedy\"],"
+      "\"videos\":[{\"season\":6,\"episode\":1,\"name\":\"Sem dia\"}]}}" },
+    { "tt5550005", "{\"meta\":{\"name\":\"Mindhunter\",\"status\":\"Ended\","
+      "\"poster\":\"deploy/app/art/10.jpg\",\"genres\":[\"Crime\"],\"runtime\":\"60 min\","
+      "\"videos\":[{\"season\":2,\"episode\":9,\"name\":\"Final\",\"released\":\"2019-08-16T07:00:00.000Z\"}]}}" },
+  };
+  size_t i;
+  (void)segundos; (void)cab;
+  *st = 404;
+  if (!strstr(url, "v3-cinemeta.strem.io/meta/series/")) return NULL;
+  for (i = 0; i < sizeof R / sizeof R[0]; i++)
+    if (strstr(url, R[i].id)) { *st = 200; return strdup(R[i].json); }
+  return NULL;
+}
+
+// Espera o fio da agenda e deixa a tela remontar (agendaui_atualizar remonta
+// na borda 1 -> 0 de agenda_atualizando).
+static void esperaFio(void) {
+  int k;
+  for (k = 0; k < 300 && agenda_atualizando(); k++) SDL_Delay(10);
+  printf("fio da agenda terminou: %d\n", !agenda_atualizando());
 }
 
 int main(int argc, char **argv) {
@@ -433,6 +479,51 @@ int main(int argc, char **argv) {
   teclaDet(SDLK_LEFT);
   snprintf(nome, sizeof nome, "%s-lembrete-desligado.bmp", saida);
   captura(nome, w);
+
+  // --- 11. SEM CHAVE DO TMDB --------------------------------------------------
+  //
+  // Perfil 3, cache VAZIO, catalogo sem nenhuma serie na lista: as cinco linhas
+  // saem so dos lembretes (terceira fonte de agenda_montar), que e o caso das
+  // series que o dono segue e o catalogo da TV nao publicou. O fio roda de
+  // verdade — so o GET e falso.
+  agenda_rede_teste(cinemetaFalso);
+  { CatItem ci;
+    memset(&ci, 0, sizeof ci);
+    snprintf(ci.imdb, sizeof ci.imdb, "%s", "tt0000001");
+    snprintf(ci.tipo, sizeof ci.tipo, "%s", "movie");
+    snprintf(ci.titulo, sizeof ci.titulo, "%s", "Fora da lista");
+    cat_definir_tudo(&ci, 1, NULL, 0); }
+  perfis_definir_ativo(3);
+  dados_gravar("lembretes-p3.txt",
+               "tt5550001\t\t0\n" "tt5550002\t\t0\n" "tt5550003\t\t0\n"
+               "tt5550004\t\t0\n" "tt5550005\t\t0\n");
+  agenda_iniciar();
+  oQue = DES_AGENDA;
+  agendaui_iniciar();
+  esperaFio();
+  snprintf(nome, sizeof nome, "%s-semchave.bmp", saida);
+  captura(nome, w);
+  // O fim da lista: a serie que nenhuma fonte conhece e a sem data.
+  { int i; for (i = 0; i < 4; i++) tecla(SDLK_DOWN); }
+  snprintf(nome, sizeof nome, "%s-semchave-fim.bmp", saida);
+  captura(nome, w);
+
+  // --- 12. CHAVE NO PACOTE, AJUSTE TMDB DESLIGADO --------------------------
+  // tmdb_enabled 1 = "Desligado" (V_LIGA). A chave e falsa e nunca e usada:
+  // com o ajuste desligado desc_chave_tmdb() devolve "".
+  desc_tmdb_definir("0123456789abcdef0123456789abcdef");
+  { char caminho[600];
+    FILE *f;
+    snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dados_dir());
+    f = fopen(caminho, "w");
+    if (f) { fprintf(f, "idioma %d\nanimacoes 0\ntmdb_enabled 1\n",
+                     getenv("NUVIO_SHOT_EN") && *getenv("NUVIO_SHOT_EN") != '0');
+             fclose(f); ajustes_dir(dados_dir()); } }
+  printf("chave TMDB para o fio: [%s]\n", desc_chave_tmdb()[0] ? "sim" : "nao");
+  agendaui_iniciar();
+  snprintf(nome, sizeof nome, "%s-tmdbdesligado.bmp", saida);
+  captura(nome, w);
+  agenda_rede_teste(NULL);
 
   tex_encerrar();
   txt_encerrar();

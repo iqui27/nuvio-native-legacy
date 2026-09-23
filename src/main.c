@@ -28,8 +28,10 @@
 #include "marco.h"
 #include "rede.h"
 #include "tex_cache.h"
+#include "cachearte.h"
 #include "artehero.h"
 #include "home.h"
+#include "homeestado.h"
 #include "text.h"
 #include "detail.h"
 #include "dados.h"
@@ -649,10 +651,11 @@ int main(int argc, char **argv) {
   addons_carregar(dirArte);
   // Ajustes tambem sao do USUARIO, nao do pacote.
   ajustes_dir(dirDados);
-  { // As imagens vindas de URL vao para a pasta GRAVAVEL, e nao para o lado da
-    // arte do pacote. Uma vez baixadas valem para sempre (arte de filme nao
-    // muda), e "para sempre" no Tizen quer dizer IDBFS: em /app/art elas
-    // morriam na recarga e a home rebaixava tudo a cada arranque.
+  // A estrutura persistida só pode ser comparada após carregar a configuração.
+  homeestado_iniciar();
+  { // Nativo conserva arte comprimida na pasta gravavel, sujeita a poda LRU.
+    // Tizen inicializa aqui o IndexedDB separado de imagens, lido sob demanda;
+    // a pasta IDBFS continua disponivel para o caminho legado de GIFs.
     char c[600];
     snprintf(c, sizeof c, "%s/cache", dirDados);
     tex_cache_dir(c); }
@@ -889,7 +892,11 @@ int main(int argc, char **argv) {
 
     if (agora - ultRelato >= 3000) {
       int itens, pend, quentes; long bytes, bytesQ;
+      NvCacheArteStats cacheArteStats;
       tex_estatisticas(&itens, &pend, &bytes, &quentes, &bytesQ);
+      memset(&cacheArteStats, 0, sizeof cacheArteStats);
+      cachearte_estatisticas_pedir();
+      cachearte_estatisticas(&cacheArteStats);
       // `idbfs=N/X.Xms` e a descarga para o IndexedDB: quantas e o custo SINCRONO
       // da pior. Sem estes dois numeros nao ha como distinguir "o pico sumiu" de
       // "o pico mudou de fase" — foi essa descarga que produziu os 100 ms.
@@ -902,17 +909,32 @@ int main(int argc, char **argv) {
       // dizer se ele girava. Se `tela` passa do orcamento, nenhum ajuste de
       // fila resolve — e o teto.
       printf("FPS=%.1f pior=%.1fms janks=%d | pior-quadro: texto %.1fms em %d linhas"
-             " | texturas=%d pend=%d %.1fMB tela=%d/%.1fMB tex-despejos=%d(q=%d)"
-             " | despejos=%d | idbfs=%d/%.1fms | cache-disco=%.1fMB | rss=%.0fMB%s\n",
+             " | gpu-cache=%d %.1fMB tela=%d/%.1fMB fila-tex=%d tex-despejos=%d(q=%d)"
+             " | despejos=%d | cache-arte=%ld/%ldB hit=%ld miss=%ld grav=%ld err=%ld essenciais=%ld/%ld"
+             " | fs-backend=%s idbfs=%s sync=%s ok=%d err=%d pend=%d custo=%d/%.1fms recovery=%d"
+             " | cache-disco=%.1fMB | rss=%.0fMB%s\n",
              quadros * 1000.0 / (double)(agora - ultRelato), pior, janks,
-             piorTxtMs, piorTxtN, itens, pend, bytes / 1048576.0,
-             quentes, bytesQ / 1048576.0, tex_despejos, tex_despejos_quentes,
+             piorTxtMs, piorTxtN, itens, bytes / 1048576.0,
+             quentes, bytesQ / 1048576.0, pend, tex_despejos, tex_despejos_quentes,
              txt_despejos,
-             dados_desc_n, dados_desc_ms,
+             cacheArteStats.itens, cacheArteStats.bytes,
+             cacheArteStats.hits, cacheArteStats.misses, cacheArteStats.gravacoes, cacheArteStats.falhas,
+             cacheArteStats.essenciais, cacheArteStats.essenciais_esperados,
+             dados_persistente() ? "on" : "off",
+#ifdef __EMSCRIPTEN__
+             dados_persistente() ? "mounted" : "unmounted",
+#else
+             "native",
+#endif
+             dados_sync_pendente() ? "pending" : (dados_sync_em_recuo() ? "retry" : "idle"),
+             dados_sync_sucessos, dados_sync_falhas, dados_sync_pendente(),
+             dados_desc_n, dados_desc_ms, dados_modo_recuperacao(),
              tex_cache_disco_bytes() / 1048576.0,
              rssMB(),
              dados_persistente() ? "" : "  <<< SEM PERSISTENCIA");
       avisos_sinal(NULL, (float)rssMB());   // batida: no maximo 1 a cada 60 s
+      dados_sync_sucessos = 0;
+      dados_sync_falhas = 0;
 #ifdef __EMSCRIPTEN__
       // Heap linear, nao RAM total do processo: GPU e memoria JS ficam fora.
       // uordblks inclui pilhas dos pthreads e dados alocados pelo malloc.

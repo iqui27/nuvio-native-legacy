@@ -12,6 +12,7 @@ static int    aberto, cheia, comSom;
 static int    falhouUltima;
 static GfxRect rect;
 static char   fonteAtual[1024];
+static Uint32 abertoEm;   // SDL_GetTicks da abertura da fonte atual, para o log
 
 #ifdef __EMSCRIPTEN__
 // O iframe fica ATRAS do canvas (z-index 0 contra 1 do canvas), no mesmo
@@ -46,15 +47,33 @@ EM_JS(int, trailer_js_abrir, (const char *fonte, float x, float y, float w, floa
       // O elemento anterior pode emitir `error`/`ended` depois de ser
       // removido. Publicar esse estado no objeto global fazia a sessao nova
       // fechar ou ficar em buffering assim que A -> B -> A acontecia.
-      f.addEventListener('playing', function () { if (T.f === f && T.geracao === geracao) T.estado = 1; });
-      f.addEventListener('waiting', function () { if (T.f === f && T.geracao === geracao && T.estado === 1) T.estado = 3; });
-      f.addEventListener('ended', function () { if (T.f === f && T.geracao === geracao) T.estado = 0; });
-      f.addEventListener('error', function () { if (T.f === f && T.geracao === geracao) T.estado = -3; });
+      // DIAGNOSTICO (log 1646, Samsung 1.4.1: o C abria o HLS e depois nao
+      // havia UMA linha sobre o video). Uma linha por transicao, pelo mesmo
+      // canal do printf (window.__nvDiag -> painel, nv-log, "Enviar
+      // registro"); waiting/stalled so a primeira de cada, para nao inundar.
+      var t0 = Date.now(), vistos = {};
+      var diz = function (ev, extra) {
+        if (vistos[ev]) return; vistos[ev] = 1;
+        var s = '[trailer-js] g' + geracao + ' ' + ev + ' +' + (Date.now() - t0) + 'ms' + (extra ? ' ' + extra : '');
+        try { console.log(s); if (window.__nvDiag) window.__nvDiag(s); } catch (e) {}
+      };
+      f.addEventListener('loadedmetadata', function () { diz('loadedmetadata', f.videoWidth + 'x' + f.videoHeight + ' dur=' + (f.duration || 0).toFixed(1)); });
+      f.addEventListener('canplay', function () { diz('canplay'); });
+      f.addEventListener('stalled', function () { diz('stalled'); });
+      f.addEventListener('playing', function () { diz('playing'); if (T.f === f && T.geracao === geracao) T.estado = 1; });
+      f.addEventListener('waiting', function () { diz('waiting'); if (T.f === f && T.geracao === geracao && T.estado === 1) T.estado = 3; });
+      f.addEventListener('ended', function () { diz('ended'); if (T.f === f && T.geracao === geracao) T.estado = 0; });
+      f.addEventListener('error', function () {
+        var me = f.error;
+        diz('error', 'code=' + (me ? me.code : '?') + ' ' + (me && me.message ? me.message : ''));
+        if (T.f === f && T.geracao === geracao) T.estado = -3;
+      });
+      setTimeout(function () { if (!vistos.playing && T.f === f) diz('sem playing em 8 s', 'readyState=' + f.readyState + ' networkState=' + f.networkState); }, 8000);
       T.f = f; T.id = id; T.estado = -1; T.som = som; T.ehVideo = 1; T.geracao = geracao;
       f.src = id;
       f.style.cssText = 'position:absolute;border:0;z-index:0;background:#000;pointer-events:none;object-fit:cover;';
       (document.body || document.documentElement).appendChild(f);
-      var pr = f.play(); if (pr && pr.catch) pr.catch(function () { if (T.f === f && T.geracao === geracao) T.estado = -3; });
+      var pr = f.play(); if (pr && pr.catch) pr.catch(function (e) { diz('play() recusado', e && e.name ? e.name : ''); if (T.f === f && T.geracao === geracao) T.estado = -3; });
     } else {
       f = document.createElement('iframe');
       var org = (location.origin && location.origin !== 'null' && location.origin.indexOf('http') === 0) ? '&origin=' + encodeURIComponent(location.origin) : '';
@@ -218,6 +237,17 @@ void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
   int nova;
   if (!trailer_suportado() || !fonte || !fonte[0]) return;
   nova = strcmp(fonteAtual, fonte) != 0;
+#ifdef __EMSCRIPTEN__
+  // O ESTADO DE SESSAO a cada tentativa (dono: "tocou um trailer e depois
+  // nenhum toca mais"). Se algo ficasse preso aqui — elemento velho ainda
+  // aberto, falha antiga, estado JS que nao volta a -2 — esta linha mostra
+  // no registro da proxima Samsung, sem precisar de TV na mesa.
+  if (nova) {
+    printf("[trailer] tentativa: aberto=%d cheia=%d falhou=%d estado=%d anterior=%.40s\n",
+           aberto, cheia, falhouUltima, trailer_js_estado(), fonteAtual[0] ? fonteAtual : "-");
+    fflush(stdout);
+  }
+#endif
   if (nova) falhouUltima = 0;
 #ifdef __EMSCRIPTEN__
   if (!trailer_js_abrir(fonte, r.x, r.y, r.w, r.h, som, ajustes_trailer_zoom())) return;
@@ -232,6 +262,7 @@ void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
 #endif
   if (nova) {
     snprintf(fonteAtual, sizeof fonteAtual, "%s", fonte);
+    abertoEm = SDL_GetTicks();
     printf("[trailer] %.60s %s%s\n", fonte, modoCheia ? "tela cheia" : "no fundo", som ? " com som" : " mudo");
     fflush(stdout);
   }
@@ -275,6 +306,13 @@ int trailer_tocando(void) {
 #endif
 }
 GfxRect trailer_retangulo(void) { return rect; }
+int trailer_estado(void) {
+#ifdef __EMSCRIPTEN__
+  return aberto ? trailer_js_estado() : -2;
+#else
+  return -9;
+#endif
+}
 
 int trailer_evento(const SDL_Event *e) {
   SDL_Keycode k;
@@ -297,6 +335,21 @@ int trailer_evento(const SDL_Event *e) {
 void trailer_atualizar(Uint32 agora) {
   (void)agora;
 #ifdef __EMSCRIPTEN__
+  // TRANSICAO DO ESTADO como o C a ve (-1 criado, 1 tocando, 3 buffering,
+  // 0 fim, -3 erro, -2 sem elemento), com o tempo desde a abertura. Com o
+  // `[trailer-js]` do elemento ao lado, o registro diz se o video falhou, se
+  // ficou sem `playing` ou se quem fechou foi a tela. So na borda: 1 linha
+  // por mudanca, nao por quadro.
+  { static int visto = -2;
+    int e = aberto ? trailer_js_estado() : -2;
+    if (e != visto) {
+      // `agora` vem do inicio do quadro e abertoEm de SDL_GetTicks no meio
+      // dele: no quadro da abertura a diferenca e negativa, vira 0.
+      Sint32 ms = abertoEm ? (Sint32)(agora - abertoEm) : 0;
+      printf("[trailer] estado %d -> %d +%dms\n", visto, e, ms > 0 ? (int)ms : 0);
+      fflush(stdout);
+      visto = e;
+    } }
   // Acabou (0 = ENDED) ou falhou (-3, so o <video>): fecha e a arte volta.
   if (aberto && trailer_js_estado() == -3) {
     falhouUltima = 1;

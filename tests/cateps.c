@@ -40,6 +40,19 @@ const char *i18n(const char *s)         { return s; }
 const char *dados_dir(void)             { return ""; }
 const char *sessao_usuario(void)        { return ""; }
 int         perfis_ativo(void)          { return 1; }
+unsigned homeestado_geracao(void) { return 1; }
+int homeestado_contexto_valido(void) { return 0; }
+int homeestado_tem_fileira(const char *chave) { (void)chave; return 0; }
+int homeestado_ordem_fileira(const char *chave) { (void)chave; return -1; }
+int homeestado_salvar_se_geracao(const CatFileira *f, int n, unsigned g) {
+  (void)f; (void)n; return g == 1;
+}
+int homeestado_identidade_geracao(unsigned g, char *d, unsigned z, int *p) {
+  if (g != 1) return 0;
+  if (d && z) d[0] = 0;
+  if (p) *p = 1;
+  return 1;
+}
 int prog_ler(ProgRegistro *saida, int max) { (void)saida; (void)max; return 0; }
 int prog_gravar_local(const char *imdb, int t, int e, double p, double d) {
   (void)imdb; (void)t; (void)e; (void)p; (void)d; return 0;
@@ -75,6 +88,10 @@ void  prog_content_id(char *d, unsigned n, const char *i, int *t, int *e) {
   (void)i; (void)t; (void)e; if (n) d[0] = 0;
 }
 int   prog_por_chave(const char *c, ProgRegistro *s) { (void)c; (void)s; return 0; }
+// "Tirar de Continuar assistindo" (desc_tirar_continuar, tests/cwremover.sh).
+void  prog_remover(const char *c)          { (void)c; }
+void  prog_marcar_removido(const char *i)  { (void)i; }
+int   prog_removido_vence(const char *i, long long ms) { (void)i; (void)ms; return 0; }
 int   trakt_continuar(CatItem *s, int m)   { (void)s; (void)m; return 0; }
 // Simkl (issue #110): sem vinculo nos testes de fileira, como o Trakt acima.
 int   simkl_ativo(void)                    { return 0; }

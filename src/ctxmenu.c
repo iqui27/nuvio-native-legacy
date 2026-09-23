@@ -2,6 +2,7 @@
 #include "catalogo.h"
 #include "descoberta.h"
 #include "syncprog.h"
+#include "visto.h"
 #include "trakt.h"
 #include "simkl.h"
 #include "extras.h"
@@ -18,7 +19,9 @@
 #include "botoes.h"
 #include "badges.h"
 #include "idioma.h"
+#include <pthread.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // Mantem o header publico de Trakt estavel: estas leituras sao o contrato
@@ -39,6 +42,19 @@ enum { CTX_PENDENTE = 1, CTX_CONFIRMADA = 2, CTX_FALHA = 3 };
 #define CTX_GAP     BOTAO_GAP         // o mesmo ritmo entre acoes do app
 #define CTX_CAB    158.0f     // titulo, estados e rotulo do grupo
 #define CTX_RODAPE  70.0f
+
+// SALVO E UM FATO DO TITULO, NAO DO CARTAO. Segurar OK num cartao do
+// "Trending" de um titulo que esta nos Salvos oferecia "Salvar", porque aquela
+// copia do CatItem nao tem a marca — so a da watchlist tem. Pergunta a todas as
+// fontes que sabem: a copia do cartao, a lista local, qualquer outra copia do
+// catalogo (watchlist do Trakt) e o Plan to Watch do Simkl.
+static int tituloSalvo(const CatItem *ci) {
+  if (!ci) return 0;
+  if (ci->naLista) return 1;
+  if (!ci->imdb[0]) return 0;
+  return salvos_tem(ci->imdb) || cat_imdb_na_lista(ci->imdb) ||
+         (simkl_ativo() && simkl_na_plantowatch(ci->imdb));
+}
 
 static int   aberto, idx = -1, foco, pedDetalhes = -1;
 static float anim;
@@ -135,6 +151,18 @@ enum { OP_DETALHES, OP_LISTA, OP_ASSISTIDO, OP_TIRAR_CONTINUAR, OP_RECOMENDAR };
 // recenviar.c, e este arquivo faz o que a tela de detalhe tambem faz: abre a
 // modal compartilhada e sai da frente.
 
+// Os DELETE remotos de "Tirar de Continuar assistindo", fora do fio de
+// desenho. Nenhum dos dois e obrigatorio: sem Trakt nao ha id de playback, sem
+// conta nao ha RPC. Os dois dizem no log o que fizeram.
+typedef struct { char imdb[64]; char chave[192]; } TirarRemoto;
+static void *fioTirarRemoto(void *u) {
+  TirarRemoto *tr = (TirarRemoto *)u;
+  trakt_playback_remover(tr->imdb);
+  syncprog_remover(tr->chave);
+  free(tr);
+  return NULL;
+}
+
 static int indiceAtual(void) {
   int n = cat_n();
   int achado;
@@ -170,7 +198,7 @@ static void montar(void) {
     // da tecla AZUL) usam a palavra "salvar", e todas escrevem no mesmo lugar.
     juntar(estadoOperacao == CTX_PENDENTE && operacao == CTX_OP_LISTA
              ? (intencao ? "Salvando..." : "Removendo dos Salvos...")
-             : (ci->naLista ? "Remover dos Salvos" : "Salvar"),
+             : (tituloSalvo(ci) ? "Remover dos Salvos" : "Salvar"),
            OP_LISTA);
   }
   // O web so oferece "assistido" em filme e serie — nao em canal nem evento,
@@ -238,6 +266,38 @@ void ctx_abrir(int indice) {
 int ctx_aberto(void) { return aberto; }
 int ctx_pediu_detalhes(void) { int v = pedDetalhes; pedDetalhes = -1; return v; }
 
+// O ESPELHO LOCAL DE "ASSISTIDO", separado de quem confirma: com Trakt ele
+// roda depois do 2xx (ctx_atualizar); sem Trakt roda na hora (aplicar), porque
+// nao ha resposta nenhuma a esperar.
+static void espelharAssistido(int atual, const CatItem *ci, int intencao) {
+  cat_historico_definir_id(ci->imdb, ci->tipo, intencao);
+  // MARCAR COMO ASSISTIDO APAGA A POSICAO DE RETOMADA.
+  //
+  // cat_historico_definir_id so escreve numa tabela lateral de
+  // historico, e a fileira "Continuar assistindo" nao le dela: ela
+  // le progresso/restanteMin/temporada/episodio do proprio item. Sem
+  // isto o card continuava ali com a barra cheia depois de o titulo
+  // ter sido marcado como visto — o "removo do watch e o card nao
+  // sai" do relato.
+  //
+  // E o MESMO par que "Tirar de Continuar assistindo" faz logo
+  // abaixo, e pelo mesmo motivo: quem terminou nao tem o que
+  // retomar. So na direcao "assistido"; desmarcar nao inventa uma
+  // posicao que ninguem gravou.
+  if (intencao) {
+    char chave[192];
+    prog_chave(chave, sizeof chave, ci->imdb, ci->temporada, ci->episodio);
+    prog_remover(chave);
+    // As mesmas tres fontes de "Tirar de Continuar assistindo": quem
+    // marcou como visto tambem nao quer o card de retomada de volta
+    // no proximo ciclo.
+    trakt_playback_remover(ci->imdb);
+    simkl_playback_remover(ci->imdb);
+    syncprog_remover(chave);
+    cat_zerar_progresso(atual);
+  }
+}
+
 static void aplicar(void) {
   int atual = indiceAtual();
   const CatItem *ci = atual >= 0 ? cat_item(atual) : NULL;
@@ -260,7 +320,7 @@ static void aplicar(void) {
     case OP_LISTA:
       // Captura a intencao ANTES de qualquer escrita. O mesmo valor segue para
       // o POST e so chega ao espelho local depois de uma resposta 2xx.
-      intencao = !ci->naLista;
+      intencao = !tituloSalvo(ci);
       snprintf(operacaoImdb, sizeof operacaoImdb, "%s", ci->imdb);
       operacao = CTX_OP_LISTA;
       opSimkl = 0;
@@ -295,6 +355,7 @@ static void aplicar(void) {
         estadoOperacao = CTX_CONFIRMADA;
         espelhoAplicado = 1;
         cat_definir_na_lista(atual, intencao);
+        cat_definir_na_lista_imdb(operacaoImdb, intencao);
         desc_remontar_fileiras();
       }
       montar();
@@ -309,8 +370,28 @@ static void aplicar(void) {
       avisoOp = NULL;
       espelhoAplicado = 0;
       estadoOperacao = CTX_PENDENTE;
-      if (!trakt_assistido_tipo(ci->imdb, ci->tipo, intencao))
-        estadoOperacao = CTX_FALHA;
+      // SIMKL E CONTA NUVIO, em fio (visto.c), com ou sem Trakt. Antes daqui
+      // so havia o Trakt, e sem ele esta acao era "[trakt] historico recusado:
+      // Trakt desligado" e CTX_FALHA — o "sem o traktv nao ta dando o watched"
+      // do dono. As temporadas vao junto porque desmarcar serie no Simkl sem
+      // elas apagaria a serie da biblioteca de la (ver simkl.c).
+      visto_titulo(ci->imdb, ci->tipo, ci->temporadas, ci->nTemporadas, intencao,
+                   visto_destinos());
+      if (trakt_ativo()) {
+        // O caminho do Trakt NAO MUDOU: mesmo pedido, mesma espera, espelho so
+        // depois do 2xx em ctx_atualizar.
+        if (!trakt_assistido_tipo(ci->imdb, ci->tipo, intencao))
+          estadoOperacao = CTX_FALHA;
+      } else {
+        // SEM TRAKT NAO HA RESPOSTA A ESPERAR (o mesmo raciocinio do "+" na
+        // Lista do Nuvio, acima): o local e a verdade desta TV, aplicado agora,
+        // e a conta o devolve no proximo pull (sync.c aplica os vistos da
+        // conta justamente quando o Trakt esta desligado).
+        espelharAssistido(atual, ci, intencao);
+        estadoOperacao = CTX_CONFIRMADA;
+        espelhoAplicado = 1;
+        desc_remontar_fileiras();
+      }
       montar();
       break;
     case OP_RECOMENDAR:
@@ -321,36 +402,46 @@ static void aplicar(void) {
       if (recenviar_abrir(ci)) aberto = 0;
       break;
     case OP_TIRAR_CONTINUAR: {
-      // A chave e montada do mesmo jeito que progresso.c monta ao gravar —
-      // com temporada e episodio quando ha —, senao a linha apagada seria
-      // outra e o card continuaria na fileira.
-      char chave[192];
-      prog_chave(chave, sizeof chave, ci->imdb, ci->temporada, ci->episodio);
-      prog_remover(chave);
+      // COPIA ANTES: `ci` aponta para dentro do bloco do catalogo, e
+      // desc_tirar_continuar desloca esse bloco (o item seguinte ocupa o
+      // lugar). Depois dela `ci->imdb` ja e OUTRO titulo.
+      TirarRemoto *tr = (TirarRemoto *)calloc(1, sizeof *tr);
+      char imdb[sizeof ci->imdb];
+      int temp = ci->temporada, ep = ci->episodio;
+      pthread_t t;
+      snprintf(imdb, sizeof imdb, "%s", ci->imdb);
+      // Efeito local e imediato, ANTES da rede: zera o que a legenda desenha
+      // neste indice (o card pode estar numa fileira de catalogo com barra) e
+      // desc_tirar_continuar apaga o registro, carimba a remocao e tira o card
+      // de "Continuar assistindo" por identidade, subindo a revisao — a home
+      // remonta neste mesmo quadro. Antes a revisao nao subia e a home (guarda
+      // curto da 1.4) seguia com a contagem velha: o card era coberto pelo
+      // vizinho e o ultimo aparecia repetido ate a proxima republicacao
+      // (medido em tests/cwremover.sh; ver tirarDaJanela em catalogo.c).
+      cat_zerar_progresso(atual);
+      desc_tirar_continuar(imdb, temp, ep);
       // AS TRES FONTES, e nao so a local — issue #22.
       //
-      // A fileira de retomada e a fusao de tres coisas: o registro local, o
-      // /sync/playback do Trakt e o progresso da conta Nuvio. Apagar so a
+      // A fileira de retomada e a fusao do registro local, do /sync/playback
+      // do Trakt (e do Simkl, #110) e do progresso da conta Nuvio. Apagar so a
       // local fazia a entrada voltar no ciclo seguinte, vinda de qualquer uma
-      // das outras duas: "seleciono remover, o prompt some e nada e removido...
-      // nao consigo remover".
+      // das outras: "seleciono remover, o prompt some e nada e removido".
       //
-      // Nenhuma das duas remotas e obrigatoria: quem nao tem Trakt nao tem id
-      // de playback, quem nao tem conta nao tem RPC. As duas dizem no log o que
-      // fizeram, e a local acontece de qualquer jeito.
-      trakt_playback_remover(ci->imdb);
-      // O Simkl tambem guarda o pausado (issue #110). Em fio proprio; sem id
-      // conhecido (item que nao veio do Simkl) nao faz nada.
-      simkl_playback_remover(ci->imdb);
-      syncprog_remover(chave);
-      // Efeito local e imediato: sem zerar o campo, o card so sairia da fileira
-      // na proxima remontagem do catalogo, e para quem apertou parece que nada
-      // aconteceu.
-      cat_zerar_progresso(atual);
-      // E TIRA O CARD DA FILEIRA, que zerar o progresso nao faz: sem isto ele
-      // fica ali sem barra de progresso ate a proxima remontagem do catalogo, e
-      // o relator do #22 via a remocao so depois de fechar e reabrir o app.
-      cat_tirar_item_da_fileira(atual);
+      // EM FIO, e nao aqui: os dois pedidos eram sincronos no fio de DESENHO.
+      // Na Samsung isso e XHR sincrono no fio principal do navegador — a tela
+      // congela ate os dois servidores responderem, e o menu so fechava
+      // depois. Com o carimbo de desc_tirar_continuar a ordem deixou de
+      // importar: uma refacao que leia o Trakt antes do DELETE chegar recebe o
+      // paused_at velho, e a remocao vence (prog_removido_vence).
+      if (tr) {
+        snprintf(tr->imdb, sizeof tr->imdb, "%s", imdb);
+        prog_chave(tr->chave, sizeof tr->chave, imdb, temp, ep);
+        if (pthread_create(&t, NULL, fioTirarRemoto, tr) == 0) pthread_detach(t);
+        else fioTirarRemoto(tr);   // sem fio: faz aqui, como antes
+      }
+      // O Simkl tambem guarda o pausado (issue #110). Ja sai em fio proprio;
+      // sem id conhecido (item que nao veio do Simkl) nao faz nada.
+      simkl_playback_remover(imdb);
       aberto = 0;
       break;
     }
@@ -419,33 +510,9 @@ void ctx_atualizar(float dt, Uint32 agora) {
         if (ci && novo == CTX_CONFIRMADA) {
           if (operacao == CTX_OP_LISTA) {
             cat_definir_na_lista(atual, intencao);
+            cat_definir_na_lista_imdb(operacaoImdb, intencao);
           } else {
-            cat_historico_definir_id(ci->imdb, ci->tipo, intencao);
-            // MARCAR COMO ASSISTIDO APAGA A POSICAO DE RETOMADA.
-            //
-            // cat_historico_definir_id so escreve numa tabela lateral de
-            // historico, e a fileira "Continuar assistindo" nao le dela: ela
-            // le progresso/restanteMin/temporada/episodio do proprio item. Sem
-            // isto o card continuava ali com a barra cheia depois de o titulo
-            // ter sido marcado como visto — o "removo do watch e o card nao
-            // sai" do relato.
-            //
-            // E o MESMO par que "Tirar de Continuar assistindo" faz logo
-            // abaixo, e pelo mesmo motivo: quem terminou nao tem o que
-            // retomar. So na direcao "assistido"; desmarcar nao inventa uma
-            // posicao que ninguem gravou.
-            if (intencao) {
-              char chave[192];
-              prog_chave(chave, sizeof chave, ci->imdb, ci->temporada, ci->episodio);
-              prog_remover(chave);
-              // As mesmas tres fontes de "Tirar de Continuar assistindo": quem
-              // marcou como visto tambem nao quer o card de retomada de volta
-              // no proximo ciclo.
-              trakt_playback_remover(ci->imdb);
-              simkl_playback_remover(ci->imdb);
-              syncprog_remover(chave);
-              cat_zerar_progresso(atual);
-            }
+            espelharAssistido(atual, ci, intencao);
           }
         }
         espelhoAplicado = 1;
@@ -502,7 +569,7 @@ void ctx_desenhar(Uint32 agora) {
   if (estadoOperacao == CTX_CONFIRMADA && operacao == CTX_OP_LISTA && avisoOp)
     mensagem = avisoOp;
 
-  estados[0] = ci->naLista ? "Na biblioteca" : "Fora da biblioteca";
+  estados[0] = tituloSalvo(ci) ? "Na biblioteca" : "Fora da biblioteca";
   if (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series")) {
     { int historico = cat_historico_estado_item(indiceAtual());
       estados[1] = historico == 1 ? "Assistido"
@@ -552,9 +619,9 @@ void ctx_desenhar(Uint32 agora) {
     float sy = y + CTX_PAD + 106.0f;
     int historico = cat_historico_estado_item(indiceAtual());
     for (i = 0; i < nEstados; i++) {
-      int positivo = i == 0 ? ci->naLista : historico == 1;
+      int positivo = i == 0 ? tituloSalvo(ci) : historico == 1;
       // "Progresso salvo" e o unico estado nem positivo nem negativo: neutro.
-      int fraco = i == 0 ? !ci->naLista : !(historico < 0 && ci->progresso > 0);
+      int fraco = i == 0 ? !tituloSalvo(ci) : !(historico < 0 && ci->progresso > 0);
       sx += badge_desenhar(sx, sy, estados[i],
                            positivo ? BADGE_REALCE : fraco ? BADGE_APAGADO : BADGE_NEUTRO,
                            a) + BADGE_GAP;
@@ -575,7 +642,7 @@ void ctx_desenhar(Uint32 agora) {
     // recomendar.
     const char *icone = "avancar";
     switch (ops[i].acao) {
-      case OP_LISTA:     icone = ci->naLista ? "visto" : "mais"; break;
+      case OP_LISTA:     icone = tituloSalvo(ci) ? "visto" : "mais"; break;
       case OP_ASSISTIDO: icone = cat_historico_estado_item(indiceAtual()) == 1
                                  ? "naovisto" : "visto"; break;
       case OP_TIRAR_CONTINUAR: icone = "oculto"; break;

@@ -19,6 +19,15 @@
 #include <pthread.h>
 #include "../src/home.c"
 
+void cachearte_marcar_grupo(int grupo, const char *url, int variante, int essencial, int emUso) {
+  (void)grupo; (void)url; (void)variante; (void)essencial; (void)emUso;
+}
+void cachearte_limpar_referencias_grupo(int grupo) { (void)grupo; }
+void cachearte_estatisticas_pedir(void) {}
+void tex_cache_marcar_larg(int grupo, const char *url, float larg, int essencial, int emUso) {
+  (void)grupo; (void)url; (void)larg; (void)essencial; (void)emUso;
+}
+
 char *dados_ler(const char *nome) { (void)nome; return NULL; }
 int   dados_gravar(const char *nome, const char *c) { (void)nome; (void)c; return 1; }
 int   dados_gravar_leve(const char *nome, const char *c) { (void)nome; (void)c; return 1; }

@@ -413,6 +413,7 @@ int agendaui_sinopse(TxtEstilo estilo, const char *s, float x, float y,
 static Uint32 relogio, trocaEm;
 
 static int   foco;
+static int   versaoVista;   // agenda_versao() da ultima montagem; ver agendaui_atualizar
 static float animFoco[AG_MAX];
 static float scrollY;
 static int   sair;
@@ -510,6 +511,7 @@ int agendaui_iniciar(void) {
   for (i = 0; i < AG_MAX; i++) animFoco[i] = 0.0f;
   agenda_iniciar();
   agenda_montar();
+  versaoVista = agenda_versao();
   // Uma passada de rede por abertura da tela, e so para as series seguidas com
   // registro faltando ou velho. Ver a nota longa em agenda.c: este e o unico
   // pedido do recurso que nao vem de graca.
@@ -600,9 +602,25 @@ const char *agendaui_pediu_abrir(void) {
 int agendaui_menu_aberto(void) { return ctxAberto != 0; }
 
 void agendaui_atualizar(float dt, Uint32 agora) {
-  int i, n = agenda_n();
+  int i, n;
   float alvoY, topo, base, y, h;
   (void)agora;
+  // O FIO TERMINOU: remonta, para o que ele trouxe aparecer JA. Ate aqui o
+  // resultado so entrava na proxima abertura da tela — o dono abria a Agenda,
+  // o fio preenchia nome, cartaz e data no cache, e a tela continuava com
+  // "TV Show" e o retangulo cinza ate ele sair e voltar. A ordem pode mudar (a
+  // serie ganhou data), entao o foco segue o TITULO, nao o indice.
+  { int v = agenda_versao();
+    if (v != versaoVista) {
+      char id[24] = "";
+      const AgItem *f = agenda_lista(foco);
+      versaoVista = v;
+      if (f) snprintf(id, sizeof id, "%s", f->imdb);
+      agenda_montar();
+      for (i = 0; id[0] && i < agenda_n(); i++)
+        if (!strcmp(agenda_lista(i)->imdb, id)) { foco = i; break; }
+    } }
+  n = agenda_n();
   // REDUZIR ANIMACOES: o alvo entra direto, sem mola, tanto no foco quanto na
   // rolagem. Mesma forma de ajustes.c — o estado final e o mesmo e nada da tela
   // depende de estar a meio caminho. Continua valendo agora que a linha nao
@@ -863,7 +881,16 @@ static void linhaEpisodio(const AgItem *it, char *dst, size_t tam) {
     char q[64];
     agenda_quando(it->dataUlt, q, sizeof q);
     if (q[0]) snprintf(dst, tam, i18n("Último episódio em %s"), q);
+    return;
   }
+  // NENHUMA DATA, NEM A DO ULTIMO, depois de todas as fontes (pedido do dono,
+  // 22/09/2026: "avisar na agenda tambem para que o usuario saiba"). A linha
+  // vazia deixava o cartao so com o nome e parecia defeito de carga; esta frase
+  // diz o que e verdade — nenhuma fonte confirmou dia. Enquanto o fio ainda
+  // busca a frase fica de fora: ali "sem data" seria so "ainda nao chegou".
+  // Situacao conhecida (encerrada, cancelada) ja esta escrita na estacao.
+  if (it->situacao == AG_DESCONHECIDA && !agenda_atualizando())
+    snprintf(dst, tam, "%s", i18n("Sem data confirmada"));
 }
 
 // --- O QUE O CATALOGO ACRESCENTA A LINHA ------------------------------------
@@ -925,6 +952,10 @@ static void linhaApoio(const AgItem *it, char *dst, size_t tam) {
   agenda_marco(it, marco, sizeof marco);
   agenda_apoio(it, apoio, sizeof apoio);
   agendaCatalogoGenero(agendaCatalogoItem(it), genero, sizeof genero);
+  // Sem catalogo (serie que veio do progresso ou de um lembrete), o genero que
+  // o fio da agenda trouxe do TMDB ou do Cinemeta. O do catalogo manda quando
+  // existe: e o que o resto do app mostra para o mesmo titulo.
+  if (!genero[0] && it->genero[0]) snprintf(genero, sizeof genero, "%s", it->genero);
   if (genero[0]) {
     size_t n = strlen(apoio);
     if (n) snprintf(apoio + n, sizeof apoio - n, " \xc2\xb7 %s", genero);
@@ -1463,7 +1494,38 @@ void agendaui_desenhar(Uint32 agora) {
   { TxtLinha l = txt_linha(TXT_CAPTION,
                            i18n("OK marca o lembrete. A TV não avisa sozinha: o aviso aparece quando você abrir o app no dia."),
                            120, 122, 130, 255);
-    txt_desenhar(l, x, yc); }
+    txt_desenhar(l, x, yc);
+    yc += (float)l.h + 8.0f; }
+
+  // O AVISO DE FONTE, so quando o TMDB esta fora E falta dado na lista. Sem o
+  // TMDB o fio cai para o Trakt e o Cinemeta (agenda.c, "AS TRES FONTES"), que
+  // nao tem rede nem marco de temporada e as vezes nem data — e o dono pediu
+  // que a tela dissesse isso em vez de a pessoa achar que a Agenda quebrou.
+  // Duas frases porque sao duas causas com saidas diferentes: ajuste
+  // desligado tem conserto em Ajustes (o caminho e o de ajustes.c: secao
+  // "Integracoes", bloco e chave "TMDB"); pacote sem chave nenhuma nao tem, e
+  // mandar a pessoa a um ajuste que nao resolve seria mentir.
+  // Cabe entre a legenda e a lista: legenda termina em ~200, listaTopo e 262.
+  { const char *chave = desc_chave_tmdb_reserva();   /* ver fioAgenda em agenda.c */
+    int falta = 0;
+    if (!chave || !chave[0]) {
+      for (i = 0; i < n && !falta; i++) {
+        const AgItem *it = agenda_lista(i);
+        if (it && (!it->poster[0] || !it->titulo[0] ||
+                   (!it->dataProx[0] && !it->dataUlt[0] && it->situacao == AG_DESCONHECIDA)))
+          falta = 1;
+      }
+    }
+    if (falta) {
+      const char *res = desc_chave_tmdb_reserva();
+      const char *msg = (res && res[0])
+        ? i18n("TMDB desligado: datas e cartazes vêm do Cinemeta e podem faltar em algumas séries · Ajustes › Integrações › TMDB")
+        : i18n("Sem chave do TMDB: datas e cartazes vêm do Cinemeta e podem faltar em algumas séries");
+      // Ambar apagado e nao o vermelho do realce: e informacao, nao erro, e o
+      // vermelho ja e o "HOJE" da linha do tempo logo abaixo.
+      TxtLinha l = txt_linha_corta(TXT_CAPTION, msg, 214, 178, 110, 255, xDir - x);
+      txt_desenhar(l, x, yc);
+    } }
 
   // ESTADO VAZIO: o despertador DESLIGADO, grande e apagado, no lugar onde a
   // lista vai ficar. Uma tela so com duas frases cinzas nao diz se ela esta

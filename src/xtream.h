@@ -53,6 +53,12 @@ typedef struct {
 // Baixa categorias + canais ao vivo e preenche `saida`. Devolve quantos; 0 sem
 // cadastro ou sem resposta. BLOQUEIA: e do fio do guia.
 int xtream_canais(XtreamCanal *saida, int max);
+// Por que a ULTIMA xtream_canais devolveu 0 (issue #112): XT_OK (respondeu,
+// mesmo vazia, ou sem cadastro), XT_SEM_RESPOSTA, XT_RECUSOU (auth 0). O guia
+// diz isso na tela; antes o "0" do Xtream sumia no meio dos canais dos addons
+// e so o log sabia.
+enum { XT_OK, XT_SEM_RESPOSTA, XT_RECUSOU };
+int xtream_ultima_falha(void);
 
 // ------------------------------------------------------------ reproducao
 int xtream_e_id(const char *id);

@@ -10,9 +10,7 @@
 #include "layout.h"
 #include "anim.h"
 #include "vistoep.h"
-#include "trakt.h"
-#include "syncprog.h"
-#include <pthread.h>
+#include "visto.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -54,6 +52,16 @@ static int semMolaScroll;
 // episodios a opcao nao existe — quem abriu a folha veio do player e ja tem
 // fonte tocando; oferece-la ali seria uma linha que nao leva a lugar nenhum.
 enum { VM_ESTE = 0, VM_ATE, VM_TEMP, VM_FONTES, VM_N };
+// O MENU DA TEMPORADA (issue #108, "Pressing 'Season' brings up option to mark
+// all as watched"): o mesmo cartao, aberto pela ABA e nao por um episodio, com
+// so as duas linhas que o dono pediu. vmModoTemp escolhe qual dos dois; as
+// opcoes sao indices proprios porque nao ha "este" nem "ate aqui" numa aba.
+enum { VT_MARCAR = 0, VT_DESMARCAR, VT_N };
+static int vmModoTemp;
+static int vmQuantos[VM_N];   // tamanho do lote de cada opcao, da abertura
+static int montarLote(int idx, int modo, int t, int e, VistoPar *saida, int max);
+// Teto do lote de um gesto. 64 era o antigo e cortava temporada de anime.
+#define VM_LOTE 256
 static int vmAberto, vmFoco, vmVisto;      // vmVisto: o sentido do gesto
 static Uint32 vmDesde;                     // relogio da pressao longa
 static int vmSegurando, vmConsumir;
@@ -76,18 +84,18 @@ static char vmNome[96];
 // que poderiam ser de qualquer titulo. Procurar no catalogo a cada quadro
 // custaria uma varredura por episodio 60 vezes por segundo para desenhar uma
 // imagem que nao muda enquanto o menu estiver aberto.
-static char vmThumb[400];
+static char vmThumb[512];   // = CatEp.thumb e CatItem.backdrop; 400 cortava URL longa
 static int  vmSo;        // 1 = aberto sozinho, sobre outra tela
 static int  vmFontesPed; // consumido por episodios_menu_pediu_fontes()
 
-static int vmOpcoes(void) { return vmSo ? VM_N : VM_N - 1; }
+static int vmOpcoes(void) { return vmModoTemp ? VT_N : vmSo ? VM_N : VM_N - 1; }
 
 // Abre o menu para um episodio qualquer. `t` e o NUMERO da temporada, nao o
 // indice da aba: quem chama de fora nao tem abas.
 static void menuAbrir(int idx, int t, int e, const char *nome, int so) {
   const CatItem *ci = cat_item(idx);
   if (!ci || !ci->imdb[0]) return;
-  vmIdx = idx; vmT = t; vmE = e; vmSo = so;
+  vmIdx = idx; vmT = t; vmE = e; vmSo = so; vmModoTemp = 0;
   snprintf(vmNome, sizeof vmNome, "%s", nome ? nome : "");
   vmThumb[0] = 0;
   { int i;
@@ -109,21 +117,10 @@ static void menuAbrir(int idx, int t, int e, const char *nome, int so) {
   // consumir o soltar faz sentido.
   vmAberto = 1; vmFoco = 0; vmConsumir = 0; vmFontesPed = 0;
   vmFeito = 0;
-}
-
-// O ENVIO VAI PARA UM FIO. trakt_episodios_marcar e syncep_empurrar sao
-// sincronas de proposito (esta escrito nos dois cabecalhos), e cada uma pode
-// levar 20 s de timeout. No fio do desenho isso congela a TV.
-//
-// O efeito LOCAL ja aconteceu antes de o fio nascer: a lista redesenha no mesmo
-// quadro e este fio so leva a noticia ao servidor.
-typedef struct { char imdb[24], tipo[12]; VistoPar pares[64]; int n, visto; } Envio;
-static void *enviarVisto(void *u) {
-  Envio *e = (Envio *)u;
-  trakt_episodios_marcar(e->imdb, e->pares, e->n, e->visto);
-  syncep_empurrar(e->imdb, e->tipo, e->pares, e->n, e->visto);
-  free(e);
-  return NULL;
+  vmQuantos[VM_ESTE] = 1;
+  vmQuantos[VM_ATE]  = montarLote(idx, VM_ATE, t, e, NULL, 0);
+  vmQuantos[VM_TEMP] = montarLote(idx, VM_TEMP, t, e, NULL, 0);
+  vmQuantos[VM_FONTES] = 0;
 }
 
 static int nTemporadas(void) {
@@ -150,38 +147,85 @@ static int nLinhas(void) {
   }
   return n;
 }
-// Aplica o gesto: monta o lote, muda o local na hora, e manda o resto para um
-// fio. Devolve 0 quando nao ha nada a fazer — e o caso de marcar o que ja esta
-// marcado, que nao deve gastar uma requisicao.
-static int aplicarVisto(int modo, int visto) {
-  const CatItem *ci = cat_item(vmIdx);
-  VistoPar lote[64];
-  int n = 0, mudou;
+// O LOTE SAI DO CATALOGO E DO MAPA, JUNTOS.
+//
+// Antes saia so do mapa (vistoep_temporada / vistoep_ate_aqui), e o mapa so
+// ENUMERA a serie quando o Trakt respondeu /shows/<id>/progress/watched. Sem
+// Trakt ele so conhece o que a conta disse que foi visto — entao "Temporada
+// inteira" mostrava "(0 episodios)" e o OK nao fazia nada. Era a metade
+// episodica do "sem o traktv nao ta dando o watched".
+//
+// O catalogo (Cinemeta `videos`) lista os episodios que existem; o mapa
+// acrescenta o que o Trakt conhece e o catalogo nao (especiais). Episodio que
+// AINDA NAO FOI AO AR fica fora (a agenda do TMDB da visita, a mesma regra de
+// epNaoExibido em detail.c): marcar como visto o que nao saiu e o erro que o
+// Trakt aceita calado. Temporada 0 do catalogo fica fora do "ate aqui" — o
+// especial so entra se o mapa o trouxer, como ja era.
+//
+// `saida` NULA = so contar, como em vistoep.h; o rotulo precisa do numero.
+// A regra mora em vistoep_lote (pura, com teste); aqui so se junta o catalogo.
+static int montarLote(int idx, int modo, int t, int e, VistoPar *saida, int max) {
+  static VistoPar cat[VM_LOTE * 4];
+  const CatItem *ci = cat_item(idx);
+  int i, nc = 0;
   if (!ci || !ci->imdb[0]) return 0;
   if (modo == VM_ESTE) {
-    lote[0].temporada = (short)vmT;
-    lote[0].episodio = (short)vmE;
-    n = 1;
-  } else if (modo == VM_ATE) {
-    n = vistoep_ate_aqui(ci->imdb, vmT, vmE, lote, 64);
-  } else {
-    // A TEMPORADA DO EPISODIO, e nao a da aba selecionada. Sao a mesma coisa
-    // dentro da folha, e fora dela nao ha aba nenhuma.
-    n = vistoep_temporada(ci->imdb, vmT, lote, 64);
+    if (saida && max > 0) { saida[0].temporada = (short)t; saida[0].episodio = (short)e; }
+    return 1;
   }
+  for (i = 0; i < cat_n_episodios(idx) && nc < VM_LOTE * 4; i++) {
+    const CatEp *ce = cat_episodio(idx, i);
+    if (!ce) continue;
+    cat[nc].temporada = (short)ce->temporada;
+    cat[nc].episodio = (short)ce->episodio;
+    nc++;
+  }
+  return vistoep_lote(ci->imdb, modo == VM_ATE, t, e, cat, nc,
+                      extras_agenda_temporada(), extras_agenda_episodio(),
+                      saida, max);
+}
+
+// Aplica o gesto: monta o lote, muda o local na hora, e manda o resto para um
+// fio (visto.c — Trakt, Simkl e conta, o que estiver vinculado). Devolve 0
+// quando nao ha nada a fazer — e o caso de marcar o que ja esta marcado, que
+// nao deve gastar uma requisicao.
+//
+// QUANDO ALGO MUDOU, O LOTE INTEIRO VAI, e nao so o que mudou localmente: o
+// mapa pode dizer "visto" por um destino (Trakt) e o outro (Simkl) nao saber.
+// Um pedido por destino, com todos os episodios — nunca um por episodio. Se
+// nada mudou no local, nada sai (a regra de antes; o menu diz "ja estava").
+static int aplicarVisto(int modo, int visto) {
+  const CatItem *ci = cat_item(vmIdx);
+  VistoPar lote[VM_LOTE];
+  int n, mudou;
+  if (!ci || !ci->imdb[0]) return 0;
+  // A TEMPORADA DO EPISODIO (vmT), e nao a da aba selecionada. Sao a mesma
+  // coisa dentro da folha, e fora dela nao ha aba nenhuma.
+  n = montarLote(vmIdx, modo, vmT, vmE, lote, VM_LOTE);
   if (n < 1) return 0;
   mudou = vistoep_marcar_lote(ci->imdb, lote, n, visto);
   if (!mudou) return 0;
-  { Envio *env = (Envio *)calloc(1, sizeof *env);
-    pthread_t fio;
-    if (!env) return mudou;
-    snprintf(env->imdb, sizeof env->imdb, "%s", ci->imdb);
-    snprintf(env->tipo, sizeof env->tipo, "%s", ci->tipo[0] ? ci->tipo : "series");
-    memcpy(env->pares, lote, sizeof(VistoPar) * (size_t)n);
-    env->n = n; env->visto = visto;
-    if (pthread_create(&fio, NULL, enviarVisto, env) == 0) pthread_detach(fio);
-    else free(env); }
+  visto_episodios(ci->imdb, ci->tipo[0] ? ci->tipo : "series", lote, n, visto,
+                  visto_destinos());
   return mudou;
+}
+
+// Abre o menu da TEMPORADA `t` (numero, nao indice de aba). O foco nasce em
+// "Desmarcar" so quando a temporada inteira ja esta vista: e o unico caso em
+// que marcar nao mudaria nada.
+static void menuAbrirTemporada(int idx, int t, int so) {
+  const CatItem *ci = cat_item(idx);
+  VistoPar lote[VM_LOTE];
+  int n, i, vistos = 0;
+  if (!ci || !ci->imdb[0] || t < 0) return;
+  menuAbrir(idx, t, 0, ci->titulo, so);
+  if (!vmAberto) return;
+  vmModoTemp = 1;
+  snprintf(vmThumb, sizeof vmThumb, "%s", ci->backdrop);
+  n = montarLote(idx, VM_TEMP, t, 0, lote, VM_LOTE);
+  for (i = 0; i < n; i++)
+    if (vistoep_estado(ci->imdb, lote[i].temporada, lote[i].episodio) == 1) vistos++;
+  vmFoco = (n > 0 && vistos == n) ? VT_DESMARCAR : VT_MARCAR;
 }
 
 void episodios_abrir(int idx, int t, int e) {
@@ -259,10 +303,20 @@ static void menuDesenhar(float x, float larg, float anim) {
         gfx_tex_aspect_atual=0.0f;
         tx=m.x+PAD+TH_W+22.0f; tw=mw-(TH_W+22.0f)-PAD*2.0f;
       }
+      // NO MENU DA TEMPORADA o sobrescrito e a temporada e a linha grande e a
+      // serie: nao ha episodio de que falar, e o sentido esta nas opcoes.
+      if (vmModoTemp) {
+        char sob[48];
+        snprintf(sob,sizeof sob,i18n("Temporada %d"),vmT);
+        txt_desenhar_alpha(txt_linha(TXT_CAPTION2,sob,174,178,188,255),
+                           tx,m.y+PAD+6.0f,anim);
+        snprintf(cab,sizeof cab,"%s",vmNome);
+      } else {
       txt_desenhar_alpha(txt_linha(TXT_CAPTION2,
           vmVisto?i18n("MARCAR COMO ASSISTIDO"):i18n("DESMARCAR COMO ASSISTIDO"),
           174,178,188,255),tx,m.y+PAD+6.0f,anim);
       snprintf(cab,sizeof cab,i18n("T%dE%d · %s"),vmT,vmE,vmNome);
+      }
       txt_desenhar_alpha(txt_linha_corta(TXT_HEADLINE,cab,245,248,255,255,tw),
                          tx,m.y+PAD+36.0f,anim);
       (void)tw; }
@@ -294,11 +348,14 @@ static void menuDesenhar(float x, float larg, float anim) {
       // O NUMERO NO ROTULO, e nao so o verbo: "marcar 7 episodios" e uma
       // decisao diferente de "marcar 1", e a pessoa tem de ver qual das duas
       // esta prestes a tomar. Sai do mapa, que e o mesmo que a acao vai usar.
-      if(i==VM_ESTE) quantos=1;
-      else if(ci&&i!=VM_FONTES) quantos=(i==VM_ATE)
-        ? vistoep_ate_aqui(ci->imdb,vmT,vmE,NULL,0)
-        : vistoep_temporada(ci->imdb,vmT,NULL,0);
-      else quantos=0;
+      // O MESMO montarLote da acao: contar de uma fonte e agir sobre outra
+      // faria o rotulo prometer um numero e o OK mudar outro.
+      // CONTADO UMA VEZ, na abertura (vmQuantos): a conta varre o mapa e o
+      // catalogo inteiros e deduplica, e fazer isso por opcao a 60 quadros
+      // por segundo era trabalho jogado fora — o lote nao muda com o menu
+      // aberto.
+      quantos=vmModoTemp?vmQuantos[VM_TEMP]:(i<VM_FONTES?vmQuantos[i]:0);
+      (void)ci;
       if (f > .5f) {
         if (tinta < .5f) {
           gfx_cor(r,14.0f/OPT_H,.78f,.79f,.82f,anim);
@@ -313,7 +370,15 @@ static void menuDesenhar(float x, float larg, float anim) {
       } else {
         gfx_cor(r,14.0f/OPT_H,.105f,.11f,.125f,anim);
       }
-      if(i==VM_ESTE) {
+      if(vmModoTemp) {
+        // As duas frases do pedido do dono, e o numero junto: e a mesma regra
+        // de "Temporada inteira (N episodios)" — a pessoa ve o tamanho do
+        // gesto antes de aplicar.
+        snprintf(rot,sizeof rot,
+                 i==VT_MARCAR?i18n("Marcar temporada como assistida (%d)")
+                             :i18n("Desmarcar temporada (%d)"),quantos);
+        nomeIcone=i==VT_MARCAR?"visto":"naovisto";
+      } else if(i==VM_ESTE) {
         // O ROTULO MUDA COM O SENTIDO. As duas metades do ternario eram
         // identicas ("Este episódio" dos dois lados) e nenhuma passava por
         // i18n — em ingles a linha saia em portugues.
@@ -374,6 +439,13 @@ static void menuEvento(const SDL_Event *ev) {
   if (ko == SDLK_DOWN) { if (vmFoco < vmOpcoes() - 1) vmFoco++; return; }
   if (vmFeito) { vmAberto = 0; vmFeito = 0; return; }   // qualquer tecla encerra a confirmacao
   if (ehOk) {
+    if (vmModoTemp) {
+      int v = vmFoco == VT_MARCAR;
+      vmFeitoN = aplicarVisto(VM_TEMP, v);
+      vmFeitoVisto = v;
+      vmFeito = 1; vmFeitoAte = SDL_GetTicks() + FEITO_MS;
+      return;
+    }
     if (vmFoco == VM_FONTES) { vmFontesPed = 1; vmAberto = 0; return; }
     vmFeitoN = aplicarVisto(vmFoco, vmVisto);
     vmFeitoVisto = vmVisto;
@@ -393,8 +465,26 @@ void episodios_evento(const SDL_Event *ev) {
     // olhando.
     if (vmAberto) { menuEvento(ev); return; }
 
+    // PRESSAO LONGA NA ABA DA TEMPORADA (issue #108): abre o menu da temporada.
+    // O toque curto continua descendo para a lista, e passou para o KEYUP pelo
+    // mesmo motivo da linha de episodio abaixo — so o soltar conhece a duracao.
+    if (ehOk && grupo == 0) {
+      if (ev->type == SDL_KEYDOWN && !ev->key.repeat) {
+        vmSegurando = 1; vmDesde = SDL_GetTicks(); return;
+      }
+      if (ev->type == SDL_KEYUP) {
+        int foiAqui = vmSegurando;
+        Uint32 dur = foiAqui ? SDL_GetTicks() - vmDesde : 0;
+        vmSegurando = 0;
+        if (!foiAqui) return;
+        if (dur >= NV_HOLD_MS) { menuAbrirTemporada(titulo, numTemporada(temporada), 0); return; }
+        grupo = 1;
+        if (!nLinhas()) desc_episodios(titulo, numTemporada(temporada));
+        return;
+      }
+    }
     // PRESSAO LONGA SOBRE UMA LINHA DE EPISODIO. So no grupo da lista: em cima
-    // das temporadas ou do cabecalho nao ha episodio para marcar.
+    // do cabecalho nao ha episodio para marcar.
     if (ehOk && grupo == 1) {
       if (ev->type == SDL_KEYDOWN && !ev->key.repeat) {
         vmSegurando = 1; vmDesde = SDL_GetTicks(); return;
@@ -438,7 +528,7 @@ void episodios_evento(const SDL_Event *ev) {
   // O OK JA FOI DECIDIDO NO KEYUP acima (e o unico jeito de conhecer a
   // DURACAO). Deixar o KEYDOWN cair no ramo antigo abriria o episodio antes de
   // a pressao longa poder existir.
-  if ((k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) && grupo == 1)
+  if ((k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) && grupo >= 0)
     return;
   if(k==SDLK_r) { desc_episodios(titulo,numTemporada(temporada)); return; }
   if (k == SDLK_ESCAPE || k == SDLK_BACKSPACE || k == SDLK_DELETE || k == SDLK_AC_BACK) {
@@ -636,6 +726,11 @@ void episodios_desenhar(void) {
     txt_desenhar_alpha(txt_linha(TXT_MINI,"Segure OK para marcar como assistido",
                                  174,177,186,255),x+300,NV_TELA_H-26,anim*.9f);
   }
+  // A mesma dica na aba: o gesto da temporada tambem nao se descobre sozinho.
+  if(grupo==0 && !vmAberto) {
+    txt_desenhar_alpha(txt_linha(TXT_MINI,i18n("Segure OK para marcar a temporada"),
+                                 174,177,186,255),x+300,NV_TELA_H-26,anim*.9f);
+  }
 
   menuDesenhar(x, EP_W, anim);
   
@@ -650,6 +745,13 @@ void episodios_menu_visto(int idxCat, int temporada, int episodio,
                           const char *nome) {
   menuAbrir(idxCat, temporada, episodio, nome, 1);
 }
+void episodios_menu_temporada(int idxCat, int temporada) {
+  menuAbrirTemporada(idxCat, temporada, 1);
+}
+int  episodios_lote(int idxCat, int temporada, VistoPar *saida, int max) {
+  return montarLote(idxCat, VM_TEMP, temporada, 0, saida, max);
+}
+int  episodios_menu_modo_temporada(void) { return vmAberto && vmModoTemp; }
 int  episodios_menu_aberto(void) { return vmAberto && vmSo; }
 int  episodios_menu_aberto_qualquer(void) { return vmAberto; }
 void episodios_menu_evento(const SDL_Event *e) {

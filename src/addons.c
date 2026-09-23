@@ -938,11 +938,28 @@ typedef struct {
   pthread_mutex_t trava;
 } Consulta;
 
+// O NOME DE TIPO DE CANAL QUE O MANIFESTO DO ADDON USA: "tv", "channel" ou
+// NULL (manifesto nao lido, ou nenhum catalogo de canal). Sai de catalogs[],
+// que capacidadesDoManifesto ja guarda para o guia: FrostView declara
+// "channel", IPTV Bridge e Meu Futebol "tv". Devolve a literal, nunca o campo
+// do addon, porque o fio que le nao segura trava nenhuma.
+static const char *tipoCanalDeclarado(int i) {
+  int k;
+  if (i < 0 || i >= nAddon || !addon[i].canalLido) return NULL;
+  for (k = 0; k < addon[i].nCanal; k++) {
+    if (!strcasecmp(addon[i].canal[k].tipo, "channel")) return "channel";
+    if (!strcasecmp(addon[i].canal[k].tipo, "tv")) return "tv";
+  }
+  return NULL;
+}
+
 static void *fioFontes(void *u) {
   Consulta *c = u;
   for (;;) {
-    int meu, i;
+    int meu, i, n;
     char url[900], *corpo;
+    const char *t1, *t2;
+    Stream *achados;
     pthread_mutex_lock(&c->trava);
     if (c->proxBalde >= c->nBaldes) { pthread_mutex_unlock(&c->trava); return NULL; }
     meu = c->proxBalde++;
@@ -951,11 +968,19 @@ static void *fioFontes(void *u) {
     // interrompe (libcurl), mas o proximo nem comeca.
     if (c->cancelado && c->cancelado(c->ctx)) continue;
     i = c->baldes[meu].idx;
-    snprintf(url, sizeof url, "%s/stream/%s/%s.json",
-             addon[i].base, c->tipo, c->id);
+    // O NOME QUE O MANIFESTO DECLARA VAI PRIMEIRO (issue #112). Ver
+    // tipoCanalDeclarado: o FrostView declara "channel" e o app perguntava
+    // "tv" antes, gastando uma viagem inteira por canal aberto so para
+    // receber a lista vazia que agora dispara o segundo nome logo abaixo.
+    { const char *dec = c->tipoAlt && c->tipoAlt[0] ? tipoCanalDeclarado(i) : NULL;
+      t1 = c->tipo; t2 = c->tipoAlt;
+      if (dec && !strcmp(dec, c->tipoAlt)) { t1 = c->tipoAlt; t2 = c->tipo; } }
+    snprintf(url, sizeof url, "%s/stream/%s/%s.json", addon[i].base, t1, c->id);
     // 12 s e nao 25: com os addons em paralelo o timeout deixa de ser somado,
     // mas continua sendo o tempo que o dono espera pelo mais lento.
     corpo = rede_baixar(url, 12);
+    achados = NULL; n = 0;
+    if (corpo) n = stream_extrair(corpo, addon[i].nome, &achados);
     // CANAL AO VIVO TEM DOIS NOMES DE TIPO NO PROTOCOLO, e addons diferentes
     // usam nomes diferentes.
     //
@@ -968,21 +993,39 @@ static void *fioFontes(void *u) {
     // erro aparecia sem o player nunca ter tentado.
     //
     // Trocar "channel" por "tv" e so mover o defeito para quem usa o outro
-    // nome, e o app nao guarda os "types" do manifesto para decidir. Entao
-    // pergunta-se o SEGUNDO nome APENAS para o addon que nao respondeu nada
-    // com o primeiro: custa uma viagem extra so no caminho que hoje ja falha.
-    if (!corpo && c->tipoAlt && c->tipoAlt[0] &&
-        !(c->cancelado && c->cancelado(c->ctx))) {
-      snprintf(url, sizeof url, "%s/stream/%s/%s.json",
-               addon[i].base, c->tipoAlt, c->id);
-      corpo = rede_baixar(url, 12);
-      if (corpo)
-        printf("[addons] %s: respondeu como \"%s\" (nao como \"%s\")\n",
-               addon[i].nome, c->tipoAlt, c->tipo);
+    // nome. Entao pergunta-se o SEGUNDO nome ao addon que nao trouxe fonte
+    // com o primeiro — E "NAO TROUXE" INCLUI A LISTA VAZIA, nao so a falta de
+    // resposta (issue #112). MEDIDO em 22/09 com curl contra o FrostView TV,
+    // manifesto "types":["channel"]:
+    //   /stream/tv/cs:channel:axn.json       -> 200 {"streams":[]}  (14 bytes)
+    //   /stream/channel/cs:channel:axn.json  -> 200 com 4 fontes
+    // O 200 vazio passava pelo `if (!corpo)` antigo, o segundo nome nunca era
+    // perguntado e TODO canal do FrostView dava "nenhuma fonte serve" — nos
+    // dois alvos, porque este caminho nao tem ramo de plataforma (o log do
+    // #112 e de uma Samsung, mas a URL e montada igual na LG). Com e sem
+    // Origin: null e User-Agent a resposta e a mesma, byte a byte.
+    if (n <= 0 && t2 && t2[0] && !(c->cancelado && c->cancelado(c->ctx))) {
+      char *alt;
+      snprintf(url, sizeof url, "%s/stream/%s/%s.json", addon[i].base, t2, c->id);
+      alt = rede_baixar(url, 12);
+      if (alt) {
+        Stream *a2 = NULL;
+        int n2 = stream_extrair(alt, addon[i].nome, &a2);
+        // O segundo so substitui o primeiro quando traz fonte, ou quando o
+        // primeiro nem respondeu: um 404 no segundo nome nao apaga o "respondeu
+        // vazio" do primeiro, que e o que a mensagem de erro vai citar.
+        if (n2 > 0 || !corpo) {
+          free(achados); free(corpo);
+          achados = a2; n = n2; corpo = alt;
+          printf("[addons] %s: respondeu como \"%s\" (nao como \"%s\")\n",
+                 addon[i].nome, t2, t1);
+        } else { free(a2); free(alt); }
+      }
     }
-    if (!corpo) { printf("[addons] %s: sem resposta\n", addon[i].nome); continue; }
+    if (!corpo) { free(achados); printf("[addons] %s: sem resposta\n", addon[i].nome); continue; }
     c->baldes[meu].respondeu = 1;
-    c->baldes[meu].n = stream_extrair(corpo, addon[i].nome, &c->baldes[meu].achados);
+    c->baldes[meu].n = n;
+    c->baldes[meu].achados = achados;
     printf("[addons] %s: %d fontes (%u bytes)\n",
            addon[i].nome, c->baldes[meu].n, (unsigned)strlen(corpo));
     // RESPOSTA CURTA SEM FONTE VAI PARA O LOG. No registro 1504 havia
@@ -1139,8 +1182,13 @@ static void resumoDaLista(Resumo *rs) {
 // fonte: quem trouxe fonte nao explica lista vazia (se ha fonte e a lista
 // esta vazia, a causa e o descarte de torrent sem debrid, e quem diz isso e
 // streams.c).
+//
+// CANAL TEM FRASE PROPRIA (issue #112). "nao tem este titulo" le como se o
+// canal nao existisse no addon; o que o FrostView diz com {"streams":[]} e que
+// AGORA nao ha link para ele — os mesmos canais voltam a ter fonte depois.
 int addons_motivo_vazio(char *dst, unsigned n) {
   const Resumo *r = &resumo;
+  int canal = !strcmp(alvoTipo, "tv") || !strcmp(alvoTipo, "channel");
   if (!dst || !n || !r->valido) return 0;
   if (!r->instalados || !r->comFonte)
     snprintf(dst, n, "%s", i18n("Nenhum add-on de fontes instalado"));
@@ -1148,6 +1196,10 @@ int addons_motivo_vazio(char *dst, unsigned n) {
     snprintf(dst, n, "%s", i18n("Os add-ons de fontes estão desligados"));
   else if (!r->consultados || r->comFontes)
     return 0;
+  else if (!r->semResposta && canal)
+    r->responderam == 1
+      ? snprintf(dst, n, i18n("%s não tem fonte para este canal agora"), r->vazio)
+      : snprintf(dst, n, i18n("%d add-ons responderam: nenhum tem fonte para este canal agora"), r->responderam);
   else if (!r->semResposta)
     r->responderam == 1
       ? snprintf(dst, n, i18n("%s respondeu: não tem este título"), r->vazio)

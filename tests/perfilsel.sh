@@ -8,16 +8,23 @@
 # coisa.
 #
 #   bash tests/perfilsel.sh              regra (entra na suite)
-#   bash tests/perfilsel.sh --capturas   BMPs da tela (precisa de janela GL)
+#   bash tests/perfilsel.sh --capturas       variante A (216x324)
+#   bash tests/perfilsel.sh --capturas-b     variante B (240x360)
+#   bash tests/perfilsel.sh --capturas-compacto  fallback de pressão 20+18
 set -eu
 cd "$(dirname "$0")/.."
 
 # AS CAPTURAS SAO OUTRO TESTE, e nao entram na suite: precisam de janela GL e de
 # olho humano para julgar. Mesma regra de tests/episodios_shot.sh.
-if [ "${1:-}" = --capturas ]; then
+if [ "${1:-}" = --capturas ] || [ "${1:-}" = --capturas-b ] ||
+   [ "${1:-}" = --capturas-compacto ]; then
+  variante=${NUVIO_PERFILSEL_VARIANTE:-A}
+  efeitos=${NUVIO_PERFILSEL_EFEITOS:-normal}
+  [ "${1:-}" = --capturas-b ] && variante=B
+  [ "${1:-}" = --capturas-compacto ] && efeitos=compacto
   fontes=()
   for f in src/*.c; do [ "$f" != src/main.c ] && fontes+=("$f"); done
-  cc "${fontes[@]}" tests/perfilsel_visual.c -Isrc -o /tmp/nuvio-perfilsel-shot \
+  cc "${fontes[@]}" tests/perfilsel_visual.c -DNV_PERFILSEL_TEST -Isrc -o /tmp/nuvio-perfilsel-shot \
     -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
     -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
     -Wno-deprecated-declarations -Wno-macro-redefined
@@ -26,7 +33,9 @@ if [ "${1:-}" = --capturas ]; then
   # respeita. O argumento de dados_iniciar e a pasta de ARTE, ultimo candidato
   # da fila — passar a pasta temporaria por ali nao desvia nada, e a escrita
   # cai em ~/.nuvio, os dados REAIS de quem roda o teste. Aconteceu.
-  NUVIO_DADOS="$D" NUVIO_TESTE_DIR="$D" /tmp/nuvio-perfilsel-shot
+  NUVIO_DADOS="$D" NUVIO_TESTE_DIR="$D" \
+    NUVIO_PERFILSEL_VARIANTE="$variante" NUVIO_PERFILSEL_EFEITOS="$efeitos" \
+    /tmp/nuvio-perfilsel-shot
   exit 0
 fi
 flags=()

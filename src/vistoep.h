@@ -68,6 +68,17 @@ int  vistoep_ate_aqui(const char *imdb, int temporada, int episodio,
 // O mesmo para uma temporada inteira.
 int  vistoep_temporada(const char *imdb, int temporada, VistoPar *saida, int max);
 
+// O LOTE DE UM GESTO ("temporada inteira", ou "ate aqui" com ateAqui=1), do
+// MAPA e do CATALOGO juntos, sem repetir. O mapa sozinho so enumera a serie
+// quando o Trakt respondeu; sem Trakt ele so tem o que ja foi visto, e a
+// temporada inteira era "0 episodios". `cat` sao os episodios que o catalogo
+// lista. (agT, agE) e o proximo episodio a ir ao ar (agenda do TMDB; 0 = nao
+// se sabe): dele em diante nada entra. Temporada 0 do catalogo fica fora do
+// "ate aqui" (especial so entra se o mapa trouxer). `saida` nula conta.
+// Teto de 256 por lote.
+int  vistoep_lote(const char *imdb, int ateAqui, int temporada, int episodio,
+                  const VistoPar *cat, int nCat, int agT, int agE,
+                  VistoPar *saida, int max);
 int  vistoep_n(void);          // total de episodios no mapa, para log e teste
 void vistoep_esquecer(void);   // logout
 

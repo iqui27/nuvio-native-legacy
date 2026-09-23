@@ -13,6 +13,7 @@
 #include "salvos.h"
 #include "recomenda.h"
 #include "fontepref.h"
+#include "buscasrec.h"
 #include "trakt.h"
 #include "traktauth.h"
 #include "catalogo.h"
@@ -23,6 +24,8 @@
 #include "catordem.h"
 #include "catordemcache.h"
 #include "descoberta.h"
+#include "homeestado.h"
+#include "cachearte.h"
 #include "extras.h"
 #include "js.h"
 #include "jsw.h"
@@ -822,6 +825,9 @@ int sync_empurrar_credencial(const char *provider, const char *credJson) {
 }
 
 void sync_reaplicar_ajustes(void) {
+  // A conta ou o perfil ativo mudou: solta pins dos dois grupos para que cada
+  // superfície publique em seguida o conjunto pertencente ao novo contexto.
+  cachearte_limpar_referencias();
   aplicarAjustes = 1;
   // Conta manda de novo: a protecao local deixa de valer ate a pessoa mexer.
   dados_apagar(SY_AJUSTES_LOCAIS);
@@ -854,6 +860,8 @@ void sync_esquecer_usuario(void) {
   catordem_esquecer();
   catordem_cache_esquecer();
   catordemCachePerfil = -1;
+  homeestado_esquecer();
+  cachearte_limpar_referencias();
   // O CACHE DO CATALOGO TAMBEM. Ele guarda o catalogo montado da conta que
   // saiu — watchlist, continuar assistindo, feed de amigos com nome e avatar —
   // e, pior, a `base` de cada fileira, que no Xperience carrega um JWT dentro
@@ -891,6 +899,10 @@ void sync_esquecer_usuario(void) {
   // sobreviveria ao logout em disco e passaria a mandar na reproducao da
   // proxima pessoa.
   fontepref_esquecer();
+  // E AS BUSCAS RECENTES. Nao sobem para a conta (sao deste aparelho), mas sao
+  // o que a pessoa procurou — a proxima a entrar abriria a Busca com a lista
+  // de quem saiu nas pilulas, a um OK de refazer cada uma.
+  buscasrec_esquecer();
   free(bibBlob);    bibBlob = NULL;    temBibBlob = 0;
   free(vistosBlob); vistosBlob = NULL; temVistosBlob = 0;
   // colBlob estava de fora desta lista desde que foi criado, ao lado de um

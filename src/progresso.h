@@ -80,6 +80,22 @@ void prog_marcar_empurrados(const char *const *chaves, int n);
 
 void prog_remover(const char *chave);
 
+// "TIRADO DE CONTINUAR ASSISTINDO EM <instante>". prog_remover so APAGA a linha
+// local, e o Trakt/Simkl/conta so esquecem o item quando o DELETE deles chega:
+// uma refacao da fileira que le o remoto antes disso (fio de
+// desc_refazer_continuar em voo, ou o ciclo seguinte com o servidor atrasado)
+// trazia o card de volta. Este registro, carimbado com prog_agora_ms(), e o
+// "registro local mais novo vence" para a remocao: um item remoto com instante
+// MAIS VELHO que ele fica fora; um MAIS NOVO (assistiu de novo em outro
+// aparelho) volta. `imdb` pode ser composto; vale a OBRA (id antes do ':').
+void prog_marcar_removido(const char *imdb);
+
+// 1 quando a remocao de `imdb` (obra, perfil ativo) vence um item cujo instante
+// conhecido e `instanteMs` (0 = desconhecido, e perde). Um registro LOCAL da
+// mesma obra gravado depois da remocao (assistiu de novo aqui) tambem derruba
+// a remocao. 0 quando nunca foi removido.
+int  prog_removido_vence(const char *imdb, long long instanteMs);
+
 // Apaga o arquivo inteiro, todos os perfis. Chamar no logout, junto de
 // sync_esquecer_usuario.
 void prog_esquecer_tudo(void);

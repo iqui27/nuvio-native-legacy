@@ -220,18 +220,18 @@
     document.addEventListener('visibilitychange', nvLogGravar);
     window.addEventListener('pagehide', nvLogGravar);
     // ARRANQUES SEGUIDOS QUE NAO CHEGARAM AO PRIMEIRO QUADRO. O contador sobe
-    // aqui e o C zera no primeiro quadro (main.c). Dois seguidos = a TV nao
-    // consegue abrir o app (#77: "cant even enter the app", tambem depois de
-    // reinstalar). O que sobrevive a reinstalacao e a cache no IndexedDB
-    // (IDBFS carrega TUDO na memoria no arranque), entao no terceiro arranque
-    // ela e apagada antes de montar (dados.c le Module.nvApagarCache). Perde a
-    // sessao — login por QR de novo —, mas o app abre e o registro conta.
+    // aqui e o C zera no primeiro quadro (main.c). A partir de duas falhas,
+    // entra em recovery: dados.c preserva todo /nuvio e evita apagar conta,
+    // ajustes, catalogo e progresso. As artes continuam acessiveis sob demanda.
     var nvFalhas = 0;
     try {
       nvFalhas = parseInt(localStorage.getItem('nv-boot-falhas') || '0', 10) || 0;
       localStorage.setItem('nv-boot-falhas', String(nvFalhas + 1));
     } catch (e) {}
-    window.__nvApagarCache = nvFalhas >= 2;
+    window.__nvModoRecuperacao = nvFalhas >= 2;
+    if (window.__nvModoRecuperacao) {
+      console.warn("[arranque] recovery ativo apos " + nvFalhas + " falhas; dados pessoais preservados");
+    }
     // BUILD DE DIAGNOSTICO (dono, 20/09/2026, para o #77: "manda uma build que
     // ja manda os logs pra gente"). So existe quando tizen.sh recebeu
     // NUVIO_DIAG_TOKEN: o placeholder fica no arquivo e nada disto arma. Com

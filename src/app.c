@@ -75,9 +75,11 @@
 #include "fontepref.h"
 #include "video.h"
 #include "addons.h"
+#include "idioma.h"
 #include "descoberta.h"
 #include "proximo.h"
 #include "trakt.h"
+#include "visto.h"
 #include "faixas.h"
 #include "episodios.h"
 #include <pthread.h>
@@ -608,6 +610,28 @@ static void cancelarFonteSeSaiu(void) {
   }
 }
 
+// NENHUMA FONTE, COM A CAUSA NO CARTAO (issue #112). Antes daqui saia sempre
+// o cartao generico: "Nao foi possivel abrir a fonte / Abra Fontes para
+// escolher outra opcao" — num canal cuja lista veio vazia, nada foi aberto e
+// a folha de Fontes estaria vazia, entao as duas frases mandavam a pessoa a
+// um lugar sem saida. No registro 1647 (Samsung) foram oito canais assim e o
+// relato foi "tela preta". A causa ja existia para a folha de fontes
+// (addons_motivo_vazio); aqui ela vira o titulo do cartao. Sem causa
+// conhecida (lista do cache, ou houve fonte e nenhuma serviu) o canal ainda
+// ganha uma frase de canal, e o filme fica com a generica.
+static void erroSemFonte(void) {
+  char motivo[160];
+  int canal = player_id_canal()[0] != 0;
+  if (addons_motivo_vazio(motivo, sizeof motivo))
+    player_erro_fonte_motivo(motivo, canal
+        ? i18n("Escolha outro canal no guia ou tente de novo mais tarde.")
+        : i18n("Abra Fontes para escolher outra opção ou recarregar."));
+  else if (canal)
+    player_erro_fonte_motivo(i18n("Nenhuma fonte deste canal abriu agora"),
+        i18n("Escolha outro canal no guia ou tente de novo mais tarde."));
+  else player_erro_fonte();
+}
+
 // Filme/serie nao tem o watchdog de canal porque nao ha troca de emissora.
 // Ainda assim a sonda de URL nao prova que o decoder vai aceitar o arquivo:
 // alguns links respondem HTTP 200 e o uMS fica em load sem erro. Se o
@@ -963,6 +987,7 @@ void app_evento(const SDL_Event *e) {
 // app e avisa o Trakt, que e a fonte que o dono usa nos outros aparelhos. Fica
 // no roteador pelo mesmo motivo de tudo mais: e ele que conhece catalogo e
 // Trakt, e a tela de detalhe nao precisa conhecer nenhum dos dois.
+extern void cat_historico_definir_id(const char *imdb, const char *tipo, int visto);
 static void marcarAssistidoSeSolicitado(void) {
   const CatItem *c;
   int i;
@@ -986,7 +1011,17 @@ static void marcarAssistidoSeSolicitado(void) {
   { int visto = (c->progresso >= 90);
     const double dur = 3600.0;
     cat_salvar_progresso(i, visto ? 0.0 : dur, dur);
-    if (c->imdb[0]) trakt_assistido(c->imdb, !visto);
+    if (c->imdb[0]) {
+      trakt_assistido(c->imdb, !visto);
+      // SIMKL E CONTA NUVIO tambem (visto.c), cada um se vinculado. O Trakt
+      // segue pela linha acima, que nao mudou; sem ele a unica marca era o
+      // progresso de 100% (que a conta ja entende como concluido), e o
+      // historico do titulo — o que o menu do cartaz le para dizer "Desmarcar"
+      // — nunca era escrito. Com Trakt quem escreve o historico e o 2xx dele.
+      visto_titulo(c->imdb, c->tipo, c->temporadas, c->nTemporadas, !visto,
+                   visto_destinos());
+      if (!trakt_ativo()) cat_historico_definir_id(c->imdb, c->tipo, !visto);
+    }
     printf("[app] assistido %s: %s\n", visto ? "desmarcado" : "marcado",
            c->titulo); fflush(stdout); }
 }
@@ -1760,7 +1795,7 @@ void app_atualizar(float dt, Uint32 agora) {
         // watchdog de fonte morta ate a lista acabar ou o canal trocar.
         if (player_id_canal()[0]) { canalFonteIdx = fonteEscolhida; canalFonteDesde = SDL_GetTicks(); }
       }
-      else { limparFonteVOD(); player_erro_fonte(); }
+      else { limparFonteVOD(); erroSemFonte(); }
     }
   }
 

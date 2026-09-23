@@ -564,7 +564,9 @@ int trakt_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd,
   Jsw w;
   char *r;
   int i, j, st = 0, ok;
-  char feita[64];
+  // 256 e nao 64: o lote da temporada agora vem do catalogo tambem (visto.c),
+  // e temporada de anime passa de 64 — com 64 o resto era cortado calado.
+  char feita[256];
   if (!ligado || !imdb || imdb[0] != 't' || !pares || qtd < 1) return 0;
   if (qtd > (int)sizeof feita) qtd = (int)sizeof feita;
   for (i = 0; imdb[i] && imdb[i] != ':' && i < (int)sizeof id - 1; i++) id[i] = imdb[i];

@@ -42,6 +42,9 @@ int  syncprog_remover(const char *chave);
 // em syncprog.c. SINCRONO, como o resto deste modulo.
 int  syncep_empurrar(const char *imdb, const char *tipo,
                      const VistoPar *pares, int qtd, int visto);
+// O titulo inteiro (filme, ou serie sem episodio) na conta: linha com
+// season/episode nulos. SINCRONO. Ver a nota em syncprog.c.
+int  syncvisto_titulo(const char *imdb, const char *tipo, int visto);
 void syncprog_esquecer(void);
 
 #endif

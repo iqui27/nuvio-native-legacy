@@ -583,6 +583,25 @@ fora:
   return NULL;
 }
 
+// Ver o comentario em lerEvento (#111). So faz algo quando JA ha um recorte
+// aplicado nesta midia; o caminho e o mesmo que o video_janela_fonte usaria.
+static void recorteNoPrimeiroQuadro(void) {
+  if (fonX < 0 || !ligado || !midia[0]) return;
+  if (expWin[0] && sdlExpRecorte) {
+    SDL_Rect org, src, dst;
+    int ok;
+    org.x = 0; org.y = 0; org.w = vidW > 0 ? vidW : 1920; org.h = vidH > 0 ? vidH : 1080;
+    src.x = fonX; src.y = fonY; src.w = fonW; src.h = fonH;
+    dst.x = dstX; dst.y = dstY; dst.w = dstW; dst.h = dstH;
+    ok = sdlExpRecorte(expWin, &org, &src, &dst);
+    printf("[video] recorte reaplicado no primeiro quadro (janela exportada) -> %d\n", ok);
+    fflush(stdout);
+  } else if (acb && acbJanelaCustom) {
+    printf("[video] recorte reaplicado no primeiro quadro (acb)\n");
+    video_recorte_reaplicar();
+  }
+}
+
 static int aoEvento(LSHandle *h, LSMessage *m, void *u) {
   const char *p = lsPayload(m);
   unsigned minhaSessao = (unsigned)(uintptr_t)u;
@@ -936,6 +955,14 @@ static int aoEvento(LSHandle *h, LSMessage *m, void *u) {
       if (cronPediu && !cronQuadro && posSeg > 0.0) {
         cronQuadro = 1;
         printf("[video] load->primeiro quadro %lums\n", msDesdePedido());
+        // #111 (LG 50UA73006LA, webOS 25): "comeca com tela preta; trocar a
+        // proporcao faz a imagem aparecer". Trocar a proporcao e a UNICA coisa
+        // que reenvia o recorte, porque video_janela_fonte descarta o pedido
+        // igual ao anterior. COMPATIVEL COM o firmware ignorar o recorte que
+        // chegou antes do primeiro quadro — NAO PROVADO, nao ha log do relator
+        // nem webOS 25 aqui. Reaplicar o ultimo recorte agora e barato (uma
+        // chamada) e a linha de log diz, no proximo registro, se ele foi aceito.
+        recorteNoPrimeiroQuadro();
         fflush(stdout);
       }
     } }

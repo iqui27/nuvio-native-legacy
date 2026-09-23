@@ -11,6 +11,7 @@
 #include "ajustes.h"
 #include "sessao.h"
 #include "catalogo.h"
+#include "cachearte.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,11 +60,13 @@
 // Catalogo vazio deixa os pontos e o fundo aparecerem imediatamente; as capas
 // entram so quando o catalogo e a textura compartilhada estiverem prontos.
 #define PS_MURAL_MAX       9
-#define PS_MURAL_CARD_W  168.0f
-#define PS_MURAL_CARD_H  252.0f
+#define PS_MURAL_CARD_W_A 216.0f
+#define PS_MURAL_CARD_H_A 324.0f
+#define PS_MURAL_CARD_W_B 240.0f
+#define PS_MURAL_CARD_H_B 360.0f
 #define PS_MURAL_GAP      40.0f
-#define PS_PART_MAX       20
-#define PS_BURST_MAX      18
+#define PS_PART_MAX       32
+#define PS_BURST_MAX      24
 #define PS_MURAL_RAIO    0.080f
 
 typedef struct {
@@ -84,10 +87,25 @@ typedef struct {
 static PSMuralCapa muralCapas[PS_MURAL_MAX];
 static PSParticula muralParticulas[PS_PART_MAX];
 static PSBurst muralBurst[PS_BURST_MAX];
+static GLuint muralTexturas[PS_MURAL_MAX];
+static float muralFade[PS_MURAL_MAX];
 static int muralN;
+static int muralPartN;
+static int muralBurstN;
+#ifdef NV_PERFILSEL_TEST
+static int muralBurstDesenhado;
+#endif
 static unsigned muralRevisao;
 static float muralTempo;
 static float muralBurstTempo;
+static float muralCardW, muralCardH;
+static float muralPressao;
+static int muralAutoCompacto;
+static float muralLuz[6]; /* cor atual RGB + vizinho RGB */
+static float muralLuzAlvo[6];
+static float muralLuzAlvoAnterior[6];
+static float muralLuzInicio[6];
+static float muralLuzTempo;
 
 // --- PIN ---------------------------------------------------------------------
 //
@@ -127,14 +145,21 @@ static unsigned muralSorteio(unsigned *estado) {
   return *estado;
 }
 
-// A mesma largura relativa que home.c usa em escalaDoAjuste(). Pedir este
-// bucket faz o mural compartilhar a textura do poster da Home quando a URL ja
-// passou por ela e evita uma segunda decodificacao. O desenho continua menor
-// que o card, para os perfis permanecerem a leitura principal.
-static float muralLarguraHome(void) {
-  int dp = ajustes_largura_poster_dp();
-  if (dp < 72 || dp > 200) return NV_CARD_W;
-  return NV_CARD_W * (float)dp / 126.0f;
+// O mural pede uma largura única, baseada no plano maior (1.22x), pelo mesmo
+// caminho do poster da Home. Isso permite reaproveitar o item existente do
+// tex_cache; o draw nunca promove nem decodifica uma capa.
+static float muralPedidoLargura(void) { return muralCardW * 1.22f; }
+
+static void muralConfigurar(void) {
+  const char *v = getenv("NUVIO_PERFILSEL_VARIANTE");
+  const char *e = getenv("NUVIO_PERFILSEL_EFEITOS");
+  int varianteB = v && (!strcmp(v, "B") || !strcmp(v, "b") || !strcmp(v, "240"));
+  int compacto = e && (!strcmp(e, "compacto") || !strcmp(e, "20"));
+  muralCardW = varianteB ? PS_MURAL_CARD_W_B : PS_MURAL_CARD_W_A;
+  muralCardH = varianteB ? PS_MURAL_CARD_H_B : PS_MURAL_CARD_H_A;
+  muralPartN = compacto ? 20 : PS_PART_MAX;
+  muralBurstN = compacto ? 18 : PS_BURST_MAX;
+  muralAutoCompacto = compacto;
 }
 
 static int muralTemUrl(const char *url) {
@@ -144,12 +169,21 @@ static int muralTemUrl(const char *url) {
   return 0;
 }
 
+static int corDe(const char *hex, float *r, float *g, float *b);
+static void corLegivel(float *r, float *g, float *b);
+
 static void muralRecriar(void) {
   unsigned rev = cat_revisao();
-  int total, i;
+  PSMuralCapa anteriores[PS_MURAL_MAX];
+  float fades[PS_MURAL_MAX];
+  int anteriorN = muralN, total, i, mesmoConjunto;
   if (muralRevisao == rev) return;
+  memcpy(anteriores, muralCapas, sizeof anteriores);
+  memcpy(fades, muralFade, sizeof fades);
   muralRevisao = rev;
   muralN = 0;
+  memset(muralTexturas, 0, sizeof muralTexturas);
+  memset(muralFade, 0, sizeof muralFade);
   total = cat_n();
   for (i = 0; i < total && muralN < PS_MURAL_MAX; i++) {
     const CatItem *item = cat_item(i);
@@ -157,14 +191,55 @@ static void muralRecriar(void) {
     snprintf(muralCapas[muralN].url, sizeof muralCapas[muralN].url, "%s",
              item->poster);
     muralCapas[muralN].fase = (float)muralN * 0.83f;
+    { int j;
+      for (j = 0; j < anteriorN; j++) {
+        if (!strcmp(anteriores[j].url, muralCapas[muralN].url)) {
+          muralCapas[muralN].fase = anteriores[j].fase;
+          muralFade[muralN] = fades[j];
+          break;
+        }
+      }
+    }
     muralN++;
   }
+  mesmoConjunto = muralN == anteriorN;
+  if (mesmoConjunto) {
+    for (i = 0; i < muralN; i++) {
+      int j, achou = 0;
+      for (j = 0; j < anteriorN; j++)
+        if (!strcmp(muralCapas[i].url, anteriores[j].url)) { achou = 1; break; }
+      if (!achou) { mesmoConjunto = 0; break; }
+    }
+  }
+  if (!mesmoConjunto) {
+    cachearte_limpar_referencias_grupo(NV_CACHE_ARTE_GRUPO_PERFIL);
+    for (i = 0; i < muralN; i++) {
+      // Reter a variante realmente solicitada, incluindo escala/qualidade.
+      // O mural integra o conjunto essencial mesmo fora desta tela.
+      tex_cache_marcar_larg(NV_CACHE_ARTE_GRUPO_PERFIL, muralCapas[i].url,
+                           muralPedidoLargura(), 1, 0);
+    }
+  }
+}
+
+static void muralAtualizarAlvosLuz(void) {
+  int m = perfis_n();
+  int idx = foco >= 0 && foco < m ? foco : 0;
+  int vizinho = m > 1 ? (idx + 1) % m : idx;
+  const ContaPerfil *p = m > 0 ? perfis_item(idx) : NULL;
+  const ContaPerfil *q = m > 0 ? perfis_item(vizinho) : NULL;
+  float cr = 0.43f, cg = 0.18f, cb = 0.92f;
+  float vr = cr, vg = cg, vb = cb;
+  if (p && corDe(p->corHex, &cr, &cg, &cb)) corLegivel(&cr, &cg, &cb);
+  if (q && corDe(q->corHex, &vr, &vg, &vb)) corLegivel(&vr, &vg, &vb);
+  muralLuzAlvo[0] = cr; muralLuzAlvo[1] = cg; muralLuzAlvo[2] = cb;
+  muralLuzAlvo[3] = vr; muralLuzAlvo[4] = vg; muralLuzAlvo[5] = vb;
 }
 
 static void muralParticulasIniciar(void) {
   unsigned estado = 0x1c7a3d29u;
   int i;
-  for (i = 0; i < PS_PART_MAX; i++) {
+  for (i = 0; i < muralPartN; i++) {
     unsigned r = muralSorteio(&estado);
     muralParticulas[i].x = (float)(r % 1920u);
     muralParticulas[i].y = 96.0f + (float)((r >> 8) % 846u);
@@ -181,9 +256,9 @@ static void muralParticulasIniciar(void) {
 static void muralBurstIniciar(void) {
   unsigned estado = 0x7d4a12c3u;
   int i;
-  for (i = 0; i < PS_BURST_MAX; i++) {
+  for (i = 0; i < muralBurstN; i++) {
     unsigned r = muralSorteio(&estado);
-    float angulo = (float)i * 6.2831853f / (float)PS_BURST_MAX
+    float angulo = (float)i * 6.2831853f / (float)muralBurstN
                  + (float)(r % 100u) * 0.0062831853f;
     float velocidade = 150.0f + (float)((r >> 8) % 190u);
     muralBurst[i].x = NV_TELA_W * 0.5f + cosf(angulo) * 8.0f;
@@ -209,7 +284,7 @@ static void muralParticulaCor(int cor, float *r, float *g, float *b) {
 
 static void muralDesenharParticulas(float alfa, int reduzida) {
   int i;
-  for (i = 0; i < PS_PART_MAX; i++) {
+  for (i = 0; i < muralPartN; i++) {
     const PSParticula *p = &muralParticulas[i];
     float t = reduzida ? 0.0f : muralTempo;
     float angulo = p->fase * 6.2831853f + t * p->angular;
@@ -255,7 +330,7 @@ static void muralDesenharBurst(float alfa, int reduzida) {
   int i;
   if (!reduzida && t > 2.6f) return;
   if (t > 2.6f) t = 2.6f;
-  for (i = 0; i < PS_BURST_MAX; i++) {
+  for (i = 0; i < muralBurstN; i++) {
     const PSBurst *p = &muralBurst[i];
     float x = p->x + p->vx * t;
     float y = p->y + p->vy * t + 42.0f * t * t;
@@ -280,7 +355,7 @@ static void muralDesenharBurst(float alfa, int reduzida) {
 // "dar mais o impacto de espaco" (dono, 21/09/2026).
 static void muralDesenharFaixa(float alfa, int reduzida, float y, int sentido,
                                float desvio, float escala, float veloc) {
-  float cw = PS_MURAL_CARD_W * escala, ch = PS_MURAL_CARD_H * escala;
+  float cw = muralCardW * escala, ch = muralCardH * escala;
   float passo = cw + PS_MURAL_GAP * escala;
   float ciclo = passo * (float)muralN;
   float deslocamento = fmodf((reduzida ? 0.0f : muralTempo * veloc) + desvio, ciclo);
@@ -297,15 +372,16 @@ static void muralDesenharFaixa(float alfa, int reduzida, float y, int sentido,
                     : NV_TELA_W - (float)(i + 1) * passo + deslocamento;
     if (x > NV_TELA_W + cw || x < -cw) continue;
     yy = y + sinf(muralTempo * 0.45f + muralCapas[pos].fase) * 3.0f * escala;
-    tex = tex_obter_larg(muralCapas[pos].url, muralLarguraHome());
-    if (!tex) continue;
+    tex = muralTexturas[pos];
+    if (!tex || muralFade[pos] <= 0.001f) continue;
     card = (GfxRect){ x, yy, cw, ch };
     gfx_tex_aspect_atual = tex_aspecto(muralCapas[pos].url);
     // O SDF do GFX_CARD recorta os quatro cantos sem uma textura ou mascara
     // extra. O raio acompanha o brilho/sombra para nao deixar quinas vivas.
     // O brilho da capa e o `alfa` da faixa: quem chama decide quao perto ela
     // esta (era 0,52 fixo, e a tela inteira lia como apagada).
-    gfx_rect(card, tex, GFX_CARD, 0, 0, 0, PS_MURAL_RAIO, 1, 1, 1, alfa);
+    gfx_rect(card, tex, GFX_CARD, 0, 0, 0, PS_MURAL_RAIO, 1, 1, 1,
+             alfa * muralFade[pos]);
     gfx_tex_aspect_atual = 0;
   }
 }
@@ -318,8 +394,12 @@ static void muralDesenharCapas(float alfa, int reduzida) {
   muralDesenharFaixa(alfa * 0.55f, reduzida,  64.0f,  1,   0.0f, 0.78f, 13.0f);
   // O plano do meio passa por tras dos avatares: fica o mais apagado, para o
   // nome e o disco continuarem sendo a primeira coisa que o olho encontra.
-  muralDesenharFaixa(alfa * 0.30f, reduzida, 392.0f, -1, 118.0f, 1.00f, 20.0f);
-  muralDesenharFaixa(alfa * 0.92f, reduzida, 668.0f,  1, 244.0f, 1.22f, 31.0f);
+  muralDesenharFaixa(alfa * 0.30f, reduzida,
+                     64.0f + muralCardH * 0.78f + 74.0f,
+                     -1, 118.0f, 1.00f, 20.0f);
+  muralDesenharFaixa(alfa * 0.92f, reduzida,
+                     NV_TELA_H - muralCardH * 1.22f - 15.0f,
+                     1, 244.0f, 1.22f, 31.0f);
 }
 
 // LUZ AMBIENTE E PROFUNDIDADE por cima das capas e por baixo de tudo o mais:
@@ -327,20 +407,9 @@ static void muralDesenharCapas(float alfa, int reduzida) {
 // vizinho a direita) tingem o mural — "mais colorido" — e as duas rampas
 // escuras no topo e na base fazem as capas sumirem para o preto nas bordas,
 // que e o que da a sensacao de espaco em vez de papel de parede.
-static int corDe(const char *hex, float *r, float *g, float *b);
-static void corLegivel(float *r, float *g, float *b);
 static void muralDesenharLuz(float alfa) {
-  int m = perfis_n();
-  float cr = 0.43f, cg = 0.18f, cb = 0.92f, vr, vg, vb;
-  if (m > 0) {
-    const ContaPerfil *p = perfis_item(foco >= 0 && foco < m ? foco : 0);
-    if (p && corDe(p->corHex, &cr, &cg, &cb)) corLegivel(&cr, &cg, &cb);
-  }
-  vr = cr; vg = cg; vb = cb;
-  if (m > 1) {
-    const ContaPerfil *q = perfis_item((foco + 1) % m);
-    if (q && corDe(q->corHex, &vr, &vg, &vb)) corLegivel(&vr, &vg, &vb);
-  }
+  float cr = muralLuz[0], cg = muralLuz[1], cb = muralLuz[2];
+  float vr = muralLuz[3], vg = muralLuz[4], vb = muralLuz[5];
   { GfxRect a = { -380.0f, 120.0f, 1500.0f, 1500.0f };
     GfxRect b = {  800.0f, -520.0f, 1500.0f, 1500.0f };
     gfx_rect(a, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, cr, cg, cb, 0.55f * alfa);
@@ -355,12 +424,20 @@ static void muralDesenharLuz(float alfa) {
 }
 
 static void muralDesenhar(float alfa, int reduzida) {
+#ifdef NV_PERFILSEL_TEST
+  muralBurstDesenhado = 0;
+#endif
   muralDesenharCapas(alfa, reduzida);
   muralDesenharLuz(alfa);
   // As particulas ficam acima do mural e abaixo do texto/avatares, para que
   // o preto continue imersivo mesmo quando os posters estao em movimento.
   muralDesenharParticulas(alfa, reduzida);
-  muralDesenharBurst(alfa, reduzida);
+  if (!reduzida) {
+    muralDesenharBurst(alfa, 0);
+#ifdef NV_PERFILSEL_TEST
+    muralBurstDesenhado = 1;
+#endif
+  }
 }
 
 static int corDe(const char *hex, float *r, float *g, float *b) {
@@ -430,10 +507,13 @@ void perfilsel_iniciar(void) {
   verificando = 0;
   animEntrada = 0.0f;
   animPin = 0.0f;
+  cachearte_limpar_referencias_grupo(NV_CACHE_ARTE_GRUPO_PERFIL);
   muralN = 0;
+  muralConfigurar();
   muralRevisao = ~0u;
   muralTempo = 0.0f;
   muralBurstTempo = 0.0f;
+  muralPressao = 0.0f;
   muralParticulasIniciar();
   muralBurstIniciar();
   atomic_fetch_add(&pinGeracao, 1);
@@ -442,6 +522,11 @@ void perfilsel_iniciar(void) {
   // um teste sem SDL consegue provar.
   foco = perfis_indice_sugerido();
   for (i = 0; i < CONTA_PERFIL_MAX; i++) animFoco[i] = (i == foco) ? 1.0f : 0.0f;
+  muralAtualizarAlvosLuz();
+  memcpy(muralLuz, muralLuzAlvo, sizeof muralLuz);
+  memcpy(muralLuzInicio, muralLuzAlvo, sizeof muralLuzInicio);
+  memcpy(muralLuzAlvoAnterior, muralLuzAlvo, sizeof muralLuzAlvoAnterior);
+  muralLuzTempo = 0.30f;
 }
 
 static void *fioVerificar(void *u) {
@@ -539,9 +624,47 @@ void perfilsel_evento(const SDL_Event *e) {
 
 void perfilsel_atualizar(float dt, Uint32 agora) {
   int i, reduzida = ajustes_animacoes_reduzidas();
+  float dtCru = dt;
   (void)agora;
 
+  // Medir antes do limite para detectar lentidao real. Um intervalo longo e
+  // uma pausa/resume, nao pressao sustentada; ele limpa o acumulador.
+  if (dtCru < 0.0f || dtCru >= 0.25f) muralPressao = 0.0f;
+  else if (!reduzida && dtCru > (1.0f / 30.0f)) {
+    muralPressao += dtCru;
+    if (muralPressao >= 1.0f && !muralAutoCompacto) {
+      muralAutoCompacto = 1;
+      muralPartN = 20;
+      muralBurstN = 18;
+      muralParticulasIniciar();
+      muralBurstIniciar();
+    }
+  } else {
+    muralPressao -= dtCru * 2.0f;
+    if (muralPressao < 0.0f) muralPressao = 0.0f;
+  }
+  // O mesmo dt limitado governa fade, mola, foco, PIN e efeitos. Limitar uma
+  // vez na entrada evita que o ramo do teclado receba um salto ao retomar.
+  if (dt < 0.0f) dt = 0.0f;
+  if (dt > 0.05f) dt = 0.05f;
+
   muralRecriar();
+  // O pedido acontece no ciclo de atualização, nunca no draw. Assim a capa
+  // compartilha o tex_cache da Home e o quadro só consulta GLuint pronto.
+  for (i = 0; i < muralN; i++) {
+    // Revalidar em todo update marca o item como quente no LRU e substitui o
+    // GLuint se o cache o despejou. `qualquer` mantém uma versão menor durante
+    // a promoção; o hit não aloca nem baixa e a promoção ocorre uma vez.
+    muralTexturas[i] = tex_obter_larg_qualquer(muralCapas[i].url,
+                                               muralPedidoLargura());
+    if (muralTexturas[i]) {
+      if (reduzida) muralFade[i] = 1.0f;
+      else if (muralFade[i] < 1.0f) {
+        muralFade[i] += dt / 0.30f;
+        if (muralFade[i] > 1.0f) muralFade[i] = 1.0f;
+      }
+    }
+  }
   // O visual anda apenas enquanto a tela de escolha esta viva e nao ha PIN na
   // frente. Ao sair, app.c deixa de chamar este ciclo; ao entrar de novo,
   // perfilsel_iniciar zera o relogio. Reduced motion conserva mural e pontos
@@ -549,12 +672,34 @@ void perfilsel_atualizar(float dt, Uint32 agora) {
   if (reduzida) {
     muralTempo = 0.0f;
     muralBurstTempo = 0.0f;
+    muralPressao = 0.0f;
   }
   else if (pinDe < 0) {
-    if (dt < 0.0f) dt = 0.0f;
-    if (dt > 0.05f) dt = 0.05f;
     muralTempo += dt;
     muralBurstTempo += dt;
+  }
+
+  muralAtualizarAlvosLuz();
+  { int mudou = 0;
+    for (i = 0; i < 6; i++)
+      if (fabsf(muralLuzAlvo[i] - muralLuzAlvoAnterior[i]) > 0.0001f) { mudou = 1; break; }
+    if (mudou) {
+      memcpy(muralLuzInicio, muralLuz, sizeof muralLuzInicio);
+      memcpy(muralLuzAlvoAnterior, muralLuzAlvo, sizeof muralLuzAlvoAnterior);
+      muralLuzTempo = 0.0f;
+    }
+  }
+  if (reduzida) {
+    memcpy(muralLuz, muralLuzAlvo, sizeof muralLuz);
+    memcpy(muralLuzInicio, muralLuzAlvo, sizeof muralLuzInicio);
+    memcpy(muralLuzAlvoAnterior, muralLuzAlvo, sizeof muralLuzAlvoAnterior);
+    muralLuzTempo = 0.30f;
+  } else {
+    float t;
+    muralLuzTempo += dt;
+    t = anim_clamp(muralLuzTempo / 0.30f, 0.0f, 1.0f);
+    for (i = 0; i < 6; i++)
+      muralLuz[i] = muralLuzInicio[i] + (muralLuzAlvo[i] - muralLuzInicio[i]) * t;
   }
 
   animEntrada = anim_reduzida(anim_mola(animEntrada, 1.0f, dt, NV_MOLA_TELA),
@@ -912,5 +1057,26 @@ void perfilsel_desenhar(Uint32 agora) {
 
   if (animPin > 0.004f) desenhaPin();
 }
+
+#ifdef NV_PERFILSEL_TEST
+void perfilsel_teste_estado(PerfilSelTesteEstado *e) {
+  int i;
+  if (!e) return;
+  memset(e, 0, sizeof *e);
+  for (i = 0; i < 8; i++) e->foco[i] = animFoco[i];
+  e->pin = animPin;
+  memcpy(e->luz, muralLuz, sizeof e->luz);
+  memcpy(e->luz_alvo, muralLuzAlvo, sizeof e->luz_alvo);
+  memcpy(e->fade, muralFade, sizeof e->fade);
+  e->mural_tempo = muralTempo;
+  e->burst_tempo = muralBurstTempo;
+  e->mural_n = muralN;
+  e->particulas = muralPartN;
+  e->burst = muralBurstN;
+#ifdef NV_PERFILSEL_TEST
+  e->burst_desenhado = muralBurstDesenhado;
+#endif
+}
+#endif
 
 int perfilsel_concluido(void) { return concluido; }

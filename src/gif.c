@@ -330,7 +330,8 @@ EM_JS(void, gif_js_seq_quadro, (int i, const unsigned char *d, int n,
 // WORKER PROPRIO DO GIF (21/09/2026), e nao o do decode de imagem. Na 1.3.8
 // o GIF dividia o Worker com os JPEG/WebP, e aquele Worker BLOQUEIA
 // (Atomics.wait ate 8 s) enquanto espera o fio de decode do C alocar o
-// bloco de cada imagem. Numa TV de 2 GB com muitas artes chegando, os
+// bloco de cada imagem (ate a 1.4.1; desde 22/09/2026 ele nao espera mais,
+// ver src/webp.c, mas separar os dois continua sem custo). Numa TV de 2 GB com muitas artes chegando, os
 // quadros do GIF ficavam na fila atras dessas esperas: medido nos registros
 // da 1.3.8/1.3.9, "deu a volta nos 90 quadros em 200745 ms" (pokaz) e "83
 // quadros em 845400 ms" (cudz007) — 2 a 10 s por quadro. Este Worker so

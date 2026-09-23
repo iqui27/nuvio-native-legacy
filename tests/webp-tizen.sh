@@ -19,7 +19,7 @@
 #   ok  jpeg 320x180 (arquivo 640x360)          <- libjpeg em software, escalado
 #   ok  jpeg inteiro 640x360
 #   jpeg: tudo ok
-#   ok  png reduzido 64x64 (arquivo 160x160)    <- pelo navegador, nao IMG_Load
+#   ok  png pequeno local 160x160 (arquivo 160x160, pedido 64) <- <= 256: libpng local
 #   ok  png inteiro 160x160
 #   png: tudo ok
 #   ok  png transparente /icone-home.png ...     <- alpha 0 e 255 preservadas

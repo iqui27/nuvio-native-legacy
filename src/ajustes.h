@@ -75,7 +75,9 @@ int   ajustes_rail_moderna(void);       // modernSidebar
 int   ajustes_rail_moderna_blur(void);  // modernSidebarBlur
 int   ajustes_hero_ligado(void);        // heroSectionEnabled
 int   ajustes_hero_cheio(void);         // modernHeroFullScreenBackdropEnabled
-int   ajustes_hero_fonte(void);         // origem local da arte do hero
+int   ajustes_hero_fonte(void);         // origem local da arte do hero (ARTEHERO_*)
+// 1 = destaque/detalhe com foto diferente da do card (regra em artehero.h).
+int   ajustes_hero_arte_diferente(void);
 int   ajustes_ps_fundo_automatico(void); // #90: fundo da escolha de perfil (psfundo.c)
 // Teto de memoria para imagens escolhido em Ajustes, em MB; 0 = automatico.
 int   ajustes_tex_mb(void);

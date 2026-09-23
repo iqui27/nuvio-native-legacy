@@ -181,6 +181,8 @@ int  cat_carregar(const char *dirArte);
 // nos chamadores, porque quem le (home.c) e quem grava (descoberta.c) sao
 // arquivos diferentes e tem de concordar. Ver a nota longa em caminhoCache.
 int  cat_gravar_cache(const char *dirArte);
+int  cat_gravar_cache_se_identidade(const char *dirArte, const char *donoEsperado,
+                                    int perfilEsperado);
 // Devolve 1 se carregou. Chamar DEPOIS de cat_carregar: ele substitui o
 // catalogo do pacote quando o cache existe e e valido.
 int  cat_ler_cache(const char *dirArte);
@@ -246,6 +248,9 @@ int cat_acrescentar_lote(const CatItem *v, int qtd, int *saidaIdx);
 // esperar o proximo ciclo de descoberta para o botao mudar de cara faria o
 // toque parecer sem efeito.
 void cat_definir_na_lista(int i, int naLista);
+// Por TITULO, em todas as copias do catalogo (ver catalogo.c).
+int  cat_definir_na_lista_imdb(const char *imdb, int naLista);
+int  cat_imdb_na_lista(const char *imdb);   // alguma copia do titulo esta salva
 
 // Grava onde o dono parou NESTE app: escreve em progresso.c (pendente, com a
 // chave do web) e atualiza o item. E o caminho do player.
@@ -258,6 +263,11 @@ void cat_definir_na_lista(int i, int naLista);
 // o progresso apaga a legenda mas deixa o card na fileira, e era isso que fazia
 // a remocao de "Continuar assistindo" so aparecer na proxima abertura (#22).
 int cat_tirar_item_da_fileira(int indice);
+// Tira de "Continuar assistindo" todos os cards da OBRA de `imdb` (composto ou
+// nao), por identidade e sob a trava dos publicadores — o indice guardado pela
+// modal pode ter mudado de dono com uma refacao em voo. Sobe cat_revisao, entao
+// a home remonta no mesmo quadro. Devolve quantos cards sairam.
+int cat_tirar_continuar(const char *imdb);
 void cat_zerar_progresso(int indice);
 
 void cat_salvar_progresso(int indice, double posSeg, double durSeg);
@@ -315,10 +325,15 @@ typedef struct {
   // o catalogo unico, que e o que a biblioteca e a busca varrem. Duplicar os
   // itens por fileira custaria ~3,5 KB por titulo repetido.
   int  ini, n;
+  // 1 = resposta valida explicitamente vazia. A linha permanece na
+  // estrutura para que uma resposta parcial nao desloque as seguintes.
+  int estado;
 } CatFileira;
 
 int cat_n_fileiras(void);
 const CatFileira *cat_fileira(int r);   // NULL fora da faixa
+int cat_copiar_fileira(const char *chave, CatItem *itens, int max,
+                       CatFileira *meta);
 
 // Refaz SO a fileira "continue_watching" (issue #38): os itens novos tomam o
 // lugar da janela dela no vetor unico, as demais fileiras deslizam no `ini` e

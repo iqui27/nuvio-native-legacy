@@ -293,10 +293,72 @@ void prog_remover(const char *chave) {
   DESTRANCAR();
 }
 
+// --- REMOCOES DE "CONTINUAR ASSISTINDO" ---------------------------------------
+//
+// SO EM MEMORIA, e de proposito. A janela que isto cobre e a do DELETE em voo
+// e a do servidor que ainda nao refletiu (segundos, no pior caso o ciclo de
+// sync seguinte). Numa abertura nova do app os tres servidores ja receberam o
+// DELETE — ou ele falhou, e ai mostrar o card de volta e a verdade, e a pessoa
+// tira de novo. Persistir exigiria um formato novo em progresso.txt, que o
+// push para a conta le linha a linha como progresso (prog_pendentes).
+//
+// 32 cabem com folga: a fileira mostra 12, e ninguem tira mais que isso numa
+// sessao. Cheio, a vaga mais velha e reaproveitada — e a que o servidor ja
+// teve mais tempo de refletir.
+#define PROG_REMOVIDOS_MAX 32
+static struct { int perfil; char obra[24]; long long ms; } removidos[PROG_REMOVIDOS_MAX];
+static int nRemovidos;
+
+void prog_marcar_removido(const char *imdb) {
+  char obra[24];
+  int i, alvo = -1, perfil = perfis_ativo();
+  long long agora = prog_agora_ms();
+  prog_content_id(obra, sizeof obra, imdb, NULL, NULL);
+  if (!obra[0]) return;
+  TRANCAR();
+  for (i = 0; i < nRemovidos && alvo < 0; i++)
+    if (removidos[i].perfil == perfil && !strcmp(removidos[i].obra, obra)) alvo = i;
+  if (alvo < 0 && nRemovidos < PROG_REMOVIDOS_MAX) alvo = nRemovidos++;
+  if (alvo < 0) {
+    alvo = 0;
+    for (i = 1; i < nRemovidos; i++) if (removidos[i].ms < removidos[alvo].ms) alvo = i;
+  }
+  removidos[alvo].perfil = perfil;
+  snprintf(removidos[alvo].obra, sizeof removidos[alvo].obra, "%s", obra);
+  removidos[alvo].ms = agora;
+  DESTRANCAR();
+}
+
+int prog_removido_vence(const char *imdb, long long instanteMs) {
+  char obra[24];
+  int i, perfil = perfis_ativo();
+  long long ms = 0;
+  prog_content_id(obra, sizeof obra, imdb, NULL, NULL);
+  if (!obra[0]) return 0;
+  TRANCAR();
+  for (i = 0; i < nRemovidos; i++)
+    if (removidos[i].perfil == perfil && !strcmp(removidos[i].obra, obra)) { ms = removidos[i].ms; break; }
+  if (!ms) { DESTRANCAR(); return 0; }
+  // EMPATE FICA COM A REMOCAO: o mesmo milissegundo e o proprio item que foi
+  // tirado, nao uma sessao nova.
+  if (instanteMs > ms) { DESTRANCAR(); return 0; }
+  // ASSISTIU DE NOVO AQUI: o player gravou depois da remocao. O item da
+  // refacao pode vir do Trakt com o paused_at velho (o scrobble ainda nao
+  // chegou la), e sem esta consulta o registro local novo perderia para ele.
+  carregar();
+  for (i = 0; i < nRegs; i++)
+    if (regs[i].perfil == perfil && !strcmp(regs[i].contentId, obra) &&
+        regs[i].lastWatchedMs > ms) { DESTRANCAR(); return 0; }
+  DESTRANCAR();
+  return 1;
+}
+
 void prog_esquecer_tudo(void) {
   TRANCAR();
   dados_apagar(ARQ);
   carregado = 0;
   nRegs = 0;
+  // Logout: as remocoes eram da conta que saiu.
+  nRemovidos = 0;
   DESTRANCAR();
 }

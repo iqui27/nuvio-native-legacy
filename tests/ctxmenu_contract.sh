@@ -12,7 +12,7 @@ cc -Wall -Wextra -Werror -fsyntax-only \
 
 # Regressao da intencao: ela tem de ser capturada antes do POST e o mesmo
 # valor tem de chegar ao espelho local quando a resposta confirmar.
-linha_intencao=$(rg -n 'intencao = !ci->naLista;' src/ctxmenu.c | cut -d: -f1)
+linha_intencao=$(rg -n 'intencao = !tituloSalvo\(ci\);' src/ctxmenu.c | cut -d: -f1)
 linha_post=$(rg -n 'trakt_watchlist_tipo\(ci->imdb, ci->tipo, intencao\)' src/ctxmenu.c | cut -d: -f1)
 # AGORA HA DOIS ESPELHOS, e por isso o `head -1`. Com "Onde o + salva" na
 # Lista do Nuvio nao existe POST para esperar: a escrita local ja terminou, o

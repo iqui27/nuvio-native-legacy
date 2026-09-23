@@ -64,6 +64,7 @@ static void avisarCascaAberto(int v) { (void)v; }
 #include "assrender.h"
 #include "mkvass.h"
 #include "intro.h"
+#include "visto.h"     /* fim de episodio/filme para Simkl e conta */
 #include "vistoep.h"   /* o check de "assistido" na lista de episodios (issue #100) */
 #include "pausao.h"
 #include "home.h"
@@ -371,7 +372,24 @@ const CatEp *player_proximo_episodio(void) {
   }
   return melhor;
 }
-void player_erro_fonte(void) { esperandoFonte = 0; erroFonte = 1; visivel = 1; tocando = 0; }
+// O MOTIVO DO CARTAO DE ERRO (issue #112). O cartao dizia sempre "Nao foi
+// possivel abrir a fonte / Abra Fontes para escolher outra opcao" — e para um
+// canal sem fonte nenhuma as duas frases sao falsas: nada foi aberto, e a
+// folha de Fontes estaria vazia. No log do #112 (Samsung, id 1647) foram oito
+// canais seguidos em "nenhuma fonte serve", e o relato e "tela preta". Com o
+// motivo, o cartao diz QUEM respondeu o que ("FrostView TV nao tem fonte para
+// este canal agora"). Vazio = as frases genericas. Ja traduzido por quem
+// chama; txt_linha tenta traduzir de novo, nao acha chave e deixa como esta.
+static char erroTitulo[160], erroDica[160];
+void player_erro_fonte(void) {
+  esperandoFonte = 0; erroFonte = 1; visivel = 1; tocando = 0;
+  erroTitulo[0] = erroDica[0] = 0;   // erro sem motivo nao herda o do anterior
+}
+void player_erro_fonte_motivo(const char *titulo, const char *dica) {
+  player_erro_fonte();
+  snprintf(erroTitulo, sizeof erroTitulo, "%s", titulo ? titulo : "");
+  snprintf(erroDica, sizeof erroDica, "%s", dica ? dica : "");
+}
 // Desfaz o de cima quando a fonte que parecia morta volta a entregar. Ver a
 // nota no watchdog de canal em app.c.
 void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; } }
@@ -940,6 +958,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
     if (canalSessao) { epg_iniciar(); guia_carregar(); } }
   tocando = 1; visivel = 1; anim = 0.0f; entrada = 0.0f;
   pedFontes = erroFonte = pedFaixas = pedProxT = pedProxE = 0; inicioImagem = 0;
+  erroTitulo[0] = erroDica[0] = 0;
   pedGuia = pedZap = 0;
   retomadaAplicada=0; semRetomada=0;
   botao = PLR_PLAY;
@@ -1079,6 +1098,23 @@ void player_encerrar(void) {
       // Otimista de proposito, como o gesto manual da folha ja e ("o efeito
       // LOCAL ja aconteceu antes de o fio nascer", episodios.c): a proxima
       // leitura do Trakt corrige se o servidor tiver recusado.
+      // CONCLUIU TAMBEM E "VISTO" NO SIMKL E NA CONTA, e so quando concluiu:
+      // um episodio largado aos 0,8% gera `[trakt] pause ... 0.8%` (scrobble,
+      // "parei aqui") e nao pode virar historico em lugar nenhum. O Trakt fica
+      // de fora da mascara porque o scrobble acima ja fecha o visto la. Um
+      // pedido por conclusao, e so quando o check local ainda nao existia —
+      // rever um episodio ja visto nao reescreve historico.
+      if (concluiu) {
+        int dest = visto_destinos() & ~VISTO_TRAKT;
+        if (epT > 0 && epE > 0) {
+          if (vistoep_estado(ci->imdb, epT, epE) != 1) {
+            VistoPar par = { (short)epT, (short)epE };
+            visto_episodios(ci->imdb, "series", &par, 1, 1, dest);
+          }
+        } else if (strcmp(ci->tipo, "series")) {
+          visto_titulo(ci->imdb, ci->tipo, NULL, 0, 1, dest);
+        }
+      }
       if (concluiu && epT > 0 && epE > 0) vistoep_definir(ci->imdb, epT, epE, 1);
       // E para a CONTA. Trakt e conta sao dois destinos diferentes: nem todo
       // usuario liga o Trakt, e o progresso do app oficial vem da conta.
@@ -2065,9 +2101,10 @@ void player_desenhar(Uint32 agora) {
   }
   if (erroFonte) {
     gfx_cor(tela,0,.02f,.02f,.025f,.65f);
-    TxtLinha er=txt_linha(TXT_CALLOUT,"Não foi possível abrir a fonte",240,241,243,255);
+    // Cortadas na largura: o motivo leva o nome do addon, que e da pessoa.
+    TxtLinha er=txt_linha_corta(TXT_CALLOUT,erroTitulo[0]?erroTitulo:"Não foi possível abrir a fonte",240,241,243,255,NV_TELA_W-240);
     txt_desenhar_alpha(er,(NV_TELA_W-er.w)*.5f,400,entrada);
-    TxtLinha aj=txt_linha(TXT_PG_FIM,"Abra Fontes para escolher outra opção ou recarregar.",192,194,200,255);
+    TxtLinha aj=txt_linha_corta(TXT_PG_FIM,erroDica[0]?erroDica:"Abra Fontes para escolher outra opção ou recarregar.",192,194,200,255,NV_TELA_W-240);
     txt_desenhar_alpha(aj,(NV_TELA_W-aj.w)*.5f,448,entrada);
   }
 
