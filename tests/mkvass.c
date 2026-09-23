@@ -377,6 +377,58 @@ int main(int argc, char **argv) {
      "CuePoints truncados nao gravam sidecar completo");
   free(corpo);
 
+  // #92 (webOS 25): sem CuePoint da faixa de legenda (mkvmerge --cues none) e
+  // sem Cues nenhum. Antes: NOGO_SEM_INDICE e a faixa voltava a TV. Agora o
+  // modulo VARRE os Clusters e entrega os mesmos eventos, com os mesmos tempos.
+  if (argc > 7 && argv[6][0]) {
+    char urlSem[600], scSem[64], scSemF[80];
+    printf("\n[6b] sem CuePoint da faixa: varredura dos Clusters pelo indice do video\n");
+    snprintf(urlSem, sizeof urlSem, "%s/%s", base, argv[6]);
+    nomeSidecar(urlSem, 3, scSem, sizeof scSem);
+    snprintf(scSemF, sizeof scSemF, "%s.fonts", scSem);
+    dados_apagar(scSem); dados_apagar(scSemF);
+    mkvass_parar(); esperarFio(); legenda_desligar();
+    zerarServidor();
+    mkvass_iniciar(urlSem, 3);
+    maxSeg = rodarAte(4.0, 120000, 0.0);
+    ok(mkvass_estado() == MKVASS_COMPLETO, "sem cues da faixa: termina COMPLETO (antes: NOGO_SEM_INDICE)");
+    ok(mkvass_varredura() == 1, "colheu em modo varredura");
+    mkvass_estatisticas(&ped, &bytes, &colhidos, &total);
+    printf("    %d/%d trechos, %ld Ranges, %ld bytes de %ld (%.1f %%), pico %d/s\n",
+           colhidos, total, ped, bytes, tamMkv, 100.0 * bytes / tamMkv, maxSeg);
+    ok(total > 1 && colhidos == total, "todos os trechos varridos");
+    ok(maxSeg >= 0 && maxSeg <= 8, "teto: no maximo 8 Ranges num mesmo segundo (varredura)");
+    r = conferirCues(esp, nEsp);
+    printf("    %d/%d cues casaram (texto, ±20 ms, \\an, \\pos)\n", r, nEsp);
+    ok(r == nEsp, "varredura: todos os cues batem com o .ass original");
+    esperarFio();
+    corpo = dados_ler(scSem);
+    ok(corpo && !strncmp(corpo, "; mkvass-estado: completo", 25), "varredura grava sidecar completo");
+    free(corpo);
+  } else printf("\n[6b] pulado: fixture sem cues da faixa nao gerada (mkvmerge?)\n");
+
+  if (argc > 7 && argv[7][0]) {
+    char urlNo[600], scNo[64], scNoF[80];
+    printf("\n[6c] sem Cues nenhum: varredura do primeiro Cluster ao fim do Segment\n");
+    snprintf(urlNo, sizeof urlNo, "%s/%s", base, argv[7]);
+    nomeSidecar(urlNo, 3, scNo, sizeof scNo);
+    snprintf(scNoF, sizeof scNoF, "%s.fonts", scNo);
+    dados_apagar(scNo); dados_apagar(scNoF);
+    mkvass_parar(); esperarFio(); legenda_desligar();
+    zerarServidor();
+    mkvass_iniciar(urlNo, 3);
+    maxSeg = rodarAte(4.0, 120000, 0.0);
+    ok(mkvass_estado() == MKVASS_COMPLETO, "--no-cues: termina COMPLETO");
+    ok(mkvass_varredura() == 1, "colheu em modo varredura");
+    mkvass_estatisticas(&ped, &bytes, &colhidos, &total);
+    printf("    %d/%d trechos, %ld Ranges, %ld bytes de %ld (%.1f %%), pico %d/s\n",
+           colhidos, total, ped, bytes, tamMkv, 100.0 * bytes / tamMkv, maxSeg);
+    ok(total == 1 && colhidos == 1, "um trecho so, varrido inteiro");
+    r = conferirCues(esp, nEsp);
+    printf("    %d/%d cues casaram\n", r, nEsp);
+    ok(r == nEsp, "--no-cues: todos os cues batem com o .ass original");
+  } else printf("\n[6c] pulado: fixture sem Cues nao gerada (mkvmerge?)\n");
+
   mkvass_parar(); esperarFio(); legenda_desligar();
   nomeSidecar(urlCurto, 3, sidecarCurto, sizeof sidecarCurto);
   dados_apagar(sidecarCurto);

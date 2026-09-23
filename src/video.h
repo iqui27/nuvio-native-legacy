@@ -135,7 +135,10 @@ int    video_terminou(void); // 1 depois do fim de fluxo (endOfStream) da fonte 
 // Tudo isto sai do evento sourceInfo da assinatura do uMS: o addon nao informa
 // nada disso, e so o pipeline sabe o que ha DENTRO do arquivo.
 
-#define NV_FAIXA_MAX 12
+// 32 e nao 12 (#92): um "Multi-Subs" de anime passa de doze legendas, e a
+// lista da TV cortada em 12 nunca casa pelo ordinal com o arquivo inteiro —
+// nenhuma faixa ASS ia ao overlay do app, todas ficavam com a TV.
+#define NV_FAIXA_MAX 32
 
 typedef struct {
   char rotulo[48];   // "Ingles · Atmos 5.1" ou "Legenda 3"
@@ -153,6 +156,13 @@ int  video_n_legenda(void);
 const VideoFaixa *video_audio(int i);
 const VideoFaixa *video_legenda(int i);
 int  video_legenda_ordinal_mkv(int i); // ordinal Tizen para casar com TrackEntry
+// Sonda do cabecalho do MKV (idioma, codec e ordinal das legendas): 0 = ainda
+// nao voltou (pendente ou rodando), 1 = voltou (com ou sem par), 2 = nao ha
+// sonda (fonte MP4, sem URL). A folha de legendas espera o 1 antes de decidir
+// se a faixa ASS vai ao overlay do app ou fica com a TV (#92).
+int  video_mkv_sondado(void);
+// Dispara a sonda ja, sem esperar o gatilho de buffer. Inocuo se ja rodou.
+void video_sondar_mkv_agora(void);
 int  video_audio_atual(void);
 int  video_legenda_atual(void);   // -1 = desligada
 

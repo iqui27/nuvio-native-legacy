@@ -15,9 +15,12 @@
 // PLAYHEAD, numa janela de MKVASS_JANELA_SEG segundos, com teto de pedidos
 // por segundo — e nao tudo de uma vez.
 //
-// NAO E UM DEMUXER. Nao le Cluster inteiro, nao decodifica nada. Le SO os
-// bytes que o indice aponta. Sem indice da faixa (mkvmerge < 7.0, remux
-// exotico) NAO TENTA: declara no-go e a folha de faixas volta ao pipeline.
+// NAO E UM DEMUXER. Nao decodifica nada. Com indice da faixa, le SO os bytes
+// que ele aponta. SEM indice da faixa (mkvmerge --cues none, remux que so
+// indexa o video, CuePoint sem CueRelativePosition) VARRE os Clusters em
+// janelas, pulando o payload das outras faixas — custa banda, e por isso so
+// entra nesse caso e avisa no log (#92: antes era no-go e a faixa voltava ao
+// renderizador da TV, que pisca e corta metade da frase).
 //
 // SIDECAR. Ao terminar (ou ao sair com o que colheu), o corpo ASS montado vai
 // para dados_dir()/mkvass-<hash da url>.ass; na proxima abertura da MESMA URL
@@ -74,6 +77,10 @@ void mkvass_parar(void);
 int  mkvass_estado(void);
 // 1 quando o estado e um dos no-go.
 int  mkvass_nogo(void);
+// 1 quando a colheita e por VARREDURA dos Clusters (o indice nao apontava os
+// blocos da faixa: sem CuePoint dela, ou sem CueRelativePosition). Custa
+// banda; a folha diz isso ao lado da faixa.
+int  mkvass_varredura(void);
 // 1 enquanto ha fio de colheita vivo (o teste espera por isto).
 int  mkvass_ocupado(void);
 

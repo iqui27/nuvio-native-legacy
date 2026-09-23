@@ -1062,12 +1062,22 @@ void video_bombear(void) {
   // SONDA DE MKV. Gatilho diferente do da LG e explicado no bloco de
   // `mkvPendente`: sem bufferRange, o sinal de que ha banda sobrando e o tempo
   // ja ter andado.
-  if (mkvPendente && !fioMkvVivo && urlAtual[0] && posSeg >= 5.0) {
-    mkvPendente = 0;
-    fioMkvVivo = 1;
-    if (pthread_create(&fioMkv, NULL, lerMkv, NULL) != 0) fioMkvVivo = 0;
-    else pthread_detach(fioMkv);
-  }
+  if (mkvPendente && !fioMkvVivo && urlAtual[0] && posSeg >= 5.0)
+    video_sondar_mkv_agora();
+}
+
+// Ver video.h e a mesma dupla em video.c.
+int video_mkv_sondado(void) {
+  if (!urlAtual[0] || fonteMp4) return 2;
+  return (mkvPendente || fioMkvVivo) ? 0 : 1;
+}
+
+void video_sondar_mkv_agora(void) {
+  if (!mkvPendente || fioMkvVivo || !urlAtual[0]) return;
+  mkvPendente = 0;
+  fioMkvVivo = 1;
+  if (pthread_create(&fioMkv, NULL, lerMkv, NULL) != 0) fioMkvVivo = 0;
+  else pthread_detach(fioMkv);
 }
 
 void video_parar(void) {

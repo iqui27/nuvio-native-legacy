@@ -178,6 +178,8 @@ int  video_n_legenda(void) { return 0; }
 const VideoFaixa *video_audio(int i) { (void)i; return 0; }
 const VideoFaixa *video_legenda(int i) { (void)i; return 0; }
 int video_legenda_ordinal_mkv(int i) { (void)i; return -1; }
+int  video_mkv_sondado(void) { return 2; }
+void video_sondar_mkv_agora(void) {}
 int  video_audio_atual(void) { return 0; }
 int  video_legenda_atual(void) { return -1; }
 void video_escolher_audio(int i) { (void)i; }
@@ -1390,12 +1392,24 @@ static void *lerMkv(void *arg) {
     modo = mkv_casar_legendas(fx, n, tv, nt, idx);
     // DIAGNOSTICO que faltou no #92: sem as duas listas lado a lado no log, o
     // deslocamento parecia "a TV desenha mal" e ninguem via que era o app.
-    for (j = 0; j < n; j++)
-      printf("[mkv] faixa num=%d tipo=%d codec=%s idioma=%s nome=%s\n", fx[j].numero,
-             fx[j].tipo, fx[j].codec, fx[j].idioma[0] ? fx[j].idioma : "-",
-             fx[j].nome[0] ? fx[j].nome : "-");
-    printf("[mkv] legendas da TV x arquivo: modo=%s\n",
-           modo == MKV_CASA_ORDINAL ? "ordinal" : modo == MKV_CASA_NUMERO ? "trackNumber" : "nenhum");
+    { int nArq = 0;
+      for (j = 0; j < n; j++) {
+        if (fx[j].tipo == 17) nArq++;
+        printf("[mkv] faixa num=%d tipo=%d codec=%s idioma=%s nome=%s\n", fx[j].numero,
+               fx[j].tipo, fx[j].codec, fx[j].idioma[0] ? fx[j].idioma : "-",
+               fx[j].nome[0] ? fx[j].nome : "-");
+      }
+      // As CONTAGENS entram na linha: "nenhum" com tv != arquivo e a TV
+      // escondendo (ou o trecho de 320 KB cortando) faixas — e nesse caso
+      // NENHUMA faixa ASS vai ao overlay do app, todas ficam com a TV.
+      printf("[mkv] legendas da TV x arquivo: modo=%s (tv=%d, arquivo=%d, lista da TV %s)\n",
+             modo == MKV_CASA_ORDINAL ? "ordinal" : modo == MKV_CASA_NUMERO ? "trackNumber" : "nenhum",
+             nt, nArq, nLeg > NV_FAIXA_MAX ? "CORTADA em NV_FAIXA_MAX" : "inteira");
+      if (modo == MKV_CASA_NADA && nt > 0) {
+        char m[96];
+        snprintf(m, sizeof m, "mkv: legendas nao casaram (tv=%d, arquivo=%d): ASS fica com a TV", nt, nArq);
+        marco(m);
+      } }
     for (i = 0; i < nt; i++) {
       VideoFaixa *f = &faixaLeg[i];
       int jaTemIdioma = f->idioma[0] != 0, ordinal = -1, k;
@@ -1480,12 +1494,8 @@ void video_bombear(void) {
   // SONDA DE MKV so com folga de buffer. 20 s a frente e o sinal de que a
   // fonte esta entregando mais rapido do que o decoder consome, e portanto de
   // que ha banda sobrando para os 320 KB do cabecalho.
-  if (mkvPendente && !fioMkvVivo && urlAtual[0] && bufferSeg - posSeg >= 20.0) {
-    mkvPendente = 0;
-    fioMkvVivo = 1;
-    if (pthread_create(&fioMkv, NULL, lerMkv, NULL) != 0) fioMkvVivo = 0;
-    else pthread_detach(fioMkv);
-  }
+  if (mkvPendente && !fioMkvVivo && urlAtual[0] && bufferSeg - posSeg >= 20.0)
+    video_sondar_mkv_agora();
   // Avanco pendente que ja repousou.
   if (seekEm && SDL_GetTicks() >= seekEm) {
     Uint32 q = seekEm; seekEm = 0; (void)q;
@@ -1974,6 +1984,31 @@ int  video_n_legenda(void) { return nLeg; }
 const VideoFaixa *video_audio(int i)   { return (i >= 0 && i < nAudio) ? &faixaAudio[i] : NULL; }
 const VideoFaixa *video_legenda(int i) { return (i >= 0 && i < nLeg) ? &faixaLeg[i] : NULL; }
 int video_legenda_ordinal_mkv(int i) { return (i >= 0 && i < nLeg) ? faixaLeg[i].ordinalMkv : -1; }
+
+// Ver video.h. Derivado dos dois sinais que ja existem, sem estado novo: a
+// sonda "voltou" quando nao esta pendente nem rodando. Antes do sourceInfo os
+// dois sao 0 e isto diria "voltou" — mas ai nLeg tambem e 0 e nao ha faixa
+// para escolher, entao ninguem pergunta.
+int video_mkv_sondado(void) {
+  if (!urlAtual[0] || fonteMp4) return 2;
+  return (mkvPendente || fioMkvVivo) ? 0 : 1;
+}
+
+// Dispara a sonda AGORA, fora do gatilho de buffer de video_bombear. Chamado
+// pela folha de legendas (#92, webOS 25): a pessoa escolheu uma faixa e o
+// ordinal so existe depois da sonda — esperar 20 s de buffer que numa fonte
+// lenta nunca chegam deixava a faixa ASS com a TV em silencio, sem uma linha
+// de log que dissesse por que. Os 320 KB competem com o buffer (medido), mas
+// a colheita do mkvass que vem a seguir pede mais que isso.
+void video_sondar_mkv_agora(void) {
+  if (!mkvPendente || fioMkvVivo || !urlAtual[0]) return;
+  mkvPendente = 0;
+  fioMkvVivo = 1;
+  printf("[mkv] sonda do cabecalho disparada (buffer %.0f s a frente)\n", bufferSeg - posSeg);
+  fflush(stdout);
+  if (pthread_create(&fioMkv, NULL, lerMkv, NULL) != 0) fioMkvVivo = 0;
+  else pthread_detach(fioMkv);
+}
 int  video_audio_atual(void)   { return audioAtual; }
 int  video_legenda_atual(void) { return legAtual; }
 int  video_tem_atmos(void)        { return vidAtmos; }
