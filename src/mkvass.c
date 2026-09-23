@@ -517,13 +517,21 @@ static int lerAttachments(Fio *f, const unsigned char *p, long n) {
 }
 
 static void tempoAss(double s, char *dst, size_t tam) {
-  int h, m; double r;
+  long cs; int h, m, sec;
   if (s < 0) s = 0;
-  h = (int)(s / 3600.0); s -= h * 3600.0;
-  m = (int)(s / 60.0);   r = s - m * 60.0;
-  // Milissegundos e nao centesimos: o parser de legenda.c le "%lf" e o bloco
-  // do Matroska tem precisao de ms — arredondar a cs jogaria fora 5 ms a toa.
-  snprintf(dst, tam, "%d:%02d:%06.3f", h, m, r);
+  /* CENTESIMOS, como o formato ASS manda. Antes saiam milesimos ("31.660"), e o
+   * libass le a fracao como centesimos SEMPRE: string2timecode faz
+   * ms * 10. "0:14:31.660" virava 871 s + 6,60 s = 877,6 s (conferido com o
+   * libass 0.17.5: Start 877600). Resultado: cada fala entrava 0 a 9,9 s
+   * atrasada, conforme os milesimos, e as que ficavam com duracao negativa
+   * nunca apareciam. Era o "fora de sincronia" e parte das "falas faltando".
+   * O parser de legenda.c le "%lf" e aceita os dois formatos. O erro de
+   * arredondamento fica abaixo de 5 ms, menos de um quadro. */
+  cs = (long)llround(s * 100.0);
+  h = (int)(cs / 360000L); cs -= (long)h * 360000L;
+  m = (int)(cs / 6000L);   cs -= (long)m * 6000L;
+  sec = (int)(cs / 100L);  cs -= (long)sec * 100L;
+  snprintf(dst, tam, "%d:%02d:%02d.%02ld", h, m, sec, cs);
 }
 
 // Bloco "ReadOrder,Layer,Style,Name,MarginL,MarginR,MarginV,Effect,Text" ->
@@ -579,8 +587,10 @@ static void nomeSidecar(const char *url, int faixa, char *dst, size_t tam) {
   snprintf(dst, tam, "mkvass-%016llx-%d.ass", h, faixa);
 }
 
-#define MARCA_COMPLETO "; mkvass-estado: completo-v2\n"
-#define MARCA_PARCIAL  "; mkvass-estado: parcial "
+// v3: os tempos passaram a centesimos (ver tempoAss). Sidecars v2 guardam
+// milesimos, que o libass le errado — sao descartados e colhidos de novo.
+#define MARCA_COMPLETO "; mkvass-estado: completo-v3\n"
+#define MARCA_PARCIAL  "; mkvass-estado: parcial-v3 "
 #define MARCA_FONTES   "NVASS-FONTES-1\n"
 
 static const char B64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

@@ -285,7 +285,7 @@ int main(int argc, char **argv) {
   mkvass_parar(); esperarFio();
   mkvass_estatisticas(&ped, NULL, &colhidos, NULL);
   corpo = dados_ler(sidecar);
-  ok(corpo && !strncmp(corpo, "; mkvass-estado: parcial ", 25), "sidecar gravado como parcial");
+  ok(corpo && !strncmp(corpo, "; mkvass-estado: parcial", 24), "sidecar gravado como parcial");
   ok(corpo && contarDialogue(corpo) == colhidos, "sidecar parcial tem os blocos colhidos");
   free(corpo);
   legenda_desligar();

@@ -70,3 +70,11 @@ else
   NUVIO_DADOS="$DIR/dados" MKV_DIR="$DIR" /tmp/nuvio-mkvass-tests \
     "http://127.0.0.1:$PORTA" t.mkv "$DIR/ref.ass" srt.mkv ref.ass
 fi
+
+# Os mesmos tempos, agora pelo LIBASS (o que a TV desenha). Ver tests/ass_tempos.c.
+if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libass; then
+  cc tests/ass_tempos.c -o /tmp/nuvio-ass-tempos-test $(pkg-config --cflags --libs libass)
+  SC=$(grep -l "^; mkvass-estado: completo" "$DIR"/dados/mkvass-*-3.ass 2>/dev/null | head -1)
+  [ -n "$SC" ] || { echo "mkvass.sh: nenhum sidecar completo para conferir no libass"; exit 1; }
+  /tmp/nuvio-ass-tempos-test "$DIR/ref.ass" "$SC"
+fi
