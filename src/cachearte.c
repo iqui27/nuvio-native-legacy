@@ -305,9 +305,26 @@ static int idb_read(const char *url, int variant, unsigned char **bytes, long *n
   }
 }
 
+// SAMSUNG 1.4.3: O CACHE DE ARTE NO INDEXEDDB FICA DESLIGADO (NV_CACHEARTE_IDB=0).
+// Cada leitura passava pelo fio principal (MAIN_THREAD_ASYNC_EM_ASM) e esperava
+// ate 1,5 s num fio de rede; as leituras e gravacoes ainda entram na fila unica
+// A.enqueue. Nos logs da 1.4.2 (Tizen, 612 downloads) a rede mediana era 268 ms
+// e o fetch inteiro 1564 ms; a fila de rede subiu de 446 ms (1.4.1) para 3 s de
+// mediana e 15,6 s no p90 (#114). Sem ele a arte volta ao caminho da 1.4.1:
+// rede com o cache HTTP do proprio navegador.
+#ifndef NV_CACHEARTE_IDB
+#define NV_CACHEARTE_IDB 0
+#endif
 int cachearte_buscar(const char *url, int variante, unsigned char **bytes, long *n) {
+#if NV_CACHEARTE_IDB
   cachearte_iniciar();
   return idb_read(url, variante, bytes, n);
+#else
+  (void)url; (void)variante;
+  if (bytes) *bytes = NULL;
+  if (n) *n = 0;
+  return 0;
+#endif
 }
 
 void cachearte_iniciar(void) {
@@ -319,6 +336,10 @@ void cachearte_iniciar(void) {
 void cachearte_salvar(const char *url, int variante, const unsigned char *bytes,
                       long n, int essencial) {
   long queued, before;
+#if !NV_CACHEARTE_IDB
+  (void)url; (void)variante; (void)bytes; (void)n; (void)essencial; (void)queued; (void)before;
+  return;
+#endif
   cachearte_iniciar();
   unsigned char *copy;
   char *urlCopy;
