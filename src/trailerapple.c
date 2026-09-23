@@ -193,7 +193,8 @@ static int montarReduzido(const char *imdb, int teto, char *saida, unsigned tam)
 // (o master levava 10,5 s e comecava em 556x232). O preco: sem audio — a
 // Apple entrega o audio em playlist separada, e um <audio> ao lado do <video>
 // travou o video no emulador (dois players de uma vez). No fundo o trailer e
-// mudo; a tela cheia com som vai pelo YouTube (detail.c, trailerFonte).
+// mudo, e a tela cheia tambem (dono, 22/09/2026: "trailer fica mudo" — nada
+// troca para o YouTube por causa de som; ver trailerfonte.h).
 //
 // Escolha: igual a montarReduzido (maior largura que cabe no teto, sem Dolby
 // Vision), mas avc1 OBRIGATORIO quando existe: decodifica em qualquer Samsung

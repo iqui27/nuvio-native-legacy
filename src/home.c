@@ -54,6 +54,7 @@ int player_aberto(void);
 #include "trailer.h"
 #include "trailerimdb.h"
 #include "trailerapple.h"
+#include "trailerfonte.h"
 
 #define MAX_ARTE   64
 // 16, o teto do web para ESTE runtime: HOME_MAX_ROWS_LEGACY_TV em
@@ -323,6 +324,8 @@ static Uint32 heroTrailerPreparandoAte = 0;
 // YouTube contam como tentativas separadas; um erro de Apple libera exatamente
 // uma tentativa de fallback sem voltar a abrir a mesma URL.
 static int    heroTrailerFonte = 0, heroTrailerAppleFalhou = 0;
+// TRF_* da fonte aberta (trailerfonte.h), so para o log dizer qual desistiu.
+static int    heroTrailerQual = 0;
 static float  heroTrailerFade = 0.0f;
 static char   heroTrailerYoutubeId[16];
 static int heroTrailerSegurando(Uint32 agora);
@@ -2926,8 +2929,10 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
     if (trailer_aberto() && !trailer_tocando() && heroTrailerPreparandoAte &&
         (Sint32)(agora - heroTrailerPreparandoAte) >= 0) {
       printf("[trailer] hero: sem playing em %d ms (%s, estado %d), %s\n",
-             NV_TRAILER_HERO_PREPARA_MS, heroTrailerFonte == 1 ? "apple" : "youtube",
-             trailer_estado(), heroTrailerFonte == 1 ? "tenta YouTube" : "desiste");
+             NV_TRAILER_HERO_PREPARA_MS, trailerfonte_nome(heroTrailerQual),
+             trailer_estado(),
+             heroTrailerFonte == 1 && trailerfonte_depois(trailerfonte_ajuste(), trailerfonte_tizen(), TRF_APPLE)
+               ? "tenta a proxima fonte" : "desiste");
       fflush(stdout);
       trailer_fechar();
       heroTrailerPreparandoAte = 0;
@@ -2945,7 +2950,9 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
   // consumir a marca no quadro seguinte transforma somente erro de Apple em
   // fallback. Um fechamento normal (ended/Voltar) nunca cai no YouTube.
   if (heroTrailerFonte == 1 && !trailer_aberto() && trailer_falhou() && !heroTrailerAppleFalhou) {
-    printf("[trailer] hero: apple deu erro, tenta YouTube\n");
+    printf("[trailer] hero: apple deu erro, %s\n",
+           trailerfonte_depois(trailerfonte_ajuste(), trailerfonte_tizen(), TRF_APPLE)
+             ? "tenta a proxima fonte" : "fonte fixa, fica a arte");
     fflush(stdout);
     heroTrailerAppleFalhou = 1;
     heroTrailerTentado = 0;
@@ -2956,36 +2963,45 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
   if (pronto && ci && ci->imdb[0] && heroTrailerItem == heroAtual &&
       !trailer_aberto() && !heroTrailerTentado &&
       agora - heroTrailerDesde >= NV_TRAILER_HERO_ESPERA_MS) {
-    // Apple (HLS matted) antes do IMDb (MP4 com tarja), e so depois de a Apple
-    // ter a primeira janela para responder. Na Samsung, se a Apple nao veio,
-    // cai no primeiro trailer YouTube valido que a busca enxuta do TMDB trouxe.
-    const char *u = heroTrailerAppleFalhou ? NULL : trailerapple_url(ci->imdb);
-    const char *yt = NULL;
-    int ehYoutube = 0;
+    // A ORDEM e a do ajuste "Fonte do trailer" (trailerfonte.h). Automatico:
+    // Apple (HLS matted) antes do IMDb (MP4 com tarja, LG) ou do YouTube (id
+    // da busca enxuta do TMDB, Samsung); uma fonte fixa e a unica tentada.
+    //
     // A APPLE TEM A JANELA INTEIRA (ate NV_TRAILER_HERO_MAX_ESPERA_MS) antes
-    // do YouTube, tambem na Samsung. Antes, com um id do YouTube em maos, o
+    // da seguinte, tambem na Samsung. Antes, com um id do YouTube em maos, o
     // hero o abria ja aos 1,2 s se a Apple ainda nao tinha respondido — e a
     // resposta da Apple agora inclui baixar o master para escolher a variante
     // (trailerapple.c, varianteMidia), ~0,3 s a mais. No emulador isso deu
     // YouTube aos 90,1 s e a Apple pronta aos 90,4 s; o embed do YouTube nao
     // produziu `playing` em 3,5 s (na TV ele cai em "Video player
     // configuration error", #82/#86), e o trailer bom ficou de fora.
-    if (!u && !trailerapple_respondeu(ci->imdb) &&
-        decorrido < NV_TRAILER_HERO_MAX_ESPERA_MS)
-      goto trailer_hero_fim;
+    // Vencida a janela, quem nao respondeu conta como "sem trailer" e a fila
+    // anda (trailerfonte_escolher cede a vez a quem respondeu vazio).
+    TrailerCandidatos c;
+    TrailerDecisao d;
+    const char *u = NULL;
+    int qual = 0, venceu = decorrido >= NV_TRAILER_HERO_MAX_ESPERA_MS;
+    memset(&c, 0, sizeof c);
+    c.apple = trailerapple_url(ci->imdb);
+    c.appleRespondeu = trailerapple_respondeu(ci->imdb) || venceu;
+    c.appleFalhou = heroTrailerAppleFalhou;
 #ifdef __EMSCRIPTEN__
-    if (!u) {
-      yt = heroTrailerYoutube(ci->imdb);
-      if (yt) { u = yt; ehYoutube = 1; }
-    }
+    c.youtube = heroTrailerYoutube(ci->imdb);
+#else
+    c.imdb = trailerimdb_url(ci->imdb, NULL);
+    c.imdbRespondeu = trailerimdb_respondeu(ci->imdb) || venceu;
 #endif
-#ifndef __EMSCRIPTEN__
-    if (!u) u = trailerimdb_url(ci->imdb, NULL);
-#endif
-    if (!u && decorrido < NV_TRAILER_HERO_MAX_ESPERA_MS) goto trailer_hero_fim;
-    if (u) {
+    c.youtubeRespondeu = venceu;
+    d = trailerfonte_escolher(trailerfonte_ajuste(), trailerfonte_tizen(), &c, &u, &qual);
+    if (d == TRF_ESPERA && !venceu) goto trailer_hero_fim;
+    if (d == TRF_ABRE && u) {
+      // 1 = Apple (erro dela libera UMA tentativa da proxima fonte), 2 = a
+      // ultima da fila (YouTube ou IMDb: erro/prazo dela e o fim). O IMDb da LG
+      // contava como 1, e o erro dele reabria o proprio IMDb em laco.
+      int ultima = qual != TRF_APPLE;
       heroTrailerTentado = 1;
-      heroTrailerFonte = ehYoutube ? 2 : 1;
+      heroTrailerFonte = ultima ? 2 : 1;
+      heroTrailerQual = qual;
       heroTrailerPreparandoAte = heroTrailerPrazoPreparacao(agora);
       trailer_abrir(u, heroArteRect, 0, 0);
       // trailer_abrir e void por compatibilidade com o player nativo; no
@@ -2993,7 +3009,7 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
       // como erro da fonte evita deixar a tentativa marcada para sempre.
       if (!trailer_aberto()) {
         heroTrailerPreparandoAte = 0;
-        if (ehYoutube) {
+        if (ultima) {
           heroTrailerTentado = 1;
           heroTrailerFonte = 3;
         } else {
@@ -3004,7 +3020,8 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
       }
     } else {
       // Sem fonte depois do orçamento, deixa a arte e o carrossel seguirem.
-      printf("[trailer] hero: sem fonte em %u ms (apple %s), fica a arte\n", decorrido,
+      printf("[trailer] hero: sem fonte em %u ms (ajuste %d, apple %s), fica a arte\n", decorrido,
+             trailerfonte_ajuste(),
              heroTrailerAppleFalhou ? "falhou" : trailerapple_respondeu(ci->imdb) ? "sem trailer" : "sem resposta");
       fflush(stdout);
       heroTrailerTentado = 1;

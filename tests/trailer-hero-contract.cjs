@@ -258,12 +258,44 @@ check('Samsung entrega a variante de midia, nao o master',
 // Pagina de titulo: prazo e degrau seguinte, com log.
 const prep = number('NV_TRAILER_PREPARA_MS');
 check('detalhe tem prazo finito de preparo (~8 s)', prep >= 5000 && prep <= 10000);
-check('detalhe: sem playing no prazo ou erro sobe Apple -> YouTube e loga',
+check('detalhe: sem playing no prazo ou erro sobe para a proxima fonte do ajuste e loga',
   /trailerPrazo = agora \+ NV_TRAILER_PREPARA_MS/.test(detail) &&
-  /\[trailer\] detalhe: %s %d ms/.test(detail) && /trailerEtapa = 2;/.test(detail) && /trailerEtapa = 3;/.test(detail));
+  /\[trailer\] detalhe: %s %d ms/.test(detail) &&
+  /trailerfonte_depois\(trailerfonte_ajuste\(\), trailerfonte_tizen\(\), trailerEtapa\)/.test(detail) &&
+  /trailerEtapa = TRF_YOUTUBE;/.test(detail) && /trailerEtapa = -1;/.test(detail));
 check('hero loga a desistencia de cada fonte', /\[trailer\] hero: sem playing em %d ms/.test(home));
-check('hero nao abre YouTube antes de a Apple responder',
-  /if \(!u && !trailerapple_respondeu\(ci->imdb\) &&\s*decorrido < NV_TRAILER_HERO_MAX_ESPERA_MS\)\s*goto trailer_hero_fim;/.test(home));
+// A ordem em si (Apple espera responder; fonte fixa e a unica) e provada em
+// tests/trailer-fonte.c, com as duas plataformas. Aqui: o hero usa aquela
+// regra e so segura enquanto a janela da Apple nao venceu.
+check('hero nao abre a proxima fonte antes de a Apple responder',
+  /c\.appleRespondeu = trailerapple_respondeu\(ci->imdb\) \|\| venceu;/.test(home) &&
+  /if \(d == TRF_ESPERA && !venceu\) goto trailer_hero_fim;/.test(home) &&
+  /venceu = decorrido >= NV_TRAILER_HERO_MAX_ESPERA_MS/.test(home));
+check('hero e detalhe escolhem pela regra do ajuste "Fonte do trailer"',
+  /trailerfonte_escolher\(trailerfonte_ajuste\(\), trailerfonte_tizen\(\), &c, &u, &qual\)/.test(home) &&
+  /trailerfonte_escolher\(aj, tz, &c, &u, &q\)/.test(detail));
+
+// SAMSUNG SEMPRE MUDA (dono, 22/09/2026: "trailer fica mudo"). Tres travas:
+// o OK em tela cheia nao escolhe fonte por som, pede o som da plataforma, e
+// trailer_abrir zera o som antes de chegar ao elemento.
+check('detalhe nao tem mais "com som -> YouTube primeiro"',
+  !/if \(som && k < extras_n_trailers\(\)/.test(detail) && !/trailerFonte\(foco\.coluna, 1\)/.test(detail));
+check('tela cheia pede o som da plataforma, nao 1 cravado',
+  /trailer_abrir\(u, tela, trailerfonte_com_som\(trailerfonte_tizen\(\)\), 1\);/.test(detail));
+{
+  const i = trailer.indexOf('void trailer_abrir(const char *fonte');
+  const trava = trailer.indexOf('if (!trailerfonte_com_som(trailerfonte_tizen())) som = 0;', i);
+  const js = trailer.indexOf('trailer_js_abrir(fonte, r.x, r.y, r.w, r.h, som', i);
+  check('trailer_abrir zera o som antes do elemento na Samsung', i >= 0 && trava > i && js > trava);
+}
+// E com som 0 o elemento real sai mudo nas duas formas (video e embed).
+fechar();
+abrir('https://vod.test/mudo.m3u8', 0, 0, 1920, 1080, 0, 1);
+check('video da Apple com som 0 nasce mudo', ultimo().muted === true);
+fechar();
+abrir('dQw4w9WgXcQ', 0, 0, 1920, 1080, 0, 1);
+check('embed do YouTube com som 0 pede mute=1', /[?&]mute=1/.test(ultimo().src));
+fechar();
 check('C loga cada transicao de estado e o estado a cada tentativa',
   /\[trailer\] estado %d -> %d/.test(trailer) && /\[trailer\] tentativa: aberto=%d/.test(trailer));
 

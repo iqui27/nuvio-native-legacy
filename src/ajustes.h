@@ -119,6 +119,7 @@ float ajustes_detalhe_veu(void);
 int   ajustes_trailer_auto(void);      // trailer mudo no fundo da pagina de titulo
 int   ajustes_trailer_hero(void);      // trailer mudo no destaque da home
 int   ajustes_trailer_qualidade(void); // teto em linhas (1080/720/480); 0 = a maior
+int   ajustes_trailer_fonte(void);     // TRF_* de trailerfonte.h; 0 = automatico
 float ajustes_trailer_zoom(void);      // ampliacao do trailer (1.0 = quadro inteiro)
 void  ajustes_definir_envio_auto(int ligado);
 // homeImdbRatingsVisibility: 0 SHOW_ALL, 1 HIDE_ALL

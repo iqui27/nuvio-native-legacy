@@ -15,8 +15,12 @@
 // DOIS USOS:
 //   autoplay   mudo, na area do fundo da pagina de titulo, depois de a
 //              pagina assentar (ajuste "Trailer automático");
-//   tela cheia com som, pelo botao de trailer — OK pausa/continua, Voltar
-//              fecha. Antes o botao abria o navegador da TV.
+//   tela cheia pelo botao de trailer — OK pausa/continua, Voltar fecha.
+//              Com som so na LG; na Samsung sempre mudo (trailerfonte.h,
+//              trailerfonte_com_som). Antes o botao abria o navegador da TV.
+//
+// DE QUAL FONTE (Apple, IMDb, YouTube) decide trailerfonte.h, pelo ajuste
+// "Fonte do trailer"; aqui so se toca o que vier.
 //
 // No Mac nao ha nem pagina nem pipeline: trailer_suportado() e 0 e o botao
 // continua abrindo o navegador (extras_trailer_abrir).
@@ -27,7 +31,8 @@
 
 int  trailer_suportado(void);
 // Abre (ou reposiciona) o trailer `fonte` no retangulo `r` (coordenadas da
-// tela 1920x1080). `som` 0 = mudo (autoplay). `cheia` marca o modo de tela
+// tela 1920x1080). `som` 0 = mudo (autoplay; na Samsung e forcado a 0 sempre).
+// `cheia` marca o modo de tela
 // cheia com teclado proprio.
 void trailer_abrir(const char *fonte, GfxRect r, int som, int cheia);
 void trailer_rect(GfxRect r);

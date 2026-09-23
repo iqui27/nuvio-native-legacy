@@ -119,6 +119,7 @@ typedef enum {
   // Pagina de detalhe
   AJ_DET_BLUR_NAO_VISTOS, AJ_DET_TRAILER, AJ_DET_META_EXT, AJ_DET_DATA_CHEIA,
   AJ_DET_VEU, AJ_DET_TRAILER_AUTO, AJ_TRAILER_QUAL, AJ_TRAILER_ASPECTO,
+  AJ_TRAILER_FONTE,
   // Foco no poster
   AJ_EXPANDIR, AJ_EXPANDIR_ATRASO, AJ_NAV_RAPIDA, AJ_BORDA_FOCO,
   // Profundidade
@@ -174,6 +175,9 @@ static const int   TEX_MB_DE[]   = { 0, 96, 160, 240, 300, 400, 512 };
 static const char *V_QUALIMG[]   = { "Baixa", "Padrão", "Alta" };
 static const char *V_QUALTRAIL[] = { "Máxima", "1080p", "720p", "480p" };
 static const char *V_ASPTRAIL[]  = { "Zoom cinema", "Zoom leve", "Zoom ultra", "Original" };
+// Fonte do trailer (trailerfonte.h). O indice e o gravado e o TRF_* do
+// modulo: 0 Automatico, 1 Apple, 2 IMDb, 3 YouTube — nao reordenar.
+static const char *V_TRAILFONTE[] = { "Automático", "Apple TV", "IMDb", "YouTube" };
 static const char *V_IDIOMA[]    = { "Português", "English" };
 static const char *V_ANIM[]      = { "Completas", "Reduzidas" };
 // A ORDEM IMPORTA: o indice 0 e o padrao (ver a lista de padroes, que e
@@ -429,6 +433,10 @@ static const Opcao OPCOES[AJ_N] = {
   // Mesmos zooms do player (player.h): o trailer do IMDb vem 16:9 com a
   // tarja do 2.39:1 embutida, e "Zoom cinema" (1,34) e o que a tira.
   ESC("Proporção do trailer",       V_ASPTRAIL, 4),
+  // De onde vem o trailer (dono, 22/09/2026: "deixa o toggle no settings de
+  // qual o source do trailer"). Vale para a pagina de titulo e o destaque;
+  // a regra inteira, com o que cada TV toca, esta em trailerfonte.h.
+  ESC("Fonte do trailer",           V_TRAILFONTE, 4),
 
   ESC("Expandir pôster ao focar",   V_LIGA, 2),   // focusedPosterBackdropExpandEnabled
   NUM("Atraso da expansão",         0, 10, 1, " s"), // ...ExpandDelaySeconds
@@ -564,6 +572,10 @@ static const char *CHAVE[] = {
   "nextUpFromFurthestEpisode", "showUnairedNextUp", "continueWatchingSortMode",
   "blurUnwatchedEpisodes", "detailPageTrailerButtonEnabled",
   "preferExternalMetaAddonDetail", "showFullReleaseDate", "detalheVeu", "trailerAuto", "trailerQualidade", "trailerAspecto",
+  // LOCAL: o app web nao tem esta escolha (NuvioWeb 0.3.38: trailerSource e
+  // estado interno da tela de detalhe, nenhuma chave em settings/), entao o
+  // nome e proprio e somenteDesteAparelho o segura aqui.
+  "trailerFonteLocal",
   "focusedPosterBackdropExpandEnabled", "focusedPosterBackdropExpandDelaySeconds",
   "fastHorizontalNavigationEnabled",
   "bordaFocoCartaz",
@@ -824,6 +836,7 @@ static int valor[AJ_N] = {
   0,                /* trailer automatico na pagina de titulo: ligado */
   0,                /* qualidade do trailer: maxima */
   0,                /* proporcao do trailer: zoom cinema */
+  0,                /* fonte do trailer: automatico (Apple -> IMDb -> YouTube) */
 
   0,                /* expandir poster ao focar: ligado (DEFAULT do web) */
   3,                /* atraso: 3s */
@@ -1018,6 +1031,8 @@ int   ajustes_trailer_hero(void)      { return lig(AJ_HERO_TRAILER); }
 float ajustes_trailer_zoom(void)      { static const float z[] = { 1.34f, 1.15f, 1.55f, 1.0f }; int v = valor[AJ_TRAILER_ASPECTO]; return (v >= 0 && v < 4) ? z[v] : 1.34f; }
 // Teto de definicao do trailer: 0 = a maior que houver.
 int   ajustes_trailer_qualidade(void) { static const int t[] = { 0, 1080, 720, 480 }; int v = valor[AJ_TRAILER_QUAL]; return (v >= 0 && v < 4) ? t[v] : 0; }
+// Fonte do trailer: o TRF_* de trailerfonte.h. Fora da lista le Automatico.
+int   ajustes_trailer_fonte(void)     { int v = valor[AJ_TRAILER_FONTE]; return (v >= 0 && v < 4) ? v : 0; }
 int  ajustes_envio_auto(void)         { return lig(AJ_ENVIO_AUTO); }
 void ajustes_definir_envio_auto(int ligado) { valor[AJ_ENVIO_AUTO] = ligado ? 0 : 1; gravar(); }
 int ajustes_notas_home(void)          { return valor[AJ_NOTAS_HOME] == 0; }
@@ -1443,6 +1458,9 @@ static int somenteDesteAparelho(int op) {
     // traga algo com o mesmo nome.
     case AJ_HERO_FUNDO:
     case AJ_HERO_ARTE_DIF:
+    // Fonte do trailer: o que toca depende da TV (IMDb so na LG, YouTube so
+    // na Samsung), entao a escolha e deste aparelho.
+    case AJ_TRAILER_FONTE:
       return 1;
     default:
       return 0;
@@ -1924,13 +1942,29 @@ static const char *ajudaOpcao(int op) {
     case AJ_CW_ORDEM: return "Como a retomada se ordena: pelo mais recente, no estilo dos streamings, ou com os episódios futuros num bloco separado.";
 
     // --- Pagina de detalhe
-    case AJ_DET_TRAILER: return "Mostra o botão de trailer na tela do título, quando existe um trailer conhecido.";
+    case AJ_DET_TRAILER:
+#ifdef __EMSCRIPTEN__
+      // Samsung: a tela cheia e muda (trailerfonte_com_som) — a ajuda diz, em
+      // vez de o botao prometer um som que nao vem.
+      return "Mostra o botão de trailer na tela do título, quando existe um trailer conhecido. Nesta TV o trailer toca sem som.";
+#else
+      return "Mostra o botão de trailer na tela do título, quando existe um trailer conhecido.";
+#endif
     case AJ_DET_META_EXT: return "Prefere a ficha do addon de metadados à do Cinemeta. Útil quando o seu addon tem sinopse e elenco melhores.";
     case AJ_DET_DATA_CHEIA: return "Escreve a data de estreia por extenso em vez de só o ano.";
     case AJ_DET_VEU: return "Quanto a vinheta escura cobre a arte na tela do título. Cem por cento é o padrão; zero mostra a arte limpa — o texto pode ficar difícil de ler sobre cenas claras.";
     case AJ_DET_TRAILER_AUTO: return "Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.";
     case AJ_TRAILER_QUAL: return "Definição do vídeo do trailer. Máxima usa a maior que existir para o título; as outras são um teto, para conexões mais lentas.";
     case AJ_TRAILER_ASPECTO: return "Quanto o trailer é ampliado para encher a tela. Zoom cinema tira a tarja preta de um trailer de cinema; Original mostra o quadro inteiro, com tarja.";
+    case AJ_TRAILER_FONTE:
+      // O que cada TV toca (trailerfonte.c, existe): a ajuda nomeia a fonte que
+      // falta AQUI, senao escolher IMDb na Samsung e ficar sem trailer parece
+      // defeito.
+#ifdef __EMSCRIPTEN__
+      return "De onde vem o trailer da tela do título e do destaque. Automático tenta a Apple TV e, sem ela, o YouTube; uma fonte escolhida é a única tentada. Nesta TV o trailer toca sempre sem som, e o IMDb não toca aqui.";
+#else
+      return "De onde vem o trailer da tela do título e do destaque. Automático tenta a Apple TV e, sem ela, o IMDb; uma fonte escolhida é a única tentada. O YouTube não toca nesta TV.";
+#endif
 
     // --- Posteres e cards
     case AJ_EXPANDIR: return "O cartaz em foco cresce e abre a arte deitada atrás dele depois de um instante parado.";
@@ -2745,7 +2779,8 @@ static const char *iconeOpcao(int op) {
     case AJ_ESPACO: case AJ_TEX_MB: return "aspecto";
     case AJ_DET_TRAILER: case AJ_TMDB_TRAILERS: case AJ_PROF_TRAILERS: return "trailer";
     case AJ_DET_VEU: return "aspecto";
-    case AJ_DET_TRAILER_AUTO: case AJ_TRAILER_QUAL: case AJ_TRAILER_ASPECTO: case AJ_HERO_TRAILER: return "trailer";
+    case AJ_DET_TRAILER_AUTO: case AJ_TRAILER_QUAL: case AJ_TRAILER_ASPECTO: case AJ_HERO_TRAILER:
+    case AJ_TRAILER_FONTE: return "trailer";
     case AJ_DET_BLUR_NAO_VISTOS: return "oculto";
     default: break;
   }
