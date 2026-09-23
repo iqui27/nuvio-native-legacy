@@ -66,8 +66,13 @@
 #define extras_comentario_curtidas fx_com_curtidas
 #define extras_comentario_nota     fx_com_nota
 #define extras_n_relacionados   fx_n_relacionados
+#define extras_relacionado_titulo fx_relacionado_titulo
+#define extras_relacionado_ano    fx_relacionado_ano
+#define extras_relacionado_poster fx_relacionado_poster
 #define extras_n_colecao        fx_n_colecao
 #define extras_n_estudios       fx_n_estudios
+#define extras_estudio_nome     fx_estudio_nome
+#define extras_estudio_logo     fx_estudio_logo
 #define extras_n_trailers       fx_n_trailers
 #define extras_nota_trakt       fx_nota_trakt
 
@@ -128,9 +133,21 @@ const char *fx_com_usuario(int i)  { return COM_USU[i]; }
 const char *fx_com_texto(int i)    { return COM_TXT[i]; }
 int fx_com_curtidas(int i)         { return COM_CUR[i]; }
 int fx_com_nota(int i)             { return COM_NOTA[i]; }
-int fx_n_relacionados(void)   { return 0; }
+static int extrasCardsLigados;
+static const char *const REL_TIT[] = { "The Second Chapter", "Night Archive", "The Glass Shore" };
+static const char *const REL_ANO[] = { "2024", "2025", "2026" };
+static const char *const REL_PO[] = {
+  "deploy/app/art/poster/00.jpg", "deploy/app/art/poster/07.jpg",
+  "deploy/app/art/poster/19.jpg" };
+static const char *const EST_NOME[] = { "Northlight Pictures", "A24 Television", "Nuvio Studios" };
+int fx_n_relacionados(void)   { return extrasCardsLigados ? 3 : 0; }
+const char *fx_relacionado_titulo(int i) { return REL_TIT[i]; }
+const char *fx_relacionado_ano(int i) { return REL_ANO[i]; }
+const char *fx_relacionado_poster(int i) { return REL_PO[i]; }
 int fx_n_colecao(void)        { return 0; }
-int fx_n_estudios(void)       { return 0; }
+int fx_n_estudios(void)       { return extrasCardsLigados ? 3 : 0; }
+const char *fx_estudio_nome(int i) { return EST_NOME[i]; }
+const char *fx_estudio_logo(int i) { (void)i; return ""; }
 int fx_n_trailers(void)       { return 0; }
 int fx_nota_trakt(void)       { return 82; }
 
@@ -552,6 +569,23 @@ int main(int argc, char **argv) {
   comentariosLigados = 1;
   abrir(1, SEC_COMENTARIOS, 1);
   snprintf(nome, sizeof nome, "%s-12-filme-comentarios.png", saida);
+  gravar(nome);
+
+  // --- 13. FILME, Relacionados em foco: cartao de vidro com accent dinamico.
+  // Usa OCEANO em vez do branco padrao para comparar com a fileira de Studios.
+  { char caminho[600]; FILE *f;
+    snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dd);
+    f = fopen(caminho, "w"); assert(f);
+    fputs("selected_theme 2\n", f); fclose(f);
+    ajustes_dir(dd); }
+  extrasCardsLigados = 1;
+  abrir(1, SEC_RELACIONADOS, 1);
+  snprintf(nome, sizeof nome, "%s-13-filme-relacionados-accent.png", saida);
+  gravar(nome);
+
+  // --- 14. SERIE, Studios em foco: surface de vidro no accent ativo.
+  abrir(0, SEC_ESTUDIOS, 1);
+  snprintf(nome, sizeof nome, "%s-14-serie-studios-accent.png", saida);
   gravar(nome);
 
   SDL_GL_DeleteContext(gl);

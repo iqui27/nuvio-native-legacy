@@ -4041,18 +4041,25 @@ static void desenhaRelacionados(float x, float y, float a) {
     GfxRect r = { cx, y, REL_CARD_W, REL_CARD_H };
     int aceso = naLista && i == foc;
     const char *po = extras_relacionado_poster(i);
+    const char *ano = extras_relacionado_ano(i);
     GLuint t = po[0] ? tex_obter_larg(po, REL_CARD_W) : 0;
     float raio = raioCartaz(REL_CARD_W, REL_CARD_H);
     if (cx + REL_CARD_W > NV_TELA_W - NV_DETP_X) break;
+    // O mesmo cartao de vidro/accent das produtoras envolve arte e legenda;
+    // o poster permanece intacto por cima, sem ganhar tinta nem moldura.
     if (aceso) {
-      GfxRect anel = { r.x - 4, r.y - 4, r.w + 8, r.h + 8 };
-      gfx_cor(anel, raio, 1, 1, 1, a);
+      float ar, ag, ab;
+      float alturaLegenda = 12.0f + 22.0f + (ano[0] ? 6.0f + 18.0f : 0.0f) + 8.0f;
+      GfxRect cartao = { cx - 8.0f, y - 8.0f,
+                         REL_CARD_W + 16.0f, REL_CARD_H + alturaLegenda + 16.0f };
+      ajustes_acento(&ar, &ag, &ab);
+      gfx_cartao_foco_vidro(cartao, 12.0f / cartao.h, 1.0f, a, ar, ag, ab);
     }
     { float aArte = revela_arte(&revRel[i], t != 0, SDL_GetTicks());
       if (t) {
         if (aArte < 0.999f) gfx_cor(r, raio, 0.133f, 0.133f, 0.133f, a);
         gfx_tex_aspect_atual = tex_aspecto(po);
-        gfx_rect(r, t, GFX_CARD, aceso ? 1.0f : 0.0f, 0, 0, raio, 0, 0, 0, a * aArte);
+        gfx_rect(r, t, GFX_CARD, 0, 0, 0, raio, 0, 0, 0, a * aArte);
         gfx_tex_aspect_atual = 0.0f;
       } else if (po[0] && !tex_falhou(po)) {
         gfx_esqueleto(r, raio, 0.133f, 0.133f, 0.133f, a);
@@ -4063,12 +4070,12 @@ static void desenhaRelacionados(float x, float y, float a) {
       TxtLinha lt = txt_linha_corta(TXT_DET_META2, extras_relacionado_titulo(i),
                                     c, c, c, 255, REL_CARD_W);
       txt_desenhar_alpha(lt, cx, y + REL_CARD_H + 12.0f, a);
-      { const char *ano = extras_relacionado_ano(i);
-        if (ano[0]) {
-          TxtLinha la = txt_linha(TXT_MINI, ano, 140, 144, 153, 255);
-          txt_desenhar_alpha(la, cx, y + REL_CARD_H + 12.0f + lt.h + 6.0f,
-                             a * 0.9f);
-        } } }
+      if (ano[0]) {
+        int cy = aceso ? 174 : 156;
+        TxtLinha la = txt_linha(TXT_MINI, ano, cy, cy + 2, cy + 9, 255);
+        txt_desenhar_alpha(la, cx, y + REL_CARD_H + 12.0f + lt.h + 6.0f,
+                           a * 0.95f);
+      } }
   }
 }
 
@@ -4092,19 +4099,19 @@ static void desenhaRelacionados(float x, float y, float a) {
 //
 // GFX_ARTE resolve os tres: RGB e alfa inteiros, recortados pela mesma mascara
 // arredondada, sem over-scan e sem ganho. O recorte monocromatico continua no
-// GFX_MARCA, que e o unico jeito de ele nao sumir — e agora ele TROCA DE TINTA
-// com o foco, porque a superficie embaixo dele troca de claro para escuro.
-//
-// FOCO PREENCHIDO, NAO CONTORNADO: era um halo branco a 35% em volta do
-// cartao. A regra da casa nao tem excecao para cartao de marca.
+// GFX_MARCA; como a superficie em foco permanece escura, a marca segue clara
+// enquanto o cartao recebe o accent configuravel.
 static void desenhaEstudio(float x, float y, int i, float f, float a) {
   GfxRect r = { x, y, EST_CARD_W, EST_CARD_H };
   const char *logo = extras_estudio_logo(i);
-  int claro = f > 0.5f;          // DEGRAU: linha ja rasterizada nao muda de cor
+  float ar, ag, ab;
   GLuint t;
-  moldura(r, 14.0f, a);
-  if (f > 0.01f)
-    gfx_cor(r, 14.0f / EST_CARD_H, 0.961f, 0.961f, 0.961f, a * f);
+  if (f > 0.001f) {
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_cartao_foco_vidro(r, 14.0f / EST_CARD_H, f, a, ar, ag, ab);
+  } else {
+    moldura(r, 14.0f, a);
+  }
   t = logo[0] ? tex_obter(logo) : 0;
   if (t) {
     float ap = tex_aspecto(logo), w, h, fr, fg, fb;
@@ -4120,15 +4127,15 @@ static void desenhaEstudio(float x, float y, int i, float f, float a) {
                      y + (EST_CARD_H - h) * 0.5f, w, h };
       gfx_tex_aspect_atual = 0.0f;
       if (recorte && tex_marca_escura(logo)) {
-        float tom = claro ? 0.09f : 0.93f;
+        float tom = 0.93f;
         gfx_rect(rl, t, GFX_MARCA, 0, 0, 0, 0.0f, tom, tom, tom, a);
       } else {
         gfx_rect(rl, t, GFX_ARTE, 0, 0, 0, 8.0f / h, 1, 1, 1, a);
       } }
   } else {
-    int c = claro ? 24 : 208;
+    int c = 208;
     TxtLinha ln = txt_linha_corta(TXT_DET_META2, extras_estudio_nome(i),
-                                  c, c, claro ? 30 : 220, 255,
+                                  c, c, 220, 255,
                                   EST_CARD_W - 28.0f);
     txt_desenhar_alpha(ln, x + (EST_CARD_W - ln.w) * 0.5f,
                        y + (EST_CARD_H - ln.h) * 0.5f, a * 0.95f);
