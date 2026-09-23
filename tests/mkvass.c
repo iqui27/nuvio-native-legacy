@@ -377,6 +377,111 @@ int main(int argc, char **argv) {
      "CuePoints truncados nao gravam sidecar completo");
   free(corpo);
 
+  // #92 (webOS 25): sem CuePoint da faixa de legenda (mkvmerge --cues none) e
+  // sem Cues nenhum. Antes: NOGO_SEM_INDICE e a faixa voltava a TV. Agora o
+  // modulo VARRE os Clusters e entrega os mesmos eventos, com os mesmos tempos.
+  if (argc > 7 && argv[6][0]) {
+    char urlSem[600], scSem[64], scSemF[80];
+    printf("\n[6b] sem CuePoint da faixa: varredura dos Clusters pelo indice do video\n");
+    snprintf(urlSem, sizeof urlSem, "%s/%s", base, argv[6]);
+    nomeSidecar(urlSem, 3, scSem, sizeof scSem);
+    snprintf(scSemF, sizeof scSemF, "%s.fonts", scSem);
+    dados_apagar(scSem); dados_apagar(scSemF);
+    mkvass_parar(); esperarFio(); legenda_desligar();
+    zerarServidor();
+    mkvass_iniciar(urlSem, 3);
+    maxSeg = rodarAte(4.0, 120000, 0.0);
+    ok(mkvass_estado() == MKVASS_COMPLETO, "sem cues da faixa: termina COMPLETO (antes: NOGO_SEM_INDICE)");
+    ok(mkvass_varredura() == 1, "colheu em modo varredura");
+    mkvass_estatisticas(&ped, &bytes, &colhidos, &total);
+    printf("    %d/%d trechos, %ld Ranges, %ld bytes de %ld (%.1f %%), pico %d/s\n",
+           colhidos, total, ped, bytes, tamMkv, 100.0 * bytes / tamMkv, maxSeg);
+    ok(total > 1 && colhidos == total, "todos os trechos varridos");
+    ok(maxSeg >= 0 && maxSeg <= 8, "teto: no maximo 8 Ranges num mesmo segundo (varredura)");
+    r = conferirCues(esp, nEsp);
+    printf("    %d/%d cues casaram (texto, ±20 ms, \\an, \\pos)\n", r, nEsp);
+    ok(r == nEsp, "varredura: todos os cues batem com o .ass original");
+    esperarFio();
+    corpo = dados_ler(scSem);
+    ok(corpo && !strncmp(corpo, "; mkvass-estado: completo", 25), "varredura grava sidecar completo");
+    free(corpo);
+  } else printf("\n[6b] pulado: fixture sem cues da faixa nao gerada (mkvmerge?)\n");
+
+  if (argc > 7 && argv[7][0]) {
+    char urlNo[600], scNo[64], scNoF[80];
+    printf("\n[6c] sem Cues nenhum: varredura do primeiro Cluster ao fim do Segment\n");
+    snprintf(urlNo, sizeof urlNo, "%s/%s", base, argv[7]);
+    nomeSidecar(urlNo, 3, scNo, sizeof scNo);
+    snprintf(scNoF, sizeof scNoF, "%s.fonts", scNo);
+    dados_apagar(scNo); dados_apagar(scNoF);
+    mkvass_parar(); esperarFio(); legenda_desligar();
+    zerarServidor();
+    mkvass_iniciar(urlNo, 3);
+    maxSeg = rodarAte(4.0, 120000, 0.0);
+    ok(mkvass_estado() == MKVASS_COMPLETO, "--no-cues: termina COMPLETO");
+    ok(mkvass_varredura() == 1, "colheu em modo varredura");
+    mkvass_estatisticas(&ped, &bytes, &colhidos, &total);
+    printf("    %d/%d trechos, %ld Ranges, %ld bytes de %ld (%.1f %%), pico %d/s\n",
+           colhidos, total, ped, bytes, tamMkv, 100.0 * bytes / tamMkv, maxSeg);
+    ok(total == 1 && colhidos == 1, "um trecho so, varrido inteiro");
+    r = conferirCues(esp, nEsp);
+    printf("    %d/%d cues casaram\n", r, nEsp);
+    ok(r == nEsp, "--no-cues: todos os cues batem com o .ass original");
+  } else printf("\n[6c] pulado: fixture sem Cues nao gerada (mkvmerge?)\n");
+
+  // A varredura e PRESA A JANELA (30 s neste binario, ver mkvass.sh): com o
+  // playhead parado os bytes sao uma fracao do arquivo; com o buffer de video
+  // curto ela pausa; um seek recomeca na nova posicao em vez de ler o meio.
+  { int caso;
+    for (caso = 0; caso < 2; caso++) {
+      const char *nome = caso == 0 ? (argc > 6 ? argv[6] : "") : (argc > 7 ? argv[7] : "");
+      char urlJ[600], scJ[64], scJF[80]; long b0, b1, b2, b3; int c, n, temPerto, temLonge;
+      LegendaCue v[LEGENDA_SIMULTANEAS];
+      if (!nome[0]) continue;
+      printf("\n[6%c] varredura presa a janela (%s): bytes ~ janela, pausa por folga, seek\n",
+             caso ? 'e' : 'd', caso ? "sem Cues nenhum" : "cues do video");
+      snprintf(urlJ, sizeof urlJ, "%s/%s", base, nome);
+      nomeSidecar(urlJ, 3, scJ, sizeof scJ);
+      snprintf(scJF, sizeof scJF, "%s.fonts", scJ);
+      dados_apagar(scJ); dados_apagar(scJF);
+      mkvass_parar(); esperarFio(); legenda_desligar();
+      zerarServidor();
+      mkvass_folga(-1.0);
+      mkvass_iniciar(urlJ, 3);
+      { long t0 = agoraMs(); while (agoraMs() - t0 < 8000) { mkvass_passo(0.0); usleep(20 * 1000); } }
+      mkvass_estatisticas(NULL, &b0, &c, &n);
+      printf("    playhead 0, janela 30 s: %ld bytes de %ld (%.1f %%), %d/%d trechos\n",
+             b0, tamMkv, 100.0 * b0 / tamMkv, c, n);
+      ok(mkvass_estado() == MKVASS_COLHENDO, "com o playhead parado a varredura NAO fecha o arquivo");
+      ok(b0 > tamMkv / 10 && b0 * 2 < tamMkv, "bytes lidos entre 10 % e 50 % do arquivo (janela de 30 s em 120 s)");
+      temPerto = legenda_cues(5.5, 0, v, LEGENDA_SIMULTANEAS) > 0;
+      temLonge = legenda_cues(100.0 + 0.5, 0, v, LEGENDA_SIMULTANEAS) > 0;
+      ok(temPerto && !temLonge, "fala dos 5 s entregue, fala dos 100 s ainda nao");
+      // Buffer de video curto: pausa. O playhead anda 5 s (a janela pede mais
+      // um Cluster) mas nada e lido enquanto a folga esta abaixo de 20 s.
+      mkvass_folga(5.0);
+      { long t0 = agoraMs(); while (agoraMs() - t0 < 3000) { mkvass_passo(5.0); usleep(20 * 1000); } }
+      mkvass_estatisticas(NULL, &b1, NULL, NULL);
+      ok(b1 <= b0 + 64L * 1024, "buffer de video < 20 s: a varredura pausou (bytes parados)");
+      mkvass_folga(60.0);
+      { long t0 = agoraMs(); while (agoraMs() - t0 < 3000) { mkvass_passo(5.0); usleep(20 * 1000); } }
+      mkvass_estatisticas(NULL, &b2, NULL, NULL);
+      ok(b2 > b1, "buffer de volta: a varredura retomou");
+      // Seek longo: recomeca na nova posicao, nao le o meio.
+      mkvass_passo(100.0);
+      { long t0 = agoraMs(); while (agoraMs() - t0 < 8000) { mkvass_passo(100.0); usleep(20 * 1000); } }
+      mkvass_estatisticas(NULL, &b3, &c, &n);
+      printf("    apos seek para 100 s: %ld bytes (%.1f %%), %d/%d trechos\n", b3, 100.0 * b3 / tamMkv, c, n);
+      temPerto = legenda_cues(100.0 + 0.5, 0, v, LEGENDA_SIMULTANEAS) > 0;
+      temLonge = legenda_cues(59.0 + 0.5, 0, v, LEGENDA_SIMULTANEAS) > 0;
+      ok(temPerto, "seek: fala dos 100 s entregue");
+      ok(!temLonge, "seek: fala dos 59 s (fora das duas janelas) NAO foi lida");
+      ok(b3 * 10 < tamMkv * 8, "seek: bytes totais < 80 % do arquivo (o meio ficou de fora)");
+      ok(mkvass_estado() == MKVASS_COLHENDO, "sem passar pelo meio o arquivo nao fecha completo");
+      mkvass_parar(); esperarFio(); legenda_desligar();
+    } }
+  mkvass_folga(-1.0);
+
   mkvass_parar(); esperarFio(); legenda_desligar();
   nomeSidecar(urlCurto, 3, sidecarCurto, sizeof sidecarCurto);
   dados_apagar(sidecarCurto);

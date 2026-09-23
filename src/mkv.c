@@ -236,6 +236,14 @@ static int acharTracks(const unsigned char *p, long n, MkvFaixa *saida, int max,
       long disp = n - o;
       long t = tam > disp ? disp : tam;   // cabecalho maior que o trecho baixado
       nFaixas = lerTracks(p + o, t, saida, max);
+      // Tracks cortado pelo trecho: a lista sai INCOMPLETA e o casamento pelo
+      // ordinal (mkv_casar_legendas) vai dar "nenhum" — dizer isso no log e o
+      // que separa "arquivo esquisito" de "trecho curto" no #92.
+      if (tam > disp) {
+        printf("[mkv] Tracks tem %ld bytes e o trecho baixado acaba em %ld: %d faixa(s) lidas, lista pode estar incompleta\n",
+               tam, disp, nFaixas);
+        fflush(stdout);
+      }
       // NAO devolve aqui: Chapters vem DEPOIS de Tracks no arquivo, e sair no
       // primeiro achado era o que deixava os capitulos para tras.
       if (!caps || tam > disp) return nFaixas;

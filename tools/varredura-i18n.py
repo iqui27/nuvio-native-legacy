@@ -293,6 +293,19 @@ IGNORAR = {
     "colecao tem o addon, mas com outro tipo",
     "colecao tem addon e tipo, mas outro id de catalogo",
     "CASOU — nao engoliu porque o grupo esta oculto",
+    # Os motivos de motivoTV() (faixas.c, #92): por que a faixa ASS ficou com
+    # a TV em vez do overlay do app. Sao `return "..."` de uma funcao e so vao
+    # para o printf "[legenda] faixa N -> TV: motivo" — o mesmo caso dos
+    # motivos do [col] acima: log em portugues de proposito, para quem manda
+    # o registro na issue.
+    "faixa inexistente",
+    "sem URL da fonte",
+    "mkvass ja desistiu desta faixa nesta sessao",
+    "fonte nao e MKV (nao ha sonda)",
+    "sonda do cabecalho ainda nao voltou",
+    "sonda voltou sem par para esta faixa (ver [mkv] legendas da TV x arquivo)",
+    "codec nao e ASS/SSA: a TV desenha bem",
+    "sem ordinal no arquivo",
 }
 
 def sem_corpo_em_js(txt):

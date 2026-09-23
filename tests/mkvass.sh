@@ -50,6 +50,21 @@ EOF
 "$FFMPEG" -v error -y \
   -f lavfi -i "testsrc2=size=320x180:rate=24:duration=10" \
   -i "$DIR/ref.ass" -map 0:v -map 1:s -c:v libx264 -preset ultrafast -c:s srt "$DIR/srt.mkv"
+# #92 (webOS 25): o MESMO arquivo sem CuePoint da faixa de legenda (mkvmerge
+# --cues none — o caso que era no-go e devolvia a faixa ao renderizador da TV)
+# e sem Cues nenhum. mkvmerge renumera as faixas na ordem (video 1, audio 2,
+# legenda 3), a mesma da fixture do ffmpeg, entao a faixa 3 continua sendo a
+# legenda. Sem mkvmerge os dois casos sao pulados, com aviso.
+MKVMERGE=${MKVMERGE:-/opt/homebrew/bin/mkvmerge}
+SEMCUES=""; NOCUES=""
+if [ -x "$MKVMERGE" ]; then
+  "$MKVMERGE" -q -o "$DIR/semcues.mkv" --cues 2:none "$DIR/t.mkv" >/dev/null 2>&1 || true
+  "$MKVMERGE" -q -o "$DIR/nocues.mkv" --no-cues "$DIR/t.mkv" >/dev/null 2>&1 || true
+  [ -s "$DIR/semcues.mkv" ] && SEMCUES=semcues.mkv
+  [ -s "$DIR/nocues.mkv" ] && NOCUES=nocues.mkv
+else
+  echo "mkvass.sh: mkvmerge nao encontrado em $MKVMERGE; casos de varredura pulados"
+fi
 ls -la "$DIR"/*.mkv
 
 python3 tests/servidor_range.py "$DIR" > "$DIR/porta.txt" &
@@ -58,17 +73,19 @@ for _ in $(seq 1 50); do grep -q porta "$DIR/porta.txt" 2>/dev/null && break; sl
 PORTA=$(awk '/porta/{print $2}' "$DIR/porta.txt")
 [ -n "$PORTA" ] || { echo "mkvass.sh: servidor nao subiu"; exit 1; }
 
-cc -Isrc tests/mkvass.c src/mkvass.c src/assrender.c src/legenda.c src/rede.c src/redeurl.c src/dados.c \
+# Janela da VARREDURA em 30 s (padrao 120) para a fixture de 120 s poder
+# provar que os bytes lidos sao proporcionais a janela, nao ao arquivo.
+cc -Isrc -DMKVASS_VARRE_JANELA_SEG=30.0 tests/mkvass.c src/mkvass.c src/assrender.c src/legenda.c src/rede.c src/redeurl.c src/dados.c \
   -o /tmp/nuvio-mkvass-tests -O1 -g -Wall -I/opt/homebrew/include \
   -Wno-deprecated-declarations
 mkdir -p "$DIR/dados"
 if [ "${NUVIO_MKVASS_LLDB:-0}" = "1" ]; then
   NUVIO_DADOS="$DIR/dados" MKV_DIR="$DIR" lldb --batch -k 'bt all' \
-    -o "run http://127.0.0.1:$PORTA t.mkv $DIR/ref.ass srt.mkv ref.ass" \
+    -o "run http://127.0.0.1:$PORTA t.mkv $DIR/ref.ass srt.mkv ref.ass $SEMCUES $NOCUES" \
     -- /tmp/nuvio-mkvass-tests
 else
   NUVIO_DADOS="$DIR/dados" MKV_DIR="$DIR" /tmp/nuvio-mkvass-tests \
-    "http://127.0.0.1:$PORTA" t.mkv "$DIR/ref.ass" srt.mkv ref.ass
+    "http://127.0.0.1:$PORTA" t.mkv "$DIR/ref.ass" srt.mkv ref.ass "$SEMCUES" "$NOCUES"
 fi
 
 # Os mesmos tempos, agora pelo LIBASS (o que a TV desenha). Ver tests/ass_tempos.c.

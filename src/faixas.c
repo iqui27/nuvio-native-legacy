@@ -82,15 +82,56 @@ static int legExterna = -1;
 // vai ao AVPlay, cujo texto o player desenha pelo onsubtitlechange (#122).
 static int legOverlay = -1, legOverlayNoGo = -1;
 
+// Faixa embutida escolhida ANTES de a sonda do cabecalho voltar (#92, webOS
+// 25). Sem a sonda nao se sabe o codec nem o ordinal, e a 1.4.2 mandava a
+// faixa para a TV EM SILENCIO — sem log, sem aviso — e la ficava: era o "liga
+// e desliga, metade da frase" do relato, numa TV em que o buffer demorava a
+// dar os 20 s que disparavam a sonda. Agora a faixa vai a TV so ENQUANTO a
+// sonda corre (disparada na hora); quando ela volta, faixas_atualizar decide
+// e diz no log por que ficou onde ficou.
+static int legOverlayEsperando = -1;
+
 static int ehAss(const VideoFaixa *f) {
   return f && (!strncmp(f->codec, "S_TEXT/ASS", 10) || !strncmp(f->codec, "S_TEXT/SSA", 10));
+}
+
+// O overlay do app assume a faixa embutida `i` (ordinal `ord` no arquivo): a
+// legenda nativa da TV e DESLIGADA (video_escolher_legenda(-1) manda
+// setSubtitleEnable false ao uMS / desliga no AVPlay) e o mkvass comeca a
+// colher. A linha de log e a prova de que o app assumiu — se a TV continuar
+// desenhando por cima, o firmware ignorou o setSubtitleEnable, e isso e
+// outro bug (a resposta do uMS sai logo abaixo como "[video] {...}").
+static void overlayAssumir(int i, int ord) {
+  const VideoFaixa *f = video_legenda(i);
+  video_escolher_legenda(-1);
+  mkvass_iniciar_ordinal(video_url_atual(), ord);
+  legOverlay = i;
+  printf("[legenda] faixa %d (%s, %s) -> app: ordinal %d; legenda nativa desligada\n",
+         i, f ? f->rotulo : "?", f ? f->codec : "?", ord);
+  fflush(stdout);
+}
+
+// Por que a faixa embutida `i` NAO vai ao overlay do app. Uma string, para o
+// log e para a folha nao divergirem.
+static const char *motivoTV(int i) {
+  const VideoFaixa *f = video_legenda(i);
+  int sond = video_mkv_sondado();
+  if (!f) return "faixa inexistente";
+  if (!video_url_atual()[0]) return "sem URL da fonte";
+  if (i == legOverlayNoGo) return "mkvass ja desistiu desta faixa nesta sessao";
+  if (sond == 2) return "fonte nao e MKV (nao ha sonda)";
+  if (sond == 0) return "sonda do cabecalho ainda nao voltou";
+  if (!f->codec[0]) return "sonda voltou sem par para esta faixa (ver [mkv] legendas da TV x arquivo)";
+  if (!ehAss(f)) return "codec nao e ASS/SSA: a TV desenha bem";
+  if (video_legenda_ordinal_mkv(i) < 0) return "sem ordinal no arquivo";
+  return "?";
 }
 
 // Chamada quando uma sessao de reproducao nova comeca: a legenda externa e da
 // sessao, nao do aparelho. Sem isto o titulo seguinte abriria a folha marcando
 // como ativa uma legenda que nao foi escolhida para ele.
 void faixas_reiniciar(void) {
-  legExterna = -1; legOverlay = legOverlayNoGo = -1; aberta = 0;
+  legExterna = -1; legOverlay = legOverlayNoGo = legOverlayEsperando = -1; aberta = 0;
   mkvass_parar(); legenda_desligar();
 }
 
@@ -132,6 +173,10 @@ void faixas_abrir_em(int col) {
   // A legenda pode estar desligada (-1); a primeira linha da coluna e sempre
   // "Desativada", entao o indice da lista e deslocado em um.
   foco[1] = legendaAtiva() + 1;
+  // Abriu a folha de LEGENDAS: e agora que idioma, codec e ordinal importam.
+  // A sonda esperava 20 s de buffer (video.c) — numa fonte lenta a folha
+  // abria com "Legenda 1..N" e sem selo ASS, e a escolha ia a TV.
+  if (modo) video_sondar_mkv_agora();
   // Clamp nas duas colunas. A lista de legendas CRESCE durante a sessao (as do
   // OpenSubtitles chegam depois) e a de audio so existe apos o sourceInfo:
   // guardar um indice de antes e reabrir sem conferir poe o foco fora do vetor.
@@ -229,11 +274,15 @@ static const char *rotuloLegenda(int i, const char **marca) {
     // sem posicao e comendo eventos simultaneos. Dizer isso na folha e o que
     // permite a pessoa preferir uma legenda externa enquanto a faixa
     // embutida nao passa pelo overlay proprio.
-    if (ehAss(f)) {
+    if (i == legOverlayEsperando)
+      *marca = i18n("Incorporada (lendo o \xc3\xadndice do arquivo\xe2\x80\xa6)");
+    else if (ehAss(f)) {
       if (i == legOverlay) {
         int e = mkvass_estado();
         *marca = e == MKVASS_PREPARANDO
                ? i18n("Incorporada \xc2\xb7 ASS (lendo o \xc3\xadndice do arquivo\xe2\x80\xa6)")
+               : mkvass_varredura()
+               ? i18n("Incorporada \xc2\xb7 ASS (desenhada pelo app, varrendo o arquivo)")
                : i18n("Incorporada \xc2\xb7 ASS (desenhada pelo app)");
       } else if (i == legOverlayNoGo) {
         int e = mkvass_estado();
@@ -259,10 +308,11 @@ static void aplicar(void) {
     int emb = video_n_legenda();
     // Qualquer escolha encerra a colheita anterior: o fio do mkvass nao pode
     // continuar entregando ao overlay uma faixa que a pessoa acabou de trocar.
-    mkvass_parar(); legOverlay = -1;
+    mkvass_parar(); legOverlay = -1; legOverlayEsperando = -1;
     if (i < 0)        { video_escolher_legenda(-1); legenda_desligar(); legExterna = -1; }
     else if (i < emb) {
       const VideoFaixa *f = video_legenda(i);
+      int ord = video_legenda_ordinal_mkv(i);
       legenda_desligar(); legExterna = -1;
       // FAIXA ASS: o overlay do app assume (#92). O pipeline fica com a legenda
       // desligada e o mkvass colhe o texto do MKV a frente do playhead; se ele
@@ -272,15 +322,26 @@ static void aplicar(void) {
       // PELO ORDINAL NOS DOIS ALVOS (#92). Na LG isto passava f->numero — o
       // trackNum da TV — como se fosse TrackNumber do Matroska, e o overlay
       // colhia a faixa de outra lingua. O ordinal e resolvido contra as
-      // TrackEntry na sonda do cabecalho; sem ele (sonda nao voltou, contagem
-      // nao bate) nao ha como saber qual faixa colher, e ela fica com a TV.
-      if (ehAss(f) && i != legOverlayNoGo && video_url_atual()[0]
-          && video_legenda_ordinal_mkv(i) >= 0) {
-        video_escolher_legenda(-1);
-        mkvass_iniciar_ordinal(video_url_atual(), video_legenda_ordinal_mkv(i));
-        legOverlay = i;
-      } else
-      video_escolher_legenda(i);
+      // TrackEntry na sonda do cabecalho.
+      //
+      // SEM ORDINAL AINDA (sonda nao voltou): a faixa vai a TV por enquanto,
+      // a sonda e disparada ja e faixas_atualizar troca para o overlay quando
+      // ela voltar com o par. NUNCA em silencio: cada caminho deixa uma linha
+      // "[legenda] faixa N -> TV: motivo" — e a linha que faltou no #92 para
+      // separar "o app desistiu" de "a TV desenha mal".
+      if (ehAss(f) && i != legOverlayNoGo && video_url_atual()[0] && ord >= 0)
+        overlayAssumir(i, ord);
+      else {
+        const char *motivo = motivoTV(i);
+        if (f && i != legOverlayNoGo && video_url_atual()[0] && video_mkv_sondado() == 0) {
+          legOverlayEsperando = i;
+          video_sondar_mkv_agora();
+        }
+        printf("[legenda] faixa %d (%s, codec=%s) -> TV: %s\n", i, f ? f->rotulo : "?",
+               f && f->codec[0] ? f->codec : "?", motivo);
+        fflush(stdout);
+        video_escolher_legenda(i);
+      }
     }
     else {
       const Legenda *l = addons_legenda(i - emb);
@@ -325,9 +386,38 @@ void faixas_atualizar(float dt, Uint32 agora) {
   // Polling por quadro e o que ha: o no-go nasce num fio de rede e este
   // modulo nao tem callback — e uma comparacao de inteiro.
   if (legOverlay >= 0 && mkvass_nogo()) {
-    int i = legOverlay;
+    int i = legOverlay, e = mkvass_estado();
     legOverlay = -1; legOverlayNoGo = i;
+    printf("[legenda] mkvass no-go %d na faixa %d: a legenda VOLTA para a TV (nativa religada)\n", e, i);
+    fflush(stdout);
+    // Aviso na tela: antes a queda era muda e a pessoa so via a legenda
+    // piscar e cortar, sem saber que o app tinha desistido.
+    player_toast(i18n(e == MKVASS_NOGO_SEM_RANGE || e == MKVASS_NOGO_REDE
+                        ? "Legenda ASS: a TV vai desenhar (servidor sem Range)"
+                        : "Legenda ASS: a TV vai desenhar (arquivo sem \xc3\xadndice)"), 6000);
     video_escolher_legenda(i);
+  }
+  // A sonda voltou para uma faixa escolhida antes dela: agora da para decidir.
+  if (legOverlayEsperando >= 0) {
+    int i = legOverlayEsperando;
+    const VideoFaixa *f = video_legenda(i);
+    video_sondar_mkv_agora();          // se o sourceInfo chegou depois da escolha
+    if (video_mkv_sondado() != 0) {
+      int ord = video_legenda_ordinal_mkv(i);
+      legOverlayEsperando = -1;
+      if (f && ehAss(f) && ord >= 0 && video_legenda_atual() == i && video_url_atual()[0]) {
+        printf("[legenda] sonda voltou: faixa %d e ASS, o app assume\n", i);
+        overlayAssumir(i, ord);
+      } else {
+        printf("[legenda] sonda voltou: faixa %d (%s, codec=%s) fica na TV: %s\n", i,
+               f ? f->rotulo : "?", f && f->codec[0] ? f->codec : "?", motivoTV(i));
+        fflush(stdout);
+        // Sem par no arquivo e uma falha do casamento, nao da TV: avisa, para
+        // a pessoa poder mandar o log em vez de achar que a legenda e assim.
+        if (f && !f->codec[0] && video_mkv_sondado() == 1)
+          player_toast(i18n("Legenda: n\xc3\xa3o deu para casar as faixas com o arquivo; a TV desenha"), 6000);
+      }
+    }
   }
 }
 
