@@ -49,6 +49,29 @@ int main(void) {
   // "Todas" na tela e "*" no codigo, e tem de significar SEM FILTRO.
   ling_local_legenda("*");      ok("* = sem filtro",       !ling_legenda()[0]);
 
+  // #129: a legenda preferida LIGA sozinha. Embutida antes da de addon;
+  // espera enquanto os idiomas embutidos podem chegar; nunca liga sem
+  // preferencia nem com "none".
+  { const char *emb[] = { "por", "eng" }, *semEtiqueta[] = { "", "" };
+    const char *add[] = { "pt-br", "en" };
+    ok("auto: embutida en", ling_legenda_auto("en", emb, 2, 1, add, 2, 1) == 1);
+    ok("auto: embutida mesmo com a sonda aberta",
+       ling_legenda_auto("en", emb, 2, 0, add, 2, 0) == 1);
+    ok("auto: espera a sonda do MKV",
+       ling_legenda_auto("en", semEtiqueta, 2, 0, add, 2, 1) == LING_AUTO_ESPERA);
+    ok("auto: addon quando o arquivo nao tem",
+       ling_legenda_auto("en", semEtiqueta, 2, 1, add, 2, 1) == 3);
+    ok("auto: pt aceita pt-br do addon",
+       ling_legenda_auto("pt", NULL, 0, 1, add, 2, 1) == 0);
+    ok("auto: espera o fio dos addons",
+       ling_legenda_auto("es", emb, 2, 1, add, 2, 0) == LING_AUTO_ESPERA);
+    ok("auto: nada em es",
+       ling_legenda_auto("es", emb, 2, 1, add, 2, 1) == LING_AUTO_NADA);
+    ok("auto: sem preferencia nao liga",
+       ling_legenda_auto("", emb, 2, 1, add, 2, 1) == LING_AUTO_NADA);
+    ok("auto: none nao liga",
+       ling_legenda_auto("none", emb, 2, 1, add, 2, 1) == LING_AUTO_NADA); }
+
   if (falhas) { printf("%d falha(s)\n", falhas); return 1; }
   printf("linguas ok\n");
   return 0;

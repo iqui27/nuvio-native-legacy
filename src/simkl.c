@@ -19,7 +19,7 @@
 // o "a seguir" disputar lugar com os pausados.
 #define SMK_PLAY_MAX 64
 // Plan to Watch conhecido, para a guarda do "-". 400 ids x 24 B = ~10 KB; a
-// lista de "quero ver" de uma pessoa real cabe com sobra (SALVOS_MAX e 300).
+// lista de "quero ver" de uma pessoa real cabe com sobra.
 #define SMK_PTW_MAX 400
 
 int simkl_ativo(void) { return simklauth_token()[0] != 0; }

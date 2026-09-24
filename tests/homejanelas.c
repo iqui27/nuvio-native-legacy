@@ -27,6 +27,8 @@ void prog_remover(const char *chave) { (void)chave; }
 void prog_marcar_removido(const char *imdb) { (void)imdb; }
 int  prog_removido_vence(const char *imdb, long long instanteMs) { (void)imdb; (void)instanteMs; return 0; }
 int  cat_tirar_continuar(const char *imdb) { (void)imdb; return 0; }
+int arte_reserva_episodios(const char *imdb, const char *corpo) { (void)imdb; (void)corpo; return 0; }
+
 #include "../src/descoberta.c"
 
 #define BASE "https://addon.example/abc"
@@ -76,6 +78,18 @@ int homeestado_identidade_geracao(unsigned g, char *d, unsigned z, int *p) {
   if (p) *p = 1;
   return 1;
 }
+// DESDE A 1.4.5 a montagem pergunta O QUE mudou, e so identidade/addons
+// descartam. O que este teste muda no meio (colecoes/ordem chegando) e
+// ESTRUTURA: a geracao entra na parte das colecoes, e o fim de montar() segue
+// o caminho "publica e remonta sem rede" — que tambem tem de manter cada
+// janela apontando para os itens da propria fileira.
+void homeestado_contexto(HomeContexto *c) {
+  *c = (HomeContexto){0}; c->perfil = 1; c->colecoes = geracaoEstado; }
+int homeestado_mudancas(const HomeContexto *a, const HomeContexto *b) {
+  return a->colecoes != b->colecoes ? HOMEESTADO_MUDOU_COLECOES : 0; }
+const char *homeestado_mudancas_texto(int m, char *b, unsigned t) {
+  if (b && t) snprintf(b, t, "%s", m ? "colecoes" : "nada"); return b; }
+const char *sessao_usuario(void) { return ""; }
 
 // ------------------------------------------------------ o catalogo publicado
 static pthread_mutex_t pubTravaT = PTHREAD_MUTEX_INITIALIZER;
@@ -137,11 +151,29 @@ unsigned long cat_assinatura_de(const CatItem *l, int q, const CatFileira *f, in
 // Cada catalogo devolve 3 titulos cujo nome comeca com o catId: e assim que a
 // conferencia sabe de onde o item veio.
 static volatile int pedidosCatalogo, catBMudo;
+// O ULTRA MAX DO #126: 174 catalogos declarados, e mais um que so responde com
+// busca (nao pode gastar vaga da cota).
+#define ULTRA_N 174
+static char *manifestoUltra(void) {
+  size_t cap = 64u + (size_t)(ULTRA_N + 1) * 96u, k = 0;
+  char *b = (char *)malloc(cap);
+  int i;
+  k += (size_t)snprintf(b + k, cap - k, "{\"id\":\"ultramax\",\"name\":\"Ultra MAX\",\"catalogs\":[");
+  k += (size_t)snprintf(b + k, cap - k,
+                        "{\"type\":\"movie\",\"id\":\"busca\",\"name\":\"Busca\","
+                        "\"extra\":[{\"name\":\"search\",\"isRequired\":true}]}");
+  for (i = 0; i < ULTRA_N; i++)
+    k += (size_t)snprintf(b + k, cap - k,
+                          ",{\"type\":\"movie\",\"id\":\"u%d\",\"name\":\"U%d\"}", i, i);
+  snprintf(b + k, cap - k, "]}");
+  return b;
+}
 static volatile int bumpNoPrimeiroCatalogo = 1;
 char *rede_baixar(const char *url, int t) {
   char buf[512];
   const char *id;
   (void)t;
+  if (strstr(url, "ultramax.test/manifest.json")) return manifestoUltra();
   if (strstr(url, "/manifest.json")) return strdup(MANIFESTO);
   if (!strstr(url, "/catalog/")) return NULL;
   // PERFIL/CONFIG MUDANDO NO MEIO DA PRIMEIRA MONTAGEM: no log da LG o
@@ -217,6 +249,11 @@ int   fil_podar_catalogos(const char *const *ids, const char *const *bases, int 
   (void)ids; (void)bases; (void)n; return 0; }
 int   fil_limite(void)                     { return 16; }
 int   fil_oculta(const char *c)            { (void)c; return 0; }
+// Dubles da escolha da cota (#126): nada escolhido na TV, e o registro dos
+// catalogos fora da cota nao interessa a este teste.
+int fil_escolhida(const char *c) { (void)c; return -1; }
+void fil_registrar_se_couber(const char *c, const char *t, const char *a,
+                             const char *tp) { (void)c; (void)t; (void)a; (void)tp; }
 void  fil_registrar(const char *c, const char *t, const char *a, const char *tp, int itens) {
   (void)c; (void)t; (void)a; (void)tp; (void)itens; }
 int   fil_tem_ordem(void)                  { return 0; }
@@ -301,6 +338,39 @@ static int conferir(const char *rotulo) {
 }
 
 int main(void) {
+  // ------------------------------------------------------------- caso 0
+  // #126: a cota de declaracoes le PELA ORDEM DA CONTA, e nao os primeiros do
+  // manifesto. O catalogo 151 do Ultra MAX, primeiro na ordem da conta, era um
+  // dos 142 cortados.
+  { static Decl d[32];
+    int real = 0, prom = 0, n, i, tem150 = 0, tem100 = 0, tem31 = 0, temBusca = 0;
+    assert(catordem_ler("[{\"settings_json\":{\"items\":["
+                        "{\"addon_id\":\"ultramax\",\"type\":\"movie\",\"catalog_id\":\"u150\",\"order\":0},"
+                        "{\"addon_id\":\"ultramax\",\"type\":\"movie\",\"catalog_id\":\"u100\",\"order\":1}"
+                        "]}}]") >= 0);
+    n = lerManifesto(0, "https://ultramax.test", d, 32, &real, &prom);
+    for (i = 0; i < n; i++) {
+      if (!strcmp(d[i].id, "u150")) tem150 = 1;
+      if (!strcmp(d[i].id, "u100")) tem100 = 1;
+      if (!strcmp(d[i].id, "u31"))  tem31 = 1;
+      if (!strcmp(d[i].id, "busca")) temBusca = 1;
+    }
+    assert(n == 32);
+    assert(real == ULTRA_N);           // o que exige busca nao conta como declarado
+    assert(tem150 && tem100);          // os da conta entram, alem da posicao 32
+    assert(!tem31);                    // quem cede a vaga e o ultimo sem escolha
+    assert(!temBusca);                 // o de busca nao gasta vaga
+    assert(prom == 2);
+    assert(nForaCota == ULTRA_N - 32); // os de fora ficam para a lista de fileiras
+    // Ordem do manifesto preservada entre os escolhidos: u100 antes de u150.
+    { int p100 = -1, p150 = -1;
+      for (i = 0; i < n; i++) { if (!strcmp(d[i].id, "u100")) p100 = i; if (!strcmp(d[i].id, "u150")) p150 = i; }
+      assert(p100 < p150); }
+    foraCotaSoltar();
+    nSoBuscaVolta = 0;
+    catordem_esquecer(); }
+  puts("ok  a cota le os catalogos da ordem da conta, nao so os primeiros (#126)");
+
   // ------------------------------------------------------------- caso 1
   // A sequencia da LG: pacote na tela, perfil/config mudando no meio da
   // primeira montagem, colecoes chegando no meio da segunda.

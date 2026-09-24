@@ -478,6 +478,16 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     return 1;
   }
 
+  // O TEXTO DO ERRO, e nao so o "houve erro" do estado. O C so via o 1 de
+  // EST_ERRO e escrevia "avplay: onerror": um log de campo mostrou oito fontes
+  // seguidas caindo assim, sem uma pista de por que (rede, codec, DRM, formato)
+  // — e a razao estava aqui, em S.erro, desde sempre. Lido uma vez por erro.
+  if (op === "erro") {
+    if (!S.erro || !dst || dstTam < 2) return 0;
+    stringToUTF8("" + S.erro, dst, dstTam);
+    return 1;
+  }
+
   if (op === "faixas") {
     var p7 = pl();
     if (!p7 || !S.pronto || !dst || dstTam < 4) return 0;
@@ -695,6 +705,8 @@ static void criarFila(void) { filaPrincipal = em_proxying_queue_create(); }
 static void executarNoPrincipalV(void *arg) { (void)executarNoPrincipal((int)(uintptr_t)arg); }
 
 
+static void logarErro(const char *onde);
+
 static double avChamar(const char *cmd, const char *txt,
                        double a, double b, double c, double d,
                        char *dst, int dstTam) {
@@ -828,6 +840,7 @@ int video_tocar(const char *url) {
   printf("[video] fonte id=%08x\n", video_id_fonte(url)); fflush(stdout);
   if (AVS("abrir", url) < 1) {
     marco("avplay: open/prepareAsync falhou");
+    logarErro("abrir");
     ativo = 0;
     return 0;
   }
@@ -964,6 +977,18 @@ static void lerInfoFluxo(void) {
   fflush(stdout);
 }
 
+// A razao que o AVPlay deu (S.erro no JS: o objeto do onerror, ou o
+// "open:/prepare:/play:" que os catch gravam). 200 bytes cobrem a mensagem do
+// AVPlay sem despejar pilha no log.
+static void logarErro(const char *onde) {
+  char buf[200];
+  buf[0] = 0;
+  if (avChamar("erro", NULL, 0, 0, 0, 0, buf, (int)sizeof buf) < 1 || !buf[0]) return;
+  buf[sizeof buf - 1] = 0;
+  printf("[video] avplay erro (%s): %s\n", onde, buf);
+  fflush(stdout);
+}
+
 // Le do JS as faixas de audio e legenda e monta os rotulos. Chamada uma vez por
 // sessao, quando o prepare termina — antes disso getTotalTrackInfo devolve
 // vazio.
@@ -1082,6 +1107,7 @@ void video_bombear(void) {
   if (est[EST_ERRO] != 0 && !houveErro) {
     houveErro = 1;
     marco("avplay: onerror");
+    logarErro("onerror");
   }
 
   if (pronto && !estavaPronto) {

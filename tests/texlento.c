@@ -84,6 +84,10 @@ int main(void) {
   }
   mtx = SDL_CreateMutex(); nMax = 4;
 
+  /* Instalacao que ja passou pela limpeza unica da 1.4.3: sem a marca o fio
+   * de fundo apagaria este cache de teste (ver limparCacheEnvenenado). */
+  { char m[600]; FILE *fm; snprintf(m, sizeof m, "%s/.limpo-143", dir);
+    fm = fopen(m, "w"); if (fm) { fputs("1\n", fm); fclose(fm); } }
   t = agora(); tex_cache_dir(dir);
   printf("tex_cache_dir: %.1f ms (antes: ~150 ms, varredura sincrona)\n", agora() - t);
   for (i = 0; i < 500 && !cachearte_nativo_indice_pronto(); i++) usleep(10000);

@@ -22,6 +22,28 @@ int main(int argc, char **argv) {
     r = webp_carregar_larg("tests/amostra.webp", 4000, &ow, &oh);
     assert(r && r->w == ow && r->h == oh);
     SDL_FreeSurface(r); }
+  // AVATAR PEQUENO NAS VARIANTES QUE O CDN ENTREGA (log de campo LG 1.4.1-1.4.3,
+  // "decode falhou ... magica=52494646"). Fixtures de 64x64 geradas com cwebp e
+  // img2webp: circulo vermelho com borda transparente no quadro 1, azul
+  // opaco no quadro 2. O animado so tem o quadro 1: centro vermelho, canto
+  // transparente — inclusive quando o quadro vem recortado (60x60 em 2,2).
+  { static const char *arqs[] = { "vp8l", "alfa", "anim_lossy", "anim_vp8l" };
+    unsigned i;
+    for (i = 0; i < sizeof arqs / sizeof *arqs; i++) {
+      char cam[96]; int ow = 0, oh = 0;
+      SDL_Surface *a;
+      unsigned char *c, *k;
+      snprintf(cam, sizeof cam, "tests/fixtures/webp/%s.webp", arqs[i]);
+      a = webp_carregar_larg(cam, 320, &ow, &oh);
+      if (!a) { printf("FALHOU  %s nao decodificou\n", cam); return 1; }
+      assert(a->w == 64 && a->h == 64 && ow == 64 && oh == 64);
+      c = (unsigned char *)a->pixels + 32 * a->pitch + 32 * 4;
+      k = (unsigned char *)a->pixels + 1 * a->pitch + 1 * 4;
+      printf("ok  %-10s 64x64 centro rgba=%d,%d,%d,%d canto alfa=%d\n", arqs[i], c[0], c[1], c[2], c[3], k[3]);
+      assert(c[0] > 200 && c[2] < 60 && c[3] == 255);   // vermelho: quadro 1, nao o 2 azul
+      assert(k[3] == 0);
+      SDL_FreeSurface(a);
+    } }
   assert(webp_carregar("tests/webp.c") == NULL);   // nao e WebP: NULL, sem alarde
   SDL_FreeSurface(s);
   puts("webp: tudo ok");

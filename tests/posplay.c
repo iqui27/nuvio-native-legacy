@@ -21,9 +21,46 @@ static int tecla(int k) {
   return posplay_evento(&e);
 }
 
+// DURACAO ESTAVEL (#115): o painel so decide depois de a duracao ficar parada
+// por alguns segundos. Os casos abaixo fingem esse tempo com dez quadros de 1 s
+// no comeco do titulo, onde nada pode subir.
+static void aquecer(double dur, int ehSerie) {
+  int i;
+  for (i = 0; i < 10; i++) posplay_atualizar(1.0f, 500, 0.0, dur, ehSerie, 0, 0);
+}
+
+// A DECISAO DO FILME, pela linha de log (ver a nota longa no main: sem
+// relacionados, posplay_visivel() diria "nao" em qualquer caso). Roda um
+// quadro com a saida desviada e diz se "[posplay] relacionados em" saiu.
+static int quadroFilmeDecide(float dt, double pos, double dur) {
+  char linha[256];
+  FILE *f;
+  int decidiu = 0, salvo, arq;
+  fflush(stdout);
+  salvo = dup(fileno(stdout));
+  arq = open("/tmp/nuvio-posplay-log.txt", O_WRONLY | O_CREAT | O_TRUNC, 0600);
+  if (arq >= 0) {
+    dup2(arq, fileno(stdout));
+    close(arq);
+    posplay_atualizar(dt, 1000, pos, dur, 0, 0, 0);
+    fflush(stdout);
+    dup2(salvo, fileno(stdout));
+  }
+  close(salvo);
+  f = fopen("/tmp/nuvio-posplay-log.txt", "r");
+  if (f) {
+    while (fgets(linha, sizeof linha, f))
+      if (strstr(linha, "[posplay] relacionados em")) decidiu = 1;
+    fclose(f);
+  }
+  remove("/tmp/nuvio-posplay-log.txt");
+  return decidiu;
+}
+
 // Deixa o painel no ar com a serie em T5E3, cujo proximo e T5E4.
 static void abrirPainel(void) {
   posplay_fechar();
+  aquecer(3600.0, 1);
   posplay_atualizar(0.016f, 1000, 3000.0, 3600.0, 1, 0, 1);
   assert(posplay_visivel());
 }
@@ -83,6 +120,7 @@ int main(void) {
   //    que arma o relogio, entao o painel ficava em "A seguir" para sempre e
   //    nada tocava sozinho. No video do relato e o que se ve.
   posplay_fechar();
+  aquecer(3600.0, 1);
   posplay_atualizar(0.016f, 1000, 3597.0, 3600.0, 1, 0, 1);   // faltam 3 s
   assert(posplay_visivel());
   posplay_atualizar(0.016f, 1000 + 3100, 3600.0, 3600.0, 1, 0, 1);
@@ -104,6 +142,7 @@ int main(void) {
     u.temporada = 5; u.episodio = 10;
     cat_definir(&u, 1);
     cat_definir_episodios(0, eps, 10); }
+  aquecer(3600.0, 1);
   posplay_atualizar(0.016f, 1000, 3597.0, 3600.0, 1, 0, 1);
   assert(!posplay_visivel());
   posplay_atualizar(0.016f, 1000 + 9000, 3600.0, 3600.0, 1, 0, 1);
@@ -120,6 +159,7 @@ int main(void) {
     cat_definir_episodios(0, eps, 10); }
   player_abrir(0, NULL);
   player_definir_episodio(5, 8);          // o player esta em T5E8
+  aquecer(3600.0, 1);
   posplay_atualizar(0.016f, 1000, 3000.0, 3600.0, 1, 0, 1);
   assert(posplay_visivel());
   assert(tecla(SDLK_RETURN) == 1);
@@ -155,6 +195,7 @@ int main(void) {
       FILE *f;
       int decidiu = 0, salvo, arq;
       posplay_fechar();
+      aquecer(casos[k2].dur, 0);
       // dup/dup2 e nao freopen("/dev/tty"): o teste roda em pipe no
       // testa-tudo.sh, onde /dev/tty nao existe — reabrir por la perderia a
       // saida do resto do arquivo, e foi o que aconteceu na primeira versao.
@@ -184,6 +225,57 @@ int main(void) {
     remove("/tmp/nuvio-posplay-log.txt");
     posplay_fechar(); }
   puts("ok  o painel de filme nao sobe no comeco, e ainda sobe no fim");
+
+  // #115, Owlphibia29: "More like this aparece cedo demais — no comeco do
+  // filme". O marcador de creditos do filme passava sem conferencia: um
+  // capitulo "Opening Credits" aos 90 s (ou um trecho de creditos de abertura
+  // no TheIntroDB) abria o painel aos 90 s. A regra pura primeiro.
+  { struct { const char *nome; double pos, dur, cred; int esperado; } cf[] = {
+      // O defeito: marcador no comeco. Antes daqui saia 1.
+      { "creditos de abertura aos 90 s, em 95 s",  95.0, 7200.0,   90.0, 0 },
+      { "creditos de abertura aos 90 s, em 1 h", 3600.0, 7200.0,   90.0, 0 },
+      // Marcador recusado nao cala o painel: a estimativa vale no fim.
+      { "marcador recusado, estimativa no fim",  7000.0, 7200.0,   90.0, 1 },
+      // Marcador no meio do filme tambem nao e credito final.
+      { "marcador no meio do filme",             3700.0, 7200.0, 3600.0, 0 },
+      // Marcador bom: manda, e antes dele nada sobe (nem a estimativa).
+      { "marcador aceito, antes dele",           6800.0, 7200.0, 6900.0, 0 },
+      { "marcador aceito, chegou nele",          6900.0, 7200.0, 6900.0, 1 },
+      // Nunca antes da metade, mesmo em video curto onde piso e janela se
+      // confundem.
+      { "video de 30 s aos 10 s",                  10.0,   30.0,    0.0, 0 },
+      { "video de 30 s aos 16 s",                  16.0,   30.0,    0.0, 1 },
+      { "sem duracao",                              0.0,    0.0,    0.0, 0 },
+    };
+    size_t k4;
+    for (k4 = 0; k4 < sizeof cf / sizeof *cf; k4++) {
+      int r = posplay_regra_filme(cf[k4].pos, cf[k4].dur, cf[k4].cred);
+      if (r != cf[k4].esperado) {
+        fprintf(stderr, "FALHOU: %s -> %d, esperava %d\n",
+                cf[k4].nome, r, cf[k4].esperado);
+        assert(0);
+      }
+    } }
+  puts("ok  #115: marcador de creditos no comeco do filme e recusado");
+
+  // E a DURACAO PROVISORIA: se o pipeline informa 30 s no primeiro instante,
+  // "video de 30 s aos 16 s" acima e verdade para a regra — quem segura e a
+  // exigencia de duracao estavel. Um quadro com duracao nova nao decide nada,
+  // nem no filme nem na serie (cuja regra de 2 min valeria na hora).
+  posplay_fechar();
+  aquecer(7200.0, 0);
+  assert(!quadroFilmeDecide(0.5f, 16.0, 30.0));   // duracao mudou agora
+  assert(!quadroFilmeDecide(0.5f, 16.5, 30.0));
+  // E a trava nao e para sempre: com a duracao parada, o fim decide.
+  posplay_fechar();
+  aquecer(30.0, 0);
+  assert(quadroFilmeDecide(0.5f, 16.0, 30.0));
+  posplay_fechar();
+  aquecer(3600.0, 1);
+  posplay_atualizar(0.5f, 1000, 16.0, 60.0, 1, 0, 1);   // serie: 60 s provisorios
+  assert(!posplay_visivel());
+  posplay_fechar();
+  puts("ok  #115: duracao que acabou de mudar nao abre painel nenhum");
 
   // O CARTAO DE PROXIMO EPISODIO, issue #34: "the play next option kicks in
   // before the show has got to the credits". A causa era ordem de regras, nao

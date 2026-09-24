@@ -42,11 +42,25 @@
 #define NV_CONTALIB_H
 
 // Teto de itens guardados. NAO e arbitrario: cada item abaixo custa ~1,5 KB, e
-// esta TV ja bateu no teto de 128 MiB do WebAssembly com o catalogo publicado
-// (TIZEN-MEMORIA.md). 200 itens sao ~300 KB, alocados SO quando existe conta.
-// O log diz quando a lista foi cortada — lista cortada em silencio e o mesmo
-// defeito de origem que este modulo conserta.
-#define CONTALIB_MAX        200
+// cada um que falta no catalogo vira um CatItem de ~15 KB (contalib_aplicar_
+// catalogo). Esta TV ja bateu no teto de 128 MiB do WebAssembly com o catalogo
+// publicado (TIZEN-MEMORIA.md). 500 itens sao ~750 KB aqui, alocados SO quando
+// existe conta, e e o tamanho de pagina do app web (p_limit=500).
+//
+// ERA 200, E FOI O ISSUE DO Owlphibia29: "o contador nunca passou de 205; o que
+// eu adiciono agora nao aparece nem substitui os antigos". 200 da conta + os
+// poucos salvos locais/Trakt que estavam no catalogo = 205, e o corte era feito
+// na ordem da resposta, que nao e a de adicao — o titulo novo era o que caia.
+// Agora o corte, quando existe, guarda os MAIS RECENTES por `added_at` e o log
+// diz quantos ficaram de fora.
+#define CONTALIB_MAX        500
+// Paginacao de `sync_pull_library`, como o web faz: paginas de CONTALIB_PAGINA
+// ate uma vir incompleta. So assim da para saber quais sao os mais recentes
+// quando a conta tem mais que o teto — o servidor nao promete ordem. Ate
+// CONTALIB_PAGINAS paginas (2000 linhas, ~2 MB de corpo transitorio no fio do
+// sync); o que passar disso nao e baixado, e o log diz.
+#define CONTALIB_PAGINA     500
+#define CONTALIB_PAGINAS    4
 // Vistos custam 48 bytes cada; o teto aqui pode ser folgado.
 #define CONTALIB_VISTO_MAX  2000
 

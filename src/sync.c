@@ -115,7 +115,10 @@ static int   temCatHomeBlob;
 // anterior precisa sair antes de a nova entrar; quando o app atualiza, ela
 // entra antes da primeira resposta de rede.
 static int catordemCachePerfil = -1;
-static char *colBlob;        // sync_pull_collections, lido por colecoes.c no fio principal
+// De qual perfil e o ciclo no ar, e o que ele deixou pendente. Ver
+// sync_iniciar (pedido com o fio vivo) e sync_passo (repeticao ao terminar).
+static int perfilDoCiclo, cicloInterrompido, pedidoComFioVivo;
+static char *colBlob;       // sync_pull_collections, lido por colecoes.c no fio principal
 static int   temColBlob;
 // sync_pull_library e sync_pull_watched_items, crus, lidos por contalib.c no
 // fio principal. Guardar o corpo em vez de contar e o conserto deste issue: as
@@ -340,6 +343,81 @@ static int puxarBlob(const char *funcao, const char *corpo, char **destino) {
   return k;
 }
 
+// Cola o array JSON `pagina` no fim do array `*acum` (os dois `[...]`, como
+// toda RPC do Supabase responde). Devolve 1 se colou. Nao valida o JSON: quem
+// le e o contalib, com js.c, que ja tolera o que vier.
+static int colarArray(char **acum, const char *pagina) {
+  const char *a, *b, *fa;
+  size_t na, nb;
+  char *novo;
+  if (!*acum) return 0;
+  a = strchr(pagina, '[');
+  b = strrchr(pagina, ']');
+  if (!a || !b || b <= a) return 0;
+  a++;
+  while (a < b && (unsigned char)*a <= ' ') a++;
+  if (a >= b) return 1;                      // pagina vazia: nada a colar
+  fa = strrchr(*acum, ']');
+  if (!fa) return 0;
+  na = (size_t)(fa - *acum);
+  nb = (size_t)(b - a);
+  novo = (char *)malloc(na + nb + 3);
+  if (!novo) return 0;
+  memcpy(novo, *acum, na);
+  // Array acumulado vazio ("[]") nao ganha virgula antes do primeiro item.
+  { size_t z = na;
+    while (z > 0 && (unsigned char)novo[z - 1] <= ' ') z--;
+    na = z;
+    if (na > 0 && novo[na - 1] != '[') novo[na++] = ','; }
+  memcpy(novo + na, a, nb);
+  novo[na + nb] = ']';
+  novo[na + nb + 1] = 0;
+  free(*acum);
+  *acum = novo;
+  return 1;
+}
+
+// `sync_pull_library` inteira, em paginas de CONTALIB_PAGINA, ate uma vir
+// incompleta ou CONTALIB_PAGINAS paginas. Devolve o total de linhas (-1 quando
+// a PRIMEIRA pagina falhou — as seguintes falhando so encurtam a lista, e a
+// lista curta ainda e melhor que nenhuma: o contalib guarda as mais recentes do
+// que chegou).
+static int puxarBiblioteca(int perfil, char **destino) {
+  char corpo[160];
+  char *acum = NULL, *pag = NULL;
+  int pagina, total = 0, c;
+  for (pagina = 0; pagina < CONTALIB_PAGINAS; pagina++) {
+    snprintf(corpo, sizeof corpo,
+             "{\"p_profile_id\":%d,\"p_limit\":%d,\"p_offset\":%d}",
+             perfil, CONTALIB_PAGINA, pagina * CONTALIB_PAGINA);
+    c = puxarBlob("sync_pull_library", corpo, pagina ? &pag : &acum);
+    if (c < 0) {
+      if (!pagina) return -1;
+      printf("[sync] biblioteca: pagina %d falhou; ficando com %d linhas\n",
+             pagina + 1, total);
+      break;
+    }
+    if (pagina && pag) {
+      if (!colarArray(&acum, pag)) {
+        printf("[sync] biblioteca: pagina %d nao colou; ficando com %d linhas\n",
+               pagina + 1, total);
+        free(pag); pag = NULL;
+        break;
+      }
+      free(pag); pag = NULL;
+    }
+    total += c;
+    if (c < CONTALIB_PAGINA) break;
+    if (pagina + 1 == CONTALIB_PAGINAS)
+      printf("[sync] biblioteca: %d linhas baixadas e a conta tem mais; o "
+             "resto nao foi pedido\n", total);
+  }
+  free(pag);
+  if (destino) { free(*destino); *destino = acum; }
+  else free(acum);
+  return total;
+}
+
 // O blob de ajustes NAO e contado, e lido: ele e o layout da pessoa. Ate agora
 // esta RPC so alimentava um numero no resumo, e as ~40 preferencias vinham dos
 // padroes transcritos a mao do perfil de quem montou o pacote.
@@ -516,13 +594,12 @@ static void puxarSoLeitura(void) {
   // codigo antigo tinha as duas metades trocadas — chamava `sync_pull_library`
   // sem os parametros de pagina e `sync_pull_saved_library` com eles.
   //
-  // Uma pagina so, do tamanho do teto que o app guarda (CONTALIB_MAX). Pedir
-  // mais do que cabe seria baixar para descartar; o contalib avisa no log
-  // quando a conta tem mais itens do que o teto.
-  snprintf(corpo, sizeof corpo,
-           "{\"p_profile_id\":%d,\"p_limit\":%d,\"p_offset\":0}",
-           perfil, CONTALIB_MAX);
-  cBiblio = puxarBlob("sync_pull_library", corpo, &bibBlob);
+  // PAGINAS ATE UMA VIR INCOMPLETA, como o web. Era UMA pagina do tamanho do
+  // teto (200), e isso escondia o titulo recem-salvo de quem tem mais que isso:
+  // o servidor nao promete ordem, entao a primeira pagina nao e a dos mais
+  // novos (issue do Owlphibia29, "o contador nunca passou de 205"). As paginas
+  // sao COLADAS num array so e o contalib guarda as CONTALIB_MAX mais recentes.
+  cBiblio = puxarBiblioteca(perfil, &bibBlob);
   if (cBiblio >= 0) temBibBlob = 1;
 
   // MEDIDO: `p_page` comeca em 1. Com 0 o servidor responde 400 "OFFSET must
@@ -573,10 +650,14 @@ static void *rodar(void *u) {
            perfis_n());
     fflush(stdout);
     snprintf(resumo, sizeof resumo, "aguardando escolha de perfil");
+    cicloInterrompido = 1;
     estado = SYNC_PRONTO;
     fioPronto = 1;
     return NULL;
   }
+  // Lido DEPOIS da porteira: quando a pessoa responde enquanto perfis_puxar
+  // ainda esta no ar, este ciclo ja segue com o perfil escolhido.
+  perfilDoCiclo = perfis_ativo();
   puxarAddons();
   // OS ADDONS SAO A SEGUNDA RPC DO CICLO, E ERAM APLICADOS NA ULTIMA LINHA DELE.
   //
@@ -607,6 +688,20 @@ static void *rodar(void *u) {
   // O puxado NAO e aplicado aqui, e sim em sync_passo, no fio principal — e
   // la a regra e "pendente local vence": o que se assistiu entre o pull e o
   // push nao volta atras.
+  // A PESSOA TROCOU DE PERFIL NO MEIO DO CICLO: nada sobe. Cada push leva
+  // p_profile_id = perfis_ativo() (agora o perfil NOVO), mas a base da costura
+  // (o blob de ajustes, a lista de addons) veio do perfil ANTERIOR — subir
+  // seria escrever o perfil 1 dentro do 2 na conta. sync_passo descarta o que
+  // foi puxado e pede a volta certa.
+  if (perfis_ativo() != perfilDoCiclo) {
+    printf("[sync] perfil trocado no meio do ciclo (%d -> %d): nada sobe\n",
+           perfilDoCiclo, perfis_ativo());
+    fflush(stdout);
+    snprintf(resumo, sizeof resumo, "perfil trocado; sincronizando de novo");
+    estado = SYNC_PRONTO;
+    fioPronto = 1;
+    return NULL;
+  }
   if (sujoAddons) empurrarAddons();
   // DEPOIS de puxarSoLeitura, pelo mesmo motivo dos addons e com um agravante:
   // a base da costura e o blob que acabou de chegar. Ver empurrarAjustes.
@@ -625,18 +720,50 @@ static void *rodar(void *u) {
   return NULL;
 }
 
+// A ORDEM LOCAL NAO DEPENDE DE REDE, E TAMBEM NAO DEPENDE DO FIO (#125).
+//
+// Isto morava DEPOIS de `if (fioVivo) return` em sync_iniciar. O arranque com
+// conta de varios perfis chama sync_iniciar com o perfil salvo, o fio para em
+// "ciclo interrompido" esperando a pergunta, e a pessoa responde. Se ela
+// responde antes de sync_passo ver o fio acabar — a pergunta abre do cache de
+// perfis no primeiro quadro, e perfis_puxar ainda esta na rede —, o
+// sync_iniciar da escolha voltava na primeira linha: o cache do perfil
+// escolhido nunca era lido, e a home ficava na ordem do perfil salvo (ou na
+// padrao) ate o blob da conta chegar e reordenar tudo. MEDIDO em
+// tests/syncordem.sh, sessao 5: salvo 1, escolhe 2 com o fio vivo -> nenhuma
+// "ordem restaurada ... (perfil 2)", e depois "3 na ordem da conta" + "ordem
+// guardada" — o mesmo par de linhas dos logs de campo.
+//
+// Restaurar tambem antes do freio, como antes: num boot apos update, sem
+// internet ou com o servidor em pausa, a Home ainda precisa abrir com a
+// escolha que ja estava no aparelho.
+//
+// REMONTA TAMBEM QUANDO O PERFIL NOVO NAO TEM CACHE, se havia ordem na
+// memoria: catordem_cache_carregar esquece a ordem anterior antes de ler, e a
+// home ficaria desenhada na ordem do OUTRO perfil ate a rede responder.
+static void restaurarOrdemLocal(void) {
+  int tinha, mudou;
+  if (!sessao_logada() || catordemCachePerfil == perfis_ativo()) return;
+  tinha = catordem_tem_ordem();
+  mudou = catordem_cache_carregar(perfis_ativo(), sessao_usuario());
+  catordemCachePerfil = perfis_ativo();
+  if (mudou || tinha) desc_remontar_fileiras();
+}
+
 void sync_iniciar(void) {
-  int cacheMudou;
-  if (fioVivo || !sessao_logada()) return;
-  // A ordem local nao depende de rede. Restaurar antes do freio e importante:
-  // justamente num boot apos update, sem internet ou com o servidor em pausa,
-  // a Home ainda precisa abrir com a escolha que ja estava no aparelho.
-  if (catordemCachePerfil != perfis_ativo()) {
-    cacheMudou = catordem_cache_carregar(perfis_ativo(), sessao_usuario());
-    catordemCachePerfil = perfis_ativo();
-    if (cacheMudou) desc_remontar_fileiras();
-  }
+  restaurarOrdemLocal();
+  if (!sessao_logada()) return;
+  // PEDIDO COM O FIO VIVO NAO SE PERDE. Voltar calado deixava um buraco: o
+  // fio que estava no ar pode ser justamente o interrompido pela pergunta de
+  // perfil, e ai o ciclo completo do perfil escolhido so partia com
+  // sync_periodico, cinco minutos depois (o ciclo interrompido marca
+  // SYNC_PRONTO e conta como `ultimoOk`). sync_passo decide, quando o fio
+  // acabar, se precisa de outra volta.
+  if (fioVivo) { pedidoComFioVivo = 1; return; }
+  pedidoComFioVivo = 0;
   if (nuvem_freio_ativo()) return;
+  cicloInterrompido = 0;
+  perfilDoCiclo = perfis_ativo();
   estado = SYNC_RODANDO;
   fioPronto = 0;
   if (pthread_create(&fio, NULL, rodar, NULL) == 0) { pthread_detach(fio); fioVivo = 1; }
@@ -665,7 +792,7 @@ void sync_passo(unsigned agoraMs) {
   // frente, porque so eles mudam O QUE a descoberta vai buscar.
   if (addonsCedo) {
     addonsCedo = 0;
-    if (temAddonsRem) {
+    if (temAddonsRem && perfilDoCiclo == perfis_ativo()) {
       if (addons_definir_lista(addonsRem, nAddonsRem)) desc_repetir();
       temAddonsRem = 0;
     }
@@ -683,6 +810,32 @@ void sync_passo(unsigned agoraMs) {
   if (!fioVivo || !fioPronto) return;
   fioVivo = 0;
   fioPronto = 0;
+
+  // O CICLO INTEIRO E DE UM PERFIL SO. Trocar de perfil com o fio no ar (a
+  // pessoa entra no 1 e volta ao 2 antes de o ciclo acabar) fazia o ciclo do 1
+  // ser aplicado no 2: colecoes, biblioteca, vistos, credencial do Trakt e o
+  // PROGRESSO — prog_aplicar_remoto grava com perfis_ativo(), entao as linhas
+  // do 1 entravam no arquivo como se fossem do 2 e o "Continuar assistindo" do
+  // 2 passava a ser o do 1 (medido na C9 do dono, 24/09: 103 linhas aceitas).
+  // Descartar tudo e pedir a volta do perfil certo; o que ja estava na tela e
+  // do perfil novo (invalidarPerfil em app.c).
+  if (!cicloInterrompido && perfilDoCiclo != perfis_ativo()) {
+    printf("[sync] ciclo do perfil %d descartado: o perfil ativo agora e %d\n",
+           perfilDoCiclo, perfis_ativo());
+    fflush(stdout);
+    temAddonsRem = 0;
+    temTraktRem = 0; traktTok[0] = 0;
+    temTmdb = temMdb = 0;
+    free(catHomeBlob); catHomeBlob = NULL; temCatHomeBlob = 0;
+    free(colBlob);     colBlob = NULL;     temColBlob = 0;
+    free(bibBlob);     bibBlob = NULL;     temBibBlob = 0;
+    free(vistosBlob);  vistosBlob = NULL;  temVistosBlob = 0;
+    temAjustesBlob = 0;
+    syncprog_esquecer();
+    pedidoComFioVivo = 0;
+    sync_iniciar();
+    return;
+  }
 
   // Uma credencial que muda o CONTEUDO do catalogo obriga a remontar. Vale
   // para o Trakt (fileiras proprias) e para os addons (sao a fonte dos
@@ -706,7 +859,19 @@ void sync_passo(unsigned agoraMs) {
   // push de "trakt" (400 22023), entao a linha da conta pode ser um token
   // antigo e vencido — aplica-lo por cima do novo devolvia 401 em tudo logo
   // depois de a pessoa ter acabado de autorizar.
-  if (temTraktRem)  { if (traktauth_estado() != TRA_LIGADO) { trakt_definir(traktTok, nuvem_trakt_cliente()); remontar = 1; }
+  // "NESTA TV" QUER DIZER "DESTE PERFIL NESTA TV": o vinculo local e por perfil
+  // (trakt-p<N>.txt, traktauth.c) e traktauth_estado() e o do perfil ativo. A
+  // credencial da conta deste ciclo tambem e do perfil ativo — um ciclo de outro
+  // perfil ja foi descartado acima —, entao o perfil 2 sem vinculo local recebe
+  // o Trakt da conta DELE, e nunca o vinculo local do 1.
+  // A MESMA CREDENCIAL DE NOVO NAO REMONTA. A conta manda o token do Trakt em
+  // TODO ciclo, e `remontar` ligava sempre: um desc_repetir por sync — a cada
+  // cinco minutos um ciclo de rede inteiro, e no arranque a montagem em voo
+  // descartada ("remontagem pedida no meio") por uma credencial que ela ja
+  // estava usando.
+  if (temTraktRem)  { if (traktauth_estado() != TRA_LIGADO) {
+                        if (!trakt_credencial_igual(traktTok, nuvem_trakt_cliente())) {
+                          trakt_definir(traktTok, nuvem_trakt_cliente()); remontar = 1; } }
                       else printf("[sync] trakt: vinculo local mantido, credencial da conta ignorada\n");
                       temTraktRem = 0; }
   if (temTmdb)      { desc_tmdb_definir(tmdbKey);   temTmdb = 0; }
@@ -791,6 +956,17 @@ void sync_passo(unsigned agoraMs) {
   // em "Continuar assistindo" no proximo ciclo de descoberta (issue #38).
   if (syncprog_aplicar(NULL) > 0) desc_refazer_continuar();
   if (estado == SYNC_PRONTO) ultimoOk = agoraMs;
+  // A VOLTA QUE FOI PEDIDA COM O FIO VIVO. So quando ela serve para algo: o
+  // ciclo que acabou parou na pergunta de perfil (e a pergunta ja foi
+  // respondida) ou puxou para um perfil que nao e mais o ativo. Quando a
+  // pessoa responde durante perfis_puxar, o proprio ciclo segue inteiro com o
+  // perfil escolhido — repetir ali seria o ciclo de rede duas vezes por nada.
+  if (pedidoComFioVivo) {
+    pedidoComFioVivo = 0;
+    if ((cicloInterrompido && !perfis_precisa_escolher()) ||
+        (!cicloInterrompido && perfilDoCiclo != perfis_ativo()))
+      sync_iniciar();
+  }
 }
 
 SyncEstado  sync_estado(void)      { return estado; }
@@ -798,11 +974,29 @@ const char *sync_resumo(void)      { return resumo; }
 unsigned    sync_ultimo_ok(void)   { return ultimoOk; }
 void        sync_sujar_progresso(void) { sujoProgresso = 1; }
 void        sync_sujar_addons(void)    { sujoAddons = 1; }
+// Provedor que o servidor recusou com "Unsupported provider credential": o
+// servidor de hoje nao guarda trakt/simkl, e a resposta nao muda ate o app
+// reiniciar. Perguntar de novo a cada renovacao do token era um 400 no log por
+// ciclo, sempre igual. Anota o provedor e para de perguntar nesta sessao; o
+// vinculo continua valendo nesta TV, guardado em disco.
+#define SY_CRED_RECUSADAS 4
+static char credRecusada[SY_CRED_RECUSADAS][16];
+static int nCredRecusadas;
+
+static int credJaRecusada(const char *provider) {
+  int i;
+  for (i = 0; i < nCredRecusadas; i++)
+    if (!strcmp(credRecusada[i], provider)) return 1;
+  return 0;
+}
+
 int sync_empurrar_credencial(const char *provider, const char *credJson) {
   Jsw w;
   char *r;
   int st = 0, ok;
   if (!sessao_logada() || !provider || !*provider || !credJson || !*credJson) return 0;
+  // -1, como qualquer recusa 4xx: quem chamou encerra a pendencia.
+  if (credJaRecusada(provider)) return -1;
   jsw_iniciar(&w);
   jsw_obj_ini(&w);
   jsw_ci(&w, "p_profile_id", perfis_ativo());
@@ -819,8 +1013,13 @@ int sync_empurrar_credencial(const char *provider, const char *credJson) {
   r = sessao_rpc("sync_push_provider_credentials", jsw_texto_final(&w), &st);
   jsw_livre(&w);
   ok = ok2xx(r, st) ? 1 : (st >= 400 && st < 500 ? -1 : 0);
-  if (!ok2xx(r, st)) printf("[sync] push de credencial %s falhou (HTTP %d): %.200s\n", provider, st, r ? r : "");
-  else printf("[sync] credencial %s guardada na conta\n", provider);
+  if (!ok2xx(r, st)) {
+    printf("[sync] push de credencial %s falhou (HTTP %d): %.200s\n", provider, st, r ? r : "");
+    if (st == 400 && r && strstr(r, "Unsupported provider") && nCredRecusadas < SY_CRED_RECUSADAS) {
+      snprintf(credRecusada[nCredRecusadas++], sizeof credRecusada[0], "%s", provider);
+      printf("[sync] servidor nao aceita credencial %s: nao tento de novo nesta sessao\n", provider);
+    }
+  } else printf("[sync] credencial %s guardada na conta\n", provider);
   free(r);
   return ok;
 }
@@ -861,6 +1060,7 @@ void sync_esquecer_usuario(void) {
   catordem_esquecer();
   catordem_cache_esquecer();
   catordemCachePerfil = -1;
+  pedidoComFioVivo = 0;
   homeestado_esquecer();
   cachearte_limpar_referencias();
   // O CACHE DO CATALOGO TAMBEM. Ele guarda o catalogo montado da conta que

@@ -34,13 +34,14 @@
 
 #include "catalogo.h"
 
-// Teto da lista local. 300 itens x ~800 bytes = ~240 KB, alocados estaticamente
-// porque esta lista e consultada por quadro no desenho do painel e uma
-// indirecao a mais ali nao paga. O teto do web para a mesma tela e maior, mas
-// esta TV ja bateu no limite de 128 MiB do WebAssembly com o catalogo publicado
-// (TIZEN-MEMORIA.md) e a lista de "quero ver" de uma pessoa real nao chega
-// perto disso.
-#define SALVOS_MAX 300
+// Teto da lista local. ERA 300 EM VETOR ESTATICO, e o 301o titulo salvo era
+// RECUSADO — so uma linha no log, com o botao "+" acendendo do mesmo jeito. A
+// pessoa via exatamente o que o issue do Owlphibia29 descreve: "o que eu
+// adiciono agora nao aparece". Agora a lista mora no heap e cresce com o uso
+// (~800 bytes por titulo, nada alocado para quem nao salva), e este numero e so
+// o teto de seguranca. Quando ele e atingido SAI O MAIS ANTIGO da lista local,
+// nunca o que acabou de ser salvo — e o log diz qual saiu.
+#define SALVOS_MAX 2000
 
 typedef struct {
   char id[24];        // IMDb ("tt0111161"). Vazio nunca entra na lista.

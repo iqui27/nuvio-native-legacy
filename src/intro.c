@@ -93,9 +93,12 @@ int intro_ativo(double pos,double*fim,int*tipo){
   pthread_mutex_unlock(&trava);return ok;
 }
 
+// O trecho de creditos que comeca POR ULTIMO, e nao o primeiro da lista
+// (#115): a API devolve uma lista por tipo, e um filme com creditos de abertura
+// e finais marcados punha o painel de relacionados no comeco.
 double intro_creditos_seg(void){
   double s=0.0;pthread_mutex_lock(&trava);
   for(int i=0;i<nTrechos;i++)
-    if(trechos[i].tipo==INTRO_CREDITOS){s=trechos[i].inicio;break;}
+    if(trechos[i].tipo==INTRO_CREDITOS&&trechos[i].inicio>s)s=trechos[i].inicio;
   pthread_mutex_unlock(&trava);return s;
 }

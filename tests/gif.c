@@ -369,6 +369,51 @@ int main(void) {
     assert(gif_montar(buf, nbuf, NULL, NULL, 0) == 0);
     puts("ok  atraso, descarte e limites do fatiamento"); }
 
+  // N) O ORCAMENTO POR RAM (24/09/2026). Os tres GIFs de avatar da TV de 1 GB
+  //    que morria (registros 2340/2341/2351) e os de colecao ja vistos em 2 GB.
+  { const size_t MB = 1024 * 1024;
+    size_t g35 = gif_custo(35, 512, 512), g75 = gif_custo(75, 500, 375), g51 = gif_custo(51, 360, 360);
+    assert(g35 == (size_t)35 * 512 * 512 * 4);
+    assert(gif_custo(0, 512, 512) == 0 && gif_custo(3, 0, 10) == 0 && gif_custo(3, 10, -1) == 0);
+    // 1 GB (o deviceMemory da Samsung dos registros) e menos: nao anima nada.
+    assert(gif_orcamento_para(1.0) == 0);
+    assert(gif_orcamento_para(0.5) == 0);
+    assert(gif_orcamento_para(0.25) == 0);
+    // 2 GB: os dois menores animam, o de 75 quadros fica parado; os de
+    // colecao (21x498x448 do rawldon, 45x480x270) continuam animando.
+    assert(gif_orcamento_para(2.0) == 48 * MB);
+    assert(g35 <= gif_orcamento_para(2.0));
+    assert(g51 <= gif_orcamento_para(2.0));
+    assert(g75 > gif_orcamento_para(2.0));
+    assert(gif_custo(21, 498, 448) <= gif_orcamento_para(2.0));
+    assert(gif_custo(45, 480, 270) <= gif_orcamento_para(2.0));
+    // Navegador que nao informa: o mesmo teto de 2 GB, nao "sem teto".
+    assert(gif_orcamento_para(0.0) == 48 * MB);
+    assert(gif_orcamento_para(-1.0) == 48 * MB);
+    // 4 GB ou mais: o que sempre foi.
+    assert(gif_orcamento_para(4.0) == GIF_SEM_TETO);
+    assert(gif_orcamento_para(8.0) == GIF_SEM_TETO);
+    // Fora do Tizen gif_pode_animar continua 0 e gif_ocioso e inofensiva.
+    assert(gif_pode_animar() == 0);
+    gif_ocioso(); gif_ocioso();
+    puts("ok  orcamento por RAM: 1 GB parado, 2 GB ate 48 MB por volta, 4 GB sem teto"); }
+
+  // ARTE ANTES DO GIF: sem arte na fila, o quadro troca quando vence; com
+  // arte na fila, so GIF_PASSO_OCUPADO_MS depois da ultima troca.
+  { assert(!gif_pode_trocar(1000.0, 1050.0, 950.0, 0));          // nao venceu
+    assert(gif_pode_trocar(1050.0, 1050.0, 1000.0, 0));          // venceu, fila vazia
+    assert(!gif_pode_trocar(1050.0, 1050.0, 1000.0, 3));         // venceu, fila cheia, 50 ms
+    assert(!gif_pode_trocar(1399.0, 1050.0, 1000.0, 1));
+    assert(gif_pode_trocar(1400.0, 1050.0, 1000.0, 1));          // 400 ms depois: anda
+    assert(!gif_pode_trocar(1400.0, 1500.0, 1000.0, 1));         // fila nao adianta o quadro
+    // O GIF de 21 quadros de 50 ms com a fila sempre cheia: no maximo 3
+    // trocas por segundo de relogio, contra 20 com a fila vazia.
+    { double t, vence = 50.0, ultima = 0.0; int trocas = 0;
+      for (t = 0.0; t < 1000.0; t += 16.7)
+        if (gif_pode_trocar(t, vence, ultima, 5)) { trocas++; ultima = t; vence = t + 50.0; }
+      assert(trocas <= 3); }
+    puts("ok  com arte na fila o GIF troca no maximo a cada 400 ms"); }
+
   remove(CAMINHO);
   puts("gif: tudo ok");
   return 0;

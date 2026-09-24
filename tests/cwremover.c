@@ -30,6 +30,8 @@ int homeestado_ordem_fileira(const char *chave) { (void)chave; return -1; }
 int homeestado_salvar_se_geracao(const CatFileira *fils, int n, unsigned g) { (void)fils; (void)n; (void)g; return 1; }
 int homeestado_identidade_geracao(unsigned g, char *dono, unsigned tamDono, int *perfil) {
   (void)g; if (dono && tamDono) dono[0] = 0; if (perfil) *perfil = 0; return 0; }
+int arte_reserva_episodios(const char *imdb, const char *corpo) { (void)imdb; (void)corpo; return 0; }
+
 #include "../src/descoberta.c"
 #include <assert.h>
 #include <stdio.h>
@@ -58,10 +60,20 @@ int   fil_podar_catalogos(const char *const *ids, const char *const *bases, int 
   (void)ids; (void)bases; (void)n; return 0; }
 int   fil_limite(void)                     { return 16; }
 int   fil_oculta(const char *c)            { (void)c; return 0; }
+// Dubles da escolha da cota (#126): nada escolhido na TV, e o registro dos
+// catalogos fora da cota nao interessa a este teste.
+int fil_escolhida(const char *c) { (void)c; return -1; }
+void fil_registrar_se_couber(const char *c, const char *t, const char *a,
+                             const char *tp) { (void)c; (void)t; (void)a; (void)tp; }
 void  fil_registrar(const char *c, const char *t, const char *a,
                     const char *tp, int itens) {
   (void)c; (void)t; (void)a; (void)tp; (void)itens;
 }
+// Contexto em partes (homeestado.h, 1.4.5): constante aqui, entao nada muda
+// no meio da montagem e o fim dela segue o caminho de sempre.
+void homeestado_contexto(HomeContexto *c) { *c = (HomeContexto){0}; c->perfil = 1; }
+int homeestado_mudancas(const HomeContexto *a, const HomeContexto *b) { (void)a; (void)b; return 0; }
+const char *homeestado_mudancas_texto(int m, char *b, unsigned t) { (void)m; if (b && t) b[0] = 0; return b; }
 int   fil_tem_ordem(void)                  { return 0; }
 int   fil_unir(const char *const *c, int n, int *s, int m) {
   int i; (void)c; for (i = 0; i < n && i < m; i++) s[i] = i; return i;

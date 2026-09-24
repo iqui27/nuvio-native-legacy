@@ -156,7 +156,8 @@ void fil_normalizar(void);
 
 // --- perfil e poda -----------------------------------------------------------
 // A escolha e POR PERFIL (fileirasui-p<N>.txt; 0 = o arquivo antigo, que serve
-// de semente ao primeiro arquivo de cada perfil). Chamar na troca de perfil.
+// de semente ao primeiro arquivo do perfil 1, e so dele). Chamar na troca de
+// perfil.
 void fil_definir_perfil(int perfil);
 // Tira da lista os catalogos de addons que ja nao estao na conta. `ids` e
 // `bases` sao os ids de manifesto e as URLs base dos addons ATUAIS; so vale
@@ -187,6 +188,22 @@ int  fil_podar_catalogos(const char *const *ids, const char *const *bases, int n
 //      causou. Por isso nenhum dos tres marca `registroSujo`.
 void fil_registrar(const char *chave, const char *titulo,
                    const char *addon, const char *conteudo, int itens);
+
+// Igual a fil_registrar, mas NUNCA despeja: com a tabela cheia a chave nova
+// fica de fora, calada. E para os catalogos que a cota por addon de
+// descoberta.c nao leu nesta volta (issue #126, Ultra MAX com 174 catalogos e
+// 32 de cota): eles entram na lista para a pessoa poder escolher um, e escolher
+// e o que faz a cota da volta seguinte le-lo. Nao valem a vaga de ninguem.
+void fil_registrar_se_couber(const char *chave, const char *titulo,
+                             const char *addon, const char *conteudo);
+
+// A pessoa ESCOLHEU esta fileira na TV? Devolve a posicao dela entre as ligadas
+// (0 = primeira) quando ela esta na home pela escolha local — ligada e dentro do
+// limite, ou posta na fila pela pessoa —, e -1 quando nao (desconhecida,
+// oculta, ou ligada so por ter entrado no fim). E a pergunta que a cota de
+// declaracoes de descoberta.c faz antes de decidir quais catalogos de um addon
+// grande ler.
+int fil_escolhida(const char *chave);
 
 // Grava o que fil_registrar acumulou, se houver. Chamar UMA VEZ no fim da
 // varredura que registra: registrar 64 chaves novas com gravacao a cada uma sao

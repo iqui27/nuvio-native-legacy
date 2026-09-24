@@ -96,6 +96,11 @@ void addons_buscar_legendas(const char *imdb, const char *tipo);
 void addons_legendas_reiniciar(void);
 
 int  addons_n_legendas(void);
+// 1 quando a busca do titulo pedido TERMINOU (a lista nao cresce mais). 0
+// enquanto o fio corre e tambem quando nada foi pedido: sem pedido, a lista em
+// memoria pode ser de outro titulo. Quem liga legenda sozinho (faixas.c, #129)
+// precisa dessa distincao; a folha nao, ela so mostra o que ha.
+int  addons_legendas_prontas(void);
 const Legenda *addons_legenda(int i);
 
 

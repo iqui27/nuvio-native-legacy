@@ -139,6 +139,10 @@ static void teclaDet(SDL_Keycode k) {
 enum { DES_PAINEL = 0, DES_CARTAO, DES_CTX, DES_DETALHE };
 static int desenharCartao;
 
+// Janela escondida e desenho num FBO (padrao de detail_eps_shot): nada aparece
+// na tela de quem roda.
+static GLuint fbo, fboTex;
+
 static void captura(const char *nome, SDL_Window *win) {
   int i;
   for (i = 0; i < 150; i++) {
@@ -148,6 +152,8 @@ static void captura(const char *nome, SDL_Window *win) {
     tex_bombear(6);
     spainel_atualizar(1.0f / 60.0f, SDL_GetTicks());
     recomenda_atualizar(1.0f / 60.0f, SDL_GetTicks());
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glViewport(0, 0, 1920, 1080);
     glClearColor(0.025f, 0.025f, 0.03f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     ctx_atualizar(1.0f / 60.0f, SDL_GetTicks());
@@ -166,6 +172,8 @@ static void captura(const char *nome, SDL_Window *win) {
       SDL_Surface *s;
       int y;
       assert(pix);
+      glFinish();
+      glBindFramebuffer(GL_FRAMEBUFFER, fbo);
       glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);
       s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
       assert(s);
@@ -290,16 +298,23 @@ int main(int argc, char **argv) {
     ajustes_dir(dados_dir());
     printf("idioma: %s, acento: %d\n", ajustes_idioma_ingles() ? "en" : "pt", tema); }
 
+  SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
-  w = SDL_CreateWindow("Nuvio: aba Social", SDL_WINDOWPOS_CENTERED,
-                       SDL_WINDOWPOS_CENTERED, 1920, 1080,
-                       SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+  w = SDL_CreateWindow("Nuvio: aba Social", 0, 0, 64, 64,
+                       SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
   assert(w);
   gl = SDL_GL_CreateContext(w);
   assert(gl);
+  glGenTextures(1, &fboTex);
+  glBindTexture(GL_TEXTURE_2D, fboTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1920, 1080, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+  glGenFramebuffers(1, &fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fboTex, 0);
+  assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
   SDL_GL_SetSwapInterval(0);
   glViewport(0, 0, 1920, 1080);
   gfx_tamanho_alvo(1920, 1080);
@@ -500,11 +515,19 @@ int main(int argc, char **argv) {
   tecla(SDLK_DOWN); tecla(SDLK_DOWN);
   snprintf(nome, sizeof nome, "%s-sw-reduzida.bmp", saida);
   captura(nome, w);
+  // DE VOLTA AO IDIOMA E AO TEMA DA CAPTURA, e nao ao portugues cravado: com
+  // "idioma 0" aqui, NUVIO_SHOT_EN=1 so valia ate este ponto e o menu do cartaz
+  // e a modal de envio saiam em portugues na rodada em ingles.
   { char caminho[700]; FILE *fa;
+    const char *en = getenv("NUVIO_SHOT_EN");
+    const char *temaEnv = getenv("NUVIO_SHOT_THEME");
+    int ingles = (en && *en && *en != '0');
+    int tema = temaEnv && *temaEnv ? atoi(temaEnv) : 2;
+    if (tema < 0 || tema >= 12) tema = 2;
     snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dados_dir());
     fa = fopen(caminho, "w");
     assert(fa);
-    fprintf(fa, "idioma 0\nselected_theme 2\n");
+    fprintf(fa, "idioma %d\nselected_theme %d\n", ingles, tema);
     fclose(fa);
     ajustes_dir(dados_dir()); }
 

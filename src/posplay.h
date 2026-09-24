@@ -27,6 +27,11 @@
 void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
                        int ehSerie, int idxCatalogo, int janelaSerie);
 int  posplay_visivel(void);
+// A regra do FILME sozinha, sem estado: 1 quando os relacionados devem subir.
+// `creditosSeg` e o marcador (0 = nenhum). Nunca antes da metade da duracao;
+// marcador fora do ultimo quarto e recusado (#115). posplay_atualizar soma a
+// ela a exigencia de a duracao estar estavel.
+int  posplay_regra_filme(double posSeg, double durSeg, double creditosSeg);
 
 // Abre os relacionados a pedido (o botao do player), sem esperar o fim do
 // filme. Devolve 0 quando nao ha relacionado nenhum para mostrar. Necessario

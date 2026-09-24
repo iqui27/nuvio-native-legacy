@@ -18,6 +18,7 @@
 #include "idioma.h"
 #include "tex_cache.h"
 #include "artehero.h"
+#include "botoes.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -28,8 +29,12 @@
 // razao de a tela existir.
 #define RE_W        860.0f
 #define RE_PAD       48.0f
-#define RE_LINHA     86.0f
-#define RE_GAP       12.0f
+// A LINHA E O BOTAO PRIMARIO DO APP (botoes.h), a mesma pilula de 72 px do
+// menu do cartaz, do menu de visto e da folha de fontes. Aqui ela era um
+// cartao de vidro de 86 px com raio 14 — o dono (23/09/2026): "o accent nao
+// esta no mesmo estilo dos outros menus".
+#define RE_LINHA     BOTAO_H_PRIMARIO
+#define RE_GAP       BOTAO_GAP
 #define RE_RODAPE    70.0f
 #define RE_JANELA     5        // linhas visiveis antes de a lista rolar
 #define RE_INTERNO  (RE_W - RE_PAD * 2.0f)
@@ -60,6 +65,10 @@ static char  alvoId[96], alvoNome[64];
 static char  aviso[192];
 static Uint32 fecharEm;
 static int   confirmandoRemover = -1;   // indice do contato a remover, ou -1
+// MOLA DO FOCO POR LINHA, como focoAnim em ctxmenu.c: o preenchimento entra
+// no realce em ~120 ms em vez de saltar. Uma posicao por linha possivel.
+#define RE_MAXL (REC_CONTATOS_MAX + 2)
+static float focoAnim[RE_MAXL];
 
 static int teclaOk(SDL_Keycode k) {
   return k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE;
@@ -77,6 +86,7 @@ static void abrirComum(void) {
   alvoId[0] = 0; alvoNome[0] = 0;
   aviso[0] = 0; fecharEm = 0;
   confirmandoRemover = -1;
+  memset(focoAnim, 0, sizeof focoAnim);
   recarregarContatos();
   // A lista ja esta no aparelho (recomenda.c a guarda do ultimo ciclo); o
   // pedido em paralelo e para o caso de um amigo ter entrado desde a ultima
@@ -157,6 +167,7 @@ static void irPara(int pag) {
   pagina = pag;
   foco = 0; topo = 0;
   confirmandoRemover = -1;
+  memset(focoAnim, 0, sizeof focoAnim);
 }
 
 // --- EVENTOS -----------------------------------------------------------------
@@ -244,6 +255,12 @@ void recenviar_atualizar(float dt, Uint32 agora) {
            ? (aberto ? 1.0f : 0.0f)
            : anim_mola(anim, aberto ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
   teclado_atualizar(dt, agora);
+  { int i;
+    for (i = 0; i < RE_MAXL; i++)
+      focoAnim[i] = ajustes_animacoes_reduzidas()
+        ? (aberto && foco == i ? 1.0f : 0.0f)
+        : anim_mola(focoAnim[i], aberto && foco == i ? 1.0f : 0.0f,
+                    dt, NV_MOLA_FOCO); }
   if (!aberto) return;
 
   // A LISTA E RELIDA POR QUADRO, e nao so na abertura. O fio de recomenda.c
@@ -388,8 +405,6 @@ static float desenhaCodigo(float x, float y, float larg, float a) {
   return RE_COD_H;
 }
 
-// Foco como o cartao de episodios: lavagem escura, texto claro e ponto de acento.
-// A cor do fundo nao depende do tema, entao o texto nao pisca entre texturas.
 // O contato da linha `i` desta pagina, ou NULL quando a linha e uma acao.
 static const RecContato *contatoDaLinha(int i) {
   if (pagina == RE_PAG_CONTATOS) return (i >= 0 && i < nCtts) ? &ctts[i] : NULL;
@@ -404,24 +419,25 @@ static float secaoAntes(int i) {
   return (pagina == RE_PAG_AMIGOS && i == 2 && nCtts > 0) ? RE_SECAO : 0.0f;
 }
 
-static void desenhaLinha(float x, float y, const char *rot, int focada,
+// A LINHA: a superficie do botao primario (botao_superficie — repouso cinza
+// tingido, foco na cor de realce com a luz difusa por tras, raio pilula e sem
+// anel) e o rotulo na tinta que ela devolve. So nao e botao_pilula porque a
+// linha do amigo leva a FOTO dele, encaixada na pilula com 8 px de folga.
+static void desenhaLinha(float x, float y, const char *rot, float f,
                          float a, const RecContato *c) {
   GfxRect r = { x, y, RE_INTERNO, RE_LINHA };
-  float ar, ag, ab, tx = r.x + 44.0f;
-  int cor = focada ? 245 : 220;
-  ajustes_acento(&ar, &ag, &ab);
-  gfx_cartao_foco_vidro(r, 14.0f / RE_LINHA, focada ? 1.0f : 0.0f,
-                        a, ar, ag, ab);
+  float tx = r.x + BOTAO_PAD_X;
+  int cor = botao_superficie(r, f, a);
   // FOTO DO AMIGO (ou a inicial), como na aba Social: a linha so com o nome
   // nao dizia quem era.
   if (c) {
-    float d = RE_LINHA - 24.0f;
-    GfxRect av = { r.x + 22.0f, y + 12.0f, d, d };
+    float d = RE_LINHA - 16.0f;
+    GfxRect av = { r.x + 8.0f, y + 8.0f, d, d };
     rec_avatar(av, c->avatar, c->nome, c->id, a);
     tx = av.x + d + 18.0f;
   }
-  { TxtLinha t = txt_linha_corta(TXT_PLR_CORPO, rot, cor, cor, cor, 255,
-                                 r.x + r.w - 24.0f - tx);
+  { TxtLinha t = txt_linha_corta(TXT_DET_BOTAO, rot, cor, cor, cor, 255,
+                                 r.x + r.w - BOTAO_PAD_X - tx);
     txt_desenhar_alpha(t, tx, y + (RE_LINHA - t.h) * 0.5f, a); }
 }
 
@@ -444,8 +460,14 @@ void recenviar_desenhar(Uint32 agora) {
   // a pergunta. Uma altura unica deixaria um buraco de 200px nas duas.
   //
   // O logo acompanha os dois passos do envio, preservando a mesma moldura.
-  cabTopo = logo ? RE_LOGO_CAB : 120.0f;
-  if (pagina == RE_PAG_AMIGOS)          cab = 150.0f + RE_COD_H + 112.0f;
+  //
+  // 170 SEM LOGO, e nao 120: chapeu + titulo + meta ja chegam a ~118, e com
+  // 120 a pergunta ("Para quem?") caia POR BAIXO da primeira linha. No passo da
+  // mensagem com logo o nome do amigo vem antes da arte, e a pilha e ~30 px
+  // mais alta que no passo dos contatos.
+  cabTopo = !logo ? 170.0f
+          : pagina == RE_PAG_MODELOS ? RE_LOGO_CAB + 30.0f : RE_LOGO_CAB;
+  if (pagina == RE_PAG_AMIGOS)          cab = 162.0f + RE_COD_H + 112.0f;
   else if (pagina == RE_PAG_CONTATOS && nCtts == 0) cab = cabTopo + 116.0f;
   else                                  cab = cabTopo;
 
@@ -457,8 +479,14 @@ void recenviar_desenhar(Uint32 agora) {
   y += (1.0f - a) * 40.0f;
 
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.72f * anim);
+  // O CARTAO FLUTUANTE DO MENU DO CARTAZ (ctxmenu.c): mesmo fundo, cantos de
+  // 28 px pelo menor lado e a luz de realce entrando pelo canto de cima.
   { GfxRect p = { x, y, RE_W, alt };
-    gfx_cor(p, 24.0f / alt, 0.11f, 0.11f, 0.13f, 0.98f * a); }
+    float ar, ag, ab, menor = alt < RE_W ? alt : RE_W, raio = 28.0f / menor;
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_cor(p, raio, 0.055f, 0.058f, 0.068f, 0.94f * a);
+    gfx_luz_canto(p, raio, RE_W * 0.1f, -RE_W * 0.1f, RE_W * 0.65f,
+                  ar, ag, ab, 0.22f * a); }
 
   if (pagina == RE_PAG_AMIGOS) {
     chapeu = "AMIGOS";
@@ -512,7 +540,11 @@ void recenviar_desenhar(Uint32 agora) {
       desenhaLogo(logo, logoTex, hx, hy, item.titulo, a);
       hy += RE_LOGO_H + 6.0f;
     }
-    { const char *sub = pagina == RE_PAG_CONTATOS ? item.meta
+    // Na tela de AMIGOS nao ha subtitulo: o nome da obra ali nao responde a
+    // nada ("Adicionar um amigo") e empurrava "Seu codigo" para cima das
+    // caixas do codigo.
+    { const char *sub = pagina == RE_PAG_AMIGOS ? ""
+                         : pagina == RE_PAG_CONTATOS ? item.meta
                          : logo ? item.meta : item.titulo;
       if (sub[0]) {
         TxtLinha t = txt_linha_corta(TXT_DET_META2, sub, 190, 192, 200, 255,
@@ -535,7 +567,10 @@ void recenviar_desenhar(Uint32 agora) {
     // nele a 8px — as duas viravam um paragrafo so na captura. Sem a ancora a
     // pergunta fica junto do titulo e sobram 55px ate o bloco, que e a mesma
     // respiracao das outras telas.
-    if (!(pagina == RE_PAG_CONTATOS && nCtts == 0)) {
+    //
+    // NA TELA DE AMIGOS TAMPOUCO: la a pergunta ("Seu codigo") rotula as caixas
+    // do codigo, que comecam a 120 px — a ancora a punha em cima delas.
+    if (!(pagina == RE_PAG_CONTATOS && nCtts == 0) && pagina != RE_PAG_AMIGOS) {
       float ancora = y + RE_PAD + cabTopo - 50.0f;
       if (hy < ancora) hy = ancora;
     }
@@ -544,7 +579,7 @@ void recenviar_desenhar(Uint32 agora) {
     txt_desenhar_alpha(t, hx, hy, a * 0.9f); }
 
   if (pagina == RE_PAG_AMIGOS) {
-    float cy = y + RE_PAD + 108.0f;
+    float cy = y + RE_PAD + 120.0f;
     cy += desenhaCodigo(x + RE_PAD, cy, RE_INTERNO, a) + 16.0f;
     // EM BLOCO pelo mesmo motivo do estado vazio: em ingles a frase e mais
     // longa que em portugues, e uma linha cortada perde o fim.
@@ -594,7 +629,8 @@ void recenviar_desenhar(Uint32 agora) {
         txt_desenhar_alpha(t, x + RE_PAD, by - t.h - 10.0f, a * 0.9f);
       } else
         by = y + RE_PAD + cab + (float)(i - topo) * (RE_LINHA + RE_GAP) + extra;
-      desenhaLinha(x + RE_PAD, by, rotulo(i), i == foco, a, contatoDaLinha(i));
+      desenhaLinha(x + RE_PAD, by, rotulo(i), i < RE_MAXL ? focoAnim[i] : 0.0f,
+                   a, contatoDaLinha(i));
     } }
 
   if (aviso[0]) {

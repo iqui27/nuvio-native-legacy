@@ -30,6 +30,7 @@
 #include "badges.h"
 #include "botoes.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -86,7 +87,12 @@
 #define SP_FECHAR_MS   150.0f
 #define SP_VEU           0.58f
 
-#define SP_MAX 200
+// Teto de linhas do painel. ERA 200, com a lista local podendo ter 300 e a
+// conta mais 200: o que passasse de 200 sumia do painel sem aviso, e como a
+// lista local vem primeiro na ordem de insercao, sumia justamente o mais novo.
+// Agora cabe tudo que pode existir (lista local + catalogo inteiro); o vetor de
+// linhas mora no heap e cresce so ate o que a lista de verdade tem.
+#define SP_MAX (SALVOS_MAX + CAT_MAX)
 
 // Linha ja resolvida: o desenho nao volta ao catalogo nem a lista local por
 // quadro.
@@ -106,8 +112,9 @@
 // "[contalib] biblioteca da conta aplicada"). No Mac, sem conta, o catalogo
 // nunca era republicado e nada acontecia — o defeito so existia com dados reais.
 //
-// Copiar custa ~150 KB estaticos para 200 linhas. E o preco de nao depender do
-// tempo de vida de um bloco que outro modulo troca sem avisar.
+// Copiar custa ~800 bytes por linha, no heap e do tamanho da lista real. E o
+// preco de nao depender do tempo de vida de um bloco que outro modulo troca sem
+// avisar.
 typedef struct {
   char  titulo[160], poster[512], meta[96];
   char  id[24];
@@ -117,8 +124,25 @@ typedef struct {
   long long quandoS;      // 0 = veio do Trakt/conta, nao sabemos quando entrou
 } SPLinha;
 
-static SPLinha linhas[SP_MAX];
-static int nLinhas;
+static SPLinha *linhas;
+static int nLinhas, capLinhas;
+
+// Vaga para `n` linhas. Cresce dobrando ate SP_MAX; 0 quando nao ha memoria, e
+// quem chama para de acrescentar (a lista fica curta, mas nao corrompe).
+static int garantirLinhas(int n) {
+  SPLinha *novo;
+  int cap;
+  if (n <= capLinhas) return 1;
+  if (n > SP_MAX) return 0;
+  cap = capLinhas ? capLinhas * 2 : 64;
+  while (cap < n) cap *= 2;
+  if (cap > SP_MAX) cap = SP_MAX;
+  novo = (SPLinha *)realloc(linhas, sizeof *linhas * (size_t)cap);
+  if (!novo) return 0;
+  linhas = novo;
+  capLinhas = cap;
+  return 1;
+}
 static int nCont;            // quantas das primeiras linhas sao "Continuar"
 
 // A ABA SOCIAL. `foco == SP_FOCO_ABAS` e a linha de cima, onde esquerda e
@@ -264,6 +288,7 @@ static void reconstruir(void) {
     SPLinha *l;
     int k;
     if (!s) continue;
+    if (!garantirLinhas(nLinhas + 1)) break;
     l = &linhas[nLinhas++];
     memset(l, 0, sizeof *l);
     snprintf(l->id, sizeof l->id, "%s", s->id);
@@ -296,6 +321,7 @@ static void reconstruir(void) {
     const CatItem *c = cat_item(i);
     SPLinha *l;
     if (!c || !c->naLista || !c->imdb[0] || jaTem(c->imdb)) continue;
+    if (!garantirLinhas(nLinhas + 1)) break;
     l = &linhas[nLinhas++];
     memset(l, 0, sizeof *l);
     snprintf(l->id, sizeof l->id, "%s", c->imdb);

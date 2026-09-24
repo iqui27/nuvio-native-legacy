@@ -548,6 +548,50 @@ int main(void) {
     for (j = 0; j < fil_n(); j++) assert(strcmp(fil_chave(j), "nao_cabe") != 0); }
   puts("ok  tabela cheia nao despeja o que a pessoa configurou");
 
+  // FORA DA COTA, MAS ESCOLHIVEL (#126). O catalogo que a cota de declaracoes
+  // nao leu entra por fil_registrar_se_couber: aparece na lista para poder ser
+  // ligado, nunca despeja ninguem, e fil_escolhida so responde por ele depois
+  // que a pessoa o poe na home.
+  fil_esquecer();
+  { int j, i, estado = -1;
+    char ch[32];
+    fil_definir_limite(3);
+    for (j = 0; j < 5; j++) {
+      snprintf(ch, sizeof ch, "cand_%d", j);
+      fil_registrar(ch, ch, "Ultra MAX", "movie", -1);
+    }
+    fil_registrar_se_couber("ultra_150", "Ultra 150", "Ultra MAX", "movie");
+    assert(fil_n() == 6);
+    assert(!strcmp(fil_chave(5), "ultra_150"));         // no fim, depois dos candidatos
+    assert(fil_escolhida("cand_0") == 0);               // dentro do limite
+    assert(fil_escolhida("cand_2") == 2);
+    assert(fil_escolhida("cand_3") == -1);              // ligada so por ter entrado
+    assert(fil_escolhida("ultra_150") == -1);           // listada, nao escolhida
+    assert(fil_escolhida("nao_existe") == -1);
+    // A folha abre (normaliza: o que sobrou alem do limite vira "fora"), a
+    // pessoa tira uma da home e poe a de fora da cota: agora ela e escolhida.
+    fil_normalizar();
+    assert(fil_escolhida("ultra_150") == -1);
+    fil_remover(0);
+    assert(fil_escolhida("cand_0") == -1);              // oculta nao e escolha
+    i = fil_adicionar(5, &estado);
+    assert(i >= 0 && estado == FIL_NA_HOME);
+    assert(fil_escolhida("ultra_150") >= 0);
+    // Tabela cheia: o registro de fora da cota fica de fora, calado, e nao
+    // despeja nem uma linha dispensavel.
+    fil_esquecer();
+    for (j = 0; j < FIL_MAX; j++) {
+      snprintf(ch, sizeof ch, "cheia_%d", j);
+      fil_registrar(ch, ch, "X", "movie", -1);
+      fil_teste_esquecer_vista(j);
+    }
+    fil_registrar_se_couber("sem_lugar", "Sem lugar", "X", "movie");
+    assert(fil_n() == FIL_MAX);
+    for (j = 0; j < fil_n(); j++) assert(strcmp(fil_chave(j), "sem_lugar") != 0);
+    assert(!strcmp(fil_chave(FIL_MAX - 1), "cheia_767") || FIL_MAX != 768);
+    fil_definir_limite(FIL_LIMITE_PADRAO); }
+  puts("ok  catalogo fora da cota e listado, escolhivel e nunca despeja");
+
   // FONTE DO DESTAQUE: sobrevive ao arquivo, e um arquivo escrito por uma
   // versao que nao a conhece continua valendo.
   fil_esquecer();
@@ -572,6 +616,37 @@ int main(void) {
   fil_teste_recarregar();
   assert(!strcmp(fil_hero_fonte(), ""));
   puts("ok  fonte do destaque grava, le e tolera arquivo antigo");
+
+  // SEMENTE SO PARA O PERFIL 1. O fileirasui.txt antigo e a escolha de quem
+  // usava o app antes dos perfis — que sincronizava sempre o perfil 1. Relato
+  // do dono na C9: o perfil 2 abria com a ordem, o limite e o destaque do 1.
+  // Perfil sem arquivo proprio que nao e o 1 comeca do padrao.
+  fil_esquecer();
+  usaArquivo = 1;
+  remove("/tmp/fileirasui-p1.txt");
+  remove("/tmp/fileirasui-p2.txt");
+  { FILE *f = fopen("/tmp/fileirasui.txt", "w");
+    assert(f);
+    fputs("limite 11\nordem 1\nhero *\nlinha catDoUm\t0\t0\t1\t0\tDo perfil 1\n", f);
+    fclose(f); }
+  fil_definir_perfil(2);
+  assert(fil_limite() == FIL_LIMITE_PADRAO);
+  assert(fil_n() == 0);
+  assert(!fil_tem_ordem());
+  assert(!strcmp(fil_hero_fonte(), ""));
+  fil_definir_perfil(1);
+  assert(fil_limite() == 11);
+  assert(fil_n() == 1 && !strcmp(fil_chave(0), "catDoUm"));
+  assert(!strcmp(fil_hero_fonte(), "*"));
+  // Voltar ao 2 continua sem nada do 1 (e o destaque zera, como antes).
+  fil_definir_perfil(2);
+  assert(fil_n() == 0 && !strcmp(fil_hero_fonte(), "") && fil_limite() == FIL_LIMITE_PADRAO);
+  remove("/tmp/fileirasui.txt");
+  remove("/tmp/fileirasui-p1.txt");
+  remove("/tmp/fileirasui-p2.txt");
+  fil_definir_perfil(0);
+  usaArquivo = 0;
+  puts("ok  fileirasui.txt antigo semeia so o perfil 1");
 
   puts("fileiras: tudo ok");
   return 0;

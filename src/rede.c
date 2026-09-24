@@ -787,6 +787,17 @@ static void *pegarHandle(void) {
 }
 // Devolve o handle ao fio. So destroi de verdade quando nao ha reuso.
 static void soltarHandle(void *c) { if (!curl_reset) curl_cleanup(c); }
+// DEVOLVE SO CONEXAO LIMPA (23/09/2026). Transferencia que nao terminou bem —
+// erro, prazo estourado, ou o CORTE DE PROPOSITO do teto/Range (curl 23) —
+// descarta o handle inteiro, e com ele a conexao: na C9 apareceram cartoes com
+// a arte de OUTRO titulo com o reuso ligado, e sumiram com ele desligado. A
+// suspeita e a libcurl 7.53.1 da TV devolvendo ao cache uma conexao com resto
+// da resposta abortada, que sai no pedido seguinte. Download completo segue
+// reaproveitado (e o ganho de 0,5-0,8 s por imagem).
+static void soltarHandleR(void *c, int r) {
+  if (!curl_reset) { curl_cleanup(c); return; }
+  if (r != 0) { curl_cleanup(c); pthread_setspecific(handleChave, NULL); }
+}
 
 typedef struct { char *p; size_t n; } Balde;
 
@@ -972,7 +983,10 @@ static int abrir(void) {
   // api.themoviedb.org 650-740 ms com conexao nova x 190-230 ms reusada;
   // image.tmdb.org w1280 1,14-1,19 s x 0,32 s. O relatorio 1669 batia com o
   // numero de conexao nova: tmdb resolve 646 ms e download 1116 ms por arte.
-  *(void **)(&curl_reset)   = dlsym(h, "curl_easy_reset");
+  // REUSO LIGADO, mas so para transferencia limpa (soltarHandleR).
+  // NUVIO_REDE_REUSO=0 desliga de vez, para comparar numa TV com problema.
+  { const char *r = getenv("NUVIO_REDE_REUSO");
+    if (!(r && r[0] == '0')) *(void **)(&curl_reset) = dlsym(h, "curl_easy_reset"); }
   if (!curl_init || !curl_setopt || !curl_perform) {
     printf("[rede] libcurl sem os simbolos esperados\n");
     pronto = -1;
@@ -1103,7 +1117,7 @@ static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
     if (http == 401 && aviso401) aviso401(url);
     if (!r && http >= 400 && !status) {
       if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
-      soltarHandle(c);
+      soltarHandleR(c, r);
       free(b.p);
       { char seg[120];
         printf("[rede] HTTP %ld em %s\n", http, rede_url_publica(url, seg, sizeof seg)); }
@@ -1111,7 +1125,7 @@ static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
       return NULL;
     } }
   if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
-  soltarHandle(c);
+  soltarHandleR(c, r);
   // 23 = CURLE_WRITE_ERROR. Quando ha teto, ele e o resultado ESPERADO: o
   // recebedor devolve menos bytes de proposito para cortar a conexao assim que
   // enche. Nesse caso o que ja veio e exatamente o que se queria — tratar como
@@ -1165,7 +1179,7 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
            rede_url_publica(url, seg, sizeof seg));
     fflush(stdout);
   }
-  soltarHandle(c);
+  soltarHandleR(c, r);
   free(b.p);
   return (!r && fim) ? 1 : 0;
 }
@@ -1206,7 +1220,7 @@ char *rede_apagar(const char *url, int segundos, const char *const *cab,
     if (status) *status = (int)h;
     if (h == 401 && aviso401) aviso401(url); }
   if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
-  soltarHandle(c);
+  soltarHandleR(c, r);
   if (r != 0) { free(b.p); return NULL; }
   // 204 sem corpo e a resposta NORMAL de um DELETE aceito: devolver NULL ali
   // faria o chamador ler sucesso como falha de transporte.
@@ -1250,7 +1264,7 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cab,
     if (status) *status = (int)codigo;
     if (codigo == 401 && aviso401) aviso401(url); }
   if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
-  soltarHandle(c);
+  soltarHandleR(c, r);
   // Falha de TRANSPORTE (r != 0) continua sendo NULL — ai nao houve resposta
   // nenhuma. O corpo de um 4xx, ao contrario, e devolvido: e nele que o
   // PostgREST explica o que faltou.

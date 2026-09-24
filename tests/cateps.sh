@@ -12,7 +12,7 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 # cateps.c inclui descoberta.c inteiro (pelo desc_tmdb_notas_temporada, pura),
 # entao o link precisa do mesmo conjunto de tests/colfileiras.sh mais o
 # catalogo.c de verdade — que e o objeto do teste original.
-cc ${flags[@]+"${flags[@]}"} src/catalogo.c tests/cateps.c \
+cc ${flags[@]+"${flags[@]}"} src/catalogo.c tests/cateps.c src/cotacat.c \
   src/js.c src/colecoes.c src/redeurl.c src/catordem.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -o /tmp/nuvio-cateps-tests -O1 -g \

@@ -121,7 +121,8 @@ static const char *const TR_NOME[] = {
   "Season 3 Official Trailer", "Season 2 Teaser", "Season 1 Official Trailer" };
 static const char *const TR_MINI[] = {
   "deploy/app/art/27.jpg", "deploy/app/art/07.jpg", "deploy/app/art/03.jpg" };
-int fx_n_trailers(void) { return trailersLigados && ehSerieDeEnsaio() ? 3 : 0; }
+// Filme tambem: a fileira e a mesma nos dois layouts, e o foco nela tambem.
+int fx_n_trailers(void) { return trailersLigados ? 3 : 0; }
 const char *fx_trailer_yt(int i) { return (i >= 0 && i < fx_n_trailers()) ? "s3TrailerEN" : ""; }
 const char *fx_trailer_nome(int i) { return (i >= 0 && i < fx_n_trailers()) ? TR_NOME[i] : ""; }
 const char *fx_trailer_miniatura(int i) { return (i >= 0 && i < fx_n_trailers()) ? TR_MINI[i] : ""; }
@@ -515,6 +516,13 @@ int main(int argc, char **argv) {
   nosEpisodios(3);
   snprintf(nome, sizeof nome, "%s-14-serie-trailers-episodios.png", saida);
   gravar(nome);
+  // --- 15. FILME COM TRAILERS, foco no SEGUNDO card: o anel de realce tem de
+  //         aparecer so nele, e o primeiro fica em repouso.
+  abrir(1, 0);
+  foco.fileira = SEC_TRAILERS; foco.coluna = 1;
+  quadros(150);
+  snprintf(nome, sizeof nome, "%s-15-filme-trailers.png", saida);
+  gravar(nome);
   trailersLigados = 0;
 
   // --- 11. BOTOES DO HERO NA COR DE REALCE (20/09/2026: "nenhum botao ta
@@ -540,6 +548,21 @@ int main(int argc, char **argv) {
   botao = 0; quadros(60);
   snprintf(nome, sizeof nome, "%s-12-hero-dourado-primario.png", saida);
   gravar(nome);
+
+  // --- 16/17. TRAILERS EM INGLES com realce carmesim (tema 7): o anel segue a
+  //            cor escolhida, nao o branco de fabrica.
+  trailersLigados = 1;
+  abrir(0, 2);
+  foco.fileira = SEC_TRAILERS; foco.coluna = 0;
+  quadros(150);
+  snprintf(nome, sizeof nome, "%s-16-serie-trailers-en.png", saida);
+  gravar(nome);
+  abrir(1, 0);
+  foco.fileira = SEC_TRAILERS; foco.coluna = 1;
+  quadros(150);
+  snprintf(nome, sizeof nome, "%s-17-filme-trailers-en.png", saida);
+  gravar(nome);
+  trailersLigados = 0;
 
   SDL_GL_DeleteContext(gl);
   SDL_DestroyWindow(janela);

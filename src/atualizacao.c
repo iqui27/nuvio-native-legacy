@@ -49,15 +49,26 @@
 #define AT_PAD        64.0f
 #define AT_ABRIR_MS   280.0f
 #define AT_FECHAR_MS  160.0f
-#define AT_LINHAS_MAX  14
+// Linhas de NOTAS guardadas (secao, paragrafo ou item). Era 14, e com as notas
+// sem rolagem isso nao importava: o cartao ja cortava antes. Agora a area das
+// notas rola, entao o teto so protege o buffer.
+#define AT_LINHAS_MAX  48
 #define AT_LEADING    34.0f
+// RODAPE FIXO: os botoes (ou o endereco da pagina) moram nos ultimos
+// AT_RODAPE_H px do cartao e as notas NUNCA descem ate la. Ver atualizacao_desenhar.
+#define AT_RODAPE_H  132.0f
+// Um aperto de cima/baixo rola tres linhas de notas.
+#define AT_PASSO     (AT_LEADING * 3.0f)
+// Linhas por item. Com rolagem nao ha por que cortar um item no meio; o teto
+// so impede que um paragrafo gigante vire uma parede.
+#define AT_ITEM_LINHAS 8
 
 static SDL_mutex *mtx;
 static SDL_Thread *fio;
 static int disparado, pronto, aberto, mostrado;
 static float entrada;
 static char tagNova[32];          // "1.0.54", vazio se nao ha nada mais novo
-static char notas[4096];          // texto ja limpo, linhas separadas por \n
+static char notas[6144];          // texto ja limpo, linhas separadas por \n
 // URL do .ipk da release. Vazia quando a release nao anexou um (ou quando este
 // alvo nao sabe instalar, e ai nem se procura).
 static char ipkUrl[512];
@@ -92,6 +103,16 @@ static float instPct;
 static char  instPasso[48];
 static int estado;
 static int foco;                  // 0 = "Atualizar agora", 1 = "Depois"
+// ROLAGEM DAS NOTAS. Relato de mackojanko (Samsung Tizen 6.0, 1.4.5): "quando
+// o aviso aparece nao consigo descer e nao vejo o botao de atualizar". As
+// notas da 1.4.4 e da 1.4.5 sao longas, e o laco de desenho so parava de COMECAR itens perto do
+// rodape — o ultimo item, com ate 3 linhas, descia por cima dos botoes (e, no
+// Tizen, por cima do endereco e do "OK para fechar"), e cima/baixo nao faziam
+// nada. Agora o rodape e fixo, as notas ficam recortadas na area de cima e
+// cima/baixo rolam essa area. `rolarAlvo` e para onde o controle mandou,
+// `rolar` e onde o desenho esta (anda ate o alvo); `notasH` e a altura do texto
+// inteiro medida no quadro anterior e `vistaH` a da janela visivel.
+static float rolar, rolarAlvo, notasH, vistaH;
 static SDL_Thread *fioInst;
 
 const char *atualizacao_nova(void) { return tagNova; }
@@ -423,6 +444,18 @@ static int podeInstalar(void) {
   return AT_INSTALA && ipkUrl[0] && estado == AT_PARADO && temInstalador();
 }
 
+// Quanto da para rolar: o que sobra das notas alem da janela. 0 = cabe tudo.
+static float rolarMax(void) {
+  float m = notasH - vistaH;
+  return m > 0.0f ? m : 0.0f;
+}
+
+// Cada abertura comeca do topo das notas e com o foco no botao de atualizar.
+static void reiniciarVista(void) {
+  foco = 0;
+  rolar = rolarAlvo = 0.0f;
+}
+
 void atualizacao_verificar(void) {
   if (disparado) return;
   disparado = 1;
@@ -446,6 +479,7 @@ void atualizacao_mostrar_se_houver(void) {
     if (igual) return;
   }
   aberto = 1;
+  reiniciarVista();
 }
 
 // Fecha e ANOTA a versao vista: o cartao e uma vez por tag.
@@ -459,7 +493,7 @@ static void fechar(void) {
 void atualizacao_abrir(void) {
   if (!mtx) return;
   SDL_LockMutex(mtx);
-  if (tagNova[0]) { aberto = 1; mostrado = 1; foco = 0; }
+  if (tagNova[0]) { aberto = 1; mostrado = 1; reiniciarVista(); }
   SDL_UnlockMutex(mtx);
 }
 
@@ -472,6 +506,14 @@ void atualizacao_evento(const SDL_Event *e) {
   // instalar, o sistema mata o app de qualquer jeito.
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
       e->key.keysym.scancode == NV_SCANCODE_BACK) { fechar(); return; }
+  // CIMA/BAIXO ROLAM AS NOTAS, em qualquer estado (inclusive baixando): o
+  // rodape nao depende delas, entao rolar nunca tira o botao da tela.
+  if (k == SDLK_UP || k == SDLK_DOWN) {
+    rolarAlvo += k == SDLK_DOWN ? AT_PASSO : -AT_PASSO;
+    if (rolarAlvo > rolarMax()) rolarAlvo = rolarMax();
+    if (rolarAlvo < 0.0f) rolarAlvo = 0.0f;
+    return;
+  }
   if (estado == AT_INSTALANDO) return;
   if (podeInstalar() && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
     foco = k == SDLK_LEFT ? 0 : 1;
@@ -496,6 +538,11 @@ void atualizacao_atualizar(float dt, Uint32 agora) {
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
   entrada = anim_rampa(entrada, aberto ? 1.0f : 0.0f, dt,
                        aberto ? AT_ABRIR_MS : AT_FECHAR_MS);
+  // Rolagem suave, mas curta (~120 ms para chegar): quem segura a seta quer
+  // ver o texto andar, nao esperar.
+  { float d = rolarAlvo - rolar, f = dt * 1000.0f / 120.0f;
+    if (f > 1.0f) f = 1.0f;
+    rolar = (d > -0.5f && d < 0.5f) ? rolarAlvo : rolar + d * f; }
 }
 
 void atualizacao_desenhar(Uint32 agora) {
@@ -537,9 +584,18 @@ void atualizacao_desenhar(Uint32 agora) {
   { TxtLinha t = txt_linha(TXT_CAPTION, buf, 176, 180, 190, 255);
     txt_desenhar_alpha(t, x, y, a * 0.9f); y += t.h + 28.0f; }
 
-  // notas, linha a linha; \x01 marca secao
+  // NOTAS, linha a linha; \x01 marca secao. Janela fixa entre o cabecalho e o
+  // rodape, recortada: o que nao cabe fica para a rolagem, nunca por cima dos
+  // botoes. A altura total sai do proprio desenho e vale para o quadro
+  // seguinte (o texto nao muda enquanto o cartao esta aberto).
+  { float topo = y, base = AT_Y + dy + AT_H - AT_RODAPE_H, y0;
+  vistaH = base - topo;
+  if (rolarAlvo > rolarMax()) rolarAlvo = rolarMax();
+  if (rolar > rolarMax()) rolar = rolarMax();
+  gfx_recorte(AT_X, topo, AT_W, vistaH);
+  y = y0 = topo - rolar;
   p = notas;
-  while (*p && y < AT_Y + dy + AT_H - 120.0f) {
+  while (*p) {
     const char *fim = strchr(p, '\n');
     size_t n = fim ? (size_t)(fim - p) : strlen(p);
     char linha[512];
@@ -552,12 +608,36 @@ void atualizacao_desenhar(Uint32 agora) {
         txt_desenhar_alpha(t, x, y, a); y += t.h + 10.0f; }
     } else {
       y += txt_bloco(TXT_BODY, linha, 200, 204, 214, x, y, w, AT_LEADING,
-                     a * 0.95f, 3) + 10.0f;
+                     a * 0.95f, AT_ITEM_LINHAS) + 10.0f;
     }
   }
+  notasH = y - y0;
+  // DICA DE QUE HA MAIS: o fim da janela some no fundo do cartao (em vez de
+  // cortar uma linha ao meio) e uma trilha fina a direita diz onde se esta.
+  if (rolarMax() > 0.5f) {
+    float ar, ag, ab, tH = vistaH - 16.0f, pH, pY;
+    if (rolar < rolarMax() - 0.5f) {
+      GfxRect veu = { AT_X, base - 72.0f, AT_W, 72.0f };
+      gfx_rect(veu, 0, GFX_VEU_BAIXO, 0, 0, 0, 0.0f, 0.055f, 0.058f, 0.068f, a);
+    }
+    gfx_recorte(AT_X, AT_Y + dy, AT_W, AT_H);
+    ajustes_acento(&ar, &ag, &ab);
+    pH = tH * vistaH / notasH;
+    if (pH < 40.0f) pH = 40.0f;
+    pY = topo + 8.0f + (tH - pH) * (rolar / rolarMax());
+    // O raio do SDF e relativo a ALTURA: NV_RAIO_PILL numa trilha em pe vira
+    // uma lente. Meia largura sobre a altura e que da a pilula.
+    gfx_cor((GfxRect){ AT_X + AT_W - 30.0f, topo + 8.0f, 6.0f, tH },
+            3.0f / tH, 1.0f, 1.0f, 1.0f, 0.12f * a);
+    gfx_cor((GfxRect){ AT_X + AT_W - 30.0f, pY, 6.0f, pH },
+            3.0f / pH, ar, ag, ab, 0.9f * a);
+  }
+  gfx_recorte(AT_X, AT_Y + dy, AT_W, AT_H); }
 
   // RODAPE. Onde ha como instalar, ele vira dois botoes; onde nao ha, continua
-  // sendo o endereco da pagina, que e a unica coisa util a dizer.
+  // sendo o endereco da pagina, que e a unica coisa util a dizer. Posicao FIXA,
+  // abaixo da janela das notas: por mais longas que elas sejam, o botao esta
+  // sempre na tela.
   y = AT_Y + dy + AT_H - 96.0f;
   if (estado == AT_INSTALANDO || estado == AT_PRONTO) {
     // BARRA E PORCENTAGEM, e nao uma frase parada. O numero e o passo vem do
@@ -613,8 +693,11 @@ void atualizacao_desenhar(Uint32 agora) {
     txt_desenhar_alpha(t, x, y + 16.0f, a * 0.9f);
   }
   if (estado != AT_INSTALANDO && estado != AT_PRONTO) {
+    int mais = rolarMax() > 0.5f;
     TxtLinha t = txt_linha(TXT_CAPTION2,
-        podeInstalar() ? i18n("Voltar para fechar") : i18n("OK para fechar"),
+        podeInstalar()
+          ? (mais ? i18n("↑ ↓  Mais notas   ·   Voltar para fechar") : i18n("Voltar para fechar"))
+          : (mais ? i18n("↑ ↓  Mais notas   ·   OK para fechar") : i18n("OK para fechar")),
         150, 154, 165, 255);
     txt_desenhar_alpha(t, AT_X + AT_W - AT_PAD - t.w, y + 24.0f, a * 0.85f);
   }

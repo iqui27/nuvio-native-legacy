@@ -86,6 +86,19 @@ static void lerProxyHeaders(const char *bh, const char *fim, char *dst, unsigned
   }
 }
 
+// "FORA DE CACHE" DITO PELO ADDON. As marcas sao as que os addons mandam de
+// verdade: "⏳" e o que o AIOStreams poe no nome de toda fonte nao cacheada
+// (registros 1136, 2191, 2501: "⏳ UHD", "⏳ FHD"; a cacheada vem com "⚡"), o
+// Torrentio escreve "[TB download]" / "[RD download]" (a cacheada e "[TB+]"),
+// e outros usam "⬇" ou a palavra "uncached". "download]" e nao "download"
+// solto: "WEB-DL"/"Download" aparecem em titulo de fonte cacheada.
+int stream_texto_fora_de_cache(const char *t) {
+  if (!t) return 0;
+  return strstr(t, "\xe2\x8f\xb3") != NULL          // U+23F3 ⏳
+      || strstr(t, "\xe2\xac\x87") != NULL          // U+2B07 ⬇
+      || contem(t, " download]") || contem(t, "uncached");
+}
+
 int stream_extrair(const char *json, const char *provedor, Stream **saida) {
   const char *p, *fim;
   int n = 0, cap = 0;
@@ -156,6 +169,7 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
       // nomes que os addons mandam (ao contrario de "dv", que precisa do
       // cuidado de token() com DVDRip — o mesmo cuidado ja se aplica aqui).
       s.av1 = token(texto, "av1") || contem(texto, "av01");
+      s.foraCache = stream_texto_fora_de_cache(texto);
       double bytes = js_num(p, fim, "videoSize", 0);
       if (bytes > 0) s.tamanhoMB = (long)(bytes / (1024.0 * 1024.0));
       else {

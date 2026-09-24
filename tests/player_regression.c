@@ -201,10 +201,16 @@ static void testar(void) {
     teclaPlayer(SDLK_RIGHT);
     assert(player_controles_visiveis() && player_foco_na_barra());
     assert(player_posicao_seg()>p0+5.0f);
+    // #128: a busca que comeca escondida sobe SO a barra e o tempo, e segue
+    // assim enquanto a pessoa so busca.
+    assert(player_so_barra());
     teclaPlayer(SDLK_RIGHT);assert(player_foco_na_barra()&&player_posicao_seg()>p0+15.0f);
-    teclaPlayer(SDLK_LEFT);assert(player_foco_na_barra()&&player_posicao_seg()<p0+25.0f); }
+    teclaPlayer(SDLK_LEFT);assert(player_foco_na_barra()&&player_posicao_seg()<p0+25.0f);
+    assert(player_so_barra()); }
   // BAIXO leva o foco a fileira; la esquerda/direita voltam a trocar de botao.
+  // E os controles voltam INTEIROS (#128).
   teclaPlayer(SDLK_DOWN);assert(!player_foco_na_barra()&&player_controles_visiveis());
+  assert(!player_so_barra());
   teclaPlayer(SDLK_RETURN);assert(player_controles_visiveis());   // OK no Play: alterna
   { float p1=player_posicao_seg();
     teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);
@@ -213,6 +219,11 @@ static void testar(void) {
   // Escondido de novo por BAIXO e revelado por BAIXO: fileira, nao barra.
   teclaPlayer(SDLK_DOWN);assert(!player_controles_visiveis());
   teclaPlayer(SDLK_DOWN);assert(player_controles_visiveis()&&!player_foco_na_barra());
+  assert(!player_so_barra());
+  // #128: busca escondida e depois OK — o OK confirma a busca e traz tudo.
+  teclaPlayer(SDLK_DOWN);assert(!player_controles_visiveis());
+  teclaPlayer(SDLK_LEFT);assert(player_so_barra());
+  teclaPlayer(SDLK_RETURN);assert(player_controles_visiveis()&&!player_so_barra());
   player_encerrar();
   strcpy(c.tipo,"movie");cat_definir(&c,1);player_abrir(0,NULL);
   player_definir_episodio(2,4);assert(!player_linha_episodio()[0]);
@@ -511,6 +522,14 @@ int main(int argc,char **argv) {
   }
   cat_definir_episodios(0,ep,5);player_abrir(0,NULL);player_definir_episodio(2,4);
   captura("/tmp/nuvio-player-loading.bmp",w,0);
+  // #128: busca comecada com os controles escondidos — so barra e tempo. O
+  // par de capturas mostra o antes (so a barra) e o depois do BAIXO (tudo).
+  { SDL_Event e={0};e.type=SDL_KEYDOWN;
+    e.key.keysym.sym=SDLK_DOWN;player_evento(&e);captura("/tmp/nuvio-player-escondido.bmp",w,0);
+    e.key.keysym.sym=SDLK_RIGHT;player_evento(&e);assert(player_so_barra());
+    captura("/tmp/nuvio-player-busca.bmp",w,0);
+    e.key.keysym.sym=SDLK_DOWN;player_evento(&e);assert(!player_so_barra());
+    captura("/tmp/nuvio-player-busca-cheio.bmp",w,0); }
   episodios_abrir(0,2,4);captura("/tmp/nuvio-player-episodes.bmp",w,1);episodios_fechar();
   Stream s[5]={0};
   for(int i=0;i<5;i++) {

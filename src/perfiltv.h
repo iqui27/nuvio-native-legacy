@@ -67,6 +67,25 @@ typedef struct {
 int ptv_depois_pior(const PtvMedida *antes, const PtvMedida *depois,
                     const char **motivo);
 
+// O VEREDITO DO RETESTE, com MARGEM (histerese). "Nao piorou" nao basta para
+// trocar de perfil: com a rede oscilando, cada rodada trocava a TV de perfil
+// (96|4|1920 -> 160|4|1920 -> 96|2|1280 com 316/297/360 ms). A regra esta em
+// perfiltv.c, em cima de ptv_decidir.
+//   PTV_DEC_APLICAR   o candidato fica e vai para o disco;
+//   PTV_DEC_RESTAURAR o reteste piorou (ptv_depois_pior): o anterior volta;
+//   PTV_DEC_RUIDO     nao piorou, mas tambem nao ganhou o bastante: o anterior
+//                     volta e o relatorio diz `aplicacao=mantido_ruido`.
+// `despejosSessao` = artes VISIVEIS despejadas nesta sessao antes do teste (o
+// sinal de falta de memoria que o agregador usa; o pico nao e sinal, o cache
+// sempre enche ate o orcamento).
+#define PTV_GANHO_PCT      15   // ganho minimo no tempo de artes, % do ANTES
+#define PTV_GANHO_MIN_MS   80   // ... e nunca menos que isto
+#define PTV_QUADRO_RUIDO_MS 17  // um quadro a 60 Hz de folga no pior quadro
+typedef enum { PTV_DEC_APLICAR = 0, PTV_DEC_RESTAURAR, PTV_DEC_RUIDO } PtvDecisao;
+PtvDecisao ptv_decidir(const PtvPerfil *perfAntes, const PtvPerfil *perfCand,
+                       const PtvMedida *antes, const PtvMedida *depois,
+                       long despejosSessao, const char **motivo);
+
 // Perfil aprovado em disco: "versao=2\ntex_mb=..\nfios_rede=..\nheroi=..\n".
 int ptv_serializar(const PtvPerfil *pf, const char *modo, char *dst, size_t cap);
 // 1 se leu os tres campos. Nao limita: quem le chama ptv_limitar.

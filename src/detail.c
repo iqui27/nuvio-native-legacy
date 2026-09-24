@@ -3734,11 +3734,24 @@ static void desenhaAbaInfo(float x, float y, int i, float f, float a) {
 //
 // E focavel e OK abre o video no app nativo da plataforma: navegador do webOS
 // (luna-send), aba do Tizen (window.open) ou browser do desktop (open).
-static void desenhaTrailer(float x, float y, int c, float a) {
+//
+// FOCO (23/09/2026, o dono: "hoje nao mostra que esta selecionado"): o anel na
+// cor de realce em volta da MINIATURA, o mesmo do card de episodio logo acima
+// na pagina — e o mesmo tipo de card (video com legenda embaixo), entao o foco
+// tem de ser o mesmo. `f` e a animacao do foco da secao (animFoco).
+static void desenhaTrailer(float x, float y, int c, float f, float a) {
   const char *mini = extras_trailer_miniatura(c);
   GfxRect v = { x, y, NV_DETF_TR_W, NV_DETF_TR_VIDEO_H };
   float raio = NV_DETF_TR_RAIO / NV_DETF_TR_VIDEO_H;   // fracao do MENOR lado
   GLuint tex = (mini && mini[0]) ? tex_obter_larg(mini, NV_DETF_TR_W) : 0;
+
+  if (f > 0.01f) {
+    GfxRect anel = { v.x - NV_DETP_ANEL, v.y - NV_DETP_ANEL,
+                     v.w + NV_DETP_ANEL * 2, v.h + NV_DETP_ANEL * 2 };
+    float ar, ag, ab;
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_cor(anel, raio, ar, ag, ab, f * a);
+  }
 
   if (tex) {
     gfx_tex_aspect_atual = tex_aspecto(mini);
@@ -4725,7 +4738,7 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
         }
         break;
       }
-      case SEC_TRAILERS: desenhaTrailer(x, y, c, a); break;
+      case SEC_TRAILERS: desenhaTrailer(x, y, c, f, a); break;
       // Reaproveitam o desenho que ja servia as ABAS da serie: e o mesmo
       // conteudo, so que agora numa secao propria em vez de atras de uma aba.
       case SEC_RELACIONADOS:

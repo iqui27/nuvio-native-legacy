@@ -269,11 +269,15 @@ static int acharTracks(const unsigned char *p, long n, MkvFaixa *saida, int max,
 // no ultimo quarto do arquivo: em disco com capitulo a cada 5 minutos o ultimo
 // e uma cena qualquer, e trata-lo como creditos poria o painel no meio do
 // terceiro ato.
+//
+// O ULTIMO NOME QUE CASA, e nao o primeiro (#115). Remux com "Opening Credits"
+// aos 90 s e "End Credits" no fim e comum, e o primeiro casamento punha o
+// painel de relacionados no comeco do filme. Varre de tras para frente.
 double mkv_creditos_nomeados(const MkvCap *caps, int n) {
   static const char *NOMES[] = { "credit", "crédit", "credito", "crédito",
                                  "end title", "outro", "encerrament" };
   int i, k;
-  for (i = 0; i < n; i++) {
+  for (i = n - 1; i >= 0; i--) {
     char m[64];
     size_t j;
     snprintf(m, sizeof m, "%s", caps[i].nome);

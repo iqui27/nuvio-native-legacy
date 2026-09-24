@@ -30,6 +30,12 @@ static void chaoDeHome(GLuint arte) {
   }
 }
 
+// Tamanho do quadro capturado. 1920x1080 e o da LG; 1280x720 e o das TVs
+// que desenham em 720p (Tizen antigo, LG 2015), onde o layout e o mesmo mas o
+// recorte (glScissor) e convertido para pixel de buffer — e onde um erro de
+// escala cortaria as notas no lugar errado.
+static int capW = 1920, capH = 1080;
+
 static void captura(const char *nome, SDL_Window *win, GLuint arte) {
   int i;
   for (i = 0; i < 90; i++) {
@@ -44,17 +50,17 @@ static void captura(const char *nome, SDL_Window *win, GLuint arte) {
     atualizacao_atualizar(1.0f / 60.0f, SDL_GetTicks());
     atualizacao_desenhar(SDL_GetTicks());
     if (i == 89) {
-      unsigned char *pix = malloc(1920 * 1080 * 4);
+      unsigned char *pix = malloc((size_t)capW * capH * 4);
       SDL_Surface *s;
       int y;
       assert(pix);
-      glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);
-      s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32,
+      glReadPixels(0, 0, capW, capH, GL_RGBA, GL_UNSIGNED_BYTE, pix);
+      s = SDL_CreateRGBSurfaceWithFormat(0, capW, capH, 32,
                                          SDL_PIXELFORMAT_RGBA32);
       assert(s);
-      for (y = 0; y < 1080; y++)
+      for (y = 0; y < capH; y++)
         memcpy((char *)s->pixels + y * s->pitch,
-               pix + (1079 - y) * 1920 * 4, 1920 * 4);
+               pix + (size_t)(capH - 1 - y) * capW * 4, (size_t)capW * 4);
       assert(SDL_SaveBMP(s, nome) == 0);
       SDL_FreeSurface(s);
       free(pix);
@@ -80,16 +86,72 @@ static const char MD[] =
   "## Notes\n"
   "Install with the Homebrew Channel or Developer Mode.\n";
 
-static void semear(int comoEstado, float pct, const char *passo) {
+// AS NOTAS DE VERDADE da 1.4.5, que sao as que empurraram o botao para fora
+// da tela no Tizen. Lidas do repositorio para a captura acompanhar a proxima
+// release longa sem ninguem copiar texto para ca.
+static char mdLongo[16384];
+static void lerNotasLongas(void) {
+  FILE *f = fopen("docs/releases/1.4.5/NOTAS.md", "rb");
+  size_t n;
+  assert(f);
+  n = fread(mdLongo, 1, sizeof mdLongo - 1, f);
+  mdLongo[n] = 0;
+  fclose(f);
+}
+
+static void tecla(SDL_Keycode k) {
+  SDL_Event e;
+  memset(&e, 0, sizeof e);
+  e.type = SDL_KEYDOWN;
+  e.key.keysym.sym = k;
+  atualizacao_evento(&e);
+}
+
+static void semearMd(const char *md, int comoEstado, float pct, const char *passo) {
   snprintf(tagNova, sizeof tagNova, "%s", "1.2.0");
-  limparNotas(MD, notas, sizeof notas);
+  limparNotas(md, notas, sizeof notas);
   snprintf(ipkUrl, sizeof ipkUrl, "%s",
            "https://github.com/iqui27/nuvio-native-legacy/releases/download/"
            "v1.2.0/space.nuvio.native.legacy_1.2.0_arm.ipk");
   estado = comoEstado;
   instPct = pct;
   snprintf(instPasso, sizeof instPasso, "%s", passo ? passo : "");
-  aberto = 1; mostrado = 1; entrada = 1.0f; foco = 0;
+  aberto = 1; mostrado = 1; entrada = 1.0f;
+  reiniciarVista();
+}
+static void semear(int comoEstado, float pct, const char *passo) {
+  semearMd(MD, comoEstado, pct, passo);
+}
+
+// NOTAS LONGAS: o rodape nao pode sair do lugar e a rolagem tem de chegar ao
+// fim. `sufixo` distingue 1080p de 720p.
+static void longas(SDL_Window *w, GLuint arte, const char *saida, const char *sufixo) {
+  char nome[600];
+  int i;
+  float max;
+  semearMd(mdLongo, AT_PARADO, 0.0f, "");
+  snprintf(nome, sizeof nome, "%s-longo-topo%s.bmp", saida, sufixo);
+  captura(nome, w, arte);
+  max = rolarMax();
+  // Foco comeca no primario, a janela das notas acaba antes do rodape e o
+  // texto da 1.4.5 nao cabe nela (senao este caso nao provaria nada).
+  assert(foco == 0);
+  assert(max > 0.0f);
+  assert(AT_Y + AT_H - AT_RODAPE_H <= AT_Y + AT_H - 96.0f);
+  for (i = 0; i < 40; i++) tecla(SDLK_DOWN);
+  assert(rolarAlvo == max);
+  assert(foco == 0);            // rolar nao mexe no foco dos botoes
+  snprintf(nome, sizeof nome, "%s-longo-fim%s.bmp", saida, sufixo);
+  captura(nome, w, arte);
+  // Chegou ao fim (o desenho reclampa com o vistaH do quadro, dai a folga).
+  assert(rolar > max - 1.0f && rolar <= max + 1.0f);
+  // SEM INSTALADOR (o caso do Tizen): mesmo rodape fixo, com o endereco.
+  semearMd(mdLongo, AT_PARADO, 0.0f, "");
+  ipkUrl[0] = 0;
+  snprintf(nome, sizeof nome, "%s-longo-tizen%s.bmp", saida, sufixo);
+  captura(nome, w, arte);
+  for (i = 0; i < 3; i++) tecla(SDLK_UP);
+  assert(rolarAlvo == 0.0f);
 }
 
 int main(int argc, char **argv) {
@@ -137,6 +199,14 @@ int main(int argc, char **argv) {
   semear(AT_PRONTO, 100.0f, "");
   snprintf(nome, sizeof nome, "%s-pronto.bmp", saida);
   captura(nome, w, arte);
+
+  lerNotasLongas();
+  longas(w, arte, saida, "");
+  capW = 1280; capH = 720;
+  SDL_SetWindowSize(w, capW, capH);
+  glViewport(0, 0, capW, capH);
+  gfx_tamanho_alvo(capW, capH);
+  longas(w, arte, saida, "-720p");
 
   tex_encerrar();
   txt_encerrar();

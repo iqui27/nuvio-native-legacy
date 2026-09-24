@@ -162,7 +162,8 @@ function sentinela(m) {
     while (p) { lista.push(p); p = H[(p >> 2) + J_FILA]; }
     for (var i = lista.length - 1; i >= 0; i--) {
       var j = lista[i] >> 2;
-      porta.postMessage({ job: lista[i], seq: H[j + J_SEQ], mime: H[j + J_MIME] === 2 ? 'image/png' : 'image/webp',
+      var mc = H[j + J_MIME];
+      porta.postMessage({ job: lista[i], seq: H[j + J_SEQ], mime: mc === 3 ? 'image/gif' : mc === 2 ? 'image/png' : 'image/webp',
                           largMax: H[j + J_LARG], direto: 1 });
     }
   }
