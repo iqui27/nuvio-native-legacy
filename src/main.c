@@ -56,6 +56,7 @@
 #include "player.h"
 #include "trailer.h"
 #include "ponteiro.h"
+#include "gif.h"
 #ifndef NV_SEM_WEBOS
 #include <dlfcn.h>
 
@@ -647,6 +648,18 @@ int main(int argc, char **argv) {
   marco("gfx_iniciar");
   if (!gfx_iniciar()) { printf("[arranque] gfx_iniciar FALHOU\n"); fflush(stdout); return 1; }
   printf("[arranque] gfx_iniciar ok\n"); fflush(stdout);
+#ifdef __EMSCRIPTEN__
+  // O ARRANQUE CEDE AO NAVEGADOR EM DOIS PONTOS (24/09/2026). Do topo do main
+  // ate o primeiro quadro era UMA tarefa so do fio principal: 1,0 a 3,4 s nos
+  // registros da Samsung (`[t] ... primeiro quadro na tela` = 1067, 1455,
+  // 2561, 3253, 3448 ms; `longtask-max=2755`/`4325 ms` no primeiro relatorio).
+  // A maior parte e a compilacao dos shaders (gfx_iniciar: 0,7 a 2,0 s na TV
+  // de 1 GB) e o resto e app_iniciar + a montagem do primeiro quadro. Ceder um
+  // rAF aqui e depois de app_iniciar nao encurta nada disso; parte a tarefa
+  // em tres, e o navegador (e o vigia de pagina que nao responde, se a TV tiver
+  // um) ve a pagina respirar no meio. O canvas ainda nao tem nada desenhado.
+  nv_ceder_quadro();
+#endif
   // fonts/ fica ao lado de art/: derruba o ultimo componente do caminho da arte
   char dirRec[512];
   snprintf(dirRec, sizeof dirRec, "%s", dirArte);
@@ -698,6 +711,9 @@ int main(int argc, char **argv) {
   traktauth_carregar_perfil(perfis_ativo());
   simklauth_carregar_perfil(perfis_ativo());
   if (!app_iniciar(dirArte)) return 1;
+#ifdef __EMSCRIPTEN__
+  nv_ceder_quadro();   // o segundo ponto: ver a nota logo depois de gfx_iniciar
+#endif
   // Progresso e dado DO USUARIO: sai da pasta do pacote, que e a mesma para
   // todo mundo que usar o aparelho, e passa para a pasta da instalacao.
   if (dados_dir()[0]) cat_dir_gravacao(dados_dir());
@@ -955,6 +971,9 @@ int main(int argc, char **argv) {
     ponteiro_quadro(agora);
     app_desenhar(agora);
     ponteiro_desenhar();
+    // GIF QUE NINGUEM DESENHOU ha 1,5 s sai da memoria (tela de perfis
+    // fechada, foco fora do cartaz). Ver gif_ocioso em gif.h.
+    gif_ocioso();
     fDes = NV_DT(t0);
     fGfxMs = gfx_ms_rect; fTexMs = tex_ms_busca;
     fNRect = gfx_n_rect; fNProg = gfx_n_prog; fNBind = gfx_n_bind; fNBusca = tex_n_busca;

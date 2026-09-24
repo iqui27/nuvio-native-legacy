@@ -157,7 +157,15 @@ SDL_Surface *jpeg_rapido_carregar_mem(const unsigned char *dados, size_t n, int 
   }
   if (!memcmp(dados, "RIFF", 4) && !memcmp(dados + 8, "WEBP", 4))
     return viaNavegador(dados, n, "image/webp", largMax, larguraOriginal, alturaOriginal);
-  return NULL;   // GIF e o resto: IMG_Load de sempre
+  // GIF: O PRIMEIRO QUADRO, PARADO (24/09/2026). O SDL_image do Tizen nao le
+  // GIF ("Unsupported image format", magica 47494638): a foto de perfil .gif
+  // fora de foco ficava so na inicial, e o cache tentava de novo a cada recuo
+  // (registros 2340/2351: o mesmo GIF de 3,4 MB lido e recusado a cada 3 s).
+  // O createImageBitmap de um GIF animado devolve o primeiro quadro; e ele que
+  // fica quando gif.c nao anima (fora de foco, ou fora do orcamento de RAM).
+  if (!memcmp(dados, "GIF8", 4))
+    return viaNavegador(dados, n, "image/gif", largMax, larguraOriginal, alturaOriginal);
+  return NULL;   // o resto: IMG_Load de sempre
 }
 
 SDL_Surface *jpeg_rapido_carregar(const char *caminho, int largMax,

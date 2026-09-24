@@ -2792,7 +2792,9 @@ static void desenhaAtalhos(int r, float y) {
       // cedo custa uma consulta ao cache, que devolve NULL enquanto nao chegou.
       const char *arq = tex_arquivo(folder->focusGif);
       if(ultimo!=id){
-        ultimo=id;desde=now;gifUltimo=0;gifAnima=-1;
+        // gifTex TAMBEM ZERA: a textura de gif.c e uma so, e ate o primeiro
+        // quadro deste cartaz chegar ela ainda tem o ultimo do cartaz anterior.
+        ultimo=id;desde=now;gifUltimo=0;gifAnima=-1;gifTex=0;
         // gif_parar SOLTA O BLOB do cartaz anterior. Sem isto ele fica preso e
         // o proximo cartaz teria de revoga-lo tarde.
         gif_parar();
