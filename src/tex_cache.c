@@ -2704,9 +2704,41 @@ void tex_encerrar(void) {
 // Ver tex_obter_larg_qualquer: 1 durante essa chamada, e a textura menor que
 // ja existe e entregue enquanto a maior e reprocessada.
 static int aceitaMenor;
+// CAMINHO QUE NAO E TEXTO NAO VIRA PEDIDO. Guarda, nao conserto: o caso que a
+// trouxe (lixo binario como caminho, "[tex] decode falhou (Couldn't open
+// ���̑C)") era um ponteiro para bloco do catalogo ja liberado, consertado em
+// catalogo.c (ver cat_quadro). Isto so impede que o proximo defeito da mesma
+// familia ocupe um slot, entre na fila de decode e grave lixo no log a cada
+// tentativa. URL e caminho de arquivo aqui sempre comecam por ASCII visivel
+// ("http", "/", "."); byte de controle em qualquer posicao tambem recusa.
+// Acento no MEIO (UTF-8) continua passando.
+static int caminhoInvalido(const char *c) {
+  const unsigned char *s = (const unsigned char *)c;
+  if (*s <= 0x20 || *s >= 0x7f) return 1;
+  for (; *s; s++) if (*s < 0x20 || *s == 0x7f) return 1;
+  return 0;
+}
+
 static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
                                int passageiro) {
   if (!caminho || !*caminho) return 0;
+  if (caminhoInvalido(caminho)) {
+    static int avisos;
+    if (avisos < 3) {
+      const unsigned char *b = (const unsigned char *)caminho;
+      char hex[3 * 12 + 1];
+      int k, p = 0;
+      avisos++;
+      // Os bytes em hexa e nao a string: e o que diz de onde o lixo veio
+      // (ponteiro do alocador, cabecalho de JPEG, texto de outro campo).
+      for (k = 0; k < 12 && b[k]; k++)
+        p += snprintf(hex + p, sizeof hex - (size_t)p, "%02x ", b[k]);
+      hex[p] = 0;
+      printf("[tex] caminho recusado: nao e texto (%s)\n", hex);
+      fflush(stdout);
+    }
+    return 0;
+  }
   GLuint saida = 0;
   unsigned long h = hashCaminho(caminho);
   int i; BUSCA_MEDIDA(i, caminho, h);

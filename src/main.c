@@ -50,6 +50,7 @@
 #include "video.h"
 #include "addons.h"
 #include "ajustes.h"
+#include "catalogo.h"
 #include "descoberta.h"
 #include "trakt.h"
 #include "player.h"
@@ -787,6 +788,10 @@ int main(int argc, char **argv) {
   while (!app_quer_sair()) {
     SDL_Event e;
     Uint64 tEv = NV_T0();
+    // VIRADA DE QUADRO DO CATALOGO, antes de qualquer tela tocar em cat_item():
+    // aqui nenhum ponteiro de item do quadro anterior esta mais na mao, entao
+    // os blocos trocados fora durante ele podem morrer. Ver cat_quadro.
+    cat_quadro();
     // Enquanto o detalhe existe ele fica com o teclado inteiro: a home
     // continua desenhada por baixo, mas nao deve reagir ao D-pad.
     while (SDL_PollEvent(&e)) {
