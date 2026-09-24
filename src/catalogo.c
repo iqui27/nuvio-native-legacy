@@ -28,12 +28,76 @@ static int aplicarProgressoDoDisco(void);
 // nunca a pega e segue lendo pelo protocolo de ordem de escrita: `n` zera
 // antes de o ponteiro trocar, e o bloco velho nao e liberado na hora.
 static pthread_mutex_t pubTrava = PTHREAD_MUTEX_INITIALIZER;
-// O bloco trocado fora morre na troca SEGUINTE, quando nenhum leitor o alcanca
-// mais. Compartilhado entre os que trocam o conjunto inteiro: cada troca mata
-// o lixo da anterior, seja qual delas for.
-static CatItem *lixoTroca;
 #include <string.h>
 #include <stdlib.h>
+
+// --- QUANDO O BLOCO VELHO PODE MORRER ----------------------------------------
+// O bloco trocado fora morria na troca SEGUINTE. Isso protegia o leitor de UMA
+// troca, e o desenho precisa de mais: ele pega `cat_item(i)->backdrop` no
+// comeco do quadro e so o entrega a tex_obter_* mais adiante, e um quadro da C9
+// passa de 100 ms. Duas trocas nesse meio — a publicacao por fileira do
+// arranque, a montagem publicando junto do fio de "Continuar assistindo", ou
+// um cat_acrescentar* de outro fio — e o bloco era liberado debaixo dele.
+//
+// Pior: eram TRES lixos (lixoTroca, lixoLote, lixoAcr), cada um liberado pela
+// proxima troca DO SEU TIPO, e a guarda de "uma troca" nem sempre valia.
+//
+// O sintoma no campo (1.3.3, 1.4.1, 1.4.3, sempre logo depois de a home
+// remontar com os catalogos dos addons):
+//   [tex] decode falhou (Couldn't open ���̑C) tam=-1 magica=00000000: ���̑C
+// `backdrop` e o PRIMEIRO campo do CatItem, entao o backdrop do item 0 — o
+// destaque, o primeiro card de "Continuar assistindo" — e o primeiro byte do
+// bloco, onde o alocador escreve os ponteiros dele depois do free. O cache de
+// textura copiou esses bytes como caminho. tests/catvida.sh reproduz com ASan.
+//
+// Agora o bloco vai para uma lista unica e so e liberado por cat_quadro(), no
+// fio de desenho, quando o quadro em que ele foi trocado ja TERMINOU. O mais
+// recente e mantido sempre, para quem le fora do desenho continuar com a
+// folga de uma troca que ja tinha. O teto existe para a memoria nao crescer se
+// o desenho parar de virar quadro; bate-lo e sinal de algo muito errado.
+#define CAT_APOSENTADOS_MAX 16
+static CatItem *aposentados[CAT_APOSENTADOS_MAX];
+static int nAposentados;
+
+// Sob pubTrava.
+static void aposentar(CatItem *bloco) {
+  if (!bloco) return;
+  if (nAposentados == CAT_APOSENTADOS_MAX) {
+    static int avisou;
+    if (!avisou) {
+      avisou = 1;
+      printf("[cat] %d blocos trocados sem virada de quadro; liberando o mais velho\n",
+             CAT_APOSENTADOS_MAX);
+      fflush(stdout);
+    }
+    free(aposentados[0]);
+    memmove(aposentados, aposentados + 1,
+            sizeof aposentados[0] * (size_t)(CAT_APOSENTADOS_MAX - 1));
+    nAposentados--;
+  }
+  aposentados[nAposentados++] = bloco;
+}
+
+// Roda no comeco do quadro, entao tudo que esta na lista foi trocado durante um
+// quadro que ja acabou. Sobra so o mais recente (a folga de uma troca).
+void cat_quadro(void) {
+  int k;
+  pthread_mutex_lock(&pubTrava);
+  if (nAposentados > 1) {
+    for (k = 0; k < nAposentados - 1; k++) free(aposentados[k]);
+    aposentados[0] = aposentados[nAposentados - 1];
+    nAposentados = 1;
+  }
+  pthread_mutex_unlock(&pubTrava);
+}
+
+int cat_blocos_aposentados(void) {
+  int q;
+  pthread_mutex_lock(&pubTrava);
+  q = nAposentados;
+  pthread_mutex_unlock(&pubTrava);
+  return q;
+}
 
 // Alocado conforme chega, nao dimensionado por um numero chutado.
 static CatItem *itens;
@@ -758,11 +822,22 @@ unsigned long cat_assinatura(void) {
   return h;
 }
 
-int cat_n(void) { return n; }
+int cat_n(void) { return __atomic_load_n(&n, __ATOMIC_ACQUIRE); }
 
+// PONTEIRO E CONTAGEM DA MESMA TROCA. A troca publica `n = 0`, o ponteiro e
+// `n` novo, nessa ordem — mas o ARM da TV nao garante que outro fio veja as
+// escritas na ordem feita sem barreira, e ler o `n` novo (maior) com o ponteiro
+// velho indexa alem do fim do bloco velho. Com release/acquire, reler o
+// ponteiro depois da contagem e achar o mesmo prova que os dois sao do mesmo
+// bloco; se mudou no meio, le de novo.
 const CatItem *cat_item(int i) {
-  if (!itens || n <= 0) return NULL;
-  return &itens[((i % n) + n) % n];
+  for (;;) {
+    CatItem *p = __atomic_load_n(&itens, __ATOMIC_ACQUIRE);
+    int k = __atomic_load_n(&n, __ATOMIC_ACQUIRE);
+    if (!p || k <= 0) return NULL;
+    if (__atomic_load_n(&itens, __ATOMIC_ACQUIRE) == p)
+      return &p[((i % k) + k) % k];
+  }
 }
 
 // ":<digitos>:<digitos>" e so isso — o sufixo de temporada/episodio.
@@ -1148,9 +1223,8 @@ void cat_atualizar_item(int i, const CatItem *item) {
 // Uma troca de bloco so, seguindo a mesma ordem de cat_definir: zera `n` antes
 // de trocar o ponteiro (o desenho ve catalogo vazio por um quadro em vez de ler
 // memoria liberada) e nao libera o bloco velho aqui — um leitor pode estar
-// dentro dele; ele morre na proxima troca.
+// dentro dele; ele morre em cat_quadro, depois do quadro em curso.
 int cat_acrescentar_lote(const CatItem *v, int qtd, int *saidaIdx) {
-  static CatItem *lixoLote;
   CatItem *novo;
   int novoN, k;
   if (!v || qtd < 1 || n < 1) return 0;
@@ -1166,18 +1240,16 @@ int cat_acrescentar_lote(const CatItem *v, int qtd, int *saidaIdx) {
       if (v[k].poster[0])   arte_reserva_registrar(v[k].poster,   v[k].imdb, 1);
       if (v[k].backdrop[0]) arte_reserva_registrar(v[k].backdrop, v[k].imdb, 0); } }
   if (saidaIdx) for (k = 0; k < qtd; k++) saidaIdx[k] = n + k;
-  free(lixoLote);
-  lixoLote = itens;
-  itens = novo;
+  aposentar(itens);
+  __atomic_store_n(&itens, novo, __ATOMIC_RELEASE);
   nAlocado = novoN;
-  n = novoN;
+  __atomic_store_n(&n, novoN, __ATOMIC_RELEASE);
   garantirFaixas(nAlocado);
   pthread_mutex_unlock(&pubTrava);
   return qtd;
 }
 
 int cat_acrescentar(const CatItem *item) {
-  static CatItem *lixoAcr;
   CatItem *novo;
   int novoN;
   if (!item || n < 1) return -1;
@@ -1188,11 +1260,10 @@ int cat_acrescentar(const CatItem *item) {
   pthread_mutex_lock(&pubTrava);
   memcpy(novo, itens, sizeof(CatItem) * (size_t)n);
   memcpy(&novo[n], item, sizeof(CatItem));
-  free(lixoAcr);
-  lixoAcr = itens;
-  itens = novo;
+  aposentar(itens);
+  __atomic_store_n(&itens, novo, __ATOMIC_RELEASE);
   nAlocado = novoN;
-  n = novoN;
+  __atomic_store_n(&n, novoN, __ATOMIC_RELEASE);
   garantirFaixas(nAlocado);
   if (novo[novoN - 1].poster[0]) arte_reserva_registrar(novo[novoN - 1].poster, novo[novoN - 1].imdb, 1);
   if (novo[novoN - 1].backdrop[0]) arte_reserva_registrar(novo[novoN - 1].backdrop, novo[novoN - 1].imdb, 0);
@@ -1285,7 +1356,8 @@ void cat_definir_tudo(const CatItem *lista, int qtd,
   // zerar `n` primeiro faz o desenho tratar o catalogo como vazio por um
   // quadro (nao desenha nada), e so depois o ponteiro e a contagem sobem. O
   // bloco antigo NAO e liberado aqui: um leitor pode estar dentro dele neste
-  // instante. Ele morre na proxima troca, quando ninguem mais o alcanca.
+  // instante. Ele morre em cat_quadro, quando o quadro em curso termina (ver
+  // aposentar, no topo).
   {
     int novoN = qtd > CAT_MAX ? CAT_MAX : qtd;
     CatItem *novo = malloc(sizeof(CatItem) * (size_t)(novoN > 0 ? novoN : 1));
@@ -1311,13 +1383,12 @@ void cat_definir_tudo(const CatItem *lista, int qtd,
     // itens; deixar as antigas de pe por um quadro enquanto o vetor troca faz o
     // desenho ler fora da faixa.
     pthread_mutex_lock(&pubTrava);
-    n = 0;
+    __atomic_store_n(&n, 0, __ATOMIC_RELEASE);
     nFils = 0;
-    free(lixoTroca);
-    lixoTroca = itens;
-    itens = novo;
+    aposentar(itens);
+    __atomic_store_n(&itens, novo, __ATOMIC_RELEASE);
     nAlocado = novoN;
-    n = novoN;
+    __atomic_store_n(&n, novoN, __ATOMIC_RELEASE);
     if (novasFils && nNovas > 0) {
       int k, q = nNovas > CAT_FIL_MAX ? CAT_FIL_MAX : nNovas;
       int v = 0;
@@ -1407,13 +1478,12 @@ void cat_trocar_continuar(const CatItem *lista, int qtd) {
     novas[0].ini = 0; novas[0].n = qtd;
     nv++;
   }
-  n = 0;
+  __atomic_store_n(&n, 0, __ATOMIC_RELEASE);
   nFils = 0;
-  free(lixoTroca);
-  lixoTroca = itens;
-  itens = novo;
+  aposentar(itens);
+  __atomic_store_n(&itens, novo, __ATOMIC_RELEASE);
   nAlocado = novoN;
-  n = novoN;
+  __atomic_store_n(&n, novoN, __ATOMIC_RELEASE);
   memcpy(fils, novas, sizeof *novas * (size_t)nv);
   nFils = nv;
   // A REFACAO NAO TRAZ DE VOLTA O QUE FOI TIRADO. montarContinuar ja filtra,
