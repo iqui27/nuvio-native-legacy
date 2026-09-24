@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns="http://tizen.org/ns/packages" api-version="6.5" package="NuvioTV002.NvSpikeNui65" version="0.1.0">
+  <profile name="tv" />
+  <ui-application appid="NuvioTV002.NvSpikeNui65"
+                   exec="NvSpikeNui65.dll"
+                   type="dotnet"
+                   multiple="false"
+                   taskmanage="true"
+                   nodisplay="false"
+                   launch_mode="single">
+    <label>NvSpike NUI 6.5</label>
+    <icon>NvSpikeNui65.png</icon>
+  </ui-application>
+  <!-- so o que o spike precisa: internet pro botao de "enviar relatorio"
+       (POST pro endpoint de avisos, ver src/avisos.c antes de reusar).
+       Nivel PUBLIC, igual ao tools/tizen-config.xml do app WASM: partner
+       exigiria registro Samsung que nao temos. -->
+  <privileges>
+    <privilege>http://tizen.org/privilege/internet</privilege>
+  </privileges>
+</manifest>

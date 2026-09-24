@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Mesmo Program.cs, no TFM tizen90 (API9 = Tizen 6.5, TVs 2022-2023).
+       Existe alem do NvSpikeNui60 porque o delegate de quadro do GLWindow
+       mudou de void (API8) para int (API9): o binario da API8 numa TV
+       API9+ poderia falhar no RegisterGlCallback sem culpa da Samsung. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>tizen90</TargetFramework>
+    <RootNamespace>NvSpikeNui</RootNamespace>
+    <AssemblyName>NvSpikeNui65</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);NV_API9</DefineConstants>
+    <LangVersion>8.0</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../NvSpikeNui/Program.cs" />
+    <PackageReference Include="Tizen.NET" Version="9.0.*">
+      <ExcludeAssets>Runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="Tizen.NET.Sdk" Version="1.1.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../Relatorio.cs" />
+    <Compile Include="../Segredos.g.cs" />
+  </ItemGroup>
+
+</Project>
