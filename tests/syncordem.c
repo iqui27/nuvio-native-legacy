@@ -191,6 +191,7 @@ void desc_tmdb_definir(const char *c) { (void)c; }
 // ------------------------------------------------------------ o resto, mudo
 
 int  addons_definir_lista(const AddonRemoto *l, int n) { (void)l; (void)n; return 0; }
+void addons_marcar_da_conta(int perfil) { (void)perfil; }
 void addons_esquecer(void) {}
 int  addons_exportar(AddonRemoto *s, int m) { (void)s; (void)m; return 0; }
 void agenda_esquecer(void) {}

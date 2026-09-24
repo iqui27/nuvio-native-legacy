@@ -30,6 +30,7 @@ typedef struct {
   int  itens;          // titulos que a fileira tem agora; -1 desconhecido
   int  vista;          // registrada nesta sessao (descoberta ou home)
   int  naHome;         // estava na ultima lista que a home montou
+  int  doDisco;        // veio do arquivo: o perfil ja viu esta fileira antes
 } Linha;
 
 static Linha linhas[FIL_MAX];
@@ -265,6 +266,7 @@ static void carregar(void) {
       linhas[nLinhas].tipo   = limita(atoi(campo[2]), 0, FIL_TIPO_N - 1);
       linhas[nLinhas].tam    = limita(atoi(campo[3]), 0, FIL_TAM_N - 1);
       if (formaFixa(linhas[nLinhas].chave)) linhas[nLinhas].tipo = FIL_TIPO_AUTO;
+      linhas[nLinhas].doDisco = 1;
       nLinhas++;
     }
   }
@@ -437,20 +439,60 @@ void fil_remover(int i) {
 // So catalogo: fileira do app e grupo de colecao nao tem addon. So `vista == 0`:
 // o que foi visto nesta sessao esta vivo por definicao, e a dupla condicao
 // protege contra chamar isto cedo demais. Devolve quantas linhas sairam.
-int fil_podar_catalogos(const char *const *ids, const char *const *bases, int n) {
+//
+// DUAS TRAVAS A MAIS, e as duas vieram de um relato do dono na C9 (24/09):
+// "as fileiras dos addons que eu tirei voltam; eu sempre tiro e elas voltam".
+//
+//   1. A LISTA TEM DE SER A DA CONTA DESTE PERFIL. A primeira volta do
+//      arranque le os addons do art/addons.txt do PACOTE (4 addons, de 31/08),
+//      e a da conta do perfil 1 (12) so chega depois do sync. A poda rodava na
+//      primeira: "16 fileira(s) de addon que ja nao existe sairam da lista",
+//      todas de addons que o perfil 1 TEM — Meu Futebol, Pluto TV, FrostView,
+//      Bingecat. Quando a lista certa chegava, as fileiras voltavam no fim, no
+//      estado de fabrica: ligadas. A escolha "fora da home" da pessoa era
+//      apagada em TODO arranque. `perfilDaLista` e o perfil cuja conta mandou a
+//      lista (addons_perfil_da_lista); qualquer outra coisa — 0 (pacote, sem
+//      conta) ou o perfil anterior — nao poda nada.
+//   2. LINHA COM ESCOLHA NAO E FANTASMA. Desligada, na fila, com forma ou
+//      tamanho escolhidos, ou fonte do destaque: isso e a pessoa dizendo algo
+//      sobre a fileira, e o addon pode voltar (ou a lista pode estar errada de
+//      um jeito que a trava 1 nao previu). A poda e para a linha intocada, que
+//      e o unico caso do @rawldon: fantasma LIGADO aparecendo na home. Uma
+//      linha desligada de addon que saiu nao aparece em lugar nenhum da home.
+// A chave de catalogo comeca por <id do manifesto>_ ou, sem id, <base>_.
+static int doAddon(const char *chave, const char *id, const char *base) {
+  size_t li = id ? strlen(id) : 0, lb = base ? strlen(base) : 0;
+  if (li && !strncmp(chave, id, li) && chave[li] == '_') return 1;
+  if (lb && !strncmp(chave, base, lb) && chave[lb] == '_') return 1;
+  return 0;
+}
+
+static int temEscolha(const Linha *l) {
+  return l->oculta || l->fila || l->tipo != FIL_TIPO_AUTO ||
+         l->tam != FIL_TAM_PADRAO || (heroFonte[0] && !strcmp(heroFonte, l->chave));
+}
+
+int fil_podar_catalogos(const char *const *ids, const char *const *bases, int n,
+                        int perfilDaLista) {
   int i, w = 0, fora = 0;
   pthread_mutex_lock(&trava);
   garantir();
+  if (perfilDaLista <= 0 || perfilDaLista != perfil) {
+    pthread_mutex_unlock(&trava);
+    printf("[fileiras] poda adiada: lista de addons %s\n",
+           perfilDaLista <= 0 ? "nao veio da conta (pacote/arquivo)"
+                              : "e de outro perfil");
+    fflush(stdout);
+    return 0;
+  }
   for (i = 0; i < nLinhas; i++) {
     int vivo = 1;
-    if (fil_origem_de(linhas[i].chave) == FIL_ORIGEM_CATALOGO && !linhas[i].vista) {
+    if (fil_origem_de(linhas[i].chave) == FIL_ORIGEM_CATALOGO && !linhas[i].vista &&
+        !temEscolha(&linhas[i])) {
       int k;
       vivo = 0;
-      for (k = 0; k < n && !vivo; k++) {
-        size_t li = ids[k] ? strlen(ids[k]) : 0, lb = bases[k] ? strlen(bases[k]) : 0;
-        if (li && !strncmp(linhas[i].chave, ids[k], li) && linhas[i].chave[li] == '_') vivo = 1;
-        if (lb && !strncmp(linhas[i].chave, bases[k], lb) && linhas[i].chave[lb] == '_') vivo = 1;
-      }
+      for (k = 0; k < n && !vivo; k++)
+        if (doAddon(linhas[i].chave, ids[k], bases[k])) vivo = 1;
     }
     if (vivo) { if (w != i) linhas[w] = linhas[i]; w++; }
     else fora++;
@@ -459,6 +501,23 @@ int fil_podar_catalogos(const char *const *ids, const char *const *bases, int n)
   pthread_mutex_unlock(&trava);
   if (fora) { printf("[fileiras] %d fileira(s) de addon que ja nao existe sairam da lista\n", fora); fflush(stdout); }
   return fora;
+}
+
+// O ADDON E NOVO PARA ESTE PERFIL NESTA TV? E a pergunta da vaga garantida
+// (cota_vaga_garantida em cotacat.h). Novo = nenhuma fileira dele veio do
+// arquivo deste perfil (foi so registrada nesta sessao) e nenhuma carrega
+// escolha.
+int fil_addon_novo(const char *id, const char *base) {
+  int i, novo = 1;
+  pthread_mutex_lock(&trava);
+  garantir();
+  for (i = 0; i < nLinhas && novo; i++)
+    if (fil_origem_de(linhas[i].chave) == FIL_ORIGEM_CATALOGO &&
+        doAddon(linhas[i].chave, id, base) &&
+        (linhas[i].doDisco || temEscolha(&linhas[i])))
+      novo = 0;
+  pthread_mutex_unlock(&trava);
+  return novo;
 }
 
 // TROCA DE PERFIL: solta a lista e le o arquivo do perfil novo na proxima

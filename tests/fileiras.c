@@ -468,31 +468,110 @@ int main(void) {
     } }
   puts("ok  normalizar: so a fila pedida fica alem do limite");
 
-  // PODA: catalogo de addon que sumiu da conta sai; o resto fica.
+  // PODA: catalogo de addon que sumiu da conta sai; o resto fica. A lista vem
+  // da conta do PERFIL desta escolha (perfilDaLista == 1 == perfil ativo).
   fil_esquecer();
   { int j;
     const char *ids[] = { "addonvivo" }; const char *bases[] = { "https://vivo.example" };
     // Nada visto == tudo candidato; mas so catalogo de addon ausente cai.
     // Antes: simula linha lida do disco (vista=0) para o fantasma.
     usaArquivo = 1;
-    { FILE *f = fopen("/tmp/fileirasui.txt", "w");
+    { FILE *f = fopen("/tmp/fileirasui-p1.txt", "w");
       fprintf(f, "limite 7\nordem 0\n");
       fprintf(f, "linha addonvivo_movie_top\t0\t0\t1\tTop\n");
       fprintf(f, "linha addonmorto_movie_top\t0\t0\t1\tFantasma\n");
       fprintf(f, "linha continue_watching\t0\t0\t1\tContinuar\n");
       fprintf(f, "linha collection_x\t0\t0\t1\tColecao\n");
       fclose(f); }
+    fil_definir_perfil(1);
     fil_teste_recarregar();
     assert(fil_n() == 4);
     // O vivo foi VISTO nesta sessao; o fantasma nao. So o fantasma cai.
     fil_registrar("addonvivo_movie_top", "Top", "Vivo", "movie", 5);
-    assert(fil_podar_catalogos(ids, bases, 1) == 1);
+    assert(fil_podar_catalogos(ids, bases, 1, 1) == 1);
     assert(fil_n() == 3);
     for (j = 0; j < fil_n(); j++) assert(strcmp(fil_chave(j), "addonmorto_movie_top") != 0);
     // Chamar de novo nao tira mais nada.
-    assert(fil_podar_catalogos(ids, bases, 1) == 0);
+    assert(fil_podar_catalogos(ids, bases, 1, 1) == 0);
+    remove("/tmp/fileirasui-p1.txt");
+    fil_definir_perfil(0);
     usaArquivo = 0; }
   puts("ok  poda: catalogo de addon removido sai, app e colecao ficam");
+
+  // A PODA DO ARRANQUE NA C9 (24/09). O perfil 1 tem Meu Futebol, Pluto TV e
+  // Bingecat na conta; a primeira volta le o art/addons.txt do PACOTE, que nao
+  // os tem. A poda rodava com essa lista e apagava do fileirasui-p1.txt as
+  // escolhas dele — Pluto "fora da home" voltava ligado quando a conta chegava.
+  fil_esquecer();
+  { const char *ids[] = { "org.stremio.opensubtitlesv3", "app.xperience", "com.akashitv" };
+    const char *bases[] = { "https://os.example", "https://xp.example", "https://ak.example" };
+    int j, achouPluto = 0, achouBinge = 0, achouFut = 0;
+    usaArquivo = 1;
+    { FILE *f = fopen("/tmp/fileirasui-p1.txt", "w");
+      fprintf(f, "limite 16\nordem 1\n");
+      fprintf(f, "linha app.xperience_movie_top\t0\t0\t1\t0\tTop\n");
+      // Desligada na TV: "Pluto TV - Channels" fora da home.
+      fprintf(f, "linha org.plutotv_tv_pluto\t1\t0\t1\t0\tPluto TV - Channels\n");
+      // Forma escolhida (destaque largo).
+      fprintf(f, "linha com.aicat.x.nuvio_movie_list\t0\t2\t1\t0\tList for you\n");
+      // Intocada: ligada, tudo no padrao.
+      fprintf(f, "linha org.meufutebol_tv_canais\t0\t0\t1\t0\tMeu Futebol\n");
+      fclose(f); }
+    fil_definir_perfil(1);
+    assert(fil_n() == 4);
+    // Lista do PACOTE (nao veio da conta): nada sai.
+    assert(fil_podar_catalogos(ids, bases, 3, 0) == 0);
+    // Lista da conta de OUTRO perfil (o 2, da sessao anterior): nada sai.
+    assert(fil_podar_catalogos(ids, bases, 3, 2) == 0);
+    assert(fil_n() == 4);
+    // Lista da conta DESTE perfil sem esses addons (removidos de verdade): so
+    // a linha intocada e fantasma. A desligada e a com forma sao escolha.
+    assert(fil_podar_catalogos(ids, bases, 3, 1) == 1);
+    assert(fil_n() == 3);
+    for (j = 0; j < fil_n(); j++) {
+      if (!strcmp(fil_chave(j), "org.plutotv_tv_pluto")) { achouPluto = 1; assert(fil_linha_oculta(j)); }
+      if (!strcmp(fil_chave(j), "com.aicat.x.nuvio_movie_list")) { achouBinge = 1; assert(fil_linha_tipo(j) == 2); }
+      if (!strcmp(fil_chave(j), "org.meufutebol_tv_canais")) achouFut = 1;
+    }
+    assert(achouPluto && achouBinge && !achouFut);
+    // E continua oculta depois de reler o arquivo gravado.
+    fil_teste_recarregar();
+    fil_definir_perfil(0); fil_definir_perfil(1);
+    assert(fil_oculta("org.plutotv_tv_pluto"));
+    remove("/tmp/fileirasui-p1.txt");
+    fil_definir_perfil(0);
+    usaArquivo = 0; }
+  puts("ok  poda: lista do pacote ou de outro perfil nao poda; escolha nunca e podada");
+
+  // ADDON NOVO (vaga garantida, cotacat.h): so o que este perfil nunca viu e
+  // sobre o qual nao decidiu nada.
+  fil_esquecer();
+  { usaArquivo = 1;
+    { FILE *f = fopen("/tmp/fileirasui-p1.txt", "w");
+      fprintf(f, "limite 7\nordem 0\n");
+      fprintf(f, "linha org.visto_movie_a\t0\t0\t1\t0\tJa visto\n");
+      fclose(f); }
+    fil_definir_perfil(1);
+    assert(fil_n() == 1);
+    // Veio do arquivo: o perfil ja viu.
+    fil_registrar("org.visto_movie_a", "Ja visto", "Visto", "movie", -1);
+    assert(!fil_addon_novo("org.visto", "https://visto.example"));
+    // So registrado nesta sessao, nada escolhido: novo.
+    fil_registrar("org.novo_movie_a", "Novo", "Novo", "movie", -1);
+    fil_registrar("org.novo_movie_b", "Novo B", "Novo", "movie", -1);
+    assert(fil_addon_novo("org.novo", "https://novo.example"));
+    // Nunca registrado: novo (a descoberta ainda nao declarou).
+    assert(fil_addon_novo("org.nunca", "https://nunca.example"));
+    // Uma fileira dele tirada da home: deixou de ser novo.
+    { int j;
+      for (j = 0; j < fil_n(); j++) if (!strcmp(fil_chave(j), "org.novo_movie_b")) fil_remover(j); }
+    assert(!fil_addon_novo("org.novo", "https://novo.example"));
+    // Prefixo parecido nao e o mesmo addon.
+    assert(fil_addon_novo("org.nov", "https://nov.example"));
+    remove("/tmp/fileirasui-p1.txt");
+    fil_definir_perfil(0);
+    usaArquivo = 0; }
+  puts("ok  addon novo: so o nunca visto e sem escolha");
 
   // TABELA CHEIA: o que a home desenha TEM de caber na lista.
   //

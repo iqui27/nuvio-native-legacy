@@ -114,9 +114,15 @@ static void baseNormalizada(const char *url, char *dst, size_t tam) {
 
 // --- leitura do arquivo de configuracao -------------------------------------
 
+// Perfil cuja conta mandou a lista atual; 0 = pacote ou nada. Ver addons.h.
+static int perfilLista;
+void addons_marcar_da_conta(int perfil) { perfilLista = perfil > 0 ? perfil : 0; }
+int  addons_perfil_da_lista(void) { return perfilLista; }
+
 int addons_carregar(const char *dirArte) {
   char caminho[600], linha[900];
   FILE *f;
+  perfilLista = 0;
   snprintf(caminho, sizeof caminho, "%s/addons.txt", dirArte ? dirArte : ".");
   f = fopen(caminho, "r");
   if (!f) { printf("[addons] sem %s\n", caminho); return 0; }
@@ -269,6 +275,7 @@ int addons_exportar(AddonRemoto *saida, int max) {
 void addons_esquecer(void) {
   memset(addon, 0, sizeof addon);
   nAddon = 0;
+  perfilLista = 0;
   versaoLista++;
   printf("[addons] lista esquecida (saiu da conta)\n");
 }
