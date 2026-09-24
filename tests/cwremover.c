@@ -64,6 +64,11 @@ void  fil_registrar(const char *c, const char *t, const char *a,
                     const char *tp, int itens) {
   (void)c; (void)t; (void)a; (void)tp; (void)itens;
 }
+// Contexto em partes (homeestado.h, 1.4.5): constante aqui, entao nada muda
+// no meio da montagem e o fim dela segue o caminho de sempre.
+void homeestado_contexto(HomeContexto *c) { *c = (HomeContexto){0}; c->perfil = 1; }
+int homeestado_mudancas(const HomeContexto *a, const HomeContexto *b) { (void)a; (void)b; return 0; }
+const char *homeestado_mudancas_texto(int m, char *b, unsigned t) { (void)m; if (b && t) b[0] = 0; return b; }
 int   fil_tem_ordem(void)                  { return 0; }
 int   fil_unir(const char *const *c, int n, int *s, int m) {
   int i; (void)c; for (i = 0; i < n && i < m; i++) s[i] = i; return i;

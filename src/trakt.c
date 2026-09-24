@@ -108,6 +108,12 @@ void trakt_esquecer(void) {
   printf("[trakt] credencial esquecida\n");
 }
 
+int trakt_credencial_igual(const char *tk, const char *cli) {
+  const char *c = (cli && *cli) ? cli : cliente;
+  if (!ligado || !tk || !*tk || strlen(tk) >= sizeof token) return 0;
+  return !strcmp(token, tk) && !strcmp(cliente, c);
+}
+
 int trakt_definir(const char *tk, const char *cli) {
   if (!tk || !*tk) return 0;
   snprintf(token, sizeof token, "%s", tk);
