@@ -1571,12 +1571,25 @@ static char *escolherPelaCota(const char *corpo, const char *fim,
   return escolhido;
 }
 
+// A versao da lista de addons com que a volta leu os manifestos (ver a poda de
+// fantasmas em montar()). So o fio da descoberta mexe.
+static unsigned versaoManifestos;
+
 // Catalogos que so respondem com busca, somados na volta: nao entram mais no
 // vetor de Decl (nao gastam cota), e a linha do log que os contava continua.
 static int nSoBuscaVolta;
 
+// `ativo` = 0 para addon DESLIGADO na conta: o manifesto e lido do mesmo jeito
+// (addons_manifesto_lido aprende o id — a poda de fileiras e as colecoes da
+// conta precisam dele) e os nomes dos catalogos ficam registrados, mas nenhum
+// catalogo vira candidato a fileira, fica "fora da cota" ou vira alvo de busca.
+// Ate a guarda `addons_tem_catalogo(i)` sair (ver o laco da cota, em montar())
+// era esse o efeito, por tabela; sem ela, Pluto TV, Minha TV, FrostView e Fenix
+// TV — desligados na conta do dono — ganhavam fileira e ate vaga garantida na
+// home da C9 (24/09), e a fonte deles continuava fora das consultas. Desligado
+// e desligado nos dois lugares.
 static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
-                         int *totalReal, int *promovidos) {
+                         int ativo, int *totalReal, int *promovidos) {
   char url[900], addonId[96] = "", nome[96], tipo[8], id[96];
   char *corpo, *escolhido;
   const char *p, *fim;
@@ -1597,7 +1610,9 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
   // behaviorHints, e ha addon que escreve "catalogs" antes de "id" — a leitura
   // crua trazia o id de um CATALOGO como se fosse o do addon. Ver js_texto_raiz.
   js_texto_raiz(corpo, "id", addonId, sizeof addonId);
-  escolhido = escolherPelaCota(corpo, fim, addonId, base, max, &nEleg, promovidos);
+  escolhido = ativo ? escolherPelaCota(corpo, fim, addonId, base, max, &nEleg, promovidos)
+                   : NULL;
+  if (!ativo && promovidos) *promovidos = 0;
   p = js_array(corpo, fim, "catalogs");
   // Sem `n < max` na condicao: o vetor de fileiras pode encher, mas a varredura
   // continua ate o fim do manifesto porque os catalogos de BUSCA costumam estar
@@ -1623,6 +1638,7 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
       Decl local, *d;
       int exige = exigeBusca(p, f), guardar = 0;
       registrarNomeCatalogo(base, tipo, id, nome);
+      if (!ativo) { p = js_prox(f); continue; }
       // QUEM A COTA LE sai de escolherPelaCota; sem escolha (cabem todos, ou a
       // memoria faltou) vale a regra antiga, os primeiros ate encher. Catalogo
       // que exige busca nao entra nunca: ele e retirado logo depois em montar(),
@@ -2421,33 +2437,45 @@ static int ordenarCandidatos(Decl *decls, int nDecl, int *ordem, int nFixas,
   // um addon mostra alguma coisa dele, que e a pergunta que traz a issue.
   // Quem ja aparece nao perde a vaga; quem perde e a SEGUNDA fileira de
   // quem tem duas.
-  { int janela = teto - nFixas, i3, nAd3 = addons_n();
-    if (janela > nOrdem) janela = nOrdem;
-    for (i3 = 0; i3 < nAd3 && janela > 1; i3++) {
-      const char *b = addons_base(i3);
-      int q, alvo = -1, ceder = -1;
-      if (!b || !b[0]) continue;
-      for (q = 0; q < janela; q++)
-        if (decls[ordem[q]].base && !strcmp(decls[ordem[q]].base, b)) break;
-      if (q < janela) continue;                 // ja tem vaga
-      for (q = janela; q < nOrdem; q++)
-        if (decls[ordem[q]].base && !strcmp(decls[ordem[q]].base, b)) { alvo = q; break; }
-      if (alvo < 0) continue;                   // addon sem catalogo declarado
-      // Cede a ULTIMA posicao da janela cujo addon ja aparece antes dela.
-      { int r, s;
-        for (r = janela - 1; r > 0 && ceder < 0; r--) {
-          const char *br = decls[ordem[r]].base;
-          if (!br) continue;
-          for (s = 0; s < r; s++)
-            if (decls[ordem[s]].base && !strcmp(decls[ordem[s]].base, br)) { ceder = r; break; }
-        } }
-      if (ceder < 0) continue;                  // ninguem tem duas: nada a ceder
-      { int mov = ordem[alvo], w;
-        for (w = alvo; w > ceder; w--) ordem[w] = ordem[w - 1];
-        ordem[ceder] = mov; }
-      if (registrar) printf("[desc] vaga garantida: %s entra em %d (%s)\n",
-             addons_nome(i3), ceder, decls[ordem[ceder]].titulo);
-    } }
+  //
+  // RESTRITA EM 24/09, decisao do dono (a regra e os porques estao em
+  // cotacat.h, cota_vaga_garantida): so para addon NOVO, nunca por cima de
+  // ordem propria, nunca com fileira desligada. Na C9 ela punha Pluto TV,
+  // Minha TV, FrostView e Fenix TV — desligados na conta — e o Meu Futebol que
+  // ele tinha tirado da home nas posicoes 11 a 13 de uma ordem arrumada a mao.
+  { int nAd3 = addons_n(), q, c, dadas;
+    static int addonDe[DECL_MAX];
+    static char deslig[DECL_MAX];
+    CotaAddon ad[16];
+    int vagaAd[16], vagaCand[16];
+    if (nAd3 > 16) nAd3 = 16;
+    for (c = 0; c < nDecl; c++) {
+      addonDe[c] = -1;
+      deslig[c] = (char)desligada(&decls[c]);
+      for (q = 0; q < nAd3; q++) {
+        const char *b = addons_base(q);
+        if (b && b[0] && decls[c].base && !strcmp(decls[c].base, b)) { addonDe[c] = q; break; }
+      }
+    }
+    for (q = 0; q < nAd3; q++) {
+      ad[q].ativo = addons_ativo(q);
+      // NOVO: este perfil nunca viu fileira dele (fileiras.c) e nenhuma das
+      // declaradas agora esta desligada — na TV, na conta ou engolida por
+      // colecao. Uma desligada e uma decisao sobre o addon.
+      ad[q].novo = ad[q].ativo && fil_addon_novo(addons_id_manifesto(q), addons_base(q));
+      for (c = 0; c < nDecl && ad[q].novo; c++)
+        if (addonDe[c] == q && deslig[c]) ad[q].novo = 0;
+    }
+    dadas = cota_vaga_garantida(ordem, nOrdem, addonDe, deslig, ad, nAd3,
+                                teto - nFixas, fil_tem_ordem(), vagaAd, vagaCand, 16);
+    if (registrar)
+      for (q = 0; q < dadas && q < 16; q++) {
+        int pos = 0;
+        while (pos < nOrdem && ordem[pos] != vagaCand[q]) pos++;
+        printf("[desc] vaga garantida (addon novo): %s entra em %d (%s)\n",
+               addons_nome(vagaAd[q]), pos, decls[vagaCand[q]].titulo);
+      }
+  }
 
   // Uma resposta nova de manifesto nao muda a estrutura que a pessoa ja
   // aceitou. Enquanto a assinatura owner/perfil/idioma/config continuar
@@ -2902,6 +2930,7 @@ static void *montar(void *u) {
     // quando ha addon pequeno — OpenSubtitles nao declara catalogo nenhum e
     // passa a cota inteira dele adiante. Uma volta so, sem reler manifesto:
     // reler custaria um pedido de rede por addon.
+    versaoManifestos = addons_versao();
     { int nAd = addons_n();
       int cota = nAd > 0 ? DECL_MAX / nAd : DECL_MAX;
       int folga = 0;
@@ -2912,8 +2941,8 @@ static void *montar(void *u) {
         LISTAS_SE_PRONTAS();
         if (CONDENADA("lendo os manifestos")) goto condenada;
         if (teto > DECL_MAX - nDecl) teto = DECL_MAX - nDecl;
-        lidos = lerManifesto(i, addons_base(i), decls + nDecl, teto, &real,
-                             &promovidos);
+        lidos = lerManifesto(i, addons_base(i), decls + nDecl, teto,
+                             addons_ativo(i), &real, &promovidos);
         nDecl += lidos;
         folga = lidos < cota + folga ? cota + folga - lidos : 0;
         // ISSUE #42(a): a linha de sempre ("N catalogo(s) declarado(s)") nao
@@ -2922,7 +2951,10 @@ static void *montar(void *u) {
         // addon declarava 40. `real` (o total que o manifesto tem de verdade,
         // contado em lerManifesto mesmo depois de `saida` encher) torna o
         // corte visivel e diz o numero que falta.
-        if (real > lidos)
+        if (!addons_ativo(i))
+          printf("[desc]   %s: desligado na conta, nenhum catalogo vira fileira\n",
+                 addons_nome(i));
+        else if (real > lidos)
           printf("[desc]   %s: %d catalogo(s) declarado(s) (cota %d, "
                  "manifesto tem %d — %d de fora por cota; %d escolhido(s) "
                  "alem da ordem do manifesto)\n",
@@ -2961,11 +2993,30 @@ static void *montar(void *u) {
     // manifestos desta volta ja foram lidos, entao a lista de addons vivos e
     // completa e a poda e segura: so cai catalogo cujo addon nao esta mais na
     // conta E que ninguem registrou nesta sessao.
+    //
+    // E SO COM UMA LISTA QUE SE SABE COMPLETA E DESTE PERFIL. Tres condicoes,
+    // todas medidas como falha na C9 do dono (24/09, "16 fileira(s) de addon
+    // que ja nao existe sairam da lista" no arranque, com 4 addons do pacote
+    // contra os 12 da conta do perfil 1):
+    //   - a lista veio da conta do perfil ativo (fil_podar_catalogos compara
+    //     addons_perfil_da_lista com o perfil da escolha);
+    //   - e a MESMA lista com que esta volta leu os manifestos: trocada no
+    //     meio, os ids dela ainda estao vazios e nada casaria;
+    //   - todo addon tem o id do manifesto: um que nao respondeu nesta volta
+    //     teria as fileiras dele tomadas por fantasma.
     { const char *ids[16], *bases[16];
-      int na = addons_n(), q;
+      int na = addons_n(), q, semId = 0;
       if (na > 16) na = 16;
-      for (q = 0; q < na; q++) { ids[q] = addons_id_manifesto(q); bases[q] = addons_base(q); }
-      if (fil_podar_catalogos(ids, bases, na)) fil_gravar_registro(); }
+      for (q = 0; q < na; q++) {
+        ids[q] = addons_id_manifesto(q); bases[q] = addons_base(q);
+        if (!ids[q] || !ids[q][0]) semId++;
+      }
+      if (addons_versao() != versaoManifestos)
+        printf("[fileiras] poda adiada: a lista de addons mudou durante a volta\n");
+      else if (semId)
+        printf("[fileiras] poda adiada: %d addon(s) sem manifesto lido nesta volta\n", semId);
+      else if (fil_podar_catalogos(ids, bases, na, addons_perfil_da_lista()))
+        fil_gravar_registro(); }
 
     // ALVOS DE BUSCA. Independem da ordem/filtro das FILEIRAS da home: um
     // catalogo pode estar desativado na home e ainda assim ser bom para

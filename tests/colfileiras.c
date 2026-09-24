@@ -135,8 +135,12 @@ int   cat_indice_por_imdb(const char *s)   { (void)s; return -1; }
 const CatItem *cat_item(int i)             { (void)i; return NULL; }
 int   cat_n_episodios(int i)               { (void)i; return 0; }
 void  fil_gravar_registro(void)            { }
-int   fil_podar_catalogos(const char *const *ids, const char *const *bases, int n) {
-  (void)ids; (void)bases; (void)n; return 0; }
+int   fil_podar_catalogos(const char *const *ids, const char *const *bases, int n,
+                          int perfilDaLista) {
+  (void)ids; (void)bases; (void)n; (void)perfilDaLista; return 0; }
+int   fil_addon_novo(const char *id, const char *base) { (void)id; (void)base; return 0; }
+int   addons_perfil_da_lista(void)         { return 0; }
+int   addons_ativo(int i)                  { (void)i; return 1; }
 int   fil_limite(void)                     { return limiteFileiras; }
 int   fil_oculta(const char *c)            { (void)c; return 0; }
 // A assinatura ganhou addon/tipo/contagem quando a folha de fileiras passou a

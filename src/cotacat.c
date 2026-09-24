@@ -32,3 +32,39 @@ int cota_escolher(const CotaPrio *pr, int n, int max, char *escolhido) {
   for (i = max; i < n; i++) if (escolhido[i]) promovidos++;
   return promovidos;
 }
+
+int cota_vaga_garantida(int *ordem, int nOrdem, const int *addonDe,
+                        const char *desligado, const CotaAddon *ad, int nAd,
+                        int janela, int ordemPropria,
+                        int *vagaAddon, int *vagaCand, int maxVagas) {
+  int i, dadas = 0;
+  if (!ordem || !addonDe || !desligado || !ad || ordemPropria) return 0;
+  if (janela > nOrdem) janela = nOrdem;
+  for (i = 0; i < nAd && janela > 1; i++) {
+    int q, alvo = -1, ceder = -1;
+    if (!ad[i].ativo || !ad[i].novo) continue;
+    for (q = 0; q < janela; q++) if (addonDe[ordem[q]] == i) break;
+    if (q < janela) continue;                   // ja tem vaga
+    for (q = janela; q < nOrdem; q++)
+      if (addonDe[ordem[q]] == i && !desligado[ordem[q]]) { alvo = q; break; }
+    if (alvo < 0) continue;                     // nada dele que possa entrar
+    // Cede a ULTIMA posicao da janela cujo addon ja aparece antes dela: quem
+    // perde e a segunda fileira de quem tem duas, nunca a unica de alguem.
+    { int r, s;
+      for (r = janela - 1; r > 0 && ceder < 0; r--) {
+        int ar = addonDe[ordem[r]];
+        if (ar < 0) continue;
+        for (s = 0; s < r; s++) if (addonDe[ordem[s]] == ar) { ceder = r; break; }
+      } }
+    if (ceder < 0) continue;                    // ninguem tem duas
+    { int mov = ordem[alvo], w;
+      for (w = alvo; w > ceder; w--) ordem[w] = ordem[w - 1];
+      ordem[ceder] = mov;
+      if (dadas < maxVagas) {
+        if (vagaAddon) vagaAddon[dadas] = i;
+        if (vagaCand) vagaCand[dadas] = mov;
+      } }
+    dadas++;
+  }
+  return dadas;
+}

@@ -161,8 +161,18 @@ void fil_normalizar(void);
 void fil_definir_perfil(int perfil);
 // Tira da lista os catalogos de addons que ja nao estao na conta. `ids` e
 // `bases` sao os ids de manifesto e as URLs base dos addons ATUAIS; so vale
-// depois de todos os manifestos da volta terem sido lidos. Devolve quantas.
-int  fil_podar_catalogos(const char *const *ids, const char *const *bases, int n);
+// depois de todos os manifestos da volta terem sido lidos. `perfilDaLista` e o
+// perfil cuja CONTA mandou essa lista (addons_perfil_da_lista): diferente do
+// perfil desta escolha, ou 0, nao poda nada. Linha com escolha da pessoa
+// (desligada, na fila, forma, tamanho, destaque) nunca e podada. Devolve
+// quantas sairam.
+int  fil_podar_catalogos(const char *const *ids, const char *const *bases, int n,
+                         int perfilDaLista);
+
+// O addon (id do manifesto, ou base sem id) e NOVO para este perfil nesta TV:
+// nenhuma fileira dele veio do arquivo do perfil e nenhuma carrega escolha. E o
+// que decide a vaga garantida (cota_vaga_garantida, cotacat.h).
+int  fil_addon_novo(const char *id, const char *base);
 
 // --- registro das fileiras que EXISTEM --------------------------------------
 // Chamado por quem monta a lista (descoberta.c com os catalogos declarados,

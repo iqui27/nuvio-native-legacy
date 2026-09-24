@@ -31,6 +31,18 @@ typedef struct { char nome[64]; char url[600]; int ativo; } AddonRemoto;
 // decidir se vale remontar o catalogo — e nao para saber quantos addons ha.
 int  addons_definir_lista(const AddonRemoto *lista, int n);
 
+// DE QUEM E A LISTA DE AGORA. O sync chama addons_marcar_da_conta(perfil) toda
+// vez que a resposta da conta para o perfil ATIVO foi aplicada — mudando a
+// lista ou nao —; addons_carregar (o art/addons.txt do pacote) e
+// addons_esquecer voltam a 0. addons_perfil_da_lista devolve esse perfil, 0
+// quando a lista nao veio da conta.
+//
+// Existe para a poda de fileiras (fil_podar_catalogos): no arranque a primeira
+// volta da descoberta roda com a lista do PACOTE, e podar com ela apagava as
+// escolhas do perfil sobre os addons que so a conta dele tem.
+void addons_marcar_da_conta(int perfil);
+int  addons_perfil_da_lista(void);
+
 // Lista atual, para o sync poder empurrar de volta o que este aparelho tem.
 int  addons_exportar(AddonRemoto *saida, int max);
 

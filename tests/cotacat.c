@@ -83,6 +83,54 @@ int main(void) {
   confere("todos marcados", esc[0] && esc[19], 1);
   confere("sem promovidos", prom, 0);
 
+  // VAGA GARANTIDA (#37, restrita em 24/09). Janela de 4; addon 0 com tres
+  // candidatos na frente, addon 1 com um, addon 2 so no fim (posicoes 5 e 6).
+  // Candidatos: c0..c3 do addon 0 e 1 na janela, c4 do 0, c5 e c6 do addon 2.
+  printf("\nvaga garantida so para addon novo:\n");
+  { static const int addonDe[7] = { 0, 0, 1, 0, 0, 2, 2 };
+    char desl[7];
+    CotaAddon ad[3];
+    int ordem[7], va[4], vc[4], k, dadas;
+#define REINICIA() do { for (k = 0; k < 7; k++) ordem[k] = k; memset(desl, 0, sizeof desl); \
+      ad[0].ativo = ad[1].ativo = ad[2].ativo = 1; ad[0].novo = ad[1].novo = 0; ad[2].novo = 1; } while (0)
+
+    REINICIA();
+    dadas = cota_vaga_garantida(ordem, 7, addonDe, desl, ad, 3, 4, 0, va, vc, 4);
+    confere("addon novo sem ordem propria ganha uma vaga", dadas, 1);
+    confere("entra a primeira dele (c5)", ordem[3], 5);
+    confere("quem cede e a segunda fileira do addon 0 (c3 sai da janela)", ordem[4], 3);
+    confere("o log diz o addon", va[0], 2);
+    confere("e o candidato", vc[0], 5);
+    confere("a unica do addon 1 fica", ordem[2], 2);
+
+    REINICIA();
+    dadas = cota_vaga_garantida(ordem, 7, addonDe, desl, ad, 3, 4, 1, va, vc, 4);
+    confere("com ORDEM PROPRIA nao ha vaga garantida", dadas, 0);
+    confere("e a ordem fica intacta", ordem[3] == 3 && ordem[5] == 5, 1);
+
+    REINICIA();
+    ad[2].novo = 0;   // o perfil ja viu o addon, ou tirou fileira dele
+    dadas = cota_vaga_garantida(ordem, 7, addonDe, desl, ad, 3, 4, 0, va, vc, 4);
+    confere("addon ja visto (ou com fileira tirada) nao ganha vaga", dadas, 0);
+
+    REINICIA();
+    ad[2].ativo = 0;  // desligado na conta
+    dadas = cota_vaga_garantida(ordem, 7, addonDe, desl, ad, 3, 4, 0, va, vc, 4);
+    confere("addon desligado na conta nao ganha vaga", dadas, 0);
+
+    REINICIA();
+    desl[5] = desl[6] = 1;   // todas as fileiras dele desligadas
+    dadas = cota_vaga_garantida(ordem, 7, addonDe, desl, ad, 3, 4, 0, va, vc, 4);
+    confere("addon com todas as fileiras desligadas continua fora", dadas, 0);
+    confere("nenhuma desligada entra na janela", ordem[3], 3);
+
+    REINICIA();
+    desl[5] = 1;             // a primeira desligada, a segunda nao
+    dadas = cota_vaga_garantida(ordem, 7, addonDe, desl, ad, 3, 4, 0, va, vc, 4);
+    confere("a vaga pula a desligada e leva a ligada (c6)", dadas == 1 && ordem[3] == 6, 1);
+#undef REINICIA
+  }
+
   printf("\n%s\n", falhas ? "FALHOU" : "PASSOU");
   return falhas ? 1 : 0;
 }
