@@ -70,14 +70,14 @@ HTTPS page, and YouTube trailers only in the single-threaded build.
 |---|---|
 | LG webOS 4.x | **Measured** on my C9. This is where I develop. |
 | LG webOS 5+ | **Works**, reported by users (2020 CX up to 2024 B4). I don't have one. |
-| LG webOS 3.x | **Experimental** build on the `webos3` branch, [prerelease](https://github.com/iqui27/nuvio-native-legacy/releases/tag/native-webos3-exp.4). A tester on webOS 3.4.3 got it running. |
+| LG webOS 3.x | **Works**, reported by testers (webOS 3.4.3). Same package as everyone else. I don't have one. |
 | LG webOS 2.x | Loads according to firmware symbol dumps. Never run. |
 | Samsung Tizen 5.5+ | **Works**, many users. |
 | Samsung Tizen 4 | Not yet (#96). |
 | Hisense VIDAA | Experimental, untested. |
 
-For webOS 3 the [web fork](https://github.com/iqui27/NuvioTVSmart-legacy-webos)
-is still the safer choice: plain JavaScript, tuned for old Chromium and low RAM.
+On webOS 3, keep in mind that many of those sets can't decode H.265 or HDR, and
+have little free RAM (around 300 MB), so pick H.264 sources when you can.
 
 About root on LG: the app itself doesn't run as root, and installing through
 the Homebrew Channel doesn't need it. What I haven't been able to measure is
@@ -201,9 +201,9 @@ Each one of these cost me at least a day:
   a transfer finished cleanly.
 - Firmware symbol dumps from [webosbrew](https://github.com/webosbrew/dev-toolbox-cli)
   tell you whether a binary will **load** on a TV you don't own. They don't tell
-  you it works. That's how the webOS 3 build was checked: exactly one missing
+  you it works. That's how webOS 3 support was checked: exactly one missing
   symbol (`SDL_CreateRGBSurfaceWithFormat`, SDL 2.0.5), replaced in
-  `src/sdlcompat.h`.
+  `src/sdlcompat.h`, so the same package runs on webOS 3 and up.
 
 And on Samsung, where the app is WebAssembly in the TV's browser: one busy main
 thread and the whole app waits. Most of the Samsung speedups came from moving
