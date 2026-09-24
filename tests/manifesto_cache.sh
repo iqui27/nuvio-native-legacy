@@ -10,6 +10,6 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 # nuvem — so a trava e a tabela estaticas do proprio arquivo. -dead_strip com
 # secoes por funcao descarta o resto que este teste nao alcanca, entao nenhum
 # desses modulos precisa de stub (mesma receita de tests/homepos.sh).
-cc "${flags[@]}" src/descoberta.c tests/manifesto_cache.c \
+cc "${flags[@]}" src/descoberta.c src/cwordem.c tests/manifesto_cache.c \
   -o /tmp/nuvio-manifesto-cache-tests
 /tmp/nuvio-manifesto-cache-tests

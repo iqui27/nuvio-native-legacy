@@ -39,6 +39,8 @@ int arte_reserva_episodios(const char *imdb, const char *corpo) { (void)imdb; (v
 
 // --- DUBLES: so fazem descoberta.c linkar (o conjunto de tests/cateps.c) -----
 int         ajustes_idioma_ingles(void) { return 0; }
+int   ajustes_cw_ordem(void)               { return 0; }   // Padrao (issue #127)
+int   ajustes_cw_mostrar_nao_exibidos(void) { return 1; }
 const char *i18n(const char *s)         { return s; }
 const char *dados_dir(void)             { return ""; }
 const char *sessao_usuario(void)        { return ""; }

@@ -2,7 +2,7 @@
 # Exercita o scheduler real de src/app.c com resolver Stalker bloqueavel.
 set -eu
 cd "$(dirname "$0")/.."
-cc tests/stalker_scheduler.c -Isrc \
+cc src/cwordem.c tests/stalker_scheduler.c -Isrc \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -o /tmp/nuvio-stalker-scheduler -O0 -g -Wall -Wextra \
   -Wno-deprecated-declarations -ffunction-sections -fdata-sections \

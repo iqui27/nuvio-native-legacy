@@ -6,7 +6,7 @@ cd "$ROOT"
 
 # Exercita o contrato de compilacao do escopo sem abrir SDL nem fazer rede.
 cc -Wall -Wextra -Werror -fsyntax-only \
-  src/ctxmenu.c src/catalogo.c src/trakt.c \
+  src/ctxmenu.c src/catalogo.c src/trakt.c src/cwordem.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -Wno-deprecated-declarations -Wno-macro-redefined
 

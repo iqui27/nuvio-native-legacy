@@ -2741,6 +2741,10 @@ void ajustes_evento(const SDL_Event *e) {
       // fonte so teria efeito no proximo sync, e para quem apertou parece que
       // o ajuste nao faz nada.
       if (focoOp == AJ_CW_FONTE) desc_repetir();
+      // A ORDENACAO E OS NAO EXIBIDOS (issue #127) tambem sao decididos em
+      // montarContinuar; aqui basta refazer so a retomada, sem o ciclo
+      // inteiro — o conjunto de itens e o mesmo, muda a ordem e quem fica.
+      if (focoOp == AJ_CW_ORDEM || focoOp == AJ_CW_NAO_EXIBIDOS) desc_refazer_continuar();
       // O DESTINO DO "+" tambem: com "Plan to Watch do Simkl" o Plan to Watch
       // entra nos Salvos pela descoberta (descoberta.c), e sem o ciclo ele so
       // apareceria no proximo sync.

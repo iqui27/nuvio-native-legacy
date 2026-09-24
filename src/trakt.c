@@ -8,6 +8,7 @@
 #include "rede.h"
 #include "js.h"
 #include "nuvem.h"
+#include "cwordem.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -341,6 +342,27 @@ static int enfeitar(CatItem *d, const char *tipo) {
       v = strstr(corpo, chave);
       if (v) { const char *ini = v; while (ini > corpo && *ini != '{') ini--;
                js_texto(ini, js_fim(ini), "name", d->nomeEpisodio, sizeof d->nomeEpisodio); } }
+  }
+  // A DATA DE ESTREIA DO EPISODIO "A SEGUIR" (issue #127), do mesmo videos[]
+  // que acabou de confirmar que ele existe. E ela que separa o que ja foi ao ar
+  // do que ainda vai — a Ordenacao de Continuar assistindo (cwordem.h) poe os
+  // futuros no fim ou numa fileira propria. Vale para o Simkl tambem: o lote
+  // dele passa por aqui (simkl_continuar -> trakt_enfeitar_lote). Episodio sem
+  // `released` fica sem data, e sem data conta como exibido, como no web.
+  if (d->progresso == 0 && d->temporada > 0 && d->episodio > 0 && !strcmp(tipo, "series")) {
+    char chave[48], quando[40] = "";
+    const char *v;
+    snprintf(chave, sizeof chave, "\"id\":\"%s:%d:%d\"", serie, d->temporada, d->episodio);
+    v = strstr(corpo, chave);
+    if (v) {
+      const char *ini = v;
+      long long ms;
+      while (ini > corpo && *ini != '{') ini--;
+      if (!js_texto(ini, js_fim(ini), "released", quando, sizeof quando))
+        js_texto(ini, js_fim(ini), "firstAired", quando, sizeof quando);
+      ms = js_ms_iso(quando);
+      cwo_marcar_estreia(d->imdb, ms > 0 ? ms : CWO_SEM_DATA);
+    }
   }
   // So completa buracos: nao trocar metahub por vazio se o Cinemeta omitir.
   if (!d->poster[0])   js_texto(corpo, NULL, "poster", d->poster, sizeof d->poster);

@@ -1301,6 +1301,7 @@
   { "Próximo episódio", "Next episode" },
   { "Próximo episódio T%dE%d · %s", "Next episode S%dE%d · %s" },
   { "Próximo episódio · %s", "Next episode · %s" },
+  { "Próximos episódios", "Upcoming" },
   { "Pular abertura", "Skip intro" },
   { "Pular créditos", "Skip credits" },
   { "Pular resumo", "Skip recap" },
