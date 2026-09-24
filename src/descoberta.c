@@ -13,6 +13,7 @@
 #include "addons.h"
 #include "rede.h"
 #include "nuvem.h"
+#include "cwordem.h"
 #include "js.h"
 #include "trakt.h"
 #include "simkl.h"
@@ -2167,6 +2168,46 @@ static int montarContinuar(CatItem *saida, int max) {
       k--;
     }
   }
+
+  // A ORDENACAO ESCOLHIDA EM AJUSTES (issue #127) — ver cwordem.h. Ate aqui a
+  // lista esta pelo instante, que e o modo "Padrao". "Estilo streaming" e
+  // "Separar futuros" levam os "a seguir" que ainda nao foram ao ar para o fim,
+  // pela estreia; no segundo a home ainda os tira desta fileira e monta
+  // "Proximos episodios" com eles. `showUnairedNextUp` desligado os tira de vez
+  // (shouldShowNextUpEpisodeForContinueWatching do web): antes esta preferencia
+  // tambem nao era lida por ninguem.
+  { static CwoItem cwo[CONT_MAX * 3];
+    static Cand ordenados[CONT_MAX * 3];
+    static int perm[CONT_MAX * 3];
+    static const char *futIds[CONT_MAX * 3];
+    long long agora = (long long)time(NULL) * 1000LL;
+    int modo = ajustes_cw_ordem(), escondidos = 0, principal, nFut = 0, w = 0;
+    for (i = 0; i < nJ; i++) {
+      const CatItem *c = juntos[i].item;
+      CwoItem x;
+      x.aSeguir = c->progresso == 0 &&
+                  (trakt_e_a_seguir(c->imdb) || simkl_e_a_seguir(c->imdb));
+      x.estreiaMs = x.aSeguir ? cwo_estreia(c->imdb) : CWO_SEM_DATA;
+      if (!ajustes_cw_mostrar_nao_exibidos() && cwo_futuro(&x, agora)) { escondidos++; continue; }
+      juntos[w] = juntos[i];
+      cwo[w++] = x;
+    }
+    nJ = w;
+    principal = cwo_ordenar(cwo, nJ, modo, agora, perm);
+    for (i = 0; i < nJ; i++) ordenados[i] = juntos[perm[i]];
+    memcpy(juntos, ordenados, sizeof *juntos * (size_t)nJ);
+    // O corte de `max` vem DEPOIS, como o slice do web: com a fileira cheia sao
+    // os futuros que ficam de fora, nunca o que a pessoa esta assistindo.
+    for (i = principal; i < nJ && i < max; i++) futIds[nFut++] = juntos[i].item->imdb;
+    // Publicado ANTES de cat_trocar_continuar (quem chama publica a fileira
+    // depois deste retorno): a home nunca ve a lista nova com o conjunto velho.
+    cwo_publicar_futuros(futIds, nFut);
+    if (modo != CWO_PADRAO || escondidos)
+      printf("[desc] continuar assistindo: ordem %s, %d futuro(s)%s, %d escondido(s) "
+             "(nao exibidos desligado)\n",
+             modo == CWO_SEPARAR ? "separar futuros" : modo == CWO_STREAMING
+                                 ? "estilo streaming" : "padrao",
+             nFut, modo == CWO_SEPARAR ? " na fileira propria" : " no fim", escondidos); }
 
   if (nJ > max) nJ = max;
   for (i = 0; i < nJ; i++) {

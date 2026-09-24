@@ -28,6 +28,7 @@
 #include "revela.h"
 #include "layout.h"
 #include "ajustes.h"
+#include "cwordem.h"
 #include "catalogo.h"
 #include "artehero.h"
 #include "colecoes.h"
@@ -1378,7 +1379,9 @@ void home_evento(const SDL_Event *e) {
         // card dela ja e um convite a tocar. Segurar OK continua abrindo o
         // menu — o ramo NV_HOLD_MS acima nem chega aqui.
         const Fileira *fl = &fileiras[foco.fileira];
-        if (ajustes_cw_ok_toca() &&
+        // "Proximos episodios" (issue #127) NAO toca: o episodio ainda nao foi
+        // ao ar, e nenhum addon tem fonte para ele. OK abre a pagina.
+        if (ajustes_cw_ok_toca() && strcmp(fl->chave, "upcoming_section") &&
             (fl->tipo == FILEIRA_CONTINUE || fl->tipo == FILEIRA_RETORNO ||
              !strcmp(fl->chave, "continue_watching")))
           pedidoTocar = 1;
@@ -1485,8 +1488,20 @@ static int assinaturaPrefs(void) {
   return (ajustes_cw_ligado() ? 1 : 0)
        | (ajustes_cw_estilo() << 1)
        | (ajustes_posteres_deitados() ? 8 : 0)
-       | (ajustes_rotulos_poster() ? 16 : 0);
+       | (ajustes_rotulos_poster() ? 16 : 0)
+       // A Ordenacao (issue #127): "Separar futuros" parte a fileira em duas
+       // sem a descoberta publicar nada novo quando a lista ja e a mesma.
+       | (ajustes_cw_ordem() << 5);
 }
+
+// OS CARDS FUTUROS DE "CONTINUAR ASSISTINDO" com a Ordenacao em "Separar
+// futuros" (issue #127, ver cwordem.h): indices no catalogo, na ordem da
+// fileira (a montagem ja os pos pela estreia). Separados no laco das fileiras
+// e reinseridos como "upcoming_section" logo abaixo da retomada DEPOIS do
+// arranjo por fil_unir: a fileira nao e do catalogo nem da conta, e sim uma
+// metade da retomada — registra-la em fileiras.c a poria no fim da home (chave
+// nova vai para o fim) e deixaria a pessoa separa-la da outra metade.
+static int proxHome[MAX_CARDS], nProxHome;
 static void sincronizarFileiras(void) {
   int nCat = cat_n_fileiras(), r, destino = 0;
   int assin = assinaturaPrefs();
@@ -1531,6 +1546,9 @@ static void sincronizarFileiras(void) {
   // em Ajustes: aquilo bumpa fil_revisao(), a assinatura muda, a home remonta e
   // a colecao aparece. Fechar e reabrir voltava ao mesmo lugar.
   revisao = (revisao ^ colRev) * 16777619u;
+  // Quem a montagem publicou como futuro (issue #127): so pesa em "Separar
+  // futuros", mas e um inteiro — mais barato perguntar sempre que ramificar.
+  revisao = (revisao ^ cwo_revisao()) * 16777619u;
   for (r = 0; r < nCat; r++) {
     const CatFileira *cf = cat_fileira(r);
     if (!cf) break;
@@ -1565,6 +1583,7 @@ static void sincronizarFileiras(void) {
   memcpy(antigas, fileiras, sizeof antigas);
   int temDestaque = 0;
   int destaqueIndice = -1;
+  nProxHome = 0;
   for (r = 0; r < nCat && destino < MAX_FIL - 1; r++) {
     const CatFileira *cf = cat_fileira(r);
     if (!cf) break;
@@ -1607,6 +1626,17 @@ static void sincronizarFileiras(void) {
     snprintf(fileiras[destino].catTipo, sizeof fileiras[destino].catTipo, "%s", cf->tipo);
     fileiras[destino].ini = cf->ini;
     if(!strcmp(cf->chave,"social_activity"))fileiras[destino].tipo=FILEIRA_SOCIAL;
+    if (!strcmp(cf->chave, "continue_watching") && ajustes_cw_ordem() == CWO_SEPARAR) {
+      Fileira *cw = &fileiras[destino];
+      int c, nm = 0;
+      for (c = 0; c < cw->n && nProxHome < MAX_CARDS; c++) {
+        int idx = cf->ini + c;
+        const CatItem *it = cat_item(idx);
+        if (it && cwo_e_futuro(it->imdb)) proxHome[nProxHome++] = idx;
+        else cw->itens[nm++] = idx;
+      }
+      if (nProxHome) { cw->usaItens = 1; cw->n = nm; }
+    }
     snprintf(fileiras[destino].chave, sizeof fileiras[destino].chave,
              "%s", cf->chave);
     destino++;
@@ -1810,6 +1840,31 @@ static void sincronizarFileiras(void) {
       w = mantidas; }
     memcpy(fileiras, arranjo, sizeof(Fileira) * (size_t)w);
     destino = w;
+  }
+  // "PROXIMOS EPISODIOS" LOGO ABAIXO DA RETOMADA (issue #127) — e onde o web
+  // poe a `upcoming_section`. Mesma forma, tamanho e tipo da retomada (a copia
+  // leva o que fil_tipo/fil_escala decidiram para ela). Retomada escondida pela
+  // pessoa leva esta junto; retomada que ficou SO com futuros da o lugar a esta,
+  // em vez de sobrar um cabecalho sem card.
+  if (nProxHome) {
+    int c = -1, q;
+    for (q = 0; q < destino; q++)
+      if (!strcmp(fileiras[q].chave, "continue_watching")) { c = q; break; }
+    if (c >= 0) {
+      Fileira u = fileiras[c];
+      u.n = nProxHome;
+      memcpy(u.itens, proxHome, sizeof(int) * (size_t)nProxHome);
+      u.usaItens = 1;
+      u.verTudo = 0;
+      snprintf(u.titulo, sizeof u.titulo, "%s", "Pr\xc3\xb3ximos epis\xc3\xb3""dios");
+      snprintf(u.chave, sizeof u.chave, "upcoming_section");
+      if (fileiras[c].n < 1) fileiras[c] = u;
+      else if (destino < MAX_FIL) {
+        memmove(fileiras + c + 2, fileiras + c + 1, sizeof(Fileira) * (size_t)(destino - c - 1));
+        fileiras[c + 1] = u;
+        destino++;
+      }
+    }
   }
   nFileiras = destino;
   retomarAplicada = retomarRev;

@@ -8,6 +8,6 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-visto-XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 cc -O1 -g -Wall -Wextra -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -Wno-deprecated-declarations -Wno-macro-redefined \
-  src/visto.c src/simkl.c src/syncprog.c src/progresso.c src/trakt.c \
+  src/visto.c src/simkl.c src/syncprog.c src/progresso.c src/trakt.c src/cwordem.c \
   src/vistoep.c src/js.c src/jsw.c tests/visto.c -o "$tmp/visto" -lpthread
 "$tmp/visto"

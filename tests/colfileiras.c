@@ -90,6 +90,8 @@ void cat_republicar_fileiras(const CatFileira *f, int n) { guardar(f, n); }
 // ------------------------------------------------------------------ o resto
 void  SDL_Delay(Uint32 ms)                 { usleep(ms * 1000); }
 int   ajustes_cw_fonte(void)               { return 0; }
+int   ajustes_cw_ordem(void)               { return 0; }   // Padrao (issue #127)
+int   ajustes_cw_mostrar_nao_exibidos(void) { return 1; }
 int   ajustes_idioma_ingles(void)          { return 0; }
 unsigned homeestado_geracao(void) { return 1; }
 int homeestado_contexto_valido(void) { return snapshotValido; }
