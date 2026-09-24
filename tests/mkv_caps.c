@@ -124,6 +124,20 @@ int main(void) {
   k = lerCapitulos(buf + 8, n - 8, caps, MKV_MAX_CAPS);
   ok(k == 1 && mkv_creditos_nomeados(caps, k) > 119.0, "\"Credits Roll\" casa");
 
+  // 5b. #115: "Opening Credits" no comeco E "End Credits" no fim. Vale o
+  //     ULTIMO: o primeiro punha o painel de relacionados aos 90 s de filme.
+  comeca();
+  { long c = abreChapters(); long e;
+    id2(0x45B9UL); e = tam4();
+      capitulo(0ULL, "Prologue");
+      capitulo(90ULL*1000000000ULL, "Opening Credits");
+      capitulo(3000ULL*1000000000ULL, "Act II");
+      capitulo(6900ULL*1000000000ULL, "End Credits");
+    fecha(e); fecha(c); }
+  k = lerCapitulos(buf + 8, n - 8, caps, MKV_MAX_CAPS);
+  ok(k == 4 && mkv_creditos_nomeados(caps, k) > 6899.0,
+     "abertura e final nomeados: vale o final");
+
   // 6. Lixo: nao pode travar nem devolver numero absurdo.
   comeca();
   { int i; for (i = 0; i < 64; i++) { unsigned char b = (unsigned char)(i * 7); put(&b, 1); } }

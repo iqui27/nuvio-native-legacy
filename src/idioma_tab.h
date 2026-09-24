@@ -1967,6 +1967,8 @@
   { "↑ ↓  Escolher fileira\n← →  Trocar de coluna\nOK  Pegar e mover (coluna Fileira) · Ligar, trocar card e tamanho nas outras\nVoltar  Fechar", "↑ ↓  Pick a row\n← →  Switch column\nOK  Grab and move (Row column) · Toggle, change card and size in the others\nBack  Close" },
   { "↑ ↓  Escolher fileira\n← →  Trocar de coluna\nOK  Pegar e mover (coluna Fileira) · Remover, trocar card e tamanho nas outras\nVoltar  Fechar", "↑ ↓  Pick a row\n← →  Switch column\nOK  Grab and move (Row column) · Remove, change card and size in the others\nBack  Close" },
   { "↑ ↓  Escolher fileira · segure para pular por letra\nOK  Adicionar à Home (entra na fila se a Home estiver cheia)\n↑ no topo  Abas\nVoltar  Fechar", "↑ ↓  Pick a row · hold to jump by letter\nOK  Add to Home (queued if Home is full)\n↑ at the top  Tabs\nBack  Close" },
+  { "↑ ↓  Mais notas   ·   OK para fechar", "↑ ↓  More notes   ·   OK to close" },
+  { "↑ ↓  Mais notas   ·   Voltar para fechar", "↑ ↓  More notes   ·   Back to close" },
   { "↑ ↓  Mover a fileira\nOK  Soltar aqui\nVoltar  Cancelar o movimento", "↑ ↓  Move the row\nOK  Drop it here\nBack  Cancel the move" },
   { "↑ ↓  Mover a fileira\n← →  Mover o bloco do addon\nOK  Soltar aqui\nVoltar  Cancelar o movimento", "↑ ↓  Move the row\n← →  Move the add-on block\nOK  Drop it here\nBack  Cancel the move" },
   { "↑ ↓  Mover o bloco do addon\n← →  Mover so a fileira\nOK  Soltar aqui\nVoltar  Cancelar", "↑ ↓  Move the add-on block\n← →  Move just the row\nOK  Drop it here\nBack  Cancel" },

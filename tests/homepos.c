@@ -187,8 +187,56 @@ int main(void) {
   home_encerrar();
   assert(gravouPos == 0);
 
+  // --- (c) #95 de novo ("It's back", 1.4.3): o CACHE contra a REDE ---------
+  //
+  // O arranque monta a home primeiro com o catalogo do cache (a lista de
+  // ontem) e, dezenas de segundos depois no Tizen, com a da rede. Desde a home
+  // incremental (9b17d38, 1.4.2) a remontagem reencontra cada fileira pelo ID
+  // do item que estava na coluna lembrada — e numa fileira que ninguem tocou
+  // essa coluna e a 0, cujo item e o PRIMEIRO DE ONTEM. Numa lista que muda de
+  // ordem todo dia (Top 100, tendencias) ele hoje esta na coluna 3 ou 4, e a
+  // coluna lembrada ia junto: descer ate a fileira caia no 3o/4o filme sem a
+  // pessoa ter mexido em nada nesta sessao.
+  reabrir();
+  montar(itens, ontem, 6);                   // cache: pos_3 = 12,13,14,15
+  alvo = idx("pos_3");
+  assert(alvo >= 0 && foco.colunaLembrada[alvo] == 0);
+  { CatItem *rede = calloc(48, sizeof *rede);
+    assert(rede);
+    memcpy(rede, itens, sizeof *rede * 48);
+    posCapturar();                           // o quadro antes de a rede chegar
+    // A rede traz a mesma fileira reordenada: o primeiro de ontem (12) caiu
+    // para a coluna 3.
+    { CatItem t = rede[12]; rede[12] = rede[13]; rede[13] = rede[14];
+      rede[14] = rede[15]; rede[15] = t; }
+    cat_definir_tudo(rede, 48, ontem, 6);
+    sincronizarFileiras();
+    for (int r = 0; r < nFileiras; r++) {
+      if (foco.colunaLembrada[r] != 0)
+        fprintf(stderr, "FALHOU: fileira %s abriu na coluna %d depois da rede\n",
+                fileiras[r].chave, foco.colunaLembrada[r]);
+      assert(foco.colunaLembrada[r] == 0);
+      assert(scrollX[r] == 0.0f);
+    }
+    assert(focoHero && foco.coluna == 0);
+    // Descer do destaque ate a fileira comeca no primeiro cartaz.
+    foco.fileira = idx("pos_3"); foco.coluna = foco.colunaLembrada[foco.fileira];
+    assert(foco.coluna == 0);
+    // E o que a sessao escolheu continua seguindo o item: a pessoa foi para a
+    // coluna 2 (item 14 na ordem da rede) e a lista mudou de novo.
+    foco.coluna = 2;
+    // O instantaneo que home_atualizar tira a cada quadro, antes de o fio da
+    // descoberta trocar o bloco do catalogo.
+    posCapturar();
+    { CatItem t = rede[12]; rede[12] = rede[14]; rede[14] = t; }
+    cat_definir_tudo(rede, 48, ontem, 6);
+    sincronizarFileiras();
+    assert(foco.fileira == idx("pos_3") && foco.coluna == 0);
+    free(rede);
+  }
+
   free(itens);
   for (int i = 0; i < nArq; i++) { free(arqNome[i]); free(arqDado[i]); }
-  puts("home pos: PASS (remontagem guarda coluna, reabrir zera e nao grava — #95)");
+  puts("home pos: PASS (remontagem guarda coluna, reabrir zera e nao grava, cache x rede nao move coluna — #95)");
   return 0;
 }

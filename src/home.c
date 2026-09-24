@@ -1165,7 +1165,15 @@ static int posAplicarTabela(const HomePos *t, int n,
     // incremental pode inserir/remover cards dentro da mesma chave sem
     // deslocar o foco para outro titulo. Coluna continua sendo fallback para
     // o caso de o item ter saído legitimamente do catalogo.
-    if (p->itemId[0]) {
+    //
+    // COLUNA 0 NAO SEGUE ITEM NENHUM (#95, "It's back" na 1.4.3). Fileira na
+    // coluna 0 e fileira que ninguem andou: o lugar dela e o COMECO, qualquer
+    // que seja o item que esteja la. Seguir o ID era o defeito: o arranque
+    // monta primeiro com o cache (a lista de ontem) e depois com a rede, e o
+    // primeiro item de ontem numa lista que reordena todo dia (Top 100,
+    // tendencias) esta hoje na coluna 3 ou 4 — a coluna lembrada ia junto, e
+    // descer ate a fileira caia no 3o/4o cartaz depois de reabrir o app.
+    if (p->itemId[0] && p->coluna > 0) {
       int q;
       for (q = 0; q < fileiras[r].n; q++) {
         int idx = fileiraItemIndice(&fileiras[r], q);
@@ -1187,7 +1195,8 @@ static int posAplicarTabela(const HomePos *t, int n,
   if (achou >= 0) {
     int c = colFoco;
     const HomePos *pf = posAchar(t, n, chFoco);
-    if (pf && pf->itemId[0]) {
+    // Mesma regra de cima: o foco no primeiro cartaz fica no primeiro cartaz.
+    if (pf && pf->itemId[0] && colFoco > 0) {
       int q;
       for (q = 0; q < fileiras[achou].n; q++) {
         int idx = fileiraItemIndice(&fileiras[achou], q);
