@@ -135,8 +135,20 @@ static const char *ORDEM_B =
   "{\"addon_id\":\"xperience\",\"type\":\"movie\",\"catalog_id\":\"foryou\",\"order\":1}]}}]";
 
 static volatile int rpcCatHome;
+// Modo "troca": a RPC das colecoes do perfil 1 fica presa ate a pessoa trocar
+// para o 2 — o ciclo do 1 termina com o 2 ja ativo.
+static int segurarCol, puxandoCol;
 char *sessao_rpc(const char *funcao, const char *corpo, int *st) {
   *st = 200;
+  if (!strcmp(funcao, "sync_pull_collections")) {
+    int p1 = strstr(corpo, "\"p_profile_id\":1") != NULL;
+    pthread_mutex_lock(&trava);
+    puxandoCol = 1;
+    pthread_cond_broadcast(&sinal);
+    while (segurarCol && p1) pthread_cond_wait(&sinal, &trava);
+    pthread_mutex_unlock(&trava);
+    return strdup(p1 ? "[{\"marca\":\"perfil1\"}]" : "[{\"marca\":\"perfil2\"}]");
+  }
   if (!strcmp(funcao, "sync_pull_home_catalog_settings")) {
     rpcCatHome++;
     // A conta guarda uma ordem por perfil: o 2 tem ORDEM_A, o 1 ORDEM_B.
@@ -180,7 +192,12 @@ int  ajustes_mesclar_blob(const char *b, char **s) { (void)b; *s = NULL; return 
 void buscasrec_esquecer(void) {}
 void cachearte_limpar_referencias(void) {}
 int  cat_apagar_cache(void) { return 0; }
-int  col_definir_json(const char *j) { (void)j; return 0; }
+static int colDoOutro, colDoCerto;
+int  col_definir_json(const char *j) {
+  if (j && strstr(j, "perfil1")) colDoOutro++;
+  if (j && strstr(j, "perfil2")) colDoCerto++;
+  return 0;
+}
 int  contalib_aplicar_catalogo(void) { return 0; }
 int  contalib_aplicar_vistos(void) { return 0; }
 void contalib_esquecer(void) {}
@@ -244,6 +261,31 @@ int main(int argc, char **argv) {
   int remAntes, rpcAntes;
 
   setvbuf(stdout, NULL, _IOLBF, 0);
+  if (argc > 1 && !strcmp(argv[1], "troca")) {
+    // Perfil 1 ja escolhido; a pessoa volta ao 2 com o ciclo do 1 no ar. Nada
+    // do ciclo do 1 pode ser aplicado no 2 (C9 do dono, 24/09: colecoes,
+    // biblioteca, Trakt e 103 linhas de progresso do 1 dentro do 2).
+    printf("-- sessao: no perfil 1, troca para o 2 com o ciclo do 1 no ar\n");
+    escolher(1);
+    segurarCol = 1;
+    sync_iniciar();
+    pthread_mutex_lock(&trava);
+    while (!puxandoCol) pthread_cond_wait(&sinal, &trava);
+    pthread_mutex_unlock(&trava);
+    escolher(2);
+    sync_iniciar();                    // app.c, ramo da escolha: fio vivo
+    pthread_mutex_lock(&trava);
+    segurarCol = 0;
+    pthread_cond_broadcast(&sinal);
+    pthread_mutex_unlock(&trava);
+    ateTerminar();
+    ateTerminar();
+    confere("colecoes do perfil 1 nao aplicadas no 2", colDoOutro == 0);
+    confere("ciclo do perfil 2 rodou e aplicou as dele", colDoCerto > 0);
+    confere("ordem final e a do perfil 2", !strcmp(catordem_chave(0), "xperience_movie_foryou"));
+    printf("%s\n", falhas ? "FALHOU" : "PASSOU");
+    return falhas ? 1 : 0;
+  }
   carregarAtivo();                     // main.c: perfis_carregar_ativo()
   printf("-- sessao: salvo=%d, escolhe=%d%s%s\n", ativo, alvo,
          segura ? ", responde com o 1o ciclo no ar" :

@@ -42,4 +42,9 @@ echo "$SAIDA" | grep -qF '[catordem] ordem restaurada do cache local (perfil 2)'
 # 6. Salvo 2, escolhe 1 no quadro em que o fio interrompido acabou: o ciclo
 #    completo nao pode ficar para o sync_periodico (5 min).
 sessao 1 tarde
+# 7. No perfil 1, volta ao 2 com o ciclo do 1 no ar: o ciclo do 1 inteiro e
+#    descartado, e o do 2 roda.
+sessao troca
+echo "$SAIDA" | grep -qF '[sync] ciclo do perfil 1 descartado' \
+  || { echo "FALHOU: sessao 7 nao descartou o ciclo do perfil 1"; exit 1; }
 echo "syncordem.sh: ok"

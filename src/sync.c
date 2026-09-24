@@ -614,6 +614,20 @@ static void *rodar(void *u) {
   // O puxado NAO e aplicado aqui, e sim em sync_passo, no fio principal — e
   // la a regra e "pendente local vence": o que se assistiu entre o pull e o
   // push nao volta atras.
+  // A PESSOA TROCOU DE PERFIL NO MEIO DO CICLO: nada sobe. Cada push leva
+  // p_profile_id = perfis_ativo() (agora o perfil NOVO), mas a base da costura
+  // (o blob de ajustes, a lista de addons) veio do perfil ANTERIOR — subir
+  // seria escrever o perfil 1 dentro do 2 na conta. sync_passo descarta o que
+  // foi puxado e pede a volta certa.
+  if (perfis_ativo() != perfilDoCiclo) {
+    printf("[sync] perfil trocado no meio do ciclo (%d -> %d): nada sobe\n",
+           perfilDoCiclo, perfis_ativo());
+    fflush(stdout);
+    snprintf(resumo, sizeof resumo, "perfil trocado; sincronizando de novo");
+    estado = SYNC_PRONTO;
+    fioPronto = 1;
+    return NULL;
+  }
   if (sujoAddons) empurrarAddons();
   // DEPOIS de puxarSoLeitura, pelo mesmo motivo dos addons e com um agravante:
   // a base da costura e o blob que acabou de chegar. Ver empurrarAjustes.
@@ -704,7 +718,7 @@ void sync_passo(unsigned agoraMs) {
   // frente, porque so eles mudam O QUE a descoberta vai buscar.
   if (addonsCedo) {
     addonsCedo = 0;
-    if (temAddonsRem) {
+    if (temAddonsRem && perfilDoCiclo == perfis_ativo()) {
       if (addons_definir_lista(addonsRem, nAddonsRem)) desc_repetir();
       temAddonsRem = 0;
     }
@@ -722,6 +736,32 @@ void sync_passo(unsigned agoraMs) {
   if (!fioVivo || !fioPronto) return;
   fioVivo = 0;
   fioPronto = 0;
+
+  // O CICLO INTEIRO E DE UM PERFIL SO. Trocar de perfil com o fio no ar (a
+  // pessoa entra no 1 e volta ao 2 antes de o ciclo acabar) fazia o ciclo do 1
+  // ser aplicado no 2: colecoes, biblioteca, vistos, credencial do Trakt e o
+  // PROGRESSO — prog_aplicar_remoto grava com perfis_ativo(), entao as linhas
+  // do 1 entravam no arquivo como se fossem do 2 e o "Continuar assistindo" do
+  // 2 passava a ser o do 1 (medido na C9 do dono, 24/09: 103 linhas aceitas).
+  // Descartar tudo e pedir a volta do perfil certo; o que ja estava na tela e
+  // do perfil novo (invalidarPerfil em app.c).
+  if (!cicloInterrompido && perfilDoCiclo != perfis_ativo()) {
+    printf("[sync] ciclo do perfil %d descartado: o perfil ativo agora e %d\n",
+           perfilDoCiclo, perfis_ativo());
+    fflush(stdout);
+    temAddonsRem = 0;
+    temTraktRem = 0; traktTok[0] = 0;
+    temTmdb = temMdb = 0;
+    free(catHomeBlob); catHomeBlob = NULL; temCatHomeBlob = 0;
+    free(colBlob);     colBlob = NULL;     temColBlob = 0;
+    free(bibBlob);     bibBlob = NULL;     temBibBlob = 0;
+    free(vistosBlob);  vistosBlob = NULL;  temVistosBlob = 0;
+    temAjustesBlob = 0;
+    syncprog_esquecer();
+    pedidoComFioVivo = 0;
+    sync_iniciar();
+    return;
+  }
 
   // Uma credencial que muda o CONTEUDO do catalogo obriga a remontar. Vale
   // para o Trakt (fileiras proprias) e para os addons (sao a fonte dos
@@ -754,17 +794,6 @@ void sync_passo(unsigned agoraMs) {
   // Uma remontagem por ciclo de sync custaria a home inteira a cada 5 minutos,
   // e o baseline de jank desta TV nao tem essa folga; duas remontagens no mesmo
   // quadro (addons e ordem) custariam o dobro por nada.
-  // SO A ORDEM DO PERFIL QUE ESTA NA TELA. Um ciclo que partiu com o perfil
-  // anterior e terminou depois da troca traria a ordem do outro perfil — e,
-  // pior, a gravaria no cache DESTE (catordem_cache_gravar usa perfis_ativo()).
-  // A volta seguinte, pedida ao terminar, traz a certa.
-  if (temCatHomeBlob && catHomeBlob && perfilDoCiclo != perfis_ativo()) {
-    printf("[catordem] ordem do perfil %d descartada: o perfil ativo agora e %d\n",
-           perfilDoCiclo, perfis_ativo());
-    free(catHomeBlob);
-    catHomeBlob = NULL;
-    temCatHomeBlob = 0;
-  }
   if (temCatHomeBlob && catHomeBlob) {
     if (catordem_ler(catHomeBlob)) {
       catordem_cache_gravar(perfis_ativo(), sessao_usuario(), catHomeBlob);
