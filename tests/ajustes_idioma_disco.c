@@ -52,6 +52,15 @@ int main(void) {
   assert(!strcmp(ling_legenda(), "en"));
   assert(!strcmp(ling_audio(), "es"));
 
+  // ABRIR A TELA DE AJUSTES nao zera a escolha (#129, a causa de campo):
+  // conferirPadroes comparava o idioma contra o n=2 da tabela e voltava tudo
+  // a "Da conta" — "padrao fora da lista em 4 (\"Idioma do áudio\")".
+  ajustes_iniciar();
+  assert(valor[AJ_LEG_LINGUA] == en);
+  assert(valor[AJ_AUD_LINGUA] == es);
+  ajustes_iniciar();
+  assert(valor[AJ_LEG_LINGUA] == en);
+
   // O que ficou em disco continua sendo a escolha, para o proximo arranque.
   { char linha[96]; int achouLeg = 0;
     f = fopen(caminho, "r");

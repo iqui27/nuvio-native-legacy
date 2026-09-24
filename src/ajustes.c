@@ -1737,14 +1737,22 @@ static void conferirSecoes(void) {
 // CORRIGIDO na hora: um padrao fora da lista vira o primeiro item. A linha no
 // log diz qual opcao, para o conserto de verdade (o inicializador que falta)
 // acontecer no lugar certo.
+static int nValores(int op);
+// O LIMITE E O DE nValores, e nao o `n` da tabela (#129). As duas linhas de
+// idioma tem n=2 na tabela const e a lista real (nLingua) — conferir contra 2
+// zerava todo idioma escolhido alem de "Da conta" a cada abertura desta tela,
+// e a gravacao seguinte levava o zero ao disco: "o ingles nao fica salvo".
+// Visto nos logs de campo da 1.4.1 a 1.4.3: "padrao fora da lista em 4
+// (\"Idioma do áudio\"): 30 de 2 valores".
 static void conferirPadroes(void) {
   int i;
   for (i = 0; i < AJ_N; i++) {
     const Opcao *o = &OPCOES[i];
-    if (o->tipo == OP_ESCOLHA && o->n > 0 && (valor[i] < 0 || valor[i] >= o->n)) {
+    int n = nValores(i);
+    if (o->tipo == OP_ESCOLHA && n > 0 && (valor[i] < 0 || valor[i] >= n)) {
       printf("[ajustes] padrao fora da lista em %d (\"%s\"): %d de %d valores"
              " — vetor `valor[]` desalinhado; usando o primeiro\n",
-             i, o->rotulo, valor[i], o->n);
+             i, o->rotulo, valor[i], n);
       valor[i] = 0;
     }
   }
@@ -1753,6 +1761,8 @@ static void conferirPadroes(void) {
 
 int ajustes_iniciar(void) {
   conferirSecoes();
+  // ANTES de conferir: e rotulosDeIdioma quem preenche nLingua.
+  rotulosDeIdioma();
   conferirPadroes();
   // Fora do vetor posicional de proposito: aquele vetor ja esta com menos
   // entradas do que o enum (as ultimas ficam em 0), e um 1 no lugar errado
