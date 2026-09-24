@@ -1309,6 +1309,13 @@ void ajustes_dir(const char *dir) {
   if (!dir || !*dir) return;
   snprintf(dirAjustes, sizeof dirAjustes, "%s", dir);
   fanartCarregar();
+  // ANTES DO LACO, e nao so no fim (#129): limita() confere as duas linhas de
+  // idioma contra nValores() -> nLingua, e quem preenche nLingua e esta
+  // chamada. No arranque ela ainda nao tinha rodado: a lista tinha "1 valor",
+  // "legendaIdioma 3" era recusado como fora da faixa e a legenda voltava a
+  // "Da conta". Quem salvava era a SEGUNDA leitura de main.c — e a migracao do
+  // Tizen logo abaixo grava no meio da primeira, levando o padrao ao disco.
+  rotulosDeIdioma();
   snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dirAjustes);
   f = fopen(caminho, "r");
   if (!f) return;
@@ -1979,7 +1986,7 @@ static const char *ajudaOpcao(int op) {
     // --- Reproducao
     case AJ_QUALIDADE: return "Define a preferência de resolução. A disponibilidade depende das fontes do addon.";
     case AJ_DV: case AJ_ATMOS: return "Preferência para fontes compatíveis. O formato disponível também depende do arquivo e da TV.";
-    case AJ_LEG_LINGUA: return "Idioma procurado primeiro na lista de legendas de cada título. \"Da conta\" segue o que está no seu perfil.";
+    case AJ_LEG_LINGUA: return "Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.";
     case AJ_AUD_LINGUA: return "Faixa de áudio escolhida quando o arquivo tem mais de uma. Se o idioma não existir no arquivo, o player usa a primeira.";
     case AJ_PAUSA_OVERLAY: return "Ao pausar, sobe uma ficha com a sinopse e os dados do que você está vendo.";
     case AJ_STALKER_PORTAL: return "Os canais do portal entram no Guia de TV, junto com os dos addons. Endereço sem http:// e sem barra no fim: meu-portal.exemplo.tv:8080";

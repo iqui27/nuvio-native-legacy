@@ -208,3 +208,26 @@ int ling_opcao_n(void) { return (int)(sizeof OPCOES_COD / sizeof *OPCOES_COD); }
 const char *ling_opcao_codigo(int i) {
   return (i >= 0 && i < ling_opcao_n()) ? OPCOES_COD[i] : "";
 }
+
+// ------------------------------------------------------------ legenda automatica
+
+int ling_legenda_auto(const char *pref,
+                      const char *const *emb, int nEmb, int embFechado,
+                      const char *const *add, int nAdd, int addFechado) {
+  int i;
+  // Sem preferencia nao ha o que ligar: "sem filtro" nao e "ligue qualquer
+  // uma". E "none" e a pessoa pedindo NENHUMA — ligar seria desobedecer.
+  if (!pref || !*pref || !strcasecmp(pref, "none")) return LING_AUTO_NADA;
+  // EMBUTIDA PRIMEIRO: vem do proprio arquivo, entao o tempo das falas bate com
+  // este corte. A do addon e um arquivo de outra pessoa para outro release.
+  // Faixa sem etiqueta ("") nunca casa: ling_casa so aceita tudo quando a
+  // PREFERENCIA e vazia, e aqui ela nao e.
+  for (i = 0; i < nEmb; i++)
+    if (emb[i] && emb[i][0] && ling_casa(emb[i], pref)) return i;
+  // Os idiomas embutidos ainda podem chegar (a sonda do MKV nao voltou): pular
+  // para o addon agora trocaria a legenda certa do arquivo por uma de fora.
+  if (!embFechado) return LING_AUTO_ESPERA;
+  for (i = 0; i < nAdd; i++)
+    if (add[i] && add[i][0] && ling_casa(add[i], pref)) return nEmb + i;
+  return addFechado ? LING_AUTO_NADA : LING_AUTO_ESPERA;
+}

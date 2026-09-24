@@ -10,8 +10,11 @@
 #include "legenda.h"
 #include "mkvass.h"
 #include "ajustes.h"
+#include "catalogo.h"
+#include "linguas.h"
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 // 1400 e nao 1180: com a terceira coluna, "Muito pequena" e "Escuro 100%" nao
 // cabiam no espaco do valor e saiam cortados. A folha de AUDIO, que tem uma
@@ -91,6 +94,12 @@ static int legOverlay = -1, legOverlayNoGo = -1;
 // e diz no log por que ficou onde ficou.
 static int legOverlayEsperando = -1;
 
+// LEGENDA AUTOMATICA DA SESSAO (#129): 1 do inicio de uma reproducao ate a
+// decisao (ligou, nao havia o que ligar, ou a pessoa escolheu na folha).
+// `legAutoDesde` e o instante em que o video ficou pronto, base dos prazos.
+static int legAuto;
+static Uint32 legAutoDesde;
+
 // NO-GO PASSAGEIRO x DEFINITIVO. Um Range que falhou (rede, timeout, 5xx, o
 // servidor que devolveu o arquivo inteiro uma vez) nao e motivo para entregar
 // a faixa a TV: o overlay fica com o que ja colheu e o mkvass tenta de novo
@@ -144,6 +153,7 @@ void faixas_reiniciar(void) {
   legExterna = -1; legOverlay = legOverlayNoGo = legOverlayEsperando = -1; aberta = 0;
   legOverlayFalhas = legOverlayRecusas = legOverlayNoGoEstado = 0; legOverlayRetomar = 0;
   mkvass_parar(); legenda_desligar();
+  legAuto = 1; legAutoDesde = 0;
 }
 
 // Indice da legenda que a folha deve marcar como ATIVA.
@@ -313,11 +323,12 @@ static const char *rotuloLegenda(int i, const char **marca) {
     return l->rotulo; }
 }
 
-static void aplicar(void) {
-  if (coluna == 0) {
-    video_escolher_audio(foco[0]);
-  } else {
-    int i = foco[1] - 1;
+// Liga a legenda `i` da lista combinada (-1 desliga; embutidas primeiro, depois
+// as de addon). E o OK da folha, e tambem o que a legenda automatica usa: os
+// dois tem de passar pelo mesmo caminho, senao uma faixa ASS escolhida sozinha
+// iria a TV sem o overlay e sem a linha de log que a folha deixa.
+static void escolherLegenda(int i) {
+  {
     int emb = video_n_legenda();
     // Qualquer escolha encerra a colheita anterior: o fio do mkvass nao pode
     // continuar entregando ao overlay uma faixa que a pessoa acabou de trocar.
@@ -368,6 +379,71 @@ static void aplicar(void) {
   }
 }
 
+static void aplicar(void) {
+  if (coluna == 0) {
+    video_escolher_audio(foco[0]);
+  } else {
+    // A pessoa escolheu: a automatica nao mexe mais nesta sessao, nem se a
+    // escolha foi "Desativada".
+    legAuto = 0;
+    escolherLegenda(foco[1] - 1);
+  }
+}
+
+// LEGENDA AUTOMATICA (#129). Roda a cada quadro enquanto `legAuto` esta de pe,
+// e so decide quando da para decidir bem (ling_legenda_auto). Os prazos existem
+// porque as duas listas podem nunca "fechar": a sonda do MKV so dispara com
+// buffer saudavel, e numa fonte lenta isso demora; o fio de legendas consulta
+// cada addon com 25 s de teto. Vencido o prazo, decide-se com o que ha.
+#define FX_AUTO_EMB_MS  30000u   // espera pelos idiomas das embutidas
+#define FX_AUTO_FIM_MS  60000u   // desiste de vez: legenda ligada no minuto 5 assusta
+static void legendaAutomatica(Uint32 agora) {
+  const char *emb[NV_FAIXA_MAX], *add[LEG_MAX];
+  const CatItem *ci;
+  int nEmb, nAdd = 0, embFechado, addFechado = 1, i, r;
+  Uint32 passou;
+  if (!legAuto || aberta || !player_aberto() || !player_com_video()) return;
+  // Canal ao vivo nao tem legenda de addon nem idioma no arquivo que valha.
+  if (player_id_canal()[0]) { legAuto = 0; return; }
+  // A lista de faixas so existe depois do sourceInfo (LG) / lerFaixas (Tizen).
+  // Antes dele a sonda "ja voltou" por falta de pendencia (ver
+  // video_mkv_sondado) e as embutidas pareceriam fechadas e vazias.
+  if (!legAutoDesde) legAutoDesde = agora | 1u;
+  passou = agora - legAutoDesde;
+  if (!video_n_audio() && !video_n_legenda() && passou < 8000u) return;
+  nEmb = video_n_legenda();
+  if (nEmb > NV_FAIXA_MAX) nEmb = NV_FAIXA_MAX;
+  for (i = 0; i < nEmb; i++) { const VideoFaixa *f = video_legenda(i); emb[i] = f ? f->idioma : ""; }
+  embFechado = video_mkv_sondado() != 0 || passou >= FX_AUTO_EMB_MS;
+  // So confia na lista dos addons quando ela e DESTE titulo: sem imdb o app
+  // nao pede legenda nenhuma (app.c), e o que estiver em memoria e do anterior.
+  ci = cat_item(player_indice());
+  if (ci && ci->imdb[0]) {
+    nAdd = addons_n_legendas();
+    if (nAdd > LEG_MAX) nAdd = LEG_MAX;
+    for (i = 0; i < nAdd; i++) { const Legenda *l = addons_legenda(i); add[i] = l ? l->idioma : ""; }
+    addFechado = addons_legendas_prontas();
+  }
+  if (passou >= FX_AUTO_FIM_MS) embFechado = addFechado = 1;
+  r = ling_legenda_auto(ling_legenda(), emb, nEmb, embFechado, add, nAdd, addFechado);
+  if (r == LING_AUTO_ESPERA) return;
+  legAuto = 0;
+  if (r == LING_AUTO_NADA) {
+    if (ling_legenda()[0] && strcasecmp(ling_legenda(), "none"))
+      printf("[legenda] automatica: nada em '%s' (%d embutida(s), %d de addon)\n",
+             ling_legenda(), nEmb, nAdd);
+    fflush(stdout);
+    return;
+  }
+  // Ja esta nela (o arquivo marcou a faixa como padrao): nao religa.
+  if (r == legendaAtiva()) return;
+  printf("[legenda] automatica: '%s' -> %s %d (%s) aos %u ms\n", ling_legenda(),
+         r < nEmb ? "embutida" : "addon", r < nEmb ? r : r - nEmb,
+         r < nEmb ? emb[r] : add[r - nEmb], (unsigned)passou);
+  fflush(stdout);
+  escolherLegenda(r);
+}
+
 void faixas_evento(const SDL_Event *e) {
   SDL_Keycode k;
   if (!aberta || e->type != SDL_KEYDOWN) return;
@@ -402,6 +478,7 @@ static const char *motivoNoGo(int e) {
 
 void faixas_atualizar(float dt, Uint32 agora) {
   anim = anim_mola(anim, aberta ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
+  legendaAutomatica(agora);
   // Recuo vencido: a MESMA faixa de novo. O overlay nao foi desligado — o que
   // ja estava colhido continua na tela, e o fio novo retoma do sidecar parcial.
   if (legOverlay >= 0 && legOverlayRetomar && (Sint32)(agora - legOverlayRetomar) >= 0) {

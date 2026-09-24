@@ -412,6 +412,11 @@ int addons_n_legendas(void) {
   pthread_mutex_lock(&legTrava); n = nLegs; pthread_mutex_unlock(&legTrava);
   return n;
 }
+int addons_legendas_prontas(void) {
+  int r;
+  pthread_mutex_lock(&legTrava); r = !fioLegVivo && legId[0]; pthread_mutex_unlock(&legTrava);
+  return r;
+}
 const Legenda *addons_legenda(int i) {
   const Legenda *r = NULL;
   pthread_mutex_lock(&legTrava);
