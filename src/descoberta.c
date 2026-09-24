@@ -2197,33 +2197,61 @@ static int montarContinuar(CatItem *saida, int max) {
     static int perm[CONT_MAX * 3];
     static const char *futIds[CONT_MAX * 3];
     long long agora = (long long)time(NULL) * 1000LL;
-    int modo = ajustes_cw_ordem(), escondidos = 0, principal, nFut = 0, w = 0;
+    int modo = ajustes_cw_ordem(), naoExibidos = ajustes_cw_mostrar_nao_exibidos();
+    int escondidos = 0, semData = 0, principal, nFut = 0, mp, mf, w = 0;
     for (i = 0; i < nJ; i++) {
       const CatItem *c = juntos[i].item;
       CwoItem x;
       x.aSeguir = c->progresso == 0 &&
                   (trakt_e_a_seguir(c->imdb) || simkl_e_a_seguir(c->imdb));
       x.estreiaMs = x.aSeguir ? cwo_estreia(c->imdb) : CWO_SEM_DATA;
-      if (!ajustes_cw_mostrar_nao_exibidos() && cwo_futuro(&x, agora)) { escondidos++; continue; }
+      // POR ITEM, para o log de campo dizer POR QUE um "a seguir" nao virou
+      // futuro: sem data ele conta como exibido (como o `hasAired !== false`
+      // do web) e a Ordenacao nao o move.
+      if (x.aSeguir && x.estreiaMs == CWO_SEM_DATA) {
+        semData++;
+        printf("[desc] continuar assistindo: a seguir %s sem data de estreia (conta como exibido)\n",
+               c->imdb);
+      }
+      if (!naoExibidos && cwo_futuro(&x, agora)) {
+        escondidos++;
+        printf("[desc] continuar assistindo: a seguir %s ainda nao foi ao ar; escondido "
+               "(nao exibidos desligado)\n", c->imdb);
+        continue;
+      }
       juntos[w] = juntos[i];
       cwo[w++] = x;
     }
     nJ = w;
     principal = cwo_ordenar(cwo, nJ, modo, agora, perm);
     for (i = 0; i < nJ; i++) ordenados[i] = juntos[perm[i]];
-    memcpy(juntos, ordenados, sizeof *juntos * (size_t)nJ);
-    // O corte de `max` vem DEPOIS, como o slice do web: com a fileira cheia sao
-    // os futuros que ficam de fora, nunca o que a pessoa esta assistindo.
-    for (i = principal; i < nJ && i < max; i++) futIds[nFut++] = juntos[i].item->imdb;
-    // Publicado ANTES de cat_trocar_continuar (quem chama publica a fileira
-    // depois deste retorno): a home nunca ve a lista nova com o conjunto velho.
-    cwo_publicar_futuros(futIds, nFut);
-    if (modo != CWO_PADRAO || escondidos)
-      printf("[desc] continuar assistindo: ordem %s, %d futuro(s)%s, %d escondido(s) "
-             "(nao exibidos desligado)\n",
-             modo == CWO_SEPARAR ? "separar futuros" : modo == CWO_STREAMING
-                                 ? "estilo streaming" : "padrao",
-             nFut, modo == CWO_SEPARAR ? " na fileira propria" : " no fim", escondidos); }
+    // O CORTE DE `max` COM RESERVA PARA OS FUTUROS (cwo_corte, cwordem.h).
+    // Antes era um slice de [exibidos..., futuros...]: com a fileira cheia —
+    // 22 candidatos para 12 lugares na C9 do dono — os futuros eram sempre os
+    // cortados, e "Separar futuros"/"Estilo streaming" nao mudavam nada.
+    cwo_corte(principal, nJ - principal, max, &mp, &mf);
+    for (i = 0; i < mp; i++) juntos[i] = ordenados[i];
+    for (i = 0; i < mf; i++) {
+      juntos[mp + i] = ordenados[principal + i];
+      futIds[nFut++] = juntos[mp + i].item->imdb;
+    }
+    if (modo != CWO_PADRAO)
+      for (i = 0; i < mf; i++)
+        printf("[desc] continuar assistindo: futuro %s estreia %lld%s\n",
+               futIds[i], cwo_estreia(futIds[i]),
+               modo == CWO_SEPARAR ? " (Proximos episodios)" : " (no fim)");
+    { int cortadosFut = nJ - principal - mf, cortados = principal - mp;
+      nJ = mp + mf;
+      // Publicado ANTES de cat_trocar_continuar (quem chama publica a fileira
+      // depois deste retorno): a home nunca ve a lista nova com o conjunto velho.
+      cwo_publicar_futuros(futIds, nFut);
+      if (modo != CWO_PADRAO || escondidos || semData)
+        printf("[desc] continuar assistindo: ordem %s, %d futuro(s)%s, %d escondido(s), "
+               "%d sem data, nao exibidos %s, corte: %d exibido(s) e %d futuro(s) fora\n",
+               modo == CWO_SEPARAR ? "separar futuros" : modo == CWO_STREAMING
+                                   ? "estilo streaming" : "padrao",
+               nFut, modo == CWO_SEPARAR ? " na fileira propria" : " no fim", escondidos,
+               semData, naoExibidos ? "ligado" : "desligado", cortados, cortadosFut); } }
 
   if (nJ > max) nJ = max;
   for (i = 0; i < nJ; i++) {

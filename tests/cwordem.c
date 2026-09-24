@@ -72,6 +72,16 @@ int main(void) {
     cwo_publicar_futuros(NULL, 0);
     assert(!cwo_e_futuro("tt5:2:1")); }
   puts("ok  futuros publicados: substitui o conjunto inteiro");
+  // O corte com reserva (Brothers, C9 24/09: 21 exibidos + 1 futuro, 12 lugares).
+  { int mp, mf;
+    cwo_corte(21, 1, 12, &mp, &mf); assert(mp == 11 && mf == 1);
+    cwo_corte(21, 9, 12, &mp, &mf); assert(mp == 8 && mf == 4);    // ate um terco
+    cwo_corte(3, 9, 12, &mp, &mf);  assert(mp == 3 && mf == 9);    // sobra vai p/ futuros
+    cwo_corte(5, 0, 12, &mp, &mf);  assert(mp == 5 && mf == 0);
+    cwo_corte(20, 0, 12, &mp, &mf); assert(mp == 12 && mf == 0);
+    cwo_corte(3, 2, 4, &mp, &mf);   assert(mp == 3 && mf == 1);    // minimo 1
+    cwo_corte(0, 0, 0, &mp, &mf);   assert(mp == 0 && mf == 0); }
+  puts("ok  corte: futuros ganham ate um terco da fileira cheia");
   puts("cwordem: tudo ok");
   return 0;
 }

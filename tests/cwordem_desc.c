@@ -103,31 +103,55 @@ int ajustes_cw_mostrar_nao_exibidos(void) { return naoExibidosTeste; }
 //   tt2       pausado
 #define DIA (24LL * 60 * 60 * 1000)
 static long long agoraMs;
-static const struct { const char *id; int seguir, prog; long long quando, estreiaDias; } FALSO[] = {
+typedef struct { const char *id; int seguir, prog; long long quando, estreiaDias; } Falso;
+static const Falso FALSO[] = {
   { "ttA:1:3", 1,  0, 900500,  10 },
   { "tt1",     0, 40, 900400,   0 },
   { "ttB:2:1", 1,  0, 900300,   1 },
   { "ttC:1:8", 1,  0, 900200,  -1 },
   { "tt2",     0, 60, 900100,   0 },
 };
-#define NFALSO ((int)(sizeof FALSO / sizeof *FALSO))
+// BROTHERS (C9 do dono, 24/09): o Trakt manda 10 itens, TODOS "a seguir", e o
+// mais recente e Brothers S1E6 — que estreia em 21/10. A conta tem 12 em
+// andamento, um deles Brothers S1E4 (mais velho que o S1E6 do Trakt). Sao 21
+// candidatos para 12 lugares. Com o slice simples o futuro era sempre o
+// cortado: "Separar futuros" dava "0 futuro(s)" e Brothers sumia da home.
+static const Falso BROTHERS[] = {
+  { "tt6773088:1:6",  1, 0, 900900,  27 },
+  { "tt32260680:1:2", 1, 0, 900800,  -2 },
+  { "tt10541088:1:2", 1, 0, 900700,  -3 },
+  { "tt11691774:1:2", 1, 0, 900600,  -4 },
+  { "tt31091039:5:4", 1, 0, 900500,  -5 },
+  { "tt31937954:1:3", 1, 0, 900400, -183 },
+  { "tt2304589:1:2",  1, 0, 900300,  -6 },
+  { "tt13111078:1:2", 1, 0, 900200,  -7 },
+  { "tt10986410:1:2", 1, 0, 900100,  -8 },
+  { "tt8599532:1:2",  1, 0, 900000,  -9 },
+};
+static const Falso *tabela = FALSO;
+static int semDataPrimeiro;   // 1 = o primeiro da tabela vem sem `released`
+static int nTabela = (int)(sizeof FALSO / sizeof *FALSO);
+#define NFALSO nTabela
 int trakt_e_a_seguir(const char *id) {
   int i;
-  for (i = 0; i < NFALSO; i++) if (!strcmp(FALSO[i].id, id)) return FALSO[i].seguir;
+  for (i = 0; i < NFALSO; i++) if (!strcmp(tabela[i].id, id)) return tabela[i].seguir;
   return 0;
 }
 int simkl_e_a_seguir(const char *id) { (void)id; return 0; }
 int trakt_continuar(CatItem *s, int m) {
   int i;
   for (i = 0; i < NFALSO && i < m; i++) {
+    const Falso *f = &tabela[i];
     memset(&s[i], 0, sizeof s[i]);
-    snprintf(s[i].imdb, sizeof s[i].imdb, "%s", FALSO[i].id);
-    snprintf(s[i].tipo, sizeof s[i].tipo, "%s", FALSO[i].seguir ? "series" : "movie");
-    if (FALSO[i].seguir) sscanf(strchr(FALSO[i].id, ':') + 1, "%d:%d", &s[i].temporada, &s[i].episodio);
-    s[i].progresso = FALSO[i].prog;
-    s[i].retomadoMs = FALSO[i].quando;
+    snprintf(s[i].imdb, sizeof s[i].imdb, "%s", f->id);
+    snprintf(s[i].tipo, sizeof s[i].tipo, "%s", f->seguir ? "series" : "movie");
+    if (f->seguir) sscanf(strchr(f->id, ':') + 1, "%d:%d", &s[i].temporada, &s[i].episodio);
+    s[i].progresso = f->prog;
+    s[i].retomadoMs = f->quando;
     // O que trakt.c faz no enfeite, com o `released` do Cinemeta.
-    if (FALSO[i].seguir) cwo_marcar_estreia(FALSO[i].id, agoraMs + FALSO[i].estreiaDias * DIA);
+    if (f->seguir)
+      cwo_marcar_estreia(f->id, semDataPrimeiro && i == 0 ? CWO_SEM_DATA
+                                                         : agoraMs + f->estreiaDias * DIA);
   }
   return i;
 }
@@ -170,7 +194,7 @@ int main(void) {
     int nc = montarContinuar(lote, 4);
     assert(nc == 4 && !strcmp(lote[3].imdb, "ttB:2:1"));
     assert(cwo_e_futuro("ttB:2:1") && !cwo_e_futuro("ttA:1:3"));
-    puts("ok  corte da fileira leva os futuros primeiro"); }
+    puts("ok  fileira curta: o futuro fica com o lugar reservado, o outro sai"); }
 
   { static const char *const e[] = { "tt1", "ttC:1:8", "tt2" };
     naoExibidosTeste = 0;
@@ -179,6 +203,74 @@ int main(void) {
     modoTeste = CWO_PADRAO;
     conferir("nao exibidos desligado (padrao)", e, 3);
     puts("ok  nao exibidos desligado: futuros saem em qualquer modo"); }
+
+  // --- BROTHERS: fileira cheia, o futuro e o mais recente ---------------------
+  { int k;
+    tabela = BROTHERS;
+    nTabela = (int)(sizeof BROTHERS / sizeof *BROTHERS);
+    for (k = 0; k < 12; k++) {
+      ProgRegistro r;
+      memset(&r, 0, sizeof r);
+      if (k == 0) {             // Brothers S1E4 na conta, MAIS VELHO que o S1E6 do Trakt
+        snprintf(r.contentId, sizeof r.contentId, "tt6773088");
+        r.temporada = 1; r.episodio = 4;
+      } else snprintf(r.contentId, sizeof r.contentId, "tt70000%02d", k);
+      r.posSeg = 1200; r.durSeg = 3000;       // 40%
+      r.lastWatchedMs = 800000 - k * 100;
+      assert(prog_aplicar_remoto(&r));
+    }
+    naoExibidosTeste = 1;
+
+    // Padrao: pelo instante, Brothers (o mais recente) primeiro.
+    { CatItem lote[CONT_MAX];
+      int nc;
+      modoTeste = CWO_PADRAO;
+      nc = montarContinuar(lote, CONT_MAX);
+      assert(nc == 12 && !strcmp(lote[0].imdb, "tt6773088:1:6"));
+      for (k = 1; k < nc; k++) assert(strncmp(lote[k].imdb, "tt6773088", 9));
+      assert(!cwo_e_futuro("tt6773088:1:6"));
+      puts("ok  brothers padrao: o S1E6 do Trakt na frente, o S1E4 da conta fora"); }
+
+    // Separar futuros: Brothers FICA na lista (no fim) e e publicado como futuro.
+    { CatItem lote[CONT_MAX];
+      int nc;
+      modoTeste = CWO_SEPARAR;
+      nc = montarContinuar(lote, CONT_MAX);
+      assert(nc == 12);
+      assert(!strcmp(lote[11].imdb, "tt6773088:1:6"));
+      assert(!strcmp(lote[0].imdb, "tt32260680:1:2"));
+      assert(cwo_e_futuro("tt6773088:1:6"));
+      assert(!cwo_e_futuro("tt32260680:1:2") && !cwo_e_futuro("tt31937954:1:3"));
+      puts("ok  brothers separar: S1E6 publicado como futuro, nao cortado");
+      modoTeste = CWO_STREAMING;
+      nc = montarContinuar(lote, CONT_MAX);
+      assert(nc == 12 && !strcmp(lote[11].imdb, "tt6773088:1:6"));
+      puts("ok  brothers streaming: S1E6 no fim da fileira"); }
+
+    // showUnairedNextUp desligado: Brothers sai, e a fileira continua cheia.
+    { CatItem lote[CONT_MAX];
+      int nc;
+      naoExibidosTeste = 0;
+      modoTeste = CWO_SEPARAR;
+      nc = montarContinuar(lote, CONT_MAX);
+      assert(nc == 12);
+      for (k = 0; k < nc; k++) assert(strncmp(lote[k].imdb, "tt6773088", 9));
+      assert(!cwo_e_futuro("tt6773088:1:6"));
+      puts("ok  brothers nao exibidos desligado: S1E6 escondido, fileira cheia"); }
+
+    // Sem data (o Cinemeta nao deu `released`): conta como exibido, fica na
+    // frente pelo instante e nao e publicado como futuro.
+    { CatItem lote[CONT_MAX];
+      int nc;
+      naoExibidosTeste = 1;
+      modoTeste = CWO_SEPARAR;
+      semDataPrimeiro = 1;
+      nc = montarContinuar(lote, CONT_MAX);
+      semDataPrimeiro = 0;
+      assert(nc == 12 && !strcmp(lote[0].imdb, "tt6773088:1:6"));
+      assert(!cwo_e_futuro("tt6773088:1:6"));
+      puts("ok  brothers sem data: conta como exibido (e o log diz)"); }
+    naoExibidosTeste = 1; }
   puts("cwordem_desc: tudo ok");
   return 0;
 }

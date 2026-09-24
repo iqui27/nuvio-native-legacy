@@ -362,6 +362,11 @@ static int enfeitar(CatItem *d, const char *tipo) {
         js_texto(ini, js_fim(ini), "firstAired", quando, sizeof quando);
       ms = js_ms_iso(quando);
       cwo_marcar_estreia(d->imdb, ms > 0 ? ms : CWO_SEM_DATA);
+      if (ms <= 0)
+        printf("[trakt] estreia: %s sem released/firstAired no Cinemeta (\"%s\")\n",
+               d->imdb, quando);
+    } else {
+      printf("[trakt] estreia: %s fora do videos[] do Cinemeta; sem data\n", d->imdb);
     }
   }
   // So completa buracos: nao trocar metahub por vazio se o Cinemeta omitir.
