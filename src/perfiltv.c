@@ -86,6 +86,16 @@ int ptv_tex_teto_mb(PtvPlataforma p, long mem) {
 
 int ptv_fios_rede_max(PtvPlataforma p) { return p == PTV_TIZEN ? 2 : 4; }
 
+// Fios que a RAM aceita: a LG abaixo de 1,2 GB fica nos 2 da tabela em
+// QUALQUER perfil — padrao, candidato de Qualidade ou perfil salvo. Antes so
+// o padrao respeitava isso; o candidato de Qualidade pedia ptv_fios_rede_max
+// (4), e LGs de 658 MB aprovaram 64 MB com 4 fios (diagnostico de campo,
+// pessoas 80cd1a98 e f9f204be) — os 4 corpos em voo que a tabela evita.
+static int fiosTeto(PtvPlataforma p, long mem) {
+  if (p == PTV_LG && mem && mem < 1200) return 2;
+  return ptv_fios_rede_max(p);
+}
+
 // Teto de heroi que a RAM aceita. No Tizen 1920 so passa com 2 GB ou mais
 // (a mesma linha de tetoDoHeroi); abaixo disso, 1280 sempre.
 int ptv_heroi_max(PtvPlataforma p, long mem) {
@@ -97,7 +107,7 @@ int ptv_heroi_max(PtvPlataforma p, long mem) {
 void ptv_padrao(PtvPlataforma p, long mem, PtvPerfil *out) {
   if (!out) return;
   out->texMb = ptv_tex_auto_mb(p, mem);
-  out->fiosRede = (p == PTV_LG && mem && mem < 1200) ? 2 : ptv_fios_rede_max(p);
+  out->fiosRede = fiosTeto(p, mem);
   // Padrao do Tizen e 1280 mesmo com 2 GB: 1920 la e escolha de quem pos a
   // qualidade em Alta, nunca o padrao (ver a tabela no topo).
   out->heroiLarg = p == PTV_TIZEN ? 1280 : ptv_heroi_max(p, mem);
@@ -132,7 +142,7 @@ int ptv_limitar(PtvPlataforma p, long mem, PtvPerfil *pf) {
   if (pf->texMb < 16) { pf->texMb = ptv_tex_auto_mb(p, mem); mudou = 1; }
   if (pf->texMb > teto) { pf->texMb = teto; mudou = 1; }
   if (pf->fiosRede < 1) { pf->fiosRede = 1; mudou = 1; }
-  if (pf->fiosRede > ptv_fios_rede_max(p)) { pf->fiosRede = ptv_fios_rede_max(p); mudou = 1; }
+  if (pf->fiosRede > fiosTeto(p, mem)) { pf->fiosRede = fiosTeto(p, mem); mudou = 1; }
   if (pf->heroiLarg < 1280) { pf->heroiLarg = 1280; mudou = 1; }
   if (pf->heroiLarg > ptv_heroi_max(p, mem)) { pf->heroiLarg = ptv_heroi_max(p, mem); mudou = 1; }
   return mudou;
