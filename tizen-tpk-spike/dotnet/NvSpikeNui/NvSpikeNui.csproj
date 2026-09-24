@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Exige o workload "tizen" (dotnet workload install tizen). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0-tizen8.0</TargetFramework>
+    <RootNamespace>NvSpikeNui</RootNamespace>
+    <AssemblyName>NvSpikeNui</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../Relatorio.cs" />
+    <Compile Include="../Segredos.g.cs" />
+  </ItemGroup>
+
+</Project>

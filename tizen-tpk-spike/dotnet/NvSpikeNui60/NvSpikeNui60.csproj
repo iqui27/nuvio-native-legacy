@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Mesmo Program.cs do NvSpikeNui, no TFM antigo tizen80 (API8 = Tizen
+       6.0, TVs 2021-2023): o workload net6.0-tizen so aceita Tizen 8.0+, e a
+       API8 e a primeira com GLWindow (a API7 / Tizen 5.5 nao tem). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>tizen80</TargetFramework>
+    <RootNamespace>NvSpikeNui</RootNamespace>
+    <AssemblyName>NvSpikeNui60</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);NV_API8</DefineConstants>
+    <LangVersion>8.0</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../NvSpikeNui/Program.cs" />
+    <PackageReference Include="Tizen.NET" Version="8.0.*">
+      <ExcludeAssets>Runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="Tizen.NET.Sdk" Version="1.1.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../Relatorio.cs" />
+    <Compile Include="../Segredos.g.cs" />
+  </ItemGroup>
+
+</Project>

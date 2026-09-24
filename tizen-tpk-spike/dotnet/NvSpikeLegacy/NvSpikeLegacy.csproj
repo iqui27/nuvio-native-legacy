@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- tizen40: alvo pra TVs antigas (Tizen 4.x). Sem GLView publico nessa
+       API: testes 1,2,4,5 apenas (teste 3 fica "N/D" no app). Usa
+       ElmSharp direto, sem Xamarin.Forms, pra minimizar dependencia. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>tizen40</TargetFramework>
+    <RootNamespace>NvSpikeLegacy</RootNamespace>
+    <AssemblyName>NvSpikeLegacy</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Tizen.NET" Version="4.0.*">
+      <ExcludeAssets>Runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="Tizen.NET.Sdk" Version="1.1.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <TizenNativeLibrary Include="lib\libnvspike.so" Condition="Exists('lib\libnvspike.so')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../Relatorio.cs" />
+    <Compile Include="../Segredos.g.cs" />
+  </ItemGroup>
+
+</Project>
