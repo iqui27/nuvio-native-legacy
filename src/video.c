@@ -91,7 +91,9 @@ static void aplicarEstilo(void);
 
 // Definidos adiante (junto de urlAtual, que e o que o fio consome); declarados
 // aqui porque o parse do sourceInfo, bem acima, e quem dispara o fio.
-static char  urlAtual[1024];   // URL da reproducao corrente
+// Mesmo limite de Stream.url: o pipeline recebe a URL original, e cortar a
+// copia faria somente a sonda MKV/ASS falhar (inclusive apos tentar de novo).
+static char  urlAtual[4096];
 const char *video_url_atual(void) { return urlAtual; }
 // Recuperacao de pipeline destruido: pedida pelo fio de resposta do luna e
 // executada no fio principal (video_bombear), porque recarregar de dentro do
@@ -1368,7 +1370,7 @@ double video_creditos(void) {
 static void *lerMkv(void *arg) {
   MkvFaixa fx[MKV_MAX_FAIXAS];
   MkvCap   caps[MKV_MAX_CAPS];
-  char url[1024];
+  char url[sizeof urlAtual];
   int n, i, j, casou = 0, nCaps = 0;
   (void)arg;
 

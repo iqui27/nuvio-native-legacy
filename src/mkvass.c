@@ -245,7 +245,7 @@ typedef struct {
 static struct {
   pthread_mutex_t trava;
   pthread_cond_t  sinal;
-  char     url[1400];
+  char     url[4096];       // mesmo limite de Stream.url e video_url_atual
   int      faixa;
   unsigned geracao;
   int      estado;
@@ -263,7 +263,7 @@ static struct {
 // Tudo abaixo e DO FIO: so o fio de colheita toca, sem trava.
 typedef struct {
   unsigned g;
-  char     url[1400];
+  char     url[sizeof S.url];
   int      faixa;
   long     segIni;         // onde comecam os dados do Segment
   unsigned long escala;    // TimestampScale (ns por unidade)
@@ -382,7 +382,7 @@ static void esperarVez(void) {
 // (rede.c: um handle por fio), e a conexao TLS fica aberta entre pedidos. Um
 // fio novo por pedido pagaria o handshake de novo a cada fala.
 typedef struct Job {
-  char url[1400];
+  char url[sizeof S.url];
   long ini, n;
   unsigned char *r; long tam, ms;
   int estado;                 // 0 na fila, 1 baixando, 2 pronto

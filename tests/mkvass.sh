@@ -8,6 +8,8 @@
 #   bash tests/mkvass.sh
 set -eu
 cd "$(dirname "$0")/.."
+cc -I/opt/homebrew/include tests/video_url.c src/video.c -o /tmp/nuvio-video-url-test
+/tmp/nuvio-video-url-test
 FFMPEG=${FFMPEG:-/opt/homebrew/bin/ffmpeg}
 [ -x "$FFMPEG" ] || { echo "mkvass.sh: ffmpeg nao encontrado em $FFMPEG"; exit 1; }
 

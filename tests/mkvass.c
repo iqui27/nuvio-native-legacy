@@ -651,9 +651,16 @@ int main(int argc, char **argv) {
   // legenda nao muda (nada recarrega, nada pisca) e a faixa fecha COMPLETA.
   { int caso;
     for (caso = 0; caso < 2; caso++) {
-      char urlF[600], scF[64], scFF[80]; long t0; int falhasF = 0, recF = 0, viuNogo = 0, manteve = 1;
+      char urlF[4096], scF[64], scFF[80]; long t0; int falhasF = 0, recF = 0, viuNogo = 0, manteve = 1;
       int antes = 0; unsigned g0 = 0; int e;
       snprintf(urlF, sizeof urlF, "%s/%s/%s", base, caso ? "falha1a1" : "falha10a16", argv[2]);
+      // URL no limite aceito pelos streams. O servidor usa o basename;
+      // cortar qualquer copia (estado, worker ou pool) perde o nome do MKV.
+      { size_t prefixo = strlen(base) + 1 + strlen(caso ? "falha1a1" : "falha10a16") + 1;
+        size_t fim = sizeof urlF - strlen(argv[2]) - 2;
+        memset(urlF + prefixo, 'a', fim - prefixo);
+        urlF[fim] = '/';
+        strcpy(urlF + fim + 1, argv[2]); }
       printf("\n[10%c] 503 %s: tenta de novo sem devolver a TV\n", caso ? 'b' : 'a',
              caso ? "no primeiro pedido (cabecalho)" : "em rajada no meio da colheita");
       nomeSidecar(urlF, 3, scF, sizeof scF); dados_apagar(scF);
