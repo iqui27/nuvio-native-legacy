@@ -55,7 +55,9 @@ enum {
   MKVASS_NOGO_FAIXA,       // a faixa pedida nao e S_TEXT/ASS nem S_TEXT/SSA
   MKVASS_NOGO_SEM_INDICE,  // sem Cues, ou sem CuePoint da faixa de legenda
   MKVASS_NOGO_SEM_REL,     // CuePoints existem mas sem CueRelativePosition
-  MKVASS_NOGO_REDE         // Range falhou repetidamente
+  MKVASS_NOGO_REDE,        // Range falhou repetidamente (PASSAGEIRO: timeout, 5xx, 429, 403 com varias conexoes)
+  MKVASS_NOGO_HTTP         // o servidor RECUSOU de vez (404, 410, 401, 400, 416 no byte 0,
+                           // 403 com uma conexao so) — ver mkvass_ultima_falha
 };
 
 // Comeca a colher a faixa `numeroFaixa` (TrackNumber do Matroska, o mesmo
@@ -79,15 +81,31 @@ void mkvass_folga(double segundosAFrente);
 // continua em tela: a primeira entrega do fio novo e uma atualizacao, nao uma
 // carga do zero — desde que a legenda ainda seja da mesma geracao.
 void mkvass_retomar(void);
+// Igual, para quando a TV esta desenhando POR ENQUANTO (faixas.c): o fio NAO
+// entrega o que ja tinha (sidecar parcial) — so a partir do primeiro bloco
+// NOVO, ou do fim da faixa. Sem isto o overlay religava com o texto antigo por
+// cima da legenda da TV ate a rede voltar de verdade.
+void mkvass_retomar_segurando(void);
 
 // POLITICA DE QUEDA PARA A TV. Recebe o no-go, quantas tentativas ja foram
 // feitas nesta escolha de faixa e quantas vezes o Range ja foi recusado.
-// Devolve o recuo em ms antes de tentar de novo (falha PASSAGEIRA: rede,
-// timeout, 5xx, Range recusado uma vez), ou 0 quando a faixa deve voltar a TV
-// (DEFINITIVA: nao e MKV, codec nao ASS, sem indice, Range recusado de novo;
-// ou MKVASS_TENTATIVAS falhas).
-#define MKVASS_TENTATIVAS 3
+// Devolve o recuo em ms antes de tentar de novo, ou 0 quando a faixa deve
+// voltar a TV DE VEZ.
+//   PASSAGEIRA (rede, timeout, 5xx, freio do CDN, Range recusado uma vez):
+//     2, 5, 15, 30 s e depois 60 s, SEM LIMITE de tentativas (#92: tres falhas
+//     seguidas devolviam a faixa a TV para sempre, com "falha de rede").
+//   DEFINITIVA (nao e MKV, codec nao ASS, sem indice, Range recusado de novo,
+//     recusa HTTP definitiva): 0.
+// Quem chama (faixas.c) mantem o overlay do app nas primeiras
+// MKVASS_TENTATIVAS_OVERLAY tentativas; dali em diante a TV desenha POR
+// ENQUANTO e o app segue tentando em segundo plano — quando uma tentativa
+// volta a entregar, a faixa volta ao overlay.
+#define MKVASS_TENTATIVAS_OVERLAY 2
 long mkvass_recuo_ms(int estado, int falhas, int recusasRange);
+
+// A ultima falha de Range da colheita atual: codigo HTTP (0 = sem resposta) e
+// da libcurl (28 = prazo; 0 no Tizen). Para o log e o aviso da queda.
+void mkvass_ultima_falha(int *http, int *curl);
 
 // Para a colheita e grava o sidecar parcial com o que ja veio. NAO bloqueia:
 // o fio termina sozinho (pode estar no meio de um Range).

@@ -56,6 +56,19 @@ char *rede_baixar_com(const char *url, int segundos, const char *const *cabecalh
 char *rede_baixar_trecho(const char *url, int segundos, long ini, long fim,
                          long *tam);
 
+// O mesmo, dizendo POR QUE falhou (#92). `*status` recebe o codigo HTTP da
+// resposta final, depois dos redirecionamentos (0 = nenhuma resposta), e
+// `*erro` o codigo da libcurl (28 = prazo, 7 = conexao recusada; 0 no Tizen,
+// que nao tem libcurl). O corpo so volta em 2xx: um 403/429/416 e NULL como
+// antes, mas quem chama sabe separar "o CDN recusou esta conexao" de "a rede
+// caiu" — o mkvass trata um como freio e o outro como falha passageira.
+// `final` (opcional, `tamFinal` bytes) recebe o endereco depois dos
+// redirecionamentos — o mesmo que rede_url_final daria, sem pedido a mais.
+// Qualquer ponteiro pode ser NULL.
+char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
+                            long *tam, int *status, int *erro,
+                            char *final, unsigned tamFinal);
+
 // Teto de bytes da transferencia corrente (0 = sem teto). E interno ao modulo;
 // esta exposto so porque rede_baixar_trecho o usa. Nao mexer de fora.
 #if defined(__GNUC__)
