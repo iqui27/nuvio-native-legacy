@@ -13,17 +13,29 @@
 static char esperado[4096];
 static const char *arquivo;
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
-static int falhar = 1, pedidos, cortados;
+// Cinco falhas seguidas: desde o recuo dentro do fio, uma falha so e
+// absorvida sem no-go; cinco (MKVASS_FALHAS_MAX) levam a NOGO_REDE e a retomada.
+static int falhar = 5, pedidos, cortados;
 char *rede_baixar(const char *url, int s) { (void)url; (void)s; return NULL; }
-char *rede_baixar_trecho(const char *url, int s, long ini, long fim, long *tam) {
+// O mkvass pede por rede_baixar_trecho_st (status, erro e url final); o
+// transporte local responde como um servidor sem redirecionamento: a url
+// final e a propria, e a falha e "sem resposta" (HTTP 0).
+const char *rede_url_publica(const char *url, char *dst, unsigned tam) {
+  (void)url; snprintf(dst, tam, "local"); return dst;
+}
+char *rede_baixar_trecho_st(const char *url, int s, long ini, long fim, long *tam,
+                            int *status, int *erro, char *final, unsigned tamFinal) {
   FILE *f; char *p; long n;
   (void)s; *tam = 0;
+  if (status) *status = 0;
+  if (erro) *erro = 0;
+  if (final && tamFinal) snprintf(final, tamFinal, "%s", url);
   pthread_mutex_lock(&trava);
   pedidos++;
   if (strcmp(url, esperado)) {
     cortados++; pthread_mutex_unlock(&trava); return NULL;
   }
-  if (falhar) { falhar = 0; pthread_mutex_unlock(&trava); return NULL; }
+  if (falhar) { falhar--; pthread_mutex_unlock(&trava); return NULL; }
   pthread_mutex_unlock(&trava);
   f = fopen(arquivo, "rb"); assert(f);
   fseek(f, 0, SEEK_END); n = ftell(f);
@@ -33,7 +45,7 @@ char *rede_baixar_trecho(const char *url, int s, long ini, long fim, long *tam) 
   p = malloc((size_t)n); assert(p);
   fseek(f, ini, SEEK_SET);
   assert(fread(p, 1, (size_t)n, f) == (size_t)n);
-  fclose(f); *tam = n; return p;
+  fclose(f); *tam = n; if (status) *status = 206; return p;
 }
 static int esperar(void) {
   for (int i = 0; i < 2000; i++) {

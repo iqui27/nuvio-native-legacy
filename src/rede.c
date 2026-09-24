@@ -109,6 +109,9 @@ EM_JS(char *, nv_http, (const char *metodo, const char *url, const char *cabs,
 });
 
 _Thread_local long rede_teto = 0;
+// Destino do endereco final do proximo pedido (so rede_baixar_trecho_st liga).
+static _Thread_local char *redeFinalDst;
+static _Thread_local unsigned redeFinalTam;
 
 void rede_preparar(void) { }   // nao ha biblioteca para carregar
 
@@ -141,8 +144,8 @@ static char *pedir2(const char *metodo, const char *url, const char *const *cab,
   if (status) *status = 0;
   if (!url || !*url) return NULL;
   cabs = juntarCabs(cab, extraCab);
-  corpoResp = nv_http(metodo, url, cabs, corpo, &n, &http, NULL, 0,
-                      etag, (int)tamEtag);
+  corpoResp = nv_http(metodo, url, cabs, corpo, &n, &http,
+                      redeFinalDst, (int)redeFinalTam, etag, (int)tamEtag);
   free(cabs);
   if (status) *status = http;
   if (http == 401 && aviso401) aviso401(url);
@@ -244,6 +247,35 @@ char *rede_baixar_trecho(const char *url, int segundos, long ini, long fim,
   return r;
 }
 
+char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
+                            long *tam, int *status, int *erro,
+                            char *final, unsigned tamFinal) {
+  char faixa[80];
+  const char *cab[2];
+  char *r;
+  int st = 0;
+  (void)segundos;
+  if (erro) *erro = 0;
+  if (final && tamFinal) final[0] = 0;
+  snprintf(faixa, sizeof faixa, "Range: bytes=%ld-%ld", ini, fim);
+  cab[0] = faixa; cab[1] = NULL;
+  rede_teto = fim - ini + 1;
+  redeFinalDst = final; redeFinalTam = final ? tamFinal : 0;
+  r = pedir("GET", url, cab, NULL, NULL, tam, &st);
+  redeFinalDst = NULL; redeFinalTam = 0;
+  rede_teto = 0;
+  if (status) *status = st;
+  // Com `status` o pedir devolve o corpo do erro; aqui o corpo so vale em 2xx.
+  if (r && (st < 200 || st >= 300)) {
+    char seg[120];
+    printf("[rede] HTTP %d em %s\n", st, rede_url_publica(url, seg, sizeof seg));
+    fflush(stdout);
+    free(r); r = NULL;
+    if (tam) *tam = 0;
+  }
+  return r;
+}
+
 char *rede_postar(const char *url, int segundos, const char *const *cab,
                   const char *corpo) {
   return rede_postar_st(url, segundos, cab, corpo, NULL);
@@ -300,6 +332,13 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
 }
 
 #else
+
+// Codigo da libcurl do ultimo pedido DESTE fio (0 = transporte ok). So o
+// rede_baixar_trecho_st le: o resto do modulo segue devolvendo NULL e logando.
+static _Thread_local int redeCurlLocal;
+// Destino do endereco final do proximo pedido (so rede_baixar_trecho_st liga).
+static _Thread_local char *redeFinalDst;
+static _Thread_local unsigned redeFinalTam;
 
 // Constantes da libcurl escritas a mao: nao ha curl.h no SDK do aparelho, e
 // puxar o header inteiro so por meia duzia de numeros nao se paga. Os valores
@@ -640,6 +679,36 @@ char *rede_baixar_trecho(const char *url, int segundos, long ini, long fim,
     return r; }
 }
 
+char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
+                            long *tam, int *status, int *erro,
+                            char *final, unsigned tamFinal) {
+  char faixa[80];
+  const char *cab[2];
+  char *r;
+  int st = 0;
+  if (final && tamFinal) final[0] = 0;
+  snprintf(faixa, sizeof faixa, "Range: bytes=%ld-%ld", ini, fim);
+  cab[0] = faixa; cab[1] = NULL;
+  redeCurlLocal = 0;
+  rede_teto = fim - ini + 1;
+  redeFinalDst = final; redeFinalTam = final ? tamFinal : 0;
+  // Com `status` o interno2 devolve o corpo de um 4xx (e o contrato do
+  // Supabase); aqui ele e descartado, mas o codigo fica com quem chamou.
+  r = rede_baixar_interno2(url, segundos, tam, cab, &st, NULL, 0);
+  redeFinalDst = NULL; redeFinalTam = 0;
+  rede_teto = 0;
+  if (status) *status = st;
+  if (erro) *erro = redeCurlLocal;
+  if (r && (st < 200 || st >= 300)) {
+    char seg[120];
+    printf("[rede] HTTP %d em %s\n", st, rede_url_publica(url, seg, sizeof seg));
+    fflush(stdout);
+    free(r); r = NULL;
+    if (tam) *tam = 0;
+  }
+  return r;
+}
+
 char *rede_baixar_com(const char *url, int segundos, const char *const *cab) {
   return rede_baixar_interno(url, segundos, NULL, cab);
 }
@@ -703,6 +772,12 @@ static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
   r = curl_perform(c);
+  redeCurlLocal = r;
+  if (redeFinalDst && redeFinalTam && curl_getinfo) {
+    char *fim = NULL;
+    curl_getinfo(c, INFO_URL_FINAL, &fim);
+    snprintf(redeFinalDst, redeFinalTam, "%s", fim ? fim : "");
+  }
   // STATUS HTTP, e nao so o codigo de erro da libcurl. MEDIDO: numa navegacao
   // da home o log tinha 93 "decode falhou" e ZERO "[rede] falha" — ou seja, o
   // curl_easy_perform devolvia 0 (sucesso de TRANSPORTE) para respostas que nao

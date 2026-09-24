@@ -43,6 +43,51 @@ static long contagemServidor(void) {
   free(r);
   return v;
 }
+static long contagemDe(const char *nome) {
+  char url[600]; char *r; long v;
+  snprintf(url, sizeof url, "%s/%s", base, nome);
+  r = rede_baixar(url, 5);
+  v = r ? atol(r) : -1;
+  free(r);
+  return v;
+}
+
+// O papel de faixas.c numa falha passageira, sem SDL: no-go -> recuo curto
+// -> nova tentativa, ate COMPLETO, no-go definitivo ou o prazo. `tv` faz o
+// que a folha faz depois de MKVASS_TENTATIVAS_OVERLAY: desliga o overlay (a
+// TV desenharia) e retoma SEGURANDO — e confere que o overlay so religa com
+// fala nova. Devolve o numero de tentativas; *religouCedo = 1 se o overlay
+// voltou antes de um bloco novo.
+static void esperarFio(void);
+static int retomarAte(long timeoutMs, int tv, int *religouCedo) {
+  long t0 = agoraMs(); int tent = 0, naTV = 0, colNoGo = 0;
+  if (religouCedo) *religouCedo = 0;
+  while (agoraMs() - t0 < timeoutMs) {
+    int e = mkvass_estado(), col = 0;
+    mkvass_passo(0.0);
+    mkvass_estatisticas(NULL, NULL, &col, NULL);
+    if (naTV && legenda_ligada_em(legenda_geracao())) {
+      if (col <= colNoGo && e != MKVASS_COMPLETO && religouCedo) *religouCedo = 1;
+      naTV = 0;
+    }
+    if (e == MKVASS_COMPLETO) break;
+    if (e >= MKVASS_NOGO) {
+      long recuo = mkvass_recuo_ms(e, tent, 0);
+      if (!recuo) break;
+      tent++;
+      esperarFio();
+      if (tv && tent > MKVASS_TENTATIVAS_OVERLAY && !naTV) {
+        mkvass_estatisticas(NULL, NULL, &colNoGo, NULL);
+        legenda_desligar(); naTV = 1;
+      }
+      usleep(300 * 1000);      // o recuo de verdade e 2-60 s
+      if (naTV) mkvass_retomar_segurando(); else mkvass_retomar();
+    }
+    usleep(20 * 1000);
+  }
+  return tent;
+}
+
 static void zerarServidor(void) {
   char url[600]; char *r;
   snprintf(url, sizeof url, "%s/zerar", base);
@@ -638,7 +683,10 @@ int main(int argc, char **argv) {
   printf("\n[10] no-go passageiro x definitivo: politica de recuo\n");
   ok(mkvass_recuo_ms(MKVASS_NOGO_REDE, 0, 0) == 2000 && mkvass_recuo_ms(MKVASS_NOGO_REDE, 1, 0) == 5000 &&
      mkvass_recuo_ms(MKVASS_NOGO_REDE, 2, 0) == 15000, "rede: recuo de 2, 5 e 15 s");
-  ok(mkvass_recuo_ms(MKVASS_NOGO_REDE, MKVASS_TENTATIVAS, 0) == 0, "rede: esgotadas as tentativas, volta a TV");
+  ok(mkvass_recuo_ms(MKVASS_NOGO_REDE, 3, 0) == 30000 && mkvass_recuo_ms(MKVASS_NOGO_REDE, 4, 0) == 60000 &&
+     mkvass_recuo_ms(MKVASS_NOGO_REDE, 50, 0) == 60000,
+     "rede: 30 s, depois 60 s, SEM limite (#92: tres falhas nao devolvem a faixa a TV de vez)");
+  ok(mkvass_recuo_ms(MKVASS_NOGO_HTTP, 0, 0) == 0, "recusa HTTP definitiva: volta a TV na hora");
   ok(mkvass_recuo_ms(MKVASS_NOGO_SEM_RANGE, 0, 0) > 0, "Range recusado uma vez: passageiro");
   ok(mkvass_recuo_ms(MKVASS_NOGO_SEM_RANGE, 1, 1) == 0, "Range recusado de novo: definitivo");
   ok(!mkvass_recuo_ms(MKVASS_NOGO_NAO_MKV, 0, 0) && !mkvass_recuo_ms(MKVASS_NOGO_FAIXA, 0, 0) &&
@@ -692,15 +740,83 @@ int main(int argc, char **argv) {
       }
       e = mkvass_estado();
       printf("    %d tentativa(s), estado final %d\n", falhasF, e);
-      ok(viuNogo == MKVASS_NOGO_REDE, "503 vira NOGO_REDE (passageiro)");
-      ok(falhasF >= 1 && falhasF <= MKVASS_TENTATIVAS, "retomou dentro das tentativas");
+      // Desde o recuo dentro do fio (#92, 1.4.6) uma rajada curta de 503 e
+      // absorvida sem no-go nenhum; se houver, e o passageiro.
+      ok(!viuNogo || viuNogo == MKVASS_NOGO_REDE, "503 nunca vira no-go definitivo");
+      ok(falhasF <= 1, "rajada curta absorvida no proprio fio (no maximo 1 retomada)");
       ok(e == MKVASS_COMPLETO, "termina COMPLETO depois de tentar de novo");
       ok(conferirCues(esp, nEsp) == nEsp, "todos os cues batem apos a retomada");
-      if (!caso) {
+      if (!caso && viuNogo) {
         ok(antes > 0 && manteve, "o que ja estava no overlay ficou durante o recuo");
         ok(g0 && legenda_geracao() == g0, "retomada nao recarregou a legenda (mesma geracao: sem pisca)");
       }
     } }
+
+  // #92, 1.4.5: "Legenda ASS: a TV vai desenhar (falha de rede)". Os caminhos
+  // de falha de um link de debrid, um por um.
+  { char urlL[600], scL[64], scLF[80]; int e, tent, cedo = 0; long r429, ped429;
+    printf("\n[11a] CDN que aceita UMA conexao por link: 429 na segunda\n");
+    snprintf(urlL, sizeof urlL, "%s/limite1/%s", base, argv[2]);
+    nomeSidecar(urlL, 3, scL, sizeof scL); dados_apagar(scL);
+    snprintf(scLF, sizeof scLF, "%s.fonts", scL); dados_apagar(scLF);
+    mkvass_parar(); esperarFio(); legenda_desligar();
+    zerarServidor();
+    mkvass_iniciar(urlL, 3);
+    tent = retomarAte(120000, 0, NULL);
+    e = mkvass_estado();
+    r429 = contagemDe("contagem429");
+    mkvass_estatisticas(&ped429, NULL, NULL, NULL);
+    printf("    estado %d, %d tentativa(s) de faixas.c, %ld recusas 429 em %ld Ranges\n", e, tent, r429, ped429);
+    ok(e == MKVASS_COMPLETO, "termina COMPLETO com uma conexao so");
+    ok(conferirCues(esp, nEsp) == nEsp, "todos os cues batem");
+    ok(r429 >= 1 && r429 <= 6, "freio: poucas recusas, nao uma por Range");
+
+    printf("\n[11b] link que redireciona (307) ao arquivo: url final UMA vez\n");
+    snprintf(urlL, sizeof urlL, "%s/redir/%s", base, argv[2]);
+    nomeSidecar(urlL, 3, scL, sizeof scL); dados_apagar(scL);
+    snprintf(scLF, sizeof scLF, "%s.fonts", scL); dados_apagar(scLF);
+    mkvass_parar(); esperarFio(); legenda_desligar();
+    zerarServidor();
+    mkvass_iniciar(urlL, 3);
+    rodarAte(4.0, 90000, 0.0);
+    { long rd = contagemDe("contagemredir"), p = 0;
+      mkvass_estatisticas(&p, NULL, NULL, NULL);
+      printf("    %ld redirecionamento(s) para %ld Ranges\n", rd, p);
+      ok(mkvass_estado() == MKVASS_COMPLETO, "COMPLETO pela url final");
+      ok(rd == 1 && p > 10, "o 307 foi pago uma vez, nao um por Range"); }
+    { char *sc = dados_ler(scL);
+      ok(sc && !strncmp(sc, "; mkvass-estado: completo", 25),
+         "o sidecar continua pelo nome da url PEDIDA (a proxima abertura acha)");
+      free(sc); }
+
+    printf("\n[11c] arquivo que nao existe (404): definitivo, sem insistir\n");
+    snprintf(urlL, sizeof urlL, "%s/nao-existe-%ld.mkv", base, (long)agoraMs());
+    mkvass_parar(); esperarFio(); legenda_desligar();
+    zerarServidor();
+    mkvass_iniciar(urlL, 3);
+    rodarAte(1.0, 30000, 0.0);
+    { int http = 0, curl = -1;
+      mkvass_ultima_falha(&http, &curl);
+      e = mkvass_estado();
+      printf("    estado %d, HTTP %d, curl %d, %ld GET(s)\n", e, http, curl, contagemServidor());
+      ok(e == MKVASS_NOGO_HTTP, "404 vira NOGO_HTTP, nao NOGO_REDE");
+      ok(http == 404, "o codigo HTTP chega a quem avisa");
+      ok(mkvass_recuo_ms(e, 0, 0) == 0, "definitivo: a faixa volta a TV sem recuo"); }
+
+    printf("\n[11d] 503 por mais tempo que tres tentativas: nao desiste, e a TV segura\n");
+    snprintf(urlL, sizeof urlL, "%s/falha10a70/%s", base, argv[2]);
+    nomeSidecar(urlL, 3, scL, sizeof scL); dados_apagar(scL);
+    snprintf(scLF, sizeof scLF, "%s.fonts", scL); dados_apagar(scLF);
+    mkvass_parar(); esperarFio(); legenda_desligar();
+    zerarServidor();
+    mkvass_iniciar(urlL, 3);
+    tent = retomarAte(300000, 1, &cedo);
+    e = mkvass_estado();
+    printf("    %d tentativa(s), estado final %d\n", tent, e);
+    ok(tent > 3, "precisou de mais de 3 tentativas (a 1.4.5 desistia na 3a)");
+    ok(e == MKVASS_COMPLETO, "e mesmo assim termina COMPLETO");
+    ok(conferirCues(esp, nEsp) == nEsp, "todos os cues batem apos as retomadas");
+    ok(!cedo, "com a TV desenhando, o overlay so religou com fala nova"); }
 
   mkvass_parar(); esperarFio();
   free(esp);

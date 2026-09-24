@@ -100,13 +100,22 @@ static int legOverlayEsperando = -1;
 static int legAuto;
 static Uint32 legAutoDesde;
 
-// NO-GO PASSAGEIRO x DEFINITIVO. Um Range que falhou (rede, timeout, 5xx, o
-// servidor que devolveu o arquivo inteiro uma vez) nao e motivo para entregar
-// a faixa a TV: o overlay fica com o que ja colheu e o mkvass tenta de novo
-// com recuo (mkvass_recuo_ms: 2, 5, 15 s). So o definitivo (nao e MKV, codec,
-// sem indice, Range recusado de novo) ou MKVASS_TENTATIVAS falhas devolvem a
-// faixa, com o motivo no log e no aviso. Contado por ESCOLHA de faixa.
+// NO-GO PASSAGEIRO x DEFINITIVO. Um Range que falhou (rede, timeout, 5xx,
+// freio do CDN, o servidor que devolveu o arquivo inteiro uma vez) nao e
+// motivo para entregar a faixa a TV DE VEZ: o mkvass tenta de novo com recuo
+// (mkvass_recuo_ms: 2, 5, 15, 30, 60 s...), SEM LIMITE enquanto a faixa estiver
+// escolhida. Nas primeiras MKVASS_TENTATIVAS_OVERLAY o overlay fica com o que
+// ja colheu; dali em diante (ou logo, se nao colheu nada) a TV desenha POR
+// ENQUANTO (`legOverlayTV`) e, quando uma tentativa volta a entregar fala
+// nova, a faixa volta ao app. So o definitivo (nao e MKV, codec, sem indice,
+// Range recusado de novo, recusa HTTP definitiva) devolve a faixa de vez, com o
+// motivo no log e no aviso. Contado por ESCOLHA de faixa; `legOverlayFalhas`
+// zera quando chega fala nova (`legOverlayColhidos` e a marca).
+//
+// #92, 1.4.5: tres falhas seguidas davam "a TV vai desenhar (falha de rede)"
+// e a faixa ficava na TV — que corta metade das falas — ate o fim do episodio.
 static int legOverlayFalhas, legOverlayRecusas, legOverlayNoGoEstado;
+static int legOverlayTV, legOverlayColhidos;
 static Uint32 legOverlayRetomar;       // 0 = nada agendado
 
 static int ehAss(const VideoFaixa *f) {
@@ -125,6 +134,7 @@ static void overlayAssumir(int i, int ord) {
   mkvass_iniciar_ordinal(video_url_atual(), ord);
   legOverlay = i;
   legOverlayFalhas = legOverlayRecusas = 0; legOverlayRetomar = 0;
+  legOverlayTV = legOverlayColhidos = 0;
   printf("[legenda] faixa %d (%s, %s) -> app: ordinal %d; legenda nativa desligada\n",
          i, f ? f->rotulo : "?", f ? f->codec : "?", ord);
   fflush(stdout);
@@ -152,6 +162,7 @@ static const char *motivoTV(int i) {
 void faixas_reiniciar(void) {
   legExterna = -1; legOverlay = legOverlayNoGo = legOverlayEsperando = -1; aberta = 0;
   legOverlayFalhas = legOverlayRecusas = legOverlayNoGoEstado = 0; legOverlayRetomar = 0;
+  legOverlayTV = legOverlayColhidos = 0;
   mkvass_parar(); legenda_desligar();
   legAuto = 1; legAutoDesde = 0;
 }
@@ -300,7 +311,9 @@ static const char *rotuloLegenda(int i, const char **marca) {
     else if (ehAss(f)) {
       if (i == legOverlay) {
         int e = mkvass_estado();
-        *marca = legOverlayRetomar
+        *marca = legOverlayTV
+               ? i18n("ASS: a TV desenha por enquanto (o app tenta de novo\xe2\x80\xa6)")
+               : legOverlayRetomar
                ? i18n("Incorporada \xc2\xb7 ASS (desenhada pelo app, tentando de novo\xe2\x80\xa6)")
                : e == MKVASS_PREPARANDO
                ? i18n("Incorporada \xc2\xb7 ASS (lendo o \xc3\xadndice do arquivo\xe2\x80\xa6)")
@@ -310,7 +323,9 @@ static const char *rotuloLegenda(int i, const char **marca) {
       } else if (i == legOverlayNoGo) {
         int e = legOverlayNoGoEstado;
         *marca = e == MKVASS_NOGO_SEM_RANGE ? i18n("ASS: a TV desenha (servidor sem Range)")
-               : e == MKVASS_NOGO_REDE     ? i18n("ASS: a TV desenha (falha de rede)")
+               : e == MKVASS_NOGO_HTTP     ? i18n("ASS: a TV desenha (o servidor recusou)")
+               : e == MKVASS_NOGO_NAO_MKV  ? i18n("ASS: a TV desenha (a fonte n\xc3\xa3o \xc3\xa9 MKV)")
+               : e == MKVASS_NOGO_FAIXA    ? i18n("ASS: a TV desenha (faixa n\xc3\xa3o \xc3\xa9 ASS)")
                : i18n("ASS: a TV desenha (arquivo sem \xc3\xadndice)");
       } else
         *marca = i18n("Incorporada \xc2\xb7 ASS (a TV pode cortar falas)");
@@ -332,7 +347,7 @@ static void escolherLegenda(int i) {
     int emb = video_n_legenda();
     // Qualquer escolha encerra a colheita anterior: o fio do mkvass nao pode
     // continuar entregando ao overlay uma faixa que a pessoa acabou de trocar.
-    mkvass_parar(); legOverlay = -1; legOverlayEsperando = -1; legOverlayRetomar = 0;
+    mkvass_parar(); legOverlay = -1; legOverlayEsperando = -1; legOverlayRetomar = 0; legOverlayTV = 0;
     if (i < 0)        { video_escolher_legenda(-1); legenda_desligar(); legExterna = -1; }
     else if (i < emb) {
       const VideoFaixa *f = video_legenda(i);
@@ -473,7 +488,25 @@ static const char *motivoNoGo(int e) {
        : e == MKVASS_NOGO_FAIXA      ? "faixa nao e ASS"
        : e == MKVASS_NOGO_SEM_INDICE ? "sem indice da faixa"
        : e == MKVASS_NOGO_SEM_REL    ? "sem CueRelativePosition"
-       : e == MKVASS_NOGO_REDE       ? "rede" : "?";
+       : e == MKVASS_NOGO_REDE       ? "rede"
+       : e == MKVASS_NOGO_HTTP       ? "servidor recusou" : "?";
+}
+
+// O aviso da queda DEFINITIVA, com o motivo que o mkvass viu. Antes todo
+// no-go que nao fosse "sem Range" ou "rede" dizia "arquivo sem indice".
+static void avisarQueda(int e) {
+  char b[160]; int http = 0;
+  mkvass_ultima_falha(&http, NULL);
+  if (e == MKVASS_NOGO_HTTP && http > 0)
+    snprintf(b, sizeof b, i18n("Legenda ASS: a TV vai desenhar (o servidor recusou: HTTP %d)"), http);
+  else
+    snprintf(b, sizeof b, "%s",
+             e == MKVASS_NOGO_SEM_RANGE ? i18n("Legenda ASS: a TV vai desenhar (servidor sem Range)")
+             : e == MKVASS_NOGO_HTTP    ? i18n("Legenda ASS: a TV vai desenhar (o servidor recusou)")
+             : e == MKVASS_NOGO_NAO_MKV ? i18n("Legenda ASS: a TV vai desenhar (a fonte n\xc3\xa3o \xc3\xa9 MKV)")
+             : e == MKVASS_NOGO_FAIXA   ? i18n("Legenda ASS: a TV vai desenhar (faixa n\xc3\xa3o \xc3\xa9 ASS)")
+             : i18n("Legenda ASS: a TV vai desenhar (arquivo sem \xc3\xadndice)"));
+  player_toast(b, 6000);
 }
 
 void faixas_atualizar(float dt, Uint32 agora) {
@@ -483,40 +516,76 @@ void faixas_atualizar(float dt, Uint32 agora) {
   // ja estava colhido continua na tela, e o fio novo retoma do sidecar parcial.
   if (legOverlay >= 0 && legOverlayRetomar && (Sint32)(agora - legOverlayRetomar) >= 0) {
     legOverlayRetomar = 0;
-    printf("[legenda] faixa %d: nova tentativa %d/%d do mkvass\n", legOverlay,
-           legOverlayFalhas, MKVASS_TENTATIVAS);
+    printf("[legenda] faixa %d: nova tentativa %d do mkvass (%s)\n", legOverlay, legOverlayFalhas,
+           legOverlayTV ? "a TV desenha enquanto isso" : "overlay do app mantido");
     fflush(stdout);
-    mkvass_retomar();
+    // Com a TV desenhando, o fio novo so religa o overlay com fala NOVA: o
+    // sidecar parcial nao volta por cima da legenda da TV.
+    if (legOverlayTV) mkvass_retomar_segurando(); else mkvass_retomar();
   }
-  // O mkvass declarou no-go. Passageiro: agenda outra tentativa e a faixa
-  // fica com o app. Definitivo (ou tentativas esgotadas): devolve a faixa ao
-  // pipeline da TV, que desenha como sempre desenhou, e a folha diz por que.
-  // Polling por quadro e o que ha: o no-go nasce num fio de rede e este
+  // PROGRESSO: chegou fala nova desde a ultima falha (ou a faixa fechou).
+  // Zera a contagem, e se a TV estava desenhando por enquanto, a faixa VOLTA
+  // ao overlay: nativa desligada, o app desenha o que acabou de entregar.
+  if (legOverlay >= 0 && !legOverlayRetomar && !mkvass_nogo() &&
+      (legOverlayFalhas || legOverlayTV)) {
+    int col = 0, e = mkvass_estado();
+    mkvass_estatisticas(NULL, NULL, &col, NULL);
+    if ((e == MKVASS_COMPLETO || (e == MKVASS_COLHENDO && col > legOverlayColhidos)) &&
+        legenda_ligada_em(legenda_geracao())) {
+      printf("[legenda] faixa %d: o mkvass voltou a entregar (%d blocos, depois de %d falha(s))%s\n",
+             legOverlay, col, legOverlayFalhas, legOverlayTV ? ": a faixa VOLTA ao app (nativa desligada)" : "");
+      fflush(stdout);
+      if (legOverlayTV) {
+        video_escolher_legenda(-1);
+        player_toast(i18n("Legenda ASS: o app voltou a desenhar"), 4000);
+      }
+      legOverlayTV = 0; legOverlayFalhas = 0; legOverlayColhidos = col;
+    }
+  }
+  // O mkvass declarou no-go. Passageiro: agenda outra tentativa — sempre — e
+  // a faixa fica com o app nas primeiras; depois a TV desenha por enquanto.
+  // Definitivo: devolve a faixa ao pipeline da TV de vez, e a folha diz por
+  // que. Polling por quadro e o que ha: o no-go nasce num fio de rede e este
   // modulo nao tem callback — e uma comparacao de inteiro.
   if (legOverlay >= 0 && !legOverlayRetomar && mkvass_nogo()) {
-    int i = legOverlay, e = mkvass_estado();
+    int i = legOverlay, e = mkvass_estado(), http = 0, curl = 0, col = 0;
     long recuo = mkvass_recuo_ms(e, legOverlayFalhas, legOverlayRecusas);
+    mkvass_ultima_falha(&http, &curl);
+    mkvass_estatisticas(NULL, NULL, &col, NULL);
     if (recuo > 0) {
       legOverlayFalhas++;
       if (e == MKVASS_NOGO_SEM_RANGE) legOverlayRecusas++;
       legOverlayRetomar = (agora + (Uint32)recuo) | 1u;
-      printf("[legenda] mkvass falha PASSAGEIRA %d (%s) na faixa %d: tentativa %d/%d em %ld ms, "
-             "overlay do app mantido\n", e, motivoNoGo(e), i, legOverlayFalhas, MKVASS_TENTATIVAS, recuo);
+      if (col > legOverlayColhidos) legOverlayColhidos = col;
+      printf("[legenda] mkvass falha PASSAGEIRA %d (%s, HTTP %d, curl %d) na faixa %d: tentativa %d em %ld ms, %s\n",
+             e, motivoNoGo(e), http, curl, i, legOverlayFalhas, recuo,
+             legOverlayTV ? "a TV segue desenhando por enquanto" : "overlay do app mantido");
       fflush(stdout);
+      // Sem nada colhido nao ha o que manter no overlay; depois de
+      // MKVASS_TENTATIVAS_OVERLAY tentativas sem fala nova, a pessoa ja
+      // ficou tempo demais sem legenda. Nos dois casos a TV desenha POR
+      // ENQUANTO, e a tentativa seguinte que entregar traz a faixa de volta.
+      if (!legOverlayTV && (col == 0 || legOverlayFalhas > MKVASS_TENTATIVAS_OVERLAY)) {
+        legOverlayTV = 1;
+        printf("[legenda] faixa %d: a TV desenha POR ENQUANTO (%d colhidos), o app segue tentando\n", i, col);
+        fflush(stdout);
+        player_toast(i18n("Legenda ASS: a TV desenha por enquanto (falha de rede); o app tenta de novo"), 6000);
+        legenda_desligar();
+        video_escolher_legenda(i);
+      }
     } else {
-      legOverlay = -1; legOverlayNoGo = i; legOverlayNoGoEstado = e;
-      printf("[legenda] mkvass no-go %d (%s%s) na faixa %d: a legenda VOLTA para a TV (nativa religada)\n",
-             e, motivoNoGo(e), legOverlayFalhas >= MKVASS_TENTATIVAS ? ", tentativas esgotadas" : "", i);
+      int estavaNaTV = legOverlayTV;
+      legOverlay = -1; legOverlayNoGo = i; legOverlayNoGoEstado = e; legOverlayTV = 0;
+      printf("[legenda] mkvass no-go %d (%s, HTTP %d, curl %d) na faixa %d: a legenda VOLTA para a TV "
+             "(nativa religada)\n", e, motivoNoGo(e), http, curl, i);
       fflush(stdout);
       // Aviso na tela: antes a queda era muda e a pessoa so via a legenda
       // piscar e cortar, sem saber que o app tinha desistido.
-      player_toast(e == MKVASS_NOGO_SEM_RANGE ? i18n("Legenda ASS: a TV vai desenhar (servidor sem Range)")
-                   : e == MKVASS_NOGO_REDE    ? i18n("Legenda ASS: a TV vai desenhar (falha de rede)")
-                   : i18n("Legenda ASS: a TV vai desenhar (arquivo sem \xc3\xadndice)"), 6000);
+      avisarQueda(e);
       // O overlay tinha o que colheu antes de desistir: sai, senao a TV e o
       // app desenhariam a mesma fala.
       legenda_desligar();
-      video_escolher_legenda(i);
+      if (!estavaNaTV) video_escolher_legenda(i);
     }
   }
   // A sonda voltou para uma faixa escolhida antes dela: agora da para decidir.

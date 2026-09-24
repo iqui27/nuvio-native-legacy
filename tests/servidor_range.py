@@ -12,14 +12,24 @@
 #                                do servidor que nao sabe Range, para o no-go)
 #   GET /falhaAaB/<arquivo> -> 503 do A-esimo ao B-esimo GET desde /zerar (falha
 #                                PASSAGEIRA: rede/5xx no meio da colheita)
+#   GET /limite1/<arquivo>    -> 429 quando ja ha OUTRO GET do mesmo modo em
+#                                andamento (CDN de debrid que aceita uma
+#                                conexao por link, #92)
+#   GET /redir/<resto>        -> 307 para /<resto> (link de addon que
+#                                redireciona ao CDN, #92)
 #   GET /contagem             -> numero de GETs a arquivos ate agora (texto)
-#   GET /zerar                -> zera a contagem
+#   GET /contagem429          -> quantos 429 o /limite1 respondeu
+#   GET /contagemredir        -> quantos 307 o /redir respondeu
+#   GET /zerar                -> zera as contagens
 import http.server, os, re, socketserver, sys, threading
 
 PASTA = sys.argv[1]
 BIND = os.environ.get("NUVIO_RANGE_BIND", "127.0.0.1")
 contagem = 0
 curtoPedidos = 0
+ativos1 = 0
+recusas429 = 0
+redirs = 0
 trava = threading.Lock()
 
 class H(http.server.BaseHTTPRequestHandler):
@@ -30,6 +40,8 @@ class H(http.server.BaseHTTPRequestHandler):
         nome = self.path.lstrip("/")
         semRange = nome.startswith("norange/")
         if semRange: nome = nome[len("norange/"):]
+        self.limite1 = nome.startswith("limite1/")
+        if self.limite1: nome = nome[len("limite1/"):]
         lento = nome.startswith("lento/")
         if lento: nome = nome[len("lento/"):]
         curtoCues = nome.startswith("curtocues/")
@@ -50,16 +62,44 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send_header("Accept-Ranges", "bytes")
         self.end_headers()
 
+    def _texto(self, v):
+        corpo = ("%d" % v).encode()
+        self.send_response(200); self.send_header("Content-Length", str(len(corpo)))
+        self.end_headers(); self.wfile.write(corpo)
+
     def do_GET(self):
-        global contagem, curtoPedidos
+        global ativos1
+        if self.path.startswith("/redir/"):
+            global redirs
+            with trava: redirs += 1
+            self.send_response(307)
+            self.send_header("Location", self.path[len("/redir"):])
+            self.send_header("Content-Length", "0"); self.end_headers(); return
+        if self.path.startswith("/limite1/"):
+            with trava: ativos1 += 1
+            try: self._get()
+            finally:
+                with trava: ativos1 -= 1
+            return
+        self._get()
+
+    def _get(self):
+        global contagem, curtoPedidos, recusas429, redirs
         if self.path == "/contagem":
-            with trava: corpo = ("%d" % contagem).encode()
-            self.send_response(200); self.send_header("Content-Length", str(len(corpo)))
-            self.end_headers(); self.wfile.write(corpo); return
+            with trava: v = contagem
+            self._texto(v); return
+        if self.path == "/contagem429":
+            with trava: v = recusas429
+            self._texto(v); return
+        if self.path == "/contagemredir":
+            with trava: v = redirs
+            self._texto(v); return
         if self.path == "/zerar":
             with trava:
                 contagem = 0
                 curtoPedidos = 0
+                recusas429 = 0
+                redirs = 0
             self.send_response(200); self.send_header("Content-Length", "2")
             self.end_headers(); self.wfile.write(b"ok"); return
         cam, semRange, lento, curto, curtoCues = self._arquivo()
@@ -70,6 +110,13 @@ class H(http.server.BaseHTTPRequestHandler):
                 curtoPedidos += 1
             curtoN = curtoPedidos
             k = contagem
+        if self.limite1:
+            with trava:
+                recusa = ativos1 > 1
+                if recusa: recusas429 += 1
+            if recusa:
+                self.send_response(429); self.send_header("Content-Length", "0")
+                self.end_headers(); return
         if self.falha and self.falha[0] <= k <= self.falha[1]:
             self.send_response(503); self.send_header("Content-Length", "0")
             self.end_headers(); return
