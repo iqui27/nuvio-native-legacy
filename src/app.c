@@ -99,7 +99,10 @@
 // folha para escolher outra fonte na mao.
 #define VOD_FONTE_PRAZO_MS 30000
 #define VOD_FONTE_BUFFER_MS 30000
-#define VOD_FONTE_MAX_TENTATIVAS 8
+// QUANTAS FONTES O AUTOMATICO ENTREGA AO PLAYER NUMA REPRODUCAO: a primeira
+// mais as de "Outra fonte se falhar" em Ajustes. Ate a 1.4.3 eram 8 fixas, e
+// cada uma e um arquivo a mais na conta de debrid (issue #130).
+#define VOD_FONTE_MAX_TENTATIVAS (1 + ajustes_fonte_repor())
 
 // PORTA DE TESTE: "abrir:tt0121955" em /tmp/nuvio-key (main.c) abre o titulo
 // pelo mesmo caminho de uma recomendacao ou aviso — sem navegar ate ele por
@@ -236,7 +239,9 @@ static void *escolherFonte(void *u) {
   FonteJob *job = u;
   // Ate 8: numa lista tipica de 12, as primeiras costumam ser do mesmo
   // provedor e falham juntas quando o arquivo nao esta em cache. Testar poucas
-  // devolvia "nenhuma fonte serve" com fontes boas logo adiante.
+  // devolvia "nenhuma fonte serve" com fontes boas logo adiante. Sao 8 NO
+  // MAXIMO e uma por vez, parando na primeira que serve; com "Primeira da
+  // lista" streams.c reduz para 1 (issue #130).
   job->resultado = stream_primeira_boa(8);
   atomic_store_explicit(&job->estado, FJOB_DONE, memory_order_release);
   return NULL;
@@ -651,10 +656,25 @@ static void erroSemFonte(void) {
 // alguns links respondem HTTP 200 e o uMS fica em load sem erro. Se o
 // automatico caiu nesse caso, tira a candidata da fila e verifica a proxima;
 // escolha manual fica intacta.
+// Pede a verificacao da proxima candidata automatica, com a sessao do player
+// aberta. 0 quando nem deu para pedir (ja mostrou o erro).
+static int pedirProximaFonteVOD(void) {
+  unsigned geracao = novaGeracaoFonte();
+  aguardandoFonte = 2;
+  fontePedidoGeracao = geracao;
+  fonteEscolhida = -2;
+  limparFontePendente();
+  if (pedirFonteJob(FJOB_ADDON, geracao, NULL, 0) < 0) {
+    aguardandoFonte = 0;
+    limparFonteVOD();
+    player_erro_fonte();
+    return 0;
+  }
+  return 1;
+}
 static void tentarProximaFonteVOD(void) {
   Uint32 desde;
   int atual, motivo = 0;
-  unsigned geracao;
   if (!fonteVODAutomatica || player_id_canal()[0] || !player_aberto() ||
       player_quer_sair() || aguardandoFonte != 0 || !fonteVODDesde) return;
   desde = SDL_GetTicks() - fonteVODDesde;
@@ -667,22 +687,13 @@ static void tentarProximaFonteVOD(void) {
   if (atual >= 0) stream_automatico_excluir(atual);
   if (fonteVODTentativas >= VOD_FONTE_MAX_TENTATIVAS ||
       stream_automatico() < 0) {
-    printf("[fonte] automatico VOD sem proxima candidata (motivo=%d)\n", motivo);
+    printf("[fonte] automatico VOD sem proxima candidata (motivo=%d, %d de %d)\n",
+           motivo, fonteVODTentativas, VOD_FONTE_MAX_TENTATIVAS);
     fonteVODAutomatica = 0;
     player_erro_fonte();
     return;
   }
-
-  geracao = novaGeracaoFonte();
-  aguardandoFonte = 2;
-  fontePedidoGeracao = geracao;
-  fonteEscolhida = -2;
-  limparFontePendente();
-  if (pedirFonteJob(FJOB_ADDON, geracao, NULL, 0) < 0) {
-    limparFonteVOD();
-    player_erro_fonte();
-    return;
-  }
+  if (!pedirProximaFonteVOD()) return;
   printf("[fonte] automatico VOD descartou %d; verificando proxima (%d/%d)\n",
          atual, fonteVODTentativas + 1, VOD_FONTE_MAX_TENTATIVAS);
   marco("fonte VOD travou; tentando proxima");
@@ -1864,6 +1875,18 @@ void app_atualizar(float dt, Uint32 agora) {
         // Armado so em sessao de canal: o indice passa a responder ao
         // watchdog de fonte morta ate a lista acabar ou o canal trocar.
         if (player_id_canal()[0]) { canalFonteIdx = fonteEscolhida; canalFonteDesde = SDL_GetTicks(); }
+      }
+      // "PRIMEIRA DA LISTA" CONFERE UMA SO (issue #130), entao a conferencia
+      // que falha conta como uma tentativa do mesmo orcamento da reproducao
+      // que trava: a proxima da lista so e conferida se ainda cabe em "Outra
+      // fonte se falhar". No modo "Melhor fonte" a conferencia ja percorreu a
+      // fila dela, e aqui e erro como sempre foi.
+      else if (!player_id_canal()[0] && ajustes_fonte_primeira() &&
+               ++fonteVODTentativas < VOD_FONTE_MAX_TENTATIVAS &&
+               stream_automatico() >= 0) {
+        printf("[fonte] primeira da lista nao serviu; conferindo a seguinte (%d/%d)\n",
+               fonteVODTentativas + 1, VOD_FONTE_MAX_TENTATIVAS);
+        (void)pedirProximaFonteVOD();
       }
       else { limparFonteVOD(); erroSemFonte(); }
     }
