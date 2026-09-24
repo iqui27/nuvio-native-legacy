@@ -516,7 +516,16 @@ int ajustes_idioma_ingles(void);
 // O cabecalho ja grava sizeof(CatItem) e recusaria o arquivo por tamanho — a
 // versao sobe mesmo assim para o motivo da recusa ser o campo novo, e nao um
 // "tamanho diferente" que ninguem lembra de onde veio.
-#define CACHE_VERSAO 5
+// VERSAO 6: o vinculo do Trakt passou a ser POR PERFIL (traktauth.c). Ate a 5
+// o perfil 2 sem Trakt proprio usava o do perfil 1, e o cache gravado com o
+// perfil 2 guarda a watchlist, o "continuar" e as listas do Trakt do 1 com o
+// cabecalho dizendo "perfil 2" — a identidade confere e a home do 2 abriria
+// com o Trakt do 1 ate a rede substituir. O formato NAO mudou: um arquivo da 5
+// com perfil 1 continua certo (era o dono daquele Trakt) e e aceito, para o
+// perfil 1 nao pagar um arranque sem cache por nada; o de qualquer outro
+// perfil e recusado e apagado.
+#define CACHE_VERSAO 6
+#define CACHE_VERSAO_SO_P1 5
 
 typedef struct {
   unsigned magia, versao, tamItem, tamFileira;
@@ -722,7 +731,9 @@ int cat_ler_cache(const char *dirArte) {
   if (!f) return 0;
   if (fread(&c, sizeof c, 1, f) != 1) { fclose(f); return 0; }
   // RECUSA em vez de ler torto. Struct diferente = arquivo de outra build.
-  if (c.magia != CACHE_MAGIA || c.versao != CACHE_VERSAO ||
+  if (c.magia != CACHE_MAGIA ||
+      !(c.versao == CACHE_VERSAO ||
+        (c.versao == CACHE_VERSAO_SO_P1 && c.perfil == 1)) ||
       c.tamItem != sizeof(CatItem) || c.tamFileira != sizeof(CatFileira) ||
       c.nItens < 0 || c.nItens > CAT_MAX ||
       c.nFileiras < 0 || c.nFileiras > CAT_FIL_MAX) {

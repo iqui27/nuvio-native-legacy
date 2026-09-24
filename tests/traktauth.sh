@@ -13,3 +13,12 @@ cc ${flags[@]+"${flags[@]}"} src/traktauth.c src/js.c src/jsw.c \
   -o /tmp/nuvio-traktauth-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
 /tmp/nuvio-traktauth-tests
+
+# Vinculo por perfil: trakt-p<N>.txt, migracao do trakt.txt antigo so para o
+# perfil 1, troca de perfil com fio no ar. Disco e rede sao dubles em memoria.
+cc ${flags[@]+"${flags[@]}"} src/traktauth.c src/js.c src/jsw.c \
+  tests/traktauth_perfil.c \
+  -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
+  -o /tmp/nuvio-traktauth-perfil-tests -O1 -g -lpthread \
+  -Wall -Wno-deprecated-declarations -Wno-macro-redefined
+/tmp/nuvio-traktauth-perfil-tests

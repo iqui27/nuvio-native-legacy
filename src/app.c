@@ -1199,6 +1199,21 @@ void app_atualizar(float dt, Uint32 agora) {
         // faltava era o pedido de refazer.
         desc_refazer_continuar();
       }
+      // O TRAKT E O SIMKL TAMBEM SAO DO PERFIL. O vinculo local era um so por
+      // aparelho e o perfil 2 seguia com o Trakt do 1 — watchlist, historico,
+      // "continuar" e as fileiras do Trakt (relato do dono na C9). Aqui a
+      // credencial do perfil anterior sai da memoria e entra a deste, ou
+      // nenhuma; a da conta, se o perfil tiver, chega pelo sync_iniciar abaixo.
+      // Quando algum dos dois estava ou ficou ligado, as fileiras na tela sao do
+      // perfil errado e a home inteira e remontada — desc_refazer_continuar so
+      // refaz o "Continuar", e a watchlist e as listas do Trakt ficariam.
+      //
+      // FORA do `if` acima de proposito: as duas comparam com o perfil DELAS, nao
+      // com perfilAntes, e devolvem 0 sem mexer em nada quando ja estao certas.
+      { int tk = traktauth_trocar_perfil(perfis_ativo());
+        int sk = simklauth_trocar_perfil(perfis_ativo());
+        if (sk) simkl_esquecer();
+        if (tk || sk) desc_repetir(); }
       sync_iniciar();
       tela = TELA_HOME;
     }

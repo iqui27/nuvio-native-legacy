@@ -89,11 +89,23 @@ static void avisoHttp401(const char *url) {
 }
 int trakt_recusada(void) { return estadoLer(&credRecusada); }
 
+// As tabelas da ultima leitura (definidas mais abaixo, junto de quem as
+// preenche). Os contadores ficam aqui porque trakt_esquecer os zera.
+static int nUlt, nProxIds, nPlay;
+
 void trakt_esquecer(void) {
   token[0] = 0;
   cliente[0] = 0;
   ligado = 0;
-  printf("[trakt] credencial esquecida (saiu da conta)\n");
+  // E O QUE A ULTIMA LEITURA DEIXOU. Esquecer vale tambem na TROCA DE PERFIL
+  // (traktauth_trocar_perfil), e ai o "a seguir" e os ids de playback do perfil
+  // anterior continuariam respondendo trakt_e_a_seguir/trakt_playback_remover
+  // para os cards do perfil novo. Zerar contadores so encurta uma varredura que
+  // o fio da descoberta esteja fazendo — nunca a faz passar do fim.
+  nUlt = nProxIds = nPlay = 0;
+  estadoEscrever(&credRecusada, 0);
+  trakt_social_reavaliar();
+  printf("[trakt] credencial esquecida\n");
 }
 
 int trakt_definir(const char *tk, const char *cli) {
@@ -145,7 +157,7 @@ int trakt_carregar(const char *dirArte) {
   // arquivo do pacote. MEDIDO: art/trakt.txt de desenvolvimento, com token de
   // 31/08 ja vencido, sobrescrevia o token recem-autorizado a cada arranque e
   // tudo do Trakt voltava a 401 — "autorizei e continua sem".
-  if (token[0]) { printf("[trakt] vinculo desta TV mantido; arquivo do pacote ignorado\n"); return 1; }
+  if (token[0]) { printf("[trakt] vinculo deste perfil mantido; arquivo do pacote ignorado\n"); return 1; }
   snprintf(caminho, sizeof caminho, "%s/trakt.txt", dirArte ? dirArte : ".");
   f = fopen(caminho, "r");
   if (!f) { printf("[trakt] sem %s\n", caminho); return 0; }
@@ -261,10 +273,10 @@ static void doBlocoTrakt(CatItem *d, const char *bloco, const char *fim,
 // cache em disco.
 #define TK_ULT_MAX 64
 typedef struct { char imdb[24]; int temporada, episodio; long long quandoMs; } TkUltimo;
-static TkUltimo ult[TK_ULT_MAX]; static int nUlt;
+static TkUltimo ult[TK_ULT_MAX];   // nUlt: ver trakt_esquecer
 // Os ids ("tt:S:E") dos itens "a seguir" desta rodada, para enfeitar() saber
 // que precisa CONFERIR que o episodio existe antes de publicar.
-static char proxIds[TK_ULT_MAX][32]; static int nProxIds;
+static char proxIds[TK_ULT_MAX][32];   // nProxIds: ver trakt_esquecer
 static int ehProximo(const char *id) {
   int i;
   for (i = 0; i < nProxIds; i++) if (!strcmp(proxIds[i], id)) return 1;
@@ -496,8 +508,7 @@ int trakt_enfeitar_lote(CatItem *saida, int n) {
 // Preenchida em trakt_continuar; consumida por trakt_playback_remover. Cabe a
 // mesma quantidade que a fileira mostra com folga.
 #define TK_PLAY_MAX 64
-static struct { char chave[28]; long long id; } play[TK_PLAY_MAX];
-static int nPlay;
+static struct { char chave[28]; long long id; } play[TK_PLAY_MAX];   // nPlay: ver trakt_esquecer
 
 // Remove o item da barra de retomada do Trakt. `imdb` e a chave COMPOSTA, do
 // mesmo jeito que trakt_continuar a montou ("tt123:2:8" em serie, "tt123" em

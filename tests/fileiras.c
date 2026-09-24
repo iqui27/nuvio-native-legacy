@@ -573,6 +573,37 @@ int main(void) {
   assert(!strcmp(fil_hero_fonte(), ""));
   puts("ok  fonte do destaque grava, le e tolera arquivo antigo");
 
+  // SEMENTE SO PARA O PERFIL 1. O fileirasui.txt antigo e a escolha de quem
+  // usava o app antes dos perfis — que sincronizava sempre o perfil 1. Relato
+  // do dono na C9: o perfil 2 abria com a ordem, o limite e o destaque do 1.
+  // Perfil sem arquivo proprio que nao e o 1 comeca do padrao.
+  fil_esquecer();
+  usaArquivo = 1;
+  remove("/tmp/fileirasui-p1.txt");
+  remove("/tmp/fileirasui-p2.txt");
+  { FILE *f = fopen("/tmp/fileirasui.txt", "w");
+    assert(f);
+    fputs("limite 11\nordem 1\nhero *\nlinha catDoUm\t0\t0\t1\t0\tDo perfil 1\n", f);
+    fclose(f); }
+  fil_definir_perfil(2);
+  assert(fil_limite() == FIL_LIMITE_PADRAO);
+  assert(fil_n() == 0);
+  assert(!fil_tem_ordem());
+  assert(!strcmp(fil_hero_fonte(), ""));
+  fil_definir_perfil(1);
+  assert(fil_limite() == 11);
+  assert(fil_n() == 1 && !strcmp(fil_chave(0), "catDoUm"));
+  assert(!strcmp(fil_hero_fonte(), "*"));
+  // Voltar ao 2 continua sem nada do 1 (e o destaque zera, como antes).
+  fil_definir_perfil(2);
+  assert(fil_n() == 0 && !strcmp(fil_hero_fonte(), "") && fil_limite() == FIL_LIMITE_PADRAO);
+  remove("/tmp/fileirasui.txt");
+  remove("/tmp/fileirasui-p1.txt");
+  remove("/tmp/fileirasui-p2.txt");
+  fil_definir_perfil(0);
+  usaArquivo = 0;
+  puts("ok  fileirasui.txt antigo semeia so o perfil 1");
+
   puts("fileiras: tudo ok");
   return 0;
 }

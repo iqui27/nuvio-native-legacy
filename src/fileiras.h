@@ -156,7 +156,8 @@ void fil_normalizar(void);
 
 // --- perfil e poda -----------------------------------------------------------
 // A escolha e POR PERFIL (fileirasui-p<N>.txt; 0 = o arquivo antigo, que serve
-// de semente ao primeiro arquivo de cada perfil). Chamar na troca de perfil.
+// de semente ao primeiro arquivo do perfil 1, e so dele). Chamar na troca de
+// perfil.
 void fil_definir_perfil(int perfil);
 // Tira da lista os catalogos de addons que ja nao estao na conta. `ids` e
 // `bases` sao os ids de manifesto e as URLs base dos addons ATUAIS; so vale
