@@ -54,8 +54,10 @@ def tabela_atual(plataforma, mem):
         return {"tex_mb": auto, "teto_mb": auto, "fios_rede": 2, "heroi": 1280}
     if not mem:
         return {"tex_mb": 96, "teto_mb": 160, "fios_rede": 4, "heroi": 1920}
-    auto = 48 if mem < 800 else 64 if mem < 1200 else 96 if mem < 2000 else 128 if mem < 3000 else 192
-    teto = 96 if mem < 1200 else 160 if mem < 2000 else 300 if mem < 3000 else 512
+    # 23/09: a replica ainda dizia 64/96 abaixo de 1,2 GB (o C desceu para
+    # 48/64 em be3d473) e por isso propunha 96 para a faixa. 1,2-2 GB: 128.
+    auto = 48 if mem < 1200 else 128 if mem < 3000 else 192
+    teto = 64 if mem < 1200 else 160 if mem < 2000 else 300 if mem < 3000 else 512
     return {"tex_mb": auto, "teto_mb": teto, "fios_rede": 2 if mem < 1200 else 4,
             "heroi": 1280 if mem < 1200 else 1920}
 
@@ -170,7 +172,9 @@ def agregar(linhas):
         g["aparelhos"].add(hash(linha.get("pessoa") or linha.get("id")))
         if mem:
             g["mem"].append(mem)
-        g["despejos"].append(num(r.get("despejos_quentes_depois")) + num(r.get("tex_quentes")))
+        # despejos_quentes_antes/_sessao so existem desde 23/09 (num() da 0).
+        g["despejos"].append(num(r.get("despejos_quentes_depois")) + num(r.get("tex_quentes")) +
+                             num(r.get("despejos_quentes_antes")) + num(r.get("despejos_quentes_sessao")))
         g["versoes"].add(linha.get("versao") or r.get("versao") or "?")
         g["ids"].append(linha.get("id"))
         g["modos"][r.get("modo", "?")] += 1
@@ -252,11 +256,16 @@ def propor(g, plat):
     aplicados = g["aplicacao"].get("aplicada", 0)
     restaurados = sum(v for k, v in g["aplicacao"].items() if k.startswith("restaurada"))
     iguais = g["aplicacao"].get("ja_no_perfil", 0)
-    if not aplicados and not restaurados:
+    # mantido_ruido (23/09): testado, nao piorou, mas sem ganho alem da margem
+    # de ptv_decidir; o anterior voltou. Conta a parte: nao e "igual" nem
+    # "restaurado por piorar".
+    ruido = g["aplicacao"].get("mantido_ruido", 0)
+    if not aplicados and not restaurados and not ruido:
         prop["perfil"] = ("manter a tabela (candidato igual ao perfil em %d de %d)" % (iguais, n)
                           if iguais else "manter a tabela (nenhum candidato testado)")
     else:
-        prop["perfil"] = "candidato mantido em %d, restaurado em %d de %d" % (aplicados, restaurados, n)
+        prop["perfil"] = "candidato mantido em %d, restaurado em %d, dentro do ruido em %d de %d" % (
+            aplicados, restaurados, ruido, n)
     if g["perfil_antes"]:
         ult = g["perfil_antes"][-1]
         prop["perfil_visto"] = {"tex_mb": ult[0], "fios_rede": ult[1], "heroi": ult[2]}

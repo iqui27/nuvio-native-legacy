@@ -7,7 +7,7 @@
 //   LG sem MemTotal       96     160       4       1920
 //   LG  < 800 MB          48      64       2       1280   webOS 3 de 2016
 //   LG  < 1,2 GB          48      64       2       1280   webOS 3/4 de 1 GB
-//   LG  < 2 GB            96     160       4       1920   webOS 4/5 menores
+//   LG  < 2 GB           128     160       4       1920   webOS 4/5 menores
 //   LG  < 3 GB (C9)      128     300       4       1920   medido na C9
 //   LG >= 3 GB           192     512       4       1920   C1/C2/C3
 //   Samsung sem devMem    96      96       2       1280
@@ -31,6 +31,13 @@
 //   HIPOTESE (nao ha log do sistema); o que e medido e o rss subir com as
 //   texturas. A tela mais cheia do registro usou 26 MB (tela=27/26.2MB), entao
 //   48 ainda cobre a tela com folga, e o preco e redecodificar mais ao voltar.
+//   O agregado de 23/09 (tools/diag-agregado.py) propunha 96 para esta faixa,
+//   mas so porque a replica da tabela no script ainda dizia 64/96; os
+//   relatorios com pico 61,7/64 MB sao de builds de antes do 48. Fica 48/64.
+// - LG 1,2-2 GB subiu de 96 para 128 (23/09/2026, agregado de ~38 relatorios
+//   diagnostico=v2): nesta faixa o pico chegou a 160 de 160 MB e houve arte
+//   VISIVEL despejada em 12 de 27 relatorios. 128 e o degrau seguinte da
+//   escada, abaixo do teto de 160 que ja valia; fios e heroi nao mudam.
 // - fios de rede: o build cria 4 na LG e 2 no Tizen (NV_TEX_FIOS_REDE). Na LG
 //   de 1 GB ficam 2 ativos: cada fio segura um corpo baixado ate o decode
 //   (ate 12 MB de fundo), e 4 corpos em voo numa TV com ~300 MB livres e o
@@ -64,8 +71,7 @@ int ptv_tex_auto_mb(PtvPlataforma p, long mem) {
   }
   if (!mem) return NV_TEX_ORCAMENTO_MB;
   if (mem < 1200) return 48;
-  if (mem < 2000) return 96;
-  if (mem < 3000) return 128;
+  if (mem < 3000) return 128;   // 1,2-2 GB e a C9: ver a tabela no topo
   return 192;
 }
 
@@ -151,6 +157,58 @@ int ptv_depois_pior(const PtvMedida *a, const PtvMedida *b, const char **motivo)
     m = "O pior quadro piorou depois da mudança";
   if (motivo) *motivo = m;
   return m != NULL;
+}
+
+// A MARGEM (23/09/2026). Com so "nao piorou", o mesmo aparelho trocava de
+// perfil a cada rodada por ruido de rede: uma LG foi de 96|4|1920 para
+// 160|4|1920 com artes 316 -> 297 ms (6%, 19 ms) e na rodada seguinte de
+// 160|4|1920 para 96|2|1280 com 320 -> 360 ms (pior, mas dentro da folga de
+// restaurar). Outras duas LGs fizeram o mesmo vaivem em rodadas seguidas.
+// Agora, depois de passar por ptv_depois_pior, o candidato precisa de UM
+// motivo medido para ficar:
+//   GANHO: artes ao menos max(15%, 80 ms) mais rapidas SEM piorar o pior
+//     quadro alem de um quadro (17 ms, so conta a partir de 50 ms) e sem
+//     arte falhando ou despejada a mais; ou menos falhas; ou menos arte
+//     visivel despejada. Contagem que cai nao e ruido de tempo.
+//   MEMORIA: subir o orcamento de texturas vale quando ja houve arte VISIVEL
+//     despejada (no passe ANTES ou na sessao). Sem isso, mais MB nao compra
+//     nada: o cache enche ate qualquer orcamento, e o tempo da amostra com
+//     disco quente nao depende dele.
+//   HEROI: subir o teto do heroi e a propria qualidade que o modo Qualidade
+//     pede (a arte de tela cheia fica nitida); nao precisa ser mais rapido,
+//     so nao pode piorar — e ptv_depois_pior ja reprovou o que piorou.
+// DESCER qualquer campo (menos textura, menos fios, heroi menor) so com
+// GANHO: nunca por uma diferenca que cabe no ruido.
+// O resto e ruido: o anterior volta e o relatorio diz mantido_ruido.
+static int ganhoMedido(const PtvMedida *a, const PtvMedida *b) {
+  int margem = a->artesMs * PTV_GANHO_PCT / 100;
+  if (margem < PTV_GANHO_MIN_MS) margem = PTV_GANHO_MIN_MS;
+  if (b->falhas < a->falhas && b->despejosQuentes <= a->despejosQuentes) return 1;
+  if (b->despejosQuentes < a->despejosQuentes && b->falhas <= a->falhas) return 1;
+  if (b->falhas > a->falhas || b->despejosQuentes > a->despejosQuentes) return 0;
+  if (b->piorQuadroMs >= 50 && b->piorQuadroMs > a->piorQuadroMs + PTV_QUADRO_RUIDO_MS) return 0;
+  return a->artesMs - b->artesMs >= margem;
+}
+
+PtvDecisao ptv_decidir(const PtvPerfil *pa, const PtvPerfil *pc,
+                       const PtvMedida *a, const PtvMedida *b,
+                       long despejosSessao, const char **motivo) {
+  const char *m = NULL;
+  int desce, ganho, pressao;
+  if (motivo) *motivo = NULL;
+  if (!pa || !pc || !a || !b) return PTV_DEC_RUIDO;
+  if (ptv_depois_pior(a, b, motivo)) return PTV_DEC_RESTAURAR;
+  ganho = ganhoMedido(a, b);
+  desce = pc->texMb < pa->texMb || pc->fiosRede < pa->fiosRede || pc->heroiLarg < pa->heroiLarg;
+  pressao = a->despejosQuentes > 0 || despejosSessao > 0;
+  if (ganho) return PTV_DEC_APLICAR;
+  if (desce) m = "Menos recursos sem ganho claro no reteste";
+  else if (pc->heroiLarg > pa->heroiLarg) return PTV_DEC_APLICAR;
+  else if (pc->texMb > pa->texMb && pressao) return PTV_DEC_APLICAR;
+  else if (pc->texMb > pa->texMb) m = "Nenhuma arte visível foi descartada: mais memória não ajuda";
+  else m = "O candidato não foi claramente mais rápido";
+  if (motivo) *motivo = m;
+  return PTV_DEC_RUIDO;
 }
 
 int ptv_serializar(const PtvPerfil *pf, const char *modo, char *dst, size_t cap) {
