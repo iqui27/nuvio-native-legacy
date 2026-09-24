@@ -118,7 +118,7 @@ static void     soltar(uint8_t *px);
 // Layout do job (int32 cada). Espelhado em tools/decodificador.js e no JS
 // logo abaixo — mudar aqui e mudar la.
 // J_ORIGEM: 0 fio principal, 1 Worker via fio principal, 2 Worker pelo canal
-// direto. J_FILA liga os jobs na pilha da sentinela; J_MIME (1 webp, 2 png) e
+// direto. J_FILA liga os jobs na pilha da sentinela; J_MIME (1 webp, 2 png, 3 gif) e
 // J_LARG sao o que a sentinela repassa ao Worker, que nao le string do C.
 enum { J_EST, J_W, J_H, J_PTR, J_OW, J_OH, J_ORIGEM, J_SEQ, J_CAP, J_DADOS, J_N, J_PROX,
        J_FILA, J_MIME, J_LARG, J_INTS };
@@ -184,8 +184,10 @@ int navegador_abandonados_vivos(void) { return varrer(); }
 static unsigned le32be(const unsigned char *p) { return ((unsigned)p[0] << 24) | ((unsigned)p[1] << 16) | ((unsigned)p[2] << 8) | p[3]; }
 static unsigned le24le(const unsigned char *p) { return p[0] | ((unsigned)p[1] << 8) | ((unsigned)p[2] << 16); }
 
-// Tamanho da imagem pelo CABECALHO, sem decodificar. So PNG e WebP passam por
-// esta ponte (JPEG e software, jpegrapido.c). 0 quando nao reconhece.
+// Tamanho da imagem pelo CABECALHO, sem decodificar. PNG, WebP e GIF passam
+// por esta ponte (JPEG e software, jpegrapido.c). 0 quando nao reconhece. Do
+// GIF vale a TELA LOGICA, que e o tamanho do primeiro quadro que o
+// createImageBitmap devolve.
 static int dimensoes(const unsigned char *d, size_t n, int *w, int *h) {
   *w = *h = 0;
   if (n >= 24 && d[0] == 0x89 && !memcmp(d + 1, "PNG", 3) && !memcmp(d + 12, "IHDR", 4)) {
@@ -199,6 +201,8 @@ static int dimensoes(const unsigned char *d, size_t n, int *w, int *h) {
     } else if (!memcmp(d + 12, "VP8 ", 4) && d[23] == 0x9d && d[24] == 0x01 && d[25] == 0x2a) {
       *w = (d[26] | (d[27] << 8)) & 0x3fff; *h = (d[28] | (d[29] << 8)) & 0x3fff;
     }
+  } else if (n >= 13 && !memcmp(d, "GIF8", 4)) {
+    *w = d[6] | (d[7] << 8); *h = d[8] | (d[9] << 8);
   }
   return *w > 0 && *h > 0 && *w <= 32768 && *h <= 32768;
 }
@@ -274,6 +278,7 @@ static int mimeCodigo(const char *mime) {
   if (!mime) return 0;
   if (!strcmp(mime, "image/webp")) return 1;
   if (!strcmp(mime, "image/png")) return 2;
+  if (!strcmp(mime, "image/gif")) return 3;
   return 0;
 }
 

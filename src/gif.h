@@ -26,12 +26,30 @@
 #include <stddef.h>
 #include "gl_compat.h"
 
-// ESTE ALVO ANIMA GIF? Constante em tempo de compilacao (1 no Tizen, 0 no
-// resto). Existe para quem CHAMA nao pagar nada onde a resposta e nao: sem ela,
-// o cartaz em foco no webOS pediria o download do GIF a cada foco, para
-// gif_textura devolver 0 no fim — banda e espaco de cache gastos num arquivo
-// que nunca vai ser desenhado.
+// ESTE APARELHO ANIMA GIF? 0 no webOS e no Mac; no Tizen, 1 quando o
+// orcamento abaixo nao e zero (TV de 1 GB: 0, fica a foto parada). Existe para
+// quem CHAMA nao pagar nada onde a resposta e nao: sem ela, o cartaz em foco
+// pediria o download do GIF a cada foco, para gif_textura devolver 0 no fim —
+// banda e espaco de cache gastos num arquivo que nunca vai ser desenhado.
 int gif_pode_animar(void);
+
+// ORCAMENTO DE ANIMACAO POR RAM (24/09/2026, TV de 1 GB que morria na tela de
+// perfis e na home). O custo de um GIF e o que ele decodifica por volta:
+// quadros x tela logica x 4 bytes (gif_custo) — e o que o Worker compoe, quadro
+// a quadro, e o que a <img> de reserva guardaria inteiro. `memGB` e o
+// navigator.deviceMemory (0 = o navegador nao disse). Devolve bytes; 0 = nao
+// anima; GIF_SEM_TETO = sem limite (o comportamento de antes). A tabela, e de
+// onde veio cada numero, esta em gif.c. Aritmetica pura: testada no Mac.
+#define GIF_SEM_TETO ((size_t)-1)
+size_t gif_orcamento_para(double memGB);
+size_t gif_custo(int quadros, int telaW, int telaH);
+
+// Chamar UMA VEZ POR QUADRO de tela (main.c). Solta a animacao corrente
+// quando ninguem pediu gif_textura ha mais de NV_GIF_OCIOSO_MS: e o que
+// libera os quadros comprimidos, a sessao do Worker e os canvases quando a
+// tela de perfis fecha ou o foco sai do cartaz — antes disso eles ficavam
+// presos ate o PROXIMO GIF. Fora do Tizen nao faz nada.
+void gif_ocioso(void);
 
 // O arquivo e um GIF com MAIS DE UM quadro? Le so a estrutura de blocos, que e
 // toda prefixada por tamanho — nao decodifica pixel nenhum.
@@ -69,7 +87,9 @@ size_t gif_montar(const unsigned char *b, size_t n, const GifQuadro *q,
                   unsigned char *saida, size_t cap);
 
 // Textura com o quadro que a animacao esta mostrando AGORA, ou 0 quando o alvo
-// nao anima, o arquivo nao e GIF animado, ou o quadro ainda nao decodificou.
+// nao anima, o arquivo nao e GIF animado, o GIF passa do orcamento acima (e ai
+// devolve 0 para sempre, sem reler o arquivo), ou o quadro ainda nao
+// decodificou. Em todos esses casos quem chama desenha a foto parada.
 // A textura e reaproveitada entre chamadas: e sempre a mesma, com o conteudo
 // trocado. So um cartaz anima por vez (o que esta em foco), e e nisso que esta
 // funcao se apoia para nao guardar quadro nenhum.

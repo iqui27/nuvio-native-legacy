@@ -21,8 +21,9 @@ SDL_Surface *webp_carregar_larg_mem(const unsigned char *dados, size_t n, int la
 
 #ifdef __EMSCRIPTEN__
 // A PONTE PARA O DECODIFICADOR DO NAVEGADOR, para qualquer formato que ele
-// leia (`mime`: image/png, image/webp — o tamanho sai do cabecalho, entao
-// so esses dois; JPEG devolve NULL). Bloqueia o fio chamador
+// leia (`mime`: image/png, image/webp, image/gif — o tamanho sai do
+// cabecalho, entao so esses tres; do GIF sai o primeiro quadro; JPEG devolve
+// NULL). Bloqueia o fio chamador
 // (nunca o principal). Devolve RGBA de malloc com largura <= largMax quando
 // largMax > 0 — a reducao acontece no canvas, com o bitmap inteiro FORA do
 // heap do WASM; `ow`/`oh` recebem o tamanho original. Ver jpegrapido.c para

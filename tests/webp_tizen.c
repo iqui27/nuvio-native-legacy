@@ -225,6 +225,21 @@ static void *fioDeDecode(void *arg) {
   // principal) e nada e impresso durante a medida (printf de pthread idem).
   // Pelo canal direto o decode nao deve sentir; pela ponte antiga cada
   // pedido espera o bloco em curso.
+  // GIF PELO NAVEGADOR (24/09/2026): o SDL_image do Tizen nao le GIF, e a
+  // foto de perfil .gif fora de foco ficava so na inicial. A ponte devolve o
+  // PRIMEIRO quadro (vermelho); o segundo (azul) nao pode aparecer.
+  { int ow = 0, oh = 0;
+    s = jpeg_rapido_carregar("/amostra.gif", 0, &ow, &oh);
+    if (!s) printf("FALHOU: gif devolveu NULL\n");
+    else {
+      Uint32 p = 0; Uint8 r, g, b, al;
+      memcpy(&p, s->pixels, 4);
+      SDL_GetRGBA(p, s->format, &r, &g, &b, &al);
+      printf("%s gif primeiro quadro %dx%d (arquivo %dx%d, pixel=%d,%d,%d,%d)\n",
+             (s->w == 8 && s->h == 4 && ow == 8 && oh == 4 && r > 200 && b < 50 && al == 255) ? "ok " : "FALHOU:",
+             s->w, s->h, ow, oh, r, g, b, al);
+      SDL_FreeSurface(s);
+    } }
   { unsigned char *dados; long n; FILE *f = fopen("/amostra.webp", "rb");
     double soma = 0, maxMs = 0; int i, ok = 0;
     if (!f) { printf("FALHOU: amostra.webp\n"); return NULL; }

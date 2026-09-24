@@ -72,8 +72,72 @@ static unsigned char *lerTudo(const char *caminho, size_t *n) {
   return b;
 }
 
+// ---------------------------------------------------------------- orcamento
+//
+// POR QUE HA UM (24/09/2026). Registros 2340/2341/2351 (Tizen 6, deviceMemory
+// 1): cada GIF de avatar que comecava a animar custava um quadro de 2,3 s
+// (`des=2353`, `des=2342`, `des=2387`) e o Worker nao dava conta do ritmo ("deu
+// a volta nos 35 quadros em 4119 ms", um GIF de 1050 ms). Numa TV que ja passa
+// segundos parada com a propria home (`swap=` de 3 a 6 s sem GIF nenhum), a
+// animacao e trabalho que ela nao tem de onde tirar. Nao esta provado que o
+// GIF derrubou a pagina: as tres sessoes morreram na home, 150 a 420 s depois
+// do ultimo GIF. O que esta medido e o custo acima.
+//
+// A MEDIDA E O QUE O GIF DECODIFICA POR VOLTA, quadros x tela logica x 4. Nao e
+// memoria presa (o Worker guarda um quadro composto por vez, ver
+// tools/decodificador.js), e o trabalho de decode por volta — e seria a
+// memoria presa na <img> de reserva, que guarda todos.
+//
+//   RAM <= 1 GB       0   nao anima: fica o primeiro quadro, parado
+//   1 GB < RAM < 4   48 MB  35x512x512 (37 MB) e 51x360x360 (26 MB) animam;
+//                          75x500x375 (56 MB) fica parado
+//   RAM >= 4 GB     sem teto (o que sempre foi)
+//   sem deviceMemory 48 MB  Chromium que nao informa e o mais velho
+//
+// Os 48 MB sao CHUTE pelos GIFs dos registros, nao medida de limite: nenhum
+// aparelho de 2 GB aqui. Os GIFs de colecao vistos (21x498x448 = 19 MB,
+// 45x480x270 = 23 MB) continuam animando em 2 GB.
+size_t gif_custo(int quadros, int telaW, int telaH) {
+  if (quadros < 1 || telaW < 1 || telaH < 1) return 0;
+  return (size_t)quadros * (size_t)telaW * (size_t)telaH * 4u;
+}
+
+size_t gif_orcamento_para(double memGB) {
+  if (memGB <= 0.0) return (size_t)48 * 1024 * 1024;
+  if (memGB <= 1.0) return 0;
+  if (memGB < 4.0) return (size_t)48 * 1024 * 1024;
+  return GIF_SEM_TETO;
+}
+
 #ifdef __EMSCRIPTEN__
-int gif_pode_animar(void) { return 1; }
+EM_JS(double, gif_js_memoria_gb, (), {
+  try {
+    var m = (typeof navigator !== 'undefined') ? navigator.deviceMemory : 0;
+    return (typeof m === 'number' && m > 0) ? m : 0;
+  } catch (e) { return 0; }
+});
+
+// Decidido uma vez: a RAM nao muda com o app aberto.
+static size_t orcamento(void) {
+  static int lido;
+  static size_t orc;
+  if (!lido) {
+    double gb = gif_js_memoria_gb();
+    lido = 1;
+    orc = gif_orcamento_para(gb);
+    if (orc == GIF_SEM_TETO)
+      printf("[gif] orcamento de animacao: sem teto (deviceMemory=%g GB)\n", gb);
+    else if (!orc)
+      printf("[gif] orcamento de animacao: nenhum (deviceMemory=%g GB): GIF fica no primeiro quadro\n", gb);
+    else
+      printf("[gif] orcamento de animacao: %u MB por GIF (deviceMemory=%g GB)\n",
+             (unsigned)(orc / (1024 * 1024)), gb);
+    fflush(stdout);
+  }
+  return orc;
+}
+
+int gif_pode_animar(void) { return orcamento() != 0; }
 #else
 int gif_pode_animar(void) { return 0; }
 #endif
@@ -311,6 +375,14 @@ EM_JS(void, gif_js_seq_iniciar, (int n, int telaW, int telaH), {
                       prontos: {}, pedidos: {}, falhas: 0 };
   Module.nvGifId = (Module.nvGifId | 0) + 1;
   Module.nvGifSeq.wid = Module.nvGifId;
+  // URL DE BLOB SO QUANDO O CAMINHO <img> PRECISA (24/09/2026). Antes cada
+  // quadro ganhava a sua na chegada: 75 createObjectURL no fio principal e
+  // mais uma copia do GIF inteiro no registro de blobs do navegador, para um
+  // caminho que so roda quando o Worker falta. Com o Worker, nenhuma nasce.
+  if (!Module.nvGifUrl) Module.nvGifUrl = function (q, k) {
+    if (!q.urls[k] && q.bufs[k]) q.urls[k] = URL.createObjectURL(new Blob([q.bufs[k]], { type: 'image/gif' }));
+    return q.urls[k];
+  };
 });
 
 // Um quadro, ja remontado como GIF de um quadro so. So guarda os BYTES (uma
@@ -321,7 +393,6 @@ EM_JS(void, gif_js_seq_quadro, (int i, const unsigned char *d, int n,
   if (!s || i < 0 || i >= s.n) return;
   var bytes = HEAPU8.slice(d, d + n);
   s.bufs[i] = bytes.buffer;
-  s.urls[i] = URL.createObjectURL(new Blob([bytes], { type: 'image/gif' }));
   s.meta[i] = { esq: esq, topo: topo, larg: larg, alt: alt, descarte: descarte };
 });
 
@@ -389,9 +460,9 @@ EM_JS(void, gif_js_seq_pedir, (int i), {
 // antes de precisar dele.
 EM_JS(int, gif_js_seq_pronto, (int i), {
   var s = Module.nvGifSeq;
-  if (!s || i < 0 || i >= s.n || !s.urls[i]) return 0;
+  if (!s || i < 0 || i >= s.n || !s.bufs[i]) return 0;
   if (s.wk) { if (s.prontos[i]) return 1; if (!s.pedidos[i]) s.wk.postMessage({ gifQuadro: { id: s.wid, i: i } }), s.pedidos[i] = 1; return 0; }
-  if (!s.imgs[i]) { var im = new Image(); im.src = s.urls[i]; s.imgs[i] = im; }
+  if (!s.imgs[i]) { var im = new Image(); im.src = Module.nvGifUrl(s, i); s.imgs[i] = im; }
   return (s.imgs[i].complete && s.imgs[i].naturalWidth) ? 1 : 0;
 });
 
@@ -429,7 +500,7 @@ EM_JS(int, gif_js_seq_subir, (int i, int nomeTex, int larg, int alt, int mesmoTa
   }
   var im = s.imgs[i];
   if (!im) {
-    if (!s.urls[i]) return 0;
+    if (!Module.nvGifUrl(s, i)) return 0;
     im = new Image(); im.src = s.urls[i]; s.imgs[i] = im;
   }
   if (!im.complete || !im.naturalWidth) return 0;
@@ -474,7 +545,7 @@ EM_JS(int, gif_js_seq_subir, (int i, int nomeTex, int larg, int alt, int mesmoTa
     }
     for (var d = 1; d <= ad; d++) {
       var pk = (i + d) % s.n;
-      if (!s.imgs[pk] && s.urls[pk]) { var nk = new Image(); nk.src = s.urls[pk]; s.imgs[pk] = nk; }
+      if (!s.imgs[pk] && Module.nvGifUrl(s, pk)) { var nk = new Image(); nk.src = s.urls[pk]; s.imgs[pk] = nk; }
     }
   }
   // MESMO QUADRO E MESMO TAMANHO: nao ha o que subir de novo. Quem chama
@@ -512,6 +583,14 @@ static double proxTroca;          // instante (ms) em que o quadro corrente venc
 // a que as fotos do aparelho nao respondiam. Uma linha por capa focada.
 static double inicioVolta;
 static int    contouVolta;
+// O GIF preso passou do orcamento: gif_textura devolve 0 sem reler o arquivo
+// ate o caminho mudar (ou gif_parar/gif_ocioso soltar).
+static int    recusado;
+// Ultima vez que alguem pediu gif_textura (ms). E o que gif_ocioso olha.
+static double ultimoUso;
+#ifndef NV_GIF_OCIOSO_MS
+#define NV_GIF_OCIOSO_MS 1500
+#endif
 
 // Corta o arquivo e entrega os quadros ao navegador. Deixa nSeq em 0 quando
 // nao der para fatiar — e ai o chamador cai no caminho antigo.
@@ -529,6 +608,17 @@ static void fatiar(const unsigned char *b, size_t n) {
   telaW = b[6] | (b[7] << 8);
   telaH = b[8] | (b[9] << 8);
   if (telaW < 1 || telaH < 1) { nSeq = 0; return; }
+  // O ORCAMENTO DECIDE ANTES DE QUALQUER COPIA para o navegador: recusado, o
+  // GIF nao custa mais nada alem desta leitura (quem chama fica na foto).
+  { size_t custo = gif_custo(nSeq, telaW, telaH), orc = orcamento();
+    if (orc != GIF_SEM_TETO && custo > orc) {
+      printf("[gif] %d quadros %dx%d = %u MB por volta, acima do orcamento de %u MB: fica o primeiro quadro\n",
+             nSeq, telaW, telaH, (unsigned)(custo / (1024 * 1024)), (unsigned)(orc / (1024 * 1024)));
+      fflush(stdout);
+      nSeq = 0;
+      recusado = 1;
+      return;
+    } }
   gif_js_seq_iniciar(nSeq, telaW, telaH);
   for (i = 0; i < nSeq; i++) {
     size_t prec = gif_montar(b, n, &seq[i], NULL, 0);
@@ -556,6 +646,8 @@ GLuint gif_textura(const char *caminho, int largAlvo) {
   int w, h;
   unsigned char *px;
   if (!caminho || !caminho[0] || largAlvo < 8) return 0;
+  ultimoUso = emscripten_get_now();
+  if (!orcamento()) return 0;
 
   if (strcmp(preso, caminho)) {
     size_t n = 0;
@@ -564,12 +656,17 @@ GLuint gif_textura(const char *caminho, int largAlvo) {
     gif_js_seq_soltar();
     gif_js_soltar();
     nSeq = 0;
+    recusado = 0;
     fatiar(b, n);
-    if (!nSeq) gif_js_preparar(caminho, b, (int)n);
+    // A <img> DE RESERVA SO ONDE NAO HA TETO. Ela guarda TODOS os quadros
+    // decodificados na memoria do navegador (e o que o orcamento existe para
+    // evitar); onde ha teto, GIF que o fatiamento nao entende fica parado.
+    if (!nSeq && !recusado && orcamento() == GIF_SEM_TETO) gif_js_preparar(caminho, b, (int)n);
     free(b);
     snprintf(preso, sizeof preso, "%s", caminho);
     texW = texH = 0;
   }
+  if (recusado) return 0;
 
   if (nSeq > 1) {
     double agora = emscripten_get_now();
@@ -663,6 +760,21 @@ void gif_parar(void) {
   proxTroca = 0.0;
   inicioVolta = 0.0;
   contouVolta = 0;
+  recusado = 0;
+}
+
+// A textura `tex` NAO sai: e pequena (o tamanho do card) e quem chama guarda o
+// nome dela entre amostras; apaga-la deixaria esse nome apontando para nada.
+void gif_ocioso(void) {
+  double agora;
+  if (!preso[0]) return;
+  agora = emscripten_get_now();
+  if (agora - ultimoUso < NV_GIF_OCIOSO_MS) return;
+  if (!recusado) {
+    printf("[gif] ninguem desenha o GIF ha %.0f ms: animacao solta\n", agora - ultimoUso);
+    fflush(stdout);
+  }
+  gif_parar();
 }
 
 #else   /* webOS e Mac: sem animacao. Ver o cabecalho de gif.h. */
@@ -672,5 +784,6 @@ GLuint gif_textura(const char *caminho, int largAlvo) {
   return 0;
 }
 void gif_parar(void) {}
+void gif_ocioso(void) {}
 
 #endif
