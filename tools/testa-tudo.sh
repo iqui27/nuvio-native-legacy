@@ -1,7 +1,7 @@
 #!/bin/bash
 # Roda todos os testes leves de tests/, pulando os que nao servem de porteiro:
 #   *_shot / cinematic / director  -> precisam de arte e de GL, nao de logica
-#   webp-tizen                     -> sobe um servidor e NUNCA sai (trava tudo)
+#   webp-tizen, webp-vidaa-st      -> sobem um servidor e NUNCA saem (trava tudo)
 #   tizen-clock                    -> depende do relogio do alvo
 # A EXCECAO DA home.sh SAIU. Ela falhava de proposito em nFileiras == 17 com
 # limite 16 — dezesseis catalogos MAIS uma colecao — esperando a decisao sobre
@@ -16,7 +16,7 @@ falhou=0
 for f in tests/*.sh; do
   n=$(basename "$f")
   case "$n" in
-    *_shot.sh|cinematic.sh|director.sh|webp-tizen.sh|tizen-clock.sh) continue;;
+    *_shot.sh|cinematic.sh|director.sh|webp-tizen.sh|webp-vidaa-st.sh|tizen-clock.sh) continue;;
   esac
   if bash "$f" >/tmp/nvteste.log 2>&1; then
     echo "ok    $n"

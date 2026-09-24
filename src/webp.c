@@ -109,6 +109,9 @@ static void     soltar(uint8_t *px);
 #include <math.h>
 #include <pthread.h>
 #include <stdarg.h>
+#ifdef NV_UM_FIO
+#include "fio1.h"
+#endif
 
 // Prazo do fio de decode, em tempo de relogio desde o envio. O teste da fila
 // compila com um prazo curto para forcar abandono.
@@ -237,6 +240,18 @@ void navegador_iniciar(void) {
       Atomics.or(HEAP32, pCanal, 4);
       return;
     }
+    // SEM MEMORIA COMPARTILHADA (VIDAA st/, --um-fio) o Worker nao serve: o
+    // postMessage abaixo COPIARIA o heap inteiro (256 MiB, uma vez por Worker)
+    // e o decode escreveria na copia, que o C nunca le. Medido no Chrome sem
+    // isolamento: a sentinela morria com "is not a shared typed array" no
+    // Atomics.wait. Fica o decode no fio principal, o mesmo caminho de quando
+    // o Worker cai.
+    if (typeof SharedArrayBuffer === 'undefined' || !(wasmMemory.buffer instanceof SharedArrayBuffer)) {
+      D.morto = true;
+      Atomics.or(HEAP32, pCanal, 4);
+      console.log('[webp] sem memoria compartilhada; decode no fio principal');
+      return;
+    }
     try {
       D.w = new Worker('decodificador.js');
       D.w.onmessage = function (ev) {
@@ -293,7 +308,17 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
   // se pudesse seria ele mesmo quem deixaria de rodar o `then`. Hoje o unico
   // chamador e o fio de decode do tex_cache; esta guarda existe para que
   // amanha isto vire NULL em vez de travar o app.
+#ifdef NV_UM_FIO
+  // VIDAA st/ (--um-fio): so ha um fio de JS, e emscripten_is_main_browser_thread()
+  // e sempre verdadeiro — a guarda de cima devolvia NULL a TODO pedido, e WebP
+  // nao tem outro decoder em WASM (arte WebP nunca aparecia). Aqui o fio de
+  // decode e uma FIBRA de src/fio1.c: pode esperar cedendo ao escalonador (ver
+  // o laco do prazo abaixo), como nv_http em rede.c. Fora de fibra continua
+  // nao dando: quem esperaria e o proprio laco que resolve a promessa.
+  if (!fio1_em_fibra()) return NULL;
+#else
   if (emscripten_is_main_browser_thread()) return NULL;
+#endif
   varrer();
   if (!dimensoes(dados, n, &fw, &fh)) return NULL;
   // A MESMA CONTA do Worker (Math.round = floor(x + 0.5)); a linha a mais no
@@ -436,7 +461,13 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
       }
       continue;   // perdeu a corrida para o 0 -> 1: o resultado chegou agora
     }
+#ifdef NV_UM_FIO
+    // Sem futex de verdade: cede as outras fibras e, no fim da fatia do
+    // quadro, ao navegador — e so ai que o `then` do createImageBitmap roda.
+    fio1_ceder();
+#else
     emscripten_futex_wait(&job[J_EST], EST_ABERTO, resta < 250.0 ? resta : 250.0);
+#endif
   }
 
   w  = job[J_W];
