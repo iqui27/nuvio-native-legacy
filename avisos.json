@@ -6,8 +6,8 @@
     "plataforma": "tizen",
     "titulo": "Ajude a deixar o Nuvio mais rápido na Samsung",
     "titulo_en": "Help make Nuvio faster on Samsung",
-    "texto": "Hoje o Nuvio roda dentro do navegador da TV, e isso limita o desempenho. Queremos rodar direto na TV, como na LG, mas precisamos saber quais modelos aceitam. Leva 2 minutos: veja github.com/iqui27/nuvio-native-legacy/issues/137, instale o app de teste NvSpike pelo Apps2Samsung e responda lá com o modelo da TV e o código de 6 letras. O seu Nuvio não muda.",
-    "texto_en": "Today Nuvio runs inside the TV's browser, which limits performance. We want to run it directly on the TV, like on LG, but need to know which models allow it. It takes 2 minutes: see github.com/iqui27/nuvio-native-legacy/issues/137, install the NvSpike test app with Apps2Samsung and reply there with your TV model and the 6-letter code. Your Nuvio stays as it is."
+    "texto": "Queremos fazer uma versão do Nuvio bem mais rápida para Samsung, mas não sabemos se a sua TV aceita. Para descobrir, instale um app de teste pequeno (2 minutos). O passo a passo está em github.com/iqui27/nuvio-native-legacy/issues/137. O seu Nuvio continua igual.",
+    "texto_en": "We want to make a much faster Nuvio for Samsung, but we don't know if your TV supports it. To find out, install a small test app (2 minutes). Step by step at github.com/iqui27/nuvio-native-legacy/issues/137. Your Nuvio stays the same."
   },
   {
     "id": "2026-09-20-samsung-rc1",
