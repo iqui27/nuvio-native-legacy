@@ -36,12 +36,14 @@ int trakt_definir(const char *tk, const char *cli) {
 }
 int trakt_ativo(void)    { return ativoFake; }
 int trakt_recusada(void) { return recusadaFake; }
+void trakt_esquecer(void) { ativoFake = 0; }
 
 const char *nuvem_trakt_cliente(void) { return "cliente-teste"; }
 const char *nuvem_trakt_segredo(void) { return "segredo-teste"; }
 
 char *dados_ler(const char *nome) {
-  if (!strcmp(nome, "trakt.txt") && arquivoTrakt[0]) return strdup(arquivoTrakt);
+  // O vinculo e por perfil (trakt-p<N>.txt); o carregar le o do perfil 1.
+  if (!strcmp(nome, "trakt-p1.txt") && arquivoTrakt[0]) return strdup(arquivoTrakt);
   return NULL;
 }
 int dados_gravar(const char *n, const char *c) { (void)n; (void)c; return 1; }

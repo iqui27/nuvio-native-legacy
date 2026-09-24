@@ -148,7 +148,10 @@ ARQ_DE_PESSOA="trakt.txt addons.txt tmdb.txt mdblist.txt ajustes.txt
 # e por isso nao os alcanca; um glob proprio alcanca. Ver a licao registrada
 # quando o collections.json vazou: lista de exclusao por nome envelhece, e a
 # conferencia tem de ser sobre o que NAO PODE SAIR.
-GLOB_DE_PESSOA="stalker-p*.txt xtream-p*.txt listas-p*.txt"
+# trakt-p*/trakt-fluxo*/simkl*: o vinculo do Trakt e do Simkl passou a ser um
+# arquivo POR PERFIL (traktauth.c, simklauth.c) — o trakt.txt da lista de nomes
+# acima deixou de alcancar o token quando a pasta de dados cai na da arte.
+GLOB_DE_PESSOA="stalker-p*.txt xtream-p*.txt listas-p*.txt trakt-p*.txt trakt-fluxo*.txt simkl*.txt"
 
 # O ACERVO DE QUEM EMPACOTOU, que nao e credencial de login e vaza igual.
 #
@@ -232,9 +235,10 @@ if [ "$1" = "--ipk" ]; then
   # POR PREFIXO, e nao por nome: os arquivos por perfil sao stalker-p1.txt,
   # stalker-p2.txt e assim por diante, e a lista acima so casa nome exato. Um
   # prefixo cobre qualquer numero de perfil, inclusive os que ainda nao existem.
-  for pre in stalker-p xtream-p listas-p; do
+  for pre in stalker-p xtream-p listas-p trakt-p trakt-fluxo-p simkl-p; do
     printf '%s\n' "$LISTA" | grep -qE "art/$pre[0-9]+\.txt$" && VAZOU="$VAZOU $pre*.txt"
   done
+  printf '%s\n' "$LISTA" | grep -qE "art/(trakt-fluxo|simkl)\.txt$" && VAZOU="$VAZOU trakt-fluxo.txt/simkl.txt"
   # Diretorio: qualquer caminho DENTRO dele conta como vazamento, nao so a
   # entrada da pasta — o tar pode listar os arquivos sem listar o diretorio.
   for d in $DIR_DE_PESSOA; do

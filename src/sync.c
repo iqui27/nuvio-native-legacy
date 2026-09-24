@@ -785,6 +785,11 @@ void sync_passo(unsigned agoraMs) {
   // push de "trakt" (400 22023), entao a linha da conta pode ser um token
   // antigo e vencido — aplica-lo por cima do novo devolvia 401 em tudo logo
   // depois de a pessoa ter acabado de autorizar.
+  // "NESTA TV" QUER DIZER "DESTE PERFIL NESTA TV": o vinculo local e por perfil
+  // (trakt-p<N>.txt, traktauth.c) e traktauth_estado() e o do perfil ativo. A
+  // credencial da conta deste ciclo tambem e do perfil ativo — um ciclo de outro
+  // perfil ja foi descartado acima —, entao o perfil 2 sem vinculo local recebe
+  // o Trakt da conta DELE, e nunca o vinculo local do 1.
   if (temTraktRem)  { if (traktauth_estado() != TRA_LIGADO) { trakt_definir(traktTok, nuvem_trakt_cliente()); remontar = 1; }
                       else printf("[sync] trakt: vinculo local mantido, credencial da conta ignorada\n");
                       temTraktRem = 0; }

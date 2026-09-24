@@ -39,8 +39,9 @@ static int   limite = FIL_LIMITE_PADRAO;
 // quem trocava de perfil na tela "Quem esta assistindo?" herdava a home que o
 // outro arrumou. Agora cada perfil tem o seu (fileirasui-p<N>.txt); 0 e o
 // nome antigo, que continua valendo para quem nunca escolheu perfil e serve de
-// SEMENTE para o primeiro arquivo de cada perfil — ninguem perde a ordem que
-// ja tinha no dia em que a separacao entrou.
+// SEMENTE para o primeiro arquivo do PERFIL 1 so (ver carregar) — ninguem perde
+// a ordem que ja tinha no dia em que a separacao entrou, e ninguem herda a do
+// perfil 1.
 static int   perfil;
 static const char *arquivoDoPerfil(void) {
   static char nome[48];
@@ -213,9 +214,15 @@ static void carregar(void) {
   heroFonte[0] = 0;
   if (!dados_caminho(caminho, sizeof caminho, arquivoDoPerfil())) return;
   f = fopen(caminho, "r");
-  // Perfil sem arquivo proprio ainda: comeca do arquivo antigo do aparelho,
-  // que e o que a pessoa via ate ontem. A primeira mutacao grava o proprio.
-  if (!f && perfil > 0 && dados_caminho(caminho, sizeof caminho, "fileirasui.txt"))
+  // Perfil sem arquivo proprio ainda: SO O PERFIL 1 comeca do arquivo antigo
+  // do aparelho. A primeira mutacao grava o proprio.
+  //
+  // Antes QUALQUER perfil sem arquivo semeava de fileirasui.txt — e esse
+  // arquivo e a escolha de quem usava o app antes da separacao, que sincronizava
+  // sempre o perfil 1 (perfis.h). O perfil 2 abria com a ordem, o limite e o
+  // destaque do perfil 1: relato do dono na C9, "o perfil 2 mostra as mesmas
+  // fileiras do 1". Os outros perfis comecam do padrao (ordem automatica).
+  if (!f && perfil == 1 && dados_caminho(caminho, sizeof caminho, "fileirasui.txt"))
     f = fopen(caminho, "r");
   if (!f) return;
   while (fgets(buf, sizeof buf, f)) {

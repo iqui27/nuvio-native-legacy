@@ -692,8 +692,10 @@ int main(int argc, char **argv) {
   // Vinculos feitos NESTA TV. Vem antes de trakt_carregar (que le o arquivo do
   // pacote) para o vinculo do usuario ganhar do arquivo de quem montou — e num
   // pacote distribuivel esse arquivo nem existe.
-  traktauth_carregar();
-  simklauth_carregar();
+  // POR PERFIL: o do perfil gravado, que perfis_carregar_ativo acabou de ler.
+  // Se a tela de escolha trocar o perfil, app.c chama traktauth_trocar_perfil.
+  traktauth_carregar_perfil(perfis_ativo());
+  simklauth_carregar_perfil(perfis_ativo());
   if (!app_iniciar(dirArte)) return 1;
   // Progresso e dado DO USUARIO: sai da pasta do pacote, que e a mesma para
   // todo mundo que usar o aparelho, e passa para a pasta da instalacao.
