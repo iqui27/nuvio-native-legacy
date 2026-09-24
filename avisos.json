@@ -4,10 +4,10 @@
     "desde": "2026-09-24",
     "ate": "2026-10-15",
     "plataforma": "tizen",
-    "titulo": "Ajude a testar um Nuvio nativo na Samsung",
-    "titulo_en": "Help test a native Nuvio on Samsung",
-    "texto": "Estamos vendo se a sua Samsung aceita um Nuvio nativo, sem navegador (bem mais rápido). Leva 2 minutos: abra github.com/iqui27/nuvio-native-legacy/issues/137, instale o app de teste NvSpike pelo Apps2Samsung, abra e responda lá com o modelo da TV e o código de 6 letras da tela.",
-    "texto_en": "We're checking whether your Samsung accepts a native Nuvio, without the browser (much faster). It takes 2 minutes: open github.com/iqui27/nuvio-native-legacy/issues/137, install the NvSpike test app with Apps2Samsung, open it and reply there with your TV model and the 6-letter code on screen."
+    "titulo": "Ajude a deixar o Nuvio mais rápido na Samsung",
+    "titulo_en": "Help make Nuvio faster on Samsung",
+    "texto": "Hoje o Nuvio roda dentro do navegador da TV, e isso limita o desempenho. Queremos rodar direto na TV, como na LG, mas precisamos saber quais modelos aceitam. Leva 2 minutos: veja github.com/iqui27/nuvio-native-legacy/issues/137, instale o app de teste NvSpike pelo Apps2Samsung e responda lá com o modelo da TV e o código de 6 letras. O seu Nuvio não muda.",
+    "texto_en": "Today Nuvio runs inside the TV's browser, which limits performance. We want to run it directly on the TV, like on LG, but need to know which models allow it. It takes 2 minutes: see github.com/iqui27/nuvio-native-legacy/issues/137, install the NvSpike test app with Apps2Samsung and reply there with your TV model and the 6-letter code. Your Nuvio stays as it is."
   },
   {
     "id": "2026-09-20-samsung-rc1",
