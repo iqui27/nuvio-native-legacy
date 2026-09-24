@@ -48,6 +48,15 @@ int ajustes_pausa_overlay(void);
 // proprio fluxo do guia ja escolhe pela playlist que responde (ver tocarCanal).
 int ajustes_fonte_manual(void);
 
+// "Fonte automatica" = "Primeira da lista" (issue #130): o automatico toca a
+// primeira fonte na ordem do addon e confere SO ela. 0 = "Melhor fonte", a
+// regra de pontuacao de streams.c. Ver fonteauto.h.
+int ajustes_fonte_primeira(void);
+// "Outra fonte se falhar": quantas OUTRAS fontes o automatico tenta quando a
+// escolhida nao abre (0..3; 0 = nenhuma). Nao vale para escolha manual nem
+// para canal ao vivo, que tem o watchdog proprio em app.c.
+int ajustes_fonte_repor(void);
+
 int ajustes_idioma_ingles(void);
 
 // COR DO ANEL DE FOCO, escolhida em "Cor de destaque" ou herdada da conta

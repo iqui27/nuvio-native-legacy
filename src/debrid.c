@@ -29,16 +29,17 @@ static int  alvoT, alvoE;
 
 // RECUSA DE CONTA POR BUSCA. recusado[q] guarda o status HTTP da recusa (0 =
 // nenhuma); `geracao` sobe a cada debrid_nova_busca. Atomicos porque
-// debrid_resolver roda em ate VER_FIOS (4) fios da verificacao ao mesmo tempo.
+// debrid_resolver rodava em ate 4 fios da verificacao ao mesmo tempo; desde o
+// #130 a verificacao e em serie, mas o fio dela continua sendo outro que o de
+// desenho, e a trava nao custa nada.
 //
-// A GERACAO e o que impede um fio da busca ANTERIOR — lote abandonado em
-// streams.c, que continua ate o prazo dele — de marcar recusa na busca nova:
+// A GERACAO e o que impede um fio da busca ANTERIOR — uma verificacao de
+// streams.c que ainda esta no prazo dela — de marcar recusa na busca nova:
 // ele guardou a geracao ao entrar e so escreve se ela nao mudou.
 //
-// LIMITE ACEITO: com 4 fios, ate 4 createtorrent podem sair antes de o
-// primeiro 403 voltar e marcar a recusa. Sao 4 chamadas no lugar das 8 do
-// registro 1541 (e de ate 26, o tamanho do lote); travar o servico antes da
-// resposta custaria serializar os fios.
+// O LIMITE QUE ESTAVA ACEITO AQUI CAIU COM O #130: com 4 fios, ate 4
+// createtorrent saiam antes de o primeiro 403 voltar. Com a verificacao em
+// serie, o primeiro 403 marca a recusa antes da candidata seguinte.
 static _Atomic unsigned geracao;
 static _Atomic int recusado[SN];
 

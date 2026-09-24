@@ -105,7 +105,7 @@ static int focoEscuro(void) { return tintaFoco() < 128; }   // superficie do foc
 typedef enum {
   // Reproducao
   AJ_QUALIDADE, AJ_DV, AJ_ATMOS, AJ_LEG_LINGUA, AJ_AUD_LINGUA,
-  AJ_PAUSA_OVERLAY, AJ_FONTE_MANUAL,
+  AJ_PAUSA_OVERLAY, AJ_FONTE_MANUAL, AJ_FONTE_AUTO, AJ_FONTE_REPOR,
   // Layout da Home
   AJ_LANDSCAPE, AJ_HERO_CHEIO, AJ_HERO_FUNDO, AJ_HERO_ARTE_DIF, AJ_HERO_TRAILER,
   // Fileiras da Home
@@ -155,6 +155,14 @@ typedef enum {
 
 static const char *V_QUALIDADE[] = { "Automática", "4K", "1080p", "720p" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
+// "Fonte automatica" (issue #130). O INDICE e o gravado (fonteAutoLocal) e o
+// FONTEAUTO_* de fonteauto.h: 0 = a regra de pontuacao, 1 = a primeira da
+// lista do addon, e so ela — o "Auto-play first source" do Nuvio.
+static const char *V_FONTE_AUTO[] = { "Melhor fonte", "Primeira da lista" };
+// Quantas OUTRAS fontes o automatico tenta quando a escolhida nao abre. O
+// indice e o numero (fonteReporLocal); ate a 1.4.3 eram 7, fixos, e cada
+// tentativa e mais um arquivo na conta de debrid da pessoa.
+static const char *V_FONTE_REPOR[] = { "Desligado", "1 fonte", "2 fontes", "3 fontes" };
 // #90: o fundo de arte da tela de escolha de perfil (psfundo.c). "Automático"
 // e o comportamento atual (perfil primeiro, catalogo como reserva, com
 // rotacao); "Desligado" volta a tela ao que era antes da issue — psfundo nao
@@ -376,6 +384,8 @@ static const Opcao OPCOES[AJ_N] = {
   // sobe cinco segundos depois de pausar; ver pausao.h.
   ESC("Painel ao pausar",           V_LIGA, 2),   // pauseOverlayEnabled
   ESC("Escolher a fonte ao reproduzir", V_LIGA, 2), // local: ver ajustes_fonte_manual
+  ESC("Fonte automática",           V_FONTE_AUTO, 2),  // local: ver fonteauto.h
+  ESC("Outra fonte se falhar",      V_FONTE_REPOR, 4), // local: ver ajustes_fonte_repor
 
   ESC("Pôsteres horizontais",       V_LIGA, 2),   // modernLandscapePostersEnabled
   ESC("Fundo em tela cheia",        V_LIGA, 2),   // modernHeroFullScreenBackdropEnabled
@@ -550,6 +560,8 @@ static const char *CHAVE[] = {
   // conta (o app web nao expoe esta escolha), entao o blob simplesmente nao
   // traz a chave e o valor local fica de pe.
   "escolherFonteManual",
+  // LOCAIS (#130), mesma razao: o app web nao tem estas escolhas.
+  "fonteAutoLocal", "fonteReporLocal",
   "modernLandscapePostersEnabled", "modernHeroFullScreenBackdropEnabled", "heroFundoLocal",
   // LOCAL, e em ingles como pedido: o app web nao tem esta escolha (grep em
   // NuvioWeb 0.3.38 por hero/backdrop: so buildHeroBackdropSources, sem
@@ -797,6 +809,8 @@ static int valor[AJ_N] = {
   LING_OPC_ORIGINAL, /* idioma de audio: Original do titulo */
   0,                /* painel ao pausar: ligado (o default do web) */
   1,                /* escolher a fonte ao reproduzir: DESLIGADO (V_LIGA: 1 = Desligado) */
+  0,                /* fonte automatica: melhor fonte (a regra de sempre) */
+  2,                /* outra fonte se falhar: ate 2 (eram 7 fixas ate a 1.4.3) */
 
   0,                /* posteres deitados: LIGADO (perfil do dono; fabrica: desligado) */
   0,                /* fundo em tela cheia: LIGADO (perfil; fabrica: desligado) */
@@ -970,6 +984,11 @@ int ajustes_dolby_vision(void)        { return lig(AJ_DV); }
 int ajustes_dolby_atmos(void)         { return lig(AJ_ATMOS); }
 int ajustes_pausa_overlay(void)       { return lig(AJ_PAUSA_OVERLAY); }
 int ajustes_fonte_manual(void)        { return lig(AJ_FONTE_MANUAL); }
+int ajustes_fonte_primeira(void)      { return valor[AJ_FONTE_AUTO] == 1; }
+int ajustes_fonte_repor(void) {
+  int v = valor[AJ_FONTE_REPOR];
+  return v < 0 ? 0 : v > 3 ? 3 : v;     // arquivo editado a mao: dentro da tabela
+}
 int ajustes_idioma_ingles(void)       { return valor[AJ_IDIOMA] == 1; }
 
 // Cor do ANEL DE FOCO. Ver TEMA_ACENTO: um tema aqui e so isto.
@@ -1523,6 +1542,8 @@ static int somenteDesteAparelho(int op) {
     case AJ_CW_FONTE:
     case AJ_BORDA_FOCO:
     case AJ_FONTE_MANUAL:
+    case AJ_FONTE_AUTO:
+    case AJ_FONTE_REPOR:
     case AJ_SALVOS_DEST:
     // Arte do destaque: o web nao tem as chaves (heroFundoLocal,
     // heroDifferentFromCard); ficam neste aparelho mesmo que um blob futuro
@@ -1979,6 +2000,8 @@ static const char *ajudaOpcao(int op) {
     case AJ_XTREAM_SENHA: return "A senha da assinatura. É credencial: vai dentro de cada URL de canal e nunca aparece nesta tela em claro.";
     case AJ_XTREAM_LIMPAR: return "Apaga servidor, usuário e senha deste perfil, e os canais somem do Guia. Sair da conta também apaga.";
     case AJ_FONTE_MANUAL: return "Ao mandar reproduzir, abre a lista de fontes em vez de escolher sozinho. Canal ao vivo não pergunta.";
+    case AJ_FONTE_AUTO: return "Melhor fonte: prefere 4K, Dolby Vision e MP4 e confere uma fonte por vez. Primeira da lista: toca a primeira que o addon mandou e não confere nenhuma outra — para quem já filtra e ordena no AIOStreams.";
+    case AJ_FONTE_REPOR: return "Quantas outras fontes o automático tenta quando a escolhida não abre. Cada tentativa pode adicionar um arquivo na sua conta de debrid.";
 
     // --- Home
     case AJ_LANDSCAPE: return "Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.";
@@ -2845,7 +2868,7 @@ static const char *iconeOpcao(int op) {
   switch (op) {
     case AJ_LEG_LINGUA: return "legenda";
     case AJ_AUD_LINGUA: case AJ_ATMOS: return "audio";
-    case AJ_FONTE_MANUAL: return "fontes";
+    case AJ_FONTE_MANUAL: case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: return "fontes";
     case AJ_PAUSA_OVERLAY: return "pause";
     case AJ_CW_LIGADO: case AJ_CW_OK: case AJ_CW_FONTE: case AJ_CW_ESTILO: case AJ_CW_THUMB: case AJ_CW_BLUR_PROX:
     case AJ_CW_FURTHEST: case AJ_CW_NAO_EXIBIDOS: case AJ_CW_ORDEM: return "avancar";

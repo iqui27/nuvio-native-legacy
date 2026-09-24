@@ -126,6 +126,12 @@ Uint32 stream_idade_ms(void);
 // Percorre as fontes na ordem da regra e devolve a primeira cujo link resolve
 // para conteudo DE VERDADE, testando ate `tentativas`. -1 se nenhuma serve.
 // BLOQUEIA — chamar de fio proprio.
+//
+// EM SERIE, UMA URL POR VEZ, e para na primeira que serve (issue #130): cada
+// candidata conferida de debrid vira um arquivo na conta da pessoa. Com
+// "Fonte automatica" em "Primeira da lista" `tentativas` vira 1 — so a fonte
+// que vai tocar e conferida. As que falham saem da fila desta lista
+// (stream_automatico_excluir) e nao sao conferidas de novo.
 int  stream_primeira_boa(int tentativas);
 
 // CANAL AO VIVO: a primeira fonte da lista cuja PLAYLIST tem segmento, com as
