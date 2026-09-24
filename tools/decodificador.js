@@ -93,55 +93,9 @@ function decodificar(m) {
   }).catch(function () { if (vivo(pJob, seq)) fim(pJob, seq, 0, 0, 0, 0, d); });
 }
 
-// GIF ANIMADO (#84, 20/09/2026): os quadros tambem sao compostos AQUI. Ate a
-// 1.3.7 cada quadro era um <img> decodificado no fio principal mais um
-// drawImage num canvas de la; numa AU7000 isso sao ~15 decodes por segundo no
-// mesmo fio que desenha, e o rawldon mediu 29-30 FPS com 20 janks so com o
-// GIF na tela. Agora o fio principal manda os quadros fatiados uma vez
-// (`gif`), pede quadro a quadro (`gifQuadro`) e recebe um ImageBitmap ja
-// composto e reduzido ao tamanho do card — o unico trabalho que sobra la e
-// o texImage2D do bitmap. A composicao segue a regra de descarte do GIF
-// (2 = limpa a area do quadro, 3 = volta ao estado anterior).
-//
-// Os quadros sao pedidos EM ORDEM; num salto para tras (volta do laco, i==0)
-// a tela logica e limpa e recomeca — e o que a <img> fazia sozinha.
-var gifs = {};
-function gifIniciar(m) {
-  var g = {};
-  g.w = m.w; g.h = m.h; g.outW = m.outW; g.outH = m.outH; g.meta = m.meta;
-  g.frames = m.frames.map(function (b) { return new Blob([b], { type: 'image/gif' }); });
-  g.comp = new OffscreenCanvas(m.w, m.h); g.cctx = g.comp.getContext('2d');
-  g.out = new OffscreenCanvas(m.outW, m.outH); g.octx = g.out.getContext('2d');
-  g.octx.imageSmoothingEnabled = true;
-  if ('imageSmoothingQuality' in g.octx) g.octx.imageSmoothingQuality = 'high';
-  g.salvo = null; g.posto = -1;
-  gifs[m.id] = g;
-}
-function gifQuadro(m) {
-  var g = gifs[m.id];
-  var i = m.i;
-  if (!g || i < 0 || i >= g.frames.length) return;
-  createImageBitmap(g.frames[i]).then(function (bmp) {
-    var gg = gifs[m.id];
-    if (!gg) { if (bmp.close) bmp.close(); return; }
-    if (i === 0 || i <= gg.posto) { gg.cctx.clearRect(0, 0, gg.w, gg.h); gg.salvo = null; }
-    else if (gg.posto >= 0) {
-      var a = gg.meta[gg.posto];
-      if (a && a.descarte === 2) gg.cctx.clearRect(a.esq, a.topo, a.larg, a.alt);
-      else if (a && a.descarte === 3 && gg.salvo) { try { gg.cctx.putImageData(gg.salvo, 0, 0); } catch (e) {} }
-    }
-    var mm = gg.meta[i];
-    if (mm && mm.descarte === 3) { try { gg.salvo = gg.cctx.getImageData(0, 0, gg.w, gg.h); } catch (e) { gg.salvo = null; } }
-    gg.cctx.drawImage(bmp, 0, 0);
-    if (bmp.close) bmp.close();
-    gg.posto = i;
-    gg.octx.clearRect(0, 0, gg.outW, gg.outH);
-    gg.octx.drawImage(gg.comp, 0, 0, gg.outW, gg.outH);
-    var ib = gg.out.transferToImageBitmap();
-    self.postMessage({ gifPronto: { id: m.id, i: i }, bitmap: ib }, [ib]);
-  }).catch(function () { self.postMessage({ gifPronto: { id: m.id, i: i, falhou: 1 } }); });
-}
-function gifSoltar(m) { delete gifs[m.id]; }
+// GIF ANIMADO: nao passa mais por aqui (1.4.7, #84). O Worker compunha os
+// quadros que o fio principal fatiava; desde entao o GIF e decodificado em C,
+// num pthread do app (src/gif.c), e este arquivo so decodifica imagem parada.
 
 // Layout do job que a sentinela le (espelho do enum J_* de src/webp.c).
 var J_SEQ = 7, J_FILA = 12, J_MIME = 13, J_LARG = 14;
@@ -186,8 +140,5 @@ self.onmessage = function (ev) {
     }
     return;
   }
-  if (m.gif)       { try { gifIniciar(m.gif); } catch (e) { self.postMessage({ gifPronto: { id: m.gif.id, i: -1, falhou: 1 } }); } return; }
-  if (m.gifQuadro) { try { gifQuadro(m.gifQuadro); } catch (e) { self.postMessage({ gifPronto: { id: m.gifQuadro.id, i: m.gifQuadro.i, falhou: 1 } }); } return; }
-  if (m.gifSoltar) { gifSoltar(m.gifSoltar); return; }
   pedido(m);
 };
