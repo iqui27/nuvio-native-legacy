@@ -192,6 +192,28 @@ int main(void) {
   confere("e releu",                        cat_ler_cache(dirPacote) == 1);
   confere("arquivo continua em disco",      cacheEmDisco(dirDados, dirPacote));
 
+  // (b5) CACHE DA VERSAO 5 SO VALE PARA O PERFIL 1. Ate ela o perfil 2 sem
+  // Trakt proprio usava o vinculo do 1, entao o arquivo gravado "do perfil 2"
+  // carrega a watchlist e o continuar do Trakt do 1 com a identidade certa no
+  // cabecalho. O do perfil 1 estava certo e continua aceito. O formato e o
+  // mesmo: rebaixar o numero da versao no arquivo e o bastante para simular.
+  printf("\n==> cache da versao 5: perfil 1 aceito, outro perfil recusado\n");
+  { char c[700]; FILE *f; unsigned v5 = 5;
+    snprintf(c, sizeof c, "%s/catalogo-rede.bin", dirDados);
+    perfilAtual = 2;
+    semearCatalogo("p2-com-trakt-do-1");
+    confere("perfil 2 gravou",                cat_gravar_cache(dirPacote));
+    f = fopen(c, "r+b"); assert(f);
+    fseek(f, (long)sizeof(unsigned), SEEK_SET); fwrite(&v5, sizeof v5, 1, f); fclose(f);
+    confere("v5 do perfil 2 e recusado",      cat_ler_cache(dirPacote) == 0);
+    confere("e apagado",                     !cacheEmDisco(dirDados, dirPacote));
+    perfilAtual = 1;
+    semearCatalogo("p1");
+    confere("perfil 1 gravou",                cat_gravar_cache(dirPacote));
+    f = fopen(c, "r+b"); assert(f);
+    fseek(f, (long)sizeof(unsigned), SEEK_SET); fwrite(&v5, sizeof v5, 1, f); fclose(f);
+    confere("v5 do perfil 1 continua aceito", cat_ler_cache(dirPacote) == 1); }
+
 #ifndef NV_CACHE_SEM_APAGAR
   // cat_apagar_cache: a metade do logout que mora aqui. Compile com
   // -DNV_CACHE_SEM_APAGAR para rodar este teste contra a versao ANTERIOR ao

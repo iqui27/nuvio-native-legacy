@@ -27,6 +27,8 @@ void prog_remover(const char *chave) { (void)chave; }
 void prog_marcar_removido(const char *imdb) { (void)imdb; }
 int  prog_removido_vence(const char *imdb, long long instanteMs) { (void)imdb; (void)instanteMs; return 0; }
 int  cat_tirar_continuar(const char *imdb) { (void)imdb; return 0; }
+int arte_reserva_episodios(const char *imdb, const char *corpo) { (void)imdb; (void)corpo; return 0; }
+
 #include "../src/descoberta.c"
 
 #define BASE "https://addon.example/abc"
@@ -76,6 +78,18 @@ int homeestado_identidade_geracao(unsigned g, char *d, unsigned z, int *p) {
   if (p) *p = 1;
   return 1;
 }
+// DESDE A 1.4.5 a montagem pergunta O QUE mudou, e so identidade/addons
+// descartam. O que este teste muda no meio (colecoes/ordem chegando) e
+// ESTRUTURA: a geracao entra na parte das colecoes, e o fim de montar() segue
+// o caminho "publica e remonta sem rede" — que tambem tem de manter cada
+// janela apontando para os itens da propria fileira.
+void homeestado_contexto(HomeContexto *c) {
+  *c = (HomeContexto){0}; c->perfil = 1; c->colecoes = geracaoEstado; }
+int homeestado_mudancas(const HomeContexto *a, const HomeContexto *b) {
+  return a->colecoes != b->colecoes ? HOMEESTADO_MUDOU_COLECOES : 0; }
+const char *homeestado_mudancas_texto(int m, char *b, unsigned t) {
+  if (b && t) snprintf(b, t, "%s", m ? "colecoes" : "nada"); return b; }
+const char *sessao_usuario(void) { return ""; }
 
 // ------------------------------------------------------ o catalogo publicado
 static pthread_mutex_t pubTravaT = PTHREAD_MUTEX_INITIALIZER;

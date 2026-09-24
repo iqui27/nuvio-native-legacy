@@ -57,6 +57,10 @@ int  trakt_recusada(void);
 // local.properties). Enquanto isto nao existia, o vinculo Trakt do app nativo
 // era o do dono do pacote — para todo mundo que instalasse.
 int  trakt_definir(const char *token, const char *clientId);
+// 1 quando o Trakt ja esta ligado com EXATAMENTE este token e este client id.
+// Quem recebe a credencial da conta a cada ciclo de sync usa isto para nao
+// remontar a home inteira por uma credencial que nao mudou.
+int  trakt_credencial_igual(const char *token, const char *clientId);
 
 // Esquece a credencial. Chamado ao SAIR: um token de Trakt que sobrevive ao
 // logout continua ESCREVENDO (trakt_marcar) na conta de quem saiu, com o que a

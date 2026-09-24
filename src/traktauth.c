@@ -15,8 +15,30 @@
 #include <pthread.h>
 #include <time.h>
 
-#define TRA_ARQ  "trakt.txt"
-#define TRA_FLUXO "trakt-fluxo.txt"
+// O VINCULO E POR PERFIL: trakt-p<N>.txt e trakt-fluxo-p<N>.txt.
+//
+// Ate aqui era UM trakt.txt por aparelho, e o perfil 2 de uma conta usava o
+// Trakt do perfil 1 — watchlist, "continuar assistindo", historico, tudo.
+// Relato do dono na C9 (conta com 2 perfis): "o perfil 2 mostra o mesmo Trakt
+// do 1", com "[trakt] vinculo desta TV mantido" no log logo depois da troca. O
+// app oficial guarda as credenciais de provedor por perfil
+// (sync_pull_provider_credentials leva p_profile_id), e este arquivo passa a
+// dizer o mesmo.
+//
+// MIGRACAO DO trakt.txt ANTIGO: ele e do PERFIL 1, e so dele. Antes dos perfis
+// o app sincronizava sempre o perfil 1 (perfis.h), entao quem vinculou o Trakt
+// nesta TV vinculou o perfil 1. Ele e RENOMEADO para trakt-p1.txt na primeira
+// leitura (ver migrarLegado) e nao e copiado para nenhum outro perfil — copiar
+// seria recriar exatamente o vazamento que esta separacao existe para fechar.
+// Se o perfil 1 ja tem arquivo proprio, o antigo esta velho e so e apagado. O
+// mesmo vale para o pedido pendente (trakt-fluxo.txt).
+#define TRA_ARQ_LEGADO   "trakt.txt"
+#define TRA_FLUXO_LEGADO "trakt-fluxo.txt"
+#define TRA_ARQ_FMT      "trakt-p%d.txt"
+#define TRA_FLUXO_FMT    "trakt-fluxo-p%d.txt"
+// Quantos perfis o logout varre. Mesmo teto de fontepref/buscasrec (o dobro
+// de CONTA_PERFIL_MAX): dados_apagar em arquivo que nao existe custa nada.
+#define TRA_PERFIS 16
 #define TRA_BASE "https://api.trakt.tv"
 // Quando o Trakt nao manda `interval`, 5s e o que a documentacao dele sugere.
 #define TRA_POLL_PADRAO 5000u
@@ -39,6 +61,23 @@ static long expiraEm;
 
 static pthread_t fio;
 static int fioVivo, fioPronto;
+
+// DE QUEM E O ESTADO ACIMA. `perfil` escolhe os arquivos; `geracao` sobe a
+// cada troca de perfil. Um fio que saiu antes da troca (poll do codigo,
+// renovacao) volta com a resposta do perfil ANTERIOR: publicar nas variaveis
+// daqui entregaria o token do 1 ao 2 — o mesmo vazamento, so que por corrida.
+// O fio leva a geracao e o perfil de quando saiu, compara sob a trava e, se
+// mudou, grava o resultado no arquivo do perfil dele sem tocar no estado vivo.
+// Gravar e nao descartar porque a renovacao ROTACIONA o refresh: jogar fora a
+// resposta mataria o vinculo do perfil anterior.
+static int perfil = 1;
+static unsigned geracao;
+static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
+// Copiados no fio principal por soltar(), antes do pthread_create: o fio nao
+// le `refresh`/`deviceCode` vivos, que a troca de perfil zera.
+static unsigned gerFio;
+static int perfilFio;
+static char refreshFio[300], deviceCodeFio[128];
 // 1 quando o fio acabou de conseguir o token e o laco principal ainda nao o
 // aplicou. Aplicar dentro do fio mexeria em trakt.c enquanto a UI le dele.
 static int tokenNovo;
@@ -63,35 +102,96 @@ static char *postar(const char *caminho, const char *corpo, int *status) {
 // exatamente o que aconteceu: o dono autorizou e o app "nao atualizou", porque
 // a instancia que tinha pedido o codigo ja nao existia. O app web guarda o
 // mesmo estado (TraktAuthStore.saveDeviceFlow).
+// O NOME VOLTA POR VALOR, e nao num buffer estatico: os fios de poll e de
+// renovacao montam o nome do arquivo do perfil DELES enquanto o laco principal
+// monta o do perfil novo. Um buffer compartilhado podia trocar um pelo outro
+// no meio — gravar o token do 1 em trakt-p2.txt, que e o defeito inteiro.
+typedef struct { char s[40]; } TraNome;
+static TraNome arqToken(int p) {
+  TraNome n;
+  snprintf(n.s, sizeof n.s, TRA_ARQ_FMT, p);
+  return n;
+}
+static TraNome arqFluxo(int p) {
+  TraNome n;
+  snprintf(n.s, sizeof n.s, TRA_FLUXO_FMT, p);
+  return n;
+}
+
 static void gravarFluxo(void) {
   char buf[600];
   snprintf(buf, sizeof buf, "%s\t%s\t%s\t%ld\n", deviceCode, userCode, url, expiraEm);
-  dados_gravar(TRA_FLUXO, buf);
+  dados_gravar(arqFluxo(perfil).s, buf);
 }
 
 static void esquecerFluxo(void) {
   deviceCode[0] = userCode[0] = 0;
   expiraEm = 0;
-  dados_apagar(TRA_FLUXO);
+  dados_apagar(arqFluxo(perfil).s);
 }
 
-static void gravar(void) {
-  char buf[400];
+// Um arquivo antigo vira o do perfil 1 (ver a nota no topo). Idempotente: sem
+// o arquivo antigo nao faz nada, e roda a cada carregar.
+static void migrarUm(const char *legado, const char *novo) {
+  char *b = dados_ler(legado), *ja;
+  char alvo[40];
+  if (!b) return;
+  snprintf(alvo, sizeof alvo, "%s", novo);   // `novo` e temporario de arq*()
+  ja = dados_ler(alvo);
+  if (ja) {
+    free(ja);
+    dados_apagar(legado);
+    printf("[trakt] %s antigo descartado: o perfil 1 ja tem %s\n", legado, alvo);
+  } else if (dados_gravar(alvo, b)) {
+    dados_apagar(legado);
+    printf("[trakt] %s migrado para %s (so o perfil 1)\n", legado, alvo);
+  }
+  fflush(stdout);
+  free(b);
+}
+static void migrarLegado(void) {
+  migrarUm(TRA_ARQ_LEGADO, arqToken(1).s);
+  migrarUm(TRA_FLUXO_LEGADO, arqFluxo(1).s);
+}
+
+static void gravarLinha(int p, const char *tk, const char *rf, long criado,
+                        long expira, int pendente) {
+  char buf[800];
   // Mesmo formato do art/trakt.txt de antes ("token<TAB>clientId"), para o
   // arquivo continuar legivel por quem ja conhecia o de la. A diferenca e o
   // LUGAR: aqui e a pasta da instalacao, nao o pacote.
   // Colunas 3-6 (refresh, created_at, expires_in, pendente) sao novas: sem o
   // refresh guardado o token nao pode ser reenviado a conta depois de um
   // reinicio, e o push falhado ficava perdido para sempre.
-  snprintf(buf, sizeof buf, "%s\t%s\t%s\t%ld\t%ld\t%d\n", token, nuvem_trakt_cliente(),
-           refresh, criadoEm, expiraSeg, pushPendente);
-  dados_gravar(TRA_ARQ, buf);
+  snprintf(buf, sizeof buf, "%s\t%s\t%s\t%ld\t%ld\t%d\n", tk, nuvem_trakt_cliente(),
+           rf, criado, expira, pendente);
+  dados_gravar(arqToken(p).s, buf);
+}
+
+static void gravar(void) {
+  gravarLinha(perfil, token, refresh, criadoEm, expiraSeg, pushPendente);
+}
+
+// Zera o que e do perfil em memoria. NAO apaga arquivo nem mexe em trakt.c.
+static void zerarEstado(void) {
+  token[0] = refresh[0] = url[0] = erro[0] = 0;
+  deviceCode[0] = userCode[0] = 0;
+  expiraEm = 0;
+  criadoEm = expiraSeg = 0;
+  pushPendente = 0;
+  renovacaoPend = 0;
+  tokenNovo = 0;
+  comecouMs = 0;
+  pollMs = TRA_POLL_PADRAO;
+  estado = TRA_PARADO;
 }
 
 int traktauth_carregar(void) {
-  char *b = dados_ler(TRA_ARQ);
+  char *b;
   char *col[6] = { NULL, NULL, NULL, NULL, NULL, NULL };
-  if (!b) return 0;
+  migrarLegado();
+  b = dados_ler(arqToken(perfil).s);
+  if (!b) goto fluxo;
   { char *fim = b + strlen(b);
     while (fim > b && (fim[-1] == '\n' || fim[-1] == '\r')) *--fim = 0; }
   { int i; col[0] = b;
@@ -121,8 +221,9 @@ int traktauth_carregar(void) {
   free(b);
   if (token[0]) return 1;
 
+fluxo:
   // Sem token, mas pode haver um pedido em andamento de antes do reinicio.
-  { char *f = dados_ler(TRA_FLUXO);
+  { char *f = dados_ler(arqFluxo(perfil).s);
     if (f) {
       char *c[4] = { f, NULL, NULL, NULL };
       int i;
@@ -143,7 +244,7 @@ int traktauth_carregar(void) {
           estado = TRA_AGUARDANDO;
           printf("[trakt] retomando o pedido pendente (%lds restantes)\n", ate - agora);
         } else {
-          dados_apagar(TRA_FLUXO);
+          dados_apagar(arqFluxo(perfil).s);
         }
       }
       free(f);
@@ -151,13 +252,54 @@ int traktauth_carregar(void) {
   return 0;
 }
 
-void traktauth_esquecer(void) {
-  token[0] = refresh[0] = url[0] = erro[0] = 0;
-  renovacaoPend = 0;
-  estado = TRA_PARADO;
-  dados_apagar(TRA_ARQ);
-  esquecerFluxo();
+int traktauth_carregar_perfil(int p) {
+  pthread_mutex_lock(&trava);
+  perfil = p > 0 ? p : 1;
+  geracao++;
+  zerarEstado();
+  pthread_mutex_unlock(&trava);
+  return traktauth_carregar();
 }
+
+int traktauth_trocar_perfil(int p) {
+  int antes;
+  if (p <= 0) p = 1;
+  if (p == perfil) return 0;
+  antes = trakt_ativo() || token[0];
+  // A credencial EM USO sai inteira, venha ela deste arquivo ou da conta
+  // (sync.c, temTraktRem): trakt_esquecer zera o token de trakt.c e as tabelas
+  // da ultima leitura. O que o perfil novo tiver chega por traktauth_carregar
+  // (vinculo local) ou pelo proximo ciclo de sync (credencial da conta dele).
+  trakt_esquecer();
+  traktauth_carregar_perfil(p);
+  printf("[trakt] perfil %d: %s\n", perfil,
+         token[0] ? "vinculo deste perfil carregado" : "sem vinculo neste perfil");
+  fflush(stdout);
+  return antes || trakt_ativo() || token[0];
+}
+
+int traktauth_perfil(void) { return perfil; }
+
+void traktauth_esquecer(void) {
+  int p;
+  pthread_mutex_lock(&trava);
+  geracao++;
+  zerarEstado();
+  // LOGOUT: o vinculo de TODOS os perfis sai, e o arquivo antigo tambem. O
+  // proximo a entrar comeca no perfil 1 da conta dele (perfis_esquecer), e um
+  // trakt-p1.txt que sobrasse seria o Trakt de quem saiu.
+  for (p = 0; p <= TRA_PERFIS; p++) {
+    dados_apagar(arqToken(p).s);
+    dados_apagar(arqFluxo(p).s);
+  }
+  dados_apagar(TRA_ARQ_LEGADO);
+  dados_apagar(TRA_FLUXO_LEGADO);
+  perfil = 1;
+  pthread_mutex_unlock(&trava);
+}
+
+// 1 quando o fio ainda fala pelo perfil em vigor. Chamar com a trava.
+static int fioAtual(void) { return gerFio == geracao; }
 
 // ---------------------------------------------------------------- fluxo
 
@@ -165,14 +307,19 @@ static void *fioPedir(void *u) {
   Jsw w;
   char *r;
   int st = 0;
+  char dc[128] = "", uc[32] = "", vu[160] = "";
+  unsigned novoPoll = 0, novoLimite = 600000u;
   (void)u;
-  erro[0] = userCode[0] = deviceCode[0] = 0;
 
   if (!nuvem_trakt_cliente()[0] || !nuvem_trakt_segredo()[0]) {
     // Caso de COMPILACAO, nao do usuario: o pacote saiu sem as chaves do
     // aplicativo. Dizer isso evita a pessoa tentar de novo para sempre.
-    snprintf(erro, sizeof erro, "pacote sem as chaves do Trakt");
-    estado = TRA_ERRO;
+    pthread_mutex_lock(&trava);
+    if (fioAtual()) {
+      snprintf(erro, sizeof erro, "pacote sem as chaves do Trakt");
+      estado = TRA_ERRO;
+    }
+    pthread_mutex_unlock(&trava);
     fioPronto = 1;
     return NULL;
   }
@@ -187,14 +334,29 @@ static void *fioPedir(void *u) {
   if (r && st >= 200 && st < 300) {
     const char *fim = r + strlen(r);
     double intervalo, expira;
-    js_texto(r, fim, "device_code", deviceCode, sizeof deviceCode);
-    js_texto(r, fim, "user_code", userCode, sizeof userCode);
-    js_texto(r, fim, "verification_url", url, sizeof url);
+    js_texto(r, fim, "device_code", dc, sizeof dc);
+    js_texto(r, fim, "user_code", uc, sizeof uc);
+    js_texto(r, fim, "verification_url", vu, sizeof vu);
     intervalo = js_num(r, fim, "interval", 0);
     expira = js_num(r, fim, "expires_in", 0);
-    if (intervalo >= 1.0 && intervalo <= 60.0) pollMs = (unsigned)(intervalo * 1000.0);
-    limiteMs = (expira > 30.0 && expira < 3600.0) ? (unsigned)(expira * 1000.0) : 600000u;
+    if (intervalo >= 1.0 && intervalo <= 60.0) novoPoll = (unsigned)(intervalo * 1000.0);
+    if (expira > 30.0 && expira < 3600.0) novoLimite = (unsigned)(expira * 1000.0);
   }
+  pthread_mutex_lock(&trava);
+  // Pedido de um perfil que ja nao esta na tela: o codigo nao e mostrado a
+  // ninguem, entao nao ha o que guardar.
+  if (!fioAtual()) {
+    pthread_mutex_unlock(&trava);
+    free(r);
+    fioPronto = 1;
+    return NULL;
+  }
+  erro[0] = 0;
+  snprintf(deviceCode, sizeof deviceCode, "%s", dc);
+  snprintf(userCode, sizeof userCode, "%s", uc);
+  snprintf(url, sizeof url, "%s", vu);
+  if (novoPoll) pollMs = novoPoll;
+  limiteMs = novoLimite;
   if (!deviceCode[0] || !userCode[0]) {
     if (st == 429) snprintf(erro, sizeof erro, "o Trakt pediu para esperar; tente daqui a pouco");
     else snprintf(erro, sizeof erro, i18n("nao consegui pedir o codigo ao Trakt (HTTP %d)"), st);
@@ -205,6 +367,7 @@ static void *fioPedir(void *u) {
     gravarFluxo();
     estado = TRA_AGUARDANDO;
   }
+  pthread_mutex_unlock(&trava);
   free(r);
   fioPronto = 1;
   return NULL;
@@ -218,13 +381,34 @@ static void *fioPoll(void *u) {
 
   jsw_iniciar(&w);
   jsw_obj_ini(&w);
-  jsw_cs(&w, "code", deviceCode);
+  jsw_cs(&w, "code", deviceCodeFio);
   jsw_cs(&w, "client_id", nuvem_trakt_cliente());
   jsw_cs(&w, "client_secret", nuvem_trakt_segredo());
   jsw_obj_fim(&w);
   r = postar("/oauth/device/token", jsw_texto_final(&w), &st);
   jsw_livre(&w);
 
+  pthread_mutex_lock(&trava);
+  if (!fioAtual()) {
+    // O perfil mudou com o poll no ar. Autorizado: o vinculo e do perfil que
+    // pediu o codigo, e vai para o arquivo DELE — o perfil em vigor nao ve
+    // nada. Qualquer outra resposta e so descartada.
+    char t[300], rf[300] = "";
+    if (r && st >= 200 && st < 300 &&
+        js_texto(r, r + strlen(r), "access_token", t, sizeof t)) {
+      js_texto(r, r + strlen(r), "refresh_token", rf, sizeof rf);
+      gravarLinha(perfilFio, t, rf,
+                  (long)js_num(r, r + strlen(r), "created_at", (double)time(NULL)),
+                  (long)js_num(r, r + strlen(r), "expires_in", 86400), 1);
+      dados_apagar(arqFluxo(perfilFio).s);
+      printf("[trakt] autorizacao do perfil %d chegou depois da troca; guardada no arquivo dele\n",
+             perfilFio);
+    }
+    pthread_mutex_unlock(&trava);
+    free(r);
+    fioPronto = 1;
+    return NULL;
+  }
   if (r && st >= 200 && st < 300) {
     char t[300];
     if (js_texto(r, r + strlen(r), "access_token", t, sizeof t)) {
@@ -267,6 +451,7 @@ static void *fioPoll(void *u) {
     snprintf(erro, sizeof erro, i18n("falha ao trocar o codigo (HTTP %d)"), st);
     estado = TRA_ERRO;
   }
+  pthread_mutex_unlock(&trava);
   free(r);
   fioPronto = 1;
   return NULL;
@@ -304,7 +489,7 @@ static void *fioRenovar(void *u) {
   (void)u;
   jsw_iniciar(&w);
   jsw_obj_ini(&w);
-  jsw_cs(&w, "refresh_token", refresh);
+  jsw_cs(&w, "refresh_token", refreshFio);
   jsw_cs(&w, "client_id", nuvem_trakt_cliente());
   jsw_cs(&w, "client_secret", nuvem_trakt_segredo());
   jsw_cs(&w, "redirect_uri", "urn:ietf:wg:oauth:2.0:oob");
@@ -313,6 +498,26 @@ static void *fioRenovar(void *u) {
   r = postar("/oauth/token", jsw_texto_final(&w), &st);
   jsw_livre(&w);
 
+  pthread_mutex_lock(&trava);
+  if (!fioAtual()) {
+    // Renovacao do perfil ANTERIOR. O refresh velho morreu nesta resposta, entao
+    // descartar mataria o vinculo daquele perfil: o par novo vai para o arquivo
+    // dele, com pendencia de envio a conta (sai quando ele voltar a ser o ativo).
+    char t[300], rf[300] = "";
+    if (r && st >= 200 && st < 300 &&
+        js_texto(r, r + strlen(r), "access_token", t, sizeof t)) {
+      js_texto(r, r + strlen(r), "refresh_token", rf, sizeof rf);
+      gravarLinha(perfilFio, t, rf,
+                  (long)js_num(r, r + strlen(r), "created_at", (double)time(NULL)),
+                  (long)js_num(r, r + strlen(r), "expires_in", 86400), 1);
+      printf("[trakt] renovacao do perfil %d chegou depois da troca; guardada no arquivo dele\n",
+             perfilFio);
+    }
+    pthread_mutex_unlock(&trava);
+    free(r);
+    fioPronto = 1;
+    return NULL;
+  }
   if (r && st >= 200 && st < 300) {
     char t[300];
     const char *fim = r + strlen(r);
@@ -338,6 +543,7 @@ static void *fioRenovar(void *u) {
   }
   // Falha de TRANSPORTE (st==0): estado nao muda; traktauth_passo tenta de
   // novo, porque uma TV sem rede por um minuto nao e sessao morta.
+  pthread_mutex_unlock(&trava);
   free(r);
   fioPronto = 1;
   return NULL;
@@ -346,6 +552,10 @@ static void *fioRenovar(void *u) {
 static void soltar(void *(*rotina)(void *)) {
   if (fioVivo) return;
   fioPronto = 0;
+  gerFio = geracao;
+  perfilFio = perfil;
+  snprintf(refreshFio, sizeof refreshFio, "%s", refresh);
+  snprintf(deviceCodeFio, sizeof deviceCodeFio, "%s", deviceCode);
   if (pthread_create(&fio, NULL, rotina, NULL) == 0) { pthread_detach(fio); fioVivo = 1; }
   else { snprintf(erro, sizeof erro, "sem fio para falar com o Trakt"); estado = TRA_ERRO; }
 }
@@ -362,6 +572,9 @@ void traktauth_comecar(void) {
 void traktauth_passo(unsigned agoraMs) {
   if (fioVivo && fioPronto) { fioVivo = 0; fioPronto = 0; }
   if (fioVivo) return;
+  // PEDINDO sem fio no ar: o pedido foi feito enquanto um fio do perfil
+  // anterior ainda respondia, e soltar() recusou. Sai agora.
+  if (estado == TRA_PEDINDO) { soltar(fioPedir); return; }
 
   // 401 NA SESSAO: a rede marcou a credencial como recusada. Com refresh
   // guardado, renova — uma tentativa por minuto, porque falha de transporte
@@ -409,7 +622,7 @@ void traktauth_passo(unsigned agoraMs) {
     // as listas dele nao existem nas fileiras que estao na tela. Sem esta
     // remontagem, vincular so tinha efeito visivel no proximo arranque.
     desc_repetir();
-    printf("[trakt] vinculado nesta TV\n");
+    printf("[trakt] vinculado nesta TV (perfil %d)\n", perfil);
     fflush(stdout);
   }
 

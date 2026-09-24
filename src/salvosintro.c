@@ -186,12 +186,16 @@ void sintro_tecla_atalho(float x, float y, float lado, float a) {
     txt_desenhar_alpha(t, k.x + (k.w - (float)t.w) * 0.5f,
                        k.y + k.h * 0.72f - (float)t.h * 0.5f, a); }
 #else
-  // Tecla colorida da LG: disco azul com um anel escuro em volta, que e o que
-  // a destaca da fileira quando o controle esta na mao.
-  GfxRect anel = { x, y, lado, lado };
-  GfxRect disco = { x + 4.0f, y + 4.0f, lado - 8.0f, lado - 8.0f };
-  gfx_cor(anel, 0.5f, 0.16f, 0.17f, 0.20f, a);
-  gfx_cor(disco, 0.5f, 0.16f, 0.44f, 0.87f, a);
+  // Tecla colorida da LG no FORMATO DO BOTAO (dono, 23/09/2026: "troca o
+  // circulo azul para o formato do botao mesmo, igual e o da Samsung"): no
+  // controle as quatro teclas de cor sao pastilhas retangulares arredondadas,
+  // nao discos. Mesma largura `lado` do disco antigo, para o texto ao lado nao
+  // mudar de lugar; altura de pastilha, centrada na linha.
+  float h = lado * 0.56f;
+  GfxRect corpo = { x, y + (lado - h) * 0.5f, lado, h };
+  GfxRect tecla = { corpo.x + 3.0f, corpo.y + 3.0f, corpo.w - 6.0f, corpo.h - 6.0f };
+  gfx_cor(corpo, 0.42f, 0.16f, 0.17f, 0.20f, a);
+  gfx_cor(tecla, 0.40f, 0.16f, 0.44f, 0.87f, a);
 #endif
 }
 

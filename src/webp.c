@@ -118,7 +118,7 @@ static void     soltar(uint8_t *px);
 // Layout do job (int32 cada). Espelhado em tools/decodificador.js e no JS
 // logo abaixo — mudar aqui e mudar la.
 // J_ORIGEM: 0 fio principal, 1 Worker via fio principal, 2 Worker pelo canal
-// direto. J_FILA liga os jobs na pilha da sentinela; J_MIME (1 webp, 2 png) e
+// direto. J_FILA liga os jobs na pilha da sentinela; J_MIME (1 webp, 2 png, 3 gif) e
 // J_LARG sao o que a sentinela repassa ao Worker, que nao le string do C.
 enum { J_EST, J_W, J_H, J_PTR, J_OW, J_OH, J_ORIGEM, J_SEQ, J_CAP, J_DADOS, J_N, J_PROX,
        J_FILA, J_MIME, J_LARG, J_INTS };
@@ -184,8 +184,10 @@ int navegador_abandonados_vivos(void) { return varrer(); }
 static unsigned le32be(const unsigned char *p) { return ((unsigned)p[0] << 24) | ((unsigned)p[1] << 16) | ((unsigned)p[2] << 8) | p[3]; }
 static unsigned le24le(const unsigned char *p) { return p[0] | ((unsigned)p[1] << 8) | ((unsigned)p[2] << 16); }
 
-// Tamanho da imagem pelo CABECALHO, sem decodificar. So PNG e WebP passam por
-// esta ponte (JPEG e software, jpegrapido.c). 0 quando nao reconhece.
+// Tamanho da imagem pelo CABECALHO, sem decodificar. PNG, WebP e GIF passam
+// por esta ponte (JPEG e software, jpegrapido.c). 0 quando nao reconhece. Do
+// GIF vale a TELA LOGICA, que e o tamanho do primeiro quadro que o
+// createImageBitmap devolve.
 static int dimensoes(const unsigned char *d, size_t n, int *w, int *h) {
   *w = *h = 0;
   if (n >= 24 && d[0] == 0x89 && !memcmp(d + 1, "PNG", 3) && !memcmp(d + 12, "IHDR", 4)) {
@@ -199,6 +201,8 @@ static int dimensoes(const unsigned char *d, size_t n, int *w, int *h) {
     } else if (!memcmp(d + 12, "VP8 ", 4) && d[23] == 0x9d && d[24] == 0x01 && d[25] == 0x2a) {
       *w = (d[26] | (d[27] << 8)) & 0x3fff; *h = (d[28] | (d[29] << 8)) & 0x3fff;
     }
+  } else if (n >= 13 && !memcmp(d, "GIF8", 4)) {
+    *w = d[6] | (d[7] << 8); *h = d[8] | (d[9] << 8);
   }
   return *w > 0 && *h > 0 && *w <= 32768 && *h <= 32768;
 }
@@ -282,6 +286,7 @@ static int mimeCodigo(const char *mime) {
   if (!mime) return 0;
   if (!strcmp(mime, "image/webp")) return 1;
   if (!strcmp(mime, "image/png")) return 2;
+  if (!strcmp(mime, "image/gif")) return 3;
   return 0;
 }
 
@@ -648,10 +653,101 @@ static uint8_t *decodificarEscalado(const unsigned char *dados, size_t n, int w,
   return px;
 }
 
+// WEBP ANIMADO: SO O PRIMEIRO QUADRO. Avatar de perfil pode vir animado
+// (VP8X com ANIM/ANMF), e a libwebp simples — a unica que a LG tem, sem a
+// libwebpdemux — responde WebPGetInfo com o tamanho do canvas e depois
+// RECUSA o WebPDecodeRGBA (VP8_STATUS_UNSUPPORTED_FEATURE). No log de campo
+// (LG 1.4.1-1.4.3) era o "[tex] decode falhou ... magica=52494646" de avatar
+// pequeno: RIFF certo, tamanho certo, e cartao vazio no lugar da foto.
+//
+// O quadro 1 e recortado do ANMF e embrulhado num WebP parado (VP8/VP8L
+// direto, ou VP8X+ALPH+VP8 quando o quadro tem alfa separado), que a libwebp
+// le. Como o quadro pode ser menor que o canvas (o img2webp corta a borda
+// transparente ja no primeiro), ele e colado na posicao dele num canvas
+// transparente do tamanho declarado. O navegador do Tizen ja faz isto sozinho
+// (createImageBitmap pega o primeiro quadro).
+static unsigned le24(const unsigned char *p) { return p[0] | ((unsigned)p[1] << 8) | ((unsigned)p[2] << 16); }
+static unsigned le32(const unsigned char *p) { return le24(p) | ((unsigned)p[3] << 24); }
+static void pe32(unsigned char *p, unsigned v) { p[0] = v; p[1] = v >> 8; p[2] = v >> 16; p[3] = v >> 24; }
+static void pe24(unsigned char *p, unsigned v) { p[0] = v; p[1] = v >> 8; p[2] = v >> 16; }
+
+static uint8_t *primeiroQuadro(const unsigned char *d, size_t n, int *lw, int *lh, int *ow, int *oh) {
+  size_t pos = 30, fim;
+  unsigned cw, ch;
+  if (n < 30 || memcmp(d + 12, "VP8X", 4) || !(d[20] & 0x02)) return NULL;
+  cw = le24(d + 24) + 1; ch = le24(d + 27) + 1;
+  if ((size_t)cw * ch > 4096u * 4096u) return NULL;
+  fim = 8 + (size_t)le32(d + 4);
+  if (fim > n) fim = n;   // RIFF que declara mais do que tem: le o que veio
+  while (pos + 8 <= fim) {
+    size_t tam = le32(d + pos + 4), dado = pos + 8;
+    if (tam > fim - dado) return NULL;
+    if (!memcmp(d + pos, "ANMF", 4) && tam >= 16 + 8) {
+      const unsigned char *q = d + dado;
+      unsigned fx = le24(q) * 2, fy = le24(q + 3) * 2;
+      unsigned fw = le24(q + 6) + 1, fh = le24(q + 9) + 1;
+      const unsigned char *sub = q + 16;
+      size_t nsub = tam - 16, i = 0, a = 0, nAlph = 0, img = 0, nImg = 0;
+      int ehVp8l = 0, w = 0, h = 0, y;
+      unsigned char *parado; size_t np;
+      uint8_t *fr, *tela;
+      // Subchunks do quadro: ALPH opcional, depois VP8 ou VP8L. Os tamanhos
+      // guardados (nAlph, nImg) sao os do campo, sem o byte de preenchimento;
+      // o embrulho repoe o preenchimento com zero.
+      while (i + 8 <= nsub) {
+        size_t t = le32(sub + i + 4);
+        if (t > nsub - i - 8) return NULL;
+        if (!memcmp(sub + i, "ALPH", 4)) { a = i; nAlph = t; }
+        else if (!memcmp(sub + i, "VP8 ", 4) || !memcmp(sub + i, "VP8L", 4)) {
+          img = i; nImg = t; ehVp8l = sub[i + 3] == 'L';
+          break;
+        }
+        i += 8 + t + (t & 1);
+      }
+      if (!nImg) return NULL;
+      if (ehVp8l) nAlph = 0;   // VP8L traz o alfa no proprio fluxo
+      { size_t pA = nAlph ? 8 + nAlph + (nAlph & 1) : 0, pI = 8 + nImg + (nImg & 1);
+        np = 12 + (nAlph ? 18 + pA : 0) + pI;
+        parado = calloc(1, np);
+        if (!parado) return NULL;
+        memcpy(parado, "RIFF", 4); pe32(parado + 4, (unsigned)(np - 8)); memcpy(parado + 8, "WEBP", 4);
+        if (nAlph) {
+          memcpy(parado + 12, "VP8X", 4); pe32(parado + 16, 10);
+          parado[20] = 0x10;   // so o bit de alfa
+          pe24(parado + 24, fw - 1); pe24(parado + 27, fh - 1);
+          memcpy(parado + 30, sub + a, 8 + nAlph);
+          memcpy(parado + 30 + pA, sub + img, 8 + nImg);
+        } else memcpy(parado + 12, sub + img, 8 + nImg); }
+      fr = pRgba(parado, np, &w, &h);
+      free(parado);
+      if (!fr) return NULL;
+      if (w == (int)cw && h == (int)ch) tela = fr;
+      else {
+        tela = calloc((size_t)cw * ch, 4);
+        if (tela)
+          for (y = 0; y < h && fy + (unsigned)y < ch; y++) {
+            int cabe = fx >= cw ? 0 : ((unsigned)w > cw - fx ? (int)(cw - fx) : w);
+            if (cabe > 0) memcpy(tela + ((size_t)(fy + y) * cw + fx) * 4, fr + (size_t)y * w * 4, (size_t)cabe * 4);
+          }
+        soltar(fr);
+        if (!tela) return NULL;
+      }
+      *lw = (int)cw; *lh = (int)ch;
+      if (ow) *ow = (int)cw;
+      if (oh) *oh = (int)ch;
+      return tela;
+    }
+    pos = dado + tam + (tam & 1);
+  }
+  return NULL;
+}
+
 static uint8_t *decodificar(const unsigned char *dados, size_t n, int largMax,
                             int *lw, int *lh, int *ow, int *oh) {
   int w = 0, h = 0; uint8_t *px;
   if (!tentado) abrir();
+  if (pRgba && n >= 30 && !memcmp(dados + 12, "VP8X", 4) && (dados[20] & 0x02))
+    return primeiroQuadro(dados, n, lw, lh, ow, oh);
   if (!pRgba || !pInfo(dados, n, &w, &h) || w < 1 || h < 1) return NULL;
   if (ow) *ow = w;
   if (oh) *oh = h;

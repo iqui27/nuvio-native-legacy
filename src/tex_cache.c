@@ -33,6 +33,7 @@ extern void NV_TEX_TEST_AFTER_POP(void);
 #include "webp.h"
 #include "jpegrapido.h"
 #include "artereserva.h"
+#include "artetamanho.h"
 #include "perfiltv.h"
 #include <stdint.h>
 #include "cachearte.h"
@@ -98,6 +99,12 @@ typedef struct {
   // novo sozinho, sem ninguem precisar notar.
   int tetoUsado;
   int fonteW;
+  // TETO COM QUE A VARIANTE MENOR FOI ESCOLHIDA (artetamanho.h), 0 quando o
+  // download foi da URL do item. Escrito pelo fio de rede, lido pelo decode:
+  // com ele o decode acha o arquivo da variante no disco, grava `tetoUsado`
+  // com o teto da variante e `fonteW` desconhecido — o w780 de um card nao e
+  // "a fonte acabou", e a promocao a heroi precisa continuar possivel.
+  int limiteTamanho;
   unsigned long uso;  // contador LRU
   // Luminancia media dos pixels OPACOS, 0..255; -1 enquanto nao se sabe.
   // Medida uma vez, na thread de decode. Serve ao logo do titulo: o TMDB nao
@@ -1096,6 +1103,7 @@ static int gravIni, gravN, gravIniciado;
 static long gravBytes;
 static long gravDescartes;
 
+static void limparCacheEnvenenado(void);
 static void *fioGravador(void *arg) {
   (void)arg;
 #ifdef __linux__
@@ -1105,6 +1113,7 @@ static void *fioGravador(void *arg) {
   /* A UNICA leitura da pasta na sessao, aqui e fora de qualquer trava que
    * outro fio espere. A primeira poda (arte acumulada acima do teto novo)
    * tambem roda aqui, em fundo. */
+  limparCacheEnvenenado();
   cachearte_nativo_indice_construir();
   publicarDiscoNativo();
   cachearte_estatisticas_pedir();
@@ -1123,6 +1132,34 @@ static void *fioGravador(void *arg) {
     pthread_mutex_unlock(&gravMtx);
   }
   return NULL;
+}
+// LIMPEZA UNICA DA 1.4.3. Com o reuso de conexao da 1.4.2 a TV podia gravar no
+// cache os bytes de OUTRA imagem com o nome de um cartaz (ver soltarHandleR em
+// rede.c), e o arquivo errado voltava em toda abertura. Na primeira vez, aqui,
+// no fio de fundo e antes do indice, o cache de arte e esvaziado; a marca
+// impede de repetir. Arte e so cache: volta a baixar sob demanda.
+static void limparCacheEnvenenado(void) {
+  char marca[600], cam[1100];
+  DIR *d;
+  struct dirent *e;
+  long n = 0;
+  FILE *f;
+  if (!dirCache[0]) return;
+  snprintf(marca, sizeof marca, "%s/.limpo-143", dirCache);
+  if (access(marca, F_OK) == 0) return;
+  d = opendir(dirCache);
+  if (d) {
+    while ((e = readdir(d)) != NULL) {
+      if (e->d_name[0] == '.') continue;
+      snprintf(cam, sizeof cam, "%s/%s", dirCache, e->d_name);
+      if (remove(cam) == 0) n++;
+    }
+    closedir(d);
+  }
+  f = fopen(marca, "w");
+  if (f) { fputs("1\n", f); fclose(f); }
+  printf("[tex] cache de arte limpo uma vez (1.4.3): %ld arquivo(s)\n", n);
+  fflush(stdout);
 }
 static void iniciarGravador(void) {
   pthread_t t;
@@ -1467,6 +1504,9 @@ static int mesmoPedido(int idx, const char *pedido) {
 static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *foiRede,
                           TexFetchTrace *trace) {
   const char *pedido = url;   // o caminho do item; `url` pode virar a variante
+  char certo[600];
+  int limitePedido;
+  SDL_LockMutex(mtx); limitePedido = itens[idx].limite; SDL_UnlockMutex(mtx);
 #ifdef __EMSCRIPTEN__
   if (!strncmp(url, "http://", 7) || !strncmp(url, "https://", 8)) {
     long n = 0;
@@ -1481,8 +1521,7 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
     // decodificar em software. So aqui, so no Tizen, so quando o pedido e de
     // card (limite <= 640): o item continua com a URL medium como chave, e a
     // promocao a heroi baixa o medium de novo, que e o que ela ja fazia.
-    { int limite;
-      SDL_LockMutex(mtx); limite = itens[idx].limite; SDL_UnlockMutex(mtx);
+    { int limite = limitePedido;
       if (limite > 0 && limite <= 640) {
         variante = NV_CACHE_ARTE_SMALL;
         const char *m = strstr(url, "images.metahub.space/background/medium/");
@@ -1492,6 +1531,11 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
           url = menor;
         }
       } }
+    // O RESTO DA ESCADA (TMDB, still do metahub): artetamanho.h.
+    if (arte_tamanho_url(url, limitePedido, certo, sizeof certo)) url = certo;
+    SDL_LockMutex(mtx);
+    if (mesmoPedido(idx, pedido)) itens[idx].limiteTamanho = url != pedido ? limitePedido : 0;
+    SDL_UnlockMutex(mtx);
     /* The exact URL, including its query string, remains the key. `variante`
      * is a second dimension so a small response can never satisfy a hero. */
     corpo = NULL;
@@ -1543,6 +1587,14 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
   if (dirCache[0] && (!strncmp(url, "http://", 7) || !strncmp(url, "https://", 8))) {
     unsigned char *corpo = NULL;
     long n = 0;
+    // A VARIANTE DO TAMANHO DO DESENHO (artetamanho.h), antes do nome de
+    // cache: o arquivo no disco e o da variante, e a promocao a heroi, com
+    // teto maior, procura outro nome e baixa o maior.
+    { int usar = arte_tamanho_url(url, limitePedido, certo, sizeof certo);
+      if (usar) url = certo;
+      SDL_LockMutex(mtx);
+      if (mesmoPedido(idx, pedido)) itens[idx].limiteTamanho = usar ? limitePedido : 0;
+      SDL_UnlockMutex(mtx); }
     nomeDeCache(url, dst, tam);
     if (foiRede) *foiRede = 0;
     if (acertoDisco(dst, trace)) return 1;
@@ -1888,6 +1940,7 @@ static int threadDecode(void *arg) {
     filaEm = itens[idx].filaDecEm;
     itens[idx].filaDecEm = 0;
     localDireto = itens[idx].localDireto;
+    int limTam = localDireto ? 0 : itens[idx].limiteTamanho;
     // OS BYTES SAEM DO ITEM AQUI, sob o mutex, e passam a ser deste fio.
     unsigned char *bruto = itens[idx].bruto;
     long nBruto = itens[idx].nBruto;
@@ -1932,8 +1985,11 @@ static int threadDecode(void *arg) {
     {
     // O download JA ACONTECEU no fio de rede; aqui garantirLocal so traduz a
     // URL para o caminho do cache, sem tocar a rede.
-    { char local[600];
-      if (garantirLocal(caminho, local, sizeof local, NULL, NULL))
+    // Com variante (limiteTamanho), o arquivo no disco e o dela.
+    { char local[600], certo[600];
+      const char *fonte = caminho;
+      if (limTam > 0 && arte_tamanho_url(caminho, limTam, certo, sizeof certo)) fonte = certo;
+      if (garantirLocal(fonte, local, sizeof local, NULL, NULL))
         snprintf(caminho, sizeof caminho, "%s", local);
     }
     // JPEG SAI DO DECODIFICADOR JA REDUZIDO (jpegrapido.h): 1/2, 1/4 ou 1/8
@@ -2060,6 +2116,7 @@ static int threadDecode(void *arg) {
         printf("[tex] decode lento: %u ms (ler %u, reduzir %u) para %dx%d (saiu %dx%d) %s\n",
                (unsigned)dt, (unsigned)(tLoad - t0), (unsigned)(SDL_GetTicks() - tLoad),
                srcW, srcH, conv->w, conv->h, urlOrig);
+        if (limTam > 0) printf("[tex] (variante do tamanho, teto %d)\n", limTam);
         printf("[tex-trace] decode hash=%08lx kind=%s queue=%u total=%u load=%u reduce=%u src=%dx%d out=%dx%d\n",
                hashCaminho(urlOrig), localDireto ? "local" : "remote",
                (unsigned)filaWait, (unsigned)dt, (unsigned)(tLoad - t0),
@@ -2126,6 +2183,20 @@ static int threadDecode(void *arg) {
     // metahub passou despercebido.
     int falhou = 0;
     SDL_LockMutex(mtx);
+    // O SLOT AINDA E DESTE PEDIDO? (23/09/2026, cards com a arte de OUTRO
+    // titulo.) O decode roda sem a trava; se o slot foi despejado e
+    // reaproveitado por outro caminho nesse meio tempo, ele esta PENDENTE de
+    // novo, mas por OUTRA imagem — publicar `conv` ali punha o fundo horizontal
+    // de um titulo no cartaz de outro ("The Boys" com a cena do Slime), e a
+    // textura ficava no cache com o nome errado. Mesma guarda do download
+    // (mesmoPedido): nao sendo o mesmo caminho, a superficie vai para o lixo.
+    if (strcmp(itens[idx].caminho, urlOrig)) {
+      if (conv) SDL_FreeSurface(conv);
+      printf("[tex] decode descartado: o slot virou outro pedido (%.60s)\n", urlOrig);
+      fflush(stdout);
+      SDL_UnlockMutex(mtx);
+      continue;
+    }
     if (itens[idx].estado == PENDENTE && !conv && pedidoObsoleto(&itens[idx])) {
       // A imagem terminou depois de o card sair da tela E NAO DECODIFICOU: nao
       // a transforme em falha, outro card pode reutilizar o slot frio.
@@ -2154,6 +2225,14 @@ static int threadDecode(void *arg) {
         // O QUE SAIU, e nao o que foi pedido: e este par que a promocao le.
         itens[idx].tetoUsado = limite;
         itens[idx].fonteW = srcW;
+        // VARIANTE MENOR: o teto que ela cobre, e a fonte de verdade nao e
+        // conhecida. Sem isto um w1280 decodificado a 1280 gravava fonteW=1280
+        // e a promocao a 1920 ficava bloqueada; e um w780 baixado a 704 mas
+        // decodificado depois de o teto subir a 1920 gravava tetoUsado=1920.
+        if (limTam > 0) {
+          if (limTam < limite) itens[idx].tetoUsado = limTam;
+          itens[idx].fonteW = 0;
+        }
       } else {
         // MANTEM o caminho: e ele que identifica o slot na proxima consulta e
         // permite responder "ainda nao, tente depois" em vez de reenfileirar.
@@ -2625,9 +2704,41 @@ void tex_encerrar(void) {
 // Ver tex_obter_larg_qualquer: 1 durante essa chamada, e a textura menor que
 // ja existe e entregue enquanto a maior e reprocessada.
 static int aceitaMenor;
+// CAMINHO QUE NAO E TEXTO NAO VIRA PEDIDO. Guarda, nao conserto: o caso que a
+// trouxe (lixo binario como caminho, "[tex] decode falhou (Couldn't open
+// ���̑C)") era um ponteiro para bloco do catalogo ja liberado, consertado em
+// catalogo.c (ver cat_quadro). Isto so impede que o proximo defeito da mesma
+// familia ocupe um slot, entre na fila de decode e grave lixo no log a cada
+// tentativa. URL e caminho de arquivo aqui sempre comecam por ASCII visivel
+// ("http", "/", "."); byte de controle em qualquer posicao tambem recusa.
+// Acento no MEIO (UTF-8) continua passando.
+static int caminhoInvalido(const char *c) {
+  const unsigned char *s = (const unsigned char *)c;
+  if (*s <= 0x20 || *s >= 0x7f) return 1;
+  for (; *s; s++) if (*s < 0x20 || *s == 0x7f) return 1;
+  return 0;
+}
+
 static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
                                int passageiro) {
   if (!caminho || !*caminho) return 0;
+  if (caminhoInvalido(caminho)) {
+    static int avisos;
+    if (avisos < 3) {
+      const unsigned char *b = (const unsigned char *)caminho;
+      char hex[3 * 12 + 1];
+      int k, p = 0;
+      avisos++;
+      // Os bytes em hexa e nao a string: e o que diz de onde o lixo veio
+      // (ponteiro do alocador, cabecalho de JPEG, texto de outro campo).
+      for (k = 0; k < 12 && b[k]; k++)
+        p += snprintf(hex + p, sizeof hex - (size_t)p, "%02x ", b[k]);
+      hex[p] = 0;
+      printf("[tex] caminho recusado: nao e texto (%s)\n", hex);
+      fflush(stdout);
+    }
+    return 0;
+  }
   GLuint saida = 0;
   unsigned long h = hashCaminho(caminho);
   int i; BUSCA_MEDIDA(i, caminho, h);
@@ -2766,6 +2877,7 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
       strncpy(itens[novo].caminho, caminho, sizeof itens[novo].caminho - 1);
       itens[novo].hash = h;
       itens[novo].limite = limite;
+      itens[novo].limiteTamanho = 0;
       itens[novo].estado = PENDENTE;
       itens[novo].uso = ++relogio;
       itens[novo].ultimoQuadro = quadroAtual;

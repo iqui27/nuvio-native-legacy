@@ -557,11 +557,13 @@ void avisos_iniciar(void) {
       snprintf(id, sizeof id, "crash:%s", crashQuando);
       snprintf(tit, sizeof tit, "%s", i18n("O app fechou sozinho"));
       snprintf(txt, sizeof txt, i18n("Em %s o Nuvio parou sem avisar. Se quiser, envie o registro daquela sessão para ajudar a encontrar a causa."), crashQuando);
+      // SEM CARTAO E SEM TOAST NO ARRANQUE (dono, 23/09/2026: "tira a
+      // mensagem de enviar o log quando entra no app, ja temos os logs"). A
+      // queda fica so na lista de Avisos, em silencio; quem ligou o envio
+      // automatico continua mandando o registro anterior (avisos_envio_auto_passo).
       pthread_mutex_lock(&trava);
-      toast(por(id, AV_CRASH, tit, txt, NULL));
-      pthread_mutex_unlock(&trava);
-      // O cartao so para quem ainda nao respondeu a ESTE crash.
-      if (!foiVisto(id)) { cartaoPendente = 1; snprintf(cartaoId, sizeof cartaoId, "%s", id); } }
+      (void)por(id, AV_CRASH, tit, txt, NULL);
+      pthread_mutex_unlock(&trava); }
   }
   marcaGravar();
   canalProximo = SDL_GetTicks() + 8000;   // depois da home, nao junto com ela
@@ -848,8 +850,11 @@ static void desenharToast(Uint32 agora) {
   // lugar do disco; o ponto que pulsa acompanha na mesma cor.
   { GfxRect ic = { x + 24.0f, y + 24.0f, 56.0f, 56.0f };
     float d = 5.0f + 3.0f * pulso;
-    gfx_rect((GfxRect){ ic.x + 2.0f, ic.y + 2.0f, 52.0f, 52.0f }, 0, GFX_SINO,
-             0, 0, 0, 0, ar, ag, ab, toastA);
+    // (23/09) Sino PREENCHIDO do Phosphor (bell-fill, MIT) em art/icones/
+    // sino.png, no lugar do GFX_SINO de contorno fino — o dono pediu "tirar o
+    // contorno do sino e usar um sino mais bonito".
+    gfx_icone((GfxRect){ ic.x + 6.0f, ic.y + 6.0f, 44.0f, 44.0f }, "sino",
+              ar, ag, ab, toastA);
     gfx_cor((GfxRect){ ic.x + ic.w - d - 1.0f, ic.y - d * 0.5f, d, d },
             0.5f, ar, ag, ab, 0.90f * toastA); }
   txt_desenhar_alpha(cab, x + 98.0f, y + 18.0f, toastA);
@@ -1070,7 +1075,10 @@ void avisos_envio_auto_passo(Uint32 agora) {
   // o player aberto enche os 200 KB em menos de um minuto (haylereader,
   // 20/09: 200 KB por minuto de eventos [video]).
 #ifdef __EMSCRIPTEN__
-  proximo = agora + 60000;
+  // Depois dos 5 primeiros minutos, 5 em 5 tambem no Tizen: a cada minuto o
+  // registro inteiro (ate 200 KB) subia de novo — 18 envios em 16 minutos de
+  // uma TV so nos logs de 24/09, quase todos repetindo o que ja tinha ido.
+  proximo = agora + (agora < 300000 ? 60000 : 300000);
 #else
   proximo = agora + 300000;
 #endif

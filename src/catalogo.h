@@ -216,7 +216,23 @@ int  cat_do_cache(void);
 void cat_cache_substituido(void);
 
 int  cat_n(void);
+// O ponteiro devolvido (e os campos dele: backdrop, poster, logo) vale ate o
+// FIM DO QUADRO em que foi pedido, mesmo que a descoberta troque o catalogo
+// quantas vezes for nesse meio tempo. Nao guarde de um quadro para o outro:
+// guarde o indice, ou copie. Ver cat_quadro.
 const CatItem *cat_item(int i);
+// VIRADA DE QUADRO, chamada pelo fio de desenho no comeco de cada quadro
+// (main.c), num ponto onde nenhum ponteiro de cat_item() esta na mao.
+//
+// E o que decide quando um bloco trocado fora pode ser liberado. Antes ele
+// morria na troca SEGUINTE — e duas trocas dentro de um quadro (a publicacao
+// por fileira, ou a montagem junto do fio de "Continuar assistindo") liberavam
+// o bloco em que o desenho ainda lia: `item->backdrop` chegava ao cache de
+// textura como lixo binario ("[tex] decode falhou (Couldn't open ���̑C)").
+// Agora o bloco so e liberado depois que o quadro seguinte a troca COMECOU.
+void cat_quadro(void);
+// Quantos blocos trocados fora ainda esperam a virada de quadro. Para teste.
+int  cat_blocos_aposentados(void);
 
 // Indice do titulo com este IMDb id, ou -1. O id do catalogo pode trazer
 // episodio ("tt123:2:1"); a comparacao para no primeiro ':' dos dois lados.

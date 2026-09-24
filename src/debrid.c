@@ -29,16 +29,17 @@ static int  alvoT, alvoE;
 
 // RECUSA DE CONTA POR BUSCA. recusado[q] guarda o status HTTP da recusa (0 =
 // nenhuma); `geracao` sobe a cada debrid_nova_busca. Atomicos porque
-// debrid_resolver roda em ate VER_FIOS (4) fios da verificacao ao mesmo tempo.
+// debrid_resolver rodava em ate 4 fios da verificacao ao mesmo tempo; desde o
+// #130 a verificacao e em serie, mas o fio dela continua sendo outro que o de
+// desenho, e a trava nao custa nada.
 //
-// A GERACAO e o que impede um fio da busca ANTERIOR — lote abandonado em
-// streams.c, que continua ate o prazo dele — de marcar recusa na busca nova:
+// A GERACAO e o que impede um fio da busca ANTERIOR — uma verificacao de
+// streams.c que ainda esta no prazo dela — de marcar recusa na busca nova:
 // ele guardou a geracao ao entrar e so escreve se ela nao mudou.
 //
-// LIMITE ACEITO: com 4 fios, ate 4 createtorrent podem sair antes de o
-// primeiro 403 voltar e marcar a recusa. Sao 4 chamadas no lugar das 8 do
-// registro 1541 (e de ate 26, o tamanho do lote); travar o servico antes da
-// resposta custaria serializar os fios.
+// O LIMITE QUE ESTAVA ACEITO AQUI CAIU COM O #130: com 4 fios, ate 4
+// createtorrent saiam antes de o primeiro 403 voltar. Com a verificacao em
+// serie, o primeiro 403 marca a recusa antes da candidata seguinte.
 static _Atomic unsigned geracao;
 static _Atomic int recusado[SN];
 
@@ -53,6 +54,14 @@ static _Atomic int recusado[SN];
 // `avisado` e o "ja mostrei o aviso" de cada servico, pelo mesmo tempo.
 static _Atomic int semPlano[SN];
 static _Atomic int avisado[SN];
+
+// Torrents que a busca atual achou fora de cache (debrid_fora_de_cache).
+static _Atomic int foraCache;
+
+// Codigo INTERNO dos resolvedores: "fora de cache", que para quem chama e 0
+// (nao tocou), mas que a escolha manual precisa separar de "falhou" para saber
+// se vale pedir ao servico que baixe. Nunca sai deste arquivo.
+#define FORA 3
 
 static int idServico(const char *s) {
   if (!strcasecmp(s, "realdebrid") || !strcasecmp(s, "real-debrid")) return SRD;
@@ -85,6 +94,7 @@ int debrid_ativo(void) {
 void debrid_esquecer(void) {
   int q;
   memset(chave, 0, sizeof chave); alvoT = alvoE = 0;
+  atomic_store(&foraCache, 0);
   for (q = 0; q < SN; q++) {
     atomic_store(&recusado[q], 0);
     atomic_store(&semPlano[q], 0);
@@ -94,6 +104,7 @@ void debrid_esquecer(void) {
 void debrid_nova_busca(void) {
   int q;
   atomic_fetch_add(&geracao, 1u);
+  atomic_store(&foraCache, 0);
   for (q = 0; q < SN; q++) atomic_store(&recusado[q], 0);
 }
 int debrid_recusa(char *dst, unsigned n) {
@@ -110,6 +121,8 @@ int debrid_recusa(char *dst, unsigned n) {
   }
   return 0;
 }
+
+int debrid_fora_de_cache(void) { return atomic_load(&foraCache); }
 
 int debrid_sem_plano(void) {
   int q, m = 0;
@@ -362,7 +375,10 @@ static const char *escolherArquivo(const char *files, int fileIdx,
 //   POST torrents/addMagnet, GET torrents/info/<id>,
 //   POST torrents/selectFiles/<id>, POST unrestrict/link.
 
-static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n) {
+// `pct` recebe o progresso (0-100) do torrent que o RD ficou baixando, quando
+// ele nao ficou pronto nas tres olhadas; a escolha manual mostra isso.
+static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n,
+                      int *pct) {
   char corpo[700], enc[600], rota[120], tid[64], status[32], link[600];
   char *r; int st = 0, id, tent;
   const char *files, *links, *el;
@@ -400,6 +416,7 @@ static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n) 
   for (tent = 0; tent < 3 && !link[0]; tent++) {
     snprintf(rota, sizeof rota, "torrents/info/%s", tid);
     r = get_auth(RD, rota, SRD, &st);
+    if (ok2xx(r, st) && pct) *pct = (int)js_num(r, NULL, "progress", -1);
     if (ok2xx(r, st) && js_texto(r, NULL, "status", status, sizeof status)
         && !strcmp(status, "downloaded") && (links = js_array(r, NULL, "links"))
         && *links == '"') {
@@ -420,7 +437,7 @@ static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n) 
     // /torrents/delete/<id>, e rede_apagar ja existe — mas remover aqui muda o
     // comportamento visivel da conta de quem usa, e isso e decisao de quem
     // manda, nao efeito colateral de uma correcao de resolvedor.
-    return 0;
+    return FORA;
   }
 
   urlenc(enc, sizeof enc, link);
@@ -449,7 +466,9 @@ static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n) 
 // 4xx que so aparece na casa de quem tem TorBox.
 #define BND "----nuvio-debrid"
 
-static char *tb_criar(const char *magnet, int *st) {
+// `soCache` 1 = add_only_if_cached (o automatico); 0 = a pessoa escolheu o
+// torrent fora de cache e o TorBox deve BAIXAR — e o "P2P" do TorBox.
+static char *tb_criar(const char *magnet, int soCache, int *st) {
   char url[300], auth[260], corpo[1200];
   const char *cab[3];
   snprintf(url, sizeof url, TB "/torrents/createtorrent");
@@ -463,17 +482,33 @@ static char *tb_criar(const char *magnet, int *st) {
   // cache, e sem isto a TV ficaria esperando um download comecar.
   snprintf(corpo, sizeof corpo,
            "--" BND "\r\nContent-Disposition: form-data; name=\"magnet\"\r\n\r\n%s\r\n"
-           "--" BND "\r\nContent-Disposition: form-data; name=\"add_only_if_cached\"\r\n\r\ntrue\r\n"
-           "--" BND "--\r\n", magnet);
+           "--" BND "\r\nContent-Disposition: form-data; name=\"add_only_if_cached\"\r\n\r\n%s\r\n"
+           "--" BND "--\r\n", magnet, soCache ? "true" : "false");
   return rede_postar_st(url, 15, cab, corpo, st);
 }
 
-static int resolverTB(const char *infoHash, int fileIdx, char *url, unsigned n) {
+// PRONTO PARA requestdl? Em cache o mylist ja vem com download_finished (ou
+// download_present) true. Torrent que o TorBox ainda baixa traz a lista de
+// arquivos assim que le os metadados — e o requestdl dele falha. Por isso,
+// quando a pessoa mandou baixar, arquivo listado nao basta: vale a bandeira.
+static int tbPronto(const char *r) {
+  char b[16];
+  return (js_bruto(r, NULL, "download_finished", b, sizeof b) && !strncmp(b, "true", 4))
+      || (js_bruto(r, NULL, "download_present", b, sizeof b) && !strncmp(b, "true", 4));
+}
+
+// `baixar` 0: so em cache (o automatico). 1: a pessoa escolheu o torrent e o
+// TorBox deve baixar o que nao tem — sem checkcached (quem chama ja
+// perguntou) e sem add_only_if_cached. `pct` recebe o progresso quando o
+// torrent ainda esta baixando.
+static int resolverTB(const char *infoHash, int fileIdx, char *url, unsigned n,
+                      int baixar, int *pct) {
   char h[80], magnet[300], rota[600];
-  char *r; int st = 0, fid = -1, tent, tid;
+  char *r; int st = 0, fid = -1, tent, tid, pronto = !baixar;
   const char *files, *el;
 
   hashMin(h, sizeof h, infoHash);
+  if (baixar) goto criar;
 
   // 1) So conteudo JA EM CACHE toca na hora. `data` volta como lista de
   //    {name,size,hash}; lista ausente ou vazia significa fora de cache, e ai
@@ -485,12 +520,13 @@ static int resolverTB(const char *infoHash, int fileIdx, char *url, unsigned n) 
   if (!ok2xx(r, st)) { int v = falha(STB, "checkcached", st, r); free(r); return v; }
   if (!js_array(r, NULL, "data")) {
     printf("[debrid] TorBox: %s fora de cache (HTTP %d)\n", h, st);
-    free(r); return 0;
+    free(r); return FORA;
   }
   free(r);
 
+criar:
   snprintf(magnet, sizeof magnet, "magnet:?xt=urn:btih:%s", h);
-  r = tb_criar(magnet, &st);
+  r = tb_criar(magnet, !baixar, &st);
   tid = ok2xx(r, st) ? (int)js_num(r, NULL, "torrent_id", -1) : -1;
   // O 403 DO REGISTRO 1541 SAI AQUI. A linha continua comecando por
   // "TorBox createtorrent: HTTP" (o que se procura no D1), agora com o corpo.
@@ -502,23 +538,59 @@ static int resolverTB(const char *infoHash, int fileIdx, char *url, unsigned n) 
   // e no Tizen o XHR nao deixa definir UA e o navegador manda o dele. Se o
   // corpo novo vier como pagina HTML de WAF em vez do JSON do TorBox, a
   // pergunta volta a ser o UA (o valor, nao a ausencia).
-  if (tid < 0) { int v = falha(STB, "createtorrent", st, r); free(r); return v; }
+  // Mandado baixar com a conta no limite de downloads ativos, o TorBox ENFILA
+  // o torrent e devolve `queued_id` no lugar de `torrent_id` (campo da
+  // documentacao, NAO conferido contra uma resposta real). Nao e falha: e
+  // "baixando", so que ainda na fila.
+  if (tid < 0 && baixar && ok2xx(r, st) && js_num(r, NULL, "queued_id", -1) >= 0) {
+    printf("[debrid] TorBox: %s na fila de downloads do TorBox; fica na conta\n", h);
+    if (pct) *pct = -1;
+    free(r); return DEBRID_BAIXANDO;
+  }
+  if (tid < 0) {
+    // "Nao esta em cache" no createtorrent do automatico (o item saiu do
+    // cache entre as duas chamadas) e fora de cache tambem, nao falha.
+    int foraC = !baixar && r && (contem(r, "not cached") || contem(r, "not_cached"));
+    int v = falha(STB, "createtorrent", st, r); free(r);
+    return v == 0 && foraC ? FORA : v;
+  }
   free(r);
 
   // 3) Os campos aqui sao "name"/"size", e nao "path"/"bytes" do RD — por isso
   //    escolherArquivo recebe os nomes. Tres olhadas de 1 s, como no RD: em
   //    cache a lista ja vem pronta, e se nao vier nao vale travar a TV.
-  for (tent = 0; tent < 3 && fid < 0; tent++) {
-    snprintf(rota, sizeof rota, "torrents/mylist?id=%d&bypass_cache=true", tid);
-    r = get_auth(TB, rota, STB, &st);
-    if (ok2xx(r, st) && (files = js_array(r, NULL, "files"))
-        && (el = escolherArquivo(files, fileIdx, "name", "size")) != NULL)
-      fid = (int)js_num(el, js_fim(el), "id", -1);
-    else if (r && !ok2xx(r, st)) {
-      int v = falha(STB, "mylist", st, r); free(r); return v;
+  //    Mandado baixar: as mesmas tres olhadas, mas so vale o torrent PRONTO
+  //    (tbPronto). O que o TorBox ainda baixa vira DEBRID_BAIXANDO com o
+  //    progresso — a TV nao fica presa minutos num fio de rede, e o torrent
+  //    fica na conta para a proxima escolha tocar.
+  { char estado[48] = "";
+    double prog = -1;
+    for (tent = 0; tent < 3 && (fid < 0 || !pronto); tent++) {
+      snprintf(rota, sizeof rota, "torrents/mylist?id=%d&bypass_cache=true", tid);
+      r = get_auth(TB, rota, STB, &st);
+      if (ok2xx(r, st)) {
+        if (baixar) {
+          pronto = tbPronto(r);
+          prog = js_num(r, NULL, "progress", -1);
+          js_texto(r, NULL, "download_state", estado, sizeof estado);
+        }
+        if ((files = js_array(r, NULL, "files"))
+            && (el = escolherArquivo(files, fileIdx, "name", "size")) != NULL)
+          fid = (int)js_num(el, js_fim(el), "id", -1);
+      } else if (r) {
+        int v = falha(STB, "mylist", st, r); free(r); return v;
+      }
+      free(r);
+      if (fid < 0 || !pronto) sleep(1);
     }
-    free(r);
-    if (fid < 0) sleep(1);
+    if (baixar && !pronto) {
+      // progress do TorBox e fracao 0-1; algum cliente antigo mandava 0-100
+      int p = prog < 0 ? -1 : prog <= 1.0 ? (int)(prog * 100 + 0.5) : (int)prog;
+      if (pct) *pct = p;
+      printf("[debrid] TorBox: %s baixando no TorBox (%d%%, estado=%s); fica na conta, "
+             "a proxima escolha toca quando terminar\n", h, p, estado[0] ? estado : "-");
+      return DEBRID_BAIXANDO;
+    }
   }
   if (fid < 0) { printf("[debrid] TorBox: sem video utilizavel em %s\n", h); return 0; }
 
@@ -580,7 +652,7 @@ static int resolverPM(const char *infoHash, int fileIdx, char *url, unsigned n) 
   free(r);
   if (!emCache) {
     printf("[debrid] Premiumize: %s fora de cache (HTTP %d)\n", infoHash, st);
-    return 0;
+    return FORA;
   }
 
   snprintf(corpo, sizeof corpo, "src=%s", enc);
@@ -601,10 +673,15 @@ static int resolverPM(const char *infoHash, int fileIdx, char *url, unsigned n) 
 
 // ---------------------------------------------------------------- resolver
 
-int debrid_resolver(const char *infoHash, int fileIdx, char *url, unsigned n) {
+// Uma volta pelos servicos com chave, na ORDEM FIXA. `baixarTB` 1 = o TorBox
+// entra no modo "baixar" (escolha manual, segunda volta); `so` >= 0 limita a
+// volta a um servico. Devolve 1 (url pronta), DEBRID_BAIXANDO (quem e quanto
+// em *qb/*pct), ou 0. `*fora` recebe a mascara dos servicos que responderam
+// "fora de cache".
+static int volta(const char *infoHash, int fileIdx, char *url, unsigned n,
+                 int baixarTB, int so, int *qb, int *pct, int *fora) {
   int q;
   unsigned g = atomic_load(&geracao);
-  if (!infoHash || !*infoHash || !url || n == 0) return 0;
 
   // ORDEM FIXA: Real-Debrid, TorBox, Premiumize; ganha o PRIMEIRO QUE
   // RESOLVER, nao o primeiro que tem chave. Quem tem duas contas costuma ter
@@ -612,15 +689,15 @@ int debrid_resolver(const char *infoHash, int fileIdx, char *url, unsigned n) {
   // mesma (previsivel no log, que e o que se le no relato de defeito) e cada
   // um so custa uma consulta de cache quando nao tem o conteudo.
   for (q = 0; q < SN; q++) {
-    int deu;
-    if (!chave[q][0]) continue;
+    int deu, p = -1;
+    if (!chave[q][0] || (so >= 0 && q != so)) continue;
     // Recusado pela conta nesta busca: nem tenta, passa ao proximo servico.
     // E o que faltava no registro 1541 — o Premiumize so era perguntado
     // depois de cada 403 do TorBox, torrent por torrent.
     if (atomic_load(&recusado[q]) || atomic_load(&semPlano[q])) continue;
     url[0] = 0;
-    deu = (q == SRD) ? resolverRD(infoHash, fileIdx, url, n)
-        : (q == STB) ? resolverTB(infoHash, fileIdx, url, n)
+    deu = (q == SRD) ? resolverRD(infoHash, fileIdx, url, n, &p)
+        : (q == STB) ? resolverTB(infoHash, fileIdx, url, n, baixarTB, &p)
                      : resolverPM(infoHash, fileIdx, url, n);
     if (deu < 0) {
       int zero = 0;
@@ -630,6 +707,19 @@ int debrid_resolver(const char *infoHash, int fileIdx, char *url, unsigned n) {
           && atomic_compare_exchange_strong(&recusado[q], &zero, -deu))
         printf("[debrid] %s: recusa da conta (HTTP %d), fora do resto desta busca\n",
                nomeServ[q], -deu);
+      url[0] = 0;
+      continue;
+    }
+    if (deu == FORA) {
+      if (fora) *fora |= 1 << q;
+      // O Real-Debrid ja COMECOU a baixar (addMagnet + selectFiles): para a
+      // escolha manual isso e "baixando", com o progresso que ele deu.
+      if (q == SRD && qb && *qb < 0) { *qb = SRD; if (pct) *pct = p; }
+      url[0] = 0;
+      continue;
+    }
+    if (deu == DEBRID_BAIXANDO) {
+      if (qb && *qb < 0) { *qb = q; if (pct) *pct = p; }
       url[0] = 0;
       continue;
     }
@@ -644,6 +734,42 @@ int debrid_resolver(const char *infoHash, int fileIdx, char *url, unsigned n) {
       return 1;
     }
     url[0] = 0;
+  }
+  return qb && *qb >= 0 ? DEBRID_BAIXANDO : 0;
+}
+
+int debrid_resolver(const char *infoHash, int fileIdx, char *url, unsigned n) {
+  int fora = 0, r;
+  if (!infoHash || !*infoHash || !url || n == 0) return 0;
+  r = volta(infoHash, fileIdx, url, n, 0, -1, NULL, NULL, &fora);
+  if (r != 1 && fora) atomic_fetch_add(&foraCache, 1);
+  return r == 1;
+}
+
+int debrid_resolver_escolhido(const char *infoHash, int fileIdx, char *url,
+                              unsigned n, char *servico, unsigned ns, int *pct) {
+  int fora = 0, qb = -1, p = -1, r;
+  if (servico && ns) servico[0] = 0;
+  if (pct) *pct = -1;
+  if (!infoHash || !*infoHash || !url || n == 0) return 0;
+  printf("[debrid] escolha manual do torrent %s: em cache primeiro, depois baixar\n",
+         infoHash);
+  // 1a volta: em cache em qualquer servico — exatamente como o automatico.
+  r = volta(infoHash, fileIdx, url, n, 0, -1, &qb, &p, &fora);
+  // 2a volta: o TorBox respondeu "fora de cache" e a pessoa quer ESTE
+  // torrent: manda baixar. So o TorBox precisa disto — o Real-Debrid ja
+  // comecou a baixar na 1a volta (addMagnet), e o Premiumize fica como estava
+  // (o transfer/create dele ninguem pediu e nao tem teste).
+  if (r != 1 && (fora & (1 << STB))) {
+    int qb2 = -1, p2 = -1;
+    r = volta(infoHash, fileIdx, url, n, 1, STB, &qb2, &p2, NULL);
+    if (r == DEBRID_BAIXANDO) { qb = qb2; p = p2; }
+  }
+  if (r == 1) return 1;
+  if (qb >= 0) {
+    if (servico && ns) snprintf(servico, ns, "%s", nomeServ[qb]);
+    if (pct) *pct = p;
+    return DEBRID_BAIXANDO;
   }
   return 0;
 }

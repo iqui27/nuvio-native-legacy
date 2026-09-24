@@ -46,6 +46,11 @@ int homeestado_identidade_geracao(unsigned g, char *d, unsigned z, int *p) {
   if (p) *p = 1;
   return 1;
 }
+// Contexto em partes (homeestado.h, 1.4.5): constante aqui, entao nada muda
+// no meio da montagem e o fim dela segue o caminho de sempre.
+void homeestado_contexto(HomeContexto *c) { *c = (HomeContexto){0}; c->perfil = 1; }
+int homeestado_mudancas(const HomeContexto *a, const HomeContexto *b) { (void)a; (void)b; return 0; }
+const char *homeestado_mudancas_texto(int m, char *b, unsigned t) { (void)m; if (b && t) b[0] = 0; return b; }
 int prog_ler(ProgRegistro *saida, int max) { (void)saida; (void)max; return 0; }
 int prog_gravar_local(const char *imdb, int t, int e, double p, double d) {
   (void)imdb; (void)t; (void)e; (void)p; (void)d; return 0;
@@ -146,6 +151,7 @@ static int pediu(const char *trecho) {
   for (i = 0; i < nPedidos && i < 16; i++) if (strstr(pedidos[i], trecho)) return 1;
   return 0;
 }
+int arte_reserva_episodios(const char *imdb, const char *corpo) { (void)imdb; (void)corpo; return 0; }
 
 static void limparCacheMeta(void) {
   int i;

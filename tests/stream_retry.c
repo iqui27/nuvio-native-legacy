@@ -29,5 +29,33 @@ int main(void) {
   stream_definir_lista(lista, 3);
   assert(stream_automatico() == 0);
   puts("stream_retry: fonte falha e a proxima candidata assume");
+
+  // FORA DE CACHE NO DEBRID (o "⏳" do AIOStreams, registro 1163): o
+  // automatico prefere a cacheada, mesmo de resolucao menor, e a fora de cache
+  // continua na fila como ultima opcao.
+  fonte(&lista[0], "https://aio.invalid/p/4k", 2160, 1);
+  lista[0].foraCache = 1;
+  fonte(&lista[1], "https://aio.invalid/p/1080", 1080, 1);
+  fonte(&lista[2], "https://aio.invalid/p/720", 720, 1);
+  lista[2].foraCache = 1;
+  stream_definir_lista(lista, 3);
+  assert(stream_automatico() == 1);
+  assert(stream_automatico_excluir(1) == 1);
+  assert(stream_automatico() == 0);     // sobrou so fora de cache: a de maior resolucao
+  puts("stream_retry: automatico prefere a cacheada; fora de cache fica por ultimo");
+
+  // ESCOLHA MANUAL (stream_resolver_escolhida) sem rede: linha com url volta a
+  // url na hora; lista trocada no meio devolve -1 e nao grava nada.
+  { char url[4096], serv[32]; int pct = 0;
+    unsigned g = stream_lista_geracao();
+    assert(stream_resolver_escolhida(1, g, url, sizeof url, serv, sizeof serv, &pct) == 1);
+    assert(!strcmp(url, "https://aio.invalid/p/1080"));
+    stream_definir_lista(lista, 3);
+    assert(stream_resolver_escolhida(1, g, url, sizeof url, serv, sizeof serv, &pct) == -1);
+    assert(!url[0]);
+    assert(stream_resolver_escolhida(7, stream_lista_geracao(), url, sizeof url,
+                                     serv, sizeof serv, &pct) == -1);
+  }
+  puts("stream_retry: escolha manual com url pronta nao vai ao debrid; lista trocada nao grava");
   return 0;
 }

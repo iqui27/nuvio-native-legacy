@@ -44,11 +44,26 @@ const char *traktauth_erro(void);
 
 void traktauth_cancelar(void);
 
-// Carrega o token guardado nesta instalacao e o aplica em trakt.c. Chamar no
-// arranque, depois de dados_iniciar. 1 quando havia token.
+// O VINCULO E POR PERFIL (trakt-p<N>.txt). O trakt.txt antigo, de antes dos
+// perfis, e do perfil 1 e so dele: vira trakt-p1.txt na primeira leitura e
+// nunca e copiado para outro perfil. Ver a nota no topo de traktauth.c.
+//
+// Carrega o token guardado para o perfil em vigor (1 ate alguem dizer outro) e
+// o aplica em trakt.c. 1 quando havia token.
 int  traktauth_carregar(void);
+// O mesmo, escolhendo antes o perfil. Chamar no arranque, depois de
+// dados_iniciar e de perfis_carregar_ativo, com perfis_ativo().
+int  traktauth_carregar_perfil(int perfil);
+// TROCA DE PERFIL: esquece a credencial em uso (trakt_esquecer — inclusive a
+// que veio da conta pelo sync) e carrega a do perfil novo, ou nenhuma. 0 quando
+// o perfil e o mesmo. Devolve 1 quando o Trakt estava ou ficou ligado, ou seja,
+// quando as fileiras do Trakt na tela sao do perfil errado e a home tem de ser
+// remontada. Um fio de poll ou de renovacao que ainda estiver no ar termina
+// gravando no arquivo do perfil que o pediu, nunca no novo.
+int  traktauth_trocar_perfil(int perfil);
+int  traktauth_perfil(void);
 
-// Esquece o vinculo (chamado ao sair da conta).
+// Esquece o vinculo de TODOS os perfis (chamado ao sair da conta).
 void traktauth_esquecer(void);
 
 #endif
