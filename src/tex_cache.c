@@ -464,7 +464,18 @@ static int quente(const Item *it) {
 // aconteceu, e a versao pequena continua servindo. `limite` fica no valor
 // promovido de proposito: com `w < limite` o proximo pedido cai em
 // `fonteMenor` e nao refaz a promocao a cada quadro.
+//
+// OS BYTES BAIXADOS SAEM JUNTO (24/09/2026, cards com a arte de OUTRO titulo
+// na C9: "Resident Evil" com o logo de "Searching", "Hokum" com o de
+// "Missing"). O fio de rede deixa o corpo em Item.bruto e o decode o consome;
+// se o decode desiste antes (pedido velho: o painel rolou), o slot ficava
+// VAZIO com o logo ainda em `bruto`. O proximo caminho a ocupar o slot era um
+// cartaz que ja estava no disco — o acerto de disco devolve sem tocar em
+// `bruto` —, e o decode, que prefere os bytes ao arquivo, publicava o logo com
+// o nome do cartaz. A guarda de caminho do decode nao pega: o caminho do item
+// e mesmo o do cartaz. tests/texbruto.c refaz a sequencia.
 static void desistir(int idx) {
+  soltarBruto(&itens[idx]);
   itens[idx].filaRedeEm = 0;
   itens[idx].filaDecEm = 0;
   itens[idx].filaUploadEm = 0;
@@ -2941,6 +2952,9 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
   } else {
     int novo = slotLivre();
     if (novo >= 0) {
+      // Slot novo nao herda bytes de ninguem (ver desistir): o que estiver
+      // em `bruto` e de outro caminho e o decode o preferiria ao arquivo.
+      soltarBruto(&itens[novo]);
       strncpy(itens[novo].caminho, caminho, sizeof itens[novo].caminho - 1);
       itens[novo].hash = h;
       itens[novo].limite = limite;
