@@ -259,6 +259,12 @@ int cat_acrescentar(const CatItem *item);
 // copia o catalogo inteiro por chamada, e a busca chegava a mover dezenas de MB
 // no fio de desenho a cada tecla.
 int cat_acrescentar_lote(const CatItem *v, int qtd, int *saidaIdx);
+// A watchlist/colecao do Trakt por cima do bloco da tela, SEM trocar fileira:
+// titulo que ja esta no catalogo so ganha a marca (naLista/naColecao, em todas
+// as copias), o resto entra no fim, como cat_acrescentar_lote. Nada sai — a
+// publicacao completa da descoberta e quem poda o que deixou a lista. Devolve
+// quantos entraram.
+int cat_mesclar_listas(const CatItem *v, int qtd);
 
 // Atualiza o espelho local de "esta na watchlist". A verdade e o Trakt, mas
 // esperar o proximo ciclo de descoberta para o botao mudar de cara faria o

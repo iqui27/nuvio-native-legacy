@@ -11,6 +11,63 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <dirent.h>
+#include <sys/stat.h>
+
+/* A PASTA DE FONTES DO SISTEMA NAO E SO DE FONTES. Na C9, /usr/share/fonts
+ * traz tabelas do firmware (arib_mrg_v5-10.bin e parecidas) ao lado das .ttf.
+ * ass_set_fonts_dir entregava TUDO ao libass como fonte em memoria, e cada
+ * arquivo que nao e fonte virava "[libass] Error opening memory font" no log
+ * — alem de ser lido inteiro para a memoria por nada. Aqui a pasta e lida
+ * pelo app, com o mesmo criterio do libass (arquivo regular, sem ponto no
+ * comeco, sem descer em subpasta), mas so passa o que tem assinatura de fonte
+ * TrueType/OpenType: 00 01 00 00, "OTTO", "true", "typ1" ou colecao "ttcf". */
+int assrender_bytes_sao_fonte(const void *dados, size_t n) {
+  const unsigned char *p = (const unsigned char *)dados;
+  if (!p || n < 4) return 0;
+  return (p[0] == 0 && p[1] == 1 && p[2] == 0 && p[3] == 0) ||
+         !memcmp(p, "OTTO", 4) || !memcmp(p, "true", 4) ||
+         !memcmp(p, "typ1", 4) || !memcmp(p, "ttcf", 4);
+}
+
+int assrender_ler_pasta_fontes(const char *dir,
+                               void (*cb)(const char *nome, const void *dados,
+                                          size_t tam, void *u),
+                               void *u, int *ignorados) {
+  DIR *d;
+  struct dirent *e;
+  int lidas = 0, fora = 0;
+  if (ignorados) *ignorados = 0;
+  if (!dir || !*dir || !(d = opendir(dir))) return 0;
+  while ((e = readdir(d)) != NULL) {
+    char caminho[1024];
+    struct stat st;
+    unsigned char cab[4];
+    FILE *f;
+    char *buf;
+    if (e->d_name[0] == '.') continue;
+    snprintf(caminho, sizeof caminho, "%s/%s", dir, e->d_name);
+    if (stat(caminho, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size < 4 ||
+        (unsigned long long)st.st_size > (unsigned long long)INT_MAX) continue;
+    f = fopen(caminho, "rb");
+    if (!f) continue;
+    if (fread(cab, 1, 4, f) != 4 || !assrender_bytes_sao_fonte(cab, 4)) {
+      fclose(f); fora++; continue;
+    }
+    buf = malloc((size_t)st.st_size);
+    if (buf && fseek(f, 0, SEEK_SET) == 0 &&
+        fread(buf, 1, (size_t)st.st_size, f) == (size_t)st.st_size) {
+      if (cb) cb(e->d_name, buf, (size_t)st.st_size, u);
+      lidas++;
+    }
+    free(buf);
+    fclose(f);
+  }
+  closedir(d);
+  if (ignorados) *ignorados = fora;
+  return lidas;
+}
+
 #ifdef NV_ASS_LIBASS
 #include <SDL2/SDL.h>
 #include <ass/ass.h>
@@ -140,6 +197,22 @@ static unsigned long long ass_amostra_fonte(const unsigned char *p, size_t n) {
   return h;
 }
 
+/* Pasta das fontes do sistema, lida por assrender_ler_pasta_fontes em vez de
+ * ass_set_fonts_dir. Guardada porque ass_clear_fonts (teto de fontes anexadas)
+ * tira estas junto, e elas precisam voltar antes do ass_set_fonts seguinte. */
+static char assPastaFontes[640];
+static void ass_fonte_da_pasta(const char *nome, const void *dados, size_t tam, void *u) {
+  (void)u;
+  ass_add_font(assLib, nome, (const char *)dados, (int)tam);
+}
+static void ass_carregar_pasta_locked(void) {
+  int ignorados = 0, lidas;
+  if (!assLib || !assPastaFontes[0]) return;
+  lidas = assrender_ler_pasta_fontes(assPastaFontes, ass_fonte_da_pasta, NULL, &ignorados);
+  fprintf(stderr, "[libass] pasta %s: %d fonte(s); %d arquivo(s) que nao sao fonte ignorado(s)\n",
+          assPastaFontes, lidas, ignorados);
+}
+
 static void ass_aplicar_fontes_locked(void) {
   if (!assRenderer) return;
   ass_set_fonts(assRenderer, assFallbackFont[0] ? assFallbackFont : NULL, "Arial",
@@ -189,7 +262,8 @@ static void ass_iniciar_locked(void) {
       snprintf(fallbackFont, sizeof fallbackFont, "%s", "/usr/share/fonts/DroidSans.ttf");
   }
 #endif
-  if (fontDir[0]) ass_set_fonts_dir(assLib, fontDir);
+  snprintf(assPastaFontes, sizeof assPastaFontes, "%s", fontDir);
+  ass_carregar_pasta_locked();
   snprintf(assFallbackFont, sizeof assFallbackFont, "%s", fallbackFont);
   ass_aplicar_fontes_locked();
   assNFontesVistas = 0; assBytesFontesVistas = 0;
@@ -545,6 +619,7 @@ int assrender_adicionar_fonte(const char *nome, const void *dados, size_t tamanh
       if (assNFontesVistas >= ASS_FONTES_MAX ||
           assBytesFontesVistas + tamanho > ASS_FONTES_TETO_BYTES) {
         ass_clear_fonts(assLib);
+        ass_carregar_pasta_locked();
         ass_aplicar_fontes_locked();
         assNFontesVistas = 0; assBytesFontesVistas = 0;
       }

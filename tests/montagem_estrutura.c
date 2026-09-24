@@ -14,9 +14,10 @@
 // (desc_iniciar), com homeestado.c, catalogo.c, colecoes.c e catordem.c DE
 // VERDADE — a assinatura, o snapshot e o cache em disco sao os do app. So a
 // rede, o Trakt e fileiras.c sao dubles. A mudanca "chega do sync" dentro de
-// trakt_lista("watchlist"), que montar() chama DEPOIS de buscar as fileiras e
-// ANTES de decidir se publica: e o mesmo instante do log (colecoes chegando
-// com os catalogos ja no ar), so que deterministico.
+// simkl_plantowatch, que montar() chama DEPOIS de buscar as fileiras e ANTES
+// de decidir se publica: e o mesmo instante do log (colecoes chegando com os
+// catalogos ja no ar), so que deterministico. (Era trakt_lista("watchlist"),
+// que desde fix/trakt-cedo-montagem roda num fio proprio no COMECO da volta.)
 //
 //   1. colecoes chegando (estrutura) com o que foi buscado bastando: UMA
 //      montagem, nada descartado, fileiras na tela, snapshot e cache validos
@@ -140,9 +141,9 @@ static int foiPedido(const char *id) {
 // ------------------------------------------------ "o sync" entre a rede e o fim
 enum { NADA, COLECAO_SEM_EFEITO, COLECAO_ENGOLE, REGISTRO_CRESCE, TROCA_DONO };
 static volatile int mudancaArmada = NADA;
-int trakt_lista(const char *q, CatItem *s, int m) {
+int trakt_lista(const char *q, CatItem *s, int m) { (void)q; (void)s; (void)m; return 0; }
+int simkl_plantowatch(CatItem *s, int m) {
   (void)s; (void)m;
-  if (strcmp(q, "watchlist")) return 0;
   switch (mudancaArmada) {
     case COLECAO_SEM_EFEITO: assert(col_definir_json(COLECAO_ALHEIA) > 0); break;
     case COLECAO_ENGOLE:     assert(col_definir_json(COLECAO_ENGOLE_A) > 0); break;
@@ -202,11 +203,10 @@ int   ajustes_tmdb_cw(void)                { return 0; }
 const char *ajustes_tmdb_idioma(void)      { return "pt-BR"; }
 const char *ajustes_tmdb_chave(void)       { return ""; }
 const char *i18n(const char *s)            { return s; }
-int   simkl_ativo(void)                    { return 0; }
+int   simkl_ativo(void)                    { return 1; }
 int   simkl_continuar(CatItem *s, int m)   { (void)s; (void)m; return 0; }
 int   simkl_e_a_seguir(const char *id)     { (void)id; return 0; }
-int   simkl_plantowatch(CatItem *s, int m) { (void)s; (void)m; return 0; }
-int   ajustes_salvos_no_simkl(void)        { return 0; }
+int   ajustes_salvos_no_simkl(void)        { return 1; }   // para simkl_plantowatch rodar
 int   trakt_enfeitar_lote(CatItem *s, int n) { (void)s; return n; }
 int   trakt_social(CatItem *s, int m)      { (void)s; (void)m; return 0; }
 int   trakt_continuar(CatItem *s, int m)   { (void)s; (void)m; return 0; }
