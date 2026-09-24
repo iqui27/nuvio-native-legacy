@@ -157,6 +157,11 @@ int trakt_lista(const char *q, CatItem *s, int m) {
 // So o registro, que e o que a montagem e a home reescrevem sozinhas.
 static char registro[64][192];
 static int nRegistro;
+// Dubles da escolha da cota (#126): nada escolhido na TV, e o registro dos
+// catalogos fora da cota nao interessa a este teste.
+int fil_escolhida(const char *c) { (void)c; return -1; }
+void fil_registrar_se_couber(const char *c, const char *t, const char *a,
+                             const char *tp) { (void)c; (void)t; (void)a; (void)tp; }
 void fil_registrar(const char *c, const char *t, const char *a, const char *tp, int itens) {
   int i;
   (void)t; (void)a; (void)tp; (void)itens;

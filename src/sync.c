@@ -343,6 +343,81 @@ static int puxarBlob(const char *funcao, const char *corpo, char **destino) {
   return k;
 }
 
+// Cola o array JSON `pagina` no fim do array `*acum` (os dois `[...]`, como
+// toda RPC do Supabase responde). Devolve 1 se colou. Nao valida o JSON: quem
+// le e o contalib, com js.c, que ja tolera o que vier.
+static int colarArray(char **acum, const char *pagina) {
+  const char *a, *b, *fa;
+  size_t na, nb;
+  char *novo;
+  if (!*acum) return 0;
+  a = strchr(pagina, '[');
+  b = strrchr(pagina, ']');
+  if (!a || !b || b <= a) return 0;
+  a++;
+  while (a < b && (unsigned char)*a <= ' ') a++;
+  if (a >= b) return 1;                      // pagina vazia: nada a colar
+  fa = strrchr(*acum, ']');
+  if (!fa) return 0;
+  na = (size_t)(fa - *acum);
+  nb = (size_t)(b - a);
+  novo = (char *)malloc(na + nb + 3);
+  if (!novo) return 0;
+  memcpy(novo, *acum, na);
+  // Array acumulado vazio ("[]") nao ganha virgula antes do primeiro item.
+  { size_t z = na;
+    while (z > 0 && (unsigned char)novo[z - 1] <= ' ') z--;
+    na = z;
+    if (na > 0 && novo[na - 1] != '[') novo[na++] = ','; }
+  memcpy(novo + na, a, nb);
+  novo[na + nb] = ']';
+  novo[na + nb + 1] = 0;
+  free(*acum);
+  *acum = novo;
+  return 1;
+}
+
+// `sync_pull_library` inteira, em paginas de CONTALIB_PAGINA, ate uma vir
+// incompleta ou CONTALIB_PAGINAS paginas. Devolve o total de linhas (-1 quando
+// a PRIMEIRA pagina falhou — as seguintes falhando so encurtam a lista, e a
+// lista curta ainda e melhor que nenhuma: o contalib guarda as mais recentes do
+// que chegou).
+static int puxarBiblioteca(int perfil, char **destino) {
+  char corpo[160];
+  char *acum = NULL, *pag = NULL;
+  int pagina, total = 0, c;
+  for (pagina = 0; pagina < CONTALIB_PAGINAS; pagina++) {
+    snprintf(corpo, sizeof corpo,
+             "{\"p_profile_id\":%d,\"p_limit\":%d,\"p_offset\":%d}",
+             perfil, CONTALIB_PAGINA, pagina * CONTALIB_PAGINA);
+    c = puxarBlob("sync_pull_library", corpo, pagina ? &pag : &acum);
+    if (c < 0) {
+      if (!pagina) return -1;
+      printf("[sync] biblioteca: pagina %d falhou; ficando com %d linhas\n",
+             pagina + 1, total);
+      break;
+    }
+    if (pagina && pag) {
+      if (!colarArray(&acum, pag)) {
+        printf("[sync] biblioteca: pagina %d nao colou; ficando com %d linhas\n",
+               pagina + 1, total);
+        free(pag); pag = NULL;
+        break;
+      }
+      free(pag); pag = NULL;
+    }
+    total += c;
+    if (c < CONTALIB_PAGINA) break;
+    if (pagina + 1 == CONTALIB_PAGINAS)
+      printf("[sync] biblioteca: %d linhas baixadas e a conta tem mais; o "
+             "resto nao foi pedido\n", total);
+  }
+  free(pag);
+  if (destino) { free(*destino); *destino = acum; }
+  else free(acum);
+  return total;
+}
+
 // O blob de ajustes NAO e contado, e lido: ele e o layout da pessoa. Ate agora
 // esta RPC so alimentava um numero no resumo, e as ~40 preferencias vinham dos
 // padroes transcritos a mao do perfil de quem montou o pacote.
@@ -519,13 +594,12 @@ static void puxarSoLeitura(void) {
   // codigo antigo tinha as duas metades trocadas — chamava `sync_pull_library`
   // sem os parametros de pagina e `sync_pull_saved_library` com eles.
   //
-  // Uma pagina so, do tamanho do teto que o app guarda (CONTALIB_MAX). Pedir
-  // mais do que cabe seria baixar para descartar; o contalib avisa no log
-  // quando a conta tem mais itens do que o teto.
-  snprintf(corpo, sizeof corpo,
-           "{\"p_profile_id\":%d,\"p_limit\":%d,\"p_offset\":0}",
-           perfil, CONTALIB_MAX);
-  cBiblio = puxarBlob("sync_pull_library", corpo, &bibBlob);
+  // PAGINAS ATE UMA VIR INCOMPLETA, como o web. Era UMA pagina do tamanho do
+  // teto (200), e isso escondia o titulo recem-salvo de quem tem mais que isso:
+  // o servidor nao promete ordem, entao a primeira pagina nao e a dos mais
+  // novos (issue do Owlphibia29, "o contador nunca passou de 205"). As paginas
+  // sao COLADAS num array so e o contalib guarda as CONTALIB_MAX mais recentes.
+  cBiblio = puxarBiblioteca(perfil, &bibBlob);
   if (cBiblio >= 0) temBibBlob = 1;
 
   // MEDIDO: `p_page` comeca em 1. Com 0 o servidor responde 400 "OFFSET must

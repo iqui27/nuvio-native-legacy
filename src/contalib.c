@@ -100,10 +100,34 @@ static void comporGenero(char *dst, size_t tam, const char *tipo,
   }
 }
 
+// Onde a linha `v` entra num vetor que ja tem `k` de `cap` vagas: -2 quando o
+// titulo ja esta la e a copia guardada e tao nova quanto ela; o indice da vaga
+// a sobrescrever quando o titulo repete (pagina que se sobrepoe a anterior) ou
+// quando o vetor esta cheio e `v` e mais nova que a MAIS VELHA guardada; -1
+// quando nao ha lugar para ela.
+//
+// A VELHA SAI, NUNCA A NOVA. Era o defeito do issue do Owlphibia29 ("o contador
+// nunca passou de 205; o que eu acabei de adicionar nao aparece"): o teto
+// cortava a resposta na ORDEM EM QUE O SERVIDOR RESPONDE, que nao e contrato
+// nenhum, e o titulo recem-salvo era justamente o que ficava de fora.
+static int vagaPara(const ContaLibItem *novo, int k, int cap,
+                    const ContaLibItem *v) {
+  int i, velho = -1;
+  for (i = 0; i < k; i++)
+    if (!strcmp(novo[i].id, v->id))
+      return novo[i].addedMs >= v->addedMs ? -2 : i;
+  if (k < cap) return k;
+  for (i = 0; i < k; i++)
+    if (velho < 0 || novo[i].addedMs < novo[velho].addedMs) velho = i;
+  return (velho >= 0 && v->addedMs > novo[velho].addedMs) ? velho : -1;
+}
+
 int contalib_ler_biblioteca(const char *json) {
   ContaLibItem *novo;
+  ContaLibItem linha;
   const char *p;
-  int total, k = 0, i, j;
+  int *seq;
+  int total, cap, k = 0, lidas = 0, fora = 0, i, j;
 
   total = contarLinhas(json);
   // A REGRA 1 DA SECAO 1.6, e ela e a razao de esta funcao devolver -1 em vez
@@ -111,23 +135,24 @@ int contalib_ler_biblioteca(const char *json) {
   // errado, 401 mal tratado ou o servidor fora do ar, e trocar uma lista boa
   // por nada e a unica falha desta area que a pessoa nao consegue desfazer.
   if (total < 1) return nItens > 0 ? -1 : 0;
-  if (total > CONTALIB_MAX) {
-    printf("[contalib] biblioteca da conta tem %d itens; guardando os %d "
-           "primeiros\n", total, CONTALIB_MAX);
-    total = CONTALIB_MAX;
-  }
-  novo = (ContaLibItem *)calloc((size_t)total, sizeof *novo);
-  if (!novo) return -1;
+  // LE TODAS AS LINHAS e guarda as CONTALIB_MAX mais recentes. O vetor tem o
+  // tamanho do teto, nao o da resposta: a memoria continua limitada por
+  // CONTALIB_MAX, e a resposta inteira ja esta no corpo que sync.c baixou
+  // (limitado por CONTALIB_PAGINAS paginas).
+  cap = total > CONTALIB_MAX ? CONTALIB_MAX : total;
+  novo = (ContaLibItem *)calloc((size_t)cap, sizeof *novo);
+  seq = (int *)calloc((size_t)cap, sizeof *seq);
+  if (!novo || !seq) { free(novo); free(seq); return -1; }
 
-  for (p = js_raiz_array(json); p && k < total; p = js_prox(js_fim(p))) {
+  for (p = js_raiz_array(json); p; p = js_prox(js_fim(p))) {
     const char *f = js_fim(p);
-    ContaLibItem *d = &novo[k];
+    ContaLibItem *d = &linha;
     char t[24];
-    // ZERA A VAGA a cada linha, e nao so uma vez no calloc. `k` NAO avanca
-    // quando a linha e recusada, entao a vaga e reaproveitada — e sem isto a
-    // linha seguinte herdaria os campos que ela mesma nao trouxer. O caso real
-    // e um poster: linha sem content_id com poster, linha seguinte com
-    // content_id e sem poster, e o titulo aparece com a arte do vizinho.
+    int vaga;
+    // ZERA A LINHA a cada volta. A linha seguinte nao pode herdar os campos que
+    // ela mesma nao trouxer — o caso real e um poster: linha sem content_id com
+    // poster, linha seguinte com content_id e sem poster, e o titulo aparecia
+    // com a arte do vizinho.
     memset(d, 0, sizeof *d);
     if (!js_texto(p, f, "content_id", d->id, sizeof d->id)) continue;
     snprintf(d->tipo, sizeof d->tipo, "%s",
@@ -147,19 +172,50 @@ int contalib_ler_biblioteca(const char *json) {
     // morar aqui: a grade da biblioteca e 2:3 fixa (NV_BIB_POSTER_H) e o
     // detalhe pergunta fontes a todos os addons instalados, nao a um so.
     // Registrado para a proxima pessoa nao achar que foram esquecidos.
-    k++;
+    lidas++;
+    vaga = vagaPara(novo, k, cap, d);
+    if (vaga == -2) continue;                 // repetida, e a guardada vale
+    if (vaga == -1) { fora++; continue; }     // mais velha que todas as guardadas
+    if (vaga < k && strcmp(novo[vaga].id, d->id)) fora++;   // desalojou a mais velha
+    novo[vaga] = *d;
+    seq[vaga] = lidas;
+    if (vaga == k) k++;
   }
-  if (k < 1) { free(novo); return nItens > 0 ? -1 : 0; }
+  if (k < 1) { free(novo); free(seq); return nItens > 0 ? -1 : 0; }
+  if (fora > 0)
+    printf("[contalib] biblioteca da conta tem %d itens; guardando os %d mais "
+           "recentes (teto %d)\n", k + fora, k, CONTALIB_MAX);
 
   // Ordem por `added_at` decrescente. O seletor "Ordenar" da biblioteca tem
   // "Ordem da lista" como padrao, e sem isto essa ordem seria a que o servidor
-  // resolvesse devolver — que nao e contrato nenhum. Insercao: sao no maximo
-  // CONTALIB_MAX itens, uma vez por ciclo de sync.
-  for (i = 1; i < k; i++) {
-    ContaLibItem v = novo[i];
-    for (j = i - 1; j >= 0 && novo[j].addedMs < v.addedMs; j--) novo[j + 1] = novo[j];
-    novo[j + 1] = v;
+  // resolvesse devolver — que nao e contrato nenhum. Empate (as duas sem
+  // `added_at`) fica na ordem em que as linhas chegaram.
+  //
+  // ORDENA INDICES, nao os itens. Com o teto em 500 uma insercao sobre o vetor
+  // de itens moveria ate ~90 MB de struct por ciclo de sync nesta TV; sobre
+  // inteiros sao ~60 mil trocas de 4 bytes, e os itens sao copiados uma vez so.
+  {
+    int *ord = (int *)malloc(sizeof(int) * (size_t)k);
+    ContaLibItem *ordenado = (ContaLibItem *)malloc(sizeof *ordenado * (size_t)k);
+    if (ord && ordenado) {
+      for (i = 0; i < k; i++) ord[i] = i;
+      for (i = 1; i < k; i++) {
+        int v = ord[i];
+        for (j = i - 1; j >= 0 && (novo[ord[j]].addedMs < novo[v].addedMs
+                                   || (novo[ord[j]].addedMs == novo[v].addedMs
+                                       && seq[ord[j]] > seq[v])); j--)
+          ord[j + 1] = ord[j];
+        ord[j + 1] = v;
+      }
+      for (i = 0; i < k; i++) ordenado[i] = novo[ord[i]];
+      free(novo);
+      novo = ordenado;
+      ordenado = NULL;
+    }
+    free(ord);
+    free(ordenado);
   }
+  free(seq);
 
   free(itens);
   itens = novo;

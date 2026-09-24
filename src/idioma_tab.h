@@ -1869,6 +1869,7 @@
   { "o código expirou", "the code expired" },
   { "o escolhido", "chosen one" },
   { "o que vem a seguir", "up next" },
+  { "o resto na exibição em grade", "the rest in grid view" },
   { "obsessão", "obsession" },
   { "oceano", "ocean" },
   { "ontem", "yesterday" },

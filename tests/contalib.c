@@ -16,6 +16,7 @@
 // O catalogo aqui e um dubl: contalib.c so precisa de seis funcoes dele, e
 // linkar catalogo.c traria descoberta, rede e SDL junto.
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "contalib.h"
 #include "catalogo.h"
@@ -263,6 +264,41 @@ int main(void) {
   confere("e o selo volta a nao dizer CONTA", contalib_tem_conta(), 0);
   contalib_reconciliar();   // nao pode explodir nem reescrever nada
   confere("reconciliar sem conta nao mexe no catalogo", cat_n(), 5);
+
+  printf("\nconta com mais que o teto guarda os MAIS RECENTES (Owlphibia29):\n");
+  // 205 no contador e o titulo recem-salvo sumindo: o corte de CONTALIB_MAX era
+  // feito na ordem da resposta. Aqui o servidor responde do MAIS VELHO para o
+  // mais novo (o pior caso), com CONTALIB_MAX + 40 linhas e UMA repetida (duas
+  // paginas que se sobrepoem), e o mais novo de todos tem de ficar.
+  {
+    int total = CONTALIB_MAX + 40, i, achouNovo = 0, achouVelho = 0;
+    size_t cap = (size_t)(total + 1) * 200u + 16u, k = 0;
+    char *json = (char *)malloc(cap);
+    k += (size_t)snprintf(json + k, cap - k, "[");
+    for (i = 0; i < total; i++)
+      k += (size_t)snprintf(json + k, cap - k,
+                            "%s{\"content_id\":\"tt%07d\",\"content_type\":\"movie\","
+                            "\"name\":\"T%d\",\"added_at\":%lld}",
+                            i ? "," : "", 1000000 + i, i,
+                            1700000000000LL + (long long)i * 1000LL);
+    // A repetida: a mesma linha mais velha de novo, mais antiga ainda.
+    k += (size_t)snprintf(json + k, cap - k,
+                          ",{\"content_id\":\"tt%07d\",\"content_type\":\"movie\","
+                          "\"name\":\"T0\",\"added_at\":1}]", 1000000);
+    confere("guarda exatamente o teto", contalib_ler_biblioteca(json), CONTALIB_MAX);
+    for (i = 0; i < contalib_n(); i++) {
+      if (!strcmp(item(i)->id, "tt1000539")) achouNovo = 1;   // o ultimo salvo
+      if (!strcmp(item(i)->id, "tt1000000")) achouVelho = 1;
+    }
+    confere("o titulo salvo por ultimo esta la", achouNovo, 1);
+    confere("o mais antigo e que saiu", achouVelho, 0);
+    confereTexto("e ele abre a lista (ordem da lista = mais novo primeiro)",
+                 item(0)->titulo, "T539");
+    confereTexto("o mais velho que ficou fecha a lista",
+                 item(CONTALIB_MAX - 1)->titulo, "T40");
+    free(json);
+  }
+  contalib_esquecer();
 
   printf("\n%s\n", falhas ? "FALHOU" : "PASSOU");
   return falhas ? 1 : 0;

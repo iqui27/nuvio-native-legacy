@@ -10,7 +10,7 @@ set -eu
 cd "$(dirname "$0")/.."
 flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
-cc ${flags[@]+"${flags[@]}"} tests/montagem_estrutura.c src/homeestado.c src/catalogo.c \
+cc ${flags[@]+"${flags[@]}"} tests/montagem_estrutura.c src/cotacat.c src/homeestado.c src/catalogo.c \
   src/progresso.c src/js.c src/colecoes.c src/redeurl.c src/catordem.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -o /tmp/nuvio-montagem-estrutura-tests -O1 -g -pthread \

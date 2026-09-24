@@ -7,7 +7,14 @@
 #ifndef NV_FOCUS_H
 #define NV_FOCUS_H
 
-#define FOCUS_MAX_FILEIRAS 32
+// ERA 32, e a grade da Biblioteca e uma fileira de foco POR LINHA de cartazes:
+// 30 linhas x 6 = 180 titulos navegaveis, e na exibicao de lista (1 coluna) so
+// 30. O que passasse disso existia no contador e nunca aparecia na tela — a
+// outra metade do issue do Owlphibia29. 700 linhas cobrem a grade inteira da
+// Biblioteca (CAT_MAX + SALVOS_MAX = 4000 titulos / 6). A home tem teto proprio
+// (MAX_FIL, 32) e a busca tambem (BU_MAX_FILEIRAS), entao isto so custa memoria:
+// ~5,6 KB por Foco, e ha cinco no app.
+#define FOCUS_MAX_FILEIRAS 700
 
 typedef struct {
   int fileira;
