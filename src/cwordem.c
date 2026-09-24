@@ -31,6 +31,20 @@ int cwo_ordenar(const CwoItem *v, int n, int modo, long long agoraMs, int *perm)
   return principal;
 }
 
+void cwo_corte(int principal, int nFut, int max, int *nPrincipal, int *nFuturos) {
+  int reserva, mp, mf;
+  if (principal < 0) principal = 0;
+  if (nFut < 0) nFut = 0;
+  if (max < 0) max = 0;
+  reserva = max / 3 > 0 ? max / 3 : 1;
+  if (reserva > nFut) reserva = nFut;
+  if (reserva > max) reserva = max;
+  mp = principal < max - reserva ? principal : max - reserva;
+  mf = nFut < max - mp ? nFut : max - mp;
+  if (nPrincipal) *nPrincipal = mp;
+  if (nFuturos) *nFuturos = mf;
+}
+
 // --- Datas de estreia --------------------------------------------------------
 // 96: a fileira tem ate 12 itens por fonte e o Trakt guarda ate 64 "a seguir"
 // (TK_ULT_MAX). Cheia, a mais velha e sobrescrita em roda — o que importa e a

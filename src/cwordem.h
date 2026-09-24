@@ -61,6 +61,21 @@ int cwo_futuro(const CwoItem *it, long long agoraMs);
 // futuros. No modo padrao nada se move e o retorno e `n`.
 int cwo_ordenar(const CwoItem *v, int n, int modo, long long agoraMs, int *perm);
 
+// O CORTE DA FILEIRA com futuros. `principal` exibidos e `nFut` futuros, na
+// ordem de cwo_ordenar, cabem em `max` lugares: devolve em *nPrincipal quantos
+// exibidos ficam (os primeiros) e em *nFuturos quantos futuros (os de estreia
+// mais proxima).
+//
+// POR QUE HA RESERVA (Brothers, C9, 24/09): o corte era um slice simples da
+// lista [exibidos..., futuros...], e a fileira do dono tem 22 candidatos para
+// 12 lugares — os futuros, sempre no fim, eram SEMPRE os cortados. "Separar
+// futuros" e "Estilo streaming" nao mudavam nada: o episodio que ainda nao foi
+// ao ar sumia da tela em vez de ir para o fim ou para "Proximos episodios". O
+// web nao tem esse problema porque o slice dele e de 300 (CW_MAX_VISIBLE_ITEMS);
+// aqui a fileira e de 12, entao os futuros ganham ate um terco dela (minimo 1).
+// Lugar que os futuros nao usam fica com os exibidos, e vice-versa.
+void cwo_corte(int principal, int nFut, int max, int *nPrincipal, int *nFuturos);
+
 // --- Datas de estreia (escritas por trakt.c, lidas por descoberta.c) --------
 // `id` e o composto "tt123:2:5". Chamada de varios fios do enfeite ao mesmo
 // tempo; protegida por trava.
