@@ -22,7 +22,9 @@ static void tabela(void) {
   assert(ptv_tex_auto_mb(PTV_LG, 624) == 48);
   assert(ptv_tex_auto_mb(PTV_LG, 1024) == 48);
   assert(ptv_tex_auto_mb(PTV_LG, 964) == 48);    // registros 1720-1774
-  assert(ptv_tex_auto_mb(PTV_LG, 1350) == 96);
+  assert(ptv_tex_auto_mb(PTV_LG, 1350) == 128);   // agregado de 23/09 (era 96)
+  assert(ptv_tex_auto_mb(PTV_LG, 1236) == 128);
+  assert(ptv_tex_auto_mb(PTV_LG, 1999) == 128);
   assert(ptv_tex_auto_mb(PTV_LG, 2245) == 128);   // a C9 do relatorio de 22/09
   assert(ptv_tex_auto_mb(PTV_LG, 3000) == 192);
   assert(ptv_tex_teto_mb(PTV_LG, 1024) == 64);
@@ -107,6 +109,98 @@ static void regra(void) {
   b.piorQuadroMs = 33 + 16 + 20 + 1;
   assert(ptv_depois_pior(&a, &b, &m) && strstr(m, "quadro"));
   puts("ok  reteste pior restaura; melhor ou dentro da folga mantem");
+}
+
+// A MARGEM DO VEREDITO (ptv_decidir), com os numeros dos relatorios de campo
+// que trocavam a TV de perfil a cada rodada. Medida: { ms, prontas, falhas,
+// pior quadro, despejos quentes }.
+static PtvMedida medida(int ms, int falhas, int quadro, int desp) {
+  PtvMedida x = { ms, 10 - falhas, falhas, quadro, desp };
+  return x;
+}
+
+static void margem(void) {
+  const PtvPerfil q96 = { 96, 4, 1920 }, q160 = { 160, 4, 1920 };
+  const PtvPerfil d96 = { 96, 2, 1280 }, d160 = { 160, 2, 1280 };
+  const PtvPerfil s96_1920 = { 96, 2, 1920 }, s96_1280 = { 96, 2, 1280 };
+  PtvMedida a, b;
+  const char *m = NULL;
+
+  // LG, rodada A: 96|4|1920 -> 160|4|1920, artes 316 -> 297 ms (6%, 19 ms).
+  // Sem arte visivel despejada, mais memoria nao se justifica: fica o 96.
+  a = medida(316, 0, 33, 0); b = medida(297, 0, 33, 0);
+  assert(ptv_decidir(&q96, &q160, &a, &b, 0, &m) == PTV_DEC_RUIDO);
+  assert(m && strstr(m, "memória"));
+  // O mesmo com arte visivel despejada na sessao (ou no passe ANTES): sobe.
+  assert(ptv_decidir(&q96, &q160, &a, &b, 3, &m) == PTV_DEC_APLICAR && m == NULL);
+  a.despejosQuentes = 1; b.despejosQuentes = 1;
+  assert(ptv_decidir(&q96, &q160, &a, &b, 0, &m) == PTV_DEC_APLICAR);
+
+  // LG, rodada B: 160|4|1920 -> 96|2|1280, artes 320 -> 360 ms. Nao passa da
+  // folga de restaurar (25% + 150), mas descer fios e heroi exige GANHO.
+  a = medida(320, 0, 33, 0); b = medida(360, 0, 33, 0);
+  assert(ptv_decidir(&q160, &d96, &a, &b, 0, &m) == PTV_DEC_RUIDO);
+  assert(m && strstr(m, "Menos recursos"));
+  // Mesmo MAIS rapido, mas dentro da margem (max(15%, 80 ms)): nao desce.
+  b = medida(250, 0, 33, 0);   // -70 ms
+  assert(ptv_decidir(&q160, &d96, &a, &b, 0, &m) == PTV_DEC_RUIDO);
+
+  // Outra LG (1236 MB): 96|4|1920 -> 96|2|1280 -> 160|4|1920 em rodadas
+  // seguidas. Com artes na faixa de ruido, a primeira descida nao acontece.
+  a = medida(1100, 0, 40, 0); b = medida(1010, 0, 40, 0);    // -90 ms, 8%
+  assert(ptv_decidir(&q96, &d96, &a, &b, 0, &m) == PTV_DEC_RUIDO);
+
+  // Outra LG: 160|2|1280 -> 160|4|1920 -> 160|2|1280. Subir o heroi e o que
+  // Qualidade pede: fica se nao piorou. A VOLTA para 2 fios/1280 dentro do
+  // ruido e que nao acontece mais.
+  a = medida(900, 0, 33, 0); b = medida(950, 0, 33, 0);
+  assert(ptv_decidir(&d160, &q160, &a, &b, 0, &m) == PTV_DEC_APLICAR);
+  a = medida(950, 0, 33, 0); b = medida(900, 0, 33, 0);
+  assert(ptv_decidir(&q160, &d160, &a, &b, 0, &m) == PTV_DEC_RUIDO);
+  // Tanto faz a ordem: com o perfil ja em 160|4|1920, a rodada seguinte de
+  // Qualidade da ja_no_perfil (candidato igual, nem chega aqui) e a de
+  // Desempenho precisa ganhar de verdade.
+
+  // GANHO CLARO: desce e fica. 1000 -> 800 ms (20%, 200 ms), quadro igual.
+  a = medida(1000, 0, 33, 0); b = medida(800, 0, 33, 0);
+  assert(ptv_decidir(&q160, &d96, &a, &b, 0, &m) == PTV_DEC_APLICAR && m == NULL);
+  // Na borda: exatamente 15% (150 ms) passa; 149 nao.
+  b.artesMs = 850;
+  assert(ptv_decidir(&q160, &d96, &a, &b, 0, &m) == PTV_DEC_APLICAR);
+  b.artesMs = 851;
+  assert(ptv_decidir(&q160, &d96, &a, &b, 0, &m) == PTV_DEC_RUIDO);
+  // Amostra curta: o piso de 80 ms vale (15% de 300 = 45 nao basta).
+  a = medida(300, 0, 20, 0); b = medida(230, 0, 20, 0);
+  assert(ptv_decidir(&q160, &d96, &a, &b, 0, &m) == PTV_DEC_RUIDO);
+  b.artesMs = 220;
+  assert(ptv_decidir(&q160, &d96, &a, &b, 0, &m) == PTV_DEC_APLICAR);
+  // Mais rapido, mas o pior quadro subiu mais que um quadro (e passa de
+  // 50 ms): nao conta como ganho.
+  a = medida(1000, 0, 40, 0); b = medida(700, 0, 58, 0);
+  assert(ptv_decidir(&q160, &d96, &a, &b, 0, &m) == PTV_DEC_RUIDO);
+  b.piorQuadroMs = 57;
+  assert(ptv_decidir(&q160, &d96, &a, &b, 0, &m) == PTV_DEC_APLICAR);
+  // Contagem que cai e ganho sem margem de tempo: uma falha a menos.
+  a = medida(1000, 1, 33, 0); b = medida(1000, 0, 33, 0);
+  assert(ptv_decidir(&q160, &d96, &a, &b, 0, &m) == PTV_DEC_APLICAR);
+  // ... e menos arte visivel despejada.
+  a = medida(1000, 0, 33, 2); b = medida(1000, 0, 33, 0);
+  assert(ptv_decidir(&q160, &d96, &a, &b, 0, &m) == PTV_DEC_APLICAR);
+  // So fios a mais, sem ganho: ruido.
+  { const PtvPerfil f2 = { 128, 2, 1920 }, f4 = { 128, 4, 1920 };
+    a = medida(1000, 0, 33, 0); b = medida(980, 0, 33, 0);
+    assert(ptv_decidir(&f2, &f4, &a, &b, 0, &m) == PTV_DEC_RUIDO);
+    assert(m && strstr(m, "claramente")); }
+
+  // SAMSUNG 2 GB: 96|2|1280 -> 96|2|1920, artes 3845 -> 5632 ms. Piorou
+  // alem da folga: restaura, com o motivo de ptv_depois_pior.
+  a = medida(3845, 0, 60, 0); b = medida(5632, 0, 60, 0);
+  assert(ptv_decidir(&s96_1280, &s96_1920, &a, &b, 0, &m) == PTV_DEC_RESTAURAR);
+  assert(m && strstr(m, "lentas"));
+  // Falha a mais ou arte despejada a mais restaura mesmo com heroi subindo.
+  a = medida(1000, 0, 33, 0); b = medida(700, 1, 33, 0);
+  assert(ptv_decidir(&q96, &q160, &a, &b, 5, &m) == PTV_DEC_RESTAURAR);
+  puts("ok  margem: ruido nao troca perfil, ganho claro troca, pior restaura");
 }
 
 static void persistencia(void) {
@@ -223,6 +317,7 @@ int main(void) {
   tabela();
   limites();
   regra();
+  margem();
   persistencia();
   sugestao();
   dimensoes();

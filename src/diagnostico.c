@@ -15,8 +15,10 @@
 //      frio (enche o disco), ANTES (perfil atual, disco quente) e DEPOIS (o
 //      candidato aplicado, a mesma amostra esquecida e pedida de novo). E o
 //      fio de desenho porque tex_obter e tex_esquecer mexem em textura GL;
-//   4. comparacao (ptv_depois_pior): pior -> o anterior volta SOZINHO e a tela
-//      diz o motivo; igual ou melhor -> o perfil fica e vai para o disco;
+//   4. comparacao (ptv_decidir): pior -> o anterior volta SOZINHO e a tela
+//      diz o motivo; dentro do ruido (sem ganho alem da margem) -> o anterior
+//      tambem volta, `mantido_ruido`; ganho medido -> o perfil fica e vai
+//      para o disco;
 //   5. fio do diagnostico: relatorio e envio.
 //
 // A FONTE DO DESTAQUE (ajuste do usuario) NUNCA muda sozinha: a medicao por
@@ -86,14 +88,15 @@ typedef enum {
 // O que a aplicacao automatica fez, para a tela e para o relatorio.
 typedef enum {
   DA_NENHUM = 0,
-  DA_MANTIDO,          // candidato aplicado, reteste nao piorou
+  DA_MANTIDO,          // candidato aplicado, reteste passou na margem (ptv_decidir)
   DA_RESTAURADO_AUTO,  // reteste piorou: o anterior voltou sozinho
   DA_IGUAL,            // o candidato e o que ja vale
   DA_SEM_AMOSTRA,      // nenhuma arte para comparar
   DA_SEM_CHECKPOINT,   // nao deu para gravar o checkpoint: nada aplicado
   DA_DESLIGADO,        // build com NV_DIAG_AUTO_OPT=0
   DA_CANCELADO,        // Voltar no meio: o anterior voltou
-  DA_RESTAURADO_MANUAL // a pessoa pediu o anterior
+  DA_RESTAURADO_MANUAL, // a pessoa pediu o anterior
+  DA_RUIDO             // nao piorou, mas nao ganhou alem da margem: o anterior voltou
 } DiagAplicacao;
 
 // O botao "Aplicar sugestao" da arte do destaque.
@@ -176,6 +179,9 @@ typedef struct {
   Uint32 passeIni;
   int passePior;
   long passeDesp0;
+  // Arte VISIVEL despejada desde o arranque ate o passe frio: o sinal de falta
+  // de memoria que justifica subir o orcamento (ptv_decidir).
+  long despSessao;
   PtvMedida medFrio, medAntes, medDepois;
   PtvPerfil perfAntes, perfCand;
   int travadoMb;
@@ -272,6 +278,7 @@ static const char *aplicacaoNome(DiagAplicacao a) {
     case DA_DESLIGADO: return "padrao_mantido";
     case DA_CANCELADO: return "cancelada";
     case DA_RESTAURADO_MANUAL: return "restaurada_manual";
+    case DA_RUIDO: return "mantido_ruido";
     default: return "sem_acao";
   }
 }
@@ -544,12 +551,18 @@ static int aplicarCandidato(void) {
   return 1;
 }
 
+// O veredito tem MARGEM (ptv_decidir): pior restaura; dentro do ruido tambem
+// volta ao anterior, sem gravar nada, para a TV nao trocar de perfil a cada
+// rodada; so um ganho medido (ou o heroi que Qualidade pede, ou memoria com
+// arte visivel despejada) fica.
 static void concluirComparacao(void) {
   const char *m = NULL;
+  PtvDecisao dec;
   if (atomic_load(&d.experimento) != 1) return;
-  if (ptv_depois_pior(&d.medAntes, &d.medDepois, &m)) {
+  dec = ptv_decidir(&d.perfAntes, &d.perfCand, &d.medAntes, &d.medDepois, d.despSessao, &m);
+  if (dec != PTV_DEC_APLICAR) {
     desfazerExperimento();
-    d.aplicacao = DA_RESTAURADO_AUTO;
+    d.aplicacao = dec == PTV_DEC_RESTAURAR ? DA_RESTAURADO_AUTO : DA_RUIDO;
     d.motivo = m;
   } else {
     char cfg[256];
@@ -655,6 +668,7 @@ static void passesAvancar(void) {
       atomic_store(&d.passesProntos, 1);
       return;
     }
+    d.despSessao = tex_despejos_quentes_total;
     passeIniciar(1);
     return;
   }
@@ -808,6 +822,10 @@ static void montarRelatorio(void) {
              d.nArte, d.medFrio.artesMs, d.medAntes.artesMs, d.medDepois.artesMs,
              d.medAntes.falhas, d.medDepois.falhas, d.medAntes.piorQuadroMs,
              d.medDepois.piorQuadroMs, d.medDepois.despejosQuentes, d.motivo ? d.motivo : "");
+  // Chaves novas (23/09): o que ptv_decidir usou alem das de cima. Relatorio
+  // antigo nao as tem; o agregador le as duas formas.
+  ACRESCENTA("despejos_quentes_antes=%d\ndespejos_quentes_sessao=%ld\nmargem_ganho=%d%%|%dms\n",
+             d.medAntes.despejosQuentes, d.despSessao, PTV_GANHO_PCT, PTV_GANHO_MIN_MS);
   ACRESCENTA("destaque_fonte=%d\ndestaque_diferente=%d\n", ajustes_hero_fonte(),
              ajustes_hero_arte_diferente());
   for (i = 1; i < PTV_N_FONTES; i++) {
@@ -1398,6 +1416,7 @@ static const char *textoAplicacao(int *cor) {
     case DA_DESLIGADO: return "Aplicação automática desligada neste build";
     case DA_CANCELADO: *cor = 2; return "Cancelado: configuração anterior restaurada";
     case DA_RESTAURADO_MANUAL: *cor = 1; return "Configuração anterior restaurada";
+    case DA_RUIDO: *cor = 1; return "Diferença dentro do ruído: o perfil atual foi mantido";
     default: return "Nada foi aplicado";
   }
 }
@@ -1660,7 +1679,8 @@ void diagnostico_desenhar(Uint32 agora) {
     // no ar, tenha ficado ou nao: o veredito acima diz qual dos dois vale.
     // Sem candidato (igual, sem amostra), so o que vale agora.
     { int testado = d.aplicacao == DA_MANTIDO || d.aplicacao == DA_RESTAURADO_AUTO ||
-                    d.aplicacao == DA_RESTAURADO_MANUAL || d.aplicacao == DA_CANCELADO;
+                    d.aplicacao == DA_RESTAURADO_MANUAL || d.aplicacao == DA_CANCELADO ||
+                    d.aplicacao == DA_RUIDO;
       PtvPerfil atual_;
       int tr_;
       long m_;

@@ -60,12 +60,29 @@ int main(void) {
   assert(!dados_ler("diagnostico-otimizacao.cfg"));
   puts("ok  aplicar -> reteste pior -> restaura sozinho (sem gravar perfil)");
 
-  // 2. DESEMPENHO, reteste MELHOR: fica, e vai para o disco.
+  // 1b. DESEMPENHO, reteste um pouco melhor mas DENTRO DO RUIDO (100 ms de
+  // 1000, a margem e 15%): o anterior volta e nada vai para o disco. Era o
+  // vaivem de perfil dos relatorios de 23/09.
+  reset(DIAG_DESEMPENHO);
+  assert(aplicarCandidato() == 1);
+  assert(tex_fios_rede() == 2 && tex_teto_heroi() == 1280);
+  d.medAntes = med(1000, 0);
+  d.medDepois = med(900, 0);
+  concluirComparacao();
+  assert(d.aplicacao == DA_RUIDO && d.motivo);
+  assert(!strcmp(aplicacaoNome(d.aplicacao), "mantido_ruido"));
+  assert(tex_fios_rede() == 4 && tex_teto_heroi() == 1920 && orcamento() == 96);
+  assert(atomic_load(&d.experimento) == 0);
+  assert(!dados_ler("diagnostico-otimizacao.checkpoint"));
+  assert(!dados_ler("diagnostico-otimizacao.cfg"));
+  puts("ok  reteste dentro do ruido: o anterior volta, nada gravado (mantido_ruido)");
+
+  // 2. DESEMPENHO, reteste CLARAMENTE melhor: fica, e vai para o disco.
   reset(DIAG_DESEMPENHO);
   assert(aplicarCandidato() == 1);
   assert(tex_fios_rede() == 2 && tex_teto_heroi() == 1280 && orcamento() == 96);
   d.medAntes = med(1000, 0);
-  d.medDepois = med(900, 0);
+  d.medDepois = med(800, 0);
   concluirComparacao();
   assert(d.aplicacao == DA_MANTIDO);
   assert(tex_fios_rede() == 2 && tex_teto_heroi() == 1280);
