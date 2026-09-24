@@ -115,7 +115,10 @@ static int   temCatHomeBlob;
 // anterior precisa sair antes de a nova entrar; quando o app atualiza, ela
 // entra antes da primeira resposta de rede.
 static int catordemCachePerfil = -1;
-static char *colBlob;        // sync_pull_collections, lido por colecoes.c no fio principal
+// De qual perfil e o ciclo no ar, e o que ele deixou pendente. Ver
+// sync_iniciar (pedido com o fio vivo) e sync_passo (repeticao ao terminar).
+static int perfilDoCiclo, cicloInterrompido, pedidoComFioVivo;
+static char *colBlob;       // sync_pull_collections, lido por colecoes.c no fio principal
 static int   temColBlob;
 // sync_pull_library e sync_pull_watched_items, crus, lidos por contalib.c no
 // fio principal. Guardar o corpo em vez de contar e o conserto deste issue: as
@@ -573,10 +576,14 @@ static void *rodar(void *u) {
            perfis_n());
     fflush(stdout);
     snprintf(resumo, sizeof resumo, "aguardando escolha de perfil");
+    cicloInterrompido = 1;
     estado = SYNC_PRONTO;
     fioPronto = 1;
     return NULL;
   }
+  // Lido DEPOIS da porteira: quando a pessoa responde enquanto perfis_puxar
+  // ainda esta no ar, este ciclo ja segue com o perfil escolhido.
+  perfilDoCiclo = perfis_ativo();
   puxarAddons();
   // OS ADDONS SAO A SEGUNDA RPC DO CICLO, E ERAM APLICADOS NA ULTIMA LINHA DELE.
   //
@@ -625,18 +632,50 @@ static void *rodar(void *u) {
   return NULL;
 }
 
+// A ORDEM LOCAL NAO DEPENDE DE REDE, E TAMBEM NAO DEPENDE DO FIO (#125).
+//
+// Isto morava DEPOIS de `if (fioVivo) return` em sync_iniciar. O arranque com
+// conta de varios perfis chama sync_iniciar com o perfil salvo, o fio para em
+// "ciclo interrompido" esperando a pergunta, e a pessoa responde. Se ela
+// responde antes de sync_passo ver o fio acabar — a pergunta abre do cache de
+// perfis no primeiro quadro, e perfis_puxar ainda esta na rede —, o
+// sync_iniciar da escolha voltava na primeira linha: o cache do perfil
+// escolhido nunca era lido, e a home ficava na ordem do perfil salvo (ou na
+// padrao) ate o blob da conta chegar e reordenar tudo. MEDIDO em
+// tests/syncordem.sh, sessao 5: salvo 1, escolhe 2 com o fio vivo -> nenhuma
+// "ordem restaurada ... (perfil 2)", e depois "3 na ordem da conta" + "ordem
+// guardada" — o mesmo par de linhas dos logs de campo.
+//
+// Restaurar tambem antes do freio, como antes: num boot apos update, sem
+// internet ou com o servidor em pausa, a Home ainda precisa abrir com a
+// escolha que ja estava no aparelho.
+//
+// REMONTA TAMBEM QUANDO O PERFIL NOVO NAO TEM CACHE, se havia ordem na
+// memoria: catordem_cache_carregar esquece a ordem anterior antes de ler, e a
+// home ficaria desenhada na ordem do OUTRO perfil ate a rede responder.
+static void restaurarOrdemLocal(void) {
+  int tinha, mudou;
+  if (!sessao_logada() || catordemCachePerfil == perfis_ativo()) return;
+  tinha = catordem_tem_ordem();
+  mudou = catordem_cache_carregar(perfis_ativo(), sessao_usuario());
+  catordemCachePerfil = perfis_ativo();
+  if (mudou || tinha) desc_remontar_fileiras();
+}
+
 void sync_iniciar(void) {
-  int cacheMudou;
-  if (fioVivo || !sessao_logada()) return;
-  // A ordem local nao depende de rede. Restaurar antes do freio e importante:
-  // justamente num boot apos update, sem internet ou com o servidor em pausa,
-  // a Home ainda precisa abrir com a escolha que ja estava no aparelho.
-  if (catordemCachePerfil != perfis_ativo()) {
-    cacheMudou = catordem_cache_carregar(perfis_ativo(), sessao_usuario());
-    catordemCachePerfil = perfis_ativo();
-    if (cacheMudou) desc_remontar_fileiras();
-  }
+  restaurarOrdemLocal();
+  if (!sessao_logada()) return;
+  // PEDIDO COM O FIO VIVO NAO SE PERDE. Voltar calado deixava um buraco: o
+  // fio que estava no ar pode ser justamente o interrompido pela pergunta de
+  // perfil, e ai o ciclo completo do perfil escolhido so partia com
+  // sync_periodico, cinco minutos depois (o ciclo interrompido marca
+  // SYNC_PRONTO e conta como `ultimoOk`). sync_passo decide, quando o fio
+  // acabar, se precisa de outra volta.
+  if (fioVivo) { pedidoComFioVivo = 1; return; }
+  pedidoComFioVivo = 0;
   if (nuvem_freio_ativo()) return;
+  cicloInterrompido = 0;
+  perfilDoCiclo = perfis_ativo();
   estado = SYNC_RODANDO;
   fioPronto = 0;
   if (pthread_create(&fio, NULL, rodar, NULL) == 0) { pthread_detach(fio); fioVivo = 1; }
@@ -715,6 +754,17 @@ void sync_passo(unsigned agoraMs) {
   // Uma remontagem por ciclo de sync custaria a home inteira a cada 5 minutos,
   // e o baseline de jank desta TV nao tem essa folga; duas remontagens no mesmo
   // quadro (addons e ordem) custariam o dobro por nada.
+  // SO A ORDEM DO PERFIL QUE ESTA NA TELA. Um ciclo que partiu com o perfil
+  // anterior e terminou depois da troca traria a ordem do outro perfil — e,
+  // pior, a gravaria no cache DESTE (catordem_cache_gravar usa perfis_ativo()).
+  // A volta seguinte, pedida ao terminar, traz a certa.
+  if (temCatHomeBlob && catHomeBlob && perfilDoCiclo != perfis_ativo()) {
+    printf("[catordem] ordem do perfil %d descartada: o perfil ativo agora e %d\n",
+           perfilDoCiclo, perfis_ativo());
+    free(catHomeBlob);
+    catHomeBlob = NULL;
+    temCatHomeBlob = 0;
+  }
   if (temCatHomeBlob && catHomeBlob) {
     if (catordem_ler(catHomeBlob)) {
       catordem_cache_gravar(perfis_ativo(), sessao_usuario(), catHomeBlob);
@@ -791,6 +841,17 @@ void sync_passo(unsigned agoraMs) {
   // em "Continuar assistindo" no proximo ciclo de descoberta (issue #38).
   if (syncprog_aplicar(NULL) > 0) desc_refazer_continuar();
   if (estado == SYNC_PRONTO) ultimoOk = agoraMs;
+  // A VOLTA QUE FOI PEDIDA COM O FIO VIVO. So quando ela serve para algo: o
+  // ciclo que acabou parou na pergunta de perfil (e a pergunta ja foi
+  // respondida) ou puxou para um perfil que nao e mais o ativo. Quando a
+  // pessoa responde durante perfis_puxar, o proprio ciclo segue inteiro com o
+  // perfil escolhido — repetir ali seria o ciclo de rede duas vezes por nada.
+  if (pedidoComFioVivo) {
+    pedidoComFioVivo = 0;
+    if ((cicloInterrompido && !perfis_precisa_escolher()) ||
+        (!cicloInterrompido && perfilDoCiclo != perfis_ativo()))
+      sync_iniciar();
+  }
 }
 
 SyncEstado  sync_estado(void)      { return estado; }
@@ -861,6 +922,7 @@ void sync_esquecer_usuario(void) {
   catordem_esquecer();
   catordem_cache_esquecer();
   catordemCachePerfil = -1;
+  pedidoComFioVivo = 0;
   homeestado_esquecer();
   cachearte_limpar_referencias();
   // O CACHE DO CATALOGO TAMBEM. Ele guarda o catalogo montado da conta que

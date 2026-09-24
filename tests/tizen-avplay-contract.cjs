@@ -185,6 +185,17 @@ const call = (op, text = '', a = 0, b = 0, c = 0, d = 0, dst = 0, size = 0) =>
     assert.equal(context.__nvav.pronto, 1);
     assert.equal(context.__nvav.tocando, 1);
   });
+  check('no error text while the session is healthy', () => {
+    outputs.delete(400);
+    assert.equal(call('erro', '', 0, 0, 0, 0, 400, 200), 0);
+    assert.equal(outputs.has(400), false);
+  });
+  listeners[1].onerror('PLAYER_ERROR_CONNECTION_FAILED');
+  check('onerror reason reaches C through the erro operation', () => {
+    outputs.delete(400);
+    assert.equal(call('erro', '', 0, 0, 0, 0, 400, 200), 1);
+    assert.equal(outputs.get(400), 'PLAYER_ERROR_CONNECTION_FAILED');
+  });
   player.prepareAsync = originalPrepareAsync;
   player.setListener = originalSetListener;
 
