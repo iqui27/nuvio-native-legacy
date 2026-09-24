@@ -253,6 +253,7 @@ IGNORAR = {
     "com.webos.media.client.nuvio", # id do cliente LS2
     "abrir", "buscar", "erro",      # nomes de operacao do bridge JS (video_tizen.c)
     "fontes", "legenda", "mais", "nao", "poster",  # chaves internas, nao rotulo
+    "fileiras", "ordem-da-conta",  # partes do contexto no log de homeestado.c
     "crédit", "crédito",            # palavra procurada no capitulo do MKV
     "episodio", "episódio",         # palavra procurada no nome do video TMDB (extras.c)
     # Nome proprio e sigla: iguais nos dois idiomas.
