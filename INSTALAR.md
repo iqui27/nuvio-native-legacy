@@ -45,7 +45,7 @@ sudo python3 tools/vidaa-instalar/instalar.py --ip 192.168.1.100
 Cria um servidor DNS/HTTPS local que se passa por vidaahub.com, permitindo que a TV
 chame `Hisense_installApp()`. Depois de instalar, volta o DNS para automatico.
 
-Ver `tools/vidaa-instalar/LEIAME.md` para instrucoes detalhadas.
+Ver `tools/vidaa-instalar/README.md` para instrucoes detalhadas.
 
 ## Precisa de root? Nao. Mas leia a ressalva do LS2.
 
