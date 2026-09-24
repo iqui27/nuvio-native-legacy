@@ -449,12 +449,28 @@ static int ehSerieSalvo(const SalvoItem *s) {
   return s && !strcmp(s->tipo, "series");
 }
 
+// 1 quando um item do catalogo ja CONTADO e o mesmo titulo que `id`. Olha os
+// contados, e nao so os de `filtro`: o seletor de tipo esconde alguns, e o
+// contador do modo tambem nao pode contar o mesmo titulo duas vezes.
+static int contados[CAT_MAX];
+static int nContados;
+static int jaNoFiltro(const char *id) {
+  int i;
+  if (!id || !id[0]) return 0;
+  for (i = 0; i < nContados; i++) {
+    const CatItem *c = cat_item(contados[i]);
+    if (c && salvos_mesmo_titulo(c->imdb, id)) return 1;
+  }
+  return 0;
+}
+
 // Refaz a lista visivel de TITULOS (modos Salvos e Coleção).
 static void reconstruir(void) {
   int n = cat_n();
   if (n > CAT_MAX) n = CAT_MAX;
   nFiltro = 0;
   totalModo = 0;
+  nContados = 0;
   for (int i = 0; i < n; i++) {
     const CatItem *ci = cat_item(i);
     if (!ci) continue;
@@ -473,6 +489,12 @@ static void reconstruir(void) {
     int entra = (modo == MODO_SALVOS) ? ci->naLista
                                       : (ci->naColecao || comprado[i]);
     if (!entra) continue;
+    // UM CARTAZ POR TITULO. O mesmo titulo vive em varias fileiras, cada uma
+    // com a sua copia marcada, e a serie com progresso tem id "tt123:1:2" ao
+    // lado do "tt123" da watchlist — a grade mostrava o titulo duas vezes. A
+    // regra e a de salvos_mesmo_titulo, a mesma do painel de Salvos.
+    if (jaNoFiltro(ci->imdb)) continue;
+    if (nContados < CAT_MAX) contados[nContados++] = i;
     totalModo++;
     if (tipo == TIPO_FILME && ehSerie(ci)) continue;
     if (tipo == TIPO_SERIE && !ehSerie(ci)) continue;

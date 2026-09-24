@@ -75,20 +75,16 @@ int sintro_aberto(void) { return aberto; }
 // nenhum, o bloco inteiro some do cartao (ver o desenho) — uma fileira de seis
 // retangulos cinza dizendo "Já na sua lista" seria pior que nao ter a fileira.
 static void juntarMinis(void) {
-  int i, n;
+  // A MESMA UNIAO DO PAINEL (salvos_uniao): um titulo com duas copias no
+  // catalogo ("tt123" e "tt123:1:2") nao vira dois cartazes iguais aqui.
+  static SalvosEntrada u[SALVOS_MAX + CAT_MAX];
+  int i, n = salvos_uniao(u, (int)(sizeof u / sizeof u[0]));
   nMinis = 0;
-  n = salvos_n();
   for (i = 0; i < n && nMinis < SI_N_MINI; i++) {
-    const SalvoItem *s = salvos_item(i);
-    if (s && s->poster[0])
-      snprintf(minis[nMinis++], sizeof minis[0], "%s", s->poster);
-  }
-  n = cat_n();
-  for (i = 0; i < n && nMinis < SI_N_MINI; i++) {
-    const CatItem *c = cat_item(i);
-    if (!c || !c->naLista || !c->poster[0]) continue;
-    if (c->imdb[0] && salvos_tem(c->imdb)) continue;   // ja entrou acima
-    snprintf(minis[nMinis++], sizeof minis[0], "%s", c->poster);
+    const SalvoItem *s = u[i].local >= 0 ? salvos_item(u[i].local) : NULL;
+    const CatItem *c = u[i].local < 0 ? cat_item(u[i].cat) : NULL;
+    const char *p = s ? s->poster : (c ? c->poster : "");
+    if (p[0]) snprintf(minis[nMinis++], sizeof minis[0], "%s", p);
   }
 }
 

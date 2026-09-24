@@ -267,73 +267,68 @@ static int catTrocou(void) {
   return c ? strcmp(c->imdb, marcaPrimeiro) != 0 : 0;
 }
 
-static int jaTem(const char *id) {
-  int i;
-  for (i = 0; i < nLinhas; i++) if (!strcmp(linhas[i].id, id)) return 1;
-  return 0;
-}
-
-// Monta a lista visivel. Duas passadas e uma reordenacao:
+// Monta a lista visivel. A uniao (lista local + catalogo) vem de salvos_uniao,
+// e a reordenacao e daqui:
 //   1. a lista LOCAL, na ordem de insercao (ela existe mesmo sem catalogo);
-//   2. o que o catalogo tem marcado como naLista e ainda nao entrou;
+//   2. cada TITULO que o catalogo tem marcado como naLista e ainda nao entrou;
 //   3. os itens COM progresso sobem para o topo, virando a secao "Continuar".
 // A reordenacao e uma insercao estavel: dentro de cada secao a ordem das duas
 // passadas e preservada, senao a lista dancaria a cada reconstrucao.
+//
+// A DEDUPLICACAO NAO E MAIS DAQUI. Ela era um strcmp dos ids ja postos
+// (`jaTem`), e o catalogo guarda a serie com progresso como "tt123:1:2" ao lado
+// do "tt123" da lista local e da conta: Widows Bay aparecia duas vezes, as duas
+// no mesmo episodio, porque a linha local puxava o progresso daquela copia e a
+// copia entrava de novo por conta propria. salvos_uniao compara por titulo, e e
+// a mesma regra que tests/salvos.sh cobra.
 static void reconstruir(void) {
+  static SalvosEntrada *uniao;
+  static int capUniao;
   int i, n, escrita = 0;
   nLinhas = 0;
-  n = salvos_n();
+  n = salvos_n() + cat_n();
+  if (n > SP_MAX) n = SP_MAX;
+  if (n > capUniao) {
+    SalvosEntrada *novo = (SalvosEntrada *)realloc(uniao, sizeof *uniao * (size_t)n);
+    if (novo) { uniao = novo; capUniao = n; }
+  }
+  n = salvos_uniao(uniao, capUniao);
   for (i = 0; i < n && nLinhas < SP_MAX; i++) {
-    const SalvoItem *s = salvos_item(i);
+    const SalvoItem *s = uniao[i].local >= 0 ? salvos_item(uniao[i].local) : NULL;
+    const CatItem *c = uniao[i].cat >= 0 ? cat_item(uniao[i].cat) : NULL;
     SPLinha *l;
-    int k;
-    if (!s) continue;
+    if (!s && !c) continue;
     if (!garantirLinhas(nLinhas + 1)) break;
     l = &linhas[nLinhas++];
     memset(l, 0, sizeof *l);
-    snprintf(l->id, sizeof l->id, "%s", s->id);
-    snprintf(l->titulo, sizeof l->titulo, "%s", s->titulo);
-    snprintf(l->poster, sizeof l->poster, "%s", s->poster);
-    snprintf(l->meta, sizeof l->meta, "%s", s->meta);
-    l->nota   = s->nota;
-    l->quandoS = s->quandoS;
-    l->serie  = ehSerie(s->tipo, 0);
+    if (s) {
+      snprintf(l->id, sizeof l->id, "%s", s->id);
+      snprintf(l->titulo, sizeof l->titulo, "%s", s->titulo);
+      snprintf(l->poster, sizeof l->poster, "%s", s->poster);
+      snprintf(l->meta, sizeof l->meta, "%s", s->meta);
+      l->nota   = s->nota;
+      l->quandoS = s->quandoS;
+      l->serie  = ehSerie(s->tipo, 0);
+    } else {
+      snprintf(l->id, sizeof l->id, "%s", c->imdb);
+      snprintf(l->titulo, sizeof l->titulo, "%s", c->titulo);
+      snprintf(l->poster, sizeof l->poster, "%s", c->poster);
+      snprintf(l->meta, sizeof l->meta, "%s", c->meta);
+      l->nota   = c->nota;
+    }
     // O PROGRESSO SO EXISTE NO CATALOGO. A lista local guarda o que e dela
     // (titulo, poster, quando entrou); posicao de retomada e de progresso.c e
     // muda sem passar por aqui. Guardar uma copia envelheceria em minutos.
-    k = cat_indice_por_imdb(s->id);
-    if (k >= 0) {
-      const CatItem *c = cat_item(k);
-      if (c) {
-        l->progresso = c->progresso;
-        l->temporada = c->temporada;
-        l->episodio  = c->episodio;
-        l->restanteMin = c->restanteMin;
-        if (c->nota > 0) l->nota = c->nota;
-        if (c->poster[0]) snprintf(l->poster, sizeof l->poster, "%s", c->poster);
-        if (c->meta[0])   snprintf(l->meta, sizeof l->meta, "%s", c->meta);
-        if (ehSerie(c->tipo, c->nTemporadas)) l->serie = 1;
-      }
+    if (c) {
+      l->progresso = c->progresso;
+      l->temporada = c->temporada;
+      l->episodio  = c->episodio;
+      l->restanteMin = c->restanteMin;
+      if (c->nota > 0) l->nota = c->nota;
+      if (c->poster[0]) snprintf(l->poster, sizeof l->poster, "%s", c->poster);
+      if (c->meta[0])   snprintf(l->meta, sizeof l->meta, "%s", c->meta);
+      if (ehSerie(c->tipo, c->nTemporadas)) l->serie = 1;
     }
-  }
-  n = cat_n();
-  for (i = 0; i < n && nLinhas < SP_MAX; i++) {
-    const CatItem *c = cat_item(i);
-    SPLinha *l;
-    if (!c || !c->naLista || !c->imdb[0] || jaTem(c->imdb)) continue;
-    if (!garantirLinhas(nLinhas + 1)) break;
-    l = &linhas[nLinhas++];
-    memset(l, 0, sizeof *l);
-    snprintf(l->id, sizeof l->id, "%s", c->imdb);
-    snprintf(l->titulo, sizeof l->titulo, "%s", c->titulo);
-    snprintf(l->poster, sizeof l->poster, "%s", c->poster);
-    snprintf(l->meta, sizeof l->meta, "%s", c->meta);
-    l->nota   = c->nota;
-    l->serie  = ehSerie(c->tipo, c->nTemporadas);
-    l->progresso = c->progresso;
-    l->temporada = c->temporada;
-    l->episodio  = c->episodio;
-    l->restanteMin = c->restanteMin;
   }
   // Estavel: percorre uma vez e move para a frente quem tem progresso.
   for (i = 0; i < nLinhas; i++) {
