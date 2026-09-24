@@ -110,10 +110,14 @@ static void focoMenu(GfxRect pill, float f, float alpha) {
   if (f <= 0.01f || alpha <= 0.01f) return;
   ajustes_acento_tinta(&cr, &cg, &cb);
   botao_luz(pill, f, alpha);
-  gfx_cor(pill, NV_MENU_RAIO_PILL,
-          anim_mistura(0.14f, cr, f),
-          anim_mistura(0.15f, cg, f),
-          anim_mistura(0.17f, cb, f), alpha);
+  // SOME POR OPACIDADE, e nao por cor (25/09, C9: "no settings e muito mais
+  // rapido"). Misturar o realce com o cinza 0.14 do BT_REP com alpha cheio
+  // deixava a pilula que perdeu o foco na tela como uma placa cinza ate a
+  // mola chegar a 0.01 — no Settings a linha fica sobre uma superficie dessa
+  // mesma cor e a transicao some; aqui o fundo da barra e outro, e a placa
+  // aparecia arrastada atras do foco. Com a cor fixa e a opacidade na mola,
+  // a pilula antiga simplesmente esmaece.
+  gfx_cor(pill, NV_MENU_RAIO_PILL, cr, cg, cb, alpha * f);
 }
 
 // O legacy deixa a rail de 144px sempre visível. O menu expandido é uma
