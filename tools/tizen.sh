@@ -108,6 +108,23 @@ if [ "${NUVIO_TIZEN_DIAGNOSTIC:-0}" = "1" ]; then
 else
   ENV_D=$(tools/env.sh --require-core)
 fi
+# TIZEN 4: A VERSAO DO PACOTE E A DO APP, com sufixo. O manifesto proprio
+# (tools/tizen4-config.xml) tem de acompanhar o appinfo.json como o
+# tizen-config.xml acompanha (tools/env.sh confere so aquele), e o app se
+# identifica como "<versao>-tizen4-exp.N" nos Ajustes e em todo registro que
+# manda — e o que separa relato de TV 2018 do resto. NUVIO_TIZEN4_EXP=N muda o N.
+if [ -n "$TIZEN4" ]; then
+  VER_APP=$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' deploy/app/appinfo.json | head -1)
+  VER_T4=$(grep -v "<?xml" "$NUVIO_TIZEN_CONFIG" | sed -n 's/.*[[:space:]]version="\([0-9.]*\)".*/\1/p' | head -1)
+  if [ "$VER_APP" != "$VER_T4" ]; then
+    echo "tizen.sh: appinfo.json diz $VER_APP e $NUVIO_TIZEN_CONFIG diz $VER_T4 -- alinhe antes de compilar" >&2
+    exit 2
+  fi
+  T4_EXP="${NUVIO_TIZEN4_EXP:-1}"
+  ENV_D=$(printf '%s' "$ENV_D" | sed "s|-DNV_VERSAO=\\\\\"$VER_APP\\\\\"|-DNV_VERSAO=\\\\\"$VER_APP-tizen4-exp.$T4_EXP\\\\\"|")
+  printf '%s' "$ENV_D" | grep -q "tizen4-exp.$T4_EXP" || { echo "tizen.sh: sufixo de versao do Tizen 4 nao entrou" >&2; exit 1; }
+  echo "tizen.sh: versao $VER_APP-tizen4-exp.$T4_EXP"
+fi
 
 # -lidbfs.js NAO E OPCIONAL. Sem ele o objeto IDBFS simplesmente nao existe no
 # JS gerado, FS.mount lanca, e a unica pista e a linha "[dados] IDBFS nao

@@ -419,6 +419,13 @@ void atualizacao_verificar(void) {
   if (disparado) return;
   disparado = 1;
   if (!mtx) mtx = SDL_CreateMutex();
+#ifdef NV_COOP
+  // BUILD TIZEN 4 NAO CONSULTA. releases/latest e sempre a release NORMAL, cujo
+  // .wgt pede Tizen 5.5 e nao instala numa TV de 2018: o cartao mandaria a
+  // pessoa baixar um pacote que a TV recusa. A build experimental sai como
+  // pre-release (native-tizen4-exp.N) e se atualiza a mao.
+  return;
+#endif
   fio = SDL_CreateThread(fioConsulta, "nv-atualizacao", NULL);
   if (fio) SDL_DetachThread(fio);
 }

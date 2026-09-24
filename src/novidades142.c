@@ -4,7 +4,8 @@
 // DA BUILD EXPERIMENTAL: o que ela e, e o que ela NAO faz. Mesmo modulo de
 // proposito — toda a fila de cartoes de app.c ja espera por novidades142_*,
 // e um cartao a mais ali seria mais uma guarda em cada condicao. Magic Remote e
-// diagnostico (os destaques da 1.4.2) nao sao o assunto numa TV de 2018.
+// diagnostico (os destaques da 1.4.2) nao sao o assunto numa TV de 2018/2019
+// (Tizen 4.0 = M56, Tizen 5.0 = M63: o pacote pede 4.0 e instala nos dois).
 //
 // Mesmo painel e mesma gramatica do cartao da 1.4 (novidades1312.c): coluna
 // da esquerda com titulo e uma ilustracao nativa, coluna da direita com os
@@ -302,7 +303,7 @@ static void desenhaFiguraT4(float x, float y, float w, float h, float a, float t
             i == 0 ? ar : PALETA[(i + 1) & 3][0], i == 0 ? ag : PALETA[(i + 1) & 3][1],
             i == 0 ? ab : PALETA[(i + 1) & 3][2], (i == 0 ? 1.0f : 0.55f) * al * a);
   }
-  { TxtLinha l = txt_linha(TXT_CAPTION2, "2018", 190, 198, 214, 255);
+  { TxtLinha l = txt_linha(TXT_CAPTION2, "2018 · 2019", 190, 198, 214, 255);
     txt_desenhar_alpha(l, sx - 118.0f, sy - 70.0f, 0.9f * a); }
 
   gfx_cor((GfxRect){ cx - 110.0f, cy + 98.0f, 44.0f, 20.0f }, 0.22f,
@@ -453,12 +454,12 @@ void novidades142_desenhar(Uint32 agora) {
 
   { float fx = N142_X + N142_PAD;
 #ifdef NV_COOP
-    { TxtLinha t = txt_linha(TXT_CAPTION2, i18n("BUILD EXPERIMENTAL · TIZEN 4"), 155, 166, 185, 255);
+    { TxtLinha t = txt_linha(TXT_CAPTION2, i18n("BUILD EXPERIMENTAL · TIZEN 4 E 5"), 155, 166, 185, 255);
       txt_desenhar_alpha(t, fx, N142_Y + dy + 56.0f, a * 0.92f); }
-    txt_bloco(TXT_TITULO2, i18n("Nuvio para TVs de 2018"), 248, 249, 252,
+    txt_bloco(TXT_TITULO2, i18n("TVs de 2018 e 2019"), 248, 249, 252,
               fx, N142_Y + dy + 88.0f, N142_FIG_W, 58.0f, a, 2);
     txt_bloco(TXT_BODY,
-              i18n("Feita para o navegador das Samsung de 2018, que não roda a versão normal. Funciona, com estes limites."),
+              i18n("Feita para o navegador das Samsung de 2018 e 2019, que não roda a versão normal. Funciona, com estes limites."),
               205, 213, 226, fx, N142_Y + dy + 166.0f, N142_FIG_W, 34.0f, a * 0.98f, 3);
     desenhaFiguraT4(fx, N142_Y + dy + 290.0f, N142_FIG_W, N142_H - 290.0f - N142_PAD,
                     a, fase);
@@ -495,7 +496,7 @@ void novidades142_desenhar(Uint32 agora) {
     gfx_cor((GfxRect){ N142_TXT_X, yFilete, N142_TXT_W, 1.5f }, 0.0f,
             1.0f, 1.0f, 1.0f, 0.08f * a);
     txt_bloco(TXT_BODY,
-              i18n("Ainda não foi testada numa TV de 2018 de verdade. Se algo travar, aperte o botão vermelho do controle e mande a foto do registro no GitHub."),
+              i18n("Ainda não foi testada numa TV de 2018 ou 2019 de verdade. Se algo travar, aperte o botão vermelho do controle e mande a foto do registro no GitHub."),
               214, 219, 230, N142_TXT_X, yFilete + 26.0f, N142_TXT_W, 34.0f, a * 0.98f, 3);
     botao_pilula(bP, rotP, NULL, 1.0f, 1, 0, a);
     if (aberto) ponteiro_alvo(bP.x, bP.y, bP.w, bP.h, ponteiroFoco, NULL, B_DIAGNOSTICO, 0); }

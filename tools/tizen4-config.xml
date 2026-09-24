@@ -2,7 +2,7 @@
 <widget xmlns="http://www.w3.org/ns/widgets"
         xmlns:tizen="http://tizen.org/ns/widgets"
         id="http://nuvio.tv/native-tizen4"
-        version="1.4.2"
+        version="1.4.5"
         viewmodes="maximized">
 
   <!-- VARIANTE EXPERIMENTAL TIZEN 4.0 (TVs 2018, Chromium M56), gerada por
@@ -17,7 +17,7 @@
                      required_version="4.0"/>
   <tizen:profile name="tv"/>
 
-  <name>Nuvio (Tizen 4 experimental)</name>
+  <name>Nuvio (Tizen 4/5 experimental)</name>
   <icon src="icon.png"/>
   <content src="index.html"/>
   <tizen:content-security-policy>
