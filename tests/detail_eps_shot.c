@@ -67,7 +67,32 @@
 #define extras_agenda_data       fx_agenda_data
 #define extras_agenda_status     fx_agenda_status
 
+// --- ESPIAO DO DESFOQUE (#133) ---------------------------------------------
+// gfx_desfocado e trocado so dentro de detail.c: o espiao anota QUAL arte a
+// pagina pediu desfocada e repassa ao modulo real (gfx.c), que gera a copia de
+// verdade no GL — a captura mostra o resultado, o espiao prova a regra.
+#define gfx_desfocado fx_desfocado
+
 #include "../src/detail.c"
+
+#undef gfx_desfocado
+GLuint gfx_desfocado(GLuint src, const char *chave);
+#define FX_DESF_MAX 64
+static char fxDesf[FX_DESF_MAX][160];
+static int  fxDesfN, fxDesfOk;
+GLuint fx_desfocado(GLuint src, const char *chave) {
+  GLuint t = gfx_desfocado(src, chave);
+  int i;
+  if (t) fxDesfOk++;
+  for (i = 0; i < fxDesfN; i++) if (!strcmp(fxDesf[i], chave ? chave : "")) break;
+  if (i == fxDesfN && fxDesfN < FX_DESF_MAX)
+    snprintf(fxDesf[fxDesfN++], sizeof fxDesf[0], "%s", chave ? chave : "");
+  return t;
+}
+static int fxDesfPediu(const char *chave) {
+  for (int i = 0; i < fxDesfN; i++) if (!strcmp(fxDesf[i], chave)) return 1;
+  return 0;
+}
 
 #include "dados.h"
 
@@ -563,6 +588,63 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-17-filme-trailers-en.png", saida);
   gravar(nome);
   trailersLigados = 0;
+
+  // --- 18/19. DESFOCAR NAO ASSISTIDOS (#133). O ajuste existia na tela e na
+  //            conta e NADA o lia: o card saia nitido em toda plataforma. A T2
+  //            ganha um still diferente por episodio (o espiao identifica o
+  //            card pela arte) e fica vista ate o E5, como no passo 8.
+  //            18 = ajuste desligado: nada pedido desfocado, cards nitidos.
+  //            19 = ligado: E1..E5 (vistos, com check) nitidos; do E6 em
+  //                 diante desfocados.
+  { int t2ini = T1_N, k;
+    static char stills[T2_N][64];
+    for (k = 0; k < T2_N; k++) {
+      snprintf(stills[k], sizeof stills[k], "deploy/app/art/ep/%s_1_%02d.jpg",
+               k < 8 ? "00" : "01", k < 8 ? k + 1 : k - 7);
+      snprintf(episodios[t2ini + k].thumb, sizeof episodios[0].thumb, "%s", stills[k]);
+    }
+    cat_definir_episodios(0, episodios, T1_N + T2_N + T3_N);
+    semear(2, T2_N, 5);
+    { char cam[600]; FILE *f;
+      snprintf(cam, sizeof cam, "%s/ajustes.txt", dados_dir());
+      f = fopen(cam, "w"); assert(f);
+      fprintf(f, "idioma 0\nblurUnwatchedEpisodes 1\n"); fclose(f);
+      ajustes_dir(dados_dir()); }
+    assert(!ajustes_desfocar_nao_assistidos());
+    fxDesfN = fxDesfOk = 0;
+    abrir(0, 1);
+    nosEpisodios(4);
+    snprintf(nome, sizeof nome, "%s-18-t2-desfoque-desligado.png", saida);
+    gravar(nome);
+    assert(fxDesfN == 0);
+
+    { char cam[600]; FILE *f;
+      snprintf(cam, sizeof cam, "%s/ajustes.txt", dados_dir());
+      f = fopen(cam, "w"); assert(f);
+      fprintf(f, "idioma 0\nblurUnwatchedEpisodes 0\n"); fclose(f);
+      ajustes_dir(dados_dir()); }
+    assert(ajustes_desfocar_nao_assistidos());
+    fxDesfN = fxDesfOk = 0;
+    abrir(0, 1);
+    nosEpisodios(4);
+    snprintf(nome, sizeof nome, "%s-19-t2-desfoque-nao-assistidos.png", saida);
+    gravar(nome);
+    // Vistos: nunca pedidos desfocados.
+    for (k = 0; k < 5; k++)
+      if (fxDesfPediu(stills[k])) {
+        printf("FALHA: E%d visto foi desfocado\n", k + 1);
+        return 1;
+      }
+    // Nao vistos na tela (o foco no E5 deixa E6 e E7 a direita): desfocados.
+    if (!fxDesfPediu(stills[5]) || !fxDesfPediu(stills[6])) {
+      printf("FALHA: E6/E7 nao vistos sairam nitidos (%d artes pedidas)\n", fxDesfN);
+      return 1;
+    }
+    // E a copia existe de fato no GL, nao so o pedido.
+    if (fxDesfOk == 0) { printf("FALHA: gfx_desfocado nunca devolveu textura\n"); return 1; }
+    printf("desfoque: %d artes desfocadas, %d desenhos com a copia pronta\n",
+           fxDesfN, fxDesfOk);
+  }
 
   SDL_GL_DeleteContext(gl);
   SDL_DestroyWindow(janela);

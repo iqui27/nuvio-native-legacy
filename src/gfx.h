@@ -251,6 +251,18 @@ int  gfx_borrao_iniciar(int w, int h);
 void gfx_borrao_gerar(int via, unsigned int tex, float texAspecto);
 void gfx_borrao_desenhar(int via, GfxRect r, float alpha);
 void gfx_borrao_encerrar(void);
+// Copia DESFOCADA e pequena (96x54) de uma textura de arte, para o ajuste
+// "Desfocar nao assistidos" (#133). Gerada na primeira chamada e guardada; as
+// seguintes devolvem a mesma textura. `chave` e o caminho da arte, e com o
+// nome GL identifica a copia (o nome sozinho volta de glGenTextures com outra
+// imagem depois de um despejo). Desenhe como qualquer arte, por GFX_CARD e
+// com gfx_tex_aspect_atual = tex_aspecto(caminho): a copia guarda a imagem
+// INTEIRA e ja sai de pe.
+//
+// Devolve 0 enquanto nao ha copia (limite de geracoes por quadro, ou alvo de
+// render indisponivel). Nesse caso NAO desenhe a arte nitida no lugar — o
+// ajuste existe para esconder o spoiler; pinte o fundo do card.
+GLuint gfx_desfocado(GLuint src, const char *chave);
 void gfx_snap_comecar(void);   // redireciona o desenho para o snapshot
 void gfx_snap_terminar(void);  // volta para a tela
 void gfx_snap_desenhar(void);  // pinta o snapshot ocupando a tela toda

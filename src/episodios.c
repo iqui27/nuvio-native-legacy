@@ -312,6 +312,14 @@ static void menuDesenhar(float x, float larg, float anim) {
     // inteira, em vez de deixar um buraco do tamanho da imagem que nao veio.
     { float tx=m.x+PAD, tw=mw-PAD*2.0f;
       GLuint th=vmThumb[0]?tex_obter_larg(vmThumb,TH_W):0;
+      // O cabecalho do menu mostra o still do MESMO episodio: desfocado pela
+      // mesma regra da lista (#133), senao o menu entregava o que ela esconde.
+      // Sem copia pronta ainda, o texto ocupa a linha por um quadro.
+      if (th && !vmModoTemp && ajustes_desfocar_nao_assistidos()) {
+        const CatItem *cv = cat_item(vmIdx);
+        if (!(cv && vistoep_estado(cv->imdb, vmT, vmE) == 1))
+          th = gfx_desfocado(th, vmThumb);
+      }
       if (th) {
         GfxRect r={m.x+PAD,m.y+PAD,TH_W,TH_H};
         gfx_tex_aspect_atual=tex_aspecto(vmThumb);
@@ -691,6 +699,13 @@ void episodios_desenhar(void) {
     }
     GfxRect tr={x+54,y+14,184,130};
     gfx_cor(tr,.10f,sel?.16f:.145f,sel?.17f:.15f,sel?.20f:.17f,anim);
+    // DESFOCAR NAO ASSISTIDOS (#133), com a mesma regra do card do detalhe:
+    // so o que o mapa afirma como visto fica nitido — e o que esta tocando
+    // agora, que a pessoa ja esta vendo. Sem copia pronta, fica o fundo.
+    if(tex&&ajustes_desfocar_nao_assistidos()&&
+       !(ep->temporada==atualT&&ep->episodio==atualE)&&
+       !(ci&&vistoep_estado(ci->imdb,ep->temporada,ep->episodio)==1))
+      tex=gfx_desfocado(tex,arte);
     if(tex){gfx_tex_aspect_atual=tex_aspecto(arte);gfx_rect(tr,tex,GFX_CARD,0,0,0,.10f,0,0,0,anim);gfx_tex_aspect_atual=0;}
     char num[40];snprintf(num,sizeof num,i18n("T%dE%d"),ep->temporada,ep->episodio);
     gfx_cor((GfxRect){tr.x+8,tr.y+92,72,30},.15f,
