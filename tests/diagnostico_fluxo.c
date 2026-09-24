@@ -159,6 +159,23 @@ int main(void) {
   assert(d.sugEstado == DS_MANTIDA && ajustes_hero_fonte() == 0 && !ajustes_hero_arte_diferente());
   puts("ok  sugestao do destaque: pior desfaz, melhor mantem");
 
+  // 10. POR PEDIDO NO RELATORIO: o caso da C9 (24/09) — duas artes da Apple
+  // de ~1,4 s e um prazo estourado de 6 s. A soma (8718) continua em
+  // download_ms; a media dos que deram certo e o pior pedido vem a parte.
+  reset(DIAG_QUALIDADE);
+  memset(d.fonte, 0, sizeof d.fonte);
+  d.fonte[PTV_FONTE_APPLE].ok = 2;
+  d.fonte[PTV_FONTE_APPLE].falhas = 1;
+  d.fonte[PTV_FONTE_APPLE].downloadMs = 8718;
+  d.fonte[PTV_FONTE_APPLE].downloadOkMs = 2718;
+  d.fonte[PTV_FONTE_APPLE].downloadPiorMs = 6000;
+  montarRelatorio();
+  assert(strstr(d.relatorio, "arte_fonte=apple|ok=2|falhas=1|resolve_ms=0|download_ms=8718|"));
+  assert(strstr(d.relatorio, "|download_medio_ms=1359|download_pior_ms=6000\narte_fonte=fanart"));
+  assert(strstr(d.relatorio, "arte_fonte=fanart|ok=0|falhas=0|") &&
+         strstr(strstr(d.relatorio, "arte_fonte=fanart"), "download_medio_ms=-1|download_pior_ms=0\n"));
+  puts("ok  relatorio: media e pior pedido por fonte, alem da soma");
+
   tex_encerrar();
   { char cmd[128]; snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir); if (system(cmd)) {} }
   return 0;

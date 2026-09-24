@@ -438,11 +438,13 @@ static void medirFontesDeArte(void) {
                        d.realUrl[t][f], sizeof d.realUrl[t][f], &d.hashArte[t][f])) {
         s->ok++;
         s->bytes += b;
+        s->downloadOkMs += dMs;
         d.bytesArte[t][f] = b;
         if (w > 0) { s->largura = w; s->altura = h; }
       } else s->falhas++;
       s->resolveMs += rMs;
       s->downloadMs += dMs;
+      if (dMs > s->downloadPiorMs) s->downloadPiorMs = dMs;
       d.fontesMs += rMs + dMs;
       atomic_fetch_add(&d.feitos, 1);
     }
@@ -833,9 +835,14 @@ static void montarRelatorio(void) {
     // `iguais` = em quantos titulos a arte foi a mesma do card; o logo nao e
     // fundo e fica sempre 0. Fonte nao medida (sem chave, nao e anime, sem
     // ano para a Apple) sai com ok=0 e falhas=0.
-    ACRESCENTA("arte_fonte=%s|ok=%d|falhas=%d|resolve_ms=%d|download_ms=%d|bytes=%ld|largura=%d|altura=%d|iguais=%d|igual_ao_card=%d\n",
+    // download_ms continua sendo a SOMA (o agregador e os relatorios antigos
+    // leem assim); download_medio_ms (so os que deram certo) e
+    // download_pior_ms (um pedido) vao no fim, para um prazo estourado nao se
+    // esconder na soma. -1 = nenhum download deu certo.
+    ACRESCENTA("arte_fonte=%s|ok=%d|falhas=%d|resolve_ms=%d|download_ms=%d|bytes=%ld|largura=%d|altura=%d|iguais=%d|igual_ao_card=%d|download_medio_ms=%d|download_pior_ms=%d\n",
                ptv_fonte_nome(i), f->ok, f->falhas, f->resolveMs, f->downloadMs,
-               f->bytes, f->largura, f->altura, f->iguais, f->iguais > 0);
+               f->bytes, f->largura, f->altura, f->iguais, f->iguais > 0,
+               f->ok > 0 ? f->downloadOkMs / f->ok : -1, f->downloadPiorMs);
   }
   if (d.sugEstado == DS_PROPOSTA)
     ACRESCENTA("sugestao_destaque=alvo:%s|diferente:%d|lenta:%s|ms_lenta=%d|base:%s|ms_base=%d|motivo:%s\n",

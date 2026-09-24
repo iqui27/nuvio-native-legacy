@@ -112,6 +112,13 @@ typedef struct {
   // ou mesmos bytes). Qualquer um > 0 e `igual_ao_card=1` no relatorio: com
   // "outra arte" ligado ela nao e outra arte e nunca e sugerida.
   int iguais;
+  // POR PEDIDO, e nao a soma (24/09/2026): downloadMs soma TODAS as
+  // tentativas, e um unico prazo estourado (6 s) somado a duas artes de 300 ms
+  // parecia "a fonte ficou 20x mais lenta" (8718 ms no relatorio da C9).
+  // downloadOkMs soma so os downloads que deram certo (media = /ok) e
+  // downloadPiorMs e o pior pedido sozinho, com ou sem sucesso.
+  int downloadOkMs;
+  int downloadPiorMs;
 } PtvFonte;
 
 // Nome curto para o relatorio ("catalog", "metahub", "tmdb", "trakt",

@@ -15,6 +15,7 @@ static _Thread_local volatile int *redeCancelLocal;
 static _Thread_local int redeLimitouLocal;
 static _Thread_local int redeCancelouLocal;
 static _Thread_local long redeBytesLocal;
+static unsigned long redeAgoraMs(void);
 
 static long redeLimiteAtual(void) {
   if (redeLimiteLocal > 0) return redeLimiteLocal;
@@ -369,6 +370,21 @@ static _Thread_local unsigned redeFinalTam;
 #define OPT_HEADERDATA      10029
 // CURLOPT_MAXCONNECTS: tamanho do cache de conexoes do handle. Ver pegarHandle.
 #define OPT_MAXCONNECTS        71
+// Prazos em milissegundos (7.16.2+), para a segunda tentativa caber no que
+// sobrou do prazo do pedido. Ver rede_baixar_interno2.
+#define OPT_TIMEOUT_MS        155
+#define OPT_CONNECTTIMEOUT_MS 156
+// Vigia de progresso (7.32+): NOPROGRESS=0 liga o XFERINFOFUNCTION.
+#define OPT_NOPROGRESS         43
+#define OPT_XFERINFOFUNCTION 20219
+#define OPT_XFERINFODATA     10057
+// Keepalive de TCP (7.25+) nas conexoes guardadas no cache do handle.
+#define OPT_TCP_KEEPALIVE     213
+#define OPT_TCP_KEEPIDLE      214
+#define OPT_TCP_KEEPINTVL     215
+// CURLINFO_NUM_CONNECTS = CURLINFO_LONG + 26: 0 = o pedido foi por conexao
+// REUSADA. So para o log de falha.
+#define INFO_NUM_CONNECTS  2097178
 
 // Ouvinte unico dos 401 — ver rede_avisar_401 no cabecalho. (O ramo
 // Emscripten tem a sua propria definicao, porque os dois lados do #ifdef
@@ -417,11 +433,84 @@ static void handleCriarChave(void) { pthread_key_create(&handleChave, handleSolt
 // sao 4 fios de arte na LG (40 sockets ociosos no pior caso, alguns KB de
 // estado TLS cada), e o servidor fecha o que ficar parado.
 #define REDE_CONEXOES_POR_FIO 10L
-static void *pegarHandle(void) {
+
+// CONEXAO OCIOSA DEMAIS NAO E REUSADA (24/09/2026).
+//
+// Uma conexao guardada no cache pode morrer SEM AVISO: o NAT do roteador
+// esquece a entrada, o servidor some, o Wi-Fi da TV troca de canal. Sem FIN
+// nem RST a libcurl nao tem como saber — a checagem dela e "o socket ficou
+// legivel?" — e manda o pedido por ela. Ninguem responde, e o pedido espera o
+// prazo INTEIRO (curl 28). tests/rede_parada.sh reproduz: 4 s de prazo, 4 s
+// de espera, NULL.
+//
+// MEDIDO na C9 com o curl da propria TV (mesma libcurl 7.53.1), mzstatic
+// reusado depois de 1, 20, 45, 90, 150 e 300 s parado: conexao reusada
+// (num_connects=0) e 30-40 ms em todos. Ou seja, NESTA rede isto nao explica
+// o curl 28 da arte da Apple; e defesa barata para as outras (e para a C9 com
+// outro roteador). O limite e por HOST, e nao pelo handle: um fio de arte
+// fala com o TMDB o tempo todo e com o mzstatic de vez em quando, e a
+// conexao do mzstatic envelhece enquanto o handle nao para de ser usado.
+// Host velho descarta o HANDLE inteiro (a libcurl 7.53 nao tem
+// CURLOPT_MAXAGE_CONN, e FRESH_CONNECT deixaria a velha no cache para o
+// pedido seguinte escolher). Custa um handshake por host depois de uma pausa;
+// rajada de arte, que e onde o reuso rende, nunca para tanto.
+// NUVIO_REDE_OCIOSO_MS muda o limite (0 = sem limite, como antes).
+#define REDE_OCIOSO_PADRAO_MS 20000UL
+static unsigned long ociosoMaxMs = REDE_OCIOSO_PADRAO_MS;
+#define REDE_HOSTS_POR_FIO 16
+typedef struct { char h[96]; unsigned long ms; } UsoHost;
+static _Thread_local UsoHost usoHost[REDE_HOSTS_POR_FIO];
+
+// "https://a.b:443" de "https://a.b:443/x?y". Sem esquema = vazio.
+static void hostDaUrl(const char *u, char *h, size_t n) {
+  const char *p = u ? strstr(u, "://") : NULL;
+  size_t k;
+  h[0] = 0;
+  if (!p || n == 0) return;
+  p += 3;
+  k = (size_t)(p - u) + strcspn(p, "/?#");
+  if (k >= n) k = n - 1;
+  memcpy(h, u, k);
+  h[k] = 0;
+}
+static void hostsEsquecer(void) { memset(usoHost, 0, sizeof usoHost); }
+static void hostUsado(const char *url, unsigned long agora) {
+  char h[96];
+  int i, velho = 0;
+  hostDaUrl(url, h, sizeof h);
+  if (!h[0]) return;
+  for (i = 0; i < REDE_HOSTS_POR_FIO; i++) {
+    if (!strcmp(usoHost[i].h, h)) { usoHost[i].ms = agora; return; }
+    if (usoHost[i].ms < usoHost[velho].ms) velho = i;
+  }
+  snprintf(usoHost[velho].h, sizeof usoHost[velho].h, "%s", h);
+  usoHost[velho].ms = agora;
+}
+// 1 = o fio ja falou com este host e a conexao guardada esta parada ha mais
+// que o limite.
+static int hostOcioso(const char *url, unsigned long agora) {
+  char h[96];
+  int i;
+  if (!ociosoMaxMs) return 0;
+  hostDaUrl(url, h, sizeof h);
+  if (!h[0]) return 0;
+  for (i = 0; i < REDE_HOSTS_POR_FIO; i++)
+    if (usoHost[i].ms && !strcmp(usoHost[i].h, h))
+      return agora - usoHost[i].ms > ociosoMaxMs;
+  return 0;
+}
+
+static void *pegarHandle(const char *url) {
   void *c;
   if (!curl_reset) return curl_init();     // libcurl sem reset: como antes
   pthread_once(&handleUma, handleCriarChave);
   c = pthread_getspecific(handleChave);
+  if (c && hostOcioso(url, redeAgoraMs())) {
+    curl_cleanup(c);
+    pthread_setspecific(handleChave, NULL);
+    hostsEsquecer();
+    c = NULL;
+  }
   if (c) curl_reset(c);
   else {
     c = curl_init();
@@ -431,18 +520,105 @@ static void *pegarHandle(void) {
   if (c) curl_setopt(c, OPT_MAXCONNECTS, REDE_CONEXOES_POR_FIO);
   return c;
 }
-// Devolve o handle ao fio. So destroi de verdade quando nao ha reuso.
-static void soltarHandle(void *c) { if (!curl_reset) curl_cleanup(c); }
 // DEVOLVE SO CONEXAO LIMPA (23/09/2026). Transferencia que nao terminou bem —
 // erro, prazo estourado, ou o CORTE DE PROPOSITO do teto/Range (curl 23) —
 // descarta o handle inteiro, e com ele a conexao: na C9 apareceram cartoes com
 // a arte de OUTRO titulo com o reuso ligado, e sumiram com ele desligado. A
 // suspeita e a libcurl 7.53.1 da TV devolvendo ao cache uma conexao com resto
 // da resposta abortada, que sai no pedido seguinte. Download completo segue
-// reaproveitado (e o ganho de 0,5-0,8 s por imagem).
-static void soltarHandleR(void *c, int r) {
+// reaproveitado (e o ganho de 0,5-0,8 s por imagem). Conexao que fica anota o
+// host (e o do fim dos redirecionamentos) para o limite de ociosidade.
+static void soltarHandleR(void *c, int r, const char *url) {
   if (!curl_reset) { curl_cleanup(c); return; }
-  if (r != 0) { curl_cleanup(c); pthread_setspecific(handleChave, NULL); }
+  if (r != 0) {
+    curl_cleanup(c);
+    pthread_setspecific(handleChave, NULL);
+    hostsEsquecer();
+    return;
+  }
+  { unsigned long agora = redeAgoraMs();
+    char *fim = NULL;
+    hostUsado(url, agora);
+    if (curl_getinfo && !curl_getinfo(c, INFO_URL_FINAL, &fim) && fim) hostUsado(fim, agora); }
+}
+
+// OPCOES DE TODO PEDIDO, com o prazo em ms.
+//
+// CONNECTTIMEOUT: DNS + TCP + TLS numa conexao nova levam 0,14-0,7 s na C9
+// (curl da TV, mzstatic). O padrao da libcurl e esperar ate o prazo inteiro, e
+// a resolucao e c-ares (curl -V da TV: AsynchDNS, c-ares 1.12; resolv.conf
+// aponta para o 127.0.0.1 do connman), que pelo padrao dele so reenvia uma
+// consulta sem resposta depois de 5 s — com prazo de 6 s, uma consulta perdida
+// seria curl 28 (padrao do c-ares, NAO medido na TV). Metade do prazo, entre
+// 2 e 5 s, deixa o resto para a segunda tentativa (rede_baixar_interno2).
+// KEEPALIVE: sonda a conexao parada no cache a cada 15 s, o que mantem viva a
+// entrada do NAT e faz a morta dar erro no socket (a libcurl a descarta sem
+// tentar mandar nada por ela).
+static unsigned long conexaoMs(unsigned long prazoMs) {
+  unsigned long m = prazoMs / 2;
+  if (m < 2000) m = 2000;
+  if (m > 5000) m = 5000;
+  return m < prazoMs ? m : prazoMs;
+}
+static void opcoesComuns(void *c, unsigned long prazoMs) {
+  curl_setopt(c, OPT_TIMEOUT_MS, (long)prazoMs);
+  curl_setopt(c, OPT_CONNECTTIMEOUT_MS, (long)conexaoMs(prazoMs));
+  // O app roda com fios; sem NOSIGNAL a libcurl usa alarmes para o timeout de
+  // DNS e pode derrubar o processo inteiro a partir de um fio secundario.
+  curl_setopt(c, OPT_NOSIGNAL, (long)1);
+  curl_setopt(c, OPT_TCP_KEEPALIVE, (long)1);
+  curl_setopt(c, OPT_TCP_KEEPIDLE, (long)15);
+  curl_setopt(c, OPT_TCP_KEEPINTVL, (long)5);
+  // Os addons sao servidos por hosts com cadeias que este aparelho de 2019 nao
+  // conhece; o pacote de CAs dele e de fabrica e nao se atualiza. Verificar
+  // recusaria fontes legitimas do dono. O conteudo e midia publica e a escolha
+  // esta escrita aqui de proposito.
+  curl_setopt(c, OPT_SSL_VERIFYPEER, (long)0);
+  curl_setopt(c, OPT_SSL_VERIFYHOST, (long)0);
+  curl_setopt(c, OPT_USERAGENT, "Nuvio/1.0 (webOS)");
+}
+
+// VIGIA DE PROGRESSO. A libcurl chama isto ao menos uma vez por segundo
+// durante a transferencia, chegue byte ou nao.
+//  - CORPO PARADO: a resposta comecou e nenhum byte novo chegou em `paradoMs`
+//    — conexao morta no meio do corpo. Sem isto o pedido esperava o prazo
+//    inteiro; com isto aborta (curl 42) e rede_baixar_interno2 repete em
+//    conexao nova com o que sobrou do prazo. So conta DEPOIS do primeiro byte
+//    do corpo: antes dele o servidor pode estar so pensando (catalogo de addon
+//    leva segundos para montar).
+//  - CANCELAMENTO: o recebedor so via o cancelamento quando chegava byte; uma
+//    conexao parada nao cancelava nunca.
+typedef struct {
+  unsigned long ultimoMs, paradoMs;
+  long long visto;
+  int parou;
+} Vigia;
+static int vigiar(void *u, long long dlTotal, long long dlAgora,
+                  long long ulTotal, long long ulAgora) {
+  Vigia *v = (Vigia *)u;
+  unsigned long agora = redeAgoraMs();
+  (void)dlTotal; (void)ulTotal; (void)ulAgora;
+  if (redeCancelLocal && *redeCancelLocal) { redeCancelouLocal = 1; return 1; }
+  if (dlAgora > v->visto) { v->visto = dlAgora; v->ultimoMs = agora; return 0; }
+  if (v->visto > 0 && v->paradoMs && agora - v->ultimoMs > v->paradoMs) {
+    v->parou = 1;
+    return 1;
+  }
+  return 0;
+}
+static unsigned long paradoMsDe(unsigned long prazoMs) {
+  unsigned long m = prazoMs / 3;
+  if (m < 2000) m = 2000;
+  if (m > 8000) m = 8000;
+  return m;
+}
+static void ligarVigia(void *c, Vigia *v, unsigned long prazoMs) {
+  memset(v, 0, sizeof *v);
+  v->paradoMs = paradoMsDe(prazoMs);
+  v->ultimoMs = redeAgoraMs();
+  curl_setopt(c, OPT_XFERINFOFUNCTION, vigiar);
+  curl_setopt(c, OPT_XFERINFODATA, v);
+  curl_setopt(c, OPT_NOPROGRESS, (long)0);
 }
 
 typedef struct { char *p; size_t n; } Balde;
@@ -633,6 +809,8 @@ static int abrir(void) {
   // NUVIO_REDE_REUSO=0 desliga de vez, para comparar numa TV com problema.
   { const char *r = getenv("NUVIO_REDE_REUSO");
     if (!(r && r[0] == '0')) *(void **)(&curl_reset) = dlsym(h, "curl_easy_reset"); }
+  { const char *o = getenv("NUVIO_REDE_OCIOSO_MS");
+    if (o && *o) ociosoMaxMs = strtoul(o, NULL, 10); }
   if (!curl_init || !curl_setopt || !curl_perform) {
     printf("[rede] libcurl sem os simbolos esperados\n");
     pronto = -1;
@@ -728,50 +906,82 @@ static char *rede_baixar_interno(const char *url, int segundos, long *tam,
   return rede_baixar_interno2(url, segundos, tam, cab, NULL, NULL, 0);
 }
 
+// SEGUNDA TENTATIVA EM CONEXAO NOVA (24/09/2026), so para falha de TRANSPORTE
+// que nao trouxe nada — e so se sobrou prazo. Conexao que nao abriu a tempo
+// (CONNECTTIMEOUT, ver opcoesComuns), recusada, TLS que caiu no meio, conexao
+// reusada que morreu sem resposta, e o corpo que parou (vigia). O que JA custou
+// o prazo inteiro nao repete: o prazo e do pedido, nao de cada tentativa, e
+// quem chama continua sabendo quanto vai esperar no maximo. Corte de proposito
+// (teto, curl 23), cancelamento e resposta HTTP de erro nunca repetem.
+static int valeRepetir(int r, const Vigia *v, size_t bytes) {
+  if (redeCancelouLocal) return 0;
+  if (r == 42) return v->parou;            // vigia: corpo parado
+  if (bytes > 0) return 0;
+  return r == 7 || r == 28 || r == 35 || r == 52 || r == 55 || r == 56;
+}
+
 static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
                                   const char *const *cab, int *status,
                                   char *etag, unsigned tamEtag) {
   Balde b = { NULL, 0 };
   CacaCab caca;
+  Vigia vigia;
   void *c, *lista = NULL;
-  int r;
+  int r = 0, tentativa, reusada = 0;
+  unsigned long inicio, prazoMs, gasto = 0;
   caca.dst = (etag && tamEtag > 1) ? etag : NULL;
   caca.tam = tamEtag;
   if (etag && tamEtag) etag[0] = 0;
   if (status) *status = 0;
   if (!url || !*url || !abrir()) return NULL;
-  c = pegarHandle();
-  if (!c) return NULL;
-  curl_setopt(c, OPT_URL, url);
-  // SO QUANDO ALGUEM PEDIU. O handle e reusado por fio (pegarHandle) e
-  // curl_easy_reset limpa as opcoes entre pedidos, entao deixar o recebedor
-  // instalado aqui nao respinga no pedido seguinte do mesmo fio — mas tambem
-  // nao ha por que pagar uma chamada por cabecalho em todo download de imagem.
-  if (caca.dst) {
-    curl_setopt(c, OPT_HEADERFUNCTION, receberCab);
-    curl_setopt(c, OPT_HEADERDATA, &caca);
+  inicio = redeAgoraMs();
+  prazoMs = (unsigned long)(segundos > 0 ? segundos : 30) * 1000UL;
+  for (tentativa = 0; ; tentativa++) {
+    unsigned long resta = prazoMs - gasto;
+    c = pegarHandle(url);
+    if (!c) return NULL;
+    curl_setopt(c, OPT_URL, url);
+    // SO QUANDO ALGUEM PEDIU. O handle e reusado por fio (pegarHandle) e
+    // curl_easy_reset limpa as opcoes entre pedidos, entao deixar o recebedor
+    // instalado aqui nao respinga no pedido seguinte do mesmo fio — mas tambem
+    // nao ha por que pagar uma chamada por cabecalho em todo download de imagem.
+    if (caca.dst) {
+      curl_setopt(c, OPT_HEADERFUNCTION, receberCab);
+      curl_setopt(c, OPT_HEADERDATA, &caca);
+    }
+    curl_setopt(c, OPT_WRITEFUNCTION, receber);
+    curl_setopt(c, OPT_WRITEDATA, &b);
+    curl_setopt(c, OPT_FOLLOWLOCATION, (long)1);
+    opcoesComuns(c, resta);
+    ligarVigia(c, &vigia, prazoMs);
+    curl_setopt(c, OPT_ACCEPT_ENCODING, "");   // "" = todas as que a lib suporta
+    if (cab && slist_append) {
+      int k;
+      for (k = 0; cab[k]; k++) lista = slist_append(lista, cab[k]);
+      if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
+    }
+    r = curl_perform(c);
+    { long novas = -1;
+      if (curl_getinfo) curl_getinfo(c, INFO_NUM_CONNECTS, &novas);
+      reusada = novas == 0; }
+    gasto = redeAgoraMs() - inicio;
+    if (tentativa == 0 && r != 0 && valeRepetir(r, &vigia, b.n) &&
+        gasto + 1000 < prazoMs) {
+      char seg[120];
+      printf("[rede] curl %d em %s (conexao %s, %ld bytes, %lu ms): de novo em conexao nova\n",
+             r, rede_url_publica(url, seg, sizeof seg), reusada ? "reusada" : "nova",
+             (long)b.n, gasto);
+      fflush(stdout);
+      if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); lista = NULL; }
+      soltarHandleR(c, r, url);            // r != 0: descarta o handle
+      free(b.p);
+      b.p = NULL; b.n = 0;
+      if (etag && tamEtag) etag[0] = 0;
+      continue;
+    }
+    break;
   }
-  curl_setopt(c, OPT_WRITEFUNCTION, receber);
-  curl_setopt(c, OPT_WRITEDATA, &b);
-  curl_setopt(c, OPT_FOLLOWLOCATION, (long)1);
-  curl_setopt(c, OPT_TIMEOUT, (long)(segundos > 0 ? segundos : 30));
-  // O app roda com fios; sem NOSIGNAL a libcurl usa alarmes para o timeout de
-  // DNS e pode derrubar o processo inteiro a partir de um fio secundario.
-  curl_setopt(c, OPT_NOSIGNAL, (long)1);
-  // Os addons sao servidos por hosts com cadeias que este aparelho de 2019 nao
-  // conhece; o pacote de CAs dele e de fabrica e nao se atualiza. Verificar
-  // recusaria fontes legitimas do dono. O conteudo e midia publica e a escolha
-  // esta escrita aqui de proposito.
-  curl_setopt(c, OPT_SSL_VERIFYPEER, (long)0);
-  curl_setopt(c, OPT_SSL_VERIFYHOST, (long)0);
-  curl_setopt(c, OPT_USERAGENT, "Nuvio/1.0 (webOS)");
-  curl_setopt(c, OPT_ACCEPT_ENCODING, "");   // "" = todas as que a lib suporta
-  if (cab && slist_append) {
-    int k;
-    for (k = 0; cab[k]; k++) lista = slist_append(lista, cab[k]);
-    if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
-  }
-  r = curl_perform(c);
+  if (r == 42 && vigia.parou) r = 28;      // para quem chama, e prazo
   redeCurlLocal = r;
   if (redeFinalDst && redeFinalTam && curl_getinfo) {
     char *fim = NULL;
@@ -799,7 +1009,7 @@ static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
     if (http == 401 && aviso401) aviso401(url);
     if (!r && http >= 400 && !status) {
       if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
-      soltarHandleR(c, r);
+      soltarHandleR(c, r, url);
       free(b.p);
       { char seg[120];
         printf("[rede] HTTP %ld em %s\n", http, rede_url_publica(url, seg, sizeof seg)); }
@@ -807,7 +1017,7 @@ static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
       return NULL;
     } }
   if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
-  soltarHandleR(c, r);
+  soltarHandleR(c, r, url);
   // 23 = CURLE_WRITE_ERROR. Quando ha teto, ele e o resultado ESPERADO: o
   // recebedor devolve menos bytes de proposito para cortar a conexao assim que
   // enche. Nesse caso o que ja veio e exatamente o que se queria — tratar como
@@ -817,8 +1027,15 @@ static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
     return NULL;
   }
   if (r == 23 && redeLimiteAtual() > 0 && b.n > 0) r = 0;
+  // O RESTO DA HISTORIA no log: por qual conexao foi, quanto veio e quanto
+  // esperou. "falha 28" sozinho nao separa conexao morta (reusada, 0 bytes),
+  // rede lenta (bytes > 0, prazo inteiro) e DNS/conexao que nao abriu (nova,
+  // 0 bytes). O comeco da linha fica igual para quem ja procura por ele.
   if (r != 0) { char seg[120]; free(b.p);
-    printf("[rede] falha %d em %s\n", r, rede_url_publica(url, seg, sizeof seg));
+    printf("[rede] falha %d em %s (conexao %s, %ld bytes, %lu ms%s)\n", r,
+           rede_url_publica(url, seg, sizeof seg), reusada ? "reusada" : "nova",
+           (long)b.n, gasto, tentativa ? ", 2a tentativa" : "");
+    fflush(stdout);
     return NULL; }
   redeBytesLocal = (long)b.n;
   if (tam) *tam = (long)b.n;
@@ -831,17 +1048,13 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
   char *fim = NULL;
   int r;
   if (!url || !*url || !abrir() || !curl_getinfo) return 0;
-  c = pegarHandle();
+  c = pegarHandle(url);
   if (!c) return 0;
   curl_setopt(c, OPT_URL, url);
   curl_setopt(c, OPT_WRITEFUNCTION, receber);
   curl_setopt(c, OPT_WRITEDATA, &b);
   curl_setopt(c, OPT_FOLLOWLOCATION, (long)1);
-  curl_setopt(c, OPT_TIMEOUT, (long)(segundos > 0 ? segundos : 20));
-  curl_setopt(c, OPT_NOSIGNAL, (long)1);
-  curl_setopt(c, OPT_SSL_VERIFYPEER, (long)0);
-  curl_setopt(c, OPT_SSL_VERIFYHOST, (long)0);
-  curl_setopt(c, OPT_USERAGENT, "Nuvio/1.0 (webOS)");
+  opcoesComuns(c, (unsigned long)(segundos > 0 ? segundos : 20) * 1000UL);
   // Um pedaco minusculo em vez de HEAD: varios servidores de debrid respondem
   // HEAD com 405 ou mentem no redirecionamento, mas honram Range.
   curl_setopt(c, OPT_RANGE, "0-64");
@@ -861,7 +1074,7 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
            rede_url_publica(url, seg, sizeof seg));
     fflush(stdout);
   }
-  soltarHandleR(c, r);
+  soltarHandleR(c, r, url);
   free(b.p);
   return (!r && fim) ? 1 : 0;
 }
@@ -880,16 +1093,12 @@ char *rede_apagar(const char *url, int segundos, const char *const *cab,
   int r;
   if (status) *status = 0;
   if (!url || !*url || !abrir()) return NULL;
-  c = pegarHandle();
+  c = pegarHandle(url);
   if (!c) return NULL;
   curl_setopt(c, OPT_URL, url);
   curl_setopt(c, OPT_WRITEFUNCTION, receber);
   curl_setopt(c, OPT_WRITEDATA, &b);
-  curl_setopt(c, OPT_TIMEOUT, (long)(segundos > 0 ? segundos : 20));
-  curl_setopt(c, OPT_NOSIGNAL, (long)1);
-  curl_setopt(c, OPT_SSL_VERIFYPEER, (long)0);
-  curl_setopt(c, OPT_SSL_VERIFYHOST, (long)0);
-  curl_setopt(c, OPT_USERAGENT, "Nuvio/1.0 (webOS)");
+  opcoesComuns(c, (unsigned long)(segundos > 0 ? segundos : 20) * 1000UL);
   curl_setopt(c, OPT_CUSTOMREQUEST, "DELETE");
   if (slist_append) {
     int k;
@@ -902,7 +1111,7 @@ char *rede_apagar(const char *url, int segundos, const char *const *cab,
     if (status) *status = (int)h;
     if (h == 401 && aviso401) aviso401(url); }
   if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
-  soltarHandleR(c, r);
+  soltarHandleR(c, r, url);
   if (r != 0) { free(b.p); return NULL; }
   // 204 sem corpo e a resposta NORMAL de um DELETE aceito: devolver NULL ali
   // faria o chamador ler sucesso como falha de transporte.
@@ -917,16 +1126,12 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cab,
   int r;
   if (status) *status = 0;
   if (!url || !*url || !abrir()) return NULL;
-  c = pegarHandle();
+  c = pegarHandle(url);
   if (!c) return NULL;
   curl_setopt(c, OPT_URL, url);
   curl_setopt(c, OPT_WRITEFUNCTION, receber);
   curl_setopt(c, OPT_WRITEDATA, &b);
-  curl_setopt(c, OPT_TIMEOUT, (long)(segundos > 0 ? segundos : 20));
-  curl_setopt(c, OPT_NOSIGNAL, (long)1);
-  curl_setopt(c, OPT_SSL_VERIFYPEER, (long)0);
-  curl_setopt(c, OPT_SSL_VERIFYHOST, (long)0);
-  curl_setopt(c, OPT_USERAGENT, "Nuvio/1.0 (webOS)");
+  opcoesComuns(c, (unsigned long)(segundos > 0 ? segundos : 20) * 1000UL);
   curl_setopt(c, OPT_POST, (long)1);
   curl_setopt(c, OPT_POSTFIELDS, corpo ? corpo : "");
   if (slist_append) {
@@ -946,7 +1151,7 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cab,
     if (status) *status = (int)codigo;
     if (codigo == 401 && aviso401) aviso401(url); }
   if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
-  soltarHandleR(c, r);
+  soltarHandleR(c, r, url);
   // Falha de TRANSPORTE (r != 0) continua sendo NULL — ai nao houve resposta
   // nenhuma. O corpo de um 4xx, ao contrario, e devolvido: e nele que o
   // PostgREST explica o que faltou.
