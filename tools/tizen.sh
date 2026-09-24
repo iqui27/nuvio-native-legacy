@@ -121,6 +121,9 @@ if [ -n "$TIZEN4" ]; then
     exit 2
   fi
   T4_EXP="${NUVIO_TIZEN4_EXP:-1}"
+  # O carimbo (.nuvio-build-stamp) confere a configuracao pelo que o env.sh
+  # devolve, SEM o sufixo; o tizen-wgt.sh recalcula do env.sh e compara.
+  ENV_D_CARIMBO="$ENV_D"
   ENV_D=$(printf '%s' "$ENV_D" | sed "s|-DNV_VERSAO=\\\\\"$VER_APP\\\\\"|-DNV_VERSAO=\\\\\"$VER_APP-tizen4-exp.$T4_EXP\\\\\"|")
   printf '%s' "$ENV_D" | grep -q "tizen4-exp.$T4_EXP" || { echo "tizen.sh: sufixo de versao do Tizen 4 nao entrou" >&2; exit 1; }
   echo "tizen.sh: versao $VER_APP-tizen4-exp.$T4_EXP"
@@ -483,7 +486,7 @@ fingerprint() {
     sha256sum | awk '{print $1}'
   fi
 }
-CONFIG_FP=$(printf '%s' "$ENV_D" | fingerprint)
+CONFIG_FP=$(printf '%s' "${ENV_D_CARIMBO:-$ENV_D}" | fingerprint)
 # O MOTOR e o arquivo com o codigo do app: index.wasm, ou index.js no Tizen 4
 # (wasm2js poe o app inteiro no JS). O carimbo diz qual e, e o tizen-wgt.sh
 # confere o pacote por ele.
