@@ -135,6 +135,7 @@ static const char *ORDEM_B =
   "{\"addon_id\":\"xperience\",\"type\":\"movie\",\"catalog_id\":\"foryou\",\"order\":1}]}}]";
 
 static volatile int rpcCatHome;
+static int rpcCredencial;
 // Modo "troca": a RPC das colecoes do perfil 1 fica presa ate a pessoa trocar
 // para o 2 — o ciclo do 1 termina com o 2 ja ativo.
 static int segurarCol, puxandoCol;
@@ -153,6 +154,12 @@ char *sessao_rpc(const char *funcao, const char *corpo, int *st) {
     rpcCatHome++;
     // A conta guarda uma ordem por perfil: o 2 tem ORDEM_A, o 1 ORDEM_B.
     return strdup(strstr(corpo, "\"p_profile_id\":2") ? ORDEM_A : ORDEM_B);
+  }
+  if (!strcmp(funcao, "sync_push_provider_credentials")) {
+    // Resposta do servidor de campo (tapmal5, 1.4.3) para trakt e simkl.
+    rpcCredencial++;
+    *st = 400;
+    return strdup("{\"code\":\"22023\",\"message\":\"Unsupported provider credential\"}");
   }
   return strdup("[]");
 }
@@ -261,6 +268,21 @@ int main(int argc, char **argv) {
   int remAntes, rpcAntes;
 
   setvbuf(stdout, NULL, _IOLBF, 0);
+  if (argc > 1 && !strcmp(argv[1], "credencial")) {
+    // O servidor recusa a credencial: a primeira tentativa sai, as seguintes
+    // (renovacao do token, proximo ciclo) nao voltam a perguntar.
+    int a, b, c;
+    printf("-- sessao: servidor recusa credencial trakt/simkl\n");
+    a = sync_empurrar_credencial("trakt", "{\"access_token\":\"x\"}");
+    b = sync_empurrar_credencial("trakt", "{\"access_token\":\"y\"}");
+    c = sync_empurrar_credencial("simkl", "{\"access_token\":\"z\"}");
+    if (a != -1 || b != -1 || c != -1 || rpcCredencial != 2) {
+      printf("  FALHOU: retornos %d %d %d, %d RPCs (esperado -1 -1 -1, 2)\n", a, b, c, rpcCredencial);
+      return 1;
+    }
+    printf("  credencial recusada perguntada uma vez por provedor\n");
+    return 0;
+  }
   if (argc > 1 && !strcmp(argv[1], "troca")) {
     // Perfil 1 ja escolhido; a pessoa volta ao 2 com o ciclo do 1 no ar. Nada
     // do ciclo do 1 pode ser aplicado no 2 (C9 do dono, 24/09: colecoes,

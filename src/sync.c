@@ -893,11 +893,29 @@ const char *sync_resumo(void)      { return resumo; }
 unsigned    sync_ultimo_ok(void)   { return ultimoOk; }
 void        sync_sujar_progresso(void) { sujoProgresso = 1; }
 void        sync_sujar_addons(void)    { sujoAddons = 1; }
+// Provedor que o servidor recusou com "Unsupported provider credential": o
+// servidor de hoje nao guarda trakt/simkl, e a resposta nao muda ate o app
+// reiniciar. Perguntar de novo a cada renovacao do token era um 400 no log por
+// ciclo, sempre igual. Anota o provedor e para de perguntar nesta sessao; o
+// vinculo continua valendo nesta TV, guardado em disco.
+#define SY_CRED_RECUSADAS 4
+static char credRecusada[SY_CRED_RECUSADAS][16];
+static int nCredRecusadas;
+
+static int credJaRecusada(const char *provider) {
+  int i;
+  for (i = 0; i < nCredRecusadas; i++)
+    if (!strcmp(credRecusada[i], provider)) return 1;
+  return 0;
+}
+
 int sync_empurrar_credencial(const char *provider, const char *credJson) {
   Jsw w;
   char *r;
   int st = 0, ok;
   if (!sessao_logada() || !provider || !*provider || !credJson || !*credJson) return 0;
+  // -1, como qualquer recusa 4xx: quem chamou encerra a pendencia.
+  if (credJaRecusada(provider)) return -1;
   jsw_iniciar(&w);
   jsw_obj_ini(&w);
   jsw_ci(&w, "p_profile_id", perfis_ativo());
@@ -914,8 +932,13 @@ int sync_empurrar_credencial(const char *provider, const char *credJson) {
   r = sessao_rpc("sync_push_provider_credentials", jsw_texto_final(&w), &st);
   jsw_livre(&w);
   ok = ok2xx(r, st) ? 1 : (st >= 400 && st < 500 ? -1 : 0);
-  if (!ok2xx(r, st)) printf("[sync] push de credencial %s falhou (HTTP %d): %.200s\n", provider, st, r ? r : "");
-  else printf("[sync] credencial %s guardada na conta\n", provider);
+  if (!ok2xx(r, st)) {
+    printf("[sync] push de credencial %s falhou (HTTP %d): %.200s\n", provider, st, r ? r : "");
+    if (st == 400 && r && strstr(r, "Unsupported provider") && nCredRecusadas < SY_CRED_RECUSADAS) {
+      snprintf(credRecusada[nCredRecusadas++], sizeof credRecusada[0], "%s", provider);
+      printf("[sync] servidor nao aceita credencial %s: nao tento de novo nesta sessao\n", provider);
+    }
+  } else printf("[sync] credencial %s guardada na conta\n", provider);
   free(r);
   return ok;
 }

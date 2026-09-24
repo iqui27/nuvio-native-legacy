@@ -47,4 +47,9 @@ sessao 1 tarde
 sessao troca
 echo "$SAIDA" | grep -qF '[sync] ciclo do perfil 1 descartado' \
   || { echo "FALHOU: sessao 7 nao descartou o ciclo do perfil 1"; exit 1; }
+# 8. Servidor que nao aceita credencial trakt/simkl (400 "Unsupported provider
+#    credential"): uma pergunta por provedor na sessao, nao uma por ciclo.
+sessao credencial
+echo "$SAIDA" | grep -qF 'nao tento de novo nesta sessao' \
+  || { echo "FALHOU: sessao 8 nao anotou a recusa"; exit 1; }
 echo "syncordem.sh: ok"
