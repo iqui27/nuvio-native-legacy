@@ -66,7 +66,8 @@ static void limites(void) {
           assert(c.texMb <= 128);
           if (m < 2000) assert(c.heroiLarg == 1280);
         }
-        if (plat == PTV_LG && m && m < 1200) assert(c.texMb <= 64 && c.heroiLarg == 1280);
+        if (plat == PTV_LG && m && m < 1200)
+          assert(c.texMb <= 64 && c.heroiLarg == 1280 && c.fiosRede <= 2);
       }
   { PtvPerfil c;
     ptv_candidato(PTV_LG, 2245, PTV_QUALIDADE, 0, &c);
@@ -79,6 +80,15 @@ static void limites(void) {
     // Manual acima do teto (perfil antigo, TV trocada) volta ao teto.
     ptv_candidato(PTV_LG, 1024, PTV_QUALIDADE, 300, &c);
     assert(c.texMb == 64); }
+  // LG de 658 MB (diagnostico de campo): o candidato de Qualidade sobe a
+  // textura ao teto, mas os fios ficam nos 2 da tabela; e um perfil salvo com
+  // 4 fios, aprovado antes desta regra, volta a 2 ao ser lido.
+  { PtvPerfil c, salvo = { 64, 4, 1280 };
+    ptv_candidato(PTV_LG, 658, PTV_QUALIDADE, 0, &c);
+    assert(c.texMb == 64 && c.fiosRede == 2 && c.heroiLarg == 1280);
+    assert(ptv_limitar(PTV_LG, 658, &salvo) == 1 && salvo.fiosRede == 2 && salvo.texMb == 64);
+    ptv_candidato(PTV_LG, 1500, PTV_QUALIDADE, 0, &c);
+    assert(c.fiosRede == 4); }
   { PtvPerfil lido = { 999, 9, 3840 };
     assert(ptv_limitar(PTV_TIZEN, 2048, &lido) == 1);
     assert(lido.texMb == 96 && lido.fiosRede == 2 && lido.heroiLarg == 1920); }
