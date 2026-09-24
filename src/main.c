@@ -755,9 +755,11 @@ int main(int argc, char **argv) {
   trakt_carregar(dirArte);
   desc_tmdb(dirArte);
   desc_iniciar();
-  // Metade da resolucao: o snapshot so aparece escurecido e nas bordas.
-  int temSnap = gfx_snap_iniciar((int)NV_TELA_W / 2, (int)NV_TELA_H / 2);
-  int snapValido = 0;
+  // RESOLUCAO DE LAYOUT, e nao metade: o snapshot e o fundo parado atras do
+  // painel de Salvos (app.c), e a esquerda dele e uma faixa de 1120 px da home
+  // a 42 % de brilho — na metade, o texto das fileiras amolecia no instante em
+  // que a copia entrava no lugar da home desenhada. RGB, ~6 MB.
+  gfx_snap_iniciar((int)NV_TELA_W, (int)NV_TELA_H);
   // Alvo minusculo de proposito: e ele esticado que vira o desfoque do fundo.
   // 480x270: com o gaussiano de duas passadas, o que importa nao e o alvo ser
   // minusculo (isso e que produzia blocos ao esticar) e sim o desfoque ser de

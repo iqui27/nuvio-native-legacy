@@ -29,6 +29,17 @@ void spainel_evento(const SDL_Event *e);
 void spainel_atualizar(float dt, Uint32 agora);
 void spainel_desenhar(Uint32 agora);
 
+// O que fica ATRAS do painel. Chame no lugar de desenhar o fundo direto:
+// com o painel inteiro na tela e `podeParar`, `fundo` e pintado uma vez num
+// FBO com o veu por cima e os quadros seguintes so copiam; `rev` diferente da
+// ultima refaz a copia. Fora disso, `fundo` e desenhado direto. Ver a nota
+// em salvospainel.c.
+void spainel_fundo(int podeParar, unsigned rev, void (*fundo)(void *), void *ctx);
+// Quantas vezes a lista foi montada desde o arranque (tests/salvospainel.sh).
+int  spainel_n_reconstrucoes(void);
+// Quantas vezes o fundo parado foi pintado no FBO.
+int  spainel_n_fundos(void);
+
 // IMDb do titulo que o dono escolheu, ou NULL. Consumido uma vez. Quem resolve
 // o id no catalogo e abre o detalhe e o roteador (app.c) — o painel nao conhece
 // nem detail.c nem a descoberta, exatamente como perfil.c nao conhecia.

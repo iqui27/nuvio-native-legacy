@@ -2478,6 +2478,60 @@ void app_atualizar(float dt, Uint32 agora) {
 // roteador de app_evento faz ("esta aberta?"), so que na ordem do desenho.
 #define CAMADA_SE(aberta) do { if (aberta) ponteiro_camada(); } while (0)
 
+// TUDO QUE FICA ATRAS DO PAINEL DE SALVOS: a tela, "Ver tudo", o cartaz com
+// menu, o detalhe e o menu lateral. Funcao propria para spainel_fundo poder
+// pinta-la direto ou uma vez so, dentro do FBO do fundo parado.
+static void desenharAtrasDoPainel(void *ctx) {
+  Uint32 agora = *(const Uint32 *)ctx;
+  // "Ver tudo" cobre a tela de tras por completo (fundo opaco), entao a home
+  // nao precisa ser desenhada por baixo — a mesma conta do detail_cobre_tela.
+  if (!detail_cobre_tela() && !vertudo_aberta()) {
+    switch (tela) {
+      case TELA_EXPLORAR:   explorar_desenhar(agora);   break;
+      case TELA_GUIA:       guia_desenhar(agora);       break;
+      case TELA_BUSCA:      busca_desenhar(agora);      break;
+      case TELA_BIBLIOTECA: biblioteca_desenhar(agora); break;
+      case TELA_AGENDA:     agendaui_desenhar(agora);   break;
+      case TELA_PERFIL:     perfil_desenhar(agora);     break;
+      case TELA_SOCIAL:     social_desenhar(agora);     break;
+      case TELA_ADDONS:     addonsui_desenhar(agora);   break;
+      case TELA_AJUSTES:    ajustes_desenhar(agora);    break;
+      case TELA_DIAGNOSTICO: diagnostico_desenhar(agora); break;
+      default:              home_desenhar(agora);       break;
+    }
+  }
+  CAMADA_SE(vertudo_aberta());
+  if (!detail_cobre_tela()) vertudo_desenhar(agora);
+  CAMADA_SE(ctx_aberto());
+  ctx_desenhar(agora);
+  CAMADA_SE(detail_aberto());
+  detail_desenhar(agora);
+  // A rail NAO existe na tela de detalhe do app web: ela e full-bleed e a
+  // coluna de conteudo comeca em x=72, ou seja, DENTRO do que a rail ocuparia.
+  // Com a rail por cima, o logo, o botao "Reproduzir" e a linha de duracao
+  // ficavam cortados pela faixa preta de 144px — foi o primeiro defeito que
+  // apareceu na captura do aparelho depois do port.
+  // A rail some com o detalhe aberto (o web nao a tem nessa tela) e some
+  // tambem quando `collapseSidebar` esta ligado, que e o estado do perfil do
+  // dono. Recolhida ela nao ocupa largura nenhuma: o conteudo passa a comecar
+  // em 104, e quem devolve esse x e ajustes_conteudo_x().
+  // A guarda de `collapseSidebar` NAO entra aqui. Ela ja existe DENTRO do
+  // menu_desenhar, e la ela pula so a RAIL FIXA — que e o correto: recolhida,
+  // a barra nao ocupa largura, mas continua abrindo como CAMADA ao ganhar
+  // foco, exatamente como o web faz.
+  //
+  // Com a guarda tambem neste ponto, o menu_desenhar nunca era chamado no
+  // perfil do dono (collapseSidebar ligado): o menu abria, engolia as teclas
+  // e nao desenhava nada. Ficava sem menu e sem caminho para os Ajustes — foi
+  // o defeito relatado como "nao ta mostrando o menu e nao tem os ajustes".
+  // Guarda repetida em dois lugares para a mesma regra: no de dentro ela
+  // significa "nao pinte a faixa", no de fora significava "nao exista".
+  if (menu_visivel() && sidebar_permitida() && !detail_aberto()) {
+    CAMADA_SE(menu_aberto());
+    menu_desenhar(agora);
+  }
+}
+
 static void desenharTelas(Uint32 agora) {
   if (tela == TELA_LOGIN)          { login_desenhar(agora);     return; }
   if (tela == TELA_ESCOLHA_PERFIL) { perfilsel_desenhar(agora); return; }
@@ -2518,53 +2572,18 @@ static void desenharTelas(Uint32 agora) {
   // O player cobre tudo; desenhar o que esta atras dele e trabalho jogado fora
   // — a mesma conta que ja valia para o cartao de detalhe esticado.
   if (!player_aberto()) {
-    // "Ver tudo" cobre a tela de tras por completo (fundo opaco), entao a home
-    // nao precisa ser desenhada por baixo — a mesma conta do detail_cobre_tela.
-    if (!detail_cobre_tela() && !vertudo_aberta()) {
-      switch (tela) {
-        case TELA_EXPLORAR:   explorar_desenhar(agora);   break;
-        case TELA_GUIA:       guia_desenhar(agora);       break;
-        case TELA_BUSCA:      busca_desenhar(agora);      break;
-        case TELA_BIBLIOTECA: biblioteca_desenhar(agora); break;
-        case TELA_AGENDA:     agendaui_desenhar(agora);   break;
-        case TELA_PERFIL:     perfil_desenhar(agora);     break;
-        case TELA_SOCIAL:     social_desenhar(agora);     break;
-        case TELA_ADDONS:     addonsui_desenhar(agora);   break;
-        case TELA_AJUSTES:    ajustes_desenhar(agora);    break;
-        case TELA_DIAGNOSTICO: diagnostico_desenhar(agora); break;
-        default:              home_desenhar(agora);       break;
-      }
-    }
-    CAMADA_SE(vertudo_aberta());
-    if (!detail_cobre_tela()) vertudo_desenhar(agora);
-    CAMADA_SE(ctx_aberto());
-    ctx_desenhar(agora);
-    CAMADA_SE(detail_aberto());
-    detail_desenhar(agora);
-    // A rail NAO existe na tela de detalhe do app web: ela e full-bleed e a
-    // coluna de conteudo comeca em x=72, ou seja, DENTRO do que a rail ocuparia.
-    // Com a rail por cima, o logo, o botao "Reproduzir" e a linha de duracao
-    // ficavam cortados pela faixa preta de 144px — foi o primeiro defeito que
-    // apareceu na captura do aparelho depois do port.
-    // A rail some com o detalhe aberto (o web nao a tem nessa tela) e some
-    // tambem quando `collapseSidebar` esta ligado, que e o estado do perfil do
-    // dono. Recolhida ela nao ocupa largura nenhuma: o conteudo passa a comecar
-    // em 104, e quem devolve esse x e ajustes_conteudo_x().
-    // A guarda de `collapseSidebar` NAO entra aqui. Ela ja existe DENTRO do
-    // menu_desenhar, e la ela pula so a RAIL FIXA — que e o correto: recolhida,
-    // a barra nao ocupa largura, mas continua abrindo como CAMADA ao ganhar
-    // foco, exatamente como o web faz.
+    // O FUNDO PARADO DO PAINEL DE SALVOS: com o painel inteiro na tela, tudo
+    // que fica atras dele e pintado UMA vez num FBO, ja com o veu, e os quadros
+    // seguintes desenham so a copia e o painel. Ver spainel_fundo em
+    // salvospainel.c para a medida da C9 que motivou isto.
     //
-    // Com a guarda tambem neste ponto, o menu_desenhar nunca era chamado no
-    // perfil do dono (collapseSidebar ligado): o menu abria, engolia as teclas
-    // e nao desenhava nada. Ficava sem menu e sem caminho para os Ajustes — foi
-    // o defeito relatado como "nao ta mostrando o menu e nao tem os ajustes".
-    // Guarda repetida em dois lugares para a mesma regra: no de dentro ela
-    // significa "nao pinte a faixa", no de fora significava "nao exista".
-    if (menu_visivel() && sidebar_permitida() && !detail_aberto()) {
-      CAMADA_SE(menu_aberto());
-      menu_desenhar(agora);
-    }
+    // SO NA HOME e so sem outra camada no meio: menu, cartaz com menu, "Ver
+    // tudo" e detalhe mudam por baixo do painel ou pedem o proprio desenho. A
+    // copia e refeita quando o catalogo troca (fileiras novas por baixo) e cai
+    // assim que o painel comeca a fechar.
+    { int podeParar = tela == TELA_HOME && !detail_aberto() && !vertudo_aberta() &&
+                      !ctx_aberto() && !menu_aberto() && !player_mini_ativo();
+      spainel_fundo(podeParar, cat_revisao(), desenharAtrasDoPainel, &agora); }
     // Depois do menu: as duas camadas de "Salvos" escurecem a tela inteira e
     // tem de ficar por cima de tudo que a home desenhou, inclusive da rail.
     CAMADA_SE(spainel_aberto());
