@@ -252,6 +252,15 @@ static long pontos(const Stream *s) {
   // preferencia, nao filtro. Uma lista em que so ha 4K e com teto de 1080p tem
   // de continuar tocando — em 4K, com uma linha no log dizendo por que.
   if (!cabeNoTeto(s)) p -= 1000000;
+  // FORA DE CACHE NO DEBRID vai para depois das cacheadas, e tambem nao sai
+  // da fila: o automatico prefere o que TOCA AGORA. Registro 1163 (1.3.12,
+  // AIOStreams+TorBox): a verificacao aceitou "⏳ FHD", o link do AIOStreams
+  // manda o TorBox baixar e devolve um clipe de aviso de 8 s — que a
+  // verificacao nao tem como distinguir de filme. Com a marca do proprio
+  // addon, a cacheada da mesma lista vem antes. Menor que o teto (1000000):
+  // uma cacheada acima do teto ainda perde para uma fora de cache dentro dele,
+  // como ja perdia para qualquer fonte dentro dele.
+  if (s->foraCache) p -= 500000;
   return p;
 }
 
@@ -419,6 +428,54 @@ static int verificarOuParar(int i, void *u) {
 static void falhouUma(int i, void *u) {
   Conferencia *c = u;
   if (!c->abortou) stream_automatico_excluir(i);
+}
+
+unsigned stream_lista_geracao(void) {
+  unsigned g;
+  pthread_mutex_lock(&verTrava);
+  g = listaGeracao;
+  pthread_mutex_unlock(&verTrava);
+  return g;
+}
+
+int stream_resolver_escolhida(int i, unsigned geracao, char *url, unsigned nu,
+                              char *servico, unsigned ns, int *pct) {
+  char infoHash[48];
+  int fileIdx, r;
+  if (url && nu) url[0] = 0;
+  if (!url || !nu) return 0;
+  pthread_mutex_lock(&verTrava);
+  if (listaGeracao != geracao || i < 0 || i >= n) {
+    pthread_mutex_unlock(&verTrava);
+    return -1;
+  }
+  // Ja resolvida (pelo automatico, ou por uma escolha anterior desta lista):
+  // e a url pronta, sem ir a rede.
+  if (lista[i].url[0]) {
+    snprintf(url, nu, "%s", lista[i].url);
+    pthread_mutex_unlock(&verTrava);
+    return 1;
+  }
+  snprintf(infoHash, sizeof infoHash, "%s", lista[i].infoHash);
+  fileIdx = lista[i].fileIdx;
+  pthread_mutex_unlock(&verTrava);
+  if (!infoHash[0]) return 0;
+
+  r = debrid_resolver_escolhido(infoHash, fileIdx, url, nu, servico, ns, pct);
+  if (r == 1) {
+    pthread_mutex_lock(&verTrava);
+    if (listaGeracao == geracao && i < n)
+      snprintf(lista[i].url, sizeof lista[i].url, "%s", url);
+    else r = -1;
+    pthread_mutex_unlock(&verTrava);
+    if (r < 0) url[0] = 0;
+  } else if (r == DEBRID_BAIXANDO) {
+    printf("[fonte] %d torrent escolhido esta baixando no %s (%d%%)\n", i,
+           servico && servico[0] ? servico : "debrid", pct ? *pct : -1);
+  } else {
+    printf("[fonte] %d torrent escolhido nao resolveu no debrid\n", i);
+  }
+  return r;
 }
 
 int stream_primeira_boa(int tentativas) {

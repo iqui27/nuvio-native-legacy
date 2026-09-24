@@ -641,6 +641,12 @@ static void erroSemFonte(void) {
     (void)debrid_sem_plano_novo();
     player_erro_fonte_motivo(i18n(debrid_sem_plano_frase(semPlano)),
         i18n("Abra Fontes para escolher uma fonte direta."));
+  } else if (!canal && debrid_fora_de_cache() > 0) {
+    // NENHUMA SERVIU E HAVIA TORRENT FORA DE CACHE (o "P2P" do TorBox). O
+    // automatico nao manda baixar — so toca o que esta pronto —, mas a folha
+    // manda. Sem esta frase a pessoa lia "nenhuma fonte" numa lista cheia.
+    player_erro_fonte_motivo(i18n("As fontes torrent desta lista não estão no cache do debrid"),
+        i18n("Abra Fontes e escolha uma: o serviço começa a baixar."));
   } else if (addons_motivo_vazio(motivo, sizeof motivo))
     player_erro_fonte_motivo(motivo, canal
         ? i18n("Escolha outro canal no guia ou tente de novo mais tarde.")
@@ -649,6 +655,118 @@ static void erroSemFonte(void) {
     player_erro_fonte_motivo(i18n("Nenhuma fonte deste canal abriu agora"),
         i18n("Escolha outro canal no guia ou tente de novo mais tarde."));
   else player_erro_fonte();
+}
+
+// TORRENT SEM URL ESCOLHIDO A DEDO — o "P2P" do TorBox.
+//
+// A folha entregava a escolha a player_definir_fonte(s->url), e num torrent
+// que so tem infoHash a url e VAZIA: player_definir_fonte volta calado e o
+// player fica em "carregando" para sempre. Registros 1739 (1.4.1) e 2325
+// (1.4.3): "fonte escolhida: Torrentio 1080p" e nenhum "[video] URL" depois.
+// So o automatico passava pelo debrid — e o automatico, de proposito, so toca
+// o que esta em cache. Um torrent fora de cache no TorBox, portanto, nao
+// tocava por caminho nenhum.
+//
+// Aqui a escolha vai a debrid_resolver_escolhido NUM FIO PROPRIO (a rede do
+// debrid leva segundos, e a TV nao pode parar de desenhar), que manda o
+// servico baixar o que nao tem. Terminado: toca. Ainda baixando: o cartao
+// diz quem baixa e quanto falta, em vez da tela parada.
+//
+// UM FIO POR VEZ, como o de fonte. Uma escolha nova com um em curso fica
+// PENDENTE e sai quando o anterior termina; `torrentSessao` sobe a cada
+// escolha, e a resposta que chega de uma escolha velha e descartada.
+typedef struct {
+  _Atomic int estado;           // 0 livre, 1 rodando, 2 pronto
+  int indice, resultado, pct;
+  unsigned geracaoLista, sessao;
+  char url[4096], servico[32];
+} TorrentJob;
+static TorrentJob torrentJob;
+static pthread_t fioTorrent;
+static int fioTorrentVivo;
+static unsigned torrentSessao;
+static int torrentPendente = -1;
+static unsigned torrentPendenteGeracao;
+
+static void *resolverTorrentEscolhido(void *u) {
+  TorrentJob *j = u;
+  j->resultado = stream_resolver_escolhida(j->indice, j->geracaoLista, j->url,
+                                           sizeof j->url, j->servico,
+                                           sizeof j->servico, &j->pct);
+  atomic_store_explicit(&j->estado, 2, memory_order_release);
+  return NULL;
+}
+static int iniciarTorrentJob(int indice, unsigned geracaoLista) {
+  TorrentJob *j = &torrentJob;
+  if (fioTorrentVivo) {
+    torrentPendente = indice;
+    torrentPendenteGeracao = geracaoLista;
+    return 1;
+  }
+  j->indice = indice; j->geracaoLista = geracaoLista; j->sessao = torrentSessao;
+  j->resultado = 0; j->pct = -1; j->url[0] = 0; j->servico[0] = 0;
+  atomic_store_explicit(&j->estado, 1, memory_order_release);
+  if (pthread_create(&fioTorrent, NULL, resolverTorrentEscolhido, j) != 0) {
+    atomic_store_explicit(&j->estado, 0, memory_order_release);
+    return -1;
+  }
+  fioTorrentVivo = 1;
+  return 0;
+}
+// A escolha manual de um torrent: abre o player em "carregando" (quem chama
+// ja abriu) e pede a url ao debrid.
+static void pedirTorrentEscolhido(int indice) {
+  torrentSessao++;
+  torrentPendente = -1;
+  if (iniciarTorrentJob(indice, stream_lista_geracao()) < 0) {
+    player_erro_fonte();
+    return;
+  }
+  player_toast(i18n("Pedindo o torrent ao serviço de debrid…"), 5000);
+}
+static void processarTorrentJob(void) {
+  TorrentJob *j = &torrentJob;
+  int valido;
+  if (!fioTorrentVivo ||
+      atomic_load_explicit(&j->estado, memory_order_acquire) != 2)
+    return;
+  pthread_join(fioTorrent, NULL);
+  fioTorrentVivo = 0;
+  atomic_store_explicit(&j->estado, 0, memory_order_release);
+  // A resposta so vale para a MESMA escolha, na mesma lista, com o player
+  // ainda esperando por ela: um episodio novo, outra fonte escolhida ou o
+  // player fechado no meio fazem a resposta velha nao tocar nada.
+  valido = j->sessao == torrentSessao && player_aberto() && !player_quer_sair() &&
+           stream_atual() == j->indice && stream_lista_geracao() == j->geracaoLista;
+  if (valido) {
+    if (j->resultado == 1 && j->url[0]) {
+      player_definir_fonte(j->url);
+    } else if (j->resultado == DEBRID_BAIXANDO) {
+      char titulo[160];
+      const char *serv = j->servico[0] ? j->servico : "debrid";
+      if (j->pct >= 0)
+        snprintf(titulo, sizeof titulo, i18n("O %s está baixando este torrent (%d%%)"),
+                 serv, j->pct);
+      else
+        snprintf(titulo, sizeof titulo, i18n("O %s está baixando este torrent"), serv);
+      player_erro_fonte_motivo(titulo,
+          i18n("Ele fica na sua conta: escolha esta fonte de novo em alguns minutos."));
+    } else if (j->resultado == 0 && debrid_sem_plano()) {
+      player_erro_fonte_motivo(i18n(debrid_sem_plano_frase(debrid_sem_plano())),
+          i18n("Abra Fontes para escolher uma fonte direta."));
+    } else if (j->resultado == 0) {
+      player_erro_fonte_motivo(i18n("O serviço de debrid não abriu este torrent"),
+          i18n("Abra Fontes para escolher outra opção."));
+    } else {
+      player_erro_fonte();
+    }
+  }
+  if (torrentPendente >= 0) {
+    int i = torrentPendente;
+    torrentPendente = -1;
+    if (iniciarTorrentJob(i, torrentPendenteGeracao) < 0 && player_aberto())
+      player_erro_fonte();
+  }
 }
 
 // Filme/serie nao tem o watchdog de canal porque nao ha troca de emissora.
@@ -2017,6 +2135,7 @@ void app_atualizar(float dt, Uint32 agora) {
   }
 
   tentarProximaFonteVOD();
+  processarTorrentJob();
 
   int fonte;
   if (aguardandoFonte != 2 && stream_folha_escolheu(&fonte)) {
@@ -2047,7 +2166,20 @@ void app_atualizar(float dt, Uint32 agora) {
       player_abrir(titulo,NULL);
       player_definir_episodio(t,e);
       stream_definir_atual(fonte);
-      player_definir_fonte(s->url);
+      // Qualquer escolha nova invalida a resposta de um torrent anterior.
+      torrentSessao++;
+      if (!s->url[0] && s->infoHash[0]) {
+        pedirTorrentEscolhido(fonte);
+      } else {
+        player_definir_fonte(s->url);
+        // FONTE QUE O ADDON MARCA COMO FORA DE CACHE ("⏳", "[TB download]"):
+        // tocar o link e o que manda o servico baixar, e o que o addon devolve
+        // enquanto baixa e um clipe de aviso de ~8 s (registros 1136, 2191,
+        // 2501). O clipe fecha o player sem nada na tela; o aviso diz o que
+        // esta acontecendo e o que fazer.
+        if (s->foraCache)
+          player_toast(i18n("Fonte fora do cache: o debrid começa a baixar. Se tocar um aviso curto, tente de novo em alguns minutos."), 9000);
+      }
       // Escolha manual num canal tambem entra no watchdog: fonte viva escolhida
       // a dedo pode morrer igual.
       if (player_id_canal()[0]) { canalFonteIdx = fonte; canalFonteDesde = SDL_GetTicks(); }
