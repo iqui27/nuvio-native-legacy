@@ -1260,6 +1260,60 @@ int cat_acrescentar_lote(const CatItem *v, int qtd, int *saidaIdx) {
   return qtd;
 }
 
+// Ver catalogo.h. Mesma troca de bloco de cat_acrescentar_lote (acrescenta no
+// FIM, janelas continuam valendo, `n` nao zera), feita inteira sob pubTrava:
+// quem chama e o fio da descoberta, e o de "Continuar assistindo" pode estar
+// trocando o bloco ao mesmo tempo.
+int cat_mesclar_listas(const CatItem *v, int qtd) {
+  CatItem *novo;
+  int m, k, i, marcados = 0, novos = 0;
+  if (!v || qtd < 1) return 0;
+  pthread_mutex_lock(&pubTrava);
+  // NADA MUDA, NADA SE COPIA. E o caso comum da volta silenciosa (a mesma
+  // lista de cinco minutos atras): cada troca de bloco copia o catalogo
+  // inteiro, e o CatItem passa de 15 KB.
+  { int falta = 0;
+    for (k = 0; k < qtd && !falta; k++) {
+      int achou = 0;
+      if (!v[k].imdb[0]) continue;
+      for (i = 0; i < n && !achou; i++)
+        if (!strcmp(itens[i].imdb, v[k].imdb) &&
+            (!v[k].naLista || itens[i].naLista) &&
+            (!v[k].naColecao || itens[i].naColecao)) achou = 1;
+      if (!achou) falta = 1;
+    }
+    if (!falta) { pthread_mutex_unlock(&pubTrava); return 0; } }
+  novo = malloc(sizeof(CatItem) * (size_t)(n + qtd > 0 ? n + qtd : 1));
+  if (!novo) { pthread_mutex_unlock(&pubTrava); return 0; }
+  if (n > 0) memcpy(novo, itens, sizeof(CatItem) * (size_t)n);
+  m = n;
+  for (k = 0; k < qtd; k++) {
+    int achou = 0;
+    if (!v[k].imdb[0]) continue;
+    for (i = 0; i < m; i++) {
+      if (strcmp(novo[i].imdb, v[k].imdb)) continue;
+      if (v[k].naLista)   novo[i].naLista = 1;
+      if (v[k].naColecao) novo[i].naColecao = 1;
+      achou = 1;
+    }
+    if (achou) { marcados++; continue; }
+    if (m >= CAT_MAX) continue;
+    novo[m] = v[k];
+    if (v[k].poster[0])   arte_reserva_registrar(v[k].poster,   v[k].imdb, 1);
+    if (v[k].backdrop[0]) arte_reserva_registrar(v[k].backdrop, v[k].imdb, 0);
+    m++; novos++;
+  }
+  aposentar(itens);
+  __atomic_store_n(&itens, novo, __ATOMIC_RELEASE);
+  nAlocado = m;
+  __atomic_store_n(&n, m, __ATOMIC_RELEASE);
+  garantirFaixas(nAlocado);
+  pthread_mutex_unlock(&pubTrava);
+  printf("[cat] listas do Trakt na tela: %d marcado(s), %d novo(s)\n", marcados, novos);
+  fflush(stdout);
+  return novos;
+}
+
 int cat_acrescentar(const CatItem *item) {
   CatItem *novo;
   int novoN;

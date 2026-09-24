@@ -51,6 +51,11 @@ void desc_iniciar(void);
 // se um ciclo ja estiver no ar, o pedido fica guardado e roda ao fim dele, em
 // vez de ser descartado. Chamar do fio principal.
 void desc_repetir(void);
+// Remonta porque a LISTA DE ADDONS mudou (sync). Mais barato que desc_repetir:
+// se a montagem em curso ainda nao leu a lista, ela ja vai ler a nova, e o
+// pedido e atendido por ela — sem jogar fora o Trakt que ela ja buscou. Se ja
+// leu, e o mesmo que desc_repetir. Chamar do fio principal.
+void desc_repetir_addons(void);
 // Refaz so a fileira "Continuar assistindo", fora do ciclo completo (issue
 // #38). Fio proprio: remontar a fileira faz rede. Pedido repetido enquanto um
 // fio ja roda vira UMA rodada a mais no fim, nao uma fila.

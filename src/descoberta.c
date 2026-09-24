@@ -22,6 +22,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <time.h>
 
 #define CINEMETA "https://v3-cinemeta.strem.io"
 #define TMDB     "https://api.themoviedb.org/3"
@@ -670,6 +671,25 @@ static volatile int repetirAoFim;
 // identicas.
 static volatile unsigned geracaoPedida;
 static unsigned geracaoLida;
+// A VOLTA NO AR JA LEU A LISTA DE ADDONS? Sob listaTrava junto com geracaoLida,
+// e e o que desc_repetir_addons consulta para decidir se o pedido ainda e
+// atendido por esta volta (nao leu: vai ler a lista nova) ou se ela esta
+// condenada (ja leu a velha).
+//
+// MEDIDO na C9 do dono (1.4.6-dev), escolhendo o perfil 1: "montar: inicio" e
+// "[sync] addons: perfil 1 -> 12 linha(s)" no MESMO segundo, a lista lida ~12 s
+// depois (depois do Trakt) — portanto a nova —, e mesmo assim a volta inteira
+// (45 s: Trakt, 30 s de manifestos, catalogos) foi descartada no fim porque o
+// pedido do sync tinha trocado montagemGeracao. Depois, uma segunda volta
+// completa.
+static pthread_mutex_t listaTrava = PTHREAD_MUTEX_INITIALIZER;
+static int listaLidaNaVolta;
+// O QUE ESTA NA TELA E PARCIAL: publicado em partes por uma volta que nao
+// chegou ao fim (condenada no meio, ou ainda no ar). A volta seguinte continua
+// publicando em partes por cima disso em vez de montar em silencio: sem isto,
+// a volta recomecada via cat_n() > 0 (o "Continuar" que a condenada publicou)
+// e so mostrava as fileiras da rede no fim.
+static volatile int parcialNaTela;
 // Ver desc_catalogos_fora em descoberta.h.
 static int catalogosFora;
 // Quantos catalogos NAO DESLIGADOS o teto impediu de pedir na ultima montagem,
@@ -1561,12 +1581,38 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
 #define CAT_FIOS 3
 
 typedef struct {
-  const Decl *d;
+  const Decl *d;        // so para quem monta; o fio le as copias abaixo
+  char base[800], tipo[8], id[96];
   CatItem itens[MAX_POR_FILEIRA];
   int  n;
   int  respondeu;
   int  pronto;
+  int  largada;         // quem monta desistiu de esperar (ver CAT_ESPERA_*)
+  unsigned long long inicioMs;   // quando um fio pegou; 0 = na fila
 } TarefaCat;
+
+// UMA RODADA TEM DONO COMPARTILHADO: quem monta e cada fio. O ultimo a soltar
+// libera. E o que deixa quem monta seguir sem pthread_join — com um catalogo
+// largado por lento, ou uma volta condenada no meio — e o fio terminar o
+// pedido dele sem escrever em memoria de ninguem.
+typedef struct {
+  TarefaCat *t;
+  int nT, prox, refs, fechada;
+  unsigned long long inicioMs, ultimoProntoMs;
+} RodadaCat;
+
+// O TETO DO CATALOGO LENTO. Os dois precisam valer juntos, com a fila da rodada
+// ja vazia: CAT_ESPERA_SILENCIO_MS sem NENHUM catalogo terminar, e este no ar ha
+// CAT_ESPERA_MIN_MS. O primeiro separa "a rede esta lenta para todos" (ai todos
+// seguem chegando e ninguem e largado) de "um so esta pendurado"; o segundo
+// protege o catalogo que so comecou tarde. O timeout de rede continua 8 s
+// (lerCatalogo); isto e quanto a HOME espera, nao quanto o pedido vive.
+#ifndef CAT_ESPERA_SILENCIO_MS
+#define CAT_ESPERA_SILENCIO_MS 2500
+#endif
+#ifndef CAT_ESPERA_MIN_MS
+#define CAT_ESPERA_MIN_MS      4000
+#endif
 
 // Recupera a ultima resposta boa da mesma fileira. O catalogo publicado pode
 // ser o snapshot do arranque anterior; manter a janela por CHAVE evita que um
@@ -1644,28 +1690,47 @@ static void preservarFileirasAusentes(CatItem **lote, int *n, int *cap,
   }
 }
 
-static TarefaCat *tarefas;
-static int  nTarefas, proximaTarefa;
 static pthread_mutex_t catTrava = PTHREAD_MUTEX_INITIALIZER;
 
+static unsigned long long descAgoraMs(void);
+
+// Sob catTrava.
+static void rodadaSoltarLocked(RodadaCat *r) {
+  if (--r->refs == 0) { free(r->t); free(r); }
+}
+// Quem monta acabou com a rodada (inteira, ou desistiu): nenhum fio pega
+// pedido novo dela, e o ultimo a sair libera.
+static void rodadaSoltar(RodadaCat *r) {
+  pthread_mutex_lock(&catTrava);
+  r->fechada = 1;
+  rodadaSoltarLocked(r);
+  pthread_mutex_unlock(&catTrava);
+}
+
 static void *fioCatalogo(void *u) {
-  (void)u;
+  RodadaCat *r = u;
   for (;;) {
     int meu, got, respondeu = 0;
-    const Decl *d;
+    TarefaCat *t;
     pthread_mutex_lock(&catTrava);
-    if (proximaTarefa >= nTarefas) { pthread_mutex_unlock(&catTrava); return NULL; }
-    meu = proximaTarefa++;
-    d = tarefas[meu].d;
+    if (r->fechada || r->prox >= r->nT) {
+      rodadaSoltarLocked(r);
+      pthread_mutex_unlock(&catTrava);
+      return NULL;
+    }
+    meu = r->prox++;
+    t = &r->t[meu];
+    t->inicioMs = descAgoraMs();
     pthread_mutex_unlock(&catTrava);
 
-    got = lerCatalogo(d->base, d->tipo, d->id, tarefas[meu].itens,
+    got = lerCatalogo(t->base, t->tipo, t->id, t->itens,
                       MAX_POR_FILEIRA, MAX_POR_FILEIRA, &respondeu);
 
     pthread_mutex_lock(&catTrava);
-    tarefas[meu].n = got;
-    tarefas[meu].respondeu = respondeu;
-    tarefas[meu].pronto = 1;
+    t->n = got;
+    t->respondeu = respondeu;
+    t->pronto = 1;
+    r->ultimoProntoMs = descAgoraMs();
     pthread_mutex_unlock(&catTrava);
   }
 }
@@ -2299,6 +2364,127 @@ static int estruturaNovaPedeRede(const CatFileira *fils, int nFils,
   return 0;
 }
 
+static unsigned long long descAgoraMs(void) {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return (unsigned long long)t.tv_sec * 1000ull + (unsigned long long)t.tv_nsec / 1000000ull;
+}
+
+// --- WATCHLIST E COLECAO DO TRAKT, EM PARALELO E NA TELA ASSIM QUE CHEGAM ---
+//
+// Eram buscadas no FIM de montar(), depois de todos os manifestos e de todos
+// os catalogos, e so entravam na tela com a publicacao completa. MEDIDO na C9
+// do dono (1.4.6-dev): "[trakt] watchlist: 112" e "collection: 98" aos 360 s,
+// 45 s depois de escolher o perfil — o "Trakt demorou muito para aparecer" —
+// enquanto as duas respostas nao dependem de addon nenhum.
+//
+// Agora um fio proprio as busca no primeiro instante da volta, e montar() as
+// poe na tela no primeiro ponto em que estiverem prontas: dentro de cada
+// publicacao em partes (tela vazia/parcial) ou, com uma home inteira na tela,
+// por cat_mesclar_listas — que so marca e acrescenta, sem trocar fileira. No
+// fim entram no lote como antes (mesmo lugar, mesma ordem), e a publicacao
+// completa e quem poda o que saiu da lista.
+//
+// O fio e DESTACADO e o pedido tem dono: montar() que desiste no meio (volta
+// condenada) larga o pedido e quem termina por ultimo libera.
+#define LISTA_TRAKT_MAX 400
+typedef struct {
+  CatItem *wl, *col;
+  int nWl, nCol;
+  int pronto, largado;
+} ListasTrakt;
+static pthread_mutex_t listasTrava = PTHREAD_MUTEX_INITIALIZER;
+
+static void listasLiberar(ListasTrakt *j) {
+  if (!j) return;
+  free(j->wl); free(j->col); free(j);
+}
+
+static CatItem *listaBuscar(const char *qual, int *n) {
+  CatItem *v = malloc(sizeof(CatItem) * LISTA_TRAKT_MAX), *menor;
+  *n = 0;
+  if (!v) return NULL;
+  *n = trakt_lista(qual, v, LISTA_TRAKT_MAX);
+  if (*n <= 0) { free(v); *n = 0; return NULL; }
+  menor = realloc(v, sizeof(CatItem) * (size_t)*n);
+  return menor ? menor : v;
+}
+
+static void *fioListas(void *u) {
+  ListasTrakt *j = u;
+  int nw = 0, nc = 0;
+  CatItem *wl = listaBuscar("watchlist", &nw);
+  CatItem *col = listaBuscar("collection", &nc);
+  pthread_mutex_lock(&listasTrava);
+  if (j->largado) {
+    pthread_mutex_unlock(&listasTrava);
+    free(wl); free(col); free(j);
+    return NULL;
+  }
+  j->wl = wl; j->nWl = nw; j->col = col; j->nCol = nc;
+  j->pronto = 1;
+  pthread_mutex_unlock(&listasTrava);
+  return NULL;
+}
+
+// NULL se nem o fio deu para criar: montar() busca no fim, no proprio fio.
+static ListasTrakt *listasLargar(void) {
+  ListasTrakt *j = calloc(1, sizeof *j);
+  pthread_t t;
+  if (!j) return NULL;
+  if (pthread_create(&t, NULL, fioListas, j) != 0) { free(j); return NULL; }
+  pthread_detach(t);
+  return j;
+}
+
+static int listasProntas(ListasTrakt *j) {
+  int r;
+  if (!j) return 0;
+  pthread_mutex_lock(&listasTrava);
+  r = j->pronto;
+  pthread_mutex_unlock(&listasTrava);
+  return r;
+}
+
+// Quem desiste de uma volta larga o pedido: se o fio ja acabou, libera aqui;
+// senao ele libera quando acabar.
+static void listasAbandonar(ListasTrakt *j) {
+  int pronto;
+  if (!j) return;
+  pthread_mutex_lock(&listasTrava);
+  pronto = j->pronto;
+  if (!pronto) j->largado = 1;
+  pthread_mutex_unlock(&listasTrava);
+  if (pronto) listasLiberar(j);
+}
+
+// PUBLICACAO EM PARTES, com as listas do Trakt (se ja chegaram) de rabo.
+// `n` e o tamanho do lote de verdade; as listas vao para depois dele como
+// rascunho — a proxima fileira escreve por cima, e a publicacao seguinte as
+// copia de novo. Com o lote sem espaco e sem memoria para crescer, publica sem
+// as listas: elas voltam na proxima.
+static void publicarParcial(CatItem **lote, int *cap, int n,
+                            const CatFileira *fils, int nf, ListasTrakt *j,
+                            int *listasNaTela) {
+  int extra = 0;
+  if (listasProntas(j)) extra = j->nWl + j->nCol;
+  if (extra && n + extra > *cap) {
+    CatItem *maior = realloc(*lote, sizeof(CatItem) * (size_t)(n + extra));
+    if (maior) { *lote = maior; *cap = n + extra; } else extra = 0;
+  }
+  if (extra) {
+    if (j->nWl) memcpy(*lote + n, j->wl, sizeof(CatItem) * (size_t)j->nWl);
+    if (j->nCol) memcpy(*lote + n + j->nWl, j->col, sizeof(CatItem) * (size_t)j->nCol);
+    if (listasNaTela && !*listasNaTela) {
+      *listasNaTela = 1;
+      printf("[desc] listas do Trakt na tela junto das fileiras: %d + %d\n", j->nWl, j->nCol);
+      marco("listas do trakt na tela");
+    }
+  }
+  cat_definir_tudo(*lote, n + extra, fils, nf);
+  parcialNaTela = 1;
+}
+
 static void *montar(void *u) {
   // O lote tambem cresce: era dimensionado por CAT_MAX e por isso herdava o
   // mesmo teto arbitrario.
@@ -2325,7 +2511,18 @@ static void *montar(void *u) {
   // "[home] 13 fileiras na tela" seguido de "6", "8", "9", "11", "13", "14"...
   // Era o "ela fica recarregando" do dono. Com algo na tela, a volta monta em
   // silencio e publica UMA vez no fim — e so se mudou (ver a assinatura).
-  int progressivo = (cat_n() == 0);
+  // Tela PARCIAL (o que uma volta condenada chegou a publicar em partes) conta
+  // como vazia: ver parcialNaTela.
+  int progressivo = (cat_n() == 0) || parcialNaTela;
+  // As listas do Trakt ja foram para a tela nesta volta (em partes ou mescladas).
+  int listasNaTela = 0;
+  // Tamanho do lote na ultima publicacao em partes DESTA volta; -1 = nenhuma.
+  int nPublicado = -1;
+  // Onde a volta estava quando foi condenada, para a linha do log.
+  const char *ondeParou = "";
+  ListasTrakt *listas = NULL;
+  // Versao da lista de addons que maniLargar viu. Ver o relargar na leitura.
+  unsigned versaoLargada;
   (void)u;
   if (!lote) { buscando = 0; return NULL; }
 
@@ -2336,7 +2533,37 @@ static void *montar(void *u) {
   // OS MANIFESTOS COMECAM A CHEGAR AGORA, nao daqui a seis segundos. Ver o
   // cabecalho de maniLargar: eles nao dependem do Trakt, e eram o bloco de 7 s
   // logo depois dele.
+  versaoLargada = addons_versao();
   maniLargar();
+  // E a watchlist/colecao do Trakt tambem: ver ListasTrakt.
+  listas = listasLargar();
+  // VOLTA CONDENADA PARA AQUI, e nao no fim. desc_repetir (credencial, idioma,
+  // addons depois de a lista ser lida) troca montagemGeracao, e uma volta com a
+  // geracao velha ja estava destinada ao descarte do fim — so que chegava la
+  // depois de pagar todos os manifestos e catalogos. MEDIDO na C9 do dono: 45 s
+  // de uma volta que ninguem ia ver. Os pontos abaixo sao os seguros: fora de
+  // trava, sem fio de catalogo esperando por quem sai.
+#define CONDENADA(onde) (minhaGeracao != montagemGeracao ? (ondeParou = (onde), 1) : 0)
+  // AS LISTAS DO TRAKT ASSIM QUE CHEGAREM, em qualquer ponto seguro. Com a
+  // home inteira na tela (volta silenciosa) so marca e acrescenta; em partes,
+  // entram de rabo na publicacao seguinte (ou nesta, se ja houve uma).
+#define LISTAS_SE_PRONTAS() do { \
+    if (!listasNaTela && listasProntas(listas) && listas->nWl + listas->nCol > 0 && \
+        minhaGeracao == montagemGeracao && fonteIntacta(&ctxIni)) { \
+      if (!progressivo) { \
+        listasNaTela = 1; \
+        if (listas->nWl) cat_mesclar_listas(listas->wl, listas->nWl); \
+        if (listas->nCol) cat_mesclar_listas(listas->col, listas->nCol); \
+        marco("listas do trakt na tela"); \
+      } else if (n == nPublicado || n == 0) { \
+        /* So com o lote igual ao que esta na tela: o rabo de rascunho nao \
+           pode cobrir item que ainda nao foi publicado. */ \
+        if (nPublicado < 0) nFileirasMontadas = 0; \
+        nPublicado = n; \
+        publicarParcial(&lote, &cap, n, filsMontadas, nFileirasMontadas, \
+                        listas, &listasNaTela); \
+      } \
+    } } while (0)
   // AS DUAS FONTES, UNIDAS. Ver o cabecalho de montarContinuar: com Trakt
   // vinculado esta fileira ignorava o progresso da conta Nuvio, que e o que
   // chega do celular do dono.
@@ -2344,6 +2571,10 @@ static void *montar(void *u) {
   nContinuar = montarContinuar(lote, CONT_MAX);
   n += nContinuar;
   marco("trakt continuar assistindo");
+  if (CONDENADA("depois do continuar assistindo")) {
+    pthread_mutex_unlock(&contTrava);
+    goto condenada;
+  }
   // O feed social oficial e uma fileira propria, logo depois do retorno ao
   // que estava sendo visto. Ele vem cedo para nao depender dos manifestos dos
   // addons e usa a mesma credencial Trakt ja carregada.
@@ -2353,6 +2584,7 @@ static void *montar(void *u) {
   pthread_mutex_unlock(&contTrava);
   n += nSocial;
   marco("trakt atividade dos amigos");
+  if (CONDENADA("depois da atividade dos amigos")) goto condenada;
   // O historico do Trakt e a PRIMEIRA fileira da home e chega ~1,6 s antes dos
   // manifestos. Publicar aqui poe conteudo na tela nesse instante em vez de
   // segurar tudo ate o fim.
@@ -2377,9 +2609,11 @@ static void *montar(void *u) {
       fs->ini = nContinuar; fs->n = nSocial;
     }
     nFileirasMontadas = nf;
-    cat_definir_tudo(lote, n, filsMontadas, nf);
+    nPublicado = n;
+    publicarParcial(&lote, &cap, n, filsMontadas, nf, listas, &listasNaTela);
     marco("continuar assistindo na tela");
   }
+  LISTAS_SE_PRONTAS();
 #define GARANTE(quantos) do { \
     if (n + (quantos) > cap) { \
       int novoCap = cap; \
@@ -2432,8 +2666,25 @@ static void *montar(void *u) {
     // A LISTA DE ADDONS E LIDA AQUI. Marcar o instante e o que permite dizer,
     // no fim, se um pedido de remontagem que chegou no meio do caminho ja foi
     // atendido por esta volta. Ver geracaoPedida.
+    pthread_mutex_lock(&listaTrava);
     geracaoLida = geracaoPedida;
+    listaLidaNaVolta = 1;
     { HomeContexto c; homeestado_contexto(&c); ctxIni.addons = c.addons; }
+    pthread_mutex_unlock(&listaTrava);
+    // A LISTA MUDOU DESDE A LARGADA (o sync entregou os addons do perfil com
+    // a volta ja no ar, o caso da escolha de perfil): os downloads em paralelo
+    // eram das URLs da lista VELHA, e cada addon da nova caia no rede_baixar
+    // serial de lerManifesto — um de cada vez, ate 20 s cada. MEDIDO na C9 do
+    // dono: 30 s entre "trakt atividade dos amigos" e "manifestos lidos" com 12
+    // addons. Larga de novo com a lista de agora; o cache por URL+versao e o
+    // mesmo, e os fios da largada velha saem sozinhos (maniGeracao).
+    if (addons_versao() != versaoLargada) {
+      printf("[desc] lista de addons mudou desde a largada: manifestos da lista "
+             "nova em paralelo\n");
+      fflush(stdout);
+      versaoLargada = addons_versao();
+      maniLargar();
+    }
     // TODO ADDON TEM O MANIFESTO LIDO, e a guarda `addons_tem_catalogo(i)` que
     // estava aqui foi TIRADA de proposito.
     //
@@ -2484,6 +2735,8 @@ static void *montar(void *u) {
       for (i = 0; i < nAd; i++) {
         int teto = cota + folga;
         int lidos, real = 0;
+        LISTAS_SE_PRONTAS();
+        if (CONDENADA("lendo os manifestos")) goto condenada;
         if (teto > DECL_MAX - nDecl) teto = DECL_MAX - nDecl;
         lidos = lerManifesto(i, addons_base(i), decls + nDecl, teto, &real);
         nDecl += lidos;
@@ -2542,6 +2795,8 @@ static void *montar(void *u) {
     // procurar (o Akashi so tem busca, nao tem fileira que valha a pena).
     printf("[desc] %d alvos de busca\n", desc_busca_n_alvos());
     marco("manifestos lidos");
+    LISTAS_SE_PRONTAS();
+    if (CONDENADA("depois dos manifestos")) goto condenada;
 
     // ensureOrderKeysWithPrefs: a ordem salva primeiro, e as chaves NOVAS
     // acrescentadas no fim. Catalogo que o addon passou a declarar hoje entra
@@ -2567,21 +2822,25 @@ static void *montar(void *u) {
       // numero que e a soma de tres montagens — e a linha [col] existe para
       // descrever a montagem que acabou de acontecer.
       engolidasNaDeclaracao = 0;
-      tarefas = calloc(CAT_FIL_MAX, sizeof(TarefaCat));
-
       // EM RODADAS, e nao num lote so. Com um lote de exatamente `teto`
       // pedidos, cada catalogo que responde VAZIO custa uma fileira a menos na
       // tela: o dono escolheria 7 e veria 5, sem nada dizendo por que. A rodada
       // seguinte pede exatamente o que faltou. O caso comum — todos respondendo
       // — continua sendo UMA rodada, com o mesmo custo de antes.
-      while (tarefas && nFil < teto && cursor < nOrdem) {
+      while (nFil < teto && cursor < nOrdem) {
         int alvo = teto - nFil;
+        RodadaCat *rod;
+        TarefaCat *tarefas;
+        int nTarefas = 0;
+        if (CONDENADA("antes de pedir os catalogos")) goto condenada;
+        rod = calloc(1, sizeof *rod);
+        tarefas = rod ? calloc((size_t)alvo, sizeof(TarefaCat)) : NULL;
+        if (!tarefas) { free(rod); break; }
+        rod->t = tarefas;
         rodadas++;
         // ETAPA 1 — escolher as fileiras DESTA rodada. Os filtros (desligada,
         // repetida) sao locais e baratos; fazer isto antes deixa os fios so com
         // a parte cara, que e a rede.
-        nTarefas = 0; proximaTarefa = 0;
-        memset(tarefas, 0, sizeof(TarefaCat) * CAT_FIL_MAX);
         for (; cursor < nOrdem && nTarefas < alvo; cursor++) {
           Decl *d = &decls[ordem[cursor]];
           int t, repetida = 0;
@@ -2601,41 +2860,83 @@ static void *montar(void *u) {
           for (t = 0; !repetida && t < nTarefas; t++)
             if (!strcmp(tarefas[t].d->chave, d->chave)) { repetida = 1; break; }
           if (repetida) { duplicados++; continue; }
-          tarefas[nTarefas++].d = d;
+          tarefas[nTarefas].d = d;
+          // COPIAS para o fio: um fio largado por lento sobrevive a esta volta,
+          // e `decls` (estatico) e a lista de addons ja podem ser de outra.
+          snprintf(tarefas[nTarefas].base, sizeof tarefas[nTarefas].base, "%s", d->base ? d->base : "");
+          snprintf(tarefas[nTarefas].tipo, sizeof tarefas[nTarefas].tipo, "%s", d->tipo);
+          snprintf(tarefas[nTarefas].id, sizeof tarefas[nTarefas].id, "%s", d->id);
+          nTarefas++;
           declPedida[ordem[cursor]] = 1;
         }
-        if (!nTarefas) break;
+        if (!nTarefas) { free(tarefas); free(rod); break; }
         pedidos += nTarefas;
+        rod->nT = nTarefas;
+        rod->refs = 1;                       // quem monta
+        rod->inicioMs = rod->ultimoProntoMs = descAgoraMs();
 
-        // ETAPA 2 — CAT_FIOS trabalhando na fila. Se o calloc falhar ou nao
-        // houver o que ler, nTarefas fica 0 e o laco de montagem abaixo nao roda:
-        // a home segue com o que ja foi publicado, sem caminho de erro proprio.
-        { pthread_t fios[CAT_FIOS];
-          int criados = 0, q;
-          for (q = 0; q < CAT_FIOS && nTarefas > 0; q++)
-            if (pthread_create(&fios[criados], NULL, fioCatalogo, NULL) == 0) criados++;
+        // ETAPA 2 — CAT_FIOS trabalhando na fila, DESTACADOS: quem monta nao
+        // espera fio nenhum no fim da rodada (ver RodadaCat).
+        { int criados = 0, q;
+          for (q = 0; q < CAT_FIOS && q < nTarefas; q++) {
+            pthread_t tf;
+            pthread_mutex_lock(&catTrava); rod->refs++; pthread_mutex_unlock(&catTrava);
+            if (pthread_create(&tf, NULL, fioCatalogo, rod) == 0) { pthread_detach(tf); criados++; }
+            else { pthread_mutex_lock(&catTrava); rod->refs--; pthread_mutex_unlock(&catTrava); }
+          }
           // Sem NENHUM fio (pthread_create falhou em todos), le em serie no
           // proprio fio: pior desempenho, mesmo resultado. Melhor que home vazia.
-          if (!criados && nTarefas > 0) fioCatalogo(NULL);
+          if (!criados) {
+            pthread_mutex_lock(&catTrava); rod->refs++; pthread_mutex_unlock(&catTrava);
+            fioCatalogo(rod);
+          }
 
           // ETAPA 3 — montar NA ORDEM, publicando cada fileira assim que o balde
           // dela fica pronto. Esperar o balde k nao desperdica tempo: os fios
           // seguem enchendo k+1, k+2 enquanto este e consumido.
           for (k = 0; k < nTarefas && nFil < teto; k++) {
             const Decl *d = tarefas[k].d;
-            int got;
+            int got, respondeu, largado = 0;
             int estadoLinha = 0;
+            const CatItem *origem = tarefas[k].itens;
+            // Rascunho de quem monta para a linha anterior de um catalogo
+            // LARGADO: o balde dele ainda e do fio, que pode escrever nele.
+            // static: 12 CatItem passam de 190 KB, e montar() roda num fio so.
+            static CatItem daLinhaAnterior[MAX_POR_FILEIRA];
             for (;;) {
               int pr;
+              unsigned long long agora = descAgoraMs();
               pthread_mutex_lock(&catTrava);
               pr = tarefas[k].pronto;
+              // O CATALOGO LENTO NAO SEGURA A RODADA. Fila vazia (nada mais
+              // para comecar), nenhum catalogo terminou ha CAT_ESPERA_SILENCIO_MS
+              // e este esta no ar ha CAT_ESPERA_MIN_MS: publica sem ele. MEDIDO
+              // na C9 do dono: "[rede] falha 28" (os 8 s do lerCatalogo) era a
+              // ultima linha antes do resumo da rodada — os outros ja tinham
+              // chegado. A resposta, se vier, o fio joga fora.
+              if (!pr && tarefas[k].inicioMs && rod->prox >= rod->nT &&
+                  agora - rod->ultimoProntoMs >= CAT_ESPERA_SILENCIO_MS &&
+                  agora - tarefas[k].inicioMs >= CAT_ESPERA_MIN_MS) {
+                tarefas[k].largada = 1;
+                largado = 1;
+              }
               pthread_mutex_unlock(&catTrava);
-              if (pr) break;
+              if (pr || largado) break;
+              if (CONDENADA("esperando os catalogos")) { rodadaSoltar(rod); goto condenada; }
+              LISTAS_SE_PRONTAS();
               SDL_Delay(10);
             }
-            got = tarefas[k].n;
-            if (tarefas[k].respondeu) responderam++;
-            if (tarefas[k].respondeu && !got) {
+            if (largado) {
+              got = 0; respondeu = 0;
+              printf("[desc] catalogo lento: %s (%s); segue sem ele depois de %llu ms\n",
+                     d->titulo, d->nomeAddon,
+                     (unsigned long long)(descAgoraMs() - tarefas[k].inicioMs));
+            } else {
+              got = tarefas[k].n;
+              respondeu = tarefas[k].respondeu;
+            }
+            if (respondeu) responderam++;
+            if (respondeu && !got) {
               // Respondeu SEM `metas`: o catalogo existe e esta vazio hoje. Nao e
               // erro e nao pode virar titulo pendurado na home — a rodada seguinte
               // pede outro no lugar dele.
@@ -2646,25 +2947,26 @@ static void *montar(void *u) {
               // que respondeu corretamente sem itens.
               estadoLinha = 1;
             }
-            if (!tarefas[k].respondeu && !got) {
+            if (!respondeu && !got) {
               // ISSUE #42(a): antes disto o log so tinha o resumo do fim da
               // rodada ("N pedidos, M responderam") — quem quisesse saber QUAL
               // fileira sumiu tinha de adivinhar por subtracao. Nomear o
               // catalogo aqui, igual ao "catalogo vazio" acima, e o que falta
               // para responder "por que esta fileira nao apareceu" por fileira
               // pedida, e nao so por total.
-              printf("[desc] catalogo sem resposta a tempo: %s (%s)\n",
-                     d->titulo, d->nomeAddon);
+              if (!largado)
+                printf("[desc] catalogo sem resposta a tempo: %s (%s)\n",
+                       d->titulo, d->nomeAddon);
               // Timeout preserva o ultimo lote bom desta chave. No primeiro
               // arranque, sem snapshot, segue omitida de forma segura.
-              got = linhaAnterior(d->chave, tarefas[k].itens,
-                                  MAX_POR_FILEIRA, NULL);
+              got = linhaAnterior(d->chave, daLinhaAnterior, MAX_POR_FILEIRA, NULL);
+              origem = daLinhaAnterior;
               if (!got) continue;
             }
             GARANTE(MAX_POR_FILEIRA + 2);
             if (got > cap - n) got = cap - n;
             if (got > 0)
-              memcpy(lote + n, tarefas[k].itens, sizeof(CatItem) * (size_t)got);
+              memcpy(lote + n, origem, sizeof(CatItem) * (size_t)got);
           {
             CatFileira *f = &fil[nFil++];
             memset(f, 0, sizeof *f);
@@ -2688,26 +2990,27 @@ static void *montar(void *u) {
           // publicar N vezes e seguro para quem esta desenhando; o custo e uma
           // copia do vetor por fileira, que acontece no fio da descoberta e nao
           // no de desenho.
-          // So publica em partes com a tela VAZIA. Sobre o cache — ou sobre a
-          // home da volta anterior — seria um retrocesso visivel: 16 fileiras
-          // viram 1. Ver `progressivo` no inicio de montar(). filsMontadas so
-          // muda JUNTO com a publicacao: sem ela o bloco da tela e outro.
-          // Estrutura que mudou no meio NAO interrompe: estas fileiras sao da
-          // conta/perfil/addons certos, e o fim da volta as rearruma.
+          // So publica em partes com a tela VAZIA (ou parcial). Sobre o cache —
+          // ou sobre a home da volta anterior — seria um retrocesso visivel: 16
+          // fileiras viram 1. Ver `progressivo` no inicio de montar().
+          // filsMontadas so muda JUNTO com a publicacao: sem ela o bloco da tela
+          // e outro. Estrutura que mudou no meio NAO interrompe: estas fileiras
+          // sao da conta/perfil/addons certos, e o fim da volta as rearruma.
           if (progressivo && minhaGeracao == montagemGeracao && fonteIntacta(&ctxIni)) {
             nFileirasMontadas = nFil;
             memcpy(filsMontadas, fil, sizeof(CatFileira) * (size_t)nFil);
-            cat_definir_tudo(lote, n, filsMontadas, nFileirasMontadas);
+            nPublicado = n;
+            publicarParcial(&lote, &cap, n, filsMontadas, nFileirasMontadas,
+                            listas, &listasNaTela);
           }
           // Bandeira propria: `nFil == 1` nunca acontece aqui porque a fileira
           // "Continuar assistindo" ja ocupou a posicao 0 antes do laco.
           if (!marcouPrimeira) { marcouPrimeira = 1;
                                  marco("primeira fileira da rede na tela"); }
           }
-          for (q = 0; q < criados; q++) pthread_join(fios[q], NULL);
+          rodadaSoltar(rod);
         }
       }   /* fim da rodada */
-      free(tarefas); tarefas = NULL; nTarefas = 0;
       // O QUE O LIMITE DEIXOU DE FORA. `cursor` parou onde o teto encheu, entao
       // o resto de `ordem` nunca foi nem considerado. Conta so o que NAO esta
       // desligado: fileira que a pessoa desligou na mao nao e surpresa e nao
@@ -2746,6 +3049,7 @@ static void *montar(void *u) {
                "catalogos disponiveis (%d declarados, %d na ordem)\n",
                teto, nDecl, nOrdem);
       fflush(stdout);
+      if (CONDENADA("depois dos catalogos")) goto condenada;
     }
   }
 
@@ -2755,10 +3059,34 @@ static void *montar(void *u) {
   // viravam a watchlist inteira e as recomendacoes nunca apareciam. A
   // biblioteca varre o catalogo todo procurando as marcas, entao para ela
   // tanto faz onde estao.
-  GARANTE(400);
-  n += trakt_lista("watchlist",  lote + n, cap - n);
-  GARANTE(400);
-  n += trakt_lista("collection", lote + n, cap - n);
+  //
+  // Buscadas no COMECO da volta por fioListas (ver ListasTrakt); aqui so se
+  // espera o que ainda nao chegou e se copia para o mesmo lugar de sempre.
+  // Sem o fio (pthread_create falhou), busca aqui mesmo, como sempre foi.
+  if (listas) {
+    while (!listasProntas(listas)) SDL_Delay(10);
+    if (listas->nWl) {
+      GARANTE(listas->nWl);
+      if (listas->nWl <= cap - n) {
+        memcpy(lote + n, listas->wl, sizeof(CatItem) * (size_t)listas->nWl);
+        n += listas->nWl;
+      }
+    }
+    if (listas->nCol) {
+      GARANTE(listas->nCol);
+      if (listas->nCol <= cap - n) {
+        memcpy(lote + n, listas->col, sizeof(CatItem) * (size_t)listas->nCol);
+        n += listas->nCol;
+      }
+    }
+    listasLiberar(listas);
+    listas = NULL;
+  } else {
+    GARANTE(400);
+    n += trakt_lista("watchlist",  lote + n, cap - n);
+    GARANTE(400);
+    n += trakt_lista("collection", lote + n, cap - n);
+  }
   // PLAN TO WATCH DO SIMKL (issue #110), SO QUANDO O "+" SALVA LA. E a mesma
   // marca naLista da watchlist do Trakt, entao o painel de Salvos e a aba
   // Salvos da Biblioteca mostram o Plan to Watch sem saber de onde ele veio.
@@ -2835,6 +3163,8 @@ static void *montar(void *u) {
       desc_iniciar();
       return NULL;
     }
+    // A tela passa a ter a volta COMPLETA (publicada agora, ou igual a ela).
+    parcialNaTela = 0;
     // A partir daqui filsMontadas descreve o bloco da tela nos dois ramos:
     // publicado agora, ou igual (mesma assinatura) ao que ja estava.
     nFileirasMontadas = nFilsLote;
@@ -2943,6 +3273,7 @@ static void *montar(void *u) {
   }
   fflush(stdout);
   free(lote);
+  listasAbandonar(listas);   // so sobra se o lote veio vazio antes de usa-las
   buscando = 0;
   // Um pedido que chegou COM o ciclo no ar roda agora, com as credenciais que
   // entraram no meio do caminho. Zerar a marca antes de disparar evita que uma
@@ -2957,11 +3288,31 @@ static void *montar(void *u) {
       desc_iniciar();
   }
   return NULL;
+
+condenada:
+  // VOLTA CONDENADA: ver CONDENADA no comeco. Nada desta volta foi publicado
+  // desde que ela foi condenada (as publicacoes em partes conferem a geracao),
+  // e a volta nova le credencial, idioma e lista de addons de agora. O pedido
+  // que a condenou e atendido por ela, entao a marca de "repetir no fim" cai.
+  printf("[desc] montagem interrompida (%s): remontagem pedida "
+         "(credencial/addons/idioma); recomecando ja\n", ondeParou);
+  fflush(stdout);
+  listasAbandonar(listas);
+  free(lote);
+  repetirAoFim = 0;
+  buscando = 0;
+  desc_iniciar();
+  return NULL;
+#undef CONDENADA
+#undef LISTAS_SE_PRONTAS
 }
 
 void desc_iniciar(void) {
   if (buscando) { printf("[desc] ja montando; pedido ignorado\n"); fflush(stdout); return; }
+  pthread_mutex_lock(&listaTrava);
   buscando = 1;
+  listaLidaNaVolta = 0;
+  pthread_mutex_unlock(&listaTrava);
   montagemGeracao++;
   if (pthread_create(&fio, NULL, montar, NULL) != 0) {
     // NAO FALHAR CALADO. No webOS um pthread_create nunca falhou e o caminho de
@@ -3137,7 +3488,20 @@ void desc_repetir(void) {
   geracaoPedida++;
   if (!buscando) { desc_iniciar(); return; }
   repetirAoFim = 1;
-  printf("[desc] remontagem pedida; roda ao fim do ciclo atual\n");
+  printf("[desc] remontagem pedida; a volta em curso para no proximo ponto seguro e recomeca\n");
+  fflush(stdout);
+}
+
+// Ver descoberta.h e listaLidaNaVolta. So a LISTA mudou: a volta que ainda nao
+// a leu vai ler a nova, e o Trakt que ela ja buscou continua valendo.
+void desc_repetir_addons(void) {
+  int atendido;
+  pthread_mutex_lock(&listaTrava);
+  atendido = buscando && !listaLidaNaVolta;
+  if (atendido) { geracaoPedida++; repetirAoFim = 1; }
+  pthread_mutex_unlock(&listaTrava);
+  if (!atendido) { desc_repetir(); return; }
+  printf("[desc] addons novos: a volta em curso ainda nao leu a lista; atendido por ela\n");
   fflush(stdout);
 }
 

@@ -56,4 +56,13 @@ void assrender_geracao(unsigned geracao);
  * corre em paralelo com o indice do MKV em vez de atrasar a primeira fala. */
 void assrender_preaquecer(void);
 
+/* Assinatura de fonte TrueType/OpenType/colecao nos primeiros bytes. */
+int  assrender_bytes_sao_fonte(const void *dados, size_t n);
+/* Le os arquivos de fonte de `dir` (so os que tem assinatura de fonte; o
+ * resto conta em *ignorados) e entrega cada um a `cb`. Devolve quantos. */
+int  assrender_ler_pasta_fontes(const char *dir,
+                                void (*cb)(const char *nome, const void *dados,
+                                           size_t tam, void *u),
+                                void *u, int *ignorados);
+
 #endif

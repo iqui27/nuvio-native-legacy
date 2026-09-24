@@ -250,6 +250,8 @@ int   ajustes_salvos_no_simkl(void)        { return 0; }
 int   trakt_enfeitar_lote(CatItem *s, int n) { (void)s; (void)n; return 0; }
 int   trakt_lista(const char *q, CatItem *s, int m) { (void)q; (void)s; (void)m; return 0; }
 void  cat_trocar_continuar(const CatItem *l, int q) { (void)l; (void)q; }
+// trakt_lista devolve 0 aqui: nada para mesclar.
+int   cat_mesclar_listas(const CatItem *v, int q) { (void)v; (void)q; return 0; }
 const char *nuvem_trakt_cliente(void)      { return ""; }
 
 // ------------------------------------------------------------------ o teste

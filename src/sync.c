@@ -719,7 +719,9 @@ void sync_passo(unsigned agoraMs) {
   if (addonsCedo) {
     addonsCedo = 0;
     if (temAddonsRem && perfilDoCiclo == perfis_ativo()) {
-      if (addons_definir_lista(addonsRem, nAddonsRem)) desc_repetir();
+      // _addons: a volta que ainda nao leu a lista (o caso do arranque e da
+      // escolha de perfil) atende o pedido sozinha, sem ser jogada fora.
+      if (addons_definir_lista(addonsRem, nAddonsRem)) desc_repetir_addons();
       temAddonsRem = 0;
     }
   }
@@ -773,12 +775,12 @@ void sync_passo(unsigned agoraMs) {
   // ultimas refazia Trakt e todos os manifestos por nada, e como o ciclo novo
   // publica um conjunto diferente do anterior, a home carregava um catalogo,
   // trocava por outro e so entao assentava na ordem final.
-  { int remontar = 0, soFileiras = 0;
+  { int remontar = 0, soFileiras = 0, soAddons = 0;
   // SO REMONTA QUANDO A LISTA MUDOU DE VERDADE. Ligar `remontar` porque a
   // resposta chegou fazia um ciclo de descoberta completo a cada cinco minutos
   // com a lista identica — ver listaIgual em addons.c.
   if (temAddonsRem) {
-    if (addons_definir_lista(addonsRem, nAddonsRem)) remontar = 1;
+    if (addons_definir_lista(addonsRem, nAddonsRem)) soAddons = 1;
     temAddonsRem = 0;
   }
   // Vinculo feito NESTA TV ganha do que a conta manda: o servidor nao aceita o
@@ -865,7 +867,10 @@ void sync_passo(unsigned agoraMs) {
   }
   // Rede so quando muda o que buscar. Quando as duas coisas mudam no mesmo
   // ciclo, o ciclo de rede ja remonta as fileiras no fim — nao ha o que somar.
+  // Credencial nova pede a volta inteira de novo (o Trakt ja lido e o velho);
+  // so a lista de addons, nem sempre — ver desc_repetir_addons.
   if (remontar) desc_repetir();
+  else if (soAddons) desc_repetir_addons();
   else if (soFileiras) desc_remontar_fileiras(); }
   if (temAjustesBlob && ajustesBlob) {
     ajustes_aplicar_blob(ajustesBlob);

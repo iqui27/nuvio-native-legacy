@@ -183,6 +183,7 @@ void desc_remontar_fileiras(void) {
 }
 static int repeticoes;
 void desc_repetir(void) { repeticoes++; }
+void desc_repetir_addons(void) { repeticoes++; }
 void desc_refazer_continuar(void) {}
 void desc_esquecer(void) {}
 void desc_tmdb_definir(const char *c) { (void)c; }
