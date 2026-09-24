@@ -1075,7 +1075,10 @@ void avisos_envio_auto_passo(Uint32 agora) {
   // o player aberto enche os 200 KB em menos de um minuto (haylereader,
   // 20/09: 200 KB por minuto de eventos [video]).
 #ifdef __EMSCRIPTEN__
-  proximo = agora + 60000;
+  // Depois dos 5 primeiros minutos, 5 em 5 tambem no Tizen: a cada minuto o
+  // registro inteiro (ate 200 KB) subia de novo — 18 envios em 16 minutos de
+  // uma TV so nos logs de 24/09, quase todos repetindo o que ja tinha ido.
+  proximo = agora + (agora < 300000 ? 60000 : 300000);
 #else
   proximo = agora + 300000;
 #endif

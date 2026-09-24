@@ -667,9 +667,28 @@ static int aoEvento(LSHandle *h, LSMessage *m, void *u) {
   if (!p) return 1;
   // O payload do uMS pode vir com '\n' no fim (medido na C9 em 23/09: 4370
   // das 4391 linhas "[video] ev" seguidas de uma linha vazia). Corta so no log.
-  { size_t n = strlen(p);
+  // OS EVENTOS DE RELOGIO SAO AMOSTRADOS NO LOG. currentTime chega a cada
+  // ~200 ms e bufferRange/streamingInfo/subtitlePosition quase tanto: nos logs
+  // de campo da 1.4.3 eram 84% do registro, e os 200 KB do envio automatico
+  // cobriam so ~4 minutos de filme — o que aconteceu antes do problema ja
+  // tinha saido. Um de cada tipo a cada 30 s basta para saber que o video
+  // andava; estado, erro, sourceInfo e o resto continuam inteiros.
+  { static Uint32 ultimoRel[4];
+    static const char *const RELOGIO[4] = {
+      "\"currentTime\"", "\"bufferRange\"", "\"streamingInfo\"", "subtitlePosition"
+    };
+    size_t n = strlen(p);
+    int k, logar = 1;
+    for (k = 0; k < 4; k++)
+      if (strstr(p, RELOGIO[k])) {
+        Uint32 agora = SDL_GetTicks();
+        if (ultimoRel[k] && agora - ultimoRel[k] < 30000) logar = 0;
+        else ultimoRel[k] = agora;
+        break;
+      }
+    if (strstr(p, "\"error") || strstr(p, "rror\"")) logar = 1;   // erro sempre sai
     while (n && (p[n - 1] == '\n' || p[n - 1] == '\r' || p[n - 1] == ' ')) n--;
-    printf("[video] ev %.*s\n", (int)n, p); fflush(stdout); }
+    if (logar) { printf("[video] ev %.*s\n", (int)n, p); fflush(stdout); } }
   if (strstr(p, "sourceInfo")) {
     const char *q;
     nAudio = nLeg = 0;
