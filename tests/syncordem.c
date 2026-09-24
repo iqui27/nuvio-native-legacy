@@ -221,6 +221,7 @@ int  syncprog_puxadas(void) { return 0; }
 int  syncprog_puxar(void) { return 0; }
 int  trakt_ativo(void) { return 0; }
 int  trakt_definir(const char *t, const char *c) { (void)t; (void)c; return 0; }
+int  trakt_credencial_igual(const char *t, const char *c) { (void)t; (void)c; return 0; }
 void trakt_esquecer(void) {}
 TraEstado traktauth_estado(void) { return TRA_LIGADO; }
 void vistoep_esquecer(void) {}

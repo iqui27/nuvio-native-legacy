@@ -790,7 +790,14 @@ void sync_passo(unsigned agoraMs) {
   // credencial da conta deste ciclo tambem e do perfil ativo — um ciclo de outro
   // perfil ja foi descartado acima —, entao o perfil 2 sem vinculo local recebe
   // o Trakt da conta DELE, e nunca o vinculo local do 1.
-  if (temTraktRem)  { if (traktauth_estado() != TRA_LIGADO) { trakt_definir(traktTok, nuvem_trakt_cliente()); remontar = 1; }
+  // A MESMA CREDENCIAL DE NOVO NAO REMONTA. A conta manda o token do Trakt em
+  // TODO ciclo, e `remontar` ligava sempre: um desc_repetir por sync — a cada
+  // cinco minutos um ciclo de rede inteiro, e no arranque a montagem em voo
+  // descartada ("remontagem pedida no meio") por uma credencial que ela ja
+  // estava usando.
+  if (temTraktRem)  { if (traktauth_estado() != TRA_LIGADO) {
+                        if (!trakt_credencial_igual(traktTok, nuvem_trakt_cliente())) {
+                          trakt_definir(traktTok, nuvem_trakt_cliente()); remontar = 1; } }
                       else printf("[sync] trakt: vinculo local mantido, credencial da conta ignorada\n");
                       temTraktRem = 0; }
   if (temTmdb)      { desc_tmdb_definir(tmdbKey);   temTmdb = 0; }

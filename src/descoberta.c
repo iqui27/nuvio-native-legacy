@@ -4,6 +4,7 @@
 #include "catordem.h"
 #include "fileiras.h"
 #include "homeestado.h"
+#include "sessao.h"
 #include "colecoes.h"
 #include "marco.h"
 #include <SDL2/SDL.h>
@@ -2046,6 +2047,258 @@ int desc_tirar_continuar(const char *imdb, int temporada, int episodio) {
   return cat_tirar_continuar(imdb);
 }
 
+// A ORDEM DOS CANDIDATOS A FILEIRA, com as preferencias de AGORA.
+//
+// Saiu de dentro de montar() para servir a duas perguntas com a mesma regra:
+// a montagem (registrar=1: renomeia, registra em fileiras.c e diz no log quem
+// ganhou vaga garantida) e a conferencia do fim dela, quando a estrutura mudou
+// no meio (registrar=0, sem efeito colateral em fileiras.c): "com a estrutura
+// nova, uma montagem pediria algum catalogo que esta nao pediu?". Duas copias
+// da regra divergiriam na primeira mudanca, e a conferencia passaria a
+// responder sobre uma ordem que ninguem monta.
+//
+// `nFixas` e quantas fileiras sinteticas (Continuar/Amigos) ja ocupam o teto.
+// Devolve quantos indices de `decls` foram escritos em `ordem`.
+static int ordenarCandidatos(Decl *decls, int nDecl, int *ordem, int nFixas,
+                             int registrar, int *tetoSaida) {
+  int nOrdem = 0, j, k;
+  char vistos[DECL_MAX];
+  memset(vistos, 0, sizeof vistos);
+  for (k = 0; k < nPrefOrdem; k++)
+    for (j = 0; j < nDecl; j++)
+      if (!vistos[j] && !strcmp(decls[j].chave, prefOrdem[k])) {
+        ordem[nOrdem++] = j; vistos[j] = 1; break;
+      }
+  // INTERCALADO POR ADDON, e nao na ordem em que os manifestos foram
+  // lidos. E o MESMO defeito que a cota de declaracoes resolveu um nivel
+  // abaixo ("o defeito nao e do addon nem do manifesto dele: e de quem
+  // reparte as vagas"), e ele voltava aqui: a home pede so as primeiras N
+  // desta lista, e na ordem crua as N eram todas do primeiro addon.
+  //
+  // MEDIDO na LG do dono ao investigar o #37: 124 catalogos declarados, 6
+  // viram fileira, o Xperience declara 72 e vem primeiro — o FrostView,
+  // com UM catalogo, ficava em 124o e nunca era pedido. Quem acabou de
+  // instalar um addon nao tinha como ver nada dele.
+  //
+  // Cada addon leva a PRIMEIRA fileira antes de qualquer um levar a
+  // segunda; dentro do addon, a ordem do manifesto. Quem tem prefencia
+  // salva ja saiu no laco de cima e nao entra nesta partilha.
+  { int nAd2 = addons_n();
+    for (;;) {
+      int pegou = 0, i2;
+      for (i2 = 0; i2 < nAd2; i2++) {
+        const char *b = addons_base(i2);
+        if (!b || !b[0]) continue;
+        for (j = 0; j < nDecl; j++)
+          if (!vistos[j] && decls[j].base && !strcmp(decls[j].base, b)) {
+            ordem[nOrdem++] = j; vistos[j] = 1; pegou = 1; break;
+          }
+      }
+      if (!pegou) break;
+    } }
+  // Sobra: declaracao cuja base nao casa com addon nenhum da lista atual.
+  for (j = 0; j < nDecl; j++) if (!vistos[j]) ordem[nOrdem++] = j;
+
+  // A ordem da CONTA por cima da ordem local, e a regra e UNIAO, nao
+  // substituicao: catordem_unir puxa para a frente o que o remoto conhece,
+  // na ordem dele, e deixa todo o resto no fim como ja estava. Aplicar a
+  // ordem remota crua removeria os catalogos que passaram a existir depois
+  // de ela ter sido gravada — era o `{"localItems":54,"remoteItems":43}`
+  // de todo boot na OLED65C9, com a home reescrita e nunca convergindo.
+  if (catordem_tem_ordem() && nOrdem > 0) {
+    const char *chaves[DECL_MAX];
+    int saida[DECL_MAX], antes[DECL_MAX], q;
+    for (q = 0; q < nOrdem; q++) chaves[q] = decls[ordem[q]].chave;
+    memcpy(antes, ordem, sizeof(int) * (size_t)nOrdem);
+    q = catordem_unir(chaves, nOrdem, saida, DECL_MAX);
+    for (j = 0; j < q; j++) ordem[j] = antes[saida[j]];
+    nOrdem = q;
+  }
+
+  // ORDEM LOCAL POR CIMA DA DA CONTA, mesma regra de uniao e um motivo a
+  // mais: catordem.c e SO LEITURA porque a TV nao pode empurrar de volta
+  // (a trava esta no topo de catordem.h), entao sem esta precedencia a
+  // ordem que a pessoa arruma aqui seria desfeita pelo proximo sync.
+  if (fil_tem_ordem() && nOrdem > 0) {
+    const char *chaves[DECL_MAX];
+    int saida[DECL_MAX], antes[DECL_MAX], q;
+    for (q = 0; q < nOrdem; q++) chaves[q] = decls[ordem[q]].chave;
+    memcpy(antes, ordem, sizeof(int) * (size_t)nOrdem);
+    q = fil_unir(chaves, nOrdem, saida, DECL_MAX);
+    for (j = 0; j < q; j++) ordem[j] = antes[saida[j]];
+    nOrdem = q;
+  }
+
+  if (registrar) {
+    // customTitles ganha do nome do manifesto. Aplicado a TODOS os
+    // candidatos, e nao so aos que forem pedidos: e este titulo que a tela de
+    // Ajustes mostra, e mostrar la o nome cru do manifesto enquanto a home
+    // mostra o renomeado seria a mesma fileira com dois nomes.
+    for (k = 0; k < nOrdem; k++) {
+      Decl *d = &decls[ordem[k]];
+      int t;
+      for (t = 0; t < nPrefTit; t++)
+        if (!strcmp(prefTit[t].chave, d->chave)) {
+          snprintf(d->titulo, sizeof d->titulo, "%s", prefTit[t].titulo);
+          break;
+        }
+    }
+    // REGISTRA TODOS OS CANDIDATOS, inclusive os desligados e os que ficam
+    // abaixo do limite. E o que deixa a tela de Ajustes PROMOVER um catalogo
+    // que hoje nao entra: se ela listasse apenas as fileiras pedidas, o limite
+    // viraria uma jaula e nada de fora dele poderia ser escolhido. O teto do
+    // registro e o FIL_MAX de fileiras.h, nao o das fileiras desenhadas.
+    // O NOME DO ADDON E O TIPO VAO JUNTO: e aqui, e so aqui, que eles sao
+    // conhecidos — a tela de Ajustes precisa deles para dizer de onde a
+    // fileira vem. `-1` em itens porque nesta altura nenhum catalogo foi
+    // pedido ainda; quem sabe a contagem e home.c.
+    for (k = 0; k < nOrdem && k < FIL_MAX; k++)
+      fil_registrar(decls[ordem[k]].chave, decls[ordem[k]].titulo,
+                    decls[ordem[k]].nomeAddon, decls[ordem[k]].tipo, -1);
+    fil_gravar_registro();
+  }
+
+  // TETO DE FILEIRAS: o numero escolhido em Ajustes (7 de fabrica),
+  // limitado pelo CAT_FIL_MAX do vetor. Ele corta o que vai ser PEDIDO pela
+  // rede, e nao o desenho: sete fileiras tem de custar sete GET, senao o
+  // ajuste economiza pixel e nao trabalho. `nFil` ja conta "Continuar
+  // assistindo" e "Amigos assistindo" — sao fileiras na tela como as outras.
+  int teto = fil_limite();
+  if (teto > CAT_FIL_MAX) teto = CAT_FIL_MAX;
+  if (tetoSaida) *tetoSaida = teto;
+
+  // UMA VAGA GARANTIDA POR ADDON, e ela vem DEPOIS das duas ordens.
+  //
+  // A partilha por addon (la em cima) so governa o que a conta nao ordena,
+  // e isso nao bastou: MEDIDO na LG do dono com os sete addons, as seis
+  // fileiras continuaram sendo as da conta e o FrostView — um catalogo,
+  // recem-instalado — seguiu invisivel. A ordem da conta sozinha ja tem
+  // mais de seis catalogos, entao o orcamento acaba antes de a partilha ser
+  // alcancada. Eu tinha dito na issue #37 que a partilha resolvia; nao
+  // resolvia, e a correcao esta publicada la.
+  //
+  // Aqui a regra e mais forte e o preco esta dito: um addon que ficaria com
+  // ZERO fileira toma a vaga do addon que ja tem mais de uma, o mais tarde
+  // possivel dentro da janela. Isso mexe de proposito numa ordem que a
+  // pessoa arrumou no app web — o que se ganha e a garantia de que instalar
+  // um addon mostra alguma coisa dele, que e a pergunta que traz a issue.
+  // Quem ja aparece nao perde a vaga; quem perde e a SEGUNDA fileira de
+  // quem tem duas.
+  { int janela = teto - nFixas, i3, nAd3 = addons_n();
+    if (janela > nOrdem) janela = nOrdem;
+    for (i3 = 0; i3 < nAd3 && janela > 1; i3++) {
+      const char *b = addons_base(i3);
+      int q, alvo = -1, ceder = -1;
+      if (!b || !b[0]) continue;
+      for (q = 0; q < janela; q++)
+        if (decls[ordem[q]].base && !strcmp(decls[ordem[q]].base, b)) break;
+      if (q < janela) continue;                 // ja tem vaga
+      for (q = janela; q < nOrdem; q++)
+        if (decls[ordem[q]].base && !strcmp(decls[ordem[q]].base, b)) { alvo = q; break; }
+      if (alvo < 0) continue;                   // addon sem catalogo declarado
+      // Cede a ULTIMA posicao da janela cujo addon ja aparece antes dela.
+      { int r, s;
+        for (r = janela - 1; r > 0 && ceder < 0; r--) {
+          const char *br = decls[ordem[r]].base;
+          if (!br) continue;
+          for (s = 0; s < r; s++)
+            if (decls[ordem[s]].base && !strcmp(decls[ordem[s]].base, br)) { ceder = r; break; }
+        } }
+      if (ceder < 0) continue;                  // ninguem tem duas: nada a ceder
+      { int mov = ordem[alvo], w;
+        for (w = alvo; w > ceder; w--) ordem[w] = ordem[w - 1];
+        ordem[ceder] = mov; }
+      if (registrar) printf("[desc] vaga garantida: %s entra em %d (%s)\n",
+             addons_nome(i3), ceder, decls[ordem[ceder]].titulo);
+    } }
+
+  // Uma resposta nova de manifesto nao muda a estrutura que a pessoa ja
+  // aceitou. Enquanto a assinatura owner/perfil/idioma/config continuar
+  // valida, pedimos apenas chaves presentes no snapshot; o usuario pode
+  // acrescentar uma fileira explicitamente em Ajustes, o que invalida a
+  // assinatura e libera a proxima montagem. Ainda registramos todas as
+  // declaracoes em fileiras.c acima para permitir essa escolha depois.
+  if (homeestado_contexto_valido()) {
+    int w = 0;
+    for (k = 0; k < nOrdem; k++) {
+      const Decl *d = &decls[ordem[k]];
+      if (homeestado_tem_fileira(d->chave)) ordem[w++] = ordem[k];
+    }
+    nOrdem = w;
+    // O snapshot aceito define a ordem estável. O manifesto pode reordenar
+    // suas declarações entre ciclos sem representar uma escolha do usuário.
+    for (k = 1; k < nOrdem; k++) {
+      int atual = ordem[k];
+      int rank = homeestado_ordem_fileira(decls[atual].chave), j = k;
+      while (j > 0) {
+        int anterior = homeestado_ordem_fileira(decls[ordem[j - 1]].chave);
+        if (anterior < 0 || (rank >= 0 && anterior <= rank)) break;
+        ordem[j] = ordem[j - 1]; j--;
+      }
+      ordem[j] = atual;
+    }
+  }
+  return nOrdem;
+}
+
+// AS DECLARACOES DA ULTIMA MONTAGEM, fora de montar(). Eram `static` dentro
+// dela; sairam para estruturaNovaPedeRede poder refazer a escolha no fim da
+// mesma volta. So montar() escreve, e so no fio dela.
+static Decl declsMontagem[DECL_MAX];
+static int nDeclsMontagem;
+// 1 para cada declaracao que virou pedido de rede nesta volta.
+static char declPedida[DECL_MAX];
+
+// A FONTE (dono, perfil, idioma, addons) continua a mesma de quando a volta
+// comecou? E so ela que torna o dado buscado imprestavel. homeestado_geracao
+// e chamada para o log dizer, na hora, o que mudou.
+static int fonteIntacta(const HomeContexto *ini) {
+  HomeContexto c;
+  (void)homeestado_geracao();
+  homeestado_contexto(&c);
+  return !(homeestado_mudancas(ini, &c) & HOMEESTADO_MUDOU_FONTE);
+}
+
+// COM A ESTRUTURA DE AGORA, UMA MONTAGEM NOVA PEDIRIA ALGO QUE ESTA NAO PEDIU?
+//
+// Refaz a escolha de montar() — mesma ordem (ordenarCandidatos), mesmo filtro
+// (desligada, que ja inclui a colecao que engole), mesmo teto — e anda pelos
+// candidatos como o laco de rodadas anda. Candidato que ja virou fileira ocupa
+// vaga; candidato pedido que nao respondeu e pulado (a montagem tambem pulou e
+// seguiu adiante); o primeiro que NUNCA foi pedido e a resposta "sim", com o
+// nome em `qual` para o log.
+//
+// Casos que isto separa: colecao nova engolindo fileiras (o teto abre vaga
+// para catalogos que ficaram de fora), fileira religada ou promovida pela
+// ordem da conta, limite maior. Ordem trocada entre fileiras ja buscadas,
+// fileira escondida e limite menor dao "nao" — a remontagem sem rede resolve.
+static int estruturaNovaPedeRede(const CatFileira *fils, int nFils,
+                                 char *qual, size_t tamQual) {
+  int ordem[DECL_MAX], nOrdem, teto = 0, nFixas = 0, cheias, k, t;
+  if (qual && tamQual) qual[0] = 0;
+  if (nDeclsMontagem < 1) return 0;
+  for (t = 0; t < nFils; t++)
+    if (!strcmp(fils[t].chave, "continue_watching") ||
+        !strcmp(fils[t].chave, "social_activity")) nFixas++;
+  lerPrefs();
+  nOrdem = ordenarCandidatos(declsMontagem, nDeclsMontagem, ordem, nFixas, 0, &teto);
+  cheias = nFixas;
+  for (k = 0; k < nOrdem && cheias < teto; k++) {
+    const Decl *d = &declsMontagem[ordem[k]];
+    int repetida = 0;
+    if (desligada(d)) continue;
+    for (t = 0; t < k && !repetida; t++)
+      if (!strcmp(declsMontagem[ordem[t]].chave, d->chave)) repetida = 1;
+    if (repetida) continue;
+    for (t = 0; t < nFils; t++) if (!strcmp(fils[t].chave, d->chave)) break;
+    if (t < nFils) { cheias++; continue; }
+    if (declPedida[ordem[k]]) continue;
+    if (qual && tamQual) snprintf(qual, tamQual, "%s", d->titulo);
+    return 1;
+  }
+  return 0;
+}
+
 static void *montar(void *u) {
   // O lote tambem cresce: era dimensionado por CAT_MAX e por isso herdava o
   // mesmo teto arbitrario.
@@ -2054,7 +2307,15 @@ static void *montar(void *u) {
   int n = 0, i;
   int nContinuar = 0, nSocial = 0;
   unsigned minhaGeracao = montagemGeracao;
-  unsigned meuEstado = homeestado_geracao();
+  // O CONTEXTO EM QUE ESTA VOLTA BUSCA, em partes (ver homeestado.h). A
+  // identidade vale do inicio: o Trakt e lido logo abaixo. Os addons sao
+  // recapturados no instante em que a lista e lida, e a estrutura no instante
+  // em que a ordem e decidida — e contra ESSES instantes que o fim compara.
+  HomeContexto ctxIni;
+  char donoIni[64];
+  (void)homeestado_geracao();
+  homeestado_contexto(&ctxIni);
+  snprintf(donoIni, sizeof donoIni, "%s", sessao_usuario() ? sessao_usuario() : "");
   // PUBLICAR EM PARTES SO COM A TELA VAZIA.
   //
   // A publicacao fileira a fileira existe para a PRIMEIRA home aparecer cedo.
@@ -2136,7 +2397,7 @@ static void *montar(void *u) {
     // static: 256 entradas passam de 200 KB, e isso nao cabe com folga na
     // pilha de um fio. montar() roda uma vez e num fio so, entao nao ha
     // reentrada que isto quebre.
-    static Decl decls[DECL_MAX];
+    Decl *decls = declsMontagem;
     int nDecl = 0, k;
     CatFileira fil[CAT_FIL_MAX];
     int nFil = 0;
@@ -2172,6 +2433,7 @@ static void *montar(void *u) {
     // no fim, se um pedido de remontagem que chegou no meio do caminho ja foi
     // atendido por esta volta. Ver geracaoPedida.
     geracaoLida = geracaoPedida;
+    { HomeContexto c; homeestado_contexto(&c); ctxIni.addons = c.addons; }
     // TODO ADDON TEM O MANIFESTO LIDO, e a guarda `addons_tem_catalogo(i)` que
     // estava aqui foi TIRADA de proposito.
     //
@@ -2286,180 +2548,13 @@ static void *montar(void *u) {
     // por ultimo, nao no meio — e o que evita a home se reorganizar sozinha.
     {
       int ordem[DECL_MAX];
-      int nOrdem = 0, j;
-      char vistos[DECL_MAX];
-      memset(vistos, 0, sizeof vistos);
-      for (k = 0; k < nPrefOrdem; k++)
-        for (j = 0; j < nDecl; j++)
-          if (!vistos[j] && !strcmp(decls[j].chave, prefOrdem[k])) {
-            ordem[nOrdem++] = j; vistos[j] = 1; break;
-          }
-      // INTERCALADO POR ADDON, e nao na ordem em que os manifestos foram
-      // lidos. E o MESMO defeito que a cota de declaracoes resolveu um nivel
-      // abaixo ("o defeito nao e do addon nem do manifesto dele: e de quem
-      // reparte as vagas"), e ele voltava aqui: a home pede so as primeiras N
-      // desta lista, e na ordem crua as N eram todas do primeiro addon.
-      //
-      // MEDIDO na LG do dono ao investigar o #37: 124 catalogos declarados, 6
-      // viram fileira, o Xperience declara 72 e vem primeiro — o FrostView,
-      // com UM catalogo, ficava em 124o e nunca era pedido. Quem acabou de
-      // instalar um addon nao tinha como ver nada dele.
-      //
-      // Cada addon leva a PRIMEIRA fileira antes de qualquer um levar a
-      // segunda; dentro do addon, a ordem do manifesto. Quem tem prefencia
-      // salva ja saiu no laco de cima e nao entra nesta partilha.
-      { int nAd2 = addons_n();
-        for (;;) {
-          int pegou = 0, i2;
-          for (i2 = 0; i2 < nAd2; i2++) {
-            const char *b = addons_base(i2);
-            if (!b || !b[0]) continue;
-            for (j = 0; j < nDecl; j++)
-              if (!vistos[j] && decls[j].base && !strcmp(decls[j].base, b)) {
-                ordem[nOrdem++] = j; vistos[j] = 1; pegou = 1; break;
-              }
-          }
-          if (!pegou) break;
-        } }
-      // Sobra: declaracao cuja base nao casa com addon nenhum da lista atual.
-      for (j = 0; j < nDecl; j++) if (!vistos[j]) ordem[nOrdem++] = j;
-
-      // A ordem da CONTA por cima da ordem local, e a regra e UNIAO, nao
-      // substituicao: catordem_unir puxa para a frente o que o remoto conhece,
-      // na ordem dele, e deixa todo o resto no fim como ja estava. Aplicar a
-      // ordem remota crua removeria os catalogos que passaram a existir depois
-      // de ela ter sido gravada — era o `{"localItems":54,"remoteItems":43}`
-      // de todo boot na OLED65C9, com a home reescrita e nunca convergindo.
-      if (catordem_tem_ordem() && nOrdem > 0) {
-        const char *chaves[DECL_MAX];
-        int saida[DECL_MAX], antes[DECL_MAX], q;
-        for (q = 0; q < nOrdem; q++) chaves[q] = decls[ordem[q]].chave;
-        memcpy(antes, ordem, sizeof(int) * (size_t)nOrdem);
-        q = catordem_unir(chaves, nOrdem, saida, DECL_MAX);
-        for (j = 0; j < q; j++) ordem[j] = antes[saida[j]];
-        nOrdem = q;
-      }
-
-      // ORDEM LOCAL POR CIMA DA DA CONTA, mesma regra de uniao e um motivo a
-      // mais: catordem.c e SO LEITURA porque a TV nao pode empurrar de volta
-      // (a trava esta no topo de catordem.h), entao sem esta precedencia a
-      // ordem que a pessoa arruma aqui seria desfeita pelo proximo sync.
-      if (fil_tem_ordem() && nOrdem > 0) {
-        const char *chaves[DECL_MAX];
-        int saida[DECL_MAX], antes[DECL_MAX], q;
-        for (q = 0; q < nOrdem; q++) chaves[q] = decls[ordem[q]].chave;
-        memcpy(antes, ordem, sizeof(int) * (size_t)nOrdem);
-        q = fil_unir(chaves, nOrdem, saida, DECL_MAX);
-        for (j = 0; j < q; j++) ordem[j] = antes[saida[j]];
-        nOrdem = q;
-      }
-
-      // customTitles ganha do nome do manifesto. Aplicado a TODOS os
-      // candidatos, e nao so aos que forem pedidos: e este titulo que a tela de
-      // Ajustes mostra, e mostrar la o nome cru do manifesto enquanto a home
-      // mostra o renomeado seria a mesma fileira com dois nomes.
-      for (k = 0; k < nOrdem; k++) {
-        Decl *d = &decls[ordem[k]];
-        int t;
-        for (t = 0; t < nPrefTit; t++)
-          if (!strcmp(prefTit[t].chave, d->chave)) {
-            snprintf(d->titulo, sizeof d->titulo, "%s", prefTit[t].titulo);
-            break;
-          }
-      }
-      // REGISTRA TODOS OS CANDIDATOS, inclusive os desligados e os que ficam
-      // abaixo do limite. E o que deixa a tela de Ajustes PROMOVER um catalogo
-      // que hoje nao entra: se ela listasse apenas as fileiras pedidas, o limite
-      // viraria uma jaula e nada de fora dele poderia ser escolhido. O teto do
-      // registro e o FIL_MAX de fileiras.h, nao o das fileiras desenhadas.
-      // O NOME DO ADDON E O TIPO VAO JUNTO: e aqui, e so aqui, que eles sao
-      // conhecidos — a tela de Ajustes precisa deles para dizer de onde a
-      // fileira vem. `-1` em itens porque nesta altura nenhum catalogo foi
-      // pedido ainda; quem sabe a contagem e home.c.
-      for (k = 0; k < nOrdem && k < FIL_MAX; k++)
-        fil_registrar(decls[ordem[k]].chave, decls[ordem[k]].titulo,
-                      decls[ordem[k]].nomeAddon, decls[ordem[k]].tipo, -1);
-      fil_gravar_registro();
-
-      // TETO DE FILEIRAS: o numero escolhido em Ajustes (7 de fabrica),
-      // limitado pelo CAT_FIL_MAX do vetor. Ele corta o que vai ser PEDIDO pela
-      // rede, e nao o desenho: sete fileiras tem de custar sete GET, senao o
-      // ajuste economiza pixel e nao trabalho. `nFil` ja conta "Continuar
-      // assistindo" e "Amigos assistindo" — sao fileiras na tela como as outras.
-      int teto = fil_limite();
-      if (teto > CAT_FIL_MAX) teto = CAT_FIL_MAX;
-
-      // UMA VAGA GARANTIDA POR ADDON, e ela vem DEPOIS das duas ordens.
-      //
-      // A partilha por addon (la em cima) so governa o que a conta nao ordena,
-      // e isso nao bastou: MEDIDO na LG do dono com os sete addons, as seis
-      // fileiras continuaram sendo as da conta e o FrostView — um catalogo,
-      // recem-instalado — seguiu invisivel. A ordem da conta sozinha ja tem
-      // mais de seis catalogos, entao o orcamento acaba antes de a partilha ser
-      // alcancada. Eu tinha dito na issue #37 que a partilha resolvia; nao
-      // resolvia, e a correcao esta publicada la.
-      //
-      // Aqui a regra e mais forte e o preco esta dito: um addon que ficaria com
-      // ZERO fileira toma a vaga do addon que ja tem mais de uma, o mais tarde
-      // possivel dentro da janela. Isso mexe de proposito numa ordem que a
-      // pessoa arrumou no app web — o que se ganha e a garantia de que instalar
-      // um addon mostra alguma coisa dele, que e a pergunta que traz a issue.
-      // Quem ja aparece nao perde a vaga; quem perde e a SEGUNDA fileira de
-      // quem tem duas.
-      { int janela = teto - nFil, i3, nAd3 = addons_n();
-        if (janela > nOrdem) janela = nOrdem;
-        for (i3 = 0; i3 < nAd3 && janela > 1; i3++) {
-          const char *b = addons_base(i3);
-          int q, alvo = -1, ceder = -1;
-          if (!b || !b[0]) continue;
-          for (q = 0; q < janela; q++)
-            if (decls[ordem[q]].base && !strcmp(decls[ordem[q]].base, b)) break;
-          if (q < janela) continue;                 // ja tem vaga
-          for (q = janela; q < nOrdem; q++)
-            if (decls[ordem[q]].base && !strcmp(decls[ordem[q]].base, b)) { alvo = q; break; }
-          if (alvo < 0) continue;                   // addon sem catalogo declarado
-          // Cede a ULTIMA posicao da janela cujo addon ja aparece antes dela.
-          { int r, s;
-            for (r = janela - 1; r > 0 && ceder < 0; r--) {
-              const char *br = decls[ordem[r]].base;
-              if (!br) continue;
-              for (s = 0; s < r; s++)
-                if (decls[ordem[s]].base && !strcmp(decls[ordem[s]].base, br)) { ceder = r; break; }
-            } }
-          if (ceder < 0) continue;                  // ninguem tem duas: nada a ceder
-          { int mov = ordem[alvo], w;
-            for (w = alvo; w > ceder; w--) ordem[w] = ordem[w - 1];
-            ordem[ceder] = mov; }
-          printf("[desc] vaga garantida: %s entra em %d (%s)\n",
-                 addons_nome(i3), ceder, decls[ordem[ceder]].titulo);
-        } }
-
-      // Uma resposta nova de manifesto nao muda a estrutura que a pessoa ja
-      // aceitou. Enquanto a assinatura owner/perfil/idioma/config continuar
-      // valida, pedimos apenas chaves presentes no snapshot; o usuario pode
-      // acrescentar uma fileira explicitamente em Ajustes, o que invalida a
-      // assinatura e libera a proxima montagem. Ainda registramos todas as
-      // declaracoes em fileiras.c acima para permitir essa escolha depois.
-      if (homeestado_contexto_valido()) {
-        int w = 0;
-        for (k = 0; k < nOrdem; k++) {
-          const Decl *d = &decls[ordem[k]];
-          if (homeestado_tem_fileira(d->chave)) ordem[w++] = ordem[k];
-        }
-        nOrdem = w;
-        // O snapshot aceito define a ordem estável. O manifesto pode reordenar
-        // suas declarações entre ciclos sem representar uma escolha do usuário.
-        for (k = 1; k < nOrdem; k++) {
-          int atual = ordem[k];
-          int rank = homeestado_ordem_fileira(decls[atual].chave), j = k;
-          while (j > 0) {
-            int anterior = homeestado_ordem_fileira(decls[ordem[j - 1]].chave);
-            if (anterior < 0 || (rank >= 0 && anterior <= rank)) break;
-            ordem[j] = ordem[j - 1]; j--;
-          }
-          ordem[j] = atual;
-        }
-      }
+      int nOrdem, teto;
+      nDeclsMontagem = nDecl;
+      memset(declPedida, 0, sizeof declPedida);
+      { HomeContexto c; homeestado_contexto(&c);
+        ctxIni.ajustes = c.ajustes; ctxIni.fileiras = c.fileiras;
+        ctxIni.ordemConta = c.ordemConta; ctxIni.colecoes = c.colecoes; }
+      nOrdem = ordenarCandidatos(decls, nDecl, ordem, nFil, 1, &teto);
 
       int marcouPrimeira = 0;
       // Instrumentacao do arranque. Antes dava para ver o TOTAL de fileiras e
@@ -2507,6 +2602,7 @@ static void *montar(void *u) {
             if (!strcmp(tarefas[t].d->chave, d->chave)) { repetida = 1; break; }
           if (repetida) { duplicados++; continue; }
           tarefas[nTarefas++].d = d;
+          declPedida[ordem[cursor]] = 1;
         }
         if (!nTarefas) break;
         pedidos += nTarefas;
@@ -2596,7 +2692,9 @@ static void *montar(void *u) {
           // home da volta anterior — seria um retrocesso visivel: 16 fileiras
           // viram 1. Ver `progressivo` no inicio de montar(). filsMontadas so
           // muda JUNTO com a publicacao: sem ela o bloco da tela e outro.
-          if (progressivo && minhaGeracao == montagemGeracao && meuEstado == homeestado_geracao()) {
+          // Estrutura que mudou no meio NAO interrompe: estas fileiras sao da
+          // conta/perfil/addons certos, e o fim da volta as rearruma.
+          if (progressivo && minhaGeracao == montagemGeracao && fonteIntacta(&ctxIni)) {
             nFileirasMontadas = nFil;
             memcpy(filsMontadas, fil, sizeof(CatFileira) * (size_t)nFil);
             cat_definir_tudo(lote, n, filsMontadas, nFileirasMontadas);
@@ -2703,7 +2801,14 @@ static void *montar(void *u) {
     // arte de volta a zero — para mostrar exatamente o que ja mostrava.
     unsigned long antes = cat_assinatura();
     unsigned long depois = cat_assinatura_de(lote, n, filsLote, nFilsLote);
-    if (minhaGeracao != montagemGeracao || meuEstado != homeestado_geracao()) {
+    // O QUE MUDOU DESDE QUE ESTA VOLTA COMECOU, por parte. So a FONTE (dono,
+    // perfil, idioma, addons) descarta; ver o bloco da estrutura mais abaixo.
+    unsigned estadoFim = homeestado_geracao();
+    HomeContexto ctxFim;
+    int mudou;
+    homeestado_contexto(&ctxFim);
+    mudou = homeestado_mudancas(&ctxIni, &ctxFim);
+    if (minhaGeracao != montagemGeracao || (mudou & HOMEESTADO_MUDOU_FONTE)) {
       // DESCARTADA SEM PUBLICAR, e por isso RECOMECA. A geracao muda sozinha
       // no arranque (perfil escolhido, catordem/colecoes/addons da conta
       // chegando — tudo entra na assinatura do homeestado), e no log da LG as
@@ -2712,7 +2817,19 @@ static void *montar(void *u) {
       // trocou montagemGeracao tambem passava por aqui e se perdia
       // (repetirAoFim nunca era lido). A volta nova le o contexto atual; ela
       // so descarta de novo se o contexto mudar DE NOVO, entao nao ha laco.
-      printf("[desc] montagem descartada: conta/perfil/config mudou no meio; recomecando\n");
+      //
+      // DESDE A 1.4.5 SO A FONTE DESCARTA, e a linha diz qual das duas causas
+      // foi: um pedido de remontagem (desc_repetir: credencial, addons, idioma)
+      // ou a fonte vista pelo homeestado. Colecoes, ordem e limite chegando no
+      // meio nao passam mais por aqui.
+      { char txt[96];
+        if (minhaGeracao != montagemGeracao)
+          printf("[desc] montagem descartada: remontagem pedida no meio "
+                 "(credencial/addons/idioma); recomecando\n");
+        else
+          printf("[desc] montagem descartada: %s mudou no meio; recomecando\n",
+                 homeestado_mudancas_texto(mudou & HOMEESTADO_MUDOU_FONTE,
+                                           txt, sizeof txt)); }
       fflush(stdout);
       free(lote); repetirAoFim = 0; buscando = 0;
       desc_iniciar();
@@ -2731,7 +2848,8 @@ static void *montar(void *u) {
       printf("[desc] catalogo montado com %d titulos, igual ao que esta na tela; mantido\n", n);
     }
     cat_cache_substituido();
-    homeestado_salvar_se_geracao(filsMontadas, nFileirasMontadas, meuEstado);
+    if (!(mudou & HOMEESTADO_MUDOU_ESTRUTURA))
+      homeestado_salvar_se_geracao(filsMontadas, nFileirasMontadas, estadoFim);
 
     // A ULTIMA PALAVRA SOBRE AS COLECOES E AQUI. Issue #18, terceira tentativa,
     // e desta vez o problema nao era a REGRA e sim QUANDO ela roda.
@@ -2757,17 +2875,68 @@ static void *montar(void *u) {
     // ANTES de cat_gravar_cache de proposito: assim o cache guarda as fileiras
     // JA agrupadas e a proxima abertura nasce certa, em vez de repetir a
     // separacao ate a rede responder de novo.
-    if (col_n() > 0) desc_remontar_fileiras();
+    if (!(mudou & HOMEESTADO_MUDOU_ESTRUTURA)) {
+      if (col_n() > 0) desc_remontar_fileiras();
+    } else {
+      // A ESTRUTURA MUDOU NO MEIO, E O QUE CHEGOU CONTINUA VALENDO.
+      //
+      // Ate a 1.4.4 isto era "montagem descartada" e uma volta inteira de
+      // rede. MEDIDO no log do @rawldon (Tizen 6, 241 colecoes): as colecoes
+      // da conta chegaram aos 29,6 s, a montagem ja tinha buscado 16 de 16
+      // fileiras aos 48,8 s e jogou tudo fora; a home da conta so apareceu aos
+      // 85 s, e o cache dessa segunda volta tambem foi recusado.
+      //
+      // Os itens nao dependem da estrutura — so a escolha e a arrumacao das
+      // fileiras dependem. Entao: publica (acima), rearruma sem rede, e so
+      // pede rede se a estrutura nova quiser um catalogo que esta volta nao
+      // buscou. Mesmo nesse caso o que chegou fica na tela e no cache.
+      char txt[96], qual[96];
+      printf("[desc] estrutura mudou durante a montagem (%s): o que chegou "
+             "vale; remontando sem rede\n",
+             homeestado_mudancas_texto(mudou & HOMEESTADO_MUDOU_ESTRUTURA,
+                                       txt, sizeof txt));
+      fflush(stdout);
+      desc_remontar_fileiras();
+      if (estruturaNovaPedeRede(filsLote, nFilsLote, qual, sizeof qual)) {
+        printf("[desc] a estrutura nova pede catalogo que esta volta nao "
+               "buscou (%s): ciclo de rede depois deste\n", qual);
+        fflush(stdout);
+        desc_repetir();
+      }
+      // Com ciclo de rede pedido (aqui ou pela propria remontagem, quando a
+      // colecao engoliu fileiras e sobrou catalogo fora do teto) o snapshot
+      // NAO e gravado: ele filtraria a proxima montagem para as chaves de
+      // agora, e a que falta nunca seria pedida.
+      if (!repetirAoFim) {
+        // Snapshot sob a estrutura FINAL, e com a geracao lida AGORA: a de
+        // antes da remontagem ja nao e a corrente.
+        HomeContexto ctxSalvo;
+        unsigned estadoSalvo = homeestado_geracao();
+        homeestado_contexto(&ctxSalvo);
+        if (!(homeestado_mudancas(&ctxIni, &ctxSalvo) & HOMEESTADO_MUDOU_FONTE))
+          homeestado_salvar_se_geracao(filsMontadas, nFileirasMontadas, estadoSalvo);
+      }
+    }
     // Grava so o resultado COMPLETO, nao as publicacoes parciais: um cache
     // com tres fileiras faria a proxima abertura nascer pela metade e so
     // completar quando a rede respondesse — exatamente o que o cache existe
     // para evitar.
-    { char donoEsperado[64]; int perfilEsperado;
-      if (homeestado_identidade_geracao(meuEstado, donoEsperado,
-                                       sizeof donoEsperado, &perfilEsperado))
-        cat_gravar_cache_se_identidade(dirArteDesc, donoEsperado, perfilEsperado);
+    //
+    // O CACHE SO PERGUNTA PELA FONTE. Ele guarda o bloco da tela como esta —
+    // ja rearrumado acima — e cat_ler_cache so confere dono, perfil e idioma;
+    // estrutura nao e dele. Exigir a geracao inteira do homeestado, como ate a
+    // 1.4.4, recusava o cache por qualquer mudanca de estrutura entre o inicio
+    // e o fim — no log do @rawldon, 0,9 s depois de a home publicar e
+    // registrar as fileiras de colecao (candidato provavel, nao medido) — e o
+    // arranque seguinte nascia sem cache.
+    // Dono e perfil sao os do INICIO desta volta, e cat_gravar_cache_se_
+    // identidade os confere contra os de agora antes e depois de escrever.
+    { HomeContexto ctxCache;
+      homeestado_contexto(&ctxCache);
+      if (!(homeestado_mudancas(&ctxIni, &ctxCache) & HOMEESTADO_MUDOU_FONTE))
+        cat_gravar_cache_se_identidade(dirArteDesc, donoIni, ctxIni.perfil);
       else
-        printf("[desc] cache descartado: conta/perfil/config mudou durante a montagem\n");
+        printf("[desc] cache descartado: conta/perfil/addons mudou durante a montagem\n");
     }
   } else {
     printf("[desc] nada veio da rede; segue o catalogo do pacote\n");
