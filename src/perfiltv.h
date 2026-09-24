@@ -21,8 +21,14 @@ typedef struct {
   int heroiLarg;  // teto de decodificacao da arte de tela cheia, px
 } PtvPerfil;
 
-// Plataforma do build (Tizen = __EMSCRIPTEN__).
+// Plataforma do build (Tizen = __EMSCRIPTEN__). O VIDAA (NV_VIDAA) e o mesmo
+// wasm com o mesmo heap fixo de 256 MiB, entao para a TABELA ele e PTV_TIZEN:
+// os tetos de textura e heroi valem igual. Quem precisa distinguir a marca
+// (registro, canal de avisos, textos de tecla) usa ptv_nome().
 PtvPlataforma ptv_plataforma(void);
+// "lg", "tizen" ou "vidaa": o valor que vai no JSON de registro e que o canal
+// de avisos compara.
+const char *ptv_nome(void);
 
 // Orcamento automatico pela RAM (MemTotal na LG, deviceMemory no Tizen). 0 =
 // RAM desconhecida.

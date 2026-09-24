@@ -78,7 +78,8 @@
 // app; e, contra um duble de `webapis.avplay` que registra chamadas, a
 // sequencia de abertura sai open -> setListener -> setDisplayMethod ->
 // prepareAsync -> setDisplayRect -> play com os argumentos certos.
-#ifdef __EMSCRIPTEN__
+// NV_VIDAA: a Hisense nao tem webapis.avplay; o video de la e src/video_html5.c.
+#if defined(__EMSCRIPTEN__) && !defined(NV_VIDAA)
 
 #include "video.h"
 #include "linguas.h"
@@ -1456,4 +1457,4 @@ void video_encerrar(void) {
   ligado = 0;
 }
 
-#endif  /* __EMSCRIPTEN__ */
+#endif  /* __EMSCRIPTEN__ && !NV_VIDAA */

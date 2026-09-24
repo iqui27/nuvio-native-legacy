@@ -151,6 +151,11 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
       s.dolbyAtmos = token(texto, "atmos");
       s.badges = badges_detectar(texto);
       s.mp4 = token(texto, "mp4") || contem(s.url, ".mp4");
+      // "av1" tambem casa "av1.0.0" (nivel/perfil, comum em nome de release);
+      // token() basta porque nao ha AV1 escrito colado a outra palavra nos
+      // nomes que os addons mandam (ao contrario de "dv", que precisa do
+      // cuidado de token() com DVDRip — o mesmo cuidado ja se aplica aqui).
+      s.av1 = token(texto, "av1") || contem(texto, "av01");
       double bytes = js_num(p, fim, "videoSize", 0);
       if (bytes > 0) s.tamanhoMB = (long)(bytes / (1024.0 * 1024.0));
       else {

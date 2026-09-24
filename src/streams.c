@@ -209,6 +209,47 @@ static int cabeNoTeto(const Stream *s) {
   return !teto || !s->altura || s->altura <= teto;
 }
 
+#ifdef NV_VIDAA
+// TABELA DE REGRAS DA VIDAA (Hisense) -----------------------------------------
+//
+// Fonte: medicoes de TERCEIROS contra o navegador dela (NoobyGains /
+// stremio-vidaa-tv), NAO VERIFICADAS neste aparelho — trocar os pesos aqui
+// se a VIDAA de verdade discordar. Aplicada DEPOIS da tabela da LG (logo
+// acima, no corpo de pontos()) e forte o bastante para reverter qualquer
+// bonus que aquela tabela ja tenha somado — a VIDAA discorda da LG em pelo
+// menos um ponto (DV em MP4), entao nao da para so ACRESCENTAR regras.
+//
+//   - DV EM MP4 TRAVA O NAVEGADOR da VIDAA — o oposto exato da LG (onde MP4 e
+//     o container que toca DV de verdade, ver o comentario grande acima).
+//     Penalidade forte o bastante para anular os +100000/+10000 que a tabela
+//     de cima ja somou para esta mesma combinacao.
+//   - DV EM MKV continua com bonus: e a LG que rebaixa DV em MKV para HDR10,
+//     nao a VIDAA — nao ha motivo medido para penalizar aqui.
+//   - AV1 nao decodifica (nem hardware nem software no navegador dela).
+//   - ACIMA DE 4K da tela preta.
+//   - http:// NA URL DO STREAM e conteudo misto — a pagina da VIDAA e https
+//     (rede.c ja reescreve para o proxy quando da, mas a pontuacao nao deve
+//     favorecer uma fonte que so toca as custas de um desvio).
+//   - MP4 SEM DV e o container que o <video> HTML5 toca com mais
+//     confiabilidade: bonus leve, so para desempatar MP4 x MKV equivalentes.
+typedef struct { const char *nome; int (*bate)(const Stream *s); long pontos; } RegraVidaa;
+static int rvDvMp4(const Stream *s)     { return s->mp4 && s->dolbyVision; }
+static int rvDvMkv(const Stream *s)     { return !s->mp4 && s->dolbyVision; }
+static int rvAv1(const Stream *s)       { return s->av1; }
+static int rvAcimaDe4k(const Stream *s) { return s->altura > 2160; }
+static int rvHttp(const Stream *s)      { return !strncmp(s->url, "http://", 7); }
+static int rvMp4SemDv(const Stream *s)  { return s->mp4 && !s->dolbyVision; }
+static const RegraVidaa REGRAS_VIDAA[] = {
+  { "dv-em-mp4 trava o navegador",  rvDvMp4,     -200000 },
+  { "dv-em-mkv ok nesta tv",        rvDvMkv,        10000 },
+  { "av1 nao decodifica",           rvAv1,        -150000 },
+  { "acima de 4k da tela preta",    rvAcimaDe4k,  -150000 },
+  { "http:// e conteudo misto",     rvHttp,       -150000 },
+  { "mp4 sem dv e mais confiavel",  rvMp4SemDv,      3000 },
+};
+#define N_REGRAS_VIDAA (sizeof REGRAS_VIDAA / sizeof REGRAS_VIDAA[0])
+#endif
+
 static long pontos(const Stream *s) {
   long p = 0;
   // DOLBY VISION SO VALE PONTO EM MP4 — e isto e medida, nao teoria.
@@ -243,6 +284,12 @@ static long pontos(const Stream *s) {
 #endif
   if (s->dolbyAtmos)                                 p +=   2000;
   p += s->altura;
+#ifdef NV_VIDAA
+  { unsigned k;
+    for (k = 0; k < N_REGRAS_VIDAA; k++)
+      if (REGRAS_VIDAA[k].bate(s)) p += REGRAS_VIDAA[k].pontos;
+  }
+#endif
   // ACIMA DO TETO vai para o fim da fila, e nao para fora dela: o teto e
   // preferencia, nao filtro. Uma lista em que so ha 4K e com teto de 1080p tem
   // de continuar tocando — em 4K, com uma linha no log dizendo por que.
@@ -368,6 +415,24 @@ static void loteSoltar(Lote *l) {   // chamar COM a trava
   if (--l->vivos <= 0 && l->abandonado) free(l);
 }
 
+// Resolve o endereco final de uma candidata e devolve 1 (resolveu), 0 (nao
+// resolveu / morta) ou -1 (desconhecido — SO ACONTECE na VIDAA: nas outras
+// duas plataformas rede_url_final so tem 0/1, e -1 nunca sai daqui).
+//
+// NA VIDAA, url de video nunca passa pelo /v1/proxy do worker (rede.c:
+// vidaaPareceVideo) — entao um bloqueio de conteudo misto ou de CORS na
+// pagina https e ROTINEIRO para esta chamada especifica, nao uma prova de
+// fonte morta. rede_url_final_vidaa devolve -1 exatamente para esse caso, e
+// o chamador abaixo trata -1 como "presuma viva", a MESMA politica que
+// playlistVazia ja usa para "nao consegui baixar para conferir".
+static int resolverUrlFinal(const char *url, char *dst, size_t tam) {
+#ifdef NV_VIDAA
+  return rede_url_final_vidaa(url, 10, dst, (unsigned)tam);
+#else
+  return rede_url_final(url, 10, dst, (unsigned)tam) ? 1 : 0;
+#endif
+}
+
 static void *fioVerificar(void *u) {
   Lote *l = u;
   for (;;) {
@@ -399,13 +464,19 @@ static void *fioVerificar(void *u) {
       ok = 0;
     // 10 s e nao 20: em paralelo o timeout deixa de ser somado, mas continua
     // sendo o tempo que o dono espera pela mais lenta.
-    } else if (!rede_url_final(url, 10, fim, sizeof fim)) {
-      printf("[fonte] %d nao resolveu\n", i);
-    } else if (enderecoDeAviso(fim)) {
-      printf("[fonte] %d e aviso (%.60s)\n", i, fim);
-    } else if (playlistVazia(fim, cab)) {
-      printf("[fonte] %d tem playlist vazia (canal fora do ar)\n", i);
-    } else ok = 1;
+    } else {
+      int r = resolverUrlFinal(url, fim, sizeof fim);
+      if (r < 0) {
+        printf("[fonte] %d sem confirmacao (bloqueio de rede na vidaa); presumindo viva\n", i);
+        ok = 1;
+      } else if (!r) {
+        printf("[fonte] %d nao resolveu\n", i);
+      } else if (enderecoDeAviso(fim)) {
+        printf("[fonte] %d e aviso (%.60s)\n", i, fim);
+      } else if (playlistVazia(fim, cab)) {
+        printf("[fonte] %d tem playlist vazia (canal fora do ar)\n", i);
+      } else ok = 1;
+    }
 
     pthread_mutex_lock(&verTrava);
     l->v[meu].estado = ok ? 1 : 2;
@@ -497,6 +568,26 @@ int stream_primeira_boa(int tentativas) {
   marco(escolhida >= 0 ? "fonte: verificacao ok" : "fonte: verificacao sem resultado");
   free(usados);
   if (escolhida >= 0) printf("[fonte] %d ok\n", escolhida);
+#ifdef NV_VIDAA
+  // QUAIS REGRAS DA TABELA DA VIDAA PESARAM na fonte escolhida — sem isto a
+  // pontuacao e uma caixa preta quando alguem perguntar "por que tocou este
+  // MKV e nao aquele MP4 4K". So imprime as que BATERAM (a maioria das
+  // fontes nao bate regra nenhuma, e "nenhuma" tambem e informacao).
+  if (escolhida >= 0 && escolhida < n) {
+    const Stream *s = &lista[escolhida];
+    char motivos[256] = "";
+    size_t u = 0;
+    unsigned k;
+    for (k = 0; k < N_REGRAS_VIDAA; k++) {
+      if (!REGRAS_VIDAA[k].bate(s)) continue;
+      int esc = snprintf(motivos + u, sizeof motivos - u, "%s%s(%+ld)",
+                          u ? "; " : "", REGRAS_VIDAA[k].nome, REGRAS_VIDAA[k].pontos);
+      if (esc < 0 || (size_t)esc >= sizeof motivos - u) break;
+      u += (size_t)esc;
+    }
+    printf("[fonte] vidaa: regras em %d: %s\n", escolhida, motivos[0] ? motivos : "nenhuma");
+  }
+#endif
   return escolhida;
 }
 

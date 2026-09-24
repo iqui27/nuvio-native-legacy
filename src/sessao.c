@@ -98,6 +98,10 @@ static void gravarSessao(void) {
   char buf[6400];
   snprintf(buf, sizeof buf, "%s\n%s\n%d\n", acesso, renovar, anonima ? 1 : 0);
   dados_gravar(ARQ_SESSAO, buf);
+  // Login novo ou token renovado: sem isto no IndexedDB a proxima abertura
+  // nao acha a sessao (ou acha a anterior). Nao espera a vez da descarga —
+  // ver dados_sincronizar_logo.
+  dados_sincronizar_logo();
 }
 
 static void limpar(void) {

@@ -9,6 +9,8 @@
 
 #if defined(__EMSCRIPTEN__) || defined(NV_DADOS_TEST)
 static volatile int sujo, sujoLeve;
+// Pedido de descarga sem a espera minima (dados_sincronizar_logo).
+static volatile int urgente;
 #endif
 
 #ifdef __EMSCRIPTEN__
@@ -322,6 +324,13 @@ void dados_marcar_sujo(int leve) {
 #endif
 }
 
+void dados_sincronizar_logo(void) {
+#if defined(__EMSCRIPTEN__) || defined(NV_DADOS_TEST)
+  sujo = 1;
+  urgente = 1;
+#endif
+}
+
 static char dir[512];
 static char clienteId[64];
 
@@ -441,7 +450,13 @@ void dados_sincronizar(void) {
   }
   if (!sujo && !sujoLeve) return;
   agora = emscripten_get_now();
-  espera = sujo ? NV_DESC_MIN_MS : NV_DESC_LEVE_MS;
+  // URGENTE PULA SO A ESPERA MINIMA, nao a descarga em voo nem o recuo apos
+  // falha logo abaixo. A sessao gravada no login esperava a vez como qualquer
+  // arquivo: 700 ms depois da descarga anterior, mais o que estivesse em voo.
+  // MEDIDO no app (24/09, gravar -> registro no IndexedDB, arquivos de
+  // dados_gravar): 23 a 774 ms. Se a pagina morre nesse intervalo (travou, a
+  // TV fechou o app) o login fica so no MEMFS e a proxima abertura pede QR.
+  espera = urgente ? 0.0 : sujo ? NV_DESC_MIN_MS : NV_DESC_LEVE_MS;
   if (agora - ultimaDesc < espera) return;
   if (nv_idbfs_em_voo()) return;
   if (!nv_idbfs_pode_gravar()) return;
@@ -451,7 +466,7 @@ void dados_sincronizar(void) {
   // e sera pego na proxima. O caro seria o contrario — limpar depois apagaria a
   // marca de uma escrita que a varredura nao viu.
   tipo = sujo ? 1 : 2;
-  sujo = 0; sujoLeve = 0;
+  sujo = 0; sujoLeve = 0; urgente = 0;
   ultimaDesc = agora;
   // A trava cobre a parte SINCRONA do syncfs, que e onde a arvore e lida.
   NV_FS_TRAVAR();

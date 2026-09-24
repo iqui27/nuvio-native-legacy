@@ -55,6 +55,16 @@ PtvPlataforma ptv_plataforma(void) {
 #endif
 }
 
+const char *ptv_nome(void) {
+#if defined(NV_VIDAA)
+  return "vidaa";
+#elif defined(__EMSCRIPTEN__)
+  return "tizen";
+#else
+  return "lg";
+#endif
+}
+
 int ptv_tex_auto_mb(PtvPlataforma p, long mem) {
   if (p == PTV_TIZEN) {
     if (!mem) return NV_TEX_ORCAMENTO_MB;

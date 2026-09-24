@@ -16,10 +16,10 @@ at startup.
 
 ## Which build fits your TV
 
-| | webOS 2.x | webOS 3.x | webOS 4.x | webOS 5+ | Samsung Tizen |
-|---|---|---|---|---|---|
-| **This one** (native C/SDL2) | loads, untested | **experimental build** | **yes**, measured | **reported working** | yes, as a `.wgt` |
-| [Web fork](https://github.com/iqui27/NuvioTVSmart-legacy-webos) (JavaScript) | — | preview builds | yes | yes | — |
+| | webOS 2.x | webOS 3.x | webOS 4.x | webOS 5+ | Samsung Tizen | Hisense VIDAA |
+|---|---|---|---|---|---|---|
+| **This one** (native C/SDL2) | loads, untested | **experimental build** | **yes**, measured | **reported working** | yes, as a `.wgt` | **experimental, not verified on a device** |
+| [Web fork](https://github.com/iqui27/NuvioTVSmart-legacy-webos) (JavaScript) | — | preview builds | yes | yes | — | — |
 
 **This table used to say webOS 5+ did not work, and that was wrong.** The video
 path once depended on `libAcbAPI`, which LG removed in webOS 5; since then the
@@ -103,6 +103,32 @@ safer choice — plain JavaScript, tuned for Chromium 53 and low RAM, with
 preview builds people have actually run. Reports from either are welcome.
 
 Both are unofficial and not affiliated with NuvioMedia.
+
+
+### Hisense VIDAA
+
+VIDAA apps are hosted URLs, not system packages. This port loads from
+`https://nuvio-recomendacoes.henriquef29.workers.dev/tv/` and automatically picks
+between two builds: **multithreaded** (mt) when the TV supports SharedArrayBuffer
+and cross-origin isolation, with a **single-threaded fallback** (st) otherwise.
+
+**Status:** experimental, not verified on a real device. Both builds start and
+reach the home screen in desktop Chrome; nobody has run them on a VIDAA TV yet.
+Reports welcome: if you accept automatic log upload when the app asks, the log
+reaches us with your TV's browser version, the codecs it reports, and the
+remote keys it did not recognize.
+
+**Known limits:**
+
+- Dolby Vision in MP4 is avoided (reported to crash VIDAA browser)
+- AV1 video not decoded (browser limitation)
+- HTTP video sources go through a relay for metadata, but HTTP video itself cannot
+  play from an HTTPS page
+- Audio/subtitle track switching depends on what the browser exposes
+- YouTube trailers only work in single-threaded mode
+
+**Install:** Open the TV browser and bookmark `https://nuvio-recomendacoes.henriquef29.workers.dev/tv/`,
+or sideload with developer mode using `tools/vidaa-instalar/instalar.py` (DNS spoofing method).
 
 ## What works
 

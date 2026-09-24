@@ -7,6 +7,17 @@ binding = "DB"
 database_name = "nuvio-recomendacoes"
 database_id = "fbea4764-9125-474e-ae4e-875d2e21b2fc"
 
+# Site da TV VIDAA (tools/vidaa-site.sh monta isto a partir do build do wasm,
+# em build/vidaa-site/: tv/versao.txt + tv/<versao>/{mt,st}/...). run_worker_first
+# SO em /tv/*: e onde o worker precisa entrar no meio do caminho para resolver
+# /tv -> a versao atual e por COOP/COEP no mt/ (ver rotaTv em index.js). Fora
+# de /tv/* nao ha nada hoje, e o pedido iria direto ao Asset Worker mesmo
+# assim.
+[assets]
+directory = "../../build/vidaa-site"
+binding = "ASSETS"
+run_worker_first = ["/tv/*"]
+
 # Limpeza da retencao de 90 dias.
 [triggers]
 crons = ["17 4 * * *"]

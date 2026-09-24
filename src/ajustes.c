@@ -2015,7 +2015,10 @@ static const char *ajudaOpcao(int op) {
 
     // --- Pagina de detalhe
     case AJ_DET_TRAILER:
-#ifdef __EMSCRIPTEN__
+#ifdef NV_VIDAA
+      // VIDAA: plain <video> permite som
+      return "Mostra o botão de trailer na tela do título, quando existe um trailer conhecido.";
+#elif defined(__EMSCRIPTEN__)
       // Samsung: a tela cheia e muda (trailerfonte_com_som) — a ajuda diz, em
       // vez de o botao prometer um som que nao vem.
       return "Mostra o botão de trailer na tela do título, quando existe um trailer conhecido. Nesta TV o trailer toca sem som.";
@@ -2032,7 +2035,9 @@ static const char *ajudaOpcao(int op) {
       // O que cada TV toca (trailerfonte.c, existe): a ajuda nomeia a fonte que
       // falta AQUI, senao escolher IMDb na Samsung e ficar sem trailer parece
       // defeito.
-#ifdef __EMSCRIPTEN__
+#ifdef NV_VIDAA
+      return "De onde vem o trailer da tela do título e do destaque. Automático tenta a Apple TV e, sem ela, o YouTube (só no modo de compatibilidade); uma fonte escolhida é a única tentada. O IMDb não toca nesta TV.";
+#elif defined(__EMSCRIPTEN__)
       return "De onde vem o trailer da tela do título e do destaque. Automático tenta a Apple TV e, sem ela, o YouTube; uma fonte escolhida é a única tentada. Nesta TV o trailer toca sempre sem som, e o IMDb não toca aqui.";
 #else
       return "De onde vem o trailer da tela do título e do destaque. Automático tenta a Apple TV e, sem ela, o IMDb; uma fonte escolhida é a única tentada. O YouTube não toca nesta TV.";

@@ -12,6 +12,41 @@ pacote se alguma voltar.
 
 ---
 
+
+---
+
+## Hisense VIDAA (Experimental)
+
+Apps em VIDAA sao hospedadas numa URL, nao sao pacotes de sistema. O Nuvio esta em:
+
+**`https://nuvio-recomendacoes.henriquef29.workers.dev/tv/`**
+
+Dois builds disponiveis; a TV escolhe automaticamente:
+- **Multifio (mt)** — usa SharedArrayBuffer, mais rapido se suportado
+- **Um fio (st)** — fallback para TVs antigas
+
+### Opcao A: Bookmark (mais simples)
+
+Abre o navegador da TV e coloca essa URL nos favoritos. Nao precisa de nada.
+
+### Opcao B: Sideload com Developer Mode
+
+Para sistemas que exigem o app estar na lista oficial:
+
+```bash
+# Ativa Developer Mode na TV: Configuracoes > Sistema > Sobre > 1234
+# Depois roda o instalador:
+sudo python3 tools/vidaa-instalar/instalar.py
+
+# Ou com IP customizado:
+sudo python3 tools/vidaa-instalar/instalar.py --ip 192.168.1.100
+```
+
+Cria um servidor DNS/HTTPS local que se passa por vidaahub.com, permitindo que a TV
+chame `Hisense_installApp()`. Depois de instalar, volta o DNS para automatico.
+
+Ver `tools/vidaa-instalar/LEIAME.md` para instrucoes detalhadas.
+
 ## Precisa de root? Nao. Mas leia a ressalva do LS2.
 
 | | Developer Mode | Homebrew Channel | Root (o caso desta TV) |

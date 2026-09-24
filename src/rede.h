@@ -70,6 +70,20 @@ extern long rede_teto;
 // erro nenhum. 1 se conseguiu resolver.
 int rede_url_final(const char *url, int segundos, char *dst, unsigned tam);
 
+#ifdef NV_VIDAA
+// VARIANTE PARA A VIDAA. rede_url_final so devolve 0/1, e na VIDAA um 0 pode
+// significar duas coisas bem diferentes: "resolvi, e o destino respondeu
+// erro" (fonte morta de verdade) ou "a requisicao nem saiu" (bloqueio de
+// conteudo misto ou de CORS na pagina https — ver o comentario de
+// vidaaNuncaProxiar/vidaaPareceVideo em rede.c: URL de video nunca passa
+// pelo /v1/proxy, entao esse bloqueio e ROTINEIRO ali, nao uma prova de nada).
+// Devolve 1 = resolveu, 0 = resolveu e o destino falhou, -1 = desconhecido —
+// quem chama decide o que fazer com "desconhecido" (streams.c trata como
+// "presuma viva", a mesma politica que playlistVazia ja usa para "nao
+// baixei").
+int rede_url_final_vidaa(const char *url, int segundos, char *dst, unsigned tam);
+#endif
+
 // POST de JSON. Existe para o Trakt, que so aceita escrita por POST.
 char *rede_postar(const char *url, int segundos, const char *const *cabecalhos,
                   const char *corpo);

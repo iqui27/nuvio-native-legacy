@@ -13,6 +13,41 @@ The package contains **no credentials**. `tools/testa-ipk.sh` proves it, and
 
 ---
 
+---
+
+## Hisense VIDAA (Experimental)
+
+VIDAA apps are web-based, hosted at a URL. Nuvio is available at:
+
+**`https://nuvio-recomendacoes.henriquef29.workers.dev/tv/`**
+
+Two builds are available; the TV picks automatically:
+- **Multithreaded (mt)** — uses SharedArrayBuffer, faster if supported
+- **Single-threaded (st)** — fallback for older TVs
+
+### Option A: Bookmark (simplest)
+
+Open the TV browser and bookmark the URL above. No installation needed.
+
+### Option B: Sideload with Developer Mode
+
+For systems that require app to be in the official app list:
+
+```bash
+# Enable Developer Mode on TV: Settings > System > About > 1234
+# Then run the installer:
+sudo python3 tools/vidaa-instalar/instalar.py
+
+# Or with custom IP:
+sudo python3 tools/vidaa-instalar/instalar.py --ip 192.168.1.100
+```
+
+This creates a local DNS/HTTPS server that mimics vidaahub.com, allowing the TV
+to call `Hisense_installApp()`. After installation, change DNS back to automatic.
+
+See `tools/vidaa-instalar/LEIAME.md` for detailed instructions.
+
+
 ## Do you need root? No. But read the LS2 caveat.
 
 | | Developer Mode | Homebrew Channel | Root |

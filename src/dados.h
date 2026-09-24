@@ -62,6 +62,13 @@ int dados_sync_em_recuo(void);
 // um download, perder a sessao custa um login por QR.
 void dados_marcar_sujo(int leve);
 
+// DESCARGA JA, sem a espera minima de 700 ms entre duas descargas. Para o que
+// nao pode ficar so no MEMFS nem um quadro a mais do que o necessario: a
+// sessao recem-gravada (sessao.c). Se ja houver uma descarga em voo, a
+// proxima sai no primeiro quadro depois de ela confirmar. Quem descarrega
+// continua sendo dados_sincronizar, no laco principal.
+void dados_sincronizar_logo(void);
+
 // TRAVA DO SISTEMA DE ARQUIVOS, para quem grava por fora deste modulo.
 //
 // So faz algo no alvo Tizen, e la nao e opcional: o "sistema de arquivos" do

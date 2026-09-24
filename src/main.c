@@ -27,6 +27,7 @@
 #include "text.h"
 #include "marco.h"
 #include "rede.h"
+#include "fio1.h"   // so existe corpo com NV_UM_FIO — ver o gancho perto de nv_ceder_quadro
 #include "tex_cache.h"
 #include "webp.h"
 #include "cachearte.h"
@@ -963,6 +964,20 @@ int main(int argc, char **argv) {
     { Uint64 c0 = SDL_GetPerformanceCounter();
       double c = (double)(c0 - fimCeder) * 1000.0 / perFreq, fora;
       if (c > cMaxMs) cMaxMs = c;
+#ifdef NV_UM_FIO
+      // GANCHO DO ESCALONADOR DE FIBRAS (--um-fio, ver src/fio1.h). No build
+      // mt/ os ~76 pontos de pthread_create rodam em Workers de verdade,
+      // paralelos ao fio principal o tempo todo. Aqui so ha ESTE fio de JS:
+      // sem chamar fio1_rodar todo quadro, nenhuma fibra de trabalho (busca,
+      // fontes, streams, etc.) jamais receberia CPU. 6 ms e um orcamento, nao
+      // uma garantia — cede mais cedo se a fila de prontas esvaziar antes
+      // disso. NAO MEDIDO NA TV: e um chute a partir do orcamento de quadro a
+      // 60 fps (16,7 ms) menos o que o desenho normal ja consome; se os fios
+      // de trabalho ficarem famintos (busca/streams lentos demais), este
+      // numero e o primeiro a subir — e se o proprio desenho comecar a
+      // atrasar, e o primeiro a descer.
+      fio1_rodar(6.0);
+#endif
       nv_ceder_quadro();
       fimCeder = SDL_GetPerformanceCounter();
       fora = (double)(fimCeder - c0) * 1000.0 / perFreq;

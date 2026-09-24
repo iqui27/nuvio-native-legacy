@@ -1693,7 +1693,10 @@ void extras_trailer_abrir(int i) {
   if (!yt[0]) return;
   char url[128];
   snprintf(url, sizeof url, "https://www.youtube.com/watch?v=%s", yt);
-#if defined(__EMSCRIPTEN__)
+#ifdef NV_VIDAA
+  printf("[extras] youtube externo indisponivel no VIDAA\n");
+  fflush(stdout);
+#elif defined(__EMSCRIPTEN__)
   char js[200];
   snprintf(js, sizeof js, "window.open('%s','_blank')", url);
   emscripten_run_script(js);

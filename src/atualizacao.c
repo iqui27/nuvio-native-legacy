@@ -284,6 +284,10 @@ static int fioConsulta(void *arg) {
   char *corpo;
   char tag[48] = "", body[8192] = "";
   (void)arg;
+#ifdef NV_VIDAA
+  pronto = 1;
+  return 0;  // hosted app e sempre current
+#endif
   corpo = rede_baixar(AT_URL, 12);
   if (!corpo) { printf("[atualizacao] sem resposta do GitHub\n"); fflush(stdout); }
   else {
@@ -329,6 +333,10 @@ static int fioConsulta(void *arg) {
 static int fioInstalar(void *arg) {
   char cmd[900];
   (void)arg;
+#ifdef NV_VIDAA
+  pronto = 1;
+  return 0;  // hosted app e sempre current
+#endif
   { char extra[110] = "";
     if (ipkHash[0]) snprintf(extra, sizeof extra, ",\"ipkHash\":\"%s\"", ipkHash);
     snprintf(cmd, sizeof cmd,

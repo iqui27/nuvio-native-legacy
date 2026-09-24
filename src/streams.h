@@ -28,6 +28,11 @@ typedef struct {
   int  altura;          // 2160, 1080, 720...
   int  dolbyVision;
   int  dolbyAtmos;
+  // AV1: so consultado pela tabela de pontuacao da VIDAA (streams.c, pontos())
+  // — a Hisense nao decodifica AV1 (nem hardware nem software no navegador
+  // dela). Detectado direto no texto do stream em stream_parse.c, do MESMO
+  // jeito que dolbyVision/mp4 logo abaixo (nao a partir de badges_detectar).
+  int  av1;
   uint64_t badges;     // classificados uma vez, nunca regex no desenho
   int  mp4;             // 1 = MP4 progressivo; 0 = HLS ou outro
   long tamanhoMB;       // 0 quando desconhecido

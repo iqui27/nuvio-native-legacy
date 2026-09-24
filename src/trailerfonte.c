@@ -1,4 +1,5 @@
 #include "trailerfonte.h"
+#include "perfiltv.h"
 #include "ajustes.h"
 #include <stddef.h>
 
@@ -10,7 +11,12 @@ static int existe(int fonte, int tizen) {
   switch (fonte) {
     case TRF_APPLE:   return 1;
     case TRF_IMDB:    return !tizen;
-    case TRF_YOUTUBE: return tizen;
+    case TRF_YOUTUBE:
+#if defined(NV_VIDAA) && !defined(NV_UM_FIO)
+      return 0;  // mt build: YouTube iframe falha com COEP isolado
+#else
+      return tizen;  // Tizen e VIDAA st: YouTube habilitado
+#endif
     default:          return 0;
   }
 }
@@ -73,7 +79,13 @@ const char *trailerfonte_nome(int qual) {
   }
 }
 
-int trailerfonte_com_som(int tizen) { return !tizen; }
+int trailerfonte_com_som(int tizen) {
+#ifdef NV_VIDAA
+  return 1;  // VIDAA: plain <video> sem problema de autoplay policy
+#else
+  return !tizen;  // Tizen: mudo; LG: som
+#endif
+}
 
 int trailerfonte_ajuste(void) { return ajustes_trailer_fonte(); }
 int trailerfonte_tizen(void) {

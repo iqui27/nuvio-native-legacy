@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920,height=1080,user-scalable=no">
+<title>Nuvio</title>
+<style>
+  /* Fundo TRANSPARENTE: no VIDAA (hosted app) nao ha camada de video como no
+     Tizen; o canvas do wasm fica direto na tela. Mantemos transparente para
+     ficar compativel com layouts futuros e passar-through de qualquer
+     decoracao que o host possa desenhar atras. */
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%;
+               overflow: hidden; background: transparent; }
+  /* PAINEL DE DIAGNOSTICO NA TELA. Mesmo motivo do Tizen: na TV nao ha
+     DevTools a mao. */
+  #diag { position: absolute; left: 2%; top: 2%; right: 2%; z-index: 5;
+          font: 18px/1.45 monospace; color: #b8f5c0; white-space: pre-wrap;
+          background: rgba(0,0,0,.82); padding: 14px 18px; border-radius: 8px;
+          max-height: 92%; overflow: hidden; }
+  #diag .e { color: #ff8b7a; }
+  /* ABERTURA, no lugar do painel tecnico. Mesmo raciocinio do Tizen. */
+  #abertura { position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+              z-index: 4; background: #050718;
+              display: flex; flex-direction: column;
+              align-items: center; justify-content: center; }
+  #abertura img { width: 512px; max-width: 42%; height: auto;
+                  mix-blend-mode: lighten;
+                  animation: nvPulso 1.8s ease-in-out infinite; }
+  #abertura .barra { margin-top: 40px; width: 320px; height: 4px;
+                     border-radius: 2px; background: rgba(255,255,255,.14);
+                     overflow: hidden; }
+  #abertura .barra i { display: block; height: 100%; width: 30%;
+                       border-radius: 2px; background: rgba(255,255,255,.75);
+                       animation: nvCorre 1.4s ease-in-out infinite; }
+  #abertura .barra.medida i { animation: none; transform: none;
+                              transition: width .25s linear; }
+  @keyframes nvPulso { 0%, 100% { opacity: 1; } 50% { opacity: .72; } }
+  @keyframes nvCorre { 0% { transform: translateX(-110%); }
+                       100% { transform: translateX(440%); } }
+  /* Canvas com scale-to-fit, igual ao Tizen. */
+  #canvas { position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100vw !important; height: 56.25vw !important;
+            max-width: 177.78vh !important; max-height: 100vh !important;
+            z-index: 1; display: block; background: transparent;
+            outline: none; }
+</style>
+</head>
+<body>
+<!-- A ABERTURA fica ANTES do painel de diagnostico no DOM. -->
+<div id="abertura"><img src="../../icone-400.png" alt="Nuvio"><div class="barra"><i></i></div></div>
+<!-- NASCE ESCONDIDO. Ver o cao de guarda no fim do arranque. -->
+<div id="diag" hidden>Nuvio: iniciando…</div>
+<canvas id="canvas" width="1920" height="1080" tabindex="0"
+        oncontextmenu="event.preventDefault()"></canvas>
+<script>
+  // MODO MT/ST: redirect se SAB nao estiver disponivel em MT
+  var NV_MODO = '@NUVIO_MODO@';
+  window.nvPlataforma = 'vidaa';
+  
+  // Se o modo pedido e MT (multithreading) mas o navegador nao suporta
+  // SharedArrayBuffer ou nao esta cross-origin-isolated, redireciona para ST
+  // (single-thread) antes de o wasm tentar carregar.
+  if (NV_MODO === 'mt' && (typeof SharedArrayBuffer === 'undefined' || self.crossOriginIsolated === false)) {
+    // O Module nao vai comecar: ele so inicia quando setMain chama
+    // run(). Paramos ele de graca.
+    var Module = { noInitialRun: true };
+    // Se tivemos localStorage, loga a queda para poder acompanhar.
+    try {
+      var pastaAtual = location.pathname;
+      var novaPasta = pastaAtual.replace(/\/mt\//, '/st/');
+      localStorage.setItem('nv-modo-st', novaPasta + location.search);
+      console.log('[vidaa] MT impossivel, redirecionando para ST');
+      location.replace(novaPasta + location.search);
+    } catch (e) {}
+  }
+
+  // DIAGNOSTICO DE ARRANQUE
+  (function () {
+    var COLETOR = "@NUVIO_LOG_URL@";
+    var fila = [];
+    if (COLETOR && COLETOR.charAt(0) !== "@") {
+      setInterval(function () {
+        if (!fila.length) return;
+        var corpo = fila.join("\n");
+        fila = [];
+        try {
+          fetch(COLETOR, { method: "POST", body: corpo, keepalive: true,
+                           headers: { "Content-Type": "text/plain" } });
+        } catch (e) {}
+      }, 2000);
+      addEventListener("pagehide", function () {
+        if (!fila.length) return;
+        try { navigator.sendBeacon(COLETOR, fila.join("\n")); } catch (e) {}
+      });
+    }
+    window.__nvEnviar = function (t) {
+      if (!COLETOR || COLETOR.charAt(0) === "@") return;
+      fila.push(t);
+      if (fila.length > 400) fila.splice(0, fila.length - 400);
+    };
+
+    var painel = document.getElementById("diag");
+    var linhas = [];
+    var nvLinhas = [];
+    window.__nvLinhas = nvLinhas;
+    var nvLogTam = 0, nvLogPartes = [], nvLogSujo = false, NV_LOG_MAX = 200 * 1024;
+    try {
+      localStorage.setItem('nv-log-anterior', localStorage.getItem('nv-log') || '');
+      localStorage.setItem('nv-log', '');
+    } catch (e) {}
+    function nvLogGravar() {
+      if (!nvLogSujo) return;
+      nvLogSujo = false;
+      try {
+        var t = nvLogPartes.join('\n');
+        if (t.length > NV_LOG_MAX) { t = t.slice(t.length - NV_LOG_MAX); nvLogPartes = [t]; nvLogTam = t.length; }
+        localStorage.setItem('nv-log', t);
+      } catch (e) {}
+    }
+    setInterval(nvLogGravar, 30000);
+    document.addEventListener('visibilitychange', nvLogGravar);
+    window.addEventListener('pagehide', nvLogGravar);
+    var nvFalhas = 0;
+    try {
+      nvFalhas = parseInt(localStorage.getItem('nv-boot-falhas') || '0', 10) || 0;
+      localStorage.setItem('nv-boot-falhas', String(nvFalhas + 1));
+    } catch (e) {}
+    window.__nvModoRecuperacao = nvFalhas >= 2;
+    if (window.__nvModoRecuperacao) {
+      console.warn("[arranque] recovery ativo apos " + nvFalhas + " falhas; dados pessoais preservados");
+    }
+    var DIAG_TOKEN = "@NUVIO_DIAG_TOKEN@", DIAG_URL = "@NUVIO_REC_URL@";
+    var diagLiga = DIAG_TOKEN.charAt(0) !== "@" && DIAG_URL.charAt(0) !== "@";
+    var diagUltimo = "";
+    function nvDiagEnviar(texto, quando) {
+      if (!diagLiga || !texto || texto === diagUltimo) return;
+      diagUltimo = texto;
+      try {
+        fetch(DIAG_URL + "/v1/registro", {
+          method: "POST", keepalive: true,
+          headers: { "Authorization": "Bearer " + DIAG_TOKEN, "X-Nuvio-Auth": "diagnostico",
+                     "Content-Type": "application/json" },
+          body: JSON.stringify({ versao: "1.3.4-diag", plataforma: "vidaa", quando: quando,
+                                 texto: texto.slice(-200 * 1024), tv: navigator.userAgent, falhas: nvFalhas })
+        }).catch(function () {});
+      } catch (e) {}
+    }
+    if (diagLiga) {
+      try {
+        var ant = localStorage.getItem('nv-log-anterior') || '';
+        if (ant) nvDiagEnviar(ant, 'anterior ' + new Date().toISOString().slice(0, 16) + ' falhas=' + nvFalhas);
+      } catch (e) {}
+      nvDiagEnviar('arranque ' + navigator.userAgent + ' | deviceMemory=' + (navigator.deviceMemory || '?') +
+                   ' | cores=' + (navigator.hardwareConcurrency || '?') + ' | falhas=' + nvFalhas,
+                   'arranque ' + new Date().toISOString().slice(0, 16));
+      setTimeout(function () {
+        nvLogGravar();
+        try { nvDiagEnviar(localStorage.getItem('nv-log') || '', 'inicio ' + new Date().toISOString().slice(0, 16)); } catch (e) {}
+      }, 5000);
+      setInterval(function () {
+        nvLogGravar();
+        try { nvDiagEnviar(localStorage.getItem('nv-log') || '', 'auto ' + new Date().toISOString().slice(0, 16)); } catch (e) {}
+      }, 20000);
+      window.addEventListener('pagehide', function () {
+        nvLogGravar();
+        try { nvDiagEnviar(localStorage.getItem('nv-log') || '', 'saida ' + new Date().toISOString().slice(0, 16)); } catch (e) {}
+      });
+    }
+    function pintar() {
+      if (painel && !painel.hidden) painel.innerHTML = linhas.join("\n");
+    }
+    window.__nvPintar = pintar;
+    var t0 = Date.now();
+    function mostrar(txt, erro) {
+      var ms = Date.now() - t0;
+      if (window.__nvEnviar) window.__nvEnviar((ms / 1000).toFixed(1) + "s " + txt);
+      txt = (ms / 1000).toFixed(1).padStart(6) + "s  " + txt;
+      nvLinhas.push(txt);
+      if (nvLinhas.length > 200) nvLinhas.splice(0, nvLinhas.length - 200);
+      nvLogPartes.push(txt); nvLogTam += txt.length + 1; nvLogSujo = true;
+      if (nvLogTam > NV_LOG_MAX * 2) { var j = nvLogPartes.join('\n').slice(-NV_LOG_MAX); nvLogPartes = [j]; nvLogTam = j.length; }
+      linhas.push(erro ? '<span class="e">' + txt + "</span>" : txt);
+      if (linhas.length > 34) linhas = linhas.slice(-34);
+      pintar();
+    }
+    window.__nvDiag = mostrar;
+    function d(k, v) { console.log("[NV-DIAG] " + k + " = " + v); mostrar(k + " = " + v); }
+    try {
+      d("userAgent", navigator.userAgent);
+      d("[vidaa] modo", NV_MODO);
+      d("[vidaa] crossOriginIsolated", (typeof crossOriginIsolated !== "undefined") ? crossOriginIsolated : "indefinido");
+      d("[vidaa] SharedArrayBuffer", typeof SharedArrayBuffer);
+      d("[vidaa] deviceMemory", navigator.deviceMemory);
+      // Verificar canPlayType e MSE
+      var v = document.createElement("video");
+      var canPlayVideo = {
+        "video/mp4; codecs=\"avc1.640028\"": v.canPlayType('video/mp4; codecs="avc1.640028"'),
+        "video/mp4; codecs=\"hvc1.1.6.L150.90\"": v.canPlayType('video/mp4; codecs="hvc1.1.6.L150.90"'),
+        "video/mp4; codecs=\"dvh1.05.06\"": v.canPlayType('video/mp4; codecs="dvh1.05.06"'),
+        "video/mp4; codecs=\"av01.0.08M.08\"": v.canPlayType('video/mp4; codecs="av01.0.08M.08"'),
+        "video/webm": v.canPlayType('video/webm'),
+        "video/x-matroska": v.canPlayType('video/x-matroska'),
+        "application/vnd.apple.mpegurl": v.canPlayType('application/vnd.apple.mpegurl')
+      };
+      mostrar("[vidaa] canPlayType: " + JSON.stringify(canPlayVideo));
+      var mseSupported = typeof MediaSource !== 'undefined';
+      var avcSupported = mseSupported && MediaSource.isTypeSupported ? MediaSource.isTypeSupported('video/mp4; codecs="avc1.640028"') : false;
+      var hevcSupported = mseSupported && MediaSource.isTypeSupported ? MediaSource.isTypeSupported('video/mp4; codecs="hvc1.1.6.L150.90"') : false;
+      mostrar("[vidaa] mse=" + mseSupported + " avc=" + avcSupported + " hevc=" + hevcSupported);
+      var audioTracksSupported = 'audioTracks' in HTMLMediaElement.prototype;
+      var textTracksSupported = 'textTracks' in HTMLMediaElement.prototype;
+      mostrar("[vidaa] audioTracks=" + audioTracksSupported + " textTracks=" + textTracksSupported);
+      window.__nvRaf = { max: 0, lentos: 0, ultimo: 0 };
+      (function tick(t) {
+        var r = window.__nvRaf;
+        if (r.ultimo) { var g = t - r.ultimo; if (g > r.max) r.max = g; if (g > 500) r.lentos++; }
+        r.ultimo = t;
+        requestAnimationFrame(tick);
+      })(performance.now());
+      window.__nvLong = { max: 0, n: 0, soma: 0, quem: "" };
+      try {
+        new PerformanceObserver(function (lista) {
+          var L = window.__nvLong;
+          lista.getEntries().forEach(function (e) {
+            L.n++; L.soma += e.duration;
+            if (e.duration > L.max) {
+              L.max = e.duration;
+              var a = e.attribution && e.attribution[0];
+              L.quem = e.name + (a ? "/" + a.containerType + (a.containerSrc ? ":" + a.containerSrc.slice(-24) : "") : "");
+            }
+          });
+        }).observe({ entryTypes: ["longtask"] });
+      } catch (e) { window.__nvLong.quem = "sem-observer"; }
+      d("WebAssembly", typeof WebAssembly);
+      d("tela", screen.width + "x" + screen.height +
+               " / viewport " + window.innerWidth + "x" + window.innerHeight +
+               " / dpr " + window.devicePixelRatio);
+      var cv = document.createElement("canvas");
+      var gl = cv.getContext("webgl", { alpha: true }) || cv.getContext("experimental-webgl", { alpha: true });
+      if (!gl) { d("WebGL", "CONTEXTO RECUSADO"); }
+      else {
+        d("WebGL", gl.getParameter(gl.VERSION));
+        d("WebGL/GLSL", gl.getParameter(gl.SHADING_LANGUAGE_VERSION));
+        d("WebGL/tamanho-max-textura", gl.getParameter(gl.MAX_TEXTURE_SIZE));
+        var a = gl.getContextAttributes && gl.getContextAttributes();
+        d("WebGL/alpha", a ? a.alpha : "?");
+        d("WebGL/npot", !!gl.getExtension("OES_texture_npot"));
+      }
+    } catch (e) { console.log("[NV-DIAG] falhou: " + e); }
+
+    window.addEventListener("error", function (ev) {
+      var t = "ERRO: " + (ev.message || ev.type) +
+              " @ " + (ev.filename || "?") + ":" + (ev.lineno || 0);
+      console.log("[NV-ERRO] " + t); mostrar(t, 1);
+    });
+    window.addEventListener("unhandledrejection", function (ev) {
+      var t2 = "ERRO promessa: " + (ev.reason && ev.reason.message ? ev.reason.message : ev.reason);
+      console.log("[NV-ERRO] " + t2); mostrar(t2, 1);
+    });
+
+    setTimeout(function () {
+      if (window.__nvPrimeiroQuadro) return;
+      mostrar("primeiro quadro nao veio em 25 s — abrindo o diagnostico", 1);
+      var p = document.getElementById("diag");
+      if (p) { p.hidden = false; pintar(); }
+    }, 25000);
+  })();
+
+  var Module = {
+    arguments: ["/app/art"],
+    canvas: (function () { return document.getElementById("canvas"); })(),
+    setStatus: function (t) {
+      if (!t) return;
+      if (window.__nvDiag) window.__nvDiag(t);
+      var barra = document.querySelector("#abertura .barra");
+      if (!barra) return;
+      var m = /\((\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\)/.exec(t);
+      if (!m) return;
+      var fim = parseFloat(m[2]);
+      if (!(fim > 0)) return;
+      var pct = Math.max(2, Math.min(100, (parseFloat(m[1]) / fim) * 100));
+      barra.className = "barra medida";
+      barra.firstChild.style.width = pct.toFixed(1) + "%";
+    },
+    print: function (t) {
+      console.log(t);
+      if (window.__nvDiag) {
+        window.__nvDiag(t);
+        if (t.indexOf("primeiro quadro na tela") >= 0) {
+          var ab = document.getElementById("abertura");
+          if (ab && ab.parentNode) ab.parentNode.removeChild(ab);
+          var p = document.getElementById("diag");
+          if (p) p.hidden = true;
+          window.__nvPrimeiroQuadro = 1;
+        }
+      }
+    },
+    printErr: function (t) { console.warn(t); if (window.__nvDiag) window.__nvDiag(t, 1); }
+  };
+
+  // MEDIDOR DE WORKERS, mesmo motivo do Tizen: evitar paralise do fio principal
+  setInterval(function () {
+    try {
+      var PT = Module.PThread;
+      if (!PT || !PT.unusedWorkers) return;
+      var livres = PT.unusedWorkers.length;
+      var pth = PT.pthreads ? Object.keys(PT.pthreads).length : -1;
+      var t = "[fios] livres=" + livres + " vivos=" + pth +
+              (livres === 0 ? "  <<< POOL NO LIMITE" : "");
+      console.log(t);
+      if (window.__nvDiag) window.__nvDiag(t, livres === 0);
+    } catch (e) {}
+  }, 3000);
+
+  // TECLAS DO CONTROLE VIDAA -> eventos sinteticos SDL
+  // Tabela de mapeamento: keyCode VIDAA -> { key, code, keyCode } para KeyboardEvent
+  var VIDAA_TECLAS = {
+    // Back: 8 (Backspace) ou 461 (XF86Back). Ambos viram Escape.
+    // Nota: o app tem teclado on-screen em GL (teclado.c, busca.c) que pode
+    // usar SDLK_BACKSPACE para deletar. Aqui mapeamos 8 para Escape de qualquer
+    // forma porque o js nao sabe se estamos digitando ou nao. O app nao sofre:
+    // o teclado de GL tem sua propria tecla de Delete.
+    8:    { key: "Escape", code: "Escape", keyCode: 27 },  // Backspace (Back)
+    461:  { key: "Escape", code: "Escape", keyCode: 27 },  // XF86Back (Back)
+    13:   null,  // Enter passa direto (trusted)
+    37:   null,  // ArrowLeft passa direto
+    38:   null,  // ArrowUp passa direto
+    39:   null,  // ArrowRight passa direto
+    40:   null,  // ArrowDown passa direto
+    415:  { key: "Pause", code: "Pause", keyCode: 19 },  // MediaPlay
+    19:   { key: "Pause", code: "Pause", keyCode: 19 },  // MediaPause
+    10252: { key: "Pause", code: "Pause", keyCode: 19 },  // MediaPlayPause
+    413:  { key: "Escape", code: "Escape", keyCode: 27 }, // MediaStop
+    417:  { key: "ArrowRight", code: "ArrowRight", keyCode: 39 }, // MediaFastForward
+    412:  { key: "ArrowLeft", code: "ArrowLeft", keyCode: 37 },   // MediaRewind
+    427:  { key: "s", code: "KeyS", keyCode: 83 },  // ChannelUp -> 's' (Salvos)
+    // Coloridas passam direto: vermelha e verde sao do ouvinte do painel logo
+    // abaixo. Converte-las aqui em F1/F2 fazia o painel agir DUAS vezes (no
+    // 403 original e no F1 sintetico, que o ouvinte do painel tambem aceita),
+    // abrindo e fechando na mesma tecla. Amarela e azul: nada ainda.
+    403:  null,  // ColorF0Red
+    404:  null,  // ColorF1Green
+    405:  null,  // ColorF2Yellow
+    406:  null   // ColorF3Blue
+  };
+  
+  var desconhecidosJaLogados = {};
+  
+  window.addEventListener("keydown", function (ev) {
+    if (!ev.isTrusted) return;
+    var mapa = VIDAA_TECLAS[ev.keyCode];
+    var entra = null;
+    
+    // Se nao esta no mapa de VIDAA, pode ser uma seta ou enter que passa direto
+    if (mapa === undefined && (ev.keyCode === 13 || (ev.keyCode >= 37 && ev.keyCode <= 40))) {
+      return;  // deixa passar
+    }
+    
+    // Se nao esta no mapa e nao e arrow/enter, log (uma vez por keyCode por sessao)
+    if (mapa === undefined) {
+      if (!desconhecidosJaLogados[ev.keyCode]) {
+        desconhecidosJaLogados[ev.keyCode] = 1;
+        console.log("[tecla] desconhecida keyCode=" + ev.keyCode + " key=" + ev.key + " code=" + ev.code);
+        if (window.__nvDiag) {
+          window.__nvDiag("[tecla] desconhecida keyCode=" + ev.keyCode + " key=" + ev.key + " code=" + ev.code);
+        }
+      }
+      return;
+    }
+    
+    // Null no mapa = deixa passar (setas, enter)
+    if (mapa === null) return;
+    
+    // So media keys com player aberto
+    if ((ev.keyCode === 415 || ev.keyCode === 19 || ev.keyCode === 10252 ||
+         ev.keyCode === 413 || ev.keyCode === 417 || ev.keyCode === 412) &&
+        !window.nvPlayerAberto) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+    
+    ev.preventDefault();
+    ev.stopPropagation();
+    
+    var alvo = document.getElementById("canvas") || window;
+    ["keydown", "keyup"].forEach(function (t) {
+      alvo.dispatchEvent(new KeyboardEvent(t, {
+        key: mapa.key, code: mapa.code, keyCode: mapa.keyCode, which: mapa.keyCode,
+        bubbles: true, cancelable: true
+      }));
+    });
+  }, true);
+
+  // PAINEL DE LOG COM TECLAS VERMELHA E VERDE
+  function mostrarPainelDOM() {
+    var p = document.getElementById("diag");
+    if (!p) return;
+    p.hidden = !p.hidden;
+    if (!p.hidden && window.__nvPintar) window.__nvPintar();
+  }
+  window.addEventListener("keydown", function (ev) {
+    var vermelho = (ev.keyCode === 403 || ev.key === "F1");
+    var verde    = (ev.keyCode === 404 || ev.key === "F2");
+    if (!vermelho && !verde) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (verde || !window.__nvPrimeiroQuadro) { mostrarPainelDOM(); return; }
+    var alvo = document.getElementById("canvas") || window;
+    ["keydown", "keyup"].forEach(function (t) {
+      alvo.dispatchEvent(new KeyboardEvent(t, {
+        key: "F9", code: "F9", keyCode: 120, which: 120,
+        bubbles: true, cancelable: true
+      }));
+    });
+  }, true);
+
+  // EXIT: tentar fechar a janela, depois backspace
+  Module.nvSair = function() {
+    try { window.close(); } catch(e) {}
+    setTimeout(function(){ try { history.back(); } catch(e) {} }, 300);
+  };
+
+  // Focus no canvas
+  window.addEventListener("load", function () {
+    var c = document.getElementById("canvas");
+    if (c) c.focus();
+  });
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

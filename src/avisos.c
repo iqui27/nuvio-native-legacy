@@ -13,6 +13,7 @@
 #include "atualizacao.h"
 #include "salvosintro.h"
 #include "registro.h"
+#include "perfiltv.h"
 #include <math.h>
 #include "agenda.h"
 #include "sessao.h"
@@ -339,7 +340,7 @@ int avisos_enviar_diagnostico(const char *execucao_id, const char *relatorio,
            "{\"versao\":\"%s\",\"plataforma\":\"%s\",\"execucao_id\":\"%s\",\"texto\":\"%s\"}",
            NV_VERSAO,
 #ifdef __EMSCRIPTEN__
-           "tizen",
+           ptv_nome(),
 #elif defined(__APPLE__)
            "mac",
 #else
@@ -430,7 +431,7 @@ static void *enviarRegistro(void *u) {
              "{\"versao\":\"%s\",\"plataforma\":\"%s\",\"quando\":\"%s\",\"texto\":\"%s\"}",
              NV_VERSAO,
 #ifdef __EMSCRIPTEN__
-             "tizen",
+             ptv_nome(),
 #elif defined(__APPLE__)
              "mac",
 #else
@@ -500,7 +501,7 @@ static void *fioCanalFn(void *u) {
       if (ate[0] && strcmp(hoje, ate) > 0) ok = 0;
       if (ateV[0] && versaoMaior(NV_VERSAO, ateV)) ok = 0;
 #ifdef __EMSCRIPTEN__
-      if (plat[0] && strcmp(plat, "todas") && strcmp(plat, "tizen")) ok = 0;
+      if (plat[0] && strcmp(plat, "todas") && strcmp(plat, ptv_nome())) ok = 0;
 #else
       if (plat[0] && strcmp(plat, "todas") && strcmp(plat, "lg")) ok = 0;
 #endif

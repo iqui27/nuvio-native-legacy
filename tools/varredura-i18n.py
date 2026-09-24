@@ -290,6 +290,10 @@ IGNORAR = {
     # literal e ali so ha uma chave de inicializacao, entao NAO_E_TELA nao tem
     # como reconhece-los. Ficam em portugues de proposito — quem le e quem
     # abre uma issue, e a linha inteira em volta deles ja e portugues.
+    # Nomes das regras de pontuacao do VIDAA (streams.c, REGRAS_VIDAA). Mesmo
+    # caso: dado de vetor que so vai para o printf "[fonte] vidaa: regras em ...".
+    "dv-em-mp4 trava o navegador", "dv-em-mkv ok nesta tv", "av1 nao decodifica",
+    "acima de 4k da tela preta", "mp4 sem dv e mais confiavel",
     "nenhuma colecao usa este addon",
     "colecao tem o addon, mas com outro tipo",
     "colecao tem addon e tipo, mas outro id de catalogo",
