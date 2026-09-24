@@ -770,7 +770,7 @@
   { "Idioma do áudio", "Audio language" },
   { "Idioma dos metadados", "Metadata language" },
   { "Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "Language of the texts TMDB provides (overview, titles). \"Interface language\" follows the app language." },
-  { "Idioma procurado primeiro na lista de legendas de cada título. \"Da conta\" segue o que está no seu perfil.", "The language looked for first in each title's subtitle list. \"From account\" follows your profile." },
+  { "Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "The language looked for first in each title's subtitles, and turned on by itself when the video starts. \"From account\" follows your profile." },
   { "Imagem preta com o áudio tocando? Recarrega esta fonte sem HDR nem Dolby Vision.", "Black picture while the audio plays? Reloads this source with no HDR and no Dolby Vision." },
   { "Impressão digital do episódio", "Episode fingerprint" },
   { "Incorporada", "Embedded" },

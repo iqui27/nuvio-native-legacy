@@ -66,4 +66,23 @@ const char *ling_original(void);
 int         ling_opcao_n(void);
 const char *ling_opcao_codigo(int i);   // "" para conta, "*" para sem filtro
 
+// LEGENDA QUE LIGA SOZINHA quando o video comeca (#129).
+//
+// Antes disto a preferencia de legenda so FILTRAVA e ordenava a lista de
+// legendas dos addons: nada era ligado, embutida ou externa. "Escolhi ingles e
+// o filme nao abre com legenda em ingles" era o comportamento do codigo, nao
+// um defeito de gravacao — e do sofa as duas coisas parecem a mesma.
+//
+// Esta e so a DECISAO, sem video nem rede, para o teste alcancar. Quem a chama
+// (faixas.c) diz o que ja se sabe: o idioma de cada faixa embutida ("" quando
+// o arquivo nao etiqueta ou a sonda do MKV ainda nao voltou) e de cada legenda
+// de addon, e se cada lista ja esta FECHADA (nao vai mudar mais). Devolve o
+// indice na lista combinada da folha de faixas — embutidas primeiro, depois as
+// de addon — ou uma das duas marcas abaixo.
+#define LING_AUTO_ESPERA (-2)   // ainda pode aparecer uma que case
+#define LING_AUTO_NADA   (-1)   // nao ha o que ligar: fica como o arquivo abriu
+int ling_legenda_auto(const char *pref,
+                      const char *const *emb, int nEmb, int embFechado,
+                      const char *const *add, int nAdd, int addFechado);
+
 #endif
