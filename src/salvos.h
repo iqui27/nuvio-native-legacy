@@ -33,6 +33,7 @@
 #define NV_SALVOS_H
 
 #include "catalogo.h"
+#include <stddef.h>
 
 // Teto da lista local. ERA 300 EM VETOR ESTATICO, e o 301o titulo salvo era
 // RECUSADO — so uma linha no log, com o botao "+" acendendo do mesmo jeito. A
@@ -87,6 +88,30 @@ int  salvos_aplicar_catalogo(void);
 // Mesmo mecanismo e mesmo motivo de contalib_reconciliar — ver a nota longa
 // la, ela vale palavra por palavra para este modulo.
 void salvos_reconciliar(void);
+
+// O MESMO TITULO COM DOIS IDS. O catalogo guarda a serie com progresso como
+// "tt123:1:2" (o card de "Continuar assistindo", ver descoberta.c/trakt.c), e a
+// lista local, a conta e a watchlist guardam "tt123". Comparar com strcmp fazia
+// o painel de Salvos mostrar Widows Bay DUAS vezes, as duas no mesmo episodio
+// (a linha local puxa o progresso da copia "tt123:1:2" do catalogo, e a copia
+// entra de novo como linha propria). A regra e a de catalogo.c (mesmoTitulo): o
+// unico sufixo que se ignora e ":<temporada>:<episodio>" em digitos. "tmdb:55"
+// e "kitsu:12" continuam ids inteiros — cortar no primeiro ':' ja fez todo
+// canal "cs:channel:..." virar o mesmo titulo (#37).
+int  salvos_mesmo_titulo(const char *a, const char *b);
+// `id` sem o sufixo ":<t>:<e>" em `out`. Id sem esse sufixo sai igual.
+void salvos_id_titulo(const char *id, char *out, size_t tam);
+
+// A UNIAO QUE A INTERFACE MOSTRA COMO "SALVOS": a lista local, na ordem de
+// insercao, e depois cada TITULO do catalogo com naLista — uma vez so, por
+// mais copias que o catalogo tenha dele (o mesmo titulo vive em varias
+// fileiras, cada uma com a sua copia) e por mais ids que ele use.
+//   local >= 0: indice em salvos_item(); `cat` e a copia do catalogo que tem o
+//               progresso dele (-1 sem nenhuma).
+//   local <  0: so o catalogo tem; `cat` e o indice.
+// Devolve quantas entradas escreveu (no maximo `cap`). FIO PRINCIPAL apenas.
+typedef struct { int local, cat; } SalvosEntrada;
+int  salvos_uniao(SalvosEntrada *out, int cap);
 
 // Apaga a lista do aparelho. Chamar de sync_esquecer_usuario: a lista de "quero
 // ver" e tao pessoal quanto o token, e numa TV de sala sair da conta tem de
