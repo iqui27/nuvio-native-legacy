@@ -12,9 +12,10 @@
 // log e depois perdia TODAS as fontes do torrent ("145 torrents sem debrid
 // descartados") — 13 das 26 pessoas cujo registro chegou dessa versao.
 //
-// Regra comum aos tres: so resolve o que JA ESTA EM CACHE no servico. Mandar
+// Regra do AUTOMATICO: so resolve o que JA ESTA EM CACHE no servico. Mandar
 // o servico comecar a baixar e ficar esperando nao e "tocar agora", e a TV
-// ficaria parada num fio de rede sem nada para mostrar.
+// ficaria parada num fio de rede sem nada para mostrar. A escolha MANUAL de
+// um torrent fora de cache e a excecao: debrid_resolver_escolhido.
 #ifndef NV_DEBRID_H
 #define NV_DEBRID_H
 
@@ -30,7 +31,34 @@ void debrid_esquecer(void);       // logout
 void debrid_definir_episodio(int temporada, int episodio);
 
 // BLOQUEIA. Devolve 1 e grava em `url` um link direto que toca; 0 se nao deu.
+// So conteudo EM CACHE: e o caminho da escolha AUTOMATICA.
 int  debrid_resolver(const char *infoHash, int fileIdx, char *url, unsigned n);
+
+// A PESSOA ESCOLHEU ESTE TORRENT NA FOLHA — e ai a regra "so o que esta em
+// cache" nao vale mais. E o "P2P" do TorBox: o torrent fora de cache que o
+// servico baixa por P2P. No Stremio/Nuvio oficial, escolher um desses manda o
+// servico baixar (o addon abre um link que faz o createtorrent) e toca quando
+// termina; aqui, ate esta correcao, o TorBox respondia "fora de cache" e a
+// fonte simplesmente nao tocava — e a escolha manual nem chegava ao debrid
+// (ver stream_resolver_escolhida em streams.h).
+//
+// Primeiro tenta como debrid_resolver (em cache em QUALQUER servico com
+// chave — cacheado no Premiumize nao manda o TorBox baixar). Nao havendo,
+// pede ao TorBox para BAIXAR (createtorrent SEM add_only_if_cached) e olha o
+// progresso por uns segundos; o Real-Debrid ja comeca a baixar no addMagnet.
+//   1               -> `url` pronta, toca
+//   DEBRID_BAIXANDO -> o servico esta baixando: `servico` recebe o nome
+//                      ("TorBox") e `*pct` o progresso 0-100 (-1 se nao sabe).
+//                      O torrent fica na conta; escolher de novo depois toca.
+//   0               -> nao deu (sem chave, conta recusou, sem video)
+#define DEBRID_BAIXANDO 2
+int  debrid_resolver_escolhido(const char *infoHash, int fileIdx, char *url,
+                               unsigned n, char *servico, unsigned ns, int *pct);
+
+// Quantos torrents a busca atual achou FORA DE CACHE (o automatico nao os
+// toca). Zera em debrid_nova_busca. Serve ao cartao de "nenhuma fonte serve"
+// dizer que ha torrent a baixar e que a folha manda baixar.
+int  debrid_fora_de_cache(void);
 
 // UMA BUSCA DE FONTES COMECOU (addons_buscar). Esquece as recusas de CONTA da
 // busca anterior: a proxima busca volta a tentar todo servico com chave.

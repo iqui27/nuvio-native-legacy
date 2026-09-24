@@ -60,6 +60,14 @@ typedef struct {
   // 512 cobre os tres cabecalhos da convencao com folga; addon que peca mais
   // que isso perde o excedente em vez de estourar.
   char cabecalhos[512];
+  // O ADDON DIZ QUE A FONTE NAO ESTA EM CACHE NO DEBRID (o "P2P" do TorBox):
+  // "⏳" do AIOStreams, "[TB download]"/"[RD download]" do Torrentio, "⬇" ou
+  // "uncached" no nome/descricao. Abrir o link manda o servico BAIXAR, e o que
+  // toca antes de terminar e um clipe de aviso de ~8 s (registros 1136, 2191,
+  // 2501). Serve a duas coisas: o automatico poe estas no fim da fila (pontos()
+  // em streams.c), e a escolha manual avisa na tela que o servico esta
+  // baixando. Nao exclui nada: escolhida a dedo, toca como na 1.3.5.
+  int  foraCache;
 } Stream;
 
 // Parser sem rede: o chamador libera *saida. Retorna -1 se a alocacao falhar.
@@ -133,6 +141,28 @@ Uint32 stream_idade_ms(void);
 // que vai tocar e conferida. As que falham saem da fila desta lista
 // (stream_automatico_excluir) e nao sao conferidas de novo.
 int  stream_primeira_boa(int tentativas);
+
+// 1 quando o texto da fonte diz "fora de cache" (ver Stream.foraCache).
+// Publica para o parser e o teste; a lista ja vem com o campo preenchido.
+int  stream_texto_fora_de_cache(const char *texto);
+
+// TORRENT SEM URL ESCOLHIDO A DEDO NA FOLHA. A escolha manual chamava
+// player_definir_fonte(s->url) com a url VAZIA — e player_definir_fonte volta
+// calado com url vazia: o player ficava em "carregando" para sempre. So o
+// automatico passava por debrid_resolver (registros 1739, 2325: "fonte
+// escolhida: Torrentio 1080p" e nenhuma linha "[video] URL" depois).
+//
+// BLOQUEIA (rede do debrid) — chamar de fio proprio. Resolve com
+// debrid_resolver_escolhido, que PODE mandar o servico baixar um torrent fora
+// de cache, porque quem escolheu foi a pessoa. `geracao` e a de
+// stream_lista_geracao() no momento da escolha: lista trocada no meio devolve
+// -1 sem gravar nada.
+//   1  -> `url` pronta (e gravada na linha, para a proxima vez)
+//   2  -> DEBRID_BAIXANDO: `servico` e `pct` dizem quem baixa e quanto falta
+//   0  -> nao deu; -1 -> lista trocada
+unsigned stream_lista_geracao(void);
+int  stream_resolver_escolhida(int i, unsigned geracao, char *url, unsigned nu,
+                               char *servico, unsigned ns, int *pct);
 
 // CANAL AO VIVO: a primeira fonte da lista cuja PLAYLIST tem segmento, com as
 // candidatas conferidas em paralelo. Existe porque a verificacao de filme

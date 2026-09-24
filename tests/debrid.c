@@ -43,6 +43,9 @@ static int   tbCriar403;
 // Premiumize de conta gratuita: directdl responde 200 "Account not premium."
 // (registros 1731-1774, texto de verdade).
 static int   pmSemPlano;
+// "P2P" do TorBox: o valor de add_only_if_cached do ultimo createtorrent
+// (1 = "true") e se o mylist diz que o torrent ainda esta baixando.
+static int   tbSoCache = -1, tbBaixando;
 
 static char *dup2s(const char *s) { return strdup(s); }
 
@@ -72,6 +75,7 @@ char *rede_postar_st(const char *url, int s, const char *const *cab,
     assert(strstr(corpo, "name=\"magnet\""));
     assert(strstr(corpo, "magnet:?xt=urn:btih:deadbeef"));
     assert(strstr(corpo, "name=\"add_only_if_cached\""));
+    tbSoCache = strstr(corpo, "name=\"add_only_if_cached\"\r\n\r\ntrue\r\n") ? 1 : 0;
     bateuTB[1]++;
     // O corpo de conta traz a PROPRIA CHAVE de proposito: a API real nao
     // deveria ecoa-la, e o teste prova que, se ecoar, o log nao a leva.
@@ -141,6 +145,13 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
     if (strstr(url, "torrents/mylist")) {
       bateuTB[2]++;
       assert(strstr(url, "id=77"));
+      // Baixando: o TorBox ja listou os arquivos (leu os metadados), mas o
+      // download nao terminou — o requestdl falharia.
+      if (tbBaixando)
+        return dup2s("{\"success\":true,\"data\":{\"id\":77,\"name\":\"Show S02\","
+          "\"download_state\":\"downloading\",\"download_finished\":false,"
+          "\"download_present\":false,\"progress\":0.37,\"files\":["
+          "{\"id\":1,\"name\":\"Show S02/Show.S02E05.1080p.mkv\",\"size\":1900000000}]}}");
       return dup2s("{\"success\":true,\"data\":{\"id\":77,\"name\":\"Show S02\","
         "\"download_finished\":true,\"files\":["
         "{\"id\":0,\"name\":\"Show S02/Show.S02E04.1080p.mkv\",\"size\":2000000000,"
@@ -233,6 +244,75 @@ static void torbox(void) {
   assert(bateuTB[0] == 1 && bateuTB[1] == 0 && bateuTB[2] == 0 && bateuTB[3] == 0);
   OK("TorBox fora de cache devolve 0 sem criar torrent");
   tbEmCache = 1;
+}
+
+// O "P2P" DO TORBOX (relato do Reddit, 1.4.4: "TorBox P2P videos don't work,
+// they were working fine in 1.3.5"). Torrent fora de cache no TorBox:
+//   - o AUTOMATICO continua so com cache: nao cria nada, conta como fora;
+//   - a ESCOLHA MANUAL manda o TorBox baixar (add_only_if_cached=false) e,
+//     enquanto baixa, devolve DEBRID_BAIXANDO com o progresso; terminado,
+//     toca pelo requestdl.
+static void torboxP2P(void) {
+  char url[4096] = "", serv[32] = "";
+  int pct = 0;
+  debrid_esquecer();
+  debrid_definir_chave("torbox", K_TB);
+  debrid_definir_episodio(2, 5);
+  debrid_nova_busca();
+  tbEmCache = 0; tbCriar403 = 0;
+
+  memset(bateuTB, 0, sizeof bateuTB);
+  assert(!debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  assert(bateuTB[0] == 1 && bateuTB[1] == 0);
+  assert(debrid_fora_de_cache() == 1);
+  OK("P2P TorBox: o automatico nao manda baixar, e conta o torrent fora de cache");
+
+  memset(bateuTB, 0, sizeof bateuTB);
+  tbBaixando = 1; tbSoCache = -1; url[0] = 0;
+  assert(debrid_resolver_escolhido("DEADBEEF", -1, url, sizeof url, serv, sizeof serv, &pct)
+         == DEBRID_BAIXANDO);
+  assert(!url[0]);
+  assert(!strcmp(serv, "TorBox") && pct == 37);
+  assert(tbSoCache == 0);                      // mandou BAIXAR, nao "so se em cache"
+  assert(bateuTB[0] == 1 && bateuTB[1] == 1);  // checkcached uma vez, um createtorrent
+  assert(bateuTB[3] == 0);                     // requestdl de torrent inacabado falharia
+  OK("P2P TorBox: escolha manual cria o torrent sem add_only_if_cached e diz 37% baixando");
+
+  memset(bateuTB, 0, sizeof bateuTB);
+  tbBaixando = 0; url[0] = 0;
+  assert(debrid_resolver_escolhido("DEADBEEF", -1, url, sizeof url, serv, sizeof serv, &pct) == 1);
+  assert(!strcmp(url, "https://store-1.torbox.app/dl/ZZZ/Show.S02E05.1080p.mkv"));
+  assert(strstr(urlRequestdl, "file_id=1"));
+  OK("P2P TorBox: terminado o download, a mesma escolha toca");
+
+  // Em cache: a escolha manual e igual ao automatico (add_only_if_cached=true)
+  memset(bateuTB, 0, sizeof bateuTB);
+  tbEmCache = 1; tbSoCache = -1;
+  assert(debrid_resolver_escolhido("DEADBEEF", -1, url, sizeof url, serv, sizeof serv, &pct) == 1);
+  assert(tbSoCache == 1 && bateuTB[1] == 1);
+  OK("escolha manual de torrent em cache nao pede download");
+
+  // Cacheado no Premiumize e fora no TorBox: toca pelo Premiumize e o TorBox
+  // NAO e mandado baixar.
+  debrid_definir_chave("premiumize", K_PM);
+  memset(bateuTB, 0, sizeof bateuTB); memset(bateuPM, 0, sizeof bateuPM);
+  tbEmCache = 0; pmEmCache = 1; pmSemPlano = 0; url[0] = 0;
+  assert(debrid_resolver_escolhido("DEADBEEF", -1, url, sizeof url, serv, sizeof serv, &pct) == 1);
+  assert(strstr(url, "a.pm.me") && bateuTB[1] == 0);
+  OK("escolha manual: em cache noutro servico ganha de mandar o TorBox baixar");
+
+  // Conta sem plano continua fora tambem na escolha manual
+  debrid_esquecer();
+  debrid_definir_chave("torbox", K_TB);
+  tbCriar403 = 1; tbEmCache = 1;
+  assert(!debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  tbEmCache = 0;
+  memset(bateuTB, 0, sizeof bateuTB);
+  assert(debrid_resolver_escolhido("DEADBEEF", -1, url, sizeof url, serv, sizeof serv, &pct) == 0);
+  assert(bateuTB[0] == 0 && bateuTB[1] == 0);
+  OK("escolha manual respeita conta sem plano");
+  tbCriar403 = 0; tbEmCache = 1; pmEmCache = 1;
+  debrid_esquecer();
 }
 
 // B3, registro 1541: TorBox com createtorrent 403 x8 na mesma busca, e o
@@ -410,6 +490,20 @@ static void parser(void) {
   assert(!v[2].url[0] && !strcmp(v[2].infoHash, "0011"));
   free(v);
   OK("parser: infoHash no topo e em clientResolve, externalUrl, magnet fora");
+
+  // Marcas de "fora de cache" que os addons mandam de verdade (registros
+  // 1136/2191/2501: "⏳ UHD" do AIOStreams; "[TB download]" do Torrentio).
+  n = stream_extrair(
+    "{\"streams\":[{\"name\":\"\xe2\x8f\xb3 FHD\",\"url\":\"https://aio/p/1\"},"
+    "{\"name\":\"\xe2\x9a\xa1 FHD\",\"url\":\"https://aio/p/2\"},"
+    "{\"name\":\"[TB download] Torrentio\\n1080p\",\"url\":\"https://t/r/3\"},"
+    "{\"name\":\"[TB+] Torrentio\\n1080p WEB-DL\",\"url\":\"https://t/r/4\"},"
+    "{\"name\":\"Comet\",\"description\":\"Uncached\",\"url\":\"https://c/5\"}]}",
+    "AIOStreams", &v);
+  assert(n == 5);
+  assert(v[0].foraCache && !v[1].foraCache && v[2].foraCache && !v[3].foraCache && v[4].foraCache);
+  free(v);
+  OK("parser: marca fora de cache (⏳, [TB download], uncached) e nao a cacheada (⚡, [TB+])");
 }
 
 int main(void) {
@@ -430,6 +524,7 @@ int main(void) {
   realDebrid();
   torbox();
   torbox403();
+  torboxP2P();
   semPlano();
   premiumize();
   ordem();
@@ -472,6 +567,8 @@ int main(void) {
   assert(strstr(capt, "[debrid] TorBox: recusa da conta (HTTP 403)"));
   assert(strstr(capt, "[debrid] TorBox: conta sem plano para a API; fora pelo resto da sessao"));
   assert(strstr(capt, "[debrid] Premiumize: conta sem plano para a API; fora pelo resto da sessao"));
+  // a linha que se procura no D1 quando alguem diz "o P2P nao toca"
+  assert(strstr(capt, "[debrid] TorBox: deadbeef baixando no TorBox (37%, estado=downloading)"));
   OK("corpo do 403 no log, sem a chave");
 
   puts("debrid: tudo ok");
