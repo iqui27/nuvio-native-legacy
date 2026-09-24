@@ -12,6 +12,12 @@
 // a consulta na URL desde que va com Accept: application/json e um Referer
 // do imdb.com; sem o Referer e 403. Funciona de datacenter tambem.
 //
+// SAMSUNG (#136): o navegador nao deixa por o Referer e a API nao manda CORS
+// a um wgt, entao la a consulta vai ao servico de recomendacoes
+// (NV_REC_URL/v1/trailer/imdb, servidor/recomendacoes/src/trailer.js), que
+// pergunta com o Referer e devolve a resposta crua. O MP4 dispensa Referer
+// (206 sem ele, medido em 24/09/2026) e toca no <video> do app.
+//
 // A URL fica em memoria por titulo e em disco (dados_dir()/trailer/<imdb>),
 // com o Expires da propria assinatura como validade.
 #ifndef NV_TRAILERIMDB_H

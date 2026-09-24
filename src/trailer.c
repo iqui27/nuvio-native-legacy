@@ -8,6 +8,9 @@
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
+#ifndef NV_REC_URL
+#define NV_REC_URL ""
+#endif
 
 static int    aberto, cheia, comSom;
 static int    falhouUltima;
@@ -22,8 +25,9 @@ static Uint32 abertoEm;   // SDL_GetTicks da abertura da fonte atual, para o log
 // nao de 1920x1080 diretos. `origin` no embed e o que a IFrame API exige
 // para aceitar postMessage; a origem de um wgt e "file://" ou "null", e ai
 // vai sem.
-EM_JS(int, trailer_js_abrir, (const char *fonte, float x, float y, float w, float h, int som, float zoom), {
+EM_JS(int, trailer_js_abrir, (const char *fonte, float x, float y, float w, float h, int som, float zoom, const char *proxy), {
   var id = UTF8ToString(fonte);
+  var base = proxy ? UTF8ToString(proxy) : '';
   // DOIS ELEMENTOS, um por fonte: id do YouTube -> <iframe> embed; URL http
   // (MP4 do IMDb, trailerimdb.h) -> <video> do proprio navegador, mudo pelo
   // atributo, sem AVPlay (o open do AVPlay custa ~1,8 s de fio principal
@@ -77,27 +81,59 @@ EM_JS(int, trailer_js_abrir, (const char *fonte, float x, float y, float w, floa
       var pr = f.play(); if (pr && pr.catch) pr.catch(function (e) { diz('play() recusado', e && e.name ? e.name : ''); if (T.f === f && T.geracao === geracao) T.estado = -3; });
     } else {
       f = document.createElement('iframe');
+      // ERRO 153 (#136, AU7000): o embed direto de um wgt vai sem Referer e
+      // sem origem, e o YouTube responde "Video player configuration error".
+      // Com o servico de recomendacoes na build, o iframe abre a PAGINA dele
+      // (/v1/trailer/yt), que embute o player com origem https valida e
+      // repassa o postMessage. Sem o servico, o embed direto de antes.
+      var viaProxy = base.indexOf('https://') === 0;
       var org = (location.origin && location.origin !== 'null' && location.origin.indexOf('http') === 0) ? '&origin=' + encodeURIComponent(location.origin) : '';
-      f.src = 'https://www.youtube.com/embed/' + id + '?autoplay=1&mute=' + (som ? 0 : 1) +
-              '&controls=0&enablejsapi=1&rel=0&modestbranding=1&playsinline=1&iv_load_policy=3&fs=0&disablekb=1' + org;
+      f.src = viaProxy
+        ? base + '/v1/trailer/yt?id=' + id + '&mute=' + (som ? 0 : 1)
+        : 'https://www.youtube.com/embed/' + id + '?autoplay=1&mute=' + (som ? 0 : 1) +
+          '&controls=0&enablejsapi=1&rel=0&modestbranding=1&playsinline=1&iv_load_policy=3&fs=0&disablekb=1' + org;
+      f.nvOrigem = viaProxy ? base.replace(/^(https:[/][/][^/]+).*$/, '$1') : '';
       f.setAttribute('allow', 'autoplay; encrypted-media');
       f.setAttribute('frameborder', '0');
       f.tabIndex = -1;
       f.style.cssText = 'position:absolute;border:0;z-index:0;background:#000;pointer-events:none;';
       f.nvGeracao = geracao;
       T.f = f; T.id = id; T.estado = -1; T.som = som; T.ehVideo = 0; T.geracao = geracao;
+      T.pronto = 0;
       (document.body || document.documentElement).appendChild(f);
+      // SEM onReady EM 10 s = o player nao vai falar (rota fora do ar, erro
+      // antes da API, rede): vira erro (-3) e quem chamou anda para a
+      // proxima fonte ou fecha, em vez de deixar a tela de erro do YouTube.
+      setTimeout(function () {
+        if (T.f !== f || T.geracao !== geracao || T.pronto || T.estado === 1 || T.estado === 3) return;
+        var s = '[trailer-js] g' + geracao + ' youtube sem onReady em 10 s';
+        try { console.log(s); if (window.__nvDiag) window.__nvDiag(s); } catch (e) {}
+        T.estado = -3;
+      }, 10000);
       if (!T.ouvinte) {
         T.ouvinte = 1;
         window.addEventListener('message', function (ev) {
+          // Direto: a mensagem vem do youtube.com. Pela pagina do servico:
+          // vem da origem dele (f.nvOrigem), repassada do player la dentro.
           if (T.ehVideo || !T.f || !T.f.contentWindow || ev.source !== T.f.contentWindow ||
-              T.f.nvGeracao !== T.geracao ||
-              typeof ev.data !== 'string' || ev.origin.indexOf('youtube.com') < 0) return;
+              T.f.nvGeracao !== T.geracao || typeof ev.data !== 'string' ||
+              !(ev.origin.indexOf('youtube.com') >= 0 || (T.f.nvOrigem && ev.origin === T.f.nvOrigem))) return;
           var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
           if (!m) return;
           if (m.event === 'onReady' && T.f) {
+            T.pronto = 1;
             T.f.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1 }), '*');
           }
+          // 2/5/100/101/150/152/153: o video nao toca aqui. 153 e o da AU7000
+          // (#136), sem Referer valido. -3 e o mesmo erro do <video>: o C
+          // fecha e passa a vez, a tela de erro do YouTube nao fica.
+          if (m.event === 'onError') {
+            var s = '[trailer-js] g' + T.geracao + ' youtube onError ' + m.info;
+            try { console.log(s); if (window.__nvDiag) window.__nvDiag(s); } catch (e) {}
+            T.estado = -3;
+            return;
+          }
+          if (T.estado === -3) return;   // erro e final para este elemento
           if (m.event === 'infoDelivery' && m.info && typeof m.info.playerState === 'number') T.estado = m.info.playerState;
           if (m.event === 'onStateChange' && typeof m.info === 'number') T.estado = m.info;
         });
@@ -245,7 +281,7 @@ void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
 #endif
   if (nova) falhouUltima = 0;
 #ifdef __EMSCRIPTEN__
-  if (!trailer_js_abrir(fonte, r.x, r.y, r.w, r.h, som, ajustes_trailer_zoom())) return;
+  if (!trailer_js_abrir(fonte, r.x, r.y, r.w, r.h, som, ajustes_trailer_zoom(), NV_REC_URL)) return;
 #else
   if (nova) {
     if (!video_tocar(fonte)) return;
@@ -271,7 +307,7 @@ void trailer_rect(GfxRect r) {
   if (!aberto) return;
   rect = r;
 #ifdef __EMSCRIPTEN__
-  trailer_js_abrir(fonteAtual, r.x, r.y, r.w, r.h, comSom, ajustes_trailer_zoom());
+  trailer_js_abrir(fonteAtual, r.x, r.y, r.w, r.h, comSom, ajustes_trailer_zoom(), NV_REC_URL);
 #else
   video_janela((int)r.x, (int)r.y, (int)r.w, (int)r.h);
   recortePendente = 1;

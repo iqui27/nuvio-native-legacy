@@ -118,6 +118,31 @@ int main(void) {
     }
   }
 
+  // --- Samsung COM o servico de recomendacoes (#136): o IMDb passa a existir
+  // la, entre a Apple e o YouTube — tudo no <video> do app antes do iframe.
+  confere("sem NV_REC_URL no teste, IMDb fora da Samsung", trailerfonte_imdb_tizen() == 0);
+  trailerfonte_definir_imdb_tizen(1);
+  n = trailerfonte_ordem(TRF_AUTO, 1, o);
+  confere("Samsung com servico: Apple -> IMDb -> YouTube",
+          n == 3 && o[0] == TRF_APPLE && o[1] == TRF_IMDB && o[2] == TRF_YOUTUBE);
+  n = trailerfonte_ordem(TRF_AUTO, 0, o);
+  confere("LG nao muda: Apple -> IMDb", n == 2 && o[0] == TRF_APPLE && o[1] == TRF_IMDB);
+  c = todas(); c.apple = NULL;
+  confere("Samsung com servico: sem Apple, IMDb antes do YouTube", escolhe(TRF_AUTO, 1, &c, &u) == TRF_IMDB && !strcmp(u, c.imdb));
+  c = todas(); c.appleFalhou = 1;
+  confere("Samsung com servico: Apple com erro cede ao IMDb", escolhe(TRF_AUTO, 1, &c, &u) == TRF_IMDB);
+  c = todas(); c.apple = NULL; c.imdb = NULL;
+  confere("Samsung com servico: sem Apple e sem IMDb, YouTube", escolhe(TRF_AUTO, 1, &c, &u) == TRF_YOUTUBE);
+  c = todas(); c.apple = NULL; c.imdb = NULL; c.imdbRespondeu = 0;
+  confere("Samsung com servico: IMDb ainda sem resposta segura o YouTube", escolhe(TRF_AUTO, 1, &c, NULL) == -1);
+  confere("Samsung com servico: depois da Apple o IMDb, depois do IMDb o YouTube",
+          trailerfonte_depois(TRF_AUTO, 1, TRF_APPLE) == TRF_IMDB &&
+          trailerfonte_depois(TRF_AUTO, 1, TRF_IMDB) == TRF_YOUTUBE &&
+          trailerfonte_depois(TRF_AUTO, 1, TRF_YOUTUBE) == 0);
+  c = todas();
+  confere("Samsung com servico: IMDb fixo toca", escolhe(TRF_IMDB, 1, &c, &u) == TRF_IMDB);
+  trailerfonte_definir_imdb_tizen(0);
+
   // Atalho do build: le o ajuste gravado.
   ajusteTeste = TRF_YOUTUBE;
   confere("trailerfonte_ajuste le o ajuste", trailerfonte_ajuste() == TRF_YOUTUBE);

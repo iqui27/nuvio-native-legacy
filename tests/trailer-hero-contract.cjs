@@ -117,7 +117,7 @@ const Module = {};
 const UTF8ToString = (value) => String(value);
 const openJs = new Function(
   'Module', 'document', 'location', 'window', 'UTF8ToString', 'setTimeout', 'console',
-  'fonte', 'x', 'y', 'w', 'h', 'som', 'zoom', openBody);
+  'fonte', 'x', 'y', 'w', 'h', 'som', 'zoom', 'proxy', openBody);
 const quietConsole = { log() {} };
 const closeJs = new Function('Module', 'document', 'location', 'window', 'UTF8ToString', closeBody);
 const stateJs = new Function('Module', 'document', 'location', 'window', 'UTF8ToString', stateBody);
@@ -262,7 +262,8 @@ check('detalhe: sem playing no prazo ou erro sobe para a proxima fonte do ajuste
   /trailerPrazo = agora \+ NV_TRAILER_PREPARA_MS/.test(detail) &&
   /\[trailer\] detalhe: %s %d ms/.test(detail) &&
   /trailerfonte_depois\(trailerfonte_ajuste\(\), trailerfonte_tizen\(\), trailerEtapa\)/.test(detail) &&
-  /trailerEtapa = TRF_YOUTUBE;/.test(detail) && /trailerEtapa = -1;/.test(detail));
+  /trailerEtapa = prox;/.test(detail) && /trailerEtapa = -1;/.test(detail) &&
+  /while \(prox && !\(seg = trailerUrlDaFonte\(prox\)\)\)/.test(detail));
 check('hero loga a desistencia de cada fonte', /\[trailer\] hero: sem playing em %d ms/.test(home));
 // A ordem em si (Apple espera responder; fonte fixa e a unica) e provada em
 // tests/trailer-fonte.c, com as duas plataformas. Aqui: o hero usa aquela
@@ -298,5 +299,60 @@ check('embed do YouTube com som 0 pede mute=1', /[?&]mute=1/.test(ultimo().src))
 fechar();
 check('C loga cada transicao de estado e o estado a cada tentativa',
   /\[trailer\] estado %d -> %d/.test(trailer) && /\[trailer\] tentativa: aberto=%d/.test(trailer));
+
+// --- #136 (AU7000): YouTube pela pagina do servico, erro 153 anda, hero sem
+// iframe, Samsung nunca abre o navegador.
+const PROXY = 'https://rec.exemplo.dev';
+fechar();
+abrir('dQw4w9WgXcQ', 0, 0, 1920, 1080, 0, 1, PROXY);
+const fp = ultimo();
+check('com servico, o iframe abre a pagina /v1/trailer/yt e nao o embed direto',
+  fp.src === PROXY + '/v1/trailer/yt?id=dQw4w9WgXcQ&mute=1');
+window.dispatchMessage(fp.contentWindow, JSON.stringify({ event: 'onStateChange', info: 1 }), PROXY);
+check('mensagem repassada pela pagina do servico e aceita', estado() === 1);
+window.dispatchMessage(fp.contentWindow, JSON.stringify({ event: 'onStateChange', info: 2 }), 'https://outra.origem');
+check('mensagem de outra origem e ignorada', estado() === 1);
+window.dispatchMessage(fp.contentWindow, JSON.stringify({ event: 'onError', info: 153 }), PROXY);
+check('onError 153 vira erro (-3), como o <video>', estado() === -3);
+window.dispatchMessage(fp.contentWindow, JSON.stringify({ event: 'onStateChange', info: 1 }), PROXY);
+check('erro e final: estado tardio nao ressuscita', estado() === -3);
+check('onError loga o codigo', diagLines.some((l) => l.includes('youtube onError 153')));
+fechar();
+abrir('dQw4w9WgXcQ', 0, 0, 1920, 1080, 0, 1, '');
+const fd = ultimo();
+check('sem servico, embed direto de antes', /^https:\/\/www\.youtube\.com\/embed\/dQw4w9WgXcQ\?/.test(fd.src));
+estadoYoutube(fd, -1);
+window.dispatchMessage(fd.contentWindow, JSON.stringify({ event: 'onError', info: 150 }));
+check('embed direto: onError tambem vira -3', estado() === -3);
+fechar();
+timers.length = 0;
+abrir('ZyX987abc12', 0, 0, 1920, 1080, 0, 1, PROXY);
+const fw = ultimo();
+const cao = timers.find((t) => t.ms === 10000);
+check('iframe arma prazo de 10 s para onReady', !!cao);
+cao.fn();
+check('sem onReady em 10 s vira erro, sem ficar na tela de erro', estado() === -3);
+fechar();
+timers.length = 0;
+abrir('ZyX987abc12', 0, 0, 1920, 1080, 0, 1, PROXY);
+const fr = ultimo();
+window.dispatchMessage(fr.contentWindow, JSON.stringify({ event: 'onReady' }), PROXY);
+timers.find((t) => t.ms === 10000).fn();
+check('com onReady o prazo nao mata o player', estado() === -1);
+fechar();
+check('C passa NV_REC_URL ao elemento', /trailer_js_abrir\(fonte, r\.x, r\.y, r\.w, r\.h, som, ajustes_trailer_zoom\(\), NV_REC_URL\)/.test(trailer));
+check('hero da Samsung nao abre YouTube (iframe = long task de ~1 s)',
+  /#ifdef __EMSCRIPTEN__[\s\S]{0,900}c\.youtube = NULL;\s*c\.youtubeRespondeu = 1;/.test(home));
+check('hero e detalhe pedem o IMDb na Samsung quando ha servico',
+  /if \(!trailerfonte_tizen\(\) \|\| trailerfonte_imdb_tizen\(\)\) trailerimdb_pedir\(ci->imdb\);/.test(home) &&
+  /if \(!trailerfonte_tizen\(\) \|\| trailerfonte_imdb_tizen\(\)\) trailerimdb_pedir\(ci->imdb\);/.test(detail));
+{
+  const i = extras.indexOf('void extras_trailer_abrir(int i)');
+  const corpo = extras.slice(i, extras.indexOf('\n}\n', i));
+  const tz = corpo.slice(corpo.indexOf('#if defined(__EMSCRIPTEN__)'), corpo.indexOf('#elif'));
+  check('Samsung: extras_trailer_abrir nao chama window.open', i >= 0 && !/window\.open\(|emscripten_run_script/.test(tz));
+}
+check('detalhe: OK no cartao sem fonte toca o YouTube do cartao dentro do app na Samsung',
+  /trailer_abrir\(extras_trailer_yt\(foco\.coluna\), tela, 0, 1\);/.test(detail));
 
 console.log('trailer-hero-contract: tudo ok');

@@ -1557,8 +1557,9 @@ static int somenteDesteAparelho(int op) {
     // traga algo com o mesmo nome.
     case AJ_HERO_FUNDO:
     case AJ_HERO_ARTE_DIF:
-    // Fonte do trailer: o que toca depende da TV (IMDb so na LG, YouTube so
-    // na Samsung), entao a escolha e deste aparelho.
+    // Fonte do trailer: o que toca depende da TV (YouTube so na Samsung; o
+    // IMDb da Samsung depende do servico de recomendacoes), entao a escolha e
+    // deste aparelho.
     case AJ_TRAILER_FONTE:
       return 1;
     default:
@@ -2073,7 +2074,7 @@ static const char *ajudaOpcao(int op) {
       // falta AQUI, senao escolher IMDb na Samsung e ficar sem trailer parece
       // defeito.
 #ifdef __EMSCRIPTEN__
-      return "De onde vem o trailer da tela do título e do destaque. Automático tenta a Apple TV e, sem ela, o YouTube; uma fonte escolhida é a única tentada. Nesta TV o trailer toca sempre sem som, e o IMDb não toca aqui.";
+      return "De onde vem o trailer da tela do título e do destaque. Automático tenta a Apple TV, depois o IMDb e, sem os dois, o YouTube (só na tela do título); uma fonte escolhida é a única tentada. Nesta TV o trailer toca sempre sem som.";
 #else
       return "De onde vem o trailer da tela do título e do destaque. Automático tenta a Apple TV e, sem ela, o IMDb; uma fonte escolhida é a única tentada. O YouTube não toca nesta TV.";
 #endif
