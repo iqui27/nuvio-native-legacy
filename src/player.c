@@ -219,6 +219,14 @@ static int   botao = PLR_PLAY;
 static int   barraFoco = 0;
 static int   visivel = 0;          // alvo dos controles (1 = em pe)
 static float anim = 0.0f;          // 0..1 seguindo `visivel`, por mola
+// SO A BARRA (#128). A busca que comeca com os controles escondidos (#121)
+// sobe so o trilho e o tempo: titulo, botoes, relogio e selos continuam fora,
+// porque quem procura um ponto no filme esta olhando o video, e o resto da
+// interface na frente dele "distrai". Qualquer outra tecla (BAIXO, OK, CIMA)
+// ou o ponteiro devolve os controles inteiros, como antes. `cheio` e a mola
+// desse resto: 0 com so a barra, 1 com tudo.
+static int   soBarra = 0;
+static float cheio = 1.0f;
 static float focoB[PLR_NBTNS];     // mola de foco de cada botao
 static float entrada = 0.0f;       // 0..1 fade de abertura/fechamento da tela
 static Uint32 ultimoInput = 0;
@@ -396,7 +404,7 @@ const CatEp *player_proximo_episodio(void) {
 // chama; txt_linha tenta traduzir de novo, nao acha chave e deixa como esta.
 static char erroTitulo[160], erroDica[160];
 void player_erro_fonte(void) {
-  esperandoFonte = 0; erroFonte = 1; visivel = 1; tocando = 0;
+  esperandoFonte = 0; erroFonte = 1; visivel = 1; tocando = 0; soBarra = 0;
   erroTitulo[0] = erroDica[0] = 0;   // erro sem motivo nao herda o do anterior
 }
 void player_erro_fonte_motivo(const char *titulo, const char *dica) {
@@ -986,7 +994,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
     // A grade EPG comeca a baixar ja: o banner "agora/a seguir" do OSD e o
     // overlay do guia dependem dela. Idempotente.
     if (canalSessao) { epg_iniciar(); guia_carregar(); } }
-  tocando = 1; visivel = 1; anim = 0.0f; entrada = 0.0f;
+  tocando = 1; visivel = 1; anim = 0.0f; entrada = 0.0f; soBarra = 0; cheio = 1.0f;
   pedFontes = erroFonte = pedFaixas = pedProxT = pedProxE = 0; inicioImagem = 0;
   erroTitulo[0] = erroDica[0] = 0;
   pedGuia = pedZap = 0;
@@ -1055,6 +1063,7 @@ int  player_com_video(void) { return comVideo && video_pronto(); }
 int  player_carregando(void) { return esperandoFonte || (comVideo && !video_pronto()); }
 int  player_controles_visiveis(void) { return visivel; }
 int   player_foco_na_barra(void) { return barraFoco; }
+int   player_so_barra(void) { return soBarra && visivel; }
 float player_posicao_seg(void) { return posSeg; }
 
 void player_encerrar(void) {
@@ -1238,7 +1247,7 @@ void player_minimizar(void) {
 void player_restaurar(void) {
   if (!mini) return;
   mini = 0; aberto = 1; saindo = 0; entrada = 0.0f;
-  visivel = 1; ultimoInput = SDL_GetTicks();
+  visivel = 1; soBarra = 0; ultimoInput = SDL_GetTicks();
   avisarCascaAberto(1);
   aplicarAspecto();   // devolve o destino de tela cheia ao plano
 }
@@ -1589,6 +1598,10 @@ void player_evento(const SDL_Event *e) {
   }
 
   if (!visivel) {
+    // Tudo que acorda daqui acorda INTEIRO; so a busca abaixo volta a pedir
+    // so a barra. Sem isto um soBarra de uma busca antiga, ja apagada, ficava
+    // valendo para o BAIXO seguinte.
+    soBarra = 0;
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
       // O proximo episodio NAO e mais tratado aqui: posplay_evento roda antes
       // de tudo em player_evento e ja consome o OK enquanto o cartao esta no
@@ -1609,7 +1622,8 @@ void player_evento(const SDL_Event *e) {
     // para onde buscar: la continua so acordando.
     if ((k == SDLK_LEFT || k == SDLK_RIGHT) && !ehCanal()) {
       acordar();
-      barraFoco = 1; skipFoco = 0;
+      barraFoco = 1; skipFoco = 0; soBarra = 1;
+      if (anim < 0.05f) cheio = 0.0f;   // de tudo apagado: o resto nem comeca a subir
       saltar(k == SDLK_RIGHT ? 1 : -1);
       return;
     }
@@ -1620,6 +1634,11 @@ void player_evento(const SDL_Event *e) {
     }
     return;
   }
+
+  // Na busca so com a barra (#128), ESQUERDA/DIREITA seguem buscando sem
+  // trazer o resto; qualquer outra tecla traz os controles inteiros e segue
+  // valendo pelo caminho de sempre (BAIXO leva a fileira, OK confirma/pausa).
+  if (soBarra && !(barraFoco && (k == SDLK_LEFT || k == SDLK_RIGHT))) soBarra = 0;
 
   // OK no meio de um avanco CONFIRMA o avanco, em vez de alternar play/pausa.
   // Quem aperta o centro com a barra correndo quer parar ali, e alternar o
@@ -1856,6 +1875,12 @@ void player_atualizar(float dt, Uint32 agora) {
 
   anim = anim_mola(anim, visivel ? 1.0f : 0.0f, dt,
                    visivel ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+  // Com os controles apagando, `cheio` NAO volta a 1: o resto nao pode
+  // reaparecer no meio do fade-out da barra. Ele so sobe quando alguem pediu
+  // os controles inteiros com eles em pe.
+  if (visivel || soBarra)
+    cheio = anim_mola(cheio, soBarra ? 0.0f : 1.0f, dt,
+                      soBarra ? NV_MOLA_DESFOCO : NV_MOLA_FOCO);
   for (int i = 0; i < PLR_NBTNS; i++) {
     float alvo = (visivel && botao == i) ? 1.0f : 0.0f;
     focoB[i] = anim_mola(focoB[i], alvo, dt,
@@ -2073,7 +2098,7 @@ static int ponteiroNoPlayer(void) {
   return ponteiro_ativo() && aberto && !saindo &&
          !posplay_visivel() && !pausao_visivel();
 }
-static void ponteiroAcordar(int a, int b) { (void)a; (void)b; acordar(); }
+static void ponteiroAcordar(int a, int b) { (void)a; (void)b; soBarra = 0; acordar(); }
 static void ponteiroPlayPause(int a, int b) {
   (void)a; (void)b;
   botao = PLR_PLAY; barraFoco = 0; skipFoco = 0;
@@ -2432,6 +2457,9 @@ void player_desenhar(Uint32 agora) {
   }
 
   float a = anim * entrada;
+  // O que NAO e barra nem tempo (titulo, meta, botoes, relogio, selos, veu de
+  // cima) segue `ac`: some na busca so com a barra (#128).
+  float ac = a * cheio;
   if (ponteiroNoPlayer())
     ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, ponteiroAcordar, ponteiroPlayPause, 0, 0);
   // O botao de pular fica POR CIMA dos degrades e dos controles: desenhado
@@ -2454,9 +2482,11 @@ void player_desenhar(Uint32 agora) {
   // GFX_VEU_BAIXO e nao GFX_VEU: aquele escurece tambem a ESQUERDA (feito para
   // o hero da home) e deixava o canto superior esquerdo deste retangulo escuro
   // com o direito transparente — a borda entre os dois lia como uma placa.
-  gfx_rect(veu, 0, GFX_VEU_BAIXO, 0, 0, 0, 0.0f, 0, 0, 0, 0.86f * a);
+  // Na busca so com a barra o veu de baixo fica mais leve: sustenta o tempo
+  // sem escurecer o rodape do video que a pessoa esta procurando.
+  gfx_rect(veu, 0, GFX_VEU_BAIXO, 0, 0, 0, 0.0f, 0, 0, 0, 0.86f * a * (0.5f + 0.5f * cheio));
   { GfxRect topo = { 0, 0, NV_TELA_W, PLR_GRAD_TOPO };
-    gfx_rect(topo, 0, GFX_VEU_TOPO, 0, 0, 0, 0.0f, 0, 0, 0, 0.70f * a); }
+    gfx_rect(topo, 0, GFX_VEU_TOPO, 0, 0, 0, 0.0f, 0, 0, 0, 0.70f * ac); }
 
   /*
    * Legenda e conteudo, enquanto o degrade e chrome do player. Ela precisa
@@ -2558,18 +2588,18 @@ void player_desenhar(Uint32 agora) {
     linhasCanal(l1, sizeof l1, l2, sizeof l2);
     { TxtLinha le = txt_linha_corta(TXT_PLR_CORPO, l1, 218,220,224,255, cw*.67f);
       yMetaBase -= le.h;
-      txt_desenhar_alpha(le, cx, yMetaBase, a);
+      txt_desenhar_alpha(le, cx, yMetaBase, ac);
       yMetaBase -= 6; }
     if (l2[0]) {
       TxtLinha l2t = txt_linha_corta(TXT_PG_FIM, l2, 160,162,170,255, cw*.67f);
       yMetaBase -= l2t.h;
-      txt_desenhar_alpha(l2t, cx, yMetaBase, a);
+      txt_desenhar_alpha(l2t, cx, yMetaBase, ac);
       yMetaBase -= 6;
     }
   } else if (linhaEp[0]) {
     TxtLinha le=txt_linha_corta(TXT_PLR_CORPO,linhaEp,218,220,224,255,cw*.67f);
     yMetaBase-=le.h;
-    txt_desenhar_alpha(le,cx,yMetaBase,a);
+    txt_desenhar_alpha(le,cx,yMetaBase,ac);
     yMetaBase-=6;
   }
 
@@ -2589,7 +2619,7 @@ void player_desenhar(Uint32 agora) {
                                   cw * 0.62f);
     hTit = (float)lt.h;
     yTit = yMetaBase - hTit;
-    txt_desenhar_alpha(lt, cx, yTit, a); }
+    txt_desenhar_alpha(lt, cx, yTit, ac); }
 
   // --- fileira de BOTOES: o transporte do aparelho --------------------------
   // Sem botoes redundantes de salto. O foco percorre so as acoes visiveis.
@@ -2604,21 +2634,21 @@ void player_desenhar(Uint32 agora) {
     for (int i = 0; i < PLR_NBTNS - (temUltimoBotao() ? 0 : 1); i++) {
       float f = focoB[i];
       int sel = (botao == i && !barraFoco);
-      botaoCirculo(cxs[i], cyBotoes, f, a, sel);
-      if (ponteiroNoPlayer() && a > 0.3f)
+      botaoCirculo(cxs[i], cyBotoes, f, ac, sel);
+      if (ponteiroNoPlayer() && ac > 0.3f)
         ponteiro_alvo(cxs[i] - PLR_BTN_D * 0.5f, cyBotoes - PLR_BTN_D * 0.5f,
                       PLR_BTN_D, PLR_BTN_D, ponteiroBotao, NULL, i, 0);
       float lum = sel ? ajustes_acento_tinta(NULL, NULL, NULL) : 0.94f;
       switch (i) {
-        case PLR_PLAY:    iconePlayPause(cxs[i], cyBotoes, a, tocando, lum); break;
-        case PLR_CC:      iconeLegendas(cxs[i], cyBotoes, a, lum); break;
-        case PLR_ASPECTO: iconeAspecto(cxs[i], cyBotoes, a, lum); break;
-        case PLR_FONTES: iconeArquivo(cxs[i],cyBotoes,a,lum,"fontes",44); break;
+        case PLR_PLAY:    iconePlayPause(cxs[i], cyBotoes, ac, tocando, lum); break;
+        case PLR_CC:      iconeLegendas(cxs[i], cyBotoes, ac, lum); break;
+        case PLR_ASPECTO: iconeAspecto(cxs[i], cyBotoes, ac, lum); break;
+        case PLR_FONTES: iconeArquivo(cxs[i],cyBotoes,ac,lum,"fontes",44); break;
         // O icone e o mesmo nos dois papeis: "uma lista de coisas para
         // escolher" serve para episodios e para relacionados, e desenhar um
         // icone novo para uma acao que aparece so em filme nao se paga.
-        case PLR_EPISODIOS: iconeArquivo(cxs[i],cyBotoes,a,lum,"episodios",44); break;
-        default:          iconeAudio(cxs[i], cyBotoes, a, lum); break;
+        case PLR_EPISODIOS: iconeArquivo(cxs[i],cyBotoes,ac,lum,"episodios",44); break;
+        default:          iconeAudio(cxs[i], cyBotoes, ac, lum); break;
       }
     }
     if (!barraFoco) {
@@ -2626,7 +2656,7 @@ void player_desenhar(Uint32 agora) {
       const char *rot = (botao==PLR_EPISODIOS && epT<=0)
                         ? (ehCanal() ? "Guia" : "Relacionados") : rotulos[botao];
       TxtLinha label=txt_linha(TXT_PG_FIM,rot,210,212,218,255);
-      txt_desenhar_alpha(label,cxs[botao]-label.w*.5f,cyBotoes+PLR_BTN_D*.5f+10,a);
+      txt_desenhar_alpha(label,cxs[botao]-label.w*.5f,cyBotoes+PLR_BTN_D*.5f+10,ac);
     }
   }
 
@@ -2710,9 +2740,9 @@ void player_desenhar(Uint32 agora) {
         snprintf(fim, sizeof fim, i18n("Termina \xc3\xa0" "s %s"), h2); }
       TxtLinha lh = txt_linha(TXT_PG_RELOGIO, hora, 255, 255, 255, 255);
       TxtLinha lf = txt_linha(TXT_PG_FIM, fim, 255, 255, 255, 255);
-      txt_desenhar_alpha(lh, NV_TELA_W - PLR_PAD_X - lh.w, yRel, a * 0.96f);
+      txt_desenhar_alpha(lh, NV_TELA_W - PLR_PAD_X - lh.w, yRel, ac * 0.96f);
       txt_desenhar_alpha(lf, NV_TELA_W - PLR_PAD_X - lf.w, yRel + lh.h + 2.0f,
-                         a * 0.78f);
+                         ac * 0.78f);
       yRel += lh.h + 2.0f + lf.h;
     }
 
@@ -2735,7 +2765,7 @@ void player_desenhar(Uint32 agora) {
         TxtLinha l = txt_linha(TXT_MINI, selos[i], 236, 237, 242, 255);
         if (e > 0.004f)
           txt_desenhar_alpha(l, NV_TELA_W - PLR_PAD_X - l.w,
-                             sy + (1.0f - e) * 10.0f, a * 0.85f * e);
+                             sy + (1.0f - e) * 10.0f, ac * 0.85f * e);
         sy += l.h + 6.0f;
       } }
   }
