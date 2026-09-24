@@ -189,6 +189,22 @@ int  fil_podar_catalogos(const char *const *ids, const char *const *bases, int n
 void fil_registrar(const char *chave, const char *titulo,
                    const char *addon, const char *conteudo, int itens);
 
+// Igual a fil_registrar, mas NUNCA despeja: com a tabela cheia a chave nova
+// fica de fora, calada. E para os catalogos que a cota por addon de
+// descoberta.c nao leu nesta volta (issue #126, Ultra MAX com 174 catalogos e
+// 32 de cota): eles entram na lista para a pessoa poder escolher um, e escolher
+// e o que faz a cota da volta seguinte le-lo. Nao valem a vaga de ninguem.
+void fil_registrar_se_couber(const char *chave, const char *titulo,
+                             const char *addon, const char *conteudo);
+
+// A pessoa ESCOLHEU esta fileira na TV? Devolve a posicao dela entre as ligadas
+// (0 = primeira) quando ela esta na home pela escolha local — ligada e dentro do
+// limite, ou posta na fila pela pessoa —, e -1 quando nao (desconhecida,
+// oculta, ou ligada so por ter entrado no fim). E a pergunta que a cota de
+// declaracoes de descoberta.c faz antes de decidir quais catalogos de um addon
+// grande ler.
+int fil_escolhida(const char *chave);
+
 // Grava o que fil_registrar acumulou, se houver. Chamar UMA VEZ no fim da
 // varredura que registra: registrar 64 chaves novas com gravacao a cada uma sao
 // 64 reescritas do arquivo no primeiro arranque, e no webOS cada uma passa

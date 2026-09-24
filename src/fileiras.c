@@ -484,13 +484,21 @@ static int achar(const char *chave) {
   return -1;
 }
 
-void fil_registrar(const char *chave, const char *titulo,
-                   const char *addon, const char *conteudo, int itens) {
+static void registrar(const char *chave, const char *titulo,
+                      const char *addon, const char *conteudo, int itens,
+                      int podeDespejar) {
   int i, grava = 0;
   if (!chave || !chave[0]) return;
   pthread_mutex_lock(&trava);
   garantir();
   i = achar(chave);
+  if (i < 0 && !podeDespejar && nLinhas >= FIL_MAX) {
+    // SO SE COUBER: e o registro dos catalogos que a cota de declaracoes deixou
+    // de fora (descoberta.c). Eles entram para poderem ser ESCOLHIDOS, e nao
+    // valem o despejo de nada que ja esta na lista.
+    pthread_mutex_unlock(&trava);
+    return;
+  }
   if (i < 0) {
     // Chave nova entra no FIM, nunca no meio: a mesma regra do
     // ensureOrderKeysWithPrefs do web. Catalogo que o addon passou a declarar
@@ -606,6 +614,30 @@ void fil_registrar(const char *chave, const char *titulo,
   // ~16 chaves a cada ciclo de sync, e nenhuma delas e novidade.
   if (grava) registroSujo = 1;
   pthread_mutex_unlock(&trava);
+}
+
+void fil_registrar(const char *chave, const char *titulo,
+                   const char *addon, const char *conteudo, int itens) {
+  registrar(chave, titulo, addon, conteudo, itens, 1);
+}
+
+void fil_registrar_se_couber(const char *chave, const char *titulo,
+                             const char *addon, const char *conteudo) {
+  registrar(chave, titulo, addon, conteudo, -1, 0);
+}
+
+int fil_escolhida(const char *chave) {
+  int i, r = -1;
+  if (!chave || !chave[0]) return -1;
+  pthread_mutex_lock(&trava);
+  garantir();
+  i = achar(chave);
+  if (i >= 0 && !linhas[i].oculta) {
+    int p = posicaoLigada(i);
+    if (p < limite || linhas[i].fila) r = p;
+  }
+  pthread_mutex_unlock(&trava);
+  return r;
 }
 
 void fil_gravar_registro(void) {

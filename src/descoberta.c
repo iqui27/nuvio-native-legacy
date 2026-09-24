@@ -2,6 +2,7 @@
 #include "idioma.h"
 #include "ajustes.h"
 #include "catordem.h"
+#include "cotacat.h"
 #include "fileiras.h"
 #include "homeestado.h"
 #include "sessao.h"
@@ -1437,12 +1438,128 @@ const char *desc_nome_catalogo(const char *base, const char *tipo, const char *i
   return saida;
 }
 
+// --- QUAIS CATALOGOS A COTA LE (issue #126) -----------------------------------
+//
+// A cota por addon (montar, "COTA POR ADDON") deixa cada addon declarar ate N
+// catalogos, e ate a 1.4.5 os N eram os PRIMEIROS do manifesto. O Ultra MAX do
+// relato declara 174 e a cota era 32: "[desc] Ultra MAX: 32 catalogo(s)
+// declarado(s) (cota 32, manifesto tem 174 — 142 de fora por cota)". O
+// catalogo que a pessoa queria estava entre os 142, e nada que ela fizesse na
+// TV ou na conta o trazia — o limite de fileiras da home nem chegava a ve-lo,
+// e a tela de Fileiras da Home nao o listava para ser escolhido.
+//
+// AGORA A COTA ESCOLHE, na ordem em que o proprio app monta a home (a regra
+// pura esta em cotacat.c, com teste proprio; aqui so se diz o nivel):
+//   0. escolhido NA TV (fileiras.c: ligado e na home, ou posto na fila);
+//   1. na ordem de catalogos da CONTA (catordem.c), na posicao dela;
+//   2. na ordem do arquivo local antigo (fileiras.txt, prefOrdem);
+//   3. o resto, na ordem do manifesto — o comportamento de antes;
+//   4. desligado (em qualquer das escolhas, ou engolido por colecao visivel):
+//      nao vira fileira de jeito nenhum, entao so fica com vaga que sobrar.
+// A memoria continua a mesma (o vetor de Decl e o mesmo, com o mesmo teto); o
+// custo e uma segunda varredura do manifesto, sem rede.
+static int prioCatalogo(const char *chave, const char *desativar,
+                        const char *base, const char *tipo, const char *id,
+                        int *pos) {
+  int k, n;
+  *pos = 0;
+  if (dentroDeColecaoVisivelBase(base, tipo, id) || fil_oculta(chave) ||
+      catordem_oculta(chave, desativar))
+    return COTA_DESLIGADO;
+  for (k = 0; k < nPrefOff; k++)
+    if (!strcmp(prefOff[k], chave) || !strcmp(prefOff[k], desativar))
+      return COTA_DESLIGADO;
+  if ((k = fil_escolhida(chave)) >= 0) { *pos = k; return COTA_ESCOLHIDO_TV; }
+  n = catordem_n();
+  for (k = 0; k < n; k++)
+    if (!strcmp(catordem_chave(k), chave)) { *pos = k; return COTA_ORDEM_CONTA; }
+  for (k = 0; k < nPrefOrdem; k++)
+    if (!strcmp(prefOrdem[k], chave)) { *pos = k; return COTA_ORDEM_LOCAL; }
+  return COTA_MANIFESTO;
+}
+
+// Os catalogos que a cota deixou de fora NESTA volta, para montar() os
+// registrar em fileiras.c DEPOIS dos candidatos (fil_registrar_se_couber). Se
+// entrassem antes, numa lista nova eles tomariam as primeiras posicoes ligadas
+// e a home da volta seguinte seria feita deles. So o fio da descoberta mexe.
+typedef struct { char chave[192], titulo[96], addon[64], tipo[8]; } ForaCota;
+static ForaCota *foraCota;
+static int nForaCota, capForaCota;
+static void foraCotaGuardar(const Decl *d) {
+  if (nForaCota >= capForaCota) {
+    int cap = capForaCota ? capForaCota * 2 : 64;
+    ForaCota *novo;
+    if (cap > FIL_MAX) cap = FIL_MAX;
+    if (nForaCota >= cap) return;          // a tabela de fileiras nem caberia
+    novo = (ForaCota *)realloc(foraCota, sizeof *foraCota * (size_t)cap);
+    if (!novo) return;
+    foraCota = novo; capForaCota = cap;
+  }
+  snprintf(foraCota[nForaCota].chave, sizeof foraCota[nForaCota].chave, "%s", d->chave);
+  snprintf(foraCota[nForaCota].titulo, sizeof foraCota[nForaCota].titulo, "%s", d->titulo);
+  snprintf(foraCota[nForaCota].addon, sizeof foraCota[nForaCota].addon, "%s", d->nomeAddon);
+  snprintf(foraCota[nForaCota].tipo, sizeof foraCota[nForaCota].tipo, "%s", d->tipo);
+  nForaCota++;
+}
+static void foraCotaSoltar(void) {
+  free(foraCota); foraCota = NULL; nForaCota = capForaCota = 0;
+}
+
+// PRIMEIRA VARREDURA: so decide. Devolve um vetor de 0/1 por catalogo ELEGIVEL
+// (tipo+id validos e que nao exige busca), na ordem do manifesto, dizendo quais
+// a cota le — ou NULL quando cabem todos (o caso comum, sem custo extra alem da
+// contagem) ou quando faltou memoria (vale a regra antiga).
+static char *escolherPelaCota(const char *corpo, const char *fim,
+                              const char *addonId, const char *base, int max,
+                              int *nElegiveis, int *promovidos) {
+  const char *p = js_array(corpo, fim, "catalogs");
+  CotaPrio *pr = NULL;
+  int n = 0, cap = 0;
+  char *escolhido;
+  if (promovidos) *promovidos = 0;
+  while (p) {
+    const char *f = js_fim(p);
+    char tipo[8] = "", id[96] = "", nome[96] = "", chave[192], desativar[352];
+    js_texto(p, f, "type", tipo, sizeof tipo);
+    js_texto(p, f, "id", id, sizeof id);
+    js_texto_raiz_em(p, f, "name", nome, sizeof nome);
+    if (tipo[0] && id[0] && !exigeBusca(p, f)) {
+      if (n >= cap) {
+        CotaPrio *novo;
+        cap = cap ? cap * 2 : 64;
+        novo = (CotaPrio *)realloc(pr, sizeof *pr * (size_t)cap);
+        if (!novo) { free(pr); return NULL; }
+        pr = novo;
+      }
+      // As MESMAS duas chaves que lerManifesto monta para o Decl.
+      snprintf(chave, sizeof chave, "%s_%s_%s", addonId[0] ? addonId : base, tipo, id);
+      snprintf(desativar, sizeof desativar, "%s_%s_%s_%s", base, tipo, id, nome);
+      pr[n].nivel = prioCatalogo(chave, desativar, base, tipo, id, &pr[n].pos);
+      n++;
+    }
+    p = js_prox(f);
+  }
+  *nElegiveis = n;
+  if (n <= max) { free(pr); return NULL; }
+  escolhido = (char *)malloc((size_t)n);
+  if (escolhido) {
+    int k = cota_escolher(pr, n, max, escolhido);
+    if (promovidos) *promovidos = k;
+  }
+  free(pr);
+  return escolhido;
+}
+
+// Catalogos que so respondem com busca, somados na volta: nao entram mais no
+// vetor de Decl (nao gastam cota), e a linha do log que os contava continua.
+static int nSoBuscaVolta;
+
 static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
-                         int *totalReal) {
+                         int *totalReal, int *promovidos) {
   char url[900], addonId[96] = "", nome[96], tipo[8], id[96];
-  char *corpo;
+  char *corpo, *escolhido;
   const char *p, *fim;
-  int n = 0, total = 0;
+  int n = 0, total = 0, e = 0, nEleg = 0;
   snprintf(url, sizeof url, "%s/manifest.json", base);
   // Ja largado em paralelo no comeco de montar(); so cai na rede aqui quando
   // este addon nao estava na lista daquele instante.
@@ -1459,6 +1576,7 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
   // behaviorHints, e ha addon que escreve "catalogs" antes de "id" — a leitura
   // crua trazia o id de um CATALOGO como se fosse o do addon. Ver js_texto_raiz.
   js_texto_raiz(corpo, "id", addonId, sizeof addonId);
+  escolhido = escolherPelaCota(corpo, fim, addonId, base, max, &nEleg, promovidos);
   p = js_array(corpo, fim, "catalogs");
   // Sem `n < max` na condicao: o vetor de fileiras pode encher, mas a varredura
   // continua ate o fim do manifesto porque os catalogos de BUSCA costumam estar
@@ -1482,10 +1600,21 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
     // que nao responde e pior que uma fileira a menos.
     if (tipo[0] && id[0]) {
       Decl local, *d;
-      total++;
+      int exige = exigeBusca(p, f), guardar = 0;
       registrarNomeCatalogo(base, tipo, id, nome);
-      // Vetor cheio: usa um Decl de rascunho so para decidir/registrar a busca.
-      d = (n < max) ? &saida[n] : &local;
+      // QUEM A COTA LE sai de escolherPelaCota; sem escolha (cabem todos, ou a
+      // memoria faltou) vale a regra antiga, os primeiros ate encher. Catalogo
+      // que exige busca nao entra nunca: ele e retirado logo depois em montar(),
+      // e ate a 1.4.5 ocupava vaga da cota ate la.
+      if (exige) nSoBuscaVolta++;
+      else {
+        guardar = (escolhido && e < nEleg) ? escolhido[e] : (n < max);
+        if (n >= max) guardar = 0;
+        e++;
+        total++;
+      }
+      // Fora do vetor: usa um Decl de rascunho so para decidir/registrar a busca.
+      d = guardar ? &saida[n] : &local;
       memset(d, 0, sizeof *d);
       d->base = base;
       // BUSCA: procura "search" dentro do bloco `extra`/`extraSupported` DESTE
@@ -1524,7 +1653,7 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
                           nomeAddon[0] ? nomeAddon
                                        : (addonId[0] ? addonId : "addon"));
         } }
-      d->exigeParam = exigeBusca(p, f);
+      d->exigeParam = exige;
       snprintf(d->tipo, sizeof d->tipo, "%s", tipo);
       snprintf(d->id,   sizeof d->id,   "%s", id);
       snprintf(d->chave, sizeof d->chave, "%s_%s_%s",
@@ -1537,10 +1666,12 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
         js_texto_raiz(corpo, "name", an, sizeof an);
         snprintf(d->nomeAddon, sizeof d->nomeAddon, "%s",
                  an[0] ? an : (addonId[0] ? addonId : "addon")); }
-      if (n < max) n++;
+      if (guardar) n++;
+      else if (!exige) foraCotaGuardar(d);
     }
     p = js_prox(f);
   }
+  free(escolhido);
   free(corpo);
   if (totalReal) *totalReal = total;
   return n;
@@ -2425,6 +2556,8 @@ static void *montar(void *u) {
     // Zera ANTES de ler os manifestos: cada catalogo com busca se registra
     // sozinho la dentro, na hora em que e lido.
     desc_alvos_busca_zerar();
+    foraCotaSoltar();
+    nSoBuscaVolta = 0;
     // Sem `nDecl < DECL_MAX` no laco: com o vetor cheio o manifesto do addon
     // seguinte nem era baixado, e AIOStreams e Akashi TV ficavam invisiveis
     // para o app inteiro so porque o Xperience, lido antes, declara 605
@@ -2483,9 +2616,10 @@ static void *montar(void *u) {
       if (cota < 1) cota = 1;
       for (i = 0; i < nAd; i++) {
         int teto = cota + folga;
-        int lidos, real = 0;
+        int lidos, real = 0, promovidos = 0;
         if (teto > DECL_MAX - nDecl) teto = DECL_MAX - nDecl;
-        lidos = lerManifesto(i, addons_base(i), decls + nDecl, teto, &real);
+        lidos = lerManifesto(i, addons_base(i), decls + nDecl, teto, &real,
+                             &promovidos);
         nDecl += lidos;
         folga = lidos < cota + folga ? cota + folga - lidos : 0;
         // ISSUE #42(a): a linha de sempre ("N catalogo(s) declarado(s)") nao
@@ -2496,8 +2630,9 @@ static void *montar(void *u) {
         // corte visivel e diz o numero que falta.
         if (real > lidos)
           printf("[desc]   %s: %d catalogo(s) declarado(s) (cota %d, "
-                 "manifesto tem %d — %d de fora por cota)\n",
-                 addons_nome(i), lidos, cota, real, real - lidos);
+                 "manifesto tem %d — %d de fora por cota; %d escolhido(s) "
+                 "alem da ordem do manifesto)\n",
+                 addons_nome(i), lidos, cota, real, real - lidos, promovidos);
         else
           printf("[desc]   %s: %d catalogo(s) declarado(s) (cota %d)\n",
                  addons_nome(i), lidos, cota);
@@ -2522,6 +2657,7 @@ static void *montar(void *u) {
         if (w2 != r2) decls[w2] = decls[r2];
         w2++;
       }
+      cortados += nSoBuscaVolta;
       if (cortados)
         printf("[desc] %d catalogo(s) so respondem com busca e nao viram fileira\n", cortados);
       nDecl = w2; }
@@ -2555,6 +2691,21 @@ static void *montar(void *u) {
         ctxIni.ajustes = c.ajustes; ctxIni.fileiras = c.fileiras;
         ctxIni.ordemConta = c.ordemConta; ctxIni.colecoes = c.colecoes; }
       nOrdem = ordenarCandidatos(decls, nDecl, ordem, nFil, 1, &teto);
+      // OS QUE A COTA NAO LEU TAMBEM PODEM SER ESCOLHIDOS (#126). Entram na
+      // lista de Fileiras da Home DEPOIS dos candidatos e sem despejar
+      // ninguem; escolher um la (ligar/mover para a home) e o que faz a cota da
+      // proxima volta le-lo — ver prioCatalogo. Nao custa rede: nenhum deles e
+      // pedido ate ser escolhido.
+      if (nForaCota > 0) {
+        int q;
+        for (q = 0; q < nForaCota; q++)
+          fil_registrar_se_couber(foraCota[q].chave, foraCota[q].titulo,
+                                  foraCota[q].addon, foraCota[q].tipo);
+        fil_gravar_registro();
+        printf("[desc] %d catalogo(s) fora da cota listados em Fileiras da Home "
+               "para escolha\n", nForaCota);
+      }
+      foraCotaSoltar();
 
       int marcouPrimeira = 0;
       // Instrumentacao do arranque. Antes dava para ver o TOTAL de fileiras e
