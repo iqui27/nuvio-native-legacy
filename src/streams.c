@@ -723,8 +723,7 @@ static char provedores[13][96];
 static int nProvedores;
 
 static int passaFiltro(int i) {
-  if (soMp4 && !lista[i].mp4) return 0;
-  if (filtro && strcmp(lista[i].provedor, provedores[filtro])) return 0;
+  if (soMp4 && !lista[i].mp4) return 0;  if (filtro && strcmp(lista[i].provedor, provedores[filtro])) return 0;
   return 1;
 }
 
@@ -791,12 +790,25 @@ static void desenharAudioBars(float x, float y, float alfa, int focado,
 }
 
 void stream_folha_abrir(void) {
+  int excl;
   aberta=1; escolha=-1; foco=0; grupo=1; filtro=0; soMp4=0; recarregar=0;
   atualizarProvedores();
   if(atual>=0) foco=atual;
   rolagem=0;velRol=0;
+  // A CONTAGEM DA FOLHA NO LOG (#132). O log tinha "[addons] X: N fontes" e
+  // "[addons] total N" de um lado e nada do que a folha mostrou do outro: um
+  // relato de "so 1 fonte listada" nao tinha como dizer se a queda foi no
+  // addon, no descarte de torrent sem debrid ou na folha.
+  pthread_mutex_lock(&autoExclTrava);
+  excl = nAutomaticasExcluidas;
+  pthread_mutex_unlock(&autoExclTrava);
+  printf("[fonte] folha: %d de %d na lista (%d addon(s); %d torrent(s) sem debrid "
+         "descartado(s); %d ja recusada(s) pelo automatico, continuam na folha)\n",
+         nFiltrados(), n, nProvedores - 1, descartadosSemDebrid, excl);
+  fflush(stdout);
 }
 int stream_folha_aberta(void) { return aberta; }
+int stream_folha_n(void) { return nFiltrados(); }
 void stream_folha_evento(const SDL_Event *e) {
   if(!aberta || e->type!=SDL_KEYDOWN) return;
   SDL_Keycode k=e->key.keysym.sym;
