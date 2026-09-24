@@ -251,7 +251,7 @@ IGNORAR = {
     "biblioteca.h", "catalogo.h", "fileiras.h", "perfil.h", "legenda.h",
     "perfil.txt",                   # #include e nome de arquivo
     "com.webos.media.client.nuvio", # id do cliente LS2
-    "abrir", "buscar",              # nomes de operacao do bridge JS (video_tizen.c)
+    "abrir", "buscar", "erro",      # nomes de operacao do bridge JS (video_tizen.c)
     "fontes", "legenda", "mais", "nao", "poster",  # chaves internas, nao rotulo
     "crédit", "crédito",            # palavra procurada no capitulo do MKV
     "episodio", "episódio",         # palavra procurada no nome do video TMDB (extras.c)

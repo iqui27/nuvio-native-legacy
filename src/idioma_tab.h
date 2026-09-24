@@ -1873,6 +1873,7 @@
   { "para retomar", "to resume" },
   { "pela RAM da TV (%.1f GB)", "from the TV RAM (%.1f GB)" },
   { "perfil", "profile" },
+  { "perfil trocado; sincronizando de novo", "profile changed; syncing again" },
   { "pesadelo", "nightmare" },
   { "polícia", "police" },
   { "política", "politics" },
