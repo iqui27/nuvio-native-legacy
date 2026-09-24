@@ -213,6 +213,10 @@ void  fil_gravar_registro(void)            { }
 int   fil_podar_catalogos(const char *const *ids, const char *const *bases, int n) {
   (void)ids; (void)bases; (void)n; return 0; }
 int   fil_limite(void)                     { return 3; }
+// Dubles da escolha da cota (#126), como em homejanelas.c.
+int fil_escolhida(const char *c) { (void)c; return -1; }
+void fil_registrar_se_couber(const char *c, const char *t, const char *a,
+                             const char *tp) { (void)c; (void)t; (void)a; (void)tp; }
 const char *fil_hero_fonte(void)           { return "auto"; }
 int   fil_oculta(const char *c)            { (void)c; return 0; }
 int   fil_tem_ordem(void)                  { return 0; }
