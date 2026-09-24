@@ -6,8 +6,8 @@
     "plataforma": "tizen",
     "titulo": "Ajude a testar um Nuvio nativo na Samsung",
     "titulo_en": "Help test a native Nuvio on Samsung",
-    "texto": "Estamos vendo se a sua Samsung aceita um Nuvio nativo, sem navegador (bem mais rápido). Leva 2 minutos: no GitHub, abra a issue #137, instale o app de teste NvSpike pelo Apps2Samsung, abra e responda lá com o modelo da TV e o código de 6 letras da tela.",
-    "texto_en": "We're checking whether your Samsung accepts a native Nuvio, without the browser (much faster). It takes 2 minutes: on GitHub, open issue #137, install the NvSpike test app with Apps2Samsung, open it and reply there with your TV model and the 6-letter code on screen."
+    "texto": "Estamos vendo se a sua Samsung aceita um Nuvio nativo, sem navegador (bem mais rápido). Leva 2 minutos: abra github.com/iqui27/nuvio-native-legacy/issues/137, instale o app de teste NvSpike pelo Apps2Samsung, abra e responda lá com o modelo da TV e o código de 6 letras da tela.",
+    "texto_en": "We're checking whether your Samsung accepts a native Nuvio, without the browser (much faster). It takes 2 minutes: open github.com/iqui27/nuvio-native-legacy/issues/137, install the NvSpike test app with Apps2Samsung, open it and reply there with your TV model and the 6-letter code on screen."
   },
   {
     "id": "2026-09-20-samsung-rc1",
