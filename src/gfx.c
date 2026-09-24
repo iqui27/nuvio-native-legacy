@@ -34,6 +34,14 @@ void gfx_tamanho_alvo(int w, int h) { telaW = w; telaH = h; }
 
 static GLuint snapFbo = 0, snapTex = 0;
 static int snapW = 0, snapH = 0;
+// O alvo de tela guardado enquanto o desenho vai para o snapshot: gfx_recorte
+// converte layout em pixel pelo tamanho do ALVO, e com o da tela o recorte de
+// uma fileira caia no lugar errado do FBO.
+static int snapTelaW = 0, snapTelaH = 0, snapAtivo = 0;
+// E o alvo que estava ligado antes: volta para ELE, e nao para o 0. Mesma
+// disciplina de gfx_desfocado — quem desenha a tela num FBO (os testes de
+// captura com janela escondida) nao perde o alvo no meio do quadro.
+static GLint snapFboAnt = 0, snapVpAnt[4];
 // Dois alvos: o desfoque gaussiano e separavel, entao uma passada escreve no
 // segundo e a outra volta para o primeiro.
 static GLuint borFbo[4] = {0,0,0,0}, borTex[4] = {0,0,0,0};
@@ -964,9 +972,16 @@ int gfx_snap_iniciar(int w, int h) {
   return 1;
 }
 
+int gfx_snap_ok(void) { return snapFbo != 0; }
+
 void gfx_snap_comecar(void) {
-  if (!snapFbo) return;
+  if (!snapFbo || snapAtivo) return;
   GFX_OUTRO_INI();
+  snapTelaW = telaW; snapTelaH = telaH;
+  telaW = snapW; telaH = snapH;
+  snapAtivo = 1;
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &snapFboAnt);
+  glGetIntegerv(GL_VIEWPORT, snapVpAnt);
   glBindFramebuffer(GL_FRAMEBUFFER, snapFbo);
   // uTela continua em coordenadas de tela cheia: o viewport menor faz a
   // reducao sozinho, e nenhum codigo de layout precisa saber que existe FBO.
@@ -975,10 +990,12 @@ void gfx_snap_comecar(void) {
 }
 
 void gfx_snap_terminar(void) {
-  if (!snapFbo) return;
+  if (!snapFbo || !snapAtivo) return;
   GFX_OUTRO_INI();
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  glViewport(0, 0, telaW, telaH);
+  telaW = snapTelaW; telaH = snapTelaH;
+  snapAtivo = 0;
+  glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)snapFboAnt);
+  glViewport(snapVpAnt[0], snapVpAnt[1], snapVpAnt[2], snapVpAnt[3]);
   GFX_OUTRO_FIM();
 }
 

@@ -60,6 +60,8 @@ typedef struct {
 void salvos_iniciar(void);
 
 int  salvos_n(void);
+// Sobe a cada mudanca da lista local. Barata de ler por quadro.
+unsigned salvos_revisao(void);
 const SalvoItem *salvos_item(int i);        // NULL fora da faixa
 
 // 1 quando `imdb` esta na lista LOCAL. Nao responde pela watchlist do Trakt nem

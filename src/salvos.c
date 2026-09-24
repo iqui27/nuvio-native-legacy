@@ -29,6 +29,11 @@ static int garantir(int n) {
   return 1;
 }
 static int carregado;
+// Sobe a cada mudanca da lista (leitura do arquivo, salvar, remover, esquecer).
+// O painel de Salvos reconstroi por ela, e nao por contagem: remover um e
+// salvar outro no mesmo quadro deixaria a contagem igual.
+static unsigned revisao;
+unsigned salvos_revisao(void) { return revisao; }
 
 // Marca de reconciliacao, igual a de contalib.c: quantos itens o catalogo tinha
 // e QUAL era o ultimo item que tocamos. Contagem igual nao prova catalogo
@@ -177,6 +182,7 @@ void salvos_iniciar(void) {
       s->nota = atoi(nota); }
   }
   free(b);
+  revisao++;
   printf("[salvos] %d titulos na lista local\n", nItens);
   fflush(stdout);
 }
@@ -223,6 +229,7 @@ int salvos_definir(const CatItem *ci, int salvo) {
             sizeof(SalvoItem) * (size_t)(nItens - k - 1));
     nItens--;
   }
+  revisao++;
   gravar();
   return 1;
 }
@@ -267,57 +274,116 @@ void salvos_reconciliar(void) {
   salvos_aplicar_catalogo();
 }
 
-// A copia do catalogo que representa o titulo: a primeira COM progresso, senao
-// a primeira. cat_indice_por_imdb devolve so a primeira, e ela pode ser a copia
-// da watchlist (sem progresso) enquanto a de "Continuar assistindo" tem o
-// episodio — a linha perderia a barra so por causa da ordem das fileiras.
-static int melhorCopia(const char *id) {
-  int i, n = cat_n(), primeira = -1;
-  for (i = 0; i < n; i++) {
-    const CatItem *c = cat_item(i);
-    if (!c || !c->imdb[0] || !salvos_mesmo_titulo(c->imdb, id)) continue;
-    if (c->progresso > 0) return i;
-    if (primeira < 0) primeira = i;
-  }
-  return primeira;
+// A UNIAO EM UMA PASSADA PELO CATALOGO, com uma tabela de espalhamento por id
+// de titulo.
+//
+// A versao anterior era quadratica e, pior, andava pelo catalogo de novo para
+// cada salvo local (melhorCopia) e pela uniao ja montada para cada copia
+// marcada (uniaoAchar), relendo o CatItem de cada uma. Um CatItem passa de
+// 15 KB: com 2000 no catalogo, cada leitura de `imdb` e um desencontro de
+// cache e de TLB no ARM da TV, e a conta chegava a dezenas de milhares por
+// reconstrucao do painel de Salvos (0,5 ms no Mac, varios ms na C9). Aqui cada
+// item do catalogo e lido UMA vez e cada id vira chave uma vez.
+//
+// O RESULTADO E O MESMO, na mesma ordem, e tests/salvos.sh cobra os casos:
+//   - salvo local: aponta para a PRIMEIRA copia com progresso, senao a
+//     primeira copia de qualquer fileira (marcada ou nao);
+//   - so do catalogo: uma entrada por titulo, na ordem da primeira copia
+//     marcada; outra copia marcada so toma o lugar se so ELA tem progresso.
+typedef struct { unsigned h; int ent; } UniaoSlot;
+static UniaoSlot *tabU;
+static unsigned   capTabU;
+static unsigned char *progU;   // entrada ja aponta para copia com progresso
+static int        capProgU;
+
+static unsigned hashTitulo(const char *id, char *chave, size_t tam) {
+  const unsigned char *p;
+  unsigned h = 2166136261u;
+  salvos_id_titulo(id, chave, tam);
+  for (p = (const unsigned char *)chave; *p; p++) { h ^= *p; h *= 16777619u; }
+  return h ? h : 1u;   // 0 marca vaga livre
 }
 
-// Posicao em `out` da entrada SO DO CATALOGO com o mesmo titulo; -1 sem ela.
-// As entradas locais ja foram cobertas por acharLocal.
-static int uniaoAchar(const SalvosEntrada *out, int k, const char *id) {
-  int i;
-  for (i = 0; i < k; i++) {
-    const CatItem *c;
-    if (out[i].local >= 0) continue;
-    c = cat_item(out[i].cat);
-    if (c && salvos_mesmo_titulo(c->imdb, id)) return i;
+// Id de titulo da entrada `e` da uniao, para conferir colisao de hash.
+static const char *idDaEntrada(const SalvosEntrada *out, int e) {
+  const CatItem *c;
+  if (out[e].local >= 0) return itens[out[e].local].id;
+  c = cat_item(out[e].cat);
+  return c ? c->imdb : "";
+}
+
+// Entrada com a mesma chave, ou -1; `*vaga` recebe onde inserir.
+static int tabAchar(const SalvosEntrada *out, unsigned h, const char *chave,
+                    unsigned *vaga) {
+  unsigned m = capTabU - 1, i = h & m;
+  while (tabU[i].h) {
+    if (tabU[i].h == h) {
+      char k2[64];
+      salvos_id_titulo(idDaEntrada(out, tabU[i].ent), k2, sizeof k2);
+      if (!strcmp(k2, chave)) return tabU[i].ent;
+    }
+    i = (i + 1) & m;
   }
+  *vaga = i;
   return -1;
 }
 
 int salvos_uniao(SalvosEntrada *out, int cap) {
-  int i, k = 0, n;
+  int i, k = 0, n = cat_n();
+  unsigned precisa = 16;
+  char chave[64];
   if (!out || cap < 1) return 0;
-  for (i = 0; i < nItens && k < cap; i++) {
-    out[k].local = i;
-    out[k].cat = melhorCopia(itens[i].id);
-    k++;
+  // Tabela no minimo com o dobro de vagas das entradas possiveis: a sondagem
+  // linear fica curta. Cresce e fica (fio principal apenas).
+  while (precisa < (unsigned)(nItens + n) * 2u) precisa <<= 1;
+  if (precisa > capTabU) {
+    UniaoSlot *t = (UniaoSlot *)realloc(tabU, sizeof *tabU * precisa);
+    if (!t) return 0;
+    tabU = t; capTabU = precisa;
   }
-  n = cat_n();
-  for (i = 0; i < n && k < cap; i++) {
-    const CatItem *c = cat_item(i);
-    int j;
-    if (!c || !c->naLista || !c->imdb[0]) continue;
-    if (acharLocal(c->imdb) >= 0) continue;
-    if ((j = uniaoAchar(out, k, c->imdb)) >= 0) {
-      // Segunda copia do mesmo titulo: nao vira linha. Se so ELA tem o
-      // progresso, passa a ser a copia da linha que ja existe.
-      const CatItem *v = cat_item(out[j].cat);
-      if (c->progresso > 0 && (!v || v->progresso <= 0)) out[j].cat = i;
+  if (cap > capProgU) {
+    unsigned char *pp = (unsigned char *)realloc(progU, (size_t)cap);
+    if (!pp) return 0;
+    progU = pp; capProgU = cap;
+  }
+  memset(tabU, 0, sizeof *tabU * capTabU);
+
+  for (i = 0; i < nItens && k < cap; i++) {
+    unsigned vaga, h = hashTitulo(itens[i].id, chave, sizeof chave);
+    // Arquivo antigo pode ter o mesmo titulo duas vezes; acharLocal acha o
+    // primeiro, e e o primeiro que responde pelo titulo.
+    if (tabAchar(out, h, chave, &vaga) >= 0) {
+      out[k].local = i; out[k].cat = -1; progU[k] = 0; k++;
       continue;
     }
-    out[k].local = -1;
-    out[k].cat = i;
+    out[k].local = i; out[k].cat = -1; progU[k] = 0;
+    tabU[vaga].h = h; tabU[vaga].ent = k;
+    k++;
+  }
+
+  for (i = 0; i < n; i++) {
+    const CatItem *c = cat_item(i);
+    unsigned vaga, h;
+    int j;
+    if (!c || !c->imdb[0]) continue;
+    h = hashTitulo(c->imdb, chave, sizeof chave);
+    j = tabAchar(out, h, chave, &vaga);
+    if (j >= 0) {
+      if (out[j].local >= 0) {
+        // Copia de um salvo local, marcada ou nao: a primeira com progresso,
+        // senao a primeira.
+        if (out[j].cat < 0) { out[j].cat = i; progU[j] = c->progresso > 0; }
+        else if (!progU[j] && c->progresso > 0) { out[j].cat = i; progU[j] = 1; }
+      } else if (c->naLista && c->progresso > 0 && !progU[j]) {
+        // Segunda copia marcada do mesmo titulo: nao vira linha. Se so ELA tem
+        // o progresso, passa a ser a copia da linha que ja existe.
+        out[j].cat = i; progU[j] = 1;
+      }
+      continue;
+    }
+    if (!c->naLista || k >= cap) continue;
+    out[k].local = -1; out[k].cat = i; progU[k] = c->progresso > 0;
+    tabU[vaga].h = h; tabU[vaga].ent = k;
     k++;
   }
   return k;
@@ -330,6 +396,7 @@ void salvos_esquecer(void) {
   nItens = 0;
   marcaCatN = marcaIdx = -1;
   marcaId[0] = 0;
+  revisao++;
   dados_apagar(SALVOS_ARQ);
   // O arquivo foi apagado: ler de novo da vazio, e deixa salvos_iniciar valer
   // para o proximo usuario em vez de ficar preso no "ja carreguei".

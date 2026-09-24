@@ -263,6 +263,7 @@ void gfx_borrao_encerrar(void);
 // render indisponivel). Nesse caso NAO desenhe a arte nitida no lugar — o
 // ajuste existe para esconder o spoiler; pinte o fundo do card.
 GLuint gfx_desfocado(GLuint src, const char *chave);
+int  gfx_snap_ok(void);        // 1 quando o FBO do snapshot existe
 void gfx_snap_comecar(void);   // redireciona o desenho para o snapshot
 void gfx_snap_terminar(void);  // volta para a tela
 void gfx_snap_desenhar(void);  // pinta o snapshot ocupando a tela toda

@@ -31,7 +31,7 @@ int dados_apagar(const char *nome) { (void)nome; free(disco); disco = NULL; retu
 
 // Catalogo de mentira. Vazio na primeira parte (o que se prova e a lista
 // local); na parte da uniao ele recebe as copias que a TV tinha.
-static CatItem cat[8];
+static CatItem cat[400];
 static int nCat;
 int cat_n(void) { return nCat; }
 const CatItem *cat_item(int i) { return (i >= 0 && i < nCat) ? &cat[i] : NULL; }
@@ -82,6 +82,43 @@ static const CatItem *titulo(int i) {
   snprintf(ci.titulo, sizeof ci.titulo, "Filme %d", i);
   return &ci;
 }
+
+
+// A UNIAO QUADRATICA DE ANTES, copiada como referencia. salvos_uniao passou a
+// ser uma passada so com tabela de espalhamento (o painel de Salvos a chama
+// em toda reconstrucao e, na TV, cada leitura de CatItem era um desencontro de
+// cache); a troca so vale se o resultado for IGUAL, na mesma ordem.
+static int refMelhorCopia(const char *id) {
+  int i, primeira = -1;
+  for (i = 0; i < nCat; i++) {
+    const CatItem *c = &cat[i];
+    if (!c->imdb[0] || !salvos_mesmo_titulo(c->imdb, id)) continue;
+    if (c->progresso > 0) return i;
+    if (primeira < 0) primeira = i;
+  }
+  return primeira;
+}
+static int refUniao(SalvosEntrada *out, int cap) {
+  int i, k = 0;
+  for (i = 0; i < salvos_n() && k < cap; i++) {
+    out[k].local = i; out[k].cat = refMelhorCopia(salvos_item(i)->id); k++;
+  }
+  for (i = 0; i < nCat && k < cap; i++) {
+    const CatItem *c = &cat[i];
+    int j, achou = -1;
+    if (!c->naLista || !c->imdb[0] || salvos_tem(c->imdb)) continue;
+    for (j = 0; j < k && achou < 0; j++)
+      if (out[j].local < 0 && salvos_mesmo_titulo(cat[out[j].cat].imdb, c->imdb)) achou = j;
+    if (achou >= 0) {
+      if (c->progresso > 0 && cat[out[achou].cat].progresso <= 0) out[achou].cat = i;
+      continue;
+    }
+    out[k].local = -1; out[k].cat = i; k++;
+  }
+  return k;
+}
+static unsigned semente = 12345u;
+static int sorteio(int n) { semente = semente * 1103515245u + 12345u; return (int)((semente >> 8) % (unsigned)n); }
 
 int main(void) {
   int i, entraram = 0, linhas = 0;
@@ -210,6 +247,57 @@ int main(void) {
   confere("dois titulos", salvos_n(), 2);
   confere("o primeiro com o id do titulo",
           strcmp(salvos_item(0)->id, "tt14000001") == 0, 1);
+  printf("\na uniao em uma passada e igual a quadratica (300 sorteios):\n");
+  { static SalvosEntrada a[800], b[800];
+    int rodada, iguais = 0;
+    for (rodada = 0; rodada < 300; rodada++) {
+      int nt = 3 + sorteio(40), k, na, nb, ok = 1;
+      salvos_esquecer();
+      salvos_iniciar();
+      nCat = 0;
+      // Poucos titulos, muitas copias: e onde as duas regras de copia
+      // (primeira com progresso; copia marcada so troca se so ela tem) se
+      // distinguem. Ids simples, com episodio, de canal e kitsu.
+      for (k = 0; k < 2 + sorteio(12); k++) {
+        char idl[32];
+        snprintf(idl, sizeof idl, "tt%07d", 100 + sorteio(nt));
+        salvos_definir(comId(idl, "Local"), 1);
+      }
+      for (k = 0; k < 20 + sorteio(300) && nCat < 400; k++) {
+        char idc[64];
+        int t = 100 + sorteio(nt), forma = sorteio(5);
+        if (forma == 0) snprintf(idc, sizeof idc, "tt%07d:%d:%d", t, 1 + sorteio(3), 1 + sorteio(9));
+        else if (forma == 1) snprintf(idc, sizeof idc, "cs:channel:canal-%d", t);
+        else if (forma == 2) snprintf(idc, sizeof idc, "kitsu:%d:%d", t, 1 + sorteio(4));
+        else snprintf(idc, sizeof idc, "tt%07d", t);
+        poeNoCatalogo(idc, "Copia", sorteio(3) == 0, sorteio(4) == 0 ? 10 + sorteio(80) : 0, 0, 0);
+      }
+      na = salvos_uniao(a, 800);
+      nb = refUniao(b, 800);
+      if (na != nb) ok = 0;
+      for (k = 0; ok && k < na; k++)
+        if (a[k].local != b[k].local || a[k].cat != b[k].cat) ok = 0;
+      if (ok) iguais++;
+      else if (iguais == rodada) printf("  primeira divergencia na rodada %d: %d x %d entradas\n", rodada, na, nb);
+    }
+    confere("as 300 rodadas deram a mesma uniao", iguais, 300);
+    nCat = 0; }
+
+  printf("\na revisao da lista sobe a cada mudanca:\n");
+  { unsigned r0;
+    salvos_esquecer();
+    salvos_iniciar();
+    r0 = salvos_revisao();
+    salvos_definir(comId("tt0000777", "Um"), 1);
+    confere("salvar sobe a revisao", salvos_revisao() != r0, 1);
+    r0 = salvos_revisao();
+    salvos_definir(comId("tt0000777", "Um"), 1);
+    confere("salvar o que ja esta nao sobe", salvos_revisao() == r0, 1);
+    salvos_definir(comId("tt0000777", "Um"), 0);
+    confere("remover sobe", salvos_revisao() != r0, 1);
+    r0 = salvos_revisao();
+    salvos_esquecer();
+    confere("esquecer sobe", salvos_revisao() != r0, 1); }
   printf("\n%s\n", falhas ? "FALHOU" : "PASSOU");
   return falhas ? 1 : 0;
 }

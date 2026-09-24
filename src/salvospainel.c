@@ -86,6 +86,16 @@
 #define SP_ABRIR_MS    230.0f
 #define SP_FECHAR_MS   150.0f
 #define SP_VEU           0.58f
+// O RASTRO. A linha focada aqui e um bloco inteiro na cor de realce, e nao um
+// anel: com a mesma mola nos dois sentidos (95 % em 120 ms) e a tecla presa
+// descendo a ~10 linhas/s, duas ou tres linhas acima da focada ainda estavam
+// acesas pela metade — uma cauda de pilulas atras do foco. E a explicacao
+// mais provavel para o "deixando rastro" do dono (24/09/2026), somada ao
+// ritmo irregular de 52 fps; nao foi conferida na TV. A que perde o foco
+// apaga em ~50 ms (95 %);
+// a que ganha continua na mola do app. A mola e exp(-k*dt): o tempo e o mesmo
+// a 60 ou a 30 quadros por segundo.
+#define SP_MOLA_DESFOCO 60.0f
 
 // Teto de linhas do painel. ERA 200, com a lista local podendo ter 300 e a
 // conta mais 200: o que passasse de 200 sumia do painel sem aviso, e como a
@@ -122,6 +132,12 @@ typedef struct {
   int   nota;
   int   progresso, temporada, episodio, restanteMin;
   long long quandoS;      // 0 = veio do Trakt/conta, nao sabemos quando entrou
+  // As duas legendas da barra de retomada, montadas na reconstrucao e nao a
+  // cada quadro: dependem so do progresso, que so muda com o catalogo (e ai
+  // a lista e reconstruida). A rasterizacao ja era cacheada em text.c — o log
+  // da C9 dizia "texto 0.0ms em 0 linhas" com o painel aberto —; isto poupa
+  // os snprintf e as buscas de i18n de cada linha visivel.
+  char  txtRestante[96], txtVisto[96];
 } SPLinha;
 
 static SPLinha *linhas;
@@ -259,12 +275,22 @@ static int ehSerie(const char *tipo, int nTemporadas) {
   return (tipo && !strcmp(tipo, "series")) || nTemporadas > 0;
 }
 
-// Retrato barato do catalogo, para detectar troca de bloco com a mesma
-// contagem. Um strcmp de 16 bytes por quadro com o painel aberto.
-static char marcaPrimeiro[24];
-static int catTrocou(void) {
-  const CatItem *c = cat_n() > 0 ? cat_item(0) : NULL;
-  return c ? strcmp(c->imdb, marcaPrimeiro) != 0 : 0;
+// O QUE A LISTA MONTADA VIU: as revisoes do catalogo e da lista local no
+// instante da reconstrucao. Reconstruir quando uma delas sobe, e so entao.
+//
+// ERA `cat_n() != marcaCatN || catTrocou()` — contagem e o id do item 0. O
+// retrato tinha dois defeitos opostos: nao via mudanca de MARCA (um titulo
+// salvo pela conta com o painel aberto nao aparecia) e, quando disparava, a
+// reconstrucao andava pelo catalogo inteiro. Com as revisoes a pergunta por
+// quadro e comparar dois inteiros, e a reconstrucao so acontece quando ha o
+// que mostrar de diferente (tests/salvospainel.sh conta quantas vezes).
+static unsigned marcaRevCat, marcaRevSalvos;
+static int reconstrucoes, fundosPintados;
+int spainel_n_reconstrucoes(void) { return reconstrucoes; }
+int spainel_n_fundos(void) { return fundosPintados; }
+static int listaVelha(void) {
+  return marcaCatN < 0 || cat_revisao_itens() != marcaRevCat ||
+         salvos_revisao() != marcaRevSalvos || cat_n() != marcaCatN;
 }
 
 // Monta a lista visivel. A uniao (lista local + catalogo) vem de salvos_uniao,
@@ -281,10 +307,18 @@ static int catTrocou(void) {
 // no mesmo episodio, porque a linha local puxava o progresso daquela copia e a
 // copia entrava de novo por conta propria. salvos_uniao compara por titulo, e e
 // a mesma regra que tests/salvos.sh cobra.
+static void legendasDaBarra(SPLinha *l);
 static void reconstruir(void) {
   static SalvosEntrada *uniao;
   static int capUniao;
   int i, n, escrita = 0;
+  // As revisoes sao lidas ANTES de ler a lista: se a descoberta mudar o
+  // catalogo no meio desta reconstrucao, a revisao guardada fica velha e o
+  // quadro seguinte reconstroi de novo, em vez de guardar a nova e perder a
+  // mudanca.
+  unsigned revCat = cat_revisao_itens(), revSalvos = salvos_revisao();
+  int catN = cat_n();
+  reconstrucoes++;
   nLinhas = 0;
   n = salvos_n() + cat_n();
   if (n > SP_MAX) n = SP_MAX;
@@ -330,6 +364,7 @@ static void reconstruir(void) {
       if (ehSerie(c->tipo, c->nTemporadas)) l->serie = 1;
     }
   }
+  for (i = 0; i < nLinhas; i++) legendasDaBarra(&linhas[i]);
   // Estavel: percorre uma vez e move para a frente quem tem progresso.
   for (i = 0; i < nLinhas; i++) {
     if (linhas[i].progresso <= 0) continue;
@@ -342,9 +377,9 @@ static void reconstruir(void) {
     escrita++;
   }
   nCont = escrita;
-  marcaCatN = cat_n();
-  { const CatItem *c = cat_n() > 0 ? cat_item(0) : NULL;
-    snprintf(marcaPrimeiro, sizeof marcaPrimeiro, "%s", c ? c->imdb : ""); }
+  marcaCatN = catN;
+  marcaRevCat = revCat;
+  marcaRevSalvos = revSalvos;
   // O FOCO DAS ABAS (-1) NAO E UM FOCO FORA DA FAIXA. Sem esta guarda, uma
   // reconstrucao com a lista vazia jogaria o foco de volta para a linha 0, que
   // nao existe, e a linha de abas perderia o anel debaixo do dedo.
@@ -671,16 +706,10 @@ void spainel_atualizar(float dt, Uint32 agora) {
     return;
   }
   // O catalogo pode ter sido republicado com o painel aberto (a descoberta faz
-  // isso varias vezes por ciclo). Sem esta reconstrucao a lista continuaria a
-  // do instante da abertura, com ponteiros de titulo apontando para CatItem que
-  // ja mudou de conteudo — texto de outro filme no card certo.
-  // CONTAGEM IGUAL NAO PROVA CATALOGO IGUAL — a descoberta republica o mesmo
-  // numero de titulos com outro conteudo. Reconstruir por contagem deixava o
-  // painel com o texto do catalogo anterior; agora que os textos sao COPIADOS
-  // isso nao e mais leitura de memoria liberada, mas continua sendo o nome
-  // errado no card certo. A marca extra e a mesma de contalib_reconciliar: o
-  // primeiro item do catalogo raramente sobrevive identico a uma troca de bloco.
-  if (aberto && (cat_n() != marcaCatN || catTrocou())) reconstruir();
+  // isso varias vezes por ciclo), e a conta pode ter marcado um titulo. Sem
+  // reconstruir, a lista continuaria a do instante da abertura. Ver listaVelha:
+  // a pergunta por quadro sao duas revisoes, e nao um retrato do catalogo.
+  if (aberto && listaVelha()) reconstruir();
   // A LISTA SOCIAL TAMBEM MUDA COM O PAINEL ABERTO: o fio de recomenda.c sonda
   // a cada 60 s, e uma recomendacao que chega enquanto a aba esta na tela tem
   // de aparecer. A copia e barata (memcpy de ate 60 registros) e so acontece
@@ -704,7 +733,7 @@ void spainel_atualizar(float dt, Uint32 agora) {
     animFoco[i] = ajustes_animacoes_reduzidas()
       ? a
       : anim_mola(animFoco[i], a, dt,
-                  a > animFoco[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+                  a > animFoco[i] ? NV_MOLA_FOCO : SP_MOLA_DESFOCO);
   }
   // A BOLA DO INTERRUPTOR, na mesma mola do foco (NV_MOLA_FOCO, 95% em 120 ms):
   // as duas coisas acontecem no mesmo OK e tempos diferentes leriam como bug.
@@ -773,6 +802,21 @@ static void restanteTexto(char *dst, size_t tam, const SPLinha *l) {
     snprintf(dst, tam, i18n("%d min restantes"), l->restanteMin);
   else
     snprintf(dst, tam, "%s", i18n("Retomar"));
+}
+
+static void legendasDaBarra(SPLinha *l) {
+  int vistoMin;
+  l->txtRestante[0] = l->txtVisto[0] = 0;
+  if (l->progresso <= 0) return;
+  restanteTexto(l->txtRestante, sizeof l->txtRestante, l);
+  vistoMin = minutosAssistidosAprox(l);
+  if (vistoMin > 0) {
+    char mins[80];
+    snprintf(mins, sizeof mins, i18n("%d min assistidos"), vistoMin);
+    snprintf(l->txtVisto, sizeof l->txtVisto, "≈%s", mins);
+  } else {
+    snprintf(l->txtVisto, sizeof l->txtVisto, i18n("%d%% assistido"), l->progresso);
+  }
 }
 
 
@@ -888,7 +932,13 @@ static void desenhaLinha(int i, float dx, float y, float a) {
     superficieItem(r, 14.0f / r.h, 0.0f, a);
   }
 
-  { GLuint tex = l->poster[0] ? tex_obter(l->poster) : 0;
+  // PELA LARGURA DE DESENHO (92), e nao tex_obter: este decodificava cada
+  // cartaz a 640 de largura (~2,4 MB) para desenha-lo a 92: 121 salvos rolados
+  // pedem ~290 MB a um cache de 300 (o log da C9 de 24/09, com o painel
+  // aberto, mostrava gpu-cache=221 269MB), e cada quadro amostrava texturas
+  // sete vezes maiores que o destino. tex_cache.h: "Prefira esta a tex_obter
+  // em qualquer arte de lista". A Biblioteca ja fazia assim (96).
+  { GLuint tex = l->poster[0] ? tex_obter_larg(l->poster, SP_POSTER_W) : 0;
     if (tex) {
       gfx_tex_aspect_atual = tex_aspecto(l->poster);
       gfx_rect(poster, tex, GFX_CARD, 0.0f, 0.0f, 0.0f, 0.08f, 0, 0, 0, a);
@@ -959,27 +1009,17 @@ static void desenhaLinha(int i, float dx, float y, float a) {
     // e contexto e vai embaixo, em secundario. Antes os dois tinham a mesma
     // cor e o restante ficava em segundo plano.
       { int c2Repouso = 168;
-        int p = l->progresso;
-        int vistoMin = minutosAssistidosAprox(l);
         float labelX = tx + SP_BARRA_W + SP_BARRA_LABEL_GAP;
-        restanteTexto(buf, sizeof buf, l);
-      { TxtLinha repouso = txt_linha_corta(TXT_CAPTION, buf, 235, 235, 235, 255,
+      { TxtLinha repouso = txt_linha_corta(TXT_CAPTION, l->txtRestante, 235, 235, 235, 255,
                                            SP_TEXTO_W - SP_BARRA_W - SP_BARRA_LABEL_GAP);
-        TxtLinha foco = txt_linha_corta(TXT_CAPTION, buf, tintaFoco, tintaFoco,
+        TxtLinha foco = txt_linha_corta(TXT_CAPTION, l->txtRestante, tintaFoco, tintaFoco,
                                         tintaFoco, 255,
                                         SP_TEXTO_W - SP_BARRA_W - SP_BARRA_LABEL_GAP);
         txt_foco_transicao(repouso, foco, labelX,
                            y + 90.0f + (SP_BARRA_H - (float)repouso.h) * 0.5f, v, a); }
-      if (vistoMin > 0) {
-        char mins[96];
-        snprintf(mins, sizeof mins, i18n("%d min assistidos"), vistoMin);
-        snprintf(buf, sizeof buf, "≈%s", mins);
-      } else {
-        snprintf(buf, sizeof buf, i18n("%d%% assistido"), p);
-      }
-      { TxtLinha repouso = txt_linha(TXT_CAPTION2, buf, c2Repouso, c2Repouso + 4,
+      { TxtLinha repouso = txt_linha(TXT_CAPTION2, l->txtVisto, c2Repouso, c2Repouso + 4,
                                      c2Repouso + 14, 255);
-        TxtLinha foco = txt_linha(TXT_CAPTION2, buf, tintaFoco2,
+        TxtLinha foco = txt_linha(TXT_CAPTION2, l->txtVisto, tintaFoco2,
                                   tintaFoco2, tintaFoco2, 255);
         txt_foco_transicao(repouso, foco, tx, y + 108.0f, v, a * 0.95f); } }
   } else {
@@ -1069,7 +1109,7 @@ static void desenhaRecLinha(int linha, int idx, float dx, float y, float a) {
     gfx_cor(barra, SPR_BARRA_W * 0.5f / SP_POSTER_H, ar, ag, ab, a);
   }
 
-  { GLuint tex = r->poster[0] ? tex_obter(r->poster) : 0;
+  { GLuint tex = r->poster[0] ? tex_obter_larg(r->poster, SP_POSTER_W) : 0;
     if (tex) {
       gfx_tex_aspect_atual = tex_aspecto(r->poster);
       gfx_rect(poster, tex, GFX_CARD, 0.0f, 0.0f, 0.0f, 0.08f, 0, 0, 0, a);
@@ -1580,6 +1620,73 @@ static void desenhaVazio(float dx, float a) {
   txt_desenhar_alpha(t2, cx - t2.w * 0.5f, listaTopo() + 278.0f, a * 0.85f);
 }
 
+// 1 = o veu ja esta no fundo (a copia parada foi pintada com ele).
+static int veuNoFundo;
+
+// O veu usa a rampa CRUA e o painel a suavizada, pelo mesmo motivo do menu
+// lateral: a medida da referencia para o escurecimento e uma reta, e um bloco
+// deste tamanho parando de vez no fim do percurso le como corte.
+static void veuInteiro(void) {
+  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, SP_VEU * entrada);
+}
+
+// O FUNDO PARADO. Com o painel inteiro na tela (a entrada terminou), o que
+// esta atras dele — a home escurecida pelo veu — nao muda de um quadro para o
+// outro: nao ha foco la, o trailer do destaque fecha com o painel aberto e a
+// troca de arte do destaque so acontece no desenho da home. Entao ele e pintado
+// UMA vez no FBO do snapshot (gfx_snap), com o veu por cima, e dali em diante o
+// quadro e a copia (uma textura de tela cheia, sem SDF) e o painel.
+//
+// O PORQUE, MEDIDO na C9 do dono (24/09/2026): home sozinha a 60 fps; com o
+// painel aberto 52-54 fps, `clr` de 21-30 ms nos piores quadros (o glClear
+// esperando a GPU terminar o anterior) e fill=4,80x. A home inteira, mais um
+// veu de tela cheia, mais o painel, eram redesenhados a cada quadro para
+// mostrar uma imagem parada a 42 % de brilho — e gfx.c ja registrava que duas
+// camadas de tela cheia derrubam a Mali-G71 para ~40 fps.
+//
+// `podeParar` e de quem chama (app.c: so na home, sem menu, detalhe ou outra
+// camada no meio). `rev` e o que invalida a copia — app.c passa cat_revisao,
+// que sobe quando as fileiras de baixo mudam. Sem FBO, ou com o painel
+// entrando ou saindo, `fundo` e desenhado direto, como sempre foi.
+// A COPIA E REFEITA TRES VEZES NOS PRIMEIROS SEGUNDOS (0,4 s, 1,5 s e 4 s
+// depois da primeira) e depois fica. Arte da home que ainda estava subindo
+// quando o painel abriu — um cartaz, o fundo do destaque logo depois do
+// arranque — ficaria congelada como esqueleto; tres pinturas a mais custam
+// tres quadros no ritmo de antes, e so na abertura.
+static const Uint32 SP_FUNDO_REFAZ_MS[] = { 400, 1500, 4000 };
+void spainel_fundo(int podeParar, unsigned rev, void (*fundo)(void *), void *ctx) {
+  static int pronto, refeitas;
+  static unsigned revPronto;
+  static Uint32 desde;
+  int parado = podeParar && aberto && entrada >= 0.999f && gfx_snap_ok();
+  if (!parado) { pronto = 0; refeitas = 0; }
+  else if (rev != revPronto) pronto = 0;
+  else if (pronto && refeitas < (int)(sizeof SP_FUNDO_REFAZ_MS / sizeof *SP_FUNDO_REFAZ_MS) &&
+           SDL_GetTicks() - desde >= SP_FUNDO_REFAZ_MS[refeitas]) {
+    pronto = 0;
+    refeitas++;
+  }
+  veuNoFundo = parado;
+  if (parado && pronto) { gfx_snap_desenhar(); return; }
+  if (parado) {
+    gfx_snap_comecar();
+    gfx_sem_recorte();
+    glClearColor(NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+  }
+  if (fundo) fundo(ctx);
+  if (parado) {
+    veuInteiro();
+    gfx_sem_recorte();
+    gfx_snap_terminar();
+    gfx_snap_desenhar();
+    if (!refeitas) desde = SDL_GetTicks();
+    pronto = 1;
+    revPronto = rev;
+    fundosPintados++;
+  }
+}
+
 void spainel_desenhar(Uint32 agora) {
   float a = anim_suave(entrada), x, y;
   int i;
@@ -1587,14 +1694,19 @@ void spainel_desenhar(Uint32 agora) {
   (void)agora;
   if (entrada < 0.002f) return;
 
-  // O veu usa a rampa CRUA e o painel a suavizada, pelo mesmo motivo do menu
-  // lateral: a medida da referencia para o escurecimento e uma reta, e um bloco
-  // deste tamanho parando de vez no fim do percurso le como corte.
-  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, SP_VEU * entrada);
-
   // Entra deslizando da BORDA DIREITA. `x` e o deslocamento: em a=0 o painel
   // esta inteiro fora da tela.
   x = (1.0f - a) * (NV_TELA_W - SP_X);
+  // Com o fundo parado o veu ja esta na copia (spainel_fundo).
+  //
+  // O VEU CONTINUA INTEIRO, e nao so em volta do painel. Tentei faixas em volta
+  // (o painel e 94 % opaco, o veu debaixo dele e quase todo desperdicio): a
+  // borda de todo gfx_cor e suavizada em ~0,6 % da ALTURA do retangulo, e numa
+  // faixa de tela inteira isso sao ~6 px de meio-veu colados no contorno do
+  // painel — um fio claro na comparacao pixel a pixel. Com o fundo parado o
+  // veu ja nao custa nada por quadro; o que sobra sao a entrada, a saida e o
+  // painel sobre outras telas.
+  if (!veuNoFundo) veuInteiro();
   // Painel flutuante escuro e neutro; o veu separa a camada do conteudo sem
   // uma luz decorativa colorida competindo com posters e selos.
   { GfxRect p = { SP_X + x, SP_Y, SP_W, SP_H };

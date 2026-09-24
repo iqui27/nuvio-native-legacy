@@ -3,6 +3,8 @@
 #   *_shot / cinematic / director  -> precisam de arte e de GL, nao de logica
 #   webp-tizen                     -> sobe um servidor e NUNCA sai (trava tudo)
 #   tizen-clock                    -> depende do relogio do alvo
+#   salvospainel_perf              -> medida por quadro para comparar arvores;
+#                                     nao passa nem falha (a trava e salvospainel.sh)
 # A EXCECAO DA home.sh SAIU. Ela falhava de proposito em nFileiras == 17 com
 # limite 16 — dezesseis catalogos MAIS uma colecao — esperando a decisao sobre
 # se colecao e fileira fixa gastam o orcamento do limite. A decisao foi que nao
@@ -16,7 +18,7 @@ falhou=0
 for f in tests/*.sh; do
   n=$(basename "$f")
   case "$n" in
-    *_shot.sh|cinematic.sh|director.sh|webp-tizen.sh|tizen-clock.sh) continue;;
+    *_shot.sh|cinematic.sh|director.sh|webp-tizen.sh|tizen-clock.sh|salvospainel_perf.sh) continue;;
   esac
   if bash "$f" >/tmp/nvteste.log 2>&1; then
     echo "ok    $n"
