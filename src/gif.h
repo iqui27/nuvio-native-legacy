@@ -102,4 +102,13 @@ GLuint gif_textura(const char *caminho, int largAlvo);
 // Solta o que estiver preso ao caminho corrente. Chamar quando o foco sai.
 void gif_parar(void);
 
+// A ARTE DA TELA VEM ANTES DO GIF (24/09/2026). O quadro devido (`agora` >=
+// `vence`) so troca se nao ha arte na fila do cache de texturas
+// (`artePendente` = pedidos em rede ou decode) ou se a ultima troca foi ha
+// pelo menos GIF_PASSO_OCUPADO_MS. Com arte chegando o GIF anda a no maximo
+// ~2,5 quadros por segundo, e cada quadro que ele nao pede e um decode a
+// menos disputando os quatro nucleos da TV. Aritmetica pura, testada no Mac.
+#define GIF_PASSO_OCUPADO_MS 400.0
+int gif_pode_trocar(double agora, double vence, double ultimaTroca, int artePendente);
+
 #endif

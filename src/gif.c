@@ -10,6 +10,7 @@
 #include <string.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#include "tex_cache.h"
 #endif
 
 // ---------------------------------------------------------------- estrutura
@@ -100,6 +101,23 @@ static unsigned char *lerTudo(const char *caminho, size_t *n) {
 size_t gif_custo(int quadros, int telaW, int telaH) {
   if (quadros < 1 || telaW < 1 || telaH < 1) return 0;
   return (size_t)quadros * (size_t)telaW * (size_t)telaH * 4u;
+}
+
+// ARTE ANTES DO GIF. Ver gif.h. POR QUE (registros D1 da TV do rawldon,
+// Tizen 6, 2 GB): na tela de perfis o FPS estava em 32-36 e caiu para 21-24
+// assim que os avatares GIF passaram a animar (2565, 1.4.5, 32,6 s a 46,5 s).
+// E a home ja carrega cartazes por tras dessa tela: nas sessoes 1839 (1.4.1),
+// 2512 e 2519 (1.4.4) o GIF animava nos MESMOS segundos em que os primeiros
+// cartazes baixavam e decodificavam (decode de 476 a 1413 ms cada). O Worker
+// do GIF e outro, mas os quatro nucleos sao os mesmos. E o GIF nem entregava
+// o ritmo que pedia: 21 quadros de 50 ms (1,05 s) davam a volta em 2,3 a
+// 3,5 s, e o do relato do rawldon, 198 quadros em 27,6 s — 7 por segundo.
+// Nao esta medido quanto a arte ganha com isto; esta medido que o GIF
+// disputa CPU no momento em que ela carrega.
+int gif_pode_trocar(double agora, double vence, double ultimaTroca, int artePendente) {
+  if (agora < vence) return 0;
+  if (artePendente > 0 && agora - ultimaTroca < GIF_PASSO_OCUPADO_MS) return 0;
+  return 1;
 }
 
 size_t gif_orcamento_para(double memGB) {
@@ -578,6 +596,24 @@ static GifQuadro seq[NV_GIF_MAX_Q];
 static int    nSeq, iSeq;
 static int    telaW, telaH;
 static double proxTroca;          // instante (ms) em que o quadro corrente vence
+static double ultimaTroca;        // instante (ms) da ultima troca de quadro
+static int    avisouFila;         // o log de "GIF cede a arte" ja saiu neste GIF
+
+// Pedidos de arte em rede ou decode (tex_cache.c). So onde a RAM tem teto de
+// GIF (< 4 GB): nas TVs maiores o GIF segue o ritmo proprio, como sempre.
+// Chamado so quando um quadro vence, nao a cada desenho.
+static int artePendente(void) {
+  int pend = 0;
+  if (orcamento() == GIF_SEM_TETO) return 0;
+  tex_estatisticas(NULL, &pend, NULL, NULL, NULL);
+  if (pend > 0 && !avisouFila) {
+    avisouFila = 1;
+    printf("[gif] %d arte(s) na fila: o GIF troca no maximo a cada %.0f ms ate ela esvaziar\n",
+           pend, GIF_PASSO_OCUPADO_MS);
+    fflush(stdout);
+  }
+  return pend;
+}
 // A VOLTA COMPLETA, uma linha de log so. Sem ela o log diz que o fatiamento
 // deu certo e nao diz se o quadro chegou a TROCAR — que e a pergunta do #49, e
 // a que as fotos do aparelho nao respondiam. Uma linha por capa focada.
@@ -635,6 +671,8 @@ static void fatiar(const unsigned char *b, size_t n) {
   free(tmp);
   iSeq = 0;
   proxTroca = 0.0;
+  ultimaTroca = 0.0;
+  avisouFila = 0;
   inicioVolta = 0.0;
   contouVolta = 0;
   printf("[gif] %d quadros %dx%d, primeiro passo %d ms: quem anima e o app\n",
@@ -670,13 +708,15 @@ GLuint gif_textura(const char *caminho, int largAlvo) {
 
   if (nSeq > 1) {
     double agora = emscripten_get_now();
-    if (proxTroca <= 0.0) { proxTroca = agora + seq[iSeq].atraso; inicioVolta = agora; }
-    else if (agora >= proxTroca) {
+    if (proxTroca <= 0.0) { proxTroca = agora + seq[iSeq].atraso; inicioVolta = agora; ultimaTroca = agora; }
+    else if (agora >= proxTroca &&
+             gif_pode_trocar(agora, proxTroca, ultimaTroca, artePendente())) {
       int prox = (iSeq + 1) % nSeq;
       // SO AVANCA PARA UM QUADRO JA DECODIFICADO. Trocar para um <img> que
       // ainda nao chegou seria um piscar; segurar o atual e invisivel.
       if (gif_js_seq_pronto(prox)) {
         iSeq = prox;
+        ultimaTroca = agora;
         // Relogio ancorado no vencimento ANTERIOR, nao em `agora`: chegar
         // 20 ms atrasado num quadro nao empurra todos os seguintes. Se o
         // atraso acumulado passou de um quadro inteiro, realinha.
@@ -758,6 +798,8 @@ void gif_parar(void) {
   nSeq = 0;
   iSeq = 0;
   proxTroca = 0.0;
+  ultimaTroca = 0.0;
+  avisouFila = 0;
   inicioVolta = 0.0;
   contouVolta = 0;
   recusado = 0;
