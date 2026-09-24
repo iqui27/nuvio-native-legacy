@@ -10,6 +10,7 @@
 // e-mail, IP. A identidade e um identificador estavel e um nome de exibicao.
 
 import { rotaXtream } from "./xtream.js";
+import { rotaTrailerImdb, rotaTrailerYoutube } from "./trailer.js";
 
 const DIA = 86400;
 const RETENCAO = 90 * DIA;
@@ -542,6 +543,11 @@ export default {
     // permitido; o cliente manda text/plain, que nem pede preflight.
     if (rota === "/v1/xtream" && (req.method === "POST" || req.method === "GET"))
       return rotaXtream(req, url);
+
+    // TRAILER NA SAMSUNG (#136): a pergunta ao IMDb (que exige Referer) e a
+    // pagina que embute o YouTube com origem valida. Regras em trailer.js.
+    if (rota === "/v1/trailer/imdb" && req.method === "GET") return rotaTrailerImdb(url, fetch, caches.default);
+    if (rota === "/v1/trailer/yt" && req.method === "GET") return rotaTrailerYoutube(url);
 
     // NOTICIAS DE UM TITULO (Agenda, 1.3.11). O RSS de busca do Google News
     // nao manda CORS, e na Samsung (wgt em file://) o fetch morre antes de

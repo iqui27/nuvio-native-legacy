@@ -3,7 +3,8 @@
 // Pedido do dono (22/09/2026): "deixa o toggle no settings de qual o source do
 // trailer". Ajustes › Detalhes › "Fonte do trailer" (AJ_TRAILER_FONTE):
 //   0 Automatico  a ordem de sempre, Apple -> IMDb -> YouTube, pulando o que a
-//                 plataforma nao toca (IMDb so na LG: exige Referer, que o
+//                 plataforma nao toca (IMDb na Samsung so com o servico de
+//                 recomendacoes na build, que faz a pergunta com o Referer que o
 //                 navegador nao deixa por; YouTube so na Samsung: o app nativo
 //                 da LG nao tem onde embutir o player dele);
 //   1 Apple TV, 2 IMDb, 3 YouTube  SO aquela. Sem ela para o titulo (ou sem
@@ -55,6 +56,11 @@ const char *trailerfonte_nome(int qual);
 // video (trailerapple.c, varianteMidia) e trocar para o YouTube so por causa
 // do som punha na tela o player que cai em "Video player configuration error".
 int  trailerfonte_com_som(int tizen);
+
+// 1 quando o IMDb toca na Samsung: a build tem o servico de recomendacoes, por
+// onde passa a pergunta que exige Referer (#136). O definir e para os testes.
+int  trailerfonte_imdb_tizen(void);
+void trailerfonte_definir_imdb_tizen(int sim);
 
 // Atalhos com o ajuste gravado e a plataforma deste build.
 int  trailerfonte_ajuste(void);

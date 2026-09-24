@@ -226,10 +226,12 @@ static const char *trailerFonte(int k, int *qual) {
   if (ci && ci->imdb[0]) {
     c.apple = trailerapple_url(ci->imdb);
     c.appleRespondeu = trailerapple_respondeu(ci->imdb);
-#ifndef __EMSCRIPTEN__
-    c.imdb = trailerimdb_url(ci->imdb, NULL);
-    c.imdbRespondeu = trailerimdb_respondeu(ci->imdb);
-#endif
+    // IMDb tambem na Samsung quando a build tem por onde perguntar (#136):
+    // MP4 direto no <video> do app, antes do iframe do YouTube.
+    if (!tz || trailerfonte_imdb_tizen()) {
+      c.imdb = trailerimdb_url(ci->imdb, NULL);
+      c.imdbRespondeu = trailerimdb_respondeu(ci->imdb);
+    } else c.imdbRespondeu = 1;
   } else c.appleRespondeu = c.imdbRespondeu = 1;   // sem id nao ha o que esperar
 #ifdef __EMSCRIPTEN__
   if (k >= 0 && k < extras_n_trailers() && extras_trailer_yt(k)[0]) c.youtube = extras_trailer_yt(k);
@@ -244,12 +246,27 @@ static const char *trailerFonte(int k, int *qual) {
     trailerSemFonteLogado = 1;
     printf("[trailer] detalhe: sem trailer (ajuste %d, apple %s, imdb %s, youtube %s)\n", aj,
            c.apple ? "tem" : c.appleRespondeu ? "sem" : "?",
-           tz ? "n/a" : c.imdb ? "tem" : c.imdbRespondeu ? "sem" : "?",
+           tz && !trailerfonte_imdb_tizen() ? "n/a" : c.imdb ? "tem" : c.imdbRespondeu ? "sem" : "?",
            !tz ? "n/a" : c.youtube ? "tem" : "sem");
     fflush(stdout);
   }
   return NULL;
 }
+// A URL que a fonte `qual` tem para o titulo agora, ou NULL. E o degrau
+// seguinte do prazo do fundo (detail_atualizar): la a ordem ja foi decidida,
+// so falta saber se aquela fonte tem o que tocar.
+#ifdef __EMSCRIPTEN__
+static const char *trailerUrlDaFonte(int qual) {
+  const CatItem *ci = cat_item(idx);
+  switch (qual) {
+    case TRF_APPLE: return ci && ci->imdb[0] ? trailerapple_url(ci->imdb) : NULL;
+    case TRF_IMDB:  return ci && ci->imdb[0] && trailerfonte_imdb_tizen() ? trailerimdb_url(ci->imdb, NULL) : NULL;
+    case TRF_YOUTUBE:
+      return extras_n_trailers() > 0 && extras_trailer_yt(0)[0] ? extras_trailer_yt(0) : NULL;
+    default: return NULL;
+  }
+}
+#endif
 static int temporada = 0;            // temporada ESCOLHIDA (nao a focada)
 // Repouso do foco sobre a fileira de temporadas, para trocar de temporada ao
 // PARAR numa pilula em vez de a cada pilula por que se passa.
@@ -930,13 +947,12 @@ void detail_abrir(const HomeItem *it) {
     extrasSerie = ehSerie();
     extras_pedir(ci ? ci->imdb : "", extrasSerie, ci ? ci->tmdb : 0);
     // Pedir agora e o que deixa o trailer pronto quando a pagina assentar.
-    // Apple nos dois alvos; IMDb so na LG (exige Referer, que o navegador
-    // nao deixa por, e o CORS dele so aceita imdb.com).
+    // Apple nos dois alvos; IMDb na LG e, na Samsung, so pelo servico de
+    // recomendacoes (a API exige Referer, que o navegador nao deixa por, e o
+    // CORS dela so aceita imdb.com — #136).
     if (trailer_suportado() && ci && ci->imdb[0]) {
       trailerapple_pedir(ci->imdb, ci->titulo, ci->meta, ehSerie());
-#ifndef __EMSCRIPTEN__
-      trailerimdb_pedir(ci->imdb);
-#endif
+      if (!trailerfonte_tizen() || trailerfonte_imdb_tizen()) trailerimdb_pedir(ci->imdb);
     }
   }
   // A aba marcada tem de ser a da temporada de "Continuar assistindo", nao a
@@ -1741,7 +1757,22 @@ void detail_evento(const SDL_Event *e) {
         GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
         trailerEtapa = 0; trailerPrazo = 0;   // tela cheia: so o teclado fecha
         trailer_abrir(u, tela, trailerfonte_com_som(trailerfonte_tizen()), 1);
-      } else extras_trailer_abrir(foco.coluna);
+      }
+#ifdef __EMSCRIPTEN__
+      // SAMSUNG: NUNCA o navegador (#136). O window.open do wgt trocava a
+      // pagina do proprio app pelo youtube.com/watch — tocava, mas sem Voltar
+      // para o Nuvio. Sem fonte na ordem do ajuste (ex.: "IMDb" fixo e o
+      // titulo sem IMDb), o cartao focado ainda e um video do YouTube: toca
+      // AQUI, em tela cheia, e o Voltar fecha (trailer_evento).
+      else if (trailer_suportado() && foco.coluna < extras_n_trailers() &&
+               extras_trailer_yt(foco.coluna)[0]) {
+        GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+        trailerEtapa = 0; trailerPrazo = 0;
+        trailer_abrir(extras_trailer_yt(foco.coluna), tela, 0, 1);
+      }
+#else
+      else extras_trailer_abrir(foco.coluna);
+#endif
     } else if (foco.fileira == SEC_ESTUDIOS) {
       // OK num logo abre o browse daquela produtora/rede no vertudo — e a
       // mesma pasta sintetica TMDB que as colecoes usam (issue #44), montada
@@ -2073,28 +2104,33 @@ void detail_atualizar(float dt, Uint32 agora) {
     // O PRAZO. Tocou: o prazo morre (buffering depois de `playing` nao e
     // falha). Nao tocou a tempo, ou o elemento deu erro (trailer_atualizar
     // ja fechou e marcou trailer_falhou): loga e passa para a PROXIMA fonte da
-    // ordem do ajuste, uma vez — em Automatico, Apple -> YouTube; com uma fonte
-    // fixa nao ha proxima e fica a arte. Tela cheia nao entra aqui.
-    // trailerEtapa: 0 nada, TRF_APPLE/TRF_YOUTUBE a fonte aberta, -1 acabou.
+    // ordem do ajuste que tem trailer — em Automatico, Apple -> IMDb ->
+    // YouTube (o erro 153 do embed chega como -3 e anda na hora, #136); com
+    // uma fonte fixa nao ha proxima e fica a arte. Tela cheia nao entra aqui.
+    // trailerEtapa: 0 nada, TRF_* a fonte aberta, -1 acabou.
     if (trailerEtapa > 0) {
       int venceu = trailer_aberto() && !trailer_cheia() && !trailer_tocando() &&
                    trailerPrazo && (Sint32)(agora - trailerPrazo) >= 0;
       int errou = !trailer_aberto() && trailer_falhou();
       if (trailer_aberto() && trailer_tocando()) trailerPrazo = 0;
       if ((venceu || errou) && topo) {
+        // A PROXIMA DA ORDEM QUE TEM TRAILER: Apple -> IMDb -> YouTube na
+        // Samsung (#136). Uma fonte da ordem sem trailer para o titulo e
+        // pulada, nao encerra a fila.
         int prox = trailerfonte_depois(trailerfonte_ajuste(), trailerfonte_tizen(), trailerEtapa);
-        const char *yt = extras_n_trailers() > 0 ? extras_trailer_yt(0) : "";
-        const char *seg = prox == TRF_YOUTUBE && yt[0] ? yt : NULL;
-        printf("[trailer] detalhe: %s %d ms (%s, estado %d), %s\n",
+        const char *seg = NULL;
+        while (prox && !(seg = trailerUrlDaFonte(prox)))
+          prox = trailerfonte_depois(trailerfonte_ajuste(), trailerfonte_tizen(), prox);
+        printf("[trailer] detalhe: %s %d ms (%s, estado %d), %s%s\n",
                errou ? "erro em" : "sem playing em", NV_TRAILER_PREPARA_MS,
                trailerfonte_nome(trailerEtapa), trailer_estado(),
-               seg ? "tenta YouTube" : prox ? "proxima fonte sem trailer, fica a arte" : "fica a arte");
+               seg ? "tenta " : "fica a arte", seg ? trailerfonte_nome(prox) : "");
         fflush(stdout);
         if (trailer_aberto()) trailer_fechar();
         if (seg) {
           GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
           trailer_abrir(seg, tela, 0, 0);
-          trailerEtapa = TRF_YOUTUBE;
+          trailerEtapa = prox;
           trailerPrazo = agora + NV_TRAILER_PREPARA_MS;
         } else { trailerEtapa = -1; trailerPrazo = 0; }
       } else if (!trailer_aberto() && !errou) {

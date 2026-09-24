@@ -24,6 +24,7 @@ static int lastSom = -1;
 static int appleReady;
 static int appleOpenFails;
 static int youtubeReady;
+static int imdbReady, imdbAnswered;
 static int opened;
 static int playing;
 static int openedCount;
@@ -73,6 +74,15 @@ const char *trailerapple_url(const char *imdb) {
 }
 int trailerapple_respondeu(const char *imdb) { (void)imdb; return appleReady; }
 
+// IMDb (#136): na Samsung ele existe quando a build tem o servico de
+// recomendacoes; aqui trailerfonte_definir_imdb_tizen decide.
+void trailerimdb_pedir(const char *imdb) { (void)imdb; }
+const char *trailerimdb_url(const char *imdb, const char **nome) {
+  (void)imdb; if (nome) *nome = "Trailer";
+  return imdbReady ? "https://media.test/imdb.mp4" : NULL;
+}
+int trailerimdb_respondeu(const char *imdb) { (void)imdb; return imdbReady || imdbAnswered; }
+
 void extras_hero_trailer_pedir(const char *imdb, int serie, long tmdbId) {
   (void)imdb; (void)serie; (void)tmdbId;
 }
@@ -115,6 +125,8 @@ static void resetState(const char *id) {
   appleReady = 0;
   appleOpenFails = 0;
   youtubeReady = 0;
+  imdbReady = 0; imdbAnswered = 1;
+  trailerfonte_definir_imdb_tizen(1);
   opened = 0;
   playing = 0;
   openedCount = 0;
@@ -126,39 +138,42 @@ int main(void) {
   const Uint32 start = 100;
   int rc = 0;
 
-  // Apple is ready and opens, but fails before playback. The next source is
-  // YouTube and it is attempted exactly once.
+  // Apple is ready and opens, but fails before playback. The next source on
+  // Samsung is IMDb (#136) and it is attempted exactly once. YouTube, even
+  // with an id in hand, never opens in the hero: its iframe costs ~1 s of main
+  // thread on the AU7000 and then fails with error 153.
   resetState("tt0000001");
   youtubeReady = 1;
+  imdbReady = 1;
   appleReady = 1;
   appleOpenFails = 1;
   home_trailer_passo(1, 0.016f, start);
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
   rc |= check("Apple abre somente depois da janela", openedCount == 1 && strstr(lastSource, "apple"));
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS + 1);
-  rc |= check("falha Apple libera YouTube", opened && !strcmp(lastSource, "dQw4w9WgXcQ"));
+  rc |= check("falha Apple libera IMDb", opened && strstr(lastSource, "imdb"));
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS + 2);
-  rc |= check("falha Apple nao repete YouTube", openedCount == 2);
+  rc |= check("falha Apple nao repete IMDb", openedCount == 2);
 
   // A source which never reaches playing gets its own preparation window.
-  // The fallback receives a fresh window too; it must stay open until that
-  // second deadline instead of inheriting Apple's already-spent time.
+  // The fallback receives a fresh window too.
   resetState("tt0000002");
   youtubeReady = 1;
+  imdbReady = 1;
   appleReady = 1;
   home_trailer_passo(1, 0.016f, start);
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
   const Uint32 appleDeadline = start + NV_TRAILER_HERO_ESPERA_MS + NV_TRAILER_HERO_PREPARA_MS;
-  const Uint32 youtubeDeadline = appleDeadline + NV_TRAILER_HERO_PREPARA_MS;
+  const Uint32 nextDeadline = appleDeadline + NV_TRAILER_HERO_PREPARA_MS;
   home_trailer_passo(1, 0.016f, appleDeadline - 1);
   rc |= check("Apple ainda prepara antes do prazo proprio", opened && strstr(lastSource, "apple"));
   home_trailer_passo(1, 0.016f, appleDeadline);
-  rc |= check("timeout Apple abre YouTube com prazo novo", opened && !strcmp(lastSource, "dQw4w9WgXcQ"));
+  rc |= check("timeout Apple abre IMDb com prazo novo", opened && strstr(lastSource, "imdb"));
   home_trailer_passo(1, 0.016f, appleDeadline + 1);
-  rc |= check("YouTube permanece aberto durante a janela nova", opened && !strcmp(lastSource, "dQw4w9WgXcQ"));
-  home_trailer_passo(1, 0.016f, youtubeDeadline);
-  rc |= check("timeout YouTube encerra fonte e libera hero", !opened && heroTrailerFonte == 3 &&
-              !heroTrailerSegurando(youtubeDeadline));
+  rc |= check("IMDb permanece aberto durante a janela nova", opened && strstr(lastSource, "imdb"));
+  home_trailer_passo(1, 0.016f, nextDeadline);
+  rc |= check("timeout IMDb encerra fonte e libera hero (sem YouTube)", !opened && heroTrailerFonte == 3 &&
+              openedCount == 2 && !heroTrailerSegurando(nextDeadline));
 
   // A source resolved at 3199 ms still gets a complete preparation window;
   // the resolution budget is not reused as its playback deadline.
@@ -178,19 +193,27 @@ int main(void) {
   rc |= check("OFF durante playback reseta trailer e fade", !opened && heroTrailerItem < 0 && heroTrailerFade == 0.0f);
   rc |= check("OFF libera rotacao", !heroTrailerSegurando(start + NV_TRAILER_HERO_MAX_ESPERA_MS + 1));
 
-  // Apple ainda sem resposta e um id do YouTube ja em maos: o hero espera a
-  // Apple a janela inteira em vez de abrir o YouTube aos 1,2 s (o embed falha
-  // na TV; a Apple costuma responder logo depois). So no fim da janela, sem
-  // Apple, o YouTube entra.
+  // Apple ainda sem resposta e o IMDb ja em maos: o hero espera a Apple a
+  // janela inteira; so no fim dela, sem Apple, o IMDb entra.
   resetState("tt0000002c");
+  imdbReady = 1;
   youtubeReady = 1;
   home_trailer_passo(1, 0.016f, start);
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
-  rc |= check("YouTube nao atropela a Apple sem resposta", !opened && openedCount == 0);
+  rc |= check("IMDb nao atropela a Apple sem resposta", !opened && openedCount == 0);
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_MAX_ESPERA_MS);
-  rc |= check("sem Apple no fim da janela, YouTube entra", opened && !strcmp(lastSource, "dQw4w9WgXcQ"));
+  rc |= check("sem Apple no fim da janela, IMDb entra", opened && strstr(lastSource, "imdb"));
 
-  // Without Apple or YouTube, the source wait is finite and the helper stops
+  // So o YouTube tem trailer: no hero da Samsung, nada abre (fica a arte).
+  resetState("tt0000002d");
+  youtubeReady = 1;
+  appleReady = 0;
+  home_trailer_passo(1, 0.016f, start);
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_MAX_ESPERA_MS);
+  rc |= check("hero da Samsung nunca abre o iframe do YouTube", openedCount == 0 && heroTrailerTentado &&
+              !heroTrailerSegurando(start + NV_TRAILER_HERO_MAX_ESPERA_MS));
+
+  // Without any source, the source wait is finite and the helper stops
   // holding the hero at the exact configured budget.
   resetState("tt0000003");
   home_trailer_passo(1, 0.016f, start);
@@ -206,47 +229,60 @@ int main(void) {
   rc |= check("troca de identidade reseta fade", heroTrailerFade == 0.0f);
 
   // --- "Fonte do trailer" no hero da Samsung (este binario e -D__EMSCRIPTEN__).
-  // Apple fixa: erro da Apple NAO cai no YouTube, mesmo com id em maos.
+  // Apple fixa: erro da Apple NAO cai em outra fonte.
   resetState("tt0000010");
   fonteSetting = TRF_APPLE;
   youtubeReady = 1;
+  imdbReady = 1;
   appleReady = 1;
   appleOpenFails = 1;
   home_trailer_passo(1, 0.016f, start);
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS + 1);
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS + 2);
-  rc |= check("Apple fixa: erro fica a arte, sem YouTube", openedCount == 1 && !opened &&
+  rc |= check("Apple fixa: erro fica a arte, sem outra fonte", openedCount == 1 && !opened &&
               heroTrailerFonte == 3 && strstr(lastSource, "apple"));
 
-  // YouTube fixo: abre o YouTube na janela, sem esperar nem abrir a Apple.
+  // YouTube fixo: o hero da Samsung nao abre o iframe; fica a arte, com
+  // prazo finito (a pagina do titulo ainda toca o YouTube).
   resetState("tt0000011");
   fonteSetting = TRF_YOUTUBE;
   youtubeReady = 1;
   appleReady = 1;
   home_trailer_passo(1, 0.016f, start);
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
-  rc |= check("YouTube fixo: so YouTube, Apple ignorada", openedCount == 1 && opened &&
-              !strcmp(lastSource, "dQw4w9WgXcQ"));
-  rc |= check("hero da Samsung abre mudo", lastSom == 0);
-
-  // IMDb fixo na Samsung: o IMDb nao toca nesta TV -> nada, com prazo finito.
-  resetState("tt0000012");
-  fonteSetting = TRF_IMDB;
-  youtubeReady = 1;
-  appleReady = 1;
-  home_trailer_passo(1, 0.016f, start);
-  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
-  rc |= check("IMDb fixo na Samsung: nada abre", openedCount == 0 && heroTrailerTentado &&
+  rc |= check("YouTube fixo: hero nao abre nada", openedCount == 0 && heroTrailerTentado &&
               !heroTrailerSegurando(start + NV_TRAILER_HERO_ESPERA_MS));
 
-  // Automatico mantem a ordem: com as duas prontas, a Apple.
-  resetState("tt0000013");
-  youtubeReady = 1;
+  // IMDb fixo com o servico: so IMDb, mudo, sem esperar a Apple.
+  resetState("tt0000012");
+  fonteSetting = TRF_IMDB;
+  imdbReady = 1;
   appleReady = 1;
   home_trailer_passo(1, 0.016f, start);
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
-  rc |= check("Automatico: Apple antes do YouTube", openedCount == 1 && strstr(lastSource, "apple"));
+  rc |= check("IMDb fixo com servico: so IMDb", openedCount == 1 && opened && strstr(lastSource, "imdb"));
+  rc |= check("hero da Samsung abre mudo", lastSom == 0);
+
+  // IMDb fixo SEM o servico na build: nada, com prazo finito.
+  resetState("tt0000012b");
+  trailerfonte_definir_imdb_tizen(0);
+  fonteSetting = TRF_IMDB;
+  imdbReady = 1;
+  appleReady = 1;
+  home_trailer_passo(1, 0.016f, start);
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
+  rc |= check("IMDb fixo sem servico: nada abre", openedCount == 0 && heroTrailerTentado &&
+              !heroTrailerSegurando(start + NV_TRAILER_HERO_ESPERA_MS));
+
+  // Automatico mantem a ordem: com todas prontas, a Apple.
+  resetState("tt0000013");
+  youtubeReady = 1;
+  imdbReady = 1;
+  appleReady = 1;
+  home_trailer_passo(1, 0.016f, start);
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
+  rc |= check("Automatico: Apple primeiro", openedCount == 1 && strstr(lastSource, "apple"));
 
   puts(rc ? "home-trailer-timer: FALHOU" : "home-trailer-timer: tudo ok");
   return rc ? 1 : 0;

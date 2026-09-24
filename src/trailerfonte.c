@@ -2,14 +2,23 @@
 #include "ajustes.h"
 #include <stddef.h>
 
-// Onde cada fonte toca. IMDb: o MP4 exige Referer imdb.com, e o CORS dele so
-// aceita imdb.com — no <video> da Samsung nem chega a pedir. YouTube: so ha
-// player embutido onde ha pagina (Samsung); na LG o botao abre o navegador do
-// webOS (extras_trailer_abrir), que nao e trailer "no app".
+// Onde cada fonte toca. IMDb: a PERGUNTA a API deles exige Referer imdb.com
+// (403 sem ele) e nao manda CORS para um wgt — na Samsung ela passa pelo
+// servico de recomendacoes (/v1/trailer/imdb, #136); o MP4 que volta toca no
+// <video> sem Referer. Sem esse servico na build, o IMDb nao existe la.
+// YouTube: so ha player embutido onde ha pagina (Samsung); na LG o botao abre
+// o navegador do webOS (extras_trailer_abrir), que nao e trailer "no app".
+#ifndef NV_REC_URL
+#define NV_REC_URL ""
+#endif
+static int imdbTizen = -1;   // -1: o que a build diz (NV_REC_URL)
+void trailerfonte_definir_imdb_tizen(int sim) { imdbTizen = sim ? 1 : 0; }
+int  trailerfonte_imdb_tizen(void) { return imdbTizen >= 0 ? imdbTizen : NV_REC_URL[0] != 0; }
+
 static int existe(int fonte, int tizen) {
   switch (fonte) {
     case TRF_APPLE:   return 1;
-    case TRF_IMDB:    return !tizen;
+    case TRF_IMDB:    return !tizen || trailerfonte_imdb_tizen();
     case TRF_YOUTUBE: return tizen;
     default:          return 0;
   }
@@ -17,8 +26,9 @@ static int existe(int fonte, int tizen) {
 
 int trailerfonte_ordem(int ajuste, int tizen, int ordem[3]) {
   // A ordem de hoje, e por que: Apple e HLS matted ate 4K, sem tarja; IMDb e
-  // MP4 16:9 com a tarja embutida; YouTube na Samsung e o embed que falha na
-  // AU7000 (#82/#86). Melhor imagem primeiro, o que mais falha por ultimo.
+  // MP4 16:9 com a tarja embutida, no <video> do app; YouTube na Samsung e o
+  // embed que falha na AU7000 (#82/#86/#136). Melhor imagem primeiro, o que
+  // mais falha por ultimo — e tudo DENTRO do app antes do iframe de terceiro.
   static const int AUTO[3] = { TRF_APPLE, TRF_IMDB, TRF_YOUTUBE };
   int i, n = 0;
   if (ajuste == TRF_APPLE || ajuste == TRF_IMDB || ajuste == TRF_YOUTUBE) {

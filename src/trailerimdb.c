@@ -11,6 +11,10 @@
 #include <time.h>
 #include <sys/stat.h>
 
+#ifndef NV_REC_URL
+#define NV_REC_URL ""
+#endif
+
 #define TR_MAX 32
 // Ate quatro definicoes por titulo (o IMDb serve 1080p, 720p, 480p e SD);
 // quem le escolhe pelo teto dos Ajustes.
@@ -151,7 +155,18 @@ static void *buscar(void *arg) {
   snprintf(consulta, sizeof consulta,
     "https://api.graphql.imdb.com/?query=%%7Btitle%%28id%%3A%%22%s%%22%%29%%7BprimaryVideos%%28first%%3A1%%29%%7Bedges%%7Bnode%%7Bname%%7Bvalue%%7DplaybackURLs%%7Burl%%20videoMimeType%%20videoDefinition%%7D%%7D%%7D%%7D%%7D%%7D",
     imdb);
+#ifdef __EMSCRIPTEN__
+  // SAMSUNG (#136): o navegador nao deixa por o Referer e a API nao manda
+  // CORS a um wgt — a mesma consulta vai pelo servico de recomendacoes, que
+  // devolve a resposta crua. Sem ele na build nao ha por onde (e
+  // trailerfonte_imdb_tizen ja tirou o IMDb da ordem).
+  (void)cabs;
+  if (NV_REC_URL[0]) snprintf(consulta, sizeof consulta, "%s/v1/trailer/imdb?id=%s", NV_REC_URL, imdb);
+  else consulta[0] = 0;
+  corpo = consulta[0] ? rede_baixar(consulta, 15) : NULL;
+#else
   corpo = rede_baixar_com(consulta, 15, cabs);
+#endif
   memset(&lida, 0, sizeof lida);
   snprintf(lida.nome, sizeof lida.nome, "Trailer");
   { int alt = corpo ? escolher(corpo, &lida) : 0;

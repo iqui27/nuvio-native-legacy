@@ -1686,17 +1686,21 @@ int extras_hero_trailer_obter(const char *imdb, char *dst, unsigned cap) {
 
 // Abre o trailer no app nativo da plataforma. O app nao tem reprodutor de
 // YouTube embutido; em vez de prometer e nao cumprir, entrega o video ao
-// componente que cada plataforma ja tem: o navegador do webOS (via luna-send),
-// a aba do Tizen (window.open) ou o browser do desktop (open).
+// componente que cada plataforma ja tem: o navegador do webOS (via luna-send)
+// ou o browser do desktop (open). Na Samsung, nada (ver abaixo).
 void extras_trailer_abrir(int i) {
   const char *yt = extras_trailer_yt(i);
   if (!yt[0]) return;
   char url[128];
   snprintf(url, sizeof url, "https://www.youtube.com/watch?v=%s", yt);
 #if defined(__EMSCRIPTEN__)
-  char js[200];
-  snprintf(js, sizeof js, "window.open('%s','_blank')", url);
-  emscripten_run_script(js);
+  // SAMSUNG: NAO abre mais nada (#136). No wgt o window.open trocava a
+  // propria pagina do app pelo youtube.com/watch — o video tocava, mas o
+  // Voltar nao tinha mais o Nuvio para onde voltar. O trailer da Samsung
+  // toca dentro do app (detail.c, SEC_TRAILERS); chegar aqui e defeito de
+  // quem chamou, e fica no registro.
+  printf("[trailer] extras_trailer_abrir na Samsung ignorado (%s)\n", url);
+  fflush(stdout);
 #elif defined(__APPLE__)
   char cmd[160];
   snprintf(cmd, sizeof cmd, "open '%s'", url);

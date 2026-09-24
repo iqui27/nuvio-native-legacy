@@ -2973,11 +2973,9 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
                               ci->tipo[0] ? !strcmp(ci->tipo, "series") : 0,
                               ci->tmdb);
 #endif
-#ifndef __EMSCRIPTEN__
     // O IMDb exige Referer, que navegador nenhum deixa por (e o CORS dele so
-    // aceita imdb.com): na Samsung nem pedir.
-    trailerimdb_pedir(ci->imdb);
-#endif
+    // aceita imdb.com): na Samsung so pelo servico de recomendacoes (#136).
+    if (!trailerfonte_tizen() || trailerfonte_imdb_tizen()) trailerimdb_pedir(ci->imdb);
   } else {
     decorrido = agora - heroTrailerDesde;
 #ifdef __EMSCRIPTEN__
@@ -3051,13 +3049,24 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
     c.apple = trailerapple_url(ci->imdb);
     c.appleRespondeu = trailerapple_respondeu(ci->imdb) || venceu;
     c.appleFalhou = heroTrailerAppleFalhou;
+    if (!trailerfonte_tizen() || trailerfonte_imdb_tizen()) {
+      c.imdb = trailerimdb_url(ci->imdb, NULL);
+      c.imdbRespondeu = trailerimdb_respondeu(ci->imdb) || venceu;
+    } else c.imdbRespondeu = 1;
 #ifdef __EMSCRIPTEN__
-    c.youtube = heroTrailerYoutube(ci->imdb);
+    // SEM YOUTUBE NO DESTAQUE DA SAMSUNG (#136). O iframe do embed custa
+    // segundos de fio principal nesta TV — registro da AU7000: raf-max=1034
+    // ms, longtask-max=934 ms atribuido ao iframe, FPS=6.7 — e depois cai no
+    // erro 153 ("Video player configuration error") e o hero fecha sem
+    // `playing` aos 6,5 s. O destaque troca a cada seta: e o pior lugar para
+    // ele. Aqui so <video> (Apple, IMDb); o YouTube fica na pagina do titulo.
+    // A lista do TMDB ainda e pedida (heroTrailerYoutube), mas nao abre.
+    (void)heroTrailerYoutube;
+    c.youtube = NULL;
+    c.youtubeRespondeu = 1;
 #else
-    c.imdb = trailerimdb_url(ci->imdb, NULL);
-    c.imdbRespondeu = trailerimdb_respondeu(ci->imdb) || venceu;
-#endif
     c.youtubeRespondeu = venceu;
+#endif
     d = trailerfonte_escolher(trailerfonte_ajuste(), trailerfonte_tizen(), &c, &u, &qual);
     if (d == TRF_ESPERA && !venceu) goto trailer_hero_fim;
     if (d == TRF_ABRE && u) {
