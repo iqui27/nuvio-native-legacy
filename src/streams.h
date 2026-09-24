@@ -180,6 +180,14 @@ int  stream_canal_classe_escolhida(void);
 // --- folha de fontes (a lista que sobe por cima do player/detalhe) ---
 void stream_folha_abrir(void);
 int  stream_folha_aberta(void);
+// QUANTAS LINHAS A FOLHA MOSTRA AGORA — issue #132 ("so 1 fonte listada"). A
+// folha lista a lista INTEIRA de stream_definir_lista; so os filtros que a
+// pessoa liga NA PROPRIA FOLHA (provedor, "MP4") tiram linha. A verificacao do
+// automatico, "Fonte automatica" (Melhor/Primeira da lista), as candidatas que
+// falharam (stream_automatico_excluir) e a fonte fora de cache NAO escondem
+// nada. tests/fontes_lista.sh prende isso; abrir a folha escreve a contagem no
+// log ("[fonte] folha: N de M na lista"), para o proximo relato dizer onde caiu.
+int  stream_folha_n(void);
 void stream_folha_evento(const SDL_Event *e);
 void stream_folha_atualizar(float dt, Uint32 agora);
 void stream_folha_desenhar(Uint32 agora);
