@@ -63,6 +63,8 @@
 //      ao topo empurra o cabecalho para fora da tela na primeira descida.
 #include "biblioteca.h"
 #include "contalib.h"
+#include "salvos.h"
+#include "artemetahub.h"
 #include "extras.h"
 #include "detail.h"
 #include "badges.h"
@@ -249,7 +251,10 @@ static int  acaoSel = 0;
 static char recado[160];         // resposta de uma acao ("Fixada", o porque do nao)
 static float recadoAte;
 
-static int filtro[CAT_MAX];      // indices do catalogo visiveis
+// Indices visiveis. >= 0 e indice do CATALOGO; < 0 e um titulo da lista LOCAL
+// de salvos que nao esta no catalogo agora, codificado como -(indice + 1) em
+// salvos_item(). Ver itemFiltro.
+static int filtro[CAT_MAX + SALVOS_MAX];
 static int nFiltro = 0;
 static int totalModo = 0;
 static Foco foco;
@@ -409,6 +414,41 @@ static void remapear(int preservar) {
   memset(animFoco, 0, sizeof animFoco); memset(revArte, 0, sizeof revArte);
 }
 
+// O item de uma posicao de `filtro`. Salvo local fora do catalogo vira um
+// CatItem montado em `tmp` com o que a lista local guardou (titulo, poster,
+// meta), do mesmo jeito que o item de uma lista aberta (lst_item).
+static const CatItem *itemFiltro(int v, CatItem *tmp) {
+  const SalvoItem *s;
+  if (v >= 0) return cat_item(v);
+  s = salvos_item(-v - 1);
+  if (!s || !tmp) return NULL;
+  memset(tmp, 0, sizeof *tmp);
+  snprintf(tmp->imdb, sizeof tmp->imdb, "%s", s->id);
+  snprintf(tmp->tipo, sizeof tmp->tipo, "%s", s->tipo);
+  snprintf(tmp->titulo, sizeof tmp->titulo, "%s", s->titulo);
+  snprintf(tmp->poster, sizeof tmp->poster, "%s", s->poster);
+  snprintf(tmp->meta, sizeof tmp->meta, "%s", s->meta);
+  tmp->nota = s->nota;
+  tmp->naLista = 1;
+  arte_metahub_preencher(tmp);
+  return tmp;
+}
+// So as chaves de ordenacao, SEM montar CatItem: a ordenacao compara O(n^2)
+// vezes e montar 15 KB por comparacao custaria gigabytes de memset.
+static const char *tituloFiltro(int v) {
+  const CatItem *c; const SalvoItem *s;
+  if (v >= 0) { c = cat_item(v); return c ? c->titulo : ""; }
+  s = salvos_item(-v - 1); return s ? s->titulo : "";
+}
+static const char *metaFiltro(int v) {
+  const CatItem *c; const SalvoItem *s;
+  if (v >= 0) { c = cat_item(v); return c ? c->meta : ""; }
+  s = salvos_item(-v - 1); return s ? s->meta : "";
+}
+static int ehSerieSalvo(const SalvoItem *s) {
+  return s && !strcmp(s->tipo, "series");
+}
+
 // Refaz a lista visivel de TITULOS (modos Salvos e Coleção).
 static void reconstruir(void) {
   int n = cat_n();
@@ -441,17 +481,35 @@ static void reconstruir(void) {
     if (ajustes_ocultar_nao_lancados() && !ci->meta[0]) continue;
     filtro[nFiltro++] = i;
   }
+  // OS SALVOS LOCAIS QUE O CATALOGO NAO TEM. salvos_aplicar_catalogo so MARCA
+  // quem esta no catalogo, de proposito (nao infla o catalogo com 15 KB por
+  // titulo); mas era por isso que o titulo salvo NESTA TV sumia da Biblioteca
+  // assim que a descoberta republicava o catalogo sem ele — "o que eu adiciono
+  // agora nao aparece" (issue do Owlphibia29). O painel de Salvos ja desenhava
+  // da lista local; a Biblioteca agora tambem. Os mais novos primeiro: a lista
+  // local e na ordem de insercao, e quem acabou de salvar procura o que salvou.
+  if (modo == MODO_SALVOS) {
+    for (int k = salvos_n() - 1; k >= 0 && nFiltro < (int)(sizeof filtro / sizeof filtro[0]); k--) {
+      const SalvoItem *s = salvos_item(k);
+      if (!s || !s->id[0] || cat_indice_por_imdb(s->id) >= 0) continue;
+      totalModo++;
+      if (tipo == TIPO_FILME && ehSerieSalvo(s)) continue;
+      if (tipo == TIPO_SERIE && !ehSerieSalvo(s)) continue;
+      if (ajustes_ocultar_nao_lancados() && !s->meta[0]) continue;
+      filtro[nFiltro++] = -k - 1;
+    }
+  }
 
   // Ordenacao por insercao — sao poucas dezenas de itens, uma vez por troca.
   if (ordem != ORD_ADICIONADOS) {
     for (int i = 1; i < nFiltro; i++) {
       int v = filtro[i], j = i - 1;
       while (j >= 0) {
-        const CatItem *a = cat_item(filtro[j]), *b = cat_item(v);
         int maior;
-        if (ordem == ORD_TITULO) maior = a && b && strcmp(a->titulo, b->titulo) > 0;
+        if (ordem == ORD_TITULO)
+          maior = strcmp(tituloFiltro(filtro[j]), tituloFiltro(v)) > 0;
         else /* ORD_ANO, decrescente */
-          maior = a && b && strcmp(a->meta, b->meta) < 0;
+          maior = strcmp(metaFiltro(filtro[j]), metaFiltro(v)) < 0;
         if (!maior) break;
         filtro[j + 1] = filtro[j]; j--;
       }
@@ -698,7 +756,16 @@ void biblioteca_evento(const SDL_Event *e) {
     int i = (foco.fileira - BIB_FIL_GRADE) * colunas() + foco.coluna;
     if (i < 0 || i >= nCelulas) return;
     if (estado() == EST_LISTAS) abrirLista(i);
-    else                        pedido = filtro[i];
+    else if (filtro[i] >= 0)    pedido = filtro[i];
+    else {
+      // Salvo local fora do catalogo: entra no fim dele para o detalhe ter um
+      // indice, o mesmo caminho de abrirItemDaLista.
+      CatItem it;
+      const CatItem *ci = itemFiltro(filtro[i], &it);
+      int idx = ci ? cat_indice_por_imdb(ci->imdb) : -1;
+      if (ci && idx < 0) idx = cat_acrescentar(ci);
+      if (idx >= 0) pedido = idx;
+    }
     return;
   }
   // A grade da biblioteca e uma GRADE: manter a coluna ao subir e descer, e
@@ -1612,6 +1679,14 @@ static void desenhaResumo(void) {
              i18n(modo == MODO_SALVOS ? "Sua lista para assistir"
                                       : "Sua coleção no Trakt"));
   }
+  // O TETO DA GRADE NUNCA E CALADO. Com a exibicao de lista (uma coluna) a
+  // grade para em BIB_MAX_LINHAS titulos; o contador acima continua dizendo
+  // quantos existem, e esta parte diz onde esta o resto.
+  if (txt == resumo && nCelulas > BIB_MAX_LINHAS * colunas()) {
+    size_t k = strlen(resumo);
+    snprintf(resumo + k, sizeof resumo - k, "   ·   %s",
+             i18n("o resto na exibição em grade"));
+  }
   // A DICA DE OK, UMA VEZ SO. Ela era repetida dentro das tres caixas dos
   // seletores; agora entra na frente do resumo, e SO enquanto o foco esta na
   // faixa de seletores — que e quando ela responde alguma coisa. Uma linha
@@ -1696,7 +1771,7 @@ void biblioteca_desenhar(Uint32 agora) {
         { CatItem tmp;
           const CatItem *ci;
           if (estado() == EST_ITENS) ci = lst_item(i, &tmp) ? &tmp : NULL;
-          else                       ci = cat_item(filtro[i]);
+          else                       ci = itemFiltro(filtro[i], &tmp);
           if (exibicao == VIS_LISTA) desenhaLinhaTitulo(ci, topo, f, a);
           else desenhaCartaz(ci, (GfxRect){ NV_BIB_X + c * passoC, topo,
                                             NV_BIB_CARD_W, NV_BIB_POSTER_H }, f, a,

@@ -10,8 +10,24 @@
 
 #define SALVOS_ARQ "salvos.txt"
 
-static SalvoItem itens[SALVOS_MAX];
-static int nItens;
+static SalvoItem *itens;
+static int nItens, capItens;
+
+// Garante vaga para `n` itens. Cresce em blocos, dobrando, ate SALVOS_MAX.
+static int garantir(int n) {
+  SalvoItem *novo;
+  int cap;
+  if (n <= capItens) return 1;
+  if (n > SALVOS_MAX) return 0;
+  cap = capItens ? capItens * 2 : 64;
+  while (cap < n) cap *= 2;
+  if (cap > SALVOS_MAX) cap = SALVOS_MAX;
+  novo = (SalvoItem *)realloc(itens, sizeof *itens * (size_t)cap);
+  if (!novo) return 0;
+  itens = novo;
+  capItens = cap;
+  return 1;
+}
 static int carregado;
 
 // Marca de reconciliacao, igual a de contalib.c: quantos itens o catalogo tinha
@@ -47,9 +63,10 @@ int salvos_tem(const char *imdb) { return acharLocal(imdb) >= 0; }
 // app — foi assim que ajustes.c se protegeu (ver a nota de CHAVE la).
 
 static void gravar(void) {
-  // 300 itens x ~800 bytes de campos + folga. No heap e nao na pilha: a pilha
-  // do fio principal no webOS nao tem 256 KB de sobra para um buffer temporario.
-  size_t cap = (size_t)SALVOS_MAX * 900u + 64u;
+  // ~800 bytes de campos por item + folga, do tamanho da lista DE AGORA. No
+  // heap e nao na pilha: a pilha do fio principal no webOS nao tem centenas de
+  // KB de sobra para um buffer temporario.
+  size_t cap = (size_t)nItens * 900u + 64u;
   char *buf = (char *)malloc(cap);
   size_t k = 0;
   int i;
@@ -98,6 +115,7 @@ void salvos_iniciar(void) {
     // qualquer coisa, e sendo o ultimo nao precisa de separador depois dele.
     titulo = p ? p : (char *)"";
     if (strncmp(id, "tt", 2)) continue;   // linha sem IMDb nao serve para nada
+    if (!garantir(nItens + 1)) break;
     { SalvoItem *s = &itens[nItens++];
       memset(s, 0, sizeof *s);
       snprintf(s->id, sizeof s->id, "%s", id);
@@ -123,11 +141,16 @@ int salvos_definir(const CatItem *ci, int salvo) {
   k = acharLocal(ci->imdb);
   if (salvo) {
     if (k >= 0) return 0;
-    if (nItens >= SALVOS_MAX) {
-      printf("[salvos] lista cheia (%d); \"%s\" nao entrou\n",
-             SALVOS_MAX, ci->titulo);
+    // CHEIA: sai o MAIS ANTIGO (o primeiro, a lista e na ordem de insercao) e
+    // o novo entra. Recusar o novo era o defeito — o "+" acendia e o titulo
+    // nao ia para lugar nenhum.
+    if (nItens >= SALVOS_MAX || !garantir(nItens + 1)) {
+      if (nItens < 1) return 0;
+      printf("[salvos] lista cheia (%d); saiu o mais antigo \"%s\" para "
+             "\"%s\" entrar\n", nItens, itens[0].titulo, ci->titulo);
       fflush(stdout);
-      return 0;
+      memmove(&itens[0], &itens[1], sizeof(SalvoItem) * (size_t)(nItens - 1));
+      nItens--;
     }
     { SalvoItem *s = &itens[nItens++];
       memset(s, 0, sizeof *s);
@@ -192,6 +215,9 @@ void salvos_reconciliar(void) {
 }
 
 void salvos_esquecer(void) {
+  free(itens);
+  itens = NULL;
+  capItens = 0;
   nItens = 0;
   marcaCatN = marcaIdx = -1;
   marcaId[0] = 0;

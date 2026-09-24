@@ -76,7 +76,9 @@
 #define BU_RES_X       (BU_KB_X + BU_KB_W + 64.0f)
 #define BU_RES_Y       NV_BUSCA_VAZIO_Y
 #define BU_RES_AREA_H  (NV_TELA_H - NV_MARGEM_Y - BU_RES_Y)
-#define BU_MAX_FILEIRAS FOCUS_MAX_FILEIRAS
+// 32 fixas, e nao FOCUS_MAX_FILEIRAS: aquele teto subiu para a grade da
+// Biblioteca caber inteira, e a busca nao precisa de mais fileiras por isso.
+#define BU_MAX_FILEIRAS 32
 #define BU_MAX_POR_FIL  12
 
 #define BU_KB_X        NV_CONTENT_PAD
