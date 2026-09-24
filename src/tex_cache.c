@@ -20,7 +20,10 @@ extern void NV_TEX_TEST_AFTER_POP(void);
 #endif
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#include <pthread.h>
 #include "dados.h"
+static void arqDiscoRegistrar(const char *dst);
+static int arqDiscoTem(const char *dst);
 #endif
 #include "rede.h"
 #include "gfx.h"
@@ -894,7 +897,10 @@ void tex_cache_dir(const char *dir) {
         struct stat st;
         if (!arquivoCacheImagem(e->d_name)) continue;
         snprintf(caminho, sizeof caminho, "%s/%s", dirCache, e->d_name);
-        if (lstat(caminho, &st) == 0 && S_ISREG(st.st_mode)) { total += st.st_size; n++; }
+        if (lstat(caminho, &st) == 0 && S_ISREG(st.st_mode)) {
+          total += st.st_size; n++;
+          arqDiscoRegistrar(caminho);
+        }
       }
       closedir(d);
       cacheDiscoBytes = total;
@@ -994,6 +1000,50 @@ static void nomeDeCache(const char *url, char *dst, size_t tam) {
     snprintf(ext, sizeof ext, "%s", ponto);
   snprintf(dst, tam, "%s/%08lx%s", dirCache, h, ext);
 }
+
+#ifdef __EMSCRIPTEN__
+// ARQUIVOS QUE JA ESTAO NA PASTA DE CACHE (Tizen, 24/09/2026). No Tizen so GIF
+// vai a arquivo (gif.c le por caminho); o resto vive em Item.bruto. Mas o fio
+// de rede so descobria que era GIF DEPOIS de baixar o corpo inteiro para a
+// memoria — e entao jogava os bytes fora e chamava garantirLocal, que achava o
+// arquivo (download perdido) ou baixava tudo DE NOVO. Registros D1 da TV do
+// rawldon: o avatar GIF de 1 MB (a1edacf2, 498x448) baixado 4 vezes na
+// sessao 2262 (1.4.3: 2929+761+473+377 ms), 3 na 2512 (1.4.4) e 2 na 1839
+// (1.4.1), com o arquivo ja no /nuvio/cache desde a sessao anterior ("cache
+// de disco ja tinha 2 arquivo(s), 2.1 MB"); na 2565 (1.4.5), sem o arquivo,
+// o primeiro pedido baixou DUAS vezes (`image_requests=2 net_ms=3169`). E um
+// dos DOIS fios de rede de arte parado 0,4-3 s por pedido, enquanto a home
+// ja pede os cartazes; eles esperavam atras (`fila-rede wait=2706`). Com
+// este registro o pedido de um arquivo que ja existe vai direto a
+// garantirLocal (um fopen, sem rede).
+//
+// So nomes, em memoria: a varredura do arranque (tex_cache_dir) ja lia a
+// pasta, e garantirLocal registra o que grava. Um nome que a poda apagou
+// continua aqui sem dano: garantirLocal confere o arquivo e baixa se faltar.
+#define NV_ARQ_DISCO_MAX 128
+static unsigned long arqDisco[NV_ARQ_DISCO_MAX];
+static int nArqDisco, proxArqDisco;
+static pthread_mutex_t arqDiscoMtx = PTHREAD_MUTEX_INITIALIZER;
+static void arqDiscoRegistrar(const char *dst) {
+  unsigned long h = hashCaminho(dst);
+  int i;
+  pthread_mutex_lock(&arqDiscoMtx);
+  for (i = 0; i < nArqDisco && arqDisco[i] != h; i++) {}
+  if (i == nArqDisco) {
+    if (nArqDisco < NV_ARQ_DISCO_MAX) arqDisco[nArqDisco++] = h;
+    else { arqDisco[proxArqDisco] = h; proxArqDisco = (proxArqDisco + 1) % NV_ARQ_DISCO_MAX; }
+  }
+  pthread_mutex_unlock(&arqDiscoMtx);
+}
+static int arqDiscoTem(const char *dst) {
+  unsigned long h = hashCaminho(dst);
+  int i, achou = 0;
+  pthread_mutex_lock(&arqDiscoMtx);
+  for (i = 0; i < nArqDisco && !achou; i++) achou = arqDisco[i] == h;
+  pthread_mutex_unlock(&arqDiscoMtx);
+  return achou;
+}
+#endif
 
 #ifndef __EMSCRIPTEN__
 /* Nunca remove o arquivo entre a entrega da rede e a leitura pelo decoder.
@@ -1325,6 +1375,46 @@ static int resolverReserva(const char *url, char *saida, size_t tam,
 // utilizavel no fim. Roda no fio de decodificacao, entao bloquear aqui nao
 // custa quadro nenhum.
 #ifdef __EMSCRIPTEN__
+// Grava `corpo` em `dst` por temporario + rename. 1 se o arquivo ficou.
+static int gravarLocal(const char *dst, const char *corpo, long n,
+                       TexFetchTrace *trace) {
+  char tmp[600];
+  Uint32 persistEm = SDL_GetTicks();
+  int ok = 0, erro = 0;
+  long anterior = 0;
+  struct stat st;
+  size_t esc = 0;
+  int fim = 0;
+  FILE *f;
+  snprintf(tmp, sizeof tmp, "%s.parcial", dst);
+  if (stat(dst, &st) == 0) anterior = (long)st.st_size;
+  errno = 0;
+  f = fopen(tmp, "wb");
+  if (f) {
+    esc = fwrite(corpo, 1, (size_t)n, f);
+    erro = errno;
+    fim = fclose(f);
+    if (fim != 0 && !erro) erro = errno;
+    if (esc == (size_t)n && fim == 0) {
+      if (rename(tmp, dst) == 0) ok = 1;
+      else erro = errno;
+    }
+  } else erro = errno;
+  if (!ok) {
+    if (!erro) erro = EIO;
+    printf("[tex] gravacao incompleta (%zu de %ld B, erro %d: %s): %.70s\n",
+           esc, n, erro, strerror(erro), dst);
+    fflush(stdout);
+    remove(tmp);
+  } else {
+    cacheDiscoBytes += n - anterior;
+    publicarCacheDisco();
+    arqDiscoRegistrar(dst);
+  }
+  if (trace) trace->persistMs += SDL_GetTicks() - persistEm;
+  return ok;
+}
+
 static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
                          TexFetchTrace *trace) {
   FILE *f;
@@ -1353,6 +1443,7 @@ static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
            got >= 12 && sig[8] == 'W' && sig[9] == 'E' && sig[10] == 'B' && sig[11] == 'P'));
         if (valid) {
           marcarUso(dst);   // sem isto a poda vira o contrario de LRU; ver a nota
+          arqDiscoRegistrar(dst);
           if (trace) trace->cacheMs += SDL_GetTicks() - cacheEm;
           return 1;
         }
@@ -1369,42 +1460,7 @@ static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
     if (resolverReserva(url, alt, sizeof alt, trace)) corpo = baixarImagem(alt, &n, trace);
   }
   if (!corpo) return 0;
-  { char tmp[600];
-    Uint32 persistEm = SDL_GetTicks();
-    int tentativa, ok = 0, erro = 0;
-    long anterior = 0;
-    struct stat st;
-    snprintf(tmp, sizeof tmp, "%s.parcial", dst);
-    if (stat(dst, &st) == 0) anterior = (long)st.st_size;
-    for (tentativa = 0; tentativa < 2; tentativa++) {
-      size_t esc = 0;
-      int fim = 0;
-      errno = 0;
-      f = fopen(tmp, "wb");
-      if (f) {
-        esc = fwrite(corpo, 1, (size_t)n, f);
-        erro = errno;
-        fim = fclose(f);
-        if (fim != 0 && !erro) erro = errno;
-        if (esc == (size_t)n && fim == 0) {
-          if (rename(tmp, dst) == 0) { ok = 1; break; }
-          erro = errno;
-        }
-      } else erro = errno;
-      if (!erro) erro = EIO;
-      printf("[tex] gravacao incompleta (%zu de %ld B, erro %d: %s): %.70s\n",
-             esc, n, erro, strerror(erro), dst);
-      fflush(stdout);
-      remove(tmp);
-      break;
-    }
-    if (ok) {
-      cacheDiscoBytes += n - anterior;
-      publicarCacheDisco();
-    }
-    if (trace) trace->persistMs += SDL_GetTicks() - persistEm;
-    if (!ok) { free(corpo); return 0; }
-  }
+  if (!gravarLocal(dst, corpo, n, trace)) { free(corpo); return 0; }
   free(corpo);
   return 1;
 }
@@ -1536,6 +1592,11 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
     SDL_LockMutex(mtx);
     if (mesmoPedido(idx, pedido)) itens[idx].limiteTamanho = url != pedido ? limitePedido : 0;
     SDL_UnlockMutex(mtx);
+    // JA ESTA NA PASTA (um GIF de outra vez ou desta sessao): o arquivo serve,
+    // sem rede. Ver arqDiscoRegistrar.
+    { char arq[600];
+      nomeDeCache(url, arq, sizeof arq);
+      if (dirCache[0] && arqDiscoTem(arq)) return garantirLocal(url, dst, tam, foiRede, trace); }
     /* The exact URL, including its query string, remains the key. `variante`
      * is a second dimension so a small response can never satisfy a hero. */
     corpo = NULL;
@@ -1551,9 +1612,15 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
     }
     if (!corpo) return 0;
     if (n >= 6 && !memcmp(corpo, "GIF8", 4)) {
-      // gif.c le por caminho: este continua indo a arquivo.
+      // gif.c le por caminho: este continua indo a arquivo. COM OS BYTES QUE
+      // JA VIERAM: ate a 1.4.5 eles eram jogados fora e garantirLocal baixava
+      // o GIF inteiro de novo (ver arqDiscoRegistrar).
+      int ok;
+      if (!dirCache[0]) { free(corpo); return 0; }
+      nomeDeCache(url, dst, tam);
+      ok = gravarLocal(dst, (const char *)corpo, n, trace);
       free(corpo);
-      return garantirLocal(url, dst, tam, foiRede, trace);
+      return ok;
     }
     /* JPEG/PNG/WebP bytes are already compressed. Persist the response as-is;
      * decoding remains the existing worker path and no raw RGBA is stored. */

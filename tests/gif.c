@@ -398,6 +398,22 @@ int main(void) {
     gif_ocioso(); gif_ocioso();
     puts("ok  orcamento por RAM: 1 GB parado, 2 GB ate 48 MB por volta, 4 GB sem teto"); }
 
+  // ARTE ANTES DO GIF: sem arte na fila, o quadro troca quando vence; com
+  // arte na fila, so GIF_PASSO_OCUPADO_MS depois da ultima troca.
+  { assert(!gif_pode_trocar(1000.0, 1050.0, 950.0, 0));          // nao venceu
+    assert(gif_pode_trocar(1050.0, 1050.0, 1000.0, 0));          // venceu, fila vazia
+    assert(!gif_pode_trocar(1050.0, 1050.0, 1000.0, 3));         // venceu, fila cheia, 50 ms
+    assert(!gif_pode_trocar(1399.0, 1050.0, 1000.0, 1));
+    assert(gif_pode_trocar(1400.0, 1050.0, 1000.0, 1));          // 400 ms depois: anda
+    assert(!gif_pode_trocar(1400.0, 1500.0, 1000.0, 1));         // fila nao adianta o quadro
+    // O GIF de 21 quadros de 50 ms com a fila sempre cheia: no maximo 3
+    // trocas por segundo de relogio, contra 20 com a fila vazia.
+    { double t, vence = 50.0, ultima = 0.0; int trocas = 0;
+      for (t = 0.0; t < 1000.0; t += 16.7)
+        if (gif_pode_trocar(t, vence, ultima, 5)) { trocas++; ultima = t; vence = t + 50.0; }
+      assert(trocas <= 3); }
+    puts("ok  com arte na fila o GIF troca no maximo a cada 400 ms"); }
+
   remove(CAMINHO);
   puts("gif: tudo ok");
   return 0;
