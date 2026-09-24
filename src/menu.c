@@ -55,6 +55,7 @@
 // Dois achados que a mola nao reproduzia: o veu e LINEAR (mola nenhuma e), e
 // FECHAR e bem mais rapido que ABRIR. NV_MOLA_TELA (9,0) dava 333 ms simetricos
 // e com a partida mais veloz do percurso, que e o oposto de uma rampa.
+#define NV_MOLA_MENU_DESFOCO 60.0f
 #define NV_MENU_ABRIR_MS  230.0f
 #define NV_MENU_FECHAR_MS 150.0f
 // A largura continua ATRASADA em relacao a entrada — e o efeito "entrou e
@@ -237,8 +238,13 @@ void menu_atualizar(float dt, Uint32 agora) {
   expande = anim_rampa(expande, alvo, dt, ms * NV_MENU_EXP_LENTO);
   for (int i = 0; i < NV_MENU_FOCOS; i++) {
     float a = (aberto && i == linha) ? 1.0f : 0.0f;
+    // O ITEM QUE SAI APAGA EM ~50 ms, e nao nos 120 ms do NV_MOLA_DESFOCO.
+    // A pilula aqui e SOLIDA na cor de realce, com luz em volta: descendo o
+    // menu com o controle, os 120 ms deixavam duas ou tres pilulas acesas
+    // atras do foco — o "rastro" que o dono viu (25/09, C9), com o FPS em 60.
+    // Mesmo valor do painel de Salvos (SP_MOLA_DESFOCO).
     animFoco[i] = anim_mola(animFoco[i], a, dt,
-                            a > animFoco[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+                            a > animFoco[i] ? NV_MOLA_FOCO : NV_MOLA_MENU_DESFOCO);
   }
 }
 
