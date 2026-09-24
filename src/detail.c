@@ -3511,6 +3511,21 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
     if (t3) { arte = reserva; t2 = t3; }
   }
   float aArte = (c >= 0 && c < DET_REV_EP) ? revela_arte(&revEp[c], t2 != 0, agora) : 1.0f;
+  // DESFOCAR NAO ASSISTIDOS (blurUnwatchedEpisodes, #133). O ajuste existia na
+  // tela e na conta e nada o lia — o card saia nitido em toda plataforma.
+  // "Nao assistido" e tudo que o mapa NAO afirma como visto: inclusive o "nao
+  // sei" (-1) de quem nao tem Trakt ou cujo historico ainda nao chegou. Aqui o
+  // erro seguro e o contrario do check: desfocar um episodio que a pessoa ja
+  // viu custa nada; mostrar nitido o que ela pediu para esconder e o spoiler.
+  if (t2 && ajustes_desfocar_nao_assistidos() &&
+      !(ep && serie && serie->imdb[0] &&
+        vistoep_estado(serie->imdb, ep->temporada, ep->episodio) == 1)) {
+    GLuint tb = gfx_desfocado(t2, arte);
+    // Copia ainda nao gerada (no maximo duas por quadro): o fundo do card, e
+    // nunca a arte nitida por um quadro.
+    if (tb) t2 = tb;
+    else { t2 = 0; arte = NULL; }
+  }
   if (t2) {
     if (aArte < 0.999f) gfx_cor(th, raioTh, 0.133f, 0.133f, 0.133f, a);
     gfx_tex_aspect_atual = tex_aspecto(arte);

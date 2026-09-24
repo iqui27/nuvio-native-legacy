@@ -775,7 +775,9 @@ int gfx_iniciar(void) {
   return 1;
 }
 
+static void desfEncerrar(void);
 void gfx_encerrar(void) {
+  desfEncerrar();
   for (int m = 0; m < GFX_NMODOS; m++)
     if (progs[m].prog) { glDeleteProgram(progs[m].prog); progs[m].prog = 0; }
   progAtual = -1;
@@ -790,7 +792,13 @@ static GLuint texAtual = 0;
 // glGenTextures) ou quando alguem deu glBindTexture por fora do gfx_rect
 // (upload de arte, raster de glifo) — nos dois casos o cache mentiria.
 // tex = 0 significa "esqueca tudo": e o que os uploads usam.
-void gfx_tex_esquecer(GLuint tex) { if (tex == 0 || texAtual == tex) texAtual = 0; }
+static void desfEsquecerFonte(GLuint tex);
+void gfx_tex_esquecer(GLuint tex) {
+  if (tex == 0 || texAtual == tex) texAtual = 0;
+  // Textura de arte que vai ser destruida: a copia desfocada dela deixa de
+  // valer, porque o nome pode voltar de glGenTextures com OUTRA imagem.
+  if (tex) desfEsquecerFonte(tex);
+}
 
 int    gfx_n_rect = 0, gfx_n_prog = 0, gfx_n_bind = 0, gfx_n_outros = 0;
 double gfx_ms_rect = 0.0, gfx_ms_outros = 0.0;
@@ -802,10 +810,12 @@ double gfx_ms_rect = 0.0, gfx_ms_outros = 0.0;
 double gfx_fill = 0.0;
 int    gfx_n_cheio = 0;   // desenhos que cobrem >= 50% da tela
 static double gfxFreqMs = 0.0;
+static int desfGeradosQuadro = 0;   // ver gfx_desfocado
 void gfx_novo_quadro(void) {
   gfx_n_rect = gfx_n_prog = gfx_n_bind = gfx_n_outros = 0;
   gfx_ms_rect = gfx_ms_outros = 0.0;
   gfx_fill = 0.0; gfx_n_cheio = 0;
+  desfGeradosQuadro = 0;
 }
 // Relogio dos pontos de GL que NAO sao gfx_rect: recorte, FBO do snapshot e as
 // tres passadas do desfoque. Numa GPU de ladrilhos trocar de alvo de render no
@@ -1098,4 +1108,157 @@ void gfx_borrao_encerrar(void) {
     if (borFbo[i]) { glDeleteFramebuffers(1, &borFbo[i]); borFbo[i] = 0; }
     if (borTex[i]) { glDeleteTextures(1, &borTex[i]); borTex[i] = 0; }
   }
+}
+
+// --- MINIATURA DESFOCADA (blurUnwatchedEpisodes, #133) ------------------------
+//
+// O ajuste "Desfocar nao assistidos" era lido da conta e da tela de Ajustes e
+// NAO ERA USADO EM LUGAR NENHUM: ajustes_desfocar_nao_assistidos() so tinha um
+// chamador, o teste da conta. No LG, no Mac e no Tizen o card saia nitido.
+//
+// POR QUE ASSIM, e nao um shader de desfoque direto no card: um kernel 2D por
+// pixel custaria dezenas de leituras de textura em cada um dos 640x414 pixels
+// de cada card, a cada quadro — e a pagina de detalhe ja e a tela que anda
+// perto do limite de preenchimento (ver gfx_fill). Nem mipmap com bias serve:
+// no Tizen o WebGL 1 recusa piramide em textura NPOT (tex_cache.c), e o still
+// do episodio quase nunca e potencia de dois.
+//
+// Aqui a arte e reduzida UMA VEZ para um alvo de 96x54 pelas duas passadas do
+// GFX_BLUR que o fundo do detalhe ja usa, e o resultado fica guardado. No
+// quadro, o card desenha essa textura minuscula esticada com filtro linear:
+// o mesmo custo de um card nitido. A geracao sao dois quads de 96x54, limitada
+// a NV_DESF_POR_QUADRO por quadro.
+#define NV_DESF_W 96
+#define NV_DESF_H 54
+#define NV_DESF_N 16            // cards visiveis + folga para a rolagem
+#define NV_DESF_POR_QUADRO 2
+// Passo do gaussiano em texels do alvo. Com 9 amostras o borrao alcanca
+// +-4 passos: 1.6 * 4 / 96 = ~6.7% da largura para cada lado, ~43 px num card
+// de 640. Rosto e texto do still somem; a cor e a composicao continuam.
+#define NV_DESF_PASSO 1.6f
+
+typedef struct { GLuint src, tex; unsigned long chave, uso; } Desf;
+static Desf desf[NV_DESF_N];
+static GLuint desfFbo = 0, desfTmp = 0;
+static int desfFalhou = 0;
+static unsigned long desfRelogio = 0;
+
+static unsigned long desfHash(const char *s) {
+  unsigned long h = 5381;
+  if (s) while (*s) h = h * 33u + (unsigned char)*s++;
+  return h;
+}
+
+static void desfEsquecerFonte(GLuint tex) {
+  for (int i = 0; i < NV_DESF_N; i++)
+    if (desf[i].src == tex) { desf[i].src = 0; desf[i].chave = 0; }
+}
+
+static GLuint desfNovaTex(void) {
+  GLuint t = 0;
+  glGenTextures(1, &t);
+  glBindTexture(GL_TEXTURE_2D, t);
+  // RGBA e nao RGB: e o unico formato que o WebGL 1 GARANTE renderizavel.
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, NV_DESF_W, NV_DESF_H, 0, GL_RGBA,
+               GL_UNSIGNED_BYTE, NULL);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  gfx_tex_esquecer(0);  // o bind acima foi por fora do gfx_rect
+  return t;
+}
+
+static int desfPreparar(void) {
+  GLenum st;
+  if (desfFbo) return 1;
+  if (desfFalhou) return 0;
+  desfTmp = desfNovaTex();
+  glGenFramebuffers(1, &desfFbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, desfFbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, desfTmp, 0);
+  st = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+  if (st != GL_FRAMEBUFFER_COMPLETE) {
+    printf("[desfoque] alvo da miniatura incompleto (0x%x): cards sem desfoque\n",
+           (unsigned)st);
+    fflush(stdout);
+    desfFalhou = 1;
+    desfEncerrar();
+    return 0;
+  }
+  return 1;
+}
+
+GLuint gfx_desfocado(GLuint src, const char *chave) {
+  unsigned long h = desfHash(chave);
+  int i, vago = -1;
+  if (!src) return 0;
+  desfRelogio++;
+  for (i = 0; i < NV_DESF_N; i++)
+    if (desf[i].tex && desf[i].src == src && desf[i].chave == h) {
+      desf[i].uso = desfRelogio;
+      return desf[i].tex;
+    }
+  if (desfGeradosQuadro >= NV_DESF_POR_QUADRO) return 0;
+  // Vaga: primeiro uma sem fonte, senao a usada ha mais tempo.
+  for (i = 0; i < NV_DESF_N; i++)
+    if (!desf[i].src) { vago = i; break; }
+  if (vago < 0) {
+    vago = 0;
+    for (i = 1; i < NV_DESF_N; i++)
+      if (desf[i].uso < desf[vago].uso) vago = i;
+  }
+  {
+    GLint fboAnt = 0, vp[4];
+    GLboolean tesoura = glIsEnabled(GL_SCISSOR_TEST);
+    GLboolean mistura = glIsEnabled(GL_BLEND);
+    GLuint dst;
+    float aspAnt = gfx_tex_aspect_atual;
+    GfxRect cheio = { 0, 0, NV_TELA_W, NV_TELA_H };
+    // Estado lido do GL de proposito, e so aqui: o card pode estar sendo
+    // desenhado dentro do snapshot da home ou sob gfx_recorte, e voltar
+    // cegamente para o framebuffer 0 com o viewport da tela estragaria os dois.
+    // Custa um glGet por miniatura NOVA, nao por quadro.
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fboAnt);
+    glGetIntegerv(GL_VIEWPORT, vp);
+    if (!desfPreparar()) { glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)fboAnt); return 0; }
+    if (!desf[vago].tex) desf[vago].tex = desfNovaTex();
+    dst = desf[vago].tex;
+    GFX_OUTRO_INI();
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glViewport(0, 0, NV_DESF_W, NV_DESF_H);
+    gfx_tex_aspect_atual = 0.0f;   // a arte INTEIRA, esticada; o card recorta depois
+    // Passada 1: horizontal, lendo a arte original e ja reduzindo. Escrever
+    // num FBO inverte o eixo y (ver GFX_SNAP); a passada 2 inverte de novo, e
+    // o resultado sai de pe para o GFX_CARD, como uma arte comum.
+    glBindFramebuffer(GL_FRAMEBUFFER, desfFbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, desfTmp, 0);
+    gfx_rect(cheio, src, GFX_BLUR, 0, NV_DESF_PASSO / (float)NV_DESF_W, 0.0f,
+             0.0f, 0, 0, 0, 1.0f);
+    // Passada 2: vertical, do intermediario para a textura guardada.
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, dst, 0);
+    gfx_rect(cheio, desfTmp, GFX_BLUR, 0, 0.0f, NV_DESF_PASSO / (float)NV_DESF_H,
+             0.0f, 0, 0, 0, 1.0f);
+    gfx_tex_aspect_atual = aspAnt;
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)fboAnt);
+    glViewport(vp[0], vp[1], vp[2], vp[3]);
+    if (mistura) glEnable(GL_BLEND);
+    if (tesoura) glEnable(GL_SCISSOR_TEST);
+    GFX_OUTRO_FIM();
+  }
+  desf[vago].src = src;
+  desf[vago].chave = h;
+  desf[vago].uso = desfRelogio;
+  desfGeradosQuadro++;
+  return desf[vago].tex;
+}
+
+static void desfEncerrar(void) {
+  for (int i = 0; i < NV_DESF_N; i++) {
+    if (desf[i].tex) { gfx_tex_esquecer(desf[i].tex); glDeleteTextures(1, &desf[i].tex); }
+    desf[i].tex = desf[i].src = 0; desf[i].chave = desf[i].uso = 0;
+  }
+  if (desfFbo) { glDeleteFramebuffers(1, &desfFbo); desfFbo = 0; }
+  if (desfTmp) { gfx_tex_esquecer(desfTmp); glDeleteTextures(1, &desfTmp); desfTmp = 0; }
 }
