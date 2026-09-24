@@ -25,6 +25,11 @@
 #define PP_FILME_MIN_S    150.0
 #define PP_FILME_MAX_S    330.0
 #define PP_CONTAGEM_S     5
+// Guardas do #115 ("More like this aparece cedo demais — no comeco do
+// filme"). Ver posplay_regra_filme.
+#define PP_FILME_METADE   0.5     // nunca antes da metade da duracao
+#define PP_CRED_MIN_FRAC  0.75    // marcador antes disto nao e credito final
+#define PP_DUR_ESTAVEL_S  8.0     // duracao parada ha tanto tempo, no minimo
 
 // Cartazes dos relacionados, no tamanho da grade de "Ver tudo".
 #define PP_CARD_W  212.0f
@@ -54,6 +59,17 @@ static void corFocoPosplay(float *r, float *g, float *b) {
 }
 
 static int    visivel, serie, idx = -1, foco;
+// DURACAO ESTAVEL. O player passa o que tiver: a duracao do metadado, a
+// reserva de 114 min e, assim que o pipeline responde, a dele — e no primeiro
+// instante o pipeline pode informar uma duracao pequena e provisoria (o
+// arquivo ainda chegando — hipotese do conserto de 10/09, nao medida aqui).
+// Com uma duracao de 30 s, a metade e o fim do filme chegam aos 15 s, e a
+// regra de 2 min da serie vale na hora. Decidir so depois de a duracao ficar
+// PARADA por PP_DUR_ESTAVEL_S tira esse instante do jogo sem atrasar o fim de
+// verdade.
+static double durVista;
+static double durEstavel;
+
 // DISPENSADO GRUDA. Sem isto o Voltar fechava o painel e o quadro seguinte o
 // reabria na hora, porque a condicao de aparecer (passar de 90% do filme)
 // continua verdadeira ate o fim — foi o "nao da pra sair, quebra tudo" que o
@@ -88,6 +104,7 @@ static void esconder(void) { visivel = 0; fecharEm = 0; foco = 0; dispensado = 1
 
 void posplay_fechar(void) {
   visivel = 0; fecharEm = 0; foco = 0;
+  durVista = 0.0; durEstavel = 0.0;   // titulo novo: a duracao comeca de novo
   pedT = pedE = 0; pedTitulo = -1;
   dispensado = 0;   // titulo novo: a dispensa do anterior nao vale mais
 }
@@ -132,6 +149,61 @@ static int acharProximo(int idxItem, int t, int e) {
   return 0;
 }
 
+// Marcador de creditos que o FILME aceita. Ver posplay_regra_filme.
+static int credAceito(double durSeg, double cred) {
+  return cred > 1.0 && cred >= durSeg * PP_CRED_MIN_FRAC && cred < durSeg;
+}
+
+// A REGRA DO FILME, sem estado (o teste chama direto).
+//
+// #115, Owlphibia29: "More like this aparece cedo demais — no comeco do
+// filme". A estimativa sem marcador ja nao subia no segundo zero (teto de
+// metade da janela, 10/09), mas o MARCADOR passava sem conferencia nenhuma:
+// `posSeg >= creditos` bastava. E os dois marcadores podem apontar para o
+// comeco do filme:
+//   - capitulo do Matroska: mkv_creditos_nomeados casava o PRIMEIRO nome com
+//     "credit", e "Opening Credits" aos 90 s e capitulo comum em remux;
+//   - TheIntroDB: dado de terceiro, e intro_creditos_seg devolvia o PRIMEIRO
+//     trecho de creditos (um filme pode ter o de abertura e o final).
+// Com qualquer um dos dois, o painel subia aos 90 s de filme. O cartao de
+// proximo episodio tinha sanidade para isso desde o #34 (credJanela, no
+// player.c); o de filme nunca teve.
+//
+// Agora, em ordem:
+//   1. NUNCA ANTES DA METADE da duracao — vale para marcador e estimativa.
+//   2. Marcador so vale no ULTIMO QUARTO (mesma regra que video_creditos ja
+//      usa para o capitulo sem nome). Fora disso e recusado e cai na
+//      estimativa, em vez de calar o painel para sempre.
+//   3. Marcador aceito manda, e so ele (antes dele, a estimativa nao sobe).
+//   4. Sem marcador, a estimativa proporcional de sempre.
+int posplay_regra_filme(double posSeg, double durSeg, double creditosSeg) {
+  double janela, resta;
+  if (durSeg <= 1.0) return 0;
+  if (posSeg < durSeg * PP_FILME_METADE) return 0;
+  if (credAceito(durSeg, creditosSeg)) return posSeg >= creditosSeg;
+  // FILME SEM CAPITULOS — e o caso comum, porque MUITA fonte e MP4 e nao
+  // Matroska. MEDIDO no log da TV: "mkv: fonte e MP4, sonda dispensada".
+  // Capitulo so existe no MKV; num MP4 nao ha o que ler e nao ha marcador.
+  //
+  // Sem marcador, so resta estimar, e a estimativa e PROPORCIONAL a duracao.
+  // Fixar minutos erra nos dois extremos: 3 min sobem com os creditos ja
+  // rolando num filme longo (a queixa) e 8 min roubam o desfecho de um curto.
+  // Credito costuma ficar perto de 4,5% do filme, com piso e teto para os
+  // casos que fogem da regra.
+  janela = durSeg * PP_FILME_FRAC;
+  if (janela < PP_FILME_MIN_S) janela = PP_FILME_MIN_S;
+  if (janela > PP_FILME_MAX_S) janela = PP_FILME_MAX_S;
+  // A JANELA NUNCA PASSA DE METADE DO FILME, e este teto vem por ultimo — de
+  // proposito, depois do piso, senao o piso o desfaz.
+  //
+  // Sem ele o piso de 150 s virava a regra em qualquer coisa mais curta que
+  // isso: `resta` comeca valendo a duracao inteira, entao no segundo ZERO ja
+  // era `resta <= janela` e o painel subia junto com o filme.
+  if (janela > durSeg * 0.5) janela = durSeg * 0.5;
+  resta = durSeg - posSeg;
+  return resta > 0.0 && resta <= janela;
+}
+
 void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
                        int ehSerie, int idxCatalogo, int janelaSerie) {
   int deveAparecer = 0;
@@ -146,6 +218,12 @@ void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
   double creditosSeg = video_creditos();
   if (creditosSeg <= 1.0) creditosSeg = intro_creditos_seg();
   anim = anim_mola(anim, visivel ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
+  if (durSeg - durVista > 2.0 || durVista - durSeg > 2.0) {
+    durVista = durSeg;
+    durEstavel = 0.0;
+  } else {
+    durEstavel += dt;
+  }
   if (durSeg <= 1.0) return;
 
   if (ehSerie) {
@@ -157,45 +235,13 @@ void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
     //
     // A CONTAGEM continua sendo a do web: so nos 5 s finais. Aparecer cedo e
     // util; comecar a contar cedo tiraria do dono o fim do episodio.
-    deveAparecer = janelaSerie;
-  } else if (creditosSeg > 1.0 && posSeg >= creditosSeg) {
-    // O MARCADOR DE VERDADE, quando o arquivo o traz: o capitulo de creditos do
-    // proprio Matroska. Nao e estimativa — e o segundo que o lancamento marcou.
-    deveAparecer = 1;
-  } else if (creditosSeg > 1.0) {
-    // Ha marcador e ele ainda nao chegou: NAO cair no plano B. Os dois juntos
-    // fariam o painel subir antes do capitulo, que e o defeito que o marcador
-    // existe para resolver.
-    deveAparecer = 0;
+    deveAparecer = janelaSerie && durEstavel >= PP_DUR_ESTAVEL_S;
   } else {
-    // FILME SEM CAPITULOS — e o caso comum, porque MUITA fonte e MP4 e nao
-    // Matroska. MEDIDO no log da TV: "mkv: fonte e MP4, sonda dispensada".
-    // Capitulo so existe no MKV; num MP4 nao ha o que ler e nao ha marcador.
-    //
-    // Sem marcador, so resta estimar, e a estimativa e PROPORCIONAL a duracao.
-    // Fixar minutos erra nos dois extremos: 3 min sobem com os creditos ja
-    // rolando num filme longo (a queixa) e 8 min roubam o desfecho de um curto.
-    // Credito costuma ficar perto de 4,5% do filme, com piso e teto para os
-    // casos que fogem da regra.
-    double janela = durSeg * PP_FILME_FRAC;
-    double resta;
-    if (janela < PP_FILME_MIN_S) janela = PP_FILME_MIN_S;
-    if (janela > PP_FILME_MAX_S) janela = PP_FILME_MAX_S;
-    // A JANELA NUNCA PASSA DE METADE DO FILME, e este teto vem por ultimo — de
-    // proposito, depois do piso, senao o piso o desfaz.
-    //
-    // Sem ele o piso de 150 s virava a regra em qualquer coisa mais curta que
-    // isso: `resta` comeca valendo a duracao inteira, entao no segundo ZERO ja
-    // era `resta <= janela` e o painel subia junto com o filme. Vale para
-    // conteudo curto de verdade e tambem para o instante inicial em que o
-    // pipeline ainda informa uma duracao pequena — e o relato de "More Like
-    // This aparece quando o filme comeca".
-    //
-    // Com o teto, em posSeg=0 sobra a duracao inteira, que e sempre maior que
-    // metade dela: o painel nao tem como subir no comeco.
-    if (janela > durSeg * 0.5) janela = durSeg * 0.5;
-    resta = durSeg - posSeg;
-    deveAparecer = (resta > 0.0 && resta <= janela);
+    // FILME: a regra inteira mora em posplay_regra_filme, logo acima, que o
+    // teste chama sem player nem rede. Aqui entra so a DURACAO ESTAVEL — ver
+    // durEstavel.
+    deveAparecer = durEstavel >= PP_DUR_ESTAVEL_S &&
+                   posplay_regra_filme(posSeg, durSeg, creditosSeg);
   }
 
   // Saiu da zona (o dono voltou o filme): a dispensa perde a validade e o
@@ -205,7 +251,9 @@ void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
   if (deveAparecer && !visivel && !dispensado) {
     if (!ehSerie)
       printf("[posplay] relacionados em %.0fs de %.0fs (%s)\n", posSeg, durSeg,
-             creditosSeg > 1.0 ? "capitulo de creditos" : "estimativa, sem capitulo");
+             credAceito(durSeg, creditosSeg) ? "marcador de creditos"
+             : creditosSeg > 1.0 ? "estimativa, marcador recusado"
+             : "estimativa, sem marcador");
     idx = idxCatalogo;
     serie = ehSerie;
     foco = 0;
