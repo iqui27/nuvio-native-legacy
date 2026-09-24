@@ -33,6 +33,7 @@ extern void NV_TEX_TEST_AFTER_POP(void);
 #include "webp.h"
 #include "jpegrapido.h"
 #include "artereserva.h"
+#include "artetamanho.h"
 #include "perfiltv.h"
 #include <stdint.h>
 #include "cachearte.h"
@@ -98,6 +99,12 @@ typedef struct {
   // novo sozinho, sem ninguem precisar notar.
   int tetoUsado;
   int fonteW;
+  // TETO COM QUE A VARIANTE MENOR FOI ESCOLHIDA (artetamanho.h), 0 quando o
+  // download foi da URL do item. Escrito pelo fio de rede, lido pelo decode:
+  // com ele o decode acha o arquivo da variante no disco, grava `tetoUsado`
+  // com o teto da variante e `fonteW` desconhecido — o w780 de um card nao e
+  // "a fonte acabou", e a promocao a heroi precisa continuar possivel.
+  int limiteTamanho;
   unsigned long uso;  // contador LRU
   // Luminancia media dos pixels OPACOS, 0..255; -1 enquanto nao se sabe.
   // Medida uma vez, na thread de decode. Serve ao logo do titulo: o TMDB nao
@@ -1497,6 +1504,9 @@ static int mesmoPedido(int idx, const char *pedido) {
 static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *foiRede,
                           TexFetchTrace *trace) {
   const char *pedido = url;   // o caminho do item; `url` pode virar a variante
+  char certo[600];
+  int limitePedido;
+  SDL_LockMutex(mtx); limitePedido = itens[idx].limite; SDL_UnlockMutex(mtx);
 #ifdef __EMSCRIPTEN__
   if (!strncmp(url, "http://", 7) || !strncmp(url, "https://", 8)) {
     long n = 0;
@@ -1511,8 +1521,7 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
     // decodificar em software. So aqui, so no Tizen, so quando o pedido e de
     // card (limite <= 640): o item continua com a URL medium como chave, e a
     // promocao a heroi baixa o medium de novo, que e o que ela ja fazia.
-    { int limite;
-      SDL_LockMutex(mtx); limite = itens[idx].limite; SDL_UnlockMutex(mtx);
+    { int limite = limitePedido;
       if (limite > 0 && limite <= 640) {
         variante = NV_CACHE_ARTE_SMALL;
         const char *m = strstr(url, "images.metahub.space/background/medium/");
@@ -1522,6 +1531,11 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
           url = menor;
         }
       } }
+    // O RESTO DA ESCADA (TMDB, still do metahub): artetamanho.h.
+    if (arte_tamanho_url(url, limitePedido, certo, sizeof certo)) url = certo;
+    SDL_LockMutex(mtx);
+    if (mesmoPedido(idx, pedido)) itens[idx].limiteTamanho = url != pedido ? limitePedido : 0;
+    SDL_UnlockMutex(mtx);
     /* The exact URL, including its query string, remains the key. `variante`
      * is a second dimension so a small response can never satisfy a hero. */
     corpo = NULL;
@@ -1573,6 +1587,14 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
   if (dirCache[0] && (!strncmp(url, "http://", 7) || !strncmp(url, "https://", 8))) {
     unsigned char *corpo = NULL;
     long n = 0;
+    // A VARIANTE DO TAMANHO DO DESENHO (artetamanho.h), antes do nome de
+    // cache: o arquivo no disco e o da variante, e a promocao a heroi, com
+    // teto maior, procura outro nome e baixa o maior.
+    { int usar = arte_tamanho_url(url, limitePedido, certo, sizeof certo);
+      if (usar) url = certo;
+      SDL_LockMutex(mtx);
+      if (mesmoPedido(idx, pedido)) itens[idx].limiteTamanho = usar ? limitePedido : 0;
+      SDL_UnlockMutex(mtx); }
     nomeDeCache(url, dst, tam);
     if (foiRede) *foiRede = 0;
     if (acertoDisco(dst, trace)) return 1;
@@ -1918,6 +1940,7 @@ static int threadDecode(void *arg) {
     filaEm = itens[idx].filaDecEm;
     itens[idx].filaDecEm = 0;
     localDireto = itens[idx].localDireto;
+    int limTam = localDireto ? 0 : itens[idx].limiteTamanho;
     // OS BYTES SAEM DO ITEM AQUI, sob o mutex, e passam a ser deste fio.
     unsigned char *bruto = itens[idx].bruto;
     long nBruto = itens[idx].nBruto;
@@ -1962,8 +1985,11 @@ static int threadDecode(void *arg) {
     {
     // O download JA ACONTECEU no fio de rede; aqui garantirLocal so traduz a
     // URL para o caminho do cache, sem tocar a rede.
-    { char local[600];
-      if (garantirLocal(caminho, local, sizeof local, NULL, NULL))
+    // Com variante (limiteTamanho), o arquivo no disco e o dela.
+    { char local[600], certo[600];
+      const char *fonte = caminho;
+      if (limTam > 0 && arte_tamanho_url(caminho, limTam, certo, sizeof certo)) fonte = certo;
+      if (garantirLocal(fonte, local, sizeof local, NULL, NULL))
         snprintf(caminho, sizeof caminho, "%s", local);
     }
     // JPEG SAI DO DECODIFICADOR JA REDUZIDO (jpegrapido.h): 1/2, 1/4 ou 1/8
@@ -2090,6 +2116,7 @@ static int threadDecode(void *arg) {
         printf("[tex] decode lento: %u ms (ler %u, reduzir %u) para %dx%d (saiu %dx%d) %s\n",
                (unsigned)dt, (unsigned)(tLoad - t0), (unsigned)(SDL_GetTicks() - tLoad),
                srcW, srcH, conv->w, conv->h, urlOrig);
+        if (limTam > 0) printf("[tex] (variante do tamanho, teto %d)\n", limTam);
         printf("[tex-trace] decode hash=%08lx kind=%s queue=%u total=%u load=%u reduce=%u src=%dx%d out=%dx%d\n",
                hashCaminho(urlOrig), localDireto ? "local" : "remote",
                (unsigned)filaWait, (unsigned)dt, (unsigned)(tLoad - t0),
@@ -2198,6 +2225,14 @@ static int threadDecode(void *arg) {
         // O QUE SAIU, e nao o que foi pedido: e este par que a promocao le.
         itens[idx].tetoUsado = limite;
         itens[idx].fonteW = srcW;
+        // VARIANTE MENOR: o teto que ela cobre, e a fonte de verdade nao e
+        // conhecida. Sem isto um w1280 decodificado a 1280 gravava fonteW=1280
+        // e a promocao a 1920 ficava bloqueada; e um w780 baixado a 704 mas
+        // decodificado depois de o teto subir a 1920 gravava tetoUsado=1920.
+        if (limTam > 0) {
+          if (limTam < limite) itens[idx].tetoUsado = limTam;
+          itens[idx].fonteW = 0;
+        }
       } else {
         // MANTEM o caminho: e ele que identifica o slot na proxima consulta e
         // permite responder "ainda nao, tente depois" em vez de reenfileirar.
@@ -2810,6 +2845,7 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
       strncpy(itens[novo].caminho, caminho, sizeof itens[novo].caminho - 1);
       itens[novo].hash = h;
       itens[novo].limite = limite;
+      itens[novo].limiteTamanho = 0;
       itens[novo].estado = PENDENTE;
       itens[novo].uso = ++relogio;
       itens[novo].ultimoQuadro = quadroAtual;
