@@ -579,6 +579,20 @@ async function rotaTv(req, url, env) {
     return new Response(r.body, { status: r.status, headers: h });
   }
 
+  // /tv/versao.txt DIRETO (nao so a leitura interna de versaoAtual): quem
+  // testar uma TV manda esta URL para conferir qual versao esta no ar sem
+  // seguir o redirect inteiro. Achado testando o deploy real (24/09): a
+  // regex de baixo exige /mt//st, entao este caminho caia em 404 mesmo
+  // com o arquivo publicado e o redirect de /tv/ funcionando (ele le por
+  // fetch interno, que nao passa por aqui).
+  if (rota === "/tv/versao.txt") {
+    const r = await env.ASSETS.fetch(req);
+    if (!r.ok) return r;
+    const h = new Headers(r.headers);
+    h.set("cache-control", "no-cache");
+    return new Response(r.body, { status: r.status, headers: h });
+  }
+
   const m = /^\/tv\/([^/]+)\/(mt|st)\/(.*)$/.exec(rota);
   if (!m) return erro("rota da tv desconhecida", 404);
   const modo = m[2], resto = m[3];

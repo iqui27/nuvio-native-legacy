@@ -60,6 +60,21 @@ const W = "https://w.test";
   console.error("ok  /tv: 302 para /tv/<versao>/mt/");
 }
 
+// === /tv/versao.txt DIRETO: quem testa a TV confere sem seguir o redirect ===
+// Achado no deploy real (24/09): so /tv, /tv/ e /tv/icone-*.png eram tratados
+// antes da regex de /tv/<v>/(mt|st)/..., que exige o segmento de modo — GET
+// /tv/versao.txt direto caia em "rota da tv desconhecida" (404) mesmo com o
+// arquivo publicado e /tv/ redirecionando certo (le por fetch interno, que
+// nao passa pela mesma regra).
+{
+  const env = { ASSETS: fakeAssets({ "/tv/versao.txt": { body: "1.4.5\n" } }) };
+  const r = await worker.fetch(new Request(W + "/tv/versao.txt"), env);
+  assert.equal(r.status, 200);
+  assert.equal(await r.text(), "1.4.5\n");
+  assert.equal(r.headers.get("cache-control"), "no-cache");
+  console.error("ok  /tv/versao.txt direto: 200, sem cache");
+}
+
 // === /tv sem ASSETS (ambiente sem [assets] configurado): 404 limpo ==========
 {
   const r = await worker.fetch(new Request(W + "/tv/1.4.3/mt/index.html"), {});
