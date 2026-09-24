@@ -2808,9 +2808,7 @@ static void desenhaAtalhos(int r, float y) {
   // Estado do ramo de GIF (#29), ao lado do da sequencia de JPEG porque os dois
   // descrevem o MESMO cartaz em foco e sao zerados juntos quando ele muda.
   //   gifAnima  -1 = ainda nao perguntei, 0 = nao e animado, 1 = e
-  //   gifUltimo instante da ultima amostra, para o passo de 67 ms
-  //   gifTex    a textura devolvida, reaproveitada entre as amostras
-  static int gifAnima=-1;static Uint32 gifUltimo;static GLuint gifTex;
+  static int gifAnima=-1;
   // Quadro da sequencia de JPEG que ja esta resolvido, para nao reconsultar
   // o cache nos ~4 quadros de tela que cabem entre dois passos de 67 ms.
   static int seqIndice=-1;static GLuint seqTex;
@@ -2844,9 +2842,9 @@ static void desenhaAtalhos(int r, float y) {
     // NA HORA da importacao —, e pasta que vem da conta nunca tem sequencia
     // nenhuma. Para todas essas, a unica animacao possivel e o proprio GIF.
     //
-    // So o Tizen anima: la o navegador conta o tempo e compoe os quadros. No
-    // webOS gif_textura devolve 0 (nao ha libgif nem IMG_LoadAnimation no
-    // aparelho) e o cartaz fica na capa parada, como hoje. Ver gif.h.
+    // So o Tizen anima: la gif.c decodifica o GIF num fio proprio e conta o
+    // tempo. No webOS gif_pode_animar e 0 e o cartaz fica na capa parada,
+    // como hoje. Ver gif.h.
     if(gif_pode_animar()&&
        foco.fileira==r&&foco.coluna==c&&folder->frames<1&&folder->focusGif[0] && !NV_SEM_GIF &&
        !ajustes_animacoes_reduzidas()) {
@@ -2856,21 +2854,19 @@ static void desenhaAtalhos(int r, float y) {
       // cedo custa uma consulta ao cache, que devolve NULL enquanto nao chegou.
       const char *arq = tex_arquivo(folder->focusGif);
       if(ultimo!=id){
-        // gifTex TAMBEM ZERA: a textura de gif.c e uma so, e ate o primeiro
-        // quadro deste cartaz chegar ela ainda tem o ultimo do cartaz anterior.
-        ultimo=id;desde=now;gifUltimo=0;gifAnima=-1;gifTex=0;
-        // gif_parar SOLTA O BLOB do cartaz anterior. Sem isto ele fica preso e
-        // o proximo cartaz teria de revoga-lo tarde.
+        ultimo=id;desde=now;gifAnima=-1;
+        // gif_parar SOLTA O FIO DE DECODE do cartaz anterior; e gif_textura
+        // devolve 0 ate o primeiro quadro DESTE chegar (a textura e uma so, e
+        // ainda tem o ultimo quadro do outro).
         gif_parar();
       }
       // gif_animado LE O ARQUIVO INTEIRO. Uma vez por cartaz, e nao por quadro.
       if(gifAnima<0&&arq) gifAnima=gif_animado(arq);
-      if(arq&&gifAnima>0&&now-desde>350&&now-gifUltimo>=67) {
-        // 67 ms e o mesmo passo da sequencia de JPEG. Cada chamada copia
-        // 480x270 RGBA = 518 KB do canvas ate a textura; a 60 fps seriam
-        // ~31 MB/s numa TV que ja e o gargalo do cache de imagem.
+      if(arq&&gifAnima>0&&now-desde>350) {
+        // A CADA DESENHO, sem passo de 67 ms (1.4.7): o relogio e de gif.c,
+        // que so sobe as linhas que mudaram quando o quadro do GIF vence. O
+        // passo de 67 ms prendia o GIF a 15 fps, abaixo do ritmo do arquivo.
         GLuint motion=gif_textura(arq,480);
-        gifUltimo=now;
         if(motion){
           tex=motion;
           // A PROPORCAO DA CAPA NAO VALE AQUI. Abaixo o desenho usa
@@ -2878,10 +2874,7 @@ static void desenhaAtalhos(int r, float y) {
           // qualquer proporcao. Zero deixa o desenho usar a moldura.
           gifDesenhando=1;
         }
-      } else if(arq&&gifAnima>0&&now-desde>350&&gifTex){
-        tex=gifTex;gifDesenhando=1;
       }
-      if(tex&&gifDesenhando)gifTex=tex;
     }
     if(foco.fileira==r&&foco.coluna==c&&folder->frames>0 && !NV_SEM_GIF &&
        !ajustes_animacoes_reduzidas()) {

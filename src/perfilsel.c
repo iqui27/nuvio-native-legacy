@@ -780,7 +780,6 @@ void perfilsel_continuar_ativo(void) {
 static const ContaPerfil *gifDono;
 static int    gifAnima = -1;
 static GLuint gifTex;
-static Uint32 gifUltimo;
 
 // O circulo do perfil: soquete escuro, cor da conta por cima e, quando ha,
 // a foto. Tres camadas e nao uma porque a cor precisa DIMINUIR fora do foco
@@ -805,12 +804,10 @@ static void disco(GfxRect a, const ContaPerfil *p, float f, float alfa,
     if (gifDono != p) { gifDono = p; gifAnima = -1; gifTex = 0; gif_parar(); }
     if (gifAnima < 0 && arq) gifAnima = gif_animado(arq);
     if (arq && gifAnima > 0) {
-      Uint32 agora = SDL_GetTicks();
-      if (agora - gifUltimo >= 67) {   // ~15 fps, o passo das sequencias de capa
-        GLuint m = gif_textura(arq, (int)a.w);
-        gifUltimo = agora;
-        if (m) gifTex = m;
-      }
+      // A cada desenho: o relogio e de gif.c, e sem quadro vencido a chamada
+      // nao sobe nada (1.4.7; o passo de 67 ms prendia o GIF a 15 fps).
+      GLuint m = gif_textura(arq, (int)a.w);
+      if (m) gifTex = m;
       if (gifTex) { foto = gifTex; emGif = 1; }
     }
   }
