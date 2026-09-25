@@ -9,6 +9,7 @@
 #include "proximo.h"
 #include "trakt.h"
 #include "simkl.h"
+#include "cwordem.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -52,7 +53,16 @@ void continuar_desenhar(const CatItem *ci, GfxRect r) {
     // "A SEGUIR" e nao "53min Restantes": o item de progresso 0 e o proximo
     // episodio de uma serie cujo ultimo terminou (issue #66) — ninguem
     // comecou a ve-lo, entao "restantes" seria mentira.
-    if (ci->progresso == 0 && (trakt_e_a_seguir(ci->imdb) || simkl_e_a_seguir(ci->imdb)))
+    // O "a seguir" que AINDA NAO FOI AO AR (issue #127) diz quando estreia:
+    // "A seguir" nele prometia um episodio que nao ha como tocar. Quem e
+    // futuro e a decisao unica da montagem (cwo_e_futuro), a mesma que o poe
+    // em "Proximos episodios".
+    char quando[32];
+    if (ci->progresso == 0 && cwo_e_futuro(ci->imdb) &&
+        cwo_data_curta(cwo_estreia(ci->imdb), (long long)time(NULL) * 1000LL,
+                       ajustes_idioma_ingles(), 0, quando, sizeof quando))
+      snprintf(selo, sizeof selo, i18n("Estreia %s"), quando);
+    else if (ci->progresso == 0 && (trakt_e_a_seguir(ci->imdb) || simkl_e_a_seguir(ci->imdb)))
       snprintf(selo, sizeof selo, "%s", i18n("A seguir"));
     else if (h && m) snprintf(selo, sizeof selo, i18n("%dh %dmin Restantes"), h, m);
     else if (h) snprintf(selo, sizeof selo, i18n("%dh Restantes"), h);

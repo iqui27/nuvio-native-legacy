@@ -58,6 +58,11 @@ static const Fileira *naHome(const char *chave) {
   for (r = 0; r < nFileiras; r++) if (!strcmp(fileiras[r].chave, chave)) return &fileiras[r];
   return NULL;
 }
+static int contar(const char *chave) {
+  int r, q = 0;
+  for (r = 0; r < nFileiras; r++) if (!strcmp(fileiras[r].chave, chave)) q++;
+  return q;
+}
 static int posicao(const char *chave) {
   int r;
   for (r = 0; r < nFileiras; r++) if (!strcmp(fileiras[r].chave, chave)) return r;
@@ -126,6 +131,48 @@ int main(void) {
   assert(naHome("lista") && naHome("lista")->n == 2);
   assert(!strcmp(card(naHome("lista"), 0), "tt3"));
   puts("ok  separar: futuro numa fileira propria, logo abaixo, lista intacta");
+
+  // A HOME REMONTADA N VEZES DA A MESMA HOME. Na C9 do dono (24/09) o log
+  // subia "19 fileiras na tela" -> 20 -> 21 com o catalogo parado em 16, e ele
+  // viu "Proximos episodios" duplicada. Cada caminho que republica passa aqui
+  // varias vezes: quadro sem mudanca, refacao de Continuar assistindo (a
+  // mesma e a do Trakt cedo), remontagem sem rede, o mesmo conjunto de
+  // futuros de novo, ida e volta da Ordenacao, catalogo inteiro de novo.
+  { int base = nFileiras, pos = posicao("upcoming_section"), k;
+    assert(contar("upcoming_section") == 1);
+    for (k = 0; k < 18; k++) {
+      switch (k % 6) {
+        case 0: quadro(); break;
+        case 1: cat_trocar_continuar(it, 3); quadro(); break;
+        case 2: cat_republicar_fileiras(fs, 2); quadro(); break;
+        case 3: cwo_publicar_futuros(fut1, 1); cat_trocar_continuar(it, 3); quadro(); break;
+        case 4: ajustes_aplicar_blob("{\"continueWatchingSortMode\":\"default\"}"); quadro();
+                assert(contar("upcoming_section") == 0);
+                ajustes_aplicar_blob("{\"continueWatchingSortMode\":\"split_upcoming\"}"); quadro(); break;
+        case 5: cat_definir_tudo(it, 5, fs, 2); quadro(); break;
+      }
+      assert(contar("upcoming_section") == 1);
+      assert(contar("continue_watching") == 1);
+      assert(posicao("upcoming_section") == pos);
+      assert(nFileiras == base);
+    }
+    printf("ok  separar: 18 remontagens, %d fileiras e uma so de futuros\n", base);
+  }
+
+  // Chave repetida vinda de baixo (catalogo publicado com a mesma fileira duas
+  // vezes) sai com uma so: a home e idempotente sobre o que chega.
+  { static CatFileira dup[3];
+    int base = nFileiras;
+    dup[0] = fs[0]; dup[1] = fs[1]; dup[2] = fs[1];
+    cat_definir_tudo(it, 5, dup, 3);
+    quadro(); quadro();
+    assert(contar("lista") == 1 && contar("upcoming_section") == 1);
+    assert(nFileiras == base);
+    cat_definir_tudo(it, 5, fs, 2);
+    quadro();
+    assert(nFileiras == base);
+    puts("ok  chave repetida no catalogo: uma fileira so");
+  }
 
   // TUDO FUTURO: nao sobra cabecalho vazio de Continuar assistindo.
   cwo_publicar_futuros(futTodos, 3);

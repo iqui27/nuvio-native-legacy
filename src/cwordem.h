@@ -35,6 +35,7 @@
 #ifndef NV_CWORDEM_H
 #define NV_CWORDEM_H
 #include <limits.h>
+#include <stddef.h>
 
 // Os valores de AJ_CW_ORDEM, na ordem de V_CW_ORDEM/W_CW_ORDEM em ajustes.c.
 enum { CWO_PADRAO = 0, CWO_STREAMING = 1, CWO_SEPARAR = 2 };
@@ -93,5 +94,15 @@ int  cwo_e_futuro(const char *id);
 // uma estreia que passou, por exemplo —, e sem este termo o guarda de
 // sincronizarFileiras achava que nada tinha mudado.
 unsigned cwo_revisao(void);
+
+// --- O rotulo do card futuro ------------------------------------------------
+// O card de "Proximos episodios" dizia "A seguir", igual ao episodio que ja
+// foi ao ar e pode tocar agora — e o hero, "A SEGUIR" (C9 do dono, Brothers
+// T1E6, 24/09). O futuro diz QUANDO: "Estreia 21 out" / "Airs Oct 21".
+// Esta e so a data: "21 out" (PT) / "Oct 21" (EN), com o ano quando nao e o
+// de `agoraMs` ("21 out 2027" / "Oct 21, 2027"); `maiusc` para o hero
+// ("21 OUT"). Dia pelo calendario UTC. Devolve 0, com dst vazio, sem data.
+int cwo_data_curta(long long estreiaMs, long long agoraMs, int ingles, int maiusc,
+                   char *dst, size_t cap);
 
 #endif
