@@ -93,6 +93,7 @@ typedef struct {
   size_t bytes;
   long long ms;          // instante (relogio do video) que este quadro mostra
   long long inicioMax;   // maior Start dos eventos vivos em ms; -1 sem evento
+  float ox, oy;          // canto da area do video na tela quando foi renderizado
 } AssCpuFrame;
 
 static pthread_mutex_t assTrava = PTHREAD_MUTEX_INITIALIZER;
@@ -118,6 +119,20 @@ static AssTex *assTex;
 static int assTexCap;
 static int assTexResetar;
 static int assFrameW, assFrameH;
+/* AREA DO VIDEO. O libass desenhava num quadro 1920x1080 fixo, como se o video
+ * ocupasse a tela inteira: num 4:3 uma placa em \pos(64,48) caia em x=195,
+ * DENTRO da barra preta (o video comeca em x=240); num 2.39:1 caia na barra de
+ * cima e 33 % maior. O quadro do libass agora e o retangulo em que o video
+ * aparece, e o storage e o tamanho do quadro decodificado — o que o mpv faz e
+ * o que o ass.js do app web faz com resampling "video_height".
+ * O fio grafico PEDE (layPed*, sob assFilaTrava) e o worker APLICA antes do
+ * proximo render (layApl*, sob assTrava): o fio grafico nunca espera um
+ * ass_render_frame para mudar o layout. */
+static float layPedX, layPedY;
+static int layPedW = 1920, layPedH = 1080, layPedVW = 1920, layPedVH = 1080;
+static double layPedEscala = 1.0;
+static int layAplW, layAplH, layAplVW, layAplVH;
+static double layAplEscala;
 static unsigned assGeracao;
 static int assCorAtiva, assCorR, assCorG, assCorB;
 static unsigned long long assUltimoRenderUs;
@@ -271,6 +286,8 @@ static void ass_iniciar_locked(void) {
   assFrameW = 1920; assFrameH = 1080;
   ass_set_frame_size(assRenderer, assFrameW, assFrameH);
   ass_set_storage_size(assRenderer, assFrameW, assFrameH);
+  ass_set_font_scale(assRenderer, 1.0);
+  layAplW = layAplVW = assFrameW; layAplH = layAplVH = assFrameH; layAplEscala = 1.0;
   clock_gettime(CLOCK_MONOTONIC, &t1);
   /* Uma vez por sessao; na C9 a pasta tem 106 MB de fontes. */
   printf("[ass] libass iniciado em %ld ms (fontes de %s)\n",
@@ -331,7 +348,9 @@ static void *ass_worker_loop(void *unused) {
   for (;;) {
     AssCpuFrame frame;
     unsigned generation, serial, epoch;
-    double ms;
+    double ms, esc;
+    float ox, oy;
+    int lw, lh, vw, vh;
     struct timespec a, b;
     ASS_Image *images = NULL;
     int changed = 0, pronto = 0, igual = 0;
@@ -341,6 +360,8 @@ static void *ass_worker_loop(void *unused) {
       pthread_cond_wait(&assFilaCond, &assFilaTrava);
     if (assWorkerParar) { pthread_mutex_unlock(&assFilaTrava); break; }
     generation = assPedidoGeracao; serial = assPedidoSerial; epoch = assEpoch; ms = assPedidoMs;
+    ox = layPedX; oy = layPedY; lw = layPedW; lh = layPedH;
+    vw = layPedVW; vh = layPedVH; esc = layPedEscala;
     assPedidoPendente = 0;
     pthread_mutex_unlock(&assFilaTrava);
 
@@ -350,6 +371,18 @@ static void *ass_worker_loop(void *unused) {
         generation == assTrackGeracao &&
         assTrack && assRenderer) {
       long long t = (long long)llround(ms);
+      if (lw != layAplW || lh != layAplH) {
+        ass_set_frame_size(assRenderer, lw, lh);
+        assFrameW = layAplW = lw; assFrameH = layAplH = lh;
+      }
+      if (vw != layAplVW || vh != layAplVH) {
+        ass_set_storage_size(assRenderer, vw, vh);
+        layAplVW = vw; layAplVH = vh;
+      }
+      if (esc != layAplEscala) {
+        ass_set_font_scale(assRenderer, esc);
+        layAplEscala = esc;
+      }
       images = ass_render_frame(assRenderer, assTrack, t, &changed);
       /* Igual ao publicado: nada a fazer, o quadro em tela continua certo. */
       pthread_mutex_lock(&assFilaTrava);
@@ -359,6 +392,7 @@ static void *ass_worker_loop(void *unused) {
       if (!igual) {
         pronto = ass_frame_copiar(images, &frame);
         frame.ms = t; frame.inicioMax = -1;
+        frame.ox = ox; frame.oy = oy;
         { int i;
           for (i = 0; i < assTrack->n_events; i++) {
             long long ini = assTrack->events[i].Start;
@@ -634,6 +668,26 @@ int assrender_adicionar_fonte(const char *nome, const void *dados, size_t tamanh
   { int ok = assLib != NULL; pthread_mutex_unlock(&assTrava); return ok; }
 }
 
+void assrender_definir_layout(float x, float y, float w, float h,
+                              int videoW, int videoH, double escalaFonte) {
+  int lw = (int)lroundf(w), lh = (int)lroundf(h);
+  if (lw < 16 || lh < 16) return;
+  if (videoW < 2 || videoH < 2) { videoW = lw; videoH = lh; }
+  if (!(escalaFonte > 0.1 && escalaFonte < 4.0)) escalaFonte = 1.0;
+  pthread_mutex_lock(&assFilaTrava);
+  if (lw != layPedW || lh != layPedH || videoW != layPedVW || videoH != layPedVH ||
+      escalaFonte != layPedEscala || fabsf(x - layPedX) > 0.5f || fabsf(y - layPedY) > 0.5f) {
+    layPedX = x; layPedY = y; layPedW = lw; layPedH = lh;
+    layPedVW = videoW; layPedVH = videoH; layPedEscala = escalaFonte;
+    /* O quadro em tela fica ate o novo chegar (sem piscar), mas nada
+     * renderizado com o layout velho pode ser publicado depois disto, e o
+     * proximo desenhar pede um render mesmo com o video pausado. */
+    ++assEpoch;
+    assTemUltimoPedido = 0;
+  }
+  pthread_mutex_unlock(&assFilaTrava);
+}
+
 void assrender_definir_cor(int enabled, int r, int g, int b) {
   pthread_mutex_lock(&assFilaTrava);
   assCorAtiva = !!enabled;
@@ -764,7 +818,7 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
      * (0,0) e o canto superior esquerdo. A textura contem somente a caixa do
      * glyph e pode ser composta diretamente pelo shader de texto. */
     gfx_tex_aspect_atual = 0.0f;
-    gfx_rect((GfxRect){ x + (float)im->x, y + (float)im->y,
+    gfx_rect((GfxRect){ x + assAtual.ox + (float)im->x, y + assAtual.oy + (float)im->y,
                         (float)im->w, (float)im->h }, tex, GFX_TEXTO,
              0, 0, 0, 0, 1, 1, 1, alpha);
   }
@@ -869,6 +923,10 @@ void assrender_aplicar_invalidacao(void) {}
 int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
                        float x, float y, float w, float h) {
   (void)posSeg; (void)atrasoMs; (void)alpha; (void)x; (void)y; (void)w; (void)h; return 0;
+}
+void assrender_definir_layout(float x, float y, float w, float h,
+                              int videoW, int videoH, double escalaFonte) {
+  (void)x; (void)y; (void)w; (void)h; (void)videoW; (void)videoH; (void)escalaFonte;
 }
 int assrender_ativo(void) { return 0; }
 int assrender_quadro_cpu(double posSeg) { (void)posSeg; return -1; }

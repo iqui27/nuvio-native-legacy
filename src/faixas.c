@@ -9,6 +9,7 @@
 #include "layout.h"
 #include "legenda.h"
 #include "mkvass.h"
+#include "assrender.h"
 #include "ajustes.h"
 #include "catalogo.h"
 #include "linguas.h"
@@ -247,10 +248,29 @@ static const char *const EST_FUNDO[5] = { "Nenhum", "Escuro 25%", "Escuro 50%",
 static const char *const EST_BORDA[3] = { "Nenhuma", "Contorno", "Sombra" };
 static const char *const EST_OPAC[4]  = { "100%", "75%", "50%", "25%" };
 
+/* Com o ASS desenhado pelo libass, fonte, cor, fundo, posicao e borda sao do
+ * arquivo: mexer nelas desmontava karaoke e placas (ou nao fazia nada). A
+ * linha continua na folha, esmaecida, dizendo por que nao muda — como o app
+ * web faz desde o 1.2.0. Tamanho vira escala proporcional; opacidade e atraso
+ * valem igual. */
+static int estiloPreservadoAss(int linha) {
+  return assrender_ativo() && (linha == 1 || linha == 2 || linha == 4 ||
+                               linha == 5 || linha == 6);
+}
+
 static void valorEstilo(int linha, char *dst, size_t tam) {
   const VideoLegendaEstilo *e = player_leg_estilo();
+  if (estiloPreservadoAss(linha)) {
+    snprintf(dst, tam, "%s", i18n("Preservado pelo ASS"));
+    return;
+  }
   switch (linha) {
-    case 0: snprintf(dst, tam, "%d%%", e->tamanho); break;
+    case 0:
+      if (assrender_ativo())
+        snprintf(dst, tam, "%d%% \xc2\xb7 ASS \xc3\x97%.2f", e->tamanho, e->tamanho / 120.0);
+      else
+        snprintf(dst, tam, "%d%%", e->tamanho);
+      break;
     case 1: snprintf(dst, tam, "%s", TXT_FAMILIAS_PT[e->familia >= 0 && e->familia < TXT_FAMILIA_N ? e->familia : 0]); break;
     case 2: snprintf(dst, tam, "%s", VIDEO_LEG_CORES_PT[e->cor % VIDEO_LEG_NCORES]); break;
     case 3: snprintf(dst, tam, "%s", EST_OPAC[e->opacidade > 3 ? 3 : e->opacidade]); break;
@@ -270,6 +290,7 @@ static void valorEstilo(int linha, char *dst, size_t tam) {
 
 static void ciclarEstilo(int linha) {
   VideoLegendaEstilo *e = player_leg_estilo();
+  if (estiloPreservadoAss(linha)) return;
   switch (linha) {
     case 0: e->tamanho += 10; if (e->tamanho > 200) e->tamanho = 50; break;
     case 1: e->familia = (e->familia + 1) % TXT_FAMILIA_N; break;
@@ -664,6 +685,7 @@ static void coluna_desenhar(int col, float x, float larg, float y0, float a) {
     corFocoFaixa(&fr, &fg, &fb);
     if(sel) superficieFocoFaixa((GfxRect){x-20,y-14,larg+20,92},a);
     int c=sel?ajustes_tinta_foco():230, sub=sel?ajustes_tinta_foco2():174;
+    if(col==FX_COL_ESTILO && estiloPreservadoAss(i)) { c=sel?c:128; sub=sel?sub:112; }
     txt_desenhar_alpha(txt_linha_corta(TXT_PAINEL_ITEM,rot,c,c,c,255,larg-72),x,y,a);
     if(marca && *marca)
       txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,marca,sub,sub,sub,255,larg-72),x,y+34,a);

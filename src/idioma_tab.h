@@ -1316,6 +1316,7 @@
   { "Prefira 720p ou 1080p leve.", "Prefer 720p or light 1080p." },
   { "Preparando o código…", "Preparing the code…" },
   { "Preparando seu catálogo…", "Getting your catalog ready…" },
+  { "Preservado pelo ASS", "Kept from the ASS file" },
   { "Preto", "Black" },
   { "Preview: não", "Preview: off" },
   { "Preview: sim", "Preview: on" },

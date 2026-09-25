@@ -196,6 +196,11 @@ void player_leg_estilo_mudou(void);
 // "quero o comportamento normal do app", e o normal do app e respeitar o
 // arquivo. Tamanho, fonte e borda nao entram nesta conta — eles vencem o ASS
 // SEMPRE, porque tamanho de legenda numa TV e acessibilidade, nao estilo.
+//
+// Tudo isto vale para o parser REDUZIDO (legenda.c). Com o libass desenhando,
+// o arquivo manda em cor, fonte, fundo, posicao e borda (decisao do dono em
+// 25/09/2026, alinhada ao app web 1.2.0): trocar a cor apagava karaoke e
+// placas. O tamanho continua da pessoa, como escala proporcional do libass.
 #define PLR_LEG_NADA  0
 #define PLR_LEG_COR   1
 void player_leg_estilo_tocou(int campos);  // PLR_LEG_NADA zera
