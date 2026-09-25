@@ -58,6 +58,7 @@
 #include "catalogo.h"
 #include "dados.h"
 #include "ajustes.h"
+#include "rail_shot.h"
 #include "perfis.h"
 #include "gfx.h"
 #include "text.h"
@@ -134,6 +135,7 @@ static void teclaDet(SDL_Keycode k) {
 
 static void captura(const char *nome, SDL_Window *win) {
   int i;
+  rail_shot_aplicar();
   for (i = 0; i < 90; i++) {
     SDL_PumpEvents();
     txt_novo_quadro();
@@ -158,6 +160,7 @@ static void captura(const char *nome, SDL_Window *win) {
       case DES_DETALHE: detail_desenhar(SDL_GetTicks());     break;
       default:          agendaui_desenhar(SDL_GetTicks());   break;
     }
+    if (oQue != DES_MENU && oQue != DES_DETALHE) rail_shot_desenhar(MENU_AGENDA);
     if (i == 89) {
       unsigned char *pix = malloc(1920 * 1080 * 4);
       SDL_Surface *s;

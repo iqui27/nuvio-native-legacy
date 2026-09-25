@@ -10,6 +10,7 @@
 // de quem nunca abriu o app) e a captura nao mexe no fileirasui.txt de quem
 // roda o teste.
 #include "ajustes.h"
+#include "rail_shot.h"
 #include "fileiras.h"
 #include "gfx.h"
 #include "text.h"
@@ -30,6 +31,7 @@ static void tecla(SDL_Keycode k) {
 
 static void captura(const char *nome, SDL_Window *win) {
   int i;
+  rail_shot_aplicar();
   for (i = 0; i < 60; i++) {
     SDL_PumpEvents();
     txt_novo_quadro();
@@ -39,6 +41,7 @@ static void captura(const char *nome, SDL_Window *win) {
     glClearColor(0.025f, 0.025f, 0.03f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     ajustes_desenhar(SDL_GetTicks());
+    rail_shot_desenhar(MENU_AJUSTES);
     if (i == 59) {
       unsigned char *pix = malloc(1920 * 1080 * 4);
       SDL_Surface *s;

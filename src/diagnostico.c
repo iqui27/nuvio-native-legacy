@@ -1804,9 +1804,14 @@ static int coberturaPercentual(void) {
   return total > 0 ? 100 : 0;
 }
 
+// A folha centra na area A DIREITA DA RAIL quando e aberta de dentro da tela
+// (a rail fixa e desenhada por cima dela, depois). A da primeira abertura vem
+// de diagnostico_intro_desenhar, que cobre tudo inclusive a rail: essa centra
+// na tela inteira.
 static void desenharApresentacao(int primeiraAbertura) {
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
-  GfxRect cartao = { 150.0f, 136.0f, 1620.0f, 808.0f };
+  float rail = primeiraAbertura ? 0.0f : ajustes_rail_largura_fixa();
+  GfxRect cartao = { rail + (NV_TELA_W - rail - 1620.0f) * 0.5f, 136.0f, 1620.0f, 808.0f };
   float ar, ag, ab;
   ajustes_acento(&ar, &ag, &ab);
   gfx_cor(tela, 0.0f, 0, 0, 0, 0.78f);
@@ -1885,15 +1890,26 @@ static void linhasDoPerfil(GfxRect r, float y, float passo, const PtvPerfil *a,
   metrica(r, y + 2.0f * passo, "Largura do fundo em tela cheia", v, 220, 226, 236);
 }
 
+// AREA UTIL DA TELA (26/09, "no diagnostico tem varias"). Todos os paineis
+// foram medidos na tela inteira, entre as margens de 80 do tvOS; com a rail
+// FIXA os 144 da esquerda sao dela, e o painel da esquerda, o titulo e os
+// botoes nasciam embaixo. x0/W vem de ajustes_area_conteudo: recolhida e o
+// 80..1840 de sempre, fixa e 224..1840 — e as colunas se repartem a partir de
+// W em vez de numeros cravados.
+static float areaX(void) { float x; ajustes_area_conteudo(NV_MARGEM_X, NV_MARGEM_X, &x, NULL); return x; }
+static float areaW(void) { float w; ajustes_area_conteudo(NV_MARGEM_X, NV_MARGEM_X, NULL, &w); return w; }
+// Duas colunas com o vao de 80 de sempre: 840 + 80 + 840 na tela inteira.
+static float colunaW(void) { return (areaW() - 80.0f) * 0.5f; }
+
 static void desenharBotoes(float y, float ar, float ag, float ab) {
   int lista[B_N], n = botoesVisiveis(lista), i;
-  float x = NV_MARGEM_X, soma = 0.0f, folga = 64.0f, vao = 20.0f;
+  float x = areaX(), soma = 0.0f, folga = 64.0f, vao = 20.0f;
   if (d.botao >= n) d.botao = n > 0 ? n - 1 : 0;
   // COM SEIS BOTOES (sugestao, restaurar e reenvio juntos, raro) a fileira
   // passava da margem direita: mede antes e encolhe o respiro para caber.
   for (i = 0; i < n; i++)
     soma += (float)txt_linha(TXT_BODY, i18n(BOTAO_ROTULO[lista[i]]), 232, 236, 244, 255).w;
-  if (soma + (float)n * folga + (float)(n - 1) * vao > NV_TELA_W - 2.0f * NV_MARGEM_X) {
+  if (soma + (float)n * folga + (float)(n - 1) * vao > areaW()) {
     folga = 36.0f;
     vao = 12.0f;
   }
@@ -2165,8 +2181,11 @@ static void desenharVazaoOrigem(GfxRect r, float ar, float ag, float ab) {
 }
 
 static void desenharVazao(float y0, float ar, float ag, float ab, Uint32 agora) {
-  GfxRect esq = { 80.0f, y0, 1080.0f, 640.0f };
-  GfxRect dir = { 1180.0f, y0, 660.0f, 640.0f };
+  // 1080 + 20 + 660 na tela inteira; com a rail fixa os dois encolhem na
+  // mesma proporcao (991 e 605), e o painel da origem continua a direita.
+  float x0 = areaX(), we = (areaW() - 20.0f) * (1080.0f / 1740.0f);
+  GfxRect esq = { x0, y0, we, 640.0f };
+  GfxRect dir = { x0 + we + 20.0f, y0, areaW() - 20.0f - we, 640.0f };
   painel(esq, ar, ag, ab);
   painel(dir, ar, ag, ab);
   desenharVazaoResumo(esq, ar, ag, ab, agora);
@@ -2174,7 +2193,7 @@ static void desenharVazao(float y0, float ar, float ag, float ab, Uint32 agora) 
   txt_desenhar(txt_linha(TXT_CAPTION, i18n(atomic_load(&vz.estado) == 1 ? "Voltar cancela o teste"
                                                                           : "OK testa de novo · Voltar fecha"),
                          172, 176, 184, 255),
-               NV_MARGEM_X, y0 + 668.0f);
+               x0, y0 + 668.0f);
 }
 
 void diagnostico_desenhar(Uint32 agora) {
@@ -2182,7 +2201,7 @@ void diagnostico_desenhar(Uint32 agora) {
   int feito = atomic_load(&d.feitos), total = atomic_load(&d.total);
   int itens = 0, pend = 0, quentes = 0, fios = 0, fiosMax = 0;
   long bytes = 0, bytesQuentes = 0, memTotal = 0, limite = 0;
-  float ar, ag, ab, yConteudo;
+  float ar, ag, ab, yConteudo, x0 = areaX(), W = areaW(), cw = colunaW();
   char v[160];
   ajustes_acento(&ar, &ag, &ab);
   tex_estatisticas(&itens, &pend, &bytes, &quentes, &bytesQuentes);
@@ -2193,17 +2212,19 @@ void diagnostico_desenhar(Uint32 agora) {
   // TITULO1 e mais alto que 52 e a frase era desenhada por cima dele (C9).
   { TxtLinha tit = txt_linha(TXT_TITULO1, i18n("Diagnóstico e otimização"), 255, 255, 255, 255);
     TxtLinha sub = txt_linha_corta(TXT_BODY, i18n("Teste os addons, artes e fontes desta TV; o relatório é enviado ao suporte."),
-                                   178, 182, 190, 255, NV_TELA_W - 2.0f * NV_MARGEM_X);
-    txt_desenhar(tit, NV_MARGEM_X, NV_MARGEM_Y);
-    txt_desenhar(sub, NV_MARGEM_X, NV_MARGEM_Y + (float)tit.h + 4.0f);
+                                   178, 182, 190, 255, W);
+    txt_desenhar(tit, x0, NV_MARGEM_Y);
+    txt_desenhar(sub, x0, NV_MARGEM_Y + (float)tit.h + 4.0f);
     yConteudo = NV_MARGEM_Y + (float)tit.h + 4.0f + (float)sub.h + 28.0f;
     if (yConteudo < 196.0f) yConteudo = 196.0f; }
 
   if (vz.aberto) {
     desenharVazao(yConteudo, ar, ag, ab, agora);
   } else if (estado == 0) {
-    GfxRect esq = { 80.0f, yConteudo, 840.0f, 880.0f - yConteudo };
-    GfxRect dir = { 1000.0f, yConteudo, 840.0f, 880.0f - yConteudo };
+    GfxRect esq = { x0, yConteudo, cw, 880.0f - yConteudo };
+    GfxRect dir = { x0 + cw + 80.0f, yConteudo, cw, 880.0f - yConteudo };
+    // Os dois cartoes de objetivo repartem o painel: 380 + 24 + 380 nos 840.
+    float oc = (esq.w - 56.0f - 24.0f) * 0.5f;
     static const char *const PASSOS[5] = {
       "Manifestos, catálogos e fontes de vídeo dos add-ons",
       "Cada fonte de arte: catálogo, Metahub, TMDB, Trakt, Apple TV, fanart.tv, anime e logo",
@@ -2221,7 +2242,7 @@ void diagnostico_desenhar(Uint32 agora) {
     painel(dir, ar, ag, ab);
     painelTitulo(esq, "Objetivo", "Esquerda e direita escolhem o objetivo");
     for (i = 0; i < 2; i++) {
-      GfxRect c = { esq.x + 28.0f + i * 404.0f, esq.y + 100.0f, 380.0f, 196.0f };
+      GfxRect c = { esq.x + 28.0f + i * (oc + 24.0f), esq.y + 100.0f, oc, 196.0f };
       int foco = focoModo == i && !focoLinha;
       gfx_cor(c, 18.0f / c.h, foco ? ar : 0.10f, foco ? ag : 0.12f, foco ? ab : 0.15f, 0.98f);
       txt_desenhar(txt_linha(TXT_BODY, i18n(i ? "Desempenho" : "Qualidade"),
@@ -2263,18 +2284,29 @@ void diagnostico_desenhar(Uint32 agora) {
       int foco = focoLinha == 1;
       TxtLinha t = txt_linha(TXT_BODY, i18n("Teste de velocidade"), foco ? 16 : 232,
                              foco ? 18 : 236, foco ? 22 : 244, 255);
-      float w = (float)t.w + 64.0f, x = NV_TELA_W - NV_MARGEM_X - w;
-      txt_desenhar(ok, NV_MARGEM_X, 930.0f);
-      txt_desenhar(txt_linha(TXT_CAPTION, i18n(focoLinha ? "Para cima volta ao objetivo · Voltar sai"
-                                                         : "Para baixo: teste de velocidade · Voltar sai"),
-                             172, 176, 184, 255),
-                   NV_MARGEM_X + ok.w + 32.0f, 934.0f);
+      float w = (float)t.w + 64.0f, x = x0 + W - w;
+      txt_desenhar(ok, x0, 930.0f);
+      // Cortada ANTES do botao: com a rail fixa a linha perdeu 144 e a dica
+      // encostava nele.
+      txt_desenhar(txt_linha_corta(TXT_CAPTION, i18n(focoLinha ? "Para cima volta ao objetivo · Voltar sai"
+                                                               : "Para baixo: teste de velocidade · Voltar sai"),
+                                   172, 176, 184, 255, x - 32.0f - (x0 + ok.w + 32.0f)),
+                   x0 + ok.w + 32.0f, 934.0f);
       // O mesmo botao da tela de resultado (desenharBotoes), a direita.
       if (foco) gfx_cor((GfxRect){ x, 910.0f, w, 60.0f }, 0.5f, ar, ag, ab, 1.0f);
       else gfx_cor((GfxRect){ x, 910.0f, w, 60.0f }, 0.5f, 0.13f, 0.15f, 0.19f, 1.0f);
       txt_desenhar(t, x + 32.0f, 910.0f + (60.0f - (float)t.h) * 0.5f); }
   } else if (estado == 1) {
-    GfxRect pn = { 180.0f, yConteudo + 20.0f, 1560.0f, 640.0f };
+    // 100 de folga de cada lado da area util: 180..1740 na tela inteira.
+    GfxRect pn = { x0 + 100.0f, yConteudo + 20.0f, W - 200.0f, 640.0f };
+    // Coluna de metricas ancorada na DIREITA do painel; com a rail fixa ela
+    // estreita um pouco (640 -> 604) e as etapas, a esquerda, cortam antes
+    // dela em vez de passar por baixo.
+    GfxRect col = { 0.0f, pn.y + 230.0f, 640.0f - (1560.0f - pn.w) * 0.25f, 300.0f };
+    float etapasW;
+    col.x = pn.x + pn.w - 60.0f - col.w;
+    etapasW = col.x - (pn.x + 108.0f) - 24.0f;
+    if (etapasW > 700.0f) etapasW = 700.0f;
     static const char *const ETAPAS[6] = {
       "Sondando manifestos, catálogos e fontes",
       "Medindo cada fonte de arte",
@@ -2303,11 +2335,10 @@ void diagnostico_desenhar(Uint32 agora) {
               feita || atual ? ar : 0.22f, feita || atual ? ag : 0.24f, feita || atual ? ab : 0.28f,
               feita ? 1.0f : atual ? a : 0.9f);
       txt_desenhar(txt_linha_corta(TXT_BODY, i18n(ETAPAS[i]), feita || atual ? 232 : 140,
-                                   feita || atual ? 236 : 146, feita || atual ? 244 : 156, 255, 700.0f),
+                                   feita || atual ? 236 : 146, feita || atual ? 244 : 156, 255, etapasW),
                    pn.x + 108.0f, y);
     }
-    { GfxRect col = { pn.x + 860.0f, pn.y + 230.0f, 640.0f, 300.0f };
-      snprintf(v, sizeof v, i18n("%d de %d"), feito, total);
+    { snprintf(v, sizeof v, i18n("%d de %d"), feito, total);
       metrica(col, col.y + 20.0f, "Etapas de rede", v, 214, 220, 230);
       if (limite > 0) snprintf(v, sizeof v, "%ld / %ld MB", bytes / (1024L * 1024L), limite / (1024L * 1024L));
       else snprintf(v, sizeof v, "%s", i18n("indisponível"));
@@ -2319,10 +2350,10 @@ void diagnostico_desenhar(Uint32 agora) {
     txt_desenhar(txt_linha(TXT_CAPTION, i18n("Voltar cancela e interrompe as requisições da sessão."), 176, 184, 194, 255),
                  pn.x + 64.0f, pn.y + pn.h - 50.0f);
   } else if (estado == 2) {
-    GfxRect tl = { 80.0f, yConteudo, 840.0f, 356.0f };
-    GfxRect tr = { 1000.0f, yConteudo, 840.0f, 356.0f };
-    GfxRect bl = { 80.0f, yConteudo + 376.0f, 840.0f, 312.0f };
-    GfxRect br = { 1000.0f, yConteudo + 376.0f, 840.0f, 312.0f };
+    GfxRect tl = { x0, yConteudo, cw, 356.0f };
+    GfxRect tr = { x0 + cw + 80.0f, yConteudo, cw, 356.0f };
+    GfxRect bl = { x0, yConteudo + 376.0f, cw, 312.0f };
+    GfxRect br = { x0 + cw + 80.0f, yConteudo + 376.0f, cw, 312.0f };
     static const char *const ETAPA_ROT[4] = { "Manifestos", "Catálogos", "Artes", "Fontes" };
     int tempos[4];
     int cobertura = coberturaPercentual(), cor;
@@ -2383,14 +2414,15 @@ void diagnostico_desenhar(Uint32 agora) {
     }
     desenharBotoes(yConteudo + 708.0f, ar, ag, ab);
     txt_desenhar(txt_linha(TXT_CAPTION, i18n("Esquerda e direita escolhem · OK confirma · Voltar sai"), 172, 176, 184, 255),
-                 NV_MARGEM_X, yConteudo + 790.0f);
+                 x0, yConteudo + 790.0f);
   } else {
     int cor;
-    painel((GfxRect){ 260.0f, 260.0f, 1400.0f, 360.0f }, ar, ag, ab);
-    txt_desenhar(txt_linha(TXT_TITULO2, i18n(d.erro[0] ? d.erro : "O teste foi cancelado."), 240, 190, 180, 255), 320.0f, 340.0f);
+    float px = x0 + (W - 1400.0f) * 0.5f;   // 260 na tela inteira
+    painel((GfxRect){ px, 260.0f, 1400.0f, 360.0f }, ar, ag, ab);
+    txt_desenhar(txt_linha(TXT_TITULO2, i18n(d.erro[0] ? d.erro : "O teste foi cancelado."), 240, 190, 180, 255), px + 60.0f, 340.0f);
     txt_desenhar(txt_linha(TXT_BODY, i18n(d.aplicacao == DA_CANCELADO ? textoAplicacao(&cor)
-                                          : "Nenhuma configuração foi alterada."), 182, 190, 202, 255), 320.0f, 420.0f);
-    txt_desenhar(txt_linha(TXT_CAPTION, i18n("OK tenta de novo · Voltar sai"), 172, 176, 184, 255), 320.0f, 540.0f);
+                                          : "Nenhuma configuração foi alterada."), 182, 190, 202, 255), px + 60.0f, 420.0f);
+    txt_desenhar(txt_linha(TXT_CAPTION, i18n("OK tenta de novo · Voltar sai"), 172, 176, 184, 255), px + 60.0f, 540.0f);
   }
   if (d.intro) desenharApresentacao(0);
 }

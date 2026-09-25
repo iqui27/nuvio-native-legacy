@@ -19,6 +19,7 @@
 //   bash tests/perfil_shot.sh [prefixo]
 #include "perfil.h"
 #include "ajustes.h"
+#include "rail_shot.h"
 #include "dados.h"
 #include "gfx.h"
 #include "text.h"
@@ -42,12 +43,14 @@ static void tecla(SDL_Keycode k) {
 // foco fechar os 120 ms medidos e para o decode das artes subir para a GPU.
 static void captura(const char *nome) {
   int i;
+  rail_shot_aplicar();
   for (i = 0; i < 90; i++) {
     SDL_PumpEvents();
     txt_novo_quadro(); tex_novo_quadro(); tex_bombear(6); gfx_novo_quadro();
     perfil_atualizar(1.0f / 60.0f, SDL_GetTicks());
     glClearColor(0.051f, 0.051f, 0.051f, 1.0f); glClear(GL_COLOR_BUFFER_BIT);
     perfil_desenhar(SDL_GetTicks());
+    rail_shot_desenhar(MENU_PERFIL);
     if (i == 89) {
       unsigned char *pix = malloc(1920 * 1080 * 4);
       SDL_Surface *s;

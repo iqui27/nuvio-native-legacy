@@ -13,6 +13,7 @@
 // Inclui src/vertudo.c: `collection`, `tabFocus`, `tabCursor` e `source` sao
 // estaticos, e semear por dentro e o unico jeito de fotografar sem addon.
 #include "../src/vertudo.c"
+#include "rail_shot.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 
@@ -20,6 +21,7 @@ static ColFolder pasta;
 
 static void captura(const char *nome, SDL_Window *win) {
   int i;
+  rail_shot_aplicar();
   for (i = 0; i < 90; i++) {
     SDL_PumpEvents();
     txt_novo_quadro();
@@ -30,6 +32,7 @@ static void captura(const char *nome, SDL_Window *win) {
     glClear(GL_COLOR_BUFFER_BIT);
     vertudo_atualizar(1.0f / 60.0f, SDL_GetTicks());
     vertudo_desenhar(SDL_GetTicks());
+    rail_shot_desenhar(MENU_INICIO);
     if (i == 89) {
       unsigned char *pix = malloc(1920 * 1080 * 4);
       SDL_Surface *s;

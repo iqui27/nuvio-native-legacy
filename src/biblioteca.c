@@ -338,12 +338,43 @@ static int estado(void) {
 }
 // Primeira fileira de foco da grade. Com uma lista aberta nao ha seletores.
 static int gradeIni(void) { return estado() == EST_ITENS ? 1 : BIB_FIL_GRADE; }
+// A AREA UTIL SAI DA RAIL (26/09, dono: "quando a sidebar ta no modo pinned
+// ela corta a interface"). NV_BIB_X/NV_BIB_W sao a medida do web com a barra
+// RECOLHIDA — 96 de recuo, 1728 uteis. Presa, a rail cobre os primeiros 144 px
+// e o titulo, as abas e a primeira coluna nasciam debaixo dela. Agora tudo
+// parte de bibX() e a direita continua em NV_BIB_DIR: a tela encolhe pela
+// esquerda, e quem nao cabe e COLUNA, nao pixel.
+static float bibX(void) {
+  float x;
+  ajustes_area_conteudo(NV_BIB_X, NV_TELA_W - NV_BIB_DIR, &x, NULL);
+  return x;
+}
+static float bibW(void) {
+  float w;
+  ajustes_area_conteudo(NV_BIB_X, NV_TELA_W - NV_BIB_DIR, NULL, &w);
+  return w;
+}
+// Cartazes: o cartaz fica nos 268 medidos e sai uma coluna (6 -> 5 com a rail
+// fixa: 5 x 268 + 4 x 24 = 1436 nos 1584). Encolher o cartaz para manter seis
+// mudaria o raio, a borda e a arte pedida — e o dono ja aprovou esse tamanho.
+// Cartoes de lista: continuam CINCO e estreitam (326 -> 297). O cartao e texto
+// em duas linhas, nao arte, e a densidade de cinco foi o pedido dele (ver
+// BIB_LC_COLS).
+static int colunasCartaz(void) {
+  int n = (int)((bibW() + NV_BIB_CARD_GAP) / (NV_BIB_CARD_W + NV_BIB_CARD_GAP));
+  return n < 1 ? 1 : n > NV_BIB_COLUNAS ? NV_BIB_COLUNAS : n;
+}
+static float larguraCartaoLista(void) {
+  float w = (bibW() - (BIB_LC_COLS - 1) * (BIB_LC_PASSO - BIB_LC_W)) / BIB_LC_COLS;
+  return w < BIB_LC_W ? w : BIB_LC_W;
+}
 static int colunas(void) {
   if (exibicao == VIS_LISTA) return 1;
-  return estado() == EST_LISTAS ? BIB_LC_COLS : NV_BIB_COLUNAS;
+  return estado() == EST_LISTAS ? BIB_LC_COLS : colunasCartaz();
 }
 static float passoColuna(void) {
-  return estado() == EST_LISTAS ? BIB_LC_PASSO : (NV_BIB_CARD_W + NV_BIB_CARD_GAP);
+  return estado() == EST_LISTAS ? larguraCartaoLista() + (BIB_LC_PASSO - BIB_LC_W)
+                                : (NV_BIB_CARD_W + NV_BIB_CARD_GAP);
 }
 // A ALTURA DA LINHA E A DA ROLAGEM: alturaLinha/passoLinha sao a UNICA fonte
 // para o laco de desenho e para o calculo de scrollY em biblioteca_atualizar.
@@ -386,8 +417,13 @@ static int contarCelulas(void) {
 // exibicao — e quando a rede acrescenta itens —, porque o numero de colunas da
 // ultima linha muda com o filtro e um foco apontando para uma coluna que nao
 // existe mais desenha um retangulo vazio.
+// Colunas com que o mapa de foco foi montado. A rail fixa muda colunas() por
+// fora desta tela (a opcao fica em Ajustes); biblioteca_atualizar compara e
+// refaz o mapa, senao a grade de 5 andaria com a navegacao de 6.
+static int ncMapa = 0;
 static void remapear(int preservar) {
   int linhas, cols[FOCUS_MAX_FILEIRAS], r, ini = gradeIni(), nc = colunas();
+  ncMapa = nc;
   int fAntes = foco.fileira, cAntes = foco.coluna;
   nCelulas = contarCelulas();
   linhas = nLinhas();
@@ -819,7 +855,7 @@ void biblioteca_atualizar(float dt, Uint32 agora) {
 
   // A GRADE CRESCE SOZINHA quando a rede entrega mais. Sem remapear, as linhas
   // novas existem no modulo e o foco nao alcanca nenhuma delas.
-  if (contarCelulas() != nCelulas) remapear(1);
+  if (contarCelulas() != nCelulas || colunas() != ncMapa) remapear(1);
 
   for (int a = 0; a < BIB_N_MODOS; a++) {
     float alvo = (estado() != EST_ITENS && foco.fileira == BIB_FIL_MODO
@@ -1025,7 +1061,7 @@ static float marcaTrakt(float x, float y, float h, int tinta, float alpha) {
 }
 
 static void desenhaModo(int a, float f) {
-  float centro = NV_BIB_X + a * NV_BIB_MODO_PASSO + NV_BIB_MODO_W * 0.5f;
+  float centro = bibX() + a * NV_BIB_MODO_PASSO + NV_BIB_MODO_W * 0.5f;
   int sel = (a == modo);
   TxtLinha l = txt_linha(TXT_CALLOUT, ROT_MODO[a], 235, 235, 235, 255);
   if (sel) {
@@ -1068,7 +1104,7 @@ static float pickerLargura(int p) {
 }
 
 static float pickerX(int p) {
-  float x = NV_BIB_X;
+  float x = bibX();
   int i;
   for (i = 0; i < p; i++) x += pickerLargura(i) + BIB_PICK_GAP;
   return x;
@@ -1104,7 +1140,7 @@ static void desenhaPicker(int p, float f) {
 // Home e trocar o tipo de midia.
 static void desenhaAcoes(void) {
   static const float W[3] = { 520.0f, 520.0f, 300.0f };
-  float x = NV_BIB_X;
+  float x = bibX();
   int a;
   for (a = 0; a < 3; a++) {
     GfxRect r = { x, NV_BIB_MODO_Y, W[a], 72.0f };
@@ -1187,8 +1223,8 @@ static void desenhaVazio(void) {
           : "Abra um filme ou série e escolha Adicionar à lista para guardar.";
   }
   { TxtLinha t1 = txt_linha(TXT_TITULO2, l1, 255, 255, 255, 255);
-    TxtLinha t2 = txt_linha_corta(TXT_CALLOUT, l2, 150, 153, 162, 255, NV_BIB_W);
-    float cx = NV_BIB_X + NV_BIB_W * 0.5f;
+    TxtLinha t2 = txt_linha_corta(TXT_CALLOUT, l2, 150, 153, 162, 255, bibW());
+    float cx = bibX() + bibW() * 0.5f;
     float y = gradeY() + 190.0f;
     gfx_icone((GfxRect){cx - 32.0f, y - 100.0f, 64.0f, 64.0f},
                "menu_library", 0.70f, 0.70f, 0.72f, 1.0f);
@@ -1445,11 +1481,11 @@ static void desenhaNota(const CatItem *ci, float xDir, float yCentro,
 // MEMORIA: a miniatura pede tex_obter_larg(96), nao tex_obter — o teto de
 // decodificacao sai da largura desenhada, e so a linha VISIVEL chega aqui.
 static void desenhaLinhaTitulo(const CatItem *ci, float y, float f, float a) {
-  GfxRect r = { NV_BIB_X, y, NV_BIB_W, BIB_LIN_H };
+  GfxRect r = { bibX(), y, bibW(), BIB_LIN_H };
   int cor = superficieLinha(r, raioPx(18.0f, r.w, r.h), f, a);
   int sr, sg, sb;
   float yc = y + BIB_LIN_H * 0.5f;
-  float xNotaDir = r.x + NV_BIB_W - BIB_COL_DIR;
+  float xNotaDir = r.x + bibW() - BIB_COL_DIR;
   float xNotaIni = xNotaDir - larguraNota(ci);
   float xProgDir = xNotaIni - BIB_COL_PROG_GAP;
   GfxRect mini = { r.x + BIB_LIN_PAD, y + (BIB_LIN_H - BIB_LIN_MINI_H) * 0.5f,
@@ -1598,7 +1634,7 @@ static void desenhaCartaoLista(const LstLista *l, GfxRect r, float f, float a) {
 }
 
 static void desenhaLinhaLista(const LstLista *l, float y, float f, float a) {
-  GfxRect r = { NV_BIB_X, y, NV_BIB_W, BIB_LL_H };
+  GfxRect r = { bibX(), y, bibW(), BIB_LL_H };
   int cor = superficieLinha(r, raioPx(14.0f, r.w, r.h), f, a);
   int sr, sg, sb;
   char sub[220];
@@ -1609,7 +1645,7 @@ static void desenhaLinhaLista(const LstLista *l, float y, float f, float a) {
   { float w = seloFonte(l, tx, y + (BIB_LL_H - 26.0f) * 0.5f, 26.0f, cor, a);
     if (w > 0.0f) tx += w + 26.0f; }
   { TxtLinha s2 = txt_linha_corta(TXT_CAPTION2, sub, sr, sg, sb, 255, 340.0f);
-    float xDir = r.x + NV_BIB_W - 24.0f;
+    float xDir = r.x + bibW() - 24.0f;
     TxtLinha t = txt_linha_corta(TXT_CALLOUT, l->titulo, cor, cor, cor, 255,
                                  xDir - (float)s2.w - 60.0f - tx);
     txt_desenhar_alpha(t, tx, y + (BIB_LL_H - (float)t.h) * 0.5f, a);
@@ -1633,8 +1669,8 @@ static void desenhaCabecalho(void) {
     tit = caminho;
   }
   { TxtLinha t = txt_linha_corta(TXT_TITULO2, tit,
-                                 255, 255, 255, 255, NV_BIB_W - 320.0f);
-    txt_desenhar(t, NV_BIB_X, NV_BIB_Y); }
+                                 255, 255, 255, 255, bibW() - 320.0f);
+    txt_desenhar(t, bibX(), NV_BIB_Y); }
 
   // Selo de origem, alinhado a direita da area util. Espacado de proposito: no
   // web ele tem letter-spacing 4 e le como etiqueta, nao como palavra.
@@ -1722,7 +1758,14 @@ static void desenhaResumo(void) {
   }
   { float linhaY = temAberta ? NV_BIB_MODO_Y : NV_BIB_PICK_Y;
     float linhaH = temAberta ? 72.0f : BIB_PICK_H;
-    TxtLinha info = txt_linha_corta(TXT_CAPTION2, txt, 150, 153, 162, 255, 760.0f);
+    // O resumo divide a faixa com os seletores (ou as acoes): com a rail fixa
+    // eles andaram 144 para a direita e os 760 de antes caiam em cima do
+    // ultimo. O teto passa a ser o que sobra ate a borda, com 40 de fresta.
+    float fim = temAberta ? bibX() + 520.0f + 520.0f + 300.0f + 2.0f * 24.0f
+                          : pickerX(2) + pickerLargura(2);
+    float teto = NV_BIB_DIR - fim - 40.0f;
+    TxtLinha info = txt_linha_corta(TXT_CAPTION2, txt, 150, 153, 162, 255,
+                                    teto < 760.0f ? (teto > 0.0f ? teto : 0.0f) : 760.0f);
     txt_desenhar(info, NV_BIB_DIR - info.w,
                  linhaY + (linhaH - info.h) * 0.5f); }
 }
@@ -1786,8 +1829,8 @@ void biblioteca_desenhar(Uint32 agora) {
         if (estado() == EST_LISTAS) {
           const LstLista *l = lst_lista(i);
           if (exibicao == VIS_LISTA) desenhaLinhaLista(l, topo, f, a);
-          else desenhaCartaoLista(l, (GfxRect){ NV_BIB_X + c * passoC, topo,
-                                                BIB_LC_W, BIB_LC_H }, f, a);
+          else desenhaCartaoLista(l, (GfxRect){ bibX() + c * passoC, topo,
+                                                larguraCartaoLista(), BIB_LC_H }, f, a);
           continue;
         }
         { CatItem tmp;
@@ -1795,7 +1838,7 @@ void biblioteca_desenhar(Uint32 agora) {
           if (estado() == EST_ITENS) ci = lst_item(i, &tmp) ? &tmp : NULL;
           else                       ci = itemFiltro(filtro[i], &tmp);
           if (exibicao == VIS_LISTA) desenhaLinhaTitulo(ci, topo, f, a);
-          else desenhaCartaz(ci, (GfxRect){ NV_BIB_X + c * passoC, topo,
+          else desenhaCartaz(ci, (GfxRect){ bibX() + c * passoC, topo,
                                             NV_BIB_CARD_W, NV_BIB_POSTER_H }, f, a,
                              (r < BIB_MAX_LINHAS && c < NV_BIB_COLUNAS)
                                ? &revArte[r][c] : NULL, agora); }

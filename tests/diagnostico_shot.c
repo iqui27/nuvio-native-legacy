@@ -9,6 +9,7 @@
 // NUVIO_DADOS e uma pasta temporaria (ver o .sh): ajustes.txt e o perfil
 // aprovado sao escritos la, nunca nos dados de quem roda.
 #include "../src/diagnostico.c"
+#include "rail_shot.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 
@@ -18,6 +19,7 @@ static GLuint fbo, fboTex;
 
 static void captura(const char *nome, SDL_Window *win, int tela) {
   int i;
+  rail_shot_aplicar();
   for (i = 0; i < 40; i++) {
     SDL_PumpEvents();
     txt_novo_quadro();
@@ -29,6 +31,7 @@ static void captura(const char *nome, SDL_Window *win, int tela) {
     glClear(GL_COLOR_BUFFER_BIT);
     if (tela) ajustes_desenhar(SDL_GetTicks());
     else diagnostico_desenhar(SDL_GetTicks());
+    rail_shot_desenhar(MENU_AJUSTES);
     if (i == 39) {
       unsigned char *pix = malloc(1920 * 1080 * 4);
       SDL_Surface *s;

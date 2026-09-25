@@ -105,6 +105,17 @@ int   ajustes_gradiente_foco_classico(void); // classicFocusGradientEnabled
 // x onde o conteudo comeca. Nao e constante: o recuo e sempre 104 e a rail
 // soma os 144 dela quando esta fixa.
 float ajustes_conteudo_x(void);
+// A FAIXA QUE A RAIL FIXA COBRE na borda esquerda, em px de tela: 144 com ela
+// presa (classica OU moderna — as duas pintam o mesmo desenhaRailFixa, e a
+// moderna desliga o recolhimento), 0 recolhida. E a UNICA fonte desse numero:
+// tela nenhuma deve somar NV_LEGACY_RAIL_W por conta propria.
+float ajustes_rail_largura_fixa(void);
+// Area util de uma tela que nasceu desenhada para a tela inteira (#rail fixa,
+// 26/09): `padEsq` e `padDir` sao os recuos que ela ja usava (80, 96, 104...).
+// Devolve x = rail + padEsq e w = NV_TELA_W - padDir - x. Recolhida, e a conta
+// de antes, byte por byte; fixa, o conteudo anda para a direita e ENCOLHE —
+// quem tem grade tira colunas a partir de `w`, nao escala nem corta.
+void  ajustes_area_conteudo(float padEsq, float padDir, float *x, float *w);
 
 // --- LAYOUT: rotulos e metadados --------------------------------------------
 int   ajustes_rotulos_poster(void);     // posterLabelsEnabled
