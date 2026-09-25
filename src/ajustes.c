@@ -131,7 +131,7 @@ typedef enum {
   // Tamanho do item
   AJ_LARGURA_DP, AJ_RAIO_DP, AJ_QUALIDADE_IMG,
   // Interface
-  AJ_IDIOMA, AJ_ANIM, AJ_RESOLUCAO, AJ_TEMA,
+  AJ_IDIOMA, AJ_ANIM, AJ_RESOLUCAO, AJ_TEMA, AJ_COR_LOGO,
   // Conta
   AJ_PERFIL_ATIVO, AJ_SYNC, AJ_ADDONS,
   AJ_STALKER_PORTAL, AJ_STALKER_MAC, AJ_STALKER_LIMPAR,
@@ -315,11 +315,15 @@ static const struct { float r, g, b; } TEMA_ACENTO[] = {
 // tambem, de leve).
 #define AJ_TEMA_DINAMICA    AJ_N_TEMAS
 #define AJ_TEMA_ESTILIZADA  (AJ_N_TEMAS + 1)
-#define AJ_N_TEMAS_OPC      (AJ_N_TEMAS + 2)
+// Depois do relato do dono de 25/09 ("quero algo mais imersivo ainda"): o
+// degrade nas superficies de destaque e a cor da arte vazando como luz.
+#define AJ_TEMA_GRADIENTE   (AJ_N_TEMAS + 2)
+#define AJ_TEMA_IMERSIVA    (AJ_N_TEMAS + 3)
+#define AJ_N_TEMAS_OPC      (AJ_N_TEMAS + 4)
 static const char *V_TEMA[] = {
   "Branco", "Carmesim", "Oceano", "Violeta", "Esmeralda", "Âmbar",
   "Rosa", "Dourado", "Jade", "Ouro rosé", "Azul ártico", "Grafite",
-  "Dinâmica", "Dinâmica estilizada"
+  "Dinâmica", "Dinâmica estilizada", "Dinâmica gradiente", "Dinâmica imersiva"
 };
 _Static_assert(sizeof V_TEMA / sizeof *V_TEMA == AJ_N_TEMAS_OPC,
                "V_TEMA: os doze temas da conta e os dois dinamicos");
@@ -501,7 +505,12 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Idioma",                     V_IDIOMA, 2),
   ESC("Animações",                  V_ANIM, 2),
   ESC("Resolução da interface",     V_RESOLUCAO, 2),
-  ESC("Cor de destaque",            V_TEMA, AJ_N_TEMAS_OPC),  // selected_theme (+2 locais)
+  ESC("Cor de destaque",            V_TEMA, AJ_N_TEMAS_OPC),  // selected_theme (+4 locais)
+  // So vale com um tema dinamico: o destaque sai do LOGO do titulo em vez da
+  // arte de fundo (dono, 25/09/2026: "matching color da logo tambem como
+  // toggle"). LIGADO de fabrica: o logo e a cor que o estudio escolheu para o
+  // titulo, e foi a falta dele que deu o botao laranja-pele no "Prenda-me".
+  ESC("Cor da logo",                V_LIGA, 2),   // local: corDaLogoLocal
 
   LER("Perfil"),
   LER("Sincronização"),
@@ -639,6 +648,8 @@ static const char *CHAVE[] = {
   // Quem escolher JADE no app web ganha o anel jade na TV sem configurar de
   // novo — e o contrario tambem vale.
   "selected_theme",
+  // LOCAL, sem o "-" para sobreviver ao fechamento: o web nao tem esta escolha.
+  "corDaLogoLocal",
   // Conta: sao linhas locais, nao vem nem vao para o perfil na nuvem.
   // "salvosDestino" e LOCAL como cwFonteLocal, e por isso SEM o "-": o app
   // oficial nao tem esta escolha, entao nao ha campo dela no blob da conta —
@@ -914,6 +925,7 @@ static int valor[AJ_N] = {
   // em Ajustes -> Interface, e a escolha fica gravada.
   1, 0, 0,          /* idioma, animacoes, resolucao (0 = 1080p) */
   0,                /* tema (cor de destaque): o primeiro, o de sempre */
+  0,                /* cor da logo (so com tema dinamico): ligada */
   // O COMENTARIO ANTIGO AQUI ESTAVA ERRADO, e o erro so nao machucou por sorte.
   // Ele dizia `0, 0, /* versao, espaco */` logo depois do idioma, mas esta
   // lista e POSICIONAL: entre AJ_ANIM e AJ_VERSAO_I existem SETE opcoes de
@@ -1022,13 +1034,16 @@ int ajustes_idioma_ingles(void)       { return valor[AJ_IDIOMA] == 1; }
 
 // 1 = o tema escolhido e um dos dinamicos (cor viva), que so existem nesta TV.
 static int temaDinamico(void) {
-  return valor[AJ_TEMA] == AJ_TEMA_DINAMICA || valor[AJ_TEMA] == AJ_TEMA_ESTILIZADA;
+  return valor[AJ_TEMA] >= AJ_TEMA_DINAMICA && valor[AJ_TEMA] < AJ_N_TEMAS_OPC;
 }
 int ajustes_cor_viva(void) {
   return valor[AJ_TEMA] == AJ_TEMA_DINAMICA   ? CORVIVA_SIMPLES
        : valor[AJ_TEMA] == AJ_TEMA_ESTILIZADA ? CORVIVA_ESTILIZADA
+       : valor[AJ_TEMA] == AJ_TEMA_GRADIENTE  ? CORVIVA_GRADIENTE
+       : valor[AJ_TEMA] == AJ_TEMA_IMERSIVA   ? CORVIVA_IMERSIVA
        : CORVIVA_DESLIGADA;
 }
+int ajustes_cor_logo(void) { return lig(AJ_COR_LOGO); }
 
 // Cor do ANEL DE FOCO. Ver TEMA_ACENTO: um tema aqui e so isto.
 //
@@ -1614,6 +1629,7 @@ static int somenteDesteAparelho(int op) {
     // IMDb da Samsung depende do servico de recomendacoes), entao a escolha e
     // deste aparelho.
     case AJ_TRAILER_FONTE:
+    case AJ_COR_LOGO:       /* so existe com os temas dinamicos, que sao locais */
       return 1;
     default:
       return 0;
@@ -2157,7 +2173,8 @@ static const char *ajudaOpcao(int op) {
 
     // --- Interface e conta
     case AJ_IDIOMA: return "Idioma de toda a interface. Não muda o idioma das legendas nem do áudio.";
-    case AJ_TEMA: return "Cor do anel que marca onde está o foco. Os doze temas são os do app web e seguem a conta. Dinâmica usa a cor da arte do título em cena; Dinâmica estilizada também tinge o fundo, de leve. As duas ficam só nesta TV.";
+    case AJ_TEMA: return "Cor do anel que marca onde está o foco. Os doze temas são os do app web e seguem a conta. Os dinâmicos tiram a cor do título em cena: estilizada também tinge o fundo, gradiente pinta os botões com as cores da arte e imersiva deixa a cor vazar pela tela como luz. Ficam só nesta TV.";
+    case AJ_COR_LOGO: return "Com um tema dinâmico, a cor sai do logo do título em vez da arte de fundo. Logo branco ou preto usa a arte.";
     case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";
     case AJ_RESOLUCAO: return "Desenha a interface em 4K nas TVs que permitem. Muitas ignoram o pedido e continuam em 1080p — o log diz qual é o caso. Vale reiniciar o app depois de mudar. O vídeo já é 4K nos dois casos.";
     case AJ_PERFIL_ATIVO: return "Perfil em uso nesta TV. Trocar de perfil é feito na tela de perfis, ao abrir o app.";
@@ -2958,7 +2975,7 @@ static const char *iconeOpcao(int op) {
     case AJ_CW_FURTHEST: case AJ_CW_NAO_EXIBIDOS: case AJ_CW_ORDEM: return "avancar";
     case AJ_DESCOBRIR: return "menu_search";
     case AJ_FIL_LIMITE: case AJ_FIL_ORDEM: return "menu_library";
-    case AJ_IDIOMA: case AJ_ANIM: case AJ_RESOLUCAO: case AJ_TEMA: return "menu_settings";
+    case AJ_IDIOMA: case AJ_ANIM: case AJ_RESOLUCAO: case AJ_TEMA: case AJ_COR_LOGO: return "menu_settings";
     case AJ_ADDONS: case AJ_STALKER_PORTAL: case AJ_STALKER_MAC: case AJ_STALKER_LIMPAR:
     case AJ_XTREAM_SERVIDOR: case AJ_XTREAM_USUARIO: case AJ_XTREAM_SENHA: case AJ_XTREAM_LIMPAR: return "portal";
     case AJ_TRAKT: case AJ_SIMKL: case AJ_SALVOS_DEST: return "recomendar";

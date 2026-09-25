@@ -2662,6 +2662,8 @@ static void desenhaHero(Uint32 agora, float saida) {
   // Durante a promoção para o hero, entregar a textura menor já pronta evita
   // um quadro vazio; o cache continua reprocessando para o teto final.
   GLuint tlogo = urlLogo ? tex_obter_larg_qualquer(urlLogo, maxWLogo) : 0;
+  // COR VIVA: o logo do mesmo titulo do destaque ("Cor da logo").
+  if (urlLogo) corviva_definir_logo(urlLogo, CORVIVA_HOME);
   // Igual ao detalhe: nome escrito so quando nao ha logo ou o cache ja falhou.
   // Antes, qualquer decode pendente caia no ramo de texto — ao voltar do
   // detalhe (catalogo com url nova do TMDB) parecia "sumiu a arte do titulo".

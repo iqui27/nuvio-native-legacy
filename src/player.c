@@ -2404,8 +2404,10 @@ void player_desenhar(Uint32 agora) {
   // ainda nao tem paleta, fica a do detalhe, que e o mesmo titulo. Canal ao
   // vivo nao pede: o logo do canal nao e cor de titulo, e o zap trocaria a
   // cor da tela a cada canal.
-  if (c && c->backdrop[0] && !player_id_canal()[0])
+  if (c && c->backdrop[0] && !player_id_canal()[0]) {
     corviva_definir(artehero_url(c), CORVIVA_PLAYER);
+    if (c->logo[0]) corviva_definir_logo(artehero_logo_sessao(c), CORVIVA_PLAYER);
+  }
 
   // --- o quadro de video ---
   // Com pipeline nao ha o que desenhar: o video esta num plano de hardware ATRAS

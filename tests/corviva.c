@@ -58,8 +58,15 @@ static void regraDeContraste(const CorvivaPaleta *p, const char *nome) {
   char m[160];
   float cb = corviva_contraste(p->acento, BRANCO), cf = corviva_contraste(p->acento, FUNDO);
   float lumGama = 0.2126f * p->acento[0] + 0.7152f * p->acento[1] + 0.0722f * p->acento[2];
-  snprintf(m, sizeof m, "%s: texto branco sobre o destaque %.2f:1 (>= 4,5)", nome, cb);
-  ok(cb >= 4.5f, m);
+  // 3,2:1 e o piso de TEXTO GRANDE do WCAG (3:1) com folga: o texto sobre o
+  // realce e rotulo de botao e de linha em foco, 26-30 px a 1080p. Ver
+  // CV_TEXTO_MIN em corviva.c para o porque de ter saido do 4,5.
+  snprintf(m, sizeof m, "%s: texto branco sobre o destaque %.2f:1 (>= 3,2)", nome, cb);
+  ok(cb >= 3.2f, m);
+  { int k; for (k = 0; k < 3; k++) {
+      float cg = corviva_contraste(p->grad[k], BRANCO);
+      snprintf(m, sizeof m, "%s: texto branco na parada %d do degrade %.2f:1", nome, k, cg);
+      ok(cg >= 3.0f, m); } }
   snprintf(m, sizeof m, "%s: destaque sobre #0D0D0D %.2f:1 (>= 3, anel de foco)", nome, cf);
   ok(cf >= 3.0f, m);
   // ajustes_acento_tinta: tinta escura so acima de 0,88 — o destaque tem de
@@ -75,7 +82,7 @@ static void quadros(int n, float dt, int modo, int red, const char *chave, int p
   int i;
   for (i = 0; i < n; i++) {
     if (chave) corviva_definir(chave, prio);
-    corviva_quadro(dt, modo, red);
+    corviva_quadro(dt, modo, 1, red);
   }
 }
 static int igual3(const float a[3], const float b[3], float tol) {
@@ -185,7 +192,7 @@ int main(void) {
     for (i = 0; i < 60; i++) {
       corviva_definir("https://arte/laranja", CORVIVA_HOME);
       corviva_definir("https://arte/azul", CORVIVA_DETALHE);
-      corviva_quadro(1 / 60.0f, CORVIVA_SIMPLES, 0);
+      corviva_quadro(1 / 60.0f, CORVIVA_SIMPLES, 1, 0);
     }
     corviva_acento(&a[0], &a[1], &a[2]);
     ok(corviva_retargets() == r0 && igual3(a, azul.acento, 0.002f), "detalhe ganha da home no mesmo quadro"); }
@@ -218,7 +225,92 @@ int main(void) {
     { float a[3]; corviva_acento(&a[0], &a[1], &a[2]);
       ok(igual3(a, azul.acento, 0.002f), "o decode chegou: troca sozinha"); } }
 
+
+  // [10] PELE NAO GANHA DA CAMISA (a foto do dono, 25/09: "Prenda-me Se For
+  // Capaz", fundo branco, camisa azul, rosto e bracos): mais pele que azul
+  // na area, e o destaque tem de sair AZUL.
+  { CorvivaPaleta pc;
+    pinta(W, H, 0, 0, W, H, 236, 236, 240, 255, 4);        // fundo branco
+    pinta(W, H, 100, 0, 230, 110, 226, 150, 112, 255, 10); // rosto/bracos (40%)
+    pinta(W, H, 90, 110, 240, H, 90, 150, 215, 255, 10);   // camisa azul (19%)
+    pinta(W, H, 60, 150, 260, 175, 220, 140, 100, 255, 8); // bracos cruzados
+    ok(corviva_extrair(img, W, H, W * 4, &pc) == 1, "pele x camisa: tem cor");
+    { float azulF[3] = { 90 / 255.0f, 150 / 255.0f, 215 / 255.0f };
+      snprintf(m, sizeof m, "pele x camisa: destaque azul (%.0f graus da camisa)", difMatiz(matiz(pc.acento), matiz(azulF)));
+      ok(difMatiz(matiz(pc.acento), matiz(azulF)) <= 20.0f, m); }
+    // E pele sozinha continua dando cor (dominante de longe): um retrato sem
+    // mais nada nao cai no branco.
+    pinta(W, H, 0, 0, W, H, 20, 18, 16, 255, 3);
+    pinta(W, H, 60, 20, 260, 170, 226, 150, 112, 255, 10);
+    ok(corviva_extrair(img, W, H, W * 4, &pc) == 1, "so pele: ainda tem cor"); }
+
+  // [11] LOGO azul-claro + azul-marinho com transparencia: e logo, e o
+  // degrade tem as DUAS cores (a mais clara primeiro).
+  { CorvivaPaleta pl;
+    pinta(W, H, 0, 0, W, H, 0, 0, 0, 0, 0);                  // transparente
+    pinta(W, H, 40, 30, 280, 80, 40, 160, 240, 255, 0);      // azul-claro
+    pinta(W, H, 20, 90, 250, 140, 25, 60, 205, 255, 0);      // azul-marinho
+    pinta(W, H, 90, 45, 200, 60, 255, 255, 255, 255, 0);     // letras brancas
+    ok(corviva_extrair(img, W, H, W * 4, &pl) == 1 && pl.transparente, "logo: tem cor e e transparente");
+    { float Lc, Le, lab[3];
+      corviva_srgb_para_oklab(pl.grad[0], lab); Lc = lab[0];
+      corviva_srgb_para_oklab(pl.grad[2], lab); Le = lab[0];
+      snprintf(m, sizeof m, "logo: degrade do claro (L %.2f) ao escuro (L %.2f)", Lc, Le);
+      ok(Lc - Le >= 0.10f, m);
+      ok(matiz(pl.grad[0]) < -60.0f && matiz(pl.grad[2]) < -60.0f, "logo: as duas paradas sao azuis"); }
+    // Logo BRANCO: sem cor (cai na arte).
+    pinta(W, H, 0, 0, W, H, 0, 0, 0, 0, 0);
+    pinta(W, H, 40, 60, 280, 120, 250, 250, 250, 255, 0);
+    ok(corviva_extrair(img, W, H, W * 4, &pl) == 0 && pl.transparente, "logo branco: sem cor"); }
+
+  // [12] COR DA LOGO: com o ajuste ligado o destaque vem do logo; desligado,
+  // da arte. O logo so vale junto do pedido de mesma prioridade.
+  { CorvivaPaleta logoAzul;
+    float a[3];
+    pinta(W, H, 0, 0, W, H, 0, 0, 0, 0, 0);
+    pinta(W, H, 40, 30, 280, 140, 25, 60, 205, 255, 0);
+    corviva_extrair(img, W, H, W * 4, &logoAzul);
+    corviva_zerar();
+    corviva_anotar("arte/laranja", &laranja);
+    corviva_anotar("logo/azul", &logoAzul);
+    { int i; for (i = 0; i < 60; i++) {
+        corviva_definir("arte/laranja", CORVIVA_DETALHE);
+        corviva_definir_logo("logo/azul", CORVIVA_DETALHE);
+        corviva_quadro(1 / 60.0f, CORVIVA_SIMPLES, 1, 0); } }
+    corviva_acento(&a[0], &a[1], &a[2]);
+    ok(igual3(a, logoAzul.acento, 0.002f), "cor da logo ligada: destaque do logo");
+    { int i; for (i = 0; i < 40; i++) {
+        corviva_definir("arte/laranja", CORVIVA_DETALHE);
+        corviva_definir_logo("logo/azul", CORVIVA_DETALHE);
+        corviva_quadro(1 / 60.0f, CORVIVA_SIMPLES, 0, 0); } }
+    corviva_acento(&a[0], &a[1], &a[2]);
+    ok(igual3(a, laranja.acento, 0.002f), "cor da logo desligada: destaque da arte");
+    // Logo da HOME nao vale para o pedido do DETALHE no mesmo quadro.
+    { int i; for (i = 0; i < 40; i++) {
+        corviva_definir("arte/laranja", CORVIVA_DETALHE);
+        corviva_definir_logo("logo/azul", CORVIVA_HOME);
+        corviva_quadro(1 / 60.0f, CORVIVA_SIMPLES, 1, 0); } }
+    corviva_acento(&a[0], &a[1], &a[2]);
+    ok(igual3(a, laranja.acento, 0.002f), "logo de outra prioridade nao vale");
+
+    // [13] GRADIENTE e IMERSIVA: o degrade liga, a luz entra; SIMPLES os tira.
+    { int i; for (i = 0; i < 40; i++) {
+        corviva_definir("arte/laranja", CORVIVA_DETALHE);
+        corviva_definir_logo("logo/azul", CORVIVA_DETALHE);
+        corviva_quadro(1 / 60.0f, CORVIVA_GRADIENTE, 1, 0); } }
+    ok(nv_grad_ativo && igual3(nv_grad_viva[0], logoAzul.grad[0], 0.002f), "gradiente: degrade ligado, paradas do logo");
+    ok(nv_ambiente_forca < 0.001f, "gradiente: sem luz ambiente");
+    { int i; for (i = 0; i < 40; i++) corviva_quadro(1 / 60.0f, CORVIVA_IMERSIVA, 1, 0); }
+    ok(nv_ambiente_forca > 0.999f && igual3(nv_ambiente_viva[0], laranja.regiao[0], 0.002f),
+       "imersiva: luz inteira, com as regioes da ARTE (nao do logo)");
+    { int i; for (i = 0; i < 40; i++) corviva_quadro(1 / 60.0f, CORVIVA_SIMPLES, 1, 0); }
+    ok(!nv_grad_ativo && nv_ambiente_forca < 0.001f, "simples: degrade e luz desligados");
+  }
+
   // [9] corviva.txt: o arranque seguinte ja nasce com a cor da ultima cena.
+  corviva_zerar();
+  corviva_anotar("https://arte/azul", &azul);
+  quadros(40, 1 / 60.0f, CORVIVA_SIMPLES, 0, "https://arte/azul", CORVIVA_HOME);
   corviva_gravar_se_preciso(1);
   ok(arquivo && strstr(arquivo, "cena ") != NULL, "corviva.txt gravado");
   corviva_zerar();
@@ -226,7 +318,10 @@ int main(void) {
   quadros(1, 1 / 60.0f, CORVIVA_ESTILIZADA, 0, NULL, 0);
   { float a[3]; corviva_acento(&a[0], &a[1], &a[2]);
     ok(igual3(a, azul.acento, 1.0f / 255.0f + 0.001f), "arranque: primeiro quadro ja com a cor da ultima cena");
-    ok(igual3(nv_cor_fundo_viva, azul.base, 1.0f / 255.0f + 0.001f), "arranque: e com a base dela"); }
+    ok(igual3(nv_cor_fundo_viva, azul.base, 1.0f / 255.0f + 0.001f), "arranque: e com a base dela");
+    { CorvivaPaleta lida; (void)lida; }
+    quadros(1, 1 / 60.0f, CORVIVA_GRADIENTE, 1, NULL, 0);
+    ok(igual3(nv_grad_viva[0], azul.grad[0], 1.0f / 255.0f + 0.001f), "arranque: o degrade tambem volta do arquivo"); }
 
   free(arquivo);
   if (falhas) { printf("%d falha(s)\n", falhas); return 1; }

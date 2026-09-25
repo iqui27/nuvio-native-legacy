@@ -4,13 +4,15 @@
 #include "layout.h"
 #include <stdio.h>
 #include "anim.h"
+#include "corviva.h"
 
 // Um programa por modo, e os uniforms de cada um: as posicoes NAO coincidem
 // entre programas, entao guardar um conjunto so devolveria lixo no segundo
 // shader que usasse a mesma variavel.
 typedef struct {
   GLuint prog;
-  GLint rect, tela, tex, foco, par, raio, cor, asp, texAsp, forcarCover, borda, varre, fundo;
+  GLint rect, tela, tex, foco, par, raio, cor, asp, texAsp, forcarCover, borda, varre, fundo,
+        grad0, grad1, grad2, tempo, reg0, reg1, reg2, reg3, vaza;
 } Programa;
 static Programa progs[GFX_NMODOS];
 static int progAtual = -1;
@@ -88,7 +90,20 @@ static const char *FS_CABECA =
   // (destaque, destaque cheio, detalhe). Era vec3(0.051) cravado em cada uma;
   // com o tema dinamico estilizado o fundo e tingido (layout.h,
   // NV_COR_FUNDO_R), e a rampa cravada deixaria uma emenda onde a arte acaba.
-  "uniform vec3  uFundo;\n";
+  "uniform vec3  uFundo;\n"
+  // Cor viva: paradas do degrade, relogio, luzes de regiao e o "vazar" das
+  // rampas (imersiva: a arte se apaga em alfa em vez de se fundir no fundo,
+  // e o que aparece por tras e a luz ambiente). Cada programa so declara de
+  // fato o que usa — o resto some no link e volta -1.
+  "uniform vec3  uGrad0;\n"
+  "uniform vec3  uGrad1;\n"
+  "uniform vec3  uGrad2;\n"
+  "uniform float uTempo;\n"
+  "uniform vec3  uReg0;\n"
+  "uniform vec3  uReg1;\n"
+  "uniform vec3  uReg2;\n"
+  "uniform vec3  uReg3;\n"
+  "uniform float uVaza;\n";
 
 // SDF de retangulo arredondado, corrigido pela proporcao — sem a correcao o
 // canto de um card landscape sai oval.
@@ -205,6 +220,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // toca atras do canvas no lugar da arte (trailer.h). Mesma regra do
   // GFX_DETALHE.
   "  if (uPar.x > 0.5) { gl_FragColor = vec4(bg, clamp(ah + av - ah*av, 0.0, 1.0) * uCor.a); return; }\n"
+  "  if (uVaza > 0.5) { gl_FragColor = vec4(c, uCor.a * (1.0 - clamp(ah + av - ah*av, 0.0, 1.0))); return; }\n"
   "  c = mix(c, bg, clamp(ah + av - ah*av, 0.0, 1.0));\n"
   "  gl_FragColor = vec4(c, uCor.a);\n"
   "}\n",
@@ -319,6 +335,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // do canvas, visto por um furo, e o texto do titulo precisa do mesmo
   // escuro a esquerda que teria sobre a arte. Mesmo perfil, mesma uFoco.
   "  if (uPar.x > 0.5) { gl_FragColor = vec4(bg, clamp(a,0.0,1.0) * uFoco * uCor.a); return; }\n"
+  "  if (uVaza > 0.5) { gl_FragColor = vec4(c, uCor.a * (1.0 - clamp(a,0.0,1.0) * uFoco)); return; }\n"
   "  c = mix(c, bg, clamp(a,0.0,1.0) * uFoco);\n"
   "  gl_FragColor = vec4(c, uCor.a);\n"
   "}\n",
@@ -350,6 +367,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "                 - clamp((t-0.76)/0.24,0.0,1.0)*0.42;\n"
   "  ah *= step(vUv.x, 0.65);\n"
   "  if (uPar.x > 0.5) { gl_FragColor = vec4(bg, clamp(ah + av - ah*av, 0.0, 1.0) * uCor.a); return; }\n"
+  "  if (uVaza > 0.5) { gl_FragColor = vec4(c, uCor.a * (1.0 - clamp(ah + av - ah*av, 0.0, 1.0))); return; }\n"
   "  c = mix(c, bg, clamp(ah + av - ah*av, 0.0, 1.0));\n"
   "  gl_FragColor = vec4(c, uCor.a);\n"
   "}\n",
@@ -682,6 +700,81 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  vec3 base = vec3(0.018, 0.019, 0.030) + uCor.rgb * (0.20 * n1 * n1) + vec3(0.20, 0.24, 0.42) * (0.07 * n2 * n2);\n"
   "  gl_FragColor = vec4(base + vec3(0.82, 0.86, 1.0) * (s + s2), 1.0);\n"
   "}\n",
+
+  // GFX_COR_GRAD — o GFX_COR com as tres paradas do degrade no lugar da cor.
+  // A direcao e quase horizontal (78/22): num botao deitado o degrade inteiro
+  // cabe no que o olho ve, e a sombra fica no canto de baixo a direita, onde a
+  // luz de uma superficie iluminada de cima-esquerda cairia. O deslocamento
+  // lento (uTempo) e a luz passeando pelo material, ~9 s por volta; o brilho
+  // de 6% no topo e o que faz a superficie ler como material e nao como tinta.
+  "vec3 grad3(float t){\n"
+  "  t = clamp(t, 0.0, 1.0);\n"
+  "  return t < 0.5 ? mix(uGrad0, uGrad1, t * 2.0) : mix(uGrad1, uGrad2, t * 2.0 - 1.0);\n"
+  "}\n"
+  "void main(){\n"
+  "  float m = smoothstep(0.006,-0.006, sdf(vUv, uRaio, uAspect));\n"
+  "  if (m <= 0.001) discard;\n"
+  "  float t = vUv.x * 0.78 + vUv.y * 0.22 + 0.10 * sin(uTempo * 0.7);\n"
+  "  vec3 c = grad3(t) + (1.0 - vUv.y) * 0.06;\n"
+  "  gl_FragColor = vec4(c, uCor.a * m);\n"
+  "}\n",
+
+  // GFX_ANEL_GRAD — o anel do GFX_ANEL com o degrade GIRANDO em volta dele:
+  // a parada clara anda pelo contorno (uma volta a cada ~7 s). E o anel de
+  // foco "vivo"; parado com animacoes reduzidas.
+  "vec3 grad3(float t){\n"
+  "  t = clamp(t, 0.0, 1.0);\n"
+  "  return t < 0.5 ? mix(uGrad0, uGrad1, t * 2.0) : mix(uGrad1, uGrad2, t * 2.0 - 1.0);\n"
+  "}\n"
+  "void main(){\n"
+  "  float d = sdf(vUv, uRaio, uAspect);\n"
+  "  float esp = max(uPar.x, 0.0015);\n"
+  "  float m = smoothstep(esp, esp*0.55, abs(d));\n"
+  "  if (m <= 0.002) discard;\n"
+  "  vec2 p = (vUv - 0.5) * vec2(uAspect, 1.0);\n"
+  "  if (uPar.y > 0.5) {\n"
+  "    float tt = fract((atan(p.y, p.x) / 6.2831853 + 0.5) * uPar.y);\n"
+  "    m *= smoothstep(0.56, 0.44, tt);\n"
+  "    if (m <= 0.002) discard;\n"
+  "  }\n"
+  "  float g = 0.5 + 0.5 * cos(atan(p.y, p.x) - uTempo * 0.9);\n"
+  "  gl_FragColor = vec4(grad3(g), uCor.a * m);\n"
+  "}\n",
+
+  // GFX_AMBIENTE — quatro luzes de regiao, grandes e macias, respirando.
+  //
+  // Os centros ficam FORA da tela (a luz entra pelas bordas, como a de uma
+  // parede atras da TV) e oscilam alguns por cento em periodos diferentes, e a
+  // intensidade de cada uma tambem: nunca duas batem juntas, entao a tela nao
+  // "pulsa", ela respira. A cor e a media PONDERADA das luzes e o alfa a soma
+  // delas, no maximo 0,5 — a luz tinge, nao pinta.
+  //
+  // DITHER de meio degrau de 8 bits: um degrade escuro e enorme num painel OLED
+  // mostra faixas, e o ruido de 1/255 as desfaz sem se ver. highp onde existe,
+  // pelo mesmo motivo do GFX_CEU (o hash em mediump vira listra na Mali).
+  "\n#ifdef GL_ES\n#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#endif\n#endif\n"
+  "float h12(vec2 c){\n"
+  "  vec3 p3 = fract(vec3(c.xyx) * 0.1031);\n"
+  "  p3 += dot(p3, p3.yzx + 33.33);\n"
+  "  return fract((p3.x + p3.y) * p3.z);\n"
+  "}\n"
+  "float luz(vec2 q, vec2 c, float r){\n"
+  "  float k = 1.0 - smoothstep(0.0, r, length(q - c));\n"
+  "  return k * k;\n"
+  "}\n"
+  "void main(){\n"
+  "  float A = uAspect;\n"
+  "  vec2 q = vUv * vec2(A, 1.0);\n"
+  "  float b = uTempo * 0.35;\n"
+  "  float wE = luz(q, vec2(-0.12*A + 0.03*sin(b),         0.55 + 0.06*sin(b*0.7)), 1.05) * (0.85 + 0.15*sin(b*0.9));\n"
+  "  float wD = luz(q, vec2( 1.12*A + 0.03*sin(b+2.0),     0.45 + 0.06*cos(b*0.8)), 1.05) * (0.85 + 0.15*sin(b*1.1+1.7));\n"
+  "  float wT = luz(q, vec2( 0.55*A + 0.08*sin(b*0.5+1.0), -0.28), 0.95) * (0.85 + 0.15*sin(b*0.7+3.1));\n"
+  "  float wB = luz(q, vec2( 0.45*A + 0.08*cos(b*0.6),     1.28), 0.95) * (0.85 + 0.15*sin(b*1.3+4.4));\n"
+  "  float w = wE + wD + wT + wB;\n"
+  "  vec3 c = (uReg0*wE + uReg1*wD + uReg2*wT + uReg3*wB) / max(w, 0.001);\n"
+  "  float n = h12(gl_FragCoord.xy) - 0.5;\n"
+  "  gl_FragColor = vec4(c + n / 255.0, min(w, 1.0) * 0.5 * uCor.a + n / 255.0);\n"
+  "}\n",
 };
 
 // Cada corpo declara o que usa; montar so o necessario mantem o shader enxuto.
@@ -705,7 +798,10 @@ static const struct { int sdf, cover; } PRECISA[GFX_NMODOS] = {
   {0,0},   /* GFX_SINO — glifo vetorial, sem textura nem SDF de retangulo */
   {1,0}    /* GFX_ESQUELETO — SDF para os cantos do card */,
   {0,0},   /* GFX_LINHA — distancia ao segmento, sem SDF de retangulo */
-  {0,0}    /* GFX_CEU — procedural, sem textura */
+  {0,0},   /* GFX_CEU — procedural, sem textura */
+  {1,0},   /* GFX_COR_GRAD — SDF do GFX_COR */
+  {1,0},   /* GFX_ANEL_GRAD — SDF do GFX_ANEL */
+  {0,0}    /* GFX_AMBIENTE — procedural, tela cheia */
 };
 
 static GLuint compila(GLenum tipo, const char *src) {
@@ -746,6 +842,15 @@ int gfx_iniciar(void) {
     progs[m].borda  = glGetUniformLocation(p, "uBorda");
     progs[m].varre  = glGetUniformLocation(p, "uVarre");
     progs[m].fundo  = glGetUniformLocation(p, "uFundo");
+    progs[m].grad0  = glGetUniformLocation(p, "uGrad0");
+    progs[m].grad1  = glGetUniformLocation(p, "uGrad1");
+    progs[m].grad2  = glGetUniformLocation(p, "uGrad2");
+    progs[m].tempo  = glGetUniformLocation(p, "uTempo");
+    progs[m].reg0   = glGetUniformLocation(p, "uReg0");
+    progs[m].reg1   = glGetUniformLocation(p, "uReg1");
+    progs[m].reg2   = glGetUniformLocation(p, "uReg2");
+    progs[m].reg3   = glGetUniformLocation(p, "uReg3");
+    progs[m].vaza   = glGetUniformLocation(p, "uVaza");
     glUseProgram(p);
     glUniform2f(progs[m].tela, NV_TELA_W, NV_TELA_H);
     glUniform1i(progs[m].tex, 0);
@@ -846,6 +951,15 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
               float parx, float pary, float raio,
               float cr, float cg, float cb, float ca) {
   if ((int)modo < 0 || (int)modo >= GFX_NMODOS) return;
+  // A COR DO DESTAQUE E A ASSINATURA. Com o degrade ligado, todo retangulo ou
+  // anel pintado EXATAMENTE com o destaque vivo (os tres floats que
+  // ajustes_acento devolveu, sem conta no meio) e superficie de destaque, e
+  // vira degrade aqui. Quem escurece ou mistura o destaque (ar*0.8) nao casa e
+  // segue chapado, que e o certo: aquilo ja e outra cor. Tres comparacoes por
+  // retangulo, e so com o degrade ligado.
+  if (nv_grad_ativo && (modo == GFX_COR || modo == GFX_ANEL) &&
+      cr == nv_acento_viva[0] && cg == nv_acento_viva[1] && cb == nv_acento_viva[2])
+    modo = modo == GFX_COR ? GFX_COR_GRAD : GFX_ANEL_GRAD;
   if (gfxFreqMs == 0.0) gfxFreqMs = 1000.0 / (double)SDL_GetPerformanceFrequency();
   (void)gfxFreqMs;
 #ifdef NV_PERF_FINO
@@ -873,6 +987,20 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
   // So os tres modos de rampa declaram uFundo: e uma chamada por destaque ou
   // fundo de detalhe desenhado, nao por retangulo.
   if (P->fundo >= 0)  glUniform3f(P->fundo, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B);
+  // Cor viva: so os modos que declaram (degrade, luz, rampas) pagam a chamada.
+  if (P->grad0 >= 0) {
+    glUniform3fv(P->grad0, 1, nv_grad_viva[0]);
+    glUniform3fv(P->grad1, 1, nv_grad_viva[1]);
+    glUniform3fv(P->grad2, 1, nv_grad_viva[2]);
+  }
+  if (P->tempo >= 0)  glUniform1f(P->tempo, nv_tempo_viva);
+  if (P->reg0 >= 0) {
+    glUniform3fv(P->reg0, 1, nv_ambiente_viva[0]);
+    glUniform3fv(P->reg1, 1, nv_ambiente_viva[1]);
+    glUniform3fv(P->reg2, 1, nv_ambiente_viva[2]);
+    glUniform3fv(P->reg3, 1, nv_ambiente_viva[3]);
+  }
+  if (P->vaza >= 0)   glUniform1f(P->vaza, nv_ambiente_forca > 0.001f ? 1.0f : 0.0f);
   if (P->cor >= 0)    glUniform4f(P->cor, cr, cg, cb, ca * gfx_opacidade_grupo);
   if (tex && tex != texAtual) {
     glActiveTexture(GL_TEXTURE0);
@@ -888,6 +1016,12 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
 
 void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca) {
   gfx_rect(r, 0, GFX_COR, 0, 0, 0, raio, cr, cg, cb, ca);
+}
+void gfx_ambiente(float alfa) {
+  float a = nv_ambiente_forca * alfa;
+  GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+  if (a <= 0.003f) return;
+  gfx_rect(tela, 0, GFX_AMBIENTE, 0, 0, 0, 0, 1, 1, 1, a);
 }
 void gfx_cartao_foco_vidro(GfxRect r, float raio, float foco, float alfa,
                            float cr, float cg, float cb) {
