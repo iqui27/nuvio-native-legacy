@@ -157,6 +157,39 @@ char *rede_baixar_etag(const char *url, int segundos,
                        const char *const *cabecalhos, int *status,
                        char *etag, unsigned tamEtag);
 
+// VAZAO DE UM STREAM: baixa `url` a partir do byte `inicio` por ate
+// `segundos` (contados do PRIMEIRO BYTE do corpo, nao da conexao) ou
+// `maxBytes`, e JOGA OS BYTES FORA — nada e acumulado em memoria, que e o que
+// a TV nao tem. Existe para o teste de velocidade do diagnostico (vazao.h).
+//
+// `kbpsPorSegundo` recebe uma amostra por SEGUNDO INTEIRO de corpo (ate
+// `nMax`); um segundo em que nada chegou vale 0, e e justamente o trecho
+// ruim que a conta do "otimo" precisa ver. Medida mais curta que 1 s (o
+// arquivo acabou) vira uma amostra so. Devolve quantas amostras escreveu.
+//
+// `cabecalhos` como em rede_baixar_com (os proxyHeaders do addon); `final`
+// (opcional) recebe o endereco depois dos redirecionamentos. `cancelado` e
+// lido durante o recebimento.
+//
+// NO TIZEN nao ha como contar bytes enquanto chegam (XHR sincrono entrega o
+// corpo inteiro de uma vez): la sao pedidos de Range em pedacos crescentes,
+// cada um descartado no proprio JavaScript e cronometrado, e cada pedaco
+// vira tantas amostras quantos segundos ele levou. Um CDN sem CORS para a
+// origem do app (debrid) aparece como status 0 e erro -1: quem chama diz
+// "nao deu para medir pelo navegador", sem inventar numero.
+typedef struct {
+  int status;               // HTTP da resposta final; 0 = nenhuma resposta
+  int erro;                 // libcurl (0 = ok); -1 no Tizen: o navegador recusou
+  long long bytes;          // recebidos (e descartados)
+  unsigned long ms;         // do primeiro byte ao fim da medida
+  unsigned long esperaMs;   // do pedido ao primeiro byte
+  int cancelado;
+} RedeVazao;
+int rede_medir_vazao(const char *url, const char *const *cabecalhos, int segundos,
+                     long inicio, long long maxBytes, volatile int *cancelado,
+                     int *kbpsPorSegundo, int nMax, RedeVazao *res,
+                     char *final, unsigned tamFinal);
+
 // Registra quem OUVE os 401. Sem isto um token de sessao vencido era so uma
 // linha no log — o Trakt continuava "conectado" na tela enquanto toda
 // resposta voltava 401. O callback recebe a URL e decide se a recusa e dele.

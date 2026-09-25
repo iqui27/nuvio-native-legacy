@@ -146,6 +146,13 @@ int  stream_primeira_boa(int tentativas);
 // Publica para o parser e o teste; a lista ja vem com o campo preenchido.
 int  stream_texto_fora_de_cache(const char *texto);
 
+// A PONTUACAO DA FONTE AUTOMATICA (modo "Melhor fonte") e o teto de
+// "Qualidade maxima", para quem precisa ordenar uma lista que NAO e a do
+// titulo aberto: o teste de velocidade do diagnostico mede primeiro a fonte
+// que o automatico escolheria, com a mesma regra, sem copia-la.
+long stream_pontos(const Stream *s);
+int  stream_cabe_no_teto(const Stream *s);
+
 // TORRENT SEM URL ESCOLHIDO A DEDO NA FOLHA. A escolha manual chamava
 // player_definir_fonte(s->url) com a url VAZIA — e player_definir_fonte volta
 // calado com url vazia: o player ficava em "carregando" para sempre. So o

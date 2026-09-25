@@ -21,6 +21,12 @@
 //      para o disco;
 //   5. fio do diagnostico: relatorio e envio.
 //
+// O TESTE DE VELOCIDADE ("Teste de velocidade", botao proprio) roda SOZINHO,
+// em outro fio e com estado fora de `d`: tempo do endpoint de fontes de cada
+// addon e 8 s de corpo de ate 3 fontes reais de hosts diferentes, contados e
+// descartados; a conta que vira "ate X GB por filme" mora em vazao.c. Quando
+// ele rodou, os NUMEROS entram no relatorio (chaves vazao*), nunca url ou host.
+//
 // A FONTE DO DESTAQUE (ajuste do usuario) NUNCA muda sozinha: a medicao por
 // fonte vira uma PROPOSTA escrita na tela, e so o botao "Aplicar sugestao"
 // troca o ajuste — com o mesmo reteste e a mesma volta automatica.
@@ -37,6 +43,9 @@
 #include "layout.h"
 #include "perfiltv.h"
 #include "rede.h"
+#include "fonteauto.h"
+#include "streams.h"
+#include "vazao.h"
 #include "tex_cache.h"
 #include "text.h"
 #include "js.h"
@@ -203,12 +212,96 @@ typedef struct {
   int botao;
   Uint32 inicioMs;
   int coberturaParcial;
+  // O teste de velocidade terminou DEPOIS do envio: o relatorio foi remontado
+  // com ele e o "Enviar de novo" aparece (botaoVisivel).
+  int vazaoPendente;
   char erro[128];
   char relatorio[20000];
 } Diagnostico;
 
 static Diagnostico d;
 static int focoModo;
+// Na escolha do objetivo: 0 = os cartoes de objetivo, 1 = o botao do teste
+// de velocidade embaixo deles (cima e baixo trocam).
+static int focoLinha;
+
+// ---------------------------------------------------------------------------
+// TESTE DE VELOCIDADE (vazao.h): estado PROPRIO, fora de `d`.
+//
+// Fora de `d` porque roda sozinho, antes ou depois do diagnostico, e o
+// "Testar de novo" do diagnostico zera `d` inteiro — o resultado da vazao tem
+// de sobreviver a isso para entrar no relatorio. Um fio so, o mesmo padrao dos
+// outros (estado atomico, juntado em juntarFios, cancelado pelo Voltar); os dois
+// testes nunca rodam ao mesmo tempo, para um nao medir a rede ocupada pelo outro.
+#define VAZ_POR_ADDON   3    // candidatas guardadas por addon
+#define VAZ_MAX_CAND    24
+#define VAZ_TENTATIVAS  6    // urls tocadas no maximo (resolucao + medida)
+// Segundos de corpo por fonte. #ifndef so para tests/vazao.sh encurtar.
+#ifndef VAZ_JANELA_S
+#define VAZ_JANELA_S    8
+#endif
+#define VAZ_TITULOS     2    // 2o titulo so se o 1o nao trouxe fonte medivel
+#define VAZ_ORCAMENTO_MS 45000u  // passou disso, nao comeca outra fonte
+// O Range comeca 5 MB DENTRO do arquivo: o comeco de um MKV/MP4 e cabecalho,
+// e o CDN costuma servi-lo de cache quente — mediria o cache, nao a fonte.
+#define VAZ_INICIO_BYTE (5L * 1024L * 1024L)
+// Teto de bytes por fonte, so contra conta errada: os bytes sao descartados
+// e nada disto fica em memoria. 8 s a 1 Gbps sao 1 GB.
+#define VAZ_TETO_BYTES  (1536LL * 1024LL * 1024LL)
+
+typedef enum {
+  VR_OK = 0, VR_SEM_ADDONS, VR_SEM_FONTES, VR_AVISO, VR_RECUSADO,
+  VR_SEM_RESPOSTA, VR_NAVEGADOR, VR_CURTO, VR_CANCELADO, VR_N
+} VazResultado;
+
+typedef struct {
+  int medido;       // 0 = desligado ou sem fontes no manifesto
+  int ms, http, ok;
+  int fontes;       // streams na resposta
+  int candidatas;   // com link direto medivel
+} VazAddon;
+
+typedef struct {
+  int kbps[VAZAO_SEG_MAX];
+  int n;
+  VazaoResumo r;
+  int http;
+  long long bytes;
+  unsigned long ms;
+} VazFonte;
+
+typedef struct {
+  char url[4096];
+  char cab[512];
+  long pontos;
+  unsigned char acima;
+} VazCand;
+
+typedef struct {
+  _Atomic int estado;     // 0 parado, 1 rodando, 2 pronto, 3 cancelado
+  _Atomic int fase;       // 1 add-ons, 2 fontes
+  _Atomic int total, feitos, cancelado;
+  _Atomic int nFonte;     // fio -> desenho: fonte[k] ja escrita para k < nFonte
+  SDL_Thread *fio;
+  int aberto;             // a tela mostra o teste no lugar do diagnostico
+  int modo;               // FONTEAUTO_*, lido no fio de desenho
+  char titulo[VAZ_TITULOS][64];
+  int nTitulo;
+  VazAddon addon[DIAG_MAX_ADDONS];
+  int nAddon;
+  VazCand cand[VAZ_MAX_CAND];
+  int nCand;
+  VazFonte fonte[VAZAO_FONTES_MAX];
+  int tentadas;
+  int falhas[VR_N];
+  int amostra[VAZAO_AMOSTRAS_MAX];
+  int nAmostra;
+  VazaoResumo resumo;
+  VazResultado resultado;
+  Uint32 inicioMs, fonteIniMs;
+} Vazao;
+
+static Vazao vz;
 static int sairTela;
 static int introGlobal;
 static int introDecidido;
@@ -317,6 +410,20 @@ static void urlJoin(char *dst, size_t cap, const char *base, const char *path) {
 static const char *amostraTitulo(int ordem) {
   if (d.nTitulo > 0) return d.titulo[ordem % d.nTitulo].imdb;
   return "tt0111161";
+}
+
+// O ENDPOINT DE FONTES do addon `i` para o filme `id`, medido. E o MESMO
+// pedido nos dois testes: o diagnostico so conta tempo e status (e joga o
+// corpo fora); o teste de velocidade ainda tira dele as candidatas a medir.
+static char *baixarFontesAddon(int i, const char *id, const RedeControle *controle,
+                               RedeMedida *medida) {
+  char url[800];
+  snprintf(url, sizeof url, "%s/stream/movie/%s.json", addons_base(i), id);
+  return rede_baixar_medido_controle(url, DIAG_TIMEOUT_S, NULL, controle, medida);
+}
+
+static int fontesRespondeu(const char *corpo, const RedeMedida *m) {
+  return corpo && m->status >= 200 && m->status < 300 && !m->limitado && jsonValido(corpo);
 }
 
 static int extrairUrl(const char *json, const char *campo, char *dst, size_t cap) {
@@ -796,6 +903,14 @@ static void concluirSugestao(void) {
 // ---------------------------------------------------------------------------
 // RELATORIO E FIO DO DIAGNOSTICO.
 
+static const char *vazaoNome(VazResultado r) {
+  static const char *const NOMES[VR_N] = {
+    "ok", "sem_addons", "sem_fontes", "aviso", "recusado", "sem_resposta",
+    "navegador", "curto", "cancelado"
+  };
+  return r >= 0 && r < VR_N ? NOMES[r] : "desconhecido";
+}
+
 static void montarRelatorio(void) {
   int texItens = 0, texPend = 0, texQuentes = 0, texSlots = 0;
   int texMb = 0, fios = 0, fiosMax = 0, i;
@@ -857,6 +972,30 @@ static void montarRelatorio(void) {
                a->bytes, a->manifest_ms, a->catalog_http, a->catalog_ms,
                a->catalog_ok, a->stream_ms, a->asset_ms,
                a->catalogo, a->stream, a->legenda);
+  }
+  // TESTE DE VELOCIDADE, quando rodou nesta tela. SO NUMEROS: nenhuma url,
+  // host, token ou titulo — o addon e a fonte vao pelo NUMERO (o addon N e a
+  // N-esima linha addon= acima, quando o diagnostico tambem rodou).
+  if (atomic_load(&vz.estado) == 2) {
+    int nf = atomic_load(&vz.nFonte);
+    ACRESCENTA("vazao=v1\nvazao_resultado=%s\nvazao_modo=%s\nvazao_mediana_kbps=%d\nvazao_p20_kbps=%d\nvazao_otimo_kbps=%d\nvazao_maximo_kbps=%d\nvazao_amostras=%d\nvazao_fontes_medidas=%d\nvazao_fontes_tentadas=%d\nvazao_candidatas=%d\n",
+               vazaoNome(vz.resultado), vz.modo == FONTEAUTO_PRIMEIRA ? "primeira" : "melhor",
+               vz.resumo.medianaKbps, vz.resumo.p20Kbps, vz.resumo.otimoKbps,
+               vz.resumo.maximoKbps, vz.nAmostra, nf, vz.tentadas, vz.nCand);
+    ACRESCENTA("vazao_falhas=aviso:%d|recusado:%d|sem_resposta:%d|navegador:%d|curto:%d\n",
+               vz.falhas[VR_AVISO], vz.falhas[VR_RECUSADO], vz.falhas[VR_SEM_RESPOSTA],
+               vz.falhas[VR_NAVEGADOR], vz.falhas[VR_CURTO]);
+    for (i = 0; i < nf && left > 40; i++) {
+      const VazFonte *f = &vz.fonte[i];
+      ACRESCENTA("vazao_fonte=%d|mediana_kbps=%d|p20_kbps=%d|segundos=%d|mb=%lld|http=%d\n",
+                 i + 1, f->r.medianaKbps, f->r.p20Kbps, f->n, f->bytes / 1000000LL, f->http);
+    }
+    for (i = 0; i < vz.nAddon && left > 40; i++) {
+      const VazAddon *a = &vz.addon[i];
+      if (!a->medido) continue;
+      ACRESCENTA("vazao_addon=%d|ms=%d|http=%d|ok=%d|streams=%d|diretas=%d\n",
+                 i + 1, a->ms, a->http, a->ok, a->fontes, a->candidatas);
+    }
   }
 #undef ACRESCENTA
 }
@@ -934,16 +1073,12 @@ static int diagnosticoWorker(void *arg) {
         free(catalogo);
       }
       if (a->stream && streamTestados < 6 && !sessaoExpirada()) {
-        char streamUrl[800];
         char *streams;
-        snprintf(streamUrl, sizeof streamUrl, "%s/stream/movie/%s.json", base,
-                 amostraTitulo(streamTestados));
         controle = controleDiagnostico(DIAG_STREAM_MAX);
-        streams = rede_baixar_medido_controle(streamUrl, DIAG_TIMEOUT_S, NULL, &controle, &medida);
-        status = medida.status;
+        streams = baixarFontesAddon(i, amostraTitulo(streamTestados), &controle, &medida);
         a->stream_ms = (int)medida.ms;
         d.streamMs += a->stream_ms;
-        if (streams && status >= 200 && status < 300 && jsonValido(streams) && !medida.limitado) d.streamOk++;
+        if (fontesRespondeu(streams, &medida)) d.streamOk++;
         else d.streamFalhas++;
         streamTestados++;
         if (medida.cancelado) atomic_store(&d.cancelado, 1);
@@ -1002,8 +1137,293 @@ static int envioWorker(void *arg) {
   d.enviado = avisos_enviar_diagnostico(d.id, d.relatorio,
                                         d.registroId, sizeof d.registroId);
   d.envioFalhou = !d.enviado;
+  if (d.enviado) d.vazaoPendente = 0;
   atomic_store(&d.enviando, 0);
   return 0;
+}
+
+// ---------------------------------------------------------------------------
+// TESTE DE VELOCIDADE: fio proprio (vazaoWorker), estado em `v`.
+//
+// 1. add-ons: o endpoint de fontes de cada addon ativo (baixarFontesAddon, o
+//    mesmo do diagnostico), com o tempo de resposta de cada um; das fontes
+//    que voltam ficam ate 3 por addon, na ordem da fonte automatica;
+// 2. fontes: as candidatas de todos os addons, de novo na ordem da fonte
+//    automatica (stream_pontos + fonteauto_fila, o modo de Ajustes), e ate 3
+//    delas de HOSTS DIFERENTES — o link resolvido como a verificacao de fonte
+//    resolve, e 8 s de corpo contados e descartados (rede_medir_vazao);
+// 3. a conta (vazao_resumir): mediana e p20 de todas as amostras por segundo.
+//
+// SO LINK DIRETO: torrent sem url (so infoHash) exigiria mandar o debrid
+// resolver, e fonte marcada fora de cache mandaria o servico BAIXAR (#130).
+// Link de aviso (slate, downloading.mp4, clipe de erro) mediria o servidor de
+// aviso. Os tres ficam de fora antes de qualquer pedido.
+
+// Corta os proxyHeaders ("Nome: valor" por linha) num vetor para rede.h,
+// como playlistVazia em streams.c. `copia` guarda as linhas.
+static const char *const *vetorCabecalhos(const char *cab, char *copia, size_t n,
+                                          const char **vet, int max) {
+  char *l, *ctx = NULL;
+  int k = 0;
+  if (!cab || !*cab) return NULL;
+  snprintf(copia, n, "%s", cab);
+  for (l = strtok_r(copia, "\n", &ctx); l && k < max - 1; l = strtok_r(NULL, "\n", &ctx))
+    vet[k++] = l;
+  vet[k] = NULL;
+  return k ? vet : NULL;
+}
+
+static int candidataMedivel(const Stream *s) {
+  return s->url[0] && !strncmp(s->url, "http", 4) && !s->foraCache &&
+         !vazao_url_aviso(s->url);
+}
+
+// Ate VAZ_POR_ADDON fontes deste addon, na ordem em que o automatico as
+// tentaria. Devolve quantas entraram em vz.cand.
+static int coletarCandidatas(const Stream *lista, int n) {
+  long *pts;
+  unsigned char *acima, *fora;
+  int fila[VAZ_POR_ADDON], nf, q, entrou = 0;
+  if (n < 1 || vz.nCand >= VAZ_MAX_CAND) return 0;
+  pts = malloc(sizeof *pts * (size_t)n);
+  acima = calloc((size_t)n, 1);
+  fora = calloc((size_t)n, 1);
+  if (!pts || !acima || !fora) { free(pts); free(acima); free(fora); return 0; }
+  for (q = 0; q < n; q++) {
+    pts[q] = stream_pontos(&lista[q]);
+    acima[q] = (unsigned char)!stream_cabe_no_teto(&lista[q]);
+    fora[q] = (unsigned char)!candidataMedivel(&lista[q]);
+  }
+  nf = fonteauto_fila(vz.modo, n, -1, pts, acima, fora, VAZ_POR_ADDON, fila);
+  for (q = 0; q < nf && vz.nCand < VAZ_MAX_CAND; q++) {
+    VazCand *c = &vz.cand[vz.nCand++];
+    snprintf(c->url, sizeof c->url, "%s", lista[fila[q]].url);
+    snprintf(c->cab, sizeof c->cab, "%s", lista[fila[q]].cabecalhos);
+    c->pontos = pts[fila[q]];
+    c->acima = acima[fila[q]];
+    entrou++;
+  }
+  free(pts); free(acima); free(fora);
+  return entrou;
+}
+
+static void vazaoAddons(void) {
+  RedeControle ctl;
+  int t, i;
+  ctl.max_bytes = DIAG_STREAM_MAX;
+  ctl.cancelado = (volatile int *)&vz.cancelado;
+  for (t = 0; t < vz.nTitulo && !vz.nCand; t++) {
+    for (i = 0; i < vz.nAddon; i++) {
+      VazAddon *a = &vz.addon[i];
+      RedeMedida m;
+      Stream *lista = NULL;
+      char *corpo;
+      int n = 0;
+      if (atomic_load(&vz.cancelado)) return;
+      if (!addons_ativo(i) || (addons_sondado(i) && !addons_fornece(i, ADD_STREAM))) {
+        if (t == 0) atomic_fetch_add(&vz.feitos, 1);
+        continue;
+      }
+      corpo = baixarFontesAddon(i, vz.titulo[t], &ctl, &m);
+      if (m.cancelado) { free(corpo); atomic_store(&vz.cancelado, 1); return; }
+      if (fontesRespondeu(corpo, &m)) n = stream_extrair(corpo, addons_nome(i), &lista);
+      if (n < 0) n = 0;
+      // O tempo por addon e o do 1o titulo: o 2o so existe quando nenhum
+      // addon trouxe fonte medivel, e somar os dois mediria outra coisa.
+      if (t == 0) {
+        a->medido = 1;
+        a->ms = (int)m.ms;
+        a->http = m.status;
+        a->ok = fontesRespondeu(corpo, &m);
+      }
+      if (n > a->fontes) a->fontes = n;
+      a->candidatas += coletarCandidatas(lista, n);
+      if (t == 0) {
+        printf("[vazao] addon %d: %d ms, HTTP %d, %d fontes, %d com link direto\n",
+               i + 1, a->ms, a->http, n, a->candidatas);
+        fflush(stdout);
+        atomic_fetch_add(&vz.feitos, 1);
+      }
+      free(lista);
+      free(corpo);
+    }
+  }
+}
+
+// Categoria da falha de uma medida, para a tela e o relatorio.
+static VazResultado falhaDaMedida(const RedeVazao *r, int amostras) {
+  if (r->cancelado) return VR_CANCELADO;
+  if (r->status >= 400) return VR_RECUSADO;
+  if (r->erro == -1) return VR_NAVEGADOR;
+  if (!r->status) return VR_SEM_RESPOSTA;
+  return amostras > 0 ? VR_OK : VR_CURTO;
+}
+
+static int medirUmaFonte(const VazCand *c, char hosts[][96], int nHosts) {
+  char fim[4096], fim2[4096], copia[512], host[96];
+  const char *vet[8];
+  const char *const *cab = vetorCabecalhos(c->cab, copia, sizeof copia, vet, 8);
+  const char *alvo = c->url;
+  VazFonte *f = &vz.fonte[atomic_load(&vz.nFonte)];
+  RedeVazao r;
+  int n, k;
+  VazResultado cat;
+  vz.tentadas++;
+  // RESOLVIDO COMO A VERIFICACAO DE FONTE RESOLVE (verificarUma em streams.c):
+  // o link do addon redireciona para o CDN do debrid, e e esse final que diz
+  // se e aviso e de qual host e. Fonte com proxyHeaders vai direto (a
+  // resolucao nao manda cabecalho, e o CDN que confere Referer recusaria).
+  if (!cab) {
+    if (rede_url_final(c->url, DIAG_TIMEOUT_S, fim, sizeof fim)) alvo = fim;
+    else {
+#ifdef __EMSCRIPTEN__
+      vz.falhas[VR_NAVEGADOR]++;
+#else
+      vz.falhas[VR_SEM_RESPOSTA]++;
+#endif
+      printf("[vazao] fonte %d/%d: o link nao resolveu\n", vz.tentadas, VAZ_TENTATIVAS);
+      fflush(stdout);
+      return 0;
+    }
+  }
+  if (vazao_url_aviso(alvo)) {
+    vz.falhas[VR_AVISO]++;
+    printf("[vazao] fonte %d/%d: link de aviso, nao medida\n", vz.tentadas, VAZ_TENTATIVAS);
+    fflush(stdout);
+    return 0;
+  }
+  vazao_host(alvo, host, sizeof host);
+  for (k = 0; k < nHosts; k++)
+    if (!strcmp(hosts[k], host)) return -1;   // host ja medido: a proxima
+  memset(f, 0, sizeof *f);
+  vz.fonteIniMs = SDL_GetTicks();
+  n = rede_medir_vazao(alvo, cab, VAZ_JANELA_S, VAZ_INICIO_BYTE, VAZ_TETO_BYTES,
+                       (volatile int *)&vz.cancelado, f->kbps, VAZAO_SEG_MAX, &r,
+                       fim2, sizeof fim2);
+  // 416: o arquivo e menor que o deslocamento. Do comeco, entao.
+  if (r.status == 416 && !r.cancelado)
+    n = rede_medir_vazao(alvo, cab, VAZ_JANELA_S, 0, VAZ_TETO_BYTES,
+                         (volatile int *)&vz.cancelado, f->kbps, VAZAO_SEG_MAX, &r,
+                         fim2, sizeof fim2);
+  if (r.cancelado) { atomic_store(&vz.cancelado, 1); return 0; }
+  if (n > 0 && fim2[0] && vazao_url_aviso(fim2)) {
+    vz.falhas[VR_AVISO]++;
+    printf("[vazao] fonte %d/%d: redirecionou para aviso, descartada\n", vz.tentadas, VAZ_TENTATIVAS);
+    fflush(stdout);
+    return 0;
+  }
+  cat = falhaDaMedida(&r, n);
+  if (cat != VR_OK) {
+    vz.falhas[cat]++;
+    printf("[vazao] fonte %d/%d: sem medida (HTTP %d, erro %d)\n", vz.tentadas,
+           VAZ_TENTATIVAS, r.status, r.erro);
+    fflush(stdout);
+    return 0;
+  }
+  f->n = n;
+  f->http = r.status;
+  f->bytes = r.bytes;
+  f->ms = r.ms;
+  vazao_resumir(f->kbps, n, &f->r);
+  for (k = 0; k < n && vz.nAmostra < VAZAO_AMOSTRAS_MAX; k++) vz.amostra[vz.nAmostra++] = f->kbps[k];
+  snprintf(hosts[nHosts], 96, "%s", host);
+  printf("[vazao] fonte %d/%d: %.1f Mbps mediana, p20 %.1f, %lu s, %lld MB\n",
+         atomic_load(&vz.nFonte) + 1, VAZAO_FONTES_MAX, f->r.medianaKbps / 1000.0,
+         f->r.p20Kbps / 1000.0, (f->ms + 500UL) / 1000UL, f->bytes / 1000000LL);
+  fflush(stdout);
+  atomic_fetch_add(&vz.nFonte, 1);
+  atomic_fetch_add(&vz.feitos, 1);
+  return 1;
+}
+
+static void vazaoFontes(void) {
+  long pts[VAZ_MAX_CAND];
+  unsigned char acima[VAZ_MAX_CAND];
+  int fila[VAZ_MAX_CAND], nf, q;
+  char hosts[VAZAO_FONTES_MAX][96];
+  for (q = 0; q < vz.nCand; q++) { pts[q] = vz.cand[q].pontos; acima[q] = vz.cand[q].acima; }
+  nf = fonteauto_fila(vz.modo, vz.nCand, -1, pts, acima, NULL, VAZ_MAX_CAND, fila);
+  for (q = 0; q < nf; q++) {
+    int nFonte = atomic_load(&vz.nFonte);
+    if (nFonte >= VAZAO_FONTES_MAX || vz.tentadas >= VAZ_TENTATIVAS) break;
+    if (atomic_load(&vz.cancelado)) break;
+    // Orcamento: com uma fonte medida, nao comeca outra que passaria dos 45 s.
+    if (nFonte > 0 && SDL_GetTicks() - vz.inicioMs > VAZ_ORCAMENTO_MS) break;
+    medirUmaFonte(&vz.cand[fila[q]], hosts, nFonte);
+  }
+}
+
+static int vazaoWorker(void *arg) {
+  int k, maior = 0;
+  (void)arg;
+  atomic_store(&vz.fase, 1);
+  vazaoAddons();
+  if (!atomic_load(&vz.cancelado)) {
+    atomic_store(&vz.fase, 2);
+    vazaoFontes();
+  }
+  if (atomic_load(&vz.cancelado)) vz.resultado = VR_CANCELADO;
+  else if (vazao_resumir(vz.amostra, vz.nAmostra, &vz.resumo)) vz.resultado = VR_OK;
+  else {
+    int algum = 0;
+    for (k = 0; k < vz.nAddon; k++) if (vz.addon[k].medido) algum = 1;
+    vz.resultado = !algum ? VR_SEM_ADDONS : !vz.nCand ? VR_SEM_FONTES : VR_SEM_RESPOSTA;
+    // A falha que MAIS aconteceu diz o motivo; empate fica a primeira.
+    for (k = VR_AVISO; k < VR_N; k++)
+      if (vz.falhas[k] > maior) { maior = vz.falhas[k]; vz.resultado = (VazResultado)k; }
+  }
+  if (vz.resultado == VR_OK)
+    printf("[vazao] resultado: otimo %.1f Mbps, maximo %.1f Mbps (mediana %.1f, p20 %.1f, %d amostras, %d fonte(s))\n",
+           vz.resumo.otimoKbps / 1000.0, vz.resumo.maximoKbps / 1000.0,
+           vz.resumo.medianaKbps / 1000.0, vz.resumo.p20Kbps / 1000.0, vz.nAmostra,
+           atomic_load(&vz.nFonte));
+  else
+    printf("[vazao] resultado: sem medida (%d)\n", (int)vz.resultado);
+  fflush(stdout);
+  atomic_store(&vz.estado, atomic_load(&vz.cancelado) ? 3 : 2);
+  return 0;
+}
+
+// Fio de desenho: copia o que o fio vai precisar (o catalogo recarrega, o
+// ajuste pode mudar) e o dispara.
+static void iniciarVazao(void) {
+  int i;
+  if (atomic_load(&vz.estado) == 1 || atomic_load(&d.estado) == 1 || d.fioSug) return;
+  if (vz.fio) { SDL_WaitThread(vz.fio, NULL); vz.fio = NULL; }
+  memset(&vz, 0, sizeof vz);
+  vz.aberto = 1;
+  vz.modo = ajustes_fonte_primeira() ? FONTEAUTO_PRIMEIRA : FONTEAUTO_MELHOR;
+  // FILME do catalogo, que e o que /stream/movie/ responde; sem nenhum, um
+  // classico que todo addon de fontes tem.
+  for (i = 0; i < cat_n() && vz.nTitulo < VAZ_TITULOS - 1; i++) {
+    const CatItem *c = cat_item(i);
+    if (!c || strncmp(c->imdb, "tt", 2) || strcmp(c->tipo, "movie")) continue;
+    snprintf(vz.titulo[vz.nTitulo++], sizeof vz.titulo[0], "%s", c->imdb);
+  }
+  snprintf(vz.titulo[vz.nTitulo++], sizeof vz.titulo[0], "%s", "tt0111161");
+  vz.nAddon = addons_n();
+  if (vz.nAddon > DIAG_MAX_ADDONS) vz.nAddon = DIAG_MAX_ADDONS;
+  atomic_store(&vz.total, vz.nAddon + VAZAO_FONTES_MAX);
+  vz.inicioMs = SDL_GetTicks();
+  atomic_store(&vz.estado, 1);
+  vz.fio = SDL_CreateThread(vazaoWorker, "nuvio-diag-vazao", NULL);
+  if (!vz.fio) {
+    vz.resultado = VR_SEM_RESPOSTA;
+    atomic_store(&vz.estado, 3);
+  }
+}
+
+// O teste acabou (fio de desenho). Com um relatorio de diagnostico ja
+// montado, ele e remontado com a vazao e o "Enviar de novo" aparece: o
+// relatorio que ja saiu nao a tinha.
+static void concluirVazao(void) {
+  if (vz.fio) { SDL_WaitThread(vz.fio, NULL); vz.fio = NULL; }
+  if (atomic_load(&vz.estado) != 2 || atomic_load(&d.estado) != 2 || !d.relatorio[0] ||
+      atomic_load(&d.enviando))
+    return;
+  montarRelatorio();
+  dados_gravar("diagnostico-otimizacao.txt", d.relatorio);
+  if (d.enviado) d.vazaoPendente = 1;
 }
 
 static void juntarFios(int esperarTodos) {
@@ -1018,14 +1438,18 @@ static void juntarFios(int esperarTodos) {
 void diagnostico_iniciar(void) {
   // VOLTAR A TELA NO MEIO DE UM TESTE nao pode zerar o estado: o fio ainda
   // escreve em `d`. A barra lateral deixa sair durante o teste.
-  if (atomic_load(&d.estado) == 1 || d.fioSug || atomic_load(&d.enviando)) {
+  if (atomic_load(&d.estado) == 1 || d.fioSug || atomic_load(&d.enviando) ||
+      atomic_load(&vz.estado) == 1) {
     sairTela = 0;
     return;
   }
   juntarFios(1);
   free(d.cfgAntes);
   memset(&d, 0, sizeof d);
+  if (vz.fio) { SDL_WaitThread(vz.fio, NULL); vz.fio = NULL; }
+  memset(&vz, 0, sizeof vz);
   focoModo = 0;
+  focoLinha = 0;
   sairTela = 0;
   d.intro = !apresentacaoVista();
   dados_uuid(d.id, sizeof d.id);
@@ -1061,6 +1485,8 @@ void diagnostico_recuperar_checkpoint(void) {
 static void iniciarTeste(void) {
   int intro = d.intro, i, t, f;
   if (atomic_load(&d.estado) == 1 || d.fioSug || atomic_load(&d.enviando)) return;
+  // Um teste por vez: o diagnostico mediria a rede ocupada pela vazao.
+  if (atomic_load(&vz.estado) == 1) return;
   juntarFios(1);
   free(d.cfgAntes);
   memset(&d, 0, sizeof d);
@@ -1102,16 +1528,18 @@ static void iniciarTeste(void) {
 // coloridas ja tem dono (vermelha = painel de registro, verde = painel DOM no
 // Tizen, azul = Salvos): a acao vira botao navegavel por esquerda/direita.
 
-enum { B_RETESTAR, B_RESTAURAR, B_SUGESTAO, B_REENVIAR, B_OBJETIVO, B_N };
+enum { B_RETESTAR, B_RESTAURAR, B_SUGESTAO, B_REENVIAR, B_VELOCIDADE, B_OBJETIVO, B_N };
 static const char *const BOTAO_ROTULO[B_N] = {
-  "Testar de novo", "Restaurar anterior", "Aplicar sugestão", "Enviar de novo", "Trocar objetivo"
+  "Testar de novo", "Restaurar anterior", "Aplicar sugestão", "Enviar de novo",
+  "Teste de velocidade", "Trocar objetivo"
 };
 
 static int botaoVisivel(int b) {
   switch (b) {
     case B_RESTAURAR: return d.aplicacao == DA_MANTIDO;
     case B_SUGESTAO: return d.sugEstado == DS_PROPOSTA;
-    case B_REENVIAR: return d.envioFalhou && d.relatorio[0] && !atomic_load(&d.enviando);
+    case B_REENVIAR: return (d.envioFalhou || d.vazaoPendente) && d.relatorio[0] &&
+                            !atomic_load(&d.enviando);
     default: return 1;
   }
 }
@@ -1132,7 +1560,8 @@ static void acionarBotao(int b) {
       d.fioEnvio = SDL_CreateThread(envioWorker, "nuvio-diag-envio", NULL);
       if (!d.fioEnvio) atomic_store(&d.enviando, 0);
       break;
-    case B_OBJETIVO: atomic_store(&d.estado, 0); break;
+    case B_VELOCIDADE: iniciarVazao(); break;
+    case B_OBJETIVO: atomic_store(&d.estado, 0); focoLinha = 0; break;
   }
   d.botao = 0;
 }
@@ -1158,6 +1587,18 @@ void diagnostico_evento(const SDL_Event *e) {
     }
     return;
   }
+  // TESTE DE VELOCIDADE NA TELA: Voltar cancela o que roda, ou fecha o
+  // resultado e volta ao que estava (objetivo ou resultado do diagnostico).
+  if (vz.aberto) {
+    int ve = atomic_load(&vz.estado);
+    if (teclaVoltar(e)) {
+      if (ve == 1) atomic_store(&vz.cancelado, 1);
+      else vz.aberto = 0;
+    } else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && ve != 1) {
+      iniciarVazao();
+    }
+    return;
+  }
   if (teclaVoltar(e)) {
     if (estado == 1 || d.sugEstado == DS_TESTANDO) atomic_store(&d.cancelado, 1);
     else sairTela = 1;
@@ -1172,6 +1613,14 @@ void diagnostico_evento(const SDL_Event *e) {
     if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && n > 0) acionarBotao(lista[d.botao]);
     return;
   }
+  if (estado == 0) {
+    if (k == SDLK_DOWN) { focoLinha = 1; return; }
+    if (k == SDLK_UP) { focoLinha = 0; return; }
+    if (focoLinha == 1) {
+      if (k == SDLK_RETURN || k == SDLK_KP_ENTER) iniciarVazao();
+      return;
+    }
+  }
   if (k == SDLK_LEFT || k == SDLK_RIGHT) { focoModo = !focoModo; return; }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) iniciarTeste();
 }
@@ -1179,6 +1628,7 @@ void diagnostico_evento(const SDL_Event *e) {
 void diagnostico_atualizar(float dt, Uint32 agora) {
   (void)agora;
   juntarFios(0);
+  if (vz.fio && atomic_load(&vz.estado) != 1) concluirVazao();
   if (d.passe) {
     int ms = (int)(dt * 1000.0f + 0.5f);
     if (ms > d.passePior) d.passePior = ms;
@@ -1398,17 +1848,25 @@ static void linhasDoPerfil(GfxRect r, float y, float passo, const PtvPerfil *a,
 
 static void desenharBotoes(float y, float ar, float ag, float ab) {
   int lista[B_N], n = botoesVisiveis(lista), i;
-  float x = NV_MARGEM_X;
+  float x = NV_MARGEM_X, soma = 0.0f, folga = 64.0f, vao = 20.0f;
   if (d.botao >= n) d.botao = n > 0 ? n - 1 : 0;
+  // COM SEIS BOTOES (sugestao, restaurar e reenvio juntos, raro) a fileira
+  // passava da margem direita: mede antes e encolhe o respiro para caber.
+  for (i = 0; i < n; i++)
+    soma += (float)txt_linha(TXT_BODY, i18n(BOTAO_ROTULO[lista[i]]), 232, 236, 244, 255).w;
+  if (soma + (float)n * folga + (float)(n - 1) * vao > NV_TELA_W - 2.0f * NV_MARGEM_X) {
+    folga = 36.0f;
+    vao = 12.0f;
+  }
   for (i = 0; i < n; i++) {
     int foco = i == d.botao;
     TxtLinha t = txt_linha(TXT_BODY, i18n(BOTAO_ROTULO[lista[i]]),
                            foco ? 16 : 232, foco ? 18 : 236, foco ? 22 : 244, 255);
-    float w = (float)t.w + 64.0f;
+    float w = (float)t.w + folga;
     if (foco) gfx_cor((GfxRect){ x, y, w, 60.0f }, 0.5f, ar, ag, ab, 1.0f);
     else gfx_cor((GfxRect){ x, y, w, 60.0f }, 0.5f, 0.13f, 0.15f, 0.19f, 1.0f);
-    txt_desenhar(t, x + 32.0f, y + (60.0f - (float)t.h) * 0.5f);
-    x += w + 20.0f;
+    txt_desenhar(t, x + folga * 0.5f, y + (60.0f - (float)t.h) * 0.5f);
+    x += w + vao;
   }
 }
 
@@ -1508,6 +1966,178 @@ static void desenharFontes(GfxRect r, float ar, float ag, float ab) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// TELA DO TESTE DE VELOCIDADE. Dois paineis: a esquerda o que interessa ao
+// dono (velocidade, otimo, maximo, dica), a direita de onde veio (tempo de
+// cada addon e vazao de cada fonte).
+
+static char sepDecimal(void) { return ajustes_idioma_ingles() ? '.' : ','; }
+
+static const char *textoFalhaVazao(VazResultado r, const char **detalhe) {
+  *detalhe = NULL;
+  switch (r) {
+    case VR_SEM_ADDONS: return "Nenhum add-on de fontes ativo para testar.";
+    case VR_SEM_FONTES:
+      *detalhe = "Torrents sem link e fontes fora de cache no debrid não são baixados.";
+      return "Nenhuma fonte com link direto para medir.";
+    case VR_AVISO:
+      *detalhe = "O link levou a um vídeo de aviso: expirado ou fora de cache.";
+      return "As fontes responderam com vídeo de aviso.";
+    case VR_RECUSADO: return "O servidor da fonte recusou o download.";
+    case VR_NAVEGADOR:
+      *detalhe = "O servidor da fonte não libera acesso pelo app da Samsung (CORS). Nenhum número foi estimado.";
+      return "Não foi possível medir o stream pelo navegador da TV.";
+    case VR_CURTO: return "A fonte respondeu, mas não entregou dados suficientes.";
+    case VR_CANCELADO: return "O teste foi cancelado.";
+    default: return "A fonte não respondeu a tempo.";
+  }
+}
+
+// "até 12 GB por filme de 2 h · 4,5 GB por episódio", para `kbps`.
+static void linhaTamanho(char *dst, size_t n, const char *formatoTraduzido, int kbps) {
+  char filme[16], ep[16];
+  char sep = sepDecimal();
+  vazao_fmt_gb(filme, sizeof filme, vazao_gb(kbps, VAZAO_FILME_S), sep);
+  vazao_fmt_gb(ep, sizeof ep, vazao_gb(kbps, VAZAO_EPISODIO_S), sep);
+  snprintf(dst, n, formatoTraduzido, filme, ep);
+}
+
+static void desenharVazaoResumo(GfxRect r, float ar, float ag, float ab, Uint32 agora) {
+  int ve = atomic_load(&vz.estado);
+  char a[200], b[32], c[32];
+  float lw = r.w - 56.0f;
+  if (ve == 1) {
+    int feito = atomic_load(&vz.feitos), total = atomic_load(&vz.total);
+    int fase = atomic_load(&vz.fase), nf = atomic_load(&vz.nFonte);
+    float pct = total > 0 ? 100.0f * (float)feito / (float)total : 0.0f;
+    // Dentro da fonte que esta sendo medida, o tempo da janela anda a barra.
+    if (fase == 2 && nf < VAZAO_FONTES_MAX && vz.fonteIniMs && total > 0) {
+      float dentro = (float)(SDL_GetTicks() - vz.fonteIniMs) / (VAZ_JANELA_S * 1000.0f);
+      if (dentro > 1.0f) dentro = 1.0f;
+      pct += 100.0f * dentro / (float)total;
+    }
+    if (pct > 99.0f) pct = 99.0f;
+    painelTitulo(r, "Teste de velocidade", fase <= 1 ? "Perguntando as fontes a cada add-on"
+                                                      : "Baixando um trecho de cada fonte");
+    snprintf(a, sizeof a, "%d%%", (int)pct);
+    txt_desenhar(txt_linha(TXT_TITULO2, a, 246, 249, 255, 255), r.x + 28.0f, r.y + 100.0f);
+    barraProgresso((GfxRect){ r.x + 28.0f, r.y + 190.0f, r.w - 56.0f, 20.0f }, pct, ar, ag, ab, 1, agora);
+    snprintf(a, sizeof a, i18n("%d de %d"), feito < vz.nAddon ? feito : vz.nAddon, vz.nAddon);
+    metrica(r, r.y + 246.0f, "Add-ons", a, 214, 220, 230);
+    snprintf(a, sizeof a, i18n("%d de %d"), nf, VAZAO_FONTES_MAX);
+    metrica(r, r.y + 290.0f, "Fontes medidas", a, 214, 220, 230);
+    txt_bloco(TXT_CAPTION, i18n("Baixa por 8 s até 3 fontes de servidores diferentes, começando no meio do arquivo; os dados são descartados."),
+              170, 178, 190, r.x + 28.0f, r.y + r.h - 110.0f, lw, 30.0f, 1, 2);
+    return;
+  }
+  if (vz.resultado != VR_OK) {
+    const char *det, *txt = textoFalhaVazao(vz.resultado, &det);
+    painelTitulo(r, "Teste de velocidade", "Sem medida");
+    txt_bloco(TXT_BODY, i18n(txt), 244, 196, 150, r.x + 28.0f, r.y + 110.0f, lw, 36.0f, 1, 2);
+    if (det) txt_bloco(TXT_CAPTION, i18n(det), 190, 196, 206, r.x + 28.0f, r.y + 176.0f, lw, 30.0f, 1, 3);
+    snprintf(a, sizeof a, i18n("%d de %d"), vz.tentadas, VAZ_TENTATIVAS);
+    metrica(r, r.y + 290.0f, "Fontes tentadas", a, 214, 220, 230);
+    return;
+  }
+  painelTitulo(r, "Teste de velocidade", "Tamanho de arquivo que toca sem parar nesta TV");
+  vazao_fmt_mbps(b, sizeof b, vz.resumo.medianaKbps, sepDecimal());
+  vazao_fmt_mbps(c, sizeof c, vz.resumo.p20Kbps, sepDecimal());
+  snprintf(a, sizeof a, i18n("Velocidade: %s Mbps (pior trecho %s Mbps)"), b, c);
+  txt_desenhar(txt_linha_corta(TXT_BODY, a, 238, 242, 248, 255, lw), r.x + 28.0f, r.y + 104.0f);
+
+  linhaTamanho(a, sizeof a, i18n("Ótimo: até %s GB por filme de 2 h · %s GB por episódio"), vz.resumo.otimoKbps);
+  txt_desenhar(txt_linha_corta(TXT_BODY, a, 170, 222, 190, 255, lw), r.x + 28.0f, r.y + 170.0f);
+  vazao_fmt_mbps(b, sizeof b, vz.resumo.otimoKbps, sepDecimal());
+  snprintf(a, sizeof a, i18n("Arquivos de até %s Mbps tocam sem parar, mesmo nos piores trechos."), b);
+  txt_desenhar(txt_linha_corta(TXT_CAPTION, a, 170, 178, 190, 255, lw), r.x + 28.0f, r.y + 210.0f);
+
+  linhaTamanho(a, sizeof a, i18n("Máximo: até %s GB por filme de 2 h · %s GB por episódio"), vz.resumo.maximoKbps);
+  txt_desenhar(txt_linha_corta(TXT_BODY, a, 244, 214, 150, 255, lw), r.x + 28.0f, r.y + 270.0f);
+  vazao_fmt_mbps(b, sizeof b, vz.resumo.maximoKbps, sepDecimal());
+  snprintf(a, sizeof a, i18n("Até %s Mbps toca, mas pode pausar quando a rede cai."), b);
+  txt_desenhar(txt_linha_corta(TXT_CAPTION, a, 170, 178, 190, 255, lw), r.x + 28.0f, r.y + 310.0f);
+
+  txt_desenhar(txt_linha_corta(TXT_BODY, i18n(vazao_dica(vz.resumo.otimoKbps)),
+                               (int)(ar * 255.0f), (int)(ag * 255.0f), (int)(ab * 255.0f), 255, lw),
+               r.x + 28.0f, r.y + 380.0f);
+  snprintf(a, sizeof a, i18n("%d de %d tentadas · %d segundos"), atomic_load(&vz.nFonte),
+           vz.tentadas, vz.nAmostra);
+  metrica(r, r.y + 450.0f, "Fontes medidas", a, 214, 220, 230);
+  txt_bloco(TXT_CAPTION, i18n("Filme de 2 h e episódio de 45 min; o tamanho do arquivo aparece no nome da fonte."),
+            160, 170, 182, r.x + 28.0f, r.y + r.h - 80.0f, lw, 30.0f, 1, 2);
+}
+
+static void desenharVazaoOrigem(GfxRect r, float ar, float ag, float ab) {
+  int i, linha = 0, medidos = 0, nf = atomic_load(&vz.nFonte), maiorMs = 1;
+  int ve = atomic_load(&vz.estado);
+  char val[96];
+  painelTitulo(r, "Add-ons e fontes", "Resposta de cada add-on e vazão de cada fonte");
+  for (i = 0; i < vz.nAddon; i++) {
+    if (vz.addon[i].medido) medidos++;
+    if (vz.addon[i].ms > maiorMs) maiorMs = vz.addon[i].ms;
+  }
+  // Durante a fase dos add-ons os numeros ainda estao sendo escritos pelo
+  // fio; so aparecem depois dela.
+  if (ve == 1 && atomic_load(&vz.fase) < 2) medidos = 0;
+  for (i = 0; i < vz.nAddon && linha < 7 && medidos; i++) {
+    const VazAddon *a = &vz.addon[i];
+    float y = r.y + 96.0f + (float)linha * 36.0f, bx = r.x + 210.0f, bw = r.w * 0.18f;
+    TxtLinha t;
+    if (!a->medido) continue;
+    linha++;
+    txt_desenhar(txt_linha_corta(TXT_CAPTION, addons_nome(i), 190, 198, 210, 255, 170.0f),
+                 r.x + 28.0f, y + 2.0f);
+    gfx_cor((GfxRect){ bx, y + 8.0f, bw, 12.0f }, 0.5f, 0.10f, 0.12f, 0.15f, 1.0f);
+    if (a->ok)
+      gfx_cor((GfxRect){ bx, y + 8.0f, bw * (float)a->ms / (float)maiorMs, 12.0f }, 0.5f,
+              ar, ag, ab, 0.95f);
+    if (a->ok) snprintf(val, sizeof val, i18n("%d ms · %d fontes"), a->ms, a->fontes);
+    else if (a->http) snprintf(val, sizeof val, i18n("HTTP %d"), a->http);
+    else snprintf(val, sizeof val, "%s", i18n("falhou"));
+    t = txt_linha_corta(TXT_CAPTION, val, 210, 216, 226, 255, r.w - (bx - r.x) - bw - 48.0f);
+    txt_desenhar(t, r.x + r.w - 28.0f - t.w, y + 2.0f);
+  }
+  if (!linha)
+    txt_desenhar(txt_linha_corta(TXT_CAPTION, i18n(ve == 1 ? "Medindo…" : "Nenhum add-on de fontes respondeu."),
+                                 170, 178, 190, 255, r.w - 56.0f), r.x + 28.0f, r.y + 98.0f);
+  // Vazao de cada fonte medida: mediana em barras, com o numero embaixo.
+  { float y = r.y + 372.0f;
+    txt_desenhar(txt_linha(TXT_BODY, i18n("Vazão por fonte"), 238, 242, 248, 255), r.x + 28.0f, y);
+    if (nf > 0) {
+      int valores[VAZAO_FONTES_MAX];
+      char rot[VAZAO_FONTES_MAX][32], b[16];
+      const char *rotulos[VAZAO_FONTES_MAX];
+      for (i = 0; i < nf; i++) {
+        vazao_fmt_mbps(b, sizeof b, vz.fonte[i].r.medianaKbps, sepDecimal());
+        snprintf(rot[i], sizeof rot[i], "%s Mbps", b);
+        rotulos[i] = rot[i];
+        valores[i] = vz.fonte[i].r.medianaKbps;
+      }
+      // Largura pelo numero de fontes: uma barra so ocupando o painel inteiro
+      // parecia um bloco, nao uma medida.
+      { float gw = (float)nf * 170.0f + (float)(nf - 1) * 24.0f;
+        if (gw > r.w - 64.0f) gw = r.w - 64.0f;
+        graficoBarras((GfxRect){ r.x + 32.0f, y + 48.0f, gw, 110.0f }, valores, rotulos, nf, ar, ag, ab); }
+    } else {
+      txt_desenhar(txt_linha_corta(TXT_CAPTION, i18n(ve == 1 ? "Medindo…" : "Nenhuma fonte medida."),
+                                   170, 178, 190, 255, r.w - 56.0f), r.x + 28.0f, y + 48.0f);
+    }
+  }
+}
+
+static void desenharVazao(float y0, float ar, float ag, float ab, Uint32 agora) {
+  GfxRect esq = { 80.0f, y0, 1080.0f, 640.0f };
+  GfxRect dir = { 1180.0f, y0, 660.0f, 640.0f };
+  painel(esq, ar, ag, ab);
+  painel(dir, ar, ag, ab);
+  desenharVazaoResumo(esq, ar, ag, ab, agora);
+  desenharVazaoOrigem(dir, ar, ag, ab);
+  txt_desenhar(txt_linha(TXT_CAPTION, i18n(atomic_load(&vz.estado) == 1 ? "Voltar cancela o teste"
+                                                                          : "OK testa de novo · Voltar fecha"),
+                         172, 176, 184, 255),
+               NV_MARGEM_X, y0 + 668.0f);
+}
+
 void diagnostico_desenhar(Uint32 agora) {
   int estado = atomic_load(&d.estado);
   int feito = atomic_load(&d.feitos), total = atomic_load(&d.total);
@@ -1530,7 +2160,9 @@ void diagnostico_desenhar(Uint32 agora) {
     yConteudo = NV_MARGEM_Y + (float)tit.h + 4.0f + (float)sub.h + 28.0f;
     if (yConteudo < 196.0f) yConteudo = 196.0f; }
 
-  if (estado == 0) {
+  if (vz.aberto) {
+    desenharVazao(yConteudo, ar, ag, ab, agora);
+  } else if (estado == 0) {
     GfxRect esq = { 80.0f, yConteudo, 840.0f, 880.0f - yConteudo };
     GfxRect dir = { 1000.0f, yConteudo, 840.0f, 880.0f - yConteudo };
     static const char *const PASSOS[5] = {
@@ -1551,7 +2183,7 @@ void diagnostico_desenhar(Uint32 agora) {
     painelTitulo(esq, "Objetivo", "Esquerda e direita escolhem o objetivo");
     for (i = 0; i < 2; i++) {
       GfxRect c = { esq.x + 28.0f + i * 404.0f, esq.y + 100.0f, 380.0f, 196.0f };
-      int foco = focoModo == i;
+      int foco = focoModo == i && !focoLinha;
       gfx_cor(c, 18.0f / c.h, foco ? ar : 0.10f, foco ? ag : 0.12f, foco ? ab : 0.15f, 0.98f);
       txt_desenhar(txt_linha(TXT_BODY, i18n(i ? "Desempenho" : "Qualidade"),
                              foco ? 16 : 244, foco ? 18 : 246, foco ? 22 : 250, 255),
@@ -1586,10 +2218,22 @@ void diagnostico_desenhar(Uint32 agora) {
               170, 178, 190, dir.x + 28.0f, dir.y + 410.0f, dir.w - 56.0f, 30.0f, 1, 2);
     txt_desenhar(txt_linha_corta(TXT_CAPTION, i18n("Não altera assistidos, histórico, progresso ou scrobbling."),
                                  160, 170, 182, 255, dir.w - 56.0f), dir.x + 28.0f, dir.h + dir.y - 50.0f);
-    { TxtLinha ok = txt_linha(TXT_BODY, i18n("OK inicia o diagnóstico"), ar * 255.0f, ag * 255.0f, ab * 255.0f, 255);
+    { TxtLinha ok = txt_linha(TXT_BODY, i18n(focoLinha ? "OK inicia o teste de velocidade"
+                                                       : "OK inicia o diagnóstico"),
+                              ar * 255.0f, ag * 255.0f, ab * 255.0f, 255);
+      int foco = focoLinha == 1;
+      TxtLinha t = txt_linha(TXT_BODY, i18n("Teste de velocidade"), foco ? 16 : 232,
+                             foco ? 18 : 236, foco ? 22 : 244, 255);
+      float w = (float)t.w + 64.0f, x = NV_TELA_W - NV_MARGEM_X - w;
       txt_desenhar(ok, NV_MARGEM_X, 930.0f);
-      txt_desenhar(txt_linha(TXT_CAPTION, i18n("Voltar sai"), 172, 176, 184, 255),
-                   NV_MARGEM_X + ok.w + 32.0f, 934.0f); }
+      txt_desenhar(txt_linha(TXT_CAPTION, i18n(focoLinha ? "Para cima volta ao objetivo · Voltar sai"
+                                                         : "Para baixo: teste de velocidade · Voltar sai"),
+                             172, 176, 184, 255),
+                   NV_MARGEM_X + ok.w + 32.0f, 934.0f);
+      // O mesmo botao da tela de resultado (desenharBotoes), a direita.
+      if (foco) gfx_cor((GfxRect){ x, 910.0f, w, 60.0f }, 0.5f, ar, ag, ab, 1.0f);
+      else gfx_cor((GfxRect){ x, 910.0f, w, 60.0f }, 0.5f, 0.13f, 0.15f, 0.19f, 1.0f);
+      txt_desenhar(t, x + 32.0f, 910.0f + (60.0f - (float)t.h) * 0.5f); }
   } else if (estado == 1) {
     GfxRect pn = { 180.0f, yConteudo + 20.0f, 1560.0f, 640.0f };
     static const char *const ETAPAS[6] = {
@@ -1722,5 +2366,7 @@ void diagnostico_encerrar(void) {
     if (d.sugEstado == DS_TESTANDO) ajustes_definir_destaque(d.sugFonteAntes, d.sugDifAntes);
   }
   if (d.fioEnvio) { SDL_WaitThread(d.fioEnvio, NULL); d.fioEnvio = NULL; }
+  atomic_store(&vz.cancelado, 1);
+  if (vz.fio) { SDL_WaitThread(vz.fio, NULL); vz.fio = NULL; }
   desfazerExperimento();
 }
