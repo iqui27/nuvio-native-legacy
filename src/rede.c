@@ -234,23 +234,12 @@ char *rede_baixar_st(const char *url, int segundos, const char *const *cab,
   return pedir("GET", url, cab, NULL, NULL, NULL, status);
 }
 
-char *rede_baixar_trecho(const char *url, int segundos, long ini, long fim,
-                         long *tam) {
-  char faixa[80];
-  const char *cab[2];
-  char *r;
-  (void)segundos;
-  snprintf(faixa, sizeof faixa, "Range: bytes=%ld-%ld", ini, fim);
-  cab[0] = faixa; cab[1] = NULL;
-  rede_teto = fim - ini + 1;
-  r = pedir("GET", url, cab, NULL, NULL, tam, NULL);
-  rede_teto = 0;
-  return r;
-}
-
-char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
-                            long *tam, int *status, int *erro,
-                            char *final, unsigned tamFinal) {
+// UM pedido de Range (o laco em pedacos e rede_baixar_trecho_st, no fim do
+// arquivo). XHR nao entrega corpo cortado: uma conexao que fecha antes do
+// Content-Length e erro de rede e o corpo some — aqui nunca ha "parcial".
+static char *trechoUmaVez(const char *url, int segundos, long ini, long fim,
+                          long *tam, int *status, int *erro,
+                          char *final, unsigned tamFinal) {
   char faixa[80];
   const char *cab[2];
   char *r;
@@ -340,6 +329,9 @@ static _Thread_local int redeCurlLocal;
 // Destino do endereco final do proximo pedido (so rede_baixar_trecho_st liga).
 static _Thread_local char *redeFinalDst;
 static _Thread_local unsigned redeFinalTam;
+// 1 = o pedido corrente aceita corpo CORTADO (206 que fechou antes do fim):
+// so trechoUmaVez liga. Ver a nota la.
+static _Thread_local int redeParcialOk;
 
 // Constantes da libcurl escritas a mao: nao ha curl.h no SDK do aparelho, e
 // puxar o header inteiro so por meia duzia de numeros nao se paga. Os valores
@@ -836,30 +828,22 @@ char *rede_baixar(const char *url, int segundos) {
   return rede_baixar_interno(url, segundos, NULL, NULL);
 }
 
-char *rede_baixar_trecho(const char *url, int segundos, long ini, long fim,
-                         long *tam) {
-  char faixa[80];
-  const char *cab[2];
-  // Range e um cabecalho comum, entao o caminho com cabecalhos ja existente
-  // serve. Nao ha modo "binario com cabecalhos" separado porque
-  // rede_baixar_interno ja devolve o tamanho quando `tam` e passado — quem
-  // pediu texto e que ignora esse campo.
-  snprintf(faixa, sizeof faixa, "Range: bytes=%ld-%ld", ini, fim);
-  cab[0] = faixa; cab[1] = NULL;
-  // TETO DE VERDADE, e nao so o cabecalho. MEDIDO: um servidor que ignora o
-  // Range responde 200 com o arquivo INTEIRO — no teste vieram 31 MB para um
-  // pedido de 2 MB. Sem o teto, ler o cabecalho de um filme de 20 GB baixaria
-  // o filme. O corte e no recebedor, entao a conexao morre no limite em vez de
-  // esperar o fim.
-  rede_teto = fim - ini + 1;
-  { char *r = rede_baixar_interno(url, segundos, tam, cab);
-    rede_teto = 0;
-    return r; }
-}
-
-char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
-                            long *tam, int *status, int *erro,
-                            char *final, unsigned tamFinal) {
+// UM pedido de Range (o laco em pedacos e rede_baixar_trecho_st, no fim do
+// arquivo). Range e um cabecalho comum, entao o caminho com cabecalhos ja
+// existente serve.
+//
+// TETO DE VERDADE, e nao so o cabecalho. MEDIDO: um servidor que ignora o
+// Range responde 200 com o arquivo INTEIRO — no teste vieram 31 MB para um
+// pedido de 2 MB. Sem o teto, ler o cabecalho de um filme de 20 GB baixaria o
+// filme. O corte e no recebedor, entao a conexao morre no limite em vez de
+// esperar o fim.
+//
+// CORPO CORTADO FICA (#92): um 206 que fecha antes do Content-Length (curl 18,
+// ou 56 no meio do corpo) devolve o que veio, com o codigo em *erro. So quem
+// sabe pedir o resto (o laco) liga isto; o resto do modulo segue igual.
+static char *trechoUmaVez(const char *url, int segundos, long ini, long fim,
+                          long *tam, int *status, int *erro,
+                          char *final, unsigned tamFinal) {
   char faixa[80];
   const char *cab[2];
   char *r;
@@ -870,9 +854,11 @@ char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
   redeCurlLocal = 0;
   rede_teto = fim - ini + 1;
   redeFinalDst = final; redeFinalTam = final ? tamFinal : 0;
+  redeParcialOk = 1;
   // Com `status` o interno2 devolve o corpo de um 4xx (e o contrato do
   // Supabase); aqui ele e descartado, mas o codigo fica com quem chamou.
   r = rede_baixar_interno2(url, segundos, tam, cab, &st, NULL, 0);
+  redeParcialOk = 0;
   redeFinalDst = NULL; redeFinalTam = 0;
   rede_teto = 0;
   if (status) *status = st;
@@ -1027,6 +1013,21 @@ static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
     return NULL;
   }
   if (r == 23 && redeLimiteAtual() > 0 && b.n > 0) r = 0;
+  // CORTE NO MEIO DO 206 (#92): o CDN do Real-Debrid responde 206 ao Range de
+  // 256 KB e fecha a conexao depois de 77465 bytes, sempre. O que veio e o
+  // comeco verdadeiro do trecho pedido: fica, com o codigo em redeCurlLocal, e
+  // quem ligou redeParcialOk (trechoUmaVez) pede o resto. O handle ja foi
+  // descartado acima (r != 0), junto com a conexao morta.
+  if ((r == 18 || r == 56) && redeParcialOk && b.n > 0 && status && *status == 206) {
+    char seg[120];
+    printf("[rede] corte %d em %s (conexao %s, %ld bytes, %lu ms): fica o que veio\n", r,
+           rede_url_publica(url, seg, sizeof seg), reusada ? "reusada" : "nova",
+           (long)b.n, gasto);
+    fflush(stdout);
+    redeBytesLocal = (long)b.n;
+    if (tam) *tam = (long)b.n;
+    return b.p;
+  }
   // O RESTO DA HISTORIA no log: por qual conexao foi, quanto veio e quanto
   // esperou. "falha 28" sozinho nao separa conexao morta (reusada, 0 bytes),
   // rede lenta (bytes > 0, prazo inteiro) e DNS/conexao que nao abriu (nova,
@@ -1165,6 +1166,159 @@ static unsigned long redeAgoraMs(void) {
   struct timespec ts;
   if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
   return (unsigned long)ts.tv_sec * 1000UL + (unsigned long)ts.tv_nsec / 1000000UL;
+}
+
+// ------------------------------------------------------------ RANGE EM PEDACOS
+//
+// #92, 1.4.6 (Real-Debrid pelo Torrentio, LG): o CDN responde 206 ao Range de
+// 256 KB do mkvass e fecha a conexao depois de 77465 bytes, TODA vez (curl 18,
+// ~200 ms). O modulo jogava o corpo fora e pedia o MESMO Range de novo — para
+// sempre, e a legenda nunca vinha. Nao se sabe se o corte e um teto por pedido
+// ou o CDN derrubando conexao a mais no mesmo link (o mkvass abria tres extras
+// com o video tocando); os dois lados sao tratados:
+//   - o que veio FICA, e o laco pede so o resto, do byte ini+recebidos;
+//   - o host ganha um TETO de pedido (o que veio arredondado para baixo em
+//     16 KB, no minimo REDE_CORTE_MIN), lembrado a sessao inteira: os pedidos
+//     seguintes ja saem em pedacos que cabem, sem corte e com a conexao
+//     reaproveitada;
+//   - rede_corte_host conta ao mkvass, que passa a UMA conexao extra.
+#define REDE_CORTE_MIN    (32L * 1024)
+#define REDE_CORTE_HOSTS  8
+// Pedacos de um trecho antes de desistir. 512 KB (a janela da varredura) em
+// pedacos de 32 KB sao 16; o dobro e so rede de seguranca.
+#define REDE_PEDACOS_MAX  32
+
+typedef struct { char h[96]; long teto; } CorteHost;
+static CorteHost corteHost[REDE_CORTE_HOSTS];
+static int corteProx;
+static pthread_mutex_t corteTrava = PTHREAD_MUTEX_INITIALIZER;
+
+// "https://a.b:443" de "https://a.b:443/x?y": o esquema e a porta contam.
+static void corteHostDe(const char *u, char *h, size_t n) {
+  const char *p = u ? strstr(u, "://") : NULL;
+  size_t k;
+  h[0] = 0;
+  if (!p || n == 0) return;
+  k = (size_t)(p + 3 - u) + strcspn(p + 3, "/?#");
+  if (k >= n) k = n - 1;
+  memcpy(h, u, k);
+  h[k] = 0;
+}
+
+long rede_corte_host(const char *url) {
+  char h[96];
+  long t = 0;
+  int i;
+  corteHostDe(url, h, sizeof h);
+  if (!h[0]) return 0;
+  pthread_mutex_lock(&corteTrava);
+  for (i = 0; i < REDE_CORTE_HOSTS; i++)
+    if (corteHost[i].teto && !strcmp(corteHost[i].h, h)) { t = corteHost[i].teto; break; }
+  pthread_mutex_unlock(&corteTrava);
+  return t;
+}
+
+// O host de `url` cortou um 206 depois de `veio` bytes. So BAIXA o teto.
+static void corteAprender(const char *url, long veio) {
+  char h[96], seg[120];
+  long teto = (veio / (16L * 1024)) * (16L * 1024);
+  int i, achou = -1, mudou = 0;
+  if (teto < REDE_CORTE_MIN) teto = REDE_CORTE_MIN;
+  corteHostDe(url, h, sizeof h);
+  if (!h[0]) return;
+  pthread_mutex_lock(&corteTrava);
+  for (i = 0; i < REDE_CORTE_HOSTS; i++)
+    if (corteHost[i].teto && !strcmp(corteHost[i].h, h)) { achou = i; break; }
+  if (achou < 0) {
+    achou = corteProx; corteProx = (corteProx + 1) % REDE_CORTE_HOSTS;
+    snprintf(corteHost[achou].h, sizeof corteHost[achou].h, "%s", h);
+    corteHost[achou].teto = teto; mudou = 1;
+  } else if (teto < corteHost[achou].teto) { corteHost[achou].teto = teto; mudou = 1; }
+  pthread_mutex_unlock(&corteTrava);
+  if (mudou) {
+    printf("[rede] %s corta Range em %ld bytes: pedidos de ate %ld KB neste host daqui em diante\n",
+           rede_url_publica(url, seg, sizeof seg), veio, teto / 1024);
+    fflush(stdout);
+  }
+}
+
+char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
+                            long *tam, int *status, int *erro,
+                            char *final, unsigned tamFinal) {
+  unsigned long t0 = redeAgoraMs(),
+                prazo = (unsigned long)(segundos > 0 ? segundos : 30) * 1000UL;
+  long pedido = fim - ini + 1, veio = 0;
+  char *buf = NULL;
+  int st = 0, e = 0, pedacos = 0;
+  // `atual`: o endereco dos pedacos seguintes (o final, depois do primeiro:
+  // sem pagar o redirecionamento de novo). `fin`: o final de cada resposta.
+  char atual[4096], fin[4096];
+  if (tam) *tam = 0;
+  if (status) *status = 0;
+  if (erro) *erro = 0;
+  if (final && tamFinal) final[0] = 0;
+  if (!url || pedido <= 0) return trechoUmaVez(url, segundos, ini, fim, tam, status, erro, final, tamFinal);
+  snprintf(atual, sizeof atual, "%s", url);
+  for (;;) {
+    long a = ini + veio, b = fim, n = 0, teto = rede_corte_host(atual);
+    int seg = segundos, cortado;
+    char *r;
+    if (teto <= 0) teto = rede_corte_host(url);
+    if (teto > 0 && b - a + 1 > teto) b = a + teto - 1;
+    if (pedacos > 0) {
+      unsigned long gasto = redeAgoraMs() - t0;
+      if (gasto + 1000UL > prazo) { e = e ? e : 28; goto falhou; }
+      seg = (int)((prazo - gasto + 999UL) / 1000UL);
+    }
+    r = trechoUmaVez(atual, seg, a, b, &n, &st, &e, fin, sizeof fin);
+    pedacos++;
+    if (pedacos == 1 && final && tamFinal) snprintf(final, tamFinal, "%s", fin);
+    if (!r) goto falhou;
+    // Sem 206 o servidor ignorou o Range (200 com o comeco do arquivo): no
+    // primeiro pedido e o contrato de sempre (quem chama recebe o que veio);
+    // no meio de um trecho ja em pedacos, o que viria nao e o resto.
+    if (st != 206) {
+      if (pedacos == 1) { if (tam) *tam = n; if (status) *status = st; return r; }
+      free(r); goto falhou;
+    }
+    cortado = e != 0;
+    { char *nv = realloc(buf, (size_t)(veio + n + 1));
+      if (!nv) { free(r); goto falhou; }
+      buf = nv; memcpy(buf + veio, r, (size_t)n); veio += n; buf[veio] = 0; free(r); }
+    if (cortado) {
+      corteAprender(atual, n);
+      if (strcmp(atual, url)) corteAprender(url, n);
+      printf("[rede] Range %ld+%ld: %ld de %ld bytes ate aqui, pedindo o resto (pedaco %d)\n",
+             ini, pedido, veio, pedido, pedacos);
+      fflush(stdout);
+    }
+    if (fin[0]) snprintf(atual, sizeof atual, "%s", fin);
+    if (veio >= pedido) break;
+    // Resposta completa e mais curta que o pedido: o arquivo acabou.
+    if (!cortado && n < b - a + 1) break;
+    if (pedacos >= REDE_PEDACOS_MAX) goto falhou;
+  }
+  if (tam) *tam = veio;
+  if (status) *status = 206;
+  return buf;
+falhou:
+  // Sem progresso: o que ja veio se perde (quem chama pede o trecho de novo,
+  // e o teto aprendido faz o pedido seguinte caber).
+  if (veio > 0) {
+    printf("[rede] Range %ld+%ld sem progresso depois de %ld bytes em %d pedaco(s) (HTTP %d, curl %d)\n",
+           ini, pedido, veio, pedacos, st, e);
+    fflush(stdout);
+  }
+  free(buf);
+  if (tam) *tam = 0;
+  if (status) *status = st;
+  if (erro) *erro = e ? e : (veio > 0 ? 18 : 0);
+  return NULL;
+}
+
+char *rede_baixar_trecho(const char *url, int segundos, long ini, long fim,
+                         long *tam) {
+  return rede_baixar_trecho_st(url, segundos, ini, fim, tam, NULL, NULL, NULL, 0);
 }
 
 char *rede_baixar_medido(const char *url, int segundos,

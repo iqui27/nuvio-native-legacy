@@ -546,7 +546,10 @@ static void falhou(Fio *f, long ini, long n, int st, int erro) {
     }
   } else {
     if (httpFreio(st)) f->freios++;
-    if ((httpFreio(st) || (erro == 28 && f->falhas >= 2)) && f->paralelos > 1) {
+    // curl 18/56 aqui e um corte que NEM o resto trouxe (rede.c ja junta os
+    // pedacos de um 206 cortado): o CDN derrubando conexao a mais no link.
+    if ((httpFreio(st) || erro == 18 || erro == 56 || (erro == 28 && f->falhas >= 2)) &&
+        f->paralelos > 1) {
       f->paralelos = 1;
       printf("[mkvass] freio do servidor (HTTP %d, curl %d): 1 conexao extra daqui em diante\n", st, erro);
     }
@@ -556,6 +559,22 @@ static void falhou(Fio *f, long ini, long n, int st, int erro) {
       printf("[mkvass] prazo estourado: janela da varredura agora %ld KB\n", f->varreCh / 1024);
     }
   }
+  fflush(stdout);
+  publicarAprendido(f);
+}
+
+// O host deste link CORTA Range (rede_corte_host: um 206 que fechou no meio,
+// #92 com o Real-Debrid): o corte foi remendado pela rede, mas conexao a mais
+// no mesmo link e a suspeita — daqui em diante UMA conexao extra.
+static void conferirCorte(Fio *f) {
+  long teto;
+  if (f->paralelos <= 1) return;
+  teto = rede_corte_host(f->url);
+  if (teto <= 0 && strcmp(f->url, f->urlOrig)) teto = rede_corte_host(f->urlOrig);
+  if (teto <= 0) return;
+  f->paralelos = 1;
+  printf("[mkvass] o servidor corta Range (pedidos de ate %ld KB): 1 conexao extra daqui em diante\n",
+         teto / 1024);
   fflush(stdout);
   publicarAprendido(f);
 }
@@ -599,6 +618,7 @@ static unsigned char *colherJob(Fio *f, Job *j, long *tam) {
   if (!atual) { free(r); *tam = 0; return NULL; }
   if (!r) { falhou(f, ini, n, st, erro); return NULL; }
   f->falhas = 0;
+  conferirCorte(f);
   return r;
 }
 
@@ -652,6 +672,7 @@ static unsigned char *range(Fio *f, long ini, long n, long *tam) {
       publicarAprendido(f);
     }
   }
+  conferirCorte(f);
   return (unsigned char *)r;
 }
 
@@ -2593,6 +2614,9 @@ static void iniciarFaixa(const char *url, int numeroFaixa, int herdar, int segur
     S.ultHttp = S.ultCurl = 0;
   }
   f->paralelos = S.paralelos > 0 ? S.paralelos : MKVASS_PARALELOS;
+  // Host que ja cortou Range nesta sessao (rede_corte_host): comeca com UMA.
+  if (rede_corte_host(url) > 0 || (S.urlFinal[0] && rede_corte_host(S.urlFinal) > 0))
+    f->paralelos = 1;
   f->varreCh = S.varreCh > 0 ? S.varreCh : MKVASS_VARRE_CH;
   S.geracao++;
   f->g = S.geracao;
