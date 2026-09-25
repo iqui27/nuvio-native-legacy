@@ -1239,8 +1239,9 @@ static void desenhaCartaz(const CatItem *ci, GfxRect base, float f, float a,
   if (f > 0.01f && ajustes_borda_foco()) {
     float ar, ag, ab;
     ajustes_acento(&ar, &ag, &ab);
-    gfx_rect(card, 0, GFX_ANEL, 0, NV_BIB_POSTER_BORDA / card.w,
-             0, raio, ar, ag, ab, f * a);
+    // Espessura em PIXELS: era NV_BIB_POSTER_BORDA / card.w, mas o anel mede
+    // em fracao da ALTURA, e num cartaz 2:3 isso dava 6 px e nao 4.
+    gfx_anel(card, raio, NV_BIB_POSTER_BORDA, ar, ag, ab, f * a);
   }
   if (ci) {
     TxtLinha tl = txt_linha_corta(TXT_CALLOUT, ci->titulo, 255, 255, 255, 255,

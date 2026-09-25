@@ -104,7 +104,7 @@ static void figAbertura(float x, float y, float a) {
     t = txt_linha(TXT_CAPTION2, i18n("TRAILER"), (int)(tinta * 255), (int)(tinta * 255), (int)(tinta * 255), 255);
     txt_desenhar_alpha(t, px + 18.0f, py + 7.0f, a); }
   // Moldura fina de foco em volta do quadro.
-  gfx_rect((GfxRect){ x - 3.0f, y - 3.0f, w + 6.0f, h + 6.0f }, 0, GFX_ANEL, 0, 0.012f, 0, 0.035f, 1, 1, 1, 0.35f * a);
+  gfx_anel_fora((GfxRect){ x, y, w, h }, 0.035f, 0.0f, 3.0f, 1, 1, 1, 0.35f * a);
   txt_bloco(TXT_BODY,
             i18n("Abra um título e, alguns segundos depois, o trailer toca no lugar da arte. "
                  "O mesmo no destaque da home. OK no trailer abre em tela cheia com som; "

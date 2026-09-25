@@ -11,6 +11,9 @@
 typedef struct {
   GLuint prog;
   GLint rect, tela, tex, foco, par, raio, cor, asp, texAsp, forcarCover, borda, varre, fundo;
+  GLint alt;     // uAlt: altura do rect em pixels do alvo (a rampa de 1 px do SDF)
+  GLint margem;  // uMargem do VS: 1 px de folga no quad dos modos de SDF
+  float altAtual, margemAtual;  // o ultimo valor enviado: so chama o GL se mudar
 } Programa;
 static Programa progs[GFX_NMODOS];
 static int progAtual = -1;
@@ -52,10 +55,23 @@ static const char *VS =
   "attribute vec2 aPos;\n"
   "uniform vec4 uRect;\n"
   "uniform vec2 uTela;\n"
+  // MARGEM DE 1 PX NOS MODOS DE SDF. O quad era o proprio rect, entao tudo que
+  // o SDF pintasse com d > 0 caia fora dele e era cortado: a metade de fora da
+  // rampa da borda sumia nos lados retos (a borda saia dura, com degrau de
+  // pixel quando o rect anda em fracao) e o GFX_ANEL, que era centrado na
+  // borda, perdia a metade de fora do traco nos lados retos e a mantinha nos
+  // cantos — traco de 1 px no reto e 2 px na curva, o contorno "quebrado".
+  // Com a margem a rampa inteira cabe no quad; vUv continua 0..1 NO RECT (a
+  // margem sai com vUv um pouco fora disso, e o SDF da cobertura 0 la).
+  // uMargem e 0 nos modos sem SDF (texto, icones, rampas) e no retangulo de
+  // canto vivo (raio 0), que seguem iguais — ver gfx_rect.
+  // Rect vazio ou invertido nao cresce: a divisao abaixo nao pode ver zero.
+  "uniform float uMargem;\n"
   "varying highp vec2 vUv;\n"
   "void main(){\n"
-  "  vUv = aPos;\n"
-  "  vec2 p = uRect.xy + aPos * uRect.zw;\n"
+  "  vec2 e = (aPos * 2.0 - 1.0) * uMargem * step(0.5, min(uRect.z, uRect.w));\n"
+  "  vUv = aPos + e / max(uRect.zw, vec2(0.5));\n"
+  "  vec2 p = uRect.xy + aPos * uRect.zw + e;\n"
   "  gl_Position = vec4(p.x/uTela.x*2.0-1.0, 1.0-p.y/uTela.y*2.0, 0.0, 1.0);\n"
   "}\n";
 
@@ -88,17 +104,41 @@ static const char *FS_CABECA =
   // (destaque, destaque cheio, detalhe). Era vec3(0.051) cravado em cada uma;
   // com o tema dinamico estilizado o fundo e tingido (layout.h,
   // NV_COR_FUNDO_R), e a rampa cravada deixaria uma emenda onde a arte acaba.
-  "uniform vec3  uFundo;\n";
+  "uniform vec3  uFundo;\n"
+  // uAlt = altura do rect em PIXELS DO ALVO. O SDF mede em fracao da altura,
+  // entao 1 px la e 1/uAlt; e o que deixa a rampa da borda com 1 px em
+  // qualquer tamanho (ver borda() em FS_SDF).
+  "uniform float uAlt;\n"
+  "#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
+  "#define NV_HP highp\n"
+  "#else\n"
+  "#define NV_HP mediump\n"
+  "#endif\n";
 
 // SDF de retangulo arredondado, corrigido pela proporcao — sem a correcao o
 // canto de um card landscape sai oval.
+//
+// p E q EM highp (onde a GPU tem): o parametro era mediump e rebaixava o vUv
+// highp para fp16 na entrada. fp16 tem 11 bits de mantissa: num cartao de
+// 1500x900 o p.x anda em degraus de 1/2048 da altura, e a posicao da borda
+// erra ate 0,4 px (simulado em fp16; 0,3 px numa linha de Ajustes de
+// 1200x96, 0,1 px numa pilula) — com rampa de 1 px isso e borda tremida. q =
+// |p| - b e pequeno perto da borda, entao dali em diante mediump basta: so
+// as duas linhas pagam highp (erro simulado depois: 0,02 px).
+//
+// borda(d) e a cobertura com rampa de UM PIXEL centrada na borda. Era
+// smoothstep(0.006,-0.006,d): 1,2% da ALTURA, que numa pilula de 56 px da
+// 0,7 px (serrilha nas pontas) e num painel de 900 px da 11 px (borda
+// borrada). Um clamp linear sobre a distancia em pixels e o antialias de SDF
+// de livro, e custa menos que o smoothstep.
 static const char *FS_SDF =
-  "float sdf(vec2 uv, float r, float asp){\n"
-  "  vec2 p = (uv - 0.5) * vec2(asp, 1.0);\n"
-  "  vec2 b = vec2(0.5*asp, 0.5) - r;\n"
-  "  vec2 q = abs(p) - b;\n"
+  "float sdf(NV_HP vec2 uv, float r, float asp){\n"
+  "  NV_HP vec2 p = (uv - 0.5) * vec2(asp, 1.0);\n"
+  "  NV_HP vec2 qh = abs(p) - (vec2(0.5*asp, 0.5) - r);\n"
+  "  vec2 q = qh;\n"
   "  return min(max(q.x,q.y),0.0) + length(max(q,0.0)) - r;\n"
-  "}\n";
+  "}\n"
+  "float borda(float d){ return clamp(0.5 - d * uAlt, 0.0, 1.0); }\n";
 
 // "cover": recorta o excedente em vez de deformar a arte.
 static const char *FS_COVER =
@@ -114,7 +154,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // GFX_CARD — arte com cantos, over-scan de parallax e especular no foco
   "void main(){\n"
   "  float d = sdf(vUv, uRaio, uAspect);\n"
-  "  float m = smoothstep(0.006,-0.006,d);\n"
+  "  float m = borda(d);\n"
   "  if (m <= 0.001) discard;\n"
   // COVER VIRA CONTAIN quando a arte foge muito da moldura (issue #89):
   // catalogo como o Xperience declara fileira deitada mas serve o poster
@@ -165,7 +205,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
 
   // GFX_COR — retangulo/pilula de cor solida
   "void main(){\n"
-  "  float m = smoothstep(0.006,-0.006, sdf(vUv, uRaio, uAspect));\n"
+  "  float m = borda(sdf(vUv, uRaio, uAspect));\n"
   "  if (m <= 0.001) discard;\n"
   "  gl_FragColor = vec4(uCor.rgb, uCor.a*m);\n"
   "}\n",
@@ -211,7 +251,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
 
   // GFX_VEU — escurece a base E a esquerda, onde fica o texto sobreposto
   "void main(){\n"
-  "  float m = smoothstep(0.006,-0.006, sdf(vUv, uRaio, uAspect));\n"
+  "  float m = borda(sdf(vUv, uRaio, uAspect));\n"
   "  if (m <= 0.001) discard;\n"
   "  float gb = smoothstep(0.34, 1.0, vUv.y);\n"
   "  float ge = smoothstep(0.62, 0.0, vUv.x) * 0.78;\n"
@@ -368,13 +408,26 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   //
   // Parametros, reaproveitando uPar para nao criar uniform novo:
   //   uPar.x = espessura do traco, na mesma escala normalizada de uRaio
+  //            (fracao da ALTURA do rect: 2 px = 2.0/r.h — gfx_anel faz a conta)
   //   uPar.y = numero de tracos do pontilhado; 0 (ou <0.5) = anel continuo
+  //
+  // O TRACO FICA POR DENTRO DO RECT, de d = -esp ate d = 0, com rampa de 1 px
+  // nas duas bordas. Era `smoothstep(esp, esp*0.55, abs(d))`: um traco CENTRADO
+  // na borda, com a metade de fora caindo fora do quad. Nos lados retos essa
+  // metade era cortada (sobrava o lado de dentro, com a borda de fora dura) e
+  // nos cantos ela aparecia. Medido: na pilula "Depois" (56 px, traco de
+  // 1,5 px) uma linha de pixel no reto e duas na diagonal da curva; no anel
+  // de 3 px do Reproduzir, 2,3 px no reto e 4,4 px a 45 graus. E o mesmo
+  // "squircle" que agendaui.c e salvospainel.c descrevem num circulo: reto
+  // nos quatro lados (o corte do quad) e cheio nas diagonais. E a rampa era
+  // 45% da espessura: abaixo de ~2 px ela tinha menos de 1 px e serrilhava.
+  // Agora a espessura e a mesma em todo o contorno e igual a pedida, e a borda
+  // de fora do anel coincide com a do rect: anel e miolo desenhados no mesmo
+  // rect dao UMA borda so. Anel por fora de outra peca: gfx_anel_fora.
   "void main(){\n"
   "  float d = sdf(vUv, uRaio, uAspect);\n"
   "  float esp = max(uPar.x, 0.0015);\n"
-  // A borda externa e a interna recebem o mesmo esmaecimento, senao o anel fica
-  // com o lado de dentro serrilhado e o de fora liso.
-  "  float m = smoothstep(esp, esp*0.55, abs(d));\n"
+  "  float m = borda(d) * clamp(0.5 + (d + esp) * uAlt, 0.0, 1.0);\n"
   "  if (m <= 0.002) discard;\n"
   "  if (uPar.y > 0.5) {\n"
   "    vec2 p = (vUv - 0.5) * vec2(uAspect, 1.0);\n"
@@ -480,7 +533,9 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "void main(){\n"
   "  vec2 p=(vUv-0.5)*vec2(uAspect,1.0);\n"
   "  float d=length(p);\n"
-  "  float m=smoothstep(0.500,0.486,d);\n"
+  // Rampa de 1 px POR DENTRO do disco (o quad deste modo nao tem margem).
+  // Era smoothstep(0.500,0.486): 1,4% da altura, 0,4 px num disco de 27.
+  "  float m=clamp((0.5-d)*uAlt,0.0,1.0);\n"
   "  if(m<=0.001) discard;\n"
   "  vec3 c=texture2D(uTex,clamp(cover(vUv),0.0,1.0)).rgb;\n"
   "  gl_FragColor=vec4(c,m*uCor.a);\n"
@@ -523,7 +578,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // produz um aro perfeito sem esconder pixels da imagem nem criar rebarbas.
   "void main(){\n"
   "  vec2 p=(vUv-0.5)*vec2(uAspect,1.0);\n"
-  "  float m=smoothstep(0.500,0.486,length(p));\n"
+  "  float m=clamp((0.5-length(p))*uAlt,0.0,1.0);\n"
   "  if(m<=0.001) discard;\n"
   "  gl_FragColor=vec4(uCor.rgb,uCor.a*m);\n"
   "}\n",
@@ -544,7 +599,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // garante laco com limite variavel, e tres mix compilam para o mesmo punhado
   // de instrucoes que o laco geraria.
   "void main(){\n"
-  "  float m = smoothstep(0.006,-0.006, sdf(vUv, uRaio, uAspect));\n"
+  "  float m = borda(sdf(vUv, uRaio, uAspect));\n"
   "  if (m <= 0.001) discard;\n"
   "#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
   "  highp float t = clamp(vUv.y, 0.0, 1.0);\n"
@@ -570,7 +625,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // retangulo chapado ja fazia, so que mais fraco.
   "void main(){\n"
   "  float d = sdf(vUv, uRaio, uAspect);\n"
-  "  float m = smoothstep(0.006,-0.006,d);\n"
+  "  float m = borda(d);\n"
   "  if (m <= 0.001) discard;\n"
   "  float t = 1.0 - smoothstep(0.0, max(uPar.x, 0.001), vUv.y);\n"
   "  gl_FragColor = vec4(uCor.rgb, uCor.a * t * t * m);\n"
@@ -578,7 +633,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
 
   // GFX_ARTE — a textura intacta, recortada pelos cantos. Ver a nota em gfx.h.
   "void main(){\n"
-  "  float m = smoothstep(0.006,-0.006, sdf(vUv, uRaio, uAspect));\n"
+  "  float m = borda(sdf(vUv, uRaio, uAspect));\n"
   "  if (m <= 0.001) discard;\n"
   "  vec4 t = texture2D(uTex, vUv);\n"
   "  gl_FragColor = vec4(t.rgb, t.a * uCor.a * m);\n"
@@ -593,7 +648,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "#define GFX_LUZ_PREC mediump\n"
   "#endif\n"
   "void main(){\n"
-  "  float m = smoothstep(0.006,-0.006, sdf(vUv, uRaio, uAspect));\n"
+  "  float m = borda(sdf(vUv, uRaio, uAspect));\n"
   "  if (m <= 0.001) discard;\n"
   "  GFX_LUZ_PREC vec2 p = (vUv - uPar) * vec2(uAspect, 1.0);\n"
   // O falloff linear ao quadrado ainda mostrava um limite circular em TVs com
@@ -631,7 +686,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // sequencia, como uma so luz passando, e a conta e a mesma do GFX_COR mais
   // um exp — nenhum desenho a mais.
   "void main(){\n"
-  "  float m = smoothstep(0.006,-0.006, sdf(vUv, uRaio, uAspect));\n"
+  "  float m = borda(sdf(vUv, uRaio, uAspect));\n"
   "  if (m <= 0.001) discard;\n"
   "  float x = uPar.y + vUv.x * uFoco + (1.0 - vUv.y) * 0.05 - uPar.x;\n"
   "  float b = exp(-x*x*70.0);\n"
@@ -746,6 +801,10 @@ int gfx_iniciar(void) {
     progs[m].borda  = glGetUniformLocation(p, "uBorda");
     progs[m].varre  = glGetUniformLocation(p, "uVarre");
     progs[m].fundo  = glGetUniformLocation(p, "uFundo");
+    progs[m].alt    = glGetUniformLocation(p, "uAlt");
+    progs[m].margem = glGetUniformLocation(p, "uMargem");
+    progs[m].altAtual = -1.0f;
+    progs[m].margemAtual = 0.0f;   // o default de um uniform recem-linkado e 0
     glUseProgram(p);
     glUniform2f(progs[m].tela, NV_TELA_W, NV_TELA_H);
     glUniform1i(progs[m].tex, 0);
@@ -855,7 +914,7 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
   { float area = (r.w * r.h) / (NV_TELA_W * NV_TELA_H);
     gfx_fill += area;
     if (area >= 0.5f) gfx_n_cheio++; }
-  const Programa *P = &progs[modo];
+  Programa *P = &progs[modo];
   if (progAtual != (int)modo) { glUseProgram(P->prog); progAtual = (int)modo; gfx_n_prog++; }
   // Uniform que o shader do modo nao declara volta como -1 do link; passar -1
   // ao glUniform e no-op valido mas ainda paga a travessia da chamada GL. Num
@@ -873,6 +932,21 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
   // So os tres modos de rampa declaram uFundo: e uma chamada por destaque ou
   // fundo de detalhe desenhado, nao por retangulo.
   if (P->fundo >= 0)  glUniform3f(P->fundo, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B);
+  // Altura em pixels do ALVO (o layout e 1920x1080; em retina ou num snapshot
+  // o alvo tem outro tamanho): a rampa de borda do SDF mede 1 px dele.
+  //
+  // RETANGULO DE CANTO VIVO (raio 0) FICA COMO ERA: borda no pixel, sem
+  // margem nem rampa (uAlt enorme = degrau). Fio de 1 px, ponteiro de
+  // relogio e divisoria caem em posicao fracionaria; com a rampa eles viram
+  // duas linhas a meia forca — borrados. So a curva precisa de antialias.
+  // Os dois valores ficam em cache por programa: fileira de cartoes iguais
+  // nao repete a chamada.
+  { float alt = r.h * (float)telaH / NV_TELA_H, mg = 0.0f;
+    if (PRECISA[modo].sdf) {
+      if (raio > 0.0f) mg = 1.0f; else alt = 8192.0f;
+    }
+    if (P->alt >= 0 && alt != P->altAtual) { glUniform1f(P->alt, alt); P->altAtual = alt; }
+    if (P->margem >= 0 && mg != P->margemAtual) { glUniform1f(P->margem, mg); P->margemAtual = mg; } }
   if (P->cor >= 0)    glUniform4f(P->cor, cr, cg, cb, ca * gfx_opacidade_grupo);
   if (tex && tex != texAtual) {
     glActiveTexture(GL_TEXTURE0);
@@ -888,6 +962,22 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
 
 void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca) {
   gfx_rect(r, 0, GFX_COR, 0, 0, 0, raio, cr, cg, cb, ca);
+}
+void gfx_anel(GfxRect r, float raio, float esp,
+              float cr, float cg, float cb, float ca) {
+  if (r.h <= 0.0f || esp <= 0.0f) return;
+  gfx_rect(r, 0, GFX_ANEL, 0, esp / r.h, 0, raio, cr, cg, cb, ca);
+}
+// CONCENTRICO: o rect cresce g = folga + esp de cada lado e o raio em pixels
+// cresce o MESMO g. Com o raio normalizado copiado da peca (o erro comum), o
+// canto do anel fica mais fechado que o da peca e o vao entre os dois engorda
+// na diagonal — ou afina, quando a peca e mais redonda que o anel.
+void gfx_anel_fora(GfxRect peca, float raio, float folga, float esp,
+                   float cr, float cg, float cb, float ca) {
+  float g = folga + esp;
+  GfxRect r = { peca.x - g, peca.y - g, peca.w + 2.0f * g, peca.h + 2.0f * g };
+  if (peca.h <= 0.0f) return;
+  gfx_anel(r, (raio * peca.h + g) / r.h, esp, cr, cg, cb, ca);
 }
 void gfx_cartao_foco_vidro(GfxRect r, float raio, float foco, float alfa,
                            float cr, float cg, float cb) {

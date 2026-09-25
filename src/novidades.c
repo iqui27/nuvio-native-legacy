@@ -101,8 +101,7 @@ static void desenhaMiniGuia(float x, float y, float w, float a) {
       float lum = (l == focoL && c == focoC) ? 0.20f : 0.115f;
       gfx_cor(card, 0.14f, lum, lum + 0.004f, lum + 0.016f, a);
       if (l == focoL && c == focoC)
-        gfx_rect(card, 0, GFX_ANEL, 0, NV_ANEL_FOCO / card.w, 0, 0.16f,
-                 0.96f, 0.96f, 0.98f, a);
+        gfx_anel(card, 0.16f, NV_ANEL_FOCO, 0.96f, 0.96f, 0.98f, a);
       // disco do logo + barra do nome
       gfx_cor((GfxRect){ cx + 10.0f, cy + 10.0f, 22.0f, 22.0f },
               0.5f, 0.36f + 0.05f * c, 0.38f, 0.50f + 0.06f * l, a * 0.85f);

@@ -2701,9 +2701,8 @@ static float desenharTopo(float a) {
       gfx_cor(r, 0.5f, 1, 1, 1, (sel ? 0.14f : 0.07f) * a);
     }
     if (f > 0.01f) {
-      GfxRect an = { r.x - 3.0f, r.y - 3.0f, r.w + 6.0f, r.h + 6.0f };
       gfx_cor(r, 0.5f, 1, 1, 1, 0.10f * f * a);
-      gfx_rect(an, 0, GFX_ANEL, 0, 3.0f / an.h, 0, 0.5f, ar, ag, ab, f * a);
+      gfx_anel_fora(r, 0.5f, 0.0f, 3.0f, ar, ag, ab, f * a);
     }
     ct = (f > 0.5f || sel) ? 245 : 168;
     { TxtLinha t = txt_linha(TXT_PG_ROTULO, rot[i], ct, ct + 1, ct + 5 > 255 ? 255 : ct + 5, 255);
@@ -3099,11 +3098,11 @@ static void desenharAnelFoco(float a, Uint32 agora, float rol) {
     focoAnel.h = anim_mola(focoAnel.h, focoAnelAlvo.h, dt, 20.0f);
   }
   ajustes_acento(&ar, &ag, &ab);
-  // Anel POR FORA da celula: 3 px de folga, espessura NV_ANEL_FOCO.
-  r = (GfxRect){ focoAnel.x - 3.0f, focoAnel.y - rol - 3.0f,
-                 focoAnel.w + 6.0f, focoAnel.h + 6.0f };
-  gfx_rect(r, 0, GFX_ANEL, 0, (NV_ANEL_FOCO * 0.75f) / r.h, 0, 13.0f / r.h,
-           ar, ag, ab, a);
+  // Anel POR FORA da celula, encostado nela: 3 px de traco (3/4 de
+  // NV_ANEL_FOCO), concentrico com o canto de 10 px da celula (raioB).
+  r = (GfxRect){ focoAnel.x, focoAnel.y - rol, focoAnel.w, focoAnel.h };
+  if (r.h > 0.0f)
+    gfx_anel_fora(r, 10.0f / r.h, 0.0f, NV_ANEL_FOCO * 0.75f, ar, ag, ab, a);
 }
 
 // --- a faixa do mini guia ------------------------------------------------------

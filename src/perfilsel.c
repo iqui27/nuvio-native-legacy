@@ -922,10 +922,7 @@ static void desenhaPin(void) {
     if (f) {
       gfx_cor(r, NV_RAIO_PILL, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, a);
       float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-      gfx_rect((GfxRect){ r.x - NV_ANEL_FOCO, r.y - NV_ANEL_FOCO,
-                          r.w + NV_ANEL_FOCO * 2, r.h + NV_ANEL_FOCO * 2 },
-               0, GFX_ANEL, 0, NV_ANEL_FOCO / (r.w + NV_ANEL_FOCO * 2), 0,
-               NV_RAIO_PILL, ar, ag, ab, a);
+      gfx_anel_fora(r, NV_RAIO_PILL, 0.0f, NV_ANEL_FOCO, ar, ag, ab, a);
     } else {
       gfx_cor(r, NV_RAIO_PILL, 1.0f, 1.0f, 1.0f, 0.09f * a);
     }
