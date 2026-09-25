@@ -9,15 +9,14 @@
 //
 // DOIS MODOS, um modulo so:
 //   - TELA: guia_abrir(), fundo opaco, voltar sai para a home.
-//   - OVERLAY: guia_overlay_abrir(), por cima do player — e o "aperta para
-//     baixo / botao azul enquanto o canal toca". Mesma navegacao, mesmo
-//     conteudo; OK troca o canal sem sair do player.
+//   - OVERLAY (o "mini guia", desde 25/09/2026): guia_overlay_abrir(), uma
+//     FAIXA no rodape por cima do video em tela cheia — o canal no ar e dois
+//     de cada lado, agora/a seguir. OK em outro canal troca; Azul abre o guia
+//     completo com o canal encolhendo para o preview; some sozinha em 6 s.
 //
-// MODO SALTA-CATEGORIA: segurar CIMA ou BAIXO por ~600 ms troca a navegacao de
-// "linha a linha" para "categoria a categoria" — nos 768 canais do FrostView,
-// descer linha a linha ate "Canais Sportv" seria minutos de D-pad. Parou de
-// apertar por 2 s, volta ao normal sozinho. O modo aparece na tela: os
-// cabecalhos acendem e uma coluna de categorias sobe na esquerda.
+// PAINEL DE CATEGORIAS: segurar CIMA ou BAIXO (~1,1 s) ou o chip
+// "Categorias" do cabecalho abre uma gaveta com as secoes; nos 768 canais do
+// FrostView, descer linha a linha ate "Canais Sportv" seria minutos de D-pad.
 #ifndef NV_GUIA_H
 #define NV_GUIA_H
 #include <SDL2/SDL.h>
@@ -60,5 +59,23 @@ const char *guia_canal_origem(void);
 // O id do canal em foco, ou "" — o player usa para saber se o overlay esta
 // apontando para o canal que esta no ar.
 const char *guia_id_focado(void);
+
+// --- o preview e o canal no ar (25/09/2026) --------------------------------
+// O preview do guia e uma sessao "mini no guia" do player (player.h). O guia
+// so PEDE; o app executa, porque abrir sessao e buscar fonte e dele:
+//   guia_pediu_preview        tocar este canal no preview (player_mini_no_guia
+//                             + player_manter_mini + o tocarCanal de sempre);
+//   guia_pediu_parar_preview  fechar a sessao do preview (saiu do guia,
+//                             desligou o preview);
+//   guia_pediu_restaurar      OK no canal que ja toca: tela cheia, mesmo fluxo;
+//   guia_pediu_guia_cheio     Azul na faixa: guia completo com o canal no ar.
+// guia_adotar_canal: o canal no ar veio para o preview (encolhido pelo app);
+// o guia foca a linha dele e deixa de seguir o foco ate o proximo OK.
+int  guia_pediu_preview(CatItem *it);
+int  guia_pediu_parar_preview(void);
+int  guia_pediu_restaurar(void);
+int  guia_pediu_guia_cheio(void);
+void guia_adotar_canal(const char *id);
+void guia_preview_rect(float *x, float *y, float *w, float *h);
 
 #endif

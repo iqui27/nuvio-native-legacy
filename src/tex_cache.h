@@ -111,6 +111,13 @@ int tex_falhou(const char *caminho);
 // Responde 0 enquanto a textura nao carregou: nao tingir e o padrao seguro.
 int  tex_marca_escura(const char *caminho);
 
+// O logo e de UM TOM SO (marca de uma cor, sem nada dentro)? 1 sim, 0 nao
+// (varios tons: azulejo claro com a marca escura, logo colorido com
+// detalhe), -1 enquanto nao carregou. So o de tom unico pode ser tingido pela
+// forma do alfa (GFX_MARCA) sem virar um bloco chapado.
+#define NV_LOGO_TOM_UNICO_DESVIO 28
+int  tex_logo_tom_unico(const char *caminho);
+
 // Identificador estável derivado do caminho, usado apenas no trace de uma
 // sessão. Não imprime nem armazena a URL original.
 unsigned long tex_hash_public(const char *caminho);

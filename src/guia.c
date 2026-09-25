@@ -60,6 +60,7 @@
 #include "layout.h"
 #include "idioma.h"
 #include "video.h"      /* preview do canal focado no canto do guia */
+#include "player.h"     /* o preview e uma sessao "mini no guia" do player */
 #include "streams.h"    /* Stream: url do preview vinda do fio */
 #include <stdio.h>
 #include <stdlib.h>
@@ -99,8 +100,9 @@
 #define G_AREA_DIR (G_AREA_X + G_AREA_W)
 #define G_HERO_Y   108.0f
 // PREVIEW: 800x450 e 41,7% da largura, 16:9 exato. Os MESMOS numeros furam a
-// superficie GL (desenharHero) e posicionam o plano de video (video_janela em
-// previewAplicarPend) — um lugar so, senao o furo e o video desencontram.
+// superficie GL (desenharHero) e posicionam o plano de video (a sessao "mini
+// no guia" do player recebe estes numeros por guia_preview_rect) — um lugar
+// so, senao o furo e o video desencontram.
 #define G_PREVIEW_W 800.0f
 #define G_PREVIEW_H 450.0f
 #define G_PREVIEW_X (G_AREA_DIR - G_PREVIEW_W)
@@ -118,7 +120,10 @@
 #define G_PASSO_Y  (G_HEAD_H + G_CARD_H + 36.0f)
 // A coluna de categorias do modo "salta secao": largura da faixa que sobe na
 // esquerda enquanto o modo esta armado.
-#define G_RAIL_W   300.0f
+#define G_CAT_W    440.0f     // gaveta de categorias
+#define G_CAT_ROW   60.0f
+#define G_CAT_TOPO 150.0f
+#define G_CAT_BASE (NV_TELA_H - 96.0f)
 // Tempos do modo salta-categoria: segurar ~600 ms entra, 2 s parado sai.
 // 450 ms e a folga entre repeticoes de KEYDOWN do firmware (ele manda uma
 // tecla segurada como varios KEYDOWN com repeat=0).
@@ -129,7 +134,6 @@
 #define G_HOLD_MS    1100
 #define G_CAT_PASSO_MS 550
 #define G_REP_MS     450
-#define G_CAT_SAIR_MS 2000
 
 // Botao AMARELO do controle da LG. SUPOSTO (ver o cabecalho do arquivo):
 // SDL_webOS.h enumera RED, GREEN, YELLOW, BLUE em sequencia e BLUE e 489.
@@ -164,7 +168,10 @@
 #define G_TOPO_Y     40.0f
 #define G_TOPO_H     40.0f
 #define G_CHIP_PAD   20.0f
-enum { G_TOPO_CARTOES = 0, G_TOPO_LISTA, G_TOPO_ADDONS, G_TOPO_PREVIEW, G_TOPO_N };
+// CATEGORIAS e o primeiro chip: a porta VISIVEL do painel de categorias,
+// que antes so abria segurando a seta (ninguem descobre gesto que nao se ve).
+enum { G_TOPO_CATEGORIAS = 0, G_TOPO_CARTOES, G_TOPO_LISTA, G_TOPO_ADDONS,
+       G_TOPO_PREVIEW, G_TOPO_N };
 
 // --- painel de addons ---------------------------------------------------------
 #define G_PA_W      720.0f
@@ -287,26 +294,19 @@ static void modoGravar(void) {
 
 // --- preview de video do canal focado ------------------------------------------
 //
-// O QUE E: quando o foco DESCANSA num canal (tela cheia do guia), o pipeline
-// de video toca a fonte dele num retangulo pequeno no canto direito, onde ja
-// fica o painel de detalhe. A pessoa VE o canal antes de apertar OK.
+// O QUE E: quando o foco DESCANSA num canal (tela cheia do guia), o canal toca
+// no preview 800x450 do heroi. A pessoa VE o canal antes de apertar OK, e o OK
+// so faz o mesmo video crescer para a tela cheia (ver "preview de video: e uma
+// SESSAO DO PLAYER" mais abaixo — desde 25/09/2026 nao ha pipeline proprio).
 //
 // PADRAO DESLIGADO: preview gasta rede e CPU numa TV que ja disputa texturas e
 // decode com o resto da interface; o HLS ao vivo demora ~20 s do "fonte
-// escolhida" ao primeiro quadro (ver video.h), e o preview nao e promessa de
-// video instantaneo — e uma janela a mais para quem quer conferir o canal.
-// Quem liga, liga sabendo disto.
+// escolhida" ao primeiro quadro (ver video.h). Quem liga, liga sabendo disto.
+// O canal que ja estava no ar (Voltar da tela cheia) vai para o preview com o
+// preview ligado ou nao: ali nao ha custo novo, o fluxo e o mesmo.
 //
-// SO TELA CHEIA, nunca no overlay: no overlay o player ja esta atras do
-// guia, e o pipeline de video e UNICO (um mediaId so no barramento LS2). Usar
-// o pipeline para o preview do canal focado mataria o canal que esta no ar.
-// No overlay a propria tela de fundo ja e o preview do canal atual.
-//
-// PRELOADING DO ADJACENTE: o engatilharVizinhos() ja pre-carrega a lista de
-// fontes do canal de cima e do de baixo (fontecache.c) quando o foco muda. O
-// preview do canal focado nao consume esse cache — ele busca a propria fonte
-// do canal focado num fio separado (addons_consultar, reentrante). Assim o
-// cache fica intacto para quando a pessoa apertar OK num vizinho.
+// SO TELA CHEIA, nunca na faixa do mini guia: la o video esta em tela cheia
+// atras da faixa, e o pipeline e UNICO (um mediaId so no barramento LS2).
 static int previewLigado, previewLido;
 static void previewLer(void) {
   char *t = dados_ler("guia-preview.txt");
@@ -1116,29 +1116,45 @@ static float rolY, velY;
 static float rolX[G_MAX_CAT + 1];     // por linha (0 = favoritos)
 static float entrada;
 static int   pediuCanal; static CatItem pedido;
-static int    modoCat;
+// PAINEL DE CATEGORIAS (gaveta da esquerda). 0 = fechado; 1 = aberto por
+// SEGURAR ↑↓ (a soltura entra na categoria escolhida); 2 = aberto pelo chip
+// "Categorias" (fica aberto, OK entra, Voltar fecha). catFoco e a linha em
+// foco DENTRO do painel — o guia so muda de secao ao confirmar.
+static int    catAberto, catFoco;
+static float  catAnim, catRol, catVelRol;
 static int    dirSeg;                 // SDLK_UP/DOWN segurado, 0 = solto
 static Uint32 dirDesde, dirTick, ultNavCat;
 
 // OK longo = favorito.
 static Uint32 okDesde; static int okLongo;
 
-// --- preview de video (estado de fio) -----------------------------------------
-// O fio busca a fonte do canal focado (addons_consultar, reentrante) e
-// entrega a URL; o fio de desenho chama video_tocar + video_janela no retangulo
-// G_PREVIEW_* do heroi (ver o bloco de layout).
-// Descanso do foco antes de arrancar o preview: mesmo criterio do
-// fontecache (FONTECACHE_ESPERA_MS) — segurar a seta nao dispara nada.
-#define G_PREVIEW_ESPERA_MS 350u
-static int    previewAtivo;          // 1 quando video_tocar ja foi chamado
-static char   previewFocoId[80];     // id do canal em preview ("" = nenhum)
-static Uint32 previewFocoDesde;      // quando o foco parou neste canal
-static int    previewUltLin, previewUltCol;  // foco do ultimo preview arrancado
-static pthread_t previewFio;
-static int    previewFioVivo, previewCancelar;
-static char   previewFioId[80], previewFioBase[600];
-static char   previewUrlPend[4096];   // URL vinda do fio, pendente de aplicar
-static int    previewUrlPronta;       // 1 quando previewUrlPend tem URL
+// --- preview de video: e uma SESSAO DO PLAYER no preview -------------------
+// DESDE 25/09/2026 o preview nao tem pipeline proprio. Ele era um fio que
+// buscava UMA url e chamava video_tocar direto, e por isso OK no canal que ja
+// estava tocando no preview RECARREGAVA tudo pelo player (queixa do dono:
+// "ao inves de so deixar em tela cheia, ele comeca a carregar de novo").
+// Agora o preview e o player em modo "mini no guia" (player.h): o guia PEDE
+// (guia_pediu_preview), o app abre a sessao com player_manter_mini, e o
+// mesmo fluxo vai da tela cheia ao preview e volta so trocando o retangulo.
+//
+// QUEM ESTA NO PREVIEW:
+//   - guia aberto sem canal no ar, preview ligado: o canal FOCADO, depois de
+//     o foco descansar G_PREVIEW_ESPERA_MS;
+//   - guia aberto COM canal no ar (Voltar da tela cheia, guia cheio aberto da
+//     faixa, guia aberto da barra com o PiP no ar): o canal que ESTAVA
+//     tocando, e ele fica — navegar nao troca o que toca, como no YouTube TV
+//     e no TiviMate. So OK em outro canal troca (e ai ele vai a tela cheia).
+//     `previewPreso` guarda isso.
+// Descanso do foco antes de pedir o preview. 600 e nao os 350 do fio antigo:
+// agora cada pedido e uma busca de fonte do player, e passar a seta por tres
+// canais nao deve abrir tres buscas.
+#define G_PREVIEW_ESPERA_MS 600u
+static int      previewPreso;           // canal no ar adotado: nao segue o foco
+static char     previewId[80];          // canal pedido/tocando no preview
+static Uint32   previewFocoMudou;       // quando o foco chegou no canal atual
+static int      previewUltLin = -1, previewUltCol = -1;
+static int      pedPreview, pedPararPreview, pedRestaurar, pedGuiaCheio;
+static CatItem  pedPreviewItem;
 
 // Foco no CABECALHO (controle segmentado + Addons). 0 = nas linhas.
 static int   focoTopo, topoCol;
@@ -1225,106 +1241,29 @@ static void focoValido(void) {
   engatilharVizinhos();
 }
 
-// --- preview de video: fio e ciclo ----------------------------------------------
-//
-// O fio e leve: uma chamada a addons_consultar (reentrante, nao toca no
-// addons_buscar nem no fontecache) com 1 fio so — o preview e uma janela
-// secundaria, e nao pode roubar a banda do pedido real. cancelado() e lido
-// entre um addon e outro; devolvendo 1, o que faltou nao e perguntado.
-static int previewFioCancelado(void *u) {
-  int c;
-  (void)u;
-  c = previewCancelar;
-  return c;
-}
-
-static void *previewFioMain(void *u) {
-  Stream *lista = NULL;
-  int n = 0;
-  char id[80], base[600];
-  (void)u;
-  // Copia o alvo com a trava do fio de desenho solta; o fio de rede nunca
-  // segura essa trava.
-  snprintf(id,   sizeof id,   "%s", previewFioId);
-  snprintf(base, sizeof base, "%s", previewFioBase);
-  n = addons_consultar(id, "tv", base[0] ? base : NULL, 1,
-                      previewFioCancelado, NULL, &lista);
-  if (!previewCancelar && n > 0 && lista && lista[0].url[0]) {
-    snprintf(previewUrlPend, sizeof previewUrlPend, "%s", lista[0].url);
-    previewUrlPronta = 1;
-  }
-  free(lista);
-  previewFioVivo = 0;
+// --- preview de video: pedidos ao app -----------------------------------------
+static void canalParaItem(const GCanal *c, CatItem *dst);
+static GCanal *canalPorId(const char *id) {
+  int i;
+  if (!id || !id[0]) return NULL;
+  for (i = 0; i < nCanais; i++) if (!strcmp(canais[i].id, id)) return &canais[i];
   return NULL;
 }
-
-// Arranca o fio do preview para o canal `c`. Nao bloqueia. Se um fio ja esta
-// no ar, sinaliza cancelamento e segue: o fio velho termina sozinho e o seu
-// resultado (se chegar) e ignorado — previewCancelar foi 1 na metade.
-static void previewArrancar(GCanal *c) {
+static char pedidoBase[600];
+static void previewPedir(GCanal *c) {
   if (!c || !c->id[0]) return;
-  if (previewFioVivo) {
-    previewCancelar = 1;
-    // Nao chama fontecache_ceder aqui: o preview e uma consulta leve (1 fio)
-    // e nao precisa derrubar o prefetch dos vizinhos, que e o que faz o OK
-    // ser rapido quando a pessoa escolher um canal adjacente.
-    // Nao junta o fio aqui (bloquearia o quadro): ele termina e desapega.
-  }
-  previewCancelar = 0;
-  previewUrlPronta = 0;
-  previewUrlPend[0] = 0;
-  snprintf(previewFioId,   sizeof previewFioId,   "%s", c->id);
-  snprintf(previewFioBase, sizeof previewFioBase, "%s", c->base);
-  previewFioVivo = 1;
-  if (pthread_create(&previewFio, NULL, previewFioMain, NULL) != 0)
-    previewFioVivo = 0;
-  else
-    pthread_detach(previewFio);
+  canalParaItem(c, &pedPreviewItem);
+  snprintf(pedidoBase, sizeof pedidoBase, "%s", c->base);
+  snprintf(previewId, sizeof previewId, "%s", c->id);
+  pedPreview = 1;
 }
-
-// Aplica a URL pendente (vinda do fio) no fio de desenho. Chamado no
-// guia_atualizar: video_tocar + video_janela no canto. Nao pode ser no fio
-// de rede porque o LS2 nao e seguro para chamadas concorrentes.
-static void previewAplicarPend(void) {
-  if (!previewUrlPronta) return;
-  previewUrlPronta = 0;
-  if (previewCancelar || !previewLigado || !aberta) { previewUrlPend[0] = 0; return; }
-  // O LS2 aceita uma mediaId so: parar limpa o anterior antes de tocar.
-  video_parar();
-  if (video_tocar(previewUrlPend)) {
-    previewAtivo = 1;
-    video_janela((int)(G_PREVIEW_X + 0.5f), (int)(G_PREVIEW_Y + 0.5f),
-                 (int)(G_PREVIEW_W + 0.5f), (int)(G_PREVIEW_H + 0.5f));
-  }
-  previewUrlPend[0] = 0;
-}
-
-// Inicia o preview do canal focado, se ligado e em tela cheia.
-static void previewIniciarFoco(void) {
-  GCanal *c;
-  if (!previewLigado || !aberta || overlay) return;
-  c = linhaItem(focoLin, focoCol);
-  if (!c || !c->id[0]) return;
-  // Mesmo canal: nada a fazer (o video ja esta a caminho ou tocando).
-  if (!strcmp(c->id, previewFocoId)) return;
-  snprintf(previewFocoId, sizeof previewFocoId, "%s", c->id);
-  previewFocoDesde = SDL_GetTicks();
-  previewUltLin = focoLin; previewUltCol = focoCol;
-  previewArrancar(c);
-}
-
-// Para o preview: para o pipeline e cancela o fio. Chamado ao sair do guia e
-// ao pedir um canal (OK) — o player assume o pipeline dali para frente.
+// Para o preview (sair do guia, desligar o preview). Quem para e o app: a
+// sessao e do player.
 static void previewParar(void) {
-  if (previewFioVivo) previewCancelar = 1;
-  previewFioVivo = 0;
-  previewUrlPronta = 0;
-  previewUrlPend[0] = 0;
-  previewAtivo = 0;
-  previewFocoId[0] = 0;
-  // So para se o pipeline estiver ativo: video_parar e uma chamada LS2, e
-  // chama-la sem mediaId e inofensiva mas desnecessaria.
-  if (video_ativo()) video_parar();
+  pedPreview = 0;
+  previewId[0] = 0;
+  previewPreso = 0;
+  pedPararPreview = 1;
 }
 
 void guia_abrir(void) {
@@ -1332,15 +1271,44 @@ void guia_abrir(void) {
   if (!previewLido) previewLer();
   aberta = 1; querSair = 0; entrada = 0.0f;
   focoTopo = 0; painel = 0;
+  previewPreso = 0; previewId[0] = 0;
+  previewUltLin = previewUltCol = -1; previewFocoMudou = SDL_GetTicks();
   focoValido();
-  previewIniciarFoco();
 }
 
+// O CANAL NO AR VEM PARA O GUIA. O app ja mandou o player encolher para o
+// preview (player_minimizar_para_guia ou player_mini_no_guia); aqui o guia so
+// fica sabendo quem esta tocando, foca a linha dele e para de seguir o foco.
+void guia_adotar_canal(const char *id) {
+  if (!id || !id[0]) return;
+  snprintf(previewId, sizeof previewId, "%s", id);
+  previewPreso = 1; pedPreview = 0; pedPararPreview = 0;
+  overlay = 0; aberta = 1;
+  guia_focar_id(id);
+  previewUltLin = focoLin; previewUltCol = focoCol;
+}
+
+int guia_pediu_preview(CatItem *it) {
+  if (!pedPreview || !it) return 0;
+  pedPreview = 0; *it = pedPreviewItem; return 1;
+}
+int guia_pediu_parar_preview(void) { int v = pedPararPreview; pedPararPreview = 0; return v; }
+int guia_pediu_restaurar(void)     { int v = pedRestaurar; pedRestaurar = 0; return v; }
+int guia_pediu_guia_cheio(void)    { int v = pedGuiaCheio; pedGuiaCheio = 0; return v; }
+void guia_preview_rect(float *x, float *y, float *w, float *h) {
+  *x = G_PREVIEW_X; *y = G_PREVIEW_Y; *w = G_PREVIEW_W; *h = G_PREVIEW_H;
+}
+
+// A FAIXA ("mini guia") por cima do video em tela cheia. Some sozinha depois
+// de G_B_OCIOSO_MS sem tecla, como os mini guias de referencia.
+#define G_B_OCIOSO_MS 6000u
+static Uint32 bandaUlt;
 void guia_overlay_abrir(void) {
   guia_carregar();
   overlay = 1; entrada = 0.0f;
-  overlayDesde = SDL_GetTicks();
-  focoTopo = 0; painel = 0;
+  overlayDesde = bandaUlt = SDL_GetTicks();
+  focoTopo = 0; painel = 0; catAberto = 0;
+  janelaDesl = 0; focoAnelOk = 0;
   focoValido();
 }
 
@@ -1389,15 +1357,20 @@ static void canalParaItem(const GCanal *c, CatItem *dst) {
 // A origem do ULTIMO canal pedido, lida por app.c junto com o CatItem. Fica
 // fora do CatItem de proposito: ele e gravado em disco (catalogo-rede.bin) e
 // um campo novo invalidaria o cache de todo mundo por um dado de sessao.
-static char pedidoBase[600];
 const char *guia_canal_origem(void) { return pedidoBase; }
 
 static void pedirCanal(GCanal *c) {
   if (!c || pediuCanal) return;
-  // O preview solta o pipeline antes de o player assumi-lo: o LS2 aceita um
-  // mediaId so, e o player_abrir que vem a seguir recarrega a fonte de toda
-  // forma (o preview nao e o player — ele e uma janela de consulta).
-  previewParar();
+  // OK NO CANAL QUE JA TOCA (no preview, ou atras da faixa): tela cheia com o
+  // MESMO fluxo, sem recarregar nada. Qualquer outro canal abre pelo caminho
+  // de sempre — o player_abrir da sessao nova solta o preview.
+  if (!strcmp(c->id, player_id_canal()) &&
+      (player_mini_no_guia_ativo() || player_aberto())) {
+    if (player_mini_no_guia_ativo()) pedRestaurar = 1;
+    overlay = 0;
+    return;
+  }
+  pedPreview = 0; previewId[0] = 0; previewPreso = 0;
   canalParaItem(c, &pedido);
   snprintf(pedidoBase, sizeof pedidoBase, "%s", c->base);
   pediuCanal = 1;
@@ -1440,6 +1413,31 @@ static void saltarCat(int dir) {
   if (focoLin < 0) focoLin = 0;
   if (focoLin >= nl) focoLin = nl - 1;
   focoCol = 0;
+}
+
+// --- painel de categorias -------------------------------------------------------
+static void catAbrir(int modo, int dir) {
+  if (nLinhas() < 1) return;
+  if (!catAberto) catFoco = focoLin;
+  catAberto = modo;
+  if (dir) {
+    catFoco += dir;
+    if (catFoco < 0) catFoco = 0;
+    if (catFoco >= nLinhas()) catFoco = nLinhas() - 1;
+  }
+}
+static void catMover(int dir) {
+  catFoco += dir;
+  if (catFoco < 0) catFoco = 0;
+  if (catFoco >= nLinhas()) catFoco = nLinhas() - 1;
+}
+static void catFechar(void) { catAberto = 0; dirSeg = 0; }
+// Entra na categoria escolhida: primeiro canal dela, foco de volta na grade.
+static void catConfirmar(void) {
+  if (catFoco != focoLin) { focoLin = catFoco; focoCol = 0; }
+  focoTopo = 0;
+  catFechar();
+  focoValido();
 }
 
 // No modo lista a navegacao e canal a canal ATRAVES das categorias: BAIXO no
@@ -1608,9 +1606,10 @@ static void painelEvento(SDL_Keycode k, Uint32 agora) {
 
 static void sair(void) {
   if (painel) { painelFechar(); return; }
+  if (catAberto) { catFechar(); return; }
   if (overlay) overlay = 0;
   else { aberta = 0; querSair = 1; previewParar(); }
-  modoCat = 0; dirSeg = 0; okDesde = 0; focoTopo = 0;
+  catAberto = 0; dirSeg = 0; okDesde = 0; focoTopo = 0;
 }
 
 void guia_evento(const SDL_Event *e) {
@@ -1618,7 +1617,11 @@ void guia_evento(const SDL_Event *e) {
 
   if (e->type == SDL_KEYUP) {
     SDL_Keycode k = e->key.keysym.sym;
-    if (k == SDLK_UP || k == SDLK_DOWN) dirSeg = 0;
+    if (k == SDLK_UP || k == SDLK_DOWN) {
+      dirSeg = 0;
+      // Soltou a seta que abriu o painel: entra onde o foco dele parou.
+      if (catAberto == 1) catConfirmar();
+    }
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
       if (okDesde && !okLongo) pedirCanal(linhaItem(focoLin, focoCol));
       okDesde = 0; okLongo = 0;
@@ -1633,22 +1636,62 @@ void guia_evento(const SDL_Event *e) {
       k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK) {
     sair(); return;
   }
-  // No overlay, AZUL nunca navega: e a tecla que o abre e fecha. O BAIXO que
-  // abriu o overlay NAO o fecha aqui — dentro dele, baixo navega como no guia
-  // (o Voltar e a saida). O repouso de G_OVERLAY_REP_MS ignora a repeticao do
-  // firmware do botao que o abriu, senao segurar o azul fechava na hora.
+  // NA FAIXA, AZUL ABRE O GUIA COMPLETO (o canal no ar encolhe para o
+  // preview; quem faz e o app, por guia_pediu_guia_cheio). O repouso de
+  // G_OVERLAY_REP_MS ignora a repeticao do firmware do botao que ABRIU a
+  // faixa, senao segurar o azul pulava direto para o guia completo.
   if (overlay && (k == SDLK_s || e->key.keysym.scancode == NV_SCANCODE_BLUE)) {
     if (agora - overlayDesde < G_OVERLAY_REP_MS) return;
-    sair(); return;
+    overlay = 0; pedGuiaCheio = 1; return;
+  }
+  // O resto da faixa: CIMA/BAIXO andam de canal em canal (atravessando as
+  // categorias), ESQUERDA/DIREITA andam o tempo, OK troca de canal (no mesmo
+  // canal so fecha — ver pedirCanal). Toda tecla adia o sumico.
+  if (overlay) {
+    bandaUlt = agora;
+    if (k == SDLK_UP || k == SDLK_DOWN) {
+      if (agora - overlayDesde < G_OVERLAY_REP_MS && k == SDLK_DOWN) return;
+      moverLista(k == SDLK_DOWN ? 1 : -1);
+      return;
+    }
+    if (k == SDLK_LEFT)  { if (janelaDesl > 0) janelaDesl -= G_L_PASSO_MIN; return; }
+    if (k == SDLK_RIGHT) { if (janelaDesl < G_L_DESL_MAX) janelaDesl += G_L_PASSO_MIN; return; }
+    if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+      if (!okDesde) { okDesde = agora; okLongo = 0; }
+      return;
+    }
+    if (e->key.keysym.scancode == NV_SCANCODE_CH_UP ||
+        e->key.keysym.scancode == NV_SCANCODE_CH_DOWN) {
+      saltarCat(e->key.keysym.scancode == NV_SCANCODE_CH_UP ? -1 : 1);
+      return;
+    }
+    return;
   }
 
   // O painel de addons captura tudo que nao e Voltar (tratado acima).
   if (painel) { painelEvento(k, agora); return; }
 
+  // O painel de categorias captura as setas e o OK enquanto aberto.
+  if (catAberto) {
+    if (k == SDLK_UP || k == SDLK_DOWN) {
+      int dir = k == SDLK_DOWN ? 1 : -1;
+      if (catAberto == 1) {
+        // Segurando: um passo a cada G_CAT_PASSO_MS, nao a cada repeticao
+        // do firmware (~130 ms), que atravessava dez secoes num piscar.
+        dirTick = agora;
+        if (agora - ultNavCat >= G_CAT_PASSO_MS) { catMover(dir); ultNavCat = agora; }
+      } else catMover(dir);
+      return;
+    }
+    if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_RIGHT) { catConfirmar(); return; }
+    if (k == SDLK_LEFT) { catFechar(); return; }
+    return;
+  }
+
   // AMARELO alterna lista e cartoes de qualquer lugar. `l` no teclado do Mac
   // e o equivalente de bancada, como `s` e do azul.
   if (e->key.keysym.scancode == G_SCANCODE_YELLOW || k == SDLK_l) {
-    dirSeg = 0; modoCat = 0;
+    dirSeg = 0; catAberto = 0;
     alternarModo();
     return;
   }
@@ -1668,16 +1711,17 @@ void guia_evento(const SDL_Event *e) {
   // Foco no cabecalho: ESQUERDA/DIREITA entre os tres controles, BAIXO volta
   // as linhas, OK age. CIMA nao faz nada — nao ha nada acima.
   if (focoTopo) {
-    dirSeg = 0; modoCat = 0;
+    dirSeg = 0;
     if (k == SDLK_LEFT)  { if (topoCol > 0) topoCol--; return; }
     if (k == SDLK_RIGHT) { if (topoCol + 1 < G_TOPO_N) topoCol++; return; }
     if (k == SDLK_DOWN)  { focoTopo = 0; return; }
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
-      if (topoCol == G_TOPO_ADDONS) painelAbrir();
+      if (topoCol == G_TOPO_CATEGORIAS) catAbrir(2, 0);
+      else if (topoCol == G_TOPO_ADDONS) painelAbrir();
       else if (topoCol == G_TOPO_PREVIEW) {
         previewLigado = !previewLigado;
         previewGravar();
-        if (previewLigado) previewIniciarFoco();
+        if (previewLigado) { previewUltLin = previewUltCol = -1; previewFocoMudou = 0; }
         else previewParar();
       }
       else if ((topoCol == G_TOPO_LISTA) != modoLista) alternarModo();
@@ -1689,11 +1733,6 @@ void guia_evento(const SDL_Event *e) {
   if (k == SDLK_UP || k == SDLK_DOWN) {
     int dir = (k == SDLK_DOWN) ? 1 : -1;
     int fresco = !(dirSeg == k && agora - dirTick < G_REP_MS);
-    if (modoCat) {
-      dirTick = agora;
-      if (agora - ultNavCat >= G_CAT_PASSO_MS) { saltarCat(dir); ultNavCat = agora; }
-      return;
-    }
     // CIMA na primeira linha sobe ao cabecalho — so num toque FRESCO: quem
     // esta segurando CIMA quer o modo salta-categoria, nao o controle.
     if (dir < 0 && fresco && focoLin == 0 && (!modoLista || focoCol == 0)) {
@@ -1705,8 +1744,7 @@ void guia_evento(const SDL_Event *e) {
     // ~130 ms; o relogio e quem distingue "toque" de "segurado".
     if (!fresco) {
       if (agora - dirDesde >= G_HOLD_MS) {
-        modoCat = 1;
-        saltarCat(dir);
+        catAbrir(1, dir);
         ultNavCat = agora; dirTick = agora;
         return;
       }
@@ -1715,8 +1753,8 @@ void guia_evento(const SDL_Event *e) {
     if (modoLista) moverLista(dir); else moverVertical(dir);
     return;
   }
-  // Qualquer outra tecla desarma os dois estados de direcao segurada.
-  dirSeg = 0; modoCat = 0;
+  // Qualquer outra tecla desarma a direcao segurada.
+  dirSeg = 0;
 
   // No modo lista ESQUERDA/DIREITA andam a JANELA DE TEMPO, meia hora por
   // toque, ate 3 h a frente — a pergunta "o que passa mais tarde" que a
@@ -1804,13 +1842,17 @@ void guia_atualizar(float dt, Uint32 agora) {
   }
   // PREVIEW: aplica a URL que o fio buscou (no fio de desenho, nunca no de
   // rede) e arranca o preview quando o foco descansa num canal novo.
-  previewAplicarPend();
-  if (aberta && !overlay && previewLigado &&
+  if (overlay && agora - bandaUlt > G_B_OCIOSO_MS) { overlay = 0; okDesde = 0; }
+  // O foco mudou de canal: o relogio do descanso recomeca.
+  { static int ul = -1, uc = -1;
+    if (focoLin != ul || focoCol != uc) { ul = focoLin; uc = focoCol; previewFocoMudou = agora; } }
+  if (aberta && !overlay && previewLigado && !previewPreso && !player_aberto() &&
+      nCanais > 0 && (estado == G_PRONTO || estado == G_BAIXANDO) &&
       (focoLin != previewUltLin || focoCol != previewUltCol) &&
-      (!previewFocoDesde || agora - previewFocoDesde >= G_PREVIEW_ESPERA_MS)) {
+      agora - previewFocoMudou >= G_PREVIEW_ESPERA_MS) {
     GCanal *c = linhaItem(focoLin, focoCol);
-    if (c && c->id[0] && strcmp(c->id, previewFocoId))
-      previewIniciarFoco();
+    previewUltLin = focoLin; previewUltCol = focoCol;
+    if (c && c->id[0] && strcmp(c->id, previewId)) previewPedir(c);
   }
   if (!guia_visivel()) return;
 
@@ -1880,7 +1922,20 @@ void guia_atualizar(float dt, Uint32 agora) {
   // Timeout do modo salta-categoria e da direcao segurada. O firmware nao
   // garante KEYUP, entao o silencio e o que vale.
   if (dirSeg && agora - dirTick > G_REP_MS) dirSeg = 0;
-  if (modoCat && agora - ultNavCat > G_CAT_SAIR_MS) modoCat = 0;
+  // O firmware nao garante KEYUP: silencio de G_REP_MS na seta que abriu o
+  // painel por segurar vale como soltura.
+  if (catAberto == 1 && !dirSeg) catConfirmar();
+  catAnim = anim_mola(catAnim, catAberto ? 1.0f : 0.0f, dt, 12.0f);
+  if (catAberto || catAnim > 0.01f) {
+    float areaH = G_CAT_BASE - G_CAT_TOPO;
+    float alvo = (float)catFoco * G_CAT_ROW - (areaH - G_CAT_ROW) * 0.5f;
+    float maxY = (float)nLinhas() * G_CAT_ROW - areaH;
+    if (maxY < 0.0f) maxY = 0.0f;
+    if (alvo > maxY) alvo = maxY;
+    if (alvo < 0.0f) alvo = 0.0f;
+    if (catAnim < 0.02f) { catRol = alvo; catVelRol = 0.0f; }
+    else catRol = anim_mola2(&catVelRol, catRol, alvo, dt, NV_MOLA2_SCROLL);
+  }
 
   // OK segurado = favorito.
   if (okDesde && !okLongo && agora - okDesde >= NV_HOLD_MS) {
@@ -1943,41 +1998,103 @@ static void fmtHora(time_t t, char *dst, size_t n) {
 #define G_LOGO_CLARO 0.965f
 #define G_LOGO_ESC   0.08f
 
+// Iniciais do canal para o azulejo de espera: a primeira letra das duas
+// primeiras palavras ("Telecine Action" -> "TA", "GNT" -> "GN"), inteiras em
+// UTF-8. Palavra que comeca com digito entra tambem ("Canal 24h" -> "C2").
+static void iniciaisDe(const char *nome, char *dst, size_t tam) {
+  size_t n = 0;
+  int palavras = 0, noInicio = 1;
+  const unsigned char *p = (const unsigned char *)(nome ? nome : "");
+  dst[0] = 0;
+  for (; *p && palavras < 2; p++) {
+    if (*p == ' ' || *p == '-' || *p == '.' || *p == '|') { noInicio = 1; continue; }
+    if (noInicio) {
+      int k = (*p < 0x80) ? 1 : (*p >= 0xF0) ? 4 : (*p >= 0xE0) ? 3 : 2, j;
+      if (n + (size_t)k >= tam) break;
+      if (*p < 0x80) dst[n++] = (char)((*p >= 'a' && *p <= 'z') ? *p - 32 : *p);
+      else for (j = 0; j < k && p[j]; j++) dst[n++] = (char)p[j];
+      p += k - 1;
+      palavras++;
+      noInicio = 0;
+    }
+  }
+  // Nome de uma palavra so ganha a segunda letra, para o azulejo nao ficar
+  // com um caractere solto ("GNT" -> "GN").
+  if (palavras == 1 && nome) {
+    const unsigned char *q = (const unsigned char *)nome;
+    while (*q == ' ') q++;
+    if (q[0] && q[0] < 0x80 && q[1] && q[1] < 0x80 && q[1] != ' ' && n + 1 < tam)
+      dst[n++] = (char)((q[1] >= 'a' && q[1] <= 'z') ? q[1] - 32 : q[1]);
+  }
+  dst[n] = 0;
+}
+
 // Desenha o logo do canal CENTRADO na caixa `cx`, sem azulejo, cabendo em
-// maxW x maxH. `tom` e a cor do logo recortado (claro sobre superficie
+// maxW x maxH. `tom` e a cor do logo de UM TOM SO (claro sobre superficie
 // escura, escuro sobre superficie clara). Logo de canal e quase sempre largo
 // (3:1, 4:1); a caixa quadrada de desenharLogo o deixava minusculo na grade.
-static void logoNaCaixa(const char *logo, GfxRect cx, float maxW, float maxH,
+//
+// TRES CAMINHOS, e o terceiro e o conserto de 25/09/2026:
+//   - borda opaca (fundo proprio): GFX_ARTE, o arquivo como veio, cantos
+//     arredondados;
+//   - borda transparente e UM TOM SO (silhueta): GFX_MARCA, a forma do alfa
+//     pintada em `tom` — a regra do dono de 16/09, logo branco ou preto;
+//   - borda transparente e VARIOS TONS: GFX_TEXTO, o arquivo como veio. E o
+//     logo em AZULEJO (quadrado arredondado claro, a marca escura dentro, uma
+//     margem transparente em volta), o formato da maioria dos pacotes de logo
+//     de IPTV. Pela forma do alfa ele virava um QUADRADO CREME chapado — os
+//     "logos brancos" da foto do dono na C9. O log dizia ok=1 para esses
+//     downloads: a imagem chegava, quem a apagava era o desenho.
+//
+// SEM TEXTURA (baixando, ou o servidor de logo falhou: o log da C9 mostra
+// "corpo curto" do 24horas.cc e do imgur, e "sem corpo" do watchplay) o lugar
+// e um azulejo ESCURO discreto com as iniciais do canal. Nunca um bloco claro.
+static void logoNaCaixa(const GCanal *c, GfxRect cx, float maxW, float maxH,
                         float tom, float a) {
-  GLuint t;
-  float ap, w, h, fr, fg, fb;
-  int comFundo;
-  if (!logo || !logo[0]) return;
-  t = tex_obter_larg(logo, cx.w);
-  ap = tex_aspecto(logo);
-  if (!t || ap <= 0.0f) return;
+  GLuint t = 0;
+  float ap = 0.0f, w, h, fr, fg, fb;
+  const char *logo = c ? c->logo : NULL;
+  if (logo && logo[0]) {
+    t = tex_obter_larg(logo, cx.w);
+    ap = tex_aspecto(logo);
+  }
+  if (!t || ap <= 0.0f) {
+    char ini[16];
+    float lado = maxH < maxW ? maxH : maxW;
+    GfxRect az = { cx.x + (cx.w - lado) * 0.5f, cx.y + (cx.h - lado) * 0.5f, lado, lado };
+    int claro = tom < 0.5f;   // superficie clara (cartao em foco): azulejo claro
+    TxtLinha l;
+    iniciaisDe(c ? c->nome : "", ini, sizeof ini);
+    if (claro) gfx_cor(az, 0.22f, 0.0f, 0.0f, 0.0f, 0.10f * a);
+    else       gfx_cor(az, 0.22f, 1.0f, 1.0f, 1.0f, 0.075f * a);
+    if (ini[0]) {
+      l = claro ? txt_linha_corta(lado >= 80.0f ? TXT_HEADLINE : TXT_PG_ROTULO, ini, 70, 72, 80, 255, lado - 8.0f)
+                : txt_linha_corta(lado >= 80.0f ? TXT_HEADLINE : TXT_PG_ROTULO, ini, 150, 153, 162, 255, lado - 8.0f);
+      txt_desenhar_alpha(l, az.x + (az.w - (float)l.w) * 0.5f, az.y + (az.h - (float)l.h) * 0.5f, a);
+    }
+    return;
+  }
   w = maxW; h = w / ap;
   if (h > maxH) { h = maxH; w = h * ap; }
-  comFundo = tex_cor_fundo(logo, &fr, &fg, &fb) == 1;
   { GfxRect lr = { cx.x + (cx.w - w) * 0.5f, cx.y + (cx.h - h) * 0.5f, w, h };
     gfx_tex_aspect_atual = 0.0f;
     // O LOGO COM FUNDO PROPRIO E UM QUADRADO, e quadrado dentro de cartao
     // arredondado aparece — foi o que o dono viu no HBO Max. GFX_ARTE e o
     // GFX_TEXTO com a mascara dos cantos: mesmo RGB, mesmo alpha, so recortado.
     // O raio e o do cartao (NV_RAIO_CARD e fracao da ALTURA do retangulo, nao
-    // pixel), entao o canto do logo acompanha o canto do cartao em vez de ter
-    // um raio proprio que brigaria com ele.
-    //
-    // O recortado nao passa por aqui: ele nao tem fundo para arredondar, e a
-    // forma dele ja vem do alpha do arquivo.
-    if (comFundo) gfx_rect(lr, t, GFX_ARTE, 0, 0, 0, NV_RAIO_CARD, 1, 1, 1, a);
-    else          gfx_rect(lr, t, GFX_MARCA, 0, 0, 0, 0.0f, tom, tom, tom, a);
+    // pixel), entao o canto do logo acompanha o canto do cartao.
+    if (tex_cor_fundo(logo, &fr, &fg, &fb) == 1)
+      gfx_rect(lr, t, GFX_ARTE, 0, 0, 0, NV_RAIO_CARD, 1, 1, 1, a);
+    else if (tex_logo_tom_unico(logo) == 1)
+      gfx_rect(lr, t, GFX_MARCA, 0, 0, 0, 0.0f, tom, tom, tom, a);
+    else
+      gfx_rect(lr, t, GFX_TEXTO, 0, 0, 0, 0.0f, 1, 1, 1, a);
   }
 }
 
-static void desenharLogo(const char *logo, GfxRect cx, float lado, float tom,
+static void desenharLogo(const GCanal *c, GfxRect cx, float lado, float tom,
                          float a) {
-  logoNaCaixa(logo, cx, lado, lado, tom, a);
+  logoNaCaixa(c, cx, lado, lado, tom, a);
 }
 
 static void desenharCard(GCanal *c, float x, float y, float foco, float a,
@@ -2015,7 +2132,7 @@ static void desenharCard(GCanal *c, float x, float y, float foco, float a,
   // Logo direto sobre o cartao, SEM AZULEJO em nenhum dos dois estados: era o
   // azulejo que desenhava a "borda" em volta da marca.
   { GfxRect cx = { x + 14.0f, y + 14.0f, 92.0f, 92.0f };
-    desenharLogo(c->logo, cx, 80.0f, escuro ? G_LOGO_ESC : G_LOGO_CLARO, a); }
+    desenharLogo(c, cx, 80.0f, escuro ? G_LOGO_ESC : G_LOGO_CLARO, a); }
 
   // Nome ao lado do logo, favorito marcado com a estrela que a fonte ja tem.
   { float tx = x + 120.0f, tw = r.w - 120.0f - 14.0f;
@@ -2106,6 +2223,76 @@ static float etiqueta(const char *s, float x, float y, float maxW, float a) {
   return r.w;
 }
 
+// O MOLDE DA DESCRICAO do addon de canal, medido na C9 (25/09/2026), em duas
+// formas:
+//   "Categoria: HBO Qualidades: 4K, FHD, HD, SD 8 fonte(s)"
+//   "Categoria: Canais 24 Horas 1 fonte(s)"
+// A categoria ja e etiqueta no heroi e sai; as qualidades viram selos; "8
+// fonte(s)" vira "8 fontes". O que vier antes de "Categoria:" ou depois de
+// "fonte(s)" fica em `resto`. Sem nenhum dos tres marcadores nao e o molde:
+// devolve 0 e o texto vai cru, como qualquer descricao.
+typedef struct { char q[6][8]; int nq; int fontes; char resto[600]; } GDesc;
+static void aparar(char *s) {
+  size_t n = strlen(s), i = 0;
+  while (n && (s[n - 1] == ' ' || s[n - 1] == '\n')) s[--n] = 0;
+  while (s[i] == ' ' || s[i] == '\n') i++;
+  if (i) memmove(s, s + i, n - i + 1);
+}
+// "N fonte(s)": devolve o inicio do numero e poe em *depois o fim do rotulo.
+static const char *acharFontes(const char *d, int *n, const char **depois) {
+  const char *f = d;
+  while ((f = strstr(f, " fonte")) != NULL) {
+    const char *i = f;
+    while (i > d && i[-1] >= '0' && i[-1] <= '9') i--;
+    if (i < f && (i == d || i[-1] == ' ')) {
+      const char *p = f + 6;
+      if (!strncmp(p, "(s)", 3)) p += 3; else if (*p == 's') p++;
+      *n = atoi(i); *depois = p;
+      return i;
+    }
+    f += 6;
+  }
+  return NULL;
+}
+static int descMolde(const char *d, GDesc *o) {
+  const char *qu = strstr(d, "Qualidades:"), *ca = strstr(d, "Categoria:");
+  const char *fo, *fimFo = NULL, *ini, *p, *fim = NULL;
+  int nf = 0;
+  size_t pre;
+  memset(o, 0, sizeof *o);
+  fo = acharFontes(d, &nf, &fimFo);
+  if (!qu && !ca && !fo) return 0;
+  ini = d + strlen(d);
+  if (ca && ca < ini) ini = ca;
+  if (qu && qu < ini) ini = qu;
+  if (fo && fo < ini) ini = fo;
+  pre = (size_t)(ini - d);
+  if (pre >= sizeof o->resto) pre = sizeof o->resto - 1;
+  memcpy(o->resto, d, pre); o->resto[pre] = 0;
+  if (qu) {
+    p = qu + 11;
+    for (;;) {
+      char tok[16]; int n = 0;
+      while (*p == ' ' || *p == ',') p++;
+      if (fo && p >= fo) break;
+      while (*p && *p != ' ' && *p != ',' && n < 15) tok[n++] = *p++;
+      tok[n] = 0;
+      if (!n) break;
+      if (n < 8 && o->nq < 6) snprintf(o->q[o->nq++], sizeof o->q[0], "%s", tok);
+    }
+  }
+  if (fo) { o->fontes = nf; fim = fimFo; }
+  aparar(o->resto);
+  if (fim && *fim) {
+    char suf[600];
+    size_t k = strlen(o->resto);
+    snprintf(suf, sizeof suf, "%s", fim);
+    aparar(suf);
+    if (suf[0]) snprintf(o->resto + k, sizeof o->resto - k, "%s%s", k ? " " : "", suf);
+  }
+  return 1;
+}
+
 // O HEROI: a ficha do canal focado a esquerda e o preview 16:9 a direita.
 //
 // `tFoco` e o instante que o foco aponta: agora, ou o comeco da janela quando
@@ -2139,12 +2326,30 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
   // O furo so abre quando o pipeline tem um quadro (video_pronto); antes
   // disso o plano esta vazio e furar cedo mostrava um retangulo PRETO. Ate la
   // o lugar do video e uma superficie com o logo: o heroi nunca muda de forma.
-  if (aberta && !overlay && previewLigado && previewAtivo && video_pronto()) {
+  // Enquanto a janela do player ANDA (encolhendo da tela cheia), o furo e o
+  // do degrau, desenhado no fim de guia_desenhar — aqui fica so a superficie.
+  //
+  // O PREVIEW PODE SER DE OUTRO CANAL que o focado: com o canal no ar adotado
+  // (previewPreso) ele segue tocando enquanto a pessoa navega. O selo diz
+  // qual, e o logo de espera e o dele.
+  { GCanal *pc = previewId[0] ? canalPorId(previewId) : NULL;
+    int sessao = aberta && !overlay && player_mini_no_guia_ativo();
+    int anda = player_janela_animando(NULL, NULL, NULL, NULL);
+    if (!pc) pc = c;
+  if (sessao && !anda && video_pronto() && !player_carregando()) {
     gfx_furo_raio(pv, raio);
     // Fio de 1,5 px: o video le como parte da interface, e nao como buraco.
     gfx_rect(pv, 0, GFX_ANEL, 0, 1.5f / pv.h, 0, raio, 1, 1, 1, 0.16f * a);
     // Selo sobre o video: GL opaco por cima do furo aparece por cima do plano.
-    seloAoVivo(pv.x + 20.0f, pv.y + pv.h - 52.0f, a);
+    { float sw = seloAoVivo(pv.x + 20.0f, pv.y + pv.h - 52.0f, a);
+      if (pc != c) {
+        TxtLinha t = txt_linha_corta(TXT_PG_ROTULO, pc->nome, 245, 246, 250, 255, pv.w - sw - 80.0f);
+        GfxRect r = { pv.x + 20.0f + sw + 8.0f, pv.y + pv.h - 52.0f, (float)t.w + 24.0f, 32.0f };
+        gfx_cor(r, 0.5f, 0.02f, 0.02f, 0.03f, 0.72f * a);
+        txt_desenhar_alpha(t, r.x + 12.0f, r.y + (r.h - (float)t.h) * 0.5f, a);
+      } }
+  } else if (anda) {
+    // encolhendo: nada aqui, o furo do degrau vem por cima de tudo
   } else {
     gfx_cor(pv, raio, 0.078f, 0.080f, 0.088f, a);
     // Uma luz so, bem fraca, na cor de realce: tira a cara de caixa vazia.
@@ -2152,14 +2357,14 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
                   ar, ag, ab, 0.10f * a);
     { GfxRect cx = { pv.x + (pv.w - 320.0f) * 0.5f, pv.y + (pv.h - 170.0f) * 0.5f - 12.0f,
                      320.0f, 170.0f };
-      logoNaCaixa(c->logo, cx, 300.0f, 150.0f, G_LOGO_CLARO, ha); }
-    // "Carregando" so enquanto ha algo a caminho: com o fio parado e sem
-    // video, dizer "carregando" seria mentir para sempre.
-    if (aberta && !overlay && previewLigado && (previewAtivo || previewFioVivo)) {
+      logoNaCaixa(pc, cx, 300.0f, 150.0f, G_LOGO_CLARO, pc == c ? ha : a); }
+    // "Carregando" so enquanto ha algo a caminho: sem sessao nem pedido,
+    // dizer "carregando" seria mentir para sempre.
+    if ((sessao && player_carregando()) || (aberta && !overlay && pedPreview)) {
       TxtLinha t = txt_linha(TXT_DET_META2, i18n("carregando canal…"), 160, 163, 172, 255);
       txt_desenhar_alpha(t, pv.x + (pv.w - (float)t.w) * 0.5f, pv.y + pv.h - 60.0f, a);
     }
-  }
+  } }
 
   // LINHA DO CANAL: logo, numero, nome e a categoria como etiqueta. O numero
   // e a posicao na ordem do guia — a mesma que o CH+/- percorre (guia_zap).
@@ -2169,7 +2374,7 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
     TxtLinha n;
     snprintf(num, sizeof num, "%d", (int)(c - canais) + 1);
     snprintf(cat, sizeof cat, "%s", c->cat >= 0 ? i18n(cats[c->cat]) : "");
-    logoNaCaixa(c->logo, lx, 112.0f, 60.0f, G_LOGO_CLARO, ha);
+    logoNaCaixa(c, lx, 112.0f, 60.0f, G_LOGO_CLARO, ha);
     n = txt_linha(TXT_DET_META2, num, 150, 153, 162, 255);
     if (tem) {
       TxtLinha t = txt_linha_corta(TXT_CW_TITULO, c->nome, 236, 237, 242, 255,
@@ -2236,13 +2441,42 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
       y += 4.0f + 22.0f;
     } }
 
-  // DESCRICAO do canal (o XMLTV deste guia nao traz sinopse de programa): no
-  // maximo tres linhas, e so as que cabem antes da linha "A seguir".
+  // DESCRICAO do canal (o XMLTV deste guia nao traz sinopse de programa). O
+  // molde do addon ("Categoria: X Qualidades: 4K, FHD 8 fonte(s)") vira
+  // selos de qualidade e a contagem de fontes; o que sobrar, ou texto fora
+  // do molde, vai como veio — no maximo tres linhas, e so as que cabem antes
+  // da linha "A seguir".
   if (c->desc[0]) {
-    int linhas = (int)((proxY - 22.0f - y) / 34.0f);
-    if (linhas > 3) linhas = 3;
-    if (linhas > 0)
-      txt_bloco(TXT_DET_SIN, c->desc, 172, 175, 184, x, y, w, 34.0f, ha * 0.95f, linhas);
+    GDesc d;
+    int molde = descMolde(c->desc, &d);
+    const char *txt = molde ? d.resto : c->desc;
+    if (molde && (d.nq > 0 || d.fontes > 0)) {
+      float bx = x;
+      int k;
+      for (k = 0; k < d.nq; k++) {
+        TxtLinha t = txt_linha(TXT_PG_ROTULO, d.q[k], 222, 224, 230, 255);
+        GfxRect r = { bx, y, (float)t.w + 20.0f, 30.0f };
+        gfx_cor(r, 0.2f, 1, 1, 1, 0.06f * ha);
+        gfx_rect(r, 0, GFX_ANEL, 0, 1.5f / r.h, 0, 0.2f, 1, 1, 1, 0.32f * ha);
+        txt_desenhar_alpha(t, r.x + 10.0f, r.y + (r.h - (float)t.h) * 0.5f, ha);
+        bx += r.w + 8.0f;
+      }
+      if (d.fontes > 0) {
+        char f[48];
+        TxtLinha t;
+        if (d.fontes == 1) snprintf(f, sizeof f, "%s", i18n("1 fonte"));
+        else snprintf(f, sizeof f, i18n("%d fontes"), d.fontes);
+        t = txt_linha(TXT_DET_META2, f, 150, 153, 162, 255);
+        txt_desenhar_alpha(t, bx + (d.nq ? 8.0f : 0.0f), y + (30.0f - (float)t.h) * 0.5f, ha);
+      }
+      y += 30.0f + 20.0f;
+    }
+    if (txt[0]) {
+      int linhas = (int)((proxY - 22.0f - y) / 34.0f);
+      if (linhas > 3) linhas = 3;
+      if (linhas > 0)
+        txt_bloco(TXT_DET_SIN, txt, 172, 175, 184, x, y, w, 34.0f, ha * 0.95f, linhas);
+    }
   }
 
   // A SEGUIR, ancorado na base do heroi (alinhado a base do preview).
@@ -2273,40 +2507,58 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
     } }
 }
 
-// A coluna de categorias do modo salta-secao. Ela existe so enquanto o modo
-// esta armado — e a resposta visual ao "estou pulando de secao em secao".
-static void desenharRailCategorias(float a) {
-  int nl = nLinhas(), primeiro, i;
-  float y, alturaLinha = 44.0f;
-  int vis = (int)((NV_TELA_H - 260.0f) / alturaLinha);
-  if (nl < 1) return;
-  primeiro = focoLin - vis / 2;
-  if (primeiro < 0) primeiro = 0;
-  if (primeiro + vis > nl) primeiro = nl - vis;
-  if (primeiro < 0) primeiro = 0;
+// O PAINEL DE CATEGORIAS: uma gaveta opaca de 440 px na esquerda, com um veu
+// escurecendo o resto. Antes era uma lista TRANSPARENTE desenhada por cima do
+// heroi e dos cartoes (foto do dono, 25/09/2026: "PULANDO CATEGORIAS" lido
+// atraves do titulo do programa) — ilegivel.
+//
+// Cada linha: nome da secao a esquerda (cortado com "…", ha secoes como
+// "Canais Series 24h") e a contagem alinhada a direita. A secao ATUAL tem a
+// barra na cor de realce; a linha em FOCO e preenchida na cor de realce com
+// texto escuro, a mesma linguagem das pilulas do menu lateral. A lista rola
+// mantendo o foco no meio. Entra deslizando da esquerda com a mola (ease-out).
+static void desenharPainelCategorias(float a) {
+  float e = catAnim, ar, ag, ab;
+  float x0 = -G_CAT_W * 0.18f * (1.0f - e);   // desliza ~80 px enquanto aparece
+  float ea = e * a;
+  int nl = nLinhas(), i, tf = ajustes_tinta_foco();
+  if (e < 0.01f || nl < 1) return;
+  ajustes_acento(&ar, &ag, &ab);
+  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.62f * ea);
+  { GfxRect p = { x0 - 40.0f, 0.0f, G_CAT_W + 40.0f, NV_TELA_H };
+    gfx_cor(p, 28.0f / p.w, 0.070f, 0.072f, 0.080f, ea);
+    gfx_luz_canto(p, 28.0f / p.w, p.w * 0.95f, -60.0f, p.w * 0.8f, ar, ag, ab, 0.10f * ea); }
+  { TxtLinha t = txt_linha(TXT_HEADLINE, i18n("Categorias"), 242, 243, 247, 255);
+    txt_desenhar_alpha(t, x0 + 48.0f, 60.0f, ea); }
 
-  GfxRect fundo = { 0.0f, 0.0f, G_AREA_X + G_RAIL_W + 20.0f, NV_TELA_H };
-  gfx_cor(fundo, 0.0f, 0.03f, 0.032f, 0.04f, 0.92f * a);
-
-  { TxtLinha t = txt_linha(TXT_MINI, i18n("PULANDO CATEGORIAS"), 148, 200, 255, 255);
-    txt_desenhar_alpha(t, G_AREA_X, 200.0f, a); }
-
-  y = 240.0f;
-  for (i = primeiro; i < nl && i < primeiro + vis; i++, y += alturaLinha) {
-    int at = (i == focoLin);
-    char rot[120];
-    snprintf(rot, sizeof rot, "%s  \xc2\xb7  %d", linhaNome(i), linhaN(i));
-    if (at) {
-      GfxRect pill = { G_AREA_X - 8.0f, y - 6.0f, G_RAIL_W, alturaLinha - 8.0f };
-      gfx_cor(pill, 0.30f, 0.20f, 0.22f, 0.25f, a);
-    }
-    { TxtLinha t = txt_linha_corta(TXT_CAPTION, rot,
-                                 at ? 255 : 150, at ? 255 : 152,
-                                 at ? 255 : 160, 255, G_RAIL_W - 16.0f);
-      txt_desenhar_alpha(t, G_AREA_X + 8.0f, y + 4.0f, a); }
+  gfx_recorte(0.0f, G_CAT_TOPO - 4.0f, G_CAT_W, G_CAT_BASE - G_CAT_TOPO + 8.0f);
+  for (i = 0; i < nl; i++) {
+    float y = G_CAT_TOPO + (float)i * G_CAT_ROW - catRol;
+    int foc = i == catFoco, atual = i == focoLin;
+    GfxRect r = { x0 + 32.0f, y, G_CAT_W - 56.0f, G_CAT_ROW - 8.0f };
+    char n[16];
+    TxtLinha tn, tc;
+    if (y + G_CAT_ROW < G_CAT_TOPO - 4.0f || y > G_CAT_BASE) continue;
+    snprintf(n, sizeof n, "%d", linhaN(i));
+    if (foc) gfx_cor(r, 12.0f / r.h, ar, ag, ab, ea);
+    else if (atual) gfx_cor(r, 12.0f / r.h, 1, 1, 1, 0.06f * ea);
+    if (atual && !foc)
+      gfx_cor((GfxRect){ r.x + 8.0f, r.y + (r.h - 24.0f) * 0.5f, 4.0f, 24.0f }, 0.5f,
+              ar, ag, ab, ea);
+    tc = foc ? txt_linha(TXT_DET_META2, n, tf, tf, tf, 255)
+             : txt_linha(TXT_DET_META2, n, 140, 143, 152, 255);
+    txt_desenhar_alpha(tc, r.x + r.w - 16.0f - (float)tc.w, r.y + (r.h - (float)tc.h) * 0.5f, ea);
+    { float nw = r.w - 24.0f - 16.0f - (float)tc.w - 16.0f;
+      int cn = atual ? 245 : 205;
+      tn = foc ? txt_linha_corta(TXT_BODY, linhaNome(i), tf, tf, tf, 255, nw)
+               : txt_linha_corta(TXT_BODY, linhaNome(i), cn, cn + 1, cn + 5 > 255 ? 255 : cn + 5, 255, nw);
+      txt_desenhar_alpha(tn, r.x + 24.0f, r.y + (r.h - (float)tn.h) * 0.5f, ea); }
   }
+  gfx_sem_recorte();
+  { TxtLinha t = txt_linha_corta(TXT_CAPTION, i18n("OK entra  ·  Voltar fecha"),
+                                 128, 130, 138, 255, G_CAT_W - 96.0f);
+    txt_desenhar_alpha(t, x0 + 48.0f, NV_TELA_H - 60.0f, ea); }
 }
-
 
 // DE ONDE VEM CANAL: as duas portas, desenhadas em codigo.
 //
@@ -2402,6 +2654,7 @@ static float desenharTopo(float a) {
   const char *rot[G_TOPO_N];
   float w[G_TOPO_N], xs[G_TOPO_N], x, ar, ag, ab, seg0;
   int i;
+  rot[G_TOPO_CATEGORIAS] = i18n("Categorias");
   rot[G_TOPO_CARTOES] = i18n("Cartões");
   rot[G_TOPO_LISTA]   = i18n("Lista");
   rot[G_TOPO_ADDONS]  = i18n("Addons");
@@ -2409,7 +2662,8 @@ static float desenharTopo(float a) {
   ajustes_acento(&ar, &ag, &ab);
   for (i = 0; i < G_TOPO_N; i++)
     w[i] = (float)txt_linha(TXT_PG_ROTULO, rot[i], 255, 255, 255, 255).w
-           + 2.0f * G_CHIP_PAD + (i == G_TOPO_PREVIEW ? 20.0f : 0.0f);
+           + 2.0f * G_CHIP_PAD
+           + (i == G_TOPO_PREVIEW ? 20.0f : i == G_TOPO_CATEGORIAS ? 26.0f : 0.0f);
 
   // Relogio na margem direita, na altura dos chips.
   { time_t tt = time(NULL); struct tm lt; char hora[8];
@@ -2433,11 +2687,13 @@ static float desenharTopo(float a) {
 
   for (i = 0; i < G_TOPO_N; i++) {
     float f = animTopo[i];
+    int seg = i == G_TOPO_CARTOES || i == G_TOPO_LISTA;
     int sel = i == G_TOPO_PREVIEW ? previewLigado
-            : i < G_TOPO_ADDONS ? ((i == G_TOPO_LISTA) == modoLista) : 0;
+            : i == G_TOPO_CATEGORIAS ? catAberto != 0
+            : seg ? ((i == G_TOPO_LISTA) == modoLista) : 0;
     GfxRect r = { xs[i], G_TOPO_Y, w[i], G_TOPO_H };
     int ct;
-    if (i < G_TOPO_ADDONS) {
+    if (seg) {
       // Segmento: so o escolhido tem superficie, 3 px para dentro do trilho.
       if (sel) gfx_cor((GfxRect){ r.x + 3.0f, r.y + 3.0f, r.w - 6.0f, r.h - 6.0f },
                        0.5f, 1, 1, 1, 0.17f * a);
@@ -2459,10 +2715,17 @@ static float desenharTopo(float a) {
         if (previewLigado) gfx_cor(d, 0.5f, 0.30f, 0.84f, 0.46f, a);
         else               gfx_cor(d, 0.5f, 0.42f, 0.43f, 0.47f, a);
         tx = d.x + 20.0f;
+      } else if (i == G_TOPO_CATEGORIAS) {
+        // Tres tracos de "lista": o chip se le como menu antes do texto.
+        float c = (float)ct / 255.0f, gx = r.x + G_CHIP_PAD, gy = r.y + (r.h - 14.0f) * 0.5f;
+        int k;
+        for (k = 0; k < 3; k++)
+          gfx_cor((GfxRect){ gx, gy + 6.0f * (float)k, 16.0f, 2.0f }, 0.5f, c, c, c, a);
+        tx = gx + 26.0f;
       }
       txt_desenhar_alpha(t, tx, r.y + (r.h - (float)t.h) * 0.5f, a); }
   }
-  return seg0;
+  return xs[G_TOPO_CATEGORIAS];
 }
 
 // --- modo lista ---------------------------------------------------------------------
@@ -2483,7 +2746,9 @@ static time_t instanteFoco(time_t agoraT) {
   return janelaIni(agoraT) + 10 * 60;
 }
 
-static void desenharRegua(float a, time_t ini) {
+static void desenharReguaEm(float a, time_t ini, float yR);
+static void desenharRegua(float a, time_t ini) { desenharReguaEm(a, ini, G_TOPO); }
+static void desenharReguaEm(float a, time_t ini, float yR) {
   float ppm = G_L_FAIXA_W / (float)G_L_JANELA_MIN;
   int i, n = G_L_JANELA_MIN / G_L_PASSO_MIN;
   for (i = 0; i < n; i++) {
@@ -2494,13 +2759,13 @@ static void desenharRegua(float a, time_t ini) {
     t = txt_linha(TXT_DET_META2, h, 160, 163, 172, 255);
     // Rotulo logo a direita do tique, como nas grades de referencia: o tique
     // marca o instante, o rotulo le junto dele.
-    txt_desenhar_alpha(t, x + 10.0f, G_TOPO + 2.0f, a);
-    gfx_cor((GfxRect){ x, G_TOPO + 4.0f, 1.0f, 30.0f }, 0.0f, 1, 1, 1, 0.20f * a);
+    txt_desenhar_alpha(t, x + 10.0f, yR + 2.0f, a);
+    gfx_cor((GfxRect){ x, yR + 4.0f, 1.0f, 30.0f }, 0.0f, 1, 1, 1, 0.20f * a);
     // Meio da meia hora: tique curto.
-    gfx_cor((GfxRect){ x + 15.0f * ppm, G_TOPO + 26.0f, 1.0f, 8.0f }, 0.0f,
+    gfx_cor((GfxRect){ x + 15.0f * ppm, yR + 26.0f, 1.0f, 8.0f }, 0.0f,
             1, 1, 1, 0.12f * a);
   }
-  gfx_cor((GfxRect){ G_AREA_X, G_TOPO + 34.0f, G_AREA_W, 1.0f }, 0.0f,
+  gfx_cor((GfxRect){ G_AREA_X, yR + 34.0f, G_AREA_W, 1.0f }, 0.0f,
           1, 1, 1, 0.08f * a);
 }
 
@@ -2521,10 +2786,15 @@ static void desenharRegua(float a, time_t ini) {
 //
 // Com `alvo`, devolve o retangulo que o anel de foco deve abracar: a celula
 // do programa em `tFoco`, ou a faixa "sem grade" inteira.
+// Altura da celula: G_L_CEL na grade, menor na faixa do mini guia.
+static float gCel = G_L_CEL;
+// O canal no ar ganha a barra na cor de realce na coluna (so na faixa, onde
+// o foco pode estar longe dele).
+static const char *gIdNoAr = "";
 static void desenharLinhaLista(GCanal *c, float y, int focada, float a,
                                time_t agoraT, time_t ini, time_t tFoco,
                                int passo, float agoraX, GfxRect *alvo) {
-  float h = G_L_CEL;
+  float h = gCel;
   float raioC = 12.0f / h, raioB = 10.0f / h;
   time_t fimJ = ini + (time_t)G_L_JANELA_MIN * 60;
   float ppm = G_L_FAIXA_W / (float)G_L_JANELA_MIN;
@@ -2533,7 +2803,13 @@ static void desenharLinhaLista(GCanal *c, float y, int focada, float a,
 
   if (passo == 0) {
     float l = focada ? G_SUP_COL_FOCO : G_SUP_COL;
-    gfx_cor(col, raioC, l, l + 0.002f, l + 0.008f, a);
+    gfx_cor(col, raioC, l, l, l, a);   // cinza NEUTRO: sem desvio de cor
+    if (gIdNoAr[0] && !strcmp(c->id, gIdNoAr)) {
+      float ar, ag, ab;
+      ajustes_acento(&ar, &ag, &ab);
+      gfx_cor((GfxRect){ col.x - 14.0f, col.y + (h - 28.0f) * 0.5f, 4.0f, 28.0f }, 0.5f,
+              ar, ag, ab, a);
+    }
   } else {
     char num[16];
     TxtLinha n;
@@ -2544,7 +2820,7 @@ static void desenharLinhaLista(GCanal *c, float y, int focada, float a,
     // coluna, como na grade impressa.
     txt_desenhar_alpha(n, G_AREA_X + 48.0f - (float)n.w, y + (h - (float)n.h) * 0.5f, a);
     { GfxRect cx = { G_AREA_X + 62.0f, y + 10.0f, 92.0f, h - 20.0f };
-      logoNaCaixa(c->logo, cx, 84.0f, 42.0f, G_LOGO_CLARO, a); }
+      logoNaCaixa(c, cx, 84.0f, 42.0f, G_LOGO_CLARO, a); }
     { float nx = G_AREA_X + 168.0f;
       float tw = G_L_COL - 168.0f - 16.0f - (c->fav ? 30.0f : 0.0f);
       int ct = focada ? 250 : 212, cb = ct + 4 > 255 ? 255 : ct + 4;
@@ -2582,7 +2858,7 @@ static void desenharLinhaLista(GCanal *c, float y, int focada, float a,
       if (passo == 0) {
         float l = foc ? G_SUP_FOCO : atual ? G_SUP_NO_AR : G_SUP_FUTURO;
         if (focada && !foc) l += 0.018f;
-        gfx_cor(b, raioB, l, l + 0.002f, l + 0.010f, a);
+        gfx_cor(b, raioB, l, l, l, a);
         continue;
       }
       // Rotulo so onde cabe: a regra da casa e desenhar MENOS rotulos, nunca
@@ -2595,8 +2871,19 @@ static void desenharLinhaLista(GCanal *c, float y, int focada, float a,
         float tx = b.x + 14.0f;
         TxtLinha t = txt_linha_corta(TXT_CW_TITULO, ps[k].titulo, ct, ct, ct, 255,
                                      b.x + b.w - 14.0f - tx);
+        if (h < 70.0f) {
+          // Celula baixa (faixa): so o titulo, centrado, e a barra do quanto
+          // ja passou no programa do ar — a regua em cima diz os horarios.
+          txt_desenhar_alpha(t, tx, y + (h - (float)t.h) * 0.5f - 2.0f, a);
+          if (atual && ps[k].fim > ps[k].ini) {
+            float f = anim_clamp((float)(agoraT - ps[k].ini) / (float)(ps[k].fim - ps[k].ini), 0.0f, 1.0f);
+            float bw = b.w - 28.0f;
+            gfx_cor((GfxRect){ tx, y + h - 9.0f, bw, 3.0f }, 0.5f, 1, 1, 1, 0.16f * a);
+            gfx_cor((GfxRect){ tx, y + h - 9.0f, bw * f, 3.0f }, 0.5f, 1, 1, 1, 0.75f * a);
+          }
+        } else
         txt_desenhar_alpha(t, tx, y + 7.0f, a);
-        if (b.w > 120.0f) {
+        if (b.w > 120.0f && h >= 70.0f) {
           char h1[8], h2[8], faixa[24];
           int cm = foc ? 200 : 146;
           TxtLinha m;
@@ -2621,7 +2908,7 @@ static void desenharLinhaLista(GCanal *c, float y, int focada, float a,
       if (epg == -1) gfx_esqueleto(b, raioB, 0.095f, 0.097f, 0.105f, a);
       else {
         float l = focada ? 0.105f : 0.068f;
-        gfx_cor(b, raioB, l, l + 0.002f, l + 0.008f, a);
+        gfx_cor(b, raioB, l, l, l, a);
       }
     } else {
       int ct = focada ? 176 : 118;
@@ -2819,12 +3106,118 @@ static void desenharAnelFoco(float a, Uint32 agora, float rol) {
            ar, ag, ab, a);
 }
 
+// --- a faixa do mini guia ------------------------------------------------------
+#define G_B_LINHAS   5
+#define G_B_ROW     66.0f
+#define G_B_CEL     58.0f
+
+// O vizinho de (l, c) na ordem da lista, atravessando as categorias. 0 quando
+// nao ha.
+static int vizinhoLista(int *l, int *c, int dir) {
+  if (dir > 0) {
+    if (*c + 1 < linhaN(*l)) { (*c)++; return 1; }
+    { int k = *l + 1;
+      while (k < nLinhas() && linhaN(k) < 1) k++;
+      if (k >= nLinhas()) return 0;
+      *l = k; *c = 0; return 1; }
+  }
+  if (*c > 0) { (*c)--; return 1; }
+  { int k = *l - 1;
+    while (k >= 0 && linhaN(k) < 1) k--;
+    if (k < 0) return 0;
+    *l = k; *c = linhaN(k) - 1; return 1; }
+}
+
+// A FAIXA: o rodape da tela (~41% da altura) por cima do video, que segue em
+// tela cheia e intocado (nenhum video_janela aqui). Degrade escuro de baixo
+// para cima, a regua de meia hora e cinco canais — o focado no meio sempre
+// que da, dois de cada lado. O canal no ar tem a barra na cor de realce.
+static void desenharBanda(float a, Uint32 agora) {
+  time_t agoraT = time(NULL);
+  time_t ini = janelaIni(agoraT);
+  time_t tFoco = janelaDesl > 0 ? ini + 10 * 60 : agoraT;
+  float topo = NV_TELA_H - 36.0f - (float)G_B_LINHAS * G_B_ROW - 42.0f - 44.0f;
+  float yR = topo + 44.0f, y0 = yR + 42.0f, fimY = y0 + (float)G_B_LINHAS * G_B_ROW - 8.0f;
+  int ll[G_B_LINHAS], cc[G_B_LINHAS], n = 0, k, passo, subiu = 0;
+  int agoraVis = agoraT >= ini && agoraT < ini + (time_t)G_L_JANELA_MIN * 60;
+  float agoraX = agoraVis ? G_L_FAIXA_X + (float)(agoraT - ini) / 60.0f
+                            * (G_L_FAIXA_W / (float)G_L_JANELA_MIN) : 0.0f;
+  float ar, ag, ab;
+  if (nLinhas() < 1 || !linhaItem(focoLin, focoCol)) return;
+  ajustes_acento(&ar, &ag, &ab);
+
+  // Degrade: oito faixas sem sobreposicao, alfa subindo em curva. Meia tela
+  // de preenchimento uma vez so.
+  { float y = topo - 160.0f, hh = (NV_TELA_H - y) / 8.0f;
+    for (k = 0; k < 8; k++) {
+      float t = (float)(k + 1) / 8.0f;
+      gfx_cor((GfxRect){ 0.0f, y + hh * (float)k, NV_TELA_W, hh + 1.0f }, 0.0f,
+              0.02f, 0.02f, 0.025f, (0.10f + 0.84f * t * t) * a);
+    } }
+
+  // Quem entra: sobe ate dois a partir do foco e completa descendo.
+  { int l = focoLin, c = focoCol;
+    while (subiu < 2 && vizinhoLista(&l, &c, -1)) subiu++;
+    ll[0] = l; cc[0] = c; n = 1;
+    while (n < G_B_LINHAS && vizinhoLista(&l, &c, 1)) { ll[n] = l; cc[n] = c; n++; }
+    // No fim da lista faltam linhas embaixo: sobe mais para a faixa encher.
+    while (n < G_B_LINHAS) {
+      int l2 = ll[0], c2 = cc[0];
+      if (!vizinhoLista(&l2, &c2, -1)) break;
+      memmove(ll + 1, ll, sizeof(int) * (size_t)n); memmove(cc + 1, cc, sizeof(int) * (size_t)n);
+      ll[0] = l2; cc[0] = c2; n++;
+    } }
+
+  { TxtLinha t = txt_linha(TXT_PG_ROTULO, i18n("Guia de canais"), 200, 202, 210, 255);
+    TxtLinha d = txt_linha(TXT_CAPTION,
+        i18n("OK troca de canal  ·  Azul: guia completo  ·  Voltar fecha"), 150, 153, 162, 255);
+    txt_desenhar_alpha(t, G_AREA_X, topo + 6.0f, a);
+    txt_desenhar_alpha(d, G_AREA_DIR - (float)d.w, topo + 6.0f, a); }
+  desenharReguaEm(a, ini, yR);
+
+  gCel = G_B_CEL;
+  gIdNoAr = player_id_canal();
+  focoAnelTem = 0;
+  for (passo = 0; passo < 2; passo++) {
+    for (k = 0; k < n; k++) {
+      int foc = ll[k] == focoLin && cc[k] == focoCol;
+      GfxRect alvo;
+      float y = y0 + (float)k * G_B_ROW;
+      desenharLinhaLista(linhaItem(ll[k], cc[k]), y, foc, a, agoraT, ini, tFoco,
+                         passo, agoraX, foc ? &alvo : NULL);
+      if (foc && passo == 0) { focoAnelAlvo = alvo; focoAnelTem = 1; }
+    }
+    if (passo == 0 && agoraVis) {
+      if (agoraX > G_L_FAIXA_X)
+        gfx_cor((GfxRect){ G_L_FAIXA_X, y0 - 4.0f, agoraX - G_L_FAIXA_X, fimY - y0 + 8.0f },
+                0.0f, 0.02f, 0.02f, 0.025f, 0.45f * a);
+      gfx_cor((GfxRect){ agoraX - 1.0f, yR + 30.0f, 2.0f, fimY - yR - 26.0f }, 0.0f,
+              ar, ag, ab, 0.85f * a);
+    }
+  }
+  gCel = G_L_CEL;
+  gIdNoAr = "";
+  desenharAnelFoco(a, agora, 0.0f);
+  if (agoraVis) {
+    char hora[8];
+    int tf = ajustes_tinta_foco();
+    TxtLinha t;
+    GfxRect pl;
+    fmtHora(agoraT, hora, sizeof hora);
+    t = txt_linha(TXT_PG_ROTULO, hora, tf, tf, tf, 255);
+    pl = (GfxRect){ agoraX - ((float)t.w + 20.0f) * 0.5f, yR + 1.0f, (float)t.w + 20.0f, 30.0f };
+    gfx_cor(pl, 0.5f, ar, ag, ab, a);
+    txt_desenhar_alpha(t, pl.x + 10.0f, pl.y + (pl.h - (float)t.h) * 0.5f, a);
+  }
+}
+
 void guia_desenhar(Uint32 agora) {
   time_t agoraT = time(NULL);
   time_t tFoco = instanteFoco(agoraT);
   float a = entrada;
   int l, i, temLinhas;
   if (a < 0.01f || !guia_visivel()) return;
+  if (overlay) { desenharBanda(a, agora); return; }
   temLinhas = (estado == G_PRONTO || estado == G_BAIXANDO) && nLinhas() > 0;
 
   // Fundo: opaco na tela cheia, quase opaco no overlay (o video continua
@@ -2899,7 +3292,7 @@ void guia_desenhar(Uint32 agora) {
       float y = G_L_TOPO - rolL;
       for (l = 0; l < nLinhas(); l++) {
         int n = linhaN(l);
-        float dim = modoCat && l != focoLin ? 0.35f : 1.0f;
+        float dim = 1.0f;
         float bloco = G_L_HEAD + (float)n * G_L_ROW;
         if (y > G_L_BASE) break;
         if (y + bloco < G_L_TOPO - 8.0f) { y += bloco; continue; }
@@ -2907,7 +3300,7 @@ void guia_desenhar(Uint32 agora) {
         // contexto da lista, nao titulo — quem manda na tela e o heroi.
         if (passo == 1) {
           char cab[140];
-          int at = modoCat && l == focoLin;
+          int at = 0;
           TxtLinha t;
           snprintf(cab, sizeof cab, "%s  \xc2\xb7  %d", linhaNome(l), n);
           t = txt_linha_corta(TXT_PG_ROTULO, cab, at ? 255 : 150, at ? 255 : 153,
@@ -2978,14 +3371,12 @@ void guia_desenhar(Uint32 agora) {
     for (l = 0; l < nLinhas(); l++) {
       float y = G_TOPO + (float)l * G_PASSO_Y - rolY;
       int n = linhaN(l);
-      float dim = modoCat && l != focoLin ? 0.35f : 1.0f;
+      float dim = 1.0f;
       if (y > G_L_BASE || y + G_PASSO_Y < G_TOPO - 8.0f) continue;
       { char cab[140];
         snprintf(cab, sizeof cab, "%s  \xc2\xb7  %d", linhaNome(l), n);
         TxtLinha t = txt_linha_corta(TXT_ROW_TITULO, cab,
-                                   modoCat && l == focoLin ? 148 : 220,
-                                   modoCat && l == focoLin ? 200 : 221,
-                                   modoCat && l == focoLin ? 255 : 224, 255,
+                                   220, 221, 224, 255,
                                    G_AREA_W);
         txt_desenhar_alpha(t, G_AREA_X, y, a * dim); }
       { float x = G_AREA_X - rolX[l];
@@ -3032,7 +3423,7 @@ void guia_desenhar(Uint32 agora) {
     txt_desenhar_alpha(t, G_AREA_X, msgY, a);
   }
 
-  if (modoCat) desenharRailCategorias(a);
+  // (A gaveta de categorias vem depois da barra de ajuda, por cima de tudo.)
 
   // Barra de ajuda — a resposta ao "explicar no componente como abrir o
   // overlay": as teclas que o dono precisa lembrar ficam escritas na tela.
@@ -3050,5 +3441,11 @@ void guia_desenhar(Uint32 agora) {
                                  G_AREA_W);
     txt_desenhar_alpha(t, G_AREA_X, NV_TELA_H - 48.0f, a); }
 
+  desenharPainelCategorias(a);
   if (painel) desenharPainelAddons(a);
+  // O CANAL NO AR ENCOLHENDO para o preview: o furo segue o degrau da janela
+  // do player por cima de tudo, e o video "pousa" no preview.
+  { float x, y, w, h;
+    if (aberta && player_janela_animando(&x, &y, &w, &h))
+      gfx_furo_raio((GfxRect){ x, y, w, h }, G_PREVIEW_RAIO / (h > 1.0f ? h : 1.0f)); }
 }

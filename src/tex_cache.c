@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 #include <utime.h>
 #include <errno.h>
+#include <math.h>
 #ifndef __EMSCRIPTEN__
 #include <pthread.h>
 #include <sys/statvfs.h>
@@ -128,6 +129,14 @@ typedef struct {
   // PRETO (acromatico, variante errada do TMDB) de logo de MARCA escuro mas
   // colorido (vermelho, vinho), que deve passar intacto.
   int croma;
+  // DESVIO da luminancia dos pixels opacos, MAIS UM (0 = ainda nao medido; o
+  // memset do slot zera tudo e zero nao pode ser "tom unico"). Separa a MARCA
+  // de uma cor so (silhueta branca, preta, vermelha) do logo em AZULEJO — um
+  // quadrado arredondado claro com a marca escura dentro, com a borda
+  // transparente. Os dois tem borda transparente; so este numero os distingue,
+  // e tingir o segundo como marca pinta um QUADRADO CHAPADO (o "logo branco"
+  // do guia na C9, 25/09/2026). Ver tex_logo_tom_unico.
+  int desvio1;
   // COR DE FUNDO da arte: a media da BORDA quando ela e opaca (logo com
   // fundo proprio), -2 quando a borda e transparente (logo recortado), -1
   // enquanto nao se sabe. Ver tex_cor_fundo.
@@ -2215,25 +2224,31 @@ static int threadDecode(void *arg) {
     // na mao e roda em prioridade baixa. Amostra de 4 em 4 nos dois eixos —
     // 1/16 dos pixels bastam para dizer se uma arte e escura, e a conta inteira
     // num logo de 700x271 seria trabalho sem retorno.
-    int lumMedia = -1, cromaMedia = 0;
+    int lumMedia = -1, cromaMedia = 0, desvio1 = 0;
     int corR = -1, corG = 0, corB = 0;
     if (conv && conv->format->BytesPerPixel == 4) {
       const unsigned char *px = (const unsigned char *)conv->pixels;
       long soma = 0, somaC = 0, n = 0;
+      double soma2 = 0.0;
       int yy, xx;
       for (yy = 0; yy < conv->h; yy += 4) {
         const unsigned char *ln = px + (size_t)yy * conv->pitch;
         for (xx = 0; xx < conv->w; xx += 4) {
           const unsigned char *q = ln + (size_t)xx * 4;   // ABGR8888: R,G,B,A
           if (q[3] < 200) continue;                       // so o que e opaco
-          soma += (q[0] * 299 + q[1] * 587 + q[2] * 114) / 1000;
+          { int lu = (q[0] * 299 + q[1] * 587 + q[2] * 114) / 1000;
+            soma += lu; soma2 += (double)lu * (double)lu; }
           { int mx = q[0] > q[1] ? q[0] : q[1]; if (q[2] > mx) mx = q[2];
             int mn = q[0] < q[1] ? q[0] : q[1]; if (q[2] < mn) mn = q[2];
             somaC += mx - mn; }
           n++;
         }
       }
-      if (n > 0) { lumMedia = (int)(soma / n); cromaMedia = (int)(somaC / n); }
+      if (n > 0) {
+        double m = (double)soma / (double)n, v = soma2 / (double)n - m * m;
+        lumMedia = (int)(soma / n); cromaMedia = (int)(somaC / n);
+        desvio1 = (int)(v > 0.0 ? sqrt(v) : 0.0) + 1;
+      }
       // COR DE FUNDO: a media da BORDA da imagem (uma moldura de 1 px de
       // cada lado). Logo com fundo proprio (o quadrado cinza do Disney+) tem
       // a borda opaca e de uma cor so; logo recortado tem a borda
@@ -2321,6 +2336,7 @@ static int threadDecode(void *arg) {
     } else if (itens[idx].estado == PENDENTE) {
       itens[idx].lum = lumMedia;
       itens[idx].croma = cromaMedia;
+      itens[idx].desvio1 = desvio1;
       itens[idx].corR = corR; itens[idx].corG = corG; itens[idx].corB = corB;
       itens[idx].sup = conv;
       if (conv) {
@@ -3184,6 +3200,19 @@ int tex_cor_fundo(const char *caminho, float *r, float *g, float *b) {
   }
   SDL_UnlockMutex(mtx);
   return ok;
+}
+
+int tex_logo_tom_unico(const char *caminho) {
+  int r = -1;
+  unsigned long h;
+  int i;
+  if (!caminho || !*caminho) return -1;
+  h = hashCaminho(caminho);
+  BUSCA_MEDIDA(i, caminho, h);
+  if (i >= 0 && itens[i].tex && itens[i].desvio1 > 0)
+    r = (itens[i].desvio1 - 1) <= NV_LOGO_TOM_UNICO_DESVIO;
+  SDL_UnlockMutex(mtx);
+  return r;
 }
 
 int tex_marca_escura(const char *caminho) {
