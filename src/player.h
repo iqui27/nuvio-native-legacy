@@ -120,6 +120,18 @@ void player_manter_mini(void);
 void player_restaurar(void);
 void player_fechar_mini(void);
 void player_mini_desenhar(Uint32 agora);
+// MINI NO GUIA: o "mini" cujo destino e o preview do guia (sem moldura: o
+// guia fura e desenha em volta). `player_mini_no_guia` define a caixa e liga
+// o modo — antes de player_manter_mini()+abrir, a sessao nova ja nasce no
+// preview; com um PiP de canto no ar, ele desliza ate a caixa.
+// `player_minimizar_para_guia`: da tela cheia ao preview, encolhendo, com o
+// mesmo fluxo. `player_restaurar` com o mini no guia faz o caminho inverso,
+// crescendo. `player_janela_animando` devolve 1 e o retangulo do degrau
+// enquanto a janela anda — o guia fura ali durante o encolher.
+void player_mini_no_guia(float x, float y, float w, float h);
+int  player_mini_no_guia_ativo(void);
+void player_minimizar_para_guia(float x, float y, float w, float h);
+int  player_janela_animando(float *x, float *y, float *w, float *h);
 
 // --- MODOS DE PROPORCAO -----------------------------------------------------
 // Os OITO modos do app web, na mesma ordem e com os mesmos fatores

@@ -856,6 +856,28 @@ static void tocarCanal(const CatItem *it) {
   marco("guia: buscando fontes do canal");
 }
 
+// O CANAL NO AR VAI PARA O GUIA, sem recarregar (25/09/2026). O mesmo fluxo
+// muda so de retangulo: da tela cheia (ou do PiP de canto) para o preview
+// 800x450, com a janela andando em degraus (player_minimizar_para_guia). O
+// guia foca a linha do canal e deixa de seguir o foco com o preview — so OK
+// em outro canal troca o que toca. E o caminho de: Voltar num canal aberto
+// pelo guia, Azul na faixa do mini guia, e Guia na barra com o PiP no ar.
+static void guiaComCanalNoAr(void) {
+  char id[80];
+  float x, y, w, h;
+  snprintf(id, sizeof id, "%s", player_id_canal());
+  guia_preview_rect(&x, &y, &w, &h);
+  if (player_mini_ativo()) player_mini_no_guia(x, y, w, h);
+  else player_minimizar_para_guia(x, y, w, h);
+  if (tela != TELA_GUIA || !guia_aberta()) {
+    if (tela == TELA_GUIA) guia_abrir();
+    else trocarTela(TELA_GUIA);
+  }
+  guia_adotar_canal(id);
+  printf("[guia] canal no ar foi para o preview, sem recarregar\n");
+  fflush(stdout);
+}
+
 // A home carregou? Sem arte no pacote ela nao carrega, e ate agora isso
 // DERRUBAVA o app: app_iniciar devolvia 0 e o main saia com codigo 1. Num
 // pacote de dono isso nunca acontecia porque a arte ia junto; num pacote
@@ -1067,7 +1089,7 @@ void app_evento(const SDL_Event *e) {
   // TELA_GUIA (bucket C / PiP no guia): Azul e CH+/- ja caem aqui ANTES de
   // guia_evento — restaurar e zapar com o guia tela cheia aberto. Voltar
   // continua com o guia (sair do guia, PiP segue), como um nivel de navegacao.
-  if (player_mini_ativo() && e->type == SDL_KEYDOWN) {
+  if (player_mini_ativo() && !player_mini_no_guia_ativo() && e->type == SDL_KEYDOWN) {
     SDL_Keycode mk = e->key.keysym.sym;
     int msc = e->key.keysym.scancode;
     if ((mk == SDLK_AC_BACK || mk == SDLK_ESCAPE || mk == SDLK_BACKSPACE ||
@@ -1663,13 +1685,10 @@ void app_atualizar(float dt, Uint32 agora) {
       case MENU_GUIA:
         // PiP ativo: overlay sobre o mini (recomendacao backlog C) em vez da
         // tela cheia opaca — zap/Azul/Voltar do PiP continuam coerentes.
-        if (player_mini_ativo()) {
-          const char *id = player_id_canal();
-          guia_overlay_abrir();
-          if (id[0]) guia_focar_id(id);
-        } else {
-          trocarTela(TELA_GUIA);
-        }
+        // PiP no ar: o guia COMPLETO abre com o canal deslizando do canto
+        // para o preview (sem recarregar) — o PiP nao tem mais lugar no guia.
+        if (player_mini_ativo() && player_id_canal()[0]) guiaComCanalNoAr();
+        else trocarTela(TELA_GUIA);
         break;
       case MENU_EXPLORAR:   trocarTela(TELA_EXPLORAR);   break;
       case MENU_BUSCAR:     trocarTela(TELA_BUSCA);      break;
@@ -2194,9 +2213,33 @@ void app_atualizar(float dt, Uint32 agora) {
     stream_folha_abrir();
   }
 
-  // CANAL ESCOLHIDO NO GUIA — tela cheia ou overlay, mesma acao: toca direto.
+  // CANAL ESCOLHIDO NO GUIA — tela cheia ou faixa, mesma acao: toca direto.
   { CatItem it;
     if (aguardandoFonte != 2 && guia_pediu_canal(&it)) tocarCanal(&it); }
+  // O PREVIEW DO GUIA e uma sessao "mini no guia" do player: mesma busca de
+  // fonte, mesmo watchdog, e o OK nele depois so faz a janela crescer.
+  { CatItem it;
+    if (aguardandoFonte != 2 && guia_pediu_preview(&it)) {
+      float x, y, w, h;
+      guia_preview_rect(&x, &y, &w, &h);
+      player_mini_no_guia(x, y, w, h);
+      player_manter_mini();
+      tocarCanal(&it);
+    } }
+  if (guia_pediu_parar_preview() && player_mini_no_guia_ativo()) player_fechar_mini();
+  // OK no canal que ja toca no preview: tela cheia crescendo, SEM carregar.
+  if (guia_pediu_restaurar() && player_mini_no_guia_ativo()) {
+    player_restaurar();
+    printf("[guia] preview -> tela cheia no mesmo fluxo\n");
+    fflush(stdout);
+  }
+  // Azul na faixa do mini guia: o guia completo, com o canal no preview.
+  if (guia_pediu_guia_cheio() && player_aberto() && player_id_canal()[0]) guiaComCanalNoAr();
+  // Sessao do preview sem guia na tela (saiu por um caminho que nao passou
+  // pelo sair() do guia): nao fica tocando escondida.
+  if (player_mini_no_guia_ativo() && !player_janela_animando(NULL, NULL, NULL, NULL) &&
+      (tela != TELA_GUIA || !guia_aberta()))
+    player_fechar_mini();
 
   // CH+/- COM CANAL NO AR: zap na ordem do guia. A lista pode ainda nao ter
   // sido carregada (guia nunca aberto nesta sessao): a primeira tecla dispara
@@ -2272,6 +2315,11 @@ void app_atualizar(float dt, Uint32 agora) {
   // SO QUANDO O TITULO NAO ESTA LA. Continuar algo que ja esta na fileira e o
   // caso comum, e ali nada mudou de lugar — pagar um ciclo inteiro (~20 s nesta
   // TV) a cada saida do player seria cobrar do comum o preco do raro.
+  // VOLTAR NUM CANAL ABERTO PELO GUIA: o video encolhe para o preview do guia,
+  // na hora (sem esperar o fade da interface do player) e sem recarregar. O
+  // PiP de canto ficou para os canais abertos fora do guia.
+  if (player_quer_sair() && player_minimizavel() && tela == TELA_GUIA && guia_aberta())
+    guiaComCanalNoAr();
   if (player_quer_sair() && !player_aberto()) {
     if (player_minimizavel()) {
       // CANAL AO VIVO sai para PiP: o fluxo fica num canto da tela em vez de
@@ -2572,7 +2620,9 @@ static void desenharTelas(Uint32 agora) {
 
   // O player cobre tudo; desenhar o que esta atras dele e trabalho jogado fora
   // — a mesma conta que ja valia para o cartao de detalhe esticado.
-  if (!player_aberto()) {
+  // ...exceto enquanto o video do preview do guia CRESCE para a tela cheia: ai
+  // o guia continua em volta do furo que anda (player_desenhar).
+  if (!player_aberto() || player_janela_animando(NULL, NULL, NULL, NULL)) {
     // O FUNDO PARADO DO PAINEL DE SALVOS: com o painel inteiro na tela, tudo
     // que fica atras dele e pintado UMA vez num FBO, ja com o veu, e os quadros
     // seguintes desenham so a copia e o painel. Ver spainel_fundo em

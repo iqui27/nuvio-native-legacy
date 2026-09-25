@@ -313,6 +313,13 @@ static CatItem itemCanal;
 // `querMini` e o pedido do CH+/- feito dentro do PiP: so ele mantem a
 // miniatura na troca de canal — OK num canal (guia, home) volta a tela cheia.
 static int     mini, querMini;
+// MINI NO GUIA (25/09/2026): a mesma sessao "mini", mas o destino e o
+// PREVIEW 800x450 do guia e nao o canto da tela, e sem moldura, etiqueta nem
+// dica — quem fura a superficie e desenha em volta e o guia. E o que faz o
+// canal no ar ir da tela cheia para o preview (e voltar) SEM recarregar: o
+// pipeline e o mesmo, so o retangulo muda. O PiP de canto continua existindo
+// fora do guia (canal aberto pela home).
+static int     miniGuia;
 // O TITULO ABERTO E UMA COPIA, NAO UM INDICE.
 //
 // `idx` e uma posicao no catalogo, e o catalogo e REPUBLICADO durante a sessao
@@ -707,6 +714,15 @@ static float aspectoQuadro(void) {
 
 typedef struct { float x, y, w, h; } PlrRect;
 static PlrRect miniDestino(void);
+// ANIMACAO DA JANELA DE VIDEO entre dois retangulos (tela cheia <-> preview
+// do guia). Em degraus espacados, como o recuo do painel de creditos: cada
+// degrau e uma mensagem ao pipeline, entao ha PLR_ENC_PASSOS delas em
+// ~450 ms, e nao uma por quadro. Enquanto anima, aplicarAspecto nao mexe no
+// plano — o fim da animacao e quem entrega o destino definitivo.
+static int     janAtiva;
+static float   janT;
+static Uint32  janEm;
+static PlrRect janDe, janPara, janAgora;
 
 static PlrRect aspectoRect(int modo) {
   const float tela = NV_TELA_W / NV_TELA_H;
@@ -846,6 +862,7 @@ static void aplicarAspecto(void) {
   float qw, qh;
   int sx, sy, sw, sh;
   if (!comVideo) return;
+  if (janAtiva) return;
 
   // No PiP todo recalculo cai na miniatura — o videoInfo da fonte nova num
   // zap, por exemplo, chega DEPOIS do video_janela do canto e sem esta
@@ -988,7 +1005,9 @@ void player_abrir(int indiceCatalogo, const char *url) {
     // fluxo de sempre. Qualquer outra abertura (OK no guia, filme, serie)
     // volta a tela cheia e para o video do canto.
     if (ficaMini && canalSessao) { mini = 1; aberto = 0; }
-    else if (mini || ficaMini) { mini = 0; video_parar(); }
+    else if (mini || ficaMini) { mini = 0; miniGuia = 0; video_parar(); }
+    else miniGuia = 0;
+    janAtiva = 0;
     avisarCascaAberto(aberto);
     if (ci && ci->imdb[0] && !canalSessao) parental_pedir(ci->imdb);
     // A grade EPG comeca a baixar ja: o banner "agora/a seguir" do OSD e o
@@ -1194,7 +1213,7 @@ void player_encerrar(void) {
            (unsigned)(tv - t0), (unsigned)(SDL_GetTicks() - tv));
     fflush(stdout); }
   comVideo = 0; esperandoFonte = 0; aberto = 0; saindo = 0; pediuSair = 0;
-  mini = 0; querMini = 0;
+  mini = 0; querMini = 0; miniGuia = 0; janAtiva = 0;
   avisarCascaAberto(0);
   // Os DOIS relogios, e nao so o do primeiro quadro. `pgDesde` sobrevivendo ao
   // fechamento faria a proxima reproducao achar que a janela do aviso ja tinha
@@ -1219,8 +1238,10 @@ void player_encerrar(void) {
 
 // O destino em miniatura: a caixa e 16:9 e a proporcao do quadro e respeitada
 // DENTRO dela — um canal 4:3 letterboxa na caixa em vez de esticar.
+static PlrRect miniGuiaCaixa = { 1040.0f, 108.0f, 800.0f, 450.0f };
 static PlrRect miniDestino(void) {
   PlrRect o = { PLR_PIP_X, PLR_PIP_Y, PLR_PIP_W, PLR_PIP_H };
+  if (miniGuia) o = miniGuiaCaixa;
   float vw = (float)video_largura(), vh = (float)video_altura();
   if (vw > 1.0f && vh > 1.0f) {
     float ca = vw / vh, ba = o.w / o.h;
@@ -1244,8 +1265,87 @@ void player_minimizar(void) {
                (int)(r.w + 0.5f), (int)(r.h + 0.5f));
 }
 
+// Tela cheia "contain" pela proporcao do quadro: o fim da animacao de
+// crescer. O modo de proporcao de verdade (zoom, recorte) entra no ultimo
+// degrau, por aplicarAspecto.
+static PlrRect telaCheia(void) {
+  PlrRect o = { 0.0f, 0.0f, NV_TELA_W, NV_TELA_H };
+  float q = aspectoQuadro(), t = NV_TELA_W / NV_TELA_H;
+  if (q > t + 0.01f) { o.h = NV_TELA_W / q; o.y = (NV_TELA_H - o.h) * 0.5f; }
+  else if (q < t - 0.01f) { o.w = NV_TELA_H * q; o.x = (NV_TELA_W - o.w) * 0.5f; }
+  return o;
+}
+static void janelaMandar(PlrRect r) {
+  video_janela((int)(r.x + 0.5f), (int)(r.y + 0.5f), (int)(r.w + 0.5f), (int)(r.h + 0.5f));
+}
+static void janelaAnimar(PlrRect de, PlrRect para) {
+  janDe = de; janPara = para; janAgora = de; janT = 0.0f; janEm = 0; janAtiva = 1;
+}
+// Um degrau por PLR_ENC_MS. Curva ease-out (1-(1-t)^3): parte rapido e
+// assenta devagar, que e o que se le como "o video veio para a frente".
+static void janelaPasso(Uint32 agora) {
+  float k, u;
+  if (!janAtiva || agora < janEm) return;
+  janT += 1.0f / (float)PLR_ENC_PASSOS;
+  if (janT > 1.0f) janT = 1.0f;
+  u = 1.0f - janT; k = 1.0f - u * u * u;
+  janAgora.x = janDe.x + (janPara.x - janDe.x) * k;
+  janAgora.y = janDe.y + (janPara.y - janDe.y) * k;
+  janAgora.w = janDe.w + (janPara.w - janDe.w) * k;
+  janAgora.h = janDe.h + (janPara.h - janDe.h) * k;
+  janEm = agora + PLR_ENC_MS;
+  if (janT >= 1.0f) {
+    janAtiva = 0;
+    if (mini) janelaMandar(miniDestino());
+    else aplicarAspecto();
+  } else janelaMandar(janAgora);
+}
+
+int player_janela_animando(float *x, float *y, float *w, float *h) {
+  if (!janAtiva) return 0;
+  if (x) *x = janAgora.x;
+  if (y) *y = janAgora.y;
+  if (w) *w = janAgora.w;
+  if (h) *h = janAgora.h;
+  return 1;
+}
+
+void player_mini_no_guia(float x, float y, float w, float h) {
+  PlrRect de = miniDestino();
+  int eraCanto = mini && !miniGuia;
+  miniGuiaCaixa = (PlrRect){ x, y, w, h };
+  miniGuia = 1;
+  // Um PiP de canto que vira preview do guia desliza do canto ate o preview.
+  if (eraCanto && comVideo) janelaAnimar(de, miniDestino());
+}
+int  player_mini_no_guia_ativo(void) { return mini && miniGuia; }
+
+void player_minimizar_para_guia(float x, float y, float w, float h) {
+  PlrRect de;
+  if (!player_minimizavel()) { player_encerrar(); return; }
+  de = telaCheia();
+  miniGuiaCaixa = (PlrRect){ x, y, w, h };
+  miniGuia = 1;
+  mini = 1; pediuSair = 0; visivel = 0; aberto = 0; saindo = 0;
+  avisarCascaAberto(0);
+  pausao_fechar(); episodios_fechar(); posplay_fechar();
+  janelaAnimar(de, miniDestino());
+}
+
 void player_restaurar(void) {
   if (!mini) return;
+  if (miniGuia && comVideo) {
+    // Do preview do guia para a tela cheia, crescendo, com o MESMO fluxo: nada
+    // de video_tocar, nada de busca de fonte.
+    PlrRect de = miniDestino();
+    miniGuia = 0;
+    mini = 0; aberto = 1; saindo = 0; entrada = 0.0f;
+    visivel = 1; soBarra = 0; ultimoInput = SDL_GetTicks();
+    avisarCascaAberto(1);
+    janelaAnimar(de, telaCheia());
+    return;
+  }
+  miniGuia = 0;
   mini = 0; aberto = 1; saindo = 0; entrada = 0.0f;
   visivel = 1; soBarra = 0; ultimoInput = SDL_GetTicks();
   avisarCascaAberto(1);
@@ -1254,7 +1354,7 @@ void player_restaurar(void) {
 
 void player_fechar_mini(void) {
   if (!mini) return;
-  mini = 0;
+  mini = 0; miniGuia = 0; janAtiva = 0;
   // comVideo pode ja ser 0 (zap em transito: a fonte nova nao chegou) e o
   // stream velho continuaria no ar — parar e seguro mesmo sem pipeline ativo.
   video_parar();
@@ -1274,11 +1374,14 @@ void player_mini_desenhar(Uint32 agora) {
   (void)agora;
   if (!mini) { lx = -1.0f; return; }
   r = miniDestino();
+  if (janAtiva) { lx = r.x; ly = r.y; lw = r.w; lh = r.h; }
   if (r.x != lx || r.y != ly || r.w != lw || r.h != lh) {
     video_janela((int)(r.x + 0.5f), (int)(r.y + 0.5f),
                  (int)(r.w + 0.5f), (int)(r.h + 0.5f));
     lx = r.x; ly = r.y; lw = r.w; lh = r.h;
   }
+  // No guia quem desenha e o guia (furo no preview, selo, bordas).
+  if (miniGuia) return;
   f = (GfxRect){ r.x, r.y, r.w, r.h };
   corFocoPlayer(&fr, &fg, &fb);
   // Furo com o MESMO raio do anel: sem ele o plano de video e retangular e
@@ -1742,6 +1845,7 @@ void player_atualizar(float dt, Uint32 agora) {
              i18n("Esta TV não toca o áudio desta fonte. Troque a fonte ou o áudio."));
     toastAte = agora + 6000;
   }
+  janelaPasso(agora);
   if (!aberto) return;
 
   entrada = anim_mola(entrada, saindo ? 0.0f : 1.0f, dt, NV_MOLA_TELA);
@@ -2193,9 +2297,17 @@ void player_desenhar(Uint32 agora) {
     // Fora do furo fica PRETO, e nao a arte-chave: e o que a TV mostra ao lado
     // do plano de video, e pintar outra coisa ali criaria uma borda que nao
     // existe no aparelho.
-    if (furo.w < NV_TELA_W - 0.5f || furo.h < NV_TELA_H - 0.5f)
-      gfx_cor(tela, 0.0f, 0, 0, 0, 1.0f);
-    if (furo.w > 0.0f && furo.h > 0.0f) gfx_furo(furo);
+    // CRESCENDO DO PREVIEW DO GUIA: o furo segue o retangulo do degrau, com
+    // canto arredondado, e fora dele NAO ha preto — o guia continua a vista
+    // em volta ate o video tomar a tela.
+    if (janAtiva) {
+      GfxRect fa = { janAgora.x, janAgora.y, janAgora.w, janAgora.h };
+      gfx_furo_raio(fa, (16.0f * (1.0f - janT)) / (fa.h > 1.0f ? fa.h : 1.0f));
+    } else {
+      if (furo.w < NV_TELA_W - 0.5f || furo.h < NV_TELA_H - 0.5f)
+        gfx_cor(tela, 0.0f, 0, 0, 0, 1.0f);
+      if (furo.w > 0.0f && furo.h > 0.0f) gfx_furo(furo);
+    }
   } else {
     // CANAL NAO TEM BACKDROP, TEM LOGO. O addon de canais manda a MESMA imagem
     // em poster/background, e ela e a marca do canal — um PNG pequeno, com
