@@ -268,6 +268,8 @@ def run_https_server(host, port, certfile, keyfile, app_url, server_ip):
     
     server = HTTPServer((host, port), InstallPageHandler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    if hasattr(ssl, "TLSVersion"):
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(certfile, keyfile)
     server.socket = context.wrap_socket(server.socket, server_side=True)
     
