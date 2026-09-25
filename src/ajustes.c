@@ -1026,10 +1026,16 @@ static int secAtual = 0;
 // abre na navegacao lateral): a primeira coisa que a pessoa ve e o mapa das
 // nove categorias, e nao a quinta linha de uma delas.
 static int focoIndice = 1;
-// "Sair da conta" pede o OK DUAS vezes: o primeiro arma, qualquer outra tecla
-// desarma. Apaga sessao, addons e progresso desta TV — um toque errado de OK
-// no fim da lista custava um novo login por QR.
+// ACOES QUE APAGAM pedem o OK DUAS vezes: o primeiro arma, qualquer outra
+// tecla desarma. "Sair da conta" apaga sessao, addons e progresso desta TV (um
+// OK errado custava um novo login por QR); remover o portal Stalker ou o
+// Xtream apaga uma credencial que foi digitada letra a letra no D-pad.
+// `sairArmado` guarda QUAL linha esta armada (0 = nenhuma; nenhuma das tres
+// e a opcao 0 do enum).
 static int sairArmado;
+static int pedeConfirmacao(int op) {
+  return op == AJ_SAIR || op == AJ_STALKER_LIMPAR || op == AJ_XTREAM_LIMPAR;
+}
 
 // --- folha "Ordenar e ativar fileiras" --------------------------------------
 // Modal dentro desta tela, e nao uma tela nova: quem troca de tela e o app.c e
@@ -1983,7 +1989,9 @@ static const char *textoLeitura(int op) {
   }
   // Armada pelo primeiro OK, a linha diz o que o segundo faz. Em repouso nao
   // diz nada: o chevron ja e o "OK faz alguma coisa aqui".
-  if (op == AJ_SAIR) return sairArmado ? i18n("OK de novo para sair") : "";
+  if (op == AJ_SAIR) return sairArmado == op ? i18n("OK de novo para sair") : "";
+  if (op == AJ_STALKER_LIMPAR || op == AJ_XTREAM_LIMPAR)
+    return sairArmado == op ? i18n("OK de novo para remover") : "";
   if (op == AJ_MDB_CHAVE) {
     // A chave chega pela CONTA (sync.c -> extras_definir_chave) ou pelo
     // arquivo art/mdblist.txt. Mostra so o estado, nunca os caracteres — a
@@ -2300,6 +2308,8 @@ static const char *efeitoOpcao(int op) {
       return "Se um título já estiver aberto, a busca de legendas é refeita um instante depois.";
     case AJ_PROF:
       return "É o ajuste mais caro desta tela para a TV desenhar. Desligue se a rolagem engasgar.";
+    case AJ_STALKER_LIMPAR: case AJ_XTREAM_LIMPAR:
+      return "Pede o OK duas vezes. Para voltar a usar é preciso digitar tudo de novo.";
     case AJ_SAIR:
       return "Pede o OK duas vezes. Para voltar é preciso entrar de novo pelo QR.";
     case AJ_SALVOS_DEST:
@@ -2867,6 +2877,9 @@ void ajustes_evento(const SDL_Event *e) {
                         (!mac && stalker_configurado()) ? stalker_portal_curto() : NULL);
       return;
     }
+    // O primeiro OK so arma (ver pedeConfirmacao); o segundo age.
+    if (pedeConfirmacao(focoOp) && sairArmado != focoOp) { sairArmado = focoOp; return; }
+    sairArmado = 0;
     if (focoOp == AJ_STALKER_LIMPAR) { stalker_esquecer(); return; }
     if (focoOp == AJ_XTREAM_SERVIDOR || focoOp == AJ_XTREAM_USUARIO || focoOp == AJ_XTREAM_SENHA) {
       int srv = focoOp == AJ_XTREAM_SERVIDOR, sen = focoOp == AJ_XTREAM_SENHA;
@@ -2894,12 +2907,9 @@ void ajustes_evento(const SDL_Event *e) {
     if (focoOp == AJ_TRAKT) { traktauth_comecar(); return; }
     if (focoOp == AJ_SIMKL) { simklauth_comecar(); return; }
     if (focoOp == AJ_SAIR) {
-      // Sair apaga a sessao do disco. A confirmacao e o SEGUNDO OK, sem modal:
-      // o primeiro arma e a linha passa a dizer o que o proximo faz; qualquer
-      // movimento desarma (focar). Era sem confirmacao, e a linha ficava entre
-      // o Simkl e a versao — um OK no lugar errado custava um login por QR.
-      if (!sairArmado) { sairArmado = 1; return; }
-      sairArmado = 0;
+      // Sair apaga a sessao do disco. Chega aqui so no SEGUNDO OK (ver
+      // pedeConfirmacao, acima): o primeiro arma e a linha diz o que o
+      // proximo faz; qualquer movimento desarma (focar).
       sessao_sair();
       traktauth_esquecer();
       simklauth_esquecer();
@@ -3166,8 +3176,10 @@ static void desenhaLinha(int item, float y, float f, float dx, float aPag) {
               ? (float)(valor[op] - o->min) / (float)(o->max - o->min) : 0.0f;
       float bw = 200.0f, bh = 4.0f;
       float bx = valorDir - bw;
-      float by = y + AJ_LINHA_H - 17.0f;
-      vy -= 8.0f;
+      // O valor e o chevron ficam no centro da linha, na altura do rotulo; a
+      // barra desce para o respiro de baixo em vez de empurrar o valor para
+      // cima (ele subia 8 px e ficava fora da linha de leitura do rotulo).
+      float by = y + AJ_LINHA_H - 12.0f;
       GfxRect trilho = { bx, by, bw, bh };
       GfxRect cheio  = { bx, by, bw * anim_clamp(t, 0.0f, 1.0f), bh };
       // Sobre o preenchimento claro do foco a barra tem de ser escura.
@@ -3193,8 +3205,6 @@ static void desenhaLinha(int item, float y, float f, float dx, float aPag) {
                          y + (AJ_LINHA_H - esq.h) * 0.5f, aTexto * f);
       txt_desenhar_alpha(val, vd - val.w, vy, aTexto);
     } else {
-      // Na linha numerica o valor sobe 8 px para dar lugar a barra; o chevron
-      // sobe junto, para os dois continuarem na mesma linha de leitura.
       if (chevron)
         txt_desenhar_alpha(chv, xDir - chv.w,
                            vy + (val.h - chv.h) * 0.5f - 2.0f, aTexto);
@@ -3381,9 +3391,13 @@ static void desenhaIndice(void) {
     } else {
       gfx_cor(r, raio, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B,
               atual ? 0.60f : 0.26f);
+      // 4 x 28, centrado na altura do rotulo, dentro do respiro esquerdo do
+      // cartao (o icone comeca em +20). O raio do shader e fracao da ALTURA:
+      // 0,5 aqui virava um raio de 14 px num traco de 4 e o SDF o reduzia a
+      // uma lasca — 2/28 da as pontas arredondadas de 2 px.
       if (atual)
-        gfx_cor((GfxRect){ r.x + 6.0f, r.y + (r.h - 30.0f) * 0.5f, 4.0f, 30.0f },
-                0.5f, ar, ag, ab, 1.0f);
+        gfx_cor((GfxRect){ r.x + 8.0f, r.y + (r.h - 28.0f) * 0.5f, 4.0f, 28.0f },
+                2.0f / 28.0f, ar, ag, ab, 1.0f);
     }
     // O ICONE E A ANCORA da varredura de olho: a 3 m o nome da categoria e
     // texto pequeno, e o simbolo e o que se reconhece antes de ler.
@@ -4255,6 +4269,9 @@ void ajustes_desenhar(Uint32 agora) {
       const char *dSair[] = { i18n("↑ ↓   Navegar"),
                               i18n("OK   Sair da conta"),
                               i18n("← ou Voltar   Categorias") };
+      const char *dRem[] = { i18n("↑ ↓   Navegar"),
+                             i18n("OK   Remover"),
+                             i18n("← ou Voltar   Categorias") };
       // Dentro de um grupo o Voltar sobe para o cabecalho do grupo, e a dica
       // tem de dizer isso — senao a pessoa espera o indice e cai no grupo.
       const char *dentro = i18n("Voltar   Fechar o grupo");
@@ -4262,7 +4279,8 @@ void ajustes_desenhar(Uint32 agora) {
       const char *const *d = focoIndice ? dIdx
                            : noGrupo ? dGrp
                            : emEdicao ? dEdi
-                           : (focoOp == AJ_SAIR && sairArmado) ? dSair
+                           : (focoOp == AJ_SAIR && sairArmado == focoOp) ? dSair
+                           : (pedeConfirmacao(focoOp) && sairArmado == focoOp) ? dRem
                            : OPCOES[focoOp].tipo == OP_ACAO ? dAcao
                            : ehInterruptor(focoOp) ? dTog : dVal;
       memcpy(d3, d, sizeof d3);

@@ -239,6 +239,15 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-rosa-indice.bmp", saida);
   captura(nome, w);
 
+  // REMOVER O PORTAL tambem pede dois OK: Conteudo > Remover o portal Stalker,
+  // armado com um OK. A captura para no armado.
+  tecla(SDLK_DOWN);                            // Conteudo
+  tecla(SDLK_RETURN);
+  for (i = 0; i < 3; i++) tecla(SDLK_DOWN);    // Addons, portal, MAC, remover
+  tecla(SDLK_RETURN);
+  snprintf(nome, sizeof nome, "%s-remover-armado.bmp", saida);
+  captura(nome, w);
+
   tex_encerrar();
   txt_encerrar();
   gfx_encerrar();
