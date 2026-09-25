@@ -54,6 +54,13 @@ int mkv_faixas(const char *url, MkvFaixa *saida, int max);
 int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
                       MkvCap *caps, int maxCaps, int *nCaps);
 
+// A MESMA leitura sobre um trecho que ja esta na memoria (o inicio do arquivo
+// que a pre-busca do mkvass leu antes do video, #92 v1.4.7). Sem rede. Devolve
+// 0 quando o trecho nao traz Tracks INTEIRO — ai quem chama vai a rede. Os
+// capitulos so vem se couberem no trecho.
+int mkv_faixas_do_trecho(const unsigned char *buf, long n, MkvFaixa *saida, int max,
+                         MkvCap *caps, int maxCaps, int *nCaps);
+
 // Segundo do capitulo que se IDENTIFICA como creditos pelo nome, ou 0. Nao
 // chuta pela posicao: quem sabe a duracao do filme e quem chama, e sem ela
 // "ultimo capitulo" nao distingue creditos de cena final.

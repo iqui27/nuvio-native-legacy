@@ -213,11 +213,17 @@ static int lerCapitulos(const unsigned char *p, long n, MkvCap *saida, int max) 
 // Anda pela arvore ate achar Tracks. Entra em Segment (que e um contentor
 // gigante) e PULA o resto — sem o pulo a busca varreria byte a byte e casaria
 // com qualquer coincidencia dentro dos dados de video.
+// 1 quando a ultima acharTracks achou Tracks CORTADO pelo fim do trecho (lista
+// incompleta). So mkv_faixas_do_trecho olha: ali o trecho e o da pre-busca, e
+// lista incompleta manda a sonda para a rede como antes.
+static int tracksCortado;
+
 static int acharTracks(const unsigned char *p, long n, MkvFaixa *saida, int max,
                        MkvCap *caps, int maxCaps, int *nCaps) {
   long o = 0;
   int nFaixas = 0;
   if (nCaps) *nCaps = 0;
+  tracksCortado = 0;
   while (o < n) {
     int ui = 0, ut = 0;
     unsigned long id = lerId(p + o, n - o, &ui);
@@ -240,6 +246,7 @@ static int acharTracks(const unsigned char *p, long n, MkvFaixa *saida, int max,
       // ordinal (mkv_casar_legendas) vai dar "nenhum" — dizer isso no log e o
       // que separa "arquivo esquisito" de "trecho curto" no #92.
       if (tam > disp) {
+        tracksCortado = 1;
         printf("[mkv] Tracks tem %ld bytes e o trecho baixado acaba em %ld: %d faixa(s) lidas, lista pode estar incompleta\n",
                tam, disp, nFaixas);
         fflush(stdout);
@@ -314,6 +321,17 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
   printf("[mkv] %d faixas e %d capitulos lidos do cabecalho (%ld bytes)\n",
          achou, (nCaps && caps) ? *nCaps : 0, n);
   fflush(stdout);
+  return achou;
+}
+
+int mkv_faixas_do_trecho(const unsigned char *buf, long n, MkvFaixa *saida, int max,
+                         MkvCap *caps, int maxCaps, int *nCaps) {
+  int achou;
+  if (nCaps) *nCaps = 0;
+  if (!buf || n < 64 || !saida || max < 1 || buf[0] != 0x1A || buf[1] != 0x45 ||
+      buf[2] != 0xDF || buf[3] != 0xA3) return 0;
+  achou = acharTracks(buf, n, saida, max, caps, maxCaps, nCaps);
+  if (tracksCortado) return 0;
   return achou;
 }
 

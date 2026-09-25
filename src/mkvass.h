@@ -56,8 +56,10 @@ enum {
   MKVASS_NOGO_SEM_INDICE,  // sem Cues, ou sem CuePoint da faixa de legenda
   MKVASS_NOGO_SEM_REL,     // CuePoints existem mas sem CueRelativePosition
   MKVASS_NOGO_REDE,        // Range falhou repetidamente (PASSAGEIRO: timeout, 5xx, 429, 403 com varias conexoes)
-  MKVASS_NOGO_HTTP         // o servidor RECUSOU de vez (404, 410, 401, 400, 416 no byte 0,
+  MKVASS_NOGO_HTTP,        // o servidor RECUSOU de vez (404, 410, 401, 400, 416 no byte 0,
                            // 403 com uma conexao so) — ver mkvass_ultima_falha
+  MKVASS_NOGO_RESTO        // o servidor recusou o RESTO de um Range cortado (0 bytes, #92
+                           // v1.4.7): PASSAGEIRO, mas com recuo longo (20, 30, 45, 60 s)
 };
 
 // Comeca a colher a faixa `numeroFaixa` (TrackNumber do Matroska, o mesmo
@@ -94,6 +96,8 @@ void mkvass_retomar_segurando(void);
 //   PASSAGEIRA (rede, timeout, 5xx, freio do CDN, Range recusado uma vez):
 //     2, 5, 15, 30 s e depois 60 s, SEM LIMITE de tentativas (#92: tres falhas
 //     seguidas devolviam a faixa a TV para sempre, com "falha de rede").
+//   RESTO RECUSADO (MKVASS_NOGO_RESTO): 20, 30, 45 e depois 60 s. O servidor
+//     que recusou continuar um Range cortado recusa de novo 2 s depois.
 //   DEFINITIVA (nao e MKV, codec nao ASS, sem indice, Range recusado de novo,
 //     recusa HTTP definitiva): 0.
 // Quem chama (faixas.c) mantem o overlay do app nas primeiras
@@ -102,6 +106,45 @@ void mkvass_retomar_segurando(void);
 // volta a entregar, a faixa volta ao overlay.
 #define MKVASS_TENTATIVAS_OVERLAY 2
 long mkvass_recuo_ms(int estado, int falhas, int recusasRange);
+
+// PRE-BUSCA ANTES DO VIDEO (#92, v1.4.7, webOS 25 + Real-Debrid). No registro
+// do relato, todo Range do mkvass feito COM O VIDEO TOCANDO era cortado (77465
+// e 11929 bytes, sempre os mesmos) e o pedido do resto voltava com zero bytes;
+// o video, do mesmo arquivo, tocava. Uma das hipoteses (nao provada) e o CDN
+// limitar conexoes ao mesmo arquivo enquanto o pipeline segura uma. Entao o
+// que a legenda precisa para comecar — cabecalho, Tracks, fontes anexadas,
+// Cues e os blocos dos primeiros minutos — e lido ANTES de a URL ir ao
+// pipeline, com teto de MKVASS_PREBUSCA_MS; vencido o teto o video comeca com
+// o que chegou e o fio segue em segundo plano, como sempre.
+//
+// `escolher` recebe os idiomas das legendas do arquivo NA ORDEM DAS TrackEntry
+// (a mesma do ordinal) e devolve o ordinal a colher, ou -1. Se a escolhida nao
+// for ASS/SSA, ou nada casar, o fio termina depois do cabecalho (um Range).
+// `fracInicio` (0..1) e onde o player vai retomar, em fracao da duracao: a
+// janela pre-buscada comeca ali (a duracao vem do Info do proprio arquivo).
+//
+// O fio NAO ENTREGA ao overlay enquanto ninguem o adota: quando faixas.c
+// chama mkvass_iniciar_ordinal com a MESMA url e o MESMO ordinal, o fio vivo e
+// ADOTADO — nada e pedido de novo — e a primeira entrega sai na hora. Faixa
+// diferente, mkvass_parar ou outra url encerram a pre-busca.
+// Devolve 1 se a pre-busca comecou.
+#ifndef MKVASS_PREBUSCA_MS
+#define MKVASS_PREBUSCA_MS 4000
+#endif
+typedef int (*MkvassEscolher)(const char *const *idiomas, int n);
+int  mkvass_prebuscar(const char *url, MkvassEscolher escolher, double fracInicio);
+// 0 = nenhuma pre-busca; 1 = correndo; 2 = acabou (pronta, desistiu ou nao
+// havia faixa ASS a colher). O player segura o video ate != 1 ou o teto.
+int  mkvass_prebusca_fase(void);
+// Copia do INICIO do arquivo que a pre-busca leu (o mesmo trecho em que a
+// sonda do cabecalho procura Tracks), para a sonda de video.c nao pedir de
+// novo pela rede com o video tocando. 1 se havia; *buf e de quem chama.
+// Com buf ou n NULL so responde se ha, sem copiar.
+int  mkvass_cabecalho(const char *url, unsigned char **buf, long *n);
+// O pipeline de video esta com a URL aberta? Diagnostico do #92: toda falha
+// de Range diz se aconteceu "com video aberto" ou "antes do video", para o
+// proximo registro separar "o CDN recusa enquanto o video toca" do resto.
+void mkvass_video_aberto(int aberto);
 
 // A ultima falha de Range da colheita atual: codigo HTTP (0 = sem resposta) e
 // da libcurl (28 = prazo; 0 no Tizen). Para o log e o aviso da queda.

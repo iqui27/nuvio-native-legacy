@@ -81,6 +81,12 @@ char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
 // tambem o candidato a derrubar conexao a mais: o mkvass passa a uma so.
 long rede_corte_host(const char *url);
 
+// 1 quando o ULTIMO rede_baixar_trecho_st DESTE FIO falhou porque um pedaco
+// seguinte (o resto, depois de um corte ou de um pedaco do teto) voltou com
+// zero bytes e sem estourar o prazo: o servidor recusou continuar (#92, v1.4.7:
+// o Real-Debrid, com o video tocando). Ler logo depois da chamada, no mesmo fio.
+int rede_resto_recusado(void);
+
 // Teto de bytes da transferencia corrente (0 = sem teto). E interno ao modulo;
 // esta exposto so porque rede_baixar_trecho o usa. Nao mexer de fora.
 #if defined(__GNUC__)

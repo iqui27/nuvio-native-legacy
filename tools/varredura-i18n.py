@@ -304,6 +304,13 @@ IGNORAR = {
     # para o printf "[legenda] faixa N -> TV: motivo" — o mesmo caso dos
     # motivos do [col] acima: log em portugues de proposito, para quem manda
     # o registro na issue.
+    # #92, v1.4.7: se o VIDEO ja estava aberto quando um Range do mkvass
+    # falhou (momentoVideo, mkvass.c), e o porque do video solto na linha da
+    # pre-busca (player.c). Os dois so vao a printf de diagnostico, por um
+    # `return`/ternario que a varredura nao liga ao printf.
+    "antes do video",
+    "com video aberto",
+    "teto vencido, o resto segue em segundo plano",
     "faixa inexistente",
     "sem URL da fonte",
     "mkvass ja desistiu desta faixa nesta sessao",

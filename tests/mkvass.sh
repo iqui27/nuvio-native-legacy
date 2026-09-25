@@ -101,7 +101,7 @@ PORTA=$(awk '/porta/{print $2}' "$DIR/porta.txt")
 
 # Janela da VARREDURA em 30 s (padrao 120) para a fixture de 120 s poder
 # provar que os bytes lidos sao proporcionais a janela, nao ao arquivo.
-cc -Isrc -DMKVASS_VARRE_JANELA_SEG=30.0 tests/mkvass.c src/mkvass.c src/assrender.c src/legenda.c src/rede.c src/redeurl.c src/dados.c \
+cc -Isrc -DMKVASS_VARRE_JANELA_SEG=30.0 tests/mkvass.c src/mkvass.c src/assrender.c src/legenda.c src/rede.c src/redeurl.c src/dados.c src/mkv.c \
   -o /tmp/nuvio-mkvass-tests -O1 -g -Wall -I/opt/homebrew/include \
   -Wno-deprecated-declarations
 mkdir -p "$DIR/dados"
