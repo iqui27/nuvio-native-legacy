@@ -257,7 +257,7 @@ static void *escolherFonteCanal(void *u) {
   FonteJob *job = u;
   int e;
   e = stream_canal_primeira_viva(8);
-  job->prazo = stream_canal_classe_escolhida() == 3
+  job->prazo = (e >= 0 && !stream_canal_prazo_longo(e))
                   ? CANAL_FONTE_PRAZO_MUDA_MS : CANAL_FONTE_PRAZO_MS;
   // -1 so acontece quando TODAS responderam dizendo que nao tem segmento.
   // Ai nao ha o que tentar, mas a primeira da lista com o watchdog ainda e
@@ -2069,7 +2069,7 @@ void app_atualizar(float dt, Uint32 agora) {
         (player_carregando() && desde > CANAL_ABRE_TETO_MS) ||
         video_bufferando_ms() > CANAL_TRAVA_MS;
     if (morta) {
-      int prox = canalFonteIdx + 1;
+      int prox = stream_canal_proxima(canalFonteIdx);
       const Stream *s;
       // PORTAL STALKER: nao existe "proxima fonte" — cada canal tem uma so, e
       // o que morre nao e o canal, e o LINK, que vale minutos. Avancar o indice
@@ -2109,20 +2109,21 @@ void app_atualizar(float dt, Uint32 agora) {
       // por 12 s a 600 kbps, o watchdog declarou morta e a "proxima" era a
       // mesma url — recarregou o mesmo fluxo lento e travou de novo. Pula as
       // repetidas; a lista continua na ordem do addon.
-      while (prox < stream_n()) {
+      while (prox >= 0 && prox < stream_n()) {
         const Stream *cand = stream_item(prox), *atual = stream_item(canalFonteIdx);
         if (!cand || !atual || strcmp(cand->url, atual->url) != 0) break;
-        prox++;
+        prox = stream_canal_proxima(prox);
       }
-      s = prox < stream_n() ? stream_item(prox) : NULL;
+      s = (prox >= 0 && prox < stream_n()) ? stream_item(prox) : NULL;
       if (s) {
         printf("[guia] fonte %d nao abriu; tentando %d\n", canalFonteIdx, prox);
         marco("canal: fonte morta, proxima");
         stream_definir_atual(prox);
         canalFonteIdx = prox; canalFonteDesde = SDL_GetTicks();
-        // A lista ja se mostrou ruim uma vez: as seguintes entram com o prazo
-        // curto. Uma fonte boa abre bem antes dele de qualquer jeito.
-        canalFontePrazo = CANAL_FONTE_PRAZO_MUDA_MS;
+        // Prazo pela classe da PROXIMA, nao por "a lista ja falhou uma vez":
+        // com todas mudas o curto matava a 4K que abre em 11,8 s (25/09).
+        canalFontePrazo = stream_canal_prazo_longo(prox)
+                            ? CANAL_FONTE_PRAZO_MS : CANAL_FONTE_PRAZO_MUDA_MS;
         player_definir_fonte(s->url);
       } else {
         canalFonteIdx = -1;
