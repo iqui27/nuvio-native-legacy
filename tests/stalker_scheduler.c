@@ -160,6 +160,8 @@ int stream_primeira_boa(int tentativas) {
 
 int stream_canal_primeira_viva(int tentativas) { (void)tentativas; return -1; }
 int stream_canal_classe_escolhida(void) { return 0; }
+int stream_canal_proxima(int a) { return a + 1; }
+int stream_canal_prazo_longo(int i) { (void)i; return 1; }
 int stream_automatico(void) { return -1; }
 
 void stream_definir_lista(const Stream *nova, int n) {

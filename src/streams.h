@@ -177,6 +177,15 @@ int  stream_canal_primeira_viva(int tentativas);
 // Serve para o chamador dar prazo menor a quem ja provou estar ruim.
 int  stream_canal_classe_escolhida(void);
 
+// A proxima fonte a tentar depois de `atual`, na fila que a sonda montou
+// (viva, incerta, muda, morta; teto antes de acima dele). -1 = acabou. Sem
+// fila valida para a lista atual, a ordem do addon (atual + 1).
+int  stream_canal_proxima(int atual);
+// 1 quando a fonte `idx` merece o prazo cheio de abertura: viva, incerta, ou
+// sonda que nao achou nenhuma viva (nao informou nada). 0 = muda/morta numa
+// lista em que outras responderam, prazo curto.
+int  stream_canal_prazo_longo(int idx);
+
 // --- folha de fontes (a lista que sobe por cima do player/detalhe) ---
 void stream_folha_abrir(void);
 int  stream_folha_aberta(void);
