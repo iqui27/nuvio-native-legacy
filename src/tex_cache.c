@@ -180,6 +180,16 @@ typedef struct {
   long nBruto;
   int varianteCache;
   char urlCache[512];
+  // OS 4 PRIMEIROS BYTES do que a rede entregou (#141), e se ja se sabe.
+  // Quem pergunta e o cartaz de colecao: "a capa e um GIF?" (para animar a
+  // capa quando a conta nao mandou focusGifUrl) e "o GIF de foco veio GIF
+  // mesmo?". No Tizen so GIF vai a arquivo — o resto vive em `bruto` e some
+  // no decode —, entao sem guardar isto aqui nao ha arquivo onde conferir.
+  unsigned char magica[4];
+  int temMagica;
+  // tex_arquivo ja pediu este GIF DE NOVO uma vez porque o arquivo sumiu do
+  // disco (poda). Uma vez por item: e a guarda contra laco de download.
+  int rebaixouGif;
 } Item;
 
 #define NV_TEX_FIOS 2
@@ -1800,6 +1810,28 @@ static int threadRede(void *arg) {
       continue;
       }
     }
+    // A MAGICA do que chegou (ver Item.magica). Dos bytes quando vieram para a
+    // memoria; do arquivo quando o que chegou foi arquivo (GIF, e no LG o
+    // acerto de disco). Lido FORA da trava: e um fopen.
+    { unsigned char mag[4] = {0, 0, 0, 0};
+      int temArq = 0;
+      FILE *g;
+      SDL_LockMutex(mtx);
+      temArq = !(itens[idx].bruto && itens[idx].nBruto >= 4);
+      SDL_UnlockMutex(mtx);
+      if (temArq && (g = fopen(local, "rb")) != NULL) {
+        temArq = fread(mag, 1, 4, g) == 4 ? 2 : 0;
+        fclose(g);
+      }
+      SDL_LockMutex(mtx);
+      if (itens[idx].estado == PENDENTE && !pedidoObsoleto(&itens[idx])) {
+        if (itens[idx].bruto && itens[idx].nBruto >= 4) {
+          memcpy(itens[idx].magica, itens[idx].bruto, 4); itens[idx].temMagica = 1;
+        } else if (temArq == 2) {
+          memcpy(itens[idx].magica, mag, 4); itens[idx].temMagica = 1;
+        }
+      }
+      SDL_UnlockMutex(mtx); }
     SDL_LockMutex(mtx);
     if (itens[idx].estado != PENDENTE || pedidoObsoleto(&itens[idx])) {
       if (itens[idx].estado == PENDENTE) desistir(idx);
@@ -3131,10 +3163,48 @@ const char *tex_arquivo(const char *url) {
   if (f) { fseek(f, 0, SEEK_END); n = ftell(f); fclose(f); }
   // Mesmo piso de garantirLocal: abaixo disso e pagina de erro, nao arquivo.
   if (n > 512) return local;
+  // O ARQUIVO SUMIU, MAS ERA GIF (#141): o "limite conhecido" da nota acima.
+  // A poda (podarCacheDisco) apaga o arquivo e o item continua PRONTO com a
+  // textura de um quadro — o pedido la embaixo so encostaria no LRU, e o
+  // cartaz ficaria parado para sempre. Pede o arquivo de novo UMA vez por
+  // item (rebaixouGif): o que acabou de chegar e o mais novo da pasta, e a
+  // poda apaga do mais velho, entao ele fica. A textura antiga segue na tela
+  // durante o download (a mesma regra da promocao em tex_obter_limite).
+  if (mtx) {
+    unsigned long h = hashCaminho(url);
+    int i;
+    BUSCA_MEDIDA(i, url, h);
+    if (i >= 0 && itens[i].estado == PRONTO && itens[i].temMagica &&
+        !memcmp(itens[i].magica, "GIF8", 4) && !itens[i].rebaixouGif &&
+        !itens[i].naFilaDec && !itens[i].localDireto) {
+      int prox = (filaFim + 1) % MAX_FILA;
+      if (prox != filaIni) {
+        itens[i].rebaixouGif = 1;
+        itens[i].estado = PENDENTE;
+        fila[filaFim] = i; filaFim = prox;
+        itens[i].filaRedeEm = SDL_GetTicks();
+        acordarRede();
+        printf("[tex] GIF saiu do cache de disco (poda): pedindo o arquivo de novo, uma vez\n");
+        fflush(stdout);
+      }
+    }
+    SDL_UnlockMutex(mtx);
+  }
   // 128 e o teto MINIMO que tex_obter_limite aceita pelo caminho normal; o que
   // interessa e o efeito colateral, que e o arquivo no disco.
   tex_obter_limite(url, 128, 0, 0);
   return NULL;
+}
+
+int tex_magica(const char *caminho, unsigned char magica[4]) {
+  int tem = 0, i;
+  unsigned long h;
+  if (!caminho || !*caminho || !mtx) return 0;
+  h = hashCaminho(caminho);
+  BUSCA_MEDIDA(i, caminho, h);
+  if (i >= 0 && itens[i].temMagica) { memcpy(magica, itens[i].magica, 4); tem = 1; }
+  SDL_UnlockMutex(mtx);
+  return tem;
 }
 
 int tex_falhou(const char *caminho) {
