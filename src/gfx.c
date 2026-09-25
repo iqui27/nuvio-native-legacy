@@ -105,7 +105,44 @@ static const char *FS_CABECA =
   "uniform vec3  uReg1;\n"
   "uniform vec3  uReg2;\n"
   "uniform vec3  uReg3;\n"
-  "uniform float uVaza;\n";
+  "uniform float uVaza;\n"
+  // DITHER DOS DEGRADES (25/09/2026, foto do dono: "o gradiente fica duro").
+  //
+  // MEDIDO na captura do framebuffer da C9 (Mali-G71, R8G8B8A8): a luz do
+  // canto da gaveta de Categorias sobe de (18,18,20) a (23,28,33) em 43 faixas
+  // de 1/255 de ~10 px cada; a luz do painel de previa, (20,20,22)->(21,21,24)
+  // em faixas de ate 171 px. O degrau e SEMPRE 1/255 — nunca 2 dentro de uma
+  // rampa —, entao nao e precisao do shader nem superficie de 16 bits: e o
+  // 8 bits do framebuffer num degrade escuro e de pouco contraste, que o OLED
+  // mostra como contorno. Remedio: ruido de meio degrau antes de quantizar.
+  //
+  // O ruido entra NA COR, dividido pelo alfa. Com o blend
+  // SRC_ALPHA/ONE_MINUS_SRC_ALPHA o resultado e c*a + dst*(1-a): somar n/a em
+  // c desloca o pixel final em exatamente n, sem saber o destino. Ruido no
+  // alfa nao serviria — o deslocamento seria n*|c-dst|, diferente por canal e
+  // quase nulo num veu sobre fundo escuro. O clamp limita o deslocamento ao
+  // fisicamente possivel ([-c*a, (1-c)*a]): num veu preto o ruido so clareia,
+  // o que ainda desfaz o contorno. Opaco (a = 1) e o ruido puro.
+  //
+  // Ruido: interleaved gradient noise (Jimenez) sobre gl_FragCoord, parado no
+  // tempo — ruido temporal cintilaria. Precisa de highp (o fract de 52,98*x
+  // em fp16 vira padrao); sem highp, Bayer 4x4, exato em fp16. Custo: ~6 ALU.
+  "#if defined(GL_FRAGMENT_PRECISION_HIGH) || !defined(GL_ES)\n"
+  "float nv_ruido(){\n"
+  "  highp float f = fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)));\n"
+  "  return fract(52.9829189 * f);\n"
+  "}\n"
+  "#else\n"
+  "float nv_bayer2(vec2 a){ a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }\n"
+  "float nv_ruido(){\n"
+  "  vec2 p = mod(gl_FragCoord.xy, 4.0);\n"
+  "  return nv_bayer2(p * 0.5) * 0.25 + nv_bayer2(p) + 0.03125;\n"
+  "}\n"
+  "#endif\n"
+  "vec4 nv_dither(vec3 c, float a){\n"
+  "  float n = (nv_ruido() - 0.5) * (1.0 / 255.0);\n"
+  "  return vec4(clamp(c + n / max(a, 0.004), 0.0, 1.0), a);\n"
+  "}\n";
 
 // SDF de retangulo arredondado, corrigido pela proporcao — sem a correcao o
 // canto de um card landscape sai oval.
@@ -177,7 +214,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // uma laje colorida. A cor vem de uCor (preto = sombra; a cor de um perfil
   // = luz ambiente em perfilsel.c). Nao havia chamador em src/ antes disso.
   "  float t = clamp(-d * 2.0, 0.0, 1.0);\n"
-  "  gl_FragColor = vec4(uCor.rgb, t * t * uFoco * uCor.a);\n"
+  "  gl_FragColor = nv_dither(uCor.rgb, t * t * uFoco * uCor.a);\n"
   "}\n",
 
   // GFX_COR — retangulo/pilula de cor solida
@@ -221,10 +258,10 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // uPar.x > 0.5 = SO AS RAMPAS, como veu com alpha: por cima do trailer que
   // toca atras do canvas no lugar da arte (trailer.h). Mesma regra do
   // GFX_DETALHE.
-  "  if (uPar.x > 0.5) { gl_FragColor = vec4(bg, clamp(ah + av - ah*av, 0.0, 1.0) * uCor.a); return; }\n"
-  "  if (uVaza > 0.5) { gl_FragColor = vec4(c, uCor.a * (1.0 - clamp(ah + av - ah*av, 0.0, 1.0))); return; }\n"
+  "  if (uPar.x > 0.5) { gl_FragColor = nv_dither(bg, clamp(ah + av - ah*av, 0.0, 1.0) * uCor.a); return; }\n"
+  "  if (uVaza > 0.5) { gl_FragColor = nv_dither(c, uCor.a * (1.0 - clamp(ah + av - ah*av, 0.0, 1.0))); return; }\n"
   "  c = mix(c, bg, clamp(ah + av - ah*av, 0.0, 1.0));\n"
-  "  gl_FragColor = vec4(c, uCor.a);\n"
+  "  gl_FragColor = nv_dither(c, uCor.a);\n"
   "}\n",
 
   // GFX_VEU — escurece a base E a esquerda, onde fica o texto sobreposto
@@ -233,7 +270,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  if (m <= 0.001) discard;\n"
   "  float gb = smoothstep(0.34, 1.0, vUv.y);\n"
   "  float ge = smoothstep(0.62, 0.0, vUv.x) * 0.78;\n"
-  "  gl_FragColor = vec4(0.0,0.0,0.0, clamp(gb+ge-gb*ge,0.0,1.0)*uCor.a*m);\n"
+  "  gl_FragColor = nv_dither(vec3(0.0), clamp(gb+ge-gb*ge,0.0,1.0)*uCor.a*m);\n"
   "}\n",
 
   // GFX_TEXTO — a forma da letra vem do ALPHA da textura, nunca do RGB
@@ -261,12 +298,12 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // dela. O fundo existe para dar cor a pagina, nao para competir com o texto.
   "  float ky = mix(0.92, 0.05, smoothstep(0.16, 0.98, vUv.y));\n"
   "  float vg = 1.0 - 0.66 * smoothstep(0.46, 0.0, min(vUv.x, 1.0 - vUv.x));\n"
-  "  gl_FragColor = vec4(cb * ky * vg, uCor.a);\n"
+  "  gl_FragColor = nv_dither(cb * ky * vg, uCor.a);\n"
   "}\n",
 
   // GFX_VEU_TOPO — degrade de cima para baixo, sob o cabecalho fixo
   "void main(){\n"
-  "  gl_FragColor = vec4(0.0,0.0,0.0, smoothstep(1.0,0.15,vUv.y)*uCor.a);\n"
+  "  gl_FragColor = nv_dither(vec3(0.0), smoothstep(1.0,0.15,vUv.y)*uCor.a);\n"
   "}\n",
 
   // GFX_SNAP — imagem ja pronta: sem SDF, sem efeito, so o quad.
@@ -336,10 +373,10 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // pagina desenha por cima do trailer (trailer.h): o video e um plano ATRAS
   // do canvas, visto por um furo, e o texto do titulo precisa do mesmo
   // escuro a esquerda que teria sobre a arte. Mesmo perfil, mesma uFoco.
-  "  if (uPar.x > 0.5) { gl_FragColor = vec4(bg, clamp(a,0.0,1.0) * uFoco * uCor.a); return; }\n"
-  "  if (uVaza > 0.5) { gl_FragColor = vec4(c, uCor.a * (1.0 - clamp(a,0.0,1.0) * uFoco)); return; }\n"
+  "  if (uPar.x > 0.5) { gl_FragColor = nv_dither(bg, clamp(a,0.0,1.0) * uFoco * uCor.a); return; }\n"
+  "  if (uVaza > 0.5) { gl_FragColor = nv_dither(c, uCor.a * (1.0 - clamp(a,0.0,1.0) * uFoco)); return; }\n"
   "  c = mix(c, bg, clamp(a,0.0,1.0) * uFoco);\n"
-  "  gl_FragColor = vec4(c, uCor.a);\n"
+  "  gl_FragColor = nv_dither(c, uCor.a);\n"
   "}\n",
 
   // GFX_HERO_CHEIO — hero ocupando a tela inteira.
@@ -368,10 +405,10 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "                 - clamp((t-0.46)/0.30,0.0,1.0)*0.38\n"
   "                 - clamp((t-0.76)/0.24,0.0,1.0)*0.42;\n"
   "  ah *= step(vUv.x, 0.65);\n"
-  "  if (uPar.x > 0.5) { gl_FragColor = vec4(bg, clamp(ah + av - ah*av, 0.0, 1.0) * uCor.a); return; }\n"
-  "  if (uVaza > 0.5) { gl_FragColor = vec4(c, uCor.a * (1.0 - clamp(ah + av - ah*av, 0.0, 1.0))); return; }\n"
+  "  if (uPar.x > 0.5) { gl_FragColor = nv_dither(bg, clamp(ah + av - ah*av, 0.0, 1.0) * uCor.a); return; }\n"
+  "  if (uVaza > 0.5) { gl_FragColor = nv_dither(c, uCor.a * (1.0 - clamp(ah + av - ah*av, 0.0, 1.0))); return; }\n"
   "  c = mix(c, bg, clamp(ah + av - ah*av, 0.0, 1.0));\n"
-  "  gl_FragColor = vec4(c, uCor.a);\n"
+  "  gl_FragColor = nv_dither(c, uCor.a);\n"
   "}\n",
 
   // GFX_ANEL — contorno, cheio ou tracejado, sem miolo.
@@ -481,7 +518,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  float t = clamp(vUv.y, 0.0, 1.0);\n"
   "  float g = t * t * (3.0 - 2.0 * t);\n"
   "  g = g * g;\n"
-  "  gl_FragColor = vec4(uCor.rgb, g * uCor.a);\n"
+  "  gl_FragColor = nv_dither(uCor.rgb, g * uCor.a);\n"
   "}\n",
   // GFX_SOCIAL: broad off-centre light, quiet left side for copy.
   "void main(){\n"
@@ -491,7 +528,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  vec3 c = mix(vec3(0.105,0.065,0.095),vec3(0.40,0.14,0.18),glow);\n"
   "  c += vec3(0.065,0.028,0.020)*ribbon*glow;\n"
   "  c = mix(c,vec3(0.047,0.045,0.055),smoothstep(0.44,1.0,p.y));\n"
-  "  gl_FragColor = vec4(c,uCor.a);\n"
+  "  gl_FragColor = nv_dither(c,uCor.a);\n"
   "}\n",
 
   // GFX_AVATAR: mascara radial exata. O GFX_CARD usa o SDF de retangulo
@@ -579,7 +616,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  g = mix(g,   0.86, smoothstep(0.52, 0.82, t));\n"
   "  g = mix(g,   0.95, smoothstep(0.82, 1.00, t));\n"
   "#endif\n"
-  "  gl_FragColor = vec4(uCor.rgb, uCor.a * g * m);\n"
+  "  gl_FragColor = nv_dither(uCor.rgb, uCor.a * g * m);\n"
   "}\n",
 
   // GFX_BRILHO_TOPO — realce claro no alto, rampa por pixel, cantos do card.
@@ -593,7 +630,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  float m = smoothstep(0.006,-0.006,d);\n"
   "  if (m <= 0.001) discard;\n"
   "  float t = 1.0 - smoothstep(0.0, max(uPar.x, 0.001), vUv.y);\n"
-  "  gl_FragColor = vec4(uCor.rgb, uCor.a * t * t * m);\n"
+  "  gl_FragColor = nv_dither(uCor.rgb, uCor.a * t * t * m);\n"
   "}\n",
 
   // GFX_ARTE — a textura intacta, recortada pelos cantos. Ver a nota em gfx.h.
@@ -622,7 +659,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // deixa o falloff no mesmo formato nas TVs GLES2 sem highp.
   "  GFX_LUZ_PREC float t = clamp(1.0 - length(p) / max(uFoco, 0.001), 0.0, 1.0);\n"
   "  GFX_LUZ_PREC float suave = t * t * (3.0 - 2.0 * t);\n"
-  "  gl_FragColor = vec4(uCor.rgb, suave * suave * uCor.a * m);\n"
+  "  gl_FragColor = nv_dither(uCor.rgb, suave * suave * uCor.a * m);\n"
   "}\n",
 
   // GFX_SINO — contorno de sino pequeno e resolvido no fragmento. E usado
@@ -700,7 +737,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  float n1 = 1.0 - smoothstep(0.0, 0.95, length((q - vec2(uAspect * 0.36, 0.50)) * vec2(0.62, 1.0)));\n"
   "  float n2 = 1.0 - smoothstep(0.0, 0.70, length((q - vec2(uAspect * 0.80, 0.18)) * vec2(0.80, 1.0)));\n"
   "  vec3 base = vec3(0.018, 0.019, 0.030) + uCor.rgb * (0.20 * n1 * n1) + vec3(0.20, 0.24, 0.42) * (0.07 * n2 * n2);\n"
-  "  gl_FragColor = vec4(base + vec3(0.82, 0.86, 1.0) * (s + s2), 1.0);\n"
+  "  gl_FragColor = nv_dither(base + vec3(0.82, 0.86, 1.0) * (s + s2), 1.0);\n"
   "}\n",
 
   // GFX_COR_GRAD — o GFX_COR com as tres paradas do degrade no lugar da cor.
@@ -718,7 +755,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  if (m <= 0.001) discard;\n"
   "  float t = vUv.x * 0.78 + vUv.y * 0.22 + 0.10 * sin(uTempo * 0.7);\n"
   "  vec3 c = grad3(t) + (1.0 - vUv.y) * 0.06;\n"
-  "  gl_FragColor = vec4(c, uCor.a * m);\n"
+  "  gl_FragColor = nv_dither(c, uCor.a * m);\n"
   "}\n",
 
   // GFX_ANEL_GRAD — o anel do GFX_ANEL com o degrade GIRANDO em volta dele:
@@ -751,15 +788,11 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // "pulsa", ela respira. A cor e a media PONDERADA das luzes e o alfa a soma
   // delas, no maximo 0,5 — a luz tinge, nao pinta.
   //
-  // DITHER de meio degrau de 8 bits: um degrade escuro e enorme num painel OLED
-  // mostra faixas, e o ruido de 1/255 as desfaz sem se ver. highp onde existe,
-  // pelo mesmo motivo do GFX_CEU (o hash em mediump vira listra na Mali).
+  // DITHER: o nv_dither do cabecalho. O daqui somava n/255 na cor E no alfa
+  // sem dividir pelo alfa, e com o alfa em no maximo 0,5 o pixel final andava
+  // um quarto de degrau — pouco para desfazer a faixa que a C9 mostrava.
+  // highp onde existe: a soma das quatro luzes e larga e lenta.
   "\n#ifdef GL_ES\n#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#endif\n#endif\n"
-  "float h12(vec2 c){\n"
-  "  vec3 p3 = fract(vec3(c.xyx) * 0.1031);\n"
-  "  p3 += dot(p3, p3.yzx + 33.33);\n"
-  "  return fract((p3.x + p3.y) * p3.z);\n"
-  "}\n"
   "float luz(vec2 q, vec2 c, float r){\n"
   "  float k = 1.0 - smoothstep(0.0, r, length(q - c));\n"
   "  return k * k;\n"
@@ -774,8 +807,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  float wB = luz(q, vec2( 0.45*A + 0.08*cos(b*0.6),     1.28), 0.95) * (0.85 + 0.15*sin(b*1.3+4.4));\n"
   "  float w = wE + wD + wT + wB;\n"
   "  vec3 c = (uReg0*wE + uReg1*wD + uReg2*wT + uReg3*wB) / max(w, 0.001);\n"
-  "  float n = h12(gl_FragCoord.xy) - 0.5;\n"
-  "  gl_FragColor = vec4(c + n / 255.0, min(w, 1.0) * 0.5 * uCor.a + n / 255.0);\n"
+  "  gl_FragColor = nv_dither(c, min(w, 1.0) * 0.5 * uCor.a);\n"
   "}\n",
 };
 

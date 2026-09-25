@@ -2592,47 +2592,92 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
 // barra na cor de realce; a linha em FOCO e preenchida na cor de realce com
 // texto escuro, a mesma linguagem das pilulas do menu lateral. A lista rola
 // mantendo o foco no meio. Entra deslizando da esquerda com a mola (ease-out).
+//
+// SEGUNDA FOTO DO DONO (25/09, a tarde), tres defeitos e o que mudou:
+//   - linha CORTADA NO MEIO DA LETRA em cima ("Canais Esportes" sob o titulo)
+//     e embaixo ("Canais Series 24h"): o recorte era a borda dura da lista.
+//     Agora cada linha apaga pelo proprio TOPO (em cima) e pela propria BASE
+//     (embaixo) ao chegar na borda, em G_CAT_FADE px, e chega a alfa 0 antes
+//     de tocar o recorte — nenhuma linha visivel e cortada. So apaga do lado
+//     em que ha mais lista: no inicio e no fim a lista enche a area inteira
+//     (catRol = 0 / maxY) e a primeira e a ultima linha ficam cheias.
+//   - um ARCO LARANJA no canto de cima a direita: era esta gaveta, nao a
+//     imersiva por tras — a luz de canto na cor de realce, a 10%, com o centro
+//     no canto e alcance de 0,8 da largura. O limite do circulo caia DENTRO do
+//     painel e, sem dither, o primeiro degrau de 1/255 (18->19) desenhava o
+//     contorno. Agora a luz vem de cima-esquerda, larga (alcance maior que o
+//     painel: o limite fica fora dele) e a 6%; com o dither do gfx.c a rampa
+//     sai lisa.
+//   - o canto era 28/p.w, na unidade errada: o SDF mede em fracao da ALTURA,
+//     entao saia um canto de 63 px, dentro da tela, e o fundo aparecia pela
+//     quina. Agora os cantos ficam fora da tela (borda reta) e o fio de 1,2 px
+//     a 6% do cartao de novidades marca a borda.
+#define G_CAT_FADE 60.0f
 static void desenharPainelCategorias(float a) {
   float e = catAnim, ar, ag, ab;
   float x0 = -G_CAT_W * 0.18f * (1.0f - e);   // desliza ~80 px enquanto aparece
   float ea = e * a;
+  float areaH = G_CAT_BASE - G_CAT_TOPO, maxY, acima, abaixo;
   int nl = nLinhas(), i, tf = ajustes_tinta_foco();
   if (e < 0.01f || nl < 1) return;
   ajustes_acento(&ar, &ag, &ab);
+  maxY = (float)nl * G_CAT_ROW - areaH;
+  if (maxY < 0.0f) maxY = 0.0f;
+  // Quanto de lista ha fora da area, em cima e embaixo (0..1 de uma linha):
+  // e o que liga o esmaecimento de cada borda.
+  acima  = catRol / G_CAT_ROW;          acima  = acima  < 0 ? 0 : (acima  > 1 ? 1 : acima);
+  abaixo = (maxY - catRol) / G_CAT_ROW; abaixo = abaixo < 0 ? 0 : (abaixo > 1 ? 1 : abaixo);
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.62f * ea);
-  { GfxRect p = { x0 - 40.0f, 0.0f, G_CAT_W + 40.0f, NV_TELA_H };
-    gfx_cor(p, 28.0f / p.w, 0.070f, 0.072f, 0.080f, ea);
-    gfx_luz_canto(p, 28.0f / p.w, p.w * 0.95f, -60.0f, p.w * 0.8f, ar, ag, ab, 0.10f * ea); }
+  // O painel passa 40 px das bordas de cima e de baixo: os cantos ficam fora
+  // da tela e o que se ve e uma borda reta de alto a baixo. Com o canto
+  // arredondado DENTRO da tela, o fundo aparecia pela quina.
+  { GfxRect p = { x0 - 40.0f, -40.0f, G_CAT_W + 40.0f, NV_TELA_H + 80.0f };
+    gfx_cor(p, 28.0f / p.h, 0.070f, 0.072f, 0.080f, ea);
+    gfx_luz_canto(p, 28.0f / p.h, p.w * 0.30f, -p.w * 0.25f, p.w * 1.45f, ar, ag, ab, 0.06f * ea);
+    gfx_rect(p, 0, GFX_ANEL, 0, 1.2f / p.h, 0, 28.0f / p.h, 1, 1, 1, 0.06f * ea); }
+  // Titulo, linhas e rodape na MESMA coluna de texto (x0 + 56): antes o titulo
+  // e o rodape ficavam a 48 e o texto das linhas a 56, e a borda esquerda do
+  // bloco nao fechava.
   { TxtLinha t = txt_linha(TXT_HEADLINE, i18n("Categorias"), 242, 243, 247, 255);
-    txt_desenhar_alpha(t, x0 + 48.0f, 60.0f, ea); }
+    txt_desenhar_alpha(t, x0 + 56.0f, 60.0f, ea); }
 
-  gfx_recorte(0.0f, G_CAT_TOPO - 4.0f, G_CAT_W, G_CAT_BASE - G_CAT_TOPO + 8.0f);
+  // O recorte fica G_CAT_FADE/2 alem da area: e so rede de seguranca, porque
+  // a linha que chegaria nele ja esta em alfa 0.
+  gfx_recorte(0.0f, G_CAT_TOPO - G_CAT_FADE * 0.5f, G_CAT_W,
+              areaH + G_CAT_FADE);
   for (i = 0; i < nl; i++) {
     float y = G_CAT_TOPO + (float)i * G_CAT_ROW - catRol;
     int foc = i == catFoco, atual = i == focoLin;
     GfxRect r = { x0 + 32.0f, y, G_CAT_W - 56.0f, G_CAT_ROW - 8.0f };
+    float ft, fb, la;
     char n[16];
     TxtLinha tn, tc;
-    if (y + G_CAT_ROW < G_CAT_TOPO - 4.0f || y > G_CAT_BASE) continue;
+    // Topo da linha contra a borda de cima; base da linha contra a de baixo.
+    ft = anim_suave((r.y - (G_CAT_TOPO - G_CAT_FADE * 0.5f)) / G_CAT_FADE);
+    fb = anim_suave(((G_CAT_BASE + G_CAT_FADE * 0.5f) - (r.y + r.h)) / G_CAT_FADE);
+    la = (1.0f - (1.0f - ft) * acima) * (1.0f - (1.0f - fb) * abaixo) * ea;
+    if (la < 0.01f) continue;
     snprintf(n, sizeof n, "%d", linhaN(i));
-    if (foc) gfx_cor(r, 12.0f / r.h, ar, ag, ab, ea);
-    else if (atual) gfx_cor(r, 12.0f / r.h, 1, 1, 1, 0.06f * ea);
+    if (foc) gfx_cor(r, 12.0f / r.h, ar, ag, ab, la);
+    else if (atual) gfx_cor(r, 12.0f / r.h, 1, 1, 1, 0.06f * la);
+    // A barra da secao atual: 4x22 com raio de 2 px. Com raio 0,5 (da altura)
+    // num retangulo de 4 px o SDF saia um grao oval colado na borda da linha.
     if (atual && !foc)
-      gfx_cor((GfxRect){ r.x + 8.0f, r.y + (r.h - 24.0f) * 0.5f, 4.0f, 24.0f }, 0.5f,
-              ar, ag, ab, ea);
+      gfx_cor((GfxRect){ r.x + 10.0f, r.y + (r.h - 22.0f) * 0.5f, 4.0f, 22.0f }, 2.0f / 22.0f,
+              ar, ag, ab, la);
     tc = foc ? txt_linha(TXT_DET_META2, n, tf, tf, tf, 255)
              : txt_linha(TXT_DET_META2, n, 140, 143, 152, 255);
-    txt_desenhar_alpha(tc, r.x + r.w - 16.0f - (float)tc.w, r.y + (r.h - (float)tc.h) * 0.5f, ea);
+    txt_desenhar_alpha(tc, r.x + r.w - 16.0f - (float)tc.w, r.y + (r.h - (float)tc.h) * 0.5f, la);
     { float nw = r.w - 24.0f - 16.0f - (float)tc.w - 16.0f;
       int cn = atual ? 245 : 205;
       tn = foc ? txt_linha_corta(TXT_BODY, linhaNome(i), tf, tf, tf, 255, nw)
                : txt_linha_corta(TXT_BODY, linhaNome(i), cn, cn + 1, cn + 5 > 255 ? 255 : cn + 5, 255, nw);
-      txt_desenhar_alpha(tn, r.x + 24.0f, r.y + (r.h - (float)tn.h) * 0.5f, ea); }
+      txt_desenhar_alpha(tn, r.x + 24.0f, r.y + (r.h - (float)tn.h) * 0.5f, la); }
   }
   gfx_sem_recorte();
   { TxtLinha t = txt_linha_corta(TXT_CAPTION, i18n("OK entra  ·  Voltar fecha"),
                                  128, 130, 138, 255, G_CAT_W - 96.0f);
-    txt_desenhar_alpha(t, x0 + 48.0f, NV_TELA_H - 60.0f, ea); }
+    txt_desenhar_alpha(t, x0 + 56.0f, NV_TELA_H - 60.0f, ea); }
 }
 
 // DE ONDE VEM CANAL: as duas portas, desenhadas em codigo.
