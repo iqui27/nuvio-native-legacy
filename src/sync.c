@@ -3,6 +3,7 @@
 #include "nuvem.h"
 #include "perfis.h"
 #include "agenda.h"
+#include "lembrete.h"
 #include "dados.h"
 #include "addons.h"
 #include "debrid.h"
@@ -1104,6 +1105,8 @@ void sync_esquecer_usuario(void) {
   // saiu, com o dia em que cada uma volta. Mesmo argumento dos salvos, e com o
   // agravante de a tela Agenda mostrar essa lista inteira de uma vez.
   agenda_esquecer();
+  // E os lembretes de programa do guia, pelo mesmo motivo.
+  lembrete_esquecer_todos();
   // E AS RECOMENDACOES, pela mesma razao com um agravante proprio: elas trazem
   // o NOME de quem mandou. Sem esta linha a proxima pessoa a entrar abriria a
   // aba Social com a lista de amigos de quem saiu.

@@ -21,6 +21,7 @@
 // Inclui src/guia.c: desenharCard e a lista de canais sao estaticos, e semear
 // por dentro e o unico jeito de fotografar o cartao sem addon no ar.
 #include "../src/guia.c"
+#include "guialembrete.h"
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
@@ -87,6 +88,7 @@ static void capturaTela(const char *nome, SDL_Window *win, int comCanais) {
     glClearColor(0.051f, 0.051f, 0.051f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     guia_desenhar(SDL_GetTicks());
+    glem_desenhar(SDL_GetTicks());
     if (i == 89) {
       unsigned char *pix = malloc(1920 * 1080 * 4);
       SDL_Surface *s;
@@ -274,6 +276,22 @@ int main(int argc, char **argv) {
   // (sem pipeline), entao o lugar mostra o logo — o estado "sem video".
   semearEpg();
   semearGuia();
+  // LEMBRETES: dois programas FUTUROS marcados, um na janela de agora (Novela
+  // das Nove, Globo) e um na janela adiantada (Viagem Curta, GNT) — o sino
+  // tem de aparecer nas duas celulas, e o heroi da adiantada diz "Lembrete
+  // marcado".
+  lembrete_carregar(1);
+  { int k;
+    for (k = 0; k < 2; k++) {
+      GCanal *c = k ? &canais[1] : &canais[0];
+      const char *tit = k ? "Viagem Curta" : "Novela das Nove";
+      EpgProg pp; int e = epgDo(c), j;
+      for (j = 0; e >= 0 && j < 8 && epg_proximo(e, time(NULL), j, &pp); j++)
+        if (!strcmp(pp.titulo, tit)) {
+          lembrete_alternar(c->id, c->nome, pp.titulo, c->base, pp.ini, pp.fim);
+          break;
+        }
+    } }
   aberta = 1; entrada = 1.0f; estado = G_PRONTO; heroA = 1.0f;
   previewLigado = 1; previewLido = 1;
   modoLista = 1; modoLido = 1;
@@ -304,6 +322,19 @@ int main(int argc, char **argv) {
   modoLista = 0; focoLin = 0; focoCol = 0; focoAnelOk = 0;
   snprintf(nome, sizeof nome, "%s-tela.bmp", saida);
   capturaTela(nome, w, 1);
+
+  // O CARTAO DO LEMBRETE por cima da tela (o que aparece em qualquer lugar
+  // do app quando o programa comeca), e o aviso curto de quem ja esta no
+  // canal.
+  modoLista = 1; focoLin = 0; focoCol = 0; focoAnelOk = 0;
+  glem_teste_cartao("Novela das Nove", "Globo RJ", 0);
+  snprintf(nome, sizeof nome, "%s-lembrete-cartao.bmp", saida);
+  capturaTela(nome, w, 1);
+  glem_teste_cartao("Novela das Nove", "Globo RJ", 1);
+  snprintf(nome, sizeof nome, "%s-lembrete-curto.bmp", saida);
+  capturaTela(nome, w, 1);
+  glem_teste_cartao("", "", 1); glem_passo(10.0f, SDL_GetTicks() + 999999u);
+  modoLista = 0;
 
   // A FAIXA DO MINI GUIA por cima do video em tela cheia: cinco canais com o
   // focado no meio, regua, linha agora. Aqui o "video" e o fundo liso da
