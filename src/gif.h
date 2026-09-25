@@ -146,4 +146,11 @@ GLuint gif_textura(const char *caminho, int largAlvo);
 // Solta o que estiver preso ao caminho corrente. Chamar quando o foco sai.
 void gif_parar(void);
 
+// gif_textura JA DESISTIU deste caminho (orcamento, ou o decodificador nao
+// abriu)? 1 so para o caminho preso agora. Existe para o cartaz de colecao
+// (#141) dizer no log POR QUE nao anima: sem isto "recusado" e "o primeiro
+// quadro ainda nao decodificou" sao o mesmo 0 devolvido por gif_textura.
+// Fora do Tizen, 0.
+int gif_recusou(const char *caminho);
+
 #endif

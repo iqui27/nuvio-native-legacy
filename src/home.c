@@ -35,6 +35,7 @@
 #include "colecoes.h"
 #include "addons.h"   /* addons_nome_por_id: o addon de um grupo de colecoes */
 #include "gif.h"
+#include "gifcolecao.h"
 #include "badges.h"
 #include "extras.h"
 #include "diretor.h"
@@ -2843,10 +2844,11 @@ static void alvoCard(float x, float y, float w, float h, int r, int c) {
 static void desenhaAtalhos(int r, float y) {
   float w = larguraFil(r), h = alturaFil(r);
   static int ultimo=-1;static Uint32 desde;
-  // Estado do ramo de GIF (#29), ao lado do da sequencia de JPEG porque os dois
-  // descrevem o MESMO cartaz em foco e sao zerados juntos quando ele muda.
-  //   gifAnima  -1 = ainda nao perguntei, 0 = nao e animado, 1 = e
-  static int gifAnima=-1;
+  // Estado do ramo de GIF (#29), SEPARADO do da sequencia de JPEG desde o #141:
+  // o GIF passou a poder sair da CAPA, e a troca de fonte no mesmo cartaz
+  // tambem zera a pergunta ao arquivo. Ver gifcolecao.h.
+  static GcFoco gcFoco; static int gcIniciado;
+  if (!gcIniciado) { gifcol_foco_iniciar(&gcFoco); gcIniciado = 1; }
   // Quadro da sequencia de JPEG que ja esta resolvido, para nao reconsultar
   // o cache nos ~4 quadros de tela que cabem entre dois passos de 67 ms.
   static int seqIndice=-1;static GLuint seqTex;
@@ -2880,38 +2882,72 @@ static void desenhaAtalhos(int r, float y) {
     // NA HORA da importacao —, e pasta que vem da conta nunca tem sequencia
     // nenhuma. Para todas essas, a unica animacao possivel e o proprio GIF.
     //
+    // A FONTE (#141): focusGifUrl, ou a propria CAPA quando os bytes que
+    // chegaram dela sao GIF e a conta nao mandou focusGifUrl. E, quando nao
+    // anima, UMA linha por cartaz dizendo por que (gifcol_registrar).
+    //
     // So o Tizen anima: la gif.c decodifica o GIF num fio proprio e conta o
     // tempo. No webOS gif_pode_animar e 0 e o cartaz fica na capa parada,
-    // como hoje. Ver gif.h.
-    if(gif_pode_animar()&&
-       foco.fileira==r&&foco.coluna==c&&folder->frames<1&&folder->focusGif[0] && !NV_SEM_GIF &&
-       !ajustes_animacoes_reduzidas()) {
+    // como hoje — e o arquivo nem e pedido; so o motivo vai ao log. Ver gif.h.
+    if(foco.fileira==r&&foco.coluna==c&&folder->frames<1) {
       int id=fileiras[r].folders[c];Uint32 now=SDL_GetTicks();
-      // O ARQUIVO E PEDIDO FORA DO ATRASO de 350 ms. Dentro dele, o download so
-      // comecaria depois do atraso e o primeiro quadro chegaria tarde; pedir
-      // cedo custa uma consulta ao cache, que devolve NULL enquanto nao chegou.
-      const char *arq = tex_arquivo(folder->focusGif);
-      if(ultimo!=id){
-        ultimo=id;desde=now;gifAnima=-1;
+      unsigned char magCapa[4], mag[4];
+      int temMagCapa=0, daCapa=0, temMag=0;
+      GcMotivo motivo=GC_ANIMA;
+      const char *fonte;
+      char chave[200];
+      // A magica da capa so interessa sem focusGif: e uma busca no cache.
+      if(!folder->focusGif[0]&&arte&&arte[0]) temMagCapa=tex_magica(arte,magCapa);
+      fonte=gifcol_fonte(folder->focusGif,arte,temMagCapa?magCapa:NULL,&daCapa);
+      if(gifcol_focar(&gcFoco,id,fonte,now)) {
         // gif_parar SOLTA O FIO DE DECODE do cartaz anterior; e gif_textura
         // devolve 0 ate o primeiro quadro DESTE chegar (a textura e uma so, e
         // ainda tem o ultimo quadro do outro).
         gif_parar();
       }
-      // gif_animado LE O ARQUIVO INTEIRO. Uma vez por cartaz, e nao por quadro.
-      if(gifAnima<0&&arq) gifAnima=gif_animado(arq);
-      if(arq&&gifAnima>0&&now-desde>350) {
-        // A CADA DESENHO, sem passo de 67 ms (1.4.7): o relogio e de gif.c,
-        // que so sobe as linhas que mudaram quando o quadro do GIF vence. O
-        // passo de 67 ms prendia o GIF a 15 fps, abaixo do ritmo do arquivo.
-        GLuint motion=gif_textura(arq,480);
-        if(motion){
-          tex=motion;
-          // A PROPORCAO DA CAPA NAO VALE AQUI. Abaixo o desenho usa
-          // tex_aspecto(arte), que e a da capa; o GIF do CDN pode vir em
-          // qualquer proporcao. Zero deixa o desenho usar a moldura.
-          gifDesenhando=1;
+      if(!fonte) motivo=gifcol_sem_fonte(arte,temMagCapa?magCapa:NULL);
+      else if(NV_SEM_GIF||ajustes_animacoes_reduzidas()) motivo=GC_REDUZIDAS;
+      else if(!gif_pode_animar()) motivo=GC_APARELHO;
+      else {
+        // O ARQUIVO E PEDIDO FORA DO ATRASO de 350 ms. Dentro dele, o download so
+        // comecaria depois do atraso e o primeiro quadro chegaria tarde; pedir
+        // cedo custa uma consulta ao cache, que devolve NULL enquanto nao chegou.
+        const char *arq = tex_arquivo(fonte);
+        if(!arq) {
+          // Sem arquivo: ou ainda nao chegou, ou chegou e nao e GIF (no Tizen
+          // so GIF vira arquivo), ou era GIF e a poda levou (tex_arquivo ja
+          // pediu de novo, uma vez).
+          temMag=tex_magica(fonte,mag);
+          motivo=!temMag?GC_ARQ_AINDA:(gifcol_eh_gif(mag)?GC_SUMIU:GC_FORMATO);
+        } else {
+          // gif_animado LE O ARQUIVO INTEIRO. Uma vez por cartaz, e nao por quadro.
+          if(gcFoco.anima<0) {
+            gcFoco.anima=gif_animado(arq);
+            gcFoco.motivoArq=gifcol_motivo_arquivo(arq,gcFoco.anima,gcFoco.magicaArq);
+          }
+          if(gcFoco.anima<=0) { motivo=gcFoco.motivoArq; memcpy(mag,gcFoco.magicaArq,4); temMag=1; }
+          else if(now-gcFoco.desde>350) {
+            // A CADA DESENHO, sem passo de 67 ms (1.4.7): o relogio e de gif.c,
+            // que so sobe as linhas que mudaram quando o quadro do GIF vence. O
+            // passo de 67 ms prendia o GIF a 15 fps, abaixo do ritmo do arquivo.
+            GLuint motion=gif_textura(arq,480);
+            if(motion){
+              tex=motion;
+              // A PROPORCAO DA CAPA NAO VALE AQUI. Abaixo o desenho usa
+              // tex_aspecto(arte), que e a da capa; o GIF do CDN pode vir em
+              // qualquer proporcao. Zero deixa o desenho usar a moldura.
+              gifDesenhando=1;
+            } else if(gif_recusou(arq)) motivo=GC_ORCAMENTO;
+          }
         }
+      }
+      // OS PROVISORIOS ESPERAM O PRAZO: "ainda nao chegou" aos 200 ms e so um
+      // download em andamento. Os definitivos saem na hora.
+      if(motivo!=GC_ANIMA&&
+         ((motivo!=GC_ARQ_AINDA&&motivo!=GC_CAPA_AINDA)||now-gcFoco.desde>GIFCOL_PRAZO_MS)) {
+        snprintf(chave,sizeof chave,"%s|%s",folder->groupId,folder->id);
+        gifcol_registrar(chave,folder->title,motivo,fonte?fonte:arte,fonte?daCapa:1,
+                         temMag?mag:NULL);
       }
     }
     if(foco.fileira==r&&foco.coluna==c&&folder->frames>0 && !NV_SEM_GIF &&

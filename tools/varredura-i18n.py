@@ -308,6 +308,17 @@ IGNORAR = {
     # falhou (momentoVideo, mkvass.c), e o porque do video solto na linha da
     # pre-busca (player.c). Os dois so vao a printf de diagnostico, por um
     # `return`/ternario que a varredura nao liga ao printf.
+    # Os motivos de gifcol_motivo_texto() (gifcolecao.c, #141): por que o
+    # cartaz de colecao em foco nao anima. `return "..."` que so vai ao
+    # printf "[gif] cartaz ... nao anima: motivo" — log para a issue.
+    "sem focusGifUrl e a capa nao e GIF",
+    "sem focusGifUrl e a capa ainda nao chegou",
+    "arquivo do GIF ainda nao chegou",
+    "veio GIF mas o arquivo saiu do disco",
+    "o arquivo nao e GIF",
+    "GIF de 1 quadro",
+    "recusado pelo orcamento de animacao (ver a linha [gif] acima)",
+    "este aparelho nao anima GIF (webOS ou TV de 1 GB)",
     "antes do video",
     "com video aberto",
     "teto vencido, o resto segue em segundo plano",

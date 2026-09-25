@@ -322,7 +322,7 @@ static void tirarManifest(char *base) {
 // descartadas nao deixavam rastro nenhum: quem instalava uma colecao na conta e
 // nao a via na TV nao tinha como saber se ela nao chegou, se chegou vazia, ou se
 // foi recusada aqui — e os tres tem conserto diferente. E o issue #13.
-static int fPulProvedor, fPulSemFonte, fPulSemTitulo, fPulCheio;
+static int fPulProvedor, fPulSemFonte, fPulSemTitulo, fPulCheio, fGifCortado;
 static char fPrimeiraPulada[128];
 
 static void lerColecaoWeb(const char *c, const char *ce) {
@@ -347,6 +347,12 @@ static void lerColecaoWeb(const char *c, const char *ce) {
     // focusGifEnabled:false DESLIGA a animacao mesmo com a URL presente, que e
     // a mesma regra de tools/import-collections.mjs. Ausente vale como ligado.
     js_texto(p, pe, "focusGifUrl", v->focusGif, sizeof v->focusGif);
+    // URL QUE NAO COUBE (#141): js_texto corta calado no tamanho do campo, e
+    // uma URL cortada nao e URL — baixaria um 404 ou outra coisa, e o cartaz
+    // ficaria parado sem dizer nada. Cheia ate o ultimo byte = cortada:
+    // descarta e conta (a linha do fim diz quantas).
+    if (strlen(v->focusGif) >= sizeof v->focusGif - 1) { v->focusGif[0] = 0; fGifCortado++; }
+    if (strlen(v->cover) >= sizeof v->cover - 1) { v->cover[0] = 0; fGifCortado++; }
     { char b[8]; v->hideTitle = js_bruto(p, pe, "hideTitle", b, sizeof b) && strstr(b, "true") ? 1 : 0; }
     { char b[8];
       if (js_bruto(p, pe, "focusGifEnabled", b, sizeof b) && strstr(b, "false")) v->focusGif[0] = 0; }
@@ -450,7 +456,7 @@ int col_definir_json(const char *json) {
   ColFolder *antigas = malloc(sizeof(ColFolder) * (size_t)(antes > 0 ? antes : 1));
   if (antigas) memcpy(antigas, folders, sizeof(ColFolder) * (size_t)antes);
   count = 0;
-  fPulProvedor = fPulSemFonte = fPulSemTitulo = fPulCheio = 0;
+  fPulProvedor = fPulSemFonte = fPulSemTitulo = fPulCheio = fGifCortado = 0;
   fPrimeiraPulada[0] = 0;
   { const char *c = arr;
     for (; c && *c == '{'; c = js_prox(js_fim(c))) {
@@ -521,7 +527,20 @@ int col_definir_json(const char *json) {
     // as pastas locais foram mantidas — uma remontagem por ciclo, de graca, que
     // reinicia animacoes e refaz o foco.
     revisao++;
-    printf("[colecoes] %d pastas vindas da conta\n", novas);
+    // QUANTAS TEM GIF (#141): "Netflix anima e Apple TV nao" comeca aqui — se
+    // a conta so mandou focusGifUrl para uma pasta, o resto nao e defeito de
+    // animacao. Capa .gif na URL e so indicio (a decisao e pelos bytes, ver
+    // gifcolecao.h); conta aqui para o log ja responder o caso comum.
+    { int comGif = 0, capaGif = 0;
+      for (int i = 0; i < count; i++) {
+        if (folders[i].focusGif[0]) comGif++;
+        else if (strstr(folders[i].cover, ".gif") || strstr(folders[i].cover, "giphy.com/") ||
+                 strstr(folders[i].cover, "tenor.com/")) capaGif++;
+      }
+      printf("[colecoes] %d pastas vindas da conta: %d com focusGifUrl, %d sem ele com capa que parece GIF\n",
+             novas, comGif, capaGif);
+      if (fGifCortado)
+        printf("[colecoes] %d URL(s) de capa/GIF passavam de 511 bytes e foram descartadas\n", fGifCortado); }
   }
   aplicarExtras();
   free(solto);
