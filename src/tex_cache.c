@@ -2280,7 +2280,11 @@ static int threadDecode(void *arg) {
     // leitura de volta da GPU, nenhum decode a mais. corviva_extrair amostra
     // uma grade de 32x18 (576 pontos) e nao aloca nada. O custo vai ao log UMA
     // vez, na primeira arte, para a medida da C9 existir sem inundar o log.
-    if (conv && heroiPedido && conv->format->BytesPerPixel == 4) {
+    // Roda em TODA arte (~15 us), mas so ANOTA a de tela cheia e a que tem
+    // transparencia — o LOGO do titulo ("Cor da logo"), que e decodificado na
+    // largura do desenho, nunca no teto do destaque. Cartaz de fileira e opaco
+    // e pequeno: medido e esquecido, sem empurrar ninguem do anel.
+    if (conv && conv->format->BytesPerPixel == 4) {
       static int medido;
       CorvivaPaleta pal;
       Uint64 c0 = SDL_GetPerformanceCounter();
@@ -2294,7 +2298,7 @@ static int threadDecode(void *arg) {
                conv->w, conv->h, pal.ok ? "com cor" : "sem cor");
         fflush(stdout);
       }
-      corviva_anotar(urlOrig, &pal);
+      if (heroiPedido || pal.transparente) corviva_anotar(urlOrig, &pal);
     }
 
     // A FALHA PRECISA APARECER. Sem log, uma imagem que nunca decodifica vira
