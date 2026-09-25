@@ -321,6 +321,102 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
   return dst[0] ? 1 : 0;
 }
 
+// VAZAO NO TIZEN (ver rede_medir_vazao em rede.h). XHR sincrono so devolve
+// quando o corpo inteiro chegou, entao nao ha "bytes por segundo" de dentro de
+// uma resposta: sao pedidos de Range em PEDACOS, cronometrados um a um, com o
+// corpo descartado no proprio JavaScript (so o tamanho atravessa para o C —
+// nada vai para o heap do WASM).
+//
+// O pedaco comeca em 1 MB e dobra enquanto volta em menos de 0,7 s, ate 8 MB:
+// pedaco pequeno numa rede rapida mediria mais o vai-e-volta de cada pedido do
+// que a vazao; pedaco grande numa rede lenta passaria da janela sem como
+// cortar (XHR sincrono nao tem prazo nem aborto). Cada pedaco vira tantas
+// amostras quantos segundos inteiros levou (no minimo uma), todas com a taxa
+// dele — e a equivalencia mais proxima de "uma amostra por segundo".
+//
+// Mesma limitacao ja escrita em pedir2: servidor que IGNORA o Range manda o
+// arquivo inteiro, e a chamada so volta depois. Os CDNs de debrid honram
+// Range; se um nao honrar, o teste trava o fio dele ate o navegador desistir.
+EM_JS(int, nv_http_contar, (const char *url, const char *cabs, double ini,
+                            double fim, int *status, char *urlFinal,
+                            int urlFinalTam), {
+  var xhr = new XMLHttpRequest();
+  HEAP32[status >> 2] = 0;
+  try { xhr.open("GET", UTF8ToString(url), false); } catch (e) { return -1; }
+  try { xhr.overrideMimeType("text/plain; charset=x-user-defined"); } catch (e) {}
+  if (cabs) {
+    UTF8ToString(cabs).split("\n").forEach(function (linha) {
+      var i = linha.indexOf(":");
+      if (i <= 0) return;
+      try {
+        xhr.setRequestHeader(linha.slice(0, i).trim(), linha.slice(i + 1).trim());
+      } catch (e) {}
+    });
+  }
+  try { xhr.setRequestHeader("Range", "bytes=" + ini + "-" + fim); } catch (e) {}
+  try { xhr.send(null); } catch (e) { return -1; }
+  HEAP32[status >> 2] = xhr.status;
+  if (urlFinal && urlFinalTam > 0) stringToUTF8(xhr.responseURL || "", urlFinal, urlFinalTam);
+  var s = xhr.responseText || "";
+  return s.length;
+});
+
+int rede_medir_vazao(const char *url, const char *const *cab, int segundos,
+                     long inicio, long long maxBytes, volatile int *cancelado,
+                     int *kbps, int nMax, RedeVazao *res,
+                     char *final, unsigned tamFinal) {
+  char *cabs;
+  char atual[4096];
+  unsigned long t0, janela, gasto = 0;
+  long long pos = inicio > 0 ? inicio : 0, total = 0, pedaco = 1024LL * 1024LL;
+  int nSeg = 0, primeiro = 1;
+  if (res) memset(res, 0, sizeof *res);
+  if (final && tamFinal) final[0] = 0;
+  if (!url || !*url) { if (res) res->erro = 2; return 0; }
+  if (segundos < 1) segundos = 1;
+  janela = (unsigned long)segundos * 1000UL;
+  snprintf(atual, sizeof atual, "%s", url);
+  cabs = juntarCabs(cab, NULL);
+  t0 = redeAgoraMs();
+  while (gasto < janela && (maxBytes <= 0 || total < maxBytes)) {
+    unsigned long a = redeAgoraMs(), dt;
+    int st = 0, n, k, reps;
+    char fin[4096];
+    if (cancelado && *cancelado) { if (res) res->cancelado = 1; break; }
+    fin[0] = 0;
+    n = nv_http_contar(atual, cabs, (double)pos, (double)(pos + pedaco - 1), &st,
+                       fin, (int)sizeof fin);
+    dt = redeAgoraMs() - a;
+    if (res) res->status = st;
+    if (primeiro && final && tamFinal) snprintf(final, tamFinal, "%s", fin);
+    if (n < 0 || st == 0) { if (res) res->erro = -1; break; }
+    if (st < 200 || st >= 300 || n == 0) break;
+    if (primeiro && res) res->esperaMs = dt;
+    primeiro = 0;
+    // Os pedacos seguintes vao direto ao endereco final: sem pagar o
+    // redirecionamento do addon de novo a cada pedaco.
+    if (fin[0]) snprintf(atual, sizeof atual, "%s", fin);
+    total += n;
+    pos += n;
+    gasto = redeAgoraMs() - t0;
+    reps = (int)(dt / 1000UL);
+    if (reps < 1) reps = 1;
+    for (k = 0; k < reps && kbps && nSeg < nMax; k++)
+      kbps[nSeg++] = (int)((long long)n * 8 / (long long)(dt > 0 ? dt : 1));
+    if (st == 200) break;              // Range ignorado: veio o arquivo todo
+    if ((long long)n < pedaco) break;  // o arquivo acabou
+    if (dt < 700UL && pedaco < 8LL * 1024LL * 1024LL) pedaco *= 2;
+  }
+  free(cabs);
+  if (res) {
+    res->bytes = total;
+    res->ms = gasto;
+    if (cancelado && *cancelado) res->cancelado = 1;
+  }
+  if (res && res->cancelado) return 0;
+  return nSeg;
+}
+
 #else
 
 // Codigo da libcurl do ultimo pedido DESTE fio (0 = transporte ok). So o
@@ -1158,6 +1254,141 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cab,
   // PostgREST explica o que faltou.
   if (r != 0) { free(b.p); return NULL; }
   return b.p ? b.p : strdup("");
+}
+
+// ------------------------------------------------------------ VAZAO (curl)
+//
+// Ver rede_medir_vazao em rede.h. Um recebedor que CONTA e descarta, com um
+// balde de bytes por segundo desde o primeiro byte do corpo. O corte (janela
+// cheia, teto de bytes, cancelamento) e de proposito: o recebedor devolve 0 e a
+// libcurl aborta com 23 (ou 42 pelo vigia), e o handle sai do cache como em
+// todo corte (soltarHandleR com r != 0) — a conexao abortada no meio de um
+// corpo de gigabytes nunca e reaproveitada.
+#define VAZ_SEG_BALDES 64
+typedef struct {
+  unsigned long pedido, t0, janelaMs, ultimo;
+  long long bytes, maxBytes;
+  long long balde[VAZ_SEG_BALDES];
+  int status, porJanela, porTeto, cancelou;
+  volatile int *cancel;
+} Contador;
+
+// Linha de status de CADA resposta ("HTTP/1.1 302", depois "HTTP/1.1 206"):
+// a ultima vale. Corpo de 4xx/5xx nao e medida de nada.
+static size_t contadorCab(void *dados, size_t tam, size_t qtd, void *u) {
+  Contador *c = (Contador *)u;
+  const char *s = (const char *)dados;
+  size_t b = tam * qtd;
+  if (b > 9 && !strncmp(s, "HTTP/", 5)) {
+    const char *p = memchr(s, ' ', b);
+    if (p) c->status = atoi(p + 1);
+  }
+  return b;
+}
+
+static size_t contadorCorpo(void *dados, size_t tam, size_t qtd, void *u) {
+  Contador *c = (Contador *)u;
+  size_t b = tam * qtd;
+  unsigned long agora = redeAgoraMs(), el;
+  (void)dados;
+  if (c->status >= 400) return 0;
+  if (c->cancel && *c->cancel) { c->cancelou = 1; return 0; }
+  if (!c->t0) c->t0 = agora;
+  el = agora - c->t0;
+  if (el >= c->janelaMs) { c->porJanela = 1; return 0; }
+  if (el / 1000UL < VAZ_SEG_BALDES) c->balde[el / 1000UL] += (long long)b;
+  c->bytes += (long long)b;
+  c->ultimo = agora;
+  if (c->maxBytes > 0 && c->bytes >= c->maxBytes) { c->porTeto = 1; return 0; }
+  return b;
+}
+
+// Chamado ~1x/s mesmo sem byte: e o que fecha a janela de um corpo PARADO.
+static int contadorVigia(void *u, long long dt, long long dn, long long ut, long long un) {
+  Contador *c = (Contador *)u;
+  (void)dt; (void)dn; (void)ut; (void)un;
+  if (c->cancel && *c->cancel) { c->cancelou = 1; return 1; }
+  if (c->t0 && redeAgoraMs() - c->t0 >= c->janelaMs) { c->porJanela = 1; return 1; }
+  return 0;
+}
+
+int rede_medir_vazao(const char *url, const char *const *cab, int segundos,
+                     long inicio, long long maxBytes, volatile int *cancelado,
+                     int *kbps, int nMax, RedeVazao *res,
+                     char *final, unsigned tamFinal) {
+  static const Contador vazio;
+  Contador ct = vazio;
+  char faixa[40];
+  void *c, *lista = NULL;
+  int r, k, nSeg = 0;
+  unsigned long el = 0;
+  if (res) memset(res, 0, sizeof *res);
+  if (final && tamFinal) final[0] = 0;
+  if (!url || !*url || !abrir()) { if (res) res->erro = 2; return 0; }
+  if (segundos < 1) segundos = 1;
+  ct.janelaMs = (unsigned long)segundos * 1000UL;
+  ct.maxBytes = maxBytes;
+  ct.cancel = cancelado;
+  ct.pedido = redeAgoraMs();
+  c = pegarHandle(url);
+  if (!c) { if (res) res->erro = 2; return 0; }
+  curl_setopt(c, OPT_URL, url);
+  curl_setopt(c, OPT_WRITEFUNCTION, contadorCorpo);
+  curl_setopt(c, OPT_WRITEDATA, &ct);
+  curl_setopt(c, OPT_HEADERFUNCTION, contadorCab);
+  curl_setopt(c, OPT_HEADERDATA, &ct);
+  curl_setopt(c, OPT_FOLLOWLOCATION, (long)1);
+  // Prazo: a janela mais 8 s para DNS, TLS, redirecionamentos e o primeiro
+  // byte. O conexaoMs de opcoesComuns fica no teto de 5 s.
+  opcoesComuns(c, ct.janelaMs + 8000UL);
+  curl_setopt(c, OPT_XFERINFOFUNCTION, contadorVigia);
+  curl_setopt(c, OPT_XFERINFODATA, &ct);
+  curl_setopt(c, OPT_NOPROGRESS, (long)0);
+  // Sem ACCEPT_ENCODING: a vazao que interessa e a do arquivo como o player o
+  // recebe, sem gzip de CDN nenhum no meio.
+  if (inicio > 0) {
+    snprintf(faixa, sizeof faixa, "%ld-", inicio);
+    curl_setopt(c, OPT_RANGE, faixa);
+  }
+  if (cab && slist_append) {
+    for (k = 0; cab[k]; k++) lista = slist_append(lista, cab[k]);
+    if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
+  }
+  r = curl_perform(c);
+  { long http = 0;
+    if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
+    if (http > 0) ct.status = (int)http; }
+  if (final && tamFinal && curl_getinfo) {
+    char *fim = NULL;
+    curl_getinfo(c, INFO_URL_FINAL, &fim);
+    snprintf(final, tamFinal, "%s", fim ? fim : "");
+  }
+  if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
+  soltarHandleR(c, r, url);
+  // Corte de proposito nao e erro; prazo estourado ou arquivo que acabou com
+  // bytes na mao tambem nao (a medida e o que veio ate ali).
+  if (ct.porJanela || ct.porTeto || ((r == 28 || r == 18) && ct.bytes > 0)) r = 0;
+  if (ct.t0) el = ct.porJanela ? ct.janelaMs : (ct.ultimo ? ct.ultimo : ct.t0) - ct.t0;
+  if (kbps && nMax > 0 && ct.bytes > 0 && !ct.cancelou && ct.status < 400 && r == 0) {
+    nSeg = (int)(el / 1000UL);
+    if (nSeg > nMax) nSeg = nMax;
+    if (nSeg > VAZ_SEG_BALDES) nSeg = VAZ_SEG_BALDES;
+    for (k = 0; k < nSeg; k++) kbps[k] = (int)(ct.balde[k] * 8 / 1000);
+    if (nSeg == 0) {
+      // Menos de 1 s de corpo: uma amostra so, pela taxa media do que veio.
+      kbps[0] = (int)(ct.bytes * 8 / (long long)(el > 0 ? el : 1));
+      nSeg = 1;
+    }
+  }
+  if (res) {
+    res->status = ct.status;
+    res->erro = ct.cancelou ? 0 : r;
+    res->bytes = ct.bytes;
+    res->ms = el;
+    res->esperaMs = ct.t0 ? ct.t0 - ct.pedido : 0;
+    res->cancelado = ct.cancelou;
+  }
+  return nSeg;
 }
 
 #endif  /* __EMSCRIPTEN__ */

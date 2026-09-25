@@ -157,6 +157,61 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-5-restaurado.bmp", saida);
   captura(nome, w, 0);
 
+  // TESTE DE VELOCIDADE. Addons de mentira so para o nome na linha (nenhum
+  // pedido sai: o fio nao e criado, o estado e montado a mao).
+  d.botao = 0;
+  atomic_store(&d.estado, 0);
+  focoLinha = 1;
+  snprintf(nome, sizeof nome, "%s-7-inicio-velocidade.bmp", saida);
+  captura(nome, w, 0);
+  focoLinha = 0;
+  addons_adicionar("Torrentio", "https://exemplo.invalid/a/manifest.json");
+  addons_adicionar("AIOStreams", "https://exemplo.invalid/b/manifest.json");
+  addons_adicionar("Comet", "https://exemplo.invalid/c/manifest.json");
+  addons_adicionar("MediaFusion", "https://exemplo.invalid/d/manifest.json");
+  addons_adicionar("OpenSubtitles v3", "https://exemplo.invalid/e/manifest.json");
+  memset(&vz, 0, sizeof vz);
+  vz.aberto = 1;
+  vz.nAddon = 5;
+  vz.addon[0] = (VazAddon){ 1, 812, 200, 1, 34, 3 };
+  vz.addon[1] = (VazAddon){ 1, 2410, 200, 1, 112, 3 };
+  vz.addon[2] = (VazAddon){ 1, 1333, 200, 1, 18, 2 };
+  vz.addon[3] = (VazAddon){ 1, 6004, 0, 0, 0, 0 };
+  vz.addon[4] = (VazAddon){ 1, 390, 404, 0, 0, 0 };
+  { static const int A[8] = { 41000, 44000, 39000, 22000, 45000, 43000, 40000, 38000 };
+    static const int B[8] = { 30000, 29000, 12000, 31000, 33000, 28000, 30000, 27000 };
+    memcpy(vz.fonte[0].kbps, A, sizeof A); vz.fonte[0].n = 8;
+    memcpy(vz.fonte[1].kbps, B, sizeof B); vz.fonte[1].n = 8;
+    vazao_resumir(A, 8, &vz.fonte[0].r);
+    vazao_resumir(B, 8, &vz.fonte[1].r);
+    memcpy(vz.amostra, A, sizeof A); memcpy(vz.amostra + 8, B, sizeof B);
+    vz.nAmostra = 16; }
+  atomic_store(&vz.estado, 1);
+  atomic_store(&vz.fase, 2);
+  atomic_store(&vz.total, 8);
+  atomic_store(&vz.feitos, 6);
+  atomic_store(&vz.nFonte, 1);
+  vz.fonteIniMs = SDL_GetTicks();
+  snprintf(nome, sizeof nome, "%s-8-velocidade-rodando.bmp", saida);
+  captura(nome, w, 0);
+
+  atomic_store(&vz.nFonte, 2);
+  vz.tentadas = 3;
+  vazao_resumir(vz.amostra, vz.nAmostra, &vz.resumo);
+  vz.resultado = VR_OK;
+  atomic_store(&vz.estado, 2);
+  snprintf(nome, sizeof nome, "%s-9-velocidade-resultado.bmp", saida);
+  captura(nome, w, 0);
+
+  // Samsung com CDN sem CORS: diz que nao mediu, sem numero inventado.
+  atomic_store(&vz.nFonte, 0);
+  vz.nAmostra = 0;
+  memset(&vz.resumo, 0, sizeof vz.resumo);
+  vz.resultado = VR_NAVEGADOR;
+  snprintf(nome, sizeof nome, "%s-10-velocidade-navegador.bmp", saida);
+  captura(nome, w, 0);
+  memset(&vz, 0, sizeof vz);
+
   // Cabecalho de Ajustes com a contagem de categorias.
   ajustes_iniciar();
   snprintf(nome, sizeof nome, "%s-6-ajustes.bmp", saida);

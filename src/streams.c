@@ -264,6 +264,9 @@ static long pontos(const Stream *s) {
   return p;
 }
 
+long stream_pontos(const Stream *s) { return s ? pontos(s) : 0; }
+int  stream_cabe_no_teto(const Stream *s) { return s ? cabeNoTeto(s) : 1; }
+
 // Endereco de aviso e nao de conteudo. Estes dois foram MEDIDOS no aparelho:
 // o AIOStreams manda para slate.m3u8/slate.mp4 ("This playback link couldn't be
 // verified") quando o link expirou, e o Debridio para downloading.mp4 quando o
