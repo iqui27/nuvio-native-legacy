@@ -369,6 +369,13 @@ int main(int argc, char **argv) {
   focoLin = 12;
   snprintf(nome, sizeof nome, "%s-lista-categorias.bmp", saida);
   capturaTela(nome, w, 1);
+  // A MESMA gaveta no MEIO da lista e no meio de uma rolagem (catRol fora do
+  // multiplo de linha): e o quadro da foto do dono, com linha pela metade
+  // sob o titulo e sobre o rodape. Aqui elas tem de sair apagadas, nao
+  // cortadas no meio da letra.
+  catFoco = 7; catRol = 3.0f * G_CAT_ROW + 27.0f;
+  snprintf(nome, sizeof nome, "%s-lista-categorias-meio.bmp", saida);
+  capturaTela(nome, w, 1);
   catAberto = 0; catAnim = 0.0f; focoLin = 0;
 
   nCanais = 0; nCats = 0; nFontes = 0; fontesOk = 1; estado = G_FALHOU;

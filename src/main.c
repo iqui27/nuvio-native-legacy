@@ -445,6 +445,13 @@ int main(int argc, char **argv) {
   // transparente, e o plano de video do aparelho — que fica ATRAS da janela e
   // so aparece pelo alpha — nunca poderia ser revelado.
   SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+  // E 8 bits por cor, pedidos e nao herdados: o padrao do SDL e 3/3/2 minimo,
+  // e o EGL que listar RGB565 antes de 8888 entregaria 32 niveis por canal —
+  // degrau de 8/255, que dither nenhum esconde. Na C9 o EGL ja dava 8888
+  // (log: "framebuffer R8 G8 B8 A8"); o pedido e para as outras LGs.
+  SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+  SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+  SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
 #ifdef __EMSCRIPTEN__
   // O navegador da TV ja entrega a pagina em tela cheia; pedir FULLSCREEN
   // aqui exigiria um gesto do usuario e falharia em silencio.
@@ -622,7 +629,14 @@ int main(int argc, char **argv) {
     SDL_GL_GetAttribute(SDL_GL_GREEN_SIZE, &g);
     SDL_GL_GetAttribute(SDL_GL_BLUE_SIZE, &b);
     printf("framebuffer R%d G%d B%d A%d%s\n", r, g, b, a,
-           a > 0 ? "" : "  <<< SEM ALPHA: video nao tem como aparecer"); }
+           a > 0 ? "" : "  <<< SEM ALPHA: video nao tem como aparecer");
+    // O que o GL diz do alvo LIGADO, e nao o que o SDL leu da config EGL: sao
+    // fontes diferentes, e so esta enxerga um drawable que o driver rebaixou.
+    { GLint br = -1, bg = -1, bb = -1, ba = -1;
+      glGetIntegerv(GL_RED_BITS, &br);   glGetIntegerv(GL_GREEN_BITS, &bg);
+      glGetIntegerv(GL_BLUE_BITS, &bb);  glGetIntegerv(GL_ALPHA_BITS, &ba);
+      printf("framebuffer GL R%d G%d B%d A%d%s\n", br, bg, bb, ba,
+             (br > 0 && br < 8) ? "  <<< MENOS DE 8 BITS: degrade vai sair em faixas" : ""); } }
 
   // MARCOS FINOS DO ARRANQUE. Na TV Samsung o log parava exatamente na linha
   // "framebuffer ..." acima e nada mais saia — sem erro, sem excecao. Entre
