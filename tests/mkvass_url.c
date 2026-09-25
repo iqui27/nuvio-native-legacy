@@ -23,6 +23,7 @@ char *rede_baixar(const char *url, int s) { (void)url; (void)s; return NULL; }
 const char *rede_url_publica(const char *url, char *dst, unsigned tam) {
   (void)url; snprintf(dst, tam, "local"); return dst;
 }
+long rede_corte_host(const char *url) { (void)url; return 0; }
 char *rede_baixar_trecho_st(const char *url, int s, long ini, long fim, long *tam,
                             int *status, int *erro, char *final, unsigned tamFinal) {
   FILE *f; char *p; long n;

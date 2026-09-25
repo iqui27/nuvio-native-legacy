@@ -17,9 +17,18 @@
 #                                conexao por link, #92)
 #   GET /redir/<resto>        -> 307 para /<resto> (link de addon que
 #                                redireciona ao CDN, #92)
+#   GET /cortaN/<arquivo>     -> 206 com Content-Range e Content-Length do
+#                                trecho INTEIRO, mas fecha a conexao depois de
+#                                N bytes (o CDN do Real-Debrid no #92: sempre
+#                                77465 bytes de um Range de 256 KB, curl 18)
+#   GET /conexK/<arquivo>     -> com mais de K GETs deste modo em andamento, o
+#                                que passou do limite recebe 206 e e cortado
+#                                depois de 4096 bytes (CDN que derruba conexao
+#                                a mais no mesmo link)
 #   GET /contagem             -> numero de GETs a arquivos ate agora (texto)
 #   GET /contagem429          -> quantos 429 o /limite1 respondeu
 #   GET /contagemredir        -> quantos 307 o /redir respondeu
+#   GET /contagemcortes       -> quantas respostas o /corta e o /conex cortaram
 #   GET /zerar                -> zera as contagens
 import http.server, os, re, socketserver, sys, threading
 
@@ -30,6 +39,8 @@ curtoPedidos = 0
 ativos1 = 0
 recusas429 = 0
 redirs = 0
+cortes = 0
+ativosConex = 0
 trava = threading.Lock()
 
 class H(http.server.BaseHTTPRequestHandler):
@@ -48,6 +59,12 @@ class H(http.server.BaseHTTPRequestHandler):
         if curtoCues: nome = nome[len("curtocues/"):]
         curto = nome.startswith("curto/")
         if curto: nome = nome[len("curto/"):]
+        m = re.match(r"corta(\d+)/", nome)
+        self.corta = int(m.group(1)) if m else 0
+        if m: nome = nome[m.end():]
+        m = re.match(r"conex(\d+)/", nome)
+        self.conex = int(m.group(1)) if m else 0
+        if m: nome = nome[m.end():]
         m = re.match(r"falha(\d+)a(\d+)/", nome)
         self.falha = (int(m.group(1)), int(m.group(2))) if m else None
         if m: nome = nome[m.end():]
@@ -75,6 +92,13 @@ class H(http.server.BaseHTTPRequestHandler):
             self.send_response(307)
             self.send_header("Location", self.path[len("/redir"):])
             self.send_header("Content-Length", "0"); self.end_headers(); return
+        if re.match(r"/conex\d+/", self.path):
+            global ativosConex
+            with trava: ativosConex += 1
+            try: self._get()
+            finally:
+                with trava: ativosConex -= 1
+            return
         if self.path.startswith("/limite1/"):
             with trava: ativos1 += 1
             try: self._get()
@@ -84,7 +108,7 @@ class H(http.server.BaseHTTPRequestHandler):
         self._get()
 
     def _get(self):
-        global contagem, curtoPedidos, recusas429, redirs
+        global contagem, curtoPedidos, recusas429, redirs, cortes
         if self.path == "/contagem":
             with trava: v = contagem
             self._texto(v); return
@@ -94,12 +118,16 @@ class H(http.server.BaseHTTPRequestHandler):
         if self.path == "/contagemredir":
             with trava: v = redirs
             self._texto(v); return
+        if self.path == "/contagemcortes":
+            with trava: v = cortes
+            self._texto(v); return
         if self.path == "/zerar":
             with trava:
                 contagem = 0
                 curtoPedidos = 0
                 recusas429 = 0
                 redirs = 0
+                cortes = 0
             self.send_response(200); self.send_header("Content-Length", "2")
             self.end_headers(); self.wfile.write(b"ok"); return
         cam, semRange, lento, curto, curtoCues = self._arquivo()
@@ -149,6 +177,17 @@ class H(http.server.BaseHTTPRequestHandler):
         if curtoCues and parcial and ini > total - 16 * 1024 and fim - ini + 1 > 32:
             fim = min(fim, ini + 31)
         n = fim - ini + 1
+        # Quantos bytes o corpo leva DE VERDADE: menos que o Content-Length
+        # promete nos modos que cortam (/corta, /conex).
+        manda = n
+        if parcial and self.corta and n > self.corta:
+            manda = self.corta
+        if parcial and self.conex:
+            with trava: demais = ativosConex > self.conex
+            if demais and n > 4096: manda = 4096
+        if manda < n:
+            with trava: cortes += 1
+            self.close_connection = True
         self.send_response(206 if parcial else 200)
         if parcial: self.send_header("Content-Range", "bytes %d-%d/%d" % (ini, fim, total))
         self.send_header("Accept-Ranges", "bytes")
@@ -157,7 +196,7 @@ class H(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         with open(cam, "rb") as f:
             f.seek(ini)
-            resta = n
+            resta = manda
             while resta > 0:
                 pedaco = f.read(min(65536, resta))
                 if not pedaco: break

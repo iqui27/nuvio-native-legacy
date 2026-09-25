@@ -65,9 +65,21 @@ char *rede_baixar_trecho(const char *url, int segundos, long ini, long fim,
 // `final` (opcional, `tamFinal` bytes) recebe o endereco depois dos
 // redirecionamentos — o mesmo que rede_url_final daria, sem pedido a mais.
 // Qualquer ponteiro pode ser NULL.
+//
+// CORPO CORTADO (#92): um 206 que fecha antes do fim (curl 18) nao e mais
+// falha — o que veio fica e o resto e pedido do byte seguinte, ate completar
+// ou um pedaco nao trazer nada (ai NULL, com o codigo). O host que corta ganha
+// um teto de pedido lembrado a sessao inteira (rede_corte_host), e os trechos
+// seguintes ja saem em pedacos desse tamanho. `segundos` e o prazo do trecho
+// INTEIRO, nao de cada pedaco. rede_baixar_trecho passa pelo mesmo laco.
 char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
                             long *tam, int *status, int *erro,
                             char *final, unsigned tamFinal);
+
+// Teto de pedido aprendido para o host de `url` (esquema, host e porta), em
+// bytes; 0 = o host nunca cortou um Range nesta sessao. Um host que corta e
+// tambem o candidato a derrubar conexao a mais: o mkvass passa a uma so.
+long rede_corte_host(const char *url);
 
 // Teto de bytes da transferencia corrente (0 = sem teto). E interno ao modulo;
 // esta exposto so porque rede_baixar_trecho o usa. Nao mexer de fora.

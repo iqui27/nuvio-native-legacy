@@ -816,7 +816,46 @@ int main(int argc, char **argv) {
     ok(tent > 3, "precisou de mais de 3 tentativas (a 1.4.5 desistia na 3a)");
     ok(e == MKVASS_COMPLETO, "e mesmo assim termina COMPLETO");
     ok(conferirCues(esp, nEsp) == nEsp, "todos os cues batem apos as retomadas");
-    ok(!cedo, "com a TV desenhando, o overlay so religou com fala nova"); }
+    ok(!cedo, "com a TV desenhando, o overlay so religou com fala nova");
+
+    // #92, 1.4.6 (Real-Debrid pelo Torrentio): o CDN responde 206 ao Range de
+    // 256 KB e fecha a conexao depois de 77465 bytes, TODA vez. O modulo
+    // jogava o que veio fora e pedia o MESMO Range de novo, para sempre.
+    printf("\n[11e] CDN que corta todo Range em 77465 bytes (206 + curl 18)\n");
+    snprintf(urlL, sizeof urlL, "%s/corta77465/%s", base, argv[2]);
+    nomeSidecar(urlL, 3, scL, sizeof scL); dados_apagar(scL);
+    snprintf(scLF, sizeof scLF, "%s.fonts", scL); dados_apagar(scLF);
+    mkvass_parar(); esperarFio(); legenda_desligar();
+    zerarServidor();
+    mkvass_iniciar(urlL, 3);
+    tent = retomarAte(120000, 0, NULL);
+    e = mkvass_estado();
+    { long cortes = contagemDe("contagemcortes"), p = 0, gets = contagemServidor();
+      mkvass_estatisticas(&p, NULL, NULL, NULL);
+      printf("    estado %d, %d tentativa(s), %ld corte(s) em %ld GET(s), %ld Ranges; teto do host %ld\n",
+             e, tent, cortes, gets, p, rede_corte_host(urlL));
+      ok(e == MKVASS_COMPLETO, "termina COMPLETO com o corpo cortado");
+      ok(tent == 0, "sem no-go: o corte nao virou falha passageira");
+      ok(conferirCues(esp, nEsp) == nEsp, "todos os cues batem (os pedacos juntaram certo)");
+      ok(cortes >= 1 && cortes <= 6, "o teto foi aprendido: poucos cortes, nao um por Range");
+      ok(rede_corte_host(urlL) >= 32 * 1024 && rede_corte_host(urlL) <= 77465,
+         "teto do host entre 32 KB e o que o CDN entregou"); }
+
+    printf("\n[11f] CDN que derruba a conexao a mais no mesmo link (206 + corte)\n");
+    snprintf(urlL, sizeof urlL, "http://localhost:%s/conex1/%s", strrchr(base, ':') + 1, argv[2]);
+    nomeSidecar(urlL, 3, scL, sizeof scL); dados_apagar(scL);
+    snprintf(scLF, sizeof scLF, "%s.fonts", scL); dados_apagar(scLF);
+    mkvass_parar(); esperarFio(); legenda_desligar();
+    zerarServidor();
+    mkvass_iniciar(urlL, 3);
+    tent = retomarAte(120000, 0, NULL);
+    e = mkvass_estado();
+    { long cortes = contagemDe("contagemcortes"), p = 0;
+      mkvass_estatisticas(&p, NULL, NULL, NULL);
+      printf("    estado %d, %d tentativa(s), %ld corte(s) em %ld Ranges\n", e, tent, cortes, p);
+      ok(e == MKVASS_COMPLETO, "termina COMPLETO");
+      ok(conferirCues(esp, nEsp) == nEsp, "todos os cues batem");
+      ok(cortes <= 8, "depois do corte, uma conexao so: poucos cortes"); } }
 
   mkvass_parar(); esperarFio();
   free(esp);
