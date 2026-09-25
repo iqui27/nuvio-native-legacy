@@ -35,6 +35,7 @@ static int arqDiscoTem(const char *dst);
 #include <SDL2/SDL_image.h>
 #include "webp.h"
 #include "jpegrapido.h"
+#include "corviva.h"
 #include "artereserva.h"
 #include "artetamanho.h"
 #include "perfiltv.h"
@@ -2015,6 +2016,11 @@ static int threadDecode(void *arg) {
     // Copiado SOB O MUTEX: o item pode ser promovido a hero enquanto este fio
     // decodifica, e ler o campo depois daria uma leitura sem trava.
     limite = itens[idx].limite > 0 ? itens[idx].limite : NV_TEX_LARG_MAX;
+    // Cor viva (corviva.h) so para a arte de TELA CHEIA: e o que destaque,
+    // detalhe e player pedem (tex_obter_hero), e so ela decide a cor. Cartaz
+    // de fileira passaria por aqui as centenas e empurraria do anel de 256 as
+    // artes que importam.
+    int heroiPedido = ehHero(&itens[idx]);
     filaEm = itens[idx].filaDecEm;
     itens[idx].filaDecEm = 0;
     localDireto = itens[idx].localDireto;
@@ -2253,6 +2259,27 @@ static int threadDecode(void *arg) {
         }
         if (bt > 0 && bn * 10 >= bt * 8) { corR = (int)(br / bn); corG = (int)(bg / bn); corB = (int)(bb / bn); }
         else corR = -2; }
+    }
+
+    // COR VIVA: a paleta sai DAQUI, dos pixels que este fio ja tem — nenhuma
+    // leitura de volta da GPU, nenhum decode a mais. corviva_extrair amostra
+    // uma grade de 32x18 (576 pontos) e nao aloca nada. O custo vai ao log UMA
+    // vez, na primeira arte, para a medida da C9 existir sem inundar o log.
+    if (conv && heroiPedido && conv->format->BytesPerPixel == 4) {
+      static int medido;
+      CorvivaPaleta pal;
+      Uint64 c0 = SDL_GetPerformanceCounter();
+      corviva_extrair((const unsigned char *)conv->pixels, conv->w, conv->h,
+                      conv->pitch, &pal);
+      if (!medido) {
+        medido = 1;
+        printf("[cor] extracao: %.0f us (%dx%d, %s)\n",
+               (double)(SDL_GetPerformanceCounter() - c0) * 1e6 /
+                 (double)SDL_GetPerformanceFrequency(),
+               conv->w, conv->h, pal.ok ? "com cor" : "sem cor");
+        fflush(stdout);
+      }
+      corviva_anotar(urlOrig, &pal);
     }
 
     // A FALHA PRECISA APARECER. Sem log, uma imagem que nunca decodifica vira

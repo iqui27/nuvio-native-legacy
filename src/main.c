@@ -50,6 +50,7 @@
 #include "video.h"
 #include "addons.h"
 #include "ajustes.h"
+#include "corviva.h"
 #include "catalogo.h"
 #include "descoberta.h"
 #include "trakt.h"
@@ -711,6 +712,9 @@ int main(int argc, char **argv) {
   traktauth_carregar_perfil(perfis_ativo());
   simklauth_carregar_perfil(perfis_ativo());
   if (!app_iniciar(dirArte)) return 1;
+  // Cor viva: a paleta da ultima cena volta ANTES do primeiro quadro, entao
+  // quem usa o tema dinamico ja abre o app na cor do ultimo titulo.
+  corviva_carregar();
 #ifdef __EMSCRIPTEN__
   nv_ceder_quadro();   // o segundo ponto: ver a nota logo depois de gfx_iniciar
 #endif
@@ -953,6 +957,10 @@ int main(int argc, char **argv) {
     fUplN = tex_upl_n; fUplB = tex_upl_bytes;
     t0 = NV_T0();
     app_atualizar(dt, agora);
+    // COR VIVA: UMA vez por quadro, antes do desenho. Consome o pedido que o
+    // desenho do quadro anterior fez (corviva_definir) e anda a transicao; o
+    // desenho deste quadro so le o resultado (ajustes_acento, NV_COR_FUNDO_*).
+    corviva_quadro(dt, ajustes_cor_viva(), ajustes_animacoes_reduzidas());
     fUpd = NV_DT(t0);
 
     // RECORTE DESLIGADO ANTES DO CLEAR. glClear respeita o scissor test: se
@@ -1059,6 +1067,7 @@ int main(int argc, char **argv) {
              rssMB(),
              dados_persistente() ? "" : "  <<< SEM PERSISTENCIA");
       avisos_sinal(NULL, (float)rssMB());   // batida: no maximo 1 a cada 60 s
+      corviva_gravar_se_preciso(0);          // corviva.txt: no maximo 1 a cada 20 s
       dados_sync_sucessos = 0;
       dados_sync_falhas = 0;
 #ifdef __EMSCRIPTEN__
@@ -1149,6 +1158,7 @@ int main(int argc, char **argv) {
   gfx_borrao_encerrar();
   gfx_snap_encerrar();
   app_encerrar();
+  corviva_gravar_se_preciso(1);
   tex_encerrar();
   txt_encerrar();
   gfx_encerrar();

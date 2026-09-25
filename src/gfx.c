@@ -10,7 +10,7 @@
 // shader que usasse a mesma variavel.
 typedef struct {
   GLuint prog;
-  GLint rect, tela, tex, foco, par, raio, cor, asp, texAsp, forcarCover, borda, varre;
+  GLint rect, tela, tex, foco, par, raio, cor, asp, texAsp, forcarCover, borda, varre, fundo;
 } Programa;
 static Programa progs[GFX_NMODOS];
 static int progAtual = -1;
@@ -83,7 +83,12 @@ static const char *FS_CABECA =
   "uniform vec4  uCor;\n"
   "uniform float uAspect;\n"
   "uniform float uTexAsp;   // w/h da TEXTURA; 0 = nao ajustar\n"
-  "uniform float uForceCover;\n";
+  "uniform float uForceCover;\n"
+  // A COR DO FUNDO DA PAGINA, para as rampas que dissolvem a arte nela
+  // (destaque, destaque cheio, detalhe). Era vec3(0.051) cravado em cada uma;
+  // com o tema dinamico estilizado o fundo e tingido (layout.h,
+  // NV_COR_FUNDO_R), e a rampa cravada deixaria uma emenda onde a arte acaba.
+  "uniform vec3  uFundo;\n";
 
 // SDF de retangulo arredondado, corrigido pela proporcao — sem a correcao o
 // canto de um card landscape sai oval.
@@ -185,7 +190,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // vez de dissolver.
   "void main(){\n"
   "  vec3 c = texture2D(uTex, clamp(cover(vUv), 0.0, 1.0)).rgb;\n"
-  "  vec3 bg = vec3(0.051,0.051,0.051);\n"   // #0d0d0d
+  "  vec3 bg = uFundo;\n"   // #0d0d0d fora do estilizado
   "  float y = vUv.y;\n"
   "  float av = clamp((y-0.820)/0.072,0.0,1.0)*0.25\n"
   "           + clamp((y-0.892)/0.063,0.0,1.0)*0.40\n"
@@ -292,7 +297,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // quadro 16:9 e nao sobra nada para deslocar.
   "void main(){\n"
   "  vec3 c = texture2D(uTex, clamp(cover(vUv), 0.0, 1.0)).rgb;\n"
-  "  vec3 bg = vec3(0.051,0.051,0.051);\n"   // #0d0d0d
+  "  vec3 bg = uFundo;\n"   // #0d0d0d fora do estilizado
   "  float x = vUv.x;\n"
   "  float a = 1.0 - clamp(x/0.0780,0.0,1.0)*0.05\n"
   "                - clamp((x-0.0780)/0.0936,0.0,1.0)*0.11\n"
@@ -333,7 +338,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // a arte ocupando a tela toda, o texto precisa de mais fundo escuro sob ele.
   "void main(){\n"
   "  vec3 c = texture2D(uTex, clamp(cover(vUv), 0.0, 1.0)).rgb;\n"
-  "  vec3 bg = vec3(0.051,0.051,0.051);\n"
+  "  vec3 bg = uFundo;\n"
   "  float y = vUv.y;\n"
   "  float av = clamp((y-0.640)/0.108,0.0,1.0)*0.35\n"
   "           + clamp((y-0.748)/0.108,0.0,1.0)*0.40\n"
@@ -740,6 +745,7 @@ int gfx_iniciar(void) {
     progs[m].forcarCover = glGetUniformLocation(p, "uForceCover");
     progs[m].borda  = glGetUniformLocation(p, "uBorda");
     progs[m].varre  = glGetUniformLocation(p, "uVarre");
+    progs[m].fundo  = glGetUniformLocation(p, "uFundo");
     glUseProgram(p);
     glUniform2f(progs[m].tela, NV_TELA_W, NV_TELA_H);
     glUniform1i(progs[m].tex, 0);
@@ -864,6 +870,9 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
   if (P->forcarCover >= 0) glUniform1f(P->forcarCover, gfx_card_forcar_cover_atual);
   if (P->borda >= 0)  glUniform1f(P->borda, gfx_borda_foco_atual);
   if (P->varre >= 0)  glUniform1f(P->varre, gfx_varre_atual);
+  // So os tres modos de rampa declaram uFundo: e uma chamada por destaque ou
+  // fundo de detalhe desenhado, nao por retangulo.
+  if (P->fundo >= 0)  glUniform3f(P->fundo, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B);
   if (P->cor >= 0)    glUniform4f(P->cor, cr, cg, cb, ca * gfx_opacidade_grupo);
   if (tex && tex != texAtual) {
     glActiveTexture(GL_TEXTURE0);

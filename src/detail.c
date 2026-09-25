@@ -49,6 +49,7 @@
 #include "anim.h"
 #include "revela.h"
 #include "layout.h"
+#include "corviva.h"
 #include "catalogo.h"
 #include "artehero.h"
 #include "recomenda.h"
@@ -849,7 +850,7 @@ static int arteDetalheEhPoster(int i) {
 static void desenhaArteDetalhe(GfxRect alvo, GLuint tex, const char *arte,
                                int poster, float alpha, float pg) {
   if (!tex) {
-    gfx_cor(alvo, 0.0f, 0.051f, 0.051f, 0.051f, alpha);
+    gfx_cor(alvo, 0.0f, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, alpha);
     return;
   }
   gfx_tex_aspect_atual = tex_aspecto(arte);
@@ -4910,7 +4911,7 @@ static void desenhaEsqueletoElenco(float a) {
 
 static void desenhaPessoa(float a) {
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
-  gfx_cor(tela, 0.0f, 0.051f, 0.051f, 0.051f, a);
+  gfx_cor(tela, 0.0f, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, a);
 
   { GLuint t = pessoa_foto()[0] ? tex_obter(pessoa_foto()) : 0;
     GfxRect r = { NV_DETP_X, 96.0f, PES_FOTO_W, PES_FOTO_H };
@@ -4982,11 +4983,15 @@ static void desenhaPessoa(float a) {
 
 void detail_desenhar(Uint32 agora) {
   if (!aberto) return;
+  // COR VIVA: a pagina do titulo manda na cor, acima da home que pode estar
+  // desenhada por baixo (a prioridade resolve o mesmo quadro). A chave e a
+  // MESMA arte que o fundo pede em tela cheia logo abaixo.
+  { const char *cv = arteDe(idx); if (cv) corviva_definir(cv, CORVIVA_DETALHE); }
   float s = suave(t), a2 = fase2();
 
   if (!detail_cobre_tela()) {
     GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
-    gfx_cor(tela, 0.0f, 0.051f, 0.051f, 0.051f, s);   // #0d0d0d, o fundo do web
+    gfx_cor(tela, 0.0f, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, s);   // #0d0d0d, o fundo do web
   }
   gfx_sem_recorte();
 
@@ -5038,7 +5043,7 @@ void detail_desenhar(Uint32 agora) {
   // a apaga.
   if (pg > 0.01f && !detail_cobre_tela()) {
     GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
-    gfx_cor(tela, 0.0f, 0.051f, 0.051f, 0.051f, pg);
+    gfx_cor(tela, 0.0f, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, pg);
   }
   // 4o parametro = forca da VINHETA, nao "foco". Vai a 0 junto com a rolagem,
   // que e o par que faltava: o web apaga a arte para 15% E some com a vinheta

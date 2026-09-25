@@ -40,6 +40,7 @@
 #include "layout.h"
 #include "catalogo.h"
 #include "artehero.h"
+#include "corviva.h"
 
 // A CASCA DO TIZEN PRECISA SABER SE O PLAYER ESTA NA TELA. tools/tizen-shell.html
 // traduz as teclas de midia do controle Samsung (play/pause, stop, avancar,
@@ -2168,6 +2169,13 @@ void player_desenhar(Uint32 agora) {
   (void)agora;
   if (!aberto) return;
   const CatItem *c = item();
+  // COR VIVA: o titulo que TOCA manda na cor (abrindo, OSD, pausa, pos-play),
+  // acima de tudo. A chave e a arte da tela de abertura logo abaixo; se ela
+  // ainda nao tem paleta, fica a do detalhe, que e o mesmo titulo. Canal ao
+  // vivo nao pede: o logo do canal nao e cor de titulo, e o zap trocaria a
+  // cor da tela a cada canal.
+  if (c && c->backdrop[0] && !player_id_canal()[0])
+    corviva_definir(artehero_url(c), CORVIVA_PLAYER);
 
   // --- o quadro de video ---
   // Com pipeline nao ha o que desenhar: o video esta num plano de hardware ATRAS

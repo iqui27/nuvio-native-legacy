@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>   // mkdtemp
 #include "ajustes.h"
 
 static int falhas;
@@ -171,6 +172,52 @@ int main(void) {
       "\"texturas_mb\":{\"type\":\"int\",\"value\":0}}}}", &saida);
     confere("ajuste de aparelho fica local", n, 0);
     free(saida); }
+
+  // --- TEMA DINAMICO (cor viva) ---------------------------------------------
+  //
+  // "Dinâmica" e "Dinâmica estilizada" so existem nesta TV. As duas travas:
+  // a conta nao desfaz a escolha local (o blob sempre traz um dos doze temas
+  // do web), e a subida nao toca selected_theme — nem com um valor que o web
+  // nao conhece, nem com o padrao, que apagaria o tema escolhido la.
+  printf("\ntema dinamico e local:\n");
+  { char dir[] = "/tmp/nuvio-conta-tema.XXXXXX", cam[200];
+    static const char *CONTA_JADE =
+      "{\"version\":1,\"features\":{\"theme_settings\":{"
+      "\"selected_theme\":{\"type\":\"string\",\"value\":\"JADE\"}}}}";
+    char *saida = NULL;
+    FILE *f;
+    int n;
+    if (!mkdtemp(dir)) { falhas++; goto fim; }
+    snprintf(cam, sizeof cam, "%s/ajustes.txt", dir);
+    f = fopen(cam, "w");
+    fputs("selected_theme 13\n", f); fclose(f);        // Dinâmica estilizada
+    ajustes_dir(dir);
+    confere("local = Dinâmica estilizada", ajustes_cor_viva(), 2);
+    ajustes_aplicar_blob(CONTA_JADE);
+    confere("JADE da conta nao desfaz o dinamico", ajustes_cor_viva(), 2);
+    n = ajustes_mesclar_blob(CONTA_JADE, &saida);
+    confere("dinamico nao sobe (nada a costurar)", n, 0);
+    confere("e o JADE da conta fica", saida == NULL, 1);
+    free(saida); saida = NULL;
+    // Tema FIXO aqui: a conta volta a mandar, e a subida volta a valer.
+    f = fopen(cam, "w");
+    fputs("selected_theme 2\n", f); fclose(f);         // Oceano
+    ajustes_dir(dir);
+    confere("local = tema fixo", ajustes_cor_viva(), 0);
+    ajustes_aplicar_blob(CONTA_JADE);
+    { float r, g, b; ajustes_acento(&r, &g, &b);
+      confere("com tema fixo, o JADE da conta e aplicado",
+              (int)(r * 255 + .5f) == 0x7b && (int)(g * 255 + .5f) == 0xf0, 1); }
+    n = ajustes_mesclar_blob(
+      "{\"features\":{\"theme_settings\":{"
+      "\"selected_theme\":{\"type\":\"string\",\"value\":\"OCEAN\"}}}}", &saida);
+    confere("tema fixo sobe", n, 1);
+    confere("...como JADE", saida && strstr(saida, "\"value\":\"JADE\"") != NULL, 1);
+    free(saida);
+    snprintf(cam, sizeof cam, "rm -rf '%s'", dir);
+    if (system(cam)) {}
+  }
+fim:
 
   printf("\n%s\n", falhas ? "TEM FALHA" : "TODOS OS AJUSTES CHEGARAM CERTOS");
   return falhas ? 1 : 0;

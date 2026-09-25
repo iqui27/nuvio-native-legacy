@@ -40,6 +40,7 @@
 #include "js.h"
 #include "artehero.h"
 #include "artereserva.h"
+#include "corviva.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -302,11 +303,29 @@ static const struct { float r, g, b; } TEMA_ACENTO[] = {
   { 0.953f, 0.961f, 0.969f },   // GRAPHITE     #f3f5f7
 };
 #define AJ_N_TEMAS (int)(sizeof TEMA_ACENTO / sizeof *TEMA_ACENTO)
+// OS DOIS TEMAS DINAMICOS (cor viva, corviva.h) vem DEPOIS dos doze da conta,
+// e a posicao nao e acaso: os indices 0..11 continuam sendo os de W_TEMA, e o
+// ajustes.txt de quem ja escolheu um tema le igual. 12 = "Dinâmica" (o destaque
+// segue a arte do titulo em cena), 13 = "Dinâmica estilizada" (e o fundo
+// tambem, de leve).
+#define AJ_TEMA_DINAMICA    AJ_N_TEMAS
+#define AJ_TEMA_ESTILIZADA  (AJ_N_TEMAS + 1)
+#define AJ_N_TEMAS_OPC      (AJ_N_TEMAS + 2)
 static const char *V_TEMA[] = {
   "Branco", "Carmesim", "Oceano", "Violeta", "Esmeralda", "Âmbar",
-  "Rosa", "Dourado", "Jade", "Ouro rosé", "Azul ártico", "Grafite"
+  "Rosa", "Dourado", "Jade", "Ouro rosé", "Azul ártico", "Grafite",
+  "Dinâmica", "Dinâmica estilizada"
 };
+_Static_assert(sizeof V_TEMA / sizeof *V_TEMA == AJ_N_TEMAS_OPC,
+               "V_TEMA: os doze temas da conta e os dois dinamicos");
 // MESMA ORDEM de TEMA_ACENTO e de V_TEMA: e o indice que liga os tres.
+//
+// SEM LITERAL PARA OS DINAMICOS, de proposito: o app web nao tem esse tema, e
+// e esta lista que decide o que a conta aceita e o que sobe. Um "DYNAMIC" aqui
+// deixaria um blob futuro ligar o dinamico sem a pessoa pedir nesta TV, e na
+// subida gravaria na conta um valor que o web nao sabe desenhar. A regra das
+// duas direcoes esta em ajustes_aplicar_blob e ajustes_mesclar_blob
+// (temaDinamico).
 static const char *W_TEMA[] = {
   "WHITE", "CRIMSON", "OCEAN", "VIOLET", "EMERALD", "AMBER",
   "ROSE", "GOLD", "JADE", "ROSE_GOLD", "ARCTIC_BLUE", "GRAPHITE", NULL
@@ -477,7 +496,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Idioma",                     V_IDIOMA, 2),
   ESC("Animações",                  V_ANIM, 2),
   ESC("Resolução da interface",     V_RESOLUCAO, 2),
-  ESC("Cor de destaque",            V_TEMA, AJ_N_TEMAS),  // selected_theme
+  ESC("Cor de destaque",            V_TEMA, AJ_N_TEMAS_OPC),  // selected_theme (+2 locais)
 
   LER("Perfil"),
   LER("Sincronização"),
@@ -991,9 +1010,24 @@ int ajustes_fonte_repor(void) {
 }
 int ajustes_idioma_ingles(void)       { return valor[AJ_IDIOMA] == 1; }
 
+// 1 = o tema escolhido e um dos dinamicos (cor viva), que so existem nesta TV.
+static int temaDinamico(void) {
+  return valor[AJ_TEMA] == AJ_TEMA_DINAMICA || valor[AJ_TEMA] == AJ_TEMA_ESTILIZADA;
+}
+int ajustes_cor_viva(void) {
+  return valor[AJ_TEMA] == AJ_TEMA_DINAMICA   ? CORVIVA_SIMPLES
+       : valor[AJ_TEMA] == AJ_TEMA_ESTILIZADA ? CORVIVA_ESTILIZADA
+       : CORVIVA_DESLIGADA;
+}
+
 // Cor do ANEL DE FOCO. Ver TEMA_ACENTO: um tema aqui e so isto.
+//
+// Com o tema dinamico, a cor e a que corviva_quadro ja calculou para ESTE
+// quadro (o laco principal anima uma vez; aqui so se copia). ~43 arquivos
+// chamam esta funcao, varias vezes por quadro: nenhuma conta mora aqui.
 void ajustes_acento(float *r, float *g, float *b) {
   int i = valor[AJ_TEMA];
+  if (temaDinamico()) { corviva_acento(r, g, b); return; }
   if (i < 0 || i >= AJ_N_TEMAS) i = 0;   // arquivo de outra versao: branco
   if (r) *r = TEMA_ACENTO[i].r;
   if (g) *g = TEMA_ACENTO[i].g;
@@ -1495,6 +1529,15 @@ int ajustes_aplicar_blob(const char *json) {
     }
 
     reconhecidas++;
+    // TEMA DINAMICO E DESTA TV, e a conta nao o desfaz. O blob so conhece os
+    // doze temas do web (W_TEMA), entao o que vier dele e sempre um desses — e
+    // aplica-lo sobre "Dinâmica" trocaria, a cada sincronizacao, a escolha que
+    // a pessoa fez aqui pela que ela fez no celular. Com um tema FIXO aqui, a
+    // conta continua mandando como sempre mandou.
+    if (i == AJ_TEMA && temaDinamico()) {
+      printf("[ajustes] selected_theme da conta mantido na conta: tema dinamico e local\n");
+      continue;
+    }
     novo = limita(i, novo);
     if (novo != valor[i]) { valor[i] = novo; mudou++; }
   }
@@ -1660,6 +1703,13 @@ int ajustes_mesclar_blob(const char *base, char **saida) {
     if (OPCOES[i].tipo == OP_LEITURA || OPCOES[i].tipo == OP_ACAO) continue;
     if (!CHAVE[i] || CHAVE[i][0] == '-') continue;
     if (somenteDesteAparelho(i)) continue;
+    // TEMA DINAMICO NAO SOBE. O web nao tem esse tema: gravar "DYNAMIC" na
+    // conta deixaria o web sem tema que ele saiba desenhar, e gravar o padrao
+    // ("WHITE") no lugar APAGARIA o tema que a pessoa escolheu la — o JADE do
+    // celular viraria branco porque ela ligou o dinamico na TV. O valor da
+    // conta fica exatamente como esta (a costura nao toca a chave), que e o
+    // "padrao" certo: o ultimo tema fixo que a conta conhece.
+    if (i == AJ_TEMA && temaDinamico()) continue;
     camelParaSnake(CHAVE[i], snake, sizeof snake);
     if (!acharValor(base, fim, snake, &vi, &vf) &&
         !acharValor(base, fim, CHAVE[i], &vi, &vf)) continue;
@@ -2097,7 +2147,7 @@ static const char *ajudaOpcao(int op) {
 
     // --- Interface e conta
     case AJ_IDIOMA: return "Idioma de toda a interface. Não muda o idioma das legendas nem do áudio.";
-    case AJ_TEMA: return "Cor do anel que marca onde está o foco. É a mesma escolha de tema do app web, e vale só para o anel: o resto da interface não muda de cor.";
+    case AJ_TEMA: return "Cor do anel que marca onde está o foco. Os doze temas são os do app web e seguem a conta. Dinâmica usa a cor da arte do título em cena; Dinâmica estilizada também tinge o fundo, de leve. As duas ficam só nesta TV.";
     case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";
     case AJ_RESOLUCAO: return "Desenha a interface em 4K nas TVs que permitem. Muitas ignoram o pedido e continuam em 1080p — o log diz qual é o caso. Vale reiniciar o app depois de mudar. O vídeo já é 4K nos dois casos.";
     case AJ_PERFIL_ATIVO: return "Perfil em uso nesta TV. Trocar de perfil é feito na tela de perfis, ao abrir o app.";
