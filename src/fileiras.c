@@ -118,12 +118,15 @@ int fil_origem_de(const char *chave) {
 // Rotulos CURTOS: o selo e lido de relance, a 3 m, ao lado do nome da fileira.
 // A frase inteira mora em fil_origem_ajuda e vai para a area de ajuda.
 static const char *ORIGEM_ROT[FIL_ORIGEM_N] = { "Do app", "Coleção", "Catálogo" };
-// Icones REAIS (SVG do app web rasterizado em art/icones), nunca forma
-// desenhada a mao no shader — ver a nota de gfx_icone em gfx.h.
+// Icones REAIS (SVG rasterizado em art/icones), nunca forma desenhada a mao no
+// shader — ver a nota de gfx_icone em gfx.h. So a folha de fileiras dos Ajustes
+// usa este selo, entao ele e do mesmo Lucide (aj_*, tools/icones-lucide.sh) que
+// o resto dos Ajustes: um "menu_home" cheio ao lado do traco fino da linha do
+// destaque lia como dois apps na mesma tela.
 static const char *ORIGEM_ICONE[FIL_ORIGEM_N] = {
-  "menu_home",     // fileira montada pelo proprio app
-  "menu_library",  // grupo de colecoes
-  "addon"          // catalogo de addon (o encaixe de quebra-cabeca)
+  "aj_house",      // fileira montada pelo proprio app
+  "aj_folders",    // grupo de colecoes (uma pasta de atalhos)
+  "aj_puzzle"      // catalogo de addon (o encaixe de quebra-cabeca)
 };
 static const char *ORIGEM_AJUDA[FIL_ORIGEM_N] = {
   "Fileira montada pelo próprio app com o que você já assistiu ou salvou. Não vem de addon nenhum.",

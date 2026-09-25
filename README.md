@@ -229,6 +229,10 @@ The C in `src/` is written from scratch, but the interface icons in
 GPLv3, as is the [web fork](https://github.com/iqui27/NuvioTVSmart-legacy-webos)
 this grew alongside. So the whole thing goes out under the same terms.
 
+Settings icons: [Lucide](https://lucide.dev), ISC license. The unmodified SVGs
+and the license text are in `deploy/app/art/icones/lucide/`; the `aj_*.png` next
+to them are rasterized by `tools/icones-lucide.sh`.
+
 "Nuvio", the logo and the wordmark belong to the original authors. The GPL covers
 the code, **not** the name or the branding. They appear here only to say which
 project this one comes from.

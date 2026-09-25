@@ -703,8 +703,11 @@ typedef char conferi_uma_chave_por_opcao[
 // CHAVE mudou — trocar a chave faria o ajuste de quem ja usa o app voltar ao
 // padrao (ver CHAVE). So o agrupamento mudou.
 //
-// `icone` e o basename em art/icones. Sao os SVG do app web ja rasterizados,
-// nunca forma desenhada a mao (ver gfx_icone).
+// `icone` e o basename em art/icones. Nos Ajustes sao os aj_* do Lucide (ISC),
+// rasterizados por tools/icones-lucide.sh — nunca forma desenhada a mao (ver
+// gfx_icone). Eram os PNG do app web, e com seis desenhos para oito categorias
+// "aspecto" marcava Cartazes E Diagnostico: a ancora do olho apontava para dois
+// lugares. Agora cada categoria tem o seu.
 // `curto` e o nome na COLUNA de categorias, que tem 240 px: "Continuar
 // assistindo" nao cabe la em corpo legivel do sofa, e cortar justamente o nome
 // da categoria e o pior corte possivel. `titulo` continua sendo o nome inteiro,
@@ -728,14 +731,14 @@ static const struct {
   const char *titulo, *curto, *icone;
   int ini;
 } SECOES[] = {
-  { "Reprodução",           "Reprodução", "play",         AJ_QUALIDADE },
-  { "Home",                 "Home",       "menu_home",    AJ_LANDSCAPE },
-  { "Continuar assistindo", "Retomar",    "avancar",      AJ_CW_LIGADO },
-  { "Página de detalhes",   "Detalhes",   "episodios",    AJ_DET_BLUR_NAO_VISTOS },
-  { "Pôsteres e cards",     "Cartazes",   "aspecto",      AJ_EXPANDIR },
-  { "Interface e conta",    "Conta",      "menu_profile", AJ_IDIOMA },
-  { "Integrações",          "Integrações","addon",        AJ_TMDB_LIGADO },
-  { "Diagnóstico",          "Diagnóstico", "aspecto",       AJ_DIAGNOSTICO },
+  { "Reprodução",           "Reprodução", "aj_circle-play",          AJ_QUALIDADE },
+  { "Home",                 "Home",       "aj_house",                AJ_LANDSCAPE },
+  { "Continuar assistindo", "Retomar",    "aj_rotate-ccw-clock",     AJ_CW_LIGADO },
+  { "Página de detalhes",   "Detalhes",   "aj_file-text",            AJ_DET_BLUR_NAO_VISTOS },
+  { "Pôsteres e cards",     "Cartazes",   "aj_gallery-vertical-end", AJ_EXPANDIR },
+  { "Interface e conta",    "Conta",      "aj_user-round-cog",       AJ_IDIOMA },
+  { "Integrações",          "Integrações","aj_plug",                 AJ_TMDB_LIGADO },
+  { "Diagnóstico",          "Diagnóstico", "aj_activity",            AJ_DIAGNOSTICO },
 };
 #define AJ_N_SECOES (int)(sizeof SECOES / sizeof *SECOES)
 
@@ -2936,40 +2939,116 @@ static const char *textoValor(int op) {
 // legenda, audio, cartaz, conta...), e a familia e o que o olho procura numa
 // lista longa. Um icone por subsecao, com excecoes onde a opcao tem cara
 // propria.
+//
+// TODOS SAO LUCIDE (aj_*, tools/icones-lucide.sh), 25/09/2026: "pode pegar SVG
+// externos novos pra gente nao reutilizar os mesmos em tudo e fazer mais
+// sentido". Antes eram os PNG do app web, e com poucos desenhos o mesmo icone
+// cobria coisas sem relacao — o "aspecto" (proporcao de tela) marcava memoria de
+// imagens, escurecimento do fundo e o diagnostico; a engrenagem marcava idioma,
+// tema, versao e envio de registro. Um icone que aparece em tudo nao diz nada.
+//
+// A REGRA AGORA: o mesmo desenho so se repete quando e A MESMA COISA em dois
+// lugares — idioma e idioma (interface e metadados), nota e nota (Home e
+// MDBList), addon e addon, spoiler escondido e spoiler escondido (Continuar e
+// detalhes), trailer e trailer, chave de API e chave de API, datas e datas.
 static const char *iconeOpcao(int op) {
   switch (op) {
-    case AJ_LEG_LINGUA: return "legenda";
-    case AJ_AUD_LINGUA: case AJ_ATMOS: return "audio";
-    case AJ_FONTE_MANUAL: case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: return "fontes";
-    case AJ_PAUSA_OVERLAY: return "pause";
-    case AJ_CW_LIGADO: case AJ_CW_OK: case AJ_CW_FONTE: case AJ_CW_ESTILO: case AJ_CW_THUMB: case AJ_CW_BLUR_PROX:
-    case AJ_CW_FURTHEST: case AJ_CW_NAO_EXIBIDOS: case AJ_CW_ORDEM: return "avancar";
-    case AJ_DESCOBRIR: return "menu_search";
-    case AJ_FIL_LIMITE: case AJ_FIL_ORDEM: return "menu_library";
-    case AJ_IDIOMA: case AJ_ANIM: case AJ_RESOLUCAO: case AJ_TEMA: return "menu_settings";
-    case AJ_ADDONS: case AJ_STALKER_PORTAL: case AJ_STALKER_MAC: case AJ_STALKER_LIMPAR:
-    case AJ_XTREAM_SERVIDOR: case AJ_XTREAM_USUARIO: case AJ_XTREAM_SENHA: case AJ_XTREAM_LIMPAR: return "portal";
-    case AJ_TRAKT: case AJ_SIMKL: case AJ_SALVOS_DEST: return "recomendar";
-    case AJ_PERFIL_ATIVO: case AJ_SAIR: return "menu_profile";
-    case AJ_SYNC: return "fluxo";
-    case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_ENVIAR_LOG: case AJ_ENVIO_AUTO: return "menu_settings";
-    case AJ_DIAGNOSTICO: return "aspecto";
-    case AJ_ESPACO: case AJ_TEX_MB: return "aspecto";
-    case AJ_DET_TRAILER: case AJ_TMDB_TRAILERS: case AJ_PROF_TRAILERS: return "trailer";
-    case AJ_DET_VEU: return "aspecto";
-    case AJ_DET_TRAILER_AUTO: case AJ_TRAILER_QUAL: case AJ_TRAILER_ASPECTO: case AJ_HERO_TRAILER:
-    case AJ_TRAILER_FONTE: return "trailer";
-    case AJ_DET_BLUR_NAO_VISTOS: return "oculto";
+    // Reproducao: imagem, som, legenda, pausa e as tres de fonte.
+    case AJ_QUALIDADE: return "aj_hd";
+    case AJ_DV: return "aj_sun";                     // HDR = brilho
+    case AJ_ATMOS: return "aj_speaker";
+    case AJ_AUD_LINGUA: return "aj_audio-lines";
+    case AJ_LEG_LINGUA: return "aj_captions";
+    case AJ_PAUSA_OVERLAY: return "aj_circle-pause";
+    case AJ_FONTE_MANUAL: return "aj_list-video";    // escolher na lista
+    case AJ_FONTE_AUTO: return "aj_wand-sparkles";   // o app escolhe
+    case AJ_FONTE_REPOR: return "aj_life-buoy";      // socorro quando falha
+    // Home: formato, destaque, fileiras, barra lateral, cartaz.
+    case AJ_LANDSCAPE: return "aj_rectangle-horizontal";
+    case AJ_HERO_CHEIO: return "aj_maximize-2";
+    case AJ_HERO_FUNDO: return "aj_wallpaper";
+    case AJ_HERO_ARTE_DIF: return "aj_images";       // duas artes
+    case AJ_HERO: case AJ_HERO_CATALOGOS: return "aj_panel-top";
+    case AJ_FIL_LIMITE: return "aj_rows-3";
+    case AJ_FIL_ORDEM: return "aj_list-ordered";
+    case AJ_RAIL: case AJ_RAIL_MODERNA: case AJ_RAIL_BLUR: return "aj_panel-left";
+    case AJ_PS_FUNDO: return "aj_users";             // a tela de perfis
+    case AJ_DESCOBRIR: return "aj_compass";
+    case AJ_ROTULOS: return "aj_tag";
+    case AJ_SUFIXO_TIPO: return "aj_tags";
+    case AJ_NOME_ADDON: case AJ_ADDONS: return "aj_puzzle";
+    case AJ_OCULTAR_NLANC: return "aj_calendar-off";
+    case AJ_NOTAS_HOME: return "aj_star";
+    case AJ_GRAD_CLASSICO: return "aj_blend";
+    // Continuar assistindo: a familia e o relogio que volta (secao); aqui so as
+    // que tem cara propria.
+    case AJ_CW_ORDEM: return "aj_arrow-down-wide-narrow";
+    case AJ_CW_BLUR_PROX: case AJ_DET_BLUR_NAO_VISTOS: return "aj_eye-off";
+    case AJ_CW_NAO_EXIBIDOS: return "aj_calendar-clock";
+    case AJ_CW_THUMB: return "aj_image-play";         // foto do episodio
+    case AJ_TMDB_CW: return "aj_rotate-ccw-clock";   // e o Continuar assistindo
+    // Detalhes.
+    case AJ_DET_TRAILER: case AJ_DET_TRAILER_AUTO: case AJ_TRAILER_QUAL: case AJ_TRAILER_ASPECTO:
+    case AJ_TRAILER_FONTE: case AJ_HERO_TRAILER: case AJ_TMDB_TRAILERS: return "aj_clapperboard";
+    case AJ_DET_META_EXT: return "aj_database";      // metadado, como o TMDB
+    case AJ_DET_DATA_CHEIA: return "aj_calendar";
+    case AJ_DET_VEU: return "aj_sun-dim";            // escurecer o fundo
+    // Cartazes. A profundidade inteira (inclusive nos trailers) e camada.
+    case AJ_EXPANDIR: return "aj_scaling";
+    case AJ_EXPANDIR_ATRASO: return "aj_timer";
+    case AJ_NAV_RAPIDA: return "aj_chevrons-right";
+    case AJ_BORDA_FOCO: return "aj_scan";
+    case AJ_PROF: case AJ_PROF_BORDA: case AJ_PROF_BRILHO: case AJ_PROF_COBERTURA: case AJ_PROF_POSTERS:
+    case AJ_PROF_CW: case AJ_PROF_EPS: case AJ_PROF_ELENCO: case AJ_PROF_TRAILERS: return "aj_layers";
+    case AJ_LARGURA_DP: return "aj_move-horizontal";
+    case AJ_RAIO_DP: return "aj_square-round-corner";
+    case AJ_QUALIDADE_IMG: return "aj_image-upscale";
+    // Interface e conta.
+    case AJ_IDIOMA: case AJ_TMDB_IDIOMA: return "aj_languages";
+    case AJ_ANIM: return "aj_sparkles";
+    case AJ_RESOLUCAO: return "aj_monitor-cog";
+    case AJ_TEMA: return "aj_palette";
+    case AJ_PERFIL_ATIVO: return "aj_user-round";
+    case AJ_SYNC: return "aj_refresh-cw";
+    case AJ_STALKER_PORTAL: case AJ_STALKER_MAC: case AJ_STALKER_LIMPAR:
+    case AJ_XTREAM_SERVIDOR: case AJ_XTREAM_USUARIO: case AJ_XTREAM_SENHA: case AJ_XTREAM_LIMPAR: return "aj_tv";
+    case AJ_SALVOS_DEST: return "aj_bookmark";
+    case AJ_TRAKT: case AJ_SIMKL: return "aj_link";  // servico conectado
+    case AJ_SAIR: return "aj_log-out";
+    case AJ_VERSAO_I: return "aj_info";
+    case AJ_ATUALIZAR: return "aj_download";
+    case AJ_ENVIAR_LOG: return "aj_send";
+    case AJ_ENVIO_AUTO: return "aj_file-clock";    // o registro, sozinho
+    case AJ_ESPACO: case AJ_TEX_MB: return "aj_memory-stick";
+    // Integracoes. O TMDB e treze interruptores de "o que pegar do TMDB":
+    // com o mesmo cilindro de banco em todos, a lista virava uma coluna de
+    // desenhos iguais e o icone nao ajudava a achar nada. Cada um leva o
+    // desenho DO QUE ELE TRAZ; o proprio "TMDB" fica com o cilindro (padrao da
+    // secao, abaixo). O MDBList e todo nota, e ai a repeticao e o certo.
+    case AJ_TMDB_ARTE: return "aj_image";
+    case AJ_TMDB_BASICO: return "aj_type";           // titulo e sinopse
+    case AJ_TMDB_FICHA: return "aj_clipboard-list";
+    case AJ_TMDB_DATAS: return "aj_calendar";
+    case AJ_TMDB_ELENCO: return "aj_drama";
+    case AJ_TMDB_PROD: return "aj_factory";
+    case AJ_TMDB_REDES: return "aj_radio-tower";
+    case AJ_TMDB_EPS: return "aj_layout-list";
+    case AJ_TMDB_MAIS: return "aj_thumbs-up";
+    case AJ_TMDB_COL: return "aj_library-big";
+    case AJ_MDB_TRAKT: case AJ_MDB_IMDB: case AJ_MDB_TMDB: case AJ_MDB_LETTER: case AJ_MDB_TOMATES:
+    case AJ_MDB_AUDIENCIA: case AJ_MDB_META: case AJ_MDB_MAL: case AJ_MDB_LIGADO: return "aj_star";
+    case AJ_MDB_CHAVE: case AJ_FANART_CHAVE: return "aj_key-round";
+    case AJ_DIAGNOSTICO: return "aj_gauge";          // mede velocidade
     default: break;
   }
   switch (secaoDe(op)) {
-    case 0: return "play";
-    case 1: return "menu_home";
-    case 2: return "avancar";
-    case 3: return "episodios";
-    case 4: return "aspecto";
-    case 5: return "menu_profile";
-    default: return "addon";
+    case 0: return "aj_circle-play";
+    case 1: return "aj_house";
+    case 2: return "aj_rotate-ccw-clock";
+    case 3: return "aj_file-text";
+    case 4: return "aj_gallery-vertical-end";
+    case 5: return "aj_user-round-cog";
+    default: return "aj_database";                   // TMDB
   }
 }
 
@@ -3014,11 +3093,17 @@ static void desenhaLinha(int op, float y, float f, float dx, float aPag) {
   int cr = emFoco ? AJ_TEXTO_ESCURO : (podeMudar ? 240 : 192);
   // O icone da familia, num disco discreto; sobre o foco claro ele escurece
   // junto com o texto.
+  //
+  // 28 NO DISCO DE 44, e nao mais 24 (25/09/2026). Os PNG do app web eram
+  // quase todos CHEIOS e aguentavam 24; o Lucide e so traco (2 na grade 24), e
+  // a 24 px o traco dava 2 px e o "HD", o alto-falante e a legenda viravam
+  // borrao a 3 m. A 28 o traco chega a 2,3 px, perto do corpo do rotulo, e o
+  // disco continua com 8 px de respiro.
   { int esc = emFoco && focoEscuro();
     float ci = esc ? 0.16f : (emFoco ? 1.0f : 0.70f), cd = esc ? 0.0f : 1.0f;
     GfxRect disco = { linha.x + AJ_PAD - 6.0f, y + (AJ_LINHA_H - 44.0f) * 0.5f, 44.0f, 44.0f };
     gfx_cor(disco, 0.5f, cd, cd, cd, (emFoco ? 0.08f : 0.06f) * a);
-    gfx_icone((GfxRect){ disco.x + 10.0f, disco.y + 10.0f, 24.0f, 24.0f }, iconeOpcao(op), ci, ci, ci + 0.02f, aTexto); }
+    gfx_icone((GfxRect){ disco.x + 8.0f, disco.y + 8.0f, 28.0f, 28.0f }, iconeOpcao(op), ci, ci, ci + 0.02f, aTexto); }
   TxtLinha rot = txt_linha_corta(TXT_CALLOUT, OPCOES[op].rotulo,
                                 cr, cr, cr, 255, AJ_LISTA_W - 480.0f);
   txt_desenhar_alpha(rot, linha.x + AJ_PAD + 60.0f,
@@ -3468,7 +3553,7 @@ static void desenhaFileiras(void) {
     // principal, que e onde a pessoa aprendeu que ← → trocam um valor.
     if (idx == AJ_FIL_DESTAQUE) {
       { GfxRect ic = { cx + AJ_FIL_COL[0].x, y + (AJ_FIL_LINHA - 26.0f) * 0.5f, 26.0f, 26.0f };
-        gfx_icone(ic, "aspecto", 0.78f, 0.80f, 0.85f, 0.9f); }
+        gfx_icone(ic, "aj_panel-top", 0.78f, 0.80f, 0.85f, 0.9f); }   // o de "Mostrar destaque"
       l = txt_linha_corta(TXT_CALLOUT, i18n("Destaque do topo"), 234, 234, 234, 255,
                           AJ_FIL_COL[0].w - 38.0f);
       txt_desenhar(l, cx + AJ_FIL_COL[0].x + 38.0f, y + 8.0f);
