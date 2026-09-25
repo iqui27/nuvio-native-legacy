@@ -24,6 +24,12 @@ int  ajustes_pediu_addons(void);   // 1 quando o Back deve fechar a tela
 int  ajustes_pediu_diagnostico(void);
 // OK em "Teste de velocidade" (Ajustes › Diagnóstico). Lido e zerado pelo app.c.
 int  ajustes_pediu_velocidade(void);
+// A proxima abertura da tela (ajustes_iniciar) pousa o foco em "Cor de
+// destaque" em vez da primeira linha. E o "Experimentar a cor viva" do cartao
+// da 1.4.8: chamar ANTES de trocar para TELA_AJUSTES.
+void ajustes_abrir_na_cor(void);
+// A linha em foco (indice AJ_*), para os testes conferirem onde a tela abriu.
+int  ajustes_opcao_em_foco(void);
 void ajustes_encerrar(void);
 
 // Leitura pelo resto do app. "Animacoes reduzidas" e a que mais importa: com

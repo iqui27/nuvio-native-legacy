@@ -973,6 +973,9 @@ static int pediuVelocidade;
 int ajustes_pediu_velocidade(void) { int v = pediuVelocidade; pediuVelocidade = 0; return v; }
 
 static int focoOp = 0;
+static int abrirNaCor;
+void ajustes_abrir_na_cor(void) { abrirNaCor = 1; }
+int  ajustes_opcao_em_foco(void) { return focoOp; }
 // 1 = o foco esta na COLUNA DE SECOES, e nao na lista de opcoes. Nao ha um
 // segundo indice: a secao em foco e a de focoOp (secaoAtual()), entao mover no
 // indice move o foco da lista junto e sair do indice nao precisa decidir onde
@@ -1857,6 +1860,8 @@ int ajustes_iniciar(void) {
   // reset unico em ajustes_dir() (marca trailer-1310.txt).
   focoOp = 0; scrollY = 0.0f; velY = 0.0f; sair = 0;
   focoIndice = 0;
+  // Pedido do cartao da 1.4.8: a tela abre na linha da cor, na secao dela.
+  if (abrirNaCor) { focoOp = AJ_TEMA; abrirNaCor = 0; }
   filAberta = 0; filFoco = 0; filCampo = 0; filPegou = 0; filTopo = 0;
   emEdicao = 0;
   valor[AJ_FIL_LIMITE] = fil_limite();
