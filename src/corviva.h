@@ -22,15 +22,24 @@
 // e a cor padrao (branco) — mas o ultimo titulo sobrevive ao fechamento em
 // corviva.txt, entao o primeiro quadro do arranque seguinte ja nasce colorido.
 //
+// DEPOIS DO RELATO DO DONO (25/09/2026, "as cores muito parecidas, nao ta
+// pegando direito"), mais tres coisas: o destaque pode vir do LOGO do titulo
+// ("Cor da logo"), as superficies de destaque podem ser um DEGRADE das cores
+// dele ("Dinâmica gradiente") e as cores da arte podem VAZAR na interface como
+// luz ambiente ("Dinâmica imersiva", gfx_ambiente).
+//
 // Este modulo NAO depende de ajustes, gfx nem SDL: quem chama passa o modo e o
 // relogio. E o que deixa tests/corviva.sh compilar so ele.
 #ifndef NV_CORVIVA_H
 #define NV_CORVIVA_H
 
-// Modo, na ordem das opcoes de "Cor de destaque" que o ligam.
+// Modo, na ordem das opcoes de "Cor de destaque" que o ligam. Cada um contem
+// o anterior.
 #define CORVIVA_DESLIGADA  0
 #define CORVIVA_SIMPLES    1   // "Dinâmica": so o destaque segue a arte
 #define CORVIVA_ESTILIZADA 2   // "Dinâmica estilizada": destaque + base tingida
+#define CORVIVA_GRADIENTE  3   // "Dinâmica gradiente": + superficies de destaque em degrade
+#define CORVIVA_IMERSIVA   4   // "Dinâmica imersiva": + a cor da arte vazando como luz
 
 // Prioridade de quem pede (maior ganha dentro do mesmo quadro).
 #define CORVIVA_HOME     1
@@ -38,9 +47,12 @@
 #define CORVIVA_PLAYER   3
 
 typedef struct {
-  int   ok;          // 0 = arte sem cor que preste (cinza, preto e branco)
-  float acento[3];   // sRGB 0..1, ja com luminosidade/croma no limite
-  float base[3];     // sRGB 0..1, o fundo escuro tingido (so o estilizado usa)
+  int   ok;           // 0 = arte sem cor que preste (cinza, preto e branco)
+  int   transparente; // >= 20% das amostras transparentes: e um LOGO
+  float acento[3];    // sRGB 0..1, ja com luminosidade/croma no limite
+  float base[3];      // sRGB 0..1, o fundo escuro tingido (estilizado em diante)
+  float grad[3][3];   // tres paradas do degrade, da mais clara a mais escura
+  float regiao[4][3]; // luz de esquerda, direita, topo e base (imersiva)
 } CorvivaPaleta;
 
 // Pixels R,G,B,A (ABGR8888 do SDL em little endian), `pitch` em bytes. Pura:
@@ -53,8 +65,12 @@ void corviva_anotar(const char *chave, const CorvivaPaleta *p);
 // Diz qual arte esta em cena neste quadro. Do fio de desenho. Barato: um hash
 // de string e uma comparacao; chamar todo quadro e o uso esperado.
 void corviva_definir(const char *chave, int prioridade);
+// O LOGO do mesmo titulo (url do clearlogo). Vale junto do pedido de mesma
+// prioridade; com "Cor da logo" ligado, o destaque e o degrade saem dele, e a
+// arte fica com a base e a luz ambiente. Logo branco/preto cai na arte.
+void corviva_definir_logo(const char *chave, int prioridade);
 // Uma vez por quadro, antes do desenho. `dt` em segundos.
-void corviva_quadro(float dt, int modo, int reduzido);
+void corviva_quadro(float dt, int modo, int usarLogo, int reduzido);
 
 // A cor corrente (animada). So faz sentido com o modo ligado.
 void corviva_acento(float *r, float *g, float *b);
@@ -62,6 +78,19 @@ void corviva_acento(float *r, float *g, float *b);
 // NV_COR_FUNDO_R/G/B leem (layout.h), e gfx.c o passa as rampas do destaque e
 // do detalhe — por isso o fundo tingido nao exige editar cada tela.
 extern float nv_cor_fundo_viva[3];
+// O MESMO destaque que corviva_acento devolve, e o degrade dele: gfx.c pinta em
+// degrade todo GFX_COR/GFX_ANEL cuja cor seja EXATAMENTE nv_acento_viva quando
+// nv_grad_ativo — e assim que as superficies de destaque de ~40 arquivos viram
+// degrade sem nenhum deles mudar. Ver gfx_rect.
+extern float nv_acento_viva[3];
+extern float nv_grad_viva[3][3];
+extern int   nv_grad_ativo;
+// Luz ambiente (imersiva): as quatro cores de regiao, a forca 0..1 (entra e
+// sai com o modo) e o relogio em segundos para a "respiracao" (0 com
+// animacoes reduzidas: a luz fica parada).
+extern float nv_ambiente_viva[4][3];
+extern float nv_ambiente_forca;
+extern float nv_tempo_viva;
 
 // corviva.txt: carregar no arranque (depois de dados_iniciar) e gravar quando
 // houver novidade. A gravacao se limita sozinha a uma a cada 20 s.

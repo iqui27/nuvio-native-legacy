@@ -29,6 +29,12 @@ int  assrender_adicionar_fonte(const char *nome, const void *dados, size_t taman
  * libass. enabled=0 preserva todas as cores do arquivo ASS. */
 void assrender_definir_cor(int enabled, int r, int g, int b);
 
+/* Area em que o video aparece na tela (x,y,w,h, podendo passar da tela nos
+ * modos de zoom), dimensoes do quadro decodificado e escala das fontes do
+ * arquivo (1.0 = como o autor fez). Barato: so pede ao worker quando muda. */
+void assrender_definir_layout(float x, float y, float w, float h,
+                              int videoW, int videoH, double escalaFonte);
+
 /* Executa no thread grafico a limpeza de texturas pendente apos troca de
  * faixa ou seek, mesmo quando a nova faixa nao e ASS. */
 void assrender_aplicar_invalidacao(void);

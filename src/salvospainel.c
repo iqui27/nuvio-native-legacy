@@ -20,6 +20,7 @@
 #include "avisos.h"
 #include "recenviar.h"
 #include "catalogo.h"
+#include "ctxmenu.h"
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
@@ -262,6 +263,22 @@ static float animSw = -1.0f;
 static char  pedido[24];
 static int   temPedido;
 
+// SEGURAR OK NUMA LINHA DE "SALVOS" abre o menu do cartaz (ctxmenu.c, modo
+// painel): remover, mais informacoes, assistido. O toque curto continua
+// abrindo o titulo — mas agora na SOLTURA, e nao no KEYDOWN: so no KEYUP se
+// sabe quanto o dedo ficou. E a mesma medida da home e da Agenda (NV_HOLD_MS),
+// e o menu abre NO LIMIAR, com o dedo ainda no botao, como na home: esperar a
+// soltura deixaria a barra cheia na tela sem nada acontecer.
+// 0 = nenhum OK afundado numa linha. So a aba Salvos arma; as outras abas
+// continuam decidindo no KEYDOWN, porque nelas nao ha o que segurar.
+static Uint32 okDesde;
+// O FOCO SEGUE A REMOCAO. Ao abrir o menu, o painel guarda o titulo e o que vem
+// logo depois dele; quando a lista remontar sem o titulo, o foco vai para o
+// seguinte — e nao para "o mesmo indice", que depois de uma remocao pelo Trakt
+// (a linha local sai antes, a copia do catalogo so no 2xx) apontaria para
+// outra coisa no meio do caminho.
+static char   menuId[24], menuProximo[24];
+
 int spainel_aberto(void)  { return aberto; }
 int spainel_visivel(void) { return aberto || entrada > 0.002f; }
 
@@ -383,6 +400,19 @@ static void reconstruir(void) {
   // O FOCO DAS ABAS (-1) NAO E UM FOCO FORA DA FAIXA. Sem esta guarda, uma
   // reconstrucao com a lista vazia jogaria o foco de volta para a linha 0, que
   // nao existe, e a linha de abas perderia o anel debaixo do dedo.
+  if (menuId[0] && foco >= 0) {
+    // Com o menu do painel no ar (ou acabando de sair), o foco vai por
+    // IDENTIDADE: fica no titulo enquanto ele existir, e cai no seguinte quando
+    // ele sair. A animacao de foco nao e zerada — a linha que chega ao lugar
+    // acende pela mola, sem piscar.
+    int achou = -1, prox = -1;
+    for (i = 0; i < nLinhas; i++) {
+      if (achou < 0 && salvos_mesmo_titulo(linhas[i].id, menuId)) achou = i;
+      if (prox < 0 && menuProximo[0] && salvos_mesmo_titulo(linhas[i].id, menuProximo)) prox = i;
+    }
+    if (achou >= 0) foco = achou;
+    else if (prox >= 0) foco = prox;
+  }
   if (foco >= 0 && foco >= nLinhas) foco = nLinhas > 0 ? nLinhas - 1 : 0;
 }
 
@@ -545,6 +575,8 @@ void spainel_abrir(void) {
   if (aberto) return;
   aberto = 1;
   foco = 0;
+  okDesde = 0;
+  menuId[0] = menuProximo[0] = 0;
   aba = SP_ABA_SALVOS;
   scrollY = 0.0f; velY = 0.0f;
   memset(animFoco, 0, sizeof animFoco);
@@ -588,10 +620,72 @@ static float topoDe(int i) {
   return y;
 }
 
+// Uma linha de Salvos em foco, ou seja, algo que o OK longo pode segurar.
+static int linhaSeguravel(void) {
+  return aba == SP_ABA_SALVOS && foco >= 0 && foco < nLinhas;
+}
+
+// Abre o menu do cartaz sobre a linha focada. A linha vira um CatItem com o
+// que o painel sabe dela; o menu troca pela copia do catalogo quando ela
+// existe (ver o modo painel em ctxmenu.c).
+static void abrirMenu(void) {
+  CatItem c;
+  const SPLinha *l;
+  if (!linhaSeguravel()) return;
+  l = &linhas[foco];
+  memset(&c, 0, sizeof c);
+  snprintf(c.imdb, sizeof c.imdb, "%s", l->id);
+  snprintf(c.tipo, sizeof c.tipo, "%s", l->serie ? "series" : "movie");
+  snprintf(c.titulo, sizeof c.titulo, "%s", l->titulo);
+  snprintf(c.poster, sizeof c.poster, "%s", l->poster);
+  snprintf(c.meta, sizeof c.meta, "%s", l->meta);
+  c.nota = l->nota;
+  c.progresso = l->progresso;
+  c.temporada = l->temporada;
+  c.episodio = l->episodio;
+  c.restanteMin = l->restanteMin;
+  snprintf(menuId, sizeof menuId, "%s", l->id);
+  // O seguinte, ou o anterior quando a linha e a ultima: e para onde o foco
+  // vai se o titulo sair da lista.
+  menuProximo[0] = 0;
+  if (foco + 1 < nLinhas) snprintf(menuProximo, sizeof menuProximo, "%s", linhas[foco + 1].id);
+  else if (foco > 0) snprintf(menuProximo, sizeof menuProximo, "%s", linhas[foco - 1].id);
+  ctx_abrir_salvo(&c);
+}
+
+// O toque curto de sempre: entrega o IMDb e fecha, app.c abre o titulo.
+static void abrirLinha(void) {
+  if (foco >= 0 && foco < nLinhas) {
+    snprintf(pedido, sizeof pedido, "%s", linhas[foco].id);
+    temPedido = 1;
+    aberto = 0;
+  }
+}
+
+static int teclaOk(SDL_Keycode k) {
+  return k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE;
+}
+
 void spainel_evento(const SDL_Event *e) {
   SDL_Keycode k;
-  if (!aberto || e->type != SDL_KEYDOWN) return;
+  if (!aberto) return;
+  // A SOLTURA DO OK numa linha de Salvos: curto abre o titulo, longo abre o
+  // menu (se spainel_atualizar ainda nao o abriu no limiar — um quadro lento
+  // ou um teste sem quadro). Soltura sem o KEYDOWN daqui nao e clique: e o OK
+  // que fechou o menu do cartaz, ou o que abriu o painel por outra porta.
+  if (e->type == SDL_KEYUP) {
+    if (okDesde && teclaOk(e->key.keysym.sym)) {
+      Uint32 dur = SDL_GetTicks() - okDesde;
+      okDesde = 0;
+      if (dur >= NV_HOLD_MS) abrirMenu();
+      else abrirLinha();
+    }
+    return;
+  }
+  if (e->type != SDL_KEYDOWN) return;
   k = e->key.keysym.sym;
+  // Qualquer outra tecla no meio desfaz o gesto, como na home (observarHold).
+  if (!teclaOk(k)) okDesde = 0;
   // Mesmo conjunto de "voltar" que o menu lateral aceita, mais a ESQUERDA: o
   // painel encosta na borda direita da tela, entao sair por ele e ir para a
   // esquerda. E o gesto que perfil.c ja tinha nesta mesma posicao.
@@ -688,10 +782,12 @@ void spainel_evento(const SDL_Event *e) {
           return;
       }
     }
-    if (foco >= 0 && foco < nLinhas) {
-      snprintf(pedido, sizeof pedido, "%s", linhas[foco].id);
-      temPedido = 1;
-      aberto = 0;
+    // A decisao fica para a soltura (ou para o limiar, em spainel_atualizar).
+    // A repeticao automatica do controle nao rearma: o relogio e do primeiro
+    // KEYDOWN.
+    if (linhaSeguravel() && !e->key.repeat && !okDesde) {
+      okDesde = SDL_GetTicks();
+      if (!okDesde) okDesde = 1;
     }
     return;
   }
@@ -701,6 +797,10 @@ void spainel_atualizar(float dt, Uint32 agora) {
   int i;
   float alvo, topo, base;
   (void)agora;
+  // A barra de "Segure OK" do menu do cartaz, centrada no painel enquanto ele e
+  // dono do D-pad; fora dele, no centro da tela como sempre.
+  ctx_centro_dica(aberto && aba == SP_ABA_SALVOS ? SP_X + SP_W * 0.5f : -1.0f);
+  if (!aberto) okDesde = 0;
   if (!aberto && entrada < 0.002f) {
     if (entrada != 0.0f) entrada = 0.0f;
     return;
@@ -710,6 +810,21 @@ void spainel_atualizar(float dt, Uint32 agora) {
   // reconstruir, a lista continuaria a do instante da abertura. Ver listaVelha:
   // a pergunta por quadro sao duas revisoes, e nao um retrato do catalogo.
   if (aberto && listaVelha()) reconstruir();
+  // O LIMIAR DO OK LONGO, com o dedo ainda no botao (ver okDesde).
+  if (aberto && okDesde && SDL_GetTicks() - okDesde >= NV_HOLD_MS) {
+    okDesde = 0;
+    abrirMenu();
+  }
+  // "Mais informações" no menu do painel: o mesmo contrato do toque curto.
+  { const char *id = ctx_pediu_detalhes_imdb();
+    if (id && aberto) {
+      snprintf(pedido, sizeof pedido, "%s", id);
+      temPedido = 1;
+      aberto = 0;
+    } }
+  // O menu saiu e a lista ja remontou o que tinha de remontar: o foco volta a
+  // ser por indice, como sempre.
+  if (menuId[0] && !ctx_aberto() && !listaVelha()) menuId[0] = menuProximo[0] = 0;
   // A LISTA SOCIAL TAMBEM MUDA COM O PAINEL ABERTO: o fio de recomenda.c sonda
   // a cada 60 s, e uma recomendacao que chega enquanto a aba esta na tela tem
   // de aparecer. A copia e barata (memcpy de ate 60 registros) e so acontece

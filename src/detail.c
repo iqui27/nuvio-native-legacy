@@ -4986,12 +4986,18 @@ void detail_desenhar(Uint32 agora) {
   // COR VIVA: a pagina do titulo manda na cor, acima da home que pode estar
   // desenhada por baixo (a prioridade resolve o mesmo quadro). A chave e a
   // MESMA arte que o fundo pede em tela cheia logo abaixo.
-  { const char *cv = arteDe(idx); if (cv) corviva_definir(cv, CORVIVA_DETALHE); }
+  { const char *cv = arteDe(idx), *lg = logoDe(idx);
+    if (cv) corviva_definir(cv, CORVIVA_DETALHE);
+    if (lg) corviva_definir_logo(lg, CORVIVA_DETALHE); }
   float s = suave(t), a2 = fase2();
 
   if (!detail_cobre_tela()) {
     GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
     gfx_cor(tela, 0.0f, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, s);   // #0d0d0d, o fundo do web
+    // Imersiva: a MESMA luz que main.c pinta depois do clear, subindo junto
+    // com o fundo. Sem ela, no quadro em que o detalhe passa a cobrir a tela
+    // (a home deixa de ser desenhada) a luz de baixo aparecia de uma vez.
+    gfx_ambiente(s);
   }
   gfx_sem_recorte();
 

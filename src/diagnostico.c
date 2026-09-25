@@ -303,6 +303,12 @@ typedef struct {
 
 static Vazao vz;
 static int sairTela;
+// O ATALHO DE AJUSTES (Ajustes › Diagnóstico › Teste de velocidade). `pedido`
+// e o recado de diagnostico_abrir_velocidade para o diagnostico_iniciar que
+// vem logo depois; `soVelocidade` e a tela aberta SO para o teste: sem
+// apresentacao, sem escolha de objetivo, e o Voltar do resultado sai da tela
+// em vez de cair na escolha que a pessoa nunca viu.
+static int velocidadePedida, soVelocidade;
 static int introGlobal;
 static int introDecidido;
 
@@ -1441,6 +1447,13 @@ void diagnostico_iniciar(void) {
   if (atomic_load(&d.estado) == 1 || d.fioSug || atomic_load(&d.enviando) ||
       atomic_load(&vz.estado) == 1) {
     sairTela = 0;
+    // O atalho com um teste de velocidade JA rodando (a barra lateral deixa
+    // sair no meio): mostra o que roda, em vez de comecar outro.
+    if (velocidadePedida && atomic_load(&vz.estado) == 1) {
+      vz.aberto = 1;
+      soVelocidade = 1;
+    }
+    velocidadePedida = 0;
     return;
   }
   juntarFios(1);
@@ -1453,7 +1466,18 @@ void diagnostico_iniciar(void) {
   sairTela = 0;
   d.intro = !apresentacaoVista();
   dados_uuid(d.id, sizeof d.id);
+  soVelocidade = 0;
+  if (velocidadePedida) {
+    velocidadePedida = 0;
+    // A apresentacao NAO e marcada como vista: ela explica o diagnostico, e
+    // quem so mediu a rede ainda nao a leu.
+    d.intro = 0;
+    soVelocidade = 1;
+    iniciarVazao();
+  }
 }
+
+void diagnostico_abrir_velocidade(void) { velocidadePedida = 1; }
 
 // ARRANQUE: o perfil aprovado volta a valer, e um experimento interrompido
 // (checkpoint pendente) so e apagado — o candidato nunca foi gravado como
@@ -1593,7 +1617,12 @@ void diagnostico_evento(const SDL_Event *e) {
     int ve = atomic_load(&vz.estado);
     if (teclaVoltar(e)) {
       if (ve == 1) atomic_store(&vz.cancelado, 1);
-      else vz.aberto = 0;
+      else {
+        vz.aberto = 0;
+        // Aberta pelo atalho: nao ha objetivo nem resultado atras, volta a
+        // Ajustes (app.c).
+        if (soVelocidade) { soVelocidade = 0; sairTela = 1; }
+      }
     } else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && ve != 1) {
       iniciarVazao();
     }
@@ -1706,10 +1735,20 @@ static void barraProgresso(GfxRect r, float pct, float ar, float ag, float ab,
   gfx_cor(r, 9.0f / r.h, 0.10f, 0.12f, 0.15f, 1.0f);
   if (w > 1.0f)
     gfx_cor((GfxRect){ r.x, r.y, w, r.h }, 9.0f / r.h, ar, ag, ab, 0.96f);
+  // O BRILHO QUE CORRE fica DENTRO do preenchimento (dono, 26/09/2026: "o
+  // trem que mexe comeca fora da barra e termina depois, ta descasado"). Ele
+  // andava de 80 px antes da barra ate 80 px depois do fim do preenchido, sem
+  // recorte, e era mais baixo e com outro raio que a barra. Agora o trecho e
+  // cortado nas duas pontas do preenchido e tem a altura e o raio dela: le
+  // como luz passando pelo material, nao como uma peca solta por cima.
   if (animado && w > 24.0f) {
-    float x = r.x + fmodf((float)agora * 0.24f, w + 160.0f) - 80.0f;
-    gfx_cor((GfxRect){ x, r.y + 2.0f, 78.0f, r.h - 4.0f },
-            7.0f / r.h, 1.0f, 1.0f, 1.0f, 0.18f);
+    float larg = w < 240.0f ? w * 0.35f : 84.0f;
+    float x0 = r.x - larg + fmodf((float)agora * 0.24f, w + larg);
+    float x1 = x0 + larg;
+    if (x0 < r.x) x0 = r.x;
+    if (x1 > r.x + w) x1 = r.x + w;
+    if (x1 - x0 > 1.0f)
+      gfx_cor((GfxRect){ x0, r.y, x1 - x0, r.h }, 9.0f / r.h, 1.0f, 1.0f, 1.0f, 0.16f);
   }
 }
 

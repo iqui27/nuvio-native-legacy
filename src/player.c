@@ -2221,18 +2221,53 @@ int player_texto_legenda_nativa(char *dst, int tam) {
 /* O uMS da C9 limita fonte e escala. OpenSubtitles passa por este overlay
  * SDL/GLES, exatamente como o overlay HTML do app web. Desde o #92 tambem
  * desenha ASS: varios blocos ao mesmo tempo, cada um no seu lugar. */
+/* Onde o video esta NESTE quadro — e ali que o ASS e composto: as placas do
+ * arquivo sao posicionadas em cima da imagem, nao da tela. Segue o mesmo
+ * caminho do plano de hardware: miniatura, animacao da janela, modo de
+ * proporcao (inclusive o retangulo virtual que passa da tela no zoom) e o
+ * recuo do painel de creditos. Sem as dimensoes do quadro, a tela inteira. */
+static PlrRect areaVideoLegenda(void) {
+  PlrRect r = { 0.0f, 0.0f, NV_TELA_W, NV_TELA_H }, d, o;
+  if (video_largura() < 2 || video_altura() < 2) return r;
+  if (mini) return miniDestino();
+  if (janAtiva) return janAgora;
+  r = aspectoRect(aspecto);
+  if (encolhe > 0.999f) return r;
+  d = aspectoVisivel(aspecto);
+  o = destinoComRecuo(d);
+  r.x = o.x + (r.x - d.x) * encolhe;
+  r.y = o.y + (r.y - d.y) * encolhe;
+  r.w *= encolhe; r.h *= encolhe;
+  return r;
+}
+
+/* Tamanho da folha aplicado ao ASS: 120 % e o padrao do app, e no ASS o
+ * padrao e o tamanho que o autor escolheu. O resto e proporcional — tudo
+ * cresce junto, como o sub-scale do mpv, sem mexer em cor, borda ou lugar. */
+static double escalaFonteAss(void) {
+  int pct = legEstilo.tamanho;
+  if (pct < 50) pct = 50;
+  if (pct > 200) pct = 200;
+  return pct / 120.0;
+}
+
 static void desenharLegendaExterna(void){
   /* ASS completo: libass devolve uma lista de bitmaps por camada, preservando
    * karaoke, movimento, desenho vetorial, fontes e todas as tags do arquivo.
-   * A preferencia de cor do app e a unica sobrescrita explicita nesta fase;
-   * com o padrao intocado, a fonte continua sendo a do proprio ASS. */
+   * Da folha, so chegam ao ASS o que nao desmonta o estilo do autor: tamanho
+   * (escala proporcional), opacidade e atraso. Cor, fonte, fundo, posicao e
+   * borda ficam com o arquivo, como no app web desde o 1.2.0 — trocar a cor
+   * apagava o karaoke e as placas coloridas. A folha mostra essas linhas como
+   * preservadas (faixas.c). */
   int r, g, b;
   assrender_aplicar_invalidacao();
-  corLegenda(legEstilo.cor, &r, &g, &b);
-  assrender_definir_cor(player_leg_estilo_tocado(PLR_LEG_COR), r, g, b);
+  assrender_definir_cor(0, 0, 0, 0);
   if (assrender_ativo()) {
+    PlrRect area = areaVideoLegenda();
     float alpha = (legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:
                    legEstilo.opacidade==1?.75f:1.f) * entrada;
+    assrender_definir_layout(area.x, area.y, area.w, area.h,
+                             video_largura(), video_altura(), escalaFonteAss());
     assrender_desenhar(posLegenda(), legEstilo.atrasoMs, alpha,
                         0, 0, NV_TELA_W, NV_TELA_H);
     return;
@@ -2369,8 +2404,10 @@ void player_desenhar(Uint32 agora) {
   // ainda nao tem paleta, fica a do detalhe, que e o mesmo titulo. Canal ao
   // vivo nao pede: o logo do canal nao e cor de titulo, e o zap trocaria a
   // cor da tela a cada canal.
-  if (c && c->backdrop[0] && !player_id_canal()[0])
+  if (c && c->backdrop[0] && !player_id_canal()[0]) {
     corviva_definir(artehero_url(c), CORVIVA_PLAYER);
+    if (c->logo[0]) corviva_definir_logo(artehero_logo_sessao(c), CORVIVA_PLAYER);
+  }
 
   // --- o quadro de video ---
   // Com pipeline nao ha o que desenhar: o video esta num plano de hardware ATRAS

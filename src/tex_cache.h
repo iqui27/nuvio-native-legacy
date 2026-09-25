@@ -77,6 +77,13 @@ GLuint tex_obter_passageira(const char *caminho, float largLayout);
 // thread de desenho.
 const char *tex_arquivo(const char *url);
 
+// Os 4 PRIMEIROS BYTES do que a rede entregou para `caminho` (1), ou 0 quando
+// o item nao existe ou ainda nao baixou. Nao pede nada. Existe para o cartaz
+// de colecao (#141): decidir se a CAPA e um GIF animavel e dizer no log em
+// que formato um "GIF" chegou. No Tizen so GIF vira arquivo; o resto vive na
+// memoria do item e some no decode, e esta e a unica testemunha que sobra.
+int tex_magica(const char *caminho, unsigned char magica[4]);
+
 // Proporcao (w/h) da textura ja carregada; 0 se ainda nao esta pronta.
 // Necessaria para o "cover" do shader — sem ela a arte estica.
 float tex_aspecto(const char *caminho);

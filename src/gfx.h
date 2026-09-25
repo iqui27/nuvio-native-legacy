@@ -177,7 +177,19 @@ typedef enum {
   //   uFoco = tempo em segundos (0 = parado, para animacoes reduzidas)
   // Substitui o preenchimento de fundo da tela, entao nao soma camada cheia.
   GFX_CEU = 30,
-  GFX_NMODOS = 31
+  // COR VIVA (corviva.h). Os dois primeiros NAO se pedem pelo nome: gfx_rect
+  // troca GFX_COR e GFX_ANEL por eles quando a cor passada e exatamente o
+  // destaque vivo e o tema e "Dinâmica gradiente" ou "imersiva" — e assim que
+  // o botao, a linha em foco e o anel de ~40 arquivos viram degrade sem que
+  // nenhum mude. As paradas vem de nv_grad_viva, e a luz anda devagar com
+  // nv_tempo_viva (o degrade "respira"; parado com animacoes reduzidas).
+  GFX_COR_GRAD = 31,
+  GFX_ANEL_GRAD = 32,
+  // GFX_AMBIENTE — a cor da arte VAZANDO na interface: quatro luzes grandes e
+  // macias (esquerda, direita, topo, base) com as cores de regiao da arte,
+  // numa passada so de tela cheia, com dither contra faixas. Use gfx_ambiente.
+  GFX_AMBIENTE = 33,
+  GFX_NMODOS = 34
 } GfxModo;
 
 typedef struct {
@@ -312,6 +324,12 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
 
 // Atalhos legiveis para os casos comuns.
 void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca);
+// A luz ambiente do tema "Dinâmica imersiva", tela cheia, com `alfa` a mais
+// por cima da forca que corviva ja anima. Nao desenha nada fora dele: o custo
+// e zero nos outros temas. main.c chama logo depois do glClear.
+// Assa a luz imersiva no quadro pequeno. Chamar ANTES do clear da tela (ver gfx.c).
+void gfx_ambiente_preparar(void);
+void gfx_ambiente(float alfa);
 // Cartao focado com material tipo vidro: mancha de accent atras, base escura
 // translucida, lavagem em degrade por pixel e reflexo de topo muito leve.
 // A area extra fica limitada a um unico item focado, nunca a tela inteira.

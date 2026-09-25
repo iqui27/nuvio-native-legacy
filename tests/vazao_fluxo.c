@@ -91,6 +91,25 @@ int main(int argc, char **argv) {
     assert(!vz.aberto && !diagnostico_quer_sair()); }
   puts("ok  Voltar cancela o teste em curso; Voltar de novo fecha");
 
+  // 4. O ATALHO DE AJUSTES: abre direto no teste (sem apresentacao nem
+  // objetivo, mesmo com a apresentacao nunca vista), mede de verdade, e o
+  // Voltar do resultado sai da tela em vez de cair na escolha do objetivo.
+  diagnostico_abrir_velocidade();
+  diagnostico_iniciar();
+  assert(!d.intro && vz.aberto && atomic_load(&vz.estado) == 1);
+  assert(!diagnostico_quer_sair());
+  esperar(40000);
+  assert(atomic_load(&vz.estado) == 2 && vz.resultado == VR_OK);
+  { SDL_Event e;
+    memset(&e, 0, sizeof e);
+    e.type = SDL_KEYDOWN;
+    e.key.keysym.sym = SDLK_ESCAPE; diagnostico_evento(&e); }
+  assert(!vz.aberto && diagnostico_quer_sair());
+  // A abertura seguinte, pelo diagnostico, e a normal.
+  diagnostico_iniciar();
+  assert(!vz.aberto && !soVelocidade && !diagnostico_quer_sair());
+  puts("ok  atalho abre direto no teste; Voltar do resultado sai da tela");
+
   diagnostico_encerrar();
   return 0;
 }

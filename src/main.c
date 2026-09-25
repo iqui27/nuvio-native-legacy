@@ -960,7 +960,8 @@ int main(int argc, char **argv) {
     // COR VIVA: UMA vez por quadro, antes do desenho. Consome o pedido que o
     // desenho do quadro anterior fez (corviva_definir) e anda a transicao; o
     // desenho deste quadro so le o resultado (ajustes_acento, NV_COR_FUNDO_*).
-    corviva_quadro(dt, ajustes_cor_viva(), ajustes_animacoes_reduzidas());
+    corviva_quadro(dt, ajustes_cor_viva(), ajustes_cor_logo(),
+                   ajustes_animacoes_reduzidas());
     fUpd = NV_DT(t0);
 
     // RECORTE DESLIGADO ANTES DO CLEAR. glClear respeita o scissor test: se
@@ -973,8 +974,14 @@ int main(int argc, char **argv) {
     gfx_novo_quadro();
     tex_novo_quadro();
     gfx_sem_recorte();
+    gfx_ambiente_preparar();
     glClearColor(NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
+    // "Dinâmica imersiva": a luz da arte POR BAIXO de toda tela, logo depois do
+    // clear — e o que as rampas do destaque e do detalhe deixam aparecer quando
+    // se apagam em alfa (uVaza). Uma passada de tela cheia com 4 luzes; nos
+    // outros temas a forca e 0 e isto nao desenha nada.
+    gfx_ambiente(1.0f);
     fClr = NV_DT(t0);
     t0 = NV_T0();
     txt_novo_quadro();

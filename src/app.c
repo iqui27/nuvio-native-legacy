@@ -29,6 +29,7 @@
 #include "artehero.h"
 #include "vertudo.h"
 #include "guia.h"
+#include "guialembrete.h"   /* aviso do lembrete de programa do guia */
 #include "epg.h"
 #include "posplay.h"
 #include "ctxmenu.h"
@@ -968,6 +969,9 @@ void app_evento(const SDL_Event *e) {
   // AZUL/CH+ abrem a lista, e com a lista aberta ela come o teclado. Fora
   // desses dois estados ela nao toca em nada (ver avisos.h).
   if (avisos_evento(e)) return;
+  // O CARTAO DO LEMBRETE DE PROGRAMA, em qualquer tela: com ele de pe as
+  // setas laterais, o OK e o Voltar sao dele (ver guialembrete.h).
+  if (glem_evento(e)) return;
 
   // PORTA DE TESTE: F10 abre o Guia de TV de onde quer que o app esteja.
   //
@@ -1125,7 +1129,12 @@ void app_evento(const SDL_Event *e) {
   if (e->type == SDL_KEYDOWN) saiuPorEsquerda = (e->key.keysym.sym == SDLK_LEFT);
   if (player_aberto()) { player_evento(e); return; }
   if (detail_aberto()) { detail_evento(e); return; }
-  if (spainel_aberto()) { spainel_evento(e); return; }
+  // O MENU DO CARTAZ ABERTO PELO PAINEL (segurar OK numa linha de Salvos)
+  // fica por cima dele: com os dois no ar, a tecla e do menu.
+  if (spainel_aberto()) {
+    if (ctx_aberto()) ctx_evento(e); else spainel_evento(e);
+    return;
+  }
   if (menu_aberto())   { menu_evento(e);   return; }
   // "Ver tudo" fica ENTRE a home e o detalhe: ela cobre a home e o detalhe
   // cobre ela. Por isso vem depois do detalhe e antes do roteamento por tela.
@@ -1625,6 +1634,15 @@ void app_atualizar(float dt, Uint32 agora) {
   }
   if (tela == TELA_AJUSTES && ajustes_pediu_diagnostico()) {
     diagDaHome = 0;
+    trocarTela(TELA_DIAGNOSTICO);
+  }
+  // O ATALHO DO TESTE DE VELOCIDADE (Ajustes › Diagnóstico, logo abaixo do
+  // diagnostico): a mesma tela, ja no teste, sem apresentacao nem objetivo. O
+  // pedido vai ANTES da troca porque e diagnostico_iniciar quem o le. O Voltar
+  // do resultado sai da tela, e diagDaHome = 0 devolve a Ajustes.
+  if (tela == TELA_AJUSTES && ajustes_pediu_velocidade()) {
+    diagDaHome = 0;
+    diagnostico_abrir_velocidade();
     trocarTela(TELA_DIAGNOSTICO);
   }
   // O diagnóstico nasce em Ajustes; voltar deve devolver a pessoa ao mesmo
@@ -2511,6 +2529,20 @@ void app_atualizar(float dt, Uint32 agora) {
   atualizacao_atualizar(dt, agora);
   agendaviso_atualizar(dt, agora);
   avisos_atualizar(dt, agora);
+  // Lembretes de programa: so com alguem dentro do app (nao no login nem na
+  // escolha de perfil), uma conferencia por segundo no maximo.
+  if (sessao_logada() && tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL) {
+    char lid[80], lnome[120], lbase[600];
+    CatItem it;
+    glem_passo(dt, agora);
+    // "Assistir" no cartao: o canal em tela cheia, de onde a pessoa estiver.
+    if (aguardandoFonte != 2 && glem_pediu_assistir(lid, sizeof lid, lnome, sizeof lnome,
+                                                     lbase, sizeof lbase) &&
+        guia_item_do_canal(lid, lnome, lbase, &it)) {
+      if (player_mini_ativo()) player_fechar_mini();
+      tocarCanal(&it);
+    }
+  }
   pipintro_atualizar(dt, agora);
   if(tela==TELA_SOCIAL) social_atualizar(dt, agora);
   if(tela==TELA_ADDONS) addonsui_atualizar(dt, agora);
@@ -2551,8 +2583,12 @@ static void desenharAtrasDoPainel(void *ctx) {
   }
   CAMADA_SE(vertudo_aberta());
   if (!detail_cobre_tela()) vertudo_desenhar(agora);
-  CAMADA_SE(ctx_aberto());
-  ctx_desenhar(agora);
+  // Com o painel de Salvos na tela o menu do cartaz e desenhado DEPOIS dele
+  // (desenharTelas): e o painel que o abre, e por baixo ele ficaria sob o veu.
+  if (!spainel_visivel() || detail_aberto()) {
+    CAMADA_SE(ctx_aberto());
+    ctx_desenhar(agora);
+  }
   CAMADA_SE(detail_aberto());
   detail_desenhar(agora);
   // A rail NAO existe na tela de detalhe do app web: ela e full-bleed e a
@@ -2633,12 +2669,17 @@ static void desenharTelas(Uint32 agora) {
     // copia e refeita quando o catalogo troca (fileiras novas por baixo) e cai
     // assim que o painel comeca a fechar.
     { int podeParar = tela == TELA_HOME && !detail_aberto() && !vertudo_aberta() &&
-                      !ctx_aberto() && !menu_aberto() && !player_mini_ativo();
+                      (!ctx_aberto() || ctx_do_painel()) && !menu_aberto() &&
+                      !player_mini_ativo();
       spainel_fundo(podeParar, cat_revisao(), desenharAtrasDoPainel, &agora); }
     // Depois do menu: as duas camadas de "Salvos" escurecem a tela inteira e
     // tem de ficar por cima de tudo que a home desenhou, inclusive da rail.
     CAMADA_SE(spainel_aberto());
-    if (spainel_visivel() && !detail_aberto()) spainel_desenhar(agora);
+    if (spainel_visivel() && !detail_aberto()) {
+      spainel_desenhar(agora);
+      CAMADA_SE(ctx_aberto());
+      ctx_desenhar(agora);
+    }
   }
   CAMADA_SE(player_aberto());
   player_desenhar(agora);
@@ -2712,6 +2753,11 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto() && !player_aberto() && sessao_logada() &&
       tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL)
     avisos_desenhar(agora);
+  // O cartao do lembrete fica acima do player e da tela: e um aviso com hora.
+  CAMADA_SE(glem_cartao_aberto());
+  if (!registro_aberto() && sessao_logada() && tela != TELA_LOGIN &&
+      tela != TELA_ESCOLHA_PERFIL)
+    glem_desenhar(agora);
   CAMADA_SE(recenviar_aberto());
   if (!registro_aberto()) recenviar_desenhar(agora);
   CAMADA_SE(recomenda_aberta());

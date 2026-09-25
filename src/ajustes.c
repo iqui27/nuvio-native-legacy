@@ -131,7 +131,7 @@ typedef enum {
   // Tamanho do item
   AJ_LARGURA_DP, AJ_RAIO_DP, AJ_QUALIDADE_IMG,
   // Interface
-  AJ_IDIOMA, AJ_ANIM, AJ_RESOLUCAO, AJ_TEMA,
+  AJ_IDIOMA, AJ_ANIM, AJ_RESOLUCAO, AJ_TEMA, AJ_COR_LOGO,
   // Conta
   AJ_PERFIL_ATIVO, AJ_SYNC, AJ_ADDONS,
   AJ_STALKER_PORTAL, AJ_STALKER_MAC, AJ_STALKER_LIMPAR,
@@ -151,6 +151,11 @@ typedef enum {
   // Integracoes — fanart.tv (fonte do destaque, so com chave pessoal)
   AJ_FANART_CHAVE,
   AJ_DIAGNOSTICO,
+  // ATALHO DO TESTE DE VELOCIDADE, logo abaixo do diagnostico (dono,
+  // 25/09/2026): a mesma tela de diagnostico, aberta ja no teste — o botao
+  // "Teste de velocidade" de dentro dela exigia passar pela escolha do
+  // objetivo so para chegar la.
+  AJ_VELOCIDADE,
   AJ_N
 } OpcaoId;
 
@@ -310,11 +315,15 @@ static const struct { float r, g, b; } TEMA_ACENTO[] = {
 // tambem, de leve).
 #define AJ_TEMA_DINAMICA    AJ_N_TEMAS
 #define AJ_TEMA_ESTILIZADA  (AJ_N_TEMAS + 1)
-#define AJ_N_TEMAS_OPC      (AJ_N_TEMAS + 2)
+// Depois do relato do dono de 25/09 ("quero algo mais imersivo ainda"): o
+// degrade nas superficies de destaque e a cor da arte vazando como luz.
+#define AJ_TEMA_GRADIENTE   (AJ_N_TEMAS + 2)
+#define AJ_TEMA_IMERSIVA    (AJ_N_TEMAS + 3)
+#define AJ_N_TEMAS_OPC      (AJ_N_TEMAS + 4)
 static const char *V_TEMA[] = {
   "Branco", "Carmesim", "Oceano", "Violeta", "Esmeralda", "Âmbar",
   "Rosa", "Dourado", "Jade", "Ouro rosé", "Azul ártico", "Grafite",
-  "Dinâmica", "Dinâmica estilizada"
+  "Dinâmica", "Dinâmica estilizada", "Dinâmica gradiente", "Dinâmica imersiva"
 };
 _Static_assert(sizeof V_TEMA / sizeof *V_TEMA == AJ_N_TEMAS_OPC,
                "V_TEMA: os doze temas da conta e os dois dinamicos");
@@ -496,7 +505,12 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Idioma",                     V_IDIOMA, 2),
   ESC("Animações",                  V_ANIM, 2),
   ESC("Resolução da interface",     V_RESOLUCAO, 2),
-  ESC("Cor de destaque",            V_TEMA, AJ_N_TEMAS_OPC),  // selected_theme (+2 locais)
+  ESC("Cor de destaque",            V_TEMA, AJ_N_TEMAS_OPC),  // selected_theme (+4 locais)
+  // So vale com um tema dinamico: o destaque sai do LOGO do titulo em vez da
+  // arte de fundo (dono, 25/09/2026: "matching color da logo tambem como
+  // toggle"). LIGADO de fabrica: o logo e a cor que o estudio escolheu para o
+  // titulo, e foi a falta dele que deu o botao laranja-pele no "Prenda-me".
+  ESC("Cor da logo",                V_LIGA, 2),   // local: corDaLogoLocal
 
   LER("Perfil"),
   LER("Sincronização"),
@@ -565,6 +579,7 @@ static const Opcao OPCOES[AJ_N] = {
   // publicada; a pessoal cada um tira em fanart.tv/get-an-api-key.
   ACAO("Chave do fanart.tv"),
   ACAO("Diagnóstico e otimização"),
+  ACAO("Teste de velocidade"),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -633,6 +648,8 @@ static const char *CHAVE[] = {
   // Quem escolher JADE no app web ganha o anel jade na TV sem configurar de
   // novo — e o contrario tambem vale.
   "selected_theme",
+  // LOCAL, sem o "-" para sobreviver ao fechamento: o web nao tem esta escolha.
+  "corDaLogoLocal",
   // Conta: sao linhas locais, nao vem nem vao para o perfil na nuvem.
   // "salvosDestino" e LOCAL como cwFonteLocal, e por isso SEM o "-": o app
   // oficial nao tem esta escolha, entao nao ha campo dela no blob da conta —
@@ -665,6 +682,7 @@ static const char *CHAVE[] = {
   // entra no ajustes.txt nem no blob da conta.
   "-fanartChave",
   "-diagnostico",
+  "-velocidade",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -907,6 +925,7 @@ static int valor[AJ_N] = {
   // em Ajustes -> Interface, e a escolha fica gravada.
   1, 0, 0,          /* idioma, animacoes, resolucao (0 = 1080p) */
   0,                /* tema (cor de destaque): o primeiro, o de sempre */
+  0,                /* cor da logo (so com tema dinamico): ligada */
   // O COMENTARIO ANTIGO AQUI ESTAVA ERRADO, e o erro so nao machucou por sorte.
   // Ele dizia `0, 0, /* versao, espaco */` logo depois do idioma, mas esta
   // lista e POSICIONAL: entre AJ_ANIM e AJ_VERSAO_I existem SETE opcoes de
@@ -940,6 +959,7 @@ static int valor[AJ_N] = {
                            audiencia, metacritic, mal */
   0,                /* chave do fanart.tv: acao (o valor mora em fanart.txt) */
   0,                /* diagnostico */
+  0,                /* teste de velocidade: acao */
 };
 
 // Pedido de abrir a lista de addons, lido e zerado pelo app.c. A tela nao e
@@ -949,6 +969,8 @@ static int pediuAddons;
 int ajustes_pediu_addons(void) { int v = pediuAddons; pediuAddons = 0; return v; }
 static int pediuDiagnostico;
 int ajustes_pediu_diagnostico(void) { int v = pediuDiagnostico; pediuDiagnostico = 0; return v; }
+static int pediuVelocidade;
+int ajustes_pediu_velocidade(void) { int v = pediuVelocidade; pediuVelocidade = 0; return v; }
 
 static int focoOp = 0;
 // 1 = o foco esta na COLUNA DE SECOES, e nao na lista de opcoes. Nao ha um
@@ -1012,13 +1034,16 @@ int ajustes_idioma_ingles(void)       { return valor[AJ_IDIOMA] == 1; }
 
 // 1 = o tema escolhido e um dos dinamicos (cor viva), que so existem nesta TV.
 static int temaDinamico(void) {
-  return valor[AJ_TEMA] == AJ_TEMA_DINAMICA || valor[AJ_TEMA] == AJ_TEMA_ESTILIZADA;
+  return valor[AJ_TEMA] >= AJ_TEMA_DINAMICA && valor[AJ_TEMA] < AJ_N_TEMAS_OPC;
 }
 int ajustes_cor_viva(void) {
   return valor[AJ_TEMA] == AJ_TEMA_DINAMICA   ? CORVIVA_SIMPLES
        : valor[AJ_TEMA] == AJ_TEMA_ESTILIZADA ? CORVIVA_ESTILIZADA
+       : valor[AJ_TEMA] == AJ_TEMA_GRADIENTE  ? CORVIVA_GRADIENTE
+       : valor[AJ_TEMA] == AJ_TEMA_IMERSIVA   ? CORVIVA_IMERSIVA
        : CORVIVA_DESLIGADA;
 }
+int ajustes_cor_logo(void) { return lig(AJ_COR_LOGO); }
 
 // Cor do ANEL DE FOCO. Ver TEMA_ACENTO: um tema aqui e so isto.
 //
@@ -1604,6 +1629,7 @@ static int somenteDesteAparelho(int op) {
     // IMDb da Samsung depende do servico de recomendacoes), entao a escolha e
     // deste aparelho.
     case AJ_TRAILER_FONTE:
+    case AJ_COR_LOGO:       /* so existe com os temas dinamicos, que sao locais */
       return 1;
     default:
       return 0;
@@ -2147,7 +2173,8 @@ static const char *ajudaOpcao(int op) {
 
     // --- Interface e conta
     case AJ_IDIOMA: return "Idioma de toda a interface. Não muda o idioma das legendas nem do áudio.";
-    case AJ_TEMA: return "Cor do anel que marca onde está o foco. Os doze temas são os do app web e seguem a conta. Dinâmica usa a cor da arte do título em cena; Dinâmica estilizada também tinge o fundo, de leve. As duas ficam só nesta TV.";
+    case AJ_TEMA: return "Cor do anel que marca onde está o foco. Os doze temas são os do app web e seguem a conta. Os dinâmicos tiram a cor do título em cena: estilizada também tinge o fundo, gradiente pinta os botões com as cores da arte e imersiva deixa a cor vazar pela tela como luz. Ficam só nesta TV.";
+    case AJ_COR_LOGO: return "Com um tema dinâmico, a cor sai do logo do título em vez da arte de fundo. Logo branco ou preto usa a arte.";
     case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";
     case AJ_RESOLUCAO: return "Desenha a interface em 4K nas TVs que permitem. Muitas ignoram o pedido e continuam em 1080p — o log diz qual é o caso. Vale reiniciar o app depois de mudar. O vídeo já é 4K nos dois casos.";
     case AJ_PERFIL_ATIVO: return "Perfil em uso nesta TV. Trocar de perfil é feito na tela de perfis, ao abrir o app.";
@@ -2163,6 +2190,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_ENVIAR_LOG: return "Manda os últimos 200 KB do registro desta sessão (sem senhas nem chaves) para quem faz o app. Use quando algo estiver errado agora.";
     case AJ_ENVIO_AUTO: return "Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.";
     case AJ_DIAGNOSTICO: return "Testa manifestos, fontes e artes dos addons, mede os tempos e aplica um perfil seguro de Qualidade ou Desempenho. O teste não marca títulos como assistidos.";
+    case AJ_VELOCIDADE: return "Mede a velocidade dos seus addons e das fontes nesta TV e diz até quantos GB por filme e por episódio tocam sem travar. Não muda nenhum ajuste.";
 
     // --- Integracoes
     case AJ_TMDB_LIGADO: return "O TMDB enriquece títulos com sinopse, elenco com foto, ficha técnica e trailers. Desligar corta tudo isso de uma vez.";
@@ -2688,6 +2716,7 @@ void ajustes_evento(const SDL_Event *e) {
     if (focoOp == AJ_ENVIAR_LOG) { avisos_enviar_registro_atual(); return; }
     if (focoOp == AJ_ADDONS) { pediuAddons = 1; return; }
     if (focoOp == AJ_DIAGNOSTICO) { pediuDiagnostico = 1; return; }
+    if (focoOp == AJ_VELOCIDADE) { pediuVelocidade = 1; return; }
     if (focoOp == AJ_STALKER_PORTAL || focoOp == AJ_STALKER_MAC) {
       int mac = focoOp == AJ_STALKER_MAC;
       stCampo = focoOp;
@@ -2946,7 +2975,7 @@ static const char *iconeOpcao(int op) {
     case AJ_CW_FURTHEST: case AJ_CW_NAO_EXIBIDOS: case AJ_CW_ORDEM: return "avancar";
     case AJ_DESCOBRIR: return "menu_search";
     case AJ_FIL_LIMITE: case AJ_FIL_ORDEM: return "menu_library";
-    case AJ_IDIOMA: case AJ_ANIM: case AJ_RESOLUCAO: case AJ_TEMA: return "menu_settings";
+    case AJ_IDIOMA: case AJ_ANIM: case AJ_RESOLUCAO: case AJ_TEMA: case AJ_COR_LOGO: return "menu_settings";
     case AJ_ADDONS: case AJ_STALKER_PORTAL: case AJ_STALKER_MAC: case AJ_STALKER_LIMPAR:
     case AJ_XTREAM_SERVIDOR: case AJ_XTREAM_USUARIO: case AJ_XTREAM_SENHA: case AJ_XTREAM_LIMPAR: return "portal";
     case AJ_TRAKT: case AJ_SIMKL: case AJ_SALVOS_DEST: return "recomendar";
@@ -2954,6 +2983,7 @@ static const char *iconeOpcao(int op) {
     case AJ_SYNC: return "fluxo";
     case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_ENVIAR_LOG: case AJ_ENVIO_AUTO: return "menu_settings";
     case AJ_DIAGNOSTICO: return "aspecto";
+    case AJ_VELOCIDADE: return "fluxo";
     case AJ_ESPACO: case AJ_TEX_MB: return "aspecto";
     case AJ_DET_TRAILER: case AJ_TMDB_TRAILERS: case AJ_PROF_TRAILERS: return "trailer";
     case AJ_DET_VEU: return "aspecto";

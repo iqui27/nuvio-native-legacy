@@ -22,6 +22,8 @@ int  ajustes_quer_sair(void);
 // 1 quando a linha "Addons" foi acionada. Lido e zerado na chamada.
 int  ajustes_pediu_addons(void);   // 1 quando o Back deve fechar a tela
 int  ajustes_pediu_diagnostico(void);
+// OK em "Teste de velocidade" (Ajustes › Diagnóstico). Lido e zerado pelo app.c.
+int  ajustes_pediu_velocidade(void);
 void ajustes_encerrar(void);
 
 // Leitura pelo resto do app. "Animacoes reduzidas" e a que mais importa: com
@@ -69,6 +71,8 @@ void ajustes_acento(float *r, float *g, float *b);
 // sao LOCAIS: nao sobem para a conta e a conta nao os desfaz (ver
 // ajustes_aplicar_blob / ajustes_mesclar_blob).
 int  ajustes_cor_viva(void);
+// "Cor da logo": 1 = com tema dinamico, o destaque sai do logo do titulo.
+int  ajustes_cor_logo(void);
 // A MESMA cor mais a TINTA que contrasta com ela: devolve 0.067 (#111) sobre
 // realce claro e 1.0 (branco) sobre realce escuro, luminancia Rec.709 com o
 // degrau em 0,55. E a regra de FOCO de layout.h (preenchimento na cor de

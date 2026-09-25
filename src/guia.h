@@ -77,5 +77,8 @@ int  guia_pediu_restaurar(void);
 int  guia_pediu_guia_cheio(void);
 void guia_adotar_canal(const char *id);
 void guia_preview_rect(float *x, float *y, float *w, float *h);
+// O CatItem do canal de um lembrete (e a origem para a busca de fonte): o do
+// guia quando a lista esta carregada, senao so id + nome guardados. 0 sem id.
+int  guia_item_do_canal(const char *id, const char *nome, const char *base, CatItem *it);
 
 #endif
