@@ -29,8 +29,9 @@ typedef enum {
   // que este shader vem sendo mantido.
   GFX_HERO_CHEIO = 12,
   // Contorno sem miolo, cheio ou tracejado. Usa o mesmo SDF dos outros modos —
-  // um anel e `abs(d) < espessura` —, entao serve para retangulo arredondado
-  // tanto quanto para circulo (raio 0.5 = circulo).
+  // o traco e `-espessura < d < 0`, POR DENTRO do rect —, entao serve para
+  // retangulo arredondado tanto quanto para circulo (raio 0.5 = circulo).
+  // Prefira gfx_anel / gfx_anel_fora, que recebem a espessura em pixels.
   //
   // Passe a espessura em `parx`, na mesma escala normalizada de `raio`, e o
   // numero de tracos do pontilhado em `pary` (0 = anel continuo). Exemplo, o
@@ -330,6 +331,16 @@ void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca);
 // Assa a luz imersiva no quadro pequeno. Chamar ANTES do clear da tela (ver gfx.c).
 void gfx_ambiente_preparar(void);
 void gfx_ambiente(float alfa);
+// Contorno de `esp` PIXELS por dentro de r: a borda de fora do anel e a borda
+// de r, entao anel e miolo no mesmo rect dao uma borda so. `raio` e o de r,
+// normalizado pela altura, como em gfx_cor.
+void gfx_anel(GfxRect r, float raio, float esp,
+              float cr, float cg, float cb, float ca);
+// Anel de foco POR FORA de uma peca: `folga` px de vao e `esp` px de traco,
+// concentrico com ela (o raio em pixels cresce folga + esp). `raio` e o da
+// PECA. E o jeito de desenhar anel em volta de botao, cartao ou celula.
+void gfx_anel_fora(GfxRect peca, float raio, float folga, float esp,
+                   float cr, float cg, float cb, float ca);
 // Cartao focado com material tipo vidro: mancha de accent atras, base escura
 // translucida, lavagem em degrade por pixel e reflexo de topo muito leve.
 // A area extra fica limitada a um unico item focado, nunca a tela inteira.

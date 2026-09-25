@@ -114,8 +114,7 @@ static void desenhaFigura(float x, float y, float w, float a) {
   { GfxRect pip = { tela.x + tela.w - 178.0f, tela.y + tela.h - 118.0f,
                     160.0f, 90.0f };
     gfx_cor(pip, 0.10f, 0.30f, 0.42f, 0.62f, a);
-    gfx_rect(pip, 0, GFX_ANEL, 0, NV_ANEL_FOCO / pip.w, 0, 0.10f,
-             0.96f, 0.96f, 0.98f, a);
+    gfx_anel(pip, 0.10f, NV_ANEL_FOCO, 0.96f, 0.96f, 0.98f, a);
     // ponto AO VIVO + etiqueta
     gfx_cor((GfxRect){ pip.x + 12.0f, pip.y + pip.h - 24.0f, 9.0f, 9.0f },
             0.5f, 0.96f, 0.25f, 0.25f, a);

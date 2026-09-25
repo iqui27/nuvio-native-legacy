@@ -63,7 +63,7 @@ void botao_pilula(GfxRect r, const char *rotulo, const char *icone,
             anim_mistura(BT_REP_G, fg, foco), anim_mistura(BT_REP_B, fb, foco),
             (0.82f + 0.18f * foco) * a);
     if (foco < 0.99f)
-      gfx_rect(r, 0, GFX_ANEL, 0, 1.5f / r.h, 0, raio, 1, 1, 1, 0.22f * (1.0f - foco) * a);
+      gfx_anel(r, raio, 1.5f, 1, 1, 1, 0.22f * (1.0f - foco) * a);
   }
 
   l = txt_linha(TXT_DET_BOTAO, rotulo, c, c, c, 255);

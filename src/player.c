@@ -1455,8 +1455,9 @@ void player_mini_desenhar(Uint32 agora) {
   // Furo com o MESMO raio do anel: sem ele o plano de video e retangular e
   // os cantos do quadro escapam por fora da moldura arredondada.
   gfx_furo_raio(f, 0.14f);
-  gfx_rect(f, 0, GFX_ANEL, 0, NV_ANEL_FOCO / f.w, 0, 0.14f,
-           fr, fg, fb, 0.85f);
+  // Espessura em pixels (gfx_anel): NV_ANEL_FOCO / f.w dava 2,25 px num
+  // quadro 16:9, porque o anel mede em fracao da ALTURA.
+  gfx_anel(f, 0.14f, NV_ANEL_FOCO, fr, fg, fb, 0.85f);
   // A etiqueta e UMA linha so dentro do furo: ponto vermelho + AO VIVO +
   // canal + programa do ar, cortada na borda direita do quadro para nomes
   // longos nao vazarem por cima do anel.

@@ -898,13 +898,13 @@ static void desenhaResultados(Uint32 agora) {
         if (f > 0.01f) {
           GfxRect luz = { poster.x - 22.0f, poster.y - 22.0f,
                           poster.w + 44.0f, poster.h + 44.0f };
-          GfxRect b = { poster.x - 3.0f, poster.y - 3.0f,
-                        poster.w + 6.0f, poster.h + 6.0f };
           ajustes_acento(&ar, &ag, &ab);
           gfx_rect(luz, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f,
                    ar, ag, ab, 0.24f * f);
-          gfx_rect(b, 0, GFX_ANEL, 0.0f, 0.014f, 0.0f, raio,
-                   ar, ag, ab, f);
+          // 3 px encostados no cartaz e CONCENTRICOS: o anel crescia 3 px de
+          // cada lado mas reusava o raio normalizado do cartaz, entao o canto
+          // dele fechava ~3 px antes do que devia.
+          gfx_anel_fora(poster, raio, 0.0f, 3.0f, ar, ag, ab, f);
         }
 
         const char *arte = ci->poster[0] ? ci->poster
