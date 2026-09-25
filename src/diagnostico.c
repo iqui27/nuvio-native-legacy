@@ -1735,10 +1735,20 @@ static void barraProgresso(GfxRect r, float pct, float ar, float ag, float ab,
   gfx_cor(r, 9.0f / r.h, 0.10f, 0.12f, 0.15f, 1.0f);
   if (w > 1.0f)
     gfx_cor((GfxRect){ r.x, r.y, w, r.h }, 9.0f / r.h, ar, ag, ab, 0.96f);
+  // O BRILHO QUE CORRE fica DENTRO do preenchimento (dono, 26/09/2026: "o
+  // trem que mexe comeca fora da barra e termina depois, ta descasado"). Ele
+  // andava de 80 px antes da barra ate 80 px depois do fim do preenchido, sem
+  // recorte, e era mais baixo e com outro raio que a barra. Agora o trecho e
+  // cortado nas duas pontas do preenchido e tem a altura e o raio dela: le
+  // como luz passando pelo material, nao como uma peca solta por cima.
   if (animado && w > 24.0f) {
-    float x = r.x + fmodf((float)agora * 0.24f, w + 160.0f) - 80.0f;
-    gfx_cor((GfxRect){ x, r.y + 2.0f, 78.0f, r.h - 4.0f },
-            7.0f / r.h, 1.0f, 1.0f, 1.0f, 0.18f);
+    float larg = w < 240.0f ? w * 0.35f : 84.0f;
+    float x0 = r.x - larg + fmodf((float)agora * 0.24f, w + larg);
+    float x1 = x0 + larg;
+    if (x0 < r.x) x0 = r.x;
+    if (x1 > r.x + w) x1 = r.x + w;
+    if (x1 - x0 > 1.0f)
+      gfx_cor((GfxRect){ x0, r.y, x1 - x0, r.h }, 9.0f / r.h, 1.0f, 1.0f, 1.0f, 0.16f);
   }
 }
 

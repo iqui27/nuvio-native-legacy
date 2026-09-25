@@ -3,6 +3,8 @@
 #include <SDL2/SDL.h>
 #include "layout.h"
 #include <stdio.h>
+#include <string.h>
+#include <math.h>
 #include "anim.h"
 #include "corviva.h"
 
@@ -1017,11 +1019,109 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
 void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca) {
   gfx_rect(r, 0, GFX_COR, 0, 0, 0, raio, cr, cg, cb, ca);
 }
+// A LUZ DA "DINAMICA IMERSIVA" E ASSADA NUM QUADRO PEQUENO. MEDIDO na C9 do
+// dono em 26/09/2026: com o tema ligado a home parada caia para 34 fps, pior
+// quadro 50 ms — o GFX_AMBIENTE rodava quatro smoothstep, um hash e highp em
+// CADA um dos 2 milhoes de pixels, todo quadro, duas vezes quando o detalhe
+// estava por cima. A luz e enorme e macia: 320x180 guarda tudo o que ela tem,
+// e o bilinear da ampliacao e o proprio desfoque. O quadro pequeno e
+// redesenhado so quando algo muda — cores, forca, o fundo tingido — ou a cada
+// 1/12 s pela respiracao, que e lenta (periodos de dezenas de segundos). O
+// custo por quadro vira um quad com UMA leitura de textura.
+//
+// O assado ja inclui o FUNDO por baixo (clear na cor de NV_COR_FUNDO) e sai
+// OPACO: nos dois chamadores a luz entra logo acima de um fundo liso dessa
+// mesma cor (o clear de main.c; o gfx_cor do detalhe com o mesmo alfa), entao
+// pintar fundo+luz com o alfa do chamador da o mesmo resultado.
+#define AMB_W 320
+#define AMB_H 180
+static GLuint ambFbo, ambTex;
+static int ambFalhou;
+static float ambChave[20];
+
+static int ambPreparar(void) {
+  GLenum st;
+  if (ambFbo) return 1;
+  if (ambFalhou) return 0;
+  glGenTextures(1, &ambTex);
+  glBindTexture(GL_TEXTURE_2D, ambTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, AMB_W, AMB_H, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  gfx_tex_esquecer(0);  // o bind acima foi por fora do gfx_rect
+  glGenFramebuffers(1, &ambFbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, ambFbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ambTex, 0);
+  st = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  if (st != GL_FRAMEBUFFER_COMPLETE) {
+    printf("[cor] luz imersiva sem quadro pequeno (fbo 0x%x): desenho direto\n", st);
+    glDeleteFramebuffers(1, &ambFbo); glDeleteTextures(1, &ambTex);
+    ambFbo = ambTex = 0; ambFalhou = 1;
+    return 0;
+  }
+  memset(ambChave, 0, sizeof ambChave);
+  ambChave[0] = -1.0f;
+  return 1;
+}
+
+static void ambAssar(void) {
+  float k[20];
+  int i, j, n = 0;
+  GLint fboAnt, vpAnt[4];
+  int twAnt = telaW, thAnt = telaH;
+  GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+  k[n++] = floorf(nv_tempo_viva * 12.0f);
+  k[n++] = nv_ambiente_forca;
+  k[n++] = NV_COR_FUNDO_R; k[n++] = NV_COR_FUNDO_G; k[n++] = NV_COR_FUNDO_B;
+  for (i = 0; i < 4; i++) for (j = 0; j < 3; j++) k[n++] = nv_ambiente_viva[i][j];
+  if (!memcmp(k, ambChave, sizeof(float) * (size_t)n)) return;
+  memcpy(ambChave, k, sizeof(float) * (size_t)n);
+  {
+    GFX_OUTRO_INI();
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fboAnt);
+    glGetIntegerv(GL_VIEWPORT, vpAnt);
+    glBindFramebuffer(GL_FRAMEBUFFER, ambFbo);
+    telaW = AMB_W; telaH = AMB_H;
+    glViewport(0, 0, AMB_W, AMB_H);
+    glClearColor(NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    gfx_rect(tela, 0, GFX_AMBIENTE, 0, 0, 0, 0, 1, 1, 1, nv_ambiente_forca);
+    telaW = twAnt; telaH = thAnt;
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)fboAnt);
+    glViewport(vpAnt[0], vpAnt[1], vpAnt[2], vpAnt[3]);
+    GFX_OUTRO_FIM();
+  }
+}
+
+void gfx_ambiente_preparar(void) {
+#ifdef NV_AMB_SO_BLIT
+  if (ambChave[0] >= 0.0f) return;
+#endif
+  if (nv_ambiente_forca <= 0.003f || snapAtivo || !ambPreparar()) return;
+  ambAssar();
+}
+
 void gfx_ambiente(float alfa) {
   float a = nv_ambiente_forca * alfa;
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
   if (a <= 0.003f) return;
-  gfx_rect(tela, 0, GFX_AMBIENTE, 0, 0, 0, 0, 1, 1, 1, a);
+  // Dentro de um snapshot (outro FBO ativo) ou sem FBO: o caminho antigo.
+  if (snapAtivo || !ambPreparar() || ambChave[0] < 0.0f) {
+    gfx_rect(tela, 0, GFX_AMBIENTE, 0, 0, 0, 0, 1, 1, 1, a);
+    return;
+  }
+  // O assado mora em gfx_ambiente_preparar, ANTES do clear da tela: trocar de
+  // alvo aqui, com a tela ja limpa, obrigava a GPU de ladrilhos a gravar a tela
+  // inteira na memoria e le-la de volta. MEDIDO na C9: assando aqui a home
+  // parada ficava em 48 fps; sem a luz, 60.
+#ifdef NV_AMB_SO_ASSA
+  return;
+#endif
+  gfx_tex_aspect_atual = 0.0f;
+  gfx_rect(tela, ambTex, GFX_SNAP, 0, 0.0f, 1.0f, 0.0f, 0, 0, 0, alfa);
 }
 void gfx_cartao_foco_vidro(GfxRect r, float raio, float foco, float alfa,
                            float cr, float cg, float cb) {
