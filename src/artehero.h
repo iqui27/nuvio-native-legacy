@@ -137,4 +137,35 @@ const char *artehero_logo_sessao_observar(const CatItem *item);
 // largura do desenho do card.
 const char *artehero_logo_sessao_larg(const CatItem *item, float larg);
 
+// A ARTE ESCOLHIDA A MAO (#142, arteescolha.h) VENCE TODA A POLITICA ACIMA.
+//
+// Registrada pelo main como as outras (definir_falhou, definir_igual): assim
+// este modulo continua sem depender de disco, e o teste dele segue compilando
+// sozinho. As duas funcoes recebem o id do item (imdb, com ou sem episodio) e
+// devolvem a url escolhida ou NULL (Automatico).
+//
+// ONDE VALE: artehero_url e artehero_url_destaque (destaque da home, tela
+// cheia, detalhe, player, Continuar assistindo — o still do episodio perde
+// para ela, ver arte_hero_do_item em home.c) e os logos de sessao (hero, card
+// aberto, detalhe, player). O CARD DEITADO NAO MUDA: a escolha e de tela
+// cheia, e o card continua com o arquivo que a fileira ja baixou.
+//
+// Escolha que ja falhou (tex_falhou) nao prende a tela num 404: vale NULL, e
+// a politica automatica volta, sem apagar a escolha do disco.
+void artehero_definir_escolha(const char *(*fundo)(const char *id),
+                              const char *(*logo)(const char *id));
+// O fundo escolhido para este item no tamanho de tela cheia, ou NULL.
+const char *artehero_url_escolhida(const CatItem *item);
+// Uma url de fundo guardada, no tamanho de tela cheia (TMDB pela qualidade).
+const char *artehero_url_escolha_grande(const char *u);
+// O logo escolhido, ja no tamanho de artehero_url_logo, ou NULL.
+const char *artehero_logo_escolhido(const CatItem *item);
+// A tela de escolha precisa ver o AUTOMATICO de um titulo que ja tem escolha
+// (a miniatura "Automatico"): entre suspender(1) e suspender(0) as funcoes
+// acima devolvem NULL.
+void artehero_escolha_suspender(int sim);
+// A chave com que a escolha deste item e guardada: o imdb (com episodio, que
+// arteescolha corta) ou, sem ele, "tmdb:m<id>"/"tmdb:t<id>". "" = sem chave.
+void artehero_id_escolha(const CatItem *item, char *dst, size_t n);
+
 #endif

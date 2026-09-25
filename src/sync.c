@@ -28,6 +28,7 @@
 #include "homeestado.h"
 #include "cachearte.h"
 #include "extras.h"
+#include "arteescolha.h"
 #include "js.h"
 #include "jsw.h"
 #include <stdio.h>
@@ -1114,6 +1115,9 @@ void sync_esquecer_usuario(void) {
   // sobreviveria ao logout em disco e passaria a mandar na reproducao da
   // proxima pessoa.
   fontepref_esquecer();
+  // E A ARTE ESCOLHIDA A MAO (#142): diz o que a pessoa abriu e guardou, e
+  // sem esta linha a proxima conta herdaria as fotos de quem saiu.
+  arteesc_esquecer();
   // E AS BUSCAS RECENTES. Nao sobem para a conta (sao deste aparelho), mas sao
   // o que a pessoa procurou — a proxima a entrar abriria a Busca com a lista
   // de quem saiu nas pilulas, a um OK de refazer cada uma.

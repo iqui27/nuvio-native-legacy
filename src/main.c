@@ -31,6 +31,7 @@
 #include "webp.h"
 #include "cachearte.h"
 #include "artehero.h"
+#include "arteescolha.h"
 #include "artereserva.h"
 #include "trailerapple.h"
 #include "home.h"
@@ -696,6 +697,8 @@ int main(int argc, char **argv) {
   // do card (mesma url real ou mesmos bytes) — artereserva.h.
   artehero_definir_igual(arte_mesma_imagem);
   artehero_definir_resolvida(arte_fonte_resolvida);
+  // A arte escolhida a mao (#142): lida do disco na primeira consulta.
+  artehero_definir_escolha(arteesc_fundo, arteesc_logo);
   // Fonte "Apple TV" do destaque: a arte-chave que a busca do trailer traz.
   arte_fonte_definir_apple(trailerapple_arte);
   // A conta vem ANTES da UI: app_iniciar decide entre abrir na home e abrir no

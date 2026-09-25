@@ -10,6 +10,8 @@
 // tela tivesse mudado. A fonte lembrada e por perfil pela mesma razao que as
 // fileiras sao — ver fontepref.h.
 void fontepref_definir_perfil(int perfil);
+// Mesma razao (arteescolha.h nao puxa SDL, mas fica no mesmo molde).
+void arteesc_definir_perfil(int perfil);
 #include "js.h"
 #include "jsw.h"
 #include <stdio.h>
@@ -344,6 +346,7 @@ void perfis_carregar_ativo(void) {
   // fileiras: sem isto o perfil 2 retomaria na fonte dublada que o perfil 1
   // escolheu, ate a primeira troca.
   fontepref_definir_perfil(ativo);
+  arteesc_definir_perfil(ativo);
   lerCache();
 }
 
@@ -353,6 +356,7 @@ void perfis_definir_ativo(int indice) {
   ativo = indice;
   fil_definir_perfil(indice);
   fontepref_definir_perfil(indice);
+  arteesc_definir_perfil(indice);
   escolhido = 1;
   gravado = 1;
   snprintf(linha, sizeof linha, "%d\n", indice);

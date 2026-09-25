@@ -27,6 +27,7 @@
 #include "text.h"
 #include "tex_cache.h"
 #include "artehero.h"
+#include "arteescolha.h"
 #include "vertudo.h"
 #include "guia.h"
 #include "epg.h"
@@ -907,6 +908,9 @@ int app_iniciar(const char *dirArte) {
   // primeiro Reproduzir, que pode acontecer segundos depois do arranque quando
   // a pessoa abre direto no "Continuar assistindo".
   fontepref_iniciar();
+  // A ARTE ESCOLHIDA A MAO (#142) tambem, antes do primeiro destaque: sem ela
+  // lida, o hero abriria na foto automatica e trocaria no quadro seguinte.
+  arteesc_iniciar();
   // MESMA RAZAO, OUTRA LISTA: o cache de recomendacoes guarda titulo e poster,
   // entao a aba Social do painel AZUL desenha no primeiro quadro, antes de
   // existir catalogo e antes de a rede responder. Isto nao abre conexao — quem

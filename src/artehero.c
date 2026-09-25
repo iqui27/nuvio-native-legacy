@@ -136,6 +136,9 @@ const char *artehero_url(const CatItem *item) {
   char buf[512];   // sai pelo anel (fixar): ver artehero_url_episodio
   const char *b;
   if (!item) return NULL;
+  // A ESCOLHA A MAO VENCE (#142): player, fundo da pausa e o detalhe passam
+  // por aqui.
+  if ((b = artehero_url_escolhida(item)) != NULL) return b;
   b = item->backdrop;
   // A MESMA IMAGEM DO CARD, SEMPRE (19/09, pedido do dono): "clicar no card e
   // as coisas simplesmente se posicionarem, nao uma mudanca de pagina". Ate
@@ -385,6 +388,70 @@ static const char *fixar(const char *u, const char *tmp) {
   return b;
 }
 
+// --- A ESCOLHA A MAO (#142) --------------------------------------------------
+// Ver artehero.h. Tudo aqui e barato de proposito: com a tabela vazia as duas
+// funcoes registradas devolvem NULL na primeira linha, e e o caso da home de
+// quase todo mundo.
+static const char *(*escFundo)(const char *) = NULL;
+static const char *(*escLogo)(const char *) = NULL;
+static int escSuspensa;
+
+void artehero_definir_escolha(const char *(*fundo)(const char *id),
+                              const char *(*logo)(const char *id)) {
+  escFundo = fundo;
+  escLogo = logo;
+}
+void artehero_escolha_suspender(int sim) { escSuspensa = sim ? 1 : 0; }
+
+void artehero_id_escolha(const CatItem *item, char *dst, size_t n) {
+  if (!n) return;
+  dst[0] = 0;
+  if (!item) return;
+  if (item->imdb[0]) snprintf(dst, n, "%s", item->imdb);
+  else if (item->tmdb > 0)
+    snprintf(dst, n, "tmdb:%c%ld", ehSerie(item) ? 't' : 'm', item->tmdb);
+}
+
+const char *artehero_url_escolhida(const CatItem *item) {
+  char id[64];
+  const char *u;
+  if (!item || !escFundo || escSuspensa) return NULL;
+  artehero_id_escolha(item, id, sizeof id);
+  if (!id[0] || !(u = escFundo(id)) || !u[0]) return NULL;
+  u = artehero_url_escolha_grande(u);
+  return falhou(u) ? NULL : u;
+}
+
+// GUARDADA NO TAMANHO DO CARD (TMDB w1280), PEDIDA NO DE TELA CHEIA: a mesma
+// escada de tamTmdb — w780 na baixa, original na alta da LG. Sem isto a
+// escolha feita na Samsung pediria original na LG e vice-versa. A tela de
+// escolha pede a previa por aqui tambem: a textura que ela carrega e a mesma
+// que o destaque vai pedir depois do OK.
+const char *artehero_url_escolha_grande(const char *u) {
+  char buf[512];
+  const char *p;
+  if (!u || !u[0]) return u;
+  if ((p = strstr(u, "/t/p/")) != NULL) {
+    const char *nome = strchr(p + 5, '/');
+    size_t pre = (size_t)(p - u);
+    if (nome && nome[1] && pre < 300) {
+      snprintf(buf, sizeof buf, "%.*s/t/p/%s%s", (int)pre, u, tamTmdb(1), nome);
+      return fixar(buf, buf);
+    }
+  }
+  return u;
+}
+
+const char *artehero_logo_escolhido(const CatItem *item) {
+  char id[64];
+  const char *u;
+  if (!item || !escLogo || escSuspensa) return NULL;
+  artehero_id_escolha(item, id, sizeof id);
+  if (!id[0] || !(u = escLogo(id)) || !u[0]) return NULL;
+  u = artehero_url_logo(u);
+  return u && !falhou(u) ? u : NULL;
+}
+
 const char *artehero_url_fonte(const CatItem *item, int fonte) {
   char tmp[512];
   if (!item) return NULL;
@@ -473,6 +540,8 @@ const char *artehero_url_destaque(const CatItem *item, int fonte, int diferente)
   const char *card, *u;
   int i;
   if (!item) return NULL;
+  // A escolha a mao vence a fonte dos Ajustes e o "outra arte" (#142).
+  if ((u = artehero_url_escolhida(item)) != NULL) return u;
   if (!diferente) {
     // PADRAO: a mesma imagem do card (19/09), agora com a fonte escolhida
     // valendo para os dois. Sem a fonte, a arte automatica.
@@ -615,6 +684,7 @@ void artehero_logo_sessao_iniciar(const CatItem *item) {
 
 const char *artehero_logo_sessao(const CatItem *item) {
   const char *url;
+  if ((url = artehero_logo_escolhido(item)) != NULL) return url;
   if (!item || !item->logo[0])
     return logo_sessao_mesma(item) && logoSessao.url[0] &&
                    !falhou(logoSessao.url) ? logoSessao.url : NULL;
@@ -631,6 +701,7 @@ const char *artehero_logo_sessao(const CatItem *item) {
 }
 
 const char *artehero_logo_sessao_observar(const CatItem *item) {
+  { const char *e = artehero_logo_escolhido(item); if (e) return e; }
   if (!item || !item->imdb[0])
     return item && item->logo[0] ? artehero_url_logo(item->logo) : NULL;
   if (!logo_sessao_mesma(item)) {
@@ -650,6 +721,7 @@ const char *artehero_logo_sessao_observar(const CatItem *item) {
 }
 
 const char *artehero_logo_sessao_larg(const CatItem *item, float larg) {
+  { const char *e = artehero_logo_escolhido(item); if (e) return e; }
   if (logo_sessao_mesma(item)) return artehero_logo_sessao(item);
   return item && item->logo[0] ? artehero_url_logo_larg(item->logo, larg) : NULL;
 }
