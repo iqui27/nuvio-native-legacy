@@ -47,35 +47,35 @@ static int existe(const char *arq) {
 
 static void regras(void) {
   // OK com o foco inicial = Experimentar a cor viva.
-  dados_apagar("novidades-148.txt");
+  dados_apagar("novidades-150.txt");
   novidades148_abrir();
   tecla(SDLK_RETURN);
   assert(!novidades148_aberto());
   assert(novidades148_pedido() == N148_PEDIU_COR);
   assert(novidades148_pedido() == N148_PEDIU_NADA);   // consumido
-  assert(existe("novidades-148.txt"));
+  assert(existe("novidades-150.txt"));
   // Esquerda + OK = teste de velocidade.
-  dados_apagar("novidades-148.txt");
+  dados_apagar("novidades-150.txt");
   novidades148_abrir();
   tecla(SDLK_LEFT);
   tecla(SDLK_RETURN);
   assert(novidades148_pedido() == N148_PEDIU_VELOCIDADE);
-  assert(existe("novidades-148.txt"));
+  assert(existe("novidades-150.txt"));
   // Duas esquerdas (e uma a mais, que para na borda) + OK = Agora nao.
-  dados_apagar("novidades-148.txt");
+  dados_apagar("novidades-150.txt");
   novidades148_abrir();
   tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_LEFT);
   tecla(SDLK_RETURN);
   assert(novidades148_pedido() == N148_PEDIU_NADA);
-  assert(existe("novidades-148.txt"));
+  assert(existe("novidades-150.txt"));
   // Voltar = Agora nao, e grava a marca.
-  dados_apagar("novidades-148.txt");
+  dados_apagar("novidades-150.txt");
   novidades148_abrir();
   tecla(SDLK_RIGHT);   // ja esta na borda direita
   tecla(SDLK_ESCAPE);
   assert(!novidades148_aberto());
   assert(novidades148_pedido() == N148_PEDIU_NADA);
-  assert(existe("novidades-148.txt"));
+  assert(existe("novidades-150.txt"));
   // Com a marca gravada, primeira_vez nao abre.
   novidades148_primeira_vez();
   assert(!novidades148_aberto());

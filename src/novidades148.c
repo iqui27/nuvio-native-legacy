@@ -21,7 +21,7 @@
 // SEM REDE: os tres titulos vem de deploy/app/art (fundo, logo e a linha de
 // catalogo.txt), os mesmos da home do pacote.
 //
-// A MARCA E "novidades-148.txt". Vem DEPOIS do cartao da 1.4.2 na fila de
+// A MARCA E "novidades-150.txt" (a versao saiu como 1.5.0). Vem DEPOIS do cartao da 1.4.2 na fila de
 // app.c: quem pula da 1.4.1 le as duas na ordem em que chegaram.
 #include "novidades148.h"
 #include "dados.h"
@@ -40,7 +40,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define N148_ARQ         "novidades-148.txt"
+#define N148_ARQ         "novidades-150.txt"
 #define N148_W           1720.0f
 #define N148_H            960.0f
 #define N148_X           ((NV_TELA_W - N148_W) * 0.5f)
@@ -577,7 +577,7 @@ void novidades148_desenhar(Uint32 agora) {
             N148_PV_RAIO / N148_PV_H, 0.075f, 0.078f, 0.090f, a);
   }
 
-  txt_bloco(TXT_TITULO2, i18n("Novidades da 1.4.8"), 248, 249, 252,
+  txt_bloco(TXT_TITULO2, i18n("Novidades da 1.5"), 248, 249, 252,
             N148_TXT_X, y0 + N148_PAD - 6.0f, N148_TXT_W, 62.0f, a, 1);
   { int g;
     float y = y0 + N148_PAD + 104.0f;

@@ -1080,7 +1080,7 @@
   { "Notas do Trakt", "Trakt ratings" },
   { "Notícias", "News" },
   { "Novembro", "November" },
-  { "Novidades da 1.4.8", "What's new in 1.4.8" },
+  { "Novidades da 1.5", "What's new in 1.5" },
   { "Novo", "New" },
   { "Novo tamanho maior para destaques, com mais espaço entre os cards.", "A larger spotlight size, with more space between cards." },
   { "Nudez", "Nudity" },
