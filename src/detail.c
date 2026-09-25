@@ -50,6 +50,7 @@
 #include "revela.h"
 #include "layout.h"
 #include "corviva.h"
+#include "trocaarte.h"
 #include "catalogo.h"
 #include "artehero.h"
 #include "recomenda.h"
@@ -805,6 +806,10 @@ static const char *logoDe(int i) {
 }
 static const char *arteDeViva(int i);
 static const char *arteDe(int i) {
+  // "TROCAR ARTE" ABERTA (#142): a pagina mostra a previa ja carregada da
+  // miniatura em foco — e o que faz a Cor viva e o veu seguirem a escolha
+  // antes do OK, sem caminho proprio.
+  if (i == idx) { const char *pv = trocaarte_previa_fundo(); if (pv) return pv; }
   // Congelada, MAS NAO PRESA A UM 404: a url da fonte escolhida pode ser
   // virtual (TMDB/Trakt pelo id, artereserva.h) e so se sabe se ela existe
   // depois do download. Falhou, solta e escolhe de novo (cai na seguinte).
@@ -841,6 +846,7 @@ static int arteDetalheEhPoster(int i) {
   const CatItem *c = cat_item(i);
   // Congelado junto com a arte: a resposta descreve a url guardada, nao a
   // que o enriquecimento pode ter posto no catalogo depois.
+  if (i == idx && trocaarte_previa_fundo()) return 0;   // previa: sempre fundo
   if (i == idx && arteFixa[0]) return arteFixaPoster;
   { int r = c && !c->backdrop[0] && c->poster[0];
     if (i == idx) arteFixaPoster = r;
@@ -916,6 +922,7 @@ void detail_abrir(const HomeItem *it) {
   // limpam a marca sozinhos.
   serieaud_fechar();
   seriefrases_fechar();
+  trocaarte_fechar();
   audAberta = 0; audTempAberta = -1; audTempVista = -1; frasesAberta = 0;
   item = *it;
   aberto = 1; saindo = 0; nivel = 0; botao = 0;
@@ -1458,9 +1465,17 @@ static const char *rotuloLembrar(void) {
 // Instante em que o dono ligou o lembrete, para o despertador tocar inteiro
 // no quadro seguinte ao OK. 0 = nao houve troca nesta sessao.
 static Uint32 lembreteEm;
+// "TROCAR ARTE" (#142): o ULTIMO circular da linha, depois do recomendar. So
+// filme e serie com id — e o id que guarda a escolha (arteescolha.h), e canal
+// e evento nao tem backdrop de fonte nenhuma para escolher.
+static int temArte(void) {
+  const CatItem *ci = cat_item(idx);
+  if (!ci || (!ci->imdb[0] && ci->tmdb <= 0)) return 0;
+  return !strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series");
+}
 static int nBotoes(void) {
   return (ehSerie() ? 3 : 4) + (temInicio() ? 1 : 0) + (temLembrar() ? 1 : 0)
-         + (temRecomendar() ? 1 : 0);
+         + (temRecomendar() ? 1 : 0) + (temArte() ? 1 : 0);
 }
 
 // Que ACAO esta na posicao `n` da linha. As acoes tem numeros fixos (0
@@ -1470,7 +1485,7 @@ static int nBotoes(void) {
 // "marcar assistido". Quando temInicio, a posicao 1 e o secundario de texto
 // e os circulares escorregam um para a direita.
 enum { ACAO_PRIMARIO = 0, ACAO_LISTA = 1, ACAO_ASSISTIDO = 2, ACAO_FONTES = 3,
-       ACAO_INICIO = 4, ACAO_RECOMENDAR = 5, ACAO_LEMBRAR = 6 };
+       ACAO_INICIO = 4, ACAO_RECOMENDAR = 5, ACAO_LEMBRAR = 6, ACAO_ARTE = 7 };
 static int acaoEm(int n) {
   if (temInicio()) {
     if (n == 1) return ACAO_INICIO;
@@ -1487,6 +1502,10 @@ static int acaoEm(int n) {
   // serie: com 3 circulares numa serie, a ultima posicao e n == 3, e a regra
   // de baixo devolveria 4 — que e ACAO_INICIO, o botao de texto. O OK ali
   // abriria "assistir do comeco" a partir de um circular de enviar.
+  // O "Trocar arte" vem DEPOIS do recomendar, e a conta e a mesma: a ultima
+  // posicao da linha, antes do salto da serie.
+  if (temArte() && n == (ehSerie() ? 3 : 4) + (temRecomendar() ? 1 : 0))
+    return ACAO_ARTE;
   if (temRecomendar() && n == (ehSerie() ? 3 : 4)) return ACAO_RECOMENDAR;
   if (n >= 2 && ehSerie()) return n + 1;   // serie pula o olho
   return n;
@@ -1498,6 +1517,9 @@ void detail_evento(const SDL_Event *e) {
   // no fundo nao passa por aqui — ele nao tem teclado, a pagina continua a
   // dela, e qualquer coisa que tire a pagina do topo o fecha (detail_atualizar).
   if (trailer_cheia() && trailer_evento(e)) return;
+  // "TROCAR ARTE" COME TUDO enquanto aberta (#142): e a coisa mais recente na
+  // tela, e o Voltar dela fecha so ela.
+  if (trocaarte_aberto()) { trocaarte_evento(e); return; }
   // MODO CINEMA: a primeira tecla so devolve o bloco de texto (o trailer
   // segue); Voltar fecha o trailer e fica na pagina.
   if (trailerCopyOculta && e->type == SDL_KEYDOWN && !e->key.repeat) {
@@ -1690,6 +1712,10 @@ void detail_evento(const SDL_Event *e) {
         pedMarcar = 1;
       } else if (acao == ACAO_ASSISTIDO) {
         pedAssistido = 1;
+      } else if (acao == ACAO_ARTE) {
+        // A tela de escolha come o teclado ate fechar (topo de detail_evento).
+        trailer_fechar();
+        trocaarte_abrir(cat_item(idx));
       } else if (acao == ACAO_RECOMENDAR) {
         // A MESMA MODAL DO MENU DO CARTAZ, e nao uma segunda copia dela: ver
         // recenviar.h. Aberta, ela fica acima desta tela no roteador de app.c e
@@ -2068,8 +2094,17 @@ void detail_atualizar(float dt, Uint32 agora) {
   // quadro nao custa nada (e um flag sob mutex) e evita precisar de uma borda:
   // `saindo` tambem e ligado por caminhos que nao passam pelo Voltar, como o
   // OK num estudio, que abre o vertudo e deixa esta tela para tras.
-  if (saindo) { serieaud_fechar(); seriefrases_fechar(); }
+  if (saindo) { serieaud_fechar(); seriefrases_fechar(); trocaarte_fechar(); }
   revalidarIdx();
+  trocaarte_atualizar(dt);
+  // OK NA TELA DE ESCOLHA: a arte congelada na abertura (arteFixa/logoFixo)
+  // e justamente a que a pessoa acabou de trocar. Solta e pede de novo — com a
+  // escolha gravada, artehero ja devolve a nova.
+  if (trocaarte_consumir_mudanca()) {
+    arteFixa[0] = logoFixo[0] = logoCatalogoFixo[0] = 0;
+    arteFixaPoster = 0;
+    artehero_logo_sessao_iniciar(cat_item(idx));
+  }
   // TRAILER AUTOMATICO, mudo, no lugar da arte (dono, 20/09/2026: "trailer
   // autoplay direto na interface"). Comeca NV_TRAILER_ESPERA_MS depois de a
   // pagina assentar, uma vez por abertura, e so enquanto a pagina esta no
@@ -2078,6 +2113,7 @@ void detail_atualizar(float dt, Uint32 agora) {
   // teclado fecha.
   if (trailer_suportado()) {
     int topo = !saindo && nivel == 0 && !pessoaAberta && !episodios_menu_aberto() &&
+               !trocaarte_aberto() &&
                !pedReproduzir && !pedFontes && !player_aberto() &&
                pg < 0.05f && scrollY < 1.0f;
     if (!detail_assentado() || !topo) { if (!trailer_cheia()) trailerDesde = 0; }
@@ -2503,6 +2539,10 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
       // icone era sempre o mesmo e nao dizia estado nenhum — era so um enfeite
       // que o dono nao conseguia ler ("avisar o que foi visto").
       gfx_icone(ig, progressoDe(idx) >= 90 ? "visto" : "naovisto", ic, ic, ic, a);
+    } else if (icone == ACAO_ARTE) {
+      // MOLDURA COM MONTANHA: o glifo universal de "imagem". PNG de
+      // deploy/app/art/icones como os vizinhos; arte.svg descreve o desenho.
+      gfx_icone(ig, "arte", ic, ic, ic, a);
     } else if (icone == ACAO_RECOMENDAR) {
       // AVIAO DE PAPEL — o mesmo vocabulario dos vizinhos: um PNG de
       // deploy/app/art/icones com a forma na alpha, desenhado com GFX_MARCA e
@@ -5067,8 +5107,12 @@ void detail_desenhar(Uint32 agora) {
   { float c = anim_suave(trailerCopy);
     // Modo cinema: o bloco desce 220 px enquanto apaga; o logo pequeno entra
     // no canto de baixo. As duas molas sao a mesma, entao o cruzamento e limpo.
-    heroWeb(a2 * (1.0f - c), -scrollY + (1.0f - a2) * NV_TELA_H * 0.05f + c * 220.0f);
-    if (c > 0.005f) logoCinema(c * a2); }
+    // Com "Trocar arte" aberta o texto da pagina sai e fica a arte: o que se
+    // escolhe e o fundo, e ele precisa da tela (a tela desenha o logo).
+    float ta = trocaarte_visivel();
+    heroWeb(a2 * (1.0f - c) * (1.0f - ta), -scrollY + (1.0f - a2) * NV_TELA_H * 0.05f + c * 220.0f);
+    if (c > 0.005f) logoCinema(c * a2);
+    if (ta > 0.005f) trocaarte_desenhar(logoDe(idx)); }
 
 
   if (pg <= 0.01f && scrollY < 1.0f) {

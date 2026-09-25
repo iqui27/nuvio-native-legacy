@@ -664,6 +664,10 @@ static const char *arte_por_formato(const CatItem *item, int deitado) {
 static const char *arte_hero_do_item(const CatItem *item) {
   int fonte = ajustes_hero_fonte();
   int diferente = ajustes_hero_arte_diferente();
+  // A ARTE ESCOLHIDA A MAO (#142) VENCE ATE O STILL DO EPISODIO: quem apontou
+  // a foto na tela "Trocar arte" quer ve-la no destaque, e o still e regra
+  // automatica. Tabela vazia = um retorno NULL, nada mais no quadro.
+  { const char *esc = artehero_url_escolhida(item); if (esc) return esc; }
   // Ao escolher uma origem, o usuario esta pedindo a arte do titulo — nao o
   // still automatico do episodio. Automatico mantem o comportamento anterior,
   // inclusive o still de Continuar assistindo. A escolha entre fonte, card e
