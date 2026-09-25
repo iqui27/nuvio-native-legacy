@@ -443,6 +443,10 @@ static int buscar(unsigned int h, CorvivaPaleta *p) {
   return achou;
 }
 
+int corviva_paleta(const char *chave, CorvivaPaleta *p) {
+  return p && chave && chave[0] && buscar(hashDe(chave), p);
+}
+
 // ------------------------------------------------------------- quem manda
 static unsigned int pedidoH, pedidoLogoH;   // os pedidos de maior prioridade DESTE quadro
 static int pedidoPrio, pedidoLogoPrio;

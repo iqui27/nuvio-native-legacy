@@ -62,6 +62,10 @@ int  corviva_extrair(const unsigned char *px, int w, int h, int pitch,
 // Guarda a paleta de `chave` (a url da arte, a mesma do cache de texturas).
 // Pode ser chamada de QUALQUER fio: o fio de decode e quem chama.
 void corviva_anotar(const char *chave, const CorvivaPaleta *p);
+// A paleta ja anotada de `chave`, sem pedir nada nem mexer na cena: 1 se ha.
+// E o que a previa do cartao da 1.4.8 (novidades148.c) usa para mostrar tres
+// titulos com as cores de cada um sem trocar a cor da interface.
+int  corviva_paleta(const char *chave, CorvivaPaleta *p);
 // Diz qual arte esta em cena neste quadro. Do fio de desenho. Barato: um hash
 // de string e uma comparacao; chamar todo quadro e o uso esperado.
 void corviva_definir(const char *chave, int prioridade);
