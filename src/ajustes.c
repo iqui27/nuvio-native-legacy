@@ -151,6 +151,11 @@ typedef enum {
   // Integracoes — fanart.tv (fonte do destaque, so com chave pessoal)
   AJ_FANART_CHAVE,
   AJ_DIAGNOSTICO,
+  // ATALHO DO TESTE DE VELOCIDADE, logo abaixo do diagnostico (dono,
+  // 25/09/2026): a mesma tela de diagnostico, aberta ja no teste — o botao
+  // "Teste de velocidade" de dentro dela exigia passar pela escolha do
+  // objetivo so para chegar la.
+  AJ_VELOCIDADE,
   AJ_N
 } OpcaoId;
 
@@ -565,6 +570,7 @@ static const Opcao OPCOES[AJ_N] = {
   // publicada; a pessoal cada um tira em fanart.tv/get-an-api-key.
   ACAO("Chave do fanart.tv"),
   ACAO("Diagnóstico e otimização"),
+  ACAO("Teste de velocidade"),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -665,6 +671,7 @@ static const char *CHAVE[] = {
   // entra no ajustes.txt nem no blob da conta.
   "-fanartChave",
   "-diagnostico",
+  "-velocidade",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -940,6 +947,7 @@ static int valor[AJ_N] = {
                            audiencia, metacritic, mal */
   0,                /* chave do fanart.tv: acao (o valor mora em fanart.txt) */
   0,                /* diagnostico */
+  0,                /* teste de velocidade: acao */
 };
 
 // Pedido de abrir a lista de addons, lido e zerado pelo app.c. A tela nao e
@@ -949,6 +957,8 @@ static int pediuAddons;
 int ajustes_pediu_addons(void) { int v = pediuAddons; pediuAddons = 0; return v; }
 static int pediuDiagnostico;
 int ajustes_pediu_diagnostico(void) { int v = pediuDiagnostico; pediuDiagnostico = 0; return v; }
+static int pediuVelocidade;
+int ajustes_pediu_velocidade(void) { int v = pediuVelocidade; pediuVelocidade = 0; return v; }
 
 static int focoOp = 0;
 // 1 = o foco esta na COLUNA DE SECOES, e nao na lista de opcoes. Nao ha um
@@ -2163,6 +2173,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_ENVIAR_LOG: return "Manda os últimos 200 KB do registro desta sessão (sem senhas nem chaves) para quem faz o app. Use quando algo estiver errado agora.";
     case AJ_ENVIO_AUTO: return "Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.";
     case AJ_DIAGNOSTICO: return "Testa manifestos, fontes e artes dos addons, mede os tempos e aplica um perfil seguro de Qualidade ou Desempenho. O teste não marca títulos como assistidos.";
+    case AJ_VELOCIDADE: return "Mede a velocidade dos seus addons e das fontes nesta TV e diz até quantos GB por filme e por episódio tocam sem travar. Não muda nenhum ajuste.";
 
     // --- Integracoes
     case AJ_TMDB_LIGADO: return "O TMDB enriquece títulos com sinopse, elenco com foto, ficha técnica e trailers. Desligar corta tudo isso de uma vez.";
@@ -2688,6 +2699,7 @@ void ajustes_evento(const SDL_Event *e) {
     if (focoOp == AJ_ENVIAR_LOG) { avisos_enviar_registro_atual(); return; }
     if (focoOp == AJ_ADDONS) { pediuAddons = 1; return; }
     if (focoOp == AJ_DIAGNOSTICO) { pediuDiagnostico = 1; return; }
+    if (focoOp == AJ_VELOCIDADE) { pediuVelocidade = 1; return; }
     if (focoOp == AJ_STALKER_PORTAL || focoOp == AJ_STALKER_MAC) {
       int mac = focoOp == AJ_STALKER_MAC;
       stCampo = focoOp;
@@ -2954,6 +2966,7 @@ static const char *iconeOpcao(int op) {
     case AJ_SYNC: return "fluxo";
     case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_ENVIAR_LOG: case AJ_ENVIO_AUTO: return "menu_settings";
     case AJ_DIAGNOSTICO: return "aspecto";
+    case AJ_VELOCIDADE: return "fluxo";
     case AJ_ESPACO: case AJ_TEX_MB: return "aspecto";
     case AJ_DET_TRAILER: case AJ_TMDB_TRAILERS: case AJ_PROF_TRAILERS: return "trailer";
     case AJ_DET_VEU: return "aspecto";

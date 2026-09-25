@@ -201,11 +201,21 @@ static int historico_pos(const char *imdb, const char *tipo, int criar) {
 
 // Leitura interna da modal: -1 = historico ainda nao consultado, 0 = nao
 // visto confirmado, 1 = visto confirmado.
+int cat_historico_estado_id(const char *imdb, const char *tipo);
 int cat_historico_estado_item(int indice) {
   const CatItem *it = cat_item(indice);
-  int p;
   if (!it || !it->imdb[0]) return -1;
-  p = historico_pos(it->imdb, it->tipo, 0);
+  return cat_historico_estado_id(it->imdb, it->tipo);
+}
+
+// A MESMA LEITURA POR ID, para quem nao tem indice: o menu aberto pelo painel
+// de Salvos fala de um titulo que pode nao estar no catalogo (veio so da lista
+// local, ver salvospainel.c). A tabela ja e por IMDb + tipo; o indice acima so
+// servia para chegar nesses dois campos.
+int cat_historico_estado_id(const char *imdb, const char *tipo) {
+  int p;
+  if (!imdb || !imdb[0]) return -1;
+  p = historico_pos(imdb, tipo ? tipo : "movie", 0);
   return p >= 0 && historico[p].conhecido ? historico[p].visto : -1;
 }
 

@@ -9,6 +9,10 @@ typedef enum {
 } DiagnosticoModo;
 
 void diagnostico_iniciar(void);
+// Pede que o PROXIMO diagnostico_iniciar abra direto no teste de velocidade,
+// sem apresentacao nem objetivo; o Voltar do resultado sai da tela. Chamar
+// antes de trocar para TELA_DIAGNOSTICO (o atalho de Ajustes, em app.c).
+void diagnostico_abrir_velocidade(void);
 void diagnostico_recuperar_checkpoint(void);
 void diagnostico_evento(const SDL_Event *e);
 void diagnostico_atualizar(float dt, Uint32 agora);
