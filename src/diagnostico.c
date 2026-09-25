@@ -303,6 +303,12 @@ typedef struct {
 
 static Vazao vz;
 static int sairTela;
+// O ATALHO DE AJUSTES (Ajustes › Diagnóstico › Teste de velocidade). `pedido`
+// e o recado de diagnostico_abrir_velocidade para o diagnostico_iniciar que
+// vem logo depois; `soVelocidade` e a tela aberta SO para o teste: sem
+// apresentacao, sem escolha de objetivo, e o Voltar do resultado sai da tela
+// em vez de cair na escolha que a pessoa nunca viu.
+static int velocidadePedida, soVelocidade;
 static int introGlobal;
 static int introDecidido;
 
@@ -1441,6 +1447,13 @@ void diagnostico_iniciar(void) {
   if (atomic_load(&d.estado) == 1 || d.fioSug || atomic_load(&d.enviando) ||
       atomic_load(&vz.estado) == 1) {
     sairTela = 0;
+    // O atalho com um teste de velocidade JA rodando (a barra lateral deixa
+    // sair no meio): mostra o que roda, em vez de comecar outro.
+    if (velocidadePedida && atomic_load(&vz.estado) == 1) {
+      vz.aberto = 1;
+      soVelocidade = 1;
+    }
+    velocidadePedida = 0;
     return;
   }
   juntarFios(1);
@@ -1453,7 +1466,18 @@ void diagnostico_iniciar(void) {
   sairTela = 0;
   d.intro = !apresentacaoVista();
   dados_uuid(d.id, sizeof d.id);
+  soVelocidade = 0;
+  if (velocidadePedida) {
+    velocidadePedida = 0;
+    // A apresentacao NAO e marcada como vista: ela explica o diagnostico, e
+    // quem so mediu a rede ainda nao a leu.
+    d.intro = 0;
+    soVelocidade = 1;
+    iniciarVazao();
+  }
 }
+
+void diagnostico_abrir_velocidade(void) { velocidadePedida = 1; }
 
 // ARRANQUE: o perfil aprovado volta a valer, e um experimento interrompido
 // (checkpoint pendente) so e apagado — o candidato nunca foi gravado como
@@ -1593,7 +1617,12 @@ void diagnostico_evento(const SDL_Event *e) {
     int ve = atomic_load(&vz.estado);
     if (teclaVoltar(e)) {
       if (ve == 1) atomic_store(&vz.cancelado, 1);
-      else vz.aberto = 0;
+      else {
+        vz.aberto = 0;
+        // Aberta pelo atalho: nao ha objetivo nem resultado atras, volta a
+        // Ajustes (app.c).
+        if (soVelocidade) { soVelocidade = 0; sairTela = 1; }
+      }
     } else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && ve != 1) {
       iniciarVazao();
     }

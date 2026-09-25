@@ -1125,7 +1125,12 @@ void app_evento(const SDL_Event *e) {
   if (e->type == SDL_KEYDOWN) saiuPorEsquerda = (e->key.keysym.sym == SDLK_LEFT);
   if (player_aberto()) { player_evento(e); return; }
   if (detail_aberto()) { detail_evento(e); return; }
-  if (spainel_aberto()) { spainel_evento(e); return; }
+  // O MENU DO CARTAZ ABERTO PELO PAINEL (segurar OK numa linha de Salvos)
+  // fica por cima dele: com os dois no ar, a tecla e do menu.
+  if (spainel_aberto()) {
+    if (ctx_aberto()) ctx_evento(e); else spainel_evento(e);
+    return;
+  }
   if (menu_aberto())   { menu_evento(e);   return; }
   // "Ver tudo" fica ENTRE a home e o detalhe: ela cobre a home e o detalhe
   // cobre ela. Por isso vem depois do detalhe e antes do roteamento por tela.
@@ -1625,6 +1630,15 @@ void app_atualizar(float dt, Uint32 agora) {
   }
   if (tela == TELA_AJUSTES && ajustes_pediu_diagnostico()) {
     diagDaHome = 0;
+    trocarTela(TELA_DIAGNOSTICO);
+  }
+  // O ATALHO DO TESTE DE VELOCIDADE (Ajustes › Diagnóstico, logo abaixo do
+  // diagnostico): a mesma tela, ja no teste, sem apresentacao nem objetivo. O
+  // pedido vai ANTES da troca porque e diagnostico_iniciar quem o le. O Voltar
+  // do resultado sai da tela, e diagDaHome = 0 devolve a Ajustes.
+  if (tela == TELA_AJUSTES && ajustes_pediu_velocidade()) {
+    diagDaHome = 0;
+    diagnostico_abrir_velocidade();
     trocarTela(TELA_DIAGNOSTICO);
   }
   // O diagnóstico nasce em Ajustes; voltar deve devolver a pessoa ao mesmo
@@ -2551,8 +2565,12 @@ static void desenharAtrasDoPainel(void *ctx) {
   }
   CAMADA_SE(vertudo_aberta());
   if (!detail_cobre_tela()) vertudo_desenhar(agora);
-  CAMADA_SE(ctx_aberto());
-  ctx_desenhar(agora);
+  // Com o painel de Salvos na tela o menu do cartaz e desenhado DEPOIS dele
+  // (desenharTelas): e o painel que o abre, e por baixo ele ficaria sob o veu.
+  if (!spainel_visivel() || detail_aberto()) {
+    CAMADA_SE(ctx_aberto());
+    ctx_desenhar(agora);
+  }
   CAMADA_SE(detail_aberto());
   detail_desenhar(agora);
   // A rail NAO existe na tela de detalhe do app web: ela e full-bleed e a
@@ -2633,12 +2651,17 @@ static void desenharTelas(Uint32 agora) {
     // copia e refeita quando o catalogo troca (fileiras novas por baixo) e cai
     // assim que o painel comeca a fechar.
     { int podeParar = tela == TELA_HOME && !detail_aberto() && !vertudo_aberta() &&
-                      !ctx_aberto() && !menu_aberto() && !player_mini_ativo();
+                      (!ctx_aberto() || ctx_do_painel()) && !menu_aberto() &&
+                      !player_mini_ativo();
       spainel_fundo(podeParar, cat_revisao(), desenharAtrasDoPainel, &agora); }
     // Depois do menu: as duas camadas de "Salvos" escurecem a tela inteira e
     // tem de ficar por cima de tudo que a home desenhou, inclusive da rail.
     CAMADA_SE(spainel_aberto());
-    if (spainel_visivel() && !detail_aberto()) spainel_desenhar(agora);
+    if (spainel_visivel() && !detail_aberto()) {
+      spainel_desenhar(agora);
+      CAMADA_SE(ctx_aberto());
+      ctx_desenhar(agora);
+    }
   }
   CAMADA_SE(player_aberto());
   player_desenhar(agora);

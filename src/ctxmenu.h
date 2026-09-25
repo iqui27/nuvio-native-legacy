@@ -11,6 +11,7 @@
 #ifndef NV_CTXMENU_H
 #define NV_CTXMENU_H
 #include <SDL2/SDL.h>
+#include "catalogo.h"
 
 // `indice` e a posicao no catalogo global.
 // A integracao da pressao longa fica em home.c: ele mede NV_HOLD_MS no KEYUP e
@@ -24,4 +25,19 @@ void ctx_atualizar(float dt, Uint32 agora);
 void ctx_desenhar(Uint32 agora);
 // Indice do titulo cujo detalhe o dono pediu, ou -1. Consumido uma vez.
 int  ctx_pediu_detalhes(void);
+
+// O MESMO MENU, aberto pelo painel de Salvos (salvospainel.c). A pressao longa
+// la tambem e medida por quem conhece a linha, com o mesmo NV_HOLD_MS, e o
+// painel chama isto no limiar. `titulo` e COPIADO: a linha do painel pode nao
+// ter indice no catalogo (veio so da lista local). Opcoes: "Mais informações",
+// "Remover dos Salvos" (o mesmo OP_LISTA do cartaz: lista local + Trakt ou
+// Simkl + espelho) e, quando da, "Marcar como assistido".
+void ctx_abrir_salvo(const CatItem *titulo);
+// 1 enquanto o menu aberto e o do painel: app.c o desenha POR CIMA do painel e
+// entrega a ele as teclas que chegariam ao painel.
+int  ctx_do_painel(void);
+// IMDb do "Mais informações" pedido no modo painel, ou NULL. Consumido uma vez.
+const char *ctx_pediu_detalhes_imdb(void);
+// Centro horizontal da barra "Segure OK para opções"; negativo = centro da tela.
+void ctx_centro_dica(float cx);
 #endif

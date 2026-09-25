@@ -31,6 +31,7 @@ extern int trakt_operacao_estado(int tipo);
 extern int trakt_watchlist_tipo(const char *imdb, const char *tipo, int adicionar);
 extern int trakt_assistido_tipo(const char *imdb, const char *tipo, int marcar);
 extern int cat_historico_estado_item(int indice);
+extern int cat_historico_estado_id(const char *imdb, const char *tipo);
 extern void cat_historico_definir_id(const char *imdb, const char *tipo, int visto);
 
 enum { CTX_OP_NENHUMA, CTX_OP_LISTA = 1, CTX_OP_HISTORICO = 2 };
@@ -83,6 +84,29 @@ static volatile int holdAtivo, holdCancelado, holdPronto;
 // KEYUP de OK — ou seja, exige um toque NOVO, que e o que o dono espera.
 static volatile int esperandoSoltura;
 static Uint32 holdDesde;
+
+// MODO PAINEL: o mesmo menu, aberto SEGURANDO OK numa linha do painel de
+// Salvos (salvospainel.c, dono 25/09/2026: "segurar e remover, ou more
+// infos").
+//
+// POR QUE UMA COPIA E NAO O INDICE. O painel mostra titulos que NAO estao no
+// catalogo — a lista local se desenha do proprio arquivo, antes de a descoberta
+// responder (ver salvospainel.c) — e para esses nao existe indice nenhum. A
+// copia e o titulo; o catalogo, quando tem o mesmo IMDb, continua sendo quem
+// responde (itemAtual), porque e ele que tem progresso, temporadas e a marca.
+//
+// O RESTO E O MESMO MENU: mesmo cartao, mesmas pilulas, mesma espera pelo 2xx
+// do Trakt e o mesmo caminho de escrita de OP_LISTA (salvos_definir + Trakt ou
+// Simkl + espelho). Um "Remover" proprio do painel seria a quinta porta
+// escrevendo a mesma marca, e o defeito dos quatro "+" do app irmao (salvos.h)
+// comecou exatamente assim.
+static int     doPainel;
+static CatItem copiaPainel;
+// Removeu pelo painel: o menu sai sozinho quando a remocao CONFIRMA — a linha
+// ja nao existe mais atras dele, e o foco do painel foi para a seguinte.
+static int     fecharAoConfirmar;
+static char    pedDetalhesImdb[24];
+static float   dicaCx = -1.0f;   // centro da barra de "Segure OK"; <0 = tela
 
 static int teclaOk(SDL_Keycode k) {
   return k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE;
@@ -167,6 +191,9 @@ static void *fioTirarRemoto(void *u) {
 static int indiceAtual(void) {
   int n = cat_n();
   int achado;
+  // No modo painel o indice e so "o catalogo tem este titulo?" — pode nao ter,
+  // e ai quem responde e a copia (itemAtual).
+  if (doPainel) return copiaPainel.imdb[0] ? cat_indice_por_imdb(copiaPainel.imdb) : -1;
   if (n < 1 || idx < 0 || idx >= n) return -1;
   if (operacaoImdb[0]) {
     achado = cat_indice_por_imdb(operacaoImdb);
@@ -177,6 +204,20 @@ static int indiceAtual(void) {
   return idx;
 }
 
+// O titulo do menu: a copia do catalogo quando ela existe, senao (so no modo
+// painel) a copia que o painel entregou. NULL quando nao ha mais titulo.
+static const CatItem *itemAtual(void) {
+  int i = indiceAtual();
+  const CatItem *ci = i >= 0 ? cat_item(i) : NULL;
+  if (!ci && doPainel && copiaPainel.imdb[0]) ci = &copiaPainel;
+  return ci;
+}
+
+// -1 nao consultado, 0 nao visto, 1 visto. Por id, para valer tambem na copia.
+static int historicoDe(const CatItem *ci) {
+  return ci ? cat_historico_estado_id(ci->imdb, ci->tipo) : -1;
+}
+
 // O UNICO CAMINHO PARA DENTRO DE ops[]. Ver a nota em CTX_MAX.
 static void juntar(const char *rot, int acao) {
   if (nOps >= CTX_MAX) return;
@@ -185,10 +226,12 @@ static void juntar(const char *rot, int acao) {
 
 static void montar(void) {
   int i = indiceAtual();
-  const CatItem *ci = i >= 0 ? cat_item(i) : NULL;
+  const CatItem *ci = itemAtual();
   nOps = 0;
   if (!ci) return;
-  juntar("Ver detalhes", OP_DETALHES);
+  // "Mais informações" no painel, que e o nome que o dono deu ao pedir; o
+  // efeito e o mesmo "Ver detalhes" do cartaz (a pagina do titulo).
+  juntar(doPainel ? "Mais informações" : "Ver detalhes", OP_DETALHES);
   // Sem IMDb nao ha endpoint remoto suportado para esta acao. Nao oferecer
   // um botao que so aparentaria funcionar e inventaria estado local.
   if (ci->imdb[0]) {
@@ -204,12 +247,17 @@ static void montar(void) {
   }
   // O web so oferece "assistido" em filme e serie — nao em canal nem evento,
   // que sao tipos que os addons do dono tambem declaram.
-  if (ci->imdb[0] && (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series"))) {
+  //
+  // NO PAINEL, SERIE SO COM O CATALOGO. A copia da lista local nao tem as
+  // temporadas, e desmarcar uma serie no Simkl sem elas apaga a serie da
+  // biblioteca de la (ver visto.c/simkl.c). Filme nao tem esse risco.
+  if (ci->imdb[0] && (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series")) &&
+      (!doPainel || i >= 0 || !strcmp(ci->tipo, "movie"))) {
     juntar(estadoOperacao == CTX_PENDENTE && operacao == CTX_OP_HISTORICO
              ? (intencao ? "Marcando como assistido..."
                          : "Desmarcando como assistido...")
-             : (cat_historico_estado_item(i) == 1 ? "Desmarcar como assistido"
-                                                  : "Marcar como assistido"),
+             : (historicoDe(ci) == 1 ? "Desmarcar como assistido"
+                                     : "Marcar como assistido"),
            OP_ASSISTIDO);
   }
   // TIRAR DE "CONTINUAR ASSISTINDO".
@@ -223,13 +271,15 @@ static void montar(void) {
   // para o titulo; esta apaga a POSICAO DE RETOMADA local, que e o que faz o
   // card aparecer na fileira. Quem terminou um filme quer as duas; quem
   // desistiu no meio quer so esta.
-  if (ci->progresso > 0 && ci->imdb[0]) {
+  // O menu do painel e o curto que o dono pediu (remover, mais informacoes,
+  // assistido): esta e a de baixo sao acoes do cartaz da home.
+  if (!doPainel && ci->progresso > 0 && ci->imdb[0]) {
     juntar("Tirar de Continuar assistindo", OP_TIRAR_CONTINUAR);
   }
   // SO EXISTE SE O PACOTE TEM O SERVICO. Sem NUVIO_REC_URL compilada,
   // recomenda_ativo() e 0 e esta linha nunca aparece — o dono publica builds
   // assim, e um item de menu que so da erro e pior que item nenhum.
-  if (recomenda_ativo() && ci->imdb[0] &&
+  if (!doPainel && recomenda_ativo() && ci->imdb[0] &&
       (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series"))) {
     juntar("Recomendar a um amigo", OP_RECOMENDAR);
   }
@@ -245,6 +295,7 @@ static void montar(void) {
   if (foco < 0) foco = 0;
 }
 
+static void abrirComum(int indice);
 void ctx_abrir(int indice) {
   if (holdCancelado) {
     holdCancelado = 0;
@@ -252,16 +303,52 @@ void ctx_abrir(int indice) {
     return;
   }
   if (indice < 0 || indice >= cat_n() || !cat_item(indice)) return;
+  doPainel = 0;
+  abrirComum(indice);
+}
+
+// O que as duas portas fazem igual. Separado para o modo painel nao ser uma
+// segunda copia da inicializacao que diverge na primeira correcao.
+static void abrirComum(int indice) {
   // A longa ja consumiu o gesto na home. Limpar a sentinela aqui evita que o
   // KEYUP seguinte seja reaproveitado como uma selecao dentro da modal.
   holdPronto = 0;
   esperandoSoltura = 1;   // o OK que abriu ainda esta afundado; ver a nota acima
   idx = indice; foco = 0; aberto = 1; pedDetalhes = -1;
+  pedDetalhesImdb[0] = 0;
+  fecharAoConfirmar = 0;
   operacao = CTX_OP_NENHUMA; intencao = 0; estadoOperacao = 0;
   espelhoAplicado = 0;
   operacaoImdb[0] = 0;
   memset(focoAnim, 0, sizeof focoAnim);
   montar();
+}
+
+void ctx_abrir_salvo(const CatItem *titulo) {
+  if (holdCancelado) {
+    holdCancelado = 0;
+    holdPronto = 0;
+    return;
+  }
+  if (!titulo || !titulo->imdb[0]) return;
+  copiaPainel = *titulo;
+  // O ID DO TITULO, nunca o do episodio: e o que a lista local, a watchlist e
+  // a conta guardam (salvos.h), e o que o Trakt recebe no DELETE.
+  salvos_id_titulo(titulo->imdb, copiaPainel.imdb, sizeof copiaPainel.imdb);
+  if (!copiaPainel.tipo[0]) snprintf(copiaPainel.tipo, sizeof copiaPainel.tipo, "movie");
+  doPainel = 1;
+  abrirComum(-1);
+}
+
+int ctx_do_painel(void) { return aberto && doPainel; }
+void ctx_centro_dica(float cx) { dicaCx = cx; }
+
+const char *ctx_pediu_detalhes_imdb(void) {
+  static char s[24];
+  if (!pedDetalhesImdb[0]) return NULL;
+  snprintf(s, sizeof s, "%s", pedDetalhesImdb);
+  pedDetalhesImdb[0] = 0;
+  return s;
 }
 
 int ctx_aberto(void) { return aberto; }
@@ -301,7 +388,7 @@ static void espelharAssistido(int atual, const CatItem *ci, int intencao) {
 
 static void aplicar(void) {
   int atual = indiceAtual();
-  const CatItem *ci = atual >= 0 ? cat_item(atual) : NULL;
+  const CatItem *ci = itemAtual();
   int acao;
   if (!ci || foco < 0 || foco >= nOps) return;
   acao = ops[foco].acao;
@@ -317,13 +404,19 @@ static void aplicar(void) {
   // simultaneas na mesma superficie e que nao podem acontecer.
   if (acao != OP_DETALHES && estadoOperacao == CTX_PENDENTE) return;
   switch (acao) {
-    case OP_DETALHES: pedDetalhes = idx; break;
+    case OP_DETALHES:
+      // O painel resolve pelo IMDb (spainel_pediu_abrir -> app.c), porque o
+      // titulo dele pode nao ter indice; a home continua pelo indice.
+      if (doPainel) snprintf(pedDetalhesImdb, sizeof pedDetalhesImdb, "%s", ci->imdb);
+      else pedDetalhes = idx;
+      break;
     case OP_LISTA:
       // Captura a intencao ANTES de qualquer escrita. O mesmo valor segue para
       // o POST e so chega ao espelho local depois de uma resposta 2xx.
       intencao = !tituloSalvo(ci);
       snprintf(operacaoImdb, sizeof operacaoImdb, "%s", ci->imdb);
       operacao = CTX_OP_LISTA;
+      fecharAoConfirmar = doPainel && !intencao;
       opSimkl = 0;
       avisoOp = NULL;
       espelhoAplicado = 0;
@@ -332,7 +425,13 @@ static void aplicar(void) {
       // acontece fora do jogo de estados abaixo; ver salvos.h para por que ele
       // e o unico destino que sobrevive ao fechamento do app.
       salvos_definir(ci, intencao);
-      if (ajustes_salvos_no_trakt()) {
+      // TRAKT ESCOLHIDO E SEM VINCULO cai no ramo local, como o Simkl sem
+      // vinculo ja caia. Antes era CTX_FALHA com a lista local JA escrita: o
+      // titulo saia do arquivo, a marca do catalogo ficava, e o "Remover" do
+      // painel de Salvos (o padrao de "Onde o + salva" e o Trakt) deixava a
+      // linha na tela com "Nao foi possivel". O "+" do detalhe (app.c) sempre
+      // marcou o local nesse caso; agora as duas portas concordam.
+      if (ajustes_salvos_no_trakt() && trakt_ativo()) {
         if (!trakt_watchlist_tipo(ci->imdb, ci->tipo, intencao))
           estadoOperacao = CTX_FALHA;
       } else if (ajustes_salvos_no_simkl() && simkl_ativo() &&
@@ -358,13 +457,14 @@ static void aplicar(void) {
         cat_definir_na_lista(atual, intencao);
         cat_definir_na_lista_imdb(operacaoImdb, intencao);
         desc_remontar_fileiras();
+        if (fecharAoConfirmar) { aberto = 0; fecharAoConfirmar = 0; }
       }
       montar();
       break;
     case OP_ASSISTIDO:
       // Progresso e posicao de retomada, nao historico. So um retrato de
       // historico confirmado pode inverter a acao para "desmarcar".
-      intencao = cat_historico_estado_item(atual) == 1 ? 0 : 1;
+      intencao = historicoDe(ci) == 1 ? 0 : 1;
       snprintf(operacaoImdb, sizeof operacaoImdb, "%s", ci->imdb);
       operacao = CTX_OP_HISTORICO;
       opSimkl = 0;
@@ -500,14 +600,14 @@ void ctx_atualizar(float dt, Uint32 agora) {
                   dt, NV_MOLA_FOCO);
 
   atual = indiceAtual();
-  if (aberto && atual < 0) { aberto = 0; return; }
+  if (aberto && !itemAtual()) { aberto = 0; return; }
 
   if (operacao != CTX_OP_NENHUMA && estadoOperacao == CTX_PENDENTE) {
     int novo = opSimkl ? simkl_lista_estado() : trakt_operacao_estado(operacao);
     if (novo == CTX_CONFIRMADA || novo == CTX_FALHA) {
       estadoOperacao = novo;
-      if (!espelhoAplicado && atual >= 0) {
-        const CatItem *ci = cat_item(atual);
+      if (!espelhoAplicado && itemAtual()) {
+        const CatItem *ci = itemAtual();
         if (ci && novo == CTX_CONFIRMADA) {
           if (operacao == CTX_OP_LISTA) {
             cat_definir_na_lista(atual, intencao);
@@ -530,6 +630,13 @@ void ctx_atualizar(float dt, Uint32 agora) {
         desc_remontar_fileiras();
         montar();
       }
+      // Remocao pelo painel confirmada: o menu sai e a lista, que ja se
+      // remontou pela revisao, fica com o foco na linha seguinte. Falhou: o
+      // menu fica, com o "Nao foi possivel" do subtitulo.
+      if (fecharAoConfirmar) {
+        if (novo == CTX_CONFIRMADA) aberto = 0;
+        fecharAoConfirmar = 0;
+      }
     }
   }
 }
@@ -549,18 +656,28 @@ void ctx_desenhar(Uint32 agora) {
   if (!aberto && holdAtivo) {
     float p = (float)(SDL_GetTicks() - holdDesde) / (float)NV_HOLD_MS;
     TxtLinha t;
+    // O centro e o da tela, ou o do painel de Salvos quando e nele que o dedo
+    // esta (ctx_centro_dica): centrada na tela a barra ficava metade no veu,
+    // metade sob o painel.
+    float cx = dicaCx >= 0.0f ? dicaCx : NV_TELA_W * 0.5f;
     if (p > 1.0f) p = 1.0f;
     t = txt_linha(TXT_CAPTION2,
                   p >= 1.0f ? "Solte para abrir opções" : "Segure OK para opções",
                   220, 224, 232, 255);
-    txt_desenhar_alpha(t, (NV_TELA_W - t.w) * 0.5f, NV_TELA_H - 124.0f, 0.94f);
-    gfx_cor((GfxRect){ (NV_TELA_W - 420.0f) * 0.5f, NV_TELA_H - 82.0f,
+    // No painel a dica cai EM CIMA da ultima linha da lista (ela vai ate a
+    // borda de baixo), e o texto dos dois se misturava: "Salvo agoraSegure
+    // OK". Uma placa na cor do cartao por baixo separa as duas leituras.
+    if (dicaCx >= 0.0f)
+      gfx_cor((GfxRect){ cx - 250.0f, NV_TELA_H - 140.0f, 500.0f, 84.0f },
+              0.3f, 0.055f, 0.058f, 0.068f, 0.94f);
+    txt_desenhar_alpha(t, cx - t.w * 0.5f, NV_TELA_H - 124.0f, 0.94f);
+    gfx_cor((GfxRect){ cx - 210.0f, NV_TELA_H - 82.0f,
                        420.0f, 8.0f }, 4.0f, 0.18f, 0.2f, 0.23f, 0.96f);
-    gfx_cor((GfxRect){ (NV_TELA_W - 420.0f) * 0.5f, NV_TELA_H - 82.0f,
+    gfx_cor((GfxRect){ cx - 210.0f, NV_TELA_H - 82.0f,
                        420.0f * p, 8.0f }, 4.0f, 0.78f, 0.84f, 0.96f, 0.98f);
   }
   if (a < 0.01f) return;
-  ci = indiceAtual() >= 0 ? cat_item(indiceAtual()) : NULL;
+  ci = itemAtual();
   if (!ci) return;
   if (estadoOperacao == CTX_PENDENTE)
     mensagem = operacao == CTX_OP_LISTA ? "Atualizando biblioteca..."
@@ -577,7 +694,7 @@ void ctx_desenhar(Uint32 agora) {
 
   estados[0] = tituloSalvo(ci) ? "Na biblioteca" : "Fora da biblioteca";
   if (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series")) {
-    { int historico = cat_historico_estado_item(indiceAtual());
+    { int historico = historicoDe(ci);
       estados[1] = historico == 1 ? "Assistido"
                    : historico == 0 ? "Não assistido"
                    : ci->progresso > 0 ? "Progresso salvo"
@@ -627,7 +744,7 @@ void ctx_desenhar(Uint32 agora) {
   // iguais e a pessoa tinha de LER para saber se o titulo ja era dela.
   { float sx = x + CTX_PAD;
     float sy = y + CTX_PAD + 106.0f;
-    int historico = cat_historico_estado_item(indiceAtual());
+    int historico = historicoDe(ci);
     for (i = 0; i < nEstados; i++) {
       int positivo = i == 0 ? tituloSalvo(ci) : historico == 1;
       // "Progresso salvo" e o unico estado nem positivo nem negativo: neutro.
@@ -655,7 +772,7 @@ void ctx_desenhar(Uint32 agora) {
     const char *icone = "avancar";
     switch (ops[i].acao) {
       case OP_LISTA:     icone = tituloSalvo(ci) ? "visto" : "mais"; break;
-      case OP_ASSISTIDO: icone = cat_historico_estado_item(indiceAtual()) == 1
+      case OP_ASSISTIDO: icone = historicoDe(ci) == 1
                                  ? "naovisto" : "visto"; break;
       case OP_TIRAR_CONTINUAR: icone = "oculto"; break;
       case OP_RECOMENDAR: icone = "recomendar"; break;
