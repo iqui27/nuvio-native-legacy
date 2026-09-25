@@ -511,9 +511,18 @@
 // a uma distancia de (1,2,0) do fundo — contraste 1,0:1, ou seja, INVISIVEL. Os
 // posteres "que nao apareciam" apareciam: como retangulos da cor exata do
 // fundo. Ver NV_COR_ESQUELETO logo abaixo.
-#define NV_COR_FUNDO_R   0.051f
-#define NV_COR_FUNDO_G   0.051f
-#define NV_COR_FUNDO_B   0.051f
+//
+// NAO E MAIS CONSTANTE, e e de proposito: com o tema "Dinâmica estilizada"
+// (corviva.h) o fundo ganha um sopro do matiz da arte em cena, e ESTE e o
+// ponto por onde todas as telas o pintam — o glClear de main.c, os gfx_cor de
+// tela cheia e, pelo uniform uFundo de gfx.c, as rampas do destaque e do
+// detalhe, que dissolvem a arte NESTA cor. Fora do estilizado o vetor vale
+// exatamente 0.051, o numero de sempre. Nao use estes tres num inicializador
+// estatico: sao lidos por quadro.
+extern float nv_cor_fundo_viva[3];   // corviva.c
+#define NV_COR_FUNDO_R   (nv_cor_fundo_viva[0])
+#define NV_COR_FUNDO_G   (nv_cor_fundo_viva[1])
+#define NV_COR_FUNDO_B   (nv_cor_fundo_viva[2])
 
 // Superficie de CARD SEM ARTE (#2C2C2C). MEDIDO na referencia, que a desenha
 // solida na caixa exata do card enquanto a imagem nao chega — luminancia ~22x

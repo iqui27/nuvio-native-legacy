@@ -2,6 +2,7 @@
 // hero no topo, rail fixa à esquerda e fileiras horizontais de posters. A
 // infraestrutura nativa cuida de cache assíncrono, foco e transições.
 #include "home.h"
+#include "corviva.h"
 // NV_LEVE (tools/tizen.sh --leve): build de diagnostico sem a animacao do
 // cartaz em foco, um dos suspeitos do travamento de #72.
 #ifdef NV_LEVE
@@ -2227,6 +2228,7 @@ static void desenhaHero(Uint32 agora, float saida) {
     if(p) {
       const char *arte=arte_hero_do_item(p);   // tela cheia: arte grande
       GLuint ta=arte?tex_obter_hero(arte):0;
+      if(arte)corviva_definir(arte,CORVIVA_HOME);
       // A atividade continua com um ambiente discreto, mas quando o Trakt
       // trouxe arte real ela vira o assunto do hero. A pessoa fica apenas na
       // ficha social, onde o avatar tem contexto e não compete com o titulo.
@@ -2312,6 +2314,7 @@ static void desenhaHero(Uint32 agora, float saida) {
       GLuint t=0;
       if (ehDiretor) diretor_pedir(folder->title);
       if (!t && art[0]) t=tex_obter_hero(art);
+      if (art[0]) corviva_definir(art, CORVIVA_HOME);
       if(t){gfx_tex_aspect_atual=tex_aspecto(art);gfx_rect(r,t,modoHero,0,0,0,0,0,0,0,aArte);gfx_tex_aspect_atual=0;}
       heroArteRect=r;
       float x=ajustes_conteudo_x(),a=1-saida;
@@ -2474,6 +2477,10 @@ static void desenhaHero(Uint32 agora, float saida) {
 
   const CatItem *ci = cat_item_exato(heroAtual);
   const char *arteA = arte_por_identidade(heroAtual, 2);
+  // COR VIVA: o titulo do destaque e quem manda na cor da home. heroAtual so
+  // troca quando a arte nova ja decodificou (acima), entao a cor chega junto
+  // com a arte, e corviva ainda espera 150 ms parado antes de mudar.
+  if (arteA) corviva_definir(arteA, CORVIVA_HOME);
   const CatItem *cAnt = cat_item_exato(heroAnterior);
   const char *arteB = arte_por_identidade(heroAnterior, 2);
   // Teto de 1920: o hero ocupa a tela e a 960 saia esticado ao dobro.
