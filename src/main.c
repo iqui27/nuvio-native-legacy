@@ -974,6 +974,7 @@ int main(int argc, char **argv) {
     gfx_novo_quadro();
     tex_novo_quadro();
     gfx_sem_recorte();
+    gfx_ambiente_preparar();
     glClearColor(NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     // "Dinâmica imersiva": a luz da arte POR BAIXO de toda tela, logo depois do

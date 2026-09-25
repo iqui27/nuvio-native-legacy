@@ -1097,9 +1097,6 @@ static void ambAssar(void) {
 }
 
 void gfx_ambiente_preparar(void) {
-#ifdef NV_AMB_SO_BLIT
-  if (ambChave[0] >= 0.0f) return;
-#endif
   if (nv_ambiente_forca <= 0.003f || snapAtivo || !ambPreparar()) return;
   ambAssar();
 }
@@ -1114,14 +1111,21 @@ void gfx_ambiente(float alfa) {
     return;
   }
   // O assado mora em gfx_ambiente_preparar, ANTES do clear da tela: trocar de
-  // alvo aqui, com a tela ja limpa, obrigava a GPU de ladrilhos a gravar a tela
-  // inteira na memoria e le-la de volta. MEDIDO na C9: assando aqui a home
-  // parada ficava em 48 fps; sem a luz, 60.
-#ifdef NV_AMB_SO_ASSA
-  return;
-#endif
+  // alvo com a tela ja limpa obriga a GPU de ladrilhos a gravar e reler a tela.
+  // (Medido na C9: nao era isso que custava — era a mistura, abaixo — mas o
+  // lugar certo de trocar de alvo continua sendo antes do clear.)
   gfx_tex_aspect_atual = 0.0f;
-  gfx_rect(tela, ambTex, GFX_SNAP, 0, 0.0f, 1.0f, 0.0f, 0, 0, 0, alfa);
+  // OPACO SEM MISTURA quando o chamador e o clear de main.c (alfa 1): o assado
+  // ja traz o fundo por baixo, entao ele SUBSTITUI o clear e a GPU nao precisa
+  // ler a tela para misturar. MEDIDO na C9: o mesmo quad com mistura custava o
+  // bastante para a home parada cair de 60 para 48 fps.
+  if (alfa >= 0.999f && gfx_opacidade_grupo >= 0.999f) {
+    glDisable(GL_BLEND);
+    gfx_rect(tela, ambTex, GFX_SNAP, 0, 0.0f, 1.0f, 0.0f, 0, 0, 0, 1.0f);
+    glEnable(GL_BLEND);
+  } else {
+    gfx_rect(tela, ambTex, GFX_SNAP, 0, 0.0f, 1.0f, 0.0f, 0, 0, 0, alfa);
+  }
 }
 void gfx_cartao_foco_vidro(GfxRect r, float raio, float foco, float alfa,
                            float cr, float cg, float cb) {

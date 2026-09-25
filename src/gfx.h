@@ -327,6 +327,8 @@ void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca);
 // A luz ambiente do tema "Dinâmica imersiva", tela cheia, com `alfa` a mais
 // por cima da forca que corviva ja anima. Nao desenha nada fora dele: o custo
 // e zero nos outros temas. main.c chama logo depois do glClear.
+// Assa a luz imersiva no quadro pequeno. Chamar ANTES do clear da tela (ver gfx.c).
+void gfx_ambiente_preparar(void);
 void gfx_ambiente(float alfa);
 // Cartao focado com material tipo vidro: mancha de accent atras, base escura
 // translucida, lavagem em degrade por pixel e reflexo de topo muito leve.
