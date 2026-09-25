@@ -117,7 +117,7 @@ int main(int argc, char **argv) {
   // controle: Voltar leva ao indice, baixo escolhe a categoria, OK entra nela.
   // O `secao` da linha de comando diz QUAL categoria, porque o agrupamento muda
   // e cravar o numero aqui faria a captura mirar outra tela depois.
-  { int secao = argc > 2 ? atoi(argv[2]) : 2;
+  { int secao = argc > 2 ? atoi(argv[2]) : 1;   // Home (a folha de fileiras mora nela)
     tecla(SDLK_ESCAPE);
     for (i = 0; i < secao; i++) tecla(SDLK_DOWN);
     // O FOCO NA COLUNA DE CATEGORIAS: a categoria em foco preenchida com a
@@ -131,7 +131,7 @@ int main(int argc, char **argv) {
   // Entra na folha de fileiras. A linha de acao e a ULTIMA da secao; descer ate
   // encontrar uma OP_ACAO seria adivinhar, entao o teste desce um numero fixo
   // passado na linha de comando.
-  { int passos = argc > 3 ? atoi(argv[3]) : 1;
+  { int passos = argc > 3 ? atoi(argv[3]) : 6;  // "Ordenar e ativar fileiras", 7a da Home
     for (i = 0; i < passos; i++) tecla(SDLK_DOWN); }
   tecla(SDLK_RETURN);
   snprintf(nome, sizeof nome, "%s-fileiras.bmp", saida);
@@ -184,7 +184,7 @@ int main(int argc, char **argv) {
     // anterior ja descrevia com outro numero. Agora e argumento, com o valor
     // certo de hoje como padrao — quem crescer a categoria conserta a chamada,
     // nao o codigo.
-    { int fundo = argc > 5 ? atoi(argv[5]) : 20;   // 22 linhas hoje; "Memoria usada" e a 21a
+    { int fundo = argc > 5 ? atoi(argv[5]) : 22;   // 24 linhas hoje; "Memoria usada" e a 23a
       for (i = 0; i < fundo; i++) tecla(SDLK_DOWN); } }
   snprintf(nome, sizeof nome, "%s-imagens.bmp", saida);
   captura(nome, w);
@@ -206,6 +206,22 @@ int main(int argc, char **argv) {
   tecla(SDLK_DOWN); tecla(SDLK_DOWN);          // Limite de fileiras
   snprintf(nome, sizeof nome, "%s-previa-fileiras.bmp", saida);
   captura(nome, w);
+
+  // TODAS AS LINHAS, pagina a pagina (25/09/2026, icones Lucide por familia):
+  // cada linha tem o proprio icone, e julgar a troca olhando so o topo de tres
+  // categorias deixava 80 linhas sem ver. A lista e continua entre categorias,
+  // entao basta entrar na primeira e descer. 6 passos por captura, e nao 7: a
+  // rolagem salta os rotulos de subsecao, e com 7 as duas linhas de memoria
+  // caiam entre uma pagina e a seguinte. 20 paginas passam das ~100 linhas.
+  tecla(SDLK_ESCAPE);
+  for (i = 0; i < 12; i++) tecla(SDLK_UP);
+  tecla(SDLK_RETURN);
+  { int p, k;
+    for (p = 0; p < 20; p++) {
+      snprintf(nome, sizeof nome, "%s-todas-%02d.bmp", saida, p);
+      captura(nome, w);
+      for (k = 0; k < 6; k++) tecla(SDLK_DOWN);
+    } }
 
   tex_encerrar();
   txt_encerrar();
