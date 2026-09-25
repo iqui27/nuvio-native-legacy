@@ -7,6 +7,7 @@
 #include "text.h"
 #include "tex_cache.h"
 #include "layout.h"
+#include "ajustes.h"
 #include <pthread.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -139,19 +140,25 @@ int social_item_selecionado(SocialItemSelecionado *saida){if(escolhido<0||escolh
 void social_atualizar(float dt,Uint32 agora){(void)dt;(void)agora;pthread_mutex_lock(&trava);if(temPronto){SocialDados novo=pronto;if((novo.estado==SOCIAL_PRIVADO||novo.estado==SOCIAL_INDISPONIVEL||novo.estado==SOCIAL_DESCONECTADO)&&dados.n>0){novo.n=dados.n;memcpy(novo.atividades,dados.atividades,sizeof novo.atividades);novo.estado=SOCIAL_STALE;}dados=novo;temPronto=0;if(selecionado>=dados.n)selecionado=dados.n?dados.n-1:0;}pthread_mutex_unlock(&trava);}
 static void texto(TxtEstilo estilo,const char *s,float x,float y,float w,int cor){txt_desenhar(txt_linha_corta(estilo,s?s:"",cor,cor,cor,255,w),x,y);}
 static const char *estadoTexto(SocialEstado estado){switch(estado){case SOCIAL_CARREGANDO:return "Carregando atividade…";case SOCIAL_ATUALIZANDO:return "Atualizando · atividade anterior preservada";case SOCIAL_STALE:return "Atualização indisponível · mostrando atividade anterior";case SOCIAL_SEM_ATIVIDADE:return "Sem atividade pública por enquanto";case SOCIAL_PRIVADO:return "Atividade privada ou não compartilhada";case SOCIAL_DESCONECTADO:return "Trakt desconectado";case SOCIAL_INDISPONIVEL:return "Serviço indisponível";default:return "Atividade recente";}}
-void social_desenhar(Uint32 agora){(void)agora;gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,NV_COR_FUNDO_R,NV_COR_FUNDO_G,NV_COR_FUNDO_B,1);texto(TXT_CAPTION,"ENTRE AMIGOS",96,56,550,179);
-  {GfxRect av={96,132,176,176};GLuint tex=dados.pessoa.socialAvatar[0]?tex_obter_larg(dados.pessoa.socialAvatar,220):0;gfx_cor(av,.5f,.15f,.16f,.18f,1);if(tex){gfx_tex_aspect_atual=tex_aspecto(dados.pessoa.socialAvatar);gfx_rect(av,tex,GFX_AVATAR,0,0,0,0,1,1,1,1);gfx_tex_aspect_atual=0;}else gfx_icone((GfxRect){148,184,72,72},"menu_profile",.8f,.81f,.83f,1);}
-  if(dados.pessoa.socialNome[0])texto(TXT_TITULO2,dados.pessoa.socialNome,96,346,480,245);else if(dados.estado==SOCIAL_INDISPONIVEL||dados.estado==SOCIAL_DESCONECTADO)texto(TXT_TITULO2,"Perfil indisponível",96,346,480,245);if(dados.pessoa.socialSlug[0]){char u[160];snprintf(u,sizeof u,"@%s",dados.pessoa.socialSlug);texto(TXT_CALLOUT,u,96,416,480,179);}if(dados.local[0])texto(TXT_CAPTION,dados.local,96,470,480,179);if(dados.bio[0])txt_bloco(TXT_CAPTION,dados.bio,210,210,210,96,524,480,32,1,8);
-  texto(TXT_CAPTION,"Trakt · perfil público",96,900,480,179);texto(TXT_CAPTION,"← Voltar",96,970,480,235);texto(TXT_TITULO3,"Atividade recente",656,64,1150,245);texto(TXT_CAPTION,"Pessoa · ação · título · horário",656,122,1150,179);
-  if(dados.estado==SOCIAL_CARREGANDO){for(int i=0;i<4;i++)gfx_cor((GfxRect){656,210+i*170,1120,134},.06f,.12f,.125f,.14f,1);texto(TXT_CAPTION,estadoTexto(dados.estado),680,248,1050,210);return;}
-  if(dados.estado!=SOCIAL_PRONTO&&dados.estado!=SOCIAL_ATUALIZANDO&&dados.estado!=SOCIAL_STALE){texto(TXT_TITULO3,estadoTexto(dados.estado),656,236,1120,235);if(dados.estado==SOCIAL_PRIVADO||dados.estado==SOCIAL_INDISPONIVEL||dados.estado==SOCIAL_DESCONECTADO)texto(TXT_CALLOUT,"OK ou R · tentar novamente",656,310,1120,235);return;}
+// A RAIL FIXA EMPURRA A TELA (26/09). As duas colunas foram medidas para a
+// tela inteira (perfil em 96, atividade em 656 ate 1800); com a rail presa a
+// coluna do perfil nascia embaixo dela. Tudo anda `R` para a direita e a
+// coluna da atividade ENCOLHE pela esquerda: a borda direita fica em 1800, e o
+// titulo + detalhe (a terceira coluna) se estreita na mesma proporcao.
+void social_desenhar(Uint32 agora){(void)agora;float R=ajustes_rail_largura_fixa(),lx=96+R,rx=656+R,rw=1120-R,k=(1008-R)/1008,tx=rx+116+438*k,tw=500*k,cw=430*k;
+  gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,NV_COR_FUNDO_R,NV_COR_FUNDO_G,NV_COR_FUNDO_B,1);texto(TXT_CAPTION,"ENTRE AMIGOS",lx,56,550,179);
+  {GfxRect av={lx,132,176,176};GLuint tex=dados.pessoa.socialAvatar[0]?tex_obter_larg(dados.pessoa.socialAvatar,220):0;gfx_cor(av,.5f,.15f,.16f,.18f,1);if(tex){gfx_tex_aspect_atual=tex_aspecto(dados.pessoa.socialAvatar);gfx_rect(av,tex,GFX_AVATAR,0,0,0,0,1,1,1,1);gfx_tex_aspect_atual=0;}else gfx_icone((GfxRect){lx+52,184,72,72},"menu_profile",.8f,.81f,.83f,1);}
+  if(dados.pessoa.socialNome[0])texto(TXT_TITULO2,dados.pessoa.socialNome,lx,346,480,245);else if(dados.estado==SOCIAL_INDISPONIVEL||dados.estado==SOCIAL_DESCONECTADO)texto(TXT_TITULO2,"Perfil indisponível",lx,346,480,245);if(dados.pessoa.socialSlug[0]){char u[160];snprintf(u,sizeof u,"@%s",dados.pessoa.socialSlug);texto(TXT_CALLOUT,u,lx,416,480,179);}if(dados.local[0])texto(TXT_CAPTION,dados.local,lx,470,480,179);if(dados.bio[0])txt_bloco(TXT_CAPTION,dados.bio,210,210,210,lx,524,480,32,1,8);
+  texto(TXT_CAPTION,"Trakt · perfil público",lx,900,480,179);texto(TXT_CAPTION,"← Voltar",lx,970,480,235);texto(TXT_TITULO3,"Atividade recente",rx,64,rw+30,245);texto(TXT_CAPTION,"Pessoa · ação · título · horário",rx,122,rw+30,179);
+  if(dados.estado==SOCIAL_CARREGANDO){for(int i=0;i<4;i++)gfx_cor((GfxRect){rx,210+i*170,rw,134},.06f,.12f,.125f,.14f,1);texto(TXT_CAPTION,estadoTexto(dados.estado),rx+24,248,rw-70,210);return;}
+  if(dados.estado!=SOCIAL_PRONTO&&dados.estado!=SOCIAL_ATUALIZANDO&&dados.estado!=SOCIAL_STALE){texto(TXT_TITULO3,estadoTexto(dados.estado),rx,236,rw,235);if(dados.estado==SOCIAL_PRIVADO||dados.estado==SOCIAL_INDISPONIVEL||dados.estado==SOCIAL_DESCONECTADO)texto(TXT_CALLOUT,"OK ou R · tentar novamente",rx,310,rw,235);return;}
   { int inicio = selecionado > 3 ? selecionado - 3 : 0;
     for (int i = inicio; i < dados.n && i < inicio + 5; i++) {
       Atividade *a=&dados.atividades[i]; float y=196+(i-inicio)*154;
-      if(i==selecionado)gfx_cor((GfxRect){640,y-12,1160,144},.07f,.18f,.185f,.20f,1);
-      if(a->poster[0]){GLuint p=tex_obter_larg(a->poster,96);if(p){gfx_tex_aspect_atual=tex_aspecto(a->poster);gfx_rect((GfxRect){656,y,96,134},p,GFX_CARD,0,0,0,.055f,0,0,0,1);gfx_tex_aspect_atual=0;}}
-      texto(TXT_MINI,a->pessoa,772,y+4,430,179);texto(TXT_CALLOUT,a->acao,772,y+36,430,235);texto(TXT_CAPTION,a->titulo,1210,y+4,500,245);texto(TXT_CAPTION,a->detalhe,1210,y+42,500,179);if(a->horario[0])texto(TXT_MINI,a->horario,1210,y+82,500,179);
+      if(i==selecionado)gfx_cor((GfxRect){rx-16,y-12,rw+40,144},.07f,.18f,.185f,.20f,1);
+      if(a->poster[0]){GLuint p=tex_obter_larg(a->poster,96);if(p){gfx_tex_aspect_atual=tex_aspecto(a->poster);gfx_rect((GfxRect){rx,y,96,134},p,GFX_CARD,0,0,0,.055f,0,0,0,1);gfx_tex_aspect_atual=0;}}
+      texto(TXT_MINI,a->pessoa,rx+116,y+4,cw,179);texto(TXT_CALLOUT,a->acao,rx+116,y+36,cw,235);texto(TXT_CAPTION,a->titulo,tx,y+4,tw,245);texto(TXT_CAPTION,a->detalhe,tx,y+42,tw,179);if(a->horario[0])texto(TXT_MINI,a->horario,tx,y+82,tw,179);
     }
   }
-  texto(TXT_MINI,dados.estado==SOCIAL_STALE?"Atualização indisponível · mostrando atividade anterior · OK: tentar novamente":"OK · abrir título   ·   Voltar · fechar",656,1000,1120,190);
+  texto(TXT_MINI,dados.estado==SOCIAL_STALE?"Atualização indisponível · mostrando atividade anterior · OK: tentar novamente":"OK · abrir título   ·   Voltar · fechar",rx,1000,rw,190);
 }

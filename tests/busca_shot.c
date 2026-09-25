@@ -7,6 +7,7 @@
 #include "buscasrec.h"
 #include "dados.h"
 #include "ajustes.h"
+#include "rail_shot.h"
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
@@ -37,6 +38,7 @@ static void quadro(void) {
   glClearColor(0.051f, 0.051f, 0.051f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
   busca_desenhar(SDL_GetTicks());
+  rail_shot_desenhar(MENU_BUSCAR);
   SDL_GL_SwapWindow(janela);
 }
 
@@ -45,6 +47,7 @@ static void captura(const char *nome) {
   SDL_Surface *s;
   int i, y;
   assert(pix);
+  rail_shot_aplicar();
   for (i = 0; i < 45; i++) quadro();
   quadro();
   glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);

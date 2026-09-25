@@ -1193,8 +1193,19 @@ float ajustes_raio_poster_px(void)    { return (float)valor[AJ_RAIO_DP] * 2.0f; 
 // A regra do web, e nao dois layouts: o conteudo tem sempre 104 de recuo e a
 // rail acrescenta os 144 dela quando esta fixa.
 float ajustes_conteudo_x(void) {
-  return ajustes_rail_recolhida() ? NV_CONTENT_PAD
-                                  : NV_LEGACY_RAIL_W + NV_CONTENT_PAD;
+  return ajustes_rail_largura_fixa() + NV_CONTENT_PAD;
+}
+// A barra MODERNA nao tem desenho proprio de rail fixa: com ela ligada
+// ajustes_rail_recolhida() responde 0 (a precedencia do web, acima) e o menu
+// pinta os mesmos 144 de desenhaRailFixa. Por isso um numero so para os dois
+// modos — conferido nas capturas de tests/*_shot.sh com NUVIO_RAIL=moderna.
+float ajustes_rail_largura_fixa(void) {
+  return ajustes_rail_recolhida() ? 0.0f : NV_LEGACY_RAIL_W;
+}
+void ajustes_area_conteudo(float padEsq, float padDir, float *x, float *w) {
+  float x0 = ajustes_rail_largura_fixa() + padEsq;
+  if (x) *x = x0;
+  if (w) *w = NV_TELA_W - padDir - x0;
 }
 const char *ajustes_qualidade(void)   { return V_QUALIDADE[valor[AJ_QUALIDADE]]; }
 

@@ -15,6 +15,7 @@
 #include "biblioteca.h"
 #include "listas.h"
 #include "ajustes.h"
+#include "rail_shot.h"
 #include "extras.h"
 #include "catalogo.h"
 #include "dados.h"
@@ -48,6 +49,7 @@ static void quadros(int n) {
     glClearColor(0.025f, 0.025f, 0.03f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     biblioteca_desenhar(SDL_GetTicks());
+    rail_shot_desenhar(MENU_BIBLIOTECA);
     SDL_GL_SwapWindow(win);
   }
 }
@@ -74,6 +76,7 @@ static void captura(const char *nome) {
   unsigned char *pix;
   SDL_Surface *s;
   int y;
+  rail_shot_aplicar();
   quadros(50);
   SDL_PumpEvents();
   txt_novo_quadro();
@@ -83,6 +86,7 @@ static void captura(const char *nome) {
   glClearColor(0.025f, 0.025f, 0.03f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
   biblioteca_desenhar(SDL_GetTicks());
+  rail_shot_desenhar(MENU_BIBLIOTECA);
   pix = malloc(1920 * 1080 * 4);
   assert(pix);
   glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);

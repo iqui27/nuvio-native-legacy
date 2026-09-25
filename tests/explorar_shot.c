@@ -14,6 +14,7 @@
 #include "text.h"
 #include "tex_cache.h"
 #include "ajustes.h"
+#include "rail_shot.h"
 #include "dados.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
@@ -35,6 +36,7 @@ static void tecla(SDL_Keycode k) {
 
 static void quadros(int n, const char *nome) {
   int i;
+  rail_shot_aplicar();
   for (i = 0; i < n; i++) {
     Uint64 t0;
     double ms;
@@ -50,6 +52,7 @@ static void quadros(int n, const char *nome) {
     glClear(GL_COLOR_BUFFER_BIT);
     t0 = SDL_GetPerformanceCounter();
     explorar_desenhar(SDL_GetTicks());
+    rail_shot_desenhar(MENU_EXPLORAR);
     glFinish();
     ms = (double)(SDL_GetPerformanceCounter() - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
     if (nome && i == n - 1) {
