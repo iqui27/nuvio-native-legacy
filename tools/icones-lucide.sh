@@ -38,20 +38,15 @@ BASE="https://raw.githubusercontent.com/lucide-icons/lucide/$TAG/icons"
 DIR="deploy/app/art/icones"
 SVG="$DIR/lucide"
 
-# Um nome por linha; o que cada um significa em Ajustes esta em iconeOpcao()
-# e SECOES[] (src/ajustes.c).
+# Um nome por linha. Nos Ajustes o icone mora SO nas nove categorias e nos
+# cabecalhos dos grupos recolhiveis (TELA[] em src/ajustes.c) — as linhas nao
+# tem icone desde o merge da 1.5 (feat/ajustes-ux), e os ~60 desenhos por
+# opcao sairam da lista. fileiras.c usa house/folders/puzzle na folha de
+# fileiras.
 NOMES="
-activity arrow-down-wide-narrow audio-lines blend bookmark calendar
-calendar-clock calendar-off captions chevrons-right circle-pause circle-play
-clapperboard clipboard-list compass database download drama eye-off factory
-file-clock file-text folders gallery-vertical-end gauge hd house image
-image-play image-upscale images info key-round languages layers layout-list
-library-big life-buoy link list-ordered list-video log-out maximize-2
-memory-stick monitor-cog move-horizontal palette panel-left panel-top plug
-puzzle radio-tower rectangle-horizontal refresh-cw rotate-ccw-clock rows-3
-scaling scan send sparkles speaker square-round-corner star sun sun-dim tag
-tags thumbs-up timer tv type user-round user-round-cog users wallpaper
-wand-sparkles
+circle-play database file-text folders gallery-vertical-end house
+images info layout-dashboard list-checks monitor-cog palette panel-top plug puzzle
+rotate-ccw-clock rows-3 scan star user-round
 "
 # Conferencia: todo aj_* citado em src/ tem de estar em NOMES, e todo NOMES
 # tem de ser citado — senao sobra PNG morto no pacote ou falta icone na tela

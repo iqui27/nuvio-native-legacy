@@ -79,12 +79,19 @@ static void regras(void) {
   // Com a marca gravada, primeira_vez nao abre.
   novidades148_primeira_vez();
   assert(!novidades148_aberto());
-  // O pedido da cor pousa Ajustes fora da primeira linha, uma vez so.
+  // O pedido da cor pousa Ajustes NA LISTA, na linha da cor (Aparencia), e
+  // uma vez so: a abertura seguinte volta ao indice de categorias, que e onde
+  // a tela abre desde a arquitetura do web (merge da 1.5).
   ajustes_abrir_na_cor();
   ajustes_iniciar();
-  assert(ajustes_opcao_em_foco() != 0);
-  ajustes_iniciar();
-  assert(ajustes_opcao_em_foco() == 0);
+  assert(!ajustes_foco_no_indice());
+  assert(ajustes_opcao_em_foco() > 0);
+  { int cor = ajustes_opcao_em_foco();
+    ajustes_iniciar();
+    assert(ajustes_foco_no_indice());
+    ajustes_abrir_na_cor();
+    ajustes_iniciar();
+    assert(ajustes_opcao_em_foco() == cor); }
   puts("PASS: regras do cartao da 1.4.8");
 }
 

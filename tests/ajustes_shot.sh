@@ -3,6 +3,14 @@
 # Nao entra na suite: precisa de janela GL e de olho humano para julgar.
 #
 #   bash tests/ajustes_shot.sh /tmp/nuvio-ajustes-antes
+#   NUVIO_RAIL=fixa bash tests/ajustes_shot.sh /tmp/nuvio-ajustes-fixa
+#
+# O roteiro (tests/ajustes_shot.c) segue a navegacao da arquitetura do web:
+# indice de categorias -> lista -> grupo. Alem das telas de sempre, grava
+# Aparencia com as linhas da cor (-aparencia-cor), Avancado > Diagnostico com o
+# teste de velocidade (-avancado-velocidade), a abertura pelo cartao de
+# novidades (-abrir-na-cor) e TODAS as linhas, categoria a categoria e grupo a
+# grupo (-todas-c<N>[-g<M>]-<pagina>).
 set -eu
 cd "$(dirname "$0")/.."
 sources=()

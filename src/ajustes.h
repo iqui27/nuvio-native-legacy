@@ -28,8 +28,12 @@ int  ajustes_pediu_velocidade(void);
 // destaque" em vez da primeira linha. E o "Experimentar a cor viva" do cartao
 // da 1.4.8: chamar ANTES de trocar para TELA_AJUSTES.
 void ajustes_abrir_na_cor(void);
-// A linha em foco (indice AJ_*), para os testes conferirem onde a tela abriu.
+// A linha em foco (indice AJ_*; -1 com o foco num grupo), para os testes
+// conferirem onde a tela abriu.
 int  ajustes_opcao_em_foco(void);
+// 1 = o foco esta na coluna de categorias, que e onde a tela abre sempre —
+// menos logo depois de ajustes_abrir_na_cor, que pousa na lista.
+int  ajustes_foco_no_indice(void);
 void ajustes_encerrar(void);
 
 // Leitura pelo resto do app. "Animacoes reduzidas" e a que mais importa: com
