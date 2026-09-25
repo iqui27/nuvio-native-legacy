@@ -1415,9 +1415,19 @@ static unsigned long redeAgoraMs(void) {
 //   - rede_corte_host conta ao mkvass, que passa a UMA conexao extra.
 #define REDE_CORTE_MIN    (32L * 1024)
 #define REDE_CORTE_HOSTS  8
-// Pedacos de um trecho antes de desistir. 512 KB (a janela da varredura) em
-// pedacos de 32 KB sao 16; o dobro e so rede de seguranca.
+// CORTES de um trecho antes de desistir. Conta so o pedaco que o servidor
+// fechou no meio, nao o que ja saiu do tamanho do teto de proposito: um anexo
+// de fontes de 5,6 MB (#92, fansub do relato de 25/09) sao 176 pedacos de
+// 32 KB, e o limite antigo de 32 PEDACOS fazia o trecho falhar sempre, sem
+// corte nenhum.
 #define REDE_PEDACOS_MAX  32
+
+// RESTO RECUSADO (#92, v1.4.7, webOS 25 + Real-Debrid): depois de um corte, o
+// pedido do resto volta com ZERO bytes em ~140 ms, toda vez, e as tentativas
+// de 2 s e 5 s so repetem a recusa. Quem chama le isto logo depois de
+// rede_baixar_trecho_st, NO MESMO FIO, para recuar de verdade.
+static _Thread_local int redeRestoRecusado;
+int rede_resto_recusado(void) { return redeRestoRecusado; }
 
 typedef struct { char h[96]; long teto; } CorteHost;
 static CorteHost corteHost[REDE_CORTE_HOSTS];
@@ -1480,7 +1490,7 @@ char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
                 prazo = (unsigned long)(segundos > 0 ? segundos : 30) * 1000UL;
   long pedido = fim - ini + 1, veio = 0;
   char *buf = NULL;
-  int st = 0, e = 0, pedacos = 0;
+  int st = 0, e = 0, pedacos = 0, cortes = 0;
   // `atual`: o endereco dos pedacos seguintes (o final, depois do primeiro:
   // sem pagar o redirecionamento de novo). `fin`: o final de cada resposta.
   char atual[4096], fin[4096];
@@ -1488,6 +1498,7 @@ char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
   if (status) *status = 0;
   if (erro) *erro = 0;
   if (final && tamFinal) final[0] = 0;
+  redeRestoRecusado = 0;
   if (!url || pedido <= 0) return trechoUmaVez(url, segundos, ini, fim, tam, status, erro, final, tamFinal);
   snprintf(atual, sizeof atual, "%s", url);
   for (;;) {
@@ -1504,6 +1515,10 @@ char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
     r = trechoUmaVez(atual, seg, a, b, &n, &st, &e, fin, sizeof fin);
     pedacos++;
     if (pedacos == 1 && final && tamFinal) snprintf(final, tamFinal, "%s", fin);
+    // Pedaco seguinte que falhou sem trazer NADA, depressa (nao e o prazo): o
+    // servidor recusou o resto. A diferenca para "rede lenta" e o que decide o
+    // recuo longo no mkvass.
+    if (!r && veio > 0 && n == 0 && e != 28) redeRestoRecusado = 1;
     if (!r) goto falhou;
     // Sem 206 o servidor ignorou o Range (200 com o comeco do arquivo): no
     // primeiro pedido e o contrato de sempre (quem chama recebe o que veio);
@@ -1517,6 +1532,7 @@ char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
       if (!nv) { free(r); goto falhou; }
       buf = nv; memcpy(buf + veio, r, (size_t)n); veio += n; buf[veio] = 0; free(r); }
     if (cortado) {
+      cortes++;
       corteAprender(atual, n);
       if (strcmp(atual, url)) corteAprender(url, n);
       printf("[rede] Range %ld+%ld: %ld de %ld bytes ate aqui, pedindo o resto (pedaco %d)\n",
@@ -1527,7 +1543,7 @@ char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
     if (veio >= pedido) break;
     // Resposta completa e mais curta que o pedido: o arquivo acabou.
     if (!cortado && n < b - a + 1) break;
-    if (pedacos >= REDE_PEDACOS_MAX) goto falhou;
+    if (cortes >= REDE_PEDACOS_MAX) goto falhou;
   }
   if (tam) *tam = veio;
   if (status) *status = 206;
@@ -1536,8 +1552,9 @@ falhou:
   // Sem progresso: o que ja veio se perde (quem chama pede o trecho de novo,
   // e o teto aprendido faz o pedido seguinte caber).
   if (veio > 0) {
-    printf("[rede] Range %ld+%ld sem progresso depois de %ld bytes em %d pedaco(s) (HTTP %d, curl %d)\n",
-           ini, pedido, veio, pedacos, st, e);
+    printf("[rede] Range %ld+%ld sem progresso depois de %ld bytes em %d pedaco(s) (HTTP %d, curl %d%s)\n",
+           ini, pedido, veio, pedacos, st, e,
+           redeRestoRecusado ? ", o servidor recusou o resto" : "");
     fflush(stdout);
   }
   free(buf);

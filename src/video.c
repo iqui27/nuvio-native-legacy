@@ -4,6 +4,7 @@
 #include <SDL2/SDL.h>
 #include "marco.h"
 #include "mkv.h"
+#include "mkvass.h"
 #include "js.h"
 #include "lsregistro.h"
 #include <stdio.h>
@@ -1376,7 +1377,19 @@ static void *lerMkv(void *arg) {
 
   snprintf(url, sizeof url, "%s", urlAtual);
 
-  n = mkv_faixas_e_caps(url, fx, MKV_MAX_FAIXAS, caps, MKV_MAX_CAPS, &nCaps);
+  // PRE-BUSCA (#92, v1.4.7): o inicio do arquivo ja foi lido ANTES do video
+  // pelo mkvass. Serve aqui sem um pedido a mais pela rede — com o video
+  // tocando e no mesmo CDN, que e justamente quando o do relato recusava.
+  n = 0;
+  { unsigned char *cab = NULL; long cabN = 0;
+    if (mkvass_cabecalho(url, &cab, &cabN)) {
+      n = mkv_faixas_do_trecho(cab, cabN, fx, MKV_MAX_FAIXAS, caps, MKV_MAX_CAPS, &nCaps);
+      printf("[mkv] sonda pelo trecho da pre-busca (%ld bytes, sem rede): %d faixa(s)%s\n", cabN, n,
+             n > 0 ? "" : " — Tracks nao coube, vai a rede");
+      fflush(stdout);
+      free(cab);
+    } }
+  if (n < 1) n = mkv_faixas_e_caps(url, fx, MKV_MAX_FAIXAS, caps, MKV_MAX_CAPS, &nCaps);
   if (nCaps > 0) {
     creditosNomeado = mkv_creditos_nomeados(caps, nCaps);
     creditosUltimo  = nCaps > 1 ? caps[nCaps - 1].inicio : 0.0;
@@ -1516,7 +1529,12 @@ void video_bombear(void) {
   // SONDA DE MKV so com folga de buffer. 20 s a frente e o sinal de que a
   // fonte esta entregando mais rapido do que o decoder consome, e portanto de
   // que ha banda sobrando para os 320 KB do cabecalho.
-  if (mkvPendente && !fioMkvVivo && urlAtual[0] && bufferSeg - posSeg >= 20.0)
+  //
+  // Com o inicio do arquivo JA LIDO pela pre-busca do mkvass (#92, v1.4.7) a
+  // sonda nao custa rede: dispara logo, e a legenda automatica decide no
+  // sourceInfo em vez de esperar os 20 s de buffer.
+  if (mkvPendente && !fioMkvVivo && urlAtual[0] &&
+      (bufferSeg - posSeg >= 20.0 || mkvass_cabecalho(urlAtual, NULL, NULL)))
     video_sondar_mkv_agora();
   // Avanco pendente que ja repousou.
   if (seekEm && SDL_GetTicks() >= seekEm) {

@@ -345,9 +345,17 @@ static const char *rotuloLegenda(int i, const char **marca) {
 static void escolherLegenda(int i) {
   {
     int emb = video_n_legenda();
+    const VideoFaixa *fe = (i >= 0 && i < emb) ? video_legenda(i) : NULL;
+    int vaiAoApp = fe && ehAss(fe) && i != legOverlayNoGo && video_url_atual()[0] &&
+                   video_legenda_ordinal_mkv(i) >= 0;
     // Qualquer escolha encerra a colheita anterior: o fio do mkvass nao pode
     // continuar entregando ao overlay uma faixa que a pessoa acabou de trocar.
-    mkvass_parar(); legOverlay = -1; legOverlayEsperando = -1; legOverlayRetomar = 0; legOverlayTV = 0;
+    // MENOS quando a escolha vai ao overlay: mkvass_iniciar_ordinal ja troca a
+    // geracao (o fio velho sai sozinho) e, se for a faixa da PRE-BUSCA (#92,
+    // v1.4.7), adota o fio vivo com o que ele ja leu antes do video — parar
+    // aqui jogaria isso fora.
+    if (!vaiAoApp) mkvass_parar();
+    legOverlay = -1; legOverlayEsperando = -1; legOverlayRetomar = 0; legOverlayTV = 0;
     if (i < 0)        { video_escolher_legenda(-1); legenda_desligar(); legExterna = -1; }
     else if (i < emb) {
       const VideoFaixa *f = video_legenda(i);
@@ -368,7 +376,7 @@ static void escolherLegenda(int i) {
       // ela voltar com o par. NUNCA em silencio: cada caminho deixa uma linha
       // "[legenda] faixa N -> TV: motivo" — e a linha que faltou no #92 para
       // separar "o app desistiu" de "a TV desenha mal".
-      if (ehAss(f) && i != legOverlayNoGo && video_url_atual()[0] && ord >= 0)
+      if (vaiAoApp)
         overlayAssumir(i, ord);
       else {
         const char *motivo = motivoTV(i);
@@ -450,8 +458,12 @@ static void legendaAutomatica(Uint32 agora) {
     fflush(stdout);
     return;
   }
-  // Ja esta nela (o arquivo marcou a faixa como padrao): nao religa.
-  if (r == legendaAtiva()) return;
+  // Ja esta nela (o arquivo marcou a faixa como padrao): nao religa — a nao
+  // ser que seja ASS com a TV desenhando: ai o overlay do app assume, que e o
+  // motivo do #92 (e o que adota a pre-busca feita antes do video).
+  if (r == legendaAtiva() &&
+      !(r < nEmb && legOverlay != r && ehAss(video_legenda(r)) && video_legenda_ordinal_mkv(r) >= 0))
+    return;
   printf("[legenda] automatica: '%s' -> %s %d (%s) aos %u ms\n", ling_legenda(),
          r < nEmb ? "embutida" : "addon", r < nEmb ? r : r - nEmb,
          r < nEmb ? emb[r] : add[r - nEmb], (unsigned)passou);
@@ -489,7 +501,8 @@ static const char *motivoNoGo(int e) {
        : e == MKVASS_NOGO_SEM_INDICE ? "sem indice da faixa"
        : e == MKVASS_NOGO_SEM_REL    ? "sem CueRelativePosition"
        : e == MKVASS_NOGO_REDE       ? "rede"
-       : e == MKVASS_NOGO_HTTP       ? "servidor recusou" : "?";
+       : e == MKVASS_NOGO_HTTP       ? "servidor recusou"
+       : e == MKVASS_NOGO_RESTO      ? "servidor recusou o resto" : "?";
 }
 
 // O aviso da queda DEFINITIVA, com o motivo que o mkvass viu. Antes todo
@@ -560,6 +573,10 @@ void faixas_atualizar(float dt, Uint32 agora) {
       printf("[legenda] mkvass falha PASSAGEIRA %d (%s, HTTP %d, curl %d) na faixa %d: tentativa %d em %ld ms, %s\n",
              e, motivoNoGo(e), http, curl, i, legOverlayFalhas, recuo,
              legOverlayTV ? "a TV segue desenhando por enquanto" : "overlay do app mantido");
+      // Recuo LONGO, e dito com todas as letras: o registro do relato mostrava
+      // tentativas a 2 s e 5 s batendo na mesma recusa.
+      if (e == MKVASS_NOGO_RESTO)
+        printf("[mkvass] servidor recusou o resto: esperando %ld s\n", recuo / 1000);
       fflush(stdout);
       // Sem nada colhido nao ha o que manter no overlay; depois de
       // MKVASS_TENTATIVAS_OVERLAY tentativas sem fala nova, a pessoa ja

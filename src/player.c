@@ -277,6 +277,10 @@ static Uint32 pgDesde;
 static int   comVideo = 0;
 static int   pedFaixas = 0;
 static int   esperandoFonte = 0;   // aberto sem URL, esperando o addon responder
+// Pre-busca da legenda ASS segurando o video (ver player_definir_fonte): a url
+// que vai ao pipeline quando ela acabar. "" = nenhuma.
+static char   prebuscaUrl[4096];
+static Uint32 prebuscaDesde;
 static float posSeg = 0.0f;
 // Relogio da LEGENDA (#92): posSeg e o ultimo currentTime do pipeline, que na
 // C9 chega a cada ~200 ms. A legenda desenhada com ele andava aos degraus e em
@@ -413,6 +417,7 @@ const CatEp *player_proximo_episodio(void) {
 static char erroTitulo[160], erroDica[160];
 void player_erro_fonte(void) {
   esperandoFonte = 0; erroFonte = 1; visivel = 1; tocando = 0; soBarra = 0;
+  prebuscaUrl[0] = 0;                // erro no meio da pre-busca: o video nao sai
   erroTitulo[0] = erroDica[0] = 0;   // erro sem motivo nao herda o do anterior
 }
 void player_erro_fonte_motivo(const char *titulo, const char *dica) {
@@ -1030,7 +1035,9 @@ void player_abrir(int indiceCatalogo, const char *url) {
   // "Zoom cinema" continuar valendo no filme seguinte, como no web.
   prefsLer();
   toastAte = 0; toastTexto[0] = 0; avisouAudio = 0;
+  prebuscaUrl[0] = 0;
   comVideo = (url && *url && video_tocar(url));
+  mkvass_video_aberto(comVideo);
   aplicarAspecto();
 
   const CatItem *c = item();
@@ -1057,14 +1064,52 @@ void player_abrir(int indiceCatalogo, const char *url) {
 
 int player_aberto(void)    { return aberto; }
 int player_quer_sair(void) { return pediuSair; }
-// So depois do loadCompleted. Antes disso o pipeline ainda nao pos nada no
-// plano de hardware, e furar a superficie cedo trocava a arte por um retangulo
-// PRETO enquanto o fluxo abria — que era o "clica em reproduzir e fica preto".
-void player_definir_fonte(const char *url) {
-  if ((!aberto && !mini) || !url || !*url) return;
-  esperandoFonte = 0;
-  erroFonte = 0;
+
+// --- PRE-BUSCA DA LEGENDA ASS ANTES DO VIDEO (#92, v1.4.7) -------------------
+//
+// No registro do relato (webOS 25, Torrentio -> Real-Debrid) todo Range do
+// mkvass feito com o video tocando era cortado (77465 e 11929 bytes, sempre)
+// e o resto era recusado, enquanto o video — o mesmo arquivo — tocava. Nao se
+// sabe se e o CDN limitando conexoes ao arquivo com o pipeline segurando uma
+// (hipotese, nao provada), a rede da pessoa ou o webOS 25. O que se pode fazer
+// sem saber: ler o que a legenda precisa ANTES de a URL ir ao pipeline. A tela
+// fica em "abrindo fonte" (esperandoFonte) ate a pre-busca acabar ou vencer
+// MKVASS_PREBUSCA_MS; dai o video comeca com o que chegou e o fio segue.
+//
+// SO PARA MKV COM LEGENDA A COLHER: sessao de VOD em tela cheia, preferencia
+// de legenda ligada e a fonte DIZENDO que e .mkv (url, arquivo ou descricao).
+// MP4, HLS, canal, PiP e quem nao quer legenda nao esperam nada. Um MKV cuja
+// legenda no idioma nao e ASS custa um Range (o cabecalho) antes do video.
+#ifndef __EMSCRIPTEN__
+static int temMkv(const char *t) {
+  const char *p;
+  for (p = t ? t : ""; (p = strchr(p, '.')) != NULL; p++)
+    if (!strncasecmp(p, ".mkv", 4)) return 1;
+  return 0;
+}
+
+// O ordinal da legenda que a legenda AUTOMATICA vai ligar, pela mesma regra
+// (ling_legenda_auto, embutida primeiro). Os idiomas vem do cabecalho do
+// arquivo, na ordem das TrackEntry — a mesma ordem da lista da TV.
+static int escolherLegendaPrebusca(const char *const *idiomas, int n) {
+  int r = ling_legenda_auto(ling_legenda(), idiomas, n, 1, NULL, 0, 1);
+  return r >= 0 && r < n ? r : -1;
+}
+
+static int prebuscaCabe(const char *url) {
+  const char *pref = ling_legenda();
+  const Stream *s = stream_item(stream_atual());
+  if (mini || ehCanal() || !url || !*url) return 0;
+  if (!pref || !*pref || !strcasecmp(pref, "none")) return 0;
+  if (s && strcmp(s->url, url)) s = NULL;     // torrent resolvido: a url e outra
+  if (s && s->mp4) return 0;
+  return temMkv(url) || (s && (temMkv(s->arquivo) || temMkv(s->descricao) || temMkv(s->rotulo)));
+}
+#endif
+
+static void tocarFonte(const char *url) {
   comVideo = video_tocar(url);
+  mkvass_video_aberto(comVideo);
   if (!comVideo) erroSemVideo();
   // No PiP a fonte nova retoca o mesmo canto — o destino de tela cheia do
   // aplicarAspecto so vale com a tela aberta.
@@ -1072,6 +1117,26 @@ void player_definir_fonte(const char *url) {
               video_janela((int)(r.x + 0.5f), (int)(r.y + 0.5f),
                            (int)(r.w + 0.5f), (int)(r.h + 0.5f)); }
   else aplicarAspecto();
+}
+// So depois do loadCompleted. Antes disso o pipeline ainda nao pos nada no
+// plano de hardware, e furar a superficie cedo trocava a arte por um retangulo
+// PRETO enquanto o fluxo abria — que era o "clica em reproduzir e fica preto".
+void player_definir_fonte(const char *url) {
+  if ((!aberto && !mini) || !url || !*url) return;
+  esperandoFonte = 0;
+  erroFonte = 0;
+#ifndef __EMSCRIPTEN__
+  prebuscaUrl[0] = 0;
+  if (prebuscaCabe(url) && mkvass_prebuscar(url, escolherLegendaPrebusca, retomarPct / 100.0)) {
+    // O video espera (player_atualizar solta): a tela segue em "abrindo fonte".
+    if (comVideo) { video_parar(); comVideo = 0; mkvass_video_aberto(0); }
+    snprintf(prebuscaUrl, sizeof prebuscaUrl, "%s", url);
+    prebuscaDesde = SDL_GetTicks();
+    esperandoFonte = 1;
+    return;
+  }
+#endif
+  tocarFonte(url);
 }
 
 // Consome o pedido de abrir a folha de faixas: quem le, zera.
@@ -1209,6 +1274,8 @@ void player_encerrar(void) {
     // overlay depois do desligamento, e o proximo titulo abriria com a legenda
     // do anterior. mkvass_parar grava o sidecar parcial com o que ja veio.
     mkvass_parar();
+    mkvass_video_aberto(0);
+    prebuscaUrl[0] = 0;
     legenda_desligar();
     printf("[player] saida: video_parar %u ms, resto %u ms\n",
            (unsigned)(tv - t0), (unsigned)(SDL_GetTicks() - tv));
@@ -1847,7 +1914,31 @@ void player_atualizar(float dt, Uint32 agora) {
     toastAte = agora + 6000;
   }
   janelaPasso(agora);
-  if (!aberto) return;
+  if (!aberto) {
+    prebuscaUrl[0] = 0;
+    return;
+  }
+
+  // PRE-BUSCA: solta o video quando ela acabou (pronta, desistiu, nada a
+  // colher) ou quando o teto venceu — o que nao chegou vem em segundo plano.
+  // (Na Samsung prebuscaUrl nunca e preenchida: o bloco nao roda.)
+  if (prebuscaUrl[0]) {
+    int fase = mkvass_prebusca_fase();
+    Uint32 esperou = agora - prebuscaDesde;
+    if (fase != 1 || esperou >= (Uint32)MKVASS_PREBUSCA_MS) {
+      char u[sizeof prebuscaUrl];
+      long ped = 0, bytes = 0; int col = 0, tot = 0;
+      mkvass_estatisticas(&ped, &bytes, &col, &tot);
+      printf("[player] pre-busca da legenda: video solto apos %u ms (%s; %d/%d blocos, %ld Ranges, %ld KB)\n",
+             (unsigned)esperou, fase == 1 ? "teto vencido, o resto segue em segundo plano"
+             : "a pre-busca acabou", col, tot, ped, bytes / 1024);
+      fflush(stdout);
+      snprintf(u, sizeof u, "%s", prebuscaUrl);
+      prebuscaUrl[0] = 0;
+      esperandoFonte = 0;
+      tocarFonte(u);
+    }
+  }
 
   entrada = anim_mola(entrada, saindo ? 0.0f : 1.0f, dt, NV_MOLA_TELA);
   // Marca o primeiro quadro COM IMAGEM. E daqui que a guia parental conta o
