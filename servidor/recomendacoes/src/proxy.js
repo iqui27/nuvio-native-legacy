@@ -47,13 +47,14 @@ const CORS = {
 // generico; recusar so pelo tipo perderia um arquivo valido que o path ja
 // identifica.
 const EXT_OCTET = /\.(srt|vtt|ass|ssa|sub|json|m3u|m3u8)$/i;
+const EXT_SEM_TIPO = /\.(srt|vtt|ass|ssa|sub|json|m3u|m3u8|xml|txt)$/i;
 
 // Decide pelo content-type da RESPOSTA, nao pela extensao pedida: um CDN pode
 // devolver imagem para uma url sem extensao. video/* e audio/* SEMPRE
 // recusados, mesmo com extensao "de texto" — o content-type e quem manda.
 function tipoAceito(ct, pathname) {
   const c = (ct || "").split(";")[0].trim().toLowerCase();
-  if (!c) return true;   // sem content-type: decide pelo tamanho, nao pelo tipo
+  if (!c) return EXT_SEM_TIPO.test(pathname);
   if (c.startsWith("video/") || c.startsWith("audio/")) return false;
   if (c.startsWith("image/")) return true;
   if (c === "application/json" || c.startsWith("text/")) return true;

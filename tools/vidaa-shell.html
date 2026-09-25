@@ -56,12 +56,15 @@
 <script>
   // MODO MT/ST: redirect se SAB nao estiver disponivel em MT
   var NV_MODO = '@NUVIO_MODO@';
+  var NV_APP_VERSAO = '@NUVIO_APP_VERSION@';
   window.nvPlataforma = 'vidaa';
+  var nvRedirecionandoSt = false;
   
   // Se o modo pedido e MT (multithreading) mas o navegador nao suporta
   // SharedArrayBuffer ou nao esta cross-origin-isolated, redireciona para ST
   // (single-thread) antes de o wasm tentar carregar.
-  if (NV_MODO === 'mt' && (typeof SharedArrayBuffer === 'undefined' || self.crossOriginIsolated === false)) {
+  if (NV_MODO === 'mt' && (typeof SharedArrayBuffer === 'undefined' || self.crossOriginIsolated !== true)) {
+    nvRedirecionandoSt = true;
     // O Module nao vai comecar: ele so inicia quando setMain chama
     // run(). Paramos ele de graca.
     var Module = { noInitialRun: true };
@@ -141,7 +144,7 @@
           method: "POST", keepalive: true,
           headers: { "Authorization": "Bearer " + DIAG_TOKEN, "X-Nuvio-Auth": "diagnostico",
                      "Content-Type": "application/json" },
-          body: JSON.stringify({ versao: "1.3.4-diag", plataforma: "vidaa", quando: quando,
+          body: JSON.stringify({ versao: NV_APP_VERSAO, plataforma: "vidaa", quando: quando,
                                  texto: texto.slice(-200 * 1024), tv: navigator.userAgent, falhas: nvFalhas })
         }).catch(function () {});
       } catch (e) {}
@@ -267,10 +270,10 @@
     }, 25000);
   })();
 
-  var Module = {
-    arguments: ["/app/art"],
-    canvas: (function () { return document.getElementById("canvas"); })(),
-    setStatus: function (t) {
+  Module = nvRedirecionandoSt ? Module : {};
+  Module.arguments = ["/app/art"];
+  Module.canvas = (function () { return document.getElementById("canvas"); })();
+  Module.setStatus = function (t) {
       if (!t) return;
       if (window.__nvDiag) window.__nvDiag(t);
       var barra = document.querySelector("#abertura .barra");
@@ -282,8 +285,8 @@
       var pct = Math.max(2, Math.min(100, (parseFloat(m[1]) / fim) * 100));
       barra.className = "barra medida";
       barra.firstChild.style.width = pct.toFixed(1) + "%";
-    },
-    print: function (t) {
+    };
+  Module.print = function (t) {
       console.log(t);
       if (window.__nvDiag) {
         window.__nvDiag(t);
@@ -295,9 +298,8 @@
           window.__nvPrimeiroQuadro = 1;
         }
       }
-    },
-    printErr: function (t) { console.warn(t); if (window.__nvDiag) window.__nvDiag(t, 1); }
-  };
+    };
+  Module.printErr = function (t) { console.warn(t); if (window.__nvDiag) window.__nvDiag(t, 1); };
 
   // MEDIDOR DE WORKERS, mesmo motivo do Tizen: evitar paralise do fio principal
   setInterval(function () {

@@ -306,7 +306,9 @@ static int fioConsulta(void *arg) {
   char tag[48] = "", body[8192] = "";
   (void)arg;
 #ifdef NV_VIDAA
+  SDL_LockMutex(mtx);
   pronto = 1;
+  SDL_UnlockMutex(mtx);
   return 0;  // hosted app e sempre current
 #endif
   corpo = rede_baixar(AT_URL, 12);
@@ -355,7 +357,9 @@ static int fioInstalar(void *arg) {
   char cmd[900];
   (void)arg;
 #ifdef NV_VIDAA
+  SDL_LockMutex(mtx);
   pronto = 1;
+  SDL_UnlockMutex(mtx);
   return 0;  // hosted app e sempre current
 #endif
   { char extra[110] = "";

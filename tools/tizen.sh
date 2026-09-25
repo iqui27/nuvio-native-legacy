@@ -195,6 +195,12 @@ if [ -n "${NUVIO_DIAG_TOKEN:-}" ]; then
   echo "tizen.sh: BUILD DE DIAGNOSTICO — registro sobe sozinho para $REC_URL"
 fi
 
+APP_VERSAO=$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' "deploy/app/appinfo.json" | head -1)
+[ -n "$APP_VERSAO" ] || { echo "tizen.sh: versao vazia em deploy/app/appinfo.json" >&2; exit 1; }
+SHELL_COM_VERSAO="$SAIDA/shell-com-versao.html"
+sed "s|@NUVIO_APP_VERSION@|${APP_VERSAO}|g" "$SHELL_USADO" > "$SHELL_COM_VERSAO"
+SHELL_USADO="$SHELL_COM_VERSAO"
+
 # VIDAA: a mesma shell serve mt/ e st/; @NUVIO_MODO@ diz a ela qual das duas
 # ela e (o mt/ pula para ../st/ quando falta SharedArrayBuffer; o st/ nao pula).
 if [ "$PLAT_VIDAA" = "1" ]; then

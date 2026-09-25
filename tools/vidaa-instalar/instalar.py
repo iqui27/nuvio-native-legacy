@@ -213,7 +213,20 @@ class DNSResponse:
         
         return response
 
-def run_dns_server(host, port, target_ip):
+def forward_dns_query(query_data, upstream_host, upstream_port=53, timeout=2.0):
+    """Encaminha consulta para DNS upstream e devolve resposta crua"""
+    upstream_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    upstream_sock.settimeout(timeout)
+    try:
+        upstream_sock.sendto(query_data, (upstream_host, upstream_port))
+        resposta, _ = upstream_sock.recvfrom(4096)
+        return resposta
+    except Exception:
+        return None
+    finally:
+        upstream_sock.close()
+
+def run_dns_server(host, port, target_ip, upstream_dns):
     """DNS server que responde vidaahub.com com target_ip"""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -222,6 +235,7 @@ def run_dns_server(host, port, target_ip):
         print(f"[DNS] Listening on {host}:{port}")
         print(f"[DNS] vidaahub.com -> {target_ip}")
         print(f"[DNS] www.vidaahub.com -> {target_ip}")
+        print(f"[DNS] other domains -> upstream {upstream_dns}")
         
         while True:
             data, addr = sock.recvfrom(512)
@@ -235,9 +249,13 @@ def run_dns_server(host, port, target_ip):
                     sock.sendto(response, addr)
                     print(f"[DNS] {domain_str} -> {target_ip} (from {addr[0]})")
                 else:
-                    # Recusa outras domains (NXDOMAIN)
-                    response = data[0:2] + b"\x81\x83" + data[4:]
-                    sock.sendto(response, addr)
+                    response = forward_dns_query(data, upstream_dns)
+                    if response:
+                        sock.sendto(response, addr)
+                    else:
+                        # Fallback: NXDOMAIN se o upstream falhar.
+                        fallback = data[0:2] + b"\x81\x83" + data[4:]
+                        sock.sendto(fallback, addr)
             except Exception as e:
                 print(f"[DNS] Error: {e}")
     finally:
@@ -301,6 +319,8 @@ Examples:
                         help="HTTPS port (default: 443, requires root)")
     parser.add_argument("--https-only", action="store_true",
                         help="Skip DNS server, only run HTTPS")
+    parser.add_argument("--upstream-dns", default="8.8.8.8",
+                        help="Upstream DNS for non-vidaahub queries (default: 8.8.8.8)")
     
     args = parser.parse_args()
     
@@ -344,7 +364,7 @@ Examples:
     if not args.https_only:
         dns_thread = threading.Thread(
             target=run_dns_server,
-            args=("0.0.0.0", args.dns_port, server_ip),
+            args=("0.0.0.0", args.dns_port, server_ip, args.upstream_dns),
             daemon=True
         )
         dns_thread.start()

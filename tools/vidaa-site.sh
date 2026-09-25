@@ -133,10 +133,22 @@ if command -v sips >/dev/null 2>&1; then
   echo "vidaa-site.sh: redimensionando icones"
   sips -z 220 220 "$ICON_SRC" --out "$TV_DIR/icone-220.png" >/dev/null 2>&1
   sips -z 400 400 "$ICON_SRC" --out "$TV_DIR/icone-400.png" >/dev/null 2>&1
+elif command -v magick >/dev/null 2>&1; then
+  echo "vidaa-site.sh: redimensionando icones com ImageMagick (magick)"
+  magick "$ICON_SRC" -resize 220x220 "$TV_DIR/icone-220.png"
+  magick "$ICON_SRC" -resize 400x400 "$TV_DIR/icone-400.png"
+elif command -v convert >/dev/null 2>&1; then
+  echo "vidaa-site.sh: redimensionando icones com ImageMagick (convert)"
+  convert "$ICON_SRC" -resize 220x220 "$TV_DIR/icone-220.png"
+  convert "$ICON_SRC" -resize 400x400 "$TV_DIR/icone-400.png"
 else
-  echo "vidaa-site.sh: aviso — sips nao encontrado, pulando icones" >&2
-  echo "  (ImageMagick 'convert' como alternativa: convert -resize 220x220)" >&2
+  echo "vidaa-site.sh: erro — sem sips, magick ou convert para gerar icones" >&2
+  exit 1
 fi
+[ -s "$TV_DIR/icone-220.png" ] && [ -s "$TV_DIR/icone-400.png" ] || {
+  echo "vidaa-site.sh: erro — icones obrigatorios nao foram gerados" >&2
+  exit 1
+}
 
 # Arquivo de versao: apenas o numero, sem newline. Qualquer outro dado e overhead.
 printf "%s" "$VERSAO" > "$TV_DIR/versao.txt"

@@ -376,8 +376,12 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
     // So toca no job se ele ainda e ESTE pedido e ainda esta em aberto ou
     // abandonado; um reencaminhamento tardio (onerror) de job ja liberado
     // cai aqui e nao escreve nada.
+    var heapCompartilhado = HEAP32.buffer instanceof SharedArrayBuffer;
+    var lerEstado = function () {
+      return heapCompartilhado ? Atomics.load(HEAP32, pJob) : HEAP32[pJob];
+    };
     var vivo = function () {
-      var e = Atomics.load(HEAP32, pJob);
+      var e = lerEstado();
       return HEAP32[pJob + 7] === seq && (e === 0 || e === 4);
     };
     var fim = function (w, h, ow, oh) {
@@ -385,9 +389,12 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
       HEAP32[pJob + 2] = h;
       HEAP32[pJob + 4] = ow;
       HEAP32[pJob + 5] = oh;
-      // 0 -> 1 entrega ao C; se o C ja desistiu (4), 4 -> 5 larga o job.
-      if (Atomics.compareExchange(HEAP32, pJob, 0, 1) === 4) Atomics.compareExchange(HEAP32, pJob, 4, 5);
-      Atomics.notify(HEAP32, pJob);
+      if (heapCompartilhado) {
+        // 0 -> 1 entrega ao C; se o C ja desistiu (4), 4 -> 5 larga o job.
+        if (Atomics.compareExchange(HEAP32, pJob, 0, 1) === 4) Atomics.compareExchange(HEAP32, pJob, 4, 5);
+        Atomics.notify(HEAP32, pJob);
+      } else if (HEAP32[pJob] === 0) HEAP32[pJob] = 1;
+      else if (HEAP32[pJob] === 4) HEAP32[pJob] = 5;
     };
     // CAMINHO ANTIGO, no fio principal. Fica como reserva: e o que roda
     // quando o Worker nao sobe (sem OffscreenCanvas, arquivo ausente, CSP).
@@ -404,7 +411,7 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
           var w = ow;
           var h = oh;
           if (!vivo()) { if (bmp.close) bmp.close(); return; }
-          if (Atomics.load(HEAP32, pJob) === 4) { if (bmp.close) bmp.close(); fim(0, 0, 0, 0); return; }
+          if (lerEstado() === 4) { if (bmp.close) bmp.close(); fim(0, 0, 0, 0); return; }
           // REDUZ NO CANVAS, nao no heap: o bitmap inteiro vive na memoria do
           // navegador; so o tamanho pedido atravessa para o WASM.
           if (largMax > 0 && ow > largMax) {

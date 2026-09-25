@@ -173,6 +173,17 @@ const proxy = (alvo, buscar) => {
   console.error("ok  proxy: content-type video/* recusado (segmento de HLS)");
 }
 
+// sem content-type: so passa quando o caminho indica texto/playlist conhecido.
+{
+  let r = await proxy("https://exemplo.tv/arquivo.bin",
+    painel(new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "" } })));
+  assert.equal(r.status, 415);
+  r = await proxy("https://exemplo.tv/lista.m3u8",
+    painel(new Response("#EXTM3U", { headers: { "content-type": "" } })));
+  assert.equal(r.status, 200);
+  console.error("ok  proxy: sem content-type so passa com extensao textual conhecida");
+}
+
 // redirect para IP privado: recusado, mesmo indo por 2 saltos.
 {
   const r = await proxy("https://exemplo.tv/legenda.srt",
