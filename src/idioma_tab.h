@@ -1303,6 +1303,7 @@
   { "Ordenar e ativar fileiras", "Reorder and enable rows" },
   { "Ordenação", "Sort order" },
   { "Original", "Original" },
+  { "Original do título", "Original title" },
   { "Orçamento", "Budget" },
   { "Orçamento, bilheteria, prêmios e onde foi filmado, tudo vindo do Wikidata.", "Budget, box office, awards and filming locations, all from Wikidata." },
   { "Os add-ons de fontes estão desligados", "Source add-ons are turned off" },
