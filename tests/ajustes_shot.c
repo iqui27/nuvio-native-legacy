@@ -110,29 +110,39 @@ int main(int argc, char **argv) {
 
   ajustes_iniciar();
 
+  // A TELA ABRE COM O FOCO NA COLUNA DE CATEGORIAS, na primeira (Conta), e a
+  // lista mostra o que ha nela.
   snprintf(nome, sizeof nome, "%s-lista.bmp", saida);
   captura(nome, w);
 
-  // Vai ate a secao das fileiras pela COLUNA DE SECOES, que e o caminho real no
-  // controle: Voltar leva ao indice, baixo escolhe a categoria, OK entra nela.
-  // O `secao` da linha de comando diz QUAL categoria, porque o agrupamento muda
-  // e cravar o numero aqui faria a captura mirar outra tela depois.
-  { int secao = argc > 2 ? atoi(argv[2]) : 2;
-    tecla(SDLK_ESCAPE);
-    for (i = 0; i < secao; i++) tecla(SDLK_DOWN);
-    // O FOCO NA COLUNA DE CATEGORIAS: a categoria em foco preenchida com a
-    // cor de realce, como as linhas da lista.
-    snprintf(nome, sizeof nome, "%s-indice.bmp", saida);
-    captura(nome, w);
-    tecla(SDLK_RETURN); }
+  // Todo caminho daqui em diante e o do CONTROLE: setas, OK e Voltar. As
+  // categorias sao as de TELA[] em ajustes.c, na ordem do web: 0 Conta,
+  // 1 Aparencia, 2 Layout, 3 Conteudo, 4 Integracoes, 5 Reproducao, 6 Trakt e
+  // Simkl, 7 Avancado, 8 Sobre. Quem mudar a ordem la conserta os numeros aqui.
+  tecla(SDLK_DOWN); tecla(SDLK_DOWN);          // Layout, ainda no indice
+  snprintf(nome, sizeof nome, "%s-indice.bmp", saida);
+  captura(nome, w);
+  tecla(SDLK_RETURN);                          // entra: foco no 1o grupo, fechado
   snprintf(nome, sizeof nome, "%s-secao.bmp", saida);
   captura(nome, w);
+  tecla(SDLK_RETURN);                          // abre "Layout da Home"
+  snprintf(nome, sizeof nome, "%s-grupo.bmp", saida);
+  captura(nome, w);
+  tecla(SDLK_DOWN);                            // Posteres horizontais: interruptor
+  snprintf(nome, sizeof nome, "%s-interruptor.bmp", saida);
+  captura(nome, w);
 
-  // Entra na folha de fileiras. A linha de acao e a ULTIMA da secao; descer ate
-  // encontrar uma OP_ACAO seria adivinhar, entao o teste desce um numero fixo
-  // passado na linha de comando.
-  { int passos = argc > 3 ? atoi(argv[3]) : 1;
-    for (i = 0; i < passos; i++) tecla(SDLK_DOWN); }
+  // Voltar fecha o grupo e devolve o foco ao cabecalho; o grupo seguinte e
+  // "Conteudo da Home", onde moram as fileiras.
+  tecla(SDLK_ESCAPE);
+  tecla(SDLK_DOWN);
+  tecla(SDLK_RETURN);
+  tecla(SDLK_DOWN);                            // Limite de fileiras
+  snprintf(nome, sizeof nome, "%s-previa-fileiras.bmp", saida);
+  captura(nome, w);
+  tecla(SDLK_DOWN);                            // Ordenar e ativar fileiras
+  snprintf(nome, sizeof nome, "%s-acao.bmp", saida);
+  captura(nome, w);
   tecla(SDLK_RETURN);
   snprintf(nome, sizeof nome, "%s-fileiras.bmp", saida);
   captura(nome, w);
@@ -165,46 +175,68 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-fileiras-botao.bmp", saida);
   captura(nome, w);
 
-  // A LINHA "MEMORIA USADA POR IMAGENS", que e a ultima da categoria da
-  // conta: o painel da direita ganha barra, grafico e estatisticas do cache.
-  // `conta` na linha de comando diz qual categoria, pelo mesmo motivo de
-  // `secao`. Sai da folha, volta ao indice, escolhe a categoria e desce ate o
-  // fim da categoria: 13 linhas, 12 passos. A lista e continua entre
-  // categorias, entao descer "ate parar" cairia na categoria seguinte.
-  { int conta = argc > 4 ? atoi(argv[4]) : 5;
-    tecla(SDLK_ESCAPE);
-    tecla(SDLK_ESCAPE);
-    for (i = 0; i < 12; i++) tecla(SDLK_UP);
-    for (i = 0; i < conta; i++) tecla(SDLK_DOWN);
-    tecla(SDLK_RETURN);
-    // QUANTOS PASSOS ATE A ULTIMA LINHA DA CATEGORIA. Era 13 cravado, quando
-    // "Interface e conta" tinha 14 linhas. A categoria cresceu (hoje sao 17) e
-    // o numero cravado passou a parar em "Sair da conta": a captura saia sem o
-    // painel que ela existe para mostrar, exatamente o defeito que o comentario
-    // anterior ja descrevia com outro numero. Agora e argumento, com o valor
-    // certo de hoje como padrao — quem crescer a categoria conserta a chamada,
-    // nao o codigo.
-    { int fundo = argc > 5 ? atoi(argv[5]) : 20;   // 22 linhas hoje; "Memoria usada" e a 21a
-      for (i = 0; i < fundo; i++) tecla(SDLK_DOWN); } }
+  // "MEMORIA USADA POR IMAGENS" (Avancado, 5a linha): o painel da direita
+  // ganha barra, grafico e estatisticas do cache. Tres Voltar: fecha a folha,
+  // fecha o grupo (o foco sobe ao cabecalho), vai ao indice.
+  tecla(SDLK_ESCAPE);
+  tecla(SDLK_ESCAPE);
+  tecla(SDLK_ESCAPE);
+  for (i = 0; i < 12; i++) tecla(SDLK_UP);
+  for (i = 0; i < 7; i++) tecla(SDLK_DOWN);    // Avancado
+  tecla(SDLK_RETURN);
+  for (i = 0; i < 4; i++) tecla(SDLK_DOWN);
   snprintf(nome, sizeof nome, "%s-imagens.bmp", saida);
   captura(nome, w);
 
-  // AS PREVIAS DO PAINEL DE AJUDA (20/09/2026): tamanho do cartaz (categoria
-  // "Cartazes", penultima linha... a de largura) e limite de fileiras (Home,
-  // 3a linha). Cada uma desenhada com o valor atual.
-  tecla(SDLK_ESCAPE);
-  for (i = 0; i < 12; i++) tecla(SDLK_UP);
-  for (i = 0; i < 4; i++) tecla(SDLK_DOWN);   // Cartazes
+  // A PREVIA DO CARTAZ: Layout > Estilo dos cartoes (6o grupo) > Largura.
+  tecla(SDLK_LEFT);                            // a esquerda tambem leva ao indice
+  for (i = 0; i < 5; i++) tecla(SDLK_UP);      // Layout
   tecla(SDLK_RETURN);
-  for (i = 0; i < 13; i++) tecla(SDLK_DOWN);   // Largura do item
+  for (i = 0; i < 5; i++) tecla(SDLK_DOWN);    // grupos todos fechados
+  tecla(SDLK_RETURN);
+  tecla(SDLK_DOWN);
   snprintf(nome, sizeof nome, "%s-previa-cartaz.bmp", saida);
   captura(nome, w);
-  tecla(SDLK_ESCAPE);
-  for (i = 0; i < 12; i++) tecla(SDLK_UP);
-  tecla(SDLK_DOWN);                            // Home
+
+  // MODO EDICAO numa lista de valores: Reproducao > Qualidade maxima.
+  tecla(SDLK_ESCAPE); tecla(SDLK_ESCAPE);      // grupo -> cabecalho -> indice
+  for (i = 0; i < 3; i++) tecla(SDLK_DOWN);    // Reproducao
   tecla(SDLK_RETURN);
-  tecla(SDLK_DOWN); tecla(SDLK_DOWN);          // Limite de fileiras
-  snprintf(nome, sizeof nome, "%s-previa-fileiras.bmp", saida);
+  for (i = 0; i < 4; i++) tecla(SDLK_DOWN);    // pula os dois rotulos de bloco
+  tecla(SDLK_RETURN);
+  snprintf(nome, sizeof nome, "%s-edicao.bmp", saida);
+  captura(nome, w);
+
+  // SAIR DA CONTA PEDE DOIS OK: o primeiro so arma. A captura para no armado.
+  tecla(SDLK_ESCAPE); tecla(SDLK_ESCAPE);
+  for (i = 0; i < 12; i++) tecla(SDLK_UP);     // Conta
+  tecla(SDLK_RETURN);
+  tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+  tecla(SDLK_RETURN);
+  snprintf(nome, sizeof nome, "%s-sair-armado.bmp", saida);
+  captura(nome, w);
+  assert(!ajustes_quer_sair());                // um OK nao sai
+
+  // COR DE DESTAQUE ROSA (a da captura aprovada no DESIGN.md), e as duas
+  // telas principais de novo com ela: Aparencia > Cor de destaque, seis passos.
+  tecla(SDLK_LEFT);
+  tecla(SDLK_DOWN);                            // Aparencia
+  tecla(SDLK_RETURN);
+  tecla(SDLK_RETURN);
+  for (i = 0; i < 6; i++) tecla(SDLK_RIGHT);
+  tecla(SDLK_RETURN);
+  snprintf(nome, sizeof nome, "%s-rosa-aparencia.bmp", saida);
+  captura(nome, w);
+  tecla(SDLK_LEFT);
+  tecla(SDLK_DOWN);                            // Layout
+  tecla(SDLK_RETURN);
+  tecla(SDLK_DOWN);                            // Conteudo da Home
+  tecla(SDLK_RETURN);
+  for (i = 0; i < 4; i++) tecla(SDLK_DOWN);    // Barra lateral moderna
+  snprintf(nome, sizeof nome, "%s-rosa-grupo.bmp", saida);
+  captura(nome, w);
+  tecla(SDLK_LEFT);
+  snprintf(nome, sizeof nome, "%s-rosa-indice.bmp", saida);
   captura(nome, w);
 
   tex_encerrar();
