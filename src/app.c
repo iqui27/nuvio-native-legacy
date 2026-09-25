@@ -29,6 +29,7 @@
 #include "artehero.h"
 #include "vertudo.h"
 #include "guia.h"
+#include "guialembrete.h"   /* aviso do lembrete de programa do guia */
 #include "epg.h"
 #include "posplay.h"
 #include "ctxmenu.h"
@@ -968,6 +969,9 @@ void app_evento(const SDL_Event *e) {
   // AZUL/CH+ abrem a lista, e com a lista aberta ela come o teclado. Fora
   // desses dois estados ela nao toca em nada (ver avisos.h).
   if (avisos_evento(e)) return;
+  // O CARTAO DO LEMBRETE DE PROGRAMA, em qualquer tela: com ele de pe as
+  // setas laterais, o OK e o Voltar sao dele (ver guialembrete.h).
+  if (glem_evento(e)) return;
 
   // PORTA DE TESTE: F10 abre o Guia de TV de onde quer que o app esteja.
   //
@@ -2511,6 +2515,20 @@ void app_atualizar(float dt, Uint32 agora) {
   atualizacao_atualizar(dt, agora);
   agendaviso_atualizar(dt, agora);
   avisos_atualizar(dt, agora);
+  // Lembretes de programa: so com alguem dentro do app (nao no login nem na
+  // escolha de perfil), uma conferencia por segundo no maximo.
+  if (sessao_logada() && tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL) {
+    char lid[80], lnome[120], lbase[600];
+    CatItem it;
+    glem_passo(dt, agora);
+    // "Assistir" no cartao: o canal em tela cheia, de onde a pessoa estiver.
+    if (aguardandoFonte != 2 && glem_pediu_assistir(lid, sizeof lid, lnome, sizeof lnome,
+                                                     lbase, sizeof lbase) &&
+        guia_item_do_canal(lid, lnome, lbase, &it)) {
+      if (player_mini_ativo()) player_fechar_mini();
+      tocarCanal(&it);
+    }
+  }
   pipintro_atualizar(dt, agora);
   if(tela==TELA_SOCIAL) social_atualizar(dt, agora);
   if(tela==TELA_ADDONS) addonsui_atualizar(dt, agora);
@@ -2712,6 +2730,11 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto() && !player_aberto() && sessao_logada() &&
       tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL)
     avisos_desenhar(agora);
+  // O cartao do lembrete fica acima do player e da tela: e um aviso com hora.
+  CAMADA_SE(glem_cartao_aberto());
+  if (!registro_aberto() && sessao_logada() && tela != TELA_LOGIN &&
+      tela != TELA_ESCOLHA_PERFIL)
+    glem_desenhar(agora);
   CAMADA_SE(recenviar_aberto());
   if (!registro_aberto()) recenviar_desenhar(agora);
   CAMADA_SE(recomenda_aberta());

@@ -61,6 +61,8 @@
 #include "idioma.h"
 #include "video.h"      /* preview do canal focado no canto do guia */
 #include "player.h"     /* o preview e uma sessao "mini no guia" do player */
+#include "lembrete.h"   /* lembrete de programa futuro */
+#include "guialembrete.h"
 #include "streams.h"    /* Stream: url do preview vinda do fio */
 #include <stdio.h>
 #include <stdlib.h>
@@ -1359,6 +1361,63 @@ static void canalParaItem(const GCanal *c, CatItem *dst) {
 // um campo novo invalidaria o cache de todo mundo por um dado de sessao.
 const char *guia_canal_origem(void) { return pedidoBase; }
 
+static time_t janelaIni(time_t agoraT);
+static time_t instanteFoco(time_t agoraT);
+static int epgDo(GCanal *c);
+static void pedirCanal(GCanal *c);
+
+// O instante que o foco aponta, na grade cheia ou na faixa do mini guia.
+static time_t tFocoAgora(void) {
+  time_t t = time(NULL);
+  if (overlay) return janelaDesl > 0 ? janelaIni(t) + 10 * 60 : t;
+  return instanteFoco(t);
+}
+
+// O programa da celula em foco (o que cobre tFocoAgora), 1 se ha.
+static int programaFocado(GCanal *c, EpgProg *p) {
+  int epg;
+  if (!c) return 0;
+  epg = epgDo(c);
+  return epg >= 0 && epg_agora(epg, tFocoAgora(), p);
+}
+
+// OK NUMA CELULA DO FUTURO MARCA (OU DESMARCA) O LEMBRETE — programa que nao
+// comecou nao tem o que assistir, entao o OK ali so pode querer dizer "me
+// avisa". Pedido do dono (25/09/2026): "avisar de um programa que ainda vai
+// comecar". Em qualquer outra celula o OK e o de sempre: assistir o canal.
+// A celula so e do futuro com a grade ADIANTADA (DIREITA), que e justamente
+// o gesto de quem esta procurando o que vem depois.
+static void acaoOk(void) {
+  GCanal *c = linhaItem(focoLin, focoCol);
+  EpgProg p;
+  if (c && programaFocado(c, &p) && p.ini > time(NULL)) {
+    char msg[200];
+    int r = lembrete_alternar(c->id, c->nome, p.titulo, c->base, p.ini, p.fim);
+    if (r == 1) snprintf(msg, sizeof msg, i18n("Lembrete marcado: %s"), p.titulo);
+    else if (r == 0) snprintf(msg, sizeof msg, "%s", i18n("Lembrete cancelado"));
+    else snprintf(msg, sizeof msg, "%s", i18n("Não cabe mais lembrete"));
+    glem_aviso_curto(msg);
+    printf("[lembrete] %s\n", r == 1 ? "marcado" : r == 0 ? "cancelado" : "lista cheia");
+    fflush(stdout);
+    return;
+  }
+  pedirCanal(c);
+}
+
+// O CANAL DE UM LEMBRETE, para o "Assistir" do cartao: o CatItem do guia
+// quando a lista ja esta carregada; senao so a identidade guardada.
+int guia_item_do_canal(const char *id, const char *nome, const char *base, CatItem *it) {
+  GCanal *c = canalPorId(id);
+  if (c) { canalParaItem(c, it); snprintf(pedidoBase, sizeof pedidoBase, "%s", c->base); return 1; }
+  if (!id || !id[0]) return 0;
+  memset(it, 0, sizeof *it);
+  snprintf(it->imdb, sizeof it->imdb, "%s", id);
+  snprintf(it->tipo, sizeof it->tipo, "%s", "channel");
+  snprintf(it->titulo, sizeof it->titulo, "%s", nome ? nome : "");
+  snprintf(pedidoBase, sizeof pedidoBase, "%s", base ? base : "");
+  return 1;
+}
+
 static void pedirCanal(GCanal *c) {
   if (!c || pediuCanal) return;
   // OK NO CANAL QUE JA TOCA (no preview, ou atras da faixa): tela cheia com o
@@ -1623,7 +1682,7 @@ void guia_evento(const SDL_Event *e) {
       if (catAberto == 1) catConfirmar();
     }
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
-      if (okDesde && !okLongo) pedirCanal(linhaItem(focoLin, focoCol));
+      if (okDesde && !okLongo) acaoOk();
       okDesde = 0; okLongo = 0;
     }
     return;
@@ -2430,6 +2489,18 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
       txt_desenhar_alpha(t, mx, y + (32.0f - (float)t.h) * 0.5f, ha);
     }
     y += 32.0f + 18.0f;
+    // PROGRAMA DO FUTURO: a linha diz o que o OK faz aqui — lembrar, nao
+    // assistir — e se o lembrete ja esta marcado.
+    if (tem && !noAr && p.ini > agoraT) {
+      int marcado = lembrete_achar(c->id, p.ini, p.titulo) >= 0;
+      TxtLinha t = txt_linha(TXT_DET_META, marcado ? i18n("Lembrete marcado  ·  OK cancela")
+                                                   : i18n("OK avisa quando começar"),
+                             marcado ? 236 : 196, marcado ? 237 : 198, marcado ? 242 : 206, 255);
+      gfx_icone((GfxRect){ x, y + 2.0f, 26.0f, 26.0f }, "sino",
+                marcado ? ar : 0.75f, marcado ? ag : 0.76f, marcado ? ab : 0.80f, ha);
+      txt_desenhar_alpha(t, x + 38.0f, y + (30.0f - (float)t.h) * 0.5f, ha);
+      y += 30.0f + 18.0f;
+    }
     if (noAr) {
       float f = (p.fim > p.ini)
                 ? anim_clamp((float)(agoraT - p.ini) / (float)(p.fim - p.ini), 0.0f, 1.0f)
@@ -2446,7 +2517,11 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
   // selos de qualidade e a contagem de fontes; o que sobrar, ou texto fora
   // do molde, vai como veio — no maximo tres linhas, e so as que cabem antes
   // da linha "A seguir".
-  if (c->desc[0]) {
+  // "Canal: <nome do canal>" (outro addon, visto na C9 em 25/09) nao diz nada
+  // que a linha do canal ja nao diga.
+  { char eco[200];
+    snprintf(eco, sizeof eco, "Canal: %s", c->nome);
+  if (c->desc[0] && strcmp(c->desc, eco)) {
     GDesc d;
     int molde = descMolde(c->desc, &d);
     const char *txt = molde ? d.resto : c->desc;
@@ -2477,7 +2552,7 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
       if (linhas > 0)
         txt_bloco(TXT_DET_SIN, txt, 172, 175, 184, x, y, w, 34.0f, ha * 0.95f, linhas);
     }
-  }
+  } }
 
   // A SEGUIR, ancorado na base do heroi (alinhado a base do preview).
   { EpgProg q;
@@ -2869,8 +2944,20 @@ static void desenharLinhaLista(GCanal *c, float y, int focada, float a,
         // visivel dela. Texto vem DEPOIS do veu do passado, entao o do
         // programa no ar continua claro mesmo nascendo antes da linha agora.
         float tx = b.x + 14.0f;
+        // SINO do lembrete no canto direito da celula. A grade que mudou o
+        // horario do programa leva o lembrete junto (ver lembrete.h).
+        int li = ps[k].ini > agoraT ? lembrete_achar(c->id, ps[k].ini, ps[k].titulo) : -1;
+        float sinoW = li >= 0 && b.w > 64.0f ? 30.0f : 0.0f;
         TxtLinha t = txt_linha_corta(TXT_CW_TITULO, ps[k].titulo, ct, ct, ct, 255,
-                                     b.x + b.w - 14.0f - tx);
+                                     b.x + b.w - 14.0f - tx - sinoW);
+        if (li >= 0) {
+          float ar2, ag2, ab2;
+          const Lembrete *lm = lembrete_item(li);
+          if (lm->ini != ps[k].ini || lm->fim != ps[k].fim) lembrete_ajustar(li, ps[k].ini, ps[k].fim);
+          ajustes_acento(&ar2, &ag2, &ab2);
+          gfx_icone((GfxRect){ b.x + b.w - 34.0f, y + (h < 70.0f ? (h - 22.0f) * 0.5f : 10.0f),
+                               22.0f, 22.0f }, "sino", ar2, ag2, ab2, a);
+        }
         if (h < 70.0f) {
           // Celula baixa (faixa): so o titulo, centrado, e a barra do quanto
           // ja passou no programa do ar — a regua em cima diz os horarios.
