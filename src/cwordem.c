@@ -2,6 +2,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 int cwo_futuro(const CwoItem *it, long long agoraMs) {
   return it && it->aSeguir && it->estreiaMs != CWO_SEM_DATA && it->estreiaMs > agoraMs;
@@ -115,4 +116,37 @@ int cwo_e_futuro(const char *id) {
   for (i = 0; i < nFut && !sim; i++) sim = !strcmp(fut[i], id);
   pthread_mutex_unlock(&futTrava);
   return sim;
+}
+
+// --- Rotulo da estreia -------------------------------------------------------
+int cwo_data_curta(long long estreiaMs, long long agoraMs, int ingles, int maiusc,
+                   char *dst, size_t cap) {
+  static const char *EN[] = { "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec" };
+  static const char *PT[] = { "jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez" };
+  struct tm e, a;
+  time_t te, ta;
+  char mes[4];
+  size_t i;
+  if (!dst || cap < 1) return 0;
+  dst[0] = 0;
+  if (estreiaMs == CWO_SEM_DATA) return 0;
+  // Pelo calendario UTC, como o `released` do Cinemeta (ver agenda.h, ponto
+  // 3): o fuso de uma TV nem sempre esta certo, e com ele a estreia andaria
+  // um dia de aparelho para aparelho.
+  te = (time_t)(estreiaMs / 1000LL);
+  ta = (time_t)(agoraMs / 1000LL);
+  if (!gmtime_r(&te, &e) || !gmtime_r(&ta, &a)) return 0;
+  if (e.tm_mon < 0 || e.tm_mon > 11) return 0;
+  snprintf(mes, sizeof mes, "%s", ingles ? EN[e.tm_mon] : PT[e.tm_mon]);
+  if (maiusc)
+    for (i = 0; mes[i]; i++) if (mes[i] >= 'a' && mes[i] <= 'z') mes[i] = (char)(mes[i] - 32);
+  // O ano so quando nao e o corrente, como as datas curtas de noticias.c.
+  if (e.tm_year != a.tm_year) {
+    if (ingles) snprintf(dst, cap, "%s %d, %d", mes, e.tm_mday, e.tm_year + 1900);
+    else        snprintf(dst, cap, "%d %s %d", e.tm_mday, mes, e.tm_year + 1900);
+  } else {
+    if (ingles) snprintf(dst, cap, "%s %d", mes, e.tm_mday);
+    else        snprintf(dst, cap, "%d %s", e.tm_mday, mes);
+  }
+  return 1;
 }

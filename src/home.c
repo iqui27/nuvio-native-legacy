@@ -53,6 +53,7 @@ int player_aberto(void);
 #include <stdlib.h>
 #include <math.h>
 #include <ctype.h>
+#include <time.h>
 #include "trailer.h"
 #include "trailerimdb.h"
 #include "trailerapple.h"
@@ -1514,19 +1515,23 @@ static void sincronizarFileiras(void) {
   // direto (cat_revisao); cat_revisao e bumpado em cat_definir_tudo,
   // cat_trocar_continuar E cat_republicar_fileiras, cobrindo todo caminho
   // que troca fils[].
-  static unsigned ultCatRev, ultFilRev, ultColRev, ultFilLim;
+  static unsigned ultCatRev, ultFilRev, ultColRev, ultFilLim, ultCwoRev;
   unsigned catRev = cat_revisao(), filRev = fil_revisao();
   int filLim = fil_limite();
   unsigned colRev = col_revisao();
+  // cwo_revisao tambem: o conjunto de futuros pode mudar sem o catalogo mudar
+  // (a mesma lista publicada, so a divisao outra), e o hash abaixo ja o pesa.
+  unsigned cwoRev = cwo_revisao();
   if (nCat == filsAplicadas && assin == prefsAplicadas &&
       catRev == ultCatRev && filRev == ultFilRev &&
-      colRev == ultColRev && filLim == ultFilLim &&
+      colRev == ultColRev && filLim == ultFilLim && cwoRev == ultCwoRev &&
       retomarAplicada == retomarRev &&
       ultCatRev) {   // ultCatRev=0: primeira chamada, cai no hash
     ultFilRev = filRev; ultColRev = colRev; ultFilLim = (unsigned)filLim;
     return;
   }
   ultCatRev = catRev; ultFilRev = filRev; ultColRev = colRev; ultFilLim = (unsigned)filLim;
+  ultCwoRev = cwoRev;
   unsigned revisao = 2166136261u;
   // A escolha LOCAL de fileiras entra na mesma assinatura do catalogo: ordem,
   // liga/desliga, forma, tamanho e limite mudam a lista tanto quanto uma
@@ -1789,8 +1794,20 @@ static void sincronizarFileiras(void) {
     q = fil_unir(ch, destino, ord, MAX_FIL);
     for (k = 0; k < q && w < MAX_FIL; k++) {
       Fileira *f = &fileiras[ord[k]];
+      int j, repetida = 0;
       if (!strcmp(f->chave, "last_session")) continue;
       if (fil_oculta(f->chave)) continue;
+      // UMA FILEIRA POR CHAVE (issue #127, "Proximos episodios" duplicada na
+      // C9 do dono). A chave e a identidade da fileira em todo o resto — foco,
+      // rolagem, registro, ordem —, e duas com a mesma chave desenhariam o
+      // mesmo conteudo duas vezes. Nenhum caminho medido produz isso, mas a
+      // home tem de ser idempotente sobre o que chega; e o log diz de onde
+      // veio se voltar a acontecer.
+      for (j = 0; j < w && !repetida; j++) repetida = !strcmp(arranjo[j].chave, f->chave);
+      if (repetida) {
+        printf("[home] fileira repetida descartada: %s\n", f->chave);
+        continue;
+      }
       arranjo[w++] = *f;
     }
     // QUANTAS FILEIRAS ESTE CORTE ENGOLIU. O aviso do fim da home contava so
@@ -1847,10 +1864,12 @@ static void sincronizarFileiras(void) {
   // pessoa leva esta junto; retomada que ficou SO com futuros da o lugar a esta,
   // em vez de sobrar um cabecalho sem card.
   if (nProxHome) {
-    int c = -1, q;
-    for (q = 0; q < destino; q++)
-      if (!strcmp(fileiras[q].chave, "continue_watching")) { c = q; break; }
-    if (c >= 0) {
+    int c = -1, q, ja = 0;
+    for (q = 0; q < destino; q++) {
+      if (c < 0 && !strcmp(fileiras[q].chave, "continue_watching")) c = q;
+      if (!strcmp(fileiras[q].chave, "upcoming_section")) ja = 1;
+    }
+    if (c >= 0 && !ja) {
       Fileira u = fileiras[c];
       u.n = nProxHome;
       memcpy(u.itens, proxHome, sizeof(int) * (size_t)nProxHome);
@@ -2567,7 +2586,17 @@ static void desenhaHero(Uint32 agora, float saida) {
   destaque[0] = 0;
   if (contHero) snprintf(destaque, sizeof destaque, i18n("CONTINUAR DE ONDE PAROU  \xc2\xb7  %d MIN"),
                          ci->restanteMin);
-  else if (seguirHero) snprintf(destaque, sizeof destaque, "%s", i18n("A SEGUIR"));
+  else if (seguirHero) {
+    // O FUTURO DIZ QUANDO (issue #127): "ESTREIA 21 OUT", nao o "A SEGUIR" do
+    // episodio que ja pode tocar. Mesma decisao e mesma data do card
+    // (continuar.c), para os dois nao discordarem.
+    char quando[32];
+    if (cwo_e_futuro(ci->imdb) &&
+        cwo_data_curta(cwo_estreia(ci->imdb), (long long)time(NULL) * 1000LL,
+                       ajustes_idioma_ingles(), 1, quando, sizeof quando))
+      snprintf(destaque, sizeof destaque, i18n("ESTREIA %s"), quando);
+    else snprintf(destaque, sizeof destaque, "%s", i18n("A SEGUIR"));
+  }
   const char *selo = (ci && ci->classificacao[0] && !contHero && !seguirHero) ? ci->classificacao : NULL;
   char nota[8];
   nota[0] = 0;
