@@ -29,7 +29,7 @@ command -v dotnet >/dev/null || falta "Falta .NET SDK."
 echo "[1/3] nativo (ARMv7 softfp)"
 OBJ="$(mktemp -d)"
 "$BIN/arm-linux-gnueabi-gcc" --sysroot="$S10" -c -fPIC -O2 -Wall native/spike.c -o "$OBJ/spike.o"
-"$BIN/arm-linux-gnueabi-gcc" --sysroot="$S9" -shared -Wl,--no-undefined "$OBJ/spike.o" -o native/libnvspike.so -lGLESv2 -lpthread
+"$BIN/arm-linux-gnueabi-gcc" --sysroot="$S9" -shared -Wl,--no-undefined -Wl,-soname,libnvspike.so "$OBJ/spike.o" -o native/libnvspike.so -lGLESv2 -lpthread
 "$BIN/arm-linux-gnueabi-gcc" --sysroot="$S10" -static -O2 -Wall native/spikebin.c -o native/spikebin
 rm -rf "$OBJ"
 VERSOES="$("$BIN/arm-linux-gnueabi-readelf" -V native/libnvspike.so)"

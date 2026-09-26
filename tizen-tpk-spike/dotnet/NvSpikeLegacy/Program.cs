@@ -17,6 +17,10 @@ namespace NvSpikeLegacy
         [DllImport("libnvspike.so")] static extern int nv_ping();
         [DllImport("libnvspike.so")] static extern int nv_thread_test();
         [DllImport("libc", SetLastError = true)] static extern int chmod(string path, int mode);
+        [DllImport("libdl.so.2")] static extern IntPtr dlopen(string path, int flags);
+        [DllImport("libdl.so.2")] static extern IntPtr dlerror();
+        const int RTLD_NOW = 2, RTLD_GLOBAL = 0x100;
+        string preCarga = "";
 
         const string Pacote = "NvSpikeLegacy";
         Window janela;
@@ -73,14 +77,36 @@ namespace NvSpikeLegacy
         static string Marcado(string t) =>
             "<font_size=26 color=#FFFFFF>" + t.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;") + "</font>";
 
+        // O dotnet-launcher do Tizen 4/5 nao poe o lib/ do pacote na busca do
+        // DllImport (a TV QE65Q80RATXXC tentou so "liblibnvspike.so.so"). Com a
+        // .so ja aberta por caminho absoluto, o dlopen("libnvspike.so") do
+        // DllImport casa pelo soname (-Wl,-soname no tools/tizen-tpk-spike.sh).
+        void PreCarrega()
+        {
+            string raiz = System.IO.Path.GetFullPath(System.IO.Path.Combine(
+                Tizen.Applications.Application.Current.DirectoryInfo.Resource, ".."));
+            var erros = new List<string>();
+            foreach (var sub in new[] { "lib", "bin", "lib/armel", "bin/runtimes/linux-armel/native" })
+            {
+                string p = System.IO.Path.Combine(raiz, sub, "libnvspike.so");
+                if (!System.IO.File.Exists(p)) continue;
+                if (dlopen(p, RTLD_NOW | RTLD_GLOBAL) != IntPtr.Zero) { preCarga = "via " + sub + "/"; return; }
+                erros.Add(sub + ": " + Marshal.PtrToStringAnsi(dlerror()));
+            }
+            preCarga = erros.Count > 0 ? "dlopen falhou: " + string.Join("; ", erros)
+                                       : "libnvspike.so nao achada em " + raiz;
+        }
+
         string TestaPing()
         {
+            try { PreCarrega(); }
+            catch (Exception e) { preCarga = $"pre-carga: {e.GetType().Name}: {e.Message}"; }
             try
             {
                 int r = nv_ping();
-                return r == 42 ? "1. DllImport (.so propria): OK" : $"1. DllImport: FALHOU (nv_ping devolveu {r}, esperava 42)";
+                return r == 42 ? $"1. DllImport (.so propria): OK ({preCarga})" : $"1. DllImport: FALHOU (nv_ping devolveu {r}, esperava 42)";
             }
-            catch (Exception e) { return $"1. DllImport: FALHOU ({e.GetType().Name}: {e.Message})"; }
+            catch (Exception e) { return $"1. DllImport: FALHOU ({e.GetType().Name}: {e.Message}) [{preCarga}]"; }
         }
 
         string TestaThread()
