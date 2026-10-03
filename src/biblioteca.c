@@ -98,9 +98,7 @@
 #define BIB_FIL_GRADE  2
 #define BIB_MAX_LINHAS (FOCUS_MAX_FILEIRAS - BIB_FIL_GRADE)
 #define BIB_GRADE_BASE (NV_TELA_H - NV_MARGEM_Y)
-// Em quantos px um poster desaparece ao subir por baixo do cabecalho. O recorte
-// de tesoura resolveria, mas gfx_recorte assume alvo 1:1 com a tela e o Mac em
-// retina entrega o dobro; o esmaecimento nao depende do drawable.
+// Em quantos px a linha esmaece enquanto sai do viewport da grade.
 #define BIB_FADE       90.0f
 
 // SELETORES COMPACTOS (21/09/2026, foto do dono da aba Salvos em lista:
@@ -1803,6 +1801,11 @@ void biblioteca_desenhar(Uint32 agora) {
   if (linhas > BIB_MAX_LINHAS) linhas = BIB_MAX_LINHAS;
   passoC = passoColuna(); passoL = passoLinha(); gy = gradeY();
 
+  // Viewport da grade: quando a fileira sobe, só a parte que ainda está abaixo
+  // do cabeçalho pode aparecer. gfx_recorte converte coordenadas de layout para
+  // o tamanho real do drawable, inclusive em telas Retina.
+  gfx_recorte(0.0f, gy, NV_TELA_W, BIB_GRADE_BASE - gy);
+
   // Dois passes: o item focado escala 2% e precisa ser desenhado por ULTIMO,
   // senao o vizinho da direita corta a borda dele.
   for (int passe = 0; passe < 2; passe++)
@@ -1810,14 +1813,9 @@ void biblioteca_desenhar(Uint32 agora) {
       float topo = gy + r * passoL - scrollY;
       float a;
       if (topo > NV_TELA_H || topo + alturaLinha() < -80.0f) continue;
-      // O que sobe para baixo do cabecalho some antes de cruza-lo: sem o
-      // esmaecimento, cartaz e seletor se leem um sobre o outro.
-      //
-      // O LIMIAR E `gy - BIB_FADE`, e isso importa: com qualquer outro valor a
-      // PRIMEIRA linha ja nasce esmaecida com a tela parada no topo. Foi
-      // exatamente o que a captura mostrou — a linha do CODA cinza enquanto as
-      // de baixo estavam brancas, sem nenhuma rolagem acontecendo.
-      a = anim_clamp((topo - (gy - BIB_FADE)) / BIB_FADE, 0.0f, 1.0f);
+      // Esmaece pela parte que ainda resta dentro do viewport. Usar só o topo
+      // apagava a fileira inteira quando ela ainda estava parcialmente visível.
+      a = anim_clamp((topo + alturaLinha() - gy) / BIB_FADE, 0.0f, 1.0f);
       if (a <= 0.005f) continue;
 
       for (c = 0; c < nc; c++) {
@@ -1845,6 +1843,7 @@ void biblioteca_desenhar(Uint32 agora) {
                                ? &revArte[r][c] : NULL, agora); }
       }
     }
+  gfx_sem_recorte();
   if (teclado_aberto()) teclado_desenhar(agora);
   gfx_borda_foco_atual = 1.0f;
 }

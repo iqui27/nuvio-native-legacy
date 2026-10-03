@@ -314,6 +314,12 @@ int main(int argc, char **argv) {
   captura(nome);
   medir(comecaLista ? "lista (frio)" : "cartazes (frio)");
 
+  // Ao descer uma fileira, a de cima deve sair pelo viewport aos poucos; nao
+  // pode desaparecer inteira enquanto ainda tem cartaz abaixo do cabecalho.
+  tecla(SDLK_DOWN);
+  snprintf(nome, sizeof nome, "%s-salvos-cartaz-rolado.bmp", saida);
+  captura(nome);
+
   // 2. A BARRA DE MODOS COM O FOCO NELA: escolhido + em foco, realce cheio.
   AO_TOPO();
   snprintf(nome, sizeof nome, "%s-modos-foco.bmp", saida);
