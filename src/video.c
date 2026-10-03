@@ -1168,6 +1168,45 @@ static int aoCarregar(LSHandle *h, LSMessage *m, void *u) {
 
 static void *rodarLaco(void *u) { (void)u; loopRodar(laco); return NULL; }
 
+// SCREENSAVER DA LG DURANTE O FILME. O buraco de video composto por GL nao conta
+// como "video em tela cheia" para o tvpower, entao o timer de inatividade do
+// remoto dispara o screensaver no meio do filme (relato C1, 1.7.0: a cada ~20
+// min). API nao documentada: assina registerScreenSaverRequest; quando o
+// screensaver vai ativar chega state "Active" + timestamp, e responder ack:false
+// com o MESMO timestamp o cancela. Sem filme tocando respondemos ack:true para
+// nao segurar o screensaver normal da TV.
+static int protetorLigado;
+static int aoPedidoScreensaver(LSHandle *h, LSMessage *m, void *u) {
+  const char *p = lsPayload(m), *t;
+  char ts[64], b[160];
+  int n = 0, segurar;
+  (void)h; (void)u;
+  if (!p || !strstr(p, "\"Active\"")) return 1;
+  t = strstr(p, "\"timestamp\"");
+  if (!t) return 1;
+  t = strchr(t, ':');
+  if (!t) return 1;
+  for (t++; *t == ' '; t++) {}
+  while (*t && *t != ',' && *t != '}' && n < (int)sizeof ts - 1) ts[n++] = *t++;
+  ts[n] = 0;
+  if (!n) return 1;
+  segurar = midia[0] && !pausaPedida;
+  snprintf(b, sizeof b, "{\"clientName\":\"space.nuvio.native.legacy\",\"ack\":%s,\"timestamp\":%s}",
+           segurar ? "false" : "true", ts);
+  printf("[video] screensaver pedido: %s\n", segurar ? "seguro (filme tocando)" : "liberado");
+  fflush(stdout);
+  lsChamar("luna://com.webos.service.tvpower/power/responseScreenSaverRequest",
+           b, NULL, NULL, "responseScreenSaverRequest");
+  return 1;
+}
+static void protegerScreensaver(void) {
+  if (protetorLigado) return;
+  protetorLigado = 1;
+  lsChamar("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
+           "{\"subscribe\":true,\"clientName\":\"space.nuvio.native.legacy\"}",
+           aoPedidoScreensaver, NULL, "registerScreenSaverRequest");
+}
+
 // O ACB EXIGE um callback de verdade. Passar NULL nao e ignorado: no primeiro
 // evento ele salta para o endereco 0 e o app morre com SIGSEGV em pc=0x0, longe
 // do ponto onde o NULL foi escrito.
@@ -1195,6 +1234,7 @@ static int iniciar(int automatico) {
   if (!lsreg_pode_tentar(&regEstado, SDL_GetTicks(), automatico)) {
     if (lsreg_desistiu(&regEstado) && !regAvisouDesistir) {
       regAvisouDesistir = 1;
+  protegerScreensaver();
       printf("[video] registro recusado %d vez(es) (%s): o trailer para de tentar "
              "nesta sessao; play ainda tenta\n", regEstado.falhas,
              lsreg_nome_codigo(regEstado.ultimoCodigo)
