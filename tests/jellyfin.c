@@ -66,6 +66,20 @@ static int conta(const char *h, const char *agulha) {
   return n;
 }
 
+// GET a player URL with no Authorization header, as the TV pipelines do:
+// 1 when the fake accepts the query token.
+static int midiaAbre(const char *url) {
+  RedePedido p;
+  RedeResposta r;
+  int ok;
+  memset(&p, 0, sizeof p);
+  p.url = url;
+  rede_pedir(&p, &r);
+  ok = r.erro == REDE_OK && r.status == 200;
+  rede_resposta_limpar(&r);
+  return ok;
+}
+
 static JfEstado esperarEstado(JfEstado alvo, unsigned prazo) {
   unsigned long long fim = ms() + prazo;
   JfEstado e;
@@ -167,11 +181,13 @@ static void testarProtocolo(void) {
   assert(e == JF_OK && pb->n == 2);
   assert(pb->sessao[0].metodo == JF_METODO_DIRETO && pb->fonte[0].altura == 2160);
   assert(strstr(pb->fonte[0].url, "/jf/Videos/") && strstr(pb->fonte[0].url, "static=true") &&
-         strstr(pb->fonte[0].url, "api_key="));
+         strstr(pb->fonte[0].url, "ApiKey=") && !strstr(pb->fonte[0].url, "api_key="));
   assert(!strstr(pb->fonte[0].descricao, "/srv/private"));
   assert(strstr(pb->fonte[0].descricao, "HDR10") && strstr(pb->fonte[0].descricao, "EAC3 5.1"));
   assert(pb->sessao[1].metodo == JF_METODO_TRANSCODE && strstr(pb->fonte[1].url, "/jf/videos/") &&
-         strstr(pb->fonte[1].url, "master.m3u8") && strstr(pb->fonte[1].url, "api_key="));
+         strstr(pb->fonte[1].url, "master.m3u8") && strstr(pb->fonte[1].url, "ApiKey=") &&
+         !strstr(pb->fonte[1].url, "api_key="));            // the server's legacy name, renamed
+  assert(midiaAbre(pb->fonte[0].url) && midiaAbre(pb->fonte[1].url));
   assert(!strcmp(pb->sessao[0].sessaoId, "ps0001") && !strcmp(pb->fonte[0].provedor, "Jellyfin"));
   // Check-ins carry int64 ticks: 3 h = 108,000,000,000 ticks.
   free(controle("reset"));
@@ -183,6 +199,34 @@ static void testarProtocolo(void) {
   assert(strstr(ev, "108000000000") && strstr(ev, "\"Transcode\"") && strstr(ev, "\"release\""));
   free(ev);
   assert(jf_ticks(1.5) == 15000000LL && jf_seg(15000000LL) == 1.5);
+  // JELLYFIN 12 (legacy auth off): "ApiKey" still opens, "api_key" is 401.
+  free(controle("version?v=12.0.0"));
+  { JfConta c12 = c;
+    char velho[2048];
+    assert(jf_publico(base, NULL, &c12) == JF_OK && !strcmp(c12.versao, "12.0.0"));
+    assert(jf_apikey_moderna(&c12));
+    e = jf_playbackinfo(&c12, NULL, "00000000000000000000000c0ffee001", JF_BACKEND_WEBOS, pb);
+    assert(e == JF_OK && pb->n == 2);
+    assert(strstr(pb->fonte[0].url, "ApiKey=") && strstr(pb->fonte[1].url, "ApiKey="));
+    assert(midiaAbre(pb->fonte[0].url) && midiaAbre(pb->fonte[1].url));
+    snprintf(velho, sizeof velho, "%s", pb->fonte[0].url);
+    { char *k = strstr(velho, "ApiKey=");
+      size_t cauda = strlen(k + 7);
+      memmove(k + 8, k + 7, cauda + 1);
+      memcpy(k, "api_key=", 8); }
+    assert(!midiaAbre(velho));
+    // A server older than 10.8 only reads "api_key"; Emby always does.
+    free(controle("version?v=10.7.5"));
+    assert(jf_publico(base, NULL, &c12) == JF_OK && !jf_apikey_moderna(&c12));
+    e = jf_playbackinfo(&c12, NULL, "00000000000000000000000c0ffee001", JF_BACKEND_WEBOS, pb);
+    assert(e == JF_OK && strstr(pb->fonte[0].url, "api_key=") && !strstr(pb->fonte[0].url, "ApiKey="));
+    assert(midiaAbre(pb->fonte[0].url) && midiaAbre(pb->fonte[1].url));
+    c12.tipo = JF_TIPO_EMBY;
+    assert(!jf_apikey_moderna(&c12));
+    c12.tipo = JF_TIPO_JELLYFIN;
+    c12.versao[0] = 0;
+    assert(jf_apikey_moderna(&c12));
+    free(controle("version?v=10.10.3")); }
   // 401 after the server revokes the token.
   free(controle("revoke"));
   assert(jf_bibliotecas(&c, NULL, libs, 6) == JF_ERR_AUTH);

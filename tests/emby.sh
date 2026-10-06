@@ -29,7 +29,7 @@ cc "${flags[@]}" tests/emby.c src/jellyfin.c src/plex.c src/servidores.c src/red
   -o "$tmp/teste"
 "$tmp/teste" "$base" "$tmp/dados" > "$tmp/log" 2>&1 || { cat "$tmp/log"; exit 1; }
 # Logs carry operation/status/latency only: no token, private path, e-mail or address.
-if grep -nE 'embytoken|emby p.ssword|/srv/private|tok-fixture|X-Emby' "$tmp/log"; then
+if grep -nE 'embytoken|emby p.ssword|/srv/private|tok-fixture|X-Emby|api_key|ApiKey|Token=' "$tmp/log"; then
   echo 'secret leaked into the log' >&2; exit 1
 fi
 grep -c '^\[emby\]' "$tmp/log" | sed 's/^/emby log lines: /'

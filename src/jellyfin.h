@@ -23,8 +23,8 @@
 // telemetry or memory. That file is local storage, not a vault: on LG, Samsung
 // and Android without a keystore bridge it is as safe as the app's data dir.
 // The token goes in the Authorization header of API calls and, only because
-// the LG/Samsung pipelines cannot attach arbitrary headers, as api_key in
-// player URLs. Logs never print the token, the base path, the media path or
+// the LG/Samsung pipelines cannot attach arbitrary headers, in the query of
+// player URLs (ApiKey= on Jellyfin, api_key= on Emby: jf_anexar_apikey). Logs never print the token, the base path, the media path or
 // full titles: [jellyfin] lines carry operation, status and latency only.
 //
 // CONCURRENCY. Every request runs on a worker with a RedeJob from a group
@@ -146,6 +146,11 @@ int jf_ler_episodios(const JfConta *c, const char *corpo, size_t n, CatEp *out, 
 int jf_ler_playbackinfo(const JfConta *c, const char *itemLimpo, const char *corpo, size_t n,
                         JfPlayback *out);
 int jf_perfil_dispositivo(JfBackend b, char *json, size_t tam);
+// Token in player URLs: "ApiKey=" for Jellyfin 10.8+ and 12.x (12.0 refuses
+// the legacy "api_key=" in the query), "api_key=" for Emby and Jellyfin <10.8.
+// jf_anexar_apikey also renames a token the server already put in the URL.
+int  jf_apikey_moderna(const JfConta *c);
+void jf_anexar_apikey(const JfConta *c, char *url, size_t tam);
 int jf_playbackinfo(const JfConta *c, RedeJob *job, const char *itemId,
                     JfBackend b, JfPlayback *out);
 // evento: JF_REL_*; positions in seconds, converted to int64 ticks inside.

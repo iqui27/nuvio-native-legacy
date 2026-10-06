@@ -1,4 +1,5 @@
-"""Deterministic fake Jellyfin 10.10 for tests/jellyfin.sh.
+"""Deterministic fake Jellyfin for tests/jellyfin.sh: 10.10 by default,
+/control/version?v=12.0.0 (or 10.7.5) switches how the query token is read.
 
 Serves under a reverse-proxy prefix (/jf) so base paths are exercised. Never
 prints headers, tokens, passwords or payloads. Control routes (/control/*)
@@ -27,7 +28,15 @@ state = {
     "polls": 0,
     "slow": 0.0,
     "secret": "QcSecret0123456789",
+    "version": "10.10.3",
 }
+
+
+def ver_tuple():
+    try:
+        return tuple(int(x) for x in state["version"].split(".")[:2])
+    except ValueError:
+        return (0, 0)
 
 
 def movie_id(i):
@@ -95,6 +104,18 @@ class Handler(BaseHTTPRequestHandler):
         with lock:
             return tok in state["tokens"]
 
+    def query_token(self, q):
+        """Token from the query, the way each server version reads it.
+
+        12.0 turned legacy auth off: "api_key" is ignored there. 10.8+ reads
+        "ApiKey"; older servers only "api_key"."""
+        v = ver_tuple()
+        if "ApiKey" in q and v >= (10, 8):
+            return q["ApiKey"][0]
+        if "api_key" in q and v < (12, 0):
+            return q["api_key"][0]
+        return None
+
     def body(self):
         n = int(self.headers.get("Content-Length", "0") or 0)
         return json.loads(self.rfile.read(n) or b"{}") if n else {}
@@ -111,7 +132,7 @@ class Handler(BaseHTTPRequestHandler):
         dev, tok = self.auth()
         if p == "/System/Info/Public" and method == "GET":
             return self.reply(200, {"LocalAddress": "http://10.0.0.2:8096", "ServerName": "Home Server",
-                                    "Version": "10.10.3", "ProductName": "Jellyfin Server",
+                                    "Version": state["version"], "ProductName": "Jellyfin Server",
                                     "Id": SERVER_ID, "StartupWizardCompleted": True})
         if p == "/QuickConnect/Enabled" and method == "GET":
             return self.reply(200, raw=b"true")
@@ -151,6 +172,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {"User": {"Name": "ana", "Id": USER_ID, "ServerId": SERVER_ID,
                                              "Policy": {"Id": "nested-should-not-win"}},
                                     "AccessToken": "pwtoken0000000000000000000000002", "ServerId": SERVER_ID})
+        m = re.match(r"^/(?:Videos|videos)/([0-9a-f]{32})/(stream|master\.m3u8)$", p)
+        if m and method == "GET":
+            qt = self.query_token(q)
+            with lock:
+                ok = tok in state["tokens"] or qt in state["tokens"]
+                state["events"].append({"op": "media", "ok": ok, "route": m.group(2)})
+            return self.reply(200 if ok else 401, {"media": m.group(2)})
         if not self.authed():
             return self.reply(401)
         if p == "/Sessions/Logout" and method == "POST":
@@ -229,7 +257,9 @@ class Handler(BaseHTTPRequestHandler):
                                   {"Codec": "eac3", "Type": "Audio", "Channels": 6}]},
                 {"Protocol": "File", "Id": "%032x" % 77, "Container": "avi", "Name": "Film - old",
                  "SupportsDirectPlay": False, "SupportsDirectStream": False, "SupportsTranscoding": True,
-                 "TranscodingUrl": "/videos/%s/master.m3u8?MediaSourceId=%032x&PlaySessionId=ps0001" % (iid, 77),
+                 # 10.x servers embed the legacy name; 12.x embeds no token here.
+                 "TranscodingUrl": "/videos/%s/master.m3u8?MediaSourceId=%032x&PlaySessionId=ps0001%s" % (
+                     iid, 77, "" if ver_tuple() >= (12, 0) else "&api_key=" + (tok or "")),
                  "TranscodingSubProtocol": "hls",
                  "MediaStreams": [{"Codec": "mpeg4", "Type": "Video", "Height": 480},
                                   {"Codec": "mp3", "Type": "Audio", "Channels": 2}]}]})
@@ -255,6 +285,9 @@ class Handler(BaseHTTPRequestHandler):
                 body = b"{}"
             elif p == "/control/revoke":
                 state["tokens"].clear()
+                body = b"{}"
+            elif p == "/control/version":
+                state["version"] = q.get("v", ["10.10.3"])[0]
                 body = b"{}"
             elif p == "/control/slow":
                 state["slow"] = float(q.get("s", ["4"])[0])

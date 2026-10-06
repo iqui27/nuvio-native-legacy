@@ -28,7 +28,7 @@ cc "${flags[@]}" tests/jellyfin.c src/jellyfin.c src/rede.c src/redeurl.c src/js
   -o "$tmp/teste"
 "$tmp/teste" "$base" "$tmp/dados" > "$tmp/log" 2>&1 || { cat "$tmp/log"; exit 1; }
 # Logs carry operation/status/latency only: no token, password or media path.
-if grep -E 'pwtoken|qctoken|api_key|quoted|/srv/private|QcSecret' "$tmp/log"; then
+if grep -E 'pwtoken|qctoken|api_key|ApiKey|Token=|quoted|/srv/private|QcSecret' "$tmp/log"; then
   echo 'secret leaked into the log' >&2; exit 1
 fi
 grep -c '^\[jellyfin\]' "$tmp/log" | sed 's/^/jellyfin log lines: /'

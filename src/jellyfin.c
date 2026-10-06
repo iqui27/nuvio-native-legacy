@@ -625,10 +625,40 @@ int jf_perfil_dispositivo(JfBackend b, char *json, size_t tam) {
     nome, JF_TAXA_MAX, JF_TAXA_MAX, cont, vid, aud) < (int)tam;
 }
 
-static void anexarApiKey(char *url, size_t tam, const char *token) {
+// Which query name carries the token in player URLs. Jellyfin 12.0 turned the
+// legacy names off by default (EnableLegacyAuthorization=false): "api_key=" in
+// the query answers 401 there, and only "ApiKey=" is still read from the query
+// (the header path is unchanged). Jellyfin 10.8+ reads "ApiKey" as well, so it
+// is the name for every Jellyfin we can tell apart. Older Jellyfin (10.7 and
+// before) and Emby only know "api_key". An unknown version (empty or not
+// numeric) gets the modern name: anything that old is out of support.
+int jf_apikey_moderna(const JfConta *c) {
+  int maior = 0, menor = 0;
+  if (!c || c->tipo == JF_TIPO_EMBY) return 0;
+  if (sscanf(c->versao, "%d.%d", &maior, &menor) < 1 || maior <= 0) return 1;
+  return maior > 10 || (maior == 10 && menor >= 8);
+}
+
+// Appends the token to a player URL, or renames a token the server already
+// put there (a 10.x TranscodingUrl may say "api_key=") to the name this server
+// reads. Never logged: the caller wipes and never prints these URLs.
+void jf_anexar_apikey(const JfConta *c, char *url, size_t tam) {
+  const char *nome = jf_apikey_moderna(c) ? "ApiKey" : "api_key", *velho = jf_apikey_moderna(c) ? "api_key=" : "ApiKey=";
+  char *p;
   size_t n = strlen(url);
-  if (strstr(url, "api_key=") || strstr(url, "ApiKey=")) return;
-  snprintf(url + n, tam - n, "%sapi_key=%s", strchr(url, '?') ? "&" : "?", token);
+  for (p = url; (p = strstr(p, velho)) != NULL; p++) {
+    if (p == url || (p[-1] != '?' && p[-1] != '&')) continue;
+    // "api_key" and "ApiKey" differ in length: shift the tail.
+    { size_t lv = strlen(velho), ln = strlen(nome) + 1, cauda = strlen(p + lv);
+      if (n - lv + ln >= tam) return;
+      memmove(p + ln, p + lv, cauda + 1);
+      memcpy(p, nome, ln - 1);
+      p[ln - 1] = '=';
+      n = n - lv + ln; }
+  }
+  if (strstr(url, "?api_key=") || strstr(url, "&api_key=") || strstr(url, "?ApiKey=") || strstr(url, "&ApiKey="))
+    return;
+  snprintf(url + n, tam - n, "%s%s=%s", strchr(url, '?') ? "&" : "?", nome, c->token);
 }
 
 static void descreverFonte(const char *msi, const char *msf, Stream *s, int metodo,
@@ -748,7 +778,7 @@ int jf_ler_playbackinfo(const JfConta *c, const char *itemLimpo, const char *cor
         snprintf(sp->url, sizeof sp->url, "%s/emby%s", c->base, tr);
       else
         snprintf(sp->url, sizeof sp->url, "%s%s", c->base, tr);
-      anexarApiKey(sp->url, sizeof sp->url, c->token);
+      jf_anexar_apikey(c, sp->url, sizeof sp->url);
       copiar(s->url, sizeof s->url, sp->url);
       copiar(s->provedor, sizeof s->provedor, nomeSrv);
       s->fileIdx = -1;
