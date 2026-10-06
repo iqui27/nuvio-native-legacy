@@ -58,6 +58,7 @@ pause send scroll-text server-crash shield-check cpu log-out
 panel-left list-x bell audio-lines layers type sliders-horizontal book-open user-plus
 alarm-clock badge-check captions chart-column chevrons-down circle-check circle-dot compass droplet feather film funnel globe image image-plus inbox key key-round layout-list life-buoy link list-ordered list-video loader log-in map maximize-2 menu message-square monitor-play mouse-pointer move-horizontal pause picture-in-picture-2 play quote send server settings-2 shield sparkle stethoscope telescope thumbs-up unlink wand sparkles corner-up-left book-open-text
 pipette blend spotlight paint-roller
+trophy crosshair circle contrast hexagon ribbon
 "
 # A linha que comeca em "clock" e da ILHA DO RELOGIO (02/10, mockup aprovado em design/ilha):
 # os icones dos avisos (alerta, wifi, debrid baixando, Trakt desconectado...) e
@@ -72,6 +73,9 @@ pipette blend spotlight paint-roller
 # os discos da lista, as pecas da previa, capitulos e recursos do guia.
 # A ultima linha e da REGUA de cores (05/10): um desenho por dinamica (Da arte,
 # Gradiente, Imersiva, Textura), que antes mostravam todas a mesma miniatura.
+# A linha "trophy" e da CACA (06/10, plano social-pessoal secao 8): o trofeu do
+# aviso de conquista na ilha, a mira do "Cacar" e as cinco formas dos degraus
+# (circulo, meia-lua, hexagono, estrela, fita) da legenda da tela Caca.
 # Conferencia: todo aj_* citado em src/ tem de estar em NOMES, e todo NOMES
 # tem de ser citado — senao sobra PNG morto no pacote ou falta icone na tela
 # (gfx_icone falha em silencio).

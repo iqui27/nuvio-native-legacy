@@ -771,7 +771,12 @@ static void avisar(int i, int extras) {
   if (extras > 0)
     snprintf(onde, sizeof onde, i18n("Você viu %d de %d · +%d conquistas"), s->i.vistos,
              s->i.total, extras);
-  else
+  else if (s->i.total > 0 && s->i.vistos >= s->i.total) {
+    char anos[40] = "";
+    if (s->i.anoIni > 0)
+      snprintf(anos, sizeof anos, " \xc2\xb7 %ld\xe2\x80\x93%ld", s->i.anoIni, s->i.anoFim);
+    snprintf(onde, sizeof onde, i18n("Você viu todos os %d%s"), s->i.total, anos);
+  } else
     snprintf(onde, sizeof onde, i18n("Você viu %d de %d"), s->i.vistos, s->i.total);
   memset(&a, 0, sizeof a);
   a.icone = "aj_trophy";
