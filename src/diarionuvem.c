@@ -290,10 +290,14 @@ void diarionuvem_definir(int ligado) {
 }
 
 void diarionuvem_perguntar_se_preciso(void) {
-  static IlhaModal m;
-  IlhaAvisoEx a;
   if (!diarionuvem_disponivel() || diario_nuvem_estado(0) != DIARIO_NUVEM_NAO_PERGUNTADO) return;
   if (diario_n(0) <= 0 || ilha_tem("diario-cofre")) return;
+  diarionuvem_mostrar_pergunta();
+}
+
+void diarionuvem_mostrar_pergunta(void) {
+  static IlhaModal m;
+  IlhaAvisoEx a;
   memset(&m, 0, sizeof m);
   memset(&a, 0, sizeof a);
   snprintf(m.kicker, sizeof m.kicker, "%s", i18n("Diário"));

@@ -62,6 +62,8 @@ void dormiu_negar(const DiarioEntrada *e);       // Nao dormi
 // --- ilha (dormiuilha.c) -------------------------------------------------------
 // Laco principal: pergunta quando a pagina do titulo esta assentada.
 void dormiu_passo(void);
+// A pergunta em si (dormiu_passo chama; a captura tambem).
+void dormiu_perguntar(const char *titulo, const char *poster, const char *arte, const DiarioEntrada *e);
 // Botao do modal "dormiu:<id>" (ilhasinais.c entrega). 1 Voltar, 2 Nao dormi.
 void dormiu_acao(const char *chave, int botao);
 

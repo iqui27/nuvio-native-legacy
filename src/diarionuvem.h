@@ -15,6 +15,8 @@
 void diarionuvem_passo(void);
 // A tela de Perfil e Stats abriu: faz a pergunta de primeira vez, se couber.
 void diarionuvem_perguntar_se_preciso(void);
+// A pergunta em si, sem as condicoes (a captura usa).
+void diarionuvem_mostrar_pergunta(void);
 // Botao do modal "diario-cofre" (ilhasinais.c). 1 Guardar, 2 Agora nao.
 void diarionuvem_acao(int botao);
 // Ajustes: 1 liga, 0 desliga (e apaga no servidor). Perfil ativo.

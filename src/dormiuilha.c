@@ -32,7 +32,7 @@ static void anotar(const char *id) {
   snprintf(perguntados[nPerg++], sizeof perguntados[0], "%s", id);
 }
 
-static void perguntar(const CatItem *ci, const DiarioEntrada *e) {
+void dormiu_perguntar(const char *titulo, const char *poster, const char *arte, const DiarioEntrada *e) {
   static IlhaModal m;     // a ilha copia; estatico so para nao pesar a pilha
   IlhaAvisoEx a;
   char chave[48], forte[200], texto[320], rot[16], ep[24];
@@ -42,19 +42,19 @@ static void perguntar(const CatItem *ci, const DiarioEntrada *e) {
   ep[0] = 0;
   if (e->temporada || e->episodio) snprintf(ep, sizeof ep, "T%dE%d · ", e->temporada, e->episodio);
   snprintf(chave, sizeof chave, "dormiu:%s", e->id);
-  snprintf(texto, sizeof texto, i18n("Você pegou no sono em %s?"), ilha_forte(forte, sizeof forte, ci->titulo));
+  snprintf(texto, sizeof texto, i18n("Você pegou no sono em %s?"), ilha_forte(forte, sizeof forte, titulo));
   snprintf(m.kicker, sizeof m.kicker, "%s", i18n("Pegou no sono"));
-  snprintf(m.titulo, sizeof m.titulo, "%s", ci->titulo);
+  snprintf(m.titulo, sizeof m.titulo, "%s", titulo);
   snprintf(m.linha, sizeof m.linha, "%s%s ~%s", ep, i18n("Você parou de mexer no controle por volta de"), rot);
   snprintf(m.texto, sizeof m.texto, "%s", i18n("Voltar põe a retomada ali. Só você vê isto."));
-  snprintf(m.arte, sizeof m.arte, "%s", ci->backdrop[0] ? ci->backdrop : ci->poster);
+  snprintf(m.arte, sizeof m.arte, "%s", arte && arte[0] ? arte : (poster ? poster : ""));
   m.tipo = ILHA_ACENTO;
   m.nBotoes = 2;
   snprintf(m.botao[0], sizeof m.botao[0], "%s ~%s", i18n("Voltar para"), rot);
   snprintf(m.botaoIcone[0], sizeof m.botaoIcone[0], "aj_rotate-ccw-clock");
   snprintf(m.botao[1], sizeof m.botao[1], "%s", i18n("Não dormi"));
   a.chave = chave; a.tipo = ILHA_ACENTO; a.icone = "aj_moon";
-  a.texto = texto; a.ms = 12000u; a.modal = &m; a.capa = ci->poster;
+  a.texto = texto; a.ms = 12000u; a.modal = &m; a.capa = poster;
   ilha_avisar_ex(&a);
   aberta.ativo = 1; aberta.e = *e;
 }
@@ -74,7 +74,7 @@ void dormiu_passo(void) {
   diario_separar_id(ci->imdb, id, sizeof id, NULL, NULL);
   if (jaPerguntou(id) || !dormiu_suspeita(id, &e) || e.dormiuSeg <= 0) return;
   anotar(id);
-  perguntar(ci, &e);
+  dormiu_perguntar(ci->titulo, ci->poster, ci->backdrop, &e);
 }
 
 void dormiu_acao(const char *chave, int botao) {
