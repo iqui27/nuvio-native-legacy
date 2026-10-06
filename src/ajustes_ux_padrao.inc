@@ -228,3 +228,4 @@
   0, /* clock format: 24 horas */
   0, 0, /* automatic source size range: max and min, Sem limite */
   0, /* support the project (Sobre e ajuda): action */
+  1, /* save diary to account: mirror of diarionuvem.c, Desligado until the person says yes */

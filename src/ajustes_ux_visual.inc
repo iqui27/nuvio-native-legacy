@@ -153,6 +153,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_LOGO_APP: return "aj_image";
     case AJ_ABERTURA: return "aj_clapperboard";
     case AJ_DISCORD: return "aj_message-square";
+    case AJ_DIARIO_NUVEM: return "aj_cloud";
     case AJ_ANIM: return "aj_activity";
     case AJ_ENQUETES: return "aj_bell";
     case AJ_BUSCA_CINEMETA: return "aj_list-x";

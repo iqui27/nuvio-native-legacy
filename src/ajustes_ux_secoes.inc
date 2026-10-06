@@ -235,7 +235,7 @@ static int ajCenaSecao(int op) {
       return AJC_CON_PERFIS;
     case AJ_ADDONS: case AJ_PLUGINS: case AJ_ADDONS_PRINCIPAL: return AJC_FON_ADDONS;
     case AJ_ENQUETES: return AJC_CON_AVISOS;
-    case AJ_DISCORD: case AJ_SALVOS_DEST: case AJ_CW_FONTE: return AJC_CON_SOCIAL;
+    case AJ_DISCORD: case AJ_SALVOS_DEST: case AJ_CW_FONTE: case AJ_DIARIO_NUVEM: return AJC_CON_SOCIAL;
     case AJ_DEBRID_RD: case AJ_DEBRID_TB: case AJ_DEBRID_PM: case AJ_DEBRID_AD: case AJ_DEBRID_AD_TESTAR:
       return AJC_CON_CHAVES;
     case AJ_P2P_LIGADO: case AJ_P2P_URL: case AJ_P2P_TESTAR: return AJC_CON_P2P;
@@ -1116,26 +1116,37 @@ static void ajcConAvisos(int A) {
 static void ajcConSocial(int A) {
   char marca[1200];
   ajCenaArte(ajArte(AJA_FUNDO, A), (GfxRect){ ajc.x, ajc.y, 640 * ajc.s, ajc.h }, 22, 0.64f);
-  CVID(36, 30, 568, 120, 22);
+  CVID(36, 30, 568, 110, 22);
   gfx_cor(CR(56, 50, 36, 36), 0.5f, 0.345f, 0.396f, 0.949f, 1);
   CICON("aj_message-square", 64, 58, 20, 0.95f);
   ajcTxt("Discord", 13, 1, 104, 56, 200, 1); ajcTxt(textoValor(AJ_DISCORD), 11, 0, 104, 76, 200, 0.6f);
-  CIMG(ajArte(AJA_POSTER, A), 380, 44, 60, 90, 8, ajEstadoLigado(AJ_DISCORD) ? 1.0f : 0.5f);
+  CIMG(ajArte(AJA_POSTER, A), 380, 40, 60, 90, 8, ajEstadoLigado(AJ_DISCORD) ? 1.0f : 0.5f);
   ajcTxt("Assistindo", 11, 0, 452, 56, 140, 0.6f); ajcTxt(ajTituloN(A), 13, 1, 452, 74, 140, 1);
   gfx_cor(CR(452, 104, 130, 4), 0.5f, 1, 1, 1, 0.2f); gfx_cor(CR(452, 104, 60, 4), 0.5f, 0.345f, 0.396f, 0.949f, 1);
-  ajcFoco(AJ_DISCORD, 36, 30, 568, 120, 22);
-  CVID(36, 168, 276, 164, 22);
-  CICON("aj_bookmark", 56, 188, 26, 0.9f);
-  ajcTxt(rotuloOpcao(AJ_SALVOS_DEST), 11, 0, 56, 230, 236, 0.6f);
-  ajcTxt(textoValor(AJ_SALVOS_DEST), 15, 1, 56, 250, 236, 1);
-  ajcFoco(AJ_SALVOS_DEST, 36, 168, 276, 164, 22);
-  CVID(328, 168, 276, 164, 22);
-  CICON("aj_rotate-ccw-clock", 348, 188, 26, 0.9f);
+  ajcFoco(AJ_DISCORD, 36, 30, 568, 110, 22);
+  CVID(36, 152, 276, 120, 22);
+  CICON("aj_bookmark", 56, 170, 26, 0.9f);
+  ajcTxt(rotuloOpcao(AJ_SALVOS_DEST), 11, 0, 56, 212, 236, 0.6f);
+  ajcTxt(textoValor(AJ_SALVOS_DEST), 15, 1, 56, 232, 236, 1);
+  ajcFoco(AJ_SALVOS_DEST, 36, 152, 276, 120, 22);
+  CVID(328, 152, 276, 120, 22);
+  CICON("aj_rotate-ccw-clock", 348, 170, 26, 0.9f);
   snprintf(marca, sizeof marca, "%s/marcas/trakt_wordmark.png", uxDirArte);
-  ajLogo(marca, CX(500), CY(190), 84 * ajc.s, 24 * ajc.s, 0.9f);
-  ajcTxt(rotuloOpcao(AJ_CW_FONTE), 11, 0, 348, 230, 236, 0.6f);
-  ajcTxt(textoValor(AJ_CW_FONTE), 15, 1, 348, 250, 236, 1);
-  ajcFoco(AJ_CW_FONTE, 328, 168, 276, 164, 22);
+  ajLogo(marca, CX(500), CY(172), 84 * ajc.s, 24 * ajc.s, 0.9f);
+  ajcTxt(rotuloOpcao(AJ_CW_FONTE), 11, 0, 348, 212, 236, 0.6f);
+  ajcTxt(textoValor(AJ_CW_FONTE), 15, 1, 348, 232, 236, 1);
+  ajcFoco(AJ_CW_FONTE, 328, 152, 276, 120, 22);
+  // Guardar o Diario na conta: so existe com o servico no pacote e sessao.
+  if (diarionuvem_disponivel()) {
+    float al = ON(AJ_DIARIO_NUVEM);
+    CVID(36, 286, 568, 46, 18);
+    CICON("aj_cloud", 54, 297, 24, 0.9f * al + 0.1f);
+    ajcTxt(rotuloOpcao(AJ_DIARIO_NUVEM), 13, 1, 94, 295, 330, 1);
+    ajcTxt(textoValor(AJ_DIARIO_NUVEM), 11, 0, 94, 313, 330, 0.6f);
+    gfx_cor(CR(530, 301, 54, 16), 0.5f, 1, 1, 1, 0.12f);
+    CACC(lig(AJ_DIARIO_NUVEM) ? 560 : 534, 303, 20, 12, lig(AJ_DIARIO_NUVEM) ? 1.0f : 0.5f);
+    ajcFoco(AJ_DIARIO_NUVEM, 36, 286, 568, 46, 18);
+  }
 }
 // Debrid: o cofre, uma linha por servico com o estado da chave. As chaves do
 // MDBList e do Fanart moram junto do que elas liberam (Notas, De onde vem a arte).

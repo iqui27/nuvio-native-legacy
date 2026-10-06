@@ -138,7 +138,7 @@ static const Item TELA[] = {
       OPC(AJ_PERFIL_ATIVO), OPC(AJ_SYNC),
       OPC(AJ_PERFIL_PESQ), OPC(AJ_PERFIL_EDITAR), OPC(AJ_SAIR),
     ROT("Trakt e Simkl"),
-      OPC(AJ_TRAKT), OPC(AJ_SIMKL), OPC(AJ_SALVOS_DEST), OPC(AJ_CW_FONTE), OPC(AJ_DISCORD),
+      OPC(AJ_TRAKT), OPC(AJ_SIMKL), OPC(AJ_SALVOS_DEST), OPC(AJ_CW_FONTE), OPC(AJ_DISCORD), OPC(AJ_DIARIO_NUVEM),
     ROT("Notificações"), OPC(AJ_ENQUETES),
 
   SEC("Desempenho desta TV", "Resolução, imagens, efeitos e diagnóstico", "aj_monitor-cog"),

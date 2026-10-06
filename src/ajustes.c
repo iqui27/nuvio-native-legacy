@@ -35,6 +35,7 @@
 #include "traktauth.h"
 #include "simklauth.h"
 #include "discord.h"
+#include "diarionuvem.h"
 #include "simkl.h"
 #include "qr.h"
 #include "atualizacao.h"
@@ -421,6 +422,9 @@ typedef enum {
   // APOIAR O PROJETO (Sobre e ajuda, apoio.h): a previa mostra os QRs do
   // Patreon e do Ko-fi. Acao, sem valor. No fim: valor[]/CHAVE[] posicionais.
   AJ_APOIAR,
+  // DIARIO NA CONTA (diarionuvem.h): espelho do modulo do diario, nada guardado
+  // aqui (chave com "-"). No fim: valor[]/CHAVE[] posicionais.
+  AJ_DIARIO_NUVEM,
   AJ_N
 } OpcaoId;
 
@@ -1183,6 +1187,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Tamanho máximo",                  V_TAMANHO_GB, 7),       // local: tamanhoMaxLocal
   ESC("Tamanho mínimo",                  V_TAMANHO_GB, 7),       // local: tamanhoMinLocal
   ACAO("Apoiar o projeto"),
+  ESC("Guardar diário na conta",         V_LIGA, 2),          // espelho de diarionuvem.c
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -1381,6 +1386,7 @@ static const char *CHAVE[] = {
   "relogio12hLocal",
   "tamanhoMaxLocal", "tamanhoMinLocal",
   "-apoiar",
+  "-diarioNuvem",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -4543,6 +4549,7 @@ static int visivel(int i) {
   if (TELA[i].tipo == IT_OPC) {
     int op = TELA[i].op;
     if ((op == AJ_PERFIL_PESQ || op == AJ_PERFIL_EDITAR) && !recomenda_ativo()) return 0;
+    if (op == AJ_DIARIO_NUVEM && !diarionuvem_disponivel()) return 0;
     if (uxAvancada(op) && !lig(AJ_AVANCADAS)) return 0;
   }
   return 1;
@@ -4887,6 +4894,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_PLUGINS: return "Scrapers em JavaScript dos repositórios de plugins do Nuvio, como mais uma fonte na lista, ao lado dos add-ons. Os repositórios vêm da sua conta. Desligado por padrão.";
     case AJ_TRAKT: return "Conecta a sua conta do Trakt para marcar o que assistiu e usar a sua lista.";
     case AJ_SIMKL: return "Conecta a sua conta do Simkl, uma alternativa ao Trakt para acompanhar séries.";
+    case AJ_DIARIO_NUVEM: return "Guarda o seu Diário na sua conta do Nuvio Legacy, para não perder ao trocar de TV. Só você vê. Desligar apaga a cópia da conta.";
     case AJ_DISCORD: return "Mostra no seu perfil do Discord o que você está assistindo, com o cartaz e o tempo. Só sai alguma coisa enquanto um vídeo toca neste perfil.";
     case AJ_SAIR: return "Sai da conta nesta TV e apaga daqui a sessão, os addons e o progresso guardados.";
     case AJ_ESPACO: return "Uso atual de memória pelo cache de imagens, não espaço ocupado no armazenamento da TV.";
@@ -5584,6 +5592,11 @@ static int definirValorDireto(int op, int novo) {
     pessoas_definir_pesquisavel(novo == 0);
     return 1;
   }
+  if (op == AJ_DIARIO_NUVEM) {
+    diarionuvem_definir(novo == 0);
+    valor[op] = diarionuvem_ligado() ? 0 : 1;
+    return 1;
+  }
   antes = valor[op];
   if (novo == antes) return 1;
   valor[op] = novo;
@@ -5855,6 +5868,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   if (uxAviso[0] && SDL_TICKS_PASSED(agora, uxAvisoAte)) uxAviso[0] = 0;
   montarTela();
   valor[AJ_PERFIL_PESQ] = recomenda_pesquisavel() ? 0 : 1;   // V_LIGA: 0 = Ligado
+  valor[AJ_DIARIO_NUVEM] = diarionuvem_ligado() ? 0 : 1;
   p2pTesteRecolher();
   pstTesteRecolher();
   adTesteRecolher();
@@ -6476,7 +6490,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_PERFIL_ATIVO: case AJ_SYNC: case AJ_SAIR:
     case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_ADDONS_PRINCIPAL: case AJ_ENQUETES:
       return AJPV_CONTA;
-    case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD:
+    case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_DIARIO_NUVEM:
       return AJPV_RASTREIO;
     case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_NOVIDADES20: case AJ_APOIAR:
     case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO:
