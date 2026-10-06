@@ -169,7 +169,8 @@ int main(int argc, char **argv) {
     e.flags = DIARIO_F_DORMIU_SUS | DIARIO_F_PARCIAL; e.quando = agora;
     dormiu_perguntar("Duna: Parte Dois", "deploy/app/art/poster/02.jpg", "deploy/app/art/02.jpg", &e);
     quadroIlha(80, "3-dormiu-pilula", 200);
-    assert(ilha_modal_abrir());
+    { SDL_Event ev; memset(&ev, 0, sizeof ev); ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_s;
+      assert(ilha_evento(&ev)); }  // AZUL: o aviso abre o proprio modal
     quadroIlha(90, "4-dormiu-modal", 760);
     ilha_modal_fechar(1);
     while (ilha_aviso_vez()[0]) ilha_retirar(ilha_aviso_vez());
@@ -178,7 +179,8 @@ int main(int argc, char **argv) {
     e.temporada = 1; e.episodio = 6; e.dormiuSeg = 1500; snprintf(e.id, sizeof e.id, "tt9000003");
     dormiu_perguntar("Ruptura", "deploy/app/art/poster/03.jpg", "deploy/app/art/03.jpg", &e);
     quadroIlha(40, NULL, 0);
-    assert(ilha_modal_abrir());
+    { SDL_Event ev; memset(&ev, 0, sizeof ev); ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_s;
+      assert(ilha_evento(&ev)); }
     quadroIlha(90, "5-dormiu-modal-episodio", 760);
     ilha_modal_fechar(1);
     while (ilha_aviso_vez()[0]) ilha_retirar(ilha_aviso_vez());
