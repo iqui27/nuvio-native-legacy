@@ -66,6 +66,7 @@ static int nFila;
 static int recarregarPend[NPERFIS];
 static struct { DiarioOuvinte fn; void *ctx; } ouv[OUV_MAX];
 static int nuvemLida;
+static unsigned donoHash;       // 0 = sem conta
 
 long long diario_relogio_teste;     // != 0 congela o relogio (testes)
 static long long agora(void) {
@@ -393,6 +394,25 @@ static void recalcularReverTudo(Loja *L) {
   free(ord);
 }
 
+static unsigned hashStr(const char *s);
+void diario_dono(const char *conta) {
+  unsigned h = (conta && conta[0]) ? hashStr(conta) : 0;
+  pthread_mutex_lock(&trava);
+  if (h != donoHash) {
+    int p;
+    donoHash = h;
+    // Outra conta: o que estava carregado nao vale mais.
+    for (p = 0; p < NPERFIS; p++) {
+      unsigned g = lojas[p].geracao;
+      free(lojas[p].ent); free(lojas[p].tit); free(lojas[p].hash);
+      memset(&lojas[p], 0, sizeof lojas[p]);
+      lojas[p].geracao = g + 1;
+    }
+    nFila = 0; nuvemLida = 0;
+  }
+  pthread_mutex_unlock(&trava);
+}
+
 static const char *nomeArquivo(int p, char *buf, size_t tam) {
   snprintf(buf, tam, "diario-p%d.txt", p);
   return buf;
@@ -423,6 +443,14 @@ static Loja *carregar(int p) {
   refazerHash(L);
   b = dados_ler(nomeArquivo(p, nome, sizeof nome));
   if (!b) return L;
+  { unsigned dono = 0;
+    if (!strncmp(b, "# nuvio diario v1", 17)) {
+      const char *d = strstr(b, "dono=");
+      const char *nl = strchr(b, '\n');
+      if (d && (!nl || d < nl)) dono = (unsigned)strtoul(d + 5, NULL, 16);
+    }
+    if (dono != donoHash) { free(b); return L; }   // de outra conta: nao e deste perfil
+  }
   for (s = b; s && *s;) {
     char *nl = strchr(s, '\n');
     DiarioEntrada d;
@@ -974,7 +1002,7 @@ static char *montarArquivo(Loja *L) {
   char *b = malloc(cap);
   int i;
   if (!b) return NULL;
-  k = (size_t)snprintf(b, cap, "# nuvio diario v1\n");
+  k = (size_t)snprintf(b, cap, "# nuvio diario v1 dono=%08x\n", donoHash);
   for (i = 0; i < L->n; i++) {
     DiarioEntrada d;
     paraPublica(L, &L->ent[i], &d);

@@ -16,6 +16,9 @@
 #include "teclado.h"
 #include "ponteiro.h"
 #include "app.h"
+#include "diario.h"
+#include "diariofontes.h"
+#include "dormiu.h"
 #include "descanso.h"
 #include "iconeapp.h"
 #include "logoapp.h"
@@ -1599,6 +1602,9 @@ int app_iniciar(const char *dirArte) {
   recomenda_iniciar();
   ilhasinais_iniciar();  // a saude da rede passa a ouvir os pedidos (ilha, 02/10)
   atividade_iniciar();   // a fila de POST /v1/atividade que nao saiu (atividade.h)
+  diario_dono(sessao_usuario());   // arquivo de outra conta nao e lido
+  diario_iniciar();      // o Diario por perfil (diario.h), carregado sob demanda
+  dormiu_iniciar();      // a sessao que morreu tocando vira suspeita de sono
   // O envio da atividade segue o nivel de privacidade (alcance) do Social: a
   // funcao e chamada agora e a cada mudanca; "nao perguntado" chega como 0.
   recomenda_ao_mudar_alcance(atividade_definir_permitido);
@@ -1828,8 +1834,10 @@ void app_evento(const SDL_Event *e) {
   if (e->type == SDL_QUIT) { sair = 1; return; }
   ilhacart_validar_identidade();
   // Qualquer gesto da pessoa: a atividade ao vivo da ilha conta 30 min daqui.
-  if (e->type == SDL_KEYDOWN || e->type == SDL_MOUSEBUTTONDOWN || e->type == SDL_MOUSEWHEEL)
+  if (e->type == SDL_KEYDOWN || e->type == SDL_MOUSEBUTTONDOWN || e->type == SDL_MOUSEWHEEL) {
     ilhacart_tecla(SDL_GetTicks());
+    dormiu_tecla();   // "Pegou no sono": qualquer gesto fecha o vao sem tecla
+  }
 
   // A explicacao de primeira abertura bloqueia o restante da interface ate
   // ser reconhecida ou fechada. Ela aparece na Home, mas pertence ao fluxo de
@@ -2817,6 +2825,13 @@ void app_atualizar(float dt, Uint32 agora) {
     int qual = 0, o;
     ilhacart_atualizar(agora, ab && ab->imdb[0] ? ab->imdb : NULL);
     ilhasinais_passo(agora);
+    // DIARIO: ouvintes, gravacao com folga, vistos da conta, nomes do titulo
+    // aberto e a pergunta do "Pegou no sono" na pagina do titulo.
+    diario_dono(sessao_usuario());   // troca de conta solta o que estava carregado
+    diario_passo();
+    diariofontes_passo();
+    if (ab && detail_assentado()) diariofontes_nome(ab);
+    dormiu_passo();
     // O "Reconectar" do Trakt (modal da ilha): Ajustes, na linha do Trakt.
     if (ilhasinais_pediu_trakt() && !player_aberto()) {
       if (detail_aberto()) detail_fechar_seco();
@@ -4514,6 +4529,7 @@ int app_central_pode(void) {
 
 void app_encerrar(void) {
   avisos_encerrar();   // saida limpa: apaga a marca de sessao viva
+  diario_gravar_agora();
   if (fioFonteVivo) {
     // O encerramento acontece depois do laco de desenho: aqui podemos
     // aguardar o transporte para fechar player/AVPlay e os demais modulos em

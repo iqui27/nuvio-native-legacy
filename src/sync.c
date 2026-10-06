@@ -1,5 +1,6 @@
 void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's token
 #include "sync.h"
+#include "diario.h"
 #include <time.h>
 #include "sessao.h"
 #include "nuvem.h"
@@ -1947,6 +1948,10 @@ void sync_esquecer_usuario(void) {
   desc_loc_apagar();
   // O mapa de episodios vistos e da conta que saiu, como todo o resto.
   vistoep_esquecer();
+  // O Diario: grava o que falta e solta a memoria; os arquivos ficam marcados
+  // com a conta e outra conta nao os le (diario_dono).
+  diario_esquecer();
+  diario_dono("");
   // O jornal da conta sai da MEMORIA; o arquivo (por usuario, so ids) fica
   // para quando ESTA pessoa voltar — e o que ainda nao subiu nao se perde.
   contapend_esquecer();

@@ -1,5 +1,6 @@
 // Ver reacao.h.
 #include "reacao.h"
+#include "diario.h"
 #include "atividade.h"
 #include "ajustes.h"
 #include "anim.h"
@@ -272,6 +273,10 @@ void reacao_responder(const char *imdb, int v) {
   atividade_reacao(r->imdb, r->midia, r->titulo,
                    c.imdb[0] && !strcmp(c.imdb, r->imdb) ? c.poster : "", v, r->rec);
   nota = reacao_nota_trakt(v);
+  // O DIARIO guarda a nota sempre (8/5/2, a escala de 1 a 10 das estrelas):
+  // e a mesma resposta, so que local e por perfil, com ou sem Trakt.
+  diario_avaliar(0, r->imdb, !strcmp(r->midia, "series") ? DIARIO_SERIE : DIARIO_FILME,
+                 diario_nota_da_reacao(v));
   // SO COM O TRAKT LIGADO. Sem ele a resposta fica nesta TV (e no servico,
   // se a pessoa permitiu) e o Trakt nao fica sabendo — e e o certo.
   if (nota && trakt_ativo()) trakt_avaliar(r->imdb, r->midia, nota);

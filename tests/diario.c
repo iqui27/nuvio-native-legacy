@@ -235,6 +235,19 @@ int main(void) {
     assert((double)(clock() - c0) / CLOCKS_PER_SEC < 1.0); }
   perfilAtivo = 1;
 
+  // 16. Dono: o arquivo de outra conta nao e lido; a volta da conta reencontra.
+  perfilAtivo = 1;
+  { int n1;
+    diario_dono("conta-a");
+    e = ent("tt9001", 'p', T0); assert(diario_adicionar(0, &e) == 1);
+    n1 = diario_n(0); assert(n1 == 1);
+    diario_gravar_agora();
+    diario_dono("conta-b");
+    assert(diario_n(0) == 0);
+    diario_dono("conta-a");
+    assert(diario_n(0) == n1);
+    diario_dono(""); }
+
   // 15. Nomes: compartilhados, sobrevivem ao arquivo, TAB nao quebra a linha.
   { char tit[160], pos[512]; int ano;
     diario_nome_definir("tt0111161:1:2", "Um\tSonho", 1994, "https://img/x.jpg");

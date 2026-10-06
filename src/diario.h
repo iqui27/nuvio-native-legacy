@@ -128,6 +128,11 @@ void diario_iniciar(void);          // depois de dados_iniciar
 // anda a fila do cofre. Custo de quadro ocioso: duas leituras atomicas.
 void diario_passo(void);
 void diario_esquecer(void);         // logout: solta a memoria (NAO apaga arquivos)
+// A CONTA dona dos arquivos (sessao_usuario()). Gravado como hash no cabecalho
+// do diario-p<N>.txt; arquivo de OUTRA conta e ignorado (e sobrescrito na
+// proxima gravacao) — os perfis sao por indice, e o perfil 1 de quem entrou
+// nao pode ler o diario do perfil 1 de quem saiu. "" = sem conta.
+void diario_dono(const char *conta);
 void diario_gravar_agora(void);     // saida do app
 
 // --- escrita ---------------------------------------------------------------

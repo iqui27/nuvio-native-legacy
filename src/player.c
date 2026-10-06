@@ -26,6 +26,7 @@
 //      congelado sem saber o que houve.
 #include "horafmt.h"
 #include "player.h"
+#include "diariofontes.h"
 #include "ilhacart.h"
 #include "idbase.h"
 #include "dados.h"
@@ -1575,6 +1576,8 @@ static void fecharSessao(int manter) {
       recomenda_atividade_fim(ci, concluiu);
       // A PARADA para o Social: fim, abandono (< 20%) ou progresso.
       atividade_player_saiu(pos, duracaoSeg, concluiu);
+      // O DIARIO (vez vista) e o "Pegou no sono": locais, sempre.
+      diariofontes_player_saiu(pos, duracaoSeg, concluiu);
       // O CHECK NA LISTA, LOCALMENTE E AGORA — a outra metade do #100.
       //
       // O relato e preciso: "mostra a barra de progresso mas nao fica com o
@@ -2893,6 +2896,8 @@ void player_atualizar(float dt, Uint32 agora) {
         double cr = credEfetivo();
         atividade_player_passo(ci, epT, epE, posSeg, duracaoSeg, tocando && !scrubbing,
                                concluiuAgora(cr), dt);
+        diariofontes_player_passo(ci, epT, epE, posSeg, duracaoSeg, tocando && !scrubbing,
+                                  concluiuAgora(cr), dt);
       }
     }
     // #202: confere que o pipeline anda na velocidade pedida antes de usa-la.

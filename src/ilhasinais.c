@@ -1,5 +1,6 @@
 // Sinais da ilha do relogio — ver ilhasinais.h.
 #include "ilhasinais.h"
+#include "dormiu.h"
 #include "ilha.h"
 #include "ilhasalvar.h"
 #include "ilhacart.h"
@@ -43,6 +44,7 @@ static void acoes(void) {
   if (!strcmp(chave, ILHA_ACAO_CHAVE)) { ilhaacao_botao(b); return; }
   if (!strncmp(chave, "salvar:", 7)) { ilhasalvar_acao(chave, b); return; }
   if (!strncmp(chave, "enquete:", 8)) { enquete_acao(chave, b); return; }
+  if (!strncmp(chave, "dormiu:", 7)) { dormiu_acao(chave, b); return; }
   if (!strncmp(chave, "pedido:", 7)) {
     // O fio social pode estar ocupado (uma releitura em voo): a resposta fica
     // guardada e sai na proxima volta, em vez de se perder em silencio.
