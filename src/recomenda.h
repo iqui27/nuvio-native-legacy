@@ -507,6 +507,9 @@ void rec_nome_exibicao(char *dst, size_t tam, const char *nome, const char *id);
 
 // O meu nome como os amigos o veem (resposta do servidor; "" antes do 1o ciclo).
 const char *recomenda_meu_nome(void);
+// O id social deste perfil ("nuvio:<sub>" ou "nuvio:<sub>:<n>"), "" antes do
+// primeiro /v1/eu. O Watch Together reconhece a propria cadeira na sala por ele.
+const char *recomenda_meu_id(void);
 // O que eu digitei como nome de exibicao ("" = uso o nome do perfil).
 const char *recomenda_minha_exibicao(void);
 // Enfileira POST /v1/eu/nome. "" volta ao nome do perfil. 1 = enfileirou.

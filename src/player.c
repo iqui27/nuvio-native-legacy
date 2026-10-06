@@ -26,6 +26,7 @@
 //      congelado sem saber o que houve.
 #include "horafmt.h"
 #include "player.h"
+#include "juntos.h"
 #include "ilhacart.h"
 #include "idbase.h"
 #include "dados.h"
@@ -1297,6 +1298,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
 
 int player_aberto(void)    { return aberto; }
 int player_quer_sair(void) { return pediuSair; }
+void player_sair(void) { if (aberto) { saindo = 1; pediuSair = 1; } }
 
 // --- PRE-BUSCA DA LEGENDA ASS ANTES DO VIDEO (#92, v1.4.7) -------------------
 //
@@ -2207,6 +2209,9 @@ static void alternarTocando(void) {
   // Canal sem janela de tempo nao pausa (ver avPodePausar): a tecla fisica de
   // Pause tambem cai aqui, e congelar um ao vivo so desincroniza o som.
   if (ehCanal() && !avPodePausar()) return;
+  // WATCH TOGETHER: com a sala aberta, play/pausa e da SALA. Quem pausa o
+  // video e o motor (juntos.c), pelo relogio comum; aqui so sai o pedido.
+  if (!ehCanal() && juntos_ao_alternar(tocando)) { retomandoSalto = 0; return; }
   retomandoSalto = 0;
   tocando = !tocando;
   if (comVideo) video_pausar(!tocando);
@@ -2462,10 +2467,27 @@ static void terminarSalto(void) {
   retomandoSalto = scrubTocava;
   pausao_fechar();
   seekr_ocioso();   // solta a folha decodificada (~22 MB), fica o JPEG
+  // Com a sala aberta o seek e da sala: o motor busca aqui e o play volta pelo
+  // relogio comum (play agendado), nao pelo estado de antes do avanco.
+  if (comVideo && juntos_ao_buscar(posSeg)) { retomandoSalto = 0; return; }
   if (comVideo) {
     video_buscar(posSeg);
     if (scrubTocava) { video_pausar(0); tocando = 1; }
   }
+}
+
+// Watch Together: o motor da sala manda no player por aqui, para o estado que
+// o OSD mostra (tocando, posSeg) andar junto com o video.
+void player_juntos_pausar(int pausado) {
+  if (!aberto || !comVideo) return;
+  tocando = !pausado;
+  video_pausar(pausado);
+}
+void player_juntos_buscar(double seg) {
+  if (!aberto || !comVideo) return;
+  if (scrubbing) return;   // a pessoa esta avancando: o fim do avanco manda
+  posSeg = (float)seg;
+  video_buscar(seg);
 }
 
 void player_evento(const SDL_Event *e) {
@@ -2484,6 +2506,8 @@ void player_evento(const SDL_Event *e) {
 
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE) {
+    // Sala aberta: "Sair da sessao?" antes (juntosui). Confirmado, o app fecha.
+    if (!ehCanal() && juntos_ao_voltar()) return;
     saindo = 1; pediuSair = 1;
     return;
   }
@@ -2573,7 +2597,7 @@ void player_evento(const SDL_Event *e) {
       // ar. Manter esta linha faria o OK disparar a troca duas vezes.
       { double fim;if(trechoPulavel(&fim)){
           { int tp=0;if(intro_ativo(posSeg,NULL,&tp)&&tp==INTRO_CREDITOS)player_aprender_creditos(); }
-          posSeg=(float)puloDestino(fim);if(comVideo)video_buscar(posSeg);return; } }
+          posSeg=(float)puloDestino(fim);if(comVideo&&!juntos_ao_buscar(posSeg))video_buscar(posSeg);return; } }
       // O OK com os controles escondidos e o Play/Pause: os controles sobem
       // com o foco NO PLAY, nao onde ficou da ultima vez (Legendas, Audio,
       // Proporcao). Sem isto o OK seguinte abria aquela folha (#109).
@@ -2620,7 +2644,7 @@ void player_evento(const SDL_Event *e) {
     double fim;
     if (!trechoPulavel(&fim)) skipFoco = 0;          // o trecho acabou por baixo do foco
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
-      posSeg = (float)puloDestino(fim); if (comVideo) video_buscar(posSeg);
+      posSeg = (float)puloDestino(fim); if (comVideo && !juntos_ao_buscar(posSeg)) video_buscar(posSeg);
       skipFoco = 0; acordar(); return;
     } else if (k == SDLK_DOWN) { skipFoco = 0; acordar(); return; }
     // CIMA nao abre mais a folha de Audio daqui (pedido do dono, 03/10): acima

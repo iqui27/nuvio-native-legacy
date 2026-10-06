@@ -95,6 +95,8 @@
 #include "cwretido.h"
 #include "ilhasinais.h"
 #include "enquete.h"
+#include "juntos.h"
+#include "juntosui.h"
 #include "recintro.h"
 #include "atualizacao.h"
 #include "pipintro.h"
@@ -1854,6 +1856,9 @@ void app_evento(const SDL_Event *e) {
   // A CENTRAL DE CONTROLE (central.h, CH+ segurado) e uma camada: aberta, come
   // o teclado todo, por cima do player, das folhas e das ilhas.
   if (central_aberta()) { central_evento(e); return; }
+  // WATCH TOGETHER (juntosui.h): a folha, o cartao da sala, a pergunta de
+  // sair e a regua de reacoes sao camadas; e o OK segurado no player e dela.
+  if (juntosui_evento_sdl(e)) return;
   // O MODAL DA ILHA (ilha.h) e uma camada: aberto, come o teclado todo.
   if (ilha_evento(e)) return;
   // A CENTRAL DE AVISOS vem logo depois do painel de log: com o toast na tela
@@ -2309,6 +2314,113 @@ static const char *homeTrailerBloqueio(void) {
   return NULL;
 }
 
+static void tocarFonteEscolhida(int fonte, int manual) {
+  {
+    const Stream *s = stream_item(fonte);
+    folhaParaTocar = 0;
+    printf("fonte escolhida: %s\n", s ? s->rotulo : "?");
+    // GUARDAR A ESCOLHA, e SO a manual. O que o automatico escolhe nao vira
+    // preferencia: quem nunca abriu esta folha continua com a regra da
+    // pontuacao para sempre, que e a condicao de nao quebrar o app de quem
+    // nunca escolheu nada.
+    if (s && manual) {
+      char base[24];
+      idBaseDoTitulo(base, sizeof base);
+      if (base[0]) fontepref_guardar(base, s);
+      // A MARCA DA FOLHA SEGUE A ESCOLHA NOVA. Sem esta linha, reabrir a folha
+      // logo depois de trocar de fonte mostraria "Sua escolha anterior" na
+      // fonte antiga — a tela contradizendo o que a pessoa acabou de fazer.
+      stream_preferir(fonte);
+    }
+    if (s) video_definir_dv(s->dolbyVision);
+    if (s) video_definir_cabecalhos(s->cabecalhos);
+    if (s) {
+      aguardandoFonte=0;
+      limparFonteVOD();
+      int titulo=player_aberto()?player_indice():detail_indice(), t=0,e=0;
+      if (player_aberto()) { player_episodio_atual(&t,&e); player_encerrar(); }
+      else detail_ep_foco(&t,&e);
+      diagnostico_cancelar_vazao();
+      player_abrir(titulo,NULL);
+      player_definir_episodio(t,e);
+      if (!manual && juntos_ativo()) player_do_inicio();   // a posicao e a da sala
+      stream_definir_atual(fonte);
+      // Qualquer escolha nova invalida a resposta de um torrent anterior; o
+      // motor P2P corta o pedido velho ja (sem isso a escolha nova esperaria
+      // ate 55 s na fila do fio unico).
+      torrentSessao++;
+      p2pmotor_cancelar();
+      if (!s->url[0] && s->infoHash[0]) {
+        pedirTorrentEscolhido(fonte);
+      } else {
+        // Fonte direta: o torrent do motor (se havia) para de baixar.
+        p2pmotor_parar_fundo();
+        player_definir_fonte(s->url);
+        if (!player_id_canal()[0]) fonteManualDesde = SDL_GetTicks();
+        // FONTE QUE O ADDON MARCA COMO FORA DE CACHE ("⏳", "[TB download]"):
+        // tocar o link e o que manda o servico baixar, e o que o addon devolve
+        // enquanto baixa e um clipe de aviso de ~8 s (registros 1136, 2191,
+        // 2501). O clipe fecha o player sem nada na tela; o aviso diz o que
+        // esta acontecendo e o que fazer.
+        if (s->foraCache)
+          player_toast_ex(i18n("Fonte fora do cache: o debrid começa a baixar. Se tocar um aviso curto, tente de novo em alguns minutos."), 9000, "aj_download", 0);
+      }
+      // Escolha manual num canal tambem entra no watchdog: fonte viva escolhida
+      // a dedo pode morrer igual.
+      if (player_id_canal()[0]) { canalFonteIdx = fonte; canalFonteDesde = SDL_GetTicks(); }
+    }
+  }
+}
+
+// WATCH TOGETHER: o titulo que a sala pediu (convidado entrando, ou a sala
+// trocou de episodio) abre como o Reproduzir do detalhe; a fonte do convidado
+// sai da impressao do release da sala (juntosfonte), nao do automatico.
+static Uint32 juntosListaDesde;
+static void juntosAbrirEFonte(Uint32 agora) {
+  char imdb[24], titulo[160], poster[512], alvo[64];
+  int t, e;
+  if (juntosui_pediu_fechar_player()) player_sair();
+  if (juntosui_pediu_reproduzir()) detail_pedir_reproduzir();
+  if (juntos_pediu_abrir(imdb, sizeof imdb, &t, &e, titulo, sizeof titulo, poster, sizeof poster)) {
+    int idx = cat_indice_por_imdb(imdb);
+    if (idx < 0) {
+      static CatItem novo;
+      memset(&novo, 0, sizeof novo);
+      snprintf(novo.imdb, sizeof novo.imdb, "%s", imdb);
+      snprintf(novo.tipo, sizeof novo.tipo, "%s", t > 0 ? "series" : "movie");
+      snprintf(novo.titulo, sizeof novo.titulo, "%s", titulo);
+      snprintf(novo.poster, sizeof novo.poster, "%s", poster);
+      idx = cat_acrescentar(&novo);
+    }
+    if (idx >= 0) {
+      limparFonteVOD();
+      if (player_aberto() || player_retido()) player_encerrar();
+      diagnostico_cancelar_vazao();
+      player_abrir(idx, NULL);
+      if (t > 0 && e > 0) player_definir_episodio(t, e);
+      player_do_inicio();          // a posicao e a da sala, nao a retomada
+      renovarListaDoPlayer();
+      juntosListaDesde = 0;
+      if (!juntos_escolhendo_fonte() && !tocarFonteGuardada()) aguardandoFonte = 1;
+      printf("[juntos] abrindo o titulo da sala\n");
+    }
+  }
+  if (juntos_escolhendo_fonte() && player_aberto() && aguardandoFonte != 2) {
+    int n, i;
+    alvoPlayer(alvo, sizeof alvo);
+    n = stream_lista_do_alvo(alvo) ? stream_n() : 0;
+    if (n > 0 && !juntosListaDesde) juntosListaDesde = agora ? agora : 1;
+    if (n > 0) {
+      // juntos_escolher_fonte le a lista contigua; stream_item devolve dela.
+      const Stream *base = stream_item(0);
+      if (base && stream_item(n - 1) == base + (n - 1)) {
+        i = juntos_escolher_fonte(base, n, agora, juntosListaDesde);
+        if (i >= 0) tocarFonteEscolhida(i, 0);
+      }
+    }
+  }
+}
+
 void app_atualizar(float dt, Uint32 agora) {
   if (player_aberto() || player_mini_ativo()) diagnostico_cancelar_vazao();
   // Login e escolha de perfil retornam cedo; a atividade da conta anterior
@@ -2479,6 +2591,7 @@ void app_atualizar(float dt, Uint32 agora) {
         sync_trocar_perfil(perfilAntes);
         ilhasinais_perfil_trocado();   // "Agora no perfil Lia" na ilha (02/10)
         enquete_perfil_trocado();      // a enquete do perfil anterior sai (N3)
+        juntos_perfil_trocado();       // a pessoa e o perfil: sai da sala
         // AS COLECOES DO PERFIL ANTERIOR SAEM JA. col_definir_json so roda
         // quando a conta manda linhas, entao um perfil sem colecoes ficava
         // com as do anterior para sempre.
@@ -3650,60 +3763,8 @@ void app_atualizar(float dt, Uint32 agora) {
   processarTorrentJob();
 
   int fonte;
-  if (aguardandoFonte != 2 && stream_folha_escolheu(&fonte)) {
-    const Stream *s = stream_item(fonte);
-    folhaParaTocar = 0;
-    printf("fonte escolhida: %s\n", s ? s->rotulo : "?");
-    // GUARDAR A ESCOLHA, e SO a manual. O que o automatico escolhe nao vira
-    // preferencia: quem nunca abriu esta folha continua com a regra da
-    // pontuacao para sempre, que e a condicao de nao quebrar o app de quem
-    // nunca escolheu nada.
-    if (s) {
-      char base[24];
-      idBaseDoTitulo(base, sizeof base);
-      if (base[0]) fontepref_guardar(base, s);
-      // A MARCA DA FOLHA SEGUE A ESCOLHA NOVA. Sem esta linha, reabrir a folha
-      // logo depois de trocar de fonte mostraria "Sua escolha anterior" na
-      // fonte antiga — a tela contradizendo o que a pessoa acabou de fazer.
-      stream_preferir(fonte);
-    }
-    if (s) video_definir_dv(s->dolbyVision);
-    if (s) video_definir_cabecalhos(s->cabecalhos);
-    if (s) {
-      aguardandoFonte=0;
-      limparFonteVOD();
-      int titulo=player_aberto()?player_indice():detail_indice(), t=0,e=0;
-      if (player_aberto()) { player_episodio_atual(&t,&e); player_encerrar(); }
-      else detail_ep_foco(&t,&e);
-      diagnostico_cancelar_vazao();
-      player_abrir(titulo,NULL);
-      player_definir_episodio(t,e);
-      stream_definir_atual(fonte);
-      // Qualquer escolha nova invalida a resposta de um torrent anterior; o
-      // motor P2P corta o pedido velho ja (sem isso a escolha nova esperaria
-      // ate 55 s na fila do fio unico).
-      torrentSessao++;
-      p2pmotor_cancelar();
-      if (!s->url[0] && s->infoHash[0]) {
-        pedirTorrentEscolhido(fonte);
-      } else {
-        // Fonte direta: o torrent do motor (se havia) para de baixar.
-        p2pmotor_parar_fundo();
-        player_definir_fonte(s->url);
-        if (!player_id_canal()[0]) fonteManualDesde = SDL_GetTicks();
-        // FONTE QUE O ADDON MARCA COMO FORA DE CACHE ("⏳", "[TB download]"):
-        // tocar o link e o que manda o servico baixar, e o que o addon devolve
-        // enquanto baixa e um clipe de aviso de ~8 s (registros 1136, 2191,
-        // 2501). O clipe fecha o player sem nada na tela; o aviso diz o que
-        // esta acontecendo e o que fazer.
-        if (s->foraCache)
-          player_toast_ex(i18n("Fonte fora do cache: o debrid começa a baixar. Se tocar um aviso curto, tente de novo em alguns minutos."), 9000, "aj_download", 0);
-      }
-      // Escolha manual num canal tambem entra no watchdog: fonte viva escolhida
-      // a dedo pode morrer igual.
-      if (player_id_canal()[0]) { canalFonteIdx = fonte; canalFonteDesde = SDL_GetTicks(); }
-    }
-  }
+  if (aguardandoFonte != 2 && stream_folha_escolheu(&fonte)) tocarFonteEscolhida(fonte, 1);
+  juntosAbrirEFonte(agora);
   if (aguardandoFonte != 2 && player_pediu_fontes()) {
     char base[24];
     stream_folha_contexto(player_linha_episodio());
@@ -3791,10 +3852,16 @@ void app_atualizar(float dt, Uint32 agora) {
   { int t,e;
     if (aguardandoFonte != 2 && player_pediu_proximo(&t,&e) && player_aberto()) {
       int titulo=player_indice();
+      // Na sala, o proximo episodio e de todos: o pedido vai a sala e cada TV
+      // abre o mesmo (juntos_pediu_abrir). Com a trava, so o anfitriao.
+      { const CatItem *pc = cat_item(titulo); char alvoProx[64] = "";
+        if (pc) snprintf(alvoProx, sizeof alvoProx, "%s:%d:%d", pc->imdb, t, e);
+        if (juntos_ativo() && juntos_ao_proximo(alvoProx)) goto semProximo; }
       diagnostico_cancelar_vazao();
       player_encerrar(); player_abrir(titulo,NULL); player_definir_episodio(t,e);
       marco("proximo episodio: buscando fontes"); buscarParaPlayer(); aguardandoFonte=1;
     }
+    semProximo:;
   }
   episodios_atualizar(dt);
   // O player devolve 1 para a coluna de audio e 2 para a de legenda.
@@ -4481,6 +4548,8 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) diagnostico_intro_desenhar(agora);
   // O MEDIDOR DE DESEMPENHO (Ajustes > Desempenho desta TV) nao e mais camada
   // propria: e conteudo da ilha do relogio (ilha.c, plrilha.c; desempenho.h).
+  // Watch Together: rostos e reacoes no player, folha e cartao da sala.
+  if (!registro_aberto()) juntosui_desenhar(agora);
   CAMADA_SE(registro_aberto());
   registro_desenhar();
   // A ilha do relogio fica acima do painel de registro, no canto de sempre.

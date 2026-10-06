@@ -3,6 +3,8 @@
 #include "ilha.h"
 #include "ilhasalvar.h"
 #include "enquete.h"
+#include "juntos.h"
+#include "juntosui.h"
 #include "ilhaacao.h"
 #include "addons.h"
 #include "avisos.h"
@@ -39,6 +41,7 @@ static void acoes(void) {
   if (!strcmp(chave, ILHA_ACAO_CHAVE)) { ilhaacao_botao(b); return; }
   if (!strncmp(chave, "salvar:", 7)) { ilhasalvar_acao(chave, b); return; }
   if (!strncmp(chave, "enquete:", 8)) { enquete_acao(chave, b); return; }
+  if (!strncmp(chave, "juntos:", 7)) { juntos_acao(chave, b); return; }
   if (!strncmp(chave, "pedido:", 7)) {
     const char *pub = chave + 7;
     if (b == 1) recomenda_aceitar(pub);
@@ -245,6 +248,8 @@ void ilhasinais_passo(Uint32 agora) {
   acoes();
   ilhasalvar_passo(agora);
   enquete_passo(agora);
+  juntos_passo(agora);
+  juntosui_atualizar(agora);
   rede();
   addonFora();
   sincronia(agora);   // a atividade e renovada por quadro

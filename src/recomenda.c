@@ -3054,6 +3054,7 @@ int recomenda_cabecalhos(const char **cab, char *aut, size_t na, char *via, size
 }
 
 const char *recomenda_meu_nome(void) { return meuNome; }
+const char *recomenda_meu_id(void) { return meuId; }
 const char *recomenda_minha_exibicao(void) { return minhaExib; }
 
 static void acordar(void) {
