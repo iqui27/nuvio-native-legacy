@@ -171,7 +171,8 @@ const lang = (navigator.language || "en").slice(0, 2);
 const T = TEXTOS[lang] || TEXTOS.en;
 document.documentElement.lang = TEXTOS[lang] ? lang : "en";
 const $ = (id) => document.getElementById(id);
-const fmt = (s, n) => s.replace(/\\{n\\}/g, n);
+const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+const fmt = (s, n) => cap(s.replace(/\\{n\\}/g, n));
 let ws = null, sala = null, eu = "", offset = 0, melhorRtt = 1e9, tentativa = 0, acabou = false;
 
 // /j/<sala 32 hex><codigo 8>: o codigo e de uso unico; depois, a chave de sessao.
@@ -243,7 +244,7 @@ function relogio(s) {
 }
 function linha(texto, de) {
   const li = document.createElement("li");
-  if (de) { const b = document.createElement("b"); b.textContent = de; li.append(b, document.createTextNode(texto)); }
+  if (de) { const b = document.createElement("b"); b.textContent = cap(de); li.append(b, document.createTextNode(texto)); }
   else { li.className = "ev"; li.textContent = texto; }
   $("mensagens").appendChild(li);
   while ($("mensagens").children.length > 60) $("mensagens").firstChild.remove();
@@ -301,7 +302,7 @@ function desenhar() {
     if (p.av && /^https:\\/\\//.test(p.av)) { const img = document.createElement("img"); img.alt = ""; img.referrerPolicy = "no-referrer"; img.src = p.av; rosto.appendChild(img); }
     else rosto.textContent = (p.nome || "?").slice(0, 1).toUpperCase();
     const q = document.createElement("span"); q.className = "q";
-    const n = document.createElement("div"); n.className = "n"; n.textContent = (p.id === eu ? T.voce : p.nome) + (p.anf ? " · " + T.anfitriao : "");
+    const n = document.createElement("div"); n.className = "n"; n.textContent = cap(p.id === eu ? T.voce : p.nome) + (p.anf ? " · " + T.anfitriao : "");
     const s = document.createElement("div"); s.className = "s " + p.st; s.textContent = T.st[p.st] || p.st;
     q.append(n, s); li.append(rosto, q); ul.appendChild(li);
   }
