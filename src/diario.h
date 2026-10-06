@@ -199,6 +199,17 @@ int  diario_nuvem_pendentes(int perfil);       // entradas esperando envio
 // 1 se o pacote tem servidor (NUVIO_REC_URL) e o perfil disse sim.
 int  diario_nuvem_ativa(int perfil);
 
+// --- nomes (cache COMPARTILHADO entre perfis: id -> titulo, ano, poster) ---
+// O diario guarda ids; as telas (Perfil e Stats, CSV do Letterboxd, Caca)
+// precisam do nome e da capa. Alimentado por quem ja tem o CatItem (player,
+// pagina do titulo, biblioteca da conta). Teto DIARIO_NOMES_MAX, sai o mais
+// antigo. Arquivo diario-nomes.txt. Seguro de qualquer fio.
+#define DIARIO_NOMES_MAX 4000
+void diario_nome_definir(const char *id, const char *titulo, int ano, const char *poster);
+// 1 se conhece. Qualquer saida pode ser NULL.
+int  diario_nome(const char *id, char *titulo, size_t tamTitulo, int *ano,
+                 char *poster, size_t tamPoster);
+
 // --- puro, para teste e para outras telas -----------------------------------
 // Mesma vez? (mesmo id/T/E e |quando| < 6 h)
 int  diario_regra_mesma_vez(const DiarioEntrada *a, const DiarioEntrada *b);

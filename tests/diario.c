@@ -235,6 +235,18 @@ int main(void) {
     assert((double)(clock() - c0) / CLOCKS_PER_SEC < 1.0); }
   perfilAtivo = 1;
 
+  // 15. Nomes: compartilhados, sobrevivem ao arquivo, TAB nao quebra a linha.
+  { char tit[160], pos[512]; int ano;
+    diario_nome_definir("tt0111161:1:2", "Um\tSonho", 1994, "https://img/x.jpg");
+    assert(diario_nome("tt0111161", tit, sizeof tit, &ano, pos, sizeof pos));
+    assert(!strcmp(tit, "Um Sonho") && ano == 1994 && !strcmp(pos, "https://img/x.jpg"));
+    diario_nome_definir("tt0111161", NULL, 0, NULL);   // nao apaga
+    assert(diario_nome("tt0111161", tit, sizeof tit, NULL, NULL, 0) && !strcmp(tit, "Um Sonho"));
+    assert(!diario_nome("tt404", tit, sizeof tit, &ano, NULL, 0) && !tit[0] && !ano);
+    diario_gravar_agora();
+    { char c[512]; snprintf(c, sizeof c, "%s/diario-nomes.txt", pasta);
+      FILE *f = fopen(c, "r"); assert(f); fclose(f); } }
+
   snprintf(linha, sizeof linha, "rm -rf '%s'", pasta);
   system(linha);
   printf("diario: ok\n");

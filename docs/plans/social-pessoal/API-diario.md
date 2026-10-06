@@ -61,3 +61,4 @@ para não colidir). Rotas: `POST /v1/diario/lote`, `GET /v1/diario?desde=`,
 
 - 06/10: versão inicial (header + stub).
 - 06/10: implementação real em `src/diario.c` (mesma API). Teste: `tests/diario.sh`.
+- 06/10 (aditivo): cache de nomes compartilhado `diario_nome_definir(id, titulo, ano, poster)` / `diario_nome(id, ...)` (`src/diarionomes.c`) — para telas que precisam de nome/capa de um id do diário.

@@ -989,7 +989,7 @@ static char *montarArquivo(Loja *L) {
   return b;
 }
 
-static void gravarPerfil(int p, int forcar) {
+static int gravarPerfil(int p, int forcar) {
   Loja *L = &lojas[p];
   char *b = NULL, nome[32];
   pthread_mutex_lock(&trava);
@@ -1001,12 +1001,17 @@ static void gravarPerfil(int p, int forcar) {
   if (b) {
     dados_gravar(nomeArquivo(p, nome, sizeof nome), b);
     free(b);
+    return 1;
   }
+  return 0;
 }
+
+void diario_nomes_gravar(void);   // diarionomes.c
 
 void diario_gravar_agora(void) {
   int p;
   for (p = 1; p < NPERFIS; p++) gravarPerfil(p, 1);
+  diario_nomes_gravar();
 }
 
 void diario_passo(void) {
@@ -1031,7 +1036,10 @@ void diario_passo(void) {
     int k;
     for (k = 0; k < OUV_MAX; k++) if (o[k].fn) o[k].fn(p, DIARIO_EV_RECARREGADO, NULL, o[k].ctx);
   }
-  for (p = 1; p < NPERFIS; p++) if (lojas[p].sujo) gravarPerfil(p, 0);
+  { int gravou = 0;
+    for (p = 1; p < NPERFIS; p++) if (lojas[p].sujo) gravou |= gravarPerfil(p, 0);
+    // Os nomes vao junto com o diario (mesma folga); sem diario, so na saida.
+    if (gravou) diario_nomes_gravar(); }
 }
 
 void diario_esquecer(void) {
