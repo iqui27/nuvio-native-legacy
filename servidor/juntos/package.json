@@ -1,0 +1,12 @@
+{
+  "name": "nuvio-juntos",
+  "private": true,
+  "type": "module",
+  "description": "Watch Together rooms (Durable Objects). Deploy only via tools/juntos-publicar.sh.",
+  "scripts": {
+    "test": "node --test teste-logica.mjs teste-bilhete.mjs && node --test teste-juntos.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.140.0"
+  }
+}
