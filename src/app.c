@@ -19,6 +19,7 @@
 #include "diario.h"
 #include "diariofontes.h"
 #include "diarioperfil.h"
+#include "diarionuvem.h"
 #include "dormiu.h"
 #include "descanso.h"
 #include "iconeapp.h"
@@ -599,7 +600,7 @@ static void trocarTela(Tela nova) {
     case TELA_BUSCA:      busca_iniciar();      break;
     case TELA_BIBLIOTECA: biblioteca_iniciar(); break;
     case TELA_AGENDA:     agendaui_iniciar();   break;
-    case TELA_PERFIL:     perfil_abrir(); pedirPerfil(); break;
+    case TELA_PERFIL:     perfil_abrir(); pedirPerfil(); diarionuvem_perguntar_se_preciso(); break;
     case TELA_AJUSTES:    ajustes_iniciar();    break;
     case TELA_DIAGNOSTICO: diagnostico_iniciar(); break;
     case TELA_LIVETV_DIAG: livetvdiag_iniciar(); break;
@@ -2838,6 +2839,7 @@ void app_atualizar(float dt, Uint32 agora) {
     diario_dono(sessao_usuario());   // troca de conta solta o que estava carregado
     diario_passo();
     diariofontes_passo();
+    diarionuvem_passo();
     if (ab && detail_assentado()) diariofontes_nome(ab);
     dormiu_passo();
     // O "Reconectar" do Trakt (modal da ilha): Ajustes, na linha do Trakt.
