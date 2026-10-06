@@ -20,6 +20,7 @@
 #include "diariofontes.h"
 #include "diarioperfil.h"
 #include "diarionuvem.h"
+#include "diariotrakt.h"
 #include "dormiu.h"
 #include "descanso.h"
 #include "iconeapp.h"
@@ -2840,6 +2841,7 @@ void app_atualizar(float dt, Uint32 agora) {
     diario_passo();
     diariofontes_passo();
     diarionuvem_passo();
+    diariotrakt_passo();
     if (ab && detail_assentado()) diariofontes_nome(ab);
     dormiu_passo();
     // O "Reconectar" do Trakt (modal da ilha): Ajustes, na linha do Trakt.
