@@ -141,30 +141,53 @@ static int fontesValidas(const ColFolder *v) {
   return v->nSources < 0 ? 0 : (v->nSources > COL_SOURCE_MAX ? COL_SOURCE_MAX : v->nSources);
 }
 
-int col_extra_definir(const ColFolder *v, int n) {
-  int i, total = 0;
+// Substitui so as extras do GRUPO `groupId` (as dos outros donos ficam): as
+// listas fixadas (listas.c, "listas_fixadas") e as cacadas (caca.c) dividem a
+// mesma tabela sem um apagar o outro.
+int col_extra_definir_grupo(const char *groupId, const ColFolder *v, int n) {
+  static ColFolder novas[COL_EXTRA_MAX];
+  int i, total = 0, k = 0;
   ColSource *bloco, *velho;
+  const char *g = groupId ? groupId : "";
   if (n < 0) n = 0;
   if (n > COL_EXTRA_MAX) n = COL_EXTRA_MAX;
+  pthread_mutex_lock(&colTrava);
+  for (i = 0; i < nExtras; i++) if (strcmp(extras[i].groupId, g)) total += fontesValidas(&extras[i]);
   for (i = 0; i < n && v; i++) total += fontesValidas(&v[i]);
   // As fontes da pasta extra sao COPIADAS: quem chama monta a pasta na pilha.
   bloco = calloc((size_t)(total + COL_SOURCE_MAX), sizeof(ColSource));
-  if (!bloco) { printf("[colecoes] pastas extras: sem memoria, ficam as de antes\n"); return nExtras; }
-  pthread_mutex_lock(&colTrava);
-  velho = extrasFontes;
-  extrasFontes = bloco;
-  nExtras = 0;
-  for (i = 0, total = 0; i < n && v; i++) {
+  if (!bloco) {
+    pthread_mutex_unlock(&colTrava);
+    printf("[colecoes] pastas extras: sem memoria, ficam as de antes\n");
+    return nExtras;
+  }
+  total = 0;
+  for (i = 0; i < nExtras && k < COL_EXTRA_MAX; i++) {
+    int ns;
+    if (!strcmp(extras[i].groupId, g)) continue;
+    ns = fontesValidas(&extras[i]);
+    novas[k] = extras[i];
+    novas[k].sources = bloco + total;
+    if (ns && extras[i].sources) memcpy(bloco + total, extras[i].sources, sizeof(ColSource) * (size_t)ns);
+    total += ns;
+    k++;
+  }
+  for (i = 0; i < n && v && k < COL_EXTRA_MAX; i++) {
     int ns = fontesValidas(&v[i]);
-    extras[nExtras] = v[i];
-    extras[nExtras].sources = bloco + total;
-    extras[nExtras].nSources = ns;
+    novas[k] = v[i];
+    snprintf(novas[k].groupId, sizeof novas[k].groupId, "%s", g);
+    novas[k].sources = bloco + total;
+    novas[k].nSources = ns;
     if (ns && v[i].sources) memcpy(bloco + total, v[i].sources, sizeof(ColSource) * (size_t)ns);
     total += ns;
-    extras[nExtras].extra = 1;
-    extras[nExtras].local = 0;   // nao e do pacote: nao disputa a arte curada
-    nExtras++;
+    novas[k].extra = 1;
+    novas[k].local = 0;   // nao e do pacote: nao disputa a arte curada
+    k++;
   }
+  velho = extrasFontes;
+  extrasFontes = bloco;
+  memcpy(extras, novas, sizeof extras[0] * (size_t)k);
+  nExtras = k;
   aplicarExtras();
   free(velho);
   // A home so remonta quando ESTE numero muda. Sem o bump, fixar uma lista na
@@ -172,6 +195,10 @@ int col_extra_definir(const ColFolder *v, int n) {
   revisao++;
   pthread_mutex_unlock(&colTrava);
   return nExtras;
+}
+
+int col_extra_definir(const ColFolder *v, int n) {
+  return col_extra_definir_grupo("listas_fixadas", v, n);
 }
 
 // Fonte da conta vem com addonId e sem URL; a URL so existe depois que a sonda

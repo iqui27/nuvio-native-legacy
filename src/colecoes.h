@@ -88,8 +88,12 @@ int col_carregar(const char *dir);
    #18. Guardadas aqui, elas sao REINJETADAS depois de cada reconstrucao.
 
    Substitui o conjunto inteiro (n=0 limpa). Devolve quantas ficaram. */
-#define COL_EXTRA_MAX 24
+#define COL_EXTRA_MAX 48
 int col_extra_definir(const ColFolder *v, int n);
+/* O mesmo, mas so para as pastas extras do grupo `groupId` (o resto fica).
+   col_extra_definir e este com "listas_fixadas" (listas.c); a Caca usa os
+   seus (caca.c). Cada pasta recebe o groupId passado. */
+int col_extra_definir_grupo(const char *groupId, const ColFolder *v, int n);
 // Colecoes da CONTA (sync_pull_collections), no shape do collectionsStore.js do
 // web: collections[{id,title,backdropImageUrl,folders[{id,title,coverImageUrl,
 // heroBackdropUrl,titleLogoUrl,hideTitle,sources[{provider,addonBaseUrl,type,

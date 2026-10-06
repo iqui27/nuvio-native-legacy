@@ -1,4 +1,5 @@
 #include "descoberta.h"
+#include "caca.h"
 #include "idioma.h"
 #include "ajustes.h"
 #include "catordem.h"
@@ -7006,6 +7007,20 @@ void desc_vertudo_fonte(const ColSource *s) {
   ColSource copia;
   if (!s || !s->prov[0]) return;
   memset(&copia, 0, sizeof copia); copia = *s;
+  // A FILEIRA DA CACA (caca.h, "Fazer fileira"/"Fazer colecao"): os filmes ja
+  // estao na memoria do app, sem rede. catId = "-<chave>" so o que falta,
+  // "*<chave>" a cacada inteira.
+  if (!strcmp(s->prov, "caca")) {
+    int k = caca_por_chave(s->catId + (s->catId[0] ? 1 : 0)), n;
+    pthread_mutex_lock(&vtTrava);
+    vtFonte = copia;
+    vtProvedor = 3;
+    vtBase[0] = 0;
+    n = k >= 0 ? caca_itens(k, s->catId[0] == '-', vtItens, VT_MAX) : 0;
+    vtN = n; vtPagina = 1; vtFim = 1; vtErro = k < 0; vtGeracao++;
+    pthread_mutex_unlock(&vtTrava);
+    return;
+  }
   pthread_mutex_lock(&vtTrava);
   if (vtProvedor && !memcmp(&vtFonte, &copia, sizeof copia) && vtN > 0) {
     pthread_mutex_unlock(&vtTrava); return;
