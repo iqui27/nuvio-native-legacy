@@ -176,6 +176,7 @@ static int pedir(const JfConta *c, const char *base, RedeJob *job, const char *m
   p.prazo_ms = prazo ? prazo : JF_PRAZO_MS;
   p.max_bytes = JF_CORPO_MAX;
   p.seguir = 1;
+  p.mesmo_host = 1;   // a redirect never takes this request to another machine
   p.job = job;
   rede_pedir(&p, r);
   apagarSegredo(auth, sizeof auth);

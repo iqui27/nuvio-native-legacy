@@ -51,6 +51,10 @@ typedef struct {
   unsigned prazo_ms;    /* total, inclusive redirects; 0 = 15 s, max 300 s */
   size_t max_bytes, max_cabecalhos;
   int seguir;          /* 0 = devolver 3xx; 1 = ate 5 redirects */
+  /* 1 = redirect only to the same host name as the request (port and
+   * http->https may change). Personal servers: a token-bearing request is
+   * never followed to another machine, even without its headers. */
+  int mesmo_host;
   const char *ca_arquivo;
   RedeJob *job;
   void (*intervalo)(const RedeIntervalo *, void *);

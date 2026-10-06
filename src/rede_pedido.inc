@@ -198,6 +198,15 @@ static int pedidoOrigem(const char *u, char *dst, size_t cap, int *tls) {
   snprintf(dst + i, cap - i, ":%u", port);
   return 1;
 }
+/* Two normalised origins ("scheme://host:port") name the same host. */
+static int pedidoMesmoHost(const char *a, const char *b) {
+  const char *ha = strstr(a, "://"), *hb = strstr(b, "://"), *fa, *fb;
+  if (!ha || !hb) return 0;
+  ha += 3; hb += 3;
+  fa = strrchr(ha, ':'); fb = strrchr(hb, ':');
+  if (!fa || !fb || fa - ha != fb - hb) return 0;
+  return !strncmp(ha, hb, (size_t)(fa - ha));
+}
 static int pedidoMetodo(const char *m) {
   return !strcmp(m, "GET") || !strcmp(m, "HEAD") || !strcmp(m, "POST") ||
          !strcmp(m, "PUT") || !strcmp(m, "PATCH") || !strcmp(m, "DELETE");
@@ -344,6 +353,7 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
       if (!pedidoOrigem(destino, novaOrigem, sizeof novaOrigem, &novoTls) || (tls && !novoTls)) {
         r->erro = REDE_REDIRECT; break;
       }
+      if (p->mesmo_host && !pedidoMesmoHost(origem, novaOrigem)) { r->erro = REDE_REDIRECT; break; }
       /* 303 converts to GET (except HEAD); 301/302 only convert POST. */
       if ((r->status == 303 && !c.head) || ((r->status == 301 || r->status == 302) && !strcmp(metodo, "POST"))) {
         metodo = "GET"; corpo = NULL; nCorpo = 0;

@@ -907,6 +907,7 @@ static int pedirEx(const PxConta *c, const char *url, const char *token, const c
   p.prazo_ms = prazo ? prazo : PX_PRAZO_MS;
   p.max_bytes = PX_CORPO_MAX;
   p.seguir = 1;
+  p.mesmo_host = 1;   // a redirect never takes this request to another machine
   p.job = job;
   rede_pedir(&p, r);
   apagarSegredo(tok, sizeof tok);
