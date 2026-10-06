@@ -156,10 +156,13 @@ int  trava_passo(const char *serie, int perfil, int t, int e, int desfazer);
 int  trava_posicao(const char *id, int perfil, int t, int e, long long em);
 
 // ---------------------------------------------------------------- servidor
-// Troca o conteudo pelo que o servidor mandou (GET /v1/travas). As travas
-// ainda locais (nunca confirmadas) ficam; posicoes locais mais adiantadas que
-// as do servidor tambem (o passo pode estar na fila). Devolve 1 se leu.
-int  trava_aplicar_servidor(const char *json);
+// Troca o conteudo pelo que o servidor mandou (GET /v1/travas pedido COMO o
+// perfil `perfil`). So as travas desse perfil sao substituidas: as dos outros
+// perfis da casa (que esta resposta nao lista) ficam, para a TV funcionar sem
+// rede depois de trocar de perfil. As ainda locais (nunca confirmadas) e as
+// com operacao na fila ficam; posicoes locais mais adiantadas que as do
+// servidor tambem (o passo pode estar na fila). Devolve 1 se leu.
+int  trava_aplicar_servidor(const char *json, int perfil);
 // A trava local `idLocal` virou `idServidor` (resposta do POST /v1/trava).
 void trava_confirmar(const char *idLocal, const char *idServidor);
 // ETag da ultima leitura e a revisao (travaRev de /v1/rec).
@@ -173,13 +176,18 @@ void trava_definir_rev(long long rev);
 typedef struct {
   char op[12];                    // "criar" "modo" "pin" "pausar" "membros" "apagar" "passo"
   char id[TRAVA_ID_MAX];
-  char pessoa[TRAVA_PESSOA_MAX];  // so "passo"
+  char pessoa[TRAVA_PESSOA_MAX];  // so "passo": de quem e a posicao
+  int  perfil;                    // QUEM FEZ o gesto (o X-Nuvio-Perfil do envio):
+                                  // o ativo pode ter mudado ate a fila andar
   int  a, b, c;                   // passo: t, e, desfazer; modo/pin/pausar: valor
 } TravaOp;
 #define TRAVA_FILA_MAX 64
 int  trava_fila_n(void);
 int  trava_fila_ver(int i, TravaOp *op);
 void trava_fila_feita(int n);     // tira as `n` primeiras
+// Tira a PRIMEIRA operacao igual a `op` (op, id, pessoa, a, b, c). A fila pode
+// ter mudado enquanto o fio enviava; tirar por igualdade nao tira a errada.
+int  trava_fila_tirar(const TravaOp *op);
 
 // "ALCANCOU VOCE": membros que, desde a ultima chamada, alcancaram o perfil
 // ativo numa trava em que ele esperava. Devolve 1 e preenche um evento.

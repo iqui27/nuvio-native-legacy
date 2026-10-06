@@ -16,6 +16,7 @@
 #include "teclado.h"
 #include "ponteiro.h"
 #include "app.h"
+#include "travarede.h"
 #include "descanso.h"
 #include "iconeapp.h"
 #include "logoapp.h"
@@ -1599,6 +1600,7 @@ int app_iniciar(const char *dirArte) {
   recomenda_iniciar();
   ilhasinais_iniciar();  // a saude da rede passa a ouvir os pedidos (ilha, 02/10)
   atividade_iniciar();   // a fila de POST /v1/atividade que nao saiu (atividade.h)
+  travarede_iniciar();   // trava de serie: arquivo da conta, fila e ouvinte do visto
   // O envio da atividade segue o nivel de privacidade (alcance) do Social: a
   // funcao e chamada agora e a cada mudanca; "nao perguntado" chega como 0.
   recomenda_ao_mudar_alcance(atividade_definir_permitido);
@@ -2817,6 +2819,7 @@ void app_atualizar(float dt, Uint32 agora) {
     int qual = 0, o;
     ilhacart_atualizar(agora, ab && ab->imdb[0] ? ab->imdb : NULL);
     ilhasinais_passo(agora);
+    travarede_passo(agora);
     // O "Reconectar" do Trakt (modal da ilha): Ajustes, na linha do Trakt.
     if (ilhasinais_pediu_trakt() && !player_aberto()) {
       if (detail_aberto()) detail_fechar_seco();

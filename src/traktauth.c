@@ -280,6 +280,29 @@ int traktauth_trocar_perfil(int p) {
 
 int traktauth_perfil(void) { return perfil; }
 
+int traktauth_token_de(int p, char *tok, size_t tam) {
+  char *b, *col[6] = { NULL, NULL, NULL, NULL, NULL, NULL };
+  long criado, expira;
+  int ok = 0, i;
+  if (!tok || tam < 2 || p < 1) return 0;
+  tok[0] = 0;
+  b = dados_ler(arqToken(p).s);
+  if (!b) return 0;
+  { char *fim = b + strlen(b);
+    while (fim > b && (fim[-1] == '\n' || fim[-1] == '\r')) *--fim = 0; }
+  col[0] = b;
+  for (i = 1; i < 6 && col[i - 1]; i++) { col[i] = strchr(col[i - 1], '\t'); if (col[i]) *col[i]++ = 0; }
+  criado = col[3] ? atol(col[3]) : 0;
+  expira = col[4] ? atol(col[4]) : 0;
+  if (b[0] && strlen(b) < tam) {
+    if (criado > 0 && expira > 0 && (long)time(NULL) >= criado + expira - 60)
+      printf("[trakt] perfil %d: token desta TV vencido; a trava nao marca la\n", p);
+    else { snprintf(tok, tam, "%s", b); ok = 1; }
+  }
+  free(b);
+  return ok;
+}
+
 void traktauth_esquecer(void) {
   int p;
   pthread_mutex_lock(&trava);

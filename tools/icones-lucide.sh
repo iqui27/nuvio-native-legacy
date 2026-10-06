@@ -58,6 +58,7 @@ pause send scroll-text server-crash shield-check cpu log-out
 panel-left list-x bell audio-lines layers type sliders-horizontal book-open user-plus
 alarm-clock badge-check captions chart-column chevrons-down circle-check circle-dot compass droplet feather film funnel globe image image-plus inbox key key-round layout-list life-buoy link list-ordered list-video loader log-in map maximize-2 menu message-square monitor-play mouse-pointer move-horizontal pause picture-in-picture-2 play quote send server settings-2 shield sparkle stethoscope telescope thumbs-up unlink wand sparkles corner-up-left book-open-text
 pipette blend spotlight paint-roller
+lock lock-open
 "
 # A linha que comeca em "clock" e da ILHA DO RELOGIO (02/10, mockup aprovado em design/ilha):
 # os icones dos avisos (alerta, wifi, debrid baixando, Trakt desconectado...) e
@@ -70,7 +71,9 @@ pipette blend spotlight paint-roller
 # As duas ultimas sao do cartao de NOVIDADES DA 1.8.0 e do GUIA DE USO
 # (ajustes_ux_guia_dados.inc, um icone por capitulo e por recurso) (03/10, mockup aprovado):
 # os discos da lista, as pecas da previa, capitulos e recursos do guia.
-# A ultima linha e da REGUA de cores (05/10): um desenho por dinamica (Da arte,
+# A linha "lock lock-open" e da TRAVA DE SERIE (travaui.c, detail.c; 06/10):
+# o botao "Travar" e o selo da trava. SVG da tag 1.48.0 transcritos a mao.
+# A ultima linha antes dela e da REGUA de cores (05/10): um desenho por dinamica (Da arte,
 # Gradiente, Imersiva, Textura), que antes mostravam todas a mesma miniatura.
 # Conferencia: todo aj_* citado em src/ tem de estar em NOMES, e todo NOMES
 # tem de ser citado — senao sobra PNG morto no pacote ou falta icone na tela

@@ -200,7 +200,10 @@ export async function rotaTrava(rota, metodo, env, quem, corpo, h, req, { limita
   if (rota === "/v1/trava/passo") {
     const te = Number(corpo?.t), ep = Number(corpo?.e);
     const pessoa = typeof corpo?.pessoa === "string" && corpo.pessoa ? corpo.pessoa : quem.id;
-    if (!Number.isInteger(te) || !Number.isInteger(ep) || te < 1 || ep < 1 || te > 999 || ep > 9999)
+    // (0, 0) = "nao comecou", so pelo Desfazer (volta de quem nunca tinha visto).
+    const zero = te === 0 && ep === 0 && !!corpo?.desfazer;
+    if (!Number.isInteger(te) || !Number.isInteger(ep) || te > 999 || ep > 9999 ||
+        (!zero && (te < 1 || ep < 1)))
       return erro("episodio invalido", 400);
     if (pessoa !== quem.id && !mesmaConta(pessoa, quem.id)) return erro("so perfis da sua conta", 403);
     const m = membros.find((x) => x.pessoa === pessoa && x.estado === 1);

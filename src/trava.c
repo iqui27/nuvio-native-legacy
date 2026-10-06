@@ -260,9 +260,9 @@ static void gravar(void) {
     }
   }
   for (i = 0; i < nFila; i++)
-    p += snprintf(p, tam - (size_t)(p - buf), "O\t%s\t%s\t%d\t%d\t%d\t%s\n",
+    p += snprintf(p, tam - (size_t)(p - buf), "O\t%s\t%s\t%d\t%d\t%d\t%s\t%d\n",
                   fila[i].op, fila[i].id, fila[i].a, fila[i].b, fila[i].c,
-                  fila[i].pessoa[0] ? fila[i].pessoa : "-");
+                  fila[i].pessoa[0] ? fila[i].pessoa : "-", fila[i].perfil);
   arquivo(nome, sizeof nome);
   dados_gravar(nome, buf);
   free(buf);
@@ -328,6 +328,7 @@ void trava_carregar(void) {
         snprintf(o->id, sizeof o->id, "%s", c[2]);
         o->a = atoi(c[3]); o->b = atoi(c[4]); o->c = atoi(c[5]);
         snprintf(o->pessoa, sizeof o->pessoa, "%s", strcmp(c[6], "-") ? c[6] : "");
+        o->perfil = n >= 8 ? atoi(c[7]) : 1;
       }
       l = fim ? fim + 1 : NULL;
     }
@@ -442,6 +443,7 @@ static void enfileirar(const char *op, const char *id, const char *pessoa, int a
   snprintf(o->op, sizeof o->op, "%s", op);
   snprintf(o->id, sizeof o->id, "%s", id);
   if (pessoa) snprintf(o->pessoa, sizeof o->pessoa, "%s", pessoa);
+  o->perfil = ativo;
   o->a = a; o->b = b; o->c = c;
 }
 
@@ -593,7 +595,8 @@ int trava_passo(const char *serie, int perfil, int t, int e, int desfazer) {
   char s[24];
   int i, k = 0;
   serieDe(serie, s, sizeof s);
-  if (!s[0] || t <= 0 || e <= 0) return 0;
+  // (0, 0) so pelo Desfazer: volta a "nao comecou".
+  if (!s[0] || (desfazer ? (t < 0 || e < 0 || (t == 0) != (e == 0)) : (t <= 0 || e <= 0))) return 0;
   pthread_mutex_lock(&mtx);
   for (i = 0; i < nTravas; i++) {
     Trava *tv = &travas[i];
@@ -661,7 +664,7 @@ void trava_definir_rev(long long r) {
   pthread_mutex_unlock(&mtx);
 }
 
-int trava_aplicar_servidor(const char *json) {
+int trava_aplicar_servidor(const char *json, int perfil) {
   const char *a;
   Trava novas[TRAVA_MAX];
   int n = 0, i, k;
@@ -728,7 +731,8 @@ int trava_aplicar_servidor(const char *json) {
     for (j = 0; j < n; j++) if (!strcmp(novas[j].id, travas[i].id)) ja = 1;
     if (ja) continue;
     for (j = 0; j < nFila; j++) if (!strcmp(fila[j].id, travas[i].id) && strcmp(fila[j].op, "passo")) temOp = 1;
-    if (travas[i].local || temOp) novas[n++] = travas[i];
+    if (travas[i].local || temOp || trava_membro_do_perfil(&travas[i], perfil) < 0)
+      novas[n++] = travas[i];
   }
   memcpy(travas, novas, sizeof travas[0] * (size_t)n);
   nTravas = n;
@@ -769,4 +773,22 @@ void trava_fila_feita(int n) {
     gravar();
   }
   pthread_mutex_unlock(&mtx);
+}
+
+int trava_fila_tirar(const TravaOp *op) {
+  int i, r = 0;
+  pthread_mutex_lock(&mtx);
+  for (i = 0; i < nFila; i++) {
+    const TravaOp *o = &fila[i];
+    if (!strcmp(o->op, op->op) && !strcmp(o->id, op->id) && !strcmp(o->pessoa, op->pessoa) &&
+        o->a == op->a && o->b == op->b && o->c == op->c) {
+      memmove(&fila[i], &fila[i + 1], sizeof fila[0] * (size_t)(nFila - i - 1));
+      nFila--;
+      gravar();
+      r = 1;
+      break;
+    }
+  }
+  pthread_mutex_unlock(&mtx);
+  return r;
 }

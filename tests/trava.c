@@ -152,6 +152,8 @@ static void estado(void) {
   assert(trava_passo("tt0001", 1, 1, 2, 0) == 0);
   assert(trava_i(0)->m[0].t == 1 && trava_i(0)->m[0].e == 3);
   assert(trava_passo("tt0001", 1, 1, 2, 1) == 1 && trava_i(0)->m[0].e == 2);
+  assert(trava_passo("tt0001", 1, 0, 0, 0) == 0);
+  assert(trava_passo("tt0001", 3, 0, 0, 1) == 0);   // ja estava em 0,0: nada muda
   assert(trava_fila_n() == 3);
   trava_fila_ver(1, &op);
   assert(!strcmp(op.op, "passo") && op.a == 1 && op.b == 3 && !strcmp(op.pessoa, "nuvio:abc-123"));
@@ -194,7 +196,7 @@ static void estado(void) {
     "{\"pessoa\":\"nuvio:abc-123:2\",\"estado\":1,\"t\":1,\"e\":6,\"em\":6}]},"
     "{\"id\":\"srv2\",\"serie\":\"tt0009\",\"titulo\":\"Other\",\"modo\":0,\"membros\":["
     "{\"pessoa\":\"nuvio:abc-123:3\",\"estado\":1,\"t\":0,\"e\":0,\"em\":0},"
-    "{\"pessoa\":\"trakt:amigo\",\"estado\":0,\"t\":2,\"e\":2,\"em\":0}]}]}"));
+    "{\"pessoa\":\"trakt:amigo\",\"estado\":0,\"t\":2,\"e\":2,\"em\":0}]}]}", 1));
   assert(trava_n() == 2);
   t = trava_por_id("srv1");
   // A minha posicao local (E2) e mais adiantada que a do servidor (E1): fica.
@@ -218,6 +220,10 @@ static void estado(void) {
   assert(trava_n() == 0);
   trava_definir_conta("abc-123");
   assert(trava_n() == 1);
+  // A resposta e POR PERFIL: a lista vazia pedida pelo perfil 3 (que nao e
+  // membro de srv1) nao apaga srv1; a do perfil 2 (membro) apaga.
+  assert(trava_aplicar_servidor("{\"rev\":9,\"travas\":[]}", 3) && trava_n() == 1);
+  assert(trava_aplicar_servidor("{\"rev\":9,\"travas\":[]}", 2) && trava_n() == 0);
   printf("estado, arquivo e servidor: ok\n");
 }
 

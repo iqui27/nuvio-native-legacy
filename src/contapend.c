@@ -269,8 +269,13 @@ static int registrar(char sup, int perfil, const char *id, const char *tipo,
 
 int contapend_episodios(const char *imdb, const char *tipo,
                         const VistoPar *pares, int n, int visto) {
+  return contapend_episodios_perfil(perfis_ativo(), imdb, tipo, pares, n, visto);
+}
+
+int contapend_episodios_perfil(int perfil, const char *imdb, const char *tipo,
+                               const VistoPar *pares, int n, int visto) {
   char id[24];
-  int i, k = 0, perfil = perfis_ativo();
+  int i, k = 0;
   long long ms = contapend_agora_ms();
   idVisto(imdb, id, sizeof id);
   if (!id[0] || !pares || n < 1 || perfil < 1) return 0;

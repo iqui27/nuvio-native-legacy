@@ -174,6 +174,10 @@ test("passo: so avanca, desfazer volta, Juntos marca outro perfil da conta, nunc
     "perfil da conta que nao e membro");
   assert.equal((await api("nuvio", "tok-a", "POST", "/v1/trava/passo", { id, t: 1, e: 2, pessoa: "nuvio:bbb" })).status, 403);
   assert.equal((await api("nuvio", "tok-a", "POST", "/v1/trava/passo", { id, t: 0, e: 2 })).status, 400);
+  assert.equal((await api("nuvio", "tok-a", "POST", "/v1/trava/passo", { id, t: 0, e: 0 })).status, 400);
+  // Desfazer pode voltar a "nao comecou".
+  assert.equal((await api("nuvio", "tok-a", "POST", "/v1/trava/passo", { id, t: 0, e: 0, desfazer: 1, pessoa: A2 })).body.mudou, 1);
+  await api("nuvio", "tok-a", "POST", "/v1/trava/passo", { id, t: 1, e: 2, pessoa: A2 });
   const l = await api("nuvio", "tok-a", "GET", "/v1/travas", null, 2);
   const pos = Object.fromEntries(l.body.travas[0].membros.map((m) => [m.pessoa, `${m.t}x${m.e}`]));
   assert.deepEqual(pos, { [A]: "1x2", [A2]: "1x2" });

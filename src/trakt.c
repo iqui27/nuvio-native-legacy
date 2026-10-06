@@ -868,8 +868,26 @@ int trakt_playback_remover(const char *imdb) {
 // O lote chega ORDENADO por temporada, mas nao se assume isso: o laco agrupa
 // procurando cada temporada uma vez, que para os poucos episodios de um gesto
 // custa menos que ordenar.
+static int marcarComToken(const char *tok, const char *cli, const char *imdb,
+                          const VistoPar *pares, int qtd, int visto);
 int trakt_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd,
                            int visto) {
+  if (!ligado) return 0;
+  return marcarComToken(token, cliente, imdb, pares, qtd, visto);
+}
+
+// TRAVA DE SERIE, modo Juntos: o mesmo lote no Trakt de OUTRO perfil desta TV
+// (o token dele, de trakt-p<N>.txt, lido por traktauth_token_de). Nunca mexe
+// na credencial em uso. Sem chave do aplicativo, nada.
+int trakt_episodios_marcar_token(const char *tok, const char *imdb,
+                                 const VistoPar *pares, int qtd, int visto) {
+  const char *cli = chaveApp();
+  if (!tok || !tok[0] || !cli || !cli[0]) return 0;
+  return marcarComToken(tok, cli, imdb, pares, qtd, visto);
+}
+
+static int marcarComToken(const char *tok, const char *cli, const char *imdb,
+                          const VistoPar *pares, int qtd, int visto) {
   const char *cab[4];
   char aut[200], chaveCab[140], id[24], url[64];
   Jsw w;
@@ -878,7 +896,7 @@ int trakt_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd,
   // 256 e nao 64: o lote da temporada agora vem do catalogo tambem (visto.c),
   // e temporada de anime passa de 64 — com 64 o resto era cortado calado.
   char feita[256];
-  if (!ligado || !imdb || imdb[0] != 't' || !pares || qtd < 1) return 0;
+  if (!imdb || imdb[0] != 't' || !pares || qtd < 1) return 0;
   if (qtd > (int)sizeof feita) qtd = (int)sizeof feita;
   for (i = 0; imdb[i] && imdb[i] != ':' && i < (int)sizeof id - 1; i++) id[i] = imdb[i];
   id[i] = 0;
@@ -917,8 +935,8 @@ int trakt_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd,
   jsw_arr_fim(&w);
   jsw_obj_fim(&w);
 
-  snprintf(aut, sizeof aut, "Authorization: Bearer %s", token);
-  snprintf(chaveCab, sizeof chaveCab, "trakt-api-key: %s", cliente);
+  snprintf(aut, sizeof aut, "Authorization: Bearer %s", tok);
+  snprintf(chaveCab, sizeof chaveCab, "trakt-api-key: %s", cli);
   cab[0] = aut;
   cab[1] = "trakt-api-version: 2";
   cab[2] = chaveCab;
