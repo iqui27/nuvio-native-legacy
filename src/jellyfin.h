@@ -69,6 +69,13 @@ typedef enum {
   JF_BACKEND_WGT        // Samsung web: unavailable (no strict HTTP)
 } JfBackend;
 JfBackend jellyfin_backend(void);
+// Tests only: pretend to be another backend (-1 = the real one).
+void jellyfin_backend_definir(int b);
+// What each pipeline is declared to open as is: comma lists of containers,
+// video and audio codecs (Jellyfin names; "ts" is MPEG-TS). 0 on WGT.
+// Shared by the Jellyfin/Emby DeviceProfile and the Plex direct-play filter.
+int jf_capacidades(JfBackend b, const char **cont, const char **vid, const char **aud);
+int jf_lista_tem(const char *lista, const char *item);   // case-insensitive, exact item
 const char *jellyfin_backend_nome(JfBackend b);
 
 enum { JF_TIPO_JELLYFIN = 0, JF_TIPO_EMBY = 1 };

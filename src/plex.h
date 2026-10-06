@@ -5,7 +5,8 @@
 // the remote), finds the person's Plex Media Server through plex.tv/api/v2/
 // resources, picks a connection (local first, then direct remote, relay last),
 // shows the movie/show libraries as Home rows, fills the title page from the
-// server item, plays the media Part (direct play) or an HLS transcode, and
+// server item, plays the media Part (direct play, only when this TV's codec
+// table AND the server's universal decision allow it) or an HLS stream, and
 // reports timeline check-ins so the server's resume state stays the authority.
 // It also keeps a small imdb:// / tmdb:// index of the libraries so that a
 // regular catalogue title (Cinemeta "tt...") that the server has gets the
@@ -32,6 +33,7 @@
 #include <stddef.h>
 #include "catalogo.h"
 #include "jfid.h"
+#include "jellyfin.h"
 #include "rede.h"
 #include "streams.h"
 
@@ -132,7 +134,15 @@ typedef struct {
   long long duracaoMs;
   char url[2048];          // absolute, carries the token: never log
 } PxSessaoPlay;
-enum { PX_METODO_DIRETO = 0, PX_METODO_TRANSCODE };
+// DIRETO: the Part as is. STREAM: HLS where the server copies the video and
+// converts only audio/subtitles. TRANSCODE: HLS, video converted too.
+enum { PX_METODO_DIRETO = 0, PX_METODO_TRANSCODE, PX_METODO_STREAM };
+// What decides direct play for one Media version (px_ler_midias): container,
+// video codec, the SELECTED audio track and the selected subtitle, if any.
+typedef struct {
+  char cont[16], vcod[16], acod[16], leg[24];
+} PxMidiaInfo;
+enum { PX_DEC_DESCONHECIDO = -1, PX_DEC_NAO = 0, PX_DEC_DIRETO = 1 };
 typedef struct {
   int n;
   PxSessaoPlay sessao[PX_FONTES_MAX];
@@ -167,7 +177,17 @@ int px_ler_indice(const char *corpo, size_t n, PxIdx *idx, int *nIdx, int maxIdx
 int px_ler_episodio_rk(const char *corpo, size_t n, int temp, int ep, char *rk, size_t tam);
 int px_ler_detalhe(const PxConta *c, const char *corpo, size_t n, CatItem *out);
 int px_ler_episodios(const PxConta *c, const char *corpo, size_t n, CatEp *out, int max);
-int px_ler_fontes(const PxConta *c, const char *rk, const char *corpo, size_t n, PxPlayback *out);
+// `direto[i]` is the server's decision for version i (PX_DEC_*), or NULL when
+// none was asked. Direct play is listed only when px_direto_suportado says
+// this TV opens the version AND the decision is not PX_DEC_NAO; otherwise the
+// version gets the HLS entry (direct stream or transcode).
+int px_ler_fontes(const PxConta *c, const char *rk, const char *corpo, size_t n,
+                  const signed char *direto, PxPlayback *out);
+int px_ler_midias(const char *corpo, size_t n, PxMidiaInfo *out, int max);
+int px_direto_suportado(JfBackend b, const PxMidiaInfo *m);
+int px_video_suportado(JfBackend b, const char *vcod);
+int px_perfil_extra(JfBackend b, char *dst, size_t tam);
+int px_ler_decisao(const char *corpo, size_t n);           // PX_DEC_*
 // Item id the person's title carries -> external ids. Accepts "tt123",
 // "tt123:2:5", "tmdb:278", "tmdb:278:1:3". 0 when not an external id.
 int px_id_titulo(const char *id, char imdb[16], long *tmdb, int *temp, int *ep);
@@ -192,6 +212,8 @@ int px_achar_episodio(const PxConta *c, RedeJob *job, const char *serieRk, int t
                       char *rk, size_t tam);
 int px_detalhe(const PxConta *c, RedeJob *job, const char *rk, CatItem *out);
 int px_episodios(const PxConta *c, RedeJob *job, const char *serieRk, CatEp *out, int max);
+int px_decisao(const PxConta *c, RedeJob *job, const char *rk, int midia, JfBackend b);
+// Item metadata, then one decision per version this TV could open as is.
 int px_fontes(const PxConta *c, RedeJob *job, const char *rk, PxPlayback *out);
 enum { PX_REL_INICIO = 0, PX_REL_PROGRESSO, PX_REL_PAUSA, PX_REL_RETOMA, PX_REL_FIM };
 int px_reportar(const PxConta *c, RedeJob *job, int evento, const PxSessaoPlay *s, double posSeg);

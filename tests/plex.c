@@ -338,25 +338,67 @@ static void testarParsers(void) {
     assert(px_ler_episodio_rk(EPISODIOS, strlen(EPISODIOS), 3, 1, rk, sizeof rk) == 0);
     assert(px_ler_episodio_rk("{}", 2, 1, 1, rk, sizeof rk) == PX_ERR_FORMATO); }
 
-  // --- playback sources: 2 usable versions (+1 HLS for the first), bad part keys refused
-  assert(px_ler_fontes(&c, "101", FONTES, strlen(FONTES), pb) == PX_OK);
+  // --- playback sources: 2 usable versions (+1 HLS for the first), bad part keys refused.
+  // Version 2 has TrueHD: this TV (webOS) does not open it, so it is NEVER
+  // offered as direct play — only as direct stream (video copied, audio converted).
+  assert(px_ler_fontes(&c, "101", FONTES, strlen(FONTES), NULL, pb) == PX_OK);
   assert(pb->n == 3);
-  assert(pb->sessao[0].metodo == PX_METODO_DIRETO && pb->sessao[1].metodo == PX_METODO_TRANSCODE &&
-         pb->sessao[2].metodo == PX_METODO_DIRETO);
+  assert(pb->sessao[0].metodo == PX_METODO_DIRETO && pb->sessao[1].metodo == PX_METODO_STREAM &&
+         pb->sessao[2].metodo == PX_METODO_STREAM);
   assert(!strcmp(pb->sessao[0].url, "http://plex.example:32400/library/parts/901/1700000000/file.mkv?X-Plex-Token=tok-fixture"));
   assert(strstr(pb->sessao[1].url, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F101&mediaIndex=0"));
   assert(strstr(pb->sessao[1].url, "protocol=hls") && strstr(pb->sessao[1].url, pb->sessao[1].sessaoId));
-  assert(pb->sessao[2].midia == 1 && strstr(pb->sessao[2].url, "/library/parts/902/"));
+  assert(pb->sessao[2].midia == 1 && strstr(pb->sessao[2].url, "start.m3u8") && strstr(pb->sessao[2].url, "mediaIndex=1"));
   assert(pb->sessao[0].duracaoMs == 7200000 && !strcmp(pb->sessao[0].ratingKey, "101"));
   assert(!strcmp(pb->fonte[0].provedor, "Plex") && pb->fonte[0].altura == 1080 && !pb->fonte[0].mp4);
-  assert(!strcmp(pb->fonte[0].rotulo, "1080p · Direct play") && !strcmp(pb->fonte[1].rotulo, "1080p · Transcode (HLS)"));
+  assert(!strcmp(pb->fonte[0].rotulo, "1080p · Direct play") && !strcmp(pb->fonte[1].rotulo, "1080p · Direct stream (HLS)"));
+  assert(!strcmp(pb->fonte[1].bingeGroup, "plex|DirectStream") && !strcmp(pb->fonte[0].bingeGroup, "plex|DirectPlay"));
   assert(strstr(pb->fonte[0].descricao, "HEVC · HDR10 · EAC3 5.1 · MKV"));
-  assert(pb->fonte[2].altura == 2160 && pb->fonte[2].dolbyVision && pb->fonte[2].mp4 && strstr(pb->fonte[2].descricao, "Dolby Vision"));
+  assert(pb->fonte[2].altura == 2160 && pb->fonte[2].dolbyVision && !pb->fonte[2].mp4 && strstr(pb->fonte[2].descricao, "Dolby Vision"));
+  // The server refused version 1 (decision): no direct play for it either.
+  { signed char d[PX_FONTES_MAX] = { PX_DEC_NAO, PX_DEC_DESCONHECIDO };
+    assert(px_ler_fontes(&c, "101", FONTES, strlen(FONTES), d, pb) == PX_OK);
+    assert(pb->n == 2 && pb->sessao[0].metodo == PX_METODO_STREAM && pb->sessao[1].metodo == PX_METODO_STREAM);
+    d[0] = PX_DEC_DESCONHECIDO;   // unknown keeps the TV's own verdict
+    assert(px_ler_fontes(&c, "101", FONTES, strlen(FONTES), d, pb) == PX_OK && pb->sessao[0].metodo == PX_METODO_DIRETO); }
+  // On the desktop build HEVC is not declared: nothing is direct, and the HLS
+  // entries are a full transcode.
+  jellyfin_backend_definir(JF_BACKEND_HOST);
+  assert(px_ler_fontes(&c, "101", FONTES, strlen(FONTES), NULL, pb) == PX_OK);
+  assert(pb->n == 2 && pb->sessao[0].metodo == PX_METODO_TRANSCODE && !strcmp(pb->fonte[0].bingeGroup, "plex|Transcode"));
+  jellyfin_backend_definir(JF_BACKEND_WEBOS);
+  assert(px_ler_fontes(&c, "101", FONTES, strlen(FONTES), NULL, pb) == PX_OK);
+  // Media info: the SELECTED audio/subtitle decide, and the decision parser.
+  { PxMidiaInfo m[4];
+    static const char SEL[] = "{\"MediaContainer\":{\"Metadata\":[{\"Media\":[{\"container\":\"mkv\",\"videoCodec\":\"h264\","
+      "\"audioCodec\":\"ac3\",\"Part\":[{\"Stream\":[{\"streamType\":2,\"codec\":\"truehd\",\"selected\":true},"
+      "{\"streamType\":3,\"codec\":\"pgs\",\"selected\":true}]}]},"
+      "{\"container\":\"mpegts\",\"videoCodec\":\"h264\",\"audioCodec\":\"aac\",\"Part\":[{\"Stream\":["
+      "{\"streamType\":3,\"codec\":\"srt\",\"selected\":true}]}]}]}]}}";
+    assert(px_ler_midias(SEL, strlen(SEL), m, 4) == 2);
+    assert(!strcmp(m[0].acod, "truehd") && !strcmp(m[0].leg, "pgs") && !px_direto_suportado(JF_BACKEND_WEBOS, &m[0]));
+    snprintf(m[0].acod, sizeof m[0].acod, "ac3");
+    assert(!px_direto_suportado(JF_BACKEND_WEBOS, &m[0]));            // PGS alone still refuses
+    m[0].leg[0] = 0;
+    assert(px_direto_suportado(JF_BACKEND_WEBOS, &m[0]));
+    assert(px_direto_suportado(JF_BACKEND_TPK, &m[1]));               // mpegts is "ts", srt is fine
+    snprintf(m[1].acod, sizeof m[1].acod, "dca");
+    assert(!px_direto_suportado(JF_BACKEND_ANDROID, &m[1]) && !px_direto_suportado(JF_BACKEND_WGT, &m[1]));
+    { char pe[600];
+      assert(px_perfil_extra(JF_BACKEND_TPK, pe, sizeof pe) && strstr(pe, "add-direct-play-profile") &&
+             strstr(pe, "mpegts") && strstr(pe, "hevc") && !strstr(pe, "dca") && !strstr(pe, "truehd"));
+      assert(!px_perfil_extra(JF_BACKEND_WGT, pe, sizeof pe)); }
+    assert(px_ler_decisao("{\"MediaContainer\":{\"directPlayDecisionCode\":1000}}", 50) == PX_DEC_DIRETO);
+    assert(px_ler_decisao("{\"MediaContainer\":{\"directPlayDecisionCode\":3000}}", 50) == PX_DEC_NAO);
+    { static const char PD[] = "{\"MediaContainer\":{\"Metadata\":[{\"Media\":[{\"Part\":[{\"decision\":\"directplay\"}]}]}]}}";
+      assert(px_ler_decisao(PD, strlen(PD)) == PX_DEC_DIRETO); }
+    assert(px_ler_decisao("{\"MediaContainer\":{}}", 21) == PX_DEC_DESCONHECIDO);
+    assert(px_ler_decisao("<xml/>", 6) == PX_DEC_DESCONHECIDO); }
   assert(pb->fonte[0].tamanhoBytes == 12345678901ull && !pb->fonte[1].tamanhoBytes);
   for (i = 0; i < pb->n; i++)
     assert(!strstr(pb->fonte[i].descricao, "/srv/private") && !strstr(pb->fonte[i].url, "evil.example") &&
            !strstr(pb->fonte[i].url, "a b"));
-  assert(px_ler_fontes(&c, "101", "{\"MediaContainer\":{\"Metadata\":[{}]}}", 37, pb) == PX_ERR_FORMATO);
+  assert(px_ler_fontes(&c, "101", "{\"MediaContainer\":{\"Metadata\":[{}]}}", 37, NULL, pb) == PX_ERR_FORMATO);
   assert(px_ms(0) == 0 && px_ms(-3) == 0 && px_ms(1.5) == 1500 && px_ms(1e300) > 0);
 
   // --- id namespaces: px: is a personal-server id for every privacy gate
@@ -452,8 +494,12 @@ static void integracao(void) {
   assert(plex_fontes_pedir(alvo));
   fim = ms() + 5000;
   while ((r = plex_fontes_colher(alvo, &lista, &n)) == PX_FONTES_PENDENTE && ms() < fim) dormir(20);
-  assert(r == PX_FONTES_PRONTO && n == 3 && lista);
+  // v1 HEVC/EAC3 direct + its HLS, v2 H.264 direct, v3 DTS only as direct stream.
+  assert(r == PX_FONTES_PRONTO && n == 4 && lista);
   assert(!strcmp(lista[0].provedor, "Plex") && strstr(lista[0].url, "/library/parts/901/"));
+  assert(strstr(lista[2].url, "/library/parts/902/") && strstr(lista[3].url, "start.m3u8") &&
+         strstr(lista[3].url, "mediaIndex=2") && !strstr(lista[3].url, "/library/parts/903/"));
+  { char *c = controle("counts"); assert(strstr(c, "\"decisions\": 2")); free(c); }   // none for the DTS version
   assert(strstr(lista[0].url, "http://127.0.0.1:"));                           // the LAN raw-http connection won the probe
   free(lista); lista = NULL;
   assert(!plex_fontes_pedir("px:deadbeef.101"));                               // wrong server: refused, never fetched
@@ -461,7 +507,7 @@ static void integracao(void) {
   { char *c = controle("counts"); assert(strstr(c, "\"probe\": 1")); free(c); }    // one probe: the first candidate answered
 
   // ---- matched sources on a REGULAR catalogue title
-  assert(plex_consultar("tt0000101", "movie", nuncaCancela, NULL, &lista) == 3);
+  assert(plex_consultar("tt0000101", "movie", nuncaCancela, NULL, &lista) == 4);
   assert(lista && strstr(lista[0].url, "/library/parts/901/") && !strcmp(lista[0].provedor, "Plex"));
   { char url0[2048]; snprintf(url0, sizeof url0, "%s", lista[0].url); free(lista); lista = NULL;
     // check-ins for that matched source: start, no progress before 10 s, pause, stop
@@ -481,11 +527,11 @@ static void integracao(void) {
     assert(strstr(ev, "\"time\": \"1000\"") && strstr(ev, "\"time\": \"5000\"") && strstr(ev, "\"dur\": \"7200000\""));
     assert(!strstr(ev, "transcode-stop"));
     free(ev); }
-  assert(plex_consultar("tmdb:5102", "movie", nuncaCancela, NULL, &lista) == 3 && lista);   // tmdb-only match
+  assert(plex_consultar("tmdb:5102", "movie", nuncaCancela, NULL, &lista) == 4 && lista);   // tmdb-only match
   free(lista); lista = NULL;
-  assert(plex_consultar("tt0000201:1:2", "series", nuncaCancela, NULL, &lista) == 3 && lista);   // episode 302 resolved
+  assert(plex_consultar("tt0000201:1:2", "series", nuncaCancela, NULL, &lista) == 4 && lista);   // episode 302 resolved
   free(lista); lista = NULL;
-  assert(plex_consultar("tt0000201:2:1", "tv", nuncaCancela, NULL, &lista) == 3);
+  assert(plex_consultar("tt0000201:2:1", "tv", nuncaCancela, NULL, &lista) == 4);
   free(lista); lista = NULL;
   assert(plex_consultar("tt0000201:3:1", "series", nuncaCancela, NULL, &lista) == 0 && !lista);  // no such episode
   assert(plex_consultar("tt0000201", "movie", nuncaCancela, NULL, &lista) == 0);                  // a show is not a movie
@@ -493,8 +539,15 @@ static void integracao(void) {
   assert(plex_consultar("kitsu:12", "series", nuncaCancela, NULL, &lista) == 0);                  // not an external id
   assert(plex_consultar("tt0000101", "movie", sempreCancela, NULL, &lista) == -1 && !lista);
 
-  // ---- transcode check-in ends with an explicit stop for the encoder
+  // ---- the server refuses direct play of version 1: only its HLS entry stays
+  free(controle("refuse?media=0"));
   assert(plex_consultar("tt0000101", "movie", nuncaCancela, NULL, &lista) == 3);
+  assert(strstr(lista[0].url, "start.m3u8") && strstr(lista[0].url, "mediaIndex=0") &&
+         strstr(lista[1].url, "/library/parts/902/"));
+  free(lista); lista = NULL;
+  free(controle("refuse?media="));
+  // ---- transcode check-in ends with an explicit stop for the encoder
+  assert(plex_consultar("tt0000101", "movie", nuncaCancela, NULL, &lista) == 4);
   { char urlT[2048]; snprintf(urlT, sizeof urlT, "%s", lista[1].url); free(lista); lista = NULL;
     assert(strstr(urlT, "start.m3u8"));
     plex_reproducao_tick(urlT, 1, 7200, 1);
@@ -545,7 +598,7 @@ static void integracao(void) {
   // ---- account logout wipes every profile file
   perfilAtivo = 3;
   plex_perfil_trocou();
-  { char nome[40];
+  { char nome[700];
     FILE *f;
     snprintf(nome, sizeof nome, "%s/plex-p3.txt", dirDados);
     f = fopen(nome, "w"); assert(f); fputs("tokc=x\ntoks=y\nbase=http://x\nsid=ab\n", f); fclose(f); }
@@ -560,6 +613,9 @@ int main(int argc, char **argv) {
   assert(argc >= 3);
   snprintf(raiz, sizeof raiz, "%s", argv[1]);
   snprintf(dirDados, sizeof dirDados, "%s", argv[2]);
+  // A TV backend: the desktop build declares no HEVC, so nothing would be
+  // direct play there (that case is pinned in testarParsers).
+  jellyfin_backend_definir(JF_BACKEND_WEBOS);
   testarPin();
   testarParsers();
   integracao();

@@ -8,7 +8,7 @@
 //            GET  /api/v2/user                     -> display name
 //   server   GET  /identity, /library/sections, /library/sections/{k}/all,
 //            /library/metadata/{rk}[/allLeaves], /:/timeline,
-//            /video/:/transcode/universal/{start.m3u8,stop}
+//            /video/:/transcode/universal/{decision,start.m3u8,stop}
 // None of this was exercised against a real Plex Media Server here: the
 // shapes follow Plex's public API documentation and community-documented
 // behaviour, and are pinned by fixture tests (tests/plex.c).
@@ -104,7 +104,9 @@ long long px_ms(double seg) {
   return (long long)(seg * 1000.0 + 0.5);
 }
 
-const char *px_metodo_nome(int m) { return m == PX_METODO_DIRETO ? "DirectPlay" : "Transcode"; }
+const char *px_metodo_nome(int m) {
+  return m == PX_METODO_DIRETO ? "DirectPlay" : m == PX_METODO_STREAM ? "DirectStream" : "Transcode";
+}
 
 static int soDigitos(const char *s, size_t max) {
   size_t n = 0;
@@ -592,6 +594,116 @@ int pxidx_achar(const PxIdx *v, int n, const char *imdb, long tmdb, char tipo) {
   return -1;
 }
 
+// --------------------------------------------------------- direct play gate
+// Plex containers are "mkv", "mp4", "mpegts"...; the capability lists of
+// jellyfin.c say "ts". DTS is "dca" (and "dca-ma") on Plex.
+static const char *contNome(const char *c) { return !strcasecmp(c, "mpegts") ? "ts" : c; }
+
+int px_ler_midias(const char *corpo, size_t n, PxMidiaInfo *out, int max) {
+  const char *ai, *af, *p, *mi, *mf;
+  int k = 0;
+  if (!arrayDe(corpo, n, "Metadata", &ai, &af)) return PX_ERR_FORMATO;
+  p = elemento(ai + 1, af);
+  if (!p || *p != '{') return PX_ERR_FORMATO;
+  af = depoisElemento(p);
+  if (!af || !blocoRaiz(p, af, "Media", &mi, &mf)) return PX_ERR_FORMATO;
+  p = mi + 1;
+  while (k < max && (p = elemento(p, mf)) != NULL) {
+    const char *f = depoisElemento(p), *pi, *pf, *q;
+    PxMidiaInfo *m = &out[k];
+    if (!f) break;
+    memset(m, 0, sizeof *m);
+    if (*p == '{') {
+      txtRaiz(p, f, "container", m->cont, sizeof m->cont);
+      txtRaiz(p, f, "videoCodec", m->vcod, sizeof m->vcod);
+      txtRaiz(p, f, "audioCodec", m->acod, sizeof m->acod);
+      // The SELECTED tracks decide: a file whose default audio is DTS but that
+      // also has an AC3 track still plays the DTS one unless told otherwise.
+      if (blocoRaiz(p, f, "Part", &pi, &pf) && (q = elemento(pi + 1, pf)) != NULL && *q == '{') {
+        const char *qf = depoisElemento(q), *si, *sf, *w;
+        if (qf && blocoRaiz(q, qf, "Stream", &si, &sf)) {
+          w = si + 1;
+          while ((w = elemento(w, sf)) != NULL) {
+            const char *wf = depoisElemento(w);
+            if (!wf) break;
+            if (*w == '{' && boolRaiz(w, wf, "selected", 0)) {
+              int t = (int)numRaiz(w, wf, "streamType", 0);
+              if (t == 2) txtRaiz(w, wf, "codec", m->acod, sizeof m->acod);
+              else if (t == 3) txtRaiz(w, wf, "codec", m->leg, sizeof m->leg);
+            }
+            w = wf;
+          }
+        }
+      }
+    }
+    k++;
+    p = f;
+  }
+  return k;
+}
+
+int px_video_suportado(JfBackend b, const char *vcod) {
+  const char *cont, *vid, *aud;
+  return jf_capacidades(b, &cont, &vid, &aud) && jf_lista_tem(vid, vcod);
+}
+
+// The TV's own table first: Plex is never asked to approve what this pipeline
+// is known not to open (DTS/TrueHD on every backend here, PGS/VobSub burned
+// subtitles, HEVC on the desktop build).
+int px_direto_suportado(JfBackend b, const PxMidiaInfo *m) {
+  const char *cont, *vid, *aud;
+  if (!m || !jf_capacidades(b, &cont, &vid, &aud)) return 0;
+  if (!jf_lista_tem(cont, contNome(m->cont)) || !jf_lista_tem(vid, m->vcod)) return 0;
+  if (m->acod[0] && !jf_lista_tem(aud, m->acod)) return 0;
+  if (m->leg[0] && (!strcasecmp(m->leg, "pgs") || !strcasecmp(m->leg, "vobsub") ||
+                    !strcasecmp(m->leg, "dvd_subtitle") || !strcasecmp(m->leg, "hdmv_pgs_subtitle")))
+    return 0;
+  return 1;
+}
+
+// X-Plex-Client-Profile-Extra with the same table, so the server's decision
+// is made against what this TV opens and not against a generic profile.
+int px_perfil_extra(JfBackend b, char *dst, size_t tam) {
+  const char *cont, *vid, *aud;
+  char c2[96];
+  size_t k = 0;
+  const char *p;
+  if (!jf_capacidades(b, &cont, &vid, &aud)) return 0;
+  for (p = cont; *p && k + 8 < sizeof c2;) {
+    size_t n = strcspn(p, ",");
+    if (n == 2 && !strncmp(p, "ts", 2)) k += (size_t)snprintf(c2 + k, sizeof c2 - k, "%smpegts", k ? "," : "");
+    else k += (size_t)snprintf(c2 + k, sizeof c2 - k, "%s%.*s", k ? "," : "", (int)n, p);
+    p += n;
+    if (*p == ',') p++;
+  }
+  return snprintf(dst, tam,
+                  "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mpegts"
+                  "&videoCodec=h264&audioCodec=aac,ac3)"
+                  "+add-direct-play-profile(type=videoProfile&container=%s&videoCodec=%s&audioCodec=%s"
+                  "&subtitleCodec=srt,ass,ssa,webvtt)", c2, vid, aud) < (int)tam;
+}
+
+// /video/:/transcode/universal/decision. directPlayDecisionCode 1000 is "Direct
+// play OK"; any other code says no. Without the code, the first Part's
+// "decision" decides. Nothing readable: unknown (the caller keeps its own
+// table's verdict).
+int px_ler_decisao(const char *corpo, size_t n) {
+  const char *mi, *mf, *ai, *af, *p, *f, *bi, *bf, *q;
+  double cod;
+  char dec[24] = "";
+  if (!corpo || !blocoRaiz(corpo, corpo + n, "MediaContainer", &mi, &mf)) return PX_DEC_DESCONHECIDO;
+  cod = numRaiz(mi, mf, "directPlayDecisionCode", -1);
+  if (cod >= 0) return cod == 1000 ? PX_DEC_DIRETO : PX_DEC_NAO;
+  if (!blocoRaiz(mi, mf, "Metadata", &ai, &af) || !(p = elemento(ai + 1, af)) || *p != '{' ||
+      !(f = depoisElemento(p)) || !blocoRaiz(p, f, "Media", &bi, &bf) || !(q = elemento(bi + 1, bf)) || *q != '{')
+    return PX_DEC_DESCONHECIDO;
+  f = depoisElemento(q);
+  if (!f || !blocoRaiz(q, f, "Part", &bi, &bf) || !(q = elemento(bi + 1, bf)) || *q != '{' ||
+      !(f = depoisElemento(q)) || !txtRaiz(q, f, "decision", dec, sizeof dec) || !dec[0])
+    return PX_DEC_DESCONHECIDO;
+  return !strcmp(dec, "directplay") ? PX_DEC_DIRETO : PX_DEC_NAO;
+}
+
 // --------------------------------------------------------- playback sources
 static void descreverMidia(const char *mi, const char *mf, Stream *s, int metodo, const char *versaoNome) {
   char vcod[16] = "", acod[16] = "", trc[24] = "", cont[16] = "", res[16] = "";
@@ -637,7 +749,8 @@ static void descreverMidia(const char *mi, const char *mf, Stream *s, int metodo
     for (u = cont; *u; u++) *u = (char)toupper((unsigned char)*u);
   }
   {
-    const char *m = metodo == PX_METODO_DIRETO ? "Direct play" : "Transcode (HLS)";
+    const char *m = metodo == PX_METODO_DIRETO ? "Direct play" :
+                    metodo == PX_METODO_STREAM ? "Direct stream (HLS)" : "Transcode (HLS)";
     if (s->altura) snprintf(s->rotulo, sizeof s->rotulo, "%dp · %s", s->altura, m);
     else copiar(s->rotulo, sizeof s->rotulo, m);
   }
@@ -665,11 +778,17 @@ static void novoSessao(char *dst, size_t tam) {
   snprintf(dst, tam, "nuvio%02x%02x%02x%02x%02x%02x", b[0], b[1], b[2], b[3], b[4], b[5]);
 }
 
-int px_ler_fontes(const PxConta *c, const char *rk, const char *corpo, size_t n, PxPlayback *out) {
+int px_ler_fontes(const PxConta *c, const char *rk, const char *corpo, size_t n,
+                  const signed char *direto, PxPlayback *out) {
   const char *ai, *af, *p, *mi, *mf;
   double durItem;
-  int idx = 0;
+  int idx = 0, nInfo;
+  PxMidiaInfo info[PX_FONTES_MAX];
+  JfBackend b = jellyfin_backend();
   memset(out, 0, sizeof *out);
+  memset(info, 0, sizeof info);
+  nInfo = px_ler_midias(corpo, n, info, PX_FONTES_MAX);
+  if (nInfo < 0) nInfo = 0;
   if (!arrayDe(corpo, n, "Metadata", &ai, &af)) return PX_ERR_FORMATO;
   p = elemento(ai + 1, af);
   if (!p || *p != '{') return PX_ERR_FORMATO;
@@ -698,8 +817,19 @@ int px_ler_fontes(const PxConta *c, const char *rk, const char *corpo, size_t n,
     for (k = 0; k < 2 && out->n < PX_FONTES_MAX; k++) {
       PxSessaoPlay *sp = &out->sessao[out->n];
       Stream *s = &out->fonte[out->n];
-      int metodo = k == 0 ? PX_METODO_DIRETO : PX_METODO_TRANSCODE;
-      if (k == 1 && idx != 0) continue;     // one transcode alternative, for the first version
+      int metodo, pode;
+      // DIRECT PLAY ONLY WHEN IT CAN WORK: this TV's table says so AND the
+      // server's decision did not refuse it (direto[idx]: 1 yes, 0 no, -1 the
+      // server could not tell). Before this every Part was "Direct play", and
+      // a DTS/TrueHD/PGS file gave a black screen or no sound.
+      pode = idx < nInfo && px_direto_suportado(b, &info[idx]) && (!direto || direto[idx] != PX_DEC_NAO);
+      if (k == 0 && !pode) continue;
+      // The HLS alternative: always for the first version, and for any version
+      // that cannot play directly. With a video codec this TV opens the server
+      // copies the video and converts only what it must (direct stream).
+      if (k == 1 && idx != 0 && pode) continue;
+      metodo = k == 0 ? PX_METODO_DIRETO
+             : idx < nInfo && px_video_suportado(b, info[idx].vcod) ? PX_METODO_STREAM : PX_METODO_TRANSCODE;
       memset(sp, 0, sizeof *sp);
       memset(s, 0, sizeof *s);
       copiar(sp->ratingKey, sizeof sp->ratingKey, rk);
@@ -735,10 +865,19 @@ int px_ler_fontes(const PxConta *c, const char *rk, const char *corpo, size_t n,
 // ------------------------------------------------------------ requests
 // One request. Logs operation/status/latency only: never the URL (the host can
 // be a private address, the query can carry a token).
+static int pedirEx(const PxConta *c, const char *url, const char *token, const char *metodo,
+                   const char *operacao, unsigned prazo, RedeJob *job, RedeResposta *r,
+                   const char *extra);
 static int pedir(const PxConta *c, const char *url, const char *token, const char *metodo,
                  const char *operacao, unsigned prazo, RedeJob *job, RedeResposta *r) {
+  return pedirEx(c, url, token, metodo, operacao, prazo, job, r, NULL);
+}
+// `extra`: one more complete header line ("Name: value"), or NULL.
+static int pedirEx(const PxConta *c, const char *url, const char *token, const char *metodo,
+                   const char *operacao, unsigned prazo, RedeJob *job, RedeResposta *r,
+                   const char *extra) {
   char tok[120], did[96], dev[64], cab[8][200];
-  const char *cabs[10];
+  const char *cabs[11];
   int k = 0, i;
   RedePedido p;
   memset(r, 0, sizeof *r);
@@ -759,6 +898,7 @@ static int pedir(const PxConta *c, const char *url, const char *token, const cha
     snprintf(cab[6], sizeof cab[6], "X-Plex-Token: %.150s", tok);
     cabs[k++] = cab[6];
   }
+  if (extra && *extra) cabs[k++] = extra;
   cabs[k] = NULL;
   memset(&p, 0, sizeof p);
   p.metodo = metodo;
@@ -946,16 +1086,57 @@ int px_achar_episodio(const PxConta *c, RedeJob *job, const char *serieRk, int t
   return e;
 }
 
+// Asks the server whether version `midia` of item `rk` can play directly on
+// this backend. PX_DEC_* or PX_ERR_CANCELADO. A server without the route
+// (old PMS) or any other failure is PX_DEC_DESCONHECIDO: the TV's own table
+// still decides, the source list is never lost to a decision request.
+int px_decisao(const PxConta *c, RedeJob *job, const char *rk, int midia, JfBackend b) {
+  RedeResposta r;
+  char url[1400], perfil[600], cab[640], sessao[24];
+  int e;
+  if (!soDigitos(rk, 20) || midia < 0 || midia > 99 || !c->base[0]) return PX_ERR_ENTRADA;
+  if (!px_perfil_extra(b, perfil, sizeof perfil)) return PX_DEC_DESCONHECIDO;
+  snprintf(cab, sizeof cab, "X-Plex-Client-Profile-Extra: %s", perfil);
+  novoSessao(sessao, sizeof sessao);
+  if (snprintf(url, sizeof url,
+               "%s/video/:/transcode/universal/decision?path=%%2Flibrary%%2Fmetadata%%2F%s&mediaIndex=%d"
+               "&partIndex=0&protocol=hls&directPlay=1&directStream=1&directStreamAudio=1&fastSeek=1&hasMDE=1"
+               "&maxVideoBitrate=%d&X-Plex-Client-Profile-Name=Generic&X-Plex-Session-Identifier=%s",
+               c->base, rk, midia, PX_TAXA_MAX, sessao) >= (int)sizeof url)
+    return PX_ERR_ENTRADA;
+  e = pedirEx(c, url, c->token, "GET", "playback decision", PX_PRAZO_SONDA_MS * 2, job, &r, cab);
+  if (e == PX_ERR_CANCELADO) return e;
+  if (e) return PX_DEC_DESCONHECIDO;
+  e = px_ler_decisao(r.corpo, r.n_corpo);
+  rede_resposta_limpar(&r);
+  return e;
+}
+
 int px_fontes(const PxConta *c, RedeJob *job, const char *rk, PxPlayback *out) {
   RedeResposta r;
   char caminho[160];
-  int e;
+  signed char dir[PX_FONTES_MAX];
+  PxMidiaInfo info[PX_FONTES_MAX];
+  JfBackend b = jellyfin_backend();
+  int e, nm, i;
   memset(out, 0, sizeof *out);
   if (!soDigitos(rk, 20)) return PX_ERR_ENTRADA;
   snprintf(caminho, sizeof caminho, "/library/metadata/%s", rk);
   e = pedirServidor(c, caminho, "GET", "playback info", 0, job, &r);
   if (e) return e;
-  e = px_ler_fontes(c, rk, r.corpo, r.n_corpo, out);
+  nm = px_ler_midias(r.corpo, r.n_corpo, info, PX_FONTES_MAX);
+  for (i = 0; i < PX_FONTES_MAX; i++) dir[i] = PX_DEC_NAO;
+  // One decision per version this TV could open as is; a version the table
+  // already refuses costs no request.
+  for (i = 0; i < nm; i++) {
+    if (!px_direto_suportado(b, &info[i])) continue;
+    e = px_decisao(c, job, rk, i, b);
+    if (e == PX_ERR_CANCELADO) { rede_resposta_limpar(&r); return e; }
+    dir[i] = (signed char)(e == PX_DEC_NAO ? PX_DEC_NAO : e == PX_DEC_DIRETO ? PX_DEC_DIRETO : PX_DEC_DESCONHECIDO);
+    printf("[plex] version %d: %s\n", i + 1, dir[i] == PX_DEC_DIRETO ? "direct play approved"
+           : dir[i] == PX_DEC_NAO ? "direct play refused by the server" : "server decision unknown");
+  }
+  e = px_ler_fontes(c, rk, r.corpo, r.n_corpo, dir, out);
   rede_resposta_limpar(&r);
   return e;
 }
@@ -977,7 +1158,7 @@ int px_reportar(const PxConta *c, RedeJob *job, int evento, const PxSessaoPlay *
                     evento == PX_REL_INICIO ? "playback start" : evento == PX_REL_FIM ? "playback stopped" : "playback progress",
                     8000, job, &r);
   if (!e) rede_resposta_limpar(&r);
-  if (!e && evento == PX_REL_FIM && s->metodo == PX_METODO_TRANSCODE && s->sessaoId[0]) {
+  if (!e && evento == PX_REL_FIM && s->metodo != PX_METODO_DIRETO && s->sessaoId[0]) {
     char cam[200];
     snprintf(cam, sizeof cam, "/video/:/transcode/universal/stop?session=%s", s->sessaoId);
     if (!pedirServidor(c, cam, "GET", "release transcode", 5000, job, &r)) rede_resposta_limpar(&r);

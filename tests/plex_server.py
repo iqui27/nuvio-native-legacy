@@ -17,7 +17,8 @@ PIN_ID = 123456
 PORT = [0]
 
 lock = threading.Lock()
-state = {"polls": 0, "total_polls": 0, "events": [], "pins": 0, "sections_hits": 0, "probe_hits": 0}
+state = {"polls": 0, "total_polls": 0, "events": [], "pins": 0, "sections_hits": 0, "probe_hits": 0,
+         "decisions": 0, "refuse": set()}
 
 MOVIES = [
     {"ratingKey": "101", "type": "movie", "title": "Movie One", "year": 1999, "summary": "Overview one",
@@ -58,6 +59,13 @@ def media_for(rk):
          "audioCodec": "aac", "videoCodec": "h264", "videoResolution": "720", "container": "mp4",
          "Part": [{"id": 902, "key": "/library/parts/902/1700000001/file.mp4", "size": 999,
                    "container": "mp4"}]},
+        # DTS: no TV backend here opens it; never offered as direct play.
+        {"id": 503, "duration": 7200000, "width": 3840, "height": 2160, "audioChannels": 8,
+         "audioCodec": "dca", "videoCodec": "hevc", "videoResolution": "4k", "container": "mkv",
+         "Part": [{"id": 903, "key": "/library/parts/903/1700000002/file.mkv", "size": 4242,
+                   "container": "mkv",
+                   "Stream": [{"id": 5, "streamType": 1, "codec": "hevc"},
+                              {"id": 6, "streamType": 2, "codec": "dca", "channels": 8, "selected": True}]}]},
     ]}
 
 
@@ -102,7 +110,12 @@ class Handler(BaseHTTPRequestHandler):
                 with lock:
                     return self.reply(200, {"probe": state["probe_hits"], "pins": state["pins"],
                                             "sections": state["sections_hits"],
-                                            "polls": state["total_polls"]})
+                                            "polls": state["total_polls"],
+                                            "decisions": state["decisions"]})
+            if p == "/control/refuse":
+                with lock:
+                    state["refuse"] = set(int(x) for x in q.get("media", [""])[0].split(",") if x)
+                return self.reply(200, {})
             return self.reply(404)
         cid = self.headers.get("X-Plex-Client-Identifier", "")
         if p.startswith("/api/v2/"):
@@ -182,6 +195,22 @@ class Handler(BaseHTTPRequestHandler):
                 state["events"].append({"state": q.get("state", [""])[0], "time": q.get("time", [""])[0],
                                         "rk": q.get("ratingKey", [""])[0], "dur": q.get("duration", [""])[0]})
             return self.reply(200, {})
+        if p == "/video/:/transcode/universal/decision":
+            # The profile must come in the header, and the item by path.
+            extra = self.headers.get("X-Plex-Client-Profile-Extra", "")
+            if "add-direct-play-profile" not in extra or "dca" in extra or "truehd" in extra:
+                return self.reply(400)
+            if not q.get("path", [""])[0].startswith("/library/metadata/"):
+                return self.reply(400)
+            mi = int(q.get("mediaIndex", ["0"])[0])
+            with lock:
+                state["decisions"] += 1
+                refused = mi in state["refuse"]
+            code = 3000 if refused else 1000
+            return self.reply(200, {"MediaContainer": {
+                "size": 1, "directPlayDecisionCode": code,
+                "directPlayDecisionText": "App cannot direct play this item." if refused else "Direct play OK.",
+                "Metadata": [{"Media": [{"Part": [{"decision": "transcode" if refused else "directplay"}]}]}]}})
         if p == "/video/:/transcode/universal/stop":
             with lock:
                 state["events"].append({"state": "transcode-stop", "session": q.get("session", [""])[0]})

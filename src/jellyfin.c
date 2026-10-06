@@ -47,7 +47,11 @@ const char *jellyfin_metodo_nome(int m) {
   return m == JF_METODO_DIRETO ? "DirectPlay" : m == JF_METODO_STREAM ? "DirectStream" : "Transcode";
 }
 
+static int backendForcado = -1;
+void jellyfin_backend_definir(int b) { backendForcado = b; }
+
 JfBackend jellyfin_backend(void) {
+  if (backendForcado >= 0) return (JfBackend)backendForcado;
 #if defined(__EMSCRIPTEN__)
   return JF_BACKEND_WGT;
 #elif defined(NV_ANDROID)
@@ -598,18 +602,37 @@ int jf_episodios(const JfConta *c, RedeJob *job, const char *serieId, CatEp *out
 // unknown capability is not announced (it would only trade a transcode for a
 // black screen). DTS/TrueHD are absent everywhere: LG 2019+ and Samsung 2018+
 // sets dropped DTS, and Android passthrough depends on the HDMI sink.
+int jf_capacidades(JfBackend b, const char **cont, const char **vid, const char **aud) {
+  switch (b) {
+    case JF_BACKEND_ANDROID: *cont = "mp4,m4v,mkv,webm,mov,ts";
+      *vid = "h264,hevc,vp9"; *aud = "aac,mp3,ac3,eac3,opus,flac,vorbis"; return 1;
+    case JF_BACKEND_WEBOS: *cont = "mp4,m4v,mkv,mov,ts";
+      *vid = "h264,hevc"; *aud = "aac,mp3,ac3,eac3"; return 1;
+    case JF_BACKEND_TPK: *cont = "mp4,m4v,mkv,mov,ts";
+      *vid = "h264,hevc"; *aud = "aac,mp3,ac3,eac3"; return 1;
+    case JF_BACKEND_WGT: *cont = *vid = *aud = ""; return 0;   // no strict HTTP: never negotiated
+    default: *cont = "mp4,m4v"; *vid = "h264"; *aud = "aac,mp3"; return 1;
+  }
+}
+
+int jf_lista_tem(const char *lista, const char *item) {
+  size_t n = item ? strlen(item) : 0;
+  const char *p = lista;
+  if (!n || !p) return 0;
+  while (*p) {
+    size_t k = strcspn(p, ",");
+    if (k == n && !strncasecmp(p, item, n)) return 1;
+    p += k;
+    if (*p == ',') p++;
+  }
+  return 0;
+}
+
 int jf_perfil_dispositivo(JfBackend b, char *json, size_t tam) {
   const char *nome, *cont, *vid, *aud;
-  switch (b) {
-    case JF_BACKEND_ANDROID: nome = "Nuvio Android TV"; cont = "mp4,m4v,mkv,webm,mov,ts";
-      vid = "h264,hevc,vp9"; aud = "aac,mp3,ac3,eac3,opus,flac,vorbis"; break;
-    case JF_BACKEND_WEBOS: nome = "Nuvio LG webOS"; cont = "mp4,m4v,mkv,mov,ts";
-      vid = "h264,hevc"; aud = "aac,mp3,ac3,eac3"; break;
-    case JF_BACKEND_TPK: nome = "Nuvio Samsung Tizen"; cont = "mp4,m4v,mkv,mov,ts";
-      vid = "h264,hevc"; aud = "aac,mp3,ac3,eac3"; break;
-    case JF_BACKEND_WGT: return 0;   // no strict HTTP: never negotiated
-    default: nome = "Nuvio Desktop"; cont = "mp4,m4v"; vid = "h264"; aud = "aac,mp3"; break;
-  }
+  if (!jf_capacidades(b, &cont, &vid, &aud)) return 0;
+  nome = b == JF_BACKEND_ANDROID ? "Nuvio Android TV" : b == JF_BACKEND_WEBOS ? "Nuvio LG webOS"
+       : b == JF_BACKEND_TPK ? "Nuvio Samsung Tizen" : "Nuvio Desktop";
   return snprintf(json, tam,
     "{\"Name\":\"%s\",\"MaxStreamingBitrate\":%d,\"MaxStaticBitrate\":%d,"
     "\"DirectPlayProfiles\":[{\"Type\":\"Video\",\"Container\":\"%s\",\"VideoCodec\":\"%s\",\"AudioCodec\":\"%s\"}],"
