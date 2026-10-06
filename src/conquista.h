@@ -7,7 +7,7 @@
 //
 // REGRAS (secao 8.1 do plano, aprovadas pelo dono):
 //   - degraus com nome, cumulativos: Primeiro passo (1 visto) . Metade (50%) .
-//     Quase la (falta 1, ou >= 80% quando o alvo tem mais de 10) . Completa
+//     Quase la (falta 1, ou >= 80% quando o alvo tem mais de 10) . Completo
 //     (100%) . Em ordem (completa E vista na ordem de lancamento, ou na ordem
 //     da historia quando a trilha define);
 //   - "Em ordem" precisa de PROVA: a data da primeira vez de cada item. Um item

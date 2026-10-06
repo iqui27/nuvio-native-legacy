@@ -92,7 +92,7 @@ const char *conq_rotulo(int degrau) {
     case CONQ_PRIMEIRO: return "Primeiro passo";
     case CONQ_METADE:   return "Metade";
     case CONQ_QUASE:    return "Quase lá";
-    case CONQ_COMPLETA: return "Completa";
+    case CONQ_COMPLETA: return "Completo";   // "Completa" ja e chave (legsyncui)
     case CONQ_ORDEM:    return "Em ordem";
   }
   return "";

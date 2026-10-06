@@ -815,7 +815,7 @@ static void aplicarExtras(void) {
     snprintf(v->groupId, sizeof v->groupId, "%s", GRUPO_FILEIRA);
     snprintf(v->id, sizeof v->id, "caca_%s", s->chave);
     if (s->i.vistos >= s->i.total)
-      snprintf(v->title, sizeof v->title, i18n("%s · Completa"), s->i.nome);
+      snprintf(v->title, sizeof v->title, i18n("%s · completo"), s->i.nome);
     else
       snprintf(v->title, sizeof v->title, i18n("%s · faltam %d"), s->i.nome, s->i.total - s->i.vistos);
     snprintf(v->cover, sizeof v->cover, "%s", s->i.foto);
