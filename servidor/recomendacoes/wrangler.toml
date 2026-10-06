@@ -19,6 +19,10 @@ service = "nuvio-tv"
 # (`...:<n>`) conta tambem. O id nao e segredo e nunca sai nas respostas.
 [vars]
 CRIADORES = "nuvio:88376366-769b-41ec-858e-f62a04a70543"
+# WATCH TOGETHER: onde moram as salas (Worker nuvio-juntos, servidor/juntos).
+# As rotas /v1/sala* respondem 503 enquanto o segredo SALA_SEGREDO nao existir
+# aqui E la, e a TV esconde o recurso.
+JUNTOS_URL = "https://nuvio-juntos.henriquef29.workers.dev"
 
 # Limpeza da retencao de 90 dias.
 [triggers]
@@ -28,3 +32,5 @@ crons = ["17 4 * * *"]
 #   TRAKT_CLIENT_ID     client id do aplicativo no Trakt
 #   SUPABASE_URL        url do projeto Supabase do Nuvio (so para verificar o token)
 #   SUPABASE_ANON_KEY   anon key do mesmo projeto
+#   SALA_SEGREDO        assina os bilhetes do Watch Together; o MESMO valor no
+#                       nuvio-juntos (tools/juntos-publicar.sh --segredo)

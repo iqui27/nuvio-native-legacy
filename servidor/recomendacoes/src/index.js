@@ -17,6 +17,7 @@ import { rotaAmigos, limpezaAmigos, despublicar, garantirPerfil, avatarPublico, 
 import { rotaEuNome, rotaAlcance, rotaEvento, rotaFeed, rotaAmigo, limpezaSocial,
          limparNome, avatarPerfilOk, resolverNome, rotaRecResposta } from "./social.js";
 import { rotaEnquete } from "./enquete.js";
+import { rotaSala, limpezaSala } from "./sala.js";
 import { resolverCanonica, canonizarEntrada, identidadesDe, rotaIdentidades, idSimkl,
          perfilExiste, RECURSO } from "./identidade.js";
 
@@ -806,6 +807,10 @@ export default {
     const enq = await rotaEnquete(rota, req.method, env, quem, corpo, h);
     if (enq) return enq;
 
+    // Watch Together: salas, convites e bilhetes (sala.js; exige migracao-010).
+    const sala = await rotaSala(rota, req.method, env, quem, corpo, url, h, limitar);
+    if (sala) return sala;
+
     // Perfil publico, busca, pedidos, bloqueio e atividade (amigos.js).
     const amigos = await rotaAmigos(rota, req.method, env, quem, corpo, h);
     if (amigos) return amigos;
@@ -822,5 +827,8 @@ export default {
       ...limpezaAmigos(env, t),
       ...limpezaSocial(env, t),
     ]);
+    // Separado de proposito: sem a migracao 010 aplicada, a tabela `sala` nao
+    // existe e o lote inteiro (90 dias de retencao) falharia junto.
+    try { await env.DB.batch(limpezaSala(env, t)); } catch {}
   },
 };
