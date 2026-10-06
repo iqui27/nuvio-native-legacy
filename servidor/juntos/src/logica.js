@@ -83,10 +83,16 @@ export class SalaLogica {
     const r = this.s.rel;
     return r.estado === "tocando" ? Math.max(0, r.pos0 + (t - r.t0) / 1000) : r.pos0;
   }
+  // Folga do play agendado: 2 x a pior RTT (Jellyfin), e o tempo que a TV mais
+  // lenta leva de um seek ate estar tocando (`prep`, medido por ela), para
+  // ninguem largar atrasado depois de um seek comum.
   lead() {
-    let rtt = 0;
-    for (const m of Object.values(this.s.membros)) if (m.on && m.rtt > rtt) rtt = m.rtt;
-    return Math.max(LIMITES.leadMinMs, Math.min(3000, 2 * rtt));
+    let rtt = 0, prep = 0;
+    for (const m of Object.values(this.s.membros)) if (m.on) {
+      if (m.rtt > rtt) rtt = m.rtt;
+      if (m.prep > prep) prep = m.prep;
+    }
+    return Math.round(Math.max(LIMITES.leadMinMs, Math.min(3000, Math.max(2 * rtt, prep + 150))));
   }
   mudarRel(campos, autor, op) {
     const r = this.s.rel;
@@ -207,7 +213,7 @@ export class SalaLogica {
 
   novoMembro(b, t) {
     return { id: b.pessoa, nome: txt(b.nome, 40), av: txt(b.av, 512), ordem: ++this.s.ordem, on: true,
-      st: "entrando", pct: 0, nivel: "", plat: "", fonte: "", rtt: 0, alc: false, alcAte: 0,
+      st: "entrando", pct: 0, nivel: "", plat: "", fonte: "", rtt: 0, prep: 0, alc: false, alcAte: 0,
       carregDesde: 0, esperas: [], cmdT: [], reacT: 0, chatT: 0, saiuEm: 0, cel: false, chat: 0, celK: "",
       inf: b.inf ? 1 : 0 };
   }
@@ -385,6 +391,7 @@ export class SalaLogica {
     eu.pct = st === "carregando" ? num(m.pct, 0, 100, 0) : 0;
     if (m.fonte && FONTE_TIPOS.has(m.fonte.tipo)) eu.fonte = m.fonte.tipo;
     if (Number.isFinite(m.rtt)) eu.rtt = num(m.rtt, 0, 5000, eu.rtt);
+    if (Number.isFinite(m.prep)) eu.prep = num(m.prep, 0, 2500, 0);
     if (st === "carregando") {
       if (eu.alc) eu.alcAte = 0;
       else if (s.rel.estado === "tocando" && !eu.carregDesde) eu.carregDesde = t;

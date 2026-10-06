@@ -54,6 +54,9 @@ test("comecar: play agendado no futuro com lead = max(2xRTT, 600 ms) e seq sobe"
   const s = ultimaSala(out);
   assert.equal(s.rel.estado, "tocando");
   assert.equal(s.rel.t0, x.rel.t + 900);
+  // a TV que demora 1,4 s de um seek ate tocar empurra a folga
+  x.l.mensagem(tv("h"), { t: "estado", st: "tocando", prep: 1400 });
+  assert.equal(x.l.lead(), 1550);
   assert.equal(s.seq, seq0 + 1);
   assert.equal(s.rel.autor, "f");
   // Quem entra no meio extrapola pelo mesmo par (o bug #8579 do Jellyfin).
