@@ -20,3 +20,24 @@ Nada aqui foi provado em TV nem em servidor real. Tudo abaixo foi provado só co
 - Jellyfin 12.x: confirmar que `ApiKey=` abre `/Videos/{id}/stream`, `master.m3u8`, as playlists filhas e os segmentos HLS, e as legendas externas. No falso só a rota principal é conferida.
 - Plex: confirmar o formato do `X-Plex-Client-Profile-Extra` (`add-direct-play-profile(...)`) e que o `directPlayDecisionCode` vem como no falso. Se o PMS ignorar o perfil, o pior caso é HEVC/MKV cair em Direct stream (toca, mas converte).
 - Docker do Jellyfin não foi usado: o Docker deste Mac guarda imagens no disco interno, não no SSD.
+
+## F1 — casar com o catálogo (feito, só com servidores falsos)
+
+| Item | Commit | Prova |
+|---|---|---|
+| `srvidx`: índice por perfil e servidor (IMDb → TMDB → TVDB → título+ano só com candidato único; episódio por série + T/E), em disco (`srvidx-p<N>-<jf\|em\|px>.txt`, só ids), incremental com checagem de contagem. | `31692dc2` | `tests/srvidx.sh` (regras, títulos, disco, 30 mil linhas). |
+| Jellyfin/Emby: índice por `/Items` (ProviderIds, DateLastSaved, `MinDateLastSaved`), episódios sob demanda, `*_consultar`/`*_tem`; itens das fileiras com IMDb/TMDB viram o título canônico. | `3fd1d01f` | `tests/jellyfin.sh`, `tests/emby.sh` (incremental, apagado → reconstrução, troca de perfil, logout apaga o índice). |
+| Plex no mesmo `srvidx` (Guid imdb/tmdb/tvdb, `updatedAt>>`, allLeaves sob demanda, título+ano). | `9ac1733e` | `tests/plex.sh`. |
+| Uma origem só para os servidores; fonte "Local · <servidor>"/"Remoto · <servidor>" com selos reais, **sempre primeiro** (folha e automático, sem teto de qualidade; lembrada de addon não passa na frente); selo "No seu servidor · <servidor> · 4K …" na página do título; QR do Quick Connect e do PIN do Plex; atualização a cada 30 min; índice fora dos pacotes. | `9025bfa9` | `tests/emby.sh` (fachada), testes de addons; build Mac sem aviso novo; `-DNV_TPK` nos arquivos tocados; build Android OK. |
+
+### Decisões de implementação
+- "Tocar do servidor": o Reproduzir já toca a cópia de casa (ela é a 1ª fonte e ganha o automático). Não há botão separado.
+- Itens sem IMDb/TMDB continuam nas fileiras com id opaco; o filtro D9 (só na Visão do servidor) fica para a F2, junto com a tela.
+- Progresso/assistido para Trakt/conta de itens casados: tocado pela fonte do servidor, o título já é canônico e segue o caminho normal; o anti-duplo (D3/F4) não foi feito.
+
+### Precisa do servidor real do dono (não verificado)
+- Jellyfin 12: `ApiKey=` em todas as rotas de mídia (HLS filho, segmentos, legendas).
+- Jellyfin/Emby: `MinDateLastSaved` e o campo `Height` na listagem; chaves de ProviderIds reais.
+- Plex: formato do `X-Plex-Client-Profile-Extra` e do `decision`; filtro `updatedAt>>=`; `videoResolution` na listagem.
+- QR do Quick Connect: a rota `<base>/web/#/quickconnect` na versão do dono; URL > 134 bytes fica só com o código.
+- Nada foi visto em TV: selo na página, cartão "Local ·", folha e QR precisam de captura real (LG C9 / TCL).
