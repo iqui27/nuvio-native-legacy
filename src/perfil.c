@@ -659,8 +659,10 @@ static void desenharVazio(float a) {
     titulo = "Perfil privado ou histórico não compartilhado";
     corpo = "O Trakt não liberou um histórico público para esta conta.";
   } else if (estado == PERFIL_ESTADO_DESCONECTADO) {
-    titulo = "Trakt desconectado";
-    corpo = "Vincule o Trakt para carregar identidade, obras recentes e estatísticas.";
+    // Sem Trakt a tela vive do Diario (diarioperfil.h); este estado so sobra
+    // quando o Diario ainda esta vazio.
+    titulo = "Seu Diário ainda está vazio";
+    corpo = "Assista a um filme ou episódio e ele aparece aqui. Para trazer o histórico de antes, vincule o Trakt.";
   } else if (estado == PERFIL_ESTADO_INDISPONIVEL || estado == PERFIL_ESTADO_ERRO) {
     titulo = "Perfil indisponível";
     corpo = erro[0] ? erro : "Não foi possível confirmar este resumo agora.";
