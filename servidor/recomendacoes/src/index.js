@@ -17,6 +17,7 @@ import { rotaAmigos, limpezaAmigos, despublicar, garantirPerfil, avatarPublico, 
 import { rotaEuNome, rotaAlcance, rotaEvento, rotaFeed, rotaAmigo, limpezaSocial,
          limparNome, avatarPerfilOk, resolverNome, rotaRecResposta } from "./social.js";
 import { rotaEnquete } from "./enquete.js";
+import { rotaDiario, DIARIO_CORPO_MAX, DIARIO_CORPO_MAX_LB } from "./diario.js";
 import { resolverCanonica, canonizarEntrada, identidadesDe, rotaIdentidades, idSimkl,
          perfilExiste, RECURSO } from "./identidade.js";
 
@@ -41,7 +42,7 @@ const agora = () => Math.floor(Date.now() / 1000);
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "authorization, content-type, x-nuvio-auth, x-nuvio-perfil, if-none-match",
-  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
   "cross-origin-resource-policy": "cross-origin",
   // O 304 de /v1/rec so manda `etag` (ver rotaReceber): sem isto exposto o
   // XHR da TV enxerga o 304 mas nunca le o cabecalho para comparar com o que
@@ -749,6 +750,10 @@ export default {
     let corpo = {};
     if (req.method === "POST") {
       const cru = (await req.text()).trim();
+      // Diario: corpo limitado (64 KB; 128 KB so na importacao do Letterboxd).
+      if (rota.startsWith("/v1/diario") &&
+          cru.length > (rota === "/v1/diario/letterboxd" ? DIARIO_CORPO_MAX_LB : DIARIO_CORPO_MAX))
+        return erro("corpo grande", 413);
       if (cru) {
         try { corpo = JSON.parse(cru); } catch { return erro("json invalido", 400); }
       }
@@ -805,6 +810,10 @@ export default {
     // Enquete na ilha (enquete.js; exige migracao-009).
     const enq = await rotaEnquete(rota, req.method, env, quem, corpo, h);
     if (enq) return enq;
+
+    // Diario por perfil, cofre e Letterboxd (diario.js; exige migracao-011).
+    const dia = await rotaDiario(rota, req.method, env, quem, corpo, url, h);
+    if (dia) return dia;
 
     // Perfil publico, busca, pedidos, bloqueio e atividade (amigos.js).
     const amigos = await rotaAmigos(rota, req.method, env, quem, corpo, h);
