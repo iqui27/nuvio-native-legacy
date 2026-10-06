@@ -4,6 +4,7 @@ void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's to
 #include "sessao.h"
 #include "nuvem.h"
 #include "perfis.h"
+#include "perfilinfantil.h"
 #include "agenda.h"
 #include "lembrete.h"
 #include "dados.h"
@@ -2014,6 +2015,7 @@ void sync_esquecer_usuario(void) {
     for (i = 1; i <= 32; i++) { nomeLocaisPerfil(nome, sizeof nome, i); dados_apagar(nome); } }
   perfilAplicado = 0;
   perfis_esquecer();
+  perfil_infantil_esquecer();
   prog_esquecer_tudo();
   perfilcont_esquecer();
   psparede_esquecer();   // a parede de cada perfil (fundo "Filmes") e da conta que saiu

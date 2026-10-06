@@ -7,6 +7,7 @@
 #include "js.h"
 #include "juntosfonte.h"
 #include "juntosui.h"
+#include "perfilinfantil.h"
 #include "player.h"
 #include "recomenda.h"
 #include "rede.h"
@@ -90,6 +91,23 @@ static void pedir(OpTipo tipo, const char *rota, const char *corpo, int get) {
   op.tipo = tipo; op.gen = gen; op.get = get;
   snprintf(op.rota, sizeof op.rota, "%s", rota);
   op.corpo = corpo ? strdup(corpo) : NULL;
+  // Perfil infantil: o servidor aplica as regras quando recebe `infantil:1`
+  // (corpo no POST, ?infantil=1 no GET). Marca por perfil: perfilinfantil.h.
+  if (perfil_infantil_ativo()) {
+    if (get) {
+      size_t n = strlen(op.rota);
+      snprintf(op.rota + n, sizeof op.rota - n, "%s", strchr(op.rota, '?') ? "&infantil=1" : "?infantil=1");
+    } else {
+      const char *c = corpo && corpo[0] == '{' ? corpo : "{}";
+      size_t n = strlen(c) + 24;
+      char *novo = (char *)malloc(n);
+      if (novo) {
+        snprintf(novo, n, "{\"infantil\":1%s%s", c[1] == '}' ? "" : ",", c + 1);
+        free(op.corpo);
+        op.corpo = novo;
+      }
+    }
+  }
   SDL_LockMutex(mtx);
   if (nFila == FILA) { SDL_UnlockMutex(mtx); free(op.corpo); return; }
   fila[nFila++] = op;
@@ -344,8 +362,8 @@ int juntos_controle_anfitriao(int so) { return temMotor ? jsm_controle(&motor, s
 
 void juntos_pedir_celular(void) {
   urlCelular[0] = 0;
-  // Perfil infantil: o servidor desliga o chat sozinho (marca do bilhete).
-  if (temMotor) jsm_pedir_celular(&motor, 1);
+  // Perfil infantil: chat livre desligado (o responsavel liga em outro lugar).
+  if (temMotor) jsm_pedir_celular(&motor, perfil_infantil_ativo() ? 0 : 1);
 }
 
 void juntos_perfil_trocado(void) {
