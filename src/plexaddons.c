@@ -10,7 +10,7 @@ static int origem(const char *id, const char *tipo, int (*cancelado)(void *), vo
   Stream **l = (Stream **)saida;
   int n, i;
   (void)aviso; (void)avisoU;   // one quiet lookup, no per-source progress rows
-  n = plex_consultar(id, tipo, cancelado, ctx, l);
+  n = plex_consultar(id, tipo, NULL, 0, cancelado, ctx, l);
   // Same badges as every addon source: classified once from the text the
   // server's real media streams produced (resolution, HDR, codecs, audio).
   for (i = 0; i < n && *l; i++) {

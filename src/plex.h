@@ -8,9 +8,10 @@
 // server item, plays the media Part (direct play, only when this TV's codec
 // table AND the server's universal decision allow it) or an HLS stream, and
 // reports timeline check-ins so the server's resume state stays the authority.
-// It also keeps a small imdb:// / tmdb:// index of the libraries so that a
-// regular catalogue title (Cinemeta "tt...") that the server has gets the
-// server's file as one more source (plex_consultar, wired through addons.c).
+// It also keeps the matching index (srvidx.h: Guid imdb/tmdb/tvdb, title +
+// year, episodes on demand) so that a regular catalogue title ("tt...") that
+// the server has gets the server's file as a source (plex_consultar, through
+// the servidores origin in addons.c).
 //
 // JSON, NOT XML. Plex answers XML by default and JSON when the request says
 // "Accept: application/json"; every request here does, so the parsers are the
@@ -149,14 +150,6 @@ typedef struct {
   Stream fonte[PX_FONTES_MAX];
 } PxPlayback;
 
-// External-id index: lets "tt1234567" / "tmdb:278" find the server's item.
-typedef struct {
-  char imdb[16];           // "tt0111161" or ""
-  long tmdb;               // 0 = none
-  char rk[24];             // ratingKey
-  char tipo;               // 'm' movie, 's' show
-} PxIdx;
-
 // ----------------------------------------------- pure parsers / helpers
 // All work on a response body in memory, never touch the network.
 int px_ler_pin(const char *corpo, size_t n, char *id, size_t ni, char *codigo, size_t nc,
@@ -169,9 +162,11 @@ int px_ler_identidade(const char *corpo, size_t n, char *id, size_t ni, char *ve
 int px_ler_usuario(const char *corpo, size_t n, char *nome, size_t tam);
 int px_ler_bibliotecas(const char *corpo, size_t n, PxBiblioteca *out, int max);
 int px_ler_itens(const PxConta *c, const char *corpo, size_t n, CatItem *out, int max, int *total);
-// Lightweight pass for the external-id index: ratingKey + Guid[] only. Appends
-// to idx[*nIdx..maxIdx). *total = totalSize. Returns items seen on this page.
-int px_ler_indice(const char *corpo, size_t n, PxIdx *idx, int *nIdx, int maxIdx, int *total);
+// Matching index rows (srvidx.h) of a listing: ratingKey, Guid[] (imdb, tmdb,
+// tvdb), title hash, year, updatedAt, viewCount, the first Media's height.
+// `serieRk` for an allLeaves answer (episode rows), else NULL. *total =
+// totalSize. Returns items seen on this page.
+int px_ler_indice(const char *corpo, size_t n, const char *serieRk, SrvIdx *x, int *total);
 // ratingKey of the episode with this season/episode in an allLeaves answer:
 // 1 found, 0 not there, PX_ERR_FORMATO on a bad body.
 int px_ler_episodio_rk(const char *corpo, size_t n, int temp, int ep, char *rk, size_t tam);
@@ -191,8 +186,6 @@ int px_ler_decisao(const char *corpo, size_t n);           // PX_DEC_*
 // Item id the person's title carries -> external ids. Accepts "tt123",
 // "tt123:2:5", "tmdb:278", "tmdb:278:1:3". 0 when not an external id.
 int px_id_titulo(const char *id, char imdb[16], long *tmdb, int *temp, int *ep);
-// Index lookup. -1 not found. `tipo` 'm' or 's'. imdb wins over tmdb.
-int pxidx_achar(const PxIdx *v, int n, const char *imdb, long tmdb, char tipo);
 long long px_ms(double seg);
 const char *px_metodo_nome(int metodo);
 
@@ -207,7 +200,8 @@ int px_bibliotecas(const PxConta *c, RedeJob *job, PxBiblioteca *out, int max);
 int px_itens(const PxConta *c, RedeJob *job, const char *secao, int inicio, int limite,
              CatItem *out, int max, int *total);
 int px_indice(const PxConta *c, RedeJob *job, const char *secao, int inicio, int limite,
-              PxIdx *idx, int *nIdx, int maxIdx, int *total);
+              long long desde, SrvIdx *x, int *total);
+int px_indice_episodios(const PxConta *c, RedeJob *job, const char *serieRk, SrvIdx *x);
 int px_achar_episodio(const PxConta *c, RedeJob *job, const char *serieRk, int temp, int ep,
                       char *rk, size_t tam);
 int px_detalhe(const PxConta *c, RedeJob *job, const char *rk, CatItem *out);
@@ -266,10 +260,12 @@ int  plex_fontes_colher(const char *alvo, Stream **lista, int *n);
 // BLOCKS (runs in addons.c's extra-source thread). Returns the number of
 // sources, 0 when the server does not have it or the index is not ready, -1
 // when cancelled. `cancelado` is polled; list is malloc'd for the caller.
-int  plex_consultar(const char *id, const char *tipo, int (*cancelado)(void *), void *ctx,
-                    Stream **saida);
+// `titulo`/`ano` feed the last match rule (title + year), may be NULL/0.
+int  plex_consultar(const char *id, const char *tipo, const char *titulo, int ano,
+                    int (*cancelado)(void *), void *ctx, Stream **saida);
 int  plex_casamento_ativo(void);       // connected and the index has entries
-int  plex_tem(const char *id, const char *tipo);   // offline: the index has this title
+// Offline: the index has this title; fills `info` (name, quality, LAN) when not NULL.
+int  plex_tem(const char *id, const char *tipo, SrvAchado *info);
 int  plex_indice_n(void);              // entries in the index (tests)
 void plex_ligar_aos_addons(void);      // plexaddons.c: registers plex_consultar with addons.c
 

@@ -18,25 +18,26 @@ PORT = [0]
 
 lock = threading.Lock()
 state = {"polls": 0, "total_polls": 0, "events": [], "pins": 0, "sections_hits": 0, "probe_hits": 0,
-         "decisions": 0, "refuse": set()}
+         "decisions": 0, "refuse": set(), "incr": 0}
 
 MOVIES = [
     {"ratingKey": "101", "type": "movie", "title": "Movie One", "year": 1999, "summary": "Overview one",
      "rating": 7.8, "contentRating": "R", "duration": 7200000, "viewOffset": 3600000,
      "thumb": "/library/metadata/101/thumb/17", "art": "/library/metadata/101/art/17",
      "Genre": [{"tag": "Drama"}, {"tag": "Thriller"}],
+     "updatedAt": 1700000101, "Media": [{"id": 1, "videoResolution": "1080", "container": "mkv"}],
      "Guid": [{"id": "imdb://tt0000101"}, {"id": "tmdb://5101"}, {"id": "tvdb://301"}]},
     {"ratingKey": "102", "type": "movie", "title": "Movie Two", "year": 2005, "duration": 5400000,
      "thumb": "/library/metadata/102/thumb/17",
-     "Guid": [{"id": "tmdb://5102"}]},
+     "updatedAt": 1700000102, "Guid": [{"id": "tmdb://5102"}]},
     {"ratingKey": "103", "type": "movie", "title": "No External Id", "year": 2010, "duration": 5400000,
-     "Guid": []},
+     "updatedAt": 1700000103, "Guid": []},
 ]
 SHOWS = [
     {"ratingKey": "201", "type": "show", "title": "Show One", "year": 2020, "summary": "Show overview",
      "thumb": "/library/metadata/201/thumb/17",
      "Genre": [{"tag": "Comedy"}],
-     "Guid": [{"id": "imdb://tt0000201"}, {"id": "tmdb://7201"}]},
+     "updatedAt": 1700000201, "Guid": [{"id": "imdb://tt0000201"}, {"id": "tmdb://7201"}]},
 ]
 EPISODES = [
     {"ratingKey": "301", "type": "episode", "parentIndex": 1, "index": 1, "title": "Pilot", "duration": 2700000,
@@ -111,7 +112,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(200, {"probe": state["probe_hits"], "pins": state["pins"],
                                             "sections": state["sections_hits"],
                                             "polls": state["total_polls"],
-                                            "decisions": state["decisions"]})
+                                            "decisions": state["decisions"], "incr": state["incr"]})
             if p == "/control/refuse":
                 with lock:
                     state["refuse"] = set(int(x) for x in q.get("media", [""])[0].split(",") if x)
@@ -218,6 +219,11 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(404)
 
     def page(self, items, q):
+        if "updatedAt>>" in q:
+            since = int(q["updatedAt>>"][0])
+            items = [x for x in items if x.get("updatedAt", 0) > since]
+            with lock:
+                state["incr"] += 1
         start = int(q.get("X-Plex-Container-Start", ["0"])[0])
         size = int(q.get("X-Plex-Container-Size", ["50"])[0])
         return container(items[start:start + size], total=len(items))

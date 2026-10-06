@@ -2,6 +2,7 @@
 // matching, and the whole integration against tests/plex_server.py (a fake
 // plex.tv + PMS). No real server, no real account, never prints a token.
 #include "plex.h"
+#include "srvidx.h"
 #include "idbase.h"
 #include <assert.h>
 #include <stdio.h>
@@ -232,8 +233,8 @@ static void testarParsers(void) {
   PxBiblioteca bib[8];
   CatItem *it = malloc(sizeof(CatItem) * 8), *det = malloc(sizeof *det);
   CatEp *eps = malloc(sizeof(CatEp) * 8);
-  PxIdx idx[16];
-  int nIdx = 0, total = 0;
+  SrvIdx idx;
+  int total = 0;
   PxPlayback *pb = malloc(sizeof *pb);
 
   // --- PIN answers
@@ -288,8 +289,12 @@ static void testarParsers(void) {
   // --- items
   i = px_ler_itens(&c, ITENS, strlen(ITENS), it, 8, &total);
   assert(i == 3 && total == 57);                   // the artist is skipped
-  assert(!strcmp(it[0].imdb, "px:01234567.101") && !strcmp(it[0].tipo, "movie"));
-  assert(jfid_e(it[0].imdb) && idbase_len(it[0].imdb) == strlen(it[0].imdb));
+  assert(!strcmp(it[0].imdb, "tt0000101") && !strcmp(it[0].tipo, "movie"));      // a Guid: the catalogue title
+  { CatItem *op = malloc(sizeof *op);                                            // no Guid: the opaque server id
+    static const char SEM[] = "{\"MediaContainer\":{\"Metadata\":[{\"ratingKey\":\"103\",\"type\":\"movie\",\"title\":\"X\"}]}}";
+    assert(px_ler_itens(&c, SEM, strlen(SEM), op, 1, NULL) == 1 && !strcmp(op->imdb, "px:01234567.103"));
+    assert(jfid_e(op->imdb) && idbase_len(op->imdb) == strlen(op->imdb));
+    free(op); }
   assert(!strcmp(it[0].titulo, "Movie One") && !strcmp(it[0].meta, "1999 · 120 min"));
   assert(it[0].nota == 78 && !strcmp(it[0].classificacao, "R") && !strcmp(it[0].genero, "Drama · Thriller"));
   assert(it[0].progresso == 50 && it[0].restanteMin == 60);
@@ -297,16 +302,21 @@ static void testarParsers(void) {
          strstr(it[0].poster, "url=%2Flibrary%2Fmetadata%2F101%2Fthumb%2F17"));
   assert(strstr(it[0].backdrop, "width=1280") && strstr(it[0].logo, "clearLogo"));
   assert(!strcmp(it[0].origem, "plex"));
-  assert(!strcmp(it[1].imdb, "px:01234567.102") && it[1].progresso == 0);
+  // Home row items with a Guid ARE the catalogue title (imdb first, else tmdb).
+  assert(!strcmp(it[0].imdb, "tt0000101") && !strcmp(it[1].imdb, "tmdb:5102") && it[1].progresso == 0);
   assert(!strcmp(it[2].tipo, "series") && !strcmp(it[2].meta, "2020"));
 
-  // --- the id index: imdb + tmdb, the show is typed 's', the artist skipped
-  i = px_ler_indice(ITENS, strlen(ITENS), idx, &nIdx, 16, &total);
-  assert(i == 4 && nIdx == 3 && total == 57);
-  assert(!strcmp(idx[0].imdb, "tt0000101") && idx[0].tmdb == 5101 && idx[0].tipo == 'm' && !strcmp(idx[0].rk, "101"));
-  assert(!idx[1].imdb[0] && idx[1].tmdb == 5102 && !strcmp(idx[1].rk, "102"));
-  assert(idx[2].tipo == 's' && !strcmp(idx[2].imdb, "tt0000201") && idx[2].tmdb == 0);
-  { int n2 = 0; px_ler_indice(ITENS, strlen(ITENS), idx, &n2, 2, &total); assert(n2 == 2); }   // cap respected
+  // --- the matching index: imdb + tmdb + tvdb, the show is typed 's', the artist skipped
+  srvidx_iniciar(&idx);
+  i = px_ler_indice(ITENS, strlen(ITENS), NULL, &idx, &total);
+  assert(i == 4 && idx.n == 3 && total == 57);
+  assert(!strcmp(idx.v[0].imdb, "tt0000101") && idx.v[0].tmdb == 5101 && idx.v[0].tvdb == 301 &&
+         idx.v[0].tipo == 'm' && !strcmp(idx.v[0].item, "101") && idx.v[0].ano == 1999);
+  assert(!idx.v[1].imdb[0] && idx.v[1].tmdb == 5102 && !strcmp(idx.v[1].item, "102"));
+  assert(idx.v[2].tipo == 's' && !strcmp(idx.v[2].imdb, "tt0000201") && idx.v[2].tmdb == 0);
+  assert(idx.v[0].tituloHash == srvidx_titulo_hash("movie one"));
+  { int k = px_ler_indice(EPISODIOS, strlen(EPISODIOS), "201", &idx, NULL);
+    assert(k == 3 && srvidx_n_eps(&idx, "201") == 2 && srvidx_achar_ep(&idx, "201", 2, 1) >= 0); }   // "No numbers" skipped
 
   // --- title ids and GUID matching
   { char imdb[16]; long tmdb; int t, e;
@@ -320,14 +330,15 @@ static void testarParsers(void) {
     assert(!px_id_titulo("tt12345678901234", imdb, &tmdb, &t, &e));
     assert(!px_id_titulo("ttabc", imdb, &tmdb, &t, &e) && !px_id_titulo("tt1:x", imdb, &tmdb, &t, &e));
     assert(!px_id_titulo("", imdb, &tmdb, &t, &e) && !px_id_titulo(NULL, imdb, &tmdb, &t, &e));
-    assert(pxidx_achar(idx, nIdx, "tt0000101", 0, 'm') == 0);
-    assert(pxidx_achar(idx, nIdx, "tt0000101", 0, 's') == -1);               // a movie id never matches a show
-    assert(pxidx_achar(idx, nIdx, "", 5102, 'm') == 1);                      // tmdb only
-    assert(pxidx_achar(idx, nIdx, "tt0000999", 5101, 'm') == 0);             // unknown imdb, known tmdb
-    assert(pxidx_achar(idx, nIdx, "tt0000201", 0, 's') == 2);
-    assert(pxidx_achar(idx, nIdx, "tt0000201", 7201, 'm') == -1);
-    assert(pxidx_achar(idx, nIdx, "", 0, 'm') == -1 && pxidx_achar(NULL, 0, "tt1", 1, 'm') == -1);
+    assert(srvidx_achar(&idx, "tt0000101", 0, 0, 'm') == 0);
+    assert(srvidx_achar(&idx, "tt0000101", 0, 0, 's') == -1);               // a movie id never matches a show
+    assert(srvidx_achar(&idx, "", 5102, 0, 'm') == 1);                      // tmdb only
+    assert(srvidx_achar(&idx, "tt0000999", 5101, 0, 'm') == 0);             // unknown imdb, known tmdb
+    assert(srvidx_achar(&idx, "tt0000201", 0, 0, 's') == 2);
+    assert(srvidx_achar(&idx, "tt0000201", 7201, 0, 'm') == -1);
+    assert(srvidx_achar(&idx, "", 0, 0, 'm') == -1);
   }
+  srvidx_limpar(&idx);
 
   // --- detail: cast, directors; a server-path photo is dropped (it would need the token)
   assert(px_ler_detalhe(&c, DETALHE, strlen(DETALHE), det) == PX_OK);
@@ -427,6 +438,10 @@ static void testarParsers(void) {
 static int nuncaCancela(void *u) { (void)u; return 0; }
 static int sempreCancela(void *u) { (void)u; return 1; }
 
+static int plex_consultar_t(const char *id, const char *tipo, int (*cc)(void *), void *ctx, Stream **l) {
+  return plex_consultar(id, tipo, NULL, 0, cc, ctx, l);
+}
+
 static void integracao(void) {
   char det[160], *ev;
   PxEstado e;
@@ -472,15 +487,15 @@ static void integracao(void) {
   nf = 0;
   while (ms() < fim) {
     nf = plex_fileiras_copiar(itens, PX_FIL_MAX * PX_POR_FILEIRA, fils, PX_FIL_MAX, &nItens);
-    if (nf == 2 && plex_indice_n() == 3) break;
+    if (nf == 2 && plex_indice_n() == 4) break;
     dormir(30);
   }
   assert(nf == 2 && nItens == 4);                  // movies + shows; the music library is skipped
   assert(!strcmp(fils[0].titulo, "Movies · Plex") && !strcmp(fils[0].chave, "plex_1") && fils[0].n == 3);
   assert(!strcmp(fils[1].titulo, "TV Shows · Plex") && fils[1].ini == 3 && !strcmp(fils[1].tipo, "series"));
   assert(plex_chave_fileira(fils[0].chave) && !plex_chave_fileira("cinemeta_movie_top"));
-  assert(!strcmp(itens[0].imdb, "px:01234567.101") && itens[0].progresso == 50);
-  assert(plex_indice_n() == 3 && plex_casamento_ativo());
+  assert(!strcmp(itens[0].imdb, "tt0000101") && itens[0].progresso == 50 && !strcmp(itens[2].imdb, "px:01234567.103"));
+  assert(plex_indice_n() == 4 && plex_casamento_ativo());   // 3 movies (one without Guid: title+year) + 1 show
 
   // ---- title page of a server-native item
   { CatItem *x = calloc(1, sizeof *x);
@@ -516,8 +531,8 @@ static void integracao(void) {
   { char *c = controle("counts"); assert(strstr(c, "\"probe\": 1")); free(c); }    // one probe: the first candidate answered
 
   // ---- matched sources on a REGULAR catalogue title
-  assert(plex_consultar("tt0000101", "movie", nuncaCancela, NULL, &lista) == 4);
-  assert(lista && strstr(lista[0].url, "/library/parts/901/") && !strcmp(lista[0].provedor, "Plex"));
+  assert(plex_consultar_t("tt0000101", "movie", nuncaCancela, NULL, &lista) == 4);
+  assert(lista && strstr(lista[0].url, "/library/parts/901/") && !strcmp(lista[0].provedor, "Home PMS"));
   { char url0[2048]; snprintf(url0, sizeof url0, "%s", lista[0].url); free(lista); lista = NULL;
     // check-ins for that matched source: start, no progress before 10 s, pause, stop
     plex_reproducao_tick(url0, 0, 7200, 0);                                    // not playing yet: nothing
@@ -536,27 +551,39 @@ static void integracao(void) {
     assert(strstr(ev, "\"time\": \"1000\"") && strstr(ev, "\"time\": \"5000\"") && strstr(ev, "\"dur\": \"7200000\""));
     assert(!strstr(ev, "transcode-stop"));
     free(ev); }
-  assert(plex_consultar("tmdb:5102", "movie", nuncaCancela, NULL, &lista) == 4 && lista);   // tmdb-only match
+  assert(plex_consultar_t("tmdb:5102", "movie", nuncaCancela, NULL, &lista) == 4 && lista);   // tmdb-only match
   free(lista); lista = NULL;
-  assert(plex_consultar("tt0000201:1:2", "series", nuncaCancela, NULL, &lista) == 4 && lista);   // episode 302 resolved
+  assert(plex_consultar_t("tt0000201:1:2", "series", nuncaCancela, NULL, &lista) == 4 && lista);   // episode 302 resolved
   free(lista); lista = NULL;
-  assert(plex_consultar("tt0000201:2:1", "tv", nuncaCancela, NULL, &lista) == 4);
+  assert(plex_consultar_t("tt0000201:2:1", "tv", nuncaCancela, NULL, &lista) == 4);
   free(lista); lista = NULL;
-  assert(plex_consultar("tt0000201:3:1", "series", nuncaCancela, NULL, &lista) == 0 && !lista);  // no such episode
-  assert(plex_consultar("tt0000201", "movie", nuncaCancela, NULL, &lista) == 0);                  // a show is not a movie
-  assert(plex_consultar("tt9999999", "movie", nuncaCancela, NULL, &lista) == 0);                  // not on the server
-  assert(plex_consultar("kitsu:12", "series", nuncaCancela, NULL, &lista) == 0);                  // not an external id
-  assert(plex_consultar("tt0000101", "movie", sempreCancela, NULL, &lista) == -1 && !lista);
+  assert(plex_consultar_t("tt0000201:3:1", "series", nuncaCancela, NULL, &lista) == 0 && !lista);  // no such episode
+  assert(plex_consultar_t("tt0000201", "movie", nuncaCancela, NULL, &lista) == 0);                  // a show is not a movie
+  assert(plex_consultar_t("tt9999999", "movie", nuncaCancela, NULL, &lista) == 0);                  // not on the server
+  assert(plex_consultar_t("kitsu:12", "series", nuncaCancela, NULL, &lista) == 0);                  // not an external id
+  assert(plex_consultar_t("tt0000101", "movie", sempreCancela, NULL, &lista) == -1 && !lista);
+  // Last rule: no Guid at all, title + year from the page that asked (±1 year).
+  assert(plex_consultar_t("tt4444444", "movie", nuncaCancela, NULL, &lista) == 0);
+  assert(plex_consultar("tt4444444", "movie", "No External Id", 2011, nuncaCancela, NULL, &lista) == 4 && lista);
+  free(lista); lista = NULL;
+  assert(plex_consultar("tt4444444", "movie", "No External Id", 2013, nuncaCancela, NULL, &lista) == 0);
+  { SrvAchado a;
+    assert(plex_tem("tt0000101", "movie", &a) && !strcmp(a.servidor, "Home PMS") && !strcmp(a.tipoSrv, "Plex") &&
+           a.altura == 1080 && a.local);
+    assert(plex_tem("tt0000201:1:2", "series", NULL) && !plex_tem("tt0000201", "movie", NULL)); }
+  { char arqIdx[700]; struct stat sx;
+    snprintf(arqIdx, sizeof arqIdx, "%s/srvidx-p1-px.txt", dirDados);
+    assert(stat(arqIdx, &sx) == 0); }
 
   // ---- the server refuses direct play of version 1: only its HLS entry stays
   free(controle("refuse?media=0"));
-  assert(plex_consultar("tt0000101", "movie", nuncaCancela, NULL, &lista) == 3);
+  assert(plex_consultar_t("tt0000101", "movie", nuncaCancela, NULL, &lista) == 3);
   assert(strstr(lista[0].url, "start.m3u8") && strstr(lista[0].url, "mediaIndex=0") &&
          strstr(lista[1].url, "/library/parts/902/"));
   free(lista); lista = NULL;
   free(controle("refuse?media="));
   // ---- transcode check-in ends with an explicit stop for the encoder
-  assert(plex_consultar("tt0000101", "movie", nuncaCancela, NULL, &lista) == 4);
+  assert(plex_consultar_t("tt0000101", "movie", nuncaCancela, NULL, &lista) == 4);
   { char urlT[2048]; snprintf(urlT, sizeof urlT, "%s", lista[1].url); free(lista); lista = NULL;
     assert(strstr(urlT, "start.m3u8"));
     plex_reproducao_tick(urlT, 1, 7200, 1);
@@ -573,13 +600,21 @@ static void integracao(void) {
   assert(plex_estado(det, sizeof det) == PX_EST_SEM_CONTA && !plex_conectado());
   assert(plex_fileiras_copiar(itens, PX_FIL_MAX * PX_POR_FILEIRA, fils, PX_FIL_MAX, &nItens) == 0);
   assert(plex_indice_n() == 0 && !plex_casamento_ativo());
-  assert(plex_consultar("tt0000101", "movie", nuncaCancela, NULL, &lista) == 0);
+  assert(plex_consultar_t("tt0000101", "movie", nuncaCancela, NULL, &lista) == 0);
   perfilAtivo = 1;
   plex_perfil_trocou();
   assert(plex_conectado());                                                     // loaded from plex-p1.txt, no new PIN
+  assert(plex_indice_n() >= 4 && plex_tem("tt0000101", "movie", NULL));        // the index came back from disk, at once
   fim = ms() + 8000;
-  while (ms() < fim && plex_indice_n() != 3) dormir(30);
-  assert(plex_indice_n() == 3);
+  { int incr = 0;
+    while (ms() < fim && !incr) {
+      char *c = controle("counts"), *q = strstr(c, "\"incr\": ");
+      incr = q && atoi(q + 8) > 0;
+      free(c);
+      if (!incr) dormir(30);
+    }
+    assert(incr); }                                                              // the reload asked only what changed
+  assert(plex_indice_n() >= 4);
 
   // ---- sign out: file gone, state clean
   plex_esquecer();
