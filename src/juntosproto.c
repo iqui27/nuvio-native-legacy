@@ -225,7 +225,7 @@ int jsp_aceitar(char *b, size_t n, const char *quem, int ok) {
 int jsp_sair(char *b, size_t n) { return fim_(snprintf(b, n, "{\"t\":\"sair\"}"), n); }
 
 int jsp_impressao(char *b, size_t n, const JsImpressao *i) {
-  char arq[260], bg[180], rot[140], h[48] = "", x[32] = "", by[40] = "", al[24] = "", du[40] = "";
+  char arq[260], bg[180], rot[140], h[64] = "", x[32] = "", by[40] = "", al[24] = "", du[40] = "";
   if (i->hash[0]) snprintf(h, sizeof h, "\"hash\":\"%.40s\",", i->hash);
   if (i->idx >= 0) snprintf(x, sizeof x, "\"idx\":%d,", i->idx);
   if (i->bytes > 0) snprintf(by, sizeof by, "\"bytes\":%lld,", i->bytes);
