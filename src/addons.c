@@ -2277,7 +2277,10 @@ static void *buscar(void *u) {
   n = consultar(alvoId, alvoTipo, fioBase, ADD_FIOS, NULL, NULL, &achados, &rs,
                 progLigado);
   resultadoQuando = SDL_GetTicks();
-  resultadoCacheavel = n > 0 && rs.semResposta == 0;
+  // A title a personal server has is never cached: its sources carry a token
+  // and a play session, and a server that failed this time must be asked
+  // again next time (NuvioTV#3175: a cached "no source" hid the server).
+  resultadoCacheavel = n > 0 && rs.semResposta == 0 && !servidores_tem(alvoId, alvoTipo);
   if (n < 0) n = 0;
   resumo = rs;
   marco(n ? "addons: fontes recebidas" : "addons: nenhuma fonte");
@@ -2378,7 +2381,7 @@ static void buscarPedido(const char *imdb, const char *tipo, int forcar) {
     int n;
     Uint32 idade;
     capturarEscopo(&escopo);
-    if (renovar) fontecache_vod_apagar(alvoId, alvoTipo, alvoBase, &escopo);
+    if (renovar || servidores_tem(alvoId, alvoTipo)) fontecache_vod_apagar(alvoId, alvoTipo, alvoBase, &escopo);
     else if (fontecache_vod_pegar(alvoId, alvoTipo, alvoBase, &escopo,
                             &l, &n, &idade) == FC_ACERTO) {
       stream_definir_lista_idade(l, n, idade);

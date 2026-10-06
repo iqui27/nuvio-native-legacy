@@ -269,6 +269,7 @@ int  plex_fontes_colher(const char *alvo, Stream **lista, int *n);
 int  plex_consultar(const char *id, const char *tipo, int (*cancelado)(void *), void *ctx,
                     Stream **saida);
 int  plex_casamento_ativo(void);       // connected and the index has entries
+int  plex_tem(const char *id, const char *tipo);   // offline: the index has this title
 int  plex_indice_n(void);              // entries in the index (tests)
 void plex_ligar_aos_addons(void);      // plexaddons.c: registers plex_consultar with addons.c
 

@@ -20,6 +20,11 @@ void servidores_carregar(void);          // active profile's connections
 void servidores_perfil_trocou(void);     // cancels in-flight work, reloads
 void servidores_esquecer_todos(void);    // Nuvio account logout: every token file
 int  servidores_conectado(void);         // any server signed in
+// Offline (index only): a server of this profile has this catalogue title
+// ("tt...", "tmdb:...", with or without :season:episode). The source cache
+// never keeps a list for such a title: server sources carry a token and a
+// play session, and "the server had nothing" is never remembered.
+int  servidores_tem(const char *id, const char *tipo);
 unsigned servidores_fileiras_versao(void);
 int  servidores_chave_fileira(const char *chave);
 int  servidores_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, int maxFils,

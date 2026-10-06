@@ -2094,6 +2094,19 @@ int plex_fontes_colher(const char *alvo, Stream **lista, int *n) {
   return e;
 }
 
+int plex_tem(const char *id, const char *tipo) {
+  char imdb[16];
+  long tmdb;
+  int serie, r;
+  if (!px_id_titulo(id, imdb, &tmdb, NULL, NULL)) return 0;
+  serie = tipo && (!strcmp(tipo, "series") || !strcmp(tipo, "tv"));
+  pthread_mutex_lock(&trava);
+  r = perfilLido == perfis_ativo() && estado == PX_EST_CONECTADO && nIndice > 0 &&
+      pxidx_achar(indice, nIndice, imdb, tmdb, serie ? 's' : 'm') >= 0;
+  pthread_mutex_unlock(&trava);
+  return r;
+}
+
 // A regular catalogue title ("tt...", "tmdb:...") the server has. Runs on the
 // extra-source thread of addons.c, so it may block; every wait is a RedeJob of
 // the current generation.

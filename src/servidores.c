@@ -17,6 +17,7 @@ void servidores_esquecer_todos(void) {
   emby_esquecer_todos();
   plex_esquecer_todos();
 }
+int servidores_tem(const char *id, const char *tipo) { return plex_tem(id, tipo); }
 int servidores_conectado(void) { return jellyfin_conectado() || emby_conectado() || plex_conectado(); }
 
 unsigned servidores_fileiras_versao(void) {
