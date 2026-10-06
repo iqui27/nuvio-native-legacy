@@ -30,6 +30,8 @@ flags+=("-DNV_PX_TV=\"$base\"")
 cc "${flags[@]}" tests/plex.c src/plex.c src/jellyfin.c src/rede.c src/redeurl.c src/js.c src/jsw.c \
   -o "$tmp/teste"
 "$tmp/teste" "$base" "$tmp/dados" > "$tmp/log" 2>&1 || { cat "$tmp/log"; exit 1; }
+# tests/servidores_log.sh collects every server test's log and scans it.
+if [ -n "${NV_SRV_LOG:-}" ]; then cat "$tmp/log" >> "$NV_SRV_LOG"; fi
 # Logs carry operation/status/latency only: no token, private path, e-mail or address.
 if grep -E 'plexacct|plexsrv|owned-srv|tok-fixture|/srv/private|private@example|X-Plex-Token|127\.0\.0\.1|WXYZ' "$tmp/log"; then
   echo 'secret leaked into the log' >&2; exit 1
