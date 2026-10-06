@@ -4124,7 +4124,7 @@ static void heroWeb(float a, float desloc) {
         if (selected && action == ACAO_EXPLORAR && stagger > .85f)
           desenhaDicaBotao(rc, i18n("Explorar a partir daqui"), a);
         if (selected && action == ACAO_JUNTOS && stagger > .85f)
-          desenhaDicaBotao(rc, i18n("Assistir juntos"), a);
+          desenhaDicaBotao(rc, i18n("Assistir Juntos"), a);
         if (maisAcoes && a > .3f && stagger > .85f)
           ponteiro_alvo(rc.x,rc.y,rc.w,rc.h,ponteiroDetalhe,NULL,-1,j);
       }
@@ -4139,7 +4139,7 @@ static void heroWeb(float a, float desloc) {
       if (nivel == 0 && botao == nb && acaoEm(nb) == ACAO_EXPLORAR)
         desenhaDicaBotao(rc, i18n("Explorar a partir daqui"), a);
       if (nivel == 0 && botao == nb && acaoEm(nb) == ACAO_JUNTOS)
-        desenhaDicaBotao(rc, i18n("Assistir juntos"), a);
+        desenhaDicaBotao(rc, i18n("Assistir Juntos"), a);
       if (a > 0.3f) ponteiro_alvo(rc.x, rc.y, rc.w, rc.h, ponteiroDetalhe, NULL, -1, nb);
       bx += NV_DETW2_CIRC + NV_DETW2_BTN_GAP;
     }
