@@ -17,6 +17,7 @@ import { rotaAmigos, limpezaAmigos, despublicar, garantirPerfil, avatarPublico, 
 import { rotaEuNome, rotaAlcance, rotaEvento, rotaFeed, rotaAmigo, limpezaSocial,
          limparNome, avatarPerfilOk, resolverNome, rotaRecResposta } from "./social.js";
 import { rotaEnquete } from "./enquete.js";
+import { rotaCaca } from "./conquista.js";
 import { resolverCanonica, canonizarEntrada, identidadesDe, rotaIdentidades, idSimkl,
          perfilExiste, RECURSO } from "./identidade.js";
 
@@ -805,6 +806,11 @@ export default {
     // Enquete na ilha (enquete.js; exige migracao-009).
     const enq = await rotaEnquete(rota, req.method, env, quem, corpo, h);
     if (enq) return enq;
+
+    // Caca a filmografia e conquistas (conquista.js; exige migracao-013 e o
+    // segredo TMDB_KEY para /v1/filmografia).
+    const caca = await rotaCaca(rota, req.method, env, quem, corpo, url, h);
+    if (caca) return caca;
 
     // Perfil publico, busca, pedidos, bloqueio e atividade (amigos.js).
     const amigos = await rotaAmigos(rota, req.method, env, quem, corpo, h);

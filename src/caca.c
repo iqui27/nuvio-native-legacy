@@ -887,7 +887,7 @@ void caca_passo(unsigned agora, int momentoBom) {
     free(s->f);
     s->f = res[i].f; s->nf = res[i].nf;
     s->i.estado = res[i].estado;
-    if (res[i].nome[0] && (s->i.tipo == CACA_SAGA || s->i.tipo == CACA_TRILHA || !s->i.nome[0]))
+    if (res[i].nome[0] && (s->i.tipo == CACA_SAGA || !s->i.nome[0]))
       snprintf(s->i.nome, sizeof s->i.nome, "%s", res[i].nome);
     if (res[i].foto[0] && !s->i.foto[0]) snprintf(s->i.foto, sizeof s->i.foto, "%s", res[i].foto);
     adotou = 1;

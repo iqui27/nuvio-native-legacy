@@ -28,3 +28,7 @@ crons = ["17 4 * * *"]
 #   TRAKT_CLIENT_ID     client id do aplicativo no Trakt
 #   SUPABASE_URL        url do projeto Supabase do Nuvio (so para verificar o token)
 #   SUPABASE_ANON_KEY   anon key do mesmo projeto
+#   TMDB_KEY            chave da API do TMDB (/v1/filmografia da Caca; sem ela a TV
+#                       pergunta ao TMDB direto). `wrangler secret put TMDB_KEY`
+# Opcional em [vars]: TRILHA_TRAKT_TOP250 = "<id numerico da lista publica do Trakt>"
+#   (o dono escolhe a lista dos "250 mais bem avaliados"; sem ela so o TMDB).

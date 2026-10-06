@@ -1,3 +1,4 @@
+import { conquistasDe } from "./conquista.js";
 // Redesenho do Social (02/10/2026): pessoa por perfil, nome de exibicao,
 // nivel de atividade, eventos do player, feed, perfil do amigo.
 // Contrato com a TV: docs/social-contrato.md. Tabelas: migracao-006-social.sql.
@@ -367,6 +368,8 @@ export async function rotaAmigo(env, quem, url, h, garantirPerfil) {
       "SELECT imdb, midia, titulo, poster, temporada, episodio, pct, atualizado FROM agora " +
       "WHERE pessoa = ? AND atualizado > ?").bind(alvo, t - AGORA_S).first();
     saida.agora = a || null;
+    // Ate 6 conquistas visiveis (conquista.js confere o alcance do dono).
+    saida.conquistas = await conquistasDe(env, alvo);
     const g = await env.DB.prepare(
       "SELECT imdb, midia, titulo, poster, temporada, episodio, criado FROM evento " +
       "WHERE id IN (SELECT MAX(id) FROM evento WHERE pessoa = ?1 AND ev = 'reacao' " +
