@@ -8,7 +8,6 @@
 //   GET  /v1/sala/convites      convites pendentes para mim (salas vivas)
 //   POST /v1/sala/entrar        {id} | {codigo} -> {id, bilhete, ws, resumo}
 //   POST /v1/sala/recusar       {id}
-//   POST /v1/sala/celular       {id, chat} -> bilhete do celular (QR)
 //   POST /v1/sala/fim           {id} anfitriao: a sala acabou (melhor esforco)
 //   POST /v1/sala/silenciar     {de|"*", sim} "nao receber convites de X"
 //
@@ -25,7 +24,6 @@ import { limparImpressao } from "../../juntos/src/logica.js";
 
 const SALA_TTL = 12 * 3600;        // o mesmo teto do Durable Object
 const BILHETE_TV_S = 60;            // uso unico; reconectar pede outro
-const BILHETE_CEL_S = 600;          // o QR vale 10 min para o primeiro uso
 const CONVIDADOS_MAX = 10;
 const COD_ALFA = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";   // o de codigo.js
 const contaDe = (id) => String(id || "").replace(/^(nuvio:[^:]+):\d{1,2}$/, "$1");
@@ -46,7 +44,9 @@ export function codigoLimpo(s) {
 const juntosBase = (env) => String(env.JUNTOS_URL || "").replace(/\/+$/, "");
 function enderecos(env) {
   const base = juntosBase(env);
-  return { ws: base.replace(/^http/, "ws") + "/ws", web: base + "/s/" };
+  // O QR do celular (web + sala + codigo) e montado pela TV com o codigo que o
+  // Durable Object da: endereco curto, porque o qr.c das TVs cabe ~134 bytes.
+  return { ws: base.replace(/^http/, "ws") + "/ws", web: base + "/j/" };
 }
 
 async function marcarInfantil(env, quem, inf, t) {
@@ -188,21 +188,6 @@ export async function rotaSala(rota, metodo, env, quem, corpo, url, h, limitar) 
     await env.DB.prepare("UPDATE convite SET estado = 2 WHERE sala = ? AND para = ? AND estado = 0")
       .bind(String(corpo?.id || ""), quem.id).run();
     return json({ ok: 1 });
-  }
-
-  if (rota === "/v1/sala/celular" && metodo === "POST") {
-    const s = await salaViva(env, "id", String(corpo?.id || ""), t);
-    if (!s) return erro("sala desconhecida", 404);
-    const dentro = s.anfitriao === quem.id || await env.DB.prepare(
-      "SELECT 1 FROM convite WHERE sala = ? AND para = ? AND estado = 1").bind(s.id, quem.id).first();
-    if (!dentro) return erro("sem convite", 403);
-    if (!(await limitar(env, `salacel:${quem.id}`, 20, 3600, t))) return erro("limite", 429);
-    // Chat livre: a TV diz se o perfil deixa (infantil vem desligado).
-    const chat = corpo?.chat === 0 || corpo?.chat === false || inf ? 0 : 1;
-    const bilhete = await assinar(env.SALA_SEGREDO, { sala: s.id, ...eu, papel: "celular", chat,
-      exp: t + BILHETE_CEL_S, n: nonce() });
-    const { web } = enderecos(env);
-    return json({ bilhete, url: web + s.codigo + "#" + bilhete, exp: t + BILHETE_CEL_S });
   }
 
   if (rota === "/v1/sala/fim" && metodo === "POST") {

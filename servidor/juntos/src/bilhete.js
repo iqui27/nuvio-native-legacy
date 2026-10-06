@@ -7,9 +7,9 @@
 // nao. Entao a identidade vai na URL, assinada e curta.
 //
 // Formato: base64url(JSON) "." base64url(HMAC-SHA256(segredo, parte1)).
-// Campos: v, sala, pessoa, nome, av, papel (anfitriao|convidado|celular),
-// cfg? (so o do anfitriao), pend? (entrada por codigo esperando aceite),
-// inf? (perfil infantil), chat? (celular pode escrever), exp (s), n (nonce).
+// Campos: v, sala, pessoa, nome, av, papel (anfitriao|convidado), cfg? (so o
+// do anfitriao), pend? (entrada por codigo esperando aceite), inf? (perfil
+// infantil), exp (s), n (nonce).
 //
 // Este arquivo e importado pelos DOIS Workers (servidor/recomendacoes importa
 // daqui): um formato so, sem copia que diverge em silencio.
@@ -69,7 +69,8 @@ export async function conferir(segredos, bilhete, agoraS) {
   if (c.v !== BILHETE_V) return null;
   if (typeof c.sala !== "string" || !/^[0-9a-f]{32}$/.test(c.sala)) return null;
   if (typeof c.pessoa !== "string" || !c.pessoa) return null;
-  if (!["anfitriao", "convidado", "celular"].includes(c.papel)) return null;
+  // O celular nao usa bilhete: entra pelo codigo curto do QR (logica.js).
+  if (!["anfitriao", "convidado"].includes(c.papel)) return null;
   if (!Number.isFinite(c.exp) || c.exp < agoraS) return null;
   return c;
 }

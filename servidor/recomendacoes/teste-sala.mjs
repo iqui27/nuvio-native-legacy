@@ -152,7 +152,7 @@ test("silenciar e bloqueio: convite nao aparece; bloqueado nao entra nem por cod
   assert.equal((await api("tok-e", "POST", "/v1/sala/entrar", { codigo: s.codigo })).status, 404);
 });
 
-test("perfil infantil: so convite de quem a conta conhece; sem codigo de estranho; chat do celular desligado", async (t) => {
+test("perfil infantil: so convite de quem a conta conhece; sem codigo de estranho", async (t) => {
   const { api, amigos } = cenario(t);
   // Conta bbb: perfil 1 adulto (principal nuvio:bbb), perfil 2 infantil.
   // aaa e amigo do adulto; eee e amigo SO do perfil infantil.
@@ -172,25 +172,17 @@ test("perfil infantil: so convite de quem a conta conhece; sem codigo de estranh
   const ok = await api("tok-b", "POST", "/v1/sala/entrar", { id: deA.id, infantil: 1 }, 2);
   assert.equal(ok.status, 200);
   assert.equal((await conferir([SEGREDO], ok.body.bilhete, agoraS())).inf, 1);
-  const cel = await api("tok-b", "POST", "/v1/sala/celular", { id: deA.id, infantil: 1 }, 2);
-  assert.equal((await conferir([SEGREDO], cel.body.bilhete, agoraS())).chat, 0);
   // sala criada pela crianca: estranho por codigo e recusado sem chegar ao modal
   const sk = (await api("tok-b", "POST", "/v1/sala", { ...NOVA, infantil: 1 }, 2)).body;
   assert.equal((await api("tok-e", "POST", "/v1/sala/entrar", { codigo: sk.codigo })).status, 403);
   assert.equal((await api("tok-a", "POST", "/v1/sala/entrar", { codigo: sk.codigo })).body.pend, 0);
 });
 
-test("celular: QR com codigo#bilhete de 10 min, so para quem esta na sala; fim apaga a sala", async (t) => {
+test("fim: so o anfitriao apaga a sala e os convites", async (t) => {
   const { api, amigos, sqlite } = cenario(t);
   amigos("nuvio:aaa", "nuvio:bbb");
   const s = (await api("tok-a", "POST", "/v1/sala", { ...NOVA, convidados: ["nuvio:bbb"] })).body;
-  assert.equal((await api("tok-b", "POST", "/v1/sala/celular", { id: s.id })).status, 403, "convidado que nao entrou");
-  const c = await api("tok-a", "POST", "/v1/sala/celular", { id: s.id });
-  assert.ok(c.body.url.startsWith(`https://juntos.test/s/${s.codigo}#`));
-  const b = await conferir([SEGREDO], c.body.bilhete, agoraS());
-  assert.equal(b.papel, "celular");
-  assert.equal(b.chat, 1);
-  assert.ok(b.exp - agoraS() > 500);
+  assert.equal(s.web, "https://juntos.test/j/");
   assert.equal((await api("tok-b", "POST", "/v1/sala/fim", { id: s.id })).status, 200);
   assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM sala").get().n, 1, "so o anfitriao encerra");
   await api("tok-a", "POST", "/v1/sala/fim", { id: s.id });

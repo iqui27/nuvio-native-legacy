@@ -51,6 +51,7 @@ typedef enum {
   JSV_FROUXO,        // seeks demais: tolerancia de 2 s daqui em diante
   JSV_NIVEL_B,       // a velocidade nao anda nesta TV
   JSV_AGUARDANDO, JSV_ACEITO,
+  JSV_CELULAR,       // k = codigo do QR do celular (a UI monta web + sala + codigo)
   JSV_FIM,           // k = motivo, n = duracao da sala (s)
   JSV_ERRO,          // k
 } JsEvTipo;
@@ -119,6 +120,7 @@ int jsm_pedir_pausa(JsMotor *m);
 int jsm_aceitar(JsMotor *m, const char *quem, int ok);
 int jsm_controle(JsMotor *m, int soAnfitriao);
 int jsm_sair(JsMotor *m);
+int jsm_pedir_celular(JsMotor *m, int chat);
 
 int  jsm_evento(JsMotor *m, JsEvento *e);       // 1 = tirou um
 int  jsm_sou_anfitriao(const JsMotor *m);

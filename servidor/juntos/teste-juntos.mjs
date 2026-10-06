@@ -209,7 +209,15 @@ test("tres TVs com rede ruim e relogios errados: depois do play agendado, todas 
   assert.equal(snap.membros.find((m) => m.id === "r").alc, true, "quem volta no meio segue alcancando");
 
   // Celular de h: primeiro uso pelo bilhete, depois pela chave de sessao.
-  const c = await new Par("cel", { atraso: [0, 0], jitter: 0 }).abrir("b=" + await bilhete(sala, "h", "celular", { chat: 1 }));
+  // O QR leva so a sala e um codigo de 8 caracteres que a TV pede a sala.
+  h.mandar({ t: "celular", chat: 1 });
+  const cod = (await h.esperar((m) => m.t === "celular")).codigo;
+  assert.equal(await statusUpgrade(`s=${sala}&c=ZZZZ`), 401);
+  const pag = await fetch(`${BASE}/j/${sala}${cod}`);
+  assert.equal(pag.status, 200);
+  assert.match(pag.headers.get("content-security-policy"), /default-src 'none'/);
+  assert.match(await pag.text(), /Watch Together/);
+  const c = await new Par("cel", { atraso: [0, 0], jitter: 0 }).abrir(`s=${sala}&c=${cod}`);
   const ses = await c.esperar((m) => m.t === "sessao");
   c.mandar({ t: "chat", txt: "pipoca pronta" });
   const chat = await f.esperar((m) => m.t === "chat");
@@ -217,6 +225,8 @@ test("tres TVs com rede ruim e relogios errados: depois do play agendado, todas 
   assert.equal(chat.de, "h");
   c.fechar();
   await dorme(200);
+  const reuso = await new Par("cel-reuso", { atraso: [0, 0], jitter: 0 }).abrir(`s=${sala}&c=${cod}`);
+  assert.equal(await reuso.esperarFechar(), 4401, "codigo do QR e de uso unico");
   const c2 = await new Par("cel2", { atraso: [0, 0], jitter: 0 }).abrir(`s=${sala}&k=${ses.k}`);
   const hist = await c2.esperar((m) => m.t === "historico");
   assert.equal(hist.itens[0].txt, "pipoca pronta");

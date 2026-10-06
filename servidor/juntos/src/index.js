@@ -7,9 +7,10 @@
 // nuvio-recomendacoes assina (bilhete.js) e encaminha ao Durable Object.
 //
 // Rotas:
-//   GET /ws?b=<bilhete>          websocket da TV (ou do celular, 1o uso)
+//   GET /ws?b=<bilhete>          websocket da TV
+//   GET /ws?s=<sala>&c=<codigo>  celular, primeiro uso (codigo do QR, 8 caracteres)
 //   GET /ws?s=<sala>&k=<chave>   celular reconectando
-//   GET /s/<codigo>              pagina do celular (o bilhete vem no #)
+//   GET /j/<sala><codigo>        pagina do celular (endereco curto: cabe no QR da TV)
 //   GET /saude
 //
 // Publicar SO por tools/juntos-publicar.sh. Segredo: SALA_SEGREDO (o mesmo
@@ -37,20 +38,20 @@ export default {
         sala = c.sala;
       } else {
         sala = url.searchParams.get("s") || "";
-        const k = url.searchParams.get("k") || "";
-        if (!/^[0-9a-f]{32}$/.test(sala) || !/^[0-9a-f]{36}$/.test(k)) return new Response("bilhete", { status: 401 });
+        const k = url.searchParams.get("k") || "", c = url.searchParams.get("c") || "";
+        if (!/^[0-9a-f]{32}$/.test(sala) || !(/^[0-9a-f]{36}$/.test(k) || /^[0-9A-Z]{8}$/.test(c)))
+          return new Response("bilhete", { status: 401 });
       }
       const stub = env.SALA.get(env.SALA.idFromName(sala));
       return stub.fetch(req);
     }
 
-    const pagina = rota.match(/^\/s\/([0-9A-Za-z]{6})\/?$/);
+    const pagina = rota.match(/^\/j\/[0-9a-f]{32}[0-9A-Z]{8}\/?$/);
     if (pagina && req.method === "GET") {
       return new Response(paginaCelular(), {
         headers: {
           "content-type": "text/html; charset=utf-8", ...SEM_CACHE,
-          // O bilhete vem no fragmento (#), que nunca sai do celular; e mesmo
-          // assim nenhum link daqui manda Referer.
+          // O codigo do QR e de uso unico; mesmo assim nenhum link daqui manda Referer.
           "referrer-policy": "no-referrer",
           "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
             "connect-src 'self' wss: ws:; img-src https: data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",

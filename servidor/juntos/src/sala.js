@@ -31,7 +31,9 @@ export class Sala extends DurableObject {
     let chaveCelular = "";
     if (url.searchParams.get("b")) {
       b = await conferir([this.env.SALA_SEGREDO, this.env.SALA_SEGREDO_ANTIGO], url.searchParams.get("b"), agoraS);
-      if (b && b.papel === "celular") chaveCelular = chaveNova();
+    } else if (url.searchParams.get("c")) {
+      b = this.l.resgatarCelular(url.searchParams.get("c"));
+      if (b) chaveCelular = chaveNova();
     } else if (url.searchParams.get("k")) {
       // Celular reconectando: o QR so vale uma vez; depois e esta chave de sessao.
       const k = url.searchParams.get("k");

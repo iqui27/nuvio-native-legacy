@@ -56,14 +56,14 @@ typedef struct {
 
 typedef enum {
   JSM_NADA = 0, JSM_PONG, JSM_SALA, JSM_MEMBRO, JSM_AVISO, JSM_REACAO, JSM_FRASE, JSM_CHAT,
-  JSM_PEDIDO, JSM_PEDIR, JSM_RECUSADO, JSM_FIM, JSM_ERRO, JSM_AGUARDANDO, JSM_ACEITO
+  JSM_PEDIDO, JSM_PEDIR, JSM_RECUSADO, JSM_FIM, JSM_ERRO, JSM_AGUARDANDO, JSM_ACEITO, JSM_CELULAR
 } JsMsgTipo;
 
 // Uma mensagem recebida, ja lida. JSM_SALA preenche `sala`; JSM_MEMBRO, `membro`.
 typedef struct {
   JsMsgTipo tipo;
   double c, s;              // pong
-  char k[32];               // aviso/reacao/frase/recusado/erro/fim(motivo)
+  char k[32];               // aviso/reacao/frase/recusado/erro/fim(motivo)/celular(codigo do QR)
   char quem[JSP_ID];        // aviso, pedido, pedir, chat (de), reacao (de)
   char nome[JSP_NOME];      // pedido, aviso de saida
   char av[256];             // pedido
@@ -88,6 +88,9 @@ int jsp_cmd(char *b, size_t n, const char *op, double pos, int seqBase, const ch
 int jsp_simples(char *b, size_t n, const char *t, const char *k);    // reacao, frase, pedir
 int jsp_aceitar(char *b, size_t n, const char *quem, int ok);
 int jsp_sair(char *b, size_t n);
+// Pede o codigo curto do QR do celular (8 caracteres, uso unico, 10 min).
+// `chat` 0 = o perfil nao deixa texto livre (a sala desliga sozinha no infantil).
+int jsp_celular(char *b, size_t n, int chat);
 
 // A impressao em JSON para POST /v1/sala ("imp":{...}), sem URL por construcao.
 int jsp_impressao(char *b, size_t n, const JsImpressao *i);

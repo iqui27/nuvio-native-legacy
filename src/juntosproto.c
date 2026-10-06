@@ -179,6 +179,10 @@ JsMsgTipo jsp_ler(const char *j, JsMsg *m, JsSala *sala) {
     m->dur = (int)js_num(j, NULL, "dur", 0);
   } else if (!strcmp(t, "aguardando")) m->tipo = JSM_AGUARDANDO;
   else if (!strcmp(t, "aceito")) m->tipo = JSM_ACEITO;
+  else if (!strcmp(t, "celular")) {
+    m->tipo = JSM_CELULAR;
+    js_texto(j, NULL, "codigo", m->k, sizeof m->k);
+  }
   return m->tipo;
 }
 
@@ -234,4 +238,8 @@ int jsp_impressao(char *b, size_t n, const JsImpressao *i) {
   return fim_(snprintf(b, n, "{%s%s%s%s%s\"arquivo\":\"%s\",\"binge\":\"%s\",\"rotulo\":\"%s\"}", h, x, by, al, du,
                        jsp_esc(arq, sizeof arq, i->arquivo), jsp_esc(bg, sizeof bg, i->binge),
                        jsp_esc(rot, sizeof rot, i->rotulo)), n);
+}
+
+int jsp_celular(char *b, size_t n, int chat) {
+  return fim_(snprintf(b, n, "{\"t\":\"celular\",\"chat\":%d}", chat ? 1 : 0), n);
 }

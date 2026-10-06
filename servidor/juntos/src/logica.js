@@ -43,6 +43,7 @@ export const LIMITES = {
   chatGuardado: 50,
   seqVelho: 2,              // cmd com seqBase mais de 2 mudancas atras...
   seqVelhoMs: 1000,         // ...em menos de 1 s e descartado (6.8)
+  celularMs: 600000,        // o codigo do QR do celular vale 10 min, uma vez
 };
 
 const num = (v, a, b, p) => (Number.isFinite(v) ? Math.min(b, Math.max(a, v)) : p);
@@ -194,6 +195,16 @@ export class SalaLogica {
     return { ok: true, cx: { pessoa: id, papel: "tv" }, ...out };
   }
 
+  // O celular chegou com o codigo do QR: vira o "bilhete" dele, e o codigo morre.
+  resgatarCelular(codigo) {
+    if (!this.aberta() || typeof codigo !== "string") return null;
+    const v = this.s.celCod[codigo];
+    if (!v) return null;
+    delete this.s.celCod[codigo];
+    if (v.exp < this.agora() || !this.s.membros[v.pessoa]) return null;
+    return { pessoa: v.pessoa, papel: "celular", chat: v.chat, sala: this.s.sala };
+  }
+
   criar(b, t) {
     const c = b.cfg || {};
     const ep = txt(c.ep, 64);
@@ -207,7 +218,7 @@ export class SalaLogica {
       rel: { ep, estado: "lobby", pos0: num(c.pos, 0, 86400, 0), t0: t, seq: 1, autor: b.pessoa, op: "criar",
         mudou: t, auto: 0 },
       espera: { quem: [], ate: 0 },
-      membros: {}, pend: {}, aceitos: {}, usados: {}, chat: [], chatSeq: 0,
+      membros: {}, pend: {}, aceitos: {}, usados: {}, chat: [], chatSeq: 0, celCod: {},
     };
   }
 
@@ -335,6 +346,18 @@ export class SalaLogica {
         s.chat.push(item);
         if (s.chat.length > LIMITES.chatGuardado) s.chat.shift();
         out.envios.push({ para: "*", msg: item });
+        break;
+      }
+      case "celular": {
+        // QR do celular (5.8): a TV pede um codigo curto de 8 caracteres, de
+        // uso unico e 10 min. Curto porque o qr.c das TVs so cabe ~134 bytes.
+        // Perfil infantil: chat desligado, digam o que disserem.
+        if (cx.papel !== "tv" || t - (eu.celPedido || 0) < 3000) break;
+        eu.celPedido = t;
+        for (const [c, v] of Object.entries(s.celCod)) if (v.pessoa === eu.id || v.exp < t) delete s.celCod[c];
+        const codigo = codigoCelular();
+        s.celCod[codigo] = { pessoa: eu.id, chat: m.chat && !eu.inf ? 1 : 0, exp: t + LIMITES.celularMs };
+        out.envios.push({ para: "tv:" + eu.id, msg: { t: "celular", codigo, exp: t + LIMITES.celularMs } });
         break;
       }
       case "pedir": {
@@ -591,6 +614,11 @@ export class SalaLogica {
     for (const [n, exp] of Object.entries(s.usados)) if (exp * 1000 < t) delete s.usados[n];
     return out;
   }
+}
+
+const COD_ALFA = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+function codigoCelular() {
+  return [...crypto.getRandomValues(new Uint8Array(8))].map((x) => COD_ALFA[x & 31]).join("");
 }
 
 function dest(cx) { return (cx.papel === "cel" ? "cel:" : "tv:") + cx.pessoa; }

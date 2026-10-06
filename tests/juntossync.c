@@ -176,6 +176,9 @@ static void mensagens(void) {
   OK(jsp_ler("{\"t\":\"fim\",\"motivo\":\"anfitriao\",\"dur\":8040}", &m, NULL) == JSM_FIM && m.dur == 8040, "fim");
   OK(jsp_ler("{\"t\":\"membro\",\"id\":\"nuvio:f\",\"st\":\"pronto\",\"on\":true}", &m, NULL) == JSM_MEMBRO
      && !strcmp(m.membro.st, "pronto"), "membro");
+  OK(jsp_ler("{\"t\":\"celular\",\"codigo\":\"K7M2QXA9\",\"exp\":1}", &m, NULL) == JSM_CELULAR && !strcmp(m.k, "K7M2QXA9"), "celular");
+  jsp_celular(b, sizeof b, 0);
+  OK(!strcmp(b, "{\"t\":\"celular\",\"chat\":0}"), "pedir celular: %s", b);
   OK(jsp_ler("nada", &m, NULL) == JSM_NADA && jsp_ler("{\"t\":\"zzz\"}", &m, NULL) == JSM_NADA, "lixo");
   // Montagem
   jsp_cmd(b, sizeof b, "pausa", 812.4, 17, NULL, NULL);

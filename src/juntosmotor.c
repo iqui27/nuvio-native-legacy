@@ -219,6 +219,7 @@ void jsm_receber(JsMotor *m, const char *json, double agora) {
     case JSM_ERRO: evento(m, JSV_ERRO, g.k, NULL, NULL, 0); break;
     case JSM_AGUARDANDO: evento(m, JSV_AGUARDANDO, NULL, NULL, NULL, 0); break;
     case JSM_ACEITO: evento(m, JSV_ACEITO, NULL, NULL, NULL, 0); break;
+    case JSM_CELULAR: if (g.k[0]) evento(m, JSV_CELULAR, g.k, NULL, NULL, 0); break;
     default: break;
   }
 }
@@ -410,4 +411,9 @@ int jsm_controle(JsMotor *m, int soAnfitriao) {
 int jsm_sair(JsMotor *m) {
   char b[32];
   return jsp_sair(b, sizeof b) > 0 ? mandar(m, b) : -1;
+}
+
+int jsm_pedir_celular(JsMotor *m, int chat) {
+  char b[48];
+  return jsp_celular(b, sizeof b, chat) > 0 ? mandar(m, b) : -1;
 }

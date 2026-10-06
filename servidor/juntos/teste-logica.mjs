@@ -287,6 +287,26 @@ test("vazia 10 min encerra e deixa so a lapide; encerrar pelo anfitriao; sem ren
   assert.ok(y.l.encerrada());
 });
 
+test("QR do celular: codigo curto de uso unico e 10 min; crianca sem chat; so membro", () => {
+  const x = tres();
+  const r = x.l.mensagem(tv("r"), { t: "celular", chat: 1 });
+  const c = r.envios[0].msg.codigo;
+  assert.match(c, /^[0-9A-HJKMNP-TV-Z]{8}$/);
+  assert.equal(("https://nuvio-juntos.henriquef29.workers.dev/j/" + "0".repeat(32) + c).length < 134, true);
+  assert.equal(x.l.mensagem(tv("r"), { t: "celular", chat: 1 }).envios.length, 0, "1 a cada 3 s");
+  const b = x.l.resgatarCelular(c);
+  assert.deepEqual([b.pessoa, b.papel, b.chat], ["r", "celular", 1]);
+  assert.equal(x.l.resgatarCelular(c), null, "uso unico");
+  x.andar(3000);
+  const c2 = x.l.mensagem(tv("r"), { t: "celular", chat: 1 }).envios[0].msg.codigo;
+  x.andar(LIMITES.celularMs + 1);
+  assert.equal(x.l.resgatarCelular(c2), null, "vencido");
+  const k = x.l.conectar(bil("k", "convidado", { inf: 1 }));
+  assert.ok(k.ok);
+  const ck = x.l.mensagem(tv("k"), { t: "celular", chat: 1 }).envios[0].msg.codigo;
+  assert.equal(x.l.resgatarCelular(ck).chat, 0, "perfil infantil: chat desligado");
+});
+
 test("rajada de comandos: mais de 5 por segundo e recusada", () => {
   const x = tres();
   let recusados = 0;
