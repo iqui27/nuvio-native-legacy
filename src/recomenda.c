@@ -2761,6 +2761,7 @@ static int acaoDeEv(const char *ev) {
   if (!strcmp(ev, "abandono")) return REC_ACAO_ABANDONO;
   if (!strcmp(ev, "reacao"))   return REC_ACAO_REACAO;
   if (!strcmp(ev, "salvo"))    return REC_ACAO_SALVO;
+  if (!strcmp(ev, "junto"))    return REC_ACAO_JUNTO;
   return 0;
 }
 
@@ -2785,7 +2786,17 @@ static int lerEvento(const char *p, const char *f, RecEvento *e) {
   e->pct = (int)js_num(p, f, "pct", 0.0);
   e->reacao = (int)js_num(p, f, "reacao", 0.0);
   e->quando = (long long)js_num(p, f, "criado", 0.0);
-  semTab(nome); semTab(e->titulo); semTab(e->via);
+  // "com" do Watch Together: [{"de","nome"}...], ja filtrado pelo alcance.
+  { const char *c = js_array(p, f, "com");
+    size_t k = 0;
+    while (c && *c == '{' && k + 2 < sizeof e->com) {
+      const char *cf = js_fim(c);
+      char n[64] = "";
+      js_texto(c, cf, "nome", n, sizeof n);
+      if (n[0]) k += (size_t)snprintf(e->com + k, sizeof e->com - k, "%s%s", k ? ", " : "", n);
+      c = js_prox(cf);
+    } }
+  semTab(nome); semTab(e->titulo); semTab(e->via); semTab(e->com);
   e->acao = acaoDeEv(ev);
   if (!e->acao || strncmp(e->imdb, "tt", 2) || !e->pessoa[0]) return 0;
   if (strcmp(e->midia, "series")) snprintf(e->midia, sizeof e->midia, "movie");

@@ -1,5 +1,6 @@
 // Watch Together: a cola com o app — ver juntos.h.
 #include "juntos.h"
+#include "atividade.h"
 #include "discordws.h"
 #include "idioma.h"
 #include "ilha.h"
@@ -127,6 +128,8 @@ static int buscandoConvites;
 static char vistos[16][40]; static int nVistos;
 // celular
 static char urlCelular[200];
+static Uint32 entrouEm;   // primeiro "conectado" desta sala (para o feed)
+static int juntoMandado, maxMembros;
 
 int juntos_disponivel(void) { return NV_REC_URL[0] && recomenda_ativo() && recomenda_meu_id()[0]; }
 int juntos_ativo(void) { return fase != JF_OCIOSO; }
@@ -139,6 +142,14 @@ int juntos_sou_anfitriao(void) { return temMotor && jsm_sou_anfitriao(&motor); }
 int juntos_pode_controlar(void) { return !temMotor || jsm_pode_controlar(&motor); }
 
 static double agoraLocal(void) { return (double)SDL_GetTicks(); }
+
+static void separarEpJ(const char *ep, char *imdb, size_t n, int *t, int *e) {
+  const char *p = strchr(ep, ':');
+  *t = *e = 0;
+  if (!p) { snprintf(imdb, n, "%s", ep); return; }
+  snprintf(imdb, n, "%.*s", (int)(p - ep), ep);
+  sscanf(p + 1, "%d:%d", t, e);
+}
 
 // ---- o player de verdade, para o motor -------------------------------------------------
 // A amostra de posicao: o backend nao diz quando leu (o LG le a cada ~200 ms),
@@ -179,7 +190,22 @@ static void fecharWs(void) {
   if (temMotor) jsm_caiu(&motor);
 }
 
+// "Assistiram juntos" no feed (decisao 8): so sessao de verdade (10 min com
+// alguem mais), uma vez por sala. atividade.c respeita o alcance da pessoa.
+static void mandarJunto(void) {
+  char imdb[24]; int t = 0, e = 0, seg;
+  if (!temMotor || juntoMandado || !entrouEm || !motor.temSala || maxMembros < 2) return;
+  seg = (int)((SDL_GetTicks() - entrouEm) / 1000u);
+  if (seg < 600) return;
+  juntoMandado = 1;
+  separarEpJ(motor.sala.ep, imdb, sizeof imdb, &t, &e);
+  atividade_junto(imdb, t > 0 ? "series" : "movie", motor.sala.titulo, motor.sala.poster, t, e, 0);
+  printf("[juntos] assistiram juntos: evento para o feed\n");
+}
+
 static void zerar(void) {
+  mandarJunto();
+  entrouEm = 0; juntoMandado = 0; maxMembros = 0;
   fecharWs();
   gen++;
   fase = JF_OCIOSO;
@@ -375,16 +401,9 @@ void juntos_silenciar(const char *de) {
 }
 
 // ---- respostas do fio ----------------------------------------------------------------------
-static void separarEp(const char *ep, char *imdb, size_t n, int *t, int *e) {
-  const char *p = strchr(ep, ':');
-  *t = *e = 0;
-  if (!p) { snprintf(imdb, n, "%s", ep); return; }
-  snprintf(imdb, n, "%.*s", (int)(p - ep), ep);
-  sscanf(p + 1, "%d:%d", t, e);
-}
 
 static void pedirAbrir(const char *ep, const char *titulo, const char *poster) {
-  separarEp(ep, abrirImdb, sizeof abrirImdb, &abrirT, &abrirE);
+  separarEpJ(ep, abrirImdb, sizeof abrirImdb, &abrirT, &abrirE);
   snprintf(abrirTitulo, sizeof abrirTitulo, "%s", titulo ? titulo : "");
   snprintf(abrirPoster, sizeof abrirPoster, "%s", poster ? poster : "");
   abrirPedido = 1;
@@ -464,7 +483,7 @@ static void eventos(void) {
         // A sala trocou de episodio: todos abrem o mesmo, cada um com a fonte
         // lembrada para a serie (fontepref/bingeGroup), nao a impressao velha.
         char imdb[24]; int t, ep;
-        separarEp(e.txt, imdb, sizeof imdb, &t, &ep);
+        separarEpJ(e.txt, imdb, sizeof imdb, &t, &ep);
         { int pt = 0, pe = 0; player_episodio_atual(&pt, &pe);
           if (!(player_aberto() && pt == t && pe == ep)) { pedirAbrir(e.txt, tituloSala, ""); escolhendo = 0; } }
         break;
@@ -513,6 +532,7 @@ static void websocket(Uint32 agora) {
   if (dws_estado(ws) == DWS_ABERTO && !motor.conectado) {
     jsm_conectou(&motor, agoraLocal());
     if (fase != JF_AGUARDANDO) fase = JF_DENTRO;
+    if (!entrouEm) entrouEm = agora ? agora : 1;
     caiuEm = 0;
     atrasoConexao = 0;
     printf("[juntos] conectado a sala\n");
@@ -579,6 +599,7 @@ void juntos_passo(Uint32 agora) {
   }
   if (escolhendo && !player_aberto()) jsm_estado_app(&motor, "procurando", 0);
   jsm_passo(&motor, agoraLocal());
+  if (motor.sala.n > maxMembros) maxMembros = motor.sala.n;
   eventos();
 }
 

@@ -39,7 +39,7 @@
 #define ATIV_FIM_PCT      90       // a partir disto e "fim", com ou sem creditos
 
 typedef struct {
-  char ev[12];          // "inicio" | "progresso" | "fim" | "abandono" | "reacao" | "salvo"
+  char ev[12];          // "inicio" | "progresso" | "fim" | "abandono" | "reacao" | "salvo" | "junto"
   char imdb[24];        // sempre "tt..." puro, sem ":T:E"
   char midia[8];        // "movie" | "series"
   char titulo[160];
@@ -79,6 +79,10 @@ void atividade_salvo(const CatItem *ci, int salvar);
 // Reacao respondida (reacao.c). `rec` = recomendacao de origem ou 0.
 void atividade_reacao(const char *imdb, const char *midia, const char *titulo,
                       const char *poster, int reacao, long long rec);
+
+// Sessao do Watch Together acabou (juntos.c). `seg` = duracao da sessao.
+void atividade_junto(const char *imdb, const char *midia, const char *titulo, const char *poster,
+                     int temporada, int episodio, int seg);
 
 // --- de onde o titulo veio --------------------------------------------------
 // O painel Social abriu o titulo a partir da recomendacao `rec` de `nome`.

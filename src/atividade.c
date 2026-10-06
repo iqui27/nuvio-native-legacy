@@ -394,6 +394,24 @@ void atividade_salvo(const CatItem *ci, int salvar) {
   enfileirar(&e);
 }
 
+// "Assistiram juntos" (Watch Together, decisao 8): cada TV manda o PROPRIO
+// evento quando a sessao acaba; o servidor junta no feed quem assistiu o mesmo
+// titulo na mesma hora, e so quem tem o alcance ligado aparece.
+void atividade_junto(const char *imdb, const char *midia, const char *titulo, const char *poster,
+                     int temporada, int episodio, int seg) {
+  AtivEvento e;
+  memset(&e, 0, sizeof e);
+  atividade_id_puro(e.imdb, sizeof e.imdb, imdb);
+  if (strncmp(e.imdb, "tt", 2)) return;
+  snprintf(e.ev, sizeof e.ev, "junto");
+  snprintf(e.midia, sizeof e.midia, "%s", midia && !strcmp(midia, "series") ? "series" : "movie");
+  snprintf(e.titulo, sizeof e.titulo, "%s", titulo ? titulo : "");
+  snprintf(e.poster, sizeof e.poster, "%s", poster ? poster : "");
+  e.temporada = temporada; e.episodio = episodio;
+  e.seg = seg;
+  enfileirar(&e);
+}
+
 void atividade_reacao(const char *imdb, const char *midia, const char *titulo,
                       const char *poster, int reacao, long long rec) {
   AtivEvento e;

@@ -574,7 +574,8 @@ enum { REC_ACAO_INICIO = 1,     // comecou (nosso) / "assistindo agora" (Trakt)
        REC_ACAO_ABANDONO,
        REC_ACAO_REACAO,         // `reacao` 1/0/-1
        REC_ACAO_SALVO,
-       REC_ACAO_NOTA };         // nota de tracker (`nota` 0-100)
+       REC_ACAO_NOTA,           // nota de tracker (`nota` 0-100)
+       REC_ACAO_JUNTO };        // assistiram juntos (Watch Together); `com` = os outros
 typedef struct {
   int  fonte, acao;
   int  agora;           // explicit watching response; a check-in alone is not live
@@ -592,6 +593,7 @@ typedef struct {
   int  reacao;          // so REC_ACAO_REACAO
   int  nota;            // so REC_ACAO_NOTA
   long long id;         // id do evento no nosso servidor (0 nas outras fontes)
+  char com[96];         // so REC_ACAO_JUNTO: "Rafa, Fabi" (quem tambem aparece)
 } RecEvento;
 #define REC_FEED_MAX 50
 

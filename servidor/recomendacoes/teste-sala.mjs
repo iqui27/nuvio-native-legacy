@@ -190,3 +190,21 @@ test("fim: so o anfitriao apaga a sala e os convites", async (t) => {
   assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM convite").get().n, 0);
   assert.equal((await api("tok-b", "POST", "/v1/sala/entrar", { id: s.id })).status, 404);
 });
+
+test("feed: 'assistiram juntos' vira uma linha com os outros; quem tem alcance 0 nao aparece", async (t) => {
+  const { api, amigos } = cenario(t);
+  amigos("nuvio:aaa", "nuvio:bbb");
+  amigos("nuvio:aaa", "nuvio:ccc");
+  amigos("nuvio:aaa", "nuvio:eee");
+  for (const tok of ["tok-b", "tok-c"]) await api(tok, "POST", "/v1/alcance", { nivel: 1 });
+  await api("tok-e", "POST", "/v1/alcance", { nivel: 0 });
+  const ev = { ev: "junto", imdb: "tt1160419", midia: "movie", titulo: "Duna: Parte 2", seg: 7200 };
+  for (const tok of ["tok-b", "tok-c", "tok-e"]) await api(tok, "POST", "/v1/atividade", ev);
+  const f = await api("tok-a", "GET", "/v1/feed");
+  const juntos = f.body.itens.filter((x) => x.ev === "junto");
+  assert.equal(juntos.length, 1, "uma linha por sessao");
+  assert.equal(juntos[0].com.length, 1);
+  const nomes = [juntos[0].deNome, juntos[0].com[0].nome].sort();
+  assert.deepEqual(nomes, ["Fabi", "Rafa"]);
+  assert.ok(!JSON.stringify(f.body).includes("Estranho"), "alcance 0 nao aparece");
+});

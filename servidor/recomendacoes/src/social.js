@@ -7,8 +7,8 @@
 //   -1 nao respondeu (vale 0) | 0 ninguem | 1 so amigos | 2 amigos de amigos
 // Nada e gravado com alcance < 1, e baixar para 0 apaga o que havia.
 
-const EVENTOS = new Set(["inicio", "progresso", "fim", "abandono", "reacao", "salvo"]);
-const NO_FEED = ["inicio", "fim", "abandono", "reacao", "salvo"];
+const EVENTOS = new Set(["inicio", "progresso", "fim", "abandono", "reacao", "salvo", "junto"]);
+const NO_FEED = ["inicio", "fim", "abandono", "reacao", "salvo", "junto"];
 const AGORA_S = 15 * 60;            // "assistindo agora" vence em 15 min
 const RETENCAO = 90 * 86400;
 const SEG_MAX = 4 * 3600;           // um trecho nao passa de 4 h
@@ -129,7 +129,8 @@ export async function rotaEvento(env, quem, corpo, h, limitar) {
   const temporada = int(corpo?.temporada, 0, 9999);
   const episodio = int(corpo?.episodio, 0, 99999);
   const pct = int(corpo?.pct, 0, 100);
-  const seg = int(corpo?.seg, 0, SEG_MAX);
+  // "junto" nao e tempo de tela: os "progresso" da mesma sessao ja contaram.
+  const seg = ev === "junto" ? 0 : int(corpo?.seg, 0, SEG_MAX);
   const reacao = ev === "reacao" ? int(corpo?.reacao, -1, 1) : 0;
   const rec = int(corpo?.rec, 0, 2 ** 31 - 1);
   const mes = mesDe(t);
@@ -256,7 +257,20 @@ export async function rotaFeed(env, quem, url, req, h, garantirPerfil) {
       reacao: x.reacao, criado: x.criado,
     });
   }
-  return h.json({ cursor: maior, itens }, 200, { etag });
+  // "ASSISTIRAM JUNTOS" (Watch Together, decisao 8): cada membro manda o
+  // proprio evento `junto` no fim da sessao; aqui os do mesmo titulo/episodio
+  // na mesma hora viram UMA linha com os nomes em `com`. So entra quem esta em
+  // `linhas` — ou seja, quem tem alcance ligado e e visivel para quem le; os
+  // outros simplesmente nao aparecem no "com".
+  const juntos = [];
+  for (const it of itens) {
+    if (it.ev !== "junto") { juntos.push(it); continue; }
+    const par = juntos.find((o) => o.ev === "junto" && o.imdb === it.imdb && o.temporada === it.temporada &&
+      o.episodio === it.episodio && Math.abs(o.criado - it.criado) <= DEDUPE_FEED_S);
+    if (par) { (par.com ||= []).push({ de: it.de, nome: it.deNome }); continue; }
+    juntos.push(it);
+  }
+  return h.json({ cursor: maior, itens: juntos }, 200, { etag });
 }
 
 // --- GET /v1/amigo?id= --------------------------------------------------------------

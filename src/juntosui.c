@@ -40,6 +40,7 @@ static int foco, linhaReacao;
 
 // folha do anfitriao
 static int folhaIdx, folhaT, folhaE, soEu, nAmigos;
+static char folhaTitulo[160];
 static char amigoId[FOLHA_AMIGOS][96], amigoNome[FOLHA_AMIGOS][64], amigoAv[FOLHA_AMIGOS][512];
 static int marcado[FOLHA_AMIGOS];
 static int pediuReproduzir, pediuFecharPlayer;
@@ -61,7 +62,33 @@ static GLuint texQr;
 static char texQrDe[200];
 static int mostrarQr;
 
+static void poeBolha(const char *quem, const char *icone, const char *txt, unsigned ms);
+#ifdef NV_SHOT_HOOKS
+static int shotPlayer;
+void juntosui_shot_player(int sim) { shotPlayer = sim; }
+// A folha com amigos de mentira (o catalogo e o social estao vazios na captura).
+void juntosui_shot_folha(int idx, const char *const *nomes, int n) {
+  int i;
+  folhaIdx = idx; nAmigos = 0;
+  snprintf(folhaTitulo, sizeof folhaTitulo, "Duna: Parte 2");
+  for (i = 0; i < n && i < FOLHA_AMIGOS; i++) {
+    snprintf(amigoId[i], sizeof amigoId[0], "nuvio:%d", i);
+    snprintf(amigoNome[i], sizeof amigoNome[0], "%s", nomes[i]);
+    amigoAv[i][0] = 0; marcado[i] = i == 0; nAmigos++;
+  }
+  camada = CAMADA_FOLHA; foco = 1;
+}
+void juntosui_shot_bolhas(void) {
+  agoraUlt = SDL_GetTicks();
+  poeBolha("nuvio:r", "jt_risada", NULL, 60000);
+  poeBolha("nuvio:f", NULL, "Volta um pouco", 60000);
+  poeBolha("nuvio:r", "aj_message-square", "a pipoca acabou", 60000);
+}
+void juntosui_shot_camada(int c, int f) { camada = (Camada)c; foco = f; linhaReacao = 0; }
+static int noPlayer(void) { return player_aberto() || shotPlayer; }
+#else
 static int noPlayer(void) { return player_aberto(); }
+#endif
 
 // --- avisos ---------------------------------------------------------------------------------
 // No player, o aviso e da plrilha (toast); fora, da ilha do relogio com o rosto.
@@ -93,11 +120,11 @@ void juntosui_convite(const JuntosConvite *c) {
   char txt[320], f1[120], f2[200], chave[64];
   conv = *c;
   memset(&m, 0, sizeof m);
-  snprintf(m.kicker, sizeof m.kicker, "%s", i18n("Assistir juntos"));
+  snprintf(m.kicker, sizeof m.kicker, "%s", i18n("Assistir Juntos"));
   snprintf(m.titulo, sizeof m.titulo, "%s", c->titulo);
   if (c->imp.rotulo[0]) snprintf(m.linha, sizeof m.linha, i18n("Fonte de %s: %s"), c->deNome, c->imp.rotulo);
   snprintf(m.texto, sizeof m.texto, "%s",
-           i18n("Cada um assiste pela própria conta e pelos próprios addons. Se a sua fonte for outra versão, o app avisa."));
+           i18n("Cada um assiste pela própria conta. Se a sua fonte for outra versão, o app avisa."));
   snprintf(m.arte, sizeof m.arte, "%s", c->poster);
   snprintf(m.rosto, sizeof m.rosto, "%s", c->deAv);
   snprintf(m.rostoNome, sizeof m.rostoNome, "%s", c->deNome);
@@ -258,6 +285,7 @@ void juntosui_abrir_folha(int idx, int t, int e) {
   }
   if (juntos_ativo()) { camada = CAMADA_SALA; foco = 0; return; }
   folhaIdx = idx; folhaT = t; folhaE = e;
+  { const CatItem *ci = cat_item(idx); snprintf(folhaTitulo, sizeof folhaTitulo, "%s", ci ? ci->titulo : ""); }
   nAmigos = 0;
   for (i = 0; i < n && nAmigos < FOLHA_AMIGOS; i++) {
     const SvAmigo *a = socialvis_amigo(i);
@@ -457,8 +485,8 @@ static void texto(TxtEstilo es, const char *s, float x, float y, int c, float a,
 static float largura(TxtEstilo es, const char *s) { return (float)txt_linha(es, s, 255, 255, 255, 255).w; }
 
 static void painel(GfxRect r) {
-  gfx_cor((GfxRect){ 0, 0, 1920, 1080 }, 0, 0, 0, 0, 0.45f);
-  gfx_vidro_painel(r, 0.06f, 0.82f, 1.0f);
+  gfx_cor((GfxRect){ 0, 0, 1920, 1080 }, 0, 0, 0, 0, 0.55f);
+  gfx_vidro_painel(r, 0.06f, 0.92f, 1.0f);
 }
 
 static const char *estadoTexto(const JsMembro *p) {
@@ -508,14 +536,14 @@ static GLuint qrTextura(const char *u) {
 }
 
 static void desenharFolha(void) {
-  GfxRect r = { 560, 120, 800, 840 };
-  const CatItem *ci = cat_item(folhaIdx);
+  float h = 48 + 40 + 72 + 48 + folhaLinhas() * 76.0f + 12 + 40;
+  GfxRect r = { 560, (1080 - h) / 2, 800, h };
   float y = r.y + 48;
   int i;
   painel(r);
-  texto(TXT_CAPTION, i18n("Assistir juntos"), r.x + 48, y, 200, 1, 0);
+  texto(TXT_CAPTION, i18n("Assistir Juntos"), r.x + 48, y, 200, 1, 0);
   y += 40;
-  texto(TXT_ILHA_TITULO, ci ? ci->titulo : "", r.x + 48, y, 245, 1, r.w - 96);
+  texto(TXT_ILHA_TITULO, folhaTitulo, r.x + 48, y, 245, 1, r.w - 96);
   y += 72;
   texto(TXT_ILHA_CORPO, nAmigos ? i18n("Quem vai assistir com você") : i18n("Nenhum amigo ainda. Quem tiver o código entra pedindo."),
         r.x + 48, y, 190, 1, r.w - 96);
@@ -543,31 +571,37 @@ static void desenharFolha(void) {
 }
 
 static void desenharCodigo(void) {
-  GfxRect r = { 610, 300, 700, 420 };
+  GfxRect r = { 610, 290, 700, 470 };
   int i;
   painel(r);
   texto(TXT_CAPTION, i18n("Código da sala"), r.x + 48, r.y + 48, 200, 1, 0);
-  texto(TXT_ILHA_CORPO, i18n("Peça o código a quem abriu a sala. CIMA e BAIXO trocam a letra."), r.x + 48, r.y + 92, 190, 1, r.w - 96);
+  txt_bloco_corta(TXT_ILHA_CORPO, i18n("Peça o código a quem abriu a sala. CIMA e BAIXO trocam a letra."),
+                  190, 190, 190, r.x + 48, r.y + 92, r.w - 96, 34, 1, 2);
   for (i = 0; i < 6; i++) {
-    GfxRect c = { r.x + 64 + i * 98.0f + (i >= 3 ? 20 : 0), r.y + 170, 80, 110 };
+    GfxRect c = { r.x + 64 + i * 98.0f + (i >= 3 ? 20 : 0), r.y + 190, 80, 110 };
     char s[2] = { cod[i], 0 };
     float f = codPos == i ? 1.0f : 0.0f;
     int tinta = botao_superficie(c, f, 1);
     TxtLinha l = txt_linha(TXT_ILHA_TITULO, s, tinta, tinta, tinta, 255);
     txt_desenhar_alpha(l, c.x + (c.w - l.w) / 2, c.y + (c.h - l.h) / 2, 1);
   }
-  botao_pilula((GfxRect){ r.x + 48, r.y + 320, r.w - 96, BOTAO_H_SECUNDARIO }, i18n("Entrar"), "aj_users", 0, 1, 0, 1);
+  botao_pilula((GfxRect){ r.x + 48, r.y + 360, r.w - 96, BOTAO_H_SECUNDARIO }, i18n("Entrar"), "aj_users", 0, 1, 0, 1);
 }
 
 static void desenharSala(void) {
   const JsMotor *m = juntos_motor();
-  GfxRect r = { 360, 140, 1200, 800 };
-  float y = r.y + 48;
+  int nm = m && m->sala.n < 5 ? m->sala.n : 5;
+  float h = 300 + nm * 76.0f + 120 + 56;
+  GfxRect r;
+  float y;
   int i, b[BT_N], n = botoesSala(b);
   char linha[200], nomes[160] = "";
   if (!m) return;
+  if (mostrarQr && h < 640) h = 640;
+  r = (GfxRect){ 360, (1080 - h) / 2, 1200, h };
+  y = r.y + 48;
   painel(r);
-  texto(TXT_CAPTION, i18n("Assistir juntos"), r.x + 48, y, 200, 1, 0);
+  texto(TXT_CAPTION, i18n("Assistir Juntos"), r.x + 48, y, 200, 1, 0);
   if (juntos_codigo()[0]) {
     char c[64];
     snprintf(c, sizeof c, i18n("Código %.3s-%s"), juntos_codigo(), juntos_codigo() + 3);
@@ -588,9 +622,9 @@ static void desenharSala(void) {
     char st[120];
     int pronto = !strcmp(p->st, "pronto") || !strcmp(p->st, "tocando");
     rec_avatar((GfxRect){ r.x + 48, y, 56, 56 }, p->av, p->nome, p->id, p->on ? 1.0f : 0.4f);
-    snprintf(linha, sizeof linha, "%s%s", strcmp(p->id, m->eu) ? p->nome : i18n("Você"), p->anf ? " · " : "");
+    snprintf(linha, sizeof linha, "%s%s", strcmp(p->id, m->eu) ? p->nome : i18n("Você"), p->anf ? "  ·  " : "");
     texto(TXT_ILHA_NOME, linha, r.x + 124, y + 4, 240, 1, 380);
-    if (p->anf) texto(TXT_CAPTION, i18n("anfitrião"), r.x + 124 + largura(TXT_ILHA_NOME, linha), y + 8, 170, 1, 0);
+    if (p->anf) texto(TXT_CAPTION, i18n("anfitrião"), r.x + 132 + largura(TXT_ILHA_NOME, linha), y + 8, 170, 1, 0);
     if (!strcmp(p->st, "carregando") && p->pct > 0) snprintf(st, sizeof st, "%s %d%%", estadoTexto(p), p->pct);
     else snprintf(st, sizeof st, "%s", estadoTexto(p));
     texto(TXT_CAPTION, st, r.x + 124, y + 34, pronto ? 200 : 160, 1, 380);
@@ -635,17 +669,21 @@ static void desenharPergunta(const char *titulo, const char *corpo, const char *
 }
 
 static void desenharReacoes(void) {
-  GfxRect r = { 560, 820, 800, 200 };
+  GfxRect r;
+  float wFrases = 0, wDiscos = 6 * 88.0f + 5 * 36.0f, w;
   int i;
+  for (i = 0; i < 4; i++) wFrases += botao_largura(frase(FRASES[i]), NULL, 0) + (i ? 12 : 0);
+  w = (wFrases > wDiscos ? wFrases : wDiscos) + 80;
+  r = (GfxRect){ (1920 - w) / 2, 820, w, 204 };
   gfx_vidro_painel(r, 0.2f, 0.82f, 1);
   for (i = 0; i < 6; i++) {
-    GfxRect d = { r.x + 40 + i * 124.0f, r.y + 24, 88, 88 };
+    GfxRect d = { r.x + (w - wDiscos) / 2 + i * 124.0f, r.y + 24, 88, 88 };
     char ic[40];
     if (i < 5) iconeReacao(ic, sizeof ic, REACOES[i]); else snprintf(ic, sizeof ic, "aj_users");
     botao_disco(d, ic, linhaReacao == 0 && foco == i ? 1.0f : 0.0f, 1);
   }
   {
-    float x = r.x + 40;
+    float x = r.x + (w - wFrases) / 2;
     for (i = 0; i < 4; i++) {
       const char *t = frase(FRASES[i]);
       float w = botao_largura(t, NULL, 0);
@@ -658,9 +696,13 @@ static void desenharReacoes(void) {
 // Rostos de quem esta junto, no canto, quando o OSD do player sobe.
 static void desenharRostos(void) {
   const JsMotor *m = juntos_motor();
-  float x, y = 44;
+  float x, y = 124;   // logo abaixo da pilula do relogio, na direita
   int i, n;
+#ifdef NV_SHOT_HOOKS
+  if (!m || !m->temSala || !(player_controles_visiveis() || shotPlayer)) return;
+#else
   if (!m || !m->temSala || !player_controles_visiveis()) return;
+#endif
   n = m->sala.n > 5 ? 5 : m->sala.n;
   x = 1920 - 60 - n * 40.0f - 16;
   gfx_vidro_painel((GfxRect){ x - 14, y - 8, n * 40.0f + 44, 64 }, 0.5f, 0.7f, 0.9f);
@@ -673,7 +715,7 @@ static void desenharRostos(void) {
 }
 
 static void desenharBolhas(Uint32 agora) {
-  float y = 140;
+  float y = 210;
   int i;
   for (i = 0; i < BOLHAS; i++) {
     float a, w;
