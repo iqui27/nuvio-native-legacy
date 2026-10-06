@@ -451,6 +451,7 @@ static int pedirFonteJob(int tipo, unsigned geracao, const char *id, int renovan
 #include "catalogo.h"
 #include "layout.h"
 #include "servidores.h"
+#include "srvidx.h"
 #include <stdio.h>
 
 static Tela tela = TELA_HOME;
@@ -699,6 +700,7 @@ static void buscarParaPlayerModo(int renovar) {
   {
     const CatItem *c = cat_item(player_indice());
     if (c && alvo[0]) {
+      servidores_dica(alvo, c->titulo, srvidx_ano_de(c->meta));   // last match rule of the servers
       if (renovar) addons_buscar_renovar(alvo,c->tipo); else addons_buscar(alvo,c->tipo);
       addons_buscar_legendas(alvo,c->tipo);
     }
@@ -726,6 +728,7 @@ static void renovarListaDoPlayer(void) {
            (unsigned)stream_idade_ms(),
            stream_lista_do_alvo(alvoP) ? "" : " e de outro alvo", alvoP);
     stream_definir_alvo(alvoP);
+    servidores_dica(alvoP, ci->titulo, srvidx_ano_de(ci->meta));
     addons_buscar(alvoP, ci->tipo);
   }
 }
@@ -751,6 +754,9 @@ static int tocarFonteGuardada(void) {
   alvoPlayer(alvo, sizeof alvo);
   if (!alvo[0] || !fontevolta_pegar(alvo, sessao_usuario(), perfis_ativo(), SDL_GetTicks(), &s))
     return 0;
+  // A title on a personal server always searches again: the server copy goes
+  // first (D2) and its play session is registered by that search.
+  if (servidores_tem(alvo, "movie") || servidores_tem(alvo, "series")) return 0;
   marco("abrir: fonte guardada, sem busca");
   stream_definir_atual(-1);
   video_definir_dv(s.dolbyVision);
@@ -3238,7 +3244,8 @@ void app_atualizar(float dt, Uint32 agora) {
         // e serie, mesmo quando o catalogo ja trouxe elenco.
         if (!strcmp(ci->tipo, "series") || strcmp(ci->tipo, "movie") ||
             ci->nElenco == 0) desc_episodios(i, 0);
-        { stream_definir_alvo(alvo); addons_buscar(alvo, ci->tipo); }
+        { stream_definir_alvo(alvo); servidores_dica(alvo, ci->titulo, srvidx_ano_de(ci->meta));
+          addons_buscar(alvo, ci->tipo); }
         // Legendas do OpenSubtitles junto: sao dezenas por titulo e a busca
         // leva segundos. Pedir so quando o dono abre a folha de faixas faria
         // ele esperar de olho numa lista vazia.

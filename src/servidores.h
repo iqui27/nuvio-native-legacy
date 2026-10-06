@@ -25,6 +25,24 @@ int  servidores_conectado(void);         // any server signed in
 // never keeps a list for such a title: server sources carry a token and a
 // play session, and "the server had nothing" is never remembered.
 int  servidores_tem(const char *id, const char *tipo);
+// Same, and what the title page says: the server's name, kind, best known
+// quality and whether it is on the LAN (LAN first when two servers have it).
+int  servidores_info(const char *id, const char *tipo, SrvAchado *info);
+int  servidores_casamento_ativo(void);   // some server has a matching index
+// The page that asks for sources says the title and year (last match rule).
+void servidores_dica(const char *id, const char *titulo, int ano);
+// Sources of every server of this profile that has this catalogue title.
+// BLOCKS (addons.c's extra-source thread). -1 cancelled.
+int  servidores_consultar(const char *id, const char *tipo, int (*cancelado)(void *), void *ctx,
+                          Stream **saida);
+// A source handed out by a personal server (bingeGroup "jellyfin|", "emby|", "plex|").
+int  servidores_eh_fonte(const Stream *s);
+// servidoresaddons.c: registers the one "servers" origin with addons.c.
+void servidores_ligar_aos_addons(void);
+// "Local · <server>" / "Remoto · <server>" and badges, on a list of sources.
+void servidores_rotular(Stream *l, int n);
+#define SRV_REFRESCO_MS (30ull * 60ull * 1000ull)
+void servidores_atualizar_periodico(void);   // servidores_passo: rows + index every 30 min
 unsigned servidores_fileiras_versao(void);
 int  servidores_chave_fileira(const char *chave);
 int  servidores_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, int maxFils,

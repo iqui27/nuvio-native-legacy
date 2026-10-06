@@ -209,6 +209,8 @@ int  jellyfin_ultimo_erro(void);            // JF_ERR_* behind JF_EST_ERRO
 // Non-blocking actions (queued on the control worker). 0 if refused.
 int  jellyfin_definir_servidor(const char *url);
 int  jellyfin_entrar_quick_connect(void);
+// "<base>/web/#/quickconnect" for the QR beside the code (display only).
+int  jellyfin_qc_url(char *dst, size_t tam);
 int  jellyfin_entrar_senha(const char *usuario, char *senha);  // wipes senha
 void jellyfin_cancelar_entrada(void);
 void jellyfin_recarregar_bibliotecas(void);

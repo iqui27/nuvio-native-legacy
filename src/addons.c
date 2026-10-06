@@ -179,6 +179,22 @@ static void progMarcarEx(int k, const char *nome, const Stream *a, int n, int es
   free(copia);
 }
 
+// The personal servers' sources: order -1, before addon 0 (streams.c).
+static void progMarcarSrv(const Stream *a, int n) {
+  Stream *copia;
+  if (!a || n <= 0) return;
+  copia = malloc(sizeof(Stream) * (size_t)n);
+  if (!copia) return;
+  memcpy(copia, a, sizeof(Stream) * (size_t)n);
+  pthread_mutex_lock(&progTrava);
+  if (progN < (int)(sizeof progFila / sizeof *progFila)) {
+    progFila[progN].idx = -1; progFila[progN].a = copia; progFila[progN].n = n;
+    progN++; copia = NULL;
+  }
+  pthread_mutex_unlock(&progTrava);
+  free(copia);
+}
+
 static void progLimpar(void) {
   int q;
   pthread_mutex_lock(&progTrava);
@@ -460,15 +476,11 @@ AddEstado addons_estado(void) {
   AddEstado e = atomic_load(&estado);
   if (jfAlvo) {
     Stream *l = NULL;
-    int n = 0, r = servidores_fontes_colher(alvoId, &l, &n), i;
+    int n = 0, r = servidores_fontes_colher(alvoId, &l, &n);
     if (r == JF_FONTES_PENDENTE) return ADD_BUSCANDO;
     jfAlvo = 0;
     if (r == JF_FONTES_PRONTO) {
-      for (i = 0; i < n; i++) {
-        char t[2400];
-        snprintf(t, sizeof t, "%s %s", l[i].rotulo, l[i].descricao);
-        l[i].badges = badges_detectar(t);
-      }
+      servidores_rotular(l, n);
       stream_definir_lista(l, n);
       printf("[addons] %d personal-server source(s)\n", n);
     } else {
@@ -563,7 +575,7 @@ static void progDrenar(void) {
       if (!progPublicou)
         printf("[addons] primeira resposta em %u ms: %s\n",
                (unsigned)(SDL_GetTicks() - progInicio),
-               local[q].idx < ADD_MAX ? addon[local[q].idx].nome : local[q].a[0].provedor);
+               local[q].idx >= 0 && local[q].idx < ADD_MAX ? addon[local[q].idx].nome : local[q].a[0].provedor);
       if (local[q].idx >= ADD_MAX && !progExtraPublicou) {
         progExtraPublicou = 1;
         printf("[plugins] primeira fonte de plugin em %u ms: %s\n",
@@ -1966,7 +1978,7 @@ static void segundaChance(Consulta *c, int fios) {
 // uma no proprio fio: a consulta rapida ao Plex nao espera os scrapers e os
 // scrapers nao seguram a fonte do servidor. As listas se somam na ordem de
 // registro.
-#define ORIGENS_EXTRA_MAX 2
+#define ORIGENS_EXTRA_MAX 2   // Nuvio plugins + the personal servers (one origin for all)
 static OrigemExtra origensExtra[ORIGENS_EXTRA_MAX];
 static int (*origensExtraAtiva[ORIGENS_EXTRA_MAX])(void);
 static int nOrigensExtra;
@@ -2003,7 +2015,8 @@ static int cancelaExtra(void *u) {
 static void avisoExtra(void *u, int k, const char *nome, int estado, const void *fontes, int n) {
   PedidoExtra *p = u;
   if (!p->progresso) return;
-  progMarcarEx(k, nome, (const Stream *)fontes, n, estado);
+  if (k == ORIGEM_SERVIDOR) progMarcarSrv((const Stream *)fontes, n);
+  else progMarcarEx(k, nome, (const Stream *)fontes, n, estado);
 }
 typedef struct { PedidoExtra *pai; OrigemExtra f; Stream *l; int n; } UmaOrigem;
 static void *fioUmaOrigem(void *u) {

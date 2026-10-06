@@ -21,6 +21,8 @@
 //   4. Ao rolar, a arte de fundo NAO desfoca: ela vai a 15% de opacidade em
 //      0.8s. O desfoque gaussiano era do app da Apple TV.
 #include "detail.h"
+#include "servidores.h"
+#include "srvidx.h"
 #include "focoprof.h"
 #include "posterprov.h"
 #include "episodios.h"
@@ -3915,16 +3917,30 @@ static void heroWeb(float a, float desloc) {
   { const CatItem *ciAg = cat_item(idx);
     if (ehSerie() && ciAg && ciAg->imdb[0])
       agenda_frase(ciAg->imdb, agLinha, sizeof agLinha); }
+  // NO SEU SERVIDOR (servidores locais F1): o titulo existe num servidor
+  // pessoal deste perfil. A consulta e o indice em memoria, sem rede. O
+  // Reproduzir ja toca a copia de casa (ela e sempre a primeira fonte, D2).
+  char srvLinha[220] = "";
+  { const CatItem *ciS = cat_item(idx);
+    SrvAchado sa;
+    if (ciS && ciS->imdb[0] && servidores_info(ciS->imdb, ciS->tipo, &sa)) {
+      const char *q = sa.altura >= 2160 ? "4K" : sa.altura >= 1080 ? "1080p" : sa.altura >= 720 ? "720p" : "";
+      const char *h = sa.hdr == SRVIDX_HDR_DV ? "Dolby Vision" : sa.hdr == SRVIDX_HDR_HDR10P ? "HDR10+" :
+                      sa.hdr == SRVIDX_HDR_HDR10 ? "HDR10" : sa.hdr == SRVIDX_HDR_HLG ? "HLG" : "";
+      snprintf(srvLinha, sizeof srvLinha, "\xe2\x96\xb6 %s \xc2\xb7 %s%s%s%s%s", i18n("No seu servidor"), sa.servidor,
+               q[0] ? " \xc2\xb7 " : "", q, h[0] ? " " : "", h);
+    } }
   float yEstado = yAcoes - NV_DETW_GAP_RETOM;
-  float yRetom = yEstado, yAgenda = yEstado;
+  float yRetom = yEstado, yAgenda = yEstado, ySrv = yEstado;
   if (temRetom > 0.0f) { yEstado -= NV_DETW_RETOM_H; yRetom = yEstado; }
+  if (srvLinha[0]) { yEstado -= NV_DETW_RETOM_H; ySrv = yEstado; }
   if (agLinha[0]) { yEstado -= carro ? 46.0f : NV_DETW_RETOM_H; yAgenda = yEstado; }
 
   // Sobe alguns pixels enquanto entra: continua o movimento da arte em vez de
   // aparecer pronto no lugar. `desloc` e a rolagem do documento.
   float sobe = (1.0f - a) * 26.0f + desloc;
   yMeta2 += sobe; yMeta1 += sobe; ySin += sobe;
-  yRetom += sobe; yAgenda += sobe; yAcoes += sobe; yEstado += sobe;
+  yRetom += sobe; yAgenda += sobe; yAcoes += sobe; yEstado += sobe; ySrv += sobe;
 
   // --- logo -----------------------------------------------------------------
   // O logo e desenhado com 261 de largura mas a arte de origem costuma vir bem
@@ -3937,7 +3953,7 @@ static void heroWeb(float a, float desloc) {
   // pedido. Pedindo o teto, o logo sumia por um instante ao abrir o titulo;
   // pedindo a largura real, aparece na hora e troca pela nitida em seguida.
   GLuint texLogo = arqLogo ? tex_obter_logo_larg_qualquer(arqLogo, NV_DETW_LOGO_MAXW) : 0;
-  float baseLogo = ((temRetom > 0.0f || agLinha[0]) ? yEstado : yAcoes)
+  float baseLogo = ((temRetom > 0.0f || agLinha[0] || srvLinha[0]) ? yEstado : yAcoes)
                    - NV_DETW_LOGO_GAP;
   float espacoLogo = baseLogo - 110.0f - (!nomeAbaixo ? hNome : 0);
   if (espacoLogo < 0) espacoLogo = 0;
@@ -4213,6 +4229,12 @@ static void heroWeb(float a, float desloc) {
                                    NV_DETW2_TEXTO_W);
       txt_desenhar_alpha(l, NV_DETW2_X, yAgenda + (NV_DETW_RETOM_H - l.h) * 0.5f, a); }
     }
+  }
+
+  // --- linha do servidor pessoal -------------------------------------------
+  if (srvLinha[0]) {
+    TxtLinha l = txt_linha_corta(TXT_CAPTION, srvLinha, 255, 255, 255, 255, NV_DETW2_TEXTO_W);
+    txt_desenhar_alpha(l, NV_DETW2_X, ySrv + (NV_DETW_RETOM_H - l.h) * 0.5f, a);
   }
 
   // --- linha de retomada ----------------------------------------------------

@@ -247,7 +247,7 @@ for T in "$SAIDA"/*.tpk; do
   L=$(unzip -l "$T")
   # Consumir a lista inteira: grep -q fecha cedo e SIGPIPE mascara o match
   # sob pipefail quando o pacote tem muitas entradas.
-  if unzip -Z1 "$T" | grep -E '(^|/)(conta-[^/]*|discord-p[^/]*|jellyfin-p[^/]*|emby-p[^/]*|plex-p[^/]*)\.txt(\.tmp)?$' >/dev/null; then
+  if unzip -Z1 "$T" | grep -E '(^|/)(conta-[^/]*|discord-p[^/]*|jellyfin-p[^/]*|emby-p[^/]*|plex-p[^/]*|srvidx-p[^/]*)\.txt(\.tmp)?$' >/dev/null; then
     echo "tpk.sh: $T leva arquivo privado da conta — abortado" >&2; exit 1
   fi
   grep -qE " lib/libnuvio.so$" <<<"$L" || { echo "$T sem lib/libnuvio.so" >&2; exit 1; }

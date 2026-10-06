@@ -2283,6 +2283,18 @@ static int jfi_consultar(JfInst *I, const char *id, const char *tipo, const char
   return n;
 }
 
+// The page where an already signed-in Jellyfin app approves a Quick Connect
+// code: shown as a QR next to the code (display only, never logged).
+int jellyfin_qc_url(char *dst, size_t tam) {
+  JfInst *I = &instJf;
+  int ok;
+  pthread_mutex_lock(&I->trava);
+  ok = I->conta.base[0] && snprintf(dst, tam, "%s/web/#/quickconnect", I->conta.base) < (int)tam;
+  pthread_mutex_unlock(&I->trava);
+  if (!ok && tam) dst[0] = 0;
+  return ok;
+}
+
 // ---------------------------------------------------------- title page
 static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps) {
   char tag[JFID_TAG + 1], id[JFID_ITEM + 1];

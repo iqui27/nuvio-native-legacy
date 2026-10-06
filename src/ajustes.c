@@ -4161,6 +4161,30 @@ static void emAtivar(int op) {
   teclado_abrir_com("Usuário do Emby", "", 64, XT_ALFA_CONTA, NULL);
 }
 
+// QR DO LOGIN DOS SERVIDORES (F1): o mesmo cartao do Trakt. Quick Connect do
+// Jellyfin: o codigo de 6 digitos e o QR da pagina do proprio servidor onde
+// um app ja logado aprova. Plex: o PIN de 4 letras e o QR de plex.tv/link.
+// URL longa demais para o qr.c (134 bytes) fica so com o codigo.
+static void desenhaVinculo(const char *servico, const char *codigo,
+                           const char *endereco, const char *falha, int esperando);
+static int srvVinculoAtivo(void) {
+  return jellyfin_disponivel() && (jellyfin_estado(NULL, 0) == JF_EST_QC_CODIGO || plex_estado(NULL, 0) == PX_EST_CODIGO);
+}
+static int srvVinculoDesenhar(void) {
+  char det[160], url[600];
+  if (!jellyfin_disponivel()) return 0;
+  if (jellyfin_estado(det, sizeof det) == JF_EST_QC_CODIGO && det[0]) {
+    if (!jellyfin_qc_url(url, sizeof url) || strlen(url) > 134) url[0] = 0;
+    desenhaVinculo("o Jellyfin", det, url, NULL, 1);
+    return 1;
+  }
+  if (plex_estado(det, sizeof det) == PX_EST_CODIGO && det[0]) {
+    desenhaVinculo("o Plex", det, "https://plex.tv/link", NULL, 1);
+    return 1;
+  }
+  return 0;
+}
+
 // PLEX: sem teclado. A TV mostra o codigo de 4 letras e a pessoa o digita em
 // plex.tv/link no celular; o token chega por polling.
 static const char *pxTexto(int op) {
@@ -5667,6 +5691,14 @@ static void eventoTela(const SDL_Event *e) {
     int smkAtivo = (sa == SMK_PEDINDO || sa == SMK_AGUARDANDO || sa == SMK_ERRO);
     DisEstado da = discord_estado();
     int disAtivo = (da == DIS_PEDINDO || da == DIS_AGUARDANDO || da == DIS_ERRO);
+    if (!traAtivo && !smkAtivo && !disAtivo && srvVinculoAtivo()) {
+      // Voltar cancela o login do servidor; o resto da tela espera.
+      if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE) {
+        jellyfin_cancelar_entrada();
+        plex_cancelar_entrada();
+      }
+      return;
+    }
     if (traAtivo || smkAtivo || disAtivo) {
       if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE) {
         if (traAtivo) traktauth_cancelar();
@@ -6568,7 +6600,8 @@ static void ajDesenharTudo(Uint32 agora) {
     else { DisEstado da = discord_estado();
       if (da == DIS_PEDINDO || da == DIS_AGUARDANDO || da == DIS_ERRO)
         desenhaVinculo("o Discord", discord_codigo(), discord_url(),
-                       discord_erro(), da == DIS_AGUARDANDO); } }
+                       discord_erro(), da == DIS_AGUARDANDO);
+      else if (srvVinculoDesenhar()) {} } }
 
   // A modal de digitacao e a ultima: ela e sempre a pergunta mais recente da
   // tela, e tem de ficar por cima ate do cartao de vinculo.
@@ -6582,6 +6615,7 @@ int ajustes_relogio_cabe(void) {
   if (teclado_aberto() || (ajModalAberto() && !filAberta)) return 0;
   if (ta == TRA_PEDINDO || ta == TRA_AGUARDANDO || ta == TRA_ERRO) return 0;
   if (sa == SMK_PEDINDO || sa == SMK_AGUARDANDO || sa == SMK_ERRO) return 0;
+  if (srvVinculoAtivo()) return 0;
   return 1;
 }
 

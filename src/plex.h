@@ -267,7 +267,6 @@ int  plex_casamento_ativo(void);       // connected and the index has entries
 // Offline: the index has this title; fills `info` (name, quality, LAN) when not NULL.
 int  plex_tem(const char *id, const char *tipo, SrvAchado *info);
 int  plex_indice_n(void);              // entries in the index (tests)
-void plex_ligar_aos_addons(void);      // plexaddons.c: registers plex_consultar with addons.c
 
 #define PX_PROGRESSO_MS 10000u
 void plex_reproducao_tick(const char *url, double posSeg, double durSeg, int tocando);

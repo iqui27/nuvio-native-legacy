@@ -322,6 +322,15 @@ static void integracao(void) {
   free(lista); lista = NULL;
   snprintf(arq, sizeof arq, "%s/srvidx-p1-em.txt", dirDados);
   assert(stat(arq, &st) == 0);
+  // The facade: one origin for every server, title hint for the last rule.
+  { SrvAchado a;
+    assert(servidores_info("tt0002002", "movie", &a) && !strcmp(a.tipoSrv, "Emby") && servidores_casamento_ativo());
+    assert(servidores_consultar("tt0002002", "movie", NULL, NULL, &lista) == 2 && servidores_eh_fonte(&lista[0]));
+    free(lista); lista = NULL;
+    assert(servidores_consultar("tt3333333", "movie", NULL, NULL, &lista) == 0);
+    servidores_dica("tt3333333", "Emby Movie 1", 2011);
+    assert(servidores_consultar("tt3333333", "movie", NULL, NULL, &lista) == 2);   // no ids: title + year
+    free(lista); lista = NULL; }
   assert(!jellyfin_fontes_pedir("em:9f8e7d6c.1001"));                              // not a jf: id
   assert(!plex_fontes_pedir("em:9f8e7d6c.1001"));
 

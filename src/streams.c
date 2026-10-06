@@ -105,6 +105,17 @@ static int n = 0;
 // da k-esima na tela. Lista inteira (stream_definir_lista): chave = indice.
 static unsigned *chave;
 static int *exib;
+// 1 when `chave` is (ordem + 1) << 16 | posicao (lista montada aos poucos);
+// 0 when it is just the index (lista inteira).
+static int chaveParcial;
+// FONTE DO SERVIDOR PESSOAL (Jellyfin/Emby/Plex, servidores.h): decisao do
+// dono D2 (06/10/2026) — a copia de casa vem SEMPRE primeiro, na folha e no
+// automatico, sem teto de qualidade. Mesmo criterio de servidores_eh_fonte,
+// aqui para streams.c nao depender do modulo dos servidores.
+static int ehServidor(const Stream *s) {
+  return !strncmp(s->bingeGroup, "jellyfin|", 9) || !strncmp(s->bingeGroup, "emby|", 5) ||
+         !strncmp(s->bingeGroup, "plex|", 5);
+}
 #define ORD(k) (exib ? exib[k] : (k))
 #define AUTO_EXCL_MAX 32
 static int automaticasExcluidas[AUTO_EXCL_MAX];
@@ -436,7 +447,13 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
     chave = malloc(sizeof *chave * (size_t)n);
     exib = malloc(sizeof *exib * (size_t)n);
     if (!chave || !exib) { free(chave); free(exib); chave = NULL; exib = NULL; }
-    else for (i = 0; i < n; i++) { chave[i] = (unsigned)i; exib[i] = i; }
+    else {
+      // Lista inteira: as do servidor na frente, o resto na ordem de chegada.
+      int k = 0;
+      for (i = 0; i < n; i++) { chave[i] = (unsigned)i; if (ehServidor(&lista[i])) exib[k++] = i; }
+      for (i = 0; i < n; i++) if (!ehServidor(&lista[i])) exib[k++] = i;
+    }
+    chaveParcial = 0;
   }
   recebidaEm = SDL_GetTicks() - idade;
   temRecebidaEm = 1;
@@ -511,8 +528,14 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
     return;
   }
   memcpy(lista + n, nova, sizeof(Stream) * (size_t)k);
+  // Ordem -1 (ORIGEM_SERVIDOR) e a chave 0: antes do addon 0, que vira 1.
+  if (!chaveParcial && n > 0) {
+    // A lista inteira que ja estava vira "addon 0" na nova contagem.
+    for (i = 0; i < n; i++) chave[exib[i]] = (1u << 16) | (unsigned)(i & 0xFFFF);
+  }
+  chaveParcial = 1;
   for (i = 0; i < k; i++)
-    chave[n + i] = ((unsigned)(ordemAddon < 0 ? 0 : ordemAddon) << 16) | (unsigned)(i & 0xFFFF);
+    chave[n + i] = ((unsigned)(ordemAddon < 0 ? 0 : ordemAddon + 1) << 16) | (unsigned)(i & 0xFFFF);
   // Insercao ordenada das novas em `exib`: as de antes ja estao em ordem, e
   // uma nova entra depois de toda chave menor OU IGUAL (estavel).
   for (i = 0; i < k; i++) {
@@ -533,8 +556,11 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
   if (focoIdx >= 0) { focoFixo = focoIdx; focoFixoY = linhaAntes < nOrdem ? linhaY[linhaAntes] : 0; }
 }
 
+static int ordemDe(int i) {
+  return chave && chaveParcial ? (int)(chave[i] >> 16) - 1 : 0;
+}
 int stream_ordem_addon(int i) {
-  return i >= 0 && i < n && chave ? (int)(chave[i] >> 16) : 0;
+  return i >= 0 && i < n ? ordemDe(i) : 0;
 }
 
 int stream_n(void) {
@@ -778,6 +804,14 @@ static long pontos(const Stream *s) {
   // MEDIDA PESADA PARA A CONEXAO: abaixo de toda fonte normal (4K DV MP4
   // inteiro soma 137 mil), acima do plugin. So com medida confiavel.
   else if (ajustes_fonte_prioridade() != 1 && fitPesadaAuto(s)) p -= 140000;
+  // SERVIDOR PESSOAL (D2): acima de qualquer soma de addon, inclusive das
+  // multas (teto, cache, P2P), e entre as copias do servidor Direct play >
+  // Direct stream > Transcode, depois a qualidade.
+  if (ehServidor(s)) {
+    const char *m = strchr(s->bingeGroup, '|');
+    p += 10000000L + (m && !strcmp(m + 1, "DirectPlay") ? 3000000L : m && !strcmp(m + 1, "DirectStream") ? 2000000L : 0);
+    if (!cabeNoTeto(s)) p += 1000000;   // sem teto de qualidade para a copia de casa
+  }
   return p;
 }
 
@@ -1122,6 +1156,18 @@ static void logarEscolha(int escolhida, int pref, int modoPrimeira) {
   pthread_mutex_unlock(&verTrava);
 }
 
+// Com a copia de casa na lista, a lembrada de addon nao passa na frente (D2):
+// so uma lembrada que E do servidor continua valendo.
+static int temServidor(void) {
+  int i;
+  for (i = 0; i < n; i++) if (ehServidor(&lista[i])) return 1;
+  return 0;
+}
+static int preferidaValida(void) {
+  if (preferida >= 0 && preferida < n && !ehServidor(&lista[preferida]) && temServidor()) return -1;
+  return preferida;
+}
+
 int stream_primeira_boa(int tentativas) {
   int fila[VER_MAX], nf, q, tocadas = 0, escolhida, total, pref;
   int modo = ajustes_fonte_primeira() ? FONTEAUTO_PRIMEIRA : FONTEAUTO_MELHOR;
@@ -1131,7 +1177,7 @@ int stream_primeira_boa(int tentativas) {
   tentativas = fonteauto_tentativas(modo, tentativas);
   pthread_mutex_lock(&verTrava);
   total = n;
-  pref = preferida;
+  pref = preferidaValida();
   c.geracao = listaGeracao;
   if (total < 1) { pthread_mutex_unlock(&verTrava); return -1; }
   if (tentativas > total) tentativas = total;
@@ -1186,6 +1232,7 @@ int stream_primeira_boa(int tentativas) {
 // desempates dentro da mesma resolucao.
 static int boaParaJa(const Stream *s) {
   int teto = alturaMax();
+  if (ehServidor(s)) return 1;   // a copia de casa e a escolha: nao espera ninguem
   if (!cabeNoTeto(s) || s->foraCache || soP2P(s)) return 0;
   return s->altura >= (teto ? teto : 2160);
 }
@@ -1193,6 +1240,7 @@ static int boaParaJa(const Stream *s) {
 static int pendenteAntesCb(int addon, void *u) { (void)u; return addons_pendente_antes(addon); }
 
 int stream_auto_pode_decidir(int preferida, int prefPendente, int prazoPassou) {
+  if (preferida >= 0 && preferida < n && !ehServidor(&lista[preferida]) && temServidor()) preferida = -1;
   FonteautoParcial p;
   long *pts; unsigned char *acima, *excl, *boa; int *ad;
   int q, total, r, posPref = -1;
@@ -1215,7 +1263,7 @@ int stream_auto_pode_decidir(int preferida, int prefPendente, int prazoPassou) {
     acima[q] = (unsigned char)!cabeNoTeto(&lista[i]);
     excl[q] = (unsigned char)automaticaExcluida(i);
     boa[q] = (unsigned char)boaParaJa(&lista[i]);
-    ad[q] = chave ? (int)(chave[i] >> 16) : 0;
+    ad[q] = ordemDe(i);
   }
   pthread_mutex_unlock(&verTrava);
   p.modo = ajustes_fonte_primeira() ? FONTEAUTO_PRIMEIRA : FONTEAUTO_MELHOR;

@@ -88,6 +88,9 @@ typedef int (*OrigemExtra)(const char *id, const char *tipo, int (*cancelado)(vo
                            void *ctx, OrigemAviso aviso, void *avisoU,
                            void *saida /* Stream ** */);
 void addons_definir_origem_extra(OrigemExtra f, int (*ativa)(void));
+// k of the personal-server origin's notice (servidoresaddons.c): its sources
+// are published BEFORE every addon (D2: the server copy is always first).
+#define ORIGEM_SERVIDOR (-1)
 int  addons_origem_extra_ativa(void);
 void addons_buscar(const char *imdb, const char *tipo);
 // Recarregar explicito: descarta a resposta anterior e vai a rede, inclusive
