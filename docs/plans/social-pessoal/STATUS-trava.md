@@ -22,9 +22,25 @@ O que falta para virar "medido": o dono, numa conta de teste ou na dele, criar u
 
 ## 2. Feito
 
-- [x] `src/trava.h/.c`: modelo, regra pura (limite, gate de spoiler, frases), arquivo `travas-<conta>.txt`, fila de operações, fusão com o servidor, "alcançou você".
-- [x] `tests/trava.sh`: regra, virada de temporada, especiais, rever, Juntos/pausada, frases, arquivo, servidor, alcance (também com ASan/UBSan).
+- [x] `src/trava.h/.c`: modelo, regra pura (limite, gate de spoiler, frases), arquivo `travas-<conta>.txt`, fila de operações, fusão com o servidor por perfil, "alcançou você".
+- [x] Servidor: `migracao-012-trava.sql` (NÃO aplicada) + `src/trava.js` (`GET /v1/travas` com ETag, criar/modo/pin/pausar/membros/sair/apagar/passo; só perfis da mesma conta) + `travaRev` em `/v1/rec`.
+- [x] `src/travarede.c`: fila → servidor num fio, leitura quando `travaRev` muda, reconciliação de hora em hora pelos vistos da conta de cada membro (`sync_pull_watched_items`, só leitura), ouvinte de `visto_episodios`.
+- [x] **Juntos**: marca o episódio para os outros membros na conta (`contapend_episodios_perfil`, jornal) e no Trakt do membro **só se** o token dele está nesta TV (`traktauth_token_de`); ilha "Marcado para Jerry e Sandra" com Desfazer; com `diario.h` no build, grava a vez no diário dos membros (`DIARIO_F_JUNTOS`, `comPerfis`) via `__has_include`.
+- [x] `src/travaui.c`: modal Travar/Gerenciar (pessoas com SEM PIN, modo, chave de PIN, linha de estado viva, Pausar/Desfazer), folha de espera (miniatura borrada, rostos, "Esperando…", Assistir mesmo assim com PIN de QUALQUER outro membro com PIN, num fio), Perfil › página 2 "Travas de série".
+- [x] Ganchos: cadeado na linha de ações da série (`detail.c`), cartão de episódio travado (borrado + rostos + "Esperando…"), gate antes de tocar (`app.c`), próximo episódio no fim (`posplay.c` → ilha "Você alcançou…"), ilha "X alcançou você", BAIXO no Perfil.
+- [x] i18n: 54 chaves novas nas 29 tabelas (`tools/idiomas.py` ok).
+- [x] Ícones `aj_lock`/`aj_lock-open` (Lucide 1.48.0, SVG transcrito; `tools/icones-lucide.sh`).
 
-## 3. Falta / próximos passos
+## 3. Testes
 
-(atualizado a cada commit)
+- `tests/trava.sh` (regra, virada de temporada, especiais, rever, Juntos/pausada, frases, arquivo, servidor, alcance).
+- `node --test servidor/recomendacoes/teste-trava.mjs` (5) + os outros `teste-*.mjs`; `wrangler dev --local` com `preparar-local.sh` + `teste.sh` (42 ok) e curl em `/v1/trava*`.
+- Capturas `tests/trava_shot.sh` (fonte 3): modal, espera, PIN, perfil.
+- Build Mac sem avisos; `-DNV_TPK` sintaxe ok. `tests/visto.sh`, `contapend.sh`, `traktauth.sh` ok.
+
+## 4. Falta / precisa do dono
+
+- **Deploy**: aplicar `migracao-012-trava.sql` no D1 e depois `wrangler deploy` (sem isso a trava funciona só local nesta TV).
+- **Medir na TV/conta** a escrita do Juntos em outro perfil (seção 1).
+- Fora desta entrega: T3 (ordem do "Continuar"), linha "te esperando" na escolha de perfil, chip no hero, amigos (Onda 4), regra de perfil infantil (perfis.c não expõe "infantil").
+- Diário: integração automática quando `diario.h` entrar no mesmo build; a entrada do perfil ATIVO com `comPerfis` fica com o diário (player).

@@ -21,6 +21,7 @@
 //   4. Ao rolar, a arte de fundo NAO desfoca: ela vai a 15% de opacidade em
 //      0.8s. O desfoque gaussiano era do app da Apple TV.
 #include "detail.h"
+#include "travaui.h"
 #include "focoprof.h"
 #include "posterprov.h"
 #include "episodios.h"
@@ -2026,10 +2027,16 @@ static int temExplorar(void) {
   if (!ci || !ci->titulo[0]) return 0;
   return !strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series");
 }
+// "TRAVAR" (trava de serie, travaui.h): o ULTIMO circular, depois do
+// explorar. So serie, e so com dois ou mais perfis na conta. O cadeado aberto
+// trava; o fechado (ja travada) gerencia.
+static int temTravar(void) {
+  return ehSerie() && travaui_disponivel();
+}
 static int nBotoesTodos(void) {
   return (ehSerie() ? 3 : 4) + (temInicio() ? 1 : 0) + (temLembrar() ? 1 : 0)
          + (temRecomendar() ? 1 : 0) + (temArte() ? 1 : 0) + (temTrailer() ? 1 : 0)
-         + (temExplorar() ? 1 : 0);
+         + (temExplorar() ? 1 : 0) + (temTravar() ? 1 : 0);
 }
 
 static int acoesAgrupadas(void) {
@@ -2049,7 +2056,7 @@ static int nBotoes(void) {
 // e os circulares escorregam um para a direita.
 enum { ACAO_PRIMARIO = 0, ACAO_LISTA = 1, ACAO_ASSISTIDO = 2, ACAO_FONTES = 3,
        ACAO_INICIO = 4, ACAO_RECOMENDAR = 5, ACAO_LEMBRAR = 6, ACAO_ARTE = 7,
-       ACAO_TRAILER = 8, ACAO_EXPLORAR = 9 };
+       ACAO_TRAILER = 8, ACAO_EXPLORAR = 9, ACAO_TRAVAR = 10 };
 static int acaoEm(int n) {
   if (n == 0) return ACAO_PRIMARIO;
   if (temInicio()) {
@@ -2075,6 +2082,9 @@ static int acaoEm(int n) {
   // O "Trocar arte" vem DEPOIS do recomendar, e a conta e a mesma: a ultima
   // posicao da linha, antes do salto da serie.
   // O "Assistir trailer" e o ultimo, depois do "Trocar arte".
+  if (temTravar() && n == (ehSerie() ? 3 : 4) + (temRecomendar() ? 1 : 0) + (temArte() ? 1 : 0)
+                          + (temTrailer() ? 1 : 0) + (temExplorar() ? 1 : 0))
+    return ACAO_TRAVAR;
   if (temExplorar() && n == (ehSerie() ? 3 : 4) + (temRecomendar() ? 1 : 0) + (temArte() ? 1 : 0)
                             + (temTrailer() ? 1 : 0))
     return ACAO_EXPLORAR;
@@ -2352,6 +2362,10 @@ void detail_evento(const SDL_Event *e) {
         pedAssistido = 1;
       } else if (acao == ACAO_TRAILER) {
         tocarTrailerCheio(0);
+      } else if (acao == ACAO_TRAVAR) {
+        // O MODAL DA TRAVA (travaui.c), acima desta tela no roteador de app.c.
+        trailer_fechar();
+        travaui_abrir(cat_item(idx), idx);
       } else if (acao == ACAO_EXPLORAR) {
         // O roteador (app.c) fecha a pagina e abre a toca neste titulo.
         trailer_fechar();
@@ -3414,6 +3428,10 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
       gfx_icone(ig, cat_visto(cat_item(idx)) ? "visto" : "naovisto", ic, ic, ic, a);
     } else if (icone == ACAO_TRAILER) {
       gfx_icone(ig, "aj_clapperboard", ic, ic, ic, a);
+    } else if (icone == ACAO_TRAVAR) {
+      // CADEADO do Lucide: aberto = "Travar", fechado = a serie ja esta travada.
+      const CatItem *ci = cat_item(idx);
+      gfx_icone(ig, ci && travaui_tem_trava(ci->imdb) ? "aj_lock" : "aj_lock-open", ic, ic, ic, a);
     } else if (icone == ACAO_EXPLORAR) {
       // BUSSOLA do Lucide (aj_compass.png, ja no pacote): o mesmo traco dos
       // vizinhos, e o glifo universal de "explorar".
@@ -4116,6 +4134,8 @@ static void heroWeb(float a, float desloc) {
           desenhaDicaBotao(rc, i18n("Assistir trailer"), a);
         if (selected && action == ACAO_EXPLORAR && stagger > .85f)
           desenhaDicaBotao(rc, i18n("Explorar a partir daqui"), a);
+        if (selected && action == ACAO_TRAVAR && stagger > .85f)
+          desenhaDicaBotao(rc, i18n(ci && travaui_tem_trava(ci->imdb) ? "Gerenciar trava" : "Travar série"), a);
         if (maisAcoes && a > .3f && stagger > .85f)
           ponteiro_alvo(rc.x,rc.y,rc.w,rc.h,ponteiroDetalhe,NULL,-1,j);
       }
@@ -4129,6 +4149,10 @@ static void heroWeb(float a, float desloc) {
         desenhaDicaBotao(rc, i18n("Assistir trailer"), a);
       if (nivel == 0 && botao == nb && acaoEm(nb) == ACAO_EXPLORAR)
         desenhaDicaBotao(rc, i18n("Explorar a partir daqui"), a);
+      if (nivel == 0 && botao == nb && acaoEm(nb) == ACAO_TRAVAR) {
+        const CatItem *cT = cat_item(idx);
+        desenhaDicaBotao(rc, i18n(cT && travaui_tem_trava(cT->imdb) ? "Gerenciar trava" : "Travar série"), a);
+      }
       if (a > 0.3f) ponteiro_alvo(rc.x, rc.y, rc.w, rc.h, ponteiroDetalhe, NULL, -1, nb);
       bx += NV_DETW2_CIRC + NV_DETW2_BTN_GAP;
     }
@@ -4755,15 +4779,21 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
     if (t3) { arte = reserva; t2 = t3; }
   }
   float aArte = (c >= 0 && c < DET_REV_EP) ? revela_arte(&revEp[c], t2 != 0, agora) : 1.0f;
+  // TRAVA DE SERIE (travaui.h): episodio alem do limite de quem esta a frente.
+  // Miniatura SEMPRE borrada (independe do ajuste abaixo), sinopse escondida e,
+  // no lugar dela, os rostos de quem falta e "Esperando Jerry e Sandra".
+  int travaQuem[8], travaN = 0;
+  int travado = ep && serie && serie->imdb[0] &&
+                travaui_segura(serie->imdb, idx, ep->temporada, ep->episodio, travaQuem, &travaN);
   // DESFOCAR NAO ASSISTIDOS (blurUnwatchedEpisodes, #133). O ajuste existia na
   // tela e na conta e nada o lia — o card saia nitido em toda plataforma.
   // "Nao assistido" e tudo que o mapa NAO afirma como visto: inclusive o "nao
   // sei" (-1) de quem nao tem Trakt ou cujo historico ainda nao chegou. Aqui o
   // erro seguro e o contrario do check: desfocar um episodio que a pessoa ja
   // viu custa nada; mostrar nitido o que ela pediu para esconder e o spoiler.
-  if (t2 && ajustes_desfocar_nao_assistidos() &&
+  if (t2 && (travado || (ajustes_desfocar_nao_assistidos() &&
       !(ep && serie && serie->imdb[0] &&
-        vistoep_estado(serie->imdb, ep->temporada, ep->episodio) == 1)) {
+        vistoep_estado(serie->imdb, ep->temporada, ep->episodio) == 1)))) {
     GLuint tb = gfx_desfocado(t2, arte);
     // Copia ainda nao gerada (no maximo duas por quadro): o fundo do card, e
     // nunca a arte nitida por um quadro.
@@ -4789,6 +4819,13 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
     gfx_cor(th, raioTh, 0, 0, 0, .12f * a);
     desenhaAssistidoEpisodio(th, a);
   }
+  if (travado) {
+    // O CADEADO no meio da miniatura borrada: e o mesmo do botao "Travar".
+    GfxRect d = { th.x + (th.w - 72.0f) * .5f, th.y + (th.h - 72.0f) * .5f, 72.0f, 72.0f };
+    gfx_cor(th, raioTh, 0, 0, 0, .22f * a);
+    gfx_cor(d, .5f, .055f, .059f, .071f, .72f * a);
+    gfx_icone((GfxRect){ d.x + 21.0f, d.y + 21.0f, 30.0f, 30.0f }, "aj_lock", .95f, .95f, .95f, a);
+  }
   th = thLayout;   // o texto abaixo segue a caixa de repouso
 
   // NADA DE RESERVA INVENTADA. Aqui as quatro linhas caiam numa tabela de
@@ -4801,8 +4838,10 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
   if (ep && ep->duracao[0]) desc_duracao_txt(ep->duracao, epDurTxt, sizeof epDurTxt);
   const char *epDur  = epDurTxt[0] ? epDurTxt : NULL;
   const char *epData = (ep && ep->data[0])    ? ep->data    : NULL;
-  const char *epSin  = (ep && ep->sinopse[0]) ? ep->sinopse : NULL;
+  const char *epSin  = (ep && ep->sinopse[0] && !travado) ? ep->sinopse : NULL;
   int epNum = ep ? ep->episodio : c + 1;
+  char travaEsp[200] = "";
+  if (travado) travaui_esperando(travaQuem, travaN, travaEsp, sizeof travaEsp);
 
   if (epApple()) {
     float textX = r.x + 18.0f, textW = r.w - 36.0f;
@@ -4850,6 +4889,13 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
     float y = textY+64;
     if (epSin) y += txt_bloco_corta(TXT_CAPTION,epSin,171,177,185,
                                    textX,y,textW,29,a,4);
+    if (travado) {
+      float dd = 36.0f, rw = dd + (float)(travaN - 1) * dd * .72f;
+      travaui_rostos(textX, y + 4.0f, dd, travaQuem, travaN, a);
+      txt_desenhar_alpha(txt_linha_corta(TXT_CAPTION, travaEsp, 235, 237, 240, 255, textW - rw - 14.0f),
+                         textX + rw + 14.0f, y + 4.0f + (dd - 29.0f) * .5f, a);
+      y += dd + 12.0f;
+    }
     if (epData) {
       const char *date = epData;
       if (!ajustes_data_completa() && strlen(date)>=4) date += strlen(date)-4;
@@ -4944,6 +4990,13 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
     txt_bloco_corta(TXT_DET_SIN, epSin, 255, 255, 255, tx,
                     r.y + NV_DETP_EP_SIN_Y, NV_DETP_EP_TEXTO_W,
                     NV_DETP_EP_LD_SIN, a * 0.9f, 3);
+  else if (travado) {
+    float dd = 44.0f, rw = dd + (float)(travaN - 1) * dd * .72f;
+    travaui_rostos(tx, r.y + NV_DETP_EP_SIN_Y + 4.0f, dd, travaQuem, travaN, a);
+    txt_desenhar_alpha(txt_linha_corta(TXT_DET_SIN, travaEsp, 255, 255, 255, 255,
+                                       NV_DETP_EP_TEXTO_W - rw - 16.0f),
+                       tx + rw + 16.0f, r.y + NV_DETP_EP_SIN_Y + 4.0f + (dd - 34.0f) * .5f, .9f * a);
+  }
 
   // Meta: relogio + duracao + data, 20/400 rgb(179,179,179), com 38 de folga
   // entre os dois blocos.

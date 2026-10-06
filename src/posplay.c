@@ -1,4 +1,5 @@
 #include "posplay.h"
+#include "travaui.h"
 #include "intro.h"
 #include "idioma.h"
 #include "catalogo.h"
@@ -295,6 +296,15 @@ void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
       // player nao ter episodio nenhum (idx trocado, dado incompleto).
       player_episodio_atual(&t, &e);
       if (!(t > 0 && e > 0) && ci) { t = ci->temporada; e = ci->episodio; }
+      // TRAVA DE SERIE: o proximo esta alem do limite (quem esta a frente
+      // espera os outros)? O cartao nao oferece; na volta do player a ilha
+      // diz "Voce alcancou Jerry. O T1E5 espera por voces." (travaui.c).
+      if (t > 0 && e > 0 && acharProximo(idx, t, e) && ci &&
+          travaui_proximo_segura(ci->imdb, idx, proxT, proxE)) {
+        printf("[posplay] proximo T%dE%d segurado pela trava de serie\n", proxT, proxE);
+        proxT = proxE = 0;
+        dispensado = 1;          // uma vez por chegada a zona, nao por quadro
+      } else
       if (t > 0 && e > 0 && acharProximo(idx, t, e)) {
         fecharEm = 0;            // a contagem entra so nos segundos finais
         visivel = 1;
