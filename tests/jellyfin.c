@@ -2,6 +2,7 @@
 // No external provider, no real server, never prints tokens or passwords.
 #include "jellyfin.h"
 #include "idbase.h"
+#include "srvidx.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,6 +35,15 @@ char *dados_ler(const char *nome) {
   return b;
 }
 int dados_apagar(const char *nome) { char c[700]; dados_caminho(c, sizeof c, nome); return remove(c) == 0; }
+int dados_gravar_leve(const char *nome, const char *conteudo) {
+  char c[700];
+  FILE *f;
+  dados_caminho(c, sizeof c, nome);
+  f = fopen(c, "wb");
+  if (!f) return 0;
+  fputs(conteudo, f);
+  return fclose(f) == 0;
+}
 void dados_fs_travar(void) {}
 void dados_fs_liberar(void) {}
 
@@ -162,7 +172,25 @@ static void testarProtocolo(void) {
   n = jf_itens(&c, NULL, libs[0].id, 48, 24, itens, 100, &total);
   assert(n == 12 && !strcmp(itens[0].titulo, "Movie 48"));
   n = jf_itens(&c, NULL, libs[1].id, 0, 24, itens, 100, &total);
-  assert(n == 1 && !strcmp(itens[0].tipo, "series"));   // episode row ignored
+  assert(n == 2 && !strcmp(itens[0].tipo, "series"));   // episode row ignored
+  // A series with an IMDb id IS that catalogue title (key spelled "IMDB").
+  assert(jfid_e(itens[0].imdb) && !strcmp(itens[1].imdb, "tt0900001"));
+  // Movies: no external id stays opaque, IMDb wins over TMDB, TMDB alone is "tmdb:".
+  n = jf_itens(&c, NULL, libs[0].id, 0, 60, itens, 100, &total);
+  assert(n == 60 && jfid_e(itens[4].imdb) && !strcmp(itens[5].imdb, "tt0001005") && !strcmp(itens[50].imdb, "tmdb:5050"));
+  // The matching index: every movie and series, one page here.
+  { SrvIdx x;
+    srvidx_iniciar(&x);
+    assert(jf_indice(&c, NULL, 0, 200, 0, &x, &total) == 62 && total == 62);
+    assert(x.n == 62 && srvidx_n_tipo(&x, 's') == 2);
+    assert(srvidx_achar(&x, "tt0001007", 0, 0, 'm') >= 0 && x.v[srvidx_achar(&x, "tt0001007", 0, 0, 'm')].altura == 2160);
+    assert(srvidx_achar(&x, NULL, 5055, 0, 'm') >= 0 && srvidx_achar(&x, NULL, 0, 999, 's') >= 0);
+    assert(srvidx_achar_titulo(&x, srvidx_titulo_hash("movie 02"), 2002, 'm') >= 0);  // home video: title + year
+    assert(x.marca == srvidx_iso("2026-09-01T01:41:00Z"));
+    // Episodes of a series, on demand.
+    assert(jf_indice_episodios(&c, NULL, "5e1e5e1e5e1e5e1e5e1e5e1e5e1e5e1e", &x) == 6);
+    assert(srvidx_achar_ep(&x, "5e1e5e1e5e1e5e1e5e1e5e1e5e1e5e1e", 2, 3) >= 0);
+    srvidx_limpar(&x); }
   // Detail: nested MediaSources "Name"/"RunTimeTicks" must not win.
   e = jf_detalhe(&c, NULL, "00000000000000000000000c0ffee001", &det);
   assert(e == JF_OK && !strcmp(det.titulo, "Movie 01") && det.nElenco == 2 && !strcmp(det.direcao, "Dir Ector"));
@@ -269,12 +297,69 @@ static void testarIntegracao(void) {
   fim = ms() + 5000;
   while (jellyfin_fileiras_versao() == v0 && ms() < fim) dormir(20);
   n = jellyfin_fileiras_copiar(itens, JF_FIL_MAX * JF_POR_FILEIRA, fils, JF_FIL_MAX, &ni);
-  assert(n == 2 && ni == JF_POR_FILEIRA + 1);
+  assert(n == 2 && ni == JF_POR_FILEIRA + 2);
   assert(jellyfin_chave_fileira(fils[0].chave) && !fils[0].base[0] && strstr(fils[0].titulo, "Jellyfin"));
   // Title page through the profile's connection.
   det = itens[JF_POR_FILEIRA];                 // the series
   r = jellyfin_ficha(&det, eps, 16);
   assert(r == 6 && det.nTemporadas == 2 && det.temporadas[1] == 2);
+  // MATCHED TITLES: the index arrives after the rows (full pass), and is on disk.
+  fim = ms() + 5000;
+  while (jellyfin_indice_n() < 62 && ms() < fim) dormir(20);
+  assert(jellyfin_indice_n() == 62);
+  arq = dados_ler("srvidx-p1-jf.txt");
+  assert(arq && !strncmp(arq, "srvidx 1 0f1e2d3c ", 18) && strstr(arq, "tt0001007") && !strstr(arq, "Movie"));
+  free(arq);
+  { SrvAchado a;
+    assert(jellyfin_tem("tt0001007", "movie", &a) && a.altura == 2160 && !strcmp(a.servidor, "Home Server") &&
+           !strcmp(a.tipoSrv, "Jellyfin") && a.local);
+    assert(!jellyfin_tem("tt0001007", "series", NULL) && !jellyfin_tem("tt7777777", "movie", NULL));
+    assert(jellyfin_tem("tmdb:5055", "movie", NULL) && jellyfin_tem("tt0900001:1:2", "series", NULL)); }
+  free(controle("reset"));
+  r = jellyfin_consultar("tt0001007", "movie", NULL, 0, NULL, NULL, &lista);
+  assert(r == 2 && lista && strstr(lista[0].url, "c0ffee007/stream") &&
+         strstr(lista[0].url, "ApiKey=") && !strcmp(lista[0].provedor, "Home Server"));
+  // Its check-ins work like the server's own items (URL registered).
+  jellyfin_reproducao_tick(lista[0].url, 1, 7200, 1);
+  jellyfin_reproducao_fim(lista[0].url, 2, 7200);
+  free(lista); lista = NULL;
+  fim = ms() + 5000;
+  while (jellyfin_relatorios_pendentes() && ms() < fim) dormir(20);
+  ev = controle("events");
+  assert(conta(ev, "\"Playing\"") == 1 && conta(ev, "\"Stopped\"") == 1);
+  free(ev);
+  assert(jellyfin_consultar("tt7777777", "movie", NULL, 0, NULL, NULL, &lista) == 0 && !lista);
+  // Last rule: title + year, only when the page that asked says them.
+  assert(jellyfin_consultar("tt5555555", "movie", NULL, 0, NULL, NULL, &lista) == 0);
+  assert(jellyfin_consultar("tt5555555", "movie", "Movie 02", 2003, NULL, NULL, &lista) == 2 && lista);
+  free(lista); lista = NULL;
+  // Episode: fetched once on demand, then offline (no second episode request).
+  free(controle("index"));
+  assert(jellyfin_consultar("tt0900001:2:3", "series", NULL, 0, NULL, NULL, &lista) == 2 && lista);
+  assert(strstr(lista[0].url, "e90000cb/stream"));    // episode_id(2, 3)
+  free(lista); lista = NULL;
+  assert(jellyfin_consultar("tt0900001:1:1", "series", NULL, 0, NULL, NULL, &lista) == 2);
+  free(lista); lista = NULL;
+  assert(jellyfin_consultar("tt0900001:9:9", "series", NULL, 0, NULL, NULL, &lista) == 0);   // not there
+  { char *ix = controle("index"); assert(strstr(ix, "\"episodes\": 1")); free(ix); }
+  // INCREMENTAL: a movie added on the server comes with a "since" request only.
+  free(controle("add?n=70"));
+  jellyfin_recarregar_bibliotecas();
+  fim = ms() + 5000;
+  while (!jellyfin_tem("tt0001070", "movie", NULL) && ms() < fim) dormir(20);
+  assert(jellyfin_tem("tt0001070", "movie", NULL));
+  { char *ix = controle("index");
+    assert(strstr(ix, "[0, 0, \"\"]") && strstr(ix, "\"2026-09-01T01:41:00Z\"") && !strstr(ix, "[0, 200, \"\"]"));
+    free(ix); }
+  // DELETED on the server: the count disagrees, one full rebuild drops it.
+  free(controle("delete?n=7"));
+  jellyfin_recarregar_bibliotecas();
+  fim = ms() + 5000;
+  while (jellyfin_tem("tt0001007", "movie", NULL) && ms() < fim) dormir(20);
+  assert(!jellyfin_tem("tt0001007", "movie", NULL) && jellyfin_tem("tt0001070", "movie", NULL));
+  assert(jellyfin_consultar("tt0900001:2:3", "series", NULL, 0, NULL, NULL, &lista) == 2);   // episodes survived
+  free(lista); lista = NULL;
+
   // Sources: request, poll, ready.
   snprintf(alvo, sizeof alvo, "%s", itens[1].imdb);
   free(controle("reset"));
@@ -324,11 +409,13 @@ static void testarIntegracao(void) {
   dormir(4200);   // past the late answer: nothing leaked into profile 2
   assert(jellyfin_fontes_colher(alvo, &lista, &n) == JF_FONTES_FALHOU && !lista);
   assert(!jellyfin_conectado());
+  assert(!jellyfin_tem("tt0001070", "movie", NULL) && jellyfin_indice_n() == 0);   // profile 1's index stays there
 
-  // Back to profile 1: token from disk; server revokes; 401 -> expired.
+  // Back to profile 1: token AND index from disk; server revokes; 401 -> expired.
   perfilAtivo = 1;
   jellyfin_perfil_trocou();
   assert(jellyfin_conectado());
+  assert(jellyfin_tem("tt0001070", "movie", NULL) && jellyfin_tem("tt0900001:2:3", "series", NULL));
   free(controle("revoke"));
   jellyfin_recarregar_bibliotecas();
   assert(esperarEstado(JF_EST_EXPIROU, 5000) == JF_EST_EXPIROU);
@@ -344,6 +431,8 @@ static void testarIntegracao(void) {
   assert(jellyfin_estado(NULL, 0) == JF_EST_SEM_SERVIDOR);
   dados_caminho(nome, sizeof nome, "jellyfin-p1.txt");
   assert(stat(nome, &st) != 0);
+  dados_caminho(nome, sizeof nome, "srvidx-p1-jf.txt");
+  assert(stat(nome, &st) != 0 && !jellyfin_tem("tt0001070", "movie", NULL));
   fim = ms() + 5000;
   for (;;) {
     ev = controle("events");

@@ -35,6 +35,15 @@ char *dados_ler(const char *nome) {
   return b;
 }
 int dados_apagar(const char *nome) { char c[700]; dados_caminho(c, sizeof c, nome); return remove(c) == 0; }
+int dados_gravar_leve(const char *nome, const char *conteudo) {
+  char c[700];
+  FILE *f;
+  dados_caminho(c, sizeof c, nome);
+  f = fopen(c, "wb");
+  if (!f) return 0;
+  fputs(conteudo, f);
+  return fclose(f) == 0;
+}
 void dados_fs_travar(void) {}
 void dados_fs_liberar(void) {}
 

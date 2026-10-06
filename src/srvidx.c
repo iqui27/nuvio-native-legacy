@@ -217,6 +217,22 @@ long long srvidx_iso(const char *iso) {
   return diasDesde1970(a, m, d) * 86400LL + H * 3600 + M * 60 + S;
 }
 
+void srvidx_iso_de(long long t, char *dst, size_t tam) {
+  long long z = t / 86400 + 719468, era, s = t % 86400;
+  unsigned doe, yoe, doy, mp, d, m;
+  long long y;
+  if (t < 0) { if (tam) dst[0] = 0; return; }
+  era = z / 146097;
+  doe = (unsigned)(z - era * 146097);
+  yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+  y = (long long)yoe + era * 400;
+  doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+  mp = (5 * doy + 2) / 153;
+  d = doy - (153 * mp + 2) / 5 + 1;
+  m = mp < 10 ? mp + 3 : mp - 9;
+  snprintf(dst, tam, "%04lld-%02u-%02uT%02lld:%02lld:%02lldZ", y + (m <= 2), m, d, s / 3600, s / 60 % 60, s % 60);
+}
+
 int srvidx_ano_de(const char *meta) {
   int i;
   if (!meta) return 0;
@@ -357,6 +373,13 @@ int srvidx_gravar(const SrvIdx *x, int perfil, const char *tipoSrv, const char *
   ok = dados_gravar_leve(nome, t);
   free(t);
   return ok;
+}
+
+int srvidx_gravar_texto(int perfil, const char *tipoSrv, const char *txt) {
+  char nome[64];
+  if (!txt) return 0;
+  nomeArquivo(nome, sizeof nome, perfil, tipoSrv);
+  return dados_gravar_leve(nome, txt);
 }
 
 int srvidx_ler(SrvIdx *x, int perfil, const char *tipoSrv, const char *tag) {

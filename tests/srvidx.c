@@ -49,6 +49,11 @@ int main(void) {
   assert(srvidx_iso("1970-01-02T00:00:00.0000000Z") == 86400);
   assert(srvidx_iso("2026-10-01T12:34:56Z") == 1790858096LL);
   assert(srvidx_iso("garbage") == 0 && srvidx_iso(NULL) == 0);
+  { char iso[32];
+    srvidx_iso_de(1790858096LL, iso, sizeof iso);
+    assert(!strcmp(iso, "2026-10-01T12:34:56Z") && srvidx_iso(iso) == 1790858096LL);
+    srvidx_iso_de(951782400LL, iso, sizeof iso);                     // leap day
+    assert(!strcmp(iso, "2000-02-29T00:00:00Z")); }
   assert(srvidx_ano_de("2019 · 2 temporadas") == 2019 && srvidx_ano_de("120 min") == 0 && srvidx_ano_de("") == 0);
   assert(srvidx_ano_de("1080p 1999") == 1999);
   assert(srvidx_host_local("http://192.168.1.5:8096") && srvidx_host_local("http://10.0.0.2/jf"));

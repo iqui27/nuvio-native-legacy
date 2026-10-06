@@ -42,6 +42,7 @@
 #include "catalogo.h"
 #include "jfid.h"
 #include "rede.h"
+#include "srvidx.h"
 #include "streams.h"
 
 // ---------------------------------------------------------------- results
@@ -143,6 +144,15 @@ int jf_itens(const JfConta *c, RedeJob *job, const char *bibliotecaId,
 int jf_detalhe(const JfConta *c, RedeJob *job, const char *itemId, CatItem *out);
 int jf_episodios(const JfConta *c, RedeJob *job, const char *serieId,
                  CatEp *out, int max);
+// Matching index (srvidx.h). jf_indice: one page of movies+series with
+// ProviderIds; `desde` > 0 asks only for items saved since then (unix s);
+// returns items seen on the page, *total = TotalRecordCount. Limit 0 is the
+// cheap count check. jf_indice_episodios: every episode of one series.
+int jf_indice(const JfConta *c, RedeJob *job, int inicio, int limite, long long desde,
+              SrvIdx *x, int *total);
+int jf_indice_episodios(const JfConta *c, RedeJob *job, const char *serieId, SrvIdx *x);
+int jf_ler_indice(const char *corpo, size_t n, const char *serie, SrvIdx *x, int *total);
+void jf_ler_ids(const char *ini, const char *fim, char imdb[12], long *tmdb, long *tvdb);
 // Pure parsers over a response body already in memory (the request functions
 // above call them; tests feed fixtures). They never touch the network.
 int jf_ler_autenticacao(JfConta *c, char *corpo, size_t n);   // wipes corpo
@@ -233,6 +243,20 @@ void jellyfin_reproducao_fim(const char *url, double posSeg, double durSeg);
 // For tests: queued check-ins not yet sent.
 int  jellyfin_relatorios_pendentes(void);
 
+// MATCHED CATALOGUE TITLES (srvidx.h). The index is built after the Home
+// rows (incremental when one is on disk) and kept per profile and server.
+// jellyfin_tem: offline, 1 when the server has this "tt..."/"tmdb:..." title
+// (fills `info` when not NULL). jellyfin_consultar: BLOCKS (addons.c's
+// extra-source thread); sources for the title (the episode for a series id
+// "tt...:S:E", fetched on demand), check-in sessions registered like the
+// server's own items. `titulo`/`ano` feed the last match rule (title + year)
+// and may be NULL/0. Returns the number of sources, 0 none/not on the server,
+// -1 cancelled; the list is malloc'd for the caller.
+int  jellyfin_tem(const char *id, const char *tipo, SrvAchado *info);
+int  jellyfin_indice_n(void);
+int  jellyfin_consultar(const char *id, const char *tipo, const char *titulo, int ano,
+                        int (*cancelado)(void *), void *ctx, Stream **saida);
+
 // ------------------------------------------------------------- Emby twin
 // The same integration API for the Emby instance (see the note at the top).
 // Differences: no emby_entrar_quick_connect (it always refuses), Home row keys
@@ -263,7 +287,11 @@ int  jellyfin_relatorios_pendentes(void);
   int P##_fontes_colher(const char *alvo, Stream **lista, int *n);                       \
   void P##_reproducao_tick(const char *url, double posSeg, double durSeg, int tocando);  \
   void P##_reproducao_fim(const char *url, double posSeg, double durSeg);                \
-  int P##_relatorios_pendentes(void);
+  int P##_relatorios_pendentes(void);                                                    \
+  int P##_tem(const char *id, const char *tipo, SrvAchado *info);                        \
+  int P##_indice_n(void);                                                                \
+  int P##_consultar(const char *id, const char *tipo, const char *titulo, int ano,       \
+                    int (*cancelado)(void *), void *ctx, Stream **saida);
 JF_EMBY_DECL(emby)
 
 #endif

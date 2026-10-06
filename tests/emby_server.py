@@ -139,6 +139,14 @@ class Handler(BaseHTTPRequestHandler):
         if p == base + "/Items" and method == "GET":
             parent = q.get("parentid", [""])[0]
             items = [movie(1), movie(2)] if parent == LIB_MOVIES else [SERIES] if parent == LIB_SHOWS else []
+            if not parent and q.get("recursive", [""])[0] == "true":
+                # The matching index: Emby spells the keys like Jellyfin.
+                m2 = movie(2)
+                m2["ProviderIds"] = {"Imdb": "tt0002002"}
+                m2["DateLastSaved"] = "2026-08-01T10:00:00.0000000Z"
+                sh = dict(SERIES)
+                sh["ProviderIds"] = {"Tmdb": "4242"}
+                items = [movie(1), m2, sh]
             start = int(q.get("startindex", ["0"])[0])
             return self.reply(200, {"Items": items[start:], "TotalRecordCount": len(items)})
         m = re.fullmatch(re.escape(base) + r"/Items/(\d+)", p)

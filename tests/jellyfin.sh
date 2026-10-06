@@ -24,7 +24,7 @@ fi
 if [ "$(uname -s)" != Darwin ]; then flags+=(-ldl); fi
 if [ "${NV_SANITIZERS:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 if [ "${NV_TSAN:-0}" = 1 ]; then flags+=(-fsanitize=thread -fno-omit-frame-pointer); fi
-cc "${flags[@]}" tests/jellyfin.c src/jellyfin.c src/rede.c src/redeurl.c src/js.c src/jsw.c \
+cc "${flags[@]}" tests/jellyfin.c src/jellyfin.c src/srvidx.c src/rede.c src/redeurl.c src/js.c src/jsw.c \
   -o "$tmp/teste"
 "$tmp/teste" "$base" "$tmp/dados" > "$tmp/log" 2>&1 || { cat "$tmp/log"; exit 1; }
 # tests/servidores_log.sh collects every server test's log and scans it.

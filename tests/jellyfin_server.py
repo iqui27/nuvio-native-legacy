@@ -18,7 +18,8 @@ USER_ID = "aa11bb22cc33dd44ee55ff6677889900"
 LIB_MOVIES = "1111aaaa2222bbbb3333cccc4444dddd"
 LIB_SHOWS = "5555eeee6666ffff7777aaaa8888bbbb"
 LIB_MUSIC = "9999cccc0000dddd1111eeee2222ffff"
-SERIES = "abcdef0123456789abcdef0123456789"
+SERIES = "abcdef0123456789abcdef0123456789"      # no external id: stays opaque
+SERIES2 = "5e1e5e1e5e1e5e1e5e1e5e1e5e1e5e1e"     # IMDb + TVDB: matched
 PASSWORD = "pässwörd \"quoted\""
 
 lock = threading.Lock()
@@ -29,6 +30,10 @@ state = {
     "slow": 0.0,
     "secret": "QcSecret0123456789",
     "version": "10.10.3",
+    "extra": [],            # movies added after the first index pass
+    "gone": set(),          # movie numbers deleted on the server
+    "index_calls": [],      # (StartIndex, Limit, MinDateLastSaved) of index requests
+    "episode_index": 0,
 }
 
 
@@ -47,9 +52,23 @@ def episode_id(s, e):
     return "%032x" % (0xE9000000 + s * 100 + e)
 
 
+def saved(i):
+    return "2026-09-01T%02d:%02d:00.0000000Z" % (i // 60, i % 60)
+
+
+def ids(i):
+    # 0..4 have no external id (home videos); 5..49 IMDb+TMDB; 50..59 TMDB only.
+    if i < 5:
+        return {}
+    if i < 50:
+        return {"Imdb": "tt%07d" % (1000 + i), "Tmdb": str(5000 + i)}
+    return {"Tmdb": str(5000 + i)}
+
+
 def movie(i):
     mid = movie_id(i)
     return {
+        "ProviderIds": ids(i), "DateLastSaved": saved(i), "Height": 2160 if i == 7 else 1080,
         "Name": "Movie %02d" % i,
         "Id": mid,
         "ServerId": SERVER_ID,
@@ -198,13 +217,26 @@ class Handler(BaseHTTPRequestHandler):
             parent = q.get("ParentId", [""])[0]
             start = int(q.get("StartIndex", ["0"])[0])
             limit = int(q.get("Limit", ["100"])[0])
+            shows = [{"Name": "Show", "Id": SERIES, "Type": "Series", "ProductionYear": 2019,
+                      "ImageTags": {"Primary": "sp"}, "BackdropImageTags": [],
+                      "UserData": {"PlayedPercentage": 0}, "DateLastSaved": saved(100)},
+                     {"Name": "The Matched Show", "Id": SERIES2, "Type": "Series", "ProductionYear": 2021,
+                      "ProviderIds": {"IMDB": "tt0900001", "Tvdb": "999"}, "DateLastSaved": saved(101),
+                      "ImageTags": {"Primary": "s2"}, "UserData": {"PlayedPercentage": 0}}]
+            with lock:
+                movies = [movie(i) for i in range(60) if i not in state["gone"]] + list(state["extra"])
             if parent == LIB_MOVIES:
-                allitems = [movie(i) for i in range(60)]
+                allitems = movies
             elif parent == LIB_SHOWS:
-                allitems = [{"Name": "Show", "Id": SERIES, "Type": "Series", "ProductionYear": 2019,
-                             "ImageTags": {"Primary": "sp"}, "BackdropImageTags": [],
-                             "UserData": {"PlayedPercentage": 0}},
-                            {"Name": "Ignored episode", "Id": episode_id(1, 1), "Type": "Episode"}]
+                allitems = shows + [{"Name": "Ignored episode", "Id": episode_id(1, 1), "Type": "Episode"}]
+            elif not parent and q.get("Recursive", [""])[0] == "true":
+                # The matching index: every movie and series of the user.
+                since = q.get("MinDateLastSaved", [""])[0]
+                allitems = movies + shows
+                if since:
+                    allitems = [x for x in allitems if x.get("DateLastSaved", "")[:19] >= since[:19]]
+                with lock:
+                    state["index_calls"].append([start, limit, since])
             else:
                 allitems = []
             return self.reply(200, {"Items": allitems[start:start + limit], "TotalRecordCount": len(allitems),
@@ -228,10 +260,14 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^/Shows/([0-9a-f]{32})/Episodes$", p)
         if m:
             eps = []
+            if "ProviderIds" in q.get("Fields", [""])[0]:
+                with lock:
+                    state["episode_index"] += 1
             for s in (1, 2):
                 for e in (1, 2, 3):
                     eps.append({"Name": "S%dE%d" % (s, e), "Id": episode_id(s, e), "Type": "Episode",
                                 "ParentIndexNumber": s, "IndexNumber": e, "RunTimeTicks": 26400000000,
+                                "SeriesId": m.group(1),
                                 "PremiereDate": "2019-0%d-1%dT00:00:00.0000000Z" % (s, e),
                                 "Overview": "ep", "ImageTags": {"Primary": "et"}})
             return self.reply(200, {"Items": eps, "TotalRecordCount": len(eps)})
@@ -285,6 +321,20 @@ class Handler(BaseHTTPRequestHandler):
                 body = b"{}"
             elif p == "/control/revoke":
                 state["tokens"].clear()
+                body = b"{}"
+            elif p == "/control/index":
+                body = json.dumps({"calls": state["index_calls"], "episodes": state["episode_index"]}).encode()
+                state["index_calls"] = []
+                state["episode_index"] = 0
+            elif p == "/control/add":
+                i = int(q.get("n", ["70"])[0])
+                m = movie(i)
+                m["DateLastSaved"] = "2026-09-30T00:00:00.0000000Z"
+                m["ProviderIds"] = {"Imdb": "tt%07d" % (1000 + i)}
+                state["extra"].append(m)
+                body = b"{}"
+            elif p == "/control/delete":
+                state["gone"].add(int(q.get("n", ["5"])[0]))
                 body = b"{}"
             elif p == "/control/version":
                 state["version"] = q.get("v", ["10.10.3"])[0]

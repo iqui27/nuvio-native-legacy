@@ -53,7 +53,7 @@ typedef struct {
   char serie[SRVIDX_ITEM];   // 'e': the series item id
 } SrvIdxItem;
 
-typedef struct {
+typedef struct SrvIdxS {
   SrvIdxItem *v;
   int n, cap;
   int *tab, ntab;    // open-addressing table (kind+item -> row+1): upsert stays O(1)
@@ -85,6 +85,14 @@ unsigned srvidx_titulo_hash(const char *titulo);
 int  srvidx_id_titulo(const char *id, char imdb[16], long *tmdb, int *temp, int *ep);
 // ISO-8601 "2026-10-01T12:34:56.0000000Z" -> unix seconds (UTC). 0 on error.
 long long srvidx_iso(const char *iso);
+void srvidx_iso_de(long long t, char *dst, size_t tam);   // "2026-10-01T12:34:56Z"
+
+// What the title page / source card shows about a matched title.
+typedef struct {
+  char servidor[96];   // the server's own name ("Casa")
+  char tipoSrv[12];    // "Jellyfin" / "Emby" / "Plex"
+  int altura, hdr, local, visto;
+} SrvAchado;
 // The four first digits of "2019 · 2 temporadas", 0 when absent.
 int  srvidx_ano_de(const char *meta);
 // 1 when the URL's host is on the local network (private IPv4, localhost,
@@ -98,5 +106,8 @@ int   srvidx_desserializar(SrvIdx *x, const char *txt, const char *tag);
 // another server's file).
 int  srvidx_gravar(const SrvIdx *x, int perfil, const char *tipoSrv, const char *tag);
 int  srvidx_ler(SrvIdx *x, int perfil, const char *tipoSrv, const char *tag);
+// Writes text already serialised (so the owner serialises under its lock and
+// writes outside it).
+int  srvidx_gravar_texto(int perfil, const char *tipoSrv, const char *txt);
 void srvidx_apagar(int perfil, const char *tipoSrv);
 #endif

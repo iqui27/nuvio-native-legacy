@@ -11,6 +11,7 @@
 #include "jsraiz.h"
 #include "jsw.h"
 #include "perfis.h"
+#include "srvidx.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -34,6 +35,9 @@
 #define JF_FILA_CTL 8
 #define JF_FILA_REL 32
 #define JF_TAXA_MAX 120000000
+#define JF_PAGINA_INDICE 200
+#define JF_EPS_BUSCADOS 16
+#define JF_EPS_VALIDADE_MS (30u * 60u * 1000u)
 
 // ------------------------------------------------------------ small helpers
 long long jf_ticks(double seg) {
@@ -361,10 +365,41 @@ static void imagem(const JfConta *c, const char *item, const char *tipo, const c
 static const char *prefixoId(const JfConta *c) {
   return c->tipo == JF_TIPO_EMBY ? JFID_PREFIXO_EMBY : JFID_PREFIXO;
 }
-static int itemDe(const JfConta *c, const char *ini, const char *fim, CatItem *it) {
-  char id[64] = "", tipo[24] = "", limpo[40], tag[64];
+
+// ProviderIds of one item. The key spelling varies ("Imdb", "IMDB", "imdb"
+// between servers, plugins and versions); values are strings on Jellyfin and
+// Emby. Only well-formed ids are kept: "tt" + digits, positive numbers.
+static int idProvedor(const char *bi, const char *bf, const char *const *chaves, char *dst, size_t tam) {
+  for (; *chaves; chaves++) if (txtRaiz(bi, bf, *chaves, dst, tam) && dst[0]) return 1;
+  dst[0] = 0;
+  return 0;
+}
+void jf_ler_ids(const char *ini, const char *fim, char imdb[12], long *tmdb, long *tvdb) {
+  static const char *const kImdb[] = { "Imdb", "IMDB", "imdb", NULL };
+  static const char *const kTmdb[] = { "Tmdb", "TMDB", "tmdb", NULL };
+  static const char *const kTvdb[] = { "Tvdb", "TVDB", "tvdb", NULL };
+  const char *bi, *bf;
+  char v[32];
+  imdb[0] = 0; *tmdb = 0; *tvdb = 0;
+  if (!blocoRaiz(ini, fim, "ProviderIds", &bi, &bf)) return;
+  if (idProvedor(bi, bf, kImdb, v, sizeof v) && v[0] == 't' && v[1] == 't' && strlen(v) < 12 &&
+      v[2] && strspn(v + 2, "0123456789") == strlen(v + 2))
+    copiar(imdb, 12, v);
+  if (idProvedor(bi, bf, kTmdb, v, sizeof v) && strspn(v, "0123456789") == strlen(v) && strlen(v) < 10)
+    *tmdb = atol(v);
+  if (idProvedor(bi, bf, kTvdb, v, sizeof v) && strspn(v, "0123456789") == strlen(v) && strlen(v) < 10)
+    *tvdb = atol(v);
+}
+
+// `canonico`: a Home row item that has an IMDb or TMDB id IS that catalogue
+// title ("tt..." / "tmdb:..."): it gets the normal title page, Trakt and the
+// Nuvio account, and the server copy reaches it as a source (srvidx). Without
+// an external id it keeps the opaque server id and its isolation.
+static int itemDeEx(const JfConta *c, const char *ini, const char *fim, CatItem *it, int canonico) {
+  char id[64] = "", tipo[24] = "", limpo[40], tag[64], imdb[12];
   const char *bi, *bf;
   double ano, ticks;
+  long tmdb, tvdb;
   memset(it, 0, sizeof *it);
   txtRaiz(ini, fim, "Id", id, sizeof id);
   txtRaiz(ini, fim, "Type", tipo, sizeof tipo);
@@ -372,7 +407,10 @@ static int itemDe(const JfConta *c, const char *ini, const char *fim, CatItem *i
   if (!strcmp(tipo, "Movie")) copiar(it->tipo, sizeof it->tipo, "movie");
   else if (!strcmp(tipo, "Series")) copiar(it->tipo, sizeof it->tipo, "series");
   else return 0;
-  if (!jfid_montar_p(prefixoId(c), it->imdb, sizeof it->imdb, c->servidorId, limpo)) return 0;
+  jf_ler_ids(ini, fim, imdb, &tmdb, &tvdb);
+  if (canonico && imdb[0]) copiar(it->imdb, sizeof it->imdb, imdb);
+  else if (canonico && tmdb > 0) snprintf(it->imdb, sizeof it->imdb, "tmdb:%ld", tmdb);
+  else if (!jfid_montar_p(prefixoId(c), it->imdb, sizeof it->imdb, c->servidorId, limpo)) return 0;
   txtRaiz(ini, fim, "Name", it->titulo, sizeof it->titulo);
   txtRaiz(ini, fim, "Overview", it->sinopse, sizeof it->sinopse);
   txtRaiz(ini, fim, "OfficialRating", it->classificacao, sizeof it->classificacao);
@@ -418,6 +456,9 @@ static int itemDe(const JfConta *c, const char *ini, const char *fim, CatItem *i
   }
   copiar(it->origem, sizeof it->origem, c->tipo == JF_TIPO_EMBY ? "emby" : "jellyfin");
   return 1;
+}
+static int itemDe(const JfConta *c, const char *ini, const char *fim, CatItem *it) {
+  return itemDeEx(c, ini, fim, it, 0);
 }
 
 // Emby has no /UserViews; its per-user views route is /Users/{id}/Views.
@@ -470,7 +511,7 @@ int jf_ler_itens(const JfConta *c, const char *corpo, size_t nCorpo, CatItem *ou
     while (n < max && (p = elemento(p, af)) != NULL) {
       const char *f = depoisElemento(p);
       if (!f) break;
-      if (*p == '{' && itemDe(c, p, f, &out[n])) n++;
+      if (*p == '{' && itemDeEx(c, p, f, &out[n], 1)) n++;
       p = f;
     }
   }
@@ -490,7 +531,7 @@ int jf_itens(const JfConta *c, RedeJob *job, const char *bib, int inicio, int li
   else snprintf(raiz, sizeof raiz, "/Items?userId=%s&", c->usuarioId);
   snprintf(caminho, sizeof caminho,
            "%sParentId=%s&Recursive=true&IncludeItemTypes=Movie,Series"
-           "&SortBy=DateCreated,SortName&SortOrder=Descending&Fields=Overview,Genres"
+           "&SortBy=DateCreated,SortName&SortOrder=Descending&Fields=Overview,Genres,ProviderIds"
            "&EnableImageTypes=Primary,Backdrop,Logo&ImageTypeLimit=1&EnableUserData=true"
            "&StartIndex=%d&Limit=%d", raiz, limpo, inicio, limite);
   e = pedir(c, c->base, job, "GET", caminho, NULL, "library items", JF_PRAZO_LISTA_MS, &r);
@@ -594,6 +635,95 @@ int jf_episodios(const JfConta *c, RedeJob *job, const char *serieId, CatEp *out
   e = pedir(c, c->base, job, "GET", caminho, NULL, "episodes", JF_PRAZO_LISTA_MS, &r);
   if (e) return e;
   n = jf_ler_episodios(c, r.corpo, r.n_corpo, out, max);
+  rede_resposta_limpar(&r);
+  return n;
+}
+
+// ------------------------------------------------------- matching index
+// One index row from a list item (Movie, Series or Episode). Titles only
+// feed the hash; nothing of the title, path or overview is kept.
+static int linhaIndice(const char *ini, const char *fim, const char *serieForcada, SrvIdxItem *e) {
+  char id[64] = "", tipo[24] = "", nome[200] = "", data[40] = "", serie[64] = "";
+  const char *bi, *bf;
+  double h;
+  memset(e, 0, sizeof *e);
+  txtRaiz(ini, fim, "Id", id, sizeof id);
+  txtRaiz(ini, fim, "Type", tipo, sizeof tipo);
+  if (!jfid_hex_limpo(id, e->item, 32)) return 0;
+  if (!strcmp(tipo, "Movie")) e->tipo = 'm';
+  else if (!strcmp(tipo, "Series")) e->tipo = 's';
+  else if (!strcmp(tipo, "Episode")) e->tipo = 'e';
+  else return 0;
+  jf_ler_ids(ini, fim, e->imdb, &e->tmdb, &e->tvdb);
+  txtRaiz(ini, fim, "Name", nome, sizeof nome);
+  e->tituloHash = srvidx_titulo_hash(nome);
+  e->ano = (short)numRaiz(ini, fim, "ProductionYear", 0);
+  if (txtRaiz(ini, fim, "DateLastSaved", data, sizeof data)) e->atualizado = srvidx_iso(data);
+  h = numRaiz(ini, fim, "Height", 0);
+  e->altura = (unsigned short)(h >= 2000 ? 2160 : h >= 1000 ? 1080 : h >= 700 ? 720 : h > 0 ? 480 : 0);
+  if (blocoRaiz(ini, fim, "UserData", &bi, &bf)) e->visto = (unsigned char)boolRaiz(bi, bf, "Played", 0);
+  if (e->tipo == 'e') {
+    double t = numRaiz(ini, fim, "ParentIndexNumber", -1), ix = numRaiz(ini, fim, "IndexNumber", -1);
+    if (t < 0 || ix <= 0 || t > 999 || ix > 30000) return 0;
+    e->temporada = (short)t; e->episodio = (short)ix;
+    if (serieForcada && *serieForcada) copiar(e->serie, sizeof e->serie, serieForcada);
+    else if (!txtRaiz(ini, fim, "SeriesId", serie, sizeof serie) || !jfid_hex_limpo(serie, e->serie, 32)) return 0;
+    e->tituloHash = 0;
+  }
+  return 1;
+}
+
+int jf_ler_indice(const char *corpo, size_t nCorpo, const char *serie, SrvIdx *x, int *total) {
+  const char *ai, *af, *p;
+  int vistos = 0;
+  if (total) *total = (int)numRaiz(corpo, corpo + nCorpo, "TotalRecordCount", 0);
+  if (!blocoRaiz(corpo, corpo + nCorpo, "Items", &ai, &af)) return JF_ERR_FORMATO;
+  p = ai + 1;
+  while ((p = elemento(p, af)) != NULL) {
+    const char *f = depoisElemento(p);
+    SrvIdxItem e;
+    if (!f) break;
+    if (*p == '{') {
+      vistos++;
+      if (linhaIndice(p, f, serie, &e)) srvidx_por(x, &e);
+    }
+    p = f;
+  }
+  return vistos;
+}
+
+int jf_indice(const JfConta *c, RedeJob *job, int inicio, int limite, long long desde,
+              SrvIdx *x, int *total) {
+  RedeResposta r;
+  char caminho[640], raiz[96], iso[40] = "";
+  int n, e;
+  if (total) *total = 0;
+  if (inicio < 0 || limite < 0 || limite > 500) return JF_ERR_ENTRADA;
+  if (c->tipo == JF_TIPO_EMBY) snprintf(raiz, sizeof raiz, "/Users/%s/Items?", c->usuarioId);
+  else snprintf(raiz, sizeof raiz, "/Items?userId=%s&", c->usuarioId);
+  if (desde > 0) srvidx_iso_de(desde, iso, sizeof iso);
+  snprintf(caminho, sizeof caminho,
+           "%sRecursive=true&IncludeItemTypes=Movie,Series&Fields=ProviderIds,DateLastSaved"
+           "&EnableImages=false&EnableUserData=true&SortBy=DateCreated,SortName&SortOrder=Ascending"
+           "&StartIndex=%d&Limit=%d%s%s", raiz, inicio, limite, iso[0] ? "&MinDateLastSaved=" : "", iso);
+  e = pedir(c, c->base, job, "GET", caminho, NULL, "library index", JF_PRAZO_LISTA_MS, &r);
+  if (e) return e;
+  n = jf_ler_indice(r.corpo, r.n_corpo, NULL, x, total);
+  rede_resposta_limpar(&r);
+  return n;
+}
+
+int jf_indice_episodios(const JfConta *c, RedeJob *job, const char *serieId, SrvIdx *x) {
+  RedeResposta r;
+  char caminho[256], limpo[40];
+  int n, e;
+  if (!jfid_hex_limpo(serieId, limpo, 32)) return JF_ERR_ENTRADA;
+  snprintf(caminho, sizeof caminho,
+           "/Shows/%s/Episodes?userId=%s&Fields=ProviderIds,DateLastSaved&EnableImages=false&EnableUserData=true",
+           limpo, c->usuarioId);
+  e = pedir(c, c->base, job, "GET", caminho, NULL, "episode index", JF_PRAZO_LISTA_MS, &r);
+  if (e) return e;
+  n = jf_ler_indice(r.corpo, r.n_corpo, limpo, x, NULL);
   rede_resposta_limpar(&r);
   return n;
 }
@@ -965,13 +1095,19 @@ typedef struct JfInst {
   Sessao sessoes[JF_SESSOES];
   int ultimoErro;
   char curto[160], nomeUsuario[96];
+  // Matching index (srvidx.h) of the connected server, this profile only.
+  const char *idxTipo;            // file kind: "jf" / "em"
+  SrvIdx idx;
+  char idxTag[JFID_TAG + 1];      // server the index belongs to ("" none loaded)
+  struct { char serie[SRVIDX_ITEM]; unsigned long long ms; } eps[JF_EPS_BUSCADOS];
+  int nEps;
 } JfInst;
 
-static JfInst instJf = { .tipo = JF_TIPO_JELLYFIN, .arqFmt = "jellyfin-p%d.txt", .log = "jellyfin",
+static JfInst instJf = { .tipo = JF_TIPO_JELLYFIN, .arqFmt = "jellyfin-p%d.txt", .log = "jellyfin", .idxTipo = "jf",
   .prefixoFila = "jellyfin_", .prefixoId = JFID_PREFIXO, .trava = PTHREAD_MUTEX_INITIALIZER,
   .sinalCtl = PTHREAD_COND_INITIALIZER, .sinalRel = PTHREAD_COND_INITIALIZER, .geracao = 1,
   .perfilLido = -1, .estado = JF_EST_SEM_SERVIDOR, .qcPermitido = -1, .fontesEstado = JF_FONTES_NADA };
-static JfInst instEm = { .tipo = JF_TIPO_EMBY, .arqFmt = "emby-p%d.txt", .log = "emby",
+static JfInst instEm = { .tipo = JF_TIPO_EMBY, .arqFmt = "emby-p%d.txt", .log = "emby", .idxTipo = "em",
   .prefixoFila = "emby_", .prefixoId = JFID_PREFIXO_EMBY, .trava = PTHREAD_MUTEX_INITIALIZER,
   .sinalCtl = PTHREAD_COND_INITIALIZER, .sinalRel = PTHREAD_COND_INITIALIZER, .geracao = 1,
   .perfilLido = -1, .estado = JF_EST_SEM_SERVIDOR, .qcPermitido = -1, .fontesEstado = JF_FONTES_NADA };
@@ -1098,6 +1234,21 @@ static void novoDispositivo(char *dst, size_t tam) {
            b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], perfis_ativo());
 }
 
+// Under I->trava. The index always belongs to the connected server: another
+// server (or none) drops it and loads that server's file, if any.
+static void idxConferirLocked(JfInst *I) {
+  char tag[JFID_TAG + 1];
+  snprintf(tag, sizeof tag, "%.8s", I->conta.servidorId);
+  if (!strcmp(tag, I->idxTag)) return;
+  srvidx_limpar(&I->idx);
+  I->nEps = 0;
+  copiar(I->idxTag, sizeof I->idxTag, tag);
+  if (tag[0] && I->perfilLido >= 0) {
+    int n = srvidx_ler(&I->idx, I->perfilLido, I->idxTipo, tag);
+    if (n > 0) printf("[%s] index from disk: %d row(s)\n", I->log, n);
+  }
+}
+
 // Under I->trava. Reads the active profile's file into `I->conta`.
 static void carregarLocked(JfInst *I) {
   char nome[40], *txt;
@@ -1126,6 +1277,11 @@ static void carregarLocked(JfInst *I) {
   else if (I->conta.base[0] && I->conta.servidorId[0]) I->estado = JF_EST_SERVIDOR_OK;
   else I->estado = JF_EST_SEM_SERVIDOR;
   I->detalhe[0] = 0;
+  // A profile's index never serves another profile: reload from this one's file.
+  srvidx_limpar(&I->idx);
+  I->idxTag[0] = 0;
+  I->nEps = 0;
+  idxConferirLocked(I);
 }
 
 // Under I->trava. Drops everything bound to the previous identity.
@@ -1210,6 +1366,7 @@ static void jfi_esquecer(JfInst *I) {
   }
   arquivo(I, nome, sizeof nome, perfis_ativo());
   dados_apagar(nome);
+  srvidx_apagar(perfis_ativo(), I->idxTipo);
   apagarSegredo(&I->conta, sizeof I->conta);
   carregarLocked(I);
   pthread_mutex_unlock(&I->trava);
@@ -1223,6 +1380,7 @@ static void jfi_esquecer_todos(JfInst *I) {
   pthread_mutex_lock(&I->trava);
   avancarLocked(I);
   for (i = 1; i <= 32; i++) { arquivo(I, nome, sizeof nome, i); dados_apagar(nome); }
+  for (i = 0; i <= 32; i++) srvidx_apagar(i, I->idxTipo);
   apagarSegredo(&I->conta, sizeof I->conta);
   carregarLocked(I);
   pthread_mutex_unlock(&I->trava);
@@ -1245,6 +1403,8 @@ static void jfi_encerrar(JfInst *I) {
   free(I->fontesLista); I->fontesLista = NULL;
   if (I->grupo) { rede_grupo_cancelar(I->grupo); rede_grupo_soltar(I->grupo); I->grupo = NULL; }
   apagarSegredo(&I->conta, sizeof I->conta);
+  srvidx_limpar(&I->idx);
+  I->idxTag[0] = 0;
   pthread_mutex_unlock(&I->trava);
 }
 
@@ -1477,6 +1637,7 @@ static void publicarConta(JfInst *I, const Tarefa *t, RedeJob *j, JfConta *c) {
     copiar(c->dispositivoNome, sizeof c->dispositivoNome, I->conta.dispositivoNome);
     I->conta = *c;
     gravarConta(I, &I->conta, I->perfilLido);
+    idxConferirLocked(I);
     definirEstadoLocked(I, JF_EST_CONECTADO, I->conta.servidorNome);
     qc = enfileirarLocked(I, T_BIBLIOTECAS, "", "");
   }
@@ -1498,6 +1659,7 @@ static void tarefaVerificar(JfInst *I, const Tarefa *t) {
       I->conta = c;
       I->qcPermitido = qc > 0;
       gravarConta(I, &I->conta, I->perfilLido);
+      idxConferirLocked(I);
       snprintf(det, sizeof det, "%s · %s", c.servidorNome[0] ? c.servidorNome : jf_tipo_nome(I->tipo), c.versao);
       definirEstadoLocked(I, JF_EST_SERVIDOR_OK, det);
     } else definirErroLocked(I, e);
@@ -1576,6 +1738,86 @@ fim:
   fecharTarefa(I, j);
 }
 
+// THE MATCHING INDEX PASS. With an index already loaded (disk or a previous
+// pass) only items saved since its newest save time are asked; then the
+// server's movie+series count is compared with the merged index, and only a
+// difference (something was deleted) pays for a full rebuild. Episodes are
+// fetched on demand (consultar) and survive a rebuild.
+static void indexar(JfInst *I, const Tarefa *t, RedeJob *j, const JfConta *c) {
+  SrvIdx novo;
+  char tag[JFID_TAG + 1], *txt = NULL;
+  long long marca;
+  int nAtual, totalTodos = -1, total = 0, inicio, vistos, e = JF_OK, incremental, passada, perfil = -1;
+  pthread_mutex_lock(&I->trava);
+  if (!aindaVale(I, t, j)) { pthread_mutex_unlock(&I->trava); return; }
+  idxConferirLocked(I);
+  marca = I->idx.marca;
+  nAtual = srvidx_n_tipo(&I->idx, 'm') + srvidx_n_tipo(&I->idx, 's');
+  copiar(tag, sizeof tag, I->idxTag);
+  pthread_mutex_unlock(&I->trava);
+  if (!tag[0]) return;
+  incremental = marca > 0 && nAtual > 0;
+  for (passada = 0; passada < 2; passada++) {
+    srvidx_iniciar(&novo);
+    if (incremental) {
+      e = jf_indice(c, j, 0, 0, 0, &novo, &totalTodos);    // the count, nothing else
+      if (e < 0) break;
+      e = JF_OK;
+    }
+    inicio = 0;
+    do {
+      pthread_mutex_lock(&I->trava);
+      if (!aindaVale(I, t, j)) e = JF_ERR_CANCELADO;
+      pthread_mutex_unlock(&I->trava);
+      if (e != JF_OK) break;
+      vistos = jf_indice(c, j, inicio, JF_PAGINA_INDICE, incremental ? marca : 0, &novo, &total);
+      if (vistos < 0) { e = vistos; break; }
+      if (!vistos) break;
+      inicio += vistos;
+    } while (inicio < total && novo.n < SRVIDX_MAX);
+    if (e != JF_OK) break;
+    pthread_mutex_lock(&I->trava);
+    if (!aindaVale(I, t, j) || strcmp(tag, I->idxTag)) {
+      e = JF_ERR_CANCELADO;
+    } else if (incremental) {
+      srvidx_juntar(&I->idx, &novo);
+      nAtual = srvidx_n_tipo(&I->idx, 'm') + srvidx_n_tipo(&I->idx, 's');
+    } else {
+      int k;
+      for (k = 0; k < I->idx.n; k++) if (I->idx.v[k].tipo == 'e') srvidx_por(&novo, &I->idx.v[k]);
+      srvidx_limpar(&I->idx);
+      I->idx = novo;
+      I->idx.total = total;
+      srvidx_iniciar(&novo);
+      nAtual = srvidx_n_tipo(&I->idx, 'm') + srvidx_n_tipo(&I->idx, 's');
+    }
+    pthread_mutex_unlock(&I->trava);
+    srvidx_limpar(&novo);
+    if (e != JF_OK) break;
+    printf("[%s] index: %d title(s), %s pass\n", I->log, nAtual, incremental ? "incremental" : "full");
+    // Deletions are invisible to an incremental pass: a count that disagrees
+    // with the server's means rows to drop, so rebuild once.
+    if (!incremental || totalTodos < 0 || totalTodos == nAtual) break;
+    incremental = 0;
+  }
+  srvidx_limpar(&novo);
+  if (e == JF_ERR_AUTH) {
+    pthread_mutex_lock(&I->trava);
+    if (aindaVale(I, t, j)) expirouLocked(I);
+    pthread_mutex_unlock(&I->trava);
+    return;
+  }
+  if (e != JF_OK) return;
+  pthread_mutex_lock(&I->trava);
+  if (aindaVale(I, t, j) && !strcmp(tag, I->idxTag)) {
+    txt = srvidx_serializar(&I->idx, tag);
+    perfil = I->perfilLido;
+  }
+  pthread_mutex_unlock(&I->trava);
+  if (txt && perfil >= 0) srvidx_gravar_texto(perfil, I->idxTipo, txt);
+  free(txt);
+}
+
 static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   JfConta c;
   RedeJob *j = abrirTarefa(I, t, &c);
@@ -1604,17 +1846,47 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   if (aindaVale(I, t, j)) {
     if (e == JF_ERR_AUTH) expirouLocked(I);
     else if (e == JF_OK) {
+      // The periodic refresh usually brings the same rows: the Home is only
+      // rebuilt when something a row shows changed.
+      int igual = nf == I->nSnapFils && ni == I->nSnapItens && I->snapItens;
+      for (i = 0; igual && i < nf; i++)
+        igual = !strcmp(fils[i].chave, I->snapFils[i].chave) && fils[i].n == I->snapFils[i].n;
+      for (i = 0; igual && i < ni; i++)
+        igual = !strcmp(itens[i].imdb, I->snapItens[i].imdb) && itens[i].progresso == I->snapItens[i].progresso &&
+                !strcmp(itens[i].poster, I->snapItens[i].poster);
       free(I->snapItens);
       I->snapItens = itens; itens = NULL;
       memcpy(I->snapFils, fils, sizeof(CatFileira) * (size_t)nf);
       I->nSnapFils = nf; I->nSnapItens = ni;
-      I->snapVersao++;
+      if (!igual) I->snapVersao++;
     }
   }
   pthread_mutex_unlock(&I->trava);
   free(itens);
+  // Second pass, after the rows are on screen: the matching index.
+  if (e == JF_OK) indexar(I, t, j, &c);
   apagarSegredo(&c, sizeof c);
   fecharTarefa(I, j);
+}
+
+// Under I->trava. Check-in sessions by URL for freshly listed sources; the
+// oldest one never started is evicted when the table is full.
+static void registrarSessoesLocked(JfInst *I, const JfPlayback *pb, int n) {
+  int i, k;
+  for (i = 0; i < n && i < pb->n; i++) {
+    int alvo = -1;
+    unsigned long long velho = ~0ull;
+    for (k = 0; k < JF_SESSOES; k++) {
+      if (!I->sessoes[k].ativo) { alvo = k; break; }
+      if (!I->sessoes[k].iniciado && I->sessoes[k].criadoMs < velho) { velho = I->sessoes[k].criadoMs; alvo = k; }
+    }
+    if (alvo < 0) break;
+    memset(&I->sessoes[alvo], 0, sizeof I->sessoes[alvo]);
+    I->sessoes[alvo].ativo = 1;
+    I->sessoes[alvo].geracao = I->geracao;
+    I->sessoes[alvo].criadoMs = agoraMs();
+    I->sessoes[alvo].s = pb->sessao[i];
+  }
 }
 
 static void tarefaFontes(JfInst *I, const Tarefa *t) {
@@ -1639,21 +1911,8 @@ static void tarefaFontes(JfInst *I, const Tarefa *t) {
       I->nFontes = I->fontesLista ? pb->n : 0;
       if (I->nFontes) memcpy(I->fontesLista, pb->fonte, sizeof(Stream) * (size_t)I->nFontes);
       I->fontesEstado = JF_FONTES_PRONTO;
-      // Register check-in sessions by URL; evict the oldest never started.
-      for (i = 0; i < I->nFontes; i++) {
-        int alvo = -1;
-        unsigned long long velho = ~0ull;
-        for (k = 0; k < JF_SESSOES; k++) {
-          if (!I->sessoes[k].ativo) { alvo = k; break; }
-          if (!I->sessoes[k].iniciado && I->sessoes[k].criadoMs < velho) { velho = I->sessoes[k].criadoMs; alvo = k; }
-        }
-        if (alvo < 0) break;
-        memset(&I->sessoes[alvo], 0, sizeof I->sessoes[alvo]);
-        I->sessoes[alvo].ativo = 1;
-        I->sessoes[alvo].geracao = I->geracao;
-        I->sessoes[alvo].criadoMs = agoraMs();
-        I->sessoes[alvo].s = pb->sessao[i];
-      }
+      (void)i; (void)k;
+      registrarSessoesLocked(I, pb, I->nFontes);
     }
   }
   pthread_mutex_unlock(&I->trava);
@@ -1876,6 +2135,154 @@ static int jfi_fontes_colher(JfInst *I, const char *alvo, Stream **lista, int *n
   return e;
 }
 
+// ------------------------------------------------- matched catalogue titles
+// Under I->trava: the index row of a catalogue title ("tt...", "tmdb:...")
+// on this server, -1 none. Title + year only as the last rule (srvidx.h).
+static int idxAcharLocked(JfInst *I, const char *id, const char *tipo, const char *titulo, int ano,
+                          int *temp, int *ep) {
+  char imdb[16];
+  long tmdb;
+  int k, serie;
+  if (I->estado != JF_EST_CONECTADO || !I->idxTag[0] || strncmp(I->idxTag, I->conta.servidorId, JFID_TAG))
+    return -1;
+  if (!srvidx_id_titulo(id, imdb, &tmdb, temp, ep)) return -1;
+  serie = tipo && (!strcmp(tipo, "series") || !strcmp(tipo, "tv"));
+  k = srvidx_achar(&I->idx, imdb, tmdb, 0, serie ? 's' : 'm');
+  if (k < 0 && titulo && *titulo) k = srvidx_achar_titulo(&I->idx, srvidx_titulo_hash(titulo), ano, serie ? 's' : 'm');
+  return k >= 0 ? k : -1;
+}
+
+static int jfi_tem(JfInst *I, const char *id, const char *tipo, SrvAchado *info) {
+  int k;
+  garantir(I);
+  pthread_mutex_lock(&I->trava);
+  conferirPerfilLocked(I);
+  k = idxAcharLocked(I, id, tipo, NULL, 0, NULL, NULL);
+  if (k >= 0 && info) {
+    memset(info, 0, sizeof *info);
+    copiar(info->servidor, sizeof info->servidor, I->conta.servidorNome[0] ? I->conta.servidorNome : jf_tipo_nome(I->tipo));
+    copiar(info->tipoSrv, sizeof info->tipoSrv, jf_tipo_nome(I->tipo));
+    info->altura = I->idx.v[k].altura;
+    info->hdr = I->idx.v[k].hdr;
+    info->visto = I->idx.v[k].visto;
+    info->local = srvidx_host_local(I->conta.base);
+  }
+  pthread_mutex_unlock(&I->trava);
+  return k >= 0;
+}
+
+static int jfi_indice_n(JfInst *I) {
+  int n;
+  pthread_mutex_lock(&I->trava);
+  n = I->idx.n;
+  pthread_mutex_unlock(&I->trava);
+  return n;
+}
+
+// Under I->trava: 1 when this series' episodes were fetched recently.
+static int epsRecentesLocked(JfInst *I, const char *serie) {
+  int i;
+  for (i = 0; i < I->nEps; i++)
+    if (!strcmp(I->eps[i].serie, serie)) return agoraMs() - I->eps[i].ms < JF_EPS_VALIDADE_MS;
+  return 0;
+}
+static void epsMarcarLocked(JfInst *I, const char *serie) {
+  int i, alvo = -1;
+  for (i = 0; i < I->nEps; i++) if (!strcmp(I->eps[i].serie, serie)) alvo = i;
+  if (alvo < 0) {
+    if (I->nEps < JF_EPS_BUSCADOS) alvo = I->nEps++;
+    else { memmove(I->eps, I->eps + 1, sizeof I->eps[0] * (JF_EPS_BUSCADOS - 1)); alvo = JF_EPS_BUSCADOS - 1; }
+  }
+  copiar(I->eps[alvo].serie, sizeof I->eps[alvo].serie, serie);
+  I->eps[alvo].ms = agoraMs();
+}
+
+// Sources for a REGULAR catalogue title this server has. Runs on the
+// extra-source thread of addons.c (it may block); every wait is a RedeJob of
+// the current generation. No index hit: no request at all.
+static int jfi_consultar(JfInst *I, const char *id, const char *tipo, const char *titulo, int ano,
+                         int (*cancelado)(void *), void *ctx, Stream **saida) {
+  char item[SRVIDX_ITEM] = "", serieItem[SRVIDX_ITEM] = "", tag[JFID_TAG + 1];
+  JfConta c;
+  RedeJob *j = NULL;
+  JfPlayback *pb = NULL;
+  unsigned g = 0;
+  int k, temp = 0, ep = 0, serie, e = JF_OK, n = 0, buscar = 0;
+  *saida = NULL;
+  garantir(I);
+  serie = tipo && (!strcmp(tipo, "series") || !strcmp(tipo, "tv"));
+  pthread_mutex_lock(&I->trava);
+  conferirPerfilLocked(I);
+  k = idxAcharLocked(I, id, tipo, titulo, ano, &temp, &ep);
+  if (k >= 0 && I->grupo) {
+    copiar(item, sizeof item, I->idx.v[k].item);
+    if (serie) {
+      int ke;
+      // A series without an episode in the id means "the first one", as in addons.c.
+      if (temp <= 0 || ep <= 0) { temp = temp > 0 ? temp : 1; ep = ep > 0 ? ep : 1; }
+      copiar(serieItem, sizeof serieItem, item);
+      ke = srvidx_achar_ep(&I->idx, serieItem, temp, ep);
+      if (ke >= 0) copiar(item, sizeof item, I->idx.v[ke].item);
+      else if (epsRecentesLocked(I, serieItem)) item[0] = 0;     // fetched: this episode is not there
+      else buscar = 1;
+    }
+    if (item[0]) { c = I->conta; g = I->geracao; j = rede_job_criar(I->grupo); copiar(tag, sizeof tag, I->idxTag); }
+  }
+  pthread_mutex_unlock(&I->trava);
+  if (!j) return 0;
+  if (buscar) {
+    // Episodes come on demand, once per series per half hour, into the index.
+    SrvIdx eps;
+    char *txt = NULL;
+    int perfil = -1;
+    srvidx_iniciar(&eps);
+    e = jf_indice_episodios(&c, j, serieItem, &eps);
+    item[0] = 0;
+    pthread_mutex_lock(&I->trava);
+    if (g == I->geracao && rede_job_estado(j) == REDE_OK && !strcmp(tag, I->idxTag)) {
+      if (e >= 0) {
+        int ke;
+        srvidx_juntar(&I->idx, &eps);
+        epsMarcarLocked(I, serieItem);
+        ke = srvidx_achar_ep(&I->idx, serieItem, temp, ep);
+        if (ke >= 0) copiar(item, sizeof item, I->idx.v[ke].item);
+        if (eps.n) { txt = srvidx_serializar(&I->idx, tag); perfil = I->perfilLido; }
+      } else if (e == JF_ERR_AUTH) expirouLocked(I);
+    }
+    pthread_mutex_unlock(&I->trava);
+    srvidx_limpar(&eps);
+    // On disk too: the next title page of this series finds it offline.
+    if (txt && perfil >= 0) srvidx_gravar_texto(perfil, I->idxTipo, txt);
+    free(txt);
+    e = item[0] ? JF_OK : JF_ERR_HTTP;
+  }
+  if (e == JF_OK && cancelado && cancelado(ctx)) e = JF_ERR_CANCELADO;
+  if (e == JF_OK) {
+    pb = malloc(sizeof *pb);
+    e = pb ? jf_playbackinfo(&c, j, item, jellyfin_backend(), pb) : JF_ERR_REDE;
+  }
+  pthread_mutex_lock(&I->trava);
+  if (g != I->geracao || rede_job_estado(j) != REDE_OK) e = JF_ERR_CANCELADO;
+  else if (e == JF_ERR_AUTH) expirouLocked(I);
+  else if (e == JF_OK && pb->n) registrarSessoesLocked(I, pb, pb->n);
+  pthread_mutex_unlock(&I->trava);
+  if (e == JF_OK && pb->n) {
+    Stream *l = malloc(sizeof(Stream) * (size_t)pb->n);
+    if (l) {
+      int i;
+      memcpy(l, pb->fonte, sizeof(Stream) * (size_t)pb->n);
+      // The server's own name: the facade turns it into "Local · <name>".
+      for (i = 0; i < pb->n; i++) copiar(l[i].provedor, sizeof l[i].provedor, c.servidorNome[0] ? c.servidorNome : jf_tipo_nome(I->tipo));
+      *saida = l;
+      n = pb->n;
+    }
+  } else n = e == JF_ERR_CANCELADO ? -1 : 0;
+  if (pb) { apagarSegredo(pb, sizeof *pb); free(pb); }
+  apagarSegredo(&c, sizeof c);
+  rede_job_soltar(j);
+  return n;
+}
+
 // ---------------------------------------------------------- title page
 static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps) {
   char tag[JFID_TAG + 1], id[JFID_ITEM + 1];
@@ -1955,7 +2362,11 @@ static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps) {
   int P##_fontes_colher(const char *a, Stream **l, int *n) { return jfi_fontes_colher(I, a, l, n); } \
   void P##_reproducao_tick(const char *u, double p, double d, int t) { jfi_reproducao_tick(I, u, p, d, t); } \
   void P##_reproducao_fim(const char *u, double p, double d) { jfi_reproducao_fim(I, u, p, d); } \
-  int P##_relatorios_pendentes(void) { return jfi_relatorios_pendentes(I); }
+  int P##_relatorios_pendentes(void) { return jfi_relatorios_pendentes(I); }                  \
+  int P##_tem(const char *id, const char *t, SrvAchado *a) { return jfi_tem(I, id, t, a); }   \
+  int P##_indice_n(void) { return jfi_indice_n(I); }                                          \
+  int P##_consultar(const char *id, const char *t, const char *ti, int ano, int (*cc)(void *), \
+                    void *ctx, Stream **s) { return jfi_consultar(I, id, t, ti, ano, cc, ctx, s); }
 
 JF_API(jellyfin, &instJf)
 JF_API(emby, &instEm)
