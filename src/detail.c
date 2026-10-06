@@ -77,6 +77,8 @@
 #include "svdesenho.h"
 #include "amigostitulo.h"
 #include "amigostitulo_ui.h"
+#include "caca.h"
+#include "ilhaacao.h"
 static void ponteiroDetalhe(int r, int c);   // ponteiro do Magic Remote (#99)
 static int moverFileira(int dy);
 static void heroReiniciar(void);
@@ -190,6 +192,11 @@ static int  pessoaFoco;
 // Primeira LINHA visivel da filmografia. A grade tem 6 por linha e cabem duas
 // linhas na tela; sem isto o resto dos creditos era cortado sem aviso.
 static int  pessoaLinha;
+// A PORTA DA CACA na ficha da pessoa ("Voce viu 7 de 12 . Cacar"): CIMA na
+// primeira linha da filmografia sobe para o botao (pessoaCaca = 1).
+static long pessoaTmdb;
+static int  pessoaCaca;
+static float pessoaCacaFoco;
 static int  pedAbrir = -1;
 // DE ONDE SE VEIO, quando um titulo e aberto de dentro de outro (Recomendacoes,
 // filmografia, colecao). Sem isto o Voltar fechava a pagina e caia na Home em
@@ -1397,6 +1404,8 @@ void detail_mostrar_pessoa(long tmdb, const char *nome, const char *foto) {
   if (!aberto || tmdb <= 0) return;
   pessoa_pedir(tmdb, nome ? nome : "", foto ? foto : "");
   pessoaAberta = 1;
+  pessoaTmdb = tmdb;
+  pessoaCaca = 0;
   pessoaFoco = 0;
   pessoaLinha = 0;
 }
@@ -2171,6 +2180,31 @@ void detail_evento(const SDL_Event *e) {
   if (colListaAberta) { eventoListaColecao(e); return; }
   if (pessoaAberta) {
     if (e->type != SDL_KEYDOWN) return;
+    if (pessoaCaca) {
+      switch (e->key.keysym.sym) {
+        case SDLK_DOWN: pessoaCaca = 0; return;
+        case SDLK_LEFT: pediuMenu = 1; return;
+        case SDLK_ESCAPE: case SDLK_BACKSPACE: case SDLK_DELETE: case SDLK_AC_BACK:
+          pessoaAberta = 0; return;
+        case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: {
+          int i = caca_previa_cacar();
+          CacaInfo c;
+          if (i >= 0 && caca_info(i, &c)) {
+            IlhaAcao ac;
+            char frase[160];
+            snprintf(frase, sizeof frase, i18n("Caçando %s"), c.nome);
+            memset(&ac, 0, sizeof ac);
+            ac.icone = "aj_crosshair"; ac.frase = frase; ac.titulo = c.nome;
+            ac.onde = i18n("Perfil · Caça"); ac.thumb = c.foto; ac.voar = c.foto[0] != 0;
+            ac.tipo = ILHA_ACENTO;
+            ilhaacao_feita(&ac);
+          }
+          return; }
+        default: break;
+      }
+      if (e->key.keysym.scancode == NV_SCANCODE_BACK) pessoaAberta = 0;
+      return;
+    }
     { int n = pessoa_n_creditos();
       switch (e->key.keysym.sym) {
         // Coluna 0 da filmografia: a barra lateral por cima (dono, 03/10);
@@ -2181,6 +2215,7 @@ void detail_evento(const SDL_Event *e) {
           return;
         case SDLK_RIGHT: if (pessoaFoco + 1 < n) pessoaFoco++; return;
         case SDLK_UP:
+          if (pessoaFoco < PES_POR_LINHA && pessoaTmdb > 0) { pessoaCaca = 1; return; }
           if (pessoaFoco >= PES_POR_LINHA) pessoaFoco -= PES_POR_LINHA;
           if (pessoaFoco / PES_POR_LINHA < pessoaLinha) pessoaLinha--;
           return;
@@ -6511,6 +6546,28 @@ static void desenhaPessoa(float a) {
       txt_desenhar_alpha(la, NV_DETP_X, y, a * 0.9f);
       y += la.h + 18.0f;
     }
+    // "Voce viu 7 de 12" + Cacar. A previa e uma cacada que ainda nao foi
+    // escolhida: a lista vem pelo mesmo caminho (Worker, senao TMDB) e so
+    // vira cacada no OK. Quem e conhecido por dirigir e cacado como diretor.
+    if (pessoaTmdb > 0 && pessoa_pronta()) {
+      int dir = !strcmp(pessoa_area(), "Dire\xc3\xa7\xc3\xa3o");
+      CacaInfo c;
+      char rot[96];
+      int ja;
+      caca_previa(dir ? CACA_DIRECAO : CACA_ATUACAO, pessoaTmdb, pessoa_nome(), pessoa_foto());
+      ja = caca_achar(dir ? CACA_DIRECAO : CACA_ATUACAO, pessoaTmdb, "") >= 0;
+      pessoaCacaFoco += ((pessoaCaca ? 1.0f : 0.0f) - pessoaCacaFoco) * 0.35f;
+      if (caca_info(CACA_PREVIA, &c) && c.total > 0) {
+        char viu[96];
+        snprintf(viu, sizeof viu, i18n("Você viu %d de %d"), c.vistos, c.total);
+        { TxtLinha lv = txt_linha_corta(TXT_DET_META2, viu, 220, 224, 232, 255, PES_FOTO_W);
+          txt_desenhar_alpha(lv, NV_DETP_X, y, a);
+          y += lv.h + 12.0f; }
+      }
+      snprintf(rot, sizeof rot, "%s", ja ? i18n("Na caçada") : i18n("Caçar"));
+      plrui_botao(NV_DETP_X, y, rot, ja ? "aj_check" : "aj_crosshair", pessoaCacaFoco, a);
+      y += 60.0f + 20.0f;
+    }
     if (pessoa_bio()[0])
       txt_bloco(TXT_DET_META2, pessoa_bio(), 190, 195, 205, NV_DETP_X, y,
                 PES_FOTO_W, 32.0f, a * 0.9f, 6);
@@ -6530,12 +6587,12 @@ static void desenhaPessoa(float a) {
       GLuint t = po[0] ? tex_obter_larg(po, PES_CARD_W) : 0;
       if (y + PES_CARD_H > NV_TELA_H - 24.0f) break;
       // Foco da Home (focoprof.h): anel so com o ajuste ligado, senao cresce.
-      { float fp = i == pessoaFoco ? 1.0f : 0.0f;
+      { float fp = i == pessoaFoco && !pessoaCaca ? 1.0f : 0.0f;
         foco_anel(r, raioCartaz(PES_CARD_W, PES_CARD_H), fp, a);
         r = foco_zoom(r, fp); }
       if (t) {
         gfx_tex_aspect_atual = tex_aspecto(po);
-        gfx_rect(r, t, GFX_CARD, i == pessoaFoco ? 1.0f : 0.0f, 0, 0,
+        gfx_rect(r, t, GFX_CARD, i == pessoaFoco && !pessoaCaca ? 1.0f : 0.0f, 0, 0,
                  raioCartaz(PES_CARD_W, PES_CARD_H), 0, 0, 0, a);
         gfx_tex_aspect_atual = 0.0f;
       } else {

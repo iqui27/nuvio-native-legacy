@@ -63,6 +63,7 @@
 #include "trakt.h"
 #include "simkl.h"
 #include "plrui.h"
+#include "caca.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -183,6 +184,12 @@ static PerfilDestaque dPedido;
 // surgem em cascata de 70 ms e as barras do duelo crescem em 1 s. So alfa e
 // largura: nenhuma camada a mais.
 static float tCena, tBarra;
+// A PORTA DA CACA (plano social-pessoal, 8.3): um botao no canto de cima,
+// alcancado por CIMA de qualquer parada (secao PF_SEC_CACA). Existe mesmo sem
+// Trakt: a Caca le o que o app ja sabe, nao o snapshot desta tela.
+#define PF_SEC_CACA 3
+static int pedirCaca, secaoAntes;
+static float focoCaca;
 static int rostosCabem(void);
 static int cartazesCabem(void);
 
@@ -276,6 +283,7 @@ int perfil_iniciar(void) {
   amigo = modo = 0; focoAmigos = 0; dLinha = dCol = 0; dId[0] = 0;
   dTem = 0; dRev = ~0u; dLido = 0; memset(dFoco, 0, sizeof dFoco);
   pedirAmigo = dTemPedido = 0; tCena = tBarra = 0;
+  pedirCaca = 0; focoCaca = 0; secaoAntes = 0;
   return 1;
 }
 void perfil_encerrar(void) { perfil_iniciar(); }
@@ -355,7 +363,7 @@ void perfil_definir_dados(const PerfilDados *d) {
   carregando = 0;
   erro[0]=0; estado=temDados?(dados.plays||dados.nDestaques?PF_PRONTO:PERFIL_ESTADO_SEM_ATIVIDADE):PF_ERRO; escolhido=-1;
   dia=limitar(dia,0,dados.nDias?dados.nDias-1:0);
-  if(!temDados)secao=0;
+  if(!temDados && secao != PF_SEC_CACA)secao=0;
   if (item >= nCards()) item = nCards() ? nCards() - 1 : 0;
   // Uma parada so existe se tiver filho focavel. Sem calendario o foco cai nos
   // cards; sem cards ele volta para o calendario. (Na tela antiga as secoes 0 e
@@ -434,6 +442,8 @@ void perfil_voltar_ao_duelo(void) {
   if (k >= 0 && temDados) duelo(k, 1);
 }
 
+int perfil_pediu_caca(void) { int v = pedirCaca; pedirCaca = 0; return v; }
+
 int perfil_pediu_amigo(char *id, size_t tam) {
   if (!pedirAmigo) return 0;
   pedirAmigo = 0;
@@ -451,6 +461,17 @@ void perfil_evento(const SDL_Event *e) {
     perfil_fechar(); return;
   }
   if (modo == PF_DUELO) { eventoDuelo(k, ok); return; }
+  if (secao == PF_SEC_CACA) {
+    if (ok) pedirCaca = 1;
+    else if (k == SDLK_DOWN) secao = temDados ? secaoAntes : 0;
+    else if (k == SDLK_LEFT) perfil_fechar();
+    return;
+  }
+  // CIMA na borda de cima de qualquer parada sobe para o botao da Caca.
+  if (k == SDLK_UP && (!temDados || (secao == 0 && dia < 7) || (secao == 1 && item == 0) ||
+                       secao == 2)) {
+    secaoAntes = secao; secao = PF_SEC_CACA; return;
+  }
   if(k==SDLK_r || ((!temDados || erro[0]) &&
      (k==SDLK_RETURN || k==SDLK_KP_ENTER))) {
     if(!carregando)pedirAtualizar=1;
@@ -509,6 +530,8 @@ void perfil_atualizar(float dt, Uint32 agora) {
                             dt, NV_MOLA_FOCO);
   focoAmigos = anim_mola(focoAmigos, modo == PF_RESUMO && secao == 2 ? 1.0f : 0.0f,
                          dt, NV_MOLA_FOCO);
+  focoCaca = reduzida ? (secao == PF_SEC_CACA) : anim_mola(focoCaca, secao == PF_SEC_CACA ? 1.0f : 0.0f,
+                                                           dt, NV_MOLA_FOCO);
   for (int i = 0; i < SV_FILA_MAX; i++)
     dFoco[i] = anim_mola(dFoco[i], modo == PF_DUELO && dLinha == 1 && i == dCol ? 1.0f : 0.0f,
                          dt, NV_MOLA_FOCO);
@@ -741,9 +764,24 @@ static float seletorAmigos(float xDir, float cy, float maxW, float a) {
   return w;
 }
 
+// O botao "Caca" no canto direito, centrado em `cy`. "Caca · 2/3": quantas
+// cacadas estao quase fechadas, quando ha. Devolve a largura (0 = nao desenhou).
+static float botaoCaca(float cy, float a) {
+  char rot[64];
+  int idx[3], ns = caca_sugestoes(idx, 3), n = caca_n();
+  float w;
+  if (modo == PF_DUELO) return 0.0f;
+  if (ns > 0) snprintf(rot, sizeof rot, i18n("Caça · %d quase"), ns);
+  else if (n > 0) snprintf(rot, sizeof rot, i18n("Caça · %d"), n);
+  else snprintf(rot, sizeof rot, "%s", i18n("Caça"));
+  w = plrui_botao_largura(rot, "aj_crosshair");
+  plrui_botao(PF_X + PF_W - w, cy - 30.0f, rot, "aj_crosshair", focoCaca, a);
+  return w;
+}
+
 static void desenharCabecalho(float a) {
   float tx = PF_X + PF_AVATAR + 28.0f, cy = PF_TOPO + PF_AVATAR * 0.5f;
-  float wTxt = PF_W - PF_AVATAR - 28.0f - 300.0f;
+  float wTxt = PF_W - PF_AVATAR - 28.0f - 520.0f;   // periodo + botao da Caca
   char sub[200];
   size_t k = 0;
   TxtLinha nome, l2;
@@ -771,15 +809,16 @@ static void desenharCabecalho(float a) {
     txtEsc(nome, tx, y, PF_ESC_NOME, a);
     if (sub[0]) txt_desenhar_alpha(l2, tx, y + hN + 4.0f, a); }
   // O PERIODO numa etiqueta de vidro (a .ilha do mockup: pilula, sem aro).
+  { float wc = botaoCaca(cy, a);
   if (modo != PF_DUELO && dados.periodo[0]) {
     TxtLinha m = txt_linha(TXT_MINI, "Hg", 104, 104, 104, 255);
     float w = txt_tracking(TXT_HERO_SEC, dados.periodo, 104, 104, 104, -1.0f, 0, 0, 2.2f);
-    GfxRect pr = { PF_X + PF_W - w - 40.0f, cy - 24.0f, w + 40.0f, 48.0f };
+    GfxRect pr = { PF_X + PF_W - w - 40.0f - (wc > 0.0f ? wc + 16.0f : 0.0f), cy - 24.0f, w + 40.0f, 48.0f };
     if (ajustes_vidro()) gfx_cor(pr, 0.5f, .92f, .93f, 1.0f, .06f * a);
     else gfx_cor(pr, 0.5f, .082f, .086f, .102f, a);
     txt_tracking(TXT_HERO_SEC, dados.periodo, 140, 140, 140,
                  pr.x + 20.0f, cy - (float)m.h * 0.5f - 2.0f, a, 2.2f);
-  }
+  } }
 }
 
 // OS NUMEROS: um cartao de vidro por fato, valor em 44/800 e o rotulo em caixa
@@ -1153,14 +1192,14 @@ void perfil_desenhar(Uint32 agora) {
   // UM recorte, aberto aqui e fechado aqui: gfx_sem_recorte() DESLIGA a
   // tesoura, nao devolve a de fora.
   gfx_recorte(0,0,NV_TELA_W,PF_CONTEUDO_H);
-  if(carregando && !temDados) desenharLoading(agora,a);
-  else if(!temDados) desenharVazio(a);
+  if(carregando && !temDados) { desenharLoading(agora,a); botaoCaca(64.0f + 34.0f, a); }
+  else if(!temDados) { desenharVazio(a); botaoCaca(64.0f + 34.0f, a); }
   else if (modo == PF_DUELO) {
     desenharCabecalho(a);
     desenharDuelo(agora, a);
   } else {
     if (temIdentidade) desenharCabecalho(a);
-    else { tituloPagina(a); }
+    else { tituloPagina(a); botaoCaca(64.0f + 34.0f, a); }
     desenharNumeros(a);
     if (surge(5) > 0.002f) desenharAtividade(a * surge(5));
     if (surge(6) > 0.002f) desenharDestaques(a * surge(6));

@@ -60,6 +60,8 @@
 #include "agenda.h"
 #include "agendaviso.h"
 #include "perfil.h"
+#include "caca.h"
+#include "cacaui.h"
 #include "salvos.h"
 #include "contapend.h"
 #include "contalib.h"
@@ -573,10 +575,13 @@ static int ltdDoGuia;
 // O perfil do amigo aberto pelo DUELO do Perfil e Stats: Voltar nele volta ao
 // Perfil, nao a home. Qualquer outra troca de tela esquece.
 static int socialDoPerfil;
+// A Caca aberta pelo Perfil volta para o Perfil (como o perfil do amigo).
+static int cacaDoPerfil;
 
 static void trocarTela(Tela nova) {
   if (nova == tela) return;
   if (nova != TELA_SOCIAL) socialDoPerfil = 0;
+  if (nova != TELA_CACA) cacaDoPerfil = 0;
   if (tela == TELA_AJUSTES) ajustes_encerrar();
   if (tela == TELA_LIVETV_DIAG) livetvdiag_encerrar();
   tela = nova;
@@ -1568,6 +1573,7 @@ int app_iniciar(const char *dirArte) {
     printf("[app] sem arte no pacote: a home so aparece depois do primeiro sync\n");
   menu_iniciar();
   perfil_iniciar();
+  caca_iniciar();
   // ANTES do primeiro sync e da primeira descoberta: salvos_aplicar_catalogo
   // marca `naLista` no catalogo do cache, entao o painel e a Biblioteca ja
   // abrem certos no primeiro quadro. Ler depois faria a lista local piscar.
@@ -2159,6 +2165,7 @@ void app_evento(const SDL_Event *e) {
     case TELA_AGENDA:     agendaui_evento(e);   break;
     case TELA_PERFIL:     perfil_evento(e);     break;
     case TELA_SOCIAL:     amigoperfil_evento(e); break;
+    case TELA_CACA:       cacaui_evento(e);     break;
     case TELA_ADDONS:     addonsui_evento(e);   break;
     case TELA_PLUGINS:    pluginsui_evento(e);  break;
     case TELA_AJUSTES:    ajustes_evento(e);    break;
@@ -2911,6 +2918,13 @@ void app_atualizar(float dt, Uint32 agora) {
       if (spainel_aberto()) spainel_fechar();
       amigoperfil_abrir(pid); trocarTela(TELA_SOCIAL);
     }
+    if (tela == TELA_PERFIL && perfil_pediu_caca()) {
+      cacaui_abrir(-1); trocarTela(TELA_CACA);
+      cacaDoPerfil = 1;
+    }
+    if (tela == TELA_CACA && cacaui_pediu_busca()) {
+      trocarTela(TELA_BUSCA); menu_definir_destino(MENU_BUSCAR);
+    }
     if (tela == TELA_PERFIL && perfil_pediu_amigo(pid, sizeof pid)) {
       amigoperfil_abrir(pid); trocarTela(TELA_SOCIAL);
       socialDoPerfil = 1;
@@ -3026,6 +3040,7 @@ void app_atualizar(float dt, Uint32 agora) {
               || (tela == TELA_AGENDA     && agendaui_quer_sair())
               || (tela == TELA_PERFIL      && perfil_quer_sair())
               || (tela == TELA_SOCIAL      && amigoperfil_quer_sair())
+              || (tela == TELA_CACA        && cacaui_quer_sair())
               || (tela == TELA_AJUSTES    && ajustes_quer_sair())
               || (tela == TELA_DIAGNOSTICO && diagnostico_quer_sair());
     if (fechar) {
@@ -3034,6 +3049,9 @@ void app_atualizar(float dt, Uint32 agora) {
       // só para alcançar a navegação principal.
       if (saiuPorEsquerda && sidebar_permitida()) {
         menu_abrir();
+      } else if (tela == TELA_CACA && cacaDoPerfil) {
+        trocarTela(TELA_PERFIL);
+        menu_definir_destino(MENU_PERFIL);
       } else if (tela == TELA_SOCIAL && socialDoPerfil) {
         trocarTela(TELA_PERFIL);
         menu_definir_destino(MENU_PERFIL);
@@ -3163,6 +3181,12 @@ void app_atualizar(float dt, Uint32 agora) {
       if (perfil_item_selecionado(&p) && p.id[0]) {
         idx = cat_indice_por_imdb(p.id);
         if (idx >= 0) abrirPorIndice(idx); else desc_pedir_titulo(p.id);
+      }
+    } else if (tela == TELA_CACA) {
+      char si[24];
+      if (cacaui_pediu_titulo(si, sizeof si) && si[0]) {
+        idx = cat_indice_por_imdb(si);
+        if (idx >= 0) abrirPorIndice(idx); else desc_pedir_titulo(si);
       }
     } else if (tela == TELA_SOCIAL) {
       char si[24];
@@ -4014,6 +4038,10 @@ void app_atualizar(float dt, Uint32 agora) {
     home_trailer_passo(porque == NULL, dt, agora); }
   trailer_atualizar(agora);
   perfil_atualizar(dt, agora);
+  // A Caca anda em toda tela: o aviso de conquista sai sem player (depois
+  // dos creditos, na volta a Home), nunca durante o filme.
+  caca_passo(agora, !player_aberto());
+  if (tela == TELA_CACA) cacaui_atualizar(dt, agora);
   spainel_atualizar(dt, agora);
   recomenda_atualizar(dt, agora);
   recenviar_atualizar(dt, agora);
@@ -4087,6 +4115,7 @@ static void desenharAtrasDoPainel(void *ctx) {
       case TELA_AGENDA:     agendaui_desenhar(agora);   break;
       case TELA_PERFIL:     perfil_desenhar(agora);     break;
       case TELA_SOCIAL:     amigoperfil_desenhar(agora);     break;
+      case TELA_CACA:       cacaui_desenhar(agora);     break;
       case TELA_ADDONS:     addonsui_desenhar(agora);   break;
       case TELA_PLUGINS:    pluginsui_desenhar(agora);  break;
       case TELA_AJUSTES:    ajustes_desenhar(agora);    break;
