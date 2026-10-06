@@ -205,6 +205,7 @@ int  diario_regra_mesma_vez(const DiarioEntrada *a, const DiarioEntrada *b);
 // Confianca da origem (maior = mais confiavel).
 int  diario_regra_confianca(char origem);
 // Linha de texto <-> entrada (formato do arquivo). Devolve tamanho / 1.
+// No arquivo, flags pode trazer o bit 0x8000 (interno: envio ao cofre pendente).
 size_t diario_linha(const DiarioEntrada *e, char *dst, size_t tam);
 int  diario_ler_linha(const char *linha, DiarioEntrada *e);
 // "tt123:2:5" -> id "tt123", t 2, e 5.

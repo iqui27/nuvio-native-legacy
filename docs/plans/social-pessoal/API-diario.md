@@ -60,3 +60,4 @@ para não colidir). Rotas: `POST /v1/diario/lote`, `GET /v1/diario?desde=`,
 ## Mudanças na API
 
 - 06/10: versão inicial (header + stub).
+- 06/10: implementação real em `src/diario.c` (mesma API). Teste: `tests/diario.sh`.
