@@ -17,6 +17,7 @@ import { rotaAmigos, limpezaAmigos, despublicar, garantirPerfil, avatarPublico, 
 import { rotaEuNome, rotaAlcance, rotaEvento, rotaFeed, rotaAmigo, limpezaSocial,
          limparNome, avatarPerfilOk, resolverNome, rotaRecResposta } from "./social.js";
 import { rotaEnquete } from "./enquete.js";
+import { rotaTrava, travaRev } from "./trava.js";
 import { resolverCanonica, canonizarEntrada, identidadesDe, rotaIdentidades, idSimkl,
          perfilExiste, RECURSO } from "./identidade.js";
 
@@ -583,7 +584,10 @@ export async function rotaReceber(env, quem, url, req) {
   // O estado das respostas entra no ETag (quantas, soma dos instantes e das
   // reacoes): responder em outra TV tem de invalidar o 304 desta.
   const sig = respostas.reduce((a, x) => a + x.respondido + (x.reacao === null ? 0 : x.reacao + 2) + x.terminou, 0);
-  const etag = `"${quem.id.length}-${maiorId}-${naoVistas}-${respostas.length}.${sig}"`;
+  // TRAVA DE SERIE (migracao 012): a revisao das travas desta pessoa pega
+  // carona nesta sondagem. Mudou = a TV faz GET /v1/travas. Sem a tabela, 0.
+  const tRev = await travaRev(env, quem.id);
+  const etag = `"${quem.id.length}-${maiorId}-${naoVistas}-${respostas.length}.${sig}.${tRev}"`;
   if (req.headers.get("if-none-match") === etag) {
     // SEM CORS AQUI, o XHR da TV via `mode: "cors"` nunca via ESTE 304 —
     // via um erro de rede generico, porque a resposta sem
@@ -592,7 +596,7 @@ export async function rotaReceber(env, quem, url, req) {
     // novo") era exatamente o caminho sem CORS; so o 200 com corpo tinha.
     return new Response(null, { status: 304, headers: { etag, ...CORS } });
   }
-  return json({ cursor: maiorId, novas: naoVistas, itens, respostas }, 200, { etag });
+  return json({ cursor: maiorId, novas: naoVistas, itens, respostas, travaRev: tRev }, 200, { etag });
 }
 
 async function rotaVisto(env, quem, corpo) {
@@ -805,6 +809,10 @@ export default {
     // Enquete na ilha (enquete.js; exige migracao-009).
     const enq = await rotaEnquete(rota, req.method, env, quem, corpo, h);
     if (enq) return enq;
+
+    // Trava de serie (trava.js; exige migracao-012).
+    const trv = await rotaTrava(rota, req.method, env, quem, corpo, h, req, { limitar, mesmaConta });
+    if (trv) return trv;
 
     // Perfil publico, busca, pedidos, bloqueio e atividade (amigos.js).
     const amigos = await rotaAmigos(rota, req.method, env, quem, corpo, h);
