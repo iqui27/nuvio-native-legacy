@@ -121,8 +121,8 @@ int dormiu_regra(const DormiuSinal *s, int *ponto) {
 
 void dormiu_rotulo(int seg, char *d, unsigned tam) {
   if (seg < 0) seg = 0;
-  if (seg >= 3600) snprintf(d, tam, "%d:%02d", seg / 3600, (seg % 3600) / 60);
-  else snprintf(d, tam, "%d min", seg / 60);
+  // Sempre horario (h:mm): a posicao no filme, nao uma duracao ("25 min").
+  snprintf(d, tam, "%d:%02d", seg / 3600, (seg % 3600) / 60);
 }
 
 // --------------------------------------------------------------- registro

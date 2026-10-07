@@ -64,7 +64,7 @@ int main(void) {
   s.credTardeSeg = -1; s.voltouSeg = 600; assert(dormiu_regra(&s, NULL));
   s.posTeclaSeg = 7100; assert(dormiu_regra(&s, &ponto) && ponto == 7200);   // nao passa da duracao
   dormiu_rotulo(4320, r, sizeof r); assert(!strcmp(r, "1:12"));
-  dormiu_rotulo(2880, r, sizeof r); assert(!strcmp(r, "48 min"));
+  dormiu_rotulo(2880, r, sizeof r); assert(!strcmp(r, "0:48"));
 
   dormiu_iniciar();
 

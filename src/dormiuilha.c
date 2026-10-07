@@ -48,7 +48,7 @@ void dormiu_perguntar(const char *titulo, const char *poster, const char *arte, 
   // A linha curta so leva T/E; a frase inteira (com a hora) quebra em 2 linhas no texto.
   snprintf(m.linha, sizeof m.linha, "%s", ep);
   if (m.linha[0]) m.linha[strlen(m.linha) - 4] = 0;   // tira o " · " do fim (4 bytes)
-  snprintf(m.texto, sizeof m.texto, "%s ~%s. %s", i18n("Você parou de mexer no controle por volta de"), rot,
+  snprintf(m.texto, sizeof m.texto, "%s %s. %s", i18n("Você parou de mexer no controle por volta de"), rot,
            i18n("Voltar põe a retomada ali. Só você vê isto."));
   snprintf(m.arte, sizeof m.arte, "%s", arte && arte[0] ? arte : (poster ? poster : ""));
   m.tipo = ILHA_ACENTO;
