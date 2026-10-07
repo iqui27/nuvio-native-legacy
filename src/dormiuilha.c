@@ -45,8 +45,11 @@ void dormiu_perguntar(const char *titulo, const char *poster, const char *arte, 
   snprintf(texto, sizeof texto, i18n("Você pegou no sono em %s?"), ilha_forte(forte, sizeof forte, titulo));
   snprintf(m.kicker, sizeof m.kicker, "%s", i18n("Pegou no sono"));
   snprintf(m.titulo, sizeof m.titulo, "%s", titulo);
-  snprintf(m.linha, sizeof m.linha, "%s%s ~%s", ep, i18n("Você parou de mexer no controle por volta de"), rot);
-  snprintf(m.texto, sizeof m.texto, "%s", i18n("Voltar põe a retomada ali. Só você vê isto."));
+  // A linha curta so leva T/E; a frase inteira (com a hora) quebra em 2 linhas no texto.
+  snprintf(m.linha, sizeof m.linha, "%s", ep);
+  if (m.linha[0]) m.linha[strlen(m.linha) - 4] = 0;   // tira o " · " do fim (4 bytes)
+  snprintf(m.texto, sizeof m.texto, "%s ~%s. %s", i18n("Você parou de mexer no controle por volta de"), rot,
+           i18n("Voltar põe a retomada ali. Só você vê isto."));
   snprintf(m.arte, sizeof m.arte, "%s", arte && arte[0] ? arte : (poster ? poster : ""));
   m.tipo = ILHA_ACENTO;
   m.nBotoes = 2;
