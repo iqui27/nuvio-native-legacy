@@ -207,37 +207,29 @@ async function saveTriagem(patterns, lastRegistroId) {
 
 async function findTriagemIssue() {
   try {
-    // Use GitHub REST API to search for triagem issues
+    // Search for any open issue with "Relatório" in title (most likely the triage report)
     const result = execSync(
-      'gh api repos/iqui27/nuvio-native-legacy/issues -f labels=triagem -f state=open -f per_page=10',
-      { encoding: 'utf8' }
-    );
-
-    const issues = JSON.parse(result || '[]');
-    const triageIssue = issues.find(i => i.title.includes('Relatório de logs'));
-
-    if (triageIssue) {
-      return triageIssue.number;
-    }
-
-    if (issues.length > 0) {
-      return issues[0].number;
-    }
-
-    console.warn('No triagem issue found with label');
-    // Fallback: search for any open issue with "Relatório" in title
-    const allResult = execSync(
       'gh api repos/iqui27/nuvio-native-legacy/issues -f state=open -f per_page=50',
       { encoding: 'utf8' }
     );
 
-    const allIssues = JSON.parse(allResult || '[]');
-    const reportIssue = allIssues.find(i => i.title.includes('Relatório'));
+    const issues = JSON.parse(result || '[]');
+    const reportIssue = issues.find(i => i.title.includes('Relatório'));
     if (reportIssue) {
+      console.log(`Found triagem issue: #${reportIssue.number} - ${reportIssue.title}`);
       return reportIssue.number;
     }
 
-    return 353; // Fallback to the opened issue from the webhook
+    // Otherwise, look for any issue with triagem label
+    for (const issue of issues) {
+      if (issue.labels && issue.labels.some(l => l.name === 'triagem')) {
+        console.log(`Found triagem labeled issue: #${issue.number}`);
+        return issue.number;
+      }
+    }
+
+    // Last resort: use issue #353 from the webhook
+    return 353;
   } catch (e) {
     console.error('Failed to find triagem issue:', e.message);
     // Fallback to issue #353 which was just opened
