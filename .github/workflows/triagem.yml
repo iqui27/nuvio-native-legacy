@@ -1,0 +1,38 @@
+name: Log Triage
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  issues:
+    types:
+      - opened
+      - reopened
+
+jobs:
+  triage:
+    name: Automatic log triage
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    environment:
+      name: cloudflare-d1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install -g wrangler@latest
+        working-directory: servidor/recomendacoes
+
+      - name: Run log triage
+        run: node triagem.mjs
+        working-directory: servidor/recomendacoes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
