@@ -52,6 +52,9 @@ int  intro_botao_visivel(double *fim,int *tipo);
 int  intro_extrair(const char *json,IntroTrecho *saida,int max);
 // Copia ate `max` trechos conhecidos; devolve quantos.
 int  intro_trechos(IntroTrecho *saida,int max);
+// Copia apenas creditos com inicio/fim numericos explicitos e verificados na
+// resposta atual. Sem fim, vizinhos, capitulos e estimativas nao entram.
+int  intro_creditos_limitados(IntroTrecho *saida,int max);
 #ifdef NV_SHOT_HOOKS
 void intro_shot_definir(const IntroTrecho *v,int n);   // capturas: trechos fixos
 #endif

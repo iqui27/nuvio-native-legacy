@@ -109,6 +109,10 @@ int ajustes_pausa_overlay(void);
 int ajustes_classif_player(void);   // 1 = mostra a classificacao/guia parental no player (padrao)
 // "O que achou?" nos creditos (reacao.h). Ligado de fabrica.
 int ajustes_reacao_creditos(void);
+// Credits with explicit start/end markers, default off; this profile on this TV.
+int ajustes_auto_creditos(void);
+// After principal-profile inheritance, restore only this profile's credit choice.
+void ajustes_auto_creditos_restaurar(int perfil);
 // Medidor de desempenho na ilha do relogio (desempenho.h): Desempenho desta TV,
 // local. 0 = desligado, 1 = Minimo, 2 = Menor, 3 = Grande (DS_* de desempenho.h).
 int ajustes_medidor_desempenho(void);

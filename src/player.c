@@ -72,6 +72,7 @@ static void avisarCascaAberto(int v) { (void)v; }
 #include "mkvass.h"
 #include "relogio.h"
 #include "intro.h"
+#include "creditosauto.h"
 #include "credfonte.h"
 #include "credaprende.h"
 #include "seekr.h"
@@ -205,6 +206,7 @@ static int   idx = 0;
 #define PLR_SCR_TOCOU_S 5.0f   // #179: reproducao continua antes do /scrobble/start
 static int   tocando = 1;
 static int retomandoSalto; // seek requested playback; buffering is not user pause
+static CreditosAuto creditosAuto;
 // Uma unica sessao VOD pausada, por no maximo dois minutos. Nao abre conexao
 // especulativa: e o pipeline que ja estava exibindo este titulo.
 //
@@ -1221,6 +1223,7 @@ void player_aspecto_ciclar(void) {
 }
 
 void player_abrir(int indiceCatalogo, const char *url) {
+  creditosauto_zerar(&creditosAuto);
   player_descartar_retido();
   // O trailer usa o mesmo plano de video (LG) — solta antes de o player
   // carregar a fonte, senao o load novo pisa no mediaId do trailer.
@@ -2473,6 +2476,12 @@ static void avTecla(SDL_Keycode k) {
 //    mexia no pipeline com o video correndo. Agora o video PAUSA ao comecar o
 //    avanco e volta a tocar sozinho ao terminar, se estava tocando — e o
 //    pipeline recebe UMA posicao, no fim, em vez de uma por toque.
+static void recuarAutomatico(double de, double para) {
+  if (!isfinite(de) || !isfinite(para) || para >= de) return;
+  creditosauto_recuar(&creditosAuto, de, para);
+  posplay_recuar();
+}
+
 static void saltar(int dir, int repeticao) {
   int novo = 0;
   if (!scrubbing) {
@@ -2493,8 +2502,10 @@ static void saltar(int dir, int repeticao) {
   scrubUltimo = agora;
   if (passo <= 0.0f) return;
   scrubPassos++;
+  double de = posSeg;
   posSeg += dir * passo;
   posSeg = anim_clamp(posSeg, 0.0f, duracaoSeg);
+  recuarAutomatico(de, posSeg);
 }
 
 // Fim do avanco: manda a posicao escolhida e devolve o estado de antes.
@@ -3053,6 +3064,29 @@ void player_atualizar(float dt, Uint32 agora) {
   // PÓS-REPRODUÇÃO: o proximo episodio ou os relacionados, no fim do titulo.
   { const CatItem *ci = item();
     int eSerie = ci && !strcmp(ci->tipo, "series");
+    if (comVideo) creditosauto_fonte(&creditosAuto, video_url_atual());
+    int aguardaBusca = creditosauto_aguardar(&creditosAuto, video_pos(),
+      comVideo && video_pronto() && tocando && !scrubbing && !video_bufferando_ms(),
+      comVideo && video_terminou());
+    posplay_aguardar_busca(aguardaBusca);
+    // Usa o relogio e os sinais existentes do pipeline, em todas as plataformas.
+    // Creditos sem fim explicito continuam disponiveis apenas pelo botao manual.
+    int livre = comVideo && video_ativo() && video_pronto() && tocando &&
+      retomadaAplicada && duracaoReal && !ehCanal() && !scrubbing && !retomandoSalto &&
+      !saindo && !erroFonte && !esperandoFonte && !pedFontes && !pedFaixas &&
+      !stream_folha_aberta() && !faixas_aberta() && !episodios_aberto() &&
+      !episodios_menu_aberto_qualquer() && !pausao_visivel() && !video_bufferando_ms();
+    if (livre && !aguardaBusca && ajustes_auto_creditos() && creditosAuto.fonte[0]) {
+      IntroTrecho v[8]; double fim, pos = video_pos();
+      int n = intro_creditos_limitados(v, 8);
+      if (creditosauto_decidir(&creditosAuto, v, n, pos, video_duracao(),
+                               !eSerie, 1, 1, &fim)) {
+        video_buscar(fim); // limite exato: a cena depois dos creditos fica intacta
+        posplay_aguardar_busca(1);
+        printf("[intro] creditos automaticos: %.3fs -> %.3fs\n", pos, fim);
+        fflush(stdout);
+      }
+    }
     // Canal ao vivo nao tem "fim": sem a guarda, o relogio reserva cruzaria os
     // 90% em ~1h42 de exibicao e abriria o painel de relacionados no meio da
     // programacao.
@@ -3683,11 +3717,15 @@ static void ponteiroBuscar(int a, int b) {
       if (tocando && comVideo) { video_pausar(1); tocando = 0; }
     }
     barraFoco = 1; skipFoco = 0;
+    double de = posSeg;
     posSeg = f * duracaoSeg;
+    recuarAutomatico(de, posSeg);
     scrubUltimo = SDL_GetTicks();
     return;
   }
+  double de = comVideo ? video_pos() : posSeg;
   posSeg = f * duracaoSeg;
+  recuarAutomatico(de, posSeg);
   if (comVideo) video_buscar(posSeg);
 }
 static void ponteiroSkip(int a, int b) { (void)a; (void)b; skipFoco = 1; barraFoco = 1; acordar(); }

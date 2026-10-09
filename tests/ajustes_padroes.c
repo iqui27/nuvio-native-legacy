@@ -106,6 +106,10 @@ int main(void) {
   assert(!strcmp(CHAVE[AJ_FANART_CHAVE + 1], "-diagnostico"));
   assert(valor[AJ_FANART_CHAVE] == 0 && valor[AJ_DIAGNOSTICO] == 0);
   assert(valor[AJ_MDB_MAL] == 0);
+  assert(valor[AJ_AUTO_CREDITOS] == 1 && !ajustes_auto_creditos());
+  assert(!strcmp(CHAVE[AJ_AUTO_CREDITOS], "autoCreditosLocal"));
+  assert(somenteDesteAparelho(AJ_AUTO_CREDITOS) && dePerfil(AJ_AUTO_CREDITOS));
+  assert(!strcmp(i18n(OPCOES[AJ_AUTO_CREDITOS].rotulo), "Automatically skip credits"));
   puts("ajustes_padroes: ok");
   return 0;
 }

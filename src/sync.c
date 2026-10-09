@@ -1888,6 +1888,7 @@ void sync_trocar_perfil(int antes) {
   if (!ajustes_perfil_restaurar(depois)) {
     int principal = perfilPrincipal();
     if (principal != depois && principal != antes) ajustes_perfil_restaurar(principal);
+    ajustes_auto_creditos_restaurar(depois);
   }
   // 3. A conta manda de novo (blob do perfil novo), e a base e a pendencia do
   //    perfil anterior caem — ver sync_reaplicar_ajustes.

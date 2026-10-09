@@ -111,7 +111,7 @@
 //   * o buffer vem de malloc/pilha do C e a escrita e feita DEPOIS, entao a
 //     view (HEAPF64/HEAPU8) tem de ser indexada na hora do uso — nunca guardada
 //     entre chamadas. Aqui isso e automatico porque cada operacao reindexa.
-//   * "estado" devolve SO DOUBLES, oito deles, e nao uma struct mista. Um
+//   * "estado" devolve SO DOUBLES, nove deles, e nao uma struct mista. Um
 //     campo int no meio obrigaria a acertar deslocamento e alinhamento em duas
 //     linguagens; um vetor de um tipo so nao tem como sair de fase.
 EM_JS(double, nv_av, (const char *cmd, const char *txt,
@@ -400,6 +400,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     // aqui mesmo) ou outra coisa no mesmo quadro. So depois disso vale
     // tentar pause/seek/play ou outra estrategia.
     S.legTxt = ""; S.legAte = 0;   // a fala de antes do salto nao vale no destino
+    S.fim = 0;                    // um fim anterior nao vale depois da busca
     S.tSeek = Date.now();          // o "estado" volta a ler getCurrentTime por 1,5 s
     var t0 = performance.now();
     try { p4.seekTo(a | 0, function () {}, function () {}); } catch (e) { return 0; }
@@ -441,10 +442,10 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
   }
 
   if (op === "estado") {
-    // OITO DOUBLES, nesta ordem, e a mesma no C (ver EST_*). Um tipo so: sem
+    // NOVE DOUBLES, nesta ordem, e a mesma no C (ver EST_*). Um tipo so: sem
     // deslocamento a acertar, sem alinhamento a supor.
     // dstTam vem em BYTES, como em "faixas": um so contrato para o buffer.
-    if (!dst || dstTam < 64) return 0;
+    if (!dst || dstTam < 72) return 0;
     var p6 = pl();
     var dur = 0;
     if (p6 && S.aberto && S.pronto) {
@@ -495,6 +496,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     HEAPF64[o + 5] = S.larg;
     HEAPF64[o + 6] = S.alt;
     HEAPF64[o + 7] = S.erro ? 1 : 0;
+    HEAPF64[o + 8] = S.fim ? 1 : 0;
     return 1;
   }
 
@@ -719,7 +721,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
 // Indices do vetor devolvido por "estado". Precisam casar com a ordem escrita
 // no JS acima, e sao a UNICA coisa combinada entre os dois lados.
 enum { EST_POS, EST_DUR, EST_TOCANDO, EST_PRONTO, EST_ABERTO,
-       EST_LARG, EST_ALT, EST_ERRO, EST_N };
+       EST_LARG, EST_ALT, EST_ERRO, EST_FIM, EST_N };
 
 // O pedido que atravessa para o fio principal. Fica na PILHA do chamador: com
 // -pthread a memoria e compartilhada e avChamar() e sincrona, entao o quadro
@@ -796,7 +798,7 @@ static int    ligado;        // video_iniciar deu certo
 static int    temAvplay;     // o firmware oferece webapis.avplay
 static Uint32 aberturaEm;   // avplay open (log do inicio, #202)
 static int    ativo;         // ha sessao aberta — e o que abre o furo
-static int    tocando, pronto;
+static int    tocando, pronto, terminou;
 static double posSeg, durSeg;
 static int    vidW, vidH;
 static int    houveErro;
@@ -893,6 +895,7 @@ int video_tocar(const char *url) {
   reconAudio = reconLeg = -1; reconFaixasPend = 0; reconBuscar = -1.0;
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; faixasLidas = 0;
   posSeg = durSeg = 0; vidW = vidH = 0; houveErro = 0; erroTexto[0] = 0;
+  terminou = 0;
   seekEm = 0;
   // Sonda de MKV so faz sentido em MKV. Num MP4 e descida garantidamente
   // perdida pela MESMA conexao que esta transmitindo — o log da LG dizia
@@ -1196,6 +1199,7 @@ void video_bombear(void) {
   durSeg   = est[EST_DUR];
   tocando  = est[EST_TOCANDO] != 0;
   pronto   = est[EST_PRONTO]  != 0;
+  terminou = est[EST_FIM]     != 0;
   if (est[EST_LARG] > 0) vidW = (int)est[EST_LARG];
   if (est[EST_ALT]  > 0) vidH = (int)est[EST_ALT];
   if (pronto && posSeg > 0.5) reconIniciou = 1;
@@ -1266,7 +1270,7 @@ void video_parar(void) {
   reconFaixasPend = 0; reconBuscar = -1.0;
   seekEm = 0; mkvPendente = 0;
   if (temAvplay) AV0("parar");
-  ativo = tocando = pronto = 0;
+  ativo = tocando = pronto = terminou = 0;
   posSeg = durSeg = 0;
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; faixasLidas = 0;
   urlAtual[0] = 0;
@@ -1296,6 +1300,7 @@ void video_buscar(double segundos) {
   if (!temAvplay || !ativo) return;
   if (segundos < 0) segundos = 0;
   posSeg   = segundos;         // a barra responde na hora
+  terminou = 0;
   seekAlvo = segundos;
   seekEm   = SDL_GetTicks() + SEEK_REPOUSO_MS;
 }
@@ -1471,9 +1476,8 @@ const char *video_erro_texto(void) { return houveErro ? erroTexto : ""; }
 int    video_decoder_anunciou(void) { return 1; }
 // O AVPlay nao separa "audio nao suportado" de erro geral; sem sinal proprio.
 int    video_audio_nao_suportado(void) { return 0; }
-// O trailer deste alvo nao passa pelo AVPlay (ver trailer.c); nao ha fim a
-// contar aqui.
-int    video_terminou(void)   { return 0; }
+// Fim real do AVPlay (onstreamcompleted), nao o destino mostrado de um seek.
+int    video_terminou(void)   { return terminou; }
 int    video_conflito_recurso(void) { return 0; }
 
 double video_creditos(void) {

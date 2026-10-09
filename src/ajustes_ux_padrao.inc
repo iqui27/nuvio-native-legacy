@@ -248,3 +248,4 @@
   0, /* warm connections when a title opens (2.0.2): Ligado */
   0, /* check several sources at once (2.0.2; only sources ready on the debrid): Ligado */
   1, /* prepare the source when a title opens (2.0.2): Desligado */
+  1, /* automatically skip credits: Desligado (this profile on this TV) */

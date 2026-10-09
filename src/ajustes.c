@@ -475,6 +475,8 @@ typedef enum {
   AJ_FONTE_AQUECER,
   AJ_FONTE_CONFERIR_VARIAS,
   AJ_FONTE_PREPARAR,
+  // Credits with explicit boundaries; local to this profile on this TV.
+  AJ_AUTO_CREDITOS,
   AJ_N
 } OpcaoId;
 
@@ -1289,6 +1291,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Aquecer conexões ao abrir o título", V_LIGA, 2),   // local: fonteAquecerLocal
   ESC("Conferir várias fontes ao mesmo tempo", V_LIGA, 2),   // local: fonteConferirVariasLocal
   ESC("Preparar a fonte ao abrir o título", V_LIGA, 2),   // local: fontePrepararLocal
+  ESC("Pular créditos automaticamente", V_LIGA, 2),   // por perfil: autoCreditosLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -1508,6 +1511,7 @@ static const char *CHAVE[] = {
   "fonteAquecerLocal",
   "fonteConferirVariasLocal",
   "fontePrepararLocal",
+  "autoCreditosLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -1823,6 +1827,7 @@ int ajustes_fonte_tocar_conferindo(void) { return lig(AJ_FONTE_TOCAR_CONFERINDO)
 int ajustes_fonte_aquecer(void) { return lig(AJ_FONTE_AQUECER); }
 int ajustes_fonte_conferir_varias(void) { return lig(AJ_FONTE_CONFERIR_VARIAS); }
 int ajustes_fonte_preparar(void) { return lig(AJ_FONTE_PREPARAR); }
+int ajustes_auto_creditos(void) { return lig(AJ_AUTO_CREDITOS); }
 int ajustes_fonte_escopo(void)      { int v = valor[AJ_FONTE_ESCOPO]; return v < 0 || v > 2 ? 0 : v; }
 int ajustes_fonte_regex_modo(void)  { int v = valor[AJ_FONTE_REGEX]; return v < 0 || v > 2 ? 0 : v; }
 int ajustes_fonte_usar_outros(void) { return lig(AJ_FONTE_OUTROS); }
@@ -2921,6 +2926,7 @@ void ajustes_dir(const char *dir) {
   FILE *f;
   char caminho[600], linha[96];
   if (!dir || !*dir) return;
+  valor[AJ_AUTO_CREDITOS] = valorPadrao[AJ_AUTO_CREDITOS];
   snprintf(dirAjustes, sizeof dirAjustes, "%s", dir);
   fonteregra_carregar();
   fanartCarregar();
@@ -3799,6 +3805,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_FONTE_AQUECER:
     case AJ_FONTE_CONFERIR_VARIAS:
     case AJ_FONTE_PREPARAR:
+    case AJ_AUTO_CREDITOS: /* por perfil nesta TV; nunca no blob da conta */
     case AJ_FONTE_TEXTO:
     case AJ_SALVOS_DEST:
     case AJ_EPG_PAIS:       /* pais da grade: por aparelho, o web nao tem */
@@ -3890,7 +3897,8 @@ static int somenteDesteAparelho(int op) {
 // onde o historico vai e se o social existe. Entram na copia por perfil
 // (ajustes-p<N>.txt) e continuam FORA do blob (somenteDesteAparelho).
 static int perfilLocal(int i) {
-  return i == AJ_CW_FONTE || i == AJ_SALVOS_DEST || i == AJ_HIST_CONTA || i == AJ_SOCIAL;
+  return i == AJ_CW_FONTE || i == AJ_SALVOS_DEST || i == AJ_HIST_CONTA || i == AJ_SOCIAL ||
+         i == AJ_AUTO_CREDITOS;
 }
 
 static int dePerfil(int i) {
@@ -3903,6 +3911,26 @@ static int dePerfil(int i) {
 
 static void nomePerfil(char *dst, size_t tam, int perfil) {
   snprintf(dst, tam, "ajustes-p%d.txt", perfil);
+}
+
+// A first visit may inherit the principal's other settings, but automatic
+// credits always use this profile's own choice (off when no choice exists).
+void ajustes_auto_creditos_restaurar(int perfil) {
+  char nome[32], *t, *l;
+  int antes = valor[AJ_AUTO_CREDITOS];
+  valor[AJ_AUTO_CREDITOS] = valorPadrao[AJ_AUTO_CREDITOS];
+  nomePerfil(nome, sizeof nome, perfil);
+  t = perfil > 0 ? dados_ler(nome) : NULL;
+  for (l = t; l && *l; ) {
+    char chave[64], *fim = strchr(l, '\n');
+    int v;
+    if (fim) *fim = 0;
+    if (sscanf(l, "%63s %d", chave, &v) == 2 && !strcmp(chave, CHAVE[AJ_AUTO_CREDITOS]))
+      valor[AJ_AUTO_CREDITOS] = limita(AJ_AUTO_CREDITOS, v);
+    l = fim ? fim + 1 : NULL;
+  }
+  free(t);
+  if (antes != valor[AJ_AUTO_CREDITOS]) gravar();
 }
 
 void ajustes_perfil_guardar(int perfil) {
@@ -3932,6 +3960,11 @@ int ajustes_perfil_restaurar(int perfil) {
   nomePerfil(nome, sizeof nome, perfil);
   t = dados_ler(nome);
   if (!t) return 0;
+  // Older profile snapshots have no credits preference: they start off.
+  if (valor[AJ_AUTO_CREDITOS] != valorPadrao[AJ_AUTO_CREDITOS]) {
+    valor[AJ_AUTO_CREDITOS] = valorPadrao[AJ_AUTO_CREDITOS];
+    mudou++;
+  }
   for (l = t; l && *l; ) {
     char chave[64], *fim = strchr(l, '\n');
     int v, i;
@@ -3965,6 +3998,8 @@ void ajustes_perfil_esquecer(void) {
   // cobre com folga. Apagar arquivo que nao existe nao custa nada.
   for (i = 1; i <= 32; i++) { nomePerfil(nome, sizeof nome, i); dados_apagar(nome); }
   fonteregra_perfil_esquecer();
+  valor[AJ_AUTO_CREDITOS] = valorPadrao[AJ_AUTO_CREDITOS];
+  gravar();
 }
 
 // Onde esta o valor de `chave` dentro de [ini,fim): *vi aponta o primeiro
@@ -4923,6 +4958,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_AUD_LINGUA: return "Faixa de áudio escolhida quando o arquivo tem mais de uma. Se o idioma não existir no arquivo, o player usa a primeira.";
     case AJ_PAUSA_OVERLAY: return "Ao pausar, sobe uma ficha com a sinopse e os dados do que você está vendo.";
     case AJ_REACAO_CREDITOS: return "Nos créditos de um filme, ou no fim de uma temporada, um cartão pequeno pergunta o que você achou. Some sozinho em 8 s. Com o Trakt ligado, a resposta vira nota lá.";
+    case AJ_AUTO_CREDITOS: return "Pula créditos com início e fim conhecidos, preservando as cenas depois deles. Sem um fim válido, use o botão manual. Retroceder no vídeo mantém esse trecho disponível para assistir manualmente. Preferência deste perfil nesta TV.";
     case AJ_STALKER_PORTAL: return "Os canais do portal entram no Guia de TV, junto com os dos addons. Endereço sem http:// e sem barra no fim: meu-portal.exemplo.tv:8080";
     case AJ_STALKER_MAC: return "O MAC que o provedor cadastrou para você. É credencial: vale como senha, e só aparece nesta tela mascarado.";
     case AJ_STALKER_LIMPAR: return "Apaga o portal e o MAC deste perfil, e os canais dele somem do Guia. Sair da conta também apaga.";
@@ -6902,6 +6938,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_FONTE_PRIORIDADE: case AJ_FONTE_HDR:
     case AJ_SELOS_PACOTE:
     case AJ_REACAO_CREDITOS:
+    case AJ_AUTO_CREDITOS:
     case AJ_FONTE_PRAZO: case AJ_TAM_MAX: case AJ_TAM_MIN: case AJ_PROPORCAO_PADRAO: case AJ_DTS_AC3:
     case AJ_FONTE_ESCOPO: case AJ_FONTE_ADDONS_PERM: case AJ_FONTE_PLUGINS_PERM: case AJ_FONTE_OUTROS:
     case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO:

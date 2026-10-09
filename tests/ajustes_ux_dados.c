@@ -308,6 +308,35 @@ static void cacheSeek(void) {
   assert(i >= 0 && resultados[i].bloqueado);
 }
 
+static void creditosAutomaticos(void) {
+  int idiomaAntes = valor[AJ_IDIOMA], vezes = 0;
+  const char *categoria = "", *grupo = "";
+  assert(!ajustes_auto_creditos() && uxValorPadrao(AJ_AUTO_CREDITOS) == 1);
+  assert(!strcmp(uxEscopo(AJ_AUTO_CREDITOS), "Este perfil nesta TV"));
+  assert(!strcmp(uxEscopoValor(AJ_AUTO_CREDITOS, 0), "Este perfil nesta TV"));
+  assert(!inativa(AJ_AUTO_CREDITOS));
+  assert(familiaPreviaOpcao(AJ_AUTO_CREDITOS) == AJPV_REPRO);
+  for (int i = 0; i < AJ_N_TELA; i++) {
+    if (TELA[i].tipo == IT_SEC) categoria = TELA[i].titulo;
+    if (TELA[i].tipo == IT_ROT) grupo = TELA[i].titulo;
+    if (TELA[i].tipo == IT_OPC && TELA[i].op == AJ_AUTO_CREDITOS) {
+      vezes++;
+      assert(!strcmp(categoria, "Reprodução") && !strcmp(grupo, "Durante e depois"));
+    }
+  }
+  assert(vezes == 1);
+  valor[AJ_IDIOMA] = IDIOMA_EN + 1;
+  int n = ajustes_buscar("Automatically skip credits", resultados, AJ_N);
+  int i = indiceResultado(AJ_AUTO_CREDITOS, n);
+  assert(i >= 0 && !resultados[i].bloqueado);
+  assert(strstr(resultados[i].caminho, "Playback"));
+  assert(strstr(i18n(ajudaOpcao(AJ_AUTO_CREDITOS)), "Rewinding keeps that section"));
+  assert(!strcmp(i18n(uxEscopo(AJ_AUTO_CREDITOS)), "This profile on this TV"));
+  valor[AJ_IDIOMA] = IDIOMA_FR + 1;
+  assert(!strcmp(i18n(rotuloOpcao(AJ_AUTO_CREDITOS)), "Automatically skip credits"));
+  valor[AJ_IDIOMA] = idiomaAntes;
+}
+
 // Cada categoria e cada submenu (ROT) tem a SUA arte: nenhum indice de
 // AJ_ARTE_SEC se repete, todo bloco de ajustes_ux_tela.inc tem coluna, e a
 // opcao devolve a arte do bloco dela (o primeiro bloco fica com a da categoria).
@@ -669,6 +698,7 @@ int main(void) {
   artePorSubmenu();
   reorganizacao202();
   cacheSeek();
+  creditosAutomaticos();
   zoomTpk();
   prazoDosAddonsIntegrado();
   padroesEValores();

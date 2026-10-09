@@ -130,6 +130,40 @@ int main(void) {
   assert(posplay_pediu_episodio(&t, &e) && t == 5 && e == 4);
   puts("ok  a contagem final toca o proximo sozinha");
 
+  // Recuar durante a contagem cancela sem tirar o cartao manual. Mesmo um
+  // recuo que continua na janela final nao pode rearmar o relogio antigo.
+  posplay_fechar();
+  aquecer(3600.0, 1);
+  posplay_atualizar(0.016f, 1000, 3597.0, 3600.0, 1, 0, 1);
+  posplay_recuar();
+  posplay_atualizar(0.016f, 6000, 3596.0, 3600.0, 1, 0, 1);
+  posplay_atualizar(0.016f, 11000, 3600.0, 3600.0, 1, 0, 1);
+  assert(posplay_visivel() && !posplay_pediu_episodio(&t, &e));
+  puts("ok  recuo cancela a contagem e nao a rearma na mesma janela");
+
+  // Sair da janela libera uma nova passagem pelo fim, e outro titulo tambem.
+  posplay_atualizar(0.016f, 12000, 3000.0, 3600.0, 1, 0, 0);
+  posplay_atualizar(0.016f, 13000, 3597.0, 3600.0, 1, 0, 1);
+  posplay_atualizar(0.016f, 16100, 3600.0, 3600.0, 1, 0, 1);
+  assert(posplay_pediu_episodio(&t, &e) && t == 5 && e == 4);
+  posplay_fechar();
+  aquecer(3600.0, 1);
+  posplay_atualizar(0.016f, 1000, 3597.0, 3600.0, 1, 0, 1);
+  posplay_atualizar(0.016f, 4100, 3600.0, 3600.0, 1, 0, 1);
+  assert(!posplay_visivel());
+
+  // O roteador pode ainda nao ter consumido o pedido automatico. Recuar
+  // cancela esse pedido ja enfileirado e devolve a escolha manual no cartao.
+  posplay_recuar();
+  assert(!posplay_pediu_episodio(&t, &e) && posplay_visivel());
+  posplay_atualizar(0.016f, 10000, 3598.0, 3600.0, 1, 0, 1);
+  assert(!posplay_pediu_episodio(&t, &e));
+  assert(tecla(SDLK_RETURN) == 1);
+  posplay_recuar();                    // pedido explicito nao e automatico
+  assert(posplay_pediu_episodio(&t, &e) && t == 5 && e == 4);
+  assert(!posplay_pediu_episodio(&t, &e));
+  puts("ok  recuo cancela Next automatico pendente e preserva o OK manual");
+
   // 6. FORA DA JANELA nao arma contagem nenhuma.
   posplay_fechar();
   posplay_atualizar(0.016f, 1000, 1800.0, 3600.0, 1, 0, 0);

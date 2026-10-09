@@ -1,4 +1,5 @@
 #include "intro.h"
+#include "creditosjson.h"
 #include "rede.h"
 #include "js.h"
 #include "credfonte.h"
@@ -10,6 +11,7 @@
 
 static pthread_mutex_t trava=PTHREAD_MUTEX_INITIALIZER;
 static IntroTrecho trechos[8];static int nTrechos;static unsigned geracao;
+static IntroTrecho creditosLimitados[8];static int nCreditosLimitados;
 static int botaoIdx=-1;static double botaoDesde;
 static int botaoVis;static double botaoFim;static int botaoTipo;
 
@@ -100,12 +102,16 @@ static void tentarVizinhos(const Pedido *p){
 }
 
 static void *baixar(void *u){
-  Pedido*p=u;char*j=pedirEp(p->id,p->t,p->e);IntroTrecho v[8];
+  Pedido*p=u;char*j=pedirEp(p->id,p->t,p->e);IntroTrecho v[8],limitados[8];
   int n=j?intro_extrair(j,v,8):0,temCred=0;
+  int nl=j?creditosjson_extrair(j,limitados,8):0;
   free(j);
   for(int i=0;i<n;i++)if(v[i].tipo==INTRO_CREDITOS)temCred=1;
   pthread_mutex_lock(&trava);
-  if(p->g==geracao){memcpy(trechos,v,(size_t)n*sizeof *v);nTrechos=n;}
+  if(p->g==geracao){
+    memcpy(trechos,v,(size_t)n*sizeof *v);nTrechos=n;
+    memcpy(creditosLimitados,limitados,(size_t)nl*sizeof *limitados);nCreditosLimitados=nl;
+  }
   pthread_mutex_unlock(&trava);
   printf("[intro] %d marcadores\n",n);fflush(stdout);
   if(!temCred)tentarVizinhos(p);
@@ -113,12 +119,12 @@ static void *baixar(void *u){
 }
 
 void intro_pedir_vizinhos(const char *imdb,int t,int e,double durAnt,double durProx){
-  Pedido*p;pthread_t fio;int nId;
+  Pedido*p;pthread_t fio;int nId;unsigned g;
   // FILME PASSA. A guarda antiga exigia temporada e episodio, porque o servico
   // antigo exigia — era ela que deixava todo filme sem marcador.
   if(!imdb||strncmp(imdb,"tt",2)){intro_desligar();return;}
-  p=calloc(1,sizeof*p);if(!p)return;
-  pthread_mutex_lock(&trava);nTrechos=0;p->g=++geracao;pthread_mutex_unlock(&trava);
+  pthread_mutex_lock(&trava);nTrechos=nCreditosLimitados=0;g=++geracao;pthread_mutex_unlock(&trava);
+  p=calloc(1,sizeof*p);if(!p)return;p->g=g;
   // O id do catalogo pode vir como "tt123:1:2" (serie com episodio embutido);
   // a API quer so a parte do imdb.
   nId=(int)strcspn(imdb,":");if(nId>(int)sizeof p->id-1)nId=(int)sizeof p->id-1;
@@ -130,7 +136,7 @@ void intro_pedir_vizinhos(const char *imdb,int t,int e,double durAnt,double durP
 
 void intro_pedir(const char *imdb,int t,int e){intro_pedir_vizinhos(imdb,t,e,0.0,0.0);}
 
-void intro_desligar(void){pthread_mutex_lock(&trava);geracao++;nTrechos=0;botaoVis=0;botaoIdx=-1;pthread_mutex_unlock(&trava);}
+void intro_desligar(void){pthread_mutex_lock(&trava);geracao++;nTrechos=nCreditosLimitados=0;botaoVis=0;botaoIdx=-1;pthread_mutex_unlock(&trava);}
 
 // DURACAO DA MIDIA E O TIPO (filme/serie), para recusar janelas absurdas.
 static double durMidia;static int ehFilme;
@@ -228,9 +234,18 @@ int intro_trechos(IntroTrecho *saida,int max){
   if(n>0)memcpy(saida,trechos,(size_t)n*sizeof *saida);
   pthread_mutex_unlock(&trava);return n;
 }
+// So limites numericos explicitos da resposta DESTE titulo. Marcadores abertos,
+// vizinhos e estimativas continuam disponiveis apenas pelo caminho manual.
+int intro_creditos_limitados(IntroTrecho *saida,int max){
+  int n;if(!saida||max<1)return 0;pthread_mutex_lock(&trava);
+  n=nCreditosLimitados<max?nCreditosLimitados:max;
+  if(n>0)memcpy(saida,creditosLimitados,(size_t)n*sizeof *saida);
+  pthread_mutex_unlock(&trava);return n;
+}
 #ifdef NV_SHOT_HOOKS
 void intro_shot_definir(const IntroTrecho *v,int n){
   pthread_mutex_lock(&trava);geracao++;
+  nCreditosLimitados=0;
   nTrechos=n<8?n:8;if(nTrechos>0)memcpy(trechos,v,(size_t)nTrechos*sizeof *v);
   pthread_mutex_unlock(&trava);
 }

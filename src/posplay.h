@@ -52,6 +52,12 @@ void posplay_desenhar(Uint32 agora, float baseY);
 float posplay_topo(float baseY);
 // Fecha e zera. Chamado quando o player abre outra coisa.
 void posplay_fechar(void);
+// Recuo manual: cancela contagem e pedido automatico, mantendo o OK manual.
+// A contagem volta a valer ao sair da janela final ou abrir outro titulo.
+void posplay_recuar(void);
+// Seek automatico em voo: suspende so a contagem/pedido automatico. OK segue
+// disponivel; o player libera quando o video progride ou termina de verdade.
+void posplay_aguardar_busca(int aguardar);
 // O titulo do cartao, ja conferido pelo id (-1 = nenhum). Para teste (#190).
 int  posplay_indice(void);
 

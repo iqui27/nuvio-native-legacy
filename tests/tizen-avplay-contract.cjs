@@ -34,12 +34,31 @@ const call = (op, text = '', a = 0, b = 0, c = 0, d = 0, dst = 0, size = 0) =>
   }
   assert.equal(call('abrir', 'https://example.invalid/video.mkv'), 1);
   await new Promise(resolve => setTimeout(resolve, 30));
-  call('estado', '', 0, 0, 0, 0, 8, 64);
+  call('estado', '', 0, 0, 0, 0, 8, 72);
   check('duration uses getDuration in milliseconds', () =>
     assert.equal(context.HEAPF64[2], 7200));
   check('video metadata is read in a valid state after async preparation', () => {
     assert.equal(context.HEAPF64[6], 3840);
     assert.equal(context.HEAPF64[7], 2160);
+  });
+  check('estado rejects an eight-double buffer before writing completion', () => {
+    context.HEAPF64[9] = -12345;
+    assert.equal(call('estado', '', 0, 0, 0, 0, 8, 64), 0);
+    assert.equal(context.HEAPF64[9], -12345, 'the ninth slot is outside the supplied buffer');
+    assert.equal(call('estado', '', 0, 0, 0, 0, 8, 72), 1);
+    assert.equal(context.HEAPF64[9], 0);
+  });
+  check('native completion reaches the existing C state vector', () => {
+    assert.equal(context.HEAPF64[9], 0);
+    context.__avOuvinte().onstreamcompleted();
+    call('estado', '', 0, 0, 0, 0, 8, 72);
+    assert.equal(context.HEAPF64[9], 1);
+    assert.equal(context.HEAPF64[3], 0);
+    assert.match(source, /terminou\s*=\s*est\[EST_FIM\]/);
+    assert.match(source, /video_terminou\(void\)\s*\{\s*return terminou;/);
+    call('buscar', '', 60000);
+    call('estado', '', 0, 0, 0, 0, 8, 72);
+    assert.equal(context.HEAPF64[9], 0, 'a seek clears completion from the old position');
   });
   call('faixas', '', 0, 0, 0, 0, 100, 4096);
   check('bridge returns all audio and text rows', () => {
@@ -145,34 +164,34 @@ const call = (op, text = '', a = 0, b = 0, c = 0, d = 0, dst = 0, size = 0) =>
     const av = context.webapis.avplay;
     const gct = av.getCurrentTime, gd = av.getDuration;
     let nTempo = 0, nDur = 0;
-    call('estado', '', 0, 0, 0, 0, 8, 64);          // primeira leitura: guarda a duracao
+    call('estado', '', 0, 0, 0, 0, 8, 72);          // primeira leitura: guarda a duracao
     av.getCurrentTime = function () { nTempo++; return gct.call(this); };
     av.getDuration = function () { nDur++; return gd.call(this); };
     context.__nvav.tEvento = Date.now();            // oncurrentplaytime acabou de chegar
     context.__nvav.tSeek = 0;
-    for (let i = 0; i < 20; i++) call('estado', '', 0, 0, 0, 0, 8, 64);
+    for (let i = 0; i < 20; i++) call('estado', '', 0, 0, 0, 0, 8, 72);
     check('estado does not call AVPlay getters every frame (#147)', () => {
       assert.equal(nTempo, 0);
       assert.equal(nDur, 0);
       assert.equal(context.HEAPF64[2], 7200);       // a duracao guardada continua valendo
     });
     call('buscar', '', 60000);
-    call('estado', '', 0, 0, 0, 0, 8, 64);
+    call('estado', '', 0, 0, 0, 0, 8, 72);
     check('estado reads getCurrentTime right after a seek (#147)', () => assert.equal(nTempo, 1));
     // Entre dois eventos a posicao anda sozinha (tocando) e para (pausado):
     // sem isso a legenda externa andaria aos saltos.
     const S = context.__nvav;
     S.tSeek = 0; S.tEvento = Date.now(); S.posMs = 10000; S.tPos = Date.now() - 300; S.tocando = 1;
-    call('estado', '', 0, 0, 0, 0, 8, 64);
+    call('estado', '', 0, 0, 0, 0, 8, 72);
     check('position advances between time events while playing (#147)', () => {
       assert.ok(context.HEAPF64[1] >= 10.25 && context.HEAPF64[1] <= 10.6, String(context.HEAPF64[1]));
     });
     S.tocando = 0; S.tEvento = Date.now();
-    call('estado', '', 0, 0, 0, 0, 8, 64);
+    call('estado', '', 0, 0, 0, 0, 8, 72);
     check('position holds between events while paused (#147)', () => assert.equal(context.HEAPF64[1], 10));
     // Pausado, o evento para: a leitura de reserva nao pode virar uma por quadro.
     nTempo = 0; S.tEvento = Date.now() - 5000; S.tPos = Date.now();
-    for (let i = 0; i < 20; i++) call('estado', '', 0, 0, 0, 0, 8, 64);
+    for (let i = 0; i < 20; i++) call('estado', '', 0, 0, 0, 0, 8, 72);
     check('paused fallback read is throttled (#147)', () => assert.ok(nTempo <= 1, String(nTempo)));
     av.getCurrentTime = gct; av.getDuration = gd;
   }
@@ -227,9 +246,11 @@ const call = (op, text = '', a = 0, b = 0, c = 0, d = 0, dst = 0, size = 0) =>
   });
   listeners[0].oncurrentplaytime(7777);
   listeners[0].onerror('stale callback');
+  listeners[0].onstreamcompleted();
   check('stale listener events do not contaminate the current session', () => {
     assert.equal(context.__nvav.posMs, 0);
     assert.equal(context.__nvav.erro, '');
+    assert.equal(context.__nvav.fim, 0);
   });
   const beforeStaleCallback = context.__avReg().length;
   pending[0]();
@@ -261,7 +282,7 @@ const call = (op, text = '', a = 0, b = 0, c = 0, d = 0, dst = 0, size = 0) =>
   call('parar');
   call('abrir', 'https://example.invalid/play-throws.mkv');
   await new Promise(resolve => setTimeout(resolve, 30));
-  call('estado', '', 0, 0, 0, 0, 8, 64);
+  call('estado', '', 0, 0, 0, 0, 8, 72);
   check('play failure never publishes a ready or open session', () => {
     assert.equal(context.HEAPF64[4], 0);
     assert.equal(context.HEAPF64[5], 0);

@@ -28,6 +28,7 @@ static int uxDiferente(int op) {
  * Audio/legenda, inclusive "Da conta", continuam no conjunto dePerfil: a
  * escolha e guardada por perfil nesta TV, sem prometer que ja sincronizou. */
 static const char *uxEscopoValor(int op, int v) {
+  if (op == AJ_AUTO_CREDITOS) return "Este perfil nesta TV";
   if (op == AJ_TEMA && v >= AJ_TEMA_DINAMICA) return "Só nesta TV";
   if (op == AJ_TMDB_IDIOMA && v == 0) return "Só nesta TV";
   return op >= 0 && op < AJ_N && dePerfil(op) ? "Conta/perfil" : "Só nesta TV";
