@@ -808,10 +808,39 @@ static int   (*curl_setopt_f)(void *, int, ...);
 // (addonurl.h) voltar a ser a URL inteira. O curl copia a string no setopt,
 // entao a expandida e liberada logo depois. Macro, e nao funcao variadica:
 // cada ramo recebe o valor com o tipo que ja tinha.
+// #416/#419: um alias oficial, ligado para todos os fios so apos responder.
+static int tmdbAlternativo;
+static char *tmdbUrl(const char *url) {
+  const char *h, *fim;
+  char *nova;
+  size_t prefixo;
+  if (!url || strncasecmp(url, "https://", 8)) return NULL;
+  h = url + 8;
+  fim = h + strcspn(h, "/?#");
+  // So o host exato; preserva esquema, porta, caminho e query byte a byte.
+  if (strncasecmp(h, "api.themoviedb.org", 18) ||
+      (h + 18 != fim && (h[18] != ':' || h + 19 == fim ||
+       h + 19 + strspn(h + 19, "0123456789") != fim))) return NULL;
+  prefixo = (size_t)(h - url);
+  nova = malloc(strlen(url) + 1);
+  if (!nova) return NULL;
+  memcpy(nova, url, prefixo);
+  strcpy(nova + prefixo, "api.tmdb.org");
+  strcat(nova, h + 18);
+  return nova;
+}
+static void tmdbLigou(void) {
+  if (!__atomic_exchange_n(&tmdbAlternativo, 1, __ATOMIC_ACQ_REL)) {
+    printf("[rede] api.themoviedb.org bloqueado aqui; usando api.tmdb.org\n");
+    fflush(stdout);
+  }
+}
 static int urlSetopt(void *c, const char *url) {
   char *grande = nv_longa_expandir(url);
-  int r = curl_setopt_f(c, 10002 /* OPT_URL */, grande ? grande : url);
-  free(grande);
+  char *alias = __atomic_load_n(&tmdbAlternativo, __ATOMIC_ACQUIRE) ?
+                tmdbUrl(grande ? grande : url) : NULL;
+  int r = curl_setopt_f(c, 10002 /* OPT_URL */, alias ? alias : grande ? grande : url);
+  free(alias); free(grande);
   return r;
 }
 #define curl_setopt(c, op, v) ((op) == 10002 ? urlSetopt((c), (const char *)(uintptr_t)(v)) \
@@ -824,6 +853,23 @@ static void  (*slist_free)(void *);
 static int   (*curl_getinfo)(void *, int, ...);
 static void  (*curl_reset)(void *);
 static time_t (*curl_getdate_fn)(const char *, const time_t *);
+
+// Chamado depois da repeticao existente do GET, diretamente nos demais caminhos.
+static int tmdbFallback(void *c, int r) {
+  char *url = NULL, *alias;
+  long http = 0;
+  if (!(r == 35 || r == 7 || r == 28 || r == 56 || r == 52) ||
+      redeCancelouLocal || !curl_getinfo) return r;
+  if (curl_getinfo(c, INFO_RESPONSE_CODE, &http) || http ||
+      curl_getinfo(c, INFO_URL_FINAL, &url) || !(alias = tmdbUrl(url))) return r;
+  if (!curl_setopt_f(c, OPT_URL, alias)) {
+    r = curl_perform(c); /* uma unica tentativa, sem recursao */
+    if (!r) tmdbLigou();
+  }
+  free(alias);
+  return r;
+}
+static int performTmdb(void *c) { return tmdbFallback(c, curl_perform(c)); }
 
 static int retrySegundos(const char *s, size_t n) {
   char b[128], *fim;
@@ -1572,9 +1618,15 @@ static char *viaAndroid(const char *verbo, const char *url, int segundos,
   for (k = 0; cab && cab[k]; k++) { strcat(cabs, cab[k]); strcat(cabs, "\n"); }
   // Mesmo padrao do postarNativo: JSON, salvo quem mandou o proprio.
   if (corpo && !temCt) strcat(cabs, "Content-Type: application/json\n");
-  r = android_http(verbo, url, cabs, corpo, (segundos > 0 ? segundos : 20) * 1000,
+  char *alias = __atomic_load_n(&tmdbAlternativo, __ATOMIC_ACQUIRE) ? tmdbUrl(url) : NULL;
+  r = android_http(verbo, alias ? alias : url, cabs, corpo, (segundos > 0 ? segundos : 20) * 1000,
                    &st, &bytes, erro, sizeof erro);
-  free(cabs);
+  if (!r && !st && !alias && !redeCancelouLocal && (alias = tmdbUrl(url))) {
+    r = android_http(verbo, alias, cabs, corpo, (segundos > 0 ? segundos : 20) * 1000,
+                     &st, &bytes, erro, sizeof erro);
+    if (r) tmdbLigou();
+  }
+  free(alias); free(cabs);
   hostDaUrl(url, h, sizeof h);
   if (__atomic_add_fetch(&logados, 1, __ATOMIC_RELAXED) <= 12 || !r) {
     printf("[rede] via Android (%s) %s %s: http=%d em %lu ms%s%s\n", porque, verbo,
@@ -1824,6 +1876,7 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
       if (etag && tamEtag) etag[0] = 0;
       continue;
     }
+    r = tmdbFallback(c, r);
     break;
   }
   if (r == 42 && vigia.parou) r = 28;      // para quem chama, e prazo
@@ -1959,7 +2012,7 @@ int rede_url_final_tipo(const char *url, int segundos, const char *const *cab,
     lista = nova;
   }
   if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
-  r = curl_perform(c);
+  r = performTmdb(c);
   curl_getinfo(c, INFO_RESPONSE_CODE, &http);
   curl_getinfo(c, INFO_URL_FINAL, &fim);
   if (status) *status = (int)http;
@@ -2027,7 +2080,7 @@ int rede_aquecer_lote(const char *const *origens, int n, unsigned *ms) {
     curl_setopt(c, OPT_FOLLOWLOCATION, (long)0);
     opcoesComuns(c, 4000UL);
     t0 = redeAgoraMs();
-    r = curl_perform(c);
+    r = performTmdb(c);
     if (ms) { unsigned long dt = redeAgoraMs() - t0; ms[i] = r ? 0 : (unsigned)(dt ? dt : 1); }
     soltarHandleR(c, r, u);
     if (!r) {
@@ -2071,7 +2124,7 @@ char *rede_apagar(const char *url, int segundos, const char *const *cab,
     for (k = 0; cab && cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
-  r = curl_perform(c);
+  r = performTmdb(c);
   { long h = 0;
     if (!r && curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &h);
     if (status) *status = (int)h;
@@ -2123,7 +2176,7 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
     for (k = 0; cab && cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
-  r = curl_perform(c);
+  r = performTmdb(c);
   anotarErro(r);
   if (r != 0) { char seg[120];
     printf("[rede] POST falhou em %s: %s\n", rede_url_publica(url, seg, sizeof seg), redeErroTxt);
@@ -2335,7 +2388,7 @@ int rede_medir_vazao(const char *url, const char *const *cab, int segundos,
     for (k = 0; cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
-  r = curl_perform(c);
+  r = performTmdb(c);
   { long http = 0;
     if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
     if (http > 0) ct.status = (int)http; }
@@ -2427,7 +2480,7 @@ RedeTls *rede_tls_abrir(const char *url, int segundos) {
   curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
   curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
   if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
-  r = curl_perform(c);
+  r = performTmdb(c);
   if (r == 0 && curl_getinfo) curl_getinfo(c, INFO_LASTSOCKET, &fd);
   if (r != 0 || fd < 0) {
     printf("[rede] tls: falhou (curl %d)\n", r);
@@ -2658,7 +2711,7 @@ char *rede_baixar_trecho64_final(const char *url, const char *headers,
     curl_setopt(c, OPT_NOPROGRESS, (long)0);
     list = downgraded ? NULL : dtsRangeHeaders(headers, public_only);
     if (list) curl_setopt(c, OPT_HTTPHEADER, list);
-    result = curl_perform(c);
+    result = performTmdb(c);
     if (curl_getinfo) {
       curl_getinfo(c, INFO_RESPONSE_CODE, &http);
       /* CURLINFO_REDIRECT_URL resolves relative Location without following it. */
