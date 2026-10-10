@@ -46,6 +46,7 @@
 #include "gputempo.h"
 #include "text.h"
 #include "marco.h"
+#include "memlog.h"
 #include "rede.h"
 #include "tex_cache.h"
 #include "webp.h"
@@ -1892,6 +1893,8 @@ int main(int argc, char **argv) {
 
     if (agora - ultRelato >= 3000) {
       int itens, pend, quentes; long bytes, bytesQ;
+      char memoria[96];
+      memlog_amostra(memoria, sizeof memoria);
       NvCacheArteStats cacheArteStats;
       tex_estatisticas(&itens, &pend, &bytes, &quentes, &bytesQ);
       memset(&cacheArteStats, 0, sizeof cacheArteStats);
@@ -1919,7 +1922,7 @@ int main(int argc, char **argv) {
              " | gpu-cache=%d %.1fMB tela=%d/%.1fMB fila-tex=%d tex-despejos=%d(q=%d) disco-direto=%d neg-arte=%d"
              " | despejos=%d | cache-arte=%ld/%ldB hit=%ld miss=%ld grav=%ld err=%ld essenciais=%ld/%ld"
              " | fs-backend=%s idbfs=%s sync=%s ok=%d err=%d pend=%d custo=%d/%.1fms recovery=%d"
-             " | cache-disco=%.1fMB | rss=%.0fMB%s\n",
+             " | cache-disco=%.1fMB | rss=%.0fMB%s%s\n",
              quadros * 1000.0 / (double)(agora - ultRelato), pior, janks,
              piorTxtMs, piorTxtN, itens, bytes / 1048576.0,
              quentes, bytesQ / 1048576.0, pend, tex_despejos, tex_despejos_quentes,
@@ -1939,6 +1942,7 @@ int main(int argc, char **argv) {
              dados_desc_n, dados_desc_ms, dados_modo_recuperacao(),
              tex_cache_disco_bytes() / 1048576.0,
              rssMB(),
+             memoria,
              dados_persistente() ? "" : "  <<< SEM PERSISTENCIA");
       // O medidor de desempenho na tela (desempenho.h) le os mesmos numeros.
       desempenho_amostra((float)(quadros * 1000.0 / (double)(agora - ultRelato)), (float)pior, janks,
