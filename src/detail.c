@@ -1948,7 +1948,13 @@ static int secaoN(int r) {
     // filme: os dados sempre estiveram la (o log mostra "coment=8 rel=12"),
     // mas sem aba e sem secao nao havia como chegar neles.
     case SEC_TRAILERS:
+#ifdef __EMSCRIPTEN__
       return extras_n_trailers();
+#else
+      // #417: no nativo nao ha player de YouTube; todo cartao tocava o MESMO
+      // trailer do titulo (Apple/IMDb). Um cartao so, que e o que de fato toca.
+      return extras_n_trailers() > 0 ? 1 : 0;
+#endif
     case SEC_RELACIONADOS: {
       int n;
       n = extras_n_relacionados();
