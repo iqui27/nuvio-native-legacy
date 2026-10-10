@@ -50,6 +50,41 @@ static FnPos    hPos;
 typedef void (*FnEscolher)(int tipo, int idx);
 static FnEscolher hEscolher;
 
+#ifdef NV_ASPECTO_DIAG
+// Reuse the session-aware selection bridge: type 4, method * 3 + mode.
+// No ABI extension, and NvVid.Ligar also routes it through the API4 ELF loader.
+static int diagMetodo = -1, diagModo;
+static atomic_int diagPedido = -1, diagAceito = -1, diagMetodos = 3;
+int video_tpk_aspecto_diag_ativo(void) { return diagMetodo >= 0; }
+void video_tpk_aspecto_diag_aplicar(void) {
+  int pedido = diagMetodo < 0 ? -1 : diagMetodo * 3 + diagModo;
+  atomic_store(&diagPedido, pedido);
+  atomic_store(&diagAceito, -1);
+  if (hEscolher) hEscolher(4, pedido);
+}
+void video_tpk_aspecto_diag_desligar(void) {
+  diagMetodo = -1; diagModo = 0;
+  video_tpk_aspecto_diag_aplicar();
+}
+void video_tpk_aspecto_diag_ciclar(int metodo) {
+  if (metodo) {
+    do { diagMetodo++; } while (diagMetodo < 4 && !(atomic_load(&diagMetodos) & (1 << diagMetodo)));
+    if (diagMetodo == 4) diagMetodo = -1;
+  } else if (diagMetodo >= 0) diagModo = (diagModo + 1) % 3;
+  video_tpk_aspecto_diag_aplicar();
+}
+const char *video_tpk_aspecto_diag_rotulo(void) {
+  static char texto[160];
+  static const char *metodos[] = { "A: DisplayMode", "B: DisplayRoi", "C: Window", "D: VideoRoi" };
+  static const char *modos[] = { "Original", "Fill", "Zoom" };
+  int aceito = atomic_load(&diagAceito);
+  if (diagMetodo < 0) return "Aspect diagnostic OFF";
+  snprintf(texto, sizeof texto, "Method %s | %s | %s", metodos[diagMetodo], modos[diagModo],
+           aceito < 0 ? "pending" : aceito ? "accepted" : "FAILED (see log)");
+  return texto;
+}
+#endif
+
 #define MAX_FAIXAS 32
 static VideoFaixa faixaAudio[MAX_FAIXAS], faixaLeg[MAX_FAIXAS];
 static volatile int nAudio, nLeg, audioAtual, legAtual = -1;
@@ -276,6 +311,10 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
                      atomic_store(&temErroDetalhe, 1);
                      reconErroCod = a; reconErroPend = 1; tocando = 0;
                      printf("[video] tpk: player error 0x%08x (%d)\n", (unsigned)a, b); break;
+#ifdef NV_ASPECTO_DIAG
+    case 9: if (a == atomic_load(&diagPedido)) atomic_store(&diagAceito, b); break;
+    case 10: atomic_store(&diagMetodos, a & 15); break;
+#endif
     case EV_TAMANHO: largura = a; altura = b; break;
     case EV_BUFFER:
       if (a < 100 && !bufferando) { bufferando = 1; bufferDesde = SDL_GetTicks(); }
@@ -380,6 +419,10 @@ static int abrirSessao(void) {
 }
 
 int video_tocar(const char *u) {
+#ifdef NV_ASPECTO_DIAG
+  diagMetodo = -1; diagModo = 0;
+  atomic_store(&diagPedido, -1); atomic_store(&diagAceito, -1);
+#endif
   snprintf(urlAtual, sizeof urlAtual, "%s", u ? u : "");
   capmkv_iniciar(urlAtual);
   mkvGeracao++; mkvN = 0; faixasNovas = 0; mkvOlhou = 0; mkvSondarJa = 0; mkvNaoMkv = 0;
@@ -626,6 +669,10 @@ void video_bombear(void) {
   }
 }
 void video_parar(void) {
+#ifdef NV_ASPECTO_DIAG
+  diagMetodo = -1; diagModo = 0;
+  atomic_store(&diagPedido, -1); atomic_store(&diagAceito, -1);
+#endif
   emTrailer = 0;
   capmkv_zerar();   // fio de capitulos em voo nao alimenta o proximo titulo
   audioPend = legPend = -1; comecou = 0; comecouEm = 0; audioComecou = 0;

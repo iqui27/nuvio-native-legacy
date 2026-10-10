@@ -464,3 +464,11 @@ void video_simular(const VideoSimulacao *s);
 int video_luna(const char *uri, const char *payload, void (*callback)(const char *, void *), void *context);
 #endif
 #endif
+
+#if defined(NV_TPK) && defined(NV_ASPECTO_DIAG)
+int video_tpk_aspecto_diag_ativo(void);
+void video_tpk_aspecto_diag_ciclar(int metodo);
+void video_tpk_aspecto_diag_aplicar(void);
+void video_tpk_aspecto_diag_desligar(void);
+const char *video_tpk_aspecto_diag_rotulo(void);
+#endif

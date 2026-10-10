@@ -71,7 +71,7 @@ namespace NuvioTpk
         }
     }
 
-    class Video
+    partial class Video
     {
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnAbrir(IntPtr url, IntPtr cabecalhos);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnSemArg();
@@ -121,6 +121,9 @@ namespace NuvioTpk
         void Escolher(int tipo, int idx)
         {
             if (player == null) return;
+#if NV_ASPECTO_DIAG
+            if (tipo == 4) { AspectoAplicar(idx); return; }
+#endif
             if (tipo == 3) { Velocidade(idx); return; }
             // Diagnostics: the player's REAL state at the moment of the write.
             // Tizen.Multimedia track selection also supports Ready and Paused.
@@ -370,6 +373,12 @@ namespace NuvioTpk
                 NvVid.Evento(EV_PRONTO, dur, 0);
                 if (minha != Volatile.Read(ref sessao)) return;
                 p.Start();
+#if NV_ASPECTO_DIAG
+                AspectoInfo();
+                int major;
+                bool sourceRoi = int.TryParse((aspectoTizen ?? "").Split('.')[0], out major) && major >= 5;
+                NvVid.Evento(10, 3 | (GeometriaJanela != null ? 4 : 0) | (sourceRoi ? 8 : 0), 0);
+#endif
                 windowMetrics.Invalidate();
                 AplicaVolume(p, "start");
                 NvVid.Evento(EV_TOCANDO, 0, 0);
@@ -485,6 +494,14 @@ namespace NuvioTpk
 
         bool PararAtual()
         {
+#if NV_ASPECTO_DIAG
+            if (aspectoDiag >= 0 || aspectoFonteSuja) {
+                var log = new System.Text.StringBuilder("[aspecto-diag] tizen=" + aspectoTizen + " model=" + aspectoModelo + " method=cleanup mode=stop");
+                AspectoLimpar(log);
+                Log(log.ToString());
+                aspectoDiag = -1;
+            }
+#endif
             ReportWindowMetrics();
             if (!SoltaPrimer()) return false;
             if (player == null) return true;
@@ -525,6 +542,9 @@ namespace NuvioTpk
         void Janela(int x, int y, int w, int h)
         {
             if (player == null) return;
+#if NV_ASPECTO_DIAG
+            if (aspectoDiag >= 0) return; // layout/seek replays cannot overwrite the selected experiment
+#endif
             bool applied = false, fullscreen = x == 0 && y == 0 && w == telaW && h == telaH;
             windowMetrics.Begin(player, x, y, w, h, fullscreen);
             long started = Stopwatch.GetTimestamp(), ended = 0;

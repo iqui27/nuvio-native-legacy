@@ -31,6 +31,35 @@ static void hInt(int v) { (void)v; }
 static void hJanela(int x, int y, int w, int h) { jx = x; jy = y; jw = w; jh = h; nj++; }
 static int hPos(void) { return 0; }
 
+#ifdef NV_ASPECTO_DIAG
+void nv_tpk_video_registrar_faixas(void (*)(int, int));
+static int diagTipo, diagIdx;
+static void escolherDiag(int tipo, int idx) { diagTipo = tipo; diagIdx = idx; }
+static void confereDiag(void) {
+  video_tocar("http://x/diagnostic.m3u8");
+  nv_tpk_video_registrar_faixas(escolherDiag);
+  nv_tpk_video_evento(10, 11, 0); // NUI: A, B, D
+  video_tpk_aspecto_diag_ciclar(1);
+  assert(diagTipo == 4 && diagIdx == 0 && video_tpk_aspecto_diag_ativo());
+  nv_tpk_video_evento(9, 0, 1);
+  assert(strstr(video_tpk_aspecto_diag_rotulo(), "accepted"));
+  video_tpk_aspecto_diag_ciclar(0);
+  assert(diagIdx == 1);
+  nv_tpk_video_evento(9, 0, 0); // late response cannot label a newer request
+  assert(strstr(video_tpk_aspecto_diag_rotulo(), "pending"));
+  video_tpk_aspecto_diag_ciclar(1); assert(diagIdx == 4);
+  video_tpk_aspecto_diag_ciclar(1); assert(diagIdx == 10);
+  video_tpk_aspecto_diag_ciclar(1); assert(diagIdx == -1 && !video_tpk_aspecto_diag_ativo());
+  nv_tpk_video_evento(10, 7, 0); // Tizen4: A, B, C; no source ROI
+  video_tpk_aspecto_diag_ciclar(1); video_tpk_aspecto_diag_ciclar(1); video_tpk_aspecto_diag_ciclar(1);
+  assert(diagIdx == 7);
+  video_tpk_aspecto_diag_ciclar(1); assert(diagIdx == -1);
+  video_tpk_aspecto_diag_ciclar(1);
+  video_parar(); assert(!video_tpk_aspecto_diag_ativo());
+  printf("ok   diagnostic bridge, capabilities, stale ack and stop reset\n");
+}
+#endif
+
 static int falhas;
 static void confere(const char *nome, int x, int y, int w, int h) {
   int ok = jx == x && jy == y && jw == w && jh == h;
@@ -45,6 +74,9 @@ static __attribute__((unused)) void naTela(const char *nome) {
 
 int main(void) {
   nv_tpk_video_registrar(hAbrir, hParar, hInt, hInt, hInt, hJanela, hPos);
+#ifdef NV_ASPECTO_DIAG
+  confereDiag();
+#endif
   video_tocar("http://x/trailer.m3u8");
   assert(!video_erro_texto()[0]);
   nv_tpk_video_evento(5, (int)0xfe6c0031u, 0);

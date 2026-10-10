@@ -51,6 +51,16 @@ mkdir -p "$SAIDA" "$CACHE"
 # old SDK through NuGet (Tizen.NET.Sdk) and need NO workload at all.
 PACOTES="${NV_TPK_PACOTES:-NuvioTpk40 NuvioTpk60 NuvioTpk65 NuvioTpk}"
 
+# Diagnostic label stays out of tracked manifests/appinfo. Tizen manifests
+# require a numeric version; the app and filename retain the prerelease label.
+ASPECTO_FLAG=""
+case "${NV_ASPECTO_DIAG:-0}" in
+  0|"") ;;
+  1) NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-} -DNV_ASPECTO_DIAG"
+     ASPECTO_FLAG="-p:NvAspectoDiag=1" ;;
+  *) echo "NV_ASPECTO_DIAG: use 0 or 1" >&2; exit 1 ;;
+esac
+
 CANARIO=""
 case "${NV_TPK_NIVEL:-}" in
   "") ;;
@@ -94,6 +104,15 @@ fi
 echo "[1/3] libnuvio.so (ARMv7 softfp, glibc <= 2.28)"
 ENVF=$(mktemp "${TMPDIR:-/tmp}/nuvio-tpk-env.XXXXXXXX"); trap 'rm -f "$ENVF"' EXIT
 tools/env.sh --env-file "$ENVF"
+if [ "${NV_ASPECTO_DIAG:-0}" = 1 ]; then
+  # Fail before building a tester package that cannot log in/upload logs.
+  tools/env.sh --require-core >/dev/null
+  DIAG_VER="${NV_ASPECTO_DIAG_VERSION:-2.0.5-aspect.1}"
+  [[ "$DIAG_VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+-aspect\.[0-9]+$ ]] || {
+    echo "NV_ASPECTO_DIAG_VERSION: expected x.y.z-aspect.n" >&2; exit 1; }
+  sed -i.bak "s/^NV_VERSAO=.*/NV_VERSAO=$DIAG_VER/" "$ENVF"
+  rm -f "$ENVF.bak"
+fi
 # Motor P2P (<raiz>/tpk de tools/p2p-motor/build-tpk.sh, achada por tools/p2p-motor/pasta.sh): liga o motor P2P
 # embutido (src/p2pmotor.h) SO na libnuvio.so dos hosts 6+, por dlopen
 # (-DNV_P2P_MOTOR_DLOPEN: sem NEEDED, a auto-atualizacao de uma libnuvio.so
@@ -198,6 +217,7 @@ docker run --rm --platform linux/arm/v5 --env-file "$ENVF" $P2P_VOL \
 echo "[2/3] host .NET + pacotes"
 export DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}" PATH="$HOME/.dotnet:$PATH" DOTNET_CLI_TELEMETRY_OPTOUT=1
 VER=$(sed -n 's/^NV_VERSAO=//p' "$ENVF")
+MAN_VER="${VER%%-*}"
 # A arte e a mesma reduzida do .wgt (tools/tizen-art.sh); fonts/ fica ao lado
 # de art/, que e onde o main.c procura.
 ARTE=$(bash tools/tizen-art.sh)
@@ -231,7 +251,7 @@ for p in $PACOTES; do
   # command dies with "cannot read ...: No such file". `-i.bak` works on both.
   MAN="$H/tizen-manifest.xml"
   cp "$MAN" "$MAN.orig"
-  sed -i.bak "s/ version=\"[^\"]*\">/ version=\"$VER\">/" "$MAN"
+  sed -i.bak "s/ version=\"[^\"]*\">/ version=\"$MAN_VER\">/" "$MAN"
   # CANARIO do teclado/ditado do sistema (tizen-tpk/Texto.cs, #imetv):
   # NUVIO_TPK_TEXTO=1 compila o Texto.cs e poe o privilegio do microfone
   # (recorder, para o Tizen.Uix.Stt) SO neste build — o manifesto do git nao muda,
@@ -244,7 +264,7 @@ for p in $PACOTES; do
   rm -f "$MAN.bak"
   # Restore on BOTH paths: a failed build must not leave the tracked manifest
   # wearing this build's identity.
-  if ! dotnet build "$H/$p.csproj" -c Release -nologo -v q $FLAG_TEXTO; then
+  if ! dotnet build "$H/$p.csproj" -c Release -nologo -v q $FLAG_TEXTO $ASPECTO_FLAG; then
     mv "$MAN.orig" "$MAN"
     echo "$p: dotnet build falhou" >&2
     exit 1

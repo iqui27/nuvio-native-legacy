@@ -16,6 +16,12 @@
   <PropertyGroup Condition="'$(NvTextoCanario)' == '1'">
     <DefineConstants>$(DefineConstants);NV_TEXTO</DefineConstants>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(NvAspectoDiag)' == '1'">
+    <DefineConstants>$(DefineConstants);NV_ASPECTO_DIAG</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(NvAspectoDiag)' == '1'">
+    <Compile Include="../AspectoDiag.cs" />
+  </ItemGroup>
   <ItemGroup>
     <Compile Include="../Program.cs" />
     <Compile Include="../Apps.cs" />

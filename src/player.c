@@ -1154,6 +1154,12 @@ static void aplicarAspecto(void) {
   int sx, sy, sw, sh;
   if (!comVideo) return;
   if (janAtiva) return;
+#if defined(NV_TPK) && defined(NV_ASPECTO_DIAG)
+  if (video_tpk_aspecto_diag_ativo()) {
+    if (!mini) { video_tpk_aspecto_diag_aplicar(); return; }
+    video_tpk_aspecto_diag_desligar();
+  }
+#endif
 
   // No PiP todo recalculo cai na miniatura — o videoInfo da fonte nova num
   // zap, por exemplo, chega DEPOIS do video_janela do canto e sem esta
@@ -1256,6 +1262,9 @@ void player_toast_ex(const char *texto, unsigned ms, const char *icone, int amba
 void player_toast(const char *texto, unsigned ms) { player_toast_ex(texto, ms, NULL, 0); }
 
 void player_aspecto_ciclar(void) {
+#if defined(NV_TPK) && defined(NV_ASPECTO_DIAG)
+  if (video_tpk_aspecto_diag_ativo()) { video_tpk_aspecto_diag_ciclar(0); return; }
+#endif
   int m = aspecto, i;
   // No maximo uma volta: se nada mais estiver disponivel, fica onde esta em vez
   // de girar para sempre.
@@ -2753,6 +2762,16 @@ void player_evento(const SDL_Event *e) {
   // um cursor que aqui nao existe. Numa TV o gesto tem que ser um toque, e o
   // aviso que sobe na troca ja diz em que modo se entrou, entao a tecla nem
   // precisa da interface aberta. O 0 e a tecla livre no controle da LG.
+#if defined(NV_TPK) && defined(NV_ASPECTO_DIAG)
+  if (comVideo && !mini && !ehCanal() && (k == SDLK_x || k == SDLK_9 || k == SDLK_KP_9)) {
+    video_tpk_aspecto_diag_ciclar(1);
+    if (!video_tpk_aspecto_diag_ativo()) {
+      aplicarAspecto();
+      player_toast("Aspect diagnostic OFF", 3000);
+    }
+    return;
+  }
+#endif
   if (k == SDLK_0 || k == SDLK_KP_0) { player_aspecto_ciclar(); return; }
 
   // CANAL AO VIVO: OSD proprio (aovivo.h) e teclas proprias. BAIXO e o botao
@@ -4329,6 +4348,9 @@ void player_desenhar(Uint32 agora) {
     // modos que nao ocupam tudo ("Original" num 2.39:1 entregue como 2.39:1):
     // o furo mostrava o nada atras do plano em vez de mostrar o plano.
     PlrRect r = destinoComRecuo(aspectoVisivel(aspecto));
+#if defined(NV_TPK) && defined(NV_ASPECTO_DIAG)
+    if (video_tpk_aspecto_diag_ativo()) r = (PlrRect){0, 0, NV_TELA_W, NV_TELA_H};
+#endif
     GfxRect furo;
     // OS MESMOS PIXELS INTEIROS QUE FORAM AO PLANO (video_janela arredonda com
     // +0,5). Furo fracionario e plano inteiro discordam em ate 1 px, e esse px
@@ -4534,6 +4556,9 @@ void player_desenhar(Uint32 agora) {
   // posicao do modo entre os disponiveis, para saber quantas vezes apertar.
   // Desenhado ANTES do corte por `a`: a tecla de proporcao funciona com os
   // controles escondidos, e o aviso e a unica confirmacao da troca.
+#if defined(NV_TPK) && defined(NV_ASPECTO_DIAG)
+  if (video_tpk_aspecto_diag_ativo()) player_toast(video_tpk_aspecto_diag_rotulo(), 1000);
+#endif
   if (toastAte > agora) {
     PlrIlhaPedido pd;
     memset(&pd, 0, sizeof pd);

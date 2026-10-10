@@ -31,6 +31,9 @@ int tpkteclas_evento(const char *nome, int apertou, SDL_Event *e) {
     // dela e o app sai (dono, 05/10). Vira o Guia de TV do app (F10, app.c).
     // Nomes da lista da Samsung; o do Q80A ainda nao apareceu num log.
     { "XF86ChannelGuide", SDLK_F10 }, { "XF86ChannelList", SDLK_F10 },
+#ifdef NV_ASPECTO_DIAG
+    { "x", SDLK_x }, { "X", SDLK_x },
+#endif
     { "Minus", SDLK_MINUS },
     // SPOTLIGHT (spotlight.h): o microfone do Smart Remote CHEGA como
     // XF86BTVoice (MEDIDO no D1, 1.6.0 Tizen 6+, "tpk sem mapa: XF86BTVoice").
