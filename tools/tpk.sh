@@ -104,11 +104,12 @@ nv_p2p_resolver tpk
 P2P_VOL=""
 [ -n "$NV_P2P_DIR" ] && P2P_VOL="-v $NV_P2P_DIR:/p2p"
 docker run --rm --platform linux/arm/v5 --env-file "$ENVF" $P2P_VOL \
+  -e NUVIO_BUILD_JOBS="${NUVIO_BUILD_JOBS:-6}" \
+  -e NUVIO_SDK_ID="$(docker image inspect --format '{{.Id}}' nuvio-tpk-sdk):$CACHE:$NV_P2P_DIR" \
   -e NUVIO_P2P_MOTOR="${NV_P2P_DIR:+1}" \
   -e NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-}" -e NV_TPK_SEM_ASS="${NV_TPK_SEM_ASS:-}" \
   -v "$RAIZ":/work -v "$CACHE/prefix":/deps -w /work nuvio-tpk-sdk sh -c '
   set -e
-  mkdir -p /tmp/o
   # ASS pelo libass (#ass-tpk): o mesmo backend do webOS (src/assrender.c). NV_TPK_SEM_ASS=1
   # volta ao texto simples (diagnostico). O libass e estatico, com FreeType/HarfBuzz/FriBidi.
   ASS_CFLAGS="-DNV_ASS_LIBASS"; ASS_LIBS="-lass -lharfbuzz -lfribidi -lfreetype"
@@ -133,14 +134,22 @@ docker run --rm --platform linux/arm/v5 --env-file "$ENVF" $P2P_VOL \
   # o -D tem de ir na linha de comando, SO para esse arquivo.
   P2P_CFLAGS=""
   [ "${NUVIO_P2P_MOTOR:-}" = "1" ] && P2P_CFLAGS="-DNV_P2P_MOTOR -DNV_P2P_MOTOR_DLOPEN -I/p2p/include"
-  ls src/*.c src/dts/*.c | grep -v "src/video_tizen.c" | xargs -P 6 -I{} sh -c \
-    "gcc $CFLAGS -c {} -o /tmp/o/\$(basename {} .c).o -DNV_TPK $ASS_CFLAGS -include src/tpk.h -fvisibility=hidden -Wno-unused-result $NUVIO_EXTRA_CFLAGS $P2P_CFLAGS \$(case {} in src/p2pmotor_motor.c) echo -D_GNU_SOURCE;; src/p2pmotor.c) echo -D_FILE_OFFSET_BITS=64;; esac) @/tmp/flags -I/deps/include -I/deps/include/SDL2" 
+  FLAGS="$CFLAGS -DNV_TPK $ASS_CFLAGS -include src/tpk.h -fvisibility=hidden -Wno-unused-result $NUVIO_EXTRA_CFLAGS"
+  KEY=$( { cat /tmp/flags; sha256sum tools/tpk.sh tools/native-objects.mk; printf "%s" "$NUVIO_SDK_ID|$FLAGS|$P2P_CFLAGS"; } | sha256sum | cut -d" " -f1)
+  O="build/tpk/objects/$KEY/common"; O40="build/tpk/objects/$KEY/tpk40"
+  SOURCES=$(ls src/*.c src/dts/*.c | grep -v "src/video_tizen.c")
+  make -s -f tools/native-objects.mk -j "$NUVIO_BUILD_JOBS" CC=gcc OBJDIR="$O" SOURCES="$SOURCES" \
+    NATIVE_FLAGS="$FLAGS $P2P_CFLAGS @/tmp/flags -I/deps/include -I/deps/include/SDL2" MOTOR_FLAGS=-D_GNU_SOURCE
+  # Preserva a ordem original de link (basename alfabetico), inclusive dts/.
+  ORDER=$(for f in $SOURCES; do echo "$(basename "$f") $f"; done | sort | cut -d" " -f2)
+  OBJECTS=""
+  for f in $ORDER; do OBJECTS="$OBJECTS $O/${f%.c}.o"; done
   # SDL e zlib ESTATICOS: a TV nao tem libSDL2 garantida, e a libz entra junto
   # para nao depender da versao do aparelho. GLES/EGL/dl/pthread/m sao do
   # sistema (API nativa publica do Tizen). libwebp tambem estatica (o Tizen nao
   # a expoe a apps; o SDL_image decodifica WebP com ela). curl e libjpeg continuam
   # por dlopen em execucao, como na LG (rede.c, jpegrapido.c, webp.c).
-  gcc -shared -o /work/build/tpk/libnuvio.so /tmp/o/*.o -Wl,--no-undefined \
+  gcc -shared -o /work/build/tpk/libnuvio.so $OBJECTS -Wl,--no-undefined \
     -Wl,-soname,libnuvio.so -Wl,--exclude-libs,ALL \
     -L/deps/lib -lSDL2_ttf -lSDL2_image -lwebpdemux -lwebp -lsharpyuv -lSDL2 $ASS_LIBS /usr/lib/arm-linux-gnueabi/libz.a \
     -lGLESv2 -ldl -lpthread -lm -lrt
@@ -159,15 +168,14 @@ docker run --rm --platform linux/arm/v5 --env-file "$ENVF" $P2P_VOL \
   # So as unidades que citam NV_TPK40 sao recompiladas; as demais sao os MESMOS
   # objetos da .so de cima. O link ganha --hash-style=both para o carregador
   # de ELF do Program40.cs achar o DT_HASH (o padrao do gcc daqui e so GNU_HASH).
-  mkdir -p /tmp/o40
   # p2pmotor_motor.c entra sempre aqui: o 4/5 NUNCA leva o motor (a UEP barra
   # .so de arquivo), entao ele e recompilado SEM -DNV_P2P_MOTOR (sem P2P_CFLAGS).
-  { grep -l NV_TPK40 src/*.c src/dts/*.c; echo src/p2pmotor_motor.c; } | sort -u | grep -v "src/video_tizen.c" | xargs -P 6 -I{} sh -c \
-    "gcc $CFLAGS -c {} -o /tmp/o40/\$(basename {} .c).o -DNV_TPK -DNV_TPK40 $ASS_CFLAGS -include src/tpk.h -fvisibility=hidden -Wno-unused-result $NUVIO_EXTRA_CFLAGS \$(case {} in src/p2pmotor.c) echo -D_FILE_OFFSET_BITS=64;; esac) @/tmp/flags -I/deps/include -I/deps/include/SDL2"
+  SOURCES40=$({ grep -l NV_TPK40 src/*.c src/dts/*.c; echo src/p2pmotor_motor.c; } | sort -u | grep -v "src/video_tizen.c")
+  make -s -f tools/native-objects.mk -j "$NUVIO_BUILD_JOBS" CC=gcc OBJDIR="$O40" SOURCES="$SOURCES40" \
+    NATIVE_FLAGS="$FLAGS -DNV_TPK40 @/tmp/flags -I/deps/include -I/deps/include/SDL2"
   OBJ40=""
-  for o in /tmp/o/*.o; do
-    b=$(basename "$o")
-    if [ -f "/tmp/o40/$b" ]; then OBJ40="$OBJ40 /tmp/o40/$b"; else OBJ40="$OBJ40 $o"; fi
+  for f in $ORDER; do
+    if printf "%s\n" "$SOURCES40" | grep -qxF "$f"; then OBJ40="$OBJ40 $O40/${f%.c}.o"; else OBJ40="$OBJ40 $O/${f%.c}.o"; fi
   done
   gcc -shared -o /work/build/tpk/libnuvio-tpk40.so $OBJ40 -Wl,--no-undefined \
     -Wl,-soname,libnuvio.so -Wl,--exclude-libs,ALL -Wl,--hash-style=both \
@@ -204,7 +212,7 @@ ARTE=$(bash tools/tizen-art.sh)
 rm -f "$SAIDA"/*.tpk
 for p in $PACOTES; do
   H=tizen-tpk/$p
-  rm -rf "$H/lib" "$H/res" "$H/bin" "$H/obj"
+  rm -rf "$H/lib" "$H/res"
   mkdir -p "$H/lib" "$H/res" "$H/shared/res"
   # O NuvioTpk40 leva a .so propria (1b/3); o nome dentro do pacote e o mesmo.
   if [ "$p" = NuvioTpk40 ]; then cp "$SAIDA/libnuvio-tpk40.so" "$H/lib/libnuvio.so"
@@ -223,33 +231,17 @@ for p in $PACOTES; do
   # Clipe mudo do canario de audio (#137, Video.PrimeAudio); so o host 6+ usa.
   [ "$p" = NuvioTpk40 ] || cp tizen-tpk/silencio.mp4 "$H/res/"
   cp deploy/app/tizen/icon.png "$H/shared/res/$p.png"
-  # The version AND the keyboard-canary privilege are rewritten here, per
-  # package — but the SOURCE manifest is a tracked file, so it is saved and put
-  # back. Without this every build left the tree dirty (and a later
-  # `git commit -a` would commit the build's identity into the source).
-  # `sed -i ''` is BSD syntax: on GNU sed the '' becomes the script itself and the
-  # command dies with "cannot read ...: No such file". `-i.bak` works on both.
-  MAN="$H/tizen-manifest.xml"
-  cp "$MAN" "$MAN.orig"
-  sed -i.bak "s/ version=\"[^\"]*\">/ version=\"$VER\">/" "$MAN"
-  # CANARIO do teclado/ditado do sistema (tizen-tpk/Texto.cs, #imetv):
-  # NUVIO_TPK_TEXTO=1 compila o Texto.cs e poe o privilegio do microfone
-  # (recorder, para o Tizen.Uix.Stt) SO neste build — o manifesto do git nao muda,
-  # porque e restaurado logo abaixo. Nao vai em release sem teste numa TV.
+  # Manifesto gerado fora da arvore versionada, tambem em falhas/interrupcoes.
+  mkdir -p "$SAIDA/manifests/$p"
+  MAN="$RAIZ/$SAIDA/manifests/$p/tizen-manifest.xml"
+  sed "s/ version=\"[^\"]*\">/ version=\"$VER\">/" "$H/tizen-manifest.xml" > "$MAN"
   FLAG_TEXTO=""
   if [ "${NUVIO_TPK_TEXTO:-}" = 1 ] && [ "$p" != NuvioTpk40 ]; then
-    sed -i.bak 's|<privilege>http://tizen.org/privilege/internet</privilege>|&<privilege>http://tizen.org/privilege/recorder</privilege>|' "$MAN"
+    sed -i.bak "s|<privilege>http://tizen.org/privilege/internet</privilege>|&<privilege>http://tizen.org/privilege/recorder</privilege>|" "$MAN"
+    rm -f "$MAN.bak"
     FLAG_TEXTO="-p:NvTextoCanario=1"
   fi
-  rm -f "$MAN.bak"
-  # Restore on BOTH paths: a failed build must not leave the tracked manifest
-  # wearing this build's identity.
-  if ! dotnet build "$H/$p.csproj" -c Release -nologo -v q $FLAG_TEXTO; then
-    mv "$MAN.orig" "$MAN"
-    echo "$p: dotnet build falhou" >&2
-    exit 1
-  fi
-  mv "$MAN.orig" "$MAN"
+  dotnet build "$H/$p.csproj" -c Release -nologo -v q -p:TizenManifestFile="$MAN" $FLAG_TEXTO
   TPK=$(find "$H/bin/Release" -name '*.tpk' | head -1)
   [ -n "$TPK" ] || { echo "$p: dotnet nao gerou .tpk" >&2; exit 1; }
   cp "$TPK" "$SAIDA/Nuvio-$VER-$p${NUVIO_TPK_TEXTO:+-texto}.tpk"

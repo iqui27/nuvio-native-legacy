@@ -191,19 +191,10 @@ if [ "${NUVIO_ASS_LIBASS:-1}" = "1" ]; then
   # As flags do emcc entram no eval abaixo; um caminho do checkout com espacos
   # vira dois argumentos mesmo dentro de ASS_CFLAGS. O symlink fica fora do
   # repositorio e nunca substitui um caminho preexistente que nao controlamos.
-  ASS_ROOT_SHORT="${TMPDIR:-/tmp}/nuvio-ass-wasm-root-$(id -u)"
-  ASS_ROOT_CANON=$(cd "$ASS_ROOT_REAL" && pwd -P)
-  if [ -L "$ASS_ROOT_SHORT" ]; then
-    [ "$(readlink "$ASS_ROOT_SHORT")" = "$ASS_ROOT_CANON" ] || {
-      echo "tizen.sh: symlink libass inesperado em $ASS_ROOT_SHORT" >&2
-      exit 2
-    }
-  elif [ -e "$ASS_ROOT_SHORT" ]; then
-    echo "tizen.sh: caminho temporario libass ja existe e nao e symlink: $ASS_ROOT_SHORT" >&2
-    exit 2
-  else
-    ln -s "$ASS_ROOT_CANON" "$ASS_ROOT_SHORT"
-  fi
+  ASS_TMP=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-ass-wasm.XXXXXXXX")
+  trap 'rm -rf "$ASS_TMP"' EXIT
+  ASS_ROOT_SHORT="$ASS_TMP/root"
+  ln -s "$(cd "$ASS_ROOT_REAL" && pwd -P)" "$ASS_ROOT_SHORT"
   ASS_ROOT="$ASS_ROOT_SHORT"
   ASS_CFLAGS="-DNV_ASS_LIBASS -I$ASS_ROOT/include"
   ASS_LIBS="-L$ASS_ROOT/lib -Wl,--start-group -lass -lharfbuzz -lfribidi -lfreetype -Wl,--end-group"
