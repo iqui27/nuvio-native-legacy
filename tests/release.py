@@ -16,6 +16,7 @@ spec = importlib.util.spec_from_file_location('release', ROOT/'tools/release.py'
 r = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(r)
 
+(ROOT/'build').mkdir(exist_ok=True)
 with tempfile.TemporaryDirectory(dir=ROOT/'build', prefix='release-test-') as tmp:
     tmp = Path(tmp)
     props = tmp/'local.properties'
