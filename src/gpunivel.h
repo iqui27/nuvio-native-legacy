@@ -21,23 +21,31 @@
 //       unica passada (GFX_COPIA, filtro linear). 2,25x menos pixels por
 //       quadro. SO FORCADO: nas Tizen 5.0 o texto ficou borrado demais.
 //
-// COMO O NIVEL E ESCOLHIDO (so no .tpk, NV_TPK):
+// COMO O NIVEL E ESCOLHIDO (.tpk, Android e LG webOS):
 //   - -DNV_TPK_NIVEL_FORCADO=N (tools/tpk.sh com NV_TPK_NIVEL=N): fixo, sem
 //     medir. E o canario de comparacao; a release nao usa.
 //   - senao ADAPTATIVO: nos primeiros ~20 s de home cheia mede FPS e quanto do
 //     quadro e ESPERA (clr+swap) contra CPU (ev+bomb+upd+des). FPS < 45 com a
 //     espera dominando = GPU presa: desce UM nivel, espera assentar, mede de
-//     novo. FPS bom = fica. CPU dominando = fica (menos pixel nao ajuda). Nunca
-//     sobe sozinho. O nivel alcancado fica em <dados>/gpu-nivel.txt com a
-//     chave GPU+driver+modelo+versao da Tizen, e o proximo arranque COMECA nele
-//     (e continua medindo: so desce). Chave diferente (firmware novo, outra TV)
-//     = recomeca do 0.
-//   - GPU fraca conhecida (ptv_gpu_fraca) sem nada gravado: comeca no 1.
+//     novo. So conserva a reducao com ganho >=15% E >=5 fps; caso contrario
+//     volta ao nivel anterior e bloqueia novas descidas para essa chave.
+//     Compara antes de aceitar FPS bom ou CPU dominante no candidato.
+//     gpu-nivel.txt mantem versao=1/nivel para leitores antigos e acrescenta
+//     avaliacao=1, bloqueado e fps0/1/2. Nivel legado >0 e comparado uma vez
+//     com o 0 na mesma sessao. Candidato so e gravado depois da comparacao.
+//     Chave diferente (firmware novo, outra TV) = recomeca do 0.
+//   - Sem nada gravado: comeca no 0, inclusive em GPU fraca conhecida.
+//     Tres descartes >1 s na tentativa, mesmo intercalados, com Home cheia e
+//     espera de GPU dominante: GPU fraca fica no 2 so nesta sessao, sem gravar.
+//     Janela completa ou perda dessas condicoes zera a contagem.
+//   - Sair da Home, perder as artes ou suspender cancela o candidato e volta
+//     ao nivel anterior; a proxima comparacao mede uma referencia nova e
+//     preserva a reavaliacao pendente do legado ate concluir a comparacao.
 //   - a chave ganha "4k" com superficie acima de 1080p: o nivel aprendido em
 //     4K (4x os pixels) nao vale para 1080p, e vice-versa.
 //   - NUNCA vira 720p sozinho (pedido do dono, 06/10: "720p e o pior cenario,
 //     e o que fica mais feio"): o maximo automatico e o 2, em 1080p.
-//   - fora do .tpk: nivel 0 sempre (LG e .wgt nao mudam). No Mac,
+//   - nos demais alvos: nivel 0 por padrao (.wgt nao muda). No Mac,
 //     NUVIO_GPU_NIVEL=N no ambiente forca o nivel, para ver o resultado.
 //
 // GLES3 / EXTENSOES: o host cria contexto GLES 2.0 (Program.cs Version20,
@@ -60,6 +68,8 @@ void gpun_iniciar(int w, int h);
 void gpun_log_perfil(long memMB, int texMb, int fios, int heroi);
 
 int  gpun_nivel(void);
+// Efeitos reduzidos pelo automatico, para a ajuda dos Ajustes.
+int  gpun_efeitos_automaticos(void);
 // Troca o nivel na hora, sem medir nem gravar (captura de teste).
 void gpun_definir_nivel(int n);
 // Ajuste "Efeitos visuais" do .tpk: 0 automatico, 1 completos, 2 leves.

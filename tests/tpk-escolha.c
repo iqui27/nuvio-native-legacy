@@ -22,18 +22,15 @@ const char *i18n(const char *s) { return s; }
 const char *ling_nome(const char *c) { return c; }
 int ling_casa(const char *c, const char *p) { (void)c; (void)p; return 0; }
 const char *ling_audio(void) { return ""; }
+int ling_tipo_legenda(const char *s, int f, int d) { (void)s; (void)f; (void)d; return 0; }
+const char *ling_tipo_legenda_rotulo(int t) { (void)t; return ""; }
+
 
 // Stubs for the dependencies #206 added to video_tpk.c (MKV header probe);
 // not the subject of this test.
 const char *ling_do_nome(const char *nome) { (void)nome; return NULL; }
 int ling_letreiro(const char *nome, int forcado) { (void)nome; (void)forcado; return 0; }
 void mkvass_aceitar_texto(int sim) { (void)sim; }
-int mkvass_cabecalho(const char *url, unsigned char **buf, long *n) {
-  (void)url; if (buf) *buf = NULL; if (n) *n = 0; return 0;
-}
-char *rede_baixar_trecho(const char *url, int segundos, long ini, long fim, long *tam) {
-  (void)url; (void)segundos; (void)ini; (void)fim; if (tam) *tam = 0; return NULL;
-}
 
 void nv_tpk_video_registrar(void (*)(const char *, const char *), void (*)(void), void (*)(int),
                             void (*)(int), void (*)(int), void (*)(int, int, int, int), int (*)(void));

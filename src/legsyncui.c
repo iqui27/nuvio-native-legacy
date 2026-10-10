@@ -149,6 +149,8 @@ int legsync_pilula_final(const LegSyncVisao *v, const char *provedor, char *dst,
 
 int legsync_pil_passo(LegSyncPil *p, const LegSyncVisao *v, unsigned agora, const char *provedor, char *texto, unsigned tam) {
   int quer, r = 0;
+  if (v->autoDesligado) { p->espera = 0; return LEGSYNC_PIL_ZERAR; }
+  if (v->falhaDownload && v->autoFase != 1) { p->espera = 0; return LEGSYNC_PIL_BAIXAR; }
   // Fechada, esperando o fim do plano: so o fim reabre. 2/3 = terminou (aceito,
   // desistiu/recusou/sem referencia); 1 segue; 0 = cancelado (sem plano): nada.
   if (p->espera && p->estado == LEGSYNC_PIL_OFF) {
@@ -165,7 +167,7 @@ int legsync_pil_passo(LegSyncPil *p, const LegSyncVisao *v, unsigned agora, cons
     if (v->fase == LEGSYNC_AGUARDANDO) quer = LEGSYNC_PIL_PROCURANDO;
     else if (v->autoFase == 1) quer = LEGSYNC_PIL_SINCRONIZANDO;
     else quer = LEGSYNC_PIL_APLICADA;
-    if (quer == LEGSYNC_PIL_PROCURANDO && agora - p->iniciou > LEGSYNC_PIL_BAIXAR_TETO) return LEGSYNC_PIL_BAIXAR;
+    // Cada troca baixa de novo. Só o callback pode declarar falha de download.
     if (quer == LEGSYNC_PIL_APLICADA && v->autoFase == 2) r |= LEGSYNC_PIL_LEMBRAR;
     // Leitura longa: a ilha encolhe de volta no relogio e o plano segue; o
     // aviso final reabre quando a sessao terminar.
@@ -196,7 +198,12 @@ static int acoesAgora(int slot, int *lista, int max) {
   int n = 0;
   if (slot != 0 || max < 1) return 0;
   v = legsync_visao(0);
-  if (v.acoes & LEGSYNC_ACAO_DESFAZER) lista[n++] = LEGSYNC_ACAO_DESFAZER;
+  if (v.autoDesligado) {
+    static const int a[] = { LEGSYNC_ACAO_RAPIDA, LEGSYNC_ACAO_COMPLETA, LEGSYNC_ACAO_AUDIO,
+                            LEGSYNC_ACAO_DESFAZER, LEGSYNC_ACAO_OUTRA, LEGSYNC_ACAO_PARAR };
+    for (unsigned i = 0; i < sizeof a / sizeof *a && n < max; i++)
+      if (v.acoes & a[i]) lista[n++] = a[i];
+  } else if (v.acoes & LEGSYNC_ACAO_DESFAZER) lista[n++] = LEGSYNC_ACAO_DESFAZER;
   return n;
 }
 
@@ -207,19 +214,20 @@ static const char *pEstado(int slot, void *u) {
   if (slot < 0 || slot > 1 || player_id_canal()[0]) return NULL;
   v = legsync_visao(slot);
   if (v.fase == LEGSYNC_INDISPONIVEL && v.autoFase == 0) return NULL;
-  legsync_texto_simples(&v, b, sizeof b);
+  if (v.autoDesligado) legsync_texto(&v, b, sizeof b);
+  else legsync_texto_simples(&v, b, sizeof b);
   return b[0] ? b : NULL;
 }
 
 static int pAcoes(int slot, const char **rot, int max, void *u) {
-  int l[2], n = acoesAgora(slot, l, max < 2 ? max : 2), i;
+  int l[6], n = acoesAgora(slot, l, max < 6 ? max : 6), i;
   (void)u;
   for (i = 0; i < n; i++) rot[i] = legsync_acao_rotulo(l[i]);
   return n;
 }
 
 static void pExecutar(int slot, int acao, void *u) {
-  int l[2], n = acoesAgora(slot, l, 2);
+  int l[6], n = acoesAgora(slot, l, 6);
   (void)u;
   if (acao >= 0 && acao < n) legsync_acao(l[acao]);
 }

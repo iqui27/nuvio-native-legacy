@@ -35,8 +35,14 @@ struct Native {
     return out != nullptr;
   }
   bool open() {
-    lib = dlopen("libplayerAPIs.so", RTLD_NOW | RTLD_LOCAL);
-    if (!lib) lib = dlopen("libplayerAPIs.so.1", RTLD_NOW | RTLD_LOCAL);
+    /* RTLD_NODELETE: a sonda abria e fechava a lib a cada video. No webOS 3
+     * a 2a sonda da sessao caia (SIGSEGV com pc fora de qualquer modulo,
+     * libgobject/libplayerAPIs na pilha; 65SJ800V/OLED55B7P). Suspeita: o
+     * dlclose descarregava dependencias dela que o processo nao tinha
+     * (GObject, GStreamer e outras; a GLib o video.c ja abre por conta)
+     * com fios delas ainda rodando. Carregada uma vez, fica. */
+    lib = dlopen("libplayerAPIs.so", RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE);
+    if (!lib) lib = dlopen("libplayerAPIs.so.1", RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE);
     if (!lib) {
       fprintf(stderr, "[dts] firmware library load failed: %s\n", dlerror());
       return false;

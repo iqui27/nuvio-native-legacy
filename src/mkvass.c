@@ -2838,12 +2838,12 @@ static int colherGrupo(Fio *f, int i, int j) {
 // Entrega o corpo ao overlay. legenda_definir_corpo REFAZ o vetor de cues do
 // zero a partir do corpo inteiro, em vez de um "anexar" incremental — e por
 // escolha: o vetor precisa continuar ordenado e com a maior duracao
-// recalculada, e reparsear algumas centenas de linhas custa menos de um
-// quadro; um anexar teria de reimplementar isso dentro de legenda.c so para
-// este chamador. A entrega e por LOTE (uma vez por passada do laco), nao por
+// recalculada. Documentos grandes custam mais que um quadro (#412), por
+// isso os lotes seguintes nao seguram a trava lida pelo player.
+// A entrega e por LOTE (uma vez por passada do laco), nao por
 // bloco.
 //
-// O mutex de S fica preso DURANTE a publicacao. Conferir a geracao, soltar o
+// Na PRIMEIRA entrega o mutex de S fica preso. Conferir a geracao, soltar o
 // mutex e so entao chamar legenda_definir_corpo deixava a troca de faixa entrar
 // no meio: o fio velho publicava cues antigos depois que o novo ja era atual.
 // legenda_definir_corpo so toma a trava interna de legenda e nao chama mkvass,
@@ -2853,8 +2853,12 @@ static int colherGrupo(Fio *f, int i, int j) {
 // libass sem apagar o quadro em tela. Antes, TODA entrega (uma por passada, a
 // cada 1-2 s enquanto colhia) apagava a legenda, desligava o libass e
 // reenviava as fontes — o pisca "por lote".
+// Serializa so os coletores: uma retomada pode herdar legG, entao o lote
+// velho deve terminar antes da primeira publicacao do coletor novo.
+static pthread_mutex_t entregaTrava = PTHREAD_MUTEX_INITIALIZER;
 static int entregarCorpoSeAtual(Fio *f, const char *corpo) {
-  int ok = 0;
+  int ok = 0, travado = 1;
+  pthread_mutex_lock(&entregaTrava);
   pthread_mutex_lock(&S.trava);
   if (f->g == S.geracao && !S.parar) {
     int i;
@@ -2871,7 +2875,15 @@ static int entregarCorpoSeAtual(Fio *f, const char *corpo) {
         g = legenda_definir_corpo_se(corpo, f->legG);
         if (g) { f->legG = g; ok = 1; S.fontesLegG = f->nFontes ? g : 0; }
       }
-    } else ok = legenda_atualizar_corpo_se(corpo, f->legG);
+    } else {
+      // #412: parse/recriacao do ASS pode levar >120 ms. O quadro usa
+      // S.trava em passo/folga/estado; nao espera pelo documento inteiro.
+      // A geracao da legenda e conferida atomicamente por *_corpo_se e
+      // pelo assrender. `f` pertence apenas a este coletor.
+      pthread_mutex_unlock(&S.trava);
+      travado = 0;
+      ok = legenda_atualizar_corpo_se(corpo, f->legG);
+    }
     if (ok) f->entregas++;
     else if (f->entregas >= 0) {
       printf("[mkvass] lote da faixa %d DESCARTADO: a legenda trocou de dono (geracao %u)\n",
@@ -2880,7 +2892,8 @@ static int entregarCorpoSeAtual(Fio *f, const char *corpo) {
       f->entregas = -1000000;     // loga uma vez; nunca volta a ser a primeira
     }
   }
-  pthread_mutex_unlock(&S.trava);
+  if (travado) pthread_mutex_unlock(&S.trava);
+  pthread_mutex_unlock(&entregaTrava);
   return ok;
 }
 

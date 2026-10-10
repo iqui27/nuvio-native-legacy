@@ -27,7 +27,7 @@ static void gfxBlend(int on) {
 // shader que usasse a mesma variavel.
 typedef struct {
   GLuint prog;
-  GLint rect, tela, tex, foco, par, raio, cor, asp, texAsp, forcarCover, veuTela, borda, varre, veu, desl, fundo,
+  GLint rect, tela, tex, foco, reflexo, par, raio, cor, asp, texAsp, forcarCover, veuTela, borda, varre, veu, desl, fundo,
         grad0, grad1, grad2, tempo, reg0, reg1, reg2, reg3, vaza;
   GLint amb, ambOn;         // uAmb/uAmbOn: so os tres modos de arte com rampa
   GLint texB, texAspB, alfaB;   // camadas do destaque (gfx_hero_camadas)
@@ -428,6 +428,7 @@ static const char *FS_COVER =
 
 static const char *FS_CORPO[GFX_NMODOS] = {
   // GFX_CARD — arte inteira com cantos e especular no foco (sem zoom nem corte)
+  "uniform float uReflexo;\n"
   "void main(){\n"
   "  float d = sdf(vUv, uRaio, uAspect);\n"
   "  float m = borda(d);\n"
@@ -461,7 +462,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // inferior esquerdo e desliza ate o repouso; em 0 e o especular de sempre.
   // Um pouco mais forte enquanto anda, para o olho seguir a passagem.
   "    float e = (dot(vUv-0.5, vec2(0.5029,-0.8644)) + uPar.x*3.0 + uVarre) * 3.0;\n"
-  "    cor += exp(-e*e) * (0.16 + 0.10*min(abs(uVarre),1.0)) * uFoco;\n"
+  "    cor += exp(-e*e) * (0.16 + 0.10*min(abs(uVarre),1.0)) * uFoco * uReflexo;\n"
   "    cor *= (0.80 + 0.20*uFoco);\n"
   // O REBORDO E OPCIONAL (Ajustes > Borda no cartaz em foco). O resto do
   // bloco de foco fica: o cartaz em foco continua mais claro e com o
@@ -1455,6 +1456,7 @@ int gfx_iniciar(void) {
     progs[m].tela = glGetUniformLocation(p, "uTela");
     progs[m].tex  = glGetUniformLocation(p, "uTex");
     progs[m].foco = glGetUniformLocation(p, "uFoco");
+    progs[m].reflexo = glGetUniformLocation(p, "uReflexo");
     progs[m].par  = glGetUniformLocation(p, "uPar");
     progs[m].raio = glGetUniformLocation(p, "uRaio");
     progs[m].cor  = glGetUniformLocation(p, "uCor");
@@ -2004,6 +2006,10 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
   // usam foco/parallax/texAsp, entao o teste barato aqui poupa a chamada cara.
   glUniform4f(P->rect, r.x, r.y, r.w, r.h);
   if (P->foco >= 0)   glUniform1f(P->foco, foco);
+  // #410: o especular da arte tambem obedece a Reflexo/Profundidade.
+  // uFoco continua inteiro: contraste e rebordo nao sao intensidade de reflexo.
+  if (P->reflexo >= 0)
+    glUniform1f(P->reflexo, ajustes_profundidade() ? ajustes_profundidade_brilho() : 0.0f);
   if (P->par >= 0)    glUniform2f(P->par, parx, pary);
   if (P->raio >= 0)   glUniform1f(P->raio, raio);
   if (P->asp >= 0)    glUniform1f(P->asp, r.h > 0 ? r.w / r.h : 1.0f);

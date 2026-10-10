@@ -1,6 +1,6 @@
 {
   "id": "space.nuvio.native.legacy",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "vendor": "iqui27",
   "type": "native",
   "main": "nuvio-proto",

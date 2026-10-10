@@ -144,6 +144,7 @@ int   addons_aceita_id(int i, const char *t, const char *id) { (void)i; (void)t;
 const char *ajustes_tmdb_idioma(void)      { return "pt-BR"; }
 int   cat_acrescentar(const CatItem *i)    { (void)i; return -1; }
 void  cat_atualizar_item(int i, const CatItem *n) { (void)i; (void)n; }
+void  cat_atualizar_item_sem_abas(int i, const CatItem *n) { (void)i; (void)n; }
 // 2.0.3: fios da descoberta copiam e escrevem por partes (2b4234eb, 70acffaf).
 int   cat_copiar_item(int i, CatItem *s) { (void)i; (void)s; return 0; }
 int   cat_completar_sinopse(int i, const char *im, const char *si, const char *ti) { (void)i; (void)im; (void)si; (void)ti; return 0; }
@@ -165,6 +166,12 @@ const CatItem *cat_item(int i)             { (void)i; return NULL; }
 int   cat_n_episodios(int i)               { (void)i; return 0; }
 double cat_relogio_ms(void)                { return 0.0; }   // descoberta.c times publicarMontagem; the value is only logged
 void  fil_gravar_registro(void)            { }
+int   fil_lista_e_deste_perfil(int p)       { (void)p; return 1; }
+unsigned fil_perfil_geracao(void)          { return 0; }
+FilPassada fil_passada_ler(void)          { FilPassada p = {0, 0}; return p; }
+int   fil_passada_valida(const FilPassada *p) { (void)p; return 1; }
+void  fil_registrar_de(const FilPassada *p, const char *c, const char *t, const char *a, const char *k, int n) { (void)p; (void)c; (void)t; (void)a; (void)k; (void)n; }
+void  fil_registrar_se_couber_de(const FilPassada *p, const char *c, const char *t, const char *a, const char *k) { (void)p; (void)c; (void)t; (void)a; (void)k; }
 int   fil_podar_catalogos(const char *const *ids, const char *const *bases, int n,
                           int perfilDaLista) {
   (void)ids; (void)bases; (void)n; (void)perfilDaLista; return 0; }

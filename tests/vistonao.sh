@@ -17,6 +17,9 @@ if [ -f src/vistonao.c ]; then extra=(-DTEM_VISTONAO src/vistonao.c); fi
 cc -O1 -g -Wall -Wextra -Isrc -Wno-deprecated-declarations -Wno-macro-redefined \
   ${extra[@]+"${extra[@]}"} src/vistoep.c src/contapend.c src/contalib.c \
   src/js.c src/jsw.c tests/vistonao.c -o "$tmp/vistonao" -lpthread
+# Diagnostico separado: falhas conhecidas de reconciliacao, sem fingir que
+# reproduzem a desmarcacao remota nao registrada no log da TV.
+if [ "${1:-}" = --site ]; then "$tmp/vistonao" --site; exit; fi
 falhou=0
 "$tmp/vistonao" | tee "$tmp/saida.txt" || falhou=1
 

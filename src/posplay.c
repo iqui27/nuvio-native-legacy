@@ -1,6 +1,8 @@
 #include "posplay.h"
 #include "intro.h"
 #include "proximo.h"
+#include "fontecache.h"
+#include "jfid.h"
 #include "idioma.h"
 #include "catalogo.h"
 #include "extras.h"
@@ -23,8 +25,10 @@
 #include "escala.h"
 #include "ponteiro.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
 #include <string.h>
+#include <time.h>
 
 // 5 s de contagem final: constante do web 1.0.6 (postPlayRecommendationController).
 // O web abre o painel de filme aos 90%; aqui, desde a 2.0.3, sem marcador e um
@@ -79,6 +83,15 @@ static Uint32 fecharEm;              // 0 = sem contagem
 static int    pedT, pedE, pedTitulo = -1;
 static int    proxT, proxE;          // proximo episodio, quando ha
 static char   proxNome[120];
+static char   preEpisodio[64], preAlvo[64];
+static int    preTentou;
+static FontecacheEscopo preEscopo;
+
+static void cancelarPreparo(int apagar) {
+  fontecache_cancelar_proximo();
+  if (apagar && preAlvo[0])
+    fontecache_vod_apagar(preAlvo, "series", "", &preEscopo);
+}
 
 int posplay_visivel(void) { return visivel; }
 // Cartao do proximo episodio: SOBRE o video em tela cheia (o video nao recua).
@@ -101,9 +114,13 @@ int posplay_sobre_video(void) { return visivel && serie; }
 // (janelaSerie) continua verdadeira e o painel volta no quadro seguinte —
 // no video do relato o cartao nem sequer some depois do OK, que era este
 // segundo defeito somado ao primeiro.
-static void esconder(void) { visivel = 0; fecharEm = 0; foco = 0; dispensado = 1; }
+static void esconder(void) { cancelarPreparo(!pedT); visivel = 0; fecharEm = 0; foco = 0; dispensado = 1; }
 
 void posplay_fechar(void) {
+  // Uma lista JA completa continua disponivel ao buscarParaPlayer do proximo.
+  // O fio em voo e cancelado sem esperar HTTP na UI; nunca publica depois daqui.
+  cancelarPreparo(0);
+  preTentou = 0; preEpisodio[0] = preAlvo[0] = 0;
   visivel = 0; fecharEm = 0; foco = 0;
   durVista = 0.0; durEstavel = 0.0;   // titulo novo: a duracao comeca de novo
   pedT = pedE = 0; pedTitulo = -1;
@@ -161,6 +178,52 @@ static int acharProximo(int idxItem, int t, int e) {
   proxT = px->temporada; proxE = px->episodio;
   snprintf(proxNome, sizeof proxNome, "%s", px->nome);
   return 1;
+}
+
+// So o gatilho e novo: identidade pelo catalogo, janela pelo player, consulta
+// e fio pelo fontecache. Tudo que le catalogo/conta/perfil fica no fio da UI.
+static void prepararProximo(int ehSerie, double resta) {
+  FontecacheEscopo escopo;
+  const CatEp *px;
+  const CatItem *ci = cat_item(idx);
+  long long quando;
+  int t = 0, e = 0, n = cat_n_episodios(idx), proximo;
+  if (!ehSerie || !ci || jfid_e(ci->imdb)) return;
+  addons_capturar_escopo(&escopo);
+  if (!ajustes_fonte_preparar() || (preTentou &&
+      (escopo.geracao != preEscopo.geracao || escopo.addons != preEscopo.addons ||
+       escopo.perfil != preEscopo.perfil || strcmp(escopo.conta, preEscopo.conta)))) {
+    cancelarPreparo(1);
+    return;
+  }
+  // Uma renovacao, 10 s antes da contagem final: o preparo feito antes dos
+  // creditos pode ter expirado. Nao consulta periodicamente durante o episodio.
+  if (preTentou == 2 || (preTentou && resta > PP_CONTAGEM_S + 10.0) ||
+      dispensado || durEstavel < PP_DUR_ESTAVEL_S ||
+      !player_janela_proximo(10.0)) return;
+  player_episodio_atual(&t, &e);
+  if (t <= 0 || e <= 0) return;
+  proximo = prox_indice_seguinte(n ? cat_episodio(idx, 0) : NULL, n, t, e);
+  px = proximo >= 0 ? cat_episodio(idx, proximo) : NULL;
+  if (!px) return;
+  quando = prox_data_ms(px->data);
+  // Desconhecido nao prova que ja estreou: nao gasta rede especulativa.
+  if (quando == PROX_SEM_DATA || quando > (long long)time(NULL) * 1000) return;
+  if (!cat_id_stream(idx, px->temporada, px->episodio, preAlvo, sizeof preAlvo) ||
+      jfid_e(preAlvo)) return;
+  preEscopo = escopo;
+  if (preTentou) {
+    Stream *l = NULL;
+    Uint32 idade = 0;
+    int n;
+    int acerto = fontecache_vod_pegar(preAlvo, "series", "", &preEscopo, &l, &n, &idade);
+    free(l);
+    if (acerto == FC_ACERTO && idade + fmax(resta, 0.0) * 1000 < FONTECACHE_VOD_VALIDADE_MS) {
+      preTentou = 2;
+      return;
+    }
+  }
+  if (fontecache_precarregar_proximo(preAlvo, &preEscopo)) preTentou++;
 }
 
 // Marcador de creditos que o FILME aceita. Ver posplay_regra_filme.
@@ -223,6 +286,17 @@ void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
   anim = anim_mola(anim, visivel ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
   // A CADA QUADRO, e nao so na abertura do painel (#190): com o cartao no ar o
   // `idx` guardado envelhecia junto com o catalogo.
+  { char episodio[64] = "";
+    int t = 0, e = 0;
+    player_episodio_atual(&t, &e);
+    if (ehSerie && t > 0 && e > 0)
+      cat_id_stream(idxCatalogo, t, e, episodio, sizeof episodio);
+    if (preEpisodio[0] && strcmp(preEpisodio, episodio)) {
+      cancelarPreparo(1);
+      posplay_fechar();
+    }
+    snprintf(preEpisodio, sizeof preEpisodio, "%s", episodio);
+  }
   fixarTitulo(idxCatalogo);
   if (durSeg - durVista > 2.0 || durVista - durSeg > 2.0) {
     durVista = durSeg;
@@ -230,6 +304,7 @@ void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
   } else {
     durEstavel += dt;
   }
+  prepararProximo(ehSerie, vel_tempo_real(durSeg - posSeg, player_velocidade_efetiva()));
   if (durSeg <= 1.0) return;
 
   if (ehSerie) {

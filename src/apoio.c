@@ -9,18 +9,24 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *const URL[APOIO_N] = { NV_URL_PATREON, NV_URL_KOFI };
-static const char *const NOME[APOIO_N] = { "Patreon", "Ko-fi" };
+static const char *const URL[] = { NV_URL_PATREON, NV_URL_KOFI, NV_URL_DISCORD };
+static const char *const NOME[] = { "Patreon", "Ko-fi", "Discord" };
 
-static GLuint tex[APOIO_N];
-static int    texLado[APOIO_N];     // modulos + zona de silencio
-static int    tentou[APOIO_N];
+static GLuint tex[APOIO_DISCORD + 1];
+static int    texLado[APOIO_DISCORD + 1];     // modulos + zona de silencio
+static int    tentou[APOIO_DISCORD + 1];
 // O QR OFICIAL DO KO-FI (o do dono, com a xicara no meio): aponta para o
 // endereco por ID da pagina (ko-fi.com/K0S82835VO), nao para NV_URL_KOFI.
 // 410 px = 41 modulos de 10 px, zona de silencio inclusa. Sem a imagem (ou
 // antes de ela carregar) vale o gerado a partir de NV_URL_KOFI.
 static char selo[600] = "deploy/app/art/marcas/kofi-badge.png";
 static char qrKofi[600] = "deploy/app/art/marcas/kofi-qr.png";
+// O QR E O SELO DO DISCORD (pedido do dono, 09/10: "com o icone e as cores"):
+// imagens geradas por tools/discord_qr.py a partir de NV_URL_DISCORD, correcao
+// H, logo no centro. Trocar o convite = rodar a ferramenta de novo. Sem a
+// imagem vale o QR gerado e a placa so com o nome.
+static char qrDiscord[600] = "deploy/app/art/marcas/discord-qr.png";
+static char seloDiscord[600] = "deploy/app/art/marcas/discord-badge.png";
 
 int apoio_n(void) {
   int i, n = 0;
@@ -35,8 +41,8 @@ int apoio_qual(int i) {
   return -1;
 }
 
-const char *apoio_nome(int q) { return q >= 0 && q < APOIO_N ? NOME[q] : ""; }
-const char *apoio_url(int q) { return q >= 0 && q < APOIO_N ? URL[q] : ""; }
+const char *apoio_nome(int q) { return q >= 0 && q <= APOIO_DISCORD ? NOME[q] : ""; }
+const char *apoio_url(int q) { return q >= 0 && q <= APOIO_DISCORD ? URL[q] : ""; }
 
 const char *apoio_url_curta(int q) {
   const char *s = apoio_url(q), *p = strstr(s, "://");
@@ -80,9 +86,9 @@ static void gerar(int q) {
 
 int apoio_qr(int q, float x, float y, float lado, float a) {
   float s;
-  if (q < 0 || q >= APOIO_N || !URL[q][0]) return 0;
-  if (q == APOIO_KOFI && a > 0.004f) {
-    GLuint t = tex_obter(qrKofi);
+  if (q < 0 || q > APOIO_DISCORD || !URL[q][0]) return 0;
+  if ((q == APOIO_KOFI || q == APOIO_DISCORD) && a > 0.004f) {
+    GLuint t = tex_obter(q == APOIO_KOFI ? qrKofi : qrDiscord);
     if (t) {
       // Cantos claros do cartao + o simbolo oficial com folga, sem modulo
       // menor que ~5 px no menor uso (a previa de Ajustes).
@@ -113,15 +119,19 @@ void apoio_dir(const char *d) {
   if (!d || !d[0]) return;
   snprintf(selo, sizeof selo, "%s/marcas/kofi-badge.png", d);
   snprintf(qrKofi, sizeof qrKofi, "%s/marcas/kofi-qr.png", d);
+  snprintf(qrDiscord, sizeof qrDiscord, "%s/marcas/discord-qr.png", d);
+  snprintf(seloDiscord, sizeof seloDiscord, "%s/marcas/discord-badge.png", d);
 }
 
 // O selo do Ko-fi tem 672x356 no original (1,89:1) e cantos de ~10% da
 // altura; a placa do Patreon copia altura, cantos e as duas linhas (pequena
 // em cima, nome grande embaixo) para os dois lerem como par.
 float apoio_rotulo(int q, float x, float y, float h, int centro, float a) {
-  if (q == APOIO_KOFI) {
-    GLuint t = tex_obter(selo);
-    float ap = tex_aspecto(selo), w;
+  if (q < 0 || q > APOIO_DISCORD) return 0;
+  if (q == APOIO_KOFI || (q == APOIO_DISCORD && tex_obter(seloDiscord))) {
+    const char *arq = q == APOIO_KOFI ? selo : seloDiscord;
+    GLuint t = tex_obter(arq);
+    float ap = tex_aspecto(arq), w;
     if (ap <= 0.0f) ap = 672.0f / 356.0f;
     w = h * ap;
     if (centro) x -= w * 0.5f;
@@ -131,20 +141,22 @@ float apoio_rotulo(int q, float x, float y, float h, int centro, float a) {
     }
     return w;
   }
-  { TxtLinha p = txt_linha(TXT_V2_18, i18n("Apoie no"), 30, 31, 36, 255);
+  { TxtLinha p = {0};
+    if (q != APOIO_DISCORD) p = txt_linha(TXT_V2_18, i18n("Apoie no"), 30, 31, 36, 255);
     TxtLinha n = txt_linha(TXT_W20_24B, NOME[q], 20, 21, 26, 255);
-    float w = (float)(p.w > n.w ? p.w : n.w) + 2.0f * 0.42f * h, th = (float)p.h + (float)n.h - 2.0f;
+    float w = (float)(p.w > n.w ? p.w : n.w) + 2.0f * 0.42f * h;
+    float ph = p.h ? (float)p.h - 2.0f : 0.0f, th = ph + (float)n.h;
     if (centro) x -= w * 0.5f;
     gfx_cor((GfxRect){ x, y, w, h }, 0.11f, 0.957f, 0.961f, 0.980f, a);
     txt_desenhar_alpha(p, x + (w - (float)p.w) * 0.5f, y + (h - th) * 0.5f, 0.8f * a);
-    txt_desenhar_alpha(n, x + (w - (float)n.w) * 0.5f, y + (h - th) * 0.5f + (float)p.h - 2.0f, a);
+    txt_desenhar_alpha(n, x + (w - (float)n.w) * 0.5f, y + (h - th) * 0.5f + ph, a);
     return w;
   }
 }
 
 void apoio_soltar(void) {
   int q;
-  for (q = 0; q < APOIO_N; q++) {
+  for (q = 0; q <= APOIO_DISCORD; q++) {
     if (tex[q]) { gfx_tex_esquecer(tex[q]); glDeleteTextures(1, &tex[q]); }
     tex[q] = 0; tentou[q] = 0;
   }

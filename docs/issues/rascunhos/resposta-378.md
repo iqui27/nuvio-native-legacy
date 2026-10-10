@@ -1,0 +1,3 @@
+Thanks, found it: once any setting is changed on the TV, the app stopped reading the subtitle language from your account, so "From account" ended up with no language and nothing was turned on; this is fixed for the next update (until then, picking the language directly in Settings works, as you saw).
+For the embedded subtitles that don't open, could you tell us which file it was (MKV or MP4, and the subtitle type if the track list shows it, e.g. PGS/image or ASS)?
+And right after it happens, please send a log from Settings > About > Send log and reply here with the time you sent it, so we can find it.

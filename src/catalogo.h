@@ -472,6 +472,11 @@ void cat_definir_episodios(int indiceItem, const CatEp *lista, int n);
 // Substitui UM item, preservando o resto. Usado quando o detalhe abre e traz
 // elenco, direcao e temporadas que o catalogo da fileira nao tinha.
 void cat_atualizar_item(int indice, const CatItem *novo);
+// O mesmo, mas as abas de temporada (temporadas/nTemporadas) ficam as que o item
+// JA tem, lidas sob a trava. Para a cauda de enriquecimento (elenco, arte) do
+// detalhe, que roda depois de soltar o fio de episodios: um fio mais novo do
+// mesmo titulo pode ter publicado outra lista com outras abas (#372).
+void cat_atualizar_item_sem_abas(int indice, const CatItem *novo);
 // Copia do item `indice` sob a trava dos publicadores; 0 se o indice nao existe.
 // Para fios fora do desenho (o ponteiro de cat_item() so vale no quadro).
 int  cat_copiar_item(int indice, CatItem *saida);

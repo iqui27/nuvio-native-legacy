@@ -196,10 +196,87 @@ static void pilula_sequencia(int fim, int ok, int cancela) {
   now += 20; r = legsync_pil_passo(&p, &v, now, "OS", t, sizeof t); assert(r & LEGSYNC_PIL_ZERAR);
 }
 
+// Regressões TCL 10/10.
+static void regressaoTcl(int caso) {
+  LegSyncVisao v; char texto[200]; const char *rot[8];
+  LegSyncPil p = { .rastreia = 1, .estado = LEGSYNC_PIL_PROCURANDO, .desde = 1, .iniciou = 1 };
+  legsync_ui_ligar(); legsync_definir_trocador(trocadorTeste);
+  if (caso == 1) {
+    legsync_auto_habilitar(0); legsync_iniciar(MKV);
+    legsync_primaria_externa("ext://0/ext_mais2500.srt", "pt", "Escolhida");
+    v = esperarFase(MKV, LEGSYNC_PRONTA);
+    for (int k = 0; k < 80; k++) passo(MKV, 0);
+    assert(!v.autoFase && pedidosLeitor == 0 && trocas == 0 && legsync_offset_ms(320) == 320);
+    assert(prov.acoes(0, rot, 8, prov.u) >= 2); // menu manual continua acessível
+    assert(legsync_pil_passo(&p, &v, 22000, "P", texto, sizeof texto) & LEGSYNC_PIL_ZERAR);
+    assert(legsync_acao(LEGSYNC_ACAO_RAPIDA));
+    v = esperarFase(MKV, LEGSYNC_ACEITA); assert(abs(v.offsetAutoMs - 2500) <= 25);
+    // A segunda também não inicia coleta quando o ajuste está desligado.
+    legsync_encerrar(); legsync_iniciar(MKV); legsync_primaria_outra(1);
+    legenda2_definir_baixador(baixar2); legenda2_reiniciar();
+    int antes = pedidosLeitor;
+    legenda2_escolher("seg", "ext://0/ext_mais2500.srt", "pt", "Addon");
+    for (int k = 0; k < 100; k++) { passo(MKV, 0); usleep(1000); }
+    assert(pedidosLeitor == antes && legenda2_offset_total() == 0);
+    legenda2_encerrar();
+    // Desligar durante leitura cancela o plano e não troca a escolha.
+    legsync_auto_habilitar(1); legsync_iniciar(MKV); travar = 1;
+    legsync_primaria_externa("ext://0/ext_mais2500.srt", "pt", "Escolhida");
+    esperarFase(MKV, LEGSYNC_LENDO); legsync_auto_habilitar(0); travar = 0;
+    for (int k = 0; k < 80; k++) { passo(MKV, 0); usleep(1000); }
+    v = legsync_visao(0); assert(!v.autoFase && v.fase == LEGSYNC_PRONTA && trocas == 0);
+  } else if (caso == 2) {
+    const char *sparse = "https://cdn.example/sparse.mkv";
+    legsync_auto_habilitar(1); legsync_iniciar(sparse);
+    cand[0] = "ext_menos1200.srt"; nCand = 1;
+    legsync_primaria_externa("ext://0/ext_mais2500.srt", "pt", "Escolhida");
+    v = esperarAuto(sparse, 3);
+    assert(trocas == 0 && voltou == 0 && legsync_offset_ms(300) == 300);
+    assert(v.fase == LEGSYNC_RECUSADA); conferirNaTela(2500);
+    // Se só a EXTERNA tem poucas falas, trocar por uma boa continua permitido.
+    legsync_iniciar(MKV); trocas = 0;
+    legsync_primaria_externa("ext://0/sparse.srt", "pt", "Curta");
+    v = esperarAuto(MKV, 2);
+    assert(trocas == 1 && v.autoTrocou && abs(v.offsetAutoMs + 1200) <= 25);
+  } else {
+    // 20 s somando escolha + análise + trocas NÃO é falha do download atual.
+    legsync_auto_habilitar(1); legsync_iniciar(MKV);
+    legsync_primaria_externa("ext://0/ext_mais2500.srt", "pt", "Escolhida");
+    do { usleep(1000); v = legsync_visao(0); } while (v.fase == LEGSYNC_AGUARDANDO);
+    assert(v.fase == LEGSYNC_PRONTA);
+    legsync_pil_passo(&p, &v, 1100, "P", texto, sizeof texto);
+    legsync_primaria_externa("ext://100/ext_menos1200.srt", "pt", "Trocada");
+    v = legsync_visao(0); assert(v.fase == LEGSYNC_AGUARDANDO);
+    assert(!(legsync_pil_passo(&p, &v, 22000, "P", texto, sizeof texto) & LEGSYNC_PIL_BAIXAR));
+    do { usleep(1000); v = legsync_visao(0); } while (v.fase == LEGSYNC_AGUARDANDO);
+    assert(v.fase == LEGSYNC_PRONTA);
+    assert(!(legsync_pil_passo(&p, &v, 23000, "P", texto, sizeof texto) & LEGSYNC_PIL_BAIXAR));
+    // A ilha ja recolheu quando o download da original falha.
+    p.estado = LEGSYNC_PIL_SINCRONIZANDO; p.desde = 19000;
+    v = pv(LEGSYNC_LENDO, 1);
+    assert(legsync_pil_passo(&p, &v, 23001, "P", texto, sizeof texto) & LEGSYNC_PIL_ESCONDEU);
+    assert(p.estado == LEGSYNC_PIL_OFF && p.espera);
+    // Falha real vem do callback, não de um relógio da interface.
+    legsync_primaria_externa("ext://0/inexistente.srt", "pt", "Falhou");
+    legsync_definir_trocador(NULL);
+    v = esperarAuto(MKV, 3);
+    assert(legsync_pil_passo(&p, &v, 24000, "P", texto, sizeof texto) & LEGSYNC_PIL_BAIXAR);
+    // pilFalhou e pilZerar (apos 8 s) limpam rastreia/estado, mas nao espera.
+    p.rastreia = 0; p.estado = LEGSYNC_PIL_OFF;
+    int avisos = 1;
+    for (unsigned t = 32001; t < 33000; t += 16)
+      if (p.rastreia || p.espera)
+        avisos += !!(legsync_pil_passo(&p, &v, t, "P", texto, sizeof texto) & LEGSYNC_PIL_BAIXAR);
+    assert(avisos == 1 && !p.espera);
+  }
+  legsync_destruir(); printf("TCL regressão %d: ok\n", caso);
+}
+
 int main(int argc, char **argv) {
   LegSyncVisao v; int casos = 0;
   DIR = argc > 1 ? argv[1] : "/tmp/nv-legref-fx";
   legsync_teste_leitor(lerMkv, NULL);
+  if (getenv("TCL_CASO")) { regressaoTcl(atoi(getenv("TCL_CASO"))); return 0; }
   legsync_teste_auto(0);   // as secoes 1..11 testam as ACOES manuais; o automatico e a secao 12
 
   // Antes de criar e no slot 1: honesto.
@@ -392,14 +469,14 @@ int main(int argc, char **argv) {
     esperarFase(MKV, LEGSYNC_PRONTA);
     assert(prov.estado(0, prov.u) && !prov.estado(1, prov.u));         // segundo idioma: depois
     canalId = "xtream:1:2"; assert(!prov.estado(0, prov.u)); canalId = "";
-    assert(strstr(prov.estado(0, prov.u), "Sincronizando"));            // R4: uma linha so, sem menu
-    assert(prov.acoes(0, rot, 8, prov.u) == 0);                         // nada a escolher antes de sincronizar
+    assert(strstr(prov.estado(0, prov.u), "Pronta"));            // R4: uma linha so, sem menu
+    assert(prov.acoes(0, rot, 8, prov.u) == 2);                         // rápida e completa continuam manuais
     assert(prov.acoes(1, rot, 8, prov.u) == 0);
     assert(legsync_acao(LEGSYNC_ACAO_COMPLETA));
     v = esperarFase(MKV, LEGSYNC_ACEITA); assert(abs(v.offsetAutoMs - 2500) <= 25);
-    assert(!strcmp(prov.estado(0, prov.u), "Sincronizada"));
+    assert(strstr(prov.estado(0, prov.u), "Sincronizada:"));
     n = prov.acoes(0, rot, 8, prov.u);
-    assert(n == 1 && !strcmp(rot[0], "Desfazer"));
+    assert(n == 2 && !strcmp(rot[0], "Desfazer"));
     prov.executar(0, 0, prov.u);                                        // Desfazer
     assert(legsync_visao(0).fase == LEGSYNC_DESFEITA && legsync_offset_ms(0) == 0);
     prov.executar(0, 99, prov.u);                                       // indice velho: nada
@@ -527,6 +604,7 @@ int main(int argc, char **argv) {
   //     embutida, sozinha, mesmo com a principal embutida. Offset puro vai
   //     para o offset automatico da legenda2; desligar a segunda zera.
   { int k;
+    legsync_auto_habilitar(1);
     legenda2_definir_baixador(baixar2);
     legsync_iniciar(MKV); legsync_primaria_outra(1);
     legenda2_reiniciar(); legenda2_escolher("seg", "ext://0/ext_mais2500.srt", "pt", "Addon");
@@ -541,6 +619,8 @@ int main(int argc, char **argv) {
     assert(legenda2_offset_total() == 0 && legsync_visao(1).fase == LEGSYNC_INDISPONIVEL);
     legenda2_encerrar(); legenda2_definir_baixador(NULL);
     casos++; }
+
+  legsync_teste_auto(0);
 
   // 10. Fim de sessao e corridas de teardown: leitura presa, download pendente,
   //     analise em curso, 40 sessoes seguidas; depois destruir com tudo no ar.

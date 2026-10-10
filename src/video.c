@@ -1,5 +1,6 @@
 #include "app_id.h"
 #include "video.h"
+#include "webosver.h"
 #include "audioinfo.h"
 #include "esmaecer.h"
 #include "video_escala.h"
@@ -712,27 +713,20 @@ static void esperar(int ms) { struct timespec t; t.tv_sec = ms / 1000;
 // registro 6311 (LG C4 atualizada para webOS 11.2) era o chute "sem ACB => 5"
 // e nao a versao: a TV do relato e as que tocam saiam iguais no log, e a
 // unica diferenca conhecida — o firmware — nao aparecia em lugar nenhum.
-static char releaseLinha[128];
+// Quem decide a versao e o webosver.c (webos_release do nyx, depois o
+// starfish-release): a TV de 2017 (webOS 3.9) so tem o nyx e antes caia no 4
+// daqui. Desconhecida continua valendo o chute de sempre (5 com a libAcbAPI
+// ausente, senao 4), guardado no primeiro uso.
 static int webosMaior(void) {
   static int v, lido;
   if (v) return v;
-  { FILE *f = fopen("/etc/starfish-release", "r");
-    if (f) {
-      char linha[256];
-      while (fgets(linha, sizeof linha, f)) {
-        const char *r = strstr(linha, "release ");
-        if (!releaseLinha[0]) {
-          size_t n = strcspn(linha, "\r\n");
-          snprintf(releaseLinha, sizeof releaseLinha, "%.*s", (int)n, linha);
-        }
-        if (r && sscanf(r + 8, "%d", &v) == 1 && v > 0) break;
-        v = 0;
-      }
-      fclose(f);
-    } }
+  v = nv_webos_major();
   if (!lido) {
     lido = 1;
-    printf("[video] starfish-release: %s\n", releaseLinha[0] ? releaseLinha : "(sem arquivo)");
+    char sf[128];
+    nv_webos_starfish_linha(sf, sizeof sf);
+    printf("[video] starfish-release: %s\n", sf[0] ? sf : "(sem arquivo)");
+    printf("[video] webos major=%d fonte=%s\n", v, nv_webos_fonte());
     fflush(stdout);
   }
   if (!v) v = expWin[0] ? 5 : 4;
@@ -2671,13 +2665,15 @@ static int dtsLiberadoNestaTv(void) {
 // Dolby Vision in MKV: the Settings option, then what this TV can do. webOS 3
 // is out (no proof of the BUFFERSTREAM audio path there); two app deaths with
 // the path open turn it off on this TV, the same counter as DTS conversion.
+// webOS 3 fica fora; desconhecida chega aqui ja como o chute do webosMaior().
+static int dvVersaoLiberada(int maior) { return maior >= 4; }
 static int dvLiberadoNestaTv(void) {
   int forcado = 0;
 #ifdef NV_DTS_DEBUG
   forcado = access("/tmp/nuvio-dv-forcar", F_OK) == 0;
 #endif
   if (!dts_playback_enabled() || (!ajustes_dv_mkv() && !forcado)) return 0;
-  if (webosMaior() < 4) {
+  if (!dvVersaoLiberada(webosMaior())) {
     printf("[dv] Dolby Vision in MKV unavailable on webOS %d\n", webosMaior()); fflush(stdout);
     return 0;
   }

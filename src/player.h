@@ -41,6 +41,8 @@ const CatEp *player_proximo_episodio(void);
 // comecam (0 quando nenhuma das duas fontes tem marcador). Devolve 1 quando o
 // cartao deve estar no ar.
 int player_regra_proximo(double posSeg, double durSeg, double cred);
+// Mesma janela do cartao, antecipada em segundos reais (0 = agora).
+int player_janela_proximo(double antecedencia);
 // Base (y, tela de 1080) da legenda principal: sobe para 690 so com o cartao
 // do proximo episodio NA TELA (posplay_sobre_video), e volta no quadro em que
 // ele some — dispensado, aceito ou contagem encerrada (2.0.3).

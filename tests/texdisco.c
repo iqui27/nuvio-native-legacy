@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <sys/statvfs.h>
+#include "artehero.h"
 #include "../src/sdlcompat.h"
 static int falhaEscrita, falhaFechar, downloads;
 static SDL_mutex *writeRaceMtx;
@@ -50,6 +51,13 @@ static int existe(const char *dir, const char *nome) {
   char p[1024]; snprintf(p, sizeof p, "%s/%s", dir, nome); return access(p, F_OK) == 0;
 }
 static int protegido(const char *p, void *ctx) { (void)ctx; return strstr(p, "00000000.jpg") != NULL; }
+static int appleConsultas;
+static int appleTeste(const char *id, const char *titulo, int ano, int serie, char *dst, size_t n) {
+  assert(!strcmp(id, "tt3567288") && !strcmp(titulo, "Silo") && ano == 2015 && !serie);
+  appleConsultas++;
+  snprintf(dst, n, "https://is1-ssl.mzstatic.com/image/thumb/correta/{w}x{h}.{f}");
+  return 1;
+}
 int main(void) {
   char dir[] = "/tmp/nuvio-texdisco-XXXXXX", nome[32], dst[600], tmp[640];
   long total = 700 * 1024;
@@ -89,6 +97,31 @@ int main(void) {
   assert(!garantirLocal("https://teste/nao-webp.bin",dst,sizeof dst,NULL,NULL));
   assert(downloads==4 && access(dst,F_OK)!=0);
   puts("ok: RIFF que nao declara WEBP nao entra no cache");
+  // A versao anterior persistiu a arte errada sob a URL sem versao.
+  {
+    const char *antiga = "https://nuvio.invalid/arte/apple/1920/tt3567288/m/2015/Silo";
+    CatItem c = {0};
+    char velha[600]; long n; int foi = 0, antes;
+    char *bytes = redeTeste("https://teste/errada.jpg", 0, &n);
+    nomeDeCache(antiga, velha, sizeof velha);
+    assert(gravarArquivo(velha, ".parcial", (unsigned char *)bytes, n)); free(bytes);
+    antes = downloads;
+    assert(garantirLocal(antiga, dst, sizeof dst, &foi, NULL) && !foi);
+    snprintf(c.imdb, sizeof c.imdb, "tt3567288");
+    snprintf(c.titulo, sizeof c.titulo, "Silo");
+    snprintf(c.meta, sizeof c.meta, "2015");
+    snprintf(c.tipo, sizeof c.tipo, "movie");
+    arte_fonte_definir_apple(appleTeste);
+    artehero_qualidade(1);
+    assert(garantirLocal(artehero_url_destaque(&c, ARTEHERO_APPLE, 0), dst, sizeof dst, &foi, NULL));
+    assert(foi && appleConsultas == 1 && downloads == antes + 1);
+    assert(strcmp(dst, velha) && access(velha, F_OK) == 0);
+    assert(garantirLocal(artehero_url_card_fonte(&c, ARTEHERO_APPLE, 0), dst, sizeof dst, &foi, NULL) && !foi);
+    assert(garantirLocal("https://teste/primeira.jpg", dst, sizeof dst, &foi, NULL) && !foi);
+    assert(downloads == antes + 1 && appleConsultas == 1);
+    arte_fonte_definir_apple(NULL);
+    puts("ok: Apple ignora cache antigo, preserva arquivo e reutiliza cache novo e de outras fontes");
+  }
   /* Simula o item entregue para decode: nao pode ser podado nesse intervalo. */
   mtx=SDL_CreateMutex(); assert(mtx); nMax=1;
   snprintf(itens[0].caminho,sizeof itens[0].caminho,"https://teste/em-uso.jpg");

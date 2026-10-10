@@ -32,8 +32,8 @@ int main(int argc,char **argv) {
  setenv("NUVIO_DTS_ADAPTER_DIR","/no-such-dts-directory",1);
  assert(!dts_pipeline_available(0)); assert(!dts_pipeline_available(2));
  assert(!dts_pipeline_create("app","",0,event,&loads));
- setenv("NUVIO_DTS_ADAPTER_DIR",argv[2],1); assert(!dts_pipeline_available(4));
- setenv("NUVIO_DTS_ADAPTER_DIR",argv[1],1);
+ setenv("NUVIO_DTS_ADAPTER_DIR",argv[2],1); dts_pipeline_available_esquecer(); assert(!dts_pipeline_available(4));
+ setenv("NUVIO_DTS_ADAPTER_DIR",argv[1],1); dts_pipeline_available_esquecer();
  assert(dts_pipeline_available(0));
  void *native=dlopen("libplayerAPIs.so",RTLD_NOW|RTLD_LOCAL);assert(native);
  int (*play_calls)(void),(*pause_calls)(void);

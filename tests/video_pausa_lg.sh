@@ -13,6 +13,6 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/video.c) continue;; esac
   sources+=("$source")
 done
-cc "${flags[@]}" "${sources[@]}" tests/video_pausa_lg.c -o "$dir/test" \
+cc -DAJUSTES_TESTE "${flags[@]}" "${sources[@]}" tests/video_pausa_lg.c -o "$dir/test" \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
 "$dir/test"

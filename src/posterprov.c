@@ -165,9 +165,23 @@ static int marcador(const char *p, size_t k) {
   return (k == 6 && !strncmp(p, "{imdb}", 6)) || (k == 6 && !strncmp(p, "{tmdb}", 6)) ||
          (k == 6 && !strncmp(p, "{type}", 6)) || (k == 11 && !strncmp(p, "{tipo_tmdb}", 11));
 }
-int posterprov_modelo_valido(const char *modelo) {
+// Pior caso de cada marcador montado (posterprov_montar_url): {imdb} vira o
+// Ident.tt (ate 23), {tmdb} um long (ate 19 digitos), {type} "series" (6),
+// {tipo_tmdb} "movie" (5). So posterprov_modelo_cabe() usa: ver o .h.
+#define PP_MAX_IMDB 23
+#define PP_MAX_TMDB 19
+static size_t montado_max(const char *p, size_t k) {
+  if (k == 6 && !strncmp(p, "{imdb}", 6)) return PP_MAX_IMDB;
+  if (k == 6 && !strncmp(p, "{tmdb}", 6)) return PP_MAX_TMDB;
+  if (k == 6) return 6;                                   // {type}: "series"
+  return 5;                                               // {tipo_tmdb}: "movie"
+}
+// Regras de sintaxe; com `pior` nao nulo, soma tambem o tamanho montado no
+// pior caso.
+static int modelo_sintaxe(const char *modelo, size_t *pior_out) {
   const char *p;
   int achou = 0;
+  size_t pior = 0;
   if (!modelo || strlen(modelo) >= PP_MODELO_MAX) return 0;
   if (strncmp(modelo, "http://", 7) && strncmp(modelo, "https://", 8)) return 0;
   for (p = modelo; *p; p++) {
@@ -176,11 +190,22 @@ int posterprov_modelo_valido(const char *modelo) {
     if (*p == '{') {
       const char *f = strchr(p, '}');
       if (!f || !marcador(p, (size_t)(f - p + 1))) return 0;
+      pior += montado_max(p, (size_t)(f - p + 1));
       achou = 1;
       p = f;
+    } else {
+      pior++;
     }
   }
+  if (pior_out) *pior_out = pior;
   return achou;
+}
+int posterprov_modelo_valido(const char *modelo) {
+  return modelo_sintaxe(modelo, NULL);
+}
+int posterprov_modelo_cabe(const char *modelo) {
+  size_t pior = 0;
+  return modelo_sintaxe(modelo, &pior) && pior < PP_URL_MAX;
 }
 
 // ---------------------------------------------------------------- montagem

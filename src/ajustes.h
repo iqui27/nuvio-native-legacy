@@ -134,6 +134,8 @@ int ajustes_fonte_manual(void);
 // primeira fonte na ordem do addon e confere SO ela. 0 = "Melhor fonte", a
 // regra de pontuacao de streams.c. Ver fonteauto.h.
 int ajustes_fonte_primeira(void);
+// #400: ordem visual do addon, local; nao altera autoplay.
+int ajustes_fonte_ordem_addon(void);
 // 1 = a folha de Fontes mostra o nome e a descricao do addon como vieram.
 int ajustes_fonte_texto_addon(void);
 int ajustes_fonte_texto_logo(void);
@@ -433,6 +435,7 @@ int   ajustes_leg2_cor(void);
 int   ajustes_leg2_fundo(void);
 int   ajustes_leg2_borda(void);
 int   ajustes_legenda_forcada_auto(void);    // #287: 1 = audio in the subtitle language -> only the forced track (local, default on)
+int   ajustes_legenda_sync_auto(void);       // local, ligada por padrão
 int   ajustes_legenda_sync_audio(void);      // 1 = offer "Por audio" in subtitle AutoSync (F06; local, default off)
 int   ajustes_trailer_zoom_tpk(void);        // #241: 1 = experimental trailer zoom on the native .tpk (local, default off)
 unsigned ajustes_p2p_limite_mb(void);           // #334: P2P space limit in MB (0 = Automatic)
@@ -585,7 +588,15 @@ int         ajustes_nota_titulo(int fonte);
 // Chave ausente no blob NAO mexe na opcao, e valor de texto que este app nao
 // reconhece tambem nao: trocar por um padrao seria inventar uma escolha que o
 // usuario nunca fez.
+// EXCECAO (#378): os idiomas de legenda, legenda secundaria e audio da conta.
+// Eles nao sao opcao desta tabela, sao a parte "da conta" de linguas.c, e o
+// blob e o retrato inteiro dela: chave ausente = a conta nao tem idioma (sem
+// isso, os do perfil anterior ficavam valendo). A escolha local nao e tocada.
 int ajustes_aplicar_blob(const char *json);
+// #378: so os idiomas de legenda/audio da conta, para o blob que chega com os
+// ajustes locais protegidos (sync.c nao o aplica). Nao mexe em escolha local.
+// NULL esquece os idiomas da conta (troca de perfil/conta).
+void ajustes_idiomas_da_conta(const char *json);
 
 // AJUSTES POR PERFIL NESTA TV (ajustes-p<N>.txt). _guardar grava os ajustes que
 // sao do perfil (os mesmos que a conta guarda; nunca os deste aparelho).

@@ -195,7 +195,7 @@ static int ajcNovaCartazes(int sec, int op) {
       float x = 220, y = 40, w = 200, h = 230;
       czSombra(x, y, w, h, 12, 0.7f);
       ajc_cartaz(x, y, w, h, 2, 1);
-      czBorda(x, y, w, h, 12, 0.25f + 0.75f * v);
+      czBorda(x, y, w, h, 12, v);
       czBorda(x - 4, y - 4, w + 8, h + 8, 15, v * 0.6f);
       ajc_progresso(170, 300, 300, v, 1);
       czNumero("%.0f%%", v * 100.0f, 290, 316, 15);
@@ -206,7 +206,7 @@ static int ajcNovaCartazes(int sec, int op) {
       float v = czLimita(ajcValor(op) / 100.0f), p = ajc_fase(3.0f);
       ajc_cartaz(80, 50, 170, 210, 2, 1);
       ajc_cartaz(390, 50, 170, 210, 2, 1);
-      ajc_luz(390, 50, 170, 210, 10, 170 * (0.1f + 0.8f * p), -20, 200, 1, 1, 1, 0.20f + 0.55f * v);
+      ajc_luz(390, 50, 170, 210, 10, 170 * (0.1f + 0.8f * p), -20, 200, 1, 1, 1, 0.75f * v);
       ajc_luz(390, 50, 170, 210, 10, 170 * 0.5f, 60, 120, 1, 1, 1, 0.45f * v);
       ajc_icone("aj_sparkle", 320, 155, 34, 0.9f);
       ajc_progresso(170, 300, 300, v, 1);

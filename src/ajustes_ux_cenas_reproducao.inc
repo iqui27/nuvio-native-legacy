@@ -428,6 +428,17 @@ static void rPreparar(int op) {   // o arquivo ja escolhido e posto no debrid an
   ajc_icone("aj_zap", 565, 215, 22, vid * 0.9f);
   ajcChaveCanto(k);
 }
+static void rOrdemFontes(void) {
+  int addon = rInt(AJ_FONTE_ORDEM_ADDON, 1);
+  const char *res[] = { "720p", "4K", "1080p" };
+  for (int i = 0; i < 3; i++) {
+    float y = 32 + i * 96;
+    if (!addon) ajcSelo(i == 0 ? "4K" : i == 1 ? "1080p" : "720p", 52, y, 12, 0, 0.8f);
+    ajc_neutro(40, y + (addon ? 0 : 22), 560, 62, 12, 0.8f);
+    ajc_barra(66, y + (addon ? 18 : 40), 230 - i * 40, 0.8f);
+    if (addon) ajcSelo(res[i], 460, y + 22, 12, 0, 0.8f);
+  }
+}
 static void rTexto(void) {   // Do Nuvio / Do addon / Logo do titulo
   int v = rInt(AJ_FONTE_TEXTO, 2), i;
   for (i = 0; i < 3; i++) {
@@ -790,6 +801,7 @@ static int ajcNovaReproducao(int sec, int op) {
     case AJ_FONTE_CONFERIR_VARIAS: rConferirVarias(op); return 1;
     case AJ_FONTE_AQUECER: rAquecer(op); return 1;
     case AJ_FONTE_PREPARAR: rPreparar(op); return 1;
+    case AJ_FONTE_ORDEM_ADDON: rOrdemFontes(); return 1;
     case AJ_FONTE_TEXTO: rTexto(); return 1;
     case AJ_SELOS_CORES: rSelosCores(op); return 1;
     case AJ_SELOS_PACOTE: rPacote(); return 1;

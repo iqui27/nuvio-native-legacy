@@ -7,6 +7,7 @@
   <a href="https://github.com/iqui27/nuvio-native-legacy/releases/latest"><strong>Download latest release</strong></a>
   &nbsp;·&nbsp; <a href="INSTALL.md">Install guide</a>
   &nbsp;·&nbsp; <a href="#reporting-a-problem">Report a problem</a>
+  &nbsp;·&nbsp; <a href="https://discord.gg/9NWr6SHyzJ">Discord</a>
   &nbsp;·&nbsp; <a href="https://www.patreon.com/cw/CraaazyDevs"><strong>Support on Patreon ♥</strong></a>
 </p>
 

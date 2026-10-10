@@ -1631,6 +1631,9 @@ static void vigiarAntecipada(void) {
     case FA_ACAO_DESFAZER_VEREDITO: desfazerAntecipada("a conferencia reprovou"); break;
     case FA_ACAO_DESFAZER_PLAYER:
       printf("[fonte] erro do player antes do veredito: %s\n", video_erro_texto());
+#ifdef NV_ANDROID
+      stream_automatico_erro_decoder(antAberta, video_erro_decoder_codigo(), 0);
+#endif
       fa_player_falhou(antAberta);
       stream_automatico_excluir(antAberta);
       stream_automatico_excluir_irmas(antAberta);
@@ -1687,7 +1690,7 @@ static void vigiarAberturaManual(void) {
   fonteManualDesde = 0;
   player_erro_fonte_motivo(i18n("A fonte não respondeu a tempo."), NULL);
 }
-// PRAZO DE ABERTURA (#202, inicio.h): 8 s sem nenhum sinal de vida, 30 s com
+// PRAZO DE ABERTURA (#202, inicio.h): 15 s sem nenhum sinal de vida, 30 s com
 // dado chegando — e o curto so quando a proxima candidata nao e pior que esta
 // (nunca baixar a qualidade por pressa; sem proxima, 30 s).
 static int aberturaVencida(Uint32 desde) {
@@ -1708,6 +1711,10 @@ static int aberturaVencida(Uint32 desde) {
   g.desdeMs = desde;
   g.proximaSemPerda = semPerda;
   g.dadoChegando = video_pronto() || video_buffer_fim() > 0.5;
+#if defined(NV_ANDROID) || defined(NV_TPK)
+  // Trilhas do player ja provam resposta antes do primeiro quadro (DV na TCL).
+  g.dadoChegando |= video_n_audio() > 0 || video_n_legenda() > 0;
+#endif
   if (!inicio_abre_vencida(&g)) return 0;
   printf("[fonte] sem sinal de abertura em %u ms (prazo %u ms%s)\n", (unsigned)desde,
          inicio_abre_prazo_ms(&g), semPerda ? ", proxima nao e pior" : "");
@@ -1817,6 +1824,9 @@ static void tentarProximaFonteVOD(void) {
   // Erro do PLAYER (nao prazo nem buffer): as irmas desta fonte saem junto,
   // senao as vagas que sobram vao todas para links que falham igual.
   if (atual >= 0 && motivo == 1) {
+#ifdef NV_ANDROID
+    stream_automatico_erro_decoder(atual, video_erro_decoder_codigo(), 0);
+#endif
     int k = stream_automatico_excluir_irmas(atual);
     if (k) printf("[fonte] automatico VOD pulou %d link(s) irmao(s) de %d\n", k, atual);
   }

@@ -2276,10 +2276,13 @@ static int gProximo(GCanal *c, time_t t, int k, EpgProg *p) {
 static int gTemGrade(GCanal *c) {
   return epgDo(c) >= 0 || (xtream_e_id(c->id) && xtepg_tem(c->id));
 }
-static int gFaixa(GCanal *c, time_t de, time_t ate, EpgProg *out, int cap) {
+static int gFaixaDesde(GCanal *c, time_t de, time_t ate, int pular, EpgProg *out, int cap) {
   int epg = epgDo(c);
-  if (epg >= 0) return epg_faixa(epg, de, ate, out, cap);
-  return xtCurta(c) ? xtepg_faixa(c->id, de, ate, out, cap) : 0;
+  if (epg >= 0) return epg_faixa_desde(epg, de, ate, pular, out, cap);
+  return xtCurta(c) ? xtepg_faixa_desde(c->id, de, ate, pular, out, cap) : 0;
+}
+static int gFaixa(GCanal *c, time_t de, time_t ate, EpgProg *out, int cap) {
+  return gFaixaDesde(c, de, ate, 0, out, cap);
 }
 
 // Quando a grade EPG e (re)publicada, os indices guardados morrem — a troca
@@ -3918,6 +3921,7 @@ static void desenharBanda(float a, Uint32 agora) {
 #define G_BUSCA_CANAIS   24
 #define G_BUSCA_PROGS    40
 #define G_BUSCA_HORAS     6
+#define G_BUSCA_RODADAS  16     // lotes de 24 por canal (#344)
 #define G_BUSCA_ROW      76.0f
 #define G_BUSCA_W       1180.0f
 static int buscaEstado;        // 0 fechada, 1 teclado, 2 resultado
@@ -3941,7 +3945,7 @@ static void ponteiroBuscaItem(int i, int b) {
 
 static void buscaFazer(const char *q) {
   char agulha[TECLADO_MAX + 1];
-  int i, numero = 0, soDigito = 1;
+  int i, numero = 0, soDigito = 1, teto = 0;
   time_t agoraT = time(NULL);
   const char *p;
   snprintf(buscaTexto, sizeof buscaTexto, "%s", q ? q : "");
@@ -3963,13 +3967,29 @@ static void buscaFazer(const char *q) {
   if (!soDigito || strlen(agulha) > 3)
     for (i = 0; i < nCanais && buscaNP < G_BUSCA_PROGS; i++) {
       EpgProg ps[24];
-      int n = gFaixa(&canais[i], agoraT, agoraT + G_BUSCA_HORAS * 3600, ps, 24), k;
-      for (k = 0; k < n && buscaNP < G_BUSCA_PROGS; k++) {
-        if (!ps[k].titulo || !nv_contem_dobrado(ps[k].titulo, agulha)) continue;
-        buscaProg[buscaNP].canal = i;
-        buscaProg[buscaNP].ini = ps[k].ini; buscaProg[buscaNP].fim = ps[k].fim;
-        snprintf(buscaProg[buscaNP].titulo, sizeof buscaProg[buscaNP].titulo, "%s", ps[k].titulo);
-        buscaNP++;
+      time_t ate = agoraT + G_BUSCA_HORAS * 3600;
+      int rodada, vistos = 0;
+      // #344: gFaixa devolve no maximo o tamanho de ps. Um canal com mais
+      // programas na janela vem em lotes, paginados por POSICAO (`vistos`): o
+      // fim dos programas nao e monotono quando a grade se sobrepoe.
+      for (rodada = 0; rodada < G_BUSCA_RODADAS && buscaNP < G_BUSCA_PROGS; rodada++) {
+        int n = gFaixaDesde(&canais[i], agoraT, ate, vistos, ps, (int)(sizeof ps / sizeof ps[0])), k;
+        if (n > (int)(sizeof ps / sizeof ps[0])) n = (int)(sizeof ps / sizeof ps[0]);
+        for (k = 0; k < n && buscaNP < G_BUSCA_PROGS; k++) {
+          if (!ps[k].titulo || !nv_contem_dobrado(ps[k].titulo, agulha)) continue;
+          buscaProg[buscaNP].canal = i;
+          buscaProg[buscaNP].ini = ps[k].ini; buscaProg[buscaNP].fim = ps[k].fim;
+          snprintf(buscaProg[buscaNP].titulo, sizeof buscaProg[buscaNP].titulo, "%s", ps[k].titulo);
+          buscaNP++;
+        }
+        if (n < (int)(sizeof ps / sizeof ps[0])) break;
+        vistos += n;
+        if (rodada == G_BUSCA_RODADAS - 1 && !teto) {
+          teto = 1;
+          printf("[guia] busca: canal com %d programas ou mais na janela; o resto fica de fora\n",
+                 G_BUSCA_RODADAS * (int)(sizeof ps / sizeof ps[0]));
+          fflush(stdout);
+        }
       }
     }
   { int a, b;   // ordem: no ar antes, depois o que comeca primeiro

@@ -48,9 +48,7 @@ int  vistoep_conhecido(const char *imdb);
 // nao so 1. Devolve quantos episodios entraram, ou -1 em corpo invalido.
 int  vistoep_ler_progresso(const char *imdb, const char *json);
 
-// Um episodio, para os lotes. Os tres gestos que a tela oferece — este
-// episodio, ate aqui, a temporada inteira — sao o MESMO lote com tamanhos
-// diferentes, e por isso ha uma funcao so em vez de tres.
+// Um episodio, para os lotes dos gestos da tela.
 typedef struct { short temporada, episodio; } VistoPar;
 
 // ---- o que as FONTES dizem (Trakt, conta Nuvio, jornal da conta) ------------
@@ -126,15 +124,20 @@ int  vistoep_ate_aqui(const char *imdb, int temporada, int episodio,
 // O mesmo para uma temporada inteira.
 int  vistoep_temporada(const char *imdb, int temporada, VistoPar *saida, int max);
 
-// O LOTE DE UM GESTO ("temporada inteira", ou "ate aqui" com ateAqui=1), do
+enum { VE_LOTE_TEMPORADA = 0, VE_LOTE_ATE, VE_LOTE_DAQUI };
+// ponytail: mapa inteiro + CAT_EP_MAX (1200); acompanhar se o catalogo crescer.
+#define VE_MAX 8000
+#define VE_LOTE_MAX (VE_MAX + 1200)
+// O LOTE DE UM GESTO (temporada, ate aqui ou daqui em diante INCLUSIVO), do
 // MAPA e do CATALOGO juntos, sem repetir. O mapa sozinho so enumera a serie
 // quando o Trakt respondeu; sem Trakt ele so tem o que ja foi visto, e a
 // temporada inteira era "0 episodios". `cat` sao os episodios que o catalogo
 // lista. (agT, agE) e o proximo episodio a ir ao ar (agenda do TMDB; 0 = nao
 // se sabe): dele em diante nada entra. Temporada 0 do catalogo fica fora do
 // "ate aqui" (especial so entra se o mapa trouxer). `saida` nula conta.
-// Teto de 256 por lote.
-int  vistoep_lote(const char *imdb, int ateAqui, int temporada, int episodio,
+// Daqui em diante respeita a agenda tambem no mapa, para so desmarcar lancados.
+// Teto VE_LOTE_MAX; quem envia divide conforme o limite do destino.
+int  vistoep_lote(const char *imdb, int modo, int temporada, int episodio,
                   const VistoPar *cat, int nCat, int agT, int agE,
                   VistoPar *saida, int max);
 // Sobe a cada episodio que muda de estado (ou entra no mapa) e no logout: quem

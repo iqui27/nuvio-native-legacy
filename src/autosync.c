@@ -669,7 +669,8 @@ AutoSyncResultado autosync_alinhar(const LegendaDocumento *doc,const LegendaDocu
      cfg.manterMs<0||cfg.manterMs>500||doc==ref)goto fim;
   if(parou(&c)){r.motivo=(AutoSyncMotivo)c.terminou;goto fim;}
   r.motivo=preparar(doc,&a,&c);if(r.motivo!=AUTOSYNC_OK)goto fim;
-  r.motivo=preparar(ref,&b,&c);if(r.motivo!=AUTOSYNC_OK)goto fim;
+  r.motivo=preparar(ref,&b,&c);
+  if(r.motivo!=AUTOSYNC_OK){r.referenciaInvalida=1;goto fim;}
   if(di->duracaoSeg>0&&ri->duracaoSeg>0&&fabs(di->duracaoSeg-ri->duracaoSeg)>cfg.toleranciaMs/1000.0) {
     r.motivo=AUTOSYNC_REGION_DISAGREEMENT;goto fim;
   }

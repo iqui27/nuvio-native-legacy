@@ -168,7 +168,7 @@
   1,                /* som do trailer no destaque: DESLIGADO (V_LIGA: 1 = Desligado) */
   22,               /* espera do trailer no destaque: 2,2 s (em decimos de segundo) */
   90,               /* percentual assistido: 90%, o numero fixo de antes */
-  0,                /* addons do perfil principal: LIGADO (V_LIGA: 0 = Ligado) */
+  1,                /* addons do perfil principal: DESLIGADO (V_LIGA: 1); dono 09/10 */
   0,                /* transicao do destaque: Deslizar */
   // Arte do addon: todas DESLIGADAS (V_LIGA: 1 = Desligado) — o visual de antes.
   1, 1, 1, 1,       /* posteres, fundo, logo do addon; arte das pastas da conta */
@@ -252,3 +252,5 @@
   0, 0, /* search (#311): Nuvio results First; show the source on result groups: Ligado */
   0, /* Settings layout (#339): Painel = the card grid and the art beside the list */
   0, /* P2P space limit (#334): Automatico */
+  0, /* Source display order (#400): Por qualidade, local */
+  0, /* Sincronia automática da legenda: Ligado, local */

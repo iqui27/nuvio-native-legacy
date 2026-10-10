@@ -71,6 +71,11 @@ const char *ling_legenda(void);
 const char *ling_legenda2(void);
 const char *ling_audio(void);
 
+// So a parte da CONTA, sem a escolha local por cima (para o log, #378).
+const char *ling_conta_legenda_valor(void);
+const char *ling_conta_legenda2_valor(void);
+const char *ling_conta_audio_valor(void);
+
 // Vindas da CONTA (blob de ajustes). Nao sobrescrevem escolha local.
 void ling_conta_legenda(const char *v);
 void ling_conta_legenda2(const char *v);

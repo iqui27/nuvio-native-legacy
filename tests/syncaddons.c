@@ -262,6 +262,7 @@ int  ajustes_aplicar_blob(const char *j) { (void)j; return 0; }
 void ajustes_definir_ocultar_nao_lancados(int l) { (void)l; }
 int  ajustes_mesclar_blob(const char *b, char **s) { (void)b; *s = NULL; return 0; }
 void ajustes_tmdb_idioma_relatar(const char *b) { (void)b; }
+void ajustes_idiomas_da_conta(const char *b) { (void)b; }
 void buscasrec_esquecer(void) {}
 void cachearte_limpar_referencias(void) {}
 int  cat_apagar_cache(void) { return 0; }
@@ -429,3 +430,5 @@ int main(int argc, char **argv) {
 }
 
 void cat_historico_contexto(const char *u, int p) { (void)u; (void)p; }
+
+__attribute__((weak)) int addons_perfil_da_lista(void) { return 0; }

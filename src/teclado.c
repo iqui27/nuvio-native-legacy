@@ -402,6 +402,10 @@ void teclado_contexto(const char *kicker) {
 #ifdef AJUSTES_TESTE
 void teclado_teste_texto(const char *t) { snprintf(texto, sizeof texto, "%s", t); n = (int)strlen(texto); }
 void teclado_teste_foco(int f, int c) { fileira = f; coluna = c; }
+// O texto que chega do celular ou do teclado do sistema: o MESMO filtro de
+// alfabeto e teto de definirDoSistema (#390).
+static void definirDoSistema(const char *t);
+void teclado_teste_sistema(const char *t) { definirDoSistema(t); }
 // Poe a camada (0 letras, 1 sinais) e a caixa (0, 1, 2) direto; 0 se este
 // alfabeto nao tem o que foi pedido.
 int teclado_teste_camada(int cam, int cx) {

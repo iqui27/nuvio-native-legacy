@@ -26,6 +26,7 @@ import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -44,7 +45,7 @@ import java.util.concurrent.atomic.AtomicInteger
 // Sessao monotonica: cada abrir/parar sobe `sessao`, e todo callback confere o
 // numero em que nasceu. Um player velho nao fala mais depois de liberado.
 //
-// Eventos (nativeEvento): 1 PRONTO(durMs) 2 TOCANDO 3 PAUSADO 4 FIM 5 ERRO(cod)
+// Eventos (nativeEvento): 1 PRONTO(durMs) 2 TOCANDO 3 PAUSADO 4 FIM 5 ERRO(cod, C.TRACK_TYPE_* do renderer)
 // 6 TAMANHO(w,h) 7 BUFFER(pct) 8 PRIMEIRO_QUADRO, e a extensao 9 = a fonte tem
 // audio mas nenhuma faixa tem decoder aqui (o C responde video_audio_nao_suportado).
 //
@@ -129,6 +130,7 @@ object NvPlayer {
     @JvmStatic external fun nativeFaixasFim(selAudio: Int, selLeg: Int)
     @JvmStatic external fun nativeLegenda(texto: String, durMs: Int)
     @JvmStatic external fun nativePos(ms: Int)
+    @JvmStatic external fun nativeDecoder4k(hevc: Int, avc: Int, vp9: Int, av1: Int)
     @JvmStatic external fun nativeTela(hdr: Int, dv: Int)
     @JvmStatic external fun nativeHdr(hdr: String, dv: Int, atmos: Int)
     @JvmStatic external fun nativeRetomada(geracao: Int, aceita: Int)
@@ -219,6 +221,9 @@ object NvPlayer {
             Log.w(TAG, "nativeIniciar sem a lib ainda; o C acha a classe pelo ClassLoader da Activity: $e")
         }
         informarTela(activity)
+        val d = decoders4k
+        try { nativeDecoder4k(d[0], d[1], d[2], d[3]) }
+        catch (e: UnsatisfiedLinkError) { Log.w(TAG, "decoder4k sem lib: $e") }
     }
 
     // Capacidade HDR/Dolby Vision da tela, para o automatico de fontes. Lista
@@ -231,6 +236,39 @@ object NvPlayer {
             val dv = if (tipos.contains(android.view.Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION)) 1 else 0
             nativeTela(1, dv)
         } catch (e: Throwable) { Log.w(TAG, "informarTela: $e") }
+    }
+
+    // #409: uma consulta por processo, independente da resolucao da tela.
+    // 24 fps e o piso UHD de filme; nao promete 4K60 nem suporte a todo perfil.
+    private val decoders4k: IntArray by lazy {
+        val mimes = arrayOf("video/hevc", "video/avc", "video/x-vnd.on2.vp9", "video/av01")
+        val resultado = IntArray(4) { -1 }
+        try {
+            val codecs = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos
+            if (codecs.isEmpty()) return@lazy resultado
+            for ((i, mime) in mimes.withIndex()) {
+                var suporta = false
+                var incerto = false
+                for (codec in codecs) {
+                    try {
+                        val nome = codec.name.lowercase(java.util.Locale.ROOT)
+                        if (codec.isEncoder || nome.endsWith(".secure") ||
+                            nome.startsWith("omx.google.") || nome.startsWith("c2.android.") ||
+                            nome.startsWith("c2.google.") || nome.contains(".sw.") ||
+                            (android.os.Build.VERSION.SDK_INT >= 29 && codec.isSoftwareOnly)) continue
+                        if (!codec.supportedTypes.any { it.equals(mime, ignoreCase = true) }) continue
+                        val v = codec.getCapabilitiesForType(mime).videoCapabilities
+                        if (v == null) { incerto = true; continue }
+                        if (v.isSizeSupported(3840, 2160) && v.areSizeAndRateSupported(3840, 2160, 24.0)) {
+                            suporta = true
+                            break
+                        }
+                    } catch (e: Exception) { incerto = true; Log.w(TAG, "decoder4k $mime: $e") }
+                }
+                resultado[i] = if (suporta) 1 else if (incerto) -1 else 0
+            }
+        } catch (e: Exception) { Log.w(TAG, "decoder4k: $e") }
+        resultado
     }
 
     // onPause: pausa (o C fica sabendo pelo evento 3) e guarda a posicao; o
@@ -296,10 +334,28 @@ object NvPlayer {
     // --- abrir / liberar ------------------------------------------------------
 
     private fun abrirMain(url: String, cabecalhos: String, reabrindo: Boolean,
-                          inicioMs: Int, geracao: Int, pedido: Int, fracao: Int = 0) {
+                          inicioMs: Int, geracao: Int, pedido: Int, fracao: Int = 0, esperaInicio: Long = -1L) {
+        if (pedido != pedidos.get()) return
         val act = activity
         if (act == null) { confirmarRetomada(geracao, false); return }
-        liberar()
+        val espera = if (esperaInicio < 0) SystemClock.elapsedRealtime() else esperaInicio
+        if (esperaInicio < 0) {
+            liberar()
+            // O C envia o ganho depois de abrir; a espera nao pode apaga-lo.
+            ganhoPct = 100
+        }
+        // MStar/Amlogic: o overlay e o decoder antigos precisam sair antes do novo.
+        // Poll no Handler deixa Back/parar funcionar enquanto o release corre em fundo.
+        if (semRecriar) {
+            val ms = SystemClock.elapsedRealtime() - espera
+            if (liberacoesEmCurso.get() > 0 && ms < 3000) {
+                principal.postDelayed({
+                    abrirMain(url, cabecalhos, reabrindo, inicioMs, geracao, pedido, fracao, espera)
+                }, 25)
+                return
+            }
+            Log.i(TAG, "[player] esperou o release anterior $ms ms (pendentes=${liberacoesEmCurso.get()})")
+        }
         novaSuperficie(act)
         pedidoAtivo = pedido
         hdrRecriado = false; hdrRecriadoPara = ""; quadroVisto = false
@@ -364,10 +420,8 @@ object NvPlayer {
             }
             relatarCache(minha)
 
-            // F07: VOLUME BOOST. Every open starts at 100% (the C side re-sends
-            // the session volume right after the open); the gain processor is
-            // per player, inside the audio sink.
-            ganhoPct = 100
+            // F07: VOLUME BOOST. Preserve the gain received during release;
+            // the processor is per player, inside the audio sink.
             val proc = GanhoAudioProcessor()
             processador = proc
 
@@ -411,6 +465,7 @@ object NvPlayer {
                     .setDataSourceFactory(DefaultDataSource.Factory(act, origem)))
                 .build()
             player = p
+            aplicarGanho()
             semTravaDeFio(p)
             // Release anterior ainda preso no HAL de audio: sessao de audio nova,
             // para o AudioTrack deste filme nao esperar o patch do velho.
@@ -548,9 +603,16 @@ object NvPlayer {
     // dele entra na lista entre estes dois (setVideoSurfaceView, em abrirMain).
     private var destruirIni = 0L
     private val antesDoMedia3 = object : SurfaceHolder.Callback {
-        override fun surfaceCreated(h: SurfaceHolder) {}
-        override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, a: Int) {}
-        override fun surfaceDestroyed(h: SurfaceHolder) { destruirIni = SystemClock.elapsedRealtime() }
+        override fun surfaceCreated(h: SurfaceHolder) {
+            Log.i(TAG, "[dvtrace] created sessao=$sessao holder=${System.identityHashCode(h)} atual=${h === superficie?.holder} hdr=$ultHdr frame=${h.surfaceFrame}")
+        }
+        override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, a: Int) {
+            Log.i(TAG, "[dvtrace] changed sessao=$sessao holder=${System.identityHashCode(h)} atual=${h === superficie?.holder} tamanho=${w}x$a formato=$f hdr=$ultHdr")
+        }
+        override fun surfaceDestroyed(h: SurfaceHolder) {
+            destruirIni = SystemClock.elapsedRealtime()
+            Log.i(TAG, "[dvtrace] destroyed sessao=$sessao holder=${System.identityHashCode(h)} atual=${h === superficie?.holder} hdr=$ultHdr")
+        }
     }
     private val depoisDoMedia3 = object : SurfaceHolder.Callback {
         override fun surfaceCreated(h: SurfaceHolder) {}
@@ -611,6 +673,7 @@ object NvPlayer {
         pedX = x; pedY = y; pedW = w; pedH = h; pedEncaixa = encaixa
         temJanela = true
         calcularJanela()
+        Log.i(TAG, "[dvtrace] janela sessao=$sessao holder=${System.identityHashCode(superficie?.holder)} pedido=$x,$y ${w}x$h encaixa=$encaixa calculada=$jx,$jy ${jw}x$jh hdr=$ultHdr semRecriar=$semRecriar")
     }
 
     private fun calcularJanela() {
@@ -718,6 +781,7 @@ object NvPlayer {
     private val recriar = Runnable {
         val p = player
         val sv = superficie
+        Log.i(TAG, "[dvtrace] recriar player=${System.identityHashCode(p)} holder=${System.identityHashCode(sv?.holder)} soltando=${soltando === p} vis=${sv?.visibility} valida=${sv?.holder?.surface?.isValid}")
         if (p != null && sv != null && soltando !== p && sv.visibility == View.VISIBLE && sv.holder.surface?.isValid == true) {
             soltando = p
             soltarSaida(p) {
@@ -728,24 +792,26 @@ object NvPlayer {
                 Log.i(TAG, "[player] superficie: destruir levou ${SystemClock.elapsedRealtime() - ini} ms no fio principal")
                 principal.post {
                     if (player != null) sv.visibility = View.VISIBLE
+                    Log.i(TAG, "[dvtrace] visible player=${System.identityHashCode(p)} holder=${System.identityHashCode(sv.holder)} atual=${player === p && superficie === sv}")
                     (activity as? NuvioActivity)?.devolverFoco()
                 }
             }
         }
     }
-    // MStar (decoder OMX.MS.*, ex.: caixas Shinon): o hwcomposer deles refaz o
-    // overlay de video a cada GONE/VISIBLE ("Overlay 0 size changed") e a tela
-    // pisca/trava. A recriacao existe por causa da TCL; la nao e necessaria.
-    private val mstar: Boolean by lazy {
+    // Familias que nao recriam a superficie no HDR (RecriaHdr.kt): MStar e
+    // Amlogic. A recriacao existe por causa da TCL; nelas so custa.
+    private val semRecriar: Boolean by lazy {
         try {
-            val r = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos
-                .any { !it.isEncoder && it.name.startsWith("OMX.MS.") }
-            Log.i(TAG, "[player] decoders MStar (OMX.MS.*): $r")
-            r
+            val nomes = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos
+                .filter { !it.isEncoder }.map { it.name }
+            val f = RecriaHdr.dispensa(nomes)
+            Log.i(TAG, "[player] recriar superficie no HDR: ${f?.let { "nao ($it)" } ?: "sim"}")
+            f != null
         } catch (e: Throwable) { false }
     }
     private fun recriarSuperficie(atrasoMs: Long) {
-        if (mstar) return
+        Log.i(TAG, "[dvtrace] pedido sessao=$sessao holder=${System.identityHashCode(superficie?.holder)} atrasoMs=$atrasoMs hdr=$ultHdr quadro=$quadroVisto semRecriar=$semRecriar soltando=${soltando != null}")
+        if (semRecriar) return
         principal.removeCallbacks(recriar)
         principal.postDelayed(recriar, atrasoMs)
     }
@@ -776,13 +842,13 @@ object NvPlayer {
     private val estavelRun = Runnable {
         if (player != null && quadroVisto && !estavelEmitido) {
             estavelEmitido = true
-            Log.i(TAG, "[aspect] superficie estavel (hdr=$ultHdr)")
+            Log.i(TAG, "[aspect] superficie estavel (hdr=$ultHdr) sessao=$sessao soltando=${soltando != null} segunda=$hdrSegundaFeita holder=${System.identityHashCode(superficie?.holder)}")
             ev(EV_SUPERFICIE_ESTAVEL)
         }
     }
     private fun avaliarEstavel() {
         if (!quadroVisto || estavelEmitido) return
-        val hdr = ultHdr.isNotEmpty() && ultHdr != "none" && !mstar
+        val hdr = ultHdr.isNotEmpty() && ultHdr != "none" && !semRecriar
         principal.removeCallbacks(estavelRun)
         if (hdr && !hdrSegundaFeita) return   // a segunda recriacao chama de novo
         principal.postDelayed(estavelRun, 150L)
@@ -801,6 +867,9 @@ object NvPlayer {
         } catch (e: Exception) { Log.w(TAG, "logTaxaDeQuadros: $e") }
     }
     private fun hdrNaSuperficie() {
+        // MStar/Amlogic nao recriam (RecriaHdr.kt): sem log de "recria" nem a
+        // segunda rodada; avaliarEstavel ja trata esse caso como SDR.
+        if (semRecriar) return
         if (!quadroVisto || ultHdr.isEmpty() || ultHdr == "none" || ultHdr == hdrRecriadoPara) return
         val primeira = !hdrRecriado
         hdrRecriado = true
@@ -843,6 +912,7 @@ object NvPlayer {
         override fun onPlaybackStateChanged(state: Int) {
             if (!atual(minha)) return
             val p = player ?: return
+            Log.i(TAG, "[player] onPlaybackStateChanged state=$state renderer=audio(${p.audioFormat?.sampleMimeType}),video(${p.videoFormat?.sampleMimeType}) loadMs=${SystemClock.elapsedRealtime() - abriuEm}")
             when (state) {
                 Player.STATE_BUFFERING -> ev(EV_BUFFER, 0)
                 Player.STATE_READY -> {
@@ -893,6 +963,7 @@ object NvPlayer {
 
         override fun onRenderedFirstFrame() {
             if (!atual(minha)) return
+            Log.i(TAG, "[player] onRenderedFirstFrame renderer=video loadMs=${SystemClock.elapsedRealtime() - abriuEm} sessao=$sessao hdr=$ultHdr holder=${System.identityHashCode(superficie?.holder)} soltando=${soltando != null}")
             ev(EV_PRIMEIRO_QUADRO)
             quadroVisto = true
             logTaxaDeQuadros()
@@ -930,7 +1001,17 @@ object NvPlayer {
 
         override fun onPlayerError(error: PlaybackException) {
             if (!atual(minha)) return
-            Log.w(TAG, "erro ${error.errorCodeName} (${error.errorCode}): ${error.message}")
+            val exo = error as? ExoPlaybackException
+            val p = player
+            val tipo = if (exo?.type == ExoPlaybackException.TYPE_RENDERER && p != null &&
+                exo.rendererIndex in 0 until p.rendererCount) p.getRendererType(exo.rendererIndex)
+                else C.TRACK_TYPE_UNKNOWN
+            val renderer = when (tipo) {
+                C.TRACK_TYPE_AUDIO -> "audio"
+                C.TRACK_TYPE_VIDEO -> "video"
+                else -> "desconhecido"
+            }
+            Log.w(TAG, "[player] onPlayerError renderer=$renderer nome=${exo?.rendererName} loadMs=${SystemClock.elapsedRealtime() - abriuEm} erro ${error.errorCodeName} (${error.errorCode}): ${error.message}")
             // Decoder que falha nos primeiros 5 s: o recurso pode estar sendo
             // solto por outro app (ResourceConflict do Tizen); reabre uma vez.
             val cedo = SystemClock.elapsedRealtime() - abriuEm < RETRY_DECODER_MS
@@ -948,7 +1029,7 @@ object NvPlayer {
                 principal.postDelayed({ if (atual(minha)) abrirMain(u, c, true, inicio, geracao, pedido, fracao) }, 400)
                 return
             }
-            ev(EV_ERRO, error.errorCode, 0)
+            ev(EV_ERRO, error.errorCode, tipo)
         }
     }
 
@@ -1073,6 +1154,7 @@ object NvPlayer {
             }
         }
         if (hdr == ultHdr && dv == ultDv && atmos == ultAtmos) return
+        Log.i(TAG, "[dvtrace] hdr sessao=$sessao $ultHdr->$hdr decoderDv=$decoderDv quadro=$quadroVisto estavel=$estavelEmitido segunda=$hdrSegundaFeita soltando=${soltando != null}")
         ultHdr = hdr; ultDv = dv; ultAtmos = atmos
         try { nativeHdr(hdr, dv, atmos) } catch (e: UnsatisfiedLinkError) { }
         hdrNaSuperficie()

@@ -104,6 +104,20 @@ int main(void) {
   fonte(&l[1], "MP4 HDR 2160p", 2160, 1, 0, "2160p HDR10 WEB-DL");
   cfg(0, 2, 1);
   espera("MKV SDR 2160p", vence(l, 2), "LG, HDR Evitar");
+  // PERFIL 5 EM MP4 NA LG TOCA COMO DV DE VERDADE (a TV aciona o DV nativo no
+  // MP4): fora do MP4 primeiro (auto-play desligado) ele ganha de um HDR10 da
+  // mesma faixa. Em MKV, ou com Dolby Vision desligado, continua abaixo do HDR10.
+  cfg(1, 0, 1);
+  fonte(&l[0], "MKV HDR10 2160p", 2160, 0, 0, "2160p HDR10 BluRay");
+  fonte(&l[1], "MP4 DV Profile 5 2160p", 2160, 1, 1, "2160p DV WEB-DL");
+  espera("MP4 DV Profile 5 2160p", vence(l, 2), "LG, sem MP4 primeiro: MP4 DV perfil 5 x MKV HDR10");
+  fonte(&l[1], "MKV DV Profile 5 2160p", 2160, 0, 1, "2160p DV WEB-DL");
+  espera("MKV HDR10 2160p", vence(l, 2), "LG: MKV DV perfil 5 x MKV HDR10");
+  fonte(&l[1], "MP4 DV Profile 5 2160p", 2160, 1, 1, "2160p DV WEB-DL");
+  cfg(1, 0, 0);
+  espera("MKV HDR10 2160p", vence(l, 2), "LG, Dolby Vision desligado: MP4 DV perfil 5 x MKV HDR10");
+  cfg(0, 0, 1);
+  espera("MP4 DV Profile 5 2160p", vence(l, 2), "LG, com MP4 primeiro: MP4 DV perfil 5 x MKV HDR10");
 #else
   // Fora da LG (Samsung/Android): nada muda, com as tres opcoes ligadas.
   espera("MKV DV 2160p", vence(l, 2), "fora da LG: MKV DV 2160p x MP4 HDR 2160p");

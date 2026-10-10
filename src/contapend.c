@@ -831,10 +831,19 @@ int contapend_aplicar_local(void) {
     // O JORNAL TAMBEM E FONTE (vistoep_fonte): um '+' daqui e um gesto ANTIGO
     // sendo reaplicado a cada ciclo, com o instante dele — nao pode passar por
     // cima de uma desmarcacao mais nova do mesmo episodio.
-    if (copia[i].ep > 0)
+    if (copia[i].ep > 0) {
+      int antes = vistoep_estado(copia[i].id, copia[i].temp, copia[i].ep), depois;
       vistoep_fonte(copia[i].id, copia[i].temp, copia[i].ep, copia[i].op == '+',
                     copia[i].ms, &fonte);
-    else
+      depois = vistoep_estado(copia[i].id, copia[i].temp, copia[i].ep);
+      if (antes != depois) {
+        printf("[vistoep] %s T%dE%d: jornal perfil=%d op=%c gesto_ms=%lld confirmado=%d "
+               "conf_ms=%lld mapa=%d->%d\n", copia[i].id, copia[i].temp, copia[i].ep,
+               copia[i].perfil, copia[i].op, copia[i].ms, copia[i].conf,
+               copia[i].confMs, antes, depois);
+        fflush(stdout);
+      }
+    } else
       cat_historico_definir_id(copia[i].id, copia[i].tipo, copia[i].op == '+');
     k++;
   }

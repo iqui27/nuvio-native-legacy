@@ -217,6 +217,27 @@ void fil_definir_perfil(int perfil);
 // Bumps on every real profile switch (#294): snapshots taken for the previous
 // profile are stale once this changes.
 unsigned fil_perfil_geracao(void);
+
+// #392: a lista de addons que a descoberta tem na mao e deste perfil? 0 (pacote,
+// sem conta) vale; o perfil cuja conta mandou a lista (addons_perfil_da_lista)
+// diferente do perfil das fileiras, nao: na janela depois de uma troca a lista
+// ainda e a do perfil que saiu, e registrar os catalogos dela no arquivo do
+// perfil novo despeja as fileiras dele e acrescenta as do outro.
+int fil_lista_e_deste_perfil(int perfilDaLista);
+
+// #392: FOTO DE UMA PASSADA. A descoberta tira a foto (perfil em uso da lista +
+// geracao do perfil das fileiras) quando le a lista e registra com ela: a
+// comparacao com o estado de agora e feita DENTRO do mutex do registro, entao
+// uma passada velha (a troca de perfil aconteceu enquanto ela rodava) e recusada
+// de forma atomica.
+typedef struct { int perfilLista; unsigned geracao; } FilPassada;
+FilPassada fil_passada_ler(void);
+int  fil_passada_valida(const FilPassada *p);
+void fil_registrar_de(const FilPassada *p, const char *chave, const char *titulo,
+                      const char *addon, const char *conteudo, int itens);
+void fil_registrar_se_couber_de(const FilPassada *p, const char *chave,
+                                const char *titulo, const char *addon,
+                                const char *conteudo);
 // Tira da lista os catalogos de addons que ja nao estao na conta. `ids` e
 // `bases` sao os ids de manifesto e as URLs base dos addons ATUAIS; so vale
 // depois de todos os manifestos da volta terem sido lidos. `perfilDaLista` e o

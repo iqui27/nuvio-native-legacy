@@ -1,7 +1,7 @@
 // Captura do cartao de novidades da versao atual (novidades_cartao.h) SEM
 // janela visivel (janela GL escondida, FBO, glReadPixels), como
 // tests/novidades202_shot.c: cada pagina, a previa em varios momentos das
-// cenas, a plataforma sem Dolby Vision (Samsung), ingles e outros idiomas,
+// cenas, todas as plataformas, ingles e outros idiomas,
 // animacoes reduzidas. No fim, a lista cabe acima do rodape em TODOS os
 // idiomas e, com a fonte da TV (NUVIO_SHOT_FONTE=3), nenhuma frase precisa de
 // reticencias.
@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 static GLuint fbo, fboTex;
 
@@ -90,6 +91,11 @@ static void captura(const char *saida, const char *nome, float seg, int pagina) 
   novcartao_teste_relogio(seg);
   // Quadros parados: icones, texto e a copia desfocada terminam de carregar.
   for (i = 0; i < 12; i++) { quadro(0.0f); SDL_Delay(2); }
+  if (pagina == novcartao_paginas() - 1) {
+    assert(novcartao_teste_discord());
+    assert(!strcmp(apoio_url(APOIO_DISCORD), NV_URL_DISCORD));
+    assert(apoio_n() == 2 && apoio_qual(2) == -1);
+  }
   snprintf(cam, sizeof cam, "%s/%s.png", saida, nome);
   grava(cam);
   tecla(SDLK_ESCAPE); tecla(SDLK_ESCAPE); tecla(SDLK_ESCAPE); tecla(SDLK_ESCAPE);
@@ -99,27 +105,36 @@ static void captura(const char *saida, const char *nome, float seg, int pagina) 
 // Em TODOS os idiomas e plataformas a lista de cada pagina termina acima do
 // rodape com folga e, com a fonte da TV, nenhuma frase precisa de reticencias.
 static void cabeEmTodos(void) {
-  static const unsigned PLAT[] = { NOV_LG, NOV_TPK, NOV_ANDROID };
+  static const unsigned PLAT[] = { NOV_LG, NOV_TPK, NOV_WGT, NOV_ANDROID, NOV_OUTRAS };
   int idi, i, p, k, comCorte = 0;
   novcartao_teste_medir(1);
-  for (k = 0; k < 3; k++) {
+  for (k = 0; k < 5; k++) {
     novcartao_teste_plataforma(PLAT[k]);
     for (idi = 0; idi < IDIOMA_N; idi++) {
-      int c = 0, n;
+      int c = 0, n, desenhados = 0;
       ajustesDeTeste(idi, 0, 2);
       novcartao_abrir();
       n = novcartao_paginas();
       for (p = 0; p < n - 1; p++) {
         for (i = 0; i < 40; i++) quadro(1.0f / 60.0f);
-        // As duas cenas passam pela legenda.
-        novcartao_teste_relogio(novcartao_teste_inicio_cena(0) + 1.0f); quadro(0.0f);
+        // Sem cenas, medir o texto da lista tambem.
         c += novcartao_teste_cortadas();
-        if (novcartao_cenas() > 1) {
-          novcartao_teste_relogio(novcartao_teste_inicio_cena(1) + 1.0f); quadro(0.0f);
+        desenhados += novcartao_teste_desenhados();
+        if (idi == 0 && novcartao_teste_vao_max() > 0) {
+          assert(fabsf(novcartao_teste_vao_min() - 12.0f) < 0.01f);
+          assert(fabsf(novcartao_teste_vao_max() - 12.0f) < 0.01f);
+        }
+        assert(novcartao_paginas() == n);
+        // Todas as cenas passam pela legenda quando o conteudo tem previa.
+        for (int cena = 0; cena < novcartao_cenas(); cena++) {
+          novcartao_teste_relogio(novcartao_teste_inicio_cena(cena) + 1.0f); quadro(0.0f);
           c += novcartao_teste_cortadas();
         }
         tecla(SDLK_RETURN);
       }
+      assert(desenhados == novcartao_itens_visiveis());
+      for (i = 0; i < 40; i++) quadro(1.0f / 60.0f);
+      assert(novcartao_teste_discord());
       if (novcartao_teste_folga() < 27.99f)
         printf("plataforma %u, idioma %d (%s): folga %.2f px\n", PLAT[k], idi, idioma_iso(idi), novcartao_teste_folga());
       assert(novcartao_teste_folga() >= 27.99f);   // lista exatamente cheia nao e erro de float
@@ -131,7 +146,8 @@ static void cabeEmTodos(void) {
   novcartao_teste_medir(0);
   novcartao_teste_plataforma(0);
   if (getenv("NUVIO_SHOT_FONTE")) assert(comCorte == 0);
-  printf("PASS: a lista acaba acima do rodape nos %d idiomas e 3 plataformas (%d com reticencias)\n", IDIOMA_N, comCorte);
+  printf("PASS: a lista acaba acima do rodape nos %d idiomas e 5 plataformas (%d com reticencias)\n", IDIOMA_N, comCorte);
+  puts("PASS: vaos de 12px em pt; Discord desenhado em todos os idiomas e plataformas");
 }
 
 int main(int argc, char **argv) {
@@ -140,7 +156,7 @@ int main(int argc, char **argv) {
   const char *so = getenv("NUVIO_SHOT_SO");   // "medir": so a medida, sem capturas
   SDL_Window *w;
   SDL_GLContext gl;
-  float dv, aj;
+  int cena;
   if (!dir || !dir[0]) return 2;
   dados_iniciar(dir);
   if (strcmp(dados_dir(), dir)) return 2;
@@ -171,44 +187,36 @@ int main(int argc, char **argv) {
   gfx_icones_dir("deploy/app/art");
 
   if (!so || strcmp(so, "medir")) {
-    // LG: as duas cenas (a tela do Dolby Vision e os Ajustes), todas as paginas.
-    novcartao_teste_plataforma(NOV_LG);
-    dv = novcartao_teste_inicio_cena(0);
-    aj = novcartao_teste_inicio_cena(1);
-    ajustesDeTeste(0, 0, 2);
-    captura(saida, "lg-pt-p1-dv-lendo", dv + 0.7f, 0);
-    captura(saida, "lg-pt-p1-dv-audio", dv + 3.2f, 0);
-    captura(saida, "lg-pt-p1-dv-imagem", dv + 6.2f, 0);
-    captura(saida, "lg-pt-p2-ajustes-relogio", aj + 1.2f, 1);
-    captura(saida, "lg-pt-p2-ajustes-selo", aj + 2.9f, 1);
-    captura(saida, "lg-pt-p2-ajustes-trailer", aj + 4.8f, 1);
-    captura(saida, "lg-pt-p3-apoio", dv + 1.0f, 2);
-
-    ajustesDeTeste(1, 0, 5);
-    captura(saida, "lg-en-p1", dv + 6.2f, 0);
-    captura(saida, "lg-en-p2", aj + 2.9f, 1);
-    captura(saida, "lg-en-p3-apoio", dv + 1.0f, 2);
-    ajustesDeTeste(IDIOMA_DE, 0, 2);
-    captura(saida, "lg-de-p1", dv + 3.2f, 0);
-    ajustesDeTeste(IDIOMA_JA, 0, 2);
-    captura(saida, "lg-ja-p1", dv + 3.2f, 0);
-    ajustesDeTeste(IDIOMA_RU, 0, 2);
-    captura(saida, "lg-ru-p2", aj + 2.9f, 1);
-
-    // Samsung (.tpk): sem o Dolby Vision e o ponteiro; sem os itens so da LG e do Android.
-    novcartao_teste_plataforma(NOV_TPK);
-    ajustesDeTeste(0, 0, 2);
-    captura(saida, "tpk-pt-p1", 1.2f, 0);
-    captura(saida, "tpk-pt-p2", 2.9f, 1);
-
-    // Android: a abertura no ponto salvo (o numero medido na TCL) na Otimizacao.
-    novcartao_teste_plataforma(NOV_ANDROID);
-    ajustesDeTeste(0, 0, 2);
-    captura(saida, "android-pt-p2", 2.9f, 1);
-
+    static const int idiomas[] = { 0, 1, IDIOMA_DE, IDIOMA_JA, IDIOMA_RU };
+    static const unsigned plataformas[] = { NOV_LG, NOV_TPK, NOV_WGT, NOV_ANDROID, NOV_OUTRAS };
+    static const char *nomes[] = { "lg", "tpk", "wgt", "android", "outras" };
+    char nome[100];
+    for (int plat = 0; plat < 5; plat++) {
+      novcartao_teste_plataforma(plataformas[plat]);
+      for (int idi = 0; idi < (plat == 0 ? 5 : 1); idi++) {
+        ajustesDeTeste(idiomas[idi], 0, idi == 1 ? 5 : 2);
+        for (int pg = 0; pg < novcartao_paginas() - 1; pg++) {
+          snprintf(nome, sizeof nome, "%s-%s-pagina-%d", nomes[plat], idioma_iso(idiomas[idi]), pg + 1);
+          captura(saida, nome, 1.2f, pg);
+        }
+        for (cena = 0; cena < novcartao_cenas(); cena++) {
+          snprintf(nome, sizeof nome, "%s-%s-cena-%d", nomes[plat], idioma_iso(idiomas[idi]), cena + 1);
+          captura(saida, nome, novcartao_teste_inicio_cena(cena) + 1.2f, 0);
+        }
+        snprintf(nome, sizeof nome, "%s-%s-apoio", nomes[plat], idioma_iso(idiomas[idi]));
+        captura(saida, nome, 1.2f, novcartao_paginas() - 1);
+      }
+    }
     novcartao_teste_plataforma(NOV_LG);
     ajustesDeTeste(0, 1, 2);
-    captura(saida, "lg-pt-reduzido-p1", 0.5f, 0);
+    for (int pg = 0; pg < novcartao_paginas(); pg++) {
+      snprintf(nome, sizeof nome, "lg-pt-reduzido-pagina-%d", pg + 1);
+      captura(saida, nome, 0.7f, pg);
+    }
+    for (cena = 0; cena < novcartao_cenas(); cena++) {
+      snprintf(nome, sizeof nome, "lg-pt-reduzido-cena-%d", cena + 1);
+      captura(saida, nome, novcartao_teste_inicio_cena(cena) + 0.7f, 0);
+    }
   }
 
   cabeEmTodos();

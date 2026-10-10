@@ -1795,6 +1795,9 @@ static int larguraLinhaMedir(TxtEstilo estilo, const char *s, TxtFamilia familia
 }
 
 int txt_largura(TxtEstilo estilo, const char *s) {
+  // Consultas de layout antes de txt_iniciar nao devem marcar fontes como
+  // ausentes para sempre nem guardar uma largura zero no cache.
+  if (!TTF_WasInit()) return 0;
   return larguraLinha(estilo, i18n(s), fonteInterface, 0);
 }
 
@@ -1922,6 +1925,7 @@ TxtLinha txt_linha_corta_enfase(TxtEstilo estilo, const char *s, int r, int g,
 static void desenhaBlocoLinha(TxtEstilo estilo, const char *s, int r, int g, int b,
                               float x, float y, float larg, float alpha,
                               int reticencias) {
+  if (alpha <= 0.0f) return; // medida de bloco sem rasterizar
   if (!reticencias) {
     TxtLinha l = txt_linha(estilo, s, r, g, b, 255);
     txt_desenhar_alpha(l, x, y, alpha);
@@ -2067,8 +2071,10 @@ static float txt_bloco_impl(TxtEstilo estilo, const char *s, int r, int g, int b
         return usado + leading;
       }
       // nao coube: fecha a linha atual e recomeca com a palavra
-      TxtLinha l = txt_linha(estilo, linha, r, g, b, 255);
-      txt_desenhar_alpha(l, x, y + usado, alpha);
+      if (alpha > 0.0f) {
+        TxtLinha l = txt_linha(estilo, linha, r, g, b, 255);
+        txt_desenhar_alpha(l, x, y + usado, alpha);
+      }
       usado += leading; nLinhas++;
       if (maxLinhas > 0 && nLinhas >= maxLinhas) return usado;
       memcpy(linha, ini, np); linha[np] = 0;
@@ -2099,7 +2105,7 @@ static float txt_bloco_impl(TxtEstilo estilo, const char *s, int r, int g, int b
                           alpha, 1);
         return usado + leading;
       }
-      if (linha[0]) {
+      if (linha[0] && alpha > 0.0f) {
         TxtLinha l = txt_linha(estilo, linha, r, g, b, 255);
         txt_desenhar_alpha(l, x, y + usado, alpha);
       }
@@ -2113,8 +2119,10 @@ static float txt_bloco_impl(TxtEstilo estilo, const char *s, int r, int g, int b
       desenhaBlocoLinha(estilo, linha, r, g, b, x, y + usado, larg,
                         alpha, 1);
     else {
-      TxtLinha l = txt_linha(estilo, linha, r, g, b, 255);
-      txt_desenhar_alpha(l, x, y + usado, alpha);
+      if (alpha > 0.0f) {
+        TxtLinha l = txt_linha(estilo, linha, r, g, b, 255);
+        txt_desenhar_alpha(l, x, y + usado, alpha);
+      }
     }
     usado += leading;
   }

@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "dts_pipeline.h"
+#include "../webosver.h"
 #include "adapter/adapter.h"
 #include <dlfcn.h>
 #include <stdlib.h>
@@ -7,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <limits.h>
+#include <pthread.h>
 struct DtsPipeline { void *library, *native; const DtsAdapter *api; };
 static void *open_adapter(int major, const DtsAdapter **api) {
   char path[PATH_MAX], executable[PATH_MAX];
@@ -50,12 +52,47 @@ fail:
   fprintf(stderr, "[dts] adapter unavailable: %s (ABI or firmware probe failed)\n", path);
   *api = NULL; dlclose(library); return NULL;
 }
-int dts_pipeline_available(int major) {
+/* O SIM vale para o processo inteiro: o firmware nao muda com o app aberto e
+ * nenhum ajuste muda o que a TV carrega. Antes cada video sondava de novo, e
+ * no webOS 3 isso era um dlopen do webos4 que sempre falha (GLIBCXX_3.4.21)
+ * mais o do webos3 e o da libplayerAPIs.
+ * O NAO so fica guardado no webOS 3 ou anterior, onde nao ha conversao a
+ * perder. No webOS 4+ (e com versao desconhecida) um nao pode ser passageiro
+ * e guarda-lo desligaria o DTS ate reabrir o app: la cada video sonda de novo,
+ * como sempre foi.
+ * Uma posicao por pedido (0 = automatico, 3, 4+); -1 = sem resposta guardada.
+ * A trava cobre dois fios perguntando juntos: o segundo espera o primeiro. */
+static pthread_mutex_t sondaTrava = PTHREAD_MUTEX_INITIALIZER;
+static int sondaResposta[3] = {-1, -1, -1};
+static int sondaPosicao(int major) { return major == 0 ? 0 : major == 3 ? 1 : 2; }
+/* webOS da TV: a fonte unica do webosver.c (nyx, depois starfish-release).
+ * 0 = nao deu para saber. */
+static int sondaWebos(void) { return nv_webos_major(); }
+static int sondar(int major) {
   const DtsAdapter *api;
   void *lib = open_adapter(major, &api);
   if (!lib) return 0;
   printf("[dts] firmware adapter ready\n"); fflush(stdout);
   dlclose(lib); return 1;
+}
+int dts_pipeline_available(int major) {
+  int i, r;
+  if (major != 0 && major < 3) return 0;
+  i = sondaPosicao(major);
+  pthread_mutex_lock(&sondaTrava);
+  r = sondaResposta[i];
+  if (r < 0) {
+    int webos = sondaWebos();
+    r = sondar(major);
+    if (r || (webos > 0 && webos < 4)) sondaResposta[i] = r;
+  }
+  pthread_mutex_unlock(&sondaTrava);
+  return r;
+}
+void dts_pipeline_available_esquecer(void) {
+  pthread_mutex_lock(&sondaTrava);
+  for (int i = 0; i < 3; i++) sondaResposta[i] = -1;
+  pthread_mutex_unlock(&sondaTrava);
 }
 DtsPipeline *dts_pipeline_create(const char *app, const char *window, int major,
                                 void (*event)(void *, const char *), void *user) {

@@ -11,7 +11,9 @@
 #include "layout.h"
 #include "anim.h"
 #include "vistoep.h"
+#include "vistonao.h"
 #include "visto.h"
+#include "simkl.h"   // SMK_LOTE_MAX: menor limite de envio dos destinos
 #include "botoes.h"
 #include <stdio.h>
 #include <string.h>
@@ -74,16 +76,16 @@ static int semMolaScroll;
 
 // --- MENU DE VISTO -----------------------------------------------------------
 //
-// Segurar OK numa linha abre. Os tres gestos que o dono pediu — este episodio,
-// ate aqui, a temporada inteira — sao O MESMO LOTE em tamanhos diferentes
-// (vistoep.h), e o sentido (marcar ou desmarcar) sai do estado do episodio em
-// foco: quem esta olhando um episodio visto quer desmarcar.
+// Segurar OK numa linha abre. Este episodio, ate aqui e a temporada inteira
+// usam o mesmo lote (vistoep.h), com o sentido dado pelo episodio em foco.
+// Daqui em diante so DESMARCA: aparece se ha visto do foco para a frente.
 // VM_FONTES so aparece quando o menu e aberto DE FORA (da pagina de detalhe):
 // la o toque curto no card ja abre as fontes e a pressao longa passou a abrir
 // este menu, entao ele precisa carregar a porta que tomou. Dentro da folha de
 // episodios a opcao nao existe — quem abriu a folha veio do player e ja tem
 // fonte tocando; oferece-la ali seria uma linha que nao leva a lugar nenhum.
-enum { VM_ESTE = 0, VM_ATE, VM_TEMP, VM_FONTES, VM_N };
+enum { VM_ESTE = 0, VM_ATE, VM_TEMP, VM_FONTES, VM_DAQUI, VM_N };
+static int vmAcoes[VM_N], vmN; // linhas visiveis -> gesto (daqui em diante e opcional)
 // O MENU DA TEMPORADA (issue #108, "Pressing 'Season' brings up option to mark
 // all as watched"): o mesmo cartao, aberto pela ABA e nao por um episodio, com
 // so as duas linhas que o dono pediu. vmModoTemp escolhe qual dos dois; as
@@ -92,8 +94,8 @@ enum { VT_MARCAR = 0, VT_DESMARCAR, VT_N };
 static int vmModoTemp;
 static int vmQuantos[VM_N];   // tamanho do lote de cada opcao, da abertura
 static int montarLote(int idx, int modo, int t, int e, VistoPar *saida, int max);
-// Teto do lote de um gesto. 64 era o antigo e cortava temporada de anime.
-#define VM_LOTE 256
+// Consulta a faixa inteira; a aplicacao limita o gesto e os envios.
+#define VM_LOTE VE_LOTE_MAX
 static int vmAberto, vmFoco, vmVisto;      // vmVisto: o sentido do gesto
 static Uint32 vmDesde;                     // relogio da pressao longa
 static int vmSegurando, vmConsumir;
@@ -150,7 +152,7 @@ static int      vmTemAncora;
 static GfxRect  vmCaixa;       // a caixa aberta do ultimo quadro (teste)
 static int      vmTemCaixa;
 
-static int vmOpcoes(void) { return vmModoTemp ? VT_N : vmSo ? VM_N : VM_N - 1; }
+static int vmOpcoes(void) { return vmModoTemp ? VT_N : vmN; }
 // A ABA QUE SE ABRE: o menu da temporada, aberto sobre a pagina de titulo com a
 // aba por ancora. Dentro da ilha do player a "aba" e um segmentado da propria
 // ilha, e la o menu da temporada e a ilha comum.
@@ -161,19 +163,23 @@ static int vmPainel(void) { return vmModoTemp && vmSo && vmTemAncora; }
 static void montarRotulos(void) {
   int i, n = vmOpcoes();
   for (i = 0; i < n; i++) {
-    int quantos = vmModoTemp ? vmQuantos[VM_TEMP] : (i < VM_FONTES ? vmQuantos[i] : 0);
+    int modo = vmAcoes[i];
+    int quantos = vmModoTemp ? vmQuantos[VM_TEMP] : vmQuantos[modo];
     const char *ic;
     if (vmModoTemp) {
       snprintf(vmRot[i], sizeof vmRot[i], i == VT_MARCAR ? i18n("Marcar temporada como assistida (%d)")
                                                          : i18n("Desmarcar temporada (%d)"), quantos);
       ic = i == VT_MARCAR ? "aj_eye" : "aj_eye-off";
-    } else if (i == VM_ESTE) {
+    } else if (modo == VM_ESTE) {
       snprintf(vmRot[i], sizeof vmRot[i], "%s", vmVisto ? i18n("Marcar este episódio") : i18n("Desmarcar este episódio"));
       ic = vmVisto ? "aj_eye" : "aj_eye-off";
-    } else if (i == VM_ATE) {
+    } else if (modo == VM_ATE) {
       snprintf(vmRot[i], sizeof vmRot[i], quantos == 1 ? i18n("Até aqui (%d episódio)") : i18n("Até aqui (%d episódios)"), quantos);
       ic = "pl_skip-forward";
-    } else if (i == VM_TEMP) {
+    } else if (modo == VM_DAQUI) {
+      snprintf(vmRot[i], sizeof vmRot[i], "%s", i18n("Desmarcar daqui em diante"));
+      ic = "aj_eye-off";
+    } else if (modo == VM_TEMP) {
       snprintf(vmRot[i], sizeof vmRot[i], quantos == 1 ? i18n("Temporada inteira (%d episódio)") : i18n("Temporada inteira (%d episódios)"), quantos);
       ic = "aj_list-video";
     } else {
@@ -211,6 +217,21 @@ static void menuAbrir(int idx, int t, int e, const char *nome, int so) {
   vmQuantos[VM_ATE]  = montarLote(idx, VM_ATE, t, e, NULL, 0);
   vmQuantos[VM_TEMP] = montarLote(idx, VM_TEMP, t, e, NULL, 0);
   vmQuantos[VM_FONTES] = 0;
+  vmN = 0;
+  vmAcoes[vmN++] = VM_ESTE;
+  vmAcoes[vmN++] = VM_ATE;
+  // Pode haver posteriores vistos mesmo quando o episodio em foco nao esta.
+  { VistoPar lote[VM_LOTE];
+    int n = montarLote(idx, VM_DAQUI, t, e, lote, VM_LOTE), i;
+    vmQuantos[VM_DAQUI] = n;
+    for (i = 0; i < n; i++)
+      if (vistoep_estado(ci->imdb, lote[i].temporada, lote[i].episodio) == 1) {
+        vmAcoes[vmN++] = VM_DAQUI;
+        break;
+      }
+  }
+  vmAcoes[vmN++] = VM_TEMP;
+  if (so) vmAcoes[vmN++] = VM_FONTES;
   // Abre do zero: a mola de um menu que acabou de fechar nao e a deste.
   vmAnim = vmAnimV = 0.0f;
   memset(vmFocoAnim, 0, sizeof vmFocoAnim);
@@ -260,7 +281,7 @@ static int nLinhas(void) {
 // `saida` NULA = so contar, como em vistoep.h; o rotulo precisa do numero.
 // A regra mora em vistoep_lote (pura, com teste); aqui so se junta o catalogo.
 static int montarLote(int idx, int modo, int t, int e, VistoPar *saida, int max) {
-  static VistoPar cat[VM_LOTE * 4];
+  static VistoPar cat[VM_LOTE];
   const CatItem *ci = cat_item(idx);
   int i, nc = 0;
   if (!ci || !ci->imdb[0]) return 0;
@@ -268,14 +289,15 @@ static int montarLote(int idx, int modo, int t, int e, VistoPar *saida, int max)
     if (saida && max > 0) { saida[0].temporada = (short)t; saida[0].episodio = (short)e; }
     return 1;
   }
-  for (i = 0; i < cat_n_episodios(idx) && nc < VM_LOTE * 4; i++) {
+  for (i = 0; i < cat_n_episodios(idx) && nc < VM_LOTE; i++) {
     const CatEp *ce = cat_episodio(idx, i);
     if (!ce) continue;
     cat[nc].temporada = (short)ce->temporada;
     cat[nc].episodio = (short)ce->episodio;
     nc++;
   }
-  return vistoep_lote(ci->imdb, modo == VM_ATE, t, e, cat, nc,
+  return vistoep_lote(ci->imdb, modo == VM_DAQUI ? VE_LOTE_DAQUI :
+                      modo == VM_ATE ? VE_LOTE_ATE : VE_LOTE_TEMPORADA, t, e, cat, nc,
                       extras_agenda_temporada(), extras_agenda_episodio(),
                       saida, max);
 }
@@ -291,10 +313,11 @@ static int montarLote(int idx, int modo, int t, int e, VistoPar *saida, int max)
 // episodio: "Ate aqui" em T2E5 re-postava a T1 inteira (Silo, 08/10, 15 em vez
 // de 1). Agora vistoep_aplicar devolve so os episodios cujo estado mudou; um
 // de estado DESCONHECIDO (mapa vazio, sem Trakt lido) conta como mudou, que e o
-// caso em que o remoto ainda precisa do reparo. Um pedido por destino, nunca um
-// por episodio. Desmarcar idem: so sai quem estava visto. Nada mudou: nada sai.
+// caso em que o remoto ainda precisa do reparo. Pedidos em lotes por destino,
+// nunca por episodio. Desmarcar idem: so sai quem estava visto. Nada mudou: nada sai.
 static const char *nomeModo(int modo) {
-  return modo == VM_ESTE ? "este" : modo == VM_ATE ? "ate aqui" : "temporada";
+  return modo == VM_ESTE ? "este" : modo == VM_ATE ? "ate aqui" :
+         modo == VM_DAQUI ? "daqui em diante" : "temporada";
 }
 static int aplicarVisto(int modo, int visto) {
   const CatItem *ci = cat_item(vmIdx);
@@ -304,14 +327,26 @@ static int aplicarVisto(int modo, int visto) {
   // A TEMPORADA DO EPISODIO (vmT), e nao a da aba selecionada. Sao a mesma
   // coisa dentro da folha, e fora dela nao ha aba nenhuma.
   n = montarLote(vmIdx, modo, vmT, vmE, lote, VM_LOTE);
+  // Faixa grande: so o que falta mudar, para o proximo gesto poder avancar.
+  if (n > VISTONAO_MAX) {
+    int k = 0;
+    for (int i = 0; i < n && k < VISTONAO_MAX; i++)
+      if (vistoep_estado(ci->imdb, lote[i].temporada, lote[i].episodio) != visto)
+        lote[k++] = lote[i];
+    n = k;
+  }
   if (n < 1) return 0;
   mudou = vistoep_aplicar(ci->imdb, lote, n, visto, envio, &ja);
   printf("[visto] menu: %s %s %s S%dE%d: %d enviados, %d ja estavam\n",
          nomeModo(modo), visto ? "marcar" : "desmarcar", ci->imdb, vmT, vmE, mudou, ja);
   fflush(stdout);
   if (!mudou) return 0;
-  visto_episodios(ci->imdb, ci->tipo[0] ? ci->tipo : "series", envio, mudou, visto,
-                  visto_destinos());
+  for (int i = 0; i < mudou; i += SMK_LOTE_MAX) {
+    int qtd = mudou - i;
+    if (qtd > SMK_LOTE_MAX) qtd = SMK_LOTE_MAX;
+    visto_episodios(ci->imdb, ci->tipo[0] ? ci->tipo : "series", envio + i, qtd, visto,
+                    visto_destinos());
+  }
   return mudou;
 }
 
@@ -505,7 +540,7 @@ static void menuDesenhar(GfxRect area, float a0) {
   else gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0, 0, 0, 0, 0.55f * a);
   if (vmFeito) meta = vmMsg;
   else if (vmModoTemp) { const CatItem *ci = cat_item(vmIdx); meta = ci ? ci->titulo : ""; }
-  else meta = vmVisto ? "Marcar como assistido" : "Desmarcar como assistido";
+  else meta = vmAcoes[vmFoco] != VM_DAQUI && vmVisto ? "Marcar como assistido" : "Desmarcar como assistido";
   ctx_menu_desenhar(m, vmCab, meta, vmFeito ? 0.8f : 0.5f, vmLin, vmOpcoes(), vmFocoAnim,
                     vmFeito ? 0.35f : 1.0f, a, vmAberto && !vmFeito ? ponteiroVmOpcao : NULL);
 }
@@ -534,8 +569,9 @@ static void menuEvento(const SDL_Event *ev) {
       menuFeito(aplicarVisto(VM_TEMP, v), v);
       return;
     }
-    if (vmFoco == VM_FONTES) { vmFontesPed = 1; vmAberto = 0; return; }
-    menuFeito(aplicarVisto(vmFoco, vmVisto), vmVisto);
+    int modo = vmAcoes[vmFoco], v = modo == VM_DAQUI ? 0 : vmVisto;
+    if (modo == VM_FONTES) { vmFontesPed = 1; vmAberto = 0; return; }
+    menuFeito(aplicarVisto(modo, v), v);
     return;
   }
   vmAberto = 0;   // qualquer outra tecla fecha

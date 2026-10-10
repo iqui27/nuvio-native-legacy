@@ -112,6 +112,12 @@ static volatile int reconErroPend, reconErroCod, reconLinhaRede;
 static int reconAudio = -1, reconLeg = -1;
 static volatile int reconFaixasPend;
 static int reconBuscarMs = -1;
+// #412: relogio congelado com estado Playing, fora de pausa/buffer/seek.
+#define TPK_PRESO_MS 15000u
+static Uint32 progressoEm;
+static double progressoPos;
+static int vigiaAtiva, pausaPedida;
+static atomic_int vigiaReiniciar;
 
 // CABECALHO DO MKV (#206). O player do host so da o idioma de cada faixa; o
 // Name ("Forced", "DD 5.1"), a FlagForced e os canais estao nas TrackEntry, e
@@ -256,6 +262,10 @@ enum { EV_PRONTO = 1, EV_TOCANDO = 2, EV_PAUSADO = 3, EV_FIM = 4, EV_ERRO = 5,
 
 __attribute__((visibility("default")))
 void nv_tpk_video_evento(int tipo, int a, int b) {
+  if (!ativo) return; // evento tardio depois de sair
+  if ((tipo == EV_TOCANDO && !tocando) || tipo == EV_PAUSADO ||
+      (tipo == EV_BUFFER && bufferando != (a < 100)))
+    atomic_store(&vigiaReiniciar, 1);
   switch (tipo) {
     case EV_PRONTO:  durMs = a; pronto = 1; break;
     case EV_TOCANDO: tocando = 1; bufferando = 0; break;
@@ -350,6 +360,8 @@ static int abrirSessao(void) {
   // escolher qualquer faixa.
   mkvass_aceitar_texto(1);
   atomic_store(&temErroDetalhe, 0);
+  vigiaAtiva = pausaPedida = 0;
+  atomic_store(&vigiaReiniciar, 1);
   ativo = 1; pronto = falhou = terminou = tocando = 0;
   largura = altura = durMs = 0; bufferando = 1; bufferDesde = SDL_GetTicks();
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1;
@@ -546,6 +558,24 @@ static void escolhasPendentes(void) {
   }
 }
 
+static void vigiarPlayer(double pos) {
+  Uint32 agora = SDL_GetTicks();
+  if (atomic_exchange(&vigiaReiniciar, 0)) vigiaAtiva = 0;
+  if (!ativo || !pronto || !tocando || pausaPedida || bufferando || terminou ||
+      falhou || recon.pendente || reconBuscarMs >= 0) { vigiaAtiva = 0; return; }
+  if (!vigiaAtiva || pos != progressoPos) {
+    vigiaAtiva = 1; progressoPos = pos; progressoEm = agora; return;
+  }
+  if (agora - progressoEm < TPK_PRESO_MS) return;
+  printf("[video] tpk preso: relogio %.3fs sem andar ha %u ms; parar e recuperar\n",
+         pos, (unsigned)(agora - progressoEm));
+  fflush(stdout);
+  // Mesma maquina limitada da reconexao: nao cria um loop paralelo infinito.
+  reconErroCod = -2; reconErroPend = 1; reconLinhaRede = 1; reconIniciou = 1;
+  tocando = 0; vigiaAtiva = 0;
+  if (hParar) hParar(); // host confirma/libera antes de aceitar outra abertura
+}
+
 void video_bombear(void) {
   escolhasPendentes();
   legendaVigiarSilencio(SDL_GetTicks());
@@ -555,6 +585,7 @@ void video_bombear(void) {
     hEscolher(3, velEnviada);
   }
   double pos = video_pos();
+  vigiarPlayer(pos);
   sondaMkv(pos);
   if (pronto && pos > 0.5) reconIniciou = 1;
   if (pronto && reconBuscarMs < 0) nv_recon_progresso(&recon, pos);
@@ -562,6 +593,7 @@ void video_bombear(void) {
   // depois do prepare, e um seek no meio disso concorre com ele.
   if (reconBuscarMs >= 0 && pronto && tocando) {
     if (hBuscar) hBuscar(reconBuscarMs);
+    vigiaAtiva = 0;
     printf("[video] reconexao: retomado em %ds\n", reconBuscarMs / 1000);
     fflush(stdout);
     reconBuscarMs = -1;
@@ -603,10 +635,11 @@ void video_parar(void) {
   if (ativo && hParar) hParar();
   ativo = pronto = tocando = 0;
 }
-void video_pausar(int p) { if (hPausar) hPausar(p); }
+void video_pausar(int p) { pausaPedida = p != 0; vigiaAtiva = 0; if (hPausar) hPausar(p); }
 int video_pausa_confirmada(void) { return 0; } // host nao fornece ack por sessao
 void video_volume(int pct) { if (hVolume) hVolume(pct); }
 void video_buscar(double s) {
+  progressoEm = SDL_GetTicks(); progressoPos = video_pos(); vigiaAtiva = 1;
   if (hBuscar) hBuscar((int)(s * 1000.0));
   terminou = 0;
 }

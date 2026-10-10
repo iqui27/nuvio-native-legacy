@@ -277,7 +277,7 @@ static pthread_mutex_t travaRetomada = PTHREAD_MUTEX_INITIALIZER;
 // decisao e o recarregar sao do video_bombear.
 static NvReconexao recon;
 static int reconProxima, reconPermitida, reconIniciou;
-static volatile int reconErroPend, reconErroCod;
+static volatile int reconErroPend, reconErroCod, reconErroVideo;
 static int reconAudio = -1, reconLeg = -1;
 static volatile int reconFaixasPend;
 static int reconBuscarMs = -1;
@@ -450,6 +450,14 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeTela(JNIEnv 
   fflush(stdout);
 }
 
+JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeDecoder4k(JNIEnv *env, jclass cls,
+                                                                                  jint hevc, jint avc, jint vp9, jint av1) {
+  (void)env; (void)cls;
+  stream_definir_decoder4k(hevc, avc, vp9, av1);
+  printf("[tv] decoder 4K: hevc=%d avc=%d vp9=%d av1=%d\n", (int)hevc, (int)avc, (int)vp9, (int)av1);
+  fflush(stdout);
+}
+
 JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeHdr(JNIEnv *env, jclass cls, jstring hdr, jint dv, jint atmos) {
   char h[24];
   (void)cls;
@@ -489,7 +497,8 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(JNIEn
     case EV_PAUSADO: tocando = 0; if (pausaPedida) pausaVista = 1; break;
     case EV_FIM:     terminou = 1; tocando = 0; break;
     // Sem `falhou` aqui: o video_bombear decide entre reconectar e desistir.
-    case EV_ERRO:    reconErroCod = a; reconErroPend = 1; tocando = 0;
+    case EV_ERRO:    reconErroCod = a; reconErroVideo = b == 2; /* Media3 C.TRACK_TYPE_VIDEO */
+                     reconErroPend = 1; tocando = 0;
                      snprintf(erroTxt, sizeof erroTxt, "%d player error:%d", a, b);
                      printf("[video] android: erro do player %d (%d)\n", a, b); break;
     case EV_TAMANHO: largura = a; altura = b; break;
@@ -521,7 +530,7 @@ static int abrirSessao(int inicioMs, int fracao) {
   ativo = 1; superficieEstavel = 0; prontoLoad = primeiroQuadro = falhou = terminou = tocando = 0;
   velEnviada = 100;
   largura = altura = durMs = posMs = 0; bufferando = 1; bufferDesde = SDL_GetTicks();
-  tocandoDesde = 0; semDecoderAudio = 0; erroTxt[0] = 0;
+  tocandoDesde = 0; semDecoderAudio = 0; erroTxt[0] = 0; reconErroVideo = 0;
   pausaPedida = pausaVista = 0;
   hdrAtual = "none"; dvAtual = atmosAtual = 0;
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; legAte = 0;
@@ -665,7 +674,7 @@ void video_parar(void) {
   novaRetomada(-1);
   capmkv_zerar();   // fio de capitulos em voo nao alimenta o proximo titulo
   nv_recon_zerar(&recon);
-  reconErroPend = 0; reconFaixasPend = 0; reconBuscarMs = -1;
+  reconErroPend = 0; reconErroVideo = 0; reconFaixasPend = 0; reconBuscarMs = -1;
   if (ativo) kSemArg(mParar);
   ativo = prontoLoad = primeiroQuadro = tocando = 0; superficieEstavel = 0;
   pausaPedida = pausaVista = 0;
@@ -764,6 +773,7 @@ int  video_terminou(void) { return terminou; }
 // Foco de audio perdido = pausa (NvPlayer); nao ha "outro app com o video".
 int  video_conflito_recurso(void) { return conflito; }
 const char *video_erro_texto(void) { return falhou ? erroTxt : ""; }
+int video_erro_decoder_codigo(void) { return falhou && reconErroVideo ? reconErroCod : 0; }
 // O Media3 nao da o sinal de decoder anunciado: valem os neutros do .tpk.
 int  video_decoder_anunciou(void) { return 1; }
 

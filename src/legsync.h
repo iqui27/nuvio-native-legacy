@@ -68,6 +68,8 @@ typedef struct {
                               // oferecido agora (plataforma/passthrough/sem audio)
   // R4 (automatico): 0 sem plano, 1 trabalhando, 2 sincronizou, 3 nao deu.
   int autoFase;
+  int autoDesligado;          // ajuste local: sem plano nem pílula automáticos
+  int falhaDownload;          // callback terminou sem corpo; não é um timeout da UI
   int autoTrocou;             // 1 = a escolhida nao sincronizou e outra legenda entrou no lugar
   char autoNome[64];          // nome da legenda que entrou (autoTrocou)
 } LegSyncVisao;
@@ -89,6 +91,8 @@ double legsync_posicao(double posSeg);
 void legsync_primaria_externa(const char *url, const char *idioma, const char *origem);
 void legsync_primaria_outra(int embutida);
 
+// Ajuste local, ligado por padrão. Desligar cancela o plano, preserva o manual.
+void legsync_auto_habilitar(int ligado);
 // F06: Ajustes > Sincronia por audio (local, padrao desligado). Barato; o
 // player chama a cada quadro. Desligar no meio cancela a escuta.
 void legsync_audio_habilitar(int ligado);
@@ -132,7 +136,6 @@ enum { LEGSYNC_PIL_OFF = 0, LEGSYNC_PIL_PROCURANDO, LEGSYNC_PIL_SINCRONIZANDO, L
 #define LEGSYNC_PIL_SINC_MS     3000u   // "Sincronizando…" na ilha antes de ela voltar ao relogio
 #define LEGSYNC_PIL_APLICADA_MS 3600u
 #define LEGSYNC_PIL_SEMSYNC_MS  6000u   // "nao sincronizada" fica mais: e um aviso, nao um sucesso
-#define LEGSYNC_PIL_BAIXAR_TETO 20000u  // a legenda escolhida nao baixou: desiste da narracao
 enum { LEGSYNC_PIL_ESCONDEU = 1, LEGSYNC_PIL_FINAL_TARDE = 2, LEGSYNC_PIL_LEMBRAR = 4,
        LEGSYNC_PIL_BAIXAR = 8, LEGSYNC_PIL_ZERAR = 16 };
 typedef struct {

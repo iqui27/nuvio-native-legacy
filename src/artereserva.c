@@ -13,7 +13,7 @@
 
 // Tamanho da chave da memoria do resolvedor (arfMem, mais abaixo): o still de
 // episodio tambem guarda nela.
-#define ARF_CHAVE 32u
+#define ARF_CHAVE 64u
 
 // images.metahub.space/<tipo>/<tamanho>/<ttNNN>/img  ->  tipo e id.
 // So poster e background: logo nao tem par no /find.
@@ -719,6 +719,7 @@ static int lerPedido(const char *url, ArfPedido *p) {
   memcpy(p->fonte, s, n); s = b + 1;
   b = strchr(s, '/'); if (!b || (n = (size_t)(b - s)) == 0 || n >= sizeof p->tamanho) return -1;
   memcpy(p->tamanho, s, n); s = b + 1;
+  if (!strcmp(p->fonte, "apple") && !strncmp(s, "v2/", 3)) s += 3;
   b = strchr(s, '/'); n = b ? (size_t)(b - s) : strlen(s);
   if (!n || n >= sizeof p->id) return -1;
   memcpy(p->id, s, n);
@@ -1012,13 +1013,20 @@ static int montarFinal(const ArfPedido *p, const char *valor, char *saida, size_
   return 1;
 }
 
+// Apple casa por nome/ano/tipo: o cache nao pode pular essa verificacao.
+static void chavePedido(const ArfPedido *p, char *chave, size_t n) {
+  if (!strcmp(p->fonte, "apple"))
+    snprintf(chave, n, "%s/%s/%c/%d", p->fonte, p->id, p->serie ? 's' : 'm', p->ano);
+  else snprintf(chave, n, "%s/%s", p->fonte, p->id);
+}
+
 int arte_fonte_resolver(const char *url, char *saida, size_t tam) {
   ArfPedido p;
   char chave[ARF_CHAVE], valor[400];
   int r = lerPedido(url, &p);
   if (r == 0) return 0;
   if (r < 0 || !saida || tam < 80) return -1;
-  snprintf(chave, sizeof chave, "%s/%s", p.fonte, p.id);
+  chavePedido(&p, chave, sizeof chave);
   r = arfLer(chave, valor, sizeof valor);
   if (r < 0) return -1;
   if (r == 0) {
@@ -1037,7 +1045,7 @@ int arte_fonte_resolvida(const char *url, char *saida, size_t tam) {
   ArfPedido p;
   char chave[ARF_CHAVE], valor[400];
   if (lerPedido(url, &p) != 1 || !saida || tam < 80) return 0;
-  snprintf(chave, sizeof chave, "%s/%s", p.fonte, p.id);
+  chavePedido(&p, chave, sizeof chave);
   if (arfLer(chave, valor, sizeof valor) <= 0) return 0;
   return montarFinal(&p, valor, saida, tam);
 }

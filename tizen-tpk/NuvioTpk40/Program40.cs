@@ -106,6 +106,10 @@ namespace NuvioTpk
         [DllImport("libdl.so.2")] static extern IntPtr dlopen(string path, int flags);
         [DllImport("libdl.so.2")] static extern IntPtr dlsym(IntPtr h, string sym);
         [DllImport("libdl.so.2")] static extern IntPtr dlerror();
+        [DllImport("libecore_wayland.so.1")] static extern IntPtr ecore_wl_window_find(uint id);
+        [DllImport("libecore_wayland.so.1")] static extern byte ecore_wl_window_keygrab_set(IntPtr win, string key, int mod, int notMod, int priority, int modo);
+        [DllImport("libecore_wl2.so.1")] static extern IntPtr ecore_wl2_window_find(uint id);
+        [DllImport("libecore_wl2.so.1")] static extern byte ecore_wl2_window_keygrab_set(IntPtr win, string key, int mod, int notMod, int priority, int modo);
         // libc por NUMERO de syscall (a libc do Tizen 4/5 nao exporta
         // memfd_create como simbolo, so o dispatcher generico syscall()).
         [DllImport("libc.so.6", SetLastError = true, EntryPoint = "syscall")]
@@ -144,7 +148,7 @@ namespace NuvioTpk
 
         Window janelaVideo, janelaErro, janelaAviso;
         Video video;
-        bool rodando, fim, primeiroQuadro;
+        bool rodando, fim, primeiroQuadro, teclasReservadas;
 
         protected override void OnCreate()
         {
@@ -245,6 +249,9 @@ namespace NuvioTpk
             // Nunca false enquanto o app vive: a TVGLApplication para de chamar.
             if (fim) return false;
             if (!rodando) return true;
+            // Aqui a TVGLApplication ja criou a janela GL. Uma tentativa por
+            // backend, nunca por quadro; TOPMOST acompanha o foco da janela.
+            if (!teclasReservadas) { teclasReservadas = true; ReservaTeclasMidia(); }
             int r = NvLib.Quadro();
             if (r < 0) fim = true;
             if (r > 0 && !primeiroQuadro) { primeiroQuadro = true; Etapa("ok first-frame"); }
@@ -268,6 +275,55 @@ namespace NuvioTpk
         {
             video?.PausarPeloSistema();
             base.OnPause();
+        }
+
+        // #411: as mesmas teclas do host 6+ (#196), por nome, sem trocar o
+        // OnKeyEvent. A janela GL nao e a janelaVideo ElmSharp que fica atras.
+        // Ecore_Wayland.h (tizen_4.0) / Ecore_Wl2.h (tizen_5.0); provas e
+        // limites em ENTREGA-411.md. Nao misturar os ponteiros dos backends.
+        static readonly string[] TeclasMidia = {
+            "XF86AudioPlay", "XF86AudioPause", "XF86AudioPlayPause", "XF86PlayBack",
+            "XF86AudioStop", "XF86AudioRewind", "XF86AudioForward",
+            "XF86AudioNext", "XF86AudioPrev", "XF86NextChapter", "XF86PreviousChapter",
+            "XF86RaiseChannel", "XF86LowerChannel", "XF86ChannelGuide", "XF86ChannelList",
+        };
+
+        void ReservaTeclasMidia()
+        {
+            // Ambos podem estar instalados: achar a janela de video num deles
+            // nao prova que achamos a GL. Tenta os dois independentemente.
+            foreach (bool wl2 in new[] { false, true })
+            {
+                string backend = wl2 ? "ecore_wl2" : "ecore_wl";
+                const int TOPMOST = 2;
+                try
+                {
+                    var janelas = new List<IntPtr>();
+                    // ponytail: mesmo limite de 64 ids do 6+, no arranque;
+                    // enumerar Ecore_Evas se o host passar a criar mais janelas.
+                    for (uint id = 0; id < 64; id++)
+                    {
+                        IntPtr w = wl2 ? ecore_wl2_window_find(id) : ecore_wl_window_find(id);
+                        if (w != IntPtr.Zero && !janelas.Contains(w)) janelas.Add(w);
+                    }
+                    if (janelas.Count == 0) { Etapa("note teclas " + backend + ": nenhuma janela"); continue; }
+                    foreach (string k in TeclasMidia)
+                    {
+                        foreach (IntPtr w in janelas)
+                        {
+                            try
+                            {
+                                byte ok = wl2 ? ecore_wl2_window_keygrab_set(w, k, 0, 0, 0, TOPMOST)
+                                              : ecore_wl_window_keygrab_set(w, k, 0, 0, 0, TOPMOST);
+                                Etapa("note teclas " + backend + " janela=" + w + " " + k +
+                                      " topmost=" + (ok != 0 ? "ok" : "recusada"));
+                            }
+                            catch (Exception e) { Etapa("note teclas " + backend + " janela=" + w + " " + k + " falhou: " + e.GetType().Name + ": " + e.Message); }
+                        }
+                    }
+                }
+                catch (Exception e) { Etapa("note teclas " + backend + " indisponivel: " + e.GetType().Name + ": " + e.Message); }
+            }
         }
 
         // ================= RASTRO DE ETAPAS =================

@@ -1846,6 +1846,23 @@ void cat_atualizar_item(int i, const CatItem *item) {
   pthread_mutex_unlock(&pubTrava);
 }
 
+void cat_atualizar_item_sem_abas(int i, const CatItem *item) {
+  CatItem copia;
+  if (!item) return;
+  copia = *item;
+  CAT_TESTE_ANTES_TRAVA();
+  catTravar();
+  if (itens && i >= 0 && i < n &&
+      !strcmp(itens[i].imdb, copia.imdb) &&
+      (!tipo_certo(itens[i].tipo) || !strcmp(tipo_base(itens[i].tipo), tipo_base(copia.tipo)))) {
+    copia.nTemporadas = itens[i].nTemporadas;
+    memcpy(copia.temporadas, itens[i].temporadas, sizeof copia.temporadas);
+    itens[i] = copia;
+    mudou();
+  }
+  pthread_mutex_unlock(&pubTrava);
+}
+
 // Copia do item `i` sob pubTrava: o bloco nao pode ser trocado nem liberado
 // no meio. Para fios fora do desenho, que nao tem a garantia de cat_item()
 // (o ponteiro so vale ate o fim do quadro).

@@ -172,10 +172,56 @@ static void reabrir(void) {
 #endif
 }
 
-int main(void) {
+// Reprodutor de hipoteses para o relato de desmarcacao NO SITE. Nao afirma
+// qual delas ocorreu na TV: falta o episodio e a resposta remota daquele gesto.
+static int site(void) {
+  const char *antes =
+    "[{\"content_id\":\"tt14688458\",\"season\":2,\"episode\":6},"
+    "{\"content_id\":\"tt14688458\",\"season\":2,\"episode\":5}]";
+  const char *depois = "[{\"content_id\":\"tt14688458\",\"season\":2,\"episode\":5}]";
+  const char *traktNao =
+    "{\"seasons\":[{\"number\":2,\"episodes\":[{\"number\":6,\"completed\":false}]}]}";
+  VistoPar par = {2, 6};
+  logada = 1;
+  contapend_relogio(relogio);
+
+  puts("SITE: conta sem Trakt, snapshot perdeu T2E6 (nenhum gesto local)");
+  contalib_ler_vistos(antes);
+  contalib_aplicar_vistos();
+  contalib_ler_vistos(depois);
+  contalib_aplicar_vistos();
+  confere("ausente do snapshot deixa de contar como visto",
+          vistoep_estado(SILO, 2, 6) == 1, 0);
+
+  puts("SITE: Trakt explicita false, sem jornal: remove do mapa");
+  vistoep_ler_progresso(SILO, traktNao);
+  confere("Trakt false remove o visto", vistoep_estado(SILO, 2, 6), 0);
+
+  puts("SITE: gesto local ainda nao enviado deve sobreviver");
+  vistoep_definir(SILO, 2, 6, 1);
+  contapend_episodios(SILO, "series", &par, 1, 1);
+  vistoep_ler_progresso(SILO, traktNao);
+  contapend_aplicar_local();
+  confere("jornal preserva visto local pendente", vistoep_estado(SILO, 2, 6), 1);
+  confere("pendente continua na fila", contapend_pendentes(), 1);
+
+  puts("SITE: gesto confirmado na conta, depois Trakt false, antes da poda");
+  contapend_enviar();
+  confere("nao ha envio pendente", contapend_pendentes(), 0);
+  vistoep_ler_progresso(SILO, traktNao);
+  contapend_aplicar_local();
+  confere("confirmado antigo nao devolve visto retirado no Trakt",
+          vistoep_estado(SILO, 2, 6), 0);
+  printf("SITE: %d falha(s) de reconciliacao reproduzida(s); nao e captura da TV\n", falhas);
+  return falhas ? 1 : 0;
+}
+
+int main(int argc, char **argv) {
   const long long DIA = 86400000LL;
   long long antes = agora - 7 * DIA;      // quando o Trakt diz que foi visto
   long long gestoMs;
+
+  if (argc == 2 && !strcmp(argv[1], "--site")) return site();
 
   contapend_relogio(relogio);
   contapend_sem_fio(1);

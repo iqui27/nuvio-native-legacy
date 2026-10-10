@@ -213,7 +213,7 @@ static void progLimpar(void) {
   progPubN = 0;
 }
 
-static void capturarEscopo(FontecacheEscopo *e) {
+void addons_capturar_escopo(FontecacheEscopo *e) {
   memset(e, 0, sizeof *e);
   snprintf(e->conta, sizeof e->conta, "%s", sessao_usuario());
   e->perfil = perfis_ativo();
@@ -223,7 +223,7 @@ static void capturarEscopo(FontecacheEscopo *e) {
 
 static int escopoAindaAtual(const FontecacheEscopo *e) {
   FontecacheEscopo atual;
-  capturarEscopo(&atual);
+  addons_capturar_escopo(&atual);
   return atual.perfil == e->perfil && atual.addons == e->addons &&
          atual.geracao == e->geracao && !strcmp(atual.conta, e->conta);
 }
@@ -271,15 +271,18 @@ static int pedidoCoube(int i, int w, size_t tam) {
 // --- leitura do arquivo de configuracao -------------------------------------
 
 // Perfil cuja conta mandou a lista atual; 0 = pacote ou nada. Ver addons.h.
+// Lida pela descoberta (outro fio) e escrita pelo sync: atomica.
 static int perfilLista;
-void addons_marcar_da_conta(int perfil) { perfilLista = perfil > 0 ? perfil : 0; }
-int  addons_perfil_da_lista(void) { return perfilLista; }
+void addons_marcar_da_conta(int perfil) {
+  __atomic_store_n(&perfilLista, perfil > 0 ? perfil : 0, __ATOMIC_SEQ_CST);
+}
+int  addons_perfil_da_lista(void) { return __atomic_load_n(&perfilLista, __ATOMIC_SEQ_CST); }
 
 int addons_carregar(const char *dirArte) {
   // A linha e nome<TAB>url<TAB>colunas: a URL inteira mais folga para o resto.
   char caminho[600], linha[NV_ADDON_URL_MAX + 256];
   FILE *f;
-  perfilLista = 0;
+  addons_marcar_da_conta(0);
   snprintf(caminho, sizeof caminho, "%s/addons.txt", dirArte ? dirArte : ".");
   f = fopen(caminho, "r");
   if (!f) { printf("[addons] sem %s\n", caminho); return 0; }
@@ -452,7 +455,7 @@ int addons_exportar(AddonRemoto *saida, int max) {
 void addons_esquecer(void) {
   memset(addon, 0, sizeof addon);
   nAddon = 0;
-  perfilLista = 0;
+  addons_marcar_da_conta(0);
   listaMudou();
   printf("[addons] lista esquecida (saiu da conta)\n");
 }
@@ -1636,10 +1639,14 @@ static void capacidadesDoManifesto(int i, const char *corpo) {
       free(trecho); } }
   lerDeclaracaoMeta(i, corpo, r);
   addon[i].catalogo = cat;
-  addon[i].fonte    = str;
+  // Atomico: a descoberta pode republicar o manifesto (addons_manifesto_lido)
+  // enquanto um fio da busca le fonte em semStreamSondado.
+  __atomic_store_n(&addon[i].fonte, str, __ATOMIC_RELAXED);
   addon[i].legenda  = leg;
   addon[i].meta     = met;
-  addon[i].sondado  = 1;
+  // Publica DEPOIS das capacidades: quem le sondado com acquire (semStreamSondado,
+  // nos fios da busca) ve o fonte certo.
+  __atomic_store_n(&addon[i].sondado, 1, __ATOMIC_RELEASE);
   printf("[addons] %s: catalogo=%d stream=%d legenda=%d meta=%d\n",
          addon[i].nome, cat, str, leg, met);
   fflush(stdout);
@@ -1852,6 +1859,17 @@ typedef struct {
   unsigned ms;                // do disparo da consulta ate a resposta (addonstats)
 } BaldeFonte;
 
+// SO DE LEGENDA (ou catalogo) SEGUNDO A SONDA (TCL do dono, 09/10). Quem vem da
+// conta entra com fonte=1 ate sondar() ler o manifesto, que pode chegar com a
+// busca ja no ar: o OpenSubtitles v3 recebia /stream/ na 1a rodada e na
+// segunda chance, tomava 404 e a folha dizia que ele "nao respondeu". So
+// LEITURA dos campos que a sonda publica: o balde dele sai da segunda chance e
+// do resumo (nao conta como consultado, mudo nem vazio).
+static int semStreamSondado(int i) {
+  return __atomic_load_n(&addon[i].sondado, __ATOMIC_ACQUIRE) &&
+         !__atomic_load_n(&addon[i].fonte, __ATOMIC_RELAXED);
+}
+
 // O QUE A ULTIMA BUSCA REAL VIU, para a folha de fontes vazia dizer a causa
 // (B6/#107 e D5). A folha so dizia "Nenhuma fonte direta disponivel", e tres
 // situacoes diferentes davam essa mesma frase:
@@ -1871,6 +1889,7 @@ typedef struct {
   int valido;
   int instalados, comFonte, ligadosComFonte;   // da lista
   int consultados, responderam, semResposta, comFontes;   // da consulta
+  int extraIncompleta;
   char mudo[64], vazio[64];   // um nome de exemplo de cada, para o singular
 } Resumo;
 static Resumo resumo;
@@ -1945,6 +1964,7 @@ static void *fioFontes(void *u) {
     if (c->cancelado && c->cancelado(c->ctx)) continue;
     i = c->baldes[meu].idx;
     if (!addon[i].ativo) continue;   // desligado na conta: nunca consultado
+    if (semStreamSondado(i)) continue;   // a sonda terminou depois dos baldes
     // Id codificado como o Nuvio web (nv_addon_id): "tt123:1:2" sai igual.
     if (!nv_addon_id(idUrl, sizeof idUrl, c->id)) idUrl[0] = 0;
     // O NOME QUE O MANIFESTO DECLARA VAI PRIMEIRO (issue #112). Ver
@@ -2097,7 +2117,7 @@ static void segundaChance(Consulta *c, int fios) {
   if (!orig || !c2.baldes) { free(orig); free(c2.baldes); return; }
   for (q = 0; q < c->nBaldes; q++) {
     int i = c->baldes[q].idx;
-    if (c->baldes[q].respondeu) continue;
+    if (c->baldes[q].respondeu || semStreamSondado(i)) continue;
     if (semSegunda(i)) { pulados++; continue; }
     c2.baldes[m].idx = i; orig[m++] = q;
   }
@@ -2165,6 +2185,7 @@ typedef struct {
   int (*cancelado)(void *); void *ctx;
   int progresso;
   Stream *l; int n;
+  _Atomic int pendentes, incompleta;
 } PedidoExtra;
 static int cancelaExtra(void *u) {
   PedidoExtra *p = u;
@@ -2172,6 +2193,11 @@ static int cancelaExtra(void *u) {
 }
 static void avisoExtra(void *u, int k, const char *nome, int estado, const void *fontes, int n) {
   PedidoExtra *p = u;
+  // Cada parte anuncia inicio (1) e fim (2/3), inclusive no prefetch.
+  // Contadores atomicos cobrem scrapers paralelos e indices de origens distintas.
+  if (estado == 1) atomic_fetch_add(&p->pendentes, 1);
+  if (estado == 2 || estado == 3) atomic_fetch_sub(&p->pendentes, 1);
+  if (estado == 3) atomic_store(&p->incompleta, 1);
   if (!p->progresso) return;
   // Scraper que terminou (2) ou desistiu (3): entra na memoria de latencia.
   if ((estado == 2 || estado == 3) && nome && !(p->cancelado && p->cancelado(p->ctx)))
@@ -2182,6 +2208,9 @@ typedef struct { PedidoExtra *pai; OrigemExtra f; Stream *l; int n; } UmaOrigem;
 static void *fioUmaOrigem(void *u) {
   UmaOrigem *o = u;
   o->n = o->f(o->pai->id, o->pai->tipo, cancelaExtra, o->pai, avisoExtra, o->pai, &o->l);
+  // ponytail: zero tambem pode ser falha sem callbacks (Plex/TMDB).
+  // Nao cachear ate as origens distinguirem falha de resposta vazia.
+  if (o->n <= 0) atomic_store(&o->pai->incompleta, 1);
   return NULL;
 }
 static void *fioExtra(void *u) {
@@ -2255,6 +2284,7 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
   }
   if (nAddon <= 0) {
     if (temExtra) pthread_join(fioEx, NULL);
+    if (rs) rs->extraIncompleta = extra.pendentes != 0 || extra.incompleta;
     if (cancelado && cancelado(ctx)) { free(extra.l); return -1; }
     if (extra.n > 0) { *saida = extra.l; return extra.n; }
     free(extra.l);
@@ -2352,6 +2382,15 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
     // Junta NA ORDEM DOS ADDONS, que e a ordem em que o dono os instalou.
     for (q = 0; q < c.nBaldes; q++) {
       int k = c.baldes[q].n;
+      // Tambem quem respondeu 200 vazio: sem recurso stream, "veio vazio" nao
+      // diz nada. Limite que fica: a sonda terminando DEPOIS deste resumo.
+      if (k <= 0 && semStreamSondado(c.baldes[q].idx)) {
+        printf("[addons] %s: o manifesto nao declara stream; fora do resumo da busca\n",
+               addon[c.baldes[q].idx].nome);
+        if (c.progresso && c.baldes[q].idx < ADD_MAX) progMarcar(c.baldes[q].idx, NULL, 0, 0);
+        free(c.baldes[q].achados);
+        continue;
+      }
       // A LATENCIA DESTA BUSCA fica na memoria desta TV (addonstats.h): so a
       // busca real e nao cancelada — prefetch e busca interrompida nao provam
       // nada sobre o add-on.
@@ -2360,16 +2399,19 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
                              c.baldes[q].respondeu ? c.baldes[q].ms
                                                    : (unsigned)(SDL_GetTicks() - c.inicio),
                              c.baldes[q].respondeu);
-      if (c.baldes[q].respondeu) addon[c.baldes[q].idx].mudoSeg = 0;
-      else {
-        addon[c.baldes[q].idx].mudoSeg++;
-        // ADDON FORA DO AR (ilha, 02/10): a busca de verdade (rs) terminou e
-        // ESTE addon nao respondeu nem na segunda chance — transporte ou HTTP,
-        // nunca "respondeu sem fonte", que e `respondeu` com n = 0. Uma vez por
-        // queda: so na PRIMEIRA consulta muda (mudoSeg 0 -> 1); responder de
-        // novo zera e rearma. Cancelada no meio nao conta.
-        if (rs && addon[c.baldes[q].idx].mudoSeg == 1 && !(c.cancelado && c.cancelado(c.ctx)))
-          foraAnotar(addon[c.baldes[q].idx].nome);
+      // Cancelamento nao prova falha nem recuperacao, nem dos baldes pulados.
+      if (!(c.cancelado && c.cancelado(c.ctx))) {
+        if (c.baldes[q].respondeu) addon[c.baldes[q].idx].mudoSeg = 0;
+        else {
+          addon[c.baldes[q].idx].mudoSeg++;
+          // ADDON FORA DO AR (ilha, 02/10): a busca de verdade (rs) terminou e
+          // ESTE addon nao respondeu nem na segunda chance — transporte ou HTTP,
+          // nunca "respondeu sem fonte", que e `respondeu` com n = 0. Uma vez por
+          // queda: so na PRIMEIRA consulta muda (mudoSeg 0 -> 1); responder de
+          // novo zera e rearma. Cancelada no meio nao conta.
+          if (rs && rs->valido && addon[c.baldes[q].idx].mudoSeg == 1)
+            foraAnotar(addon[c.baldes[q].idx].nome);
+        }
       }
       if (rs) {
         const char *nome = addon[c.baldes[q].idx].nome;
@@ -2392,6 +2434,7 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
   free(c.baldes);
   pthread_mutex_destroy(&c.trava);
   if (temExtra) pthread_join(fioEx, NULL);
+  if (rs) rs->extraIncompleta = extra.pendentes != 0 || extra.incompleta;
   if (progresso) addonstats_salvar();
   if (extra.n > 0) {
     Stream *tmp = realloc(achados, sizeof(Stream) * (size_t)(n + extra.n));
@@ -2406,7 +2449,13 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
 
 int addons_consultar(const char *id, const char *tipo, const char *base, int fios,
                      int (*cancelado)(void *), void *ctx, Stream **saida) {
-  return consultar(id, tipo, base, fios, cancelado, ctx, saida, NULL, 0);
+  // Uma resposta VOD incompleta nao pode esconder o addon que falhou na
+  // busca real seguinte. O cache da busca principal aplica a mesma guarda.
+  Resumo rs = {0};
+  int vod = tipo && !strcmp(tipo, "series");
+  int n = consultar(id, tipo, base, fios, cancelado, ctx, saida, vod ? &rs : NULL, 0);
+  if (vod && (rs.semResposta || rs.extraIncompleta)) { free(*saida); *saida = NULL; return -1; }
+  return n;
 }
 
 // Contagens da LISTA (nao da consulta), para "nao ha a quem perguntar".
@@ -2468,7 +2517,7 @@ static void *buscar(void *u) {
   n = consultar(alvoId, alvoTipo, fioBase, ADD_FIOS, NULL, NULL, &achados, &rs,
                 progLigado);
   resultadoQuando = SDL_GetTicks();
-  resultadoCacheavel = n > 0 && rs.semResposta == 0;
+  resultadoCacheavel = n > 0 && rs.semResposta == 0 && !rs.extraIncompleta;
   if (n < 0) n = 0;
   resumo = rs;
   marco(n ? "addons: fontes recebidas" : "addons: nenhuma fonte");
@@ -2493,7 +2542,7 @@ static void dispararBusca(void) {
   progLigado = alvoVod();
   progPublicou = 0; progExtraPublicou = 0;
   progInicio = SDL_GetTicks();
-  capturarEscopo(&fioEscopo);
+  addons_capturar_escopo(&fioEscopo);
   snprintf(fioBase, sizeof fioBase, "%s", alvoBase);
   alvoBase[0] = 0;   // consumida: origem e do pedido, nao de sessao
   if (pthread_create(&fio, NULL, buscar, NULL) != 0) { fioVivo = 0; progLigado = 0; estado = ADD_PARADO; }
@@ -2584,7 +2633,7 @@ static void buscarPedido(const char *imdb, const char *tipo, int forcar) {
     Stream *l;
     int n;
     Uint32 idade;
-    capturarEscopo(&escopo);
+    addons_capturar_escopo(&escopo);
     if (renovar) fontecache_vod_apagar(alvoId, alvoTipo, alvoBase, &escopo);
     else if (fontecache_vod_pegar(alvoId, alvoTipo, alvoBase, &escopo,
                             &l, &n, &idade) == FC_ACERTO) {

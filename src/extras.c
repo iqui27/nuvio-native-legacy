@@ -500,6 +500,7 @@ static void *buscar(void *arg) {
   if (parte != 1 && serie && temTrakt) {
     snprintf(url, sizeof url,
              "https://api.trakt.tv/shows/%s/progress/watched", id);
+    printf("[vistoep] %s: consulta trakt progress/watched\n", id);
     corpo = rede_baixar_com(url, 20, cab);
     if (corpo) {
       unsigned char novo[EX_VIS_T][EX_VIS_E];
@@ -557,6 +558,10 @@ static void *buscar(void *arg) {
                   quandoMs = js_ms_iso(quando);
               }
               vistoep_fonte(id, t, en, visto, quandoMs, &fonte);
+              { char cru[16] = "ausente";
+                js_bruto(q, qf, "completed", cru, sizeof cru);
+                printf("[vistoep] %s T%dE%d: trakt completed=%s lido=%d last_ms=%lld mapa=%d\n",
+                       id, t, en, cru, visto, quandoMs, vistoep_estado(id, t, en)); }
               // Barrado nao entra na matriz nem na conta de vistos do topo.
               if (fonte.bloqueados != barrados) visto = 0;
             }
@@ -622,6 +627,9 @@ static void *buscar(void *arg) {
         epsRev = vistoep_revisao();
       }
       pthread_mutex_unlock(&trava);
+    } else {
+      printf("[vistoep] %s: consulta trakt sem corpo; mapa preservado\n", id);
+      fflush(stdout);
     }
   }
 
@@ -1468,6 +1476,9 @@ void extras_pedir(const char *imdb, int serie, long tmdbId) {
   // ("anime") abre como filme e o /meta o resolve como serie — ai os extras
   // tem de ser refeitos por /tv e /shows (detail.c repede).
   if (!strcmp(idPedido, imdb) && seriePedido == serie) {
+    printf("[vistoep] %s: extras reutilizados; fio=%d pronto=%d; sem nova consulta\n",
+           imdb, fioVivo, progressoPronto);
+    fflush(stdout);
     pthread_mutex_unlock(&trava); return; }
   snprintf(idPedido, sizeof idPedido, "%s", imdb);
   seriePedido = serie;

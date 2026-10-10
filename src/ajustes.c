@@ -9,6 +9,7 @@
 #include "trailerfonte.h"   // NV_TRAILER_CONTINUA_DETALHE, nas ajudas do trailer
 #include "dados.h"
 #include "resolucao.h"
+#include "gpunivel.h"
 #include "enquete.h"
 #include "stalker.h"
 #include "xtream.h"
@@ -497,6 +498,9 @@ typedef enum {
   // Automatico (o de sempre) ou 2/4/8/16 GB, sempre deixando 512 MB livres.
   // LOCAL (o disco e desta TV). No fim: valor[]/CHAVE[] posicionais.
   AJ_P2P_LIMITE,
+  // #400: LOCAL, deste aparelho. No fim: valor[]/CHAVE[] posicionais.
+  AJ_FONTE_ORDEM_ADDON,
+  AJ_LEG_SYNC_AUTO, // local, ligada de fábrica; append-only
   AJ_N
 } OpcaoId;
 
@@ -508,6 +512,7 @@ static const char *V_ICONE_APP[ICONEAPP_N] = {
   "Original", "Fênix", "N verde-água", "TV laranja", "N pixel",
   "Play tricolor", "Arco", "TV viva", "Clube retrô", "Arcade N",
 };
+static const char *V_FONTE_ORDEM_ADDON[] = { "Por qualidade", "Do addon" };
 static const char *V_QUALIDADE[] = { "Automática", "4K", "1080p", "720p" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
 // Medidor de desempenho NA ILHA DO RELOGIO (desempenho.h, 03/10). O indice e o
@@ -1321,6 +1326,8 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Mostrar a fonte nos resultados da busca", V_LIGA, 2),   // local: buscaOrigemLocal
   ESC("Layout dos Ajustes",              V_LAYOUT_AJUSTES, 2),   // local: ajustesLayoutLocal (#339)
   ESC("Limite de espaço do P2P",         V_P2P_LIMITE, 5),   // local: p2pLimiteLocal (#334)
+  ESC("Ordem das fontes", V_FONTE_ORDEM_ADDON, 2), // local (#400)
+  ESC("Sincronia automática da legenda", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -1544,6 +1551,8 @@ static const char *CHAVE[] = {
   "buscaNuvioLocal", "buscaOrigemLocal",
   "ajustesLayoutLocal",
   "p2pLimiteLocal",
+  "fonteOrdemLocal",
+  "legendaSyncAutoLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -1909,6 +1918,7 @@ int ajustes_proporcao_padrao(void) { int v = valor[AJ_PROPORCAO_PADRAO]; return 
 int ajustes_brilho_player(void)    { int v = valor[AJ_BRILHO_PLAYER]; return v < 0 || v > 3 ? 1 : v; }
 void ajustes_espelhar_enquetes(int ligado) { int n = ligado ? 0 : 1; if (valor[AJ_ENQUETES] != n) { valor[AJ_ENQUETES] = n; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); } }
 int ajustes_fonte_hdr(void)        { int v = valor[AJ_FONTE_HDR]; return v < 0 || v > 2 ? 0 : v; }
+int ajustes_fonte_ordem_addon(void)   { return valor[AJ_FONTE_ORDEM_ADDON] == 1; }
 int ajustes_fonte_texto_addon(void)   { return valor[AJ_FONTE_TEXTO] == 1; }
 // "Logo do titulo" (dono, 03/10, em teste): o layout do Nuvio com a logo do
 // conteudo no lugar do nome escrito em cada linha. Indice 2: o 0 e o 1 ja
@@ -2058,6 +2068,7 @@ float ajustes_tamanho_ajustes(void) {
 }
 int ajustes_layout_lista(void) { return valor[AJ_LAYOUT_AJUSTES] == 1; }
 int ajustes_esconder_logo_trailer(void) { return lig(AJ_LOGO_TRAILER); }
+int ajustes_legenda_sync_auto(void) { return lig(AJ_LEG_SYNC_AUTO); }
 int ajustes_trailer_zoom_tpk(void) { return lig(AJ_TRAILER_ZOOM_TPK); }   // 1 = Ligado
 #ifdef NV_ANDROID
 int ajustes_legenda_sync_audio(void) { return lig(AJ_LEG_SYNC_AUDIO); }
@@ -3317,7 +3328,8 @@ static int gravar(void) {
 static char pstInst[PP_INSTANCIA_MAX], pstToken[PP_TOKEN_MAX + 1], pstExtra[PP_EXTRA_MAX + 1];
 static char pstChave[PP_CHAVE_MAX], pstModelo[PP_MODELO_MAX];
 // Ultima recusa de um campo digitado (0 = nenhuma); aparece na linha "Testar".
-enum { PST_OK = 0, PST_TOKEN_RUIM, PST_INST_RUIM, PST_EXTRA_RUIM, PST_CHAVE_RUIM, PST_MODELO_RUIM };
+enum { PST_OK = 0, PST_TOKEN_RUIM, PST_INST_RUIM, PST_EXTRA_RUIM, PST_CHAVE_RUIM, PST_MODELO_RUIM,
+       PST_MODELO_LONGO };
 static int pstAviso;
 
 static const char *pstCodigoLingua(void) {
@@ -3411,7 +3423,12 @@ static void pstDefinir(int op, const char *texto) {
       pstCopia(pstChave, sizeof pstChave, b);
       break; }
     case AJ_POSTER_MODELO:
-      if (b[0] && !posterprov_modelo_valido(b)) { pstAviso = PST_MODELO_RUIM; return; }
+      // Sintaxe certa mas endereco pronto acima de PP_URL_MAX: aviso de tamanho,
+      // nao o de sintaxe (que mandaria corrigir o que esta certo).
+      if (b[0] && !posterprov_modelo_cabe(b)) {
+        pstAviso = posterprov_modelo_valido(b) ? PST_MODELO_LONGO : PST_MODELO_RUIM;
+        return;
+      }
       pstCopia(pstModelo, sizeof pstModelo, b);
       break;
   }
@@ -3499,6 +3516,7 @@ static const char *pstTexto(int op) {
     case PST_EXTRA_RUIM:  return i18n("parâmetros inválidos (fmt, format, config e c não valem)");
     case PST_CHAVE_RUIM:  return i18n("chave inválida");
     case PST_MODELO_RUIM: return i18n("modelo inválido: use http(s):// e {imdb}, {tmdb}, {type} ou {tipo_tmdb}");
+    case PST_MODELO_LONGO: return i18n("modelo longo demais: o endereço pronto passa de 512 caracteres");
     default: break;
   }
   { int e = atomic_load_explicit(&pstTeste, memory_order_acquire);
@@ -3520,7 +3538,10 @@ static const char *PST_ALFA_TOKEN  =
 static const char *PST_ALFA_EXTRA  = "abcdefghijklmnopqrstuvwxyz0123456789=&_.,-%";
 static const char *PST_ALFA_CHAVE  =
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
-static const char *PST_ALFA_MODELO = "abcdefghijklmnopqrstuvwxyz0123456789:/.-_?=&{}%";
+// O modelo leva a chave do servico no caminho: caixa mista e os sinais que
+// uma URL aceita. So minusculas baixava a caixa da chave (#390).
+static const char *PST_ALFA_MODELO =
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:/.-_?=&{}%~+,;!*@$()";
 static void pstAtivar(int op) {
   if (inativa(op)) return;
   switch (op) {
@@ -3555,6 +3576,30 @@ static void pstAtivar(int op) {
       break;
   }
 }
+#ifdef AJUSTES_TESTE
+// #390: "Modelo de URL dos posteres" pelo caminho de verdade — a modal do
+// campo, o texto que chega do celular, pstDefinir, posteres.txt e a leitura de
+// volta. Devolve o aviso (PST_OK = 0) e o modelo relido em `lido`.
+void teclado_teste_sistema(const char *t);
+int ajustes_teste_poster_modelo(const char *colado, char *lido, size_t n) {
+  valor[AJ_POSTER_PROV] = PP_MODELO;
+  pstAtivar(AJ_POSTER_MODELO);
+  if (!teclado_aberto()) return -1;
+  teclado_teste_sistema(colado);
+  pstDefinir(AJ_POSTER_MODELO, teclado_texto());
+  teclado_esquecer();
+  pstModelo[0] = 0;
+  pstCarregar();
+  snprintf(lido, n, "%s", pstModelo);
+  return pstAviso;
+}
+// So a leitura de posteres.txt (o que outra versao gravou), sem digitar nada.
+void ajustes_teste_poster_recarregar(char *lido, size_t n) {
+  pstModelo[0] = 0;
+  pstCarregar();
+  snprintf(lido, n, "%s", pstModelo);
+}
+#endif
 
 
 // IDIOMA AUTOMATICO — o resto (estado e regra: ver ajustes_idioma e idiomaauto.h).
@@ -3774,6 +3819,10 @@ static void idiomasDoBlob(const char *json, const char *fim) {
     { "preferred_audio_language",            ling_conta_audio    },
   };
   size_t k;
+  // #378 (revisao): o blob e o retrato INTEIRO da conta. Chave ausente = a
+  // conta nao tem idioma; sem limpar, o do perfil anterior ficava valendo.
+  // So a parte da conta: a escolha desta TV (ling_local_*) nao e tocada.
+  for (k = 0; k < sizeof M / sizeof *M; k++) M[k].aplica("");
   for (k = 0; k < sizeof M / sizeof *M; k++) {
     char bruto[80], texto[80];
     size_t n;
@@ -3787,9 +3836,21 @@ static void idiomasDoBlob(const char *json, const char *fim) {
     else if (!strcmp(texto, "null")) texto[0] = 0;
     M[k].aplica(texto);
   }
-  printf("[ajustes] idiomas da conta: legenda=\"%s\" audio=\"%s\"\n",
+  // A CONTA e o que VALE separados (#378): antes so saia o em vigor, que com
+  // escolha local nesta TV nao dizia nada sobre a conta.
+  printf("[ajustes] idiomas da conta: legenda=\"%s\" legenda2=\"%s\" audio=\"%s\"; "
+         "em vigor: legenda=\"%s\" audio=\"%s\"\n",
+         ling_conta_legenda_valor(), ling_conta_legenda2_valor(), ling_conta_audio_valor(),
          ling_legenda(), ling_audio());
   fflush(stdout);
+}
+
+// #378: so os idiomas da conta, para o blob que chega com os ajustes locais
+// protegidos (sync.c nao o aplica). Ver a nota em sync.c.
+void ajustes_idiomas_da_conta(const char *json) {
+  if (json && *json) { idiomasDoBlob(json, json + strlen(json)); return; }
+  // NULL: troca de perfil/conta (sync_reaplicar_ajustes) — esquece os da conta.
+  ling_conta_legenda(""); ling_conta_legenda2(""); ling_conta_audio("");
 }
 
 int ajustes_aplicar_blob(const char *json) {
@@ -3956,7 +4017,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_FONTE_AQUECER:
     case AJ_FONTE_CONFERIR_VARIAS:
     case AJ_FONTE_PREPARAR:
-    case AJ_FONTE_TEXTO:
+    case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON:
     case AJ_SALVOS_DEST:
     case AJ_EPG_PAIS:       /* pais da grade: por aparelho, o web nao tem */
     // Arte do destaque: o web nao tem as chaves (heroFundoLocal,
@@ -4016,6 +4077,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_TAMANHO_AJUSTES:
     case AJ_LAYOUT_AJUSTES: /* #339: o arranjo dos Ajustes e desta TV */
     case AJ_LOGO_TRAILER:   /* so a protecao de OLED desta TV */
+    case AJ_LEG_SYNC_AUTO: /* escolha local desta TV */
     case AJ_LEG_SYNC_AUDIO: /* PCM e passthrough sao desta TV; o web nao tem */
     case AJ_LEG_FORCADA:    /* #287: o web nao tem esta escolha */
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA: /* estilo da legenda e desta TV */
@@ -5099,7 +5161,7 @@ static void focarOpcao(int op) {
 // A frase responde "o que isto E". O que MUDA na pratica vai em efeitoOpcao,
 // separado de proposito: as duas perguntas sao diferentes e juntas viram um
 // paragrafo que ninguem le do sofa.
-static const char *ajudaOpcao(int op) {
+static const char *ajudaOpcaoBase(int op) {
   if (op == AJ_ICONE_APP) return "Escolha uma marca alternativa para o Nuvio nesta TV. Um agradecimento a quem apoia o projeto.";
   if (inativa(op)) {
     if (op == AJ_VIDRO_CONTORNO) return "Ative a interface de vidro para ajustar o contorno.";
@@ -5160,6 +5222,7 @@ static const char *ajudaOpcao(int op) {
     // --- Reproducao
     case AJ_QUALIDADE: return "Define a preferência de resolução. A disponibilidade depende das fontes do addon.";
     case AJ_DV: case AJ_ATMOS: return "Preferência para fontes compatíveis. O formato disponível também depende do arquivo e da TV.";
+    case AJ_LEG_SYNC_AUTO: return "Ajusta a legenda automaticamente. Desligue para manter a escolhida. Vale só nesta TV.";
     case AJ_LEG_SYNC_AUDIO: return "Compara as falas do áudio com a legenda externa para acertar o atraso. Só onde o player entrega o áudio decodificado e sem passthrough; vale só nesta TV.";
     case AJ_LEG_FORCADA: return "Quando o áudio já está no idioma da legenda, liga só a legenda forçada desse idioma (falas em outra língua e placas), ou nenhuma se o arquivo não tiver. Desligado, liga a legenda completa como antes.";
     case AJ_LEG_LINGUA2: return "Segunda legenda, mostrada no alto da tela junto com a principal. Só arquivos SRT/VTT dos addons. \"Da conta\" segue o que está no seu perfil.";
@@ -5195,6 +5258,7 @@ static const char *ajudaOpcao(int op) {
     case AJ_LOGO_APP: return "O símbolo que o Nuvio mostra na abertura e nas telas de entrada. Novo é o play em degradê; Clássico é a TV retrô de sempre. Vale só nesta TV.";
     case AJ_ABERTURA: return "Como o logo some quando o app abre. Padrão para um instante, aproxima e esmaece; Só esmaece não aproxima; Direto abre a Home sem parar. Vale só nesta TV.";
     case AJ_FONTE_HDR: return "Preferir: fontes com HDR ou Dolby Vision vêm na frente. Indiferente: o formato não conta. Evitar: prefere SDR na mesma resolução. O Dolby Vision só entra se estiver ligado em Imagem e som; perfil 5 sem HDR10 fica atrás do HDR10, porque sai com cores erradas fora de TV Dolby Vision. Só vale para a escolha automática.";
+    case AJ_FONTE_ORDEM_ADDON: return "Por qualidade: as fontes vêm agrupadas por resolução, da maior para a menor, e do maior arquivo para o menor. Do addon: cada addon na ordem em que você o instalou, e as fontes de cada um na ordem em que ele mandou — para quem já ordena no AIOStreams. A escolha automática não muda.";
     case AJ_FONTE_TEXTO: return "Do Nuvio: o nome do título em cima e os logos de qualidade embaixo. Do addon: o nome e a descrição exatamente como o addon manda — para quem já formata o texto no AIOStreams. Logo do título: a logo do título no lugar do nome escrito.";
     case AJ_FONTE_PRAZO: return "As fontes aparecem na lista assim que cada add-on responde. A escolha automática não espera o mais lento: sai quando já há uma fonte boa ou depois deste tempo. Com uma fonte escolhida antes neste título, o add-on dela é sempre esperado.";
     case AJ_FONTE_TOCAR_CONFERINDO: return "Abre o player com a primeira fonte do automático na hora em que a conferência dela começa, em vez de esperar o resultado. Se a conferência reprovar a fonte, volta a esperar e segue para a próxima, sem baixar a qualidade. Torrent e fonte que precisa ser resolvida antes seguem o caminho de sempre.";
@@ -5468,6 +5532,23 @@ static const char *ajudaOpcao(int op) {
       return "Mostra esta nota na linha do título, com a marca e a escala do próprio site. Se a linha não couber, saem primeiro as menos importantes. A aba de notas continua mostrando todas.";
     default: return "Use as setas laterais para escolher. A preferência é aplicada ao alterar o valor.";
   }
+}
+
+// #410B: aviso primeiro para ficar visivel tambem nas ajudas compactas.
+// Traduz cada frase antes de juntar: i18n nao encontra uma chave composta.
+static const char *ajudaOpcao(int op) {
+  const char *base = ajudaOpcaoBase(op);
+  static char b[2048];
+  if (gpun_efeitos_automaticos() &&
+      (op == AJ_VIDRO || op == AJ_VIDRO_CONTORNO || op == AJ_VIDRO_OPAC ||
+       op == AJ_VIDRO_FOSCO || (op >= AJ_PROF && op <= AJ_PROF_TRAILERS))) {
+    const char *aviso = gpun_nivel() >= 2
+      ? "Efeitos visuais está em mínimos nesta TV; a opção tem pouco efeito. Ajuste em Esta TV › Efeitos visuais."
+      : "Efeitos visuais está em leves nesta TV; a opção tem pouco efeito. Ajuste em Esta TV › Efeitos visuais.";
+    snprintf(b, sizeof b, "%s\n%s", i18n(aviso), i18n(base));
+    return b;
+  }
+  return base;
 }
 
 // O QUE MUDA NA PRATICA quando esta opcao muda. NULL quando nao ha nada
@@ -7271,7 +7352,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_DV_MKV:
     case AJ_LEG_FORCADA:
     case AJ_AUD_LINGUA: case AJ_PAUSA_OVERLAY: case AJ_PLR_CLASSIF: case AJ_FONTE_MANUAL:
-    case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_SELOS_CORES: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR:
+    case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: case AJ_SELOS_CORES: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR:
     case AJ_FONTE_PRIORIDADE: case AJ_FONTE_HDR:
     case AJ_SELOS_PACOTE:
     case AJ_REACAO_CREDITOS:

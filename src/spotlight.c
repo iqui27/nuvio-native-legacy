@@ -51,6 +51,7 @@
 #include "ajustes_ux.h"
 #include "idioma.h"
 #include "posterprov.h"
+#include "rede.h"
 #include "ponteiro.h"
 #include "sistexto.h"
 #include "celbotao.h"
@@ -149,6 +150,8 @@ typedef struct {
   char t1[160];
   char t2[200];
   char arte[1024];
+  char genero[160];
+  int paisagem;
   char icone[32];
   char id[80];
   char base[600];
@@ -185,6 +188,7 @@ static int   nConsulta;
 static char  montada[SP_MAX_TXT];  // consulta da ultima remontagem
 static int   ultimoRemoto = -1, ultimoBuscando = -1, ultimaGeracao = -1;
 static unsigned ultimaGerPessoa;
+static unsigned ultimaRevCatalogo;
 static float scrollY, scrollAlvo, velY;
 static float animTecla[SP_KB_MAX_FIL + 1][SP_KB_COLS];
 static float animCampo;
@@ -320,9 +324,11 @@ static void metaTitulo(const CatItem *ci, char *dst, size_t n) {
 static const char *arteDe(const CatItem *ci, int paisagem) {
   const char *a;
   if (paisagem && ci->backdrop[0]) return ci->backdrop;
-  a = posterprov_card_addon(ci->origem, ci->imdb, ci->tmdb, ci->tipo, ci->poster);
-  if (a && a[0]) return a;
-  return ci->backdrop[0] ? ci->backdrop : "";
+  // A busca preserva a arte do resultado; provedor por ID so sem nenhuma.
+  if (ci->poster[0]) return ci->poster;
+  if (ci->backdrop[0]) return ci->backdrop;
+  a = posterprov_card_addon(ci->origem, ci->imdb, ci->tmdb, ci->tipo, "");
+  return a && a[0] ? a : "";
 }
 
 static void linhaTitulo(int tipo, int idx) {
@@ -333,6 +339,21 @@ static void linhaTitulo(int tipo, int idx) {
   snprintf(l->t1, sizeof l->t1, "%s", ci->titulo);
   metaTitulo(ci, l->t2, sizeof l->t2);
   snprintf(l->arte, sizeof l->arte, "%s", arteDe(ci, tipo == L_TOPO));
+  snprintf(l->id, sizeof l->id, "%s", ci->imdb);
+  snprintf(l->genero, sizeof l->genero, "%s", ci->genero);
+  l->paisagem = ci->backdrop[0] && strcmp(ci->backdrop, ci->poster) &&
+                !strcmp(l->arte, ci->backdrop);
+  // Uma linha por montagem, nao por quadro. URLs redigidas, inclusive addon.
+  { char origem[160], poster[256], fundo[256], escolhida[256];
+    printf("[spotlight-arte] id=%s tipo=%s meta=%.96s linha=%s fonte=%s paisagem=%d origem=%s poster=%s background=%s escolhida=%s\n",
+           ci->imdb, ci->tipo, ci->meta, tipo == L_TOPO ? "topo" : "titulo",
+           !l->arte[0] ? "nenhuma" : !strcmp(l->arte, ci->poster) ? "poster" :
+           !strcmp(l->arte, ci->backdrop) ? "background" : "provedor-id", l->paisagem,
+           rede_url_publica(ci->origem, origem, sizeof origem),
+           rede_url_log(ci->poster, poster, sizeof poster),
+           rede_url_log(ci->backdrop, fundo, sizeof fundo),
+           rede_url_log(l->arte, escolhida, sizeof escolhida));
+  }
   snprintf(l->chave, sizeof l->chave, "t|%s|%s", ci->imdb, ci->titulo);
 }
 
@@ -344,6 +365,9 @@ static int candCmp(const void *a, const void *b) {
 }
 
 #define SP_MAX_TIT 9
+static int tituloDoUsuario(const CatItem *ci) {
+  return ci->naLista || ci->naColecao || ci->progresso > 0 || ci->retomadoMs > 0;
+}
 static void montarTitulos(const char *alvo) {
   Cand c[64];
   int nc = 0, r, i, ordem = 0;
@@ -359,8 +383,9 @@ static void montarTitulos(const char *alvo) {
       for (i = 0; i < nRem && i < 8 && nc < 40; i++) {
         CatItem it;
         int idx, k, dup = 0;
-        if (!desc_busca_alvo_item(a, i, &it)) continue;
-        idx = it.imdb[0] ? cat_indice_por_imdb(it.imdb) : -1;
+        // Sem ID, cada montagem reinseriria o resultado e mudaria a revisao.
+        if (!desc_busca_alvo_item(a, i, &it) || !it.imdb[0]) continue;
+        idx = cat_indice_por_imdb(it.imdb);
         if (idx >= 0) for (k = 0; k < nc; k++) if (c[k].idx == idx) { dup = 1; break; }
         if (dup) continue;
         busca_normalizar(it.titulo, nome, sizeof nome);
@@ -378,25 +403,39 @@ static void montarTitulos(const char *alvo) {
         for (i = 0; i < nNovos; i++) c[posNovo[i]].idx = i < entraram ? idxNovos[i] : -1;
       }
     } }
-  for (r = 0; r < cat_n_fileiras() && nc < 64; r++) {
-    const CatFileira *cf = cat_fileira(r);
-    if (!cf) break;
-    if (desc_busca_base_oculta(cf->base)) continue;   // "Buscar no Cinemeta" desligado
-    for (i = 0; i < cf->n && nc < 64; i++) {
-      const CatItem *ci = cat_item(cf->ini + i);
-      int p, k, dup = 0;
+  // Salvos podem estar fora das fileiras. O bonus pessoal (15) vence a
+  // ordem dos addons (0..6), mas nao a classe de casamento do nome (20).
+  // Nao usamos nota como popularidade: CatItem nao tem esse dado.
+  for (r = -1; r < cat_n_fileiras(); r++) {
+    const CatFileira *cf = r >= 0 ? cat_fileira(r) : NULL;
+    int n = cf ? cf->n : cat_n();
+    if (r >= 0 && !cf) break;
+    if (cf && desc_busca_base_oculta(cf->base)) continue;
+    for (i = 0; i < n; i++) {
+      int idx = cf ? cf->ini + i : i;
+      const CatItem *ci = cat_item(idx);
+      int p, k, bonus, dup = 0;
       if (!ci || !strcmp(ci->tipo, "channel")) continue;
+      if (!cf && !tituloDoUsuario(ci)) continue;
+      bonus = tituloDoUsuario(ci) || (cf && !strcmp(cf->chave, "continue_watching")) ? 15 : 5;
       busca_normalizar(ci->titulo, nome, sizeof nome);
       if (!(p = pontuar(nome, alvo))) continue;
       for (k = 0; k < nc; k++) {
         const CatItem *o = c[k].idx >= 0 ? cat_item(c[k].idx) : NULL;
-        if (c[k].idx == cf->ini + i || (o && ci->imdb[0] && !strcmp(o->imdb, ci->imdb))) {
-          if (p + 5 > c[k].pont) c[k].pont = p + 5;   // esta nas fileiras do dono
+        if (c[k].idx == idx || (o && ci->imdb[0] && !strcmp(o->imdb, ci->imdb))) {
+          if (p + bonus > c[k].pont) c[k].pont = p + bonus;
           dup = 1; break;
         }
       }
       if (dup) continue;
-      c[nc].idx = cf->ini + i; c[nc].pont = p + 5; c[nc].ordem = ordem++; nc++;
+      // O teto limita memoria, nao a busca: um exato tardio substitui parcial.
+      k = nc;
+      if (nc == 64) {
+        k = 0;
+        for (int j = 1; j < nc; j++) if (candCmp(&c[j], &c[k]) > 0) k = j;
+        if (p + bonus <= c[k].pont) continue;
+      } else nc++;
+      c[k].idx = idx; c[k].pont = p + bonus; c[k].ordem = ordem++;
     }
   }
   // tira os -1 (catalogo no teto) antes de ordenar
@@ -787,6 +826,8 @@ static void remontar(void) {
   static char chavesAntes[SP_MAX_LIN][96];
   float entraAntes[SP_MAX_LIN];
   int nAntes = nLin, i, j;
+  // Publicacao durante a montagem deve continuar pendente no proximo quadro.
+  ultimaRevCatalogo = cat_revisao_itens();
   if (focoL >= 0 && focoL < nLin) snprintf(chaveFoco, sizeof chaveFoco, "%s", lin[focoL].chave);
   for (i = 0; i < nLin; i++) { memcpy(chavesAntes[i], lin[i].chave, 96); entraAntes[i] = entraLin[i]; }
   snprintf(montada, sizeof montada, "%s", consulta);
@@ -1074,7 +1115,10 @@ static void acionar(int i) {
       remontar();
       return;
     case L_TOPO: case L_TITULO:
-      pedido.tipo = SPOT_TITULO; pedido.indice = l->ref; break;
+      // Eventos podem chegar antes do atualizar que observa a publicacao.
+      pedido.indice = cat_indice_vivo(l->ref, l->id);
+      if (pedido.indice < 0) { remontar(); return; }
+      pedido.tipo = SPOT_TITULO; break;
     case L_PESSOA:
       pedido.tipo = SPOT_PESSOA; pedido.indice = l->ref2; pedido.tmdb = l->tmdb;
       pedido.tituloTmdb = l->tituloTmdb;
@@ -1314,9 +1358,8 @@ static float alturaTeclado(void) { return (kbFil + 1) * SP_KB_PASSO - SP_TECLA_G
 static float corpoAlvo(void) {
   float h = alturaLista(), teto = SP_CORPO_MAX - SP_CPAD_T - SP_CPAD_B - SP_RODAPE_H;
   // LISTA MAIOR QUE A ILHA: a ilha desce ate a margem e a janela mostra o
-  // maximo de linhas; a ultima, se nao couber, e cortada pelo recorte da lista
-  // (e a pista de que ha mais para rolar). Antes a janela terminava na ultima
-  // linha INTEIRA e a ilha parava um pedaco acima do fim da tela.
+  // maximo de linhas. O desenho so admite uma linha inteira na borda inferior;
+  // a navegacao rola a proxima para dentro sem encurtar a ilha.
   if (h > teto) h = teto;
   if (kbAberto && alturaTeclado() > h) h = alturaTeclado();
   if (h <= 0.0f) return 0.0f;
@@ -1350,7 +1393,8 @@ void spot_atualizar(float dt, Uint32 agora) {
   // A RESPOSTA DA REDE CHEGA DEPOIS DA TECLA: remonta quando a contagem do termo
   // corrente muda ou quando a busca termina (o aviso "Buscando..." sai).
   if (!modoAjustes) spotpessoa_atualizar(agora);
-  if (strcmp(montada, consulta)) remontar();
+  if (strcmp(montada, consulta) ||
+      (!modoAjustes && cat_revisao_itens() != ultimaRevCatalogo)) remontar();
   else if (!modoAjustes && nConsulta >= 2) {
     int n = remotoTotal(), b = desc_buscando(), g = desc_busca_geracao();
     if (n != ultimoRemoto || b != ultimoBuscando || g != ultimaGeracao ||
@@ -1388,6 +1432,15 @@ void spot_atualizar(float dt, Uint32 agora) {
   } else if (painel != P_LISTA) scrollAlvo = 0.0f;
   if (scrollAlvo < 0.0f) scrollAlvo = 0.0f;
   scrollY = anim_mola2(&velY, scrollY, scrollAlvo, dt, NV_MOLA2_SCROLL);
+  // OK ja aciona o foco: nao espere a mola para faze-lo caber no recorte real.
+  if (painel == P_LISTA && focoL >= 0 && focoL < nLin) {
+    float vis = corpoH - SP_CPAD_T - SP_CPAD_B - SP_RODAPE_H;
+    float topo = lin[focoL].y + (1.0f - entraLin[focoL]) * 10.0f;
+    if (vis >= lin[focoL].h) {
+      float y = anim_clamp(scrollY, topo + lin[focoL].h - vis, topo);
+      if (y != scrollY) { scrollY = y; velY = 0.0f; }
+    }
+  }
 }
 
 // --- Desenho -----------------------------------------------------------------------
@@ -1756,11 +1809,10 @@ static void desenhaLinha(int i, float x, float y, float a) {
   a1 = anim_mistura(.88f, 1.0f, f);
   a2 = anim_mistura(.48f, .58f, f);
   if (l->tipo == L_TOPO) {
-    const CatItem *ci = cat_item(l->ref);
     GfxRect art = { r.x + 16.0f, r.y + 16.0f, 250.0f, r.h - 32.0f };
     float tx, ty, bloco, dw = 0.0f;
     // Sem paisagem, o cartaz em pe ocupa o mesmo lugar (e a caixa encolhe).
-    if (!(ci && ci->backdrop[0])) art.w = art.h * 2.0f / 3.0f;
+    if (!l->paisagem) art.w = art.h * 2.0f / 3.0f;
     arte(art, l->arte, 14.0f / art.h, 0, a);
     tx = art.x + art.w + 24.0f;
     // "OK Abrir" a direita, no meio da altura: so com o foco nela.
@@ -1774,7 +1826,7 @@ static void desenhaLinha(int i, float x, float y, float a) {
       TxtLinha t = txt_linha_corta(TXT_ROW_TITULO, l->t1, SP_TINTA, 255, tw);
       TxtLinha m = txt_linha_corta(TXT_ILHA_META, l->t2, SP_TINTA, 255, tw);
       TxtLinha g = { 0, 0, 0 };
-      if (ci && ci->genero[0]) g = txt_linha_corta(TXT_ILHA_GENERO, ci->genero, SP_TINTA, 255, tw);
+      if (l->genero[0]) g = txt_linha_corta(TXT_ILHA_GENERO, l->genero, SP_TINTA, 255, tw);
       bloco = t.h + 6.0f + m.h + (g.h ? 6.0f + g.h : 0.0f);
       ty = r.y + (r.h - bloco) * 0.5f;
       txt_desenhar_alpha(t, tx, ty, a);
@@ -1873,11 +1925,12 @@ static void desenhaLista(float dy, float a) {
   float topo = SP_CORPO_Y + SP_CPAD_T + dy;
   float vis = corpoH - SP_CPAD_T - SP_CPAD_B - SP_RODAPE_H;
   if (vis <= 2.0f) return;
-  gfx_recorte(listaX - 30.0f, topo - 8.0f, listaW + 60.0f, vis + 4.0f);
+  gfx_recorte(listaX - 30.0f, topo - 8.0f, listaW + 60.0f, vis + 8.0f);
   for (i = 0; i < nLin; i++) {
     float y = topo + lin[i].y - scrollY;
     float e = entraLin[i];
     if (y > topo + vis + 20.0f || y + lin[i].h < topo - 20.0f) continue;
+    if (lin[i].h <= vis && y + lin[i].h + (1.0f - e) * 10.0f > topo + vis + 0.1f) continue;
     // Linha nova sobe 10 px e acende; a que ja estava fica parada.
     desenhaLinha(i, listaX, y + (1.0f - e) * 10.0f, a * e);
   }

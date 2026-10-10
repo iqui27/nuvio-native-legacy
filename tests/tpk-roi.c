@@ -8,28 +8,17 @@
 #include "mkvass.h"
 
 // This geometry fixture has no media bytes or network metadata provider.
-int mkv_faixas(const char *url, MkvFaixa *out, int max) {
-  (void)url; (void)out; (void)max; return 0;
-}
-int mkv_faixas_do_trecho(const unsigned char *buf, long n, MkvFaixa *out, int max,
-                       MkvCap *caps, int maxCaps, int *nCaps) {
-  (void)buf; (void)n; (void)out; (void)max; (void)caps; (void)maxCaps;
-  if (nCaps) *nCaps = 0;
-  return 0;
-}
 void mkvass_aceitar_texto(int sim) { (void)sim; }
-int mkvass_cabecalho(const char *url, unsigned char **buf, long *n) {
-  (void)url; if (buf) *buf = NULL; if (n) *n = 0; return 0;
-}
-int faixasmkv_aplicar(VideoFaixa *aud, int nAud, VideoFaixa *leg, int nLeg,
-                     const MkvFaixa *fx, int n) {
-  (void)aud; (void)nAud; (void)leg; (void)nLeg; (void)fx; (void)n; return 0;
-}
 
 const char *i18n(const char *s) { return s; }
 const char *ling_nome(const char *c) { return c; }
 int ling_casa(const char *c, const char *p) { return !strcmp(c, p); }
 const char *ling_audio(void) { return ""; }
+int ling_tipo_legenda(const char *s, int f, int d) { (void)s; (void)f; (void)d; return 0; }
+const char *ling_tipo_legenda_rotulo(int t) { (void)t; return ""; }
+const char *ling_do_nome(const char *s) { (void)s; return NULL; }
+int ling_letreiro(const char *s, int f) { (void)s; (void)f; return 0; }
+
 
 void nv_tpk_video_registrar(void (*)(const char *, const char *), void (*)(void), void (*)(int),
                             void (*)(int), void (*)(int), void (*)(int, int, int, int), int (*)(void));

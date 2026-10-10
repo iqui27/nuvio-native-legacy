@@ -13,9 +13,7 @@
 // absurda nao virar consumo sem limite, e nao porque 8000 seja um numero
 // especial. Estourado, o mapa PARA DE CRESCER e diz no log — o que ja entrou
 // continua valendo, porque meio mapa e melhor que nenhum.
-#define VE_MAX 8000
-// Teto de um lote de gesto (ver vistoep_lote): o SMK_LOTE_MAX do Simkl.
-#define VE_LOTE 256
+#define VE_LOTE VE_LOTE_MAX
 
 typedef struct { char id[16]; short temp, ep; unsigned char visto; } Marca;
 static Marca *mapa;
@@ -313,8 +311,8 @@ static int antesOuIgual(int t, int e, int tAlvo, int eAlvo) {
   return e <= eAlvo;
 }
 
-int vistoep_ate_aqui(const char *imdb, int temporada, int episodio,
-                     VistoPar *saida, int max) {
+static int intervalo(const char *imdb, int temporada, int episodio, int frente,
+                     int agT, int agE, VistoPar *saida, int max) {
   char id[16];
   int i, k = 0;
   base(imdb, id, sizeof id);
@@ -326,7 +324,10 @@ int vistoep_ate_aqui(const char *imdb, int temporada, int episodio,
   pthread_mutex_lock(&trava);
   for (i = 0; i < n; i++) {
     if (strcmp(mapa[i].id, id)) continue;
-    if (!antesOuIgual(mapa[i].temp, mapa[i].ep, temporada, episodio)) continue;
+    int t = mapa[i].temp, e = mapa[i].ep;
+    if (frente ? !antesOuIgual(temporada, episodio, t, e)
+               : !antesOuIgual(t, e, temporada, episodio)) continue;
+    if (agT > 0 && agE > 0 && antesOuIgual(agT, agE, t, e)) continue;
     if (saida) {
       if (k >= max) break;
       saida[k].temporada = mapa[i].temp;
@@ -336,6 +337,11 @@ int vistoep_ate_aqui(const char *imdb, int temporada, int episodio,
   }
   pthread_mutex_unlock(&trava);
   return k;
+}
+
+int vistoep_ate_aqui(const char *imdb, int temporada, int episodio,
+                     VistoPar *saida, int max) {
+  return intervalo(imdb, temporada, episodio, 0, 0, 0, saida, max);
 }
 
 int vistoep_temporada(const char *imdb, int temporada, VistoPar *saida, int max) {
@@ -357,21 +363,25 @@ int vistoep_temporada(const char *imdb, int temporada, VistoPar *saida, int max)
   return k;
 }
 
-int vistoep_lote(const char *imdb, int ateAqui, int temporada, int episodio,
+int vistoep_lote(const char *imdb, int modo, int temporada, int episodio,
                  const VistoPar *cat, int nCat, int agT, int agE,
                  VistoPar *saida, int max) {
   static VistoPar buf[VE_LOTE];
   int k, i, j;
   if (saida && max < 1) return 0;
-  k = ateAqui ? vistoep_ate_aqui(imdb, temporada, episodio, buf, VE_LOTE)
-              : vistoep_temporada(imdb, temporada, buf, VE_LOTE);
+  if (modo == VE_LOTE_DAQUI)
+    k = intervalo(imdb, temporada, episodio, 1, agT, agE, buf, VE_LOTE);
+  else
+    k = modo == VE_LOTE_ATE ? vistoep_ate_aqui(imdb, temporada, episodio, buf, VE_LOTE)
+                           : vistoep_temporada(imdb, temporada, buf, VE_LOTE);
   for (i = 0; cat && i < nCat && k < VE_LOTE; i++) {
     int t = cat[i].temporada, e = cat[i].episodio, dentro;
     if (e < 1) continue;
     // Nao foi ao ar: a partir de (agT, agE), o proximo episodio da agenda.
     if (agT > 0 && agE > 0 && (t != agT ? t > agT : e >= agE)) continue;
-    dentro = ateAqui ? t > 0 && antesOuIgual(t, e, temporada, episodio)
-                     : t == temporada;
+    dentro = modo == VE_LOTE_DAQUI ? t >= 0 && antesOuIgual(temporada, episodio, t, e)
+           : modo == VE_LOTE_ATE ? t > 0 && antesOuIgual(t, e, temporada, episodio)
+                                : t == temporada;
     if (!dentro) continue;
     for (j = 0; j < k; j++) if (buf[j].temporada == t && buf[j].episodio == e) break;
     if (j < k) continue;

@@ -1,0 +1,37 @@
+// Conteudo da 2.0.4: docs/releases/2.0.4/NOTAS.md e PEDIDO-NOV-R2.md.
+// Sem cenas nem artes. Tetos de linhas para as traducoes; o motor mede antes de paginar.
+static const NovItem ITENS_204[] = {
+  { .grupo = "Correções", .icone = "aj_list-video", .nome = "Temporadas",
+    .frase = "Abas de temporadas corrigidas em animes longos.", .linhas = 2 },
+  { .icone = "aj_list-video", .nome = "Episódios",
+    .frase = "Listas de arquivos de torrent do add-on não repetem mais os episódios.", .linhas = 2 },
+  { .icone = "aj_tv-minimal-play", .nome = "TV ao vivo",
+    .frase = "A busca no guia não fecha mais o app." },
+  { .icone = "aj_house", .nome = "Home",
+    .frase = "A ordem da Home é mantida ao trocar de perfil." },
+  { .icone = "aj_languages", .nome = "Idiomas",
+    .frase = "Áudio e legendas respeitam os idiomas definidos como \"Da conta\".", .linhas = 2 },
+  { .icone = "aj_image", .nome = "Pôsteres",
+    .frase = "O modelo de URL personalizado é salvo. Um aviso indica quando fica longo demais.", .linhas = 2 },
+  { .grupo = "Fontes", .icone = "aj_layers", .nome = "1080p",
+    .frase = "Fontes FHD e Full HD ficam no grupo 1080p." },
+  { .icone = "aj_sliders-horizontal", .nome = "Ordem das fontes",
+    .frase = "Nova opção em Ajustes: Por qualidade ou Do addon.", .linhas = 2 },
+  { .icone = "aj_captions", .nome = "Add-ons de legenda",
+    .frase = "Add-ons só de legenda, como OpenSubtitles, não aparecem mais como \"não respondeu\".", .linhas = 2 },
+  { .grupo = "Plataformas", .icone = "aj_monitor-play", .nome = "Android · Amlogic",
+    .frase = "Vídeos HDR não fecham mais o app em caixas Amlogic.", .linhas = 2,
+    .plataformas = NOV_ANDROID | NOV_OUTRAS },
+  { .icone = "aj_tv-minimal-play", .nome = "LG webOS 3 (2017)",
+    .frase = "O segundo vídeo não fecha mais o app. A versão do sistema é lida corretamente.", .linhas = 2,
+    .plataformas = NOV_LG | NOV_OUTRAS },
+  { .icone = "aj_sliders-horizontal", .nome = "Samsung .tpk",
+    .frase = "Vidro, contorno, Profundidade e Reflexo voltam a responder aos ajustes.", .linhas = 2,
+    .plataformas = NOV_TPK | NOV_OUTRAS },
+};
+static const NovConteudo NOV_ATUAL = {
+  .versao = "2.0.4",
+  .arquivo = "novidades-204.txt",
+  .subtitulo = "Correções e opções de fontes.",
+  .itens = ITENS_204, .nItens = (int)(sizeof ITENS_204 / sizeof *ITENS_204),
+};

@@ -60,7 +60,20 @@ static const char *descarteNome = "nenhum";
 static int profStencil;   // a janela tem profundidade/stencil para descartar
 // Medida.
 static double aquece = GPUN_AQUECE_MS, janMs, janEsp, janCpu, totalMs;
-static int janN, estavaNaHome;
+static int janN, estavaNaHome, descartes;
+// #410B: so vale perder efeitos com >= 15% E >= 5 fps. Os dois pisos
+// rejeitam ruido perto de 45 fps e ganhos absolutos pequenos em TV muito lenta.
+// ponytail: janelas de Home cheia, nao cena fixa; usar A/B/A se a navegacao
+// variar a carga o bastante para falsear esta comparacao.
+static double fpsNivel[3];
+static int anterior = -1, reavaliar, bloqueado;
+
+static void reiniciarMedida(void) {
+  decidido = bloqueado = reavaliar = 0; anterior = -1;
+  memset(fpsNivel, 0, sizeof fpsNivel);
+  aquece = GPUN_AQUECE_MS; janMs = janEsp = janCpu = totalMs = 0;
+  janN = estavaNaHome = descartes = 0;
+}
 
 #ifndef GL_FRAMEBUFFER_BINDING
 #define GL_FRAMEBUFFER_BINDING 0x8CA6
@@ -142,23 +155,31 @@ static void logExtensoes(const char *ext) {
 #endif
 
 static void gravar(void) {
-  char buf[400];
+  char buf[1024];
   if (!adaptativo) return;
-  snprintf(buf, sizeof buf, "versao=1\nchave=%lx\nnivel=%d\ngpu=%s\ngl=%s\nmodelo=%s\ntizen=%s\n",
-           chave, nivel, renderer, versaoGl, modelo, tizen);
+  snprintf(buf, sizeof buf, "versao=1\nchave=%lx\nnivel=%d\ngpu=%s\ngl=%s\nmodelo=%s\ntizen=%s\n"
+           "avaliacao=1\nbloqueado=%d\nfps0=%.3f\nfps1=%.3f\nfps2=%.3f\n",
+           chave, nivel, renderer, versaoGl, modelo, tizen,
+           bloqueado, fpsNivel[0], fpsNivel[1], fpsNivel[2]);
   if (!dados_gravar(GPUN_ARQ, buf)) printf("[gpu-nivel] nao gravou %s\n", GPUN_ARQ);
 }
 
-#if (defined(NV_TPK) || defined(NV_ANDROID) || defined(NV_WEBOS)) && !defined(NV_TPK_NIVEL_FORCADO)
+#if (defined(NV_TPK) || defined(NV_ANDROID) || defined(NV_WEBOS) || defined(NV_GPUN_TESTE)) && !defined(NV_TPK_NIVEL_FORCADO)
 static void ler(void) {
   char *t = dados_ler(GPUN_ARQ);
   unsigned long c = 0;
-  int v = 0, n = -1;
+  int v = 0, n = -1, avaliado = 0, trava = 0;
+  double f[3] = {0};
   const char *p;
   if (!t) { printf("[gpu-nivel] sem %s: comeca do 0\n", GPUN_ARQ); return; }
   if ((p = strstr(t, "versao=")) != NULL) v = atoi(p + 7);
   if ((p = strstr(t, "chave=")) != NULL) c = strtoul(p + 6, NULL, 16);
   if ((p = strstr(t, "nivel=")) != NULL) n = atoi(p + 6);
+  if ((p = strstr(t, "avaliacao=")) != NULL) avaliado = atoi(p + 10) == 1;
+  if ((p = strstr(t, "bloqueado=")) != NULL) trava = atoi(p + 10) == 1;
+  if ((p = strstr(t, "fps0=")) != NULL) f[0] = atof(p + 5);
+  if ((p = strstr(t, "fps1=")) != NULL) f[1] = atof(p + 5);
+  if ((p = strstr(t, "fps2=")) != NULL) f[2] = atof(p + 5);
   free(t);
   if (v != 1 || n < 0 || n > 3) { printf("[gpu-nivel] %s invalido: comeca do 0\n", GPUN_ARQ); return; }
   if (c != chave) {
@@ -168,6 +189,15 @@ static void ler(void) {
   }
   nivel = n > GPUN_NIVEL_AUTO_MAX ? GPUN_NIVEL_AUTO_MAX : n;
   origem = "salvo";
+  if (avaliado) {
+    memcpy(fpsNivel, f, sizeof f);
+    bloqueado = decidido = trava;
+  } else if (nivel > 0) {
+    reavaliar = nivel;
+    nivel = 0;
+    origem = "reavaliando salvo";
+    printf("[gpu-nivel] nivel salvo %d sem comparacao: reavalia uma vez a partir do 0\n", reavaliar);
+  }
 }
 #endif
 
@@ -187,6 +217,8 @@ static void aplicar(int n, const char *porque) {
 void gpun_iniciar(int w, int h) {
   const char *ext = "";
   GLint db = 0, sb = 0;
+  reiniciarMedida();
+  nivel = adaptativo = prefFixa = 0; origem = "padrao";
   telaW = w > 0 ? w : 1920;
   telaH = h > 0 ? h : 1080;
 #ifdef NV_ANDROID
@@ -274,13 +306,7 @@ void gpun_iniciar(int w, int h) {
   adaptativo = 1;
   origem = "adaptativo";
   ler();
-  // Nothing saved yet and a GPU class known to be weak (Mali-4xx, Midgard,
-  // ptv_gpu_fraca): start at light effects instead of spending the first
-  // measured window janking at full effects. Measuring continues from there.
-  if (!strcmp(origem, "adaptativo") && ptv_gpu_fraca_atual()) {
-    nivel = 1;
-    origem = "GPU fraca: comeca nos efeitos leves";
-  }
+  // Mesmo GPU fraca precisa da referencia no 0 antes de reduzir efeitos.
 #else
   { const char *e = getenv("NUVIO_GPU_NIVEL");
 #if defined(__APPLE__) || defined(NV_LINUX_DESKTOP)
@@ -305,7 +331,7 @@ void gpun_forcar_720(void) {
 
 void gpun_preferencia(int p) {
   if (forca720) return;
-#if (defined(NV_TPK) || defined(NV_ANDROID) || defined(NV_WEBOS)) && !defined(NV_TPK_NIVEL_FORCADO)
+#if (defined(NV_TPK) || defined(NV_ANDROID) || defined(NV_WEBOS) || defined(NV_GPUN_TESTE)) && !defined(NV_TPK_NIVEL_FORCADO)
   prefFixa = p == 1 || p == 2;
   if (p == 1) { adaptativo = 0; aplicar(0, "ajuste: efeitos completos"); return; }
   if (p == 2) {
@@ -318,7 +344,8 @@ void gpun_preferencia(int p) {
     else aplicar(1, "ajuste: efeitos leves");
     return;
   }
-  adaptativo = 1; decidido = 0; origem = "adaptativo"; nivel = 0;
+  reiniciarMedida();
+  adaptativo = 1; origem = "adaptativo"; nivel = 0;
   ler();
   aplicar(nivel, "ajuste: automatico");
 #else
@@ -335,10 +362,11 @@ void gpun_alvo_1080(void) {
   // 1080p, from what this GPU saved for 1080p (the old key), unless the person
   // fixed "Efeitos visuais".
   chave = djb2(tizen, djb2(modelo, djb2(versaoGl, djb2(renderer, 5381))));
-#if (defined(NV_TPK) || defined(NV_ANDROID) || defined(NV_WEBOS)) && !defined(NV_TPK_NIVEL_FORCADO)
+#if (defined(NV_TPK) || defined(NV_ANDROID) || defined(NV_WEBOS) || defined(NV_GPUN_TESTE)) && !defined(NV_TPK_NIVEL_FORCADO)
   if (!prefFixa) {
-    adaptativo = 1; decidido = 0; origem = "adaptativo"; nivel = 0;
-    aquece = GPUN_ASSENTA_MS; janMs = janEsp = janCpu = totalMs = 0; janN = 0;
+    reiniciarMedida();
+    adaptativo = 1; origem = "adaptativo"; nivel = 0;
+    aquece = GPUN_ASSENTA_MS;
     ler();
     aplicar(nivel, "interface em 1080p: mede de novo");
   }
@@ -350,6 +378,7 @@ void gpun_alvo_1080(void) {
 int gpun_alvo_1080_ativo(void) { return alvo1080; }
 
 int gpun_nivel(void) { return nivel; }
+int gpun_efeitos_automaticos(void) { return adaptativo && nivel > 0; }
 void gpun_definir_nivel(int n) { aplicar(n, "definido por gpun_definir_nivel"); }
 
 void gpun_log_perfil(long memMB, int texMb, int fios, int heroi) {
@@ -453,7 +482,9 @@ void gpun_quadro_fim(void) {
 // tests/gpunivel.sh: a regra do adaptativo sem TV nem GL.
 void gpun_teste_reiniciar(void) {
   nivel = 0; adaptativo = 1; decidido = 0; origem = "teste";
-  aquece = GPUN_AQUECE_MS; janMs = janEsp = janCpu = totalMs = 0; janN = 0; estavaNaHome = 0;
+  reiniciarMedida();
+  forca720 = prefFixa = 0;
+  aplicar(0, "teste");
 }
 int gpun_teste_decidido(void) { return decidido; }
 #endif
@@ -467,10 +498,26 @@ static void decidir(const char *porque) {
 
 void gpun_medir(double dtms, double espera, double cpu, int naHome, int cheia) {
   double fps, e, c;
-  if (!adaptativo || decidido) return;
+  if (!adaptativo || decidido || nivel > GPUN_NIVEL_AUTO_MAX) return;
+  // GPU fraca pode nao terminar nem a referencia no 0. Tres descartes na
+  // tentativa, mesmo intercalados, ativam protecao so nesta sessao: sem
+  // janela comparavel nao ha avaliacao para gravar.
+  if (naHome && cheia && ptv_gpu_fraca_atual() &&
+      espera >= GPUN_ESPERA_MIN && espera > cpu) {
+    if (dtms > 1000.0 && ++descartes >= 3) {
+      aplicar(GPUN_NIVEL_AUTO_MAX, "GPU fraca: referencia nao termina");
+      decidido = 1;
+      return;
+    }
+  } else descartes = 0;
   if (!naHome || !cheia || dtms > 1000.0) {
-    // Fora da home (ou suspensao): a janela em curso nao vale; ao voltar,
-    // aquece de novo antes de medir.
+    // Outra cena invalida tambem a referencia do candidato. Volta ao ultimo
+    // nivel confirmado, sem gravar/bloquear; ao voltar mede a referencia nova.
+    if (anterior >= 0) {
+      fpsNivel[nivel] = fpsNivel[anterior] = 0;
+      aplicar(anterior, "comparacao interrompida");
+      anterior = -1;
+    }
     if (estavaNaHome) { janN = 0; janMs = janEsp = janCpu = 0; if (aquece < GPUN_ASSENTA_MS) aquece = GPUN_ASSENTA_MS; }
     estavaNaHome = 0;
     return;
@@ -479,12 +526,35 @@ void gpun_medir(double dtms, double espera, double cpu, int naHome, int cheia) {
   if (aquece > 0) { aquece -= dtms; return; }
   janN++; janMs += dtms; janEsp += espera; janCpu += cpu; totalMs += dtms;
   if (janMs < GPUN_JANELA_MS) return;
+  descartes = 0; // janela completa encerra a tentativa
   fps = janN * 1000.0 / janMs;
   e = janEsp / janN;
   c = janCpu / janN;
   printf("[gpu-nivel] janela na home: nivel=%d fps=%.1f espera=%.1fms cpu=%.1fms (%d quadros)\n",
          nivel, fps, e, c, janN);
   janN = 0; janMs = janEsp = janCpu = 0;
+  fpsNivel[nivel] = fps;
+  if (anterior >= 0) {
+    double antes = fpsNivel[anterior];
+    reavaliar = 0; // legado so deixa de estar pendente com a comparacao completa
+    if (fps < antes * 1.15 || fps - antes < 5.0) {
+      printf("[gpu-nivel] nivel %d nao ajudou (%.1f -> %.1f fps): volta ao %d\n",
+             nivel, antes, fps, anterior);
+      aplicar(anterior, "sem ganho significativo");
+      bloqueado = 1;
+      decidir("nao desce de novo nesta TV");
+      return;
+    }
+    anterior = -1;
+  }
+  // Um nivel legado nao tinha prova do ganho. Compara-o diretamente com o
+  // 0 na mesma sessao, inclusive se o 0 ja der 45 fps (migracao uma vez).
+  if (reavaliar) {
+    anterior = 0;
+    aplicar(reavaliar, "compara nivel salvo com efeitos completos");
+    aquece = GPUN_ASSENTA_MS;
+    return;
+  }
   if (fps >= GPUN_FPS_BOM) { decidir("fps bom"); return; }
   if (e >= GPUN_ESPERA_MIN && e > c) {
     // O adaptativo PARA no nivel 1 quando ele ja resolve. Teste nas duas
@@ -494,11 +564,12 @@ void gpun_medir(double dtms, double espera, double cpu, int naHome, int cheia) {
     // GPUN_FPS_CRITICO (a Mali-400 do registro 9859, UA40N5300, Tizen 4.0,
     // 10-21 fps com efeitos leves), desce ao 2: efeitos MINIMOS, em 1080p.
     if (nivel == 0 || (nivel == 1 && fps < GPUN_FPS_CRITICO)) {
+      if (totalMs >= GPUN_TETO_MS) { decidir("teto de tempo de medida"); return; }
+      anterior = nivel;
       aplicar(nivel + 1, nivel == 0 ? "GPU presa: efeitos leves"
                                     : "GPU presa mesmo com efeitos leves: efeitos minimos");
-      gravar();
+      // So grava depois de medir o candidato: interrupcao nao o confirma.
       aquece = GPUN_ASSENTA_MS;
-      if (totalMs >= GPUN_TETO_MS) decidir("teto de tempo de medida");
       return;
     }
     decidir("GPU presa, mas ja no ultimo nivel");

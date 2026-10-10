@@ -8,7 +8,18 @@ int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
 int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
 int ajustes_ocultar_nao_lancados(void) { return 0; }   // #369: descoberta.c le o ajuste
+// FALTA DE MEMORIA NO CRESCIMENTO DO CONJUNTO (EpSet): com `callocFalha` ligado,
+// todo calloc de mais de 1024 itens (so o crescimento do conjunto pede isso
+// neste teste) responde NULL. O primeiro, de 1024, passa.
+#include <stdlib.h>
+static int callocFalha, callocNegados;
+static void *callocDoTeste(size_t n, size_t tam) {
+  if (callocFalha && n > 1024) { callocNegados++; return NULL; }
+  return calloc(n, tam);
+}
+#define calloc(n, tam) callocDoTeste(n, tam)
 #include "../src/descoberta.c"
+#undef calloc
 Uint32 SDL_GetTicks(void) { return 0; }
 #include "../src/progresso.h"
 #include <assert.h>
@@ -74,6 +85,12 @@ static const char *fakeIdioma = "pt-BR";
 const char *ajustes_tmdb_idioma(void)      { return fakeIdioma; }
 const char *ajustes_tmdb_chave(void)       { return ""; }
 void  fil_gravar_registro(void)            { }
+int   fil_lista_e_deste_perfil(int p)       { (void)p; return 1; }
+unsigned fil_perfil_geracao(void)          { return 0; }
+FilPassada fil_passada_ler(void)          { FilPassada p = {0, 0}; return p; }
+int   fil_passada_valida(const FilPassada *p) { (void)p; return 1; }
+void  fil_registrar_de(const FilPassada *p, const char *c, const char *t, const char *a, const char *k, int n) { (void)p; (void)c; (void)t; (void)a; (void)k; (void)n; }
+void  fil_registrar_se_couber_de(const FilPassada *p, const char *c, const char *t, const char *a, const char *k) { (void)p; (void)c; (void)t; (void)a; (void)k; }
 int   fil_podar_catalogos(const char *const *ids, const char *const *bases, int n,
                           int perfilDaLista) {
   (void)ids; (void)bases; (void)n; (void)perfilDaLista; return 0; }
@@ -306,6 +323,328 @@ int main(void) {
                        "{\"id\":\"y\",\"season\":1,\"name\":\"Y\"},"
                        "{\"id\":\"z\",\"season\":1,\"name\":\"Z\"}]}", e, 16);
   assert(n == 3);
+  // --- LISTA DE ARQUIVOS DE ADDON DE FONTE NO LUGAR DOS EPISODIOS (2.0.3.1) ---
+  // Relato de TV LG na 2.0.2 (Breaking Bad): um addon de FONTES respondia o
+  // /meta com um video por ARQUIVO de torrent — 18529 entradas, quase todas
+  // repeticoes dos mesmos (temporada, episodio). Ganhava da lista de 62 por
+  // contagem BRUTA, o corte de 1200 valia sobre as repeticoes e a pagina
+  // mostrava "Episodio 1" em todos os cartoes, "1200 de 1200 assistidos".
+  {
+    static const int porTemp[5] = { 7, 13, 13, 13, 16 };   // 62 episodios
+    size_t cap = 4u << 20, k = 0;
+    char *cine = malloc(cap), *arq = malloc(cap), *maior = malloc(cap);
+    int t, ep, i, total = 0;
+    assert(cine && arq && maior);
+    k = (size_t)snprintf(cine, cap, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                         "\"name\":\"Serie\",\"description\":\"S.\",\"videos\":[");
+    for (t = 1; t <= 5; t++)
+      for (ep = 1; ep <= porTemp[t - 1]; ep++, total++)
+        k += (size_t)snprintf(cine + k, cap - k,
+                              "%s{\"id\":\"tt13293588:%d:%d\",\"season\":%d,\"episode\":%d,"
+                              "\"name\":\"T%dE%d\"}", total ? "," : "", t, ep, t, ep, t, ep);
+    snprintf(cine + k, cap - k, "]}}");
+    assert(total == 62);
+    // 18000 arquivos, todos repeticoes de T1E1..T1E7.
+    k = (size_t)snprintf(arq, cap, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                         "\"name\":\"Serie\",\"videos\":[");
+    for (i = 0; i < 18000; i++)
+      k += (size_t)snprintf(arq + k, cap - k,
+                            "%s{\"id\":\"arq%d\",\"season\":1,\"episode\":%d,"
+                            "\"name\":\"Serie.S01E%02d.1080p.mkv\"}", i ? "," : "",
+                            i, i % 7 + 1, i % 7 + 1);
+    snprintf(arq + k, cap - k, "]}}");
+    assert(k < cap - 8);
+
+    nFake = 0; nRotas = 0; addonMeta = 1; addonTipo = "/series/";
+    fakeMetaExterno = 0; fakeSoCinemeta = 0; fakeIdioma = "en-US";
+    cineSerie = cine;
+    addonResp = arq;
+    limparCacheMeta();
+    catalogoCom("tt13293588", "series", "Serie");
+    abrir();
+    assert(pediu("addon.test/SEGREDO/meta/series/tt13293588.json"));
+    printf("lista de arquivos: %d episodios, %d abas\n",
+           cat_n_episodios(0), cat_item(0)->nTemporadas);
+    assert(cat_n_episodios(0) == 62);
+    assert(cat_item(0)->nTemporadas == 5);
+    assert(cat_episodio(0, 0)->episodio == 1 && cat_episodio(0, 1)->episodio == 2);
+    assert(cat_episodio(0, 61)->temporada == 5 && cat_episodio(0, 61)->episodio == 16);
+    puts("ok  lista de arquivos de addon de fonte nao troca a lista de episodios");
+    assert(desc_meta_n_episodios(cine) == 62);
+    assert(desc_meta_n_episodios(arq) == 7);          // distintos, nao 18000
+
+    // O corte de VIDEOS_MAX vale sobre episodios DISTINTOS: 1300 repeticoes de
+    // T1E1 na frente nao gastam as vagas dos outros.
+    k = (size_t)snprintf(maior, cap, "{\"videos\":[");
+    for (i = 0; i < 1300; i++)
+      k += (size_t)snprintf(maior + k, cap - k, "%s{\"id\":\"r%d\",\"season\":1,\"episode\":1}",
+                            i ? "," : "", i);
+    for (ep = 2; ep <= 80; ep++)
+      k += (size_t)snprintf(maior + k, cap - k, ",{\"id\":\"e%d\",\"season\":1,\"episode\":%d}", ep, ep);
+    snprintf(maior + k, cap - k, "]}");
+    {
+      CatEp *g = malloc(sizeof(CatEp) * VIDEOS_MAX);
+      assert(g);
+      n = parsearEpisodios(maior, g, VIDEOS_MAX);
+      assert(n == 80);
+      assert(!strcmp(g[0].vid, "r0") && g[79].episodio == 80);
+      free(g);
+    }
+    puts("ok  corte de 1200 sobre episodios distintos");
+
+    // Addon LEGITIMO com mais episodios DISTINTOS (e algumas repeticoes, #328)
+    // continua ganhando: 62 + a temporada 6 com 10, cada episodio duas vezes.
+    k = (size_t)snprintf(maior, cap, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                         "\"name\":\"Serie\",\"videos\":[");
+    total = 0;
+    for (t = 1; t <= 6; t++)
+      for (ep = 1; ep <= (t == 6 ? 10 : porTemp[t - 1]); ep++)
+        for (i = 0; i < 2; i++, total++)
+          k += (size_t)snprintf(maior + k, cap - k,
+                                "%s{\"id\":\"m%d\",\"season\":%d,\"episode\":%d,\"name\":\"M\"}",
+                                total ? "," : "", total, t, ep);
+    snprintf(maior + k, cap - k, "]}}");
+    assert(desc_meta_n_episodios(maior) == 72);
+    addonResp = maior;
+    limparCacheMeta();
+    catalogoCom("tt13293588", "series", "Serie");
+    abrir();
+    assert(cat_n_episodios(0) == 72);
+    assert(cat_item(0)->nTemporadas == 6);
+    puts("ok  addon com mais episodios distintos continua ganhando");
+    // SEM MEMORIA PARA CRESCER O CONJUNTO, a repeticao continua sendo repeticao:
+    // 600 episodios, cada um duas vezes. O conjunto de 1024 casas cabe os 600;
+    // o crescimento (pedido ao passar de meia carga) falha sempre.
+    k = (size_t)snprintf(maior, cap, "{\"videos\":[");
+    for (i = 0; i < 1200; i++)
+      k += (size_t)snprintf(maior + k, cap - k, "%s{\"id\":\"f%d\",\"season\":1,\"episode\":%d}",
+                            i ? "," : "", i, i % 600 + 1);
+    snprintf(maior + k, cap - k, "]}");
+    callocFalha = 1; callocNegados = 0;
+    n = desc_meta_n_episodios(maior);
+    printf("sem memoria para crescer: %d distintos (%d callocs negados)\n", n, callocNegados);
+    assert(callocNegados > 0);                 // a falha foi mesmo injetada
+    assert(n == 600);
+    {
+      CatEp *g = malloc(sizeof(CatEp) * VIDEOS_MAX);
+      assert(g);
+      n = parsearEpisodios(maior, g, VIDEOS_MAX);
+      assert(n == 600);
+      assert(!strcmp(g[0].vid, "f0") && g[599].episodio == 600);
+      free(g);
+    }
+    callocFalha = 0;
+    puts("ok  sem memoria para crescer o conjunto, repeticao continua repeticao");
+
+    // CATALOGO PRIMEIRO: a mesma lista de arquivos, agora na ficha do addon que
+    // PUBLICOU o item (titulo aberto de um catalogo dele). A base manda no
+    // texto, mas a lista de arquivos dela nao pode esconder os 62 do Cinemeta.
+    addonMeta = 0; addonResp = NULL;
+    nFake = 1;
+    fake[0] = (FakeAddon){ "Fontes", "https://fx.test/SEGREDO", "org.fx", "tt", 0 };
+    nRotas = 0;
+    rota("fx.test/SEGREDO/meta/series/tt13293588.json", arq);
+    limparCacheMeta();
+    catalogoDe("tt13293588", "series", "Serie", "org.fx");
+    abrir();
+    assert(pediu("fx.test/SEGREDO/meta/series/tt13293588.json"));
+    assert(pediu("cinemeta"));
+    printf("catalogo primeiro, lista de arquivos: %d episodios, %d abas\n",
+           cat_n_episodios(0), cat_item(0)->nTemporadas);
+    assert(cat_n_episodios(0) == 62);
+    assert(cat_item(0)->nTemporadas == 5);
+    assert(cat_episodio(0, 61)->temporada == 5 && cat_episodio(0, 61)->episodio == 16);
+    for (i = 0; i < 62; i++) assert(!strstr(cat_episodio(0, i)->nome, ".mkv"));
+    assert(!strcmp(cat_episodio(0, 0)->nome, "T1E1"));
+    puts("ok  catalogo primeiro: lista de arquivos da base nao esconde a lista real");
+    // LISTA DE ARQUIVOS QUE SABE MAIS EPISODIOS NAO E JOGADA FORA: 20 episodios
+    // distintos em 4 variantes cada (80 videos, "cara" de lista de arquivos)
+    // contra 12 do Cinemeta. Sem a recusa em bloco os 8 a mais aparecem; nos 12
+    // que os dois tem, o nome e o do Cinemeta e nao o nome de arquivo.
+    k = (size_t)snprintf(cine, cap, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                         "\"name\":\"Serie\",\"description\":\"S.\",\"videos\":[");
+    for (ep = 1; ep <= 12; ep++)
+      k += (size_t)snprintf(cine + k, cap - k,
+                            "%s{\"id\":\"tt13293588:1:%d\",\"season\":1,\"episode\":%d,"
+                            "\"name\":\"C%d\"}", ep > 1 ? "," : "", ep, ep, ep);
+    snprintf(cine + k, cap - k, "]}}");
+    k = (size_t)snprintf(maior, cap, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                         "\"name\":\"Serie\",\"videos\":[");
+    for (i = 0; i < 80; i++)
+      k += (size_t)snprintf(maior + k, cap - k,
+                            "%s{\"id\":\"v%d\",\"season\":1,\"episode\":%d,"
+                            "\"name\":\"Serie.S01E%02d.v%d.mkv\"}", i ? "," : "",
+                            i, i % 20 + 1, i % 20 + 1, i / 20);
+    snprintf(maior + k, cap - k, "]}}");
+    assert(desc_meta_n_episodios(cine) == 12 && desc_meta_n_episodios(maior) == 20);
+    nFake = 0; nRotas = 0; addonMeta = 1; addonTipo = "/series/";
+    cineSerie = cine; addonResp = maior;
+    limparCacheMeta();
+    catalogoCom("tt13293588", "series", "Serie");
+    abrir();
+    printf("20x4 contra 12: %d episodios\n", cat_n_episodios(0));
+    assert(cat_n_episodios(0) == 20);
+    assert(cat_episodio(0, 19)->episodio == 20);
+    assert(!strcmp(cat_episodio(0, 0)->nome, "C1") && !strcmp(cat_episodio(0, 11)->nome, "C12"));
+    puts("ok  lista de arquivos com mais episodios distintos nao e descartada");
+    // O mesmo pelo caminho do catalogo primeiro.
+    addonMeta = 0; addonResp = NULL;
+    nFake = 1;
+    fake[0] = (FakeAddon){ "Fontes", "https://fx.test/SEGREDO", "org.fx", "tt", 0 };
+    rota("fx.test/SEGREDO/meta/series/tt13293588.json", maior);
+    limparCacheMeta();
+    catalogoDe("tt13293588", "series", "Serie", "org.fx");
+    abrir();
+    assert(cat_n_episodios(0) == 20);
+    assert(!strcmp(cat_episodio(0, 0)->nome, "C1") && strstr(cat_episodio(0, 19)->nome, ".mkv"));
+    puts("ok  catalogo primeiro: lista de arquivos com mais episodios fica");
+    // EMPATE NAO E DA LISTA DE ARQUIVOS, nem com a preferencia pela ficha do
+    // addon ligada: 12 distintos x 5 variantes contra os mesmos 12.
+    k = (size_t)snprintf(maior, cap, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                         "\"name\":\"Serie\",\"videos\":[");
+    for (i = 0; i < 60; i++)
+      k += (size_t)snprintf(maior + k, cap - k,
+                            "%s{\"id\":\"w%d\",\"season\":1,\"episode\":%d,"
+                            "\"name\":\"Serie.S01E%02d.w%d.mkv\"}", i ? "," : "",
+                            i, i % 12 + 1, i % 12 + 1, i / 12);
+    snprintf(maior + k, cap - k, "]}}");
+    nFake = 0; nRotas = 0; addonMeta = 1; addonResp = maior; fakeMetaExterno = 1;
+    limparCacheMeta();
+    catalogoCom("tt13293588", "series", "Serie");
+    abrir();
+    assert(cat_n_episodios(0) == 12);
+    for (i = 0; i < 12; i++) assert(!strstr(cat_episodio(0, i)->nome, ".mkv"));
+    assert(!strcmp(cat_episodio(0, 0)->vid, "tt13293588:1:1"));
+    fakeMetaExterno = 0;
+    puts("ok  empate: a lista de arquivos nao ganha nem com a ficha do addon preferida");
+    // EMPATE ACIMA DO CORTE DE 1200: o Cinemeta conhece 1300 episodios (publica
+    // 1200) e a lista de arquivos os MESMOS 1300, de tras para a frente, em 4
+    // variantes. 1300 contra os 1200 PUBLICADOS nao e "saber mais": a conta e
+    // de distintos contra distintos, e a lista continua a do Cinemeta.
+    k = (size_t)snprintf(cine, cap, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                         "\"name\":\"Serie\",\"description\":\"S.\",\"videos\":[");
+    for (ep = 1; ep <= 1300; ep++)
+      k += (size_t)snprintf(cine + k, cap - k,
+                            "%s{\"id\":\"tt13293588:1:%d\",\"season\":1,\"episode\":%d,"
+                            "\"name\":\"C%d\"}", ep > 1 ? "," : "", ep, ep, ep);
+    snprintf(cine + k, cap - k, "]}}");
+    k = (size_t)snprintf(maior, cap, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                         "\"name\":\"Serie\",\"videos\":[");
+    for (i = 0; i < 5200; i++)
+      k += (size_t)snprintf(maior + k, cap - k,
+                            "%s{\"id\":\"z%d\",\"season\":1,\"episode\":%d,"
+                            "\"name\":\"Serie.S01E%04d.z%d.mkv\"}", i ? "," : "",
+                            i, 1300 - i % 1300, 1300 - i % 1300, i / 1300);
+    snprintf(maior + k, cap - k, "]}}");
+    assert(k < cap - 8);
+    assert(desc_meta_n_episodios(cine) == 1300 && desc_meta_n_episodios(maior) == 1300);
+    nFake = 0; nRotas = 0; addonMeta = 1; addonTipo = "/series/";
+    cineSerie = cine; addonResp = maior;
+    limparCacheMeta();
+    catalogoCom("tt13293588", "series", "Serie");
+    abrir();
+    printf("1300 contra 1300x4: primeiro id %s, %d episodios\n",
+           cat_episodio(0, 0)->vid, cat_n_episodios(0));
+    assert(cat_n_episodios(0) == VIDEOS_MAX);
+    assert(!strcmp(cat_episodio(0, 0)->vid, "tt13293588:1:1"));
+    assert(!strcmp(cat_episodio(0, VIDEOS_MAX - 1)->vid, "tt13293588:1:1200"));
+    assert(!strcmp(cat_episodio(0, 0)->nome, "C1"));
+    puts("ok  empate acima do corte de 1200: a lista de arquivos nao ganha");
+    // CATALOGO PRIMEIRO COM TRES FONTES: lista de arquivos (20), addon de
+    // verdade (10), Cinemeta (12). A lista de arquivos fica (sabe mais), e o
+    // nome do Cinemeta tem de entrar por cima mesmo com outra fonte no meio.
+    {
+      static char dez[2048], doze[2048];
+      size_t kk;
+      kk = (size_t)snprintf(dez, sizeof dez, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                            "\"name\":\"Serie\",\"videos\":[");
+      for (ep = 1; ep <= 10; ep++)
+        kk += (size_t)snprintf(dez + kk, sizeof dez - kk,
+                               "%s{\"id\":\"d%d\",\"season\":1,\"episode\":%d,\"name\":\"D%d\"}",
+                               ep > 1 ? "," : "", ep, ep, ep);
+      snprintf(dez + kk, sizeof dez - kk, "]}}");
+      kk = (size_t)snprintf(doze, sizeof doze, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                            "\"name\":\"Serie\",\"description\":\"S.\",\"videos\":[");
+      for (ep = 1; ep <= 12; ep++)
+        kk += (size_t)snprintf(doze + kk, sizeof doze - kk,
+                               "%s{\"id\":\"tt13293588:1:%d\",\"season\":1,\"episode\":%d,"
+                               "\"name\":\"C%d\"}", ep > 1 ? "," : "", ep, ep, ep);
+      snprintf(doze + kk, sizeof doze - kk, "]}}");
+      k = (size_t)snprintf(maior, cap, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                           "\"name\":\"Serie\",\"videos\":[");
+      for (i = 0; i < 80; i++)
+        k += (size_t)snprintf(maior + k, cap - k,
+                              "%s{\"id\":\"v%d\",\"season\":1,\"episode\":%d,"
+                              "\"name\":\"Serie.S01E%02d.v%d.mkv\"}", i ? "," : "",
+                              i, i % 20 + 1, i % 20 + 1, i / 20);
+      snprintf(maior + k, cap - k, "]}}");
+      addonMeta = 0; addonResp = NULL; cineSerie = doze;
+      nFake = 2;
+      fake[0] = (FakeAddon){ "Fontes", "https://fx.test/SEGREDO", "org.fx", "tt", 0 };
+      fake[1] = (FakeAddon){ "Meta", "https://mt.test/SEGREDO", "org.mt", "tt", 0 };
+      nRotas = 0;
+      rota("fx.test/SEGREDO/meta/series/tt13293588.json", maior);
+      rota("mt.test/SEGREDO/meta/series/tt13293588.json", dez);
+      limparCacheMeta();
+      catalogoDe("tt13293588", "series", "Serie", "org.fx");
+      abrir();
+      assert(pediu("fx.test/SEGREDO") && pediu("mt.test/SEGREDO") && pediu("cinemeta"));
+      printf("tres fontes: %d episodios, primeiro nome '%s'\n",
+             cat_n_episodios(0), cat_episodio(0, 0)->nome);
+      assert(cat_n_episodios(0) == 20);
+      for (i = 0; i < 12; i++) {
+        char esperado[8];
+        snprintf(esperado, sizeof esperado, "C%d", i + 1);
+        assert(!strcmp(cat_episodio(0, i)->nome, esperado));
+      }
+      puts("ok  catalogo primeiro: nome do Cinemeta entra mesmo com outra fonte no meio");
+      // LISTA DE ARQUIVOS QUE FICOU NAO E "TEXTO DO ADDON": o retorno liga
+      // DESC_EPT_SO_VAZIO em buscarEps e o TMDB deixaria de traduzir os nomes,
+      // prendendo os 8 nomes de arquivo que sobraram. Como em episodiosDoAddon,
+      // devolve 0. (Chamada direta: o que se mede e o retorno.)
+      {
+        MetaFontes m3;
+        TempsPub tp3 = {0};
+        int r;
+        memset(&m3, 0, sizeof m3);
+        m3.corpo[0] = maior; m3.corpo[1] = dez; m3.corpo[2] = doze;
+        m3.cine[2] = 1; m3.n = 3;
+        r = episodiosDoCatalogo(0, "Serie", "tt13293588", &m3, &tp3);
+        printf("lista de arquivos que ficou: retorno %d\n", r);
+        assert(cat_n_episodios(0) == 20);
+        assert(r == 0);
+        // A base de verdade continua contando como episodios do addon.
+        memset(&m3, 0, sizeof m3);
+        memset(&tp3, 0, sizeof tp3);
+        m3.corpo[0] = dez; m3.corpo[1] = doze; m3.cine[1] = 1; m3.n = 2;
+        r = episodiosDoCatalogo(0, "Serie", "tt13293588", &m3, &tp3);
+        assert(cat_n_episodios(0) == 10 && r == 1);
+        assert(!strcmp(cat_episodio(0, 0)->nome, "D1"));
+      }
+      puts("ok  catalogo primeiro: lista de arquivos que ficou nao trava a traducao do TMDB");
+    }
+    // CONJUNTO CHEIO sem poder crescer: 1023 pares entram (sobra a casa vazia
+    // que encerra a sondagem), repetido segue repetido, e o 1024o nunca e
+    // guardado — responde "novo" toda vez, sem travar a procura.
+    {
+      EpSet cj = { 0 };
+      callocFalha = 1; callocNegados = 0;
+      for (i = 1; i <= 1023; i++) assert(epSetNovo(&cj, 1, i) == 1);
+      assert(cj.n == 1023 && cj.cap == 1024);
+      for (i = 1; i <= 1023; i++) assert(epSetNovo(&cj, 1, i) == 0);
+      for (i = 0; i < 3; i++) assert(epSetNovo(&cj, 1, 1024) == 1);
+      assert(epSetNovo(&cj, 2, 1) == 1);
+      assert(cj.n == 1023 && cj.cap == 1024 && callocNegados > 0);
+      assert(epSetNovo(&cj, 1, 1023) == 0);
+      free(cj.v);
+      callocFalha = 0;
+      puts("ok  conjunto cheio sem crescer: 1023 pares, o resto nao entra e a procura termina");
+    }
+    nFake = 0; nRotas = 0;
+    addonMeta = 0; cineSerie = NULL; addonResp = NULL;
+    limparCacheMeta();
+    free(cine); free(arq); free(maior);
+  }
   puts("episodiosdup: ok");
   return 0;
 }

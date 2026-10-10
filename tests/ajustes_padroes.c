@@ -11,6 +11,18 @@
 #include <assert.h>
 
 int main(void) {
+  // TCL: opção ligada de fábrica, local, antes da sincronia por áudio.
+  int syncAuto = -1, naTela = -1, audioTela = -1;
+  for (int i = 0; i < AJ_N; i++) if (!strcmp(CHAVE[i], "legendaSyncAutoLocal")) syncAuto = i;
+  assert(syncAuto >= 0);
+  assert(valor[syncAuto] == 0 && somenteDesteAparelho(syncAuto));
+  montarTela();
+  for (int i = 0; i < AJ_N_TELA; i++) if (TELA[i].tipo == IT_OPC) {
+    if (TELA[i].op == syncAuto) naTela = i;
+    if (TELA[i].op == AJ_LEG_SYNC_AUDIO) audioTela = i;
+  }
+  assert(naTela >= 0 && (audioTela < 0 || audioTela == naTela + 1));
+  assert(!strcmp(OPCOES[syncAuto].rotulo, "Sincronia automática da legenda"));
   // Home: layout e arte do destaque.
   assert(valor[AJ_HERO_FUNDO] == 0);          // Automatico
   assert(valor[AJ_HERO_ARTE_DIF] == 1);       // Desligado: mesma foto do card

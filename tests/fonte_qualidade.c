@@ -169,10 +169,17 @@ int main(void) {
     { Stream e[2] = { m[1], m[0] }; assert(!strcmp(vence(e, 2), "Torrentio 4k HDR10")); }  // empate: ordem da lista
     stream_definir_tela(-1, -1);
   }
-  // Perfil 5 (sem base HDR10) fica atras do HDR10; DV mkv na LG toca como HDR10.
+  // Perfil 5 (sem base HDR10) em MP4 NA LG toca como DV de verdade (a TV aciona o
+  // DV nativo no MP4), entao nao e mais rebaixado abaixo do HDR10; em MKV, com o
+  // DV desligado em Ajustes ou fora da LG continua atras do HDR10 (cor lavada).
+  // Este arquivo compila streams.c como o host (LG). Ver tests/fonte_lg_mp4.c.
   { Stream m[2];
     deb(&m[0], "Torrentio 4k DV Profile 5", 2160, 1, 1);
     deb(&m[1], "Torrentio 4k HDR10", 2160, 0, 0);
+    cfg(0, 0, 0); assert(!strcmp(vence(m, 2), "Torrentio 4k DV Profile 5"));
+    cfg(1, 0, 0); assert(!strcmp(vence(m, 2), "Torrentio 4k DV Profile 5"));
+    cfg(0, 0, 1); assert(!strcmp(vence(m, 2), "Torrentio 4k HDR10"));
+    deb(&m[0], "Torrentio 4k DV Profile 5", 2160, 0, 1);   // MKV
     cfg(0, 0, 0); assert(!strcmp(vence(m, 2), "Torrentio 4k HDR10"));
     cfg(1, 0, 0); assert(!strcmp(vence(m, 2), "Torrentio 4k HDR10"));
   }

@@ -1359,6 +1359,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   { char px[96];
     comVideo = (url && *url && video_tocar(proxyts_resolver(url, px, sizeof px))); }
   mkvass_video_aberto(comVideo);
+  legsync_auto_habilitar(ajustes_legenda_sync_auto());
   legsync_iniciar(comVideo ? video_url_atual() : "");   // F05: geracao nova, sem rede nem espera
   legsync_ui_ligar();   // F05: a linha de AutoSync do seletor de legendas (legendasui.c)
   aspArmar();
@@ -2187,7 +2188,7 @@ static double credJanelaDe(double durSeg) { return intro_creditos_janela(durSeg)
 static double credJanela(void) { return credJanelaDe(duracaoSeg); }
 
 // A REGRA SOZINHA, sem o estado do player e sem log: e o que o teste consegue
-// chamar. ofertaProximo() abaixo e ela mais a leitura das duas fontes de
+// chamar. player_janela_proximo(0) abaixo e ela mais a leitura das duas fontes de
 // marcador e as duas linhas de diagnostico.
 int player_regra_proximo(double posSeg, double durSeg, double cred) {
   if (durSeg <= 1.0) return 0;
@@ -2250,7 +2251,8 @@ static int concluiuAgora(double cred) {
   return player_regra_concluiu(posSeg, duracaoSeg, cred);
 }
 
-static int ofertaProximo(void) {
+int player_janela_proximo(double antecedencia) {
+  double posAntecipada = posSeg + antecedencia * player_velocidade_efetiva() / 100.0;
   // SEM A DURACAO DO VIDEO NAO SE DECIDE NADA. Log da 2.0.0: "creditos
   // RECUSADO: comecam em 1335s de 6840s" impresso ANTES de "abrir: url ao
   // pipeline" — a conta rodou com os 114 min de reserva e ainda gastou a linha
@@ -2309,7 +2311,7 @@ static int ofertaProximo(void) {
     // E a mesma guarda que o filme ganhou na 1.0.35 (posplay.c: "ha marcador e
     // ele ainda nao chegou: NAO cair no plano B"). A serie tinha ficado de
     // fora.
-    if (aceito) return player_regra_proximo(posSeg, duracaoSeg, cred);
+    if (aceito) return player_regra_proximo(posAntecipada, duracaoSeg, cred);
   }
   // FALLBACK sem dado de ninguem. Se a duracao estiver errada, e ELE quem abre
   // o cartao cedo — por isso a linha abaixo diz de onde veio.
@@ -2323,8 +2325,8 @@ static int ofertaProximo(void) {
       }
       return 0;
     } }
-  if (player_regra_proximo(posSeg, duracaoSeg, 0.0)) {
-    if (!credFimAvisado) {
+  if (player_regra_proximo(posAntecipada, duracaoSeg, 0.0)) {
+    if (!credFimAvisado && antecedencia <= 0.0) {
       credFimAvisado = 1;
       printf("[posplay] estimativa sem marcador (%.0f s antes do fim): pos %.0fs de %.0fs\n",
              intro_fim_estimado(duracaoSeg), (double)posSeg, (double)duracaoSeg);
@@ -2683,19 +2685,29 @@ void player_evento(const SDL_Event *e) {
 
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE) {
+#ifdef NV_ANDROID
+    if (erroFonte && !ehCanal()) {
+      player_voltar_a_esperar(); pedFontes = 1;
+      return;
+    }
+#endif
     saindo = 1; pediuSair = 1;
     return;
   }
 
   // A FONTE NAO ABRIU (filme/serie): a tecla e do MODAL da ilha. ESQUERDA e
   // DIREITA escolhem entre Abrir Fontes e Voltar; OK aciona. Voltar fecha o
-  // player como o BACK (tratado acima).
+  // player como o BACK (tratado acima); no Android ambos voltam as fontes (#409).
   if (erroFonte && !ehCanal()) {
     if (k == SDLK_LEFT) erroBotao = 0;
     else if (k == SDLK_RIGHT) erroBotao = 1;
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
+#ifdef NV_ANDROID
+      player_voltar_a_esperar(); pedFontes = 1; // Abrir Fontes e Voltar dispensam o erro
+#else
       if (erroBotao == 0) pedFontes = 1;
       else { saindo = 1; pediuSair = 1; }
+#endif
     }
     return;
   }
@@ -3099,6 +3111,7 @@ void player_atualizar(float dt, Uint32 agora) {
       mkvass_folga(bf > 0.5 ? bf - (double)posSeg : -1.0);
       // F05: troca de fonte, seek e buffer curto cancelam/pausam o AutoSync.
       // F06: o ajuste local decide se "Por audio" existe (padrao desligado).
+      legsync_auto_habilitar(ajustes_legenda_sync_auto());
       legsync_audio_habilitar(ajustes_legenda_sync_audio());
       legsync_passo(video_url_atual(), posSeg, bf > 0.5 ? bf - (double)posSeg : -1.0,
                     scrubbing || video_bufferando_ms() > 0, agora); }
@@ -3303,7 +3316,7 @@ void player_atualizar(float dt, Uint32 agora) {
     // programacao.
     if (!ehCanal())
       posplay_atualizar(dt, agora, posSeg, duracaoSeg, eSerie, idxAtual(),
-                        eSerie && ofertaProximo());
+                        eSerie && player_janela_proximo(0));
     // "O QUE ACHOU?" (reacao.h): no mesmo instante do pos-reproducao do filme,
     // e na serie so no fim da temporada ou no ultimo episodio disponivel.
     //
@@ -3330,7 +3343,7 @@ void player_atualizar(float dt, Uint32 agora) {
   // PAINEL DE PAUSA. A condicao e a traducao de canShowPauseOverlay
   // (playerScreen.js:7299): pausado, com imagem na tela, sem nenhuma folha
   // aberta por cima. `!player_carregando()` cobre o `loadingVisible` do web e
-  // `!ofertaProximo()` cobre o cartao de proximo episodio (:8241) — os dois sao
+  // `!player_janela_proximo(0)` cobre o cartao de proximo episodio (:8241) — os dois sao
   // convites a uma acao, e um painel informativo nao pode competir com eles.
   //
   // `!posplay_visivel()` nao vem do web: la o pos-reproducao e outra tela. Aqui
@@ -3351,7 +3364,7 @@ void player_atualizar(float dt, Uint32 agora) {
                    // "comeca pausado" do Dolby Vision em MKV (video_iniciando).
                    !video_iniciando() && !dvtela_visivel() &&
                    !episodios_aberto() && !stream_folha_aberta() &&
-                   !faixas_aberta() && !ofertaProximo() && !posplay_visivel(),
+                   !faixas_aberta() && !player_janela_proximo(0) && !posplay_visivel(),
                    idxAtual(), item() ? item()->imdb : "", linhaEp);
   // Com o painel de pe os controles SAEM de cena. Este ponto ja foi das duas
   // formas: com os controles visiveis o dono achou pior e pediu de volta o

@@ -11,6 +11,10 @@ void *SDL_AndroidGetActivity(void);
 #include <stdint.h>
 #include <stdlib.h>
 
+static int cap4k[4];
+void stream_definir_decoder4k(int h, int a, int v, int av) {
+  cap4k[0] = h; cap4k[1] = a; cap4k[2] = v; cap4k[3] = av;
+}
 static struct JNINativeInterface_ jni;
 static const struct JNINativeInterface_ *env = &jni;
 static int chamadasNormais, chamadasPosicao, recebidoMs, recebidoGeracao, excecao, lancar;
@@ -21,6 +25,7 @@ void *SDL_AndroidGetActivity(void) { return NULL; }
 Uint32 SDL_GetTicks(void) { return relogio; }
 SDL_mutex *SDL_CreateMutex(void) { return (SDL_mutex *)(uintptr_t)1; }
 void marco(const char *s) { (void)s; }
+void vel_log(int cent, const char *estado) { (void)cent; (void)estado; }
 
 static jobject JNICALL global(JNIEnv *e, jobject o) { (void)e; return o; }
 static jmethodID JNICALL metodo(JNIEnv *e, jclass c, const char *nome, const char *sig) {
@@ -61,6 +66,9 @@ static void JNICALL chamar(JNIEnv *e, jclass c, jmethodID m, ...) {
   va_end(ap);
 }
 int main(void) {
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeDecoder4k(NULL, NULL, 1, 0, -1, 1);
+  assert(cap4k[0] == 1 && cap4k[1] == 0 && cap4k[2] == -1 && cap4k[3] == 1);
+
   jni.NewGlobalRef = global; jni.GetStaticMethodID = metodo;
   jni.NewString = texto; jni.DeleteLocalRef = apagar;
   jni.ExceptionCheck = temExcecao; jni.ExceptionClear = limparExcecao;
@@ -146,5 +154,20 @@ int main(void) {
   assert(video_retomada_inicial_estado() == -1);
   ausenteFracao = 0; assert(resolverMetodos(&env)); mParar = (jmethodID)(uintptr_t)4;
   puts("ok percentual na abertura, segundos vencem, invalido e casca antiga recuam");
+  // #409 R2: mesmos codigos Media3 em audio/video/desconhecido. So video
+  // pode alimentar o bloqueio por codec nos dois caminhos do automatico.
+  const int codigos[] = {4001, 4003, 4004, 4005};
+  for (unsigned i = 0; i < sizeof codigos / sizeof *codigos; i++) {
+    for (int renderer = -1; renderer <= 2; renderer++) {
+      Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_ERRO, codigos[i], renderer);
+      video_bombear();
+      assert(video_falhou());
+      assert(video_erro_decoder_codigo() == (renderer == 2 ? codigos[i] : 0));
+    }
+  }
+  video_parar(); assert(video_erro_decoder_codigo() == 0);
+  assert(video_tocar("https://example.invalid/novo.mkv"));
+  assert(video_erro_decoder_codigo() == 0 && !video_falhou());
+  puts("ok #409 JNI: audio/desconhecido nao bloqueiam video; reset ao parar/abrir");
   puts("video Android retomada: PASS (JNI, geracoes, fallback e limites)");
 }

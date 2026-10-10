@@ -5,9 +5,19 @@
 #include "idioma.h"
 #include "ajustes.h"
 #include "dados.h"
+#include "catalogo.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+
+static int montagens;
+void __cyg_profile_func_enter(void *funcao, void *chamador) {
+  (void)chamador;
+  if (funcao == (void *)tgraf_montar) montagens++;
+}
+void __cyg_profile_func_exit(void *funcao, void *chamador) {
+  (void)funcao; (void)chamador;
+}
 
 static TgEp eps[64];
 static int nEps;
@@ -118,6 +128,20 @@ int main(void) {
   for (i = 1; i <= 6; i++) ep(1, i, 0);
   tgraf_montar(&d, eps, nEps, 1, 0, 0, 0, NULL);
   assert(d.n == 1 && d.vistos == 0 && !tgraf_existe(&d));
+
+  // Id de Continuar assistindo: a segunda consulta reutiliza a montagem.
+  { CatItem item = {0}; CatEp episodio = {0}; const TgDados *cache;
+    snprintf(item.imdb, sizeof item.imdb, "tt123:2:6");
+    snprintf(item.tipo, sizeof item.tipo, "series");
+    cat_definir_tudo(&item, 1, NULL, 0);
+    episodio.temporada = 2; episodio.episodio = 6;
+    cat_definir_episodios(0, &episodio, 1);
+    montagens = 0;
+    cache = tgraf_dados(0);
+    assert(!strcmp(cache->imdb, "tt123") && cache->total == 1);
+    assert(montagens == 1);
+    tgraf_dados(0);
+    assert(montagens == 1); }
 
   puts("temporadas_grafico: ok");
   return 0;

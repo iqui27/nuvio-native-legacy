@@ -247,6 +247,12 @@ long stream_pontos(const Stream *s);
 int  stream_e_mp4(const Stream *s);
 // R9b: o que a tela mostra (1/0; -1 = desconhecido, o padrao, nao penaliza).
 void stream_definir_tela(int hdr, int dv);
+// Android: -1 desconhecido, 0 sem decoder 3840x2160, 1 suportado. Nao filtra a folha manual.
+void stream_definir_decoder4k(int hevc, int avc, int vp9, int av1);
+// Erro Media3 no automatico: nao repetir tamanho/codec nesta lista. `renderer`
+// diz de onde veio o erro: 0 video, 1 audio, 2 desconhecido. Erros de audio
+// (EAC3/AC4 sem suporte) nao bloqueiam codecs de video.
+void stream_automatico_erro_decoder(int indice, int codigo, int renderer);
 int  stream_cabe_no_teto(const Stream *s);
 
 // TORRENT SEM URL ESCOLHIDO A DEDO NA FOLHA. A escolha manual chamava

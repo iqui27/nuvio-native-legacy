@@ -39,6 +39,9 @@ int   perfis_ativo(void) { return 1; }
 void dados_marcar_sujo(int leve) { (void)leve; }
 const char *ling_legenda(void) { return ""; }
 const char *ling_audio(void) { return ""; }
+const char *ling_conta_legenda_valor(void) { return ""; }
+const char *ling_conta_legenda2_valor(void) { return ""; }
+const char *ling_conta_audio_valor(void) { return ""; }
 void ling_conta_legenda(const char *v) { (void)v; }
 void ling_conta_legenda2(const char *v) { (void)v; }
 void ling_conta_audio(const char *v) { (void)v; }

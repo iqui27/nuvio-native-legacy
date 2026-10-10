@@ -195,7 +195,7 @@ static int ajCenaSecao(int op) {
     case AJ_VIDRO: case AJ_VIDRO_CONTORNO: case AJ_VIDRO_OPAC: case AJ_VIDRO_FOSCO: return AJC_APA_VIDRO;
     case AJ_ANIM: case AJ_RELOGIO: case AJ_RELOGIO_12H: return AJC_APA_MOVIMENTO;
     case AJ_FONTE_MANUAL: case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_PRIORIDADE: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR:
-    case AJ_FONTE_PRAZO: case AJ_FONTE_TEXTO: case AJ_TAM_MAX: case AJ_TAM_MIN: case AJ_SELOS_CORES: case AJ_SELOS_PACOTE: case AJ_SELOS_PACOTE_ADD:
+    case AJ_FONTE_PRAZO: case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: case AJ_TAM_MAX: case AJ_TAM_MIN: case AJ_SELOS_CORES: case AJ_SELOS_PACOTE: case AJ_SELOS_PACOTE_ADD:
     case AJ_FONTE_ESCOPO: case AJ_FONTE_ADDONS_PERM: case AJ_FONTE_PLUGINS_PERM: case AJ_FONTE_OUTROS:
     case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO:
     case AJ_FONTE_ORDEM: case AJ_FONTE_ORDEM_USO:
@@ -208,7 +208,7 @@ static int ajCenaSecao(int op) {
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_CHAVE: case AJ_SEEKR_TESTAR: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE:
       return AJC_REP_SEEKR;
     case AJ_IDIOMA: case AJ_TMDB_IDIOMA: return AJC_IDI_INTERFACE;
-    case AJ_AUD_LINGUA: case AJ_LEG_LINGUA: case AJ_LEG_SYNC_AUDIO: case AJ_LEG_FORCADA: return AJC_IDI_FAIXAS;
+    case AJ_AUD_LINGUA: case AJ_LEG_LINGUA: case AJ_LEG_SYNC_AUTO: case AJ_LEG_SYNC_AUDIO: case AJ_LEG_FORCADA: return AJC_IDI_FAIXAS;
     case AJ_LEG_LINGUA2: case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA:
       return AJC_IDI_LEGENDA2;
     case AJ_XTREAM_SERVIDOR: case AJ_XTREAM_USUARIO: case AJ_XTREAM_SENHA: case AJ_XTREAM_CONTA:
@@ -916,20 +916,20 @@ static void ajcIdiInterface(int A) {
 }
 // Audio e legendas: o player com a legenda e o painel de faixas.
 static void ajcIdiFaixas(int A) {
-  static const int OP[4] = { AJ_AUD_LINGUA, AJ_LEG_LINGUA, AJ_LEG_LINGUA2, AJ_LEG_SYNC_AUDIO };
-  static const char *const IC[4] = { "aj_audio-lines", "aj_captions", "aj_captions", "aj_activity" };
-  int i, n = 3;
+  static const int OP[5] = { AJ_AUD_LINGUA, AJ_LEG_LINGUA, AJ_LEG_LINGUA2, AJ_LEG_SYNC_AUTO, AJ_LEG_SYNC_AUDIO };
+  static const char *const IC[5] = { "aj_audio-lines", "aj_captions", "aj_captions", "aj_activity", "aj_activity" };
+  int i, n = 4;
 #ifdef NV_ANDROID
-  n = 4;
+  n = 5;
 #endif
-  if (ajc.op == AJ_LEG_SYNC_AUDIO) n = 4;
+  if (ajc.op == AJ_LEG_SYNC_AUDIO) n = 5;
   CIMG(ajArte(AJA_FUNDO, A), 0, 0, 640, 360, 22, 1);
   gfx_veu_css(CR(0, 220, 640, 140), 0, 0, 1.0f, 0.6f);
   gfx_cor(CR(70, 296, 260, 20), 0.25f, 0, 0, 0, 0.55f); CBAR(80, 302, 240, 0.95f);
   gfx_cor(CR(100, 22, 200, 20), 0.25f, 0, 0, 0, 0.55f); CBAR(110, 28, 180, 0.85f);
   CVID(372, 30, 240, 300, 22);
   for (i = 0; i < n; i++) {
-    float by = 50 + i * 66;
+    float by = 50 + i * (n == 5 ? 54 : 66);
     if (OP[i] == ajc.op) gfx_cor(CR(382, by - 6, 220, 56), 0.3f, 1, 1, 1, 0.12f);
     CICON(IC[i], 394, by + 4, 18, 0.85f);
     ajcTxt(rotuloOpcao(OP[i]), 11, 0, 420, by + 4, 176, 0.6f);

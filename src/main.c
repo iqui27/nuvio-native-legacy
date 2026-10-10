@@ -1720,7 +1720,7 @@ int main(int argc, char **argv) {
       for (k = 0; k < GFX_NMODOS; k++) if (gfx_fill_modo[k] > 0.02) printf(" %d=%.2f", k, gfx_fill_modo[k]);
       printf("\n");
     }
-#if defined(NV_TPK) || defined(NV_ANDROID)
+#if defined(NV_TPK) || defined(NV_ANDROID) || defined(NV_WEBOS)
     // NIVEL DE GPU ADAPTATIVO (gpunivel.h): o quadro que acabou, repartido em
     // ESPERA (clr + swap: o driver devolvendo buffer, a GPU atrasada) e CPU.
     // "Cheia" = artes na tela (o conjunto quente do cache), conferido a cada

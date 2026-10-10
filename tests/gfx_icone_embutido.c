@@ -16,6 +16,8 @@ static unsigned char pixelsUpload[128 * 128 * 4];
 int nv_grad_ativo;
 float nv_acento_viva[3], nv_grad_viva[3][3], nv_tempo_viva;
 float nv_ambiente_viva[4][3], nv_ambiente_forca;
+int ajustes_profundidade(void) { return 0; }
+float ajustes_profundidade_brilho(void) { return 0; }
 
 void teste_glGenTextures(GLsizei n, GLuint *t) {
   tentativas += n;

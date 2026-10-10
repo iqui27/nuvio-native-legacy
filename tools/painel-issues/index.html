@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nuvio Legacy - issues e roadmap</title>
+<style>
+:root{--bg:#0e1013;--card:#161a1f;--card2:#1d2228;--line:#2a313a;--tx:#e6e9ed;--mut:#8a94a1;--ac:#7c9cff;--ac2:#3b4f94;--ok:#58c08a;--warn:#e0b24c;--bad:#e5736f}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow-x:hidden}
+a{color:var(--ac);text-decoration:none}a:hover{text-decoration:underline}
+header{padding:20px 16px 12px;border-bottom:1px solid var(--line)}
+h1{margin:0 0 4px;font-size:20px;font-weight:650;display:flex;align-items:center;gap:10px}
+h1 svg{width:22px;height:22px;color:var(--ac);flex:none}
+.sub{color:var(--mut);font-size:12.5px;overflow-wrap:anywhere}
+main{max-width:1280px;margin:0 auto;padding:16px}
+h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:28px 0 10px;font-weight:600}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;text-align:left;color:inherit;font:inherit;cursor:pointer}
+.kpi:hover,.kpi.on{border-color:var(--ac)}
+.kpi b{display:block;font-size:26px;font-weight:650;line-height:1.1}
+.kpi span{color:var(--mut);font-size:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:800px){.grid2{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.bar{display:grid;grid-template-columns:minmax(90px,150px) 1fr 40px;gap:8px;align-items:center;width:100%;background:none;border:0;color:inherit;font:inherit;padding:4px 2px;border-radius:6px;cursor:pointer;text-align:left}
+.bar:hover{background:var(--card2)}
+.bar .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .t{height:10px;background:var(--card2);border-radius:5px;overflow:hidden}
+.bar .t i{display:block;height:100%;background:var(--ac2);border-radius:5px}
+.bar.on .t i{background:var(--ac)}.bar.on .n{color:var(--ac);font-weight:600}
+.bar .c{text-align:right;color:var(--mut);font-variant-numeric:tabular-nums}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.rel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.rel h3{margin:0;font-size:16px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.rel .sit{color:var(--mut);font-size:12px;margin:2px 0 6px}
+.rel .desc{color:var(--mut);font-size:12.5px;margin:0 0 8px}
+.it{border-top:1px solid var(--line);padding:8px 0}
+.it b{display:block}
+.it p{margin:3px 0;color:var(--mut);font-size:12.5px;overflow-wrap:anywhere}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:var(--card2);border:1px solid var(--line);color:var(--mut);margin:2px 3px 0 0;overflow-wrap:anywhere}
+.tag.ac{color:var(--ac);border-color:var(--ac2)}.tag.ok{color:var(--ok)}.tag.warn{color:var(--warn)}.tag.bad{color:var(--bad)}
+.lst>div{border-top:1px solid var(--line);padding:9px 0}.lst>div:first-child{border-top:0}
+.lst p{margin:3px 0;overflow-wrap:anywhere}.lst .rec{color:var(--mut)}
+.q{font-style:normal}
+.dec{border-top:1px solid var(--line);padding:10px 0}.lst>.dec:first-child{border-top:0}
+.dec.feita{opacity:.65}
+.resp{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 6px}
+.resp button{min-height:44px;min-width:96px;font:inherit;font-weight:600;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--tx);cursor:pointer}
+.resp button.on.sim{background:var(--ok);color:var(--bg);border-color:var(--ok)}
+.resp button.on.nao{background:var(--bad);color:var(--bg);border-color:var(--bad)}
+.resp button:focus-visible,.dec textarea:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.dec textarea{width:100%;min-height:72px;resize:vertical;background:var(--card2);color:var(--tx);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+.dec .linha{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:6px}
+.dec .env{min-height:44px;padding:0 18px;border-radius:10px;border:1px solid var(--ac);background:var(--ac2);color:var(--tx);font:inherit;font-weight:600;cursor:pointer}
+.dec .env[disabled]{opacity:.5;cursor:default}
+.dec .ctr,.dec .est{color:var(--mut);font-size:12.5px}.dec .est.bad{color:var(--bad)}.dec .est.ok{color:var(--ok)}
+.ctx{background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:7px 0}
+.ctx .rot{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin:0 0 4px}
+.ctx p{margin:3px 0}
+.linha-issue{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;padding:3px 0;border-top:1px solid var(--line)}
+.linha-issue:first-of-type{border-top:0}
+.linha-issue .ti{overflow-wrap:anywhere;min-width:0}
+.rot-l{color:var(--mut)}
+.decidida{border-top:1px solid var(--line);padding:9px 0}.decidida:first-child{border-top:0}
+.decidida .quando{color:var(--mut);font-size:12.5px}
+.espera{color:var(--warn)}
+.atualiz{color:var(--mut)}
+.aviso{border:1px solid var(--warn);color:var(--warn);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:12.5px}
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+input,select{background:var(--card2);color:var(--tx);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit;min-width:0}
+input[type=search]{flex:1 1 220px}
+.chip{background:var(--card2);color:var(--mut);border:1px solid var(--line);border-radius:99px;padding:4px 11px;font:inherit;font-size:12.5px;cursor:pointer}
+.chip.on{color:var(--bg);background:var(--ac);border-color:var(--ac)}
+.btn{background:none;border:1px solid var(--line);color:var(--mut);border-radius:8px;padding:6px 10px;font:inherit;cursor:pointer}
+.btn:hover{color:var(--tx);border-color:var(--ac)}
+.scroll{overflow:auto;border:1px solid var(--line);border-radius:10px;max-height:78vh;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;min-width:860px}
+th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{position:sticky;top:0;background:var(--card2);cursor:pointer;white-space:nowrap;font-size:12px;color:var(--mut);user-select:none;z-index:1}
+th.s{color:var(--ac)}
+tr.row{cursor:pointer}tr.row:hover td{background:var(--card)}
+td.num{white-space:nowrap;font-variant-numeric:tabular-nums}
+td.tit{min-width:240px;overflow-wrap:anywhere}
+tr.det td{background:var(--card);padding:12px 16px}
+.det dl{margin:0;display:grid;grid-template-columns:130px 1fr;gap:6px 12px}
+.det dt{color:var(--mut)}.det dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
+@media(max-width:600px){.det dl{grid-template-columns:1fr}}
+.cnt{color:var(--mut);font-size:12.5px;margin:6px 0}
+.vazio{color:var(--mut);padding:8px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v16h16"/><path d="M8 15l3-4 3 2 5-6"/></svg><span>Nuvio Legacy — issues e roadmap</span></h1>
+  <div class="sub" id="meta">carregando...</div>
+  <div class="sub atualiz"><span id="atualiz">atualizado há 0 s</span> <span class="atualiz" id="falha" hidden></span></div>
+</header>
+<main id="app"></main>
+<script>
+"use strict";
+function el(tag, attrs, kids) {
+  var e = document.createElement(tag);
+  if (attrs) for (var k in attrs) {
+    if (k === "class") e.className = attrs[k];
+    else if (k === "text") e.textContent = attrs[k];
+    else if (k.slice(0, 2) === "on") e.addEventListener(k.slice(2), attrs[k]);
+    else e.setAttribute(k, attrs[k]);
+  }
+  (kids || []).forEach(function (c) { if (c != null) e.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+  return e;
+}
+function safeUrl(u) { return /^https?:\/\//.test(u || "") ? u : null; }
+function sv(v) { return v == null || v === "" ? "" : String(v); }
+
+var D, ITENS, BY = {}, F = { q: "", plat: "", status: "", alvo: "", estado: "", extra: "", sort: "numero", dir: -1 };
+var RASCUNHOS = {};   // o que o dono esta digitando, por id: sobrevive ao recarregamento
+var ULTIMA = Date.now(), ASSINATURA = "";
+var ALVO_ORDEM = ["2.0.4", "2.0.5", "2.1", "2.2", "futuro", "nao vamos fazer", "ja-lancada"];
+var SEM_ALVO = "(sem alvo)";
+
+function alvoDe(i) { return i.alvo ? String(i.alvo) : SEM_ALVO; }
+function platDe(i) {
+  var p = sv(i.plataforma);
+  if (!p || p === "?") return "desconhecida";
+  if (/^samsung/i.test(p)) return "Samsung";
+  if (/^lg/i.test(p)) return "LG";
+  if (/^android/i.test(p)) return "Android";
+  if (p === "all") return "todas";
+  return "outras";
+}
+function aberta(i) { return i.estado_github === "aberta"; }
+function proximaVersao() {
+  var abertas = ITENS.filter(aberta);
+  for (var k = 0; k < ALVO_ORDEM.length - 3; k++) {
+    if (abertas.some(function (i) { return i.alvo === ALVO_ORDEM[k]; })) return ALVO_ORDEM[k];
+  }
+  return "2.0.4";
+}
+function sortAlvos(keys) {
+  return keys.sort(function (a, b) {
+    var ia = ALVO_ORDEM.indexOf(a), ib = ALVO_ORDEM.indexOf(b);
+    if (a === SEM_ALVO) ia = 99; if (b === SEM_ALVO) ib = 99;
+    if (ia < 0) ia = 50; if (ib < 0) ib = 50;
+    return ia - ib || a.localeCompare(b);
+  });
+}
+function count(fn) {
+  var m = {};
+  ITENS.forEach(function (i) { var k = fn(i); m[k] = (m[k] || 0) + 1; });
+  return m;
+}
+
+function issueUrl(n) {
+  var it = BY[n], u = it && safeUrl(it.url);
+  if (u) return u;
+  var repo = (D && D.meta && D.meta.repo) || "";
+  return repo ? repo + "/issues/" + n : null;
+}
+function issueLink(n) {
+  var it = BY[n], u = issueUrl(n), t = "#" + n;
+  return u ? el("a", { href: u, target: "_blank", rel: "noopener", text: t, title: (it && it.titulo) || "" }) : el("span", { text: t });
+}
+
+// O mapa tem texto de terceiros: linkify monta NODES, nunca innerHTML.
+// #NNN vira issue/PR, hash que existe no repo (meta.commits) vira commit,
+// branch citada (meta.branches) vira tree, e URL http(s) vira link.
+var RE_LINK = /https?:\/\/[^\s<>"'`]+|#\d{1,4}\b|\b[0-9a-f]{7,12}\b|[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._/-]*/g;
+function linkify(texto) {
+  var frag = document.createDocumentFragment(), t = sv(texto);
+  if (!t) return frag;
+  var meta = (D && D.meta) || {}, repo = meta.repo || "", commits = meta.commits || {}, branches = {};
+  (meta.branches || []).forEach(function (b) { branches[b] = 1; });
+  var last = 0, m, re = new RegExp(RE_LINK.source, "g");
+  while ((m = re.exec(t)) !== null) {
+    var txt = m[0], url = null;
+    if (/^https?:/i.test(txt)) {
+      while (txt.length > 10 && /[.,;:!?)\]]$/.test(txt)) txt = txt.slice(0, -1);
+      url = safeUrl(txt);
+    } else if (txt.charAt(0) === "#") {
+      url = issueUrl(Number(txt.slice(1)));
+    } else if (branches[txt] && repo) {
+      url = repo + "/tree/" + txt;
+    } else if (commits[txt] && repo) {
+      url = repo + "/commit/" + commits[txt];
+    }
+    if (!url) continue;
+    frag.appendChild(document.createTextNode(t.slice(last, m.index)));
+    frag.appendChild(el("a", { href: url, target: "_blank", rel: "noopener", text: txt, title: txt }));
+    last = m.index + txt.length;
+  }
+  frag.appendChild(document.createTextNode(t.slice(last)));
+  return frag;
+}
+function tx(texto, tag, cls) { var e = el(tag || "span", cls ? { class: cls } : null); e.appendChild(linkify(texto)); return e; }
+
+function setFilter(k, v) {
+  F[k] = (F[k] === v) ? "" : v;
+  renderBars(); renderTools(); renderTable();
+  document.getElementById("tabela").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function kpi(label, val, onclick, key) {
+  return el("button", { class: "kpi" + (F.extra === key && key ? " on" : ""), onclick: onclick, type: "button" }, [el("b", { text: String(val) }), el("span", { text: label })]);
+}
+
+function renderKpis() {
+  var box = document.getElementById("kpis"); box.textContent = "";
+  var prox = proximaVersao();
+  var abertas = ITENS.filter(aberta);
+  var saiProx = abertas.filter(function (i) { return i.alvo === prox; }).length;
+  var semResp = abertas.filter(function (i) { return i.ultima_resposta && i.ultima_resposta.nos === false; }).length;
+  var log = ITENS.filter(function (i) { return i.status === "precisa-log"; }).length;
+  var ex = function (k, estado) { return function () { F.extra = k; F.estado = estado || ""; F.alvo = ""; F.status = ""; F.plat = ""; F.q = ""; renderAll(); document.getElementById("tabela").scrollIntoView({ behavior: "smooth" }); }; };
+  box.appendChild(kpi("total de issues", ITENS.length, ex(""), ""));
+  box.appendChild(kpi("abertas no GitHub", abertas.length, ex("", "aberta"), "ab"));
+  box.appendChild(kpi("sai na proxima versao (" + prox + ")", saiProx, function () { F.extra = ""; F.estado = "aberta"; F.alvo = prox; F.status = ""; F.plat = ""; F.q = ""; renderAll(); document.getElementById("tabela").scrollIntoView({ behavior: "smooth" }); }, "px"));
+  box.appendChild(kpi("sem resposta nossa", semResp, ex("semresp", "aberta"), "semresp"));
+  box.appendChild(kpi("aguardando log", log, function () { F.extra = ""; F.estado = ""; F.alvo = ""; F.status = "precisa-log"; F.plat = ""; F.q = ""; renderAll(); document.getElementById("tabela").scrollIntoView({ behavior: "smooth" }); }, "log"));
+}
+
+function barBlock(titulo, map, keys, campo) {
+  var max = Math.max.apply(null, keys.map(function (k) { return map[k]; }).concat([1]));
+  var p = el("div", { class: "panel" }, [el("div", { class: "sub", text: titulo })]);
+  keys.forEach(function (k) {
+    p.appendChild(el("button", { class: "bar" + (F[campo] === k ? " on" : ""), type: "button", onclick: function () { setFilter(campo, k); } }, [
+      el("span", { class: "n", text: k, title: k }),
+      el("span", { class: "t" }, [el("i", { style: "width:" + Math.round(map[k] / max * 100) + "%" })]),
+      el("span", { class: "c", text: String(map[k]) })
+    ]));
+  });
+  return p;
+}
+function renderBars() {
+  var box = document.getElementById("bars"); box.textContent = "";
+  var ma = count(alvoDe), ms = count(function (i) { return sv(i.status) || "(sem status)"; });
+  var ks = Object.keys(ms).sort(function (a, b) { return ms[b] - ms[a]; });
+  box.appendChild(barBlock("Por alvo (release)", ma, sortAlvos(Object.keys(ma)), "alvo"));
+  box.appendChild(barBlock("Por status", ms, ks, "status"));
+}
+
+function renderRoadmap() {
+  var box = document.getElementById("roadmap"); box.textContent = "";
+  var rm = Array.isArray(D.roadmap) ? D.roadmap : [];
+  if (!rm.length) { box.appendChild(el("div", { class: "vazio", text: "Sem roadmap neste mapa." })); return; }
+  rm.forEach(function (r) {
+    var card = el("div", { class: "rel" }, [el("h3", null, [el("span", { text: sv(r.release) })])]);
+    if (r.situacao) card.appendChild(el("div", { class: "sit" }, [tx(r.situacao)]));
+    if (r.descricao) card.appendChild(el("p", { class: "desc" }, [tx(r.descricao)]));
+    var its = r.itens || [];
+    if (!its.length) card.appendChild(el("div", { class: "vazio", text: "Nenhum item." }));
+    its.forEach(function (x) {
+      var d = el("div", { class: "it" }, [tx(x.nome, "b")]);
+      if (x.porque) d.appendChild(el("p", null, [tx(x.porque)]));
+      var links = el("div");
+      (x.issues || []).forEach(function (n) { links.appendChild(el("span", { class: "tag ac" }, [issueLink(n)])); });
+      (x.branches || []).forEach(function (b) { links.appendChild(el("span", { class: "tag" }, [tx(b)])); });
+      if (x.origem) links.appendChild(el("span", { class: "tag" }, [document.createTextNode("origem: "), tx(x.origem)]));
+      d.appendChild(links);
+      card.appendChild(d);
+    });
+    box.appendChild(card);
+  });
+}
+
+var API = "api/respostas", RESP = {}, API_OK = false;
+function atual(id) { var r = RESP[id]; return r && r.historico && r.historico.length ? r.historico[r.historico.length - 1] : null; }
+function quandoFmt(q) { return sv(q).replace("T", " ").slice(0, 16); }
+function issuesDa(x) { return (x.issues || []).map(Number).filter(function (n) { return !isNaN(n); }); }
+
+// Release afetada: campo `release` da decisao ou, na falta, o alvo das issues
+// ligadas. Sem os dois, a decisao nao tem release definida (nao inventa uma).
+function releaseDa(x) {
+  var ns = issuesDa(x), m = {};
+  ns.forEach(function (n) { var it = BY[n]; if (it && it.alvo) m[String(it.alvo)] = 1; });
+  var ks = Object.keys(m).sort();
+  return x.release ? String(x.release) : (ks.length ? ks.join(", ") : "");
+}
+function roadmapDe(x) {
+  // item de roadmap que cita alguma das issues ligadas
+  var ns = issuesDa(x), achados = [];
+  (D.roadmap || []).forEach(function (r) {
+    (r.itens || []).forEach(function (i) {
+      if ((i.issues || []).some(function (n) { return ns.indexOf(Number(n)) >= 0; })) achados.push([r, i]);
+    });
+  });
+  return achados;
+}
+function validacoesDe(x) {
+  var ns = issuesDa(x);
+  return (D.validacoes || []).filter(function (v) {
+    return (v.issues || []).some(function (n) { return ns.indexOf(Number(n)) >= 0; });
+  }).sort(function (a, b) { return sv(b.data).localeCompare(sv(a.data)); });
+}
+function bloco(rotulo) { var c = el("div", { class: "ctx" }); c.appendChild(el("p", { class: "rot", text: rotulo })); return c; }
+
+function contextoDecisao(x) {
+  var ns = issuesDa(x), frag = document.createDocumentFragment();
+
+  var rel = releaseDa(x);
+  var linha = el("p", { class: "rot-l" });
+  linha.appendChild(document.createTextNode("Release afetada: "));
+  linha.appendChild(el("b", { text: rel || "(defina o campo release ou ligue a decisao a uma issue)" }));
+  frag.appendChild(linha);
+
+  if (ns.length) {
+    var bi = bloco("Issues ligadas (" + ns.length + ")");
+    ns.forEach(function (n) {
+      var it = BY[n];
+      var l = el("div", { class: "linha-issue" }, [issueLink(n), el("span", { class: "ti", text: (it && it.titulo) || "(issue fora do mapa)" })]);
+      if (it) l.appendChild(el("span", { class: "tag " + (/lancada|consertada/.test(sv(it.status)) ? "ok" : "warn"), text: sv(it.status) }));
+      if (it && it.alvo) l.appendChild(el("span", { class: "tag ac", text: "alvo " + it.alvo }));
+      if (it) l.appendChild(el("span", { class: "tag", text: sv(it.plataforma) }));
+      bi.appendChild(l);
+    });
+    frag.appendChild(bi);
+  }
+
+  var rms = roadmapDe(x);
+  if (rms.length) {
+    var br = bloco("No roadmap");
+    rms.forEach(function (p) {
+      br.appendChild(el("p", { class: "rot-l" }, [
+        el("span", { class: "tag ac", text: p[0].release }),
+        document.createTextNode(" "),
+        tx(p[1].nome, "b")
+      ]));
+    });
+    frag.appendChild(br);
+  }
+
+  var vs = validacoesDe(x);
+  if (vs.length) {
+    var bv = bloco("Auditoria (" + vs.length + " validacoes)");
+    vs.forEach(function (v) {
+      var l = el("p", { class: "rot-l" }, [
+        el("span", { class: "tag " + (RES_TAG[v.resultado] || ""), text: sv(v.resultado) }),
+        document.createTextNode(" "), tx(v.o_que, "span"),
+        document.createTextNode(" — "), tx(sv(v.quem) + " em " + sv(v.data), "span", "rot-l")
+      ]);
+      bv.appendChild(l);
+    });
+    frag.appendChild(bv);
+  }
+  return frag;
+}
+
+function cardDecisao(x) {
+  var feita = !!x.aplicada_em, a = x.id ? atual(x.id) : null;
+  var d = el("div", { class: "dec" + (feita ? " feita" : "") }, [el("p", { class: "q" }, [tx(x.pergunta)])]);
+  if (x.recomendacao) d.appendChild(el("p", { class: "rec" }, [document.createTextNode("Recomendacao: "), tx(x.recomendacao)]));
+  d.appendChild(contextoDecisao(x));
+  var l = el("div");
+  l.appendChild(el("span", { class: "tag", text: x.id || "sem id" }));
+  if (feita) l.appendChild(el("span", { class: "tag ok", text: "aplicada em " + x.aplicada_em }));
+  else if (a) l.appendChild(el("span", { class: "tag warn", text: "aguardando a coordinacao aplicar" }));
+  d.appendChild(l);
+  if (a) d.appendChild(el("p", { class: "rec" }, [
+    document.createTextNode("Resposta do dono: " + (a.resposta === "sim" ? "ACEITAR" : "NEGAR") + " em " + quandoFmt(a.quando)),
+    el("span", { class: "espera", text: feita ? "" : " — aguardando a coordenacao aplicar" })
+  ]));
+  if (a && a.nota) d.appendChild(el("p", { class: "rec" }, [document.createTextNode("Informacao adicional: "), tx(a.nota)]));
+  if (feita || !API_OK || !x.id) return d;
+
+  // Rascunho nao enviado tem precedencia sobre a resposta salva: o redesenho do
+  // polling nunca sobrescreve o que o dono esta digitando ou escolhendo.
+  var r = RASCUNHOS[x.id];
+  var escolha = (r ? r.escolha : a && a.resposta) || "", enviando = false;
+  var bS = el("button", { type: "button", class: "sim", text: "Aceitar" }), bN = el("button", { type: "button", class: "nao", text: "Negar" });
+  var ta = el("textarea", { maxlength: "2000", rows: "3", placeholder: "informacao adicional (opcional, vai junto da resposta)", "aria-label": "Informacao adicional" });
+  ta.setAttribute("data-dec", x.id);
+  ta.value = (r ? r.nota : a && a.nota) || "";
+  var ctr = el("span", { class: "ctr" }), est = el("span", { class: "est" });
+  var env = el("button", { type: "button", class: "env", text: a ? "Alterar resposta" : "Enviar" });
+  function guarda() { RASCUNHOS[x.id] = { escolha: escolha, nota: ta.value }; }
+  function marca() {
+    bS.className = "sim" + (escolha === "sim" ? " on" : ""); bN.className = "nao" + (escolha === "nao" ? " on" : "");
+    bS.setAttribute("aria-pressed", String(escolha === "sim")); bN.setAttribute("aria-pressed", String(escolha === "nao"));
+    ctr.textContent = ta.value.length + "/2000";
+    bS.disabled = bN.disabled = ta.disabled = enviando; env.disabled = enviando || !escolha;
+  }
+  bS.addEventListener("click", function () { if (enviando) return; escolha = "sim"; guarda(); marca(); });
+  bN.addEventListener("click", function () { if (enviando) return; escolha = "nao"; guarda(); marca(); });
+  ta.addEventListener("input", function () { guarda(); if (!enviando) marca(); });
+  env.addEventListener("click", function () {
+    if (enviando || !escolha) return;
+    enviando = true; guarda(); marca(); est.className = "est"; est.textContent = "enviando...";
+    fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: x.id, resposta: escolha, nota: ta.value }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.erro || ("HTTP " + r.status)); return j; }); })
+      .then(function (j) {
+        var h = (RESP[x.id] || (RESP[x.id] = { historico: [] })).historico; h.push(j.registro);
+        delete RASCUNHOS[x.id]; enviando = false;
+        if (d.parentNode) d.parentNode.replaceChild(cardDecisao(x), d);
+      }).catch(function (e) { enviando = false; est.className = "est bad"; est.textContent = "nao enviou: " + e.message; marca(); });
+  });
+  d.appendChild(el("div", { class: "resp" }, [bS, bN]));
+  d.appendChild(ta);
+  d.appendChild(el("div", { class: "linha" }, [env, ctr, est]));
+  marca();
+  return d;
+}
+
+// Decisoes ja resolvidas no mapa (estado decidida ou aplicadas pela
+// coordenacao) vao para a lista "Decididas", com decisao, data e quem.
+function linhaDecidida(x) {
+  var d = el("div", { class: "decidida" });
+  d.appendChild(el("p", null, [tx(x.pergunta)]));
+  if (x.decisao) d.appendChild(el("p", { class: "rot-l" }, [document.createTextNode("Decisao: "), tx(x.decisao, "b")]));
+  var quando = x.aplicada_em ? "aplicada em " + x.aplicada_em : (x.data || "");
+  d.appendChild(el("p", { class: "quando" }, [
+    document.createTextNode((x.quem ? x.quem : "") + (quando ? " — " + quando : "")),
+    x.aplicada_em ? el("span", { class: "tag ok", text: "aplicada" }) : el("span", { class: "tag", text: "decidida" })
+  ]));
+  var a = x.id ? atual(x.id) : null;
+  if (a) d.appendChild(el("p", { class: "rec" }, [document.createTextNode("Resposta no painel: " + (a.resposta === "sim" ? "ACEITAR" : "NEGAR") + " em " + quandoFmt(a.quando) + (a.nota ? " — " : "")), a.nota ? tx(a.nota) : document.createTextNode("")]));
+  return d;
+}
+function renderDecisoes() {
+  var dec = document.getElementById("decisoes"); dec.textContent = "";
+  var todas = D.decisoes || [];
+  if (!API_OK) dec.appendChild(el("div", { class: "aviso", text: "API de respostas fora do ar: painel somente leitura (o resto continua atualizando)." }));
+  var estaDecidida = function (x) { return !!x.aplicada_em || x.estado === "decidida"; };
+  var pend = todas.filter(function (x) { return !estaDecidida(x); });
+  var feitas = todas.filter(estaDecidida);
+  pend.forEach(function (x) { dec.appendChild(cardDecisao(x)); });
+  if (!pend.length) dec.appendChild(el("div", { class: "vazio", text: "Nenhuma decisao pendente." }));
+  dec.appendChild(el("p", { class: "sub", text: "Decididas (" + feitas.length + ")" }));
+  var lista = el("div", { id: "decididas", class: "panel lst" });
+  if (!feitas.length) lista.appendChild(el("div", { class: "vazio", text: "Nenhuma ainda." }));
+  feitas.sort(function (a, b) { return sv(b.aplicada_em || b.data).localeCompare(sv(a.aplicada_em || a.data)); })
+    .forEach(function (x) { lista.appendChild(linhaDecidida(x)); });
+  dec.appendChild(lista);
+}
+function carregaRespostas() {
+  return fetch(API, { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(function (j) { RESP = j.respostas || {}; API_OK = true; }).catch(function () { RESP = {}; API_OK = false; });
+}
+
+function renderListas() {
+
+  var fe = document.getElementById("fechar"); fe.textContent = "";
+  (D.fechar_203 || []).forEach(function (x) {
+    var it = BY[x.numero];
+    var d = el("div", null, [el("div", null, [
+      el("span", { class: "tag ac" }, [issueLink(x.numero)]),
+      el("b", { text: " " + (it ? sv(it.titulo) : "") }),
+      el("span", { class: "tag " + (x.confirmado ? "ok" : "warn"), text: x.confirmado ? "confirmado" : "nao confirmado" })
+    ])]);
+    if (x.resposta) d.appendChild(el("p", null, [document.createTextNode("Resposta proposta: "), tx(x.resposta)]));
+    if (x.confirmacao) d.appendChild(el("p", { class: "rec" }, [document.createTextNode("Confirmacao: "), tx(x.confirmacao)]));
+    fe.appendChild(d);
+  });
+  if (!(D.fechar_203 || []).length) fe.appendChild(el("div", { class: "vazio", text: "Nada na lista." }));
+
+  var nf = document.getElementById("naofechar"); nf.textContent = "";
+  (D.nao_fechar_ainda || []).forEach(function (x) {
+    var it = BY[x.numero];
+    nf.appendChild(el("div", null, [
+      el("div", null, [el("span", { class: "tag ac" }, [issueLink(x.numero)]), el("b", { text: " " + (it ? sv(it.titulo) : "") })]),
+      el("p", { class: "rec" }, [tx(x.motivo)])
+    ]));
+  });
+  if (!(D.nao_fechar_ainda || []).length) nf.appendChild(el("div", { class: "vazio", text: "Nada na lista." }));
+}
+
+function renderTools() {
+  var box = document.getElementById("tools"); box.textContent = "";
+  var q = el("input", { type: "search", placeholder: "Buscar numero, titulo ou notas", value: F.q, "aria-label": "Buscar" });
+  q.addEventListener("input", function () { F.q = q.value; renderTable(); });
+  box.appendChild(q);
+  function sel(campo, label, opts) {
+    var s = el("select", { "aria-label": label }, [el("option", { value: "", text: label + ": todos" })]);
+    opts.forEach(function (o) { s.appendChild(el("option", { value: o[0], text: o[1] })); });
+    s.value = F[campo];
+    s.addEventListener("change", function () { F[campo] = s.value; F.extra = ""; renderBars(); renderKpis(); renderTable(); });
+    return s;
+  }
+  var ma = count(alvoDe), ms = count(function (i) { return sv(i.status); });
+  box.appendChild(sel("estado", "GitHub", [["aberta", "aberta"], ["fechada", "fechada"]]));
+  box.appendChild(sel("alvo", "Alvo", sortAlvos(Object.keys(ma)).map(function (k) { return [k, k + " (" + ma[k] + ")"]; })));
+  box.appendChild(sel("status", "Status", Object.keys(ms).sort().map(function (k) { return [k, k + " (" + ms[k] + ")"]; })));
+  box.appendChild(el("button", { class: "btn", type: "button", text: "Limpar", onclick: function () { F.q = F.plat = F.status = F.alvo = F.estado = F.extra = ""; renderAll(); } }));
+  var chips = document.getElementById("chips"); chips.textContent = "";
+  var mp = count(platDe);
+  Object.keys(mp).sort(function (a, b) { return mp[b] - mp[a]; }).forEach(function (k) {
+    chips.appendChild(el("button", { class: "chip" + (F.plat === k ? " on" : ""), type: "button", text: k + " " + mp[k], onclick: function () { F.plat = F.plat === k ? "" : k; renderTools(); renderBars(); renderTable(); } }));
+  });
+}
+
+var COLS = [["numero", "#"], ["titulo", "Titulo"], ["estado_github", "GitHub"], ["plataforma", "Plataforma"], ["tipo", "Tipo"], ["status", "Status"], ["alvo", "Alvo"], ["release", "Release"], ["resp", "Resposta nossa"]];
+function respTxt(i) { var r = i.ultima_resposta; if (!r) return "-"; return (r.nos ? "sim" : "nao") + (r.ultima_nossa ? " " + r.ultima_nossa : ""); }
+function sortVal(i, k) {
+  if (k === "numero") return i.numero || 0;
+  if (k === "alvo") { var a = alvoDe(i), x = ALVO_ORDEM.indexOf(a); return a === SEM_ALVO ? 99 : (x < 0 ? 50 : x); }
+  if (k === "resp") return respTxt(i);
+  return sv(i[k]).toLowerCase();
+}
+function filtrar() {
+  var q = F.q.trim().toLowerCase();
+  var r = ITENS.filter(function (i) {
+    if (F.estado && i.estado_github !== F.estado) return false;
+    if (F.alvo && alvoDe(i) !== F.alvo) return false;
+    if (F.status && sv(i.status) !== F.status) return false;
+    if (F.plat && platDe(i) !== F.plat) return false;
+    if (F.extra === "semresp" && !(aberta(i) && i.ultima_resposta && i.ultima_resposta.nos === false)) return false;
+    if (q) {
+      var hay = ("#" + i.numero + " " + sv(i.titulo) + " " + sv(i.notas)).toLowerCase();
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+  r.sort(function (a, b) {
+    var x = sortVal(a, F.sort), y = sortVal(b, F.sort);
+    var c = x < y ? -1 : x > y ? 1 : 0;
+    return (c || (a.numero - b.numero)) * F.dir;
+  });
+  return r;
+}
+var ABERTOS = {};
+function renderTable() {
+  var rows = filtrar();
+  document.getElementById("cnt").textContent = rows.length + " de " + ITENS.length + " issues";
+  var box = document.getElementById("tbl"); box.textContent = "";
+  var tr = el("tr");
+  COLS.forEach(function (c) {
+    var th = el("th", { class: F.sort === c[0] ? "s" : "", text: c[1] + (F.sort === c[0] ? (F.dir > 0 ? " ▲" : " ▼") : ""), onclick: function () {
+      if (F.sort === c[0]) F.dir = -F.dir; else { F.sort = c[0]; F.dir = c[0] === "numero" ? -1 : 1; }
+      renderTable();
+    } });
+    tr.appendChild(th);
+  });
+  box.appendChild(el("thead", null, [tr]));
+  var tb = el("tbody");
+  rows.forEach(function (i) {
+    var u = safeUrl(i.url);
+    var numCell = el("td", { class: "num" }, [u ? el("a", { href: u, target: "_blank", rel: "noopener", text: "#" + i.numero, onclick: function (e) { e.stopPropagation(); } }) : el("span", { text: "#" + i.numero })]);
+    var st = sv(i.status);
+    var stCls = /lancada|consertada/.test(st) ? "ok" : /precisa-log|aberta/.test(st) ? "warn" : "";
+    var row = el("tr", { class: "row" }, [
+      numCell,
+      el("td", { class: "tit" }, [tx(i.titulo)]),
+      el("td", null, [el("span", { class: "tag " + (aberta(i) ? "warn" : ""), text: sv(i.estado_github) })]),
+      el("td", { text: sv(i.plataforma) }),
+      el("td", { text: sv(i.tipo) }),
+      el("td", null, [el("span", { class: "tag " + stCls, text: st })]),
+      el("td", { text: alvoDe(i) === SEM_ALVO ? "-" : alvoDe(i) }),
+      el("td", { text: sv(i.release) }),
+      el("td", { text: respTxt(i) })
+    ]);
+    tb.appendChild(row);
+    var det = null;
+    row.addEventListener("click", function () {
+      if (det) { det.remove(); det = null; delete ABERTOS[i.numero]; return; }
+      det = detalhe(i); row.after(det); ABERTOS[i.numero] = 1;
+    });
+    if (ABERTOS[i.numero]) { det = detalhe(i); tb.appendChild(det); }
+  });
+  box.appendChild(tb);
+  if (!rows.length) { /* tabela vazia: mensagem no contador */ }
+}
+function detalhe(i) {
+  var dl = el("dl");
+  function add(k, v) { if (v) { dl.appendChild(el("dt", { text: k })); dl.appendChild(el("dd", null, [tx(v)])); } }
+  add("Notas", sv(i.notas));
+  add("Proximo passo", sv(i.proximo_passo));
+  add("Conserto", Array.isArray(i.conserto) ? i.conserto.join("\n") : sv(i.conserto));
+  var r = i.ultima_resposta;
+  if (r) add("Ultima resposta", "ultimo comentario por " + sv(r.ultimo_comentario_por) + " em " + sv(r.data) + "; ultima nossa: " + sv(r.ultima_nossa || "nunca"));
+  add("Criada em", sv(i.criada_em));
+  if (!dl.childNodes.length) add("Detalhes", "(sem notas)");
+  return el("tr", { class: "det" }, [el("td", { colspan: String(COLS.length) }, [dl])]);
+}
+
+function renderAll() { renderKpis(); renderBars(); renderTools(); renderTable(); }
+
+// AUDITORIA: quem validou o que, em que ref, com que resultado e onde esta a
+// prova (validacoes em mapa.json; ver docs/issues/MAPA.md, "Como atualizar").
+var RES_TAG = { passou: "ok", falhou: "bad", inconclusivo: "warn", "nao-reproduziu": "warn", pendente: "" };
+function renderAuditoria() {
+  var box = document.getElementById("auditoria"); box.textContent = "";
+  var vs = (Array.isArray(D.validacoes) ? D.validacoes : []).slice().sort(function (a, b) { return sv(b.data).localeCompare(sv(a.data)); });
+  if (!vs.length) { box.appendChild(el("div", { class: "vazio", text: "Nenhuma validacao registrada." })); return; }
+  var cont = {}; vs.forEach(function (v) { cont[v.resultado] = (cont[v.resultado] || 0) + 1; });
+  box.appendChild(el("div", { class: "cnt", text: vs.length + " validacoes: " + Object.keys(cont).map(function (k) { return cont[k] + " " + k; }).join(", ") }));
+  var t = el("table");
+  t.appendChild(el("tr", null, ["Data", "Quem", "O que", "Issues", "Ref", "Resultado", "Evidencia"].map(function (h) { return el("th", { text: h }); })));
+  vs.forEach(function (v) {
+    var iss = el("td"); (v.issues || []).forEach(function (n) { iss.appendChild(el("span", { class: "tag ac" }, [issueLink(n)])); });
+    t.appendChild(el("tr", null, [
+      el("td", { text: sv(v.data) }), el("td", null, [tx(v.quem)]), el("td", null, [tx(v.o_que)]), iss,
+      el("td", null, [tx(v.ref)]),
+      el("td", null, [el("span", { class: "tag " + (RES_TAG[v.resultado] || ""), text: sv(v.resultado) })]),
+      el("td", null, [tx(v.evidencia)])
+    ]));
+  });
+  // a caixa de scroll e reaproveitada entre recargas, senao o scroll dela se perde
+  var s = document.getElementById("scroll-auditoria");
+  if (!s) { s = el("div", { class: "scroll", id: "scroll-auditoria" }); box.appendChild(s); }
+  s.textContent = ""; s.appendChild(t);
+}
+function renderFora() {
+  var box = document.getElementById("fora"); box.textContent = "";
+  var fs = Array.isArray(D.fora_do_github) ? D.fora_do_github : [];
+  if (!fs.length) { box.appendChild(el("div", { class: "vazio", text: "Nada fora do GitHub." })); return; }
+  fs.slice().reverse().forEach(function (o) {
+    var d = el("div", { class: "it" }, [tx(o.titulo, "b")]);
+    var tags = el("div");
+    [o.plataforma, o.status, o.release && o.release !== "-" ? "release " + o.release : ""].forEach(function (x) { if (x) tags.appendChild(el("span", { class: "tag", text: x })); });
+    d.appendChild(tags);
+    if (o.proximo_passo) d.appendChild(el("p", { class: "rec" }, [document.createTextNode("Proximo passo: "), tx(o.proximo_passo)]));
+    if (o.notas) d.appendChild(el("p", null, [tx(o.notas)]));
+    if ((o.conserto || []).length) d.appendChild(el("p", null, [document.createTextNode("Conserto: "), tx(o.conserto.join("; "))]));
+    box.appendChild(d);
+  });
+}
+
+function esqueleto() {
+  var app = document.getElementById("app");
+  app.textContent = "";
+  function sec(titulo, id, cls) { app.appendChild(el("h2", { text: titulo })); var b = el("div", { id: id, class: cls || "" }); app.appendChild(b); return b; }
+  sec("Resumo", "kpis", "kpis");
+  sec("Distribuicao", "bars", "grid2");
+  sec("Roadmap por release", "roadmap", "cards");
+  app.appendChild(el("h2", { text: "Decisoes do dono" })); app.appendChild(el("div", { id: "decisoes", class: "panel lst" }));
+  app.appendChild(el("div", { class: "grid2" }, [
+    el("div", null, [el("h2", { text: "Fechar com a 2.0.3" }), el("div", { id: "fechar", class: "panel lst" })]),
+    el("div", null, [el("h2", { text: "Nao fechar ainda" }), el("div", { id: "naofechar", class: "panel lst" })])
+  ]));
+  app.appendChild(el("h2", { text: "Auditoria de validacoes" })); app.appendChild(el("div", { id: "auditoria" }));
+  app.appendChild(el("h2", { text: "Fora do GitHub (Reddit e outros)" })); app.appendChild(el("div", { id: "fora", class: "panel lst" }));
+  app.appendChild(el("h2", { id: "tabela", text: "Todas as issues" }));
+  app.appendChild(el("div", { id: "tools", class: "tools" }));
+  app.appendChild(el("div", { id: "chips", class: "tools" }));
+  app.appendChild(el("div", { id: "cnt", class: "cnt" }));
+  app.appendChild(el("div", { class: "scroll", id: "scroll-tabela" }, [el("table", { id: "tbl" })]));
+}
+function meta() {
+  var m = (D && D.meta) || {}, partes = [];
+  if (m.commit) partes.push("commit " + m.commit + (m.assunto ? " - " + m.assunto : ""));
+  if (m.branch) partes.push("branch " + m.branch);
+  if (m.mapa_atualizado_em) partes.push("mapa de " + m.mapa_atualizado_em);
+  if (m.gerado_em) partes.push("gerado em " + m.gerado_em.replace("T", " ").slice(0, 19));
+  document.getElementById("meta").textContent = partes.join("  |  ") || "sem metadados";
+}
+function aplicaDados(d) {
+  D = d; BY = {}; ITENS = Array.isArray(d.itens) ? d.itens : [];
+  ITENS.forEach(function (i) { BY[i.numero] = i; });
+  meta();
+  renderAll(); renderRoadmap(); renderListas(); renderAuditoria(); renderFora();
+  return carregaRespostas().then(renderDecisoes);
+}
+function init(d) { ASSINATURA = JSON.stringify(d); esqueleto(); return aplicaDados(d); }
+
+// Recarrega sem perder o que o dono esta digitando nem o scroll.
+// fn pode devolver promise: a restauracao so acontece depois do redesenho
+// assincrono dos cartoes de decisao.
+var EV = "scroll wheel click keydown input touchstart";
+function preserva(fn) {
+  var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+  var caixas = [].slice.call(document.querySelectorAll(".scroll")).map(function (c) { return [c.id, c.scrollTop]; });
+  var a = document.activeElement;
+  var id = a && a.tagName === "TEXTAREA" ? a.getAttribute("data-dec") : null;
+  var pos = a && a.selectionStart;
+  var mexidos = false, ouve = function () { mexidos = true; };
+  EV.split(" ").forEach(function (ev) { window.addEventListener(ev, ouve, true); });
+  var solta = function () { EV.split(" ").forEach(function (ev) { window.removeEventListener(ev, ouve, true); }); };
+  return Promise.resolve(fn()).then(function () {
+    solta();
+    if (mexidos) return;   // o dono mexeu durante a espera: nao rouba o foco nem o scroll
+    // foco primeiro e sem rolar: senao o foco puxa a pagina para o textarea
+    if (id) {
+      var t = document.querySelector('textarea[data-dec="' + id.replace(/"/g, "") + '"]');
+      if (t) {
+        try { t.focus({ preventScroll: true }); } catch (e) { t.focus(); }
+        try { t.setSelectionRange(pos, pos); } catch (e) { /* sem cursor */ }
+      }
+    }
+    caixas.forEach(function (p) {
+      var c = document.getElementById(p[0]);
+      if (c) c.scrollTop = p[1];
+    });
+    window.scrollTo(0, y);
+  }, function (e) { solta(); throw e; });
+}
+function relogio() {
+  var s = Math.max(0, Math.round((Date.now() - ULTIMA) / 1000)), m = Math.floor(s / 60);
+  document.getElementById("atualiz").textContent = m > 0 ? "atualizado há " + m + " min" : "atualizado há " + s + " s";
+}
+function buscaMapa() {
+  return fetch("data.json", { cache: "no-store" }).then(function (r) {
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return r.json();
+  });
+}
+function recarrega() {
+  return preserva(function () {
+    return buscaMapa().then(function (d) {
+      if (JSON.stringify(d) !== ASSINATURA) { ASSINATURA = JSON.stringify(d); return aplicaDados(d); }
+      // mapa igual, mas as respostas podem ter vindo de outra aba (ou a API ter voltado)
+      return carregaRespostas().then(renderDecisoes);
+    });
+  }).then(function () {
+    ULTIMA = Date.now(); relogio();
+  }).catch(function (e) {
+    ULTIMA = Date.now(); relogio();
+    var av = document.getElementById("falha");
+    if (av) { av.textContent = "ultima recarga falhou: " + e.message; av.hidden = false; }
+  });
+}
+function ligaRelogio() {
+  relogio();
+  setInterval(relogio, 1000);
+  setInterval(recarrega, 30000);   // tempo real: data.json + /api/respostas a cada 30 s
+}
+buscaMapa().then(init).then(ligaRelogio).catch(function (e) {
+  document.getElementById("meta").textContent = "Erro ao carregar data.json: " + e.message + " (rode gerar.py e sirva a pasta site/ por HTTP)";
+});
+</script>
+</body>
+</html>

@@ -258,6 +258,13 @@ def contexto(txt, i):
 # "nao sei o que e": sem esta lista a ferramenta nao pode virar teste, e sem
 # virar teste ela nao impede a proxima regressao.
 IGNORAR = {
+    "daqui em diante",  # episodios.c nomeModo: so no log [visto] menu, nunca rotulo
+    # gpunivel.c: motivos passados a aplicar()/decidir(), que so fazem printf do
+    # log "[gpu-nivel]"; nunca chegam a tela.
+    "GPU fraca: referencia nao termina",
+    "compara nivel salvo com efeitos completos",
+    "nao desce de novo nesta TV",
+    "sem ganho significativo",
     # RC 1.8 triage, each checked in the source:
     # - sync.c NOME[] are the labels of the "[sync] etapas" LOG line; "ver" is a
     #   field name in the jellyfin conta file; "forcé" is a pattern legref.c

@@ -209,13 +209,20 @@ static void guardar(char *dest, size_t n, const char *v) {
   if (!v || !*v) { dest[0] = 0; return; }
   if (!strcasecmp(v, "off") || !strcasecmp(v, "device") ||
       !strcasecmp(v, "default") || !strcasecmp(v, "original") ||
-      !strcasecmp(v, "system") || !strcmp(v, "*")) { dest[0] = 0; return; }
+      !strcasecmp(v, "system") || !strcmp(v, "*") ||
+      // #378: "forced" e o "Usar legendas forcadas" do app oficial, nao um
+      // idioma; como codigo nao casa com faixa nenhuma e "Da conta" ficava sem
+      // legenda. Vale como conta sem idioma (a escolha a mao decide).
+      !strcasecmp(v, "forced") || !strcasecmp(v, "force")) { dest[0] = 0; return; }
   snprintf(dest, n, "%s", v);
 }
 
 void ling_conta_legenda(const char *v)  { guardar(contaLeg,  sizeof contaLeg,  v); }
 void ling_conta_legenda2(const char *v) { guardar(contaLeg2, sizeof contaLeg2, v); }
 void ling_conta_audio(const char *v)    { guardar(contaAud,  sizeof contaAud,  v); }
+const char *ling_conta_legenda_valor(void)  { return contaLeg; }
+const char *ling_conta_legenda2_valor(void) { return contaLeg2; }
+const char *ling_conta_audio_valor(void)    { return contaAud; }
 // A escolha LOCAL preserva o "*": "Todas" e uma decisao ("nao filtre"), nao a
 // ausencia de decisao. Tratar as duas como vazio fazia escolher "Todas" cair de
 // volta na preferencia da conta — ou seja, o ajuste nao obedecia.

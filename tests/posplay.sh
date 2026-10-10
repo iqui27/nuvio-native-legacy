@@ -5,7 +5,7 @@ sources=()
 for source in src/*.c src/dts/*.c; do
   if [ "$source" != src/main.c ]; then sources+=("$source"); fi
 done
-flags=()
+flags=(-DNV_SHOT_HOOKS)
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 # Liga o app inteiro menos o main, como tests/player.sh: posplay.c fala com
 # catalogo, extras e video. Nenhuma janela e aberta — posplay_atualizar nao

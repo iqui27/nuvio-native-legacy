@@ -175,8 +175,24 @@ static char ultimoPush[2048];
 // Modo "troca": a RPC das colecoes do perfil 1 fica presa ate a pessoa trocar
 // para o 2 — o ciclo do 1 termina com o 2 ja ativo.
 static int segurarCol, puxandoCol;
+// #378: modo "legconta" — a conta devolve um blob de ajustes com o idioma da
+// legenda, e o que sync.c faz com ele fica anotado (stubs mais abaixo).
+static int modoBlob, blobsAplicados;
+static char idiomasConta[512];
+static const char *legContaValor = "en";   // valor da legenda no proximo blob
+static int idiomasChamadas;
 char *sessao_rpc(const char *funcao, const char *corpo, int *st) {
   *st = 200;
+  // modoBlob 2: so o perfil 1 tem blob na conta; o 2 nunca salvou ajustes.
+  if (modoBlob == 2 && !strcmp(funcao, "sync_pull_profile_settings_blob") &&
+      strstr(corpo, "\"p_profile_id\":2"))
+    return strdup("[]");
+  if (modoBlob && !strcmp(funcao, "sync_pull_profile_settings_blob"))
+  { char b[256];
+    snprintf(b, sizeof b, "[{\"settings_json\":{\"features\":{\"player_settings\":{"
+             "\"subtitle_preferred_language\":{\"type\":\"string\",\"value\":\"%s\"}}}}}]",
+             legContaValor);
+    return strdup(b); }
   if (modoAddons && !strcmp(funcao, "sync_push_addons")) {
     pthread_mutex_lock(&trava);
     snprintf(ultimoPush, sizeof ultimoPush, "%s", corpo);
@@ -276,7 +292,11 @@ int  addons_exportar(AddonRemoto *s, int m) {
 }
 void agenda_esquecer(void) {}
 void lembrete_esquecer_todos(void) {}
-int  ajustes_aplicar_blob(const char *j) { (void)j; return 0; }
+int  ajustes_aplicar_blob(const char *j) { (void)j; blobsAplicados++; return 0; }
+void ajustes_idiomas_da_conta(const char *b) {
+  idiomasChamadas++;
+  snprintf(idiomasConta, sizeof idiomasConta, "%s", b ? b : "");
+}
 void ajustes_definir_ocultar_nao_lancados(int l) { (void)l; }
 int  ajustes_mesclar_blob(const char *b, char **s) { (void)b; *s = NULL; return 0; }
 void ajustes_tmdb_idioma_relatar(const char *b) { (void)b; }
@@ -491,6 +511,59 @@ int main(int argc, char **argv) {
   int remAntes, rpcAntes;
 
   setvbuf(stdout, NULL, _IOLBF, 0);
+  if (argc > 1 && !strcmp(argv[1], "legconta-troca")) {
+    // Revisao P1: troca do 1 para o 2 com o ciclo do 1 no ar. O blob do 1
+    // ("en") chega DEPOIS da troca (sync_reaplicar_ajustes ja o tinha
+    // soltado), o ciclo do 1 e descartado, e o 2 nao tem blob na conta. Os
+    // idiomas do 1 nao podem virar "Da conta" do 2.
+    printf("-- sessao: troca 1 -> 2 com o blob do 1 chegando depois\n");
+    modoBlob = 2;
+    escolher(1);
+    segurarCol = 1;
+    sync_iniciar();
+    pthread_mutex_lock(&trava);
+    while (!puxandoCol) pthread_cond_wait(&sinal, &trava);
+    pthread_mutex_unlock(&trava);
+    escolher(2);
+    sync_trocar_perfil(1);
+    sync_iniciar();
+    pthread_mutex_lock(&trava);
+    segurarCol = 0;
+    pthread_cond_broadcast(&sinal);
+    pthread_mutex_unlock(&trava);
+    ateTerminar();
+    ateTerminar();
+    ciclo();                           // mais um ciclo do 2, ainda sem blob
+    confere("idiomas do perfil 1 nao vazam para o 2", !strstr(idiomasConta, "\"en\""));
+    printf("%s\n", falhas ? "FALHOU" : "PASSOU");
+    return falhas ? 1 : 0;
+  }
+  if (argc > 1 && !strcmp(argv[1], "legconta")) {
+    // #378: uma mudanca anterior em Ajustes deixou a protecao gravada. O blob
+    // nao e aplicado (certo), mas os idiomas da conta tem de chegar a
+    // linguas.c: e deles que "Da conta" vive, e eles nao sobrescrevem escolha
+    // local nenhuma.
+    printf("-- sessao: ajustes locais protegidos, conta com legenda en\n");
+    dados_gravar("ajustes-locais.txt", "1\n");
+    modoBlob = 1;
+    escolher(1);
+    ciclo();
+    confere("blob protegido nao aplicado", blobsAplicados == 0);
+    confere("idiomas da conta entregues mesmo protegido",
+            strstr(idiomasConta, "subtitle_preferred_language") && strstr(idiomasConta, "\"en\""));
+    // Revisao P2: troca de perfil solta o blob (sync_reaplicar_ajustes) e o
+    // do perfil novo, do MESMO tamanho, tende a cair no mesmo endereco. A
+    // deteccao de "blob novo" pelo ponteiro pulava os idiomas dele.
+    { sync_reaplicar_ajustes();
+      confere("troca de perfil limpa os idiomas da conta", idiomasChamadas >= 2 && !idiomasConta[0]);
+      sync_proteger_ajustes_locais();
+      legContaValor = "pt";
+      ciclo();
+      confere("blob do perfil novo entrega os idiomas dele",
+              strstr(idiomasConta, "\"pt\"") != NULL); }
+    printf("%s\n", falhas ? "FALHOU" : "PASSOU");
+    return falhas ? 1 : 0;
+  }
   if (argc > 1 && !strncmp(argv[1], "addons-", 7)) return testePersistencia(argv[1]);
   if (argc > 1 && !strcmp(argv[1], "addons")) {
     modoAddons = 1; escolher(1); sync_sujar_addons(); sync_iniciar(); ateTerminar();
@@ -629,3 +702,5 @@ int main(int argc, char **argv) {
 
 // sync.c 2.0 chama no logout; faltava aqui e o teste nao ligava (igual a contaoffline.c)
 void psparede_esquecer(void) {}
+
+__attribute__((weak)) int addons_perfil_da_lista(void) { return 0; }

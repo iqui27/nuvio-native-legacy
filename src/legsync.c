@@ -32,6 +32,7 @@ static struct {
   int primTipo;                   // 0 nenhuma, 1 externa, 2 embutida/nativa
   uint64_t primToken;
   unsigned primGer;
+  int falhaDownload;
   int primFase;                   // 0 baixando, 1 pronta e completa, 2 falhou/incompleta
   LegendaDocumento *primDoc;
   char primIdioma[24];
@@ -71,8 +72,8 @@ static struct {
 } L = { .querModo = -1 };
 #define LS_AUTO_TETO_MS 45000u
 static LegSyncTrocador trocador;
-static int autoLigado = 1;        // so os testes do menu manual o desligam
-void legsync_teste_auto(int ligado) { pthread_mutex_lock(&M); autoLigado = ligado; pthread_mutex_unlock(&M); }
+static int autoLigado = 1;
+void legsync_teste_auto(int ligado) { legsync_auto_habilitar(ligado); }
 
 static uint64_t fnv(const char *s) {
   uint64_t h = UINT64_C(14695981039346656037);
@@ -109,6 +110,22 @@ static void soltarSegunda(void) {
   legenda2_definir_offset_auto(0);
 }
 
+void legsync_auto_habilitar(int ligado) {
+  pthread_mutex_lock(&M);
+  if (autoLigado && !ligado && L.criado) {
+    if (L.autoFase == 1 || (L.segOrig && !L.solicitou && L.querModo < 0)) {
+      legref_cancelar(L.ref); L.refPedido = 0;
+      autosync_cancelar(L.sync, 0);
+      zerarAnalise(); pararAudio();
+    }
+    autosync_cancelar(L.sync, 1); soltarSegunda();
+    L.autoFase = 0; L.autoEtapa = 9; L.autoPend = 0;
+    L.autoTroca = L.autoVolta = 0; L.autoTrocou = 0; L.autoNome[0] = 0;
+  }
+  autoLigado = ligado != 0;
+  pthread_mutex_unlock(&M);
+}
+
 static void novaSessao(const char *url, int manterPrimaria) {
   L.sessao++;
   soltarSegunda();
@@ -126,7 +143,7 @@ static void novaSessao(const char *url, int manterPrimaria) {
   snprintf(L.url, sizeof L.url, "%s", url ? url : "");
   L.urlHash = fnv(L.url);
   if (!manterPrimaria) {
-    L.primToken++; L.primTipo = 0; L.primFase = 0; L.primGer = 0;
+    L.primToken++; L.primTipo = 0; L.primFase = 0; L.falhaDownload = 0; L.primGer = 0;
     legenda_documento_liberar(L.primDoc); L.primDoc = NULL; L.primIdioma[0] = 0;
   }
 }
@@ -187,6 +204,7 @@ static void aoBaixar(const char *corpo, unsigned g, int vigente, void *u) {
   pthread_mutex_lock(&M);
   if (L.criado && m->token == L.primToken) {
     velho = L.primDoc; L.primDoc = NULL;
+    L.falhaDownload = !corpo; // recusa do parser de análise não é falha da rede
     if (doc && (legenda_documento_info(doc)->flags & LEGENDA_DOC_COMPLETO)) {
       L.primDoc = legenda_documento_reter(doc); L.primGer = g; L.primFase = 1;
       if (m->sessao == L.sessao) autosync_selecionar(L.sync, 0, doc);
@@ -211,7 +229,7 @@ void legsync_primaria_externa(const char *url, const char *idioma, const char *o
     snprintf(m->info.origem, sizeof m->info.origem, "%s", origem && *origem ? origem : "Addon");
     // Identidade opaca: hash da URL, nunca a URL (pode ser assinada).
     snprintf(m->info.identidade, sizeof m->info.identidade, "addon:%016llx", (unsigned long long)h);
-    L.primTipo = 1; L.primFase = 0; L.primGer = 0;
+    L.primTipo = 1; L.primFase = 0; L.falhaDownload = 0; L.primGer = 0;
     velho = L.primDoc; L.primDoc = NULL;
     snprintf(L.primIdioma, sizeof L.primIdioma, "%s", m->info.idioma);
     autosync_selecionar(L.sync, 0, NULL);
@@ -242,7 +260,7 @@ void legsync_primaria_externa(const char *url, const char *idioma, const char *o
 void legsync_primaria_outra(int embutida) {
   LegendaDocumento *velho;
   pthread_mutex_lock(&M);
-  L.primToken++; L.primTipo = embutida ? 2 : 0; L.primFase = 0; L.primGer = 0;
+  L.primToken++; L.primTipo = embutida ? 2 : 0; L.primFase = 0; L.falhaDownload = 0; L.primGer = 0;
   velho = L.primDoc; L.primDoc = NULL;
   if (L.criado) {
     autosync_selecionar(L.sync, 0, NULL);
@@ -439,7 +457,7 @@ static void autoPasso(void) {
   e = autosync_estado(L.sync, 0);
   if (L.autoEtapa == 1) {
     if (L.solicitou && e.estado == AUTOSYNC_ACCEPTED) { L.autoFase = 2; L.autoEtapa = 9; return; }
-    if (L.solicitou && e.estado == AUTOSYNC_REJECTED) { autoFalhou(0); return; }
+    if (L.solicitou && e.estado == AUTOSYNC_REJECTED) { autoFalhou(e.referenciaInvalida); return; }
     if (!L.refDoc && !L.refPedido && L.refMotivo != LEGREF_OK && L.refMotivo != LEGREF_PARADO) {
       // Faixa de referencia ruim (sem duracao/incompleta): outra faixa do arquivo pode servir.
       if ((L.refMotivo == LEGREF_SEM_DURACAO || L.refMotivo == LEGREF_INCOMPLETO) &&
@@ -619,9 +637,9 @@ void legsync_passo(const char *url, double pos, double folga, int sensivel, unsi
   } else L.autoDesde = 0;
   // Competicao: seek/buffer pausa a leitura; buffer de video curto tambem.
   autoPasso();
-  segundaPasso(sensivel);
-  if (L.autoFase != L.autoLog) {
-    L.autoLog = L.autoFase;
+  if (autoLigado) segundaPasso(sensivel);
+  if (L.autoFase * 3 + L.primFase != L.autoLog) {
+    L.autoLog = L.autoFase * 3 + L.primFase;
     printf("[legsync] automatico: %s (etapa %d, legenda %s, referencia %s)\n",
            L.autoFase == 1 ? "sincronizando" : L.autoFase == 2 ? "sincronizada" : L.autoFase == 3 ? "nao deu" : "sem plano",
            L.autoEtapa, L.primFase == 0 ? "baixando" : L.primFase == 2 ? "incompleta" : "baixada",
@@ -710,6 +728,7 @@ LegSyncVisao legsync_visao(int slot) {
   if (!L.criado) { v.motivo = LEGSYNC_M_SEM_EXTERNA; goto fim; }
   snprintf(v.idiomaRef, sizeof v.idiomaRef, "%s", L.idiomaRef);
   v.autoFase = L.autoFase; v.autoTrocou = L.autoTrocou;
+  v.autoDesligado = !autoLigado; v.falhaDownload = L.falhaDownload;
   snprintf(v.autoNome, sizeof v.autoNome, "%s", L.autoNome);
   // F06: so com o ajuste ligado o audio aparece (oferecido ou com o motivo).
   v.motivoAudio = L.audLigado ? motivoAudio() : LEGSYNC_M_NENHUM;

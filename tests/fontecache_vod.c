@@ -14,6 +14,8 @@ void ondever_pedir(const char *id, int series, long tmdb) {
   (void)id; (void)series; (void)tmdb;
 }
 
+int dados_gravar_leve(const char *nome, const char *conteudo) { (void)nome; (void)conteudo; return 1; }
+
 static _Atomic Uint32 relogio = 100000;
 static _Atomic int pedidos;
 static const char *conta = "conta-a";

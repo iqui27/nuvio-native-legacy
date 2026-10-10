@@ -35,7 +35,11 @@ with tempfile.TemporaryDirectory(prefix="nuvio-audiosync-", dir=os.environ.get("
     deps.append(jar("androidx.annotation", "annotation-jvm", "1.6.0"))
     deps.append(aar_jar("androidx.annotation", "annotation-experimental", "1.4.0", tmp))
     deps.append(jar("com.google.guava", "guava", "33.3.1-android"))
-    sources = [kt / "NvPlayer.kt", kt / "ParaleloDataSource.kt", kt / "PassivoMedidor.kt",
+    # A Activity so devolve o foco neste teste de player; SDL nao e necessario.
+    activity = tmp / "NuvioActivity.kt"
+    activity.write_text("package space.nuvio.nativelegacy\n"
+                        "class NuvioActivity : android.app.Activity() { fun devolverFoco() {} }\n")
+    sources = [activity, kt / "RecriaHdr.kt", kt / "NvPlayer.kt", kt / "ParaleloDataSource.kt", kt / "PassivoMedidor.kt",
                kt / "AudioSyncTap.kt", kt / "AudioSyncSink.kt",
                # F07: NvPlayer layers the seek cache and the gain processor
                kt / "CacheSessao.kt", kt / "CacheMidia.kt", kt / "GanhoMath.kt", kt / "GanhoAudioProcessor.kt"]

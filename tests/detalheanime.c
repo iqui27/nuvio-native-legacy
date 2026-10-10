@@ -91,6 +91,12 @@ static const char *fakeIdioma = "pt-BR";
 const char *ajustes_tmdb_idioma(void)      { return fakeIdioma; }
 const char *ajustes_tmdb_chave(void)       { return ""; }
 void  fil_gravar_registro(void)            { }
+int   fil_lista_e_deste_perfil(int p)       { (void)p; return 1; }
+unsigned fil_perfil_geracao(void)          { return 0; }
+FilPassada fil_passada_ler(void)          { FilPassada p = {0, 0}; return p; }
+int   fil_passada_valida(const FilPassada *p) { (void)p; return 1; }
+void  fil_registrar_de(const FilPassada *p, const char *c, const char *t, const char *a, const char *k, int n) { (void)p; (void)c; (void)t; (void)a; (void)k; (void)n; }
+void  fil_registrar_se_couber_de(const FilPassada *p, const char *c, const char *t, const char *a, const char *k) { (void)p; (void)c; (void)t; (void)a; (void)k; }
 int   fil_podar_catalogos(const char *const *ids, const char *const *bases, int n,
                           int perfilDaLista) {
   (void)ids; (void)bases; (void)n; (void)perfilDaLista; return 0; }
@@ -231,6 +237,7 @@ static void rota(const char *trecho, const char *resp) {
   rotas[nRotas].trecho = trecho; rotas[nRotas].resp = resp; nRotas++;
 }
 
+static void (*caudaB)(void);
 char *rede_baixar(const char *u, int t) {
   int r;
   (void)t;
@@ -250,6 +257,9 @@ char *rede_baixar(const char *u, int t) {
   if (strstr(u, "addon.test/SEGREDO/meta/") && addonResp &&
       strstr(u, addonTipo)) return strdup(addonResp);
   // TMDB (#176): so o que o teste liga em `tmdbResp*`.
+  // Caso 31: a cauda de enriquecimento do fio A pede o /find; nesse meio o
+  // fio B (mesmo titulo, reaberto) publica 72 episodios em 3 temporadas.
+  if (strstr(u, "themoviedb.org/3/find/tt0000373") && caudaB) caudaB();
   if (strstr(u, "themoviedb.org/3/find/")) return tmdbFind ? strdup(tmdbFind) : NULL;
   if (strstr(u, "themoviedb.org/3/tv/555/season/1?") && tmdbTemp1) return strdup(tmdbTemp1);
   if (strstr(u, "themoviedb.org/3/tv/555/season/")) return strdup("{\"episodes\":[]}");
@@ -272,6 +282,36 @@ static void limparCacheMeta(void) {
   int i;
   for (i = 0; i < META_CACHE_N; i++) { free(metaCache[i].corpo); metaCache[i].corpo = NULL; }
   metaNegLimpar();
+}
+
+// /meta de serie com `nt` temporadas de cont[t] episodios (ids "<tt>:T:E"),
+// no formato que o Nuvio e o Cinemeta mandam, so com os campos que o parser le.
+static void corpoSerie(char *b, size_t n, const char *tt, const int *cont, int nt) {
+  size_t k = (size_t)snprintf(b, n, "{\"meta\":{\"id\":\"%s\",\"type\":\"series\","
+                              "\"name\":\"Serie\",\"videos\":[", tt);
+  int t, e, prim = 1;
+  for (t = 0; t < nt; t++)
+    for (e = 1; e <= cont[t] && k < n; e++, prim = 0)
+      k += (size_t)snprintf(b + k, n - k, "%s{\"id\":\"%s:%d:%d\",\"season\":%d,\"episode\":%d,"
+                            "\"name\":\"E%d\"}", prim ? "" : ",", tt, t + 1, e, t + 1, e, e);
+  if (k < n) snprintf(b + k, n - k, "]}}");
+  assert(k + 4 < n);
+}
+
+// O fio B do caso 31: publica a lista e as abas T1-T3 do mesmo titulo, como
+// buscarEps faria (cat_definir_episodios e cat_atualizar_item).
+static void publicaB(void) {
+  static CatEp eps[72];
+  CatItem it;
+  int i;
+  for (i = 0; i < 72; i++) {
+    memset(&eps[i], 0, sizeof eps[i]);
+    eps[i].temporada = i / 24 + 1; eps[i].episodio = i % 24 + 1;
+  }
+  cat_definir_episodios(0, eps, 72);
+  assert(cat_copiar_item(0, &it));
+  it.nTemporadas = 3; it.temporadas[0] = 1; it.temporadas[1] = 2; it.temporadas[2] = 3;
+  cat_atualizar_item(0, &it);
 }
 
 static void catalogoCom(const char *imdb, const char *tipo, const char *titulo) {
@@ -1162,6 +1202,50 @@ int main(void) {
     nFake = 0; nRotas = 0; addonMeta = 0;
     limparCacheMeta();
   }
+  // 30) #372: AS ABAS DE TEMPORADA SAEM DA LISTA PUBLICADA. Log 2.0.3 (webOS):
+  //   [desc] The Apothecary Diaries: AIOMetadata tem 72 episodios contra 60 do
+  //   Cinemeta; usando a lista do addon ... 1 temporadas
+  // A ficha do Nuvio (TMDB) junta tudo na temporada 1; o addon tem 1, 2 e 3.
+  // A lista do addon era publicada, mas as abas vinham do corpo do Nuvio: uma
+  // aba so, e detail.c so mostra episodio de temporada que tem aba.
+  { static char nuvio60[16384], addon72[16384];
+    int s2 = 0, i;
+    corpoSerie(nuvio60, sizeof nuvio60, "tt0000372", (const int[]){60}, 1);
+    corpoSerie(addon72, sizeof addon72, "tt0000372", (const int[]){24, 24, 24}, 3);
+    limparCacheMeta(); nRotas = 0; nFake = 0; metaprov_zerar_pausa();
+    rota("catalog.nuvio.tv", nuvio60);
+    rota("v3-cinemeta", NULL);
+    addonMeta = 1; addonResp = addon72; addonTipo = "/series/";
+    catalogoCom("tt0000372", "series", "The Apothecary Diaries");
+    abrir();
+    assert(cat_n_episodios(0) == 72);
+    assert(cat_item(0)->nTemporadas == 3);
+    assert(cat_item(0)->temporadas[0] == 1 && cat_item(0)->temporadas[2] == 3);
+    for (i = 0; i < cat_n_episodios(0); i++) if (cat_episodio(0, i)->temporada == 2) s2++;
+    assert(s2 == 24);
+    puts("ok  #372: abas de temporada da lista publicada (addon 3 temporadas sobre Nuvio 1)");
+    addonMeta = 0; addonResp = NULL; nRotas = 0; limparCacheMeta(); }
+
+  // 31) Codex P2 (#372): A CAUDA DO FIO VELHO NAO DEVOLVE AS ABAS VELHAS. O fio
+  //   A publica T1 e solta fioEpVivo para enfeitar (elenco, /find); o titulo
+  //   reaberto (fio B) publica T1-T3; a cauda de A republicava o `edit` inteiro
+  //   salvo antes e o item voltava a 1 aba com 72 episodios: T2/T3 escondidos.
+  { static char nuvio60b[16384];
+    corpoSerie(nuvio60b, sizeof nuvio60b, "tt0000373", (const int[]){60}, 1);
+    limparCacheMeta(); nRotas = 0; nFake = 0; metaprov_zerar_pausa();
+    rota("catalog.nuvio.tv", nuvio60b);
+    rota("v3-cinemeta", NULL);
+    addonMeta = 0;
+    catalogoCom("tt0000373", "series", "Fio Velho");
+    caudaB = publicaB;
+    abrir();
+    caudaB = NULL;
+    assert(cat_n_episodios(0) == 72);
+    assert(cat_item(0)->nTemporadas == 3);
+    assert(cat_item(0)->temporadas[2] == 3);
+    puts("ok  #372: cauda do fio velho nao repoe as abas que o fio novo trocou");
+    nRotas = 0; limparCacheMeta(); }
+
   puts("detalheanime: tudo ok");
   return 0;
 }

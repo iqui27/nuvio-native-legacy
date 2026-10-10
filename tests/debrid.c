@@ -259,6 +259,7 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
 
 // o parser puxa badges; duble
 unsigned long long badges_detectar(const char *t) { (void)t; return 0; }
+unsigned long long badges_bit(const char *id) { (void)id; return 0; }
 
 // ---------------------------------------------------------------- testes
 

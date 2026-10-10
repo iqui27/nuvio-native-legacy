@@ -9,6 +9,7 @@
 #include "player.h"
 #include "ajustes.h"
 #include "vistoep.h"
+#include "intro.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -407,6 +408,24 @@ int main(void) {
   vistoep_definir("tt0944947", 5, 4, 1);
   assert(posplay_desfocar_thumb(0, 5, 4) == 0);            // reassistindo: nitido
   puts("ok  o still do proximo episodio obedece a desfocar nao assistidos");
+
+  // Janela REAL do player antecipada: mesmas guardas/marcadores do cartao.
+  player_definir_episodio(5, 3);
+  intro_shot_definir(NULL, 0);
+  player_shot_estado(1000, 3539, 3600, 1, 0, 0, 0);
+  assert(!player_janela_proximo(10));
+  player_shot_estado(1000, 3540, 3600, 1, 0, 0, 0);
+  assert(player_janela_proximo(10) && !player_janela_proximo(0));
+  intro_definir_duracao(3600, 0);
+  { IntroTrecho cred = {3500, 3600, INTRO_CREDITOS};
+    intro_shot_definir(&cred, 1);
+    player_shot_estado(1000, 3489, 3600, 1, 0, 0, 0);
+    assert(!player_janela_proximo(10));
+    player_shot_estado(1000, 3490, 3600, 1, 0, 0, 0);
+    assert(player_janela_proximo(10) && !player_janela_proximo(0));
+  }
+  intro_shot_definir(NULL, 0);
+  puts("ok  prefetch antecipa a janela real em 10 s, com e sem creditos");
 
   puts("posplay: tudo ok");
   return 0;

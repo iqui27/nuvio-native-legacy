@@ -303,6 +303,7 @@ float txt_tracking(TxtEstilo estilo, const char *s, int r, int g, int b,
 // espaco entre dois que vinham separados por espaco no texto.
 size_t txt_token_tam(const char *s);
 
+// Com alpha = 0, os blocos so medem: mesma quebra, sem rasterizacao nem GL.
 float txt_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,
                 float x, float y, float larg, float leading, float alpha, int maxLinhas);
 

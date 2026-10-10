@@ -27,7 +27,7 @@ compiler += list(cache.glob("org.jetbrains/annotations/13.0/*/*.jar"))
 compiler += list(cache.glob("org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm/*/*/*.jar"))
 stdlib = next(cache.glob("org.jetbrains.kotlin/kotlin-stdlib/2.0.21/*/*.jar"))
 sdk = Path(os.environ.get("ANDROID_HOME", str(Path.home() / "Library/Android/sdk"))) / "platforms/android-35/android.jar"
-sdl = Path.home() / ".cache/nuvio-android/src/SDL2-2.30.9/android-project/app/src/main/java"
+sdl = Path(os.environ.get("NUVIO_ANDROID_CACHE", str(Path.home() / ".cache/nuvio-android"))) / "src/SDL2-2.30.9/android-project/app/src/main/java"
 assert sdk.is_file() and any("compiler-embeddable" in str(x) for x in compiler)
 cp = os.pathsep.join(map(str, compiler))
 java = os.environ.get("NUVIO_TEST_JAVA") or str(next((Path.home() / ".local/jdks").glob("jdk-17*/Contents/Home/bin/java")))
@@ -66,15 +66,26 @@ with tempfile.TemporaryDirectory(prefix="nuvio-cacheboost-android-", dir=os.envi
     deps.append(guava)
     sources = [kt / n for n in ("NvPlayer.kt", "ParaleloDataSource.kt", "PassivoMedidor.kt", "NuvioActivity.kt",
                                 "CacheSessao.kt", "CacheMidia.kt", "GanhoMath.kt", "GanhoAudioProcessor.kt",
-                                "AudioSyncTap.kt", "AudioSyncSink.kt")]
+                                "AudioSyncTap.kt", "AudioSyncSink.kt", "RecriaHdr.kt", "ArranqueVigia.kt")]
     java_roots = []
     if sdl.is_dir():
         java_roots = ["-Xjava-source-roots=" + str(sdl)]
         sources.append(sdl)
     else:
+        # A Activity real so devolve o foco aqui; SDL nao e necessario neste teste.
+        activity = tmp / "NuvioActivity.kt"
+        activity.write_text("package space.nuvio.nativelegacy\n"
+                            "class NuvioActivity : android.app.Activity() {\n"
+                            "  fun devolverFoco() {}\n"
+                            "  fun nativeQuadros(): Long = -1L\n"
+                            "  fun nativeEtapa(): String = \"lib-nao-carregou\"\n"
+                            "  fun estadoSdl(): String = \"\"\n"
+                            "  fun nativeRecUrl(): String = \"\"\n"
+                            "}\n")
         sources.remove(kt / "NuvioActivity.kt")
-        print("note: SDL Java sources missing; NuvioActivity.kt not compiled here")
-    kotlinc(sources, tmp / "app", os.pathsep.join(map(str, deps)), ["-Werror"] if os.environ.get("NV_KT_WERROR") else [])
+        sources.insert(0, activity)
+        print("note: SDL Java sources missing; NuvioActivity.kt stubbed here")
+    kotlinc(sources, tmp / "app", os.pathsep.join(map(str, deps)), java_roots + (["-Werror"] if os.environ.get("NV_KT_WERROR") else []))
     print("compile-check: NvPlayer/CacheMidia/CacheSessao/GanhoMath/GanhoAudioProcessor (+ParaleloDataSource/PassivoMedidor"
           + ("/NuvioActivity" if java_roots else "") + ") against android-35 + Media3 1.8.0: OK")
 

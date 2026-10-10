@@ -28,6 +28,7 @@ typedef enum { AUTOSYNC_T_OFFSET, AUTOSYNC_T_ESCALA, AUTOSYNC_T_TRECHOS } AutoSy
 typedef struct {
   AutoSyncEstado estado;
   AutoSyncMotivo motivo;
+  int referenciaInvalida; // falha ao preparar a referência, não a externa
   int offsetMs, regioes, erroMs, tempoMs;
   double confianca, alternativa;
   uint64_t documento, referencia, sessao;

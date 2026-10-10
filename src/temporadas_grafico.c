@@ -169,13 +169,18 @@ const TgDados *tgraf_dados(int idx) {
   int agT = extras_agenda_temporada(), agE = extras_agenda_episodio();
   int n = cat_n_episodios(idx), i, k = 0, sabe;
   AmigosTitulo at;
-  int temAmg;
+  int temAmg, mesmo;
   if (!ci || !ci->imdb[0] || n < 1) {
     memset(&dados, 0, sizeof dados);
     dValido = 0;
     return &dados;
   }
-  if (dValido && idx == dIdx && !strncmp(dados.imdb, ci->imdb, sizeof dados.imdb - 1) &&
+  // dados.imdb guarda o id SEM ":temporada:episodio"; o item vindo de Continuar
+  // assistindo ou do Spotlight traz o sufixo. Comparar os dois inteiros nunca
+  // batia e o grafico era remontado em toda chamada (dezenas por quadro).
+  { size_t nb = strlen(dados.imdb);
+    mesmo = nb > 0 && !strncmp(dados.imdb, ci->imdb, nb) && (ci->imdb[nb] == 0 || ci->imdb[nb] == ':'); }
+  if (dValido && idx == dIdx && mesmo &&
       dCat == cat_revisao() && dVisto == vistoep_revisao() &&
       dAmg == amigostitulo_revisao() && dAgT == agT && dAgE == agE && dNEps == n)
     return &dados;
@@ -194,6 +199,12 @@ const TgDados *tgraf_dados(int idx) {
   tgraf_montar(&dados, epsBuf, k, sabe, agT, agE, 0, temAmg ? &at : NULL);
   dIdx = idx; dCat = cat_revisao(); dVisto = vistoep_revisao();
   dAmg = amigostitulo_revisao(); dAgT = agT; dAgE = agE; dNEps = n; dValido = 1;
+  printf("[vistoep] %s: grafico mapa_rev=%u sabe=%d vistos=%d/%d agenda=T%dE%d",
+         dados.imdb, dVisto, sabe, dados.vistos, dados.exibidos, agT, agE);
+  for (i = 0; i < dados.n; i++)
+    printf(" T%d=%d/%d", dados.t[i].numero, dados.t[i].vistos, dados.t[i].exibidos);
+  printf("\n");
+  fflush(stdout);
   return &dados;
 }
 

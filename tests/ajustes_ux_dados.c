@@ -637,7 +637,7 @@ int main(void) {
   { int vz = 0, k; for (k = 0; k < AJ_N_TELA; k++) if (TELA[k].tipo == IT_OPC && TELA[k].op == AJ_LAYOUT_AJUSTES) vz++; assert(vz == 1); }
   assert(indiceResultado(AJ_LAYOUT_AJUSTES, ajustes_buscar("lista", resultados, AJ_N)) >= 0);
   // #334: limite de espaco do P2P, local, Automatico por padrao.
-  assert(AJ_P2P_LIMITE == AJ_LAYOUT_AJUSTES + 1 && AJ_N == AJ_P2P_LIMITE + 1);
+  assert(AJ_P2P_LIMITE == AJ_LAYOUT_AJUSTES + 1 && AJ_FONTE_ORDEM_ADDON == AJ_P2P_LIMITE + 1);
   assert(!strcmp(CHAVE[AJ_P2P_LIMITE], "p2pLimiteLocal") && OPCOES[AJ_P2P_LIMITE].n == 5);
   assert(valorPadrao[AJ_P2P_LIMITE] == 0 && ajustes_p2p_limite_mb() == 0);
   assert(somenteDesteAparelho(AJ_P2P_LIMITE) && !dePerfil(AJ_P2P_LIMITE));
@@ -645,6 +645,17 @@ int main(void) {
     valor[AJ_P2P_LIMITE] = 9; assert(ajustes_p2p_limite_mb() == 0); valor[AJ_P2P_LIMITE] = antes; }
   { int vz = 0, k; for (k = 0; k < AJ_N_TELA; k++) if (TELA[k].tipo == IT_OPC && TELA[k].op == AJ_P2P_LIMITE) vz++; assert(vz == 1); }
   assert(indiceResultado(AJ_P2P_LIMITE, ajustes_buscar("limite p2p", resultados, AJ_N)) >= 0);
+  // #400: acrescentado no fim, sem deslocar os indices antigos.
+  assert(AJ_LEG_SYNC_AUTO == AJ_FONTE_ORDEM_ADDON + 1 && AJ_N == AJ_LEG_SYNC_AUTO + 1);
+  assert(!strcmp(CHAVE[AJ_FONTE_ORDEM_ADDON], "fonteOrdemLocal"));
+  assert(OPCOES[AJ_FONTE_ORDEM_ADDON].n == 2 && valorPadrao[AJ_FONTE_ORDEM_ADDON] == 0);
+  assert(somenteDesteAparelho(AJ_FONTE_ORDEM_ADDON) && !dePerfil(AJ_FONTE_ORDEM_ADDON));
+  { int vz = 0; for (int k = 1; k < AJ_N_TELA; k++)
+      if (TELA[k].tipo == IT_OPC && TELA[k].op == AJ_FONTE_ORDEM_ADDON) {
+        assert(TELA[k - 1].op == AJ_FONTE_TEXTO); vz++;
+      }
+    assert(vz == 1); }
+  assert(indiceResultado(AJ_FONTE_ORDEM_ADDON, ajustes_buscar("ordem fontes", resultados, AJ_N)) >= 0);
   // #303: "Continuar na escolha de perfil". Local, last, default ON (= today), once on screen, findable.
   assert(AJ_PS_CONTINUAR == AJ_CW_RETIDO_TAMBEM + 1 && AJ_PS_CONTINUAR == AJ_FONTE_ESCOPO + 11);
   assert(!strcmp(CHAVE[AJ_PS_CONTINUAR], "psContinuarLocal") && OPCOES[AJ_PS_CONTINUAR].n == 2 && valorPadrao[AJ_PS_CONTINUAR] == 0 && ajustes_ps_continuar());
