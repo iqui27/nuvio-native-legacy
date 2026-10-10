@@ -30,7 +30,7 @@ cd "$(dirname "$0")/.."
 CERT_SHA256=c3c967d4fac138de15126da01ea3ae43b52e6aa23106e336c2acc607ae0f2add
 
 python3 tools/release.py --check-tree
-NUVIO_REQUIRE_ALL=1 tools/env.sh --require-core >/dev/null
+tools/env.sh --require-core >/dev/null
 
 VER=$(sed -n 's/.*"version": *"\([0-9.]*\)".*/\1/p' deploy/app/appinfo.json)
 VT=$(grep -v '<?xml' tools/tizen-config.xml | sed -n 's/.*[[:space:]]version="\([0-9.]*\)".*/\1/p' | head -1)

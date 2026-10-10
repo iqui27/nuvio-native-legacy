@@ -157,7 +157,7 @@ if [ -n "${NUVIO_DTS_ROOT:-}" ]; then DTS_ENV=(-e "NUVIO_DTS_ROOT=$NUVIO_DTS_ROO
            NV_REC_URL NV_DISCORD_CLIENT_ID NV_VERSAO; do
     v=${!k}
     v=$(printf "%s" "$v" | sed "s/[\\\\\"]/\\\\&/g")
-    printf "%s\n" "-D$k=\\\"$v\\\""
+    printf "%s\n" "\"-D$k=\\\"$v\\\"\""
   done >> /tmp/arm-flags
   KEY=$( { cat /tmp/arm-flags; sha256sum tools/arm.sh tools/native-objects.mk; printf "%s" "$NUVIO_SDK_ID"; } | sha256sum | cut -d" " -f1)
   OBJDIR="build/arm-objects/$KEY"

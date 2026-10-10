@@ -71,10 +71,10 @@ if [ "$VER" != "$VERT" ]; then
   echo "env.sh: appinfo.json diz $VER e tizen-config.xml diz $VERT -- alinhe antes de compilar" >&2; exit 2
 fi
 
-# Release unificada: nenhuma integracao pode sair silenciosamente vazia.
+# Release unificada: conta, Trakt, Simkl e TMDB obrigatorios; demais opcionais.
 if [ "${NUVIO_REQUIRE_ALL:-0}" = 1 ]; then
   MISSING_ALL=()
-  for k in URL KEY TVB TRK TRS SMK SMA TMD SKR REC DSC; do
+  for k in URL KEY TVB TRK TRS SMK SMA TMD; do
     v="${!k}"
     [ -n "${v//[[:space:]]/}" ] || MISSING_ALL+=("$k")
   done

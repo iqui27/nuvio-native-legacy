@@ -25,6 +25,46 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build', prefix='release-test-') as tm
     assert p.returncode == 3 and not (tmp/'env').exists()
     assert 'sentinel-do-not-print' not in p.stdout+p.stderr
 
+    # Os scripts individuais exigem somente o core, como antes. Execute o
+    # preflight real ate VER, sem entrar em SDKs, assinatura ou empacotamento.
+    individual_env = dict(env, NUVIO_RELEASE_TREE=r.tree_state()[1])
+    individual_env.pop('NUVIO_REQUIRE_ALL')
+    for name in ('release-android.sh', 'release-samsung.sh'):
+        script = ROOT/'tools'/name
+        preflight = script.read_text().split('\nVER=', 1)[0]
+        p = subprocess.run(['bash', '-c', preflight, str(script)], env=individual_env, capture_output=True, text=True)
+        assert p.returncode == 0, p.stderr
+        print(f'ok: {name} preflight core apenas, Social/Discord/Seekr vazios rc={p.returncode}')
+
+    required = dict(NUVIO_SUPABASE_URL='https://example.invalid', NUVIO_SUPABASE_ANON_KEY='sentinel-do-not-print',
+                    TV_LOGIN_WEB_BASE_URL='https://example.invalid', TRAKT_CLIENT_ID='synthetic',
+                    TRAKT_CLIENT_SECRET='synthetic', SIMKL_CLIENT_ID='synthetic',
+                    SIMKL_APP_NAME='Nuvio Native', TMDB_API_KEY='synthetic')
+    complete = ''.join(f'{k}={v}\n' for k, v in required.items()) + 'NUVIO_REC_URL=\nDISCORD_CLIENT_ID=\nSEEKR_API_KEY=\n'
+    props.write_text(complete)
+    with patch.dict(os.environ, env):
+        values = r.config()
+    assert all(values[k] == '' for k in ('NV_REC_URL', 'NV_DISCORD_CLIENT_ID', 'NV_SEEKR_API_KEY'))
+
+    # O bloco real do arm.sh deve preservar o argumento E a string C no @file.
+    arm = (ROOT/'tools/arm.sh').read_text()
+    block = arm[arm.index('  for k in NV_SUPABASE_URL'):arm.index('  done >> /tmp/arm-flags')] + '  done\n'
+    flags = tmp/'arm-flags'
+    flags.write_text(subprocess.check_output(['bash', '-c', block], env=dict(env, **values), text=True))
+    source = tmp/'name.c'
+    source.write_text('#include <string.h>\nint main(void){return strcmp(NV_SIMKL_APP, "Nuvio Native");}\n')
+    p = subprocess.run(['clang', '@'+str(flags), str(source), '-o', str(tmp/'name')], capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    subprocess.run([str(tmp/'name')], check=True)
+    print(f'ok: clang SIMKL_APP_NAME=Nuvio Native rc={p.returncode}; valor preservado')
+
+    for key, value in required.items():
+        props.write_text(complete.replace(f'{key}={value}\n', f'{key}=\n'))
+        p = subprocess.run(['bash', 'tools/release.sh', values['NV_VERSAO'], '--ensaio'], env=env, capture_output=True, text=True)
+        assert p.returncode == 1 and 'configuracao de release vazia:' in p.stderr, p.stdout+p.stderr
+        assert 'sentinel-do-not-print' not in p.stdout+p.stderr
+        print(f'ok: release.sh aborta com {key} vazia rc={p.returncode} (env.sh rc=3)')
+
     with patch.object(r, 'tree_state', return_value=(' M tools/a.sh', 'abc')), patch.dict(os.environ, {}, clear=True):
         try: r.check_tree()
         except RuntimeError: pass

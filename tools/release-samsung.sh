@@ -32,7 +32,7 @@ cd "$(dirname "$0")/.."
 SO_TPK=0; [ "$1" = "--so-tpk" ] && SO_TPK=1
 
 python3 tools/release.py --check-tree
-NUVIO_REQUIRE_ALL=1 tools/env.sh --require-core >/dev/null
+tools/env.sh --require-core >/dev/null
 
 VER=$(sed -n 's/.*"version": *"\([0-9.]*\)".*/\1/p' deploy/app/appinfo.json)
 VT=$(grep -v '<?xml' tools/tizen-config.xml | sed -n 's/.*[[:space:]]version="\([0-9.]*\)".*/\1/p' | head -1)
