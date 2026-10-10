@@ -26,6 +26,7 @@
 //      congelado sem saber o que houve.
 #include "horafmt.h"
 #include "player.h"
+#include "memlog.h"
 #include "dvtela.h"
 #include "ilhacart.h"
 #include "idbase.h"
@@ -292,6 +293,7 @@ static void corFocoPlayer(float *r, float *g, float *b) { ajustes_acento(r, g, b
 // outra ha a busca de fonte, que pode levar segundos). Zero enquanto nao houve.
 // A guia parental se apoia nisto para aparecer UMA vez, no comeco, e sumir.
 static Uint32 inicioImagem = 0;
+static int memQuadroPendente; // Um primeiro quadro por load, nao por volta da ilha.
 // MEDIDA DO RETOMAR (05/10): desde player_abrir ate o pronto e ate o primeiro
 // "tocando" depois de aplicada a retomada. E o numero para comparar, na TV, o
 // Retomar sem reter (fonte guardada + posicao) com o retido ("retomada pronta").
@@ -1357,6 +1359,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   cacheboost_backend_cache(ehCanal() ? 0 : ajustes_cache_seek_mb());
   loadEm = SDL_GetTicks();
   { char px[96];
+    if (url && *url) { memlog_evento("load"); memQuadroPendente = 1; }
     comVideo = (url && *url && video_tocar(proxyts_resolver(url, px, sizeof px))); }
   mkvass_video_aberto(comVideo);
   legsync_auto_habilitar(ajustes_legenda_sync_auto());
@@ -1439,6 +1442,7 @@ static void tocarFonte(const char *url) {
   video_definir_reconexao(!ehCanal());
   video_definir_modo_live(ehCanal() ? ajustes_livetv_modo() : 0);
   cacheboost_backend_cache(ehCanal() ? 0 : ajustes_cache_seek_mb());   // F07, ver player_abrir
+  memlog_evento("load"); memQuadroPendente = 1;
   { char px[96];
 #ifdef NV_ANDROID
     // app.c define episodio e "do inicio" antes de entregar a fonte. O
@@ -3018,6 +3022,12 @@ void player_atualizar(float dt, Uint32 agora) {
   // tempo dela — contar da abertura da tela faria a guia gastar o prazo
   // enquanto o app ainda procurava fonte, e ela sumiria antes de o filme
   // aparecer.
+  // webOS: pronto ja sobe no loadCompleted. A posicao em reproducao e o
+  // sinal de quadro usado pelo log do backend, nao apenas a preparacao.
+  if (memQuadroPendente && comVideo && video_pronto() && video_tocando() && video_pos() > 0.0) {
+    memQuadroPendente = 0;
+    memlog_evento("primeiro-quadro");
+  }
   if (!inicioImagem && comVideo && video_pronto()) {
     inicioImagem = agora; acordar();
     if (medirAbertura && !ehCanal()) {
