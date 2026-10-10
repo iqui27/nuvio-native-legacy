@@ -31,15 +31,14 @@ cd "$(dirname "$0")/.."
 
 SO_TPK=0; [ "$1" = "--so-tpk" ] && SO_TPK=1
 
-if [ -n "$(git status --porcelain)" ]; then
-  echo "release-samsung: arvore suja. Compile de uma worktree limpa no commit da release:" >&2
-  echo "  git worktree add --detach ../nuvio-build-X <commit>" >&2
-  git status --short >&2; exit 1
-fi
+python3 tools/release.py --check-tree
+NUVIO_REQUIRE_ALL=1 tools/env.sh --require-core >/dev/null
+
 VER=$(sed -n 's/.*"version": *"\([0-9.]*\)".*/\1/p' deploy/app/appinfo.json)
 VT=$(grep -v '<?xml' tools/tizen-config.xml | sed -n 's/.*[[:space:]]version="\([0-9.]*\)".*/\1/p' | head -1)
 [ -n "$VER" ] && [ "$VER" = "$VT" ] || { echo "release-samsung: appinfo.json ($VER) != tizen-config.xml ($VT)" >&2; exit 1; }
-OUT="build/release-$VER"; rm -rf "$OUT"; mkdir -p "$OUT"
+OUT="${NUVIO_RELEASE_OUT:-build/release-$VER}"; mkdir -p "$OUT"
+rm -f "$OUT"/Nuvio-*-NuvioTpk*.tpk "$OUT"/NuvioTV-*-tizen.wgt "$OUT"/libnuvio-*-tpk*.so "$OUT/SHA256SUMS-samsung"
 echo "== release-samsung $VER (commit $(git rev-parse --short HEAD)) -> $OUT"
 
 # Credenciais: a lista de exclusao dos scripts e INTENCAO; isto e o fato.
@@ -51,7 +50,6 @@ confere() {  # $1 pacote (zip)
 
 # 1. .tpk (os quatro de uma vez; tools/tpk.sh reescreve os manifestos)
 bash tools/tpk.sh
-git checkout -q -- tizen-tpk/*/tizen-manifest.xml   # o bump e so do pacote
 bash tests/tpk40_tls.sh
 for H in NuvioTpk40 NuvioTpk60 NuvioTpk65 NuvioTpk; do
   T="build/tpk/Nuvio-$VER-$H.tpk"
@@ -97,20 +95,13 @@ if [ "$SO_TPK" = 0 ]; then
   mv "NuvioTV-$VER-tizen.wgt" "$OUT/"
 fi
 
-( cd "$OUT" &&
-  checksum_files=(*) &&
+( cd "$OUT" || exit
+  checksum_files=(Nuvio-*-NuvioTpk*.tpk libnuvio-*-tpk*.so)
+  [ "$SO_TPK" = 1 ] || checksum_files+=(NuvioTV-*-tizen.wgt)
   if command -v shasum >/dev/null 2>&1; then shasum -a 256 "${checksum_files[@]}"
   else sha256sum "${checksum_files[@]}"; fi > SHA256SUMS-samsung )
-git status --porcelain | grep -q . && { echo "release-samsung: o build sujou a arvore:" >&2; git status --short >&2; }
+python3 tools/release.py --check-tree
 echo
 echo "== pronto, sem publicar. Conteudo de $OUT:"
 ls -la "$OUT"
-cat <<EOF
-
-Proximo passo (skill samsung-release):
-  - juntar com o .ipk da LG e o repo.json/webosbrew.manifest.json (hb-repo.sh)
-  - SHA256SUMS = o da LG + $OUT/SHA256SUMS-samsung
-  - gh release create v$VER <tudo> --title ... --notes-file ...
-    (release NORMAL: ela vira latest. Pre-release de teste e sempre
-     --prerelease --latest=false)
-EOF
+echo "Release completa (LG + Android + Samsung + SHA256SUMS + Homebrew): bash tools/release.sh $VER"

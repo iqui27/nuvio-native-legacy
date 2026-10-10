@@ -17,6 +17,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 RAIZ="$PWD"
+RELEASE_ONLY=0
+case "${1:-}" in "") ;; --release-only) RELEASE_ONLY=1;; *) echo "opcao desconhecida: $1" >&2; exit 2;; esac
 CACHE="${NUVIO_ANDROID_CACHE:-$HOME/.cache/nuvio-android}"
 EST="$RAIZ/build/android"
 
@@ -55,12 +57,15 @@ ENVF="$(mktemp "${TMPDIR:-/tmp}/nuvio-android-env.XXXXXXXX")"; trap 'rm -f "$ENV
 [ -z "${NUVIO_REQUIRE_CORE:-}" ] || tools/env.sh --require-core >/dev/null
 tools/env.sh --env-file "$ENVF"
 # KEY=valor -> set(KEY "valor") com escape de \ " $ . Fora do git (build/).
-: > "$EST/nuvio-env.cmake"; chmod 600 "$EST/nuvio-env.cmake"
+: > "$EST/nuvio-env.cmake.new"; chmod 600 "$EST/nuvio-env.cmake.new"
 while IFS= read -r l; do
   k="${l%%=*}"; v="${l#*=}"
   v=$(printf '%s' "$v" | sed 's/[\\"$]/\\&/g')
-  printf 'set(%s "%s")\n' "$k" "$v" >> "$EST/nuvio-env.cmake"
+  printf 'set(%s "%s")\n' "$k" "$v" >> "$EST/nuvio-env.cmake.new"
 done < "$ENVF"
+# Nao invalida CMake por timestamp quando a configuracao e identica.
+if cmp -s "$EST/nuvio-env.cmake.new" "$EST/nuvio-env.cmake"; then rm "$EST/nuvio-env.cmake.new"
+else mv "$EST/nuvio-env.cmake.new" "$EST/nuvio-env.cmake"; fi
 # libcurl/libjpeg/libwebp por dlopen: se o outro agente ja as compilou, entram em lib/<abi>/.
 rm -rf "$EST/jnilibs"
 for abi in arm64-v8a armeabi-v7a; do
@@ -78,7 +83,8 @@ GR=(android/gradlew -p android --console=plain -Pnuvio.sdlSrc="$CACHE/src" -Pnuv
 . tools/p2p-motor/pasta.sh
 nv_p2p_resolver android
 [ -n "$NV_P2P_DIR" ] && GR+=(-Pnuvio.p2pMotor="$NV_P2P_DIR")
-TAREFAS=(assembleDebug)
+TAREFAS=()
+[ "$RELEASE_ONLY" = 1 ] || TAREFAS=(assembleDebug)
 # Chave de release FIXA (o Android so atualiza por cima com a mesma
 # assinatura): ~/.nuvio-android/release.env, fora do repo, chmod 600. A copia
 # de seguranca e o item do Vaultwarden. Variaveis no ambiente ganham do arquivo.
@@ -86,13 +92,18 @@ if [ -z "${NUVIO_KEYSTORE:-}" ] && [ -f "$HOME/.nuvio-android/release.env" ]; th
   set -a; . "$HOME/.nuvio-android/release.env"; set +a
 fi
 [ -n "${NUVIO_KEYSTORE:-}" ] && TAREFAS+=(assembleRelease)
+[ "${#TAREFAS[@]}" -gt 0 ] || { echo "android.sh: release-only exige chave" >&2; exit 1; }
+[ -z "${NUVIO_BUILD_JOBS:-}" ] || GR+=(--max-workers="$NUVIO_BUILD_JOBS")
 "${GR[@]}" "${TAREFAS[@]}"
 
 echo "[5/5] conferencia"
 SAIDA="$EST"
 DBG="android/app/build/outputs/apk/debug/app-debug.apk"
-cp "$DBG" "$SAIDA/Nuvio-$VER-android-debug.apk"
-APKS=("$SAIDA/Nuvio-$VER-android-debug.apk")
+APKS=()
+if [ "$RELEASE_ONLY" = 0 ]; then
+  cp "$DBG" "$SAIDA/Nuvio-$VER-android-debug.apk"
+  APKS+=("$SAIDA/Nuvio-$VER-android-debug.apk")
+fi
 if [ -n "${NUVIO_KEYSTORE:-}" ]; then
   cp android/app/build/outputs/apk/release/app-release.apk "$SAIDA/Nuvio-$VER-android.apk"
   APKS+=("$SAIDA/Nuvio-$VER-android.apk")

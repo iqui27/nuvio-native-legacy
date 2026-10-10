@@ -22,27 +22,17 @@ Detalhe de cada alvo: skills `samsung-wgt`, `samsung-tpk`, `samsung-tpk-legacy`.
 ## A ferramenta
 
 ```bash
-git worktree add --detach ../nuvio-build-<v> <commit-da-release>
-cd ../nuvio-build-<v>
-NUVIO_PROPERTIES="/Users/hrocha/Projetos/Pessoal/LG WEB/NuvioWeb-0.3.38-beta/local.properties" \
-  bash tools/release-samsung.sh
+NUVIO_PROPERTIES="/caminho/local.properties" bash tools/release.sh X.Y.Z
 ```
 
-`tools/release-samsung.sh` compila o `.wgt` e os quatro `.tpk`, e RECUSA:
-arvore suja; versao diferente entre `appinfo.json` e `tizen-config.xml`;
-arquivo de pessoa em qualquer pacote; `drminfo` no 4/5; lib do 4/5 com TLS;
-manifesto com outra versao; anexo `.so` diferente da `.so` do pacote. Sai em
-`build/release-<v>/` com `SHA256SUMS-samsung`. NAO publica.
-
-Numa worktree nova o `.wgt` para em "libass WASM ausente": faca
-`ln -s "<checkout principal>/build/ass-wasm" build/ass-wasm` (dependencia ja
-compilada, gitignorada; symlink e nao copia, porque o `tizen.sh` confere que o
-atalho temporario `$TMPDIR/nuvio-ass-wasm-root-<uid>` aponta para o mesmo
-lugar) ou rode `tools/build-ass-wasm.sh` com o emsdk ativo.
-
-`NUVIO_PROPERTIES` so e preciso fora do checkout principal (o `tools/env.sh`
-procura `../NuvioWeb-0.3.38-beta` dois niveis acima, e da worktree o caminho
-nao existe: o pacote sairia sem servidor e sem login).
+Na worktree limpa, compila LG (2 variantes), Android e Samsung em paralelo.
+Não publica nem instala. Entrega os 10 artefatos (8 pacotes + 2 SO),
+`SHA256SUMS` unificado e os dois JSON Homebrew em `build/release-<v>/`.
+Chaves vazias, versões divergentes e árvore alterada abortam. Logs e tempos
+ficam em `logs/`; `--jobs 2` limita plataformas simultâneas.
+`ass-wasm` ausente é localizado automaticamente em outra worktree.
+Pré-requisitos, cache e modo de medição sem commit: `docs/android/RELEASE.md`.
+`release-samsung.sh` continua disponível para conferir só Samsung.
 
 ## Ordem
 
@@ -51,16 +41,14 @@ nao existe: o pacote sairia sem servidor e sem login).
 1. **Versao**: `deploy/app/appinfo.json` e `tools/tizen-config.xml`. Commit
    `vX.Y.Z`. O `.tpk` pega sozinho (`tools/tpk.sh` reescreve os manifestos no
    build e a ferramenta devolve o original depois).
-2. **LG**: receita da LG (`arm.sh --ipk`, as duas variantes `_arm.ipk` e
-   `_arm-highcache.ipk`, `hb-repo.sh` -> `repo.json` + `webosbrew.manifest.json`).
-3. **Samsung**: `tools/release-samsung.sh` (acima).
-4. **Android**: `tools/release-android.sh` na mesma worktree (skill
-   `android-release`). Sai `Nuvio-<v>-android.apk` + `SHA256SUMS-android` em
-   `build/release-<v>/`. Precisa da chave de release em `~/.nuvio-android/`.
+2. **Compilar/conferir tudo**: `bash tools/release.sh X.Y.Z`.
+   Não é necessário mover IPKs nem juntar checksums à mão.
+3. **Prova**: `cd build/release-X.Y.Z && shasum -a 256 -c SHA256SUMS`.
+4. **TV**, somente se pedido: `--instalar` instala LG normal; os demais alvos
+   mantêm seus procedimentos próprios de instalação.
 5. **Publicar TUDO no mesmo `gh release create vX.Y.Z`**: `.ipk` x2, `repo.json`,
    `webosbrew.manifest.json`, `.wgt`, os 4 `.tpk`, os 2 `libnuvio-*.so`, o
-   `Nuvio-<v>-android.apk`, e o `SHA256SUMS` unindo LG + `SHA256SUMS-samsung` +
-   `SHA256SUMS-android`. Release normal vira
+   `Nuvio-<v>-android.apk`, e o `SHA256SUMS` já gerado pelo comando unificado. Release normal vira
    latest (o app e o Homebrew Channel leem `releases/latest`). Sem os `.so`
    anexados, os `.tpk` instalados nao se atualizam sozinhos.
 6. **Notas** em ingles, `## Added` / `## Fixed` / `## Notes`, balas curtas (o

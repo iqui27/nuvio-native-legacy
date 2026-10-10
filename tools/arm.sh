@@ -103,11 +103,14 @@ DTS_ENV=()
 if [ -n "${NUVIO_DTS_ROOT:-}" ]; then DTS_ENV=(-e "NUVIO_DTS_ROOT=$NUVIO_DTS_ROOT"); fi
 "$CONTAINER_RUNTIME" run --rm --platform "$BUILD_PLATFORM" --env-file "$ENVF" \
   -e NUVIO_P2P_MOTOR="${NV_P2P_DIR:+1}" $P2P_VOL \
+  -e NUVIO_BUILD_JOBS="${NUVIO_BUILD_JOBS:-3}" \
+  -e NUVIO_SDK_ID="$("$CONTAINER_RUNTIME" image inspect --format '{{.Id}}' "$SDK_IMAGE"):$NV_P2P_DIR" \
+  -e CCACHE_DIR=/work/build/ccache-arm \
   -e NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-}" \
   -e NUVIO_ASS_LIBASS="${NUVIO_ASS_LIBASS:-1}" \
   -e NUVIO_DTS_FFMPEG="$DTS_ENABLED" \
   "${DTS_ENV[@]}" \
-  -v "$PWD":/work:z "$SDK_IMAGE" sh -c '
+  -v "$PWD":/work:z "$SDK_IMAGE" bash -c '
   set -e
   SR=$NUVIO_SYSROOT
   ASS=$NUVIO_ASS_ROOT
@@ -143,9 +146,30 @@ if [ -n "${NUVIO_DTS_ROOT:-}" ]; then DTS_ENV=(-e "NUVIO_DTS_ROOT=$NUVIO_DTS_ROO
   # de torrent acima de 2 GB e o cache nunca era contado nem apagado. So este
   # arquivo: o header dele so expoe tipos de largura fixa (uint64_t), entao o
   # resto do binario segue sem a flag. O _Static_assert do .c barra o esquecimento.
-  arm-webos-linux-gnueabi-gcc -c src/p2pmotor.c -o /tmp/p2pmotor.o -O2 -DNV_WEBOS -D_FILE_OFFSET_BITS=64 $NUVIO_EXTRA_CFLAGS $P2P_CFLAGS \
+  CC="arm-webos-linux-gnueabi-gcc"
+  if command -v ccache >/dev/null 2>&1; then CC="ccache $CC"; fi
+  $CC -c src/p2pmotor.c -o /tmp/p2pmotor.o -O2 -DNV_WEBOS -D_FILE_OFFSET_BITS=64 $NUVIO_EXTRA_CFLAGS $P2P_CFLAGS \
     -I$SR/usr/include -I$SR/usr/include/SDL2
-  arm-webos-linux-gnueabi-gcc $(ls src/*.c | grep -v "^src/p2pmotor\.c$") src/dts/*.c /tmp/p2pmotor.o -o nuvio-proto.arm -O2 -DNV_WEBOS $NUVIO_EXTRA_CFLAGS $ASS_CFLAGS $P2P_CFLAGS $DTS_CFLAGS \
+  printf "%s\n" -O2 -DNV_WEBOS $NUVIO_EXTRA_CFLAGS $ASS_CFLAGS $P2P_CFLAGS $DTS_CFLAGS \
+    -I$SR/usr/include -I$SR/usr/include/SDL2 > /tmp/arm-flags
+  for k in NV_SUPABASE_URL NV_SUPABASE_ANON_KEY NV_TV_LOGIN_BASE NV_TRAKT_CLIENT_ID \
+           NV_TRAKT_CLIENT_SECRET NV_SIMKL_CLIENT_ID NV_SIMKL_APP NV_TMDB_API_KEY NV_SEEKR_API_KEY \
+           NV_REC_URL NV_DISCORD_CLIENT_ID NV_VERSAO; do
+    v=${!k}
+    v=$(printf "%s" "$v" | sed "s/[\\\\\"]/\\\\&/g")
+    printf "%s\n" "-D$k=\\\"$v\\\""
+  done >> /tmp/arm-flags
+  KEY=$( { cat /tmp/arm-flags; sha256sum tools/arm.sh tools/native-objects.mk; printf "%s" "$NUVIO_SDK_ID"; } | sha256sum | cut -d" " -f1)
+  OBJDIR="build/arm-objects/$KEY"
+  SOURCES=$(ls src/*.c src/dts/*.c | grep -v "^src/p2pmotor\.c$")
+  make -s -f tools/native-objects.mk -j "$NUVIO_BUILD_JOBS" CC="$CC" \
+    OBJDIR="$OBJDIR" SOURCES="$SOURCES" NATIVE_FLAGS=@/tmp/arm-flags
+  if command -v ccache >/dev/null 2>&1; then ccache -s; fi
+  OBJECTS=()
+  for f in $(ls src/*.c | grep -v "^src/p2pmotor\.c$") src/dts/*.c; do
+    OBJECTS+=("$OBJDIR/${f%.c}.o")
+  done
+  arm-webos-linux-gnueabi-gcc "${OBJECTS[@]}" /tmp/p2pmotor.o -o nuvio-proto.arm -O2 -DNV_WEBOS $NUVIO_EXTRA_CFLAGS $ASS_CFLAGS $P2P_CFLAGS $DTS_CFLAGS \
     -DNV_SUPABASE_URL="\"$NV_SUPABASE_URL\"" \
     -DNV_SUPABASE_ANON_KEY="\"$NV_SUPABASE_ANON_KEY\"" \
     -DNV_TV_LOGIN_BASE="\"$NV_TV_LOGIN_BASE\"" \
@@ -209,7 +233,6 @@ while IFS='=' read -r NOME VALOR; do
 done < "$ENVF"
 
 cp nuvio-proto.arm deploy/app/nuvio-proto
-rm -f ./*.ipk
 
 # O .ipk so interessa para DISTRIBUIR (instalar em outra TV, publicar). O ciclo
 # de desenvolvimento nao passa por ele — ver a nota abaixo.
@@ -304,14 +327,19 @@ if [ "$1" = "--ipk" ]; then
   # trocado com chmod 755 a mao.
   chmod 755 "$PALCO/app/nuvio-proto"
 
-  "$ARES" "$PALCO/app" -o .
-  IPK=$(ls -t ./*.ipk | head -1)
+  IPK_OUT="${NUVIO_RELEASE_OUT:-$PWD}"
+  mkdir -p "$IPK_OUT"
+  # ares sempre gera o nome normal: palco isolado evita sobrescrever outra variante.
+  "$ARES" "$PALCO/app" -o "$PALCO"
+  IPK=$(ls "$PALCO"/*.ipk)
   # A variante ganha o nome no ARQUIVO: dois .ipk com o mesmo nome e md5
   # diferente e exatamente o que ja publicou build errada uma vez.
   if [ -n "$VARIANTE" ]; then
     NOVO="${IPK%.ipk}-$VARIANTE.ipk"
     mv -f "$IPK" "$NOVO"; IPK="$NOVO"
   fi
+
+  IPK_DEST="$IPK_OUT/$(basename "$IPK")"
 
   # CONFERE o pacote PRONTO, e nao a pasta de onde ele saiu. A lista de
   # exclusao acima e uma intencao; o teste abaixo e o fato.
@@ -321,7 +349,7 @@ if [ "$1" = "--ipk" ]; then
   # sem erro nenhum, apenas esses tres nomes — nunca os arquivos do app. Uma
   # conferencia escrita assim passa sempre, inclusive quando o segredo esta
   # dentro. Tem de desempacotar o `ar` e listar o data.tar.gz.
-  LISTA=$(cd "$PALCO" && ar x "$OLDPWD/$IPK" 2>/dev/null && tar tzf data.tar.gz 2>/dev/null)
+  LISTA=$(cd "$PALCO" && ar x "$IPK" 2>/dev/null && tar tzf data.tar.gz 2>/dev/null)
   if [ -z "$LISTA" ]; then
     echo "    ABORTADO: nao consegui LER o pacote para conferir; nao vou dizer que esta limpo"
     rm -f "$IPK"
@@ -383,6 +411,7 @@ if [ "$1" = "--ipk" ]; then
   else
     echo "    ATENCAO: pacote SEM motor P2P (NUVIO_P2P_MOTOR=none ou sem pasta)"
   fi
+  mv -f "$IPK" "$IPK_DEST"; IPK="$IPK_DEST"
   echo "    $IPK ($(du -h "$IPK" | cut -f1)) — sem art/{$(echo $ARQ_DE_PESSOA $GLOB_DE_PESSOA $ACERVO_DE_PESSOA $DIR_DE_PESSOA | tr ' ' ',')}"
 fi
 

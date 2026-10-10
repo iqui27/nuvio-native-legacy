@@ -17,7 +17,7 @@ Mesmo nucleo C da LG e da Samsung; so a camada de plataforma muda:
 | `[tv]`, logcat, pilha de 8 MB, superficie 4K, instalador | `src/android.c` |
 | curl + mbedTLS, libjpeg-turbo, libwebp (.so para o dlopen) | `tools/android/deps.sh` -> `~/.cache/nuvio-android/prefix` |
 | Build (debug + release) | `tools/android.sh` |
-| Release | `tools/release-android.sh` |
+| Release completa | `tools/release.sh X.Y.Z` |
 
 Android 7+ (minSdk 24), arm64-v8a + armeabi-v7a. Muita TV (a TCL do dono) so
 roda 32 bits: as duas ABIs vao sempre.
@@ -77,17 +77,14 @@ cima exige desinstalar.
 ## Release (dentro do vX.Y.Z normal)
 
 1. Versao como sempre (`deploy/app/appinfo.json` + `tools/tizen-config.xml`).
-2. Worktree limpa no commit da release e:
-   ```bash
-   bash tools/release-android.sh
-   ```
-   Sai `build/release-<v>/Nuvio-<v>-android.apk` + `SHA256SUMS-android`. Recusa
-   arvore suja, versao divergente, chave errada/ausente, arquivo de pessoa e lib
-   faltando.
-3. Junto da LG e da Samsung (skill `samsung-release`): `SHA256SUMS` une os tres
-   e o `.apk` vai no MESMO `gh release create vX.Y.Z`. Sem ele no latest,
-   nenhum Android se atualiza sozinho (o app procura `-android.apk` em
-   `releases/latest`).
+2. Na worktree limpa: `NUVIO_PROPERTIES="/caminho/local.properties" bash tools/release.sh X.Y.Z`.
+   LG, Android e Samsung rodam em paralelo, com logs/tempos próprios. Entrega
+   os 10 artefatos, SHA256SUMS unificado e Homebrew em `build/release-<v>/`.
+   Recusa chaves vazias, versão divergente e árvore alterada. Não publica nem
+   instala. Android gera só release; debug continua em `tools/android.sh`.
+3. Publicação manual no MESMO `gh release create vX.Y.Z`, incluindo o APK.
+   Sem ele no latest, nenhum Android se atualiza sozinho. Detalhes e
+   `--jobs 2` / `--ensaio`: `docs/android/RELEASE.md`.
 4. Enquanto o dono nao liberar a divulgacao do Android: o `.apk` entra como
    anexo, SEM linha na tabela "Which file do I need?", sem aviso no app
    (`avisos.json` plataforma `android`) e sem README. Quando liberar, a linha e:

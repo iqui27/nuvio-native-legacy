@@ -71,6 +71,18 @@ if [ "$VER" != "$VERT" ]; then
   echo "env.sh: appinfo.json diz $VER e tizen-config.xml diz $VERT -- alinhe antes de compilar" >&2; exit 2
 fi
 
+# Release unificada: nenhuma integracao pode sair silenciosamente vazia.
+if [ "${NUVIO_REQUIRE_ALL:-0}" = 1 ]; then
+  MISSING_ALL=()
+  for k in URL KEY TVB TRK TRS SMK SMA TMD SKR REC DSC; do
+    v="${!k}"
+    [ -n "${v//[[:space:]]/}" ] || MISSING_ALL+=("$k")
+  done
+  [ "${#MISSING_ALL[@]}" = 0 ] || {
+    echo "env.sh: configuracao de release vazia: ${MISSING_ALL[*]}" >&2; exit 3;
+  }
+fi
+
 MISSING_CORE=()
 [ -n "$URL" ] || MISSING_CORE+=(NUVIO_SUPABASE_URL)
 [ -n "$KEY" ] || MISSING_CORE+=(NUVIO_SUPABASE_ANON_KEY)
