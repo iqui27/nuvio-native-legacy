@@ -1764,9 +1764,13 @@ int main(int argc, char **argv) {
     // Com o player aberto (filme pausado) fica so o escurecer de antes: a
     // vitrine pediria texturas de tela cheia com o decodificador ocupado.
     esmaecer_estilo(player_aberto() ? ESM_ESTILO_ESCURECER : ajustes_descanso_estilo());
+    // #422: trailer tocando na pagina do titulo tambem e alguem assistindo. So
+    // no titulo: o destaque da Home troca de trailer sem parar e a tela nunca
+    // escureceria.
     esmaecer_quadro(agora, dt,
-                    (player_aberto() || player_mini_ativo()) && player_com_video() &&
-                    !player_pausado() && !player_carregando());
+                    ((player_aberto() || player_mini_ativo()) && player_com_video() &&
+                     !player_pausado() && !player_carregando()) ||
+                    (detail_aberto() && !player_aberto() && trailer_tocando()));
     // TELA DE DESCANSO: vitrine/relogio por cima do preto (descanso.h).
     descanso_quadro(agora, dt, esmaecer_descanso(),
                     ajustes_descanso_estilo(), ajustes_descanso_fonte());
