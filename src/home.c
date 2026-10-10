@@ -2126,6 +2126,22 @@ static int proxHome[MAX_CARDS], nProxHome;
 static void sincronizarFileiras(void) {
   int nCat = cat_n_fileiras(), r, destino = 0;
   int assin = assinaturaPrefs();
+  // #392: reservas expiram em 30 s, mesmo sem nova resposta da rede.
+  // ponytail: resposta depois do prazo pode mover CW; usar o fim da rodada
+  // de descoberta se for preciso esperar catalogos por mais tempo.
+  static unsigned reservaGeracao;
+  static Uint32 reservaDesde;
+  static int reservaEstado; // 0 ainda nao usada, 1 ativa, 2 expirada
+  unsigned geracao = fil_passada_ler().geracao;
+  if (geracao != reservaGeracao) {
+    reservaGeracao = geracao;
+    reservaEstado = 0;
+    filsAplicadas = -1;
+  }
+  if (reservaEstado == 1 && SDL_GetTicks() - reservaDesde >= 30000u) {
+    reservaEstado = 2;
+    filsAplicadas = -1;
+  }
   static unsigned ultimaRevisao;
   // GUARDA CURTO POR CONTADORES, antes do hash das fileiras. O hash FNV sobre
   // todas as chaves/titulos/ini/n de cada CatFileira e o guarda de seguranca
@@ -2162,6 +2178,7 @@ static void sincronizarFileiras(void) {
   ultOrdemRev = ordemRev;
   ultRetRev = cw_retido_rev();
   unsigned revisao = 2166136261u;
+  revisao = (revisao ^ (unsigned)reservaEstado) * 16777619u;
   // A escolha LOCAL de fileiras entra na mesma assinatura do catalogo: ordem,
   // liga/desliga, forma, tamanho e limite mudam a lista tanto quanto uma
   // fileira nova da rede. Sem isto, sair de Ajustes deixaria a home igual ate a
@@ -2466,6 +2483,35 @@ static void sincronizarFileiras(void) {
     // inteira em vez de mover uma fileira — ver fil_espelhar_ordem. O titulo
     // vai junto para a chave resgatada de tabela cheia nao mostrar a si mesma.
     fil_espelhar_ordem(ch, ti, destino);
+    // #392: fil_unir projeta apenas as chaves presentes. Sem reservar as
+    // anteriores, CW sobe na Home parcial e desce a cada resposta da rede.
+    // Reusa a fileira vazia (titulo, zero colunas), sem dados nem GET novos.
+    int temCw = 0;
+    for (int i = 0; i < destino; i++)
+      if (!strcmp(fileiras[i].chave, "continue_watching")) temCw = 1;
+    if (reservaEstado != 2 && temCw && fil_tem_ordem() && !fil_oculta("continue_watching")) {
+      int cw = -1;
+      for (int i = 0; i < fil_n(); i++)
+        if (!strcmp(fil_chave(i), "continue_watching")) { cw = i; break; }
+      for (int i = 0; i < cw && destino < MAX_FIL; i++) {
+        const char *key = fil_chave(i);
+        if (fil_linha_origem(i) == FIL_ORIGEM_APP || fil_estado(i) != FIL_NA_HOME) continue;
+        int existe = 0;
+        for (int j = 0; j < destino; j++) if (!strcmp(fileiras[j].chave, key)) existe = 1;
+        if (existe) continue;
+        if (!reservaEstado) { reservaDesde = SDL_GetTicks(); reservaEstado = 1; }
+        Fileira *f = &fileiras[destino];
+        memset(f, 0, sizeof *f);
+        snprintf(f->chave, sizeof f->chave, "%s", key);
+        snprintf(f->titulo, sizeof f->titulo, "%s", fil_titulo(i));
+        f->ini = -1;
+        f->tipoAuto = FILEIRA_NORMAL;
+        int t = fil_tipo(key);
+        f->tipo = t == FIL_TIPO_AUTO ? FILEIRA_NORMAL : tipoDaEscolha(t);
+        f->escala = fil_escala(key); f->fator = fil_tipo_fator(t);
+        ch[destino++] = f->chave;
+      }
+    }
     // "Retomar agora" e contexto do player, nao fileira de catalogo: fica presa
     // no topo, fora da ordem e fora do liga/desliga. Ela aparece por causa de
     // uma sessao interrompida e desaparece sozinha; deixar a pessoa mover ou
