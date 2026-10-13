@@ -27,6 +27,7 @@
 #include "resolverregra.h"
 #include "horafmt.h"
 #include "player.h"
+#include "conquistasdados.h"
 #include "memlog.h"
 #include "dvtela.h"
 #include "abrecine.h"
@@ -2068,6 +2069,7 @@ static void fecharSessao(int manter) {
     // A fileira "Continuar assistindo" so era refeita no ciclo completo da
     // descoberta (issue #38): sem isto o titulo terminado ficava nela e o que
     // comecou agora nao entrava ate a proxima volta.
+    if (assistiu) cqd_atualizar_local();
     desc_refazer_continuar();
   }
   if (!jaRetido) wsParou(!duracaoErrada && prova && assistiu, !duracaoErrada);

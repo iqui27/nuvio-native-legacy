@@ -368,6 +368,7 @@ static void ok(void) {
 }
 
 void conquistas_abrir(void) {
+  cqd_atualizar_local();
   cqd_carregar(&st);
   aberto = 1; view = V_HUB; aba = A_TODAS; ordem = 0; famF = -1; topo = 0; detIdx = 0;
   backPressionado = backVisto = 0;

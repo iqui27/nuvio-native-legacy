@@ -43,6 +43,8 @@
 #include "intro.h"
 #include "perfis.h"
 #include "descoberta.h"
+#include "conquistas.h"
+#include "conquistasdados.h"
 
 // Episode metadata stays under host-test control, without background HTTP.
 static int carregando;
@@ -160,6 +162,21 @@ static void tocar(int seg, double vel) {
 
 int main(void) {
   assert(SDL_Init(SDL_INIT_TIMER) == 0); dados_iniciar(""); ling_local_legenda("none");
+
+  // Feed real: historico e progresso locais, sem cqregra_registrar no teste.
+  cat_historico_definir_id("tt0018578", "movie", 1);
+  assert(prog_gravar_local("tt0019729", 0, 0, 1000, 1000, 1));
+  assert(prog_gravar_local("tt0020629", 0, 0, 1000, 1000, 0)); // seek nao conta
+  assert(prog_gravar_local("tt0021746", 1, 1, 1000, 1000, 1)); // episodio nao e filme
+  assert(prog_gravar_local("tt0022958", 0, 0, 1000, 1000, 1));
+  cat_historico_definir_id("tt0022958", "movie", 0); // desmarcado vence progresso
+  conquistas_abrir();
+  {
+    CqEstado s; cqd_carregar(&s);
+    const CqEntrada *e = cqregra_buscar(&s, "trilha:oscar-melhor-filme");
+    assert(e && e->vistos == 2 && e->total == 98 && e->nivel == 1);
+  }
+  conquistas_teste_esquecer();
 
   // A REGRA (#205): chegou = tocado+3 >= 90% do trecho base->saida; visto =
   // fim, chegou e base+tocado >= 120 s.
@@ -498,6 +515,16 @@ int main(void) {
   terminou = 1; quadro();
   assert(!player_quer_sair());
   player_encerrar(); trailer_fechar();
+
+  // Conclusao via player atualiza e persiste, mesmo sem abrir Conquistas.
+  abrir(1, "tt0020629", NULL, NULL, 180, 180);
+  {
+    CqEstado s; cqd_carregar(&s);
+    const CqEntrada *e = cqregra_buscar(&s, "trilha:oscar-melhor-filme");
+    assert(e && e->vistos == 3 && e->nivel == 1);
+    prog_invalidar(); cqd_carregar(&s);
+    assert(cqregra_buscar(&s, "trilha:oscar-melhor-filme")->vistos == 3);
+  }
 
   puts("PASS: trailer, seek, pausa e buffer nao marcam; reproducao real grava progresso e visto");
   return 0;

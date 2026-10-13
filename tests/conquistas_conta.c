@@ -1,4 +1,5 @@
 #include "conquistasdados.h"
+#include "progresso.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,6 +9,9 @@ static const char *conta = "account-A";
 static int perfil = 1;
 const char *sessao_usuario(void) { return conta; }
 int perfis_ativo(void) { return perfil; }
+int ajustes_conquistas(void) { return 1; }
+int prog_ler(ProgRegistro *r, int max) { (void)r; (void)max; return 0; }
+int cat_historico_estado_id(const char *id, const char *tipo) { (void)id; (void)tipo; return -1; }
 char *dados_ler(const char *nome) {
   FILE *f = fopen(nome, "rb");
   char *s = calloc(1, 32768);

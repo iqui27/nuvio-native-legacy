@@ -9,7 +9,8 @@
 // desce) e a fila do aviso "depois dos creditos". O QUE NAO ESTA: de onde vem
 // `vistos` e `total`. O app nao guarda ano, pais nem diretor de um titulo; quem
 // souber (trilhas, listas, Caca) chama cqregra_registrar com os numeros.
-// Ninguem chama hoje fora dos testes, e a tela mostra o vazio honesto.
+// conquistasdados.c alimenta o Oscar com historico/progresso locais, usando o
+// catalogo CC0 versionado. As demais familias aguardam membros conhecidos.
 //
 // Premia descoberta, nunca tempo de tela: nao ha contagem de horas, sequencia
 // nem prazo (NOTAS-CONQUISTAS.md, principios 1 e 2).
