@@ -6,6 +6,7 @@
 #include "ajlog.h"
 #include "horafmt.h"
 #include "ajustes_ux.h"
+#include "resolver.h"
 #include "trailerfonte.h"   // NV_TRAILER_CONTINUA_DETALHE, nas ajudas do trailer
 #include "dados.h"
 #include "resolucao.h"

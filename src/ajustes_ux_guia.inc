@@ -181,17 +181,6 @@ static void guiaSair(void) {
   else if (doIndice) focoIndice = 1;   // volta ao cartao da grade (uxTopo ficou nele)
   else focarOpcao(AJ_GUIA);
 }
-// "Resolver um problema" (grade, 2.0.3): o guia ja no capitulo cujo icone e
-// este, com a primeira entrada em foco.
-static void guiaIrCapitulo(const char *icone) {
-  int c;
-  for (c = 0; c < GUIA_NCAPS; c++)
-    if (!strcmp(GUIA_CAPS[c].icone, icone)) {
-      gv.idx = GI_CAP0 + c; gv.col = GC_LISTA; gv.ent = guiaPrimeira(gv.idx);
-      return;
-    }
-}
-
 // --- GEOMETRIA --------------------------------------------------------------------
 #define GU_IDX_W   380.0f
 #define GU_INSP_X 1176.0f
