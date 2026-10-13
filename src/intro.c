@@ -27,6 +27,53 @@ static int botaoVis;static double botaoFim;static int botaoTipo;
 static IntroTrecho capTr[4];static int nCapTr;
 static void fundirCapitulos(void);   // chamar COM a trava
 static unsigned verGer;
+
+// A MASCARA DE MARCAS POR EPISODIO, lembrada alem do playback (a faixa "Vai
+// tocar" e os chips A/R/C da pagina do titulo, 2.1). So o que a REDE ou o
+// ARQUIVO responderam entra; estimativa nao vira marca. O anel e pequeno: a
+// pagina pergunta pelos episodios DA TEMPORADA VISIVEL, e quem acessa (a
+// camada vt.c) ja sabe que 0 = "sem dado", nao "sem marcas".
+static struct { char id[40]; int t, e; int mask, origem; } marcasLem[32];
+static int marcasLemN, marcasLemPtr;
+// COM a trava. `origem` 0 = cada trecho diz a sua (ani = AniSkip, senao
+// TheIntroDB); diferente de 0 vale para todos (capitulos do arquivo).
+static void marcasGuardar(const char *id, int t, int e, const IntroTrecho *v, int n, int origem) {
+  if (!id || !id[0] || n <= 0) return;
+  int k = -1;
+  for (int i = 0; i < marcasLemN; i++)
+    if (!strcmp(marcasLem[i].id, id) && marcasLem[i].t == t && marcasLem[i].e == e) k = i;
+  if (k < 0) {
+    k = marcasLemN < 32 ? marcasLemN++ : (marcasLemPtr++ & 31);
+    snprintf(marcasLem[k].id, sizeof marcasLem[k].id, "%s", id);
+    marcasLem[k].t = t; marcasLem[k].e = e;
+    marcasLem[k].mask = 0; marcasLem[k].origem = INTRO_O_NENHUMA;
+  }
+  for (int i = 0; i < n; i++) {
+    int o = origem ? origem : v[i].ani ? INTRO_O_ANISKIP : INTRO_O_THEINTRODB;
+    if (v[i].tipo < INTRO_ABERTURA || v[i].tipo > INTRO_PREVIA) continue;
+    marcasLem[k].mask |= 1 << (v[i].tipo - 1);
+    marcasLem[k].origem = marcasLem[k].origem == INTRO_O_NENHUMA || marcasLem[k].origem == o ? o : INTRO_O_MISTA;
+  }
+}
+int intro_marcas(const char *imdb, int t, int e, int *origem) {
+  int m = 0, k;
+  if (origem) *origem = INTRO_O_NENHUMA;
+  if (!imdb) return 0;
+  // O id do catalogo pode vir como "tt123:2:5"; a API quer so a parte do
+  // imdb. "kitsu:12", "mal:33" passam inteiros (o ':' nao corta).
+  char base[40];
+  snprintf(base, sizeof base, "%s", imdb);
+  if (!strncmp(base, "tt", 2)) { char *c = strchr(base, ':'); if (c) *c = 0; }
+  pthread_mutex_lock(&trava);
+  for (k = 0; k < marcasLemN; k++)
+    if (!strcmp(marcasLem[k].id, base) && marcasLem[k].t == t && marcasLem[k].e == e) {
+      m = marcasLem[k].mask;
+      if (origem) *origem = marcasLem[k].origem;
+      break;
+    }
+  pthread_mutex_unlock(&trava);
+  return m;
+}
 // Memoria unica do automatico, inclusive recuo antes de uma resposta tardia.
 static unsigned autoGer;static double autoFim[4],autoDe,autoAte;static int autoRecuou;
 static void autoSincronizar(void){
@@ -495,6 +542,7 @@ static void *baixar(void *u){
     }
     fundirCapitulos();caps=nCapTr;total=nTrechos;
   }
+  if(r!=R_FALHA||n>0)marcasGuardar(p->id,p->t,p->e,v,n,0);   // pagina do titulo (2.1): vale mesmo de resposta velha
   pthread_mutex_unlock(&trava);
   if(vale&&r!=R_FALHA){
     printf("[intro] %s S%02dE%02d: fonte=%s%s, %d marcadores, dur %.0fs\n",p->id,p->t,p->e,
@@ -561,6 +609,7 @@ void intro_definir_capitulos(const IntroTrecho *v,int n){
   nCapTr=0;
   for(int i=0;v&&i<n&&nCapTr<4;i++)capTr[nCapTr++]=v[i];
   fundirCapitulos();
+  if(temUltimo)marcasGuardar(ultimo.id,ultimo.t,ultimo.e,capTr,nCapTr,INTRO_O_CAPITULOS);
   if(nCapTr>0&&temUltimo){printf("[intro] %s S%02dE%02d: fonte=capitulos, %d marcadores\n",
       ultimo.id,ultimo.t,ultimo.e,nTrechos);fflush(stdout);}
   pthread_mutex_unlock(&trava);

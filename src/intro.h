@@ -29,6 +29,11 @@
 // intro_ativo.
 typedef struct { double inicio,fim; int tipo; int ani; } IntroTrecho; // ani 1 = veio do AniSkip
 enum { INTRO_ABERTURA=1, INTRO_RESUMO=2, INTRO_CREDITOS=3, INTRO_PREVIA=4 };
+// Origem das marcas de um episodio (pagina do titulo, 2.1).
+enum { INTRO_O_NENHUMA=0, INTRO_O_THEINTRODB, INTRO_O_ANISKIP, INTRO_O_CAPITULOS, INTRO_O_MISTA };
+// Marcas ja conhecidas de um episodio nesta sessao: bit0 abertura, bit1 resumo,
+// bit2 creditos, bit3 previa. 0 = nenhuma em memoria (nao pergunta a rede).
+int  intro_marcas(const char *imdb,int temporada,int episodio,int *origem);
 // `temporada` e `episodio` ZERO = filme: a consulta sai so com o imdb.
 void intro_pedir(const char *imdb,int temporada,int episodio);
 // Igual a intro_pedir, mas diz a duracao (s) dos episodios E-1 e E+1 quando o
