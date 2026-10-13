@@ -90,6 +90,7 @@ static void avisarCascaAberto(int v) { (void)v; }
 #include "seekr.h"
 #include "visto.h"     /* fim de episodio/filme para Simkl e conta */
 #include "vistoep.h"   /* o check de "assistido" na lista de episodios (issue #100) */
+#include "rewatch.h"   /* sessao de reassistir: cada conclusao e um play novo */
 #include "pausao.h"
 #include "relogiofim.h"
 #include "aovivo.h"
@@ -2050,13 +2051,16 @@ static void fecharSessao(int manter) {
       // de fora da mascara porque o scrobble acima ja fecha o visto la. Um
       // pedido por conclusao, e so quando o check local ainda nao existia —
       // rever um episodio ja visto nao reescreve historico.
+      // EXCETO NA SESSAO DE REASSISTIR (rewatch.h): la cada conclusao e um play
+      // novo e o historico vai de novo, mesmo com o check ja marcado.
+      int reassistindo = rewatch_ativa(ci->imdb);
       if (assistiu) {
         int dest = visto_destinos() & ~VISTO_TRAKT;
         // O stop do scrobble ja fecha o visto no Simkl (e cai no historico
         // sozinho se falhar): mandar o historico de novo seria pedido em dobro.
         if (simklScr == SCR_STOP) dest &= ~VISTO_SIMKL;
         if (epT > 0 && epE > 0) {
-          if (vistoep_estado(ci->imdb, epT, epE) != 1) {
+          if (reassistindo || vistoep_estado(ci->imdb, epT, epE) != 1) {
             VistoPar par = { (short)epT, (short)epE };
             visto_episodios(ci->imdb, "series", &par, 1, 1, dest);
           }
@@ -2065,6 +2069,13 @@ static void fecharSessao(int manter) {
         }
       }
       if (assistiu && epT > 0 && epE > 0) vistoep_definir(ci->imdb, epT, epE, 1);
+      // A sessao anota o que foi revisto (selo "Nx") ou onde parou a meio.
+      if (reassistindo && epT > 0 && epE > 0) {
+        if (assistiu) rewatch_registrar(ci->imdb, epT, epE);
+        else if (duracaoSeg > 0.0f)
+          rewatch_parcial(ci->imdb, epT, epE, (int)(posSeg * 100.0f / duracaoSeg));
+        sync_sujar_progresso();
+      }
       // E para a CONTA. Trakt e conta sao dois destinos diferentes: nem todo
       // usuario liga o Trakt, e o progresso do app oficial vem da conta.
       sync_sujar_progresso();

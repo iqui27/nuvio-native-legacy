@@ -16,3 +16,12 @@ if [ -f src/rewatch.c ]; then extra=(-DTEM_REWATCH src/rewatch.c); fi
 cc -O1 -g -Wall -Wextra -Isrc -Wno-deprecated-declarations -Wno-macro-redefined \
   ${extra[@]+"${extra[@]}"} tests/rewatch.c -o "$tmp/rewatch" -lpthread
 "$tmp/rewatch"
+
+# O PLAYER REENVIA O HISTORICO NA SESSAO (decisao 7): sem o desvio, o episodio
+# ja visto (vistoep_estado == 1) nunca chega de novo ao Simkl.
+echo
+echo "player ligado a sessao:"
+falhou=0
+grep -q 'reassistindo || vistoep_estado' src/player.c && echo "  ok      reenvia historico na sessao" || { echo "  FALHOU: player nao reenvia historico na sessao"; falhou=1; }
+grep -q 'rewatch_registrar(ci->imdb' src/player.c && echo "  ok      registra o episodio revisto" || { echo "  FALHOU: player nao registra o episodio revisto"; falhou=1; }
+[ "$falhou" -eq 0 ]
