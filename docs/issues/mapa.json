@@ -11683,6 +11683,15 @@
      "porque": "Fileira Trilha sonora: faixas via MusicBrainz (sem chave), trecho 30 s via iTunes Search/Deezer (sem chave). API pública do Trakt não expõe isso. Risco: casar trilha errada; tocar por cima do trailer. Prioridade baixa.",
      "issues": [],
      "origem": "dono 13/10 (inspirado nos Preview Features do trakt.tv)"
+    },
+    {
+     "nome": "Filmografia contada (timeline interativa, já vi N de M, conquistas, Já vi com quiz)",
+     "porque": "Redesenho da filmografia além do mockup 2.1: mais dados da pessoa (TMDB), timeline interativa por ano em capítulos, selo visto/não visto e contador por pessoa (Nuvio+Trakt+Simkl), conquistas ligadas às Conquistas 2.1, marcar Já vi fora do histórico com quiz de 2 perguntas (checagem leve, não prova). Mockup: Fable, agente/21-filmografia.",
+     "issues": [],
+     "origem": "dono 13/10",
+     "branches": [
+      "agente/21-filmografia (mockup)"
+     ]
     }
    ]
   },
