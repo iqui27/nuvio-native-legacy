@@ -23,6 +23,7 @@
 #include "dados.h"
 #include "gfx.h"
 #include "text.h"
+#include "teclado.h"
 #include "tex_cache.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
@@ -157,6 +158,13 @@ static const struct {
   { "Cidade de Deus", "2002", "Movie · Crime · Drama", "", 0, 86, 0, 0 },
   { "O Agente Secreto", "", "Programa de TV", "", 1, 0, 0, 0 },
 };
+
+// Conferencia do que a tela decidiu (foco, modo); a falha sai no rc do programa.
+static int falhasTela;
+#define ASSERTA(cond, ...) do { \
+  if (!(cond)) { falhasTela++; printf("  FALHOU: "); printf(__VA_ARGS__); printf("\n"); } \
+  else { printf("  ok: "); printf(__VA_ARGS__); printf("\n"); } \
+} while (0)
 
 static void povoar(void) {
   CatItem v[sizeof AMOSTRA / sizeof AMOSTRA[0]];
@@ -520,6 +528,102 @@ int main(int argc, char **argv) {
     tecla(SDLK_ESCAPE);
   }
 
+  // 8c. A LISTA PROPRIA: uma lista do Trakt do dono, com os 6 itens inteiros
+  // (item_count 6 e ids de entrada), ganha os sete chips. Sem conta o Trakt nao
+  // grava, entao o salvamento falha e a tela tem que voltar ao que o servidor tem.
+  { static const char *UMA =
+      "[{\"name\":\"Noites de chuva\",\"description\":\"Para ver sem pressa\","
+      "\"privacy\":\"public\",\"item_count\":6,\"likes\":2,"
+      "\"ids\":{\"trakt\":3100500,\"slug\":\"noites-de-chuva\"},"
+      "\"user\":{\"username\":\"iqui27\",\"name\":\"Henrique\",\"ids\":{\"slug\":\"iqui27\"}}}]";
+    CatItem pit[6];
+    DescItemLista ex[6];
+    int k, pn = cat_n() < 6 ? cat_n() : 6;
+    int ed, acao, pega, comp, fil;
+    memset(ex, 0, sizeof ex);
+    for (k = 0; k < pn; k++) {
+      const CatItem *c = cat_item(k);
+      if (c) pit[k] = *c;
+      ex[k].rank = k + 1;
+      ex[k].itemId = 7000 + k;
+    }
+    quadros(40);
+    lst_ler_trakt(UMA, 0);
+    quadros(4);
+    lst_teste_itens(pit, pn);
+    lst_teste_extras(ex, pn);
+    AO_TOPO();
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    quadros(40);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(fil == 0 && acao == 0, "a lista abre com o foco no primeiro chip (fil %d acao %d)", fil, acao);
+    snprintf(nome, sizeof nome, "%s-propria-chips.bmp", saida);
+    captura(nome);
+    // Ate Ordem (chip 4) e liga.
+    for (k = 0; k < 4; k++) tecla(SDLK_RIGHT);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(acao == 4, "o foco alcanca Ordem pelo D-pad (veio %d)", acao);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(ed == 1 && fil >= 1, "Ordem liga e leva o foco para a grade (ed %d fil %d)", ed, fil);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);       // pega o primeiro titulo
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(pega == 0, "OK pega o titulo 0 (veio %d)", pega);
+    tecla(SDLK_DOWN);                              // move para a posicao 1 (exibicao em lista: uma coluna)
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(pega == 1, "seta move o titulo pego (veio %d)", pega);
+    { CatItem c0;
+      lst_item(1, &c0);
+      ASSERTA(!strcmp(c0.titulo, pit[0].titulo), "o titulo pego foi para a posicao 1 (%s)", c0.titulo); }
+    snprintf(nome, sizeof nome, "%s-propria-ordem.bmp", saida);
+    captura(nome);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);       // solta
+    tecla(SDLK_ESCAPE);                            // conclui: sem conta, falha e recarrega
+    { const char *rec = biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+      ASSERTA(ed == 0 && pega == -1, "Back conclui a ordem (ed %d pega %d)", ed, pega);
+      ASSERTA(!strcmp(rec, "Não foi possível salvar a lista"), "sem conta o salvamento falha com recado (%s)", rec); }
+    snprintf(nome, sizeof nome, "%s-propria-ordem-falha.bmp", saida);
+    captura(nome);
+    // Compartilhar (chip 6): QR por cima, qualquer tecla fecha.
+    AO_TOPO();
+    for (k = 0; k < 2; k++) tecla(SDLK_RIGHT);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(acao == 6, "o foco alcanca Compartilhar (veio %d)", acao);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(comp == 1, "lista publica abre o QR");
+    snprintf(nome, sizeof nome, "%s-propria-compartilhar.bmp", saida);
+    captura(nome);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(comp == 0, "uma tecla fecha o QR");
+    // Notas (chip 5): liga, OK no titulo abre o teclado, Back fecha o teclado e depois o modo.
+    tecla(SDLK_LEFT);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(ed == 2, "Notas liga (ed %d)", ed);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    ASSERTA(teclado_aberto(), "OK no titulo abre o teclado da nota");
+    snprintf(nome, sizeof nome, "%s-propria-nota-teclado.bmp", saida);
+    captura(nome);
+    tecla(SDLK_ESCAPE);
+    ASSERTA(!teclado_aberto(), "Back fecha o teclado");
+    tecla(SDLK_ESCAPE);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(ed == 0, "Back conclui Notas (ed %d)", ed);
+    // Descricao (chip 3): teclado com a descricao atual.
+    AO_TOPO();
+    for (k = 0; k < 8; k++) tecla(SDLK_LEFT);
+    for (k = 0; k < 3; k++) tecla(SDLK_RIGHT);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    ASSERTA(teclado_aberto(), "Descricao abre o teclado");
+    snprintf(nome, sizeof nome, "%s-propria-descricao.bmp", saida);
+    captura(nome);
+    tecla(SDLK_ESCAPE);
+    tecla(SDLK_ESCAPE);                            // volta para a lista de listas
+  }
+
   // 9. A fonte SIMKL sem vinculo: a tela diz o que falta, e nao mostra aba
   // vazia. O seletor de fonte cicla Trakt -> Simkl.
   AO_TOPO();
@@ -543,6 +647,6 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-busca-teclado.bmp", saida);
   captura(nome);
 
-  printf("pronto\n");
-  return 0;
+  printf("pronto (%d falha%s)\n", falhasTela, falhasTela == 1 ? "" : "s");
+  return falhasTela ? 1 : 0;
 }
