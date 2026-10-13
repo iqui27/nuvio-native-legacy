@@ -3611,6 +3611,7 @@ void app_atualizar(float dt, Uint32 agora) {
     atomic_store_explicit(&perfilCarga, 0, memory_order_release);
   }
   if (tela == TELA_PERFIL && perfil_pediu_atualizar()) pedirPerfil();
+  if (tela == TELA_PERFIL && perfil_pediu_conquistas()) conquistas_abrir();
   // Titulo escolhido no painel de Salvos. Ele entrega o IMDb e nao um indice:
   // a lista dele inclui titulos que NAO estao no catalogo (vieram do arquivo
   // local, ver salvospainel.c), e um indice para esses nao existe. Sem item no
