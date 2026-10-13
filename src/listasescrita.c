@@ -131,14 +131,23 @@ static LstescEnvio envioTeste;
 static int envioReal(const char *metodo, const char *url, const char *corpo, char **resp) {
   const char *cab[5];
   char aut[200], chave[140];
+  int status = 0, k;
+#ifndef __EMSCRIPTEN__
   RedePedido q;
   RedeResposta r;
-  int ok, status = 0, k;
+  int ok;
+#endif
   *resp = NULL;
   if (!trakt_cabecalhos(cab, aut, sizeof aut, chave, sizeof chave)) return 0;
   for (k = 0; cab[k]; k++) ;
   cab[k++] = "Content-Type: application/json";
   cab[k] = NULL;
+#ifdef __EMSCRIPTEN__
+  if (!strcmp(metodo, "PUT"))
+    *resp = rede_putar_st(url, 20, cab, corpo, &status);
+  else
+    *resp = rede_postar_st(url, 20, cab, corpo, &status);
+#else
   memset(&q, 0, sizeof q);
   q.metodo = metodo; q.url = url; q.cabecalhos = cab;
   q.corpo = corpo; q.n_corpo = strlen(corpo);
@@ -148,6 +157,7 @@ static int envioReal(const char *metodo, const char *url, const char *corpo, cha
   status = ok ? r.status : 0;
   if (ok && r.corpo) { *resp = strdup(r.corpo); }
   rede_resposta_limpar(&r);
+#endif
   return status;
 }
 
