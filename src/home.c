@@ -45,6 +45,7 @@ static void heroTempoInicio(int indice) {
 #include "catalogo.h"
 #include "artehero.h"
 #include "colecoes.h"
+#include "homefil.h"
 #include "colfileiras.h"
 #include "addons.h"   /* addons_nome_por_id: o addon de um grupo de colecoes */
 #include "gif.h"
@@ -148,6 +149,7 @@ typedef struct {
   // preservando identidade, arte e navegação do título.
   int itens[MAX_CARDS];
   int usaItens;
+  int vistosOcultos;   // chip somente quando o filtro removeu cartoes
   // Fator de TAMANHO desta fileira, escolhido em Ajustes (fileiras.c). Fica no
   // Fileira e nao numa consulta por chave dentro do desenho: larguraDe/alturaDe
   // sao chamadas varias vezes por fileira por QUADRO, e cada consulta por chave
@@ -1285,7 +1287,15 @@ static void abrirMenuCartaz(void) {
     return;
   }
   s = &fileiras[foco.fileira];
-  if (s->tipo == FILEIRA_CATALOGOS) { ctx_abrir_fileira(s->chave, s->titulo); return; }
+  if (s->tipo == FILEIRA_CATALOGOS || !strncmp(s->chave, CF_PREFIXO, strlen(CF_PREFIXO))) {
+    // A pasta fixada conserva o menu de desafixar tambem com titulos locais.
+    int fixada = !strncmp(s->chave, CF_PREFIXO, strlen(CF_PREFIXO));
+    const char *pastaId = fixada ? s->chave + strlen(CF_PREFIXO) : "";
+    const ColFolder *pf = !fixada && foco.coluna >= 0 && foco.coluna < s->n ? col_folder(s->folders[foco.coluna]) : NULL;
+    ctx_abrir_filmenu(s->chave, s->titulo, pf ? pf->id : pastaId,
+                      s->tipo != FILEIRA_CATALOGOS);
+    return;
+  }
   // A PILHA FECHADA nao e um titulo (sao ate seis num card so): como a pasta
   // de colecao, abre direto no estilo da fileira.
   if (s->tipo == FILEIRA_TOP10 && s->stackN) { ctx_abrir_fileira(s->chave, s->titulo); return; }
@@ -2586,8 +2596,9 @@ static void sincronizarFileiras(void) {
   // direto (cat_revisao); cat_revisao e bumpado em cat_definir_tudo,
   // cat_trocar_continuar E cat_republicar_fileiras, cobrindo todo caminho
   // que troca fils[].
-  static unsigned ultCatRev, ultFilRev, ultColRev, ultFilLim, ultCwoRev, ultOrdemRev, ultRetRev;
+  static unsigned ultCatRev, ultFilRev, ultColRev, ultFilLim, ultCwoRev, ultOrdemRev, ultRetRev, ultCfRev, ultOvRev, ultItensRev;
   unsigned catRev = cat_revisao(), filRev = fil_revisao();
+  unsigned itensRev = cat_revisao_itens();
   int filLim = fil_limite();
   unsigned colRev = col_revisao();
   unsigned ordemRev = catordem_revisao();
@@ -2595,10 +2606,11 @@ static void sincronizarFileiras(void) {
   // (a mesma lista publicada, so a divisao outra), e o hash abaixo ja o pesa.
   unsigned cwoRev = cwo_revisao();
   if (nCat == filsAplicadas && assin == prefsAplicadas &&
-      catRev == ultCatRev && filRev == ultFilRev &&
+      catRev == ultCatRev && itensRev == ultItensRev && filRev == ultFilRev &&
       colRev == ultColRev && ordemRev == ultOrdemRev &&
       filLim == ultFilLim && cwoRev == ultCwoRev &&
       retomarAplicada == retomarRev && cw_retido_rev() == ultRetRev &&
+      cf_revisao() == ultCfRev && ov_revisao() == ultOvRev &&
       ultCatRev) {   // ultCatRev=0: primeira chamada, cai no hash
     ultFilRev = filRev; ultColRev = colRev; ultFilLim = (unsigned)filLim;
     return;
@@ -2612,7 +2624,12 @@ static void sincronizarFileiras(void) {
   ultCwoRev = cwoRev;
   ultOrdemRev = ordemRev;
   ultRetRev = cw_retido_rev();
+  ultCfRev = cf_revisao(); ultOvRev = ov_revisao(); ultItensRev = itensRev;
   unsigned revisao = 2166136261u;
+  // Colecao fixada e "vistos ocultos" (homefil.h) mudam a lista sem o catalogo mudar.
+  revisao = (revisao ^ ultCfRev) * 16777619u;
+  revisao = (revisao ^ ultOvRev) * 16777619u;
+  revisao = (revisao ^ itensRev) * 16777619u;
   revisao = (revisao ^ (unsigned)reservaEstado) * 16777619u;
   // A escolha LOCAL de fileiras entra na mesma assinatura do catalogo: ordem,
   // liga/desliga, forma, tamanho e limite mudam a lista tanto quanto uma
@@ -2806,6 +2823,26 @@ static void sincronizarFileiras(void) {
       }
     }
   }
+  // COLECAO FIXADA = FILEIRA PROPRIA (Home 2.1, "colpin_<id>"). A ordem dos
+  // titulos vem das fontes ja carregadas (cf_itens). Sem dado local suficiente,
+  // mostra o cartao da propria colecao, que abre o "Ver tudo" dela. Escolha
+  // local por perfil; a chave entra no registro de ordem como as demais.
+  for(int i=0;i<cf_n() && destino<MAX_FIL;i++) {
+    const ColFolder *pf=cf_pasta(i);
+    int fi=-1;
+    Fileira v={0};
+    if(!pf)continue;
+    for(int k=0;k<col_n();k++)if(col_folder(k)==pf){fi=k;break;}
+    if(fi<0)continue;
+    snprintf(v.chave,sizeof v.chave,CF_PREFIXO "%s",pf->id);
+    snprintf(v.titulo,sizeof v.titulo,"%s",pf->title);
+    v.tipo=FILEIRA_CATALOGOS;
+    v.forma=pf->forma>=0&&pf->forma<COL_FORMA_N?pf->forma:COL_FORMA_PAISAGEM;
+    v.n=cf_itens(pf,v.itens,MAX_CARDS-1);
+    if(v.n) { v.tipo=FILEIRA_NORMAL;v.usaItens=1; }
+    else { v.n=1;v.folders[0]=fi; }
+    fileiras[destino++]=v;
+  }
   // FORMA E TAMANHO ESCOLHIDOS POR FILEIRA (Ajustes -> Fileiras da Home).
   // Aplicado AQUI, antes da normalizacao do Top 10 logo abaixo: quem escolhe
   // "Top 10" espera a pilha com o ranking, e ela sai daquele laco. Depois dele,
@@ -2850,6 +2887,26 @@ static void sincronizarFileiras(void) {
       }
       s->usaItens = 1;
     }
+  }
+  // "VISTOS OCULTOS" (#366, homefil.h): a fileira marcada perde os titulos ja
+  // vistos. Se so sobrar o vazio, a fileira fica inteira — fileira sem nada
+  // nao tem foco nem saida; o chip so aparece se algum cartao saiu.
+  for(int i=0;i<destino;i++) {
+    Fileira *s=&fileiras[i];
+    int k=0;
+    s->vistosOcultos=0;
+    if(!ov_ativa(s->chave)||s->stackN||s->n<1||s->n>MAX_CARDS)continue;
+    if(s->tipo==FILEIRA_CATALOGOS||s->tipo==FILEIRA_SOCIAL||s->tipo==FILEIRA_CONTINUE||(!s->base[0]&&strncmp(s->chave,CF_PREFIXO,strlen(CF_PREFIXO))))continue;
+    int novo[MAX_CARDS];
+    for(int c=0;c<s->n;c++) {
+      int idx=s->usaItens?s->itens[c]:s->ini+c;
+      const CatItem *it=cat_item_exato(idx);
+      if(it&&cat_visto(it))continue;
+      novo[k++]=idx;
+    }
+    if(k<1||k==s->n)continue;
+    memcpy(s->itens,novo,(size_t)k*sizeof *novo);
+    s->usaItens=1;s->n=k;s->vistosOcultos=1;
   }
   int socialExiste=0;
   for(int i=0;i<destino;i++)if(fileiras[i].tipo==FILEIRA_SOCIAL)socialExiste=1;
@@ -3151,6 +3208,17 @@ static void sincronizarFileiras(void) {
 }
 
 int home_tem_fileiras(void) { return nFileiras > 0; }
+// Chave da fileira sob o foco ("" com o destaque em foco) e quantos cartoes ela
+// tem na tela agora (com o filtro de vistos). Para os testes de tela.
+const char *home_fileira_focada(void) {
+  return (!focoHero && foco.fileira >= 0 && foco.fileira < nFileiras) ? fileiras[foco.fileira].chave : "";
+}
+int home_fileiras_n(void) { return nFileiras; }
+const char *home_fileira_chave(int i) { return (i >= 0 && i < nFileiras) ? fileiras[i].chave : ""; }
+int home_fileira_n(const char *chave) {
+  for (int r = 0; r < nFileiras; r++) if (!strcmp(fileiras[r].chave, chave)) return fileiras[r].n;
+  return -1;
+}
 
 // A HOME DE OUTRO PERFIL ABRE NO TOPO, como no arranque: destaque em foco,
 // fileira 0 no primeiro cartaz, sem rolagem, e a memoria de posicao da sessao
@@ -6532,6 +6600,44 @@ void home_desenhar(Uint32 agora) {
       if(!strncmp(fileiras[r].catId,"ai_",3)) {
         TxtLinha ai=txt_linha(TXT_HERO_META,"AI-powered",183,192,219,255);
         txt_desenhar(ai,homeConteudoX()+tl.w+22,y+(tl.h-ai.h)*.5f);
+      }
+      {
+        // ORIGEM DA FILEIRA (home.html `.org`): "Trakt · Este aparelho" ao lado
+        // do titulo de Continuar e dos Proximos episodios.
+        const char *partes[3];
+        float chipX = homeConteudoX() + tl.w + 22;
+        int np = homefil_origem(fileiras[r].chave, trakt_ativo(), simkl_ativo(), partes);
+        if (np > 0) {
+          char org[96] = "";
+          for (int k = 0; k < np; k++) {
+            size_t u = strlen(org);
+            snprintf(org + u, sizeof org - u, "%s%s", k ? " \xc2\xb7 " : "", i18n(partes[k]));
+          }
+          TxtLinha lo = txt_linha(TXT_HERO_META, org, 183, 192, 219, 255);
+          txt_desenhar(lo, homeConteudoX() + tl.w + 22, y + (tl.h - lo.h) * .5f);
+          chipX += lo.w + 18.0f;
+        }
+        // Colecao fixada: identifica tanto os titulos locais quanto o atalho.
+        if (!strncmp(fileiras[r].chave, CF_PREFIXO, strlen(CF_PREFIXO))) {
+          TxtLinha lc = txt_linha(TXT_HERO_META, i18n("Coleção fixada"), 183, 192, 219, 255);
+          txt_desenhar(lc, chipX, y + (tl.h - lc.h) * .5f);
+          chipX += lc.w + 18.0f;
+        }
+        // Chip "vistos ocultos" (#366).
+        if (fileiras[r].vistosOcultos) {
+          TxtLinha lv = txt_linha(TXT_HERO_META, i18n("vistos ocultos"), 238, 240, 245, 255);
+          float py = y + (tl.h - lv.h) * .5f;
+          gfx_cor((GfxRect){ chipX - 12.0f, py - 5.0f, lv.w + 24.0f, lv.h + 10.0f }, 0.5f,
+                  0.04f, 0.045f, 0.055f, 0.62f);
+          txt_desenhar(lv, chipX, py);
+          chipX += lv.w + 30.0f;
+        }
+        // Dica de colecoes: o que segurar OK faz.
+        if (fileiras[r].tipo == FILEIRA_CATALOGOS && foco.fileira == r && !focoHero &&
+            strncmp(fileiras[r].chave, CF_PREFIXO, strlen(CF_PREFIXO))) {
+          TxtLinha lh = txt_linha(TXT_HERO_META, i18n("Segure OK: fixar na Home · mover · ocultar"), 183, 192, 219, 200);
+          txt_desenhar(lh, chipX, y + (tl.h - lh.h) * .5f);
+        }
       }
       if (foco.fileira == r && !focoHero && tipo != FILEIRA_SOCIAL) {
         char pos[32];

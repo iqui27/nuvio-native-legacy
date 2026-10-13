@@ -102,6 +102,12 @@ void ctx_dispensar_retomar(int on);
 // previa da fileira a direita (home_previa_fileira). Nao abre nada se a chave
 // nao aceita forma.
 void ctx_abrir_fileira(const char *chave, const char *titulo);
+// MENU DA FILEIRA da Home 2.1 (segurar OK numa colecao ou numa fileira fixada):
+// fixar/tirar a colecao da Home (`pastaId` vazio = nao e colecao), mover,
+// ocultar, "vistos ocultos" (`comVistos`) e o estilo. Tudo pela `chave`.
+void ctx_abrir_filmenu(const char *chave, const char *titulo, const char *pastaId, int comVistos);
+// 1 UMA vez quando o menu mudou fixacao/ordem/visibilidade: a Home se refaz.
+int  ctx_fil_alterou(void);
 // O MESMO MENU, aberto pela BIBLIOTECA (biblioteca.c) segurando OK num cartaz.
 // `r` e a caixa do cartaz na tela virtual (1920x1080) e `arte` o poster dele: o
 // menu nasce ao lado e o poster volta por cima do veu, como na home. Sem arte

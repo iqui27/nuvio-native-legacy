@@ -19,7 +19,7 @@ cc ${flags[@]+"${flags[@]}"} src/catalogo.c src/progresso.c src/cwordem.c src/cw
   -o /tmp/nuvio-cwremover-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined -Wno-unused-function
 /tmp/nuvio-cwremover-tests
-cc ${flags[@]+"${flags[@]}"} src/catalogo.c src/progresso.c src/focus.c src/ajustes.c src/posterprov.c src/redeurl.c src/colecoes.c src/js.c src/metaprov.c src/catordem.c src/fileiras.c src/artehero.c src/cwordem.c src/cwretido.c src/fonteregra.c src/regexjs.c src/ajlog.c tests/cwremover_home.c tests/amigosfil_stub.c \
+cc ${flags[@]+"${flags[@]}"} src/catalogo.c src/progresso.c src/focus.c src/ajustes.c src/posterprov.c src/redeurl.c src/colecoes.c src/js.c src/metaprov.c src/catordem.c src/fileiras.c src/homefil.c src/artehero.c src/cwordem.c src/cwretido.c src/fonteregra.c src/regexjs.c src/ajlog.c tests/cwremover_home.c tests/amigosfil_stub.c \
   -Isrc -o /tmp/nuvio-cwremover-home-tests -O1 -g -ffunction-sections -fdata-sections \
   -Wl,-dead_strip -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -Wno-deprecated-declarations -Wno-macro-redefined
