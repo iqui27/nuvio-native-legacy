@@ -1,5 +1,5 @@
 #!/bin/bash
-# Episodio duplicado (#328).
+# Episodio duplicado (#328) e listas completas de addon (#391).
 #
 #   bash tests/episodiosdup.sh
 set -eu

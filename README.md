@@ -87,6 +87,21 @@ Not sure which Tizen you have? Apps2Samsung shows it when it connects.
 - Samsung TVs don't support Dolby Vision; the player labels the source's HDR
   type instead (HDR10, HDR10+, HDR).
 
+#### Search microphone
+
+In the native `.tpk` (Tizen 6+) and `.wgt`, the microphone button in Search and
+Spotlight opens the Samsung keyboard. Press the microphone on the remote to
+dictate; Done submits the text and Back cancels. Typing uses the TV keyboard
+in `.wgt` and Nuvio's keyboard in `.tpk`. Settings › Home screen › More options
+› Sidebar › **Mic button in search** offers Automatic, On and Off. Recognition is handled by Samsung's
+keyboard, not by an audio upload implemented in Nuvio.
+
+**Native `.tpk` installations need a package reinstall to gain this feature**:
+the native-library-only updater cannot add the new .NET host code. Tizen 4–5
+(`NuvioTpk40`) keeps the existing keyboard. Remote dictation and IME placement
+still require validation on real Samsung TVs; see the
+[implementation notes](docs/plans/microfone-busca.md).
+
 #### WebAssembly `.wgt`
 
 `NuvioTV-X.Y.Z-tizen.wgt`, for Tizen **5.5 or newer**. The same app compiled to

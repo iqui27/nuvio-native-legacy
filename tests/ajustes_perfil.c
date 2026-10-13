@@ -10,6 +10,7 @@
 //   4. o logout apaga as copias.
 #include "../src/ajustes.c"
 #include <assert.h>
+#include <string.h>
 #include <unistd.h>
 
 int main(void) {
@@ -72,6 +73,24 @@ int main(void) {
   valor[AJ_HERO] = 1;
   assert(ajustes_perfil_restaurar(3) == 0);
   assert(valor[AJ_HERO] == 1);
+
+  // #461: copia gravada ANTES da chave menuTopoLocal. O perfil 1 ligou o topo;
+  // trocar para o 2 (arquivo antigo) tem de voltar ao padrao 0, e nao herdar o 1.
+  valor[AJ_MENU_TOPO] = 1;
+  { char *t = dados_ler("ajustes-p2.txt"), *l; FILE *f;
+    char nome[600], buf[AJ_N * 56]; size_t u = 0;
+    assert(t);
+    for (l = t; *l; ) {
+      char *fim = strchr(l, '\n'); size_t n = fim ? (size_t)(fim - l + 1) : strlen(l);
+      if (strncmp(l, "menuTopoLocal ", 14)) { memcpy(buf + u, l, n); u += n; }
+      if (!fim) break; l = fim + 1;
+    }
+    buf[u] = 0; free(t);
+    snprintf(nome, sizeof nome, "%s/ajustes-p2.txt", dir);
+    f = fopen(nome, "w"); assert(f); fputs(buf, f); fclose(f); }
+  assert(ajustes_perfil_restaurar(2) == 1);
+  assert(valor[AJ_MENU_TOPO] == 0);
+  assert(ajustes_menu_topo() == 0);
 
   // A copia nao carrega linha de aparelho nem chave local com "-".
   { char *t = dados_ler("ajustes-p1.txt");

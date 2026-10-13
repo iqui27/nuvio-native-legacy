@@ -35,9 +35,13 @@ int ajustes_social(void) { return 1; }
 int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
 int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
+int ajustes_cw_do_episodio_mais_alto(void) { return 1; }
+int trakt_ativo(void) { return 1; }
+int vistoep_estado(const char *i, int s, int e) { (void)i; (void)s; (void)e; return -1; }
 int ajustes_ocultar_nao_lancados(void) { return 0; }   // #369: descoberta.c le o ajuste
 #include "../src/descoberta.c"
 #include "jellyfin_stub.inc"
+int contalib_sementes_a_seguir(ContaSemente *s, int m, int a) { (void)s; (void)m; (void)a; return 0; }
 unsigned recomenda_geracao(void) { return 1; }
 Uint32 SDL_GetTicks(void) { return 0; }
 
@@ -50,12 +54,22 @@ static const char *MANIFESTO =
   "{\"type\":\"movie\",\"id\":\"cat_b\",\"name\":\"Cat B\"}]}";
 
 int   addons_n(void)                   { return 1; }
-const char *addons_base(int i)         { (void)i; return BASE; }
+static const char *baseFixture = BASE;
+static int ativoFixture = 1;
+const char *addons_base(int i)         { (void)i; return baseFixture; }
+void addons_lista_travar(void) {}
+void addons_lista_destravar(void) {}
+void ws_destino(const char *b, const char *u, int p, char out[20]) {
+  (void)b; (void)u; (void)p; strcpy(out, "fixture");
+}
 const char *addons_id_manifesto(int i) { (void)i; return ""; }
 const char *addons_nome(int i)         { (void)i; return "addon"; }
 unsigned addons_versao(void)           { return 1; }
 const char *addons_base_por_id(const char *id) { return id && !strcmp(id, AID) ? BASE : ""; }
 void addons_manifesto_lido(int i, const char *c) { (void)i; (void)c; }
+void addons_manifesto_lido_base(int i, const char *b, const char *d, unsigned v, const char *c) {
+  (void)b; (void)d; (void)v; addons_manifesto_lido(i, c);
+}
 
 // ------------------------------------------------------------ o homeestado
 // Fiel no que importa: a geracao muda quando o contexto muda, e o snapshot
@@ -297,7 +311,7 @@ int fil_marcar_sem_addon(const char *const *ids, const char *const *bases, const
 int   fil_addon_novo(const char *id, const char *base) { (void)id; (void)base; return 0; }
 int   addons_perfil_da_lista(void)         { return 0; }
 int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
-int   addons_ativo(int i)                  { (void)i; return 1; }
+int   addons_ativo(int i)                  { (void)i; return ativoFixture; }
 int   addons_fornece(int i, int oque)     { (void)i; (void)oque; return 0; }
 int   addons_sondado(int i)              { (void)i; return 0; }
 int   fil_limite(void)                     { return 16; }
@@ -409,7 +423,8 @@ int main(void) {
                         "{\"addon_id\":\"ultramax\",\"type\":\"movie\",\"catalog_id\":\"u150\",\"order\":0},"
                         "{\"addon_id\":\"ultramax\",\"type\":\"movie\",\"catalog_id\":\"u100\",\"order\":1}"
                         "]}}]") >= 0);
-    n = lerManifesto(0, "https://ultramax.test", d, 32, 1, &real, &prom);
+    baseFixture = "https://ultramax.test";
+    n = lerManifesto(0, d, 32, &real, &prom);
     for (i = 0; i < n; i++) {
       if (!strcmp(d[i].id, "u150")) tem150 = 1;
       if (!strcmp(d[i].id, "u100")) tem100 = 1;
@@ -437,7 +452,10 @@ int main(void) {
   // (24/09) Pluto TV, Minha TV e FrostView, desligados, ganhavam fileira.
   { static Decl d[32];
     int real = -1, prom = -1, n, alvos = desc_busca_n_alvos();
-    n = lerManifesto(0, "https://ultramax.test", d, 32, 0, &real, &prom);
+    ativoFixture = 0;
+    n = lerManifesto(0, d, 32, &real, &prom);
+    ativoFixture = 1;
+    baseFixture = BASE;
     assert(n == 0);
     assert(real == 0 && prom == 0);
     assert(nForaCota == 0);

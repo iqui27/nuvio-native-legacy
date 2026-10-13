@@ -98,7 +98,9 @@ static void conferirFolhaCheia(const Stream *l, int n, const char *cenario) {
   tecla(SDLK_RETURN);
   { int esc = -1;
     assert(stream_folha_escolheu(&esc));
-    assert(esc == 4); } // #402: ultima e a segunda fonte conhecida fora de cache
+    // #205 (38f3dd35): fora de cache fica no fim do proprio grupo;
+    // a ultima linha e a ultima MediaFusion 720p, abaixo de 4K e 1080p.
+    assert(esc == N_TOTAL - 1); }
   printf("fontes_lista: %s: %d de %d na folha\n", cenario, stream_folha_n(), N_TOTAL);
 }
 

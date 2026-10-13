@@ -6,6 +6,7 @@
 #include "ajlog.h"
 #include "horafmt.h"
 #include "ajustes_ux.h"
+#include "resolver.h"
 #include "trailerfonte.h"   // NV_TRAILER_CONTINUA_DETALHE, nas ajudas do trailer
 #include "dados.h"
 #include "resolucao.h"
@@ -544,6 +545,13 @@ typedef enum {
   AJ_PULAR_CREDITOS,
   AJ_PROXIMO_CONTAGEM, // #256: segundos locais; append-only
   AJ_INTERFACE_MODO, // local, append-only; 0 = TV, 1 = Mobile
+  // Botao de microfone das buscas no .tpk (Voz.cs): Automatico (a TV que diz
+  // nao ter microfone fica sem ele) / Ligado / Desligado. LOCAL, so na tela do
+  // .tpk. No fim: valor[]/CHAVE[] posicionais.
+  AJ_MIC_BUSCA,
+  // #461: menu na lateral (0, o de sempre) ou numa barra no topo (1). Por
+  // perfil, so desta TV. No fim: valor[]/CHAVE[] posicionais.
+  AJ_MENU_TOPO,
   AJ_N
 } OpcaoId;
 
@@ -618,6 +626,7 @@ static const char *V_FONTE_ORDEM_USO[] = { "Não", "Para desempatar", "Ordem est
 static const char *V_TAMANHO_UI[] = { "100%", "120%", "130%", "150%" };
 static const char *V_TAMANHO_AJUSTES[] = { "80%", "90%", "100%" };
 static const char *V_INTERFACE_MODO[] = { "TV", "Mobile" };
+static const char *V_MENU_POS[] = { "Na lateral", "No topo" };   // #461
 // F07: the order is cacheboost_cache_mb's (0, 256, 512, 1024 MB).
 // #338: indice = preset do NvPlayer.kt (0 = o de sempre).
 static const char *V_BUFFER[] = { "Automático", "Pequeno", "Médio", "Grande" };
@@ -785,6 +794,7 @@ static const char *V_CW_ORDEM[]  = { "Padrão", "Estilo streaming", "Separar fut
 // cada um esta em ajustes_itens_fileira. 24 e o teto de DESC_ITENS_POR_FILEIRA.
 static const char *V_ITENS_FIL[] = { "12", "18", "24" };
 static const char *V_GPU_EF[]    = { "Automático", "Completos", "Leves" };
+static const char *V_MIC_BUSCA[] = { "Automático", "Ligado", "Desligado" };
 // O que o toque curto de OK faz num card da retomada (issue #93): abre o
 // episodio direto no player, ou abre a pagina do titulo como sempre fez.
 // Local, como cwFonteLocal — o app oficial nao tem esta escolha.
@@ -1405,6 +1415,8 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Pular os créditos automaticamente", V_LIGA, 2),   // local: pularCreditosLocal
   NUM("Contagem do próximo episódio", 1, 60, 1, "s"),
   ESC("Modo da interface", V_INTERFACE_MODO, 2),
+  ESC("Botão de microfone na busca", V_MIC_BUSCA, 3),   // local: micBuscaLocal (.tpk)
+  ESC("Posição do menu", V_MENU_POS, 2),   // por perfil: menuTopoLocal (#461)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -1645,6 +1657,8 @@ static const char *CHAVE[] = {
   "pularCreditosLocal",
   "proximoContagemLocal",
   "interfaceModoLocal",
+  "micBuscaLocal",
+  "menuTopoLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2246,6 +2260,7 @@ static int ajOpcaoDisponivel(int op) {
 int ajustes_layout_lista(void) { return !ajLayoutSelecionavel() || valor[AJ_LAYOUT_AJUSTES] == 1; }
 int ajustes_esconder_logo_trailer(void) { return lig(AJ_LOGO_TRAILER); }
 int ajustes_legenda_sync_auto(void) { return lig(AJ_LEG_SYNC_AUTO); }
+int ajustes_mic_busca(void) { return valor[AJ_MIC_BUSCA]; }   // 0 auto, 1 ligado, 2 desligado
 int ajustes_trailer_zoom_tpk(void) { return lig(AJ_TRAILER_ZOOM_TPK); }   // 1 = Ligado
 #ifdef NV_ANDROID
 int ajustes_legenda_sync_audio(void) { return lig(AJ_LEG_SYNC_AUDIO); }
@@ -2399,6 +2414,11 @@ void ajustes_textura_quadro(void) {
 // moderna DESLIGA o recolhimento, e nao o contrario. Copiado de
 // normalizeLayoutPreferences para nao inventar precedencia.
 int ajustes_rail_moderna(void)        { return lig(AJ_RAIL_MODERNA); }
+// #461: a barra no topo nao existe no Dinamica (a pilula dela ja e o topo) nem
+// no telefone em retrato (nao cabe).
+int ajustes_menu_topo(void) {
+  return valor[AJ_MENU_TOPO] == 1 && ajustes_home_layout() != HOME_LAYOUT_DINAMICA && !ajRetrato();
+}
 int ajustes_rail_recolhida(void) {
   // No telefone em retrato, o menu sobrepoe a pagina. A preferencia salva
   // continua valendo quando a tela volta para paisagem.
@@ -2627,7 +2647,7 @@ float ajustes_rail_largura_fixa(void) {
   float borda;
   // Layout Dinamica: a barra e a pilula da Apple TV (menu.c), sem rail fixa.
   if (ajustes_home_layout() == HOME_LAYOUT_DINAMICA) return 0.0f;
-  if (ajustes_rail_recolhida()) return 0.0f;
+  if (ajustes_rail_recolhida() || ajustes_menu_topo()) return 0.0f;
   borda = ajustes_home_layout() == HOME_LAYOUT_PADRAO ? NV_MENU_RAIL_BORDA_PADRAO
                                                       : NV_MENU_RAIL_BORDA_MODERNA;
   return borda + NV_MENU_RAIL_VAO - NV_CONTENT_PAD;
@@ -4362,11 +4382,13 @@ static int somenteDesteAparelho(int op) {
     case AJ_TAMANHO_AJUSTES:
     case AJ_LAYOUT_AJUSTES: /* #339: o arranjo dos Ajustes e desta TV */
     case AJ_INTERFACE_MODO: /* TV/Mobile follows this device, never the account */
+    case AJ_MENU_TOPO:      /* #461: o web nao tem; por perfil (perfilLocal) */
     case AJ_LOGO_TRAILER:   /* so a protecao de OLED desta TV */
     case AJ_LEG_MOSTRAR:
     case AJ_HDR_UI:         /* o painel e desta TV */
     case AJ_LEG_SYNC_AUTO: /* escolha local desta TV */
     case AJ_TELA_ABERTURA: /* #205: o web nao tem; escolha desta TV */
+    case AJ_MIC_BUSCA:     /* o microfone e o controle sao desta TV */
     case AJ_LEG_SYNC_AUDIO: /* PCM e passthrough sao desta TV; o web nao tem */
     case AJ_LEG_FORCADA:    /* #287: o web nao tem esta escolha */
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA: /* estilo da legenda e desta TV */
@@ -4403,7 +4425,8 @@ static int somenteDesteAparelho(int op) {
 // onde o historico vai e se o social existe. Entram na copia por perfil
 // (ajustes-p<N>.txt) e continuam FORA do blob (somenteDesteAparelho).
 static int perfilLocal(int i) {
-  return i == AJ_CW_FONTE || i == AJ_CW_PROXIMO || i == AJ_SALVOS_DEST || i == AJ_HIST_CONTA || i == AJ_SOCIAL;
+  return i == AJ_CW_FONTE || i == AJ_CW_PROXIMO || i == AJ_SALVOS_DEST || i == AJ_HIST_CONTA || i == AJ_SOCIAL ||
+         i == AJ_MENU_TOPO;
 }
 
 static int dePerfil(int i) {
@@ -4445,7 +4468,7 @@ int ajustes_perfil_restaurar(int perfil) {
   nomePerfil(nome, sizeof nome, perfil);
   t = dados_ler(nome);
   if (!t) return 0;
-  { int focoAntigo = -1, viuFoco = 0;
+  { int focoAntigo = -1, viuFoco = 0, viuTopo = 0;
   for (l = t; l && *l; ) {
     char chave[64], *fim = strchr(l, '\n');
     int v, i;
@@ -4458,6 +4481,7 @@ int ajustes_perfil_restaurar(int perfil) {
         if (!dePerfil(i) || strcmp(CHAVE[i], chave)) continue;
         v = limita(i, v);
         if (i == AJ_FOCO_TRAILER) viuFoco = 1;
+        if (i == AJ_MENU_TOPO) viuTopo = 1;
         if (v != valor[i]) { valor[i] = v; mudou++; }
         break;
       }
@@ -4466,7 +4490,10 @@ int ajustes_perfil_restaurar(int perfil) {
   if (!viuFoco && focoAntigo >= 0) {
     int v = focoTrailerMigrar(focoAntigo);
     if (v != valor[AJ_FOCO_TRAILER]) { valor[AJ_FOCO_TRAILER] = v; mudou++; }
-  } }
+  }
+  // Copia de antes do #461 nao tem menuTopoLocal, e a conta nao o guarda: sem
+  // isto o topo ligado pelo perfil anterior vazaria para este.
+  if (!viuTopo && valor[AJ_MENU_TOPO]) { valor[AJ_MENU_TOPO] = 0; mudou++; } }
   free(t);
   if (mudou) {
     gravar();
@@ -4679,6 +4706,11 @@ static int foraDestaPlataforma(int op) {
   if (op >= AJ_MDB_TRAKT && op <= AJ_MDB_MAL) return 1;
 #ifndef NV_TPK
   if (op == AJ_TRAILER_ZOOM_TPK) return 1;
+#endif
+  // Botao de microfone das buscas: so onde ha o teclado da Samsung por tras
+  // (.tpk de release e .wgt; o NuvioTpk40 do Tizen 4/5 nao tem o host dele).
+#if !(defined(NV_TPK) || defined(__EMSCRIPTEN__)) || defined(NV_TPK40)
+  if (op == AJ_MIC_BUSCA) return 1;
 #endif
 #if defined(NV_TPK) || defined(NV_ANDROID)
   if (op == AJ_DV_MKV) return 1;
@@ -5272,6 +5304,7 @@ static int inativa(int op) {
   switch (op) {
     case AJ_VIDRO_CONTORNO: case AJ_VIDRO_OPAC: case AJ_VIDRO_FOSCO: return !lig(AJ_VIDRO);
     case AJ_RAIL:         return ajustes_rail_moderna();
+    case AJ_MENU_TOPO:    return ajustes_home_layout() == HOME_LAYOUT_DINAMICA;
     case AJ_RAIL_BLUR:    return !ajustes_rail_moderna();
     case AJ_HERO_CATALOGOS: return !ajustes_hero_ligado();
     // O fundo em tela cheia e da Moderna: no Padrao o destaque e um banner e na
@@ -5471,6 +5504,7 @@ static const char *ajudaOpcaoBase(int op) {
     if (op == AJ_VIDRO_CONTORNO) return "Ative a interface de vidro para ajustar o contorno.";
     if (op == AJ_VIDRO_OPAC || op == AJ_VIDRO_FOSCO) return "Ative a interface de vidro para ajustar o vidro.";
     if (op == AJ_RAIL) return "Desative a barra lateral moderna para escolher entre recolhida e fixa.";
+    if (op == AJ_MENU_TOPO) return "No layout Dinâmica o menu já fica no alto da tela.";
     if (op == AJ_RAIL_BLUR) return "Ative a barra lateral moderna para usar o desfoque.";
     if (op == AJ_HERO_CATALOGOS) return "Ative Mostrar destaque para exibir os catálogos no topo da Home.";
     if (op == AJ_HERO_CHEIO) return "Só vale no layout Moderna. No Padrão o destaque é um banner, e na Dinâmica ele ocupa a largura toda e sobe junto com a rolagem.";
@@ -5613,8 +5647,10 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_ITENS_FILEIRA: return "Quantos títulos cada fileira da Home mostra antes do Ver tudo. Mais itens usam mais memória: em TV com 1 GB de memória a Home pode ficar mais lenta ou fechar. Se o app fechar depois de você aumentar, ele volta sozinho ao valor anterior. Aumentar vale na próxima vez que o app abrir.";
     case AJ_FIL_ORDEM: return "Abre a lista de fileiras para reordenar, ligar, desligar e escolher o card de cada uma. É lá que dá para ver de onde cada fileira vem.";
     case AJ_RAIL: return "A barra de navegação da esquerda fica sempre aberta, ou recolhida até você ir até ela.";
+    case AJ_MENU_TOPO: return "Na lateral: o menu fica na esquerda, como sempre. No topo: o menu vira uma barra no alto da tela e o conteúdo usa a largura toda. Para cima no primeiro item da tela chega à barra e Para baixo volta. Vale para este perfil.";
     case AJ_RAIL_MODERNA: return "Troca a barra lateral pela versão nova, com ícones maiores. Ela ignora a escolha entre recolhida e fixa.";
     case AJ_RAIL_BLUR: return "Desfoca a arte atrás da barra lateral moderna em vez de usar um fundo sólido.";
+    case AJ_MIC_BUSCA: return "Mostra nas buscas um microfone ao lado de Digitar pelo celular: ele abre o teclado da Samsung para você falar pelo microfone do controle. Automático esconde o botão se a TV disser que não tem microfone; Ligado mostra sempre; Desligado esconde.";
     case AJ_HERO: return "O bloco grande no topo da Home, com a arte e o nome de um título em destaque.";
     case AJ_HERO_CATALOGOS: return "De onde vêm os títulos do destaque: os primeiros do catálogo, um sorteio, ou uma fileira da Home. OK troca.";
     case AJ_PS_FUNDO: return "Fundo da tela de escolha de perfil. Filmes: os cartazes do que cada perfil assistiu, numa parede inclinada. Luz: preto com uma luz na cor do perfil. Projetor: sala de cinema antes da sessão. Arte do perfil: o fundo escolhido ao editar o perfil no app Nuvio; sem ele, o avatar desfocado. Ou as listras do login.";
@@ -5957,6 +5993,10 @@ static const char *efeitoOpcao(int op) {
       return "Esta nota vem do MDBList: ligar aqui liga também a consulta ao MDBList.";
     case AJ_HERO_TRAILER:
       return "O som do trailer no destaque é uma opção à parte, em Som e imagem.";
+#ifndef __EMSCRIPTEN__
+    case AJ_MIC_BUSCA:
+      return "Para digitar, continua o teclado do Nuvio: o da Samsung só abre por este botão.";
+#endif
     default: return NULL;
   }
 }
@@ -5979,6 +6019,7 @@ static const char *beneficioProprio(int op) {
     case AJ_LEG_FORCADA: return "Placas e falas em outra língua aparecem; o resto, não.";
     case AJ_BUSCA_CINEMETA: return "A busca também consulta o Cinemeta se o catálogo do Nuvio falhar.";
     case AJ_HOME_LAYOUT: return "Como a Home se organiza: Moderna, Padrão ou Dinâmica.";
+    case AJ_MENU_TOPO: return "Onde fica o menu: na esquerda ou no alto da tela.";
     case AJ_HERO_FUNDO: return "De onde vem a arte grande do destaque e da página do título.";
     case AJ_HERO_ARTE_DIF: return "O destaque pode usar outra arte que não a do cartaz.";
     case AJ_HERO_TRAILER: return "Com o foco parado no destaque, o trailer toca no lugar da arte.";
@@ -5996,6 +6037,7 @@ static const char *beneficioProprio(int op) {
     case AJ_FONTE_REGEX: return "Sobe ou exige fontes cujo nome casa com um padrão.";
     case AJ_DTS_AC3: return "Para TVs que não tocam DTS: o som é convertido na hora.";
     case AJ_CACHE_SEEK: return "Guarda o que já baixou para voltar no filme sem esperar.";
+    case AJ_MIC_BUSCA: return "Busque falando, pelo microfone do controle.";
     default: return NULL;
   }
 }
@@ -6101,7 +6143,14 @@ static void fileirasReagir(void) {
 // A fila nao e estrutura nova: e a ordem de sempre lida de outro jeito (ver
 // fil_estado em fileiras.h). Tudo continua no mesmo arquivo, agora por perfil.
 static int filAba;                    // 0 = Na Home, 1 = Fora da Home
-static int filNaBarra;                // foco na barra de abas
+static int filNaBarra;                // foco na barra do topo (abas + chips)
+// Dentro da barra: 0 = aba Na Home, 1 = aba Fora, 2 = Ordenar (so na Fora),
+// 3 = Atualizar tudo. Os chips moravam DEPOIS da ultima linha (filFoco == n);
+// com 200 linhas o controle da C9 nao chegava neles de lado ("so no final da
+// lista embaixo"). O foco da barra NAO e a aba aberta: ← → andam, OK abre.
+static int filBarra;
+// Na linha da aba Fora (filCampo): 0 = a linha, 1 = botao Adicionar, 2 = regua A-Z.
+#define FIL_CAMPO_REGUA 2
 // FIL_MAX + 1: a aba "Na Home" escreve o DESTAQUE antes das fileiras, e com a
 // tabela cheia (320) a lista teria 321 entradas. Um a mais aqui custa 4 bytes e
 // tira do caminho um estouro que so apareceria na TV de quem tem addon demais.
@@ -6165,8 +6214,7 @@ static void filMontarLista(void) {
     for (i = 0; i < n; i++) if (fil_estado(i) == FIL_FORA) filLista[filListaN++] = i;
     qsort(filLista, (size_t)filListaN, sizeof *filLista, filCmpFora);
   }
-  { int max = filListaN + (filAba == 1 ? 1 : 0);
-    if (filFoco > max) filFoco = max; }
+  if (filFoco >= filListaN) filFoco = filListaN - 1;
   if (filFoco < 0) filFoco = 0;
 }
 
@@ -6224,6 +6272,22 @@ static void heroFonteCiclar(int dir) {
   fil_definir_hero_fonte(ops[atual]);
 }
 
+// Pula para a primeira linha da letra vizinha (a regua A-Z da aba Fora).
+static int filSaltoLetra(int n, int dir) {
+  int p = filFoco, l = filLetra(filIdx(p));
+  while (p + dir >= 0 && p + dir < n && filLetra(filIdx(p + dir)) == l) p += dir;
+  if (p + dir < 0 || p + dir >= n) return filFoco;
+  p += dir;
+  l = filLetra(filIdx(p));
+  while (dir < 0 && p > 0 && filLetra(filIdx(p - 1)) == l) p--;
+  return p;
+}
+
+static void filTrocarAba(int aba) {
+  filAba = aba; filFoco = 0; filTopo = 0; filCampo = 0; filPegou = 0;
+  filMontarLista();
+}
+
 static void eventoFileiras(SDL_Keycode k) {
   int n;
   filMontarLista();
@@ -6256,13 +6320,37 @@ static void eventoFileiras(SDL_Keycode k) {
     return;
   }
 
-  // BARRA DE ABAS: ← → trocam a aba, ↓ volta para a lista.
+  // BARRA DO TOPO: ← → andam por Na Home, Fora, Ordenar (so na Fora) e
+  // Atualizar tudo; ↓ volta para a lista; OK age no item focado. Trocar de
+  // aba e OK (ou ↓): passar por cima dela nao esconde a lista nem os chips.
   if (filNaBarra) {
     if (k == SDLK_LEFT || k == SDLK_RIGHT) {
-      filAba = !filAba; filFoco = 0; filTopo = 0; filCampo = 0; filPegou = 0;
-      filMontarLista();
+      int dir = k == SDLK_RIGHT ? 1 : -1, b = filBarra + dir;
+      if (b == 2 && filAba == 0) b += dir;
+      if (b >= 0 && b <= 3) filBarra = b;
     } else if (k == SDLK_DOWN || k == SDLK_RETURN || k == SDLK_KP_ENTER) {
-      filNaBarra = 0;
+      if (filBarra <= 1) {
+        // Aba: OK numa aba diferente troca (e fica na barra, para seguir aos
+        // chips dela); na aba atual, ou com ↓, entra na lista.
+        int trocou = filBarra != filAba;
+        if (trocou) filTrocarAba(filBarra);
+        if ((k == SDLK_DOWN || !trocou) && filListaN > 0) filNaBarra = 0;
+      } else if (k == SDLK_DOWN) {
+        if (n > 0) filNaBarra = 0;
+      } else if (filBarra == 2) {
+        // ORDENAR: agrupado por addon (padrao) ou uma lista alfabetica unica.
+        // Na aba "Na Home" nao existe — la a ordem e a da home.
+        filForaAgrupada = !filForaAgrupada;
+        filFoco = 0; filTopo = 0;
+        filMontarLista();
+      } else {
+        // ATUALIZAR TUDO: um sync da conta (addons, colecoes, ajustes) e uma
+        // volta completa da descoberta, para "instalei/removi um addon no
+        // celular e quero ver aqui agora". A poda de fantasmas roda na volta.
+        sync_iniciar();
+        desc_repetir();
+        filAvisar(i18n("Atualizando: addons, coleções e fileiras — a Home se refaz uma vez, no fim"));
+      }
     }
     return;
   }
@@ -6279,7 +6367,14 @@ static void eventoFileiras(SDL_Keycode k) {
                          { int p; for (p = 0; p < filListaN; p++) if (filLista[p] == idx) filFoco = p; } return; }
     if (filPegou)      { int idx = fil_mover(filIdx(filFoco), dir); filMontarLista();
                          { int p; for (p = 0; p < filListaN; p++) if (filLista[p] == idx) filFoco = p; } return; }
-    if (k == SDLK_UP && filFoco == 0) { filNaBarra = 1; return; }
+    // Na regua A-Z cima/baixo andam de letra em letra; sem letra antes, ↑ sobe a barra.
+    if (filAba == 1 && filCampo == FIL_CAMPO_REGUA && n > 0) {
+      int p = filSaltoLetra(n, dir);
+      if (p != filFoco) { filFoco = p; return; }
+      if (dir < 0) { filNaBarra = 1; filBarra = filAba; filCampo = 0; }
+      return;
+    }
+    if (k == SDLK_UP && filFoco == 0) { filNaBarra = 1; filBarra = filAba; filCampo = 0; return; }
     // SALTO POR LETRA na aba "Fora": segurando, pula para a proxima letra em
     // vez de andar linha a linha — com 200 linhas e o unico jeito de chegar
     // ao fim sem soltar o dedo por um minuto.
@@ -6291,10 +6386,7 @@ static void eventoFileiras(SDL_Keycode k) {
       // tecla segurada nunca chegava ao botao "Atualizar tudo" no fim da lista.
       if (p != filFoco) { filFoco = p; return; }
     }
-    // Botoes no fim: aba 0 tem "Atualizar tudo" em n; aba 1 tem "Agrupar por
-    // addon" em n e "Atualizar tudo" em n+1.
-    { int max = (filAba == 0) ? n : n + 1;
-      if (filFoco + dir >= 0 && filFoco + dir <= max) filFoco += dir; }
+    if (filFoco + dir >= 0 && filFoco + dir < n) filFoco += dir;
     return;
   }
   filRajada = 0;
@@ -6312,7 +6404,15 @@ static void eventoFileiras(SDL_Keycode k) {
       heroFonteCiclar(k == SDLK_RIGHT ? 1 : -1);
       return;
     }
-    if (filAba == 1 || filFoco >= n) return;   // uma coluna so; os botoes nao tem colunas
+    if (filAba == 1) {   // linha -> botao Adicionar -> regua A-Z
+      if (n > 0) {
+        filCampo += k == SDLK_RIGHT ? 1 : -1;
+        if (filCampo < 0) filCampo = 0;
+        if (filCampo > FIL_CAMPO_REGUA) filCampo = FIL_CAMPO_REGUA;
+      }
+      return;
+    }
+    if (filFoco >= n) return;
     filCampo += (k == SDLK_RIGHT) ? 1 : -1;
     if (filCampo < 0) filCampo = 0;
     if (filCampo > AJ_FIL_CAMPOS - 1) filCampo = AJ_FIL_CAMPOS - 1;
@@ -6321,27 +6421,9 @@ static void eventoFileiras(SDL_Keycode k) {
 
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
     int idx = filIdx(filFoco);
-    // ATUALIZAR TUDO: um sync da conta (addons, colecoes, ajustes) e uma volta
-    // completa da descoberta. E o botao para "instalei/removi um addon no
-    // celular e quero ver aqui agora", sem sair da conta nem esperar o ciclo.
-    // A poda de fantasmas roda dentro da volta.
-    if ((filAba == 0 && filFoco == n) || (filAba == 1 && filFoco == n + 1)) {
-      sync_iniciar();
-      desc_repetir();
-      filAvisar(i18n("Atualizando: addons, coleções e fileiras — a Home se refaz uma vez, no fim"));
-      return;
-    }
     if (filIdx(filFoco) == AJ_FIL_DESTAQUE) { heroFonteCiclar(1); return; }
     if (n < 1) return;
-    if (filAba == 1 && filFoco == n) {
-      // AGRUPAR POR ADDON e uma alternancia desta aba: agrupado (padrao) ou
-      // uma lista alfabetica unica. Na aba "Na Home" nao existe — la a ordem e
-      // a da home, e a pessoa e quem a arruma.
-      filForaAgrupada = !filForaAgrupada;
-      filFoco = 0; filTopo = 0;
-      filMontarLista();
-      return;
-    }
+    if (filAba == 1 && filCampo == FIL_CAMPO_REGUA) { filCampo = 0; return; }   // OK na regua A-Z volta para a linha
     if (filAba == 1) {
       // ADICIONAR. Cabe: entra na home. Nao cabe: entra na fila, e a tela diz.
       int est = -1;
@@ -6355,8 +6437,8 @@ static void eventoFileiras(SDL_Keycode k) {
       } else filAvisar(i18n("Adicionada à Home"));
       fileirasReagir();
       filMontarLista();
-      if (filFoco >= filListaN) filFoco = filListaN - 1;
       if (filFoco < 0) filFoco = 0;
+      if (filListaN < 1) { filNaBarra = 1; filBarra = 1; filCampo = 0; }   // adicionou a ultima: o foco sobe para a barra
       return;
     }
     if (idx < 0) return;
@@ -7739,8 +7821,8 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS:
     case AJ_HERO_TRAILER_SOM: case AJ_HERO_TRAILER_ESPERA: case AJ_HERO_TRANSICAO: case AJ_LOGO_TRAILER:
     case AJ_ADDON_FUNDO: case AJ_ADDON_LOGO:
-    case AJ_FIL_ORDEM: case AJ_RAIL: case AJ_RAIL_MODERNA:
-    case AJ_RAIL_BLUR: case AJ_HERO: case AJ_HERO_CATALOGOS:
+    case AJ_FIL_ORDEM: case AJ_RAIL: case AJ_RAIL_MODERNA: case AJ_MENU_TOPO:
+    case AJ_RAIL_BLUR: case AJ_MIC_BUSCA: case AJ_HERO: case AJ_HERO_CATALOGOS:
     case AJ_PS_FUNDO: case AJ_PS_CONTINUAR: case AJ_DESCOBRIR: case AJ_ROTULOS:
     case AJ_NOME_ADDON: case AJ_SUFIXO_TIPO: case AJ_OCULTAR_NLANC:
     case AJ_NOTAS_HOME: case AJ_GRAD_CLASSICO: case AJ_SELO_VISTO:

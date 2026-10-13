@@ -3,6 +3,9 @@
 // SEM _Thread_local (a .so do Tizen 4/5 recusa TLS, tests/tpk40_tls.sh): tudo
 // aqui roda no fio de desenho, e os estaticos sao so dele.
 #include "gpunivel.h"
+#ifdef NV_TPK
+#include "video.h"
+#endif
 #ifdef NV_ANDROID
 #include "android.h"
 #endif
@@ -106,7 +109,7 @@ static void infoPlataforma(void) {
   if (!get) return;
   { char *v = NULL;
     if (get("http://tizen.org/feature/platform.version", &v) == 0 && v) {
-      snprintf(tizen, sizeof tizen, "%s", v); free(v); } }
+      snprintf(tizen, sizeof tizen, "%s", v); free(v); video_tpk_tizen_definir(tizen); } }
   { char *v = NULL;
     if (get("http://tizen.org/system/model_name", &v) == 0 && v) {
       snprintf(modelo, sizeof modelo, "%s", v); free(v); } }

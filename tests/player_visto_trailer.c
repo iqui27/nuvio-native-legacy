@@ -42,6 +42,14 @@
 #include "progresso.h"
 #include "intro.h"
 #include "perfis.h"
+#include "descoberta.h"
+
+// Episode metadata stays under host-test control, without background HTTP.
+static int carregando;
+void desc_episodios(int idx, int temporada) { (void)idx; (void)temporada; }
+void desc_episodios_garantir(int idx) { (void)idx; }
+void desc_episodios_pendente(void) {}
+int desc_episodios_carregando(int idx) { (void)idx; return carregando; }
 
 // Relogio monotono controlado: seek/retomada nao ganham tempo assistido.
 static double agoraMono;
@@ -447,6 +455,38 @@ int main(void) {
   tocar(1080, 1); player_encerrar(); pularAbertura = 0;
   intro_definir_capitulos(NULL, 0);
   assert(nVisto == 1 && tkAssistiu);
+
+  // #379: EOF sai do filme/ultimo episodio, nunca da pausa ou do canal.
+  for (int caso = 0; caso < 4; caso++) {
+    CatItem c = {0}; CatEp eps[2] = {{0}};
+    strcpy(c.imdb, "tt90000379");
+    strcpy(c.tipo, caso == 0 ? "movie" : caso == 3 ? "channel" : "series");
+    cat_definir(&c, 1);
+    eps[0].temporada = eps[0].episodio = 1;
+    eps[1].temporada = 1; eps[1].episodio = 2;
+    if (caso == 1 || caso == 2) cat_definir_episodios(0, eps, caso == 2 ? 2 : 1);
+    dur = 3600; player_abrir(0, fonte);
+    if (caso == 1 || caso == 2) player_definir_episodio(1, 1);
+    quadro(); quadro();
+    pos = 3599; pausado = 1; quadro();
+    assert(!player_quer_sair()); // pausa no ultimo segundo nao e EOF
+    terminou = 1; quadro();
+    assert(player_quer_sair() == (caso < 2));
+    if (caso < 2) {
+      for (int i = 0; i < 120 && player_aberto(); i++) quadro();
+      assert(!player_aberto() && player_quer_sair());
+      assert(!player_suspender()); // EOF nao conserva o decoder para retomada
+    }
+    player_encerrar();
+    assert(!video_ativo());
+  }
+
+  // EOF de trailer enquanto o titulo espera uma fonte nao pede saida.
+  player_abrir(0, NULL);
+  trailer_abrir(fonte, (GfxRect){0,0,100,100}, 0, 0);
+  terminou = 1; quadro();
+  assert(!player_quer_sair());
+  player_encerrar(); trailer_fechar();
 
   puts("PASS: trailer, seek, pausa e buffer nao marcam; reproducao real grava progresso e visto");
   return 0;

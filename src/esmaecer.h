@@ -62,6 +62,8 @@ int   esmaecer_descanso(void);
 // 1 = a tela de descanso do Nuvio esta ligada (tempo e estilo vitrine/relogio):
 // o screensaver da TV deve ser segurado (video.c, webOS).
 int   esmaecer_segura_protetor_tv(void);
+// webOS registra o publicador do ACK; setters avisam mesmo sem desenho.
+void  esmaecer_protetor_publicador(void (*publicar)(void));
 // Chamar para CADA evento de pessoa (tecla, ponteiro). `consumivel` = o evento
 // age se passar (KEYDOWN, clique). Devolve 1 se o evento deve ser engolido (a
 // primeira tecla que acorda a tela, e a repeticao dela logo depois).

@@ -1822,6 +1822,62 @@ void gfx_ambiente_descarregar(void) {
   gfx_opacidade_grupo = g;
   if (rec) { glEnable(GL_SCISSOR_TEST); recorteAtivo = 1; }
 }
+// O fundo pendente SO FORA de `furo` (coordenadas de quem chama), que um painel
+// opaco pinta em seguida com alfa 1: as mesmas faixas uSub de gfx_sombra_vazada,
+// cada uma um pedaco do MESMO quad de tela cheia, entao todo pixel visivel e o
+// de ambPintar. Os Ajustes sem vidro (a C9 do dono) pintavam o Frost inteiro
+// embaixo da ilha de 0,82 tela. Sem como recortar, descarrega inteiro.
+static int ambCmpF(const void *a, const void *b) {
+  float x = *(const float *)a, y = *(const float *)b;
+  return x < y ? -1 : x > y;
+}
+void gfx_ambiente_descarregar_fora(const GfxRect *furos, int n) {
+  float fx[4][4], ys[10], sub[4];
+  int rec, i, k, ny = 0;
+  float g;
+  dinDescarregar();
+  if (!ambPendente) return;
+  if (n > 4 || giroOn || ambPendAlfa < 0.999f || progs[GFX_SNAP].sub < 0) { gfx_ambiente_descarregar(); return; }
+  for (i = 0; i < n; i++) {   // em fracao da tela, como o uSub
+    GfxRect f = furos[i];
+    GFX_TR_RECT(f.x, f.y, f.w, f.h);
+    if (escAtiva != 1.0f) { f.x *= escAtiva; f.y *= escAtiva; f.w *= escAtiva; f.h *= escAtiva; }
+    fx[i][0] = fmaxf(f.x / NV_TELA_W, 0.0f); fx[i][2] = fminf((f.x + f.w) / NV_TELA_W, 1.0f);
+    fx[i][1] = fmaxf(f.y / NV_TELA_H, 0.0f); fx[i][3] = fminf((f.y + f.h) / NV_TELA_H, 1.0f);
+    if (fx[i][2] <= fx[i][0] || fx[i][3] <= fx[i][1]) fx[i][0] = fx[i][2] = fx[i][1] = fx[i][3] = 0.0f;
+  }
+  ambPendente = 0;
+  rec = recorteAtivo;
+  g = gfx_opacidade_grupo;
+  if (rec) { glDisable(GL_SCISSOR_TEST); recorteAtivo = 0; }
+  gfx_opacidade_grupo = 1.0f;
+  memcpy(sub, subAtual, sizeof sub);
+  ys[ny++] = 0.0f; ys[ny++] = 1.0f;
+  for (i = 0; i < n; i++) { ys[ny++] = fx[i][1]; ys[ny++] = fx[i][3]; }
+  qsort(ys, (size_t)ny, sizeof ys[0], ambCmpF);
+  // Faixas horizontais entre as bordas dos furos; em cada uma, os vaos entre
+  // os furos que a atravessam viram pedacos do quad (poucos furos: varredura).
+  for (k = 0; k + 1 < ny; k++) {
+    float y0 = ys[k], y1 = ys[k + 1], x = 0.0f;
+    if (y1 - y0 <= 0.0f) continue;
+    for (;;) {
+      float prox = 1.0f, fim = x;
+      for (i = 0; i < n; i++)
+        if (fx[i][1] <= y0 && fx[i][3] >= y1 && fx[i][2] > x) {
+          if (fx[i][0] <= x) { if (fx[i][2] > fim) fim = fx[i][2]; }
+          else if (fx[i][0] < prox) prox = fx[i][0];
+        }
+      if (fim > x) { x = fim; continue; }   // dentro de um furo: pula
+      subAtual[0] = x; subAtual[1] = y0; subAtual[2] = prox; subAtual[3] = y1;
+      if (prox > x) ambPintar(1.0f);
+      if (prox >= 1.0f) break;
+      x = prox;
+    }
+  }
+  memcpy(subAtual, sub, sizeof sub);
+  gfx_opacidade_grupo = g;
+  if (rec) { glEnable(GL_SCISSOR_TEST); recorteAtivo = 1; }
+}
 // O pendente pintado JA com um veu de cor (cr, cg, cb) a `va` por cima, numa
 // passada opaca: o GFX_SNAP faz mix(textura, cor, uFoco), que e o pixel do
 // veu misturado sobre ele. Ver o veu de tela cheia em gfx_rect.
@@ -2695,6 +2751,68 @@ void gfx_mascara_opaca(GfxRect r, float raioPx) {
   }
   dinOp[dinNOp++] = a;
   dinOp[dinNOp++] = b;
+}
+
+// PAINEL OPACO GRANDE (o miolo solido das ilhas dos Ajustes, sem vidro): o
+// interior e um glClear tesourado na cor exata — a mistura de alfa 1 devolve
+// a mesma cor e alfa 1 — e so a faixa do canto passa pelo shader, em ate quatro
+// pedacos uSub do MESMO rect (o mesmo pixel do desenho inteiro, como em
+// gfx_sombra_vazada). Na C9 do dono o miolo da ilha (0,82 tela) era a maior
+// camada MISTURADA por quadro dos Ajustes. Sem as condicoes, gfx_cor de sempre.
+void gfx_cor_painel(GfxRect r, float raio, float cr, float cg, float cb, float ca) {
+  GfxRect r0 = r;   // gfx_cor/gfx_rect aplicam a transformacao e a escala sozinhos
+  float m, sub[4], ex, ey, area, x0, y0, x1, y1;
+  int sx0, sy0, sx1, sy1;
+  if (r.w <= 0.0f || r.h <= 0.0f) return;
+  GFX_TR_RECT(r.x, r.y, r.w, r.h);
+  if (escAtiva != 1.0f) { r.x *= escAtiva; r.y *= escAtiva; r.w *= escAtiva; r.h *= escAtiva; }
+  m = raio * r.h + 2.0f;
+  if (raio <= 0.0f || ca * gfx_opacidade_grupo != 1.0f || snapAtivo || miniAtiva || giroOn ||
+      gfxTr.on || recorteAtivo || progs[GFX_COR].sub < 0 ||
+      (nv_grad_ativo && cr == nv_acento_viva[0] && cg == nv_acento_viva[1] && cb == nv_acento_viva[2]) ||
+      gfx_osd_mult < 0.999f || gfx_hdr_ui < 0.999f ||
+      r.w - 2.0f * m < 64.0f || r.h - 2.0f * m < 64.0f) {
+    gfx_cor(r0, raio, cr, cg, cb, ca);
+    return;
+  }
+  // O clear e as faixas so se encontram sem fresta com o miolo alinhado em pixels.
+  ex = (float)telaW / NV_TELA_W; ey = (float)telaH / NV_TELA_H;
+  x0 = (r.x + m) * ex; x1 = (r.x + r.w - m) * ex;
+  y0 = (NV_TELA_H - (r.y + r.h - m)) * ey;
+  y1 = (NV_TELA_H - (r.y + m)) * ey;
+  sx0 = (int)floorf(x0 + 0.5f); sx1 = (int)floorf(x1 + 0.5f);
+  sy0 = (int)floorf(y0 + 0.5f); sy1 = (int)floorf(y1 + 0.5f);
+  if (x0 != sx0 || x1 != sx1 || y0 != sy0 || y1 != sy1 || sx1 <= sx0 || sy1 <= sy0) {
+    gfx_cor(r0, raio, cr, cg, cb, ca);
+    return;
+  }
+  dinDescarregar();
+  if (ambPendente) gfx_ambiente_descarregar();   // o clear do miolo cobriria o fundo
+  // o interior: clear na cor do painel
+  { float cc[4];
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, cc);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(sx0, sy0, sx1 - sx0, sy1 - sy0);
+    glClearColor(cr, cg, cb, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glClearColor(cc[0], cc[1], cc[2], cc[3]);
+    glDisable(GL_SCISSOR_TEST); }
+  area = ((r.w - 2.0f * m) * (r.h - 2.0f * m)) / (NV_TELA_W * NV_TELA_H);
+  gfx_fill += area; gfx_fill_modo[GFX_COR] += area;
+  if (area >= 0.5f) gfx_n_cheio++;
+  ambIntacta = 0;
+  // a faixa do canto, em pedacos do mesmo rect
+  memcpy(sub, subAtual, sizeof sub);
+  { // uSub conta do topo, como o rect.
+    const float f[4][4] = {
+      { 0, 0, 1, m / r.h }, { 0, 1 - m / r.h, 1, 1 },
+      { 0, m / r.h, m / r.w, 1 - m / r.h }, { 1 - m / r.w, m / r.h, 1, 1 - m / r.h } };
+    int k;
+    for (k = 0; k < 4; k++) {
+      memcpy(subAtual, f[k], sizeof subAtual);
+      gfx_rect(r0, 0, GFX_COR, 0, 0, 0, raio, cr, cg, cb, ca);
+    }
+    subAtual[0] = subAtual[1] = 0.0f; subAtual[2] = subAtual[3] = 1.0f; }
 }
 
 void gfx_anel(GfxRect r, float raio, float esp,

@@ -91,7 +91,9 @@ static void captura(const char *nome, SDL_Window *win) {
   rail_shot_aplicar();
   for (i = 0; i < quadrosCaptura; i++) {
     SDL_PumpEvents();
+    if (getenv("NUVIO_SHOT_PERF")) gfx_novo_quadro();   // os contadores do quadro, como app.c
     txt_novo_quadro();
+    gfx_rastro_grandes = getenv("NUVIO_SHOT_RASTRO") && i == quadrosCaptura - 1;
     tex_novo_quadro();
     tex_bombear(6);
     ajustes_atualizar(1.0f / 60.0f, SDL_GetTicks());
@@ -124,6 +126,14 @@ static void captura(const char *nome, SDL_Window *win) {
         printf("txt %s quadro %d: +%d rasterizadas +%d pendentes +%d despejos\n", nome, i,
                txt_rasterizadas - r0, txt_pendentes - p0, txt_despejos - d0);
       r0 = txt_rasterizadas; p0 = txt_pendentes; d0 = txt_despejos;
+    }
+    if (getenv("NUVIO_SHOT_PERF") && i == quadrosCaptura - 1)
+      printf("perf %s fill=%.3f rects=%d cheios=%d snap=%.3f cor=%.3f luz=%.3f sombra=%.3f gpu=%.3f mist=%.3f\n", nome,
+             gfx_fill, gfx_n_rect, gfx_n_cheio, gfx_fill_modo[GFX_SNAP], gfx_fill_modo[GFX_COR],
+             gfx_fill_modo[GFX_LUZ], gfx_fill_modo[GFX_SOMBRA], gfx_fill_gpu, gfx_fill_gpu_mist);
+    // #205: the C9 (no glass) must not blend Frost + island core full-screen: index fill <= 2.3x.
+    if (getenv("NUVIO_SHOT_FILL_MAX") && i == quadrosCaptura - 1 && strstr(nome, "indice")) {
+      if (gfx_fill > atof(getenv("NUVIO_SHOT_FILL_MAX"))) { printf("FAIL: fill %.3f > %s\n", gfx_fill, getenv("NUVIO_SHOT_FILL_MAX")); exit(1); }
     }
     if (i == quadrosCaptura - 1) {
       unsigned char *pix = malloc(1920 * 1080 * 4);

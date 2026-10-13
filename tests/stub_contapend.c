@@ -21,6 +21,10 @@ void salvos_migracao_conta_feita(void) {}
 int  salvos_perfil_atual(void) { return 1; }
 #endif
 
+// Home preferences have a real logout regression in homefil.sh.
+__attribute__((weak)) void cf_esquecer(void) {}
+__attribute__((weak)) void ov_esquecer(void) {}
+
 // #360: synchronization harnesses stub the addon list; counts are verified
 // against real addons.c in addons_diferenca.sh.
 #include "addons.h"

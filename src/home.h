@@ -48,6 +48,10 @@ int  home_n_artes(void);                   // acervo de backdrops, usado pelo de
 // Ha fileira montada? Serve para o app saber que o catalogo CHEGOU depois do
 // arranque, e nao so que existia na hora de abrir.
 int  home_tem_fileiras(void);
+const char *home_fileira_focada(void);   // chave sob o foco, "" no destaque
+int  home_fileiras_n(void);                // fileiras na tela, na ordem
+const char *home_fileira_chave(int i);     // chave da i-esima, "" fora da faixa
+int  home_fileira_n(const char *chave);    // cartoes da fileira na tela; -1 se nao existe
 const char *home_arte(int i);
 const char *home_backdrop(int i);   // arte do titulo i do catalogo
 void home_evento(const SDL_Event *e);

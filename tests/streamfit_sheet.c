@@ -48,6 +48,8 @@ int naovideo_nome(const char *rotulo, const char *descricao, int altura, long ta
   { (void)rotulo;(void)descricao;(void)altura;(void)tamanhoMB;return 0; }
 int video_pode_forcar_sdr(void) { return 0; }
 void video_forcar_sdr(void) {}
+// No persisted failed sources in this sheet fixture (24185059).
+long fontesmortas_idade(const Stream *s) { (void)s; return -1; }
 int player_aberto(void) { return 0; }
 void plrui_decimal(char *s) { (void)s; }
 static char lastLookup[64]; static int lookups; static double lookupValue;

@@ -158,7 +158,8 @@ int fil_origem_de(const char *chave) {
   if (!strcmp(chave, "continue_watching") ||
       !strcmp(chave, "social_activity") ||
       !strcmp(chave, "last_session")) return FIL_ORIGEM_APP;
-  if (!strncmp(chave, "collection_", 11)) return FIL_ORIGEM_COLECAO;
+  if (!strncmp(chave, "collection_", 11) ||
+      !strncmp(chave, "colpin_", 7)) return FIL_ORIGEM_COLECAO;
   return FIL_ORIGEM_CATALOGO;
 }
 
@@ -887,7 +888,7 @@ int fil_podar_catalogos(const char *const *ids, const char *const *bases, int n,
 // row back exactly as the person left it.
 int fil_marcar_sem_addon(const char *const *ids, const char *const *bases,
                          const int *ativos, int n, int perfilDaLista) {
-  int i, mudou = 0;
+  int i, mudou = 0, w = 0, limpeza = 0;
   pthread_mutex_lock(&trava);
   garantir();
   if (perfilDaLista <= 0 || perfilDaLista != perfil) {
@@ -901,8 +902,37 @@ int fil_marcar_sem_addon(const char *const *ids, const char *const *bases,
       if (ativos[k] && doAddon(linhas[i].chave, ids[k], bases[k])) vivo = 1;
     if (linhas[i].semAddon != !vivo) { linhas[i].semAddon = !vivo; mudou++; }
   }
-  if (mudou) revisao++;
+  // #365: FANTASMAS EM "FORA DA HOME". A linha sem escolha valida — tipo e
+  // tamanho padrao, sem fila, sem visPessoal, nao e fonte do destaque e
+  // so foi escondida (OC_SUGESTAO — a proposta automatica — ou OC_PESSOA
+  // sem visPessoal, que e o arquivo antigo escondendo sem registrar
+  // vinculo proprio — e a aparencia do relato: a linha fica "Not on Home
+  // Screen" para sempre mesmo depois do addon sair) NAO tem mais volta
+  // possivel. Quem guardou valor de verdade tem visPessoal/destaque e
+  // fica. O passo nao usa orfaDespejavel: esse exige !vista, e o relato e
+  // do arranque que NUNCA publicou a linha nesta sessao.
+  for (i = 0; i < nLinhas; i++) {
+    int morto = fil_origem_de(linhas[i].chave) == FIL_ORIGEM_CATALOGO &&
+                linhas[i].semAddon && !linhas[i].vista && !linhas[i].naHome &&
+                !linhas[i].ocultaConta && !linhas[i].emColecao &&
+                linhas[i].oculta != OC_COLECAO &&
+                !linhas[i].visPessoal && !linhas[i].fila &&
+                linhas[i].tipo == FIL_TIPO_AUTO && linhas[i].tam == FIL_TAM_PADRAO &&
+                (linhas[i].oculta == OC_SUGESTAO ||
+                 linhas[i].oculta == OC_PESSOA) &&
+                !(heroFonte[0] && !strcmp(heroFonte, linhas[i].chave));
+    if (morto) { limpeza++; continue; }
+    if (w != i) linhas[w] = linhas[i];
+    w++;
+  }
+  if (w != nLinhas) nLinhas = w;
+  if (mudou || limpeza) { revisao++; if (limpeza) gravar(); }
   pthread_mutex_unlock(&trava);
+  if (limpeza) {
+    printf("[fileiras] #365: %d catalogo(s) sem escolha de addon removido "
+           "sairam da aba Fora da Home\n", limpeza);
+    fflush(stdout);
+  }
   return mudou;
 }
 
@@ -1291,7 +1321,7 @@ void fil_colecoes_reconciliar(const char *const *chaves,
   garantir();
   for (int i = 0; i < nLinhas; i++) {
     int viva = 1;
-    if (autoritativo && fil_origem_de(linhas[i].chave) == FIL_ORIGEM_COLECAO) {
+    if (autoritativo && !strncmp(linhas[i].chave, "collection_", 11)) {
       viva = 0;
       for (int j = 0; j < n && !viva; j++)
         viva = chaves[j] && !strcmp(linhas[i].chave, chaves[j]);
@@ -1929,6 +1959,14 @@ void fil_teste_recarregar(void) { carregado = 0; }
 // da C9 percorreu (linhas antigas, lidas do disco, com vista=0).
 void fil_teste_esquecer_vista(int i) {
   if (i >= 0 && i < nLinhas) linhas[i].vista = 0;
+}
+// Indice da linha de uma chave: com a mexida no resumo da tabela as linhas se
+// reordenam, e quem testa a mudanca do addon precisa da linha MARCADA, nao
+// de uma posicao fixa.
+int fil_teste_achar(const char *chave) {
+  int i;
+  for (i = 0; i < nLinhas; i++) if (chave && !strcmp(linhas[i].chave, chave)) return i;
+  return -1;
 }
 #endif
 
