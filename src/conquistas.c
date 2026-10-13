@@ -736,8 +736,8 @@ static void desenha_detalhe(float a) {
     y += 36.0f;
   }
   if (raridade_txt(e->chave, b, sizeof b)) texto(TXT_V2_24, b, ox + MG, y, 420.0f, SEC, a);
-  botao_breve(em(MG, 700.0f, 300.0f, PILULA_H), "Ir à trilha", "aj_play", 0, a);
-  botao_breve(em(MG, 764.0f, 300.0f, PILULA_H), "Fixar no perfil", "aj_bookmark", 0, a);
+  botao_breve(em(MG, 700.0f, 420.0f, PILULA_H), "Ir à trilha", "aj_play", 0, a);
+  botao_breve(em(MG, 764.0f, 420.0f, PILULA_H), "Fixar no perfil", "aj_bookmark", 0, a);
   // Meio: os cinco niveis.
   for (i = 0; i < CQ_NIVEIS; i++) {
     GfxRect r = em(MG + 460.0f, 164.0f + (float)i * 122.0f, 700.0f, 108.0f);
