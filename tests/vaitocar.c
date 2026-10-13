@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdatomic.h>
 
 static void fonte(Stream *s, const char *prov, const char *rot, const char *arq,
                   const char *desc, int altura, int mp4, unsigned long long mb) {
@@ -35,8 +36,14 @@ static void fonte(Stream *s, const char *prov, const char *rot, const char *arq,
 
 static int tem(const char *s, const char *agulha) { return strstr(s, agulha) != NULL; }
 
+static atomic_int redeStatus = 500, redePedidos;
 static int semMarcadores(const char *url, char **corpo, int *status) {
-  (void)url; *corpo = NULL; *status = 500; return 500;
+  (void)url; *corpo = NULL; *status = atomic_load(&redeStatus);
+  if (*status == 200) *corpo = strdup(
+    "{\"intro\":[{\"start_ms\":10000,\"end_ms\":80000}],"
+    "\"credits\":[{\"start_ms\":3000000,\"end_ms\":3200000}]}");
+  atomic_fetch_add(&redePedidos, 1);
+  return *status;
 }
 
 int main(void) {
@@ -216,6 +223,41 @@ int main(void) {
     assert(vt.marcas == VT_T_C && vt.origem == VT_O_THEINTRODB);
     intro_desligar();
     puts("ok  fallback MKV->MP4 descarta capitulos e preserva marcas da rede");
+
+    // Resposta valida na sessao: trocar a fonte com 500 mantem o pulo real.
+    atomic_store(&redeStatus, 200);
+    intro_pedir(c.imdb, 2, 5);
+    for (int i = 0; i < 300 && intro_trechos(trechos, 8) < 2; i++) usleep(10000);
+    assert(intro_trechos(trechos, 8) == 2);
+    intro_definir_duracao(3300, 0);
+    usleep(200000);   // consulta com duracao termina antes da troca
+    atomic_store(&redeStatus, 500);
+    for (int comCap = 0; comCap < 2; comCap++) {
+      double fim; int tipo;
+      if (comCap) {
+        IntroTrecho caps[] = {cap, {100, 120, INTRO_RESUMO, 0}};
+        intro_definir_capitulos(caps, 2);
+        assert(intro_trechos(trechos, 8) == 3);
+        assert(intro_ativo(35, &fim, &tipo) && fim == cap.fim);
+      }
+      int antes = atomic_load(&redePedidos);
+      player_voltar_a_esperar();
+      player_definir_fonte("https://exemplo.invalido/rede.mp4");
+      for (int i = 0; i < 300 && atomic_load(&redePedidos) == antes; i++) usleep(10000);
+      assert(atomic_load(&redePedidos) > antes);
+      usleep(200000);   // deixa a resposta 500 chegar ao estado do intro
+      assert(intro_trechos(trechos, 8) == 2);
+      assert(trechos[0].inicio == 10 && trechos[0].fim == 80);
+      assert(intro_botao(35, 1000 + comCap, 1, 0, &fim, &tipo));
+      assert(tipo == INTRO_ABERTURA && fim == 80);
+      assert(intro_creditos_limitados(trechos, 8) == 1);
+      assert(trechos[0].inicio == 3000 && trechos[0].fim == 3200);
+      assert(intro_auto_ativo(3100, &fim, &tipo) && tipo == INTRO_CREDITOS && fim == 3200);
+      assert(vt_montar(&vt, c.imdb, 2, 5));
+      assert(vt.marcas == (VT_T_A | VT_T_C) && vt.origem == VT_O_THEINTRODB);
+    }
+    intro_desligar();
+    puts("ok  troca com rede 500 preserva abertura e creditos do TheIntroDB");
   }
 
   printf("ok vaitocar (escolha: %s, %d linhas, %d fora)\n", e.nome, e.nLinha, fora);

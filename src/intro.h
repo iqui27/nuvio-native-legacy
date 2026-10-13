@@ -68,7 +68,7 @@ long intro_kitsu_mal(const char *json);
 // tipo, o que o TheIntroDB/AniSkip trouxe, tenha chegado antes ou depois. n=0
 // limpa. Zerados por intro_desligar.
 void intro_definir_capitulos(const IntroTrecho *v,int n);
-// Novo arquivo do mesmo episodio: reinicia os marcadores sem perder os IDs.
+// Novo arquivo do mesmo episodio: descarta capitulos e preserva os trechos da rede.
 void intro_trocar_fonte(void);
 void intro_desligar(void);
 int  intro_ativo(double posSeg,double *fim,int *tipo);

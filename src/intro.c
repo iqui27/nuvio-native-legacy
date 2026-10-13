@@ -17,6 +17,7 @@
 
 static pthread_mutex_t trava=PTHREAD_MUTEX_INITIALIZER;
 static IntroTrecho trechos[8];static int nTrechos;static unsigned geracao;
+static IntroTrecho redeTr[8];static int nRedeTr;
 static IntroTrecho creditosLimitados[8];static int nCreditosLimitados;
 static int botaoIdx=-1;static double botaoDesde;
 static int botaoVis;static double botaoFim;static int botaoTipo;
@@ -549,7 +550,7 @@ static void *baixar(void *u){
     falhou=r==R_FALHA;
     if(falhou)falhouEm=(long)time(NULL);
     if(!falhou||n>0){
-      memcpy(trechos,v,(size_t)n*sizeof *v);nTrechos=n;
+      memcpy(redeTr,v,(size_t)n*sizeof *v);nRedeTr=n;
       memcpy(creditosLimitados,limitados,(size_t)nl*sizeof *limitados);nCreditosLimitados=nl;
     }
     fundirCapitulos();caps=nCapTr;total=nTrechos;
@@ -573,7 +574,7 @@ static void disparar(const Pedido *base,double dur,int novo){
   pthread_mutex_lock(&trava);
   if(novo){
     marcasLimparCapitulos(p->id,p->t,p->e);
-    nTrechos=0;nCreditosLimitados=0;nCapTr=0;refeitos=0;tentativas=0;
+    nTrechos=nRedeTr=0;nCreditosLimitados=0;nCapTr=0;refeitos=0;tentativas=0;
   }
   falhou=0;
   p->anime=animeDe(p->id,p->tmdb);
@@ -608,13 +609,16 @@ void intro_pedir(const char *imdb,int t,int e){intro_pedir_vizinhos(imdb,t,e,0.0
 
 void intro_trocar_fonte(void){
   Pedido b;int tem;
-  pthread_mutex_lock(&trava);tem=temUltimo;b=ultimo;pthread_mutex_unlock(&trava);
-  if(tem)disparar(&b,0.0,1);else intro_desligar();
+  intro_definir_capitulos(NULL,0);
+  pthread_mutex_lock(&trava);tem=temUltimo;b=ultimo;refeitos=tentativas=0;pthread_mutex_unlock(&trava);
+  if(tem)disparar(&b,0.0,0);else intro_desligar();
 }
 
 static int tipoDeCap(int t){return t==INTRO_ABERTURA?1:t==INTRO_RESUMO?2:3;}   // creditos e previa andam juntos
 static void fundirCapitulos(void){
   int i,k,j=0;
+  memcpy(trechos,redeTr,(size_t)nRedeTr*sizeof *trechos);nTrechos=nRedeTr;
+  verGer=geracao+1;   // reavalia os indices mesmo ao retirar todos os capitulos
   if(nCapTr<=0)return;
   for(i=0;i<nTrechos;i++){
     int sub=0;
@@ -631,12 +635,15 @@ void intro_definir_capitulos(const IntroTrecho *v,int n){
   nCapTr=0;
   for(int i=0;v&&i<n&&nCapTr<4;i++)capTr[nCapTr++]=v[i];
   fundirCapitulos();
-  if(temUltimo)marcasGuardar(ultimo.id,ultimo.t,ultimo.e,capTr,nCapTr,INTRO_O_CAPITULOS);
+  if(temUltimo){
+    marcasGuardar(ultimo.id,ultimo.t,ultimo.e,redeTr,nRedeTr,0);
+    marcasGuardar(ultimo.id,ultimo.t,ultimo.e,capTr,nCapTr,INTRO_O_CAPITULOS);
+  }
   if(nCapTr>0&&temUltimo){printf("[intro] %s S%02dE%02d: fonte=capitulos, %d marcadores\n",
       ultimo.id,ultimo.t,ultimo.e,nTrechos);fflush(stdout);}
   pthread_mutex_unlock(&trava);
 }
-void intro_desligar(void){pthread_mutex_lock(&trava);geracao++;nTrechos=nCreditosLimitados=0;nCapTr=0;botaoVis=0;botaoIdx=-1;temUltimo=0;falhou=0;pthread_mutex_unlock(&trava);}
+void intro_desligar(void){pthread_mutex_lock(&trava);geracao++;nTrechos=nRedeTr=nCreditosLimitados=0;nCapTr=0;botaoVis=0;botaoIdx=-1;temUltimo=0;falhou=0;pthread_mutex_unlock(&trava);}
 
 // DURACAO DA MIDIA E O TIPO (filme/serie), para recusar janelas absurdas.
 static double durMidia;static int ehFilme;
@@ -875,7 +882,8 @@ int intro_creditos_limitados(IntroTrecho *saida,int max){
 void intro_shot_definir(const IntroTrecho *v,int n){
   pthread_mutex_lock(&trava);geracao++;
   nCreditosLimitados=0;
-  nTrechos=n<8?n:8;if(nTrechos>0)memcpy(trechos,v,(size_t)nTrechos*sizeof *v);
+  nRedeTr=n<8?n:8;if(nRedeTr>0)memcpy(redeTr,v,(size_t)nRedeTr*sizeof *v);
+  fundirCapitulos();
   pthread_mutex_unlock(&trava);
 }
 void intro_shot_marcas(const char *imdb,int t,int e,const IntroTrecho *v,int n,int origem){
