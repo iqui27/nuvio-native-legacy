@@ -1,4 +1,5 @@
 #include "streams.h"
+#include "vaitocar.h"
 #include "plrui.h"
 #include "ondever.h"
 #include "naovideo.h"
@@ -15,6 +16,7 @@
 #include "limpa.h"
 #include "vazao.h"
 #include <ctype.h>
+#include <stdarg.h>
 #include <strings.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -33,6 +35,7 @@
 #include "marco.h"
 #include "debrid.h"
 #include "fonteregra.h"
+#include "fontepref.h"
 #include "p2p.h"
 #include "p2pmotor.h"
 #include "fonteauto.h"
@@ -1533,21 +1536,17 @@ static int prontaNoDebrid(int i, void *u) {
   return i >= 0 && i < n && lista[i].url[0] && !lista[i].foraCache && !soP2P(&lista[i]);
 }
 
-int stream_primeira_boa(int tentativas) {
-  int fila[VER_MAX], nf, q, tocadas = 0, escolhida, total, pref, livres = 0, kk;
+// Chamar com verTrava: Play e descricao consultam a mesma fila, sem rede.
+static int filaDoPlay(int tentativas, int pref, int *fila, int *livres) {
+  int nf, q, total = n;
   int modo = ajustes_fonte_primeira() ? FONTEAUTO_PRIMEIRA : FONTEAUTO_MELHOR;
   long *pts;
   unsigned char *acima, *excl;
   signed char *grp;
   int *rk, ordemUso = ajustes_fonte_ordem_uso();
-  Conferencia c = { 0, 0, 0, -1 };
-  Uint32 tVerif = 0;
+  *livres = 0;
   tentativas = fonteauto_tentativas(modo, tentativas);
-  pthread_mutex_lock(&verTrava);
-  total = n;
-  pref = preferida;
-  c.geracao = listaGeracao;
-  if (total < 1) { pthread_mutex_unlock(&verTrava); return -1; }
+  if (total < 1) return 0;
   if (tentativas > total) tentativas = total;
   if (tentativas > VER_MAX) tentativas = VER_MAX;
   pts = malloc(sizeof *pts * (size_t)total);
@@ -1555,9 +1554,7 @@ int stream_primeira_boa(int tentativas) {
   excl = calloc((size_t)total, 1);
   grp = calloc((size_t)total, 1);
   rk = calloc((size_t)total, sizeof *rk);
-  regraBloqueou = 0;
   if (!pts || !acima || !excl || !grp || !rk) {
-    pthread_mutex_unlock(&verTrava);
     free(pts); free(acima); free(excl); free(grp); free(rk);
     return -1;
   }
@@ -1567,7 +1564,6 @@ int stream_primeira_boa(int tentativas) {
   { int *ordem = malloc(sizeof *ordem * (size_t)total), posPref = -1;
     FonteRegraCfg cfgEscopo = regraCfg();
     if (!ordem) {
-      pthread_mutex_unlock(&verTrava);
       free(pts); free(acima); free(excl); free(grp); free(rk);
       return -1;
     }
@@ -1583,15 +1579,44 @@ int stream_primeira_boa(int tentativas) {
       excl[q] = (unsigned char)foraDoAuto(i);
       grp[q] = (signed char)grupoDe(i);
       rk[q] = fonteregra_ordem_rank(lista[i].provedor);
-      if (!excl[q]) livres++;
+      if (!excl[q]) (*livres)++;
     }
     // LG: o MP4 da mesma faixa na frente, a mesma regra do automatico.
     if (lgMp4Primeiro()) mp4PrimeiroNaFaixa(ordem, pts, grp, excl, total);
-    pthread_mutex_unlock(&verTrava);
     nf = fonteauto_fila_o(modo, total, posPref, pts, acima, excl, grp, rk, ordemUso, tentativas, fila);
     for (q = 0; q < nf; q++) fila[q] = ordem[fila[q]];
     free(ordem); }
   free(pts); free(acima); free(excl); free(grp); free(rk);
+  return nf;
+}
+
+int stream_play_candidata(void) {
+  int fila[1], livres, nf, pref = preferida;
+  // Resolver como Play mesmo sem preparo, sem alterar preferida no desenho.
+  // Fora de verTrava: fontepref consulta a lista para casar a escolha salva.
+  if (alvoLista[0]) {
+    int lembrada = ajustes_fonte_manual() ? fontepref_escolher_manual(alvoLista)
+                                        : fontepref_escolher(alvoLista);
+    if (lembrada >= 0) pref = lembrada;
+  }
+  pthread_mutex_lock(&verTrava);
+  nf = filaDoPlay(1, pref, fila, &livres);
+  pthread_mutex_unlock(&verTrava);
+  return nf > 0 ? fila[0] : -1;
+}
+
+int stream_primeira_boa(int tentativas) {
+  int fila[VER_MAX], nf, tocadas = 0, escolhida, pref, livres = 0, kk;
+  int modo = ajustes_fonte_primeira() ? FONTEAUTO_PRIMEIRA : FONTEAUTO_MELHOR;
+  int ordemUso = ajustes_fonte_ordem_uso();
+  Conferencia c = { 0, 0, 0, -1 };
+  Uint32 tVerif = 0;
+  pthread_mutex_lock(&verTrava);
+  pref = preferida;
+  c.geracao = listaGeracao;
+  regraBloqueou = 0;
+  nf = filaDoPlay(tentativas, pref, fila, &livres);
+  pthread_mutex_unlock(&verTrava);
   if (nf < 1) {
     // Havia fonte, mas as regras de Ajustes nao deixam nenhuma (#202).
     if (livres > 0) {
@@ -2221,8 +2246,7 @@ static int nFiltrados(void) {
 // na frente quando existe; senao, a de maior pontuacao. Pedido do dono, 16/09.
 // Uma vez por quadro, nunca por linha: stream_automatico percorre a lista.
 static int automaticaDaFolha(void) {
-  return preferida >= 0 && !lista[preferida].foraCache && !automaticaExcluida(preferida) &&
-         (canalFolha || !excedeDecoder(&lista[preferida])) ? preferida : automaticoCom(!canalFolha);
+  return canalFolha ? stream_automatico_canal() : stream_play_candidata();
 }
 
 // A LISTA AGRUPADA POR RESOLUCAO. A ordem da lista (a pontuacao) vale DENTRO
@@ -2665,6 +2689,47 @@ static void porLinha(int i, float *y, int automatica) {
 // Tamanho para ordenar: desconhecido (0) vai para o fim do grupo.
 static long tamanhoOrdem(int i) { return lista[i].tamanhoMB > 0 ? lista[i].tamanhoMB : -1; }
 
+// CARTAO "ESCOLHA AUTOMATICA" (2.1, titulo.html 4B): no topo da lista da aba
+// Todos, a fonte que o automatico tocaria e cada criterio. Nao e linha: nao
+// recebe foco; a lista comeca `escAlt` mais abaixo (montar() parte de y = escAlt)
+// e o resto da conta de rolagem (linhaY, secY, alturaTotal) segue igual.
+#define ESC_PAD_Y   22.0f
+#define ESC_PAD_X   24.0f
+#define ESC_CAB_H   30.0f
+#define ESC_NOME_H  52.0f
+#define ESC_LIN_H   24.0f
+#define ESC_LIN_GAP 10.0f
+#define ESC_VAO     24.0f
+static VtEscolha escCartao;
+static float escAlt;   // cartao + vao ate a lista; 0 = sem cartao
+static void escolhaAtualizar(void) {
+  int linhas;
+  escAlt = 0.0f;
+  if (filtro != 0 || !vt_escolha(&escCartao)) return;
+  linhas = (escCartao.nLinha + 1) / 2;
+  escAlt = ESC_PAD_Y + ESC_CAB_H + 14.0f + ESC_NOME_H + (linhas ? 16.0f : 0.0f) +
+           linhas * ESC_LIN_H + (linhas > 1 ? (linhas - 1) * ESC_LIN_GAP : 0.0f) +
+           ESC_PAD_Y + ESC_VAO;
+}
+
+// COPIAS DO MESMO ARQUIVO (#457/#458): a copia de outro add-on dobra na primeira
+// (vt_copia_rep) quando as duas estao na lista e no mesmo estado de cache; a
+// que esta tocando, a lembrada e a automatica ficam sempre visiveis. No modo
+// "do addon" (#400) nada dobra: a ordem dele e preservada inteira.
+static int dobravel(int i) {
+  int r;
+  if (ajustes_fonte_ordem_addon()) return 0;
+  r = vt_copia_rep(i);
+  return r != i && i != atual && i != preferida && i != melhorFolha &&
+         passaFiltro(r) && !!lista[r].foraCache == !!lista[i].foraCache;
+}
+// Quantas copias dobraram em `i` (so quem esta na lista: dobravel).
+static int copiasDobradas(int i) {
+  int c = 0;
+  for (int j = 0; j < n; j++) if (j != i && vt_copia_rep(j) == i && dobravel(j)) c++;
+  return c;
+}
+
 // POR QUALIDADE (dono, 02/10): a fonte "Melhor para esta TV" e a PRIMEIRA linha,
 // sozinha e sem cabecalho — o selo dela ja diz o que ela e —, e cada grupo
 // vem do MAIOR arquivo para o menor. Tamanho e o que mais separa duas fontes
@@ -2673,10 +2738,12 @@ static long tamanhoOrdem(int i) { return lista[i].tamanhoMB > 0 ? lista[i].taman
 static int *grupoTmp;
 static int *grupoFitTmp;
 static int grupoTmpCap;
-static void montar(int automatica) {
-  float y = 0;
+static void montarLinhas(int automatica) {
+  float y;
   int g, i, k, m = -1, nt;
   int needed = filtro == -1 ? ondever_n(alvoPedido) : n;
+  escolhaAtualizar();
+  y = escAlt;
   if (ordemCap < needed) {
     int cap = needed + 32;
     int *o = realloc(ordem, cap * sizeof *o);
@@ -2739,7 +2806,7 @@ static void montar(int automatica) {
     // addon (#221) e o empate de tamanho fica com a ordem do addon.
     for (k = 0; k < n; k++) {
       i = ORD(k);
-      if (i != m && !lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g) grupoTmp[nt++] = i;
+      if (i != m && !lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g && !dobravel(i)) grupoTmp[nt++] = i;
     }
     // Insercao estavel: em tamanho igual vale a ordem do addon.
     for (k = 1; k < nt; k++) {
@@ -2755,7 +2822,7 @@ static void montar(int automatica) {
     // secao do grupo as abriga, na ordem do addon.
     for (k = 0; k < n; k++) {
       i = ORD(k);
-      if (i != m && lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g) grupoTmp[nt++] = i;
+      if (i != m && lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g && !dobravel(i)) grupoTmp[nt++] = i;
     }
     if (!nt) continue;
     if (nOrdem) y += FOLHA_SEC_GAP;
@@ -2772,6 +2839,16 @@ static int filtrado(int linha) {
 static int linhaDe(int indice) {
   for (int r = 0; r < nOrdem; r++) if (ordem[r] == indice) return r;
   return -1;
+}
+// A fonte em foco segue seu indice; se dobrar, o OK vai para a mesma copia.
+static void montar(int automatica) {
+  int alvo = grupo == 1 ? (focoFixo >= 0 ? focoFixo : filtrado(foco)) : -1;
+  montarLinhas(automatica);
+  if (alvo >= 0) {
+    int r = linhaDe(alvo);
+    if (r < 0) r = linhaDe(vt_copia_rep(alvo));
+    if (r >= 0) foco = r;
+  }
 }
 static int folhaIlha(void) { return player_aberto(); }
 static float folhaIlhaH(void) { return NV_TELA_H - FOLHA_ILHA_Y - FOLHA_ILHA_CAB - FOLHA_ILHA_BASE; }
@@ -2922,6 +2999,27 @@ void stream_atualizar_lista(const Stream *l, int qtd) {
   }
 }
 int stream_folha_n(void) { return nFiltrados(); }
+#ifdef NV_SHOT_HOOKS
+// Capturas: altura do cartao da escolha automatica (0 = sem cartao nesta aba),
+// linhas que a lista desenha e copias que dobraram em outra linha.
+void stream_shot_folha(float *cartao, int *linhas, int *dobradas) {
+  int l = 0, d = 0;
+  for (int i = 0; i < n; i++) {
+    if (!passaFiltro(i)) continue;
+    if (dobravel(i)) d++; else l++;
+  }
+  if (cartao) *cartao = escAlt;
+  if (linhas) *linhas = l;
+  if (dobradas) *dobradas = d;
+}
+// Linha em foco: indice em stream_item() (-1 = foco fora da lista) e se esse
+// indice e uma copia dobrada (nunca deveria: a linha dobrada nao tem foco).
+void stream_shot_foco(int *indice, int *dobrada) {
+  int i = filtrado(foco);
+  if (indice) *indice = i;
+  if (dobrada) *dobrada = i >= 0 && dobravel(i);
+}
+#endif
 // DETALHES DA FONTE (#355): o titulo e a descricao do addon sao cortados na
 // linha (uma fileira de selos, duas linhas de texto). O texto inteiro existe
 // em Stream.rotulo / descricao / arquivo; esta modal o mostra por completo,
@@ -3085,6 +3183,7 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
   montar(automaticaDaFolha());
   if (focoFixo >= 0) {
     int r = grupo == 1 ? linhaDe(focoFixo) : -1;
+    if (r < 0 && grupo == 1) r = linhaDe(vt_copia_rep(focoFixo));
     if (r >= 0) {
 #ifdef NV_TOUCH_UI
       if (!toqueFontes.livre)
@@ -3468,6 +3567,59 @@ static void stream_folha_desenharCorpo_(Uint32 agora) {
     } else plrui_material(corpo,FOLHA_RAIO_IL,0,anim); }
   corpoFolha(x, FOLHA_W, anim, agora, 0);
 }
+// Pinta o cartao da escolha automatica (ver escolhaAtualizar). (x, y, w, h) e o
+// retangulo do cartao, sem o vao. Linhas cumpridas no acento com "check"; as que
+// contam o que ficou de fora, em cinza com "x".
+static void escDesenhar(float x, float y, float w, float h, float ar, float ag, float ab, float a) {
+  const VtEscolha *e = &escCartao;
+  float px = x + ESC_PAD_X, pr = x + w - ESC_PAD_X, py = y + ESC_PAD_Y, ny, gy, colW;
+  TxtLinha t;
+  int ai = (int)(ar * 255.0f + .5f), k;
+  gfx_cor((GfxRect){x, y, w, h}, FOLHA_RAIO / h, 1, 1, 1, .05f * a);
+  // cabecalho: marca no acento a esquerda, "regras em Ajustes" a direita
+  gfx_cor((GfxRect){px, py + 5, 7, 7}, .5f, ar, ag, ab, a);
+  { float kw = caixaAlta("Escolha automática · melhor para esta TV", ai, (int)(ag * 255.0f + .5f),
+                         (int)(ab * 255.0f + .5f), px + 16, py, a);
+    // O link so ocupa o que sobra do kicker (em idiomas de rotulo longo os
+    // dois se atropelavam); sobrou menos de 80 px, ele some.
+    float sobra = (pr - px) - 16.0f - kw - 20.0f;
+    if (sobra >= 80.0f) {
+      t = txt_linha_corta(TXT_ILHA_APOIO, i18n("regras em Ajustes › Reprodução"), 115, 115, 113, 255,
+                          sobra < w * .38f ? sobra : w * .38f);
+      txt_desenhar_alpha(t, pr - t.w, py + (ESC_CAB_H - t.h) * .5f - 4.0f, a);
+    } }
+  // a fonte: nome amigavel a esquerda; tamanho e add-on a direita
+  ny = py + ESC_CAB_H + 14.0f;
+  { TxtLinha lg = txt_linha(TXT_PAINEL_ITEM, e->tamanho, 242, 242, 240, 255);
+    TxtLinha lp = txt_linha_corta(TXT_PG_FIM, e->prov, 150, 150, 148, 255, 300.0f);
+    float cw = lg.w > lp.w ? lg.w : lp.w;
+    if (e->tamanho[0]) txt_desenhar_alpha(lg, pr - lg.w, ny, a);
+    txt_desenhar_alpha(lp, pr - lp.w, ny + (e->tamanho[0] ? lg.h + 4.0f : 6.0f), a);
+    t = txt_linha_corta(TXT_CALLOUT, e->nome, 255, 255, 253, 255, (pr - px) - cw - 28.0f);
+    txt_desenhar_alpha(t, px, ny, a); }
+  // criterios, 2 colunas na ordem de leitura
+  gy = ny + ESC_NOME_H + 16.0f;
+  // A coluna da esquerda leva o que o texto dela pede (ate a metade); a da
+  // direita fica com o resto — frases longas ("Dolby Vision: mais cor e
+  // brilho...") deixam de ser cortadas quando a esquerda e curta.
+  colW = ((pr - px) - 28.0f) * .5f;
+  { float esqW = 0.0f, dirX;
+    for (k = 0; k < e->nLinha; k += 2) {
+      TxtLinha m = txt_linha(TXT_ILHA_APOIO, e->linha[k], 208, 208, 206, 255);
+      if ((float)m.w + 30.0f > esqW) esqW = (float)m.w + 30.0f;
+    }
+    if (esqW > colW) esqW = colW;
+    dirX = px + esqW + 28.0f;
+    for (k = 0; k < e->nLinha; k++) {
+      float cx = k % 2 ? dirX : px, ly = gy + (k / 2) * (ESC_LIN_H + ESC_LIN_GAP);
+      float cw = k % 2 ? pr - dirX : esqW;
+      int fora = e->fora[k], c = fora ? 115 : 208;
+      if (fora) gfx_icone((GfxRect){cx, ly + 1, 20, 20}, "aj_x", .45f, .45f, .45f, a);
+      else gfx_icone((GfxRect){cx, ly + 1, 20, 20}, "check", ar, ag, ab, a);
+      t = txt_linha_corta(TXT_ILHA_APOIO, e->linha[k], c, c, c - 2, 255, cw - 30.0f);
+      txt_desenhar_alpha(t, cx + 30.0f, ly + (ESC_LIN_H - t.h) * .5f, a);
+    } }
+}
 // `anim` aqui e o alfa do corpo (sombra a variavel da mola de proposito: na
 // ilha quem manda na opacidade e a forma, nao a mola da folha).
 static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
@@ -3604,6 +3756,8 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   montar(automatica);
   nf=nOrdem;
   gfx_recorte(x,FOLHA_TOPO-8,w,folhaBase-(FOLHA_TOPO-8));
+  if (escAlt > 0.0f && FOLHA_TOPO - rolagem + escAlt - ESC_VAO > FOLHA_TOPO - 8)
+    escDesenhar(lx, FOLHA_TOPO - rolagem, rw, escAlt - ESC_VAO, ar, ag, ab, anim);
   // CABECALHOS DE GRUPO: "4K  ULTRA HD ........ 3 fontes", com um fio embaixo.
   for(int g=0;g<FOLHA_GRUPOS;g++){
     float y; char q[48];
@@ -3674,7 +3828,9 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       // em 30 s"); a pessoa escolhia as cegas. "seeds" fica sem traducao: e o
       // termo que quem usa torrent conhece em qualquer idioma.
       { char pv[160];
-        if(!s->url[0] && s->infoHash[0] && s->temSemeadores)
+        int dob = copiasDobradas(i);
+        if(dob > 0) snprintf(pv,sizeof pv,i18n("%d add-ons · mesmo arquivo"),dob + 1);
+        else if(!s->url[0] && s->infoHash[0] && s->temSemeadores)
           snprintf(pv,sizeof pv,"%d seeds · %s",s->semeadores,s->provedor);
         else snprintf(pv,sizeof pv,"%s",s->provedor);
         lp=txt_linha_corta(TXT_PG_FIM,pv,sel?150:110,sel?150:110,sel?148:108,255,340); }
@@ -3949,5 +4105,125 @@ int stream_fit_abrindo(const Stream *s, char *l1, size_t n1, char *l2, size_t n2
   r = fitAutoResultado(s);
   if (r.razao != SF_BITRATE_ESTIMADO) return 0;
   fitLinhasDe(&r, l1, n1, l2, n2);
+  return 1;
+}
+
+// --- 2.1 "Titulo e Fontes": leituras para a faixa Vai tocar e o cartao da folha ---
+const char *stream_idioma(const Stream *s) { return s ? idiomaDa(s) : NULL; }
+int stream_texto_tem(const Stream *s, const char *palavra) {
+  return s && palavra && temNoTexto(s, palavra);
+}
+
+// COPIAS DO MESMO ARQUIVO (#457/#458). Ver a regra em vaitocar.h: infoHash, ou
+// nome de arquivo normalizado + tamanho conhecido igual. bingeGroup nao entra.
+#define COPIA_CHAVE 160
+static void copiaChave(const Stream *s, char *d, size_t tam) {
+  const char *a = arquivoDa(s);   // buffer estatico: consumido na hora
+  size_t k = 0;
+  for (; *a && k + 1 < tam; a++)
+    if (isalnum((unsigned char)*a)) d[k++] = (char)tolower((unsigned char)*a);
+  d[k] = 0;
+}
+static int copiaIgual(const Stream *x, const char *kx, const Stream *y, const char *ky) {
+  if (x->infoHash[0] && !strcmp(x->infoHash, y->infoHash)) return x->fileIdx == y->fileIdx;
+  if (strlen(kx) < 16 || strcmp(kx, ky)) return 0;
+  if (x->tamanhoBytes && y->tamanhoBytes) return x->tamanhoBytes == y->tamanhoBytes;
+  { unsigned long long a = tamanhoMBFonte(x), b = tamanhoMBFonte(y); if (a && b) return a == b; }
+  return 0;
+}
+int vt_copias_mesmas(int a, int b) {
+  char ka[COPIA_CHAVE], kb[COPIA_CHAVE];
+  if (a < 0 || b < 0 || a >= n || b >= n) return 0;
+  if (a == b) return 1;
+  copiaChave(&lista[a], ka, sizeof ka);
+  copiaChave(&lista[b], kb, sizeof kb);
+  return copiaIgual(&lista[a], ka, &lista[b], kb);
+}
+// Feito uma vez por lista (geracao + tamanho), nunca por quadro: n^2 nomes.
+// copiaRep[i] = primeira copia de i na ORDEM DA FOLHA (ORD); copiaQtd[i] = quantas
+// fontes de OUTRO add-on dobram em i (so conta na primeira).
+static int *copiaRep, *copiaQtd, copiaCap, copiaN = -1;
+static unsigned copiaGer;
+static void copiasCalcular(void) {
+  char (*ch)[COPIA_CHAVE];
+  if (copiaGer == listaGeracao && copiaN == n && copiaRep) return;
+  if (n > copiaCap) {
+    int *r = realloc(copiaRep, sizeof *r * (size_t)n), *q = realloc(copiaQtd, sizeof *q * (size_t)n);
+    if (r) copiaRep = r;
+    if (q) copiaQtd = q;
+    if (!r || !q) { copiaN = -1; return; }
+    copiaCap = n;
+  }
+  ch = malloc(sizeof *ch * (size_t)(n ? n : 1));
+  if (!ch) { copiaN = -1; return; }
+  for (int i = 0; i < n; i++) { copiaRep[i] = i; copiaQtd[i] = 0; copiaChave(&lista[i], ch[i], COPIA_CHAVE); }
+  for (int k = 0; k < n; k++) {
+    int i = ORD(k);
+    if (copiaRep[i] != i) continue;
+    for (int k2 = k + 1; k2 < n; k2++) {
+      int j = ORD(k2);
+      if (copiaRep[j] != j || !strcmp(lista[i].provedor, lista[j].provedor)) continue;
+      if (copiaIgual(&lista[i], ch[i], &lista[j], ch[j])) { copiaRep[j] = i; copiaQtd[i]++; }
+    }
+  }
+  free(ch);
+  copiaGer = listaGeracao; copiaN = n;
+}
+int vt_copia_rep(int i) {
+  if (i < 0 || i >= n) return i;
+  copiasCalcular();
+  return copiaN == n ? copiaRep[i] : i;
+}
+int vt_copias_n(int i) {
+  if (i < 0 || i >= n) return 0;
+  copiasCalcular();
+  return copiaN == n && copiaRep[i] == i ? copiaQtd[i] : 0;
+}
+
+// O CARTAO DA ESCOLHA AUTOMATICA. Cada linha diz um fato que a lista ja prova;
+// nenhuma e inventada (ver as ambar no cabecalho de vaitocar.h).
+static void linhaEsc(VtEscolha *e, int fora, const char *fmt, ...) {
+  va_list ap;
+  if (e->nLinha >= VT_CRITERIA_MAX) return;
+  va_start(ap, fmt);
+  vsnprintf(e->linha[e->nLinha], sizeof e->linha[0], fmt, ap);
+  va_end(ap);
+  e->fora[e->nLinha++] = fora;
+}
+int vt_escolha(VtEscolha *e) {
+  VaiTocar vt;
+  const Stream *s;
+  int i, max, dec = 0, sem = 0, aviso = 0, dobradas = 0;
+  memset(e, 0, sizeof *e);
+  i = automaticaDaFolha();
+  if (i < 0 || i >= n) return 0;
+  s = &lista[i];
+  memset(&vt, 0, sizeof vt);
+  vt_descrever(s, &vt);
+  e->tem = 1; e->indice = i;
+  vt_nome_amigavel(&vt, e->nome, sizeof e->nome);
+  snprintf(e->nomeCru, sizeof e->nomeCru, "%s", s->arquivo[0] ? s->arquivo : s->rotulo);
+  snprintf(e->prov, sizeof e->prov, "%s", s->provedor);
+  snprintf(e->tamanho, sizeof e->tamanho, "%s", vt.tamanho);
+  if (vt.res[0] && cabeNaAltura(s) && !excedeDecoder(s))
+    linhaEsc(e, 0, i18n("%s, dentro do que esta TV toca"), vt.res);
+  if (vt.hdr[0]) linhaEsc(e, 0, i18n("%s: mais cor e brilho, a TV liga o modo HDR"), vt.hdr);
+  else if (ajustes_fonte_hdr() == 2) linhaEsc(e, 0, "%s", i18n("Sem HDR, como pedido em Ajustes"));
+  if (soP2P(s)) linhaEsc(e, 0, "%s", i18n("Torrent direto: abre quando houver pares"));
+  else if (!s->foraCache) linhaEsc(e, 0, "%s", i18n("Em cache no debrid: abre rápido"));
+  if (vt.idiomas[0]) linhaEsc(e, 0, i18n("Áudio e legenda: %s"), vt.idiomas);
+  max = ajustes_tamanho_max_gb();
+  if (vt.tamanho[0] && max > 0 && !foraDaFaixaTamanho(s))
+    linhaEsc(e, 0, i18n("%s, abaixo do limite de %d GB"), vt.tamanho, max);
+  for (int k = 0; k < n; k++) {
+    if (excedeDecoder(&lista[k])) dec++;
+    if (lista[k].foraCache) sem++;
+    if (ehInformativa(&lista[k])) aviso++;
+    if (vt_copia_rep(k) != k) dobradas++;
+  }
+  if (dec) linhaEsc(e, 1, i18n("Fora do automático, a TV não toca: %d"), dec);
+  if (sem) linhaEsc(e, 1, i18n("Fora do automático, sem cache: %d"), sem);
+  if (aviso) linhaEsc(e, 1, i18n("Fora do automático, avisos do add-on: %d"), aviso);
+  if (dobradas) linhaEsc(e, 1, i18n("Cópias do mesmo arquivo agrupadas: %d"), dobradas);
   return 1;
 }
