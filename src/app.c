@@ -92,6 +92,7 @@
 #include "novidades139.h"
 #include "novidades1312.h"
 #include "novidades142.h"
+#include "comecar.h"
 #include "novidades148.h"
 #include "novidades170.h"
 #include "novidades180.h"
@@ -663,6 +664,9 @@ static void sidebarToqueRegistrar(int contexto) {
 // requisicoes) num perfil que nao mudou seria pagar o preco da troca em toda
 // abertura do app.
 static int perfilAntes = 1;
+// 1 quando a conta entrou AGORA pelo login (0 = sessao restaurada do disco).
+// O Comecar da 2.1 (comecar.h) decide o que mostrar com isto.
+static int loginNovo;
 // Quando a troca de perfil comecou a preparar a home nova. Ver o teto abaixo.
 static Uint32 trocaPerfilDesde;
 // Teto da espera pela home do perfil novo. A rede lenta nunca prende a pessoa
@@ -2229,6 +2233,9 @@ int app_iniciar(const char *dirArte) {
   const char *preview = getenv("NUVIO_UI_PREVIEW");
   uiPreview = preview && !strcmp(preview, "1");
 #endif
+  // Antes de tudo que mexe na conta: o login e o sync criam os arquivos que o
+  // Começar olha para saber se esta instalacao ja vem de uso anterior.
+  comecar_marcar_dados();
   arranque_etapa("app_iniciar/ajustes_recursos");
   ajustes_recursos(dirArte);
   arranque_etapa("app_iniciar/login_recursos");
@@ -2468,7 +2475,7 @@ int app_no_login(void) { return tela == TELA_LOGIN; }
 int app_na_home(void) {
   return tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() &&
          !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() &&
-         !novcartao_aberto();
+         !novcartao_aberto() && !comecar_aberto();
 }
 
 // ONDE A AZUL/CH+ ABRE O PAINEL DE SALVOS/AVISOS (dono, 04/10: "tem que dar
@@ -2596,6 +2603,13 @@ void app_evento(const SDL_Event *e) {
   // Central" fecha o cartao e abre a Central de controle no lugar.
   // O DA 2.0.2 (novidades202.h) e igual, sem a Central.
   // O CARTAO DA VERSAO ATUAL (novidades_cartao.h, 2.0.3 em diante) tambem.
+  // O COMECAR da 2.1 (comecar.h): primeiro uso guiado, tela inteira, come o
+  // teclado todo. O tour do fim e o guia da 2.0 reaberto pelo pedido.
+  if (comecar_aberto()) {
+    comecar_evento(e);
+    if (comecar_pedido() == COMECAR_PEDIU_TOUR) novidades20_abrir(loginNovo);
+    return;
+  }
   if (novcartao_aberto()) {
     novcartao_evento(e);
     return;
@@ -3048,6 +3062,7 @@ static const char *homeTrailerBloqueio(void) {
   if (vertudo_aberta()) return "see-all";
   if (avisos_aberto() || avisos_cartao_aberto()) return "notices";
   if (sintro_aberto() || pipintro_aberto() || recintro_aberto() || telemetria_aberto()) return "intro";
+  if (comecar_aberto()) return "comecar";
   if (novidades_aberto() || novidades11_aberto() || novidades12_aberto() ||
       novidades13_aberto() || novidades131_aberto() || novidades132_aberto() ||
       novidades133_aberto() || novidades134_aberto() || novidades139_aberto() || novidades1312_aberto() ||
@@ -3132,6 +3147,7 @@ void app_atualizar(float dt, Uint32 agora) {
       // mostrar.
       sync_reaplicar_ajustes();
       sync_iniciar();
+      loginNovo = 1;
       tela = TELA_ESCOLHA_PERFIL;
       perfilAntes = perfis_ativo();
       perfilsel_iniciar();
@@ -3375,12 +3391,19 @@ void app_atualizar(float dt, Uint32 agora) {
   // teste a exercita.
   novcartao_decidir(tela == TELA_HOME && homePronta, player_aberto(), detail_aberto());
   if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto()) {
+    // O COMECAR da 2.1 primeiro: e ele o primeiro uso. Quando abre, o guia da
+    // 2.0 fica so gravado (novidades20_suprimir) — o tour sai do proprio
+    // Comecar — e a fila antiga nao abre nada embaixo dele.
+    comecar_decidir(loginNovo);
+    if (comecar_aberto()) novidades20_suprimir();
+  }
+  if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() && !comecar_aberto()) {
     // A 2.0.2 antes da 2.0.1: ela substitui o cartao da 2.0.1.
     novidades202_primeira_vez();
     novidades201_primeira_vez();
     novidades20_primeira_vez();
   }
-  if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() && !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() && !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto()) {
+  if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() && !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() && !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto() && !comecar_aberto()) {
     // Esta e a primeira explicacao da versao: aparece antes dos demais
     // cartoes de onboarding. Depois de OK, o bloco abaixo continua a fila
     // antiga no quadro seguinte.
@@ -5008,6 +5031,10 @@ void app_atualizar(float dt, Uint32 agora) {
   novidades170_atualizar(dt, agora);
   novidades180_atualizar(dt, agora);
   novidades20_atualizar(dt, agora);
+  comecar_atualizar(dt, agora);
+  // O pedido de tour sai de ok() (tecla ou ponteiro): conferir aqui cobre os
+  // dois caminhos sem duplicar — comecar_pedido consome.
+  if (comecar_pedido() == COMECAR_PEDIU_TOUR) novidades20_abrir(loginNovo);
   novidades201_atualizar(dt, agora);
   novidades202_atualizar(dt, agora);
   novcartao_atualizar(dt, agora);
@@ -5313,6 +5340,15 @@ static int miniToquePermitido(void) {
 #endif
 
 void app_desenhar(Uint32 agora) {
+  // O COMECAR da 2.1 e tela inteira e opaco, como o guia da 2.0.
+  if (comecar_aberto() && !registro_aberto() && !player_aberto()) {
+    gfx_sem_recorte();
+    gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0,
+            NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
+    ponteiro_camada();
+    comecar_desenhar(agora);
+    return;
+  }
   // O GUIA DA 2.0 e tela inteira e opaco: nada do app por baixo (uma camada
   // de tela cheia a menos; o fundo dele e o assado do Borrada).
   if (novidades20_aberto() && !registro_aberto() && !player_aberto()) {
@@ -5476,6 +5512,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novidades180_desenhar(agora);
   // O esmaecer de saida do guia da 2.0, por cima do app que ja voltou.
   if (!registro_aberto() && novidades20_visivel()) novidades20_desenhar(agora);
+  if (!registro_aberto()) comecar_desenhar(agora);        // so o esmaecer de saida
   if (!registro_aberto()) novidades201_desenhar(agora);   // so o esmaecer de saida
   if (!registro_aberto()) novidades202_desenhar(agora);
   if (!registro_aberto()) novcartao_desenhar(agora);      // so o esmaecer de saida
@@ -5608,7 +5645,8 @@ int app_central_pode(void) {
   return tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL && login_concluido() &&
          perfilsel_concluido() && !registro_aberto() && !spot_aberto() &&
          !teclado_aberto() && !diagnostico_intro_aberto() && !novidades20_aberto() &&
-         !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto();
+         !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto() &&
+         !comecar_aberto();
 }
 
 void app_encerrar(void) {
