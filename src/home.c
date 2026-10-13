@@ -3209,6 +3209,17 @@ static void sincronizarFileiras(void) {
 }
 
 int home_tem_fileiras(void) { return nFileiras > 0; }
+// Chave da fileira sob o foco ("" com o destaque em foco) e quantos cartoes ela
+// tem na tela agora (com o filtro de vistos). Para os testes de tela.
+const char *home_fileira_focada(void) {
+  return (!focoHero && foco.fileira >= 0 && foco.fileira < nFileiras) ? fileiras[foco.fileira].chave : "";
+}
+int home_fileiras_n(void) { return nFileiras; }
+const char *home_fileira_chave(int i) { return (i >= 0 && i < nFileiras) ? fileiras[i].chave : ""; }
+int home_fileira_n(const char *chave) {
+  for (int r = 0; r < nFileiras; r++) if (!strcmp(fileiras[r].chave, chave)) return fileiras[r].n;
+  return -1;
+}
 
 // A HOME DE OUTRO PERFIL ABRE NO TOPO, como no arranque: destaque em foco,
 // fileira 0 no primeiro cartaz, sem rolagem, e a memoria de posicao da sessao
