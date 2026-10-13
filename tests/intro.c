@@ -446,6 +446,22 @@ int main(int argc,char **argv) {
     intro_pedir_ids("tt0903747", 0, 1, 1, 0, 0);
     assert(esperar(2) == 2);
     puts("ok  resposta 500 nao e guardada como vazia");
+    // Mesmo episodio em outro arquivo: capitulos antigos nao sobrevivem.
+    { int origem;
+      IntroTrecho cap = {30, 120, INTRO_ABERTURA};
+      intro_definir_capitulos(&cap, 1);
+      assert(intro_marcas("tt0903747", 1, 1, &origem) ==
+             ((1 << (INTRO_ABERTURA - 1)) | (1 << (INTRO_CREDITOS - 1))));
+      assert(origem == (INTRO_O_CAPITULOS | INTRO_O_THEINTRODB));
+      intro_desligar();
+      intro_pedir("tt0903747", 1, 1);
+      assert(esperar(2) == 2);
+      nt = intro_trechos(t, 8);
+      assert(achar(t, nt, INTRO_ABERTURA)->inicio != cap.inicio);
+      assert(intro_marcas("tt0903747", 1, 1, &origem));
+      assert(origem == INTRO_O_THEINTRODB);
+      puts("ok  trocar arquivo descarta origem dos capitulos antigos");
+    }
     // A DURACAO CHEGA: pede de novo com duration_ms (uma vez por mudanca).
     intro_definir_duracao(3481.0, 0);
     usleep(200000);

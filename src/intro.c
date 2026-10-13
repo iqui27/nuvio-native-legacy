@@ -58,6 +58,15 @@ static void marcasGuardar(const char *id, int t, int e, const IntroTrecho *v, in
       marcasLem[k].origem[tipo] = o;
   }
 }
+// COM a trava: capitulos pertencem ao arquivo atual, nao ao episodio inteiro.
+static void marcasLimparCapitulos(const char *id, int t, int e) {
+  for (int k = 0; k < marcasLemN; k++)
+    if (!strcmp(marcasLem[k].id, id) && marcasLem[k].t == t && marcasLem[k].e == e)
+      for (int i = 0; i < 4; i++) if (marcasLem[k].origem[i] == INTRO_O_CAPITULOS) {
+        marcasLem[k].origem[i] = 0;
+        marcasLem[k].mask &= ~(1 << i);
+      }
+}
 int intro_marcas(const char *imdb, int t, int e, int *origem) {
   int m = 0, k;
   if (origem) *origem = INTRO_O_NENHUMA;
@@ -562,7 +571,10 @@ static void disparar(const Pedido *base,double dur,int novo){
   p=malloc(sizeof*p);if(!p)return;
   *p=*base;p->dur=dur;
   pthread_mutex_lock(&trava);
-  if(novo){nTrechos=0;nCreditosLimitados=0;nCapTr=0;refeitos=0;tentativas=0;}
+  if(novo){
+    marcasLimparCapitulos(p->id,p->t,p->e);
+    nTrechos=0;nCreditosLimitados=0;nCapTr=0;refeitos=0;tentativas=0;
+  }
   falhou=0;
   p->anime=animeDe(p->id,p->tmdb);
   p->g=++geracao;ultimo=*p;temUltimo=1;enviadoDur=dur;
@@ -609,6 +621,7 @@ static void fundirCapitulos(void){
 }
 void intro_definir_capitulos(const IntroTrecho *v,int n){
   pthread_mutex_lock(&trava);
+  if(temUltimo)marcasLimparCapitulos(ultimo.id,ultimo.t,ultimo.e);
   nCapTr=0;
   for(int i=0;v&&i<n&&nCapTr<4;i++)capTr[nCapTr++]=v[i];
   fundirCapitulos();
