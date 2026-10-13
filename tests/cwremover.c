@@ -136,6 +136,8 @@ int   trakt_ativo(void)                    { return 1; }
 int   ajustes_cw_do_episodio_mais_alto(void) { return 1; }
 int   contalib_sementes_a_seguir(ContaSemente *s, int m, int a) { (void)s; (void)m; (void)a; return 0; }
 const char *nuvem_trakt_cliente(void)      { return ""; }
+void addons_lista_travar(void) {}
+void addons_lista_destravar(void) {}
 int   addons_n(void)                       { return 0; }
 const char *addons_base(int i)             { (void)i; return ""; }
 const char *addons_id_manifesto(int i)     { (void)i; return ""; }
