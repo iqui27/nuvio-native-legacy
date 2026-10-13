@@ -160,6 +160,39 @@ int main(void) {
   // pastas (cacheEmDisco). Assim estas assercoes falham por causa da regra que
   // testam, e nao de tabela por causa do defeito do bloco anterior.
 
+  // (a3) CACHE DO LAYOUT ANTERIOR E RECUSADO. `fontes` ocupou padding: o
+  // sizeof(CatItem) nao mudou, mas `imdb` deslocou 4 bytes. So a versao protege.
+  printf("\n==> cache de versao antiga (layout sem `fontes`) e recusado\n");
+  snprintf(usuarioAtual, sizeof usuarioAtual, "uuid-da-alice");
+  perfilAtual = 1;
+  {
+    static const unsigned antigas[] = { 7, 5 };   // 5 era aceito so no perfil 1
+    for (int v = 0; v < 2; v++) {
+      char c[700]; FILE *f; unsigned ver = antigas[v];
+      semearCatalogo("alice");
+      confere("gravou", cat_gravar_cache(dirPacote));
+      snprintf(c, sizeof c, "%s/catalogo-rede.bin", dirDados);
+      f = fopen(c, "r+b");
+      confere("abriu o arquivo para forjar a versao antiga", f != NULL);
+      if (f) { fseek(f, 4, SEEK_SET); fwrite(&ver, 4, 1, f); fclose(f); }
+      printf("  versao forjada: %u\n", ver);
+      confere("leitor recusa a versao antiga", cat_ler_cache(dirPacote) == 0);
+      confere("e apaga o arquivo", !cacheEmDisco(dirDados, dirPacote));
+    }
+  }
+
+  // (a4) SALVAR NO SERVICO ACENDE O BIT DE ORIGEM NA HORA, EM TODAS AS COPIAS.
+  printf("\n==> marcar fonte por imdb acende o bit do servico\n");
+  semearCatalogo("fonte");
+  confere("item nasce sem fonte", cat_item(0)->fontes == 0 && !cat_item(0)->naLista);
+  confere("marcou 1 copia", cat_marcar_fonte_imdb("tt1000fonte", CAT_FONTE_TRAKT) == 1);
+  confere("bit Trakt + naLista", cat_item(0)->naLista && cat_item(0)->fontes == CAT_FONTE_TRAKT);
+  confere("repetir nao muda nada", cat_marcar_fonte_imdb("tt1000fonte", CAT_FONTE_TRAKT) == 0);
+  confere("Simkl soma ao Trakt", cat_marcar_fonte_imdb("tt1000fonte", CAT_FONTE_SIMKL) == 1 &&
+          cat_item(0)->fontes == (CAT_FONTE_TRAKT | CAT_FONTE_SIMKL));
+  confere("outro titulo intacto", cat_item(1)->fontes == 0 && !cat_item(1)->naLista);
+  confere("imdb desconhecido", cat_marcar_fonte_imdb("ttzzz", CAT_FONTE_TRAKT) == 0);
+
   // (b) CACHE DE OUTRO USUARIO E RECUSADO E APAGADO.
   printf("\n==> cache de outro usuario e recusado e apagado\n");
   snprintf(usuarioAtual, sizeof usuarioAtual, "uuid-da-alice");
@@ -220,7 +253,8 @@ int main(void) {
     confere("perfil 1 gravou",                cat_gravar_cache(dirPacote));
     f = fopen(c, "r+b"); assert(f);
     fseek(f, (long)sizeof(unsigned), SEEK_SET); fwrite(&v5, sizeof v5, 1, f); fclose(f);
-    confere("v5 do perfil 1 continua aceito", cat_ler_cache(dirPacote) == 1); }
+    confere("v5 do perfil 1 tambem e recusado (layout sem fontes)",
+            cat_ler_cache(dirPacote) == 0); }
 
   // #433: mudanca no CatItem invalida o cache, mesmo com versao igual.
   { char c[700]; FILE *f; unsigned antigo = (unsigned)sizeof(CatItem) - 1024u;

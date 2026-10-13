@@ -207,6 +207,7 @@ int simkl_ler_plantowatch(const char *json, int serie, CatItem *dst, int max) {
     snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
     snprintf(d->tipo, sizeof d->tipo, "%s", serie ? "series" : "movie");
     d->naLista = 1;
+    d->fontes = CAT_FONTE_SIMKL;
     // O mesmo acabamento de trakt_lista: arte deterministica pelo IMDb, sem
     // um GET por item, e o genero de sempre para a legenda do cartaz.
     arte_metahub_preencher(d);
