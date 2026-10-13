@@ -494,8 +494,19 @@ static float larguraCartaoLista(void) {
   float w = (bibW() - (n - 1) * (BIB_LC_PASSO - BIB_LC_W)) / n;
   return w < BIB_LC_W ? w : BIB_LC_W;
 }
+// A PAGINA DA LISTA (design/2.1/listas.html 6B). Uma lista do Trakt aberta nao e
+// uma grade de cartazes: tem dono, descricao, ordem (`rank`) e nota do curador
+// por item, e nada disso cabe num cartaz. Ela abre em LINHAS, com o cabecalho
+// logo acima, e a exibicao salva da pessoa continua valendo nas outras fontes
+// (Simkl/Nuvio nao informam rank nem nota).
+#define BIB_PAG_CAB_H   150.0f   // descricao (2 linhas) + dono/datas + numeros
+#define BIB_PAG_DESC_H   72.0f   // o que a descricao ocupa; sem ela o cabecalho encolhe
+#define BIB_PAG_RANK_W   84.0f   // coluna do rank, antes da miniatura
+static int paginaLista(void) { return temAberta && aberta.fonte == LST_TRAKT; }
+static float paginaCabH(void) { return BIB_PAG_CAB_H - (aberta.descricao[0] ? 0.0f : BIB_PAG_DESC_H); }
+static int modoLinha(void) { return exibicao == VIS_LISTA || paginaLista(); }
 static int colunas(void) {
-  if (exibicao == VIS_LISTA) return 1;
+  if (modoLinha()) return 1;
   return estado() == EST_LISTAS ? colunasLista() : colunasCartaz();
 }
 static float passoColuna(void) {
@@ -507,20 +518,21 @@ static float passoColuna(void) {
 // Uma linha de titulo (168) e uma linha de lista (96) nao tem a mesma altura,
 // e e por isso que a exibicao de lista pergunta o estado.
 static float alturaLinha(void) {
-  if (exibicao == VIS_LISTA) return estado() == EST_LISTAS ? BIB_LL_H : BIB_LIN_H;
+  if (modoLinha()) return estado() == EST_LISTAS ? BIB_LL_H : BIB_LIN_H;
   if (estado() == EST_LISTAS) return BIB_LC_H;
   // poster + 10 + o titulo em ate duas linhas (o focado abre a segunda)
   return BIB_POSTER_H + BIB_TIT_GAP + 14.0f + 52.0f;
 }
 static float passoLinha(void) {
-  if (exibicao == VIS_LISTA) return estado() == EST_LISTAS ? BIB_LL_PASSO : BIB_LIN_PASSO;
+  if (modoLinha()) return estado() == EST_LISTAS ? BIB_LL_PASSO : BIB_LIN_PASSO;
   if (estado() == EST_LISTAS) return BIB_LC_LINHA;
   return BIB_LINHA_PASSO;
 }
 static float gradeY(void) {
   float y = estado() == EST_ITENS ? BIB_GRADE_Y_ABERTA : BIB_GRADE_Y_TITULOS;
   if (bibFaixaQuebra() && estado() != EST_ITENS) y += BIB_SEG_H + BIB_FAIXA_GAP;
-  return y * bibHS();
+  y *= bibHS();
+  return paginaLista() ? y + paginaCabH() : y;
 }
 static int nLinhas(void) { return (nCelulas + colunas() - 1) / colunas(); }
 
@@ -582,12 +594,24 @@ static int contarCelulas(void) {
 // refaz o mapa, senao a grade de 5 andaria com a navegacao de 6.
 static int ncMapa = 0;
 static int bibNPicks(void);
+// Quantos dos itens da lista aberta a pessoa ja viu, para o cabecalho da pagina.
+// Contado aqui e nao por quadro: remapear roda quando chegam itens, e varrer
+// ate 960 CatItem a 60 Hz seria custo sem ninguem pedindo.
+static int pagVistos = 0;
+static void contarVistos(void) {
+  CatItem tmp;
+  pagVistos = 0;
+  if (!paginaLista()) return;
+  for (int i = 0; i < nCelulas; i++)
+    if (lst_item(i, &tmp) && cat_visto(&tmp)) pagVistos++;
+}
 static void remapear(int preservar) {
   if (pickSel >= bibNPicks()) pickSel = bibNPicks() - 1;
   int linhas, cols[FOCUS_MAX_FILEIRAS], r, ini = gradeIni(), nc = colunas();
   ncMapa = nc;
   int fAntes = foco.fileira, cAntes = foco.coluna;
   nCelulas = contarCelulas();
+  contarVistos();
   linhas = nLinhas();
   if (linhas > FOCUS_MAX_FILEIRAS - ini) linhas = FOCUS_MAX_FILEIRAS - ini;
   if (estado() == EST_ITENS) cols[0] = 3;          // as tres acoes
@@ -1068,7 +1092,7 @@ static void menuNaCelula(int i) {
     if (idx < 0) return;
     ctx_fileira(NULL, NULL);
     ci = estado() == EST_ITENS ? (lst_item(i, &tmp) ? &tmp : NULL) : itemFiltro(filtro[i], &tmp);
-    if (exibicao == VIS_CARTAZ && ci) {
+    if (!modoLinha() && ci) {
       // O poster volta por cima do veu, onde esta na tela agora.
       float esc = 1.0f + BIB_FOCO_ESCALA, w = BIB_CARD_W * esc, h = BIB_POSTER_H * esc;
       int nc = colunas(), r = i / nc, c = i % nc;
@@ -2061,7 +2085,11 @@ static void desenhaNota(const CatItem *ci, float xDir, float yCentro,
 //
 // MEMORIA: a miniatura pede tex_obter_larg(96), nao tex_obter — o teto de
 // decodificacao sai da largura desenhada, e so a linha VISIVEL chega aqui.
-static void desenhaLinhaTitulo(const CatItem *ci, float y, float f, float a) {
+//
+// NA PAGINA DA LISTA (idx >= 0) a linha ganha o RANK antes da miniatura e a NOTA
+// DO CURADOR no lugar da sinopse. O rank so aparece quando o Trakt o informa
+// (0 = nao informado), e a nota quando a pessoa que fez a lista escreveu uma.
+static void desenhaLinhaTitulo(const CatItem *ci, int idx, float y, float f, float a) {
   GfxRect r = { bibX(), y, bibW(), BIB_LIN_H };
   int cor = superficieLinha(r, raioPx(18.0f, r.w, r.h), f, a);
   int sr, sg, sb;
@@ -2069,8 +2097,12 @@ static void desenhaLinhaTitulo(const CatItem *ci, float y, float f, float a) {
   float xNotaDir = r.x + bibW() - BIB_COL_DIR;
   float xNotaIni = xNotaDir - larguraNota(ci);
   float xProgDir = xNotaIni - BIB_COL_PROG_GAP;
-  GfxRect mini = { r.x + BIB_LIN_PAD, y + (BIB_LIN_H - BIB_LIN_MINI_H) * 0.5f,
-                   BIB_LIN_MINI_W, BIB_LIN_MINI_H };
+  DescItemLista ex = { 0 };
+  float dx = 0.0f;
+  GfxRect mini;
+  if (idx >= 0) { lst_item_extra(idx, &ex); dx = BIB_PAG_RANK_W; }
+  mini = (GfxRect){ r.x + BIB_LIN_PAD + dx, y + (BIB_LIN_H - BIB_LIN_MINI_H) * 0.5f,
+                    BIB_LIN_MINI_W, BIB_LIN_MINI_H };
   const char *arte = ci ? posterprov_card_addon(ci->origem, ci->imdb, ci->tmdb, ci->tipo, ci->poster) : NULL;
   if (arte && !arte[0]) arte = NULL;
   GLuint tex = arte ? tex_obter_larg(arte, BIB_LIN_MINI_W) : 0;
@@ -2085,6 +2117,14 @@ static void desenhaLinhaTitulo(const CatItem *ci, float y, float f, float a) {
   if (!ci) return;
   if (ajustes_selo_visto() && cat_visto(ci))
     badges_selo_visto(mini.x, mini.y, mini.w, a);
+  if (idx >= 0 && ex.rank > 0) {
+    char n[16];
+    TxtLinha tr;
+    snprintf(n, sizeof n, "%d", ex.rank);
+    tr = txt_linha_corta(TXT_HEADLINE, n, sr, sg, sb, 255, BIB_PAG_RANK_W - 12.0f);
+    txt_desenhar_alpha(tr, r.x + BIB_LIN_PAD + (BIB_PAG_RANK_W - 12.0f - (float)tr.w) * 0.5f,
+                       yc - (float)tr.h * 0.5f, a * 0.85f);
+  }
 
   // BARRA DE RETOMADA.
   //
@@ -2121,7 +2161,11 @@ static void desenhaLinhaTitulo(const CatItem *ci, float y, float f, float a) {
     if (larg < 80.0f) larg = 80.0f;
     t = txt_linha_corta(TXT_HEADLINE, ci->titulo, cor, cor, cor, 255, larg);
     sl = txt_linha_corta(TXT_CAPTION2, sub, sr, sg, sb, 255, larg);
-    if (f > 0.5f && ci->sinopse[0])
+    if (ex.nota[0]) {
+      char q[340];
+      snprintf(q, sizeof q, "“%s”", ex.nota);
+      ss = txt_linha_corta(TXT_CAPTION, q, sr, sg, sb, 255, larg);
+    } else if (f > 0.5f && ci->sinopse[0])
       ss = txt_linha_corta(TXT_CAPTION, ci->sinopse, sr, sg, sb, 255, larg);
     { float hBloco = (float)t.h + 7.0f + (float)sl.h;
       if (ss.h) hBloco += 6.0f + (float)ss.h;
@@ -2400,6 +2444,49 @@ static void desenhaResumo(void) {
     txt_desenhar(info, hdrX(), BIB_TOPO + (float)t.h + 2.0f); }
 }
 
+// "2024-03-01T10:00:00.000Z" -> "01/03/2024". "" quando o Trakt nao mandou.
+static void dataCurta(const char *iso, char *dst, size_t n) {
+  dst[0] = 0;
+  if (strlen(iso) >= 10 && iso[4] == '-' && iso[7] == '-')
+    snprintf(dst, n, "%.2s/%.2s/%.4s", iso + 8, iso + 5, iso);
+}
+
+// CABECALHO DA PAGINA DA LISTA: descricao, quem fez e quando, os numeros e
+// quantos a pessoa ja viu. Cada parte SO ENTRA quando o Trakt a informou
+// (-1 / "" = nao informado): zero inventado vira "0 curtidas" numa lista que so
+// nao trouxe o campo.
+static void desenhaPaginaCab(void) {
+  float x = bibX(), y = BIB_GRADE_Y_ABERTA * bibHS() + 4.0f;
+  char l2[240], l3[240], c1[16], c2[16];
+  size_t k;
+  if (aberta.descricao[0]) {
+    txt_bloco_corta(TXT_CALLOUT, aberta.descricao, 214, 216, 222, x, y, bibW(), 32.0f, 1.0f, 2);
+    y += BIB_PAG_DESC_H;
+  }
+  l2[0] = 0;
+  if (aberta.autorNome[0] || aberta.autor[0])
+    snprintf(l2, sizeof l2, "%s %s", i18n("por"),
+             aberta.autorNome[0] ? aberta.autorNome : aberta.autor);
+  dataCurta(aberta.criada, c1, sizeof c1);
+  dataCurta(aberta.atualizada, c2, sizeof c2);
+  k = strlen(l2);
+  if (c1[0]) { snprintf(l2 + k, sizeof l2 - k, "%s%s %s", k ? "   ·   " : "", i18n("criada"), c1); k = strlen(l2); }
+  if (c2[0]) snprintf(l2 + k, sizeof l2 - k, "%s%s %s", k ? "   ·   " : "", i18n("atualizada"), c2);
+  if (aberta.privada) { k = strlen(l2); snprintf(l2 + k, sizeof l2 - k, "%s%s", k ? "   ·   " : "", i18n("privada")); }
+  if (l2[0]) {
+    TxtLinha t = txt_linha_corta(TXT_CAPTION2, l2, 150, 153, 162, 255, bibW());
+    txt_desenhar(t, x, y);
+    y += (float)t.h + 6.0f;
+  }
+  l3[0] = 0;
+  snprintf(l3, sizeof l3, "%d %s", nCelulas, i18n(nCelulas == 1 ? "título" : "títulos"));
+  if (aberta.curtidas >= 0) { k = strlen(l3); snprintf(l3 + k, sizeof l3 - k, "   ·   %d %s", aberta.curtidas, i18n(aberta.curtidas == 1 ? "curtida" : "curtidas")); }
+  if (aberta.comentarios >= 0) { k = strlen(l3); snprintf(l3 + k, sizeof l3 - k, "   ·   %d %s", aberta.comentarios, i18n(aberta.comentarios == 1 ? "comentário" : "comentários")); }
+  if (nCelulas > 0) { k = strlen(l3); snprintf(l3 + k, sizeof l3 - k, "   ·   %s %d/%d", i18n("você viu"), pagVistos, nCelulas); }
+  { TxtLinha t = txt_linha_corta(TXT_CAPTION2, l3, 200, 203, 210, 255, bibW());
+    txt_desenhar(t, x, y); }
+}
+
 // BARRA DE PRESSAO LONGA NO CARTAO, a mesma da Home (home.c: trilho de 4 px
 // perto da base, preenchimento claro e a dica "Segure para opcoes"): enche em
 // NV_HOLD_MS, o mesmo relogio que abre o menu em biblioteca_atualizar. So no
@@ -2444,6 +2531,7 @@ void biblioteca_desenhar(Uint32 agora) {
     }
     desenhaResumo();
     ESCALA_MIN_FIM(); }
+  if (paginaLista()) desenhaPaginaCab();
 
   if (nCelulas == 0) {
     desenhaVazio();
@@ -2485,7 +2573,7 @@ void biblioteca_desenhar(Uint32 agora) {
         // O alvo e a celula em REPOUSO (sem a escala do foco nem a onda), uma
         // vez por celula, recortado a janela da grade.
         if (passe == 0) {
-          GfxRect ra = exibicao == VIS_LISTA
+          GfxRect ra = modoLinha()
             ? (GfxRect){ bibX(), topo, bibW(), estado() == EST_LISTAS ? BIB_LL_H : BIB_LIN_H }
             : estado() == EST_LISTAS
               ? (GfxRect){ bibX() + c * passoC, topo, larguraCartaoLista(), BIB_LC_H }
@@ -2516,8 +2604,8 @@ void biblioteca_desenhar(Uint32 agora) {
           const CatItem *ci;
           if (estado() == EST_ITENS) ci = lst_item(i, &tmp) ? &tmp : NULL;
           else                       ci = itemFiltro(filtro[i], &tmp);
-          if (exibicao == VIS_LISTA) {
-            desenhaLinhaTitulo(ci, ty, f, ac);
+          if (modoLinha()) {
+            desenhaLinhaTitulo(ci, paginaLista() ? i : -1, ty, f, ac);
             if (i == celulaEmFoco()) barraHold((GfxRect){ bibX(), ty, bibW(), BIB_LIN_H }, ac);
           } else {
             GfxRect rp = { bibX() + c * passoC, ty, BIB_CARD_W, BIB_POSTER_H };

@@ -495,6 +495,31 @@ int main(int argc, char **argv) {
   captura(nome);
   tecla(SDLK_ESCAPE);      // volta para a lista de listas
 
+  // 8b. A PAGINA DA LISTA do Trakt (6B): cabecalho, rank e nota do curador. Sem
+  // rede o Trakt nao entrega itens nem extras, entao entram por gancho.
+  { CatItem pit[6];
+    DescItemLista ex[6];
+    int k, pn = cat_n() < 6 ? cat_n() : 6;
+    memset(ex, 0, sizeof ex);
+    for (k = 0; k < pn; k++) {
+      const CatItem *c = cat_item(k);
+      if (c) pit[k] = *c;
+      ex[k].rank = k + 1;
+      if (k % 2 == 0) snprintf(ex[k].nota, sizeof ex[k].nota,
+                               "Repare na fotografia da cena do corredor.");
+    }
+    lst_teste_itens(pit, pn);
+    lst_teste_extras(ex, pn);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    quadros(40);
+    snprintf(nome, sizeof nome, "%s-lista-pagina.bmp", saida);
+    captura(nome);
+    tecla(SDLK_DOWN);
+    snprintf(nome, sizeof nome, "%s-lista-pagina-foco.bmp", saida);
+    captura(nome);
+    tecla(SDLK_ESCAPE);
+  }
+
   // 9. A fonte SIMKL sem vinculo: a tela diz o que falta, e nao mostra aba
   // vazia. O seletor de fonte cicla Trakt -> Simkl.
   AO_TOPO();

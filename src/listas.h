@@ -146,6 +146,8 @@ int  lst_itens_carregando(void);
 int  lst_item_extra(int i, DescItemLista *dst);
 // So para testes e capturas: itens de mentira na lista aberta; ver listas.c.
 void lst_teste_itens(const CatItem *v, int n);
+// O par de lst_teste_itens para rank/listed_at/nota; chamar depois dele.
+void lst_teste_extras(const DescItemLista *v, int n);
 // Pede a proxima pagina, quando a fonte pagina. Sem efeito no Simkl (uma volta
 // so) e quando a anterior veio curta.
 void lst_itens_mais(void);

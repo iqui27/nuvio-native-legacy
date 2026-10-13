@@ -25,6 +25,7 @@ void ajustes_area_conteudo(float e, float d, float *x, float *w) {
 int perfis_ativo(void) { return 1; }
 int lst_n(void) { return 0; }
 int lst_itens_n(void) { return 0; }
+int lst_item(int i, CatItem *dst) { (void)i; (void)dst; return 0; }
 char *dados_ler(const char *nome) {
   char b[2048] = "";
   if (strcmp(nome, "salvos-p1.txt")) return NULL;

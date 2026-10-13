@@ -682,6 +682,7 @@ static CatItem  itens[LST_ITENS_MAX];
 static int      nItens, itFioVivo, itSimkl;
 static unsigned itGeracao;
 static int      itInjetado;   // so os testes (lst_teste_itens)
+static DescItemLista itExtraTeste[LST_ITENS_MAX];   // so os testes (lst_teste_extras)
 static char     itEstado[16], itMidia[8];
 
 static void *fioSimkl(void *u) {
@@ -820,8 +821,22 @@ int lst_item_extra(int i, DescItemLista *dst) {
   simkl = itSimkl;
   pthread_mutex_unlock(&itTrava);
   if (dst) memset(dst, 0, sizeof *dst);
-  if (simkl) return i >= 0 && i < lst_itens_n();
+  if (simkl) {
+    if (i < 0 || i >= lst_itens_n()) return 0;
+    if (dst && itInjetado) *dst = itExtraTeste[i];
+    return 1;
+  }
   return desc_vertudo_extra(i, dst);
+}
+
+// So para testes e capturas: rank/nota dos itens de lst_teste_itens, ja que sem
+// rede o Trakt nao entrega nenhum.
+void lst_teste_extras(const DescItemLista *v, int n) {
+  if (n > LST_ITENS_MAX) n = LST_ITENS_MAX;
+  pthread_mutex_lock(&itTrava);
+  memset(itExtraTeste, 0, sizeof itExtraTeste);
+  for (int i = 0; i < n; i++) itExtraTeste[i] = v[i];
+  pthread_mutex_unlock(&itTrava);
 }
 
 void lst_itens_mais(void) {
