@@ -535,8 +535,8 @@ char *rede_apagar(const char *url, int segundos, const char *const *cab,
   return r;
 }
 
-char *rede_postar_st(const char *url, int segundos, const char *const *cab,
-                     const char *corpo, int *status) {
+static char *escrever_st(const char *metodo, const char *url, int segundos,
+                         const char *const *cab, const char *corpo, int *status) {
   int temCt = 0, k;
   char *r;
   (void)segundos;
@@ -544,12 +544,21 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cab,
   // (Real-Debrid quer form-urlencoded) nao recebe um segundo.
   for (k = 0; cab && cab[k]; k++)
     if (!strncasecmp(cab[k], "Content-Type:", 13)) temCt = 1;
-  r = pedir("POST", url, cab, temCt ? NULL : "Content-Type: application/json",
+  r = pedir(metodo, url, cab, temCt ? NULL : "Content-Type: application/json",
             corpo ? corpo : "", NULL, status);
   // Falha de TRANSPORTE continua sendo NULL; corpo de 4xx e devolvido. Um POST
   // que respondeu com corpo vazio devolve "" e nao NULL, como no outro caminho.
   if (!r && status && *status > 0) return strdup("");
   return r;
+}
+
+char *rede_postar_st(const char *url, int segundos, const char *const *cab,
+                     const char *corpo, int *status) {
+  return escrever_st("POST", url, segundos, cab, corpo, status);
+}
+char *rede_putar_st(const char *url, int segundos, const char *const *cab,
+                    const char *corpo, int *status) {
+  return escrever_st("PUT", url, segundos, cab, corpo, status);
 }
 
 void rede_discord_ca(const char *caminho) { (void)caminho; }

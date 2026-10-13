@@ -9,6 +9,7 @@
 // SEM REDE. Tudo o que envolve HTTP entra por arquivo de tests/fixtures: o que
 // esta sob teste e a LEITURA das respostas e o efeito delas, nao o curl.
 #include "listas.h"
+#include "listasescrita.h"
 #include "colecoes.h"
 #include "dados.h"
 #include "perfis.h"
@@ -55,7 +56,33 @@ static void testeTraktMinhas(void) {
   CONFERE(a && a->itens == 42, "item_count 42 (veio %d)", a ? a->itens : -1);
   CONFERE(a && a->curtidas == 3, "likes 3 (veio %d)", a ? a->curtidas : -1);
   CONFERE(b && b->traktId == 2200311, "id da segunda");
+  // Cabecalho da pagina da lista (6B).
+  CONFERE(a && !strcmp(a->slug, "classicos-do-terror"), "slug da lista (veio %s)", a ? a->slug : "");
+  CONFERE(a && !strcmp(a->autorNome, "Henrique"), "nome do autor (veio %s)", a ? a->autorNome : "");
+  CONFERE(a && !strcmp(a->autorSlug, "iqui27"), "slug do autor (veio %s)", a ? a->autorSlug : "");
+  CONFERE(a && !strncmp(a->criada, "2024-10-01", 10), "created_at (veio %s)", a ? a->criada : "");
+  CONFERE(a && !strncmp(a->atualizada, "2026-09-01", 10), "updated_at (veio %s)", a ? a->atualizada : "");
+  CONFERE(a && a->comentarios == 0, "comment_count 0 (veio %d)", a ? a->comentarios : -9);
+  CONFERE(a && !a->privada, "publica");
+  CONFERE(b && b->privada, "a segunda e privada");
   free(j);
+}
+
+static void testeExtraItem(void) {
+  const char *e =
+    "{\"rank\": 3,\"id\":5521,\"listed_at\":\"2026-09-04T18:52:07.000Z\",\"notes\":\"Melhor do ano\","
+    "\"type\":\"movie\",\"movie\":{\"title\":\"X\",\"notes\":\"falsa\",\"ids\":{\"imdb\":\"tt1\"}}}";
+  const char *v = "{\"rank\":1,\"notes\":\"  \",\"movie\":{}}";
+  DescItemLista d;
+  printf("\n[1b] rank, listed_at e nota do item\n");
+  desc_trakt_extra_ler(e, e + strlen(e), &d);
+  CONFERE(d.rank == 3, "rank 3 (veio %d)", d.rank);
+  CONFERE(d.itemId == 5521, "id da entrada, nao o de movie.ids (veio %ld)", d.itemId);
+  CONFERE(d.entrouMs == 1788547927000LL, "listed_at em ms (veio %lld)", d.entrouMs);
+  CONFERE(!strcmp(d.nota, "Melhor do ano"), "nota da raiz, nao a do filme (veio %s)", d.nota);
+  desc_trakt_extra_ler(v, v + strlen(v), &d);
+  CONFERE(d.rank == 1 && d.entrouMs == 0 && d.itemId == 0, "sem listed_at nem id fica 0");
+  CONFERE(!d.nota[0], "nota so de espacos vira vazia");
 }
 
 static void testeTraktBusca(void) {
@@ -234,6 +261,122 @@ static void testeLogout(void) {
   CONFERE(!lst_fixada(&l), "e o arquivo do perfil nao a devolve");
 }
 
+// ---------------------------------------------------------------- escrita
+
+static char envMetodo[8], envUrl[160], envCorpo[2400];
+static int envStatus = 200;
+static int envio(const char *m, const char *u, const char *c, char **resp) {
+  snprintf(envMetodo, sizeof envMetodo, "%s", m);
+  snprintf(envUrl, sizeof envUrl, "%s", u);
+  snprintf(envCorpo, sizeof envCorpo, "%s", c);
+  *resp = strdup(strstr(c, "\"movies\":") ? "{\"added\":{\"movies\":1}}" : "{}");
+  return envStatus;
+}
+
+static void testeEscrita(void) {
+  char c[2400];
+  long ord[3] = { 11, 22, 33 };
+  printf("\n[9] escrita nas listas do Trakt\n");
+  CONFERE(lstesc_corpo_criar(c, sizeof c, "Noites \"frias\"", "linha1\nlinha2", 1) &&
+          !strcmp(c, "{\"name\":\"Noites \\\"frias\\\"\",\"description\":\"linha1\\nlinha2\","
+                     "\"privacy\":\"private\"}"), "criar: escapa aspas e quebra (%s)", c);
+  CONFERE(!lstesc_corpo_criar(c, sizeof c, "", "x", 0), "criar sem nome e recusado");
+  CONFERE(lstesc_corpo_item(c, sizeof c, "tt0111161", "movie", "") &&
+          !strcmp(c, "{\"movies\":[{\"ids\":{\"imdb\":\"tt0111161\"}}]}"), "item sem nota (%s)", c);
+  CONFERE(lstesc_corpo_item(c, sizeof c, "tt0903747:1:2", "series", "Piloto") &&
+          !strcmp(c, "{\"shows\":[{\"ids\":{\"imdb\":\"tt0903747\"},\"notes\":\"Piloto\"}]}"),
+          "serie vira shows, id sem :t:e e com notes (%s)", c);
+  CONFERE(lstesc_corpo_ordem(c, sizeof c, ord, 3) && !strcmp(c, "{\"rank\":[11,22,33]}"), "ordem (%s)", c);
+  ord[1] = 0;
+  CONFERE(!lstesc_corpo_ordem(c, sizeof c, ord, 3), "ordem com id 0 e recusada");
+  CONFERE(!lstesc_corpo_ordem(c, 12, (long[]){1000000, 2000000}, 2), "ordem que nao cabe e recusada");
+
+  lstesc_teste_envio(envio);
+  CONFERE(lstesc_descricao(77, "Nova") == 1, "descricao dispara");
+  CONFERE(lstesc_estado() == LSTESC_PENDENTE || lstesc_estado() == LSTESC_OK, "estado andou");
+  lstesc_teste_esperar();
+  CONFERE(!strcmp(envMetodo, "PUT") && !strcmp(envUrl, "https://api.trakt.tv/users/me/lists/77") &&
+          !strcmp(envCorpo, "{\"description\":\"Nova\"}"), "PUT /users/me/lists/77 (%s %s)", envMetodo, envUrl);
+  CONFERE(lstesc_consumir() == LSTESC_OK && lstesc_estado() == LSTESC_OCIOSO, "2xx = OK, e consumir zera");
+  envStatus = 401;
+  CONFERE(lstesc_adicionar(77, "tt1", "movie", NULL) == 1, "adicionar dispara");
+  lstesc_teste_esperar();
+  CONFERE(!strcmp(envMetodo, "POST") && !strcmp(envUrl, "https://api.trakt.tv/users/me/lists/77/items"),
+          "POST .../items (%s)", envUrl);
+  CONFERE(lstesc_consumir() == LSTESC_FALHA, "401 = FALHA");
+  envStatus = 200;
+  { long ids[2] = { 5, 6 };
+    CONFERE(lstesc_ordenar(77, ids, 2) == 1, "ordenar dispara");
+    lstesc_teste_esperar();
+    CONFERE(!strcmp(envUrl, "https://api.trakt.tv/users/me/lists/77/items/reorder") &&
+            !strcmp(envCorpo, "{\"rank\":[5,6]}"), "POST .../items/reorder (%s)", envCorpo);
+    lstesc_consumir(); }
+  // "Adicionar a uma lista" do menu do titulo: as listas da pessoa e o POST do titulo.
+  { LstLista l;
+    CatItem ci;
+    lst_minhas_teste("[{\"name\":\"Noites\",\"ids\":{\"trakt\":901,\"slug\":\"noites\"},\"item_count\":3},"
+                     "{\"name\":\"Cult\",\"ids\":{\"trakt\":902,\"slug\":\"cult\"}}]");
+    CONFERE(lst_minhas_n() == 2 && lst_minha(1, &l) && !strcmp(l.titulo, "Cult") && l.traktId == 902,
+            "minhas: duas listas, a segunda e Cult/902 (n=%d)", lst_minhas_n());
+    CONFERE(!lst_minha(2, &l) && !lst_minha(-1, &l), "minhas: fora do indice recusa");
+    memset(&ci, 0, sizeof ci);
+    snprintf(ci.imdb, sizeof ci.imdb, "tt0111161");
+    snprintf(ci.tipo, sizeof ci.tipo, "movie");
+    snprintf(ci.titulo, sizeof ci.titulo, "Um Sonho de Liberdade");
+    lst_minha(0, &l);
+    CONFERE(lstesc_adicionar_titulo(&ci, &l) == 1, "adicionar titulo dispara");
+    lstesc_teste_esperar();
+    CONFERE(!strcmp(envUrl, "https://api.trakt.tv/users/me/lists/901/items") &&
+            !strcmp(envCorpo, "{\"movies\":[{\"ids\":{\"imdb\":\"tt0111161\"}}]}"),
+            "titulo vai para a lista escolhida (%s %s)", envUrl, envCorpo);
+    lstesc_consumir(); }
+  CONFERE(!lstesc_descricao(0, "x") && !lstesc_criar("", "", 0), "id 0 e nome vazio recusados");
+  lstesc_teste_envio(NULL);
+  CONFERE(!lstesc_criar("X", "", 0), "sem token nao escreve");
+}
+
+// ---------------------------------------------------------------- reordenar
+
+static void testeOrdem(void) {
+  CatItem v[3], c;
+  DescItemLista x[3];
+  long ids[8];
+  LstLista l;
+  char u[160];
+  int i;
+  printf("\n[10] reordenar e link publico\n");
+  memset(v, 0, sizeof v); memset(x, 0, sizeof x);
+  for (i = 0; i < 3; i++) {
+    snprintf(v[i].titulo, sizeof v[i].titulo, "T%d", i);
+    snprintf(v[i].imdb, sizeof v[i].imdb, "tt%d", i);
+    x[i].rank = i + 1; x[i].itemId = 100 + i;
+  }
+  lst_teste_itens(v, 3); lst_teste_extras(x, 3);
+  CONFERE(lst_ordem_ids(ids, 8) == 3 && ids[0] == 100 && ids[2] == 102, "ids na ordem do servidor");
+  CONFERE(lst_ordem_mover(0, 2) == 1, "mover 0 -> 2");
+  lst_item(0, &c);
+  CONFERE(!strcmp(c.titulo, "T1"), "a posicao 0 agora e T1 (veio %s)", c.titulo);
+  lst_item(2, &c);
+  CONFERE(!strcmp(c.titulo, "T0"), "T0 foi para o fim (veio %s)", c.titulo);
+  CONFERE(lst_ordem_ids(ids, 8) == 3 && ids[0] == 101 && ids[1] == 102 && ids[2] == 100,
+          "ids seguem a tela (%ld %ld %ld)", ids[0], ids[1], ids[2]);
+  lst_ordem_mover(2, 0);
+  CONFERE(lst_ordem_ids(ids, 8) == 3 && ids[0] == 100 && ids[1] == 101, "voltar 2 -> 0 desfaz");
+  CONFERE(!lst_ordem_mover(0, 3) && !lst_ordem_mover(-1, 1), "fora do intervalo recusa");
+  x[1].itemId = 0;
+  lst_teste_extras(x, 3);
+  CONFERE(!lst_ordem_ids(ids, 8), "item sem id impede gravar a ordem");
+
+  memset(&l, 0, sizeof l);
+  l.fonte = LST_TRAKT;
+  snprintf(l.autorSlug, sizeof l.autorSlug, "iqui27");
+  snprintf(l.slug, sizeof l.slug, "classicos-do-terror");
+  CONFERE(lst_url_publica(&l, u, sizeof u) && !strcmp(u, "https://trakt.tv/users/iqui27/lists/classicos-do-terror"),
+          "url publica (%s)", u);
+  l.privada = 1;
+  CONFERE(!lst_url_publica(&l, u, sizeof u), "privada nao gera link");
+}
+
 // ---------------------------------------------------------------------- main
 
 int main(void) {
@@ -251,12 +394,15 @@ int main(void) {
   printf("gravando em %s\n", dados_dir());
 
   testeTraktMinhas();
+  testeExtraItem();
   testeTraktBusca();
   testeSimkl();
   testeFixarSobrevive();
   testeIsolamentoPerfil();
   testeAdicionarNaHome();
   testeLogout();
+  testeEscrita();
+  testeOrdem();
 
   printf("\n%s (%d falha%s)\n", falhas ? "FALHOU" : "PASSOU", falhas,
          falhas == 1 ? "" : "s");

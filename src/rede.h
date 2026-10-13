@@ -281,6 +281,11 @@ char *rede_apagar(const char *url, int segundos, const char *const *cabecalhos,
                   int *status);
 char *rede_postar_st(const char *url, int segundos, const char *const *cabecalhos,
                      const char *corpo, int *status);
+#ifdef __EMSCRIPTEN__
+// PUT pelo mesmo XHR das escritas POST do Trakt.
+char *rede_putar_st(const char *url, int segundos, const char *const *cabecalhos,
+                    const char *corpo, int *status);
+#endif
 
 // GET com cabecalhos E codigo HTTP. Pelo mesmo motivo do POST acima: a leitura
 // de tabela do Supabase precisa distinguir "tabela nao existe" (404 com

@@ -7775,6 +7775,7 @@ static int pendItem = -1, pendTemp;
 #define VT_PASSO 100        // `skipStep` padrao do web quando o addon nao diz
 
 static CatItem  vtItens[VT_MAX];
+static DescItemLista vtExtra[VT_MAX];   // paralela a vtItens; ver descoberta.h
 static int      vtN;
 static char     vtBase[NV_ADDON_URL_MAX], vtTipo[8], vtCat[96], vtGenre[96];
 static int      vtPagina, vtFim, vtFioVivo, vtErro;
@@ -7857,6 +7858,45 @@ static int deMetaTrakt(const char *p, const char *f, const char *midia,
   snprintf(d->tipo, sizeof d->tipo, "%s", serie ? "series" : "movie");
   snprintf(d->genero, sizeof d->genero, "%s", i18n(rotuloTipoSing(d->tipo)));
   return 1;
+}
+
+// rank, listed_at e notes vivem na RAIZ da entrada, ao lado de "movie"/"show".
+// Leitura por profundidade 1: o objeto do titulo tem os proprios campos e um
+// "notes" ou "rank" la dentro nao pode passar por da lista.
+// Numero no NIVEL RAIZ do objeto [p,f): js_texto_raiz_em so devolve string, e o
+// "id" da entrada nao pode casar o "id" de dentro de movie.ids.
+static long numRaiz(const char *p, const char *f, const char *chave) {
+  size_t kn = strlen(chave);
+  const char *q = p;
+  int prof = 0;
+  for (; *q && (!f || q < f); q++) {
+    if (*q == '"') {
+      const char *i2 = q + 1, *e = i2;
+      while (*e && *e != '"') e += (*e == '\\' && e[1]) ? 2 : 1;
+      if (prof == 1 && (size_t)(e - i2) == kn && !strncmp(i2, chave, kn)) {
+        const char *v = e + 1;
+        while (*v == ' ' || *v == '\n' || *v == '\t' || *v == '\r') v++;
+        if (*v == ':') return atol(v + 1);
+      }
+      q = *e ? e : e - 1;
+    } else if (*q == '{' || *q == '[') prof++;
+    else if (*q == '}' || *q == ']') prof--;
+  }
+  return 0;
+}
+
+void desc_trakt_extra_ler(const char *p, const char *f, DescItemLista *d) {
+  char t[40] = "";
+  memset(d, 0, sizeof *d);
+  if (js_texto_raiz_em(p, f, "listed_at", t, sizeof t)) d->entrouMs = js_ms_iso(t);
+  if (js_texto_raiz_em(p, f, "notes", d->nota, sizeof d->nota)) {
+    // Nota so de espacos e ausencia de nota.
+    char *a = d->nota;
+    while (*a == ' ' || *a == '\n' || *a == '\t') a++;
+    if (!*a) d->nota[0] = 0;
+  }
+  d->rank = (int)numRaiz(p, f, "rank");
+  d->itemId = numRaiz(p, f, "id");
 }
 
 // Traduz o objeto "filters" do editor do site para parametros do /discover
@@ -7971,6 +8011,9 @@ static void *fioVerTudo(void *u) {
   // NUMERO da pagina (comeca em 1), nao o skip de itens.
   if (prov) {
     CatItem *lote=malloc(sizeof *lote*48); int nl=0, semMais=0, ok=0;
+    // Extras da entrada (rank/listed_at/notes), amarrados ao imdb e NAO a
+    // posicao: trakt_enfeitar_lote compacta o lote e um indice dessincroniza.
+    DescItemLista exLote[48]; char exImdb[48][64]; int nex=0;
     if(!lote){pthread_mutex_lock(&vtTrava);vtErro=1;vtFioVivo=0;pthread_mutex_unlock(&vtTrava);return NULL;}
     corpo=NULL;
     if (prov==1) {
@@ -8003,14 +8046,15 @@ static void *fioVerTudo(void *u) {
         ok=1;
       }
     } else {
-      // Lista publica do Trakt: so precisa do client id do aplicativo, nao
-      // do token da pessoa (o web faz igual — buildTraktHeaders).
+      // So listas vindas de /users/me/lists recebem o token da sessao.
       const char *cli=nuvem_trakt_cliente();
       if (cli[0]) {
-        char chave[160];
-        const char *cab[]={"trakt-api-version: 2",NULL,NULL};
-        snprintf(chave,sizeof chave,"trakt-api-key: %s",cli);
-        cab[1]=chave;
+        char chave[160], aut[200];
+        const char *cab[4];
+        if (!fonte.traktPropria || !trakt_cabecalhos(cab,aut,sizeof aut,chave,sizeof chave)) {
+          snprintf(chave,sizeof chave,"trakt-api-key: %s",cli);
+          cab[0]="trakt-api-version: 2"; cab[1]=chave; cab[2]=NULL;
+        }
         snprintf(url,sizeof url,
           "https://api.trakt.tv/lists/%ld/items/%s?page=%d&limit=40&sort_by=%s&sort_how=%s",
           fonte.traktLista,!strcasecmp(fonte.midia,"TV")?"show":"movie",
@@ -8022,7 +8066,15 @@ static void *fioVerTudo(void *u) {
           for(;p&&nl<48;p=js_prox(js_fim(p))) {
             const char *f=js_fim(p);raw++;
             if (deMetaTrakt(p,f,fonte.midia,&lote[nl])) {
-              if (descOcultaNaoLancado(&lote[nl])) ocultos++; else nl++;
+              if (descOcultaNaoLancado(&lote[nl])) ocultos++;
+              else {
+                if (nex<48) {
+                  desc_trakt_extra_ler(p,f,&exLote[nex]);
+                  snprintf(exImdb[nex],sizeof exImdb[nex],"%s",lote[nl].imdb);
+                  nex++;
+                }
+                nl++;
+              }
             }
           }
           // rede_baixar nao devolve cabecalhos; menos que a pagina cheia e o
@@ -8044,7 +8096,12 @@ static void *fioVerTudo(void *u) {
         for(int j=0;j<vtN;j++)
           if(lote[i].imdb[0]&&!strcmp(vtItens[j].imdb,lote[i].imdb)
              &&!strcmp(vtItens[j].tipo,lote[i].tipo)){dup=1;break;}
-        if(!dup){vtItens[vtN++]=lote[i];added++;}
+        if(!dup){
+          memset(&vtExtra[vtN],0,sizeof vtExtra[vtN]);
+          for(int j=0;j<nex;j++)
+            if(!strcmp(exImdb[j],lote[i].imdb)){vtExtra[vtN]=exLote[j];break;}
+          vtItens[vtN++]=lote[i];added++;
+        }
       }
       vtErro=!ok;
       if(ok){if(semMais||!added||vtN>=VT_MAX)vtFim=1;else vtPagina=skip+1;}
@@ -8082,7 +8139,10 @@ static void *fioVerTudo(void *u) {
       pthread_mutex_lock(&vtTrava);
       int duplicate=0;
       for(int i=0;i<vtN;i++)if(it.imdb[0]&&!strcmp(vtItens[i].imdb,it.imdb)&&!strcmp(vtItens[i].tipo,it.tipo)){duplicate=1;break;}
-      if(generation==vtGeracao&&vtN<cap&&!duplicate){vtItens[vtN++]=it;added++;}
+      if(generation==vtGeracao&&vtN<cap&&!duplicate){
+        memset(&vtExtra[vtN],0,sizeof vtExtra[vtN]);
+        vtItens[vtN++]=it;added++;
+      }
       pthread_mutex_unlock(&vtTrava);
     }
   }
@@ -8158,12 +8218,31 @@ void desc_vertudo_fonte(const ColSource *s) {
   vtDisparar();
 }
 
+void desc_vertudo_invalidar_lista(long id) {
+  int recarregar;
+  pthread_mutex_lock(&vtTrava);
+  recarregar = id > 0 && vtProvedor == 2 && vtFonte.traktLista == id;
+  if (recarregar) {
+    vtN = 0; vtPagina = 1; vtFim = 0; vtErro = 0; vtGeracao++;
+  }
+  pthread_mutex_unlock(&vtTrava);
+  if (recarregar) vtDisparar();
+}
+
 void desc_vertudo_mais(void) { vtDisparar(); }
 int  desc_vertudo_n(void) { pthread_mutex_lock(&vtTrava);int n=vtN;pthread_mutex_unlock(&vtTrava);return n; }
 int  desc_vertudo_carregando(void) { pthread_mutex_lock(&vtTrava);int n=vtFioVivo;pthread_mutex_unlock(&vtTrava);return n; }
 int  desc_vertudo_fim(void) { pthread_mutex_lock(&vtTrava);int n=vtFim;pthread_mutex_unlock(&vtTrava);return n; }
 int  desc_vertudo_erro(void) { pthread_mutex_lock(&vtTrava);int n=vtErro;pthread_mutex_unlock(&vtTrava);return n; }
 void desc_vertudo_fechar(void) { /* guarda o que leu; ver desc_vertudo_abrir */ }
+
+int desc_vertudo_extra(int i, DescItemLista *dst) {
+  int ok = 0;
+  pthread_mutex_lock(&vtTrava);
+  if (dst && i >= 0 && i < vtN) { *dst = vtExtra[i]; ok = 1; }
+  pthread_mutex_unlock(&vtTrava);
+  return ok;
+}
 
 int desc_vertudo_item(int i, CatItem *dst) {
   int ok = 0;

@@ -9,6 +9,7 @@
 #include "fileiras.h"
 #include "dados.h"
 #include "perfis.h"
+#include "recomenda.h"
 #include "rede.h"
 #include "js.h"
 #include <stdio.h>
@@ -42,6 +43,14 @@ typedef struct {
   int  naHome;
   char titulo[128];
   char autor[64];
+  // A LISTA E PROPRIA? O GET de itens so leva o Bearer quando traktPropria
+  // (descoberta.c), e a reconstrucao de uma fixada nao tem o objeto original:
+  // o que decidiu no momento de fixar tem de sobreviver no arquivo — sem isto,
+  // a lista privada do dono fixada e reaberta vinha 403. As linhas ANTIGAS nao
+  // tem esta coluna: na leitura, o autor (username) e comparado ao slug da
+  // conta Trakt ligada — no Trakt o username E o slug, e e assim que o pin
+  // antigo migra; a proxima gravacao ja escreve a coluna.
+  int  propria;
 } LstFixa;
 static LstFixa fixas[LST_FIX_MAX];
 static int     nFixas;
@@ -97,12 +106,13 @@ static void gravarFixas(void) {
   // encontrar primeiro sera alguem depurando a TV de outra pessoa.
   k += (size_t)snprintf(txt + k, sizeof txt - k,
       "# Listas fixadas na Biblioteca deste perfil.\n"
-      "# fonte\\tid\\tmidia\\tnaHome\\ttitulo\\tautor\n");
+      "# fonte\\tid\\tmidia\\tnaHome\\ttitulo\\tautor\\tpropria\n");
   for (i = 0; i < nFixas && k + 320 < sizeof txt; i++)
-    k += (size_t)snprintf(txt + k, sizeof txt - k, "%s\t%s\t%s\t%d\t%s\t%s\n",
+    k += (size_t)snprintf(txt + k, sizeof txt - k, "%s\t%s\t%s\t%d\t%s\t%s\t%d\n",
                           nomeFonte(fixas[i].fonte), fixas[i].id,
                           fixas[i].midia[0] ? fixas[i].midia : "-",
-                          fixas[i].naHome, fixas[i].titulo, fixas[i].autor);
+                          fixas[i].naHome, fixas[i].titulo, fixas[i].autor,
+                          fixas[i].propria);
   dados_gravar(lst_arquivo(), txt);
 }
 
@@ -114,12 +124,12 @@ static void lerFixas(void) {
   b = dados_ler(lst_arquivo());
   if (!b) { aplicarHome(); return; }
   for (linha = b; *linha; linha = fim) {
-    char *campo[6]; int c = 0; char *s;
+    char *campo[7]; int c = 0; char *s;
     fim = strchr(linha, '\n');
     if (fim) *fim++ = 0; else fim = linha + strlen(linha);
     if (linha[0] == '#' || !linha[0]) continue;
     campo[c++] = linha;
-    for (s = linha; *s && c < 6; s++) if (*s == '\t') { *s = 0; campo[c++] = s + 1; }
+    for (s = linha; *s && c < 7; s++) if (*s == '\t') { *s = 0; campo[c++] = s + 1; }
     if (c < 5 || nFixas >= LST_FIX_MAX) continue;
     { LstFixa *f = &fixas[nFixas];
       memset(f, 0, sizeof *f);
@@ -129,6 +139,13 @@ static void lerFixas(void) {
       f->naHome = atoi(campo[3]) ? 1 : 0;
       snprintf(f->titulo, sizeof f->titulo, "%s", campo[4]);
       if (c > 5) snprintf(f->autor, sizeof f->autor, "%s", campo[5]);
+      if (c > 6) f->propria = atoi(campo[6]) ? 1 : 0;
+      else {
+        // LINHA ANTIGA, sem a coluna propria: migra comparando o dono gravado
+        // ao slug da conta Trakt ligada (no Trakt, username e slug sao o mesmo).
+        const char *eu = recomenda_identidade_trakt();
+        f->propria = eu[0] && !strcmp(f->autor, eu);
+      }
       if (f->id[0] && f->titulo[0]) nFixas++; }
   }
   free(b);
@@ -178,6 +195,7 @@ int lst_alternar_fixada(const LstLista *l) {
     snprintf(f->midia, sizeof f->midia, "%s", l->midia);
     limpo(f->titulo, sizeof f->titulo, l->titulo);
     limpo(f->autor, sizeof f->autor, l->autor);
+    f->propria = l->fonte == LST_TRAKT && l->propria;
     nFixas++; }
   gravarFixas();
   return 1;
@@ -357,6 +375,7 @@ static int lerListaTrakt(const char *p, const char *f, LstLista *d) {
   d->fonte = LST_TRAKT;
   d->curtidas = -1;
   d->itens = -1;
+  d->comentarios = -1;
   js_texto_raiz_em(p, f, "name", d->titulo, sizeof d->titulo);
   if (!d->titulo[0]) return 0;
   js_texto_raiz_em(p, f, "description", d->descricao, sizeof d->descricao);
@@ -365,13 +384,23 @@ static int lerListaTrakt(const char *p, const char *f, LstLista *d) {
   // js_texto crus casaria o primeiro que aparecesse no texto, entao cada um e
   // lido DENTRO do seu objeto.
   { char ids[256] = "";
-    if (brutoRaiz(p, f, "ids", ids, sizeof ids))
-      d->traktId = (long)js_num(ids, ids + strlen(ids), "trakt", 0.0); }
-  { char usr[400] = "";
+    if (brutoRaiz(p, f, "ids", ids, sizeof ids)) {
+      d->traktId = (long)js_num(ids, ids + strlen(ids), "trakt", 0.0);
+      js_texto(ids, ids + strlen(ids), "slug", d->slug, sizeof d->slug); } }
+  { char usr[700] = "";
     if (brutoRaiz(p, f, "user", usr, sizeof usr)) {
       const char *uf = usr + strlen(usr);
+      char uids[200] = "";
       if (!js_texto_raiz_em(usr, uf, "username", d->autor, sizeof d->autor))
-        js_texto(usr, uf, "slug", d->autor, sizeof d->autor); } }
+        js_texto(usr, uf, "slug", d->autor, sizeof d->autor);
+      js_texto_raiz_em(usr, uf, "name", d->autorNome, sizeof d->autorNome);
+      if (brutoRaiz(usr, uf, "ids", uids, sizeof uids))
+        js_texto(uids, uids + strlen(uids), "slug", d->autorSlug, sizeof d->autorSlug); } }
+  js_texto_raiz_em(p, f, "created_at", d->criada, sizeof d->criada);
+  js_texto_raiz_em(p, f, "updated_at", d->atualizada, sizeof d->atualizada);
+  { char pv[16] = "";
+    d->privada = js_texto_raiz_em(p, f, "privacy", pv, sizeof pv) && strcmp(pv, "public") ? 1 : 0; }
+  d->comentarios = (int)js_num(p, f, "comment_count", -1.0);
   d->itens    = (int)js_num(p, f, "item_count", -1.0);
   d->curtidas = (int)js_num(p, f, "likes", -1.0);
   if (d->curtidas < 0) d->curtidas = (int)js_num(p, f, "like_count", -1.0);
@@ -383,21 +412,95 @@ static int lerListaTrakt(const char *p, const char *f, LstLista *d) {
   return 1;
 }
 
-int lst_ler_trakt(const char *json, int envelope) {
+static int lerVetor(const char *json, int envelope, LstLista *dst, int max) {
   const char *p;
   int n = 0;
   if (!json) return 0;
   p = *json == '[' ? js_raiz_array(json) : NULL;
-  for (; p && *p == '{' && n < LST_MAX; p = js_prox(js_fim(p))) {
+  for (; p && *p == '{' && n < max; p = js_prox(js_fim(p))) {
     const char *f = js_fim(p);
     if (envelope) {
       char dentro[1600];
       if (!brutoRaiz(p, f, "list", dentro, sizeof dentro)) continue;
-      if (lerListaTrakt(dentro, dentro + strlen(dentro), &tabela[n])) n++;
-    } else if (lerListaTrakt(p, f, &tabela[n])) n++;
+      if (lerListaTrakt(dentro, dentro + strlen(dentro), &dst[n])) n++;
+    } else if (lerListaTrakt(p, f, &dst[n])) { dst[n].propria = 1; n++; }
   }
-  nTabela = n;
   return n;
+}
+
+int lst_ler_trakt(const char *json, int envelope) {
+  nTabela = lerVetor(json, envelope, tabela, LST_MAX);
+  return nTabela;
+}
+
+// --- AS LISTAS DO DONO, FORA DA TABELA DA TELA --------------------------------
+// "Adicionar a uma lista" (menu do titulo) precisa das listas proprias do Trakt
+// sem pisar na tabela que a Biblioteca esta mostrando (uma busca publica, por
+// exemplo). Tabela propria, um pedido por abertura do menu.
+static LstLista minhas[LST_MAX];
+static int      nMinhas, fioMinhas;
+
+static void *fioMinhasListas(void *u) {
+  const char *cab[4];
+  char aut[200], chave[160];
+  char *corpo = NULL;
+  static LstLista tmp[LST_MAX];
+  int n = 0;
+  (void)u;
+  if (trakt_cabecalhos(cab, aut, sizeof aut, chave, sizeof chave))
+    corpo = rede_baixar_com("https://api.trakt.tv/users/me/lists", 15, cab);
+  pthread_mutex_lock(&trava);
+  n = lerVetor(corpo, 0, tmp, LST_MAX);
+  memcpy(minhas, tmp, sizeof(LstLista) * (size_t)n);
+  nMinhas = n;
+  fioMinhas = 0;
+  pthread_mutex_unlock(&trava);
+  free(corpo);
+  return NULL;
+}
+
+void lst_minhas_pedir(void) {
+  pthread_t t;
+  pthread_mutex_lock(&trava);
+  if (fioMinhas) { pthread_mutex_unlock(&trava); return; }
+  fioMinhas = 1;
+  if (pthread_create(&t, NULL, fioMinhasListas, NULL) != 0) fioMinhas = 0;
+  else pthread_detach(t);
+  pthread_mutex_unlock(&trava);
+}
+int lst_minhas_carregando(void) {
+  int v;
+  pthread_mutex_lock(&trava); v = fioMinhas; pthread_mutex_unlock(&trava);
+  return v;
+}
+int lst_minhas_n(void) {
+  int v;
+  pthread_mutex_lock(&trava); v = nMinhas; pthread_mutex_unlock(&trava);
+  return v;
+}
+int lst_minha(int i, LstLista *dst) {
+  int ok = 0;
+  pthread_mutex_lock(&trava);
+  if (i >= 0 && i < nMinhas && dst) { *dst = minhas[i]; ok = 1; }
+  pthread_mutex_unlock(&trava);
+  return ok;
+}
+void lst_descricao_atualizar(long id, const char *descricao) {
+  if (id <= 0 || !descricao) return;
+  pthread_mutex_lock(&trava);
+  for (int i = 0; i < nTabela; i++)
+    if (tabela[i].fonte == LST_TRAKT && tabela[i].traktId == id)
+      snprintf(tabela[i].descricao, sizeof tabela[i].descricao, "%s", descricao);
+  for (int i = 0; i < nMinhas; i++)
+    if (minhas[i].traktId == id)
+      snprintf(minhas[i].descricao, sizeof minhas[i].descricao, "%s", descricao);
+  pthread_mutex_unlock(&trava);
+}
+
+void lst_minhas_teste(const char *json) {
+  pthread_mutex_lock(&trava);
+  nMinhas = lerVetor(json, 0, minhas, LST_MAX);
+  pthread_mutex_unlock(&trava);
 }
 
 // ITENS DO SIMKL. O envelope e {"movies":[{"movie":{...}}]} ou
@@ -507,7 +610,10 @@ static int montarFixadas(void) {
     snprintf(d->titulo, sizeof d->titulo, "%s", fixas[i].titulo);
     snprintf(d->autor, sizeof d->autor, "%s", fixas[i].autor);
     snprintf(d->midia, sizeof d->midia, "%s", fixas[i].midia);
-    if (fixas[i].fonte == LST_TRAKT)      d->traktId = atol(fixas[i].id);
+    if (fixas[i].fonte == LST_TRAKT) {
+      d->traktId = atol(fixas[i].id);
+      d->propria = fixas[i].propria;
+    }
     else if (fixas[i].fonte == LST_NUVIO) snprintf(d->colId, sizeof d->colId, "%s", fixas[i].id);
     else                                  snprintf(d->estado, sizeof d->estado, "%s", fixas[i].id);
   }
@@ -671,7 +777,18 @@ static CatItem  itens[LST_ITENS_MAX];
 static int      nItens, itFioVivo, itSimkl;
 static unsigned itGeracao;
 static int      itInjetado;   // so os testes (lst_teste_itens)
+static DescItemLista itExtraTeste[LST_ITENS_MAX];   // so os testes (lst_teste_extras)
 static char     itEstado[16], itMidia[8];
+// Ordem do dono ainda nao gravada (Reordenar): itPerm[i] e o indice REAL do item
+// mostrado na posicao i. itPermN 0 = a ordem que o servidor mandou.
+static int      itPerm[LST_ITENS_MAX], itPermN;
+static int mapear(int i) {
+  int r = i;
+  pthread_mutex_lock(&itTrava);
+  if (itPermN && i >= 0 && i < itPermN) r = itPerm[i];
+  pthread_mutex_unlock(&itTrava);
+  return r;
+}
 
 static void *fioSimkl(void *u) {
   char url[500], cid[200], nome[120], aut[400];
@@ -722,7 +839,7 @@ void lst_abrir(const LstLista *l, const char *midia) {
   ColSource s;
   if (!l || itInjetado) return;
   pthread_mutex_lock(&itTrava);
-  nItens = 0; itGeracao++;
+  nItens = 0; itGeracao++; itPermN = 0;
   itSimkl = (l->fonte == LST_SIMKL);
   snprintf(itEstado, sizeof itEstado, "%s", l->estado);
   snprintf(itMidia, sizeof itMidia, "%s", midia && midia[0] ? midia : l->midia);
@@ -743,6 +860,7 @@ void lst_abrir(const LstLista *l, const char *midia) {
   if (l->fonte == LST_TRAKT) {
     snprintf(s.prov, sizeof s.prov, "trakt");
     s.traktLista = l->traktId;
+    s.traktPropria = l->propria;
     snprintf(s.title, sizeof s.title, "%s", l->titulo);
     snprintf(s.midia, sizeof s.midia, "%s", midia && midia[0] ? midia : l->midia);
     snprintf(s.ordenar, sizeof s.ordenar, "rank");
@@ -787,6 +905,7 @@ int lst_itens_n(void) {
 
 int lst_item(int i, CatItem *dst) {
   int simkl, ok = 0;
+  i = mapear(i);
   pthread_mutex_lock(&itTrava);
   simkl = itSimkl;
   if (simkl && dst && i >= 0 && i < nItens) { *dst = itens[i]; ok = 1; }
@@ -801,6 +920,65 @@ int lst_itens_carregando(void) {
   v = itSimkl ? itFioVivo : -1;
   pthread_mutex_unlock(&itTrava);
   return v >= 0 ? v : desc_vertudo_carregando();
+}
+
+int lst_item_extra(int i, DescItemLista *dst) {
+  int simkl, r;
+  pthread_mutex_lock(&itTrava);
+  simkl = itSimkl;
+  pthread_mutex_unlock(&itTrava);
+  if (dst) memset(dst, 0, sizeof *dst);
+  r = mapear(i);
+  if (simkl) {
+    if (i < 0 || i >= lst_itens_n()) return 0;
+    if (dst && itInjetado) *dst = itExtraTeste[r];
+    return 1;
+  }
+  return desc_vertudo_extra(r, dst);
+}
+
+// So para testes e capturas: rank/nota dos itens de lst_teste_itens, ja que sem
+// rede o Trakt nao entrega nenhum.
+void lst_teste_extras(const DescItemLista *v, int n) {
+  if (n > LST_ITENS_MAX) n = LST_ITENS_MAX;
+  pthread_mutex_lock(&itTrava);
+  memset(itExtraTeste, 0, sizeof itExtraTeste);
+  for (int i = 0; i < n; i++) itExtraTeste[i] = v[i];
+  pthread_mutex_unlock(&itTrava);
+}
+
+int lst_ordem_mover(int de, int para) {
+  int n = lst_itens_n(), v, k;
+  if (de < 0 || para < 0 || de >= n || para >= n || n > LST_ITENS_MAX) return 0;
+  pthread_mutex_lock(&itTrava);
+  if (itPermN != n) {
+    int novo[LST_ITENS_MAX];
+    for (k = 0; k < n; k++) novo[k] = k < itPermN ? itPerm[k] : k;
+    memcpy(itPerm, novo, sizeof(int) * (size_t)n);
+    itPermN = n;
+  }
+  v = itPerm[de];
+  for (k = de; k < para; k++) itPerm[k] = itPerm[k + 1];
+  for (k = de; k > para; k--) itPerm[k] = itPerm[k - 1];
+  itPerm[para] = v;
+  pthread_mutex_unlock(&itTrava);
+  return 1;
+}
+
+int lst_ordem_ids(long *ids, int max) {
+  int n = lst_itens_n(), i;
+  DescItemLista d;
+  if (n < 1 || n > max) return 0;
+  for (i = 0; i < n; i++) {
+    if (!lst_item_extra(i, &d) || d.itemId <= 0) return 0;
+    ids[i] = d.itemId;
+  }
+  return n;
+}
+
+int lst_url_publica(const LstLista *l, char *dst, size_t n) {
+  if (!l || !dst || l->fonte != LST_TRAKT || l->privada || !l->autorSlug[0] || !l->slug[0]) return 0;
+  return snprintf(dst, n, "https://trakt.tv/users/%s/lists/%s", l->autorSlug, l->slug) < (int)n;
 }
 
 void lst_itens_mais(void) {

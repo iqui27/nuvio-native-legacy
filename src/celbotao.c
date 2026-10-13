@@ -195,6 +195,10 @@ static void qrDesenhar(const char *u, float x, float y, float a) {
   gfx_tex_aspect_atual = 0.0f;
   gfx_rect((GfxRect){ x + CB_MOLDURA, y + CB_MOLDURA, CB_QR, CB_QR }, texQr, GFX_SNAP, 0, 0.0f, 0.0f, 0.0f, 0, 0, 0, a);
 }
+// Para quem so quer mostrar um QR de endereco publico (biblioteca.c: link da
+// lista), sem servidor nem token.
+float celb_qr_lado(void) { return CB_QR + 2 * CB_MOLDURA; }
+void  celb_qr_desenhar(const char *url, float x, float y, float a) { qrDesenhar(url, x, y, a); }
 static const char *FRASE_QR = "Aponte a câmera do celular. Mesma rede Wi-Fi, vale por 5 minutos.";
 static const char *msgSemQr(int est) {
   return est == CEL_FALHOU ? "Endereço bloqueado por tentativas erradas. Aperte OK para gerar outro."
