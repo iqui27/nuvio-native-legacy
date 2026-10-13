@@ -37,6 +37,16 @@
 
 static GLuint fbo, fboTex;
 
+// Relogio controlado para reproduzir pedidos em segundos distintos sem esperar.
+static time_t testeQuando;
+time_t time(time_t *out) {
+  struct timespec agora;
+  clock_gettime(CLOCK_REALTIME, &agora);
+  time_t t = testeQuando ? testeQuando : agora.tv_sec;
+  if (out) *out = t;
+  return t;
+}
+
 static void tecla(SDL_Keycode k) {
   SDL_Event e;
   memset(&e, 0, sizeof e);
@@ -293,6 +303,44 @@ static void regras(void) {
   { char *s = dados_ler(RESOLVER_ARQ);
     assert(s && strstr(s, "K7QM2X"));
     free(s); }
+
+  // ---- Enviar, Voltar, enviar de novo em 5 s: acompanha o mesmo upload A.
+  limpar(); fatos_ok(); abrir();
+  testeQuando = time(NULL);
+  { time_t t0 = testeQuando;
+    ir_chip(51); tecla(SDLK_RETURN);
+    avisos_teste_envio(1, 0, 0, "", 186L * 1024, 2214);
+    tecla(SDLK_ESCAPE);
+    testeQuando = t0 + 5;
+    ir_chip(51); tecla(SDLK_RETURN);
+    assert(resolver_fase() == RESOLVER_FASE_ENVIO);
+    testeQuando = t0;   // A termina com o horario original, anterior ao segundo pedido.
+    avisos_teste_envio(2, AVISOS_ENVIO_OK, 200, "DBL001", 186L * 1024, 2214);
+    testeQuando = t0 + 5;
+    quadro(0.016f);
+    assert(resolver_enviados_n() == 1);
+    { char *s = dados_ler(RESOLVER_ARQ);
+      assert(s && strstr(s, "DBL001")); free(s); }
+    tecla(SDLK_RETURN);
+    assert(resolver_fase() == RESOLVER_FASE_SINTOMA);
+  }
+  testeQuando = 0;
+
+  // ---- Offline nao encerra a espera: o retry automatico guarda o codigo com a tela fechada.
+  limpar(); fatos_ok(); abrir();
+  ir_chip(51); tecla(SDLK_RETURN);
+  avisos_teste_envio(3, AVISOS_ENVIO_OFFLINE, 0, "", 186L * 1024, 2214);
+  quadro(0.016f);
+  assert(resolver_enviados_n() == 0);
+  tecla(SDLK_ESCAPE); tecla(SDLK_ESCAPE);
+  assert(!resolver_aberto());
+  avisos_teste_envio(1, 0, 0, "", 186L * 1024, 2214);
+  quadro(0.016f);
+  avisos_teste_envio(2, AVISOS_ENVIO_OK, 200, "OFF001", 186L * 1024, 2214);
+  quadro(0.016f);
+  assert(resolver_enviados_n() == 1);
+  { char *s = dados_ler(RESOLVER_ARQ);
+    assert(s && strstr(s, "OFF001")); free(s); }
 
   // ---- Apagar o ultimo registro persiste: reabrir nao o traz de volta.
   limpar(); fatos_ok(); seed_enviados(1); abrir();

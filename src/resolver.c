@@ -408,11 +408,13 @@ static void testar(int s) {
 }
 
 static void enviar_registro(int s, int volta) {
+  AvisosEnvio i;
+  avisos_envio_info(&i);
   envSint = s;
   voltaFase = volta;
   envModo = M_ENVIANDO;
   envNoAr = 1;
-  envInicio = (long)time(NULL);
+  envInicio = i.estado == 1 ? (long)i.quando : (long)time(NULL);
   envCodigo[0] = 0;
   envMotivo = envHttp = 0;
 #ifndef RESOLVER_TESTE
@@ -511,7 +513,7 @@ static void sondar_envio(void) {
     envMotivo = i.motivo;
     envHttp = i.http;
   }
-  envNoAr = 0;
+  envNoAr = i.estado == 3 && i.motivo == AVISOS_ENVIO_OFFLINE;
   if (envModo != M_ENVIANDO) return;   // a pessoa ja voltou: o codigo ficou so na lista
   envModo = i.estado == 2 ? M_ENVIADO : M_FALHOU;
   if (aberto && fase == RESOLVER_FASE_ENVIO) foco = foco_padrao();
