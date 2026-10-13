@@ -158,7 +158,8 @@ int fil_origem_de(const char *chave) {
   if (!strcmp(chave, "continue_watching") ||
       !strcmp(chave, "social_activity") ||
       !strcmp(chave, "last_session")) return FIL_ORIGEM_APP;
-  if (!strncmp(chave, "collection_", 11)) return FIL_ORIGEM_COLECAO;
+  if (!strncmp(chave, "collection_", 11) ||
+      !strncmp(chave, "colpin_", 7)) return FIL_ORIGEM_COLECAO;
   return FIL_ORIGEM_CATALOGO;
 }
 
@@ -1291,7 +1292,7 @@ void fil_colecoes_reconciliar(const char *const *chaves,
   garantir();
   for (int i = 0; i < nLinhas; i++) {
     int viva = 1;
-    if (autoritativo && fil_origem_de(linhas[i].chave) == FIL_ORIGEM_COLECAO) {
+    if (autoritativo && !strncmp(linhas[i].chave, "collection_", 11)) {
       viva = 0;
       for (int j = 0; j < n && !viva; j++)
         viva = chaves[j] && !strcmp(linhas[i].chave, chaves[j]);

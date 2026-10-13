@@ -132,6 +132,13 @@ int main(void) {
   assert(fil_origem_de("social_activity")   == FIL_ORIGEM_APP);
   assert(fil_origem_de("last_session")      == FIL_ORIGEM_APP);
   assert(fil_origem_de("collection_a24")    == FIL_ORIGEM_COLECAO);
+  assert(fil_origem_de("colpin_a24")        == FIL_ORIGEM_COLECAO);
+  // A sincronizacao dos grupos da conta nao apaga a ordem da pasta fixada.
+  fil_registrar("colpin_a24", "Pinned", "", "", 3);
+  fil_colecoes_reconciliar(NULL, NULL, NULL, 0, 1);
+  { int achou = 0;
+    for (int k = 0; k < fil_n(); k++) if (!strcmp(fil_chave(k), "colpin_a24")) achou = 1;
+    assert(achou); }
   // Chave que so COMECA parecida nao e colecao: o prefixo tem de ser exato.
   assert(fil_origem_de("collections_movie_x") == FIL_ORIGEM_CATALOGO);
   assert(fil_origem_de("com.linvo.cinemeta_movie_top") == FIL_ORIGEM_CATALOGO);

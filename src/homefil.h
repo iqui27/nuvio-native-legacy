@@ -21,9 +21,9 @@ unsigned     cf_revisao(void);
 int          cf_n(void);
 const ColFolder *cf_pasta(int i);   // NULL se a conta nao a trouxe mais
 const char  *cf_titulo(int i);
-// AMBAR: os titulos da pasta na ordem do add-on. Hoje devolve 0 (o resolvedor
-// das fontes da pasta so existe na tela "Ver tudo"); a Home mostra o estado
-// vazio. Quando existir: preencher `indicesCat` e devolver quantos.
+// Titulos das janelas locais, na ordem das fontes e dos catalogos, sem
+// duplicatas. 0 se alguma fonte nao esta disponivel ou exige consulta propria:
+// a Home conserva o atalho para "Ver tudo", sem buscar dados novos.
 int          cf_itens(const ColFolder *pasta, int *indicesCat, int max);
 void         cf_definir_perfil(int perfil);
 void         cf_esquecer(void);

@@ -3,6 +3,11 @@ set -eu
 cd "$(dirname "$0")/.."
 bin="$(mktemp "${TMPDIR:-/tmp}/nuvio-homefil.XXXXXXXX")"
 trap 'rm -f "$bin"' EXIT
-# homefil.c chama fil_*/col_* que o teste dubla; so ele entra.
-cc -O1 -g -Isrc -Wno-deprecated-declarations src/homefil.c tests/homefil.c -o "$bin"
+flags=()
+if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
+# Perfil real: o teste precisa provar a recarga pela API usada pelo app.
+cc ${flags[@]+"${flags[@]}"} -O1 -g -ftrivial-auto-var-init=pattern -Isrc -Wno-deprecated-declarations \
+  src/homefil.c src/perfis.c src/js.c src/jsw.c tests/homefil.c -o "$bin"
+"$bin" empty
+"$bin" profile
 "$bin"

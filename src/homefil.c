@@ -5,6 +5,8 @@
 // vai para a conta.
 #include "homefil.h"
 #include "fileiras.h"
+#include "catalogo.h"
+#include "addons.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,7 +71,7 @@ int ov_ativa(const char *chave) {
 
 static void ovGravar(void) {
   char nome[64];
-  char buf[OV_MAX * (OV_CHAVE + 1)];
+  char buf[OV_MAX * (OV_CHAVE + 1)] = "";
   size_t uso = 0;
   int i;
   ovNome(nome, sizeof nome, perfis_ativo());
@@ -178,7 +180,7 @@ static int cfIndice(const char *pastaId) {
 
 static void cfGravar(void) {
   char nome[64];
-  char buf[CF_MAX * (96 + 1 + 128 + 1)];
+  char buf[CF_MAX * (96 + 1 + 128 + 1)] = "";
   size_t uso = 0;
   int i;
   cfNome(nome, sizeof nome, perfis_ativo());
@@ -245,10 +247,35 @@ const char *cf_titulo(int i) {
 }
 
 int cf_itens(const ColFolder *pasta, int *indicesCat, int max) {
-  // AMBAR (2.1): devolve 0 — o resolvedor da ordem da pasta ainda nao existe
-  // (ver o cabecalho de colfixada.h). A Home mostra o estado vazio limpo.
-  (void)pasta; (void)indicesCat; (void)max;
-  return 0;
+  int n = 0;
+  if (!pasta || !pasta->sources || pasta->nSources < 1 || !indicesCat || max < 1) return 0;
+  // So janelas ja carregadas e sem filtros adicionais: nunca faz rede nem
+  // apresenta outro genero como se fosse o conteudo da pasta.
+  for (int s = 0; s < pasta->nSources; s++) {
+    const ColSource *fonte = &pasta->sources[s];
+    const char *base = fonte->base[0] ? fonte->base : addons_base_por_id(fonte->addonId);
+    const CatFileira *f = NULL;
+    if (fonte->prov[0] || fonte->genre[0] || fonte->filtros[0] || !base || !base[0]) return 0;
+    for (int r = 0; r < cat_n_fileiras(); r++) {
+      const CatFileira *c = cat_fileira(r);
+      if (c && !strcmp(c->base, base) && !strcmp(c->tipo, fonte->type) &&
+          !strcmp(c->catId, fonte->catId)) { f = c; break; }
+    }
+    if (!f) return 0;
+    for (int c = 0; c < f->n && n < max; c++) {
+      int idx = f->ini + c, repetido = 0;
+      const CatItem *it = idx >= 0 && idx < cat_n() ? cat_item(idx) : NULL;
+      if (!it) continue;
+      for (int k = 0; k < n; k++) {
+        const CatItem *antes = cat_item(indicesCat[k]);
+        if (antes && !strcmp(antes->imdb, it->imdb) && !strcmp(antes->tipo, it->tipo)) {
+          repetido = 1; break;
+        }
+      }
+      if (!repetido) indicesCat[n++] = idx;
+    }
+  }
+  return n;
 }
 
 void cf_definir_perfil(int p) {
