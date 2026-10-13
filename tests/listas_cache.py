@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory(prefix='listas-cache-') as tmp:
     (path / 'test.c').write_text(code)
     subprocess.run(['cc', '-ffunction-sections', '-fdata-sections', '-Isrc',
                     '-I/opt/homebrew/include', '-I/opt/homebrew/include/SDL2',
-                    'src/listasescrita.c', str(path / 'test.c'), '-Wl,-dead_strip',
+                    'src/listasescrita.c', 'src/js.c', str(path / 'test.c'), '-Wl,-dead_strip',
                     '-Wl,-undefined,dynamic_lookup', '-o', str(path / 'test')], check=True)
     subprocess.run([str(path / 'test')], check=True)
 print('listas cache: PASS')

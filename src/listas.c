@@ -405,7 +405,7 @@ static int lerVetor(const char *json, int envelope, LstLista *dst, int max) {
       char dentro[1600];
       if (!brutoRaiz(p, f, "list", dentro, sizeof dentro)) continue;
       if (lerListaTrakt(dentro, dentro + strlen(dentro), &dst[n])) n++;
-    } else if (lerListaTrakt(p, f, &dst[n])) n++;
+    } else if (lerListaTrakt(p, f, &dst[n])) { dst[n].propria = 1; n++; }
   }
   return n;
 }
@@ -467,6 +467,18 @@ int lst_minha(int i, LstLista *dst) {
   pthread_mutex_unlock(&trava);
   return ok;
 }
+void lst_descricao_atualizar(long id, const char *descricao) {
+  if (id <= 0 || !descricao) return;
+  pthread_mutex_lock(&trava);
+  for (int i = 0; i < nTabela; i++)
+    if (tabela[i].fonte == LST_TRAKT && tabela[i].traktId == id)
+      snprintf(tabela[i].descricao, sizeof tabela[i].descricao, "%s", descricao);
+  for (int i = 0; i < nMinhas; i++)
+    if (minhas[i].traktId == id)
+      snprintf(minhas[i].descricao, sizeof minhas[i].descricao, "%s", descricao);
+  pthread_mutex_unlock(&trava);
+}
+
 void lst_minhas_teste(const char *json) {
   pthread_mutex_lock(&trava);
   nMinhas = lerVetor(json, 0, minhas, LST_MAX);
@@ -827,6 +839,7 @@ void lst_abrir(const LstLista *l, const char *midia) {
   if (l->fonte == LST_TRAKT) {
     snprintf(s.prov, sizeof s.prov, "trakt");
     s.traktLista = l->traktId;
+    s.traktPropria = l->propria;
     snprintf(s.title, sizeof s.title, "%s", l->titulo);
     snprintf(s.midia, sizeof s.midia, "%s", midia && midia[0] ? midia : l->midia);
     snprintf(s.ordenar, sizeof s.ordenar, "rank");

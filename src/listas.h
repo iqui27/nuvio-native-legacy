@@ -65,6 +65,7 @@ typedef struct {
   char atualizada[32];    // updated_at
   int  comentarios;       // comment_count, -1 = nao informado
   int  privada;           // 1 = privacy diferente de "public"
+  int  propria;           // veio de /users/me/lists
 } LstLista;
 
 // --- ciclo de vida -----------------------------------------------------------
@@ -114,6 +115,8 @@ void lst_minhas_teste(const char *json);   // teste: injeta o JSON de /users/me/
 int  lst_carregando(void);
 int  lst_n(void);
 const LstLista *lst_lista(int i);
+// Espelha uma descricao confirmada pelo Trakt nas tabelas em memoria.
+void lst_descricao_atualizar(long traktId, const char *descricao);
 // Motivo de a lista ter vindo vazia, ja em portugues e pronto para i18n: "" =
 // nao ha motivo a mostrar (veio cheia, ou ainda esta carregando).
 const char *lst_aviso(void);

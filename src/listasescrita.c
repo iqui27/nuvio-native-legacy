@@ -6,6 +6,7 @@
 #include "idioma.h"
 #include "ilha.h"
 #include "ilhaacao.h"
+#include "js.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -129,6 +130,7 @@ typedef struct {
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static volatile int estado, ultimo, vivo;
 static long ultimoId;
+static int itemNaoEncontrado;
 static LstescEnvio envioTeste;
 
 static int envioReal(const char *metodo, const char *url, const char *corpo, char **resp) {
@@ -168,13 +170,32 @@ static void *fio(void *u) {
   Envio *e = (Envio *)u;
   char *resp = NULL;
   int st = (envioTeste ? envioTeste : envioReal)(e->metodo, e->url, e->corpo, &resp);
-  int ok = st >= 200 && st < 300;
+  int ok = st >= 200 && st < 300, naoEncontrado = 0;
+  if (ok && e->qual == LSTESC_ADICIONAR) {
+    // Cada pedido envia UM titulo: a contagem deve confirma-lo no tipo pedido.
+    const char *tipo = strstr(e->corpo, "\"shows\":") ? "shows" : "movies";
+    const char *grupos[] = { "added", "existing" };
+    char grupo[900], id[40] = "";
+    ok = 0;
+    for (int i = 0; i < 2; i++)
+      if (js_bruto(resp, NULL, grupos[i], grupo, sizeof grupo) &&
+          js_num(grupo, NULL, tipo, 0) == 1) ok = 1;
+    js_texto(e->corpo, NULL, "imdb", id, sizeof id);
+    if (js_bruto(resp, NULL, "not_found", grupo, sizeof grupo))
+      for (const char *p = js_array(grupo, NULL, tipo); p; p = js_prox(js_fim(p))) {
+        char achado[40] = "";
+        if (js_texto(p, js_fim(p), "imdb", achado, sizeof achado) && !strcmp(id, achado))
+          naoEncontrado = 1;
+      }
+    if (naoEncontrado) ok = 0;
+  }
   printf("[listas] escrita %d %s -> %s (HTTP %d)\n", e->qual, e->metodo, ok ? "confirmada" : "falhou", st);
   fflush(stdout);
   free(resp);
   if (ok && e->listaId > 0) desc_vertudo_invalidar_lista(e->listaId);
   free(e);
   pthread_mutex_lock(&trava);
+  itemNaoEncontrado = naoEncontrado;
   estado = ok ? LSTESC_OK : LSTESC_FALHA;
   vivo = 0;
   pthread_mutex_unlock(&trava);
@@ -279,6 +300,7 @@ void lstesc_passo(void) {
   avisoPendente = 0;
   memset(&a, 0, sizeof a);
   if (e == LSTESC_OK) snprintf(frase, sizeof frase, i18n("Adicionado a %s"), avisoLista);
+  else if (itemNaoEncontrado) snprintf(frase, sizeof frase, i18n("Nada encontrado para “%s”."), avisoTitulo);
   else snprintf(frase, sizeof frase, "%s", i18n("Não foi possível adicionar à lista"));
   a.icone = e == LSTESC_OK ? "aj_bookmark" : NULL;
   a.frase = frase; a.titulo = avisoTitulo; a.onde = "";

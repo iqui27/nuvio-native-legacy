@@ -8046,13 +8046,12 @@ static void *fioVerTudo(void *u) {
         ok=1;
       }
     } else {
-      // Com sessao, o mesmo GET tambem le as listas proprias privadas.
-      // Sem sessao, as listas publicas continuam usando so o client id.
+      // So listas vindas de /users/me/lists recebem o token da sessao.
       const char *cli=nuvem_trakt_cliente();
       if (cli[0]) {
         char chave[160], aut[200];
         const char *cab[4];
-        if (!trakt_cabecalhos(cab,aut,sizeof aut,chave,sizeof chave)) {
+        if (!fonte.traktPropria || !trakt_cabecalhos(cab,aut,sizeof aut,chave,sizeof chave)) {
           snprintf(chave,sizeof chave,"trakt-api-key: %s",cli);
           cab[0]="trakt-api-version: 2"; cab[1]=chave; cab[2]=NULL;
         }

@@ -1438,6 +1438,7 @@ static void pollEscrita(void) {
     if (modo == MODO_LISTAS && !temAberta && fonte == FONTE_TRAKT) pedirFonte();
     dizer("Lista criada");
   } else if (q == LSTESC_DESCRICAO) {
+    lst_descricao_atualizar(lstesc_lista_id(), descNova);
     if (mesma) snprintf(aberta.descricao, sizeof aberta.descricao, "%s", descNova);
     dizer("Descrição salva");
   } else if (q == LSTESC_ORDENAR) {

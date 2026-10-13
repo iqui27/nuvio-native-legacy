@@ -269,7 +269,7 @@ static int envio(const char *m, const char *u, const char *c, char **resp) {
   snprintf(envMetodo, sizeof envMetodo, "%s", m);
   snprintf(envUrl, sizeof envUrl, "%s", u);
   snprintf(envCorpo, sizeof envCorpo, "%s", c);
-  *resp = strdup("{}");
+  *resp = strdup(strstr(c, "\"movies\":") ? "{\"added\":{\"movies\":1}}" : "{}");
   return envStatus;
 }
 

@@ -19,6 +19,9 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
 void rede_resposta_limpar(RedeResposta *r) { (void)r; }
 static char *reply(const char *const *cab, const char *body, int *status) {
   assert(cab[0] && strstr(cab[0], "Authorization:")); assert(body && body[0] == '{');
+  if (strstr(body, "\"movies\":")) {
+    *status = 201; return strdup("{\"added\":{\"movies\":1}}");
+  }
   *status = 204; return strdup("");
 }
 char *rede_postar_st(const char *u, int t, const char *const *cab, const char *body, int *st) {
