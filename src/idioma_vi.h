@@ -773,6 +773,7 @@
   T("Assistidas", "Đã xem"),
   T("Assistidas sincronizam sozinhas", "Đã xem tự đồng bộ"),
   T("Assistido", "Đã xem"),
+  T("Assistidos", "Đã xem"),
   T("Assistidos primeiro", "Đã xem trước"),
   T("Assistindo", "Đang xem"),
   T("Assistir", "Xem"),

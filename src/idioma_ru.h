@@ -772,6 +772,7 @@
   T("Assistidas", "Просмотренные"),
   T("Assistidas sincronizam sozinhas", "Просмотренное синхронизируется само"),
   T("Assistido", "Просмотрено"),
+  T("Assistidos", "Просмотрено"),
   T("Assistidos primeiro", "Сначала просмотренные"),
   T("Assistindo", "Смотрю"),
   T("Assistir", "Смотреть"),

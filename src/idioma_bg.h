@@ -773,6 +773,7 @@
   T("Assistidas", "Гледани"),
   T("Assistidas sincronizam sozinhas", "Гледаното се синхронизира само"),
   T("Assistido", "Гледано"),
+  T("Assistidos", "Гледани"),
   T("Assistidos primeiro", "Първо гледаните"),
   T("Assistindo", "Гледа се"),
   T("Assistir", "Гледай"),

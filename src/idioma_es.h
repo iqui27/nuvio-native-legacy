@@ -772,6 +772,7 @@
   T("Assistidas", "Vistas"),
   T("Assistidas sincronizam sozinhas", "Lo visto se sincroniza solo"),
   T("Assistido", "Visto"),
+  T("Assistidos", "Vistos"),
   T("Assistidos primeiro", "Vistos primero"),
   T("Assistindo", "Viendo"),
   T("Assistir", "Ver"),

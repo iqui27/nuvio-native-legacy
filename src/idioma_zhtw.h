@@ -773,6 +773,7 @@
   T("Assistidas", "已看過"),
   T("Assistidas sincronizam sozinhas", "已看內容自動同步"),
   T("Assistido", "已看"),
+  T("Assistidos", "已看"),
   T("Assistidos primeiro", "已觀看優先"),
   T("Assistindo", "在看"),
   T("Assistir", "觀看"),

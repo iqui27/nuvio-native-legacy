@@ -773,6 +773,7 @@
   T("Assistidas", "Obejrzane"),
   T("Assistidas sincronizam sozinhas", "Obejrzane synchronizują się same"),
   T("Assistido", "Obejrzane"),
+  T("Assistidos", "Obejrzane"),
   T("Assistidos primeiro", "Najpierw obejrzane"),
   T("Assistindo", "Oglądasz"),
   T("Assistir", "Oglądaj"),

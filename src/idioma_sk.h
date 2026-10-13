@@ -773,6 +773,7 @@
   T("Assistidas", "Pozreté"),
   T("Assistidas sincronizam sozinhas", "Pozreté sa synchronizuje samo"),
   T("Assistido", "Pozreté"),
+  T("Assistidos", "Pozreté"),
   T("Assistidos primeiro", "Najprv pozreté"),
   T("Assistindo", "Sledujete"),
   T("Assistir", "Pozerať"),

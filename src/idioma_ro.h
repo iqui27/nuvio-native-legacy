@@ -772,6 +772,7 @@
   T("Assistidas", "Vizionate"),
   T("Assistidas sincronizam sozinhas", "Titlurile vizionate se sincronizează singure"),
   T("Assistido", "Vizionat"),
+  T("Assistidos", "Vizionate"),
   T("Assistidos primeiro", "Vizionate primele"),
   T("Assistindo", "Se vizionează"),
   T("Assistir", "Vizionează"),

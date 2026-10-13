@@ -773,6 +773,7 @@
   T("Assistidas", "Bekeken"),
   T("Assistidas sincronizam sozinhas", "Bekeken titels synchroniseren vanzelf"),
   T("Assistido", "Bekeken"),
+  T("Assistidos", "Bekeken"),
   T("Assistidos primeiro", "Bekeken eerst"),
   T("Assistindo", "Aan het kijken"),
   T("Assistir", "Kijken"),

@@ -772,6 +772,7 @@
   T("Assistidas", "Vus"),
   T("Assistidas sincronizam sozinhas", "Les titres vus se synchronisent seuls"),
   T("Assistido", "Vu"),
+  T("Assistidos", "Vus"),
   T("Assistidos primeiro", "Vus en premier"),
   T("Assistindo", "En cours"),
   T("Assistir", "Regarder"),

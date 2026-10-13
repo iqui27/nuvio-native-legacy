@@ -772,6 +772,7 @@
   T("Assistidas", "Переглянуті"),
   T("Assistidas sincronizam sozinhas", "Переглянуте синхронізується саме"),
   T("Assistido", "Переглянуто"),
+  T("Assistidos", "Переглянуті"),
   T("Assistidos primeiro", "Спочатку переглянуті"),
   T("Assistindo", "Дивлюсь"),
   T("Assistir", "Дивитися"),

@@ -772,6 +772,7 @@
   T("Assistidas", "Gesehen"),
   T("Assistidas sincronizam sozinhas", "Gesehenes synchronisiert sich selbst"),
   T("Assistido", "Gesehen"),
+  T("Assistidos", "Gesehen"),
   T("Assistidos primeiro", "Gesehene zuerst"),
   T("Assistindo", "Schaut gerade"),
   T("Assistir", "Schauen"),

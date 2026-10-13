@@ -773,6 +773,7 @@
   T("Assistidas", "Zhlédnuté"),
   T("Assistidas sincronizam sozinhas", "Zhlédnuté se synchronizuje samo"),
   T("Assistido", "Zhlédnuto"),
+  T("Assistidos", "Zhlédnuté"),
   T("Assistidos primeiro", "Nejdřív zhlédnuté"),
   T("Assistindo", "Sledujete"),
   T("Assistir", "Sledovat"),

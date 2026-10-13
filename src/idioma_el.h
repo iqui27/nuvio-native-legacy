@@ -773,6 +773,7 @@
   T("Assistidas", "Προβεβλημένα"),
   T("Assistidas sincronizam sozinhas", "Τα προβεβλημένα συγχρονίζονται μόνα τους"),
   T("Assistido", "Προβλήθηκε"),
+  T("Assistidos", "Προβληθέντα"),
   T("Assistidos primeiro", "Πρώτα τα προβεβλημένα"),
   T("Assistindo", "Παρακολούθηση"),
   T("Assistir", "Προβολή"),

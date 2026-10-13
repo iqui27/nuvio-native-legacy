@@ -773,6 +773,7 @@
   T("Assistidas", "Sete"),
   T("Assistidas sincronizam sozinhas", "Sete titler synkroniseres af sig selv"),
   T("Assistido", "Set"),
+  T("Assistidos", "Sete"),
   T("Assistidos primeiro", "Sete først"),
   T("Assistindo", "Ser"),
   T("Assistir", "Se"),

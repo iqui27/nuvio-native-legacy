@@ -773,6 +773,7 @@
   T("Assistidas", "Visti"),
   T("Assistidas sincronizam sozinhas", "I titoli visti si sincronizzano da soli"),
   T("Assistido", "Visto"),
+  T("Assistidos", "Visti"),
   T("Assistidos primeiro", "Prima i visti"),
   T("Assistindo", "In visione"),
   T("Assistir", "Guarda"),

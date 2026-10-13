@@ -773,6 +773,7 @@
   T("Assistidas", "Peržiūrėti"),
   T("Assistidas sincronizam sozinhas", "Peržiūrėti sinchronizuojasi patys"),
   T("Assistido", "Peržiūrėta"),
+  T("Assistidos", "Peržiūrėta"),
   T("Assistidos primeiro", "Pirmiau peržiūrėti"),
   T("Assistindo", "Žiūrima"),
   T("Assistir", "Žiūrėti"),

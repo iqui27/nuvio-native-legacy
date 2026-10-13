@@ -773,6 +773,7 @@
   T("Assistidas", "Megnézve"),
   T("Assistidas sincronizam sozinhas", "A megnézettek maguktól szinkronizálódnak"),
   T("Assistido", "Megnézve"),
+  T("Assistidos", "Megnézettek"),
   T("Assistidos primeiro", "Először a megnézettek"),
   T("Assistindo", "Nézed"),
   T("Assistir", "Megnézés"),

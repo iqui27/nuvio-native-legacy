@@ -773,6 +773,7 @@
   T("Assistidas", "İzlenenler"),
   T("Assistidas sincronizam sozinhas", "İzlenenler kendiliğinden eşitlenir"),
   T("Assistido", "İzlendi"),
+  T("Assistidos", "İzlenenler"),
   T("Assistidos primeiro", "Önce izlenenler"),
   T("Assistindo", "İzleniyor"),
   T("Assistir", "İzle"),

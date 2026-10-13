@@ -773,6 +773,7 @@
   T("Assistidas", "視聴済み"),
   T("Assistidas sincronizam sozinhas", "視聴済みは自動で同期"),
   T("Assistido", "視聴済み"),
+  T("Assistidos", "視聴済み"),
   T("Assistidos primeiro", "視聴済みを先に"),
   T("Assistindo", "視聴中"),
   T("Assistir", "再生"),

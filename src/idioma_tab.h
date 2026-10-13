@@ -772,6 +772,7 @@
   { "Assistidas", "Watched" },
   { "Assistidas sincronizam sozinhas", "Watched titles sync on their own" },
   { "Assistido", "Watched" },
+  { "Assistidos", "Watched" },
   { "Assistidos primeiro", "Watched first" },
   { "Assistindo", "Watching" },
   { "Assistir", "Watch" },

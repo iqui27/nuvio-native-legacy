@@ -773,6 +773,7 @@
   T("Assistidas", "Sudah ditonton"),
   T("Assistidas sincronizam sozinhas", "Yang ditonton tersinkron sendiri"),
   T("Assistido", "Ditonton"),
+  T("Assistidos", "Ditonton"),
   T("Assistidos primeiro", "Sudah ditonton dulu"),
   T("Assistindo", "Menonton"),
   T("Assistir", "Tonton"),
