@@ -181,6 +181,18 @@ int main(void) {
     }
   }
 
+  // (a4) SALVAR NO SERVICO ACENDE O BIT DE ORIGEM NA HORA, EM TODAS AS COPIAS.
+  printf("\n==> marcar fonte por imdb acende o bit do servico\n");
+  semearCatalogo("fonte");
+  confere("item nasce sem fonte", cat_item(0)->fontes == 0 && !cat_item(0)->naLista);
+  confere("marcou 1 copia", cat_marcar_fonte_imdb("tt1000fonte", CAT_FONTE_TRAKT) == 1);
+  confere("bit Trakt + naLista", cat_item(0)->naLista && cat_item(0)->fontes == CAT_FONTE_TRAKT);
+  confere("repetir nao muda nada", cat_marcar_fonte_imdb("tt1000fonte", CAT_FONTE_TRAKT) == 0);
+  confere("Simkl soma ao Trakt", cat_marcar_fonte_imdb("tt1000fonte", CAT_FONTE_SIMKL) == 1 &&
+          cat_item(0)->fontes == (CAT_FONTE_TRAKT | CAT_FONTE_SIMKL));
+  confere("outro titulo intacto", cat_item(1)->fontes == 0 && !cat_item(1)->naLista);
+  confere("imdb desconhecido", cat_marcar_fonte_imdb("ttzzz", CAT_FONTE_TRAKT) == 0);
+
   // (b) CACHE DE OUTRO USUARIO E RECUSADO E APAGADO.
   printf("\n==> cache de outro usuario e recusado e apagado\n");
   snprintf(usuarioAtual, sizeof usuarioAtual, "uuid-da-alice");

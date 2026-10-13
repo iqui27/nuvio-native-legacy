@@ -1842,6 +1842,27 @@ void cat_marcar_fonte(int i, int fonte) {
   pthread_mutex_unlock(&pubTrava);
 }
 
+// Por titulo, como cat_definir_na_lista_imdb: o servico confirmou o salvo e
+// todas as copias passam a aparecer no filtro de Origem dele na hora.
+int cat_marcar_fonte_imdb(const char *imdb, int fonte) {
+  int i, k = 0;
+  char id[64];
+  if (!imdb || !imdb[0]) return 0;
+  snprintf(id, sizeof id, "%s", imdb);
+  CAT_TESTE_ANTES_TRAVA();
+  catTravar();
+  for (i = 0; itens && i < n; i++)
+    if (!strcmp(itens[i].imdb, id) &&
+        (!itens[i].naLista || (itens[i].fontes & fonte) != fonte)) {
+      itens[i].naLista = 1;
+      itens[i].fontes |= fonte;
+      mudou();
+      k++;
+    }
+  pthread_mutex_unlock(&pubTrava);
+  return k;
+}
+
 void cat_definir_na_lista(int i, int naLista) {
   CAT_TESTE_ANTES_TRAVA();
   catTravar();

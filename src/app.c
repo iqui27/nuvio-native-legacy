@@ -4115,6 +4115,12 @@ void app_atualizar(float dt, Uint32 agora) {
         else simkl_lista_tipo(c->imdb, c->tipo, entrar);
       }
       if (c) cat_definir_na_lista(i, entrar);
+      // Marca de Origem do servico que recebeu o pedido, para o filtro da
+      // Biblioteca ja mostrar o titulo sem esperar o proximo ciclo.
+      if (c && entrar && c->imdb[0]) {
+        if (ajustes_salvos_no_trakt() && trakt_ativo()) cat_marcar_fonte_imdb(c->imdb, CAT_FONTE_TRAKT);
+        if (ajustes_salvos_no_simkl() && simkl_ativo()) cat_marcar_fonte_imdb(c->imdb, CAT_FONTE_SIMKL);
+      }
       if (c) ilhasalvar_aviso(c, entrar);   // o voo da capa e o "Salvo em ..." na ilha
     }
     if (detail_pediu_fontes()) {

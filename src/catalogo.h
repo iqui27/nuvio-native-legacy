@@ -329,6 +329,8 @@ int cat_mesclar_listas(const CatItem *v, int qtd);
 void cat_definir_na_lista(int i, int naLista);
 // naLista=1 e acende o bit `fonte` (CAT_FONTE_*) do item i.
 void cat_marcar_fonte(int i, int fonte);
+// Idem em todas as copias do titulo; devolve quantas mudaram.
+int  cat_marcar_fonte_imdb(const char *imdb, int fonte);
 // Por TITULO, em todas as copias do catalogo (ver catalogo.c).
 int  cat_definir_na_lista_imdb(const char *imdb, int naLista);
 int  cat_imdb_na_lista(const char *imdb);   // alguma copia do titulo esta salva
