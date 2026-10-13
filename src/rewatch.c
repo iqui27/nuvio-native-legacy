@@ -2,6 +2,7 @@
 #include "sessao.h"
 #include "perfis.h"
 #include "dados.h"
+#include "proximo.h"
 #include <ctype.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -342,6 +343,32 @@ int rewatch_vezes(const char *imdb, int temporada, int episodio) {
       }
   pthread_mutex_unlock(&trava);
   return r;
+}
+
+int rewatch_alvo(const char *imdb, const CatEp *eps, int n, int *t, int *e, int *pct) {
+  int i, k, melhor = -1, parcialT = 0, parcialE = 0, p = 0;
+  long long agora = agoraMs();
+  if (pct) *pct = 0;
+  if (!rewatch_ativa(imdb) || !eps || n < 1) return 0;
+  rewatch_parcial_de(imdb, &parcialT, &parcialE, &p);
+  for (i = 0; i < n; i++) {
+    long long data = prox_data_ms(eps[i].data);
+    if (eps[i].temporada < 1 || eps[i].episodio < 1 ||
+        (data != PROX_SEM_DATA && data > agora)) continue;
+    if (p && eps[i].temporada == parcialT && eps[i].episodio == parcialE) {
+      melhor = i;
+      if (pct) *pct = p;
+      break;
+    }
+    if (rewatch_vezes(imdb, eps[i].temporada, eps[i].episodio)) continue;
+    k = melhor;
+    if (k < 0 || eps[i].temporada < eps[k].temporada ||
+        (eps[i].temporada == eps[k].temporada && eps[i].episodio < eps[k].episodio)) melhor = i;
+  }
+  if (melhor < 0) return 0;
+  if (t) *t = eps[melhor].temporada;
+  if (e) *e = eps[melhor].episodio;
+  return 1;
 }
 
 int rewatch_feitos(const char *imdb) {

@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-rewatch-XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 extra=()
-if [ -f src/rewatch.c ]; then extra=(-DTEM_REWATCH src/rewatch.c); fi
+if [ -f src/rewatch.c ]; then extra=(-DTEM_REWATCH src/rewatch.c src/proximo.c); fi
 cc -O1 -g -Wall -Wextra -Isrc -Wno-deprecated-declarations -Wno-macro-redefined \
   ${extra[@]+"${extra[@]}"} tests/rewatch.c -o "$tmp/rewatch" -lpthread
 "$tmp/rewatch"

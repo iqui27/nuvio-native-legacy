@@ -20,6 +20,7 @@
 #define NV_REWATCH_H
 
 #include <stddef.h>
+#include "catalogo.h"
 
 #define RW_MAX   24     // sessoes (todos os perfis do usuario)
 #define RW_EPS   800    // episodios revistos por sessao
@@ -39,6 +40,8 @@ int  rewatch_registrar(const char *imdb, int temporada, int episodio);
 // 0 = fora da sessao ou ainda nao revisto nela; senao 1 + vezes revistas (>= 2).
 // E o numero do selo "Nx".
 int  rewatch_vezes(const char *imdb, int temporada, int episodio);
+// Primeiro episodio ainda nao revisto (ou parcial), sem especiais/futuros.
+int rewatch_alvo(const char *imdb, const CatEp *eps, int n, int *t, int *e, int *pct);
 int  rewatch_feitos(const char *imdb);           // episodios distintos revistos
 long long rewatch_inicio_ms(const char *imdb);   // 0 sem sessao
 int  rewatch_origem(const char *imdb);
