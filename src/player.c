@@ -24,6 +24,7 @@
 //   3. Parado alguns segundos, eles somem sozinhos — mas nao enquanto o video
 //      esta pausado. Pausado sem controles o usuario fica olhando um quadro
 //      congelado sem saber o que houve.
+#include "resolverregra.h"
 #include "horafmt.h"
 #include "player.h"
 #include "memlog.h"
@@ -730,6 +731,9 @@ void player_erro_fonte_motivo(const char *titulo, const char *dica) {
   player_erro_fonte();
   snprintf(erroTitulo, sizeof erroTitulo, "%s", titulo ? titulo : "");
   snprintf(erroDica, sizeof erroDica, "%s", dica ? dica : "");
+  // Guarda o ultimo erro para o "Resolver um problema" (resolverregra.h): so
+  // memoria, nada vai a lugar nenhum sem a pessoa pedir.
+  resolverregra_falha_registrar(RES_T_FONTE, erroTitulo, erroDica, linhaEp, (long)time(NULL));
 }
 // O VIDEO NAO ABRIU. Quase sempre e a fonte; mas quando o hub LS2 negou o
 // registro (registros 1720-1774: PERMISSION em toda sessao) nenhuma fonte
@@ -743,7 +747,7 @@ static void erroSemVideo(void) {
 }
 // Desfaz o de cima quando a fonte que parecia morta volta a entregar. Ver a
 // nota no watchdog de canal em app.c.
-void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; } }
+void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; resolverregra_falha_limpar(); } }
 // Leitura do estado para o watchdog de canal do app.c: uma fonte ao vivo que
 // falhou (ou nao abre no prazo) deve trocar para a proxima da lista sozinha.
 int  player_fonte_falhou(void) { return erroFonte; }
