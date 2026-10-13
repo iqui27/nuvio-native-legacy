@@ -3414,6 +3414,7 @@
   T("Organizar", "Упорядкувати"),
   T("Organizar Salvos", "Упорядкувати Збережене"),
   T("Organizar recomendações", "Упорядкувати рекомендації"),
+  T("Origem", "Джерело"),
   T("Original", "Оригінал"),
   T("Original do título", "Оригінальна назва"),
   T("Orçamento", "Бюджет"),

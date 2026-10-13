@@ -106,6 +106,19 @@ int main(void) {
   ocultar = 0; confere(129);
   tipo = TIPO_FILME; confere(11);
   tipo = TIPO_SERIE; confere(118);
+  // Origem: 0-9 Trakt, 10-14 Trakt+Simkl, 15-19 Simkl, o resto sem fonte
+  // (Conta Nuvio, junto com os 3 salvos locais fora do catalogo).
+  for (int i = 0; i < 20; i++)
+    catalogoTeste[i].fontes = i < 10 ? CAT_FONTE_TRAKT
+                            : i < 15 ? CAT_FONTE_TRAKT | CAT_FONTE_SIMKL : CAT_FONTE_SIMKL;
+  tipo = TIPO_TODOS; ocultar = 0; modo = MODO_PARAVER;
+  origem = ORIG_TODAS; reconstruir(); assert(nFiltro == 129);
+  origem = ORIG_TRAKT; reconstruir(); assert(nFiltro == 15);
+  origem = ORIG_SIMKL; reconstruir(); assert(nFiltro == 10);
+  origem = ORIG_NUVIO; reconstruir(); assert(nFiltro == 109);
+  assert(bibNPicks() == 4);
+  modo = MODO_ASSISTIDOS; assert(bibNPicks() == 3);
+  origem = ORIG_TODAS;
   puts("biblioteca filtro: PASS (regressao sintetica; sem prova da TV)");
   return 0;
 }

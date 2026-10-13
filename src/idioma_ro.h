@@ -3414,6 +3414,7 @@
   T("Organizar", "Organizează"),
   T("Organizar Salvos", "Organizează Salvate"),
   T("Organizar recomendações", "Organizează recomandările"),
+  T("Origem", "Sursă"),
   T("Original", "Original"),
   T("Original do título", "Titlul original"),
   T("Orçamento", "Buget"),

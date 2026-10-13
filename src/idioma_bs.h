@@ -3415,6 +3415,7 @@
   T("Organizar", "Organizuj"),
   T("Organizar Salvos", "Organizuj Sačuvano"),
   T("Organizar recomendações", "Organizuj preporuke"),
+  T("Origem", "Izvor"),
   T("Original", "Original"),
   T("Original do título", "Originalni naslov"),
   T("Orçamento", "Budžet"),

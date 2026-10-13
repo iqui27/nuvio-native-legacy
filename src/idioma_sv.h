@@ -3415,6 +3415,7 @@
   T("Organizar", "Organisera"),
   T("Organizar Salvos", "Ordna Sparat"),
   T("Organizar recomendações", "Organisera rekommendationer"),
+  T("Origem", "Källa"),
   T("Original", "Original"),
   T("Original do título", "Originaltitel"),
   T("Orçamento", "Budget"),

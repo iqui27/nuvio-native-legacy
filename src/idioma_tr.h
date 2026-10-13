@@ -3415,6 +3415,7 @@
   T("Organizar", "Düzenle"),
   T("Organizar Salvos", "Kaydedilenleri düzenle"),
   T("Organizar recomendações", "Önerileri düzenle"),
+  T("Origem", "Kaynak"),
   T("Original", "Orijinal"),
   T("Original do título", "Orijinal başlık"),
   T("Orçamento", "Bütçe"),

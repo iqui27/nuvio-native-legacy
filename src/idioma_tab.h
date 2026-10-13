@@ -3414,6 +3414,7 @@
   { "Organizar", "Organize" },
   { "Organizar Salvos", "Organize Saved" },
   { "Organizar recomendações", "Organize recommendations" },
+  { "Origem", "Source" },
   { "Original", "Original" },
   { "Original do título", "Original title" },
   { "Orçamento", "Budget" },

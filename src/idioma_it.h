@@ -3415,6 +3415,7 @@
   T("Organizar", "Organizza"),
   T("Organizar Salvos", "Organizza Salvati"),
   T("Organizar recomendações", "Organizza i consigli"),
+  T("Origem", "Origine"),
   T("Original", "Originale"),
   T("Original do título", "Titolo originale"),
   T("Orçamento", "Budget"),

@@ -3415,6 +3415,7 @@
   T("Organizar", "整理"),
   T("Organizar Salvos", "整理已儲存"),
   T("Organizar recomendações", "整理推薦"),
+  T("Origem", "來源"),
   T("Original", "原始"),
   T("Original do título", "原名"),
   T("Orçamento", "預算"),

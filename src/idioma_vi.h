@@ -3415,6 +3415,7 @@
   T("Organizar", "Sắp xếp"),
   T("Organizar Salvos", "Sắp xếp Đã lưu"),
   T("Organizar recomendações", "Sắp xếp đề xuất"),
+  T("Origem", "Nguồn"),
   T("Original", "Gốc"),
   T("Original do título", "Tựa gốc"),
   T("Orçamento", "Kinh phí"),

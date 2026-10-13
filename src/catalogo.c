@@ -1824,7 +1824,20 @@ static void definir_na_lista(int i, int naLista) {
   if (!itens || n <= 0 || i < 0 || i >= n) return;
   if (itens[i].naLista == (naLista ? 1 : 0)) return;
   itens[i].naLista = naLista ? 1 : 0;
+  if (!naLista) itens[i].fontes = 0;
   mudou();
+}
+
+void cat_marcar_fonte(int i, int fonte) {
+  CAT_TESTE_ANTES_TRAVA();
+  catTravar();
+  if (itens && n > 0 && i >= 0 && i < n &&
+      (!itens[i].naLista || (itens[i].fontes & fonte) != fonte)) {
+    itens[i].naLista = 1;
+    itens[i].fontes |= fonte;
+    mudou();
+  }
+  pthread_mutex_unlock(&pubTrava);
 }
 
 void cat_definir_na_lista(int i, int naLista) {
@@ -2052,6 +2065,7 @@ int cat_mesclar_listas(const CatItem *v, int qtd) {
       for (i = 0; i < n && !achou; i++)
         if (!strcmp(itens[i].imdb, v[k].imdb) &&
             (!v[k].naLista || itens[i].naLista) &&
+            (v[k].fontes & ~itens[i].fontes) == 0 &&
             (!v[k].naColecao || itens[i].naColecao)) achou = 1;
       if (!achou) falta = 1;
     }
@@ -2066,6 +2080,7 @@ int cat_mesclar_listas(const CatItem *v, int qtd) {
     for (i = 0; i < m; i++) {
       if (strcmp(novo[i].imdb, v[k].imdb)) continue;
       if (v[k].naLista)   novo[i].naLista = 1;
+      novo[i].fontes |= v[k].fontes;
       if (v[k].naColecao) novo[i].naColecao = 1;
       achou = 1;
     }

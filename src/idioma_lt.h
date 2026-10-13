@@ -3415,6 +3415,7 @@
   T("Organizar", "Tvarkyti"),
   T("Organizar Salvos", "Tvarkyti Išsaugota"),
   T("Organizar recomendações", "Tvarkyti rekomendacijas"),
+  T("Origem", "Šaltinis"),
   T("Original", "Originalas"),
   T("Original do título", "Originalus pavadinimas"),
   T("Orçamento", "Biudžetas"),

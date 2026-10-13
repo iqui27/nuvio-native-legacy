@@ -3415,6 +3415,7 @@
   T("Organizar", "Usporiadať"),
   T("Organizar Salvos", "Usporiadať Uložené"),
   T("Organizar recomendações", "Usporiadať odporúčania"),
+  T("Origem", "Zdroj"),
   T("Original", "Pôvodné"),
   T("Original do título", "Pôvodný názov"),
   T("Orçamento", "Rozpočet"),

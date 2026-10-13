@@ -287,6 +287,11 @@ static const char *ROT_ORD[BIB_N_ORD] = { "Ordem da lista", "Título: A a Z", "A
 // Seletor "Exibição".
 enum { VIS_CARTAZ, VIS_LISTA, BIB_N_VIS };
 static const char *ROT_VIS[BIB_N_VIS] = { "Cartazes", "Lista" };
+// Seletor "Origem", so em Para ver: de onde vem a marca de lista do titulo.
+// Um titulo salvo em Trakt e Simkl aparece uma vez, em Todas e nas duas. Salvo
+// so nesta TV (sem fonte remota) conta como Conta Nuvio.
+enum { ORIG_TODAS, ORIG_TRAKT, ORIG_SIMKL, ORIG_NUVIO, BIB_N_ORIG };
+static const char *ROT_ORIG[BIB_N_ORIG] = { "Todas", "Trakt", "Simkl", "Conta Nuvio" };
 // Seletor "Fonte", no modo Listas. "Públicas" e a busca — ela vive na mesma
 // roda porque e mais uma origem de listas, nao um lugar separado.
 enum { FONTE_TRAKT, FONTE_SIMKL, FONTE_NUVIO, FONTE_FIXADAS, FONTE_PUB, BIB_N_FONTES };
@@ -300,9 +305,10 @@ enum { EST_TITULOS, EST_LISTAS, EST_ITENS };
 static int modo = MODO_PARAVER;
 static int tipo = TIPO_TODOS;
 static int ordem = ORD_ADICIONADOS;
+static int origem = ORIG_TODAS;
 static int exibicao = VIS_CARTAZ;
 static int fonte = FONTE_TRAKT;
-static int pickSel = 0;          // qual dos tres seletores esta em foco
+static int pickSel = 0;          // qual dos seletores esta em foco
 
 static LstLista aberta;          // lista aberta (EST_ITENS)
 static int  temAberta;
@@ -322,7 +328,7 @@ static int totalModo = 0;
 static int contaModo[BIB_N_MODOS];
 static Foco foco;
 static float animModo[BIB_N_MODOS];
-static float animPick[3];
+static float animPick[4];
 static float animFoco[BIB_MAX_LINHAS][BIB_COLUNAS_MAX];
 // Arte chegando, a mesma da home (revela.h): um registro por celula da grade.
 static RevelaArte revArte[BIB_MAX_LINHAS][BIB_COLUNAS_MAX];
@@ -570,7 +576,9 @@ static int contarCelulas(void) {
 // fora desta tela (a opcao fica em Ajustes); biblioteca_atualizar compara e
 // refaz o mapa, senao a grade de 5 andaria com a navegacao de 6.
 static int ncMapa = 0;
+static int bibNPicks(void);
 static void remapear(int preservar) {
+  if (pickSel >= bibNPicks()) pickSel = bibNPicks() - 1;
   int linhas, cols[FOCUS_MAX_FILEIRAS], r, ini = gradeIni(), nc = colunas();
   ncMapa = nc;
   int fAntes = foco.fileira, cAntes = foco.coluna;
@@ -578,7 +586,7 @@ static void remapear(int preservar) {
   linhas = nLinhas();
   if (linhas > FOCUS_MAX_FILEIRAS - ini) linhas = FOCUS_MAX_FILEIRAS - ini;
   if (estado() == EST_ITENS) cols[0] = 3;          // as tres acoes
-  else { cols[BIB_FIL_MODO] = BIB_N_MODOS; cols[BIB_FIL_PICK] = 3; }
+  else { cols[BIB_FIL_MODO] = BIB_N_MODOS; cols[BIB_FIL_PICK] = bibNPicks(); }
   for (r = 0; r < linhas; r++) {
     int resto = nCelulas - r * nc;
     cols[ini + r] = resto > nc ? nc : resto;
@@ -655,6 +663,16 @@ static int ehSerieSalvo(const SalvoItem *s) {
 // terminou. cat_visto manda: >=90% tocado ou historico ja e assistido.
 static int emAndamento(const CatItem *c) {
   return c && !cat_visto(c) && (c->progresso > 0 || c->retomadoMs > 0);
+}
+// Quantos seletores a faixa tem: Para ver ganha o quarto, "Origem".
+static int bibNPicks(void) { return modo == MODO_PARAVER ? 4 : 3; }
+// 1 quando o titulo passa no seletor Origem. `fontes` 0 com naLista e o salvo
+// desta TV: Conta Nuvio.
+static int daOrigem(int fontes) {
+  if (origem == ORIG_TODAS) return 1;
+  if (!fontes) fontes = CAT_FONTE_NUVIO;
+  return (fontes & (origem == ORIG_TRAKT ? CAT_FONTE_TRAKT
+                  : origem == ORIG_SIMKL ? CAT_FONTE_SIMKL : CAT_FONTE_NUVIO)) != 0;
 }
 // 1 quando o item `ci` (indice i do catalogo) pertence a aba `m`.
 //   Para ver     : esta na lista (watchlist/Conta) e nao esta em andamento. O
@@ -743,6 +761,7 @@ static void reconstruir(void) {
     // rede a cada descoberta, entao a posicao 3 de hoje e outro titulo amanha —
     // a marca "salvo" migrava sozinha para um filme que ninguem salvou.
     if (!noModo(modo, ci, i)) continue;
+    if (modo == MODO_PARAVER && !daOrigem(ci->fontes)) continue;
     // UM CARTAZ POR TITULO. O mesmo titulo vive em varias fileiras, cada uma
     // com a sua copia marcada, e a serie com progresso tem id "tt123:1:2" ao
     // lado do "tt123" da watchlist — a grade mostrava o titulo duas vezes. A
@@ -767,6 +786,7 @@ static void reconstruir(void) {
     for (int k = salvos_n() - 1; k >= 0 && nFiltro < (int)(sizeof filtro / sizeof filtro[0]); k--) {
       const SalvoItem *s = salvos_item(k);
       if (!s || !s->id[0] || cat_indice_por_imdb(s->id) >= 0) continue;
+      if (!daOrigem(0)) continue;
       totalModo++;
       locaisFora++;
       if (tipo == TIPO_FILME && ehSerieSalvo(s)) { exclTipo++; continue; }
@@ -834,7 +854,7 @@ int biblioteca_iniciar(void) {
   prefPerfil = -1;
   lerPref();
   lst_iniciar();
-  modo = MODO_PARAVER; tipo = TIPO_TODOS; ordem = ORD_ADICIONADOS;
+  modo = MODO_PARAVER; tipo = TIPO_TODOS; ordem = ORD_ADICIONADOS; origem = ORIG_TODAS;
   pickSel = 0; temAberta = 0; acaoSel = 0; recado[0] = 0; recadoAte = 0.0f;
   buscaAberta = 0;
   memset(animModo, 0, sizeof animModo);
@@ -1156,7 +1176,7 @@ void biblioteca_evento(const SDL_Event *e) {
   // menu suspenso; num D-pad, ciclar no proprio seletor poupa a viagem de ida
   // e volta ate a lista.
   if (foco.fileira == BIB_FIL_PICK) {
-    if (k == SDLK_RIGHT && pickSel < 2) { pickSel++; foco.coluna = pickSel; return; }
+    if (k == SDLK_RIGHT && pickSel < bibNPicks() - 1) { pickSel++; foco.coluna = pickSel; return; }
     if (k == SDLK_LEFT  && pickSel > 0) { pickSel--; foco.coluna = pickSel; return; }
     if (k == SDLK_LEFT)  { foco.fileira = BIB_FIL_MODO; foco.coluna = BIB_N_MODOS - 1; return; }
     if (k == SDLK_DOWN) { descerDaFaixa(); return; }
@@ -1178,7 +1198,8 @@ void biblioteca_evento(const SDL_Event *e) {
       } else {
         if (pickSel == 0)      { tipo = (tipo + 1) % BIB_N_TIPOS;   reconstruir(); }
         else if (pickSel == 1) { ordem = (ordem + 1) % BIB_N_ORD;   reconstruir(); }
-        else                     alternarExibicao();
+        else if (pickSel == 2)   alternarExibicao();
+        else                   { origem = (origem + 1) % BIB_N_ORIG; reconstruir(); }
       }
       foco.fileira = BIB_FIL_PICK; foco.coluna = pickSel;
     }
@@ -1235,7 +1256,7 @@ void biblioteca_atualizar(float dt, Uint32 agora) {
     animModo[a] = anim_mola(animModo[a], alvo, dt,
                             alvo > animModo[a] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
   }
-  for (int p = 0; p < 3; p++) {
+  for (int p = 0; p < 4; p++) {
     float alvo = (foco.fileira == (estado() == EST_ITENS ? 0 : BIB_FIL_PICK)
                   && foco.coluna == p) ? 1.0f : 0.0f;
     animPick[p] = anim_mola(animPick[p], alvo, dt,
@@ -1497,7 +1518,7 @@ static void ponteiroPicker(int p, int b) {
   toqueLivre = 0;
 #endif
   (void)b;
-  if (estado() == EST_ITENS || p < 0 || p > 2) return;
+  if (estado() == EST_ITENS || p < 0 || p >= bibNPicks()) return;
   pickSel = p; foco.fileira = BIB_FIL_PICK; foco.coluna = p;
 }
 static void ponteiroAcao(int a, int b) {
@@ -1573,8 +1594,9 @@ static void pickerTexto(int p, const char **rot, const char **val) {
     *rot = p == 0 ? "Fonte" : p == 1 ? "Exibição" : "Listas públicas";
     *val = p == 0 ? ROT_FONTE[fonte] : p == 1 ? ROT_VIS[exibicao] : "Procurar";
   } else {
-    *rot = p == 0 ? "Tipo" : p == 1 ? "Ordenar" : "Exibição";
-    *val = p == 0 ? ROT_TIPO[tipo] : p == 1 ? ROT_ORD[ordem] : ROT_VIS[exibicao];
+    *rot = p == 0 ? "Tipo" : p == 1 ? "Ordenar" : p == 2 ? "Exibição" : "Origem";
+    *val = p == 0 ? ROT_TIPO[tipo] : p == 1 ? ROT_ORD[ordem]
+         : p == 2 ? ROT_VIS[exibicao] : ROT_ORIG[origem];
   }
 }
 
@@ -2392,7 +2414,7 @@ void biblioteca_desenhar(Uint32 agora) {
     if (temAberta) desenhaAcoes();
     else {
       desenhaModos();
-      for (int p = 0; p < 3; p++)           desenhaPicker(p, animPick[p]);
+      for (int p = 0; p < bibNPicks(); p++)  desenhaPicker(p, animPick[p]);
     }
     desenhaResumo();
     ESCALA_MIN_FIM(); }

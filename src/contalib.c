@@ -326,6 +326,7 @@ static void montarItem(CatItem *d, const ContaLibItem *s) {
   snprintf(d->meta, sizeof d->meta, "%s", s->meta);
   d->nota = s->nota;
   d->naLista = 1;
+  d->fontes = CAT_FONTE_NUVIO;
   if (s->poster[0]) snprintf(d->poster, sizeof d->poster, "%s", s->poster);
   if (s->backdrop[0]) snprintf(d->backdrop, sizeof d->backdrop, "%s", s->backdrop);
   snprintf(d->backdropCatalogo, sizeof d->backdropCatalogo, "%s", d->backdrop);
@@ -369,7 +370,7 @@ int contalib_aplicar_catalogo(void) {
     // remota nao re-marca. Sem isto o titulo voltava no ciclo seguinte.
     if (listaOculta && listaOculta(itens[i].id, itens[i].addedMs)) continue;
     k = cat_indice_por_imdb(itens[i].id);
-    if (k >= 0) { cat_definir_na_lista(k, 1); marcados++; ultimo = k; }
+    if (k >= 0) { cat_marcar_fonte(k, CAT_FONTE_NUVIO); marcados++; ultimo = k; }
     else { faltam[i] = 1; nFaltam++; }
   }
 

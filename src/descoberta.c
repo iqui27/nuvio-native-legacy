@@ -4770,7 +4770,7 @@ static void *montar(void *u) {
     for (k = n, w = n; k < n + np; k++) {
       int jj, ja = 0;
       for (jj = 0; jj < n; jj++)
-        if (!strcmp(lote[jj].imdb, lote[k].imdb)) { lote[jj].naLista = 1; ja = 1; break; }
+        if (!strcmp(lote[jj].imdb, lote[k].imdb)) { lote[jj].naLista = 1; lote[jj].fontes |= lote[k].fontes; ja = 1; break; }
       if (ja) continue;
       if (w != k) lote[w] = lote[k];
       w++;

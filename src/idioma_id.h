@@ -3415,6 +3415,7 @@
   T("Organizar", "Atur"),
   T("Organizar Salvos", "Atur Tersimpan"),
   T("Organizar recomendações", "Atur rekomendasi"),
+  T("Origem", "Sumber"),
   T("Original", "Asli"),
   T("Original do título", "Judul asli"),
   T("Orçamento", "Anggaran"),

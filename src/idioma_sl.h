@@ -3415,6 +3415,7 @@
   T("Organizar", "Uredi"),
   T("Organizar Salvos", "Uredi Shranjeno"),
   T("Organizar recomendações", "Uredi priporočila"),
+  T("Origem", "Vir"),
   T("Original", "Izvirno"),
   T("Original do título", "Izvirni naslov"),
   T("Orçamento", "Proračun"),
