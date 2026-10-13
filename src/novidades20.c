@@ -1108,6 +1108,20 @@ void novidades20_primeira_vez(void) {
   novidades20_abrir(f == NF_NOVA);
 }
 
+void novidades20_suprimir(void) {
+  char *s;
+  if (decidido) return;
+  decidido = 1;
+  s = dados_ler(N20_ARQ);
+  if (s) { free(s); return; }
+  // O COMECAR da 2.1 (comecar.h) tomou o primeiro uso: a fila antiga fica
+  // vista do mesmo jeito, mas o guia NAO abre sozinho — quem oferece o tour
+  // e o Comecar, e o guia inteiro continua em Ajustes > Sobre e ajuda.
+  novidadesfila_preparar();
+  dados_gravar(NF_ARQ_180, "1\n");
+  dados_gravar(N20_ARQ, "1\n");
+}
+
 static void fechar(const char *aviso, int oQue) {
   aberto = 0;
   saindo = 0;

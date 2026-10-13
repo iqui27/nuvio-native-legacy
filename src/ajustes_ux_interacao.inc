@@ -1,5 +1,4 @@
 static int aj2GrupoDe(int s);   // ajustes_ux_v2.inc: o grupo (coluna da grade) da categoria
-static void guiaIrCapitulo(const char *icone);   // ajustes_ux_guia.inc
 // #339: AJ2_T_LAYOUT e o segmentado "Painel | Lista" no fim da fileira das pilulas.
 enum { AJ2_T_BUSCA = 0, AJ2_T_AV, AJ2_T_PERFIL, AJ2_T_DIF, AJ2_T_LAYOUT, AJ2_T_TOUR, AJ2_T_RESOLVER, AJ2_T_N };
 static int aj2TopoVisivel(int t) { return t >= 0 && t < AJ2_T_N && (t != AJ2_T_LAYOUT || ajLayoutSelecionavel()); }
@@ -288,11 +287,11 @@ static int uxEvento(SDL_Keycode k) {
         // Diferentes do padrao: abre a lista (degrau 1); Voltar devolve a pilula (uxTopo fica nela).
         if (t == AJ2_T_DIF) { uxListarDiferencas(); uxDifFoco = 0; uxIndice = 1; focoIndice = 0; return 1; }
         if (t == AJ2_T_LAYOUT) return uxAlternarLayout();   // o foco fica na pilula
-        // Os cartoes de descoberta abrem o Guia de uso (o tour completo, com
-        // "Ligar agora" por funcao, e da 2.1): o do problema ja no capitulo
-        // "Problemas comuns". Voltar devolve a este cartao.
+        // "Resolver um problema" e a tela inteira da 2.1 (resolver.h); Voltar
+        // nela devolve a este cartao. Os demais abrem o Guia de uso (o tour
+        // completo, com "Ligar agora" por funcao, e da 2.1).
+        if (t == AJ2_T_RESOLVER) { resolver_abrir(); return 1; }
         guiaAbrir(0); guiaDoIndice = 1;
-        if (t == AJ2_T_RESOLVER) guiaIrCapitulo("aj_life-buoy");
         return 1;
       }
       if (k == SDLK_LEFT) {
@@ -310,6 +309,7 @@ static int uxEvento(SDL_Keycode k) {
       } else if (k == SDLK_UP) {
         if (t == AJ2_T_TOUR) uxTopo = AJ2_T_BUSCA;
         else if (t == AJ2_T_RESOLVER) uxTopo = AJ2_T_PERFIL;
+        else if (ajustes_menu_topo()) { sair = 1; return 1; }
       }
       return 1;
     }

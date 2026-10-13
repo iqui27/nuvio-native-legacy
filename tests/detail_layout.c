@@ -138,6 +138,14 @@ int main(void) {
   colListaAberta = 1; detail_evento(&e);
   assert(colListaAberta && !saindo && detail_pediu_menu());
   colListaAberta = 0;
+  // #407: CIMA no alto da pagina de titulo (sobre os botoes) NAO abre o painel
+  // de Salvos/Avisos. O atalho existia para controles sem tecla AZUL, mas na
+  // Samsung o CH+ ja abre o painel (e o relogio continua clicavel); a seta
+  // disparando um menu era o que o relato pedia para sair.
+  nivel = 0; focoAmigos = 0; botao = 0; saindo = 0;
+  e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_UP;
+  detail_evento(&e);
+  assert(!detail_pediu_social() && !saindo && nivel == 0 && botao == 0);
   // Back never carries a menu request.
   nivel = 0; e.key.keysym.sym = SDLK_ESCAPE; detail_evento(&e);
   assert(saindo && !detail_pediu_menu());

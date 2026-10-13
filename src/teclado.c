@@ -8,6 +8,7 @@
 #include "ajustes.h"
 #include "idioma.h"
 #include "sistexto.h"
+#include "entrada_texto.h"
 #include "ponteiro.h"
 #include "celbotao.h"
 #include "celular.h"
@@ -137,7 +138,11 @@ static int semCel;
 static int forcaIme = -1, forcaVoz = -1, forcaCel = -1;
 void teclado_teste_modos(int ime, int voz, int cel) { forcaIme = ime; forcaVoz = voz; forcaCel = cel; }
 static int imeOk(void) { return forcaIme >= 0 ? forcaIme : st_ime_disponivel(); }
-static int vozOk(void) { return forcaVoz >= 0 ? forcaVoz : st_voz_disponivel(); }
+// No .tpk a voz e o botao de microfone das BUSCAS (teclado da Samsung, Voz.cs):
+// o teclado modal (chaves, nomes) fica sem o "Falar".
+static int vozOk(void) {
+  return forcaVoz >= 0 ? forcaVoz : st_voz_disponivel() && !texto_sistema_voz_pelo_teclado();
+}
 static int celOk(void) { return (forcaCel >= 0 ? forcaCel : celb_disponivel()) && !semCel; }
 static int teTelefoneIme(void) { return telefoneui_ativo() && imeOk(); }
 #ifdef NV_TOUCH_UI

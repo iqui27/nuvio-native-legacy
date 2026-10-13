@@ -472,8 +472,14 @@
     printErr: function (t) { console.warn(t); if (window.__nvDiag) window.__nvDiag(t, 1); }
   };
 
-  // TECLADO DO SISTEMA (src/entrada_texto.c). O C chama nvTexto.abrir/fechar
-  // por EM_ASM e LE seq/valor/fim a cada quadro; o JS nunca chama o WASM.
+  // TECLADO DA SAMSUNG PARA DIGITAR E PARA O BOTAO DE MICROFONE DAS BUSCAS
+  // (src/entrada_texto.c). OK no campo abre o teclado da TV para digitar;
+  // OK no botao de microfone abre o mesmo teclado, e a pessoa aperta o
+  // microfone do controle e fala. O C chama
+  // nvTexto.abrir/fechar por EM_ASM e LE seq/valor/fim a cada quadro; o JS
+  // nunca chama o WASM. nvTexto.microfone: o que a TV diz de
+  // http://tizen.org/feature/microphone (1 tem, 0 nao tem, -1 sem resposta);
+  // o ajuste "Botao de microfone na busca" decide com isso.
   //
   // focus() por JS abre o IME porque o metadado
   // http://samsung.com/tv/metadata/use.keypad.without.useraction vale true por
@@ -484,7 +490,12 @@
   // Este ouvinte de captura vem ANTES dos outros de keydown de proposito: o
   // Return (10009) com o IME aberto fecha so o IME, e nao o Spotlight.
   (function () {
-    var t = { seq: 0, valor: "", fim: -1, aberto: false };
+    var t = { seq: 0, valor: "", fim: -1, aberto: false, microfone: -1 };
+    try {
+      if (window.tizen && tizen.systeminfo && tizen.systeminfo.getCapability)
+        t.microfone = tizen.systeminfo.getCapability("http://tizen.org/feature/microphone") ? 1 : 0;
+    } catch (e) { console.log("[texto] wgt: feature/microphone: " + e); }
+    console.log("[texto] wgt: feature/microphone = " + t.microfone);
     var campo = function () { return document.getElementById("nvTextoCampo"); };
     function devolverFoco() {
       var c = document.getElementById("canvas");
@@ -505,10 +516,16 @@
     }
     t.abrir = function (atual, voz) {
       var el = campo();
-      if (!el) return;
-      t.valor = atual || ""; el.value = t.valor; t.fim = -1; t.aberto = true;
+      t.valor = atual || ""; t.fim = -1; t.aberto = true;
       t.seq++;
-      el.focus();
+      if (el) {
+        el.value = t.valor;
+        try { el.focus(); } catch (e) { console.warn("[texto] wgt: focus: " + e); }
+      }
+      if (!el || document.activeElement !== el) {
+        console.warn("[texto] wgt: campo nao recebeu foco");
+        terminar(0); return;   // C ja abriu a sessao: devolve o cancelamento.
+      }
       try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) {}
       console.log("[texto] wgt: campo focado (voz=" + (voz ? 1 : 0) + ")");
     };
@@ -526,7 +543,9 @@
       el.addEventListener("input", ler);
       el.addEventListener("compositionend", ler);
       el.addEventListener("change", ler);
-      el.addEventListener("blur", function () { ler(); terminar(0); });
+      // O teclado da Samsung fechou sozinho (sem Concluido nem Voltar): o que
+      // ja foi dito vale, como no .tpk.
+      el.addEventListener("blur", function () { ler(); terminar(t.valor.trim() ? 1 : 0); });
       ["keydown", "keyup", "keypress"].forEach(function (tipo) {
         el.addEventListener(tipo, function (ev) {
           if (!t.aberto) return;
@@ -622,6 +641,10 @@
     } catch (e) {}
   }, 3000);
 
+  // Captura vem antes do campo: os atalhos nao podem agir por baixo do IME.
+  // So retorna dos tradutores; nao impede input, composicao nem Done/Cancel.
+  function imeAberto() { return window.nvTexto && window.nvTexto.aberto; }
+
   // TECLA RETURN DO CONTROLE SAMSUNG -> Escape.
   //
   // No webOS o botao de voltar chega ao SDL como SDLK_AC_BACK e o app ja o
@@ -634,6 +657,7 @@
   // ja existe e e o mesmo dos outros dois alvos; o que faltava era a tecla
   // chegar. Escape porque as telas ja o aceitam ao lado de AC_BACK.
   window.addEventListener("keydown", function (ev) {
+    if (imeAberto()) return;
     if (ev.keyCode !== 10009) return;
     ev.preventDefault();
     ev.stopPropagation();
@@ -686,6 +710,7 @@
   // menu tem "marcar como visto". Fora do player a tecla e engolida, nao
   // repassada: o app nao tem nada util para fazer com ela ali.
   window.addEventListener("keydown", function (ev) {
+    if (imeAberto()) return;
     // O evento que ESTE listener despacha tambem passa por aqui (captura no
     // window), e o Pause traduzido tem o mesmo keyCode 19 da tecla MediaPause:
     // sem esta guarda ele se redespacharia para sempre.
@@ -736,6 +761,7 @@
     if (!p.hidden && window.__nvPintar) window.__nvPintar();
   }
   window.addEventListener("keydown", function (ev) {
+    if (imeAberto()) return;
     // 403 = ColorF0Red, 404 = ColorF1Green, 427 = ChannelUp. F1/F2/F3 servem
     // para testar no desktop.
     var vermelha = (ev.keyCode === 403 || ev.key === "F1");
@@ -772,6 +798,7 @@
   // A SUBIDA DO CANAL+ (ver o ouvinte acima): F7 keyup, para o C saber que a
   // tecla foi solta. Sem ela o toque curto sai pelo silencio (chsegura.h).
   window.addEventListener("keyup", function (ev) {
+    if (imeAberto()) return;
     if (ev.keyCode !== 427 && ev.key !== "F3") return;
     ev.preventDefault();
     ev.stopPropagation();
@@ -788,6 +815,7 @@
   // 10009 do Return. A tecla de MICROFONE do Smart Remote nao esta entre as
   // registraveis do tizen.tvinputdevice: se ela chegar, a linha abaixo conta.
   window.addEventListener("keydown", function (ev) {
+    if (imeAberto()) return;
     if (!ev.isTrusted) return;
     var f = ev.keyCode === 10225 ? "F6" : ev.keyCode === 405 ? "F5" : null;
     if (!f) return;

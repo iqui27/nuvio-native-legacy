@@ -444,6 +444,7 @@ static void toquePerfilRepetir(int a, int b) { (void)a; (void)b; if (!carregando
 static void eventoDuelo(SDL_Keycode k, int ok) {
   int n = socialvis_n_amigos();
   if (dLinha == 0) {
+    if (k == SDLK_UP && ajustes_menu_topo()) { sair = 1; return; }
     if (k == SDLK_LEFT)  { if (amigo > 0) duelo(amigo - 1, 0); return; }
     if (k == SDLK_RIGHT) { if (amigo + 1 < n) duelo(amigo + 1, 0); return; }
     if (k == SDLK_DOWN)  { if (cartazesCabem() > 0) dLinha = 1; return; }
@@ -508,14 +509,14 @@ void perfil_evento(const SDL_Event *e) {
     if (k==SDLK_RIGHT) { if (dia+1<dados.nDias) { dia++; return; }
                          if (nCards()) secao=1; else if (rostosCabem()>0) secao=2;
                          return; }
-    if (k==SDLK_UP)    { if (dia>=7) dia-=7; return; }
+    if (k==SDLK_UP)    { if (dia>=7) dia-=7; else if (ajustes_menu_topo()) sair = 1; return; }
     if (k==SDLK_DOWN)  { if (dia+7<dados.nDias) dia+=7; return; }
     return;
   }
   if (secao == 1) {
     if (k==SDLK_LEFT)  { if (dados.nDias>0) secao=0; else sair = 1; return; }
     if (k==SDLK_RIGHT) { if (rostosCabem()>0) secao=2; return; }
-    if (k==SDLK_UP)    { if (item>0) item--; return; }
+    if (k==SDLK_UP)    { if (item>0) item--; else if (ajustes_menu_topo()) sair = 1; return; }
     if (k==SDLK_DOWN)  { if (item+1<nCards()) item++; return; }
     if (k==SDLK_RETURN || k==SDLK_KP_ENTER || k==SDLK_SPACE) {
       if (nCards() > 0) escolhido = item;
@@ -534,6 +535,7 @@ void perfil_evento(const SDL_Event *e) {
       return;
     }
     if (k==SDLK_RIGHT) { if (amigo+1<rostosCabem()) amigo++; return; }
+    if (k==SDLK_UP && ajustes_menu_topo()) { sair = 1; return; }
     if (ok) { duelo(amigo, 1); return; }
     return;
   }
