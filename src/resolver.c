@@ -158,7 +158,10 @@ static void texto_ha(long seg, char *dst, size_t tam) {
     case RES_HA_AGORA: snprintf(dst, tam, "%s", i18n("agora")); break;
     case RES_HA_MIN:   snprintf(dst, tam, i18n("há %d min"), n); break;
     case RES_HA_H:     snprintf(dst, tam, i18n("há %d h"), n); break;
-    default:           snprintf(dst, tam, n == 1 ? "%.0d%s" : i18n("há %d dias"), n, n == 1 ? i18n("há 1 dia") : ""); break;
+    default:
+      if (n == 1) snprintf(dst, tam, "%s", i18n("há 1 dia"));
+      else snprintf(dst, tam, i18n("há %d dias"), n);
+      break;
   }
 }
 
@@ -684,8 +687,8 @@ static const char *motivo_envio(char *buf, size_t tam) {
 }
 
 static void desenha_envio(float a) {
-  static const char *const VAI[3] = { "Os últimos 200 KB do registro desta sessão", "O que o app fez e quanto demorou", "Endereços cortados no host" };
-  static const char *const NAO[3] = { "Senhas e chaves", "O caminho completo dos endereços", "Nada fica gravado em Ajustes" };
+  static const char *const VAI[2] = { "Os últimos 200 KB do registro desta sessão", "Endereços cortados no host" };
+  static const char *const NAO[2] = { "Senhas e chaves", "O caminho completo dos endereços" };
   Item it[MAX_ITENS];
   char kick[160], buf[160], cod[16];
   const char *tit, *sub;
@@ -717,11 +720,11 @@ static void desenha_envio(float a) {
     txt_em(TXT_ILHA_TITULO, envN ? buf : i18n("Nenhum registro enviado ainda."), x, oy + 340.0f, 760.0f, 248, 249, 252, a);
   }
   // O que vai e o que nao vai.
-  { float px = ox + 900.0f, py = oy + 290.0f, pw = 900.0f, ph = 372.0f, colw = 380.0f;
+  { float px = ox + 900.0f, py = oy + 290.0f, pw = 900.0f, ph = 282.0f, colw = 380.0f;
     painel_fundo((GfxRect){ px, py, pw, ph }, 32.0f, a);
     txt_em(TXT_CAPTION, i18n("Vai junto"), px + 36.0f, py + 30.0f, colw, 150, 156, 168, a);
     txt_em(TXT_CAPTION, i18n("Não vai"), px + 36.0f + colw + 36.0f, py + 30.0f, colw, 150, 156, 168, a);
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < 2; i++) {
       float ry = py + 84.0f + (float)i * 90.0f, ar, ag, ab;
       ajustes_acento(&ar, &ag, &ab);
       gfx_icone((GfxRect){ px + 36.0f, ry + 2.0f, 24.0f, 24.0f }, "aj_check", ar, ag, ab, a);
