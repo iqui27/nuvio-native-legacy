@@ -856,6 +856,9 @@ void intro_shot_definir(const IntroTrecho *v,int n){
   nTrechos=n<8?n:8;if(nTrechos>0)memcpy(trechos,v,(size_t)nTrechos*sizeof *v);
   pthread_mutex_unlock(&trava);
 }
+void intro_shot_marcas(const char *imdb,int t,int e,const IntroTrecho *v,int n,int origem){
+  pthread_mutex_lock(&trava);marcasGuardar(imdb,t,e,v,n,origem);pthread_mutex_unlock(&trava);
+}
 #endif
 
 void intro_registrar_tmdb(const char *id,long tmdb,const char *json){

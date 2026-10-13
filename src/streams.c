@@ -2967,6 +2967,20 @@ void stream_atualizar_lista(const Stream *l, int qtd) {
   }
 }
 int stream_folha_n(void) { return nFiltrados(); }
+#ifdef NV_SHOT_HOOKS
+// Capturas: altura do cartao da escolha automatica (0 = sem cartao nesta aba),
+// linhas que a lista desenha e copias que dobraram em outra linha.
+void stream_shot_folha(float *cartao, int *linhas, int *dobradas) {
+  int l = 0, d = 0;
+  for (int i = 0; i < n; i++) {
+    if (!passaFiltro(i)) continue;
+    if (dobravel(i)) d++; else l++;
+  }
+  if (cartao) *cartao = escAlt;
+  if (linhas) *linhas = l;
+  if (dobradas) *dobradas = d;
+}
+#endif
 // DETALHES DA FONTE (#355): o titulo e a descricao do addon sao cortados na
 // linha (uma fileira de selos, duas linhas de texto). O texto inteiro existe
 // em Stream.rotulo / descricao / arquivo; esta modal o mostra por completo,

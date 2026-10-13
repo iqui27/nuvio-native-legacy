@@ -160,5 +160,7 @@ int  intro_trechos(IntroTrecho *saida,int max);
 int  intro_creditos_limitados(IntroTrecho *saida,int max);
 #ifdef NV_SHOT_HOOKS
 void intro_shot_definir(const IntroTrecho *v,int n);   // capturas: trechos fixos
+// capturas: marcas lembradas de um episodio (o que a pagina do titulo le)
+void intro_shot_marcas(const char *imdb,int t,int e,const IntroTrecho *v,int n,int origem);
 #endif
 #endif

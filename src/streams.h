@@ -357,6 +357,9 @@ int  stream_detalhe_tecla_abre(const SDL_Event *e);
 // nada. tests/fontes_lista.sh prende isso; abrir a folha escreve a contagem no
 // log ("[fonte] folha: N de M na lista"), para o proximo relato dizer onde caiu.
 int  stream_folha_n(void);
+#ifdef NV_SHOT_HOOKS
+void stream_shot_folha(float *cartao, int *linhas, int *dobradas);   // capturas
+#endif
 void stream_folha_evento(const SDL_Event *e);
 void stream_folha_atualizar(float dt, Uint32 agora);
 void stream_folha_desenhar(Uint32 agora);
