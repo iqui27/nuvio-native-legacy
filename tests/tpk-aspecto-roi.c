@@ -42,6 +42,9 @@ int main(void) {
 #else
   check(-328,0,2582,1080,0,0,1920,1080);
 #endif
+  // P1: a new destination invalidates the cached card/player crop.
+  video_janela(0,0,1920,1080);
+  nj=0; video_recorte_reaplicar(); assert(nj==0);
   nv_tpk_video_evento(6,1440,1080);
   video_janela_fonte(0,134,1440,810,0,0,1920,1080);
 #ifdef NV_TPK40
@@ -61,6 +64,21 @@ int main(void) {
 #ifndef NV_TPK40
   confere("trailer opt-in unchanged",0,0,1920,1080);
 #endif
+  // P1: only the card trailer is fitted; others keep the raw destination.
+  nv_tpk_video_evento(6,1440,1080);
+  video_janela_fonte(0,0,1440,1080,0,0,1920,1080);
+  confere("P1 non-card trailer keeps fullscreen",0,0,1920,1080);
+  video_tpk_cartao_marcar(1);
+  // P2: a vertical trailer cannot cover 960x540 within a 1080-high panel.
+  nv_tpk_video_evento(6,1080,1920);
+  cartaoDaHome("P2 aspect bridge: plane equals hole",0,656,1080,606,400,200,960,540);
+  confere("P2 portrait fit with aspect bridge",728,200,304,540);
+  nj=0; video_recorte_reaplicar(); assert(nj==0);
+  nv_tpk_video_evento(6,1920,1080);
+  cartaoDaHome("aspect bridge: plane equals hole",600,0,720,1080,40,300,360,540);
+  cartaoDaHome("aspect bridge: whole-frame plane equals hole",0,0,1920,1080,40,300,360,540);
+  confere("unproven family uses proportional fit",40,469,360,202);
+  cartaoExpandido();
   assert(falhas==0);
   puts("tpk-aspecto-roi: PASS"); return 0;
 }

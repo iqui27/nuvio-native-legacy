@@ -44,9 +44,8 @@
 //     temporada/episodio do TVDB. Converter exigiria /anime/episodes por
 //     titulo. Anime PAUSADO entra, porque /sync/playback manda tvdb_season e
 //     tvdb_number junto.
-//   - scrobble: assistir aqui nao escreve no Simkl. O Simkl so cria playback a
-//     partir de /scrobble/pause|stop, entao o "continuar" do Simkl mostra o que
-//     outros clientes Simkl pausaram. Escrever e outro trabalho (outro issue).
+//   - nada: o scrobble (start/pause/stop do player, #459) e o historico estao
+//     la embaixo. Esta tela so le o playback que o proprio player escreve.
 //
 // MODELO DE FIOS: o de trakt.c. Leituras BLOQUEIAM e so sao chamadas do fio de
 // descoberta (montarContinuar, montar); escritas do "+" e do "tirar da
@@ -156,7 +155,28 @@ int simkl_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd, int
 int simkl_titulo_marcar(const char *imdb, const char *tipo, const int *temporadas,
                         int nt, int visto);
 
-// Esquece caches e tabelas (logout, desvincular). O token e de simklauth.c.
+// --- scrobble do player (#459) ------------------------------------------------
+
+// Mesma interface de trakt_scrobble (traktscrobble.h), decisao Simkl: `evento`
+// e SCR_EV_*, `id` e "tt123" (filme) ou "tt123:T:E" (episodio), e a posicao,
+// a duracao e o assistido sao em segundos. Manda /scrobble/start|pause|stop com
+// a porcentagem, num fio (nunca bloqueia o desenho). Devolve a acao decidida
+// (SCR_*); SCR_NADA sem vinculo, com id que nao e IMDb ou sem prova de
+// reproducao. Pause aceita 80-90% sem visto. 401 desfaz o vinculo do perfil;
+// 429/5xx/400 RATE_LIMIT abrem espera (30 s, dobra ate 5 min). Um STOP que
+// nao chega cai em simkl_*_marcar; fica em disco ate confirmacao para retry.
+int simkl_scrobble(int evento, const char *id, double posSeg, double durSeg,
+                   double assistidoSeg, int assistiu);
+// 1 quando o fio de envio nao tem nada pendente nem em voo (para o teste).
+int simkl_scrobble_ocioso(void);
+// Retoma stops persistidos do vinculo atual, no maximo uma tentativa a cada
+// 30 s. Chamar do laco principal sem player aberto; rede continua no fio.
+void simkl_scrobble_retentar(void);
+// Espera ate `ms` o fio esvaziar. Stops sem resposta sobrevivem em disco.
+void simkl_scrobble_drenar(unsigned ms);
+
+// Esquece caches, tabelas e o estado do scrobble (logout, troca de perfil,
+// desvincular). O token e de simklauth.c.
 void simkl_esquecer(void);
 
 #endif

@@ -22,7 +22,7 @@ static GfxRect rect;
 static char   fonteAtual[1024];
 static Uint32 abertoEm;   // SDL_GetTicks da abertura da fonte atual, para o log
 static int    dono;       // TRAILER_DONO_* (trailer.h)
-static int    noCartao;   // trailer_no_cartao: sem recorte de fonte no .tpk
+static int    noCartao;   // trailer_no_cartao: quadro inteiro encaixado no .tpk
 static char   donoImdb[32];
 
 void trailer_recorte(int vw, int vh, float z, float dw, float dh,
@@ -299,6 +299,9 @@ int trailer_suportado(void) {
 }
 static void nativoAplicar(void) {
   if (!aberto) return;
+#ifdef NV_TPK
+  video_tpk_cartao_marcar(noCartao);
+#endif
   if(video_tocando())tocouFonte=1;
   // O uMS setVolume funciona nesta TV (provado ao contrario: sem ele o
   // trailer tocou com som).
@@ -336,11 +339,15 @@ static void nativoAplicar(void) {
   if (recortePendente && video_pronto() && video_largura() > 0 && video_altura() > 0 &&
       tocandoDesde && SDL_GetTicks() - tocandoDesde >= 800) {
     int sw, sh, sx, sy;
+#ifdef NV_TPK
+    // O cartao e cover puro (zoom 1): video_tpk.c recorta a fonte onde ha
+    // prova (Tizen 6.x) e encaixa o quadro inteiro nas demais familias.
+    trailer_recorte(video_largura(), video_altura(), noCartao ? 1.0f : ajustes_trailer_zoom(),
+                    rect.w, rect.h, &sx, &sy, &sw, &sh);
+    if (video_recorte_fonte_trailer() || noCartao)
+#else
     trailer_recorte(video_largura(), video_altura(), ajustes_trailer_zoom(),
                     rect.w, rect.h, &sx, &sy, &sw, &sh);
-#ifdef NV_TPK
-    if (video_recorte_fonte_trailer() && !noCartao)
-#else
     if (video_recorte_fonte_trailer())
 #endif
       video_janela_fonte(sx, sy, sw, sh,
@@ -460,6 +467,7 @@ int trailer_continuar(GfxRect r, int som) {
   // Copia: trailer_abrir le `fonte` e grava fonteAtual. Mesma fonte = nao e
   // "nova": so o volume e o retangulo (com o recorte do zoom) mudam.
   snprintf(f, sizeof f, "%s", fonteAtual);
+  noCartao = 0;   // o destino ja pertence ao detalhe antes de recalcular
   trailer_abrir(f, r, som, 0);
   printf("[trailer] continua %.60s %s\n", f, comSom ? "com som" : "mudo");
   fflush(stdout);
@@ -496,8 +504,11 @@ int trailer_mostra_video(void) {
   // a esperar, o LetterBox de sempre ja e a imagem certa.
   // "Original" so dispensa a espera quando o destino tambem nao pede corte
   // (o cover de trailer_recorte num destino que nao e da proporcao do video).
-  int semCorte = !video_recorte_fonte_trailer() || noCartao;
-  if (!semCorte && ajustes_trailer_zoom() <= 1.001f && video_largura() > 0 && video_altura() > 0) {
+  // O cartao so espera o recorte onde ele e cover de fonte (Tizen 6.x); nas
+  // demais familias o quadro inteiro encaixado ja e a imagem final.
+  int cartaoCover = noCartao && video_tpk_cartao_cover();
+  int semCorte = !video_recorte_fonte_trailer() && !cartaoCover;
+  if (!semCorte && (cartaoCover || ajustes_trailer_zoom() <= 1.001f) && video_largura() > 0 && video_altura() > 0) {
     int sx, sy, sw, sh;
     trailer_recorte(video_largura(), video_altura(), 1.0f, rect.w, rect.h, &sx, &sy, &sw, &sh);
     semCorte = sw >= (video_largura() & ~1) && sh >= (video_altura() & ~1);

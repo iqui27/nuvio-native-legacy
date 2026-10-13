@@ -1265,6 +1265,9 @@ void ctx_atualizar(float dt, Uint32 agora) {
           if (operacao == CTX_OP_LISTA) {
             cat_definir_na_lista(atual, intencao);
             cat_definir_na_lista_imdb(operacaoImdb, intencao);
+            // O servico confirmou: o titulo ja entra no filtro dele.
+            if (intencao)
+              cat_marcar_fonte_imdb(operacaoImdb, opSimkl ? CAT_FONTE_SIMKL : CAT_FONTE_TRAKT);
           } else {
             espelharAssistido(atual, ci, intencao);
             anunciarAssistido(intencao);

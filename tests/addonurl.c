@@ -19,6 +19,9 @@
 //
 // So addons.c e js.c; a rede e um duble que anota a URL pedida.
 #include <stdio.h>
+// A entrega real tem o harness watchstate_poda.sh; aqui nao ha diario.
+void wsenvio_podar(void) {}
+void wsenvio_podar_addon(const char *base) { (void)base; }
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>

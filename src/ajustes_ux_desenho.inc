@@ -125,12 +125,22 @@ static void ajIlhaSombra(GfxRect r, float raioPx, float al, int opaca) {
   gfx_sombra_sob((GfxRect){ r.x - 20, r.y - 6, r.w + 40, r.h + 46 }, 1.0f, 0.0f, 0.5f, 0, 0, 0, al,
                  r, raioPx, opaca ? 1.0f : 0.0f);
 }
+// O miolo que a ilha solida cobre de certeza (sem a faixa do canto).
+static GfxRect ajIlhaMiolo0(GfxRect r, float raioPx) {
+  float m = raioPx + 2.0f;
+  return (GfxRect){ r.x + m, r.y + m, r.w - 2.0f * m, r.h - 2.0f * m };
+}
 // Ilha: sombra curta, miolo (vidro 80% / solido #15161A) e a luz larga do canto
 // de cima, sem contorno. `modal` = miolo a 86%, para a ilha por cima de outra.
 static void ajIlhaMaterial(GfxRect r, float raioPx, float a, int modal, int pagina) {
   if (pagina) raioPx = 0.0f;
   float raio = raioPx / r.h;
   if (a <= 0.003f) return;
+  // Solido e opaco: o Frost pendente nao e pintado embaixo do miolo.
+  if (!ajVid() && a * gfx_opacidade_grupo >= 0.999f) {
+    GfxRect f = ajIlhaMiolo0(r, raioPx);
+    if (f.w > 0.0f && f.h > 0.0f) gfx_ambiente_descarregar_fora(&f, 1);
+  }
   if (!pagina) ajIlhaSombra(r, raioPx, (ajVid() ? 0.36f : 0.45f) * a, !ajVid() && a >= 0.999f);
   if (ajVid()) {
     // Teste do vidro: opacidade (78% = 0.80/0.86 de sempre) e fosco.
@@ -139,7 +149,7 @@ static void ajIlhaMaterial(GfxRect r, float raioPx, float a, int modal, int pagi
     gfx_vidro_miolo(r, raio, 0.055f, 0.059f, 0.071f, (miolo > 1.0f ? 1.0f : miolo) * a, a);
     gfx_luz_canto(r, raio, r.w * 0.22f, -r.h * 0.40f, r.h * 0.62f, 1, 1, 1, 0.10f * a);
   } else {
-    gfx_cor(r, raio, 0.082f, 0.086f, 0.102f, a);
+    gfx_cor_painel(r, raio, 0.082f, 0.086f, 0.102f, a);
   }
 }
 static void ajIlha(GfxRect r, float raioPx, float a, int modal) {
@@ -158,7 +168,7 @@ static void ajIlhaMiolo(GfxRect r, float raioPx, float miolo) {
     gfx_vidro_fosco(r, raio, 1);
     gfx_vidro_miolo(r, raio, 0.055f, 0.059f, 0.071f, m > 1.0f ? 1.0f : m, 1);
     gfx_luz_canto(r, raio, r.w * 0.22f, -r.h * 0.40f, r.h * 0.62f, 1, 1, 1, 0.10f);
-  } else gfx_cor(r, raio, 0.082f, 0.086f, 0.102f, 1);
+  } else gfx_cor_painel(r, raio, 0.082f, 0.086f, 0.102f, 1);
 }
 // Superficie de FOCO de linha: um degrau mais clara (vidro 12%, solido #2B2D34).
 static void ajFocoLinha(GfxRect r, float raioPx, float f, float a) {

@@ -33,6 +33,11 @@ void marco(const char *m) { (void)m; }
 static const char *tokenSimkl = "";
 static int logada = 1;
 const char *simklauth_token(void) { return tokenSimkl; }
+unsigned long long simklauth_credencial_copiar(char *dst, size_t tam) {
+  if (dst && tam) snprintf(dst, tam, "%s", tokenSimkl);
+  return 1;
+}
+int simklauth_invalidar_se(unsigned long long cred) { (void)cred; tokenSimkl = ""; return 1; }
 const char *nuvem_simkl_cliente(void) { return "cid-teste"; }
 const char *nuvem_simkl_app(void) { return "nuvio"; }
 const char *nuvem_trakt_cliente(void) { return "cli-trakt"; }

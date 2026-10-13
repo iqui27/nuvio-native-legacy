@@ -1964,7 +1964,7 @@ static int listaNucleo(const char *qual, CatItem **pv, int *cap, int cresce,
             snprintf(d->titulo, sizeof d->titulo, "%s", titulo);
             snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
             snprintf(d->tipo, sizeof d->tipo, "%s", passo ? "series" : "movie");
-            if (paginavel) d->naLista = 1;
+            if (paginavel) { d->naLista = 1; d->fontes = CAT_FONTE_TRAKT; }
             else           d->naColecao = 1;
             // Arte SEM consultar: metahub deterministico pelo IMDb (ver
             // artemetahub.h). Uma consulta por item limitava a lista a dez.

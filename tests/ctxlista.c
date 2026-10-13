@@ -163,11 +163,14 @@ static void conferirExtensao(const char *rotulo) {
   char msg[160], t[1200];
   snprintf(msg, sizeof msg, "%s: a extensao de informacoes abre ao lado do menu", rotulo);
   confere(msg, tem);
-  // Colada ao menu quando cabe; sem lugar dos dois do mesmo lado ela vai para
-  // o outro lado do cartaz (ctxinfo_geometria) — nunca por cima do menu.
-  snprintf(msg, sizeof msg, "%s: do lado %s do menu, sem sobrepor, dentro da tela", rotulo,
+  // O CARTAZ VIRA O CARTAO (6e3b8470): a extensao e o proprio cartaz crescido
+  // e o menu fica colado a ele (ctxinfo_cartao_geo), no lado com lugar — nunca
+  // um por cima do outro. `lado` diz onde o menu esta em relacao ao cartao,
+  // como em tests/ctxinfo_shot.c.
+  snprintf(msg, sizeof msg, "%s: o menu fica do lado %s do cartao, sem sobrepor, dentro da tela", rotulo,
            lado > 0 ? "direito" : "esquerdo");
-  confere(msg, tem && (lado > 0 ? ri.x >= rm.x + rm.w - 0.5f : ri.x + ri.w <= rm.x + 0.5f) &&
+  confere(msg, tem && (lado > 0 ? rm.x >= ri.x + ri.w - 0.5f : rm.x + rm.w <= ri.x + 0.5f) &&
+               rm.x >= 0.0f && rm.x + rm.w <= 1920.0f &&
                ri.x >= 0.0f && ri.x + ri.w <= 1920.0f && ri.y + ri.h <= 1080.0f);
   ctxinfo_texto(ctx_titulo(), NULL, t, sizeof t);
   if (getenv("NV_VERBOSO")) printf("%s\n[info %g,%g %gx%g menu %g,%g lado %d]\n", t, ri.x, ri.y, ri.w, ri.h, rm.x, rm.y, lado);

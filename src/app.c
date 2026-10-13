@@ -92,6 +92,7 @@
 #include "novidades139.h"
 #include "novidades1312.h"
 #include "novidades142.h"
+#include "comecar.h"
 #include "novidades148.h"
 #include "novidades170.h"
 #include "novidades180.h"
@@ -99,6 +100,7 @@
 #include "novidades201.h"
 #include "novidades202.h"
 #include "novidades_cartao.h"
+#include "resolver.h"
 #include "apoio.h"
 #include "telemetria.h"
 #include "avisos.h"
@@ -589,7 +591,7 @@ const char *app_tela_nome(void) {
   if ((unsigned)tela < sizeof NOMES / sizeof *NOMES) return NOMES[tela];
   return "?";
 }
-static int saiuPorEsquerda;   // a ultima tecla foi ESQUERDA (ver app_evento)
+static int saiuPorEsquerda, saiuPorCima;   // a ultima tecla foi ESQUERDA ou CIMA (ver app_evento)
 // A barra e uma camada de navegacao, mas nao pode disputar o Guia de TV nem
 // um canal minimizado. Manter a regra aqui evita que cada tela invente sua
 // propria nocao de PiP/Guia.
@@ -604,7 +606,7 @@ static int sidebarToquePode(void) {
 }
 static void sidebarToqueAbrirTela(Tela origem) {
   if (!sidebarToquePode() || tela != origem || detail_aberto() || vertudo_aberta()) return;
-  saiuPorEsquerda = 0;
+  saiuPorEsquerda = saiuPorCima = 0;
   menu_abrir();
 }
 #define SIDEBAR_TOQUE_TELA(nome, origem) static void nome(void) { sidebarToqueAbrirTela(origem); }
@@ -623,12 +625,12 @@ SIDEBAR_TOQUE_TELA(sidebarToquePlugins, TELA_PLUGINS)
 #undef SIDEBAR_TOQUE_TELA
 static void sidebarToqueDetalhe(void) {
   if (!sidebarToquePode() || !detail_aberto()) return;
-  saiuPorEsquerda = 0;
+  saiuPorEsquerda = saiuPorCima = 0;
   menu_abrir_sobre(1);
 }
 static void sidebarToqueLista(void) {
   if (!sidebarToquePode() || !vertudo_aberta() || detail_aberto()) return;
-  saiuPorEsquerda = 0;
+  saiuPorEsquerda = saiuPorCima = 0;
   menu_abrir_sobre(0);
 }
 static void sidebarToqueRegistrar(int contexto) {
@@ -663,6 +665,9 @@ static void sidebarToqueRegistrar(int contexto) {
 // requisicoes) num perfil que nao mudou seria pagar o preco da troca em toda
 // abertura do app.
 static int perfilAntes = 1;
+// 1 quando a conta entrou AGORA pelo login (0 = sessao restaurada do disco).
+// O Comecar da 2.1 (comecar.h) decide o que mostrar com isto.
+static int loginNovo;
 // Quando a troca de perfil comecou a preparar a home nova. Ver o teto abaixo.
 static Uint32 trocaPerfilDesde;
 // Teto da espera pela home do perfil novo. A rede lenta nunca prende a pessoa
@@ -2229,6 +2234,9 @@ int app_iniciar(const char *dirArte) {
   const char *preview = getenv("NUVIO_UI_PREVIEW");
   uiPreview = preview && !strcmp(preview, "1");
 #endif
+  // Antes de tudo que mexe na conta: o login e o sync criam os arquivos que o
+  // Começar olha para saber se esta instalacao ja vem de uso anterior.
+  comecar_marcar_dados();
   arranque_etapa("app_iniciar/ajustes_recursos");
   ajustes_recursos(dirArte);
   arranque_etapa("app_iniciar/login_recursos");
@@ -2468,7 +2476,7 @@ int app_no_login(void) { return tela == TELA_LOGIN; }
 int app_na_home(void) {
   return tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() &&
          !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() &&
-         !novcartao_aberto();
+         !novcartao_aberto() && !resolver_aberto() && !comecar_aberto();
 }
 
 // ONDE A AZUL/CH+ ABRE O PAINEL DE SALVOS/AVISOS (dono, 04/10: "tem que dar
@@ -2596,12 +2604,32 @@ void app_evento(const SDL_Event *e) {
   // Central" fecha o cartao e abre a Central de controle no lugar.
   // O DA 2.0.2 (novidades202.h) e igual, sem a Central.
   // O CARTAO DA VERSAO ATUAL (novidades_cartao.h, 2.0.3 em diante) tambem.
+  // O COMECAR da 2.1 (comecar.h): primeiro uso guiado, tela inteira, come o
+  // teclado todo. O tour do fim e o guia da 2.0 reaberto pelo pedido.
+  if (comecar_aberto()) {
+    comecar_evento(e);
+    if (comecar_pedido() == COMECAR_PEDIU_TOUR) novidades20_abrir(loginNovo);
+    return;
+  }
   if (novcartao_aberto()) {
     novcartao_evento(e);
     return;
   }
   if (novidades202_aberto()) {
     novidades202_evento(e);
+    return;
+  }
+  // RESOLVER UM PROBLEMA (2.1, resolver.h): tela inteira, come o teclado todo.
+  // "Ver Fontes e addons" fecha a tela e abre Ajustes no lugar.
+  if (resolver_aberto()) {
+    resolver_evento(e);
+    if (resolver_pedido() == RESOLVER_PEDIU_FONTES) {
+      menu_fechar();
+      ajustes_abrir_na_espera_fonte();
+      if (tela == TELA_AJUSTES) ajustes_iniciar();
+      else trocarTela(TELA_AJUSTES);
+      menu_definir_destino(MENU_AJUSTES);
+    }
     return;
   }
   if (novidades201_aberto()) {
@@ -2840,7 +2868,10 @@ void app_evento(const SDL_Event *e) {
   // ESQUERDA quando nao ha mais para onde ir a esquerda; aqui, se a saida foi
   // por essa tecla, a home volta JA com a barra aberta em vez de exigir um
   // segundo ESQUERDA. `saiuPorEsquerda` e o que o bloco de sair le.
-  if (e->type == SDL_KEYDOWN) saiuPorEsquerda = (e->key.keysym.sym == SDLK_LEFT);
+  if (e->type == SDL_KEYDOWN) {
+    saiuPorEsquerda = (e->key.keysym.sym == SDLK_LEFT);
+    saiuPorCima = (e->key.keysym.sym == SDLK_UP);
+  }
   if (spotAtalho(e) && spotPode()) { spotAbrir(e->key.keysym.sym == SPOT_TECLA_VOZ); return; }
   if (player_aberto()) { player_evento(e); return; }
   // A BARRA LATERAL POR CIMA DA PAGINA DO TITULO (dono, 03/10: "pode abrir por
@@ -2864,7 +2895,7 @@ void app_evento(const SDL_Event *e) {
     // do controle ainda cairiam na pagina.
     if (detail_aberto() && detail_pediu_menu() && sidebar_permitida()) {
       menu_abrir_sobre(1);
-      saiuPorEsquerda = 0;
+      saiuPorEsquerda = saiuPorCima = 0;
     }
     { char im[24];
       if (detail_aberto() && detail_pediu_amigos(im, sizeof im)) abrirSocialNoTitulo(im); }
@@ -2888,7 +2919,7 @@ void app_evento(const SDL_Event *e) {
     // Por cima: DIREITA/Voltar voltam para a lista, um destino a fecha.
     if (vertudo_aberta() && vertudo_pediu_menu() && sidebar_permitida()) {
       menu_abrir_sobre(0);
-      saiuPorEsquerda = 0;
+      saiuPorEsquerda = saiuPorCima = 0;
     }
     return;
   }
@@ -2915,7 +2946,7 @@ void app_evento(const SDL_Event *e) {
   // ainda acha que e a dona do foco.
   if (tela == TELA_HOME && home_pediu_menu() && sidebar_permitida()) {
     menu_abrir();
-    saiuPorEsquerda = 0;
+    saiuPorEsquerda = saiuPorCima = 0;
   }
 }
 
@@ -3048,12 +3079,14 @@ static const char *homeTrailerBloqueio(void) {
   if (vertudo_aberta()) return "see-all";
   if (avisos_aberto() || avisos_cartao_aberto()) return "notices";
   if (sintro_aberto() || pipintro_aberto() || recintro_aberto() || telemetria_aberto()) return "intro";
+  if (comecar_aberto()) return "comecar";
   if (novidades_aberto() || novidades11_aberto() || novidades12_aberto() ||
       novidades13_aberto() || novidades131_aberto() || novidades132_aberto() ||
       novidades133_aberto() || novidades134_aberto() || novidades139_aberto() || novidades1312_aberto() ||
       novidades142_aberto() || novidades148_aberto() || novidades170_aberto() || novidades180_aberto() ||
       novidades20_aberto() || novidades201_aberto() || novidades202_aberto() ||
       novcartao_aberto()) return "whats-new";
+  if (resolver_aberto()) return "resolver";
   if (atualizacao_aberta() || agendaviso_aberto()) return "update-notice";
   if (recomenda_aberta() || recenviar_aberto() || pessoas_aberto()) return "recommend";
   if (faixas_aberta() || episodios_aberto() || stream_folha_aberta()) return "sheet";
@@ -3132,6 +3165,7 @@ void app_atualizar(float dt, Uint32 agora) {
       // mostrar.
       sync_reaplicar_ajustes();
       sync_iniciar();
+      loginNovo = 1;
       tela = TELA_ESCOLHA_PERFIL;
       perfilAntes = perfis_ativo();
       perfilsel_iniciar();
@@ -3166,6 +3200,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // integer compare per frame, no network here.
   if (servidores_passo()) desc_repetir_silencioso();
   simklauth_passo((unsigned)agora);
+  if (!player_aberto()) simkl_scrobble_retentar();
 
   if (tela == TELA_ESCOLHA_PERFIL) {
     sync_passo((unsigned)agora);
@@ -3375,12 +3410,19 @@ void app_atualizar(float dt, Uint32 agora) {
   // teste a exercita.
   novcartao_decidir(tela == TELA_HOME && homePronta, player_aberto(), detail_aberto());
   if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto()) {
+    // O COMECAR da 2.1 primeiro: e ele o primeiro uso. Quando abre, o guia da
+    // 2.0 fica so gravado (novidades20_suprimir) — o tour sai do proprio
+    // Comecar — e a fila antiga nao abre nada embaixo dele.
+    comecar_decidir(loginNovo);
+    if (comecar_aberto()) novidades20_suprimir();
+  }
+  if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() && !comecar_aberto()) {
     // A 2.0.2 antes da 2.0.1: ela substitui o cartao da 2.0.1.
     novidades202_primeira_vez();
     novidades201_primeira_vez();
     novidades20_primeira_vez();
   }
-  if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() && !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() && !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto()) {
+  if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() && !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() && !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto() && !resolver_aberto() && !comecar_aberto()) {
     // Esta e a primeira explicacao da versao: aparece antes dos demais
     // cartoes de onboarding. Depois de OK, o bloco abaixo continua a fila
     // antiga no quadro seguinte.
@@ -3727,7 +3769,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // na linha "Addons" (antes a Esquerda abria a barra lateral e o Voltar caia
   // no indice dos Ajustes).
   if (tela == TELA_ADDONS && addonsui_quer_sair()) {
-    saiuPorEsquerda = 0;
+    saiuPorEsquerda = saiuPorCima = 0;
     ajustes_voltar_de_lista(0);
     trocarTela(TELA_AJUSTES); menu_definir_destino(MENU_AJUSTES);
   }
@@ -3764,7 +3806,7 @@ void app_atualizar(float dt, Uint32 agora) {
   }
   // Plugins (F09): o mesmo caminho da lista de addons (abre de Ajustes, volta a ela).
   if (tela == TELA_PLUGINS && pluginsui_quer_sair()) {
-    saiuPorEsquerda = 0;
+    saiuPorEsquerda = saiuPorCima = 0;
     ajustes_voltar_de_lista(1);
     trocarTela(TELA_AJUSTES); menu_definir_destino(MENU_AJUSTES);
   }
@@ -3829,7 +3871,7 @@ void app_atualizar(float dt, Uint32 agora) {
       // ESQUERDA na borda abre a barra SOBRE a tela atual. Voltar continua
       // sendo a saída normal para a Home; assim o foco da tela não é perdido
       // só para alcançar a navegação principal.
-      if (saiuPorEsquerda && sidebar_permitida()) {
+      if ((saiuPorEsquerda || saiuPorCima) && sidebar_permitida()) {
         menu_abrir();
       } else if (tela == TELA_SOCIAL && socialDoPerfil) {
         trocarTela(TELA_PERFIL);
@@ -3839,7 +3881,7 @@ void app_atualizar(float dt, Uint32 agora) {
         trocarTela(TELA_HOME);
         menu_definir_destino(MENU_INICIO);
       }
-      saiuPorEsquerda = 0;
+      saiuPorEsquerda = saiuPorCima = 0;
     }
   } else if (home_quer_sair()) {
     sair = 1;
@@ -4115,6 +4157,12 @@ void app_atualizar(float dt, Uint32 agora) {
         else simkl_lista_tipo(c->imdb, c->tipo, entrar);
       }
       if (c) cat_definir_na_lista(i, entrar);
+      // Marca de Origem do servico que recebeu o pedido, para o filtro da
+      // Biblioteca ja mostrar o titulo sem esperar o proximo ciclo.
+      if (c && entrar && c->imdb[0]) {
+        if (ajustes_salvos_no_trakt() && trakt_ativo()) cat_marcar_fonte_imdb(c->imdb, CAT_FONTE_TRAKT);
+        if (ajustes_salvos_no_simkl() && simkl_ativo()) cat_marcar_fonte_imdb(c->imdb, CAT_FONTE_SIMKL);
+      }
       if (c) ilhasalvar_aviso(c, entrar);   // o voo da capa e o "Salvo em ..." na ilha
     }
     if (detail_pediu_fontes()) {
@@ -5008,8 +5056,13 @@ void app_atualizar(float dt, Uint32 agora) {
   novidades170_atualizar(dt, agora);
   novidades180_atualizar(dt, agora);
   novidades20_atualizar(dt, agora);
+  comecar_atualizar(dt, agora);
+  // O pedido de tour sai de ok() (tecla ou ponteiro): conferir aqui cobre os
+  // dois caminhos sem duplicar — comecar_pedido consome.
+  if (comecar_pedido() == COMECAR_PEDIU_TOUR) novidades20_abrir(loginNovo);
   novidades201_atualizar(dt, agora);
   novidades202_atualizar(dt, agora);
+  resolver_atualizar(dt, agora);
   novcartao_atualizar(dt, agora);
   telemetria_atualizar(dt, agora);
   recintro_atualizar(dt, agora);
@@ -5140,6 +5193,7 @@ static void desenharAtrasDoPainel(void *ctx) {
     // barra abre pelo ESQUERDA na borda e pela faixa do ponteiro.
     menu_pilula_mostrar(vertudo_aberta() || detail_aberto() ? -1.0f   // "Ver tudo"/colecao/pagina tem cabecalho proprio
                         : tela == TELA_HOME ? home_topo_fracao()
+                        : ajustes_menu_topo() ? -1.0f   // #461: a barra no topo fechada so mora na home
                         : (tela == TELA_EXPLORAR || tela == TELA_BUSCA ||
                            tela == TELA_BIBLIOTECA || tela == TELA_AGENDA ||
                            tela == TELA_PERFIL || tela == TELA_AJUSTES) ? 1.0f : -1.0f);
@@ -5267,7 +5321,7 @@ static int relogioCamadaAberta(void) {
       novidades13_aberto() || novidades131_aberto() || novidades132_aberto() ||
       novidades133_aberto() || novidades134_aberto() || novidades139_aberto() ||
       novidades1312_aberto() || novidades142_aberto() || novidades148_aberto() ||
-      novidades170_aberto() || novidades180_aberto() || novidades20_aberto() || novidades201_aberto() || novidades202_aberto() || novcartao_aberto() || telemetria_aberto() || recintro_aberto() ||
+      novidades170_aberto() || novidades180_aberto() || novidades20_aberto() || novidades201_aberto() || novidades202_aberto() || novcartao_aberto() || resolver_aberto() || telemetria_aberto() || recintro_aberto() ||
       atualizacao_aberta() || agendaviso_aberto() || avisos_cartao_aberto() ||
       glem_cartao_aberto() || recenviar_aberto() || pessoas_aberto() ||
       recomenda_aberta() || pipintro_aberto() || diagnostico_intro_aberto();
@@ -5313,6 +5367,15 @@ static int miniToquePermitido(void) {
 #endif
 
 void app_desenhar(Uint32 agora) {
+  // O COMECAR da 2.1 e tela inteira e opaco, como o guia da 2.0.
+  if (comecar_aberto() && !registro_aberto() && !player_aberto()) {
+    gfx_sem_recorte();
+    gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0,
+            NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
+    ponteiro_camada();
+    comecar_desenhar(agora);
+    return;
+  }
   // O GUIA DA 2.0 e tela inteira e opaco: nada do app por baixo (uma camada
   // de tela cheia a menos; o fundo dele e o assado do Borrada).
   if (novidades20_aberto() && !registro_aberto() && !player_aberto()) {
@@ -5340,6 +5403,14 @@ void app_desenhar(Uint32 agora) {
             NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
     ponteiro_camada();
     novidades202_desenhar(agora);
+    return;
+  }
+  if (resolver_aberto() && !registro_aberto() && !player_aberto()) {
+    gfx_sem_recorte();
+    gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0,
+            NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
+    ponteiro_camada();
+    resolver_desenhar(agora);
     return;
   }
   if (novcartao_aberto() && !registro_aberto() && !player_aberto()) {
@@ -5476,8 +5547,10 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novidades180_desenhar(agora);
   // O esmaecer de saida do guia da 2.0, por cima do app que ja voltou.
   if (!registro_aberto() && novidades20_visivel()) novidades20_desenhar(agora);
+  if (!registro_aberto()) comecar_desenhar(agora);        // so o esmaecer de saida
   if (!registro_aberto()) novidades201_desenhar(agora);   // so o esmaecer de saida
   if (!registro_aberto()) novidades202_desenhar(agora);
+  if (!registro_aberto()) resolver_desenhar(agora);        // so o esmaecer de saida
   if (!registro_aberto()) novcartao_desenhar(agora);      // so o esmaecer de saida
   CAMADA_SE(telemetria_aberto());
   if (!registro_aberto()) telemetria_desenhar(agora);
@@ -5608,7 +5681,8 @@ int app_central_pode(void) {
   return tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL && login_concluido() &&
          perfilsel_concluido() && !registro_aberto() && !spot_aberto() &&
          !teclado_aberto() && !diagnostico_intro_aberto() && !novidades20_aberto() &&
-         !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto();
+         !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto() &&
+         !resolver_aberto() && !comecar_aberto();
 }
 
 void app_encerrar(void) {
@@ -5630,6 +5704,7 @@ void app_encerrar(void) {
   }
   aguardandoFonte = 0;
   player_encerrar();
+  simkl_scrobble_drenar(3000);   // stop sem resposta fica em disco para retry
   legsync_destruir();   // F05: join dos fios do AutoSync, depois do player
   discord_encerrar();   // a atividade some na hora, sem esperar o Discord notar a queda
   video_encerrar();    // solta o nome LS2 antes do processo sumir (deploy mata sem aviso)

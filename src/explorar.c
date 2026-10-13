@@ -505,7 +505,7 @@ static void eventoClimas(SDL_Keycode k) {
   if (climas.n <= 0) { if (k == SDLK_LEFT) sair = 1; return; }
   if (k == SDLK_LEFT)  { if (col == 0) { sair = 1; return; } clFoco--; }
   else if (k == SDLK_RIGHT) { if (col < cols - 1 && clFoco + 1 < climas.n) clFoco++; }
-  else if (k == SDLK_UP)    { if (clFoco >= cols) clFoco -= cols; }
+  else if (k == SDLK_UP)    { if (clFoco >= cols) clFoco -= cols; else if (ajustes_menu_topo()) sair = 1; }
   else if (k == SDLK_DOWN)  {
     if (clFoco + cols < climas.n) clFoco += cols;
     else if ((clFoco / cols) < (climas.n - 1) / cols) clFoco = climas.n - 1;
@@ -519,7 +519,7 @@ static void eventoClima(SDL_Keycode k) {
   int *c = &caCol[caLinha];
   if (k == SDLK_LEFT)  { if (*c == 0) { sair = 1; return; } (*c)--; }
   else if (k == SDLK_RIGHT) { if (*c + 1 < caN[caLinha]) (*c)++; }
-  else if (k == SDLK_UP)    { if (caLinha == 1 && caN[0] > 0) caLinha = 0; }
+  else if (k == SDLK_UP)    { if (caLinha == 1 && caN[0] > 0) caLinha = 0; else if (ajustes_menu_topo()) sair = 1; }
   else if (k == SDLK_DOWN)  { if (caLinha == 0 && caN[1] > 0) caLinha = 1; }
   else if (ehOk(k)) {
     const MapaObra *o = climaObraFocada();
@@ -533,6 +533,7 @@ static void eventoClima(SDL_Keycode k) {
 static void eventoViz(SDL_Keycode k) {
   int g[MAPA_VIZ_GRUPOS], n = gruposVisiveis(g);
   if (vzLinha < 0) {
+    if (k == SDLK_UP && ajustes_menu_topo()) { sair = 1; return; }
     if (k == SDLK_LEFT) { sair = 1; return; }
     if (k == SDLK_RIGHT && n > 0) { vzLinha = 0; vzCol = 0; }
     else if (ehOk(k)) { abrirPagina(&viz.foco); return; }
@@ -540,7 +541,7 @@ static void eventoViz(SDL_Keycode k) {
   } else {
     if (k == SDLK_LEFT)  { if (vzCol == 0) vzLinha = -1; else vzCol--; }
     else if (k == SDLK_RIGHT) { if (vzCol + 1 < viz.g[g[vzLinha]].n) vzCol++; }
-    else if (k == SDLK_UP)    { if (vzLinha > 0) vzLinha--; }
+    else if (k == SDLK_UP)    { if (vzLinha > 0) vzLinha--; else if (ajustes_menu_topo()) sair = 1; }
     else if (k == SDLK_DOWN)  { if (vzLinha + 1 < n) vzLinha++; }
     else if (ehOk(k)) {
       const MapaVizGrupo *gr = &viz.g[g[vzLinha]];
