@@ -45,6 +45,7 @@ static TituloTempo detalheTempo;
 #include "agenda.h"
 #include "agendaui.h"
 #include "vistoep.h"
+#include "vaitocarui.h"
 #include "pessoa.h"
 #include "streams.h"
 #include "descoberta.h"
@@ -4185,6 +4186,15 @@ static Uint32 sinTrocaDesde;
 static float  hSinVis;            // altura reservada, suavizada
 static int    hSinInit;
 static Uint32 hSinTick;
+// FAIXA "VAI TOCAR" (2.1): a fonte que o automatico escolheria agora. Refeita
+// a cada 250 ms (ou ao mudar o alvo do botao primario) e a altura reservada
+// assenta suave, para a chegada da lista de fontes nao dar salto no hero.
+#define DET_VAI_GAP 18.0f
+static VaiTocar vaiTocar;
+static Uint32 vaiTocarEm;
+static int    vaiTocarIdx = -1, vaiTocarT, vaiTocarE;
+static float  hVaiVis;
+static Uint32 hVaiTick;
 static int    metaEsqVisto;       // o esqueleto da linha de meta foi mostrado
 static Uint32 metaChegouEm;
 
@@ -4195,6 +4205,8 @@ static void heroReiniciar(void) {
   tgraf_reiniciar();
   sinVisto[0] = sinAnt[0] = 0; sinVistoInit = 0; sinTrocaDesde = 0;
   hSinVis = 0.0f; hSinInit = 0; hSinTick = 0;
+  memset(&vaiTocar, 0, sizeof vaiTocar); vaiTocarEm = 0; vaiTocarIdx = -1;
+  hVaiVis = 0.0f; hVaiTick = 0;
   metaEsqVisto = 0; metaChegouEm = 0;
 }
 
@@ -4350,7 +4362,30 @@ static void heroWeb(float a, float desloc) {
   if (!temAmg) focoAmigos = 0;
   float hAmg = temAmg ? NV_DETW_AMIGOS_H + NV_DETW_AMIGOS_GAP : 0.0f;
   float hAcoesExtra = detalheRetrato() ? NV_DETW2_CIRC + NV_DETW2_BTN_GAP : 0;
-  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg;
+  // Faixa "Vai tocar": embaixo dos botoes (e da ilha de amigos), reservada na
+  // pilha de baixo para cima como a ilha. Alvo = o mesmo episodio do botao
+  // primario, para a faixa e o botao nunca falarem de episodios diferentes.
+  float hVai;
+  { const CatItem *ciVt = cat_item(idx);
+    int vt_t = 0, vt_e = 0;
+    if (ehSerie() && !episodioAlvo(&vt_t, &vt_e, NULL)) vt_t = vt_e = 0;
+    if (vaiTocarIdx != idx || vaiTocarT != vt_t || vaiTocarE != vt_e ||
+        (Uint32)(agoraH - vaiTocarEm) > 250u) {
+      if (ciVt && ciVt->imdb[0]) vt_montar(&vaiTocar, ciVt->imdb, vt_t, vt_e);
+      else memset(&vaiTocar, 0, sizeof vaiTocar);
+      vaiTocarIdx = idx; vaiTocarT = vt_t; vaiTocarE = vt_e; vaiTocarEm = agoraH;
+    }
+    { float alvo = vaiTocar.tem ? vtui_altura(&vaiTocar) + DET_VAI_GAP : 0.0f;
+      float dt = hVaiTick ? (float)(Uint32)(agoraH - hVaiTick) : 0.0f;
+      hVaiTick = agoraH;
+      if (dt > 100.0f) dt = 100.0f;
+      if (anim_politica_reduzida) hVaiVis = alvo;
+      else {
+        hVaiVis += (alvo - hVaiVis) * (1.0f - expf(-dt / 90.0f));
+        if (fabsf(alvo - hVaiVis) < 0.5f) hVaiVis = alvo;
+      }
+      hVai = hVaiVis; } }
+  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg - hVai;
   // BLOCO DE LINHAS DE ESTADO, empilhado de baixo para cima logo acima dos
   // botoes. Sao duas, e a ordem tem razao: a retomada explica o BOTAO e fica
   // colada nele; a agenda ("Próximo episódio T2E5 · em 3 dias") explica o
@@ -4638,6 +4673,15 @@ static void heroWeb(float a, float desloc) {
         txt_desenhar_alpha(t1, tx, ty, a);
         txt_desenhar_alpha(t2, tx, ty + t1.h + 2.0f, a * (foc ? 0.9f : 0.8f)); }
       if (a > 0.3f) ponteiro_alvo(ilha.x, ilha.y, ilha.w, ilha.h, ponteiroDetalhe, NULL, -1, DET_PTR_AMIGOS); } }
+
+  // --- FAIXA "VAI TOCAR", logo abaixo dos botoes (e da ilha de amigos) ---------
+  if (vaiTocar.tem && hVai > 1.0f) {
+    float alvoH = vtui_altura(&vaiTocar) + DET_VAI_GAP;
+    float yV = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + hCaption + hAmg + DET_VAI_GAP;
+    float wV = larguraTextoHero() < 1000.0f ? larguraTextoHero() : 1000.0f;
+    float fV = hVai / alvoH;
+    vtui_desenhar(&vaiTocar, NV_DETW2_X - 24.0f, yV, wV, a * (fV > 1.0f ? 1.0f : fV));
+  }
 
   // --- linha da AGENDA ------------------------------------------------------
   // Cor de realce e nao branco: e a unica linha do hero que fala de uma data
