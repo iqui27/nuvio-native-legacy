@@ -9,6 +9,7 @@
 #include "fileiras.h"
 #include "dados.h"
 #include "perfis.h"
+#include "recomenda.h"
 #include "rede.h"
 #include "js.h"
 #include <stdio.h>
@@ -42,6 +43,14 @@ typedef struct {
   int  naHome;
   char titulo[128];
   char autor[64];
+  // A LISTA E PROPRIA? O GET de itens so leva o Bearer quando traktPropria
+  // (descoberta.c), e a reconstrucao de uma fixada nao tem o objeto original:
+  // o que decidiu no momento de fixar tem de sobreviver no arquivo — sem isto,
+  // a lista privada do dono fixada e reaberta vinha 403. As linhas ANTIGAS nao
+  // tem esta coluna: na leitura, o autor (username) e comparado ao slug da
+  // conta Trakt ligada — no Trakt o username E o slug, e e assim que o pin
+  // antigo migra; a proxima gravacao ja escreve a coluna.
+  int  propria;
 } LstFixa;
 static LstFixa fixas[LST_FIX_MAX];
 static int     nFixas;
@@ -97,12 +106,13 @@ static void gravarFixas(void) {
   // encontrar primeiro sera alguem depurando a TV de outra pessoa.
   k += (size_t)snprintf(txt + k, sizeof txt - k,
       "# Listas fixadas na Biblioteca deste perfil.\n"
-      "# fonte\\tid\\tmidia\\tnaHome\\ttitulo\\tautor\n");
+      "# fonte\\tid\\tmidia\\tnaHome\\ttitulo\\tautor\\tpropria\n");
   for (i = 0; i < nFixas && k + 320 < sizeof txt; i++)
-    k += (size_t)snprintf(txt + k, sizeof txt - k, "%s\t%s\t%s\t%d\t%s\t%s\n",
+    k += (size_t)snprintf(txt + k, sizeof txt - k, "%s\t%s\t%s\t%d\t%s\t%s\t%d\n",
                           nomeFonte(fixas[i].fonte), fixas[i].id,
                           fixas[i].midia[0] ? fixas[i].midia : "-",
-                          fixas[i].naHome, fixas[i].titulo, fixas[i].autor);
+                          fixas[i].naHome, fixas[i].titulo, fixas[i].autor,
+                          fixas[i].propria);
   dados_gravar(lst_arquivo(), txt);
 }
 
@@ -114,12 +124,12 @@ static void lerFixas(void) {
   b = dados_ler(lst_arquivo());
   if (!b) { aplicarHome(); return; }
   for (linha = b; *linha; linha = fim) {
-    char *campo[6]; int c = 0; char *s;
+    char *campo[7]; int c = 0; char *s;
     fim = strchr(linha, '\n');
     if (fim) *fim++ = 0; else fim = linha + strlen(linha);
     if (linha[0] == '#' || !linha[0]) continue;
     campo[c++] = linha;
-    for (s = linha; *s && c < 6; s++) if (*s == '\t') { *s = 0; campo[c++] = s + 1; }
+    for (s = linha; *s && c < 7; s++) if (*s == '\t') { *s = 0; campo[c++] = s + 1; }
     if (c < 5 || nFixas >= LST_FIX_MAX) continue;
     { LstFixa *f = &fixas[nFixas];
       memset(f, 0, sizeof *f);
@@ -129,6 +139,13 @@ static void lerFixas(void) {
       f->naHome = atoi(campo[3]) ? 1 : 0;
       snprintf(f->titulo, sizeof f->titulo, "%s", campo[4]);
       if (c > 5) snprintf(f->autor, sizeof f->autor, "%s", campo[5]);
+      if (c > 6) f->propria = atoi(campo[6]) ? 1 : 0;
+      else {
+        // LINHA ANTIGA, sem a coluna propria: migra comparando o dono gravado
+        // ao slug da conta Trakt ligada (no Trakt, username e slug sao o mesmo).
+        const char *eu = recomenda_identidade_trakt();
+        f->propria = eu[0] && !strcmp(f->autor, eu);
+      }
       if (f->id[0] && f->titulo[0]) nFixas++; }
   }
   free(b);
@@ -178,6 +195,7 @@ int lst_alternar_fixada(const LstLista *l) {
     snprintf(f->midia, sizeof f->midia, "%s", l->midia);
     limpo(f->titulo, sizeof f->titulo, l->titulo);
     limpo(f->autor, sizeof f->autor, l->autor);
+    f->propria = l->fonte == LST_TRAKT && l->propria;
     nFixas++; }
   gravarFixas();
   return 1;
@@ -592,7 +610,10 @@ static int montarFixadas(void) {
     snprintf(d->titulo, sizeof d->titulo, "%s", fixas[i].titulo);
     snprintf(d->autor, sizeof d->autor, "%s", fixas[i].autor);
     snprintf(d->midia, sizeof d->midia, "%s", fixas[i].midia);
-    if (fixas[i].fonte == LST_TRAKT)      d->traktId = atol(fixas[i].id);
+    if (fixas[i].fonte == LST_TRAKT) {
+      d->traktId = atol(fixas[i].id);
+      d->propria = fixas[i].propria;
+    }
     else if (fixas[i].fonte == LST_NUVIO) snprintf(d->colId, sizeof d->colId, "%s", fixas[i].id);
     else                                  snprintf(d->estado, sizeof d->estado, "%s", fixas[i].id);
   }

@@ -1405,8 +1405,13 @@ static void tecladoPronto(int para, const char *txt) {
     if (!txt[0]) { dizer("Dê um nome à lista"); return; }
     ok = lstesc_criar(txt, "", 1);
   } else if (para == TEC_DESC && temAberta) {
-    snprintf(descNova, sizeof descNova, "%s", txt);
-    ok = lstesc_descricao(aberta.traktId, descNova);
+    // O texto so fica quando o pedido saiu: lstesc_descricao recusa (0) com
+    // outra escrita em voo, e sobrescrever descNova ali destruiria a descricao
+    // do pedido ANTERIOR, que ainda vai chegar com 200 e seria espelhada errada
+    // na tela e nas tabelas. descNova e o texto do pedido ACEITO, nao o ultimo
+    // digitado.
+    ok = lstesc_descricao(aberta.traktId, txt);
+    if (ok) snprintf(descNova, sizeof descNova, "%s", txt);
   } else if (para == TEC_NOTA && temAberta) {
     ok = lstesc_nota(aberta.traktId, notaItemId, txt);
   }
