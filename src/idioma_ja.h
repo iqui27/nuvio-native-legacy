@@ -3412,6 +3412,7 @@
   T("Opcional. Ajustes curtos do cartaz, no formato do SpatialPosters, por exemplo bs=vetro&side=right (selo de vidro, faixa à direita). O idioma da interface já vai sozinho.", "任意。SpatialPosters 形式の短いポスター調整 (例: bs=vetro&side=right でガラスのバッジ、右側にリボン)。インターフェースの言語は自動的に送られます。"),
   T("Opcional. Token de configuração do SpatialPosters, ou o endereço do manifest colado inteiro. Um token completo costuma ter mais de 500 letras e não cabe aqui; prefira os parâmetros curtos ao lado ou os padrões da sua instância.", "任意。SpatialPosters の設定トークン、またはマニフェストのアドレス全体を貼り付けます。完全なトークンは通常 500 文字を超え、ここには収まりません。隣の短いパラメーターか、お使いのインスタンスの既定値をおすすめします。"),
   T("Opcional. Vazio, a TV baixa sozinha. Com o IP e a porta de um servidor de streaming do Stremio na sua rede (por exemplo 192.168.1.5:11470), quem baixa é ele e a TV só toca.", "任意です。空欄ならテレビが自分でダウンロードします。ネットワーク内の Stremio ストリーミングサーバーの IP とポート(例: 192.168.1.5:11470)を入れると、サーバーがダウンロードし、テレビは再生だけを行います。"),
+  T("Opcional: um passeio rápido pela Home, pela busca e pela Central de controle.", "Optional: a quick walk through Home, search and the Control hub."),
   T("Opção", "オプション"),
   T("Opção Catálogos do destaque sem efeito", "「ヒーローのカタログ」オプションが効いていませんでした"),
   T("Opção inativa explica por quê. E o <b>Guia de uso</b> mora aqui dentro.", "無効なオプションはその理由を説明します。<b>使い方ガイド</b>もここにあります。"),

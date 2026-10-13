@@ -3412,6 +3412,7 @@
   T("Opcional. Ajustes curtos do cartaz, no formato do SpatialPosters, por exemplo bs=vetro&side=right (selo de vidro, faixa à direita). O idioma da interface já vai sozinho.", "可选。SpatialPosters 格式的简短海报调整，例如 bs=vetro&side=right（玻璃徽章，右侧丝带）。界面语言会自动发送。"),
   T("Opcional. Token de configuração do SpatialPosters, ou o endereço do manifest colado inteiro. Um token completo costuma ter mais de 500 letras e não cabe aqui; prefira os parâmetros curtos ao lado ou os padrões da sua instância.", "可选。SpatialPosters 的配置令牌，或整个粘贴的 manifest 地址。完整令牌通常超过 500 个字符，这里放不下；建议使用旁边的简短参数或您实例的默认值。"),
   T("Opcional. Vazio, a TV baixa sozinha. Com o IP e a porta de um servidor de streaming do Stremio na sua rede (por exemplo 192.168.1.5:11470), quem baixa é ele e a TV só toca.", "可选。留空时由电视自己下载。填写你网络中 Stremio 串流服务器的 IP 和端口(例如 192.168.1.5:11470)后,由服务器下载,电视只负责播放。"),
+  T("Opcional: um passeio rápido pela Home, pela busca e pela Central de controle.", "Optional: a quick walk through Home, search and the Control hub."),
   T("Opção", "选项"),
   T("Opção Catálogos do destaque sem efeito", "“主视觉片库”选项此前不起作用"),
   T("Opção inativa explica por quê. E o <b>Guia de uso</b> mora aqui dentro.", "不可用的选项会说明原因。<b>使用指南</b>也在这里。"),
