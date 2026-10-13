@@ -14,6 +14,9 @@
 #include <stddef.h>
 
 enum { RES_S_NAO_COMECA = 0, RES_S_TRAVA, RES_S_SOM, RES_S_LEGENDA, RES_S_CONTINUAR, RES_S_CONTAS, RES_S_N };
+// Registro enviado sem escolher sintoma ("Enviar um registro" da tela inicial).
+// Nao e um cartao: so vale na lista de enviados.
+#define RES_S_GERAL RES_S_N
 // Na ordem em que rodam.
 enum { RES_T_INTERNET = 0, RES_T_ADDONS, RES_T_DEBRID, RES_T_FONTE, RES_T_TV, RES_T_AUDIO, RES_T_N };
 enum { RES_NAO_TESTADO = 0, RES_OK, RES_FALHOU };

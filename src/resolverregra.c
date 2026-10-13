@@ -99,7 +99,7 @@ int resolverregra_enviados_ler(const char *txt, long agora, ResolverEnviado *v, 
     if (*p == '\n') p++;
     if (sscanf(lin, "%15s %ld %d", c, &q, &s) != 3 || !codigo_ok(c)) continue;
     if (agora - q >= RES_GUARDA_S) continue;     // passou dos 30 dias
-    if (s < 0 || s >= RES_S_N) s = RES_S_NAO_COMECA;
+    if (s < 0 || s > RES_S_GERAL) s = RES_S_NAO_COMECA;
     snprintf(v[n].codigo, sizeof v[n].codigo, "%s", c);
     v[n].quando = q;
     v[n].sintoma = s;
