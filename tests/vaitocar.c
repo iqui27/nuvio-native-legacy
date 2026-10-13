@@ -9,6 +9,11 @@
 #include "fonteregra.h"
 #include "fontepref.h"
 #include "dados.h"
+#include "catalogo.h"
+#include "player.h"
+#include "video.h"
+#include "linguas.h"
+#include <SDL2/SDL.h>
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +35,10 @@ static void fonte(Stream *s, const char *prov, const char *rot, const char *arq,
 
 static int tem(const char *s, const char *agulha) { return strstr(s, agulha) != NULL; }
 
+static int semMarcadores(const char *url, char **corpo, int *status) {
+  (void)url; *corpo = NULL; *status = 500; return 500;
+}
+
 int main(void) {
   char dir[] = "/tmp/nv-vaitocar-XXXXXX", caminho[600];
   Stream v[6];
@@ -43,7 +52,7 @@ int main(void) {
   assert(mkdtemp(dir));
   snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dir);
   f = fopen(caminho, "w"); assert(f);
-  fprintf(f, "idioma 0\npularAberturaLocal 0\nfontePrepararLocal 1\n");
+  fprintf(f, "idioma 0\npularAberturaLocal 0\nfontePrepararLocal 1\nclassifPlayerLocal 0\n");
   fclose(f);
   ajustes_dir(dir);
   ajustes_iniciar();
@@ -179,6 +188,35 @@ int main(void) {
   { const char *nomes[] = { "MediaFusion", "Torrentio" }; fonteregra_ordem_definir(nomes, 2); }
   assert(vt_montar(&vt, "tt14688458", 2, 5) && !strcmp(vt.res, "1080p"));
   assert(vt_escolha(&e) && e.indice == 0);
+
+  // Fallback na mesma sessao: MKV falha e o player real recebe um MP4.
+  // A rede indisponivel nao pode apagar a regressao com uma resposta tardia.
+  {
+    CatItem c = {0}; CatEp ep = {.temporada = 2, .episodio = 5};
+    VideoSimulacao sim = {0};
+    IntroTrecho cap = {30, 90, INTRO_ABERTURA, 0}, trechos[8];
+    assert(SDL_Init(SDL_INIT_TIMER) == 0);
+    ling_local_legenda("none");
+    intro_definir_buscador(semMarcadores);
+    strcpy(c.imdb, "tt14688458"); strcpy(c.tipo, "series");
+    c.temporada = 2; c.episodio = 5;
+    cat_definir(&c, 1); cat_definir_episodios(0, &ep, 1);
+    video_simular(&sim);   // pipeline recusa o MKV
+    player_abrir(0, NULL);
+    player_definir_fonte("https://exemplo.invalido/fallback.mkv");
+    intro_definir_capitulos(&cap, 1);
+    assert(intro_trechos(trechos, 8) == 1 && trechos[0].inicio == 30);
+    assert(intro_marcas(c.imdb, 2, 5, &origem) == (VT_T_A | VT_T_C));
+    assert(origem == (VT_O_CAPITULOS | VT_O_THEINTRODB));
+    player_voltar_a_esperar();
+    sim.aceita = 1; video_simular(&sim);
+    player_definir_fonte("https://exemplo.invalido/fallback.mp4");
+    assert(intro_trechos(trechos, 8) == 0);
+    assert(vt_montar(&vt, c.imdb, 2, 5));
+    assert(vt.marcas == VT_T_C && vt.origem == VT_O_THEINTRODB);
+    intro_desligar();
+    puts("ok  fallback MKV->MP4 descarta capitulos e preserva marcas da rede");
+  }
 
   printf("ok vaitocar (escolha: %s, %d linhas, %d fora)\n", e.nome, e.nLinha, fora);
   return 0;

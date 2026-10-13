@@ -606,6 +606,12 @@ void intro_pedir_vizinhos(const char *imdb,int t,int e,double durAnt,double durP
 
 void intro_pedir(const char *imdb,int t,int e){intro_pedir_vizinhos(imdb,t,e,0.0,0.0);}
 
+void intro_trocar_fonte(void){
+  Pedido b;int tem;
+  pthread_mutex_lock(&trava);tem=temUltimo;b=ultimo;pthread_mutex_unlock(&trava);
+  if(tem)disparar(&b,0.0,1);else intro_desligar();
+}
+
 static int tipoDeCap(int t){return t==INTRO_ABERTURA?1:t==INTRO_RESUMO?2:3;}   // creditos e previa andam juntos
 static void fundirCapitulos(void){
   int i,k,j=0;

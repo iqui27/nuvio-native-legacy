@@ -1676,6 +1676,7 @@ static void dvTelaAtualizar(float dt, Uint32 agora) {
 // PRETO enquanto o fluxo abria — que era o "clica em reproduzir e fica preto".
 void player_definir_fonte(const char *url) {
   if ((!aberto && !mini) || !url || !*url) return;
+  intro_trocar_fonte();
   durFonteAvisada = pedProximaFonte = 0;
   // Fonte nova: a duracao esperada conhecida nao vale mais (mesmo titulo,
   // episodio outro, catalogo pode ter andado).
