@@ -33,7 +33,7 @@ static unsigned verGer;
 // ARQUIVO responderam entra; estimativa nao vira marca. O anel e pequeno: a
 // pagina pergunta pelos episodios DA TEMPORADA VISIVEL, e quem acessa (a
 // camada vt.c) ja sabe que 0 = "sem dado", nao "sem marcas".
-static struct { char id[40]; int t, e; int mask, origem; } marcasLem[32];
+static struct { char id[40]; int t, e; int mask, origem[4]; } marcasLem[32];
 static int marcasLemN, marcasLemPtr;
 // COM a trava. `origem` 0 = cada trecho diz a sua (ani = AniSkip, senao
 // TheIntroDB); diferente de 0 vale para todos (capitulos do arquivo).
@@ -46,13 +46,16 @@ static void marcasGuardar(const char *id, int t, int e, const IntroTrecho *v, in
     k = marcasLemN < 32 ? marcasLemN++ : (marcasLemPtr++ & 31);
     snprintf(marcasLem[k].id, sizeof marcasLem[k].id, "%s", id);
     marcasLem[k].t = t; marcasLem[k].e = e;
-    marcasLem[k].mask = 0; marcasLem[k].origem = INTRO_O_NENHUMA;
+    marcasLem[k].mask = 0; memset(marcasLem[k].origem, 0, sizeof marcasLem[k].origem);
   }
   for (int i = 0; i < n; i++) {
     int o = origem ? origem : v[i].ani ? INTRO_O_ANISKIP : INTRO_O_THEINTRODB;
     if (v[i].tipo < INTRO_ABERTURA || v[i].tipo > INTRO_PREVIA) continue;
     marcasLem[k].mask |= 1 << (v[i].tipo - 1);
-    marcasLem[k].origem = marcasLem[k].origem == INTRO_O_NENHUMA || marcasLem[k].origem == o ? o : INTRO_O_MISTA;
+    int tipo = v[i].tipo - 1;
+    // Capitulos substituem o marcador da rede; a origem antiga deixa de contribuir.
+    if (o == INTRO_O_CAPITULOS || marcasLem[k].origem[tipo] != INTRO_O_CAPITULOS)
+      marcasLem[k].origem[tipo] = o;
   }
 }
 int intro_marcas(const char *imdb, int t, int e, int *origem) {
@@ -68,7 +71,7 @@ int intro_marcas(const char *imdb, int t, int e, int *origem) {
   for (k = 0; k < marcasLemN; k++)
     if (!strcmp(marcasLem[k].id, base) && marcasLem[k].t == t && marcasLem[k].e == e) {
       m = marcasLem[k].mask;
-      if (origem) *origem = marcasLem[k].origem;
+      if (origem) for (int i = 0; i < 4; i++) *origem |= marcasLem[k].origem[i];
       break;
     }
   pthread_mutex_unlock(&trava);

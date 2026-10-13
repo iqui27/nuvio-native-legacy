@@ -181,6 +181,8 @@ float stream_selos_fileira(const Stream *s, float x, float y, float maxW, float 
 
 // Indice do stream que o modo automatico escolhe, ou -1 se a lista esta vazia.
 int  stream_automatico(void);
+// Primeira candidata da MESMA fila usada pelo Play, sem conferir URLs.
+int  stream_play_candidata(void);
 // A candidata que o automatico usaria se `atual` falhar (e nao esta excluida)
 // existe e NAO e pior que ela: mesma resolucao ou maior, Dolby Vision igual ou
 // melhor. 0 = nao ha proxima, ou a proxima baixaria a qualidade (#202).

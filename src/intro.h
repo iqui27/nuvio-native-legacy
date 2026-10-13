@@ -30,7 +30,7 @@
 typedef struct { double inicio,fim; int tipo; int ani; } IntroTrecho; // ani 1 = veio do AniSkip
 enum { INTRO_ABERTURA=1, INTRO_RESUMO=2, INTRO_CREDITOS=3, INTRO_PREVIA=4 };
 // Origem das marcas de um episodio (pagina do titulo, 2.1).
-enum { INTRO_O_NENHUMA=0, INTRO_O_THEINTRODB, INTRO_O_ANISKIP, INTRO_O_CAPITULOS, INTRO_O_MISTA };
+enum { INTRO_O_NENHUMA=0, INTRO_O_THEINTRODB=1, INTRO_O_ANISKIP=2, INTRO_O_CAPITULOS=4 }; // bits das origens presentes
 // Marcas ja conhecidas de um episodio nesta sessao: bit0 abertura, bit1 resumo,
 // bit2 creditos, bit3 previa. 0 = nenhuma em memoria (nao pergunta a rede).
 int  intro_marcas(const char *imdb,int temporada,int episodio,int *origem);

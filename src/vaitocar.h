@@ -65,10 +65,9 @@ typedef struct {
 
 enum {
   VT_O_NENHUMA = 0,      // sem origem (nenhuma marca respondeu ainda)
-  VT_O_THEINTRODB,       // TheIntroDB
-  VT_O_ANISKIP,          // AniSkip (animes)
-  VT_O_CAPITULOS,        // capitulos do proprio arquivo
-  VT_O_MISTA             // dois ou mais (ex.: capitulos + TheIntroDB)
+  VT_O_THEINTRODB = 1,   // TheIntroDB
+  VT_O_ANISKIP = 2,      // AniSkip (animes)
+  VT_O_CAPITULOS = 4     // capitulos do proprio arquivo; origens combinam com |
 };
 
 // MONTA a faixa a partir do que ja esta em memoria (streams.c + intro.c).

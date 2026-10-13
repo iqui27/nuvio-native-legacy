@@ -14,16 +14,17 @@
 // diz, os canais. O que nao estiver no texto fica de fora — sem chute.
 static void audioDo(const Stream *s, char *dst, size_t n) {
   static const struct { const char *bit, *rot; } T[] = {
-    { "a-truehd", "TrueHD" }, { "a-atmos", "Atmos" }, { "a-dtshdma", "DTS-HD MA" },
+    { "a-truehd", "TrueHD" }, { "a-truehd-dv", "TrueHD" },
+    { "a-atmos", "Atmos" }, { "a-atmos-dv", "Atmos" }, { "a-dtshdma", "DTS-HD MA" },
     { "a-dtshd", "DTS-HD" }, { "a-dtsx", "DTS:X" }, { "a-dts", "DTS" },
-    { "a-eac3", "EAC3" }, { "a-ddp", "EAC3" }, { "a-dd", "AC3" },
+    { "a-eac3", "EAC3" }, { "a-ddp", "EAC3" }, { "a-dd-dv", "EAC3" }, { "a-dd", "AC3" },
     { "a-ac3", "AC3" }, { "a-aac", "AAC" },
   };
   dst[0] = 0;
   for (size_t i = 0; i < sizeof T / sizeof T[0]; i++)
     if (s->badges & badges_bit(T[i].bit)) { snprintf(dst, n, "%s", T[i].rot); break; }
   if (!dst[0]) return;
-  if (stream_texto_tem(s, "5.1") || s->dolbyAtmos) strncat(dst, " 5.1", n - strlen(dst) - 1);
+  if (stream_texto_tem(s, "5.1")) strncat(dst, " 5.1", n - strlen(dst) - 1);
   else if (stream_texto_tem(s, "7.1")) strncat(dst, " 7.1", n - strlen(dst) - 1);
 }
 
@@ -59,7 +60,8 @@ void vt_descrever(const Stream *s, VaiTocar *vt) {
   else if (s->altura >= 1000 || (s->badges & badges_bit("r-1080"))) snprintf(vt->res, sizeof vt->res, "1080p");
   else if (s->altura >= 700 || (s->badges & badges_bit("r-720"))) snprintf(vt->res, sizeof vt->res, "720p");
   // HDR: o Dolby Vision antes (o que a TV liga primeiro). Vazio = SDR.
-  if (s->dolbyVision || (s->badges & badges_bit("v-dv"))) snprintf(vt->hdr, sizeof vt->hdr, "Dolby Vision");
+  if (s->dolbyVision || (s->badges & (badges_bit("v-dv") | badges_bit("a-atmos-dv") |
+                                   badges_bit("a-truehd-dv") | badges_bit("a-dd-dv")))) snprintf(vt->hdr, sizeof vt->hdr, "Dolby Vision");
   else if (s->badges & badges_bit("v-hdr10plus")) snprintf(vt->hdr, sizeof vt->hdr, "HDR10+");
   else if (s->badges & badges_bit("v-hdr10")) snprintf(vt->hdr, sizeof vt->hdr, "HDR10");
   else if (s->badges & (badges_bit("v-hdr") | badges_bit("v-hlg")))
@@ -80,7 +82,7 @@ int vt_montar(VaiTocar *vt, const char *imdb, int temporada, int episodio) {
   if (temporada > 0 && episodio > 0) snprintf(alvo, sizeof alvo, "%s:%d:%d", imdb, temporada, episodio);
   else snprintf(alvo, sizeof alvo, "%s", imdb);
   if (!stream_lista_do_alvo(alvo)) return 0;
-  int i = stream_automatico();
+  int i = stream_play_candidata();
   const Stream *s = i >= 0 ? stream_item(i) : NULL;
   if (!s) return 0;
   vt_descrever(s, vt);
@@ -111,11 +113,16 @@ void vt_nome_amigavel(const VaiTocar *vt, char *dst, size_t n) {
 }
 
 const char *vt_origem_rotulo(int origem) {
+  static char misto[256];
   switch (origem) {
     case VT_O_THEINTRODB: return i18n("marcas do TheIntroDB");
     case VT_O_ANISKIP:    return i18n("marcas do AniSkip");
     case VT_O_CAPITULOS:  return i18n("capítulos do arquivo");
-    case VT_O_MISTA:      return i18n("capítulos do arquivo + TheIntroDB");
-    default:              return "";
+    case VT_O_CAPITULOS | VT_O_THEINTRODB: return i18n("capítulos do arquivo + TheIntroDB");
   }
+  misto[0] = 0;
+  const char *nomes[] = { i18n("marcas do TheIntroDB"), i18n("marcas do AniSkip"), i18n("capítulos do arquivo") };
+  for (int i = 0; i < 3; i++) if (origem & (1 << i))
+    snprintf(misto + strlen(misto), sizeof misto - strlen(misto), "%s%s", misto[0] ? " + " : "", nomes[i]);
+  return misto;
 }

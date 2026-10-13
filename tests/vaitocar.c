@@ -6,6 +6,7 @@
 #include "ajustes.h"
 #include "badges.h"
 #include "intro.h"
+#include "fonteregra.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -78,11 +79,25 @@ int main(void) {
   assert(tem(nome, "WEB-DL") && tem(nome, "4K"));
   assert(!tem(nome, ".mkv") && !tem(nome, "Silo."));   // frase amigavel, nao o nome cru
 
+  // Badges combinados preservam video/audio; Atmos nao inventa canais.
+  { const char *desc[] = { "DV Atmos 7.1", "DV TrueHD 5.1", "DV EAC3 5.1", "Atmos" };
+    const char *audio[] = { "Atmos 7.1", "TrueHD 5.1", "EAC3 5.1", "Atmos" };
+    for (int j = 0; j < 4; j++) {
+      Stream s;
+      fonte(&s, "Teste", "", "", desc[j], 1080, 0, 100);
+      s.dolbyAtmos = j == 0 || j == 3;
+      memset(&vt, 0, sizeof vt);
+      vt_descrever(&s, &vt);
+      assert(!strcmp(vt.audio, audio[j]));
+      if (j < 3) assert(!strcmp(vt.hdr, "Dolby Vision"));
+    }
+  }
+
   // --- origem das marcas ---
   assert(!strcmp(vt_origem_rotulo(VT_O_NENHUMA), ""));
   assert(tem(vt_origem_rotulo(VT_O_THEINTRODB), "TheIntroDB"));
   assert(tem(vt_origem_rotulo(VT_O_ANISKIP), "AniSkip"));
-  assert(tem(vt_origem_rotulo(VT_O_MISTA), "TheIntroDB"));
+  assert(tem(vt_origem_rotulo(VT_O_CAPITULOS | VT_O_THEINTRODB), "TheIntroDB"));
 
   // --- marcas lembradas: so o que a rede respondeu; 0 = sem dado ---
   assert(vt_pular_ligado());
@@ -97,6 +112,15 @@ int main(void) {
   tr[0].ani = 1;
   intro_shot_marcas("tt14688458", 3, 1, tr, 1, 0);
   assert(intro_marcas("tt14688458", 3, 1, &origem) == VT_T_A && origem == VT_O_ANISKIP);
+
+  intro_shot_marcas("tt14688458", 3, 2, tr, 2, 0);
+  assert(intro_marcas("tt14688458", 3, 2, &origem) == (VT_T_A | VT_T_C));
+  assert(tem(vt_origem_rotulo(origem), "AniSkip") && tem(vt_origem_rotulo(origem), "TheIntroDB"));
+  assert(!tem(vt_origem_rotulo(origem), "arquivo"));
+  intro_shot_marcas("tt14688458", 3, 2, tr, 1, VT_O_CAPITULOS);
+  assert(intro_marcas("tt14688458", 3, 2, &origem));
+  assert(!tem(vt_origem_rotulo(origem), "AniSkip"));
+  assert(tem(vt_origem_rotulo(origem), "arquivo") && tem(vt_origem_rotulo(origem), "TheIntroDB"));
 
   // --- faixa montada do que o automatico escolhe ---
   assert(vt_montar(&vt, "tt14688458", 2, 5) == 1);
@@ -115,6 +139,26 @@ int main(void) {
   }
   assert(fora >= 1 && copias == 1);   // o que ficou de fora vem DEPOIS dos criterios cumpridos
   for (k = 1; k < e.nLinha; k++) assert(!(e.fora[k - 1] && !e.fora[k]));
+
+  // A lembrada no indice 2 vence a 4K tanto na faixa quanto no cartao.
+  stream_preferir(2);
+  assert(vt_montar(&vt, "tt14688458", 2, 5));
+  assert(!strcmp(vt.provedor, "MediaFusion") && !strcmp(vt.res, "1080p"));
+  assert(vt_escolha(&e) && e.indice == 2 && tem(e.nome, "1080p"));
+  stream_preferir(-1);
+
+  // Primeira da lista e ordem estrita dos add-ons tambem chegam ao texto.
+  f = fopen(caminho, "w"); assert(f);
+  fprintf(f, "idioma 0\nfonteAutoLocal 1\n"); fclose(f); ajustes_dir(dir);
+  stream_definir_lista(&v[2], 1);
+  stream_lista_acrescentar(&v[0], 1, 1);
+  assert(vt_montar(&vt, "tt14688458", 2, 5) && !strcmp(vt.res, "1080p"));
+  assert(vt_escolha(&e) && e.indice == 0);
+  f = fopen(caminho, "w"); assert(f);
+  fprintf(f, "idioma 0\nfonteAutoLocal 0\nfonteOrdemUsoLocal 2\n"); fclose(f); ajustes_dir(dir);
+  { const char *nomes[] = { "MediaFusion", "Torrentio" }; fonteregra_ordem_definir(nomes, 2); }
+  assert(vt_montar(&vt, "tt14688458", 2, 5) && !strcmp(vt.res, "1080p"));
+  assert(vt_escolha(&e) && e.indice == 0);
 
   printf("ok vaitocar (escolha: %s, %d linhas, %d fora)\n", e.nome, e.nLinha, fora);
   return 0;

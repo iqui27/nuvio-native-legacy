@@ -1535,21 +1535,17 @@ static int prontaNoDebrid(int i, void *u) {
   return i >= 0 && i < n && lista[i].url[0] && !lista[i].foraCache && !soP2P(&lista[i]);
 }
 
-int stream_primeira_boa(int tentativas) {
-  int fila[VER_MAX], nf, q, tocadas = 0, escolhida, total, pref, livres = 0, kk;
+// Chamar com verTrava: Play e descricao consultam a mesma fila, sem rede.
+static int filaDoPlay(int tentativas, int *fila, int *livres) {
+  int nf, q, total = n, pref = preferida;
   int modo = ajustes_fonte_primeira() ? FONTEAUTO_PRIMEIRA : FONTEAUTO_MELHOR;
   long *pts;
   unsigned char *acima, *excl;
   signed char *grp;
   int *rk, ordemUso = ajustes_fonte_ordem_uso();
-  Conferencia c = { 0, 0, 0, -1 };
-  Uint32 tVerif = 0;
+  *livres = 0;
   tentativas = fonteauto_tentativas(modo, tentativas);
-  pthread_mutex_lock(&verTrava);
-  total = n;
-  pref = preferida;
-  c.geracao = listaGeracao;
-  if (total < 1) { pthread_mutex_unlock(&verTrava); return -1; }
+  if (total < 1) return 0;
   if (tentativas > total) tentativas = total;
   if (tentativas > VER_MAX) tentativas = VER_MAX;
   pts = malloc(sizeof *pts * (size_t)total);
@@ -1557,9 +1553,7 @@ int stream_primeira_boa(int tentativas) {
   excl = calloc((size_t)total, 1);
   grp = calloc((size_t)total, 1);
   rk = calloc((size_t)total, sizeof *rk);
-  regraBloqueou = 0;
   if (!pts || !acima || !excl || !grp || !rk) {
-    pthread_mutex_unlock(&verTrava);
     free(pts); free(acima); free(excl); free(grp); free(rk);
     return -1;
   }
@@ -1569,7 +1563,6 @@ int stream_primeira_boa(int tentativas) {
   { int *ordem = malloc(sizeof *ordem * (size_t)total), posPref = -1;
     FonteRegraCfg cfgEscopo = regraCfg();
     if (!ordem) {
-      pthread_mutex_unlock(&verTrava);
       free(pts); free(acima); free(excl); free(grp); free(rk);
       return -1;
     }
@@ -1585,15 +1578,37 @@ int stream_primeira_boa(int tentativas) {
       excl[q] = (unsigned char)foraDoAuto(i);
       grp[q] = (signed char)grupoDe(i);
       rk[q] = fonteregra_ordem_rank(lista[i].provedor);
-      if (!excl[q]) livres++;
+      if (!excl[q]) (*livres)++;
     }
     // LG: o MP4 da mesma faixa na frente, a mesma regra do automatico.
     if (lgMp4Primeiro()) mp4PrimeiroNaFaixa(ordem, pts, grp, excl, total);
-    pthread_mutex_unlock(&verTrava);
     nf = fonteauto_fila_o(modo, total, posPref, pts, acima, excl, grp, rk, ordemUso, tentativas, fila);
     for (q = 0; q < nf; q++) fila[q] = ordem[fila[q]];
     free(ordem); }
   free(pts); free(acima); free(excl); free(grp); free(rk);
+  return nf;
+}
+
+int stream_play_candidata(void) {
+  int fila[1], livres, nf;
+  pthread_mutex_lock(&verTrava);
+  nf = filaDoPlay(1, fila, &livres);
+  pthread_mutex_unlock(&verTrava);
+  return nf > 0 ? fila[0] : -1;
+}
+
+int stream_primeira_boa(int tentativas) {
+  int fila[VER_MAX], nf, tocadas = 0, escolhida, pref, livres = 0, kk;
+  int modo = ajustes_fonte_primeira() ? FONTEAUTO_PRIMEIRA : FONTEAUTO_MELHOR;
+  int ordemUso = ajustes_fonte_ordem_uso();
+  Conferencia c = { 0, 0, 0, -1 };
+  Uint32 tVerif = 0;
+  pthread_mutex_lock(&verTrava);
+  pref = preferida;
+  c.geracao = listaGeracao;
+  regraBloqueou = 0;
+  nf = filaDoPlay(tentativas, fila, &livres);
+  pthread_mutex_unlock(&verTrava);
   if (nf < 1) {
     // Havia fonte, mas as regras de Ajustes nao deixam nenhuma (#202).
     if (livres > 0) {
@@ -2223,8 +2238,7 @@ static int nFiltrados(void) {
 // na frente quando existe; senao, a de maior pontuacao. Pedido do dono, 16/09.
 // Uma vez por quadro, nunca por linha: stream_automatico percorre a lista.
 static int automaticaDaFolha(void) {
-  return preferida >= 0 && !lista[preferida].foraCache && !automaticaExcluida(preferida) &&
-         (canalFolha || !excedeDecoder(&lista[preferida])) ? preferida : automaticoCom(!canalFolha);
+  return canalFolha ? stream_automatico_canal() : stream_play_candidata();
 }
 
 // A LISTA AGRUPADA POR RESOLUCAO. A ordem da lista (a pontuacao) vale DENTRO
@@ -2716,7 +2730,7 @@ static int copiasDobradas(int i) {
 static int *grupoTmp;
 static int *grupoFitTmp;
 static int grupoTmpCap;
-static void montar(int automatica) {
+static void montarLinhas(int automatica) {
   float y;
   int g, i, k, m = -1, nt;
   int needed = filtro == -1 ? ondever_n(alvoPedido) : n;
@@ -2817,6 +2831,16 @@ static int filtrado(int linha) {
 static int linhaDe(int indice) {
   for (int r = 0; r < nOrdem; r++) if (ordem[r] == indice) return r;
   return -1;
+}
+// A fonte em foco segue seu indice; se dobrar, o OK vai para a mesma copia.
+static void montar(int automatica) {
+  int alvo = grupo == 1 ? (focoFixo >= 0 ? focoFixo : filtrado(foco)) : -1;
+  montarLinhas(automatica);
+  if (alvo >= 0) {
+    int r = linhaDe(alvo);
+    if (r < 0) r = linhaDe(vt_copia_rep(alvo));
+    if (r >= 0) foco = r;
+  }
 }
 static int folhaIlha(void) { return player_aberto(); }
 static float folhaIlhaH(void) { return NV_TELA_H - FOLHA_ILHA_Y - FOLHA_ILHA_CAB - FOLHA_ILHA_BASE; }
@@ -3151,6 +3175,7 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
   montar(automaticaDaFolha());
   if (focoFixo >= 0) {
     int r = grupo == 1 ? linhaDe(focoFixo) : -1;
+    if (r < 0 && grupo == 1) r = linhaDe(vt_copia_rep(focoFixo));
     if (r >= 0) {
 #ifdef NV_TOUCH_UI
       if (!toqueFontes.livre)
@@ -4162,7 +4187,7 @@ int vt_escolha(VtEscolha *e) {
   const Stream *s;
   int i, max, dec = 0, sem = 0, aviso = 0, dobradas = 0;
   memset(e, 0, sizeof *e);
-  i = melhorFolha >= 0 ? melhorFolha : automaticaDaFolha();
+  i = automaticaDaFolha();
   if (i < 0 || i >= n) return 0;
   s = &lista[i];
   memset(&vt, 0, sizeof vt);

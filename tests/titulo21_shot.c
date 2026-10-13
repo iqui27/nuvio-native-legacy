@@ -19,6 +19,7 @@
 #include "streams.h"
 #include "badges.h"
 #include "idioma.h"
+#include "vaitocar.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <assert.h>
@@ -177,5 +178,34 @@ int main(int argc, char **argv) {
   printf("aba de add-on: cartao %.0f px, %d linhas, %d dobradas\n", cartao, linhas, dobradas);
   assert(cartao == 0.0f);
   salvar("4-aba-addon");
+  // Cartao aberto nao conserva o ranking 4K depois de lembrar o indice 2.
+  stream_preferir(2);
+  stream_folha_abrir();
+  quadros(4);
+  { VaiTocar vt; VtEscolha e;
+    assert(vt_montar(&vt, "tt14688458", 2, 5) && !strcmp(vt.res, "1080p"));
+    assert(vt_escolha(&e) && e.indice == 2 && strstr(e.nome, "1080p")); }
+
+  // Foco na 1080p: copia tardia de addon anterior, sem resolucao conhecida.
+  stream_preferir(-1);
+  stream_definir_lista(&v[0], 1);
+  stream_lista_acrescentar(&v[2], 1, 1);
+  fonte(&v[3], "Outro", "720p", "Outro.Arquivo.720p.mkv", "720p", 720, 0, 0);
+  stream_lista_acrescentar(&v[3], 1, 2);
+  stream_folha_abrir();
+  quadros(4);
+  tecla(SDLK_DOWN);
+  stream_shot_foco(&idx, &dob);
+  assert(idx == 1 && !dob);
+  v[4] = v[2];
+  snprintf(v[4].provedor, sizeof v[4].provedor, "Anterior");
+  v[4].altura = 0; v[4].badges = 0;
+  stream_lista_acrescentar(&v[4], 1, 0);
+  assert(vt_copia_rep(1) == 3);
+  quadros(8);
+  stream_shot_foco(&idx, &dob);
+  assert(idx == 3 && !dob);   // foco transferido explicitamente a copia representante
+  tecla(SDLK_RETURN);
+  assert(stream_folha_escolheu(&idx) && idx == 3);
   return 0;
 }
