@@ -277,6 +277,7 @@ typedef struct {
   char tipo[8];
   int conhecido;
   int visto;
+  long long ms;
 } CatHistorico;
 
 // TETO PROPRIO, e nao CAT_MAX (#212). A tabela agora recebe o mapa INTEIRO de
@@ -369,6 +370,7 @@ static int historico_pos(const char *imdb, const char *tipo, int criar) {
   snprintf(historico[nHistorico].tipo, sizeof historico[nHistorico].tipo, "%s", tb);
   historico[nHistorico].conhecido = 0;
   historico[nHistorico].visto = 0;
+  historico[nHistorico].ms = 0;
   histBalde[b] = nHistorico + 1;
   return nHistorico++;
 }
@@ -391,29 +393,48 @@ int cat_historico_estado_item(int indice) {
 // O hash e consultado sob uma trava curta: nenhum ponteiro da tabela escapa,
 // e reset de perfil e insercao de outro fio nunca deixam chave pela metade.
 int cat_historico_estado_id(const char *imdb, const char *tipo) {
+  return cat_historico_estado_tempo(imdb, tipo, NULL);
+}
+
+int cat_historico_estado_tempo(const char *imdb, const char *tipo, long long *ms) {
   int p, estado;
+  if (ms) *ms = 0;
   if (!imdb || !imdb[0]) return -1;
   pthread_mutex_lock(&histTrava);
   p = historico_pos(imdb, tipo ? tipo : "movie", 0);
   estado = p >= 0 && historico[p].conhecido ? historico[p].visto : -1;
+  if (ms && estado >= 0) *ms = historico[p].ms;
   pthread_mutex_unlock(&histTrava);
   return estado;
 }
 
 // Sob histTrava. Ausencia num snapshot Trakt nao apaga uma marca que veio
 // da conta ou de acao local: cada fonte continua acrescentando suas provas.
-static void historico_definir(const char *imdb, const char *tipo, int visto) {
+static void historico_definir(const char *imdb, const char *tipo, int visto, long long ms) {
   int p = historico_pos(imdb, tipo, 1);
   if (p < 0) return;
-  if (historico[p].conhecido && historico[p].visto == (visto ? 1 : 0)) return;
+  if (ms > 0 && historico[p].ms > ms) return;
+  if (!ms) {
+    // Snapshot repetido conserva a data; um jornal fornece a data original.
+    if (historico[p].conhecido && historico[p].visto == (visto ? 1 : 0)) return;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ms = (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+  }
+  if (historico[p].conhecido && historico[p].visto == (visto ? 1 : 0) && historico[p].ms == ms) return;
+  historico[p].ms = ms;
   historico[p].visto = visto ? 1 : 0;
   historico[p].conhecido = 1;
   mudou();
 }
 
 void cat_historico_definir_id(const char *imdb, const char *tipo, int visto) {
+  cat_historico_definir_tempo(imdb, tipo, visto, 0);
+}
+
+void cat_historico_definir_tempo(const char *imdb, const char *tipo, int visto, long long ms) {
   pthread_mutex_lock(&histTrava);
-  historico_definir(imdb, tipo, visto);
+  historico_definir(imdb, tipo, visto, ms);
   pthread_mutex_unlock(&histTrava);
 }
 
@@ -422,7 +443,7 @@ int cat_historico_definir_se_geracao(const char *imdb, const char *tipo,
   int atual;
   pthread_mutex_lock(&histTrava);
   atual = geracao == histGeracao;
-  if (atual) historico_definir(imdb, tipo, visto);
+  if (atual) historico_definir(imdb, tipo, visto, 0);
   pthread_mutex_unlock(&histTrava);
   return atual;
 }

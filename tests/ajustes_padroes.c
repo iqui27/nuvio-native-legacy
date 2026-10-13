@@ -148,7 +148,9 @@ int main(void) {
   assert(!ajustes_proximo_auto() && ajustes_proximo_contagem() == 5);
   assert(AJ_INTERFACE_MODO == AJ_PROXIMO_CONTAGEM + 1);
   assert(AJ_MIC_BUSCA == AJ_INTERFACE_MODO + 1);
-  assert(AJ_MENU_TOPO == AJ_MIC_BUSCA + 1 && AJ_N == AJ_MENU_TOPO + 1);
+  assert(AJ_MENU_TOPO == AJ_MIC_BUSCA + 1);
+  assert(AJ_N == AJ_CONQ_DICAS + 1 && AJ_CONQ_LIGADO == AJ_MENU_TOPO + 1);
+  assert(ajustes_conquistas() && ajustes_conquistas_aviso() && ajustes_conquistas_dicas());
   for (int i = 0; i < AJ_N; i++) assert(strcmp(CHAVE[i], "autoCreditosLocal"));
   puts("ajustes_padroes: ok");
   return 0;

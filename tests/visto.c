@@ -55,6 +55,7 @@ int dados_apagar(const char *n) { (void)n; return 1; }
 int cat_indice_por_imdb(const char *imdb) { (void)imdb; return -1; }
 void cat_aplicar_progresso(int i, double p, double d, int t, int e) { (void)i; (void)p; (void)d; (void)t; (void)e; }
 void cat_historico_definir_id(const char *i, const char *t, int v) { (void)i; (void)t; (void)v; }
+void cat_historico_definir_tempo(const char *i, const char *t, int v, long long ms) { (void)ms; cat_historico_definir_id(i, t, v); }
 unsigned long long cat_historico_geracao(void) { return 1; }
 int cat_historico_definir_se_geracao(const char *i, const char *t, int v,
                                      unsigned long long g) {
