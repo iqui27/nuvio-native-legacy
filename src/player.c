@@ -1813,6 +1813,9 @@ static void lembrarFonte(void) {
   fontevolta_guardar(alvo, sessao_usuario(), perfis_ativo(), s, stream_idade_ms(), SDL_GetTicks());
 }
 
+static int saiuVisto;
+int player_saiu_visto(void) { int v = saiuVisto; saiuVisto = 0; return v; }
+
 static void fecharSessao(int manter) {
   int jaRetido = retido;
   // A tela do DV nao sobrevive a sessao (Voltar ja a tirou; aqui e o resto:
@@ -1911,6 +1914,7 @@ static void fecharSessao(int manter) {
     const CatItem *ci = item();
     home_registrar_retorno(ia, pos, duracaoSeg);
     ilhacart_player_saiu(ia, pos, duracaoSeg, epT, epE);
+    saiuVisto = assistiu;
     if (assistiu) {
       printf("[visto] marcado por player pos=%.3f dur=%.3f assistido=%.3fs id=%s T%dE%d\n",
              (double)pos, (double)duracaoSeg, assistidoSeg, ci ? ci->imdb : "", epT, epE);

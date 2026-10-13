@@ -93,6 +93,7 @@
 #include "novidades1312.h"
 #include "novidades142.h"
 #include "comecar.h"
+#include "conquistas.h"
 #include "novidades148.h"
 #include "novidades170.h"
 #include "novidades180.h"
@@ -2596,6 +2597,11 @@ void app_evento(const SDL_Event *e) {
   // O CARTAO DO CELULAR (celbotao.h), aberto de qualquer campo de texto: come
   // o teclado todo ate fechar.
   if (celb_evento(e)) return;
+  // O AVISO DAS CONQUISTAS (depois dos creditos) nao toma o foco: so o Voltar e
+  // dele, e so enquanto estiver na tela. Vem antes do Voltar do app.
+  if (conquistas_aviso_evento(e)) return;
+  // A TELA DE CONQUISTAS (2.1), aberta pelo Perfil: tela inteira, come o teclado.
+  if (conquistas_aberto()) { conquistas_evento(e); return; }
   // O GUIA DA 2.0 (novidades20.h) e tela inteira e come o teclado todo,
   // inclusive a AZUL (pula para o resumo). "Abrir o Guia de uso" leva a
   // Ajustes › Sobre e ajuda › Guia de uso.
@@ -3063,6 +3069,7 @@ static const char *homeTrailerBloqueio(void) {
   if (avisos_aberto() || avisos_cartao_aberto()) return "notices";
   if (sintro_aberto() || pipintro_aberto() || recintro_aberto() || telemetria_aberto()) return "intro";
   if (comecar_aberto()) return "comecar";
+  if (conquistas_aberto()) return "achievements";
   if (novidades_aberto() || novidades11_aberto() || novidades12_aberto() ||
       novidades13_aberto() || novidades131_aberto() || novidades132_aberto() ||
       novidades133_aberto() || novidades134_aberto() || novidades139_aberto() || novidades1312_aberto() ||
@@ -4860,6 +4867,8 @@ void app_atualizar(float dt, Uint32 agora) {
     snprintf(imdbSaiu, sizeof imdbSaiu, "%s", ci ? ci->imdb : "");
     { unsigned vivoAntes = ilhacart_vivo_seq();
       if (!ajustes_saida_player_home() || !player_suspender()) player_encerrar();
+      // Titulo visto: arma o aviso das Conquistas (so se ligado em Ajustes).
+      if (player_saiu_visto()) conquistas_aviso_armar();
       // UM LUGAR SO (cwretido.h): o cartao da ilha / a faixa "Retomar agora"
       // acabaram de pegar o titulo (player_encerrar -> ilhacart_player_saiu,
       // home_registrar_retorno) e ele NAO entra em "Continuar assistindo"
@@ -5032,6 +5041,7 @@ void app_atualizar(float dt, Uint32 agora) {
   novidades180_atualizar(dt, agora);
   novidades20_atualizar(dt, agora);
   comecar_atualizar(dt, agora);
+  conquistas_atualizar(dt, agora);
   // O pedido de tour sai de ok() (tecla ou ponteiro): conferir aqui cobre os
   // dois caminhos sem duplicar — comecar_pedido consome.
   if (comecar_pedido() == COMECAR_PEDIU_TOUR) novidades20_abrir(loginNovo);
@@ -5593,6 +5603,10 @@ void app_desenhar(Uint32 agora) {
 #endif
     ilha_desenhar(agora);
   }
+  // As Conquistas: tela inteira (ou o esmaecer de saida) e, por baixo de tudo
+  // que e aviso, o aviso depois dos creditos, que nao e camada do ponteiro.
+  CAMADA_SE(conquistas_aberto());
+  if (!registro_aberto()) { conquistas_desenhar(agora); conquistas_aviso_desenhar(); }
   // O cartao do lembrete fica acima do player e da tela: e um aviso com hora.
   CAMADA_SE(glem_cartao_aberto());
   if (!registro_aberto() && sessao_logada() && tela != TELA_LOGIN &&
@@ -5646,7 +5660,7 @@ int app_central_pode(void) {
          perfilsel_concluido() && !registro_aberto() && !spot_aberto() &&
          !teclado_aberto() && !diagnostico_intro_aberto() && !novidades20_aberto() &&
          !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto() &&
-         !comecar_aberto();
+         !comecar_aberto() && !conquistas_aberto();
 }
 
 void app_encerrar(void) {
