@@ -241,6 +241,14 @@ int main(void) {
   printf("\nreconciliacao depois de a descoberta trocar o catalogo:\n");
   confere("nada a refazer com o catalogo intacto", (contalib_reconciliar(), cat_n()), 5);
   confere("a marca continua onde estava", naListaDe("tt1375666"), 1);
+  // Mesmos IDs/indices e naLista: a republicacao trouxe so Trakt.
+  for (int i = 0; i < catN; i++)
+    if (cat[i].naLista) cat[i].fontes = CAT_FONTE_TRAKT;
+  contalib_reconciliar();
+  confere("republicar Trakt repoe Nuvio no titulo da conta",
+          catDe("tt1375666")->fontes, CAT_FONTE_TRAKT | CAT_FONTE_NUVIO);
+  confere("republicar Trakt repoe Nuvio nos demais titulos",
+          catDe("tt0111161")->fontes, CAT_FONTE_TRAKT | CAT_FONTE_NUVIO);
   // cat_definir_tudo: a descoberta publica um catalogo NOVO e tudo que a conta
   // acrescentou desaparece. Sem reconciliar, a Biblioteca esvaziava sozinha uns
   // 20 s depois do arranque.

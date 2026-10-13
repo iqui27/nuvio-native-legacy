@@ -457,7 +457,9 @@ static float bibHS(void) { return escala_min(BIB_TOPO_ESCALA_MIN); }
 static float hdrX(void) { return bibX() / bibHS(); }
 static float hdrW(void) { return bibW() / bibHS(); }
 static float hdrDir(void) { return bibDireita() / bibHS(); }
-static float bibControleMax(void) { return (hdrW() - BIB_FAIXA_GAP * 2.0f) / 3.0f; }
+// Quantos seletores a faixa tem: "Para ver" ganha o quarto, "Origem".
+static int bibNPicks(void);
+static float bibControleMax(void) { return (hdrW() - BIB_FAIXA_GAP * 2.0f) / (float)bibNPicks(); }
 // Os chips descem para uma segunda linha sob as abas: sempre no retrato e, na
 // paisagem, quando abas + chips nao cabem na largura (ver bibFaixaQuebra).
 static int bibFaixaQuebra(void);
@@ -667,7 +669,7 @@ static int ehSerieSalvo(const SalvoItem *s) {
 static int emAndamento(const CatItem *c) {
   return c && !cat_visto(c) && (c->progresso > 0 || c->retomadoMs > 0);
 }
-// Quantos seletores a faixa tem: Para ver ganha o quarto, "Origem".
+// Quantos seletores a faixa tem: "Para ver" ganha o quarto, "Origem".
 static int bibNPicks(void) { return modo == MODO_PARAVER ? 4 : 3; }
 // 1 quando o titulo passa no seletor Origem. `fontes` 0 com naLista e o salvo
 // desta TV: Conta Nuvio.

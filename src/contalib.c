@@ -415,7 +415,13 @@ void contalib_reconciliar(void) {
   // os acrescentados ficam no fim do vetor.
   if (marcaIdx < 0 || marcaIdx >= cat_n()) return;
   c = cat_item(marcaIdx);
-  if (c && !strcmp(c->imdb, marcaId) && c->naLista) return;
+  // `naLista` SOZINHO NAO PROVA NADA. A descoberta tambem republica titulos
+  // que estao no Trakt com `naLista=1` e so o bit Trakt: aceitar a marca ai
+  // deixava o bit Nuvio apagado para sempre e o titulo sumia de "Conta Nuvio".
+  // A marca e sempre um item da conta — sem o bit Nuvio nele, o catalogo foi
+  // republicado por cima e tudo que a conta marcou tem de ser reaplicado.
+  if (c && !strcmp(c->imdb, marcaId) && c->naLista
+      && (c->fontes & CAT_FONTE_NUVIO)) return;
   contalib_aplicar_catalogo();
 }
 

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Faixa de filtros da Biblioteca (tests/biblioteca_faixa.c): em 1920x1080, topo
-# a 120%, Inter e Origem "Conta Nuvio", abas e chips cabem na area util. Janela
+# Faixa de filtros da Biblioteca (tests/biblioteca_faixa.c): 1920x1080 e
+# NV_TOUCH_UI 1080x1920, 120%, Inter e Origem "Conta Nuvio". Janela
 # GL escondida do Mac; sem rede.
 #
 #   bash tests/biblioteca_faixa.sh
@@ -15,7 +15,7 @@ for source in src/*.c src/dts/*.c; do
   sources+=("$source")
 done
 if ! cc "${sources[@]}" tests/biblioteca_faixa.c -Isrc -o "$NUVIO_DADOS/teste" \
-  -O1 -g -DNV_SHOT_HOOKS -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
+  -O1 -g -DNV_SHOT_HOOKS -DNV_TOUCH_UI -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined \
   >"$NUVIO_DADOS/build.log" 2>&1; then
@@ -23,3 +23,4 @@ if ! cc "${sources[@]}" tests/biblioteca_faixa.c -Isrc -o "$NUVIO_DADOS/teste" \
   exit 1
 fi
 "$NUVIO_DADOS/teste" "$@"
+"$NUVIO_DADOS/teste" retrato

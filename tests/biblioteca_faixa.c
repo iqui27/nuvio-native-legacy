@@ -20,6 +20,7 @@
 
 static SDL_Window *janela;
 static int falhas;
+static float direita = NV_BIB_DIR;
 #define CONFERE(c, msg) do { if (c) printf("ok   %s\n", msg); \
   else { printf("FALHA: %s (linha %d)\n", msg, __LINE__); falhas++; } } while (0)
 
@@ -139,16 +140,18 @@ static void confereFaixa(const char *quando) {
   float x0, x1;
   char msg[160];
   int c = faixa(&x0, &x1);
-  printf("     %s: %d alvos, x=%.0f..%.0f\n", quando, c, x0, x1);
+  printf("     %s: %d alvos, x=%.1f..%.1f\n", quando, c, x0, x1);
   snprintf(msg, sizeof msg, "%s: abas e 4 chips sao alvos", quando);
   CONFERE(c >= 9, msg);
-  snprintf(msg, sizeof msg, "%s: nada passa da area util (%.0f)", quando, NV_BIB_DIR);
-  CONFERE(x1 <= NV_BIB_DIR + 0.5f, msg);
+  snprintf(msg, sizeof msg, "%s: nada passa da area util (%.0f)", quando, direita);
+  CONFERE(x1 <= direita, msg);
   snprintf(msg, sizeof msg, "%s: nada antes da margem esquerda", quando);
   CONFERE(x0 >= NV_BIB_X - 0.5f, msg);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+  int retrato = argc > 1 && !strcmp(argv[1], "retrato");
+  int w = retrato ? 1080 : 1920, h = retrato ? 1920 : 1080;
   const char *quero = getenv("NUVIO_DADOS");
   SDL_GLContext gl;
   if (!quero || !*quero) { printf("RECUSADO: rode por tests/biblioteca_faixa.sh\n"); return 2; }
@@ -158,19 +161,24 @@ int main(void) {
     snprintf(cam, sizeof cam, "%s/ajustes.txt", dados_dir());
     fa = fopen(cam, "w");
     if (fa) { fprintf(fa, "idioma 0\n"); fclose(fa); } }   // fonte padrao: Inter
+  layout_tela_definir(w, h);
+  layout_modo_definir(retrato);
+  CONFERE(NV_TELA_W == w && NV_TELA_H == h, "layout usa as dimensoes do caso");
+  gfx_tamanho_alvo(w, h);
+  if (retrato) direita = 984.0f;
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
   janela = SDL_CreateWindow("Nuvio: faixa da Biblioteca", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                            1920, 1080, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+                            w, h, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
   assert(janela);
   gl = SDL_GL_CreateContext(janela);
   assert(gl);
   SDL_GL_SetSwapInterval(0);
-  glViewport(0, 0, 1920, 1080);
-  gfx_tamanho_alvo(1920, 1080);
+  glViewport(0, 0, w, h);
+  gfx_tamanho_alvo(w, h);
   assert(gfx_iniciar());
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64);
@@ -178,11 +186,15 @@ int main(void) {
   extras_carregar("deploy/app/art");
   ajustes_iniciar();
   ajustes_dir(dados_dir());
+  layout_modo_definir(retrato);
+  CONFERE(NV_TELA_W == w && NV_TELA_H == h, "layout usa as dimensoes do caso");
+  gfx_tamanho_alvo(w, h);
   ponteiro_teste_relogio(agora);
-  ponteiro_teste_janela(1920, 1080);
+  ponteiro_teste_janela(w, h);
   ponteiro_teste_toque(0);
+  gfx_escala_ui_definir(1.2f);
 
-  printf("== faixa da Biblioteca, 1920x1080, Origem ate Conta Nuvio\n");
+  printf("== faixa da Biblioteca, %dx%d, Inter, 120%%, Origem ate Conta Nuvio\n", w, h);
   povoar();
   biblioteca_iniciar();
   mover(5, 5);
