@@ -242,24 +242,6 @@
   "nl": "Code opvragen…",
   "ptpt": "A pedir o código…"
  },
- "Perfil infantil": {
-  "en": "Kids profile",
-  "es": "Perfil infantil",
-  "fr": "Profil enfants",
-  "de": "Kinderprofil",
-  "it": "Profilo bambini",
-  "nl": "Kinderprofiel",
-  "ptpt": "Perfil infantil"
- },
- "Perfil infantil · desta TV": {
-  "en": "Kids profile · this TV",
-  "es": "Perfil infantil · esta TV",
-  "fr": "Profil enfants · ce téléviseur",
-  "de": "Kinderprofil · dieser Fernseher",
-  "it": "Profilo bambini · questa TV",
-  "nl": "Kinderprofiel · deze tv",
-  "ptpt": "Perfil infantil · desta TV"
- },
  "Perfil principal": {
   "en": "Main profile",
   "es": "Perfil principal",
@@ -314,15 +296,6 @@
   "nl": "Wie gaat er kijken?",
   "ptpt": "Quem vai ver?"
  },
- "Quer um tour, %s?": {
-  "en": "Want a tour, %s?",
-  "es": "¿Quieres un recorrido, %s?",
-  "fr": "Un petit tour, %s ?",
-  "de": "Möchten Sie eine Tour, %s?",
-  "it": "Vuoi fare un tour, %s?",
-  "nl": "Wil je een rondleiding, %s?",
-  "ptpt": "Quer um tour, %s?"
- },
  "Sem conta externa. O progresso fica guardado neste perfil.": {
   "en": "No external account. Progress is saved in this profile.",
   "es": "Sin cuenta externa. El progreso queda guardado en este perfil.",
@@ -358,15 +331,6 @@
   "it": "La tua configurazione di AIOStreams e AIOMetadata, già pronta",
   "nl": "Je AIOStreams- en AIOMetadata-configuratie, klaar voor gebruik",
   "ptpt": "A sua configuração de AIOStreams e AIOMetadata, já pronta"
- },
- "Só classificação livre e 10 anos.": {
-  "en": "Only All Ages and 10+ ratings.",
-  "es": "Solo clasificación libre y mayores de 10.",
-  "fr": "Classification tous publics et 10 ans seulement.",
-  "de": "Nur Freigabe ab 0 und ab 10 Jahren.",
-  "it": "Solo classificazione libera e 10 anni.",
-  "nl": "Alleen alle leeftijden en 10 jaar.",
-  "ptpt": "Só classificação livre e 10 anos."
  },
  "Só o nome pede ação; o resto já vem preenchido.": {
   "en": "Only the name needs input; the rest comes pre-filled.",
@@ -422,15 +386,6 @@
   "nl": "Een kleine set openbare add-ons om uit te proberen",
   "ptpt": "Um conjunto pequeno de add-ons públicos para experimentar"
  },
- "Um passeio de 1 minuto pelo app: a Home, a busca e a Central de controle. Dá para ver depois em Ajustes.": {
-  "en": "A 1-minute walk through the app: Home, search and the Control hub. You can see it later in Settings.",
-  "es": "Un paseo de 1 minuto por la app: la Home, la búsqueda y la Central de control. Se puede ver después en Ajustes.",
-  "fr": "Une visite d'une minute de l'app : l'accueil, la recherche et le Centre de contrôle. À revoir plus tard dans les Réglages.",
-  "de": "Ein einminütiger Rundgang durch die App: Startseite, Suche und die Steuerzentrale. Später unter Einstellungen erneut verfügbar.",
-  "it": "Un giro di 1 minuto nell'app: la Home, la ricerca e la Central di controllo. Si può vedere dopo in Impostazioni.",
-  "nl": "Een rondleiding van 1 minuut door de app: het beginscherm, zoeken en het Controlecentrum. Later opnieuw te zien via Instellingen.",
-  "ptpt": "Um passeio de 1 minuto pela app: a Home, a procura e a Central de controlo. Dá para ver depois em Ajustes."
- },
  "Você já entrou na sua conta Nuvio. Perfis, Ajustes e salvos de outras TVs chegam por ela.": {
   "en": "You're already signed in to your Nuvio account. Profiles, Settings and saved items from other TVs arrive through it.",
   "es": "Ya has entrado en tu cuenta Nuvio. Los perfiles, Ajustes y guardados de otras TVs llegan por ella.",
@@ -466,5 +421,14 @@
   "it": "Opzionale: un giro rapido tra Home, ricerca e Central di controllo.",
   "nl": "Optioneel: een korte rondgang door het beginscherm, zoeken en het Controlecentrum.",
   "ptpt": "Opcional: um passeio rápido pela Home, pela procura e pela Central de controlo."
+ },
+ "Pular tudo": {
+  "en": "Skip all",
+  "es": "Omitir todo",
+  "fr": "Tout passer",
+  "de": "Alles überspringen",
+  "it": "Salta tutto",
+  "nl": "Alles overslaan",
+  "ptpt": "Saltar tudo"
  }
 }
