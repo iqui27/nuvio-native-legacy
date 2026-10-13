@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark"><title>Nuvio 2.1 — Filmografia, protótipo de UX</title>
+<link rel="icon" href="data:,"><link rel="stylesheet" href="app.css">
+</head>
+<body>
+<nav class="labbar" aria-label="Demonstração">
+  <span><strong>Nuvio 2.1</strong><span class="lab-divider"></span>Filmografia</span>
+  <span class="lab-meio">
+    <button data-pessoa="mara">Mara · 46 títulos</button><button data-pessoa="theo">Theo · 1</button><button data-pessoa="rosa">Rosa · 322</button>
+    <span class="lab-divider"></span>
+    <button id="fontes" aria-pressed="false"><kbd>D</kbd> origem dos dados</button>
+    <span class="leg"><i class="hoje"></i>hoje <i class="nosso"></i>nosso servidor <i class="bloq"></i>sem fonte</span>
+    <span class="lab-divider"></span>
+    <button id="reiniciar">Reiniciar</button>
+  </span>
+  <span><kbd>←↑↓→</kbd> foco · <kbd>Enter</kbd> OK · <kbd>Esc</kbd>/<kbd>⌫</kbd> Voltar</span>
+</nav>
+<div class="quadro"><div class="caixa" id="caixa"><div class="tv" id="tela">
+  <main class="screen" id="tv" aria-label="Ficha da pessoa"></main>
+  <div id="camada"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
+</div></div></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
