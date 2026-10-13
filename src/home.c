@@ -2890,6 +2890,25 @@ static void sincronizarFileiras(void) {
       s->usaItens = 1;
     }
   }
+  // "VISTOS OCULTOS" (#366, homefil.h): a fileira marcada perde os titulos ja
+  // vistos. Se so sobrar o vazio, a fileira fica inteira — fileira sem nada
+  // nao tem foco nem saida; o chip no titulo continua dizendo a marca.
+  for(int i=0;i<destino;i++) {
+    Fileira *s=&fileiras[i];
+    int k=0;
+    if(!ov_ativa(s->chave)||s->stackN||s->n<1||s->n>MAX_CARDS)continue;
+    if(s->tipo==FILEIRA_CATALOGOS||s->tipo==FILEIRA_SOCIAL||s->tipo==FILEIRA_CONTINUE||!s->base[0])continue;
+    int novo[MAX_CARDS];
+    for(int c=0;c<s->n;c++) {
+      int idx=s->usaItens?s->itens[c]:s->ini+c;
+      const CatItem *it=cat_item_exato(idx);
+      if(it&&cat_visto(it))continue;
+      novo[k++]=idx;
+    }
+    if(k<1||k==s->n)continue;
+    memcpy(s->itens,novo,(size_t)k*sizeof *novo);
+    s->usaItens=1;s->n=k;
+  }
   int socialExiste=0;
   for(int i=0;i<destino;i++)if(fileiras[i].tipo==FILEIRA_SOCIAL)socialExiste=1;
   if(!socialExiste && destino<MAX_FIL && ajustes_social()) {
@@ -6573,6 +6592,7 @@ void home_desenhar(Uint32 agora) {
         // ORIGEM DA FILEIRA (home.html `.org`): "Trakt · Este aparelho" ao lado
         // do titulo de Continuar e dos Proximos episodios.
         const char *partes[3];
+        float chipX = homeConteudoX() + tl.w + 22;
         int np = homefil_origem(fileiras[r].chave, trakt_ativo(), simkl_ativo(), partes);
         if (np > 0) {
           char org[96] = "";
@@ -6582,6 +6602,29 @@ void home_desenhar(Uint32 agora) {
           }
           TxtLinha lo = txt_linha(TXT_HERO_META, org, 183, 192, 219, 255);
           txt_desenhar(lo, homeConteudoX() + tl.w + 22, y + (tl.h - lo.h) * .5f);
+          chipX += lo.w + 18.0f;
+        }
+        // Colecao fixada: a fileira diz o que e; os titulos em ordem de
+        // lancamento ainda nao tem fonte (cf_itens, ambar).
+        if (!strncmp(fileiras[r].chave, CF_PREFIXO, strlen(CF_PREFIXO))) {
+          TxtLinha lc = txt_linha(TXT_HERO_META, i18n("Coleção fixada"), 183, 192, 219, 255);
+          txt_desenhar(lc, chipX, y + (tl.h - lc.h) * .5f);
+          chipX += lc.w + 18.0f;
+        }
+        // Chip "vistos ocultos" (#366).
+        if (ov_ativa(fileiras[r].chave)) {
+          TxtLinha lv = txt_linha(TXT_HERO_META, i18n("vistos ocultos"), 238, 240, 245, 255);
+          float py = y + (tl.h - lv.h) * .5f;
+          gfx_cor((GfxRect){ chipX - 12.0f, py - 5.0f, lv.w + 24.0f, lv.h + 10.0f }, 0.5f,
+                  0.04f, 0.045f, 0.055f, 0.62f);
+          txt_desenhar(lv, chipX, py);
+          chipX += lv.w + 30.0f;
+        }
+        // Dica de colecoes: o que segurar OK faz.
+        if (fileiras[r].tipo == FILEIRA_CATALOGOS && foco.fileira == r && !focoHero &&
+            strncmp(fileiras[r].chave, CF_PREFIXO, strlen(CF_PREFIXO))) {
+          TxtLinha lh = txt_linha(TXT_HERO_META, i18n("Segure OK: fixar na Home · mover · ocultar"), 183, 192, 219, 200);
+          txt_desenhar(lh, chipX, y + (tl.h - lh.h) * .5f);
         }
       }
       if (foco.fileira == r && !focoHero && tipo != FILEIRA_SOCIAL) {
