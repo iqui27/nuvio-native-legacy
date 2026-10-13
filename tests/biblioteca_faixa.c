@@ -128,7 +128,6 @@ static int faixa(float *xmin, float *xmax) {
   *xmin = 1e9f; *xmax = -1e9f;
   for (int i = 0; i < n; i++) {
     if (v[i].y > 330.0f) continue;
-    printf("       alvo x=%.0f y=%.0f w=%.0f h=%.0f\n", v[i].x, v[i].y, v[i].w, v[i].h);
     c++;
     if (v[i].x < *xmin) *xmin = v[i].x;
     if (v[i].x + v[i].w > *xmax) *xmax = v[i].x + v[i].w;
