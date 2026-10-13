@@ -35,6 +35,7 @@
 #include "marco.h"
 #include "debrid.h"
 #include "fonteregra.h"
+#include "fontepref.h"
 #include "p2p.h"
 #include "p2pmotor.h"
 #include "fonteauto.h"
@@ -1536,8 +1537,8 @@ static int prontaNoDebrid(int i, void *u) {
 }
 
 // Chamar com verTrava: Play e descricao consultam a mesma fila, sem rede.
-static int filaDoPlay(int tentativas, int *fila, int *livres) {
-  int nf, q, total = n, pref = preferida;
+static int filaDoPlay(int tentativas, int pref, int *fila, int *livres) {
+  int nf, q, total = n;
   int modo = ajustes_fonte_primeira() ? FONTEAUTO_PRIMEIRA : FONTEAUTO_MELHOR;
   long *pts;
   unsigned char *acima, *excl;
@@ -1590,9 +1591,16 @@ static int filaDoPlay(int tentativas, int *fila, int *livres) {
 }
 
 int stream_play_candidata(void) {
-  int fila[1], livres, nf;
+  int fila[1], livres, nf, pref = preferida;
+  // Resolver como Play mesmo sem preparo, sem alterar preferida no desenho.
+  // Fora de verTrava: fontepref consulta a lista para casar a escolha salva.
+  if (alvoLista[0]) {
+    int lembrada = ajustes_fonte_manual() ? fontepref_escolher_manual(alvoLista)
+                                        : fontepref_escolher(alvoLista);
+    if (lembrada >= 0) pref = lembrada;
+  }
   pthread_mutex_lock(&verTrava);
-  nf = filaDoPlay(1, fila, &livres);
+  nf = filaDoPlay(1, pref, fila, &livres);
   pthread_mutex_unlock(&verTrava);
   return nf > 0 ? fila[0] : -1;
 }
@@ -1607,7 +1615,7 @@ int stream_primeira_boa(int tentativas) {
   pref = preferida;
   c.geracao = listaGeracao;
   regraBloqueou = 0;
-  nf = filaDoPlay(tentativas, fila, &livres);
+  nf = filaDoPlay(tentativas, pref, fila, &livres);
   pthread_mutex_unlock(&verTrava);
   if (nf < 1) {
     // Havia fonte, mas as regras de Ajustes nao deixam nenhuma (#202).

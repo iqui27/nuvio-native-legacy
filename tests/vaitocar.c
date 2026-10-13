@@ -7,6 +7,8 @@
 #include "badges.h"
 #include "intro.h"
 #include "fonteregra.h"
+#include "fontepref.h"
+#include "dados.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,7 +43,7 @@ int main(void) {
   assert(mkdtemp(dir));
   snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dir);
   f = fopen(caminho, "w"); assert(f);
-  fprintf(f, "idioma 0\npularAberturaLocal 0\n");
+  fprintf(f, "idioma 0\npularAberturaLocal 0\nfontePrepararLocal 1\n");
   fclose(f);
   ajustes_dir(dir);
   ajustes_iniciar();
@@ -145,6 +147,24 @@ int main(void) {
   assert(vt_montar(&vt, "tt14688458", 2, 5));
   assert(!strcmp(vt.provedor, "MediaFusion") && !strcmp(vt.res, "1080p"));
   assert(vt_escolha(&e) && e.indice == 2 && tem(e.nome, "1080p"));
+  stream_preferir(-1);
+
+  // Reabrir com preferencia persistida e preparo desligado: faixa e Play iguais.
+  assert(setenv("NUVIO_DADOS", dir, 1) == 0);
+  dados_iniciar(dir);
+  assert(!strcmp(dados_dir(), dir) && !ajustes_fonte_preparar());
+  assert(fontepref_guardar("tt14688458", &v[2]));
+  fontepref_definir_perfil(1);
+  fontepref_definir_perfil(0);   // descarrega a tabela: a escolha vem do disco
+  stream_definir_lista(v, 6);   // reabrir zera preferida
+  assert(stream_preferida() == -1 && stream_automatico() != 2);
+  assert(vt_montar(&vt, "tt14688458", 2, 5));
+  assert(!strcmp(vt.provedor, "MediaFusion") && !strcmp(vt.res, "1080p"));
+  assert(vt_escolha(&e) && e.indice == 2);
+  assert(stream_preferida() == -1);   // desenhar nao prepara nem muda a lista
+  stream_preferir(fontepref_escolher("tt14688458"));   // caminho do Play
+  assert(stream_play_candidata() == e.indice);
+  fontepref_esquecer();
   stream_preferir(-1);
 
   // Primeira da lista e ordem estrita dos add-ons tambem chegam ao texto.
