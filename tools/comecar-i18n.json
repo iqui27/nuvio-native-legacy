@@ -1,0 +1,461 @@
+{
+ "1 · Perfil": {
+  "en": "1 · Profile",
+  "es": "1 · Perfil",
+  "fr": "1 · Profil",
+  "de": "1 · Profil",
+  "it": "1 · Profilo",
+  "nl": "1 · Profiel",
+  "ptpt": "1 · Perfil"
+ },
+ "2 · Trazer suas coisas": {
+  "en": "2 · Bring your stuff",
+  "es": "2 · Traer tus cosas",
+  "fr": "2 · Apporter vos contenus",
+  "de": "2 · Ihre Inhalte mitbringen",
+  "it": "2 · Porta le tue cose",
+  "nl": "2 · Jouw spullen meenemen",
+  "ptpt": "2 · Trazer as suas coisas"
+ },
+ "3 · Acompanhar": {
+  "en": "3 · Tracking",
+  "es": "3 · Seguimiento",
+  "fr": "3 · Suivi",
+  "de": "3 · Verfolgen",
+  "it": "3 · Tracciamento",
+  "nl": "3 · Bijhouden",
+  "ptpt": "3 · Acompanhar"
+ },
+ "4 · Pronto": {
+  "en": "4 · Ready",
+  "es": "4 · Listo",
+  "fr": "4 · Prêt",
+  "de": "4 · Fertig",
+  "it": "4 · Pronti",
+  "nl": "4 · Klaar",
+  "ptpt": "4 · Pronto"
+ },
+ "Abra este endereço no celular e digite o código:": {
+  "en": "Open this address on your phone and enter the code:",
+  "es": "Abre esta dirección en el móvil e introduce el código:",
+  "fr": "Ouvrez cette adresse sur votre téléphone et saisissez le code :",
+  "de": "Öffnen Sie diese Adresse auf Ihrem Smartphone und geben Sie den Code ein:",
+  "it": "Apri questo indirizzo sul telefono e inserisci il codice:",
+  "nl": "Open dit adres op je telefoon en voer de code in:",
+  "ptpt": "Abra este endereço no telemóvel e escreva o código:"
+ },
+ "Add-ons na mesma ordem, biblioteca e Continuar assistindo": {
+  "en": "Add-ons in the same order, library and Continue watching",
+  "es": "Add-ons en el mismo orden, biblioteca y Seguir viendo",
+  "fr": "Add-ons dans le même ordre, bibliothèque et Reprendre",
+  "de": "Add-ons in derselben Reihenfolge, Bibliothek und Weiterschauen",
+  "it": "Add-on nello stesso ordine, libreria e Continua a guardare",
+  "nl": "Add-ons in dezelfde volgorde, bibliotheek en Doorgaan met kijken",
+  "ptpt": "Add-ons pela mesma ordem, biblioteca e Continuar a ver"
+ },
+ "Add-ons, catálogos e o que estava assistindo. Escolha uma; dá para juntar outra depois.": {
+  "en": "Add-ons, catalogs and what you were watching. Pick one; you can add another later.",
+  "es": "Add-ons, catálogos y lo que estabas viendo. Elige uno; puedes añadir otro después.",
+  "fr": "Add-ons, catalogues et ce que vous regardiez. Choisissez-en un ; vous pourrez en ajouter un autre ensuite.",
+  "de": "Add-ons, Kataloge und das, was Sie angesehen haben. Wählen Sie eines; ein anderes können Sie später hinzufügen.",
+  "it": "Add-on, cataloghi e quello che stavi guardando. Scegline uno; puoi aggiungerne un altro dopo.",
+  "nl": "Add-ons, catalogi en wat je aan het kijken was. Kies er één; later kun je een andere toevoegen.",
+  "ptpt": "Add-ons, catálogos e o que estava a ver. Escolha uma; dá para juntar outra depois."
+ },
+ "Ainda não dá para trazer por aqui. Por enquanto, instale os add-ons em Ajustes › Fontes e addons.": {
+  "en": "Not available here yet. For now, install add-ons in Settings › Sources and add-ons.",
+  "es": "Todavía no se puede traer por aquí. Por ahora, instala los add-ons en Ajustes › Fuentes y add-ons.",
+  "fr": "Ce n'est pas encore possible ici. Pour l'instant, installez les add-ons dans Réglages › Sources et add-ons.",
+  "de": "Das geht hier noch nicht. Installieren Sie Add-ons vorerst unter Einstellungen › Quellen und Add-ons.",
+  "it": "Non si può ancora portare da qui. Per ora, installa gli add-on in Impostazioni › Fonti e add-on.",
+  "nl": "Hier meenemen kan nog niet. Installeer add-ons voorlopig via Instellingen › Bronnen en add-ons.",
+  "ptpt": "Ainda não dá para trazer por aqui. Por agora, instale os add-ons em Ajustes › Fontes e add-ons."
+ },
+ "Aperte OK para ligar": {
+  "en": "Press OK to connect",
+  "es": "Pulsa OK para conectar",
+  "fr": "Appuyez sur OK pour connecter",
+  "de": "Drücken Sie OK zum Verbinden",
+  "it": "Premi OK per collegare",
+  "nl": "Druk op OK om te verbinden",
+  "ptpt": "Prima OK para ligar"
+ },
+ "Aperte OK para seguir sem conta": {
+  "en": "Press OK to continue without an account",
+  "es": "Pulsa OK para seguir sin cuenta",
+  "fr": "Appuyez sur OK pour continuer sans compte",
+  "de": "Drücken Sie OK, um ohne Konto fortzufahren",
+  "it": "Premi OK per continuare senza account",
+  "nl": "Druk op OK om zonder account verder te gaan",
+  "ptpt": "Prima OK para continuar sem conta"
+ },
+ "Bom para anime. Entra pelo código no celular.": {
+  "en": "Good for anime. Sign in with the code on your phone.",
+  "es": "Bueno para anime. Entra con el código en el móvil.",
+  "fr": "Bien pour les animés. Connectez-vous avec le code sur votre téléphone.",
+  "de": "Gut für Anime. Melden Sie sich mit dem Code auf dem Smartphone an.",
+  "it": "Ottimo per gli anime. Entra con il codice dal telefono.",
+  "nl": "Goed voor anime. Log in met de code op je telefoon.",
+  "ptpt": "Bom para anime. Entre com o código no telemóvel."
+ },
+ "Cada perfil tem o próprio Continuar, as próprias listas e os próprios Ajustes. Dá para criar outros depois.": {
+  "en": "Each profile has its own Continue watching, its own lists and its own Settings. You can create more later.",
+  "es": "Cada perfil tiene su propio Seguir viendo, sus propias listas y sus propios Ajustes. Se pueden crear otros después.",
+  "fr": "Chaque profil a son propre Reprendre, ses propres listes et ses propres Réglages. Vous pourrez en créer d'autres ensuite.",
+  "de": "Jedes Profil hat sein eigenes Weiterschauen, eigene Listen und eigene Einstellungen. Weitere können Sie später anlegen.",
+  "it": "Ogni profilo ha il suo Continua a guardare, le sue liste e le sue Impostazioni. Puoi crearne altri dopo.",
+  "nl": "Elk profiel heeft zijn eigen Doorgaan met kijken, eigen lijsten en eigen Instellingen. Je kunt er later meer aanmaken.",
+  "ptpt": "Cada perfil tem o seu Continuar a ver, as suas listas e os seus Ajustes. Dá para criar outros depois."
+ },
+ "Começar do zero": {
+  "en": "Start from scratch",
+  "es": "Empezar de cero",
+  "fr": "Partir de zéro",
+  "de": "Von vorn anfangen",
+  "it": "Partire da zero",
+  "nl": "Van nul beginnen",
+  "ptpt": "Começar do zero"
+ },
+ "Conta Stremio": {
+  "en": "Stremio account",
+  "es": "Cuenta de Stremio",
+  "fr": "Compte Stremio",
+  "de": "Stremio-Konto",
+  "it": "Account Stremio",
+  "nl": "Stremio-account",
+  "ptpt": "Conta Stremio"
+ },
+ "Dá para mudar em Ajustes › Contas.": {
+  "en": "You can change it in Settings › Accounts.",
+  "es": "Se puede cambiar en Ajustes › Cuentas.",
+  "fr": "Modifiable dans Réglages › Comptes.",
+  "de": "Änderbar unter Einstellungen › Konten.",
+  "it": "Si può cambiare in Impostazioni › Account.",
+  "nl": "Wijzigbaar via Instellingen › Accounts.",
+  "ptpt": "Dá para mudar em Ajustes › Contas."
+ },
+ "Esperando você autorizar": {
+  "en": "Waiting for you to authorize",
+  "es": "Esperando tu autorización",
+  "fr": "En attente de votre autorisation",
+  "de": "Warte auf Ihre Autorisierung",
+  "it": "In attesa della tua autorizzazione",
+  "nl": "Wachten op je goedkeuring",
+  "ptpt": "À espera da sua autorização"
+ },
+ "Fazer o tour · 1 min": {
+  "en": "Take the tour · 1 min",
+  "es": "Hacer el recorrido · 1 min",
+  "fr": "Faire le tour · 1 min",
+  "de": "Tour machen · 1 Min.",
+  "it": "Fai il tour · 1 min",
+  "nl": "Rondleiding · 1 min",
+  "ptpt": "Fazer o tour · 1 min"
+ },
+ "Histórico, watchlist e Próximos episódios.": {
+  "en": "History, watchlist and Up next.",
+  "es": "Historial, watchlist y Próximos episodios.",
+  "fr": "Historique, watchlist et Prochains épisodes.",
+  "de": "Verlauf, Watchlist und Nächste Folgen.",
+  "it": "Cronologia, watchlist e Prossimi episodi.",
+  "nl": "Geschiedenis, watchlist en Volgende afleveringen.",
+  "ptpt": "Histórico, watchlist e Próximos episódios."
+ },
+ "Ir para a Home": {
+  "en": "Go to Home",
+  "es": "Ir a la Home",
+  "fr": "Aller à l'accueil",
+  "de": "Zur Startseite",
+  "it": "Vai alla Home",
+  "nl": "Naar het beginscherm",
+  "ptpt": "Ir para a Home"
+ },
+ "Isto ficou arrumado:": {
+  "en": "We set this up:",
+  "es": "Hemos dejado esto listo:",
+  "fr": "Voici ce qui a été réglé :",
+  "de": "Das haben wir eingerichtet:",
+  "it": "Abbiamo sistemato questo:",
+  "nl": "Dit hebben we geregeld:",
+  "ptpt": "Isto ficou arrumado:"
+ },
+ "Já usa o Nuvio em outra TV? No próximo passo, “Conta Nuvio” traz os perfis de lá.": {
+  "en": "Already use Nuvio on another TV? In the next step, “Nuvio account” brings those profiles over.",
+  "es": "¿Ya usas Nuvio en otra TV? En el siguiente paso, “Cuenta Nuvio” trae los perfiles de allí.",
+  "fr": "Vous utilisez déjà Nuvio sur un autre téléviseur ? À l'étape suivante, « Compte Nuvio » en récupère les profils.",
+  "de": "Nutzen Sie Nuvio schon auf einem anderen Fernseher? Im nächsten Schritt bringt „Nuvio-Konto“ die Profile von dort mit.",
+  "it": "Usi già Nuvio su un'altra TV? Nel prossimo passo, \"Account Nuvio\" porta qui i profili di lì.",
+  "nl": "Gebruik je Nuvio al op een andere tv? In de volgende stap haalt \"Nuvio-account\" de profielen daar op.",
+  "ptpt": "Já usa o Nuvio noutra TV? No próximo passo, \"Conta Nuvio\" traz os perfis de lá."
+ },
+ "Nome e cor guardados nesta TV.": {
+  "en": "Name and color saved on this TV.",
+  "es": "Nombre y color guardados en esta TV.",
+  "fr": "Nom et couleur enregistrés sur ce téléviseur.",
+  "de": "Name und Farbe auf diesem Fernseher gespeichert.",
+  "it": "Nome e colore salvati su questa TV.",
+  "nl": "Naam en kleur op deze tv bewaard.",
+  "ptpt": "Nome e cor guardados nesta TV."
+ },
+ "Não deu certo. OK para tentar de novo.": {
+  "en": "It didn't work. Press OK to try again.",
+  "es": "No funcionó. Pulsa OK para intentarlo de nuevo.",
+  "fr": "Ça n'a pas fonctionné. Appuyez sur OK pour réessayer.",
+  "de": "Es hat nicht geklappt. Drücken Sie OK, um es erneut zu versuchen.",
+  "it": "Non ha funzionato. Premi OK per riprovare.",
+  "nl": "Het is niet gelukt. Druk op OK om het opnieuw te proberen.",
+  "ptpt": "Não resultou. Prima OK para tentar outra vez."
+ },
+ "O Nuvio avisa o tracker quando você termina um episódio e lê de lá o que falta ver. Pode ligar mais de um.": {
+  "en": "Nuvio tells the tracker when you finish an episode and reads from it what's left to watch. You can connect more than one.",
+  "es": "Nuvio avisa al tracker cuando terminas un episodio y lee de él lo que falta por ver. Se puede conectar más de uno.",
+  "fr": "Nuvio prévient le tracker quand vous terminez un épisode et y lit ce qu'il reste à voir. Vous pouvez en connecter plusieurs.",
+  "de": "Nuvio meldet dem Tracker, wenn Sie eine Folge beenden, und liest dort, was noch zu sehen ist. Sie können mehrere verbinden.",
+  "it": "Nuvio avvisa il tracker quando finisci un episodio e legge da lì cosa resta da vedere. Puoi collegarne più di uno.",
+  "nl": "Nuvio meldt het de tracker als je een aflevering afrondt en leest ervan wat je nog moet kijken. Je kunt er meer dan één verbinden.",
+  "ptpt": "O Nuvio avisa o tracker quando termina um episódio e lê de lá o que falta ver. Dá para ligar mais de um."
+ },
+ "OK para digitar": {
+  "en": "Press OK to type",
+  "es": "Pulsa OK para escribir",
+  "fr": "Appuyez sur OK pour saisir",
+  "de": "Drücken Sie OK zum Eingeben",
+  "it": "Premi OK per digitare",
+  "nl": "Druk op OK om te typen",
+  "ptpt": "Prima OK para escrever"
+ },
+ "Onde marcar o que você assiste": {
+  "en": "Where to mark what you watch",
+  "es": "Dónde marcar lo que ves",
+  "fr": "Où marquer ce que vous regardez",
+  "de": "Wo markiert wird, was Sie sehen",
+  "it": "Dove segnare ciò che guardi",
+  "nl": "Waar je kijkt wordt bijgehouden",
+  "ptpt": "Onde marcar o que vê"
+ },
+ "Pedindo o código…": {
+  "en": "Requesting the code…",
+  "es": "Pidiendo el código…",
+  "fr": "Demande du code…",
+  "de": "Code wird angefordert …",
+  "it": "Richiedo il codice…",
+  "nl": "Code opvragen…",
+  "ptpt": "A pedir o código…"
+ },
+ "Perfil infantil": {
+  "en": "Kids profile",
+  "es": "Perfil infantil",
+  "fr": "Profil enfants",
+  "de": "Kinderprofil",
+  "it": "Profilo bambini",
+  "nl": "Kinderprofiel",
+  "ptpt": "Perfil infantil"
+ },
+ "Perfil infantil · desta TV": {
+  "en": "Kids profile · this TV",
+  "es": "Perfil infantil · esta TV",
+  "fr": "Profil enfants · ce téléviseur",
+  "de": "Kinderprofil · dieser Fernseher",
+  "it": "Profilo bambini · questa TV",
+  "nl": "Kinderprofiel · deze tv",
+  "ptpt": "Perfil infantil · desta TV"
+ },
+ "Perfil principal": {
+  "en": "Main profile",
+  "es": "Perfil principal",
+  "fr": "Profil principal",
+  "de": "Hauptprofil",
+  "it": "Profilo principale",
+  "nl": "Hoofdprofiel",
+  "ptpt": "Perfil principal"
+ },
+ "Perfil principal · desta TV": {
+  "en": "Main profile · this TV",
+  "es": "Perfil principal · esta TV",
+  "fr": "Profil principal · ce téléviseur",
+  "de": "Hauptprofil · dieser Fernseher",
+  "it": "Profilo principale · questa TV",
+  "nl": "Hoofdprofiel · deze tv",
+  "ptpt": "Perfil principal · desta TV"
+ },
+ "Perfis, Ajustes e salvos de outra TV": {
+  "en": "Profiles, Settings and saved items from another TV",
+  "es": "Perfiles, Ajustes y guardados de otra TV",
+  "fr": "Profils, Réglages et éléments enregistrés d'un autre téléviseur",
+  "de": "Profile, Einstellungen und Gespeichertes von einem anderen Fernseher",
+  "it": "Profili, Impostazioni e salvataggi da un'altra TV",
+  "nl": "Profielen, instellingen en opgeslagen items van een andere tv",
+  "ptpt": "Perfis, Ajustes e guardados doutra TV"
+ },
+ "Pronto, %s.": {
+  "en": "Ready, %s.",
+  "es": "Listo, %s.",
+  "fr": "Prêt, %s.",
+  "de": "Fertig, %s.",
+  "it": "Pronti, %s.",
+  "nl": "Klaar, %s.",
+  "ptpt": "Pronto, %s."
+ },
+ "Pular este passo": {
+  "en": "Skip this step",
+  "es": "Saltar este paso",
+  "fr": "Passer cette étape",
+  "de": "Diesen Schritt überspringen",
+  "it": "Salta questo passaggio",
+  "nl": "Deze stap overslaan",
+  "ptpt": "Saltar este passo"
+ },
+ "Quem vai assistir?": {
+  "en": "Who's watching?",
+  "es": "¿Quién va a ver?",
+  "fr": "Qui va regarder ?",
+  "de": "Wer sieht fern?",
+  "it": "Chi guarda?",
+  "nl": "Wie gaat er kijken?",
+  "ptpt": "Quem vai ver?"
+ },
+ "Quer um tour, %s?": {
+  "en": "Want a tour, %s?",
+  "es": "¿Quieres un recorrido, %s?",
+  "fr": "Un petit tour, %s ?",
+  "de": "Möchten Sie eine Tour, %s?",
+  "it": "Vuoi fare un tour, %s?",
+  "nl": "Wil je een rondleiding, %s?",
+  "ptpt": "Quer um tour, %s?"
+ },
+ "Sem conta externa. O progresso fica guardado neste perfil.": {
+  "en": "No external account. Progress is saved in this profile.",
+  "es": "Sin cuenta externa. El progreso queda guardado en este perfil.",
+  "fr": "Sans compte externe. La progression est enregistrée dans ce profil.",
+  "de": "Ohne externes Konto. Der Fortschritt wird in diesem Profil gespeichert.",
+  "it": "Senza account esterni. I progressi restano in questo profilo.",
+  "nl": "Zonder extern account. De voortgang wordt in dit profiel bewaard.",
+  "ptpt": "Sem conta externa. O progresso fica guardado neste perfil."
+ },
+ "Seu nome": {
+  "en": "Your name",
+  "es": "Tu nombre",
+  "fr": "Votre nom",
+  "de": "Ihr Name",
+  "it": "Il tuo nome",
+  "nl": "Jouw naam",
+  "ptpt": "O seu nome"
+ },
+ "Simkl ligado": {
+  "en": "Simkl connected",
+  "es": "Simkl conectado",
+  "fr": "Simkl connecté",
+  "de": "Simkl verbunden",
+  "it": "Simkl collegato",
+  "nl": "Simkl verbonden",
+  "ptpt": "Simkl ligado"
+ },
+ "Sua configuração de AIOStreams e AIOMetadata, já pronta": {
+  "en": "Your AIOStreams and AIOMetadata setup, ready to go",
+  "es": "Tu configuración de AIOStreams y AIOMetadata, ya lista",
+  "fr": "Votre configuration AIOStreams et AIOMetadata, déjà prête",
+  "de": "Ihre AIOStreams- und AIOMetadata-Konfiguration, fertig eingerichtet",
+  "it": "La tua configurazione di AIOStreams e AIOMetadata, già pronta",
+  "nl": "Je AIOStreams- en AIOMetadata-configuratie, klaar voor gebruik",
+  "ptpt": "A sua configuração de AIOStreams e AIOMetadata, já pronta"
+ },
+ "Só classificação livre e 10 anos.": {
+  "en": "Only All Ages and 10+ ratings.",
+  "es": "Solo clasificación libre y mayores de 10.",
+  "fr": "Classification tous publics et 10 ans seulement.",
+  "de": "Nur Freigabe ab 0 und ab 10 Jahren.",
+  "it": "Solo classificazione libera e 10 anni.",
+  "nl": "Alleen alle leeftijden en 10 jaar.",
+  "ptpt": "Só classificação livre e 10 anos."
+ },
+ "Só o nome pede ação; o resto já vem preenchido.": {
+  "en": "Only the name needs input; the rest comes pre-filled.",
+  "es": "Solo el nombre pide acción; el resto ya viene relleno.",
+  "fr": "Seul le nom demande une action ; le reste est déjà rempli.",
+  "de": "Nur der Name erfordert eine Eingabe; alles andere ist vorausgefüllt.",
+  "it": "Solo il nome richiede un'azione; il resto è già precompilato.",
+  "nl": "Alleen de naam vraagt om invoer; de rest is al ingevuld.",
+  "ptpt": "Só o nome pede ação; o resto já vem preenchido."
+ },
+ "Tour de 1 minuto": {
+  "en": "1-minute tour",
+  "es": "Recorrido de 1 minuto",
+  "fr": "Tour d'une minute",
+  "de": "Tour von 1 Minute",
+  "it": "Tour di 1 minuto",
+  "nl": "Rondleiding van 1 minuut",
+  "ptpt": "Tour de 1 minuto"
+ },
+ "Traga o que você já usa": {
+  "en": "Bring what you already use",
+  "es": "Trae lo que ya usas",
+  "fr": "Apportez ce que vous utilisez déjà",
+  "de": "Bringen Sie mit, was Sie schon nutzen",
+  "it": "Porta ciò che usi già",
+  "nl": "Neem mee wat je al gebruikt",
+  "ptpt": "Traga o que já usa"
+ },
+ "Trakt e Simkl ligados": {
+  "en": "Trakt and Simkl connected",
+  "es": "Trakt y Simkl conectados",
+  "fr": "Trakt et Simkl connectés",
+  "de": "Trakt und Simkl verbunden",
+  "it": "Trakt e Simkl collegati",
+  "nl": "Trakt en Simkl verbonden",
+  "ptpt": "Trakt e Simkl ligados"
+ },
+ "Trakt ligado": {
+  "en": "Trakt connected",
+  "es": "Trakt conectado",
+  "fr": "Trakt connecté",
+  "de": "Trakt verbunden",
+  "it": "Trakt collegato",
+  "nl": "Trakt verbonden",
+  "ptpt": "Trakt ligado"
+ },
+ "Um conjunto pequeno de add-ons públicos para experimentar": {
+  "en": "A small set of public add-ons to try out",
+  "es": "Un conjunto pequeño de add-ons públicos para probar",
+  "fr": "Un petit ensemble d'add-ons publics pour essayer",
+  "de": "Ein kleines Set öffentlicher Add-ons zum Ausprobieren",
+  "it": "Un piccolo set di add-on pubblici da provare",
+  "nl": "Een kleine set openbare add-ons om uit te proberen",
+  "ptpt": "Um conjunto pequeno de add-ons públicos para experimentar"
+ },
+ "Um passeio de 1 minuto pelo app: a Home, a busca e a Central de controle. Dá para ver depois em Ajustes.": {
+  "en": "A 1-minute walk through the app: Home, search and the Control hub. You can see it later in Settings.",
+  "es": "Un paseo de 1 minuto por la app: la Home, la búsqueda y la Central de control. Se puede ver después en Ajustes.",
+  "fr": "Une visite d'une minute de l'app : l'accueil, la recherche et le Centre de contrôle. À revoir plus tard dans les Réglages.",
+  "de": "Ein einminütiger Rundgang durch die App: Startseite, Suche und die Steuerzentrale. Später unter Einstellungen erneut verfügbar.",
+  "it": "Un giro di 1 minuto nell'app: la Home, la ricerca e la Central di controllo. Si può vedere dopo in Impostazioni.",
+  "nl": "Een rondleiding van 1 minuut door de app: het beginscherm, zoeken en het Controlecentrum. Later opnieuw te zien via Instellingen.",
+  "ptpt": "Um passeio de 1 minuto pela app: a Home, a procura e a Central de controlo. Dá para ver depois em Ajustes."
+ },
+ "Você já entrou na sua conta Nuvio. Perfis, Ajustes e salvos de outras TVs chegam por ela.": {
+  "en": "You're already signed in to your Nuvio account. Profiles, Settings and saved items from other TVs arrive through it.",
+  "es": "Ya has entrado en tu cuenta Nuvio. Los perfiles, Ajustes y guardados de otras TVs llegan por ella.",
+  "fr": "Vous êtes déjà connecté à votre compte Nuvio. Profils, Réglages et éléments enregistrés d'autres téléviseurs arrivent par son biais.",
+  "de": "Sie sind bereits in Ihrem Nuvio-Konto angemeldet. Profile, Einstellungen und Gespeichertes anderer Fernseher kommen darüber an.",
+  "it": "Hai già effettuato l'accesso al tuo account Nuvio. Profili, Impostazioni e salvataggi delle altre TV arrivano tramite lui.",
+  "nl": "Je bent al ingelogd op je Nuvio-account. Profielen, instellingen en opgeslagen items van andere tv's komen erlangs binnen.",
+  "ptpt": "Já entrou na sua conta Nuvio. Perfis, Ajustes e guardados doutras TVs chegam por ela."
+ },
+ "Você liga o Trakt ou o Simkl depois, em Ajustes › Contas.": {
+  "en": "You can connect Trakt or Simkl later, in Settings › Accounts.",
+  "es": "Puedes conectar Trakt o Simkl después, en Ajustes › Cuentas.",
+  "fr": "Vous pouvez connecter Trakt ou Simkl plus tard, dans Réglages › Comptes.",
+  "de": "Trakt oder Simkl können Sie später unter Einstellungen › Konten verbinden.",
+  "it": "Puoi collegare Trakt o Simkl dopo, in Impostazioni › Account.",
+  "nl": "Je kunt Trakt of Simkl later verbinden, via Instellingen › Accounts.",
+  "ptpt": "Dá para ligar o Trakt ou o Simkl depois, em Ajustes › Contas."
+ },
+ "Você segue com o que já está nesta TV e junta o resto quando quiser.": {
+  "en": "You keep what's already on this TV and add the rest whenever you want.",
+  "es": "Sigues con lo que ya está en esta TV y añades el resto cuando quieras.",
+  "fr": "Vous gardez ce qui est déjà sur ce téléviseur et ajoutez le reste quand vous voulez.",
+  "de": "Sie behalten, was auf diesem Fernseher ist, und holen sich den Rest, wann immer Sie möchten.",
+  "it": "Resti con quello che c'è già su questa TV e aggiungi il resto quando vuoi.",
+  "nl": "Je houdt wat er al op deze tv staat en haalt de rest erbij wanneer je maar wilt.",
+  "ptpt": "Fica com o que já está nesta TV e junta o resto quando quiser."
+ }
+}
