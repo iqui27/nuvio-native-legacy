@@ -458,9 +458,12 @@ static float hdrX(void) { return bibX() / bibHS(); }
 static float hdrW(void) { return bibW() / bibHS(); }
 static float hdrDir(void) { return bibDireita() / bibHS(); }
 static float bibControleMax(void) { return (hdrW() - BIB_FAIXA_GAP * 2.0f) / 3.0f; }
+// Os chips descem para uma segunda linha sob as abas: sempre no retrato e, na
+// paisagem, quando abas + chips nao cabem na largura (ver bibFaixaQuebra).
+static int bibFaixaQuebra(void);
 static float pickerY(void) {
   return BIB_FAIXA_Y + (BIB_SEG_H - BIB_CHIP_H) * 0.5f
-       + (bibRetrato() ? BIB_SEG_H + BIB_FAIXA_GAP : 0.0f);
+       + (bibFaixaQuebra() ? BIB_SEG_H + BIB_FAIXA_GAP : 0.0f);
 }
 // Cartazes: o cartaz fica nos 268 medidos e sai uma coluna (6 -> 5 com a rail
 // fixa: 5 x 268 + 4 x 24 = 1436 nos 1584). Encolher o cartaz para manter seis
@@ -514,7 +517,7 @@ static float passoLinha(void) {
 }
 static float gradeY(void) {
   float y = estado() == EST_ITENS ? BIB_GRADE_Y_ABERTA : BIB_GRADE_Y_TITULOS;
-  if (bibRetrato() && estado() != EST_ITENS) y += BIB_SEG_H + BIB_FAIXA_GAP;
+  if (bibFaixaQuebra() && estado() != EST_ITENS) y += BIB_SEG_H + BIB_FAIXA_GAP;
   return y * bibHS();
 }
 static int nLinhas(void) { return (nCelulas + colunas() - 1) / colunas(); }
@@ -1584,7 +1587,7 @@ static void desenhaModos(void) {
     x += w + BIB_SEG_ITEM_GAP;
   }
   // O fio vertical entre o seletor e os filtros (1 x 34, branco a 12%).
-  if (!bibRetrato())
+  if (!bibFaixaQuebra())
     gfx_cor((GfxRect){ c.x + c.w + BIB_FAIXA_GAP, c.y + (c.h - 34.0f) * 0.5f, 1.0f, 34.0f },
             0.0f, 1, 1, 1, .12f);
 }
@@ -1603,17 +1606,38 @@ static void pickerTexto(int p, const char **rot, const char **val) {
 // O CHIP DE FILTRO (.vid do mockup, raio 24, 12/20 de recuo): o rotulo em
 // cinza e o valor em branco 600, separados por um espaco — o "·" que existia
 // aqui saiu com o mockup. A largura sai do texto.
-static float pickerLargura(int p) {
+static float pickerLarguraNat(int p) {
   const char *rot, *val;
   pickerTexto(p, &rot, &val);
-  float w = (float)txt_linha(TXT_CAPTION2, rot, 117, 117, 117, 255).w * BIB_ESC_ROT + 6.0f
+  return (float)txt_linha(TXT_CAPTION2, rot, 117, 117, 117, 255).w * BIB_ESC_ROT + 6.0f
        + (float)txt_linha(TXT_HERO_SEC, val, 245, 245, 245, 255).w * BIB_ESC_VAL
        + BIB_CHIP_PADX * 2.0f;
-  return bibRetrato() ? fminf(w, bibControleMax()) : w;
+}
+
+// Folga a direita para o anel de foco (brilhoFoco passa da borda do chip).
+#define BIB_FAIXA_FOLGA 16.0f
+
+// A faixa cabe numa linha so se seletor + fio + todos os chips (com a folga do
+// anel) ficam dentro da largura util. "Origem: Conta Nuvio" com contagens
+// grandes passava de 1920 a 120% (x=1803-2054). Medido com os chips naturais,
+// sem o teto do retrato, para nao depender do proprio resultado.
+static int bibFaixaQuebra(void) {
+  float w;
+  if (bibRetrato()) return 1;
+  if (estado() == EST_ITENS) return 0;
+  w = larguraSeletor() + BIB_FAIXA_GAP * 2.0f + 1.0f;
+  for (int p = 0; p < bibNPicks(); p++) w += pickerLarguraNat(p) + (p ? BIB_FAIXA_GAP : 0.0f);
+  return w + BIB_FAIXA_FOLGA > hdrW();
+}
+
+static float pickerLargura(int p) {
+  float w = pickerLarguraNat(p);
+  if (bibRetrato()) return fminf(w, bibControleMax());
+  return bibFaixaQuebra() ? fminf(w, hdrW() - BIB_FAIXA_FOLGA) : w;
 }
 
 static float pickerX(int p) {
-  float x = hdrX() + (bibRetrato() ? 0.0f : larguraSeletor() + BIB_FAIXA_GAP * 2.0f + 1.0f);
+  float x = hdrX() + (bibFaixaQuebra() ? 0.0f : larguraSeletor() + BIB_FAIXA_GAP * 2.0f + 1.0f);
   int i;
   for (i = 0; i < p; i++) x += pickerLargura(i) + BIB_FAIXA_GAP;
   return x;
