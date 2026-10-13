@@ -1,13 +1,18 @@
-// Captura da tela "Começar" (2.1): os 4 passos + o fim de "só o tour", em
+// Captura da tela "Começar" (2.1): os 4 passos e o teclado da TV por cima, em
 // 1920x1080, janela GL escondida e desenho num FBO — como
-// tests/novidades148_shot.c. Antes das capturas, confere por evento de tecla:
-//   passo 1: OK abre o teclado; nome gravado continua no passo 2; cor e
-//            infantil gravam em comecar.txt (estado=andamento);
+// tests/novidades148_shot.c. Antes das capturas, confere por evento de tecla,
+// SO pelo caminho real (comecar_evento, o que app_evento chama; nada de falar
+// com o teclado da TV direto):
+//   passo 1: OK abre o teclado da TV e o D-pad digita/cancela/confirma; nao ha
+//            linha de perfil infantil; nada vai ao disco antes do fim;
 //   passo 2: Voltar volta ao 1 sem perder o nome; Conta Nuvio e Começar do
 //            zero avançam; Stremio e AIOManager ficam "Em breve" (não avançam);
 //   passo 3: Trakt pede o código (traktauth), "Só nesta TV" avança;
-//   passo 4: OK devolve COMECAR_PEDIU_TOUR ou NADA e grava estado=feito;
-//   Back: volta um passo em 2/3/4, fecha o "só o tour";
+//   passo 4: OK devolve COMECAR_PEDIU_TOUR ou NADA e grava estado=feito, nome e cor;
+//   saidas:  Voltar no passo 1 pula (feito, nada mais); Voltar nos passos 2-4
+//            volta um passo; Voltar segurado e "Pular tudo" pulam de qualquer
+//            passo; repeticao de tecla nunca volta passo;
+//   upgrade: instalacao com sessao/perfis/progresso e sem comecar.txt nunca abre;
 //   D-pad: todo foco alcança e escapa — varredura por foco inicial (baixo,
 //            cima, direita, esquerda) sem cair em item que não sai do lugar.
 #include "comecar.h"
@@ -33,15 +38,19 @@ static GLuint fbo, fboTex;
 
 void teclado_teste_sistema(const char *t);   // teclado.c (uso de teste)
 
-static void tecla(SDL_Keycode k) {
+static void tecla_em(SDL_Keycode k, int repeticao, Uint32 ts) {
   SDL_Event e;
   memset(&e, 0, sizeof e);
   e.type = SDL_KEYDOWN;
   e.key.keysym.sym = k;
-  // Como o app: com o teclado da TV aberto, a tecla e dele; senao, do Comecar.
-  if (teclado_aberto()) teclado_evento(&e);
-  else comecar_evento(&e);
+  e.key.repeat = (Uint8)repeticao;
+  e.key.timestamp = ts;
+  // So o caminho real: app_evento entrega a tecla ao Comecar e ele decide.
+  // Nada de falar com o teclado da TV direto, senao o teste esconde o bug.
+  comecar_evento(&e);
 }
+
+static void tecla(SDL_Keycode k) { tecla_em(k, 0, 1000); }
 
 // Um quadro: fundo de mentira (a tela do app embaixo) e o Começar por cima.
 static void quadro(float dt) {
@@ -82,15 +91,71 @@ static char *ler(void) {
   return s;
 }
 
+static int existe(void) {
+  char *s = dados_ler(COMECAR_ARQ);
+  int r = s != NULL;
+  free(s);
+  return r;
+}
+
 static void contem(const char *agulha) {
   char *s = ler();
   if (!strstr(s, agulha)) { printf("FALHA: comecar.txt sem '%s' (tem: %s)\n", agulha, s); exit(1); }
   free(s);
 }
 
+static void nao_contem(const char *agulha) {
+  char *s = ler();
+  if (strstr(s, agulha)) { printf("FALHA: comecar.txt com '%s' (tem: %s)\n", agulha, s); exit(1); }
+  free(s);
+}
+
 static void apagar(void) {
   dados_apagar(COMECAR_ARQ);
   comecar_teste_esquecer();
+}
+
+// Dados de pessoa de uma instalacao que vem da 2.0.x.
+static void apagar_usuario(void) {
+  dados_apagar("sessao.txt");
+  dados_apagar("perfis.txt");
+  dados_apagar("progresso.txt");
+}
+
+// Com o teclado da TV aberto: entrega `txt` como o teclado da TV faz, leva o
+// foco do teclado a "pronto" so com o D-pad e confirma.
+static void digitar(const char *txt) {
+  int i;
+  assert(teclado_aberto());
+  teclado_teste_modos(0, 0, 0);
+  teclado_teste_sistema(txt);
+  assert(!strcmp(teclado_texto(), txt));
+  for (i = 0; i < 12 && teclado_foco_tipo() != TECLADO_FOCO_ACOES; i++) tecla(SDLK_DOWN);
+  assert(teclado_foco_tipo() == TECLADO_FOCO_ACOES);
+  tecla(SDLK_RIGHT);   // 'limpar'
+  tecla(SDLK_RIGHT);   // 'pronto'
+  tecla(SDLK_RETURN);
+  assert(!teclado_aberto());
+  quadro(0.016f);      // comecar_atualizar le o PRONTO e guarda o nome
+}
+
+// Leva o foco a um item pelo D-pad: sobe ao campo, ou desce ao rodape e anda de lado.
+static void ir_para(int id) {
+  int i;
+  for (i = 0; i < 16 && comecar_foco() != id; i++) {
+    int f = comecar_foco();
+    if (id < 100) tecla(SDLK_UP);
+    else if (f < 100) tecla(SDLK_DOWN);
+    else tecla(f < id ? SDLK_RIGHT : SDLK_LEFT);
+  }
+  assert(comecar_foco() == id);
+}
+
+static void previa(const char *conteudo) {
+  apagar();
+  dados_gravar(COMECAR_ARQ, conteudo);
+  comecar_teste_esquecer();
+  comecar_abrir();
 }
 
 // O D-pad tem de levar a todo item: comeca em cada foco de partida, anda em
@@ -101,7 +166,7 @@ static void navegacao(int passoEsperado) {
   int partida, dir, volta, andadas = 0;
   for (partida = 0; partida < 12; partida++) {
     apagar();
-    dados_gravar(COMECAR_ARQ, "estado=andamento\nnome=Ana\n");
+    dados_gravar(COMECAR_ARQ, "estado=nenhum\nnome=Ana\n");
     comecar_abrir();
     while (comecar_passo() != passoEsperado) {
       if (comecar_passo() == 2 && comecar_foco() == 0) { tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); }
@@ -112,7 +177,7 @@ static void navegacao(int passoEsperado) {
     for (dir = 0; dir < 4; dir++) {
       tecla(dir == 0 ? SDLK_RIGHT : dir == 1 ? SDLK_LEFT : dir == 2 ? SDLK_DOWN : SDLK_UP);
       assert(comecar_foco() >= 0);
-      assert(comecar_passo() == passoEsperado || comecar_foco() == 100 || comecar_foco() == 101 || comecar_foco() == 102);
+      assert(comecar_passo() == passoEsperado || comecar_foco() >= 100);
       if (comecar_passo() != passoEsperado) break;   // botao avancou: recomeca
       andadas++;
     }
@@ -156,70 +221,61 @@ int main(int argc, char **argv) {
   gfx_tex_esquecer(0);
   gfx_icones_dir("deploy/app/art");
 
-  // ---- Regras, por evento de tecla. (Ids: 0=campo, 1..6=cores, 7=infantil,
-  // 100=Voltar, 101=Continuar/principal, 102=secundario.)
+  // ---- Regras, por evento de tecla. (Ids: 0=campo, 1..6=cores, 100=Voltar,
+  // 101=Continuar/principal, 102=secundario, 103=Pular tudo.)
   // Passo 1 (Perfil): o foco inicial e o campo; OK abre o teclado da TV, o
-  // nome entra por ele e o foco sobe para o Continuar.
-  apagar(); comecar_abrir();
+  // nome entra por ele (so D-pad) e o foco sobe para o Continuar.
+  apagar(); apagar_usuario(); comecar_abrir();
   assert(comecar_passo() == 0 && comecar_aberto());
   assert(comecar_foco() == 0);
+  assert(!existe());             // abrir nao grava nada
   tecla(SDLK_RETURN);            // abre o teclado
   assert(teclado_aberto());
-  teclado_teste_modos(0, 0, 0);
-  teclado_teste_sistema("so");   // como o teclado da TV entrega o valor
-  assert(!strcmp(teclado_texto(), "so"));
-  { SDL_Event e;                                 // Pronto: fileira de acoes
-    int i;
-    memset(&e, 0, sizeof e); e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_DOWN;
-    for (i = 0; i < 12 && teclado_foco_tipo() != TECLADO_FOCO_ACOES; i++) teclado_evento(&e);
-    assert(teclado_foco_tipo() == TECLADO_FOCO_ACOES);
-    e.key.keysym.sym = SDLK_RIGHT; teclado_evento(&e);   // 'limpar'
-    e.key.keysym.sym = SDLK_RIGHT; teclado_evento(&e);   // 'pronto'
-    e.key.keysym.sym = SDLK_RETURN; teclado_evento(&e); }
-  assert(!teclado_aberto());
-  quadro(0.016f);              // comecar_atualizar le o PRONTO e guarda
+  digitar("so");
   assert(comecar_foco() == 101);
-  contem("nome=so");
-  // Cancelar o teclado deixa o nome como estava.
+  assert(!existe());             // o nome so vai ao disco no fim
+  // Cancelar o teclado (Voltar nele) deixa o nome como estava e NAO pula o fluxo.
   tecla(SDLK_UP); tecla(SDLK_UP); tecla(SDLK_RETURN);   // campo: reabre
   assert(teclado_aberto());
   tecla(SDLK_ESCAPE);
   quadro(0.016f);
-  assert(!teclado_aberto() && comecar_passo() == 0);
-  // Cor e infantil gravam no arquivo.
-  tecla(SDLK_DOWN); tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_RETURN);
-  contem("cor=2");
-  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_DOWN);
-  tecla(SDLK_RETURN);
-  contem("infantil=1");
+  assert(!teclado_aberto() && comecar_passo() == 0 && comecar_aberto() && !existe());
+  // Nao ha perfil infantil: do campo, uma descida chega as cores e a seguinte
+  // ao rodape, sem linha no meio.
+  assert(comecar_foco() == 0);
+  tecla(SDLK_DOWN);
+  assert(comecar_foco() >= 1 && comecar_foco() <= 6);
+  tecla(SDLK_DOWN);
+  assert(comecar_foco() >= 100);
+  // Escolher cor nao grava; Continuar com o nome feito avanca.
+  ir_para(0); tecla(SDLK_DOWN); tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_RETURN);   // cor 2
+  assert(!existe());
+  ir_para(101); tecla(SDLK_RETURN);
+  assert(comecar_passo() == 1 && !existe());
   // Continuar com nome vazio reabre o teclado em vez de avancar.
   apagar(); comecar_abrir();
-  tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RETURN);
+  ir_para(101); tecla(SDLK_RETURN);
   assert(comecar_passo() == 0 && teclado_aberto());
   tecla(SDLK_ESCAPE);
   quadro(0.016f);
-  assert(comecar_passo() == 0 && !teclado_aberto());
+  assert(comecar_passo() == 0 && !teclado_aberto() && comecar_aberto());
 
   // Passo 2 (Trazer): Stremio e AIOManager sao "Em breve" e nao avancam.
-  dados_gravar(COMECAR_ARQ, "estado=andamento\nnome=so\n");
-  comecar_teste_esquecer(); comecar_abrir();
+  previa("estado=nenhum\nnome=so\n");
   tecla(SDLK_RETURN);            // nome ja ha: Continuar
   assert(comecar_passo() == 1);
   assert(comecar_foco() == 2);   // foco padrao: Conta Nuvio
   tecla(SDLK_UP); tecla(SDLK_UP); tecla(SDLK_RETURN);   // Stremio: fica
   assert(comecar_passo() == 1);
-  tecla(SDLK_RETURN);                                   // AIOManager: fica
+  tecla(SDLK_DOWN); tecla(SDLK_RETURN);                 // AIOManager: fica
   assert(comecar_passo() == 1);
-  // Voltar volta ao 1 sem perder o nome (desce ao rodape e vai a esquerda).
-  tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_DOWN);
-  assert(comecar_foco() == 101);          // principal (Pular este passo)
-  tecla(SDLK_LEFT); tecla(SDLK_RETURN);   // B_VOLTAR
+  // Voltar (botao) volta ao 1 sem perder o nome.
+  ir_para(100); tecla(SDLK_RETURN);
   assert(comecar_passo() == 0);
-  contem("nome=so");
   // De volta ao 2: "Pular este passo" (o principal) tambem avanca.
   tecla(SDLK_RETURN);
   assert(comecar_passo() == 1);
-  tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RETURN);
+  ir_para(101); tecla(SDLK_RETURN);
   assert(comecar_passo() == 2);
 
   // Passo 3 (Acompanhar): "So nesta TV" avanca; Back volta um passo.
@@ -227,8 +283,8 @@ int main(int argc, char **argv) {
   tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
   assert(comecar_passo() == 3);
   tecla(SDLK_AC_BACK);
-  assert(comecar_passo() == 2);
-  tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RETURN);
+  assert(comecar_passo() == 2 && comecar_aberto());
+  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
   assert(comecar_passo() == 3);
 
   // Passo 4 (Pronto): OK no principal = Ir para a Home (NADA), grava feito.
@@ -236,27 +292,113 @@ int main(int argc, char **argv) {
   tecla(SDLK_RETURN);
   assert(!comecar_aberto());
   assert(comecar_pedido() == COMECAR_PEDIU_NADA);
-  contem("estado=feito");
+  contem("estado=feito"); contem("nome=so");
+  nao_contem("infantil"); nao_contem("andamento");
   comecar_decidir(1);            // feito: nunca mais, nem com login novo
   assert(!comecar_aberto());
   // O secundario (Fazer o tour) pede o tour e tambem grava feito.
-  apagar();
-  dados_gravar(COMECAR_ARQ, "estado=andamento\nnome=so\n");
-  comecar_teste_esquecer(); comecar_abrir();
-  tecla(SDLK_RETURN); tecla(SDLK_RETURN);   // passo 2
+  previa("estado=nenhum\nnome=so\n");
+  tecla(SDLK_RETURN); tecla(SDLK_RETURN);   // passo 3
   tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);   // passo 4
-  tecla(SDLK_RIGHT); tecla(SDLK_RETURN);   // secundario
+  ir_para(102); tecla(SDLK_RETURN);   // secundario
   assert(!comecar_aberto());
   assert(comecar_pedido() == COMECAR_PEDIU_TOUR);
   contem("estado=feito");
-  // So o tour (sessao restaurada): abre ja no fim e Back fecha com NADA.
-  apagar(); comecar_decidir(0);
-  assert(comecar_aberto() && comecar_passo() == 3);
-  tecla(SDLK_AC_BACK);
+
+  // Escolhas e nome gravam JUNTOS, so no resumo: cor 2 + nome do teclado.
+  apagar(); comecar_abrir();
+  tecla(SDLK_RETURN); digitar("Lia");
+  tecla(SDLK_UP); tecla(SDLK_UP); tecla(SDLK_DOWN); tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_RETURN);
+  assert(!existe());
+  ir_para(101); tecla(SDLK_RETURN); tecla(SDLK_RETURN);   // passo 3
+  assert(comecar_passo() == 2 && !existe());
+  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);   // passo 4
+  assert(comecar_passo() == 3 && !existe());
+  // Fechar o app aqui (antes de confirmar) nao deixa rastro.
+  comecar_teste_esquecer();
+  assert(!existe());
+  comecar_abrir();
+  tecla(SDLK_RETURN); digitar("Lia");
+  ir_para(101); tecla(SDLK_RETURN); tecla(SDLK_RETURN);
+  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
+  tecla(SDLK_RETURN);            // Ir para a Home
+  assert(!comecar_aberto());
+  contem("estado=feito"); contem("nome=Lia");
+
+  // ---- Saidas.
+  // Voltar no passo 1 pula o fluxo todo: feito, nada do que foi digitado.
+  apagar(); comecar_abrir();
+  tecla(SDLK_RETURN); digitar("zz");
+  tecla(SDLK_ESCAPE);
   assert(!comecar_aberto() && comecar_pedido() == COMECAR_PEDIU_NADA);
-  // Login novo, nada gravado: os 4 passos.
-  apagar(); comecar_decidir(1);
+  contem("estado=feito"); nao_contem("zz"); contem("cor=0");
+  comecar_decidir(1);
+  assert(!comecar_aberto());
+  // ...e, reaberto por Ajustes, deixa como estava o que ja estava gravado.
+  previa("estado=feito\nnome=Ana\ncor=3\n");
+  tecla(SDLK_RETURN);            // passo 2
+  tecla(SDLK_AC_BACK);           // passo 1
+  tecla(SDLK_AC_BACK);           // pula
+  assert(!comecar_aberto());
+  contem("estado=feito"); contem("nome=Ana"); contem("cor=3");
+  // Voltar segurado pula de qualquer passo; a repeticao nao volta passo.
+  previa("estado=nenhum\nnome=Ana\n");
+  tecla(SDLK_RETURN); tecla(SDLK_RETURN);   // passo 3
+  assert(comecar_passo() == 2);
+  tecla_em(SDLK_AC_BACK, 0, 5000);          // primeira descida: um passo
+  assert(comecar_passo() == 1 && comecar_aberto());
+  tecla_em(SDLK_AC_BACK, 1, 5300);          // repeticoes: ainda curto, nao volta
+  tecla_em(SDLK_AC_BACK, 1, 5600);
+  assert(comecar_passo() == 1 && comecar_aberto());
+  nao_contem("feito");
+  tecla_em(SDLK_AC_BACK, 1, 5750);          // >= 700 ms desde a descida
+  assert(!comecar_aberto() && comecar_pedido() == COMECAR_PEDIU_NADA);
+  contem("estado=feito"); contem("nome=Ana");
+  // Repeticao sem descida (tecla que ja vinha apertada) nao pula nada.
+  previa("estado=nenhum\nnome=Ana\n");
+  tecla(SDLK_RETURN);
+  tecla_em(SDLK_AC_BACK, 1, 9000);
+  assert(comecar_aberto() && comecar_passo() == 1);
+  // "Pular tudo" (visivel no rodape) pula de qualquer passo.
+  apagar(); comecar_abrir();
+  ir_para(103); tecla(SDLK_RETURN);
+  assert(!comecar_aberto());
+  contem("estado=feito"); contem("nome=\n");
+  previa("estado=nenhum\nnome=Ana\n");
+  tecla(SDLK_RETURN);            // passo 2
+  ir_para(103); tecla(SDLK_RETURN);
+  assert(!comecar_aberto());
+  contem("estado=feito");
+  previa("estado=nenhum\nnome=Ana\n");
+  tecla(SDLK_RETURN); tecla(SDLK_RETURN);   // passo 3
+  ir_para(103); tecla(SDLK_RETURN);
+  assert(!comecar_aberto());
+  contem("estado=feito");
+
+  // ---- Upgrade: dados de pessoa de antes + sem comecar.txt = nunca abre.
+  { static const char *const ARQS[3] = { "sessao.txt", "perfis.txt", "progresso.txt" };
+    int k;
+    for (k = 0; k < 3; k++) {
+      apagar(); apagar_usuario();
+      dados_gravar(ARQS[k], "x\n");
+      comecar_marcar_dados();
+      comecar_decidir(0);                     // sessao restaurada
+      assert(!comecar_aberto() && !existe());
+      comecar_teste_esquecer();
+      dados_gravar(ARQS[k], "x\n");
+      comecar_marcar_dados();
+      comecar_decidir(1);                     // login novo nessa mesma instalacao
+      assert(!comecar_aberto() && !existe());
+    } }
+  // Instalacao limpa: login novo abre os 4 passos; sessao restaurada nao abre.
+  apagar(); apagar_usuario();
+  comecar_marcar_dados();
+  comecar_decidir(1);
   assert(comecar_aberto() && comecar_passo() == 0);
+  apagar(); apagar_usuario();
+  comecar_marcar_dados();
+  comecar_decidir(0);
+  assert(!comecar_aberto());
 
   navegacao(0); navegacao(1); navegacao(2); navegacao(3);
 
@@ -265,8 +407,7 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-1-perfil.png", saida);
   captura(nome, 40);
 
-  dados_gravar(COMECAR_ARQ, "estado=andamento\nnome=so\ncor=1\n");
-  comecar_teste_esquecer(); comecar_abrir();
+  previa("estado=nenhum\nnome=so\ncor=1\n");
   tecla(SDLK_RETURN);
   snprintf(nome, sizeof nome, "%s-2-trazer.png", saida);
   captura(nome, 2);
@@ -279,9 +420,13 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-4-pronto.png", saida);
   captura(nome, 2);
 
-  apagar(); comecar_decidir(0);
-  snprintf(nome, sizeof nome, "%s-5-so-tour.png", saida);
-  captura(nome, 2);
+  // O teclado da TV por cima do passo 1: aberto pelo OK, desenhado pelo Comecar.
+  apagar(); comecar_abrir();
+  tecla(SDLK_RETURN);
+  assert(teclado_aberto());
+  snprintf(nome, sizeof nome, "%s-5-teclado.png", saida);
+  captura(nome, 40);
+  tecla(SDLK_ESCAPE);
 
   tex_encerrar();
   txt_encerrar();
