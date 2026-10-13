@@ -2233,6 +2233,9 @@ int app_iniciar(const char *dirArte) {
   const char *preview = getenv("NUVIO_UI_PREVIEW");
   uiPreview = preview && !strcmp(preview, "1");
 #endif
+  // Antes de tudo que mexe na conta: o login e o sync criam os arquivos que o
+  // Começar olha para saber se esta instalacao ja vem de uso anterior.
+  comecar_marcar_dados();
   arranque_etapa("app_iniciar/ajustes_recursos");
   ajustes_recursos(dirArte);
   arranque_etapa("app_iniciar/login_recursos");

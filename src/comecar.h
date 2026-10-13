@@ -5,15 +5,24 @@
 //
 // O QUE ESTA LIGADO DE VERDADE: o login do Trakt e do Simkl (o mesmo codigo de
 // Ajustes), o nome digitado no teclado da TV e o que ficou gravado em
-// comecar.txt. O QUE AINDA NAO: nome, cor e "perfil infantil" so valem para a
-// saudacao do resumo — nao criam nem renomeiam o perfil da conta. Conta
-// Stremio e AIOManager aparecem apagados, com "Em breve".
+// comecar.txt. O QUE AINDA NAO: nome e cor so valem para a saudacao do resumo —
+// nao criam nem renomeiam o perfil da conta. Conta Stremio e AIOManager
+// aparecem apagados, com "Em breve". Nao ha "perfil infantil": o app nao tem
+// filtro de classificacao, e a tela nao promete o que nao cumpre (NOTAS.md,
+// pergunta 11).
+//
+// SAIDAS: Voltar no passo 1 pula o fluxo todo (grava feito, mais nada); Voltar
+// nos passos 2-4 volta um passo; Voltar segurado ou "Pular tudo" pulam de
+// qualquer passo. So concluir e pular gravam; fechar o app no meio nao deixa nada.
 #ifndef NV_COMECAR_H
 #define NV_COMECAR_H
 #include <SDL2/SDL.h>
 
 #define COMECAR_ARQ "comecar.txt"
 
+// Uma vez no arranque, ANTES do login e do sync: anota se a instalacao ja tinha
+// dados de pessoa (sessao, perfis, progresso). Quem tem nunca ve o Começar.
+void comecar_marcar_dados(void);
 // Uma vez, com a home de pe. `loginNovo` = 1 quando a conta entrou agora por
 // login, 0 quando a sessao veio restaurada (ver comecarregra_decidir).
 void comecar_decidir(int loginNovo);

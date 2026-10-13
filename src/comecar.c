@@ -35,25 +35,32 @@
 #define FECHAR_MS   180.0f
 #define PASSOS        4
 #define MAX_ITENS    16
+#define BACK_LONGO_MS 700   // Voltar segurado por tanto tempo pula o fluxo todo
 
 // Ids de foco. Os de campo valem dentro do passo; os botoes valem em todos.
-enum { I_NOME = 0, I_COR0 = 1, I_INF = I_COR0 + COMECAR_CORES };       // passo 0
+enum { I_NOME = 0, I_COR0 = 1 };                                       // passo 0
 enum { I_STREMIO = 0, I_AIO, I_NUVIO, I_ZERO };                        // passo 1
 enum { I_TRAKT = 0, I_SIMKL, I_TV };                                   // passo 2
-enum { B_VOLTAR = 100, B_PRINC, B_SEC };
+enum { B_VOLTAR = 100, B_PRINC, B_SEC, B_PULAR };
 
 typedef struct { int id; GfxRect r; } Item;
 
-static int   aberto, passo, foco = B_PRINC, pedido, esperaTeclado, soTour, decidido;
+static int   aberto, passo, foco = B_PRINC, pedido, esperaTeclado, decidido, temDados;
+static Uint32 backDesde;   // timestamp do Voltar que abriu a pressao atual; 0 = nenhuma
 static float entrada;
-static ComecarSalvo dados;
+static ComecarSalvo dados;   // o que a pessoa esta preenchendo (so vai ao disco no fim)
+static ComecarSalvo antes;   // o que ja estava gravado quando a tela abriu
 
 static const unsigned CORES[COMECAR_CORES] = { 0x7c5cff, 0xe0565b, 0x00a88f, 0xf0a030, 0x3d8bff, 0xe05aa0 };
 
 int comecar_aberto(void) { return aberto; }
 int comecar_passo(void) { return passo; }
 int comecar_foco(void) { return foco; }
-void comecar_teste_esquecer(void) { aberto = 0; entrada = 0.0f; decidido = 0; memset(&dados, 0, sizeof dados); }
+void comecar_teste_esquecer(void) {
+  aberto = 0; entrada = 0.0f; decidido = 0; temDados = 0; backDesde = 0;
+  memset(&dados, 0, sizeof dados);
+  memset(&antes, 0, sizeof antes);
+}
 
 int comecar_pedido(void) {
   int p = pedido;
@@ -62,10 +69,26 @@ int comecar_pedido(void) {
 }
 
 // ------------------------------------------------------------------ gravacao
-static void gravar(int estado) {
+// So duas coisas gravam comecar.txt: concluir (o resumo) e pular. Nada de
+// "andamento" nem de gravar a cada escolha: fechar o app no meio nao deixa rastro.
+static void gravar_feito(void) {
   char buf[256];
-  dados.estado = estado;
+  dados.estado = COMECAR_ESTADO_FEITO;
   if (comecarregra_serializar(&dados, buf, sizeof buf)) dados_gravar(COMECAR_ARQ, buf);
+}
+
+static int existe_dado(const char *arq) {
+  char *s = dados_ler(arq);
+  int r = s && s[0];
+  free(s);
+  return r;
+}
+
+// Chamada uma vez no arranque, ANTES do login e do sync: eles criam estes
+// arquivos, e ai nao daria mais para distinguir uma instalacao que vem da 2.0.x
+// de uma limpa.
+void comecar_marcar_dados(void) {
+  temDados = existe_dado("sessao.txt") || existe_dado("perfis.txt") || existe_dado("progresso.txt");
 }
 
 static void carregar(void) {
@@ -76,7 +99,6 @@ static void carregar(void) {
 
 // ------------------------------------------------------------------- estado
 static int foco_padrao(void) {
-  if (soTour) return B_PRINC;
   if (passo == 0) return dados.nome[0] ? B_PRINC : I_NOME;
   if (passo == 1) return I_NUVIO;
   if (passo == 2) return I_TRAKT;
@@ -86,24 +108,23 @@ static int foco_padrao(void) {
 static void ir_passo(int p) {
   passo = p < 0 ? 0 : p >= PASSOS ? PASSOS - 1 : p;
   foco = foco_padrao();
-  gravar(COMECAR_ESTADO_ANDAMENTO);
 }
 
-static void abrir(int tour) {
+static void abrir(void) {
   aberto = 1;
-  soTour = tour;
   entrada = 0.0f;
   pedido = COMECAR_PEDIU_NADA;
   esperaTeclado = 0;
-  passo = tour ? PASSOS - 1 : 0;
+  backDesde = 0;
+  antes = dados;
+  passo = 0;
   foco = foco_padrao();
-  if (!tour) gravar(COMECAR_ESTADO_ANDAMENTO);
 }
 
 void comecar_abrir(void) {
   carregar();
   dados.estado = COMECAR_ESTADO_NENHUM;
-  abrir(0);
+  abrir();
 }
 
 void comecar_decidir(int loginNovo) {
@@ -111,20 +132,28 @@ void comecar_decidir(int loginNovo) {
   if (decidido) return;   // uma vez por execucao, com a home de pe (app.c)
   decidido = 1;
   carregar();
-  o = comecarregra_decidir(&dados, loginNovo);
-  if (o == COMECAR_COMPLETO) abrir(0);
-  else if (o == COMECAR_SO_TOUR) abrir(1);
+  o = comecarregra_decidir(&dados, loginNovo, temDados);
+  if (o == COMECAR_COMPLETO) abrir();
 }
 
 static void concluir(int oQue) {
   aberto = 0;
   pedido = oQue;
-  gravar(COMECAR_ESTADO_FEITO);
+  gravar_feito();
+}
+
+// Pular: marca como feito e nada mais. O que foi digitado nesta passada se
+// perde; o que ja estava gravado (reabrir por Ajustes) fica como estava.
+static void pular(void) {
+  aberto = 0;
+  pedido = COMECAR_PEDIU_NADA;
+  dados = antes;
+  gravar_feito();
 }
 
 // ------------------------------------------------------------------- rotulos
 static const char *rotulo_botao(int id) {
-  if (soTour) return id == B_PRINC ? i18n("Fazer o tour · 1 min") : i18n("Agora não");
+  if (id == B_PULAR) return i18n("Pular tudo");
   switch (passo) {
     case 0: return i18n("Continuar");
     case 1: return id == B_VOLTAR ? i18n("Voltar") : i18n("Pular este passo");
@@ -151,12 +180,13 @@ static void poe(Item *it, int *n, int id, float x, float y, float w, float h) {
 // Rodape: os botoes da esquerda para a direita; o ultimo e o primario, salvo
 // no resumo, onde o primario vem primeiro.
 static void rodape(Item *it, int *n) {
-  int ids[2], k = 0, i;
   float x = MARGEM, yc = 972.0f;
-  if (soTour || passo == PASSOS - 1) { ids[k++] = B_PRINC; ids[k++] = B_SEC; }
+  int ids[3], k = 0, i;
+  if (passo == PASSOS - 1) { ids[k++] = B_PRINC; ids[k++] = B_SEC; }
   else {
     if (passo > 0) ids[k++] = B_VOLTAR;
     ids[k++] = B_PRINC;
+    ids[k++] = B_PULAR;
   }
   for (i = 0; i < k; i++) {
     int prim = ids[i] == B_PRINC;
@@ -170,13 +200,12 @@ static void rodape(Item *it, int *n) {
 static int montar(Item *it) {
   int n = 0, i;
   origem();
-  if (!soTour && passo == 0) {
+  if (passo == 0) {
     poe(it, &n, I_NOME, MARGEM, 430.0f, 820.0f, 84.0f);
     for (i = 0; i < COMECAR_CORES; i++) poe(it, &n, I_COR0 + i, MARGEM + (float)i * 90.0f, 548.0f, 72.0f, 72.0f);
-    poe(it, &n, I_INF, MARGEM, 664.0f, 820.0f, 108.0f);
-  } else if (!soTour && passo == 1) {
+  } else if (passo == 1) {
     for (i = 0; i < 4; i++) poe(it, &n, i, MARGEM, 330.0f + (float)i * 114.0f, 860.0f, 104.0f);
-  } else if (!soTour && passo == 2) {
+  } else if (passo == 2) {
     float w = (1680.0f - 2.0f * 28.0f) / 3.0f;
     for (i = 0; i < 3; i++) poe(it, &n, i, MARGEM + (float)i * (w + 28.0f), 330.0f, w, 330.0f);
   }
@@ -211,11 +240,12 @@ static void abrir_teclado(void) {
   teclado_abrir_com(i18n("Seu nome"), i18n("Só o nome pede ação; o resto já vem preenchido."), COMECAR_NOME_MAX,
                     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -", dados.nome);
   esperaTeclado = 1;
+  backDesde = 0;
 }
 
 static void ok(void) {
   if (foco == B_VOLTAR) { ir_passo(passo - 1); return; }
-  if (soTour) { concluir(foco == B_PRINC ? COMECAR_PEDIU_TOUR : COMECAR_PEDIU_NADA); return; }
+  if (foco == B_PULAR) { pular(); return; }
   if (foco == B_PRINC || foco == B_SEC) {
     if (passo == 0) { if (!dados.nome[0]) abrir_teclado(); else ir_passo(1); }
     else if (passo < PASSOS - 1) ir_passo(passo + 1);
@@ -224,8 +254,7 @@ static void ok(void) {
   }
   if (passo == 0) {
     if (foco == I_NOME) abrir_teclado();
-    else if (foco == I_INF) { dados.infantil = !dados.infantil; gravar(COMECAR_ESTADO_ANDAMENTO); }
-    else if (foco >= I_COR0 && foco < I_COR0 + COMECAR_CORES) { dados.cor = foco - I_COR0; gravar(COMECAR_ESTADO_ANDAMENTO); }
+    else if (foco >= I_COR0 && foco < I_COR0 + COMECAR_CORES) dados.cor = foco - I_COR0;
   } else if (passo == 1) {
     if (foco == I_NUVIO || foco == I_ZERO) ir_passo(2);   // Stremio e AIOManager: Em breve
   } else if (passo == 2) {
@@ -237,7 +266,11 @@ static void ok(void) {
 
 void comecar_evento(const SDL_Event *e) {
   SDL_Keycode k;
-  if (!aberto || esperaTeclado || e->type != SDL_KEYDOWN) return;
+  if (!aberto) return;
+  // O teclado da TV e modal: com ele aberto, toda tecla e dele (digitar,
+  // Voltar cancela, Pronto confirma). Quem le o resultado e comecar_atualizar.
+  if (teclado_aberto()) { teclado_evento(e); return; }
+  if (e->type != SDL_KEYDOWN) return;
   k = e->key.keysym.sym;
   if (k == SDLK_LEFT)  { mover(-1, 0); return; }
   if (k == SDLK_RIGHT) { mover(1, 0); return; }
@@ -246,19 +279,27 @@ void comecar_evento(const SDL_Event *e) {
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) { ok(); return; }
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK) {
-    if (soTour) concluir(COMECAR_PEDIU_NADA);
-    else if (passo > 0) ir_passo(passo - 1);
+    // Voltar: um passo para tras; no primeiro, pula o fluxo. Segurado por
+    // BACK_LONGO_MS (as repeticoes da tecla), pula de qualquer passo. Repeticao
+    // nunca volta passo: so a primeira descida conta como "voltar".
+    if (!e->key.repeat) {
+      backDesde = e->key.timestamp ? e->key.timestamp : 1;
+      if (passo == 0) pular();
+      else ir_passo(passo - 1);
+    } else if (backDesde && e->key.timestamp - backDesde >= BACK_LONGO_MS) pular();
+    return;
   }
+  if (!e->key.repeat) backDesde = 0;
 }
 
 void comecar_atualizar(float dt, Uint32 agora) {
   int red = ajustes_animacoes_reduzidas();
-  (void)agora;
   if (esperaTeclado) {
-    int r = teclado_resultado();
+    int r;
+    if (teclado_aberto()) teclado_atualizar(dt, agora);
+    r = teclado_resultado();
     if (r == TECLADO_PRONTO) {
       comecarregra_nome_limpo(teclado_texto(), dados.nome, sizeof dados.nome);
-      gravar(COMECAR_ESTADO_ANDAMENTO);
       esperaTeclado = 0;
       if (dados.nome[0] && foco == I_NOME) foco = B_PRINC;
     } else if (r == TECLADO_CANCELOU) esperaTeclado = 0;
@@ -346,7 +387,6 @@ static void cabecalho(float a) {
   float ar, ag, ab, segW = (1800.0f - 520.0f - 3.0f * 12.0f) / 4.0f;
   int i;
   txt_em(TXT_NOV_TITULO, "nuvio", ox + MARGEM, oy + 50.0f, 380.0f, 243, 242, 239, a);
-  if (soTour) return;
   ajustes_acento(&ar, &ag, &ab);
   for (i = 0; i < PASSOS; i++) {
     float x = ox + 520.0f + (float)i * (segW + 12.0f);
@@ -391,25 +431,13 @@ static void desenha_passo0(float a) {
         gfx_icone((GfxRect){ d.x + d.w * 0.3f, d.y + d.h * 0.3f, d.w * 0.4f, d.h * 0.4f }, "aj_check", 1, 1, 1, a);
       }
       alvo(r, id);
-    } else if (id == I_INF) {
-      float tw = 64.0f, th = 36.0f;
-      GfxRect tg = { r.x + r.w - 28.0f - tw, r.y + (r.h - th) * 0.5f, tw, th };
-      superficie(r, 24.0f, f, a, &p, &s);
-      bola(r.x + 26.0f, r.y + 22.0f, 64.0f, NULL, "aj_shield", p, f, a);
-      txt_em(TXT_ILHA_NOME, i18n("Perfil infantil"), r.x + 114.0f, r.y + 20.0f, r.w - 260.0f, p.r, p.g, p.b, a);
-      txt_em(TXT_CAPTION, i18n("Só classificação livre e 10 anos."), r.x + 114.0f, r.y + 58.0f, r.w - 260.0f, s.r, s.g, s.b, a);
-      gfx_cor(tg, 0.5f, 1, 1, 1, dados.infantil ? 0.9f * a : 0.22f * a);
-      gfx_cor((GfxRect){ tg.x + (dados.infantil ? tw - 32.0f : 4.0f), tg.y + 4.0f, 28.0f, 28.0f }, 0.5f,
-              dados.infantil ? 0.1f : 0.72f, dados.infantil ? 0.1f : 0.72f, dados.infantil ? 0.1f : 0.72f, a);
-      alvo(r, id);
     }
   }
   // O painel da direita: o perfil como vai ficar.
   { float cx = ox + 1360.0f;
     avatar(cx, oy + 400.0f, 200.0f, a);
     txt_bloco(TXT_ILHA_TITULO, nome_exibido(), 248, 249, 252, cx - 260.0f, oy + 530.0f, 520.0f, 46.0f, a, 1);
-    txt_em(TXT_CAPTION, dados.infantil ? i18n("Perfil infantil · desta TV") : i18n("Perfil principal · desta TV"),
-           cx - 260.0f, oy + 586.0f, 520.0f, 150, 156, 168, a);
+    txt_em(TXT_CAPTION, i18n("Perfil principal · desta TV"), cx - 260.0f, oy + 586.0f, 520.0f, 150, 156, 168, a);
     txt_bloco(TXT_CAPTION, i18n("Já usa o Nuvio em outra TV? No próximo passo, “Conta Nuvio” traz os perfis de lá."),
               150, 156, 168, cx - 260.0f, oy + 660.0f, 520.0f, 28.0f, 0.9f * a, 3); }
 }
@@ -527,29 +555,21 @@ static void linha_resumo(float x, float y, float w, const char *t, const char *d
 }
 
 static void desenha_passo3(float a) {
-  Item it[MAX_ITENS];
   char t[160], lig[64];
-  int n = montar(it), i, tr = trakt_ativo(), sk = simkl_ativo();
-  if (soTour) {
-    snprintf(t, sizeof t, i18n("Quer um tour, %s?"), nome_exibido());
-    titulo(t, i18n("Um passeio de 1 minuto pelo app: a Home, a busca e a Central de controle. Dá para ver depois em Ajustes."),
-           860.0f, a);
-  } else {
-    snprintf(t, sizeof t, i18n("Pronto, %s."), nome_exibido());
-    titulo(t, i18n("Isto ficou arrumado:"), 860.0f, a);
-    snprintf(t, sizeof t, i18n("Perfil: %s"), nome_exibido());
-    linha_resumo(ox + MARGEM, oy + 330.0f, 860.0f, t, i18n("Nome e cor guardados nesta TV."), a);
-    snprintf(lig, sizeof lig, "%s", tr && sk ? i18n("Trakt e Simkl ligados") : tr ? i18n("Trakt ligado")
-                                   : sk ? i18n("Simkl ligado") : i18n("Só nesta TV"));
-    linha_resumo(ox + MARGEM, oy + 330.0f + 110.0f, 860.0f, lig,
-                 tr || sk ? i18n("Dá para mudar em Ajustes › Contas.") : i18n("Você liga o Trakt ou o Simkl depois, em Ajustes › Contas."), a);
-    linha_resumo(ox + MARGEM, oy + 330.0f + 220.0f, 860.0f, i18n("Tour de 1 minuto"),
-                 i18n("Opcional: um passeio rápido pela Home, pela busca e pela Central de controle."), a);
-  }
+  int tr = trakt_ativo(), sk = simkl_ativo();
+  snprintf(t, sizeof t, i18n("Pronto, %s."), nome_exibido());
+  titulo(t, i18n("Isto ficou arrumado:"), 860.0f, a);
+  snprintf(t, sizeof t, i18n("Perfil: %s"), nome_exibido());
+  linha_resumo(ox + MARGEM, oy + 330.0f, 860.0f, t, i18n("Nome e cor guardados nesta TV."), a);
+  snprintf(lig, sizeof lig, "%s", tr && sk ? i18n("Trakt e Simkl ligados") : tr ? i18n("Trakt ligado")
+                                 : sk ? i18n("Simkl ligado") : i18n("Só nesta TV"));
+  linha_resumo(ox + MARGEM, oy + 330.0f + 110.0f, 860.0f, lig,
+               tr || sk ? i18n("Dá para mudar em Ajustes › Contas.") : i18n("Você liga o Trakt ou o Simkl depois, em Ajustes › Contas."), a);
+  linha_resumo(ox + MARGEM, oy + 330.0f + 220.0f, 860.0f, i18n("Tour de 1 minuto"),
+               i18n("Opcional: um passeio rápido pela Home, pela busca e pela Central de controle."), a);
   { float cx = ox + 1360.0f;
     avatar(cx, oy + 430.0f, 200.0f, a);
     txt_bloco(TXT_ILHA_TITULO, nome_exibido(), 248, 249, 252, cx - 260.0f, oy + 560.0f, 520.0f, 46.0f, a, 1); }
-  (void)n; (void)i;
 }
 
 static void desenha_rodape(float a) {
@@ -559,7 +579,7 @@ static void desenha_rodape(float a) {
     int id = it[i].id, prim = id == B_PRINC;
     const char *ic = NULL;
     if (id < B_VOLTAR) continue;
-    if (!soTour && passo == PASSOS - 1) ic = id == B_PRINC ? "aj_house" : "aj_sparkles";
+    if (passo == PASSOS - 1) ic = id == B_PRINC ? "aj_house" : "aj_sparkles";
     botao_pilula(it[i].r, rotulo_botao(id), ic, foco == id ? 1.0f : 0.0f, prim, 0, a);
     alvo(it[i].r, id);
   }
@@ -567,16 +587,17 @@ static void desenha_rodape(float a) {
 
 void comecar_desenhar(Uint32 agora) {
   float a = anim_suave(entrada);
-  (void)agora;
   if (entrada < 0.002f) return;
   ESCALA_SE_COUBER_INI(Q_W, Q_H);
   origem();
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0.051f, 0.051f, 0.051f, entrada);
   cabecalho(a);
-  if (soTour || passo == PASSOS - 1) desenha_passo3(a);
+  if (passo == PASSOS - 1) desenha_passo3(a);
   else if (passo == 0) desenha_passo0(a);
   else if (passo == 1) desenha_passo1(a);
   else desenha_passo2(a);
   desenha_rodape(a);
   ESCALA_SE_COUBER_FIM();
+  // O teclado da TV cuida da propria escala e vai por cima de tudo.
+  if (esperaTeclado && teclado_aberto()) teclado_desenhar(agora);
 }

@@ -43,14 +43,11 @@ void comecarregra_ler(const char *txt, ComecarSalvo *s) {
     if (len && linha[len - 1] == '\r') linha[len - 1] = 0;
     if (!strncmp(linha, "estado=", 7)) {
       if (!strcmp(linha + 7, "feito")) s->estado = COMECAR_ESTADO_FEITO;
-      else if (!strcmp(linha + 7, "andamento")) s->estado = COMECAR_ESTADO_ANDAMENTO;
     } else if (!strncmp(linha, "nome=", 5)) {
       comecarregra_nome_limpo(linha + 5, s->nome, sizeof s->nome);
     } else if (!strncmp(linha, "cor=", 4)) {
       int c = atoi(linha + 4);
       s->cor = (c >= 0 && c < COMECAR_CORES) ? c : 0;
-    } else if (!strncmp(linha, "infantil=", 9)) {
-      s->infantil = linha[9] == '1';
     }
     if (!fim) break;
     p = fim + 1;
@@ -59,17 +56,15 @@ void comecarregra_ler(const char *txt, ComecarSalvo *s) {
 
 int comecarregra_serializar(const ComecarSalvo *s, char *dst, size_t tam) {
   char nome[COMECAR_NOME_MAX + 1];
-  const char *est = s->estado == COMECAR_ESTADO_FEITO ? "feito"
-                  : s->estado == COMECAR_ESTADO_ANDAMENTO ? "andamento" : "nenhum";
+  const char *est = s->estado == COMECAR_ESTADO_FEITO ? "feito" : "nenhum";
   int n;
   comecarregra_nome_limpo(s->nome, nome, sizeof nome);
-  n = snprintf(dst, tam, "estado=%s\nnome=%s\ncor=%d\ninfantil=%d\n", est, nome,
-               (s->cor >= 0 && s->cor < COMECAR_CORES) ? s->cor : 0, s->infantil ? 1 : 0);
+  n = snprintf(dst, tam, "estado=%s\nnome=%s\ncor=%d\n", est, nome,
+               (s->cor >= 0 && s->cor < COMECAR_CORES) ? s->cor : 0);
   return (n > 0 && (size_t)n < tam) ? n : 0;
 }
 
-int comecarregra_decidir(const ComecarSalvo *s, int loginNovo) {
-  if (s->estado == COMECAR_ESTADO_FEITO) return COMECAR_NADA;
-  if (s->estado == COMECAR_ESTADO_ANDAMENTO) return COMECAR_COMPLETO;
-  return loginNovo ? COMECAR_COMPLETO : COMECAR_SO_TOUR;
+int comecarregra_decidir(const ComecarSalvo *s, int loginNovo, int temDados) {
+  if (s->estado == COMECAR_ESTADO_FEITO || temDados) return COMECAR_NADA;
+  return loginNovo ? COMECAR_COMPLETO : COMECAR_NADA;
 }

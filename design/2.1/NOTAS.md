@@ -62,3 +62,4 @@ Watch Together, Diário + sono, Trava, Caça e Conquistas, busca nos Ajustes, á
 8. **Marcas A/R/C nos episódios.** Aparecem sempre ou só com "Pular" ligado? Com muitos episódios pode pesar a busca de marcas.
 9. **Nome do arquivo na folha de Fontes.** Mostrar o nome cru ajuda quem entende e assusta quem não entende. Trocar por uma frase ("WEB-DL · 4K Dolby Vision") e deixar o nome no detalhe?
 10. **AniList.** Entra como terceiro tracker no passo 3 já na 2.1?
+11. **Perfil infantil / filtro de idade.** O app não tem filtro de classificação (catálogo nem reprodução), então a opção "Perfil infantil" saiu do Começar para não prometer o que não se cumpre. Você decide: construir um filtro parental/de idade ("só classificação livre e 10 anos") e então devolver a opção ao passo 1, ou deixar fora da 2.1?
