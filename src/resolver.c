@@ -66,6 +66,7 @@ static ResolverEnviado env[RES_ENVIADOS_MAX];
 static int   envN, envModo, envSint, envMotivo, envHttp, rolo;
 static long  envInicio, envQuando;
 static char  envCodigo[8];
+static int   envNoAr;   // um envio foi pedido e ainda nao chegou: segue valendo com a tela fechada ou em outra fase
 #ifdef RESOLVER_TESTE
 static ResolverFatos fatosFixos;
 static int   usaFixos;
@@ -78,7 +79,7 @@ int resolver_foco(void) { return foco; }
 int resolver_sintoma(void) { return sint; }
 int resolver_enviados_n(void) { return envN; }
 void resolver_teste_esquecer(void) {
-  aberto = 0; entrada = 0.0f; fase = 0; foco = 0; envN = 0; envModo = 0; rolo = 0; temFalha = 0;
+  aberto = 0; entrada = 0.0f; fase = 0; foco = 0; envN = 0; envModo = 0; envNoAr = 0; rolo = 0; temFalha = 0;
   memset(&fatos, 0, sizeof fatos);
 #ifdef RESOLVER_TESTE
   usaFixos = 0;
@@ -100,7 +101,8 @@ static void enviados_ler(void) {
 
 static void enviados_gravar(void) {
   char buf[RES_ENVIADOS_MAX * 40];
-  if (resolverregra_enviados_serializar(env, envN, buf, sizeof buf)) dados_gravar(RESOLVER_ARQ, buf);
+  // Lista vazia grava o arquivo vazio: sem isso o ultimo registro apagado volta.
+  if (resolverregra_enviados_serializar(env, envN, buf, sizeof buf) || envN == 0) dados_gravar(RESOLVER_ARQ, buf);
 }
 
 // ------------------------------------------------------------------- fatos
@@ -409,6 +411,7 @@ static void enviar_registro(int s, int volta) {
   envSint = s;
   voltaFase = volta;
   envModo = M_ENVIANDO;
+  envNoAr = 1;
   envInicio = (long)time(NULL);
   envCodigo[0] = 0;
   envMotivo = envHttp = 0;
@@ -494,7 +497,7 @@ void resolver_evento(const SDL_Event *e) {
 // que chega depois entra na lista do mesmo jeito.
 static void sondar_envio(void) {
   AvisosEnvio i;
-  if (envModo != M_ENVIANDO) return;
+  if (!envNoAr) return;
   avisos_envio_info(&i);
   if ((long)i.quando < envInicio || i.estado == 1 || i.estado == 0) return;
   if (i.estado == 2) {
@@ -504,12 +507,13 @@ static void sondar_envio(void) {
       envN = resolverregra_enviados_add(env, envN, RES_ENVIADOS_MAX, envCodigo, envQuando, envSint);
       enviados_gravar();
     }
-    envModo = M_ENVIADO;
   } else {
     envMotivo = i.motivo;
     envHttp = i.http;
-    envModo = M_FALHOU;
   }
+  envNoAr = 0;
+  if (envModo != M_ENVIANDO) return;   // a pessoa ja voltou: o codigo ficou so na lista
+  envModo = i.estado == 2 ? M_ENVIADO : M_FALHOU;
   if (aberto && fase == RESOLVER_FASE_ENVIO) foco = foco_padrao();
 }
 
@@ -786,15 +790,25 @@ static void desenha_envio(float a) {
     } }
 }
 
+// Fator da tela: o tamanho da interface se a grade 1920x1080 cabe; senao encolhe
+// ate caber (celular em retrato), nunca amplia.
+float resolver_escala(void) {
+  float ui = gfx_escala_ui(), fw = NV_LAYOUT_REAL_W / Q_W, fh = NV_LAYOUT_REAL_H / Q_H;
+  float fit = fw < fh ? fw : fh;
+  if (Q_W * ui <= NV_LAYOUT_REAL_W - 32.0f && Q_H * ui <= NV_LAYOUT_REAL_H - 32.0f) return ui;
+  return fit < 1.0f ? fit : 1.0f;
+}
+
 void resolver_desenhar(Uint32 agora) {
   float a = anim_suave(entrada);
   (void)agora;
   if (entrada < 0.002f) return;
-  ESCALA_SE_COUBER_INI(Q_W, Q_H);
+  float escAnt = gfx_escala();
+  gfx_escala_sair(resolver_escala());
   origem();
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0.051f, 0.051f, 0.051f, entrada);
   if (fase == RESOLVER_FASE_SINTOMA) desenha_sintoma(a);
   else if (fase == RESOLVER_FASE_TESTES) desenha_testes(a);
   else desenha_envio(a);
-  ESCALA_SE_COUBER_FIM();
+  gfx_escala_sair(escAnt);
 }

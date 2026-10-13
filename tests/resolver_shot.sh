@@ -25,3 +25,4 @@ cc -DAJUSTES_TESTE -DAVISOS_TESTE_ENVIO -DRESOLVER_TESTE "${sources[@]}" tests/r
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
 "$BIN" "${1:-/tmp/nuvio-resolver}"
+bash "$(dirname "$0")/resolver_retrato.sh"

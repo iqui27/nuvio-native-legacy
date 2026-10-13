@@ -16,6 +16,7 @@
 #include "resolver.h"
 #include "resolverregra.h"
 #include "avisos.h"
+#include "player.h"
 #include "ajustes.h"
 #include "anim.h"
 #include "layout.h"
@@ -278,6 +279,41 @@ static void regras(void) {
   assert(resolver_enviados_n() == 0);
   tecla(SDLK_ESCAPE);
   assert(resolver_fase() == RESOLVER_FASE_SINTOMA);
+
+  // ---- Voltar durante o envio: o codigo que chega depois entra na lista e no arquivo.
+  limpar(); fatos_ok(); abrir();
+  ir_chip(51);
+  tecla(SDLK_RETURN);
+  assert(resolver_fase() == RESOLVER_FASE_ENVIO);
+  tecla(SDLK_ESCAPE);
+  assert(resolver_fase() == RESOLVER_FASE_SINTOMA);
+  avisos_teste_envio(2, AVISOS_ENVIO_OK, 200, "K7QM2X", 186L * 1024, 2214);
+  quadro(0.016f);
+  assert(resolver_enviados_n() == 1);
+  { char *s = dados_ler(RESOLVER_ARQ);
+    assert(s && strstr(s, "K7QM2X"));
+    free(s); }
+
+  // ---- Apagar o ultimo registro persiste: reabrir nao o traz de volta.
+  limpar(); fatos_ok(); seed_enviados(1); abrir();
+  ir_chip(52);
+  tecla(SDLK_RETURN);
+  tecla(SDLK_RETURN);                          // apaga a unica linha
+  assert(resolver_enviados_n() == 0);
+  tecla(SDLK_ESCAPE); tecla(SDLK_ESCAPE);
+  resolver_teste_esquecer(); fatos_ok(); abrir();
+  assert(resolver_enviados_n() == 0);
+
+  // ---- Erro generico de fonte tambem alimenta o Resolver e troca o anterior.
+  limpar(); fatos_ok();
+  player_erro_fonte_motivo("Antigo", "dica");
+  player_erro_fonte();
+  { ResolverFalha f;
+    assert(resolverregra_falha_recente(&f, (long)time(NULL)));
+    assert(f.titulo[0] && strcmp(f.titulo, "Antigo") && !f.dica[0]); }
+  abrir();
+  assert(resolver_foco() == 50);               // o banner de erro recente
+  tecla(SDLK_ESCAPE);
 
   // ---- Lista dos enviados: OK numa linha remove do arquivo.
   limpar(); fatos_ok(); seed_enviados(3); abrir();

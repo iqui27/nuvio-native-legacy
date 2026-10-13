@@ -22,6 +22,7 @@
 // Abre a tela de qualquer lugar (Ajustes › Ajuda).
 void resolver_abrir(void);
 int  resolver_aberto(void);
+float resolver_escala(void);   // fator de desenho (<1 quando a grade 1920x1080 nao cabe)
 void resolver_evento(const SDL_Event *e);
 void resolver_atualizar(float dt, Uint32 agora);
 // Desenha a tela inteira, ou o fim do esmaecer de saida por cima do app.
