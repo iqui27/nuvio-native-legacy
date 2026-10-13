@@ -232,6 +232,8 @@ void desc_vertudo_filtro(const char *base, const char *tipo, const char *catId, 
 // "trakt" vindo do site. Os itens sao pedidos direto a esses servicos —
 // nao passa por catalogo de addon.
 void desc_vertudo_fonte(const ColSource *s);
+// Escrita 2xx: descarta a fonte desta lista e busca novamente, inclusive em voo.
+void desc_vertudo_invalidar_lista(long id);
 int desc_vertudo_erro(void);
 // Pede a proxima pagina, se houver. Nada acontece se a ultima veio curta — sinal
 // de fim de lista no protocolo.

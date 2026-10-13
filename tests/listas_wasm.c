@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 static int posts, putCount, strict;
+void desc_vertudo_invalidar_lista(long id) { assert(id == 77); }
 int trakt_cabecalhos(const char **cab, char *aut, size_t na, char *key, size_t nk) {
   (void)na; (void)nk;
   strcpy(aut, "Authorization: Bearer fixture"); strcpy(key, "trakt-api-key: fixture");

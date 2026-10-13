@@ -2,6 +2,7 @@
 #include "listasescrita.h"
 #include "rede.h"
 #include "trakt.h"
+#include "descoberta.h"
 #include "idioma.h"
 #include "ilha.h"
 #include "ilhaacao.h"
@@ -120,6 +121,7 @@ int lstesc_corpo_ordem(char *dst, size_t n, const long *ids, int k) {
 // --- envio ------------------------------------------------------------------
 typedef struct {
   int qual;
+  long listaId;
   char metodo[8], url[120];
   char corpo[2400];   // ate ~200 ids na ordem; o nome/nota cabem folgados
 } Envio;
@@ -169,6 +171,7 @@ static void *fio(void *u) {
   printf("[listas] escrita %d %s -> %s (HTTP %d)\n", e->qual, e->metodo, ok ? "confirmada" : "falhou", st);
   fflush(stdout);
   free(resp);
+  if (ok && e->listaId > 0) desc_vertudo_invalidar_lista(e->listaId);
   free(e);
   pthread_mutex_lock(&trava);
   estado = ok ? LSTESC_OK : LSTESC_FALHA;
@@ -177,7 +180,7 @@ static void *fio(void *u) {
   return NULL;
 }
 
-static int disparar(int qual, const char *metodo, const char *url, const char *corpo) {
+static int disparar(int qual, long listaId, const char *metodo, const char *url, const char *corpo) {
   Envio *e;
   pthread_t f;
   if (!envioTeste) { const char *cab[4]; char a[200], c[140];
@@ -186,7 +189,7 @@ static int disparar(int qual, const char *metodo, const char *url, const char *c
   if (vivo) { pthread_mutex_unlock(&trava); return 0; }
   e = (Envio *)calloc(1, sizeof *e);
   if (!e) { pthread_mutex_unlock(&trava); return 0; }
-  e->qual = qual;
+  e->qual = qual; e->listaId = listaId;
   snprintf(e->metodo, sizeof e->metodo, "%s", metodo);
   snprintf(e->url, sizeof e->url, "%s", url);
   snprintf(e->corpo, sizeof e->corpo, "%s", corpo);
@@ -204,35 +207,35 @@ static int disparar(int qual, const char *metodo, const char *url, const char *c
 int lstesc_criar(const char *nome, const char *desc, int privada) {
   char c[1200];
   if (!lstesc_corpo_criar(c, sizeof c, nome, desc, privada)) return 0;
-  return disparar(LSTESC_CRIAR, "POST", "https://api.trakt.tv/users/me/lists", c);
+  return disparar(LSTESC_CRIAR, 0, "POST", "https://api.trakt.tv/users/me/lists", c);
 }
 
 int lstesc_descricao(long id, const char *desc) {
   char c[900], u[100];
   if (id <= 0 || !lstesc_corpo_descricao(c, sizeof c, desc)) return 0;
   snprintf(u, sizeof u, "https://api.trakt.tv/users/me/lists/%ld", id);
-  return disparar(LSTESC_DESCRICAO, "PUT", u, c);
+  return disparar(LSTESC_DESCRICAO, id, "PUT", u, c);
 }
 
 int lstesc_adicionar(long id, const char *imdb, const char *tipo, const char *nota) {
   char c[900], u[100];
   if (id <= 0 || !lstesc_corpo_item(c, sizeof c, imdb, tipo, nota)) return 0;
   snprintf(u, sizeof u, "https://api.trakt.tv/users/me/lists/%ld/items", id);
-  return disparar(LSTESC_ADICIONAR, "POST", u, c);
+  return disparar(LSTESC_ADICIONAR, id, "POST", u, c);
 }
 
 int lstesc_ordenar(long id, const long *itemIds, int k) {
   char c[2400], u[100];
   if (id <= 0 || !lstesc_corpo_ordem(c, sizeof c, itemIds, k)) return 0;
   snprintf(u, sizeof u, "https://api.trakt.tv/users/me/lists/%ld/items/reorder", id);
-  return disparar(LSTESC_ORDENAR, "POST", u, c);
+  return disparar(LSTESC_ORDENAR, id, "POST", u, c);
 }
 
 int lstesc_nota(long id, long itemId, const char *nota) {
   char c[900], u[120];
   if (id <= 0 || itemId <= 0 || !lstesc_corpo_nota(c, sizeof c, nota)) return 0;
   snprintf(u, sizeof u, "https://api.trakt.tv/users/me/lists/%ld/items/%ld", id, itemId);
-  return disparar(LSTESC_NOTA, "PUT", u, c);
+  return disparar(LSTESC_NOTA, id, "PUT", u, c);
 }
 
 int lstesc_estado(void) { return estado; }

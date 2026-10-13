@@ -8217,6 +8217,17 @@ void desc_vertudo_fonte(const ColSource *s) {
   vtDisparar();
 }
 
+void desc_vertudo_invalidar_lista(long id) {
+  int recarregar;
+  pthread_mutex_lock(&vtTrava);
+  recarregar = id > 0 && vtProvedor == 2 && vtFonte.traktLista == id;
+  if (recarregar) {
+    vtN = 0; vtPagina = 1; vtFim = 0; vtErro = 0; vtGeracao++;
+  }
+  pthread_mutex_unlock(&vtTrava);
+  if (recarregar) vtDisparar();
+}
+
 void desc_vertudo_mais(void) { vtDisparar(); }
 int  desc_vertudo_n(void) { pthread_mutex_lock(&vtTrava);int n=vtN;pthread_mutex_unlock(&vtTrava);return n; }
 int  desc_vertudo_carregando(void) { pthread_mutex_lock(&vtTrava);int n=vtFioVivo;pthread_mutex_unlock(&vtTrava);return n; }
