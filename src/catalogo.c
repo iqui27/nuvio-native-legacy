@@ -785,7 +785,11 @@ int ajustes_idioma(void);
 // VERSAO 7: novo campo CatItem.posCreditos (cena pós-créditos, TMDB
 // 179430/179431). O sizeof recusaria o arquivo sozinho; a versao sobe mesmo
 // assim para o motivo da recusa ser o campo novo.
-#define CACHE_VERSAO 7
+// VERSAO 8: CatItem.fontes ocupou o padding antes de `imdb`. sizeof(CatItem)
+// nao mudou (17816), mas `imdb` e `tipo` deslocaram 4 bytes: um arquivo da 7
+// passaria no sizeof e leria "tt1234567" como "34567". So a versao recusa. A 5
+// deixou de ser aceita no perfil 1 pelo mesmo motivo (layout sem `fontes`).
+#define CACHE_VERSAO 8
 // Mesmo cabecalho, itens CODIFICADOS (zeros em corrida). Um CatItem tem ~16 KB
 // e quase tudo e zero (buffers de URL dimensionados para o pior caso): 1600
 // titulos eram 25,6 MB gravados na MEMFS dentro da trava do sistema de arquivos
@@ -837,7 +841,6 @@ static int rleDecodificar(const unsigned char *enc, size_t encN, unsigned char *
   }
   return o <= n;
 }
-#define CACHE_VERSAO_SO_P1 5
 
 typedef struct {
   unsigned magia, versao, tamItem, tamFileira;
@@ -1091,8 +1094,7 @@ int cat_ler_cache(const char *dirArte) {
   if (fread(&c, sizeof c, 1, f) != 1) { fclose(f); return 0; }
   // RECUSA em vez de ler torto. Struct diferente = arquivo de outra build.
   if ((c.magia != CACHE_MAGIA && c.magia != CACHE_MAGIA_RLE) ||
-      !(c.versao == CACHE_VERSAO ||
-        (c.versao == CACHE_VERSAO_SO_P1 && c.perfil == 1)) ||
+      c.versao != CACHE_VERSAO ||
       c.tamItem != sizeof(CatItem) || c.tamFileira != sizeof(CatFileira) ||
       c.nItens < 0 || c.nItens > CAT_MAX ||
       c.nFileiras < 0 || c.nFileiras > CAT_FIL_MAX) {
