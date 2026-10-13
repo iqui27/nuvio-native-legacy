@@ -2352,6 +2352,7 @@ static void epgPaisesEscolher(void) {
 // consultar de novo a cada quadro.
 static int epgDo(GCanal *c) {
   if (c->epg == -1) {
+    if (epg_estado() == EPG_FALHOU) return -2;
     if (epg_estado() != EPG_PRONTO) return -1;
     c->epg = c->epgId[0] ? epg_match_id(c->epgId) : -1;
     if (c->epg < 0) c->epg = epg_match(c->nome);
@@ -2381,8 +2382,15 @@ static int gProximo(GCanal *c, time_t t, int k, EpgProg *p) {
   if (epg >= 0) return epg_proximo(epg, t, k, p);
   return xtCurta(c) && xtepg_proximo(c->id, t, k, p);
 }
-static int gTemGrade(GCanal *c) {
-  return epgDo(c) >= 0 || (xtream_e_id(c->id) && xtepg_tem(c->id));
+// 0 = grade disponivel, -1 = pedido pendente, -2 = sem grade.
+static int gEstadoGrade(GCanal *c) {
+  int epg = epgDo(c);
+  if (epg >= 0) return 0;
+  if (xtCurta(c)) {
+    if (xtepg_tem(c->id)) return 0;
+    if (xtepg_carregando(c->id)) return -1;
+  }
+  return epg;
 }
 static int gFaixaDesde(GCanal *c, time_t de, time_t ate, int pular, EpgProg *out, int cap) {
   int epg = epgDo(c);
@@ -2752,7 +2760,7 @@ static void desenharCard(GCanal *c, float x, float y, float foco, float a,
   EpgProg ag, px;
   int temAgora = gAgora(c, agoraT, &ag);
   int temProx  = gProximo(c, agoraT, 0, &px);
-  int epg = gTemGrade(c) ? 0 : -1;
+  int epg = gEstadoGrade(c);
 
   // FOCO = O CARTAO PREENCHIDO NA COR DO FUNDO DO LOGO, sem anel. Pedido do
   // dono (16/09), olhando a captura do guia: "quando ta selecionado ficar com
@@ -2973,7 +2981,7 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
   if (!c) return;
   ajustes_acento(&ar, &ag, &ab);
   tem = gAgora(c, tFoco, &p);
-  epg = gTemGrade(c) ? 0 : -1;
+  epg = gEstadoGrade(c);
   noAr = tem && p.ini <= agoraT && agoraT < p.fim;
 
   // PREVIEW. O plano de video vive ATRAS da superficie GL; o furo e o que o
@@ -3754,7 +3762,7 @@ static void desenharLinhaLista(GCanal *c, float y, int focada, float a,
   float ppm = G_L_FAIXA_W / (float)G_L_JANELA_MIN;
   GfxRect col = { G_AREA_X, y, G_L_COL, h };
   // Grade da XMLTV ou, no Xtream, a curta (#158): ver gFaixa.
-  int epg = (epgDo(c) >= 0 || (xtCurta(c) && xtepg_tem(c->id))) ? 0 : -1;
+  int epg = gEstadoGrade(c);
 
   if (passo == 0) {
     // GLASS UI: a coluna do canal nao tem superficie propria; o foco e a

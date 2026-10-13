@@ -61,6 +61,10 @@ const char *simklauth_token(void);
 unsigned long long simklauth_credencial_copiar(char *dst, size_t tam);
 // Esquece o vinculo de TODOS os perfis (logout).
 void simklauth_esquecer(void);
+// O Simkl recusou (401) um pedido que saiu com a credencial de geracao `cred`
+// (simklauth_credencial_copiar): desfaz o vinculo do perfil ATUAL so se ele
+// ainda e essa credencial. Devolve 1 quando desfez; 0 = o 401 era de outra.
+int simklauth_invalidar_se(unsigned long long cred);
 // POR PERFIL, como o Trakt (simkl-p<N>.txt; simkl.txt antigo vira o do perfil
 // 1). carregar_perfil escolhe o perfil e le; trocar_perfil faz o mesmo so
 // quando o perfil mudou e devolve 1 quando o Simkl estava ou ficou ligado —

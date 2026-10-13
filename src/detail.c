@@ -345,7 +345,6 @@ static Uint32 trailerPrazo = 0;
 // 03/10: "pode abrir por cima"). Antes a tecla ligava `saindo` junto e a
 // pagina fechava para a barra abrir sobre a tela de baixo. Voltar/DIREITA na
 // barra devolvem o foco aqui; um destino escolhido fecha a pagina (app.c).
-static int    pediuSocial = 0; // CIMA no alto da pagina: abrir Salvos/Avisos (ver app.c)
 static int    pediuMenu = 0;   // ESQUERDA na borda: abrir a barra por cima (ver app.c)
 // A barra esta aberta por cima (detail_sob_menu): o trailer segue tocando,
 // MUDO, e o som volta quando ela fecha. `somAntesMenu` lembra se tinha som.
@@ -1670,7 +1669,10 @@ static int carDesenhaFundo(void) {
 
 int detail_aberto(void) { return aberto; }
 int detail_relogio_oculto(void) { return aberto && carro && !carCheia && nivel == 0; }
-int detail_pediu_social(void) { int p = pediuSocial; pediuSocial = 0; return p; }
+// #407: detail_pediu_social saiu (CIMA no topo nao abre mais o painel); a
+// accessor fica para o linkage e diz 0, para o caminho de app.c nao crescer
+// um #ifdef a mais por causa de um atalho que nao existe mais.
+int detail_pediu_social(void) { return 0; }
 
 // 0..1 de quanto o detalhe ja tomou a tela. A home le isto para DESCER as
 // fileiras enquanto ele entra: e o movimento que o dono descreve como "so os
@@ -2888,7 +2890,10 @@ void detail_evento(const SDL_Event *e) {
       if (amigosDoTitulo(&at)) { focoAmigos = 1; return; }
     }
     if (k == SDLK_UP && reacao_detalhe_abrir(cat_item(idx))) return;
-    if (k == SDLK_UP && !e->key.repeat) { pediuSocial = 1; return; }
+    // #407: CIMA no alto da pagina NAO abre mais o painel de Salvos/Avisos.
+    // O atalho de cef8c3e8 (alcançar o painel sem tecla AZUL) ficou
+    // redundante com o relogio clicavel e com o CH+/AZUL, e a seta no topo da
+    // pagina abrindo um menu surpreendia (relato #407, Samsung).
     // CARROSSEL: a primeira seta para baixo so estica o cartao (ver carCheia).
     if (k == SDLK_DOWN && carro && !carCheia) { carCheia = 1; return; }
     if (k == SDLK_DOWN) {
@@ -3961,25 +3966,6 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
                        r.y + (r.h - l.h) * 0.5f, a); }
 }
 
-// DICA DO CIRCULAR EM FOCO (so o "Assistir trailer"): o circular e mudo, e uma
-// acao que abre video nao pode ser adivinhada pelo glifo. Pilula escura com o
-// nome logo acima do botao, no mesmo vocabulario da legenda do carrossel.
-static void desenhaDicaBotao(GfxRect rc, const char *texto, float a) {
-  float ar, ag, ab;
-  TxtLinha label = txt_linha_corta(TXT_CAPTION2, texto, 232, 235, 240, 255,
-                                   larguraTextoHero() - 28.0f);
-  float w = label.w + 28.0f, h = 34.0f;
-  GfxRect pill = { rc.x + (rc.w - w) * 0.5f, rc.y - h - 14.0f, w, h };
-  if (pill.x < NV_DETW2_X) pill.x = NV_DETW2_X;
-  if (detalheRetrato() && pill.x + pill.w > NV_TELA_W - 96.0f)
-    pill.x = NV_TELA_W - 96.0f - pill.w;
-  ajustes_acento(&ar, &ag, &ab);
-  gfx_cor(pill, .5f, ar, ag, ab, .16f * a);
-  gfx_cor((GfxRect){ pill.x + 1, pill.y + 1, pill.w - 2, pill.h - 2 }, .5f,
-          .075f, .08f, .095f, .76f * a);
-  txt_desenhar_alpha(label, pill.x + 14.0f, pill.y + (h - label.h) * .5f, a);
-}
-
 // Botao secundario: 345x96, raio 64, fundo #222 e texto branco; focado, fundo
 // #f5f5f5 e texto #111, com o mesmo anel de 4px. Nao tem icone — no web e so o
 // rotulo, e por isso a largura sai de `texto + 2 x 34` e nao da conta do
@@ -4590,8 +4576,6 @@ static void heroWeb(float a, float desloc) {
           desenhaLembrete(rc,ci && agenda_lembrete(ci->imdb),selected,a*stagger);
         else desenhaBotao(rc,NULL,action,selected,a*stagger);
         if (action == ACAO_MAIS) maisAncora = rc;
-        if (selected && action == ACAO_MAIS && stagger > .85f && !detmais_aberto())
-          desenhaDicaBotao(rc, i18n("Mais opções"), a);
         if (maisAcoes && a > .3f && stagger > .85f)
           ponteiro_alvo(rc.x,rc.y,rc.w,rc.h,ponteiroDetalhe,NULL,-1,j);
       }
@@ -4603,8 +4587,6 @@ static void heroWeb(float a, float desloc) {
       if (detalheRetrato()) rc = heroAcaoRect(&bx, &cyBtn, rc.w, rc.h);
       desenhaBotao(rc, NULL, acaoEm(nb), nivel == 0 && botao == nb, a);
       if (acaoEm(nb) == ACAO_MAIS) maisAncora = rc;
-      if (nivel == 0 && botao == nb && acaoEm(nb) == ACAO_MAIS && !detmais_aberto())
-        desenhaDicaBotao(rc, i18n("Mais opções"), a);
       if (a > 0.3f) ponteiro_alvo(rc.x, rc.y, rc.w, rc.h, ponteiroDetalhe, NULL, -1, nb);
       bx += NV_DETW2_CIRC + NV_DETW2_BTN_GAP;
     }

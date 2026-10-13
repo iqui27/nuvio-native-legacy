@@ -30,6 +30,12 @@ RETIRADAS = {
     # titulo"; turning a rating on turns its pair on (notaLigarPar in ajustes.c).
     "AJ_MDB_TRAKT", "AJ_MDB_IMDB", "AJ_MDB_TMDB", "AJ_MDB_LETTER",
     "AJ_MDB_TOMATES", "AJ_MDB_AUDIENCIA", "AJ_MDB_META", "AJ_MDB_MAL",
+    # 2.0.5 (owner, 12/10): profundidade virou o reflexo do foco do GFX_CARD,
+    # com um controle so (AJ_PROF_BRILHO). Os outros AJ_PROF_* (borda, cobertura
+    # e os cinco por tipo de cartao) sairam da tela de proposito; os slots ficam
+    # no enum para o valor[] salvo manter os indices (migracao profundidade-205).
+    "AJ_PROF_BORDA", "AJ_PROF_COBERTURA", "AJ_PROF_POSTERS", "AJ_PROF_CW",
+    "AJ_PROF_EPS", "AJ_PROF_ELENCO", "AJ_PROF_TRAILERS",
 }
 opcoes = [op for op in opcoes if op not in RETIRADAS]
 

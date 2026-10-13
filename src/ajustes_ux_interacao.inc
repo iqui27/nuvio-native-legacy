@@ -309,6 +309,7 @@ static int uxEvento(SDL_Keycode k) {
       } else if (k == SDLK_UP) {
         if (t == AJ2_T_TOUR) uxTopo = AJ2_T_BUSCA;
         else if (t == AJ2_T_RESOLVER) uxTopo = AJ2_T_PERFIL;
+        else if (ajustes_menu_topo()) { sair = 1; return 1; }
       }
       return 1;
     }

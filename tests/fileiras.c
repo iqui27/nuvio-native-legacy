@@ -44,6 +44,7 @@ char *dados_caminho(char *dst, unsigned tam, const char *nome) {
 }
 void fil_teste_recarregar(void);
 void fil_teste_esquecer_vista(int i);
+int  fil_teste_achar(const char *chave);
 
 // A ordem que a HOME desenha: fixas primeiro, catalogo depois.
 static const char *DA_HOME[] = { "continuar", "amigos", "catA", "catB", "catC" };
@@ -1133,6 +1134,66 @@ int main(void) {
     fil_definir_perfil(0);
     usaArquivo = 0; }
   puts("ok  #319: addon removido/desligado nao ocupa vaga da home e a poda nao fica adiada");
+
+  // #365: FANTASMAS EM "FORA DA HOME". Removido o addon, as suas linhas
+  // "Fora da Home" — a sugestao automatica (oculta=2) e a oculta impunida
+  // que sobrou de arquivo antigo (oculta=1, sem mais escolha nenhuma) —
+  // ficavam na aba "Fora da Home" para sempre: #204 so despeja o intruso
+  // via orfaDespejavel (que exige !vista da volta ATUAL) e so acima de 25%
+  // da tabela; a limpeza "na remocao do addon" entra no marcar_sem_addon,
+  // que e o que sabe que o addon acabou — mas so da FILA INTACTA: sugestao,
+  // ou oculta da pessoa sem visibilidade guardada (arquivo antigo), com
+  // tamanho/forma padrao, sem fila e nao e a fonte do destaque.
+  fil_esquecer();
+  { const char *vivos[] = { "addonvivo", "addonmorto" };
+    const char *bases[] = { "https://vivo.example", "https://off.example" };
+    int ativos[] = { 1, 0 };   // addonmorto removido da conta
+    char nomeLixo[FIL_CHAVE], tituloLixo[FIL_TITULO];
+    int k, lixo = 0;
+    usaArquivo = 1;
+    { FILE *f = fopen("/tmp/fileirasui-p1.txt", "w");
+      fprintf(f, "limite 16\n");
+      fprintf(f, "linha addonvivo_movie_a\t0\t0\t1\tVivo A\n");
+      // Oculta pela pessoa um dia, sem mais nada de escolha guardada.
+      fprintf(f, "linha addonmorto_movie_pessoa\t1\t0\t1\tMorto Pessoa\n");
+      // Sugestao automatica de fora-da-cota (oculta=2).
+      fprintf(f, "linha addonmorto_movie_auto\t2\t0\t1\tMorto Auto\n");
+      // Fora da home com escolha REAL (visPessoal): fica.
+      fprintf(f, "linha addonmorto_movie_escolha\t1\t0\t1\tMorto Escolha\n");
+      fprintf(f, "visibilidade addonmorto_movie_escolha\n");
+      // Ligadas e indesejadas (#204 ja cuida pelo orfaDespejavel quando o
+      // volume passa de 25%; aqui, ficam so marcadas fora — mas tem de
+      // ganhar estado FIL_FORA na tela).
+      for (k = 0; k < 100; k++) {
+        snprintf(nomeLixo, sizeof nomeLixo, "addonmorto_movie_lixo%d", k);
+        snprintf(tituloLixo, sizeof tituloLixo, "Lixo %d", k);
+        fprintf(f, "linha %s\t0\t0\t1\t%s\n", nomeLixo, tituloLixo);
+      }
+      fclose(f); }
+    fil_definir_perfil(1);
+    assert(fil_n() == 4 + 100);
+    assert(fil_teste_achar("addonmorto_movie_pessoa") >= 0);
+    assert(fil_teste_achar("addonmorto_movie_auto") >= 0);
+    assert(fil_teste_achar("addonmorto_movie_escolha") >= 0);
+    // A volta da descoberta: so o vivo declara coisas; o marcar registra o
+    // estado do addon que saiu — e limpa o que nao tem mais razao de ficar.
+    fil_registrar("addonvivo_movie_a", "Vivo A", "Vivo", "movie", 5);
+    { int mudado = fil_marcar_sem_addon(vivos, bases, ativos, 2, 1);
+      assert(mudado >= 102); }
+    assert(fil_teste_achar("addonmorto_movie_pessoa") < 0);
+    assert(fil_teste_achar("addonmorto_movie_auto") < 0);
+    // A escolha real (visPessoal) fica, como sempre ficou.
+    assert(fil_teste_achar("addonmorto_movie_escolha") >= 0);
+    // O vivo e o lixo ligado (sem oculta) ficam; 100 + 1 escolha + 1 vivo.
+    assert(fil_n() == 102);
+    for (k = 0; k < fil_n(); k++)
+      if (!strncmp(fil_chave(k), "addonmorto_movie_lixo", 21)) lixo++;
+    assert(lixo == 100);
+    assert(fil_teste_achar("addonvivo_movie_a") >= 0);
+    remove("/tmp/fileirasui-p1.txt");
+    fil_definir_perfil(0);
+    usaArquivo = 0; }
+  puts("ok  #365: catalogo intocado de addon removido sai da aba Fora da Home");
 
   // #327: "Adicionada a Home" de um catalogo engolido por pasta de colecao nao
   // mudava nada (emColecao seguia ligado). A escolha local vence a colecao.

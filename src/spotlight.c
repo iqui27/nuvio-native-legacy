@@ -410,18 +410,21 @@ static int tituloDoUsuario(const CatItem *ci) {
   return ci->naLista || ci->naColecao || ci->progresso > 0 || ci->retomadoMs > 0;
 }
 static void montarTitulos(const char *alvo) {
-  Cand c[64];
+  int nAlvos = desc_busca_n_alvos(), capacidade = 64 + nAlvos * 12;
+  Cand c[capacidade];
   int nc = 0, r, i, ordem = 0;
   char nome[320];
   // REDE primeiro na ORDEM (o addon ja ranqueou), local depois; o placar
   // decide o resto. Remoto que nao contem o texto (o addon casou por outro
   // campo) ainda entra, abaixo de qualquer casamento de nome.
-  { int a, nAlvos = desc_busca_n_alvos();
-    for (a = 0; a < nAlvos && nc < 40; a++) {
+  { int a;
+    // #405: 12 por alvo, como a Busca. Todos participam do ranking antes
+    // do teto global de 64: um exato no ultimo alvo nao pode ser descartado.
+    for (a = 0; a < nAlvos; a++) {
       int nRem = desc_busca_alvo_n(a, consulta);
-      CatItem novos[8];
-      int posNovo[8], idxNovos[8], nNovos = 0;
-      for (i = 0; i < nRem && i < 8 && nc < 40; i++) {
+      CatItem novos[12];
+      int posNovo[12], idxNovos[12], nNovos = 0;
+      for (i = 0; i < nRem && i < 12; i++) {
         CatItem it;
         int idx, k, dup = 0;
         // Sem ID, cada montagem reinseriria o resultado e mudaria a revisao.
@@ -435,7 +438,7 @@ static void montarTitulos(const char *alvo) {
         c[nc].pont += 6 - (a < 6 ? a : 6);   // primeiro addon desempata
         c[nc].ordem = ordem++;
         if (idx >= 0) c[nc++].idx = idx;
-        else if (nNovos < 8) { novos[nNovos] = it; posNovo[nNovos++] = nc; c[nc++].idx = -1; }
+        else if (nNovos < 12) { novos[nNovos] = it; posNovo[nNovos++] = nc; c[nc++].idx = -1; }
       }
       // Os que nao estao no catalogo entram numa troca de bloco so (o porque
       // esta em refiltrar, busca.c: cat_acrescentar por item copia tudo).
@@ -471,7 +474,7 @@ static void montarTitulos(const char *alvo) {
       if (dup) continue;
       // O teto limita memoria, nao a busca: um exato tardio substitui parcial.
       k = nc;
-      if (nc == 64) {
+      if (nc == capacidade) {
         k = 0;
         for (int j = 1; j < nc; j++) if (candCmp(&c[j], &c[k]) > 0) k = j;
         if (p + bonus <= c[k].pont) continue;
@@ -497,7 +500,8 @@ static void montarTitulos(const char *alvo) {
   // do IMDb, com o placar maior dos dois. Mesmo nome, mesmo tipo e mesmo ano
   // (ou ano desconhecido de um lado) — remake com o mesmo nome tem outro ano.
   { int w = 0, k;
-    unsigned char sai[64] = { 0 };
+    unsigned char sai[capacidade];
+    memset(sai, 0, sizeof sai);
     for (i = 0; i < nc; i++) {
       const CatItem *a = cat_item(c[i].idx);
       int junta = -1;
@@ -519,6 +523,7 @@ static void montarTitulos(const char *alvo) {
     for (i = 0; i < nc; i++) if (!sai[i]) c[w++] = c[i];
     nc = w;
     qsort(c, (size_t)nc, sizeof *c, candCmp); }
+  if (nc > 64) nc = 64;
   if (nc > 0) {
     cabecalho(i18n("Melhor resultado"));
     linhaTitulo(L_TOPO, c[0].idx);
