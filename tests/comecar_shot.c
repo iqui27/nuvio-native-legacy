@@ -50,7 +50,14 @@ static void tecla_em(SDL_Keycode k, int repeticao, Uint32 ts) {
   comecar_evento(&e);
 }
 
-static void tecla(SDL_Keycode k) { tecla_em(k, 0, 1000); }
+static void soltar(SDL_Keycode k) {
+  SDL_Event e; SDL_zero(e);
+  e.type = SDL_KEYUP;
+  e.key.keysym.sym = k;
+  comecar_evento(&e);
+}
+
+static void tecla(SDL_Keycode k) { tecla_em(k, 0, 1000); soltar(k); }
 
 // Um quadro: fundo de mentira (a tela do app embaixo) e o Começar por cima.
 static void quadro(float dt) {
@@ -338,27 +345,60 @@ int main(int argc, char **argv) {
   previa("estado=feito\nnome=Ana\ncor=3\n");
   tecla(SDLK_RETURN);            // passo 2
   tecla(SDLK_AC_BACK);           // passo 1
+  SDL_Delay(260);                // segundo toque fora do debounce
   tecla(SDLK_AC_BACK);           // pula
   assert(!comecar_aberto());
   contem("estado=feito"); contem("nome=Ana"); contem("cor=3");
+  // main.c traduz o scancode LG 482 em um KEYDOWN AC_BACK zerado.
+  // Duas entregas desse caminho em menos de 700 ms so voltam um passo.
+  previa("estado=nenhum\nnome=Ana\n");
+  tecla(SDLK_RETURN); tecla(SDLK_RETURN);   // passo 3
+  {
+    SDL_Event back; SDL_zero(back);
+    Uint32 inicio = SDL_GetTicks();
+    back.type = SDL_KEYDOWN;
+    back.key.keysym.sym = SDLK_AC_BACK;
+    comecar_evento(&back);
+    assert(comecar_passo() == 1 && comecar_aberto());
+    SDL_Delay(100);
+    assert(SDL_GetTicks() - inicio < 700);
+    comecar_evento(&back);
+    assert(comecar_passo() == 1 && comecar_aberto());
+    nao_contem("feito");
+    // O KEYUP LG segue sem traducao; a rajada seguinte tambem e ignorada.
+    SDL_Event up; SDL_zero(up);
+    up.type = SDL_KEYUP;
+    up.key.keysym.scancode = (SDL_Scancode)482;
+    comecar_evento(&up);
+    comecar_evento(&back);
+    assert(comecar_passo() == 1 && comecar_aberto());
+    SDL_Delay(260);
+    comecar_evento(&back);   // novo toque fora do debounce
+    assert(comecar_passo() == 0 && comecar_aberto());
+  }
   // Voltar segurado pula de qualquer passo; a repeticao nao volta passo.
   previa("estado=nenhum\nnome=Ana\n");
   tecla(SDLK_RETURN); tecla(SDLK_RETURN);   // passo 3
   assert(comecar_passo() == 2);
-  tecla_em(SDLK_AC_BACK, 0, 5000);          // primeira descida: um passo
+  tecla_em(SDLK_AC_BACK, 0, 0);             // primeira descida: um passo
   assert(comecar_passo() == 1 && comecar_aberto());
-  tecla_em(SDLK_AC_BACK, 1, 5300);          // repeticoes: ainda curto, nao volta
-  tecla_em(SDLK_AC_BACK, 1, 5600);
+  SDL_Delay(300);
+  tecla_em(SDLK_AC_BACK, 0, 0);             // evento LG: repeat/timestamp zerados
+  SDL_Delay(300);
+  tecla_em(SDLK_AC_BACK, 1, 9000);          // timestamp falso nao pode pular
   assert(comecar_passo() == 1 && comecar_aberto());
   nao_contem("feito");
-  tecla_em(SDLK_AC_BACK, 1, 5750);          // >= 700 ms desde a descida
+  SDL_Delay(150);
+  tecla_em(SDLK_AC_BACK, 0, 0);             // >= 700 ms no relogio do Comecar
   assert(!comecar_aberto() && comecar_pedido() == COMECAR_PEDIU_NADA);
   contem("estado=feito"); contem("nome=Ana");
-  // Repeticao sem descida (tecla que ja vinha apertada) nao pula nada.
+  // Soltar encerra a pressao: outro toque apos 700 ms nao e pressao longa.
   previa("estado=nenhum\nnome=Ana\n");
-  tecla(SDLK_RETURN);
-  tecla_em(SDLK_AC_BACK, 1, 9000);
-  assert(comecar_aberto() && comecar_passo() == 1);
+  tecla(SDLK_RETURN); tecla(SDLK_RETURN);
+  tecla(SDLK_AC_BACK);
+  SDL_Delay(750);
+  tecla(SDLK_AC_BACK);
+  assert(comecar_aberto() && comecar_passo() == 0);
   // "Pular tudo" (visivel no rodape) pula de qualquer passo.
   apagar(); comecar_abrir();
   ir_para(103); tecla(SDLK_RETURN);

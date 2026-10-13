@@ -36,6 +36,7 @@
 #define PASSOS        4
 #define MAX_ITENS    16
 #define BACK_LONGO_MS 700   // Voltar segurado por tanto tempo pula o fluxo todo
+#define BACK_DEBOUNCE_MS 250
 
 // Ids de foco. Os de campo valem dentro do passo; os botoes valem em todos.
 enum { I_NOME = 0, I_COR0 = 1 };                                       // passo 0
@@ -46,7 +47,8 @@ enum { B_VOLTAR = 100, B_PRINC, B_SEC, B_PULAR };
 typedef struct { int id; GfxRect r; } Item;
 
 static int   aberto, passo, foco = B_PRINC, pedido, esperaTeclado, decidido, temDados;
-static Uint32 backDesde;   // timestamp do Voltar que abriu a pressao atual; 0 = nenhuma
+static Uint32 backDesde, backUltimo;   // relogio proprio: main.c zera o evento LG
+static int backPressionado, backVisto;
 static float entrada;
 static ComecarSalvo dados;   // o que a pessoa esta preenchendo (so vai ao disco no fim)
 static ComecarSalvo antes;   // o que ja estava gravado quando a tela abriu
@@ -57,7 +59,8 @@ int comecar_aberto(void) { return aberto; }
 int comecar_passo(void) { return passo; }
 int comecar_foco(void) { return foco; }
 void comecar_teste_esquecer(void) {
-  aberto = 0; entrada = 0.0f; decidido = 0; temDados = 0; backDesde = 0;
+  aberto = 0; entrada = 0.0f; decidido = 0; temDados = 0;
+  backPressionado = backVisto = 0;
   memset(&dados, 0, sizeof dados);
   memset(&antes, 0, sizeof antes);
 }
@@ -115,7 +118,7 @@ static void abrir(void) {
   entrada = 0.0f;
   pedido = COMECAR_PEDIU_NADA;
   esperaTeclado = 0;
-  backDesde = 0;
+  backPressionado = backVisto = 0;
   antes = dados;
   passo = 0;
   foco = foco_padrao();
@@ -240,7 +243,7 @@ static void abrir_teclado(void) {
   teclado_abrir_com(i18n("Seu nome"), i18n("Só o nome pede ação; o resto já vem preenchido."), COMECAR_NOME_MAX,
                     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -", dados.nome);
   esperaTeclado = 1;
-  backDesde = 0;
+  backPressionado = backVisto = 0;
 }
 
 static void ok(void) {
@@ -270,26 +273,33 @@ void comecar_evento(const SDL_Event *e) {
   // O teclado da TV e modal: com ele aberto, toda tecla e dele (digitar,
   // Voltar cancela, Pronto confirma). Quem le o resultado e comecar_atualizar.
   if (teclado_aberto()) { teclado_evento(e); return; }
-  if (e->type != SDL_KEYDOWN) return;
+  if (e->type != SDL_KEYDOWN && e->type != SDL_KEYUP) return;
   k = e->key.keysym.sym;
+  if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
+      k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK) {
+    Uint32 agora = SDL_GetTicks();
+    if (e->type == SDL_KEYUP) { backPressionado = 0; return; }
+    // O Back LG traduzido nao tem repeat/timestamp. Descida volta uma vez;
+    // rajadas apos soltar ficam no debounce, e segurar usa nosso relogio.
+    if (!backPressionado) {
+      if (backVisto && agora - backUltimo < BACK_DEBOUNCE_MS) {
+        backUltimo = agora;
+        return;
+      }
+      backPressionado = backVisto = 1;
+      backDesde = agora;
+      if (passo == 0) pular();
+      else ir_passo(passo - 1);
+    } else if (agora - backDesde >= BACK_LONGO_MS) pular();
+    backUltimo = agora;
+    return;
+  }
+  if (e->type != SDL_KEYDOWN) return;
   if (k == SDLK_LEFT)  { mover(-1, 0); return; }
   if (k == SDLK_RIGHT) { mover(1, 0); return; }
   if (k == SDLK_UP)    { mover(0, -1); return; }
   if (k == SDLK_DOWN)  { mover(0, 1); return; }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) { ok(); return; }
-  if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
-      k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK) {
-    // Voltar: um passo para tras; no primeiro, pula o fluxo. Segurado por
-    // BACK_LONGO_MS (as repeticoes da tecla), pula de qualquer passo. Repeticao
-    // nunca volta passo: so a primeira descida conta como "voltar".
-    if (!e->key.repeat) {
-      backDesde = e->key.timestamp ? e->key.timestamp : 1;
-      if (passo == 0) pular();
-      else ir_passo(passo - 1);
-    } else if (backDesde && e->key.timestamp - backDesde >= BACK_LONGO_MS) pular();
-    return;
-  }
-  if (!e->key.repeat) backDesde = 0;
 }
 
 void comecar_atualizar(float dt, Uint32 agora) {

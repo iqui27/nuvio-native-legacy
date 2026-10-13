@@ -32,6 +32,7 @@ Títulos, artes, códigos e QR são inventados. O QR não codifica nada.
 - Hoje: "Começar" é um capítulo do guia nos Ajustes; não há primeiro uso guiado.
 - Muda: 4 passos. Perfil; trazer add-ons e biblioteca (Conta Stremio, AIOManager, Conta Nuvio ou do zero) com login no celular; trackers com padrões preenchidos; resumo do que foi feito sozinho, inclusive o que a TV aceita, e tour opcional de 1 minuto.
 - Issues: #393 (escolha do tracker padrão), #313 (DTS para 5.1 compatível aparece no resumo). Roadmap: Começar, perfis + tour.
+- "Pular tudo" não desvincula contas Trakt/Simkl autorizadas no passo 3: autorizar é a confirmação explícita do vínculo.
 
 ### 4 · Título e Fontes (`titulo.html`)
 
