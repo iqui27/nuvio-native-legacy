@@ -359,6 +359,7 @@ int  stream_detalhe_tecla_abre(const SDL_Event *e);
 int  stream_folha_n(void);
 #ifdef NV_SHOT_HOOKS
 void stream_shot_folha(float *cartao, int *linhas, int *dobradas);   // capturas
+void stream_shot_foco(int *indice, int *dobrada);   // capturas
 #endif
 void stream_folha_evento(const SDL_Event *e);
 void stream_folha_atualizar(float dt, Uint32 agora);

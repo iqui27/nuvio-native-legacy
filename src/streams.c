@@ -2980,6 +2980,13 @@ void stream_shot_folha(float *cartao, int *linhas, int *dobradas) {
   if (linhas) *linhas = l;
   if (dobradas) *dobradas = d;
 }
+// Linha em foco: indice em stream_item() (-1 = foco fora da lista) e se esse
+// indice e uma copia dobrada (nunca deveria: a linha dobrada nao tem foco).
+void stream_shot_foco(int *indice, int *dobrada) {
+  int i = filtrado(foco);
+  if (indice) *indice = i;
+  if (dobrada) *dobrada = i >= 0 && dobravel(i);
+}
 #endif
 // DETALHES DA FONTE (#355): o titulo e a descricao do addon sao cortados na
 // linha (uma fileira de selos, duas linhas de texto). O texto inteiro existe
@@ -3538,10 +3545,16 @@ static void escDesenhar(float x, float y, float w, float h, float ar, float ag, 
   gfx_cor((GfxRect){x, y, w, h}, FOLHA_RAIO / h, 1, 1, 1, .05f * a);
   // cabecalho: marca no acento a esquerda, "regras em Ajustes" a direita
   gfx_cor((GfxRect){px, py + 5, 7, 7}, .5f, ar, ag, ab, a);
-  caixaAlta("Escolha automática · melhor para esta TV", ai, (int)(ag * 255.0f + .5f),
-            (int)(ab * 255.0f + .5f), px + 16, py, a);
-  t = txt_linha_corta(TXT_ILHA_APOIO, i18n("regras em Ajustes › Reprodução"), 115, 115, 113, 255, w * .38f);
-  txt_desenhar_alpha(t, pr - t.w, py + (ESC_CAB_H - t.h) * .5f - 4.0f, a);
+  { float kw = caixaAlta("Escolha automática · melhor para esta TV", ai, (int)(ag * 255.0f + .5f),
+                         (int)(ab * 255.0f + .5f), px + 16, py, a);
+    // O link so ocupa o que sobra do kicker (em idiomas de rotulo longo os
+    // dois se atropelavam); sobrou menos de 80 px, ele some.
+    float sobra = (pr - px) - 16.0f - kw - 20.0f;
+    if (sobra >= 80.0f) {
+      t = txt_linha_corta(TXT_ILHA_APOIO, i18n("regras em Ajustes › Reprodução"), 115, 115, 113, 255,
+                          sobra < w * .38f ? sobra : w * .38f);
+      txt_desenhar_alpha(t, pr - t.w, py + (ESC_CAB_H - t.h) * .5f - 4.0f, a);
+    } }
   // a fonte: nome amigavel a esquerda; tamanho e add-on a direita
   ny = py + ESC_CAB_H + 14.0f;
   { TxtLinha lg = txt_linha(TXT_PAINEL_ITEM, e->tamanho, 242, 242, 240, 255);
@@ -3553,15 +3566,26 @@ static void escDesenhar(float x, float y, float w, float h, float ar, float ag, 
     txt_desenhar_alpha(t, px, ny, a); }
   // criterios, 2 colunas na ordem de leitura
   gy = ny + ESC_NOME_H + 16.0f;
+  // A coluna da esquerda leva o que o texto dela pede (ate a metade); a da
+  // direita fica com o resto — frases longas ("Dolby Vision: mais cor e
+  // brilho...") deixam de ser cortadas quando a esquerda e curta.
   colW = ((pr - px) - 28.0f) * .5f;
-  for (k = 0; k < e->nLinha; k++) {
-    float cx = px + (k % 2) * (colW + 28.0f), ly = gy + (k / 2) * (ESC_LIN_H + ESC_LIN_GAP);
-    int fora = e->fora[k], c = fora ? 115 : 208;
-    if (fora) gfx_icone((GfxRect){cx, ly + 1, 20, 20}, "aj_x", .45f, .45f, .45f, a);
-    else gfx_icone((GfxRect){cx, ly + 1, 20, 20}, "check", ar, ag, ab, a);
-    t = txt_linha_corta(TXT_ILHA_APOIO, e->linha[k], c, c, c - 2, 255, colW - 30.0f);
-    txt_desenhar_alpha(t, cx + 30.0f, ly + (ESC_LIN_H - t.h) * .5f, a);
-  }
+  { float esqW = 0.0f, dirX;
+    for (k = 0; k < e->nLinha; k += 2) {
+      TxtLinha m = txt_linha(TXT_ILHA_APOIO, e->linha[k], 208, 208, 206, 255);
+      if ((float)m.w + 30.0f > esqW) esqW = (float)m.w + 30.0f;
+    }
+    if (esqW > colW) esqW = colW;
+    dirX = px + esqW + 28.0f;
+    for (k = 0; k < e->nLinha; k++) {
+      float cx = k % 2 ? dirX : px, ly = gy + (k / 2) * (ESC_LIN_H + ESC_LIN_GAP);
+      float cw = k % 2 ? pr - dirX : esqW;
+      int fora = e->fora[k], c = fora ? 115 : 208;
+      if (fora) gfx_icone((GfxRect){cx, ly + 1, 20, 20}, "aj_x", .45f, .45f, .45f, a);
+      else gfx_icone((GfxRect){cx, ly + 1, 20, 20}, "check", ar, ag, ab, a);
+      t = txt_linha_corta(TXT_ILHA_APOIO, e->linha[k], c, c, c - 2, 255, cw - 30.0f);
+      txt_desenhar_alpha(t, cx + 30.0f, ly + (ESC_LIN_H - t.h) * .5f, a);
+    } }
 }
 // `anim` aqui e o alfa do corpo (sombra a variavel da mola de proposito: na
 // ilha quem manda na opacidade e a forma, nao a mola da folha).
