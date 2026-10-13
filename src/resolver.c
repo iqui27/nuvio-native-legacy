@@ -297,6 +297,14 @@ static void poe_botao(Item *it, int *n, int id, float x, float y, const char *ro
   poe(it, n, id, x, y, botao_largura(rot, ic, prim), prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO);
 }
 
+// Altura que o titulo e o corpo do painel ocupam, quebrados na largura dele (o
+// desenho usa os mesmos numeros em desenha_testes). Alpha 0 so mede.
+static void medir_painel(void) {
+  float w = PAINEL_W - 2.0f * PAINEL_PAD;
+  pHeadH = pTitulo[0] ? txt_bloco(TXT_ILHA_TITULO, pTitulo, 0, 0, 0, 0, 0, w, 48.0f, 0.0f, 2) : 0.0f;
+  pBodyH = pCorpo[0] ? txt_bloco(TXT_V2_26, pCorpo, 0, 0, 0, 0, 0, w, 32.0f, 0.0f, 6) : 0.0f;
+}
+
 static float painel_corpo_y(void) { return PAINEL_Y + 100.0f + pHeadH + 22.0f; }
 static float painel_botoes_y(void) { return painel_corpo_y() + pBodyH + 36.0f; }
 static float painel_h(void) {
@@ -322,7 +330,10 @@ static int montar(Item *it) {
     poe_botao(it, &n, B_ENVIAR, MARGEM, 944.0f, i18n("Enviar um registro"), "aj_send", 0);
     poe_botao(it, &n, B_LISTA, MARGEM + botao_largura(i18n("Enviar um registro"), "aj_send", 0) + BOTAO_GAP, 944.0f, lista, NULL, 0);
   } else if (fase == RESOLVER_FASE_TESTES) {
-    float by = painel_botoes_y(), x = PAINEL_X + PAINEL_PAD, cy = PAINEL_Y + painel_h() + 28.0f;
+    float by, x = PAINEL_X + PAINEL_PAD, cy;
+    medir_painel();
+    by = painel_botoes_y();
+    cy = PAINEL_Y + painel_h() + 28.0f;
     poe_botao(it, &n, B_PRINC, x, by, rotulo_acao(pPrim), icone_acao(pPrim), 1);
     if (pSec) poe_botao(it, &n, B_SEC, x + botao_largura(rotulo_acao(pPrim), icone_acao(pPrim), 1) + BOTAO_GAP, by + 8.0f,
                         rotulo_acao(pSec), icone_acao(pSec), 0);
@@ -335,11 +346,11 @@ static int montar(Item *it) {
   } else {
     float x = MARGEM;
     if (envModo == M_FALHOU && !(envMotivo == AVISOS_ENVIO_INDISPONIVEL || envMotivo == AVISOS_ENVIO_CONTA)) {
-      poe_botao(it, &n, B_REPETIR, x, 480.0f, i18n("Tentar de novo"), "aj_rotate-cw", 1);
+      poe_botao(it, &n, B_REPETIR, x, 504.0f, i18n("Tentar de novo"), "aj_rotate-cw", 1);
       x += botao_largura(i18n("Tentar de novo"), "aj_rotate-cw", 1) + BOTAO_GAP;
-      poe_botao(it, &n, B_PRONTO, x, 488.0f, i18n("Voltar"), NULL, 0);
+      poe_botao(it, &n, B_PRONTO, x, 512.0f, i18n("Voltar"), NULL, 0);
     } else {
-      poe_botao(it, &n, B_PRONTO, x, 480.0f, envModo == M_ENVIANDO ? i18n("Voltar") : envModo == M_LISTA ? i18n("Voltar") : i18n("Pronto"), NULL, 1);
+      poe_botao(it, &n, B_PRONTO, x, 504.0f, envModo == M_ENVIANDO ? i18n("Voltar") : envModo == M_LISTA ? i18n("Voltar") : i18n("Pronto"), NULL, 1);
     }
     for (i = 0; i < envio_visiveis(); i++)
       poe(it, &n, B_LIN0 + rolo + i, MARGEM, 790.0f + (float)i * 68.0f, 1680.0f, 64.0f);
@@ -745,7 +756,7 @@ static void desenha_envio(float a) {
   // "Mandar o codigo pro celular": ainda nao existe, aparece apagado.
   if (envModo == M_ENVIADO && envCodigo[0]) {
     TxtLinha l = txt_linha(TXT_CAPTION, i18n("Mandar o código pro celular · em breve"), 150, 156, 168, 255);
-    txt_desenhar_alpha(l, x, oy + 580.0f, 0.8f * a);
+    txt_desenhar_alpha(l, x, oy + 604.0f, 0.8f * a);
   }
   // Lista dos enviados.
   { float ly = oy + 724.0f;
