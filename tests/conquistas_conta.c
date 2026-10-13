@@ -11,7 +11,8 @@ const char *sessao_usuario(void) { return conta; }
 int perfis_ativo(void) { return perfil; }
 int ajustes_conquistas(void) { return 1; }
 int prog_ler(ProgRegistro *r, int max) { (void)r; (void)max; return 0; }
-int cat_historico_estado_id(const char *id, const char *tipo) { (void)id; (void)tipo; return -1; }
+int cat_historico_estado_tempo(const char *id, const char *tipo, long long *ms) { (void)id; (void)tipo; *ms = 0; return -1; }
+long long prog_agora_ms(void) { return 1000; }
 char *dados_ler(const char *nome) {
   FILE *f = fopen(nome, "rb");
   char *s = calloc(1, 32768);

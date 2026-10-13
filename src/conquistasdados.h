@@ -16,6 +16,9 @@ void cqd_carregar(CqEstado *s);
 int  cqd_gravar(const CqEstado *s);
 // Reconta o catalogo local do Oscar pelo historico e progresso do perfil. Sem rede.
 void cqd_atualizar_local(void);
+// Player confirmou um filme: baseline silencioso e conclusao nova com aviso.
+// Chamar ANTES de substituir a posicao de retomada desta sessao.
+void cqd_concluir_local(const char *id);
 
 // ---- Fonte: nosso servidor (ambar). Hoje nenhuma entrega nada.
 // Raridade anonima de um emblema, em partes de mil; -1 = nao se sabe.

@@ -2009,6 +2009,8 @@ static void fecharSessao(int manter) {
     }
     // A posicao gravada e sempre a REAL (ponto de retomada), com o como ela
     // foi alcancada: cat_visto e a proxima base leem `tocou`.
+    if (assistiu && ci && epE == 0 && strcmp(ci->tipo, "series"))
+      cqd_concluir_local(ci->imdb);
     cat_salvar_progresso_ep(ia, pos, duracaoSeg, epT, epE, chegou);
     // E tambem para o Trakt, que e de onde o "continue assistindo" vem: gravar
     // so aqui deixaria este app discordando dos outros aparelhos do dono.
@@ -2069,7 +2071,6 @@ static void fecharSessao(int manter) {
     // A fileira "Continuar assistindo" so era refeita no ciclo completo da
     // descoberta (issue #38): sem isto o titulo terminado ficava nela e o que
     // comecou agora nao entrava ate a proxima volta.
-    if (assistiu) cqd_atualizar_local();
     desc_refazer_continuar();
   }
   if (!jaRetido) wsParou(!duracaoErrada && prova && assistiu, !duracaoErrada);

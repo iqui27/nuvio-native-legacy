@@ -361,6 +361,10 @@ int cat_visto(const CatItem *c);
 void cat_historico_contexto(const char *usuario, int perfil);
 unsigned long long cat_historico_geracao(void);
 int cat_historico_estado_id(const char *imdb, const char *tipo);
+// Estado e instante sob a mesma trava. Snapshot sem data conserva a primeira
+// observacao; fontes com data (jornal) devem fornecer o instante original.
+int cat_historico_estado_tempo(const char *imdb, const char *tipo, long long *ms);
+void cat_historico_definir_tempo(const char *imdb, const char *tipo, int visto, long long ms);
 int cat_historico_estado_item(int indice);
 void cat_historico_definir_id(const char *imdb, const char *tipo, int visto);
 // Worker captura geracao ANTES da rede. A resposta so pertence ao mapa se a

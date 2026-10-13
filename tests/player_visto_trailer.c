@@ -525,6 +525,14 @@ int main(void) {
     prog_invalidar(); cqd_carregar(&s);
     assert(cqregra_buscar(&s, "trilha:oscar-melhor-filme")->vistos == 3);
   }
+  abrir(1, "tt0020629", NULL, NULL, 180, 20);
+  assert(!player_saiu_visto());
+  conquistas_abrir();
+  {
+    CqEstado s; cqd_carregar(&s);
+    assert(cqregra_buscar(&s, "trilha:oscar-melhor-filme")->vistos == 3);
+  }
+  conquistas_teste_esquecer();
 
   puts("PASS: trailer, seek, pausa e buffer nao marcam; reproducao real grava progresso e visto");
   return 0;

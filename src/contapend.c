@@ -14,7 +14,7 @@
 #include <time.h>
 
 // Mesmo prototipo que contalib.c e app.c usam; mora em catalogo.c.
-extern void cat_historico_definir_id(const char *imdb, const char *tipo, int visto);
+extern void cat_historico_definir_tempo(const char *imdb, const char *tipo, int visto, long long ms);
 
 // Lote por RPC de vistos. O web manda ate 5000 num corpo so; 200 deixa o corpo
 // abaixo de ~30 KB e uma falha custa pouco para repetir.
@@ -856,7 +856,7 @@ int contapend_aplicar_local(void) {
         printf("[visto] marcado por conta-jornal-importacao pos=0 dur=0 assistido=0s id=%s\n", copia[i].id);
         fflush(stdout);
       }
-      cat_historico_definir_id(copia[i].id, copia[i].tipo, copia[i].op == '+');
+      cat_historico_definir_tempo(copia[i].id, copia[i].tipo, copia[i].op == '+', copia[i].ms);
     }
     k++;
   }
