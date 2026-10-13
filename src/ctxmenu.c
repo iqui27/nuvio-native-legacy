@@ -271,10 +271,10 @@ static int dispensarPend, dispensarOp;
 static int  pagina, soFileira;
 // PAGINA 3: "ADICIONAR A UMA LISTA" (Trakt). As linhas sao as listas da pessoa
 // (lst_minha), no mesmo ops[]; o rotulo e o titulo, que mora aqui porque ops[].rot
-// so guarda o ponteiro. Sete cabem em CTX_MAX com a linha de aviso.
+// so guarda o ponteiro. Sete linhas visiveis; cima/baixo rolam a janela.
 #define CTX_PICK_MAX 7
 static char pickRot[CTX_PICK_MAX][96];
-static int  pickN, pickCarregando;
+static int  pickN, pickTotal, pickIni, pickCarregando;
 // PAGINA 2: A CONFIRMACAO de "Tirar de Continuar assistindo" (dono, 02/10:
 // modal de ilha do mockup "ilha" tela 7). Tirar apaga o ponto de retomada
 // aqui e nas contas ligadas — nao se desfaz com um Voltar —, entao a acao so
@@ -434,13 +434,15 @@ static void montar(void) {
   }
   if (pagina == 3) {
     int k;
-    pickN = lst_minhas_n();
+    pickTotal = lst_minhas_n();
     pickCarregando = lst_minhas_carregando();
+    if (pickIni >= pickTotal) pickIni = pickTotal > 0 ? pickTotal - 1 : 0;
+    pickN = pickTotal - pickIni;
     if (pickN > CTX_PICK_MAX) pickN = CTX_PICK_MAX;
     for (k = 0; k < pickN; k++) {
       LstLista l;
       pickRot[k][0] = 0;
-      if (lst_minha(k, &l)) snprintf(pickRot[k], sizeof pickRot[k], "%s", l.titulo);
+      if (lst_minha(pickIni + k, &l)) snprintf(pickRot[k], sizeof pickRot[k], "%s", l.titulo);
       juntar(pickRot[k], OP_PICK_LISTA + k);
     }
     // Sem listas (ainda): uma linha so de aviso, sem acao (aplicar() a ignora).
@@ -980,12 +982,12 @@ static void aplicar(void) {
   }
   if (!ci) return;
   if (acao == OP_ADD_LISTA) {
-    pagina = 3; foco = 0; lst_minhas_pedir();
+    pagina = 3; foco = 0; pickIni = 0; lst_minhas_pedir();
     montar(); return;
   }
   if (acao >= OP_PICK_LISTA && acao < OP_PICK_LISTA + CTX_PICK_MAX) {
     LstLista l;
-    if (lst_minha(acao - OP_PICK_LISTA, &l) && lstesc_adicionar_titulo(ci, &l)) {
+    if (lst_minha(pickIni + acao - OP_PICK_LISTA, &l) && lstesc_adicionar_titulo(ci, &l)) {
       aberto = 0; pagina = 0;
     }
     return;
@@ -1246,8 +1248,16 @@ void ctx_evento(const SDL_Event *e) {
   if (operacao != CTX_OP_NENHUMA && estadoOperacao == CTX_PENDENTE) return;
   if (modoInline() && k == SDLK_LEFT)  { if (foco > 0) foco--; return; }
   if (modoInline() && k == SDLK_RIGHT) { if (foco + 1 < nOps) foco++; return; }
-  if (k == SDLK_UP)   { if (foco > 0) foco--; return; }
-  if (k == SDLK_DOWN) { if (foco + 1 < nOps) foco++; return; }
+  if (k == SDLK_UP) {
+    if (foco > 0) foco--;
+    else if (pagina == 3 && pickIni > 0) { pickIni--; montar(); }
+    return;
+  }
+  if (k == SDLK_DOWN) {
+    if (foco + 1 < nOps) foco++;
+    else if (pagina == 3 && pickIni + pickN < pickTotal) { pickIni++; montar(); }
+    return;
+  }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) { aplicar(); return; }
 }
 
@@ -1303,7 +1313,7 @@ void ctx_atualizar(float dt, Uint32 agora) {
   // As listas chegam depois do OK: remonta quando o que a pagina 3 mostra mudou.
   if (aberto && pagina == 3 &&
       (lst_minhas_carregando() != pickCarregando ||
-       (lst_minhas_n() < CTX_PICK_MAX ? lst_minhas_n() : CTX_PICK_MAX) != pickN))
+       lst_minhas_n() != pickTotal))
     montar();
 
   if (operacao != CTX_OP_NENHUMA && estadoOperacao == CTX_PENDENTE) {
