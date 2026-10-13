@@ -7832,6 +7832,28 @@ static int deMetaTrakt(const char *p, const char *f, const char *midia,
 // rank, listed_at e notes vivem na RAIZ da entrada, ao lado de "movie"/"show".
 // Leitura por profundidade 1: o objeto do titulo tem os proprios campos e um
 // "notes" ou "rank" la dentro nao pode passar por da lista.
+// Numero no NIVEL RAIZ do objeto [p,f): js_texto_raiz_em so devolve string, e o
+// "id" da entrada nao pode casar o "id" de dentro de movie.ids.
+static long numRaiz(const char *p, const char *f, const char *chave) {
+  size_t kn = strlen(chave);
+  const char *q = p;
+  int prof = 0;
+  for (; *q && (!f || q < f); q++) {
+    if (*q == '"') {
+      const char *i2 = q + 1, *e = i2;
+      while (*e && *e != '"') e += (*e == '\\' && e[1]) ? 2 : 1;
+      if (prof == 1 && (size_t)(e - i2) == kn && !strncmp(i2, chave, kn)) {
+        const char *v = e + 1;
+        while (*v == ' ' || *v == '\n' || *v == '\t' || *v == '\r') v++;
+        if (*v == ':') return atol(v + 1);
+      }
+      q = *e ? e : e - 1;
+    } else if (*q == '{' || *q == '[') prof++;
+    else if (*q == '}' || *q == ']') prof--;
+  }
+  return 0;
+}
+
 void desc_trakt_extra_ler(const char *p, const char *f, DescItemLista *d) {
   char t[40] = "";
   memset(d, 0, sizeof *d);
@@ -7842,21 +7864,8 @@ void desc_trakt_extra_ler(const char *p, const char *f, DescItemLista *d) {
     while (*a == ' ' || *a == '\n' || *a == '\t') a++;
     if (!*a) d->nota[0] = 0;
   }
-  { const char *q = p;   // rank e numero: js_texto_raiz_em so devolve string
-    int prof = 0;
-    for (; *q && (!f || q < f); q++) {
-      if (*q == '"') {
-        const char *i2 = q + 1, *e = i2;
-        while (*e && *e != '"') e += (*e == '\\' && e[1]) ? 2 : 1;
-        if (prof == 1 && e - i2 == 4 && !strncmp(i2, "rank", 4)) {
-          const char *v = e + 1;
-          while (*v == ' ' || *v == '\n' || *v == '\t' || *v == '\r') v++;
-          if (*v == ':') { d->rank = atoi(v + 1); break; }
-        }
-        q = *e ? e : e - 1;
-      } else if (*q == '{' || *q == '[') prof++;
-      else if (*q == '}' || *q == ']') prof--;
-    } }
+  d->rank = (int)numRaiz(p, f, "rank");
+  d->itemId = numRaiz(p, f, "id");
 }
 
 // Traduz o objeto "filters" do editor do site para parametros do /discover

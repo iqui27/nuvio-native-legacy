@@ -9,6 +9,7 @@
 // SEM REDE. Tudo o que envolve HTTP entra por arquivo de tests/fixtures: o que
 // esta sob teste e a LEITURA das respostas e o efeito delas, nao o curl.
 #include "listas.h"
+#include "listasescrita.h"
 #include "colecoes.h"
 #include "dados.h"
 #include "perfis.h"
@@ -69,17 +70,18 @@ static void testeTraktMinhas(void) {
 
 static void testeExtraItem(void) {
   const char *e =
-    "{\"rank\": 3,\"listed_at\":\"2026-09-04T18:52:07.000Z\",\"notes\":\"Melhor do ano\","
+    "{\"rank\": 3,\"id\":5521,\"listed_at\":\"2026-09-04T18:52:07.000Z\",\"notes\":\"Melhor do ano\","
     "\"type\":\"movie\",\"movie\":{\"title\":\"X\",\"notes\":\"falsa\",\"ids\":{\"imdb\":\"tt1\"}}}";
   const char *v = "{\"rank\":1,\"notes\":\"  \",\"movie\":{}}";
   DescItemLista d;
   printf("\n[1b] rank, listed_at e nota do item\n");
   desc_trakt_extra_ler(e, e + strlen(e), &d);
   CONFERE(d.rank == 3, "rank 3 (veio %d)", d.rank);
+  CONFERE(d.itemId == 5521, "id da entrada, nao o de movie.ids (veio %ld)", d.itemId);
   CONFERE(d.entrouMs == 1788547927000LL, "listed_at em ms (veio %lld)", d.entrouMs);
   CONFERE(!strcmp(d.nota, "Melhor do ano"), "nota da raiz, nao a do filme (veio %s)", d.nota);
   desc_trakt_extra_ler(v, v + strlen(v), &d);
-  CONFERE(d.rank == 1 && d.entrouMs == 0, "sem listed_at fica 0");
+  CONFERE(d.rank == 1 && d.entrouMs == 0 && d.itemId == 0, "sem listed_at nem id fica 0");
   CONFERE(!d.nota[0], "nota so de espacos vira vazia");
 }
 
@@ -259,6 +261,61 @@ static void testeLogout(void) {
   CONFERE(!lst_fixada(&l), "e o arquivo do perfil nao a devolve");
 }
 
+// ---------------------------------------------------------------- escrita
+
+static char envMetodo[8], envUrl[160], envCorpo[2400];
+static int envStatus = 200;
+static int envio(const char *m, const char *u, const char *c, char **resp) {
+  snprintf(envMetodo, sizeof envMetodo, "%s", m);
+  snprintf(envUrl, sizeof envUrl, "%s", u);
+  snprintf(envCorpo, sizeof envCorpo, "%s", c);
+  *resp = strdup("{}");
+  return envStatus;
+}
+
+static void testeEscrita(void) {
+  char c[2400];
+  long ord[3] = { 11, 22, 33 };
+  printf("\n[9] escrita nas listas do Trakt\n");
+  CONFERE(lstesc_corpo_criar(c, sizeof c, "Noites \"frias\"", "linha1\nlinha2", 1) &&
+          !strcmp(c, "{\"name\":\"Noites \\\"frias\\\"\",\"description\":\"linha1\\nlinha2\","
+                     "\"privacy\":\"private\"}"), "criar: escapa aspas e quebra (%s)", c);
+  CONFERE(!lstesc_corpo_criar(c, sizeof c, "", "x", 0), "criar sem nome e recusado");
+  CONFERE(lstesc_corpo_item(c, sizeof c, "tt0111161", "movie", "") &&
+          !strcmp(c, "{\"movies\":[{\"ids\":{\"imdb\":\"tt0111161\"}}]}"), "item sem nota (%s)", c);
+  CONFERE(lstesc_corpo_item(c, sizeof c, "tt0903747:1:2", "series", "Piloto") &&
+          !strcmp(c, "{\"shows\":[{\"ids\":{\"imdb\":\"tt0903747\"},\"notes\":\"Piloto\"}]}"),
+          "serie vira shows, id sem :t:e e com notes (%s)", c);
+  CONFERE(lstesc_corpo_ordem(c, sizeof c, ord, 3) && !strcmp(c, "{\"rank\":[11,22,33]}"), "ordem (%s)", c);
+  ord[1] = 0;
+  CONFERE(!lstesc_corpo_ordem(c, sizeof c, ord, 3), "ordem com id 0 e recusada");
+  CONFERE(!lstesc_corpo_ordem(c, 12, (long[]){1000000, 2000000}, 2), "ordem que nao cabe e recusada");
+
+  lstesc_teste_envio(envio);
+  CONFERE(lstesc_descricao(77, "Nova") == 1, "descricao dispara");
+  CONFERE(lstesc_estado() == LSTESC_PENDENTE || lstesc_estado() == LSTESC_OK, "estado andou");
+  lstesc_teste_esperar();
+  CONFERE(!strcmp(envMetodo, "PUT") && !strcmp(envUrl, "https://api.trakt.tv/users/me/lists/77") &&
+          !strcmp(envCorpo, "{\"description\":\"Nova\"}"), "PUT /users/me/lists/77 (%s %s)", envMetodo, envUrl);
+  CONFERE(lstesc_consumir() == LSTESC_OK && lstesc_estado() == LSTESC_OCIOSO, "2xx = OK, e consumir zera");
+  envStatus = 401;
+  CONFERE(lstesc_adicionar(77, "tt1", "movie", NULL) == 1, "adicionar dispara");
+  lstesc_teste_esperar();
+  CONFERE(!strcmp(envMetodo, "POST") && !strcmp(envUrl, "https://api.trakt.tv/users/me/lists/77/items"),
+          "POST .../items (%s)", envUrl);
+  CONFERE(lstesc_consumir() == LSTESC_FALHA, "401 = FALHA");
+  envStatus = 200;
+  { long ids[2] = { 5, 6 };
+    CONFERE(lstesc_ordenar(77, ids, 2) == 1, "ordenar dispara");
+    lstesc_teste_esperar();
+    CONFERE(!strcmp(envUrl, "https://api.trakt.tv/users/me/lists/77/items/reorder") &&
+            !strcmp(envCorpo, "{\"rank\":[5,6]}"), "POST .../items/reorder (%s)", envCorpo);
+    lstesc_consumir(); }
+  CONFERE(!lstesc_descricao(0, "x") && !lstesc_criar("", "", 0), "id 0 e nome vazio recusados");
+  lstesc_teste_envio(NULL);
+  CONFERE(!lstesc_criar("X", "", 0), "sem token nao escreve");
+}
+
 // ---------------------------------------------------------------------- main
 
 int main(void) {
@@ -283,6 +340,7 @@ int main(void) {
   testeIsolamentoPerfil();
   testeAdicionarNaHome();
   testeLogout();
+  testeEscrita();
 
   printf("\n%s (%d falha%s)\n", falhas ? "FALHOU" : "PASSOU", falhas,
          falhas == 1 ? "" : "s");

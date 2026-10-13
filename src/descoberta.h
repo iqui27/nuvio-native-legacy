@@ -247,6 +247,7 @@ typedef struct {
   int       rank;        // posicao na lista, 0 = nao informada
   long long entrouMs;    // listed_at em ms desde a epoca, 0 = nao informado
   char      nota[320];   // "" = sem nota do curador
+  long      itemId;      // id da ENTRADA na lista (reordenar), 0 = nao informado
 } DescItemLista;
 int  desc_vertudo_extra(int i, DescItemLista *dst);
 // Le rank/listed_at/notes de UMA entrada de /lists/<id>/items ({rank, listed_at,
