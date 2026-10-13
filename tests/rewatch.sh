@@ -24,4 +24,11 @@ echo "player ligado a sessao:"
 falhou=0
 grep -q 'reassistindo || vistoep_estado' src/player.c && echo "  ok      reenvia historico na sessao" || { echo "  FALHOU: player nao reenvia historico na sessao"; falhou=1; }
 grep -q 'rewatch_registrar(ci->imdb' src/player.c && echo "  ok      registra o episodio revisto" || { echo "  FALHOU: player nao registra o episodio revisto"; falhou=1; }
+
+# A CONTA: a sessao viaja no blob de ajustes (sync.c), puxada e empurrada.
+echo
+echo "conta ligada a sessao:"
+grep -q 'rewatch_blob_ler(novo)' src/sync.c && echo "  ok      pull funde as sessoes" || { echo "  FALHOU: pull nao funde as sessoes"; falhou=1; }
+grep -q 'rewatch_blob_costurar(base)' src/sync.c && echo "  ok      push costura as sessoes" || { echo "  FALHOU: push nao costura as sessoes"; falhou=1; }
+grep -q 'rewatch_esquecer()' src/sync.c && echo "  ok      logout esquece as sessoes" || { echo "  FALHOU: logout nao esquece as sessoes"; falhou=1; }
 [ "$falhou" -eq 0 ]
