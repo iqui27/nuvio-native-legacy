@@ -128,6 +128,7 @@ typedef struct {
 
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static volatile int estado, ultimo, vivo;
+static long ultimoId;
 static LstescEnvio envioTeste;
 
 static int envioReal(const char *metodo, const char *url, const char *corpo, char **resp) {
@@ -193,7 +194,7 @@ static int disparar(int qual, long listaId, const char *metodo, const char *url,
   snprintf(e->metodo, sizeof e->metodo, "%s", metodo);
   snprintf(e->url, sizeof e->url, "%s", url);
   snprintf(e->corpo, sizeof e->corpo, "%s", corpo);
-  vivo = 1; estado = LSTESC_PENDENTE; ultimo = qual;
+  vivo = 1; estado = LSTESC_PENDENTE; ultimo = qual; ultimoId = listaId;
   pthread_mutex_unlock(&trava);
   if (pthread_create(&f, NULL, fio, e) != 0) {
     free(e);
@@ -240,6 +241,11 @@ int lstesc_nota(long id, long itemId, const char *nota) {
 
 int lstesc_estado(void) { return estado; }
 int lstesc_qual(void) { return ultimo; }
+long lstesc_lista_id(void) {
+  long id;
+  pthread_mutex_lock(&trava); id = ultimoId; pthread_mutex_unlock(&trava);
+  return id;
+}
 int lstesc_consumir(void) {
   int e;
   pthread_mutex_lock(&trava);

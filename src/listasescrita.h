@@ -56,6 +56,7 @@ void lstesc_passo(void);
 
 int  lstesc_estado(void);
 int  lstesc_qual(void);
+long lstesc_lista_id(void); // destino da ultima escrita; criar = 0
 // OK/FALHA -> OCIOSO, para a tela mostrar o resultado uma vez. Devolve o que havia.
 int  lstesc_consumir(void);
 // Teste: troca o transporte. NULL volta ao rede_pedir. `resp` e um malloc que

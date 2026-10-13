@@ -1417,17 +1417,19 @@ static void tecladoPronto(int para, const char *txt) {
 // A escrita desta tela terminou: diz o que houve e refaz o que mudou. So olha o
 // que ELA disparou (`escrevendo`); a escrita do menu do titulo tem dono proprio.
 static void pollEscrita(void) {
-  int est, q;
+  int est, q, mesma;
   if (!escrevendo) return;
   est = lstesc_estado();
   if (est == LSTESC_PENDENTE) return;
   if (est != LSTESC_OK && est != LSTESC_FALHA) { escrevendo = 0; return; }
   q = lstesc_qual();
+  mesma = temAberta && aberta.fonte == LST_TRAKT &&
+          aberta.traktId == lstesc_lista_id();
   lstesc_consumir();
   escrevendo = 0;
   if (est == LSTESC_FALHA) {
     // A ordem na tela nao e a do servidor: recarrega a dele.
-    if (q == LSTESC_ORDENAR && temAberta) { lst_abrir(&aberta, abertaMidia); remapear(1); }
+    if (q == LSTESC_ORDENAR && mesma) { lst_abrir(&aberta, abertaMidia); remapear(1); }
     dizer("Não foi possível salvar a lista");
     return;
   }
@@ -1436,14 +1438,14 @@ static void pollEscrita(void) {
     if (modo == MODO_LISTAS && !temAberta && fonte == FONTE_TRAKT) pedirFonte();
     dizer("Lista criada");
   } else if (q == LSTESC_DESCRICAO) {
-    if (temAberta) snprintf(aberta.descricao, sizeof aberta.descricao, "%s", descNova);
+    if (mesma) snprintf(aberta.descricao, sizeof aberta.descricao, "%s", descNova);
     dizer("Descrição salva");
   } else if (q == LSTESC_ORDENAR) {
     // Recarrega: o rank que cada linha mostra vem do servidor.
-    if (temAberta) { lst_abrir(&aberta, abertaMidia); remapear(1); }
+    if (mesma) { lst_abrir(&aberta, abertaMidia); remapear(1); }
     dizer("Ordem salva");
   } else if (q == LSTESC_NOTA) {
-    if (temAberta) { lst_abrir(&aberta, abertaMidia); remapear(1); }
+    if (mesma) { lst_abrir(&aberta, abertaMidia); remapear(1); }
     dizer("Nota salva");
   }
 }
