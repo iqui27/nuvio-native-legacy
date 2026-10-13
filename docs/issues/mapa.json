@@ -11653,6 +11653,45 @@
       397
      ],
      "origem": "agente 09/10"
+    },
+    {
+     "nome": "Reassistir (rewatch) por série",
+     "porque": "Sessão de reassistir: episódios vistos de novo sem apagar histórico, progresso separado, cada play vai ao Trakt/Simkl como novo play. Usa watch-state e scrobble. Prioridade 1 das ideias Trakt. Mockup: Fable, agente/21-trakt-ideias.",
+     "issues": [],
+     "origem": "dono 13/10 (inspirado nos Preview Features do trakt.tv)",
+     "branches": [
+      "agente/21-trakt-ideias (mockup)"
+     ]
+    },
+    {
+     "nome": "Prévia rápida (quick glance) no Ver tudo",
+     "porque": "OK num cartão de Ver tudo abre prévia por cima (sinopse, nota, Assistir/Detalhes/Salvar) sem sair da lista. Prioridade 2. Mockup: Fable, agente/21-trakt-ideias.",
+     "issues": [],
+     "origem": "dono 13/10 (inspirado nos Preview Features do trakt.tv)",
+     "branches": [
+      "agente/21-trakt-ideias (mockup)"
+     ]
+    },
+    {
+     "nome": "Modo editar na Home",
+     "porque": "Segurar OK numa fileira mostra/esconde ali mesmo, sem ir a Ajustes (hoje só em Ajustes). Prioridade 3.",
+     "issues": [],
+     "origem": "dono 13/10 (inspirado nos Preview Features do trakt.tv)"
+    },
+    {
+     "nome": "Trilha sonora no detalhe (extra)",
+     "porque": "Fileira Trilha sonora: faixas via MusicBrainz (sem chave), trecho 30 s via iTunes Search/Deezer (sem chave). API pública do Trakt não expõe isso. Risco: casar trilha errada; tocar por cima do trailer. Prioridade baixa.",
+     "issues": [],
+     "origem": "dono 13/10 (inspirado nos Preview Features do trakt.tv)"
+    },
+    {
+     "nome": "Filmografia contada (timeline interativa, já vi N de M, conquistas, Já vi com quiz)",
+     "porque": "Redesenho da filmografia além do mockup 2.1: mais dados da pessoa (TMDB), timeline interativa por ano em capítulos, selo visto/não visto e contador por pessoa (Nuvio+Trakt+Simkl), conquistas ligadas às Conquistas 2.1, marcar Já vi fora do histórico com quiz de 2 perguntas (checagem leve, não prova). Mockup: Fable, agente/21-filmografia.",
+     "issues": [],
+     "origem": "dono 13/10",
+     "branches": [
+      "agente/21-filmografia (mockup)"
+     ]
     }
    ]
   },

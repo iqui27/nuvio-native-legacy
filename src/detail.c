@@ -45,6 +45,7 @@ static TituloTempo detalheTempo;
 #include "agenda.h"
 #include "agendaui.h"
 #include "vistoep.h"
+#include "vaitocarui.h"
 #include "pessoa.h"
 #include "streams.h"
 #include "descoberta.h"
@@ -4171,6 +4172,15 @@ static Uint32 sinTrocaDesde;
 static float  hSinVis;            // altura reservada, suavizada
 static int    hSinInit;
 static Uint32 hSinTick;
+// FAIXA "VAI TOCAR" (2.1): a fonte que o automatico escolheria agora. Refeita
+// a cada 250 ms (ou ao mudar o alvo do botao primario) e a altura reservada
+// assenta suave, para a chegada da lista de fontes nao dar salto no hero.
+#define DET_VAI_GAP 18.0f
+static VaiTocar vaiTocar;
+static Uint32 vaiTocarEm;
+static int    vaiTocarIdx = -1, vaiTocarT, vaiTocarE;
+static float  hVaiVis;
+static Uint32 hVaiTick;
 static int    metaEsqVisto;       // o esqueleto da linha de meta foi mostrado
 static Uint32 metaChegouEm;
 
@@ -4181,6 +4191,8 @@ static void heroReiniciar(void) {
   tgraf_reiniciar();
   sinVisto[0] = sinAnt[0] = 0; sinVistoInit = 0; sinTrocaDesde = 0;
   hSinVis = 0.0f; hSinInit = 0; hSinTick = 0;
+  memset(&vaiTocar, 0, sizeof vaiTocar); vaiTocarEm = 0; vaiTocarIdx = -1;
+  hVaiVis = 0.0f; hVaiTick = 0;
   metaEsqVisto = 0; metaChegouEm = 0;
 }
 
@@ -4336,7 +4348,30 @@ static void heroWeb(float a, float desloc) {
   if (!temAmg) focoAmigos = 0;
   float hAmg = temAmg ? NV_DETW_AMIGOS_H + NV_DETW_AMIGOS_GAP : 0.0f;
   float hAcoesExtra = detalheRetrato() ? NV_DETW2_CIRC + NV_DETW2_BTN_GAP : 0;
-  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg;
+  // Faixa "Vai tocar": embaixo dos botoes (e da ilha de amigos), reservada na
+  // pilha de baixo para cima como a ilha. Alvo = o mesmo episodio do botao
+  // primario, para a faixa e o botao nunca falarem de episodios diferentes.
+  float hVai;
+  { const CatItem *ciVt = cat_item(idx);
+    int vt_t = 0, vt_e = 0;
+    if (ehSerie() && !episodioAlvo(&vt_t, &vt_e, NULL)) vt_t = vt_e = 0;
+    if (vaiTocarIdx != idx || vaiTocarT != vt_t || vaiTocarE != vt_e ||
+        (Uint32)(agoraH - vaiTocarEm) > 250u) {
+      if (ciVt && ciVt->imdb[0]) vt_montar(&vaiTocar, ciVt->imdb, vt_t, vt_e);
+      else memset(&vaiTocar, 0, sizeof vaiTocar);
+      vaiTocarIdx = idx; vaiTocarT = vt_t; vaiTocarE = vt_e; vaiTocarEm = agoraH;
+    }
+    { float alvo = vaiTocar.tem ? vtui_altura(&vaiTocar) + DET_VAI_GAP : 0.0f;
+      float dt = hVaiTick ? (float)(Uint32)(agoraH - hVaiTick) : 0.0f;
+      hVaiTick = agoraH;
+      if (dt > 100.0f) dt = 100.0f;
+      if (anim_politica_reduzida) hVaiVis = alvo;
+      else {
+        hVaiVis += (alvo - hVaiVis) * (1.0f - expf(-dt / 90.0f));
+        if (fabsf(alvo - hVaiVis) < 0.5f) hVaiVis = alvo;
+      }
+      hVai = hVaiVis; } }
+  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg - hVai;
   // BLOCO DE LINHAS DE ESTADO, empilhado de baixo para cima logo acima dos
   // botoes. Sao duas, e a ordem tem razao: a retomada explica o BOTAO e fica
   // colada nele; a agenda ("Próximo episódio T2E5 · em 3 dias") explica o
@@ -4620,6 +4655,15 @@ static void heroWeb(float a, float desloc) {
         txt_desenhar_alpha(t1, tx, ty, a);
         txt_desenhar_alpha(t2, tx, ty + t1.h + 2.0f, a * (foc ? 0.9f : 0.8f)); }
       if (a > 0.3f) ponteiro_alvo(ilha.x, ilha.y, ilha.w, ilha.h, ponteiroDetalhe, NULL, -1, DET_PTR_AMIGOS); } }
+
+  // --- FAIXA "VAI TOCAR", logo abaixo dos botoes (e da ilha de amigos) ---------
+  if (vaiTocar.tem && hVai > 1.0f) {
+    float alvoH = vtui_altura(&vaiTocar) + DET_VAI_GAP;
+    float yV = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + hCaption + hAmg + DET_VAI_GAP;
+    float wV = larguraTextoHero() < 1000.0f ? larguraTextoHero() : 1000.0f;
+    float fV = hVai / alvoH;
+    vtui_desenhar(&vaiTocar, NV_DETW2_X - 24.0f, yV, wV, a * (fV > 1.0f ? 1.0f : fV));
+  }
 
   // --- linha da AGENDA ------------------------------------------------------
   // Cor de realce e nao branco: e a unica linha do hero que fala de uma data
@@ -5231,6 +5275,13 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
       }
     } else if (epDur)
       txt_desenhar_alpha(txt_linha(TXT_CAPTION,epDur,235,237,240,255),durationX,metaY,a);
+    if (!(progress > 0 && progress < 100) && ep && serie && serie->imdb[0] &&
+        vt_pular_ligado()) {
+      int mk = vt_marcas_episodio(serie->imdb, ep->temporada, ep->episodio);
+      float cw = mk ? vtui_chips_episodio(mk, -1.0f, 0, a) : 0.0f;
+      if (cw > 0.0f)
+        vtui_chips_episodio(mk, r.x + r.w - 18.0f - cw, metaY + 2.0f, a);
+    }
     char number[32]; snprintf(number,sizeof number,i18n("EPISÓDIO %d"),epNum);
     txt_desenhar_alpha(txt_linha(TXT_CAPTION2,number,164,169,176,255),textX,textY,a);
     char fallback[40]; snprintf(fallback,sizeof fallback,i18n("Episódio %d"),epNum);
@@ -5382,6 +5433,24 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
     // episodio pode ter uma, a outra ou as duas.
     if (ep && ep->nota > 0)
       x += desenhaNotaEpisodio(x, y - 4, EX_TMDB, ep->nota, a);
+    // CHIPS A/R/C (2.1): so com "Pular" ligado e so do episodio cujas marcas o
+    // intro.c ja tem em cache (vt_marcas_episodio). Cabem entre a meta e a data;
+    // sem lugar, saem — a data e a duracao ganham.
+    { int mk = (ep && serie && serie->imdb[0] && vt_pular_ligado())
+               ? vt_marcas_episodio(serie->imdb, ep->temporada, ep->episodio) : 0;
+      if (mk) {
+        float cw = vtui_chips_episodio(mk, -1.0f, 0, a), reserva = 0;
+        if (epData) {
+          const char *d0 = epData;
+          size_t n0 = strlen(epData);
+          if (!ajustes_data_completa() && n0 >= 4) d0 = epData + n0 - 4;
+          reserva = txt_linha_corta(TXT_CAPTION2, d0, 179, 179, 179, 255, 400.0f).w + 16.0f;
+        }
+        if (x + cw + reserva <= r.x + r.w - NV_DETP_EP_PAD) {
+          vtui_chips_episodio(mk, x, y + (NV_DETP_EP_ICONE - VTUI_CHIP_H) * 0.5f, a);
+          x += cw + 16.0f;
+        }
+      } }
     // A DATA vai para a direita do card, como na referencia: a esquerda fica so
     // a duracao, e as duas deixam de disputar a mesma linha corrida.
     if (epData) {

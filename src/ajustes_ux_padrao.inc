@@ -267,3 +267,4 @@
   0, /* interface mode: TV, including on phones until Mobile is selected */
   0, /* Mic button in search (.tpk): Automatico, local */
   0, /* menu position (#461): Na lateral, the rail as always */
+  0, 0, 0, /* achievements (2.1): master, notice after credits, secret hints: all On */

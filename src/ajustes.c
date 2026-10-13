@@ -552,6 +552,9 @@ typedef enum {
   // #461: menu na lateral (0, o de sempre) ou numa barra no topo (1). Por
   // perfil, so desta TV. No fim: valor[]/CHAVE[] posicionais.
   AJ_MENU_TOPO,
+  // 2.1 Conquistas (conquistasregra.h): chave geral, aviso depois dos creditos e
+  // dica das secretas. LOCAIS, padrao Ligado. Append-only.
+  AJ_CONQ_LIGADO, AJ_CONQ_AVISO, AJ_CONQ_DICAS,
   AJ_N
 } OpcaoId;
 
@@ -1417,6 +1420,9 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Modo da interface", V_INTERFACE_MODO, 2),
   ESC("Botão de microfone na busca", V_MIC_BUSCA, 3),   // local: micBuscaLocal (.tpk)
   ESC("Posição do menu", V_MENU_POS, 2),   // por perfil: menuTopoLocal (#461)
+  ESC("Conquistas", V_LIGA, 2),                          // local: conquistasLocal
+  ESC("Avisar depois dos créditos", V_LIGA, 2),          // local: conquistasAvisoLocal
+  ESC("Dicas das conquistas secretas", V_LIGA, 2),       // local: conquistasDicasLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -1659,6 +1665,7 @@ static const char *CHAVE[] = {
   "interfaceModoLocal",
   "micBuscaLocal",
   "menuTopoLocal",
+  "conquistasLocal", "conquistasAvisoLocal", "conquistasDicasLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2090,6 +2097,9 @@ int ajustes_fonte_manual(void)        { return lig(AJ_FONTE_MANUAL); }
 int ajustes_fonte_primeira(void)      { return valor[AJ_FONTE_AUTO] == 1; }
 int ajustes_fonte_prioridade(void) { int v = valor[AJ_FONTE_PRIORIDADE]; return v < 0 || v > 2 ? 0 : v; }
 int ajustes_enquetes(void)         { return lig(AJ_ENQUETES); }
+int ajustes_conquistas(void)       { return lig(AJ_CONQ_LIGADO); }
+int ajustes_conquistas_aviso(void) { return lig(AJ_CONQ_LIGADO) && lig(AJ_CONQ_AVISO); }
+int ajustes_conquistas_dicas(void) { return lig(AJ_CONQ_DICAS); }
 int ajustes_busca_cinemeta(void)   { return lig(AJ_BUSCA_CINEMETA); }
 int ajustes_esmaecer(void)         { int v = valor[AJ_ESMAECER]; return v < 0 || v > 5 ? 3 : v; }
 int ajustes_descanso_estilo(void)  { int v = valor[AJ_DESCANSO_ESTILO]; return v < 0 || v > 2 ? 0 : v; }
@@ -4369,6 +4379,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_RELOGIO: case AJ_RELOGIO_POS: case AJ_SAIDA_PLAYER: /* o web nao tem a ilha */
     case AJ_RELOGIO_12H:    /* formato da hora: desta TV */
     case AJ_PLR_CLASSIF:    /* o web nao tem esta escolha */
+    case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS: /* conquistas: por perfil desta TV */
     case AJ_CW_RETIDO_TAMBEM: /* o web nao tem a ilha */
     case AJ_PS_CONTINUAR:   /* o web nao tem este cartao; escolha desta TV */
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
@@ -5797,6 +5808,9 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_BUSCA_CINEMETA: return "Só a busca. Ligado (padrão): consulta o catálogo do Nuvio e, se ele falhar, o Cinemeta; um add-on Cinemeta instalado também responde. Desligado: o Cinemeta fica de fora da busca. Não mexe nas fileiras da Home (use Fileiras da Home) nem na ficha do título.";
     case AJ_BUSCA_NUVIO: return "Onde ficam os resultados do catálogo do Nuvio (os grupos Filmes e Séries da busca). Primeiro (padrão): antes dos seus add-ons. Por último: depois deles, para os seus resultados virem na frente. Desligado: a busca não consulta o catálogo do Nuvio. O Continuar assistindo não muda.";
     case AJ_BUSCA_ORIGEM: return "Ligado (padrão): cada grupo de resultados diz de qual fonte veio, como de AIOMetadata. Desligado: só o nome do grupo. Com uma única fonte de busca ativa, a fonte nunca aparece.";
+    case AJ_CONQ_LIGADO: return "Ligado (padrão): o Nuvio guarda suas conquistas neste perfil e mostra a tela Perfil › Conquistas. Desligado: nada novo é contado nem avisado, e as trilhas e listas funcionam do mesmo jeito. O que já foi ganho fica guardado.";
+    case AJ_CONQ_AVISO: return "Ligado (padrão): quando uma conquista é ganha, um aviso pequeno aparece depois dos créditos, sem tirar o foco do que você está fazendo. Desligado: ela só aparece na tela de conquistas.";
+    case AJ_CONQ_DICAS: return "Ligado (padrão): conquistas secretas mostram uma dica curta. Desligado: elas só aparecem com nome e dica depois de ganhas.";
     case AJ_ENQUETES: return "Ligado, o Nuvio pode convidar você a votar numa enquete curta na ilha do relógio. Desligado, nenhuma aparece. A escolha fica na sua conta.";
     case AJ_RELOGIO: return "Desligado, a pílula do relógio não fica na tela em repouso. Os avisos continuam saindo dela: ela aparece só para o aviso e some depois.";
     case AJ_SAIDA_PLAYER: return "Ao sair de um filme ou episódio no meio. Home: o vídeo encolhe até a pílula do relógio, que fica com o título para você retomar (CH+ ou AZUL). Página do título: volta para onde você estava. Só vale com o relógio na tela; terminar o título segue para o próximo episódio como sempre.";
@@ -6014,6 +6028,9 @@ static const char *beneficioProprio(int op) {
     case AJ_FONTE_PRIORIDADE: return "O critério da escolha automática: equilíbrio, qualidade ou começar rápido.";
     case AJ_FONTE_PRAZO: return "Quanto tempo o Nuvio espera os add-ons antes de escolher.";
     case AJ_PLR_CLASSIF: return "No começo do filme, a ilha mostra a classificação e os avisos.";
+    case AJ_CONQ_LIGADO: return "Guarda e mostra suas conquistas neste perfil.";
+    case AJ_CONQ_AVISO: return "Um aviso calmo depois dos créditos.";
+    case AJ_CONQ_DICAS: return "Mostra uma dica nas conquistas secretas.";
     case AJ_TELA_ABERTURA: return "O que aparece enquanto o vídeo abre: a arte do título ou os detalhes da fonte.";
     case AJ_SAIDA_PLAYER: return "O filme pode ficar na ilha do relógio para você voltar depois.";
     case AJ_LEG_FORCADA: return "Placas e falas em outra língua aparecem; o resto, não.";
@@ -7856,6 +7873,7 @@ static AjPreview familiaPreviaOpcao(int op) {
       return AJPV_INTERFACE;
     case AJ_PERFIL_ATIVO: case AJ_SYNC: case AJ_SAIR:
     case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_ADDONS_PRINCIPAL: case AJ_ENQUETES:
+    case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS:
       return AJPV_CONTA;
     case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL:
       return AJPV_RASTREIO;

@@ -414,6 +414,10 @@ void  ajustes_definir_envio_auto(int ligado);
 // N3: "Receber enquetes" (padrao ligado). O espelho local do opt-out da conta:
 // enquete.c grava aqui o que o servidor disse, sem refazer o pedido.
 int   ajustes_enquetes(void);
+// 2.1 Conquistas (Ajustes › Conta e serviços): chave geral, aviso depois dos creditos e dicas das secretas.
+int   ajustes_conquistas(void);
+int   ajustes_conquistas_aviso(void);   // chave geral E aviso
+int   ajustes_conquistas_dicas(void);
 void  ajustes_espelhar_enquetes(int ligado);
 // Fonte do destaque (ARTEHERO_*) e "Destaque com outra arte", gravados na hora.
 void  ajustes_definir_destaque(int fonte, int diferente);

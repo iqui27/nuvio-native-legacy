@@ -27,6 +27,7 @@
 #include "resolverregra.h"
 #include "horafmt.h"
 #include "player.h"
+#include "conquistasdados.h"
 #include "memlog.h"
 #include "dvtela.h"
 #include "abrecine.h"
@@ -1386,7 +1387,11 @@ void player_aspecto_ciclar(void) {
   toastAte = SDL_GetTicks() + PLR_TOAST_MS;
 }
 
+static int saiuVisto;
+int player_saiu_visto(void) { int v = saiuVisto; saiuVisto = 0; return v; }
+
 void player_abrir(int indiceCatalogo, const char *url) {
+  saiuVisto = 0;
 #ifdef NV_TOUCH_UI
   avToqueCanal[0] = 0;
 #endif
@@ -1676,6 +1681,7 @@ static void dvTelaAtualizar(float dt, Uint32 agora) {
 // PRETO enquanto o fluxo abria — que era o "clica em reproduzir e fica preto".
 void player_definir_fonte(const char *url) {
   if ((!aberto && !mini) || !url || !*url) return;
+  intro_trocar_fonte();
   durFonteAvisada = pedProximaFonte = 0;
   // Fonte nova: a duracao esperada conhecida nao vale mais (mesmo titulo,
   // episodio outro, catalogo pode ter andado).
@@ -1898,6 +1904,7 @@ static void lembrarFonte(void) {
 }
 
 static void fecharSessao(int manter) {
+  saiuVisto = 0;
   int jaRetido = retido;
   // A tela do DV nao sobrevive a sessao (Voltar ja a tirou; aqui e o resto:
   // troca de titulo, encerramento pelo app).
@@ -1995,6 +2002,7 @@ static void fecharSessao(int manter) {
     const CatItem *ci = item();
     home_registrar_retorno(ia, pos, duracaoSeg);
     ilhacart_player_saiu(ia, pos, duracaoSeg, epT, epE);
+    saiuVisto = assistiu;
     if (assistiu) {
       printf("[visto] marcado por player pos=%.3f dur=%.3f assistido=%.3fs id=%s T%dE%d\n",
              (double)pos, (double)duracaoSeg, assistidoSeg, ci ? ci->imdb : "", epT, epE);
@@ -2002,6 +2010,8 @@ static void fecharSessao(int manter) {
     }
     // A posicao gravada e sempre a REAL (ponto de retomada), com o como ela
     // foi alcancada: cat_visto e a proxima base leem `tocou`.
+    if (assistiu && ci && epE == 0 && strcmp(ci->tipo, "series"))
+      cqd_concluir_local(ci->imdb);
     cat_salvar_progresso_ep(ia, pos, duracaoSeg, epT, epE, chegou);
     // E tambem para o Trakt, que e de onde o "continue assistindo" vem: gravar
     // so aqui deixaria este app discordando dos outros aparelhos do dono.

@@ -167,6 +167,11 @@ int  stream_lista_do_alvo(const char *id);
 void stream_invalidar(const char *porque);
 int  stream_n(void);
 const Stream *stream_item(int i);
+// Leituras de texto da fonte para a faixa "Vai tocar" (vaitocar.c): o idioma
+// como a folha o mostra ("Dublado", "Dual áudio", "Legendado", NULL = nao
+// sei) e a pergunta "o addon cita esta palavra?" (nome, descricao, arquivo).
+const char *stream_idioma(const Stream *s);
+int  stream_texto_tem(const Stream *s, const char *palavra);
 // Fileira de selos do pacote ativo (ver selospacote.h) para fora da folha, como
 // o cartao "Abrindo fonte" do player: padrao em cinza `tom`, colorido em pecas.
 // `stream_selos_ha` diz se ha o que desenhar (a resolucao entra); 0 de largura
@@ -176,6 +181,8 @@ float stream_selos_fileira(const Stream *s, float x, float y, float maxW, float 
 
 // Indice do stream que o modo automatico escolhe, ou -1 se a lista esta vazia.
 int  stream_automatico(void);
+// Primeira candidata da MESMA fila usada pelo Play, sem conferir URLs.
+int  stream_play_candidata(void);
 // A candidata que o automatico usaria se `atual` falhar (e nao esta excluida)
 // existe e NAO e pior que ela: mesma resolucao ou maior, Dolby Vision igual ou
 // melhor. 0 = nao ha proxima, ou a proxima baixaria a qualidade (#202).
@@ -352,6 +359,10 @@ int  stream_detalhe_tecla_abre(const SDL_Event *e);
 // nada. tests/fontes_lista.sh prende isso; abrir a folha escreve a contagem no
 // log ("[fonte] folha: N de M na lista"), para o proximo relato dizer onde caiu.
 int  stream_folha_n(void);
+#ifdef NV_SHOT_HOOKS
+void stream_shot_folha(float *cartao, int *linhas, int *dobradas);   // capturas
+void stream_shot_foco(int *indice, int *dobrada);   // capturas
+#endif
 void stream_folha_evento(const SDL_Event *e);
 void stream_folha_atualizar(float dt, Uint32 agora);
 void stream_folha_desenhar(Uint32 agora);
