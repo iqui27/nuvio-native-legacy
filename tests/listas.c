@@ -335,6 +335,48 @@ static void testeEscrita(void) {
   CONFERE(!lstesc_criar("X", "", 0), "sem token nao escreve");
 }
 
+// ---------------------------------------------------------------- reordenar
+
+static void testeOrdem(void) {
+  CatItem v[3], c;
+  DescItemLista x[3];
+  long ids[8];
+  LstLista l;
+  char u[160];
+  int i;
+  printf("\n[10] reordenar e link publico\n");
+  memset(v, 0, sizeof v); memset(x, 0, sizeof x);
+  for (i = 0; i < 3; i++) {
+    snprintf(v[i].titulo, sizeof v[i].titulo, "T%d", i);
+    snprintf(v[i].imdb, sizeof v[i].imdb, "tt%d", i);
+    x[i].rank = i + 1; x[i].itemId = 100 + i;
+  }
+  lst_teste_itens(v, 3); lst_teste_extras(x, 3);
+  CONFERE(lst_ordem_ids(ids, 8) == 3 && ids[0] == 100 && ids[2] == 102, "ids na ordem do servidor");
+  CONFERE(lst_ordem_mover(0, 2) == 1, "mover 0 -> 2");
+  lst_item(0, &c);
+  CONFERE(!strcmp(c.titulo, "T1"), "a posicao 0 agora e T1 (veio %s)", c.titulo);
+  lst_item(2, &c);
+  CONFERE(!strcmp(c.titulo, "T0"), "T0 foi para o fim (veio %s)", c.titulo);
+  CONFERE(lst_ordem_ids(ids, 8) == 3 && ids[0] == 101 && ids[1] == 102 && ids[2] == 100,
+          "ids seguem a tela (%ld %ld %ld)", ids[0], ids[1], ids[2]);
+  lst_ordem_mover(2, 0);
+  CONFERE(lst_ordem_ids(ids, 8) == 3 && ids[0] == 100 && ids[1] == 101, "voltar 2 -> 0 desfaz");
+  CONFERE(!lst_ordem_mover(0, 3) && !lst_ordem_mover(-1, 1), "fora do intervalo recusa");
+  x[1].itemId = 0;
+  lst_teste_extras(x, 3);
+  CONFERE(!lst_ordem_ids(ids, 8), "item sem id impede gravar a ordem");
+
+  memset(&l, 0, sizeof l);
+  l.fonte = LST_TRAKT;
+  snprintf(l.autorSlug, sizeof l.autorSlug, "iqui27");
+  snprintf(l.slug, sizeof l.slug, "classicos-do-terror");
+  CONFERE(lst_url_publica(&l, u, sizeof u) && !strcmp(u, "https://trakt.tv/users/iqui27/lists/classicos-do-terror"),
+          "url publica (%s)", u);
+  l.privada = 1;
+  CONFERE(!lst_url_publica(&l, u, sizeof u), "privada nao gera link");
+}
+
 // ---------------------------------------------------------------------- main
 
 int main(void) {
@@ -360,6 +402,7 @@ int main(void) {
   testeAdicionarNaHome();
   testeLogout();
   testeEscrita();
+  testeOrdem();
 
   printf("\n%s (%d falha%s)\n", falhas ? "FALHOU" : "PASSOU", falhas,
          falhas == 1 ? "" : "s");

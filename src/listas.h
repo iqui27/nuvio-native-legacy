@@ -152,6 +152,16 @@ int  lst_itens_carregando(void);
 // curador (ver DescItemLista). 0 quando o indice nao existe ou a fonte nao e o
 // Trakt (Simkl/Nuvio devolvem 1 com tudo vazio).
 int  lst_item_extra(int i, DescItemLista *dst);
+// REORDENAR (so o Trakt de quem e dono): move o item da posicao `de` para `para`
+// so na tela; lst_item/lst_item_extra passam a devolver na ordem nova. lst_abrir
+// volta a ordem do servidor. 1 = moveu.
+int  lst_ordem_mover(int de, int para);
+// Os ids das ENTRADAS (DescItemLista.itemId) na ordem que a tela mostra, para
+// lstesc_ordenar. 0 quando algum item nao tem id ou nao cabe em `max`.
+int  lst_ordem_ids(long *ids, int max);
+// https://trakt.tv/users/<autor>/lists/<slug>; 0 quando a lista e privada, nao e
+// do Trakt ou faltam os slugs.
+int  lst_url_publica(const LstLista *l, char *dst, size_t n);
 // So para testes e capturas: itens de mentira na lista aberta; ver listas.c.
 void lst_teste_itens(const CatItem *v, int n);
 // O par de lst_teste_itens para rank/listed_at/nota; chamar depois dele.

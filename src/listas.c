@@ -746,6 +746,16 @@ static unsigned itGeracao;
 static int      itInjetado;   // so os testes (lst_teste_itens)
 static DescItemLista itExtraTeste[LST_ITENS_MAX];   // so os testes (lst_teste_extras)
 static char     itEstado[16], itMidia[8];
+// Ordem do dono ainda nao gravada (Reordenar): itPerm[i] e o indice REAL do item
+// mostrado na posicao i. itPermN 0 = a ordem que o servidor mandou.
+static int      itPerm[LST_ITENS_MAX], itPermN;
+static int mapear(int i) {
+  int r = i;
+  pthread_mutex_lock(&itTrava);
+  if (itPermN && i >= 0 && i < itPermN) r = itPerm[i];
+  pthread_mutex_unlock(&itTrava);
+  return r;
+}
 
 static void *fioSimkl(void *u) {
   char url[500], cid[200], nome[120], aut[400];
@@ -796,7 +806,7 @@ void lst_abrir(const LstLista *l, const char *midia) {
   ColSource s;
   if (!l || itInjetado) return;
   pthread_mutex_lock(&itTrava);
-  nItens = 0; itGeracao++;
+  nItens = 0; itGeracao++; itPermN = 0;
   itSimkl = (l->fonte == LST_SIMKL);
   snprintf(itEstado, sizeof itEstado, "%s", l->estado);
   snprintf(itMidia, sizeof itMidia, "%s", midia && midia[0] ? midia : l->midia);
@@ -861,6 +871,7 @@ int lst_itens_n(void) {
 
 int lst_item(int i, CatItem *dst) {
   int simkl, ok = 0;
+  i = mapear(i);
   pthread_mutex_lock(&itTrava);
   simkl = itSimkl;
   if (simkl && dst && i >= 0 && i < nItens) { *dst = itens[i]; ok = 1; }
@@ -878,17 +889,18 @@ int lst_itens_carregando(void) {
 }
 
 int lst_item_extra(int i, DescItemLista *dst) {
-  int simkl;
+  int simkl, r;
   pthread_mutex_lock(&itTrava);
   simkl = itSimkl;
   pthread_mutex_unlock(&itTrava);
   if (dst) memset(dst, 0, sizeof *dst);
+  r = mapear(i);
   if (simkl) {
     if (i < 0 || i >= lst_itens_n()) return 0;
-    if (dst && itInjetado) *dst = itExtraTeste[i];
+    if (dst && itInjetado) *dst = itExtraTeste[r];
     return 1;
   }
-  return desc_vertudo_extra(i, dst);
+  return desc_vertudo_extra(r, dst);
 }
 
 // So para testes e capturas: rank/nota dos itens de lst_teste_itens, ja que sem
@@ -899,6 +911,40 @@ void lst_teste_extras(const DescItemLista *v, int n) {
   memset(itExtraTeste, 0, sizeof itExtraTeste);
   for (int i = 0; i < n; i++) itExtraTeste[i] = v[i];
   pthread_mutex_unlock(&itTrava);
+}
+
+int lst_ordem_mover(int de, int para) {
+  int n = lst_itens_n(), v, k;
+  if (de < 0 || para < 0 || de >= n || para >= n || n > LST_ITENS_MAX) return 0;
+  pthread_mutex_lock(&itTrava);
+  if (itPermN != n) {
+    int novo[LST_ITENS_MAX];
+    for (k = 0; k < n; k++) novo[k] = k < itPermN ? itPerm[k] : k;
+    memcpy(itPerm, novo, sizeof(int) * (size_t)n);
+    itPermN = n;
+  }
+  v = itPerm[de];
+  for (k = de; k < para; k++) itPerm[k] = itPerm[k + 1];
+  for (k = de; k > para; k--) itPerm[k] = itPerm[k - 1];
+  itPerm[para] = v;
+  pthread_mutex_unlock(&itTrava);
+  return 1;
+}
+
+int lst_ordem_ids(long *ids, int max) {
+  int n = lst_itens_n(), i;
+  DescItemLista d;
+  if (n < 1 || n > max) return 0;
+  for (i = 0; i < n; i++) {
+    if (!lst_item_extra(i, &d) || d.itemId <= 0) return 0;
+    ids[i] = d.itemId;
+  }
+  return n;
+}
+
+int lst_url_publica(const LstLista *l, char *dst, size_t n) {
+  if (!l || !dst || l->fonte != LST_TRAKT || l->privada || !l->autorSlug[0] || !l->slug[0]) return 0;
+  return snprintf(dst, n, "https://trakt.tv/users/%s/lists/%s", l->autorSlug, l->slug) < (int)n;
 }
 
 void lst_itens_mais(void) {
