@@ -256,6 +256,24 @@ static void regras_perfil(const char *prefixo) {
     perfil_tecla(SDLK_LEFT);
     assert(perfil_quer_sair());
   }
+  // Conquistas locais continuam acessiveis sem resumo do tracker.
+  {
+    static const PerfilEstado estados[] = { PERFIL_ESTADO_CARREGANDO,
+      PERFIL_ESTADO_DESCONECTADO, PERFIL_ESTADO_PRIVADO, PERFIL_ESTADO_INDISPONIVEL };
+    for (unsigned j = 0; j < sizeof estados / sizeof estados[0]; j++) {
+      perfil_definir_dados(NULL);
+      perfil_abrir();
+      perfil_definir_estado(estados[j], NULL);
+      perfil_tecla(SDLK_UP);
+      assert(perfil_foco_conquistas());
+      perfil_tecla(SDLK_RETURN);
+      assert(perfil_pediu_conquistas() && !perfil_pediu_atualizar());
+      perfil_tecla(SDLK_DOWN);
+      assert(!perfil_foco_conquistas());
+      perfil_tecla(SDLK_RETURN);
+      assert(perfil_pediu_atualizar() == (estados[j] != PERFIL_ESTADO_CARREGANDO));
+    }
+  }
   // Captura com o botao em foco.
   perfil_abrir_com_dados();
   for (i = 0; i < 8 && !perfil_foco_conquistas(); i++) perfil_tecla(SDLK_UP);

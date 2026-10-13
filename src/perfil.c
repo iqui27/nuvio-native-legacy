@@ -505,16 +505,20 @@ void perfil_evento(const SDL_Event *e) {
     perfil_fechar(); return;
   }
   if (modo == PF_DUELO) { eventoDuelo(k, ok); return; }
+  if (secao == PF_SEC_CONQ) {
+    if (k==SDLK_LEFT || (k==SDLK_UP && ajustes_menu_topo())) { sair = 1; return; }
+    if (k==SDLK_DOWN) { secao = secaoAntes; return; }
+    if (ok) pedirConquistas = 1;
+    return;
+  }
   if(k==SDLK_r || ((!temDados || erro[0]) &&
      (k==SDLK_RETURN || k==SDLK_KP_ENTER))) {
     if(!carregando)pedirAtualizar=1;
     return;
   }
-  if (!temDados) return;
-  if (secao == PF_SEC_CONQ) {
-    if (k==SDLK_LEFT) { sair = 1; return; }
-    if (k==SDLK_DOWN) { secao = secaoAntes; return; }
-    if (ok) pedirConquistas = 1;
+  if (!temDados) {
+    if (k==SDLK_UP) subirConquistas();
+    if (k==SDLK_LEFT) sair = 1;
     return;
   }
   // DUAS paradas de verdade, lado a lado: o calendario a esquerda e a lista de
@@ -889,11 +893,11 @@ static GfxRect rConquistas(void) {
 }
 static void ponteiroConquistas(int a, int b) {
   (void)a; (void)b;
-  if (modo == PF_RESUMO && temDados && secao != PF_SEC_CONQ) subirConquistas();
+  if (modo == PF_RESUMO && secao != PF_SEC_CONQ) subirConquistas();
 }
 static void toqueConquistas(int a, int b) {
   (void)a; (void)b;
-  if (modo == PF_RESUMO && temDados) pedirConquistas = 1;
+  if (modo == PF_RESUMO) pedirConquistas = 1;
 }
 static void desenharConquistas(float a) {
   GfxRect r = rConquistas();
@@ -1356,7 +1360,6 @@ void perfil_desenhar(Uint32 agora) {
   } else {
     if (temIdentidade) desenharCabecalho(a);
     else { tituloPagina(a); }
-    desenharConquistas(a);
 #ifdef NV_TOUCH_UI
     if (pfRetrato()) gfx_recorte(PF_X, PF_NUM_Y - 16.0f, PF_W, PF_CONTEUDO_H - PF_NUM_Y + 16.0f);
 #endif
@@ -1366,6 +1369,7 @@ void perfil_desenhar(Uint32 agora) {
     if (surge(7) > 0.002f) desenharAmigos(agora, a * surge(7));
   }
   gfx_sem_recorte();
+  if (modo == PF_RESUMO) desenharConquistas(a);
 
   // NO DUELO o pe e a linha de dicas do mockup, no lugar do aviso.
   if (modo == PF_DUELO && temDados) {
