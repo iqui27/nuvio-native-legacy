@@ -26,7 +26,7 @@ cc ${flags[@]+"${flags[@]}"} src/catalogo.c src/progresso.c src/cwordem.c src/cw
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined -Wno-unused-function
 "$out/nuvio-cwordem-desc-tests"
 cc ${flags[@]+"${flags[@]}"} src/catalogo.c src/progresso.c src/focus.c src/ajustes.c src/ajlog.c src/posterprov.c src/redeurl.c src/colecoes.c \
-  src/js.c src/metaprov.c src/catordem.c src/fileiras.c src/artehero.c src/cwordem.c src/cwretido.c src/fonteregra.c src/regexjs.c tests/cwordem_home.c tests/amigosfil_stub.c \
+  src/js.c src/metaprov.c src/catordem.c src/fileiras.c src/homefil.c src/artehero.c src/cwordem.c src/cwretido.c src/fonteregra.c src/regexjs.c tests/cwordem_home.c tests/amigosfil_stub.c \
   -Isrc -o "$out/nuvio-cwordem-home-tests" -O1 -g -ffunction-sections -fdata-sections \
   -Wl,-dead_strip -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -Wno-deprecated-declarations -Wno-macro-redefined

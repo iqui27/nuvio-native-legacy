@@ -319,9 +319,11 @@ int main(void) {
     assert(uxIndice == 2 + AJS_TVAOVIVO);                                       // stops at the end of the column
     key(SDLK_RETURN); assert(!focoIndice && secAtual == AJS_TVAOVIVO);          // OK opens
     key(SDLK_LEFT); assert(focoIndice && uxIndice == 2 + AJS_TVAOVIVO);         // Left goes back to the card
-    // The discovery cards open the usage guide; Back returns to the card.
-    uxTopo = AJ2_T_RESOLVER; key(SDLK_RETURN); assert(guiaAberto && gv.col == GC_LISTA && gv.ent >= 0);
-    guiaSair(); assert(!guiaAberto && focoIndice && uxTopo == AJ2_T_RESOLVER);
+    // "Resolver um problema" opens its own full-screen flow (resolver.h); Back
+    // closes it and the card keeps the focus.
+    uxTopo = AJ2_T_RESOLVER; key(SDLK_RETURN); assert(!guiaAberto && resolver_aberto());
+    { SDL_Event b; memset(&b, 0, sizeof b); b.type = SDL_KEYDOWN; b.key.keysym.sym = SDLK_ESCAPE; resolver_evento(&b); }
+    assert(!resolver_aberto() && focoIndice && uxTopo == AJ2_T_RESOLVER);
     uxTopo = AJ2_T_PERFIL; key(SDLK_RETURN); assert(!focoIndice && focoOp == AJ_PERFIL_ATIVO);
     // Diferentes do padrao: Down goes to the discovery card, OK opens the list
     // (uxIndice 1), Back returns to the pill.

@@ -32,10 +32,43 @@ static void hJanela(int x, int y, int w, int h) { jx = x; jy = y; jw = w; jh = h
 static int hPos(void) { return 0; }
 
 static int falhas;
+void video_tpk_log_host(const char *);
 static void confere(const char *nome, int x, int y, int w, int h) {
   int ok = jx == x && jy == y && jw == w && jh == h;
   printf("%s %s: %d,%d %dx%d (esperado %d,%d %dx%d)\n", ok ? "ok  " : "FALHA", nome, jx, jy, jw, jh, x, y, w, h);
   if (!ok) falhas++;
+}
+// Home requests a destination, then punches its intersection with the final plane.
+static __attribute__((unused)) void cartaoDaHome(const char *nome, int sx, int sy, int sw, int sh,
+                         float cx, float cy, float cw, float ch) {
+  float x,y,w,h;
+  video_tpk_cartao_destino(cx,cy,cw,ch,&x,&y,&w,&h);
+  video_janela_fonte(sx,sy,sw,sh,(int)x,(int)y,(int)w,(int)h);
+  video_tpk_cartao_furo(cx,cy,cw,ch,&x,&y,&w,&h);
+  float left = jx > cx ? jx : cx, top = jy > cy ? jy : cy;
+  float right = jx + jw < cx + cw ? jx + jw : cx + cw;
+  float bottom = jy + jh < cy + ch ? jy + jh : cy + ch;
+  int ok = x == left && y == top && w == right - left && h == bottom - top;
+  printf("%s %s: hole %.0f,%.0f %.0fx%.0f\n", ok ? "ok  " : "FALHA", nome, x,y,w,h);
+  if (!ok) falhas++;
+}
+static void cartaoExpandido(void) {
+  video_tocar("http://x/expanded-card.m3u8");
+  video_tpk_trailer_marcar(1); video_tpk_cartao_marcar(1);
+  video_tpk_tizen_definir("6.0");
+  nv_tpk_video_evento(6,1920,1080);
+  assert(video_tpk_cartao_cover());
+  cartaoDaHome("#471 expanded full source: hole equals final plane",0,0,1920,1080,40,300,606,341);
+  confere("#471 expanded full source rounds to even height",40,300,606,340);
+  cartaoDaHome("#471 expanded delayed crop: hole equals final plane",0,0,1920,1080,40,300,606,341);
+  video_recorte_reaplicar();
+  confere("#471 expanded delayed crop keeps the final plane",40,300,606,340);
+  cartaoDaHome("#471 cover ROI: hole is confined to the card",600,0,720,1080,40,300,360,540);
+  confere("#471 cover ROI preserves its final plane",-259,300,960,540);
+  video_recorte_reaplicar();
+  confere("#471 replay preserves the cover plane",-259,300,960,540);
+  video_tpk_cartao_marcar(0); video_tpk_trailer_marcar(0);
+  video_tpk_tizen_definir("0");
 }
 static __attribute__((unused)) void naTela(const char *nome) {
   int ok = jx >= 0 && jy >= 0 && jx + jw <= 1920 && jy + jh <= 1080;
@@ -104,7 +137,93 @@ int main(void) {
   nj = 0; video_recorte_reaplicar();
   if (nj) { printf("FALHA reaplicar mandou %d,%d %dx%d\n", jx, jy, jw, jh); falhas++; }
   else printf("ok   reaplicar nao manda nada\n");
+  // P1: hero/detail/fullscreen trailers keep the raw destination: a 4:3 frame
+  // into 1920x1080 stays the full-screen LetterBox path, never a smaller ROI.
+  nv_tpk_video_evento(6, 1440, 1080);
+  video_tpk_trailer_marcar(1);
+  video_janela_fonte(0, 0, 1440, 1080, 0, 0, 1920, 1080);
+  confere("P1 non-card trailer keeps the raw fullscreen destination", 0, 0, 1920, 1080);
+  video_janela_fonte(0, 0, 1440, 1080, 100, 100, 960, 540);
+  confere("P1 non-card trailer keeps the raw destination", 100, 100, 960, 540);
+  // P2: portrait cover cannot fit the panel. Never stretch it into the card.
+  video_tpk_cartao_marcar(1);
+  nv_tpk_video_evento(6, 1080, 1920);
+  cartaoDaHome("P2 portrait trailer uses the home fit",0,656,1080,606,400,200,960,540);
+  confere("P2 portrait trailer falls back to proportional fit", 728, 200, 304, 540);
+  // A panel-contained ROI is not proof of visible video on this family.
+  nv_tpk_video_evento(6, 1920, 1080);
+  video_tpk_trailer_marcar(1);
+  cartaoDaHome("unproven family: plane equals hole",600,0,720,1080,40,300,360,540);
+  confere("unproven model family uses letterbox at panel edge", 40, 469, 360, 202);
+  cartaoDaHome("unproven family: plane equals hole within panel",600,0,720,1080,800,300,360,540);
+  confere("unproven model family uses letterbox even with ROI in panel", 800, 469, 360, 202);
+  // #471: Tizen 6.x card trailer COVERS the card by cropping the source (center
+  // 720x1080 of 1920x1080 into a 360x540 card = roi 960x540 at x-260; the
+  // existing (int)(v+0.5) rounding truncates -259.5 to -259, still covers it).
+  video_tpk_tizen_definir("6.0");
+  if (!video_tpk_cartao_cover()) { printf("FALHA Tizen 6.0 should cover the card\n"); falhas++; }
+  video_janela_fonte(600, 0, 720, 1080, 40, 300, 360, 540);
+  confere("#471 Tizen 6 card trailer covers the card", -259, 300, 960, 540);
+  // Portrait source cannot cover within the panel even on Tizen 6: fit.
+  // Fresh session: the previous card request must not already have cleared cover.
+  video_tocar("http://x/portrait.m3u8"); video_tpk_trailer_marcar(1); video_tpk_cartao_marcar(1);
+  video_tpk_tizen_definir("6.0");
+  nv_tpk_video_evento(6, 1080, 1920);
+  video_janela_fonte(0, 656, 1080, 606, 400, 200, 960, 540);
+  confere("#471 Tizen 6 portrait falls back to proportional fit", 728, 200, 304, 540);
+  if (video_tpk_cartao_cover()) { printf("FALHA portrait fallback must not keep cover\n"); falhas++; }
+  { float x,y,w,h; video_tpk_cartao_furo(400,200,960,540,&x,&y,&w,&h);
+    int ok = x==728 && y==200 && w==304 && h==540;
+    printf("%s #471 card hole follows the 304x540 plane: %.0f,%.0f %.0fx%.0f\n", ok?"ok  ":"FALHA", x,y,w,h);
+    if (!ok) falhas++; }
+  // Host rejected the ROI: the plane is the fallback fit, so the hole shrinks too.
+  video_tocar("http://x/card.m3u8"); video_tpk_trailer_marcar(1); video_tpk_cartao_marcar(1);
+  video_tpk_tizen_definir("6.0");
+  nv_tpk_video_evento(6, 1920, 1080);
+  video_janela_fonte(600, 0, 720, 1080, 40, 300, 360, 540);
+  confere("#471 Tizen 6 cover before the host rejects ROI", -259, 300, 960, 540);
+  video_tpk_log_host("[aspecto] sessao=1 DisplayRoi rc=0xffffffa1 fallback=ok");
+  if (video_tpk_cartao_cover()) { printf("FALHA rejected ROI must clear effective cover\n"); falhas++; }
+  nj = 0; cartaoDaHome("#471 rejected ROI: plane equals hole",600,0,720,1080,40,300,360,540);
+  confere("#471 rejected ROI uses the proportional fit", 40, 469, 360, 202);
+  { float x,y,w,h; video_tpk_cartao_furo(40,300,360,540,&x,&y,&w,&h);
+    int ok = x==40 && y==469 && w==360 && h==202;
+    printf("%s #471 rejected ROI hole: %.0f,%.0f %.0fx%.0f\n", ok?"ok  ":"FALHA", x,y,w,h);
+    if (!ok) falhas++; }
+  cartaoDaHome("#471 rejected ROI: whole-frame plane equals hole",0,0,1920,1080,40,300,360,540);
+  cartaoDaHome("#471 rejected ROI: delayed crop plane equals hole",0,2,1920,1076,40,300,360,540);
+  nv_tpk_video_evento(6, 1920, 1080);
+  // Other families keep the letterbox.
+  video_tpk_tizen_definir("9.0");
+  if (video_tpk_cartao_cover()) { printf("FALHA Tizen 9.0 must not cover the card\n"); falhas++; }
+  cartaoDaHome("#471 Tizen 9: plane equals hole",600,0,720,1080,40,300,360,540);
+  confere("#471 Tizen 9 card trailer stays letterboxed", 40, 469, 360, 202);
+  { const char *familias[] = {"4.0","5.0","7.0","9.0"};
+    for (int i=0;i<4;i++) {
+      video_tocar("http://x/card.m3u8"); video_tpk_trailer_marcar(1); video_tpk_cartao_marcar(1);
+      video_tpk_tizen_definir(familias[i]);
+      nv_tpk_video_evento(6,1920,1080);
+      printf("#471 default fit Tizen %s\n",familias[i]);
+      cartaoDaHome("whole-frame plane equals hole",0,0,1920,1080,40,300,360,540);
+      cartaoDaHome("delayed crop plane equals hole",0,2,1920,1076,40,300,360,540);
+      confere("fitted card destination stays unchanged",40,469,360,202);
+    }
+  }
+  video_tpk_tizen_definir("0");
+  video_tpk_cartao_marcar(0);
+  video_tpk_trailer_marcar(0);
 #endif
+  cartaoExpandido();
+  // P1: legacy hosts must also invalidate a cached crop on repositioning.
+  nv_tpk_video_evento(6, 1920, 1080);
+  video_janela_fonte(480, 270, 960, 540, 400, 300, 640, 360);
+  nj = 0; video_recorte_reaplicar();
+  assert(nj == 1);
+  nj = 0; video_recorte_reaplicar();
+  assert(nj == 1);   // replay itself must keep the crop cached
+  video_janela(0, 0, 1920, 1080);
+  nj = 0; video_recorte_reaplicar();
+  assert(nj == 0);
   // Quadro inteiro num destino pequeno continua passando cru.
   nv_tpk_video_evento(6, 1920, 1080);
   video_janela_fonte(0, 0, 1920, 1080, 10, 10, 640, 360);

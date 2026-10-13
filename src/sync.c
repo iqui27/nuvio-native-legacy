@@ -39,6 +39,7 @@ void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's to
 #include "descoberta.h"
 #include "simkl.h"
 #include "homeestado.h"
+#include "homefil.h"
 #include "cachearte.h"
 #include "extras.h"
 #include "arteescolha.h"
@@ -1877,6 +1878,8 @@ void sync_esquecer_usuario(void) {
   copiaQuando = 0;
   pedidoComFioVivo = 0;
   homeestado_esquecer();
+  cf_esquecer();
+  ov_esquecer();
   cachearte_limpar_referencias();
   // O CACHE DO CATALOGO TAMBEM. Ele guarda o catalogo montado da conta que
   // saiu — watchlist, continuar assistindo, feed de amigos com nome e avatar —

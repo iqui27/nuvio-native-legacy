@@ -168,6 +168,24 @@ void simklauth_esquecer(void) {
   pthread_mutex_unlock(&trava);
 }
 
+// O Simkl respondeu 401 a um pedido que saiu com a credencial de geracao `cred`
+// (simklauth_credencial_copiar). So desfaz o vinculo se ele ainda e ESSE: com a
+// troca de perfil ou um novo vinculo no meio do voo, o 401 e de um token que ja
+// nao esta aqui e o do perfil atual fica. Devolve 1 quando desfez. (O esquecer
+// acima e o logout, varre todos.)
+int simklauth_invalidar_se(unsigned long long cred) {
+  int atual;
+  pthread_mutex_lock(&trava);
+  atual = cred == credGeracao;
+  if (atual) {
+    geracao++;
+    zerarEstado();
+    dados_apagar(arq(perfil).s);
+  }
+  pthread_mutex_unlock(&trava);
+  return atual;
+}
+
 // ---------------------------------------------------------------- fluxo
 
 static void *fioPedir(void *u) {

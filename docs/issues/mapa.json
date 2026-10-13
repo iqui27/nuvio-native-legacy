@@ -9184,7 +9184,7 @@
     "ultimo_comentario_por": "",
     "ultima_nossa": ""
    },
-   "proximo_passo": "Implementar Simkl scrobble (dono aprovou 12/10 para 2.0.6, PLANO-ECOSSISTEMA Q4).",
+   "proximo_passo": "Revisar o diff de agente/205-simkl-scrobble e testar na TV com Simkl vinculado (start/pause/stop aparecem no Simkl).",
    "notas": "LG 2.0.4, Simkl conectado diretamente: pede enviar progresso parcial ao pausar/sair para retomar em outros apps. src/simkl.c:simkl_ler_playback e simkl_continuar leem pausados; simkl_episodios_marcar/simkl_titulo_marcar enviam histórico de visto. src/player.c chama trakt_scrobble ao tocar/pausar; não há envio Simkl equivalente neste caminho. Leitura de playback e histórico existem, envio incremental Simkl não comprovado. Limite demonstrado do cliente, sem afirmar capacidade atual da API Simkl offline.",
    "url": "https://github.com/iqui27/nuvio-native-legacy/issues/459",
    "alvo": "2.0.6"
@@ -10414,6 +10414,17 @@
    "ref": "agente/205-issues-novas",
    "resultado": "passou",
    "evidencia": "docs/issues/TRIAGEM-2.0.5.md (Provas da triagem detalhada); docs/issues/rascunhos/respostas-triagem-2.0.5.md; /private/tmp/triagem-publico-final.log"
+  },
+  {
+   "data": "2026-10-12",
+   "quem": "Claude Sonnet 5.5",
+   "o_que": "Simkl scrobble do player (start/pause/stop com porcentagem, filme e episódio, só com Simkl vinculado): 401 desfaz o vínculo do perfil, 429/5xx/400 RATE_LIMIT abrem janela de espera sem retry, stop que falha cai no histórico. Rede falsa; sem TV nem conta Simkl real.",
+   "issues": [
+    459
+   ],
+   "ref": "agente/205-simkl-scrobble",
+   "resultado": "passou",
+   "evidencia": "tests/simkl_scrobble.sh rc 0 (FAIL antes: simkl_scrobble indefinido); regressão simkl_cw, visto, vistonao, simklauth, trakt_scrobble, player_visto_trailer rc 0; tools/build-local.sh build ok"
   }
  ],
  "decisoes": [

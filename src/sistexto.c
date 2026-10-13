@@ -21,6 +21,13 @@
 static int   dono, estado, pedeTeclado, quedaTeclado;
 static float nivel;
 static const char *aviso = "";
+// O aviso do botao de microfone da Samsung: vale so com o teclado dela aberto.
+static const char AVISO_MIC_CONTROLE[] = "Aperte o microfone do controle e fale.";
+// Teclado da Samsung aberto pelo botao de microfone. Ele cobre a tela e nao da
+// para esconde-lo e espiar o app: o texto do meio do caminho NAO vai ao campo
+// (nada de busca, resultados nem cartazes montados por baixo dele). So o
+// texto final, ao fechar, entra e busca.
+static int micTeclado;
 
 #define ST_FILA 16
 static char  fila[ST_FILA][600];
@@ -84,6 +91,7 @@ int st_ime_abrir(int d, const char *inicial, int max) {
   proximoTipo = ST_IME_TEXTO;
   if (!st_ime_disponivel()) return 0;
   descartar();
+  micTeclado = 0;
   dono = d; nivel = 0.0f;
   if (!quedaTeclado) aviso = "";      // caiu da voz: o aviso de por que fica
   quedaTeclado = 0;
@@ -106,6 +114,7 @@ int st_voz_iniciar(int d) {
   int ok = 0;
   if (!st_voz_disponivel()) return 0;
   descartar();
+  micTeclado = 0;
   dono = d; aviso = ""; nivel = 0.0f;
 #ifdef NV_ANDROID
   ok = android_st_ditar(desc_tmdb_idioma());
@@ -114,6 +123,15 @@ int st_voz_iniciar(int d) {
   else ok = 1;
 #endif
   estado = ok ? ST_OUVINDO : ST_PARADO;
+#ifndef NV_ANDROID
+  // Samsung (.tpk e .wgt): o botao abriu o teclado da Samsung, que ainda NAO
+  // esta ouvindo. Nada de "Ouvindo…": o campo diz onde esta o microfone.
+  if (ok && pelaPlataforma() && texto_sistema_voz_pelo_teclado()) {
+    estado = ST_DIGITANDO;
+    aviso = AVISO_MIC_CONTROLE;
+    micTeclado = 1;
+  }
+#endif
   if (!ok) aviso = "O ditado não respondeu. Tente de novo ou digite.";
   printf("[texto] voz: %s (dono %d, idioma %s)\n", ok ? "pedida" : "falhou", d, desc_tmdb_idioma());
   fflush(stdout);
@@ -130,6 +148,8 @@ void st_fechar(int d) {
   estado = ST_PARADO;
   dono = ST_DONO_NENHUM;
   nivel = 0.0f;
+  micTeclado = 0;
+  if (aviso == AVISO_MIC_CONTROLE) aviso = "";
 }
 
 void st_teste_evento(const char *ev) {
@@ -182,16 +202,21 @@ int st_ler_valor(int d, char *dst, size_t n, int *valorRecebido) {
     if (d != dono) continue;              // de outro campo: descarta
     switch (t) {
       case 'T': case 'P':
+        if (micTeclado) break;            // por baixo do teclado: espera o fim
         if (valorRecebido) *valorRecebido = 1;
         snprintf(dst, n, "%s", v); r = ST_TEXTO; break;
       case 'D': case 'V':
         if (valorRecebido) *valorRecebido = 1;
+        micTeclado = 0;
+        if (aviso == AVISO_MIC_CONTROLE) aviso = "";
         snprintf(dst, n, "%s", v);
         printf("[texto] %s: %d bytes\n", t == 'D' ? "teclado concluiu" : "voz final", (int)strlen(v));
         fflush(stdout);
         estado = ST_PARADO; nivel = 0.0f;
         return ST_FIM;
       case 'X':
+        micTeclado = 0;
+        if (aviso == AVISO_MIC_CONTROLE) aviso = "";
         estado = ST_PARADO;
         return ST_CANCELOU;
       case 'R': nivel = (float)atoi(v) / 100.0f; break;

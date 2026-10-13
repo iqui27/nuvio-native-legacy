@@ -1410,7 +1410,7 @@ typedef struct {
   char titulo[96];
   char tipo[8];
   char id[96];
-  const char *base;
+  char base[NV_ADDON_URL_MAX];
   // 1 quando o catalogo aceita BUSCA. O manifesto declara isso em
   // `extra: [{name:"search"}]` (formato novo) ou `extraSupported: ["search"]`
   // (antigo) — os addons do dono usam os dois.
@@ -1601,6 +1601,8 @@ static void formatarTitulo(const char *nome, const char *tipo, char *dst, size_t
 #define MANI_FIOS  4
 static struct {
   char  url[NV_ADDON_PEDIDO_MAX];   // <base>/manifest.json inteiro (addonurl.h)
+  char destino[20];
+  unsigned versao;
   char *corpo;
   int   ativo, erro;
   int   pronto;      // 1 = tentativa terminada (corpo pode ser NULL)
@@ -1798,7 +1800,7 @@ static void *fioManifesto(void *u) {
       size_t n = strlen(corpo);
       if (n < MANI_CACHE_BYTES) {
         char *copia = malloc(n + 1);
-        if (copia) { memcpy(copia, corpo, n + 1); maniCacheColocar(url, addons_versao(), copia); }
+        if (copia) { memcpy(copia, corpo, n + 1); maniCacheColocar(url, mani[meu].versao, copia); }
       }
     }
     if (mani[meu].largado && corpo) {
@@ -1825,10 +1827,13 @@ static void *fioManifesto(void *u) {
 
 // Larga o download de todos os manifestos. Volta na hora.
 static void maniLargar(void) {
-  int nAd = addons_n(), i, criados = 0;
-  unsigned versao = addons_versao();
+  int nAd, i, criados = 0;
+  unsigned versao;
   pthread_t fios[MANI_FIOS];
   pthread_mutex_lock(&maniTrava);
+  addons_lista_travar();
+  nAd = addons_n();
+  versao = addons_versao();
   // Sobra da volta anterior (ninguem pediu, addon trocado no meio): nao pode
   // virar vazamento nem ser entregue como se fosse desta volta.
   for (i = 0; i < maniN; i++) { free(mani[i].corpo); mani[i].corpo = NULL; }
@@ -1840,6 +1845,8 @@ static void maniLargar(void) {
     mani[i].ativo = addons_ativo(ad);
     int cache;
     nv_addon_url(mani[i].url, sizeof mani[i].url, addons_base(ad), "/manifest.json");
+    ws_destino(addons_base(ad), sessao_usuario(), perfis_ativo(), mani[i].destino);
+    mani[i].versao = versao;
     mani[i].pronto = 0; mani[i].erro = 0;
     // CACHE HIT: o manifesto deste addon ja foi baixado numa volta com a
     // MESMA versao da lista (lista inalterada). Reaproveita sem rede. A
@@ -1857,6 +1864,7 @@ static void maniLargar(void) {
       }
     }
   }
+  addons_lista_destravar();
   maniProx = 0;
   maniGeracao++;
   maniLargadaMs = descAgoraMs();
@@ -2190,18 +2198,40 @@ static int nManiFalhouVolta;
 // TV — desligados na conta do dono — ganhavam fileira e ate vaga garantida na
 // home da C9 (24/09), e a fonte deles continuava fora das consultas. Desligado
 // e desligado nos dois lugares.
-static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
-                         int ativo, int *totalReal, int *promovidos) {
+static int lerManifesto(int iAddon, Decl *saida, int max,
+                         int *totalReal, int *promovidos) {
+  char base[NV_ADDON_URL_MAX], destino[20];
+  unsigned versao;
+  int ativo;
   char url[NV_ADDON_PEDIDO_MAX], addonId[96] = "", nome[96], tipo[8], id[96];
   char *corpo, *escolhido;
   const char *p, *fim;
   int n = 0, total = 0, e = 0, nEleg = 0;
   if (totalReal) *totalReal = 0;
   if (promovidos) *promovidos = 0;
+  // A URL inclui a configuracao; conta/perfil e versao tambem ficam congelados.
+  // Nenhum ponteiro do slot atravessa o download.
+  addons_lista_travar();
+  snprintf(base, sizeof base, "%s", addons_base(iAddon));
+  ws_destino(base, sessao_usuario(), perfis_ativo(), destino);
+  versao = addons_versao();
+  ativo = addons_ativo(iAddon);
+  addons_lista_destravar();
+  if (!base[0]) return 0;
   // Ja largado em paralelo no comeco de montar(); so cai na rede aqui quando
   // este addon nao estava na lista daquele instante.
-  corpo = descPedidoCoube(base, nv_addon_url(url, sizeof url, base, "/manifest.json"), sizeof url)
-          ? maniObter(url, ativo) : NULL;
+  corpo = NULL;
+  if (descPedidoCoube(base, nv_addon_url(url, sizeof url, base, "/manifest.json"), sizeof url)) {
+    // Se ja largado em paralelo, vale a identidade copiada antes daquela rede.
+    pthread_mutex_lock(&maniTrava);
+    for (int m = 0; m < maniN; m++) if (!strcmp(mani[m].url, url)) {
+      snprintf(destino, sizeof destino, "%s", mani[m].destino);
+      versao = mani[m].versao;
+      break;
+    }
+    pthread_mutex_unlock(&maniTrava);
+    corpo = maniObter(url, ativo);
+  }
   if (!corpo) {
     // Sem esta linha o log dizia "0 catalogo(s) declarado(s)", igual a um
     // addon que so tem stream.
@@ -2215,8 +2245,10 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
   // O MESMO CORPO SERVE AOS DOIS LEITORES. Ver addons_manifesto_lido: sem esta
   // linha o id e as capacidades do addon so eram aprendidos por quem abrisse a
   // tela de addons nos Ajustes, e sem o id nenhuma colecao da conta encontrava
-  // a URL do proprio addon (issue #10).
-  addons_manifesto_lido(iAddon, corpo);
+  // a URL do proprio addon (issue #10). O _base reconfere que o slot ainda e o
+  // addon de `base`: a lista pode ter trocado durante o download (ate 20 s) e o
+  // manifesto atrasado de A nao pode gravar nada no slot de B.
+  addons_manifesto_lido_base(iAddon, base, destino, versao, corpo);
   // Chave da RAIZ: um manifesto tem "id" tambem dentro de catalogs[] e de
   // behaviorHints, e ha addon que escreve "catalogs" antes de "id" — a leitura
   // crua trazia o id de um CATALOGO como se fosse o do addon. Ver js_texto_raiz.
@@ -2264,7 +2296,7 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
       // Fora do vetor: usa um Decl de rascunho so para decidir/registrar a busca.
       d = guardar ? &saida[n] : &local;
       memset(d, 0, sizeof *d);
-      d->base = base;
+      snprintf(d->base, sizeof d->base, "%s", base);
       // BUSCA: procura "search" dentro do bloco `extra`/`extraSupported` DESTE
       // catalogo (a faixa [p,f) e o objeto dele, entao nao vaza para o vizinho).
       //
@@ -3503,7 +3535,7 @@ static int ordenarCandidatos(Decl *decls, int nDecl, int *ordem, int nFixas,
         const char *b = addons_base(i2);
         if (!b || !b[0]) continue;
         for (j = 0; j < nDecl; j++)
-          if (!vistos[j] && decls[j].base && !strcmp(decls[j].base, b)) {
+          if (!vistos[j] && !strcmp(decls[j].base, b)) {
             ordem[nOrdem++] = j; vistos[j] = 1; pegou = 1; break;
           }
       }
@@ -3623,7 +3655,7 @@ static int ordenarCandidatos(Decl *decls, int nDecl, int *ordem, int nFixas,
       deslig[c] = (char)desligada(&decls[c]);
       for (q = 0; q < nAd3; q++) {
         const char *b = addons_base(q);
-        if (b && b[0] && decls[c].base && !strcmp(decls[c].base, b)) { addonDe[c] = q; break; }
+        if (b && b[0] && !strcmp(decls[c].base, b)) { addonDe[c] = q; break; }
       }
     }
     for (q = 0; q < nAd3; q++) {
@@ -4263,8 +4295,7 @@ static void *montar(void *u) {
         LISTAS_SE_PRONTAS();
         if (CONDENADA("lendo os manifestos")) goto condenada;
         if (teto > DECL_MAX - nDecl) teto = DECL_MAX - nDecl;
-        lidos = lerManifesto(i, addons_base(i), decls + nDecl, teto,
-                             addons_ativo(i), &real, &promovidos);
+        lidos = lerManifesto(i, decls + nDecl, teto, &real, &promovidos);
         nDecl += lidos;
         folga = lidos < cota + folga ? cota + folga - lidos : 0;
         // ISSUE #42(a): a linha de sempre ("N catalogo(s) declarado(s)") nao
@@ -4470,7 +4501,7 @@ static void *montar(void *u) {
           tarefas[nTarefas].d = d;
           // COPIAS para o fio: um fio largado por lento sobrevive a esta volta,
           // e `decls` (estatico) e a lista de addons ja podem ser de outra.
-          snprintf(tarefas[nTarefas].base, sizeof tarefas[nTarefas].base, "%s", d->base ? d->base : "");
+          snprintf(tarefas[nTarefas].base, sizeof tarefas[nTarefas].base, "%s", d->base);
           snprintf(tarefas[nTarefas].tipo, sizeof tarefas[nTarefas].tipo, "%s", d->tipo);
           snprintf(tarefas[nTarefas].id, sizeof tarefas[nTarefas].id, "%s", d->id);
           nTarefas++;
@@ -4588,7 +4619,7 @@ static void *montar(void *u) {
             snprintf(f->chave,  sizeof f->chave,  "%s", d->chave);
             snprintf(f->titulo, sizeof f->titulo, "%s", d->titulo);
             snprintf(f->tipo,   sizeof f->tipo,   "%s", d->tipo);
-            snprintf(f->base,   sizeof f->base,   "%s", d->base ? d->base : "");
+            snprintf(f->base,   sizeof f->base,   "%s", d->base);
             snprintf(f->catId,  sizeof f->catId,  "%s", d->id);
             f->ini = n; f->n = got; f->estado = estadoLinha;
           }
@@ -4672,7 +4703,7 @@ static void *montar(void *u) {
           for (q = 0; q < nOrdem && !dh; q++) if (!fil_oculta(decls[ordem[q]].chave)) dh = &decls[ordem[q]];
           for (q = 0; q < nOrdem && !dh; q++) dh = &decls[ordem[q]];
         }
-        if (dh && dh->base && dh->base[0] && (fil_estado_chave(dh->chave) == FIL_FORA ||
+        if (dh && dh->base[0] && (fil_estado_chave(dh->chave) == FIL_FORA ||
                                               fil_estado_chave(dh->chave) == FIL_NA_FILA)) {
           static CatItem hItens[MAX_POR_FILEIRA];
           int resp = 0, qtd = ajustes_itens_fileira(), got;
@@ -4770,7 +4801,7 @@ static void *montar(void *u) {
     for (k = n, w = n; k < n + np; k++) {
       int jj, ja = 0;
       for (jj = 0; jj < n; jj++)
-        if (!strcmp(lote[jj].imdb, lote[k].imdb)) { lote[jj].naLista = 1; ja = 1; break; }
+        if (!strcmp(lote[jj].imdb, lote[k].imdb)) { lote[jj].naLista = 1; lote[jj].fontes |= lote[k].fontes; ja = 1; break; }
       if (ja) continue;
       if (w != k) lote[w] = lote[k];
       w++;
@@ -6464,8 +6495,8 @@ int desc_meta_tem_temporadas(const char *corpo) {
 
 // CONJUNTO DE (temporada, episodio) JA VISTOS num videos[]. Um addon de FONTES
 // pode responder o /meta com um video por ARQUIVO de torrent (relato de TV LG,
-// Breaking Bad: 18529 entradas para 62 episodios), entao contar e cortar tem de
-// ser sobre episodios DISTINTOS. Enderecamento aberto, dobra ao passar de meia
+// Breaking Bad: 18529 entradas para 62 episodios), entao contar e deduplicar
+// tem de ser sobre episodios DISTINTOS. Enderecamento aberto, dobra ao passar de meia
 // carga: O(n) no corpo inteiro. Memoria pelos pares DISTINTOS, nao pelas
 // entradas: 8 KiB (1024 casas) ate 511 pares, o caso do relato (62); 18 mil
 // pares distintos chegam a 512 KiB, com 768 KiB no instante da copia.
@@ -6578,7 +6609,7 @@ static int metaArquivosCompativeis(const char *arquivos, const char *catalogo) {
 
 // Em par com CAT_EP_MAX (catalogo.c): um titulo que caiba no store nao pode
 // truncar no parse, e um que nao caiba trunca aqui em vez de zerar os outros.
-#define VIDEOS_MAX 1200
+#define VIDEOS_MAX 2400
 
 // videos[] de um /meta -> lista de CatEp ORDENADA por (temporada, episodio).
 // So entram videos com temporada > 0. Devolve quantos.
@@ -6591,7 +6622,7 @@ static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
     int t = videoTemporada(p, f);
     int ne = t > 0 ? (int)js_num(p, f, "episode", 0) : 0;
     // Repeticao sai JA AQUI, antes do corte de `max`: descartada so depois de
-    // ordenar, as 1200 vagas iam para copias dos primeiros episodios e o resto
+    // ordenar, as vagas iam para copias dos primeiros episodios e o resto
     // da serie nem era lido. Fica o primeiro da resposta; sem numero de
     // episodio nao e repeticao.
     if (t > 0 && (ne <= 0 || epSetNovo(&set, t, ne))) {
@@ -7461,7 +7492,7 @@ static void *buscarEps(void *u) {
     arte_reserva_episodios(serie, corpo);
     // A disputa e de distintos contra distintos, os dois do corpo INTEIRO: o
     // nCine publicado para em VIDEOS_MAX, e contra ele uma lista com os mesmos
-    // 1300 episodios "sabia mais" (1300 > 1200).
+    // episodios acima do teto "sabia mais" so por nao estar cortada.
     if (nCine >= VIDEOS_MAX) nCine = desc_meta_n_episodios(corpo);
     epsDoAddon = episodiosDoAddon(alvoItem, serie, it->titulo, corpo, nCine, aplicar, &tp);
   }

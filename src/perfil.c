@@ -452,6 +452,7 @@ static void toquePerfilRepetir(int a, int b) { (void)a; (void)b; if (!carregando
 static void eventoDuelo(SDL_Keycode k, int ok) {
   int n = socialvis_n_amigos();
   if (dLinha == 0) {
+    if (k == SDLK_UP && ajustes_menu_topo()) { sair = 1; return; }
     if (k == SDLK_LEFT)  { if (amigo > 0) duelo(amigo - 1, 0); return; }
     if (k == SDLK_RIGHT) { if (amigo + 1 < n) duelo(amigo + 1, 0); return; }
     if (k == SDLK_DOWN)  { if (cartazesCabem() > 0) dLinha = 1; return; }

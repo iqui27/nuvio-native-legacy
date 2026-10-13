@@ -24,6 +24,7 @@
 //   3. Parado alguns segundos, eles somem sozinhos — mas nao enquanto o video
 //      esta pausado. Pausado sem controles o usuario fica olhando um quadro
 //      congelado sem saber o que houve.
+#include "resolverregra.h"
 #include "horafmt.h"
 #include "player.h"
 #include "memlog.h"
@@ -67,7 +68,9 @@ static void avisarCascaAberto(int v) { android_player_tela_cheia(v); }
 static void avisarCascaAberto(int v) { (void)v; }
 #endif
 #include "trakt.h"
+#include "simkl.h"
 #include "traktscrobble.h"
+#include "watchstate_envio.h"
 #include "sync.h"
 #include "parental.h"
 #include "plrguia.h"
@@ -341,9 +344,11 @@ static double monoSeg(void) {
 // Prova de reproducao da fonte principal, independente de posicao/seek.
 static char fonteSessao[4096];
 static double assistidoSeg, assistidoMono, assistidoPos;
+static double eofDesde = -1.0;
 static int assistidoAmostra;
 static unsigned trailerSessao;
 static void zerarAssistido(void) {
+  eofDesde = -1.0;
   assistidoSeg = 0; assistidoAmostra = 0; trailerSessao = trailer_geracao();
   snprintf(fonteSessao, sizeof fonteSessao, "%s", comVideo ? video_url_atual() : "");
 }
@@ -725,11 +730,15 @@ void player_erro_fonte(void) {
   erroBotao = 0;
   prebuscaUrl[0] = 0;                // erro no meio da pre-busca: o video nao sai
   erroTitulo[0] = erroDica[0] = 0;   // erro sem motivo nao herda o do anterior
+  resolverregra_falha_registrar(RES_T_FONTE, i18n("Não foi possível abrir a fonte"), "", linhaEp, (long)time(NULL));
 }
 void player_erro_fonte_motivo(const char *titulo, const char *dica) {
   player_erro_fonte();
   snprintf(erroTitulo, sizeof erroTitulo, "%s", titulo ? titulo : "");
   snprintf(erroDica, sizeof erroDica, "%s", dica ? dica : "");
+  // Guarda o ultimo erro para o "Resolver um problema" (resolverregra.h): so
+  // memoria, nada vai a lugar nenhum sem a pessoa pedir.
+  resolverregra_falha_registrar(RES_T_FONTE, erroTitulo, erroDica, linhaEp, (long)time(NULL));
 }
 // O VIDEO NAO ABRIU. Quase sempre e a fonte; mas quando o hub LS2 negou o
 // registro (registros 1720-1774: PERMISSION em toda sessao) nenhuma fonte
@@ -743,7 +752,7 @@ static void erroSemVideo(void) {
 }
 // Desfaz o de cima quando a fonte que parecia morta volta a entregar. Ver a
 // nota no watchdog de canal em app.c.
-void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; } }
+void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; resolverregra_falha_limpar(); } }
 // Leitura do estado para o watchdog de canal do app.c: uma fonte ao vivo que
 // falhou (ou nao abre no prazo) deve trocar para a proxima da lista sozinha.
 int  player_fonte_falhou(void) { return erroFonte; }
@@ -1753,6 +1762,81 @@ static void idTrakt(const CatItem *ci, char *dst, size_t n) {
   else snprintf(dst, n, "%s", base);
 }
 
+// WATCH_STATE v2 (#466): o player avisa os addons que declaram o resource
+// (AIOStreams) de start, pause e stop. So enfileira: quem entrega e o fio de
+// watchstate_envio.c, entao nada aqui espera por rede. Mesmas guardas do
+// Trakt (sem canal, sem servidor pessoal, sem clipe/trailer de duracao
+// errada) e identidade sem ambiguidade: filme com IMDb puro, ou episodio com
+// temporada e episodio conhecidos. estado: -1 recusado nesta sessao, 0 fora,
+// 1 tocando (start enviado), 2 pausado.
+static struct { int estado; WsEvento ev; } ws;
+
+static int wsIdentidade(WsEvento *e) {
+  const CatItem *c = item();
+  size_t n;
+  memset(e, 0, sizeof *e);
+  if (!c || !c->imdb[0] || jfid_e(c->imdb) || ehCanal() || !idbase_e_imdb(c->imdb) ||
+      !isdigit((unsigned char)c->imdb[2])) return 0;
+  n = strlen(c->imdb);
+  if (n >= sizeof e->imdb || strcspn(c->imdb, ":") != n) return 0;
+  if (!strcmp(c->tipo, "series") && epT > 0 && epE > 0) {
+    snprintf(e->tipo, sizeof e->tipo, "series");
+    snprintf(e->videoId, sizeof e->videoId, "%s:%d:%d", c->imdb, epT, epE);
+    e->season = epT; e->episode = epE;
+  } else if (!strcmp(c->tipo, "movie") && epT <= 0) {
+    snprintf(e->tipo, sizeof e->tipo, "movie");
+    snprintf(e->videoId, sizeof e->videoId, "%s", c->imdb);
+    e->season = e->episode = -1;
+  } else return 0;
+  snprintf(e->metaId, sizeof e->metaId, "%s", c->imdb);
+  snprintf(e->imdb, sizeof e->imdb, "%s", c->imdb);
+  if (c->tmdb > 0) snprintf(e->tmdb, sizeof e->tmdb, "%ld", c->tmdb);
+  return 1;
+}
+
+// Posicao REAL (nao a pos=dur que o disco guarda ao concluir) e duracao so
+// quando o pipeline descreve este titulo; durMs 0 faz a chave sair do corpo.
+static void wsEmitir(int ev, int played, int duracaoBoa) {
+  WsEvento e = ws.ev;
+  e.ev = ev; e.played = played;
+  e.atMs = (long long)time(NULL) * 1000LL;
+  e.posMs = isfinite(posSeg) && posSeg > 0.0f ? (long long)((double)posSeg * 1000.0) : 0;
+  e.durMs = duracaoBoa && isfinite(duracaoSeg) && duracaoSeg >= 120.0f ?
+            (long long)((double)duracaoSeg * 1000.0) : 0;
+  wsenvio_emitir(&e);
+}
+
+// A sessao ainda e a do snapshot? (troca de episodio sem passar por fecharSessao)
+static int wsMesma(void) {
+  WsEvento a;
+  return wsIdentidade(&a) && !strcmp(a.videoId, ws.ev.videoId);
+}
+
+static void wsTocando(void) {
+  if (ws.estado < 0 || ws.estado == 1) return;
+  if (ws.estado == 0) {
+    if (!wsIdentidade(&ws.ev) ||
+        player_duracao_suspeita((double)duracaoSeg, duracaoCatalogo())) { ws.estado = -1; return; }
+    ws.ev.iniMs = (long long)time(NULL) * 1000LL;
+  } else if (!wsMesma()) { ws.estado = 0; return; }
+  ws.estado = 1;
+  wsEmitir(WS_START, 0, 1);
+}
+
+static void wsPausou(void) {
+  if (ws.estado != 1) return;
+  if (!wsMesma()) { ws.estado = 0; return; }
+  ws.estado = 2;
+  wsEmitir(WS_PAUSE, 0, 1);
+}
+
+// Encerramento: so com start enviado. `played` vem da regra do player (e da
+// prova de reproducao), nao da supressao 80-90% do Trakt.
+static void wsParou(int played, int duracaoBoa) {
+  if (ws.estado > 0 && wsMesma()) wsEmitir(WS_STOP, played, duracaoBoa);
+  ws.estado = 0;
+}
+
 // O ALVO DO STREAM desta sessao, no formato que app.c usa para pedir fontes
 // (alvoPlayer): "tt1" no filme, o id do episodio na serie.
 static void alvoStream(char *dst, unsigned tam) {
@@ -1929,8 +2013,12 @@ static void fecharSessao(int manter) {
     // activity (jfid.h). The server got its own stop check-in above.
     if (ci && ci->imdb[0] && !jfid_e(ci->imdb)) {
       char id[64];
+      int simklScr;
       idTrakt(ci, id, sizeof id);
       trakt_marcar(id, pos, duracaoSeg, assistidoSeg, assistiu);
+      // Simkl (#459): mesmo scrobble, independente de o Trakt estar ligado.
+      // Sem vinculo, id fora do IMDb ou guarda recusando: SCR_NADA.
+      simklScr = simkl_scrobble(SCR_EV_SAIU, id, pos, duracaoSeg, assistidoSeg, assistiu);
       // "ASSISTIU" para os amigos, so quando CONCLUIU e so se ela ligou a
       // atividade (ou os "vistos recentemente" do perfil). Largar aos 8% nao
       // assistiu nada — e nao chega a lugar nenhum.
@@ -1958,6 +2046,9 @@ static void fecharSessao(int manter) {
       // rever um episodio ja visto nao reescreve historico.
       if (assistiu) {
         int dest = visto_destinos() & ~VISTO_TRAKT;
+        // O stop do scrobble ja fecha o visto no Simkl (e cai no historico
+        // sozinho se falhar): mandar o historico de novo seria pedido em dobro.
+        if (simklScr == SCR_STOP) dest &= ~VISTO_SIMKL;
         if (epT > 0 && epE > 0) {
           if (vistoep_estado(ci->imdb, epT, epE) != 1) {
             VistoPar par = { (short)epT, (short)epE };
@@ -1977,6 +2068,7 @@ static void fecharSessao(int manter) {
     // comecou agora nao entrava ate a proxima volta.
     desc_refazer_continuar();
   }
+  if (!jaRetido) wsParou(!duracaoErrada && prova && assistiu, !duracaoErrada);
   if (!jaRetido && comVideo && !ehCanal() && (!prova || !assistiu)) {
     printf("[visto] encerramento player pos=%.3f dur=%.3f assistido=%.3fs fonte=%d prova=%d id=%s T%dE%d\n",
            (double)posSeg, (double)duracaoSeg, assistidoSeg, fontePrincipal(), prova,
@@ -3592,7 +3684,11 @@ void player_atualizar(float dt, Uint32 agora) {
       if (epT > 0 && epE > 0) snprintf(id, sizeof id, "%.*s:%d:%d", (int)strcspn(cs->imdb,":"), cs->imdb, epT, epE);
       else snprintf(id, sizeof id, "%s", cs->imdb);
       tocouS += dt;
-      if (tocouS >= PLR_SCR_TOCOU_S) trakt_scrobble(SCR_EV_TOCANDO, id, posSeg, duracaoSeg, assistidoSeg, 0);
+      if (tocouS >= PLR_SCR_TOCOU_S) {
+        trakt_scrobble(SCR_EV_TOCANDO, id, posSeg, duracaoSeg, assistidoSeg, 0);
+        simkl_scrobble(SCR_EV_TOCANDO, id, posSeg, duracaoSeg, assistidoSeg, 0);
+        wsTocando();
+      }
     } else {
       // Pausou (ou o video parou de andar): so fala se ha um start em pe.
       if (tocouS > 0.0f && cs && cs->imdb[0] && fontePrincipal() && video_pronto() && !ehCanal() &&
@@ -3601,6 +3697,8 @@ void player_atualizar(float dt, Uint32 agora) {
         if (epT > 0 && epE > 0) snprintf(id, sizeof id, "%.*s:%d:%d", (int)strcspn(cs->imdb,":"), cs->imdb, epT, epE);
         else snprintf(id, sizeof id, "%s", cs->imdb);
         trakt_scrobble(SCR_EV_PAUSOU, id, posSeg, duracaoSeg, assistidoSeg, 0);
+        simkl_scrobble(SCR_EV_PAUSOU, id, posSeg, duracaoSeg, assistidoSeg, 0);
+        if (!saindo) wsPausou();
       }
       tocouS = 0.0f;
     } }
@@ -3685,13 +3783,28 @@ void player_atualizar(float dt, Uint32 agora) {
     // SERIE SO COM A LISTA DE EPISODIOS NA MAO: sem ela, player_proximo_episodio
     // e NULL e todo episodio pareceria "o ultimo disponivel" (o #151 mostra que
     // a lista pode chegar tarde ou nao chegar).
+    int listaConhecida = !eSerie ||
+      (cat_n_episodios(idxAtual()) > 0 && !desc_episodios_carregando(idxAtual()));
     if (!ehCanal() && ci && comVideo && video_pronto() && duracaoSeg >= 120.0f &&
-        (!eSerie || (cat_n_episodios(idxAtual()) > 0 && !desc_episodios_carregando(idxAtual())))) {
+        listaConhecida) {
       const CatEp *px = eSerie ? player_proximo_episodio() : NULL;
       double cr = credEfetivo();
       reacao_player_atualizar(dt, agora, ci, eSerie, posSeg, duracaoSeg, cr,
                               px != NULL, px && px->temporada != epT);
-    } else reacao_player_atualizar(dt, agora, NULL, 0, 0, 0, 0, 0, 0); }
+    } else reacao_player_atualizar(dt, agora, NULL, 0, 0, 0, 0, 0, 0);
+    // webOS conserva terminou depois de buscar: confira o fim e o recuo.
+    // Espera a lista so enquanto carrega, por no maximo 8 s no EOF.
+    int noFim = !saindo && fontePrincipal() && video_ativo() && video_terminou() &&
+      !ehCanal() && !scrubbing && !retomandoSalto && !aguardaBusca &&
+      duracaoSeg > 1.0f && posSeg >= duracaoSeg - 1.0f && video_pos() >= duracaoSeg - 1.0;
+    double agoraEof = monoSeg();
+    if (!noFim) eofDesde = -1.0;
+    else {
+      if (eofDesde < 0.0) eofDesde = agoraEof;
+      if ((!eSerie || !desc_episodios_carregando(idxAtual()) || agoraEof - eofDesde >= 8.0) &&
+          !player_proximo_episodio()) { saindo = 1; pediuSair = 1; }
+    }
+  }
   // Com o painel no ar os controles nao somem: eles sao a saida do dono.
   if (posplay_visivel()) ultimoInput = agora;
 

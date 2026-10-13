@@ -4,6 +4,7 @@ void servidores_perfil_trocou(void);   // servidores.c: cancel in-flight work, l
 #include "nuvem.h"
 #include "dados.h"
 #include "fileiras.h"   /* fil_definir_perfil: a escolha de fileiras e por perfil */
+#include "homefil.h"
 // fontepref_definir_perfil DECLARADA A MAO, e nao por #include: fontepref.h
 // puxa streams.h, que puxa SDL, e tests/perfilsel.sh compila perfis.c SOZINHO
 // (com js.c e jsw.c) exatamente para provar que a regra de perfil nao depende
@@ -356,6 +357,8 @@ void perfis_carregar_ativo(void) {
   // A escolha de fileiras acompanha o perfil desde o arranque, senao a home
   // do perfil 1 e montada com o arquivo do perfil 2 ate a primeira troca.
   fil_definir_perfil(ativo);
+  cf_definir_perfil(ativo);
+  ov_definir_perfil(ativo);
   // A FONTE LEMBRADA ACOMPANHA O PERFIL desde o arranque, pela mesma razao das
   // fileiras: sem isto o perfil 2 retomaria na fonte dublada que o perfil 1
   // escolheu, ate a primeira troca.
@@ -374,6 +377,8 @@ void perfis_definir_ativo(int indice) {
   if (indice <= 0) return;
   ativo = indice;
   fil_definir_perfil(indice);
+  cf_definir_perfil(indice);
+  ov_definir_perfil(indice);
   fontepref_definir_perfil(indice);
   legmem_definir_perfil(indice);
   arteesc_definir_perfil(indice);

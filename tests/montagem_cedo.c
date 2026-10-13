@@ -100,6 +100,14 @@ const char *addons_nome(int i)         { (void)i; return "Addon"; }
 unsigned addons_versao(void)           { return versaoAddons; }
 const char *addons_base_por_id(const char *id) { return id && !strcmp(id, AID) ? baseAtual() : ""; }
 void  addons_manifesto_lido(int i, const char *c) { (void)i; (void)c; }
+void addons_lista_travar(void) {}
+void addons_lista_destravar(void) {}
+void ws_destino(const char *b, const char *u, int p, char out[20]) {
+  (void)b; (void)u; (void)p; strcpy(out, "fixture");
+}
+void addons_manifesto_lido_base(int i, const char *b, const char *d, unsigned v, const char *c) {
+  (void)b; (void)d; (void)v; addons_manifesto_lido(i, c);
+}
 
 // ------------------------------------------------------------------ o relogio
 static unsigned long long agoraMs(void) {

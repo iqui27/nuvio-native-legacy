@@ -139,8 +139,22 @@ void descanso_quadro(unsigned agora, float dt, int ativo, int estilo, int fonte)
   if (dt < 0.0f) dt = 0.0f;
   if (dt > 0.1f) dt = 0.1f;
   estiloAt = estilo; fonteAt = fonte;
-  if (!ativo) { ativoAnt = 0; atual = -1; texArte = texLogo = texProx = 0; return; }
-  if (!ativoAnt) entrar(agora);
+  if (!ativo) {
+    if (ativoAnt) {
+      printf("[descanso] sair t=%u dur=%.1fs estilo=%d item=%d tex=%u/%u/%u pedido=%d\n",
+             agora, tempoAtivo, estilo, atual, texArte, texLogo, texProx, pedidoAbrir);
+      fflush(stdout);
+    }
+    ativoAnt = 0; atual = -1; texArte = texLogo = texProx = 0; return;
+  }
+  if (!ativoAnt) {
+    printf("[descanso] entrar t=%u estilo=%d fonte=%d catalogo=%d rev=%u\n",
+           agora, estilo, fonte, cat_n(), cat_revisao());
+    fflush(stdout);
+    entrar(agora);
+    printf("[descanso] pronto t=%u fila=%d item=%d\n", agora, filaN, atual);
+    fflush(stdout);
+  }
   ativoAnt = 1;
   tempoAtivo += dt;
   if (estilo != ESM_ESTILO_VITRINE) return;

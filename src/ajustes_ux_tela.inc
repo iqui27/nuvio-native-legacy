@@ -103,7 +103,7 @@ static const Item TELA[] = {
       OPC(AJ_CW_BLUR_PROX), OPC(AJ_CW_ORDEM), OPC(AJ_CW_NAO_EXIBIDOS),
       OPC(AJ_CW_RETIDO_TAMBEM),
     ROT("Barra lateral"),
-      OPC(AJ_RAIL_MODERNA), OPC(AJ_RAIL), OPC(AJ_MENU_EXPLORAR),
+      OPC(AJ_MENU_TOPO), OPC(AJ_RAIL_MODERNA), OPC(AJ_RAIL), OPC(AJ_MENU_EXPLORAR),
       OPC(AJ_MENU_GUIA), OPC(AJ_MENU_AGENDA), OPC(AJ_MENU_PERFIL),
     ROT("Escolha de perfil"), OPC(AJ_PS_FUNDO), OPC(AJ_PS_CONTINUAR),
     MAIS(),
@@ -111,6 +111,9 @@ static const Item TELA[] = {
     ROT("Fileiras"), OPC(AJ_ROTULOS), OPC(AJ_NOME_ADDON), OPC(AJ_SUFIXO_TIPO),
     ROT("Continuar assistindo"), OPC(AJ_CW_FURTHEST),
     ROT("Barra lateral"), OPC(AJ_RAIL_BLUR),
+#if (defined(NV_TPK) || defined(__EMSCRIPTEN__)) && !defined(NV_TPK40)
+      OPC(AJ_MIC_BUSCA),
+#endif
 
   SEC("Aparência", "Cor, transparência, fonte, animações e relógio", "aj_palette"),
 #ifdef NV_TOUCH_UI

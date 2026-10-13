@@ -87,6 +87,10 @@ static GfxRect lastRect;
 // cartaoVideoRect (LetterBox no cartao): quadro ainda sem tamanho = 16:9.
 int video_largura(void) { return 0; }
 int video_altura(void) { return 0; }
+// Scheduling fixture: the video backend accepts the card destination unchanged.
+void video_tpk_cartao_destino(float x,float y,float w,float h,float *ox,float *oy,float *ow,float *oh) {
+  if (ox) *ox=x; if (oy) *oy=y; if (ow) *ow=w; if (oh) *oh=h;
+}
 #endif
 static int lastNoCartao, rectCalls;
 void trailer_no_cartao(int sim) { lastNoCartao = sim; }
