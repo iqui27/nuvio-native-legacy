@@ -146,7 +146,8 @@ int main(void) {
   assert(somenteDesteAparelho(AJ_PULAR_CREDITOS) && !dePerfil(AJ_PULAR_CREDITOS));
   assert(!strcmp(i18n(OPCOES[AJ_PULAR_CREDITOS].rotulo), "Skip the credits automatically"));
   assert(!ajustes_proximo_auto() && ajustes_proximo_contagem() == 5);
-  assert(AJ_N == AJ_PROXIMO_CONTAGEM + 1);
+  assert(AJ_N == AJ_CONQ_DICAS + 1 && AJ_CONQ_LIGADO == AJ_INTERFACE_MODO + 1);
+  assert(ajustes_conquistas() && ajustes_conquistas_aviso() && ajustes_conquistas_dicas());
   for (int i = 0; i < AJ_N; i++) assert(strcmp(CHAVE[i], "autoCreditosLocal"));
   puts("ajustes_padroes: ok");
   return 0;

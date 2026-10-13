@@ -176,6 +176,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_DISCORD: return "aj_message-square";
     case AJ_ANIM: return "aj_activity";
     case AJ_ENQUETES: return "aj_bell";
+    case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS: return "aj_badge-check";
     case AJ_BUSCA_CINEMETA: return "aj_list-x";
     case AJ_BUSCA_NUVIO: return "aj_arrow-down";
     case AJ_BUSCA_ORIGEM: return "aj_tag";
