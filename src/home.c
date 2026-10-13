@@ -1300,7 +1300,13 @@ static void abrirMenuCartaz(void) {
     return;
   }
   s = &fileiras[foco.fileira];
-  if (s->tipo == FILEIRA_CATALOGOS) { ctx_abrir_fileira(s->chave, s->titulo); return; }
+  if (s->tipo == FILEIRA_CATALOGOS) {
+    // Segurar OK numa colecao: fixar na Home, mover, ocultar e o estilo da fileira.
+    const ColFolder *pf = foco.coluna >= 0 && foco.coluna < s->n ? col_folder(s->folders[foco.coluna]) : NULL;
+    int fixada = !strncmp(s->chave, CF_PREFIXO, strlen(CF_PREFIXO));
+    ctx_abrir_filmenu(s->chave, fixada && pf ? pf->title : s->titulo, pf ? pf->id : "", 0);
+    return;
+  }
   // A PILHA FECHADA nao e um titulo (sao ate seis num card so): como a pasta
   // de colecao, abre direto no estilo da fileira.
   if (s->tipo == FILEIRA_TOP10 && s->stackN) { ctx_abrir_fileira(s->chave, s->titulo); return; }
@@ -2596,7 +2602,7 @@ static void sincronizarFileiras(void) {
   // direto (cat_revisao); cat_revisao e bumpado em cat_definir_tudo,
   // cat_trocar_continuar E cat_republicar_fileiras, cobrindo todo caminho
   // que troca fils[].
-  static unsigned ultCatRev, ultFilRev, ultColRev, ultFilLim, ultCwoRev, ultOrdemRev, ultRetRev;
+  static unsigned ultCatRev, ultFilRev, ultColRev, ultFilLim, ultCwoRev, ultOrdemRev, ultRetRev, ultCfRev, ultOvRev;
   unsigned catRev = cat_revisao(), filRev = fil_revisao();
   int filLim = fil_limite();
   unsigned colRev = col_revisao();
@@ -2609,6 +2615,7 @@ static void sincronizarFileiras(void) {
       colRev == ultColRev && ordemRev == ultOrdemRev &&
       filLim == ultFilLim && cwoRev == ultCwoRev &&
       retomarAplicada == retomarRev && cw_retido_rev() == ultRetRev &&
+      cf_revisao() == ultCfRev && ov_revisao() == ultOvRev &&
       ultCatRev) {   // ultCatRev=0: primeira chamada, cai no hash
     ultFilRev = filRev; ultColRev = colRev; ultFilLim = (unsigned)filLim;
     return;
@@ -2622,7 +2629,11 @@ static void sincronizarFileiras(void) {
   ultCwoRev = cwoRev;
   ultOrdemRev = ordemRev;
   ultRetRev = cw_retido_rev();
+  ultCfRev = cf_revisao(); ultOvRev = ov_revisao();
   unsigned revisao = 2166136261u;
+  // Colecao fixada e "vistos ocultos" (homefil.h) mudam a lista sem o catalogo mudar.
+  revisao = (revisao ^ ultCfRev) * 16777619u;
+  revisao = (revisao ^ ultOvRev) * 16777619u;
   revisao = (revisao ^ (unsigned)reservaEstado) * 16777619u;
   // A escolha LOCAL de fileiras entra na mesma assinatura do catalogo: ordem,
   // liga/desliga, forma, tamanho e limite mudam a lista tanto quanto uma
@@ -2815,6 +2826,24 @@ static void sincronizarFileiras(void) {
         fileiras[destino++]=v;
       }
     }
+  }
+  // COLECAO FIXADA = FILEIRA PROPRIA (Home 2.1, "colpin_<id>"). A ordem dos
+  // titulos da pasta ainda nao tem fonte (cf_itens, ambar): ate la a fileira
+  // mostra o cartao da propria colecao, que abre o "Ver tudo" dela. Escolha
+  // local por perfil; a chave entra no registro de ordem como as demais.
+  for(int i=0;i<cf_n() && destino<MAX_FIL;i++) {
+    const ColFolder *pf=cf_pasta(i);
+    int fi=-1;
+    Fileira v={0};
+    if(!pf)continue;
+    for(int k=0;k<col_n();k++)if(col_folder(k)==pf){fi=k;break;}
+    if(fi<0)continue;
+    snprintf(v.chave,sizeof v.chave,CF_PREFIXO "%s",pf->id);
+    snprintf(v.titulo,sizeof v.titulo,"%s",pf->title);
+    v.tipo=FILEIRA_CATALOGOS;
+    v.forma=pf->forma>=0&&pf->forma<COL_FORMA_N?pf->forma:COL_FORMA_PAISAGEM;
+    v.n=1;v.folders[0]=fi;
+    fileiras[destino++]=v;
   }
   // FORMA E TAMANHO ESCOLHIDOS POR FILEIRA (Ajustes -> Fileiras da Home).
   // Aplicado AQUI, antes da normalizacao do Top 10 logo abaixo: quem escolhe

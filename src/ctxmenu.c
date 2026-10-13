@@ -23,6 +23,7 @@
 #include "ilhaacao.h"
 #include "ilha.h"
 #include "recomenda.h"
+#include "homefil.h"
 #include "atividade.h"
 #include "recenviar.h"
 #include "botoes.h"
@@ -102,6 +103,11 @@ static int   aberto, idx = -1, foco;
 // deve ser refeito a cada quadro a partir do cartaz focado da HOME.
 static int       doLista, cartazFixo, listaPedida, listaAlterou;
 static LstLista  lista;
+// MODO FILEIRA (segurar OK numa colecao ou fileira fixada da Home): corre sobre
+// o modo lista (doLista=1 junto), que ja exclui titulo/estilo/painel. As
+// opcoes agem pela CHAVE da fileira (homefil.h), nunca por indice.
+static int       doFil, filAlterou, filVistos;
+static char      filPastaId[96];
 static float anim, animV;
 static int   operacao, intencao, estadoOperacao;
 static int   espelhoAplicado;
@@ -237,6 +243,7 @@ static float focoAnim[CTX_MAX];
 static int holdObservador;
 enum { OP_LISTA = 1, OP_ASSISTIDO, OP_TIRAR_CONTINUAR, OP_RECOMENDAR, OP_DISPENSAR,
        OP_ESTILO, OP_CATEGORIA, OP_DETALHES, OP_L_ABRIR, OP_L_FIXAR, OP_L_HOME,
+       OP_F_MENU, OP_F_FIXAR, OP_F_SUBIR, OP_F_DESCER, OP_F_OCULTAR, OP_F_VISTOS,
        OP_EXTRA = 100 };   // OP_EXTRA + k = extras[k] (modo social)
 // "Mover para categoria" pedido no modo painel: o IMDb do titulo, consumido
 // uma vez pelo painel (ctx_pediu_categoria), que abre a escolha dele.
@@ -393,6 +400,18 @@ static void montar(void) {
   int i = indiceAtual();
   const CatItem *ci = itemAtual();
   nOps = 0;
+  if (doLista && doFil) {
+    if (filPastaId[0])
+      juntar(cf_fixada(filPastaId) ? "Tirar da Home" : "Fixar na Home", OP_F_FIXAR);
+    juntar("Mover para cima", OP_F_SUBIR);
+    juntar("Mover para baixo", OP_F_DESCER);
+    if (filVistos) juntar(ov_ativa(filChave) ? "Mostrar vistos" : "Ocultar vistos", OP_F_VISTOS);
+    if (fil_estilos(filChave, NULL, NULL, FIL_TIPO_N) >= 1) juntar("Estilo da fileira", OP_ESTILO);
+    juntar("Ocultar fileira", OP_F_OCULTAR);
+    if (foco >= nOps) foco = nOps - 1;
+    if (foco < 0) foco = 0;
+    return;
+  }
   if (doLista) {
     const char *porque;
     juntar("Abrir lista", OP_L_ABRIR);
@@ -502,6 +521,8 @@ static void montar(void) {
   // destaque ficam com o visual deles — a home nem passa a chave).
   if (!doPainel && filChave[0] && fil_estilos(filChave, NULL, NULL, FIL_TIPO_N) > 0)
     juntar("Estilo da fileira", OP_ESTILO);
+  // Mover/ocultar/"vistos ocultos": fileira que a Home registrou (Ajustes a religa).
+  if (!doPainel && filChave[0] && homefil_indice(filChave) >= 0) juntar("Opções da fileira", OP_F_MENU);
   // Cartao "Retomar agora": soltar o titulo da faixa, sem apagar progresso.
   if (!doPainel && dispensarOp) juntar("Dispensar", OP_DISPENSAR);
   // As acoes da linha social por ULTIMO: sao dela, nao do titulo.
@@ -604,6 +625,7 @@ void ctx_abrir_lista(const LstLista *l) {
   doPainel = 0; soFileira = 0; doSocial = 0;
   lista = *l;
   doLista = 1;
+  doFil = 0;
   abrirComum(-1);
   // Baixa os itens para o resumo ter capas e a mistura. Os da lista aberta de
   // antes (se havia) nao servem: lst_abrir comeca do zero.
@@ -619,6 +641,18 @@ void ctx_fileira(const char *chave, const char *titulo) {
   snprintf(filTitulo, sizeof filTitulo, "%s", titulo ? titulo : "");
 }
 
+void ctx_abrir_filmenu(const char *chave, const char *titulo, const char *pastaId, int comVistos) {
+  if (holdCancelado) { holdCancelado = 0; holdPronto = 0; return; }
+  if (!chave || !chave[0]) return;
+  ctx_fileira(chave, titulo);
+  snprintf(filPastaId, sizeof filPastaId, "%s", pastaId ? pastaId : "");
+  filVistos = comVistos ? 1 : 0;
+  doPainel = 0; doSocial = 0; soFileira = 0;
+  doLista = 1; doFil = 1;
+  abrirComum(-1);
+}
+int ctx_fil_alterou(void) { int v = filAlterou; filAlterou = 0; return v; }
+
 void ctx_abrir_fileira(const char *chave, const char *titulo) {
   if (holdCancelado) {
     holdCancelado = 0;
@@ -630,7 +664,7 @@ void ctx_abrir_fileira(const char *chave, const char *titulo) {
   doPainel = 0;
   doSocial = 0;
   soFileira = 1;
-  doLista = 0;
+  doLista = 0; doFil = 0;
   abrirComum(-1);
 }
 
@@ -869,6 +903,33 @@ static void aplicar(void) {
   int acao;
   if (foco < 0 || foco >= nOps) return;
   acao = ops[foco].acao;
+  if (doLista && doFil) {
+    if (acao == OP_ESTILO) {
+      // "Estilo da fileira": segue para a pagina de formas, no mesmo modal.
+      doLista = 0; doFil = 0; soFileira = 1;
+      pagina = 1; estFoco = -1; prevAtual = prevAnt = prevRefAtual = prevRefAnt = -1; prevT = 1.0f;
+      memset(estAnim, 0, sizeof estAnim);
+      montar(); return;
+    }
+    if (acao == OP_F_FIXAR) {
+      const ColFolder *pf = NULL;
+      int k, n = col_n();
+      for (k = 0; k < n; k++) { const ColFolder *f = col_folder(k); if (f && !strcmp(f->id, filPastaId)) pf = f; }
+      if (pf) cf_alternar(pf);
+      filAlterou = 1;
+      // Tirar da Home some com a fileira fixada; nada mais a fazer aqui.
+      if (!cf_fixada(filPastaId)) { aberto = 0; return; }
+      montar();
+    } else if (acao == OP_F_SUBIR || acao == OP_F_DESCER) {
+      if (homefil_mover(filChave, acao == OP_F_SUBIR ? -1 : 1)) filAlterou = 1;
+    } else if (acao == OP_F_VISTOS) {
+      ov_alternar(filChave); filAlterou = 1; montar();
+    } else if (acao == OP_F_OCULTAR) {
+      if (homefil_ocultar(filChave)) filAlterou = 1;
+      aberto = 0;
+    }
+    return;
+  }
   if (doLista) {
     if (acao == OP_L_ABRIR) { listaPedida = 1; aberto = 0; }
     else if (acao == OP_L_FIXAR) { lst_alternar_fixada(&lista); listaAlterou = 1; montar(); }
@@ -879,6 +940,12 @@ static void aplicar(void) {
     pagina = 1; estFoco = -1; prevAtual = prevAnt = prevRefAtual = prevRefAnt = -1; prevT = 1.0f;
     memset(estAnim, 0, sizeof estAnim);
     montar(); return;
+  }
+  if (acao == OP_F_MENU) {
+    char ch[sizeof filChave], ti[sizeof filTitulo];
+    snprintf(ch, sizeof ch, "%s", filChave); snprintf(ti, sizeof ti, "%s", filTitulo);
+    ctx_abrir_filmenu(ch, ti, "", 1);
+    return;
   }
   if (!ci) return;
   if (acao >= OP_EXTRA && acao < OP_EXTRA + nExtras) {
@@ -1801,6 +1868,45 @@ static void misturaDaLista(const LstLista *l, char *dst, size_t n) {
                                     : i18n(q == 1 ? "série" : "séries")); }
 }
 
+static void desenhaFil(float a) {
+  const float pad = CTX_ILHA_PAD;
+  const float larg = 560.0f;
+  char kick[96];
+  TxtLinha n;
+  float x, y, alt, hx, hy;
+  int i;
+  snprintf(kick, sizeof kick, "%s", i18n(filPastaId[0] ? "Coleção" : "Fileira"));
+  n = txt_linha_corta(TXT_ILHA_NOME, filTitulo, 243, 242, 239, 255, larg - 2.0f * (pad + 20.0f));
+  alt = pad * 2.0f + 12.0f + 22.0f + n.h + 18.0f + (float)nOps * (CTX_LINHA + CTX_GAP);
+  x = (NV_TELA_W - larg) * 0.5f;
+  y = (NV_TELA_H - alt) * 0.5f;
+  if (y < CTX_BORDA) y = CTX_BORDA;
+  { GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+    gfx_cor(tela, 0.0f, 0, 0, 0, 0.55f * a); }
+  if (aberto && a > 0.5f && ponteiro_ativo()) {
+    ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ponteiroCtxFora, 0, 0);
+    ponteiro_alvo(x, y, larg, alt, NULL, NULL, 0, 0);
+  }
+  y += (1.0f - a) * 16.0f;
+  ilhaCtx((GfxRect){ x, y, larg, alt }, CTX_ILHA_RAIO, a);
+  hx = x + pad + 20.0f;
+  hy = y + pad + 12.0f;
+  kickerCtx(kick, hx, hy, a);
+  hy += 22.0f;
+  txt_desenhar_alpha(n, hx, hy, a);
+  hy += n.h + 18.0f;
+  for (i = 0; i < nOps; i++) {
+    float by = hy + CTX_GAP + (float)i * (CTX_LINHA + CTX_GAP) - CTX_GAP;
+    GfxRect r = { x + pad, by, larg - pad * 2.0f, CTX_LINHA };
+    int ac = ops[i].acao;
+    const char *icone = ac == OP_F_FIXAR ? "aj_folders" : ac == OP_ESTILO ? "aj_rows-3"
+                      : ac == OP_F_OCULTAR ? "aj_eye-off" : ac == OP_F_VISTOS ? "aj_eye" : "aj_rows-3";
+    if (aberto && a > 0.5f)
+      ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroCtxOpcao, NULL, i, 0);
+    linhaCtx(r, ops[i].rot, icone, focoAnim[i], a);
+  }
+}
+
 static void desenhaLista(float a) {
   const LstLista *l = &lista;
   const char *arte = arteDaLista(l);
@@ -2081,7 +2187,7 @@ static void ctx_desenharCorpo_(Uint32 agora) {
   if (a < 0.01f) return;
   if (modoInline() && pagina == 0) return;   // a linha do painel se abre sozinha (salvospainel.c)
   if (pagina == 1) { desenhaEstilos(a); return; }
-  if (doLista) { desenhaLista(a); return; }
+  if (doLista) { if (doFil) desenhaFil(a); else desenhaLista(a); return; }
   ci = itemAtual();
   if (!ci) return;
   if (pagina == 2) { desenhaConfirmar(ci, a); return; }
@@ -2297,6 +2403,7 @@ static void ctx_desenharCorpo_(Uint32 agora) {
       case OP_RECOMENDAR: icone = "aj_users"; break;
       case OP_DETALHES:   icone = "aj_info"; break;
       case OP_ESTILO:     icone = "aj_rows-3"; break;
+      case OP_F_MENU:     icone = "aj_rows-3"; break;
       case OP_CATEGORIA:  icone = "aj_folders"; break;
       default:
         if (ops[i].acao >= OP_EXTRA && ops[i].acao < OP_EXTRA + nExtras &&
