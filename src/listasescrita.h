@@ -14,6 +14,8 @@
 #ifndef NV_LISTASESCRITA_H
 #define NV_LISTASESCRITA_H
 #include <stddef.h>
+#include "catalogo.h"
+#include "listas.h"
 
 enum { LSTESC_OCIOSO = 0, LSTESC_PENDENTE, LSTESC_OK, LSTESC_FALHA };
 // O que a ultima escrita foi, para a tela dizer a coisa certa.
@@ -44,6 +46,13 @@ int lstesc_descricao(long traktId, const char *desc);
 int lstesc_adicionar(long traktId, const char *imdb, const char *tipo, const char *nota);
 int lstesc_ordenar(long traktId, const long *itemIds, int k);
 int lstesc_nota(long traktId, long itemId, const char *nota);
+
+// "Adicionar a uma lista" do menu do titulo: dispara lstesc_adicionar e guarda o
+// que a ilha vai dizer quando a resposta chegar (lstesc_passo).
+int  lstesc_adicionar_titulo(const CatItem *ci, const LstLista *l);
+// Uma vez por quadro (ilhasinais.c): ao fim de uma escrita feita pelo menu, a
+// ilha diz "Adicionado a <lista>" ou que falhou.
+void lstesc_passo(void);
 
 int  lstesc_estado(void);
 int  lstesc_qual(void);

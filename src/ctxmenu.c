@@ -23,6 +23,8 @@
 #include "ilhaacao.h"
 #include "ilha.h"
 #include "recomenda.h"
+#include "listas.h"
+#include "listasescrita.h"
 #include "atividade.h"
 #include "recenviar.h"
 #include "botoes.h"
@@ -237,6 +239,7 @@ static float focoAnim[CTX_MAX];
 static int holdObservador;
 enum { OP_LISTA = 1, OP_ASSISTIDO, OP_TIRAR_CONTINUAR, OP_RECOMENDAR, OP_DISPENSAR,
        OP_ESTILO, OP_CATEGORIA, OP_DETALHES, OP_L_ABRIR, OP_L_FIXAR, OP_L_HOME,
+       OP_ADD_LISTA, OP_PICK_LISTA = 50,   // OP_PICK_LISTA + k = a k-esima lista da pessoa
        OP_EXTRA = 100 };   // OP_EXTRA + k = extras[k] (modo social)
 // "Mover para categoria" pedido no modo painel: o IMDb do titulo, consumido
 // uma vez pelo painel (ctx_pediu_categoria), que abre a escolha dele.
@@ -260,6 +263,12 @@ static char filChave[192], filTitulo[96];
 // o menu aberto (op).
 static int dispensarPend, dispensarOp;
 static int  pagina, soFileira;
+// PAGINA 3: "ADICIONAR A UMA LISTA" (Trakt). As linhas sao as listas da pessoa
+// (lst_minha), no mesmo ops[]; o rotulo e o titulo, que mora aqui porque ops[].rot
+// so guarda o ponteiro. Sete cabem em CTX_MAX com a linha de aviso.
+#define CTX_PICK_MAX 7
+static char pickRot[CTX_PICK_MAX][96];
+static int  pickN, pickCarregando;
 // PAGINA 2: A CONFIRMACAO de "Tirar de Continuar assistindo" (dono, 02/10:
 // modal de ilha do mockup "ilha" tela 7). Tirar apaga o ponto de retomada
 // aqui e nas contas ligadas — nao se desfaz com um Voltar —, entao a acao so
@@ -405,6 +414,25 @@ static void montar(void) {
     if (foco < 0) foco = 0;
     return;
   }
+  if (pagina == 3) {
+    int k;
+    pickN = lst_minhas_n();
+    pickCarregando = lst_minhas_carregando();
+    if (pickN > CTX_PICK_MAX) pickN = CTX_PICK_MAX;
+    for (k = 0; k < pickN; k++) {
+      LstLista l;
+      pickRot[k][0] = 0;
+      if (lst_minha(k, &l)) snprintf(pickRot[k], sizeof pickRot[k], "%s", l.titulo);
+      juntar(pickRot[k], OP_PICK_LISTA + k);
+    }
+    // Sem listas (ainda): uma linha so de aviso, sem acao (aplicar() a ignora).
+    if (pickN == 0)
+      juntar(pickCarregando ? "Carregando listas"
+                            : "Você ainda não criou listas no Trakt", 0);
+    if (foco >= nOps) foco = nOps > 0 ? nOps - 1 : 0;
+    if (foco < 0) foco = 0;
+    return;
+  }
   if (pagina == 1) {
     int k, j, atual = fil_tipo(filChave);
     nEstilos = fil_estilo_linhas(filChave, estLin, FIL_TIPO_N);
@@ -448,6 +476,10 @@ static void montar(void) {
              ? (intencao ? "Salvando..." : "Removendo dos Salvos...")
              : (tituloSalvo(ci) ? "Remover dos Salvos" : "Salvar"),
            OP_LISTA);
+    // Listas do Trakt: so com conta e so onde a lista aceita o tipo (filme/serie).
+    if (!doPainel && !doSocial && trakt_ativo() &&
+        (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series")))
+      juntar("Adicionar a uma lista", OP_ADD_LISTA);
   }
   // AS CATEGORIAS DA PESSOA (salvosorg.h) so existem no painel de Salvos: e
   // la que o titulo esta salvo e e la que a escolha abre.
@@ -881,6 +913,18 @@ static void aplicar(void) {
     montar(); return;
   }
   if (!ci) return;
+  if (acao == OP_ADD_LISTA) {
+    pagina = 3; foco = 0; lst_minhas_pedir();
+    montar(); return;
+  }
+  if (acao >= OP_PICK_LISTA && acao < OP_PICK_LISTA + CTX_PICK_MAX) {
+    LstLista l;
+    if (lst_minha(acao - OP_PICK_LISTA, &l) && lstesc_adicionar_titulo(ci, &l)) {
+      aberto = 0; pagina = 0;
+    }
+    return;
+  }
+  if (acao == 0) return;
   if (acao >= OP_EXTRA && acao < OP_EXTRA + nExtras) {
     int k = acao - OP_EXTRA;
     if (extras[k].juntaAssistido && assistidoPossivel(ci, indiceAtual()) &&
@@ -1086,6 +1130,13 @@ void ctx_evento(const SDL_Event *e) {
     // entrada de onde a pessoa veio. Sem titulo por tras (colecao), fecha.
     // Voltar CANCELA: nada foi gravado ao mover o foco, so a previa mudou.
     if (pagina == 2) { pagina = 0; confExtra = -1; return; }   // Voltar = Cancelar
+    // Da escolha de lista, Voltar volta ao menu, com o foco na entrada de onde veio.
+    if (pagina == 3) {
+      pagina = 0; montar();
+      for (foco = 0; foco < nOps && ops[foco].acao != OP_ADD_LISTA; foco++) {}
+      if (foco >= nOps) foco = 0;
+      return;
+    }
     if (pagina == 1 && !soFileira) {
       pagina = 0; montar();
       for (foco = 0; foco < nOps && ops[foco].acao != OP_ESTILO; foco++) {}
@@ -1183,6 +1234,11 @@ void ctx_atualizar(float dt, Uint32 agora) {
 
   atual = indiceAtual();
   if (aberto && !soFileira && !doLista && !itemAtual()) { aberto = 0; return; }
+  // As listas chegam depois do OK: remonta quando o que a pagina 3 mostra mudou.
+  if (aberto && pagina == 3 &&
+      (lst_minhas_carregando() != pickCarregando ||
+       (lst_minhas_n() < CTX_PICK_MAX ? lst_minhas_n() : CTX_PICK_MAX) != pickN))
+    montar();
 
   if (operacao != CTX_OP_NENHUMA && estadoOperacao == CTX_PENDENTE) {
     int novo = opSimkl ? simkl_lista_estado() : trakt_operacao_estado(operacao);
@@ -2301,7 +2357,9 @@ static void ctx_desenharCorpo_(Uint32 agora) {
       case OP_DETALHES:   icone = "aj_info"; break;
       case OP_ESTILO:     icone = "aj_rows-3"; break;
       case OP_CATEGORIA:  icone = "aj_folders"; break;
+      case OP_ADD_LISTA:  icone = "aj_rows-3"; break;
       default:
+        if (pagina == 3) { icone = ops[i].acao ? "aj_rows-3" : "aj_info"; break; }
         if (ops[i].acao >= OP_EXTRA && ops[i].acao < OP_EXTRA + nExtras &&
             extras[ops[i].acao - OP_EXTRA].icone)
           icone = extras[ops[i].acao - OP_EXTRA].icone;

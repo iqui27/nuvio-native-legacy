@@ -103,6 +103,14 @@ void lst_buscar(const char *termo);
 // As FIXADAS do perfil, no lugar de uma fonte. Nao tem rede.
 void lst_pedir_fixadas(void);
 
+// AS LISTAS PROPRIAS DO TRAKT, numa tabela a parte (menu "Adicionar a uma lista"):
+// pedir nao mexe em lst_n/lst_lista. lst_minha copia; 0 = indice fora.
+void lst_minhas_pedir(void);
+int  lst_minhas_carregando(void);
+int  lst_minhas_n(void);
+int  lst_minha(int i, LstLista *dst);
+void lst_minhas_teste(const char *json);   // teste: injeta o JSON de /users/me/lists
+
 int  lst_carregando(void);
 int  lst_n(void);
 const LstLista *lst_lista(int i);

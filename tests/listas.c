@@ -311,6 +311,25 @@ static void testeEscrita(void) {
     CONFERE(!strcmp(envUrl, "https://api.trakt.tv/users/me/lists/77/items/reorder") &&
             !strcmp(envCorpo, "{\"rank\":[5,6]}"), "POST .../items/reorder (%s)", envCorpo);
     lstesc_consumir(); }
+  // "Adicionar a uma lista" do menu do titulo: as listas da pessoa e o POST do titulo.
+  { LstLista l;
+    CatItem ci;
+    lst_minhas_teste("[{\"name\":\"Noites\",\"ids\":{\"trakt\":901,\"slug\":\"noites\"},\"item_count\":3},"
+                     "{\"name\":\"Cult\",\"ids\":{\"trakt\":902,\"slug\":\"cult\"}}]");
+    CONFERE(lst_minhas_n() == 2 && lst_minha(1, &l) && !strcmp(l.titulo, "Cult") && l.traktId == 902,
+            "minhas: duas listas, a segunda e Cult/902 (n=%d)", lst_minhas_n());
+    CONFERE(!lst_minha(2, &l) && !lst_minha(-1, &l), "minhas: fora do indice recusa");
+    memset(&ci, 0, sizeof ci);
+    snprintf(ci.imdb, sizeof ci.imdb, "tt0111161");
+    snprintf(ci.tipo, sizeof ci.tipo, "movie");
+    snprintf(ci.titulo, sizeof ci.titulo, "Um Sonho de Liberdade");
+    lst_minha(0, &l);
+    CONFERE(lstesc_adicionar_titulo(&ci, &l) == 1, "adicionar titulo dispara");
+    lstesc_teste_esperar();
+    CONFERE(!strcmp(envUrl, "https://api.trakt.tv/users/me/lists/901/items") &&
+            !strcmp(envCorpo, "{\"movies\":[{\"ids\":{\"imdb\":\"tt0111161\"}}]}"),
+            "titulo vai para a lista escolhida (%s %s)", envUrl, envCorpo);
+    lstesc_consumir(); }
   CONFERE(!lstesc_descricao(0, "x") && !lstesc_criar("", "", 0), "id 0 e nome vazio recusados");
   lstesc_teste_envio(NULL);
   CONFERE(!lstesc_criar("X", "", 0), "sem token nao escreve");

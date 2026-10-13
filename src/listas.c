@@ -394,21 +394,83 @@ static int lerListaTrakt(const char *p, const char *f, LstLista *d) {
   return 1;
 }
 
-int lst_ler_trakt(const char *json, int envelope) {
+static int lerVetor(const char *json, int envelope, LstLista *dst, int max) {
   const char *p;
   int n = 0;
   if (!json) return 0;
   p = *json == '[' ? js_raiz_array(json) : NULL;
-  for (; p && *p == '{' && n < LST_MAX; p = js_prox(js_fim(p))) {
+  for (; p && *p == '{' && n < max; p = js_prox(js_fim(p))) {
     const char *f = js_fim(p);
     if (envelope) {
       char dentro[1600];
       if (!brutoRaiz(p, f, "list", dentro, sizeof dentro)) continue;
-      if (lerListaTrakt(dentro, dentro + strlen(dentro), &tabela[n])) n++;
-    } else if (lerListaTrakt(p, f, &tabela[n])) n++;
+      if (lerListaTrakt(dentro, dentro + strlen(dentro), &dst[n])) n++;
+    } else if (lerListaTrakt(p, f, &dst[n])) n++;
   }
-  nTabela = n;
   return n;
+}
+
+int lst_ler_trakt(const char *json, int envelope) {
+  nTabela = lerVetor(json, envelope, tabela, LST_MAX);
+  return nTabela;
+}
+
+// --- AS LISTAS DO DONO, FORA DA TABELA DA TELA --------------------------------
+// "Adicionar a uma lista" (menu do titulo) precisa das listas proprias do Trakt
+// sem pisar na tabela que a Biblioteca esta mostrando (uma busca publica, por
+// exemplo). Tabela propria, um pedido por abertura do menu.
+static LstLista minhas[LST_MAX];
+static int      nMinhas, fioMinhas;
+
+static void *fioMinhasListas(void *u) {
+  const char *cab[4];
+  char aut[200], chave[160];
+  char *corpo = NULL;
+  static LstLista tmp[LST_MAX];
+  int n = 0;
+  (void)u;
+  if (trakt_cabecalhos(cab, aut, sizeof aut, chave, sizeof chave))
+    corpo = rede_baixar_com("https://api.trakt.tv/users/me/lists", 15, cab);
+  pthread_mutex_lock(&trava);
+  n = lerVetor(corpo, 0, tmp, LST_MAX);
+  memcpy(minhas, tmp, sizeof(LstLista) * (size_t)n);
+  nMinhas = n;
+  fioMinhas = 0;
+  pthread_mutex_unlock(&trava);
+  free(corpo);
+  return NULL;
+}
+
+void lst_minhas_pedir(void) {
+  pthread_t t;
+  pthread_mutex_lock(&trava);
+  if (fioMinhas) { pthread_mutex_unlock(&trava); return; }
+  fioMinhas = 1;
+  if (pthread_create(&t, NULL, fioMinhasListas, NULL) != 0) fioMinhas = 0;
+  else pthread_detach(t);
+  pthread_mutex_unlock(&trava);
+}
+int lst_minhas_carregando(void) {
+  int v;
+  pthread_mutex_lock(&trava); v = fioMinhas; pthread_mutex_unlock(&trava);
+  return v;
+}
+int lst_minhas_n(void) {
+  int v;
+  pthread_mutex_lock(&trava); v = nMinhas; pthread_mutex_unlock(&trava);
+  return v;
+}
+int lst_minha(int i, LstLista *dst) {
+  int ok = 0;
+  pthread_mutex_lock(&trava);
+  if (i >= 0 && i < nMinhas && dst) { *dst = minhas[i]; ok = 1; }
+  pthread_mutex_unlock(&trava);
+  return ok;
+}
+void lst_minhas_teste(const char *json) {
+  pthread_mutex_lock(&trava);
+  nMinhas = lerVetor(json, 0, minhas, LST_MAX);
+  pthread_mutex_unlock(&trava);
 }
 
 // ITENS DO SIMKL. O envelope e {"movies":[{"movie":{...}}]} ou

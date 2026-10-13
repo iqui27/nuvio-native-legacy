@@ -2,6 +2,7 @@
 #include "ilhasinais.h"
 #include "ilha.h"
 #include "ilhasalvar.h"
+#include "listasescrita.h"
 #include "ilhacart.h"
 #include "avisodisp.h"
 #include "enquete.h"
@@ -377,6 +378,7 @@ void ilhasinais_passo(Uint32 agora) {
   acoes();
   responderPedido();
   ilhasalvar_passo(agora);
+  lstesc_passo();
   enquete_passo(agora);
   rede();
   addonFora();

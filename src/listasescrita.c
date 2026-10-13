@@ -2,6 +2,9 @@
 #include "listasescrita.h"
 #include "rede.h"
 #include "trakt.h"
+#include "idioma.h"
+#include "ilha.h"
+#include "ilhaacao.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -234,3 +237,33 @@ int lstesc_consumir(void) {
 }
 void lstesc_teste_envio(LstescEnvio f) { envioTeste = f; }
 void lstesc_teste_esperar(void) { while (vivo) usleep(1000); }
+
+// --- aviso na ilha ----------------------------------------------------------
+static int  avisoPendente;
+static char avisoTitulo[160], avisoLista[128], avisoCapa[300];
+
+int lstesc_adicionar_titulo(const CatItem *ci, const LstLista *l) {
+  if (!ci || !l || !lstesc_adicionar(l->traktId, ci->imdb, ci->tipo, NULL)) return 0;
+  snprintf(avisoTitulo, sizeof avisoTitulo, "%s", ci->titulo);
+  snprintf(avisoLista, sizeof avisoLista, "%s", l->titulo);
+  snprintf(avisoCapa, sizeof avisoCapa, "%s", ci->poster);
+  avisoPendente = 1;
+  return 1;
+}
+
+void lstesc_passo(void) {
+  int e;
+  char frase[260];
+  IlhaAcao a;
+  if (!avisoPendente || lstesc_estado() == LSTESC_PENDENTE || lstesc_estado() == LSTESC_OCIOSO) return;
+  e = lstesc_consumir();
+  avisoPendente = 0;
+  memset(&a, 0, sizeof a);
+  if (e == LSTESC_OK) snprintf(frase, sizeof frase, i18n("Adicionado a %s"), avisoLista);
+  else snprintf(frase, sizeof frase, "%s", i18n("Não foi possível adicionar à lista"));
+  a.icone = e == LSTESC_OK ? "aj_bookmark" : NULL;
+  a.frase = frase; a.titulo = avisoTitulo; a.onde = "";
+  a.thumb = avisoCapa; a.tipo = e == LSTESC_OK ? ILHA_ACENTO : ILHA_ERRO;
+  a.voar = e == LSTESC_OK;
+  ilhaacao_feita(&a);
+}
