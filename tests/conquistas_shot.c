@@ -444,6 +444,19 @@ int main(int argc, char **argv) {
     assert(conquistas_aviso_aberto() && conquistas_foco() == foco && conquistas_aberto());
     tecla(SDLK_DOWN);
     assert(conquistas_aviso_aberto()); }    // seta mexe a tela, o aviso fica
+  // Aviso oculto pela tela nao captura o primeiro Voltar.
+  memset(&e, 0, sizeof e); e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_ESCAPE;
+  assert(!conquistas_aviso_evento(&e));
+  conquistas_evento(&e);
+  assert(!conquistas_aberto());
+  conquistas_teste_esquecer();
+  subir("trilha:cult-80s", 10);
+  conquistas_aviso_armar();
+  assert(conquistas_aviso_aberto());
+  conquistas_abrir();
+  assert(!conquistas_aviso_evento(&e));
+  conquistas_evento(&e);
+  assert(!conquistas_aberto());
   conquistas_aviso_fechar();
   conquistas_teste_esquecer();
   (void)ids; (void)rs;

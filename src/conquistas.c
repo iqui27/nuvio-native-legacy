@@ -843,6 +843,10 @@ void conquistas_aviso_armar(void) {
 
 int conquistas_aviso_evento(const SDL_Event *e) {
   Uint32 agora;
+  if (aberto || avAlfa < 0.002f) {
+    avBackPress = 0; avBackUltimo = 0;
+    return 0;
+  }
   if (e->type != SDL_KEYDOWN && e->type != SDL_KEYUP) return 0;
   if (!eh_voltar(e)) return 0;
   agora = SDL_GetTicks();
