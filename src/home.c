@@ -45,6 +45,7 @@ static void heroTempoInicio(int indice) {
 #include "catalogo.h"
 #include "artehero.h"
 #include "colecoes.h"
+#include "homefil.h"
 #include "colfileiras.h"
 #include "addons.h"   /* addons_nome_por_id: o addon de um grupo de colecoes */
 #include "gif.h"
@@ -6538,6 +6539,21 @@ void home_desenhar(Uint32 agora) {
       if(!strncmp(fileiras[r].catId,"ai_",3)) {
         TxtLinha ai=txt_linha(TXT_HERO_META,"AI-powered",183,192,219,255);
         txt_desenhar(ai,homeConteudoX()+tl.w+22,y+(tl.h-ai.h)*.5f);
+      }
+      {
+        // ORIGEM DA FILEIRA (home.html `.org`): "Trakt · Este aparelho" ao lado
+        // do titulo de Continuar e dos Proximos episodios.
+        const char *partes[3];
+        int np = homefil_origem(fileiras[r].chave, trakt_ativo(), simkl_ativo(), partes);
+        if (np > 0) {
+          char org[96] = "";
+          for (int k = 0; k < np; k++) {
+            size_t u = strlen(org);
+            snprintf(org + u, sizeof org - u, "%s%s", k ? " \xc2\xb7 " : "", i18n(partes[k]));
+          }
+          TxtLinha lo = txt_linha(TXT_HERO_META, org, 183, 192, 219, 255);
+          txt_desenhar(lo, homeConteudoX() + tl.w + 22, y + (tl.h - lo.h) * .5f);
+        }
       }
       if (foco.fileira == r && !focoHero && tipo != FILEIRA_SOCIAL) {
         char pos[32];

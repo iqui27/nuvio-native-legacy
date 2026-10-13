@@ -33,4 +33,13 @@ int homefil_indice(const char *chave);          // -1 = fora do registro
 int homefil_ocultar(const char *chave);         // 1 = ocultou
 int homefil_mover(const char *chave, int dir);  // 1 = mudou de lugar
 
+// --- de onde vem a fileira ------------------------------------------------------
+// Origem ao lado do titulo de "Continuar assistindo" / "Proximos episodios"
+// (home.html, `.org`), em PARTES que quem desenha junta com " · ": "Trakt",
+// "Simkl" (nomes proprios) e a chave "Este aparelho" (passa por i18n). `trakt`
+// e `simkl` = vinculo ativo nesta TV. O progresso do aparelho sempre existe;
+// os proximos episodios so existem com algum rastreador ligado. Devolve quantas
+// partes pos em `partes` (precisa de 3 posicoes); 0 = fileira sem origem.
+int homefil_origem(const char *chave, int trakt, int simkl, const char *partes[3]);
+
 #endif

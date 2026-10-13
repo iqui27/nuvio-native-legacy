@@ -54,6 +54,15 @@ int main(void) {
   snprintf(pastas[0].id, sizeof pastas[0].id, "pasta1");
   assert(cf_alternar(&pastas[0]) == 0 && cf_n() == 0);
   assert(homefil_ocultar("x") == 0 && homefil_mover("x", 1) == 0);
+  {
+    const char *p[3];
+    assert(homefil_origem("continue_watching", 1, 0, p) == 2 && !strcmp(p[0], "Trakt") &&
+           !strcmp(p[1], "Este aparelho"));
+    assert(homefil_origem("continue_watching", 0, 0, p) == 1 && !strcmp(p[0], "Este aparelho"));
+    assert(homefil_origem("continue_watching", 1, 1, p) == 3);
+    assert(homefil_origem("upcoming_section", 1, 1, p) == 2 && !strcmp(p[1], "Simkl"));
+    assert(homefil_origem("upcoming_section", 0, 0, p) == 0 && homefil_origem("addon_a", 1, 1, p) == 0);
+  }
   puts("homefil: PASS");
   return 0;
 }

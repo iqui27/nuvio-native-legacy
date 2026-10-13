@@ -283,3 +283,15 @@ int homefil_mover(const char *chave, int dir) {
   j = fil_mover(i, dir);
   return j != i;
 }
+
+// --- de onde vem a fileira ---------------------------------------------------
+int homefil_origem(const char *chave, int trakt, int simkl, const char *partes[3]) {
+  int n = 0, cw;
+  if (!chave) return 0;
+  cw = !strcmp(chave, "continue_watching");
+  if (!cw && strcmp(chave, "upcoming_section")) return 0;
+  if (trakt) partes[n++] = "Trakt";
+  if (simkl) partes[n++] = "Simkl";
+  if (cw) partes[n++] = "Este aparelho";
+  return n;
+}
