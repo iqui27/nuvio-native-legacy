@@ -47,6 +47,8 @@ int fil_n(void) { return 0; }
 const char *fil_chave(int i) { (void)i; return ""; }
 void fil_remover(int i) { (void)i; }
 int fil_mover(int i, int d) { (void)d; return i; }
+int fil_oculta(const char *chave) { (void)chave; return 0; }
+void fil_alternar(int i) { (void)i; }
 // colecoes.c idem
 static ColFolder pastas[2];
 int col_n(void) { return 2; }

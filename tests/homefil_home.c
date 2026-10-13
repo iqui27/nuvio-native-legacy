@@ -40,6 +40,22 @@ int main(int argc, char **argv) {
     assert(row("colpin_pin") == 0);
     assert(row("cat0") >= 0 && row("cat1") >= 0 && row("cat2") >= 0);
     assert(fileiras[row("cat2")].n == 3);
+  } else if (!strcmp(argv[1], "repin")) {
+    assert(col_definir_json("{\"collections\":[{\"id\":\"group\",\"title\":\"Group\",\"folders\":["
+      "{\"id\":\"pin\",\"title\":\"Pinned\",\"sources\":[{\"addonBaseUrl\":\"https://missing.invalid\",\"type\":\"movie\",\"catalogId\":\"missing\"}]}]}]}"));
+    const ColFolder *p = col_folder(0);
+    assert(p && cf_alternar(p));
+    sincronizarFileiras();
+    assert(row("colpin_pin") >= 0);
+    assert(homefil_ocultar("colpin_pin"));
+    sincronizarFileiras();
+    assert(row("colpin_pin") == -1 && fil_oculta("colpin_pin"));
+    assert(!cf_alternar(p));
+    sincronizarFileiras();
+    assert(cf_alternar(p));
+    sincronizarFileiras();
+    assert(cf_fixada("pin") && !fil_oculta("colpin_pin"));
+    assert(row("colpin_pin") >= 0);
   } else if (!strcmp(argv[1], "watched")) {
     cat_historico_definir_id("tt0", "movie", 1);
     assert(ov_alternar("cat0"));

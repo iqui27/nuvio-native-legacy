@@ -13,6 +13,7 @@
 
 char *dados_ler(const char *nome);
 int   dados_gravar(const char *nome, const char *conteudo);
+int   dados_apagar(const char *nome);
 int   perfis_ativo(void);
 
 #define OV_CHAVE 200
@@ -113,7 +114,11 @@ void ov_esquecer(void) {
   ovN = 0;
   ovPerfil = perfis_ativo();
   ovRev++;
-  ovGravar();   // arquivo vazio: a conta que saiu nao deixa marca para tras
+  char nome[64];
+  for (int p = 1; p <= 16; p++) {
+    ovNome(nome, sizeof nome, p);
+    dados_apagar(nome);
+  }
 }
 
 typedef struct {
@@ -209,6 +214,9 @@ int cf_alternar(const ColFolder *pasta) {
     snprintf(cfFixas[cfN].id, sizeof cfFixas[cfN].id, "%s", pasta->id);
     snprintf(cfFixas[cfN].titulo, sizeof cfFixas[cfN].titulo, "%s", pasta->title);
     cfN++;
+    char chave[sizeof CF_PREFIXO + sizeof pasta->id];
+    snprintf(chave, sizeof chave, "%s%s", CF_PREFIXO, pasta->id);
+    if (fil_oculta(chave)) fil_alternar(homefil_indice(chave));
   }
   cfRev++;
   cfGravar();
@@ -288,7 +296,11 @@ void cf_esquecer(void) {
   cfN = 0;
   cfPerfil = perfis_ativo();
   cfRev++;
-  cfGravar();
+  char nome[64];
+  for (int p = 1; p <= 16; p++) {
+    cfNome(nome, sizeof nome, p);
+    dados_apagar(nome);
+  }
 }
 
 // --- ocultar / mover pela chave ---------------------------------------------
