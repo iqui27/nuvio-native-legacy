@@ -1386,7 +1386,11 @@ void player_aspecto_ciclar(void) {
   toastAte = SDL_GetTicks() + PLR_TOAST_MS;
 }
 
+static int saiuVisto;
+int player_saiu_visto(void) { int v = saiuVisto; saiuVisto = 0; return v; }
+
 void player_abrir(int indiceCatalogo, const char *url) {
+  saiuVisto = 0;
 #ifdef NV_TOUCH_UI
   avToqueCanal[0] = 0;
 #endif
@@ -1897,10 +1901,8 @@ static void lembrarFonte(void) {
   fontevolta_guardar(alvo, sessao_usuario(), perfis_ativo(), s, stream_idade_ms(), SDL_GetTicks());
 }
 
-static int saiuVisto;
-int player_saiu_visto(void) { int v = saiuVisto; saiuVisto = 0; return v; }
-
 static void fecharSessao(int manter) {
+  saiuVisto = 0;
   int jaRetido = retido;
   // A tela do DV nao sobrevive a sessao (Voltar ja a tirou; aqui e o resto:
   // troca de titulo, encerramento pelo app).

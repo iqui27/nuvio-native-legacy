@@ -218,6 +218,17 @@ int main(void) {
   assert(vistoep_estado("tt22687794", 1, 1) == 1);
   assert(cat_item(0)->progresso == 100);
 
+  // Conclusao anterior nao arma aviso ao cancelar o proximo antes da fonte.
+  player_abrir(0, NULL);
+  assert(!player_saiu_visto());
+  player_encerrar();
+  assert(!player_saiu_visto());
+  abrir(1, "tt90000210", NULL, NULL, 180, 180);
+  assert(player_saiu_visto() && !player_saiu_visto());
+  abrir(1, "tt90000211", NULL, NULL, 180, 180);
+  player_encerrar(); // segundo fechamento invalido tambem limpa a conclusao
+  assert(!player_saiu_visto());
+
   // (6) CONTROLE: filme real abandonado no comeco — progresso REAL gravado,
   // scrobble de progresso (pause) enviado, nada marcado como visto.
   abrir(1, "tt22687795", "1 h 46 min", NULL, 6357.0, 200.0);
