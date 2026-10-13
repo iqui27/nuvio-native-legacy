@@ -1,6 +1,6 @@
 // Dados das Conquistas (2.1): o que a tela le e escreve. Ver conquistas.h.
 //
-// LOCAL de verdade: o estado do perfil (conquistas-p<N>.txt, regra em
+// LOCAL de verdade: o estado por conta e perfil (conquistas-<conta>-p<N>.txt, regra em
 // conquistasregra.h). O resto sao FONTES QUE PRECISAM DO NOSSO SERVIDOR: cada
 // funcao abaixo devolve "nada" hoje e a tela mostra o vazio honesto. Quando o
 // servidor existir, so o corpo de cada uma muda — a tela ja pergunta por elas.
@@ -9,7 +9,8 @@
 #define NV_CONQUISTASDADOS_H
 #include "conquistasregra.h"
 
-// Estado do perfil ativo. Arquivo ausente ou ruim = estado vazio.
+// Estado da conta e perfil ativos. Arquivos antigos sem conta sao ignorados.
+// Arquivo ausente ou ruim = estado vazio.
 void cqd_carregar(CqEstado *s);
 // Grava o estado do perfil ativo (atomico). 1 se gravou.
 int  cqd_gravar(const CqEstado *s);

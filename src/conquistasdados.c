@@ -1,16 +1,23 @@
 #include "conquistasdados.h"
 #include "dados.h"
 #include "perfis.h"
+#include "sessao.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-// Um arquivo por perfil, como agenda/central. Perfil <= 0 usa o nome sem sufixo.
+// Conta (sub do JWT, ate 79 bytes em sessao.c) e perfil. Hex evita caminhos
+// e colisoes por remover caracteres; arquivos antigos sem conta nao migram.
 static const char *arquivo(void) {
-  static char nome[48];
-  int p = perfis_ativo();
-  if (p <= 0) snprintf(nome, sizeof nome, "conquistas.txt");
-  else snprintf(nome, sizeof nome, "conquistas-p%d.txt", p);
+  static char nome[192];
+  char conta[160];
+  const unsigned char *u = (const unsigned char *)sessao_usuario();
+  size_t n = 0;
+  while (*u && n + 2 < sizeof conta) {
+    snprintf(conta + n, 3, "%02x", *u++); n += 2;
+  }
+  conta[n] = 0;
+  snprintf(nome, sizeof nome, "conquistas-%s-p%d.txt", n ? conta : "anon", perfis_ativo());
   return nome;
 }
 
