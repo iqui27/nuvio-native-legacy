@@ -84,12 +84,16 @@ int vt_montar(VaiTocar *vt, const char *imdb, int temporada, int episodio) {
   const Stream *s = i >= 0 ? stream_item(i) : NULL;
   if (!s) return 0;
   vt_descrever(s, vt);
-  vt->pularOn = ajustes_pular_abertura() || ajustes_pular_resumo() || ajustes_pular_creditos();
+  vt->pularOn = vt_pular_ligado();
   if (vt->pularOn) {
     vt->marcas = vt_marcas_episodio(imdb, temporada, episodio);
     if (vt->marcas) intro_marcas(imdb, temporada, episodio, &vt->origem);
   }
   return 1;
+}
+
+int vt_pular_ligado(void) {
+  return ajustes_pular_abertura() || ajustes_pular_resumo() || ajustes_pular_creditos();
 }
 
 int vt_marcas_episodio(const char *imdb, int temporada, int episodio) {

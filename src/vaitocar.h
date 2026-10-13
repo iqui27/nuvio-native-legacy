@@ -94,6 +94,10 @@ void vt_nome_amigavel(const VaiTocar *vt, char *dst, size_t n);
 // Chaves novas em idioma_tab.h, devolvidas no idioma da pagina.
 const char *vt_origem_rotulo(int origem);
 
+// 1 = algum ajuste de pular (abertura, resumo, creditos) esta ligado. Sem
+// isto as marcas nao aparecem em lugar nenhum da pagina (nem chips, nem faixa).
+int vt_pular_ligado(void);
+
 // Marcas conhecidas de UM episodio (para o card dele): bits VT_T_*. 0 = nada
 // em cache — o card nao desenha chip nenhum (nunca o placeholder das marcas
 // da lista inteira: "sem dado" e "sem a marca" nao sao a mesma coisa).

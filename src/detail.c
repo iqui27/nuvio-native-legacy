@@ -5293,6 +5293,13 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
       }
     } else if (epDur)
       txt_desenhar_alpha(txt_linha(TXT_CAPTION,epDur,235,237,240,255),durationX,metaY,a);
+    if (!(progress > 0 && progress < 100) && ep && serie && serie->imdb[0] &&
+        vt_pular_ligado()) {
+      int mk = vt_marcas_episodio(serie->imdb, ep->temporada, ep->episodio);
+      float cw = mk ? vtui_chips_episodio(mk, -1.0f, 0, a) : 0.0f;
+      if (cw > 0.0f)
+        vtui_chips_episodio(mk, r.x + r.w - 18.0f - cw, metaY + 2.0f, a);
+    }
     char number[32]; snprintf(number,sizeof number,i18n("EPISÓDIO %d"),epNum);
     txt_desenhar_alpha(txt_linha(TXT_CAPTION2,number,164,169,176,255),textX,textY,a);
     char fallback[40]; snprintf(fallback,sizeof fallback,i18n("Episódio %d"),epNum);
@@ -5444,6 +5451,24 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
     // episodio pode ter uma, a outra ou as duas.
     if (ep && ep->nota > 0)
       x += desenhaNotaEpisodio(x, y - 4, EX_TMDB, ep->nota, a);
+    // CHIPS A/R/C (2.1): so com "Pular" ligado e so do episodio cujas marcas o
+    // intro.c ja tem em cache (vt_marcas_episodio). Cabem entre a meta e a data;
+    // sem lugar, saem — a data e a duracao ganham.
+    { int mk = (ep && serie && serie->imdb[0] && vt_pular_ligado())
+               ? vt_marcas_episodio(serie->imdb, ep->temporada, ep->episodio) : 0;
+      if (mk) {
+        float cw = vtui_chips_episodio(mk, -1.0f, 0, a), reserva = 0;
+        if (epData) {
+          const char *d0 = epData;
+          size_t n0 = strlen(epData);
+          if (!ajustes_data_completa() && n0 >= 4) d0 = epData + n0 - 4;
+          reserva = txt_linha_corta(TXT_CAPTION2, d0, 179, 179, 179, 255, 400.0f).w + 16.0f;
+        }
+        if (x + cw + reserva <= r.x + r.w - NV_DETP_EP_PAD) {
+          vtui_chips_episodio(mk, x, y + (NV_DETP_EP_ICONE - VTUI_CHIP_H) * 0.5f, a);
+          x += cw + 16.0f;
+        }
+      } }
     // A DATA vai para a direita do card, como na referencia: a esquerda fica so
     // a duracao, e as duas deixam de disputar a mesma linha corrida.
     if (epData) {
