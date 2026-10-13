@@ -357,6 +357,7 @@ static int lerListaTrakt(const char *p, const char *f, LstLista *d) {
   d->fonte = LST_TRAKT;
   d->curtidas = -1;
   d->itens = -1;
+  d->comentarios = -1;
   js_texto_raiz_em(p, f, "name", d->titulo, sizeof d->titulo);
   if (!d->titulo[0]) return 0;
   js_texto_raiz_em(p, f, "description", d->descricao, sizeof d->descricao);
@@ -365,13 +366,23 @@ static int lerListaTrakt(const char *p, const char *f, LstLista *d) {
   // js_texto crus casaria o primeiro que aparecesse no texto, entao cada um e
   // lido DENTRO do seu objeto.
   { char ids[256] = "";
-    if (brutoRaiz(p, f, "ids", ids, sizeof ids))
-      d->traktId = (long)js_num(ids, ids + strlen(ids), "trakt", 0.0); }
-  { char usr[400] = "";
+    if (brutoRaiz(p, f, "ids", ids, sizeof ids)) {
+      d->traktId = (long)js_num(ids, ids + strlen(ids), "trakt", 0.0);
+      js_texto(ids, ids + strlen(ids), "slug", d->slug, sizeof d->slug); } }
+  { char usr[700] = "";
     if (brutoRaiz(p, f, "user", usr, sizeof usr)) {
       const char *uf = usr + strlen(usr);
+      char uids[200] = "";
       if (!js_texto_raiz_em(usr, uf, "username", d->autor, sizeof d->autor))
-        js_texto(usr, uf, "slug", d->autor, sizeof d->autor); } }
+        js_texto(usr, uf, "slug", d->autor, sizeof d->autor);
+      js_texto_raiz_em(usr, uf, "name", d->autorNome, sizeof d->autorNome);
+      if (brutoRaiz(usr, uf, "ids", uids, sizeof uids))
+        js_texto(uids, uids + strlen(uids), "slug", d->autorSlug, sizeof d->autorSlug); } }
+  js_texto_raiz_em(p, f, "created_at", d->criada, sizeof d->criada);
+  js_texto_raiz_em(p, f, "updated_at", d->atualizada, sizeof d->atualizada);
+  { char pv[16] = "";
+    d->privada = js_texto_raiz_em(p, f, "privacy", pv, sizeof pv) && strcmp(pv, "public") ? 1 : 0; }
+  d->comentarios = (int)js_num(p, f, "comment_count", -1.0);
   d->itens    = (int)js_num(p, f, "item_count", -1.0);
   d->curtidas = (int)js_num(p, f, "likes", -1.0);
   if (d->curtidas < 0) d->curtidas = (int)js_num(p, f, "like_count", -1.0);
@@ -801,6 +812,16 @@ int lst_itens_carregando(void) {
   v = itSimkl ? itFioVivo : -1;
   pthread_mutex_unlock(&itTrava);
   return v >= 0 ? v : desc_vertudo_carregando();
+}
+
+int lst_item_extra(int i, DescItemLista *dst) {
+  int simkl;
+  pthread_mutex_lock(&itTrava);
+  simkl = itSimkl;
+  pthread_mutex_unlock(&itTrava);
+  if (dst) memset(dst, 0, sizeof *dst);
+  if (simkl) return i >= 0 && i < lst_itens_n();
+  return desc_vertudo_extra(i, dst);
 }
 
 void lst_itens_mais(void) {

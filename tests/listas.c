@@ -55,7 +55,32 @@ static void testeTraktMinhas(void) {
   CONFERE(a && a->itens == 42, "item_count 42 (veio %d)", a ? a->itens : -1);
   CONFERE(a && a->curtidas == 3, "likes 3 (veio %d)", a ? a->curtidas : -1);
   CONFERE(b && b->traktId == 2200311, "id da segunda");
+  // Cabecalho da pagina da lista (6B).
+  CONFERE(a && !strcmp(a->slug, "classicos-do-terror"), "slug da lista (veio %s)", a ? a->slug : "");
+  CONFERE(a && !strcmp(a->autorNome, "Henrique"), "nome do autor (veio %s)", a ? a->autorNome : "");
+  CONFERE(a && !strcmp(a->autorSlug, "iqui27"), "slug do autor (veio %s)", a ? a->autorSlug : "");
+  CONFERE(a && !strncmp(a->criada, "2024-10-01", 10), "created_at (veio %s)", a ? a->criada : "");
+  CONFERE(a && !strncmp(a->atualizada, "2026-09-01", 10), "updated_at (veio %s)", a ? a->atualizada : "");
+  CONFERE(a && a->comentarios == 0, "comment_count 0 (veio %d)", a ? a->comentarios : -9);
+  CONFERE(a && !a->privada, "publica");
+  CONFERE(b && b->privada, "a segunda e privada");
   free(j);
+}
+
+static void testeExtraItem(void) {
+  const char *e =
+    "{\"rank\": 3,\"listed_at\":\"2026-09-04T18:52:07.000Z\",\"notes\":\"Melhor do ano\","
+    "\"type\":\"movie\",\"movie\":{\"title\":\"X\",\"notes\":\"falsa\",\"ids\":{\"imdb\":\"tt1\"}}}";
+  const char *v = "{\"rank\":1,\"notes\":\"  \",\"movie\":{}}";
+  DescItemLista d;
+  printf("\n[1b] rank, listed_at e nota do item\n");
+  desc_trakt_extra_ler(e, e + strlen(e), &d);
+  CONFERE(d.rank == 3, "rank 3 (veio %d)", d.rank);
+  CONFERE(d.entrouMs == 1788547927000LL, "listed_at em ms (veio %lld)", d.entrouMs);
+  CONFERE(!strcmp(d.nota, "Melhor do ano"), "nota da raiz, nao a do filme (veio %s)", d.nota);
+  desc_trakt_extra_ler(v, v + strlen(v), &d);
+  CONFERE(d.rank == 1 && d.entrouMs == 0, "sem listed_at fica 0");
+  CONFERE(!d.nota[0], "nota so de espacos vira vazia");
 }
 
 static void testeTraktBusca(void) {
@@ -251,6 +276,7 @@ int main(void) {
   printf("gravando em %s\n", dados_dir());
 
   testeTraktMinhas();
+  testeExtraItem();
   testeTraktBusca();
   testeSimkl();
   testeFixarSobrevive();

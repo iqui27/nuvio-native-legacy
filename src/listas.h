@@ -30,6 +30,7 @@
 #define NV_LISTAS_H
 #include "catalogo.h"
 #include "colecoes.h"
+#include "descoberta.h"
 
 // Quantas listas a tela mostra de uma fonte (ou de uma busca). O Trakt devolve
 // ate 30 por pagina e nao ha paginacao na tela: rolar 60 cartoes de lista num
@@ -55,6 +56,15 @@ typedef struct {
   char midia[8];          // "MOVIE" | "TV" — ver a nota sobre tipo em listas.c
   int  itens;             // -1 quando a fonte nao informa
   int  curtidas;          // so o Trakt informa; -1 caso contrario
+  // Cabecalho da PAGINA da lista (design/2.1/listas.html 6B). So o Trakt informa;
+  // "" / -1 nas outras fontes e quando a resposta nao trouxe o campo.
+  char slug[96];          // ids.slug da lista
+  char autorSlug[64];     // user.ids.slug, para montar a URL publica
+  char autorNome[64];     // user.name ("Henrique"); autor continua sendo o username
+  char criada[32];        // created_at, ISO 8601 como o Trakt devolve
+  char atualizada[32];    // updated_at
+  int  comentarios;       // comment_count, -1 = nao informado
+  int  privada;           // 1 = privacy diferente de "public"
 } LstLista;
 
 // --- ciclo de vida -----------------------------------------------------------
@@ -130,6 +140,10 @@ void lst_abrir(const LstLista *l, const char *midia);
 int  lst_itens_n(void);
 int  lst_item(int i, CatItem *dst);
 int  lst_itens_carregando(void);
+// O que a lista diz do item `i` alem do titulo: posicao, quando entrou, nota do
+// curador (ver DescItemLista). 0 quando o indice nao existe ou a fonte nao e o
+// Trakt (Simkl/Nuvio devolvem 1 com tudo vazio).
+int  lst_item_extra(int i, DescItemLista *dst);
 // So para testes e capturas: itens de mentira na lista aberta; ver listas.c.
 void lst_teste_itens(const CatItem *v, int n);
 // Pede a proxima pagina, quando a fonte pagina. Sem efeito no Simkl (uma volta

@@ -238,6 +238,20 @@ int desc_vertudo_erro(void);
 void desc_vertudo_mais(void);
 int  desc_vertudo_n(void);
 int  desc_vertudo_item(int i, CatItem *dst);
+// O QUE A LISTA DO TRAKT DIZ SOBRE O ITEM, alem do titulo: a posicao (rank), o
+// instante em que entrou (listed_at) e a nota de quem montou a lista (notes).
+// Mora numa tabela paralela a vtItens e NAO no CatItem: o CatItem vai inteiro
+// para o cache em disco, e mudar o tamanho dele invalidaria o catalogo de quem
+// nunca abriu uma lista. Vazio/0 = a fonte nao disse (addon, TMDB, Simkl).
+typedef struct {
+  int       rank;        // posicao na lista, 0 = nao informada
+  long long entrouMs;    // listed_at em ms desde a epoca, 0 = nao informado
+  char      nota[320];   // "" = sem nota do curador
+} DescItemLista;
+int  desc_vertudo_extra(int i, DescItemLista *dst);
+// Le rank/listed_at/notes de UMA entrada de /lists/<id>/items ({rank, listed_at,
+// notes, type, movie:{...}}). Exposto para o teste de fixture.
+void desc_trakt_extra_ler(const char *p, const char *f, DescItemLista *d);
 int  desc_vertudo_carregando(void);
 // 1 quando a ultima pagina veio curta: nao ha mais o que pedir.
 int  desc_vertudo_fim(void);
