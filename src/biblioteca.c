@@ -269,8 +269,13 @@ static int bibTinta2(void) { return 205; }
 // (CatItem.naLista): a watchlist do Trakt, posta ali pela descoberta, e a
 // biblioteca da CONTA (sync_pull_library), posta ali por contalib.c.
 // "Coleção" = TENHO, e so o Trakt tem. "Listas" = conjuntos, nao titulos.
-enum { MODO_SALVOS, MODO_NUVEM, MODO_LISTAS, BIB_N_MODOS };
-static const char *ROT_MODO[BIB_N_MODOS] = { "Salvos", "Coleção", "Listas" };
+//
+// 2.1: as abas sao ESTADOS do titulo, nao fontes. Cada titulo cai em uma so de
+// Para ver / Em andamento / Assistidos (ver estadoDoItem); Coleções e Listas
+// seguem como antes.
+enum { MODO_PARAVER, MODO_ANDAMENTO, MODO_ASSISTIDOS, MODO_COLECOES, MODO_LISTAS, BIB_N_MODOS };
+static const char *ROT_MODO[BIB_N_MODOS] =
+  { "Para ver", "Em andamento", "Assistidos", "Coleções", "Listas" };
 
 // Seletor "Tipo": os mesmos valores do web.
 enum { TIPO_TODOS, TIPO_FILME, TIPO_SERIE, BIB_N_TIPOS };
@@ -292,7 +297,7 @@ static const char *ROT_FONTE[BIB_N_FONTES] =
 // lista aberta por cima.
 enum { EST_TITULOS, EST_LISTAS, EST_ITENS };
 
-static int modo = MODO_SALVOS;
+static int modo = MODO_PARAVER;
 static int tipo = TIPO_TODOS;
 static int ordem = ORD_ADICIONADOS;
 static int exibicao = VIS_CARTAZ;
@@ -314,7 +319,7 @@ static int nFiltro = 0;
 static int totalModo = 0;
 // Quantos titulos cada modo de titulos tem (Salvos, Colecao), para a contagem
 // do seletor segmentado. Refeito em reconstruir(), nunca por quadro.
-static int contaModo[2];
+static int contaModo[BIB_N_MODOS];
 static Foco foco;
 static float animModo[BIB_N_MODOS];
 static float animPick[3];
@@ -646,6 +651,28 @@ static int ehSerieSalvo(const SalvoItem *s) {
   return s && !strcmp(s->tipo, "series");
 }
 
+// Em andamento: comecou (progresso parcial ou ponto de retomada) e ainda nao
+// terminou. cat_visto manda: >=90% tocado ou historico ja e assistido.
+static int emAndamento(const CatItem *c) {
+  return c && !cat_visto(c) && (c->progresso > 0 || c->retomadoMs > 0);
+}
+// 1 quando o item `ci` (indice i do catalogo) pertence a aba `m`.
+//   Para ver     : esta na lista (watchlist/Conta) e nao esta em andamento. O
+//                  assistido que continua na lista fica aqui com o selo de visto,
+//                  e o chip "Esconder assistidos" o tira.
+//   Em andamento : emAndamento, venha de onde vier.
+//   Assistidos   : cat_visto.
+//   Coleções     : naColecao ou comprado (independe do estado).
+static int noModo(int m, const CatItem *ci, int i) {
+  switch (m) {
+    case MODO_PARAVER:    return ci->naLista && !emAndamento(ci);
+    case MODO_ANDAMENTO:  return emAndamento(ci);
+    case MODO_ASSISTIDOS: return cat_visto(ci);
+    case MODO_COLECOES:   return ci->naColecao || (i >= 0 && i < CAT_MAX && comprado[i]);
+    default:              return 0;
+  }
+}
+
 // 1 quando um item do catalogo ja CONTADO e o mesmo titulo que `id`. Olha os
 // contados, e nao so os de `filtro`: o seletor de tipo esconde alguns, e o
 // contador do modo tambem nao pode contar o mesmo titulo duas vezes.
@@ -672,12 +699,12 @@ static int contarModo(int m) {
   for (int i = 0; i < n; i++) {
     const CatItem *ci = cat_item(i);
     if (!ci) continue;
-    if (!(m == MODO_SALVOS ? ci->naLista : (ci->naColecao || comprado[i]))) continue;
+    if (!noModo(m, ci, i)) continue;
     if (jaNoFiltro(ci->imdb)) continue;
     if (nContados < CAT_MAX) contados[nContados++] = i;
     total++;
   }
-  if (m == MODO_SALVOS)
+  if (m == MODO_PARAVER)
     for (int k = salvos_n() - 1; k >= 0; k--) {
       const SalvoItem *sv = salvos_item(k);
       if (sv && sv->id[0] && cat_indice_por_imdb(sv->id) < 0) total++;
@@ -696,8 +723,7 @@ static void reconstruir(void) {
     if (gmtime_r(&agora, &tmv)) anoAtual = tmv.tm_year + 1900;
   }
   if (n > CAT_MAX) n = CAT_MAX;
-  contaModo[0] = contarModo(MODO_SALVOS);
-  contaModo[1] = contarModo(MODO_NUVEM);
+  for (int m = 0; m < MODO_LISTAS; m++) contaModo[m] = contarModo(m);
   nFiltro = 0;
   totalModo = 0;
   nContados = 0;
@@ -716,9 +742,7 @@ static void reconstruir(void) {
     // vetor era um erro conhecido e documentado: o catalogo e RECONSTRUIDO da
     // rede a cada descoberta, entao a posicao 3 de hoje e outro titulo amanha —
     // a marca "salvo" migrava sozinha para um filme que ninguem salvou.
-    int entra = (modo == MODO_SALVOS) ? ci->naLista
-                                      : (ci->naColecao || comprado[i]);
-    if (!entra) continue;
+    if (!noModo(modo, ci, i)) continue;
     // UM CARTAZ POR TITULO. O mesmo titulo vive em varias fileiras, cada uma
     // com a sua copia marcada, e a serie com progresso tem id "tt123:1:2" ao
     // lado do "tt123" da watchlist — a grade mostrava o titulo duas vezes. A
@@ -739,7 +763,7 @@ static void reconstruir(void) {
   // agora nao aparece" (issue do Owlphibia29). O painel de Salvos ja desenhava
   // da lista local; a Biblioteca agora tambem. Os mais novos primeiro: a lista
   // local e na ordem de insercao, e quem acabou de salvar procura o que salvou.
-  if (modo == MODO_SALVOS) {
+  if (modo == MODO_PARAVER) {
     for (int k = salvos_n() - 1; k >= 0 && nFiltro < (int)(sizeof filtro / sizeof filtro[0]); k--) {
       const SalvoItem *s = salvos_item(k);
       if (!s || !s->id[0] || cat_indice_por_imdb(s->id) >= 0) continue;
@@ -782,7 +806,7 @@ static void reconstruir(void) {
          "salvos=%d colecao=%d total=%d cat_unicos=%d locais_fora=%d "
          "excl_tipo=%d excl_meta=%d grade=%d colunas=%d linhas=%d teto_linhas=%d\n",
          perfis_ativo(), modo, tipo, ajustes_ocultar_nao_lancados(), exibicao,
-         contaModo[0], contaModo[1], totalModo, nContados, locaisFora,
+         contaModo[MODO_PARAVER], contaModo[MODO_COLECOES], totalModo, nContados, locaisFora,
          exclTipo, exclMeta, nCelulas, colunas(), nLinhas(), BIB_MAX_LINHAS);
   fflush(stdout);
 }
@@ -810,7 +834,7 @@ int biblioteca_iniciar(void) {
   prefPerfil = -1;
   lerPref();
   lst_iniciar();
-  modo = MODO_SALVOS; tipo = TIPO_TODOS; ordem = ORD_ADICIONADOS;
+  modo = MODO_PARAVER; tipo = TIPO_TODOS; ordem = ORD_ADICIONADOS;
   pickSel = 0; temAberta = 0; acaoSel = 0; recado[0] = 0; recadoAte = 0.0f;
   buscaAberta = 0;
   memset(animModo, 0, sizeof animModo);
@@ -1692,17 +1716,24 @@ static void desenhaVazio(void) {
   } else {
     // "Salvos" com o "+" apontado para o Simkl e sem vinculo (issue #110): a
     // aba vazia diz o que falta, e nao "sua proxima sessao comeca aqui".
-    const char *semSimkl = modo == MODO_SALVOS && !totalModo
+    const char *semSimkl = modo == MODO_PARAVER && !totalModo
         ? simkl_aviso_sem_vinculo(ajustes_salvos_no_simkl()) : NULL;
     l1 = semSimkl ? semSimkl
         : totalModo ? "Nenhum título neste filtro"
-        : modo == MODO_NUVEM ? "Sua coleção aparece aqui" : "Sua próxima sessão começa aqui";
+        : modo == MODO_COLECOES ? "Sua coleção aparece aqui"
+        : modo == MODO_ANDAMENTO ? "Nada em andamento"
+        : modo == MODO_ASSISTIDOS ? "Nada assistido ainda"
+        : "Sua próxima sessão começa aqui";
     l2 = semSimkl
         ? "O + salva no Plan to Watch do Simkl, e ele ainda não está vinculado nesta TV."
         : totalModo
         ? "Em Tipo, escolha Todos. Confira também os filtros em Ajustes."
-        : modo == MODO_NUVEM
+        : modo == MODO_COLECOES
           ? "Os filmes e séries da sua coleção no Trakt ficam reunidos nesta aba."
+        : modo == MODO_ANDAMENTO
+          ? "O que você começa a ver aparece aqui para retomar de onde parou."
+        : modo == MODO_ASSISTIDOS
+          ? "O que você termina de ver fica registrado aqui."
           : "Abra um filme ou série e escolha Adicionar à lista para guardar.";
   }
   { TxtLinha t1 = txt_linha(TXT_TITULO2, l1, 255, 255, 255, 255);
@@ -2234,7 +2265,7 @@ static void desenhaCabecalho(void) {
                              : fonte == FONTE_SIMKL ? "SIMKL"
                              : fonte == FONTE_FIXADAS ? "LOCAL"
                              : "TRAKT")
-      : modo == MODO_NUVEM ? (trakt_ativo() ? "TRAKT" : "LOCAL")
+      : modo == MODO_COLECOES ? (trakt_ativo() ? "TRAKT" : "LOCAL")
       : (contalib_tem_conta() ? seloCaixaAlta("Conta")
                               : ajustes_salvos_no_simkl() && simkl_ativo() ? "SIMKL"
                               : trakt_ativo() ? "TRAKT" : "LOCAL");
@@ -2287,8 +2318,10 @@ static void desenhaResumo(void) {
     // biblioteca com a interface em inglês (issue #3).
     snprintf(resumo, sizeof resumo, "%d %s   ·   %s", nFiltro,
              i18n(nFiltro == 1 ? "título" : "títulos"),
-             i18n(modo == MODO_SALVOS ? "Sua lista para assistir"
-                                      : "Sua coleção no Trakt"));
+             i18n(modo == MODO_PARAVER ? "Sua lista para assistir"
+                  : modo == MODO_ANDAMENTO ? "Retome de onde parou"
+                  : modo == MODO_ASSISTIDOS ? "Seu histórico"
+                  : "Sua coleção no Trakt"));
   }
   // O TETO DA GRADE NUNCA E CALADO. Com a exibicao de lista (uma coluna) a
   // grade para em BIB_MAX_LINHAS titulos; o contador acima continua dizendo

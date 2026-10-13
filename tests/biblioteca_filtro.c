@@ -16,6 +16,7 @@ int cat_indice_por_imdb(const char *id) {
     if (salvos_mesmo_titulo(id, catalogoTeste[i].imdb)) return i;
   return -1;
 }
+int cat_visto(const CatItem *c) { (void)c; return 0; }
 int ajustes_ocultar_nao_lancados(void) { return ocultar; }
 void ajustes_area_conteudo(float e, float d, float *x, float *w) {
   if (x) *x = e;
@@ -41,15 +42,15 @@ int dados_apagar(const char *n) { (void)n; return 1; }
 
 static void confere(int esperado) {
   reconstruir();
-  int total = modo == MODO_SALVOS ? 129 : 126;
-  assert(contaModo[MODO_SALVOS] == 129);
-  assert(contaModo[MODO_NUVEM] == 126);
+  int total = modo == MODO_PARAVER ? 129 : 126;
+  assert(contaModo[MODO_PARAVER] == 129);
+  assert(contaModo[MODO_COLECOES] == 126);
   assert(totalModo == total && nFiltro == esperado && nCelulas == esperado);
   int navegaveis = 0;
   for (int r = BIB_FIL_GRADE; r < foco.nFileiras; r++) navegaveis += foco.nColunas[r];
   assert(navegaveis == esperado);
   char num[16];
-  textoModo(MODO_SALVOS, num, sizeof num);
+  textoModo(MODO_PARAVER, num, sizeof num);
   assert(!strcmp(num, "129"));
   printf("fixture: Salvos=%s grade=%d navegaveis=%d ocultar=%d tipo=%d exibicao=%d\n",
          num, nFiltro, navegaveis, ocultar, tipo, exibicao);
@@ -68,7 +69,7 @@ int main(void) {
   catalogoTeste[126] = catalogoTeste[125];
   strcat(catalogoTeste[126].imdb, ":1:2");
   salvos_iniciar();
-  modo = MODO_SALVOS; tipo = TIPO_TODOS;
+  modo = MODO_PARAVER; tipo = TIPO_TODOS;
   ocultar = 0; confere(129);
   ocultar = 1; confere(129);
   exibicao = VIS_LISTA; confere(129);
@@ -93,15 +94,15 @@ int main(void) {
     assert(salvos_definir(&local, 0));
     assert(salvos_definir(&local, 1));
     for (exibicao = VIS_CARTAZ; exibicao <= VIS_LISTA; exibicao++) {
-      modo = MODO_SALVOS;
+      modo = MODO_PARAVER;
       ocultar = 1; confere(i == 5 ? 127 : 129);
       ocultar = 0; confere(129);
-      modo = MODO_NUVEM;
+      modo = MODO_COLECOES;
       ocultar = 1; confere(i == 5 ? 125 : 126);
       ocultar = 0; confere(126);
     }
   }
-  modo = MODO_SALVOS; exibicao = VIS_LISTA;
+  modo = MODO_PARAVER; exibicao = VIS_LISTA;
   ocultar = 0; confere(129);
   tipo = TIPO_FILME; confere(11);
   tipo = TIPO_SERIE; confere(118);
