@@ -87,6 +87,7 @@ int cat_n(void) { return 0; }
 const CatItem *cat_item(int i) { (void)i; return NULL; }
 int cat_indice_por_imdb(const char *imdb) { (void)imdb; return -1; }
 void cat_definir_na_lista(int i, int n) { (void)i; (void)n; }
+void cat_marcar_fonte(int i, int f) { (void)i; (void)f; }
 int cat_acrescentar_lote(const CatItem *v, int q, int *s) { (void)v; (void)q; (void)s; return 0; }
 
 // A CONTA: aceita tudo com 200 e conta os deletes. O que ela DEVOLVE no pull e
