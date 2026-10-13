@@ -35,12 +35,16 @@ _Static_assert(AJ_SALVOS_LOCAL == 0 && AJ_SALVOS_TRAKT == 1 && AJ_SALVOS_SIMKL =
 
 // ---------------------------------------------------------------- stubs
 
+char *dados_ler(const char *nome) { (void)nome; return NULL; }
+int dados_gravar(const char *nome, const char *buf) { (void)nome; (void)buf; return 1; }
+int dados_apagar(const char *nome) { (void)nome; return 1; }
 static int proximoTeste = 1;
 int ajustes_cw_proximo(void) { return proximoTeste; }
 int ajustes_cw_minimo(void) { return 1; }
 int ajustes_cw_concluido(void) { return 90; }
 static const char *tokenAtual = "";
 const char *simklauth_token(void) { return tokenAtual; }
+int simklauth_invalidar_se(unsigned long long cred) { (void)cred; tokenAtual = ""; return 1; }
 static unsigned long long credGeracao = 1;
 unsigned long long simklauth_credencial_copiar(char *dst, size_t tam) {
   if (dst && tam) snprintf(dst, tam, "%s", tokenAtual);

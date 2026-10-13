@@ -185,6 +185,10 @@ namespace NuvioTpk
         Video video;
 #if NV_TEXTO
         Texto texto;
+#else
+        // Guardado aqui de proposito: o C chama os delegates do Voz; sem esta
+        // referencia o GC os recolheria.
+        Voz voz;
 #endif
         bool soCarregada;
 
@@ -293,6 +297,12 @@ namespace NuvioTpk
             // CANARIO (Texto.cs): teclado/ditado do sistema. So com -p:NvTextoCanario=1.
             try { texto = new Texto(a => { if (principal != null) principal.Post(_ => a(), null); else a(); }, s => video.Log(s)); }
             catch (Exception e) { Etapa("note texto-init " + e.GetType().Name + ": " + e.Message); }
+#else
+            // Botao de microfone das buscas (Voz.cs): abre o teclado da Samsung
+            // so para o microfone dele. Se aparece, decide o ajuste "Botao de
+            // microfone na busca" com o que a TV diz sobre microfone.
+            try { voz = new Voz(a => { if (principal != null) principal.Post(_ => a(), null); else a(); }, s => video.Log(s)); }
+            catch (Exception e) { Etapa("note voz-init " + e.GetType().Name + ": " + e.Message); }
 #endif
 
             // API8: o callback roda no fio principal e o DALi troca os buffers
@@ -933,6 +943,9 @@ namespace NuvioTpk
             pausado = true;
             if (!jaPausou) { jaPausou = true; Janela("primeira pausa (canario 8: video no gl, gl opaco, sem prime, sobe no appcontrol; ela ainda vem?)"); }
             Etapa("note pause" + Contagem() + " mainVisible=" + principalVisivel + (JanelaUnica ? " (glview)" : " glVisible=" + glVisivel));
+#if !NV_TEXTO
+            try { voz?.Cancelar(); } catch { }
+#endif
             video?.PausarPeloSistema();
             base.OnPause();
         }
@@ -998,6 +1011,9 @@ namespace NuvioTpk
         {
             if (soltou) return;
             soltou = true;
+#if !NV_TEXTO
+            try { voz?.Cancelar(); } catch { }
+#endif
             try { video?.Encerrar(); Janela("saida: player solto (" + porque + ")"); } catch (Exception e) { Janela("saida: player falhou " + e.GetType().Name + ": " + e.Message); }
 #if NV_API11
             try { glView?.Hide(); } catch { }

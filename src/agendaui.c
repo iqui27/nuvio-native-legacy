@@ -1048,7 +1048,7 @@ void agendaui_evento(const SDL_Event *e) {
       int ordemListaN = vistaMes ? 5 : 2;
       int pos = 0, j;
       if (volta || k == SDLK_DOWN) { focoCabecalho = 0; return; }
-      if (k == SDLK_UP) return;
+      if (k == SDLK_UP) { if (ajustes_menu_topo()) sair = 1; return; }
       if (k == SDLK_LEFT || k == SDLK_RIGHT) {
         for (j = 0; j < ordemListaN; j++) {
           int id = vistaMes ? ordemLista[j] : (j == 0 ? AG_CAB_LISTA : AG_CAB_MES);
@@ -1094,7 +1094,10 @@ void agendaui_evento(const SDL_Event *e) {
         abrirModal(itens[calEvento]);
       return;
     }
-    if (k == SDLK_UP && calCelula < 7) { focoCabecalho = AG_CAB_HOJE; return; }
+    if (k == SDLK_UP && calCelula < 7) {
+      focoCabecalho = AG_CAB_HOJE;
+      return;
+    }
     // COLUNA 0 DA GRADE (domingo): a barra lateral por cima (dono, 03/10).
     // Antes a ESQUERDA ali pulava para o ultimo dia da semana de cima.
     if (k == SDLK_LEFT) {
@@ -1124,7 +1127,7 @@ void agendaui_evento(const SDL_Event *e) {
   }
   if (focoCabecalho) {
     if (volta || k == SDLK_DOWN) { focoCabecalho = 0; return; }
-    if (k == SDLK_UP) return;
+    if (k == SDLK_UP) { if (ajustes_menu_topo()) sair = 1; return; }
     if (k == SDLK_LEFT && focoCabecalho == AG_CAB_LISTA) { sair = 1; return; }
     if (k == SDLK_LEFT || k == SDLK_RIGHT) {
       focoCabecalho = focoCabecalho == AG_CAB_LISTA ? AG_CAB_MES : AG_CAB_LISTA;

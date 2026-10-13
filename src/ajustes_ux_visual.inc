@@ -29,11 +29,13 @@ static const char *ajVisualIcone(int op) {
     case AJ_CW_RETIDO_TAMBEM: return "aj_rotate-ccw-clock";
     case AJ_RAIL_MODERNA: return "aj_panel-left";
     case AJ_RAIL: return "aj_panel-left";
+    case AJ_MENU_TOPO: return "aj_panel-top";
     case AJ_MENU_EXPLORAR: return "aj_panel-left";
     case AJ_MENU_GUIA: return "aj_panel-left";
     case AJ_MENU_AGENDA: return "aj_panel-left";
     case AJ_MENU_PERFIL: return "aj_panel-left";
     case AJ_RAIL_BLUR: return "aj_panel-left";
+    case AJ_MIC_BUSCA: return "aj_mic";
     case AJ_DESCOBRIR: return "aj_panel-left";
     case AJ_PS_FUNDO: return "aj_users";
     case AJ_PS_CONTINUAR: return "aj_users";

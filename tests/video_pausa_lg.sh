@@ -15,4 +15,6 @@ for source in src/*.c src/dts/*.c; do
 done
 cc -DAJUSTES_TESTE "${flags[@]}" "${sources[@]}" tests/video_pausa_lg.c -o "$dir/test" \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
+# Mesmo ajuste do loader sdl2-compat/ASan usado em descanso_wake.sh.
+[ ! -e /opt/homebrew/lib/libSDL3.dylib ] || ln -s /opt/homebrew/lib/libSDL3.dylib "$dir/libSDL3.dylib"
 "$dir/test"

@@ -676,7 +676,11 @@ int main(void) {
     valor[AJ_CW_MINIMO] = 99; assert(ajustes_cw_minimo() == 20);
     valor[AJ_CW_MINIMO] = antes; }
   // #400: acrescentado no fim, sem deslocar os indices antigos.
-  assert(AJ_LEG_SYNC_AUTO == AJ_FONTE_ORDEM_ADDON + 1 && AJ_LEG_MOSTRAR == AJ_LEG_SYNC_AUTO + 1 && AJ_AVISO_LEGAL == AJ_LEG_MOSTRAR + 1 && AJ_HDR_UI == AJ_AVISO_LEGAL + 1 && AJ_TELA_ABERTURA == AJ_HDR_UI + 1 && AJ_CW_MINIMO == AJ_TELA_ABERTURA + 1 && AJ_BUFFER == AJ_CW_MINIMO + 1 && AJ_PULAR_ABERTURA == AJ_BUFFER + 1 && AJ_PULAR_RESUMO == AJ_PULAR_ABERTURA + 1 && AJ_PROXIMO_AUTO == AJ_PULAR_RESUMO + 1 && AJ_PULAR_CREDITOS == AJ_PROXIMO_AUTO + 1 && AJ_PROXIMO_CONTAGEM == AJ_PULAR_CREDITOS + 1 && AJ_INTERFACE_MODO == AJ_PROXIMO_CONTAGEM + 1 && AJ_N == AJ_INTERFACE_MODO + 1);
+  assert(AJ_LEG_SYNC_AUTO == AJ_FONTE_ORDEM_ADDON + 1 && AJ_LEG_MOSTRAR == AJ_LEG_SYNC_AUTO + 1 && AJ_AVISO_LEGAL == AJ_LEG_MOSTRAR + 1 && AJ_HDR_UI == AJ_AVISO_LEGAL + 1 && AJ_TELA_ABERTURA == AJ_HDR_UI + 1 && AJ_CW_MINIMO == AJ_TELA_ABERTURA + 1 && AJ_BUFFER == AJ_CW_MINIMO + 1 && AJ_PULAR_ABERTURA == AJ_BUFFER + 1 && AJ_PULAR_RESUMO == AJ_PULAR_ABERTURA + 1 && AJ_PROXIMO_AUTO == AJ_PULAR_RESUMO + 1 && AJ_PULAR_CREDITOS == AJ_PROXIMO_AUTO + 1 && AJ_PROXIMO_CONTAGEM == AJ_PULAR_CREDITOS + 1 && AJ_INTERFACE_MODO == AJ_PROXIMO_CONTAGEM + 1 && AJ_MIC_BUSCA == AJ_INTERFACE_MODO + 1 && AJ_MENU_TOPO == AJ_MIC_BUSCA + 1 && AJ_N == AJ_MENU_TOPO + 1);
+  assert(!strcmp(CHAVE[AJ_MENU_TOPO], "menuTopoLocal") && valorPadrao[AJ_MENU_TOPO] == 0);
+  assert(!strcmp(CHAVE[AJ_MIC_BUSCA], "micBuscaLocal") && valorPadrao[AJ_MIC_BUSCA] == 0);
+  assert(!strcmp(OPCOES[AJ_MIC_BUSCA].valores[0], "Automático") && OPCOES[AJ_MIC_BUSCA].n == 3);
+  assert(somenteDesteAparelho(AJ_MIC_BUSCA) && !dePerfil(AJ_MIC_BUSCA));
   assert(!strcmp(CHAVE[AJ_FONTE_ORDEM_ADDON], "fonteOrdemLocal"));
   assert(OPCOES[AJ_FONTE_ORDEM_ADDON].n == 2 && valorPadrao[AJ_FONTE_ORDEM_ADDON] == 0);
   assert(somenteDesteAparelho(AJ_FONTE_ORDEM_ADDON) && !dePerfil(AJ_FONTE_ORDEM_ADDON));

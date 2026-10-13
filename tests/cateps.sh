@@ -1,5 +1,5 @@
 #!/bin/bash
-# Faixas de episodio contra o catalogo que cresce.
+# Faixas de episodio contra o catalogo que cresce e listas longas (#391).
 #
 #   bash tests/cateps.sh
 #

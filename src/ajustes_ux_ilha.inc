@@ -1158,6 +1158,14 @@ static void ajDesenharTela(void) {
   ajPontInline = 0;
 #endif
   ajFundoPagina();
+  // Pagina assentada sem vidro: o cabecalho e a lista sao opacos e vem logo,
+  // entao o Frost pendente so e pintado fora deles (ajIlhaMaterial faz o mesmo
+  // com uma ilha so; aqui sao duas antes da primeira).
+  if (!ajVid() && !modal && !filAberta && !uxEditor && p.rA <= 0.003f && uxIndice >= 1 &&
+      p.lA >= 0.999f && fabsf(p.lS - 1.0f) < 0.002f && fabsf(p.lDx) < 0.5f) {
+    GfxRect f[2] = { ajIlhaMiolo0(aj2PaginaR(), 36.0f), ajIlhaMiolo0(aj2ListaR(), 40.0f) };
+    gfx_ambiente_descarregar_fora(f, 2);
+  }
   if (filAberta) return;   // a folha de fileiras ocupa a tela (desenhada depois)
 #ifdef NV_TOUCH_UI
   ajPontInline = ajInlineAtivo(modal, &p);

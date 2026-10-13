@@ -10,6 +10,7 @@ static int nTexto, nFim, fimConfirmou = -1;
 
 EMSCRIPTEN_KEEPALIVE int t_iniciar(void) { return SDL_Init(SDL_INIT_EVENTS); }
 EMSCRIPTEN_KEEPALIVE int t_disponivel(void) { return texto_sistema_disponivel(); }
+EMSCRIPTEN_KEEPALIVE void t_mic_modo(int m) { texto_sistema_mic_modo(m); }
 EMSCRIPTEN_KEEPALIVE void t_abrir(const char *s, int voz) { texto_sistema_abrir(s, voz); }
 EMSCRIPTEN_KEEPALIVE void t_fechar(void) { texto_sistema_fechar(); }
 EMSCRIPTEN_KEEPALIVE int t_aberto(void) { return texto_sistema_aberto(); }

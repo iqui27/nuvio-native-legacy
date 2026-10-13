@@ -18,6 +18,8 @@
 // a nota grande em sondar(), mais abaixo.
 #include "descoberta.h"
 #include "legextras.h"
+#include "watchstate.h"
+#include "watchstate_envio.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,8 +71,12 @@ static struct {
   // do resource (ou, na falta, os do manifesto), nMetaPref = 0 = nao disse.
   char metaTipos[64];
   char metaPref[ADD_PREF_MAX][ADD_PREF_TAM]; int nMetaPref;
+  WsDecl ws;     // resource "watch_state" v2 (watchstate.h); zerado = nao participa
 } addon[ADD_MAX];
 static int nAddon;
+static pthread_mutex_t listaTrava = PTHREAD_MUTEX_INITIALIZER;
+void addons_lista_travar(void) { pthread_mutex_lock(&listaTrava); }
+void addons_lista_destravar(void) { pthread_mutex_unlock(&listaTrava); }
 static unsigned versaoLista;   // ver addons_versao
 static _Atomic AddEstado estado = ADD_PARADO;
 static pthread_t fio;
@@ -230,9 +236,18 @@ static int alvoVod(void) {
   return !strcmp(alvoTipo, "movie") || !strcmp(alvoTipo, "series");
 }
 
+// Escritor entra com listaTrava; a poda toma envio -> lista, nunca o inverso.
 static void listaMudou(void) {
   versaoLista++;
+  addons_lista_destravar();
   fontecache_vod_limpar();
+  // A PODA DO DIARIO NAO VEM AQUI. "A lista mudou" tambem e dito pelo
+  // addons_carregar do PACOTE (art/addons.txt, a lista de exemplo), que no
+  // arranque roda logo DEPOIS de a conta ter restaurado a lista dela:
+  // podar contra a lista de exemplo apagava o diario pendente dos addons da
+  // conta em TODO boot. A poda mora em quem remove por vontade do usuario
+  // (addons_definir_lista, addons_esquecer, addons_alternar); o que a lista
+  // de agora nao conhece fica segurado no envio ate a lista da conta voltar.
 }
 
 // A BASE de um addon a partir da URL guardada (arquivo local ou conta). A URL
@@ -284,6 +299,7 @@ int addons_carregar(const char *dirArte) {
   snprintf(caminho, sizeof caminho, "%s/addons.txt", dirArte ? dirArte : ".");
   f = fopen(caminho, "r");
   if (!f) { printf("[addons] sem %s\n", caminho); return 0; }
+  addons_lista_travar();
   nAddon = 0;
   while (nAddon < ADD_MAX && fgets(linha, sizeof linha, f)) {
     char *tab = strchr(linha, '\t');
@@ -308,6 +324,7 @@ int addons_carregar(const char *dirArte) {
     { const char *fimUrl = strchr(tab + 1, '\t');
       size_t lenUrl = fimUrl ? (size_t)(fimUrl - (tab + 1)) : strlen(tab + 1);
       if (!nv_addon_url_cabe(linha, lenUrl)) continue; }
+    memset(&addon[nAddon], 0, sizeof addon[nAddon]);
     // Terceira coluna (opcional): 1 = fornece stream. Ausente vale 1, para
     // arquivo antigo continuar funcionando.
     addon[nAddon].fonte = 1;
@@ -382,7 +399,8 @@ int addons_definir_lista(const AddonRemoto *nova, int n) {
   // inutil — o laco abaixo zera `sondado` e o `id` do manifesto, entao reaplicar
   // uma lista identica jogaria fora o que a sonda aprendeu e faria as colecoes
   // da conta perderem a URL dos addons ate a proxima leitura.
-  if (listaIgual(nova, n)) return 0;
+  addons_lista_travar();
+  if (listaIgual(nova, n)) { addons_lista_destravar(); return 0; }
   for (i = 0; i < n && aceitos < ADD_MAX; i++) {
     // Addon DESLIGADO tambem entra: ele aparece na lista e pode ser religado
     // aqui. So nao e consultado (ver ativoParaConsulta).
@@ -417,6 +435,7 @@ int addons_definir_lista(const AddonRemoto *nova, int n) {
     aceitos++;
   }
   if (aceitos == 0) {
+    addons_lista_destravar();
     printf("[addons] a conta veio sem addons utilizaveis; mantendo a local\n");
     return 0;
   }
@@ -436,6 +455,11 @@ int addons_definir_lista(const AddonRemoto *nova, int n) {
       printf("[addons] %d da conta ficaram de fora: o app guarda no maximo %d\n",
              uteis - aceitos, ADD_MAX); }
   listaMudou();
+  // A lista da conta E a lista certa do usuario: o diario pode ser podado
+  // contra ela — e so agora, com a trava da lista ja solta (a poda toma
+  // envio -> lista, nunca o inverso). Addon que a conta nao tem mais nao
+  // recebe o que ficou pendente.
+  wsenvio_podar();
   return 1;
 }
 
@@ -474,10 +498,12 @@ void addons_diferenca(const AddonRemoto *antes, int na, const AddonRemoto *depoi
 }
 
 void addons_esquecer(void) {
+  addons_lista_travar();
   memset(addon, 0, sizeof addon);
   nAddon = 0;
   addons_marcar_da_conta(0);
   listaMudou();
+  wsenvio_podar();   // lista vazia: nada do diario sobra para quem logou depois
   printf("[addons] lista esquecida (saiu da conta)\n");
 }
 
@@ -1404,12 +1430,21 @@ int addons_fornece(int i, int oque) {
   return addon[i].legenda;
 }
 int addons_alternar(int i) {
-  if (i < 0 || i >= nAddon) return 0;
+  int novo;
+  char base[NV_ADDON_URL_MAX];
+  addons_lista_travar();
+  if (i < 0 || i >= nAddon) { addons_lista_destravar(); return 0; }
   addon[i].ativo = !addon[i].ativo;
+  novo = addon[i].ativo;
+  snprintf(base, sizeof base, "%s", addon[i].base);   // antes de soltar a trava
   listaMudou();
-  printf("[addons] %s: %s\n", addon[i].nome, addon[i].ativo ? "ligado" : "desligado");
+  // Desligou: o pendente DESTE addon sai do diario — e so dele. Poda por
+  // ausencia nao serve aqui: a lista de agora pode ser ainda a de exemplo
+  // do pacote, e ela nao pode apagar o diario dos addons da conta.
+  if (!novo) wsenvio_podar_addon(base);
+  printf("[addons] %s: %s\n", addon[i].nome, novo ? "ligado" : "desligado");
   fflush(stdout);
-  return addon[i].ativo;
+  return novo;
 }
 
 // ACRESCENTA UM ADDON, sem passar por addons_definir_lista.
@@ -1438,19 +1473,22 @@ int addons_adicionar(const char *nome, const char *urlManifest) {
   { static char ap[NV_ADDON_URL_MAX];   // so o fio principal instala
     if (!nv_addon_url_guardar(nome, urlManifest, ap, sizeof ap)) return 0;
     urlManifest = ap; }
+  baseNormalizada(urlManifest, nova, sizeof nova);
+  if (!nova[0]) return 0;
+  addons_lista_travar();
   if (nAddon >= ADD_MAX) {
+    addons_lista_destravar();
     printf("[addons] nao coube: a lista ja tem %d\n", ADD_MAX);
     fflush(stdout);
     return 0;
   }
-  baseNormalizada(urlManifest, nova, sizeof nova);
-  if (!nova[0]) return 0;
   for (i = 0; i < nAddon; i++) {
     char base[NV_ADDON_URL_MAX];
     baseNormalizada(addon[i].base, base, sizeof base);
     if (!strcmp(base, nova)) {
       printf("[addons] ja instalado: %s\n", addon[i].nome);
       fflush(stdout);
+      addons_lista_destravar();
       return 0;
     }
   }
@@ -1627,6 +1665,12 @@ int addons_aceita_id(int i, const char *tipo, const char *id) {
   return 0;
 }
 
+int addons_watchstate(int i, WsDecl *out) {
+  if (i < 0 || i >= nAddon || !addon[i].ativo || !addon[i].ws.push) return 0;
+  *out = addon[i].ws;
+  return 1;
+}
+
 static void capacidadesDoManifesto(int i, const char *corpo) {
   const char *r = strstr(corpo, "\"resources\"");
   int cat = 0, str = 0, leg = 0, met = 0;
@@ -1661,6 +1705,7 @@ static void capacidadesDoManifesto(int i, const char *corpo) {
   { char nome[64];
     if (js_texto_raiz(corpo, "name", nome, sizeof nome) && nome[0])
       snprintf(addon[i].nome, sizeof addon[i].nome, "%s", nome); }
+  ws_decl_ler(corpo, &addon[i].ws);   // antes dos retornos cedo, como o id
   // CATALOGOS DE CANAL, antes do retorno cedo de "resources": um manifesto
   // sem resources legivel ainda declara catalogs[], e o guia precisa deles.
   { const char *p = js_array(corpo, NULL, "catalogs");
@@ -1747,11 +1792,14 @@ static void *sondar(void *u) {
   int i;
   unsigned versao = addons_versao();
   (void)u;
-  for (i = 0; i < nAddon; i++) {
+  for (i = 0; ; i++) {
     char url[NV_ADDON_PEDIDO_MAX], *corpo;
-    if (addon[i].sondado) continue;
-    if (!pedidoCoube(i, nv_addon_url(url, sizeof url, addon[i].base, "/manifest.json"),
-                     sizeof url)) continue;
+    addons_lista_travar();
+    if (i >= nAddon) { addons_lista_destravar(); break; }
+    if (addon[i].sondado ||
+        !pedidoCoube(i, nv_addon_url(url, sizeof url, addon[i].base, "/manifest.json"),
+                     sizeof url)) { addons_lista_destravar(); continue; }
+    addons_lista_destravar();
     corpo = desc_manifesto_cache_obter(url, versao);
     if (corpo) {
       printf("[addons] %s: manifesto do cache da descoberta (sem rede)\n", addon[i].nome);
@@ -1767,7 +1815,14 @@ static void *sondar(void *u) {
       // de `corpo`: a sonda continua dona dele e libera embaixo, como sempre.
       desc_manifesto_cache_guardar(url, versao, corpo);
     }
-    capacidadesDoManifesto(i, corpo);
+    addons_lista_travar();
+    { char atual[NV_ADDON_PEDIDO_MAX];
+      // A resposta de A nao pode declarar capacidades para B no mesmo slot.
+      if (i < nAddon && nv_addon_url(atual, sizeof atual, addon[i].base,
+                                    "/manifest.json") > 0 && !strcmp(atual, url))
+        capacidadesDoManifesto(i, corpo);
+    }
+    addons_lista_destravar();
     free(corpo);
   }
   sondaViva = 0;
@@ -1775,8 +1830,37 @@ static void *sondar(void *u) {
 }
 
 void addons_manifesto_lido(int i, const char *corpo) {
-  if (i < 0 || i >= nAddon || !corpo || !*corpo) return;
-  capacidadesDoManifesto(i, corpo);
+  addons_lista_travar();
+  if (i >= 0 && i < nAddon && corpo && *corpo) capacidadesDoManifesto(i, corpo);
+  addons_lista_destravar();
+}
+
+// O CAMINHO DA DESCOBERTA. O manifesto e baixado com a lista de um instante
+// (rede_baixar, ate 20 s) e o slot pode ter virado OUTRO addon quando a
+// resposta chega: a conta trocou ou reordenou a lista durante a viagem. Sem o
+// recheck de identidade — o mesmo da sonda, la em sondar() — o manifesto
+// atrasado de A gravava a declaracao watch_state e as capacidades de A no
+// slot de B, e o fio de envio passava a entregar eventos de reproducao para
+// a URL de B, addon que nunca pediu o resource. Resposta que nao e do addon
+// do slot agora: descartada.
+void addons_manifesto_lido_base(int i, const char *base, const char *destino,
+                                unsigned versao, const char *corpo) {
+  char atual[NV_ADDON_URL_MAX], identidade[20];
+  int atrasado = 0;
+  if (!base || !*base) return;
+  addons_lista_travar();
+  baseNormalizada(base, atual, sizeof atual);
+  if (i >= 0 && i < nAddon && corpo && *corpo) {
+    ws_destino(addon[i].base, sessao_usuario(), perfis_ativo(), identidade);
+    if (versao == versaoLista && destino && !strcmp(destino, identidade) &&
+        !strcmp(addon[i].base, atual)) capacidadesDoManifesto(i, corpo);
+    else atrasado = 1;
+  }
+  addons_lista_destravar();
+  if (atrasado) {
+    printf("[addons] manifesto atrasado descartado: o slot %d ja e outro addon\n", i);
+    fflush(stdout);
+  }
 }
 
 void addons_sondar_manifestos(void) {
@@ -2641,6 +2725,7 @@ static void buscarPedido(const char *imdb, const char *tipo, int forcar) {
       snprintf(pendTipo, sizeof pendTipo, "%s", tipo ? tipo : "movie");
       pendRenovar = forcar;
       pendBase[0] = 0;
+      stream_invalidar("pending personal-server target");
       return;
     }
     resumo.valido = 0;
@@ -2683,6 +2768,9 @@ static void buscarPedido(const char *imdb, const char *tipo, int forcar) {
       snprintf(pendTipo, sizeof pendTipo, "%s", tipo ? tipo : "movie");
       pendRenovar = forcar;
       snprintf(pendBase, sizeof pendBase, "%s", alvoBase);
+      // The running search is now obsolete; its partial list must not feed
+      // Play while the new target waits for this worker to finish (#413).
+      stream_invalidar("pending source target");
     } else if (progLigado && !pendId[0] && !stream_lista_do_alvo(id))
       // O MESMO alvo, com a busca dele no ar, e a lista da tela nao e mais
       // dela: devolve o que ja chegou em vez de esperar (ou perder) — senao so

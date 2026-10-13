@@ -300,6 +300,25 @@ int main(void) {
   assert(cat_indice_titulo("tt9", 1) == -1);
   puts("ok  mesma serie em duas fileiras: a copia com episodios vence a do CW");
 
+  // #391: uma lista longa nao perde os episodios depois do antigo teto de 1200.
+  montarCatalogo();
+  {
+    CatEp *longa = calloc(2001, sizeof *longa);
+    assert(longa);
+    for (int i = 0; i < 2001; i++) {
+      longa[i].temporada = 1;
+      longa[i].episodio = i + 1;
+    }
+    cat_definir_episodios(0, longa, 2001);
+    free(longa);
+    assert(cat_n_episodios(0) == 2001);
+    for (int i = 0; i < 2001; i++) {
+      assert(cat_episodio(0, i)->temporada == 1);
+      assert(cat_episodio(0, i)->episodio == i + 1);
+    }
+  }
+  puts("ok  #391: catalogo preserva S1E1..S1E2001");
+
   // E) APPEND DE ARTE: o caminho unitário precisa registrar poster e fundo
   // exatamente como o lote e a publicação completa. Repetir o mesmo item é
   // permitido pelo catálogo, mas deve reusar a mesma chave no registry (a

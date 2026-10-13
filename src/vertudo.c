@@ -891,7 +891,7 @@ static void vitEvento(int k) {
   VitLin *l;
   vitMexeu = 1;
   if (tabFocus) {   // o botao "Exibição", acima do destaque
-    if (k == SDLK_LEFT) pedMenu = 1;
+    if (k == SDLK_LEFT || (k == SDLK_UP && ajustes_menu_topo())) pedMenu = 1;
     else if (k == SDLK_DOWN && vitTemItens()) tabFocus = 0;
     else if (enter) alternarExibicao();
     return;
@@ -1014,7 +1014,7 @@ void vertudo_evento(const SDL_Event *e) {
   if (lay == VT_LAY_VITRINE) { vitEvento(k); return; }
   if(collection&&tabFocus) {
     int na = nAbas();
-    if(k==SDLK_LEFT){ if(tabCursor>0)tabCursor--; else pedMenu=1; }
+    if(k==SDLK_LEFT||(k==SDLK_UP&&ajustes_menu_topo())){ if(k==SDLK_LEFT&&tabCursor>0)tabCursor--; else pedMenu=1; }
     if(k==SDLK_RIGHT&&tabCursor<na)tabCursor++;
     if(k==SDLK_RETURN||k==SDLK_KP_ENTER) {
       if(tabCursor>=na) {
@@ -1037,7 +1037,7 @@ void vertudo_evento(const SDL_Event *e) {
   else if (k == SDLK_DOWN) { int v = vizinhoNaLinha(n, celLin[foco] + 1);
                              foco = v >= 0 ? v : n - 1; }
   else if (k == SDLK_UP) { int v = vizinhoNaLinha(n, celLin[foco] - 1);
-                           if (v >= 0) foco = v; }
+                           if (v >= 0) foco = v; else if (ajustes_menu_topo()) pedMenu = 1; }
   else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) abrirFocado();
   // Chegando perto do fim, pede a proxima pagina. Antes de o dono ver o vazio,
   // e nao quando ele ja esta olhando para ele.
