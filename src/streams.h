@@ -167,6 +167,11 @@ int  stream_lista_do_alvo(const char *id);
 void stream_invalidar(const char *porque);
 int  stream_n(void);
 const Stream *stream_item(int i);
+// Leituras de texto da fonte para a faixa "Vai tocar" (vaitocar.c): o idioma
+// como a folha o mostra ("Dublado", "Dual áudio", "Legendado", NULL = nao
+// sei) e a pergunta "o addon cita esta palavra?" (nome, descricao, arquivo).
+const char *stream_idioma(const Stream *s);
+int  stream_texto_tem(const Stream *s, const char *palavra);
 // Fileira de selos do pacote ativo (ver selospacote.h) para fora da folha, como
 // o cartao "Abrindo fonte" do player: padrao em cinza `tom`, colorido em pecas.
 // `stream_selos_ha` diz se ha o que desenhar (a resolucao entra); 0 de largura

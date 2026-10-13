@@ -1,4 +1,5 @@
 #include "streams.h"
+#include "vaitocar.h"
 #include "plrui.h"
 #include "ondever.h"
 #include "naovideo.h"
@@ -15,6 +16,7 @@
 #include "limpa.h"
 #include "vazao.h"
 #include <ctype.h>
+#include <stdarg.h>
 #include <strings.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -3949,5 +3951,125 @@ int stream_fit_abrindo(const Stream *s, char *l1, size_t n1, char *l2, size_t n2
   r = fitAutoResultado(s);
   if (r.razao != SF_BITRATE_ESTIMADO) return 0;
   fitLinhasDe(&r, l1, n1, l2, n2);
+  return 1;
+}
+
+// --- 2.1 "Titulo e Fontes": leituras para a faixa Vai tocar e o cartao da folha ---
+const char *stream_idioma(const Stream *s) { return s ? idiomaDa(s) : NULL; }
+int stream_texto_tem(const Stream *s, const char *palavra) {
+  return s && palavra && temNoTexto(s, palavra);
+}
+
+// COPIAS DO MESMO ARQUIVO (#457/#458). Ver a regra em vaitocar.h: infoHash, ou
+// nome de arquivo normalizado + tamanho conhecido igual. bingeGroup nao entra.
+#define COPIA_CHAVE 160
+static void copiaChave(const Stream *s, char *d, size_t tam) {
+  const char *a = arquivoDa(s);   // buffer estatico: consumido na hora
+  size_t k = 0;
+  for (; *a && k + 1 < tam; a++)
+    if (isalnum((unsigned char)*a)) d[k++] = (char)tolower((unsigned char)*a);
+  d[k] = 0;
+}
+static int copiaIgual(const Stream *x, const char *kx, const Stream *y, const char *ky) {
+  if (x->infoHash[0] && !strcmp(x->infoHash, y->infoHash)) return x->fileIdx == y->fileIdx;
+  if (strlen(kx) < 16 || strcmp(kx, ky)) return 0;
+  if (x->tamanhoBytes && y->tamanhoBytes) return x->tamanhoBytes == y->tamanhoBytes;
+  { unsigned long long a = tamanhoMBFonte(x), b = tamanhoMBFonte(y); if (a && b) return a == b; }
+  return 0;
+}
+int vt_copias_mesmas(int a, int b) {
+  char ka[COPIA_CHAVE], kb[COPIA_CHAVE];
+  if (a < 0 || b < 0 || a >= n || b >= n) return 0;
+  if (a == b) return 1;
+  copiaChave(&lista[a], ka, sizeof ka);
+  copiaChave(&lista[b], kb, sizeof kb);
+  return copiaIgual(&lista[a], ka, &lista[b], kb);
+}
+// Feito uma vez por lista (geracao + tamanho), nunca por quadro: n^2 nomes.
+// copiaRep[i] = primeira copia de i na ORDEM DA FOLHA (ORD); copiaQtd[i] = quantas
+// fontes de OUTRO add-on dobram em i (so conta na primeira).
+static int *copiaRep, *copiaQtd, copiaCap, copiaN = -1;
+static unsigned copiaGer;
+static void copiasCalcular(void) {
+  char (*ch)[COPIA_CHAVE];
+  if (copiaGer == listaGeracao && copiaN == n && copiaRep) return;
+  if (n > copiaCap) {
+    int *r = realloc(copiaRep, sizeof *r * (size_t)n), *q = realloc(copiaQtd, sizeof *q * (size_t)n);
+    if (r) copiaRep = r;
+    if (q) copiaQtd = q;
+    if (!r || !q) { copiaN = -1; return; }
+    copiaCap = n;
+  }
+  ch = malloc(sizeof *ch * (size_t)(n ? n : 1));
+  if (!ch) { copiaN = -1; return; }
+  for (int i = 0; i < n; i++) { copiaRep[i] = i; copiaQtd[i] = 0; copiaChave(&lista[i], ch[i], COPIA_CHAVE); }
+  for (int k = 0; k < n; k++) {
+    int i = ORD(k);
+    if (copiaRep[i] != i) continue;
+    for (int k2 = k + 1; k2 < n; k2++) {
+      int j = ORD(k2);
+      if (copiaRep[j] != j || !strcmp(lista[i].provedor, lista[j].provedor)) continue;
+      if (copiaIgual(&lista[i], ch[i], &lista[j], ch[j])) { copiaRep[j] = i; copiaQtd[i]++; }
+    }
+  }
+  free(ch);
+  copiaGer = listaGeracao; copiaN = n;
+}
+int vt_copia_rep(int i) {
+  if (i < 0 || i >= n) return i;
+  copiasCalcular();
+  return copiaN == n ? copiaRep[i] : i;
+}
+int vt_copias_n(int i) {
+  if (i < 0 || i >= n) return 0;
+  copiasCalcular();
+  return copiaN == n && copiaRep[i] == i ? copiaQtd[i] : 0;
+}
+
+// O CARTAO DA ESCOLHA AUTOMATICA. Cada linha diz um fato que a lista ja prova;
+// nenhuma e inventada (ver as ambar no cabecalho de vaitocar.h).
+static void linhaEsc(VtEscolha *e, int fora, const char *fmt, ...) {
+  va_list ap;
+  if (e->nLinha >= VT_CRITERIA_MAX) return;
+  va_start(ap, fmt);
+  vsnprintf(e->linha[e->nLinha], sizeof e->linha[0], fmt, ap);
+  va_end(ap);
+  e->fora[e->nLinha++] = fora;
+}
+int vt_escolha(VtEscolha *e) {
+  VaiTocar vt;
+  const Stream *s;
+  int i, max, dec = 0, sem = 0, aviso = 0, dobradas = 0;
+  memset(e, 0, sizeof *e);
+  i = melhorFolha >= 0 ? melhorFolha : automaticaDaFolha();
+  if (i < 0 || i >= n) return 0;
+  s = &lista[i];
+  memset(&vt, 0, sizeof vt);
+  vt_descrever(s, &vt);
+  e->tem = 1; e->indice = i;
+  vt_nome_amigavel(&vt, e->nome, sizeof e->nome);
+  snprintf(e->nomeCru, sizeof e->nomeCru, "%s", s->arquivo[0] ? s->arquivo : s->rotulo);
+  snprintf(e->prov, sizeof e->prov, "%s", s->provedor);
+  snprintf(e->tamanho, sizeof e->tamanho, "%s", vt.tamanho);
+  if (vt.res[0] && cabeNaAltura(s) && !excedeDecoder(s))
+    linhaEsc(e, 0, i18n("%s, dentro do que esta TV toca"), vt.res);
+  if (vt.hdr[0]) linhaEsc(e, 0, i18n("%s: mais cor e brilho, a TV liga o modo HDR"), vt.hdr);
+  else if (ajustes_fonte_hdr() == 2) linhaEsc(e, 0, "%s", i18n("Sem HDR, como pedido em Ajustes"));
+  if (soP2P(s)) linhaEsc(e, 0, "%s", i18n("Torrent direto: abre quando houver pares"));
+  else if (!s->foraCache) linhaEsc(e, 0, "%s", i18n("Em cache no debrid: abre rápido"));
+  if (vt.idiomas[0]) linhaEsc(e, 0, i18n("Áudio e legenda: %s"), vt.idiomas);
+  max = ajustes_tamanho_max_gb();
+  if (vt.tamanho[0] && max > 0 && !foraDaFaixaTamanho(s))
+    linhaEsc(e, 0, i18n("%s, abaixo do limite de %d GB"), vt.tamanho, max);
+  for (int k = 0; k < n; k++) {
+    if (excedeDecoder(&lista[k])) dec++;
+    if (lista[k].foraCache) sem++;
+    if (ehInformativa(&lista[k])) aviso++;
+    if (vt_copia_rep(k) != k) dobradas++;
+  }
+  if (dec) linhaEsc(e, 1, i18n("Fora do automático, a TV não toca: %d"), dec);
+  if (sem) linhaEsc(e, 1, i18n("Fora do automático, sem cache: %d"), sem);
+  if (aviso) linhaEsc(e, 1, i18n("Fora do automático, avisos do add-on: %d"), aviso);
+  if (dobradas) linhaEsc(e, 1, i18n("Cópias do mesmo arquivo agrupadas: %d"), dobradas);
   return 1;
 }
