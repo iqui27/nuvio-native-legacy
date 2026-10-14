@@ -14,7 +14,12 @@ int cat_historico_estado_tempo(const char *s,const char *t,long long *ms){(void)
 int vistoep_estado(const char *s,int t,int e){(void)t;(void)e;return watched[atoi(s+2)];}
 void vistoep_definir(const char *s,int t,int e,int v){(void)t;(void)e;watched[atoi(s+2)]=v;}
 const char *i18n(const char *s){return s;}
-int main(void){
+unsigned long long cat_historico_geracao(void){return 1;}
+const char *desc_chave_tmdb(void){return "test";}
+const char *desc_tmdb_idioma(void){return "en";}
+char *rede_baixar(const char *url,int timeout){(void)timeout;char b[500];int id=0;sscanf(strstr(url,"/movie/")+7,"%d",&id);snprintf(b,sizeof b,"{\"imdb_id\":\"tt%d\",\"credits\":{\"cast\":[{\"name\":\"Actor %d\"},{\"name\":\"Other %d\"},{\"name\":\"Third %d\"}]}}",id,id,id,id);return strdup(b);}
+int main(int argc,char **argv){
+ if(argc>1&&!strcmp(argv[1],"quiz")){pessoa_ler(123,"{\"name\":\"A\",\"cast\":[{\"id\":1,\"title\":\"M1\",\"character\":\"C1\"},{\"id\":2,\"title\":\"M2\",\"character\":\"C2\"},{\"id\":3,\"title\":\"M3\",\"character\":\"C3\"},{\"id\":4,\"title\":\"M4\",\"character\":\"C4\"}]}","2026-01-01");fd_abrir();worker(novo(1,0));fd_atualizar();FmQuiz q;assert(fd_quiz(0,&q));puts("fresh quiz: PASS");return 0;}
  dados_iniciar(NULL);
  pessoa_ler(123,"{\"name\":\"A\",\"cast\":[{\"id\":1,\"name\":\"S1\",\"media_type\":\"tv\",\"episode_count\":1},{\"id\":2,\"name\":\"S2\",\"media_type\":\"tv\",\"episode_count\":1}]}","2026-01-01");
  fd_abrir();
