@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #define TMDB "https://api.themoviedb.org/3"
 #define IMG "https://image.tmdb.org/t/p/w342"
@@ -145,7 +146,12 @@ static void *buscar(void *arg) {
   pthread_mutex_lock(&trava);
   int atual = id == idPedido;
   pthread_mutex_unlock(&trava);
-  if (atual && pessoa_ler(id, corpo, "9999-12-31") && !bio[0]) {
+  char hoje[11];
+  time_t agora = time(NULL);
+  struct tm local;
+  localtime_r(&agora, &local);
+  strftime(hoje, sizeof hoje, "%Y-%m-%d", &local);
+  if (atual && pessoa_ler(id, corpo, hoje) && !bio[0]) {
     char *en;
     snprintf(url, sizeof url, "%s/person/%ld?api_key=%s&language=en-US", TMDB, id, chave);
     en = rede_baixar(url, 20);
