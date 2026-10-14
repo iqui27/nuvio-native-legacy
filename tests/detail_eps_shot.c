@@ -565,7 +565,7 @@ int main(int argc, char **argv) {
     assert(episodioAlvo(&t,&e,NULL) && t==1 && e==2);
     rewatch_parcial(IMDB_SERIE,1,2,42);
     assert(rewatch_alvo(IMDB_SERIE,episodios,T1_N+T2_N+T3_N,&t,&e,&p) && p==42);
-    nosEpisodios(0);
+    nivel=1; nosEpisodios(0);
     snprintf(nome,sizeof nome,"%s-session.png",saida); gravar(nome);
     rewatchui_abrir(cat_item(0),RW_ORIGEM_TITULO,0,0);
     quadros(120); rewatchui_desenhar();
