@@ -1176,6 +1176,20 @@ static void aplicar(void) {
   }
 }
 
+void ctx_acao_rapida(const CatItem *titulo, int visto) {
+  if (aberto || estadoOperacao == CTX_PENDENTE || !titulo) return;
+  ctx_abrir_salvo(titulo);
+  if (!aberto) return;
+  esperandoSoltura = 0;
+  for (foco = 0; foco < nOps; foco++)
+    if (ops[foco].acao == (visto ? OP_ASSISTIDO : OP_LISTA)) break;
+  if (foco >= nOps) { aberto = 0; return; }
+  aplicar();
+  // Pending writes/errors stay in the existing menu, so their outcome and
+  // retry remain visible. Immediate actions leave the preview in place.
+  if (estadoOperacao == CTX_CONFIRMADA && pagina == 0) aberto = 0;
+}
+
 void ctx_evento(const SDL_Event *e) {
   int k;
   if (!aberto) return;
