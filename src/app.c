@@ -4833,18 +4833,20 @@ void app_atualizar(float dt, Uint32 agora) {
   }
   { int t,e;
     if (aguardandoFonte != 2 && episodios_escolheu(&t,&e) && player_aberto()) {
-      int titulo=player_indice();
+      int titulo=player_indice(), reassistindo=player_reassistindo();
       diagnostico_cancelar_vazao();
       player_encerrar(); player_abrir(titulo,NULL);
+      player_rewatch(reassistindo);
       player_definir_episodio(t,e);
       marco("buscando fontes"); buscarParaPlayer(); aguardandoFonte=1;
     }
   }
   { int t,e;
     if (aguardandoFonte != 2 && player_pediu_proximo(&t,&e) && player_aberto()) {
-      int titulo=player_indice();
+      int titulo=player_indice(), reassistindo=player_reassistindo();
       diagnostico_cancelar_vazao();
-      player_encerrar(); player_abrir(titulo,NULL); player_definir_episodio(t,e);
+      player_encerrar(); player_abrir(titulo,NULL);
+      player_rewatch(reassistindo); player_definir_episodio(t,e);
       marco("proximo episodio: buscando fontes"); buscarParaPlayer(); aguardandoFonte=1;
     }
   }

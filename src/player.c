@@ -785,6 +785,7 @@ void player_do_inicio(void) {
   retomarSeg = 0.0;
 #endif
 }
+int player_reassistindo(void) { return sessaoRewatch; }
 void player_rewatch(int sim) {
   sessaoRewatch = sim && item() && rewatch_ativa(item()->imdb);
   player_definir_episodio(epT, epE);

@@ -16,6 +16,7 @@
 // Com NULL, aguarda a consulta de fontes; nao simula uma reproducao.
 void player_abrir(int indiceCatalogo, const char *url);
 void player_definir_episodio(int temporada, int episodio);
+int player_reassistindo(void);
 void player_rewatch(int sim); // 0: retomada normal mesmo com reprise ativa
 void player_do_inicio(void);
 // Posicao confiavel para preparar o Android: registro com duracao conhecida,
