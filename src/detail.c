@@ -47,6 +47,7 @@ static TituloTempo detalheTempo;
 #include "vistoep.h"
 #include "vaitocarui.h"
 #include "pessoa.h"
+#include "filmo.h"
 #include "streams.h"
 #include "descoberta.h"
 #include "diretor.h"
@@ -1546,6 +1547,7 @@ void detail_mostrar_pessoa(long tmdb, const char *nome, const char *foto) {
   if (!aberto || tmdb <= 0) return;
   pessoa_pedir(tmdb, nome ? nome : "", foto ? foto : "");
   pessoaAberta = 1;
+  filmo_abrir();
   pessoaFoco = 0;
   pessoaLinha = 0;
 #ifdef NV_TOUCH_UI
@@ -2539,6 +2541,12 @@ void detail_evento(const SDL_Event *e) {
   // cartaz. Filmografia e saga sao telas proprias: o gesto decide na soltura.
   // Nas Recomendacoes o resto da pagina segue como estava (OK no KEYDOWN arma o
   // okDesceEm); aqui so se mede o limiar, que detail_atualizar dispara.
+  if (pessoaAberta) {
+    if (filmo_evento(e)) pessoaAberta = 0;
+    int credito = filmo_titulo();
+    if (credito >= 0) { pessoaFoco = credito; abrirCredito(); }
+    return;
+  }
   { int r = ctxhold_evento(&holdLista, e, listaAceitaMenu());
     if (r == CTXH_LONGO) {
       if (menuNaLista()) { okDesceEm = 0; return; }
@@ -2762,6 +2770,7 @@ void detail_evento(const SDL_Event *e) {
                      ci->elenco[foco.coluna].nome,
                      ci->elenco[foco.coluna].foto);
         pessoaAberta = 1;
+        filmo_abrir();
         pessoaFoco = 0;
         pessoaLinha = 0;
 #ifdef NV_TOUCH_UI
@@ -7024,102 +7033,7 @@ static void desenhaEsqueletoElenco(float a) {
 // seguem as que esta tela ja usa: gutter de 96, poster de 212x318, cartao com
 // o mesmo raio dos outros.
 
-static void desenhaPessoa(float a) {
-  GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
-  gfx_cor(tela, 0.0f, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, a);
-
-  // Foto pedida pela largura com que desenha (PES_FOTO_W=280, cap 352) — o
-  // 640 unico decodificava o retrato inteiro para 280 de cartao. Ver
-  // tests/artemenor.c.
-  { GLuint t = pessoa_foto()[0] ? tex_obter_larg(pessoa_foto(), PES_FOTO_W) : 0;
-    GfxRect r = { NV_DETP_X, 96.0f, PES_FOTO_W, PES_FOTO_H };
-    if (t) {
-      gfx_tex_aspect_atual = tex_aspecto(pessoa_foto());
-      gfx_rect(r, t, GFX_CARD, 0, 0, 0, raioCartaz(PES_FOTO_W, PES_FOTO_H), 0, 0, 0, a);
-      gfx_tex_aspect_atual = 0.0f;
-    } else {
-      gfx_cor(r, raioCartaz(PES_FOTO_W, PES_FOTO_H), 0.13f, 0.13f, 0.13f, a);
-    } }
-
-  { float y = 96.0f + PES_FOTO_H + 32.0f;
-    TxtLinha ln = txt_linha_corta(TXT_TITULO3, pessoa_nome(), 245, 248, 255, 255,
-                                  PES_FOTO_W);
-    txt_desenhar_alpha(ln, NV_DETP_X, y, a);
-    y += ln.h + 10.0f;
-    if (pessoa_area()[0]) {
-      TxtLinha la = txt_linha(TXT_DET_META2, pessoa_area(), 150, 154, 163, 255);
-      txt_desenhar_alpha(la, NV_DETP_X, y, a * 0.9f);
-      y += la.h + 18.0f;
-    }
-    if (pessoa_bio()[0])
-      txt_bloco(TXT_DET_META2, pessoa_bio(), 190, 195, 205, NV_DETP_X, y,
-                PES_FOTO_W, 32.0f, a * 0.9f, 6);
-  }
-
-  { int n = pessoa_n_creditos(), i;
-    float x0 = PES_COL_X;
-    TxtLinha lt = txt_linha(TXT_HEADLINE, "Filmografia", 245, 248, 255, 255);
-    txt_desenhar_alpha(lt, x0, 96.0f, a);
-#ifdef NV_TOUCH_UI
-    float topo = 96.0f + lt.h + 28.0f, area = NV_TELA_H - 24.0f - topo;
-    if (!toquePessoa.livre) toquePessoaOffset = pessoaLinha * (PES_CARD_H + 92.0f);
-    toquerol_vincular(&toquePessoa, (GfxRect){x0, topo, NV_TELA_W - x0, area}, gfx_escala(),
-                     0, ((n + pessoaColunas() - 1) / pessoaColunas()) * (PES_CARD_H + 92.0f) - area, 1, &toquePessoaOffset);
-    ponteiro_rolagem(toquePessoaRolar);
-    gfx_recorte(x0, topo, NV_TELA_W - x0, area);
-#endif
-    for (i = 0; i < n; i++) {
-      int col = i % pessoaColunas(), lin = i / pessoaColunas();
-      float x = x0 + col * (PES_CARD_W + PES_CARD_GAP);
-      float y = 96.0f + lt.h + 28.0f + (lin - pessoaLinha) * (PES_CARD_H + 92.0f);
-#ifdef NV_TOUCH_UI
-      y = topo + lin * (PES_CARD_H + 92.0f) - toquePessoaOffset;
-      if (y + PES_CARD_H + 92.0f < topo || y > topo + area) continue;
-#else
-      if (lin < pessoaLinha) continue;
-#endif
-      GfxRect r = { x, y, PES_CARD_W, PES_CARD_H };
-      const char *po = pessoa_credito_poster(i);
-      GLuint t = po[0] ? tex_obter_larg(po, PES_CARD_W) : 0;
-#ifdef NV_TOUCH_UI
-      ponteiro_alvo_faixa(r.x, r.y, r.w, PES_CARD_H + 92.0f, topo, topo + area, toquePessoaFocar, NULL, i, 0);
-#else
-      if (y + PES_CARD_H > NV_TELA_H - 24.0f) break;
-#endif
-      if (i == pessoaFoco) { pesFocoRect = r; snprintf(pesFocoArte, sizeof pesFocoArte, "%s", po); }
-      // Foco da Home (focoprof.h): anel so com o ajuste ligado, senao cresce.
-      { float fp = i == pessoaFoco ? 1.0f : 0.0f;
-        foco_anel(r, raioCartaz(PES_CARD_W, PES_CARD_H), fp, a);
-        r = foco_zoom(r, fp); }
-      if (t) {
-        gfx_tex_aspect_atual = tex_aspecto(po);
-        gfx_rect(r, t, GFX_CARD, i == pessoaFoco ? 1.0f : 0.0f, 0, 0,
-                 raioCartaz(PES_CARD_W, PES_CARD_H), 0, 0, 0, a);
-        gfx_tex_aspect_atual = 0.0f;
-      } else {
-        gfx_cor(r, raioCartaz(PES_CARD_W, PES_CARD_H), 0.13f, 0.13f, 0.13f, a);
-      }
-      { TxtLinha lc = txt_linha_corta(TXT_DET_META2, pessoa_credito_titulo(i),
-                                      230, 234, 242, 255, PES_CARD_W);
-        txt_desenhar_alpha(lc, x, y + PES_CARD_H + 12.0f, a);
-        { const char *ano = pessoa_credito_ano(i);
-          const char *pap = pessoa_credito_papel(i);
-          char sub[96];
-          snprintf(sub, sizeof sub, "%s%s%s", ano,
-                   (ano[0] && pap[0]) ? "  \xc2\xb7  " : "", pap);
-          if (sub[0]) {
-            TxtLinha ls = txt_linha_corta(TXT_MINI, sub, 140, 144, 153, 255,
-                                          PES_CARD_W);
-            txt_desenhar_alpha(ls, x, y + PES_CARD_H + 12.0f + lc.h + 6.0f,
-                               a * 0.9f);
-          } } }
-    }
-#ifdef NV_TOUCH_UI
-    gfx_sem_recorte();
-#endif
-  }
-}
-
+static void desenhaPessoa(float a) { filmo_desenhar(a); }
 
 // A ARTE BORRADA NA PAGINA DO TITULO (fundo.c: a arte desfocada) leva um veu
 // mais forte que os 28% dos Ajustes: aqui o texto do heroi (titulo, sinopse,
