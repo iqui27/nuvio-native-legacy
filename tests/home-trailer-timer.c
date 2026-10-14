@@ -50,6 +50,7 @@ static int sourceRequests;
 static int appleFailure;
 static char lastSource[128];
 
+int glance_aberto(void) { return 0; }
 int cat_n(void) { return 1; }
 const CatItem *cat_item(int i) { return i == 0 ? &item : NULL; }
 
