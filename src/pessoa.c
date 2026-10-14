@@ -13,7 +13,8 @@
 
 static FmCredito cred[PES_MAX];
 static int nCred;
-static char nome[80], foto[200], bio[1400], area[24], nasc[16], morte[16], lugar[120], outros[240], wiki[24];
+static char nome[80], foto[200], area[24], nasc[16], morte[16], lugar[120], outros[240], wiki[24];
+static char *bio;
 static long idPedido, idEmCurso, idAtual;
 static char nomeSemente[80], fotoSemente[200];
 static int pronta, fioVivo, bioIngles;
@@ -81,14 +82,16 @@ static int linhas(const char *corpo, const char *chave, int papel, FmBruto *b, i
 }
 
 int pessoa_ler(long id, const char *corpo, const char *hoje) {
-  char n[80] = "", f[160] = "", b[1400] = "", a[24] = "", nc[16] = "", mo[16] = "", lu[120] = "", wk[24] = "", caminho[128] = "";
+  char n[80] = "", f[160] = "", a[24] = "", nc[16] = "", mo[16] = "", lu[120] = "", wk[24] = "", caminho[128] = "";
   char ou[240] = "";
   FmBruto *raw = calloc(FM_MAX * 2, sizeof *raw);
   FmCredito *out = calloc(PES_MAX, sizeof *out);
   int k, nb;
-  if (!raw || !out) { free(raw); free(out); return 0; }
+  size_t bioTam = strlen(corpo) + 1;
+  char *b = calloc(1, bioTam);
+  if (!raw || !out || !b) { free(raw); free(out); free(b); return 0; }
   js_texto_raiz(corpo, "name", n, sizeof n);
-  js_texto_raiz(corpo, "biography", b, sizeof b);
+  js_texto_raiz(corpo, "biography", b, bioTam);
   js_texto_raiz(corpo, "known_for_department", a, sizeof a);
   js_texto_raiz(corpo, "birthday", nc, sizeof nc);
   js_texto_raiz(corpo, "deathday", mo, sizeof mo);
@@ -111,13 +114,14 @@ int pessoa_ler(long id, const char *corpo, const char *hoje) {
   pthread_mutex_lock(&trava);
   if (idPedido && idPedido != id) {
     pthread_mutex_unlock(&trava);
-    free(raw); free(out);
+    free(raw); free(out); free(b);
     return 0;
   }
   idAtual = id;
   snprintf(nome, sizeof nome, "%s", n[0] ? n : nomeSemente);
   snprintf(foto, sizeof foto, "%s", f[0] ? f : fotoSemente);
-  snprintf(bio, sizeof bio, "%s", b);
+  free(bio);
+  bio = b;
   snprintf(area, sizeof area, "%s", a[0] ? traduzArea(a) : "");
   snprintf(nasc, sizeof nasc, "%s", nc);
   snprintf(morte, sizeof morte, "%s", mo);
@@ -156,13 +160,13 @@ static void *buscar(void *arg) {
   struct tm local;
   localtime_r(&agora, &local);
   strftime(hoje, sizeof hoje, "%Y-%m-%d", &local);
-  if (atual && pessoa_ler(id, corpo, hoje) && !bio[0]) {
+  if (atual && pessoa_ler(id, corpo, hoje) && (!bio || !bio[0])) {
     char *en;
     snprintf(url, sizeof url, "%s/person/%ld?api_key=%s&language=en-US", TMDB, id, chave);
     en = rede_baixar(url, 20);
     if (en) {
       pthread_mutex_lock(&trava);
-      if (id == idPedido) { js_texto_raiz(en, "biography", bio, sizeof bio); bioIngles = bio[0] != 0; revisao++; }
+      if (id == idPedido) { char *trad = calloc(1, strlen(en) + 1); if (trad) { js_texto_raiz(en, "biography", trad, strlen(en) + 1); free(bio); bio = trad; bioIngles = bio[0] != 0; revisao++; } }
       pthread_mutex_unlock(&trava);
       free(en);
     }
@@ -182,7 +186,8 @@ void pessoa_pedir(long tmdbId, const char *nomeConhecido, const char *fotoConhec
   if (idPedido == tmdbId) { pthread_mutex_unlock(&trava); return; }
   idPedido = tmdbId;
   nCred = 0; pronta = 0; bioIngles = 0; revisao++;
-  bio[0] = area[0] = nasc[0] = morte[0] = lugar[0] = outros[0] = wiki[0] = 0;
+  free(bio); bio = NULL;
+  area[0] = nasc[0] = morte[0] = lugar[0] = outros[0] = wiki[0] = 0;
   // The name and photo the cast row already had show at once, so the screen opens with content.
   snprintf(nomeSemente, sizeof nomeSemente, "%s", nomeConhecido ? nomeConhecido : "");
   snprintf(fotoSemente, sizeof fotoSemente, "%s", fotoConhecida ? fotoConhecida : "");
@@ -201,7 +206,7 @@ long pessoa_id(void) { return idAtual; }
 unsigned pessoa_revisao(void) { return revisao; }
 const char *pessoa_nome(void) { return nome; }
 const char *pessoa_foto(void) { return foto; }
-const char *pessoa_bio(void) { return bio; }
+const char *pessoa_bio(void) { return bio ? bio : ""; }
 const char *pessoa_area(void) { return area; }
 const char *pessoa_nascimento(void) { return nasc; }
 const char *pessoa_morte(void) { return morte; }
