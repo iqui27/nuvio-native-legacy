@@ -5140,7 +5140,7 @@
   T("Vai junto", "Goes with it"),
   T("Vai mudar: Background do hero, de %s para %s.", "Promeniće se: Pozadina glavnog prikaza, sa %s na %s."),
   T("Vai mudar: Destaque com outra arte, de Ligado para Desligado.", "Promeniće se: Drugačija slika glavnog prikaza, iz Uključeno u Isključeno."),
-  T("Vai para o histórico do Nuvio, "нн нннн нннннн нннн н нннн нннннн нннн, нннн н ннннн."),
+  T("Vai para o histórico do Nuvio, do Trakt e do Simkl com esta data.", "Izlazi u istoriju Nuvio, Trakt i Simkl sa ovim datumom."),
   T("Vai tocar", "Reprodukovaće se"),
   T("Vale a partir do próximo trailer. Se a tela ficar preta ou aparecer a tela inicial da TV, desligue.", "Važi od sledećeg trejlera. Ako ekran pocrni ili se pojavi početni ekran televizora, isključite."),
   T("Vale a partir do próximo vídeo. Se a tela ficar preta ou aparecer a tela inicial da TV, desligue.", "Važi od sledećeg videa. Ako ekran postane crn ili se pojavi početni ekran televizora, isključite."),
