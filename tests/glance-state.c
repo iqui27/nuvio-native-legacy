@@ -3,12 +3,15 @@
 #include <assert.h>
 static Uint32 clockNow = 100;
 static int opened, playing, failed, opens, actions, busy, requests;
+static int catalogIndex = -1, episodeBusy, episodeRequests;
+void desc_episodios(int idx, int season) { assert(idx == 0 && season == 0); episodeBusy = 1; episodeRequests++; }
+int desc_episodios_carregando(int idx) { assert(idx == 0); return episodeBusy; }
 static CatItem item, result;
 static char requestedType[16], lastUrl[32];
 Uint32 SDL_GetTicks(void) { return clockNow; }
 unsigned cat_revisao(void) { return 1; }
 int cat_copiar_item(int i, CatItem *out) { if (i != 0) return 0; *out = result; return 1; }
-int ctxlista_indice(const char *id, long tmdb) { (void)id; (void)tmdb; return -1; }
+int ctxlista_indice(const char *id, long tmdb) { (void)id; (void)tmdb; return catalogIndex; }
 int ctx_aberto(void) { return 0; }
 void ctx_acao_rapida(const CatItem *ci, int visto) { (void)ci; (void)visto; actions++; }
 int desc_titulo_buscando(void) { return busy; }
@@ -80,6 +83,18 @@ int main(void) {
   glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
   glance_abrir(&source, 0); // A new session for the same title.
   assert(!glance_tomar_acao(0) && actions == 1);
+  busy = 0; catalogIndex = 0;
+  snprintf(item.imdb, sizeof item.imdb, "ttseries"); item.tmdb = 0; result = item;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  assert(episodeRequests == 1 && actions == 1);
+  glance_atualizar(.016f, ++clockNow); assert(actions == 1);
+  result.nTemporadas = 2; result.temporadas[0] = 1; result.temporadas[1] = 2; episodeBusy = 0;
+  glance_atualizar(.016f, ++clockNow); assert(actions == 2);
+  glance_atualizar(.016f, ++clockNow); assert(actions == 2);
+  result.nTemporadas = 0;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  episodeBusy = 0;
+  glance_atualizar(.016f, ++clockNow); assert(actions == 2); // No local success on fetch failure.
   puts("glance-state: ok");
   return 0;
 }

@@ -26,12 +26,13 @@ static Uint32 desde, prazo;
 static float focoAnim[4];
 static unsigned revisao;
 static int acaoPendente;
+static int acaoEpisodios = -1;
 static CatItem acaoTitulo;
 static Uint32 acaoDesde;
 static GfxRect videoRect(void) { return (GfxRect){ 1110, 180, 700, 394 }; }
 
 void glance_fechar(void) {
-  acaoPendente = 0;
+  acaoPendente = 0; acaoEpisodios = -1;
   if (!aberta) return;
   aberta = 0;
   trailer_fechar();
@@ -44,7 +45,7 @@ static int selecionar(int i) {
   CatItem it;
   if (!fonte.total || !fonte.item || i < 0 || i >= fonte.total() || !fonte.item(i, &it)) return 0;
   trailer_fechar();
-  acaoPendente = 0;
+  acaoPendente = 0; acaoEpisodios = -1;
   atual = it; indice = i; botao = GLANCE_BT_PRIMARIO;
   trailerPedido = trailerFim = trailerQual = 0;
   desde = SDL_GetTicks(); prazo = 0;
@@ -87,6 +88,13 @@ void glance_evento(const SDL_Event *e) {
       if (abrir) abrir(i);
     } else {
       int k = ctxlista_indice(atual.imdb, atual.tmdb);
+      CatItem ci = atual;
+      if (k >= 0 && cat_copiar_item(k, &ci) && !strcmp(ci.tipo, atual.tipo) &&
+          botao == GLANCE_BT_VISTO && !strcmp(ci.tipo, "series") && ci.nTemporadas == 0) {
+        acaoPendente = botao; acaoTitulo = atual; acaoDesde = SDL_GetTicks();
+        acaoEpisodios = k; desc_episodios(k, 0);
+        return;
+      }
       if ((k < 0 && !strncmp(atual.imdb, "tmdb:", 5)) ||
           (botao == GLANCE_BT_VISTO && !strcmp(atual.tipo, "series") && atual.nTemporadas == 0)) {
         if (!desc_titulo_buscando()) {
@@ -95,7 +103,7 @@ void glance_evento(const SDL_Event *e) {
                                     atual.tmdb, !strcmp(atual.tipo, "series") ? "tv" : atual.tipo,
                                     atual.titulo, atual.meta, atual.poster);
         }
-      } else ctx_acao_rapida(&atual, botao == GLANCE_BT_VISTO);
+      } else ctx_acao_rapida(&ci, botao == GLANCE_BT_VISTO);
     }
   }
 }
@@ -111,7 +119,11 @@ int glance_tomar_acao(int idx) {
   }
   if (!cat_copiar_item(idx, &ci) || strcmp(ci.tipo, acaoTitulo.tipo) ||
       (strcmp(ci.imdb, acaoTitulo.imdb) && !(ci.tmdb > 0 && ci.tmdb == acaoTitulo.tmdb))) return 0;
-  b = acaoPendente; acaoPendente = 0;
+  if (acaoPendente == GLANCE_BT_VISTO && !strcmp(ci.tipo, "series") && ci.nTemporadas == 0) {
+    acaoEpisodios = idx; desc_episodios(idx, 0);
+    return 1;
+  }
+  b = acaoPendente; acaoPendente = 0; acaoEpisodios = -1;
   ctx_acao_rapida(&ci, b == GLANCE_BT_VISTO);
   return 1;
 }
@@ -122,7 +134,17 @@ void glance_atualizar(float dt, Uint32 agora) {
   char youtube[32] = "";
   int qual = 0, venceu;
   if (!aberta) return;
-  if (acaoPendente && (agora - acaoDesde >= 20000 || !desc_titulo_buscando()))
+  if (acaoPendente && acaoEpisodios >= 0) {
+    CatItem ci;
+    if (agora - acaoDesde < 20000 && cat_copiar_item(acaoEpisodios, &ci) &&
+        !strcmp(ci.tipo, acaoTitulo.tipo) &&
+        (!strcmp(ci.imdb, acaoTitulo.imdb) || (ci.tmdb > 0 && ci.tmdb == acaoTitulo.tmdb)) && ci.nTemporadas > 0) {
+      acaoPendente = 0; acaoEpisodios = -1;
+      ctx_acao_rapida(&ci, 1);
+    } else if (agora - acaoDesde >= 20000 || !desc_episodios_carregando(acaoEpisodios)) {
+      acaoPendente = 0; acaoEpisodios = -1;
+    }
+  } else if (acaoPendente && (agora - acaoDesde >= 20000 || !desc_titulo_buscando()))
     acaoPendente = 0;
   // A catalog replacement invalidates the owner's positions. Do not let a
   // late publication make an arrow or Details act on another title.
