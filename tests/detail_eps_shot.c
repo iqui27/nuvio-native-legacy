@@ -92,6 +92,20 @@ static float fx_titulo_bloco(TxtEstilo estilo, const char *s, int r, int g, int 
 #define gfx_icone fx_icone
 #define plrui_kicker fx_kicker
 #include "../src/detail.c"
+// As escritas locais da folha sao reais; refazer/sync nao abre fios de rede.
+static void rwRefazer(void) {}
+static void rwSujar(void) {}
+static void rwTirar(const char *id,int t,int e) { (void)id; (void)t; (void)e; }
+static void rwRemoto(const char *id,const char *chave,int ocultar) { (void)id; (void)chave; (void)ocultar; }
+#define desc_refazer_continuar rwRefazer
+#define sync_sujar_progresso rwSujar
+#define desc_tirar_continuar rwTirar
+#define tirarremoto_executar rwRemoto
+#include "../src/rewatchui.c"
+#undef desc_refazer_continuar
+#undef sync_sujar_progresso
+#undef desc_tirar_continuar
+#undef tirarremoto_executar
 #include "menu.h"
 #include "intro.h"
 #include "ilha.h"
@@ -529,6 +543,42 @@ int main(int argc, char **argv) {
     ajustes_dir(dados_dir()); }
 
   montarCatalogo();
+  if (getenv("NV_REWATCH_SHOT")) {
+    SDL_Event ev={0};
+    semear(1,T1_N,T1_N); semear(2,T2_N,T2_N);
+    progVis=progExib=T1_N+T2_N;
+    abrir(0,0); nivel=0; botao=0;
+    ev.type=SDL_KEYDOWN; ev.key.keysym.sym=SDLK_RETURN; detail_evento(&ev);
+    ev.type=SDL_KEYUP; detail_evento(&ev);
+    assert(rewatchui_aberta() && !detail_pediu_reproduzir());
+    quadros(120); rewatchui_desenhar();
+    snprintf(nome,sizeof nome,"%s-start.png",saida); gravar(nome);
+    // O soltar herdado da abertura nao inicia nada.
+    rewatchui_evento(&ev); assert(!rewatch_ativa(IMDB_SERIE));
+    ev.type=SDL_KEYDOWN; rewatchui_evento(&ev);
+    ev.type=SDL_KEYUP; rewatchui_evento(&ev);
+    assert(rewatch_ativa(IMDB_SERIE));
+    int t=0,e=0,p=0; char id[64];
+    assert(rewatchui_tocar(id,sizeof id,&t,&e));
+    assert(episodioAlvo(&t,&e,NULL) && t==1 && e==1);
+    rewatch_registrar(IMDB_SERIE,1,1);
+    assert(episodioAlvo(&t,&e,NULL) && t==1 && e==2);
+    rewatch_parcial(IMDB_SERIE,1,2,42);
+    assert(rewatch_alvo(IMDB_SERIE,episodios,T1_N+T2_N+T3_N,&t,&e,&p) && p==42);
+    nosEpisodios(0);
+    snprintf(nome,sizeof nome,"%s-session.png",saida); gravar(nome);
+    rewatchui_abrir(cat_item(0),RW_ORIGEM_TITULO,0,0);
+    quadros(120); rewatchui_desenhar();
+    snprintf(nome,sizeof nome,"%s-end.png",saida); gravar(nome);
+    ev.type=SDL_KEYDOWN; rewatchui_evento(&ev);
+    ev.type=SDL_KEYUP; rewatchui_evento(&ev);
+    assert(!rewatch_ativa(IMDB_SERIE) && !rewatch_vezes(IMDB_SERIE,1,1));
+    assert(vistoep_estado(IMDB_SERIE,1,1)==1);
+    quadros(120);
+    snprintf(nome,sizeof nome,"%s-ended.png",saida); gravar(nome);
+    puts("PASS: D-pad start/end, orphan OK, target, partial, session badge and preserved history");
+    return 0;
+  }
   if (getenv("NV_APPLE_EP")) {
     semear(1,2,T1_N);
     itens[0].temporada=1; itens[0].episodio=3;

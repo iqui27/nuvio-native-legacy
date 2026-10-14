@@ -23,7 +23,7 @@
 #include "gfx.h"
 
 // Ordem FIXA das linhas (a do uso: o trailer e o que mais se procura).
-enum { DMAIS_TRAILER = 0, DMAIS_EXPLORAR, DMAIS_ARTE, DMAIS_RECOMENDAR, DMAIS_N };
+enum { DMAIS_TRAILER = 0, DMAIS_EXPLORAR, DMAIS_ARTE, DMAIS_RECOMENDAR, DMAIS_REWATCH, DMAIS_REWATCH_FIM, DMAIS_N };
 
 // Abre com as acoes que existem neste titulo (`disp[i]` != 0), foco na
 // primeira. Sem nenhuma disponivel, nao abre.

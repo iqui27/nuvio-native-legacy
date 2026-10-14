@@ -11,6 +11,8 @@
 #include "layout.h"
 #include "anim.h"
 #include "vistoep.h"
+#include "rewatch.h"
+#include "sync.h"
 #include "vistonao.h"
 #include "visto.h"
 #include "simkl.h"   // SMK_LOTE_MAX: menor limite de envio dos destinos
@@ -178,7 +180,7 @@ static void montarRotulos(void) {
                                                          : i18n("Desmarcar temporada (%d)"), quantos);
       ic = i == VT_MARCAR ? "aj_eye" : "aj_eye-off";
     } else if (modo == VM_ESTE) {
-      snprintf(vmRot[i], sizeof vmRot[i], "%s", vmVisto ? i18n("Marcar este episódio") : i18n("Desmarcar este episódio"));
+      snprintf(vmRot[i], sizeof vmRot[i], "%s", vmVisto ? i18n(rewatch_ativa(vmId) ? "Marcar como revisto" : "Marcar este episódio") : i18n("Desmarcar este episódio"));
       ic = vmVisto ? "aj_eye" : "aj_eye-off";
     } else if (modo == VM_ATE) {
       snprintf(vmRot[i], sizeof vmRot[i], quantos == 1 ? i18n("Até aqui (%d episódio)") : i18n("Até aqui (%d episódios)"), quantos);
@@ -211,7 +213,7 @@ static void menuAbrir(int idx, int t, int e, const char *nome, int so) {
   vmTemAncora = 0;
   // O SENTIDO SAI DO ESTADO: quem esta olhando um episodio visto quer
   // desmarcar. Desconhecido (-1) conta como nao visto.
-  vmVisto = vistoep_estado(ci->imdb, t, e) == 1 ? 0 : 1;
+  vmVisto = rewatch_ativa(ci->imdb) ? 1 : vistoep_estado(ci->imdb, t, e) == 1 ? 0 : 1;
   // vmConsumir FICA EM ZERO. O menu abre no KEYUP da pressao longa — o OK que
   // o abriu ja foi SOLTO quando se chega aqui — e com 1 o proximo KEYDOWN, que
   // e a escolha de verdade, era engolido como se fosse esse soltar. Era o
@@ -344,6 +346,13 @@ static int aplicarVisto(int modo, int visto) {
   }
   if (n < 1) return 0;
   mudou = vistoep_aplicar(ci->imdb, lote, n, visto, envio, &ja);
+  if (visto && rewatch_ativa(ci->imdb)) {
+    memcpy(envio,lote,sizeof lote[0]*(size_t)n);
+    mudou=n;
+    for (int i=0;i<n;i++) rewatch_registrar(ci->imdb,lote[i].temporada,lote[i].episodio);
+    sync_sujar_progresso();
+    desc_refazer_continuar();
+  }
   printf("[visto] menu: %s %s %s S%dE%d: %d enviados, %d ja estavam\n",
          nomeModo(modo), visto ? "marcar" : "desmarcar", ci->imdb, vmT, vmE, mudou, ja);
   fflush(stdout);

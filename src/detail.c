@@ -45,6 +45,8 @@ static TituloTempo detalheTempo;
 #include "agenda.h"
 #include "agendaui.h"
 #include "vistoep.h"
+#include "rewatch.h"
+#include "rewatchui.h"
 #include "vaitocarui.h"
 #include "pessoa.h"
 #include "streams.h"
@@ -1722,6 +1724,12 @@ static int episodioAlvo(int *temp, int *epis, int *origem) {
                            ci->temporada == ep->temporada && ci->episodio == ep->episodio) ? 2 : 1;
     return 1;
   }
+  if (ci && rewatch_ativa(ci->imdb)) {
+    int pct = 0;
+    if (!rewatch_alvo(ci->imdb, cat_episodio(idx, 0), cat_n_episodios(idx), temp, epis, &pct)) return 0;
+    if (origem) *origem = pct ? 2 : 3;
+    return 1;
+  }
   // Em andamento: o item do "Continuar assistindo" traz temporada e episodio.
   if (ci && ci->progresso > 0 && ci->progresso < ajustes_cw_concluido() && ci->temporada > 0 && ci->episodio > 0 &&
       !extras_ep_visto(ci->temporada, ci->episodio)) {
@@ -2287,6 +2295,10 @@ static void maisDisponiveis(int d[DMAIS_N]) {
   d[DMAIS_EXPLORAR] = temExplorar();
   d[DMAIS_ARTE] = temArte();
   d[DMAIS_RECOMENDAR] = temRecomendar();
+  const CatItem *ci = cat_item(idx);
+  int rw = ci && ehSerie() && ci->imdb[0];
+  d[DMAIS_REWATCH] = rw && !rewatch_ativa(ci->imdb);
+  d[DMAIS_REWATCH_FIM] = rw && rewatch_ativa(ci->imdb);
 }
 static int temMais(void) {
   int d[DMAIS_N], i;
@@ -2446,7 +2458,9 @@ static void abrirCredito(void) {
 // O QUE A ILHA "MAIS OPCOES" ESCOLHEU (detmais.h). Eram os ramos dos quatro
 // circulares que sairam da linha; o comportamento de cada um e o mesmo.
 static void executarMais(int dm) {
-  if (dm == DMAIS_TRAILER) {
+  if (dm == DMAIS_REWATCH || dm == DMAIS_REWATCH_FIM) {
+    rewatchui_abrir(cat_item(idx), RW_ORIGEM_TITULO, 0, 0);
+  } else if (dm == DMAIS_TRAILER) {
     tocarTrailerCheio(0);
   } else if (dm == DMAIS_EXPLORAR) {
     // O roteador (app.c) fecha a pagina e abre a toca neste titulo.
@@ -2691,7 +2705,13 @@ void detail_evento(const SDL_Event *e) {
       // marcou nada, apesar do icone. Agora tem pedido proprio.
       int acao = acaoEm(botao);
       if (acao == ACAO_PRIMARIO) {
-        if (dur >= NV_HOLD_MS) pedFontes = 1; else pedReproduzir = 1;
+        const CatItem *ci = cat_item(idx);
+        int total = 0, vistos = 0;
+        extras_progresso_serie(&vistos, &total);
+        if (dur >= NV_HOLD_MS) pedFontes = 1;
+        else if (ci && ehSerie() && !rewatch_ativa(ci->imdb) && total > 0 && vistos >= total)
+          rewatchui_abrir(ci, RW_ORIGEM_TITULO, 0, 0);
+        else pedReproduzir = 1;
 
       } else if (acao == ACAO_INICIO) {
         // "Assistir do comeco" (issue #46): mesmo caminho do primario, mas o
@@ -4501,6 +4521,16 @@ static void heroWeb(float a, float desloc) {
     else { snprintf(rot, sizeof rot, "%s",
                     det_rotulo_primario(ci ? ci->progresso : 0, ajustes_cw_concluido()));
            retomando = !ehSerie(); } }
+  if (ci && ehSerie()) {
+    int total = 0, vistos = 0;
+    extras_progresso_serie(&vistos, &total);
+    if (rewatch_ativa(ci->imdb)) {
+      int t=0,e=0;
+      if (episodioAlvo(&t,&e,NULL)) snprintf(rot,sizeof rot,i18n("Reassistindo T%dE%d"),t,e);
+      else snprintf(rot,sizeof rot,"%s",i18n("Encerrar reassistida"));
+      retomando = 0;
+    } else if (total > 0 && vistos >= total) snprintf(rot,sizeof rot,"%s",i18n("Reassistir do início"));
+  }
   // Retomando com progresso: trilho no botao e, no lugar de "Retomar", o tempo
   // que falta, como o app da Apple TV ("1 h 51 min"). Serie mantem o TxEy na
   // frente. Sem duracao conhecida o rotulo fica como estava.
@@ -5020,6 +5050,18 @@ static void resumoTemporada(float x, float yPilulas, float a) {
   size_t k = 0;
   contarTemporada(&total, &vistos, &futuros, &sabe);
   if (total <= 0) return;
+  const CatItem *rwItem = cat_item(idx);
+  if (rwItem && rewatch_ativa(rwItem->imdb)) {
+    int feitos = rewatch_feitos(rwItem->imdb), todos = 0;
+    for (int i=0;i<cat_n_episodios(idx);i++) {
+      const CatEp *ep=cat_episodio(idx,i);
+      if (ep && ep->temporada>0 && !epNaoExibido(ep)) todos++;
+    }
+    snprintf(linha,sizeof linha,i18n("Reassistindo · %d de %d episódios"),feitos,todos);
+    txt_desenhar_alpha(txt_linha(TXT_DET_META2,linha,190,192,200,255),x,
+                       yPilulas-NV_DETP_TEMP_RESUMO_DY-28,a);
+    return;
+  }
   // Com historico a linha e uma FRACAO ("2 de 8 assistidos"), a mesma forma
   // da linha de progresso do heroi; sem historico sobra o total — zero vistos
   // seria afirmar o que ninguem nos contou (vistoep e tri-estado).
@@ -5221,7 +5263,11 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
   if (ep && serie && serie->imdb[0] &&
       vistoep_estado(serie->imdb, ep->temporada, ep->episodio) == 1) {
     gfx_cor(th, raioTh, 0, 0, 0, .12f * a);
-    desenhaAssistidoEpisodio(th, a);
+    int vezes = rewatch_vezes(serie->imdb, ep->temporada, ep->episodio);
+    if (vezes > 1) {
+      char selo[16]; snprintf(selo,sizeof selo,"%dx",vezes);
+      badge_desenhar(th.x+th.w-badge_largura(selo)-18,th.y+18,selo,BADGE_REALCE,a);
+    } else desenhaAssistidoEpisodio(th, a);
   }
   th = thLayout;   // o texto abaixo segue a caixa de repouso
 

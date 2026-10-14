@@ -14,19 +14,19 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-deteps-dados.XXXXXX)
+NUVIO_DADOS=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-deteps-dados.XXXXXX")
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 echo "dados do teste em $NUVIO_DADOS"
 
 sources=()
 for source in src/*.c src/dts/*.c; do
-  case "$source" in src/main.c|src/detail.c) continue;; esac
+  case "$source" in src/main.c|src/detail.c|src/rewatchui.c) continue;; esac
   sources+=("$source")
 done
 
-cc -DNV_SHOT_HOOKS "${sources[@]}" tests/detail_eps_shot.c -Isrc -o /tmp/nuvio-deteps-shot \
+cc -DNV_SHOT_HOOKS "${sources[@]}" tests/detail_eps_shot.c -Isrc -o "${TMPDIR:-/tmp}/nuvio-deteps-shot" \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-deteps-shot "$@"
+"${TMPDIR:-/tmp}/nuvio-deteps-shot" "$@"

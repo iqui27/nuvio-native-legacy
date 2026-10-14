@@ -330,6 +330,7 @@ static int   esperandoFonte = 0;   // aberto sem URL, esperando o addon responde
 // que vai ao pipeline quando ela acabar. "" = nenhuma.
 static char   prebuscaUrl[4096];
 static Uint32 prebuscaDesde;
+static int sessaoRewatch;
 static float posSeg = 0.0f;
 // Relogio da LEGENDA (#92): posSeg e o ultimo currentTime do pipeline, que na
 // C9 chega a cada ~200 ms. A legenda desenhada com ele andava aos degraus e em
@@ -784,6 +785,10 @@ void player_do_inicio(void) {
   retomarSeg = 0.0;
 #endif
 }
+void player_rewatch(int sim) {
+  sessaoRewatch = sim && item() && rewatch_ativa(item()->imdb);
+  player_definir_episodio(epT, epE);
+}
 void player_definir_episodio(int t, int e) {
   const CatItem *c = item();
   epT = t; epE = e; linhaEp[0] = 0;
@@ -792,9 +797,13 @@ void player_definir_episodio(int t, int e) {
   // "progresso" lido ali seria de outro titulo qualquer.
   if (c && !canalSessao && !semRetomada && c->progresso > 0 && c->progresso < ajustes_cw_concluido() &&
       (strcmp(c->tipo,"series") || (t==c->temporada && e==c->episodio))) retomarPct=c->progresso;
+  if (sessaoRewatch && c && !semRetomada) {
+    int rt=0,re=0,rp=0;
+    retomarPct = rewatch_parcial_de(c->imdb,&rt,&re,&rp) && rt==t && re==e ? rp : 0;
+  }
 #ifdef NV_ANDROID
   retomarSeg = 0.0;
-  if (c && retomarPct > 0) {
+  if (!sessaoRewatch && c && retomarPct > 0) {
     char chave[48]; ProgRegistro r;
     int serie = !strcmp(c->tipo, "series");
     prog_chave(chave, sizeof chave, c->imdb, serie ? t : 0, serie ? e : 0);
@@ -807,7 +816,8 @@ void player_definir_episodio(int t, int e) {
     ProgRegistro r;
     char chave[48];
     baseT = t; baseE = e; basePct = retomarPct; baseTocou = 0;
-    if (c && retomarPct > 0) {
+    if (sessaoRewatch) { basePos=baseDur=0; baseTocou=retomarPct>0; }
+    else if (c && retomarPct > 0) {
       int serie = !strcmp(c->tipo, "series");
       prog_chave(chave, sizeof chave, c->imdb, serie ? t : 0, serie ? e : 0);
       if (prog_por_chave(chave, &r)) { basePos = r.posSeg; baseDur = r.durSeg; baseTocou = r.tocou; }
@@ -1432,6 +1442,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
     // A COPIA e feita AQUI, no unico instante em que o indice e sabidamente o
     // do titulo pedido. Ver item().
     if (ci) { itemFixo = *ci; temFixo = 1; } else temFixo = 0;
+    sessaoRewatch = ci && rewatch_ativa(ci->imdb);
     artehero_logo_sessao_iniciar(temFixo ? &itemFixo : NULL);
     canalSessao = ci && (!strcmp(ci->tipo, "channel") || !strcmp(ci->tipo, "tv"));
     if (canalSessao) itemCanal = *ci;
@@ -2013,7 +2024,8 @@ static void fecharSessao(int manter) {
     // foi alcancada: cat_visto e a proxima base leem `tocou`.
     if (assistiu && ci && epE == 0 && strcmp(ci->tipo, "series"))
       cqd_concluir_local(ci->imdb);
-    cat_salvar_progresso_ep(ia, pos, duracaoSeg, epT, epE, chegou);
+    // A reprise tem seu proprio parcial: nao pisa na retomada normal.
+    if (!sessaoRewatch) cat_salvar_progresso_ep(ia, pos, duracaoSeg, epT, epE, chegou);
     // E tambem para o Trakt, que e de onde o "continue assistindo" vem: gravar
     // so aqui deixaria este app discordando dos outros aparelhos do dono.
     // Personal-server items stay private: no Trakt, friends feed or social
@@ -2053,7 +2065,7 @@ static void fecharSessao(int manter) {
       // rever um episodio ja visto nao reescreve historico.
       // EXCETO NA SESSAO DE REASSISTIR (rewatch.h): la cada conclusao e um play
       // novo e o historico vai de novo, mesmo com o check ja marcado.
-      int reassistindo = rewatch_ativa(ci->imdb);
+      int reassistindo = sessaoRewatch && rewatch_ativa(ci->imdb);
       if (assistiu) {
         int dest = visto_destinos() & ~VISTO_TRAKT;
         // O stop do scrobble ja fecha o visto no Simkl (e cai no historico
