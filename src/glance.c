@@ -129,7 +129,7 @@ void glance_atualizar(float dt, Uint32 agora) {
     trailerPedido = 1; desde = agora;
   }
   if (trailerQual > 0) {
-    if (trailer_tocando()) prazo = 0;
+    if (trailer_tocando()) { prazo = 0; return; }
     else if (trailer_falhou() || (prazo && (Sint32)(agora - prazo) >= 0)) {
       trailer_fechar();
       trailerQual = trailerfonte_depois(trailerfonte_ajuste(), trailerfonte_tizen(), trailerQual);
