@@ -521,7 +521,7 @@
   T("Abrir o guia", "Otvori vodič"),
   T("Abrir o próximo no fio", "Otvori sledeće u nizu"),
   T("Abrir o título", "Otvori naslov"),
-  T("Abrir opções", "нннннннн нннннн"),
+  T("Abrir opções", "Otvori opcije"),
   T("Abrir para ver o que acharam", "Otvori da vidiš šta misle"),
   T("Abrir página", "Otvori stranicu naslova"),
   T("Abrir título", "Otvori naslov"),
