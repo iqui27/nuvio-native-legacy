@@ -31,6 +31,7 @@ static Uint32 acaoDesde;
 static GfxRect videoRect(void) { return (GfxRect){ 1110, 180, 700, 394 }; }
 
 void glance_fechar(void) {
+  acaoPendente = 0;
   if (!aberta) return;
   aberta = 0;
   trailer_fechar();
@@ -43,6 +44,7 @@ static int selecionar(int i) {
   CatItem it;
   if (!fonte.total || !fonte.item || i < 0 || i >= fonte.total() || !fonte.item(i, &it)) return 0;
   trailer_fechar();
+  acaoPendente = 0;
   atual = it; indice = i; botao = GLANCE_BT_PRIMARIO;
   trailerPedido = trailerFim = trailerQual = 0;
   desde = SDL_GetTicks(); prazo = 0;
@@ -102,11 +104,15 @@ int glance_tomar_acao(int idx) {
   CatItem ci;
   int b;
   if (!acaoPendente) return 0;
+  if (!aberta || SDL_GetTicks() - acaoDesde >= 20000 ||
+      strcmp(atual.tipo, acaoTitulo.tipo) || strcmp(atual.imdb, acaoTitulo.imdb)) {
+    acaoPendente = 0;
+    return 0;
+  }
   if (!cat_copiar_item(idx, &ci) || strcmp(ci.tipo, acaoTitulo.tipo) ||
       (strcmp(ci.imdb, acaoTitulo.imdb) && !(ci.tmdb > 0 && ci.tmdb == acaoTitulo.tmdb))) return 0;
   b = acaoPendente; acaoPendente = 0;
-  if (aberta && SDL_GetTicks() - acaoDesde < 20000 && !strcmp(atual.imdb, acaoTitulo.imdb))
-    ctx_acao_rapida(&ci, b == GLANCE_BT_VISTO);
+  ctx_acao_rapida(&ci, b == GLANCE_BT_VISTO);
   return 1;
 }
 
@@ -116,6 +122,8 @@ void glance_atualizar(float dt, Uint32 agora) {
   char youtube[32] = "";
   int qual = 0, venceu;
   if (!aberta) return;
+  if (acaoPendente && (agora - acaoDesde >= 20000 || !desc_titulo_buscando()))
+    acaoPendente = 0;
   // A catalog replacement invalidates the owner's positions. Do not let a
   // late publication make an arrow or Details act on another title.
   if (cat_revisao() != revisao) { glance_fechar(); return; }

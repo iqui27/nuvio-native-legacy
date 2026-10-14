@@ -63,6 +63,23 @@ int main(void) {
   assert(!glance_tomar_acao(0) && actions == 0);
   result.tmdb = 42;
   assert(glance_tomar_acao(0) && actions == 1);
+  busy = 0;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  glance_fechar();
+  assert(!glance_tomar_acao(0) && actions == 1);
+  busy = 0;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  clockNow += 20001;
+  assert(!glance_tomar_acao(0) && actions == 1);
+  busy = 0;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  busy = 0; // Resolution failed without publishing a title.
+  glance_atualizar(.016f, ++clockNow);
+  assert(!glance_tomar_acao(0) && actions == 1);
+  busy = 0;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  glance_abrir(&source, 0); // A new session for the same title.
+  assert(!glance_tomar_acao(0) && actions == 1);
   puts("glance-state: ok");
   return 0;
 }
