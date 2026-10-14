@@ -2550,8 +2550,8 @@ static void abrirExplorarNoTitulo(void) {
 }
 
 void app_evento(const SDL_Event *e) {
-  if (rewatchui_aberta()) { rewatchui_evento(e); return; }
   if (e->type == SDL_QUIT) { sair = 1; return; }
+  if (rewatchui_aberta()) { rewatchui_evento(e); return; }
   ilhacart_validar_identidade();
   // Qualquer gesto da pessoa: a atividade ao vivo da ilha conta 30 min daqui.
   if (e->type == SDL_KEYDOWN || e->type == SDL_MOUSEBUTTONDOWN || e->type == SDL_MOUSEWHEEL)
