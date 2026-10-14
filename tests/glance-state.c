@@ -52,6 +52,17 @@ int main(void) {
   assert(opens == 2 && !strcmp(lastUrl, "imdb"));
   playing = 0; failed = 1; glance_atualizar(.016f, ++clockNow);
   assert(opens == 2 && !opened);
+  snprintf(item.imdb, sizeof item.imdb, "tmdb:42"); item.tmdb = 42;
+  snprintf(item.tipo, sizeof item.tipo, "series");
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  assert(requests == 1 && !strcmp(requestedType, "tv"));
+  result = item; snprintf(result.imdb, sizeof result.imdb, "ttresolved");
+  snprintf(result.tipo, sizeof result.tipo, "movie");
+  assert(!glance_tomar_acao(0) && actions == 0);
+  snprintf(result.tipo, sizeof result.tipo, "series"); result.tmdb = 43;
+  assert(!glance_tomar_acao(0) && actions == 0);
+  result.tmdb = 42;
+  assert(glance_tomar_acao(0) && actions == 1);
   puts("glance-state: ok");
   return 0;
 }

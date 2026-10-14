@@ -90,7 +90,8 @@ void glance_evento(const SDL_Event *e) {
         if (!desc_titulo_buscando()) {
           acaoPendente = botao; acaoTitulo = atual; acaoDesde = SDL_GetTicks();
           desc_pedir_titulo_semente(!strncmp(atual.imdb, "tmdb:", 5) ? "" : atual.imdb,
-                                    atual.tmdb, atual.tipo, atual.titulo, atual.meta, atual.poster);
+                                    atual.tmdb, !strcmp(atual.tipo, "series") ? "tv" : atual.tipo,
+                                    atual.titulo, atual.meta, atual.poster);
         }
       } else ctx_acao_rapida(&atual, botao == GLANCE_BT_VISTO);
     }
@@ -101,7 +102,7 @@ int glance_tomar_acao(int idx) {
   CatItem ci;
   int b;
   if (!acaoPendente) return 0;
-  if (!cat_copiar_item(idx, &ci) ||
+  if (!cat_copiar_item(idx, &ci) || strcmp(ci.tipo, acaoTitulo.tipo) ||
       (strcmp(ci.imdb, acaoTitulo.imdb) && !(ci.tmdb > 0 && ci.tmdb == acaoTitulo.tmdb))) return 0;
   b = acaoPendente; acaoPendente = 0;
   if (aberta && SDL_GetTicks() - acaoDesde < 20000 && !strcmp(atual.imdb, acaoTitulo.imdb))

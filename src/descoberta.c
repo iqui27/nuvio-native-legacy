@@ -8399,7 +8399,7 @@ static void pedirTmdb(long tmdbId, const char *tipo, int semente) {
   if (tmdbId <= 0 || sobFioVivo) return;
   sobTemSemente = semente;
   sobTmdb = tmdbId;
-  snprintf(sobTipo, sizeof sobTipo, "%s", tipo ? tipo : "movie");
+  snprintf(sobTipo, sizeof sobTipo, "%s", tipo && !strcmp(tipo, "series") ? "tv" : tipo ? tipo : "movie");
   sobId[0] = 0;
   sobIndice = -1;
   sobFioVivo = 1;
