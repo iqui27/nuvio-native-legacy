@@ -99,6 +99,9 @@ static void ajustesDeTeste(int reduzidas) {
     fprintf(f, "perfilFundoLocal %d\n", atoi(getenv("NUVIO_PERFILSEL_FUNDO")));
   if (getenv("NUVIO_PERFILSEL_VIDRO"))
     fprintf(f, "vidroLocal %d\n", atoi(getenv("NUVIO_PERFILSEL_VIDRO")));
+  // 2.1: tamanho dos avatares (0/1/2). Sem a variavel, Medio (o de sempre).
+  if (getenv("NUVIO_PERFILSEL_TAMANHO"))
+    fprintf(f, "psTamanhoLocal %d\n", atoi(getenv("NUVIO_PERFILSEL_TAMANHO")));
   fclose(f);
   ajustes_dir(dados_dir());
 }
@@ -393,6 +396,32 @@ int main(void) {
     ajustesDeTeste(0);
   }
 
+  // 2.1: O CARTAO "+" NO FIM DA FILEIRA, OS BOTOES DO RODAPE (Adicionar /
+  // Gerenciar) E O MODAL DE GERENCIAR — acoes, paleta de cores e a
+  // confirmacao de remover. Nada e enviado: sem rede, o modal so desenha.
+  captura(nvt("/nuvio-perfilsel-221.bmp"));
+  tecla(SDLK_DOWN);
+  captura(nvt("/nuvio-perfilsel-rodape.bmp"));
+  tecla(SDLK_RIGHT);   // Gerenciar perfis
+  tecla(SDLK_RETURN);
+  captura(nvt("/nuvio-perfilsel-gerenciar.bmp"));
+  tecla(SDLK_RETURN);   // Henrique: Renomear / Cor / Remover
+  captura(nvt("/nuvio-perfilsel-acoes.bmp"));
+  tecla(SDLK_DOWN); tecla(SDLK_RETURN);   // Cor
+  captura(nvt("/nuvio-perfilsel-cor.bmp"));
+  tecla(SDLK_BACKSPACE);
+  tecla(SDLK_DOWN); tecla(SDLK_RETURN);   // Remover: confirmacao
+  captura(nvt("/nuvio-perfilsel-remover.bmp"));
+  tecla(SDLK_BACKSPACE); tecla(SDLK_BACKSPACE);   // acoes -> lista
+  tecla(SDLK_ESCAPE);   // fecha o modal
+  tecla(SDLK_UP);       // volta `a fileira (o ESC devolve ao rodape)
+  { int k; for (k = 0; k < 4; k++) tecla(SDLK_RIGHT); }
+  captura(nvt("/nuvio-perfilsel-221-mais.bmp"));
+  tecla(SDLK_RETURN);   // o "+" abre o teclado do nome
+  captura(nvt("/nuvio-perfilsel-221-nome.bmp"));
+  tecla(SDLK_ESCAPE);   // teclado cancelado: volta a lista do modal
+  tecla(SDLK_ESCAPE);   // fecha o modal
+
   // AMBIENTE DO PERFIL (2.0, variante A): Henrique e Infantil tem arte, Alvaro
   // nao. So roda com NUVIO_PERFILSEL_FUNDO=2.
   if (ajustes_ps_fundo() == 2) {
@@ -441,6 +470,23 @@ int main(void) {
     perfilsel_teste_estado(&e);
     assert(e.amb_atual == 3 && e.amb_fonte == 2 && e.amb_t == 1.0f);
   }
+
+  // 2.1: TAMANHO GRANDE DOS AVATARES (Ajustes › Tamanho dos perfis): o teto
+  // da conta so aperta com POUCOS perfis — com 2, o Medio para em 288 e o Grande
+  // abre ate 351. E a fileira subida, com o cartao "+" acompanhando.
+  setenv("NUVIO_PERFILSEL_TAMANHO", "2", 1);
+  perfis_esquecer(); dados_iniciar(NULL);
+  escreverCache("1\t0\t1\t0\t#1E88E5\tHenrique\t\tdeploy/app/art/03.jpg\n"
+                  "2\t0\t0\t1\t#E53935\tÁlvaro\t\tdeploy/app/art/05.jpg\n", 1);
+  perfis_carregar_ativo();
+  ajustesDeTeste(0);
+  perfilsel_iniciar();
+  captura(nvt("/nuvio-perfilsel-grande.bmp"));
+  // E o PEQUENO, no mesmo cenario: o piso desce junto.
+  setenv("NUVIO_PERFILSEL_TAMANHO", "0", 1);
+  ajustesDeTeste(0);
+  perfilsel_iniciar();
+  captura(nvt("/nuvio-perfilsel-pequeno.bmp"));
 
   tex_encerrar(); txt_encerrar(); gfx_encerrar();
   SDL_GL_DeleteContext(gl); SDL_DestroyWindow(win); SDL_Quit();

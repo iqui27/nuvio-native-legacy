@@ -579,6 +579,10 @@ typedef enum {
   AJ_HERO_GENERO,
   // #205: nome do add-on na tela Cinema da abertura. 1 = Desligado de fabrica. LOCAL, append-only.
   AJ_ABERTURA_ADDON,
+  // 2.1: tamanho dos avatares na escolha de perfil (0 Pequeno, 1 Medio — o
+  // de sempre —, 2 Grande). O piso e o teto da conta andam juntos; ver
+  // perfilsel.c (fatorTamanho). LOCAL, append-only.
+  AJ_PS_TAMANHO,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -599,6 +603,7 @@ static const char *V_ICONE_APP[ICONEAPP_N] = {
 };
 static const char *V_FONTE_ORDEM_ADDON[] = { "Por qualidade", "Do addon" };
 static const char *V_TELA_ABERTURA[] = { "Cinema", "Detalhada" };
+static const char *V_PS_TAMANHO[] = { "Pequeno", "Médio", "Grande" };   // 2.1: os avatares da escolha de perfil
 static const char *V_QUALIDADE[] = { "Automática", "4K", "1080p", "720p" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
 // TRAILER DO CARTAZ EM FOCO EM TRES MODOS (dono, 07/10/2026). O indice e o
@@ -1477,6 +1482,7 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Dicas do controle"),
   ESC("Mostrar gênero no destaque", V_LIGA, 2),   // local: heroGeneroLocal
   ESC("Mostrar addon na abertura", V_LIGA, 2),   // local: aberturaAddonLocal (#205)
+  ESC("Tamanho dos perfis", V_PS_TAMANHO, 3),   // local: psTamanhoLocal (2.1)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -1731,6 +1737,7 @@ static const char *CHAVE[] = {
   "-dicasControle",
   "heroGeneroLocal",
   "aberturaAddonLocal",
+  "psTamanhoLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2723,6 +2730,7 @@ int ajustes_cw_mostrar_nao_exibidos(void)  { return lig(AJ_CW_NAO_EXIBIDOS); }
 int ajustes_cw_ordem(void)            { return valor[AJ_CW_ORDEM]; }
 int ajustes_cw_retido_tambem(void)    { return lig(AJ_CW_RETIDO_TAMBEM); }
 int ajustes_ps_continuar(void)        { return lig(AJ_PS_CONTINUAR); }
+int ajustes_ps_tamanho(void)         { int v = valor[AJ_PS_TAMANHO]; return v >= 0 && v <= 2 ? v : 1; }
 int ajustes_dts_ac3(void)             { return valor[AJ_DTS_AC3] == 1; }
 int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV); }
 int ajustes_hist_conta(void)          { return lig(AJ_HIST_CONTA); }
@@ -5995,6 +6003,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_DTS_AC3: return "Como o áudio DTS é entregue à TV quando o app o converte (só na LG). Estéreo (AAC) é o modo provado e serve qualquer TV. 5.1 (Dolby Digital) mantém o som surround para barra de som e receiver por ARC/eARC; vale a partir do próximo vídeo.";
 #endif
     case AJ_PS_CONTINUAR: return "Ligado, cada perfil mostra na escolha de perfil o cartão com o que ele estava assistindo. Desligado, a tela mostra só os perfis.";
+    case AJ_PS_TAMANHO: return "Tamanho dos avatares na escolha de perfil: Pequeno, Médio (o de sempre) ou Grande.";
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
     case AJ_DV_MKV: return "Arquivos MKV em Dolby Vision perfil 5 ou 8 tocam com o Dolby Vision ligado, em vez de HDR10. O áudio Dolby Digital e Dolby Digital Plus vai direto para a TV. Se a conexão não acompanhar, o vídeo continua em HDR10. Só em TVs LG com webOS 4 ou mais novo.";
@@ -8257,7 +8266,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_ADDON_FUNDO: case AJ_ADDON_LOGO:
     case AJ_FIL_ORDEM: case AJ_RAIL: case AJ_RAIL_MODERNA: case AJ_MENU_TOPO: case AJ_ABAS_ESTILO:
     case AJ_RAIL_BLUR: case AJ_MIC_BUSCA: case AJ_HERO: case AJ_HERO_CATALOGOS: case AJ_HERO_GENERO:
-    case AJ_PS_FUNDO: case AJ_PS_CONTINUAR: case AJ_DESCOBRIR: case AJ_ROTULOS:
+    case AJ_PS_FUNDO: case AJ_PS_CONTINUAR: case AJ_PS_TAMANHO: case AJ_DESCOBRIR: case AJ_ROTULOS:
     case AJ_NOME_ADDON: case AJ_SUFIXO_TIPO: case AJ_OCULTAR_NLANC:
     case AJ_NOTAS_HOME: case AJ_GRAD_CLASSICO: case AJ_SELO_VISTO: case AJ_OCULTAR_FILMES_VISTOS:
       return AJPV_HOME;

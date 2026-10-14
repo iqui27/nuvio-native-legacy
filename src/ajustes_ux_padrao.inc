@@ -282,3 +282,4 @@
   0, /* remote tips: action */
   0, /* show genre under the hero logo: Ligado, as always */
   1, /* addon name on the Cinema opening (#205): Desligado, local */
+  1, /* profile picker avatar size (2.1): Médio, the size of always */

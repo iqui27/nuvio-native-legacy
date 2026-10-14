@@ -524,6 +524,7 @@ int   ajustes_cw_mostrar_nao_exibidos(void);  // showUnairedNextUp
 int   ajustes_cw_ordem(void);
 int   ajustes_dts_ac3(void);             // 1 = DTS convertido em AC3 5.1 (LG, e padrao no .tpk); 0 = AAC estereo
 int   ajustes_ps_continuar(void);        // #303: 0 = sem o cartao "continuar" na escolha de perfil
+int   ajustes_ps_tamanho(void);         // 2.1: 0 pequeno, 1 medio (padrao), 2 grande — os avatares da escolha de perfil
 int   ajustes_hist_conta(void);          // 1 = this profile's history goes to the Nuvio account (per profile, default on)
 int   ajustes_social(void);              // 1 = friends/social features on (per profile, default on)
 int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our demux (webOS, local, default off)

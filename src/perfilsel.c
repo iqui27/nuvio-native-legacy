@@ -17,6 +17,7 @@
 #include "ponteiro.h"
 #include "plrui.h"
 #include "perfilcont.h"
+#include "perfisedit.h"
 #include "psparede.h"
 #include "psestilos.h"
 #include <math.h>
@@ -58,18 +59,24 @@
 #define PS_ILHA_H        68.0f
 #define PS_ILHA_PAD      30.0f
 #define PS_ARTE_H       648.0f   // faixa da arte de fundo do perfil focado
-// "CONTINUAR" SOB CADA AVATAR (2.0.3, variante D2 aprovada pelo dono): um bloco
-// pequeno sob o nome — capa 2:3 a esquerda, titulo e "T2 · E5 · 23 min" a
-// direita, um fio de 2 px de progresso — apagado fora do foco. Os avatares
-// continuam sendo o protagonista; nada de cartao/material por baixo.
-#define PS_CONT_CAPA_W  62.0f
-#define PS_CONT_CAPA_H  93.0f
-#define PS_CONT_CAPA_RAIO 6.0f
-#define PS_CONT_GAP     12.0f   // capa -> texto
-#define PS_CONT_NOME_GAP 22.0f  // base do nome -> topo do bloco
-#define PS_CONT_FIO      2.0f
-#define PS_CONT_TEXTO_MAX 300.0f
+// "CONTINUAR" SOB CADA AVATAR (2.0.3, variante D2; RENOVADO NA 2.1): era um
+// bloco pequeno — capa 2:3, fio de 2 px — e o dono o chamou de "meio xoxo".
+// Agora e o cartao DEITADO que a Home ensinou (ver PS_CONT_W abaixo). Os
+// avatares continuam sendo o protagonista; nada de cartao/material por baixo.
 #define PS_CONT_APAGADO  0.50f  // opacidade sem foco
+// 2.1: o cartao "continuar" de cada perfil e o mesmo CARTAO DEITADO da Home
+// (continuar.c, 419x236): capa em cover, veu na base, titulo, T/E e a barra de
+// progresso. O dono: "renovar o continue playing, que ainda ta meio xoxo" —
+// a capa 62x93 e o fio de 2 px liam como legenda, nao como um lugar para
+// continuar. O deitado da Home e a linguagem que a pessoa ja conhece.
+#define PS_CONT_W      252.0f
+#define PS_CONT_NOME_GAP 22.0f  // base do nome -> topo do cartao
+#define PS_CONT_H      142.0f   // ~16:9, como o cartao da Home
+#define PS_CONT_RAIO    0.080f  // raio relativo (o shader mede pela altura)
+#define PS_CONT_PAD     18.0f   // o NV_CW_PAD da Home
+#define PS_CONT_BAR      4.0f   // o NV_CW_BAR_H da Home
+#define PS_CONT_VEU_F    0.62f  // o veu da base cobre titulo e meta
+#define PS_CONT_VEU_A     0.78f
 #define PS_HALO_N            3   // poucos aneis suaves, sem efeito de alvo
 #define PS_HALO_ATE      0.66f   // quanto o ultimo anel passa do avatar
 #define PS_HALO_ALFA     0.040f
@@ -162,6 +169,15 @@ static float muralLuzTempo;
 
 static int foco;
 static int concluido, sair, repetir;
+// 2.1: a fileira ganhou um cartao "+" e o rodape ganhou dois botoes —
+// "Adicionar perfil" e "Gerenciar perfis" (perfisedit.c). `fase` separa a
+// fileira (0) dos botoes (1): BAIXO desce, CIMA volta, e o D-pad continua
+// tendo uma pergunta linear por vez — a mesma regra da fileira que a cabecalho
+// desta secao defende.
+static int fase;              // 0 = fileira, 1 = rodape
+static int botao;             // 0 = Adicionar perfil, 1 = Gerenciar perfis
+static float animTile;
+static float animBotao[2];
 // PREPARANDO A HOME DO PERFIL ESCOLHIDO. A escolha ja foi feita (concluido), mas
 // a tela fica de pe com o indicador girando no cartao escolhido enquanto app.c
 // monta a home nova por tras. Ver perfilsel_preparar.
@@ -535,12 +551,36 @@ static void inicialDe(const char *nome, char *dst, size_t tam) {
   dst[z] = 0;
 }
 
+// TAMANHO DOS AVATARES (2.1, Ajustes › Home › "Tamanho dos perfis"): o PISO e
+// o TETO da conta andam juntos — com dois perfis, "Grande" da circulos que a
+// tela inteira, e com oito, "Pequeno" e o que cabe sem apertar o vao. Medio e
+// a conta de sempre (168..288) e o padrao: quem nunca mexeu no ajuste nao ve
+// a tela mudar.
+#define PS_TAM_P   0.78f
+#define PS_TAM_M   1.00f
+#define PS_TAM_G   1.22f
+static float fatorTamanho(void) {
+  switch (ajustes_ps_tamanho()) {
+    case 0:  return PS_TAM_P;
+    default: return PS_TAM_M;
+    case 2:  return PS_TAM_G;
+  }
+}
+
+// A FILEIRA SOBE no Grande para o nome e o cartao "continuar" caberem embaixo
+// (medido: 344 + 352 de diametro + nome + cartao 142 = 935, ainda a 13 px do
+// rodape de acoes). Pequeno e Medio ficam onde sempre estiveram.
+static float filaY(void) {
+  return ajustes_ps_tamanho() == 2 ? PS_FILA_Y - 52.0f : PS_FILA_Y;
+}
+
 static float diametro(int m) {
   float util = NV_TELA_W - 2.0f * NV_MARGEM_X;
+  float f = fatorTamanho();
   float d;
-  if (m <= 0) return PS_AV_MAX;
+  if (m <= 0) return PS_AV_MAX * f;
   d = util / ((float)m + PS_VAO_RAZAO * (float)(m - 1));
-  return anim_clamp(d, PS_AV_MIN, PS_AV_MAX);
+  return anim_clamp(d, PS_AV_MIN * f, PS_AV_MAX * f);
 }
 
 static float vaoDe(int m, float d) {
@@ -554,6 +594,25 @@ static float vaoDe(int m, float d) {
     if (sobra > g) g = sobra > teto ? teto : sobra;
     else g = sobra; }
   return g < PS_VAO_MIN ? PS_VAO_MIN : g;
+}
+
+// --- O CARTAO "+" E O RODAPE (2.1) -------------------------------------------
+// O dono: "podemos colocar no painel de quick switch profile o botao de
+// gerenciar e adicionar. Assim como adicionar no profile picker". O cartao
+// "+" e o fim da fileira (o padrao de quem escolhe perfil em TV); os botoes
+// ficam no rodape, para quem prefere a palavra ao simbolo.
+static int podeAdicionar(void) {
+  int m = perfis_n();
+  return m > 0 && m < CONTA_PERFIL_MAX && perfis_indice_livre() > 0;
+}
+static int nFila(void) {
+  int m = perfis_n();
+  return m + (podeAdicionar() ? 1 : 0);
+}
+// O RODAPE aparece com a lista na tela (sem lista nao ha nada para gerenciar
+// e o adicionar morreria sem conta viva).
+static int rodapeVisivel(void) {
+  return perfis_n() > 0 && !preparando;
 }
 
 // --- FUNDOS NOVOS (2.0): Filmes, Luz, Projetor (psestilos.h) -----------------
@@ -570,7 +629,8 @@ static void montarCena(PSCena *c, int reduzida) {
   int m = perfis_n(), i;
   const ContaPerfil *p = m > 0 && foco >= 0 && foco < m ? perfis_item(foco) : NULL;
   memcpy(c->luz, muralLuz, sizeof c->luz);
-  { float d = diametro(m), vao = vaoDe(m, d), larg = (float)m * d + (float)(m - 1) * vao;
+  { int nf = nFila();
+    float d = diametro(nf), vao = vaoDe(nf, d), larg = (float)nf * d + (float)(nf - 1) * vao;
     c->xFoco = m > 0 ? (NV_TELA_W - larg) * 0.5f + (float)foco * (d + vao) + d * 0.5f
                      : NV_TELA_W * 0.5f; }
   c->perfil = p ? p->indice : 0;
@@ -614,62 +674,65 @@ static void contAtualizar(void) {
   // com item mostra a capa (apagada), e o cartaz vem do mesmo tex_cache.
   for (i = 0; i < m && i < CONTA_PERFIL_MAX; i++)
     contCard[i].tex = contCard[i].tem && contCard[i].c.poster[0]
-      ? tex_obter_larg(contCard[i].c.poster, 108.0f) : 0;
+      ? tex_obter_larg(contCard[i].c.poster, PS_CONT_W) : 0;
 }
 
 // Altura do bloco, para o alvo de toque.
-static float contAltura(void) { return PS_CONT_CAPA_H; }
+static float contAltura(void) { return PS_CONT_H; }
 
-// Desenha o bloco do perfil i centrado em cx, com o topo em yTopo. `f` e o foco
+// Desenha o cartao do perfil i centrado em cx, com o topo em yTopo. `f` e o foco
 // (0..1): apagado a PS_CONT_APAGADO sem foco, cheio com foco. `larg` e a largura
 // da coluna do perfil (diametro + vao), o teto do texto.
 static void contDesenhar(int i, float cx, float yTopo, float f, float a, float larg,
                          int nada) {
   const PSCont *k = &contCard[i];
   float af = a * (PS_CONT_APAGADO + (1.0f - PS_CONT_APAGADO) * (f > 1.0f ? 1.0f : f));
-  float avail, tw, bw, x, y;
+  float w = PS_CONT_W, x, y, livre;
   TxtLinha tit, meta;
   if (af < 0.01f) return;
   if (!k->tem) {
     if (nada) {
       TxtLinha l = txt_linha(TXT_CAPTION, "Nada a continuar", 160, 163, 174, 255);
       txt_desenhar_alpha(l, cx - (float)l.w * 0.5f,
-                         yTopo + (PS_CONT_CAPA_H - (float)l.h) * 0.5f, af);
+                         yTopo + (PS_CONT_H - (float)l.h) * 0.5f, af);
     }
     return;
   }
-  avail = larg - PS_CONT_CAPA_W - PS_CONT_GAP - 12.0f;
-  if (avail > PS_CONT_TEXTO_MAX) avail = PS_CONT_TEXTO_MAX;
-  if (avail < 110.0f) avail = 110.0f;
-  tit = txt_linha_corta(TXT_ILHA_NOME, k->c.titulo, 244, 245, 248, 255, avail);
-  meta = txt_linha_corta(TXT_CAPTION, k->meta, 190, 193, 202, 255, avail);
-  tw = (float)(tit.w > meta.w ? tit.w : meta.w);
-  if (tw < 96.0f) tw = 96.0f;
-  bw = PS_CONT_CAPA_W + PS_CONT_GAP + tw;
-  x = cx - bw * 0.5f;
-  { GfxRect capa = { x, yTopo, PS_CONT_CAPA_W, PS_CONT_CAPA_H };
-    GfxRect sombra = { x - 14.0f, yTopo - 6.0f, PS_CONT_CAPA_W + 28.0f, PS_CONT_CAPA_H + 28.0f };
+  // O CARTAO DEITADO DA HOME (continuar.c): capa em cover, veu so na base,
+  // titulo, meta e a barra de progresso. Nada de material embaixo — o que o
+  // dono reprovou no cartao antigo era ele parecer legenda; agora ele parece
+  // o que a Home ja ensinou a pessoa a clicar.
+  if (larg - 24.0f < w) w = larg - 24.0f;
+  x = cx - w * 0.5f;
+  { GfxRect card = { x, yTopo, w, PS_CONT_H };
+    GfxRect sombra = { x - 16.0f, yTopo - 8.0f, w + 32.0f, PS_CONT_H + 32.0f };
     gfx_rect(sombra, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.55f * af);
     if (k->tex) {
       gfx_tex_aspect_atual = tex_aspecto(k->c.poster);
       gfx_card_forcar_cover_atual = 1.0f;
-      gfx_rect(capa, k->tex, GFX_CARD, 0.0f, 0.0f, 0.0f, PS_CONT_CAPA_RAIO / PS_CONT_CAPA_H,
-               0, 0, 0, af);
+      gfx_rect(card, k->tex, GFX_CARD, 0.0f, 0.0f, 0.0f, PS_CONT_RAIO, 0, 0, 0, af);
       gfx_card_forcar_cover_atual = 0.0f;
       gfx_tex_aspect_atual = 0.0f;
-    } else gfx_cor(capa, PS_CONT_CAPA_RAIO / PS_CONT_CAPA_H, NV_COR_ESQUELETO_R,
-                   NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, af); }
-  x += PS_CONT_CAPA_W + PS_CONT_GAP;
-  // Texto centrado na vertical da capa, o fio logo abaixo da meta.
-  y = yTopo + (PS_CONT_CAPA_H - ((float)tit.h + 4.0f + (float)meta.h + 12.0f + PS_CONT_FIO)) * 0.5f;
-  txt_desenhar_alpha(tit, x, y, af);
+    } else gfx_cor(card, PS_CONT_RAIO, NV_COR_ESQUELETO_R,
+                   NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, af);
+    gfx_veu_base(card, PS_CONT_RAIO, PS_CONT_VEU_F, PS_CONT_VEU_A * af); }
+  // O TEXTO NA BASE, como no cartao da Home: titulo em cima da meta, a barra
+  // embaixo dos dois.
+  livre = w - PS_CONT_PAD * 2.0f;
+  tit = txt_linha_corta(TXT_ILHA_NOME, k->c.titulo, 247, 248, 250, 255, livre);
+  meta = txt_linha_corta(TXT_MINI, k->meta, 214, 216, 224, 255, livre);
+  y = yTopo + PS_CONT_H - PS_CONT_PAD - PS_CONT_BAR - 6.0f
+      - (float)meta.h - 4.0f - (float)tit.h;
+  txt_desenhar_alpha(tit, x + PS_CONT_PAD, y, af);
   y += (float)tit.h + 4.0f;
-  txt_desenhar_alpha(meta, x, y, af);
-  y += (float)meta.h + 12.0f;
+  txt_desenhar_alpha(meta, x + PS_CONT_PAD, y, af);
   { float pr = k->c.progresso > 1.0f ? 1.0f : (k->c.progresso < 0.0f ? 0.0f : k->c.progresso);
-    gfx_cor((GfxRect){ x, y, tw, PS_CONT_FIO }, 0.5f, 1, 1, 1, 0.22f * af);
-    if (pr > 0.0f)
-      gfx_cor((GfxRect){ x, y, tw * pr, PS_CONT_FIO }, 0.5f, 1, 1, 1, 0.95f * af); }
+    float h = PS_CONT_BAR, bh = yTopo + PS_CONT_H - PS_CONT_PAD - h;
+    gfx_cor((GfxRect){ x + PS_CONT_PAD, bh, livre, h }, 0.5f, 1, 1, 1, 0.25f * af);
+    if (pr > 0.0f) {
+      float cheio = livre * pr;
+      if (cheio < h) cheio = h;
+      gfx_cor((GfxRect){ x + PS_CONT_PAD, bh, cheio, h }, 0.5f, 1, 1, 1, 0.98f * af); } }
 }
 
 // --- AMBIENTE DO PERFIL (2.0, variante A) ------------------------------------
@@ -806,6 +869,11 @@ void perfilsel_iniciar(void) {
   verificando = 0;
   animEntrada = 0.0f;
   animPin = 0.0f;
+  fase = 0;
+  botao = 0;
+  animTile = 0.0f;
+  animBotao[0] = animBotao[1] = 0.0f;
+  perfisedit_fechar();
   cachearte_limpar_referencias_grupo(NV_CACHE_ARTE_GRUPO_PERFIL);
   muralN = 0;
   muralConfigurar();
@@ -958,10 +1026,40 @@ static void perfisRetentar(int a, int b) {
   if (!preparando && !perfis_n() && sync_estado() == SYNC_FALHOU) repetir = 1;
 }
 
+// O "+" da fileira e os dois botoes do rodape, para o toque.
+static void tileFocar(int a, int b) {
+  (void)b;
+  if (!preparando && pinDe < 0 && a == perfis_n()) foco = a;
+}
+static void tileAtivar(int a, int b) {
+  (void)b;
+  if (!preparando && pinDe < 0 && a == perfis_n() && podeAdicionar()) {
+    foco = a;
+    perfisedit_abrir(1);
+  }
+}
+static void botaoFocar(int i, int b) {
+  (void)b;
+  if (!preparando && pinDe < 0 && rodapeVisivel()) { fase = 1; botao = i; }
+}
+static void botaoAtivar(int i, int b) {
+  (void)b;
+  if (!preparando && pinDe < 0 && rodapeVisivel()) {
+    fase = 1;
+    if (i == 0 && !podeAdicionar()) return;   // lista cheia: o botao e mudo
+    botao = i;
+    perfisedit_abrir(i == 0);
+  }
+}
+
 void perfilsel_evento(const SDL_Event *e) {
   SDL_Keycode k;
   int m = perfis_n();
+  int total;
   if (e->type != SDL_KEYDOWN) return;
+  // O MODAL DE GERENCIAR/ADICIONAR e dono do teclado enquanto existe (o
+  // teclado.c dele incluido) — o mesmo molde de biblioteca.c e ajustes.c.
+  if (perfisedit_aberto()) { perfisedit_evento(e); return; }
 #ifdef NV_TOUCH_UI
   if (psToqueLivre && psToquePasso > 0.0f && m > 0) {
     foco = (int)((psToqueX + (NV_TELA_W - 2.0f * NV_MARGEM_X) * 0.35f) / psToquePasso);
@@ -980,15 +1078,37 @@ void perfilsel_evento(const SDL_Event *e) {
   // acao que faz sentido: tentar de novo.
   if (m == 0 && sync_estado() == SYNC_FALHOU &&
       (k == SDLK_RETURN || k == SDLK_KP_ENTER)) { repetir = 1; return; }
-  if (k == SDLK_RIGHT) { if (foco < m - 1) foco++; }
+  total = nFila();
+  if (fase) {
+    // O RODAPE: dois botoes, CIMA volta `a fileira. O de adicionar fica mudo
+    // quando a conta encheu (CONTA_PERFIL_MAX): o foco pula direto ao gerenciar.
+    if (k == SDLK_LEFT)       { if (podeAdicionar() && botao > 0) botao--; }
+    else if (k == SDLK_RIGHT) { if (podeAdicionar() && botao < 1) botao++; }
+    else if (k == SDLK_UP)     { fase = 0; }
+    else if (k == SDLK_DOWN)   { }
+    else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) botaoAtivar(botao, 0);
+    return;
+  }
+  if (k == SDLK_RIGHT) { if (foco < total - 1) foco++; }
   else if (k == SDLK_LEFT) { if (foco > 0) foco--; }
-  else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) escolher(foco);
+  else if (k == SDLK_DOWN) {
+    if (rodapeVisivel()) { fase = 1; if (!podeAdicionar() && botao == 0) botao = 1; }
+  }
+  else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+    if (foco >= m) tileAtivar(foco, 0);
+    else escolher(foco);
+  }
 }
 
 void perfilsel_atualizar(float dt, Uint32 agora) {
   int i, reduzida = ajustes_animacoes_reduzidas();
   float dtCru = dt;
   (void)agora;
+
+  // O MODAL DE GERENCIAR/ADICIONAR atualiza antes de qualquer guarda abaixo:
+  // a mola dele e o fio da rede tem de andar mesmo com a tela "segurando"
+  // (SYNC_RODANDO, lista vazia).
+  if (perfisedit_aberto()) perfisedit_atualizar(dt, agora);
 
   // Medir antes do limite para detectar lentidao real. Um intervalo longo e
   // uma pausa/resume, nao pressao sustentada; ele limpa o acumulador.
@@ -1082,10 +1202,22 @@ void perfilsel_atualizar(float dt, Uint32 agora) {
   animPin = anim_reduzida(anim_mola(animPin, pinDe >= 0 ? 1.0f : 0.0f, dt, NV_MOLA_TELA),
                           pinDe >= 0 ? 1.0f : 0.0f, reduzida);
   for (i = 0; i < CONTA_PERFIL_MAX; i++) {
-    float alvo = (i == foco && pinDe < 0) ? 1.0f : 0.0f;
+    float alvo = (i == foco && pinDe < 0 && !fase) ? 1.0f : 0.0f;
     animFoco[i] = anim_mola(animFoco[i], alvo, dt,
                             alvo > animFoco[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
     if (reduzida) animFoco[i] = alvo;
+  }
+  // O "+" e os dois botoes do rodape tem as mesmas molas do foco da fileira.
+  { float alvo = (foco == perfis_n() && podeAdicionar() && pinDe < 0 && !fase) ? 1.0f : 0.0f;
+    animTile = anim_mola(animTile, alvo, dt,
+                         alvo > animTile ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+    if (reduzida) animTile = alvo; }
+  for (i = 0; i < 2; i++) {
+    int vivo = rodapeVisivel() && (i == 1 || podeAdicionar());
+    float alvo = (fase && i == botao && vivo) ? 1.0f : 0.0f;
+    animBotao[i] = anim_mola(animBotao[i], alvo, dt,
+                             alvo > animBotao[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+    if (reduzida) animBotao[i] = alvo;
   }
 
   if (pinTremor > 0.0f) { pinTremor -= dt; if (pinTremor < 0.0f) pinTremor = 0.0f; }
@@ -1111,7 +1243,11 @@ void perfilsel_atualizar(float dt, Uint32 agora) {
     }
   }
   }
-  if (foco >= perfis_n()) foco = perfis_n() > 0 ? perfis_n() - 1 : 0;
+  // O foco clampa na FILEIRA inteira (perfis + o "+"), e o rodape so volta
+  // a aparecer quando a fileira existe.
+  { int total = nFila();
+    if (foco >= total) foco = total > 0 ? total - 1 : 0; }
+  if (perfis_n() <= 0) fase = 0;
 
   // NAO concluir enquanto o ciclo que BUSCA os perfis ainda esta rodando E a
   // lista ainda esta vazia.
@@ -1127,14 +1263,17 @@ void perfilsel_atualizar(float dt, Uint32 agora) {
   // tela ja e util enquanto o ciclo confirma — por isso a guarda olha tambem o
   // perfis_n(), e nao so o estado do sync.
   if (sync_estado() == SYNC_RODANDO && perfis_n() == 0) return;
-
   // Terminado o ciclo, "nenhum ou um destravado" e resposta de verdade: seguir
   // direto. Um erro de rede nunca equivale a "uma conta sem perfis", entao so
   // com SYNC_PRONTO. A pergunta e perfis_sem_escolha() e nao
   // perfis_precisa_escolher(): esta tela tambem e aberta DE PROPOSITO pelo
   // "trocar de perfil" do menu, e ali a bandeira de sessao ja esta ligada — a
   // tela se fecharia sozinha no quadro seguinte.
-  if (sync_estado() == SYNC_PRONTO && perfis_sem_escolha() && pinDe < 0) concluido = 1;
+  // O MODAL ABERTO SEGURA A TELA: dispensa-la por cima dele fecharia a
+  // pergunta com a edicao ainda no ar — e o "sem escolha" de um perfil so
+  // dispensava a tela exatamente quando quem ia adicionar o segundo chegava.
+  if (!perfisedit_aberto() &&
+      sync_estado() == SYNC_PRONTO && perfis_sem_escolha() && pinDe < 0) concluido = 1;
 }
 
 void perfilsel_preparar(int ligado, Uint32 agora) {
@@ -1425,9 +1564,10 @@ void perfilsel_desenhar(Uint32 agora) {
                        PS_SUB_Y + subida + 3.0f, a * 0.78f);
     txt_desenhar_alpha(s, (NV_TELA_W - s.w) * 0.5f, PS_SUB_Y + subida, a); }
 
-  d = diametro(m);
-  vao = vaoDe(m, d);
-  largura = (float)m * d + (float)(m - 1) * vao;
+  d = diametro(nFila());
+  vao = vaoDe(nFila(), d);
+  { int total = nFila();
+    largura = (float)total * d + (float)(total - 1) * vao; }
   x = (NV_TELA_W - largura) * 0.5f;
 #ifdef NV_TOUCH_UI
   psToqueMaximo = fmaxf(0.0f, largura - (NV_TELA_W - 2.0f * NV_MARGEM_X));
@@ -1440,7 +1580,7 @@ void perfilsel_desenhar(Uint32 agora) {
       if (esq - psToqueX < 0.0f) psToqueX = esq;
     }
     x = NV_MARGEM_X - psToqueX;
-    psToqueRegiao = (GfxRect){NV_MARGEM_X, PS_FILA_Y - 40.0f, NV_TELA_W - 2.0f * NV_MARGEM_X, 560.0f};
+    psToqueRegiao = (GfxRect){NV_MARGEM_X, filaY() - 40.0f, NV_TELA_W - 2.0f * NV_MARGEM_X, 560.0f};
     if (!preparando && pinDe < 0) ponteiro_rolagem(psToqueRolar);
   }
 #endif
@@ -1450,7 +1590,7 @@ void perfilsel_desenhar(Uint32 agora) {
     float f = animFoco[i];
     float px = x + (float)i * (d + vao);
     float cresce = d * NV_FOCO_ESCALA_P * f;
-    float y = PS_FILA_Y + subida;
+    float y = filaY() + subida;
     GfxRect av = { px - cresce * 0.5f, y - cresce * 0.5f - NV_FOCO_LIFT * f,
                    d + cresce, d + cresce };
     TxtLinha nome, sombra;
@@ -1511,6 +1651,81 @@ void perfilsel_desenhar(Uint32 agora) {
     }
   }
 
+  // O CARTAO "+" DEPOIS DO ULTIMO PERFIL (2.1): o mesmo circulo, o mesmo
+  // tamanho, so o sinal em vez da foto — quem varre a fileira com a seta
+  // encontra o adicionar sem procurar o rodape.
+  if (podeAdicionar()) {
+    float f = animTile;
+    float px = x + (float)m * (d + vao);
+    float cresce = d * NV_FOCO_ESCALA_P * f;
+    float y = filaY() + subida;
+    GfxRect av = { px - cresce * 0.5f, y - cresce * 0.5f - NV_FOCO_LIFT * f,
+                   d + cresce, d + cresce };
+    float ar, ag, ab;
+    TxtLinha rot, sombra;
+    int c = 176 + (int)(79.0f * f);
+    ajustes_acento(&ar, &ag, &ab);
+    if (f > 0.02f) {
+      float e = NV_ANEL_FOCO * f;
+      gfx_rect((GfxRect){ av.x - e, av.y - e, av.w + e * 2, av.h + e * 2 },
+               0, GFX_DISCO, 0, 0, 0, 0, 0.97f, 0.97f, 0.99f, f * a);
+    }
+    gfx_rect(av, 0, GFX_DISCO, 0, 0, 0, 0, 0.15f, 0.16f, 0.18f, (0.80f + 0.20f * f) * a);
+    gfx_cor((GfxRect){ av.x + av.w * 0.5f - d * 0.10f, av.y + av.h * 0.5f - 2.5f,
+                       d * 0.20f, 5.0f }, 0.5f, ar, ag, ab, (0.80f + 0.20f * f) * a);
+    gfx_cor((GfxRect){ av.x + av.w * 0.5f - 2.5f, av.y + av.h * 0.5f - d * 0.10f,
+                       5.0f, d * 0.20f }, 0.5f, ar, ag, ab, (0.80f + 0.20f * f) * a);
+    rot = txt_linha_corta(d >= 230.0f ? TXT_TITULO3 : TXT_HEADLINE, "Adicionar perfil",
+                          c, c, c + 6 > 255 ? 255 : c + 6, 255, d + vao * 0.9f);
+    sombra = txt_linha_corta(d >= 230.0f ? TXT_TITULO3 : TXT_HEADLINE, "Adicionar perfil",
+                             0, 0, 0, 220, d + vao * 0.9f);
+    if (!preparando && pinDe < 0)
+      ponteiro_alvo(av.x, av.y, av.w, av.h + PS_NOME_GAP + (float)rot.h,
+                    tileFocar, tileAtivar, m, 0);
+    txt_desenhar_alpha(sombra, px + (d - sombra.w) * 0.5f + 2.0f,
+                       y + d + PS_NOME_GAP + 3.0f - NV_FOCO_LIFT * f * 0.5f, a * 0.90f);
+    txt_desenhar_alpha(rot, px + (d - rot.w) * 0.5f,
+                      y + d + PS_NOME_GAP - NV_FOCO_LIFT * f * 0.5f, a);
+  }
+
+  // O RODAPE COM OS DOIS BOTOES (2.1): "Adicionar perfil" e "Gerenciar
+  // perfis", no lugar da ilha de dicas que o dono tirou (05/10). Onde a
+  // palavra vale mais que o simbolo do cartao "+".
+  if (rodapeVisivel()) {
+    static const char *ROT[2] = { "Adicionar perfil", "Gerenciar perfis" };
+    TxtLinha l[2];
+    float bw = 0.0f, bx;
+    int b;
+    for (b = 0; b < 2; b++) {
+      l[b] = txt_linha(TXT_TITULO3, ROT[b], 247, 248, 250, 255);
+      bw += (float)l[b].w + 76.0f;
+    }
+    bw += 24.0f;   // o vao entre os dois
+    bx = (NV_TELA_W - bw) * 0.5f;
+    for (b = 0; b < 2; b++) {
+      int vivo = b == 1 || podeAdicionar();
+      float f = animBotao[b];
+      float w = (float)l[b].w + 76.0f;
+      GfxRect r = { bx, PS_DICA_Y, w, PS_ILHA_H };
+      if (vivo && f > 0.02f) {
+        float ar, ag, ab;
+        ajustes_acento(&ar, &ag, &ab);
+        gfx_cor(r, NV_RAIO_PILL, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, f * a);
+        gfx_anel_fora(r, NV_RAIO_PILL, 0.0f, NV_ANEL_FOCO * f, ar, ag, ab, f * a);
+      } else gfx_cor(r, NV_RAIO_PILL, 1.0f, 1.0f, 1.0f,
+                     (vivo ? 0.10f : 0.05f) * a);
+      { TxtLinha t = txt_linha(TXT_TITULO3, ROT[b],
+                              vivo ? (int)(214.0f + 41.0f * f) : 140,
+                              vivo ? (int)(216.0f + 39.0f * f) : 142,
+                              vivo ? (int)(224.0f + 31.0f * f) : 148, 255);
+        txt_desenhar_alpha(t, r.x + (r.w - (float)t.w) * 0.5f,
+                           r.y + (r.h - (float)t.h) * 0.5f, a); }
+      if (vivo && !preparando && pinDe < 0)
+        ponteiro_alvo(r.x, r.y, r.w, r.h, botaoFocar, botaoAtivar, b, 0);
+      bx += w + 24.0f;
+    }
+  }
+
   // SEM ILHA DE DICAS NO RODAPE (dono, 05/10). So o "Preparando o perfil…"
   // continua, porque e estado e nao instrucao.
   if (preparando) {
@@ -1522,6 +1737,9 @@ void perfilsel_desenhar(Uint32 agora) {
   }
 
   if (animPin > 0.004f) desenhaPin();
+
+  // O MODAL DE GERENCIAR/ADICIONAR por cima de tudo, como o teclado do PIN.
+  if (perfisedit_aberto()) perfisedit_desenhar(agora);
 }
 
 #ifdef NV_PERFILSEL_TEST
