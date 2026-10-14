@@ -109,6 +109,11 @@ int pessoa_ler(long id, const char *corpo, const char *hoje) {
   nb = linhas(corpo, "crew", FM_DIR, raw, nb, FM_MAX * 2);
   k = fm_juntar(raw, nb, hoje, out, PES_MAX);
   pthread_mutex_lock(&trava);
+  if (idPedido && idPedido != id) {
+    pthread_mutex_unlock(&trava);
+    free(raw); free(out);
+    return 0;
+  }
   idAtual = id;
   snprintf(nome, sizeof nome, "%s", n[0] ? n : nomeSemente);
   snprintf(foto, sizeof foto, "%s", f[0] ? f : fotoSemente);
