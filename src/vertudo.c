@@ -1,5 +1,6 @@
 #include "imdbnota.h"
 #include "vertudo.h"
+#include "glance.h"
 #include "posterprov.h"
 #include "idioma.h"
 #include "badges.h"
@@ -489,6 +490,13 @@ static void abrirFocado(void) {
   if (viewItem(foco, &it)) abrirItem(&it);
 }
 
+static void glanceVtFoco(int i) { foco = i; }
+static void glanceVtDetalhes(int i) { foco = i; abrirFocado(); }
+static void previaFocado(void) {
+  static const GlanceFonte f = {nItens, viewItem, glanceVtFoco, glanceVtDetalhes};
+  glance_abrir(&f, foco);
+}
+
 // Retangulo e arte do cartao em foco, na tela virtual: o menu nasce ao lado e
 // o cartaz volta por cima do veu, como na home. Le a tabela de celulas, a mesma
 // do desenho, entao vale para toda exibicao.
@@ -868,6 +876,15 @@ static void abrirItem(const CatItem *src) {
   }
 }
 
+static int glanceVitTotal(void) { return vitFR < vitN ? vitLin[vitFR].n : 0; }
+static int glanceVitItem(int i, CatItem *out) {
+  const CatItem *it = vitItem(vitFR, i);
+  if (!it) return 0;
+  *out = *it; return 1;
+}
+static void glanceVitFoco(int i) { vitFC = i; }
+static void glanceVitDetalhes(int i) { const CatItem *it = vitItem(vitFR, i); if (it) abrirItem(it); }
+
 static int primeiraFonte(void) {
   for (int i = 0; i < collection->nSources; i++)
     if (collection->sources[i].prov[0] || baseDaFonte(&collection->sources[i])[0]) return i;
@@ -908,8 +925,8 @@ static void vitEvento(int k) {
     if (r >= 0) { vitColLemb[vitFR] = vitFC; vitFR = r; vitFC = vitColLemb[r]; }
     else tabFocus = 1, tabCursor = nAbas();
   } else if (enter) {
-    const CatItem *it = vitItem(vitFR, vitFC);
-    if (it) abrirItem(it);
+    static const GlanceFonte f = {glanceVitTotal, glanceVitItem, glanceVitFoco, glanceVitDetalhes};
+    glance_abrir(&f, vitFC);
   }
   if (vitFR < vitN && vitFC >= vitLin[vitFR].n) vitFC = vitLin[vitFR].n ? vitLin[vitFR].n - 1 : 0;
 }
@@ -1003,7 +1020,7 @@ void vertudo_evento(const SDL_Event *e) {
   switch (ctxhold_evento(&hold, e, celulaAceitaMenu())) {
     case CTXH_LONGO: if (!menuNoFocado()) abrirFocado(); return;
     case CTXH_CONSUMIDO: return;
-    case CTXH_TOQUE: abrirFocado(); return;
+    case CTXH_TOQUE: previaFocado(); return;
     default: break;
   }
   if (e->type != SDL_KEYDOWN) return;
@@ -1038,7 +1055,7 @@ void vertudo_evento(const SDL_Event *e) {
                              foco = v >= 0 ? v : n - 1; }
   else if (k == SDLK_UP) { int v = vizinhoNaLinha(n, celLin[foco] - 1);
                            if (v >= 0) foco = v; else if (ajustes_menu_topo()) pedMenu = 1; }
-  else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) abrirFocado();
+  else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) previaFocado();
   // Chegando perto do fim, pede a proxima pagina. Antes de o dono ver o vazio,
   // e nao quando ele ja esta olhando para ele.
   if (foco >= n - 12) desc_vertudo_mais();

@@ -21,6 +21,7 @@
 //   4. Ao rolar, a arte de fundo NAO desfoca: ela vai a 15% de opacidade em
 //      0.8s. O desfoque gaussiano era do app da Apple TV.
 #include "detail.h"
+#include "glance.h"
 #include "focoprof.h"
 #include "posterprov.h"
 #include "episodios.h"
@@ -2443,6 +2444,34 @@ static void abrirCredito(void) {
   }
 }
 
+static int glanceDetColecao;
+static int glanceDetTotal(void) { return glanceDetColecao ? extras_n_colecao() : pessoa_n_creditos(); }
+static int glanceDetItem(int i, CatItem *out) {
+  const char *id = glanceDetColecao ? "" : pessoa_credito_imdb(i);
+  long t = glanceDetColecao ? extras_colecao_tmdb(i) : pessoa_credito_tmdb(i);
+  int k = ctxlista_indice(id, t);
+  if (k >= 0) return cat_copiar_item(k, out);
+  memset(out, 0, sizeof *out);
+  if (id[0]) snprintf(out->imdb, sizeof out->imdb, "%s", id);
+  else snprintf(out->imdb, sizeof out->imdb, "tmdb:%ld", t);
+  out->tmdb = t;
+  snprintf(out->tipo, sizeof out->tipo, "%s", !glanceDetColecao && !strcmp(pessoa_credito_tipo(i), "tv") ? "series" : "movie");
+  snprintf(out->titulo, sizeof out->titulo, "%s", glanceDetColecao ? extras_colecao_titulo(i) : pessoa_credito_titulo(i));
+  snprintf(out->meta, sizeof out->meta, "%s", glanceDetColecao ? extras_colecao_ano(i) : pessoa_credito_ano(i));
+  snprintf(out->poster, sizeof out->poster, "%s", glanceDetColecao ? extras_colecao_poster(i) : pessoa_credito_poster(i));
+  return out->titulo[0] != 0;
+}
+static void glanceDetFoco(int i) { if (glanceDetColecao) colListaFoco = i; else pessoaFoco = i; }
+static void glanceDetDetalhes(int i) {
+  glanceDetFoco(i);
+  if (glanceDetColecao) abrirParteColecao(); else abrirCredito();
+}
+static void previaLista(void) {
+  static const GlanceFonte f = {glanceDetTotal, glanceDetItem, glanceDetFoco, glanceDetDetalhes};
+  glanceDetColecao = colListaAberta;
+  glance_abrir(&f, colListaAberta ? colListaFoco : pessoaFoco);
+}
+
 // O QUE A ILHA "MAIS OPCOES" ESCOLHEU (detmais.h). Eram os ramos dos quatro
 // circulares que sairam da linha; o comportamento de cada um e o mesmo.
 static void executarMais(int dm) {
@@ -2547,7 +2576,7 @@ void detail_evento(const SDL_Event *e) {
     if (colListaAberta || pessoaAberta) {
       if (r == CTXH_CONSUMIDO) return;
       if (r == CTXH_TOQUE) {
-        if (colListaAberta) abrirParteColecao(); else abrirCredito();
+        previaLista();
         return;
       }
     } }
@@ -3297,7 +3326,7 @@ void detail_atualizar(float dt, Uint32 agora) {
   // o video e a arte volta. Em tela cheia (botao) a regra e outra: so o
   // teclado fecha.
   if (trailer_suportado()) {
-    int topo = !saindo && nivel == 0 && !pessoaAberta && !episodios_menu_aberto() &&
+    int topo = !glance_aberto() && !saindo && nivel == 0 && !pessoaAberta && !episodios_menu_aberto() &&
                !trocaarte_aberto() &&
                !pedReproduzir && !pedFontes && !player_aberto() &&
                pg < 0.05f && scrollY < 1.0f &&
@@ -3312,7 +3341,7 @@ void detail_atualizar(float dt, Uint32 agora) {
                !(carro && cartao > 0.01f && ajustes_animacoes_reduzidas());
     if (!detail_assentado() || !topo) { if (!trailer_cheia()) trailerDesde = 0; }
     else if (!trailerDesde) trailerDesde = agora;
-    if (trailer_aberto() && !trailer_cheia() && !topo) trailer_fechar();
+    if (!glance_aberto() && trailer_aberto() && !trailer_cheia() && !topo) trailer_fechar();
     if (saindo && trailer_aberto()) trailer_fechar();
     if (!trailer_aberto() && !trailerTentado && trailerDesde && topo &&
         agora - trailerDesde >= NV_TRAILER_ESPERA_MS &&
@@ -6168,7 +6197,7 @@ static void eventoListaColecao(const SDL_Event *e) {
   if (k == SDLK_LEFT) { pediuMenu = 1; return; }
   if (k == SDLK_DOWN && colListaFoco + 1 < n) colListaFoco++;
   else if (k == SDLK_UP && colListaFoco > 0) colListaFoco--;
-  else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) abrirParteColecao();
+  else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) previaLista();
 }
 
 static void desenhaListaColecao(float a) {

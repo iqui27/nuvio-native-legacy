@@ -28,6 +28,7 @@
 // no maximo 5+6 toques e ~5 em media.
 #include "menu.h"
 #include "busca.h"
+#include "glance.h"
 #include "posterprov.h"
 #include "idioma.h"
 #include "gfx.h"
@@ -969,6 +970,21 @@ static void abrirResultado(void) {
   }
 }
 
+static int glanceBuscaLinha;
+static int glanceBuscaTotal(void) { return glanceBuscaLinha < nFil ? fil[glanceBuscaLinha].n : 0; }
+static int glanceBuscaItem(int i, CatItem *out) { return cat_copiar_item(fil[glanceBuscaLinha].itens[i], out); }
+static void glanceBuscaFoco(int i) {
+  focoRes.fileira = glanceBuscaLinha; focoRes.coluna = i;
+  focoRes.colunaLembrada[glanceBuscaLinha] = i;
+}
+static void glanceBuscaDetalhes(int i) { glanceBuscaFoco(i); abrirResultado(); }
+static void previaResultado(void) {
+  static const GlanceFonte f = {glanceBuscaTotal, glanceBuscaItem, glanceBuscaFoco, glanceBuscaDetalhes};
+  if (focoRes.fileira < 0 || focoRes.fileira >= nFil || fil[focoRes.fileira].pessoas) { abrirResultado(); return; }
+  registrarConsulta(); glanceBuscaLinha = focoRes.fileira;
+  glance_abrir(&f, focoRes.coluna);
+}
+
 // O resultado em foco aceita o menu do cartaz?
 static int resultadoAceitaMenu(void) {
   return painel == 1 && temItemFoco && focoRes.fileira >= 0 && focoRes.fileira < nFil &&
@@ -1012,7 +1028,7 @@ void busca_evento(const SDL_Event *e) {
   switch (ctxhold_evento(&holdRes, e, resultadoAceitaMenu())) {
     case CTXH_LONGO: if (!menuNoResultado()) abrirResultado(); return;
     case CTXH_CONSUMIDO: return;
-    case CTXH_TOQUE: abrirResultado(); return;
+    case CTXH_TOQUE: previaResultado(); return;
     default: break;
   }
 
@@ -1196,7 +1212,7 @@ void busca_evento(const SDL_Event *e) {
       break;
     }
     case SDLK_DOWN: focus_mover(&focoRes, 0,  1); break;
-    case SDLK_RETURN: case SDLK_KP_ENTER: abrirResultado(); break;
+    case SDLK_RETURN: case SDLK_KP_ENTER: previaResultado(); break;
     default: break;
   }
 }

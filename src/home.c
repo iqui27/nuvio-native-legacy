@@ -3,6 +3,7 @@
 // hero no topo, rail fixa à esquerda e fileiras horizontais de posters. A
 // infraestrutura nativa cuida de cache assíncrono, foco e transições.
 #include "home.h"
+#include "glance.h"
 #include "botoes.h"
 #include "cwretido.h"
 #include "focoprof.h"
@@ -2202,6 +2203,23 @@ int home_iniciar(const char *dirArte) {
   return 1;
 }
 
+static int glanceHomeLinha, glanceHomeHero;
+static int glanceHomeTotal(void) {
+  return glanceHomeHero ? 1 : (glanceHomeLinha >= 0 && glanceHomeLinha < nFileiras ? fileiras[glanceHomeLinha].n : 0);
+}
+static int glanceHomeItem(int i, CatItem *out) {
+  return cat_copiar_item(glanceHomeHero ? heroAtual : fileiraItemIndice(&fileiras[glanceHomeLinha], i), out);
+}
+static void glanceHomeFoco(int i) {
+  if (!glanceHomeHero) { foco.fileira = glanceHomeLinha; foco.coluna = i; foco.colunaLembrada[glanceHomeLinha] = i; }
+}
+static void glanceHomeDetalhes(int i) { glanceHomeFoco(i); pedidoAbrir = 1; }
+static void previaHome(void) {
+  static const GlanceFonte f = {glanceHomeTotal, glanceHomeItem, glanceHomeFoco, glanceHomeDetalhes};
+  glanceHomeHero = focoHero; glanceHomeLinha = foco.fileira;
+  glance_abrir(&f, focoHero ? 0 : foco.coluna);
+}
+
 void home_evento(const SDL_Event *e) {
   if (e->type == SDL_QUIT) { sair = 1; return; }
 #ifdef NV_TOUCH_UI
@@ -2265,7 +2283,7 @@ void home_evento(const SDL_Event *e) {
       if (focoHero) {
         okDesde = 0; okPressionando = 0; okLongDisparado = 0; okHold = 0.0f;
         if (dur >= NV_HOLD_MS) abrirMenuCartaz();
-        else pedidoAbrir = 1;
+        else previaHome();
         return;
       }
       int noVerTudo = (foco.fileira >= 0 && foco.fileira < nFileiras &&
@@ -2312,22 +2330,8 @@ void home_evento(const SDL_Event *e) {
         pedidoGuia = 1;
         snprintf(guiaId, sizeof guiaId, "%s", ci ? ci->imdb : "");
       } else {
-        // OK num card da retomada TOCA de onde parou quando o ajuste pede
-        // (issue #93): abrirTitulo seguido de detail_pedir_reproduzir cai no
-        // mesmo caminho do botao Reproduzir. Com o estilo "poster" a fileira
-        // de CW vira FILEIRA_NORMAL, entao a CHAVE e o que a identifica; a
-        // "Retomar agora" (FILEIRA_RETORNO) sempre responde assim, porque o
-        // card dela ja e um convite a tocar. Segurar OK continua abrindo o
-        // menu — o ramo NV_HOLD_MS acima nem chega aqui.
-        const Fileira *fl = &fileiras[foco.fileira];
-        // "Proximos episodios" (issue #127) NAO toca: o episodio ainda nao foi
-        // ao ar, e nenhum addon tem fonte para ele. OK abre a pagina.
-        if (ajustes_cw_ok_toca() && strcmp(fl->chave, "upcoming_section") &&
-            (fl->tipo == FILEIRA_CONTINUE || fl->tipo == FILEIRA_RETORNO ||
-             !strcmp(fl->chave, "continue_watching")))
-          pedidoTocar = 1;
-        else
-          pedidoAbrir = 1;
+        // Short OK now opens quick glance, including Continue Watching.
+        previaHome();
       }
       return;
     } }
@@ -5331,6 +5335,7 @@ static void shotTrailerPasso(int topo, float dt, Uint32 agora, int heroSetting, 
 #endif
 
 void home_trailer_passo(int topo, float dt, Uint32 agora) {
+  if (glance_aberto()) return; // Preview owns the single video pipeline.
   const CatItem *ci = NULL;
   int pronto;
   Uint32 decorrido;
