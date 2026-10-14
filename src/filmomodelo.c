@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+const char *i18n(const char *s);
+
 // Copia sem partir um caractere UTF-8 ao meio.
 static void cpy(char *dst, size_t n, const char *src) {
   size_t i = 0;
@@ -393,7 +395,7 @@ int fm_conquistas(long tmdb, const char *curto, const FmCredito *l, const FmEsta
   }
   if (lib >= 5) {
     snprintf(chave, sizeof chave, "ator:%ld/cinco", tmdb);
-    snprintf(nome, sizeof nome, "Cinco de %s", curto);
+    snprintf(nome, sizeof nome, i18n("Cinco de %s"), curto);
     conquista(&out[k++], chave, nome, 0, vistos > 5 ? 5 : vistos, 5, vistos >= 5 ? 1 : 0);
   }
   if (a >= 0 && z >= 0 && a != z) {

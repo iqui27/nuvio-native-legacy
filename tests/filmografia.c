@@ -2,6 +2,8 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+
+const char *i18n(const char *s) { return s; }
 int main(void) {
   FmBruto b[3] = {{.tmdb=1,.papel=FM_ATUA,.ano=2000,.ordem=0,.votos=20},
                    {.tmdb=1,.papel=FM_DIR,.ano=2000},
