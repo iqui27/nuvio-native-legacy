@@ -20,6 +20,7 @@
 // o alcance do dono >= 1 na hora da LEITURA — conferido em conquistasDe, nao
 // confiado ao que foi gravado.
 
+import { rotaFilmografiaPessoal } from "./filmografia.js";
 import { TRILHAS_PREMIOS } from "./trilhas-dados.js";
 
 const DIA = 86400;
@@ -160,6 +161,8 @@ export async function conquistasDe(env, alvo) {
 }
 
 export async function rotaCaca(rota, metodo, env, quem, corpo, url, h, fetchFn = fetch) {
+  const pessoal = await rotaFilmografiaPessoal(rota, metodo, env, quem, corpo, url, h, fetchFn);
+  if (pessoal) return pessoal;
   if (rota === "/v1/filmografia" && metodo === "GET") return rotaFilmografia(env, url, h, fetchFn);
   if (rota === "/v1/trilhas" && metodo === "GET") return h.json(catalogo(env));
   if (rota === "/v1/trilha" && metodo === "GET") {
