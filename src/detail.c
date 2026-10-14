@@ -2709,6 +2709,9 @@ void detail_evento(const SDL_Event *e) {
         int total = 0, vistos = 0;
         extras_progresso_serie(&vistos, &total);
         if (dur >= NV_HOLD_MS) pedFontes = 1;
+        else if (ci && ehSerie() && rewatch_ativa(ci->imdb) &&
+                 !episodioAlvo(NULL, NULL, NULL))
+          rewatchui_abrir(ci, RW_ORIGEM_TITULO, 0, 0);
         else if (ci && ehSerie() && !rewatch_ativa(ci->imdb) && total > 0 && vistos >= total)
           rewatchui_abrir(ci, RW_ORIGEM_TITULO, 0, 0);
         else pedReproduzir = 1;
