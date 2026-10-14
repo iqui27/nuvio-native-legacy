@@ -258,6 +258,8 @@ def contexto(txt, i):
 # "nao sei o que e": sem esta lista a ferramenta nao pode virar teste, e sem
 # virar teste ela nao impede a proxima regressao.
 IGNORAR = {
+    # filmography provider hostname and spoiler-matching stem, never UI labels.
+    "simkl.com", "traiç",
     "daqui em diante",  # episodios.c nomeModo: so no log [visto] menu, nunca rotulo
     "fechar",  # main.c: nome do evento de janela so no log "[ciclo] janela="
     # video_tpk.c: motivos de cartaoModo()/cartaoEncaixar(), so no log "[video] tpk cartao".
