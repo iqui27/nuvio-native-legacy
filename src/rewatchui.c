@@ -3,7 +3,10 @@
 #include "ctxmenu.h"
 #include "descoberta.h"
 #include "progresso.h"
-#include "tirarremoto.h"
+#include "trakt.h"
+#include "syncprog.h"
+#include "sessao.h"
+#include "perfis.h"
 #include "sync.h"
 #include "idioma.h"
 #include "layout.h"
@@ -34,10 +37,19 @@ void rewatchui_abrir(const CatItem *ci, int de, int t, int e) {
   rwLinhas[rwN++] = (CtxLinha){"Cancelar", "aj_x"};
 }
 int rewatchui_aberta(void) { return rwAberta; }
-typedef struct { char id[64], chave[64]; } RwRemover;
+typedef struct {
+  char id[64], chave[64], conta[96];
+  int perfil;
+  unsigned long long credencial;
+} RwRemover;
+static int rwRemoverAtual(const RwRemover *r) {
+  return r->perfil == perfis_ativo() && !strcmp(r->conta,sessao_usuario()) &&
+         r->credencial == trakt_credencial_geracao();
+}
 static void *rwRemover(void *u) {
   RwRemover *r = u;
-  tirarremoto_executar(r->id,r->chave,0);
+  if (rwRemoverAtual(r)) trakt_playback_remover(r->id);
+  if (rwRemoverAtual(r)) syncprog_remover(r->chave);
   free(r);
   return NULL;
 }
@@ -49,7 +61,10 @@ static void rwEscolher(void) {
       RwRemover *r = calloc(1,sizeof *r);
       pthread_t th;
       if (!r) return;
-      snprintf(r->id,sizeof r->id,"%s",rwItem.imdb);
+      snprintf(r->conta,sizeof r->conta,"%s",sessao_usuario());
+      r->perfil = perfis_ativo();
+      r->credencial = trakt_credencial_geracao();
+      prog_chave(r->id,sizeof r->id,rwItem.imdb,rwItem.temporada,rwItem.episodio);
       prog_chave(r->chave,sizeof r->chave,rwItem.imdb,rwItem.temporada,rwItem.episodio);
       // Sem fio nao apagamos o ponto local nem iniciamos a troca.
       if (pthread_create(&th,NULL,rwRemover,r)) { free(r); return; }
