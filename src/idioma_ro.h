@@ -3687,6 +3687,7 @@
   T("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.", "Addon-urile de canale ale acestui cont nu răspund acum. Ghidul reîncearcă la fiecare 10 secunde cât timp ecranul este deschis."),
   T("Os addons de canais não responderam.", "Addon-urile de canale nu au răspuns."),
   T("Os addons instalados e os portais de TV ao vivo (Stalker e Xtream).", "Addon-urile instalate și portalurile TV live (Stalker și Xtream)."),
+  T("Os addons selecionados ignoram os filtros de fontes.", "Extensiile selectate ignoră filtrele surselor."),
   T("Os addons vêm da sua conta Nuvio. Ligar e desligar aqui vale só nesta TV, até a próxima sincronização.", "Add-onurile vin din contul tău Nuvio. Pornirea și oprirea lor aici valorează doar pe acest TV, până la următoarea sincronizare."),
   T("Os botões coloridos", "Butoanele colorate"),
   T("Os canais HLS só abriram pelo proxy de TS: ele fica ligado para a Live TV.", "Canalele HLS s-au deschis doar prin proxy-ul TS: rămâne activat pentru Live TV."),

@@ -3688,6 +3688,7 @@
   T("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.", "A fiók csatornabővítményei most nem válaszolnak. Az útmutató 10 másodpercenként újrapróbálja, amíg ez a képernyő nyitva van."),
   T("Os addons de canais não responderam.", "A csatornabővítmények nem válaszoltak."),
   T("Os addons instalados e os portais de TV ao vivo (Stalker e Xtream).", "Telepített bővítmények és élő TV-portálok (Stalker és Xtream)."),
+  T("Os addons selecionados ignoram os filtros de fontes.", "A kiválasztott kiegészítők megkerülik a forrásszűrőket."),
   T("Os addons vêm da sua conta Nuvio. Ligar e desligar aqui vale só nesta TV, até a próxima sincronização.", "A bővítmények a Nuvio-fiókodból jönnek. Az itteni be- és kikapcsolásuk csak ezen a tévén érvényes, a következő szinkronizálásig."),
   T("Os botões coloridos", "A színes gombok"),
   T("Os canais HLS só abriram pelo proxy de TS: ele fica ligado para a Live TV.", "A HLS-csatornák csak a TS-proxyn keresztül nyíltak meg: a Live TV-hez bekapcsolva marad."),

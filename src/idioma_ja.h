@@ -3688,6 +3688,7 @@
   T("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.", "このアカウントのチャンネルアドオンが現在応答していません。この画面を開いている間、ガイドは 10 秒ごとに再試行します。"),
   T("Os addons de canais não responderam.", "チャンネルアドオンが応答しませんでした。"),
   T("Os addons instalados e os portais de TV ao vivo (Stalker e Xtream).", "インストール済みのアドオンと、ライブ TV ポータル（Stalker と Xtream）。"),
+  T("Os addons selecionados ignoram os filtros de fontes.", "選択したアドオンにはソースフィルターを適用しません。"),
   T("Os addons vêm da sua conta Nuvio. Ligar e desligar aqui vale só nesta TV, até a próxima sincronização.", "アドオンはNuvioアカウントから取得されます。ここでのオン・オフは、次の同期まではこのテレビでのみ有効です。"),
   T("Os botões coloridos", "カラーボタン"),
   T("Os canais HLS só abriram pelo proxy de TS: ele fica ligado para a Live TV.", "HLS のチャンネルは TS proxy 経由でしか開きませんでした。Live TV では proxy をオンのままにします。"),

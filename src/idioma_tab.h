@@ -3687,6 +3687,7 @@
   { "Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.", "The channel addons on this account are not answering right now. The guide retries every 10 seconds while this screen is open." },
   { "Os addons de canais não responderam.", "The channel addons did not answer." },
   { "Os addons instalados e os portais de TV ao vivo (Stalker e Xtream).", "Installed add-ons and live TV portals (Stalker and Xtream)." },
+  { "Os addons selecionados ignoram os filtros de fontes.", "Selected add-ons bypass source filters." },
   { "Os addons vêm da sua conta Nuvio. Ligar e desligar aqui vale só nesta TV, até a próxima sincronização.", "Add-ons come from your Nuvio account. Turning them on or off here applies only to this TV until the next sync." },
   { "Os botões coloridos", "The coloured buttons" },
   { "Os canais HLS só abriram pelo proxy de TS: ele fica ligado para a Live TV.", "The HLS channels only opened through the TS proxy: it stays on for Live TV." },

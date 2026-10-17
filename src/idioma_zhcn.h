@@ -3688,6 +3688,7 @@
   T("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.", "此账号的频道附加组件目前无响应。此界面打开期间，指南会每 10 秒重试一次。"),
   T("Os addons de canais não responderam.", "频道附加组件无响应。"),
   T("Os addons instalados e os portais de TV ao vivo (Stalker e Xtream).", "已安装的附加组件和直播电视门户（Stalker 和 Xtream）。"),
+  T("Os addons selecionados ignoram os filtros de fontes.", "所选插件将绕过片源筛选。"),
   T("Os addons vêm da sua conta Nuvio. Ligar e desligar aqui vale só nesta TV, até a próxima sincronização.", "插件来自您的 Nuvio 账户。在此处的启用或停用仅在此电视上有效，直至下次同步。"),
   T("Os botões coloridos", "彩色按钮"),
   T("Os canais HLS só abriram pelo proxy de TS: ele fica ligado para a Live TV.", "HLS 频道只有通过 TS proxy 才能打开：它会为 Live TV 保持开启。"),

@@ -43,6 +43,7 @@ int player_aberto(void) { return aberto; }
 int player_mini_ativo(void) { return mini; }
 int player_quer_sair(void) { return sair; }
 const char *player_id_canal(void) { return ""; }
+const char *player_tipo_canal(void) { return ""; }
 int player_carregando(void) { return carregando; }
 int player_fonte_falhou(void) { return playerFalhou; }
 void player_voltar_a_esperar(void) {
@@ -102,6 +103,9 @@ int stream_primeira_boa_sessao(int n, uint64_t sessao) {
   (void)sessao; return stream_primeira_boa(n);
 }
 int stream_filtro_permite(const Stream *s) { (void)s; return 1; }
+void stream_filtro_dados(const Stream *s, FonteFiltroDados *dados) {
+  *dados = s ? s->filtro : (FonteFiltroDados){0};
+}
 int stream_verificar_proxima_vod(int i, int n, int *conferidas) {
   (void)i; (void)n; legadas++; *conferidas = 1; return 1;
 }

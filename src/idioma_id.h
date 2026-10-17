@@ -3688,6 +3688,7 @@
   T("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.", "Addon kanal di akun ini tidak merespons saat ini. Panduan mencoba lagi setiap 10 detik selama layar ini terbuka."),
   T("Os addons de canais não responderam.", "Addon kanal tidak merespons."),
   T("Os addons instalados e os portais de TV ao vivo (Stalker e Xtream).", "Addon terpasang dan portal TV langsung (Stalker dan Xtream)."),
+  T("Os addons selecionados ignoram os filtros de fontes.", "Add-on yang dipilih melewati filter sumber."),
   T("Os addons vêm da sua conta Nuvio. Ligar e desligar aqui vale só nesta TV, até a próxima sincronização.", "Add-on berasal dari akun Nuvio Anda. Menyalakan atau mematikannya di sini hanya berlaku di TV ini, sampai sinkronisasi berikutnya."),
   T("Os botões coloridos", "Tombol berwarna"),
   T("Os canais HLS só abriram pelo proxy de TS: ele fica ligado para a Live TV.", "Kanal HLS hanya terbuka lewat proxy TS: proxy tetap aktif untuk Live TV."),

@@ -3687,6 +3687,7 @@
   T("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.", "Аддони каналів цього облікового запису зараз не відповідають. Гід повторює спробу кожні 10 секунд, поки екран відкритий."),
   T("Os addons de canais não responderam.", "Аддони каналів не відповіли."),
   T("Os addons instalados e os portais de TV ao vivo (Stalker e Xtream).", "Встановлені аддони та портали ефірного ТБ (Stalker і Xtream)."),
+  T("Os addons selecionados ignoram os filtros de fontes.", "Вибрані доповнення оминають фільтри джерел."),
   T("Os addons vêm da sua conta Nuvio. Ligar e desligar aqui vale só nesta TV, até a próxima sincronização.", "Додатки надходять з вашого облікового запису Nuvio. Вмикання й вимикання тут діє лише на цьому ТБ до наступної синхронізації."),
   T("Os botões coloridos", "Кольорові кнопки"),
   T("Os canais HLS só abriram pelo proxy de TS: ele fica ligado para a Live TV.", "Канали HLS відкрилися лише через TS proxy: він лишається ввімкненим для Live TV."),

@@ -58,6 +58,8 @@ int servidores_fontes_pedir(const char *alvo) { (void)alvo; return 0; }
 int servidores_fontes_colher(const char *alvo, Stream **l, int *n) {
   (void)alvo; if (l) *l = NULL; if (n) *n = 0; return JF_FONTES_FALHOU; }
 uint64_t badges_detectar(const char *m) { (void)m; return 0; }
+void stream_folha_canal(int sim) { (void)sim; }
+void stream_filtro_tipo(const char *tipo) { (void)tipo; }
 void stream_definir_lista(const Stream *l, int n) { (void)l; (void)n; }
 void stream_preparar_dica_p2p(const Stream *l, int n) { (void)l; (void)n; }
 void stream_definir_lista_idade(const Stream *l, int n, Uint32 idade) {

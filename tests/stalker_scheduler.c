@@ -249,6 +249,7 @@ const Stream *stream_item(int indice) {
 void stream_definir_atual(int indice) { fonteAtual = indice; }
 
 const char *player_id_canal(void) { return idCanal; }
+const char *player_tipo_canal(void) { return idCanal[0] ? "tv" : ""; }
 int player_aberto(void) { return idPlayerAberto; }
 int player_mini_ativo(void) { return 0; }
 int player_quer_sair(void) { return playerSaindo; }

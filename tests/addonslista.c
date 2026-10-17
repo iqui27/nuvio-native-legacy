@@ -113,6 +113,11 @@ int servidores_fontes_pedir(const char *alvo) { (void)alvo; return 0; }
 int servidores_fontes_colher(const char *alvo, Stream **l, int *n) {
   (void)alvo; if (l) *l = NULL; if (n) *n = 0; return JF_FONTES_FALHOU; }
 uint64_t badges_detectar(const char *m) { (void)m; return 0; }
+static int liveRequest, filterVodRequest;
+void stream_folha_canal(int sim) { liveRequest = sim; }
+void stream_filtro_tipo(const char *tipo) {
+  filterVodRequest = tipo && (!strcasecmp(tipo, "movie") || !strcasecmp(tipo, "series"));
+}
 void stream_definir_lista(const Stream *l, int n) { (void)l; (void)n; }
 void stream_preparar_dica_p2p(const Stream *l, int n) { (void)l; (void)n; }
 void stream_definir_lista_idade(const Stream *l, int n, Uint32 idade) {
@@ -186,6 +191,23 @@ static void conferirTexto(const char *o_que, const char *obtido, const char *esp
 static int sempreCancelado(void *u) { (void)u; return 1; }
 
 int main(void) {
+  const char *liveTypes[] = {"tv", "channel", "channels", "live", "iptv", "LiVe", "sport", "sports"};
+  for (unsigned i = 0; i < sizeof liveTypes / sizeof *liveTypes; i++) {
+    addons_buscar("fixture:live", liveTypes[i]);
+    conferir("live context before player/sheet opens", liveRequest, 1);
+    conferir("live request outside VOD filters", filterVodRequest, 0);
+    addons_buscar("tt123", "movie");
+    conferir("VOD request restores filtering", liveRequest, 0);
+    conferir("movie request uses VOD filters", filterVodRequest, 1);
+  }
+  const char *customTypes[] = {"custom-live-resource", "events", "hockey", "24-hour-channel"};
+  for (unsigned i = 0; i < sizeof customTypes / sizeof *customTypes; i++) {
+    addons_buscar("fixture:custom", customTypes[i]);
+    conferir("arbitrary live resource outside VOD filters", filterVodRequest, 0);
+  }
+  addons_buscar("tt123:1:1", "series");
+  conferir("episode request restores VOD filters", filterVodRequest, 1);
+  nDebridNovaBusca = 0;
   char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-addonslista-XXXXXX");
   char caminho[600];
   FILE *f;

@@ -98,6 +98,7 @@ static int addonAdicionar(FonteFalhaConfig *c, const char *chave) {
   i = c->nAddons++;
   snprintf(c->addon[i].chave, sizeof c->addon[i].chave, "%s", chave);
   c->addon[i].limite = 3;
+  c->addon[i].aoVivo = 0;
   return i;
 }
 static int nomeVale(const char *nome) {
@@ -153,6 +154,8 @@ static void lerArquivo(const char *arquivo, FonteFalhaConfig *saida) {
         if (limiteVale(a) && limiteVale(b) && limiteVale(d) && limiteVale(e)) memcpy(c.limites, l, sizeof l);
       } else if (sscanf(linha, "addon %39s %d %c", k, &a, &extra) == 2 && limiteVale(a)) {
         int i = addonAdicionar(&c, k); if (i >= 0) c.addon[i].limite = a;
+      } else if (sscanf(linha, "addon_live %39s %d %c", k, &a, &extra) == 2 && (a == 0 || a == 1)) {
+        int i = addonAdicionar(&c, k); if (i >= 0) c.addon[i].aoVivo = a;
       }
     }
     fclose(f);
@@ -181,6 +184,8 @@ static int gravarArquivo(const FonteFalhaConfig *c, const char *arquivo) {
                    c->limites[0], c->limites[1], c->limites[2], c->limites[3]) >= 0;
   for (int i = 0; i < c->nAddons && ok; i++)
     ok = fprintf(f, "addon %s %d\n", c->addon[i].chave, c->addon[i].limite) >= 0;
+  for (int i = 0; i < c->nAddons && ok; i++)
+    if (c->addon[i].aoVivo) ok = fprintf(f, "addon_live %s 1\n", c->addon[i].chave) >= 0;
   for (int i = 0; i < FONTEFILTRO_N && ok; i++)
     ok = fprintf(f, "%s %016" PRIx64 "\n", filtroChaves[i], c->filtro.excluir[i]) >= 0;
   if (ok) ok = fprintf(f, "filtro_maxgb %u\nfiltro_grupos ", c->filtro.maxGB) >= 0;
@@ -306,6 +311,18 @@ int fontefalha_addon_definir_limite(const char *chave, int l) {
   FonteFalhaConfig c; fontefalha_config(&c); int i = addonAdicionar(&c, chave);
   if (i < 0) return 0;
   c.addon[i].limite = l; return publicar(&c);
+}
+int fontefalha_addon_ao_vivo(const char *chave) {
+  if (!chave || !chave[0]) return 0;
+  iniciar(); pthread_mutex_lock(&configTrava);
+  int i = addonIndice(&configuracao, chave);
+  int ligado = i >= 0 && configuracao.addon[i].aoVivo;
+  pthread_mutex_unlock(&configTrava); return ligado;
+}
+int fontefalha_addon_definir_ao_vivo(const char *chave, int ligado) {
+  FonteFalhaConfig c; fontefalha_config(&c); int i = addonAdicionar(&c, chave);
+  if (i < 0) return 0;
+  c.addon[i].aoVivo = !!ligado; return publicar(&c);
 }
 
 typedef struct { char addon[FONTEFALHA_CHAVE]; int usadas[5]; } UsoAddon;

@@ -3688,6 +3688,7 @@
   T("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.", "Šios paskyros kanalų papildiniai šiuo metu neatsako. Vadovas bando iš naujo kas 10 sekundžių, kol šis ekranas atidarytas."),
   T("Os addons de canais não responderam.", "Kanalų papildiniai neatsakė."),
   T("Os addons instalados e os portais de TV ao vivo (Stalker e Xtream).", "Įdiegti papildiniai ir tiesioginės TV portalai (Stalker ir Xtream)."),
+  T("Os addons selecionados ignoram os filtros de fontes.", "Pasirinkti priedai apeina šaltinių filtrus."),
   T("Os addons vêm da sua conta Nuvio. Ligar e desligar aqui vale só nesta TV, até a próxima sincronização.", "Priedai gaunami iš jūsų Nuvio paskyros. Jų įjungimas ar išjungimas čia galioja tik šiame televizoriuje, iki kito sinchronizavimo."),
   T("Os botões coloridos", "Spalvoti mygtukai"),
   T("Os canais HLS só abriram pelo proxy de TS: ele fica ligado para a Live TV.", "HLS kanalai atsidarė tik per TS proxy: jis lieka įjungtas Live TV."),

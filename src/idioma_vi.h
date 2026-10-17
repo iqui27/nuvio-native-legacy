@@ -3688,6 +3688,7 @@
   T("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.", "Các tiện ích kênh của tài khoản này hiện không phản hồi. Hướng dẫn thử lại mỗi 10 giây khi màn hình này đang mở."),
   T("Os addons de canais não responderam.", "Các tiện ích kênh không phản hồi."),
   T("Os addons instalados e os portais de TV ao vivo (Stalker e Xtream).", "Các tiện ích đã cài và cổng TV trực tiếp (Stalker và Xtream)."),
+  T("Os addons selecionados ignoram os filtros de fontes.", "Các tiện ích đã chọn bỏ qua bộ lọc nguồn."),
   T("Os addons vêm da sua conta Nuvio. Ligar e desligar aqui vale só nesta TV, até a próxima sincronização.", "Các addon đến từ tài khoản Nuvio của bạn. Việc bật tắt tại đây chỉ có hiệu lực trên TV này, cho đến lần đồng bộ tiếp theo."),
   T("Os botões coloridos", "Các nút màu"),
   T("Os canais HLS só abriram pelo proxy de TS: ele fica ligado para a Live TV.", "Các kênh HLS chỉ mở được qua proxy TS: proxy sẽ được bật cho Live TV."),

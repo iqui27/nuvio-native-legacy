@@ -3688,6 +3688,7 @@
   T("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.", "Os add-ons de canais desta conta não responderam neste momento. O guia tenta de novo a cada 10 segundos enquanto este ecrã estiver aberto."),
   T("Os addons de canais não responderam.", "Os add-ons de canais não responderam."),
   T("Os addons instalados e os portais de TV ao vivo (Stalker e Xtream).", "Os add-ons instalados e os portais de TV em direto (Stalker e Xtream)."),
+  T("Os addons selecionados ignoram os filtros de fontes.", "Os addons selecionados ignoram os filtros de fontes."),
   T("Os addons vêm da sua conta Nuvio. Ligar e desligar aqui vale só nesta TV, até a próxima sincronização.", "Os add-ons vêm da sua conta Nuvio. Ligar e desligar aqui vale só nesta TV, até à próxima sincronização."),
   T("Os botões coloridos", "Os botões coloridos"),
   T("Os canais HLS só abriram pelo proxy de TS: ele fica ligado para a Live TV.", "Os canais HLS só abriram pelo proxy de TS: fica ligado para a Live TV."),

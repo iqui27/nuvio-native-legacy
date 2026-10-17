@@ -13,6 +13,7 @@
 typedef struct {
   char chave[FONTEFALHA_CHAVE];
   int limite;
+  int aoVivo;                    // Device/profile override: skip source filters.
 } FonteFalhaAddon;
 typedef struct {
   int provedores, addons;
@@ -53,6 +54,8 @@ int fontefalha_addon_posicao(const char *chave);
 int fontefalha_addon_limite(const char *chave);
 int fontefalha_addon_mover(const char *chave, int delta);
 int fontefalha_addon_definir_limite(const char *chave, int limite);
+int fontefalha_addon_ao_vivo(const char *chave);
+int fontefalha_addon_definir_ao_vivo(const char *chave, int ligado);
 
 typedef struct FonteFalhaSessao FonteFalhaSessao;
 typedef struct {

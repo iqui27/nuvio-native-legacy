@@ -3688,6 +3688,7 @@
   T("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.", "Τα πρόσθετα καναλιών αυτού του λογαριασμού δεν απαντούν αυτή τη στιγμή. Ο οδηγός ξαναδοκιμάζει κάθε 10 δευτερόλεπτα όσο αυτή η οθόνη είναι ανοιχτή."),
   T("Os addons de canais não responderam.", "Τα πρόσθετα καναλιών δεν απάντησαν."),
   T("Os addons instalados e os portais de TV ao vivo (Stalker e Xtream).", "Εγκατεστημένα πρόσθετα και πύλες ζωντανής τηλεόρασης (Stalker και Xtream)."),
+  T("Os addons selecionados ignoram os filtros de fontes.", "Τα επιλεγμένα πρόσθετα παρακάμπτουν τα φίλτρα πηγών."),
   T("Os addons vêm da sua conta Nuvio. Ligar e desligar aqui vale só nesta TV, até a próxima sincronização.", "Τα πρόσθετα προέρχονται από τον λογαριασμό σας Nuvio. Η ενεργοποίηση ή απενεργοποίησή τους εδώ ισχύει μόνο σε αυτήν την τηλεόραση, μέχρι τον επόμενο συγχρονισμό."),
   T("Os botões coloridos", "Τα έγχρωμα κουμπιά"),
   T("Os canais HLS só abriram pelo proxy de TS: ele fica ligado para a Live TV.", "Τα κανάλια HLS άνοιξαν μόνο μέσω του proxy TS: μένει ενεργό για το Live TV."),

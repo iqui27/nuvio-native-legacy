@@ -3688,6 +3688,7 @@
   T("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.", "Dodatki za kanale v tem računu se trenutno ne odzivajo. Vodnik poskusi znova vsakih 10 sekund, dokler je ta zaslon odprt."),
   T("Os addons de canais não responderam.", "Dodatki za kanale se niso odzvali."),
   T("Os addons instalados e os portais de TV ao vivo (Stalker e Xtream).", "Nameščeni dodatki in portali za televizijo v živo (Stalker in Xtream)."),
+  T("Os addons selecionados ignoram os filtros de fontes.", "Izbrani dodatki obidejo filtre virov."),
   T("Os addons vêm da sua conta Nuvio. Ligar e desligar aqui vale só nesta TV, até a próxima sincronização.", "Dodatki prihajajo iz vašega računa Nuvio. Njihov vklop in izklop tukaj velja samo na tem televizorju, do naslednje sinhronizacije."),
   T("Os botões coloridos", "Barvni gumbi"),
   T("Os canais HLS só abriram pelo proxy de TS: ele fica ligado para a Live TV.", "Kanali HLS so se odprli samo prek proxyja TS: za Live TV ostane vklopljen."),

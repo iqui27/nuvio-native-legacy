@@ -1092,7 +1092,9 @@ static void buscarParaPlayerModo(int renovar) {
   if (idC[0]) {
     // SEM LEGENDA DE ADDON NO CANAL: o id do canal ia ao OpenSubtitles como
     // "movie" (Recarregar da folha). As do canal sao as do fluxo (faixas.c).
-    if (renovar) addons_buscar_renovar(alvo,"tv"); else addons_buscar(alvo,"tv");
+    const char *tipo = player_tipo_canal();
+    if (!tipo[0]) tipo = "tv";
+    if (renovar) addons_buscar_renovar(alvo,tipo); else addons_buscar(alvo,tipo);
     return;
   }
   {
@@ -1292,7 +1294,7 @@ static void nomeParaFolha(void) {
   const CatItem *c = player_id_canal()[0] ? NULL
                    : cat_item(player_aberto() ? player_indice() : detail_indice());
   stream_folha_nome(c ? c->titulo : "");
-  stream_folha_canal(player_id_canal()[0] != 0);
+  stream_folha_canal(player_id_canal()[0] != 0 || (c && nv_tipo_canal(c->tipo)));
   stream_folha_item(c ? (player_aberto() ? player_indice() : detail_indice()) : -1);
 }
 
@@ -2129,7 +2131,7 @@ static void prepararAoAbrir(void) {
       player_retido() || aguardandoFonte || !detail_aberto() || preparoRodando) return;
   if (addons_estado() == ADD_BUSCANDO || stream_n() < 1 || stream_n_candidatas() < 1) return;
   ci = cat_item(detail_indice());
-  if (!ci || !ci->imdb[0]) return;
+  if (!ci || !ci->imdb[0] || !nv_tipo_vod(ci->tipo)) return;
   idDoAlvo(ci, alvo, sizeof alvo);
   if (!stream_lista_do_alvo(alvo)) return;
   g = stream_lista_geracao();

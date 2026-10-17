@@ -138,6 +138,10 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida);
 // Idiomas declarados para exibicao, sem rotulo. 0 = nenhum informado.
 int stream_faixas_texto(const Stream *fonte, int legendas, char *saida, unsigned tam);
 void stream_filtro_dados(const Stream *fonte, FonteFiltroDados *saida);
+// Capture the requested resource type before publishing its sources. Filters
+// apply only to movie/series; this scope survives resolution and failover.
+void stream_filtro_tipo(const char *tipo);
+void stream_filtro_atualizar(void);
 int stream_filtro_permite(const Stream *fonte);
 int stream_filtro_bloqueou(void);
 void stream_definir_atual(int indice);
@@ -151,7 +155,9 @@ void stream_folha_nome(const char *nome);
 // do titulo no lugar do nome (Ajustes > Texto das fontes > Logo do titulo).
 void stream_folha_item(int indice);
 // Folha de um CANAL ao vivo: a resolucao e o codec saem do nome (UHD/FHD/HD/SD,
-// H.265...) e entram no agrupamento e nos selos. Filme nao muda.
+// H.265...) e entram no agrupamento e nos selos. Define tambem o contexto da
+// busca ANTES da selecao: canais ignoram filtros e regras de filme/episodio.
+// Toda busca nova deve repor o valor, inclusive ao voltar para VOD.
 void stream_folha_canal(int sim);
 void stream_canal_enriquecer(Stream *s);
 int stream_folha_recarregar(void);

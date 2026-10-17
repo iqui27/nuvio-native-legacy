@@ -21,5 +21,7 @@ int  addonsui_pediu_relogio(void);
 // Ponteiro (#99): foca a linha i (PonteiroFn). addonsui_foco para os testes.
 void addonsui_ponteiro(int i, int b);
 int  addonsui_foco(void);
+int  addonsui_ao_vivo(void);
+int  addonsui_addon_ao_vivo(int i);
 
 #endif

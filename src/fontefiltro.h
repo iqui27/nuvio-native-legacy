@@ -21,6 +21,7 @@ typedef struct {
   uint64_t valores[FONTEFILTRO_N]; /* Zero = desconhecido; nao soma ao limite. */
   uint64_t tamanhoBytes;          /* Zero = desconhecido. */
   char grupo[80];
+  int naoVod;                     /* Request scope; travels with this source. */
 } FonteFiltroDados;
 
 typedef struct {

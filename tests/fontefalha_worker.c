@@ -458,6 +458,33 @@ static void resolvedorManual(const char *dir) {
   assert(nManual == 3 && nP2P == 3 && !stream_item(0)->url[0]);
   assert(fontefalha_definir_provedores(0));
 }
+static void canalIgnoraFiltros(const char *dir) {
+  resetar(); fontefalha_dir(dir);
+  FonteFiltroConfig previous, blocked = {0}; fontefalha_filtro(&previous);
+  for (int c = 0; c < FONTEFILTRO_N; c++)
+    blocked.excluir[c] = (UINT64_C(1) << fontefiltro_opcoes_n(c)) - 1;
+  assert(fontefalha_filtro_definir(&blocked));
+  Stream live = {0}; live.fileIdx = -1;
+  snprintf(live.url, sizeof live.url, "%s", "https://live.invalid/channel.m3u8");
+  stream_definir_lista(&live, 1);
+  unsigned generation = stream_lista_geracao(); char url[4096], service[32]; int pct;
+  stream_folha_canal(0);
+  assert(stream_resolver_escolhida(0, generation, url, sizeof url, service, sizeof service, &pct) == 0);
+  stream_folha_canal(1);
+  stream_filtro_tipo("custom-live-resource");
+  stream_definir_lista(&live, 1); generation = stream_lista_geracao();
+  assert(stream_resolver_escolhida(0, generation, url, sizeof url, service, sizeof service, &pct) == 1);
+  assert(!strcmp(url, live.url) && !nManual && !nPedidos && !nHttp);
+  FonteFiltroDados retained;
+  stream_filtro_dados(stream_item(0), &retained);
+  assert(retained.naoVod);
+  stream_folha_canal(0);
+  stream_filtro_tipo("movie");
+  assert(fontefiltro_permite(&blocked, &retained));
+  stream_definir_lista(&live, 1); generation = stream_lista_geracao();
+  assert(stream_resolver_escolhida(0, generation, url, sizeof url, service, sizeof service, &pct) == 0);
+  assert(fontefalha_filtro_definir(&previous));
+}
 int main(int argc, char **argv) {
   assert(argc == 2 && "runner supplies an isolated preference directory");
   ordemETotal(); identidadeEDedup(); missNaoExcluiOutroServico(); semTetosAntigos();
@@ -465,6 +492,7 @@ int main(int argc, char **argv) {
   cachePertenceAoServico(); hashCanonicoEAplicacaoSobreposta();
   geracaoECancelamento(); addonIndependente(); buscaParcial(); escolhaManual();
   resolvedorManual(argv[1]);
+  canalIgnoraFiltros(argv[1]);
   stream_definir_lista(NULL, 0);
   puts("fontefalha worker: PASS (provider order, total limits, dedup, identity, generation, cancellation, addon order, partial search, manual selection, cached winner, P2P isolation)");
   return 0;

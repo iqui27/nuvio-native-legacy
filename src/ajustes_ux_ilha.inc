@@ -1498,7 +1498,7 @@ static void ajSubLista(const AjSubLinha *L, int n, int foco, const AjDica *d, in
 #ifdef NV_TOUCH_UI
   if (ajTelaCheia()) {
     { static int anterior = -1, tipoAnterior = -1;
-      int tipo = focar == addonsui_ponteiro ? 1 : 2;
+      int tipo = focar == addonsui_ponteiro ? (addonsui_ao_vivo() ? 3 : 1) : 2;
       if (tipo != tipoAnterior || foco != anterior) ajToqueLivre[AJT_SUB] = 0;
       anterior = foco; tipoAnterior = tipo;
     }
@@ -1577,28 +1577,31 @@ static const char *ajSyncAddonsApoio(void) {
   return "Busca agora os addons da sua conta, sem esperar a volta automática.";
 }
 static void ajDesenharAddons(int foco) {
-  static AjSubLinha L[129];
-  int n = addons_n(), i, lig = 0;
+  static AjSubLinha L[130];
+  int n = addons_n(), i, lig = 0, live = addonsui_ao_vivo();
   char sub[96], val[64], k[160];
   montarTela();
   if (n > 128) n = 128;
-  for (i = 0; i < n; i++) if (addons_ativo(i)) lig++;
+  for (i = 0; i < n; i++) if (live ? addonsui_addon_ao_vivo(i) : addons_ativo(i)) lig++;
   ajFundoPagina();
   snprintf(val, sizeof val, i18n("%d de %d"), lig, n);
-  snprintf(sub, sizeof sub, "%s", n ? i18n("Ligados nesta TV") : i18n("Nenhum addon nesta conta."));
-  ajSubCabecalho("aj_puzzle", "Fontes e addons", "Addons", n ? val : "", sub);
-  if (foco > n) foco = n;
+  snprintf(sub, sizeof sub, "%s", n ? i18n(live ? "TV ao vivo" : "Ligados nesta TV") : i18n("Nenhum addon nesta conta."));
+  ajSubCabecalho("aj_puzzle", "Fontes e addons", live ? "TV ao vivo" : "Addons", n ? val : "", sub);
+  if (foco > (live ? n - 1 : n + 1)) foco = live ? n - 1 : n + 1;
   if (foco < 0) foco = 0;
   { static char apoio[128][96];
     for (i = 0; i < n; i++) {
       snprintf(apoio[i], sizeof apoio[i], "%s", ajAddonFornece(i));   // ajAddonFornece devolve um buffer so
-      L[i] = (AjSubLinha){ addons_nome(i), apoio[i], NULL, addons_ativo(i), 0, 0 };
+      L[i] = (AjSubLinha){ addons_nome(i), apoio[i], NULL, live ? addonsui_addon_ao_vivo(i) : addons_ativo(i), 0, 0 };
     } }
   L[n] = (AjSubLinha){ "Sincronizar addons", ajSyncAddonsApoio(), "aj_rotate-cw", -1, 0, 1 };
-  { AjDica d[3] = { { "OK", foco == n ? "Sincronizar addons" : "Mudar" }, { "↑ ↓", "Navegar" }, { "Voltar", "Fontes e addons" } };
-    ajSubLista(L, n + 1, foco, d, 3, NULL, addonsui_ponteiro); }
+  L[n + 1] = (AjSubLinha){ "TV ao vivo", "Os addons selecionados ignoram os filtros de fontes.", "aj_tv-minimal-play", -1, 0, 1 };
+  { AjDica d[3] = { { "OK", !live && foco == n ? "Sincronizar addons" : "Mudar" }, { "↑ ↓", "Navegar" }, { "Voltar", "Fontes e addons" } };
+    ajSubLista(L, live ? n : n + 2, foco, d, 3, NULL, addonsui_ponteiro); }
   snprintf(k, sizeof k, "%s · %s", i18n("Fontes e addons"), i18n("Addons"));
-  if (foco == n) ajSubInspetor(AJ_ADDONS, k, "Sincronizar addons", i18n(ajSyncAddonsApoio()));
+  if (live) ajSubInspetor(AJ_ADDONS, k, n ? addons_nome(foco) : "TV ao vivo", i18n("Os addons selecionados ignoram os filtros de fontes."));
+  else if (foco == n + 1) ajSubInspetor(AJ_ADDONS, k, "TV ao vivo", i18n("Os addons selecionados ignoram os filtros de fontes."));
+  else if (foco == n) ajSubInspetor(AJ_ADDONS, k, "Sincronizar addons", i18n(ajSyncAddonsApoio()));
   else if (n > 0) {
     const char *base0 = addons_base(foco);
     char host[160] = "", forn[200];

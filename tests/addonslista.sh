@@ -7,9 +7,10 @@ TMPDIR="${TMPDIR%/}"
 #   bash tests/addonslista.sh
 set -eu
 cd "$(dirname "$0")/.."
-flags=(-O1 -g -Isrc -ffunction-sections -fdata-sections -Wl,-dead_strip \
+flags=(-O1 -g -Isrc -ffunction-sections -fdata-sections \
        -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
        -Wno-deprecated-declarations -Wno-macro-redefined)
+if [ "$(uname -s)" = Darwin ]; then flags+=(-Wl,-dead_strip); else flags+=(-Wl,--gc-sections); fi
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 # SO addons.c: o teste chama o leitor do arquivo e os acessores, que nao tocam
 # rede, SDL nem descoberta. -dead_strip com secoes por funcao descarta o resto

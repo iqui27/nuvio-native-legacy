@@ -3688,6 +3688,7 @@
   T("Os addons de canais desta conta não responderam agora. O guia tenta de novo a cada 10 segundos enquanto esta tela estiver aberta.", "Bu hesaptaki kanal eklentileri şu an yanıt vermiyor. Bu ekran açıkken rehber her 10 saniyede bir yeniden dener."),
   T("Os addons de canais não responderam.", "Kanal eklentileri yanıt vermedi."),
   T("Os addons instalados e os portais de TV ao vivo (Stalker e Xtream).", "Kurulu eklentiler ve canlı TV portalları (Stalker ve Xtream)."),
+  T("Os addons selecionados ignoram os filtros de fontes.", "Seçilen eklentiler kaynak filtrelerini atlar."),
   T("Os addons vêm da sua conta Nuvio. Ligar e desligar aqui vale só nesta TV, até a próxima sincronização.", "Eklentiler Nuvio hesabınızdan gelir. Burada açıp kapatmak, bir sonraki eşitlemeye kadar yalnızca bu TV'de geçerlidir."),
   T("Os botões coloridos", "Renkli düğmeler"),
   T("Os canais HLS só abriram pelo proxy de TS: ele fica ligado para a Live TV.", "HLS kanalları yalnızca TS proxy'si üzerinden açıldı: Live TV için açık kalır."),
