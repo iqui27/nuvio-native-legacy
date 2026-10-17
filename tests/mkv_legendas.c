@@ -87,6 +87,32 @@ int main(int argc, char **argv) {
     ok(mkv_casar_legendas(fx, n, tv, 3, idx) == MKV_CASA_NADA,
        "trackNum que cairia no video/audio nao casa"); }
 
+  printf("\n[2b] BD/remux: a TV omite as legendas de imagem (PGS)\n");
+  { MkvFaixa g[8]; int tv[3], ix[8];
+    memset(g, 0, sizeof g);
+    // 1 video, 2 audio, 3 PGS, 4 ASS (Full), 5 PGS, 6 ASS (Signs)
+    g[0].numero = 1; g[0].tipo = 1;  snprintf(g[0].codec, sizeof g[0].codec, "V_MPEGH/ISO/HEVC");
+    g[1].numero = 2; g[1].tipo = 2;  snprintf(g[1].codec, sizeof g[1].codec, "A_FLAC");
+    g[2].numero = 3; g[2].tipo = 17; snprintf(g[2].codec, sizeof g[2].codec, "S_HDMV/PGS");
+    g[3].numero = 4; g[3].tipo = 17; snprintf(g[3].codec, sizeof g[3].codec, "S_TEXT/ASS");
+    g[4].numero = 5; g[4].tipo = 17; snprintf(g[4].codec, sizeof g[4].codec, "S_HDMV/PGS");
+    g[5].numero = 6; g[5].tipo = 17; snprintf(g[5].codec, sizeof g[5].codec, "S_TEXT/ASS");
+    tv[0] = 0; tv[1] = 1;           // renumeradas entre as de texto
+    modo = mkv_casar_legendas(g, 6, tv, 2, ix);
+    ok(modo == MKV_CASA_SEM_IMAGEM && ix[0] == 3 && ix[1] == 5, "TV renumera 0,1: casa as duas ASS");
+    tv[0] = 1; tv[1] = 3;           // trackNum segue o ordinal do arquivo
+    modo = mkv_casar_legendas(g, 6, tv, 2, ix);
+    ok(modo == MKV_CASA_SEM_IMAGEM && ix[0] == 3 && ix[1] == 5, "TV mantem o ordinal do arquivo (1,3)");
+    tv[0] = 0; tv[1] = 1; tv[2] = 2; // lista inteira (com PGS): continua ordinal puro
+    modo = mkv_casar_legendas(g, 6, tv, 3, ix);
+    ok(modo == MKV_CASA_NADA, "3 na TV contra 4 no arquivo, 2 de texto: nao casa");
+    tv[0] = 0; tv[1] = 0;
+    ok(mkv_casar_legendas(g, 6, tv, 2, ix) == MKV_CASA_NADA, "ordinal repetido sem imagem: nao casa");
+    tv[0] = 0; tv[1] = 5;
+    ok(mkv_casar_legendas(g, 6, tv, 2, ix) == MKV_CASA_NADA, "ordinal fora do arquivo: nao casa");
+    tv[0] = 1; tv[1] = 2;           // 1 e ASS, mas 2 aponta uma PGS no arquivo inteiro e passa de 2 no texto
+    ok(mkv_casar_legendas(g, 6, tv, 2, ix) == MKV_CASA_NADA, "ordinal que cairia numa PGS: nao casa"); }
+
   printf("\n[3] mkvass colhe a faixa do ORDINAL pedido\n");
   mkvass_iniciar_ordinal(argv[1], 2);
   ok(colher(30) == MKVASS_COMPLETO, "ordinal 2 (TrackNumber 5, ASS) completa");

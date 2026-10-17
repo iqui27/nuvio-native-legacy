@@ -2117,6 +2117,13 @@ static void *lerMkv(void *arg) {
     if (nt > NV_FAIXA_MAX) nt = NV_FAIXA_MAX;
     for (i = 0; i < nt; i++) tv[i] = faixaLeg[i].numero;
     modo = mkv_casar_legendas(fx, n, tv, nt, idx);
+    // SEM_IMAGEM so confere contagem: com idioma dos dois lados, tem de bater.
+    if (modo == MKV_CASA_SEM_IMAGEM && !faixasmkv_idiomas_coerentes(faixaLeg, nt, fx, idx)) {
+      int q;
+      printf("[mkv] legendas: casamento sem imagem contradiz o idioma da TV; descartado\n");
+      for (q = 0; q < nt; q++) idx[q] = -1;
+      modo = MKV_CASA_NADA;
+    }
     if (modo == MKV_CASA_NADA && faixasmkv_legendas_por_idioma(faixaLeg, nt, fx, n, idx))
       printf("[mkv] legendas: pares unicos por idioma (lista da TV diferente)\n");
     // DIAGNOSTICO que faltou no #92: sem as duas listas lado a lado no log, o
@@ -2132,7 +2139,8 @@ static void *lerMkv(void *arg) {
       // escondendo (ou o trecho de 320 KB cortando) faixas — e nesse caso
       // NENHUMA faixa ASS vai ao overlay do app, todas ficam com a TV.
       printf("[mkv] legendas da TV x arquivo: modo=%s (tv=%d, arquivo=%d, lista da TV %s)\n",
-             modo == MKV_CASA_ORDINAL ? "ordinal" : modo == MKV_CASA_NUMERO ? "trackNumber" : "nenhum",
+             modo == MKV_CASA_ORDINAL ? "ordinal" : modo == MKV_CASA_NUMERO ? "trackNumber" :
+             modo == MKV_CASA_SEM_IMAGEM ? "ordinal (sem legendas de imagem)" : "nenhum",
              nt, nArq, nLeg > NV_FAIXA_MAX ? "CORTADA em NV_FAIXA_MAX" : "inteira");
       if (modo == MKV_CASA_NADA && nt > 0) {
         char m[96];

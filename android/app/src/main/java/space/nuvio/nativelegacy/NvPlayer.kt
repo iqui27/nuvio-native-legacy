@@ -92,7 +92,7 @@ object NvPlayer {
 
     private const val TELA_W = 1920   // coordenadas de layout do app
     private const val TELA_H = 1080
-    private const val FAIXAS_MAX = 32 // NV_FAIXA_MAX do C
+    private const val FAIXAS_MAX = 64 // NV_FAIXA_MAX do C
     private const val TIQUE_MS = 250L
     private const val RETRY_DECODER_MS = 5000L
 

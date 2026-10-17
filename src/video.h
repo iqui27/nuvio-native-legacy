@@ -315,10 +315,12 @@ void video_simular_estatisticas(const VideoStats *s);   // capturas; NULL zera
 // Tudo isto sai do evento sourceInfo da assinatura do uMS: o addon nao informa
 // nada disso, e so o pipeline sabe o que ha DENTRO do arquivo.
 
-// 32 e nao 12 (#92): um "Multi-Subs" de anime passa de doze legendas, e a
-// lista da TV cortada em 12 nunca casa pelo ordinal com o arquivo inteiro —
-// nenhuma faixa ASS ia ao overlay do app, todas ficavam com a TV.
-#define NV_FAIXA_MAX 32
+// 64 (era 12, depois 32; #92): um "Multi-Subs" de anime passa de doze legendas,
+// e um BD/remux multi-idioma passa de trinta. A lista da TV cortada abaixo do
+// total do arquivo nunca casa pelo ordinal (mkv_casar_legendas exige contagem
+// igual) — nenhuma faixa ASS ia ao overlay do app, todas ficavam com a TV. O
+// lado do arquivo (MKV_MAX_FAIXAS) ja era 64.
+#define NV_FAIXA_MAX 64
 
 typedef struct {
   char rotulo[48];   // "Ingles · Atmos 5.1" ou "Legenda 3"

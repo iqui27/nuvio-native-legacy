@@ -119,6 +119,18 @@ int faixasmkv_legendas_por_idioma(const VideoFaixa *f, int nF,
   return achou;
 }
 
+int faixasmkv_idiomas_coerentes(const VideoFaixa *f, int nF, const MkvFaixa *fx, const int *idx) {
+  int k;
+  for (k = 0; k < nF; k++) {
+    const MkvFaixa *m;
+    if (idx[k] < 0) continue;
+    m = &fx[idx[k]];
+    if (!f[k].idioma[0] || !strcmp(f[k].idioma, "und") || !m->idioma[0] || !strcmp(m->idioma, "und")) continue;
+    if (!ling_casa(f[k].idioma, m->idioma)) return 0;
+  }
+  return 1;
+}
+
 // Linha que o player entregou. numero < 0 e PGS pendurada por
 // acrescentar_imagem; a segunda sonda nao pode conta-la como faixa da TV.
 static int linhaDoPlayer(const VideoFaixa *f) { return !f || f->numero >= 0; }

@@ -171,10 +171,13 @@ double mkv_previa_nomeada(const MkvCap *caps, int n);
 //   MKV_CASA_NUMERO   todo trackNum e o TrackNumber de uma legenda do arquivo
 //                     (a leitura antiga; fica como segunda tentativa, nunca
 //                     misturada com a primeira);
+//   MKV_CASA_SEM_IMAGEM  a TV omitiu as legendas de imagem (PGS/VobSub): as de
+//                     texto batem em contagem, pelo ordinal do arquivo ou
+//                     renumeradas entre as de texto;
 //   MKV_CASA_NADA     nenhuma das duas fecha: nada e casado. Idioma errado e
 //                     pior que idioma nenhum, e codec errado manda a faixa
 //                     errada para o overlay.
-enum { MKV_CASA_NADA = 0, MKV_CASA_ORDINAL = 1, MKV_CASA_NUMERO = 2 };
+enum { MKV_CASA_NADA = 0, MKV_CASA_ORDINAL = 1, MKV_CASA_NUMERO = 2, MKV_CASA_SEM_IMAGEM = 3 };
 int mkv_casar_legendas(const MkvFaixa *fx, int n, const int *tvNum, int nTv,
                        int *idxFx);
 

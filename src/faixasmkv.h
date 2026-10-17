@@ -33,6 +33,13 @@ int faixasmkv_aplicar(VideoFaixa *aud, int nAud, VideoFaixa *leg, int nLeg,
 int faixasmkv_legendas_por_idioma(const VideoFaixa *leg, int nLeg,
                                  const MkvFaixa *fx, int n, int *mapa);
 
+// Casamento "sem legendas de imagem" (MKV_CASA_SEM_IMAGEM) so confere contagem:
+// uma TV que esconde um texto e MOSTRA uma PGS casaria errado em silencio.
+// Com idioma dos dois lados (tpk, Tizen), exige que concordem; vazio ou "und"
+// de um dos lados nao contradiz. `idx[i]` = indice em `fx` da faixa `i` da TV
+// (ou -1). 0 quando alguma contradiz.
+int faixasmkv_idiomas_coerentes(const VideoFaixa *leg, int nLeg, const MkvFaixa *fx, const int *idx);
+
 // "2.0", "5.1", "7.1" ou "" (mesma tabela do sourceInfo da LG, video.c).
 const char *faixasmkv_canais(int canais);
 

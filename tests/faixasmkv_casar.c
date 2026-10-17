@@ -144,6 +144,21 @@ int main(void) {
        "2a sonda: idioma unico nao conta a PGS anexada", leg[0].codec);
   }
 
+  printf("[faixasmkv_idiomas_coerentes] SEM_IMAGEM nao pode contradizer o idioma\n");
+  {
+    MkvFaixa fx2[2]; VideoFaixa lv[2]; int idx[2] = { 0, 1 };
+    mkv(&fx2[0], 17, "S_TEXT/ASS", "eng", "", 0);
+    mkv(&fx2[1], 17, "S_TEXT/ASS", "por", "", 0);
+    tv(&lv[0], 0, "en"); tv(&lv[1], 1, "pt");
+    ok(faixasmkv_idiomas_coerentes(lv, 2, fx2, idx), "idiomas iguais (en/eng, pt/por): coerente", "");
+    tv(&lv[1], 1, "es");
+    ok(!faixasmkv_idiomas_coerentes(lv, 2, fx2, idx), "TV diz es, arquivo diz por: incoerente", "");
+    tv(&lv[1], 1, "");
+    ok(faixasmkv_idiomas_coerentes(lv, 2, fx2, idx), "TV sem idioma (LG): nao contradiz", "");
+    idx[1] = -1; tv(&lv[1], 1, "es");
+    ok(faixasmkv_idiomas_coerentes(lv, 2, fx2, idx), "faixa sem par: ignorada", "");
+  }
+
   printf(falhas ? "faixasmkv_casar: %d FALHA(S)\n" : "faixasmkv_casar: tudo ok\n", falhas);
   return falhas != 0;
 }
