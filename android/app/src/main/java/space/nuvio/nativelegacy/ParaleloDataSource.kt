@@ -45,18 +45,82 @@ internal class FalhaDownloadParalelo(causa: IOException) : IOException(causa)
 // vez ao link do addon, que pede um novo. Mesma ideia do cdnlink.c do .tpk
 // (PR #567), aqui dentro do proprio DataSource. Nunca loga o destino: o link
 // do CDN carrega token.
+//
+// LINK RESERVA (comentario do #572): o TorBox da ~3 h ao link do CDN. Com
+// 2,5 h de destino guardado, um link novo e pedido ao addon EM SEGUNDO PLANO
+// (ate 20 s de espera pela fonte, a reproducao nao espera) e fica de reserva.
+// So entra numa pausa ou seek feitos 10 min ou mais depois de ele chegar; a
+// reproducao continua segue no link velho. Se o velho for recusado antes
+// disso, a reserva entra no lugar sem perguntar ao addon de novo.
 class DestinosAddon(private val agora: () -> Long = { android.os.SystemClock.elapsedRealtime() }) {
     companion object {
-        // O TorBox da ~3 h ao link do CDN; o resto do caminho cobre a sobra.
-        const val VALIDADE_MS = 2L * 60 * 60 * 1000
+        // Idade do destino que pede a reserva. 2,5 h como no .tpk (#567).
+        const val VALIDADE_MS = 150L * 60 * 1000
+        // A reserva so entra numa pausa/seek a partir de tanto depois de chegar.
+        const val CARENCIA_MS = 10L * 60 * 1000
+        // Reserva que falhou (fonte lenta, fora do ar): tenta de novo depois.
+        const val NOVA_RESERVA_MS = 60L * 1000
+        // Ultima pausa ou seek pedido pelo usuario (NvPlayer.pausar/buscar),
+        // no mesmo relogio de `agora`.
+        @Volatile private var gatilho = Long.MIN_VALUE
+        fun pausaOuBusca(ms: Long = android.os.SystemClock.elapsedRealtime()) { gatilho = ms }
     }
     private var original: String? = null
     private var destino: URL? = null
     private var tamanho = -1L
     private var desde = 0L
+    private var reserva: URL? = null
+    private var reservaDesde = 0L
+    private var buscandoReserva = false
+    private var proximaReserva = 0L
+    // Muda a cada troca de destino: uma abertura em curso ve e passa a usar o novo.
+    private var geracao = 0
 
-    @Synchronized fun buscar(orig: String): URL? =
-        if (orig == original && agora() - desde < VALIDADE_MS) destino else null
+    @Synchronized fun buscar(orig: String): URL? {
+        if (orig != original) return null
+        promoverSePausou()
+        return destino
+    }
+
+    @Synchronized fun geracao(orig: String): Int {
+        if (orig == original) promoverSePausou()
+        return geracao
+    }
+
+    private fun promoverSePausou() {
+        val r = reserva ?: return
+        val pronta = reservaDesde + CARENCIA_MS
+        if (agora() >= pronta && gatilho >= pronta) {
+            Log.i("nuvio-paralelo", "pausa/seek depois da carencia: link reserva ${r.host} entra")
+            promover()
+        }
+    }
+
+    private fun promover() {
+        destino = reserva; desde = reservaDesde; reserva = null; geracao++
+    }
+
+    // A abertura pergunta se e hora de pedir a reserva; `true` a reserva fica
+    // por conta dela (guardarReserva ou reservaFalhou).
+    @Synchronized fun pedirReserva(orig: String): Boolean {
+        val t = agora()
+        if (orig != original || destino == null || reserva != null || buscandoReserva ||
+            t - desde < VALIDADE_MS || t < proximaReserva) return false
+        buscandoReserva = true
+        return true
+    }
+
+    @Synchronized fun guardarReserva(orig: String, fim: URL, total: Long) {
+        buscandoReserva = false
+        if (orig != original || destino == null) return
+        if (tamanho > 0 && total != tamanho) { proximaReserva = agora() + NOVA_RESERVA_MS; return }
+        reserva = fim; reservaDesde = agora()
+    }
+
+    @Synchronized fun reservaFalhou(orig: String) {
+        buscandoReserva = false
+        if (orig == original) proximaReserva = agora() + NOVA_RESERVA_MS
+    }
 
     // Tamanho do arquivo que o destino guardado serviu (-1 = desconhecido).
     // Uma resposta "OK" do destino com OUTRO tamanho nao e este arquivo: um
@@ -68,11 +132,22 @@ class DestinosAddon(private val agora: () -> Long = { android.os.SystemClock.ela
         val o = try { URL(orig) } catch (_: java.net.MalformedURLException) { return }
         if (fim.host.isNullOrEmpty() || fim.host.equals(o.host, true)) return
         if (orig == original && fim == destino && (total <= 0 || total == tamanho)) return
+        if (orig != original) { reserva = null; buscandoReserva = false; proximaReserva = 0L }
         original = orig; destino = fim; tamanho = if (total > 0) total else -1L; desde = agora()
+        if (fim == reserva) reserva = null
+        geracao++
     }
 
-    @Synchronized fun esquecer(orig: String) {
-        if (orig == original) { original = null; destino = null }
+    // O destino foi recusado. Com reserva, ela entra no lugar (devolve true).
+    @Synchronized fun esquecer(orig: String): Boolean {
+        if (orig != original) return false
+        if (reserva != null) {
+            Log.i("nuvio-paralelo", "destino recusado: o link reserva ${reserva?.host} entra")
+            promover()
+            return true
+        }
+        original = null; destino = null; geracao++
+        return false
     }
 }
 
@@ -101,6 +176,8 @@ class ParaleloDataSource(
     // Injetaveis para os testes de falha/cancelamento; producao usa a rede real.
     private val novaConexao: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
     private val dormir: (Long) -> Unit = { Thread.sleep(it) },
+    // Onde roda o pedido do link reserva (fora do player e do pool).
+    private val fundo: (Runnable) -> Unit = { RESERVA.execute(it) },
 ) : BaseDataSource(true) {
 
     // ESTATISTICAS AO VIVO (src/estatvivo.h, via NvPlayer.nativeStats): o que
@@ -125,11 +202,19 @@ class ParaleloDataSource(
         const val PEDACO = 4 shl 20           // 4 MB por pedido
         private const val ADIANTE = 3         // pedacos em voo por conexao
         private const val TENTATIVAS = 3
+        // O link do CDN venceu ou nao vale mais (ver renovarDestino).
+        private val RECUSAS_LINK = setOf(401, 403, 404, 410)
         private val ESPERA_TENTATIVA_MS = longArrayOf(250L, 750L)
         // O primeiro pedido e menor: a imagem nao espera 4 MB chegarem.
         private const val PRIMEIRO = 1 shl 20
         // Menor pedaco do FIM DO ARQUIVO (ver `cauda` em abrir).
         private const val PEDACO_CAUDA_MIN = 128 shl 10
+        // Espera pela fonte (o addon) ao pedir o link do CDN: o MediaFusion
+        // passa de 10 s, e um timeout antes disso seria uma queda falsa.
+        const val ESPERA_FONTE_MS = 20000
+        private val RESERVA: ExecutorService = Executors.newSingleThreadExecutor { r ->
+            Thread(r, "nuvio-reserva").apply { isDaemon = true }
+        }
 
         // Manifesto e segmento de streaming adaptativo: conexao unica.
         fun serve(uri: Uri): Boolean {
@@ -179,7 +264,13 @@ class ParaleloDataSource(
     }
 
     private var uri: Uri? = null
-    private var urlFinal: URL? = null
+    // Destino dos pedacos desta abertura; trocado em renovarDestino.
+    @Volatile private var urlFinal: URL? = null
+    // O link do addon desta abertura, para pedir um destino novo.
+    @Volatile private var origem: URL? = null
+    // DestinosAddon.geracao ja aplicada a urlFinal (ver destinoAtual).
+    @Volatile private var geracaoVista = 0
+    private val travaRenovar = Any()
     private var pos = 0L          // proximo byte a entregar
     private var fim = 0L          // exclusivo
     private var total = C.LENGTH_UNSET.toLong()
@@ -234,8 +325,15 @@ class ParaleloDataSource(
         val c = novaConexao(u)
         ativas.add(c)
         if (fechado) { desconectar(c); throw cancelado() }
-        c.connectTimeout = 15000
-        c.readTimeout = 20000
+        // O addon pode levar ate ESPERA_FONTE_MS para dar o link; o CDN, nao.
+        val fonte = origem?.host?.equals(u.host, true) == true
+        prepararPedido(c, if (fonte) ESPERA_FONTE_MS else 15000, ini, ultimo)
+        return c
+    }
+
+    private fun prepararPedido(c: HttpURLConnection, esperaConexao: Int, ini: Long, ultimo: Long) {
+        c.connectTimeout = esperaConexao
+        c.readTimeout = ESPERA_FONTE_MS
         // Redirecionamento seguido A MAO (conectar): o HttpURLConnection nao
         // segue troca de protocolo (https -> http), e o AIOStreams/ElfHosted faz
         // exatamente isso — a fonte ficava em "Opening source" com um 302.
@@ -244,7 +342,70 @@ class ParaleloDataSource(
         for ((k, v) in props) c.setRequestProperty(k, v)
         c.setRequestProperty("Accept-Encoding", "identity")
         c.setRequestProperty("Range", if (ultimo >= 0) "bytes=$ini-$ultimo" else "bytes=$ini-")
-        return c
+    }
+
+    // LINK RESERVA (DestinosAddon): pedido ao addon em segundo plano quando o
+    // destino guardado faz 2,5 h. Nao depende desta abertura: um seek a fecha,
+    // e o pedido segue. Ate ESPERA_FONTE_MS pela fonte; falhou, tenta depois.
+    private fun pedirReservaSePreciso() {
+        val d = destinos ?: return
+        val o = origem ?: return
+        val chave = o.toString()
+        if (!d.pedirReserva(chave)) return
+        Log.i(TAG, "destino guardado faz 2,5 h; pedindo o link reserva a ${o.host}")
+        try {
+            fundo(Runnable {
+                try {
+                    val c = resolverReserva(o)
+                    try {
+                        val visto = totalDe(c)
+                        if (c.responseCode in 200..299 && !c.url.host.equals(o.host, true)) {
+                            d.guardarReserva(chave, c.url, visto)
+                            Log.i(TAG, "link reserva ${c.url.host} guardado; entra numa pausa/seek daqui a 10 min")
+                        } else {
+                            d.reservaFalhou(chave)
+                            Log.w(TAG, "${o.host} nao deu link reserva (HTTP ${c.responseCode})")
+                        }
+                    } finally { c.disconnect() }
+                } catch (e: IOException) {
+                    d.reservaFalhou(chave)
+                    Log.w(TAG, "${o.host} nao deu link reserva (${e.javaClass.simpleName})")
+                }
+            })
+        } catch (e: java.util.concurrent.RejectedExecutionException) { d.reservaFalhou(chave) }
+    }
+
+    private fun resolverReserva(u0: URL): HttpURLConnection {
+        var u = u0
+        repeat(10) {
+            val c = novaConexao(u)
+            prepararPedido(c, ESPERA_FONTE_MS, 0L, 0L)
+            val code = try { c.responseCode } catch (e: IOException) { c.disconnect(); throw e }
+            if (code in 300..399 && code != 304) {
+                val loc = c.getHeaderField("Location")
+                c.disconnect()
+                if (loc.isNullOrEmpty()) throw IOException("HTTP $code sem Location")
+                u = URL(u, loc)
+                return@repeat
+            }
+            return c
+        }
+        throw IOException("redirecionamentos demais")
+    }
+
+    // Destino dos pedacos: o desta abertura, ou o que DestinosAddon trocou
+    // depois (o link reserva numa pausa/seek, ou uma renovacao).
+    private fun destinoAtual(): URL? {
+        val d = destinos ?: return urlFinal
+        val chave = origem?.toString() ?: return urlFinal
+        val g = d.geracao(chave)
+        if (g != geracaoVista) synchronized(travaRenovar) {
+            if (g != geracaoVista) {
+                d.buscar(chave)?.let { urlFinal = it }
+                geracaoVista = g
+            }
+        }
+        return urlFinal
     }
 
     private fun conectar(u0: URL, ini: Long, ultimo: Long): HttpURLConnection {
@@ -297,8 +458,10 @@ class ParaleloDataSource(
     // volta ao link do addon com o retry normal, e o destino novo fica guardado.
     private fun abrirSonda(original: URL, ini: Long, ultimo: Long): HttpURLConnection {
         val chave = original.toString()
-        val guardado = destinos?.buscar(chave)
-        if (guardado != null) {
+        // Duas voltas: recusado o destino guardado, o link reserva (se houver)
+        // e tentado antes do addon.
+        for (volta in 0 until 2) {
+            val guardado = destinos?.buscar(chave) ?: break
             try {
                 val c = conectar(guardado, ini, ultimo)
                 val esperado = destinos?.tamanhoDe(chave) ?: -1L
@@ -315,7 +478,7 @@ class ParaleloDataSource(
                 if (foiCancelado(e)) throw cancelado(e)
                 Log.i(TAG, "destino guardado falhou (${e.javaClass.simpleName}); de volta a ${original.host}")
             }
-            destinos?.esquecer(chave)
+            if (destinos?.esquecer(chave) != true) break
         }
         val c = conectarComRetry(original, ini, ultimo, 0L)
         if (c.responseCode in 200..299) destinos?.lembrar(chave, c.url, totalDe(c))
@@ -363,7 +526,11 @@ class ParaleloDataSource(
         // Primeiro pedaco pela URL original: segue os redirecionamentos do debrid
         // uma vez so; os pedacos seguintes vao direto ao endereco final. Uma
         // abertura seguinte da mesma sessao ja comeca no destino (DestinosAddon).
-        val c = abrirSonda(URL(dataSpec.uri.toString()), pos, primeiroUltimo)
+        val o = URL(dataSpec.uri.toString())
+        origem = o
+        val c = abrirSonda(o, pos, primeiroUltimo)
+        geracaoVista = destinos?.geracao(o.toString()) ?: 0
+        pedirReservaSePreciso()
         val code = c.responseCode
         if (code == 206) {
             val cr = c.getHeaderField("Content-Range") ?: ""
@@ -484,27 +651,38 @@ class ParaleloDataSource(
     // Mantem ate conexoes * ADIANTE pedacos pedidos a frente da leitura.
     private fun encher() {
         val ex = exec ?: return
-        val u = urlFinal ?: return
+        if (urlFinal == null) return
+        pedirReservaSePreciso()
         while (pedidos.size < conexoes * ADIANTE && proximoPedido < fim) {
             val ini = proximoPedido
             val ult = minOf(fim, ini + pedacoAtual) - 1
-            pedidos[ini] = ex.submit<ByteArray> { baixar(u, ini, ult) }
+            pedidos[ini] = ex.submit<ByteArray> { baixar(ini, ult) }
             proximoPedido = ult + 1
         }
     }
 
-    private fun baixar(u: URL, ini: Long, ult: Long): ByteArray {
+    private fun baixar(ini: Long, ult: Long): ByteArray {
         var ultimoErro: IOException? = null
-        repeat(TENTATIVAS) {
+        var tentativa = 0
+        var renovou = false
+        while (tentativa < TENTATIVAS) {
             conferirCancelamento()
+            val u = destinoAtual() ?: throw cancelado()
             // Uma conexao paralela ativa, do connect ao ultimo byte. As outras
             // somam no mesmo segundo do medidor; nada e contado duas vezes.
             medidor?.inicio(token)
             Estat.conexoes.incrementAndGet()
             var c: HttpURLConnection? = null
+            var recusado = 0
             try {
                 c = conectar(u, ini, ult)
-                if (c.responseCode != 206) throw IOException("HTTP ${c.responseCode} no pedaco $ini-$ult")
+                val code = c.responseCode
+                // Recusa do CDN (link vencido) ou outro arquivo no lugar (um
+                // CDN vencido pode servir 200 com um clipe de erro).
+                if (code != 206 || (total > 0 && totalDe(c) != total)) {
+                    if (code in RECUSAS_LINK || code in 200..299) recusado = code
+                    throw IOException("HTTP $code no pedaco $ini-$ult")
+                }
                 val d = lerTudo(c)
                 if (d.size.toLong() != ult - ini + 1) throw IOException("pedaco curto: ${d.size} de ${ult - ini + 1}")
                 return d
@@ -516,9 +694,69 @@ class ParaleloDataSource(
                 Estat.conexoes.decrementAndGet()
                 medidor?.fim(token)
             }
-            if (it + 1 < TENTATIVAS) esperarTentativa(it)
+            // Uma renovacao por pedaco, fora da conta das tentativas: o pedaco
+            // espera (o player ve buffer) em vez de a abertura cair.
+            if (recusado != 0 && !renovou) {
+                renovou = true
+                renovarDestino(u, recusado)
+                continue
+            }
+            tentativa++
+            if (tentativa < TENTATIVAS) esperarTentativa(tentativa - 1)
         }
         throw FalhaDownloadParalelo(ultimoErro ?: IOException("pedaco $ini-$ult falhou"))
+    }
+
+    // LINK DO CDN VENCIDO NO MEIO DE UMA ABERTURA. A reproducao continua (e a
+    // retomada depois de uma pausa, que nao abre de novo) pede os pedacos ao
+    // destino resolvido na abertura. Vencido, cada pedaco gastava as tentativas
+    // e a abertura caia: erro no player e a reconexao inteira do nucleo. Agora
+    // o pedaco recusado pede UM destino novo ao link do addon (o mesmo arquivo:
+    // mesmo total) e segue nele; quem chegar depois com o destino velho so
+    // passa a usar o novo. So o primeiro pedaco recusado conversa com o addon.
+    // Com link reserva guardado, ele entra primeiro e o addon nem e chamado.
+    private fun renovarDestino(usada: URL, code: Int) {
+        val o = origem ?: return
+        synchronized(travaRenovar) {
+            if (urlFinal != usada) return   // outro pedaco ja renovou
+            conferirCancelamento()
+            val chave = o.toString()
+            val d = destinos
+            if (d != null && d.esquecer(chave)) {
+                val r = d.buscar(chave)
+                if (r != null && r != usada && mesmoArquivo(r)) {
+                    urlFinal = r
+                    geracaoVista = d.geracao(chave)
+                    Log.i(TAG, "destino recusou um pedaco (HTTP $code); o link reserva ${r.host} segue a abertura")
+                    return
+                }
+                d.esquecer(chave)
+            }
+            Log.i(TAG, "destino recusou um pedaco (HTTP $code); pedindo outro a ${o.host}")
+            val c = try { conectarComRetry(o, 0L, 0L, 0L) } catch (e: IOException) {
+                if (foiCancelado(e)) throw cancelado(e)
+                Log.w(TAG, "${o.host} nao deu destino novo (${e.javaClass.simpleName})")
+                return
+            }
+            try {
+                val visto = totalDe(c)
+                if (c.responseCode in 200..299 && (total <= 0 || visto == total)) {
+                    urlFinal = c.url
+                    destinos?.lembrar(o.toString(), c.url, visto)
+                    Log.i(TAG, "destino novo: ${c.url.host}, a abertura segue nele")
+                } else Log.w(TAG, "${o.host} respondeu HTTP ${c.responseCode} ($visto bytes); destino mantido")
+            } finally { desconectar(c) }
+        }
+    }
+
+    // O link reserva ainda serve ESTE arquivo (mesmo total)? Um byte basta.
+    private fun mesmoArquivo(u: URL): Boolean {
+        val c = try { conectar(u, 0L, 0L) } catch (e: IOException) {
+            if (foiCancelado(e)) throw cancelado(e)
+            return false
+        }
+        try { return c.responseCode in 200..299 && (total <= 0 || totalDe(c) == total) }
+        finally { desconectar(c) }
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {

@@ -1033,6 +1033,7 @@ object NvPlayer {
         val aindaAtual = pedidoAtivo == pedidos.get()
         val pedido = pedidos.incrementAndGet()
         if (aindaAtual) pedidoAtivo = pedido
+        DestinosAddon.pausaOuBusca()
         try { player?.pause() } catch (e: Exception) { Log.w(TAG, "pausarPeloSistema: $e") }
     }
 
@@ -1076,6 +1077,8 @@ object NvPlayer {
     }
     private var pausaPedida = false
     @JvmStatic fun pausar(p: Int) {
+        // Pausa e seek sao a hora de o link reserva do CDN entrar (DestinosAddon).
+        if (p != 0) DestinosAddon.pausaOuBusca()
         principal.post { pausaPedida = p != 0; player?.playWhenReady = !pausaPedida }
     }
     // Episode handoff arms this token before the old visible session closes.
@@ -1097,6 +1100,7 @@ object NvPlayer {
     }
     @JvmStatic fun buscar(ms: Int) {
         val pedido = pedidos.get()
+        DestinosAddon.pausaOuBusca()
         principal.post {
             if (pedido == pedidos.get()) {
                 relatarAudio(sessao, "seek alvoMs=$ms")

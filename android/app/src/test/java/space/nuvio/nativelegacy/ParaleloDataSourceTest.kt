@@ -151,11 +151,16 @@ class ParaleloDataSourceTest {
             assertEquals(0, ParaleloDataSource.Estat.conexoes.get())
             esperas += it
         })
+        // Os pedacos leem o destino da abertura (urlFinal), que renovarDestino
+        // pode trocar; aqui ele e posto a mao, sem abertura.
+        val urlFinal = ParaleloDataSource::class.java.getDeclaredField("urlFinal")
+        urlFinal.isAccessible = true
+        urlFinal.set(fonte, URL("https://example.invalid/video.mkv"))
         val baixar = ParaleloDataSource::class.java.getDeclaredMethod("baixar",
-            URL::class.java, Long::class.javaPrimitiveType, Long::class.javaPrimitiveType)
+            Long::class.javaPrimitiveType, Long::class.javaPrimitiveType)
         baixar.isAccessible = true
         try {
-            val dados = baixar.invoke(fonte, URL("https://example.invalid/video.mkv"), 0L, 3L) as ByteArray
+            val dados = baixar.invoke(fonte, 0L, 3L) as ByteArray
             assertEquals(listOf<Byte>(1, 2, 3, 4), dados.toList())
         } finally { fonte.close() }
         assertEquals(3, aberturas.get())
@@ -378,17 +383,23 @@ class ParaleloDataSourceTest {
         @Volatile var vencido = ""
         // Host que responde 200 com um "clipe de erro" de 5000 bytes.
         @Volatile var clipe = ""
+        // O addon fora do ar (o link reserva falha).
+        @Volatile var addonCai = false
+        val doAddon = java.util.concurrent.CopyOnWriteArrayList<HttpURLConnection>()
+        val porHost = java.util.concurrent.ConcurrentHashMap<String, AtomicInteger>()
         fun conexao(url: URL): HttpURLConnection =
             if (url.host == "addon.invalid") {
                 noAddon.incrementAndGet()
                 val destino = cdn
+                val cai = addonCai
                 object : ConexaoFalsa(url) {
-                    override fun getResponseCode(): Int = 307
+                    override fun getResponseCode(): Int = if (cai) throw SocketTimeoutException("lento") else 307
                     override fun getHeaderField(name: String?): String? =
                         if (name == "Location") destino else null
-                }
+                }.also { doAddon.add(it) }
             } else {
                 noCdn.incrementAndGet()
+                porHost.getOrPut(url.host) { AtomicInteger() }.incrementAndGet()
                 val recusa = url.host == vencido
                 if (url.host == clipe) object : ConexaoFalsa(url) {
                     override fun getResponseCode(): Int = HTTP_OK
@@ -464,16 +475,238 @@ class ParaleloDataSourceTest {
         assertEquals("cdn2.invalid", destinos.buscar("https://addon.invalid/play/abc")?.host)
     }
 
-    @Test fun destinoVencidoNaoEReusado() {
+    private val chave = "https://addon.invalid/play/abc"
+    private val minuto = 60L * 1000
+
+    private fun comReserva(rede: Rede, destinos: DestinosAddon) = {
+        ParaleloDataSource(null, emptyMap(), destinos = destinos, novaConexao = rede::conexao,
+            dormir = { throw AssertionError("nao deve esperar retry") }, fundo = { it.run() })
+    }
+
+    // Comentario do #572: com 2,5 h o link reserva e pedido em segundo plano,
+    // e so entra numa pausa/seek feitos 10 min ou mais depois de chegar.
+    @Test fun linkReservaSoEntraNumaPausaOuSeekDepoisDaCarencia() {
+        DestinosAddon.pausaOuBusca(Long.MIN_VALUE)
         val rede = Rede(24891962527L)
         var agora = 0L
         val destinos = DestinosAddon(agora = { agora })
-        val nova = { ParaleloDataSource(null, emptyMap(), destinos = destinos, novaConexao = rede::conexao,
-            dormir = { throw AssertionError("nao deve esperar retry") }) }
+        val nova = comReserva(rede, destinos)
         abrirDois(nova(), 0L)
+        // Um seek 2 h depois: direto ao cdn1, nada pedido ao addon.
+        agora = 120 * minuto
+        DestinosAddon.pausaOuBusca(agora)
+        abrirDois(nova(), 0L)
+        assertEquals(1, rede.noAddon.get())
+        // 2,5 h: a abertura segue no cdn1 e o link reserva vem do addon.
+        rede.cdn = "https://cdn2.invalid/f?token=b"
         agora = DestinosAddon.VALIDADE_MS
         abrirDois(nova(), 0L)
         assertEquals(2, rede.noAddon.get())
+        assertEquals("cdn1.invalid", destinos.buscar(chave)?.host)
+        // Ate 20 s de espera pelo addon, na conexao e na leitura.
+        for (c in rede.doAddon) {
+            assertEquals(ParaleloDataSource.ESPERA_FONTE_MS, c.connectTimeout)
+            assertEquals(ParaleloDataSource.ESPERA_FONTE_MS, c.readTimeout)
+        }
+        // Seek 5 min depois do link reserva: ainda o cdn1.
+        agora += 5 * minuto
+        DestinosAddon.pausaOuBusca(agora)
+        abrirDois(nova(), 0L)
+        assertEquals(1, rede.porHost["cdn2.invalid"]?.get())   // so a conferencia da reserva
+        // Passada a carencia, sem pausa nem seek novo: ainda o cdn1.
+        agora = DestinosAddon.VALIDADE_MS + 11 * minuto
+        assertEquals("cdn1.invalid", destinos.buscar(chave)?.host)
+        // A pausa depois da carencia: o cdn2 entra, sem perguntar ao addon.
+        DestinosAddon.pausaOuBusca(agora)
+        assertEquals("cdn2.invalid", destinos.buscar(chave)?.host)
+        abrirDois(nova(), 0L)
+        assertEquals(2, rede.porHost["cdn2.invalid"]?.get())
+        assertEquals(2, rede.noAddon.get())
+    }
+
+    // Reproducao em curso: a pausa depois da carencia troca os pedacos
+    // seguintes para o link reserva, na mesma abertura e sem erro.
+    @Test fun pausaDepoisDaCarenciaTrocaOsPedacosSeguintes() {
+        DestinosAddon.pausaOuBusca(Long.MIN_VALUE)
+        val total = 8L shl 20
+        val porHost = java.util.concurrent.ConcurrentHashMap<String, AtomicInteger>()
+        val cdn = AtomicReference("https://cdn1.invalid/f?token=a")
+        var agora = 0L
+        val destinos = DestinosAddon(agora = { agora })
+        val conexao: (URL) -> HttpURLConnection = { url ->
+            porHost.getOrPut(url.host) { AtomicInteger() }.incrementAndGet()
+            if (url.host == "addon.invalid") {
+                val d = cdn.get()
+                object : ConexaoFalsa(url) {
+                    override fun getResponseCode(): Int = 307
+                    override fun getHeaderField(name: String?): String? = if (name == "Location") d else null
+                }
+            } else ConexaoPadrao(url, total)
+        }
+        val nova = { ParaleloDataSource(null, emptyMap(), conexoes = 1, pedaco = 256 shl 10,
+            destinos = destinos, novaConexao = conexao, dormir = { }, fundo = { it.run() }) }
+        abrirDois(nova(), 0L)
+        cdn.set("https://cdn2.invalid/f?token=b")
+        agora = DestinosAddon.VALIDADE_MS
+        abrirDois(nova(), 0L)                                    // pede a reserva
+        agora += 11 * minuto
+        val fonte = nova()
+        val buf = ByteArray(1 shl 16)
+        var lidos = 0L
+        var pausou = false
+        try {
+            assertEquals(total, fonte.open(DataSpec.Builder().setUri(android.net.Uri.parse(chave)).build()))
+            while (true) {
+                if (!pausou && lidos >= total / 2) { DestinosAddon.pausaOuBusca(agora); pausou = true }
+                val n = fonte.read(buf, 0, buf.size)
+                if (n == C.RESULT_END_OF_INPUT) break
+                for (i in 0 until n) assertEquals(((lidos + i) % 251).toByte(), buf[i])
+                lidos += n
+            }
+        } finally { fonte.close() }
+        assertEquals(total, lidos)
+        assertEquals(2, porHost["addon.invalid"]?.get())
+        // A conferencia da reserva e pedacos da segunda metade.
+        assertTrue((porHost["cdn2.invalid"]?.get() ?: 0) > 1)
+    }
+
+    // O cdn1 venceu antes da carencia: a reserva entra no lugar dele, sem
+    // pedir outro link ao addon.
+    @Test fun destinoRecusadoUsaOLinkReservaSemPerguntarAoAddon() {
+        DestinosAddon.pausaOuBusca(Long.MIN_VALUE)
+        val rede = Rede(24891962527L)
+        var agora = 0L
+        val destinos = DestinosAddon(agora = { agora })
+        val nova = comReserva(rede, destinos)
+        abrirDois(nova(), 0L)
+        rede.cdn = "https://cdn2.invalid/f?token=b"
+        agora = DestinosAddon.VALIDADE_MS
+        abrirDois(nova(), 0L)
+        assertEquals(2, rede.noAddon.get())
+        agora += minuto
+        rede.vencido = "cdn1.invalid"
+        abrirDois(nova(), 7000L)
+        assertEquals(2, rede.noAddon.get())
+        assertEquals("cdn2.invalid", destinos.buscar(chave)?.host)
+    }
+
+    // A fonte nao deu o link reserva (lenta, fora do ar): a reproducao segue
+    // no cdn1 e o pedido so se repete 1 min depois.
+    @Test fun linkReservaQueFalhaNaoAtrapalhaETentaDeNovo() {
+        DestinosAddon.pausaOuBusca(Long.MIN_VALUE)
+        val rede = Rede(24891962527L)
+        var agora = 0L
+        val destinos = DestinosAddon(agora = { agora })
+        val nova = comReserva(rede, destinos)
+        abrirDois(nova(), 0L)
+        rede.addonCai = true
+        agora = DestinosAddon.VALIDADE_MS
+        abrirDois(nova(), 0L)
+        assertEquals(2, rede.noAddon.get())
+        assertEquals("cdn1.invalid", destinos.buscar(chave)?.host)
+        agora += 30 * 1000
+        abrirDois(nova(), 0L)
+        assertEquals(2, rede.noAddon.get())
+        rede.addonCai = false
+        rede.cdn = "https://cdn2.invalid/f?token=b"
+        agora += 31 * 1000
+        abrirDois(nova(), 0L)
+        assertEquals(3, rede.noAddon.get())
+        agora += 10 * minuto
+        DestinosAddon.pausaOuBusca(agora)
+        assertEquals("cdn2.invalid", destinos.buscar(chave)?.host)
+    }
+
+    // 206 com bytes conferiveis ((pos % 251)) e o total que o teste escolhe.
+    private class ConexaoPadrao(url: URL, private val total: Long) : ConexaoFalsa(url) {
+        private var range = "bytes=0-"
+        override fun setRequestProperty(key: String?, value: String?) { if (key == "Range" && value != null) range = value }
+        private fun ini() = range.removePrefix("bytes=").substringBefore('-').toLong()
+        private fun fim() = range.substringAfter('-', "").let { if (it.isEmpty()) total - 1 else it.toLong() }
+        override fun getResponseCode(): Int = HTTP_PARTIAL
+        override fun getContentLengthLong(): Long = fim() - ini() + 1
+        override fun getHeaderField(name: String?): String? =
+            if (name == "Content-Range") "bytes ${ini()}-${fim()}/$total" else null
+        override fun getInputStream(): InputStream {
+            val i = ini()
+            return ByteArrayInputStream(ByteArray((fim() - i + 1).toInt()) { ((i + it) % 251).toByte() })
+        }
+    }
+
+    private fun lerTudoDe(fonte: ParaleloDataSource, total: Long) {
+        val buf = ByteArray(1 shl 16)
+        var lidos = 0L
+        while (true) {
+            val n = fonte.read(buf, 0, buf.size)
+            if (n == C.RESULT_END_OF_INPUT) break
+            for (i in 0 until n) assertEquals(((lidos + i) % 251).toByte(), buf[i])
+            lidos += n
+        }
+        assertEquals(total, lidos)
+    }
+
+    // Reproducao continua (ou retomada apos pausa) com o link do CDN vencendo
+    // no meio: os pedacos recusados pedem UM destino novo ao addon e a mesma
+    // abertura segue, sem erro e sem gastar as tentativas.
+    @Test fun linkVencidoNoMeioDaAberturaTrocaDeDestinoSemCair() {
+        val total = 40L shl 20
+        val noAddon = AtomicInteger()
+        val noCdn1 = AtomicInteger()
+        val cdn = AtomicReference("https://cdn1.invalid/f?token=a")
+        val fonte = ParaleloDataSource(null, emptyMap(), novaConexao = { url ->
+            when (url.host) {
+                "addon.invalid" -> {
+                    noAddon.incrementAndGet()
+                    val d = cdn.get()
+                    object : ConexaoFalsa(url) {
+                        override fun getResponseCode(): Int = 307
+                        override fun getHeaderField(name: String?): String? = if (name == "Location") d else null
+                    }
+                }
+                // A sonda e dois pedacos passam; dai em diante o link venceu.
+                "cdn1.invalid" -> if (noCdn1.incrementAndGet() <= 3) ConexaoPadrao(url, total) else {
+                    cdn.set("https://cdn2.invalid/f?token=b")
+                    object : ConexaoFalsa(url) { override fun getResponseCode(): Int = HTTP_FORBIDDEN }
+                }
+                else -> ConexaoPadrao(url, total)
+            }
+        }, dormir = { throw AssertionError("a troca de destino nao deve esperar retry") })
+        try {
+            assertEquals(total, fonte.open(DataSpec.Builder()
+                .setUri(android.net.Uri.parse("https://addon.invalid/play/abc")).build()))
+            lerTudoDe(fonte, total)
+        } finally { fonte.close() }
+        assertEquals(2, noAddon.get())   // a abertura e UMA renovacao
+    }
+
+    // O addon devolve outro arquivo (outro total): o destino nao e trocado e
+    // o pedaco falha como antes, pelas tentativas.
+    @Test fun renovacaoQueTrazOutroArquivoNaoTrocaODestino() {
+        val total = 40L shl 20
+        val noCdn1 = AtomicInteger()
+        val cdn = AtomicReference("https://cdn1.invalid/f?token=a")
+        val fonte = ParaleloDataSource(null, emptyMap(), novaConexao = { url ->
+            when (url.host) {
+                "addon.invalid" -> {
+                    val d = cdn.get()
+                    object : ConexaoFalsa(url) {
+                        override fun getResponseCode(): Int = 307
+                        override fun getHeaderField(name: String?): String? = if (name == "Location") d else null
+                    }
+                }
+                "cdn1.invalid" -> if (noCdn1.incrementAndGet() <= 3) ConexaoPadrao(url, total) else {
+                    cdn.set("https://outro.invalid/g")
+                    object : ConexaoFalsa(url) { override fun getResponseCode(): Int = HTTP_FORBIDDEN }
+                }
+                else -> ConexaoPadrao(url, total + 1)
+            }
+        }, dormir = { })
+        var falhou = false
+        try {
+            fonte.open(DataSpec.Builder().setUri(android.net.Uri.parse("https://addon.invalid/play/abc")).build())
+            try { lerTudoDe(fonte, total) } catch (e: IOException) { falhou = true }
+        } finally { fonte.close() }
+        assertTrue(falhou)
     }
 
     @Test fun semRedirecionamentoNadaEGuardado() {
