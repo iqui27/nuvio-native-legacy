@@ -246,5 +246,38 @@ int main(int argc, char **argv) {
   video_bombear(); relogio += 3000; video_bombear();
   assert(chamadasPausa == pausas + 1 && ultimoPausar == 1);
   puts("ok reconexao conserva pausa pedida antes do ack");
+
+  // Seek ate o fim (Shield, 17/10/2026): episodio de 2547128 ms, barra levada
+  // a 2547127. O Media3 falhava o load ali (erro 2000) e a reconexao voltava
+  // ao mesmo ponto tres vezes. Nem o seek nem a retomada entram nos ultimos
+  // 2 s; o resto do episodio toca e termina pelo EV_FIM.
+  video_parar(); video_definir_reconexao(1);
+  assert(video_tocar("https://example.invalid/fim.mkv"));
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_PRONTO, 2547128, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_PRIMEIRO_QUADRO, 0, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_TOCANDO, 0, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativePos(NULL, NULL, 30000);
+  video_bombear();
+  buscas = chamadasBusca;
+  video_buscar(2547.127);
+  assert(chamadasBusca == buscas + 1 && ultimoBuscar == 2545128);
+  video_buscar(1200.0);                       // longe do fim: sem mudanca
+  assert(ultimoBuscar == 1200000);
+  // A posicao do player pode chegar ao fim mesmo assim; a retomada nao.
+  Java_space_nuvio_nativelegacy_NvPlayer_nativePos(NULL, NULL, 2547127);
+  video_bombear();
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_ERRO, 2000, -1);
+  video_bombear(); relogio += 3000; video_bombear();
+  buscas = chamadasBusca;
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_PRONTO, 2547128, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_TOCANDO, 0, 0);
+  video_bombear();
+  assert(chamadasBusca == buscas + 1 && ultimoBuscar == 2545128);
+  // Duracao desconhecida (0) ou curta: o alvo segue como veio.
+  video_parar();
+  assert(video_tocar("https://example.invalid/sem-duracao.mkv"));
+  video_buscar(99.5);
+  assert(ultimoBuscar == 99500);
+  puts("ok seek e retomada nunca entram nos ultimos 2 s do arquivo");
   puts("video Android retomada: PASS (JNI, geracoes, fallback e limites)");
 }

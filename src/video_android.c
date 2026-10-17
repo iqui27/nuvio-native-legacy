@@ -832,8 +832,22 @@ void cacheboost_backend_ganho(int pct) {
 int video_tocar(const char *u) { return video_tocar_posicao(u, 0.0); }
 
 void video_definir_reconexao(int sim) { reconProxima = sim ? 1 : 0; }
+
+// SEEK ATE O FIM DO ARQUIVO. Segurar a direita na barra mandava o seek para o
+// ultimo milissegundo (2547127 de 2547128 ms, Shield, 17/10/2026): o Media3
+// falha o load ali (IllegalStateException, erro 2000), o erro 2000 conta como
+// rede, e a reconexao retomava na MESMA posicao, tres vezes, ate o cartao de
+// erro. Nenhum alvo entra nos ultimos VIDEO_FIM_MARGEM_MS: o fim toca e
+// termina pelo caminho normal (EV_FIM: visto, proximo episodio).
+#define VIDEO_FIM_MARGEM_MS 2000
+static int foraDoFim(int ms) {
+  int d = durMs;
+  if (d > 2 * VIDEO_FIM_MARGEM_MS && ms > d - VIDEO_FIM_MARGEM_MS) return d - VIDEO_FIM_MARGEM_MS;
+  return ms;
+}
+
 int video_recarregar(void) {
-  int alvo = posNativoMs, pausado = pausaPedida;
+  int alvo = foraDoFim(posNativoMs), pausado = pausaPedida;
   if (!ativo || !prontoLoad || !urlAtual[0] || falhou || terminou ||
       reconErroPend || video_reconectando() || recarregarPausa >= 0 ||
       alvo < 0 || !ambiente()) return 0;
@@ -909,7 +923,7 @@ void video_bombear(void) {
     printf("[video] reconectando: alvo %.0fs, tentativa %d\n", recon.alvo, recon.tentativa);
     fflush(stdout);
     reconFaixasPend = 1;
-    reconBuscarMs = recarregarPausa < 0 && recon.alvo > 1.0 ? (int)(recon.alvo * 1000.0) : -1;
+    reconBuscarMs = recarregarPausa < 0 && recon.alvo > 1.0 ? foraDoFim((int)(recon.alvo * 1000.0)) : -1;
     if (!abrirSessao(recarregarPausa >= 0 ? recarregarPosMs : 0, 0))
       { reconErroCod = -1; reconErroPend = 1; }
     else if (recarregarPausa > 0) video_pausar(1);
@@ -953,7 +967,7 @@ int video_pausa_confirmada(void) {
 
 void video_volume(int pct) { kInt(mVolume, pct); }
 void video_buscar(double s) {
-  posMs = (int)(s * 1000.0);   // a barra nao pode voltar enquanto o seek corre
+  posMs = foraDoFim((int)(s * 1000.0));   // a barra nao pode voltar enquanto o seek corre
   kInt(mBuscar, posMs);
   terminou = 0;
 }
