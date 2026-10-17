@@ -7,7 +7,8 @@
 #include <strings.h>
 
 /* A ordem e parte do formato salvo: acrescentar escolhas exige migracao.
-   Taxonomia do DirectDebridStreamFilter do NuvioTV; somente exclusoes. */
+   As categorias seguem a taxonomia de exclusoes do DirectDebridStreamFilter
+   do NuvioTV; o estado de cache e uma escolha unica separada. */
 static const char *const resolucoes[] = {"2160p", "1440p", "1080p", "720p", "576p", "480p", "360p", "Desconhecido"};
 static const char *const qualidades[] = {"BluRay REMUX", "BluRay", "WEB-DL", "WEBRip", "HDRip", "HC HD-Rip", "DVDRip", "HDTV", "CAM", "TS", "TC", "SCR", "Desconhecido"};
 static const char *const visuais[] = {"HDR+DV", "Somente DV", "Somente HDR", "HDR10+", "HDR10", "DV", "HDR", "HLG", "10bit", "3D", "IMAX", "AI", "SDR", "H-OU", "H-SBS", "Desconhecido"};
@@ -227,10 +228,20 @@ int fontefiltro_grupos_normalizar(const char *csv, char *saida, unsigned n) {
 
 int fontefiltro_config_validar(const FonteFiltroConfig *cfg) {
   char grupos[512];
-  if (!cfg || cfg->maxGB > FONTEFILTRO_MAX_GB || !memchr(cfg->grupos,0,sizeof cfg->grupos)) return 0;
+  if (!cfg || cfg->maxGB > FONTEFILTRO_MAX_GB || cfg->cache >= FONTEFILTRO_CACHE_N ||
+      !memchr(cfg->grupos,0,sizeof cfg->grupos)) return 0;
   for (int c = 0; c < FONTEFILTRO_N; c++)
     if (cfg->excluir[c] & ~((UINT64_C(1) << fontefiltro_opcoes_n(c))-1)) return 0;
   return fontefiltro_grupos_normalizar(cfg->grupos,grupos,sizeof grupos);
+}
+
+unsigned fontefiltro_cache_estado(int emCache, int cacheNegado, int foraCache,
+                                  int cacheNativo, int urlP2P, int naoVideo) {
+  int confirmado = emCache && !cacheNegado && (!foraCache || cacheNativo) &&
+                   !urlP2P && !naoVideo;
+  if (confirmado) return FONTEFILTRO_CACHE_SIM;
+  if (foraCache || cacheNegado) return FONTEFILTRO_CACHE_NAO;
+  return FONTEFILTRO_CACHE_TODAS;
 }
 
 /* Apenas texto de metadados: URLs e legendas nao sao tags da faixa de audio.
@@ -480,6 +491,9 @@ void fontefiltro_classificar(const FonteFiltroEntrada *e, FonteFiltroDados *d) {
 
 int fontefiltro_permite(const FonteFiltroConfig *cfg, const FonteFiltroDados *d) {
   if (!cfg || !d) return 1;
+  // Status ausente nao e uma negativa. Assim, fontes sem uma declaracao do
+  // addon ou uma resposta nativa confirmada aparecem somente em Todas.
+  if (cfg->cache != FONTEFILTRO_CACHE_TODAS && d->cache != cfg->cache) return 0;
   for (int c = 0; c < FONTEFILTRO_N; c++) {
     uint64_t v = d->valores[c] & (fontefiltro_desconhecido(c)-1);
     if (c == FONTEFILTRO_LINGUAS) v |= d->valores[c] & fontefiltro_desconhecido(c);
@@ -502,4 +516,17 @@ int fontefiltro_permite(const FonteFiltroConfig *cfg, const FonteFiltroDados *d)
     }
   }
   return 1;
+}
+
+int fontefiltro_renovacao_permite(const FonteFiltroConfig *cfg,
+                                  const FonteFiltroDados *selecionado,
+                                  const FonteFiltroDados *atual) {
+  FonteFiltroDados dados;
+  if (!selecionado) return 0;
+  dados = atual ? *atual : *selecionado;
+  // Cache is a property learned while resolving. Renewal preserves the state
+  // that made this exact winner eligible instead of treating confirmation by
+  // another debrid as a new candidate-selection decision.
+  dados.cache = selecionado->cache;
+  return fontefiltro_permite(cfg, &dados);
 }

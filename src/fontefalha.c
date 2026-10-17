@@ -48,6 +48,11 @@ static int filtroMaximo(const char *texto, unsigned *saida) {
   }
   *saida = v; return 1;
 }
+static int filtroCache(const char *texto, unsigned *saida) {
+  if (!texto || texto[0] < '0' || texto[0] > '0' + FONTEFILTRO_CACHE_N - 1 || texto[1]) return 0;
+  *saida = (unsigned)(texto[0] - '0');
+  return 1;
+}
 static int filtroGruposLer(const char *texto, char *saida, size_t n) {
   if (!strcmp(texto, "-")) { saida[0] = 0; return 1; }
   size_t l = strlen(texto);
@@ -135,10 +140,12 @@ static void lerArquivo(const char *arquivo, FonteFalhaConfig *saida) {
       if (sscanf(linha, "%39s", k) == 1 && !strncmp(k, "filtro_", 7)) {
         int categoria = -1;
         for (int i = 0; i < FONTEFILTRO_N; i++) if (!strcmp(k, filtroChaves[i])) categoria = i;
-        if (categoria >= 0 || !strcmp(k, "filtro_maxgb") || !strcmp(k, "filtro_grupos")) {
+        if (categoria >= 0 || !strcmp(k, "filtro_maxgb") || !strcmp(k, "filtro_cache") ||
+            !strcmp(k, "filtro_grupos")) {
           int ok = sscanf(linha, "%39s %1099s %c", k, valor, &extra) == 2;
           if (ok && categoria >= 0) ok = filtroMascara(valor, &c.filtro.excluir[categoria]);
           else if (ok && !strcmp(k, "filtro_maxgb")) ok = filtroMaximo(valor, &c.filtro.maxGB);
+          else if (ok && !strcmp(k, "filtro_cache")) ok = filtroCache(valor, &c.filtro.cache);
           else if (ok) ok = filtroGruposLer(valor, c.filtro.grupos, sizeof c.filtro.grupos);
           if (!ok) filtroInvalido = 1;
         }
@@ -183,7 +190,8 @@ static int gravarArquivo(const FonteFalhaConfig *c, const char *arquivo) {
     ok = fprintf(f, "addon %s %d\n", c->addon[i].chave, c->addon[i].limite) >= 0;
   for (int i = 0; i < FONTEFILTRO_N && ok; i++)
     ok = fprintf(f, "%s %016" PRIx64 "\n", filtroChaves[i], c->filtro.excluir[i]) >= 0;
-  if (ok) ok = fprintf(f, "filtro_maxgb %u\nfiltro_grupos ", c->filtro.maxGB) >= 0;
+  if (ok) ok = fprintf(f, "filtro_maxgb %u\nfiltro_cache %u\nfiltro_grupos ",
+                       c->filtro.maxGB, c->filtro.cache) >= 0;
   if (ok && !c->filtro.grupos[0]) ok = fputc('-', f) != EOF;
   for (const unsigned char *p = (const unsigned char *)c->filtro.grupos; ok && *p; p++)
     ok = fprintf(f, "%02x", (unsigned)*p) >= 0;
@@ -238,13 +246,14 @@ int fontefalha_filtro_ativo(void) {
   FonteFiltroConfig filtro;
   fontefalha_filtro(&filtro);
   for (int i = 0; i < FONTEFILTRO_N; i++) if (filtro.excluir[i]) return 1;
-  return filtro.maxGB != 0 || filtro.grupos[0] != 0;
+  return filtro.maxGB != 0 || filtro.cache != FONTEFILTRO_CACHE_TODAS || filtro.grupos[0] != 0;
 }
 int fontefalha_filtro_definir(const FonteFiltroConfig *filtro) {
   iniciar();
   if (!filtro || !memchr(filtro->grupos, 0, sizeof filtro->grupos)) return 0;
   FonteFiltroConfig novo = {0};
-  memcpy(novo.excluir, filtro->excluir, sizeof novo.excluir); novo.maxGB = filtro->maxGB;
+  memcpy(novo.excluir, filtro->excluir, sizeof novo.excluir);
+  novo.maxGB = filtro->maxGB; novo.cache = filtro->cache;
   if (!fontefiltro_grupos_normalizar(filtro->grupos, novo.grupos, sizeof novo.grupos) ||
       !fontefiltro_config_validar(&novo)) return 0;
   FonteFalhaConfig c; fontefalha_config(&c); c.filtro = novo;

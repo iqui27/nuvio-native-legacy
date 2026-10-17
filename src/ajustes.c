@@ -621,7 +621,7 @@ typedef enum {
 #ifdef NV_ANDROID
   AJ_BAIXAR_REGISTRO, // acao local; no fim para preservar os IDs existentes
 #endif
-  // Shared exclusions live in fontefalha.txt; appended device-local views.
+  // Shared source filters live in fontefalha.txt; appended device-local views.
   AJ_FILTROS_FONTES, AJ_FILTRO_TAM_MAX, AJ_FILTRO_GRUPOS,
   // Player-backed primary style views: no second copy in ajustes.txt.
   AJ_LEG1_TAMANHO, AJ_LEG1_FONTE, AJ_LEG1_COR, AJ_LEG1_OPACIDADE,
@@ -7874,7 +7874,7 @@ static void desenhaFolhaFiltros(void);
 // marcados que ja nao estao instalados, para poder tira-los), com "Todos" no
 // topo. OK marca/desmarca e grava na hora (fonteregra.c); Voltar fecha.
 #define FR_FOLHA_MAX 128
-static int frAberta;            // 0 closed; 1/2 allowed; 3 legacy order; 4/5 failover order; 6 shared exclusions
+static int frAberta;            // 0 closed; 1/2 allowed; 3 legacy order; 4/5 failover order; 6 shared filters
 // Failover order uses native IDs / opaque instance keys, never display names.
 typedef struct {
   int servico, instalado;
@@ -7982,19 +7982,46 @@ static const char *faResumo(int provedores) {
   return buf;
 }
 
-// Shared, exclusion-only filters. Category checkboxes save atomically as soon
-// as OK/tap toggles one; size uses the existing explicit-confirmation editor.
-// Every edit reads the saved config first, so another field is never lost.
+// Shared source filters. Category checkboxes exclude values; cache is a single
+// All/Cached/Uncached choice. Both save atomically on OK/tap; size uses the
+// existing explicit-confirmation editor. Every edit reads the saved config
+// first, so another field is never lost.
 static int ffCategoria = -1, ffFoco, ffValorFoco;
-static const int FF_CATEGORIA[9] = {
-  FONTEFILTRO_RESOLUCAO, FONTEFILTRO_QUALIDADE, -1,
+#define FF_CACHE FONTEFILTRO_N
+#define FF_LINHAS 10
+static const int FF_CATEGORIA[FF_LINHAS] = {
+  FF_CACHE, FONTEFILTRO_RESOLUCAO, FONTEFILTRO_QUALIDADE, -1,
   FONTEFILTRO_VISUAL, FONTEFILTRO_AUDIO, FONTEFILTRO_CANAIS,
   FONTEFILTRO_ENCODE, FONTEFILTRO_LINGUAS, -1
 };
+static const char *ffCacheNome(void) {
+  static char texto[96];
+  snprintf(texto, sizeof texto, "%s / %s", i18n("Em cache"), i18n("Fora do cache"));
+  return texto;
+}
+static const char *ffCacheAjuda(void) {
+  static char texto[160];
+  snprintf(texto, sizeof texto, "%s · %s · %s", i18n("Todos"), i18n("Em cache"), i18n("Fora do cache"));
+  return texto;
+}
+static const char *ffCacheOpcao(int i) {
+  static const char *const opcoes[FONTEFILTRO_CACHE_N] = {"Todos", "Em cache", "Fora do cache"};
+  return i >= 0 && i < FONTEFILTRO_CACHE_N ? opcoes[i] : "Todos";
+}
+static int ffOpcoesN(void) {
+  return ffCategoria == FF_CACHE ? FONTEFILTRO_CACHE_N : fontefiltro_opcoes_n(ffCategoria);
+}
+static const char *ffCategoriaNome(void) {
+  return ffCategoria == FF_CACHE ? ffCacheNome() : fontefiltro_rotulo(ffCategoria);
+}
+static const char *ffOpcao(int i) {
+  return ffCategoria == FF_CACHE ? ffCacheOpcao(i) : fontefiltro_opcao(ffCategoria, i);
+}
 static const char *ffNome(int linha) {
-  if (linha < 0 || linha >= 9) return "";
-  if (linha == 2) return "Tamanho máximo da fonte";
-  if (linha == 8) return "Grupos de lançamento excluídos";
+  if (linha < 0 || linha >= FF_LINHAS) return "";
+  if (linha == 0) return ffCacheNome();
+  if (linha == 3) return "Tamanho máximo da fonte";
+  if (linha == 9) return "Grupos de lançamento excluídos";
   return fontefiltro_rotulo(FF_CATEGORIA[linha]);
 }
 static int ffBits(uint64_t bits) {
@@ -8005,14 +8032,15 @@ static int ffBits(uint64_t bits) {
 static const char *ffValor(int linha) {
   static char texto[160]; FonteFiltroConfig cfg;
   fontefalha_filtro(&cfg);
-  if (linha == 2) {
+  if (linha == 0) return i18n(ffCacheOpcao((int)cfg.cache));
+  if (linha == 3) {
     if (!cfg.maxGB) return i18n("Sem limite de tamanho");
     snprintf(texto, sizeof texto, "%u GB", cfg.maxGB);
-  } else if (linha == 8) {
+  } else if (linha == 9) {
     if (!cfg.grupos[0]) return i18n("Nenhuma exclusão");
     snprintf(texto, sizeof texto, "%s", cfg.grupos);
   } else {
-    int n = linha >= 0 && linha < 9 ? ffBits(cfg.excluir[FF_CATEGORIA[linha]]) : 0;
+    int n = linha >= 0 && linha < FF_LINHAS ? ffBits(cfg.excluir[FF_CATEGORIA[linha]]) : 0;
     if (!n) return i18n("Nenhuma exclusão");
     snprintf(texto, sizeof texto, i18n("%d valores filtrados"), n);
   }
@@ -8022,6 +8050,7 @@ static const char *ffResumo(void) {
   static char texto[80]; FonteFiltroConfig cfg; int n = 0;
   fontefalha_filtro(&cfg);
   for (int c = 0; c < FONTEFILTRO_N; c++) n += ffBits(cfg.excluir[c]);
+  n += cfg.cache != FONTEFILTRO_CACHE_TODAS;
   n += cfg.maxGB > 0;
   if (cfg.grupos[0]) { n++; for (const char *p = cfg.grupos; *p; p++) n += *p == ','; }
   if (!n) return i18n("Nenhum filtro");
@@ -8044,6 +8073,15 @@ static void ffGruposDefinir(const char *texto) {
 }
 static void ffEscolher(void) {
   if (frAberta != 6 || teclado_aberto()) return;
+  if (ffCategoria == FF_CACHE) {
+    FonteFiltroConfig cfg; fontefalha_filtro(&cfg);
+    if (ffValorFoco < 0 || ffValorFoco >= FONTEFILTRO_CACHE_N) return;
+    cfg.cache = (unsigned)ffValorFoco;
+    if (!fontefalha_filtro_definir(&cfg))
+      uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");
+    else uxNotificar("Ajuste salvo nesta TV.");
+    return;
+  }
   if (ffCategoria >= 0) {
     uint64_t bit = fontefiltro_bit(ffCategoria, ffValorFoco);
     FonteFiltroConfig cfg; fontefalha_filtro(&cfg);
@@ -8054,10 +8092,10 @@ static void ffEscolher(void) {
     else uxNotificar("Ajuste salvo nesta TV.");
     return;
   }
-  if (ffFoco == 2) {
+  if (ffFoco == 3) {
     frAberta = 0; ajFalhaEspelhar(); uxAbrirEditor(AJ_FILTRO_TAM_MAX);
     faRetornarFolha = 6;
-  } else if (ffFoco == 8) {
+  } else if (ffFoco == 9) {
     static const char *const alfabeto =
       "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789, ._-+";
     FonteFiltroConfig cfg; char contexto[160]; fontefalha_filtro(&cfg);
@@ -8067,7 +8105,10 @@ static void ffEscolher(void) {
                       TECLADO_LONGO, alfabeto, cfg.grupos);
     teclado_permitir_vazio(1);
   } else {
-    ffCategoria = FF_CATEGORIA[ffFoco]; ffValorFoco = 0;
+    ffCategoria = FF_CATEGORIA[ffFoco];
+    if (ffCategoria == FF_CACHE) {
+      FonteFiltroConfig cfg; fontefalha_filtro(&cfg); ffValorFoco = (int)cfg.cache;
+    } else ffValorFoco = 0;
   }
 }
 static void ffVoltar(void) {
@@ -8077,7 +8118,7 @@ static void ffVoltar(void) {
 }
 static void ffEvento(SDL_Keycode k) {
   int *foco = ffCategoria >= 0 ? &ffValorFoco : &ffFoco;
-  int n = ffCategoria >= 0 ? fontefiltro_opcoes_n(ffCategoria) : 9;
+  int n = ffCategoria >= 0 ? ffOpcoesN() : FF_LINHAS;
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE || k == SDLK_DELETE || k == SDLK_LEFT) {
     ffVoltar(); return;
   }

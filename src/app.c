@@ -773,7 +773,7 @@ static int armarPoliticaFonteAberta(int indice, int servico, const char *url) {
   stream_falha_identidade(s, identidade, sizeof identidade);
   c.indice = indice; c.nativa = s->infoHash[0] != 0; c.ordemAddon = s->addonOrdem;
   snprintf(c.addon, sizeof c.addon, "%s", s->addonChave); c.identidade = identidade;
-  c.filtro = s->filtro;
+  stream_filtro_dados(s, &c.filtro);
   if (!iniciarPoliticaFonte(indice, 1) || !fontefalha_semear(fonteFalha, &c, servico, url)) {
     fontefalha_sessao_liberar(fonteFalha); fonteFalha = NULL; return 0;
   }

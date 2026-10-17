@@ -111,7 +111,13 @@ static void medirCabecalho(void);
 static Stream *lista;
 static int n = 0;
 static int cacheConfirmado(const Stream *s) {
-  return s->emCache && !s->cacheNegado && (!s->foraCache || s->cacheNativo) && !s->urlP2P && !s->naoVideo;
+  return fontefiltro_cache_estado(s->emCache,s->cacheNegado,s->foraCache,
+                                  s->cacheNativo,s->urlP2P,s->naoVideo) ==
+         FONTEFILTRO_CACHE_SIM;
+}
+static unsigned cacheEstado(const Stream *s) {
+  return fontefiltro_cache_estado(s->emCache,s->cacheNegado,s->foraCache,
+                                  s->cacheNativo,s->urlP2P,s->naoVideo);
 }
 static void cacheConfirmar(Stream *s) {
   s->emCache = 1;
@@ -371,17 +377,22 @@ static int ehInformativa(const Stream *s) {
 void stream_filtro_dados(const Stream *s, FonteFiltroDados *dados) {
   if (!dados) return;
   if (!s) { memset(dados, 0, sizeof *dados); return; }
-  if (s->filtroLido) { *dados = s->filtro; return; }
-  char texto[sizeof s->rotulo + sizeof s->descricao + 2], resolucao[24] = "";
-  snprintf(texto, sizeof texto, "%s\n%s", s->rotulo, s->descricao);
-  if (s->altura > 0) snprintf(resolucao, sizeof resolucao, "%dp", s->altura);
-  FonteFiltroEntrada entrada = {0};
-  entrada.resolucao = resolucao; entrada.filename = s->arquivo; entrada.texto = texto;
-  entrada.tamanhoBytes = s->tamanhoBytes;
-  if (!entrada.tamanhoBytes && s->tamanhoMB > 0)
-    entrada.tamanhoBytes = (uint64_t)s->tamanhoMB > UINT64_MAX / UINT64_C(1048576)
-                        ? UINT64_MAX : (uint64_t)s->tamanhoMB * UINT64_C(1048576);
-  fontefiltro_classificar(&entrada, dados);
+  if (s->filtroLido) *dados = s->filtro;
+  else {
+    char texto[sizeof s->rotulo + sizeof s->descricao + 2], resolucao[24] = "";
+    snprintf(texto, sizeof texto, "%s\n%s", s->rotulo, s->descricao);
+    if (s->altura > 0) snprintf(resolucao, sizeof resolucao, "%dp", s->altura);
+    FonteFiltroEntrada entrada = {0};
+    entrada.resolucao = resolucao; entrada.filename = s->arquivo; entrada.texto = texto;
+    entrada.tamanhoBytes = s->tamanhoBytes;
+    if (!entrada.tamanhoBytes && s->tamanhoMB > 0)
+      entrada.tamanhoBytes = (uint64_t)s->tamanhoMB > UINT64_MAX / UINT64_C(1048576)
+                          ? UINT64_MAX : (uint64_t)s->tamanhoMB * UINT64_C(1048576);
+    fontefiltro_classificar(&entrada, dados);
+  }
+  // Pode mudar depois do parse quando o resolvedor nativo confirma ou nega.
+  // Nunca conservar no cache de metadados uma disponibilidade antiga.
+  dados->cache = cacheEstado(s);
 }
 static void filtroCompletar(Stream *s) {
   if (!s->filtroLido) { stream_filtro_dados(s, &s->filtro); s->filtroLido = 1; }
@@ -393,13 +404,18 @@ int stream_filtro_permite(const Stream *s) {
   fontefalha_filtro(&cfg); stream_filtro_dados(s, &dados);
   return fontefiltro_permite(&cfg, &dados);
 }
+static int filtroPermiteStream(const FonteFiltroConfig *cfg, const Stream *s) {
+  FonteFiltroDados dados;
+  stream_filtro_dados(s, &dados);
+  return fontefiltro_permite(cfg, &dados);
+}
 int stream_filtro_bloqueou(void) {
   if (!fontefalha_filtro_ativo()) return 0;
   FonteFiltroConfig cfg; fontefalha_filtro(&cfg);
   pthread_mutex_lock(&verTrava);
   int bloqueou = n > 0;
   for (int i = 0; i < n && bloqueou; i++)
-    if (fontefiltro_permite(&cfg, &lista[i].filtro)) bloqueou = 0;
+    if (filtroPermiteStream(&cfg, &lista[i])) bloqueou = 0;
   pthread_mutex_unlock(&verTrava);
   return bloqueou;
 }
@@ -409,7 +425,7 @@ int stream_filtro_bloqueou(void) {
 // automatico os escolhe, contra 6/14/9% das fontes com resolucao).
 static int foraDoAutoComFiltro(int i, const FonteFiltroConfig *filtro) {
   return automaticaExcluida(i) || (i >= 0 && i < n &&
-      ((!canalFolha && (filtro ? !fontefiltro_permite(filtro, &lista[i].filtro) : !stream_filtro_permite(&lista[i]))) ||
+      ((!canalFolha && (filtro ? !filtroPermiteStream(filtro, &lista[i]) : !stream_filtro_permite(&lista[i]))) ||
        lista[i].foraCache || ehInformativa(&lista[i]) || excedeDecoder(&lista[i]) || fontesmortas_idade(&lista[i]) >= 0));
 }
 static int foraDoAuto(int i) { return foraDoAutoComFiltro(i, NULL); }
@@ -1589,7 +1605,7 @@ static int verificarUma(int i, Conferencia *c) {
     pthread_mutex_unlock(&verTrava);
     return 0;
   }
-  if ((!canalFolha && !fontefiltro_permite(&c->filtro, &lista[i].filtro)) || lista[i].foraCache || excedeDecoder(&lista[i]) || fontesmortas_idade(&lista[i]) >= 0) {
+  if ((!canalFolha && !filtroPermiteStream(&c->filtro, &lista[i])) || lista[i].foraCache || excedeDecoder(&lista[i]) || fontesmortas_idade(&lista[i]) >= 0) {
     pthread_mutex_unlock(&verTrava); return 0;
   }
   snprintf(url, sizeof url, "%s", lista[i].url);
@@ -2015,7 +2031,7 @@ static int falhaCandidatas(unsigned geracao, int escolhida, int primeira, FonteF
     }
     stream_falha_identidade(s, id, (unsigned)tam);
     c[q].indice = i; c[q].nativa = s->infoHash[0] != 0;
-    c[q].filtro = s->filtro;
+    stream_filtro_dados(s, &c[q].filtro);
     c[q].ordemAddon = s->addonOrdem;
     snprintf(c[q].addon, sizeof c[q].addon, "%s", s->addonChave);
     c[q].identidade = id;
@@ -2115,6 +2131,8 @@ struct StreamPreparo {
   int n, nc, teto, falhaAtiva;
   FonteFalhaSessao *politica;
   FonteFiltroConfig filtro;
+  FonteFiltroDados filtroVencedor;
+  int indiceVencedor;
   DebridContexto debrid;
   uint64_t configuracao;
   uint64_t sessaoPerfil;
@@ -2209,6 +2227,7 @@ StreamPreparo *stream_preparo_criar_alvo(const Stream *fontes, int total, int pr
   int pref = -1;
   unsigned disponiveis = 0;
   if (!p) return NULL;
+  p->indiceVencedor = -1;
   p->sessaoPerfil = nv_perfil_sessao_ler();
   if (!nv_perfil_sessao_atual(p->sessaoPerfil)) goto erro;
   p->fontes = malloc((size_t)total * sizeof *p->fontes);
@@ -2244,7 +2263,7 @@ StreamPreparo *stream_preparo_criar_alvo(const Stream *fontes, int total, int pr
   for (int q = 0; q < total; q++) {
     int i = ordem[q]; const Stream *s = &fontes[i];
     pts[q] = pontosDoAlvo(s, alvo ? alvo : ""); acima[q] = !cabeNoTeto(s);
-    excl[q] = !fontefiltro_permite(&p->filtro, &s->filtro) ||
+    excl[q] = !filtroPermiteStream(&p->filtro, s) ||
               s->urlP2P || (s->foraCache && !s->infoHash[0]) || ehInformativa(s) || excedeDecoder(s) ||
               (!s->infoHash[0] && fontesmortas_idade(s) >= 0);
     grupo[q] = grupoDaFonte(&escopo, s); rank[q] = fonteregra_ordem_rank(s->provedor);
@@ -2275,7 +2294,7 @@ StreamPreparo *stream_preparo_criar_alvo(const Stream *fontes, int total, int pr
     c->identidade = strdup(identidade);
     if (!c->identidade) goto erro;
     c->indice = i; c->nativa = s->infoHash[0] != 0; c->ordemAddon = s->addonOrdem;
-    c->filtro = s->filtro;
+    stream_filtro_dados(s, &c->filtro);
     snprintf(c->addon, sizeof c->addon, "%s", s->addonChave); p->nc++;
   }
   free(ordem); free(fila); free(rank); free(pts); free(acima); free(excl); free(grupo);
@@ -2318,6 +2337,8 @@ int stream_preparo_resolver(StreamPreparo *p, int (*cancelado)(void *), void *ct
     fonte->debridServico = r.servico + 1; fonte->urlP2P = 0;
     if (s->infoHash[0]) cacheConfirmar(fonte);
     p->fontes[r.indice] = *fonte;
+    p->indiceVencedor = r.indice;
+    p->filtroVencedor = p->candidatas[r.candidata].filtro;
     if (indice) *indice = r.indice;
     if (politica && p->falhaAtiva) { *politica = p->politica; p->politica = NULL; }
     resultado = 1; break;
@@ -2332,7 +2353,10 @@ int stream_preparo_renovar(StreamPreparo *p, int indice, int (*cancelado)(void *
   if (!p || !p->fontes || !fonte || indice < 0 || indice >= p->n ||
       !nv_perfil_sessao_atual(p->sessaoPerfil) || (cancelado && cancelado(ctx))) return 0;
   const Stream *s = &p->fontes[indice];
-  if (!fontefiltro_permite(&p->filtro, &s->filtro)) return 0;
+  FonteFiltroDados filtroAtual;
+  stream_filtro_dados(s, &filtroAtual);
+  if (indice != p->indiceVencedor ||
+      !fontefiltro_renovacao_permite(&p->filtro, &p->filtroVencedor, &filtroAtual)) return 0;
   char url[4096] = "", fim[4096], mime[96] = "";
   int ok = 0, fora = 0;
   long corpo = -1;
