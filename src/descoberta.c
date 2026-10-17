@@ -17,6 +17,7 @@
 #include "nuvem.h"
 #include "cwordem.h"
 #include "js.h"
+#include "metaep.h"
 #include "recomenda.h"
 #include "trakt.h"
 #include "simkl.h"
@@ -7322,22 +7323,36 @@ static int metaArquivosCompativeis(const char *arquivos, const char *catalogo) {
 // Inclui especiais (temporada 0) sem renumerar o par nem o id do video.
 static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
   int n = 0;
+  unsigned char parAmbiguo[VIDEOS_MAX] = {0};
   const char *p = metaContarEpisodios(corpo, NULL) ? js_array(corpo, NULL, "videos") : NULL;
   EpSet set = { 0 };
-  while (p && n < max) {
+  while (p) {
     const char *f = js_fim(p);
     int t = videoTemporada(p, f);
     int ne = t >= 0 ? (int)js_num(p, f, "episode", 0) : 0;
+    int tvdb = metaep_tvdb_video(p, f);
+    int novo = t >= 0 && (ne <= 0 || epSetNovo(&set, t, ne));
+    // Duplicate files for one displayed episode can disagree about identity.
+    // Keep the first source URL, but do not let either ID become a Trakt proof.
+    if (t >= 0 && !novo)
+      for (int i = 0; i < n; i++)
+        if (eps[i].temporada == t && eps[i].episodio == ne) {
+          if (!parAmbiguo[i] && eps[i].tvdbEp > 0 && tvdb > 0 && eps[i].tvdbEp != tvdb) {
+            eps[i].tvdbEp = 0; parAmbiguo[i] = 1;
+          } else if (!parAmbiguo[i] && eps[i].tvdbEp <= 0 && tvdb > 0)
+            eps[i].tvdbEp = tvdb;
+        }
     // Repeticao sai JA AQUI, antes do corte de `max`: descartada so depois de
     // ordenar, as vagas iam para copias dos primeiros episodios e o resto
     // da serie nem era lido. Fica o primeiro da resposta; sem numero de
     // episodio nao e repeticao.
-    if (t >= 0 && (ne <= 0 || epSetNovo(&set, t, ne))) {
+    if (novo && n < max) {
       CatEp *e = &eps[n];
       char d[24] = "";
       memset(e, 0, sizeof *e);
       e->temporada = t;
       e->episodio = ne;
+      e->tvdbEp = tvdb;
       js_texto(p, f, "name", e->nome, sizeof e->nome);
       // O id do video (cat_id_stream): e ele que se manda aos addons de fonte
       // quando o titulo nao e do IMDb. Addon que usa "title" no lugar de "name"
@@ -7362,6 +7377,16 @@ static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
     p = js_prox(f);
   }
   free(set.v);
+  // The same exact ID assigned to different source pairs is ambiguous. Keep
+  // both playable cards, but never translate or scrobble either by that ID.
+  { unsigned char ambiguo[VIDEOS_MAX] = {0};
+    for (int i = 0; i < n; i++) if (eps[i].tvdbEp > 0)
+      for (int j = i + 1; j < n; j++)
+        if (eps[j].tvdbEp == eps[i].tvdbEp &&
+            (eps[j].temporada != eps[i].temporada || eps[j].episodio != eps[i].episodio))
+          ambiguo[i] = ambiguo[j] = 1;
+    for (int i = 0; i < n; i++) if (ambiguo[i]) eps[i].tvdbEp = 0;
+  }
   for (int i = 1; i < n; i++) {
     CatEp k = eps[i];
     int j;
@@ -7502,8 +7527,10 @@ static void temporadasDosEps(const CatEp *eps, int n, TempsPub *tp) {
   }
 }
 
-static int publicarEpisodiosEx(const char *corpo, int alvoItem, const char *titulo,
-                               const char *sobre, int modo, TempsPub *tp, int cedo) {
+static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
+                                       const char *titulo, const char *sobre,
+                                       int modo, TempsPub *tp, int cedo,
+                                       int substituir) {
   CatEp *eps = malloc(sizeof(CatEp) * VIDEOS_MAX);
   int n = 0;
   if (!eps) return 0;
@@ -7520,8 +7547,27 @@ static int publicarEpisodiosEx(const char *corpo, int alvoItem, const char *titu
   alvoItem = epPublicacaoIniciar(alvoItem);
   if (n && alvoItem >= 0 && (!cedo || !cat_n_episodios(alvoItem))) {
     int antigos = cat_n_episodios(alvoItem);
-    CatEp *estavel = antigos > 0 && epPedidoAtual() ? malloc(sizeof(CatEp) * VIDEOS_MAX) : NULL;
-    if (estavel) {
+    CatItem atual;
+    int parcial = !cedo && cat_copiar_item(alvoItem, &atual) && atual.epsParciais;
+    int trocarTopologia = !cedo && (parcial || substituir);
+    CatEp *estavel = antigos > 0 && epPedidoAtual() && !trocarTopologia
+                   ? malloc(sizeof(CatEp) * VIDEOS_MAX) : NULL;
+    if (trocarTopologia) {
+      // A provisional list, or a complete list that lost source selection,
+      // must not contribute extra topology to the selected final list:
+      // continuous S1E13 and split S2E1 can be the same episode. Text/art
+      // enrichment was already applied above to matching final pairs.
+      descCatEpisodios(alvoItem, eps, n);
+      if (tp) temporadasDosEps(eps, n, tp);
+      if (cat_copiar_item(alvoItem, &atual)) {
+        atual.epsParciais = 0;
+        if (tp) {
+          atual.nTemporadas = tp->n;
+          memcpy(atual.temporadas, tp->t, sizeof(int) * (size_t)tp->n);
+        }
+        descCatAtualizar(cat_atualizar_item, alvoItem, &atual);
+      }
+    } else if (estavel) {
       int k = 0;
       // Mantem os pares e a ordem ja vistos; novos pares entram no fim.
       // ponytail: busca O(n²), limitada a 2400 pares; indexar se o teto crescer.
@@ -7572,9 +7618,25 @@ static int publicarEpisodiosEx(const char *corpo, int alvoItem, const char *titu
   return n;
 }
 
+static int publicarEpisodiosEx(const char *corpo, int alvoItem, const char *titulo,
+                               const char *sobre, int modo, TempsPub *tp, int cedo) {
+  return publicarEpisodiosEscolhidos(corpo, alvoItem, titulo, sobre, modo, tp,
+                                     cedo, 0);
+}
+
 static int publicarEpisodios(const char *corpo, int alvoItem, const char *titulo,
                              const char *sobre, int modo, TempsPub *tp) {
   return publicarEpisodiosEx(corpo, alvoItem, titulo, sobre, modo, tp, 0);
+}
+
+// A source selected as the better episode list owns the topology. This is
+// distinct from ordinary enrichment: merging the old numeric pairs would keep
+// both S1E13 and S2E1 when two providers number the same episode differently.
+static int publicarEpisodiosSubstituir(const char *corpo, int alvoItem,
+                                       const char *titulo, const char *sobre,
+                                       int modo, TempsPub *tp) {
+  return publicarEpisodiosEscolhidos(corpo, alvoItem, titulo, sobre, modo, tp,
+                                     0, 1);
 }
 
 // O Cinemeta as vezes conhece MENOS episodios que o addon de metadados do
@@ -7637,14 +7699,16 @@ static int episodiosDoAddon(int alvoItem, const char *serie, const char *titulo,
            "usando a lista do addon com os nomes do Cinemeta\n",
            titulo, melhorNome, melhor, nCine);
     fflush(stdout);
-    publicarEpisodios(melhorCorpo, alvoItem, titulo, corpoCine, DESC_MESCLA_TEXTO, tp);
+    publicarEpisodiosSubstituir(melhorCorpo, alvoItem, titulo, corpoCine,
+                                DESC_MESCLA_TEXTO, tp);
     arte_reserva_episodios(serie, melhorCorpo);
   } else if (melhor > nCine || (aplicar && melhor >= nCine)) {
     printf("[desc] %s: %s tem %d episodios contra %d do Cinemeta; usando a lista do addon\n",
            titulo, melhorNome, melhor, nCine);
     fflush(stdout);
-    publicarEpisodios(melhorCorpo, alvoItem, titulo, aplicar ? corpoCine : NULL,
-                      DESC_MESCLA_VAZIOS, tp);
+    publicarEpisodiosSubstituir(melhorCorpo, alvoItem, titulo,
+                                aplicar ? corpoCine : NULL,
+                                DESC_MESCLA_VAZIOS, tp);
     arte_reserva_episodios(serie, melhorCorpo);
     usouTexto = aplicar;
   } else if (aplicar) {
@@ -8178,9 +8242,9 @@ static int episodiosDoCatalogo(int alvoItem, const char *titulo, const char *ser
   }
   // Lista de arquivos que ficou (sabe mais episodios): o nome dela e nome de
   // arquivo, entao o do Cinemeta entra por cima nos episodios que os dois tem.
-  publicarEpisodios(mf->corpo[fonte], alvoItem, titulo,
-                    outro >= 0 ? mf->corpo[outro] : NULL,
-                    modo, tp);
+  publicarEpisodiosSubstituir(mf->corpo[fonte], alvoItem, titulo,
+                              outro >= 0 ? mf->corpo[outro] : NULL,
+                              modo, tp);
   arte_reserva_episodios(serie, mf->corpo[fonte]);
   // Lista de arquivos nao e "texto do addon" (como em episodiosDoAddon): com 1
   // o TMDB so preencheria vazios e os nomes de arquivo que sobraram ficariam.

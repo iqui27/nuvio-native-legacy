@@ -25,6 +25,7 @@
 #include "dados.h"
 #include "linguas.h"
 #include "trakt.h"
+#include "traktscrobble.h"
 #include "visto.h"
 #include "vistoep.h"
 #include <SDL2/SDL.h>
@@ -51,6 +52,9 @@ void desc_episodios(int idx, int temporada) { (void)idx; (void)temporada; }
 void desc_episodios_garantir(int idx) { (void)idx; }
 void desc_episodios_pendente(void) {}
 int desc_episodios_carregando(int idx) { (void)idx; return carregando; }
+// A detached Home refresh publishes a real catalog, which would race the next
+// scenario's fixture. This test observes player writes, not rebuilding Home.
+void desc_refazer_continuar(void) {}
 #include "rede.h"
 
 // Keep background marker lookups offline too.
@@ -108,6 +112,15 @@ static double tkPos, tkDur;   // o que o Trakt recebeu por ultimo
 static int tkAssistiu;
 void trakt_marcar(const char *imdb, double posSeg, double durSeg, double assistidoSeg, int assistiu) {
   (void)imdb; (void)assistidoSeg; tkPos = posSeg; tkDur = durSeg; tkAssistiu = assistiu; nTrakt++;
+}
+// Observe the same canonical boundary used by the production player. Keep
+// start/pause events separate from the exit counted by these assertions.
+int trakt_scrobble_alvo(int evento, const TraktScrobbleAlvo *alvo,
+                        double posSeg, double durSeg, double assistidoSeg, int assistiu) {
+  assert(alvo && alvo->id[0]);
+  if (evento == SCR_EV_SAIU)
+    trakt_marcar(alvo->id, posSeg, durSeg, assistidoSeg, assistiu);
+  return SCR_NADA;
 }
 int visto_titulo(const char *imdb, const char *tipo, const int *temporadas,
                  int nt, int visto, int destinos) {
