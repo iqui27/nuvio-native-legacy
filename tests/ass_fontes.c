@@ -16,6 +16,8 @@
 #include <string.h>
 
 // assrender.c desenha por gfx_rect; aqui nao ha GL, e nada disso e chamado.
+// CPU-only fixture: no GL uploads are submitted.
+int perftv_enabled, perftv_uploads;
 float gfx_tex_aspect_atual;
 void gfx_tex_esquecer(GLuint tex) { (void)tex; }
 void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,

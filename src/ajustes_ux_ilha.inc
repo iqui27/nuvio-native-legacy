@@ -1106,7 +1106,7 @@ static void aj2EditorEscolha(GfxRect m) {
         ponteiro_alvo(r.x, r.y, r.w, r.h, ac, NULL, i, 0);
     }
     if (foco) ajFocoLinha(r, 28, 1, 1);
-    fv = marcaDoValor(uxOp, o->valores ? o->valores[i] : NULL);
+    fv = marcaDoValor(uxOp, o->valores && i < o->n ? o->valores[i] : NULL);
     if (fv >= 0) marca_formato((FormatoMarca)fv, r.x + 30, r.y + 26, 44, 1, 1, 1, foco ? 0.9f : 0.6f);
     else {
       float textoX = r.x + 30;

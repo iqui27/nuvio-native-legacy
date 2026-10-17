@@ -1,5 +1,6 @@
 // Subtitle selector and second subtitle drawing. See legendasui.h.
 #include "legendasui.h"
+#include "legfontes.h"
 #include "legenda2.h"
 #include "legenda.h"
 #include "faixas.h"
@@ -1165,7 +1166,8 @@ static void visualLinha(TxtFamilia fam, TxtEstilo est, char *linha) {
 static int quebrar(const LegendaCue *c, const VideoLegendaEstilo *e, TxtEstilo est, int r, int g, int b, int borda, unsigned corBorda,
                    float maxW, Leg2Linha *out, int max) {
   char texto[768], *linha, *salva;
-  TxtFamilia fam = (TxtFamilia)e->familia;
+  TxtFamilia fam = legfontes_caminho(1) ? TXT_FAMILIA_IMPORTADA2 :
+    ajustes_leg2_fonte_principal() && legfontes_caminho(0) ? TXT_FAMILIA_IMPORTADA1 : (TxtFamilia)e->familia;
   int enf = (c->negrito || e->negrito ? TXT_ENF_NEGRITO : 0) | (c->italico ? TXT_ENF_ITALICO : 0);
   int n = 0;
   snprintf(texto, sizeof texto, "%s", c->texto);

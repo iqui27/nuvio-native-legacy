@@ -28,6 +28,7 @@ int  ajustes_interface_mobile(void);
 void ajustes_dir(const char *dir);
 void ajustes_evento(const SDL_Event *e);
 void ajustes_atualizar(float dt, Uint32 agora);
+void ajustes_fontes_atualizar(void);
 void ajustes_desenhar(Uint32 agora);
 int  ajustes_quer_sair(void);
 // 1 quando a linha "Addons" foi acionada. Lido e zerado na chamada.
@@ -512,6 +513,7 @@ int   ajustes_leg2_borda(void);
 void  ajustes_leg_contorno_rgb(int *r, int *g, int *b);   // #475: cor do contorno/sombra da legenda (0..255)
 unsigned ajustes_leg_borda_rgb(int corBorda);   // corBorda >= 0: explicit colour; -1: legacy #475 colour
 // Independent secondary overrides; absent fields inherit the main style.
+int ajustes_leg2_fonte_principal(void);
 void ajustes_leg2_estilo(const VideoLegendaEstilo *principal, VideoLegendaEstilo *out);
 int ajustes_leg2_posicao(void); // -1 keeps the existing Top/Stacked placement
 int ajustes_leg2_atraso(void);

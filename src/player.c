@@ -26,6 +26,7 @@
 //      congelado sem saber o que houve.
 #include "horafmt.h"
 #include "player.h"
+#include "legfontes.h"
 #include "memlog.h"
 #include "dvtela.h"
 #include "abrecine.h"
@@ -1152,6 +1153,7 @@ void player_dir(const char *dir) {
   if (!dir || !*dir) return;
   snprintf(dirPrefs, sizeof dirPrefs, "%s", dir);
   prefsLidas = 0;
+  legfontes_dir(dir);
 }
 static const char *prefsArquivo(void) {
   static char caminho[600];
@@ -1252,7 +1254,7 @@ const VideoLegendaEstilo *player_leg_estilo_padrao(void) {
   static const VideoLegendaEstilo padrao = {120, 0, 0, 3, 1, 0, 0, TXT_FAMILIA_INTER, 0, 0};
   return &padrao;
 }
-int player_leg_estilo_definir(const VideoLegendaEstilo *estilo, int tocou) {
+static int estiloPreparar(const VideoLegendaEstilo *estilo, int tocou) {
   if (!estilo || estilo->tamanho < TXT_LEG_PCT_MIN || estilo->tamanho > TXT_LEG_PCT_MAX ||
       estilo->tamanho % 10 || estilo->cor < 0 || estilo->cor >= VIDEO_LEG_NCORES ||
       estilo->corBorda < -1 || estilo->corBorda >= VIDEO_LEG_NCORES ||
@@ -1263,7 +1265,6 @@ int player_leg_estilo_definir(const VideoLegendaEstilo *estilo, int tocou) {
       estilo->atrasoMs < -LEG_ATRASO_MANUAL_MAX || estilo->atrasoMs > LEG_ATRASO_MANUAL_MAX) return 0;
   player_leg_estilo_carregar();
   VideoLegendaEstilo antes = legEstilo;
-  int tocadoAntes = legTocado;
   legEstilo = *estilo;
   if (tocou != PLR_LEG_NADA) {
     if (antes.cor != estilo->cor) legTocado |= PLR_LEG_COR;
@@ -1275,9 +1276,49 @@ int player_leg_estilo_definir(const VideoLegendaEstilo *estilo, int tocou) {
     if (antes.negrito != estilo->negrito) legTocado |= PLR_LEG_NEGRITO;
   }
   if (tocou >= 0) player_leg_estilo_tocou(tocou);
+  return 1;
+}
+typedef struct { const VideoLegendaEstilo *novo; int tocou; } EstiloCommit;
+static int estiloConfirmar(void *u) {
+  EstiloCommit *c = u;
+  VideoLegendaEstilo antes = legEstilo;
+  int tocadoAntes = legTocado;
+  if (!estiloPreparar(c->novo, c->tocou)) return 0;
   if (!prefsGravar()) { legEstilo = antes; legTocado = tocadoAntes; return 0; }
+  return 1;
+}
+int player_leg_estilo_definir(const VideoLegendaEstilo *estilo, int tocou) {
+  player_leg_estilo_carregar();
+  EstiloCommit c = { estilo, tocou };
+  if (!estiloConfirmar(&c)) return 0;
   video_legenda_estilo(&legEstilo);
   return 1;
+}
+// A bundled-font selection and Restore also clear the device-local override.
+// Keep both persisted sources unchanged if either write fails.
+static int estiloSemFonteLocal(const VideoLegendaEstilo *novo, int tocou) {
+  player_leg_estilo_carregar();
+  EstiloCommit c = { novo, tocou };
+  if (!legfontes_escolher_transacao(0, -1, estiloConfirmar, &c)) return 0;
+  video_legenda_estilo(&legEstilo);
+  return 1;
+}
+int player_leg_fonte_definir(int familia) {
+  player_leg_estilo_carregar();
+  VideoLegendaEstilo novo = legEstilo;
+  novo.familia = familia;
+  return estiloSemFonteLocal(&novo, PLR_LEG_FONTE);
+}
+int player_leg_fonte_local_definir(int indice) {
+  player_leg_estilo_carregar();
+  VideoLegendaEstilo novo = legEstilo;
+  EstiloCommit c = { &novo, PLR_LEG_FONTE };
+  if (!legfontes_escolher_transacao(0, indice, estiloConfirmar, &c)) return 0;
+  video_legenda_estilo(&legEstilo);
+  return 1;
+}
+int player_leg_estilo_restaurar(void) {
+  return estiloSemFonteLocal(player_leg_estilo_padrao(), PLR_LEG_NADA);
 }
 void player_leg_estilo_tocou(int campos) {
   if (campos == PLR_LEG_NADA) legTocado = PLR_LEG_NADA;
@@ -4718,7 +4759,7 @@ static void blocoLinha(LegBloco *bl, TxtEstilo est, const char *linha, int r, in
 // no quadro seguinte.
 static void montarBloco(const LegendaCue *c, TxtEstilo est, int r, int g, int b, LegBloco *bl) {
   char texto[768], *linha, *salva;
-  TxtFamilia fam = (TxtFamilia)legEstilo.familia;
+  TxtFamilia fam = legfontes_caminho(0) ? TXT_FAMILIA_IMPORTADA1 : (TxtFamilia)legEstilo.familia;
   int enf = (c->negrito || legEstilo.negrito ? TXT_ENF_NEGRITO : 0) | (c->italico ? TXT_ENF_ITALICO : 0);
   bl->n = 0; bl->w = 0; bl->h = 0;
   snprintf(texto, sizeof texto, "%s", c->texto);
@@ -4939,6 +4980,10 @@ static void desenharLegendaPrincipal(float *topoPilha){
       style.border = legEstilo.borda; style.bold = legEstilo.negrito;
       style.outlineRgb = (int)ajustes_leg_borda_rgb(legEstilo.corBorda);
       style.overrides = legTocado;
+      if (assrender_fonte_local_ativa(legfontes_caminho(0))) {
+        snprintf(style.font, sizeof style.font, "%s", legfontes_nome_ass(0));
+        style.overrides |= PLAIN_ASS_FONT;
+      }
       style.marginV = (int)(1080.f - base);
       assrender_definir_texto_estilo(&style);
       /* Plain captions follow the old screen-space layout; authored ASS

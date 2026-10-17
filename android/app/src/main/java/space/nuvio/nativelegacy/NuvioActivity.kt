@@ -140,6 +140,9 @@ class NuvioActivity : SDLActivity() {
     }
 
     private val registroDownload by lazy { RegistroDownload(this) }
+    private val fontImport by lazy { FontImport(this) }
+    fun importarFonte(): Boolean = fontImport.abrir()
+    fun proximaFonteImportada(): String? = fontImport.proximo()
 
     // Chamado pelo fio SDL, sem ler arquivos nem abrir a tela naquele fio.
     fun baixarRegistro(arquivo: String, sucesso: String, falha: String) {
@@ -156,11 +159,13 @@ class NuvioActivity : SDLActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         registroDownload.salvar(outState)
+        fontImport.salvar(outState)
         super.onSaveInstanceState(outState)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         registroDownload.restaurar(savedInstanceState)
+        fontImport.restaurar(savedInstanceState)
         // SEGUNDO onCreate NO MESMO PROCESSO = SEGUNDO main() DO C (o
         // SDLActivity.initialize() zera mSDLThread e o SDL sobe outro fio de
         // main). O nucleo C guarda estado global (mutex, fios, caches) que nao
@@ -590,7 +595,7 @@ class NuvioActivity : SDLActivity() {
         // Instalador ou tela de voz por cima NAO e sair do app: trocar o icone
         // ali fecharia a tarefa embaixo deles (ver aplicarIconePendente).
         if (!instalando && !esperandoTela && !isChangingConfigurations &&
-            !registroDownload.escolhendoArquivo) aplicarIconePendente()
+            !registroDownload.escolhendoArquivo && !fontImport.escolhendoArquivo) aplicarIconePendente()
         super.onStop()
         Log.i("nuvio", "[android] parada: ${SystemClock.elapsedRealtime() - ini} ms no fio da interface")
     }
@@ -621,6 +626,7 @@ class NuvioActivity : SDLActivity() {
 
     override fun onDestroy() {
         registroDownload.fechar()
+        fontImport.fechar()
         vigia?.parar()
         fecharRede()
         NvPlayer.encerrar()
@@ -1121,6 +1127,7 @@ class NuvioActivity : SDLActivity() {
     @Deprecated("startActivityForResult e o que o SDLActivity (Activity) oferece")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (registroDownload.resultado(requestCode, resultCode, data)) return
+        if (fontImport.resultado(requestCode, resultCode, data)) return
         if (requestCode == PEDIDO_DITADO) esperandoTela = false
         if (requestCode == PEDIDO_DITADO) {
             val t = if (resultCode == RESULT_OK)

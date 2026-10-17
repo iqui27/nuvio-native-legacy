@@ -536,7 +536,7 @@ static float ajVisualCena(int sec, int op, float x, float y, float w) {
       gfx_rect(RR(26, 50, 320, 290), 0, GFX_SOMBRA, 1, 0, 0, 0.5f, 0, 0, 0, 0.4f);
       VID(36, 44, 300, 272, 26);
       TXT("Aa", 64, 1, 60, 62, 1);
-      uxValorTexto(AJ_FONTE_UI, valor[AJ_FONTE_UI], fam, sizeof fam);
+      uxValorTexto(AJ_FONTE_UI, ajFonteAtual(AJ_FONTE_UI), fam, sizeof fam);
       TXT(fam, 14, 0, 62, 150, 0.6f);
       for (i = 0; i < 6; i++) {
         unsigned c = TEMA_ACENTO[1 + i].fill;
