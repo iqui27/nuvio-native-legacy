@@ -172,12 +172,15 @@ int simkl_titulo_marcar(const char *imdb, const char *tipo, const int *temporada
 // e SCR_EV_*, `id` e "tt123" (filme) ou "tt123:T:E" (episodio), e a posicao,
 // a duracao e o assistido sao em segundos. Manda /scrobble/start|pause|stop com
 // a porcentagem, num fio (nunca bloqueia o desenho). Devolve a acao decidida
-// (SCR_*); SCR_NADA sem vinculo, com id que nao e IMDb ou sem prova de
+// (SCR_*); SCR_NADA sem vinculo, com id que nao e IMDb nem episodio de anime, ou sem prova de
 // reproducao. Pause aceita 80-90% sem visto. 401 desfaz o vinculo do perfil;
 // 429/5xx/400 RATE_LIMIT abrem espera (30 s, dobra ate 5 min). Um STOP que
 // nao chega cai em simkl_*_marcar; fica em disco ate confirmacao para retry.
 int simkl_scrobble(int evento, const char *id, double posSeg, double durSeg,
                    double assistidoSeg, int assistiu);
+// The scrobble body for `id`: "tt123[:T:E]" as before, or an anime add-on
+// episode ("kitsu:41370:5", "mal:5114:1:3"). 0 for an id Simkl can't take.
+int simkl_corpo_scrobble(char *dst, size_t tam, const char *id, double pct);
 // 1 quando o fio de envio nao tem nada pendente nem em voo (para o teste).
 int simkl_scrobble_ocioso(void);
 // Retoma stops persistidos do vinculo atual, no maximo uma tentativa a cada

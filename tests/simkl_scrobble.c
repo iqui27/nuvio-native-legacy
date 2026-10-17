@@ -253,12 +253,42 @@ static void especial(void) {
   OK("#556: S00 e episodio no scrobble e no historico, nunca filme");
 }
 
+// Anime add-on ids, as NuvioTV sends them (SimklMutationBodies.kt): with a
+// season a "show" in TVDB-style coordinates, without one an "anime" with the
+// absolute number. They were refused before: Kitsu anime never reached Simkl.
+static void anime(void) {
+  char c[200];
+  simkl_esquecer(); tokenAtual = TOKEN; stScr = 200;
+  assert(mandar(SCR_EV_TOCANDO, "kitsu:41370:1:2", 60, 2400, 60, 0) == SCR_START);
+  assert(!strcmp(ultimaRota, "/scrobble/start"));
+  assert(!strcmp(ultimoCorpo,
+    "{\"show\":{\"ids\":{\"kitsu\":41370}},\"episode\":{\"season\":1,\"number\":2},\"progress\":2.50}"));
+  assert(mandar(SCR_EV_TOCANDO, "mal:5114:25", 60, 2400, 60, 0) == SCR_START);
+  assert(!strcmp(ultimoCorpo,
+    "{\"anime\":{\"ids\":{\"mal\":5114}},\"episode\":{\"number\":25},\"progress\":2.50}"));
+  // A stop Simkl rejects for good leaves the journal; the IMDb history
+  // fallback doesn't apply to these ids.
+  stScr = 404;
+  assert(mandar(SCR_EV_SAIU, "mal:5114:25", 2400, 2400, 2000, 1) == SCR_STOP);
+  assert(nScr == 1 && nHist == 0 && !strcmp(ultimaRota, "/scrobble/stop"));
+  stScr = 200; simkl_esquecer();
+  // IMDb bodies are unchanged, and the builder refuses what it can't name.
+  assert(simkl_corpo_scrobble(c, sizeof c, "tt0903747:1:5", 50.0) &&
+         !strcmp(c, "{\"show\":{\"ids\":{\"imdb\":\"tt0903747\"}},\"episode\":{\"season\":1,\"number\":5},\"progress\":50.00}"));
+  assert(!simkl_corpo_scrobble(c, sizeof c, "tvdb:123:1:2", 50.0) && !c[0]);
+  assert(!simkl_corpo_scrobble(c, sizeof c, "kitsu:0:1", 50.0));
+  OK("anime: kitsu/mal com temporada viram show, sem temporada viram anime");
+}
+
 static void guardas(void) {
   posts = 0;
   assert(mandar(SCR_EV_TOCANDO, "tt2000001", 10, 90, 10, 0) == SCR_NADA);      // < 120 s
   assert(mandar(SCR_EV_TOCANDO, "tt2000002", 10, 3000, 1, 0) == SCR_NADA);     // assistiu < 5 s
   assert(mandar(SCR_EV_TOCANDO, "tmdb:m123", 100, 3000, 100, 0) == SCR_NADA);  // nao e IMDb
-  assert(mandar(SCR_EV_TOCANDO, "kitsu:41370:1:2", 100, 3000, 100, 0) == SCR_NADA);
+  // Anime add-on episodes now go (see `anime`); the id alone, with no
+  // episode, or a non-numeric one still doesn't.
+  assert(mandar(SCR_EV_TOCANDO, "kitsu:41370", 100, 3000, 100, 0) == SCR_NADA);
+  assert(mandar(SCR_EV_TOCANDO, "kitsu:abc:1:2", 100, 3000, 100, 0) == SCR_NADA);
   assert(mandar(SCR_EV_TOCANDO, "", 100, 3000, 100, 0) == SCR_NADA);
   assert(mandar(SCR_EV_SAIU, "tt2000003", 2900, 3000, 200, 0) == SCR_NADA);    // 96% sem ter assistido
   assert(posts == 0);
@@ -589,6 +619,7 @@ int main(int argc, char **argv) {
     filme();
     episodio();
     especial();
+    anime();
     guardas();
     indevido();
     falhaNaoAutorizada();

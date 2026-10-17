@@ -72,6 +72,13 @@ static void avisarCascaAberto(int v) { (void)v; }
 #include "trakt.h"
 #include "simkl.h"
 #include "traktscrobble.h"
+#include "perfisessao.h"
+extern int cat_episodios_finais(int, const char *) NV_PERFIL_OPCIONAL;
+extern int cat_episodio_tvdb(int, const char *, int, int) NV_PERFIL_OPCIONAL;
+extern int cat_episodio_tvdb_qualquer(int, const char *, int, int) NV_PERFIL_OPCIONAL;
+extern int cat_episodio_existe_final(int, const char *, int, int) NV_PERFIL_OPCIONAL;
+extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
+                              double, int) NV_PERFIL_OPCIONAL;
 #include "watchstate_envio.h"
 #include "perfisessao.h"
 #include "sync.h"
@@ -694,6 +701,12 @@ static void medirAssistido(void) {
 // Dentro de player_abrir: o episodio ainda e o do progresso, nao o que vai
 // tocar. Ver a nota la — segura a invalidacao da lista de fontes (#101).
 static int abrindoSessao;
+// Identidade Trakt escolhida uma vez por abertura. O par exibido continua a
+// servir ao addon/Simkl/estado local; TVDB serve apenas ao Trakt quando a lista
+// final de episodios provou a correspondencia.
+static TraktScrobbleAlvo scrobbleAlvo;
+static int scrobbleAlvoPronto;
+static int scrobbleTvdbCapturado;
 static int pedGuia, pedZap, pedGuiaCheio;   // pedidos de canal: overlay do guia / CH+/-
 // OSD PROPRIO DO CANAL AO VIVO (aovivo.h). O zapping acumula toques e so pede a
 // troca depois do debounce; `pedZap` passa a ser um DESLOCAMENTO (pode ser 3 ou
@@ -926,14 +939,26 @@ void player_definir_episodio(int t, int e) {
   if (t >= 0 && e > 0) { epPedidoT = t; epPedidoE = e; }
   atualizarTipoItem();
   const CatItem *c = item();
-  if (t != epT || e != epE) retomarFonteSeg = -1.0;
+  if (t != epT || e != epE) {
+    retomarFonteSeg = -1.0;
+    memset(&scrobbleAlvo, 0, sizeof scrobbleAlvo); scrobbleAlvoPronto = 0;
+    scrobbleTvdbCapturado = 0;
+  }
   epT = t; epE = e; linhaEp[0] = 0;
+  // Capture exact identity while the pair still belongs to the provisional
+  // list. A later final list may renumber this same episode and remove the old
+  // pair; TVDB is the bridge that remains valid across that replacement.
+  if (!scrobbleTvdbCapturado && c && !strcmp(c->tipo, "series") && t >= 0 && e > 0 &&
+      cat_episodio_tvdb_qualquer)
+    scrobbleTvdbCapturado = cat_episodio_tvdb_qualquer(idxAtual(), c->imdb, t, e);
   audioTitulo();
   retomarPct = 0;
   // !canalSessao: canal nao tem retomada, e se o indice ja foi remapeado o
   // "progresso" lido ali seria de outro titulo qualquer.
   if (c && !canalSessao && !semRetomada && c->progresso > 0 && c->progresso < ajustes_cw_concluido() &&
-      (strcmp(c->tipo,"series") || (t==c->temporada && e==c->episodio))) retomarPct=c->progresso;
+      (strcmp(c->tipo,"series") || (t==c->temporada && e==c->episodio) ||
+       (c->tvdbEp > 0 && cat_episodio_tvdb &&
+        cat_episodio_tvdb(idxAtual(), c->imdb, t, e) == c->tvdbEp))) retomarPct=c->progresso;
 #ifdef NV_ANDROID
   retomarSeg = 0.0;
   if (c && retomarPct > 0) {
@@ -1619,6 +1644,8 @@ void player_abrir(int indiceCatalogo, const char *url) {
 #endif
   retomamorna_cancelar();
   creditosauto_zerar(&creditosAuto);
+  memset(&scrobbleAlvo, 0, sizeof scrobbleAlvo); scrobbleAlvoPronto = 0;
+  scrobbleTvdbCapturado = 0;
   quadroCapturado = 0;
   player_descartar_retido();
   // O trailer usa o mesmo plano de video (LG) — solta antes de o player
@@ -2127,6 +2154,47 @@ static void idTrakt(const CatItem *ci, char *dst, size_t n) {
   else snprintf(dst, n, "%s", base);
 }
 
+static const TraktScrobbleAlvo *alvoTrakt(const CatItem *ci) {
+  char id[64];
+  int tvdb = scrobbleTvdbCapturado, final, parFinal = 0;
+  if (!ci || !ci->imdb[0] || (strcmp(ci->tipo, "movie") && strcmp(ci->tipo, "series")) ||
+      (!strcmp(ci->tipo, "series") && (epT < 0 || epE <= 0))) return NULL;
+  idTrakt(ci, id, sizeof id);
+  // `ci` is the immutable snapshot captured when the player opened. Consult
+  // the live catalog so a playback opened from a provisional episode list can
+  // begin scrobbling once the canonical list replaces it.
+  final = strcmp(ci->tipo, "series") ||
+          (cat_episodios_finais ? cat_episodios_finais(idxAtual(), ci->imdb)
+                                : !ci->epsParciais);
+  if (!strcmp(ci->tipo, "series")) {
+    if (!tvdb && final && cat_episodio_tvdb)
+      tvdb = cat_episodio_tvdb(idxAtual(), ci->imdb, epT, epE);
+    if (final && cat_episodio_existe_final)
+      parFinal = cat_episodio_existe_final(idxAtual(), ci->imdb, epT, epE);
+    // Without the helper, retain the old behavior for optional-link builds.
+    else if (final && !cat_episodio_existe_final) parFinal = 1;
+  } else parFinal = final;
+  // An exact id captured before topology replacement is safe immediately. A
+  // numeric pair is safe only while that pair still exists in the final list.
+  if (!scrobble_alvo_congelar(&scrobbleAlvo, &scrobbleAlvoPronto, id,
+                              final, parFinal, tvdb))
+    return NULL;
+  return &scrobbleAlvo;
+}
+
+static int scrobbleTrakt(int evento, const CatItem *ci, double pos, double dur,
+                         double assistido, int fim) {
+  const TraktScrobbleAlvo *alvo = alvoTrakt(ci);
+  if (!alvo) return SCR_NADA;
+  if (trakt_scrobble_alvo)
+    return trakt_scrobble_alvo(evento, alvo, pos, dur, assistido, fim);
+  if (evento == SCR_EV_SAIU) {
+    trakt_marcar(alvo->id, pos, dur, assistido, fim);
+    return SCR_NADA;
+  }
+  return trakt_scrobble(evento, alvo->id, pos, dur, assistido, fim);
+}
+
 // WATCH_STATE v2 (#466): o player avisa os addons que declaram o resource
 // (AIOStreams) de start, pause e stop. So enfileira: quem entrega e o fio de
 // watchstate_envio.c, entao nada aqui espera por rede. Mesmas guardas do
@@ -2411,7 +2479,9 @@ static void fecharSessao(int manter) {
       int simklScr;
       idTrakt(ci, id, sizeof id);
       // Trakt also completes by percentage, so an invalid duration cannot be sent.
-      if (!duracaoContradita) trakt_marcar(id, pos, duracaoSeg, assistidoSeg, assistiu);
+      if (!duracaoContradita) {
+        scrobbleTrakt(SCR_EV_SAIU, ci, pos, duracaoSeg, assistidoSeg, assistiu);
+      }
       // Simkl (#459): mesmo scrobble, independente de o Trakt estar ligado.
       // Sem vinculo, id fora do IMDb ou guarda recusando: SCR_NADA.
       simklScr = simkl_scrobble(SCR_EV_SAIU, id, pos, duracaoSeg, assistidoSeg, assistiu);
@@ -4266,11 +4336,12 @@ void player_atualizar(float dt, Uint32 agora) {
     if (cs && (jfid_e(cs->imdb) || !identidadeValida())) cs = NULL;
     if (ok && cs && cs->imdb[0]) {
       char id[64];
-      if (epT >= 0 && epE > 0) snprintf(id, sizeof id, "%.*s:%d:%d", (int)strcspn(cs->imdb,":"), cs->imdb, epT, epE);
-      else snprintf(id, sizeof id, "%s", cs->imdb);
+      // Same id as the exit's: cutting at the first ':' made "kitsu:41370"
+      // episode 5 a "kitsu:1:5", a different title from its own stop.
+      idTrakt(cs, id, sizeof id);
       tocouS += dt;
       if (tocouS >= PLR_SCR_TOCOU_S) {
-        trakt_scrobble(SCR_EV_TOCANDO, id, posSeg, duracaoSeg, assistidoSeg, 0);
+        scrobbleTrakt(SCR_EV_TOCANDO, cs, posSeg, duracaoSeg, assistidoSeg, 0);
         simkl_scrobble(SCR_EV_TOCANDO, id, posSeg, duracaoSeg, assistidoSeg, 0);
         wsTocando();
       }
@@ -4285,9 +4356,8 @@ void player_atualizar(float dt, Uint32 agora) {
           duracaoSeg >= 120.0f && !scrubbing &&
           !player_duracao_suspeita((double)duracaoSeg, duracaoCatalogo())) {
         char id[64];
-        if (epT >= 0 && epE > 0) snprintf(id, sizeof id, "%.*s:%d:%d", (int)strcspn(cs->imdb,":"), cs->imdb, epT, epE);
-        else snprintf(id, sizeof id, "%s", cs->imdb);
-        trakt_scrobble(SCR_EV_PAUSOU, id, posSeg, duracaoSeg, assistidoSeg, 0);
+        idTrakt(cs, id, sizeof id);
+        scrobbleTrakt(SCR_EV_PAUSOU, cs, posSeg, duracaoSeg, assistidoSeg, 0);
         simkl_scrobble(SCR_EV_PAUSOU, id, posSeg, duracaoSeg, assistidoSeg, 0);
         if (!saindo) wsPausou();
         parcialPausa = 1;

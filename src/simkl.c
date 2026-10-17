@@ -13,6 +13,7 @@
 #include "traktscrobble.h"
 #include "artemetahub.h"
 #include "dados.h"
+#include "idbase.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1039,13 +1040,68 @@ static unsigned long long agoraMs(void) {
 
 // "tt123:T:E" -> temporada e episodio; filme "tt123" -> 0, 0. 0 quando o id
 // tem ':' mas nao e temporada >= 0 / episodio > 0 (iria como FILME do show).
+// Anime add-on ids Simkl resolves itself: "kitsu:41370", "mal:5114"... The
+// numeric part is what goes in "ids". 0 for any other id (tmdb:, tvdb:...).
+static const char *const animePrefixos[] = { "kitsu", "mal", "anilist", "anidb" };
+static int idAnime(const char *id, const char **prefixo, long *num) {
+  size_t i, k;
+  char *fim;
+  long v;
+  if (!id) return 0;
+  for (i = 0; i < sizeof animePrefixos / sizeof animePrefixos[0]; i++) {
+    k = strlen(animePrefixos[i]);
+    if (strncmp(id, animePrefixos[i], k) || id[k] != ':') continue;
+    v = strtol(id + k + 1, &fim, 10);
+    if (v <= 0 || fim == id + k + 1 || (*fim && *fim != ':')) return 0;
+    if (prefixo) *prefixo = animePrefixos[i];
+    if (num) *num = v;
+    return 1;
+  }
+  return 0;
+}
+
 static int idScrobble(const char *id, int *t, int *e) {
   const char *dp;
   *t = *e = 0;
+  if (idAnime(id, NULL, NULL)) {
+    // Only an episode: an anime id alone could be a film or a whole series.
+    // "kitsu:41370:5" has no season (t = -1); "kitsu:41370:1:5" has one.
+    idbase_episodio(id, t, e);
+    return *e > 0;
+  }
   if (!imdbValido(id)) return 0;
   dp = strchr(id, ':');
   if (!dp) return 1;
   return sscanf(dp + 1, "%d:%d", t, e) == 2 && *t >= 0 && *e > 0;
+}
+
+// Scrobble body. IMDb ids keep the Trakt-shaped body they always used. Anime
+// add-on ids go the way NuvioTV sends them (SimklMutationBodies.kt): with a
+// season, a "show" in TVDB-style coordinates; without one (absolute
+// numbering), an "anime" with the episode number, which Simkl maps itself.
+int simkl_corpo_scrobble(char *dst, size_t tam, const char *id, double pct) {
+  const char *prefixo = NULL;
+  long num = 0;
+  int t = 0, e = 0, w;
+  if (!dst || !tam) return 0;
+  dst[0] = 0;
+  if (!idScrobble(id, &t, &e)) return 0;
+  if (!idAnime(id, &prefixo, &num)) {
+    scrobble_corpo(dst, tam, id, pct);
+    return dst[0] != 0;
+  }
+  if (pct < 0.0) pct = 0.0;
+  if (pct > 100.0) pct = 100.0;
+  if (t >= 0)
+    w = snprintf(dst, tam, "{\"show\":{\"ids\":{\"%s\":%ld}},"
+                 "\"episode\":{\"season\":%d,\"number\":%d},\"progress\":%.2f}",
+                 prefixo, num, t, e, pct);
+  else
+    w = snprintf(dst, tam, "{\"anime\":{\"ids\":{\"%s\":%ld}},"
+                 "\"episode\":{\"number\":%d},\"progress\":%.2f}",
+                 prefixo, num, e, pct);
+  if (w < 0 || (size_t)w >= tam) { dst[0] = 0; return 0; }
+  return 1;
 }
 
 // Apenas ids no disco, separados por vinculo (assinatura estavel do token).
@@ -1157,7 +1213,7 @@ static void scrobbleEnviar(const ScrPedido *p) {
     memset(tk, 0, sizeof tk);
     return;
   }
-  scrobble_corpo(corpo, sizeof corpo, id, pct);
+  if (!simkl_corpo_scrobble(corpo, sizeof corpo, id, pct)) { memset(tk, 0, sizeof tk); return; }
   snprintf(caminho, sizeof caminho, "/scrobble/%s", scrobble_nome(acao));
   r = pedirComToken('P', caminho, NULL, corpo, &st, tk);
   memset(tk, 0, sizeof tk);
@@ -1201,6 +1257,11 @@ static void scrobbleEnviar(const ScrPedido *p) {
   }
   pthread_mutex_unlock(&travaScr);
   free(r);
+  // An anime add-on episode has no history fallback (that body is IMDb-only).
+  // A 4xx that no retry changes (Simkl doesn't know the id) leaves the
+  // journal: kept, it would be resent every 30 s ahead of every other stop.
+  if (acao == SCR_STOP && !ok && !espera && st >= 400 && st < 500 &&
+      idAnime(id, NULL, NULL)) ok = 1;
   if (acao == SCR_STOP && (ok || scrobbleCairNoHistorico(id, p->token, p->cred))) {
     pthread_mutex_lock(&travaScr);
     scrobbleJornal(p->jornal, id, 0);

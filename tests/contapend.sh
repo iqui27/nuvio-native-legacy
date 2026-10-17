@@ -14,6 +14,7 @@ if [ "$#" -gt 0 ]; then
 else
   rc=0
   "$tmp/contapend" retry || rc=1
+  "$tmp/contapend" identity || rc=1
   "$tmp/contapend" progress || rc=1
   "$tmp/contapend" || rc=1
   exit "$rc"

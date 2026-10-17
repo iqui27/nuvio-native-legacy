@@ -124,37 +124,38 @@ int main(void) {
   assert(strstr(ultimaUrl, "/scrobble/stop"));
   assert(strstr(ultimoCorpo, "100.00"));
   // Invalid playback remains rejected; a played seek may queue a stop.
+  // Events for different titles remain separate, so the stop cannot be lost.
   assert(trakt_scrobble(SCR_EV_SAIU, "tt9999999", 180, 180, 0, 0) == SCR_NADA);
   assert(trakt_scrobble(SCR_EV_SAIU, "tt9999999", 2580, 2580, 120, 0) == SCR_STOP);
   assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 200, 2580, 200, 0) == SCR_PAUSE);
   pthread_mutex_lock(&lock); liberar = 1; pthread_cond_broadcast(&cond); pthread_mutex_unlock(&lock);
-  espera(7);
+  espera(8);
   assert(strstr(ultimaUrl, "/scrobble/pause"));
   assert(!strstr(ultimoCorpo, "tt9999999"));
   // A seek completion ends the active start; reopening must send a new start.
   assert(trakt_scrobble(SCR_EV_TOCANDO, "tt7777777", 99, 2843, 99, 0) == SCR_START);
-  espera(8);
-  assert(trakt_scrobble(SCR_EV_SAIU, "tt7777777", 2824, 2843, 133, 0) == SCR_STOP);
   espera(9);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt7777777", 2824, 2843, 133, 0) == SCR_STOP);
+  espera(10);
   assert(strstr(ultimaUrl, "/scrobble/stop"));
   assert(trakt_scrobble(SCR_EV_TOCANDO, "tt7777777", 10, 2843, 10, 0) == SCR_START);
-  espera(10);
+  espera(11);
   assert(strstr(ultimaUrl, "/scrobble/start"));
   // Com a decisao do player (player_regra_visto), o stop sai.
   assert(trakt_scrobble(SCR_EV_SAIU, "tt7777777", 2700, 2700, 2400, 1) == SCR_STOP);
-  espera(11);
-  assert(trakt_scrobble(SCR_EV_SAIU, "tt8888888", 6000, 6000, 2300, 1) == SCR_STOP);
   espera(12);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt8888888", 6000, 6000, 2300, 1) == SCR_STOP);
+  espera(13);
   assert(strstr(ultimaUrl, "/scrobble/stop") && strstr(ultimoCorpo, "tt8888888"));
   // Exit accepts one second of playback; completion begins at 80%, even after seeking.
   assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 129, 129, 69, 0) == SCR_STOP);
-  espera(13);
-  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 2768, 2843, 133, 0) == SCR_STOP);
   espera(14);
-  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 85, 1000, 1, 0) == SCR_PAUSE);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 2768, 2843, 133, 0) == SCR_STOP);
   espera(15);
-  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 850, 1000, 1, 0) == SCR_STOP);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 85, 1000, 1, 0) == SCR_PAUSE);
   espera(16);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 850, 1000, 1, 0) == SCR_STOP);
+  espera(17);
   puts("trakt contracts: PASS (intent, scope, failure, retry, seek completion and playback guards)");
   return 0;
 }
