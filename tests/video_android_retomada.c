@@ -246,5 +246,33 @@ int main(int argc, char **argv) {
   video_bombear(); relogio += 3000; video_bombear();
   assert(chamadasPausa == pausas + 1 && ultimoPausar == 1);
   puts("ok reconexao conserva pausa pedida antes do ack");
+
+  // Recarregar (botao do player) pausado cuja reabertura cai: a reconexao
+  // reabre na posicao do recarregar e continua pausada, sem um segundo seek
+  // de retomada por cima (recarregarPausa e reconPausado juntos).
+  video_parar(); video_definir_reconexao(1);
+  assert(video_tocar("https://example.invalid/recarga.mkv"));
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_PRONTO, 7200000, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_PRIMEIRO_QUADRO, 0, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativePos(NULL, NULL, 1800000);
+  video_bombear();
+  video_pausar(1);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_PAUSADO, 0, 0);
+  pausas = chamadasPausa; buscas = chamadasBusca; posicoes = chamadasPosicao;
+  assert(video_recarregar());
+  assert(chamadasPosicao == posicoes + 1 && recebidoMs == 1800000);
+  assert(chamadasPausa == pausas + 1 && ultimoPausar == 1);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_ERRO, 2000, -1);
+  video_bombear();
+  relogio += 3000; video_bombear();
+  assert(chamadasPosicao == posicoes + 2 && recebidoMs == 1800000);
+  assert(chamadasPausa == pausas + 2 && ultimoPausar == 1);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_PRONTO, 7200000, 0);
+  video_bombear();
+  assert(chamadasBusca == buscas);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_PAUSADO, 0, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_PRIMEIRO_QUADRO, 0, 0);
+  assert(video_pausa_confirmada());
+  puts("ok recarregar pausado que cai reconecta na mesma posicao, pausado");
   puts("video Android retomada: PASS (JNI, geracoes, fallback e limites)");
 }
