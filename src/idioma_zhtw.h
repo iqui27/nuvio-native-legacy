@@ -2667,6 +2667,7 @@
   T("Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "開啟後，應用程式會自動上傳日誌：開啟時上傳上一次工作階段的，之後每分鐘上傳本次工作階段的。不含密碼和金鑰，用於找出導致三星電視當機的原因。你可以隨時關閉。"),
   T("Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "開啟：頂部預告片有聲播放。關閉：靜音播放。"),
   T("Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "開啟：作品頁自動播放的預告片有聲音。關閉：靜音播放；按確定鍵可全螢幕有聲開啟。"),
+  T("Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "開啟：自動播放的預告片——焦點區、焦點海報和作品頁——有聲音。關閉：靜音。"),
   T("Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "開：允許的在等待時間內沒有來源時，自動播放改用其他。關：只用允許的；它們沒有來源時開啟來源清單。"),
   T("Ligados nesta TV", "在這台電視上已開啟"),
   T("Ligando o Dolby Vision", "正在開啟杜比視界"),

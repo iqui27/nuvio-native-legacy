@@ -2667,6 +2667,7 @@
   T("Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "Vklopljeno: aplikacija sama naloži dnevnik, prejšnje seje ob odprtju in te vsako minuto. Brez gesel in ključev; prav to najde, kaj zamrzne televizorje Samsung. Izklopite ga lahko kadar koli."),
   T("Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "Vklopljeno: napovednik na vrhu se predvaja z zvokom. Izklopljeno: brez zvoka."),
   T("Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "Vklopljeno: napovednik, ki se sam predvaja na strani naslova, ima zvok. Izklopljeno: predvaja se brez zvoka; OK ga odpre čez cel zaslon z zvokom."),
+  T("Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "Vklopljeno: napovedniki, ki se predvajajo sami — izpostavljeno, plakat v fokusu in stran naslova — imajo zvok. Izklopljeno: brez zvoka."),
   T("Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "Vklopljeno: če dovoljeni med čakanjem nimajo vira, samodejno predvajanje uporabi druge. Izklopljeno: samo dovoljeni; brez vira v njih se odpre seznam virov."),
   T("Ligados nesta TV", "Vklopljeni na tem televizorju"),
   T("Ligando o Dolby Vision", "Vklapljamo Dolby Vision"),

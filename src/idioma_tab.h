@@ -2666,6 +2666,7 @@
   { "Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "On, the app uploads the log by itself: the previous session's when it opens and this one's every minute. No passwords or keys; it is what finds what freezes Samsung TVs. Turn it off whenever you want." },
   { "Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "On: the trailer at the top plays with sound. Off: it plays muted." },
   { "Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "On: the trailer that plays by itself on the title page has sound. Off: it plays muted; OK opens it full screen with sound." },
+  { "Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "On: trailers that play by themselves — hero, focused poster and title page — have sound. Off: they play muted." },
   { "Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "On: if the allowed ones have no source within the wait, auto-play uses the others. Off: allowed ones only; with no source in them, the source list opens." },
   { "Ligados nesta TV", "On on this TV" },
   { "Ligando o Dolby Vision", "Turning on Dolby Vision" },

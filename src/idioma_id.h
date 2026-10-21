@@ -2667,6 +2667,7 @@
   T("Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "Nyala: aplikasi mengunggah log sendiri: sesi sebelumnya saat dibuka dan sesi ini setiap menit. Tanpa kata sandi atau kunci; inilah yang menemukan penyebab TV Samsung membeku. Matikan kapan pun kamu mau."),
   T("Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "Aktif: trailer di atas diputar dengan suara. Mati: tanpa suara."),
   T("Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "Aktif: trailer yang diputar otomatis di halaman judul bersuara. Mati: diputar tanpa suara; OK membukanya layar penuh dengan suara."),
+  T("Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "Aktif: trailer yang diputar sendiri — sorotan, poster dalam fokus dan halaman judul — bersuara. Mati: tanpa suara."),
   T("Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "Aktif: jika yang diizinkan tidak punya sumber selama waktu tunggu, putar otomatis memakai yang lain. Nonaktif: hanya yang diizinkan; tanpa sumber, daftar sumber terbuka."),
   T("Ligados nesta TV", "Aktif di TV ini"),
   T("Ligando o Dolby Vision", "Menyalakan Dolby Vision"),

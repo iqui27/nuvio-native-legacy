@@ -2667,6 +2667,7 @@
   T("Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "Bật: ứng dụng tự tải nhật ký lên: của phiên trước khi mở và của phiên này mỗi phút. Không có mật khẩu hay khóa; đây là thứ giúp tìm ra nguyên nhân làm TV Samsung bị đứng. Tắt bất cứ lúc nào bạn muốn."),
   T("Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "Bật: trailer phía trên phát có tiếng. Tắt: không tiếng."),
   T("Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "Bật: trailer tự phát ở trang tựa phim có tiếng. Tắt: phát không tiếng; OK mở toàn màn hình có tiếng."),
+  T("Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "Bật: trailer tự phát — nổi bật, poster đang chọn và trang tựa phim — có tiếng. Tắt: không tiếng."),
   T("Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "Bật: nếu nguồn được phép không có gì trong thời gian chờ, tự động phát dùng nguồn khác. Tắt: chỉ nguồn được phép; nếu chúng không có nguồn, danh sách nguồn sẽ mở."),
   T("Ligados nesta TV", "Đang bật trên TV này"),
   T("Ligando o Dolby Vision", "Đang bật Dolby Vision"),

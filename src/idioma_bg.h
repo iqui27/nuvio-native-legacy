@@ -2667,6 +2667,7 @@
   T("Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "Когато е включено, приложението само качва дневника: на предишната сесия при отваряне и на текущата всяка минута. Без пароли и ключове; така се открива какво замразява телевизорите Samsung. Изключете го, когато пожелаете."),
   T("Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "Включено: трейлърът горе върви със звук. Изключено: без звук."),
   T("Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "Включено: трейлърът, който тръгва сам на страницата на заглавието, върви със звук. Изключено: без звук; OK го отваря на цял екран със звук."),
+  T("Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "Включено: трейлърите, които тръгват сами — акцент, плакат в фокус и страница на заглавието — вървят със звук. Изключено: без звук."),
   T("Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "Включено: ако разрешените нямат източник по време на чакането, автоматиката ползва другите. Изключено: само разрешените; без източник в тях се отваря списъкът с източници."),
   T("Ligados nesta TV", "Включени на този телевизор"),
   T("Ligando o Dolby Vision", "Включваме Dolby Vision"),

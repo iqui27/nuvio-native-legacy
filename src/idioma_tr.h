@@ -2667,6 +2667,7 @@
   T("Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "Açıkken uygulama günlüğü kendisi yükler: önceki oturumunkini açılışta, bunu her dakika. Şifre veya anahtar yok; Samsung TV'lerin nerede donduğunu bulan şey bu. İstediğin zaman kapatabilirsin."),
   T("Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "Açık: üstteki fragman sesli oynar. Kapalı: sessiz oynar."),
   T("Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "Açık: başlık sayfasında kendiliğinden oynayan fragman sesli çalar. Kapalı: sessiz çalar; Tamam onu sesli ve tam ekran açar."),
+  T("Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "Açık: kendiliğinden oynayan fragmanlar — öne çıkan, odaktaki afiş ve başlık sayfası — sesli çalar. Kapalı: sessiz çalar."),
   T("Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "Açık: izin verilenlerde bekleme süresinde kaynak yoksa otomatik oynatma diğerlerini kullanır. Kapalı: yalnızca izin verilenler; onlarda kaynak yoksa kaynak listesi açılır."),
   T("Ligados nesta TV", "Bu TV’de açık"),
   T("Ligando o Dolby Vision", "Dolby Vision açılıyor"),

@@ -2667,6 +2667,7 @@
   T("Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "عند التفعيل، يرفع التطبيق السجل وحده: سجل الجلسة السابقة عند الفتح وسجل هذه الجلسة كل دقيقة. بلا كلمات مرور أو مفاتيح؛ وهو ما يكشف ما يجمّد أجهزة Samsung. أوقفه متى شئت."),
   T("Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "مفعّل: يُشغَّل الإعلان في الأعلى بالصوت. متوقف: يُشغَّل بلا صوت."),
   T("Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "مفعّل: الإعلان الذي يُشغَّل وحده في صفحة العنوان له صوت. متوقف: يُشغَّل بلا صوت؛ وOK يفتحه بملء الشاشة مع الصوت."),
+  T("Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "مفعّل: الإعلانات التي تُشغَّل وحدها — الواجهة والملصق المحدد وصفحة العنوان — لها صوت. متوقف: بلا صوت."),
   T("Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "مفعّل: إن لم يكن لدى المسموح بها مصدر خلال الانتظار، يستخدم التشغيل التلقائي الأخرى. متوقف: المسموح بها فقط؛ وإن لم يكن فيها مصدر، تُفتح قائمة المصادر."),
   T("Ligados nesta TV", "مفعّل على هذا التلفاز"),
   T("Ligando o Dolby Vision", "جارٍ تفعيل Dolby Vision"),

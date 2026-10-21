@@ -2667,6 +2667,7 @@
   T("Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "Włączone: aplikacja sama wysyła dziennik — poprzedniej sesji przy otwarciu, a bieżącej co minutę. Bez haseł i kluczy; dzięki temu znajdujemy przyczyny zawieszeń telewizorów Samsung. Możesz to wyłączyć w dowolnej chwili."),
   T("Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "Włączone: zwiastun u góry gra z dźwiękiem. Wyłączone: bez dźwięku."),
   T("Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "Włączone: zwiastun, który sam się odtwarza na stronie tytułu, gra z dźwiękiem. Wyłączone: bez dźwięku; OK otwiera go na pełnym ekranie z dźwiękiem."),
+  T("Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "Włączone: zwiastuny, które grają same — wyróżnienie, plakat w fokusu i strona tytułu — mają dźwięk. Wyłączone: bez dźwięku."),
   T("Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "Włączone: gdy dozwolone nie mają źródła w czasie oczekiwania, autoodtwarzanie użyje innych. Wyłączone: tylko dozwolone; bez źródła w nich otwiera się lista źródeł."),
   T("Ligados nesta TV", "Włączone na tym telewizorze"),
   T("Ligando o Dolby Vision", "Włączamy Dolby Vision"),

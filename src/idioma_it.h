@@ -2667,6 +2667,7 @@
   T("Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "Attivo, l'app carica il log da sola: quello della sessione precedente all'apertura e quello di questa ogni minuto. Nessuna password né chiave; è ciò che permette di trovare cosa blocca le TV Samsung. Disattivalo quando vuoi."),
   T("Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "Attivo: il trailer in alto parte con l'audio. Disattivo: senza audio."),
   T("Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "Attivo: il trailer che parte da solo nella pagina del titolo ha l'audio. Disattivo: parte senza audio; OK lo apre a schermo intero con l'audio."),
+  T("Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "Attivo: i trailer che partono da soli — evidenza, locandina a fuoco e pagina del titolo — hanno l'audio. Disattivo: senza audio."),
   T("Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "Attivo: se i consentiti non hanno fonti entro l'attesa, la riproduzione automatica usa gli altri. Disattivo: solo i consentiti; senza fonti lì, si apre l'elenco delle fonti."),
   T("Ligados nesta TV", "Attivi su questa TV"),
   T("Ligando o Dolby Vision", "Attivo il Dolby Vision"),

@@ -2666,6 +2666,7 @@
   T("Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "Activat, aplicația trimite singură jurnalul: pe cel al sesiunii anterioare la deschidere și pe cel curent în fiecare minut. Fără parole sau chei; ajută la găsirea a ceea ce blochează Samsung. Îl poți dezactiva oricând."),
   T("Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "Activat: trailerul de sus rulează cu sunet. Dezactivat: rulează fără sunet."),
   T("Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "Activat: trailerul care rulează singur pe pagina titlului are sunet. Dezactivat: rulează fără sunet; OK îl deschide pe tot ecranul, cu sunet."),
+  T("Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "Activat: trailerele care pornesc singure — evidență, afiș la focus și pagina titlului — au sunet. Dezactivat: fără sunet."),
   T("Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "Activat: dacă cele permise n-au sursă în timpul așteptării, redarea automată le folosește pe celelalte. Dezactivat: doar cele permise; fără sursă în ele, se deschide lista de surse."),
   T("Ligados nesta TV", "Pornite pe acest televizor"),
   T("Ligando o Dolby Vision", "Pornim Dolby Vision"),

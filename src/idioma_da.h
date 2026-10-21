@@ -2667,6 +2667,7 @@
   T("Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "Til: appen sender loggen af sig selv: den fra den forrige session, når den åbnes, og den fra denne hvert minut. Ingen adgangskoder eller nøgler; den bruges til at finde det, der får Samsung-tv til at fryse. Slå fra, når du vil."),
   T("Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "Til: traileren i toppen afspilles med lyd. Fra: uden lyd."),
   T("Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "Til: traileren, der starter af sig selv på titelsiden, har lyd. Fra: afspilles uden lyd; OK åbner den i fuld skærm med lyd."),
+  T("Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "Til: trailere, der starter af sig selv — toptrailer, plakat i fokus og titelsiden — har lyd. Fra: uden lyd."),
   T("Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "Til: har de tilladte ingen kilde inden for ventetiden, bruger autoafspilning de andre. Fra: kun tilladte; uden kilde i dem åbner kildelisten."),
   T("Ligados nesta TV", "Slået til på dette TV"),
   T("Ligando o Dolby Vision", "Slår Dolby Vision til"),

@@ -2667,6 +2667,7 @@
   T("Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "オンにすると、アプリがログを自動でアップロードします。起動時に前回のセッション分、その後は 1 分ごとに今回のセッション分です。パスワードやキーは含まれません。Samsung のテレビが固まる原因の特定に使います。いつでもオフにできます。"),
   T("Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "オン：上部の予告編を音声付きで再生。オフ：無音で再生。"),
   T("Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "オン：作品ページで自動再生される予告編が音声付きになります。オフ：無音で再生。OKで全画面・音声付きで開きます。"),
+  T("Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "オン：ひとりで再生される予告編（ヒーロー、フォーカス中のポスター、作品ページ）は音声付きです。オフ：無音です。"),
   T("Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "オン: 待ち時間内に許可したものにソースがなければ、他を使います。オフ: 許可したものだけ。ソースがなければソース一覧が開きます。"),
   T("Ligados nesta TV", "このテレビでオン"),
   T("Ligando o Dolby Vision", "Dolby Vision をオンにしています"),

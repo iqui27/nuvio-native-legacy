@@ -2667,6 +2667,7 @@
   T("Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "Aan: de app uploadt het log zelf: dat van de vorige sessie bij het openen en dat van deze elke minuut. Geen wachtwoorden of sleutels; hiermee vinden we wat Samsung-tv's laat vastlopen. Zet het uit wanneer je wilt."),
   T("Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "Aan: de trailer bovenaan speelt met geluid. Uit: zonder geluid."),
   T("Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "Aan: de trailer die vanzelf start op de titelpagina speelt met geluid. Uit: zonder geluid; OK opent hem schermvullend met geluid."),
+  T("Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "Aan: trailers die vanzelf starten — uitgelicht, poster in focus en titelpagina — hebben geluid. Uit: zonder geluid."),
   T("Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "Aan: hebben de toegestane binnen de wachttijd geen bron, dan gebruikt automatisch afspelen de andere. Uit: alleen toegestane; zonder bron daarin opent de bronnenlijst."),
   T("Ligados nesta TV", "Aan op deze tv"),
   T("Ligando o Dolby Vision", "Dolby Vision wordt ingeschakeld"),

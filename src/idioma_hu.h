@@ -2667,6 +2667,7 @@
   T("Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "Be: az app magától feltölti a naplót: az előző munkamenetét induláskor, a jelenlegit percenként. Jelszavak és kulcsok nélkül; ezzel találjuk meg, mi fagyasztja le a Samsung TV-ket. Bármikor kikapcsolhatod."),
   T("Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "Be: a felső előzetes hanggal megy. Ki: hang nélkül."),
   T("Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "Be: a cím oldalán magától induló előzetes hanggal megy. Ki: hang nélkül megy; az OK teljes képernyőn, hanggal nyitja meg."),
+  T("Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "Be: az előzetesek, amelyek maguktól indulnak — kiemelt, poszter fókuszban és a cím oldala — hanggal mennek. Ki: hang nélkül."),
   T("Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "Be: ha az engedélyezetteknek a várakozás alatt nincs forrása, az automatikus lejátszás a többit használja. Ki: csak az engedélyezettek; ha nincs bennük forrás, megnyílik a forráslista."),
   T("Ligados nesta TV", "Bekapcsolva ezen a TV-n"),
   T("Ligando o Dolby Vision", "A Dolby Vision bekapcsolása"),

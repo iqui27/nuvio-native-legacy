@@ -2667,6 +2667,7 @@
   T("Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.", "Įjungus, programa pati įkelia žurnalą: ankstesnės sesijos – ją atidarius, o šios – kas minutę. Be slaptažodžių ir raktų; tai padeda rasti, kas stabdo Samsung televizorius. Išjunkite bet kada."),
   T("Ligado: o trailer do destaque do topo toca com som. Desligado: toca sem som.", "Įjungta: anonsas viršuje rodomas su garsu. Išjungta: be garso."),
   T("Ligado: o trailer que toca sozinho na página do título sai com som. Desligado: toca sem som; OK abre em tela cheia com som.", "Įjungta: anonsas, kuris pats paleidžiamas pavadinimo puslapyje, rodomas su garsu. Išjungta: be garso; OK atidaro jį per visą ekraną su garsu."),
+  T("Ligado: os trailers que tocam sozinhos — destaque, cartaz em foco e página do título — saem com som. Desligado: tocam sem som.", "Įjungta: anonsai, kurie paleidžiami patys — išskirtas, plakatas fokuse ir pavadinimo puslapis — rodomi su garsu. Išjungta: be garso."),
   T("Ligado: sem fonte nos permitidos dentro da espera, o automático usa os outros. Desligado: só os permitidos; sem fonte neles, a lista de fontes abre.", "Įjungta: jei leidžiami per laukimą neturi šaltinio, automatinis paleidimas naudoja kitus. Išjungta: tik leidžiami; jei juose nėra šaltinio, atsidaro šaltinių sąrašas."),
   T("Ligados nesta TV", "Įjungti šiame televizoriuje"),
   T("Ligando o Dolby Vision", "Įjungiame Dolby Vision"),
