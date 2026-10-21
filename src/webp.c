@@ -733,6 +733,9 @@ static uint8_t *decodificar(const unsigned char *dados, size_t n, int largMax,
     px = decodificarEscalado(dados, n, w, h, largMax, lh);
     if (px) { *lw = largMax; return px; }
   }
+  // Sem reducao possivel: o decode inteiro e RGBA (w*h*4). O cabecalho vem da
+  // rede; mesmo teto de 64 MiB do caminho do Tizen (4K cheio = 33 MB).
+  if ((uint64_t)w * (uint64_t)h * 4u > 64ull * 1024ull * 1024ull) return NULL;
   px = pRgba(dados, n, &w, &h);
   if (!px) return NULL;
   *lw = w; *lh = h;

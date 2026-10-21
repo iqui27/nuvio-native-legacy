@@ -462,7 +462,12 @@ class ParaleloDataSource(
     private fun lerTudo(c: HttpURLConnection, limite: Long = -1L): ByteArray {
         val esperado = c.contentLengthLong
         val cap = if (limite >= 0) limite else if (esperado > 0) esperado else pedaco.toLong()
-        val out = java.io.ByteArrayOutputStream(cap.toInt())
+        // Content-Length vem do servidor: acima de 2 GiB `cap.toInt()` estoura
+        // (IllegalArgumentException, que o retry de IOException nao pega) e o
+        // buffer inicial pode ser enorme. Capacidade inicial limitada, e o corpo
+        // nunca passa do que um pedaco pode ter.
+        val teto = if (limite >= 0) limite else maxOf(cap, pedaco.toLong(), pedacoAtual.toLong()).coerceAtMost(512L shl 20)
+        val out = java.io.ByteArrayOutputStream(cap.coerceIn(0L, 32L shl 20).toInt())
         val origem = PassivoMedidor.origemDe(c.url)
         conferirCancelamento()
         c.inputStream.use { inp ->
@@ -474,6 +479,7 @@ class ParaleloDataSource(
                 conferirCancelamento()
                 if (n < 0) break
                 out.write(tmp, 0, n)
+                if (out.size() > teto) throw IOException("corpo passa do teto ($teto bytes)")
                 medidor?.bytes(token, origem, n)
                 Estat.bytes.addAndGet(n.toLong())
             }

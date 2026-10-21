@@ -2380,15 +2380,24 @@ static int colherDoBuffer(Fio *f, int i, int j, unsigned char *p, long n, Off bu
     long r = (o >= 0 && o < n && blocoDaFaixa(f, p + o, n - o))
            ? lerBloco(f, p + o, n - o, cl, f->pontos[k].tempo) : 0;
     if (r < 0) {
-      // Uma fala maior que a janela: completa com um Range so para ela.
+      // Uma fala maior que a janela: completa com um Range so para ela. O
+      // tamanho vem do arquivo (hostil ou corrompido): sem teto, um Block
+      // declarando ~2 GB pedia 2 GB e a reserva, e se o malloc falhava o ponto
+      // saia "colhido" sem fala. Acima do teto do corpo o ponto e desistido.
       long falta = -r, m = 0;
-      unsigned char *q = malloc((size_t)(n - o + falta));
-      unsigned char *resto = q ? range(f, bufIni + n, falta, &m) : NULL;
-      if (q && resto && m >= falta) {
+      unsigned char *q, *resto;
+      if (falta > MKVASS_CORPO_MAX) {
+        f->pontos[k].colhido = 2;
+        continue;
+      }
+      q = malloc((size_t)(n - o + falta));
+      if (!q) { f->pontos[k].colhido = 2; continue; }
+      resto = range(f, bufIni + n, falta, &m);
+      if (resto && m >= falta) {
         memcpy(q, p + o, (size_t)(n - o)); memcpy(q + (n - o), resto, (size_t)falta);
         r = lerBloco(f, q, n - o + falta, cl, f->pontos[k].tempo);
       }
-      if (q && (!resto || m < falta)) { free(q); free(resto); return -2; }
+      if (!resto || m < falta) { free(q); free(resto); return -2; }
       free(q); free(resto);
     }
     if (r == 0) {

@@ -1594,6 +1594,18 @@ static unsigned long conexaoMs(unsigned long prazoMs) {
   if (m > 10000) m = 10000;
   return m < prazoMs ? m : prazoMs;
 }
+// 1 quando algum cabecalho do pedido carrega credencial do dono. Usado para
+// verificar o TLS e nao seguir redirect (ver rede_baixar_interno3).
+static int carregaCredencial(const char *const *cab) {
+  static const char *const nomes[] = { "authorization:", "apikey:", "x-api-key:", "trakt-api-key:",
+    "x-emby-token:", "x-plex-token:", "x-mediabrowser-token:", "cookie:", NULL };
+  int k, i;
+  for (k = 0; cab && cab[k]; k++)
+    for (i = 0; nomes[i]; i++)
+      if (!strncasecmp(cab[k], nomes[i], strlen(nomes[i]))) return 1;
+  return 0;
+}
+
 static void opcoesComuns(void *c, unsigned long prazoMs) {
 #ifdef NV_TPK
   if (dnsShare) curl_setopt(c, 10100 /* CURLOPT_SHARE */, dnsShare);
@@ -2322,6 +2334,16 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
     curl_setopt(c, OPT_WRITEDATA, &b);
     curl_setopt(c, OPT_FOLLOWLOCATION, (long)1);
     opcoesComuns(c, resta);
+    // Pedido que leva credencial (Authorization, apikey, token): TLS verificado
+    // e nenhum redirect — um 3xx reenviaria os cabecalhos do dono (apikey,
+    // trakt-api-key...) a outro host, e sem verificar qualquer um no caminho
+    // le a senha/token. As APIs (Supabase, Trakt, debrid) nao redirecionam.
+    if (carregaCredencial(cab) && !strncmp(url, "https://", 8)) {
+      curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
+      curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
+      if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
+      curl_setopt(c, OPT_FOLLOWLOCATION, (long)0);
+    }
     ligarVigia(c, &vigia, prazoMs);
     curl_setopt(c, OPT_ACCEPT_ENCODING, "");   // "" = todas as que a lib suporta
     if (cab && slist_append) {
@@ -2736,6 +2758,14 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
   curl_setopt(c, OPT_WRITEFUNCTION, receber);
   curl_setopt(c, OPT_WRITEDATA, &b);
   opcoesComuns(c, (unsigned long)(segundos > 0 ? segundos : 20) * 1000UL);
+  // POST de API (login, token, sync): o corpo e/ou os cabecalhos levam senha,
+  // refresh token ou chave. opcoesComuns desliga a verificacao para a MIDIA
+  // publica dos addons; aqui o destino e sempre uma API com certificado valido.
+  if (!strncmp(url, "https://", 8)) {
+    curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
+    curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
+    if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
+  }
   if (seguro) {
     // OAuth credentials require authenticated TLS and never follow redirects.
     curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);

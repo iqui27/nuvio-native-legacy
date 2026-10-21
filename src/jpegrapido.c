@@ -314,6 +314,12 @@ static SDL_Surface *carregarDeFILE(FILE *f, int largMax,
   // 1:1 (o heroi de 1920) fica o decode de sempre, pixel por pixel.
   if (cinfo.scale_denom > 1) { cinfo.dct_method = JDCT_IFAST; cinfo.do_fancy_upsampling = FALSE; }
   lib.calc(&cinfo);
+  // Teto da saida (RGBA, depois da reducao): o cabecalho vem da rede e declara
+  // ate 65500x65500 em poucos KB. 64 MiB cobre um 4K inteiro (33 MB) com folga.
+  if ((unsigned long long)cinfo.output_width * (unsigned long long)cinfo.output_height * 4ull >
+      64ull * 1024ull * 1024ull) {
+    lib.destroy(&cinfo); fclose(f); return NULL;
+  }
 
   s = nv_superficie(0, (int)cinfo.output_width, (int)cinfo.output_height, 32,
                     SDL_PIXELFORMAT_ABGR8888);

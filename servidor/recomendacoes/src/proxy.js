@@ -67,6 +67,17 @@ function tipoAceito(ct, pathname) {
   return false;
 }
 
+// O que sai no content-type. O cliente le o corpo com fetch (JSON, legenda,
+// playlist, XMLTV, imagem) e nunca precisa que o navegador RENDERIZE uma
+// pagina: HTML, SVG, XML, JavaScript, CSS e afins saem como text/plain.
+// Vale para qualquer status, inclusive o corpo de um 4xx/5xx do destino.
+const SAIDA_LIVRE = /^(application\/json|application\/x-subrip|application\/vnd\.apple\.mpegurl|application\/x-mpegurl|application\/octet-stream|text\/plain|text\/vtt|text\/csv|image\/(png|jpe?g|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon))$/;
+function tipoSaida(ct) {
+  const c = (ct || "").split(";")[0].trim().toLowerCase();
+  if (!c) return "application/octet-stream";
+  return SAIDA_LIVRE.test(c) ? ct : "text/plain; charset=utf-8";
+}
+
 function falha(msg, status) {
   return new Response(JSON.stringify({ erro: msg }), {
     status,
@@ -170,8 +181,15 @@ export async function rotaProxy(req, url, env, buscar = fetch) {
   if (!corpo) clearTimeout(relogio);
 
   const headersSaida = {
-    "content-type": ct || "application/octet-stream",
+    "content-type": tipoSaida(ct),
     "cache-control": "no-store",
+    // O proxy devolve conteudo de TERCEIROS no mesmo origin do app hospedado
+    // (/tv). Sem estes dois, um HTML/SVG de um destino qualquer abriria como
+    // pagina daqui, com acesso ao storage do app: nosniff impede adivinhar o
+    // tipo, e o CSP com sandbox faz o documento (se algum navegador o abrir) ter
+    // origin opaco, sem script e sem rede.
+    "x-content-type-options": "nosniff",
+    "content-security-policy": "default-src 'none'; sandbox",
     // O CAMINHO FINAL, exposto: quando o cliente pediu uma url que redirecionou,
     // e assim que ele sabe para onde foi sem seguir o redirect ele mesmo.
     "x-nuvio-url-final": alvo.toString(),

@@ -70,7 +70,7 @@ int main(int argc, char **argv) {
     CONFERE(!acharIpk("{\"assets\":[]}", url, sizeof url, hash, sizeof hash, AT_SUFIXO),
             "sem anexo devolve 0");
     CONFERE(url[0] == 0, "e a url fica vazia");
-    CONFERE(!acharIpk("{\"assets\":[{\"browser_download_url\":\"https://x/y.wgt\"}]}",
+    CONFERE(!acharIpk("{\"assets\":[{\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/y.wgt\"}]}",
                       url, sizeof url, hash, sizeof hash, AT_SUFIXO), "so .wgt tambem devolve 0"); }
 
   // O DIGEST DO ANEXO CERTO. Sem ele o instalador do Homebrew Channel recusa
@@ -79,12 +79,12 @@ int main(int argc, char **argv) {
   { char url[128], hash[80];
     const char *j =
       "{\"assets\":["
-      "{\"digest\":\"sha256:aaaa\",\"browser_download_url\":\"https://x/a.wgt\"},"
-      "{\"digest\":\"sha256:bbbb\",\"browser_download_url\":\"https://x/b_arm.ipk\"}]}";
+      "{\"digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/a.wgt\"},"
+      "{\"digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/b_arm.ipk\"}]}";
     { int achou = acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO);
       CONFERE(achou, "achou o ipk");
-      CONFERE(!strcmp(url, "https://x/b_arm.ipk"), "url do ipk: [%s]", url);
-      CONFERE(!strcmp(hash, "bbbb"), "digest do MESMO anexo, sem o prefixo: [%s]", hash); }
+      CONFERE(!strcmp(url, "https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/b_arm.ipk"), "url do ipk: [%s]", url);
+      CONFERE(!strcmp(hash, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), "digest do MESMO anexo, sem o prefixo: [%s]", hash); }
   }
 
   // A VARIANTE CERTA ENTRE OS TRES ANEXOS, NA ORDEM REAL DO GITHUB.
@@ -97,13 +97,13 @@ int main(int argc, char **argv) {
   { char url[160], hash[80];
     const char *j =
       "{\"assets\":["
-      "{\"digest\":\"sha256:1111\",\"browser_download_url\":\"https://x/NuvioTV-1.1.3-tizen.wgt\"},"
-      "{\"digest\":\"sha256:2222\",\"browser_download_url\":\"https://x/space.nuvio_1.1.3_arm-highcache.ipk\"},"
-      "{\"digest\":\"sha256:3333\",\"browser_download_url\":\"https://x/space.nuvio_1.1.3_arm.ipk\"}]}";
+      "{\"digest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/NuvioTV-1.1.3-tizen.wgt\"},"
+      "{\"digest\":\"sha256:2222222222222222222222222222222222222222222222222222222222222222\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/space.nuvio_1.1.3_arm-highcache.ipk\"},"
+      "{\"digest\":\"sha256:3333333333333333333333333333333333333333333333333333333333333333\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/space.nuvio_1.1.3_arm.ipk\"}]}";
     CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "achou o anexo da variante");
     CONFERE(strstr(url, AT_SUFIXO) != NULL, "e o sufixo desta build (%s): [%s]", AT_SUFIXO, url);
     CONFERE(strstr(url, "highcache") == NULL, "build NAO leva a highcache, nem a de cache grande: [%s]", url);
-    CONFERE(!strcmp(hash, "3333"), "digest do anexo normal: [%s]", hash);
+    CONFERE(!strcmp(hash, "3333333333333333333333333333333333333333333333333333333333333333"), "digest do anexo normal: [%s]", hash);
   }
 
   // OS NOMES DAS RELEASES 1.3.1/1.3.2 ("NuvioTV-1.3.2-webos.ipk"): a LG normal
@@ -112,11 +112,11 @@ int main(int argc, char **argv) {
   { char url[160], hash[80];
     const char *j =
       "{\"assets\":["
-      "{\"digest\":\"sha256:aaaa\",\"browser_download_url\":\"https://x/NuvioTV-1.3.2-tizen.wgt\"},"
-      "{\"digest\":\"sha256:bbbb\",\"browser_download_url\":\"https://x/NuvioTV-1.3.2-webos-highcache.ipk\"},"
-      "{\"digest\":\"sha256:cccc\",\"browser_download_url\":\"https://x/NuvioTV-1.3.2-webos.ipk\"}]}";
+      "{\"digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/NuvioTV-1.3.2-tizen.wgt\"},"
+      "{\"digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/NuvioTV-1.3.2-webos-highcache.ipk\"},"
+      "{\"digest\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/NuvioTV-1.3.2-webos.ipk\"}]}";
     CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "nome NuvioTV-*-webos: achou a variante");
-    CONFERE(!strcmp(hash, "cccc") && !strstr(url, "highcache"), "normal pelo nome novo, sem highcache: [%s]", url);
+    CONFERE(!strcmp(hash, "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc") && !strstr(url, "highcache"), "normal pelo nome novo, sem highcache: [%s]", url);
   }
 
   // RELEASE SO COM A HIGHCACHE (so acontece em release antiga ou de teste): a
@@ -124,10 +124,31 @@ int main(int argc, char **argv) {
   // variante calada e o defeito; mandar para a pagina e a saida honesta.
   { char url[160], hash[80];
     const char *so_highcache =
-      "{\"assets\":[{\"browser_download_url\":\"https://x/space.nuvio_1.1.3_arm-highcache.ipk\"}]}";
+      "{\"assets\":[{\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/space.nuvio_1.1.3_arm-highcache.ipk\"}]}";
     CONFERE(!acharIpk(so_highcache, url, sizeof url, hash, sizeof hash, AT_SUFIXO),
             "so a highcache devolve 0");
     CONFERE(url[0] == 0, "e a url fica vazia"); }
+
+  // O JSON da release e nao confiavel: so o anexo oficial deste repositorio e
+  // um sha256 hex de 64 caracteres entram; nada que quebre o comando de shell.
+  { const char *H = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const char *OK = "https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/space.nuvio_1.0_arm.ipk";
+    char j[1024], url[512], hash[80];
+    snprintf(j, sizeof j, "{\"assets\":[{\"digest\":\"sha256:%s\",\"browser_download_url\":\"%s\"}]}", H, OK);
+    CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO) && !strcmp(url, OK) && !strcmp(hash, H),
+            "anexo oficial com sha256 valido passa");
+    snprintf(j, sizeof j, "{\"assets\":[{\"digest\":\"sha256:%s\",\"browser_download_url\":\"https://evil.example/space.nuvio_1.0_arm.ipk\"}]}", H);
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "outro host: recusado");
+    snprintf(j, sizeof j, "{\"assets\":[{\"digest\":\"sha256:%s\",\"browser_download_url\":\"https://github.com.evil.example/iqui27/nuvio-native-legacy/releases/download/v1/space.nuvio_1.0_arm.ipk\"}]}", H);
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "host parecido: recusado");
+    snprintf(j, sizeof j, "{\"assets\":[{\"digest\":\"sha256:%s\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/x';touch${IFS}/tmp/pwn;'_arm.ipk\"}]}", H);
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "aspas/ponto-e-virgula na URL: recusado");
+    snprintf(j, sizeof j, "{\"assets\":[{\"digest\":\"sha256:%s\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/../../x/space.nuvio_1.0_arm.ipk\"}]}", H);
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "'..' na URL: recusado");
+    snprintf(j, sizeof j, "{\"assets\":[{\"digest\":\"sha256:abc'; id; '\",\"browser_download_url\":\"%s\"}]}", OK);
+    CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO) && hash[0] == 0,
+            "digest que nao e sha256 hex: descartado (vazio)");
+    CONFERE(!hashHexValido("abcd") && !hashHexValido(NULL) && hashHexValido(H), "hashHexValido"); }
 
   // JSON com escapes variados
   { char d[64];

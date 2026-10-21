@@ -41,6 +41,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <ctype.h>
 
 #ifndef NV_VERSAO
 #define NV_VERSAO "dev"
@@ -376,6 +377,58 @@ static int terminaEm(const char *s, size_t n, const char *sufixo) {
   return n >= k && !strncmp(s + n - k, AT_SUFIXO2, k);
 }
 
+// ---- O que se aceita do JSON da release --------------------------------------
+// O JSON traz a URL e o sha256 do que sera instalado como codigo. Dois freios,
+// alem do TLS verificado em baixarJsonSeguro: a URL tem de ser a de anexo de
+// release deste repositorio (nenhum outro host, nenhum caractere de shell), e o
+// hash tem de ser sha256 hex.
+#define AT_DL_PREFIXO "https://github.com/iqui27/nuvio-native-legacy/releases/download/"
+static int urlOficial(const char *u, size_t n) {
+  size_t k = strlen(AT_DL_PREFIXO), i;
+  if (n <= k || strncmp(u, AT_DL_PREFIXO, k)) return 0;
+  for (i = k; i < n; i++) {
+    unsigned char c = (unsigned char)u[i];
+    if (!(isalnum(c) || c == '.' || c == '_' || c == '-' || c == '+' || c == '/' || c == '%' || c == '~')) return 0;
+  }
+  for (i = k; i + 1 < n; i++) if (u[i] == '.' && u[i + 1] == '.') return 0;
+  return 1;
+}
+static int hashHexValido(const char *h) {
+  size_t i;
+  if (!h || strlen(h) != 64) return 0;
+  for (i = 0; i < 64; i++) if (!isxdigit((unsigned char)h[i])) return 0;
+  return 1;
+}
+
+// A consulta do JSON da release com TLS VERIFICADO (rede_pedir). O caminho
+// generico (rede_baixar) nao verifica o certificado, e um JSON forjado vira
+// download de codigo. So o JSON precisa disso: o binario e conferido pelo sha256
+// vindo dele. No navegador (.wgt) o TLS e sempre do navegador; no Android, sem
+// libcurl, o caminho Java tambem verifica.
+static char *baixarJsonSeguro(const char *url, int segundos) {
+#ifdef __EMSCRIPTEN__
+  return rede_baixar(url, segundos);
+#else
+  RedePedido p;
+  RedeResposta r;
+  char *out = NULL;
+  memset(&p, 0, sizeof p);
+  p.url = url;
+  p.prazo_ms = (unsigned)segundos * 1000u;
+  p.max_bytes = 2u * 1024u * 1024u;
+  p.seguir = 1;
+  if (rede_pedir(&p, &r) && r.status >= 200 && r.status < 300 && r.corpo && r.n_corpo) {
+    out = (char *)malloc(r.n_corpo + 1);
+    if (out) { memcpy(out, r.corpo, r.n_corpo); out[r.n_corpo] = 0; }
+  }
+#ifdef NV_ANDROID
+  if (!out && r.erro == REDE_INDISPONIVEL) { rede_resposta_limpar(&r); return rede_baixar(url, segundos); }
+#endif
+  rede_resposta_limpar(&r);
+  return out;
+#endif
+}
+
 // O sha256 hex do anexo cuja browser_download_url comeca em `ini`. O campo
 // `digest` vem ANTES do browser_download_url dentro do mesmo anexo (ordem do
 // JSON do GitHub: ... size, digest, download_count, ..., browser_download_url),
@@ -396,7 +449,9 @@ static void hashAntesDe(const char *corpo, const char *ini, char *hash, size_t t
   d++;
   if (!strncmp(d, "sha256:", 7)) d += 7;   // so o hex interessa
   { const char *e = strchr(d, '"');
-    if (e && (size_t)(e - d) < tamHash) { memcpy(hash, d, (size_t)(e - d)); hash[e - d] = 0; } }
+    if (e && (size_t)(e - d) < tamHash) { memcpy(hash, d, (size_t)(e - d)); hash[e - d] = 0; }
+    // Um digest que nao seja sha256 hex de 64 caracteres nao e hash: descarta.
+    if (hash[0] && !hashHexValido(hash)) hash[0] = 0; }
 }
 
 // `sufixo` obrigatorio. NAO ha reserva para "qualquer .ipk": uma release sem o
@@ -417,7 +472,7 @@ static int acharIpk(const char *corpo, char *dst, size_t tam,
     ini = ++p;
     while (*p && *p != '"') p++;
     n = (size_t)(p - ini);
-    if (n > 4 && n < tam && terminaEm(ini, n, sufixo)) {
+    if (n > 4 && n < tam && terminaEm(ini, n, sufixo) && urlOficial(ini, n)) {
       memcpy(dst, ini, n); dst[n] = 0;
       // O SHA-256 DO MESMO ANEXO, e ele e obrigatorio na pratica: sem ele o
       // instalador do Homebrew Channel compara o hash calculado contra
@@ -451,7 +506,7 @@ static int acharAnexo(const char *corpo, char *dst, size_t tam, char *hash, size
     ini = ++p;
     while (*p && *p != '"') p++;
     n = (size_t)(p - ini);
-    if (n > k && n < tam && !strncmp(ini + n - k, sufixo, k)) {
+    if (n > k && n < tam && !strncmp(ini + n - k, sufixo, k) && urlOficial(ini, n)) {
       char h[80] = "";
       hashAntesDe(corpo, ini, h, sizeof h);
       if (!h[0]) continue;                 // sem digest: nao confiar
@@ -560,7 +615,7 @@ static int fioConsulta(void *arg) {
   SDL_UnlockMutex(mtx);
   return 0;  // hosted app e sempre current
 #endif
-  corpo = rede_baixar(AT_URL, 12);
+  corpo = baixarJsonSeguro(AT_URL, 12);
   if (!corpo) { printf("[atualizacao] sem resposta do GitHub\n"); fflush(stdout); }
   else {
     textoJson(corpo, "tag_name", tag, sizeof tag);
@@ -644,6 +699,14 @@ static int fioInstalar(void *arg) {
   SDL_UnlockMutex(mtx);
   return 0;  // hosted app e sempre current
 #endif
+  // O URL e o hash vao dentro de um comando de shell entre aspas simples. Eles
+  // vem do JSON da release: revalida aqui, na ponta, e nunca monta o comando com
+  // algo que nao seja o endereco oficial e 64 hex (sem aspas, espaco, $, crase).
+  if (!urlOficial(ipkUrl, strlen(ipkUrl)) || (ipkHash[0] && !hashHexValido(ipkHash))) {
+    SDL_LockMutex(mtx); estado = AT_FALHOU; SDL_UnlockMutex(mtx);
+    printf("[atualizacao] endereco ou hash do .ipk fora do padrao: nao instalo\n"); fflush(stdout);
+    return 0;
+  }
   { char extra[110] = "";
     if (ipkHash[0]) snprintf(extra, sizeof extra, ",\"ipkHash\":\"%s\"", ipkHash);
     snprintf(cmd, sizeof cmd,
