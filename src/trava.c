@@ -1,6 +1,7 @@
 // Trava de serie na mesma TV/conta. Ver trava.h.
 #include "trava.h"
 #include "dados.h"
+#include "catalogo.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -272,7 +273,18 @@ int trava_bloqueio(const char *serie, int perfil, int te, int ee) {
   int ids[TRAVA_MAX], i, n = trava_da_serie(serie, perfil, ids, TRAVA_MAX);
   for (i = 0; i < n && i < TRAVA_MAX; i++) {
     Trava t;
-    if (trava_obter(ids[i], &t) && !trava_liberado(&t, perfil, te, ee, 0)) return t.id;
+    if (trava_obter(ids[i], &t)) {
+      TravaEstado s;
+      int eps = 0;
+      if (ee == 1 && trava_estado(&t, perfil, &s) && te == s.minT + 1) {
+        int ix = cat_indice_por_imdb(serie), count = ix >= 0 ? cat_n_episodios(ix) : 0;
+        for (int k = 0; k < count; k++) {
+          const CatEp *ep = cat_episodio(ix, k);
+          if (ep && ep->temporada == s.minT && ep->episodio > eps) eps = ep->episodio;
+        }
+      }
+      if (!trava_liberado(&t, perfil, te, ee, eps)) return t.id;
+    }
   }
   return 0;
 }

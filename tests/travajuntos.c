@@ -2,6 +2,10 @@
 // Diario de verdade; conta, ilha e idioma sao dubles.
 #include "travajuntos.h"
 #include "trava.h"
+#include "catalogo.h"
+int cat_indice_por_imdb(const char *id) { (void)id; return -1; }
+int cat_n_episodios(int ix) { (void)ix; return 0; }
+const CatEp *cat_episodio(int ix, int i) { (void)ix; (void)i; return 0; }
 #include "contapend.h"
 #include "ilhaacao.h"
 #include <assert.h>

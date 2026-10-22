@@ -1,6 +1,7 @@
 // TRAVA DE SERIE: regra, arquivo e Juntos contra o Diario de verdade
 // (dados e perfil sao dubles; sem SDL, sem rede).
 #include "trava.h"
+#include "catalogo.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,6 +9,15 @@
 #include <unistd.h>
 
 static char pasta[256];
+static int seasonCount;
+int cat_indice_por_imdb(const char *id) { return !strcmp(id, "tt1") ? 0 : -1; }
+int cat_n_episodios(int ix) { return ix == 0 ? seasonCount : 0; }
+const CatEp *cat_episodio(int ix, int i) {
+  static CatEp ep;
+  (void)ix;
+  memset(&ep, 0, sizeof ep); ep.temporada = 1; ep.episodio = i + 1;
+  return &ep;
+}
 int perfis_ativo(void) { return 1; }
 char *dados_ler(const char *nome) {
   char c[512]; FILE *f; long n; char *b;
@@ -87,6 +97,11 @@ int main(void) {
   assert(trava_estado(&t, 1, &s) && s.minE == 9);
   assert(!trava_liberado(&t, 1, 2, 1, 0));                  // contagem desconhecida: nao adivinha
   assert(trava_liberado(&t, 1, 1, 10, 0));                  // E+1 da mesma temporada
+  seasonCount = 9;
+  assert(!trava_bloqueio("tt1", 1, 2, 1));
+  assert(trava_bloqueio("tt1", 1, 2, 2) == id);
+  seasonCount = 0;
+  assert(trava_bloqueio("tt1", 1, 2, 1) == id);
   assert(trava_liberado(&t, 1, 2, 1, 9));                   // T1 tem 9 -> T2E1 e o proximo
   assert(!trava_liberado(&t, 1, 2, 2, 9));
   // pausar congela as esperas
