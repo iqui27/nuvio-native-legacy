@@ -4814,7 +4814,7 @@ void app_atualizar(float dt, Uint32 agora) {
   int fonte;
   if (aguardandoFonte != 2 && stream_folha_escolheu(&fonte)) tocarFonteEscolhida(fonte, 1);
   juntosAbrirEFonte(agora);
-  if (aguardandoFonte != 2 && player_pediu_fontes()) {
+  if (aguardandoFonte != 2 && (player_pediu_fontes() || juntosui_pediu_fontes())) {
     char base[24];
     stream_folha_contexto(player_linha_episodio());
     idBaseDoTitulo(base, sizeof base);

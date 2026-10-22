@@ -47,5 +47,6 @@ int  juntosui_pediu_fechar_player(void);
 // Reproduzir do detalhe (a sala nasce quando a fonte tocar).
 int  juntosui_pediu_reproduzir(void);
 int  juntosui_pediu_escolher_filme(void);          // "Escolher um filme" no cinema: abrir a busca
+int  juntosui_pediu_fontes(void);                 // Local source picker, consumed by app.c.
 
 #endif

@@ -2,6 +2,7 @@
 #include "juntosui.h"
 #include "ajustes.h"
 #include "botoes.h"
+#include "badges.h"
 #include "catalogo.h"
 #include "gfx.h"
 #include "idioma.h"
@@ -45,7 +46,7 @@ static int folhaIdx, folhaT, folhaE, soEu, nAmigos;
 static char folhaTitulo[160];
 static char amigoId[FOLHA_AMIGOS][96], amigoNome[FOLHA_AMIGOS][64], amigoAv[FOLHA_AMIGOS][512];
 static int marcado[FOLHA_AMIGOS];
-static int pediuReproduzir, pediuFecharPlayer, pediuEscolherFilme;
+static int pediuReproduzir, pediuFecharPlayer, pediuEscolherFilme, pediuFontes;
 // codigo
 static char cod[7] = "000000";
 static int codPos;
@@ -322,6 +323,7 @@ static void abrirSala(void) {
 int juntosui_pediu_reproduzir(void) { int p = pediuReproduzir; pediuReproduzir = 0; return p; }
 int juntosui_pediu_escolher_filme(void) { int p = pediuEscolherFilme; pediuEscolherFilme = 0; return p; }
 int juntosui_pediu_fechar_player(void) { int p = pediuFecharPlayer; pediuFecharPlayer = 0; return p; }
+int juntosui_pediu_fontes(void) { int p = pediuFontes; pediuFontes = 0; return p; }
 int juntosui_aberta(void) { return camada != CAMADA_NADA || okSegurando; }
 
 // --- botoes do cartao da sala ------------------------------------------------------------------
@@ -443,9 +445,19 @@ int juntosui_evento_sdl(const SDL_Event *e) {
       else if (ehOk(k)) apertarSala(b[foco]);
       return 1;
     }
-    case CAMADA_FONTES:
-      if (ehVoltar(k) || ehOk(k)) { camada = CAMADA_SALA; foco = 0; }
+    case CAMADA_FONTES: {
+      const JsMotor *m = juntos_motor();
+      int n = m ? (m->sala.n < 5 ? m->sala.n : 5) : 0;
+      if (foco > n) foco = n;
+      if (ehVoltar(k) || (ehOk(k) && foco == 0)) { camada = CAMADA_SALA; foco = 0; }
+      else if (k == SDLK_DOWN && foco < n) foco++;
+      else if (k == SDLK_UP && foco > 0) foco--;
+      else if (ehOk(k) && m && foco > 0 && !strcmp(m->sala.m[foco - 1].id, m->eu)
+               && stream_lista_do_alvo(m->sala.ep) && stream_item(stream_atual())) {
+        pediuFontes = 1; camada = CAMADA_NADA;
+      }
       return 1;
+    }
     case CAMADA_SAIR:
       if (ehVoltar(k)) camada = CAMADA_NADA;
       else if (k == SDLK_LEFT) foco = 0;
@@ -730,24 +742,114 @@ static void cabecalhoSala(float a) {
   texto(TXT_ILHA_NOME, c, 1840 - largura(TXT_ILHA_NOME, c), 54, 225, a, 0);
 }
 
-// Fontes: cada TV com a sua; a lista mostra o veredito de cada pessoa (juntosfonte).
+// Remote members expose a verdict, not their private stream metadata.
+static const char *plataformaFonte(const JsMembro *p) {
+  if (!strcmp(p->plat, "lg")) return "LG · webOS";
+  if (!strcmp(p->plat, "wgt")) return "Samsung · Tizen";
+  if (!strcmp(p->plat, "android")) return "Android TV";
+  if (!strcmp(p->plat, "mac")) return "macOS";
+  return p->plat[0] ? p->plat : i18n("TV");
+}
+
+static const Stream *fonteLocal(const JsMotor *m) {
+  return stream_lista_do_alvo(m->sala.ep) ? stream_item(stream_atual()) : NULL;
+}
+
+static void fonteSelos(const Stream *s, const JsImpressao *imp, float x, float y, float a) {
+  int altura = s ? s->altura : imp ? imp->altura : 0;
+  int hdr = s ? (s->dolbyVision ? FMT_DV : badges_fonte_hdr_marca(s->badges)) : -1;
+  char tamanho[64];
+  double bytes = s ? (s->tamanhoBytes ? (double)s->tamanhoBytes : s->tamanhoMB * 1048576.0) : imp ? (double)imp->bytes : 0;
+  if (altura) {
+    FormatoMarca f = altura >= 2160 ? FMT_4K : altura >= 1080 ? FMT_1080 : altura >= 720 ? FMT_720 : FMT_SD;
+    float w = marca_formato_largura(f, 20) + 24;
+    gfx_cor((GfxRect){ x, y - 6, w, 32 }, 0.5f, 1, 1, 1, 0.08f * a);
+    marca_formato(f, x + 12, y, 20, 0.93f, 0.93f, 0.92f, a);
+    x += w + 16;
+  }
+  if (hdr >= 0) x += marca_formato((FormatoMarca)hdr, x, y, 20, 0.8f, 0.8f, 0.8f, a) + 16;
+  if (s) {
+    const char *audio[] = { "a-atmos", "a-truehd", "a-dtshdma", "a-dts", "a-ddp", "a-dd" };
+    FormatoMarca marcas[] = { FMT_ATMOS, FMT_TRUEHD, FMT_DTSHD, FMT_DTS, FMT_DDP, FMT_DD };
+    int j;
+    for (j = 0; j < 6; j++) if ((j == 0 && s->dolbyAtmos) || (s->badges & badges_bit(audio[j]))) {
+      x += marca_formato(marcas[j], x, y, 20, 0.8f, 0.8f, 0.8f, a) + 16;
+      break;
+    }
+  }
+  if (bytes > 0) {
+    snprintf(tamanho, sizeof tamanho, "%.1f GB", bytes / 1073741824.0);
+    texto(TXT_ILHA_META, tamanho, x, y - 2, 190, a, 120);
+    x += largura(TXT_ILHA_META, tamanho) + 20;
+  }
+  texto(TXT_ILHA_META, s && s->provedor[0] ? s->provedor : i18n("Detalhes não compartilhados"), x, y - 2, 165, a, 680 - (x - 580));
+}
+
 static void desenharFontes(void) {
   const JsMotor *m = juntos_motor();
-  float a = fadeSala(), y = 210;
-  int i;
+  GfxRect painelFontes = { 460, 124, 1380, 868 };
+  float a = fadeSala(), y = 306;
+  static float expansao[5];
+  static Uint32 ultimo;
+  Uint32 agora = SDL_GetTicks();
+  float passo = 1 - expf(-(float)(agora - ultimo) / 65.0f);
+  int i, n;
+  char sala[128];
   if (!m) return;
-  gfx_cor((GfxRect){ 0, 0, 1920, 1080 }, 0, 0.06f, 0.055f, 0.08f, a);
-  cabecalhoSala(a);
-  texto(TXT_ILHA_TITULO, i18n("Cada TV, sua fonte"), 110, 130, 250, a, 1400);
-  for (i = 0; i < m->sala.n && i < 5; i++, y += 100) {
-    const JsMembro *p = &m->sala.m[i];
-    rec_avatar((GfxRect){ 146, y, 56, 56 }, p->av, p->nome, p->id, a);
-    texto(TXT_ILHA_NOME, p->nome, 226, y + 12, 245, a, 300);
-    texto(TXT_ILHA_NOME, p->fonte[0] ? fonteTexto(p->fonte) : estadoTexto(p), 560, y + 12, 235, a, 900);
+  ultimo = agora;
+  n = m->sala.n < 5 ? m->sala.n : 5;
+  telaCinema((GfxRect){ 0, 0, 1920, 1080 }, 0.8f, a);
+  gfx_icone((GfxRect){ 80, 58, 30, 30 }, "aj_users", 0.94f, 0.94f, 0.92f, a);
+  texto(TXT_ILHA_NOME, i18n("Assistir Juntos"), 126, 58, 245, a, 600);
+  gfx_vidro_painel(painelFontes, 28.0f / painelFontes.h, ajustes_vidro() ? 0.80f : 0.98f, a);
+  gfx_luz_canto(painelFontes, 28.0f / painelFontes.h, 0.1f, 0, 0.9f, 1, 1, 1, 0.05f * a);
+  texto(TXT_ILHA_TITULO, i18n("Cada TV, sua fonte"), 500, 160, 245, a, 1200);
+  texto(TXT_ILHA_META, i18n("Cada um assiste pela própria conta. Se a sua fonte for outra versão, o app avisa."), 500, 222, 180, a, 1260);
+  gfx_cor((GfxRect){ 500, 278, 1300, 1 }, 0, 1, 1, 1, 0.08f * a);
+
+  // Title art stays outside the floating island, over the film's backdrop.
+  if (m->sala.poster[0]) {
+    GLuint t = tex_obter(m->sala.poster);
+    if (t) {
+      gfx_tex_aspect_atual = tex_aspecto(m->sala.poster);
+      gfx_rect((GfxRect){ 100, 176, 240, 360 }, t, GFX_CARD, 1, 0, 0, 0.04f, 1, 1, 1, a);
+      gfx_tex_aspect_atual = 0;
+    }
   }
-  botao_pilula((GfxRect){ 110, 905, botao_largura(i18n("Voltar para a sala"), "aj_users", 1), BOTAO_H_PRIMARIO },
-               i18n("Voltar para a sala"), "aj_users", 1.0f, 1, 0, a);
-  texto(TXT_CAPTION, i18n("Setas para mover · OK para escolher · Voltar para retornar"), 80, 1010, 170, a, 1760);
+  texto(TXT_ILHA_TITULO, m->sala.titulo, 80, 572, 245, a, 340);
+  snprintf(sala, sizeof sala, "%s · %s", i18n("Código da sala"), m->sala.codigo);
+  texto(TXT_ILHA_META, sala, 80, 640, 205, a, 340);
+
+  for (i = 0; i < n; i++) {
+    const JsMembro *p = &m->sala.m[i];
+    int eu = !strcmp(p->id, m->eu), mesma = !strcmp(p->fonte, "mesma"), parecida = !strcmp(p->fonte, "parecida");
+    int diferente = !strcmp(p->fonte, "diferente");
+    const Stream *s = eu ? fonteLocal(m) : NULL;
+    const JsImpressao *imp = !s && p->anf ? &m->sala.imp : NULL;
+    const char *icone = mesma ? "aj_circle-check" : parecida ? "aj_circle-dot" : "aj_triangle-alert";
+    const char *impacto = mesma ? i18n("Mesmo arquivo. Sincronia automática.") : parecida ? i18n("Arquivo parecido. A sincronia pode variar.") : diferente ? i18n("Duração diferente. Algumas cenas podem desalinhar.") : i18n("Aguardando uma fonte para sincronizar.");
+    float r = mesma ? 0.55f : 0.96f, g = mesma ? 0.90f : parecida ? 0.78f : 0.56f, b = mesma ? 0.70f : 0.42f;
+    float alvo = foco == i + 1 && eu && s ? 1 : 0;
+    if (ajustes_animacoes_reduzidas()) expansao[i] = alvo;
+    else expansao[i] += (alvo - expansao[i]) * passo;
+    float h = 106 + 62 * expansao[i];
+    if (foco == i + 1) gfx_cor((GfxRect){ 484, y - 10, 1332, h }, 20.0f / h, 1, 1, 1, 0.12f * a);
+    rec_avatar((GfxRect){ 504, y + 6, 56, 56 }, p->av, p->nome, p->id, p->on ? a : 0.45f * a);
+    texto(TXT_ILHA_NOME, p->nome, 580, y, 245, a, 290);
+    snprintf(sala, sizeof sala, "%s%s%s", plataformaFonte(p), eu ? " · " : "", eu ? i18n("Sua TV") : "");
+    texto(TXT_ILHA_META, sala, 880, y + 3, 170, a, 380);
+    if (s || imp) fonteSelos(s, imp, 580, y + 45, a);
+    else texto(TXT_ILHA_META, i18n("Detalhes não compartilhados"), 580, y + 43, 165, a, 670);
+    gfx_icone((GfxRect){ 1300, y + 1, 26, 26 }, icone, r, g, b, a);
+    TxtLinha status = txt_linha(TXT_ILHA_NOME, p->fonte[0] ? fonteTexto(p->fonte) : estadoTexto(p), r * 255, g * 255, b * 255, 255);
+    txt_desenhar_alpha(status, 1338, y, a);
+    txt_bloco_corta(TXT_ILHA_APOIO, impacto, 190, 190, 190, 1338, y + 37, 438, 24, a, 2);
+    if (expansao[i] > 0.01f) botao_pilula((GfxRect){ 580, y + 82, 236, 52 }, i18n("Trocar fonte"), "aj_monitor-cog", alvo, 0, 0, a * expansao[i]);
+    y += h + 2;
+  }
+  botao_pilula((GfxRect){ 500, 888, botao_largura(i18n("Voltar à sala"), "aj_users", 1), BOTAO_H_PRIMARIO },
+               i18n("Voltar à sala"), "aj_users", foco == 0, 1, 0, a);
+  texto(TXT_ILHA_APOIO, i18n("Setas para mover · OK para escolher · Voltar para retornar"), 80, 1020, 190, a, 1760);
 }
 
 static void desenharSala(void) {
