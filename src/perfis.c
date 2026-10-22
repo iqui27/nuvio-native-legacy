@@ -19,6 +19,7 @@ void arteesc_definir_perfil(int perfil);
 // Mesma razao: ajustes.h puxa SDL. O ajuste "Usar os addons do perfil
 // principal" (Ajustes > Conta), ver perfis_ativo_addons.
 int ajustes_addons_do_principal(void);
+#include "trava.h"
 #include "js.h"
 #include "jsw.h"
 #include <stdio.h>
@@ -375,6 +376,7 @@ void perfis_definir_ativo(int indice) {
   char linha[32];
   int ativoAntes = ativo;
   if (indice <= 0) return;
+  if (ativo != indice) trava_invalidar_autorizacoes();
   ativo = indice;
   fil_definir_perfil(indice);
   cf_definir_perfil(indice);
@@ -452,6 +454,7 @@ int perfis_verificar_pin(int indice, const char *pin) {
 }
 
 void perfis_esquecer(void) {
+  trava_invalidar_autorizacoes();
   memset(lista, 0, sizeof lista);
   n = 0;
   dono[0] = 0;

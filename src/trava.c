@@ -200,6 +200,7 @@ static int nPerfis, ativo = 1;
 static char etag[96];
 static long long rev;
 static unsigned geracao;
+static unsigned identidadeGeracao;
 static long long (*relogio)(void);
 static TravaAlcance alcances[8];
 static int nAlcances;
@@ -207,6 +208,8 @@ static int nAlcances;
 static long long agora(void) { return relogio ? relogio() : (long long)time(NULL); }
 void trava_relogio(long long (*f)(void)) { relogio = f; }
 unsigned trava_geracao(void) { return geracao; }
+unsigned trava_identidade_geracao(void) { return __atomic_load_n(&identidadeGeracao, __ATOMIC_RELAXED); }
+void trava_invalidar_autorizacoes(void) { __atomic_add_fetch(&identidadeGeracao, 1, __ATOMIC_RELAXED); }
 
 static void limpo(char *d, size_t tam, const char *s) {
   size_t k = 0;
@@ -344,6 +347,7 @@ void trava_esquecer(void) {
   pthread_mutex_lock(&mtx);
   nTravas = nFila = nAlcances = nPerfis = 0;
   conta[0] = etag[0] = 0;
+  trava_invalidar_autorizacoes();
   rev = 0;
   geracao++;
   pthread_mutex_unlock(&mtx);
@@ -353,7 +357,10 @@ void trava_definir_conta(const char *sub) {
   int troca;
   pthread_mutex_lock(&mtx);
   troca = strcmp(conta, sub ? sub : "") != 0;
-  if (troca) snprintf(conta, sizeof conta, "%s", sub ? sub : "");
+  if (troca) {
+    snprintf(conta, sizeof conta, "%s", sub ? sub : "");
+    trava_invalidar_autorizacoes();
+  }
   pthread_mutex_unlock(&mtx);
   if (troca) trava_carregar();
 }
@@ -366,6 +373,7 @@ void trava_definir_perfis(const TravaPerfil *v, int n, int at) {
   if (n < 0) n = 0;
   for (i = 0; i < n; i++) perfis[i] = v[i];
   nPerfis = n;
+  if (ativo != (at > 0 ? at : 1)) trava_invalidar_autorizacoes();
   ativo = at > 0 ? at : 1;
   pthread_mutex_unlock(&mtx);
 }

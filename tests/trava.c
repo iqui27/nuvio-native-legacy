@@ -236,6 +236,18 @@ int main(void) {
   setenv("NUVIO_DADOS", dir, 1);
   dados_iniciar(dir);
   trava_relogio(relogioFixo);
+  unsigned identity = trava_identidade_geracao();
+  trava_definir_conta("identity-test");
+  assert(trava_identidade_geracao() != identity);
+  identity = trava_identidade_geracao();
+  trava_definir_perfis(NULL, 0, 2);
+  assert(trava_identidade_geracao() != identity);
+  identity = trava_identidade_geracao();
+  trava_definir_perfis(NULL, 0, 2);
+  assert(trava_identidade_geracao() == identity);
+  trava_invalidar_autorizacoes();
+  assert(trava_identidade_geracao() != identity);
+  trava_esquecer();
   regra();
   frases();
   estado();

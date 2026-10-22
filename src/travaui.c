@@ -71,6 +71,8 @@ static int pinFioVivo;
 static struct { char serie[24]; int t, e; } liberados[16];
 static int nLiberados;
 static int retomarIdx = -1, retomarT, retomarE;
+static unsigned autorizacaoGeracao;
+static void fechar(void);
 static int alcancouPerfis[TRAVA_MEMBROS], nAlcancou, alcT, alcE;
 static char alcSerie[24];
 
@@ -108,8 +110,18 @@ static int nEpsCat(void *ctx, int temporada) {
   return k;
 }
 
+static int identidadeMudou(void) {
+  unsigned atual = trava_identidade_geracao();
+  if (autorizacaoGeracao == atual) return 0;
+  autorizacaoGeracao = atual;
+  nLiberados = 0;
+  retomarIdx = -1;
+  return 1;
+}
+
 static int liberado(const char *s, int t, int e) {
   int i;
+  identidadeMudou();
   for (i = 0; i < nLiberados; i++)
     if (liberados[i].t == t && liberados[i].e == e && !strcmp(liberados[i].serie, s)) return 1;
   return 0;
@@ -290,6 +302,7 @@ int travaui_abrir_espera(int idxCat, int t, int e) {
   const CatItem *ci = cat_item(idxCat);
   int com[TRAVA_MEMBROS];
   if (!ci) return 0;
+  if (identidadeMudou()) fechar();
   lerSerie(ci);
   idx = idxCat;
   if (!travaui_segura(serie, idxCat, t, e, espQuem, &espN)) return 0;
@@ -323,6 +336,7 @@ int travaui_proximo_segura(const char *imdb, int idxCat, int t, int e) {
 }
 
 int travaui_pediu_reproduzir(int *alvo, int *t, int *e) {
+  if (identidadeMudou()) fechar();
   if (retomarIdx < 0) return 0;
   *alvo = retomarIdx; *t = retomarT; *e = retomarE;
   retomarIdx = -1;
@@ -419,6 +433,7 @@ static void conferirPin(void) {
 }
 
 static void assistirMesmoAssim(void) {
+  if (identidadeMudou()) { fechar(); return; }
   liberar(serie, espT, espE);
   printf("[trava] assistir mesmo assim: %s T%dE%d\n", serie, espT, espE);
   fechar();
@@ -532,6 +547,7 @@ void travaui_atualizar(float dt, Uint32 agora) {
   int r, c;
   static Uint32 posLocalEm;
   (void)agora;
+  if (identidadeMudou()) fechar();
   anim = anim_mola(anim, tela ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
   troca = anim_mola(troca, 1.0f, dt, NV_MOLA_TELA);
   if (ajustes_animacoes_reduzidas()) { anim = tela ? 1.0f : 0.0f; troca = 1.0f; }

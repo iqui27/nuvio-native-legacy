@@ -1,4 +1,5 @@
 #include "sessao.h"
+#include "trava.h"
 #include "idioma.h"
 #include "nuvem.h"
 #include "dados.h"
@@ -823,6 +824,7 @@ void sessao_cancelar(void) {
 }
 
 void sessao_sair(void) {
+  trava_invalidar_autorizacoes();
   pthread_mutex_lock(&tokTrava);
   limpar();
   dados_apagar(ARQ_SESSAO);

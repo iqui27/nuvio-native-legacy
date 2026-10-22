@@ -196,6 +196,9 @@ int  trava_alcance_proximo(TravaAlcance *ev);
 
 // Mudou algo (para as telas refazerem cache barato).
 unsigned trava_geracao(void);
+// Authorization lifetime, separate from lock/progress updates.
+unsigned trava_identidade_geracao(void);
+void trava_invalidar_autorizacoes(void);
 
 // Disco. trava_carregar e chamado por trava_definir_conta; gravar e automatico
 // a cada mudanca. trava_esquecer = logout (o arquivo fica, como o do jornal).
