@@ -249,6 +249,8 @@ static int  pedAbrir = -1;
 // vez de voltar ao titulo anterior (dono, 05/10/2026). Zerada quando a pagina
 // nasce de fora; app.c avisa cada troca por detail_volta_notar.
 static int  voltaPilha[8], nVolta, voltando;
+static struct { int fileira,coluna,nivel,botao,temporada,aba; float y; int colunas[N_SECOES]; } voltaEstado[8];
+static int restaurarVolta;
 // Foco DENTRO da aba "Mais como este", que e uma lista vertical propria e nao
 // uma das fileiras horizontais do focus.c.
 static int  relFoco;
@@ -1004,7 +1006,11 @@ static void recalcularLayout(void) {
     // porque nome comprido quebra em duas ("Geneva Robertson-Dworet" na propria
     // captura do dono) e empurra o papel para baixo.
     y = baseDaAbaAtiva() + NV_DETP_EL_GAP_TRAKT;
-    // Recommendations keep their own row and focus, directly below cast.
+    // Round 2: trailers precede related titles; preserve each section's geometry.
+    topoSec[SEC_TRAILERS]=y;
+    conteudoSec[SEC_TRAILERS]=y+NV_DETF_CAB_H+NV_DETF_CAB_GAP;
+    if (secaoN(SEC_TRAILERS)>0) y=conteudoSec[SEC_TRAILERS]+alturaSecao(SEC_TRAILERS)+NV_DETF_SEC_GAP;
+    // Recommendations keep their own row and focus, directly below trailers.
     topoSec[SEC_RELACIONADOS] = conteudoSec[SEC_RELACIONADOS] = y;
     if (secaoN(SEC_RELACIONADOS) > 0) {
       conteudoSec[SEC_RELACIONADOS] += NV_DETF_CAB_H + NV_DETF_CAB_GAP;
@@ -1036,13 +1042,6 @@ static void recalcularLayout(void) {
     // TRAILERS NA SERIE (#123), na posicao que o enum ja dava a eles (depois
     // da audiencia, antes dos comentarios — a ordem do D-pad). Com cabecalho,
     // como no filme: o topo do grupo e a linha do titulo, o conteudo abaixo.
-    topoSec[SEC_TRAILERS] = conteudoSec[SEC_TRAILERS] = y;
-    if (secaoN(SEC_TRAILERS) > 0) {
-      conteudoSec[SEC_TRAILERS] = y + NV_DETF_CAB_H + NV_DETF_CAB_GAP;
-      y = conteudoSec[SEC_TRAILERS] + alturaSecao(SEC_TRAILERS) + NV_DETF_SEC_GAP;
-      { float fim = y + NV_DETF_PAD_FIM - NV_DETF_SEC_GAP;
-        if (fim > docFim) docFim = fim; }
-    }
     topoSec[SEC_COMENTARIOS] = conteudoSec[SEC_COMENTARIOS] = y;
     if (secaoN(SEC_COMENTARIOS) > 0) {
       y += alturaSecao(SEC_COMENTARIOS) + NV_DETF_SEC_GAP;
@@ -1555,6 +1554,14 @@ static void abrirInterno(const HomeItem *it) {
   memset(animFoco, 0, sizeof animFoco);
   memset(scrollSec, 0, sizeof scrollSec); memset(velSec, 0, sizeof velSec);
   memset(revEp, 0, sizeof revEp); memset(revRel, 0, sizeof revRel);
+  if (restaurarVolta) {
+    int k=nVolta;
+    nivel=voltaEstado[k].nivel; botao=voltaEstado[k].botao;
+    foco.fileira=voltaEstado[k].fileira; foco.coluna=voltaEstado[k].coluna;
+    memcpy(foco.colunaLembrada,voltaEstado[k].colunas,sizeof voltaEstado[k].colunas);
+    temporada=voltaEstado[k].temporada; abaInfo=voltaEstado[k].aba;
+    scrollY=voltaEstado[k].y; pg=nivel ? 1 : 0; restaurarVolta=0;
+  }
 }
 
 void detail_fechar(void) {
@@ -2217,7 +2224,7 @@ static int secaoN(int r) {
     // nem ao Wikidata nem ao Wikiquote, e a frase de vazio seria sobre uma
     // consulta que nunca aconteceu.
     case SEC_FRASES:
-      return ci && ci->imdb[0] && seriefrases_n()>0 ? 1 : 0;
+      return ci && ci->imdb[0] && frasesAberta && seriefrases_n()>0 ? 1 : 0;
     // Sem nenhuma nota a secao nao existe (nada de painel vazio).
     // UMA PARADA SO: o numero grande. Os blocos por fonte nao tomam foco
     // (dono 11/10/2026: "so focar no numero grande e depois ja desce").
@@ -2966,7 +2973,7 @@ void detail_evento(const SDL_Event *e) {
     else if (focoVersao) { focoVersao = 0; botao = 0; }
     else if (nivel > 0) { nivel = 0; botao = 0; focoAmigos = 0; }
     else if (carro && carCheia) carCheia = 0;   // tela cheia no topo -> cartao
-    else if (nVolta > 0) { pedAbrir = voltaPilha[--nVolta]; voltando = 1; }   // volta ao titulo de onde veio
+    else if (nVolta > 0) { pedAbrir = voltaPilha[--nVolta]; voltando = 1; restaurarVolta=1; }   // volta ao titulo de onde veio
     else { saindo = 1; pediuMenu = 0; }   // Voltar nao abre um menu pedido antes
     return;
   }
@@ -2976,7 +2983,7 @@ void detail_evento(const SDL_Event *e) {
       if (k == SDLK_DOWN) { pedFontes = 1; return; }
       return;
     }
-    if (k == SDLK_DOWN && topoVersao() && vaiTocar.tem && !(carro && !carCheia)) {
+    if (k == SDLK_DOWN && botao==0 && topoVersao() && vaiTocar.tem && !(carro && !carCheia)) {
       focoVersao = 1; return;
     }
     // CIMA na linha de botoes nao fazia nada; com uma reacao pendente ele abre
@@ -3242,6 +3249,10 @@ static void sincronizarColunas(void) {
     if (foco.nColunas[r] != n) { foco.nColunas[r] = n; mudou = 1; }
   }
   if (!mudou) return;
+  if (nivel>=1 && foco.fileira>=0 && foco.fileira<N_SECOES &&
+      foco.nColunas[foco.fileira]==0 && foco.fileira!=SEC_EPISODIOS) {
+    if (!moverFileira(1) && !moverFileira(-1)) { nivel=0; botao=0; }
+  }
   // A LISTA VAZIA E TRANSITORIA, E GRAMPEAR NELA PERDIA O EPISODIO (#102).
   // cat_definir_tudo zera nEps de proposito a cada republicacao da descoberta,
   // entao a fileira fica em zero por alguns quadros; grampear a coluna a 0 ai
@@ -7109,6 +7120,9 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
   if (r == SEC_TEMPORADAS) resumoTemporada(NV_DETP_X, y, a);
   // O grafico e UM desenho; as colunas focaveis sao posicoes dentro dele.
   if (r == SEC_PROGTEMP) {
+    if (progTemNotas() && nivel>=1 && foco.fileira==SEC_PROGTEMP) {
+      desenhaGradeProgresso(NV_DETP_X,y,a); return;
+    }
     tgraf_desenhar(tgraf_dados(idx), NV_DETP_X, y, NV_TELA_W - NV_DETP_X * 2,
                    !progTemNotas() && nivel >= 1 && foco.fileira == SEC_PROGTEMP ? foco.coluna : -1,
                    temporadaEm(temporada), a, agora);
@@ -7711,8 +7725,14 @@ void detail_volta_notar(int novo) {
   if (!aberto || saindo || novo == idx || idx < 0) return;
   if (nVolta == (int)(sizeof voltaPilha / sizeof *voltaPilha)) {
     memmove(voltaPilha, voltaPilha + 1, sizeof voltaPilha - sizeof *voltaPilha);
+    memmove(voltaEstado,voltaEstado+1,sizeof voltaEstado-sizeof *voltaEstado);
     nVolta--;
   }
+  voltaEstado[nVolta].fileira=foco.fileira; voltaEstado[nVolta].coluna=foco.coluna;
+  voltaEstado[nVolta].nivel=nivel; voltaEstado[nVolta].botao=botao;
+  voltaEstado[nVolta].temporada=temporada; voltaEstado[nVolta].aba=abaInfo;
+  voltaEstado[nVolta].y=scrollY;
+  memcpy(voltaEstado[nVolta].colunas,foco.colunaLembrada,sizeof voltaEstado[nVolta].colunas);
   voltaPilha[nVolta++] = idx;
 }
 int detail_pediu_assistido(void) { int v = pedAssistido; pedAssistido = 0; return v; }

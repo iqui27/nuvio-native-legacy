@@ -75,13 +75,28 @@ int main(void) {
   comAbrir(0); assert(comInteiro==0);
   comInteiro=-1; comAbrir(1); assert(comInteiro==1);
   quoteCount=0; assert(secaoN(SEC_FRASES)==0);
-  quoteCount=1; assert(secaoN(SEC_FRASES)==1);
+  quoteCount=1; frasesAberta=0; assert(secaoN(SEC_FRASES)==0); // prior title data stays hidden
+  frasesAberta=1; assert(secaoN(SEC_FRASES)==1);
   snprintf(itemTeste.titulo,sizeof itemTeste.titulo,"Test title");
   cat_definir_tudo(&itemTeste,1,NULL,0);
   assert(secaoN(SEC_DETALHES)==1); // series facts are reachable too
   assert(ORDEM_FILME[0]==SEC_NOTAS && ORDEM_FILME[1]==SEC_TRAILERS);
   assert(ORDEM_FILME[3]==SEC_COLECAO);
-  puts("detail21: hero, episodes, grid, cast, recommendations, spoilers and footer OK");
+  snprintf(itemTeste.tipo,sizeof itemTeste.tipo,"movie");
+  cat_definir_tudo(&itemTeste,1,NULL,0);
+  nivel=0; botao=1; focoVersao=0; vaiTocar.tem=1;
+  e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_DOWN;
+  detail_evento(&e); assert(!focoVersao); // other buttons can reach the body
+  nivel=1; foco.fileira=SEC_RELACIONADOS; foco.coluna=2; scrollY=400;
+  memset(foco.nColunas,0,sizeof foco.nColunas);
+  foco.nColunas[SEC_FRASES]=1; foco.fileira=SEC_FRASES;
+  quoteCount=0; sincronizarColunas();
+  assert(nivel==0 || secaoN(foco.fileira)>0); // a vanished row never traps focus
+  nivel=1; foco.fileira=SEC_RELACIONADOS; foco.coluna=2; scrollY=400;
+  aberto=1; saindo=0; nVolta=0;
+  detail_volta_notar(1);
+  assert(nVolta==1 && voltaEstado[0].coluna==2 && voltaEstado[0].fileira==SEC_RELACIONADOS);
+  puts("detail21: content, empty rows and nested-title state OK");
   SDL_Quit();
   return 0;
 }
