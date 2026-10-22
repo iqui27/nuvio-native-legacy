@@ -66,9 +66,10 @@ int botao_superficie(GfxRect r, float foco, float a) {
   float fr, fg, fb, ti = botao_cor_foco(&fr, &fg, &fb);
   if (ajustes_vidro()) {
     // Acao principal: em repouso o vidro leva a lavagem e o aro do realce (e
-    // assim o tema continua visivel); em foco, a pilula CHEIA no realce.
+    // assim o tema continua visivel); em foco, a mesma pilula de vidro do
+    // Play do detalhe (realce coloridos = vidro com lavagem; branco = cheia).
     gfx_vidro_painel_acento(r, 0.5f, 0.55f, a);
-    vidroFoco(r, foco, a);
+    gfx_vidro_pilula_cheia(r, 0.5f, foco, a);
     return gfx_vidro_tinta(foco);
   }
   botao_luz(r, foco, a);
