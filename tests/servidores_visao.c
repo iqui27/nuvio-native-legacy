@@ -47,6 +47,8 @@ int servidores_info(const char *id, const char *type, SrvAchado *out) {
 void desc_pedir_titulo_tmdb(long id, const char *type) { (void)id; (void)type; assert(0); }
 int cat_indice_por_imdb(const char *id) { (void)id; return -1; }
 int cat_acrescentar(const CatItem *it) { (void)it; added++; return 7; }
+const CatItem *cat_item(int i) { (void)i; return NULL; }
+void cat_atualizar_item(int i, const CatItem *it) { (void)i; (void)it; assert(0); }
 
 static void key(SDL_Keycode code) {
   SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = code;
