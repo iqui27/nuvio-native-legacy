@@ -1,8 +1,13 @@
+#define seriefrases_n quoteCountFixture
+#define seriefrases_n_fatos factCountFixture
 #define extras_comentario_spoiler comSpoilerFixture
 #define extras_n_comentarios comCountFixture
 #define extras_relacionado_imdb relFixture
 #include "../src/detail.c"
 #undef extras_relacionado_imdb
+static int quoteCount;
+int quoteCountFixture(void) { return quoteCount; }
+int factCountFixture(void) { return 0; }
 int comSpoilerFixture(int i) { return i == 0; }
 int comCountFixture(void) { return 3; }
 const char *relFixture(int i) { (void)i; return "tt9000011"; }
@@ -69,7 +74,14 @@ int main(void) {
   comAbrir(0); assert(!comOculto(0) && comInteiro==-1);
   comAbrir(0); assert(comInteiro==0);
   comInteiro=-1; comAbrir(1); assert(comInteiro==1);
-  puts("detail21: hero, episodes, progress, cast, recommendations and spoilers OK");
+  quoteCount=0; assert(secaoN(SEC_FRASES)==0);
+  quoteCount=1; assert(secaoN(SEC_FRASES)==1);
+  snprintf(itemTeste.titulo,sizeof itemTeste.titulo,"Test title");
+  cat_definir_tudo(&itemTeste,1,NULL,0);
+  assert(secaoN(SEC_DETALHES)==1); // series facts are reachable too
+  assert(ORDEM_FILME[0]==SEC_NOTAS && ORDEM_FILME[1]==SEC_TRAILERS);
+  assert(ORDEM_FILME[3]==SEC_COLECAO);
+  puts("detail21: hero, episodes, grid, cast, recommendations, spoilers and footer OK");
   SDL_Quit();
   return 0;
 }

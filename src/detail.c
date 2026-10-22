@@ -34,6 +34,7 @@
 #include "marco.h"
 #include "titulotempo.h"
 #include "relogiofim.h"
+#include "linguas.h"
 static TituloTempo detalheTempo;
 #include "ajustes.h"
 #include "home.h"
@@ -654,18 +655,16 @@ typedef enum { SEC_TEMPORADAS, SEC_EPISODIOS, SEC_ABAS_INFO, SEC_ELENCO, SEC_REL
 // serie tem a propria tabela porque o enum (que a serie usava como ordem do
 // D-pad) mantem as Notas depois da audiencia.
 static const int ORDEM_FILME[] = {
-  SEC_NOTAS, SEC_TEMPORADAS, SEC_EPISODIOS, SEC_ABAS_INFO, SEC_ELENCO, SEC_RELACIONADOS,
-  SEC_AUD_ARCO, SEC_AUD_RADAR, SEC_AUD_DIGITAL, SEC_NOTAS_EP,
-  SEC_TRAILERS, SEC_COLECAO, SEC_COMENTARIOS,
-  SEC_ESTUDIOS, SEC_FRASES, SEC_DETALHES, SEC_PROGTEMP };
+  SEC_NOTAS, SEC_TRAILERS, SEC_ELENCO, SEC_COLECAO, SEC_RELACIONADOS, SEC_COMENTARIOS,
+  SEC_FRASES, SEC_DETALHES, SEC_ESTUDIOS, SEC_TEMPORADAS, SEC_EPISODIOS, SEC_ABAS_INFO,
+  SEC_AUD_ARCO, SEC_AUD_RADAR, SEC_AUD_DIGITAL, SEC_NOTAS_EP, SEC_PROGTEMP };
 // NUMEROS DA TEMPORADA (Glass UI 1.8, mockup "Notas e graficos"): os tres
 // graficos da serie viraram UM bloco logo depois das Notas. Ele usa a fileira
 // SEC_AUD_ARCO (SEC_NUMEROS); RADAR, DIGITAL e NOTAS_EP ficaram sem colunas.
 static const int ORDEM_SERIE[] = {
   SEC_TEMPORADAS, SEC_EPISODIOS, SEC_PROGTEMP, SEC_NOTAS, SEC_AUD_ARCO, SEC_ABAS_INFO, SEC_ELENCO,
-  SEC_RELACIONADOS, SEC_AUD_RADAR, SEC_AUD_DIGITAL, SEC_NOTAS_EP,
-  SEC_TRAILERS, SEC_COLECAO, SEC_COMENTARIOS,
-  SEC_ESTUDIOS, SEC_FRASES, SEC_DETALHES };
+  SEC_TRAILERS, SEC_RELACIONADOS, SEC_AUD_RADAR, SEC_AUD_DIGITAL, SEC_NOTAS_EP,
+  SEC_COLECAO, SEC_COMENTARIOS, SEC_FRASES, SEC_DETALHES, SEC_ESTUDIOS };
 #define N_ORDEM ((int)(sizeof ORDEM_FILME / sizeof ORDEM_FILME[0]))
 #define SEC_NUMEROS SEC_AUD_ARCO
 static int ehSerie(void);
@@ -1050,6 +1049,11 @@ static void recalcularLayout(void) {
       float fim = y + NV_DETF_PAD_FIM - NV_DETF_SEC_GAP;
       if (fim > docFim) docFim = fim;
     }
+    topoSec[SEC_FRASES] = conteudoSec[SEC_FRASES] = y;
+    if (secaoN(SEC_FRASES)>0) y += alturaSecao(SEC_FRASES) + NV_DETF_SEC_GAP;
+    topoSec[SEC_DETALHES] = y;
+    conteudoSec[SEC_DETALHES] = y + NV_DETF_CAB_H + NV_DETF_CAB_GAP;
+    if (secaoN(SEC_DETALHES)>0) y = conteudoSec[SEC_DETALHES] + alturaSecao(SEC_DETALHES) + NV_DETF_SEC_GAP;
     // Estudios/redes empilham DEPOIS dos comentarios, como no web
     // (renderCompanySections monta a secao ao fim do corpo da pagina).
     topoSec[SEC_ESTUDIOS] = conteudoSec[SEC_ESTUDIOS] = y;
@@ -1066,11 +1070,7 @@ static void recalcularLayout(void) {
       float fim = y + NV_DETF_PAD_FIM - NV_DETF_SEC_GAP;
       if (fim > docFim) docFim = fim;
     }
-    topoSec[SEC_FRASES] = conteudoSec[SEC_FRASES] = y;
-    if (secaoN(SEC_FRASES) > 0) {
-      float fim = y + alturaSecao(SEC_FRASES) + NV_DETF_PAD_FIM;
-      if (fim > docFim) docFim = fim;
-    }
+    if (y+NV_DETF_PAD_FIM>docFim) docFim=y+NV_DETF_PAD_FIM;
     return;
   }
   { float y = NV_DETF_HERO_FIM;
@@ -1931,6 +1931,8 @@ static int montarDetalhes(LinhaDet *o, int max) {
       n++;                                                     \
     } } while (0)
 
+  DET_POE("Título", ci ? ci->titulo : NULL);
+  if (extras_idioma_original()[0]) DET_POE("Idioma", i18n(ling_nome(extras_idioma_original())));
   // Status cru do TMDB/Trakt ("Released", "returning series") -> rotulo no
   // idioma da interface; valor que a tabela nao conhece sai como veio.
   // Filme ja lancado: o mockup nao traz a linha (o "Lançado" nao diz nada a
@@ -2175,7 +2177,6 @@ static int secaoN(int r) {
     // ela rola para a tela e pronto. Zero colunas faria focus_mover PULA-LA
     // (focus.c:25) e a secao viraria inalcancavel — logo, tambem irrolavel.
     case SEC_DETALHES:
-      if (ehSerie()) return 0;
       return nLinhasDetalhe() > 0 ? 1 : 0;
     // NUMEROS DA TEMPORADA: UMA COLUNA POR EPISODIO da temporada escolhida
     // (ate o teto de pedidos do modulo, SA_EP_MAX). Esquerda/direita anda pelos
@@ -2216,7 +2217,7 @@ static int secaoN(int r) {
     // nem ao Wikidata nem ao Wikiquote, e a frase de vazio seria sobre uma
     // consulta que nunca aconteceu.
     case SEC_FRASES:
-      return (ci && ci->imdb[0]) ? 1 : 0;
+      return ci && ci->imdb[0] && seriefrases_n()>0 ? 1 : 0;
     // Sem nenhuma nota a secao nao existe (nada de painel vazio).
     // UMA PARADA SO: o numero grande. Os blocos por fonte nao tomam foco
     // (dono 11/10/2026: "so focar no numero grande e depois ja desce").
@@ -3665,8 +3666,8 @@ void detail_atualizar(float dt, Uint32 agora) {
   // No filme a linha Colecao | Frases aparece com a pagina rolando ate ela:
   // a consulta sai quando o foco chega a "Mais como este" ou abaixo.
   if (nivel >= 1 && (foco.fileira == SEC_FRASES ||
-      (!ehSerie() && (foco.fileira == SEC_RELACIONADOS || foco.fileira == SEC_COLECAO ||
-                      foco.fileira == SEC_DETALHES || foco.fileira == SEC_ESTUDIOS)))) {
+      foco.fileira == SEC_RELACIONADOS || foco.fileira == SEC_COLECAO ||
+      foco.fileira == SEC_COMENTARIOS || foco.fileira == SEC_DETALHES || foco.fileira == SEC_ESTUDIOS)) {
     const CatItem *ci = cat_item(idx);
     if (ci && ci->imdb[0]) { seriefrases_abrir(ci->imdb); frasesAberta = 1; }
   }
@@ -7060,6 +7061,7 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     case SEC_TRAILERS:
     case SEC_RELACIONADOS:
     case SEC_FRASES:
+    case SEC_DETALHES:
     case SEC_COMENTARIOS:
     case SEC_ESTUDIOS:    y = conteudoSec[r]; break;
     default:             y = epElencoY();   break;
@@ -7153,7 +7155,7 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
       case SEC_COLECAO:
         if (c == 0) desenhaColecao(x, y, f, a);
         break;
-      case SEC_COMENTARIOS:  desenhaComentarios(NV_DETP_X, y, a); break;
+      case SEC_COMENTARIOS: if (c == 0) desenhaComentarios(NV_DETP_X, y, a); break;
       // UMA VEZ SO, e nao uma por coluna: as colunas destas duas sao posicoes
       // dentro de um desenho unico (o episodio em destaque, a frase em
       // destaque), como os cartazes de "Mais como este" no filme. A altura
