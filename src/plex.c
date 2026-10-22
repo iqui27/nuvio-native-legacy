@@ -429,10 +429,12 @@ static int itemDeEx(const PxConta *c, const char *ini, const char *fim, CatItem 
   txtRaiz(ini, fim, "type", tipo, sizeof tipo);
   if (!strcmp(tipo, "movie")) copiar(it->tipo, sizeof it->tipo, "movie");
   else if (!strcmp(tipo, "show")) copiar(it->tipo, sizeof it->tipo, "series");
+  else if (!strcmp(tipo, "collection")) copiar(it->tipo, sizeof it->tipo, "group");
+  else if (!strcmp(tipo, "playlist")) copiar(it->tipo, sizeof it->tipo, "list");
   else return 0;
   guidsDe(ini, fim, imdb, &tmdb, NULL);
-  if (canonico && imdb[0]) copiar(it->imdb, sizeof it->imdb, imdb);
-  else if (canonico && tmdb > 0) snprintf(it->imdb, sizeof it->imdb, "tmdb:%ld", tmdb);
+  if (canonico && it->tipo[0] != 'g' && it->tipo[0] != 'l' && imdb[0]) copiar(it->imdb, sizeof it->imdb, imdb);
+  else if (canonico && it->tipo[0] != 'g' && it->tipo[0] != 'l' && tmdb > 0) snprintf(it->imdb, sizeof it->imdb, "tmdb:%ld", tmdb);
   else if (!jfid_montar_p(JFID_PREFIXO_PLEX, it->imdb, sizeof it->imdb, c->servidorId, rk)) return 0;
   txtRaiz(ini, fim, "title", it->titulo, sizeof it->titulo);
   txtRaiz(ini, fim, "summary", it->sinopse, sizeof it->sinopse);
@@ -1658,7 +1660,9 @@ int plex_pagina(const char *chave, int inicio, int limite, CatItem *out, int max
   PxConta c;
   unsigned g;
   int n;
-  if (!plex_chave_fileira(chave)) return -1;
+  if (total) *total = 0;
+  if (!plex_chave_fileira(chave) || !out || max <= 0 || inicio < 0 || limite <= 0) return -1;
+  if (limite > 100) limite = 100;
   if (!strcmp(chave + 5, "nextup")) {
     if (total) *total = 0;
     if (inicio) return 0;
@@ -1671,7 +1675,23 @@ int plex_pagina(const char *chave, int inicio, int limite, CatItem *out, int max
   if (estado != PX_EST_CONECTADO) { pthread_mutex_unlock(&trava); return -1; }
   c = conta; g = geracao;
   pthread_mutex_unlock(&trava);
-  n = px_itens(&c, NULL, chave + 5, inicio, limite, out, max, total);
+  { const char *id = chave + 5;
+    if (!strcmp(id, "collections") || !strcmp(id, "playlists") || !strncmp(id, "group_", 6) || !strncmp(id, "list_", 5)) {
+      RedeResposta r;
+      char rota[256];
+      int e;
+      if (!strncmp(id, "group_", 6) || !strncmp(id, "list_", 5)) {
+        const char *rk = id + (id[0] == 'g' ? 6 : 5);
+        if (!soDigitos(rk, 20)) { apagarSegredo(&c, sizeof c); return -1; }
+        snprintf(rota, sizeof rota, "%s/%s/%s?includeGuids=1&X-Plex-Container-Start=%d&X-Plex-Container-Size=%d",
+          id[0] == 'g' ? "/library/collections" : "/playlists", rk, id[0] == 'g' ? "children" : "items", inicio, limite);
+      } else snprintf(rota, sizeof rota, "%sincludeGuids=1&X-Plex-Container-Start=%d&X-Plex-Container-Size=%d",
+          !strcmp(id, "collections") ? "/library/all?type=18&" : "/playlists?", inicio, limite);
+      e = pedirServidor(&c, rota, "GET", "collection items", PX_PRAZO_LISTA_MS, NULL, &r);
+      n = e ? e : px_ler_itens(&c, r.corpo, r.n_corpo, out, max, total);
+      rede_resposta_limpar(&r);
+    } else n = px_itens(&c, NULL, id, inicio, limite, out, max, total);
+  }
   apagarSegredo(&c, sizeof c);
   pthread_mutex_lock(&trava);
   conferirPerfilLocked();
@@ -2316,6 +2336,12 @@ int plex_tem(const char *id, const char *tipo, SrvAchado *info) {
   pthread_mutex_lock(&trava);
   conferirPerfilLocked();
   k = idxAcharLocked(id, tipo, NULL, 0, NULL, NULL);
+  if (k < 0) {
+    char tag[JFID_TAG + 1], item[JFID_ITEM + 1];
+    if (jfid_partes_p(JFID_PREFIXO_PLEX, id, tag, item) && !strncmp(tag, conta.servidorId, JFID_TAG))
+      for (int i = 0; i < idx.n; i++)
+        if (!strcmp(idx.v[i].item, item)) { k = i; break; }
+  }
   if (k >= 0 && info) {
     memset(info, 0, sizeof *info);
     copiar(info->servidor, sizeof info->servidor, conta.servidorNome[0] ? conta.servidorNome : "Plex");

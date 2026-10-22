@@ -31,7 +31,7 @@ int servidores_tem(const char *id, const char *tipo) {
 int servidores_info(const char *id, const char *tipo, SrvAchado *info) {
   SrvAchado a[3];
   int tem[3], i, melhor = -1;
-  if (!id || !*id || jfid_e(id)) return 0;
+  if (!id || !*id) return 0;
   tem[0] = jellyfin_tem(id, tipo, &a[0]);
   tem[1] = emby_tem(id, tipo, &a[1]);
   tem[2] = plex_tem(id, tipo, &a[2]);
@@ -139,6 +139,19 @@ int servidores_bibliotecas(CatFileira *fils, int max) {
   n += jellyfin_fileiras_copiar(NULL, SRV_ITENS_MAX, fils, max, &ni);
   n += emby_fileiras_copiar(NULL, SRV_ITENS_MAX, fils + n, max - n, &ni);
   n += plex_fileiras_copiar(NULL, SRV_ITENS_MAX, fils + n, max - n, &ni);
+  for (int m = 0; m < 3; m++) {
+    int ligado = m == 0 ? jellyfin_conectado() : m == 1 ? emby_conectado() : plex_conectado();
+    const char *prefixo = m == 0 ? "jellyfin_" : m == 1 ? "emby_" : "plex_";
+    const char *nome = m == 0 ? "Jellyfin" : m == 1 ? "Emby" : "Plex";
+    if (!ligado) continue;
+    for (int k = 0; k < 2 && n < max; k++) {
+      memset(&fils[n], 0, sizeof fils[n]);
+      snprintf(fils[n].chave, sizeof fils[n].chave, "%s%s", prefixo, k ? "playlists" : "collections");
+      snprintf(fils[n].titulo, sizeof fils[n].titulo, "%s · %s", i18n(k ? "Listas" : "Coleções"), nome);
+      snprintf(fils[n].tipo, sizeof fils[n].tipo, "%s", k ? "list" : "group");
+      n++;
+    }
+  }
   return n;
 }
 
@@ -181,7 +194,8 @@ int servidores_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, i
 
 int servidores_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total) {
   if (total) *total = 0;
-  if (!ajustes_jellyfin_ligado() || !out || max <= 0) return -1;
+  if (!ajustes_jellyfin_ligado() || !out || max <= 0 || inicio < 0 || limite <= 0) return -1;
+  if (limite > 100) limite = 100;
   if (jellyfin_chave_fileira(chave)) return jellyfin_pagina(chave, inicio, limite, out, max, total);
   if (emby_chave_fileira(chave)) return emby_pagina(chave, inicio, limite, out, max, total);
   if (plex_chave_fileira(chave)) return plex_pagina(chave, inicio, limite, out, max, total);

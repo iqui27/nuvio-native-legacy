@@ -497,6 +497,14 @@ static void integracao(void) {
   assert(!strcmp(itens[0].imdb, "tt0000101") && itens[0].progresso == 50 && !strcmp(itens[2].imdb, "px:01234567.103"));
   assert(plex_indice_n() == 4 && plex_casamento_ativo());   // 3 movies (one without Guid: title+year) + 1 show
 
+  { int total;
+    assert(plex_pagina("plex_collections", 0, 60, itens, 60, &total) == 1 && !strcmp(itens[0].tipo, "group"));
+    assert(plex_pagina("plex_group_4001", 0, 60, itens, 60, &total) == 2 && !strcmp(itens[0].imdb, "tt0000101"));
+    assert(plex_pagina("plex_playlists", 0, 60, itens, 60, &total) == 1 && !strcmp(itens[0].tipo, "list"));
+    assert(plex_pagina("plex_list_5001", 1, 60, itens, 60, &total) == 1 && total == 2);
+    assert(plex_pagina("plex_list_invalid", 0, 60, itens, 60, &total) < 0);
+  }
+
   // ---- title page of a server-native item
   { CatItem *x = calloc(1, sizeof *x);
     CatEp *eps = calloc(32, sizeof *eps);

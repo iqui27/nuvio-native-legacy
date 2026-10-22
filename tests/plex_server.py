@@ -173,6 +173,12 @@ class Handler(BaseHTTPRequestHandler):
                 {"key": "1", "type": "movie", "title": "Movies"},
                 {"key": "2", "type": "show", "title": "TV Shows"},
                 {"key": "3", "type": "artist", "title": "Music"}]}})
+        if p in ("/library/all", "/playlists"):
+            kind = "collection" if p == "/library/all" else "playlist"
+            return self.reply(200, self.page([{"ratingKey": "4001" if kind == "collection" else "5001",
+                "type": kind, "title": "Fixture collection"}], q))
+        if p in ("/library/collections/4001/children", "/playlists/5001/items"):
+            return self.reply(200, self.page(MOVIES[:2], q))
         if p == "/library/sections/1/all":
             return self.reply(200, self.page(MOVIES, q))
         if p == "/library/sections/2/all":

@@ -213,7 +213,14 @@ class Handler(BaseHTTPRequestHandler):
                 {"Name": "Shows", "Id": LIB_SHOWS, "CollectionType": "tvshows"},
                 {"Name": "Music", "Id": LIB_MUSIC, "CollectionType": "music"}],
                 "TotalRecordCount": 3})
+        if p == "/Playlists/00000000000000000000000000005001/Items":
+            return self.reply(200, {"Items": [movie(7)], "TotalRecordCount": 1})
         if p == "/Items" and method == "GET":
+            kind = q.get("IncludeItemTypes", [""])[0]
+            if kind in ("BoxSet", "Playlist"):
+                items = [{"Id": "00000000000000000000000000004001" if kind == "BoxSet" else "00000000000000000000000000005001",
+                          "Type": kind, "Name": "Fixture collection"}]
+                return self.reply(200, {"Items": items[int(q.get("StartIndex", ["0"])[0]):], "TotalRecordCount": 1})
             parent = q.get("ParentId", [""])[0]
             start = int(q.get("StartIndex", ["0"])[0])
             limit = int(q.get("Limit", ["100"])[0])
@@ -225,7 +232,9 @@ class Handler(BaseHTTPRequestHandler):
                       "ImageTags": {"Primary": "s2"}, "UserData": {"PlayedPercentage": 0}}]
             with lock:
                 movies = [movie(i) for i in range(60) if i not in state["gone"]] + list(state["extra"])
-            if parent == LIB_MOVIES:
+            if parent == "00000000000000000000000000004001":
+                allitems = [movie(7)]
+            elif parent == LIB_MOVIES:
                 allitems = movies
             elif parent == LIB_SHOWS:
                 allitems = shows + [{"Name": "Ignored episode", "Id": episode_id(1, 1), "Type": "Episode"}]

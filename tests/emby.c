@@ -315,6 +315,14 @@ static void integracao(void) {
     assert(servidores_pagina("emby_11", 1, 60, x, 60, &tot) == 1 && tot == 2);
     assert(!strcmp(x[0].imdb, "tt0002002"));
     assert(servidores_pagina("other", 0, 60, x, 60, &tot) == -1);
+    // Collection routes must obey the same paging contract as libraries.
+    assert(servidores_pagina("emby_collections", -1, 60, x, 60, &tot) < 0 && tot == 0);
+    assert(servidores_pagina("emby_collections", 0, 0, x, 60, &tot) < 0 && tot == 0);
+    assert(servidores_bibliotecas(f, SRV_FIL_MAX) == 4);
+    assert(servidores_pagina("emby_collections", 0, 60, x, 60, &tot) == 1 && !strcmp(x[0].tipo, "group"));
+    assert(servidores_pagina("emby_4001", 0, 60, x, 60, &tot) == 1 && !strcmp(x[0].imdb, "tt0002002"));
+    assert(servidores_pagina("emby_playlists", 0, 60, x, 60, &tot) == 1 && !strcmp(x[0].tipo, "list"));
+    assert(servidores_pagina("emby_list_5001", 0, 60, x, 60, &tot) == 1 && !strcmp(x[0].imdb, "tt0002002"));
     free(x); }
   // ---- matched catalogue titles: the Emby index (per-user route) and sources
   fim = ms() + 5000;
@@ -328,6 +336,8 @@ static void integracao(void) {
     assert(cw[1].progresso == 33 && cw[1].retomadoMs > cw[0].retomadoMs);
     free(cw); }
   { SrvAchado a;
+    assert(servidores_info("em:9f8e7d6c.1001", "movie", &a));
+    assert(!servidores_info("em:00000000.1001", "movie", &a));
     assert(emby_tem("tt0002002", "movie", &a) && !strcmp(a.tipoSrv, "Emby") && !strcmp(a.servidor, "Emby Home")); }
   r = emby_consultar("tt0002002", "movie", NULL, 0, NULL, NULL, &lista);
   assert(r == 2 && lista && strstr(lista[0].url, "/media/emby/Videos/1002/stream") && strstr(lista[0].url, "api_key="));

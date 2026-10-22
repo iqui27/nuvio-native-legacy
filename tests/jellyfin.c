@@ -299,6 +299,14 @@ static void testarIntegracao(void) {
   n = jellyfin_fileiras_copiar(itens, JF_FIL_MAX * JF_POR_FILEIRA, fils, JF_FIL_MAX, &ni);
   assert(n == 2 && ni == JF_POR_FILEIRA + 2);
   assert(jellyfin_chave_fileira(fils[0].chave) && !fils[0].base[0] && strstr(fils[0].titulo, "Jellyfin"));
+  { int total;
+    assert(jellyfin_pagina("jellyfin_collections", 0, 60, itens, 60, &total) == 1 && !strcmp(itens[0].tipo, "group"));
+    assert(jellyfin_pagina("jellyfin_00000000000000000000000000004001", 0, 60, itens, 60, &total) == 1 && !strcmp(itens[0].imdb, "tt0001007"));
+    assert(jellyfin_pagina("jellyfin_playlists", 0, 60, itens, 60, &total) == 1 && !strcmp(itens[0].tipo, "list"));
+    assert(jellyfin_pagina("jellyfin_list_00000000000000000000000000005001", 0, 60, itens, 60, &total) == 1 && !strcmp(itens[0].imdb, "tt0001007"));
+    assert(jellyfin_pagina("jellyfin_collections", 1, 60, itens, 60, &total) == 0 && total == 1);
+  }
+  jellyfin_fileiras_copiar(itens, JF_FIL_MAX * JF_POR_FILEIRA, fils, JF_FIL_MAX, &ni);
   // Title page through the profile's connection.
   det = itens[JF_POR_FILEIRA];                 // the series
   r = jellyfin_ficha(&det, eps, 16);

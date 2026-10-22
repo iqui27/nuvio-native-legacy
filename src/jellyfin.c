@@ -406,10 +406,12 @@ static int itemDeEx(const JfConta *c, const char *ini, const char *fim, CatItem 
   if (!jfid_hex_limpo(id, limpo, 32)) return 0;
   if (!strcmp(tipo, "Movie")) copiar(it->tipo, sizeof it->tipo, "movie");
   else if (!strcmp(tipo, "Series")) copiar(it->tipo, sizeof it->tipo, "series");
+  else if (!strcmp(tipo, "BoxSet")) copiar(it->tipo, sizeof it->tipo, "group");
+  else if (!strcmp(tipo, "Playlist")) copiar(it->tipo, sizeof it->tipo, "list");
   else return 0;
   jf_ler_ids(ini, fim, imdb, &tmdb, &tvdb);
-  if (canonico && imdb[0]) copiar(it->imdb, sizeof it->imdb, imdb);
-  else if (canonico && tmdb > 0) snprintf(it->imdb, sizeof it->imdb, "tmdb:%ld", tmdb);
+  if (canonico && it->tipo[0] != 'g' && it->tipo[0] != 'l' && imdb[0]) copiar(it->imdb, sizeof it->imdb, imdb);
+  else if (canonico && it->tipo[0] != 'g' && it->tipo[0] != 'l' && tmdb > 0) snprintf(it->imdb, sizeof it->imdb, "tmdb:%ld", tmdb);
   else if (!jfid_montar_p(prefixoId(c), it->imdb, sizeof it->imdb, c->servidorId, limpo)) return 0;
   txtRaiz(ini, fim, "Name", it->titulo, sizeof it->titulo);
   txtRaiz(ini, fim, "Overview", it->sinopse, sizeof it->sinopse);
@@ -1591,7 +1593,9 @@ static int jfi_pagina(JfInst *I, const char *chave, int inicio, int limite,
   JfConta c;
   unsigned g;
   int n;
-  if (!jfi_chave_fileira(I, chave)) return -1;
+  if (total) *total = 0;
+  if (!jfi_chave_fileira(I, chave) || !out || max <= 0 || inicio < 0 || limite <= 0) return -1;
+  if (limite > 100) limite = 100;
   if (!strcmp(chave + strlen(I->prefixoFila), "nextup")) {
     if (total) *total = 0;
     if (inicio) return 0;
@@ -1604,7 +1608,23 @@ static int jfi_pagina(JfInst *I, const char *chave, int inicio, int limite,
   if (I->estado != JF_EST_CONECTADO) { pthread_mutex_unlock(&I->trava); return -1; }
   c = I->conta; g = I->geracao;
   pthread_mutex_unlock(&I->trava);
-  n = jf_itens(&c, NULL, chave + strlen(I->prefixoFila), inicio, limite, out, max, total);
+  { const char *id = chave + strlen(I->prefixoFila);
+    if (!strcmp(id, "collections") || !strcmp(id, "playlists") || !strncmp(id, "list_", 5)) {
+      RedeResposta r;
+      char rota[480], limpo[40];
+      int e;
+      if (!strncmp(id, "list_", 5)) {
+        if (!jfid_hex_limpo(id + 5, limpo, 32)) { apagarSegredo(&c, sizeof c); return -1; }
+        snprintf(rota, sizeof rota, "/Playlists/%s/Items?UserId=%s&StartIndex=%d&Limit=%d&Fields=ProviderIds,Overview", limpo, c.usuarioId, inicio, limite);
+      } else snprintf(rota, sizeof rota,
+        "%s%s%sIncludeItemTypes=%s&Recursive=true&Fields=ProviderIds,Overview&StartIndex=%d&Limit=%d",
+        c.tipo == JF_TIPO_EMBY ? "/Users/" : "/Items?userId=", c.usuarioId,
+        c.tipo == JF_TIPO_EMBY ? "/Items?" : "&", !strcmp(id, "collections") ? "BoxSet" : "Playlist", inicio, limite);
+      e = pedir(&c, c.base, NULL, "GET", rota, NULL, "collection items", JF_PRAZO_LISTA_MS, &r);
+      n = e ? e : jf_ler_itens(&c, r.corpo, r.n_corpo, out, max, total);
+      rede_resposta_limpar(&r);
+    } else n = jf_itens(&c, NULL, id, inicio, limite, out, max, total);
+  }
   apagarSegredo(&c, sizeof c);
   pthread_mutex_lock(&I->trava);
   conferirPerfilLocked(I);
@@ -2267,6 +2287,12 @@ static int jfi_tem(JfInst *I, const char *id, const char *tipo, SrvAchado *info)
   pthread_mutex_lock(&I->trava);
   conferirPerfilLocked(I);
   k = idxAcharLocked(I, id, tipo, NULL, 0, NULL, NULL);
+  if (k < 0) {
+    char tag[JFID_TAG + 1], item[JFID_ITEM + 1];
+    if (jfid_partes_p(prefixoId(&I->conta), id, tag, item) && !strncmp(tag, I->conta.servidorId, JFID_TAG))
+      for (int i = 0; i < I->idx.n; i++)
+        if (!strcmp(I->idx.v[i].item, item)) { k = i; break; }
+  }
   if (k >= 0 && info) {
     memset(info, 0, sizeof *info);
     copiar(info->servidor, sizeof info->servidor, I->conta.servidorNome[0] ? I->conta.servidorNome : jf_tipo_nome(I->tipo));
