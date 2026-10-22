@@ -7132,11 +7132,16 @@ static void desenhaGradeProgresso(float x, float y, float a) {
     }
   }
   char pos[48]; snprintf(pos,sizeof pos,i18n("T%dE%d"),ep->temporada,ep->episodio);
-  txt_desenhar_alpha(txt_linha(TXT_CALLOUT,pos,235,237,242,255),x+944,y+4,a);
+  txt_desenhar_alpha(txt_linha(TXT_G28B,pos,243,242,239,255),x+944,y+4,a);
+  char detail[160];
+  snprintf(detail,sizeof detail,"IMDb %d.%d · %s",ep->nota/10,ep->nota%10,i18n(epOculto(ep) ? "Sem spoilers" : "Episódios"));
+  idioma_decimal_texto(detail,ajustes_idioma());
+  txt_desenhar_alpha(txt_linha(TXT_G22M,detail,189,189,189,255),x+944,y+48,a);
   int bt=0,be=0,nota=progMelhorNaoVisto(&bt,&be);
   if (nota>0) {
     char melhor[160]; snprintf(melhor,sizeof melhor,i18n("Melhor: T%dE%d  ·  %.1f"),bt,be,nota/10.0);
-    txt_desenhar_alpha(txt_linha_corta(TXT_CAPTION2,melhor,175,181,192,255,560),x+944,y+112,a);
+    idioma_decimal_texto(melhor,ajustes_idioma());
+    txt_desenhar_alpha(txt_linha_corta(TXT_G22M,melhor,189,189,189,255,760),x+944,y+112,a);
   }
 }
 
