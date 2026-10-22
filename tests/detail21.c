@@ -39,7 +39,17 @@ int main(void) {
   detail_evento(&e);
   assert(!epOculto(&ep) && !pedReproduzir);
   ep.episodio = 2; assert(epOculto(&ep)); // reveal belongs to one episode
-  puts("detail21: top modes and episode spoiler reveal OK");
+  CatEp grid[4] = {{0}};
+  grid[0].temporada=1; grid[0].episodio=1; grid[0].nota=72;
+  grid[1].temporada=1; grid[1].episodio=2; grid[1].nota=81;
+  grid[2].temporada=2; grid[2].episodio=1; grid[2].nota=90;
+  grid[3].temporada=2; grid[3].episodio=2; grid[3].nota=79;
+  cat_definir_episodios(0, grid, 4);
+  assert(progVizinho(1, 1) == 3);
+  assert(progVizinho(2, -1) == 0);
+  assert(progVizinho(0, -1) == -1);
+  assert(secaoN(SEC_PROGTEMP) == 4);
+  puts("detail21: top modes, spoiler reveal and progress grid OK");
   SDL_Quit();
   return 0;
 }
