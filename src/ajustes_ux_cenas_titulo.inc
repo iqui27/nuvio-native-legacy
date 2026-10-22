@@ -93,7 +93,6 @@ static void ajcT_nota(int op, int fi) {
   else ajc_icone("aj_eye-off", x0 - 34, y0 + h * 0.5f, 30, 0.8f);
   // do close-up para a linha, no tamanho real
   ajc_icone("aj_arrow-down", 320, 196, 22, 0.35f + 0.5f * k * ajc_onda(1.6f));
-  ajcChaveCanto(k);
 }
 static void ajcT_notasTodas(int op) {
   float k = ajcLig(op), y = 112;
@@ -111,7 +110,6 @@ static void ajcT_notasTodas(int op) {
   ajcT_brilho(30, 100, 580, 120, k);
   ajc_foco(26, 100, 588, 128, 14, k * (0.4f + 0.6f * ajc_onda(2.4f)));
   ajc_ladrilho("aj_chart-column", 590, 40, 36, 1, 0.5f + 0.5f * ajc_onda(2.4f));
-  ajcChaveCanto(k);
 }
 static void ajcT_mdbChave(void) {
   static const int FI[6] = { 0, 1, 3, 5, 6, 10 };
@@ -165,7 +163,6 @@ static void ajcT_dataCheia(int op) {
   ajcT_txtc("2024", 20, 1, 40, 296, 243, 242, 239, 0.9f - 0.5f * k);
   ajc_icone("aj_chevron-right", 130, 306, 20, 0.5f);
   ajcT_txtc("15.03.2024", 20, 1, 150, 296, 243, 242, 239, 0.3f + 0.65f * k);
-  ajcChaveCanto(k);
 }
 
 // --- TMDB: cada opcao acende a parte da pagina que ela preenche -------------------------
@@ -174,7 +171,6 @@ static float ajcT_quadro(int op) {
   ajc_cartaz(0, 0, 640, 360, 2, 0.30f);
   ajc_veu(0, 0, 640, 360, 0, 0.85f);
   ajcSelo("TMDB", 28, 22, 13, k, 1);
-  ajcChaveCanto(k);
   return k;
 }
 static void ajcT_cinza(float x, float y, float w, float h, float raio, float k) {
@@ -371,7 +367,6 @@ static void ajcT_metaExt(int op) {
   ajc_icone("aj_arrow-down", 160, 196, 24, 0.5f + 0.5f * p);
   ajc_vidro(60, 220, 520, 100, 16, 1);
   for (i = 0; i < 4; i++) ajc_barra(84, 238 + i * 17, (380 - 40 * i) * (0.5f + 0.5f * ajc_fase(2.0f)), i == 0 ? 0.7f : 0.4f);
-  ajcChaveCanto(k);
 }
 static void ajcT_soCinemeta(int op) {
   float k = ajcLig(op), p = ajc_onda(1.8f);
@@ -392,7 +387,6 @@ static void ajcT_soCinemeta(int op) {
   ajc_icone("aj_chevron-right", 505, 155, 28, 0.5f + 0.4f * p);
   ajc_vidro(530, 110, 90, 90, 14, 1);
   ajc_barras(542, 128, 66, 4, 1);
-  ajcChaveCanto(k);
 }
 
 // --- idiomas --------------------------------------------------------------------------
@@ -475,7 +469,6 @@ static void ajcT_forcada(int op) {
     }
   }
   ajc_ret(30 + 580 * f, 240, 3, 52, 1.5f, 1, 1, 1, 0.8f);
-  ajcChaveCanto(k);
 }
 static void ajcT_leg2(int op) {
   static const float COR[7][3] = { { 1, 1, 1 }, { 1, 1, 1 }, { 1, 0.9f, 0.2f }, { 0.4f, 0.9f, 0.4f },
@@ -638,7 +631,6 @@ static void ajcT_diagnostico(void) {
     if (i == n) ajc_foco(180, y, 330, 50, 12, 1);
   }
   ajc_ladrilho("aj_shield-check", 570, 290, 52, n >= 4, n >= 4 ? 1.0f : 0.5f);
-  ajc_ladrilho("aj_sliders-horizontal", 570, 190, 52, 0, n >= 4 ? 1.0f : 0.6f);
 }
 static void ajcT_velocidade(void) {
   float f = ajc_onda(3.2f);
@@ -800,7 +792,6 @@ static void ajcT_enviarLog(int op) {
     ajc_icone("aj_file-text", x, 190, 26, 0.3f + 0.5f * k);
   }
   if (k < 0.5f) ajc_icone("aj_x", 320, 110, 60, 0.85f);
-  ajcChaveCanto(k);
 }
 
 static int ajcNovaTitulo(int sec, int op) {

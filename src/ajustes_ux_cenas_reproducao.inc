@@ -63,7 +63,6 @@ static void rDv(int op) {   // HDR10 fixo x Dolby Vision cena a cena
   ajcSelo("HDR10", 135, 236, 14, k > 0.5f ? 0 : 1, 1);
   ajcSelo("DV", 456, 236, 14, k > 0.5f ? 1 : 0, 1);
   ajc_icone("aj_chevron-right", 320, 136, 20, 0.5f);
-  ajcChaveCanto(k);
 }
 static void rAtmos(int op) {   // sons como objetos no espaco (ligado) x dois canais (desligado)
   float k = ajcLig(op), t = ajc_t();
@@ -81,7 +80,6 @@ static void rAtmos(int op) {   // sons como objetos no espaco (ligado) x dois ca
     ajc_bolinha(cx, cy, 24, C.ar, C.ag, C.ab, k * 0.2f);
   }
   ajcSelo("ATMOS", 276, 268, 14, k, 1);
-  ajcChaveCanto(k);
 }
 
 // --- escolha da fonte ----------------------------------------------------------------
@@ -106,11 +104,9 @@ static void rManual(int op) {   // Play -> lista aberta (ligado) ou video direto
     ajc_foco(252, 56 + s * 68, 340, 56, 12, ap * k);
   }
   if (k < 0.99f) { ajc_video(236, 56, 372, 210, 14, ap * (1 - k)); ajc_play(422, 161, 44, ap * (1 - k) * 0.9f); }
-  ajcChaveCanto(k);
 }
 static void rPrioridade(void) {   // Equilibrio / Qualidade / Comecar rapido
   static const char *Q[3] = { "4K", "1080p", "720p" };
-  static const char *IC[3] = { "aj_sliders-horizontal", "aj_star", "aj_zap" };
   static const float VEL[3] = { 0.22f, 0.55f, 0.95f };
   int v = rInt(AJ_FONTE_PRIORIDADE, 3), pick = v == 1 ? 0 : v == 0 ? 1 : 2, i;
   if (v == 3) {
@@ -127,8 +123,6 @@ static void rPrioridade(void) {   // Equilibrio / Qualidade / Comecar rapido
     ajc_progresso(308, y + 23.5f, 80, VEL[i], i == pick ? 1.0f : 0.5f);
     if (i == pick) ajc_foco(40, y, 470, 52, 12, p);
   }
-  ajc_ladrilho(IC[v], 570, 140, 64, 1, 1);
-  ajc_foco(538, 108, 64, 64, 18, p);
 }
 static void rPrazo(void) {   // a linha do tempo dos add-ons e o corte
   static const int PZ[7] = { 0, 3, 5, 8, 15, 30, -1 };
@@ -336,7 +330,6 @@ static void rOutros(int op) {   // permitidos vazios: usa os outros (ligado) ou 
     ajc_icone("aj_x", 372, 160, 16, 0.5f * s);
   }
   ajc_ladrilho("aj_play", 320, 290, 40, 0, 0.5f);
-  ajcChaveCanto(k);
 }
 
 // --- como o automatico escolhe e prepara -----------------------------------------------
@@ -373,7 +366,6 @@ static void rTocarConferindo(int op) {   // conferir e tocar em paralelo (ligado
   rLane(190, "aj_play", ini, 0.95f, f, 1);
   if (k > 0.5f) ajc_ret(110, 135, 480 * 0.4f, 3, 1.5f, C.ar, C.ag, C.ab, 0.8f);
   ajc_icone(k > 0.5f ? "aj_zap" : "aj_clock", 320, 270, 30, 0.8f);
-  ajcChaveCanto(k);
 }
 static void rConferirVarias(int op) {   // 3 conferencias de uma vez (ligado) x uma por vez
   float k = ajcLig(op), f = ajc_fase(5.0f) * 1.1f;
@@ -388,7 +380,6 @@ static void rConferirVarias(int op) {   // 3 conferencias de uma vez (ligado) x 
   }
   ajc_icone("aj_clock", 580, 270, 24, 0.5f);
   ajc_ret(60, 268, k > 0.5f ? 140 : 380, 6, 3, C.ar, C.ag, C.ab, 0.9f);
-  ajcChaveCanto(k);
 }
 static void rAquecer(int op) {   // abrir a conexao antes do Play
   float k = ajcLig(op), f = ajc_fase(5.0f), w = rK(((k > 0.5f) ? (f - 0.1f) : (f - 0.6f)) / 0.2f), vid = rK((f - (k > 0.5f ? 0.65f : 0.9f)) / 0.08f);
@@ -413,7 +404,6 @@ static void rAquecer(int op) {   // abrir a conexao antes do Play
   ajc_video(436, 106, 168, 88, 8, vid);
   ajc_play(520, 150, 30, 1 - vid);
   ajc_icone("aj_wifi", 300, 250, 26, 0.3f + 0.6f * w);
-  ajcChaveCanto(k);
 }
 static void rPreparar(int op) {   // o arquivo ja escolhido e posto no debrid antes do Play
   float k = ajcLig(op), f = ajc_fase(5.0f), m = rK(((k > 0.5f) ? (f - 0.1f) : (f - 0.6f)) / 0.25f), vid = rK((f - (k > 0.5f ? 0.65f : 0.92f)) / 0.07f);
@@ -432,7 +422,6 @@ static void rPreparar(int op) {   // o arquivo ja escolhido e posto no debrid an
   ajc_video(515, 125, 100, 52, 6, vid);
   ajc_play(565, 151, 22, 1 - vid);
   ajc_icone("aj_zap", 565, 215, 22, vid * 0.9f);
-  ajcChaveCanto(k);
 }
 // MEMORIA DA FONTE: tres episodios, tres fontes cada. Ligado, a mesma linha
 // (a lembrada / o mesmo grupo) e a escolhida em todos; desligado, cada episodio
@@ -456,7 +445,6 @@ static void rMemoria(int op) {
   }
   ajc_ladrilho(ic, 40, 300, 40, k > 0.5f, 1);
   if (op == AJ_LINK_PRAZO) ajcTexto(textoValor(op), 16, 1, 72, 290, 0.9f);
-  else ajcChaveCanto(ajcLig(op));
 }
 static void rOrdemFontes(void) {
   int addon = rInt(AJ_FONTE_ORDEM_ADDON, 1);
@@ -502,7 +490,6 @@ static void rSelosCores(int op) {
     for (j = 0; j < 3; j++) x += rSeloCor(T[i * 3 + j], x + (j ? 0 : 0), 92 + i * 90, 20, 2 + i * 3 + j, k, 1) + 14;
   }
   ajc_icone("aj_palette", 320, 270, 30, 0.35f + 0.6f * k);
-  ajcChaveCanto(k);
 }
 static void rCartaoPacote(float x, float y, float w, float h, int estilo, float a) {
   int j;
@@ -585,7 +572,6 @@ static void rDvMkv(int op) {   // arquivo MKV em Dolby Vision: a TV recebe DV ou
   ajc_icone("aj_chevron-right", 208, 150, 28, 0.55f);
   rTelaHdr(250, 70, 350, 197, k, k > 0.5f ? 0.35f + 0.5f * o : 0.4f, 1);
   ajcSelo(k > 0.5f ? "DV" : "HDR10", 392, 286, 14, k > 0.5f ? 1 : 0, 1);
-  ajcChaveCanto(k);
 }
 static void rProporcao(int op) {   // o mesmo video 4:3 nos 9 modos de ocupar a tela 16:9
   static const float W[9] = { 240, 240, 320, 320, 270, 300, 380, 240, 320 };
@@ -621,7 +607,6 @@ static void rClassif(int op) {   // a ilha desce no comeco do filme com a classi
   ajc_ret(168, 32 - 70 * (1 - d), 44, 44, 10, 0.94f, 0.48f, 0.18f, d);
   ajcTexto("14", 22, 1, 177, 41 - 70 * (1 - d), d);
   { int j; for (j = 0; j < 3; j++) { ajc_barra(232, 34 + j * 14 - 70 * (1 - d), 160 - j * 30, d * 0.7f); ajc_bolinha(430 + j * 18, 54 - 70 * (1 - d), 10 + j * 0, 1, 1, 1, d * (0.3f + 0.25f * j)); } }
-  ajcChaveCanto(k);
 }
 static void rSaida(void) {   // sair no meio: o video vai para a ilha da Home ou para a pagina do titulo
   float k = ajc_onda(4.0f);
@@ -662,7 +647,6 @@ static void rManter(int op) {   // paused player for the chosen duration
   ajc_icone_tinta("aj_play", 375, 199, 13, k);
   if (k < 0.5f) ajc_icone("aj_x", 320, 165, 90, 0.5f);
   ajc_icone("aj_memory-stick", 320, 290, 30, 0.45f);
-  ajcChaveCanto(k);
 }
 
 // --- miniaturas na barra de tempo (Seekr) -------------------------------------------------
@@ -685,7 +669,6 @@ static void rSeekr(int op) {
         ajc_foco(cx - 70, 196, 140, 80, 10, 1);
         ajcTextoVivo(b, 15, 1, cx - 20, 284, 1);
       } else { ajc_vidro(cx - 30, 284, 60, 24, 12, 1); ajcTextoVivo(b, 14, 1, cx - 19, 287, 1); }
-      ajcChaveCanto(k);
       return;
     case AJ_SEEKR_FITA: {   // a fita de quadros (ligada) x um quadro por vez
       int i;
@@ -699,7 +682,6 @@ static void rSeekr(int op) {
         }
         ajc_foco(266, 160, 108, 66, 4, 1);
         if (k <= 0.5f) ajc_icone("aj_loader", 320, 193, 26, 0.95f); }
-      ajcChaveCanto(k);
       return; }
     case AJ_SEEKR_CHAVE: {
       static const char *TX = "************";
@@ -763,7 +745,6 @@ static void rP2p(int op) {
         ajc_icone("aj_user-round", px, py, 18, 0.7f + 0.3f * k);
         ajc_bolinha(px + (320 - px) * q * 0.8f, py + (160 - py) * q * 0.8f, 10, C.ar, C.ag, C.ab, k * (1 - q * 0.5f));
       }
-      ajcChaveCanto(k);
       return; }
     case AJ_P2P_URL: {
       static const char *TX = "192.168.1.20:8080";

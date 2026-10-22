@@ -190,17 +190,11 @@ static void ajc_ladrilho(const char *nome, float cx, float cy, float d, int acen
   if (acento) ajc_icone_tinta(nome, cx, cy, d * 0.5f, a);
   else ajc_icone(nome, cx, cy, d * 0.5f, a);
 }
-// 2.0.3: a mesma PILULA COM ESTADO das linhas (nunca a bolinha sozinha):
-// ligada, clara e cheia com ponto escuro e o "texto" escuro; desligada, so o
-// contorno, ponto vazado e o "texto" cinza.
-static void ajc_chave(float x, float y, float liga, float a) {
+// Estado de uma peca na cena (addon ligado, fileira visivel): so a marca de
+// "ligado", nunca um interruptor. Controle mora na linha da opcao (dono, 22/10).
+static void ajc_marca(float x, float y, float liga, float a) {
   float k = liga < 0 ? 0 : liga > 1 ? 1 : liga;
-  ajc_ret(x - 6, y, 52, 22, 11, 0.55f, 0.56f, 0.60f, (1 - k) * a);
-  ajc_ret(x - 5, y + 1, 50, 20, 10, 0.10f, 0.105f, 0.12f, (1 - k) * a);
-  ajc_ret(x - 6, y, 52, 22, 11, 0.953f, 0.949f, 0.937f, k * a);
-  ajc_ret(x + 1, y + 7, 8, 8, 4, 0.75f * (1 - k) + 0.09f * k, 0.75f * (1 - k) + 0.09f * k, 0.78f * (1 - k) + 0.10f * k, a);
-  ajc_ret(x + 3, y + 9, 4, 4, 2, 0.10f, 0.105f, 0.12f, (1 - k) * a);
-  ajc_ret(x + 14, y + 9, 24, 4, 2, 0.75f * (1 - k) + 0.09f * k, 0.75f * (1 - k) + 0.09f * k, 0.78f * (1 - k) + 0.10f * k, a);
+  ajc_icone("aj_check", x + 20, y + 11, 18, k * a);
 }
 static void ajc_bolinha(float cx, float cy, float d, float r, float g, float b, float a) {
   ajc_ret(cx - d * 0.5f, cy - d * 0.5f, d, d, d * 0.5f, r, g, b, a);

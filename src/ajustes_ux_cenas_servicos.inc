@@ -243,7 +243,7 @@ static void ajcSvServ(int modo, const char *marca, const char *icone, const char
         { float r, g, b; ajc_matiz(2 + i * 2, &r, &g, &b); ajc_ret(58, y + 10, 32, 32, 9, r, g, b, 1); }
         ajc_icone("aj_server", 74, y + 26, 18, 0.9f);
         ajcTexto(N[i], 15, 1, 104, y + 17, 1);
-        ajc_chave(264, y + 15, k, 1);
+        ajc_marca(264, y + 15, k, 1);
       }
       conn = k * (0.55f + 0.45f * ajc_onda(3.0f));
       break; }
@@ -252,7 +252,6 @@ static void ajcSvServ(int modo, const char *marca, const char *icone, const char
   if (estilo == 2) ajcSvStb(conn, mac, 1); else ajcSvTelaTV(conn, m0, estilo, 1);
   if (modo == SV_URL || modo == SV_ENTRAR || modo == SV_MAC || modo == SV_CODIGO || modo == SV_ESCOLHER)
     ajcSvElo(ajcSvTr(f, 0.55f, 0.75f), 1);
-  if (modo == SV_LIGA) ajcChaveCanto(ajcLig(AJ_JF_LIGADO));
   if (modo == SV_CODIGO) {   // o telefone que confirma o codigo
     ajc_icone("aj_smartphone", 490, 270, 52, 0.9f);
     if (conn > 0.5f) { ajc_bolinha(520, 246, 20, C.ar, C.ag, C.ab, 1); ajc_icone_tinta("aj_check", 520, 246, 12, 1); }
@@ -418,7 +417,6 @@ static void ajcSvProxy(void) {
   ajc_barra(110, 232, 60, 0.4f);
   ajcSelo("HLS", 120, 260, 13, 0, 1);
   ajcSelo("TS", 470, 260, 13, k > 0.5f ? 1.0f : 0.0f, 1);
-  ajcChaveCanto(k);
 }
 
 // --- contas ------------------------------------------------------------------------
@@ -469,7 +467,6 @@ static void ajcSvPesq(void) {
     ajc_icone("aj_eye-off", 320, 190, 56, 0.4f);
     ajc_barra(270, 240, 100, 0.2f);
   }
-  ajcChaveCanto(k);
 }
 static void ajcSvPerfilEditar(void) {
   float f = ajc_fase(4.0f);
@@ -486,7 +483,7 @@ static void ajcSvPerfilEditar(void) {
     float y = 60 + i * 66;
     ajc_neutro(400, y, 200, 52, 12, 1);
     ajc_icone(i == 0 ? "aj_eye" : i == 1 ? "aj_users" : "aj_activity", 428, y + 26, 20, 0.85f);
-    ajc_chave(500, y + 15, i == 2 ? 0.0f : 1.0f, 1);
+    ajc_marca(500, y + 15, i == 2 ? 0.0f : 1.0f, 1);
   }
   ajc_icone("aj_users", 440, 290, 24, 0.7f);
   ajc_acento_ret(470, 280, 22, 22, 11, 1);
@@ -591,7 +588,6 @@ static void ajcSvHist(void) {
   ajc_bolinha(224 + 196 * f, 161.5f, 9, 1, 1, 1, 0.9f);
   ajcSvMarca("Trakt", "aj_link", 440, 140, 1);
   ajcSvMarca("Simkl", "aj_link", 440, 190, 1);
-  ajcChaveCanto(k);
 }
 static void ajcSvSocial(void) {
   float k = ajcLig(AJ_SOCIAL), f = ajc_fase(3.0f);
@@ -612,7 +608,6 @@ static void ajcSvSocial(void) {
     }
   }
   ajc_icone("aj_users", 320, 304, 24, 0.4f + 0.5f * k);
-  ajcChaveCanto(k);
 }
 static void ajcSvDiscord(void) {
   float k = ajcLig(AJ_DISCORD), f = ajc_fase(5.0f);
@@ -635,7 +630,6 @@ static void ajcSvDiscord(void) {
   } else {
     ajc_icone("aj_eye-off", 375, 245, 46, 0.3f);
   }
-  ajcChaveCanto(k);
 }
 static void ajcSvEnquete(void) {
   float k = ajcLig(AJ_ENQUETES), f = ajc_fase(4.0f), s = k > 0.5f ? ajcSvTr(f, 0.1f, 0.3f) : 0.0f;
@@ -655,7 +649,6 @@ static void ajcSvEnquete(void) {
     ajc_icone("aj_bell", 320, 190, 60, 0.18f);
     ajc_ret(272, 170, 96, 4, 2, 1, 1, 1, 0.55f);
   }
-  ajcChaveCanto(k);
 }
 
 // Plugins: cada plugin entrega fontes; elas descem para a lista e a primeira toca.
@@ -704,7 +697,6 @@ static void ajcSvPrincipal(int op) {
     }
   }
   ajc_foco(50, 170, 140, 130, 12, 0.5f + 0.5f * ajc_onda(2.4f));
-  ajcChaveCanto(k);
 }
 // Buscar no Cinemeta: a busca consulta o catalogo do Nuvio e o Cinemeta;
 // desligado, o Cinemeta sai e os resultados dele somem.
@@ -726,7 +718,6 @@ static void ajcSvCinemeta(int op) {
     ajc_cartaz(x, y, 110, 96, i + 2, 0.15f + 0.85f * a);
     if (doCinemeta) ajc_icone("aj_film", x + 96, y + 14, 12, 0.8f * a);
   }
-  ajcChaveCanto(k);
 }
 
 static int ajcNovaServicos(int sec, int op) {

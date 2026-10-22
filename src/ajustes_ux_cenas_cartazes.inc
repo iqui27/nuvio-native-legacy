@@ -152,7 +152,6 @@ static int ajcNovaCartazes(int sec, int op) {
       }
       ajc_foco(160, 100, 100 + 400 * k, 150, 10, 1);
       ajc_barra(40, 276, 80, 0.5f);
-      ajcChaveCanto(ajcLig(op));
       return 1;
     }
     case AJ_BORDA_FOCO: {   // o anel no acento anda com o foco; sem ele, so o tamanho
@@ -166,7 +165,6 @@ static int ajcNovaCartazes(int sec, int op) {
         ajc_cartaz(40 + 130 * i + ox, 110 - (w > 100 ? 8 : 0), w, 150 + (w > 100 ? 16 : 0), i, 1);
       }
       if (k > 0.01f) ajc_foco(fx - 6, 102, 112, 166, 10, k);
-      ajcChaveCanto(k);
       return 1;
     }
     case AJ_GRAD_CLASSICO: {   // o realce antigo: um degrade escuro embaixo do cartaz em foco
@@ -176,7 +174,6 @@ static int ajcNovaCartazes(int sec, int op) {
       ajc_veu(180, 90 + 180 * 0.45f, 120, 180 * 0.55f, 0, 0.85f * k);
       ajc_ret(192, 238, 70, 7, 3, 1, 1, 1, 0.8f * k);
       ajc_foco(180, 90, 120, 180, 9, 1);
-      ajcChaveCanto(k);
       return 1;
     }
     case AJ_PROF: {   // relevo: sombra embaixo, borda acesa e reflexo passando
@@ -187,7 +184,6 @@ static int ajcNovaCartazes(int sec, int op) {
         ajc_cartaz(24 + i * 124, 104, 100, 150, i, 1);
       }
       czRelevo(148 + 124, 104, 100, 150, 2, 9, k, ajc_fase(2.6f));
-      ajcChaveCanto(k);
       return 1;
     }
     case AJ_PROF_BORDA: {   // o valor: o contorno do cartaz grande acende nesse tanto
@@ -277,7 +273,6 @@ static int ajcNovaCartazes(int sec, int op) {
         }
         ajc_ladrilho("aj_film", 590, 40, 44, 1, 1);
       }
-      ajcChaveCanto(k);
       return 1;
     }
     case AJ_HERO_FUNDO: {   // de onde vem a arte grande: a fonte atual no acento
@@ -306,7 +301,6 @@ static int ajcNovaCartazes(int sec, int op) {
       ajc_ret(290, 150, 110, 12, 4, 1, 1, 1, 0.9f);
       ajc_barras(290, 172, 150, 2, 1);
       ajc_ladrilho(k > 0.5f ? "aj_unlink" : "aj_link", 235, 175, 44, k > 0.5f, 1);
-      ajcChaveCanto(k);
       return 1;
     }
     case AJ_POSTER_PROV: {   // o cartaz ganha notas, selos e faixa do servico escolhido
@@ -414,7 +408,6 @@ static int ajcNovaCartazes(int sec, int op) {
       }
       czPuzzle(144, 104, 30, 1);
       ajc_foco(50, 90, 110, 165, 9, k);
-      ajcChaveCanto(k);
       return 1;
     }
     case AJ_ADDON_FUNDO: {   // o fundo do destaque e o que o addon manda, nao o da fonte
@@ -426,7 +419,6 @@ static int ajcNovaCartazes(int sec, int op) {
       ajc_barras(90, 168, 200, 2, 1);
       czPuzzle(550, 70, 36, k);
       ajcSelo("TMDB", 500, 232, 13, 0, 1 - k);
-      ajcChaveCanto(k);
       return 1;
     }
     case AJ_ADDON_LOGO: {   // o logo do addon nao e trocado pelo logo traduzido do TMDB
@@ -439,7 +431,6 @@ static int ajcNovaCartazes(int sec, int op) {
       czPuzzle(330, 117, 32, k);
       ajc_ladrilho("aj_languages", 330, 117, 32, 0, 1 - k);
       ajcSelo("TMDB", 90, 76 - 4, 12, 0, 1 - k);
-      ajcChaveCanto(k);
       return 1;
     }
     case AJ_COL_ARTE_CONTA: {   // as pastas trocam a arte do app pela da sua conta
@@ -453,7 +444,6 @@ static int ajcNovaCartazes(int sec, int op) {
         ajc_barra(x + 22, 206, 80, 0.5f);
       }
       ajc_ladrilho("aj_cloud", 560, 56, 48, k > 0.5f, 1);
-      ajcChaveCanto(k);
       return 1;
     }
     // --- trailers: cada um no lugar onde acontece ---
@@ -461,19 +451,16 @@ static int ajcNovaCartazes(int sec, int op) {
       float k = ajcLig(op), vid = k * czPulso(5.0f);
       czHero(vid);
       ajc_play(560, 114, 46, 1 - vid);
-      ajcChaveCanto(k);
       return 1;
     }
     case AJ_HERO_TRAILER_SOM: {
       czHero(1);
       czSom(op);
-      ajcChaveCanto(ajcLig(op));
       return 1;
     }
     case AJ_DET_TRAILER_SOM: {
       czDetalhe(1, 0);
       czSom(op);
-      ajcChaveCanto(ajcLig(op));
       return 1;
     }
     case AJ_HERO_TRAILER_ESPERA: {   // o relogio: o destaque fica parado ate o anel encher
@@ -492,14 +479,12 @@ static int ajcNovaCartazes(int sec, int op) {
       czDetalhe(k * p, 1);
       ajc_progresso(34, 330, 140, k * f, 1);
       ajc_icone("aj_volume-2", 600, 40, 20, 0.0f);
-      ajcChaveCanto(k);
       return 1;
     }
     case AJ_DET_TRAILER: {   // o botao de trailer ao lado de Play
       float k = ajcLig(op), p = czPulso(5.0f);
       czDetalhe(k * p, k);
       if (k > 0.5f) ajc_foco(186, 270, 36, 36, 18, 0.4f + 0.6f * p);
-      ajcChaveCanto(k);
       return 1;
     }
     case AJ_TRAILER_FONTE: {   // de onde o trailer vem: a fonte atual no acento

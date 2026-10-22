@@ -59,7 +59,6 @@ static void ajcHPaisagem(int op) {
     if (lado == on) ajc_acento_ret(x + 140 - (lado ? 16 : 8), 296, lado ? 32 : 16, lado ? 18 : 26, 3, 1);
   }
   ajcHSeta(320, 154);
-  ajcChaveCanto(ajcLig(op));
 }
 // Destaque: o banner do alto abre e fecha, e as fileiras sobem ou descem.
 static void ajcHDestaque(int op) {
@@ -79,7 +78,6 @@ static void ajcHDestaque(int op) {
     ajc_barra(86, ry, 70, 0.5f);
     for (j = 0; j < 5; j++) ajcHBloco(86 + j * 94, ry + 14, 82, 48, i * 3 + j, 1);
   }
-  ajcChaveCanto(k);
 }
 // Espaco entre fileiras / entre titulos: o valor real, com a regua no vao.
 static void ajcHEspaco(int op) {
@@ -128,7 +126,6 @@ static void ajcHRailModerna(int op) {
     }
   }
   ajcHSeta(320, 164);
-  ajcChaveCanto(ajcLig(op));
 }
 // Recolhida / fixa: a largura da barra anda com o valor; a Home encolhe.
 static void ajcHRailFixa(int op) {
@@ -200,7 +197,6 @@ static void ajcHMenuItem(int op, const char *ico) {
         else ajc_ret(x0 + 6 + i * 36, y0 + 230 - h, 26, h, 5, 0.9f, 0.9f, 0.92f, 0.28f * a);
       }
     } }
-  ajcChaveCanto(k);
 }
 // Desfoque da barra: solida contra vidro sobre a arte.
 static void ajcHRailBlur(int op) {
@@ -217,7 +213,6 @@ static void ajcHRailBlur(int op) {
     for (i = 0; i < 4; i++) ajcHItemRail(x + 24, 54 + i * 52, 34, AJC_H_ICO[i], i == 1, 0, 1);
   }
   ajcHSeta(320, 164);
-  ajcChaveCanto(ajcLig(op));
 }
 // Botao de microfone na busca (.tpk): a barra da busca (a da cena do Cinemeta)
 // com o microfone no acento ao lado do celular. O laco mostra o que ele faz: o
@@ -304,7 +299,6 @@ static void ajcHRelogio(int op) {
   ajcTexto("20", 30, 1, 422, 56, 0.2f + 0.8f * k);
   ajc_ret(465, 62, 5, 5, 2.5f, 1, 1, 1, b * k); ajc_ret(465, 76, 5, 5, 2.5f, 1, 1, 1, b * k);
   ajcTexto("30", 30, 1, 480, 56, 0.2f + 0.8f * k);
-  ajcChaveCanto(k);
 }
 // Formato do relogio: 24 h contra 12 h, o atual em foco.
 static void ajcHRelogio12(int op) {
@@ -333,7 +327,7 @@ static void ajcHOrdem(void) {
     ajc_icone("aj_list-ordered", 68, y + 31, 22, 0.6f);
     ajc_barra(92, y + 12, 80 + i * 14, 0.65f);
     for (j = 0; j < 5; j++) ajcHBloco(92 + j * 50, y + 28, 42, 26, i * 2 + j, 0.85f);
-    ajc_chave(522, y + 20, i == 3 ? 0.0f : 1.0f, 1);
+    ajc_marca(522, y + 20, i == 3 ? 0.0f : 1.0f, 1);
   }
   ajc_icone("aj_arrow-up-down", 614, 150, 20, 0.7f);
 }
@@ -389,7 +383,6 @@ static void ajcHNaoLancados(int op) {
     } else ajcHBloco(x, 72, 82, 130, i, 1);
   }
   ajc_icone("aj_eye-off", 330, 250, 30, 0.3f + 0.7f * p);
-  ajcChaveCanto(k);
 }
 // Nota do IMDb: a etiqueta amarela no canto do cartaz.
 static void ajcHNotas(int op) {
@@ -405,7 +398,6 @@ static void ajcHNotas(int op) {
     ajTextoMini(N[i], ajc_px(14), 1, ajc_x(x + 36), ajc_y(62), 26, 26, 26, k);
   }
   ajcTexto("IMDb", 14, 1, 288, 276, 0.4f + 0.6f * k);
-  ajcChaveCanto(k);
 }
 // Selo de assistido: o check no canto de cima dos que voce ja viu.
 static void ajcHSelo(int op) {
@@ -422,7 +414,6 @@ static void ajcHSelo(int op) {
     }
   }
   ajc_icone("aj_eye", 320, 282, 22, 0.5f + 0.5f * k);
-  ajcChaveCanto(k);
 }
 // Ocultar filmes assistidos: o cartaz marcado sai da descoberta e fecha o vao.
 static void ajcHOcultarVistos(int op) {
@@ -440,7 +431,6 @@ static void ajcHOcultarVistos(int op) {
     }
   }
   ajc_icone("aj_eye-off", 330, 250, 30, 0.3f + 0.7f * p);
-  ajcChaveCanto(k);
 }
 // Rotulos: o nome escrito abaixo do cartaz.
 static void ajcHRotulos(int op) {
@@ -454,7 +444,6 @@ static void ajcHRotulos(int op) {
     ajc_barra(x + 4, 50 + h + 26, 52, 0.4f * k);
   }
   ajc_icone("aj_type", 320, 266, 26, 0.3f + 0.7f * k);
-  ajcChaveCanto(k);
 }
 // Titulo da fileira com o nome do addon (cartucho) ou o tipo (filme / serie).
 static void ajcHTituloFileira(int op) {
@@ -480,7 +469,6 @@ static void ajcHTituloFileira(int op) {
     }
     for (j = 0; j < 5; j++) ajcHBloco(x + j * 94, y + 22, 82, 70, i * 5 + j, 1);
   }
-  ajcChaveCanto(k);
 }
 
 // --- CONTINUAR ASSISTINDO -----------------------------------------------------------------
@@ -496,7 +484,6 @@ static void ajcHCwLigado(int op) {
   }
   ajc_barra(86, y2 + 4, 70, 0.5f);
   for (i = 0; i < 5; i++) ajcHBloco(86 + i * 94, y2 + 20, 82, 70, i, 1);
-  ajcChaveCanto(k);
 }
 // OK no card: o card, o botao e o que acontece depois.
 static void ajcHCwOk(int op) {
@@ -550,7 +537,6 @@ static void ajcHCwThumb(int op) {
     ajc_progresso(x + 24, 220, 212, 0.45f, 1);
   }
   ajcHSeta(320, 175);
-  ajcChaveCanto(ajcLig(op));
 }
 // Desfocar o proximo: o episodio que voce ainda nao viu vira mosaico.
 static void ajcHCwBlur(int op) {
@@ -569,7 +555,6 @@ static void ajcHCwBlur(int op) {
     ajc_icone("aj_eye-off", 465, 165, 38, k);
   }
   ajc_foco(350, 100, 230, 130, 10, 0.5f + 0.5f * ajc_onda(2.4f));
-  ajcChaveCanto(k);
 }
 // Ordenacao: os mesmos seis cards reorganizados por cada modo.
 // Tipos: 0 em andamento (barra), 1 proximo episodio (seta), 2 futuro (calendario).
@@ -618,7 +603,6 @@ static void ajcHCwNaoExibidos(int op) {
     ajcTexto("15/10", 16, 1, 431, 164, k);
     ajc_foco(380, 104, 154, 100, 10, k * (0.5f + 0.5f * ajc_onda(2.0f)));
   }
-  ajcChaveCanto(k);
 }
 // Tambem em Continuar assistindo: o card da ilha cai na fileira.
 static void ajcHCwRetido(int op) {
@@ -638,7 +622,6 @@ static void ajcHCwRetido(int op) {
       if (k > 0.02f) { ajcHCw(x, 160, 128, 84, 6, 0.5f, k); ajc_foco(x, 160, 128, 84, 10, k); }
     } else ajcHCw(x, 160, 128, 84, i + 2, 0.2f + 0.2f * i, 1);
   }
-  ajcChaveCanto(k);
 }
 // Proximo do episodio mais alto: a seta nasce do mais alto, nao do mais recente.
 static void ajcHCwFurthest(int op) {
@@ -657,7 +640,6 @@ static void ajcHCwFurthest(int op) {
     if (i == 4) ajc_icone("aj_arrow-up", x + 31, y - 20, 18, 0.9f);
   }
   ajc_icone("aj_arrow-up", 30 + alvo * 74 + 31, 222 + bump, 26, 1);
-  ajcChaveCanto(ajcLig(op));
 }
 // Escolha de perfil: o Continuar embaixo do perfil em foco.
 static void ajcHPsContinuar(int op) {
@@ -676,7 +658,6 @@ static void ajcHPsContinuar(int op) {
   if (cx > 450) cx = 450;
   for (j = 0; j < 3; j++) ajcHCw(cx - 130 + j * 90, 218, 80, 50, 3 + j + f, 0.3f + 0.2f * j, k);
   ajc_foco(cx - 136, 212, 272, 62, 10, k * 0.6f);
-  ajcChaveCanto(k);
 }
 
 // --- APARENCIA ----------------------------------------------------------------------------
@@ -710,7 +691,6 @@ static void ajcHVidro(int op) {
     ajcHVidroPainel(x, 36, 280, 250, o, 1, 0, !lado, 0);
   }
   ajcHSeta(320, 160);
-  ajcChaveCanto(ajcLig(op));
 }
 static void ajcHVidroContorno(int op) {
   int on = ajcLig(op) > 0.5f, lado;
@@ -720,7 +700,6 @@ static void ajcHVidroContorno(int op) {
     ajcHVidroPainel(x, 36, 280, 250, 0.62f, lado ? 2 : 0, 0, 0, 0);
   }
   ajcHSeta(320, 160);
-  ajcChaveCanto(ajcLig(op));
 }
 static void ajcHVidroFosco(int op) {
   int on = ajcLig(op) > 0.5f, lado;
@@ -730,7 +709,6 @@ static void ajcHVidroFosco(int op) {
     ajcHVidroPainel(x, 36, 280, 250, 0.45f, 1, lado, 0, 1);
   }
   ajcHSeta(320, 160);
-  ajcChaveCanto(ajcLig(op));
 }
 static void ajcHVidroOpac(void) {
   static const int P[5] = { 60, 70, 78, 86, 92 };
@@ -783,7 +761,7 @@ static void ajcHTamanhoAj(void) {
     ajc_ret(44, y, 330 * e + 20, 38 * e, 10 * e, 0.17f, 0.18f, 0.21f, i == 1 ? 1.0f : 0.7f);
     ajc_bolinha(44 + 20 * e, y + 19 * e, 22 * e, 0.30f, 0.34f, 0.42f, 1);
     ajc_barra(44 + 40 * e, y + 15 * e, 120 * e, 0.7f);
-    ajc_chave(44 + 330 * e - 56 * e, y + 8 * e, i % 2 ? 0.0f : 1.0f, 1);
+    ajc_marca(44 + 330 * e - 56 * e, y + 8 * e, i % 2 ? 0.0f : 1.0f, 1);
     if (i == 1) ajc_foco(44, y, 330 * e + 20, 38 * e, 10 * e, 1);
   }
   ajc_painel(400 + 20 * (1 - e), 40, 196 * e + 4, 250 * e, 14, 1);
