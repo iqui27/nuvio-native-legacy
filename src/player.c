@@ -32,6 +32,12 @@
 #include "memlog.h"
 #include "dvtela.h"
 #include "abrecine.h"
+#include "trava.h"
+#include "diario.h"
+#include "teclado.h"
+#include <pthread.h>
+#include <stdatomic.h>
+#include "diariofontes.h"
 #include "ilhacart.h"
 #include "idbase.h"
 #include "dados.h"
@@ -1503,7 +1509,10 @@ void player_abrir(int indiceCatalogo, const char *url) {
   loadEm = SDL_GetTicks();
   { char px[96];
     if (url && *url) { memlog_evento("load"); memQuadroPendente = 1; }
-    comVideo = (url && *url && video_tocar(proxyts_resolver(url, px, sizeof px))); }
+    const CatItem *c = item();
+    int bloqueado = c && !strcmp(c->tipo, "series") && trava_bloqueio(c->imdb, perfis_ativo(),
+        c->temporada > 0 ? c->temporada : 1, c->episodio > 0 ? c->episodio : 1);
+    comVideo = (url && *url && !bloqueado && video_tocar(proxyts_resolver(url, px, sizeof px))); }
   zerarAssistido();
   mkvass_video_aberto(comVideo);
   legsync_auto_habilitar(ajustes_legenda_sync_auto());
@@ -1583,7 +1592,48 @@ static int prebuscaCabe(const char *url) {
 }
 #endif
 
+static char travaUrl[4096];
+static int travaPergunta, travaPerfil, travaT, travaE, travaId, travaAutorizada;
+static unsigned travaSessao, travaPinSessao;
+static unsigned travaDono, travaGeracao;
+static _Atomic int travaPinResultado;
+typedef struct { int perfil, id; char pin[65]; } TravaPinJob;
+
+static void *verificarTravaPin(void *u) {
+  TravaPinJob *j = u;
+  Trava t;
+  int r = 0;
+  if (trava_obter(j->id, &t)) {
+    for (int i = 0; i < t.n && r <= 0; i++)
+      if (t.perfil[i] != j->perfil) r = perfis_verificar_pin(t.perfil[i], j->pin);
+  }
+  memset(j->pin, 0, sizeof j->pin); free(j);
+  atomic_store(&travaPinResultado, r > 0 ? 1 : -1);
+  return NULL;
+}
+
+static int travaFonte(const char *url) {
+  const CatItem *c = item();
+  int id = c && !strcmp(c->tipo, "series") ? trava_bloqueio(c->imdb, perfis_ativo(), epT, epE) : 0;
+  Trava t;
+  if (!id || (travaAutorizada && travaPerfil == perfis_ativo() && epT == travaT && epE == travaE &&
+      travaDono == diario_dono_geracao() && travaGeracao == trava_geracao() && id == travaId)) return 1;
+  travaAutorizada = 0;
+  if (!travaPergunta && !atomic_load(&travaPinResultado) && trava_obter(id, &t) && t.pin && !teclado_aberto()) {
+    snprintf(travaUrl, sizeof travaUrl, "%s", url);
+    travaPerfil = perfis_ativo(); travaT = epT; travaE = epE; travaId = id;
+    travaDono = diario_dono_geracao(); travaGeracao = trava_geracao();
+    travaPinSessao = travaSessao;
+    travaPergunta = 1;
+    teclado_abrir_com(i18n("PIN"), i18n("Protegido por PIN. Digite o PIN para ver."), 8, "0123456789", NULL);
+    teclado_tipo(TECLADO_TIPO_SENHA);
+  }
+  player_erro_fonte_motivo(i18n("Travar série"), i18n("Separados"));
+  return 0;
+}
+
 static void tocarFonte(const char *url) {
+  if (!travaFonte(url)) return;
   marco("abrir: url ao pipeline");
   loadEm = SDL_GetTicks();   // #202: do pipeline ao primeiro quadro ("[player] load->1o quadro")
   video_definir_reconexao(!ehCanal());
@@ -1696,6 +1746,7 @@ static void dvTelaAtualizar(float dt, Uint32 agora) {
 // PRETO enquanto o fluxo abria — que era o "clica em reproduzir e fica preto".
 void player_definir_fonte(const char *url) {
   if ((!aberto && !mini) || !url || !*url) return;
+  if (!travaFonte(url)) return;
   intro_trocar_fonte();
   durFonteAvisada = pedProximaFonte = 0;
   // Fonte nova: a duracao esperada conhecida nao vale mais (mesmo titulo,
@@ -2047,6 +2098,7 @@ static void fecharSessao(int manter) {
       recomenda_atividade_fim(ci, assistiu);
       // A PARADA para o Social: fim, abandono (< 20%) ou progresso.
       atividade_player_saiu(pos, duracaoSeg, assistiu);
+      diariofontes_player_saiu(pos, duracaoSeg, assistiu);
       // O CHECK NA LISTA, LOCALMENTE E AGORA — a outra metade do #100.
       //
       // O relato e preciso: "mostra a barra de progresso mas nao fica com o
@@ -2152,6 +2204,8 @@ static void fecharSessao(int manter) {
 }
 
 void player_encerrar(void) {
+  travaSessao++;
+  travaAutorizada = 0;
   if (retido) player_descartar_retido(); else fecharSessao(0);
 }
 
@@ -3117,6 +3171,7 @@ void player_juntos_buscar(double seg) {
 }
 
 void player_evento(const SDL_Event *e) {
+  if (travaPergunta && teclado_aberto()) { teclado_evento(e); return; }
   // O painel de pos-reproducao come a tecla quando esta no ar; ele e a coisa
   // mais recente na tela e o dono esta olhando para ele. O 2 e o BAIXO: ele
   // dispensa o painel E pede a barra de tempo de volta, que e o gesto que o
@@ -3403,6 +3458,38 @@ void player_atualizar(float dt, Uint32 agora) {
 #ifdef NV_TOUCH_UI
   playerTelaAtualizar();
 #endif
+  if (travaPergunta == 1) {
+    int r;
+    teclado_atualizar(dt, agora);
+    r = teclado_resultado();
+    if (r == TECLADO_PRONTO) {
+      pthread_t fio;
+      TravaPinJob *j = calloc(1, sizeof *j);
+      if (j) {
+        j->perfil = travaPerfil; j->id = travaId; snprintf(j->pin, sizeof j->pin, "%s", teclado_texto());
+        if (!pthread_create(&fio, NULL, verificarTravaPin, j)) { pthread_detach(fio); travaPergunta = 2; }
+        else { free(j); travaPergunta = 0; }
+      } else travaPergunta = 0;
+      teclado_esquecer();
+    } else if (r == TECLADO_CANCELOU) { travaPergunta = 0; teclado_esquecer(); }
+  }
+  if (travaPergunta == 2) {
+    int r = atomic_exchange(&travaPinResultado, 0);
+    if (r) {
+      const CatItem *c = item();
+      int valido = r == 1 && c && aberto && travaPinSessao == travaSessao && travaPerfil == perfis_ativo() &&
+          travaDono == diario_dono_geracao() && travaGeracao == trava_geracao() &&
+          epT == travaT && epE == travaE && trava_bloqueio(c->imdb, travaPerfil, epT, epE) == travaId;
+      travaPergunta = 0;
+      if (valido) {
+        // One verified source open; no persistent bypass for later episodes.
+        travaAutorizada = 1;
+        tocando = 1;
+        player_definir_fonte(travaUrl);
+      }
+      memset(travaUrl, 0, sizeof travaUrl);
+    }
+  }
   if (retido) { player_validar_retido(agora); return; }
   // DV EM MKV NASCE NO PONTO SALVO: enquanto a retomada nao foi pedida ao
   // player da TV, a troca para o caminho do DV espera (video.c, iniciarDts le o
@@ -3666,6 +3753,8 @@ void player_atualizar(float dt, Uint32 agora) {
         double cr = credEfetivo();
         atividade_player_passo(ci, epT, epE, posSeg, duracaoSeg, tocando && !scrubbing,
                                concluiuAgora(cr), dt);
+        diariofontes_player_passo(ci, epT, epE, posSeg, duracaoSeg, tocando && !scrubbing,
+                                  concluiuAgora(cr), dt);
       }
     }
     // #202: confere que o pipeline anda na velocidade pedida antes de usa-la.
@@ -4951,6 +5040,7 @@ static void desenharCinema(Uint32 agora, const CatItem *c, int furou) {
 }
 
 void player_desenhar(Uint32 agora) {
+  if (travaPergunta == 1 && teclado_aberto()) { teclado_desenhar(agora); return; }
   if (!aberto) return;
   const CatItem *c = item();
   // COR VIVA: o titulo que TOCA manda na cor (abrindo, OSD, pausa, pos-play),
