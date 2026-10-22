@@ -22,12 +22,31 @@ int cat_historico_estado_tempo(const char *s,const char *t,long long *ms){(void)
 int vistoep_estado(const char *s,int t,int e){(void)t;(void)e;return watched[atoi(s+2)];}
 void vistoep_definir(const char *s,int t,int e,int v){(void)t;(void)e;watched[atoi(s+2)]=v;}
 const char *i18n(const char *s){return s;}
-unsigned long long cat_historico_geracao(void){return 1;}
+static unsigned long long historyGeneration=1;
+unsigned long long cat_historico_geracao(void){return historyGeneration;}
 const char *desc_chave_tmdb(void){return "test";}
 const char *desc_tmdb_idioma(void){return "en";}
 char *rede_baixar(const char *url,int timeout){(void)timeout;char b[500];int id=0;if(strstr(url,"/tv/"))return strdup(strstr(url,"/season/")?"{\"cast\":[{\"id\":123}],\"episodes\":[{\"episode_number\":1}]}":"{\"number_of_seasons\":1,\"imdb_id\":\"tt1\"}");sscanf(strstr(url,"/movie/")+7,"%d",&id);snprintf(b,sizeof b,"{\"imdb_id\":\"tt%d\",\"credits\":{\"cast\":[{\"name\":\"Actor %d\"},{\"name\":\"Other %d\"},{\"name\":\"Third %d\"}]}}",id,id,id,id);return strdup(b);}
 static void finish(int op){assert(scheduled);Pedido *p=scheduled;scheduled=NULL;assert(p->op==op);worker(p);fd_atualizar();}
 int main(int argc,char **argv){
+ if(argc>1&&!strcmp(argv[1],"publication")){
+  for(int scenario=0;scenario<5;scenario++){
+   pessoa_ler(123,"{\"name\":\"A\",\"cast\":[{\"id\":1,\"title\":\"M1\"},{\"id\":2,\"title\":\"M2\"}]}","2026-01-01");fd_abrir();
+   Pedido *p=novo(1,1);assert(p);
+   if(scenario!=4){worker(p);assert(resultado);}
+   if(scenario==2)historyGeneration++;
+   if(scenario==0||scenario==1||scenario==4)
+    pessoa_ler(scenario==4?123:456,"{\"name\":\"B\",\"cast\":[{\"id\":99,\"title\":\"B movie\"}]}","2026-01-01");
+   if(scenario==0||scenario==3||scenario==4)fd_abrir();
+   else fd_atualizar();
+   if(scenario==4){worker(p);fd_atualizar();}
+   assert(ficha.c[0].tmdb==(scenario==2||scenario==3?1:99));
+   assert(!fd_preparado(1));assert(!episodios[1].carregado);
+   assert(!resultado&&!vivo);
+  }
+  worker(novo(1,0));fd_atualizar();assert(fd_preparado(0));
+  puts("stale result publication: PASS");return 0;
+ }
  if(argc>1&&!strcmp(argv[1],"provenance")){
   const char *body="{\"name\":\"A\",\"cast\":[{\"id\":1,\"title\":\"Shared\"}]}";
   pessoa_ler(123,body,"2026-01-01");fd_abrir();
@@ -50,7 +69,7 @@ int main(int argc,char **argv){
  vivo=1;
  pessoa_ler(123,"{\"name\":\"A\",\"cast\":[{\"id\":1,\"name\":\"S1\",\"media_type\":\"tv\",\"episode_count\":1},{\"id\":2,\"name\":\"S2\",\"media_type\":\"tv\",\"episode_count\":1}]}","2026-01-01");
  fd_abrir();
- for(int k=0;k<2;k++){snprintf(ficha.c[k].imdb,16,"tt%d",k+1);remota=ficha;remota.c[k].eps=1;paresN=1;pares[0]=(VistoPar){1,1};alvo=k;operacao=1;resultado=1;fd_atualizar();vistoep_definir(ficha.c[k].imdb,1,1,1);fd_atualizar();assert(ficha.st[k].estado==FM_VISTO);}
+ for(int k=0;k<2;k++){snprintf(ficha.c[k].imdb,16,"tt%d",k+1);remota=ficha;remota.c[k].eps=1;paresN=1;pares[0]=(VistoPar){1,1};alvo=k;operacao=1;resultadoGeracao=cat_historico_geracao();resultado=1;fd_atualizar();vistoep_definir(ficha.c[k].imdb,1,1,1);fd_atualizar();assert(ficha.st[k].estado==FM_VISTO);}
  vivo=1;fd_atualizar();assert(ficha.st[0].estado==FM_VISTO&&ficha.st[1].estado==FM_VISTO);
  puts("per-title episodes: PASS");return 0;
 }
