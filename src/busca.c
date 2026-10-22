@@ -970,18 +970,34 @@ static void abrirResultado(void) {
   }
 }
 
-static int glanceBuscaLinha;
-static int glanceBuscaTotal(void) { return glanceBuscaLinha < nFil ? fil[glanceBuscaLinha].n : 0; }
-static int glanceBuscaItem(int i, CatItem *out) { return cat_copiar_item(fil[glanceBuscaLinha].itens[i], out); }
-static void glanceBuscaFoco(int i) {
-  focoRes.fileira = glanceBuscaLinha; focoRes.coluna = i;
-  focoRes.colunaLembrada[glanceBuscaLinha] = i;
+static int glanceBuscaItens[BU_MAX_POR_FIL], glanceBuscaN;
+static int glanceBuscaTotal(void) { return glanceBuscaN; }
+static int glanceBuscaItem(int i, CatItem *out) {
+  return i >= 0 && i < glanceBuscaN && cat_copiar_item(glanceBuscaItens[i], out);
 }
-static void glanceBuscaDetalhes(int i) { glanceBuscaFoco(i); abrirResultado(); }
+static void glanceBuscaFoco(int i) {
+  if (i < 0 || i >= glanceBuscaN) return;
+  for (int r = 0; r < nFil; r++) {
+    if (fil[r].pessoas) continue;
+    for (int c = 0; c < fil[r].n; c++) {
+      if (fil[r].itens[c] != glanceBuscaItens[i]) continue;
+      focoRes.fileira = r; focoRes.coluna = c;
+      focoRes.colunaLembrada[r] = c;
+      return;
+    }
+  }
+}
+static void glanceBuscaDetalhes(int i) {
+  if (i < 0 || i >= glanceBuscaN) return;
+  glanceBuscaFoco(i);
+  pedido = glanceBuscaItens[i];
+}
 static void previaResultado(void) {
   static const GlanceFonte f = {glanceBuscaTotal, glanceBuscaItem, glanceBuscaFoco, glanceBuscaDetalhes};
   if (focoRes.fileira < 0 || focoRes.fileira >= nFil || fil[focoRes.fileira].pessoas) { abrirResultado(); return; }
-  registrarConsulta(); glanceBuscaLinha = focoRes.fileira;
+  registrarConsulta();
+  glanceBuscaN = fil[focoRes.fileira].n;
+  memcpy(glanceBuscaItens, fil[focoRes.fileira].itens, glanceBuscaN * sizeof glanceBuscaItens[0]);
   glance_abrir(&f, focoRes.coluna);
 }
 

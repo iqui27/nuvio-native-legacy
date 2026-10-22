@@ -21,3 +21,7 @@ cc -O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -Wno-deprecated-declarations -ffunction-sections -fdata-sections \
   tests/glance-collision.c -Wl,-dead_strip -o "$tmp/collision"
 "$tmp/collision"
+cc -O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
+  -Wno-deprecated-declarations -ffunction-sections -fdata-sections \
+  tests/glance-search.c -Wl,-dead_strip -o "$tmp/search"
+"$tmp/search"
