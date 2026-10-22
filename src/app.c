@@ -598,6 +598,14 @@ static void trocarTela(Tela nova) {
   }
 }
 
+static int episodioNaSala(int titulo, int t, int e) {
+  const CatItem *c = cat_item(titulo);
+  char alvo[64] = "";
+  if (!juntos_ativo()) return 0;
+  if (c) snprintf(alvo, sizeof alvo, "%s:%d:%d", c->imdb, t, e);
+  return juntos_ao_proximo(alvo);
+}
+
 static void alvoPlayer(char *alvo, size_t tam) {
   const CatItem *c = cat_item(player_indice());
   int t, e;
@@ -3849,20 +3857,20 @@ void app_atualizar(float dt, Uint32 agora) {
   { int t,e;
     if (aguardandoFonte != 2 && episodios_escolheu(&t,&e) && player_aberto()) {
       int titulo=player_indice();
+      if (episodioNaSala(titulo, t, e)) goto semEscolhaEpisodio;
       diagnostico_cancelar_vazao();
       player_encerrar(); player_abrir(titulo,NULL);
       player_definir_episodio(t,e);
       marco("buscando fontes"); buscarParaPlayer(); aguardandoFonte=1;
     }
+    semEscolhaEpisodio:;
   }
   { int t,e;
     if (aguardandoFonte != 2 && player_pediu_proximo(&t,&e) && player_aberto()) {
       int titulo=player_indice();
       // Na sala, o proximo episodio e de todos: o pedido vai a sala e cada TV
       // abre o mesmo (juntos_pediu_abrir). Com a trava, so o anfitriao.
-      { const CatItem *pc = cat_item(titulo); char alvoProx[64] = "";
-        if (pc) snprintf(alvoProx, sizeof alvoProx, "%s:%d:%d", pc->imdb, t, e);
-        if (juntos_ativo() && juntos_ao_proximo(alvoProx)) goto semProximo; }
+      if (episodioNaSala(titulo, t, e)) goto semProximo;
       diagnostico_cancelar_vazao();
       player_encerrar(); player_abrir(titulo,NULL); player_definir_episodio(t,e);
       marco("proximo episodio: buscando fontes"); buscarParaPlayer(); aguardandoFonte=1;
@@ -3986,6 +3994,7 @@ void app_atualizar(float dt, Uint32 agora) {
       //   - buscarParaPlayer pede LEGENDA tambem, e compoe o id por alvoPlayer
       //     (que ja corta no ':' — era o que o atalho reimplementava a mao).
       int titulo = player_indice();
+      if (episodioNaSala(titulo, t, e)) goto semPosplayEpisodio;
       player_encerrar();
       diagnostico_cancelar_vazao();
       player_abrir(titulo, NULL);
@@ -4002,7 +4011,9 @@ void app_atualizar(float dt, Uint32 agora) {
       marco("posplay: proximo episodio");
       buscarParaPlayer();
       aguardandoFonte = 1;
-    } }
+    }
+    semPosplayEpisodio:;
+  }
   { int i = posplay_pediu_titulo();
     if (i >= 0) {
       const CatItem *ci = cat_item(i);

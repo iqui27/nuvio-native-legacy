@@ -274,6 +274,9 @@ void jsm_passo(JsMotor *m, double agora) {
   if (!m->temSala) return;
 
   pronto = m->p.pronto(m->p.u);
+  if (!pronto) m->seekEmCurso = 0;
+  if (pronto && !m->prontoAnterior) aplicar(m, agora);
+  m->prontoAnterior = pronto;
   tocando = m->p.tocando(m->p.u);
   pos = posLocal(m, agora);
 
@@ -318,7 +321,7 @@ void jsm_passo(JsMotor *m, double agora) {
   // maximo a cada 1,5 s (o LG responde assincrono).
   if (pronto && !m->playArmado) {
     int quer = r->estado == JSE_TOCANDO;
-    if (quer != m->queroTocar || (quer && !tocando && !m->seekEmCurso)) ordenar(m, quer, agora, quer != m->queroTocar);
+    if (quer != m->queroTocar || (quer != tocando && !m->seekEmCurso)) ordenar(m, quer, agora, quer != m->queroTocar);
   }
 
   if (m->conectado) reportar(m, agora, parado);

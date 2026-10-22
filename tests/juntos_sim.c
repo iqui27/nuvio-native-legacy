@@ -19,6 +19,7 @@
 // play agendado, pausa no quadro, seek, espera de 3 s com prazo). A regra
 // completa do servidor e testada la (teste-logica.mjs, teste-juntos.mjs).
 #include "juntosmotor.h"
+#include <assert.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -245,6 +246,35 @@ static double p95(int i) {
   return erros[i][(int)(0.95 * (nErros[i] - 1))];
 }
 
+static void readinessRegression(void) {
+  static JsMotor m;
+  SimP p = { .vel = 100 };
+  JsPlayer jp = { spPos, spTocando, spPronto, spBuf, spDur, spPausar, spBuscar, spVel, &p };
+  jsm_iniciar(&m, "p0", "test", "test", 'A', &jp, NULL, NULL);
+  jsm_receber(&m, "{\"t\":\"sala\",\"seq\":1,\"rel\":{\"estado\":\"pausado\",\"pos0\":300,\"t0\":0}}", 0);
+  jsm_passo(&m, 10);
+  assert(!p.buscando);
+  // Loading backends can discard the first pause and start automatically.
+  p.pronto = p.quer = 1;
+  jsm_passo(&m, 20);
+  assert(!p.quer && p.buscando && p.seekAlvo == 300);
+  // A replacement source invalidates any seek still pending on the old one.
+  p.pronto = p.buscando = 0;
+  jsm_passo(&m, 30);
+  p.amostra = 0;
+  p.pronto = p.quer = 1;
+  jsm_passo(&m, 40);
+  assert(!p.quer && p.buscando && p.seekAlvo == 300);
+  // A pause ignored while seeking must be retried after the seek completes.
+  p.amostra = 300;
+  p.buscando = 0;
+  jsm_passo(&m, 200);
+  p.quer = 1;
+  jsm_passo(&m, 2000);
+  assert(!p.quer);
+  puts("readiness: paused late load, replacement and pause retry OK");
+}
+
 int main(void) {
   int i, falhas = 0, nSeeks = 0, nRajadas = 0, nPausas = 0, nivelB3 = 0;
   double ultimoCmd = 0, proxCmd = 30000, playEm = 0, seekEm = 0, piorAlinhar = 0;
@@ -253,6 +283,7 @@ int main(void) {
   JsPlayer jp = { spPos, spTocando, spPronto, spBuf, spDur, spPausar, spBuscar, spVel, NULL };
   const char *plats[N] = { "android", "lg", "wgt", "tpk" };
   char niveis[N] = { 'A', 'A', 'B', 'A' };
+  readinessRegression();
   depurar = getenv("JS_DEPURAR") != NULL;
   memset(&S, 0, sizeof S);
   S.estado = JSE_LOBBY;

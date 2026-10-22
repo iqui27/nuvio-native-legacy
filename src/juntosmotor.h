@@ -78,7 +78,7 @@ typedef struct {
   double proxTick;
   int velCent;                    // velocidade que o motor pediu (100 = normal)
   // play agendado e o que o motor quer do player
-  int queroTocar; double ordemEm;
+  int queroTocar, prontoAnterior; double ordemEm;
   int playArmado; double playEm;
   int medindoPlay; double playPedidoEm, playPedidoPos;
   int seekEmCurso; double seekEm, seekPos, seekRef;
