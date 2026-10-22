@@ -1,6 +1,12 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <pthread.h>
+static void *scheduled;
+static int schedule(pthread_t *t,const pthread_attr_t *a,void *(*fn)(void *),void *p){(void)t;(void)a;(void)fn;assert(!scheduled);scheduled=p;return 0;}
+static int detach(pthread_t t){(void)t;return 0;}
+#define pthread_create schedule
+#define pthread_detach detach
 #include "../src/filmodados.c"
 static int watched[3];
 void dados_iniciar(const char *s){(void)s;}
@@ -17,8 +23,18 @@ const char *i18n(const char *s){return s;}
 unsigned long long cat_historico_geracao(void){return 1;}
 const char *desc_chave_tmdb(void){return "test";}
 const char *desc_tmdb_idioma(void){return "en";}
-char *rede_baixar(const char *url,int timeout){(void)timeout;char b[500];int id=0;sscanf(strstr(url,"/movie/")+7,"%d",&id);snprintf(b,sizeof b,"{\"imdb_id\":\"tt%d\",\"credits\":{\"cast\":[{\"name\":\"Actor %d\"},{\"name\":\"Other %d\"},{\"name\":\"Third %d\"}]}}",id,id,id,id);return strdup(b);}
+char *rede_baixar(const char *url,int timeout){(void)timeout;char b[500];int id=0;if(strstr(url,"/tv/"))return strdup(strstr(url,"/season/")?"{\"cast\":[{\"id\":123}],\"episodes\":[{\"episode_number\":1}]}":"{\"number_of_seasons\":1,\"imdb_id\":\"tt1\"}");sscanf(strstr(url,"/movie/")+7,"%d",&id);snprintf(b,sizeof b,"{\"imdb_id\":\"tt%d\",\"credits\":{\"cast\":[{\"name\":\"Actor %d\"},{\"name\":\"Other %d\"},{\"name\":\"Third %d\"}]}}",id,id,id,id);return strdup(b);}
+static void finish(int op){assert(scheduled);Pedido *p=scheduled;scheduled=NULL;assert(p->op==op);worker(p);fd_atualizar();}
 int main(int argc,char **argv){
+ if(argc>1&&!strcmp(argv[1],"scheduling")){
+  pessoa_ler(123,"{\"name\":\"A\",\"cast\":[{\"id\":1,\"name\":\"S1\",\"media_type\":\"tv\"},{\"id\":2,\"name\":\"S2\",\"media_type\":\"tv\"}]}","2026-01-01");
+  fd_abrir();assert(scheduled&&((Pedido*)scheduled)->op==5);
+  fd_enriquecer(0);fd_seguir();fd_sobre();
+  finish(5);assert(scheduled&&((Pedido*)scheduled)->op==1);
+  finish(1);assert(fd_preparado(0));
+  finish(3);finish(4);finish(5);assert(fd_preparado(0));
+  assert(!scheduled);puts("pending user actions: PASS");return 0;
+ }
  if(argc>1&&!strcmp(argv[1],"quiz")){pessoa_ler(123,"{\"name\":\"A\",\"cast\":[{\"id\":1,\"title\":\"M1\",\"character\":\"C1\"},{\"id\":2,\"title\":\"M2\",\"character\":\"C2\"},{\"id\":3,\"title\":\"M3\",\"character\":\"C3\"},{\"id\":4,\"title\":\"M4\",\"character\":\"C4\"}]}","2026-01-01");fd_abrir();worker(novo(1,0));fd_atualizar();FmQuiz q;assert(fd_quiz(0,&q));puts("fresh quiz: PASS");return 0;}
  dados_iniciar(NULL);
  vivo=1;
