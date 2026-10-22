@@ -21,6 +21,7 @@
 #include "trakt.h"
 #include "simkl.h"
 #include "progresso.h"
+#include "rewatch.h"
 #include "contalib.h"
 #include "vistoep.h"
 #include "proximo.h"
@@ -3336,6 +3337,27 @@ static int montarContinuar(CatItem *saida, int max) {
   // O que ja foi localizado antes entra AQUI, sem rede: a fileira nao pisca em
   // ingles a cada refazagem. O que falta e buscado depois de publicada
   // (localizarContinuarPublicado), para o texto novo nunca atrasar a fileira.
+  // Sessoes entram depois da deduplicacao por obra: manter da dois cartoes.
+  int nrw = rewatch_n_ativas();
+  for (i=0;i<nrw && nJ<max;i++) {
+    char id[64]; CatItem *c=&saida[nJ]; int t=0,e=0,p=0;
+    if (!rewatch_ativa_n(i,id,sizeof id)) continue;
+    memset(c,0,sizeof *c);
+    if (!cat_copiar_por_id(id,"series",c)) {
+      snprintf(c->imdb,sizeof c->imdb,"%s",id);
+      snprintf(c->tipo,sizeof c->tipo,"series");
+      snprintf(c->titulo,sizeof c->titulo,"%s",i18n("Programa de TV"));
+    }
+    int k=cat_indice_titulo(id,-1);
+    if (!rewatch_alvo(id,cat_episodio(k,0),cat_n_episodios(k),&t,&e,&p)) {
+      if (cat_n_episodios(k)>0) continue; // concluida: encerra na pagina
+      if (!rewatch_parcial_de(id,&t,&e,&p)) { t=1; e=1; }
+    }
+    snprintf(c->imdb,sizeof c->imdb,"%s",id);
+    c->rewatch=1; c->temporada=t; c->episodio=e; c->progresso=p;
+    c->restanteMin=0; c->nomeEpisodio[0]=0;
+    nJ++;
+  }
   aplicarLocCache(saida, nJ);
   printf("[desc] continuar assistindo: %d do Trakt, %d do Simkl (%d fora de 1-90%%), "
          "%d da conta, %d repetido(s); %d na fileira\n",

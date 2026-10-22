@@ -35,6 +35,8 @@
 #include "listas.h"
 #include "home.h"
 #include "ctxinfo.h"
+#include "rewatch.h"
+#include "rewatchui.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -245,7 +247,7 @@ static int holdObservador;
 enum { OP_LISTA = 1, OP_ASSISTIDO, OP_TIRAR_CONTINUAR, OP_RECOMENDAR, OP_DISPENSAR,
        OP_ESTILO, OP_CATEGORIA, OP_DETALHES, OP_L_ABRIR, OP_L_FIXAR, OP_L_HOME,
        OP_F_MENU, OP_F_FIXAR, OP_F_SUBIR, OP_F_DESCER, OP_F_OCULTAR, OP_F_VISTOS,
-       OP_ADD_LISTA, OP_PICK_LISTA = 50,   // OP_PICK_LISTA + k = a k-esima lista da pessoa
+       OP_ADD_LISTA, OP_REWATCH, OP_PICK_LISTA = 50,   // OP_PICK_LISTA + k = a k-esima lista da pessoa
        OP_EXTRA = 100 };   // OP_EXTRA + k = extras[k] (modo social)
 // "Mover para categoria" pedido no modo painel: o IMDb do titulo, consumido
 // uma vez pelo painel (ctx_pediu_categoria), que abre a escolha dele.
@@ -524,6 +526,8 @@ static void montar(void) {
     juntar(estadoOperacao == CTX_PENDENTE && operacao == CTX_OP_HISTORICO
              ? "Marcando como assistido..." : extras[k].rot, OP_EXTRA + k);
   }
+  if (!doPainel && !strcmp(ci->tipo,"series") && ci->imdb[0])
+    juntar(rewatch_ativa(ci->imdb) ? "Encerrar reassistida" : "Reassistir do início", OP_REWATCH);
   // TIRAR DE "CONTINUAR ASSISTINDO".
   //
   // So aparece em item que TEM progresso — e o unico caso em que a acao quer
@@ -539,7 +543,7 @@ static void montar(void) {
   // assistido): esta e a de baixo sao acoes do cartaz da home.
   // "A SEGUIR" TAMBEM (#203): o proximo episodio tem progresso 0 e a condicao
   // antiga nunca o oferecia; sem a opcao ele nao saia da fileira.
-  if (!doPainel && (ci->progresso > 0 || itemASeguir(ci)) && ci->imdb[0]) {
+  if (!doPainel && !ci->rewatch && (ci->progresso > 0 || itemASeguir(ci)) && ci->imdb[0]) {
     juntar("Tirar de Continuar assistindo", OP_TIRAR_CONTINUAR);
   }
   // SO EXISTE SE O PACOTE TEM O SERVICO. Sem NUVIO_REC_URL compilada,
@@ -1092,6 +1096,10 @@ static void aplicar(void) {
         if (fecharAoConfirmar) { aberto = 0; fecharAoConfirmar = 0; }
       }
       montar();
+      break;
+    case OP_REWATCH:
+      rewatchui_abrir(ci,RW_ORIGEM_CONTINUAR,0,0);
+      aberto=0;
       break;
     case OP_ASSISTIDO:
       iniciarAssistido(atual, ci, 0);
@@ -2469,6 +2477,7 @@ static void ctx_desenharCorpo_(Uint32 agora) {
       case OP_TIRAR_CONTINUAR: icone = "aj_x"; break;
       case OP_DISPENSAR:  icone = "aj_x"; break;
       case OP_RECOMENDAR: icone = "aj_users"; break;
+      case OP_REWATCH: icone = "aj_rotate-ccw-clock"; break;
       case OP_DETALHES:   icone = "aj_info"; break;
       case OP_ESTILO:     icone = "aj_rows-3"; break;
       case OP_F_MENU:     icone = "aj_rows-3"; break;
