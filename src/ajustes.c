@@ -704,6 +704,8 @@ typedef enum {
   // fileiraFormato): o estilo. LOCAL (o web nao tem). No fim:
   // valor[]/CHAVE[] posicionais.
   AJ_PLR_FORMATO,
+  // Hero logo and information size (0 Normal, 1 Grande, 2 Muito grande). LOCAL, append-only.
+  AJ_HERO_TAMANHO,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1058,6 +1060,7 @@ static const char *V_NOTAS[]     = { "Mostrar", "Ocultar" };
 // 23/09/2026: Apple TV, fanart.tv e Anime entraram NO FIM (5, 6, 7), pelo
 // mesmo contrato — quem ja tinha 1..4 gravado continua lendo a mesma fonte.
 static const char *V_HERO_SINOPSE[] = { "Normal", "Grande" };
+static const char *V_HERO_TAMANHO[] = { "Normal", "Grande", "Muito grande" };
 static const char *V_HERO_FONTE[] = {
   "Automático", "Catálogo / Cinemeta", "IMDb / Metahub", "TMDB", "Trakt",
   "Apple TV", "fanart.tv", "Anime (Kitsu / AniList)"
@@ -1829,6 +1832,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Dolby Vision P7 para P8.1 (experimental)", V_LIGA, 2),
   ESC("Registro na rede local", V_LIGA, 2),                   // local: logRedeLocal
   ESC("Formato no player", V_PLR_FORMATO, 6),          // local: plrFormatoLocal
+  ESC("Tamanho do destaque", V_HERO_TAMANHO, 3),       // local: heroSizeLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2153,6 +2157,7 @@ static const char *CHAVE[] = {
   "dv7ConversionLocal",
   "logRedeLocal",
   "plrFormatoLocal",
+  "heroSizeLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3485,7 +3490,10 @@ int ajustes_hero_notas(void)   { return lig(AJ_HERO_NOTAS); }
 int ajustes_hero_ano(void)     { return lig(AJ_HERO_ANO); }
 int ajustes_hero_duracao(void) { return lig(AJ_HERO_DURACAO); }
 int ajustes_hero_cheio(void)          { return lig(AJ_HERO_CHEIO); }
-int ajustes_hero_sinopse_grande(void) { return valor[AJ_HERO_SINOPSE_TAM] == 1; }
+int ajustes_hero_sinopse_grande(void) { return valor[AJ_HERO_SINOPSE_TAM] == 1 || ajustes_hero_tamanho() > 0; }
+float ajustes_hero_escala_logo(void) { static const float e[3] = { 1.0f, 1.25f, 1.5f }; return e[ajustes_hero_tamanho()]; }
+float ajustes_hero_escala_info(void) { static const float e[3] = { 1.0f, 1.15f, 1.3f }; return e[ajustes_hero_tamanho()]; }
+int ajustes_hero_tamanho(void) { int v = valor[AJ_HERO_TAMANHO]; return v >= 0 && v <= 2 ? v : 0; }
 int ajustes_home_layout(void) {
   int v = valor[AJ_HOME_LAYOUT];
   return v >= 0 && v < HOME_LAYOUT_N ? v : HOME_LAYOUT_MODERNA;
@@ -5889,6 +5897,7 @@ static int somenteDesteAparelho(int op) {
     // traga algo com o mesmo nome.
     case AJ_HERO_FUNDO:
     case AJ_HERO_SINOPSE_TAM:
+    case AJ_HERO_TAMANHO:
     case AJ_HERO_ARTE_DIF:
     case AJ_HERO_GENERO:
     case AJ_HERO_SINOPSE: case AJ_HERO_NOTAS: case AJ_HERO_ANO: case AJ_HERO_DURACAO: /* o web nao tem */
@@ -7588,6 +7597,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_IDIOMA: return "Idioma de toda a interface. Automático segue a sua conta e, sem ela, o idioma da TV. Não muda o idioma das legendas nem do áudio.";
     case AJ_GPU_EFEITOS: return "Efeitos funcionam em qualquer resolução. Automático adapta; Completos mantém tudo; Leves reduz brilho e desfoque; Mínimos reduz mais.";
     case AJ_FONTE_UI: return "Altera a tipografia dos menus. A fonte das legendas é escolhida separadamente no player.";
+    case AJ_HERO_TAMANHO: return "Aumenta a logo e as informações do destaque da Home: tipo, gênero, ano, duração, nota do IMDb e sinopse. Vale só nesta TV.";
     case AJ_HERO_SINOPSE_TAM: return "Aumenta apenas as sinopses. Na página do título, abra Mais opções › Ler sinopse para ler o texto completo.";
     case AJ_TAMANHO_UI: return "Aumenta os controles do player, os painéis e os avisos. Os Ajustes têm um tamanho próprio.";
     case AJ_INTERFACE_MODO: return "Automático usa TV em aparelhos Android TV e Mobile nos demais aparelhos. TV mantém a interface do controle remoto; Mobile usa toque em retrato ou paisagem. A escolha fica salva só neste aparelho.";
@@ -10346,7 +10356,7 @@ static AjPreview familiaPreviaOpcao(int op) {
       return AJPV_REPRO;
     case AJ_HOME_LAYOUT:
     case AJ_PALCO_FUNDO:
-    case AJ_HERO_SINOPSE_TAM:
+    case AJ_HERO_SINOPSE_TAM: case AJ_HERO_TAMANHO:
     case AJ_LANDSCAPE: case AJ_HERO_CHEIO: case AJ_FUNDO_DIN: case AJ_FUNDO_DIN_COR: case AJ_HERO_FUNDO:
     case AJ_HERO_ARTE_DIF: case AJ_HERO_TRAILER: case AJ_FIL_LIMITE:
     case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS:
