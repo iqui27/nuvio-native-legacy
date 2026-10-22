@@ -271,6 +271,8 @@ IGNORAR = {
     '"POSTER"', "conta-pend-%s.txt", "perfil-infantil.txt", "escolha-perfil",
     # Room protocol values and notice IDs; UI resolves these to translated text.
     "juntos:erro", "juntos:fonte", "nenhuma", "todos", ',"fonte":{"tipo":"%s"}',
+    # filmography provider hostname and spoiler-matching stem, never UI labels.
+    "simkl.com", "traiç",
     "daqui em diante",  # episodios.c nomeModo: so no log [visto] menu, nunca rotulo
     "fechar",  # main.c: nome do evento de janela so no log "[ciclo] janela="
     # video_tpk.c: motivos de cartaoModo()/cartaoEncaixar(), so no log "[video] tpk cartao".
