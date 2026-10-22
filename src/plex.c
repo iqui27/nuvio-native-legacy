@@ -428,7 +428,7 @@ static int itemDeEx(const PxConta *c, const char *ini, const char *fim, CatItem 
   if (!chaveTxt(ini, fim, "ratingKey", rk, sizeof rk)) return 0;
   txtRaiz(ini, fim, "type", tipo, sizeof tipo);
   if (!strcmp(tipo, "movie")) copiar(it->tipo, sizeof it->tipo, "movie");
-  else if (!strcmp(tipo, "show")) copiar(it->tipo, sizeof it->tipo, "series");
+  else if (!strcmp(tipo, "show") || !strcmp(tipo, "episode")) copiar(it->tipo, sizeof it->tipo, "series");
   else if (!strcmp(tipo, "collection")) copiar(it->tipo, sizeof it->tipo, "group");
   else if (!strcmp(tipo, "playlist")) copiar(it->tipo, sizeof it->tipo, "list");
   else return 0;
@@ -483,6 +483,14 @@ static int itemDeEx(const PxConta *c, const char *ini, const char *fim, CatItem 
     it->progresso = (int)(off * 100.0 / dur);
     it->restanteMin = (int)((dur - off) / 60000.0 + 0.5);
   }
+  if (!strcmp(tipo, "episode")) {
+    if (!chaveTxt(ini, fim, "grandparentRatingKey", rk, sizeof rk) ||
+        !jfid_montar_p(JFID_PREFIXO_PLEX, it->imdb, sizeof it->imdb, c->servidorId, rk)) return 0;
+    copiar(it->nomeEpisodio, sizeof it->nomeEpisodio, it->titulo);
+    txtRaiz(ini, fim, "grandparentTitle", it->titulo, sizeof it->titulo);
+    it->temporada = (int)numRaiz(ini, fim, "parentIndex", 0);
+    it->episodio = (int)numRaiz(ini, fim, "index", 0);
+  }
   copiar(it->origem, sizeof it->origem, "plex");
   return 1;
 }
@@ -490,7 +498,8 @@ static int itemDe(const PxConta *c, const char *ini, const char *fim, CatItem *i
   return itemDeEx(c, ini, fim, it, 0);
 }
 
-int px_ler_itens(const PxConta *c, const char *corpo, size_t n, CatItem *out, int max, int *total) {
+static int px_ler_itensEx(const PxConta *c, const char *corpo, size_t n, CatItem *out, int max, int *total, int *raw) {
+  if (raw) *raw = 0;
   const char *mi, *mf, *ai, *af, *p;
   int k = 0;
   if (total) *total = 0;
@@ -504,10 +513,15 @@ int px_ler_itens(const PxConta *c, const char *corpo, size_t n, CatItem *out, in
   while (k < max && (p = elemento(p, af)) != NULL) {
     const char *f = depoisElemento(p);
     if (!f) break;
+    if (raw) (*raw)++;
     if (*p == '{' && itemDeEx(c, p, f, &out[k], 1)) k++;
     p = f;
   }
   return k;
+}
+
+int px_ler_itens(const PxConta *c, const char *corpo, size_t n, CatItem *out, int max, int *total) {
+  return px_ler_itensEx(c, corpo, n, out, max, total, NULL);
 }
 
 int px_ler_detalhe(const PxConta *c, const char *corpo, size_t n, CatItem *out) {
@@ -1027,8 +1041,14 @@ static void caminhoSecao(char *dst, size_t tam, const char *secao, int inicio, i
            "&X-Plex-Container-Start=%d&X-Plex-Container-Size=%d", secao, extra, inicio, limite);
 }
 
+static int px_itensEx(const PxConta *c, RedeJob *job, const char *secao, int inicio, int limite,
+             CatItem *out, int max, int *total, int *raw);
 int px_itens(const PxConta *c, RedeJob *job, const char *secao, int inicio, int limite,
              CatItem *out, int max, int *total) {
+  return px_itensEx(c, job, secao, inicio, limite, out, max, total, NULL);
+}
+static int px_itensEx(const PxConta *c, RedeJob *job, const char *secao, int inicio, int limite,
+             CatItem *out, int max, int *total, int *raw) {
   RedeResposta r;
   char caminho[256];
   int e, n;
@@ -1038,7 +1058,7 @@ int px_itens(const PxConta *c, RedeJob *job, const char *secao, int inicio, int 
   caminhoSecao(caminho, sizeof caminho, secao, inicio, limite, "");
   e = pedirServidor(c, caminho, "GET", "library items", PX_PRAZO_LISTA_MS, job, &r);
   if (e) return e;
-  n = px_ler_itens(c, r.corpo, r.n_corpo, out, max, total);
+  n = px_ler_itensEx(c, r.corpo, r.n_corpo, out, max, total, raw);
   rede_resposta_limpar(&r);
   return n;
 }
@@ -1656,7 +1676,8 @@ int plex_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, int max
   return nf;
 }
 
-int plex_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total) {
+int plex_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total, int *raw) {
+  if (raw) *raw = 0;
   PxConta c;
   unsigned g;
   int n;
@@ -1668,6 +1689,7 @@ int plex_pagina(const char *chave, int inicio, int limite, CatItem *out, int max
     if (inicio) return 0;
     n = plex_atividade("nextup", out, max);
     if (total && n > 0) *total = n;
+    if (raw && n > 0) *raw = n;
     return n;
   }
   pthread_mutex_lock(&trava);
@@ -1688,9 +1710,11 @@ int plex_pagina(const char *chave, int inicio, int limite, CatItem *out, int max
       } else snprintf(rota, sizeof rota, "%sincludeGuids=1&X-Plex-Container-Start=%d&X-Plex-Container-Size=%d",
           !strcmp(id, "collections") ? "/library/all?type=18&" : "/playlists?", inicio, limite);
       e = pedirServidor(&c, rota, "GET", "collection items", PX_PRAZO_LISTA_MS, NULL, &r);
-      n = e ? e : px_ler_itens(&c, r.corpo, r.n_corpo, out, max, total);
+      n = e ? e : px_ler_itensEx(&c, r.corpo, r.n_corpo, out, max, total, raw);
       rede_resposta_limpar(&r);
-    } else n = px_itens(&c, NULL, id, inicio, limite, out, max, total);
+    } else {
+      n = px_itensEx(&c, NULL, id, inicio, limite, out, max, total, raw);
+    }
   }
   apagarSegredo(&c, sizeof c);
   pthread_mutex_lock(&trava);
@@ -2497,6 +2521,9 @@ int plex_ficha(CatItem *item, CatEp *eps, int maxEps) {
       if (!ja && novo->nTemporadas < CAT_TEMP_MAX) novo->temporadas[novo->nTemporadas++] = t;
     }
   }
+  novo->temporada = item->temporada;
+  novo->episodio = item->episodio;
+  copiar(novo->nomeEpisodio, sizeof novo->nomeEpisodio, item->nomeEpisodio);
   novo->naLista = item->naLista;
   novo->naColecao = item->naColecao;
   novo->retomadoMs = item->retomadoMs;

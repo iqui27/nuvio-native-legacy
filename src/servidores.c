@@ -192,13 +192,14 @@ int servidores_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, i
   return nf;
 }
 
-int servidores_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total) {
+int servidores_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total, int *raw) {
+  if (raw) *raw = 0;
   if (total) *total = 0;
   if (!ajustes_jellyfin_ligado() || !out || max <= 0 || inicio < 0 || limite <= 0) return -1;
   if (limite > 100) limite = 100;
-  if (jellyfin_chave_fileira(chave)) return jellyfin_pagina(chave, inicio, limite, out, max, total);
-  if (emby_chave_fileira(chave)) return emby_pagina(chave, inicio, limite, out, max, total);
-  if (plex_chave_fileira(chave)) return plex_pagina(chave, inicio, limite, out, max, total);
+  if (jellyfin_chave_fileira(chave)) return jellyfin_pagina(chave, inicio, limite, out, max, total, raw);
+  if (emby_chave_fileira(chave)) return emby_pagina(chave, inicio, limite, out, max, total, raw);
+  if (plex_chave_fileira(chave)) return plex_pagina(chave, inicio, limite, out, max, total, raw);
   return -1;
 }
 

@@ -405,7 +405,7 @@ static int itemDeEx(const JfConta *c, const char *ini, const char *fim, CatItem 
   txtRaiz(ini, fim, "Type", tipo, sizeof tipo);
   if (!jfid_hex_limpo(id, limpo, 32)) return 0;
   if (!strcmp(tipo, "Movie")) copiar(it->tipo, sizeof it->tipo, "movie");
-  else if (!strcmp(tipo, "Series")) copiar(it->tipo, sizeof it->tipo, "series");
+  else if (!strcmp(tipo, "Series") || !strcmp(tipo, "Episode")) copiar(it->tipo, sizeof it->tipo, "series");
   else if (!strcmp(tipo, "BoxSet")) copiar(it->tipo, sizeof it->tipo, "group");
   else if (!strcmp(tipo, "Playlist")) copiar(it->tipo, sizeof it->tipo, "list");
   else return 0;
@@ -460,6 +460,16 @@ static int itemDeEx(const JfConta *c, const char *ini, const char *fim, CatItem 
     if (pct > 0 && pct < 100) it->progresso = (int)pct;
     if (pos > 0 && ticks > pos) it->restanteMin = (int)(jf_seg((long long)(ticks - pos)) / 60.0 + 0.5);
   }
+  if (!strcmp(tipo, "Episode")) {
+    char serie[40];
+    if (!txtRaiz(ini, fim, "SeriesId", serie, sizeof serie) ||
+        !jfid_hex_limpo(serie, limpo, 32) ||
+        !jfid_montar_p(prefixoId(c), it->imdb, sizeof it->imdb, c->servidorId, limpo)) return 0;
+    copiar(it->nomeEpisodio, sizeof it->nomeEpisodio, it->titulo);
+    txtRaiz(ini, fim, "SeriesName", it->titulo, sizeof it->titulo);
+    it->temporada = (int)numRaiz(ini, fim, "ParentIndexNumber", 0);
+    it->episodio = (int)numRaiz(ini, fim, "IndexNumber", 0);
+  }
   copiar(it->origem, sizeof it->origem, c->tipo == JF_TIPO_EMBY ? "emby" : "jellyfin");
   return 1;
 }
@@ -507,8 +517,9 @@ int jf_bibliotecas(const JfConta *c, RedeJob *job, JfBiblioteca *out, int max) {
   return n;
 }
 
-int jf_ler_itens(const JfConta *c, const char *corpo, size_t nCorpo, CatItem *out, int max,
-                 int *total) {
+static int jf_ler_itensEx(const JfConta *c, const char *corpo, size_t nCorpo, CatItem *out, int max,
+                 int *total, int *raw) {
+  if (raw) *raw = 0;
   const char *ai, *af, *p;
   int n = 0;
   if (total) *total = (int)numRaiz(corpo, corpo + nCorpo, "TotalRecordCount", 0);
@@ -517,6 +528,7 @@ int jf_ler_itens(const JfConta *c, const char *corpo, size_t nCorpo, CatItem *ou
     while (n < max && (p = elemento(p, af)) != NULL) {
       const char *f = depoisElemento(p);
       if (!f) break;
+      if (raw) (*raw)++;
       if (*p == '{' && itemDeEx(c, p, f, &out[n], 1)) n++;
       p = f;
     }
@@ -524,8 +536,18 @@ int jf_ler_itens(const JfConta *c, const char *corpo, size_t nCorpo, CatItem *ou
   return n;
 }
 
+int jf_ler_itens(const JfConta *c, const char *corpo, size_t n, CatItem *out, int max, int *total) {
+  return jf_ler_itensEx(c, corpo, n, out, max, total, NULL);
+}
+
+static int jf_itensEx(const JfConta *c, RedeJob *job, const char *bib, int inicio, int limite,
+             CatItem *out, int max, int *total, int *raw);
 int jf_itens(const JfConta *c, RedeJob *job, const char *bib, int inicio, int limite,
              CatItem *out, int max, int *total) {
+  return jf_itensEx(c, job, bib, inicio, limite, out, max, total, NULL);
+}
+static int jf_itensEx(const JfConta *c, RedeJob *job, const char *bib, int inicio, int limite,
+             CatItem *out, int max, int *total, int *raw) {
   RedeResposta r;
   char caminho[512], limpo[40], raiz[96];
   int n, e;
@@ -542,7 +564,7 @@ int jf_itens(const JfConta *c, RedeJob *job, const char *bib, int inicio, int li
            "&StartIndex=%d&Limit=%d", raiz, limpo, inicio, limite);
   e = pedir(c, c->base, job, "GET", caminho, NULL, "library items", JF_PRAZO_LISTA_MS, &r);
   if (e) return e;
-  n = jf_ler_itens(c, r.corpo, r.n_corpo, out, max, total);
+  n = jf_ler_itensEx(c, r.corpo, r.n_corpo, out, max, total, raw);
   rede_resposta_limpar(&r);
   return n;
 }
@@ -1589,8 +1611,9 @@ static int jfi_fileiras_copiar(JfInst *I, CatItem *itens, int maxItens, CatFilei
 }
 
 static int jfi_pagina(JfInst *I, const char *chave, int inicio, int limite,
-                      CatItem *out, int max, int *total) {
+                      CatItem *out, int max, int *total, int *raw) {
   JfConta c;
+  if (raw) *raw = 0;
   unsigned g;
   int n;
   if (total) *total = 0;
@@ -1601,6 +1624,7 @@ static int jfi_pagina(JfInst *I, const char *chave, int inicio, int limite,
     if (inicio) return 0;
     n = jfi_atividade(I, "nextup", out, max);
     if (total && n > 0) *total = n;
+    if (raw && n > 0) *raw = n;
     return n;
   }
   pthread_mutex_lock(&I->trava);
@@ -1621,9 +1645,11 @@ static int jfi_pagina(JfInst *I, const char *chave, int inicio, int limite,
         c.tipo == JF_TIPO_EMBY ? "/Users/" : "/Items?userId=", c.usuarioId,
         c.tipo == JF_TIPO_EMBY ? "/Items?" : "&", !strcmp(id, "collections") ? "BoxSet" : "Playlist", inicio, limite);
       e = pedir(&c, c.base, NULL, "GET", rota, NULL, "collection items", JF_PRAZO_LISTA_MS, &r);
-      n = e ? e : jf_ler_itens(&c, r.corpo, r.n_corpo, out, max, total);
+      n = e ? e : jf_ler_itensEx(&c, r.corpo, r.n_corpo, out, max, total, raw);
       rede_resposta_limpar(&r);
-    } else n = jf_itens(&c, NULL, id, inicio, limite, out, max, total);
+    } else {
+      n = jf_itensEx(&c, NULL, id, inicio, limite, out, max, total, raw);
+    }
   }
   apagarSegredo(&c, sizeof c);
   pthread_mutex_lock(&I->trava);
@@ -2474,6 +2500,9 @@ static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps) {
       if (!ja && novo.nTemporadas < CAT_TEMP_MAX) novo.temporadas[novo.nTemporadas++] = t;
     }
   }
+  novo.temporada = item->temporada;
+  novo.episodio = item->episodio;
+  copiar(novo.nomeEpisodio, sizeof novo.nomeEpisodio, item->nomeEpisodio);
   novo.naLista = item->naLista;
   novo.naColecao = item->naColecao;
   novo.retomadoMs = item->retomadoMs;
@@ -2503,8 +2532,8 @@ static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps) {
   unsigned P##_fileiras_versao(void) { return jfi_fileiras_versao(I); }                       \
   int P##_chave_fileira(const char *k) { return jfi_chave_fileira(I, k); }                    \
   int P##_atividade(const char *m, CatItem *out, int max) { return jfi_atividade(I, m, out, max); } \
-  int P##_pagina(const char *k, int ini, int lim, CatItem *out, int max, int *total) {        \
-    return jfi_pagina(I, k, ini, lim, out, max, total); }                                    \
+  int P##_pagina(const char *k, int ini, int lim, CatItem *out, int max, int *total, int *raw) {        \
+    return jfi_pagina(I, k, ini, lim, out, max, total, raw); }                                    \
   int P##_fileiras_copiar(CatItem *it, int mi, CatFileira *f, int mf, int *n) {               \
     return jfi_fileiras_copiar(I, it, mi, f, mf, n); }                                        \
   int P##_ficha(CatItem *it, CatEp *e, int m) { return jfi_ficha(I, it, e, m); }              \

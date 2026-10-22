@@ -300,11 +300,19 @@ static void testarIntegracao(void) {
   assert(n == 2 && ni == JF_POR_FILEIRA + 2);
   assert(jellyfin_chave_fileira(fils[0].chave) && !fils[0].base[0] && strstr(fils[0].titulo, "Jellyfin"));
   { int total;
-    assert(jellyfin_pagina("jellyfin_collections", 0, 60, itens, 60, &total) == 1 && !strcmp(itens[0].tipo, "group"));
-    assert(jellyfin_pagina("jellyfin_00000000000000000000000000004001", 0, 60, itens, 60, &total) == 1 && !strcmp(itens[0].imdb, "tt0001007"));
-    assert(jellyfin_pagina("jellyfin_playlists", 0, 60, itens, 60, &total) == 1 && !strcmp(itens[0].tipo, "list"));
-    assert(jellyfin_pagina("jellyfin_list_00000000000000000000000000005001", 0, 60, itens, 60, &total) == 1 && !strcmp(itens[0].imdb, "tt0001007"));
-    assert(jellyfin_pagina("jellyfin_collections", 1, 60, itens, 60, &total) == 0 && total == 1);
+    assert(jellyfin_pagina("jellyfin_collections", 0, 60, itens, 60, &total, NULL) == 1 && !strcmp(itens[0].tipo, "group"));
+    assert(jellyfin_pagina("jellyfin_00000000000000000000000000004001", 0, 60, itens, 60, &total, NULL) == 1 && !strcmp(itens[0].imdb, "tt0001007"));
+    assert(jellyfin_pagina("jellyfin_playlists", 0, 60, itens, 60, &total, NULL) == 1 && !strcmp(itens[0].tipo, "list"));
+    assert(jellyfin_pagina("jellyfin_list_00000000000000000000000000005001", 0, 60, itens, 60, &total, NULL) == 1 && !strcmp(itens[0].imdb, "tt0001007"));
+    assert(jellyfin_pagina("jellyfin_collections", 1, 60, itens, 60, &total, NULL) == 0 && total == 1);
+    int raw = 0;
+    assert(jellyfin_pagina("jellyfin_list_00000000000000000000000000005002", 0, 2, itens, 60, &total, &raw) == 1);
+    assert(raw == 2 && total == 3 && itens[0].temporada == 1 && itens[0].episodio == 2);
+    CatEp playlistEps[16];
+    assert(jellyfin_ficha(&itens[0], playlistEps, 16) >= 0);
+    assert(itens[0].temporada == 1 && itens[0].episodio == 2);
+    assert(jellyfin_pagina("jellyfin_list_00000000000000000000000000005002", raw, 2, itens, 60, &total, &raw) == 1);
+    assert(raw == 1 && !strcmp(itens[0].imdb, "tt0001007"));
   }
   jellyfin_fileiras_copiar(itens, JF_FIL_MAX * JF_POR_FILEIRA, fils, JF_FIL_MAX, &ni);
   // Title page through the profile's connection.

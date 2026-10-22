@@ -50,7 +50,8 @@ int  servidores_chave_fileira(const char *chave);
 int  servidores_bibliotecas(CatFileira *fils, int max);
 int  servidores_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, int maxFils,
                                 int *nItens);
-int  servidores_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total);
+// raw counts consumed server entries, including unsupported playlist media.
+int  servidores_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total, int *raw);
 // Blocking on discovery workers only; never writes account/Trakt progress.
 int  servidores_continuar(CatItem *out, int max);
 int  servidores_ficha(CatItem *item, CatEp *eps, int maxEps);

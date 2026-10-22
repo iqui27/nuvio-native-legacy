@@ -177,6 +177,10 @@ class Handler(BaseHTTPRequestHandler):
             kind = "collection" if p == "/library/all" else "playlist"
             return self.reply(200, self.page([{"ratingKey": "4001" if kind == "collection" else "5001",
                 "type": kind, "title": "Fixture collection"}], q))
+        if p == "/playlists/5002/items":
+            items = [dict(EPISODES[1], grandparentRatingKey="201", grandparentTitle="Show One"),
+                     {"ratingKey": "999", "type": "track"}, MOVIES[0]]
+            return self.reply(200, self.page(items, q))
         if p in ("/library/collections/4001/children", "/playlists/5001/items"):
             return self.reply(200, self.page(MOVIES[:2], q))
         if p == "/library/sections/1/all":

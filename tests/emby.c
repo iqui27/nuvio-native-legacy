@@ -310,19 +310,19 @@ static void integracao(void) {
     assert(!strcmp(x[0].imdb, "tt0002002") && !strcmp(x[1].imdb, "tmdb:4242"));
     assert(!jfid_e(x[0].imdb) && !jfid_e(x[1].imdb));
     assert(servidores_chave_fileira("emby_11") && servidores_chave_fileira("plex_1") && !servidores_chave_fileira("cw"));
-    assert(servidores_pagina("emby_11", 0, 60, x, 60, &tot) == 2 && tot == 2);
+    assert(servidores_pagina("emby_11", 0, 60, x, 60, &tot, NULL) == 2 && tot == 2);
     assert(jfid_e(x[0].imdb) && !strcmp(x[1].imdb, "tt0002002"));
-    assert(servidores_pagina("emby_11", 1, 60, x, 60, &tot) == 1 && tot == 2);
+    assert(servidores_pagina("emby_11", 1, 60, x, 60, &tot, NULL) == 1 && tot == 2);
     assert(!strcmp(x[0].imdb, "tt0002002"));
-    assert(servidores_pagina("other", 0, 60, x, 60, &tot) == -1);
+    assert(servidores_pagina("other", 0, 60, x, 60, &tot, NULL) == -1);
     // Collection routes must obey the same paging contract as libraries.
-    assert(servidores_pagina("emby_collections", -1, 60, x, 60, &tot) < 0 && tot == 0);
-    assert(servidores_pagina("emby_collections", 0, 0, x, 60, &tot) < 0 && tot == 0);
+    assert(servidores_pagina("emby_collections", -1, 60, x, 60, &tot, NULL) < 0 && tot == 0);
+    assert(servidores_pagina("emby_collections", 0, 0, x, 60, &tot, NULL) < 0 && tot == 0);
     assert(servidores_bibliotecas(f, SRV_FIL_MAX) == 4);
-    assert(servidores_pagina("emby_collections", 0, 60, x, 60, &tot) == 1 && !strcmp(x[0].tipo, "group"));
-    assert(servidores_pagina("emby_4001", 0, 60, x, 60, &tot) == 1 && !strcmp(x[0].imdb, "tt0002002"));
-    assert(servidores_pagina("emby_playlists", 0, 60, x, 60, &tot) == 1 && !strcmp(x[0].tipo, "list"));
-    assert(servidores_pagina("emby_list_5001", 0, 60, x, 60, &tot) == 1 && !strcmp(x[0].imdb, "tt0002002"));
+    assert(servidores_pagina("emby_collections", 0, 60, x, 60, &tot, NULL) == 1 && !strcmp(x[0].tipo, "group"));
+    assert(servidores_pagina("emby_4001", 0, 60, x, 60, &tot, NULL) == 1 && !strcmp(x[0].imdb, "tt0002002"));
+    assert(servidores_pagina("emby_playlists", 0, 60, x, 60, &tot, NULL) == 1 && !strcmp(x[0].tipo, "list"));
+    assert(servidores_pagina("emby_list_5001", 0, 60, x, 60, &tot, NULL) == 1 && !strcmp(x[0].imdb, "tt0002002"));
     free(x); }
   // ---- matched catalogue titles: the Emby index (per-user route) and sources
   fim = ms() + 5000;

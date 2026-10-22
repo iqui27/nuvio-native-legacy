@@ -498,11 +498,19 @@ static void integracao(void) {
   assert(plex_indice_n() == 4 && plex_casamento_ativo());   // 3 movies (one without Guid: title+year) + 1 show
 
   { int total;
-    assert(plex_pagina("plex_collections", 0, 60, itens, 60, &total) == 1 && !strcmp(itens[0].tipo, "group"));
-    assert(plex_pagina("plex_group_4001", 0, 60, itens, 60, &total) == 2 && !strcmp(itens[0].imdb, "tt0000101"));
-    assert(plex_pagina("plex_playlists", 0, 60, itens, 60, &total) == 1 && !strcmp(itens[0].tipo, "list"));
-    assert(plex_pagina("plex_list_5001", 1, 60, itens, 60, &total) == 1 && total == 2);
-    assert(plex_pagina("plex_list_invalid", 0, 60, itens, 60, &total) < 0);
+    assert(plex_pagina("plex_collections", 0, 60, itens, 60, &total, NULL) == 1 && !strcmp(itens[0].tipo, "group"));
+    assert(plex_pagina("plex_group_4001", 0, 60, itens, 60, &total, NULL) == 2 && !strcmp(itens[0].imdb, "tt0000101"));
+    assert(plex_pagina("plex_playlists", 0, 60, itens, 60, &total, NULL) == 1 && !strcmp(itens[0].tipo, "list"));
+    assert(plex_pagina("plex_list_5001", 1, 60, itens, 60, &total, NULL) == 1 && total == 2);
+    assert(plex_pagina("plex_list_invalid", 0, 60, itens, 60, &total, NULL) < 0);
+    int raw = 0;
+    assert(plex_pagina("plex_list_5002", 0, 2, itens, 60, &total, &raw) == 1);
+    assert(raw == 2 && total == 3 && itens[0].temporada == 1 && itens[0].episodio == 2);
+    CatEp playlistEps[16];
+    assert(plex_ficha(&itens[0], playlistEps, 16) == 3);
+    assert(itens[0].temporada == 1 && itens[0].episodio == 2);
+    assert(plex_pagina("plex_list_5002", raw, 2, itens, 60, &total, &raw) == 1);
+    assert(raw == 1 && !strcmp(itens[0].imdb, "tt0000101"));
   }
 
   // ---- title page of a server-native item

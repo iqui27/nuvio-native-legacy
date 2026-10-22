@@ -6858,14 +6858,14 @@ static void *fioVerTudo(void *u) {
   // route, never an address; private items remain confined to this view.
   if (!strcmp(base, "servidores")) {
     CatItem *lote = calloc(60, sizeof *lote);
-    int total = 0, n = lote ? servidores_pagina(id, skip, 60, lote, 60, &total) : -1;
+    int total = 0, n = lote ? servidores_pagina(id, skip, 60, lote, 60, &total, &raw) : -1;
     pthread_mutex_lock(&vtTrava);
     if (generation != vtGeracao) { pthread_mutex_unlock(&vtTrava); free(lote); continue; }
     vtErro = n < 0;
     if (n >= 0) {
       for (int i = 0; i < n && vtN < VT_MAX; i++) vtItens[vtN++] = lote[i];
-      vtPagina += n;
-      vtFim = n < 60 || vtPagina >= total || vtN >= VT_MAX;
+      vtPagina += raw;
+      vtFim = raw < 60 || vtPagina >= total || vtN >= VT_MAX;
     }
     vtFioVivo = 0;
     pthread_mutex_unlock(&vtTrava);

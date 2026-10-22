@@ -213,6 +213,13 @@ class Handler(BaseHTTPRequestHandler):
                 {"Name": "Shows", "Id": LIB_SHOWS, "CollectionType": "tvshows"},
                 {"Name": "Music", "Id": LIB_MUSIC, "CollectionType": "music"}],
                 "TotalRecordCount": 3})
+        if p == "/Playlists/00000000000000000000000000005002/Items":
+            items = [dict(Id=episode_id(1, 2), Type="Episode", SeriesId=SERIES,
+                          SeriesName="Show", Name="Second", ParentIndexNumber=1, IndexNumber=2),
+                     dict(Id="abcd", Type="Audio"), movie(7)]
+            start = int(q.get("StartIndex", ["0"])[0])
+            limit = int(q.get("Limit", ["60"])[0])
+            return self.reply(200, {"Items": items[start:start + limit], "TotalRecordCount": 3})
         if p == "/Playlists/00000000000000000000000000005001/Items":
             return self.reply(200, {"Items": [movie(7)], "TotalRecordCount": 1})
         if p == "/Items" and method == "GET":
