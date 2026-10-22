@@ -49,7 +49,7 @@ static void ler(void) {
   b = dados_ler("travas.txt");
   if (!b) return;
   if (sscanf(b, "#travas 1 %u", &h) != 1 || h != donoHash) { free(b); return; }   // outra conta
-  for (l = strchr(b, '\n'); l && *l && nTv < TRAVA_MAX; l = fim) {
+  for (l = strchr(b, '\n'); l && nTv < TRAVA_MAX; l = fim) {
     Trava t;
     char *c[7], *q;
     int k = 0;

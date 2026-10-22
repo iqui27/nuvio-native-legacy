@@ -145,6 +145,16 @@ int main(void) {
   assert(trava_n() == 1);
   id2 = trava_criar("tt2", "Dark", TRAVA_SEPARADOS, 0, p2, 2);
   assert(id2 > id);
+  // Both series locks and their playback gates survive reload and the next save.
+  trava_esquecer(); trava_iniciar();
+  assert(trava_n() == 2);
+  assert(trava_obter(id, &t) && !strcmp(t.serie, "tt1") && t.pin == 1);
+  assert(trava_obter(id2, &t) && !strcmp(t.serie, "tt2") && t.modo == TRAVA_SEPARADOS);
+  assert(trava_bloqueio("tt2", 1, 1, 2) == id2);
+  assert(trava_definir_pin(id, 0));
+  trava_esquecer(); trava_iniciar();
+  assert(trava_n() == 2 && trava_obter(id2, &t));
+  assert(trava_bloqueio("tt2", 1, 1, 2) == id2);
   // tirar o penultimo membro desfaz a trava
   assert(trava_remover_membro(id2, 2) == 2 && trava_n() == 1);
 
