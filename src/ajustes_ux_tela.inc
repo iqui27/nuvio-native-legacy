@@ -28,7 +28,11 @@ static const Item TELA[] = {
       OPC(AJ_PULAR_CREDITOS), OPC(AJ_PROXIMO_AUTO), OPC(AJ_PROXIMO_CONTAGEM), OPC(AJ_REACAO_CREDITOS), OPC(AJ_CW_CONCLUIDO), OPC(AJ_CW_MINIMO),
       OPC(AJ_PLR_FORMATO), OPC(AJ_PLR_FORMATO_POS), OPC(AJ_PLR_CODEC), OPC(AJ_SAIDA_PLAYER), OPC(AJ_PROPORCAO_PADRAO), OPC(AJ_BRILHO_PLAYER), OPC(AJ_HDR_UI),
     ROT("Miniatura ao avançar"),
-      OPC(AJ_SEEKR_LIGADO), OPC(AJ_SEEKR_CHAVE), OPC(AJ_SEEKR_TESTAR), OPC(AJ_SEEKR_FITA),
+      OPC(AJ_SEEKR_LIGADO), OPC(AJ_SEEKR_CHAVE),
+#ifndef NV_MINIATURAS
+      OPC(AJ_SEEKR_TESTAR),   // .tpk: thumbnails made on the TV, no key to test
+#endif
+      OPC(AJ_SEEKR_FITA),
     MAIS(),
     ROT("Escolha da fonte"),
       // #310: o "Auto-play streams" do oficial (fonteregra.h).
@@ -53,7 +57,10 @@ static const Item TELA[] = {
       OPC(AJ_DV7),
 #endif
 #endif
-      OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO), OPC(AJ_SEEKR_AJUSTE),
+      OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO),
+#ifndef NV_MINIATURAS
+      OPC(AJ_SEEKR_AJUSTE),   // .tpk: frames come from the file itself, never out of sync
+#endif
 #if defined(NV_ANDROID) || (!defined(NV_TPK) && !defined(__EMSCRIPTEN__))
       OPC(AJ_BUFFER),   // webOS: DTS/Dolby Vision conversion read-ahead
 #endif

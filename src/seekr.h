@@ -15,6 +15,7 @@
 // across all accounts, profiles and keys. The provider's limits are separate.
 #ifndef NV_SEEKR_H
 #define NV_SEEKR_H
+#include "miniplat.h"
 #include "gl_compat.h"
 #include "seekrquota.h"
 #include <stddef.h>

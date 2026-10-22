@@ -4620,7 +4620,12 @@ void player_atualizar(float dt, Uint32 agora) {
     // da folha por ela) e uma vez por titulo — seekr_pedir ignora o repetido.
     if (d > 60.0 && video_pronto() && !ehCanal() && ajustes_seekr_ligado()) {
       const CatItem *cs = item();
+#ifdef NV_MINIATURAS
+      // Made on this TV from the file itself (miniatura.c): no IMDb id needed.
+      if (cs)
+#else
       if (cs && !strncmp(cs->imdb, "tt", 2))
+#endif
         seekr_pedir(cs->imdb, strcmp(cs->tipo, "series") ? 0 : epT,
                     strcmp(cs->tipo, "series") ? 0 : epE, (long)(d * 1000.0));
     }

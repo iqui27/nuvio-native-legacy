@@ -12,7 +12,7 @@ name: Build TPK
 
 on:
   push:
-    branches: [master]
+    branches: [master, feat/tpk-local-thumbs]
     paths-ignore:
       - "docs/**"
       - "**/*.md"
@@ -50,6 +50,19 @@ jobs:
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm
+
+      # Optional: keys that tools/env.sh reads from local.properties
+      # (NUVIO_SUPABASE_URL, TRAKT_CLIENT_ID, TMDB_API_KEY, GOOGLE_DRIVE_CLIENT_ID,
+      # GOOGLE_DRIVE_CLIENT_SECRET, ...). Repository secret LOCAL_PROPERTIES = the file contents.
+      - name: Write local.properties (if secret set)
+        env:
+          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
+        run: |
+          if [ -n "$LOCAL_PROPERTIES" ]; then
+            printf '%s\n' "$LOCAL_PROPERTIES" > local.properties
+          else
+            echo "No LOCAL_PROPERTIES secret: building without API keys"
+          fi
 
       # Static SDL2/libass/etc. take a long time to build; reuse them.
       # restore + save are split so the cache is saved even when a later step

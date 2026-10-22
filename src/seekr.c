@@ -1,3 +1,8 @@
+// The Samsung .tpk, LG and Android make their thumbnails on the device
+// (miniatura.c serves the same seekr_* calls there, miniplat.h); the Seekr API
+// is not built into them.
+#include "miniplat.h"
+#ifndef NV_MINIATURAS
 #include "seekr.h"
 #include "seekrvtt.h"
 #include "rede.h"
@@ -609,3 +614,6 @@ int seekr_validar(const char *c) {
   free(corpo);
   return r;
 }
+#else
+typedef int seekr_fora_daqui;   // ISO C: a translation unit must not be empty
+#endif

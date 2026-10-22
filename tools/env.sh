@@ -55,6 +55,13 @@ REC=$(valor NUVIO_REC_URL)
 # "indisponivel" e nada fala com o Discord. E so o client id: o app do Discord
 # e Public Client, sem segredo no binario.
 DSC=$(valor DISCORD_CLIENT_ID)
+# Google Drive for the seek-bar thumbnails made on the Samsung .tpk (src/minidrive.h):
+# an OAuth client of type "TVs and Limited Input devices", scope drive.appdata.
+# Empty = the Settings row says "unavailable in this version". Only the .tpk reads it.
+# Spaces around the value (a paste into the GitHub secret) are dropped: a
+# client id never contains one, and a stray space split the compiler flag.
+GDI=$(valor GOOGLE_DRIVE_CLIENT_ID | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+GDS=$(valor GOOGLE_DRIVE_CLIENT_SECRET | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 # A versao do app sai do appinfo.json — FONTE UNICA. Ela ja vivia em tres
 # lugares (appinfo.json, tizen-config.xml e um #define em ajustes.c) e o
 # terceiro ficou parado em 1.0.44 por nove releases: a tela de Ajustes mentia
@@ -117,6 +124,8 @@ if [ "$1" = "--env-file" ]; then
     printf 'NV_SEEKR_API_KEY=%s\n' "$SKR"
     printf 'NV_REC_URL=%s\n' "$REC"
     printf 'NV_DISCORD_CLIENT_ID=%s\n' "$DSC"
+    printf 'NV_GDRIVE_CLIENT_ID=%s\n' "$GDI"
+    printf 'NV_GDRIVE_CLIENT_SECRET=%s\n' "$GDS"
     printf 'NV_VERSAO=%s\n' "$VER"
   } > "$2"
   chmod 600 "$2"

@@ -701,6 +701,16 @@ static void rSeekr(int op) {
         if (k <= 0.5f) ajc_icone("aj_loader", 320, 193, 26, 0.95f); }
       ajcChaveCanto(k);
       return; }
+#ifdef NV_MINIATURAS
+    case AJ_SEEKR_CHAVE: {   // the TV hands its thumbnails to Google Drive
+      float f = ajc_fase(3.6f), p = rK(f / 0.7f);
+      ajc_ladrilho("aj_tv-minimal-play", 120, 170, 84, 0, 1);
+      ajc_ret(170, 168, 300, 4, 2, 1, 1, 1, 0.15f);
+      ajc_bolinha(170 + 300 * p, 170, 10, 1, 1, 1, f < 0.75f ? 1.0f : 0.0f);
+      ajc_ladrilho("aj_cloud", 520, 170, 84, f > 0.75f ? 1 : 0, 1);
+      if (f > 0.75f) ajc_foco(478, 128, 84, 84, 22, 1);
+      return; }
+#else
     case AJ_SEEKR_CHAVE: {
       static const char *TX = "************";
       char c[16];
@@ -714,6 +724,7 @@ static void rSeekr(int op) {
       if (ajc_onda(0.8f) > 0.5f) ajc_acento_ret(180 + n * 26, 134, 3, 32, 1.5f, 1);
       ajc_ret(150, 220, 300, 8, 4, 1, 1, 1, 0.1f);
       return; }
+#endif
     case AJ_SEEKR_TESTAR: {
       float f = ajc_fase(3.6f), p = rK(f / 0.6f), ok = f > 0.65f ? 1.0f : 0.0f;
       ajc_ladrilho("aj_key-round", 90, 160, 70, 0, 1);

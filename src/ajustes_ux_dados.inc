@@ -24,7 +24,9 @@ static int uxValorAtual(int op) {
   if(ajIptvGerenciador(op))return ajIptvQuantos(ajIptvTipo(op))?ajIptvAtualTipo(ajIptvTipo(op)):1;
   if (ajLegendaPrincipal(op)) return ajLegendaValor(op);
   if (ajFalhaBackend(op)) return ajFalhaValor(op);
+#ifndef NV_MINIATURAS
   if (op == AJ_SEEKR_LIGADO && !seekrChave[0]) return 1;
+#endif
   return op == AJ_FIL_LIMITE ? fil_limite_gravado() : valor[op];
 }
 
