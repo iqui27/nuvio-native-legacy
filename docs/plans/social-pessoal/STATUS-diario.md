@@ -13,6 +13,7 @@ API para as outras frentes: `API-diario.md` (estável desde 06/10; só acréscim
 - [x] Cofre na nuvem (`src/diarionuvem.c`): perguntado 1 vez ao abrir Perfil e Stats; lotes de 100; restauração; 409 = desligado no servidor. `tests/diarionuvem.sh`, `tests/diarionuvem_servidor.sh` (contra wrangler dev --local)
 - [x] Servidor: `migracao-011-diario.sql` (NÃO aplicada), `src/diario.js`, `src/letterboxd.js`; testes `teste-diario.mjs` (134) e `teste-letterboxd.mjs` (55)
 - [x] Letterboxd: CSV de exportação no formato deles (servidor + `diario_csv_letterboxd` na TV), import do ZIP/CSV da própria pessoa (módulo JS, para a página do celular), link de review (só o link). Rascunho do pedido de API: `letterboxd-pedido-api.md` (não enviado)
+- [x] Trava de série na mesma TV (`src/trava.c` regra + arquivo `travas.txt` por conta; `src/travajuntos.c` Juntos; `src/travatela.c` modal). Separados: limite = menor "mais longe" dos outros +1, sem início segura no T1E1, especiais e rever livres, pausa congela. Juntos: episódio visto no player marca os outros membros, com Desfazer na ilha. Entrada "Travar série" no menu de contexto; 13 frases em 28 idiomas. `tests/trava.sh`, `tests/travajuntos.sh`, `tests/trava_shot.sh` (PNGs 1920x1080)
 
 ## Em andamento / falta
 
@@ -20,6 +21,7 @@ API para as outras frentes: `API-diario.md` (estável desde 06/10; só acréscim
 - [ ] i18n das frases novas + capturas (`tests/diario_shot.sh`, NUVIO_SHOT_FONTE=3)
 - Página do celular (import ZIP, review longa) é da onda 3: o módulo `letterboxd.js` já está pronto para ela.
 - Tela "Diário" (lista por mês) é da onda 5 do plano.
+- Trava, falta: chip na página do título e episódios borrados além do limite ("Esperando X"); reordenar/selo no Continuar Assistindo; lembrete na ilha e no seletor de perfil; cartão de fim de episódio no player; Perfil "Travas de série".
 
 ## Precisa do dono
 
