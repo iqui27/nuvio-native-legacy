@@ -1,17 +1,15 @@
-// CAPTURAS DA TRAVA DE SERIE: a modal em criacao, com perfis escolhidos, em
-// Juntos e ja criada (gerenciar). Perfis e dados numa pasta descartavel, sem
-// rede e sem conta.
-//
-// NAO ENTRA NA SUITE: precisa de janela GL e de olho humano.
-//   NUVIO_SHOT_FONTE=3 bash tests/trava_shot.sh [prefixo]
-#include "travatela.h"
+// Capturas da trava de serie (travaui.c): o modal "Travar série com…", a folha
+// de espera do episodio alem do limite (com o PIN) e o Perfil › "Travas de
+// série". Sem rede: perfis e travas semeados direto no modelo (trava.h).
+#include "travaui.h"
 #include "trava.h"
-#include "perfis.h"
+#include "catalogo.h"
 #include "ajustes.h"
 #include "dados.h"
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
+#include "layout.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <assert.h>
@@ -19,148 +17,90 @@
 #include <stdlib.h>
 #include <string.h>
 
-static SDL_Window *win;
-static const char *base;
-static GLuint fundoTex;
-
-static void salvar(const char *nome) {
-  unsigned char *pix = malloc(1920 * 1080 * 4);
-  SDL_Surface *s;
-  char cam[700];
-  int y;
-  assert(pix);
-  glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);
-  s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
-  assert(s);
-  for (y = 0; y < 1080; y++)
-    memcpy((char *)s->pixels + y * s->pitch, pix + (size_t)(1079 - y) * 1920 * 4, 1920 * 4);
-  snprintf(cam, sizeof cam, "%s-%s.png", base, nome);
-  assert(IMG_SavePNG(s, cam) == 0);
-  SDL_FreeSurface(s); free(pix);
-  printf("captura: %s\n", cam);
-}
-
-static void quadros(int n, const char *nome) {
-  int i;
-  for (i = 0; i < n; i++) {
-    Uint32 agora = SDL_GetTicks();
-    txt_novo_quadro(); tex_novo_quadro(); tex_bombear(3); gfx_novo_quadro();
-    travatela_atualizar(1.0f / 60.0f, agora);
-    glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT);
-    if (fundoTex) gfx_rect((GfxRect){ 0, 0, 1920, 1080 }, fundoTex, GFX_SNAP, 0, 0, 0, 0, 1, 1, 1, 1);
-    travatela_desenhar(agora);
-    if (i == n - 1 && nome) salvar(nome);
-    SDL_GL_SwapWindow(win); SDL_Delay(2);
+static Uint32 relogio = 100000;
+static void quadro(int desenhar, int perfil, SDL_Window *win, const char *path) {
+  int q;
+  for (q = 0; q < 70; q++) {
+    relogio += 16;
+    SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(6); gfx_novo_quadro();
+    travaui_atualizar(1.0f / 60.0f, relogio);
+    travaui_perfil_atualizar(1.0f / 60.0f);
+    glClearColor(.05f, .055f, .07f, 1); glClear(GL_COLOR_BUFFER_BIT);
+    if (perfil) travaui_perfil_desenhar(140.0f, 60.0f, 1640.0f, 900.0f, 1.0f);
+    if (desenhar) travaui_desenhar(relogio);
+    if (q == 69 && path) {
+      unsigned char *pix = malloc(1920 * 1080 * 4);
+      SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
+      int y;
+      glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);
+      for (y = 0; y < 1080; y++) memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
+      assert(IMG_SavePNG(s, path) == 0); SDL_FreeSurface(s); free(pix);
+      printf("captura: %s\n", path);
+    }
+    SDL_GL_SwapWindow(win);
   }
 }
-
 static void tecla(SDL_Keycode k) {
-  SDL_Event e;
-  memset(&e, 0, sizeof e);
-  e.type = SDL_KEYDOWN; e.key.keysym.sym = k;
-  travatela_evento(&e);
-  quadros(4, NULL);
-}
-
-static void carregarFundo(const char *cam) {
-  SDL_Surface *s = IMG_Load(cam), *t;
-  if (!s) return;
-  t = SDL_ConvertSurfaceFormat(s, SDL_PIXELFORMAT_ABGR8888, 0);
-  SDL_FreeSurface(s);
-  if (!t) return;
-  glGenTextures(1, &fundoTex);
-  glBindTexture(GL_TEXTURE_2D, fundoTex);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glPixelStorei(GL_UNPACK_ROW_LENGTH, t->pitch / 4);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, t->w, t->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, t->pixels);
-  glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-  SDL_FreeSurface(t);
+  SDL_Event e; memset(&e, 0, sizeof e);
+  e.type = SDL_KEYDOWN; e.key.keysym.sym = k; travaui_evento(&e);
 }
 
 int main(int argc, char **argv) {
-  const char *dir = getenv("NUVIO_DADOS"), *tmp = getenv("NUVIO_TESTE_DIR");
-  char cam[700];
-  SDL_GLContext gl;
-  FILE *f;
-  int ids[2];
-  base = argc > 1 ? argv[1] : "/tmp/nuvio-trava";
-  if (!dir || !*dir || !tmp || strcmp(dir, tmp)) { fprintf(stderr, "trava_shot: rode por tests/trava_shot.sh\n"); return 1; }
-  snprintf(cam, sizeof cam, "%s/ajustes.txt", dir);
-  f = fopen(cam, "w"); assert(f);
-  fprintf(f, "idioma 0\nselected_theme 2\n");
+  const char *dir = getenv("NUVIO_DADOS"), *out = argc > 1 ? argv[1] : "/tmp/nuvio-trava";
+  char path[700]; FILE *f; SDL_Window *win; SDL_GLContext gl;
+  static CatItem it; static CatEp eps[8];
+  TravaPerfil p[3]; int i, outros[2] = { 2, 3 };
+  assert(dir && *dir);
+  snprintf(path, sizeof path, "%s/ajustes.txt", dir); f = fopen(path, "w"); assert(f);
+  fprintf(f, "selected_theme 2\n");
   if (getenv("NUVIO_SHOT_FONTE")) fprintf(f, "fonteInterface %d\n", atoi(getenv("NUVIO_SHOT_FONTE")));
   fclose(f);
-  // Quatro perfis da conta, o 1 ativo (formato do cache: perfis.txt).
-  snprintf(cam, sizeof cam, "%s/perfis.txt", dir);
-  f = fopen(cam, "w"); assert(f);
-  fprintf(f, "1\t0\t1\t0\t#1E88E5\tHenrique\t\t\n2\t0\t0\t0\t#E91E63\tMaria\t\t\n"
-             "3\t0\t0\t0\t#43A047\tLuca\t\t\n4\t0\t0\t0\t#FB8C00\tSala\t\t\n");
-  fclose(f);
-  snprintf(cam, sizeof cam, "%s/perfil.txt", dir);
-  f = fopen(cam, "w"); assert(f); fputs("1\n", f); fclose(f);
-  dados_iniciar("deploy/app");
-  assert(!strcmp(dados_dir(), dir));
-  ajustes_dir(dir);
-  perfis_carregar_ativo();
-  assert(perfis_n() == 4 && perfis_ativo() == 1);
-  trava_dono("conta-shot");
-  trava_iniciar();
-
-  assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
-  IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
-  win = SDL_CreateWindow("Nuvio: Trava", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                         1920, 1080, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
-  assert(win);
+  dados_iniciar(dir); ajustes_dir(dir);
+  assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0); IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2); SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+  win = SDL_CreateWindow("trava", 0, 0, 1920, 1080, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN); assert(win);
   gl = SDL_GL_CreateContext(win); assert(gl);
-  SDL_GL_SetSwapInterval(0);
-  glViewport(0, 0, 1920, 1080);
-  gfx_tamanho_alvo(1920, 1080);
-  assert(gfx_iniciar());
-  gfx_snap_iniciar(1920, 1080);
-  assert(txt_iniciar("deploy/app", 1));
-  tex_iniciar(64);
-  gfx_icones_dir("deploy/app/art");
-  carregarFundo("deploy/app/art/00.jpg");
+  glViewport(0, 0, 1920, 1080); gfx_tamanho_alvo(1920, 1080);
+  assert(gfx_iniciar() && txt_iniciar("deploy/app", 1)); tex_iniciar(64); gfx_icones_dir("deploy/app/art");
 
-  // 1. CRIAR: so o perfil ativo marcado; a acao reclama de menos de 2.
-  assert(!travatela_abrir("", "x"));
-  assert(travatela_abrir("tt9000000", "Pluribus"));
-  quadros(60, "1-nova");
-  tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_DOWN);   // modo
-  tecla(SDLK_DOWN); tecla(SDLK_DOWN);                                       // acao
-  tecla(SDLK_RETURN);
-  assert(travatela_aberto() && trava_n() == 0);                             // falta gente
-  quadros(30, "2-aviso");
+  memset(&it, 0, sizeof it);
+  snprintf(it.imdb, sizeof it.imdb, "tt11280740"); snprintf(it.tipo, sizeof it.tipo, "series");
+  snprintf(it.titulo, sizeof it.titulo, "Severance");
+  snprintf(it.poster, sizeof it.poster, "deploy/app/art/poster/00.jpg");
+  snprintf(it.backdrop, sizeof it.backdrop, "deploy/app/art/00.jpg");
+  cat_definir_tudo(&it, 1, NULL, 0);
+  for (i = 0; i < 8; i++) { eps[i].temporada = 1; eps[i].episodio = i + 1;
+    snprintf(eps[i].thumb, sizeof eps[i].thumb, "deploy/app/art/0%d.jpg", i % 4); }
+  cat_definir_episodios(0, eps, 8);
 
-  // 2. ESCOLHER Maria e Luca, trocar para Juntos.
-  tecla(SDLK_UP); tecla(SDLK_UP); tecla(SDLK_UP); tecla(SDLK_UP); tecla(SDLK_UP); tecla(SDLK_UP);
-  tecla(SDLK_DOWN); tecla(SDLK_RETURN);                                     // Maria
-  tecla(SDLK_DOWN); tecla(SDLK_RETURN);                                     // Luca
-  tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RETURN);                   // modo -> Juntos
-  quadros(40, "3-juntos");
-  tecla(SDLK_RETURN);                                                       // volta Separados
-  tecla(SDLK_DOWN); tecla(SDLK_RETURN);                                     // PIN ligado
-  quadros(40, "4-separados-pin");
-  tecla(SDLK_DOWN); tecla(SDLK_RETURN);                                     // criar
-  assert(!travatela_aberto() && trava_n() == 1);
-  assert(trava_da_serie("tt9000000", 1, ids, 2) == 1);
-  { Trava t; assert(trava_obter(ids[0], &t) && t.n == 3 && t.pin == 1 && t.modo == TRAVA_SEPARADOS); }
+  memset(p, 0, sizeof p);
+  p[0].indice = 1; p[0].primario = 1; p[0].temPin = 1; snprintf(p[0].nome, sizeof p[0].nome, "Henrique");
+  p[1].indice = 2; p[1].temPin = 1; snprintf(p[1].nome, sizeof p[1].nome, "Jerry");
+  p[2].indice = 3; snprintf(p[2].nome, sizeof p[2].nome, "Sandra");
+  trava_definir_conta("shot");
+  trava_definir_perfis(p, 3, 1);
 
-  // 3. GERIR: reabrir mostra a trava; tirar um membro grava na hora.
-  assert(travatela_abrir("tt9000000", "Pluribus"));
-  quadros(60, "5-gerir");
-  tecla(SDLK_DOWN); tecla(SDLK_RETURN);                                     // tira Maria
-  { Trava t; assert(trava_obter(ids[0], &t) && t.n == 2); }
-  quadros(40, "6-gerir-menos");
-  tecla(SDLK_ESCAPE);
-  quadros(60, NULL);
-  assert(!travatela_aberto());
-
-  tex_encerrar(); txt_encerrar(); gfx_encerrar();
+  // 1. O modal, com Jerry escolhido e o foco em Sandra.
+  assert(travaui_abrir(cat_item(0), 0));
+  tecla(SDLK_RIGHT); tecla(SDLK_RETURN); tecla(SDLK_RIGHT);
+  snprintf(path, sizeof path, "%s-modal.png", out); quadro(1, 0, win, path);
+  // Cria (Separados, PIN) e anda as posicoes: eu no E4, Jerry no E2, Sandra no E3.
+  tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RETURN); tecla(SDLK_DOWN); tecla(SDLK_RETURN);
+  quadro(0, 0, win, NULL);
+  assert(trava_n() == 1);
+  trava_definir_membros(trava_i(0)->id, outros, 2);
+  trava_passo("tt11280740", 1, 1, 4, 0);
+  trava_posicao(trava_i(0)->id, 2, 1, 2, 1);
+  trava_posicao(trava_i(0)->id, 3, 1, 3, 1);
+  // 2. A folha de espera do E5, e o PIN.
+  assert(travaui_abrir_espera(0, 1, 5));
+  snprintf(path, sizeof path, "%s-espera.png", out); quadro(1, 0, win, path);
+  tecla(SDLK_RETURN); tecla(SDLK_1); tecla(SDLK_2);
+  snprintf(path, sizeof path, "%s-pin.png", out); quadro(1, 0, win, path);
+  tecla(SDLK_ESCAPE); tecla(SDLK_ESCAPE); quadro(0, 0, win, NULL);
+  // 3. Perfil, pagina 2.
+  travaui_perfil_entrar();
+  snprintf(path, sizeof path, "%s-perfil.png", out); quadro(0, 1, win, path);
   SDL_GL_DeleteContext(gl); SDL_DestroyWindow(win); SDL_Quit();
-  puts("PASS: capturas da Trava gravadas.");
   return 0;
 }

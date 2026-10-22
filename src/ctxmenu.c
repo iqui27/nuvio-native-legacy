@@ -27,7 +27,7 @@
 #include "homefil.h"
 #include "atividade.h"
 #include "recenviar.h"
-#include "travatela.h"
+#include "travaui.h"
 #include "perfis.h"
 #include "botoes.h"
 #include "badges.h"
@@ -1127,7 +1127,7 @@ static void aplicar(void) {
       pagina = 0;
       break;
     case OP_TRAVA:
-      if (travatela_abrir(ci->imdb, ci->titulo)) aberto = 0;
+      if (travaui_abrir(ci, atual)) aberto = 0;
       break;
     case OP_DISPENSAR:
       home_retomar_dispensar();

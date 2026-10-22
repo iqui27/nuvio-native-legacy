@@ -1922,7 +1922,7 @@ void sync_esquecer_usuario(void) {
   diario_esquecer();
   diario_dono("");
   trava_esquecer();
-  trava_dono("");
+  trava_definir_conta("");
   // O jornal da conta sai da MEMORIA; o arquivo (por usuario, so ids) fica
   // para quando ESTA pessoa voltar — e o que ainda nao subiu nao se perde.
   contapend_esquecer();

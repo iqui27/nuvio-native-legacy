@@ -14,6 +14,7 @@
 // O QUE ELE NAO GUARDA: token. A identidade e montada a cada ciclo a partir de
 // trakt.c ou de sessao.c e vai so no cabecalho do pedido.
 #include "recomenda.h"
+#include "travarede.h"
 #include "atividade.h"
 #include "dados.h"
 #include "rede.h"
@@ -1921,6 +1922,9 @@ static int lerRecs(const char **cab) {
     free(r);
     return st != 0;
   }
+  // TRAVA DE SERIE: a revisao das travas pega carona nesta sondagem
+  // (migracao 012). Servidor antigo nao manda; nada acontece.
+  if (js_tem(r, NULL, "travaRev")) travarede_rev((long long)js_num(r, NULL, "travaRev", 0.0));
   p = js_array(r, NULL, "itens");
   while (p && *p == '{') {
     const char *f = js_fim(p);

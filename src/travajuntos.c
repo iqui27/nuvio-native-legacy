@@ -1,5 +1,7 @@
 #include "travajuntos.h"
 #include "trava.h"
+#include "diario.h"
+#include "perfis.h"
 #include "contapend.h"
 #include "idioma.h"
 #include "ilha.h"
@@ -61,16 +63,34 @@ static void ouvinte(int perfil, int evento, const DiarioEntrada *e, void *ctx) {
   Marca m;
   VistoPar par;
   unsigned char bits;
-  Trava tv;
-  int ids[8];
+  int ids[TRAVA_MAX], ni, k;
   IlhaAcao a;
   char fr[200];
   (void)ctx;
-  if (evento != DIARIO_EV_NOVA || !e) return;
+  if (!e) return;
+  if (e->tipo == DIARIO_SERIE && e->temporada > 0 && e->episodio > 0 &&
+      !(e->flags & DIARIO_F_PARCIAL)) {
+    int t = 0, ep = 0;
+    long long quando;
+    if (diario_ultimo_episodio(perfil, e->id, &t, &ep, &quando))
+      trava_passo(e->id, perfil, t, ep, 0);
+  }
+  if (evento != DIARIO_EV_NOVA) return;
   if (e->origem != DIARIO_ORIG_PLAYER || e->tipo != DIARIO_SERIE) return;
   if (e->temporada < 1 || e->episodio < 1) return;
   if (e->flags & (DIARIO_F_PARCIAL | DIARIO_F_JUNTOS)) return;
-  na = trava_juntos_alvos(e->id, perfil, alvos, TRAVA_MEMBROS);
+  na = 0;
+  ni = trava_da_serie(e->id, perfil, ids, TRAVA_MAX);
+  for (i = 0; i < ni; i++) {
+    const Trava *tv = trava_i(ids[i]);
+    if (!tv || tv->modo != TRAVA_JUNTOS || tv->pausada) continue;
+    for (k = 0; k < tv->n; k++) {
+      int p = tv->m[k].perfil, j;
+      if (p < 1 || p == perfil || tv->m[k].estado != TRAVA_DENTRO) continue;
+      for (j = 0; j < na && alvos[j] != p; j++) {}
+      if (j == na && na < TRAVA_MEMBROS) alvos[na++] = p;
+    }
+  }
   if (na < 1) return;
 
   memset(&m, 0, sizeof m);
@@ -96,7 +116,7 @@ static void ouvinte(int perfil, int evento, const DiarioEntrada *e, void *ctx) {
   diario_definir_flags(perfil, e->id, e->temporada, e->episodio, e->quando, DIARIO_F_JUNTOS, 0);
   contapend_chutar();
 
-  if (trava_da_serie(e->id, perfil, ids, 8) > 0 && trava_obter(ids[0], &tv)) snprintf(m.titulo, sizeof m.titulo, "%s", tv.titulo);
+  if (ni > 0) snprintf(m.titulo, sizeof m.titulo, "%s", trava_i(ids[0])->titulo);
   frase(&m, fr, sizeof fr);
   memset(&a, 0, sizeof a);
   a.icone = "aj_users";

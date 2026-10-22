@@ -18,9 +18,10 @@
 #include "teclado.h"
 #include "ponteiro.h"
 #include "app.h"
+#include "travarede.h"
+#include "travaui.h"
 #include "telefoneui.h"
 #include "diario.h"
-#include "trava.h"
 #include "travajuntos.h"
 #include "diariofontes.h"
 #include "diarioperfil.h"
@@ -88,7 +89,6 @@
 #include "recomenda.h"
 #include "atividade.h"
 #include "recenviar.h"
-#include "travatela.h"
 #include "pessoas.h"
 #include "salvospainel.h"
 #include "salvosintro.h"
@@ -2352,10 +2352,9 @@ int app_iniciar(const char *dirArte) {
   atividade_iniciar();   // a fila de POST /v1/atividade que nao saiu (atividade.h)
   diario_dono(sessao_usuario());   // arquivo de outra conta nao e lido
   diario_iniciar();      // o Diario por perfil (diario.h), carregado sob demanda
-  trava_dono(sessao_usuario());   // travas de serie (trava.h): mesmo dono do Diario
-  trava_iniciar();
   travajuntos_iniciar(); // Juntos: o episodio do player vira marca nos outros membros
   dormiu_iniciar();      // a sessao que morreu tocando vira suspeita de sono
+  travarede_iniciar();   // trava de serie: arquivo da conta, fila e ouvinte do visto
   // O envio da atividade segue o nivel de privacidade (alcance) do Social: a
   // funcao e chamada agora e a cada mudanca; "nao perguntado" chega como 0.
   recomenda_ao_mudar_alcance(atividade_definir_permitido);
@@ -2533,7 +2532,8 @@ int app_na_home(void) {
 static int azulPodeAbrirSalvos(const SDL_Event *e) {
   if (player_aberto() || player_mini_ativo() || menu_aberto() || ctx_aberto() ||
       faixas_aberta() || episodios_aberto() || stream_folha_aberta() ||
-      guia_overlay_aberta() || pessoas_aberto() || recomenda_aberta() || recenviar_aberto() || travatela_aberto())
+      guia_overlay_aberta() || pessoas_aberto() || recomenda_aberta() || recenviar_aberto() ||
+      travaui_aberta())
     return 0;
   // So no teclado de verdade (Mac/desktop). No Android a AZUL, o CH+ e o
   // MENU/BOOKMARK CHEGAM como "s" (NuvioActivity/main.c) e o SDL pode deixar o
@@ -2866,7 +2866,9 @@ void app_evento(const SDL_Event *e) {
   // painel da tecla AZUL — as tres portas que a abrem. Abaixo do cartao de
   // aviso, que e uma pergunta sobre outra recomendacao.
   if (recenviar_aberto()) { recenviar_evento(e); return; }
-  if (travatela_aberto()) { travatela_evento(e); return; }
+  // TRAVA DE SERIE (travaui.c): o modal e a folha de espera abrem da pagina do
+  // titulo e do Perfil, na mesma altura da modal de recomendar.
+  if (travaui_aberta()) { travaui_evento(e); return; }
   // ENCONTRAR PESSOAS (busca, perfil, pedidos): mesma altura da modal de
   // recomendar — abre da aba Social e de Ajustes, e devolve o foco a quem abriu.
   if (pessoas_aberto()) { pessoas_evento(e); return; }
@@ -3144,7 +3146,7 @@ static const char *homeTrailerBloqueio(void) {
       novcartao_aberto()) return "whats-new";
   if (resolver_aberto()) return "resolver";
   if (atualizacao_aberta() || agendaviso_aberto()) return "update-notice";
-  if (recomenda_aberta() || recenviar_aberto() || travatela_aberto() || pessoas_aberto()) return "recommend";
+  if (recomenda_aberta() || recenviar_aberto() || travaui_aberta() || pessoas_aberto()) return "recommend";
   if (faixas_aberta() || episodios_aberto() || stream_folha_aberta()) return "sheet";
   if (guia_overlay_aberta()) return "guide";
   if (registro_aberto()) return "log";
@@ -3152,6 +3154,10 @@ static const char *homeTrailerBloqueio(void) {
 }
 
 static void tocarFonteEscolhida(int fonte, int manual) {
+  int alvo = player_aberto() ? player_indice() : detail_indice(), t = 0, e = 0;
+  if (player_aberto()) player_episodio_atual(&t, &e);
+  else detail_ep_foco(&t, &e);
+  if (travaui_abrir_espera(alvo, t, e)) { aguardandoFonte = 0; folhaParaTocar = 0; return; }
   {
     const Stream *s = stream_item(fonte);
     folhaParaTocar = 0;
@@ -3242,6 +3248,7 @@ static void juntosAbrirEFonte(Uint32 agora) {
       idx = cat_acrescentar(&novo);
     }
     if (idx >= 0) {
+      if (travaui_abrir_espera(idx, t, e)) return;
       limparFonteVOD();
       if (player_aberto() || player_retido()) player_encerrar();
       diagnostico_cancelar_vazao();
@@ -3821,13 +3828,13 @@ void app_atualizar(float dt, Uint32 agora) {
     // DIARIO: ouvintes, gravacao com folga, vistos da conta, nomes do titulo
     // aberto e a pergunta do "Pegou no sono" na pagina do titulo.
     diario_dono(sessao_usuario());   // troca de conta solta o que estava carregado
-    trava_dono(sessao_usuario());
     diario_passo();
     diariofontes_passo();
     diarionuvem_passo();
     diariotrakt_passo();
     if (ab && detail_assentado()) diariofontes_nome(ab);
     dormiu_passo();
+    travarede_passo(agora);
     // O "Reconectar" do Trakt (modal da ilha): Ajustes, na linha do Trakt.
     if (ilhasinais_pediu_trakt() && !player_aberto()) {
       if (detail_aberto()) detail_fechar_seco();
@@ -4288,7 +4295,11 @@ void app_atualizar(float dt, Uint32 agora) {
     // definitivo — player_do_inicio sobrevive as re-chamadas tardias de
     // player_definir_episodio.
     int doInicio = detail_pediu_do_inicio();
-    if ((detail_pediu_reproduzir() || doInicio) && aguardandoFonte != 2) {
+    int querTocar = detail_pediu_reproduzir() || doInicio;
+    // TRAVA DE SERIE: o episodio alvo alem do limite (quem esta a frente
+    // espera) nao toca: abre a folha de espera, que tem "Assistir mesmo assim".
+    if (querTocar && aguardandoFonte != 2 && travaui_segurar_detalhe()) querTocar = 0;
+    if (querTocar && aguardandoFonte != 2) {
       marco("abrir: reproduzir pedido");
       // A tela abre JA, no estado "abrindo fonte", e a escolha acontece depois.
       // Escolher antes deixaria o botao sem resposta por segundos, e escolher
@@ -4944,9 +4955,11 @@ void app_atualizar(float dt, Uint32 agora) {
       if (ci) { stream_definir_alvo(id); addons_buscar_renovar(id,ci->tipo); }
     }
   }
-  { int t,e;
-    if (aguardandoFonte != 2 && episodios_escolheu(&t,&e) && player_aberto()) {
-      int titulo=player_indice(), reassistindo=player_reassistindo();
+  { int t,e, autorizado = -1;
+    int retomar = travaui_pediu_reproduzir(&autorizado, &t, &e);
+    if (aguardandoFonte != 2 && (retomar || episodios_escolheu(&t,&e)) && player_aberto()) {
+      int titulo = retomar ? autorizado : player_indice(), reassistindo=player_reassistindo();
+      if (travaui_abrir_espera(titulo, t, e)) goto semEscolhaEpisodio;
       if (episodioNaSala(titulo, t, e)) goto semEscolhaEpisodio;
       diagnostico_cancelar_vazao();
       player_encerrar(); player_abrir(titulo,NULL);
@@ -4961,6 +4974,7 @@ void app_atualizar(float dt, Uint32 agora) {
       int titulo=player_indice(), reassistindo=player_reassistindo();
       // Na sala, o proximo episodio e de todos: o pedido vai a sala e cada TV
       // abre o mesmo (juntos_pediu_abrir). Com a trava, so o anfitriao.
+      if (travaui_abrir_espera(titulo, t, e)) goto semProximo;
       if (episodioNaSala(titulo, t, e)) goto semProximo;
       diagnostico_cancelar_vazao();
       player_encerrar(); player_abrir(titulo,NULL);
@@ -5185,7 +5199,7 @@ void app_atualizar(float dt, Uint32 agora) {
   spainel_atualizar(dt, agora);
   recomenda_atualizar(dt, agora);
   recenviar_atualizar(dt, agora);
-  travatela_atualizar(dt, agora);
+  travaui_atualizar(dt, agora);
   pessoas_atualizar(dt, agora);
   sintro_atualizar(dt, agora);
   novidades_atualizar(dt, agora);
@@ -5472,7 +5486,7 @@ static int relogioCamadaAberta(void) {
       novidades170_aberto() || novidades180_aberto() || novidades20_aberto() || novidades201_aberto() || novidades202_aberto() || novcartao_aberto() || resolver_aberto() || telemetria_aberto() || recintro_aberto() ||
       atualizacao_aberta() || agendaviso_aberto() || avisos_cartao_aberto() ||
       glem_cartao_aberto() || recenviar_aberto() || pessoas_aberto() ||
-      recomenda_aberta() || pipintro_aberto() || diagnostico_intro_aberto();
+      recomenda_aberta() || pipintro_aberto() || diagnostico_intro_aberto() || travaui_aberta();
 }
 static int relogioCabe(void) {
   // AJUSTES NO GLASS UI (mockup de 03/10): o relogio fica no canto, em cima da
@@ -5498,7 +5512,7 @@ static int relogioCabe(void) {
       novidades1312_aberto() || novidades142_aberto() || novidades148_aberto() ||
       novidades170_aberto() || novidades180_aberto() || novidades20_aberto() || novidades201_aberto() || telemetria_aberto() || recintro_aberto() ||
       atualizacao_aberta() || agendaviso_aberto() || avisos_cartao_aberto() ||
-      glem_cartao_aberto() || recenviar_aberto() || travatela_aberto() || pessoas_aberto() ||
+      glem_cartao_aberto() || recenviar_aberto() || travaui_aberta() || pessoas_aberto() ||
       recomenda_aberta() || pipintro_aberto() || diagnostico_intro_aberto())
     return 0;
   return 1;
@@ -5798,8 +5812,8 @@ void app_desenhar(Uint32 agora) {
     glem_desenhar(agora);
   CAMADA_SE(recenviar_aberto());
   if (!registro_aberto()) recenviar_desenhar(agora);
-  CAMADA_SE(travatela_aberto());
-  if (!registro_aberto()) travatela_desenhar(agora);
+  CAMADA_SE(travaui_aberta());
+  if (!registro_aberto()) travaui_desenhar(agora);
   CAMADA_SE(pessoas_aberto());
   if (!registro_aberto()) pessoas_desenhar(agora);
   CAMADA_SE(recomenda_aberta());

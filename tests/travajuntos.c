@@ -2,6 +2,8 @@
 // Diario de verdade; conta, ilha e idioma sao dubles.
 #include "travajuntos.h"
 #include "trava.h"
+#include "diario.h"
+#include "perfis.h"
 #include "catalogo.h"
 int cat_indice_titulo(const char *id, int preferido) { (void)id; (void)preferido; return -1; }
 int cat_n_episodios(int ix) { (void)ix; return 0; }
@@ -61,7 +63,8 @@ static void viu(int perfil, int t, int e, char origem, unsigned flags) {
 
 int main(void) {
   int p3[3] = {1, 2, 3}, id;
-  Trava t;
+  char idTrava[TRAVA_ID_MAX];
+  TravaPerfil perfis[3] = {0};
   long long q;
   char cmd[600];
 
@@ -71,15 +74,21 @@ int main(void) {
   snprintf(pasta, sizeof pasta, "%s/nuvio-travajuntos-teste-%d", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp", (int)getpid());
   snprintf(cmd, sizeof cmd, "rm -rf '%s' && mkdir -p '%s'", pasta, pasta); assert(system(cmd) == 0);
   diario_relogio_teste = 1790000000LL;
-  diario_dono("conta-a"); trava_dono("conta-a");
-  diario_iniciar(); trava_iniciar(); travajuntos_iniciar();
+  diario_dono("conta-a"); trava_definir_conta("conta-a");
+  for (int i = 0; i < 3; i++) {
+    perfis[i].indice = pf[i].indice;
+    snprintf(perfis[i].nome, sizeof perfis[i].nome, "%s", pf[i].nome);
+  }
+  trava_definir_perfis(perfis, 3, 1);
+  diario_iniciar(); travajuntos_iniciar();
 
   // sem trava: nada
   viu(1, 1, 1, DIARIO_ORIG_PLAYER, 0);
   assert(nIlha == 0 && nPush == 0 && !diario_episodio(2, "tt1", 1, 1, &q));
 
-  id = trava_criar("tt1", "Severance", TRAVA_JUNTOS, 0, p3, 3);
-  assert(id > 0);
+  id = trava_criar("tt1", "Severance", "", TRAVA_JUNTOS, 0, p3, 3);
+  assert(id >= 0);
+  snprintf(idTrava, sizeof idTrava, "%s", trava_i(id)->id);
   // parcial, conta e especial nao propagam
   viu(1, 1, 2, DIARIO_ORIG_PLAYER, DIARIO_F_PARCIAL);
   viu(1, 1, 3, DIARIO_ORIG_CONTA, 0);
@@ -111,14 +120,14 @@ int main(void) {
   assert(!diario_episodio(3, "tt1", 1, 5, &q) && diario_episodio(2, "tt1", 1, 5, &q) && ultVisto == 0);
 
   // trava pausada nao propaga
-  trava_definir_pausada(id, 1); nIlha = 0;
+  trava_definir_pausada(idTrava, 1); nIlha = 0;
   viu(1, 1, 6, DIARIO_ORIG_PLAYER, 0);
   assert(nIlha == 0 && !diario_episodio(2, "tt1", 1, 6, &q));
   // Separados nao propaga
-  trava_definir_pausada(id, 0); trava_definir_modo(id, TRAVA_SEPARADOS);
+  trava_definir_pausada(idTrava, 0); trava_definir_modo(idTrava, TRAVA_SEPARADOS);
   viu(1, 1, 7, DIARIO_ORIG_PLAYER, 0);
   assert(nIlha == 0 && !diario_episodio(2, "tt1", 1, 7, &q));
-  assert(trava_obter(id, &t));
+  assert(trava_por_id(idTrava));
 
   snprintf(cmd, sizeof cmd, "rm -rf '%s'", pasta); (void)!system(cmd);
   puts("travajuntos: ok");

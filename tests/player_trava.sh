@@ -6,26 +6,28 @@ trap 'rm -rf "$dir"' EXIT
 python3 - "$dir/test.c" <<'PY'
 from pathlib import Path
 import sys
-s = Path('src/player.c').read_text()
-worker = s[s.index('typedef struct { int perfil'):s.index('static int travaFonte(')]
+s = Path('src/travaui.c').read_text()
+worker = s[s.index('static int pinFio(void *u) {'):s.index('static void conferirPin(void) {')]
 Path(sys.argv[1]).write_text('''
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdatomic.h>
-typedef struct { int n, perfil[8]; } Trava;
-static _Atomic int travaPinResultado;
-static int travaId = 7;
-static int perfis_verificar_pin(int p, const char *pin) { return p == atoi(pin); }
-static int trava_obter(int id, Trava *t) { assert(id == 7); t->n = 3; t->perfil[0]=1; t->perfil[1]=2; t->perfil[2]=3; return 1; }
+static int mtx, pinResposta, pinFioVivo;
+static char pin[5];
+static void SDL_LockMutex(int unused) { (void)unused; }
+static void SDL_UnlockMutex(int unused) { (void)unused; }
+static int perfis_verificar_pin(int p, const char *value) { return p == atoi(value); }
 ''' + worker + '''
 int main(void) {
-  for (int pin = 1; pin <= 4; pin++) {
-    TravaPinJob *j = calloc(1, sizeof *j);
-    j->perfil = 1; j->id = travaId;
-    snprintf(j->pin, sizeof j->pin, "%d", pin);
-    verificarTravaPin(j);
-    assert(atomic_load(&travaPinResultado) == (pin == 2 || pin == 3 ? 1 : -1));
+  for (int value = 1; value <= 4; value++) {
+    int *members = calloc(3, sizeof *members);
+    members[0] = 2; members[1] = 2; members[2] = 3;
+    snprintf(pin, sizeof pin, "%d", value);
+    pinFioVivo = 1;
+    pinFio(members);
+    assert(pinResposta == (value == 2 || value == 3));
+    assert(pinFioVivo == 0);
   }
   return 0;
 }

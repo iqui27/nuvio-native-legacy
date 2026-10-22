@@ -125,6 +125,7 @@ def eh_frase(s):
     # nem "luna://com.webos.media/%s", e depois que a regra de formato passou a
     # deixar frases com "%" entrarem, os quatro viraram ruido fixo.
     if "://" in s: return False
+    if s == "perfil:%d": return False  # Internal avatar identity, never displayed.
     if re.search(r"/[A-Za-z0-9._-]+\.[A-Za-z]{2,4}$", s): return False
     # FORMATO PURO x FRASE QUE CONTEM FORMATO, e a diferenca custou tres
     # frases em portugues na v1.0.35. A regra antiga descartava todo literal
