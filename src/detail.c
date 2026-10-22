@@ -2042,7 +2042,7 @@ static float alturaSecao(int r) {
     case SEC_FRASES:    return 300;
     case SEC_NOTAS:     return 150.0f;
     case SEC_NOTAS_EP:  return 0.0f;
-    case SEC_PROGTEMP:  return tgraf_altura_dados(tgraf_dados(idx)) + (progTemNotas() ? 360 : 0);
+    case SEC_PROGTEMP:  return progTemNotas() ? 292 : tgraf_altura_dados(tgraf_dados(idx));
   }
   return 0.0f;
 }
@@ -7082,9 +7082,7 @@ static void desenhaGradeProgresso(float x, float y, float a) {
   const CatEp *ep=cat_episodio(idx,alvo);
   const CatItem *ci=cat_item(idx);
   if (!ci || !ep) return;
-  TxtLinha titulo=txt_linha(TXT_CALLOUT,"Notas por episódio",235,237,242,255);
-  txt_desenhar_alpha(titulo,x,y,a);
-  notasui_marca(EX_TMDB, x+1100, y+14, 24, a);
+
   int temp[5]={0}, nt=0;
   // Window around the selected season; at most fifty cells, no image textures.
   int inicio=ep->temporada>2 ? ep->temporada-2 : 0;
@@ -7095,27 +7093,31 @@ static void desenhaGradeProgresso(float x, float y, float a) {
   int primeiro=((ep->episodio-1)/10)*10+1;
   float cr,cg,cb; ajustes_acento(&cr,&cg,&cb);
   for (int row=0; row<nt; row++) {
-    char nome[32]; snprintf(nome,sizeof nome,i18n("Temporada %d"),temp[row]);
-    txt_desenhar_alpha(txt_linha(TXT_CAPTION2,nome,175,180,188,255),x,y+50+row*48,a);
+    char nome[32]; snprintf(nome,sizeof nome,"T%d",temp[row]);
+    txt_desenhar_alpha(txt_linha(TXT_G22M,nome,243,242,239,220),x+44,y+8+row*56,a);
+    gfx_anel((GfxRect){x,y+10+row*56,28,28},.5f,3,1,1,1,.18f*a);
     for (int i=0; i<cat_n_episodios(idx); i++) {
       const CatEp *p=cat_episodio(idx,i);
       if (!p || p->temporada!=temp[row] || p->episodio<primeiro || p->episodio>=primeiro+10) continue;
-      GfxRect cell={x+180+(p->episodio-primeiro)*88,y+44+row*48,78,36};
+      GfxRect cell={x+110+(p->episodio-primeiro)*76,y+4+row*56,68,46};
       int sel=focoGrade && i==alvo;
-      gfx_cor(cell, .2f, sel?.28f:.14f,sel?.30f:.15f,sel?.33f:.17f,a);
+      float tone=.03f+anim_clamp((p->nota-72)/26.0f,0,1)*.32f;
+      gfx_cor(cell,10.0f/46,1,1,1,tone*a);
+      if (sel) gfx_anel(cell,10.0f/46,3,1,1,1,a);
       char nota[24]; if (p->nota>0) snprintf(nota,sizeof nota,"%d.%d",p->nota/10,p->nota%10); else snprintf(nota,sizeof nota,"—");
-      TxtLinha l=txt_linha(TXT_CAPTION2,nota,235,237,242,255);
+      idioma_decimal_texto(nota,ajustes_idioma());
+      TxtLinha l=txt_linha(TXT_G18M,nota,243,242,239,255);
       txt_desenhar_alpha(l,cell.x+(cell.w-l.w)*.5f,cell.y+(cell.h-l.h)*.5f,a);
       if (vistoep_estado(ci->imdb,p->temporada,p->episodio)==1)
-        gfx_cor((GfxRect){cell.x+10,cell.y+32,cell.w-20,3},.5f,cr,cg,cb,a);
+        gfx_cor((GfxRect){cell.x+14,cell.y+38,cell.w-28,3},.5f,cr,cg,cb,a);
     }
   }
   char pos[48]; snprintf(pos,sizeof pos,i18n("T%dE%d"),ep->temporada,ep->episodio);
-  txt_desenhar_alpha(txt_linha(TXT_CALLOUT,pos,235,237,242,255),x+1160,y+64,a);
+  txt_desenhar_alpha(txt_linha(TXT_CALLOUT,pos,235,237,242,255),x+944,y+4,a);
   int bt=0,be=0,nota=progMelhorNaoVisto(&bt,&be);
   if (nota>0) {
     char melhor[160]; snprintf(melhor,sizeof melhor,i18n("Melhor: T%dE%d  ·  %.1f"),bt,be,nota/10.0);
-    txt_desenhar_alpha(txt_linha_corta(TXT_CAPTION2,melhor,175,181,192,255,560),x+1160,y+112,a);
+    txt_desenhar_alpha(txt_linha_corta(TXT_CAPTION2,melhor,175,181,192,255,560),x+944,y+112,a);
   }
 }
 
@@ -7232,7 +7234,7 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
   }
   // O grafico e UM desenho; as colunas focaveis sao posicoes dentro dele.
   if (r == SEC_PROGTEMP) {
-    if (progTemNotas() && nivel>=1 && foco.fileira==SEC_PROGTEMP) {
+    if (progTemNotas()) {
       desenhaGradeProgresso(NV_DETP_X,y,a); return;
     }
     tgraf_desenhar(tgraf_dados(idx), NV_DETP_X, y, NV_TELA_W - NV_DETP_X * 2,
