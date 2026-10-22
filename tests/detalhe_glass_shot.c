@@ -33,6 +33,7 @@
 #define extras_ep_numero        fx_ep_numero
 #define extras_ep_nota          fx_ep_nota
 #define extras_n_comentarios    fx_n_comentarios
+#define extras_comentario_spoiler fx_com_spoiler
 #define extras_n_comentarios_ep fx_n_comentarios_ep
 #define extras_comentario_usuario  fx_com_usuario
 #define extras_comentario_texto    fx_com_texto
@@ -103,6 +104,7 @@ static const char *const COM_TXT[] = {
   "as cenas em que aparece.",
   "Perfeito para uma tarde de chuva." };
 static const int COM_NOTA[] = { 8, 6, 7 }, COM_CUR[] = { 6, 3, 1 };
+int fx_com_spoiler(int i) { return i == 1; }
 int fx_n_comentarios(void)    { return ehSerieDeEnsaio() ? 0 : 3; }
 int fx_n_comentarios_ep(void) { return 0; }
 const char *fx_com_usuario(int i)  { return COM_USU[i]; }
@@ -264,6 +266,7 @@ static void montarCatalogo(void) {
     for (i = 0; i < 8; i++) {
       CatEp *e = &episodios[n++];
       e->temporada = t; e->episodio = i + 1;
+      e->nota=78+(i*3+t)%16;
       snprintf(e->nome, sizeof e->nome, "%s", EP_NOME[i]);
       snprintf(e->duracao, sizeof e->duracao, "56 min");
       snprintf(e->data, sizeof e->data, "11 de abril de 2024");
@@ -332,6 +335,20 @@ static void abrir(int i, int nv, int sec, int col) {
   hi.rect.w = NV_TELA_W; hi.rect.h = NV_TELA_H;
   hi.titulo = itens[i].titulo; hi.genero = itens[i].genero; hi.meta = itens[i].meta;
   detail_abrir(&hi);
+  if (getenv("NUVIO_SHOT_SOURCE")) {
+    Stream source={0};
+    snprintf(source.rotulo,sizeof source.rotulo,"Fixture 4K Dolby Vision Atmos");
+    snprintf(source.url,sizeof source.url,"https://example.invalid/fixture.mp4");
+    snprintf(source.provedor,sizeof source.provedor,"Offline fixture");
+    source.altura=2160; source.dolbyVision=source.dolbyAtmos=source.mp4=1;
+    source.badges=badges_detectar(source.rotulo);
+    source.tamanhoMB=8000;
+    char alvo[96]; int st=0,ep=0;
+    if (ehSerie()) episodioAlvo(&st,&ep,NULL);
+    if (st && ep) snprintf(alvo,sizeof alvo,"%s:%d:%d",itens[i].imdb,st,ep);
+    else snprintf(alvo,sizeof alvo,"%s",itens[i].imdb);
+    stream_definir_alvo(alvo); stream_definir_lista(&source,1);
+  }
   quadros(2);
   nivel = nv;
   if (nv == 0) botao = col;
@@ -383,6 +400,8 @@ int main(int argc, char **argv) {
     if (lg && *lg) fprintf(f, "idioma %d\n", atoi(lg));
     // Acento azul do mockup (#5aa2ff/#42a5f5): o tema Oceano.
     fputs("selected_theme 2\n", f);
+    if (getenv("NUVIO_SHOT_TOPO")) fprintf(f, "detalheTopoLocal %d\n", atoi(getenv("NUVIO_SHOT_TOPO")));
+    if (getenv("NUVIO_SHOT_SPOILERS")) fputs("blurUnwatchedEpisodes 0\n",f);
     if (getenv("NUVIO_SHOT_VIDRO") && atoi(getenv("NUVIO_SHOT_VIDRO")))
       fputs("vidroLocal 0\n", f);
     else fputs("vidroLocal 1\n", f);
@@ -489,6 +508,9 @@ int main(int argc, char **argv) {
   if (quer(argc, argv, "filme-colecao")) { abrir(1, 1, SEC_COLECAO, 0); gravar("filme-colecao"); }
   if (quer(argc, argv, "filme-fim")) { abrir(1, 1, SEC_DETALHES, 0); gravar("filme-fim"); }
   if (quer(argc, argv, "serie-topo")) { abrir(0, 0, 0, 0); gravar("serie-topo"); }
+  if (quer(argc, argv, "serie-progresso")) { abrir(0, 1, SEC_PROGTEMP, 2); gravar("serie-progresso"); }
+  if (quer(argc, argv, "serie-fim")) { abrir(0, 1, SEC_DETALHES, 0); gravar("serie-fim"); }
+  if (quer(argc, argv, "serie-comentarios")) { abrir(0, 1, SEC_COMENTARIOS, 2); gravar("serie-comentarios"); }
   if (quer(argc, argv, "serie-ep")) { abrir(0, 1, SEC_EPISODIOS, 2); gravar("serie-ep"); }
   if (quer(argc, argv, "serie-temp")) { abrir(0, 1, SEC_TEMPORADAS, 0); gravar("serie-temp"); }
   if (quer(argc, argv, "serie-baixo")) { abrir(0, 1, SEC_ELENCO, 0); gravar("serie-baixo"); }
