@@ -3,6 +3,7 @@
 #include "perfis.h"
 #include "dados.h"
 #include "proximo.h"
+#include "idbase.h"
 #include <ctype.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -19,7 +20,7 @@ typedef struct { short t, e, n; } Rev;        // n: vezes revisto NA sessao
 
 typedef struct {
   int       perfil;
-  char      id[24];        // o id ate o ':' (a mesma chave de vistoep.c)
+  char      id[24];        // Base title ID, including the provider prefix.
   long long ini;           // quando comecou
   long long atual;         // ultima mudanca: decide a mesclagem com a conta
   long long fim;           // 0 = ativa; senao lapide (encerrada em `fim`)
@@ -51,16 +52,12 @@ static long long carimbo(long long prev) {
 }
 
 static int idBase(const char *s, char *d, size_t tam) {
-  size_t k = 0;
-  d[0] = 0;
-  if (!s) return 0;
-  while (s[k] && s[k] != ':' && k + 1 < tam) {
-    unsigned char c = (unsigned char)s[k];
-    if (!isalnum(c) && c != '-' && c != '_') { d[0] = 0; return 0; }
-    d[k] = (char)c;
-    k++;
+  size_t k;
+  idbase_copiar(s, d, tam);
+  for (k = 0; d[k]; k++) {
+    unsigned char c = (unsigned char)d[k];
+    if (!isalnum(c) && c != '-' && c != '_' && c != ':') { d[0] = 0; return 0; }
   }
-  d[k] = 0;
   return k > 0;
 }
 

@@ -156,6 +156,40 @@ int main(void) {
   confere("sessao nova esta no texto", strstr(txt, "tt0000001") != NULL, 1);
   free(txt);
 
+  printf("provider title identity:\n");
+  confere("start first provider title", rewatch_iniciar("kitsu:41370", RW_ORIGEM_TITULO), 1);
+  confere("other provider title stays inactive", rewatch_ativa("kitsu:999"), 0);
+  confere("start second provider title independently", rewatch_iniciar("kitsu:999", RW_ORIGEM_TITULO), 1);
+  confere("provider episode resolves to its title", rewatch_ativa("kitsu:41370:1:2"), 1);
+  confere("record first provider title", rewatch_registrar("kitsu:41370:1:2", 1, 2), 2);
+  confere("second provider title has no badge", rewatch_vezes("kitsu:999", 1, 2), 0);
+  confere("second provider title has no completions", rewatch_feitos("kitsu:999"), 0);
+  rewatch_parcial("kitsu:999", 1, 3, 42);
+  confere("first provider title has no partial", rewatch_parcial_de("kitsu:41370", &t, &e, &pct), 0);
+  {
+    char id[24];
+    int i, found = 0;
+    for (i = 0; i < rewatch_n_ativas(); i++)
+      if (rewatch_ativa_n(i, id, sizeof id)) {
+        if (!strcmp(id, "kitsu:41370")) found |= 1;
+        if (!strcmp(id, "kitsu:999")) found |= 2;
+      }
+    confere("Continue Watching retains both full provider IDs", found, 3);
+  }
+  rewatch_esquecer();
+  confere("provider badge survives disk reload", rewatch_vezes("kitsu:41370", 1, 2), 2);
+  confere("provider partial survives disk reload", rewatch_parcial_de("kitsu:999", &t, &e, &pct) && t == 1 && e == 3 && pct == 42, 1);
+  blob = rewatch_blob_costurar("{}");
+  rewatch_esquecer();
+  dados_apagar("rewatch-anon.txt");
+  confere("provider sessions survive account round-trip", rewatch_blob_ler(blob) >= 2, 1);
+  free(blob);
+  confere("provider badge survives account round-trip", rewatch_vezes("kitsu:41370", 1, 2), 2);
+  confere("provider partial survives account round-trip", rewatch_parcial_de("kitsu:999", &t, &e, &pct) && pct == 42, 1);
+  rewatch_encerrar("kitsu:41370");
+  confere("ending first provider title closes it", rewatch_ativa("kitsu:41370"), 0);
+  confere("ending first provider title preserves second", rewatch_ativa("kitsu:999"), 1);
+
   printf("%s\n", falhas ? "FALHOU" : "tudo ok");
   return falhas ? 1 : 0;
 }
