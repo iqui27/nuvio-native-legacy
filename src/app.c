@@ -1360,6 +1360,7 @@ static void processarTorrentJob(void) {
 // aberta. 0 quando nem deu para pedir (ja mostrou o erro).
 static int pedirProximaFonteVOD(void) {
   unsigned geracao = novaGeracaoFonte();
+  juntos_preferir_reserva();
   aguardandoFonte = 2;
   fontePedidoGeracao = geracao;
   fonteEscolhida = -2;
@@ -2343,7 +2344,12 @@ static void tocarFonteEscolhida(int fonte, int manual) {
       diagnostico_cancelar_vazao();
       player_abrir(titulo,NULL);
       player_definir_episodio(t,e);
-      if (!manual && juntos_ativo()) player_do_inicio();   // a posicao e a da sala
+      if (!manual && juntos_ativo()) {
+        player_do_inicio(); // The room clock restores position after load.
+        fonteVODAutomatica = 1;
+        fonteVODTentativas = 1;
+        fonteVODDesde = SDL_GetTicks();
+      }
       stream_definir_atual(fonte);
       // Qualquer escolha nova invalida a resposta de um torrent anterior; o
       // motor P2P corta o pedido velho ja (sem isso a escolha nova esperaria

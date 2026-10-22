@@ -327,6 +327,7 @@ static int automaticaExcluida(int indice) {
   pthread_mutex_unlock(&autoExclTrava);
   return resultado;
 }
+int stream_automatico_excluida(int indice) { return automaticaExcluida(indice); }
 int stream_automatico_excluir(int indice) {
   int resultado = 0;
   pthread_mutex_lock(&autoExclTrava);

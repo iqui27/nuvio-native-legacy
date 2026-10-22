@@ -163,7 +163,12 @@ const call = (op, text = '', a = 0, b = 0, c = 0, d = 0, dst = 0, size = 0) =>
     // sem isso a legenda externa andaria aos saltos.
     const S = context.__nvav;
     S.tSeek = 0; S.tEvento = Date.now(); S.posMs = 10000; S.tPos = Date.now() - 300; S.tocando = 1;
-    call('estado', '', 0, 0, 0, 0, 8, 64);
+    S.tPosMono = clock - 200;
+    call('estado', '', 0, 0, 0, 0, 8, 80);
+    check('sync receives raw position and monotonic sample age', () => {
+      assert.equal(context.HEAPF64[9], 10);
+      assert.ok(context.HEAPF64[10] >= 200);
+    });
     check('position advances between time events while playing (#147)', () => {
       assert.ok(context.HEAPF64[1] >= 10.25 && context.HEAPF64[1] <= 10.6, String(context.HEAPF64[1]));
     });

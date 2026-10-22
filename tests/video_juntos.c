@@ -6,14 +6,6 @@
 #include <math.h>
 #include <stdio.h>
 
-__attribute__((weak)) void video_taxa_sync(int rate) {
-  (void)rate; assert(!"Missing separate sync multiplier");
-}
-__attribute__((weak)) int video_taxa_efetiva(void) { return -1; }
-__attribute__((weak)) double video_pos_amostra(Uint64 *stamp) {
-  (void)stamp; assert(!"Missing native position sample"); return -1;
-}
-
 int cacheboost_ganho_estado(void) { return 0; }
 
 int main(void) {

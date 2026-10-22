@@ -11,6 +11,7 @@
 #include "js.h"
 #include "lsregistro.h"
 #include "rede.h"
+#include "ajustes.h" // Load host GL headers before selecting the real LS2 branch.
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -64,6 +65,25 @@ int main(void) {
   lsCall = fakeCall; lsPayload = fakePayload;
   ligado = pronto = tocando = 1; sessao = 7;
   snprintf(midia, sizeof midia, "fixture-media-id");
+  Uint64 stamp, same, before = SDL_GetTicks64();
+  evento("{\"currentTime\":12500}", 7);
+  assert(video_pos_amostra(&stamp) == 12.5 && stamp >= before);
+  SDL_Delay(10);
+  assert(video_pos_amostra(&same) == 12.5 && same == stamp);
+  evento("{\"currentTime\":12500}", 6);
+  assert(video_pos_amostra(&same) == 12.5 && same == stamp);
+  evento("{\"currentTime\":12500}", 7);
+  assert(video_pos_amostra(&same) == 12.5 && same > stamp);
+  video_buscar(90);
+  assert(video_pos() == 90 && video_pos_amostra(&same) == 12.5);
+  seekEm = 0;
+  video_velocidade(150); video_taxa_sync(950);
+  assert(video_velocidade_atual() == 150 && video_taxa_efetiva() == 143);
+  video_taxa_sync(1000); video_velocidade(100);
+#ifdef NV_JUNTOS_TEST
+  puts("video_juntos_lg: native samples, stale generation, optimistic seek and sync rate OK");
+  return 0;
+#endif
   video_pausar(1);
   assert(pedidos == 1 && !video_tocando() && !video_pausa_confirmada());
   evento("{\"paused\":true}", 6);

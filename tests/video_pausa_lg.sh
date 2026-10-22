@@ -7,6 +7,7 @@ export NUVIO_DADOS="$dir/dados"
 mkdir -p "$NUVIO_DADOS"
 flags=(-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2
   -Wno-deprecated-declarations -Wno-macro-redefined)
+if [ "${NV_JUNTOS_TEST:-0}" = 1 ]; then flags+=(-DNV_JUNTOS_TEST); fi
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 sources=()
 for source in src/*.c src/dts/*.c; do

@@ -444,7 +444,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
   if (op === "estado") {
     // Ten doubles, same order as EST_* in C. One type, no padding.
     // dstTam vem em BYTES, como em "faixas": um so contrato para o buffer.
-    if (!dst || dstTam < 80) return 0;
+    if (!dst || dstTam < 64) return 0;
     var p6 = pl();
     var dur = 0;
     if (p6 && S.aberto && S.pronto) {
@@ -495,8 +495,10 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     HEAPF64[o + 5] = S.larg;
     HEAPF64[o + 6] = S.alt;
     HEAPF64[o + 7] = S.erro ? 1 : 0;
-    HEAPF64[o + 8] = S.posMs / 1000.0;
-    HEAPF64[o + 9] = S.tPos && S.tPosMono ? Math.max(0, performance.now() - S.tPosMono) : 0;
+    if (dstTam >= 80) {
+      HEAPF64[o + 8] = S.posMs / 1000.0;
+      HEAPF64[o + 9] = S.tPos && S.tPosMono ? Math.max(0, performance.now() - S.tPosMono) : 0;
+    }
     return 1;
   }
 

@@ -70,6 +70,8 @@ int  juntos_escolhendo_fonte(void);
 // Com a lista do alvo: o indice a tocar, ou -1 para esperar mais addons.
 // `desdeMs` = quando a lista comecou a chegar.
 int  juntos_escolher_fonte(const Stream *lista, int n, Uint32 agora, Uint32 desdeMs);
+// Reuse the room fingerprint when the existing VOD watchdog retries.
+void juntos_preferir_reserva(void);
 
 // --- player.c ---------------------------------------------------------------------------
 // A pessoa pausou/continuou (OK, PAUSE). 1 = a sala cuidou (o player nao mexe

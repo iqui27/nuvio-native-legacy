@@ -139,7 +139,7 @@ static char abrirImdb[24], abrirTitulo[160], abrirPoster[512];
 static int abrirT, abrirE;
 static JsImpressao impSala;
 static JsVeredito veredito;
-static int fonteEscolhida = -1, salaDurConferida;
+static int fonteEscolhida = -1, salaDurConferida, fonteVista = -1;
 // convites
 static Uint32 iniciouEm, proxConvites;
 static int buscandoConvites;
@@ -159,7 +159,7 @@ const char *juntos_url_celular(void) { return urlCelular; }
 int juntos_sou_anfitriao(void) { return temMotor && jsm_sou_anfitriao(&motor); }
 int juntos_pode_controlar(void) { return !temMotor || jsm_pode_controlar(&motor); }
 
-static double agoraLocal(void) { return (double)SDL_GetTicks(); }
+static double agoraLocal(void) { return (double)SDL_GetTicks64(); }
 
 static void separarEpJ(const char *ep, char *imdb, size_t n, int *t, int *e) {
   const char *p = strchr(ep, ':');
@@ -170,14 +170,11 @@ static void separarEpJ(const char *ep, char *imdb, size_t n, int *t, int *e) {
 }
 
 // ---- o player de verdade, para o motor -------------------------------------------------
-// A amostra de posicao: o backend nao diz quando leu (o LG le a cada ~200 ms),
-// entao "quando" e o primeiro quadro em que o valor mudou.
-static double posUlt = -1, posEm;
 static double pPos(void *u, double *t) {
-  double p = video_pos();
+  Uint64 stamp;
+  double p = video_pos_amostra(&stamp);
   (void)u;
-  if (p != posUlt) { posUlt = p; posEm = agoraLocal(); }
-  *t = posEm;
+  *t = (double)stamp;
   return p;
 }
 static int pTocando(void *u) { (void)u; return video_tocando() && !player_pausado(); }
@@ -186,7 +183,7 @@ static unsigned pBuffer(void *u) { (void)u; return video_bufferando_ms(); }
 static double pDur(void *u) { (void)u; return video_duracao(); }
 static void pPausar(void *u, int p) { (void)u; player_juntos_pausar(p); }
 static void pBuscar(void *u, double s) { (void)u; player_juntos_buscar(s); }
-static void pVel(void *u, int c) { (void)u; if (video_velocidade_suportada()) video_velocidade(c); }
+static void pVel(void *u, int c) { (void)u; video_taxa_sync(c * 10); }
 
 static int enviarWs(void *u, const char *j) { (void)u; return ws ? dws_enviar(ws, j) : -1; }
 
@@ -230,9 +227,9 @@ static void zerar(void) {
   temMotor = 0;
   salaId[0] = codigo[0] = bilhete[0] = tituloSala[0] = urlCelular[0] = 0;
   pedindoBilhete = 0;
-  escolhendo = 0; abrirPedido = 0; fonteEscolhida = -1; salaDurConferida = 0;
+  escolhendo = 0; abrirPedido = 0; fonteEscolhida = -1; salaDurConferida = 0; fonteVista = -1;
   memset(&prep, 0, sizeof prep);
-  if (video_velocidade_suportada()) video_velocidade(100);
+  video_taxa_sync(1000);
   juntosui_sala_fechou();
 }
 
@@ -608,6 +605,14 @@ void juntos_passo(Uint32 agora) {
   if (!temMotor) return;
   websocket(agora);
   if (!temMotor) return;
+  // The room owns time; personal speed stays at 1x. Sync uses its own rate.
+  if (video_velocidade_atual() != 100) video_velocidade(100);
+  // A retry or manual source change needs a fresh duration verdict.
+  if (video_pronto() && stream_atual() != fonteVista) {
+    fonteVista = stream_atual();
+    fonteEscolhida = fonteVista;
+    salaDurConferida = 0;
+  }
   // Duracao conferida depois do load: a fonte do convidado pode ser outra versao.
   if (!salaDurConferida && fonteEscolhida >= 0 && video_pronto() && video_duracao() > 0) {
     int pal = 0;
@@ -649,6 +654,20 @@ int juntos_escolher_fonte(const Stream *lista, int n, Uint32 agora, Uint32 desde
   jsm_fonte(&motor, jsf_nome(v));
   printf("[juntos] fonte da sala: %s (indice %d)\n", jsf_nome(v), i);
   return i;
+}
+
+void juntos_preferir_reserva(void) {
+  int best = -1, n = stream_n();
+  const Stream *base = stream_item(0);
+  unsigned char *excluded;
+  if (!temMotor || !motor.temSala || n <= 0 || !base || stream_item(n - 1) != base + n - 1) return;
+  excluded = malloc((size_t)n);
+  if (!excluded) return;
+  for (int i = 0; i < n; i++) excluded[i] = (unsigned char)stream_automatico_excluida(i);
+  jsf_casar(&impSala, base, n, excluded, &best);
+  free(excluded);
+  stream_preferir(best);
+  salaDurConferida = 0;
 }
 
 // ---- player.c -------------------------------------------------------------------------------
