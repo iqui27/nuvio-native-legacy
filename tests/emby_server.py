@@ -147,6 +147,12 @@ class Handler(BaseHTTPRequestHandler):
                 sh = dict(SERIES)
                 sh["ProviderIds"] = {"Tmdb": "4242"}
                 items = [movie(1), m2, sh]
+            if parent:
+                for item in items:
+                    if item["Id"] == "1002":
+                        item["ProviderIds"] = {"Imdb": "tt0002002"}
+                    elif item["Id"] == "2001":
+                        item["ProviderIds"] = {"Tmdb": "4242"}
             start = int(q.get("startindex", ["0"])[0])
             return self.reply(200, {"Items": items[start:], "TotalRecordCount": len(items)})
         m = re.fullmatch(re.escape(base) + r"/Items/(\d+)", p)

@@ -298,13 +298,16 @@ static void integracao(void) {
   assert(!strcmp(fils[1].titulo, "Shows · Emby") && fils[1].ini == 2 && !strcmp(fils[1].tipo, "series"));
   assert(emby_chave_fileira("emby_11") && !emby_chave_fileira("jellyfin_11") && !jellyfin_chave_fileira("emby_11"));
   assert(comeca(itens[0].imdb, "em:9f8e7d6c.") && itens[0].progresso == 25);
+  assert(!strcmp(itens[1].imdb, "tt0002002") && !strcmp(itens[2].imdb, "tmdb:4242"));
   { int nj = jellyfin_fileiras_copiar(itens, 10, fils, 2, &n); assert(nj == 0 && n == 0); }
 
   // ---- the fan-out in servidores.c: Emby rows come through it, ids route by namespace
   { CatItem *x = malloc(sizeof(CatItem) * SRV_ITENS_MAX);
     CatFileira f[SRV_FIL_MAX];
     int tot = 0, nr = servidores_fileiras_copiar(x, SRV_ITENS_MAX, f, SRV_FIL_MAX, &tot);
-    assert(nr == 2 && tot == 3 && f[1].ini == 2 && servidores_conectado());
+    assert(nr == 2 && tot == 2 && f[0].n == 1 && f[1].ini == 1 && servidores_conectado());
+    assert(!strcmp(x[0].imdb, "tt0002002") && !strcmp(x[1].imdb, "tmdb:4242"));
+    assert(!jfid_e(x[0].imdb) && !jfid_e(x[1].imdb));
     assert(servidores_chave_fileira("emby_11") && servidores_chave_fileira("plex_1") && !servidores_chave_fileira("cw"));
     free(x); }
   // ---- matched catalogue titles: the Emby index (per-user route) and sources
