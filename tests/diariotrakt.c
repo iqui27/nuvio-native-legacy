@@ -4,8 +4,26 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+static void import_free(void *p);
+static unsigned import_owner(void);
+#define free import_free
+#define diario_dono_geracao import_owner
 #include "../src/diariotrakt.c"
+#undef diario_dono_geracao
+#undef free
 static int switchAt, requests, cursorWrites;
+static int switchAfterParse, parsed, switchAfterCheck, checks;
+
+static void import_free(void *p) {
+  if (switchAfterParse && ++parsed == switchAfterParse) diario_dono("account-b");
+  free(p);
+}
+static unsigned import_owner(void) {
+  unsigned g = diario_dono_geracao();
+  if (switchAfterCheck && ++checks == switchAfterCheck) diario_dono("account-b");
+  return g;
+}
 
 int perfis_ativo(void) { return 1; }
 char *dados_ler(const char *n) { (void)n; return NULL; }
@@ -70,6 +88,38 @@ int main(void) {
     assert(diario_n(1) == 0);
     assert(cursorWrites == 0);
   }
+  switchAt = 0;
+  // stale_batch_after_parse: switch after each response passed its owner
+  // check and was parsed, immediately before the real diary insertion.
+  for (int response = 1; response <= 3; response++) {
+    diario_dono("account-a");
+    requests = cursorWrites = parsed = 0;
+    switchAfterParse = response;
+    Volta *vt = calloc(1, sizeof *vt);
+    vt->perfil = 1; vt->dono = diario_dono_geracao();
+    fio(vt);
+    switchAfterParse = 0;
+    assert(diario_n(1) == 0);
+    assert(cursorWrites == 0);
+  }
+  // stale_cursor_after_final_check: switch just after the final generation
+  // read returns A's generation, before the cursor write reaches storage.
+  diario_dono("account-a");
+  requests = cursorWrites = checks = 0;
+  switchAfterCheck = 5;
+  Volta *vt = calloc(1, sizeof *vt);
+  vt->perfil = 1; vt->dono = diario_dono_geracao();
+  fio(vt);
+  switchAfterCheck = 0;
+  assert(checks == 5 && diario_n(1) == 0);
+  assert(cursorWrites == 0);
+  // Current owner still imports watched/history entries and persists progress.
+  diario_dono("account-a");
+  requests = cursorWrites = 0;
+  vt = calloc(1, sizeof *vt);
+  vt->perfil = 1; vt->dono = diario_dono_geracao();
+  fio(vt);
+  assert(diario_n(1) == 5 && cursorWrites == 1);
   printf("diariotrakt: ok\n");
   return 0;
 }

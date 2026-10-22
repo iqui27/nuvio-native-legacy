@@ -145,13 +145,6 @@ static long long lerCursor(int p) {
   return c;
 }
 
-static void gravarCursor(int p, long long c) {
-  char n[40], v[32];
-  snprintf(n, sizeof n, "diario-trakt-p%d.txt", p);
-  snprintf(v, sizeof v, "%lld\n", c);
-  dados_gravar(n, v);
-}
-
 static void *fio(void *u) {
   Volta *vt = u;
   const char *cab[4];
@@ -164,10 +157,10 @@ static void *fio(void *u) {
   if (!vt->cursor) {
     char *c = rede_baixar_com("https://api.trakt.tv/sync/watched/movies", 30, cab);
     if (vt->dono != diario_dono_geracao()) { free(c); goto fim; }
-    if (c) { n = diariotrakt_ler_vistos(c, 0, v, LOTE_TRAKT); free(c); if (n > 0) total += diario_adicionar_lote(vt->perfil, v, n); }
+    if (c) { n = diariotrakt_ler_vistos(c, 0, v, LOTE_TRAKT); free(c); if (n > 0) total += diario_adicionar_lote_se_dono(vt->perfil, v, n, vt->dono); }
     c = rede_baixar_com("https://api.trakt.tv/sync/watched/shows", 45, cab);
     if (vt->dono != diario_dono_geracao()) { free(c); goto fim; }
-    if (c) { n = diariotrakt_ler_vistos(c, 1, v, LOTE_TRAKT); free(c); if (n > 0) total += diario_adicionar_lote(vt->perfil, v, n); }
+    if (c) { n = diariotrakt_ler_vistos(c, 1, v, LOTE_TRAKT); free(c); if (n > 0) total += diario_adicionar_lote_se_dono(vt->perfil, v, n, vt->dono); }
   }
   // 2/3. Historico: do 1 de janeiro (primeira volta) ou do cursor.
   { long long desde = vt->cursor;
@@ -191,13 +184,13 @@ static void *fio(void *u) {
     if (!c) break;
     n = diariotrakt_ler_historico(c, v, LOTE_TRAKT, &mais);
     free(c);
-    if (n > 0) total += diario_adicionar_lote(vt->perfil, v, n);
+    if (n > 0) total += diario_adicionar_lote_se_dono(vt->perfil, v, n, vt->dono);
     if (mais > novo) novo = mais;
     if (n < 100) break;
   }
   if (vt->dono != diario_dono_geracao()) goto fim;
-  if (novo > vt->cursor) gravarCursor(vt->perfil, novo);
-  else if (!vt->cursor) gravarCursor(vt->perfil, (long long)time(NULL) - 86400);
+  if (novo > vt->cursor) diario_trakt_cursor(vt->perfil, novo, vt->dono);
+  else if (!vt->cursor) diario_trakt_cursor(vt->perfil, (long long)time(NULL) - 86400, vt->dono);
   printf("[diariotrakt] perfil %d: %d novas\n", vt->perfil, total);
   fflush(stdout);
 fim:

@@ -142,6 +142,10 @@ void diario_gravar_agora(void);     // saida do app
 int  diario_adicionar(int perfil, const DiarioEntrada *e);
 // Muitas de uma vez (importacao): um evento RECARREGADO no fim. Devolve novas.
 int  diario_adicionar_lote(int perfil, const DiarioEntrada *v, int n);
+// Reject stale imports while holding the same mutex as insertion.
+int  diario_adicionar_lote_se_dono(int perfil, const DiarioEntrada *v, int n, unsigned dono);
+// Persist the Trakt cursor under the account mutex; reject stale workers.
+int  diario_trakt_cursor(int perfil, long long cursor, unsigned dono);
 
 // Uma entrada e identificada por (id, temporada, episodio, quando).
 // `quando` = 0 escolhe a MAIS RECENTE desse (id,T,E).

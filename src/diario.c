@@ -669,17 +669,33 @@ int diario_adicionar(int perfil, const DiarioEntrada *e) {
 }
 
 int diario_adicionar_lote(int perfil, const DiarioEntrada *v, int n) {
+  return diario_adicionar_lote_se_dono(perfil, v, n, diario_dono_geracao());
+}
+
+int diario_adicionar_lote_se_dono(int perfil, const DiarioEntrada *v, int n, unsigned dono) {
   int p = perfilReal(perfil), i, novas = 0;
   unsigned g;
   Loja *L;
   if (!v || n <= 0) return 0;
   pthread_mutex_lock(&trava);
+  if (dono != donoGeracao) { pthread_mutex_unlock(&trava); return 0; }
   L = carregar(p);
   g = L->geracao;
   for (i = 0; i < n; i++) if (adicionarSemTrava(p, L, &v[i], 0, 1) > 0) novas++;
   if (L->geracao != g) { recalcularReverTudo(L); recarregarPend[p] = 1; }
   pthread_mutex_unlock(&trava);
   return novas;
+}
+
+int diario_trakt_cursor(int perfil, long long cursor, unsigned dono) {
+  char nome[40], valor[32];
+  int ok = 0;
+  snprintf(nome, sizeof nome, "diario-trakt-p%d.txt", perfilReal(perfil));
+  snprintf(valor, sizeof valor, "%lld\n", cursor);
+  pthread_mutex_lock(&trava);
+  if (dono == donoGeracao) ok = dados_gravar(nome, valor);
+  pthread_mutex_unlock(&trava);
+  return ok;
 }
 
 typedef enum { M_NOTA, M_FLAGS, M_TAGS, M_DATA, M_APAGAR } Mexida;
