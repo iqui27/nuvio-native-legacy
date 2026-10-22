@@ -7,6 +7,8 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include "../src/diarionuvem.c"
 
 int perfis_ativo(void) { return 1; }
 const ContaPerfil *perfis_item_ativo(void) { return NULL; }
@@ -56,6 +58,31 @@ int main(void) {
     assert(diario_nome("tt0900", t, sizeof t, &ano, NULL, 0) && !strcmp(t, "Ruptura") && ano == 2022); }
   assert(diarionuvem_ler_itens("{\"erro\":\"cofre\"}", w, 4, &mais, &ate) == -1);
   assert(!diarionuvem_disponivel());     // sem sessao: nada sai
+  // Stale restore must never enter the new account's store or names cache.
+  {
+    Job j = {0};
+    diario_dono("account-a");
+    diario_nuvem_definir(1, DIARIO_NUVEM_SIM);
+    j.dono = diario_dono_geracao(); j.perfil = 1; j.tipo = J_RESTAURAR;
+    j.status = 200;
+    j.resp = "{\"itens\":[{\"chave\":\"ttprivate\",\"quando\":1790000000,\"titulo\":\"Private\"}]}";
+    diario_dono("account-b");
+    tratar(&j);
+    assert(diario_n(1) == 0);
+    assert(diario_nuvem_estado(1) == DIARIO_NUVEM_NAO_PERGUNTADO);
+    diario_dono("account-a");
+    diario_nuvem_definir(1, DIARIO_NUVEM_SIM);
+    diario_nuvem_consent_confirmar(1, DIARIO_NUVEM_SIM);
+    atomic_store(&ocupado, 1);
+    diarionuvem_definir(0);
+    assert(diario_nuvem_consent_pendente(1));
+    j.dono = diario_dono_geracao(); j.tipo = J_COFRE; j.ligado = 0;
+    j.status = 503; tratar(&j);
+    assert(diario_nuvem_consent_pendente(1));
+    j.status = 200; tratar(&j);
+    assert(!diario_nuvem_consent_pendente(1));
+    atomic_store(&ocupado, 0);
+  }
   printf("diarionuvem: ok\n");
   return 0;
 }

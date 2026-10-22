@@ -120,17 +120,38 @@ void diario_nomes_gravar(void) {
   char *b = NULL;
   size_t c = 0, k = 0;
   int i;
+  Nome *copia = NULL;
+  int qtd = 0;
   pthread_mutex_lock(&trava);
   if (sujo) {
-    for (i = 0; i < n; i++) c += strlen(nomes[i].id) + strlen(nomes[i].titulo) + strlen(nomes[i].poster) + 24;
-    b = malloc(c + 32);
-    if (b) {
-      k = (size_t)snprintf(b, c + 32, "# nuvio diario nomes v1\n");
-      for (i = 0; i < n; i++)
-        k += (size_t)snprintf(b + k, c + 32 - k, "%s\t%s\t%d\t%s\n", nomes[i].id, nomes[i].titulo, nomes[i].ano, nomes[i].poster);
-      sujo = 0;
+    copia = calloc((size_t)n + 1, sizeof *copia);
+    if (copia) {
+      for (i = 0; i < n; i++) {
+        copia[i] = nomes[i];
+        copia[i].id = dup(nomes[i].id); copia[i].titulo = dup(nomes[i].titulo); copia[i].poster = dup(nomes[i].poster);
+        if (!copia[i].id || !copia[i].titulo || !copia[i].poster) break;
+      }
+      if (i == n) { qtd = n; sujo = 0; }
+      else {
+        for (; i >= 0; i--) { free(copia[i].id); free(copia[i].titulo); free(copia[i].poster); }
+        free(copia); copia = NULL;
+      }
     }
   }
   pthread_mutex_unlock(&trava);
-  if (b) { dados_gravar("diario-nomes.txt", b); free(b); }
+  if (copia) {
+    for (i = 0; i < qtd; i++) c += strlen(copia[i].id) + strlen(copia[i].titulo) + strlen(copia[i].poster) + 24;
+    b = malloc(c + 32);
+    if (b) {
+      k = (size_t)snprintf(b, c + 32, "# nuvio diario nomes v1\n");
+      for (i = 0; i < qtd; i++)
+        k += (size_t)snprintf(b + k, c + 32 - k, "%s\t%s\t%d\t%s\n", copia[i].id, copia[i].titulo, copia[i].ano, copia[i].poster);
+    }
+  }
+  if (!b || !dados_gravar("diario-nomes.txt", b)) {
+    if (copia) { pthread_mutex_lock(&trava); sujo = 1; pthread_mutex_unlock(&trava); }
+  }
+  free(b);
+  for (i = 0; i < qtd; i++) { free(copia[i].id); free(copia[i].titulo); free(copia[i].poster); }
+  free(copia);
 }

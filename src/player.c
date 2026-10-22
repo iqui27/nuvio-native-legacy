@@ -26,6 +26,11 @@
 //      congelado sem saber o que houve.
 #include "horafmt.h"
 #include "player.h"
+#include "trava.h"
+#include "diario.h"
+#include "teclado.h"
+#include <pthread.h>
+#include <stdatomic.h>
 #include "diariofontes.h"
 #include "ilhacart.h"
 #include "idbase.h"
@@ -1267,7 +1272,10 @@ void player_abrir(int indiceCatalogo, const char *url) {
   // refuses HLS/DASH). Arms only the next video_tocar: trailers stay uncached.
   cacheboost_backend_cache(ehCanal() ? 0 : ajustes_cache_seek_mb());
   { char px[96];
-    comVideo = (url && *url && video_tocar(proxyts_resolver(url, px, sizeof px))); }
+    const CatItem *c = item();
+    int bloqueado = c && !strcmp(c->tipo, "series") && trava_bloqueio(c->imdb, perfis_ativo(),
+        c->temporada > 0 ? c->temporada : 1, c->episodio > 0 ? c->episodio : 1);
+    comVideo = (url && *url && !bloqueado && video_tocar(proxyts_resolver(url, px, sizeof px))); }
   mkvass_video_aberto(comVideo);
   legsync_iniciar(comVideo ? video_url_atual() : "");   // F05: geracao nova, sem rede nem espera
   legsync_ui_ligar();   // F05: a linha de AutoSync do seletor de legendas (legendasui.c)
@@ -1341,7 +1349,43 @@ static int prebuscaCabe(const char *url) {
 }
 #endif
 
+static char travaUrl[4096];
+static int travaPergunta, travaPerfil, travaT, travaE, travaId, travaAutorizada;
+static unsigned travaSessao, travaPinSessao;
+static unsigned travaDono, travaGeracao;
+static _Atomic int travaPinResultado;
+typedef struct { int perfil; char pin[65]; } TravaPinJob;
+
+static void *verificarTravaPin(void *u) {
+  TravaPinJob *j = u;
+  int r = perfis_verificar_pin(j->perfil, j->pin);
+  memset(j->pin, 0, sizeof j->pin); free(j);
+  atomic_store(&travaPinResultado, r > 0 ? 1 : -1);
+  return NULL;
+}
+
+static int travaFonte(const char *url) {
+  const CatItem *c = item();
+  int id = c && !strcmp(c->tipo, "series") ? trava_bloqueio(c->imdb, perfis_ativo(), epT, epE) : 0;
+  Trava t;
+  if (!id || (travaAutorizada && travaPerfil == perfis_ativo() && epT == travaT && epE == travaE &&
+      travaDono == diario_dono_geracao() && travaGeracao == trava_geracao() && id == travaId)) return 1;
+  travaAutorizada = 0;
+  if (!travaPergunta && !atomic_load(&travaPinResultado) && trava_obter(id, &t) && t.pin && !teclado_aberto()) {
+    snprintf(travaUrl, sizeof travaUrl, "%s", url);
+    travaPerfil = perfis_ativo(); travaT = epT; travaE = epE; travaId = id;
+    travaDono = diario_dono_geracao(); travaGeracao = trava_geracao();
+    travaPinSessao = travaSessao;
+    travaPergunta = 1;
+    teclado_abrir_com(i18n("PIN"), i18n("Protegido por PIN. Digite o PIN para ver."), 8, "0123456789", NULL);
+    teclado_tipo(TECLADO_TIPO_SENHA);
+  }
+  player_erro_fonte_motivo(i18n("Travar série"), i18n("Separados"));
+  return 0;
+}
+
 static void tocarFonte(const char *url) {
+  if (!travaFonte(url)) return;
   marco("abrir: url ao pipeline");
   video_definir_reconexao(!ehCanal());
   video_definir_modo_live(ehCanal() ? ajustes_livetv_modo() : 0);
@@ -1372,6 +1416,7 @@ static void tocarFonte(const char *url) {
 // PRETO enquanto o fluxo abria — que era o "clica em reproduzir e fica preto".
 void player_definir_fonte(const char *url) {
   if ((!aberto && !mini) || !url || !*url) return;
+  if (!travaFonte(url)) return;
   esperandoFonte = 0;
   erroFonte = 0;
 #ifndef __EMSCRIPTEN__
@@ -1663,6 +1708,8 @@ static void fecharSessao(int manter) {
 }
 
 void player_encerrar(void) {
+  travaSessao++;
+  travaAutorizada = 0;
   if (retido) player_descartar_retido(); else fecharSessao(0);
 }
 
@@ -2472,6 +2519,7 @@ static void terminarSalto(void) {
 }
 
 void player_evento(const SDL_Event *e) {
+  if (travaPergunta && teclado_aberto()) { teclado_evento(e); return; }
   // O painel de pos-reproducao come a tecla quando esta no ar; ele e a coisa
   // mais recente na tela e o dono esta olhando para ele. O 2 e o BAIXO: ele
   // dispensa o painel E pede a barra de tempo de volta, que e o gesto que o
@@ -2700,6 +2748,38 @@ void player_evento(const SDL_Event *e) {
 }
 
 void player_atualizar(float dt, Uint32 agora) {
+  if (travaPergunta == 1) {
+    int r;
+    teclado_atualizar(dt, agora);
+    r = teclado_resultado();
+    if (r == TECLADO_PRONTO) {
+      pthread_t fio;
+      TravaPinJob *j = calloc(1, sizeof *j);
+      if (j) {
+        j->perfil = travaPerfil; snprintf(j->pin, sizeof j->pin, "%s", teclado_texto());
+        if (!pthread_create(&fio, NULL, verificarTravaPin, j)) { pthread_detach(fio); travaPergunta = 2; }
+        else { free(j); travaPergunta = 0; }
+      } else travaPergunta = 0;
+      teclado_esquecer();
+    } else if (r == TECLADO_CANCELOU) { travaPergunta = 0; teclado_esquecer(); }
+  }
+  if (travaPergunta == 2) {
+    int r = atomic_exchange(&travaPinResultado, 0);
+    if (r) {
+      const CatItem *c = item();
+      int valido = r == 1 && c && aberto && travaPinSessao == travaSessao && travaPerfil == perfis_ativo() &&
+          travaDono == diario_dono_geracao() && travaGeracao == trava_geracao() &&
+          epT == travaT && epE == travaE && trava_bloqueio(c->imdb, travaPerfil, epT, epE) == travaId;
+      travaPergunta = 0;
+      if (valido) {
+        // One verified source open; no persistent bypass for later episodes.
+        travaAutorizada = 1;
+        tocando = 1;
+        player_definir_fonte(travaUrl);
+      }
+      memset(travaUrl, 0, sizeof travaUrl);
+    }
+  }
   if (retido) { player_validar_retido(agora); return; }
   // AUDIO QUE A TV NAO TOCA (uMS errorCode 200, registro 1545): o video segue
   // mudo, e sem isto a pessoa nao tinha como saber que era a fonte e nao o
@@ -3907,6 +3987,7 @@ void player_fundo_fora_do_furo(GfxRect furo, int recuado, const CatItem *c) {
 }
 
 void player_desenhar(Uint32 agora) {
+  if (travaPergunta == 1 && teclado_aberto()) { teclado_desenhar(agora); return; }
   if (!aberto) return;
   const CatItem *c = item();
   // COR VIVA: o titulo que TOCA manda na cor (abrindo, OSD, pausa, pos-play),

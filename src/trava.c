@@ -268,6 +268,15 @@ int trava_liberado(const Trava *t, int perfil, int te, int ee, int epsNaTemp) {
   return trava_quem_segura(t, perfil, te, ee, epsNaTemp) == 0;
 }
 
+int trava_bloqueio(const char *serie, int perfil, int te, int ee) {
+  int ids[TRAVA_MAX], i, n = trava_da_serie(serie, perfil, ids, TRAVA_MAX);
+  for (i = 0; i < n && i < TRAVA_MAX; i++) {
+    Trava t;
+    if (trava_obter(ids[i], &t) && !trava_liberado(&t, perfil, te, ee, 0)) return t.id;
+  }
+  return 0;
+}
+
 int trava_juntos_alvos(const char *serie, int perfil, int *alvos, int max) {
   int i, k, n = 0;
   pthread_mutex_lock(&mx);

@@ -77,6 +77,7 @@ int  trava_estado(const Trava *t, int perfil, TravaEstado *s);
 // menos adiantado (0 = nao se sabe: so vale E+1 na mesma temporada).
 // Pausada, Juntos, especiais e quem esta sozinho: sempre 1.
 int  trava_liberado(const Trava *t, int perfil, int te, int ee, int epsNaTemp);
+int  trava_bloqueio(const char *serie, int perfil, int te, int ee);
 // Quem segura `perfil` (bits) em (te,ee); 0 se esta liberado.
 unsigned trava_quem_segura(const Trava *t, int perfil, int te, int ee, int epsNaTemp);
 

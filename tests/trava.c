@@ -61,6 +61,9 @@ int main(void) {
   // ---- regra Separados: ninguem comecou -> so o T1E1
   trava_obter(id, &t);
   assert(trava_liberado(&t, 1, 1, 1, 9) && !trava_liberado(&t, 1, 1, 2, 9));
+  assert(trava_bloqueio("tt1", 1, 1, 2) == id);
+  assert(!trava_bloqueio("tt1", 1, 1, 1));
+  assert(!trava_bloqueio("tt1", 4, 1, 2));
   assert(trava_liberado(&t, 1, 0, 3, 9));                    // especial fora da regra
   viu(1, 1, 1);                                              // perfil 1 viu o E1
   assert(trava_estado(&t, 1, &s) && s.esperando && s.minT == 0 && s.minE == 0 && s.quem == 6);

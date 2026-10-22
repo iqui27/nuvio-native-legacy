@@ -258,6 +258,15 @@ def contexto(txt, i):
 # "nao sei o que e": sem esta lista a ferramenta nao pode virar teste, e sem
 # virar teste ela nao impede a proxima regressao.
 IGNORAR = {
+    # Verified diagnostics, protocol/file identifiers, and genre/token match data.
+    " (sem quadro pequeno)", "desenho direto (sem quadro pequeno)",
+    "sem a copia desfocada da arte ainda (arte nao decodificada?): fundo liso",
+    "codec nao e de texto (ASS/SRT/WebVTT): a TV desenha",
+    "confirmada pelo relogio do pipeline", "enviado ao ExoPlayer",
+    '"POSTER"', "conta-pend-%s.txt", "escolha-perfil", "com",
+    "acción", "ação", "comédia", "fantasía", "ciencia ficción",
+    "%s/v1/diario?desde=%lld&limite=500",
+    "%d addons · %d progressos · %d vistos · %d na lista · %d coleções%s%s",
     # RC 1.8 triage, each checked in the source:
     # - sync.c NOME[] are the labels of the "[sync] etapas" LOG line; "ver" is a
     #   field name in the jellyfin conta file; "forcé" is a pattern legref.c

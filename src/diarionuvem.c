@@ -34,6 +34,7 @@ enum { J_NADA, J_COFRE, J_LOTE, J_RESTAURAR };
 
 typedef struct {
   int tipo, perfil, ligado;
+  unsigned dono;
   char url[512], aut[1200], via[40], pf[40];
   char *corpo;
   // resultado
@@ -166,6 +167,7 @@ static int cabecalhos(Job *j) {
   // Mesma regra de recomenda.c: o perfil principal e a pessoa sem sufixo.
   if (p && !p->primario && p->indice >= 1) snprintf(j->pf, sizeof j->pf, "X-Nuvio-Perfil: %d", p->indice);
   j->perfil = perfis_ativo();
+  j->dono = diario_dono_geracao();
   return 1;
 }
 
@@ -232,6 +234,8 @@ static void pedirRestaurar(int perfil) {
 static void tratar(Job *j) {
   long long agora = (long long)time(NULL);
   int ok = j->status >= 200 && j->status < 300 && j->resp;
+  if (j->dono != diario_dono_geracao()) return;
+  if (j->tipo != J_COFRE && diario_nuvem_estado(j->perfil) != DIARIO_NUVEM_SIM) return;
   if (j->status == 409 && j->resp && strstr(j->resp, "cofre")) {
     // O servidor nao tem o consentimento: nada mais sobe ate a pessoa ligar.
     diario_nuvem_definir(j->perfil, DIARIO_NUVEM_NAO);
@@ -240,6 +244,7 @@ static void tratar(Job *j) {
     esperarAte = agora + ESPERA_FALHA_S;
     printf("[diarionuvem] falhou (%d), tenta em %d s\n", j->status, ESPERA_FALHA_S);
   } else if (j->tipo == J_COFRE) {
+    diario_nuvem_consent_confirmar(j->perfil, j->ligado ? DIARIO_NUVEM_SIM : DIARIO_NUVEM_NAO);
     printf("[diarionuvem] cofre %s\n", j->ligado ? "ligado" : "desligado (apagado no servidor)");
     if (j->ligado && j->perfil >= 1 && j->perfil <= CONTA_PERFIL_MAX) {
       restaurarPend[j->perfil] = 1; restaurarDesde[j->perfil] = 0;
@@ -263,6 +268,13 @@ static void tratar(Job *j) {
 
 void diarionuvem_passo(void) {
   static long long ultimo;
+  static unsigned dono;
+  if (dono != diario_dono_geracao()) {
+    dono = diario_dono_geracao();
+    memset(restaurarPend, 0, sizeof restaurarPend);
+    memset(restaurarDesde, 0, sizeof restaurarDesde);
+    esperarAte = ultimo = 0;
+  }
   Job *j = atomic_exchange(&pronto, NULL);
   long long agora;
   int p;
@@ -273,6 +285,10 @@ void diarionuvem_passo(void) {
   ultimo = agora;
   if (!diarionuvem_disponivel()) return;
   p = perfis_ativo();
+  if (diario_nuvem_consent_pendente(p)) {
+    pedirCofre(diarionuvem_ligado());
+    return;
+  }
   if (diario_nuvem_estado(p) != DIARIO_NUVEM_SIM) return;
   if (p >= 1 && p <= CONTA_PERFIL_MAX && restaurarPend[p]) { pedirRestaurar(p); return; }
   if (diario_nuvem_pendentes(p) > 0) { esperarAte = agora + FOLGA_S; pedirLote(); }
@@ -283,9 +299,9 @@ int diarionuvem_ligado(void) { return diario_nuvem_estado(0) == DIARIO_NUVEM_SIM
 void diarionuvem_definir(int ligado) {
   if (!!ligado == diarionuvem_ligado()) return;
   diario_nuvem_definir(0, ligado ? DIARIO_NUVEM_SIM : DIARIO_NUVEM_NAO);
-  // Desligar avisa o servidor (que APAGA a copia). Se a rede falhar agora, a
-  // proxima vez que ligar manda o "sim" de novo; o servidor nunca recebe
-  // entradas sem o "sim" (409).
+  // Desired consent stays pending on disk until the server acknowledges it.
+  esperarAte = 0;
+  if (!ligado) { int p = perfis_ativo(); restaurarPend[p] = 0; restaurarDesde[p] = 0; }
   if (diarionuvem_disponivel()) pedirCofre(ligado);
 }
 

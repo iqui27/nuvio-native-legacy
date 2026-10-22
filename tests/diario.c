@@ -8,6 +8,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <pthread.h>
+#include <stdatomic.h>
+static pthread_t renderThread;
+static _Atomic int slowWrites, workerWrite;
 
 // ---- dubles de dados.c e perfis.c
 static char pasta[256];
@@ -23,6 +27,11 @@ char *dados_ler(const char *nome) {
 }
 int dados_gravar(const char *nome, const char *conteudo) {
   char c[512]; FILE *f;
+  if (atomic_load(&slowWrites)) {
+    assert(!pthread_equal(pthread_self(), renderThread));
+    atomic_store(&workerWrite, 1);
+    usleep(200000);
+  }
   snprintf(c, sizeof c, "%s/%s", pasta, nome);
   f = fopen(c, "wb"); if (!f) return 0;
   fputs(conteudo, f); fclose(f); return 1;
@@ -235,6 +244,17 @@ int main(void) {
     assert((double)(clock() - c0) / CLOCKS_PER_SEC < 1.0); }
   perfilAtivo = 1;
 
+  // Slow flash must not run serialization/writes on the render thread.
+  renderThread = pthread_self();
+  diario_relogio_teste += 10;
+  atomic_store(&slowWrites, 1);
+  diario_passo();
+  for (int wait = 0; wait < 1000 && !atomic_load(&workerWrite); wait++) usleep(1000);
+  assert(atomic_load(&workerWrite));
+  diario_passo();
+  atomic_store(&slowWrites, 0);
+  diario_gravar_agora();
+
   // 16. Dono: o arquivo de outra conta nao e lido; a volta da conta reencontra.
   perfilAtivo = 1;
   { int n1;
@@ -242,7 +262,13 @@ int main(void) {
     e = ent("tt9001", 'p', T0); assert(diario_adicionar(0, &e) == 1);
     n1 = diario_n(0); assert(n1 == 1);
     diario_gravar_agora();
+    diario_nuvem_definir(1, DIARIO_NUVEM_SIM);
     diario_dono("conta-b");
+    assert(diario_nuvem_estado(1) == DIARIO_NUVEM_NAO_PERGUNTADO);
+    diario_nuvem_definir(1, DIARIO_NUVEM_NAO);
+    diario_esquecer();
+    assert(diario_nuvem_estado(1) == DIARIO_NUVEM_NAO);
+    assert(diario_nuvem_consent_pendente(1));
     assert(diario_n(0) == 0);
     diario_dono("conta-a");
     assert(diario_n(0) == n1);

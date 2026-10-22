@@ -13,6 +13,7 @@
 #include "dados.h"
 #include "perfis.h"
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -55,6 +56,7 @@ typedef struct {
   int sujo; long long sujoDesde;
   unsigned geracao;
   int nuvem;                       // DIARIO_NUVEM_*
+  int consentPendente;
 } Loja;
 
 typedef struct { int perfil, ev, temE; DiarioEntrada e; } Evento;
@@ -66,6 +68,16 @@ static int nFila;
 static int recarregarPend[NPERFIS];
 static struct { DiarioOuvinte fn; void *ctx; } ouv[OUV_MAX];
 static int nuvemLida;
+static pthread_t flushThread;
+static int flushStarted;
+static _Atomic int flushBusy;
+static unsigned donoGeracao;
+
+static void esperarFlush(void) {
+  if (flushStarted) { pthread_join(flushThread, NULL); flushStarted = 0; }
+}
+
+unsigned diario_dono_geracao(void) { return donoGeracao; }
 static unsigned donoHash;       // 0 = sem conta
 
 long long diario_relogio_teste;     // != 0 congela o relogio (testes)
@@ -397,8 +409,10 @@ static void recalcularReverTudo(Loja *L) {
 static unsigned hashStr(const char *s);
 void diario_dono(const char *conta) {
   unsigned h = (conta && conta[0]) ? hashStr(conta) : 0;
+  if (h != donoHash) esperarFlush();
   pthread_mutex_lock(&trava);
   if (h != donoHash) {
+    donoGeracao++;
     int p;
     donoHash = h;
     // Outra conta: o que estava carregado nao vale mais.
@@ -422,12 +436,17 @@ static void lerNuvem(void) {
   char *b, *s;
   if (nuvemLida) return;
   nuvemLida = 1;
-  b = dados_ler("diario-nuvem.txt");
+  { char nome[64];
+    snprintf(nome, sizeof nome, "diario-nuvem-%08x.txt", donoHash);
+    b = dados_ler(nome);
+  }
   if (!b) return;
   for (s = b; s && *s;) {
-    int p, v;
-    if (sscanf(s, "p%d=%d", &p, &v) == 2 && p >= 1 && p < NPERFIS && v >= 0 && v <= 2)
+    int p, v, pend = 0;
+    if (sscanf(s, "p%d=%d,%d", &p, &v, &pend) >= 2 && p >= 1 && p < NPERFIS && v >= 0 && v <= 2) {
       lojas[p].nuvem = v;
+      lojas[p].consentPendente = pend != 0;
+    }
     s = strchr(s, '\n'); if (s) s++;
   }
   free(b);
@@ -997,12 +1016,12 @@ void diario_parar_de_ouvir(DiarioOuvinte fn, void *ctx) {
 }
 
 // Monta o arquivo inteiro. Chamado com a trava.
-static char *montarArquivo(Loja *L) {
+static char *montarArquivo(Loja *L, unsigned dono) {
   size_t cap = 64 + (size_t)L->n * 96, k;
   char *b = malloc(cap);
   int i;
   if (!b) return NULL;
-  k = (size_t)snprintf(b, cap, "# nuvio diario v1 dono=%08x\n", donoHash);
+  k = (size_t)snprintf(b, cap, "# nuvio diario v1 dono=%08x\n", dono);
   for (i = 0; i < L->n; i++) {
     DiarioEntrada d;
     paraPublica(L, &L->ent[i], &d);
@@ -1020,16 +1039,30 @@ static char *montarArquivo(Loja *L) {
 static int gravarPerfil(int p, int forcar) {
   Loja *L = &lojas[p];
   char *b = NULL, nome[32];
+  Loja copia = {0};
+  unsigned dono, geracao = 0;
   pthread_mutex_lock(&trava);
+  dono = donoHash;
   if (L->carregado && L->sujo && (forcar || agora() - L->sujoDesde >= GRAVAR_FOLGA_S)) {
-    b = montarArquivo(L);
-    if (b) L->sujo = 0;
+    copia = *L;
+    copia.ent = malloc(sizeof(Ent) * (size_t)(L->n + 1));
+    copia.tit = malloc(sizeof(Tit) * (size_t)(L->nTit + 1));
+    if (copia.ent && copia.tit) {
+      memcpy(copia.ent, L->ent, sizeof(Ent) * (size_t)L->n);
+      memcpy(copia.tit, L->tit, sizeof(Tit) * (size_t)L->nTit);
+      geracao = L->geracao;
+    }
   }
   pthread_mutex_unlock(&trava);
+  if (geracao) b = montarArquivo(&copia, dono);
+  free(copia.ent); free(copia.tit);
   if (b) {
-    dados_gravar(nomeArquivo(p, nome, sizeof nome), b);
+    int ok = dados_gravar(nomeArquivo(p, nome, sizeof nome), b);
     free(b);
-    return 1;
+    pthread_mutex_lock(&trava);
+    if (ok && L->geracao == geracao) L->sujo = 0;
+    pthread_mutex_unlock(&trava);
+    return ok;
   }
   return 0;
 }
@@ -1038,15 +1071,25 @@ void diario_nomes_gravar(void);   // diarionomes.c
 
 void diario_gravar_agora(void) {
   int p;
+  esperarFlush();
   for (p = 1; p < NPERFIS; p++) gravarPerfil(p, 1);
   diario_nomes_gravar();
+}
+
+static void *flush(void *u) {
+  int p, gravou = 0;
+  (void)u;
+  for (p = 1; p < NPERFIS; p++) gravou |= gravarPerfil(p, 0);
+  if (gravou) diario_nomes_gravar();
+  atomic_store(&flushBusy, 0);
+  return NULL;
 }
 
 void diario_passo(void) {
   static Evento local[EV_MAX];   // so o laco principal chama
   int n, p, i, rec[NPERFIS], algum = 0;
   struct { DiarioOuvinte fn; void *ctx; } o[OUV_MAX];
-  pthread_mutex_lock(&trava);
+  if (pthread_mutex_trylock(&trava)) return;
   n = nFila;
   if (n) memcpy(local, fila, sizeof(Evento) * (size_t)n);
   nFila = 0;
@@ -1064,10 +1107,12 @@ void diario_passo(void) {
     int k;
     for (k = 0; k < OUV_MAX; k++) if (o[k].fn) o[k].fn(p, DIARIO_EV_RECARREGADO, NULL, o[k].ctx);
   }
-  { int gravou = 0;
-    for (p = 1; p < NPERFIS; p++) if (lojas[p].sujo) gravou |= gravarPerfil(p, 0);
-    // Os nomes vao junto com o diario (mesma folga); sem diario, so na saida.
-    if (gravou) diario_nomes_gravar(); }
+  if (!atomic_load(&flushBusy)) {
+    esperarFlush();
+    atomic_store(&flushBusy, 1);
+    if (!pthread_create(&flushThread, NULL, flush, NULL)) flushStarted = 1;
+    else atomic_store(&flushBusy, 0);
+  }
 }
 
 void diario_esquecer(void) {
@@ -1095,7 +1140,7 @@ int diario_nuvem_estado(int perfil) {
 
 void diario_nuvem_definir(int perfil, int estado) {
   int p = perfilReal(perfil), i;
-  char buf[256];
+  char buf[256], nome[64];
   size_t k = 0;
   if (estado < 0 || estado > 2) return;
   pthread_mutex_lock(&trava);
@@ -1106,12 +1151,28 @@ void diario_nuvem_definir(int perfil, int estado) {
     for (i = 0; i < L->n; i++) L->ent[i].flags |= F_NUVEM;
     if (L->n) mudou(L);
   }
+  if (lojas[p].nuvem != estado) lojas[p].consentPendente = 1;
   lojas[p].nuvem = estado;
+  snprintf(nome, sizeof nome, "diario-nuvem-%08x.txt", donoHash);
   buf[0] = 0;
   for (i = 1; i < NPERFIS; i++)
-    if (lojas[i].nuvem) k += (size_t)snprintf(buf + k, sizeof buf - k, "p%d=%d\n", i, lojas[i].nuvem);
+    if (lojas[i].nuvem) k += (size_t)snprintf(buf + k, sizeof buf - k, "p%d=%d,%d\n", i, lojas[i].nuvem, lojas[i].consentPendente);
   pthread_mutex_unlock(&trava);
-  dados_gravar("diario-nuvem.txt", buf);
+  dados_gravar(nome, buf);
+}
+
+int diario_nuvem_consent_pendente(int perfil) {
+  int p = perfilReal(perfil), v;
+  pthread_mutex_lock(&trava); lerNuvem(); v = lojas[p].consentPendente; pthread_mutex_unlock(&trava);
+  return v;
+}
+
+void diario_nuvem_consent_confirmar(int perfil, int estado) {
+  int p = perfilReal(perfil);
+  pthread_mutex_lock(&trava);
+  if (lojas[p].nuvem == estado) lojas[p].consentPendente = 0;
+  pthread_mutex_unlock(&trava);
+  diario_nuvem_definir(p, diario_nuvem_estado(p));
 }
 
 int diario_nuvem_pendentes(int perfil) {
