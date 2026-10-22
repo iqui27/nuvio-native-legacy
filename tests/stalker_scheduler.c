@@ -158,6 +158,9 @@ int stream_primeira_boa(int tentativas) {
   return 7;
 }
 
+int stream_verificar_proxima_vod(int atual, int tentativas, int *conferidas) {
+  (void)atual; (void)tentativas; if (conferidas) *conferidas = 0; return -1;
+}
 int stream_canal_primeira_viva(int tentativas) { (void)tentativas; return -1; }
 int stream_canal_classe_escolhida(void) { return 0; }
 int stream_canal_proxima(int a) { return a + 1; }
@@ -186,6 +189,16 @@ void player_definir_fonte(const char *url) {
 void player_erro_fonte(void) { errosPlayer++; }
 void player_fechar_mini(void) { idPlayerAberto = 0; }
 void marco(const char *texto) { (void)texto; }
+// Dobles inertes: o scheduler (app.c) os referencia, mas estes testes nao os exercitam.
+int cat_id_stream(int i, int t, int e, char *dst, unsigned tam) { (void)i; (void)t; (void)e; (void)dst; (void)tam; return 0; }
+const CatItem *cat_item(int i) { (void)i; return NULL; }
+void player_episodio_atual(int *t, int *e) { if (t) *t = 0; if (e) *e = 0; }
+int player_indice(void) { return -1; }
+int stream_n(void) { return listaN; }
+int stream_automatico_canal(void) { return -1; }
+int stream_automatico_disponivel(int i) { (void)i; return 0; }
+Uint32 stream_idade_ms(void) { return 0; }
+unsigned stream_lista_geracao(void) { return 0; }
 
 static void test_gera_invalida_e_single_flight(void) {
   limpar_cenario();

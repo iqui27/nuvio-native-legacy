@@ -287,6 +287,44 @@ int main(void) {
   CONFERE(ponteiro_x() > 959 && ponteiro_x() < 961 && ponteiro_y() > 539 && ponteiro_y() < 541,
           "janela de metade: coordenada dobra");
 
+  // --- the pointer's own activity clock ------------------------------------
+  //
+  // See ponteiro.h. The player does not receive motion as an event: main.c
+  // consumes it in the pointer, and inside a single target `mover()` returns
+  // early (the hover only fires when the target CHANGES). This is what answers
+  // "is the person still moving the remote?".
+  //
+  // Tested directly, without depending on `visivel`: the pointer's own sleep
+  // already failed here BEFORE this change (see the failure above), and hanging
+  // the new proof on it would hang it on someone else's defect.
+  ponteiro_teste_janela(1920, 1080);
+  { Uint32 antes = ponteiro_last_motion();
+    relogio += 100;
+    mover(150, 150);
+    CONFERE(ponteiro_last_motion() > antes, "motion stamps the clock");
+  }
+  // MOVING INSIDE THE SAME TARGET: the focus does not change (the hover only
+  // fires when the target CHANGES), but the activity still has to count.
+  { Uint32 antes = ponteiro_last_motion();
+    relogio += 100;
+    int nFocoAntes = nFocar;
+    mover(160, 160);            // still the card at (0,0)
+    CONFERE(nFocar == nFocoAntes, "moving inside one target does not re-focus");
+    CONFERE(ponteiro_last_motion() > antes, "and still counts as activity");
+  }
+  // A TOUCH COUNTS THE SAME: a finger resting on the screen is also a hand on the
+  // remote.
+  { Uint32 antes = ponteiro_last_motion();
+    relogio += 100;
+    { SDL_Event e; SDL_zero(e);
+      e.type = SDL_FINGERDOWN; e.tfinger.x = 0.1f; e.tfinger.y = 0.1f;
+      e.tfinger.fingerId = 1; e.tfinger.touchId = 0;
+      ponteiro_evento(&e, entregar); }
+    CONFERE(ponteiro_last_motion() > antes, "a touch counts as activity");
+    { SDL_Event e; SDL_zero(e);
+      e.type = SDL_FINGERUP; e.tfinger.fingerId = 1; e.tfinger.touchId = 0;
+      ponteiro_evento(&e, entregar); } }
+
   // --- botao direito = Voltar (Mac) ---------------------------------------
   zerar();
   botao(SDL_MOUSEBUTTONDOWN, 10, 10, SDL_BUTTON_RIGHT);

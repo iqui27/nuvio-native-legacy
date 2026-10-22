@@ -14,5 +14,7 @@ void livetvdiag_atualizar(float dt, Uint32 agora);
 void livetvdiag_desenhar(Uint32 agora);
 int  livetvdiag_quer_sair(void);
 void livetvdiag_encerrar(void);
+// Testes do ponteiro (#99): o botao do rodape em foco (L.botao).
+int  livetvdiag_teste_foco(void);
 
 #endif

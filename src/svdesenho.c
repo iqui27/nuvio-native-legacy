@@ -251,7 +251,7 @@ void svd_cartao(GfxRect r, const SvEvento *ev, float foco, float a, Uint32 t) {
     GfxRect b = { r.x - NV_ANEL_FOCO, r.y - NV_ANEL_FOCO,
                   r.w + 2 * NV_ANEL_FOCO, r.h + 2 * NV_ANEL_FOCO };
     ajustes_acento(&ar, &ag, &ab);
-    if (ajustes_vidro()) gfx_vidro_cartao(r, raio * menor / r.h, f, a);
+    if (ajustes_vidro()) gfx_vidro_cartao(r, raio, f, a);
     else gfx_cor(b, (raio * menor + NV_ANEL_FOCO) / (menor + 2 * NV_ANEL_FOCO), ar, ag, ab, f * a);
   }
   svd_poster(r, arte, raio, a);

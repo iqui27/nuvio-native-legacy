@@ -8,6 +8,7 @@ void cachearte_estatisticas_pedir(void) {}
 void tex_cache_marcar_larg(int grupo, const char *url, float larg, int essencial, int emUso) {
   (void)grupo; (void)url; (void)larg; (void)essencial; (void)emUso; }
 #include "../src/home.c"
+void desc_sinopse_hero(const int *idx, int n) { (void)idx; (void)n; }
 
 char *dados_ler(const char *nome) { (void)nome; return NULL; }
 int   dados_gravar(const char *nome, const char *c) { (void)nome; (void)c; return 1; }
@@ -20,6 +21,9 @@ void  dados_marcar_sujo(int leve) { (void)leve; }
 // ajustes_aplicar_blob (abaixo) fala com linguas.c; nada disso entra na regra.
 const char *ling_legenda(void) { return ""; }
 const char *ling_audio(void) { return ""; }
+const char *ling_conta_legenda_valor(void) { return ""; }
+const char *ling_conta_legenda2_valor(void) { return ""; }
+const char *ling_conta_audio_valor(void) { return ""; }
 void ling_conta_legenda(const char *v) { (void)v; }
 void ling_conta_legenda2(const char *v) { (void)v; }
 void ling_conta_audio(const char *v) { (void)v; }
@@ -50,6 +54,7 @@ const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nom
 static Uint32 relogio = 1000;
 static void quadro(void) { relogio += 16; home_atualizar(0.016f, relogio); }
 int trakt_e_a_seguir(const char *i) { (void)i; return 0; }
+int   trakt_progresso_ocultar(const char *i, int o) { (void)i; (void)o; return 0; }
 int simkl_e_a_seguir(const char *i) { (void)i; return 0; }
 int main(void) {
   static CatItem a, b;

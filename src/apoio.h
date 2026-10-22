@@ -14,8 +14,10 @@
 
 #define NV_URL_PATREON "https://www.patreon.com/cw/CraaazyDevs"
 #define NV_URL_KOFI    "https://ko-fi.com/iqui27"
+#define NV_URL_DISCORD "https://discord.gg/9NWr6SHyzJ"
 
-enum { APOIO_PATREON = 0, APOIO_KOFI = 1, APOIO_N };
+// Discord compartilha so o desenho; APOIO_N/apoio_qual continuam so doacoes.
+enum { APOIO_PATREON = 0, APOIO_KOFI = 1, APOIO_N, APOIO_DISCORD = APOIO_N };
 
 // Quantos enderecos estao preenchidos, e o i-esimo deles (APOIO_*); -1 fora.
 int apoio_n(void);

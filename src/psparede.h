@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // A PAREDE DE CADA PERFIL no fundo "Filmes" da escolha de perfil (2.0).
 //
 // A tela de perfil abre ANTES do sync e com o catalogo do ultimo perfil usado,
@@ -12,7 +13,7 @@
 #define NV_PSPAREDE_H
 
 #define PSPAREDE_MAX   12   // cartazes guardados por perfil
-#define PSPAREDE_URL 1024   // mesmo teto do CatItem.poster
+#define PSPAREDE_URL NV_ARTE_URL_MAX   // mesmo teto do CatItem.poster
 
 // Guarda a parede do perfil ativo a partir do catalogo e do progresso.
 void psparede_registrar(void);

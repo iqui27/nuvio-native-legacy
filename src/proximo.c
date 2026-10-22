@@ -148,3 +148,18 @@ int prox_seguinte(const CatItem *ci, const CatEp *eps, int n, int limiarPct,
   }
   return 0;
 }
+
+int prox_indice_seguinte(const CatEp *eps, int n, int t, int e) {
+  int i, melhor = -1;
+  if (!eps || n < 1) return -1;
+  for (i = 0; i < n; i++) {
+    const CatEp *p = &eps[i];
+    if (p->episodio < 1 || p->temporada < 0) continue;
+    if (p->temporada == 0 && t > 0) continue;          // especial nao e o proximo
+    if (p->temporada < t || (p->temporada == t && p->episodio <= e)) continue;
+    if (melhor < 0 || p->temporada < eps[melhor].temporada ||
+        (p->temporada == eps[melhor].temporada && p->episodio < eps[melhor].episodio))
+      melhor = i;
+  }
+  return melhor;
+}

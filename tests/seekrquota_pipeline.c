@@ -102,6 +102,10 @@ static void recorte(void) {
 int main(void) {
   assert(SDL_Init(SDL_INIT_TIMER) == 0);
   dados_iniciar("/tmp");
+  // Sem chave: nem a validacao nem a miniatura chegam a rede.
+  assert(seekr_validar("") == 0);
+  seekr_pedir("tt0133093", 0, 0, 7200000);
+  assert(validationN == 0 && spriteN == 0 && usadas() == 0);
   seekr_definir_chave(esperada);
   assert(seekr_validar(esperada) == 1 && validationN == 1 && usadas() == 0);
   // Equal requests in flight have one reservation and one dispatch.
@@ -145,6 +149,12 @@ int main(void) {
   esperada = "third-key"; seekr_definir_chave(esperada); pedir(SEEKR_LIMITE_LOCAL);
   assert(spriteN == antes && usadas() == 50);
   assert(seekr_validar(esperada) == 1 && usadas() == 50);
+  // #312: chave pessoal nao paga nem sofre o teto local de 50 (o plano e do Seekr).
+  seekr_chave_propria(1); esperada = "own-key"; seekr_definir_chave(esperada);
+  seekr_tentar_novamente(); respostasHttp(200, 0); pedir(SEEKR_PRONTO);
+  assert(usadas() == 50 && spriteN > antes);
+  { SeekrUso p; seekr_uso(&p); assert(p.chavePropria); }
+  seekr_chave_propria(0);
   seekr_desligar();
   puts("seekrquota pipeline: PASS single-flight, durable-before-HTTP, cache, key/profile changes, retries, expiry, states and50limit");
   return 0;

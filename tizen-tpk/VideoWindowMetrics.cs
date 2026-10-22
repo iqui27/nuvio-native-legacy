@@ -14,7 +14,7 @@ namespace NuvioTpk
         internal long ElapsedTicks { get; private set; }
         internal long MaxTicks { get; private set; }
 
-        // Called only on the host UI thread, immediately before native work.
+        // Called on the session thread, immediately before native work.
         internal void Begin(object player, int rx, int ry, int rw, int rh, bool fullscreen)
         {
             Requests++;

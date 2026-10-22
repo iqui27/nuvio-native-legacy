@@ -3,7 +3,7 @@
 # parado, spainel_fundo) nao pode sumir. Precisa de GL; escreve so em
 # NUVIO_DADOS, uma pasta temporaria.  bash tests/spainel_fundo_tempo.sh
 # A medida de tempo por quadro e outra: tests/salvospainel_perf.sh.
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-spft-XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT

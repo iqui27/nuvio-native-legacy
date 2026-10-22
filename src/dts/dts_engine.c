@@ -5,10 +5,15 @@
 #include <math.h>
 #include <time.h>
 struct DtsEngine;
+/* Output mode for the NEXT open: 0 = stereo AAC (default, the proven path),
+ * 1 = AC3 5.1 at 640 kbps (falls back to AAC when the encoder is absent). */
+static volatile int g_surround_ac3;
+void dts_engine_set_ac3(int on) { g_surround_ac3 = on ? 1 : 0; }
 #ifndef NV_DTS_FFMPEG
 struct DtsEngine { DtsMediaInfo info; };
 DtsEngine *dts_engine_create(void) { return calloc(1, sizeof(DtsEngine)); }
 int dts_engine_available(void) { return 0; }
+void dts_engine_dv(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
 void dts_engine_metrics(DtsEngine *e,DtsEngineMetrics *out) { (void)e; if(out) memset(out,0,sizeof(*out)); }
 int dts_engine_open(DtsEngine *e,const char *u,const char *h,int a,int c,double s) {
   (void)e;(void)u;(void)h;(void)a;(void)c;(void)s; return -1;
@@ -34,6 +39,12 @@ const char *dts_engine_error(DtsEngine *e) { (void)e; return "DTS conversion not
 #include <libavutil/dovi_meta.h>
 #include <libswresample/swresample.h>
 #define RANGE_BYTES (1024 * 1024)
+/* Dolby Vision path (dts_engine_dv): 4K sources of 25-30 Mbit/s starved on
+ * 1 MiB requests that re-followed the add-on redirects every time (LG C9:
+ * readMs 4953/5000, 0.9 s of video ahead). Larger requests sent straight to
+ * the final address keep the native buffer full with the same 32 MiB cap. */
+#define RANGE_BYTES_DV (4 * 1024 * 1024 - 1)
+#define RANGE_SLOTS_DV 8
 #ifndef RANGE_WORKERS
 #define RANGE_WORKERS 4
 #endif
@@ -65,6 +76,8 @@ struct DtsEngine {
   int range_threads, range_stop;
   int64_t range_next;
   long range_bytes;
+  int dv, passthrough, range_slots, final_cross;
+  char final_url[8192];
   AVFormatContext *fmt;
   AVIOContext *io;
   AVCodecContext *dec, *enc;
@@ -125,8 +138,50 @@ static void *range_worker(void *opaque) {
     job->state=2;
     pthread_mutex_unlock(&e->range_lock);
     uint64_t begun=clock_ns(CLOCK_MONOTONIC);
-    job->data=rede_baixar_trecho64_cab(e->url,e->headers,job->start,job->end,
-      &job->count,&job->total,&job->status,&job->cancel);
+    if(!e->dv)
+      job->data=rede_baixar_trecho64_cab(e->url,e->headers,job->start,job->end,
+        &job->count,&job->total,&job->status,&job->cancel);
+    else {
+      /* After the first answer, go straight to the address behind the add-on
+       * redirects. Credential headers follow only on the same origin. A final
+       * link that stops answering (expired: 403/410, or any failure) is
+       * dropped and the request repeats through the original URL. */
+      char target[8192], fin[8192]; int direct, cross=0;
+      pthread_mutex_lock(&e->range_lock);
+      direct=e->final_url[0]!=0; cross=e->final_cross;
+      snprintf(target,sizeof target,"%s",direct?e->final_url:e->url);
+      pthread_mutex_unlock(&e->range_lock);
+      job->data=rede_baixar_trecho64_final(target,direct&&cross?"":e->headers,job->start,job->end,
+        &job->count,&job->total,&job->status,&job->cancel,fin,&cross);
+      uint64_t first=clock_ns(CLOCK_MONOTONIC);
+      int first_status=job->status, first_ok=job->data!=NULL;
+      if(direct && !job->data && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) {
+        pthread_mutex_lock(&e->range_lock);
+        if(!strcmp(e->final_url,target)) e->final_url[0]=0;
+        pthread_mutex_unlock(&e->range_lock);
+        job->data=rede_baixar_trecho64_final(e->url,e->headers,job->start,job->end,
+          &job->count,&job->total,&job->status,&job->cancel,fin,&cross);
+        direct=0;
+        /* #203 DV startup took ~19.5 s twice (LG C9): one stalled request
+         * hitting the 15 s curl deadline plus a ~4.5 s add-on re-resolve is
+         * the suspicion. Name it in the log: no URL, only timings/status. */
+        uint64_t done=clock_ns(CLOCK_MONOTONIC);
+        printf("[dts-range] direto falhou: at=%lldMiB ms=%llu http=%d; pelo addon: ms=%llu http=%d bytes=%ld\n",
+               (long long)(job->start>>20),(unsigned long long)((first-begun)/1000000),first_status,
+               (unsigned long long)((done-first)/1000000),job->status,job->count);
+        fflush(stdout);
+      } else if(!__atomic_load_n(&job->cancel,__ATOMIC_RELAXED) &&
+                (!first_ok || first-begun>=UINT64_C(3000000000))) {
+        printf("[dts-range] %s: at=%lldMiB ms=%llu http=%d bytes=%ld direto=%d\n",first_ok?"lento":"falhou",
+               (long long)(job->start>>20),(unsigned long long)((first-begun)/1000000),first_status,job->count,direct);
+        fflush(stdout);
+      }
+      if(!direct && job->data && fin[0]) {
+        pthread_mutex_lock(&e->range_lock);
+        snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross;
+        pthread_mutex_unlock(&e->range_lock);
+      }
+    }
     uint64_t ended=clock_ns(CLOCK_MONOTONIC);
     pthread_mutex_lock(&e->range_lock);
     job->elapsed=ended>=begun?ended-begun:0; job->state=3;
@@ -163,7 +218,7 @@ static int start_ranges(DtsEngine *e) {
 }
 /* Called under range_lock; only idle slots can receive new work. */
 static void queue_ranges(DtsEngine *e) {
-  for(int i=0;i<RANGE_SLOTS && !cancelled(e);i++) {
+  for(int i=0;i<e->range_slots && !cancelled(e);i++) {
     DtsRangeJob *job=&e->ranges[i];
     if(job->state || (e->total>=0 && e->range_next>=e->total)) continue;
     job->start=e->range_next;
@@ -223,7 +278,7 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
     }
     queue_ranges(e);
     pthread_mutex_unlock(&e->range_lock);
-    if (!e->cache || count<=0 || count>RANGE_BYTES || status!=206) {
+    if (!e->cache || count<=0 || count>RANGE_BYTES_DV || status!=206) {
       free(e->cache); e->cache=NULL;
       if (status==416 && total>=0 && e->pos>=total) { e->total=total; return AVERROR_EOF; }
       return AVERROR(EIO);
@@ -278,9 +333,10 @@ static void close_media(DtsEngine *e) {
 }
 DtsEngine *dts_engine_create(void) {
   DtsEngine *e=calloc(1,sizeof(*e));
-  if(e) { e->total=-1; e->range_bytes=RANGE_BYTES; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
+  if(e) { e->total=-1; e->range_bytes=RANGE_BYTES; e->range_slots=RANGE_SLOTS; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
   return e;
 }
+void dts_engine_dv(DtsEngine *e, int enabled) { if (e) e->dv = !!enabled; }
 int dts_engine_available(void) {
   return avcodec_find_decoder(AV_CODEC_ID_DTS) && avcodec_find_encoder(AV_CODEC_ID_AAC) && av_bsf_get_by_name("h264_mp4toannexb")
       && av_bsf_get_by_name("hevc_mp4toannexb");
@@ -314,8 +370,8 @@ static int reset_encoder(DtsEngine *e) {
   av_channel_layout_copy(&e->enc->ch_layout,&layout); av_channel_layout_uninit(&layout);
   e->enc->sample_rate=48000; e->enc->time_base=(AVRational){1,48000};
   e->enc->sample_fmt=AV_SAMPLE_FMT_FLTP;
-  e->enc->bit_rate=192000;
-  e->enc->profile=AV_PROFILE_AAC_LOW;
+  if(id==AV_CODEC_ID_AC3) e->enc->bit_rate=e->enc->ch_layout.nb_channels>2?640000:192000;
+  else { e->enc->bit_rate=192000; e->enc->profile=AV_PROFILE_AAC_LOW; }
   int r=avcodec_open2(e->enc,codec,NULL);
   return r<0?fail(e,"Audio encoder open",r):0;
 }
@@ -327,7 +383,8 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   memset(&e->logged_metrics,0,sizeof(e->logged_metrics)); e->logged_at_ns=0;
 #endif
   e->pos=0; e->total=-1; e->cache_size=0; e->has_core=0;
-  e->range_bytes=RANGE_BYTES;
+  e->range_bytes=e->dv?RANGE_BYTES_DV:RANGE_BYTES; e->range_slots=e->dv?RANGE_SLOTS_DV:RANGE_SLOTS;
+  e->final_url[0]=0; e->final_cross=0; e->passthrough=0;
   e->demux_eof=e->decoder_eof=e->resampler_eof=e->encoder_sent_eof=e->timeline=0;
   if (cancelled(e)) return fail(e,"Cancelled",0);
   if (audio < -1 || !isfinite(start) || start<0 || start>INT64_MAX/1000000000.0)
@@ -361,7 +418,9 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
       return fail(e,"Encrypted media is unsupported",0);
     if(p->codec_type==AVMEDIA_TYPE_VIDEO && e->info.video_stream<0 && !(s->disposition&AV_DISPOSITION_ATTACHED_PIC))
       e->info.video_stream=i;
-    if(p->codec_id==AV_CODEC_ID_DTS && e->info.audio_stream<0 && (audio<0 || audio==(int)i)) e->info.audio_stream=i;
+    /* Dolby Vision path: AC-3/E-AC-3 go to the TV untouched (passthrough). */
+    if((p->codec_id==AV_CODEC_ID_DTS || (e->dv && (p->codec_id==AV_CODEC_ID_AC3 || p->codec_id==AV_CODEC_ID_EAC3)))
+       && e->info.audio_stream<0 && (audio<0 || audio==(int)i)) e->info.audio_stream=i;
     int kind=p->codec_type==AVMEDIA_TYPE_VIDEO?DTS_VIDEO:p->codec_type==AVMEDIA_TYPE_AUDIO?DTS_AUDIO:p->codec_type==AVMEDIA_TYPE_SUBTITLE?DTS_SUBTITLE:0;
     if(kind && e->info.n_tracks<DTS_TRACK_MAX) {
       DtsTrack *t=&e->info.tracks[e->info.n_tracks++]; t->kind=kind; t->stream_index=i; t->stream_id=s->id;
@@ -403,6 +462,18 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
     if((r=av_bsf_init(e->bsf))<0) return fail(e,"Video filter open",r);
   }
   AVCodecParameters *ap=e->fmt->streams[e->info.audio_stream]->codecpar;
+  e->passthrough=ap->codec_id!=AV_CODEC_ID_DTS;
+  if(e->passthrough) {
+    e->in=av_packet_alloc(); e->out=av_packet_alloc();
+    if(!e->in || !e->out) return fail(e,"Audio queue allocation",0);
+    e->info.channels=ap->ch_layout.nb_channels>0?ap->ch_layout.nb_channels:6;
+    e->info.sample_rate=ap->sample_rate>0?ap->sample_rate:48000;
+    snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(ap->codec_id));
+    e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
+    e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
+    e->target_ns=(int64_t)(start*1000000000.0);
+    return start>0?dts_engine_seek(e,start):0;
+  }
   const AVCodec *decoder=avcodec_find_decoder(AV_CODEC_ID_DTS);
   if(!decoder) return fail(e,"DTS decoder absent",0);
   e->dec=avcodec_alloc_context3(decoder);
@@ -414,12 +485,18 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   e->dec->err_recognition=AV_EF_EXPLODE;
   if(core && av_opt_set_int(e->dec->priv_data,"core_only",1,0)<0) return fail(e,"DTS core-only unavailable",0);
   if((r=avcodec_open2(e->dec,decoder,NULL))<0) return fail(e,"DTS decoder open",r);
-  const AVCodec *encoder=avcodec_find_encoder(AV_CODEC_ID_AAC);
+  /* AC3 5.1 only when asked and the build has the encoder; else stereo AAC. */
+  const AVCodec *encoder=g_surround_ac3?avcodec_find_encoder(AV_CODEC_ID_AC3):NULL;
+  int out_channels=2;
+  if(encoder) {
+    int in_channels=ap->ch_layout.nb_channels;
+    out_channels=(in_channels==0 || in_channels>2)?6:2;
+  } else encoder=avcodec_find_encoder(AV_CODEC_ID_AAC);
   if(!encoder) return fail(e,"Audio encoder absent",0);
   e->enc=avcodec_alloc_context3(encoder);
   if(!e->enc) return fail(e,"Audio encoder absent",0);
   e->enc->codec_id=encoder->id;
-  av_channel_layout_default(&e->enc->ch_layout,2);
+  av_channel_layout_default(&e->enc->ch_layout,out_channels);
   if(reset_encoder(e)<0) return -1;
   e->fifo=av_audio_fifo_alloc(e->enc->sample_fmt,e->enc->ch_layout.nb_channels,4096);
   e->in=av_packet_alloc(); e->out=av_packet_alloc(); e->decoded=av_frame_alloc(); e->encoded=av_frame_alloc();
@@ -485,7 +562,50 @@ static int frame_out(DtsEngine *e,DtsFrame *f,int kind,AVRational tb) {
   f->pts_ns=ns(e->out->pts,tb); f->dts_ns=ns(e->out->dts,tb); f->duration_ns=ns(e->out->duration,tb);
   return 1;
 }
+/* Passthrough: demux only. Video still crosses the Annex-B filter; the selected
+ * audio packets leave as they are in the file, trimmed to the seek target. */
+static int next_frame_passthrough(DtsEngine *e,DtsFrame *f) {
+  av_packet_unref(e->out);
+  for(;;) {
+    int r;
+    if(cancelled(e)) return fail(e,"Cancelled",0);
+    if(e->bsf) {
+      r=av_bsf_receive_packet(e->bsf,e->out);
+      if(r==0) return frame_out(e,f,DTS_VIDEO,e->bsf->time_base_out);
+      if(r==AVERROR_EOF) return 0;
+      if(r!=AVERROR(EAGAIN)) return fail(e,"Compressed video output",r);
+    }
+    if(e->demux_eof) return 0;
+    r=av_read_frame(e->fmt,e->in);
+    if(r==AVERROR_EOF) {
+      e->demux_eof=1;
+      if(e->bsf && (r=av_bsf_send_packet(e->bsf,NULL))<0) return fail(e,"Video filter drain",r);
+      continue;
+    }
+    if(r<0) return fail(e,"Container read",r);
+    if(av_packet_get_side_data(e->in,AV_PKT_DATA_ENCRYPTION_INFO,NULL)) { av_packet_unref(e->in); return fail(e,"Encrypted packet unsupported",0); }
+    AVRational tb=e->fmt->streams[e->in->stream_index]->time_base;
+    if(e->fmt->streams[e->in->stream_index]->codecpar->codec_type==AVMEDIA_TYPE_SUBTITLE) {
+      av_packet_move_ref(e->out,e->in);
+      return frame_out(e,f,DTS_SUBTITLE,tb);
+    }
+    if(e->in->stream_index==e->info.audio_stream) {
+      if(e->in->pts==AV_NOPTS_VALUE || ns(e->in->pts+e->in->duration,tb)<=e->target_ns) { av_packet_unref(e->in); continue; }
+      av_packet_move_ref(e->out,e->in);
+      return frame_out(e,f,DTS_AUDIO,tb);
+    }
+    if(e->in->stream_index==e->info.video_stream) {
+      if(!e->bsf) { av_packet_move_ref(e->out,e->in); return frame_out(e,f,DTS_VIDEO,tb); }
+      r=av_bsf_send_packet(e->bsf,e->in);
+      av_packet_unref(e->in);
+      if(r<0) return fail(e,"Compressed video input",r);
+      continue;
+    }
+    av_packet_unref(e->in);
+  }
+}
 static int next_frame(DtsEngine *e,DtsFrame *f) {
+  if(e && f && e->passthrough && e->in && e->out) return next_frame_passthrough(e,f);
   if(!e || !f || !e->enc) return -1;
   av_packet_unref(e->out);
   for(;;) {
@@ -596,6 +716,12 @@ int dts_engine_seek(DtsEngine *e,double seconds) {
   int64_t timestamp=(int64_t)(seconds*1000000.0);
   int r=avformat_seek_file(e->fmt,-1,INT64_MIN,timestamp,timestamp,AVSEEK_FLAG_BACKWARD);
   if(r<0) return fail(e,"Container seek",r);
+  if(e->passthrough) {
+    if(e->bsf) av_bsf_flush(e->bsf);
+    av_packet_unref(e->in); av_packet_unref(e->out);
+    e->demux_eof=0; e->target_ns=(int64_t)(seconds*1000000000.0);
+    return 0;
+  }
   avcodec_flush_buffers(e->dec); if(e->bsf) av_bsf_flush(e->bsf);
   if(reset_encoder(e)<0) return -1;
   swr_free(&e->swr); av_channel_layout_uninit(&e->input_layout);

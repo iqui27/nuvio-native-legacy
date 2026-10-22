@@ -21,6 +21,11 @@ int legauto_escolher(const Legenda *v, int n, const char *pref, const char *midi
 // Palavras em comum entre o nome da legenda e o da midia (so para teste/log).
 int legauto_afinidade_release(const char *arquivo, const char *midia);
 
+// O que comparar com o nome das legendas: o nome do arquivo da fonte que toca
+// (Stream.arquivo, dado por legauto_fonte) quando ha, senao `url`.
+void legauto_fonte(const char *arquivo);
+const char *legauto_midia(const char *url);
+
 // Memoria por titulo+idioma, so da execucao (4 entradas, a mais velha sai).
 void     legauto_lembrar(const char *titulo, const char *idioma, uint64_t hash);
 uint64_t legauto_lembrada(const char *titulo, const char *idioma);

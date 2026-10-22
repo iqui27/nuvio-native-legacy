@@ -1,5 +1,7 @@
 // Exercita o contrato do controle com persistência real numa pasta descartável.
 #include "../src/ajustes.c"
+#include "../src/addonsui.h"
+#include "../src/pluginsui.h"
 #include <assert.h>
 #include <unistd.h>
 
@@ -27,6 +29,81 @@ int main(void) {
   dados_iniciar(dir); assert(!strcmp(dados_dir(), dir)); snprintf(dirAjustes, sizeof dirAjustes, "%s", dir);
   ajustes_iniciar(); assert(gravar());
 
+  // Seekr: sem chave avisa sem gravar; chave propria permite ligar e recarregar.
+  {
+    assert(!ajustes_seekr_habilitado());
+    antes = arquivo();
+    assert(uxAlternarDireto(AJ_SEEKR_LIGADO));
+    assert(strstr(uxAviso, "seekr.tv") && !ajustes_seekr_ligado());
+    igual(antes); free(antes);
+    seekrDefinir("seekr-chave-ficticia");
+    assert(uxAlternarDireto(AJ_SEEKR_LIGADO) && ajustes_seekr_ligado());
+    ajustes_iniciar();
+    assert(ajustes_seekr_ligado() && seekr_tem_chave());
+    seekrDefinir("");
+    assert(!ajustes_seekr_ligado() && !seekr_tem_chave());
+    assert(uxValorAtual(AJ_SEEKR_LIGADO) == 1);
+    assert(definirValorDireto(AJ_SEEKR_LIGADO, 1));
+  }
+
+  // #427: a saved request above the RAM cap stays visible, but cannot be selected again.
+  {
+    char t[160];
+    int lingua = valor[AJ_IDIOMA];
+    valor[AJ_IDIOMA] = IDIOMA_PT + 1;
+    int cap = tex_teto_ram_mb();
+    assert(cap == 160);   // no tex_iniciar: unknown RAM uses the conservative cap
+    valor[AJ_TEX_MB] = 6;
+    assert(gravar());
+    assert(!strcmp(textoValor(AJ_TEX_MB), "512 MB → 160 MB nesta TV"));
+    uxValorTexto(AJ_TEX_MB, 6, t, sizeof t);
+    assert(!strcmp(t, textoValor(AJ_TEX_MB)));
+    assert(ajustes_tex_mb() == 512 && valor[AJ_TEX_MB] == 6);
+    assert(passoAdiante(AJ_TEX_MB, -1) == 2);
+    assert(passoAdiante(AJ_TEX_MB, 1) == 0);
+    uxAbrirEditor(AJ_TEX_MB);
+    key(SDLK_UP); assert(uxPendente == 2);
+    key(SDLK_DOWN); assert(uxPendente == 2);
+    ajPontEdValor(6, 0); assert(uxPendente == 2);
+    // Clicking unavailable 400 MB must not confirm the focused 160 MB.
+    {
+      const PonteiroAlvo *alvos;
+      SDL_Event e = {0};
+      int alvo, total;
+      antes = arquivo();
+      ponteiro_iniciar(); ponteiro_teste_janela(1920, 1080);
+      ponteiro_teste_toque(1);
+      ponteiro_quadro(SDL_GetTicks());
+      ajPontEditor = 1;
+      gfx_opacidade_grupo = 0;  // register real editor targets without a GL context
+      GfxRect painel = aj2EditorR(); painel.w = 1100;  // compact layout, no GPU preview
+      aj2EditorEscolha(painel);
+      ponteiro_desenhar();
+      gfx_opacidade_grupo = 1;
+      total = ponteiro_teste_lista(&alvos);
+      for (alvo = 0; alvo < total && alvos[alvo].a != 5; alvo++) { }
+      assert(alvo < total);
+      e.type = SDL_MOUSEBUTTONDOWN; e.button.button = SDL_BUTTON_LEFT;
+      e.button.x = (int)(alvos[alvo].x + alvos[alvo].w / 2);
+      e.button.y = (int)(alvos[alvo].y + alvos[alvo].h / 2);
+      assert(ponteiro_evento(&e, ajustes_evento));
+      assert(uxEditor == 1 && uxPendente == 2 && valor[AJ_TEX_MB] == 6);
+      igual(antes); free(antes);
+      e.type = SDL_MOUSEBUTTONUP;
+      assert(ponteiro_evento(&e, ajustes_evento));
+      ponteiro_teste_toque(0); ajPontEditor = 0;
+    }
+    assert(!definirValorDireto(AJ_TEX_MB, 5));
+    key(SDLK_ESCAPE);
+    valor[AJ_TEX_MB] = 2;
+    assert(passoAdiante(AJ_TEX_MB, 1) == 0);
+    assert(!strcmp(textoValor(AJ_TEX_MB), "160 MB"));
+    valor[AJ_TEX_MB] = 0;
+    assert(passoAdiante(AJ_TEX_MB, -1) == 2);
+    assert(!strcmp(textoValor(AJ_TEX_MB), "Automático"));
+    valor[AJ_IDIOMA] = lingua;
+  }
+
   // Glass and outline are reachable without advanced settings, even when off.
   assert(!uxAvancada(AJ_VIDRO) && !uxAvancada(AJ_VIDRO_CONTORNO));
   original = valor[AJ_VIDRO]; valor[AJ_VIDRO] = 1;
@@ -39,9 +116,26 @@ int main(void) {
   assert(inativa(AJ_VIDRO_CONTORNO));
   assert(uxRequisito(AJ_VIDRO_CONTORNO) == AJ_VIDRO);
   assert(strstr(ajudaOpcao(AJ_VIDRO_CONTORNO), "Ative a interface de vidro"));
-  antes = arquivo(); abrir(AJ_VIDRO_CONTORNO);
-  assert(uxEditor == 2); igual(antes);
+  // 2.0.3 (M3): the line says what it needs and OK turns it on ("OK liga").
+  // The dry run touches nothing; the modal stays for shortcuts.
+  antes = arquivo(); focarOpcao(AJ_VIDRO_CONTORNO);
+  assert(uxLigarRequisitos(AJ_VIDRO_CONTORNO, 0) == 1); igual(antes);
+  assert(ajLinhaAviso(focoItem));
+  key(SDLK_RETURN); assert(!uxEditor && lig(AJ_VIDRO) && !inativa(AJ_VIDRO_CONTORNO) && focoOp == AJ_VIDRO_CONTORNO);
+  { char *d = arquivo(); assert(strcmp(antes, d)); free(d); } free(antes);
+  valor[AJ_VIDRO] = 1; antes = arquivo(); uxAbrirEditor(AJ_VIDRO_CONTORNO); assert(uxEditor == 2); igual(antes);
   key(SDLK_ESCAPE); igual(antes); free(antes);
+  // "liga as duas": Desfocar o proximo episodio needs Miniatura do episodio.
+  valor[AJ_CW_LIGADO] = 0; valor[AJ_CW_THUMB] = 1; valor[AJ_CW_BLUR_PROX] = 1;
+  assert(inativa(AJ_CW_BLUR_PROX) && uxLigarRequisitos(AJ_CW_BLUR_PROX, 0) == 2);
+  focarOpcao(AJ_CW_BLUR_PROX); key(SDLK_RETURN);
+  assert(lig(AJ_CW_THUMB) && lig(AJ_CW_BLUR_PROX) && !inativa(AJ_CW_BLUR_PROX));
+  // A child right under its parent is indented; the first row of a block is not.
+  { int k, ti = -1, tb = -1;
+    for (k = 0; k < AJ_N_TELA; k++) if (TELA[k].tipo == IT_OPC) {
+      if (TELA[k].op == AJ_CW_THUMB) ti = k;
+      if (TELA[k].op == AJ_CW_LIGADO) tb = k; }
+    assert(ti > 0 && tb > 0 && ajLinhaFilha(ti) && !ajLinhaFilha(tb)); }
   valor[AJ_VIDRO] = original;
 
   // Interruptor (Ligado/Desligado): OK troca e grava na hora, sem editor nem
@@ -57,8 +151,8 @@ int main(void) {
   { char falho[1400]; snprintf(falho, sizeof falho, "%s/ausente", dir); snprintf(dirAjustes, sizeof dirAjustes, "%s", falho);
     key(SDLK_RETURN); assert(valor[AJ_RELOGIO] == 0 && !uxEditor); assert(strstr(uxAviso, "salvar"));
     snprintf(dirAjustes, sizeof dirAjustes, "%s", dir); }
-  // Interruptor inativo (depende de outro) continua abrindo o aviso de requisito.
-  valor[AJ_VIDRO] = 1; focarOpcao(AJ_VIDRO_CONTORNO); key(SDLK_RETURN); assert(uxEditor == 2); key(SDLK_ESCAPE);
+  // Interruptor inativo (depende de outro): 2.0.3, o OK liga o requisito.
+  valor[AJ_VIDRO] = 1; focarOpcao(AJ_VIDRO_CONTORNO); key(SDLK_RETURN); assert(!uxEditor && lig(AJ_VIDRO));
   valor[AJ_VIDRO] = 0;
   focarOpcao(AJ_RELOGIO);
 
@@ -144,34 +238,46 @@ int main(void) {
   // Avançado encontrado pela busca é revelado e alcançável, sem ciclos extras.
   ajustes_abrir_opcao(AJ_TEX_MB); ajustes_iniciar();
   assert(focoOp == AJ_TEX_MB && !focoIndice && visivel(focoItem));
-  assert(lig(AJ_AVANCADAS));   // the deep link turned the global toggle on
+  assert(!lig(AJ_AVANCADAS) && maisAberto[secAtual]);   // 2.0.3: the deep link opens that category's "Mais opcoes", not the global toggle
   key(SDLK_ESCAPE); assert(ajustes_pediu_busca() == 2); assert(!ajustes_pediu_busca());
   assert(!uxVeioBusca);
   ajustes_abrir_opcao(AJ_TEX_MB); ajustes_iniciar(); assert(uxVeioBusca);
   ajustes_encerrar(); ajustes_iniciar(); assert(!uxVeioBusca);
   focarOpcao(AJ_TEX_MB);
-  key(SDLK_LEFT); while (uxIndice >= 2) key(SDLK_UP);   // grade: sobe ate a fileira de cima
-  while (uxChipAv || uxIndice > 0) key(SDLK_LEFT);        // e anda ate o Buscar
+  key(SDLK_LEFT); while (uxTopo < 0) key(SDLK_UP);          // grade: sobe ate os cartoes do alto
+  key(SDLK_UP); while (uxTopo != AJ2_T_BUSCA) key(SDLK_LEFT);   // e anda ate o Buscar
   key(SDLK_RETURN); assert(ajustes_pediu_busca()); assert(!ajustes_pediu_busca());
 
-  // Dependência: abrir requisito e voltar retorna à opção original.
-  valor[AJ_HERO_TRAILER] = 1; abrir(AJ_HERO_TRAILER_ESPERA); assert(uxEditor == 2);
-  key(SDLK_RETURN); assert(focoOp == AJ_HERO_TRAILER && !uxEditor);
-  key(SDLK_ESCAPE); assert(focoOp == AJ_HERO_TRAILER_ESPERA && !focoIndice);
+  // Dependência (2.0.3): requisito interruptor, OK liga e o foco fica; requisito
+  // que nao e interruptor (o layout), OK leva ate ele e Voltar devolve.
+  valor[AJ_HERO_TRAILER] = 1; focarOpcao(AJ_HERO_TRAILER_ESPERA); key(SDLK_RETURN);
+  assert(lig(AJ_HERO_TRAILER) && !inativa(AJ_HERO_TRAILER_ESPERA) && focoOp == AJ_HERO_TRAILER_ESPERA && !uxEditor);
+  valor[AJ_HOME_LAYOUT] = 1; focarOpcao(AJ_HERO_CHEIO); assert(inativa(AJ_HERO_CHEIO) && !uxLigarRequisitos(AJ_HERO_CHEIO, 0));
+  key(SDLK_RETURN); assert(focoOp == AJ_HOME_LAYOUT && !uxEditor && uxRetornarOp == AJ_HERO_CHEIO);
+  key(SDLK_ESCAPE); assert(focoOp == AJ_HERO_CHEIO && !focoIndice);
 
-  abrir(AJ_HERO_TRAILER_ESPERA); key(SDLK_RETURN); key(SDLK_DOWN);
+  focarOpcao(AJ_HERO_CHEIO); key(SDLK_RETURN); key(SDLK_DOWN);
   assert(uxRetornarOp == -1); key(SDLK_ESCAPE); assert(focoIndice);
+  valor[AJ_HOME_LAYOUT] = 0;
 
   // Categoria lembra a última opção; esconder avançados nunca deixa foco oculto.
   focarOpcao(AJ_TEX_MB); int sec = secAtual;
   focarSecao(0); focarSecao(sec); assert(focoOp == AJ_TEX_MB);
   { int ti = focoItem; (void)sec;
-    // Global toggle chip (top of the index): RIGHT from "Diferentes", OK flips it.
-    focoIndice = 1; uxIndice = 1; key(SDLK_RIGHT); assert(uxChipAv && focoIndice);
+    // "Mais opcoes" (2.0.3): OK on the row opens the category's advanced options
+    // in place and OK again closes them; the global pill shows them everywhere.
+    memset(maisAberto, 0, sizeof maisAberto); valor[AJ_AVANCADAS] = 1;
+    assert(!visivel(ti) && maisItem[sec] >= 0 && focavel(maisItem[sec]));
+    focar(maisItem[sec]); focoIndice = 0; key(SDLK_RETURN); assert(maisAberto[sec] && visivel(ti) && focoItem == maisItem[sec]);
+    key(SDLK_DOWN); assert(focoItem > maisItem[sec] && uxAvancada(focoOp));
+    focar(maisItem[sec]); key(SDLK_RETURN); assert(!maisAberto[sec] && !visivel(ti));
+    // Global pill (top of the index): RIGHT from Buscar, OK flips it.
+    focoIndice = 1; uxTopo = AJ2_T_BUSCA; key(SDLK_RIGHT); assert(uxTopo == AJ2_T_AV && focoIndice);
+    key(SDLK_RETURN); assert(lig(AJ_AVANCADAS) && visivel(ti) && !visivel(maisItem[sec]));
     key(SDLK_RETURN); assert(!lig(AJ_AVANCADAS) && !visivel(ti) && !focavel(ti));
     { char *f = arquivo(); assert(strstr(f, "avancadasLocal 1")); free(f); }
     key(SDLK_RETURN); assert(lig(AJ_AVANCADAS) && visivel(ti));
-    key(SDLK_LEFT); assert(!uxChipAv);
+    key(SDLK_LEFT); assert(uxTopo == AJ2_T_BUSCA);
     // Advanced stays hidden in EVERY category while off, visible in every one while on.
     valor[AJ_AVANCADAS] = 1; assert(!visivel(ti));
     for (i = 0; i < AJ_N_TELA; i++) if (TELA[i].tipo == IT_OPC && uxAvancada(TELA[i].op)) assert(!visivel(i));
@@ -182,26 +288,109 @@ int main(void) {
   // each over a column); below, one column per group. Up/Down inside a column,
   // Left/Right across columns at the same height, Up from the first card goes
   // to the pill over its column, OK opens.
-  { focoIndice = 1; uxChipAv = 0;
-    uxIndice = 0; key(SDLK_RIGHT); assert(uxIndice == 1 && !uxChipAv);
-    key(SDLK_RIGHT); assert(uxChipAv);
-    key(SDLK_RIGHT); assert(uxChipAv);                                          // last of the row
-    key(SDLK_LEFT); assert(!uxChipAv && uxIndice == 1);
-    key(SDLK_LEFT); assert(uxIndice == 0);
-    key(SDLK_DOWN); assert(uxIndice == 2 + AJS_HOME);                           // Buscar -> first card of Telas
-    key(SDLK_DOWN); assert(uxIndice == 2 + AJS_TITULO);
-    key(SDLK_RIGHT); assert(uxIndice == 2 + AJS_REPRODUCAO + 1);                // same height in Assistir
+  // 2.0.3 (mockup v3): pills Buscar, Avancadas, Perfil; below them the two
+  // discovery cards (O que o Nuvio faz? over Assistir+Telas, Resolver um
+  // problema over Conta e sistema); then one column per group (Assistir, Telas,
+  // Conta e sistema).
+  { focoIndice = 1; uxTopo = AJ2_T_BUSCA;
+    key(SDLK_RIGHT); assert(uxTopo == AJ2_T_AV);
+    key(SDLK_RIGHT); assert(uxTopo == AJ2_T_PERFIL);
+    key(SDLK_RIGHT); assert(uxTopo == AJ2_T_DIF);                               // Diferentes do padrao is reachable from Perfil
+    key(SDLK_RIGHT); assert(uxTopo == AJ2_T_LAYOUT);                            // #339 Painel | Lista
+    key(SDLK_RIGHT); assert(uxTopo == AJ2_T_LAYOUT);                            // last of the row
+    key(SDLK_DOWN); assert(uxTopo == AJ2_T_RESOLVER);
+    key(SDLK_LEFT); assert(uxTopo == AJ2_T_TOUR);
+    uxTopo = AJ2_T_LAYOUT; key(SDLK_LEFT); assert(uxTopo == AJ2_T_DIF);
+    key(SDLK_LEFT); assert(uxTopo == AJ2_T_PERFIL);
+    key(SDLK_LEFT); assert(uxTopo == AJ2_T_AV);
+    key(SDLK_LEFT); assert(uxTopo == AJ2_T_BUSCA);
+    key(SDLK_DOWN); assert(uxTopo == AJ2_T_TOUR);
+    key(SDLK_DOWN); assert(uxTopo < 0 && uxIndice == 2 + AJS_REPRODUCAO);       // tour -> first card of Assistir
+    key(SDLK_DOWN); assert(uxIndice == 2 + AJS_IDIOMAS);
+    key(SDLK_RIGHT); assert(uxIndice == 2 + AJS_HOME + 1);                      // same height in Telas
     key(SDLK_RIGHT); assert(uxIndice == 2 + AJS_CONTAS + 1);
     key(SDLK_RIGHT); assert(uxIndice == 2 + AJS_CONTAS + 1);                    // last column
-    key(SDLK_UP); key(SDLK_UP); assert(uxChipAv && focoIndice);                 // pill over Conta e sistema
-    key(SDLK_DOWN); assert(!uxChipAv && uxIndice == 2 + AJS_CONTAS);
-    key(SDLK_LEFT); assert(uxIndice == 2 + AJS_REPRODUCAO);
-    key(SDLK_UP); assert(uxIndice == 1 && !uxChipAv);                           // Diferentes over Assistir
-    key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_DOWN);
-    assert(uxIndice == 2 + AJS_CONTAS - 1);                                     // stops at the end of the column
-    key(SDLK_RETURN); assert(!focoIndice && secAtual == AJS_CONTAS - 1);        // OK opens
-    key(SDLK_LEFT); assert(focoIndice && uxIndice == 2 + AJS_CONTAS - 1);       // Left goes back to the card
-    uxIndice = 1; focoIndice = 1; }
+    key(SDLK_UP); key(SDLK_UP); assert(uxTopo == AJ2_T_RESOLVER && focoIndice); // card over Conta e sistema
+    key(SDLK_UP); assert(uxTopo == AJ2_T_PERFIL);
+    key(SDLK_DOWN); key(SDLK_DOWN); assert(uxTopo < 0 && uxIndice == 2 + AJS_CONTAS);
+    key(SDLK_LEFT); assert(uxIndice == 2 + AJS_HOME);
+    key(SDLK_UP); assert(uxTopo == AJ2_T_TOUR);                                 // the tour spans Assistir and Telas
+    key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_DOWN);
+    assert(uxIndice == 2 + AJS_TVAOVIVO);                                       // stops at the end of the column
+    key(SDLK_RETURN); assert(!focoIndice && secAtual == AJS_TVAOVIVO);          // OK opens
+    key(SDLK_LEFT); assert(focoIndice && uxIndice == 2 + AJS_TVAOVIVO);         // Left goes back to the card
+    // "Resolver um problema" opens its own full-screen flow (resolver.h); Back
+    // closes it and the card keeps the focus.
+    uxTopo = AJ2_T_RESOLVER; key(SDLK_RETURN); assert(!guiaAberto && resolver_aberto());
+    { SDL_Event b; memset(&b, 0, sizeof b); b.type = SDL_KEYDOWN; b.key.keysym.sym = SDLK_ESCAPE; resolver_evento(&b); }
+    assert(!resolver_aberto() && focoIndice && uxTopo == AJ2_T_RESOLVER);
+    uxTopo = AJ2_T_PERFIL; key(SDLK_RETURN); assert(!focoIndice && focoOp == AJ_PERFIL_ATIVO);
+    // Diferentes do padrao: Down goes to the discovery card, OK opens the list
+    // (uxIndice 1), Back returns to the pill.
+    focoIndice = 1; uxTopo = AJ2_T_DIF; key(SDLK_DOWN); assert(uxTopo == AJ2_T_RESOLVER);
+    key(SDLK_UP); assert(uxTopo == AJ2_T_PERFIL);
+    uxTopo = AJ2_T_DIF; valor[AJ_LARGURA_DP] = valorPadrao[AJ_LARGURA_DP] + 1;
+    key(SDLK_RETURN); assert(!focoIndice && uxIndice == 1 && uxNDifs >= 1 && uxDifFoco == 0);
+    key(SDLK_ESCAPE); assert(focoIndice && uxTopo == AJ2_T_DIF);
+    { char b[160], d[96]; aj2TopoTexto(AJ2_T_DIF, b, sizeof b, d, sizeof d);
+      char n[16]; snprintf(n, sizeof n, " · %d", uxNDifs); assert(b[0] && !strcmp(d, n)); }
+    valor[AJ_LARGURA_DP] = valorPadrao[AJ_LARGURA_DP];
+    sair = 0; focoIndice = 1; uxTopo = AJ2_T_TOUR; key(SDLK_LEFT); assert(sair); sair = 0;
+    uxIndice = 1; focoIndice = 1; uxTopo = -1; }
+  // #339 "Lista": one column. Down walks every category across the groups, Up on
+  // the first climbs to the tour, Down from either discovery card lands on the
+  // first category, Left leaves, Right stays.
+  { valor[AJ_LAYOUT_AJUSTES] = 1; assert(ajustes_layout_lista());
+    focoIndice = 1; uxTopo = AJ2_T_TOUR;
+    key(SDLK_DOWN); assert(uxTopo < 0 && uxIndice == 2);
+    { int k; for (k = 1; k < nSecoes; k++) { key(SDLK_DOWN); assert(uxIndice == 2 + k && focoIndice); } }
+    key(SDLK_DOWN); assert(uxIndice == 2 + nSecoes - 1);                         // last stays
+    key(SDLK_RIGHT); assert(uxIndice == 2 + nSecoes - 1 && focoIndice && uxTopo < 0);
+    { int k; for (k = nSecoes - 1; k > 0; k--) key(SDLK_UP); } assert(uxIndice == 2);
+    key(SDLK_UP); assert(uxTopo == AJ2_T_TOUR);
+    uxTopo = AJ2_T_RESOLVER; key(SDLK_DOWN); assert(uxTopo < 0 && uxIndice == 2);   // one column: the first
+    key(SDLK_RETURN); assert(!focoIndice && secAtual == 0);
+    key(SDLK_LEFT); assert(focoIndice && uxIndice == 2);
+    sair = 0; key(SDLK_LEFT); assert(sair); sair = 0;
+    valor[AJ_LAYOUT_AJUSTES] = 0;
+    uxIndice = 1; focoIndice = 1; uxTopo = -1; }
+  // #339: the "Painel | Lista" toggle on both screens, same key as Aparencia.
+  // Index: the pill at the end of the top row; OK flips and focus stays on it.
+  { valor[AJ_LAYOUT_AJUSTES] = 0;
+    focoIndice = 1; uxTopo = AJ2_T_DIF;
+    key(SDLK_RIGHT); assert(uxTopo == AJ2_T_LAYOUT);
+    key(SDLK_RETURN); assert(ajustes_layout_lista() && focoIndice && uxTopo == AJ2_T_LAYOUT);
+    key(SDLK_RETURN); assert(!ajustes_layout_lista() && focoIndice && uxTopo == AJ2_T_LAYOUT);
+    // Category page: Up on the first row reaches the header toggle; the row
+    // rests (not focused) but stays the same, Down returns to it.
+    { int primeiro;
+      uxTopo = -1; focarSecao(AJS_APARENCIA); uxIndice = 2 + AJS_APARENCIA; focoIndice = 1;
+      key(SDLK_RETURN); assert(!focoIndice && secAtual == AJS_APARENCIA);
+      while (!uxCabLayout) key(SDLK_UP);
+      primeiro = focoItem; assert(!aj2FocoNaLista(primeiro));
+      key(SDLK_RIGHT); assert(ajustes_layout_lista() && uxCabLayout && !focoIndice);   // Right picks Lista
+      key(SDLK_RIGHT); assert(ajustes_layout_lista() && uxCabLayout);                  // already Lista
+      key(SDLK_RETURN); assert(!ajustes_layout_lista() && uxCabLayout);                // OK flips back
+      key(SDLK_RETURN); assert(ajustes_layout_lista());
+      key(SDLK_LEFT); assert(!ajustes_layout_lista() && uxCabLayout && !focoIndice);   // Left picks Painel
+      key(SDLK_DOWN); assert(!uxCabLayout && focoItem == primeiro && aj2FocoNaLista(primeiro));
+      key(SDLK_UP); assert(uxCabLayout);
+      key(SDLK_LEFT); assert(focoIndice && !uxCabLayout && uxIndice == 2 + AJS_APARENCIA);   // on Painel, Left leaves
+      key(SDLK_RETURN); assert(!focoIndice && !uxCabLayout && focoItem == primeiro); }
+    valor[AJ_LAYOUT_AJUSTES] = 0;
+    uxIndice = 1; focoIndice = 1; uxTopo = -1; }
+  // 2.0.3: as listas de addons/plugins voltam para a linha de onde sairam
+  // (Fontes e addons), e nao para o indice; Voltar/ESC/Esquerda saem delas.
+  { SDL_Event ev = { 0 };
+    ajustes_voltar_de_lista(0); ajustes_iniciar();
+    assert(!focoIndice && focoOp == AJ_ADDONS && !uxVeioBusca);
+    ajustes_voltar_de_lista(1); ajustes_iniciar();
+    assert(!focoIndice && focoOp == AJ_PLUGINS);
+    ev.type = SDL_KEYDOWN;
+    addonsui_abrir(); ev.key.keysym.sym = SDLK_ESCAPE; addonsui_evento(&ev); assert(addonsui_quer_sair());
+    addonsui_abrir(); ev.key.keysym.sym = SDLK_LEFT; addonsui_evento(&ev); assert(addonsui_quer_sair());
+    pluginsui_abrir(); ev.key.keysym.sym = SDLK_ESCAPE; pluginsui_evento(&ev); assert(pluginsui_quer_sair());
+    uxIndice = 1; focoIndice = 1; uxTopo = -1; }
   valor[AJ_ANIM] = 1; ajustes_atualizar(1.0f, SDL_GetTicks());
   assert(animItem[focoItem] == 0);
 
@@ -215,6 +404,14 @@ int main(void) {
   // Toda opcao visivel tem uma escolha explicita no mapa visual.
   for (i=0;i<AJ_N_TELA;i++) if (TELA[i].tipo == IT_OPC)
     assert(strcmp(ajVisualIcone(TELA[i].op), "aj_settings-2"));
+
+  // Apoiar o projeto: OK abre o painel dos QRs, o foco fica na linha, Voltar e OK fecham.
+  assert(apoio_n() > 0);
+  focarOpcao(AJ_APOIAR); assert(!apoioAberto);
+  key(SDLK_RETURN); assert(apoioAberto && !uxEditor);
+  key(SDLK_DOWN); assert(apoioAberto && focoOp == AJ_APOIAR);   // setas nao andam por tras
+  key(SDLK_ESCAPE); assert(!apoioAberto && focoOp == AJ_APOIAR);
+  key(SDLK_RETURN); assert(apoioAberto); key(SDLK_RETURN); assert(!apoioAberto && focoOp == AJ_APOIAR);
 
   // Reabrir a tela preserva valores confirmados e não confirma rascunhos.
   int confirmado = valor[AJ_RELOGIO]; ajustes_encerrar(); ajustes_iniciar();

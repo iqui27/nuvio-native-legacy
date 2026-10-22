@@ -59,7 +59,7 @@ typedef struct {
 
 typedef struct {
   unsigned ger;
-  char aut[1200];
+  char aut[3040];
   int  nOps;
   JobOp ops[JOB_OPS];
   int  get, getPerfil, getStatus;
@@ -181,6 +181,14 @@ static int fio(void *u) {
   Job *j = (Job *)u;
   int i;
   const char *cab[5];
+  char token[3000];
+  int autenticado = sessao_token_copiar(token, sizeof token);
+  if (autenticado) snprintf(j->aut, sizeof j->aut, "Authorization: Bearer %s", token);
+  memset(token, 0, sizeof token);
+  if (!autenticado) {
+    for (i = 0; i < j->nOps; i++) j->ops[i].status = -1;
+    goto fim;
+  }
   for (i = 0; i < j->nOps; i++) {
     JobOp *o = &j->ops[i];
     char *r;
@@ -205,6 +213,7 @@ static int fio(void *u) {
     j->getCorpo = rede_baixar_etag(url, PRAZO_S, cab, &j->getStatus, j->getEtag, sizeof j->getEtag);
   }
   for (i = 0; i < j->nRec; i++) reconciliar(&j->rec[i]);
+fim:
   SDL_LockMutex(mtx);
   pronto = 1;
   SDL_UnlockMutex(mtx);
@@ -254,7 +263,7 @@ static int lancar(Uint32 agora) {
   Job *j;
   int i, n = trava_fila_n(), querGet, querRec;
   SDL_Thread *th;
-  if (emVoo || !ativa() || !sessao_logada() || !sessao_token()[0] || !trava_conta()[0]) return 0;
+  if (emVoo || !ativa() || !sessao_logada() || !trava_conta()[0]) return 0;
   querGet = (int)(agora - esperaGet) >= 0 &&
             (pedirJa || revServidor != revAplicada || perfilGet != trava_perfil_ativo() ||
              (int)(agora - proxGet) >= 0);
@@ -264,7 +273,6 @@ static int lancar(Uint32 agora) {
   j = (Job *)calloc(1, sizeof *j);
   if (!j) return 0;
   j->ger = ger;
-  snprintf(j->aut, sizeof j->aut, "Authorization: Bearer %s", sessao_token());
   if ((int)(agora - proxEnvio) >= 0)
     for (i = 0; i < n && j->nOps < JOB_OPS; i++) {
       TravaOp op;

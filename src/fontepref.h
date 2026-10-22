@@ -149,6 +149,33 @@ typedef struct {
   long long quandoS;                // time(NULL) da escolha
 } FontePref;
 
+// --- A MEMORIA DO AUTOMATICO (2.0.4, #310) ---------------------------------
+//
+// Quem nunca abre a folha de fontes nunca teve preferencia gravada, e o
+// episodio seguinte caia na pontuacao, que pode trocar de release. Agora o
+// bingeGroup da fonte que o AUTOMATICO escolheu e que TOCOU (app.c, so depois
+// de o video andar) tambem e guardado — mas SEPARADO da escolha da pessoa:
+// outra tabela, outro arquivo (fontepref-auto-p<N>.txt, que o app antigo nem
+// le, entao o formato da manual nao muda). Por isso fontepref_tem e
+// fontepref_do_titulo continuam respondendo SO pela manual: e delas que
+// dependem a folha abrir em "escolher ao reproduzir", o "Sua escolha anterior"
+// e o Retomar. A manual sempre vence: com ela gravada a automatica nem entra, e
+// gravar uma manual apaga a automatica do titulo.
+//
+// Guarda so o bingeGroup (sem grupo nao guarda nada: a heuristica de
+// provedor+audio foi feita para uma escolha deliberada). Ao ler, so segue o
+// grupo se isso nao rebaixar o que o automatico escolheria hoje
+// (stream_grupo_sem_perda: regras do dono, faixa, DV, MP4 da LG). Grupo ausente
+// na lista: cai calado na pontuacao e NAO apaga a memoria. Outro grupo que
+// TOCOU em automatico substitui (e a release que de fato esta disponivel);
+// vence o prazo da manual (FONTEPREF_VALIDADE_S).
+// 1 = guardou/atualizou; 0 = nada (sem grupo, manual existente, episodio nao).
+int fontepref_auto_guardar(const char *id, const Stream *s);
+// Como fontepref_escolher, mas SO a escolha da pessoa: para a folha de fontes e
+// para "escolher a fonte ao reproduzir", onde a automatica nao pode aparecer
+// como escolha nem tocar sozinha.
+int fontepref_escolher_manual(const char *id);
+
 // Le o arquivo do perfil corrente. Chamar no arranque, depois de
 // dados_iniciar. Sem pasta de dados e no-op silencioso (dados.c ja explicou no
 // log por que nao ha pasta) e a tabela comeca vazia.

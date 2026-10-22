@@ -156,6 +156,22 @@ int main(void) {
     assert(!prox_seguinte(&c, NULL, 0, 90, AGORA, &s));
   }
 
+
+  // 2.0.3: O EPISODIO SEGUINTE, a regra unica do cartao e da janela.
+  { CatEp l[8];
+    l[0] = ep(1, 1, "a", ""); l[1] = ep(1, 2, "b", ""); l[2] = ep(1, 2, "b2", "");   // repetido
+    l[3] = ep(1, 4, "d", "");                                                    // E3 falta
+    l[4] = ep(2, 1, "e", ""); l[5] = ep(0, 1, "especial", ""); l[6] = ep(2, 2, "f", "");
+    assert(prox_indice_seguinte(l, 7, 1, 1) == 1);           // E1 -> E2
+    assert(prox_indice_seguinte(l, 7, 1, 2) == 3);           // E2 repetido nao e o proximo; E3 falta -> E4
+    assert(prox_indice_seguinte(l, 7, 1, 4) == 4);           // fim da temporada -> T2E1
+    assert(prox_indice_seguinte(l, 7, 2, 1) == 6);           // especial (T0) nunca e o proximo
+    assert(prox_indice_seguinte(l, 7, 2, 2) == -1);          // fim da serie
+    assert(prox_indice_seguinte(l, 7, 1, 3) == 3);           // tocando um que a lista nao tem
+    assert(prox_indice_seguinte(l, 7, 0, 1) == 0);           // tocando especial: segue a T1
+    assert(prox_indice_seguinte(NULL, 0, 1, 1) == -1);
+    puts("ok  proximo episodio: repetido, faltando, virada, especial, fim");
+  }
   puts("proximo: PASS (ancora absoluta, janela de novidade, virada de temporada,"
        " fim da serie, sem progresso)");
   return 0;

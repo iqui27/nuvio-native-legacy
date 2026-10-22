@@ -12,5 +12,5 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 # e linkar o app inteiro aqui so tornaria o teste lento e fragil.
 cc ${flags[@]+"${flags[@]}"} src/catordem.c src/js.c tests/catordem.c \
   -Isrc -o /tmp/nuvio-catordem-tests -O1 -g \
-  -Wall -Wno-deprecated-declarations -Wno-macro-redefined
+  -lpthread -Wall -Wno-deprecated-declarations -Wno-macro-redefined
 /tmp/nuvio-catordem-tests

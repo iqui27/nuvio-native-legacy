@@ -12,6 +12,9 @@
 #include <unistd.h>
 #include <pthread.h>
 
+unsigned int SDL_GetTicks(void) { return 0; }
+void marco(const char *m) { (void)m; }
+
 extern int trakt_operacao_estado(int tipo);
 
 static int lat(const char *k, int padrao) {
@@ -124,8 +127,9 @@ int main(void) {
     for (i = 0; i < n; i++) { const char *c = v[i].imdb; while (*c) h = h * 33 + (unsigned char)*c++; }
     printf("[arranque-trakt] n=%d hash=%u\n", n, h); }
   assert(ns == 1 && !strcmp(s[0].imdb, "tt8888888"));
-  // ordem: mais recente primeiro (o historico anda de marco 1 a marco 21)
-  for (i = 1; i < n; i++) assert(v[i - 1].retomadoMs >= v[i].retomadoMs);
+  // Pausado preservado primeiro; sugestoes por recencia nos lugares restantes.
+  assert(n == 12 && !strcmp(v[0].imdb, "tt7777777") && v[0].progresso == 40);
+  for (i = 2; i < n; i++) assert(v[i - 1].retomadoMs >= v[i].retomadoMs);
   (void)0;
   assert(nHist >= 2);          // historico + filmes vistos chegaram ao mapa
   { double a = agoraMs(); int m;

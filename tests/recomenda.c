@@ -328,6 +328,65 @@ int main(void) {
     CONFERE(!recomenda_enviar(&ci, "trakt:gustavo", 99, ""), "modelo 99 recusado");
     CONFERE(!recomenda_enviar(&ci, "", 0, ""), "sem destinatario, recusado"); }
 
+  // --- 9b. card de Continuar assistindo de SERIE (issue #363) --------------
+  // O CatItem do card carrega "tt123:S:E" em `imdb`. O servidor so aceita
+  // /^tt\d+$/ (HTTP 400): o que viaja tem de ser o id da serie.
+  { CatItem ci;
+    memset(&ci, 0, sizeof ci);
+    snprintf(ci.imdb, sizeof ci.imdb, "%s", "tt17887410:2:5");
+    snprintf(ci.tipo, sizeof ci.tipo, "%s", "series");
+    snprintf(ci.titulo, sizeof ci.titulo, "%s", "Dark Matter");
+    respStatus = 200;
+    respCorpo = "{\"ok\":1,\"id\":10}";
+    envioEstado = REC_ENVIO_NADA;
+    fila.cheia = 0;
+    CONFERE(recomenda_enviar(&ci, "trakt:gustavo", 4, ""), "serie: o envio entra na fila");
+    nPost = 0;
+    enviarFila(cab);
+    CONFERE(strstr(ultimoCorpoPost, "\"imdb\":\"tt17887410\"") != NULL,
+            "serie: imdb sem temporada/episodio: [%s]", ultimoCorpoPost);
+    CONFERE(strstr(ultimoCorpoPost, "tt17887410:") == NULL,
+            "serie: sem sufixo :S:E no corpo: [%s]", ultimoCorpoPost); }
+
+  // --- 9c. mesmo card de serie nos OUTROS remetentes (atividade, evento) ----
+  // Todo caminho que manda imdb ao servidor manda o id da serie, nunca "tt:S:E".
+  { CatItem ci;
+    RecAtiv a;
+    memset(&ci, 0, sizeof ci);
+    snprintf(ci.imdb, sizeof ci.imdb, "%s", "tt17887410:2:5");
+    snprintf(ci.tipo, sizeof ci.tipo, "%s", "series");
+    snprintf(ci.titulo, sizeof ci.titulo, "%s", "Dark Matter");
+    respStatus = 200;
+    respCorpo = "{\"ok\":1}";
+    // /v1/atividade assistiu/agora (ativEnfileirar)
+    perfil.ativ = 2;
+    nAtivFila = 0;
+    ativEnfileirar(&ci, 0);
+    nPost = 0;
+    enviarAtividade(cab);
+    CONFERE(nPost == 1, "atividade: um POST, nao %d", nPost);
+    CONFERE(strstr(ultimoCorpoPost, "\"imdb\":\"tt17887410\"") != NULL,
+            "atividade: imdb da serie: [%s]", ultimoCorpoPost);
+    CONFERE(strstr(ultimoCorpoPost, "tt17887410:") == NULL,
+            "atividade: sem sufixo :S:E: [%s]", ultimoCorpoPost);
+    // /v1/atividade com "ev" (recomenda_atividade + enviarAtivNova)
+    memset(&a, 0, sizeof a);
+    snprintf(a.ev, sizeof a.ev, "%s", "fim");
+    snprintf(a.imdb, sizeof a.imdb, "%s", "tt17887410:2:5");
+    snprintf(a.midia, sizeof a.midia, "%s", "series");
+    snprintf(a.titulo, sizeof a.titulo, "%s", "Dark Matter");
+    a.temporada = 2; a.episodio = 5;
+    alcance = 1; alcancePendente = -2; nAtivN = 0;
+    CONFERE(recomenda_atividade(&a), "evento entra na fila");
+    nPost = 0;
+    enviarAtivNova(cab);
+    CONFERE(nPost == 1, "evento: um POST, nao %d", nPost);
+    CONFERE(strstr(ultimoCorpoPost, "\"imdb\":\"tt17887410\"") != NULL,
+            "evento: imdb da serie: [%s]", ultimoCorpoPost);
+    CONFERE(strstr(ultimoCorpoPost, "tt17887410:") == NULL,
+            "evento: sem sufixo :S:E: [%s]", ultimoCorpoPost);
+    CONFERE(strstr(ultimoCorpoPost, "\"temporada\":2") != NULL, "evento: temporada preservada"); }
+
   // --- 10. o JSON do envio escapa aspas ------------------------------------
   { char esc[80];
     jsonEsc(esc, sizeof esc, "as\"pas\\e barra");

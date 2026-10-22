@@ -1,3 +1,4 @@
+#include "arteurl.h"
 #include "agenda.h"
 #include "dados.h"
 #include "perfis.h"
@@ -33,7 +34,7 @@
 typedef struct {
   char imdb[24];
   char titulo[160];
-  char poster[512];
+  char poster[NV_ARTE_URL_MAX];
   int  situacao;
   int  temporada, episodio;
   char nomeEp[120];
@@ -357,7 +358,7 @@ static const char *campo(const char *p, char *dst, size_t tam) {
 // perde a sinopse e ganha de volta na proxima passada do fio. Inserir no MEIO
 // deslocaria todos os campos seguintes em silencio, e o sintoma seria uma data
 // no lugar do nome do episodio.
-#define AG_LINHA_BYTES 2200
+#define AG_LINHA_BYTES (2200 + NV_ARTE_URL_MAX - 512)
 
 static void gravarCache(void) {
   char *txt;
@@ -368,7 +369,7 @@ static void gravarCache(void) {
   if (!txt) return;
   txt[0] = 0;
   for (i = 0; i < nCache; i++) {
-    char t[160], po[512], ne[120], si[400], re[64], ge[48], fu[512];
+    char t[160], po[NV_ARTE_URL_MAX], ne[120], si[400], re[64], ge[48], fu[512];
     limpo(t, sizeof t, cache[i].titulo);
     limpo(po, sizeof po, cache[i].poster);
     limpo(ne, sizeof ne, cache[i].nomeEp);
@@ -997,7 +998,7 @@ static char *metaGetAg(const char *url, int seg, int *st, void *ctx) {
 // de AgReg; `prox`/`ult` = alguma fonte ja AFIRMOU o proximo/ultimo episodio
 // (inclusive "nao ha"), e a seguinte nao mexe mais nele.
 typedef struct {
-  char titulo[160], poster[512], status[32];
+  char titulo[160], poster[NV_ARTE_URL_MAX], status[32];
   int  temp, ep;
   char nomeEp[120], dataProx[16], dataUlt[16];
   char sinopse[400], tipoEp[24], rede[64], genero[48];
@@ -1275,7 +1276,7 @@ static int cinemetaLer(AgBusca *b, const char *corpo, const char *hoje) {
     // cartaz sai do cache de textura em vez de ser uma segunda copia.
     char *k = strstr(b->poster, "/poster/small/");
     if (k) {
-      char resto[512];
+      char resto[NV_ARTE_URL_MAX];
       snprintf(resto, sizeof resto, "%s", k + strlen("/poster/small/"));
       snprintf(k, sizeof b->poster - (size_t)(k - b->poster), "/poster/medium/%s", resto);
     }
@@ -1402,7 +1403,7 @@ static void buscarSerie(const char *imdb, const char *titulo, const char *poster
 // garante uma fila so por vez, entao os vetores podem ser estaticos.
 static char filaImdb[AG_MAX][24];
 static char filaTit[AG_MAX][160];
-static char filaPoster[AG_MAX][512];
+static char filaPoster[AG_MAX][NV_ARTE_URL_MAX];
 static long filaTmdb[AG_MAX];
 static int  nFila;
 static char filaHoje[12];

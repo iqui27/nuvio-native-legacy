@@ -1,0 +1,5 @@
+=== (1) literal desenhado SEM chave na tabela: 0 ===
+
+=== (2) snprintf em portugues SEM i18n no formato: 0 ===
+
+=== (3) funcao que devolve rotulo em portugues, chamada sem i18n(): 0 ===

@@ -16,12 +16,13 @@
 #define NV_CREDFONTE_H
 
 enum { CRED_FONTE_NENHUMA = 0, CRED_FONTE_CAPITULO, CRED_FONTE_INTRODB,
-       CRED_FONTE_VIZINHO, CRED_FONTE_APRENDIDO };
+       CRED_FONTE_VIZINHO, CRED_FONTE_APRENDIDO, CRED_FONTE_ANISKIP };
 
 typedef struct {
   double dur;                   // duracao REAL deste episodio, em s
   double capitulo;              // inicio do capitulo de creditos (0 = nao ha)
-  double introdb;               // inicio do marcador deste episodio (0 = nao ha)
+  double introdb;               // inicio do marcador do TheIntroDB deste episodio (0 = nao ha)
+  double aniskip;               // idem, vindo do AniSkip (mesma prioridade do introdb)
   double vizInicio, vizDur;     // marcador do vizinho e a duracao dele (0 = nao ha / desconhecida)
   double aprendidoResto;        // quanto faltava quando o dono apertou Proximo (0 = nada)
 } CredEntrada;

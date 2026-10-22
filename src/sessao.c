@@ -19,8 +19,31 @@
 // perguntando so gasta bateria do aparelho e mostra um codigo morto na tela.
 #define LOGIN_LIMITE_MS 600000
 
-static char acesso[3000];
-static char renovar[3000];
+// ESTADO DO TOKEN, guardado por tokTrava (#203). Renovacao e RPC rodam em
+// varios fios ao mesmo tempo (sync.c, contapend.c, visto.c, perfilsel.c via
+// perfis.c, o fio do login) e quem monta "Bearer <token>" le de outros fios
+// (recomenda.c, avisos.c). Sem trava, um leitor podia pegar o JWT pela metade
+// (401 falso -> mais renovacoes) e dois fios renovavam com o MESMO refresh
+// token (o segundo leva 400 e desloga todo mundo).
+//
+// REGRAS DA TRAVA:
+//  - tokTrava NUNCA fica presa durante rede (nuvem_post/nuvem_tabela). Quem vai
+//    falar com o servidor copia o token para um buffer local e solta.
+//  - Ordem de travas: tokTrava -> dadosTrava (gravarSessao/dados_apagar sob
+//    tokTrava). Nenhum outro modulo e chamado com ela presa; e dados.c nunca
+//    chama de volta aqui. Quem segura trava de outro modulo pode chamar
+//    sessao_* (tokTrava e folha), mas nao o contrario.
+//  - Renovacao e de UM fio so por vez (renovando + tokCond): ver renovarToken.
+static pthread_mutex_t tokTrava = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  tokCond  = PTHREAD_COND_INITIALIZER;
+static int      renovando;        // um fio esta no meio da renovacao
+static unsigned rodada;           // +1 a cada renovacao terminada
+static int      rodadaRes;        // resultado da ultima rodada (1/0/-1)
+static int      rodadaSt;         // HTTP da ultima rodada
+
+#define TOKMAX 3000
+static char acesso[TOKMAX];
+static char renovar[TOKMAX];
 static char sub[80];
 static int  anonima;              // 1 quando o token e da sessao anonima
 static long expiraEm;             // `exp` do JWT, em segundos
@@ -73,20 +96,23 @@ static int b64url(const char *s, size_t n, char *dst, size_t tam) {
 // Le `sub` e `exp` do payload. Sem isto o app nao sabe de quem e a sessao nem
 // quando ela vence, e so descobriria pelo 401 — depois de a operacao ja ter
 // falhado uma vez.
+// Chamar com tokTrava presa (ou antes de existir outro fio, em
+// sessao_iniciar). `sub` so e reescrito quando MUDA: sessao_usuario() devolve
+// o ponteiro e e lido sem trava por ~30 chamadores; numa renovacao do mesmo
+// usuario o texto e identico e nao pode passar por "" no meio.
 static void lerJwt(const char *token) {
   const char *p1, *p2;
-  char payload[2200];
-  sub[0] = 0;
-  expiraEm = 0;
-  if (!token || !*token) return;
-  p1 = strchr(token, '.');
-  if (!p1) return;
-  p2 = strchr(p1 + 1, '.');
-  if (!p2) return;
-  if (!b64url(p1 + 1, (size_t)(p2 - p1 - 1), payload, sizeof payload)) return;
-  { const char *fim = payload + strlen(payload);
-    js_texto(payload, fim, "sub", sub, sizeof sub);
-    expiraEm = (long)js_num(payload, fim, "exp", 0); }
+  char payload[2200], s[sizeof sub];
+  long exp = 0;
+  s[0] = 0;
+  if (token && *token && (p1 = strchr(token, '.')) && (p2 = strchr(p1 + 1, '.')) &&
+      b64url(p1 + 1, (size_t)(p2 - p1 - 1), payload, sizeof payload)) {
+    const char *fim = payload + strlen(payload);
+    js_texto(payload, fim, "sub", s, sizeof s);
+    exp = (long)js_num(payload, fim, "exp", 0);
+  }
+  if (strcmp(sub, s)) snprintf(sub, sizeof sub, "%s", s);
+  expiraEm = exp;
 }
 
 // Forma de JWT (tres partes nao vazias, sem espaco): so a FORMA, a assinatura e
@@ -102,12 +128,14 @@ static int jwtValido(const char *t) {
 }
 
 // Folga de 30s, igual a do web: um token que vence durante a requisicao volta
-// como 401 e custa a viagem inteira.
-static int vencido(void) {
+// como 401 e custa a viagem inteira. O Worker (sessao_token_copiar) usa 60s.
+// tokTrava presa.
+static int vencidoEm(long folga) {
   if (!acesso[0]) return 1;
   if (!expiraEm) return 0;   // sem exp legivel, so o servidor pode dizer
-  return expiraEm <= (long)time(NULL) + 30;
+  return expiraEm <= (long)time(NULL) + folga;
 }
+static int vencido(void) { return vencidoEm(30); }
 
 // FALHA DO SERVIDOR, e nao da pessoa (#215): sem resposta, 429 ou 5xx. Nesses
 // casos nada que a TV tem e invalido — o token, o refresh token, o codigo — e
@@ -137,12 +165,14 @@ static void erroServidor(int st) {
 
 // ---------------------------------------------------------------- disco
 
+// tokTrava presa (ordem tokTrava -> dadosTrava).
 static void gravarSessao(void) {
   char buf[6400];
   snprintf(buf, sizeof buf, "%s\n%s\n%d\n", acesso, renovar, anonima ? 1 : 0);
   dados_gravar(ARQ_SESSAO, buf);
 }
 
+// tokTrava presa.
 static void limpar(void) {
   acesso[0] = renovar[0] = sub[0] = 0;
   anonima = 0;
@@ -155,30 +185,51 @@ static void limpar(void) {
 // formatos que aparecem: /auth/v1/signup, /auth/v1/token e a funcao de troca —
 // todos trazem access_token/refresh_token, uns na raiz, outros dentro de
 // "session".
-static int guardarTokens(const char *corpo, int ehAnonima) {
+// Extrai sem trava; quem grava e gravarTokensL (trava presa).
+static int extrairTokens(const char *corpo, char *a, char *r /* TOKMAX cada */) {
   const char *fim, *ses;
-  char a[3000], r[3000];
   if (!corpo) return 0;
   fim = corpo + strlen(corpo);
   a[0] = r[0] = 0;
-  js_texto(corpo, fim, "access_token", a, sizeof a);
-  js_texto(corpo, fim, "refresh_token", r, sizeof r);
+  js_texto(corpo, fim, "access_token", a, TOKMAX);
+  js_texto(corpo, fim, "refresh_token", r, TOKMAX);
   if (!a[0]) {
     ses = strstr(corpo, "\"session\"");
     if (ses) {
-      js_texto(ses, fim, "access_token", a, sizeof a);
-      js_texto(ses, fim, "refresh_token", r, sizeof r);
+      js_texto(ses, fim, "access_token", a, TOKMAX);
+      js_texto(ses, fim, "refresh_token", r, TOKMAX);
     }
   }
-  if (!a[0] || !jwtValido(a)) return 0;
+  return a[0] && jwtValido(a);
+}
+
+// tokTrava presa.
+static void gravarTokensL(const char *a, const char *r, int ehAnonima) {
   // ATOMICO (#223): o que ja estava (sessao anterior, anonima) so e trocado
   // quando a resposta nova esta inteira; resposta torta nao deixa meia sessao.
+  // E sob tokTrava (#203): nenhum leitor ve metade do JWT.
   snprintf(acesso, sizeof acesso, "%s", a);
   snprintf(renovar, sizeof renovar, "%s", r);
   anonima = ehAnonima ? 1 : 0;
   lerJwt(acesso);
   gravarSessao();
+}
+
+static int guardarTokens(const char *corpo, int ehAnonima) {
+  char a[TOKMAX], r[TOKMAX];
+  a[0] = r[0] = 0;
+  if (!extrairTokens(corpo, a, r)) return 0;
+  pthread_mutex_lock(&tokTrava);
+  gravarTokensL(a, r, ehAnonima);
+  pthread_mutex_unlock(&tokTrava);
   return 1;
+}
+
+// Copia do token atual para um buffer do chamador (para ir na rede sem trava).
+static void copiarAcesso(char *dst, size_t n) {
+  pthread_mutex_lock(&tokTrava);
+  snprintf(dst, n, "%s", acesso);
+  pthread_mutex_unlock(&tokTrava);
 }
 
 // ---------------------------------------------------------------- anonima
@@ -205,29 +256,96 @@ static int sessaoAnonima(void) {
 
 // ---------------------------------------------------------------- renovacao
 
-// Status HTTP da ultima renovacao, para chamar() devolver a quem pediu o
-// motivo real (um 504 da renovacao nao e um 401 da RPC).
-static int stRenovacao;
+static void apagar(volatile char *p, size_t n) { while (n--) *p++ = 0; }
 
-// 1 = renovado; 0 = recusado de verdade (sessao encerrada); -1 = o servidor
-// nao respondeu: a sessao FICA, e a proxima chamada tenta de novo.
-static int renovarToken(void) {
+// UMA RENOVACAO POR VEZ (#203). `visto` e o token com que o chamador levou o
+// 401; NULL quando a renovacao e por vencimento (token vencido antes da RPC).
+//   - Se outro fio ja trocou o token (acesso != visto, ou nao esta mais
+//     vencido), nao renova: devolve 1 e o chamador repete com o token novo.
+//   - Se outro fio esta renovando agora, espera ele terminar (tokCond) e usa o
+//     resultado DELE: dez fios com 401 no mesmo segundo fazem UMA renovacao, e
+//     com o servidor em 504 fazem UM pedido, nao dez.
+//   - So o fio que renova vai a rede, e sem tokTrava presa.
+// Sem `visto`, renova so se o token vence em `folga` segundos ou menos.
+// 1 = renovado (por este fio ou por outro); 0 = recusado de verdade (sessao
+// encerrada); -1 = o servidor nao respondeu: a sessao FICA, e a proxima
+// chamada tenta de novo. *stOut recebe o HTTP da renovacao que decidiu.
+static int renovarToken(const char *visto, long folga, int *stOut) {
   Jsw w;
   char *resp;
-  int st = 0, ok;
-  stRenovacao = 0;
-  if (!renovar[0]) return 0;
+  char r[TOKMAX], a2[TOKMAX], r2[TOKMAX];
+  int st = 0, ok, ehAnon;
+  *stOut = 0;
+  pthread_mutex_lock(&tokTrava);
+  for (;;) {
+    if (visto ? (acesso[0] && strcmp(acesso, visto)) : (acesso[0] && !vencidoEm(folga))) {
+      pthread_mutex_unlock(&tokTrava);
+      return 1;
+    }
+    if (!renovar[0]) { pthread_mutex_unlock(&tokTrava); return 0; }
+    if (!renovando) break;
+    { unsigned minha = rodada;
+      while (renovando && rodada == minha) pthread_cond_wait(&tokCond, &tokTrava);
+      if (rodada != minha && rodadaRes <= 0) {
+        // A rodada que esperei falhou: herdo o resultado em vez de bater no
+        // servidor de novo com o mesmo refresh token.
+        int res = rodadaRes;
+        *stOut = rodadaSt;
+        pthread_mutex_unlock(&tokTrava);
+        return res;
+      }
+    }
+    // Rodada terminou bem (ou foi de outra sessao): reavalia do topo.
+  }
+  renovando = 1;
+  snprintf(r, sizeof r, "%s", renovar);
+  ehAnon = anonima;
+  pthread_mutex_unlock(&tokTrava);
+
   jsw_iniciar(&w);
   jsw_obj_ini(&w);
-  jsw_cs(&w, "refresh_token", renovar);
+  jsw_cs(&w, "refresh_token", r);
   jsw_obj_fim(&w);
   resp = nuvem_post("/auth/v1/token?grant_type=refresh_token",
                     jsw_texto_final(&w), NULL, &st);
   jsw_livre(&w);
-  ok = (resp && st >= 200 && st < 300 && guardarTokens(resp, anonima));
+  ok = (resp && st >= 200 && st < 300 && extrairTokens(resp, a2, r2));
   free(resp);
-  stRenovacao = st;
-  if (!ok && falhaServidor(st)) {
+
+  pthread_mutex_lock(&tokTrava);
+  // A SESSAO PODE TER MUDADO durante a rede: sessao_sair, ou um login novo.
+  // Resposta de um refresh token que ja nao e o da sessao nao grava nada e,
+  // se for recusa, nao apaga a sessao nova de ninguem.
+  if (strcmp(renovar, r)) {
+    rodadaRes = 1;   // quem esperava reavalia contra a sessao nova
+  } else if (ok) {
+    gravarTokensL(a2, r2, ehAnon);
+    rodadaRes = 1;
+  } else if (falhaServidor(st)) {
+    rodadaRes = -1;
+  } else {
+    // Renovacao recusada e o fim da sessao, nao um erro transitorio: insistir
+    // com um refresh token invalido devolve 400 para sempre. DECISAO (#203):
+    // continua deslogando daqui, de um fio de trabalho — e o mesmo que o app ja
+    // fazia, e e o certo SO porque agora (a) e uma recusa 4xx do servidor, nunca
+    // falha de transporte (#215), e (b) a renovacao e unica: o 400 de "refresh
+    // token ja usado" que a corrida produzia entre dois fios deste app nao
+    // acontece mais. Um 4xx aqui e de fato o servidor dizendo que a sessao acabou.
+    printf("[sessao] renovacao recusada (HTTP %d): saindo\n", st);
+    limpar();
+    dados_apagar(ARQ_SESSAO);
+    estado = SES_DESLOGADO;
+    rodadaRes = 0;
+  }
+  rodadaSt = st;
+  rodada++;
+  renovando = 0;
+  ok = rodadaRes;
+  pthread_cond_broadcast(&tokCond);
+  pthread_mutex_unlock(&tokTrava);
+  apagar(r, sizeof r);
+  *stOut = st;
+  if (ok < 0) {
     // O SERVIDOR CAIU, O TOKEN NAO (#215). Ate aqui qualquer falha da
     // renovacao apagava a sessao do disco: com o servidor da conta em 504 por
     // horas, cada TV cujo token vencesse nesse intervalo saia da conta sozinha
@@ -235,46 +353,53 @@ static int renovarToken(void) {
     // servidor. So uma RECUSA (4xx) encerra a sessao.
     printf("[sessao] renovacao sem resposta do servidor (HTTP %d): sessao mantida\n", st);
     nuvem_falhou();
-    return -1;
-  }
-  if (!ok) {
-    // Renovacao recusada e o fim da sessao, nao um erro transitorio: insistir
-    // com um refresh token invalido devolve 400 para sempre.
-    printf("[sessao] renovacao recusada (HTTP %d): saindo\n", st);
-    limpar();
-    dados_apagar(ARQ_SESSAO);
-    estado = SES_DESLOGADO;
   }
   return ok;
 }
 
 // ---------------------------------------------------------------- RPC
 
-static char *chamar(const char *caminho, const char *corpo, int *status) {
+// Mesma logica para RPC/funcao (POST) e tabela (GET). O token vai para a rede
+// como COPIA local, nunca o buffer `acesso` (que outro fio pode reescrever).
+static char *pedir(int tabela, const char *a1, const char *a2, int *status) {
+  char tok[TOKMAX];
   char *resp;
-  int st = 0;
+  int st = 0, precisa, temR;
   if (!nuvem_pronta()) { if (status) *status = 0; return NULL; }
   // Token vencido e servidor sem responder a renovacao: nem tenta a RPC (ela
   // voltaria 401 e pediria outra renovacao). O status e o da renovacao, para
   // quem chamou saber que a falha e do servidor e usar a copia (sync.c).
-  if (vencido() && renovar[0] && renovarToken() < 0) {
-    if (status) *status = stRenovacao;
-    return NULL;
+  pthread_mutex_lock(&tokTrava);
+  precisa = vencido() && renovar[0];
+  pthread_mutex_unlock(&tokTrava);
+  if (precisa) {
+    int stR;
+    if (renovarToken(NULL, 30, &stR) < 0) { if (status) *status = stR; return NULL; }
   }
-  resp = nuvem_post(caminho, corpo, acesso, &st);
-  if (st == 401 && renovar[0]) {
-    int rr;
+  copiarAcesso(tok, sizeof tok);
+  resp = tabela ? nuvem_tabela(a1, a2, tok, &st) : nuvem_post(a1, a2, tok, &st);
+  pthread_mutex_lock(&tokTrava);
+  temR = renovar[0] != 0;
+  pthread_mutex_unlock(&tokTrava);
+  if (st == 401 && temR) {
+    int rr, stR;
     free(resp);
-    rr = renovarToken();
-    if (rr <= 0) { if (status) *status = rr < 0 ? stRenovacao : 401; return NULL; }
-    resp = nuvem_post(caminho, corpo, acesso, &st);
+    rr = renovarToken(tok, 30, &stR);
+    if (rr <= 0) { if (status) *status = rr < 0 ? stR : 401; return NULL; }
+    copiarAcesso(tok, sizeof tok);
+    resp = tabela ? nuvem_tabela(a1, a2, tok, &st) : nuvem_post(a1, a2, tok, &st);
   }
+  apagar(tok, sizeof tok);
   if (status) *status = st;
   // 429 tambem freia: e o servidor pedindo menos pedidos, e o ciclo de sync
   // mandaria mais dez em seguida.
   if (!resp || st == 0 || st == 429 || st >= 500) nuvem_falhou();
   else nuvem_ok();
   return resp;
+}
+
+static char *chamar(const char *caminho, const char *corpo, int *status) {
+  return pedir(0, caminho, corpo, status);
 }
 
 char *sessao_rpc(const char *funcao, const char *corpoJson, int *status) {
@@ -285,25 +410,7 @@ char *sessao_rpc(const char *funcao, const char *corpoJson, int *status) {
 }
 
 char *sessao_tabela(const char *tabela, const char *consulta, int *status) {
-  char *resp;
-  int st = 0;
-  if (!nuvem_pronta()) { if (status) *status = 0; return NULL; }
-  if (vencido() && renovar[0] && renovarToken() < 0) {
-    if (status) *status = stRenovacao;
-    return NULL;
-  }
-  resp = nuvem_tabela(tabela, consulta, acesso, &st);
-  if (st == 401 && renovar[0]) {
-    int rr;
-    free(resp);
-    rr = renovarToken();
-    if (rr <= 0) { if (status) *status = rr < 0 ? stRenovacao : 401; return NULL; }
-    resp = nuvem_tabela(tabela, consulta, acesso, &st);
-  }
-  if (status) *status = st;
-  if (!resp || st == 0 || st == 429 || st >= 500) nuvem_falhou();
-  else nuvem_ok();
-  return resp;
+  return pedir(1, tabela, consulta, status);
 }
 
 char *sessao_funcao(const char *nome, const char *corpoJson, int *status) {
@@ -319,7 +426,8 @@ char *sessao_funcao(const char *nome, const char *corpoJson, int *status) {
 static void *fioPedir(void *u) {
   Jsw w;
   char *resp;
-  int st = 0;
+  char tok[TOKMAX];
+  int st = 0, precisaAnon;
   (void)u;
 #ifdef NV_TPK40
   nv_tpk40_etapa("note sign-in-thread started");   // rastro do Tizen 4/5 (#180)
@@ -328,9 +436,13 @@ static void *fioPedir(void *u) {
   codigo[0] = 0;
   urlLogin[0] = 0;
 
-  if (!acesso[0] || (anonima && vencido())) {
+  pthread_mutex_lock(&tokTrava);
+  precisaAnon = !acesso[0] || (anonima && vencido());
+  pthread_mutex_unlock(&tokTrava);
+  if (precisaAnon) {
     if (!sessaoAnonima()) { estado = SES_ERRO; passoPronto = 1; return NULL; }
   }
+  copiarAcesso(tok, sizeof tok);
 
   // MEDIDO contra o servidor: `p_redirect_base_url` vazia devolve 400 com
   // "Invalid TV login redirect base URL". Nao ha login sem essa configuracao, e
@@ -352,7 +464,7 @@ static void *fioPedir(void *u) {
   jsw_cs(&w, "p_redirect_base_url", nuvem_base_login());
   jsw_cs(&w, "p_device_name", "LG webOS (Nuvio nativo)");
   jsw_obj_fim(&w);
-  resp = nuvem_rpc_com("start_tv_login_session", jsw_texto_final(&w), acesso, &st);
+  resp = nuvem_rpc_com("start_tv_login_session", jsw_texto_final(&w), tok, &st);
 
   // Servidor antigo recusa o p_device_name; o web repete sem ele. Sem esta
   // segunda tentativa o login simplesmente nao existe nesses projetos.
@@ -364,7 +476,7 @@ static void *fioPedir(void *u) {
     jsw_cs(&w, "p_device_nonce", nonce);
     jsw_cs(&w, "p_redirect_base_url", nuvem_base_login());
     jsw_obj_fim(&w);
-    resp = nuvem_rpc_com("start_tv_login_session", jsw_texto_final(&w), acesso, &st);
+    resp = nuvem_rpc_com("start_tv_login_session", jsw_texto_final(&w), tok, &st);
   }
   jsw_livre(&w);
 
@@ -403,6 +515,7 @@ static void *fioPedir(void *u) {
     if (!emailPedido && estado != SES_EMAIL) estado = SES_AGUARDANDO;
   }
   free(resp);
+  apagar(tok, sizeof tok);
   passoPronto = 1;
   return NULL;
 }
@@ -413,14 +526,16 @@ static void *fioPoll(void *u) {
   char *resp;
   int st = 0;
   char status[48];
+  char tok[TOKMAX];
   (void)u;
+  copiarAcesso(tok, sizeof tok);
 
   jsw_iniciar(&w);
   jsw_obj_ini(&w);
   jsw_cs(&w, "p_code", codigo);
   jsw_cs(&w, "p_device_nonce", nonce);
   jsw_obj_fim(&w);
-  resp = nuvem_rpc_com("poll_tv_login_session", jsw_texto_final(&w), acesso, &st);
+  resp = nuvem_rpc_com("poll_tv_login_session", jsw_texto_final(&w), tok, &st);
   jsw_livre(&w);
 
   status[0] = 0;
@@ -441,7 +556,7 @@ static void *fioPoll(void *u) {
     jsw_cs(&w, "device_nonce", nonce);
     jsw_obj_fim(&w);
     resp = nuvem_post("/functions/v1/tv-logins-exchange", jsw_texto_final(&w),
-                      acesso, &st);
+                      tok, &st);
     jsw_livre(&w);
     if (resp && st >= 200 && st < 300 && guardarTokens(resp, 0)) {
       estado = SES_LOGADO;
@@ -460,17 +575,16 @@ static void *fioPoll(void *u) {
     }
     free(resp);
   } else if (!strcmp(status, "expired") || !strcmp(status, "cancelled")) {
-    snprintf(erro, sizeof erro, "o codigo expirou");
+    snprintf(erro, sizeof erro, "o código expirou");
     estado = SES_ERRO;
   }
+  apagar(tok, sizeof tok);
   passoPronto = 1;
   return NULL;
 }
 
 // ---------------------------------------------------------------- e-mail
 
-
-static void apagar(volatile char *p, size_t n) { while (n--) *p++ = 0; }
 
 // A FRASE, nunca o corpo cru: o corpo de erro do GoTrue nao traz segredo, mas
 // vem em ingles e com codigo interno. Dois formatos convivem: o antigo
@@ -610,13 +724,44 @@ SesEstado   sessao_estado(void)   { return estado; }
 // tela de login estando logada e a tentativa falha, o estado vira SES_ERRO mas
 // a sessao anterior continua boa. Amarrar isto ao estado deslogaria alguem por
 // causa de um erro que nao tocou na sessao dela.
-int         sessao_logada(void)   { return acesso[0] != 0 && !anonima; }
+int sessao_logada(void) {
+  int r;
+  pthread_mutex_lock(&tokTrava);
+  r = acesso[0] != 0 && !anonima;
+  pthread_mutex_unlock(&tokTrava);
+  return r;
+}
 const char *sessao_codigo(void)   { return codigo; }
 const char *sessao_url_login(void){ return urlLogin; }
 const char *sessao_erro(void)     { return erro; }
+// Ponteiro sem trava, de proposito (~30 chamadores): `sub` so muda quando a
+// CONTA muda (login/saida, no laco principal); a renovacao do mesmo usuario nao
+// reescreve o texto (ver lerJwt).
 const char *sessao_usuario(void)  { return sub; }
 // "" para sessao anonima de proposito — ver a nota em sessao.h.
-const char *sessao_token(void)    { return sessao_logada() ? acesso : ""; }
+// Quem chama e um fio de trabalho (recomenda, avisos, atividade) e pode estar
+// na rede: a renovacao roda AQUI, no fio de quem pediu, sem tokTrava presa.
+// Nunca chamar com trava de outro modulo presa (ver a regra de ordem la em cima).
+int sessao_token_copiar(char *dst, size_t n) {
+  int tem, precisa, st = 0;
+  if (!dst || !n) return 0;
+  dst[0] = 0;
+  pthread_mutex_lock(&tokTrava);
+  precisa = acesso[0] != 0 && !anonima && vencidoEm(60);
+  pthread_mutex_unlock(&tokTrava);
+  if (precisa && renovarToken(NULL, 60, &st) <= 0) return 0;
+  pthread_mutex_lock(&tokTrava);
+  tem = acesso[0] != 0 && !anonima;
+  snprintf(dst, n, "%s", tem ? acesso : "");
+  pthread_mutex_unlock(&tokTrava);
+  return tem && dst[0];
+}
+
+void sessao_token_recusado(const char *tok) {
+  int st = 0;
+  if (!tok || !*tok) return;
+  renovarToken(tok, 30, &st);
+}
 
 void sessao_login_comecar(void) {
   if (!nuvem_pronta()) {
@@ -656,7 +801,7 @@ void sessao_passo(unsigned agoraMs) {
   if (estado == SES_AGUARDANDO) {
     if (!loginComecouMs) loginComecouMs = agoraMs;
     if (agoraMs - loginComecouMs > LOGIN_LIMITE_MS) {
-      snprintf(erro, sizeof erro, "o codigo expirou");
+      snprintf(erro, sizeof erro, "o código expirou");
       estado = SES_ERRO;
       codigo[0] = 0;
       return;
@@ -678,8 +823,10 @@ void sessao_cancelar(void) {
 }
 
 void sessao_sair(void) {
+  pthread_mutex_lock(&tokTrava);
   limpar();
   dados_apagar(ARQ_SESSAO);
+  pthread_mutex_unlock(&tokTrava);
   codigo[0] = 0;
   erro[0] = 0;
   estado = SES_DESLOGADO;

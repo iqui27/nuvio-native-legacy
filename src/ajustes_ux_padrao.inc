@@ -78,9 +78,9 @@
   1,                /* navegacao horizontal rapida: desligada (fabrica) */
   0,                /* borda no cartaz em foco: ligada (o foco de sempre) */
 
-  1,                /* efeito de profundidade: desligado (fabrica) */
-  28,               /* brilho da borda */
-  10,               /* reflexo */
+  0,                /* efeito de profundidade: ligado (2.0.5: e o reflexo do foco) */
+  28,               /* brilho da borda (sem uso desde a 2.0.5; so a conta) */
+  100,              /* reflexo: a intensidade do efeito */
   0,                /* cobertura da borda */
   0, 0, 0, 0, 0,    /* profundidade em posters, cw, episodios, elenco, trailers */
 
@@ -146,7 +146,7 @@
   0,                /* diagnostico */
   0,                /* teste de velocidade: acao */
   0, 0, 0, 0,       /* explorar, guia, agenda, perfil na barra lateral: ligados */
-  1,                /* trailer do cartaz em foco: desligado (DEFAULT do web) */
+  0,                /* trailer do cartaz em foco: Desligado (AJ_TRAILER_CARTAZ_*; DEFAULT do web) */
   0,                /* itens por fileira: 12, como sempre foi (ver V_ITENS_FIL) */
   TXT_FAMILIA_INTER,/* fonte da interface: independente da legenda */
   0,                /* efeitos visuais do .tpk: automatico (adaptativo, ate o nivel 1) */
@@ -168,7 +168,7 @@
   1,                /* som do trailer no destaque: DESLIGADO (V_LIGA: 1 = Desligado) */
   22,               /* espera do trailer no destaque: 2,2 s (em decimos de segundo) */
   90,               /* percentual assistido: 90%, o numero fixo de antes */
-  0,                /* addons do perfil principal: LIGADO (V_LIGA: 0 = Ligado) */
+  1,                /* addons do perfil principal: DESLIGADO (V_LIGA: 1); dono 09/10 */
   0,                /* transicao do destaque: Deslizar */
   // Arte do addon: todas DESLIGADAS (V_LIGA: 1 = Desligado) — o visual de antes.
   1, 1, 1, 1,       /* posteres, fundo, logo do addon; arte das pastas da conta */
@@ -191,7 +191,7 @@
   0,                /* sincronia da miniatura: 0 s (a documentacao: nada automatico) */
   0,                /* ao sair do player: a home, minimizando na ilha (com o relogio) */
   0,                /* perguntar o que achou nos creditos: LIGADO (V_LIGA: 0 = Ligado) */
-  1,                /* espera pelos add-ons: 5 s (#221) */
+  2,                /* espera pelos add-ons: 5 s (#221; indice 2 da lista do #202) */
   0,                /* ver o registro na tela: acao */
   0,                /* medidor de desempenho: DESLIGADO (V_MEDIDOR: 0 = Desligado) */
   0,                /* guia de uso: acao */
@@ -228,3 +228,44 @@
   0, /* clock format: 24 horas */
   0, 0, /* automatic source size range: max and min, Sem limite */
   0, /* support the project (Sobre e ajuda): action */
+  0, /* forced subtitle when the audio is in your language (#287): Ligado (V_LIGA: 0 = Ligado) */
+  0, /* content rating in the player: Ligado (V_LIGA: 0) */
+  0, /* auto-play scope (#202): Todas as fontes (ALL_SOURCES, the official default) */
+  0, 0, /* allowed add-ons / plugins: actions (lists live in fonteregra.c; empty = all) */
+  0, /* use the others when the allowed have none: Ligado (V_LIGA: 0 = Ligado) */
+  0, /* regex match: Desligada */
+  0, 0, /* regex pattern (action) and preset mirror (Personalizado) */
+  100, 100, /* Home spacing: between rows and between titles, 100% = as measured */
+  0, /* default aspect ratio: Ultimo usado */
+  1, /* also in Continue watching (2.0.2): Desligado (V_LIGA: 1 = Desligado) = one title, one place */
+  0, /* continue on the profile picker (#303): Ligado (V_LIGA: 0 = Ligado) = as before */
+  0, /* DTS converted to: Estereo (AAC) = the proven path */
+  1, /* Dolby Vision in MKV (2.0.2, experimental): Desligado */
+  0, /* send history to the Nuvio account (2.0.2, per profile): Ligado */
+  0, /* social features (2.0.2, per profile): Ligado */
+  0, 0, /* add-on order (action; list lives in fonteregra.c) and use of it: Nao */
+  0, /* play while verifying the first auto source (2.0.2): Ligado */
+  0, /* warm connections when a title opens (2.0.2): Ligado */
+  0, /* check several sources at once (2.0.2; only sources ready on the debrid): Ligado */
+  1, /* prepare the source when a title opens (2.0.2): Desligado */
+  0, /* next episode in Continue watching (#203): Ligado */
+  0, 0, /* search (#311): Nuvio results First; show the source on result groups: Ligado */
+  0, /* Settings layout (#339): Painel = the card grid and the art beside the list */
+  0, /* P2P space limit (#334): Automatico */
+  0, /* Source display order (#400): Por qualidade, local */
+  0, /* Sincronia automática da legenda: Ligado, local */
+  0, /* Mostrar no player (#425): Só meus idiomas; sem preferencia, todas */
+  0, /* Aviso legal: acao */
+  0, /* Brilho da interface em HDR (#205): Automatico, local */
+  0, /* Tela de abertura do video (#205): Cinema, local */
+  1, /* minimum progress to enter Continue watching (#326): 1% */
+  0, /* player buffer size (#338, Android only): Automatico */
+  1, 1, /* auto-skip intro and recap (#329): Desligado */
+  1, /* owner decision #256: next episode auto-play is off by default */
+  1, /* auto-skip credits, only with a real start+end marker: Desligado */
+  5, /* owner decision #256: configurable countdown in seconds */
+  0, /* interface mode: TV, including on phones until Mobile is selected */
+  0, /* Mic button in search (.tpk): Automatico, local */
+  0, /* menu position (#461): Na lateral, the rail as always */
+  0, 0, 0, /* achievements (2.1): master, notice after credits, secret hints: all On */
+  1, /* kids profile: Desligado (V_LIGA: 1); the state lives in perfilinfantil.c */

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nuvio 2.1 · Biblioteca</title>
+<link rel="stylesheet" href="tv.css">
+<style>
+.pg{position:absolute;left:200px;right:96px;top:0;bottom:0}
+.topo{position:absolute;left:0;right:0;top:124px;display:flex;align-items:flex-end;justify-content:space-between}
+.sinc{display:flex;gap:18px;align-items:center;font-size:17px;color:var(--mut)}
+.sinc .ok{display:inline-flex;align-items:center;gap:6px}
+.sinc .ok .ic{width:18px;height:18px;color:var(--ac)}
+.linha{position:absolute;left:0;right:0;display:flex;gap:14px;align-items:center}
+.sep{width:1px;height:34px;background:rgba(255,255,255,.12)}
+.origens{position:absolute;left:0;top:388px;width:320px;border-radius:26px;padding:12px}
+.origens .row{display:flex;align-items:center;gap:14px;padding:16px 18px}
+.origens .row .nm{font-size:20px;font-weight:600}
+.origens .row .ds{font-size:15px;color:var(--mut2);margin-top:3px}
+.origens .row .ct{margin-left:auto;font-size:18px;color:var(--mut)}
+.origens .row.sel .nm::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ac);margin:0 9px 3px 0}
+.letra{width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex:none}
+.grade{position:absolute;left:364px;right:0;top:388px;display:grid;grid-template-columns:repeat(5,220px);justify-content:space-between;row-gap:34px}
+.grade .cz{width:220px;height:330px}
+.selos{position:absolute;left:10px;top:10px;z-index:1;display:flex;gap:5px}
+.selos span{min-width:26px;height:26px;padding:0 6px;border-radius:8px;background:rgba(10,10,12,.72);font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.85)}
+.tt{font-size:18px;font-weight:500;color:rgba(243,242,239,.6);margin-top:12px}
+.cz.foco+.tt{color:#fff;font-weight:600;margin-top:24px}
+.cz.foco+.tt+.td{display:block}
+.td{display:none;font-size:15px;color:var(--mut);margin-top:4px}
+/* modo lista */
+.tab{position:absolute;left:0;right:0;top:388px}
+.tab .cabl,.tab .row{display:grid;grid-template-columns:64px 1fr 220px 120px 210px 330px;gap:22px;align-items:center}
+.tab .cabl{padding:0 22px 12px;font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--mut2);border-bottom:1px solid rgba(255,255,255,.08)}
+.tab .row{padding:12px 22px;margin-top:6px;font-size:19px;color:rgba(243,242,239,.8)}
+.tab .row .cz{width:64px;height:96px;border-radius:9px}
+.tab .row .cz::after{display:none}
+.tab .row .t{font-size:21px;font-weight:600;color:#fff}
+.tab .row .s{font-size:16px;color:var(--mut2);margin-top:4px}
+.tab .row .ls{display:flex;gap:6px}
+.tab .row .ls span{min-width:30px;height:30px;padding:0 7px;border-radius:9px;background:rgba(255,255,255,.08);font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.tab .row .ls span.falta{background:none;border:1.5px dashed rgba(255,255,255,.3);color:var(--mut2)}
+.dif{font-size:16px;color:var(--mut)}
+.dif b{color:var(--ac);font-weight:700}
+</style>
+</head>
+<body>
+
+<section class="quadro">
+<p class="leg"><b>2A · Biblioteca, grade</b> — abas por estado, origens à esquerda, um título aparece uma vez com as marcas de onde ele está.</p>
+<div class="caixa"><div class="tv">
+  <div class="arte a10" style="opacity:.35"></div><div class="fundo"></div>
+  <div class="ilha relogio">20:44<span class="s"></span><span class="av" style="background:#7c5cff">M</span></div>
+  <nav class="ilha rail" aria-label="Menu">
+    <a data-f><span data-i="home"></span></a><a data-f><span data-i="explorar"></span></a><a data-f><span data-i="guia"></span></a><a data-f><span data-i="busca"></span></a><a class="ativo" data-f><span data-i="biblio"></span></a><a data-f><span data-i="agenda"></span></a><a data-f><span data-i="perfil"></span></a><a data-f><span data-i="ajustes"></span></a>
+  </nav>
+  <div class="pg">
+    <div class="topo">
+      <div><h1 class="h1">Biblioteca</h1><div class="sub" style="margin-top:6px">48 títulos para ver · perfil Marina</div></div>
+      <div class="sinc"><span class="ok"><span data-i="ok"></span>Trakt</span><span class="ok"><span data-i="ok"></span>Simkl</span><span class="ok"><span data-i="ok"></span>AIOMetadata</span><span style="color:var(--mut2)">sincronizado há 3 min</span></div>
+    </div>
+    <div class="linha" style="top:232px">
+      <div class="seg"><span class="sg sel" data-f>Para ver <span class="n">48</span></span><span class="sg" data-f>Em andamento <span class="n">6</span></span><span class="sg" data-f>Assistidos <span class="n">312</span></span><span class="sg" data-f>Coleções <span class="n">9</span></span><a class="sg" href="listas.html" data-f>Listas <span class="n">14</span></a></div>
+    </div>
+    <div class="linha" style="top:312px">
+      <span class="chip" data-f>Tipo <span class="v">Filmes e séries</span></span>
+      <span class="chip" data-f>Gênero <span class="v">Todos</span></span>
+      <span class="chip" data-f>Ordem <span class="v">Adicionados por último</span></span>
+      <span class="chip on" data-f>Esconder assistidos</span>
+      <span style="margin-left:auto" class="seg"><span class="sg sel" data-f><span data-i="grade" class="p"></span></span><span class="sg" data-f><span data-i="lista" class="p"></span></span></span>
+    </div>
+
+    <div class="vid origens">
+      <div class="kick" style="padding:8px 18px 6px">Origens</div>
+      <div class="row sel" data-f><div><div class="nm">Todas</div><div class="ds">sem repetir títulos</div></div><span class="ct">48</span></div>
+      <div class="row" data-f><span class="letra">T</span><div><div class="nm">Trakt</div><div class="ds">watchlist</div></div><span class="ct">41</span></div>
+      <div class="row" data-f><span class="letra">S</span><div><div class="nm">Simkl</div><div class="ds">plano para ver</div></div><span class="ct">37</span></div>
+      <div class="row" data-f><span class="letra">N</span><div><div class="nm">Conta Nuvio</div><div class="ds">salvos neste perfil</div></div><span class="ct">5</span></div>
+      <div class="row" data-f><span class="letra">A</span><div><div class="nm">AIOMetadata</div><div class="ds">lista do add-on</div></div><span class="ct">12</span></div>
+      <div style="padding:14px 18px 8px;font-size:15px;color:var(--mut2);line-height:1.45;border-top:1px solid rgba(255,255,255,.07);margin-top:8px">O <b style="color:var(--mut)">+</b> salva em Trakt e Simkl.<br>Muda em Ajustes › Contas.</div>
+    </div>
+
+    <div class="grade">
+      <div><div class="cz a3" data-f><div class="selos"><span>T</span><span>S</span></div><b>Fogo Lento</b></div><div class="tt">Fogo Lento</div><div class="td"></div></div>
+      <div><div class="cz a7 foco" data-f><div class="selos"><span>T</span><span>S</span><span>A</span></div><b>Torre do Vento</b></div><div class="tt">Torre do Vento</div><div class="td">Anime · 24 ep · salvo em 3 origens · 08 out</div></div>
+      <div><div class="cz a11" data-f><div class="selos"><span>T</span></div><b>Os Silenciosos</b></div><div class="tt">Os Silenciosos</div><div class="td"></div></div>
+      <div><div class="cz a14" data-f><div class="selos"><span>S</span></div><b>Céu de Chumbo</b></div><div class="tt">Céu de Chumbo</div><div class="td"></div></div>
+      <div><div class="cz a9" data-f><div class="selos"><span>N</span></div><b>Ponte Quebrada</b></div><div class="tt">Ponte Quebrada</div><div class="td"></div></div>
+      <div><div class="cz a12" data-f><div class="selos"><span>T</span><span>S</span></div><b>Norte Selvagem</b></div><div class="tt">Norte Selvagem</div></div>
+      <div><div class="cz a6" data-f><div class="selos"><span>T</span></div><b>Asfalto</b></div><div class="tt">Asfalto</div></div>
+      <div><div class="cz a5" data-f><div class="selos"><span>A</span></div><b>Noite Âmbar</b></div><div class="tt">Noite Âmbar</div></div>
+      <div><div class="cz a4" data-f><div class="selos"><span>T</span><span>S</span></div><b>Terra Baixa</b></div><div class="tt">Terra Baixa</div></div>
+      <div><div class="cz a13" data-f><div class="selos"><span>S</span></div><b>Corrente Fria</b></div><div class="tt">Corrente Fria</div></div>
+    </div>
+  </div>
+</div></div>
+</section>
+
+<section class="quadro">
+<p class="leg"><b>2B · Biblioteca, lista</b> — Assistidos com data e origem; quando Trakt e Simkl discordam, a linha mostra e resolve ali.</p>
+<div class="caixa"><div class="tv">
+  <div class="fundo" style="background:var(--bg)"></div>
+  <div class="ilha relogio">20:45<span class="s"></span><span class="av" style="background:#7c5cff">M</span></div>
+  <nav class="ilha rail" aria-label="Menu">
+    <a data-f><span data-i="home"></span></a><a data-f><span data-i="explorar"></span></a><a data-f><span data-i="guia"></span></a><a data-f><span data-i="busca"></span></a><a class="ativo" data-f><span data-i="biblio"></span></a><a data-f><span data-i="agenda"></span></a><a data-f><span data-i="perfil"></span></a><a data-f><span data-i="ajustes"></span></a>
+  </nav>
+  <div class="pg">
+    <div class="topo">
+      <div><h1 class="h1">Biblioteca</h1><div class="sub" style="margin-top:6px">312 assistidos · 3 diferenças entre Trakt e Simkl</div></div>
+      <div class="sinc"><span class="ok"><span data-i="ok"></span>Trakt</span><span class="ok"><span data-i="alerta" style="color:#ffb74d"></span>Simkl · 3 diferenças</span><span style="color:var(--mut2)">sincronizado há 3 min</span></div>
+    </div>
+    <div class="linha" style="top:232px">
+      <div class="seg"><span class="sg" data-f>Para ver <span class="n">48</span></span><span class="sg" data-f>Em andamento <span class="n">6</span></span><span class="sg sel" data-f>Assistidos <span class="n">312</span></span><span class="sg" data-f>Coleções <span class="n">9</span></span><a class="sg" href="listas.html" data-f>Listas <span class="n">14</span></a></div>
+    </div>
+    <div class="linha" style="top:312px">
+      <span class="chip" data-f>Origem <span class="v">Todas</span></span>
+      <span class="chip" data-f>Tipo <span class="v">Filmes e séries</span></span>
+      <span class="chip" data-f>Ordem <span class="v">Visto por último</span></span>
+      <span class="chip" data-f>Só diferenças <span class="v">3</span></span>
+      <span style="margin-left:auto" class="seg"><span class="sg" data-f><span data-i="grade" class="p"></span></span><span class="sg sel" data-f><span data-i="lista" class="p"></span></span></span>
+    </div>
+    <div class="tab">
+      <div class="cabl"><span></span><span>Título</span><span>Visto em</span><span>Vezes</span><span>Origens</span><span></span></div>
+      <div class="row" data-f><div class="cz a2"></div><div><div class="t">Estação Ômega</div><div class="s">Série · 2024 · T1 completa</div></div><span>11 out</span><span>1</span><div class="ls"><span>T</span><span class="falta">S</span></div><span class="dif">Falta no <b>Simkl</b></span></div>
+      <div class="row dentro" data-f><div class="cz a1"></div><div><div class="t">Os Relojoeiros</div><div class="s">Série · 2025 · T1 completa, T2 até E4</div></div><span>09 out</span><span>1</span><div class="ls"><span>T</span><span>S</span><span>N</span></div><div style="display:flex;gap:10px"><span class="chip foco" data-f style="height:46px;font-size:16px">Marcar E4 no Simkl</span><span class="chip" data-f style="height:46px;font-size:16px">Ignorar</span></div></div>
+      <div class="row" data-f><div class="cz a8"></div><div><div class="t">Sal e Cinza</div><div class="s">Filme · 2023</div></div><span>02 out</span><span>2</span><div class="ls"><span class="falta">T</span><span>S</span></div><span class="dif">Falta no <b>Trakt</b></span></div>
+      <div class="row" data-f><div class="cz a4"></div><div><div class="t">Terra Baixa</div><div class="s">Série · 2022 · completa</div></div><span>28 set</span><span>1</span><div class="ls"><span>T</span><span>S</span></div><span class="dif" style="color:var(--mut2)">igual nas duas</span></div>
+      <div class="row" data-f><div class="cz a12"></div><div><div class="t">Norte Selvagem</div><div class="s">Filme · 2021</div></div><span>21 set</span><span>3</span><div class="ls"><span>T</span><span>S</span></div><span class="dif" style="color:var(--mut2)">igual nas duas</span></div>
+    </div>
+  </div>
+</div></div>
+</section>
+
+<script src="tv.js"></script>
+</body>
+</html>

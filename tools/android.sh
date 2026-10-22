@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build do Nuvio para Android TV (SDL2 + GLES2, nucleo C em libmain.so).
+# Build do Nuvio para Android TV/Mobile (SDL2 + GLES2, nucleo C em libmain.so).
 #
 #   tools/android.sh            -> APK debug em build/android/Nuvio-<v>-android-debug.apk
 #   NUVIO_P2P_MOTOR=<raiz> tools/android.sh -> motor P2P (padrao: pasta achada por tools/p2p-motor/pasta.sh; =none desliga)
@@ -17,6 +17,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 RAIZ="$PWD"
+RELEASE_ONLY=0
+case "${1:-}" in "") ;; --release-only) RELEASE_ONLY=1;; *) echo "opcao desconhecida: $1" >&2; exit 2;; esac
 CACHE="${NUVIO_ANDROID_CACHE:-$HOME/.cache/nuvio-android}"
 EST="$RAIZ/build/android"
 
@@ -55,30 +57,41 @@ ENVF="$(mktemp "${TMPDIR:-/tmp}/nuvio-android-env.XXXXXXXX")"; trap 'rm -f "$ENV
 [ -z "${NUVIO_REQUIRE_CORE:-}" ] || tools/env.sh --require-core >/dev/null
 tools/env.sh --env-file "$ENVF"
 # KEY=valor -> set(KEY "valor") com escape de \ " $ . Fora do git (build/).
-: > "$EST/nuvio-env.cmake"; chmod 600 "$EST/nuvio-env.cmake"
+: > "$EST/nuvio-env.cmake.new"; chmod 600 "$EST/nuvio-env.cmake.new"
 while IFS= read -r l; do
   k="${l%%=*}"; v="${l#*=}"
   v=$(printf '%s' "$v" | sed 's/[\\"$]/\\&/g')
-  printf 'set(%s "%s")\n' "$k" "$v" >> "$EST/nuvio-env.cmake"
+  printf 'set(%s "%s")\n' "$k" "$v" >> "$EST/nuvio-env.cmake.new"
 done < "$ENVF"
+# Nao invalida CMake por timestamp quando a configuracao e identica.
+if cmp -s "$EST/nuvio-env.cmake.new" "$EST/nuvio-env.cmake"; then rm "$EST/nuvio-env.cmake.new"
+else mv "$EST/nuvio-env.cmake.new" "$EST/nuvio-env.cmake"; fi
 # libcurl/libjpeg/libwebp por dlopen: se o outro agente ja as compilou, entram em lib/<abi>/.
 rm -rf "$EST/jnilibs"
 for abi in arm64-v8a armeabi-v7a; do
   for so in libcurl.so libjpeg.so libwebp.so; do
     f="$CACHE/prefix/$abi/lib/$so"
     if [ -f "$f" ]; then mkdir -p "$EST/jnilibs/$abi"; cp "$f" "$EST/jnilibs/$abi/"
+    # Sem libcurl o app cai inteiro no HttpURLConnection e imagem chega com 0 B
+    # (11/10: limpeza de disco apagou ~/.cache/*; APK sem logo nem capa na TCL).
+    elif [ "$so" = libcurl.so ] && [ -z "${NUVIO_SEM_CURL:-}" ]; then
+      echo "ERRO: $abi/libcurl.so ausente em $CACHE/prefix (NUVIO_SEM_CURL=1 para seguir sem)" >&2; exit 1
     else echo "  aviso: $abi/$so ausente em $CACHE/prefix (o APK segue sem ela)"; fi
   done
 done
 
 echo "[4/5] gradle"
-GR=(android/gradlew -p android --console=plain -Pnuvio.sdlSrc="$CACHE/src" -Pnuvio.estagio="$EST")
+export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/27.2.12479018}"
+FFMPEG_AAR="$EST/media3-ffmpeg-16kb.aar"
+bash tools/android/ffmpeg-android.sh "$FFMPEG_AAR" arm64-v8a armeabi-v7a
+GR=(android/gradlew -p android --console=plain -Pnuvio.sdlSrc="$CACHE/src" -Pnuvio.estagio="$EST" -Pnuvio.ffmpegAar="$FFMPEG_AAR")
 # Motor P2P embutido: pasta achada por tools/p2p-motor/pasta.sh (NUVIO_P2P_MOTOR,
 # ou a pasta padrao); configurada e incompleta = erro, nunca pacote sem motor calado.
 . tools/p2p-motor/pasta.sh
 nv_p2p_resolver android
 [ -n "$NV_P2P_DIR" ] && GR+=(-Pnuvio.p2pMotor="$NV_P2P_DIR")
-TAREFAS=(assembleDebug)
+TAREFAS=()
+[ "$RELEASE_ONLY" = 1 ] || TAREFAS=(assembleDebug)
 # Chave de release FIXA (o Android so atualiza por cima com a mesma
 # assinatura): ~/.nuvio-android/release.env, fora do repo, chmod 600. A copia
 # de seguranca e o item do Vaultwarden. Variaveis no ambiente ganham do arquivo.
@@ -86,13 +99,18 @@ if [ -z "${NUVIO_KEYSTORE:-}" ] && [ -f "$HOME/.nuvio-android/release.env" ]; th
   set -a; . "$HOME/.nuvio-android/release.env"; set +a
 fi
 [ -n "${NUVIO_KEYSTORE:-}" ] && TAREFAS+=(assembleRelease)
+[ "${#TAREFAS[@]}" -gt 0 ] || { echo "android.sh: release-only exige chave" >&2; exit 1; }
+[ -z "${NUVIO_BUILD_JOBS:-}" ] || GR+=(--max-workers="$NUVIO_BUILD_JOBS")
 "${GR[@]}" "${TAREFAS[@]}"
 
 echo "[5/5] conferencia"
 SAIDA="$EST"
 DBG="android/app/build/outputs/apk/debug/app-debug.apk"
-cp "$DBG" "$SAIDA/Nuvio-$VER-android-debug.apk"
-APKS=("$SAIDA/Nuvio-$VER-android-debug.apk")
+APKS=()
+if [ "$RELEASE_ONLY" = 0 ]; then
+  cp "$DBG" "$SAIDA/Nuvio-$VER-android-debug.apk"
+  APKS+=("$SAIDA/Nuvio-$VER-android-debug.apk")
+fi
 if [ -n "${NUVIO_KEYSTORE:-}" ]; then
   cp android/app/build/outputs/apk/release/app-release.apk "$SAIDA/Nuvio-$VER-android.apk"
   APKS+=("$SAIDA/Nuvio-$VER-android.apk")
@@ -105,11 +123,11 @@ SEGREDO='(^|/)(trakt|addons|tmdb|mdblist|sessao|simkl[^/]*|fanart|diag-token)\.t
 for a in "${APKS[@]}"; do
   L=$(unzip -Z1 "$a")
   for need in lib/arm64-v8a/libmain.so lib/armeabi-v7a/libmain.so lib/arm64-v8a/libSDL2.so lib/armeabi-v7a/libSDL2.so; do
-    printf '%s\n' "$L" | grep -qx "$need" || { echo "android.sh: $a nao tem $need" >&2; exit 1; }
+    printf '%s\n' "$L" | grep -x "$need" >/dev/null || { echo "android.sh: $a nao tem $need" >&2; exit 1; }
   done
-  printf '%s\n' "$L" | grep -q '^assets/art/' || { echo "android.sh: $a sem assets/art" >&2; exit 1; }
-  printf '%s\n' "$L" | grep -q '^assets/fonts/' || { echo "android.sh: $a sem assets/fonts" >&2; exit 1; }
-  printf '%s\n' "$L" | grep -q '^assets/licencas/p2p-avisos.txt$' || { echo "android.sh: $a sem assets/licencas" >&2; exit 1; }
+  printf '%s\n' "$L" | grep '^assets/art/' >/dev/null || { echo "android.sh: $a sem assets/art" >&2; exit 1; }
+  printf '%s\n' "$L" | grep '^assets/fonts/' >/dev/null || { echo "android.sh: $a sem assets/fonts" >&2; exit 1; }
+  printf '%s\n' "$L" | grep '^assets/licencas/p2p-avisos.txt$' >/dev/null || { echo "android.sh: $a sem assets/licencas" >&2; exit 1; }
   if [ -n "$NV_P2P_DIR" ]; then   # motor pedido: o simbolo da API C tem de estar nas DUAS libmain.so
     for abi in arm64-v8a armeabi-v7a; do
       m=$(unzip -p "$a" "lib/$abi/libmain.so" | strings | grep -c 'Nuvio Engine/' || true)
@@ -119,6 +137,8 @@ for a in "${APKS[@]}"; do
   fi
   n=$(printf '%s\n' "$L" | grep -c -E "$SEGREDO" || true)
   [ "$n" = "0" ] || { echo "android.sh: $a leva $n arquivo(s) de pessoa:" >&2; printf '%s\n' "$L" | grep -E "$SEGREDO" >&2; exit 1; }
+  python3 tools/android-apk-pages.py "$a"
   echo "ok: $a ($(du -h "$a" | cut -f1))"
   printf '%s\n' "$L" | grep -E '^lib/.*\.so$' | sed 's/^/  /'
 done
+

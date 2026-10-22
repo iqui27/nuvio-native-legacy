@@ -15,6 +15,9 @@ static void *alocar(void *p, size_t n) {
 #define realloc alocar
 #include "../src/rede.c"
 #undef realloc
+static int receberFluxo(const void *b, size_t n, void *u) {
+  assert(b && n == 32); (*(int *)u)++; return 1;
+}
 int main(void) {
   RedePedido p = {0}; RedeResposta r = {0}; PedidoCtx c = {0};
   char dados[4096]; memset(dados, 'x', sizeof dados);
@@ -68,5 +71,12 @@ int main(void) {
   assert(!pedidoCorpo(dados, 1, 1, &c) && r.fim_teto && !chamadas);
   assert(c.descartado == 4096); // strict accepted-byte cap; no media allocation
   rede_resposta_limpar(&r);
+  p.janela_corpo_ms=0; p.receber_corpo=receberFluxo;
+  int recebidos=0; p.corpo_usuario=&recebidos; c.status=302; c.tetoCorpo=64;
+  assert(pedidoCorpo(dados,1,32,&c)==32 && !recebidos && !chamadas);
+  c.status=200; r.n_corpo=0;
+  assert(pedidoCorpo(dados,1,32,&c)==32 && recebidos==1);
+  assert(!r.corpo && !chamadas && r.n_corpo==32);
+  assert(!pedidoCorpo(dados,1,33,&c) && r.erro==REDE_LIMITE_CORPO);
   puts("rede_pedido_buffer: PASS (before allocation, exact caps, OOM, multiplication, stale/deadline)");
 }

@@ -13,6 +13,7 @@
 
 Uint32 SDL_GetTicks(void) { return 1000; }
 int addons_n(void) { return 0; }
+int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 const char *addons_base(int i) { (void)i; return ""; }
 const char *addons_id_manifesto(int i) { (void)i; return ""; }
 const char *sessao_usuario(void) { return "account-255"; }

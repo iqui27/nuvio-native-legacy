@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // SOCIALVIS — o MODELO DA TELA do social: o que a fileira "Amigos assistindo"
 // (amigosfil.c), o painel da tecla azul (abas Atividade e Amigos, em
 // salvospainel.c) e o perfil do amigo (amigoperfil.c) desenham. Nenhuma dessas
@@ -29,7 +30,7 @@
 //     char acao[12];         // "agora" | "inicio" | "fim" | "reacao" | "salvo"
 //                            // | "abandono"
 //     char titulo[160], imdb[24], tipo[8];   // tipo "movie" | "series"
-//     char poster[512];      // 2:3
+//     char poster[NV_ARTE_URL_MAX];      // 2:3
 //     char arte[512];        // 16:9 (backdrop); vazio = cai no poster  [NOVO]
 //     int  temporada, episodio;              // 0 = filme
 //     int  pct;              // 0..100, -1 = nao se sabe
@@ -52,7 +53,7 @@
 //     int  minutosMes, filmesMes, seriesCurso;   // do mes corrente; -1 = ?
 //     int  recsVistas, recsTotal; // das MINHAS recomendacoes para ele
 //     int  nEnviadas;
-//     struct { char imdb[24], titulo[160], poster[512];
+//     struct { char imdb[24], titulo[160], poster[NV_ARTE_URL_MAX];
 //              int estado;        // 0 entregue, 1 abriu, 2 viu
 //              int reacao;        // como em RecEvento
 //              long long quando; } enviadas[8];   // mais nova primeiro
@@ -85,7 +86,7 @@
 #define SV_FILA_MAX      8    // fileiras do perfil
 
 enum { SV_AGORA = 0, SV_INICIO, SV_FIM, SV_REACAO, SV_SALVO, SV_ABANDONO,
-       SV_AVALIOU, SV_MANDOU, SV_ATIVIDADE };
+       SV_AVALIOU, SV_MANDOU, SV_ATIVIDADE, SV_JUNTO };
 enum { SV_REAC_NADA = -2, SV_REAC_NAO = -1, SV_REAC_MEIO = 0, SV_REAC_GOSTOU = 1 };
 enum { SV_FONTE_NUVIO = 0, SV_FONTE_TRAKT, SV_FONTE_SIMKL, SV_FONTE_LETTERBOXD };
 // Estado de uma recomendacao que EU mandei.
@@ -98,7 +99,7 @@ typedef struct {
   int  acao;            // SV_*
   int  reacao;          // SV_REAC_*
   char imdb[24], tipo[8], titulo[160];
-  char poster[512];     // 2:3
+  char poster[NV_ARTE_URL_MAX];     // 2:3
   char arte[512];       // 16:9; vazio = o desenho cai no poster
   int  temporada, episodio;
   int  pct;             // 0..100, -1 = nao se sabe
@@ -106,6 +107,7 @@ typedef struct {
   long long quando;     // epoch s; 0 = nao se sabe
   int  sobreMinhaRec;
   int  nota;            // so SV_AVALIOU: nota do tracker 0..100; 0 = nao se sabe
+  char com[96];         // so SV_JUNTO: com quem assistiu ("Rafa, Fabi")
   // SV_FIM de serie agrupado: quantos episodios distintos a pessoa terminou
   // (o servidor ja manda agrupado; o feed do Trakt e agrupado aqui). 0/1 = um.
   int  eps;
@@ -126,7 +128,7 @@ typedef struct {
 } SvAmigo;
 
 typedef struct {
-  char imdb[24], titulo[160], poster[512];
+  char imdb[24], titulo[160], poster[NV_ARTE_URL_MAX];
   int  estado;          // SV_REC_*
   int  reacao;          // SV_REAC_*
   long long quando;

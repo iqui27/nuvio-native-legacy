@@ -12,6 +12,7 @@
 // modulo imprime. O progresso do proprio teste sai por stderr.
 #include "../src/simkl.h"
 #include "../src/ajustes.h"
+#include "../src/js.h"
 #include "../src/rede.h"
 #include <assert.h>
 #include <fcntl.h>
@@ -34,8 +35,21 @@ _Static_assert(AJ_SALVOS_LOCAL == 0 && AJ_SALVOS_TRAKT == 1 && AJ_SALVOS_SIMKL =
 
 // ---------------------------------------------------------------- stubs
 
+char *dados_ler(const char *nome) { (void)nome; return NULL; }
+int dados_gravar(const char *nome, const char *buf) { (void)nome; (void)buf; return 1; }
+int dados_apagar(const char *nome) { (void)nome; return 1; }
+static int proximoTeste = 1;
+int ajustes_cw_proximo(void) { return proximoTeste; }
+int ajustes_cw_minimo(void) { return 1; }
+int ajustes_cw_concluido(void) { return 90; }
 static const char *tokenAtual = "";
 const char *simklauth_token(void) { return tokenAtual; }
+int simklauth_invalidar_se(unsigned long long cred) { (void)cred; tokenAtual = ""; return 1; }
+static unsigned long long credGeracao = 1;
+unsigned long long simklauth_credencial_copiar(char *dst, size_t tam) {
+  if (dst && tam) snprintf(dst, tam, "%s", tokenAtual);
+  return credGeracao;
+}
 const char *nuvem_simkl_cliente(void) { return "cid-teste"; }
 const char *nuvem_simkl_app(void) { return "nuvio"; }
 void nuvem_url_escapar(const char *v, char *dst, unsigned tam) { snprintf(dst, tam, "%s", v); }
@@ -116,6 +130,9 @@ static void rota(const char *url, char *dst, size_t tam) {
   memcpy(dst, p, n); dst[n] = 0;
 }
 
+static int perfilRede, trocarNaResposta, perfilHistorySt = 200;
+static const char *perfilHistoryBody = "{\"movies\":[],\"shows\":[],\"anime\":[]}";
+
 char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
   char r[64];
   (void)s;
@@ -123,6 +140,16 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
   rota(url, r, sizeof r);
   snprintf(ultimaRota, sizeof ultimaRota, "%s", r);
   *st = 200;
+  if (perfilRede && !strcmp(r, "/users/settings")) {
+    if (trocarNaResposta == 1) { tokenAtual = "OUTRO-TOKEN-FALSO"; credGeracao++; }
+    return strdup("{\"user\":{\"name\":\"Identidade Simkl\"}}");
+  }
+  if (perfilRede && !strcmp(r, "/sync/all-items/all/all")) {
+    assert(strstr(url, "include_all_episodes=original") && strstr(url, "episode_watched_at=yes"));
+    if (trocarNaResposta == 2) { tokenAtual = "OUTRO-TOKEN-FALSO"; credGeracao++; }
+    *st = perfilHistorySt;
+    return perfilHistoryBody ? strdup(perfilHistoryBody) : NULL;
+  }
   if (!strcmp(r, "/sync/activities"))                   { batidas[0]++; return strdup(atividades); }
   if (!strcmp(r, "/sync/playback"))                     { batidas[1]++; return strdup(PLAYBACK); }
   if (!strcmp(r, "/sync/all-items/shows/watching"))     { batidas[2]++; return strdup(WATCHING); }
@@ -234,9 +261,9 @@ static void retomada(void) {
   // novo: a serie ja esta pausada no S01E05.
   assert(n == 4);
   for (i = 0; i < n; i++) assert(strncmp(v[i].imdb, "tt0903747:1:6", 13));
-  // Mais recente primeiro: Severance (20/01) antes de Inception (15/01 11:15).
-  assert(!strcmp(v[0].imdb, "tt11280740:2:3"));
-  assert(!strcmp(v[1].imdb, "tt1375666"));
+  // Pausados primeiro; sugestoes ficam nos lugares restantes.
+  assert(!strcmp(v[0].imdb, "tt1375666"));
+  assert(!strcmp(v[3].imdb, "tt11280740:2:3"));
   assert(simkl_e_a_seguir("tt11280740:2:3"));
   assert(!simkl_e_a_seguir("tt1375666"));
   assert(batidas[0] == 1 && batidas[1] == 1 && batidas[2] == 1);
@@ -252,11 +279,17 @@ static void retomada(void) {
   assert(n == 4 && batidas[0] == 3 && batidas[1] == 2 && batidas[2] == 2);
   OK("retomada: /sync/activities igual nao baixa all-items de novo");
 
-  // Lista cheia: o "a seguir" mais novo toma o lugar do pausado mais velho.
+  // Lista cheia: a sugestao nao expulsa nenhum pausado.
   n = simkl_continuar(v, 3);
-  assert(n == 3 && !strcmp(v[0].imdb, "tt11280740:2:3"));
-  for (i = 0; i < n; i++) assert(strcmp(v[i].imdb, "tt2560140:2:3"));   // o de 14/01 saiu
-  OK("retomada: com a fileira cheia, o a seguir mais novo substitui o mais velho");
+  assert(n == 3 && !strcmp(v[0].imdb, "tt1375666"));
+  for (i = 0; i < n; i++) assert(strcmp(v[i].imdb, "tt11280740:2:3"));
+  assert(!strcmp(v[2].imdb, "tt2560140:2:3"));
+  OK("retomada: com a fileira cheia, todos os pausados ficam");
+  proximoTeste = 0;
+  n = simkl_continuar(v, 12);
+  assert(n == 3 && !simkl_e_a_seguir("tt11280740:2:3"));
+  proximoTeste = 1;
+  OK("retomada: OFF filtra sugestoes antes da disputa");
 
   // Tirar da retomada: DELETE /sync/playback/<id do registro>.
   n = simkl_continuar(v, 12);
@@ -314,6 +347,85 @@ static void maisMenos(void) {
   OK("plantowatch da rede: naLista e a guarda do - conhece o que veio de la");
 }
 
+static void perfilRedeCasos(void) {
+  PerfilDados d;
+  perfilRede = 1;
+  assert(simkl_perfil(&d) && !strcmp(d.nome, "Identidade Simkl"));
+  perfilHistorySt = 500;
+  assert(!simkl_perfil(&d));
+  perfilHistorySt = 200; perfilHistoryBody = "<html>erro</html>";
+  assert(!simkl_perfil(&d));
+  perfilHistoryBody = "{}";
+  semBearer = 0; trocarNaResposta = 1;
+  assert(!simkl_perfil(&d));
+  assert(!semBearer);  // os dois pedidos usam a mesma credencial capturada
+  tokenAtual = TOKEN; credGeracao++; trocarNaResposta = 2;
+  assert(!simkl_perfil(&d));
+  tokenAtual = TOKEN; credGeracao++; trocarNaResposta = 0; perfilRede = 0;
+  OK("perfil: HTTP/HTML falham e relink no meio da consulta nao mistura contas");
+}
+
+static void perfilFalhas(void) {
+  PerfilDados d;
+  time_t agora = (time_t)(js_ms_iso("2026-10-12T12:00:00Z") / 1000);
+  assert(!simkl_perfil_ler("{\"user\":{\"name\":\"Pessoa\"}}", NULL, &d, agora));
+  assert(!simkl_perfil_ler(NULL, "<html>erro</html>", &d, agora));
+  assert(!simkl_perfil_ler(NULL, "{\"error\":\"unauthorized\"}", &d, agora));
+  assert(!simkl_perfil_ler(NULL, "{\"movies\":[", &d, agora));
+  assert(!simkl_perfil_ler(NULL, "{\"movies\":null}", &d, agora));
+  assert(simkl_perfil_ler(NULL, "{\"movies\":[],\"shows\":[],\"anime\":[]}", &d, agora));
+  assert(d.plays == 0 && d.nDestaques == 0);
+  assert(simkl_perfil_ler(NULL, "{}", &d, agora));
+  OK("perfil: falha de historico nao vira zero reproducoes; vazio confirmado e aceito");
+}
+
+static void perfilAnimeRanking(void) {
+  const char *itens =
+    "{\"movies\":["
+    "{\"last_watched_at\":\"2026-10-10T12:00:00Z\",\"movie\":{\"ids\":{\"imdb\":\"tt1\"}}},"
+    "{\"last_watched_at\":\"2026-10-10T12:00:00Z\",\"movie\":{\"ids\":{\"imdb\":\"tt2\"}}},"
+    "{\"last_watched_at\":\"2026-10-10T12:00:00Z\",\"movie\":{\"ids\":{\"imdb\":\"tt3\"}}},"
+    "{\"last_watched_at\":\"2026-10-10T12:00:00Z\",\"movie\":{\"ids\":{\"imdb\":\"tt4\"}}}],"
+    "\"anime\":[{\"anime\":{\"title\":\"Anime\",\"runtime\":24,\"ids\":{\"imdb\":\"tt5\"}},"
+    "\"seasons\":[{\"number\":1,\"episodes\":[{\"number\":1,\"watched_at\":\"2026-10-11T12:00:00Z\"},"
+    "{\"number\":2,\"watched_at\":\"2026-10-12T12:00:00Z\"}]}]}]}";
+  PerfilDados d;
+  time_t agora = (time_t)(js_ms_iso("2026-10-12T15:00:00Z") / 1000);
+  assert(simkl_perfil_ler(NULL, itens, &d, agora));
+  assert(d.plays == 6 && d.filmes == 4 && d.episodios == 2 && d.minutos == 48);
+  assert(d.nDestaques == 4 && !strcmp(d.destaques[0].id, "tt5"));
+  assert(d.destaques[0].plays == 2 && d.destaques[0].minutos == 48);
+  assert(d.streakAtual == 3 && d.diasAtivosMes == 3 && d.atividade[11] == 1);
+  assert(d.nGeneros == 0 && d.parcial && !d.anoCompleto && !d.streakCompleto);
+  OK("perfil: anime conta e o quinto titulo mais visto entra nos quatro destaques");
+}
+
+static void perfilStats(void) {
+  static const char *settings =
+    "{\"user\":{\"name\":\"Tolu no Simkl\",\"avatar\":\"https://simkl.in/avatars/tolu_100.jpg\"},"
+    "\"account\":{\"id\":42,\"type\":\"free\"}}";
+  static const char *itens =
+    "{\"movies\":[{\"last_watched_at\":\"2026-10-10T20:00:00Z\","
+      "\"movie\":{\"title\":\"Dune\",\"runtime\":120,\"ids\":{\"imdb\":\"tt1160419\"}}},"
+      "{\"last_watched_at\":\"2026-09-30T20:00:00Z\","
+      "\"movie\":{\"title\":\"Old\",\"runtime\":99,\"ids\":{\"imdb\":\"tt0000001\"}}}],"
+    "\"shows\":[{\"show\":{\"title\":\"Severance\",\"runtime\":45,"
+      "\"ids\":{\"imdb\":\"tt11280740\"}},\"seasons\":[{\"number\":2,\"episodes\":["
+      "{\"number\":1,\"watched_at\":\"2026-10-11T19:00:00Z\"},"
+      "{\"number\":2,\"runtime\":50,\"watched_at\":\"2026-10-11T20:00:00Z\"}]}]}],"
+    "\"anime\":[]}";
+  PerfilDados d;
+  time_t agora = (time_t)(js_ms_iso("2026-10-12T12:00:00Z") / 1000);
+  assert(simkl_perfil_ler(settings, itens, &d, agora));
+  assert(!strcmp(d.nome, "Tolu no Simkl"));
+  assert(strstr(d.avatar, "simkl.in/avatars"));
+  assert(d.plays == 3 && d.filmes == 1 && d.episodios == 2);
+  assert(d.minutos == 215 && d.diasAtivosMes == 2);
+  assert(d.nDestaques == 2 && !strcmp(d.destaques[0].id, "tt11280740"));
+  assert(d.destaques[0].plays == 2 && strstr(d.destaques[0].detalhe, "2"));
+  OK("perfil: identidade e estatisticas mensais saem do Simkl; outro mes fica fora");
+}
+
 int main(void) {
   char caminho[] = "/tmp/nuvio-simkl-cw-XXXXXX";
   int fd = mkstemp(caminho), salvo = dup(1);
@@ -328,6 +440,10 @@ int main(void) {
   leitores();
   retomada();
   maisMenos();
+  perfilStats();
+  perfilFalhas();
+  perfilAnimeRanking();
+  perfilRedeCasos();
   simkl_esquecer();
   assert(!simkl_na_plantowatch("tt2788316"));
 

@@ -30,3 +30,4 @@ cc "${flags[@]}" tests/rede_pedido.c src/rede.c src/redeurl.c -o "$tmp/teste"
 cc "${flags[@]}" tests/rede_pedido_buffer.c src/redeurl.c -o "$tmp/buffer"
 "$tmp/buffer"
 node tests/rede_retry_wgt.cjs
+node tests/rede_fluxo_wgt.cjs

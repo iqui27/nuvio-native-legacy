@@ -1,0 +1,119 @@
+retomada regra: PASS (posicao exata, duracao, percentual e limites)
+[dados] gravando em /var/folders/tb/3tdgxb_151x63831hfnszg1n9cg9nz/T//nuvio-android-retomada.vvtloa/dados
+[plugins] desligados, 0 repositorio(s), 0 scraper(s)
+[perfis] perfil ativo: 1
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[t] 6005600 abrir: url ao pipeline
+[t] 6005600 abrir: ponto salvo vai na abertura (segundos)
+[player] pronto em 1 ms desde a abertura (retomada 34%)
+[player] load->1o quadro 0 ms
+[fonte] duracao incompatível: real=1800s esperada=14400s automatico=0
+[relogio] pipeline=612.345 legenda=612.345 (+0 ms; amostra de 0 ms atras)
+[t] 6005601 abrir: ponto salvo na preparacao
+[player] tocando em 2 ms desde a abertura (retomada 34%)
+ok posicao salva chega no prepare, sem segundo seek ou uso de meta
+[player] duracao 1800s contra 14400s no catalogo: trailer ou fonte que nao e este titulo — progresso e visto NAO gravados
+[player] saida: video retido 0 ms, resto 0 ms
+[player] sessao pausada so ate o voo pousar (teto 800 ms), depois solta
+[player] sessao retida solta: voo pousou (0 ms)
+[player] saida: video parar 0 ms, resto 0 ms
+ok sem o ajuste: retida so durante o voo, solta depois do pouso
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[t] 6005906 abrir: url ao pipeline
+[t] 6005906 abrir: ponto salvo vai na abertura (segundos)
+[player] pronto em 0 ms desde a abertura (retomada 34%)
+[player] load->1o quadro 0 ms
+[fonte] duracao incompatível: real=1800s esperada=14400s automatico=0
+[t] 6005906 abrir: ponto salvo na preparacao
+[player] tocando em 0 ms desde a abertura (retomada 34%)
+[ajustes] aparencia -> Da arte + Cor da logo + Frost, sem vidro (migracao unica da 2.0)
+[player] duracao 1800s contra 14400s no catalogo: trailer ou fonte que nao e este titulo — progresso e visto NAO gravados
+[player] saida: video retido 0 ms, resto 0 ms
+[player] sessao pausada pronta para retomar (teto 120000 ms)
+[player] retomada pronta: 0 ms, sem load nem seek
+[player] duracao 1800s contra 14400s no catalogo: trailer ou fonte que nao e este titulo — progresso e visto NAO gravados
+[player] saida: video parar 0 ms, resto 0 ms
+ok sessao retida nao recarrega nem busca
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[t] 6006213 abrir: url ao pipeline
+[t] 6006213 abrir: ponto salvo vai na abertura (segundos)
+[player] pronto em 0 ms desde a abertura (retomada 34%)
+[player] load->1o quadro 0 ms
+[fonte] duracao incompatível: real=1800s esperada=14400s automatico=0
+[player] retomada: a abertura nao aplicou o ponto salvo; seek depois do pronto
+[t] 6006213 abrir: seek para o ponto salvo
+[player] tocando em 0 ms desde a abertura (retomada 34%)
+[player] duracao 1800s contra 14400s no catalogo: trailer ou fonte que nao e este titulo — progresso e visto NAO gravados
+[player] saida: video parar 0 ms, resto 0 ms
+ok preparacao recusada recua a um seek normal
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[t] 6006821 abrir: url ao pipeline
+[t] 6006821 abrir: ponto salvo vai na abertura (percentual)
+[player] pronto em 0 ms desde a abertura (retomada 34%)
+[player] load->1o quadro 0 ms
+[fonte] duracao incompatível: real=1800s esperada=14400s automatico=0
+[t] 6006821 abrir: ponto salvo na preparacao
+[player] tocando em 0 ms desde a abertura (retomada 34%)
+[player] duracao 1800s contra 14400s no catalogo: trailer ou fonte que nao e este titulo — progresso e visto NAO gravados
+[player] saida: video parar 0 ms, resto 0 ms
+ok percentual sozinho vai na abertura, sem seek depois do pronto
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[t] 6007432 abrir: url ao pipeline
+[t] 6007432 abrir: ponto salvo vai na abertura (percentual)
+[player] pronto em 1 ms desde a abertura (retomada 34%)
+[player] load->1o quadro 0 ms
+[fonte] duracao incompatível: real=1800s esperada=14400s automatico=0
+[player] retomada: a abertura nao aplicou o ponto salvo; seek depois do pronto
+[t] 6007432 abrir: seek para o ponto salvo
+[player] tocando em 1 ms desde a abertura (retomada 34%)
+[player] duracao 1800s contra 14400s no catalogo: trailer ou fonte que nao e este titulo — progresso e visto NAO gravados
+[player] saida: video parar 0 ms, resto 0 ms
+ok percentual recusado na abertura recua ao seek com a duracao real
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[t] 6007737 abrir: url ao pipeline
+[player] pronto em 0 ms desde a abertura (retomada 0%)
+[player] load->1o quadro 0 ms
+[fonte] duracao incompatível: real=1800s esperada=14400s automatico=0
+[player] tocando em 0 ms desde a abertura (retomada 0%)
+[player] duracao 1800s contra 14400s no catalogo: trailer ou fonte que nao e este titulo — progresso e visto NAO gravados
+[player] saida: video parar 0 ms, resto 0 ms
+ok assistir do inicio persiste na definicao tardia do episodio
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[epg] paises da grade: BR,PT,MX,AR (5 arquivo(s))
+[t] 6008042 abrir: url ao pipeline
+[player] saida: video parar 0 ms, resto 0 ms
+ok ao vivo nao busca
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[t] 6008348 abrir: url ao pipeline
+[player] pronto em 0 ms desde a abertura (retomada 0%)
+[player] load->1o quadro 0 ms
+[player] tocando em 0 ms desde a abertura (retomada 0%)
+[posplay] sem lista de episodios de fixture-serie no player: pedindo de novo
+[player] saida: video parar 0 ms, resto 0 ms
+[desc] continuar assistindo local: 2
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 2 da conta, 0 repetido(s); 2 na fileira
+[cat] continuar assistindo refeita: 2 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[t] 6008654 abrir: url ao pipeline
+[t] 6008654 abrir: ponto salvo vai na abertura (segundos)
+[player] pronto em 0 ms desde a abertura (retomada 34%)
+[player] load->1o quadro 0 ms
+[t] 6008654 abrir: ponto salvo na preparacao
+[player] tocando em 0 ms desde a abertura (retomada 34%)
+[posplay] sem lista de episodios de fixture-serie no player: pedindo de novo
+[player] saida: video parar 0 ms, resto 0 ms
+ok episodio salvo nao vaza para o seguinte
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 0 da conta, 0 repetido(s); 0 na fileira
+[cat] continuar assistindo refeita: 0 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[plugins] desligados, 0 repositorio(s), 0 scraper(s)
+[jellyfin] profile changed: in-flight requests dropped
+[emby] profile changed: in-flight requests dropped
+[plex] profile changed: in-flight requests dropped
+[perfis] perfil ativo: 2
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[t] 6008960 abrir: url ao pipeline
+[t] 6008960 abrir: ponto salvo vai na abertura (percentual)
+[player] saida: video parar 0 ms, resto 0 ms
+player Android retomada: PASS (prepare, fallback, retido, live, episodio e perfil)

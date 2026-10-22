@@ -31,5 +31,7 @@ int  pessoas_aberto(void);
 void pessoas_evento(const SDL_Event *e);
 void pessoas_atualizar(float dt, Uint32 agora);
 void pessoas_desenhar(Uint32 agora);
+// Teste do ponteiro (#99): a linha em foco; em `col` a coluna (1 = pilula).
+int  pessoas_teste_foco(int *col);
 
 #endif

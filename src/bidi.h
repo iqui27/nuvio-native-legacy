@@ -28,4 +28,15 @@ int bidi_visual_utf8(const char *in, char *out, size_t tam);
 int bidi_visual_utf8_ex(const char *in, char *out, size_t tam,
                         int (*tem_glifo)(unsigned cp, void *ctx), void *ctx);
 
+// Algum codepoint arabe em UTF-8: U+0600-06FF (D8-DB), U+0740-07BF (DD),
+// U+FB50-FDFF e U+FE70-FEFF (EF AD-B7 / B9-BB). text.c e assrender.c (#335).
+static inline int bidi_tem_arabe(const char *s) {
+  const unsigned char *p = (const unsigned char *)s;
+  for (; p && *p; p++) {
+    if ((*p >= 0xD8 && *p <= 0xDB) || *p == 0xDD) return 1;
+    if (*p == 0xEF && ((p[1] >= 0xAD && p[1] <= 0xB7) || (p[1] >= 0xB9 && p[1] <= 0xBB))) return 1;
+  }
+  return 0;
+}
+
 #endif

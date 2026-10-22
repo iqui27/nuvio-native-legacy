@@ -18,6 +18,7 @@
 // (uma passada do tamanho da previa), veus de cor e retangulos pequenos; na
 // troca de cena sao duas artes por ~0,5 s. O resto e texto em cache.
 #include "novidades201.h"
+#include "novidades202.h"
 #include "apoio.h"
 #include "ajustes.h"
 #include "anim.h"
@@ -137,6 +138,9 @@ void novidades201_primeira_vez(void) {
   decidido = 1;
   s = dados_ler(N201_ARQ);
   if (s) { free(s); return; }
+  // A 2.0.2 SUBSTITUI este cartao: quem vai ve-la (ou ja viu) nao recebe a
+  // 2.0.1 depois. Fica visto.
+  if (novidades202_aberto() || (s = dados_ler(N202_ARQ))) { free(s); dados_gravar(N201_ARQ, "1\n"); return; }
   // Sem a marca do guia da 2.0 o guia abre agora (novidades20_primeira_vez,
   // logo depois desta): ele ja conta o app inteiro, e um segundo cartao em
   // seguida seria demais. Fica visto.

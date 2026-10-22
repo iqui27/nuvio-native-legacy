@@ -22,7 +22,7 @@
 // transcreve isso da TV para o celular sem errar — sem QR, esta tela nao
 // funciona.
 #define LG_QR_LADO       440.0f
-#define LG_BLOCO_W      1100.0f
+#define LG_BLOCO_W      lgBlocoW()
 #define LG_PILL_W        360.0f
 #define LG_PILL_H         76.0f
 #define LG_EMAIL_PILL_W  560.0f
@@ -33,6 +33,12 @@
 // da textura para que nenhum ajuste de layout possa comer a margem por
 // acidente — sem ela, leitor nenhum acha o simbolo.
 #define LG_QR_MARGEM       4
+static float lgBlocoW(void) {
+#ifdef NV_TOUCH_UI
+  if (NV_TELA_H > NV_TELA_W) return NV_TELA_W - 2.0f * NV_MARGEM_X;
+#endif
+  return 1100.0f;
+}
 
 static float animBotao;
 static float pulso;
@@ -311,6 +317,17 @@ static void linhaCentrada(TxtEstilo est, const char *s, int r, int g, int b,
   TxtLinha l = txt_linha_corta(est, s, r, g, b, 255, LG_BLOCO_W);
   txt_desenhar_alpha(l, (NV_TELA_W - l.w) * 0.5f, y, alpha);
 }
+static float tituloLogin(float y) {
+#ifdef NV_TOUCH_UI
+  const char *s = i18n("Entrar na sua conta");
+  if (NV_TELA_H > NV_TELA_W && txt_largura(TXT_TITULO1, s) > LG_BLOCO_W)
+    return txt_bloco_corta(TXT_TITULO1, s, 255, 255, 255,
+                          (NV_TELA_W - LG_BLOCO_W) * 0.5f, y, LG_BLOCO_W,
+                          86.0f, 1.0f, 2) + 42.0f;
+#endif
+  linhaCentrada(TXT_TITULO1, "Entrar na sua conta", 255, 255, 255, y, 1.0f);
+  return 118.0f;
+}
 
 // Campo da tela de e-mail: rotulo em cima, caixa com o valor (ou pontos).
 static void campo(float y, int i, const char *rotulo, const char *valor, int oculto) {
@@ -391,8 +408,7 @@ void login_desenhar(Uint32 agora) {
   logoapp_marca((GfxRect){ NV_MARGEM_X, NV_MARGEM_Y, 72.0f, 72.0f }, 1.0f);
 
   y = 118.0f;
-  linhaCentrada(TXT_TITULO1, "Entrar na sua conta", 255, 255, 255, y, 1.0f);
-  y += 118.0f;
+  y += tituloLogin(y);
 
   if (modo == LG_EMAIL && nuvem_pronta()) {
     desenharEmail(y, agora);

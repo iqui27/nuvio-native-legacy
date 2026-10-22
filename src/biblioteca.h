@@ -28,4 +28,9 @@ int  biblioteca_na_lista(int indiceCatalogo);
 void biblioteca_alternar_lista(int indiceCatalogo);
 int  biblioteca_comprado(int indiceCatalogo);
 
+// Estado da lista aberta para os testes de tela: modo de edicao (0 nada, 1 ordem,
+// 2 notas), chip em foco, posicao do titulo pego (-1 solto), QR na tela, fileira.
+// Devolve o recado vivo da ultima acao ("" se nao ha).
+const char *biblioteca_teste_estado(int *ed, int *acao, int *pega, int *compart, int *fileira);
+
 #endif

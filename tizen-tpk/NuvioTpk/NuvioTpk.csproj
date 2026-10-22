@@ -23,6 +23,8 @@
     <Compile Include="../VideoWindowMetrics.cs" />
     <Compile Include="../Carga.cs" />
     <Compile Include="../Texto.cs" Condition="'$(NvTextoCanario)' == '1'" />
+    <!-- Botao de microfone pelo teclado da Samsung (../Voz.cs): release. O canario do teclado o substitui. -->
+    <Compile Include="../Voz.cs" Condition="'$(NvTextoCanario)' != '1'" />
 
   </ItemGroup>
 </Project>

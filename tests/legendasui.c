@@ -1,9 +1,4 @@
-// SUBTITLE SELECTOR MODEL (src/legendasui.c): languages + origins filtered to
-// the configured main/second languages, slot markers, None per slot, More
-// options with real details only, focus by opaque identity across late
-// arrivals (embedded discovery shifts indices, addon list replaced), second
-// slot refusing embedded/ASS without touching the primary, independent
-// offsets, and the AutoSync provider row (hidden when NULL).
+// Subtitle selector regression: model invariants retained across the #425 UI.
 #include "../src/legendasui.c"
 #include "linguas.h"
 #include "../src/legauto.c"
@@ -22,6 +17,13 @@ static char sec[128];
 static int secEscolhas, secDesligar, secOffset;
 static VideoLegendaEstilo estilo = { 120, 0, 0, 3, 1, 0, 0, 0, 0 };
 static int caps = REDE_CAP_CORPO;
+static int todas;
+int ajustes_legendas_todas(void) { return todas; }
+static int segundaPct;
+int ajustes_leg2_tamanho(void) { return segundaPct; }
+int ajustes_leg2_cor(void) { return -1; }
+int ajustes_leg2_fundo(void) { return -1; }
+int ajustes_leg2_borda(void) { return -1; }
 
 int video_n_legenda(void) { return nEmb; }
 const VideoFaixa *video_legenda(int i) { return i >= 0 && i < nEmb ? &emb[i] : NULL; }
@@ -50,7 +52,8 @@ uint64_t legsync_hash_url(const char *u) { uint64_t h = 1469598103934665603ull; 
 unsigned rede_pedido_capacidades(void) { return (unsigned)caps; }
 VideoLegendaEstilo *player_leg_estilo(void) { return &estilo; }
 void player_leg_estilo_mudou(void) {}
-Uint32 SDL_GetTicks(void) { return 1000; }
+static Uint32 agoraMs = 1000;
+Uint32 SDL_GetTicks(void) { return agoraMs; }
 void plrui_decimal(char *s) { (void)s; }
 // legenda2: record what the selector asks for (the loader has its own test).
 void legenda2_reiniciar(void) { sec[0] = 0; secOffset = 0; }
@@ -87,7 +90,9 @@ static int linhaDe(const char *chave) {
 static int tecla(SDL_Keycode k) {
   SDL_Event e; memset(&e, 0, sizeof e);
   e.type = SDL_KEYDOWN; e.key.keysym.sym = k;
-  return legendasui_evento(&e);
+  int r = legendasui_evento(&e);
+  e.type = SDL_KEYUP; legendasui_evento(&e);
+  return r;
 }
 static void focarChave(const char *k) {
   montarLinhas();
@@ -112,6 +117,16 @@ static int syncAcoes(int slot, const char **r, int max, void *u) {
 static void syncRodar(int slot, int acao, void *u) { (void)u; syncExec[slot] = acao; }
 
 int main(void) {
+  // #439: the secondary overlay must keep all added sizes.
+  TxtEstilo est; int r, g, b, fundo, borda;
+  for (segundaPct = 260; segundaPct <= 300; segundaPct += 10) {
+    estiloSecundario(&estilo, &est, &r, &g, &b, &fundo, &borda);
+    assert(est == TXT_LEG_50 + (segundaPct - 50) / 10);
+  }
+  segundaPct = 0; estilo.tamanho = 300;
+  estiloSecundario(&estilo, &est, &r, &g, &b, &fundo, &borda);
+  assert(est == TXT_LEG_50 + (270 - 50) / 10);
+  estilo.tamanho = 120;
   char sub[256];
   int i, n0;
 
@@ -153,262 +168,150 @@ int main(void) {
   ativaEmb = 0;
   legendasui_abrir();
   assert(aberto && !mais);
-  assert(linhaDe("p|Português|E") >= 0 && linhaDe("p|Português|E*") >= 0);
-  assert(linhaDe("p|Português|A:OpenSubtitles") >= 0 && linhaDe("p|Português|A:SubDL") >= 0);
-  assert(linhas[linhaDe("p|Português|A:OpenSubtitles")].nVar == 2);   // variants folded
-  assert(linhaDe("p|Espanhol|A:OpenSubtitles") < 0);                     // filtered out
-  assert(linhaDe("p|Inglês|E") < 0);
-  // The second slot never offers what would not draw: no embedded row.
-  assert(linhaDe("s|Inglês|E") < 0 && linhaDe("s|Inglês|A:OpenSubtitles") >= 0 && linhaDe("s|Inglês|A:Subs.ro") >= 0);
-  assert(linhaDe("s|Português|E") < 0);
-  assert(linhaDe("p|-") >= 0 && linhaDe("s|-") >= 0 && linhaDe("mais") == nLinhasV - 1);
-  assert(linhaDe("sync|p") < 0 && linhaDe("sync|s") < 0);              // NULL provider: no sync row
-  assert(!strcmp(linhas[foco].chave, "p|Português|E"));                // opens on the active primary
-  subDe("p|Português|A:OpenSubtitles", sub, sizeof sub);
-  assert(strstr(sub, "OpenSubtitles") && strstr(sub, "2 versões"));
-  subDe("s|-", sub, sizeof sub);                                          // ... and says why
-  assert(strstr(sub, "Embutida como secundária: indisponível"));
+  assert(nLinhasV == 4 && linhas[0].tipo == LR_NENHUMA);
+  assert(linhas[1].cand >= 0 && cand[linhas[1].cand].indice == 0);
+  assert(!strcmp(linhas[foco].chave, "rec|p"));
+  subDe("rec|p", sub, sizeof sub);
+  assert(strstr(sub, "Embutida") && strstr(sub, "Legenda completa"));
 
-  // --- #202: a row with several versions opens THAT language's versions ---
-  { int r, ant;
-    focarChave("p|Português|A:SubDL");              // one version: OK applies at once
-    escolhidasExt = 0;
-    tecla(SDLK_RETURN);
-    assert(!ver && escolhidasExt == 1 && !strcmp(escolhidaExtUrl, "https://h.invalid/3"));
-    escolhidasExt = 0; extId[0] = 0; ativaEmb = 0;
-    focarChave("p|Português|A:OpenSubtitles");      // two versions: OK opens the list
-    ant = foco;
-    assert(tecla(SDLK_RETURN) == LEGUI_TRATADO);
-    assert(ver && escolhidasExt == 0 && nLinhasV == 2);
-    assert(linhas[0].tipo == LR_CAND && linhas[1].tipo == LR_CAND && linhas[0].slot == 0);
-    r = versaoRecomendada(verGrupo);
-    assert(r == linhas[0].cand && linhas[0].nVar < 0 && linhas[1].nVar > 0);   // release match wins
-    { char nome[96]; const char *id, *ic; int at, ap;
-      textoLinha(&linhas[0], nome, sizeof nome, sub, sizeof sub, &id, &ic, &at, &ap);
-      assert(strstr(nome, "Recomendada") && strstr(sub, "SRT") && strstr(sub, "Show.S01E01.WEB.srt") && !at);
-      textoLinha(&linhas[1], nome, sizeof nome, sub, sizeof sub, &id, &ic, &at, &ap);
-      assert(!strstr(nome, "Recomendada")); }
-    tecla(SDLK_DOWN);                               // the second version, exactly
-    assert(foco == 1);
-    tecla(SDLK_RETURN);
-    assert(escolhidasExt == 1 && !strcmp(escolhidaExtUrl, "https://h.invalid/2") && ver);
-    { char nome[96]; const char *id, *ic; int at, ap;
-      textoLinha(&linhas[1], nome, sizeof nome, sub, sizeof sub, &id, &ic, &at, &ap);
-      assert(at);
-      textoLinha(&linhas[0], nome, sizeof nome, sub, sizeof sub, &id, &ic, &at, &ap);
-      assert(!at); }
-    assert(tecla(SDLK_ESCAPE) == LEGUI_TRATADO);    // Back: the main list, focus on that language
-    assert(!ver && aberto && foco == ant && !strcmp(linhas[foco].chave, "p|Português|A:OpenSubtitles"));
-    escolhidasExt = 0; extId[0] = 0; ativaEmb = 0;
-    // Second slot: its own versions list.
-    nAdd = 7;
-    addon(6, "en", "OpenSubtitles", "Show.S01E01.WEB.en.srt", "https://h.invalid/8");
-    focarChave("s|Inglês|A:OpenSubtitles");
-    assert(linhas[foco].nVar == 2);
-    tecla(SDLK_RETURN);
-    assert(ver && nLinhasV == 2 && linhas[0].slot == 1);
-    tecla(SDLK_DOWN);
-    secEscolhas = 0;
-    tecla(SDLK_RETURN);
-    assert(secEscolhas == 1 && escolhidasExt == 0 && escolhidaEmb == -99 + 0);
-    tecla(SDLK_ESCAPE);
-    assert(!ver && !strcmp(linhas[foco].chave, "s|Inglês|A:OpenSubtitles"));
-    nAdd = 6; sec[0] = 0; secEscolhas = 0; escolhidasExt = 0; montarLinhas(); }
+  // --- #287: forced / SDH / full, each its own row with its own label ---
+  { LegUiCand c[8]; const VideoFaixa *pe[4]; int n, k;
+    VideoFaixa sal[4]; memcpy(sal, emb, sizeof sal);
+    faixa(0, 3, "pt", "Português", "S_TEXT/UTF8", 0);
+    faixa(1, 4, "pt", "Português · Forced", "S_TEXT/UTF8", 1); emb[1].tipoLeg = LING_LEG_FORCADA;
+    faixa(2, 5, "en", "English SDH", "S_TEXT/UTF8", 0); emb[2].tipoLeg = LING_LEG_SDH;
+    faixa(3, 6, "en", "English · Full", "S_TEXT/UTF8", 0); emb[3].tipoLeg = LING_LEG_COMPLETA;
+    for (k = 0; k < 4; k++) pe[k] = &emb[k];
+    n = legendasui_montar(pe, 4, NULL, 0, c, 8);
+    assert(n == 4 && c[0].indice == 0 && c[3].indice == 1);              // forced listed last, as before
+    assert(c[0].completaPar && !strcmp(legendasui_tipo_rotulo(&c[0]), "Legenda completa"));
+    assert(!strcmp(legendasui_tipo_rotulo(&c[3]), "Forçada"));
+    assert(!strcmp(legendasui_tipo_rotulo(&c[1]), "SDH") && !c[1].completaPar);
+    assert(!strcmp(legendasui_tipo_rotulo(&c[2]), "Legenda completa"));
+    { LegUiCand a; memset(&a, 0, sizeof a); assert(!legendasui_tipo_rotulo(&a)); }   // addons: nothing
+    memcpy(emb, sal, sizeof sal); }
 
-  // --- no configured language: unfiltered primary, second slot only None ---
-  ling_local_legenda("*"); ling_local_legenda2("");
-  montarLinhas();
-  assert(linhaDe("p|Espanhol|A:OpenSubtitles") >= 0 && linhaDe("p|Inglês|E") >= 0);
-  for (i = 0; i < nLinhasV; i++) assert(linhas[i].slot == 0 || linhas[i].tipo != LR_CAND);
-  ling_local_legenda("pt"); ling_local_legenda2("en");
 
-  // --- focus by identity while data arrives late ---
-  focarChave("s|Inglês|A:OpenSubtitles");
+  // Full list keeps exact candidate identities and real metadata.
+  focarChave("mais"); tecla(SDLK_RETURN);
+  assert(mais && nLinhasV == 3 + nEmb + nAdd);
+  char key[96], missing[96];
+  snprintf(key, sizeof key, "m|%s", cand[3].id);
+  focarChave(key); subDe(key, sub, sizeof sub);
+  assert(strstr(sub, "OpenSubtitles") && strstr(sub, "SRT") && strstr(sub, "Show.S01E01"));
+  assert(!strstr(sub, "h.invalid"));
   n0 = foco;
-  // Embedded tracks discovered late: two NEW tracks listed before the old
-  // ones, so every old index shifts by two. The addon list is replaced too.
   memmove(&emb[2], &emb[0], 3 * sizeof emb[0]);
-  faixa(0, 1, "pt", "Português (Forçada)", "S_TEXT/UTF8", 0);
+  faixa(0, 1, "pt", "Português", "S_TEXT/UTF8", 0);
   faixa(1, 2, "en", "English SDH", "S_TEXT/UTF8", 0);
-  nEmb = 5;
-  ativaEmb = 2;                                   // same track (numero 3), new index
-  memmove(&add[1], &add[0], 6 * sizeof add[0]);
-  addon(0, "en", "Podnapisi", "", "https://h.invalid/7");
-  nAdd = 7;
+  nEmb = 5; ativaEmb = 2;
   montarLinhas();
-  assert(aberto);                                 // never closed by late data
-  assert(!strcmp(linhas[foco].chave, "s|Inglês|A:OpenSubtitles") && foco != n0);
-  assert(linhaDe("p|Português|E") >= 0 && linhas[linhaDe("p|Português|E")].nVar == 2);
-  // The check of the primary follows the identity, not the index.
-  { char nome[96]; const char *id, *ic; int at, ap, k = linhaDe("p|Português|E");
-    textoLinha(&linhas[k], nome, sizeof nome, sub, sizeof sub, &id, &ic, &at, &ap);
-    assert(at && cand[linhas[k].cand].indice == 2); }
-  // A row that disappears: focus stays at the same position, panel open.
-  focarChave("s|Inglês|A:Podnapisi");
-  n0 = foco;
-  nAdd = 0;
+  assert(!strcmp(linhas[foco].chave, key) && foco != n0);
+  // Re-resolve an embedded snapshot after the backend reorders tracks.
+  char id[24]; legendasui_id_embutida(&emb[3], id);
+  snprintf(key, sizeof key, "m|%s", id); focarChave(key);
+  tecla(SDLK_RETURN); assert(escolhidaEmb == 3);
+  assert(aberto);
+  snprintf(missing, sizeof missing, "m|%s", cand[nCand-1].id);
+  focarChave(missing); n0 = foco; nAdd = 0; montarLinhas();
+  assert(foco == (n0 < nLinhasV ? n0 : nLinhasV - 1)); nAdd = 6;
   montarLinhas();
-  assert(aberto && foco == (n0 < nLinhasV ? n0 : nLinhasV - 1) && !strcmp(linhas[foco].chave, focoChave));
 
-  // --- choosing the primary by identity after the shift ---
-  nAdd = 7;
-  focarChave("p|Português|E*");
-  assert(tecla(SDLK_RETURN) == LEGUI_TRATADO);
-  assert(escolhidaEmb == 3);                      // letreiro track: index 1 -> 3
-  assert(aberto);                                 // stays open: both slots can be set
-
-  // --- second slot: embedded and ASS refused, primary untouched ---
-  escolhidaEmb = -99; escolhidasExt = 0; secEscolhas = 0;
-  // Simple view: not offered at all (see above). More options with the
-  // second slot aimed: listed dimmed with the reason, OK refused.
-  focarChave("mais");
-  tecla(SDLK_RETURN);
-  focarChave("m|alvo");
-  tecla(SDLK_RIGHT);
-  assert(mais && alvo == 1);
-  { char k[96]; int j, e = -1, a = -1;
-    for (j = 0; j < nCand; j++) {
-      if (cand[j].embutida && !strcmp(cand[j].idioma, "en") && e < 0) e = j;
-      if (!cand[j].embutida && !strcmp(cand[j].formato, "ASS")) a = j;
-    }
-    assert(e >= 0 && a >= 0);
-    snprintf(k, sizeof k, "m|%s", cand[e].id);
-    focarChave(k);
+  // Second slot refuses embedded/ASS and unsupported platforms.
+  escolhidaEmb = -99; escolhidasExt = secEscolhas = 0;
+  focarChave("m|alvo"); tecla(SDLK_RIGHT); assert(alvo == 1);
+  for (i = 0; i < nCand; i++) {
+    if (!cand[i].embutida && strcmp(cand[i].formato, "ASS")) continue;
+    snprintf(key, sizeof key, "m|%s", cand[i].id); focarChave(key);
     tecla(SDLK_RETURN);
-    assert(secEscolhas == 0 && escolhidaEmb == -99 && escolhidasExt == 0);
-    assert(strstr(aviso, "Embutida como secundária"));
-    snprintf(k, sizeof k, "m|%s", cand[a].id);   // .ass file
-    focarChave(k);
-    tecla(SDLK_RETURN);
-    assert(secEscolhas == 0 && strstr(aviso, "ASS como secundária"));
-    { const char *id, *ic; char nome[96]; int at, ap, i2 = linhaDe(k);
-      textoLinha(&linhas[i2], nome, sizeof nome, sub, sizeof sub, &id, &ic, &at, &ap);
-      assert(ap && !at); } }                      // dimmed, never checked
-  tecla(SDLK_ESCAPE);
-  assert(!mais);
-  alvo = 0;
-  // Portuguese as the second language: its embedded tracks and the SubDL .ass
-  // file are hidden from the simple view; the OpenSubtitles SRTs stay.
-  ling_local_legenda2("pt");
-  montarLinhas();
-  assert(linhaDe("s|Português|A:SubDL") < 0 && linhaDe("s|Português|E") < 0);
-  assert(linhaDe("s|Português|A:OpenSubtitles") >= 0);
-  // Unsupported platform: honest refusal, nothing changes.
-  caps = 0;
-  focarChave("s|Português|A:OpenSubtitles");
-  tecla(SDLK_RETURN);                             // two versions: opens the list first
-  assert(ver);
-  tecla(SDLK_RETURN);
-  assert(secEscolhas == 0 && strstr(aviso, "nesta plataforma"));
-  tecla(SDLK_ESCAPE);
-  assert(!ver);
-  caps = REDE_CAP_CORPO;
-  // An external SRT as the second subtitle.
-  ling_local_legenda2("en");
-  montarLinhas();
-  focarChave("s|Inglês|A:OpenSubtitles");
-  tecla(SDLK_RETURN);
-  assert(secEscolhas == 1 && sec[0] == 'a' && escolhidaEmb == -99 && escolhidasExt == 0);
-  { char nome[96]; const char *id, *ic; int at, ap, k = linhaDe("s|Inglês|A:OpenSubtitles");
-    textoLinha(&linhas[k], nome, sizeof nome, sub, sizeof sub, &id, &ic, &at, &ap);
-    assert(at); }
-  // The same file cannot be both.
-  focarChave("p|Português|A:OpenSubtitles");
-  tecla(SDLK_RETURN);                             // the versions list: pick the .../1 file
-  assert(ver);
-  for (i = 0; i < nLinhasV; i++) if (!strcmp(cand[linhas[i].cand].leg.url, "https://h.invalid/1")) focar(i);
-  tecla(SDLK_RETURN);
-  tecla(SDLK_ESCAPE);
-  assert(!ver && escolhidasExt == 1 && strstr(escolhidaExtUrl, "h.invalid/1"));
-  ling_local_legenda2("pt");
-  montarLinhas();
-  secEscolhas = 0;
-  focarChave("s|Português|A:OpenSubtitles");
-  tecla(SDLK_RETURN);
-  for (i = 0; i < nLinhasV; i++) if (!strcmp(cand[linhas[i].cand].leg.url, "https://h.invalid/1")) focar(i);
-  tecla(SDLK_RETURN);
-  tecla(SDLK_ESCAPE);
-  assert(secEscolhas == 0 && strstr(aviso, "Já é a principal"));
-  ling_local_legenda2("en");
-  // None per slot.
-  focarChave("s|-");
-  tecla(SDLK_RETURN);
-  assert(secDesligar == 1 && !sec[0] && escolhidasExt == 1);
-  focarChave("p|-");
-  tecla(SDLK_RETURN);
-  assert(escolhidaEmb == -1);
-
-  // --- More options: every candidate, real details, aim at either slot ---
-  focarChave("mais");
-  tecla(SDLK_RETURN);
-  assert(mais && linhaDe("m|alvo") == 0 && linhaDe("m|atraso") == 1 && linhaDe("m|-") == 2);
-  assert(nLinhasV == 3 + nEmb + nAdd);            // nothing filtered here
-  assert(linhas[foco].tipo == LR_CAND);
-  { char k[96];
-    snprintf(k, sizeof k, "m|%s", cand[nEmb + 1].id);           // pt OpenSubtitles with release name
-    subDe(k, sub, sizeof sub);
-    assert(strstr(sub, "OpenSubtitles") && strstr(sub, "SRT") && strstr(sub, "Show.S01E01.WEB.srt"));
-    snprintf(k, sizeof k, "m|%s", cand[nEmb + 2].id);           // no name, no extension: provider only
-    subDe(k, sub, sizeof sub);
-    assert(!strcmp(sub, "OpenSubtitles"));
-    assert(!strstr(sub, "h.invalid")); }
-  // Offsets are per slot: the second slot's offset never moves the primary's.
-  focarChave("m|atraso");
-  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);
-  assert(estilo.atrasoMs == 200 && secOffset == 0);   // 0,1 s por toque (a regua)
-  focarChave("m|alvo");
-  tecla(SDLK_RIGHT);
-  assert(alvo == 1);
-  focarChave("m|atraso");
-  tecla(SDLK_LEFT);
-  assert(secOffset == -100 && estilo.atrasoMs == 200);
-  // Estilo is still one RIGHT away from a candidate row; Back returns to the
-  // simple view on the More options row, a second Back closes.
-  focarChave("m|-");
-  assert(tecla(SDLK_RIGHT) == LEGUI_ESTILO);
-  assert(tecla(SDLK_ESCAPE) == LEGUI_TRATADO && !mais && !strcmp(linhas[foco].chave, "mais"));
-
-  // --- AutoSync provider plugs in per slot ---
+    assert(!secEscolhas && escolhidaEmb == -99 && !escolhidasExt);
+    subDe(key, sub, sizeof sub); assert(strstr(sub, "indisponível"));
+  }
+  snprintf(key, sizeof key, "m|%s", cand[nEmb+3].id); focarChave(key);
+  caps = 0; tecla(SDLK_RETURN); assert(!secEscolhas && strstr(aviso, "plataforma"));
+  caps = REDE_CAP_CORPO; agoraMs += 1000; tecla(SDLK_RETURN); assert(secEscolhas == 1);
+  // Same external file cannot be both slots.
+  snprintf(extId, sizeof extId, "%s", cand[nEmb+3].id);
+  agoraMs += 1000; tecla(SDLK_RETURN); assert(secEscolhas == 1 && strstr(aviso, "principal"));
+  focarChave("m|-"); tecla(SDLK_RETURN); assert(!sec[0] && secDesligar == 1);
+  focarChave("m|atraso"); tecla(SDLK_LEFT); assert(secOffset == -100 && estilo.atrasoMs == 0);
+  focarChave("m|alvo"); tecla(SDLK_LEFT);
+  focarChave("m|atraso"); tecla(SDLK_RIGHT); assert(estilo.atrasoMs == 100 && secOffset == -100);
+  // The full list also carries the AutoSync row: without a language
+  // preference the panel opens straight into it.
   { LegendasSyncProvider p = { syncEstado, syncAcoes, syncRodar, NULL };
-    legendasui_definir_sync(&p);
-    montarLinhas();
-    assert(linhaDe("sync|p") >= 0 && linhaDe("sync|s") >= 0);
-    focarChave("sync|s");
-    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);             // to "Tentar outra referência"
-    tecla(SDLK_RETURN);
+    legendasui_definir_sync(&p); montarLinhas();
+    focarChave("m|sync|p"); assert(linhas[foco].tipo == LR_SYNC && linhas[foco].slot == 0);
+    legendasui_definir_sync(NULL); montarLinhas(); focarChave("m|atraso"); }
+  tecla(SDLK_ESCAPE); assert(!mais && !strcmp(linhas[foco].chave, "mais"));
+
+  // AutoSync actions are unchanged, per slot.
+  { LegendasSyncProvider p = { syncEstado, syncAcoes, syncRodar, NULL };
+    legendasui_definir_sync(&p); montarLinhas();
+    focarChave("sync|s"); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
     assert(syncExec[1] == 2 && syncExec[0] == -1);
-    subDe("sync|s", sub, sizeof sub);
-    // F05 row: title is fixed, the provider's state is the line below; the
-    // chosen action is drawn between < > (not in the text).
-    assert(strstr(sub, "Sincronizada (+1,2 s)") && !strstr(sub, "["));
-    legendasui_definir_sync(NULL);
-    montarLinhas();
-    assert(linhaDe("sync|p") < 0 && linhaDe("sync|s") < 0); }
-
-  // --- foto da TV (04/10): a lingua preferida vem primeiro, "PORTUGUESE" tem nome
-  //     e selo inteiros, e as duas "Nenhuma" nao se parecem ---
-  { char nm[96], sb[160]; const char *id, *ic; int at, ap, a, b;
-    nAdd = 3; ativaEmb = -1; nEmb = 0;
-    addon(0, "eng", "AIOStreams", "", "https://h.invalid/a");
-    ling_normalizar("PORTUGUESE", add[1].idioma, sizeof add[1].idioma);
-    snprintf(add[1].provedor, sizeof add[1].provedor, "AIOStreams");
-    snprintf(add[1].url, sizeof add[1].url, "https://h.invalid/b");
-    addon(2, "pob", "OpenSubtitles", "", "https://h.invalid/c");
-    ling_local_legenda("pt"); ling_local_legenda2("");
-    legendasui_abrir();
-    assert(linhas[0].tipo == LR_CAND && ling_casa(cand[linhas[0].cand].idioma, "pt"));
-    a = linhaDe("p|-"); assert(a >= 0);
-    textoLinha(&linhas[a], nm, sizeof nm, sb, sizeof sb, &id, &ic, &at, &ap);
-    assert(!strcmp(nm, "Nenhuma"));
-    b = linhaDe("s|-");
-    if (b >= 0) { textoLinha(&linhas[b], nm, sizeof nm, sb, sizeof sb, &id, &ic, &at, &ap); assert(!strcmp(nm, "Sem segunda legenda")); }
-    assert(!strcmp(ling_selo(add[1].idioma), "PT")); }
-
-  assert(tecla(SDLK_ESCAPE) == LEGUI_FECHAR && !aberto);
-  // Media change drops the second slot.
+    subDe("sync|s", sub, sizeof sub); assert(strstr(sub, "Sincronizada (+1,2 s)"));
+    legendasui_definir_sync(NULL); }
+  // Settings default and explicit full list; opening never selects a track.
+  escolhidaEmb = -99; escolhidasExt = 0;
+  todas = 1; legendasui_abrir(); assert(mais);
+  assert(tecla(SDLK_ESCAPE) == LEGUI_FECHAR);
+  todas = 0; ling_local_legenda("*"); legendasui_abrir(); assert(mais);
+  assert(escolhidaEmb == -99 && !escolhidasExt);
+  assert(tecla(SDLK_ESCAPE) == LEGUI_FECHAR);
   snprintf(sec, sizeof sec, "a1"); secOffset = 900;
-  legendasui_reiniciar();
-  assert(!sec[0] && secOffset == 0);
-  puts("legendasui: languages/origins, slots, None, More options details, focus identity, index shift, second-slot refusals, offsets, sync row ok");
+  legendasui_reiniciar(); assert(!sec[0] && secOffset == 0);
+
+  // --- recommended view: ACTIVE primary outside the recommendations -------
+  // pt preferido, en como segunda, mas a ativa e a faixa es: linha propria
+  // (marcada) e foco nela ao abrir — antes caia em "Desligada".
+  ling_local_legenda("pt"); ling_local_legenda2("en");
+  nEmb = 3;
+  faixa(0, 3, "pt", "Português", "S_TEXT/UTF8", 0);
+  faixa(1, 4, "en", "English", "S_TEXT/UTF8", 0);
+  faixa(2, 5, "es", "Español", "S_TEXT/UTF8", 0);
+  nAdd = 6;
+  ativaEmb = 2; extId[0] = 0; sec[0] = 0;
+  legendasui_abrir();
+  assert(!mais && linhaDe("rec|a") >= 0);
+  assert(!strcmp(linhas[foco].chave, "rec|a"));
+  assert(cand[linhas[linhaDe("rec|a")].cand].indice == 2);
+  { char nome[96]; const char *id, *ic; int at, ap;
+    textoLinha(&linhas[linhaDe("rec|a")], nome, sizeof nome, sub, sizeof sub, &id, &ic, &at, &ap);
+    assert(at && strstr(sub, "Embutida")); }
+  // A ativa vira a recomendada (preferencia muda para es): rec|a some e o
+  // cache da decisao acompanha o mundo sem reabrir nada.
+  ling_local_legenda("es");
+  montarLinhas();
+  assert(linhaDe("rec|a") < 0);
+  assert(!strcmp(cand[linhas[linhaDe("rec|p")].cand].idioma, "es"));
+  // Com segunda legenda ligada, a combinacao em vigor tem a linha "par": sem
+  // duplicar a ativa em rec|a.
+  ativaEmb = 2; snprintf(sec, sizeof sec, "%s", cand[nEmb + 3].id);
+  ling_local_legenda("pt"); montarLinhas();
+  assert(linhaDe("par") >= 0 && linhaDe("rec|a") < 0);
+  // With both on, the hold-OK menu on the pair turns the second one off
+  // (there used to be no way back out from the menu).
+  focarChave("par"); abrirMenu();
+  assert(menu && menuTiraSecundaria() && !strcmp(menuRot(1), "Sem segunda legenda"));
+  secDesligar = 0; menuFoco = 1; menuEscolher();
+  assert(!menu && secDesligar == 1 && !sec[0]);
+  montarLinhas(); abrirMenu(); assert(!menuTiraSecundaria()); menu = 0;
+  sec[0] = 0; ativaEmb = -1;
+
+  // Nome publicado depois do primeiro calculo, com URL opaca e candidatas iguais.
+  nEmb = 0; nAdd = 2; tocando = "https://h.invalid/opaque";
+  addon(0, "pt", "OpenSubtitles", "Show.HDTV.LOL.srt", "https://h.invalid/old.srt");
+  addon(1, "pt", "OpenSubtitles", "Show.WEB-DL.NTb.srt", "https://h.invalid/new.srt");
+  legauto_fonte(NULL); legendasui_abrir();
+  assert(recP == 0);
+  uint64_t assinatura = recAssinatura();
+  legauto_fonte("Show.WEB-DL.NTb.mkv");
+  montarLinhas();
+  assert(recP == 1 && recAssinatura() != assinatura);
+  legendasui_abrir(); assert(recP == 1);
+  legauto_fonte(NULL); montarLinhas(); assert(recP == 0);
+
+  puts("legendasui: identities, formats, kinds, full list, late arrivals, second-slot refusals, offsets, AutoSync, settings, active-outside-recommendations OK");
   return 0;
 }

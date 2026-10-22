@@ -5,7 +5,7 @@
 #
 #   bash tests/corviva_shot.sh /tmp/nuvio-corviva
 #   sips -s format png /tmp/nuvio-corviva-1-home-dinamica-vermelho.bmp --out x.png
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 
 NUVIO_DADOS=$(mktemp -d /tmp/nuvio-corviva-shot.XXXXXX)

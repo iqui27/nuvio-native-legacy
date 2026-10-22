@@ -1,5 +1,6 @@
 // Icone do app para apoiadores. Ver iconeapp.h.
 #include "iconeapp.h"
+#include "iconeapp_arte.h"
 #include "ajustes.h"
 #include "dados.h"
 #include "tex_cache.h"
@@ -87,6 +88,19 @@ int iconeapp_marca(GfxRect r, float alpha) {
   return iconeapp_desenhar(i, r, 0, alpha);
 }
 
+// Re-apply when the bundled art of the icon in force differs from the one last
+// applied ("id:hash" in iconeapp-arte.txt). A new APK/package ships the new art
+// by itself; this covers installs that only copy files and the wasm splash.
+const char *iconeapp_arte_atual(int i) {
+  static char b[48];
+  snprintf(b, sizeof b, "%s:%s", ID[i], ARTE_HASH[i]);
+  return b;
+}
+int iconeapp_arte_mudou(int i, const char *gravado) {
+  if (i < 0 || i >= ICONEAPP_N) return 0;
+  return !gravado || strcmp(gravado, iconeapp_arte_atual(i)) != 0;
+}
+
 #ifdef NV_ANDROID
 // NuvioActivity.trocarIcone(id): agenda a troca do <activity-alias> do launcher
 // para quando o app sair da frente (ver a nota la: trocar na hora fecha a
@@ -114,7 +128,8 @@ static void androidTrocar(const char *id) {
 #endif
 
 void iconeapp_aplicar_plataforma(void) {
-  const char *id = iconeapp_id(iconeapp_atual());
+  int i = iconeapp_atual();
+  const char *id = iconeapp_id(i);
 #ifdef NV_ANDROID
   androidTrocar(id);
 #elif defined(__EMSCRIPTEN__)
@@ -129,4 +144,5 @@ void iconeapp_aplicar_plataforma(void) {
 #else
   (void)id;
 #endif
+  if (dados_dir() && dados_dir()[0]) dados_gravar("iconeapp-arte.txt", iconeapp_arte_atual(i));
 }

@@ -34,7 +34,11 @@
 #include <unistd.h>
 int arte_reserva_episodios(const char *imdb, const char *corpo) { (void)imdb; (void)corpo; return 0; }
 
+int ajustes_social(void) { return 1; }
+int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
+int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
+int ajustes_ocultar_nao_lancados(void) { return 0; }   // #369: descoberta.c le o ajuste
 #include "../src/descoberta.c"
 #include "jellyfin_stub.inc"
 Uint32 SDL_GetTicks(void) { return 0; }
@@ -96,6 +100,14 @@ const char *addons_nome(int i)         { (void)i; return "Addon"; }
 unsigned addons_versao(void)           { return versaoAddons; }
 const char *addons_base_por_id(const char *id) { return id && !strcmp(id, AID) ? baseAtual() : ""; }
 void  addons_manifesto_lido(int i, const char *c) { (void)i; (void)c; }
+void addons_lista_travar(void) {}
+void addons_lista_destravar(void) {}
+void ws_destino(const char *b, const char *u, int p, char out[20]) {
+  (void)b; (void)u; (void)p; strcpy(out, "fixture");
+}
+void addons_manifesto_lido_base(int i, const char *b, const char *d, unsigned v, const char *c) {
+  (void)b; (void)d; (void)v; addons_manifesto_lido(i, c);
+}
 
 // ------------------------------------------------------------------ o relogio
 static unsigned long long agoraMs(void) {
@@ -193,6 +205,15 @@ int trakt_lista(const char *q, CatItem *s, int m) {
   }
   return i;
 }
+// Mesmo dublê, na forma que cresce: descoberta.c pede a lista por aqui agora.
+int trakt_lista_cresc(const char *q, CatItem **s, int m) {
+  int n;
+  *s = m > 0 ? calloc((size_t)m, sizeof(CatItem)) : NULL;
+  if (!*s) return 0;
+  n = trakt_lista(q, *s, m);
+  if (n <= 0) { free(*s); *s = NULL; return 0; }
+  return n;
+}
 // O "sync" que chega entre o Trakt e a leitura da lista de addons.
 enum { S_NADA, S_ADDONS, S_CREDENCIAL };
 static volatile int armadoSocial = S_NADA;
@@ -233,11 +254,22 @@ int   fil_linha_oculta(int i)              { (void)i; return 0; }
 int   fil_linha_tipo(int i)                { (void)i; return FIL_TIPO_AUTO; }
 int   fil_linha_tam(int i)                 { (void)i; return FIL_TAM_PADRAO; }
 void  fil_gravar_registro(void)            { }
+int   fil_lista_e_deste_perfil(int p)       { (void)p; return 1; }
+unsigned fil_perfil_geracao(void)          { return 0; }
+FilPassada fil_passada_ler(void)          { FilPassada p = {0, 0}; return p; }
+int   fil_passada_valida(const FilPassada *p) { (void)p; return 1; }
+void  fil_registrar_de(const FilPassada *p, const char *c, const char *t, const char *a, const char *k, int n) { (void)p; (void)c; (void)t; (void)a; (void)k; (void)n; }
+void  fil_registrar_se_couber_de(const FilPassada *p, const char *c, const char *t, const char *a, const char *k) { (void)p; (void)c; (void)t; (void)a; (void)k; }
 int   fil_podar_catalogos(const char *const *ids, const char *const *bases, int n,
                           int perfilDaLista) {
   (void)ids; (void)bases; (void)n; (void)perfilDaLista; return 0; }
+int fil_marcar_declaradas(const char *const *chaves, int n, int perfilDaLista) { (void)chaves; (void)n; (void)perfilDaLista; return 0; }
+int fil_marcar_sem_addon(const char *const *ids, const char *const *bases, const int *ativos, int n, int perfilDaLista) {
+  (void)ids; (void)bases; (void)ativos; (void)n; (void)perfilDaLista; return 0;
+}
 int   fil_addon_novo(const char *id, const char *base) { (void)id; (void)base; return 0; }
 int   addons_perfil_da_lista(void)         { return 0; }
+int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 int   fil_limite(void)                     { return 3; }
 // Dubles da escolha da cota (#126), como em homejanelas.c.
 int fil_escolhida(const char *c) { (void)c; return -1; }
@@ -246,6 +278,8 @@ void fil_registrar_se_couber(const char *c, const char *t, const char *a,
                              const char *tp) { (void)c; (void)t; (void)a; (void)tp; }
 const char *fil_hero_fonte(void)           { return "auto"; }
 int   fil_oculta(const char *c)            { (void)c; return 0; }
+int   fil_adicionada_na_tv(const char *c) { (void)c; return 0; }
+int   fil_estado_chave(const char *c) { (void)c; return -1; }
 int   fil_tem_ordem(void)                  { return 0; }
 int   fil_unir(const char *const *c, int n, int *s, int m) {
   int i; (void)c; for (i = 0; i < n && i < m; i++) s[i] = i; return i; }
@@ -261,11 +295,15 @@ int   ajustes_idioma_ingles(void)          { return 0; }
 int ajustes_idioma(void) { return 0; }
 int   ajustes_cw_ordem(void)               { return 0; }   // Padrao (issue #127)
 int   ajustes_cw_concluido(void)           { return 90; }  // Percentual assistido de fabrica
+int   ajustes_cw_minimo(void)             { return 1; }
 int   ajustes_itens_fileira(void)          { return 12; }   // padrao (#163)
 int   ajustes_cw_mostrar_nao_exibidos(void) { return 1; }
+int   ajustes_cw_proximo(void) { return 1; }
 int   ajustes_cw_ligado(void)              { return 1; }
 int   ajustes_cw_estilo(void)              { return 0; }
 int   ajustes_posteres_deitados(void)      { return 0; }
+float ajustes_espaco_fileiras(void) { return 1.0f; }
+float ajustes_espaco_titulos(void)  { return 1.0f; }
 int   ajustes_rotulos_poster(void)         { return 1; }
 int   ajustes_hero_fonte(void)             { return 0; }
 int   ajustes_cw_fonte(void)               { return fixtureCW ? AJ_CWF_TRAKT : AJ_CWF_CONTA; }
@@ -306,6 +344,8 @@ int trakt_continuar(CatItem *s, int m) {
   return 1;
 }
 int   trakt_e_a_seguir(const char *id)     { (void)id; return 0; }
+int trakt_cw_concluiu(const char *id, long long ms) { (void)id; (void)ms; return 0; }
+int   trakt_progresso_ocultar(const char *i, int o) { (void)i; (void)o; return 0; }
 int   trakt_continuar_falhou(void)         { return 0; }
 const char *nuvem_trakt_cliente(void)      { return ""; }
 int   arte_reserva_registrar(const char *url, const char *imdb, int poster) {

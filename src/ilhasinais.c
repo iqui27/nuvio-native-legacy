@@ -2,9 +2,12 @@
 #include "ilhasinais.h"
 #include "ilha.h"
 #include "ilhasalvar.h"
+#include "listasescrita.h"
 #include "ilhacart.h"
 #include "avisodisp.h"
 #include "enquete.h"
+#include "juntos.h"
+#include "juntosui.h"
 #include "ilhaacao.h"
 #include "addons.h"
 #include "avisos.h"
@@ -43,6 +46,7 @@ static void acoes(void) {
   if (!strcmp(chave, ILHA_ACAO_CHAVE)) { ilhaacao_botao(b); return; }
   if (!strncmp(chave, "salvar:", 7)) { ilhasalvar_acao(chave, b); return; }
   if (!strncmp(chave, "enquete:", 8)) { enquete_acao(chave, b); return; }
+  if (!strncmp(chave, "juntos:", 7)) { juntos_acao(chave, b); return; }
   if (!strncmp(chave, "pedido:", 7)) {
     // O fio social pode estar ocupado (uma releitura em voo): a resposta fica
     // guardada e sai na proxima volta, em vez de se perder em silencio.
@@ -82,15 +86,80 @@ static void responderPedido(void) {
   pedOpPend = 0;
 }
 
+// "DITO" E QUANDO APARECEU, NAO QUANDO FOI MANDADO (06/10, relato do dono:
+// "nao ta mostrando na ilha"). A versao anterior gravava "pedido:<pub>" no
+// disco no mesmo instante em que chamava ilha_avisar_ex. Se o aviso nao
+// chegasse a aparecer — a fila cheia de erros o descartou, o painel de Salvos
+// estava por cima e o prazo venceu por baixo dele — o pedido ficava marcado
+// como dito para sempre e nunca mais passava pela ilha. Agora o anuncio fica
+// PENDENTE (so na RAM) ate a ilha dizer que mostrou (ilha_mostrou); some da
+// fila sem ter aparecido, ele e anunciado de novo na proxima sondagem.
+#define PED_PEND_MAX REC_PEDIDOS_MAX
+static char pendPub[PED_PEND_MAX][16];
+static char pendChave[PED_PEND_MAX][40];
+static int nPend;
+
+static int pendIndice(const char *pub) {
+  int i;
+  for (i = 0; i < nPend; i++) if (!strcmp(pendPub[i], pub)) return i;
+  return -1;
+}
+static void pendTirar(int i) {
+  memmove(pendPub[i], pendPub[i + 1], sizeof pendPub[0] * (size_t)(nPend - i - 1));
+  memmove(pendChave[i], pendChave[i + 1], sizeof pendChave[0] * (size_t)(nPend - i - 1));
+  nPend--;
+}
+static void pendPor(const char *pub, const char *chave) {
+  if (nPend == PED_PEND_MAX) pendTirar(0);
+  snprintf(pendPub[nPend], sizeof pendPub[0], "%s", pub);
+  snprintf(pendChave[nPend], sizeof pendChave[0], "%s", chave);
+  nPend++;
+}
+
+// Os anuncios pendentes: os que apareceram viram "dito" no disco; os que a
+// fila perdeu voltam a ser novos; os de um pedido que ja nao esta na caixa
+// (respondido na aba Amigos, ou cancelado por quem pediu) saem da pilula.
+static void pedidosPendentes(void) {
+  int i, j, n = recomenda_n_pedidos();
+  char vistas[PED_PEND_MAX][40];
+  int nVistas = 0;
+  RecPessoa p;
+  // ilha_mostrou consome: pergunta UMA vez por chave (o agregado "pedidos"
+  // cobre varias pessoas).
+  for (i = 0; i < nPend; i++) {
+    for (j = 0; j < nVistas; j++) if (!strcmp(vistas[j], pendChave[i])) break;
+    if (j < nVistas) continue;
+    if (ilha_mostrou(pendChave[i])) snprintf(vistas[nVistas++], sizeof vistas[0], "%s", pendChave[i]);
+  }
+  for (i = 0; i < nPend; ) {
+    char chave[40];
+    int naCaixa = 0, mostrou = 0;
+    for (j = 0; j < n; j++)
+      if (recomenda_pedido(j, &p) && !strcmp(p.pub, pendPub[i])) { naCaixa = 1; break; }
+    for (j = 0; j < nVistas; j++) if (!strcmp(vistas[j], pendChave[i])) { mostrou = 1; break; }
+    snprintf(chave, sizeof chave, "pedido:%s", pendPub[i]);
+    if (mostrou) {
+      avisodisp_por(chave);       // apareceu: nao volta nem depois de reiniciar
+      pendTirar(i);
+    } else if (!naCaixa) {
+      if (!strcmp(pendChave[i], chave)) ilha_retirar(chave);
+      pendTirar(i);
+    } else if (!ilha_tem(pendChave[i])) {
+      pendTirar(i);               // a fila perdeu: anuncia de novo abaixo
+    } else i++;
+  }
+}
+
 static void pedidosDeAmizade(void) {
-  int i, n = recomenda_n_pedidos(), novos = 0;
+  int i, n, novos = 0;
   RecPessoa p, primeiro;
   char chave[40];
+  pedidosPendentes();
+  n = recomenda_n_pedidos();
   for (i = 0; i < n; i++) {
     if (!recomenda_pedido(i, &p) || !p.pub[0]) continue;
     snprintf(chave, sizeof chave, "pedido:%s", p.pub);
-    if (avisodisp_tem(chave)) continue;
-    avisodisp_por(chave);        // dito: nao volta nem depois de reiniciar
+    if (avisodisp_tem(chave) || pendIndice(p.pub) >= 0) continue;
     if (!novos) primeiro = p;
     novos++;
   }
@@ -122,6 +191,7 @@ static void pedidosDeAmizade(void) {
     e.rosto = primeiro.avatar; e.rostoNome = nome;
     e.modal = &m;
     ilha_avisar_ex(&e);
+    pendPor(primeiro.pub, chave);
   } else {
     // VARIOS DE UMA VEZ: um aviso so, com o rosto do mais novo; OK leva a
     // aba Amigos, onde cada um tem Aceitar e Recusar.
@@ -133,6 +203,12 @@ static void pedidosDeAmizade(void) {
     e.rosto = primeiro.avatar; e.rostoNome = primeiro.apelido[0] ? primeiro.apelido : "?";
     e.acao = 1;
     ilha_avisar_ex(&e);
+    for (i = 0; i < n; i++) {
+      if (!recomenda_pedido(i, &p) || !p.pub[0]) continue;
+      snprintf(chave, sizeof chave, "pedido:%s", p.pub);
+      if (avisodisp_tem(chave) || pendIndice(p.pub) >= 0) continue;
+      pendPor(p.pub, "pedidos");
+    }
   }
   printf("[ilha] pedidos de amizade novos: %d\n", novos);
 }
@@ -223,6 +299,21 @@ void ilhasinais_debrid_baixando(const char *servico, const char *titulo) {
   ilha_avisar("debrid-baixa", ILHA_INFO, "aj_download", txt, 9000u, 0);
 }
 
+// O BOTAO "Sincronizar addons" (#360) da tela de Add-ons: o resultado chega
+// aqui, e nao na tela, porque a pessoa pode sair dela antes de a volta acabar.
+static void addonsAMao(void) {
+  char txt[200];
+  int add = 0, rem = 0, mud = 0, r = sync_manual_addons_estado(&add, &rem, &mud);
+  if (r < 2) return;
+  if (r == 3) {
+    ilha_avisar("sync-addons", ILHA_ERRO, "aj_rotate-cw", i18n("Não foi possível sincronizar os addons."), 5000u, 0);
+    return;
+  }
+  if (add || rem) snprintf(txt, sizeof txt, i18n("Addons sincronizados: %d adicionados, %d removidos"), add, rem);
+  else snprintf(txt, sizeof txt, "%s", i18n(mud ? "Addons atualizados com a conta" : "Addons já estão em dia"));
+  ilha_avisar("sync-addons", ILHA_OK, "aj_rotate-cw", txt, 4000u, 0);
+}
+
 static void sincronia(Uint32 agora) {
   static SyncEstado antes = SYNC_PARADO;
   static Uint32 rodandoDesde;
@@ -242,6 +333,7 @@ static void sincronia(Uint32 agora) {
     }
   } else if (st == SYNC_PRONTO) falhaDita = 0;
   antes = st;
+  addonsAMao();
 }
 
 void ilhasinais_perfil_trocado(void) {
@@ -289,7 +381,10 @@ void ilhasinais_passo(Uint32 agora) {
   acoes();
   responderPedido();
   ilhasalvar_passo(agora);
+  lstesc_passo();
   enquete_passo(agora);
+  juntos_passo(agora);
+  juntosui_atualizar(agora);
   rede();
   addonFora();
   sincronia(agora);   // a atividade e renovada por quadro

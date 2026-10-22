@@ -61,6 +61,22 @@ if [ "${NUVIO_TIZEN_DIAGNOSTIC:-0}" != "1" ]; then
   STAMP_CONFIG_FP=$(sed -n 's/^config-fingerprint=//p' "$STAMP" | head -1)
   STAMP_WASM_SHA=$(sed -n 's/^wasm-sha256=//p' "$STAMP" | head -1)
   ACTUAL_WASM_SHA=$(sha256 "$ENTRADA/index.wasm")
+  # O wasm e o glue tem de ter sido escritos DEPOIS do inicio deste build
+  # (build-start, gravado por tools/tizen.sh). Um stamp velho que ainda casa com
+  # o wasm velho passava na checagem de sha acima.
+  STAMP_INICIO=$(sed -n 's/^build-start=//p' "$STAMP" | head -1)
+  case "$STAMP_INICIO" in ''|*[!0-9]*)
+    echo "tizen-wgt.sh: stamp sem build-start; o tools/tizen.sh nao terminou este build — rode de novo" >&2
+    exit 1 ;;
+  esac
+  mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+  for f in index.wasm index.js; do
+    if [ "$(mtime "$ENTRADA/$f")" -lt "$STAMP_INICIO" ]; then
+      echo "tizen-wgt.sh: $f e mais velho que o inicio do build (build-start=$STAMP_INICIO);" >&2
+      echo "  o tools/tizen.sh falhou ou nao rodou — rode tools/tizen.sh de novo" >&2
+      exit 1
+    fi
+  done
   [ -n "$STAMP_CONFIG_FP" ] && [ "$STAMP_CONFIG_FP" = "$EXPECTED_CONFIG_FP" ] || {
     echo "tizen-wgt.sh: proveniencia de configuracao nao corresponde ao ambiente atual" >&2
     exit 1

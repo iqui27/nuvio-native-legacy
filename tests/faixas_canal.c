@@ -19,7 +19,25 @@ int addons_n_legendas(void) { return 3; }
 const Legenda *addons_legenda(int i) { return i >= 0 && i < 3 ? &filme[i] : NULL; }
 const char *player_id_canal(void) { return canal; }
 const char *i18n(const char *s) { return s; }
+static VideoLegendaEstilo estilo;
+VideoLegendaEstilo *player_leg_estilo(void) { return &estilo; }
+void player_leg_estilo_mudou(void) {}
+void player_leg_estilo_tocou(int m) { (void)m; }
+int assrender_ativo(void) { return 0; }
+int assrender_texto_simples(void) { return 0; }
 int main(void) {
+  // #439: every 10% step is selectable up to 300%, no wrap (the slider clamps).
+  estilo.tamanho = 250;
+  for (int pct = 260; pct <= 300; pct += 10) {
+    estPasso(0, 1, 0); assert(estilo.tamanho == pct);
+  }
+  estPasso(0, 1, 0); assert(estilo.tamanho == 300);
+  // The delay slider shares the +-60 s bound: 0,1 s a tap, 0,5 s held.
+  estPasso(7, 1, 0); assert(estilo.atrasoMs == 100);
+  estPasso(7, 1, 1); assert(estilo.atrasoMs == 600);
+  estGravar(7, 100000); assert(estilo.atrasoMs == LEGUI_ATRASO_MAX);
+  estPasso(7, 1, 1); assert(estilo.atrasoMs == LEGUI_ATRASO_MAX);
+  estGravar(7, -100000); assert(estilo.atrasoMs == -LEGUI_ATRASO_MAX);
   snprintf(filme[0].rotulo, sizeof filme[0].rotulo, "Portugues (OpenSubtitles)");
   // A movie: embedded + addon subtitles, as before.
   assert(nLegendas() == 3);

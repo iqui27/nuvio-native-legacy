@@ -37,6 +37,7 @@ int main(void) {
   scrobble_corpo(c, sizeof c, "tt1375666", 120.0);
   assert(!strcmp(c, "{\"movie\":{\"ids\":{\"imdb\":\"tt1375666\"}},\"progress\":100.00}"));
   assert(!strcmp(scrobble_nome(SCR_START), "start"));
+
   puts("trakt scrobble: PASS");
   return 0;
 }

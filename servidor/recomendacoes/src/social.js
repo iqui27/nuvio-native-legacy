@@ -1,3 +1,4 @@
+import { conquistasDe } from "./conquista.js";
 // Redesenho do Social (02/10/2026): pessoa por perfil, nome de exibicao,
 // nivel de atividade, eventos do player, feed, perfil do amigo.
 // Contrato com a TV: docs/social-contrato.md. Tabelas: migracao-006-social.sql.
@@ -7,16 +8,17 @@
 //   -1 nao respondeu (vale 0) | 0 ninguem | 1 so amigos | 2 amigos de amigos
 // Nada e gravado com alcance < 1, e baixar para 0 apaga o que havia.
 
-const EVENTOS = new Set(["inicio", "progresso", "fim", "abandono", "reacao", "salvo"]);
+const EVENTOS = new Set(["inicio", "progresso", "fim", "abandono", "reacao", "salvo", "junto"]);
 // O FEED SO MOSTRA O QUE DIZ ALGO (dono, 06/10/2026: "muito sujo"): terminou,
 // reagiu e — so na primeira vez de uma serie — comecou. "abandono" (saiu do
 // player), "salvo" e o "inicio" de cada episodio/filme ficam fora: o "agora"
 // ja diz quem esta vendo. As linhas antigas continuam na tabela, so nao saem.
-const NO_FEED = ["inicio", "fim", "reacao"];
+const NO_FEED = ["inicio", "fim", "reacao", "junto"];
 // Nao vira linha da tabela `evento`: e so sinal (fecha o "agora", soma tempo).
 // "abandono" e o cliente antigo; o novo manda "progresso" com parou=1.
 const SO_SINAL = new Set(["progresso", "abandono"]);
 const FEED_BRUTO = 150;             // linhas lidas antes de agrupar (sai FEED_MAX)
+const DEDUPE_FEED_S = 3600;          // junto: mesmo titulo na mesma hora = uma linha
 const AGORA_S = 15 * 60;            // "assistindo agora" vence em 15 min
 const RETENCAO = 90 * 86400;
 const SEG_MAX = 4 * 3600;           // um trecho nao passa de 4 h
@@ -136,7 +138,8 @@ export async function rotaEvento(env, quem, corpo, h, limitar) {
   const temporada = int(corpo?.temporada, 0, 9999);
   const episodio = int(corpo?.episodio, 0, 99999);
   const pct = int(corpo?.pct, 0, 100);
-  const seg = int(corpo?.seg, 0, SEG_MAX);
+  // "junto" nao e tempo de tela: os "progresso" da mesma sessao ja contaram.
+  const seg = ev === "junto" ? 0 : int(corpo?.seg, 0, SEG_MAX);
   const reacao = ev === "reacao" ? int(corpo?.reacao, -1, 1) : 0;
   const rec = int(corpo?.rec, 0, 2 ** 31 - 1);
   const mes = mesDe(t);
@@ -269,7 +272,20 @@ export async function rotaFeed(env, quem, url, req, h, garantirPerfil) {
     if (x.ev === "fim" && g.reac !== null) { item.reac = g.reac; item.reacao = g.reac; }
     itens.push(item);
   }
-  return h.json({ cursor: maior, itens }, 200, { etag });
+  // "ASSISTIRAM JUNTOS" (Watch Together, decisao 8): cada membro manda o
+  // proprio evento `junto` no fim da sessao; aqui os do mesmo titulo/episodio
+  // na mesma hora viram UMA linha com os nomes em `com`. So entra quem esta em
+  // `linhas` — ou seja, quem tem alcance ligado e e visivel para quem le; os
+  // outros simplesmente nao aparecem no "com".
+  const juntos = [];
+  for (const it of itens) {
+    if (it.ev !== "junto") { juntos.push(it); continue; }
+    const par = juntos.find((o) => o.ev === "junto" && o.imdb === it.imdb && o.temporada === it.temporada &&
+      o.episodio === it.episodio && Math.abs(o.criado - it.criado) <= DEDUPE_FEED_S);
+    if (par) { (par.com ||= []).push({ de: it.de, nome: it.deNome }); continue; }
+    juntos.push(it);
+  }
+  return h.json({ cursor: maior, itens: juntos }, 200, { etag });
 }
 
 // UMA LINHA POR PESSOA E TITULO (dono, 06/10/2026). Entra `linhas` do mais
@@ -281,6 +297,9 @@ export function agruparFeed(linhas) {
   const grupos = new Map();
   const ordem = [];
   for (const x of linhas) {
+    // `junto` (Watch Together) nao agrupa: cada linha segue sozinha e e
+    // fundida por titulo/hora em rotaFeed.
+    if (x.ev === "junto") { ordem.push({ solta: x }); continue; }
     const k = `${x.pessoa}|${x.imdb}|${x.midia}`;
     let g = grupos.get(k);
     if (!g) { g = { fim: null, reacao: null, inicio: null, eps: new Set(), id: x.id, criado: x.criado }; grupos.set(k, g); ordem.push(g); }
@@ -289,6 +308,7 @@ export function agruparFeed(linhas) {
     else if (x.ev === "inicio") { if (!g.inicio) g.inicio = x; }
   }
   return ordem.map((g) => {
+    if (g.solta) return { linha: g.solta, eps: 0, reac: null };
     const base = g.fim || g.reacao || g.inicio;
     return {
       linha: { ...base, id: g.id, criado: g.criado },
@@ -367,6 +387,8 @@ export async function rotaAmigo(env, quem, url, h, garantirPerfil) {
       "SELECT imdb, midia, titulo, poster, temporada, episodio, pct, atualizado FROM agora " +
       "WHERE pessoa = ? AND atualizado > ?").bind(alvo, t - AGORA_S).first();
     saida.agora = a || null;
+    // Ate 6 conquistas visiveis (conquista.js confere o alcance do dono).
+    saida.conquistas = await conquistasDe(env, alvo);
     const g = await env.DB.prepare(
       "SELECT imdb, midia, titulo, poster, temporada, episodio, criado FROM evento " +
       "WHERE id IN (SELECT MAX(id) FROM evento WHERE pessoa = ?1 AND ev = 'reacao' " +

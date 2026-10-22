@@ -13,6 +13,7 @@ char *dados_ler(const char *name) {
   assert(!strcmp(name, "apoiador.txt"));
   return override ? strdup(override) : NULL;
 }
+int dados_gravar(const char *n, const char *c) { (void)n; (void)c; return 0; }
 GLuint tex_obter_larg(const char *p, float w) { (void)p; (void)w; return 0; }
 void gfx_cor(GfxRect r,float a,float b,float c,float d,float e) {
   (void)r;(void)a;(void)b;(void)c;(void)d;(void)e;
@@ -37,5 +38,15 @@ int main(void) {
   iconeapp_iniciar("/art/second");
   assert(!strcmp(iconeapp_caminho(3),"/art/second/icones-app/tvlaranja.png"));
   assert(!iconeapp_caminho(-1)[0]);
+  /* Bundled art fingerprint: changed Original -> apply; unchanged -> no apply. */
+  assert(iconeapp_arte_mudou(0, NULL));
+  assert(iconeapp_arte_mudou(0, "original:old"));
+  { char cur[64]; /* what aplicar_plataforma stamps for Original */
+    selected = 0; iconeapp_aplicar_plataforma();
+    snprintf(cur, sizeof cur, "%s", iconeapp_arte_atual(0));
+    assert(!iconeapp_arte_mudou(0, cur));
+    selected = 3; assert(!iconeapp_arte_mudou(3, iconeapp_arte_atual(3)));
+    assert(iconeapp_arte_mudou(3, cur)); }
+  assert(!iconeapp_arte_mudou(-1, NULL));
   puts("PASS: app icon local gate, bounds, and resource directory refresh");
 }

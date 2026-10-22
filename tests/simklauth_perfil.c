@@ -101,7 +101,21 @@ int main(void) {
   assert(simklauth_trocar_perfil(1) == 1 && !strcmp(simklauth_token(), "SIMKL-FALSO-P1"));
   printf("ok  autorizar no perfil 2 grava so simkl-p2.txt\n");
 
+  // Recarregar a credencial no MESMO perfil invalida consultas em andamento;
+  // a copia antiga continua inteira, nunca aponta para o buffer vivo.
+  char copia[300];
+  unsigned long long cred = simklauth_credencial_copiar(copia, sizeof copia);
+  assert(!strcmp(copia, "SIMKL-FALSO-P1"));
+  dados_gravar("simkl-p1.txt", "SIMKL-OUTRA-CONTA\n");
+  assert(simklauth_carregar());
+  assert(simklauth_credencial_copiar(NULL, 0) != cred);
+  assert(!strcmp(copia, "SIMKL-FALSO-P1"));
+  cred = simklauth_credencial_copiar(copia, sizeof copia);
+  assert(!strcmp(copia, "SIMKL-OUTRA-CONTA"));
+  assert(simklauth_carregar() && simklauth_credencial_copiar(NULL, 0) == cred);
+
   simklauth_esquecer();
+  assert(simklauth_credencial_copiar(copia, sizeof copia) != cred && !copia[0]);
   assert(!existe("simkl-p1.txt") && !existe("simkl-p2.txt") && !simklauth_token()[0]);
   printf("ok  sair apaga o vinculo de todos os perfis\n");
   printf("simklauth_perfil: tudo ok\n");

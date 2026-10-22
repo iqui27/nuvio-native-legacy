@@ -146,4 +146,5 @@ double cacheboost_volume_db(int pct) {
 #ifndef NV_ANDROID
 void cacheboost_backend_ganho(int pct) { (void)pct; }
 void cacheboost_backend_cache(int mb) { (void)mb; }
+void cacheboost_backend_buffer(int preset) { (void)preset; }
 #endif

@@ -173,13 +173,28 @@ static int pedir(const JfConta *c, const char *base, RedeJob *job, const char *m
   p.max_bytes = JF_CORPO_MAX;
   p.seguir = 1;
   p.job = job;
+  // #290: the configured personal server may use a self-signed or LAN
+  // certificate. Only this server's own origin skips verification (rede.h).
+  p.tls_pessoal = 1;
+  if (!strncmp(url, "https://", 8)) {
+    static int avisado;
+    if (!avisado) {
+      avisado = 1;
+      printf("[%s] TLS: certificado nao verificado (servidor pessoal)\n", emby ? "emby" : "jellyfin");
+    }
+  }
   rede_pedir(&p, r);
   apagarSegredo(auth, sizeof auth);
   apagarSegredo(tokh, sizeof tokh);
-  apagarSegredo(url, sizeof url);   // may carry nothing secret, but cheap
-  printf("[%s] %s: HTTP %d, %u ms%s\n", emby ? "emby" : "jellyfin", operacao, r->status, r->ms,
+  // The curl code is what tells a certificate refusal (60/51), a missing CA
+  // file (77) and a TLS handshake the TV cannot do (35) apart (#290).
+  printf("[%s] %s: HTTP %d, %u ms%s", emby ? "emby" : "jellyfin", operacao, r->status, r->ms,
          r->erro == REDE_OK ? "" : r->erro == REDE_CANCELADO || r->erro == REDE_GERACAO
                                    ? " (cancelled)" : " (transport)");
+  if (r->erro != REDE_OK && r->erro != REDE_CANCELADO && r->erro != REDE_GERACAO)
+    printf(" erro=%d curl=%d %s", (int)r->erro, r->curl_erro, !strncmp(url, "https://", 8) ? "https" : "http");
+  printf("\n");
+  apagarSegredo(url, sizeof url);   // may carry nothing secret, but cheap
   fflush(stdout);
   if (r->erro == REDE_CANCELADO || r->erro == REDE_GERACAO) { rede_resposta_limpar(r); return JF_ERR_CANCELADO; }
   if (r->erro == REDE_INDISPONIVEL) { rede_resposta_limpar(r); return JF_ERR_INDISPONIVEL; }

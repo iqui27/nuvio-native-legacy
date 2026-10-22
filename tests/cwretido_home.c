@@ -16,6 +16,13 @@ void cachearte_estatisticas_pedir(void) {}
 void tex_cache_marcar_larg(int grupo, const char *url, float larg, int essencial, int emUso) {
   (void)grupo; (void)url; (void)larg; (void)essencial; (void)emUso; }
 #include "../src/home.c"
+// heroAquecerVizinhos (home_atualizar) pede a arte dos vizinhos: sem textura aqui.
+unsigned long tex_hash_public(const char *c) { (void)c; return 0; }
+GLuint tex_obter_hero_quente(const char *c) { (void)c; return 0; }
+GLuint tex_obter_larg(const char *c, float w) { (void)c; (void)w; return 0; }
+GLuint tex_obter_logo_larg_qualquer(const char *c, float w) { (void)c; (void)w; return 0; }
+void marco(const char *m) { (void)m; }
+void desc_sinopse_hero(const int *idx, int n) { (void)idx; (void)n; }
 #include "cwfrente.h"
 
 char *dados_ler(const char *nome) { (void)nome; return NULL; }
@@ -29,6 +36,9 @@ void  dados_marcar_sujo(int leve) { (void)leve; }
 // ajustes_aplicar_blob (abaixo) fala com linguas.c; nada disso entra na regra.
 const char *ling_legenda(void) { return ""; }
 const char *ling_audio(void) { return ""; }
+const char *ling_conta_legenda_valor(void) { return ""; }
+const char *ling_conta_legenda2_valor(void) { return ""; }
+const char *ling_conta_audio_valor(void) { return ""; }
 void ling_conta_legenda(const char *v) { (void)v; }
 void ling_conta_legenda2(const char *v) { (void)v; }
 void ling_conta_audio(const char *v) { (void)v; }
@@ -181,6 +191,14 @@ int main(void) {
   conferir("dispensado: tt300 na frente", "tt300 tt100 tt200:2:4");
   assert(!naHome("last_session"));
   puts("ok  o cartao dispensado sai e o titulo entra na frente");
+  // "Tambem em Continuar assistindo" (2.0.2): ligado, a retencao nao exclui nada.
+  assert(!ajustes_cw_retido_tambem());
+  assert(cw_retido_definir("tt300") && cw_retido_exclui("tt300"));
+  { unsigned r0 = cw_retido_rev(); cw_retido_tambem_definir(1);
+    assert(cw_retido_rev() != r0 && !cw_retido_exclui("tt300")); cw_retido_tambem_definir(1);
+    cw_retido_tambem_definir(0); assert(cw_retido_exclui("tt300")); }
+  assert(cw_retido_definir(cw_retido_escolher(0, "", home_retomar_imdb())));
+  puts("ok  com a opcao ligada o titulo retido nao sai da fileira");
   // Republicacao (rede/catalogo): o cartao NAO volta.
   cw[0] = *cat_item(cat_indice_por_imdb("tt300")); cw[1] = *cat_item(0); cw[2] = *cat_item(1);
   cat_trocar_continuar(cw, 3);

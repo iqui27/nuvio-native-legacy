@@ -1,7 +1,7 @@
 #!/bin/bash
 # B2: tempo de trakt_continuar/trakt_social contra rede falsa com latencia.
 #   bash tests/trakt_arranque.sh
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 dir=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-traktarr.XXXXXX")
 trap 'rm -rf "$dir"' EXIT

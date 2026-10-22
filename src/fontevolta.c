@@ -131,7 +131,7 @@ int fontevolta_decidir(const FontevoltaSinais *g, const char **motivo) {
   // O clipe de aviso do debrid (30 s, sem audio) TOCA: so a duracao denuncia.
   else if (g->pronto && g->duracao > 1.0 && g->duracao < 120.0) m = "clipe curto";
   else if (!g->pronto && g->conferencia == FV_FALHOU) m = "conferencia falhou";
-  else if (g->carregando && g->desdeMs > FONTEVOLTA_PRAZO_MS) m = "prazo";
+  else if (g->carregando && !g->quadro && g->desdeMs > FONTEVOLTA_PRAZO_MS) m = "prazo";
   else if (g->pronto && !g->carregando && g->conferencia != FV_CONFERINDO) return FV_ABRIU;
   if (!m) return FV_ESPERAR;
   if (motivo) *motivo = m;
@@ -139,6 +139,6 @@ int fontevolta_decidir(const FontevoltaSinais *g, const char **motivo) {
 }
 
 int fontevolta_abertura_vencida(const FontevoltaSinais *g, unsigned prazoMs) {
-  if (!g || g->falhou || g->pronto || !g->carregando) return 0;
+  if (!g || g->falhou || g->pronto || !g->carregando || g->quadro) return 0;
   return g->desdeMs > prazoMs;
 }

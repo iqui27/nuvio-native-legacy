@@ -2,7 +2,21 @@
 #include "proxyts.h"
 #include <string.h>
 
-#if defined(__EMSCRIPTEN__) || defined(NV_TPK) || defined(NV_ANDROID)
+int proxyts_candidata(const char *url, int mp4) {
+  const char *q;
+  size_t n;
+  if (!url || mp4) return 0;
+  if (strncmp(url, "http://", 7) && strncmp(url, "https://", 8)) return 0;
+  // A extensao do caminho, sem a query: ".../video.mp4?token=..." e arquivo.
+  q = strchr(url, '?');
+  n = q ? (size_t)(q - url) : strlen(url);
+  if (n >= 4 && (!strncmp(url + n - 4, ".mp4", 4) || !strncmp(url + n - 4, ".mkv", 4))) return 0;
+  return 1;
+}
+
+#if defined(__EMSCRIPTEN__) || defined(NV_ANDROID)
+void proxyts_definir_cabecalhos(const char *c) { (void)c; }
+int  proxyts_redirecionou(void) { return 0; }
 int  proxyts_disponivel(void) { return 0; }
 int  proxyts_url(const char *f, char *s, size_t n) { (void)f; (void)s; (void)n; return 0; }
 void proxyts_parar(void) {}
@@ -43,7 +57,9 @@ const char *proxyts_resolver(const char *url, char *buf, size_t n) {
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static int sockOuvir = -1, porta;
 static char fonteAtual[4096];
-static atomic_uint sessaoAtual;
+// Cabecalhos do addon: os pendentes (proxima sessao) e os da sessao em curso.
+static char cabsPendentes[512], cabsAtual[512];
+static atomic_uint sessaoAtual, sessaoRedirecionada;
 // O download do segmento em curso, para a troca de canal cortar na hora (a
 // conta de 1 tela recusaria o canal novo com o velho ainda baixando).
 static volatile int *cancelarEmCurso;
@@ -56,7 +72,21 @@ typedef struct {
   char uri[PX_SEG_MAX][1024];
   int  mestre;          // e master playlist: uri[0] e a variante escolhida
   int  fim;             // EXT-X-ENDLIST
+  // O que o proxy NAO converte (#283): segmento cifrado (EXT-X-KEY com METHOD
+  // diferente de NONE) e segmento fMP4 (EXT-X-MAP). Os dois chegariam ao uMS
+  // como lixo; o certo e encerrar e deixar o app tentar a fonte direto.
+  int  cifrado, fmp4;
 } PxLista;
+
+// "Nome: valor" por linha -> vetor terminado em NULL para rede.h (ate 7).
+static const char *const *pxVetor(char *copia, const char **v) {
+  char *l, *ctx = NULL;
+  int k = 0;
+  for (l = strtok_r(copia, "\n", &ctx); l && k < 7; l = strtok_r(NULL, "\n", &ctx))
+    if (*l) v[k++] = l;
+  v[k] = NULL;
+  return k ? v : NULL;
+}
 
 static void pxJuntar(const char *base, const char *rel, char *dst, size_t n) {
   size_t semQuery = strcspn(base, "?"), barra = 0, i;
@@ -85,6 +115,8 @@ static int pxLer(const char *texto, const char *base, PxLista *l) {
     if (!strncmp(linha, "#EXT-X-TARGETDURATION:", 22)) l->alvo = atoi(linha + 22);
     else if (!strncmp(linha, "#EXT-X-MEDIA-SEQUENCE:", 22)) l->seq0 = atol(linha + 22);
     else if (!strncmp(linha, "#EXT-X-ENDLIST", 14)) l->fim = 1;
+    else if (!strncmp(linha, "#EXT-X-KEY:", 11) && !strstr(linha, "METHOD=NONE")) l->cifrado = 1;
+    else if (!strncmp(linha, "#EXT-X-MAP:", 11)) l->fmp4 = 1;
     else if (!strncmp(linha, "#EXT-X-STREAM-INF", 17)) proximaEhVariante = 1;
     else if (linha[0] && linha[0] != '#') {
       if (proximaEhVariante) {
@@ -180,6 +212,7 @@ struct PxFluxo {
   PxConexao *clientes;
   time_t semLeitorDesde;
   char lista[4096];
+  char cabs[512];                   // os do addon, para playlist e segmentos
   PxConexao produtor;
 };
 static PxFluxo *fluxoAtual;
@@ -229,7 +262,12 @@ static void pxDormir(const PxConexao *c, int ms) {
 
 // A playlist (de midia) ao vivo, com a variante resolvida. `final` recebe o
 // endereco depois dos redirecionamentos — e a base dos segmentos.
-static int pxPlaylist(const char *url, PxLista *l, char *final, size_t nf) {
+//
+// COM CABECALHOS DO ADDON (#283) o pedido sai por rede_baixar_bin_medido_
+// controle, que os aceita mas nao diz o endereco final: a base dos segmentos
+// e o endereco pedido. O redirecionamento da FONTE ja foi resolvido uma vez em
+// pxAtender (rede_url_final_cab), e e esse endereco que chega aqui.
+static int pxPlaylist(const char *url, const char *cabs, PxLista *l, char *final, size_t nf) {
   char atual[4096];
   int volta;
   snprintf(atual, sizeof atual, "%s", url);
@@ -239,7 +277,18 @@ static int pxPlaylist(const char *url, PxLista *l, char *final, size_t nf) {
     char fin[4096];
     char *b;
     fin[0] = 0;
-    b = rede_baixar_trecho_st(atual, 8, 0, 1048575, &n, &st, &er, fin, sizeof fin);
+    if (cabs && *cabs) {
+      char copia[512];
+      const char *v[8];
+      RedeMedida md;
+      RedeControle ctl;
+      memset(&md, 0, sizeof md);
+      ctl.max_bytes = 1048576; ctl.cancelado = NULL;
+      snprintf(copia, sizeof copia, "%s", cabs);
+      b = rede_baixar_bin_medido_controle(atual, 8, pxVetor(copia, v), &ctl, &n, &md);
+      if (b && (md.status < 200 || md.status >= 300)) { free(b); b = NULL; }
+    } else
+      b = rede_baixar_trecho_st(atual, 8, 0, 1048575, &n, &st, &er, fin, sizeof fin);
     if (!b || n <= 0) { free(b); return 0; }
     if (fin[0]) snprintf(atual, sizeof atual, "%s", fin);
     if (!pxLer(b, atual, l)) { free(b); return 0; }
@@ -300,7 +349,7 @@ static int pxEntregar(PxConexao *c, const void *b, size_t n) {
   return 1;
 }
 
-static void pxHls(PxConexao *c, const char *urlLista) {
+static void pxHls(PxConexao *c, const char *urlLista, const char *cabs) {
   PxLista *lp = malloc(sizeof *lp);
   PxTabelas tab;
   char base[4096];
@@ -312,12 +361,18 @@ static void pxHls(PxConexao *c, const char *urlLista) {
 #define l (*lp)
   while (pxViva(c)) {
     int i, novos = 0;
-    if (!pxPlaylist(urlLista, &l, base, sizeof base)) {
+    if (!pxPlaylist(urlLista, cabs, &l, base, sizeof base)) {
       if (++falhas >= PX_FALHAS_MAX) { printf("[proxy-ts] playlist falhou %d vezes: fim\n", falhas); break; }
       pxDormir(c, 1000);
       continue;
     }
     falhas = 0;
+    if (l.cifrado || l.fmp4) {
+      printf("[proxy-ts] HLS %s: o proxy nao converte, fim (o app tenta a fonte direto)\n",
+             l.cifrado ? "cifrado (EXT-X-KEY)" : "fMP4 (EXT-X-MAP)");
+      fflush(stdout);
+      break;
+    }
     // A PRIMEIRA LEITURA comeca perto da ponta; playlist que voltou atras
     // (painel reiniciou o canal) recomeca da ponta tambem.
     if (ultimo < 0 || l.seq0 + l.n - 1 < ultimo) {
@@ -339,7 +394,11 @@ static void pxHls(PxConexao *c, const char *urlLista) {
       ctl.max_bytes = PX_SEG_TETO;
       ctl.cancelado = &c->cancelar;
       pthread_mutex_lock(&trava); cancelarEmCurso = &c->cancelar; pthread_mutex_unlock(&trava);
-      b = (unsigned char *)rede_baixar_bin_medido_controle(l.uri[i], 15, NULL, &ctl, &n, &md);
+      { char copia[512];
+        const char *v[8];
+        snprintf(copia, sizeof copia, "%s", cabs ? cabs : "");
+        b = (unsigned char *)rede_baixar_bin_medido_controle(l.uri[i], 15, pxVetor(copia, v), &ctl,
+                                                             &n, &md); }
       pthread_mutex_lock(&trava); if (cancelarEmCurso == &c->cancelar) cancelarEmCurso = NULL; pthread_mutex_unlock(&trava);
       if (!pxViva(c)) { free(b); break; }
       ultimo = seq;
@@ -389,7 +448,7 @@ fim:
 
 static void *pxProduzir(void *u) {
   PxFluxo *f = u;
-  pxHls(&f->produtor, f->lista);
+  pxHls(&f->produtor, f->lista, f->cabs);
   pthread_mutex_lock(&f->trava);
   f->encerrado = 1; pthread_cond_broadcast(&f->chegou);
   pthread_mutex_unlock(&f->trava);
@@ -397,7 +456,7 @@ static void *pxProduzir(void *u) {
   return NULL;
 }
 
-static PxFluxo *pxFluxoPegar(PxConexao *c, const char *lista) {
+static PxFluxo *pxFluxoPegar(PxConexao *c, const char *lista, const char *cabs) {
   PxFluxo *f;
   pthread_t t;
   pthread_mutex_lock(&trava);
@@ -422,6 +481,7 @@ static PxFluxo *pxFluxoPegar(PxConexao *c, const char *lista) {
     f->refs = 2; // sessao e produtor
     f->produtor.s = -1; f->produtor.sessao = c->sessao; f->produtor.fluxo = f;
     snprintf(f->lista, sizeof f->lista, "%s", lista);
+    snprintf(f->cabs, sizeof f->cabs, "%s", cabs ? cabs : "");
     fluxoAtual = f;
     if (pthread_create(&t, NULL, pxProduzir, f) != 0) {
       fluxoAtual = NULL; pxFluxoDestruir(f); pthread_mutex_unlock(&trava); return NULL;
@@ -503,7 +563,7 @@ static void pxServirFluxo(PxConexao *c) {
 
 static void *pxAtender(void *u) {
   PxConexao *c = u;
-  char req[4096], cab[512];
+  char req[4096], cab[512], cabs[512];
   ssize_t r, tot = 0;
   unsigned s = 0;
   const char *q;
@@ -520,6 +580,7 @@ static void *pxAtender(void *u) {
   pthread_mutex_lock(&trava);
   if (s && s == atomic_load(&sessaoAtual)) snprintf(c->fonte, sizeof c->fonte, "%s", fonteAtual);
   else c->fonte[0] = 0;
+  snprintf(cabs, sizeof cabs, "%s", c->fonte[0] ? cabsAtual : "");
   pthread_mutex_unlock(&trava);
   c->sessao = s;
   if (!c->fonte[0] || strncmp(req, "GET ", 4)) {
@@ -542,7 +603,7 @@ static void *pxAtender(void *u) {
     printf("[proxy-ts] sessao %u: GET (Range %s)\n", c->sessao, range);
     fflush(stdout); }
   // Uma conexao da mesma sessao usa a ingestao que ja esta em andamento.
-  c->fluxo = pxFluxoPegar(c, NULL);
+  c->fluxo = pxFluxoPegar(c, NULL, NULL);
   if (c->fluxo) {
     printf("[proxy-ts] sessao %u: GET compartilha a ingestao HLS\n", c->sessao);
     fflush(stdout); pxServirFluxo(c); goto sair;
@@ -553,10 +614,28 @@ static void *pxAtender(void *u) {
     char fin[4096];
     char *b;
     fin[0] = 0;
-    b = rede_baixar_trecho_st(c->fonte, 8, 0, 65535, &n, &st, &er, fin, sizeof fin);
-    if (b && n >= 7 && !strncmp(b, "#EXTM3U", 7)) {
+    if (cabs[0]) {
+      // Com os cabecalhos do addon (#283): sem eles o CDN recusa, e a sonda
+      // concluiria "nao e playlist" e mandaria o uMS direto — que e o caminho
+      // que nao toca. O endereco final sai de um pedido a parte, de 64 bytes.
+      char copia[512];
+      const char *v[8];
+      RedeMedida md;
+      RedeControle ctl;
+      memset(&md, 0, sizeof md);
+      ctl.max_bytes = 65536; ctl.cancelado = NULL;
+      snprintf(copia, sizeof copia, "%s", cabs);
+      b = rede_baixar_bin_medido_controle(c->fonte, 8, pxVetor(copia, v), &ctl, &n, &md);
+      st = md.status;
+      if (b && n >= 7 && !strncmp(b, "#EXTM3U", 7) && st >= 200 && st < 300) {
+        snprintf(copia, sizeof copia, "%s", cabs);
+        if (!rede_url_final_cab(c->fonte, 8, pxVetor(copia, v), fin, sizeof fin, NULL)) fin[0] = 0;
+      }
+    } else
+      b = rede_baixar_trecho_st(c->fonte, 8, 0, 65535, &n, &st, &er, fin, sizeof fin);
+    if (b && n >= 7 && !strncmp(b, "#EXTM3U", 7) && (!st || (st >= 200 && st < 300))) {
       free(b);
-      c->fluxo = pxFluxoPegar(c, fin[0] ? fin : c->fonte);
+      c->fluxo = pxFluxoPegar(c, fin[0] ? fin : c->fonte, cabs);
       if (c->fluxo) {
         printf("[proxy-ts] sessao %u: a fonte e playlist HLS; entregando TS continuo\n", c->sessao);
         fflush(stdout); pxServirFluxo(c);
@@ -568,6 +647,7 @@ static void *pxAtender(void *u) {
       free(b);
       printf("[proxy-ts] sessao %u: a fonte %s (HTTP %d, %ld B): redirecionando o player\n",
              c->sessao, ts ? "ja e TS continuo" : "nao e playlist", st, n);
+      atomic_store(&sessaoRedirecionada, c->sessao);
       fflush(stdout);
       snprintf(cab, sizeof cab, "HTTP/1.1 302 Found\r\nLocation: %s\r\nContent-Length: 0\r\n"
                "Connection: close\r\n\r\n", c->fonte);
@@ -640,6 +720,17 @@ static int pxSubir(void) {
 
 int proxyts_disponivel(void) { return 1; }
 
+void proxyts_definir_cabecalhos(const char *cabs) {
+  pthread_mutex_lock(&trava);
+  snprintf(cabsPendentes, sizeof cabsPendentes, "%s", cabs ? cabs : "");
+  pthread_mutex_unlock(&trava);
+}
+
+int proxyts_redirecionou(void) {
+  unsigned s = atomic_load(&sessaoAtual);
+  return s && atomic_load(&sessaoRedirecionada) == s;
+}
+
 int proxyts_url(const char *fonte, char *saida, size_t n) {
   unsigned s;
   if (!fonte || !fonte[0] || !saida || n < 40) return 0;
@@ -648,6 +739,7 @@ int proxyts_url(const char *fonte, char *saida, size_t n) {
   if (cancelarEmCurso) __atomic_store_n(cancelarEmCurso, 1, __ATOMIC_RELEASE);
   pxFluxoParar();
   snprintf(fonteAtual, sizeof fonteAtual, "%s", fonte);
+  snprintf(cabsAtual, sizeof cabsAtual, "%s", cabsPendentes);
   s = atomic_fetch_add(&sessaoAtual, 1) + 1;
   pthread_mutex_unlock(&trava);
   snprintf(saida, n, "http://127.0.0.1:%d/live.ts?s=%u", porta, s);
@@ -660,6 +752,7 @@ void proxyts_parar(void) {
   pxFluxoParar();
   atomic_fetch_add(&sessaoAtual, 1);
   fonteAtual[0] = 0;
+  cabsAtual[0] = 0;
   pthread_mutex_unlock(&trava);
 }
 

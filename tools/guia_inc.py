@@ -2,7 +2,7 @@
 """Gera src/ajustes_ux_guia_dados.inc a partir de design/guia-de-uso/guia.json.
 
 O GUIA DE USO (Ajustes › Sobre e ajuda › Guia de uso) e conteudo, nao codigo:
-os 87 recursos em 12 capitulos, com o texto, o "Onde fica" e o atalho de cada
+os 104 recursos em 12 capitulos, com o texto, o "Onde fica" e o atalho de cada
 um, vem do JSON aprovado com o mockup (cada entrada tem a prova no codigo em
 "prova"). Este script so traduz o JSON para tabelas C. Mudou o JSON, rode de
 novo e mande os dois juntos:
@@ -39,7 +39,7 @@ ALVO = {
     "t-trailer": "AJ_DET_TRAILER_AUTO", "t-trailer-destaque": "AJ_HERO_TRAILER",
     "t-trailer-ajuste": "AJ_TRAILER_FONTE", "t-notas": "AJ_NT_IMDB", "t-dados": "AJ_TMDB_LIGADO",
     "t-colecao": "AJ_COL_ARTE_CONTA", "f-folha": "AJ_FONTE_MANUAL", "f-texto": "AJ_FONTE_TEXTO",
-    "f-auto": "AJ_FONTE_AUTO", "f-imagem": "AJ_QUALIDADE", "f-pausa": "AJ_PAUSA_OVERLAY",
+    "f-auto": "AJ_FONTE_PRIORIDADE", "f-imagem": "AJ_QUALIDADE", "f-pausa": "AJ_PAUSA_OVERLAY",
     "f-seekr": "AJ_SEEKR_LIGADO", "f-reacao": "AJ_REACAO_CREDITOS", "f-assistido": "AJ_CW_CONCLUIDO",
     "f-debrid": "AJ_DEBRID_RD", "f-p2p": "AJ_P2P_LIGADO", "l-idiomas": "AJ_LEG_LINGUA",
     "l-app": "AJ_IDIOMA", "l-meta": "AJ_TMDB_IDIOMA", "i-saida": "AJ_SAIDA_PLAYER",
@@ -51,6 +51,11 @@ ALVO = {
     "d-vel": "AJ_VELOCIDADE", "d-mem": "AJ_TEX_MB", "d-img": "AJ_QUALIDADE_IMG",
     "d-leve": "AJ_RESOLUCAO", "p-registro": "AJ_ENVIAR_LOG", "p-canal": "AJ_LIVETV_DIAG",
     "p-trava": "AJ_VELOCIDADE",
+    # 2.0.3: o guia passa a contar a 2.0 (docs/releases/2.0.x/NOTAS.md).
+    "f-regras": "AJ_FONTE_REGEX", "f-rapido": "AJ_FONTE_CONFERIR_VARIAS", "f-som": "AJ_DTS_AC3",
+    "f-proporcao": "AJ_PROPORCAO_PADRAO", "f-servidores": "AJ_JF_LIGADO", "f-plugins": "AJ_PLUGINS",
+    "l-forcada": "AJ_LEG_FORCADA", "l-segunda": "AJ_LEG_LINGUA2", "o-social": "AJ_SOCIAL",
+    "a-descanso": "AJ_ESMAECER", "a-abertura": "AJ_LOGO_APP", "p-som": "AJ_DTS_AC3",
 }
 TELA = {"Abrir o Guia de TV": "GT_GUIA_TV", "Abrir a Biblioteca": "GT_BIBLIOTECA",
         "Abrir a Agenda": "GT_AGENDA", "Abrir o Explorar": "GT_EXPLORAR",
@@ -77,7 +82,7 @@ def main():
     caps = g["caps"]
     ids = [k["id"] for k in caps]
     ent = g["entradas"]
-    assert len(ent) == 87 and len(caps) == 12, (len(ent), len(caps))
+    assert len(ent) == 104 and len(caps) == 12, (len(ent), len(caps))
     for k in list(ALVO) + list(EXEMPLO) + list(VISUAL):
         assert any(e["id"] == k for e in ent), k
     out = ["// GERADO por tools/guia_inc.py a partir de design/guia-de-uso/guia.json.",

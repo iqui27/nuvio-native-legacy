@@ -163,4 +163,135 @@ static inline void nv_addon_base(const char *url, char *dst, size_t tam) {
   }
 }
 
+// URL DE ADDON GRANDE DEMAIS PARA OS BUFFERS FIXOS (#203).
+//
+// 19 pessoas tinham addon com URL de 2 a 8 KB (AIOLists, StremioLabAR) que era
+// IGNORADO. Subir NV_ADDON_URL_MAX para 8 KB custaria dezenas de MB em vetores
+// de fileira/canal/lista, entao a URL grande fica numa tabela no heap (um
+// malloc por addon grande) e o resto do app guarda um APELIDO curto:
+//   <esquema>://<host>/~nv<16 hex do hash da URL>
+// O host fica de proposito: log por host, agrupamento e rede_url_publica
+// continuam funcionando. O apelido e DETERMINISTICO (hash da URL), entao uma
+// cache em disco que o guarde continua valendo na proxima abertura.
+// Quem fala com a rede (rede.c, no unico ponto do curl OPT_URL) EXPANDE o
+// apelido de volta para a URL inteira — normalizada, com o caminho do pedido
+// no lugar certo e a query do addon no fim. Quem envia a lista para a conta
+// (sync.c) troca o apelido pela URL EXATA que chegou.
+//
+// A tabela e global e fica fora do `static` por um simbolo fraco: este header
+// entra em varias unidades de traducao e todas precisam ver a mesma tabela.
+#include <pthread.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+#define NV_LONGA_MAX 128
+typedef struct {
+  pthread_mutex_t m; int n;
+  char *bruto[NV_LONGA_MAX], *norm[NV_LONGA_MAX], apelido[NV_LONGA_MAX][96];
+} NvLonga;
+__attribute__((weak)) NvLonga nv_longa = { PTHREAD_MUTEX_INITIALIZER, 0, {0}, {0}, {{0}} };
+
+// Registra `bruto` (qualquer tamanho) e escreve o apelido em `dst`.
+// 0 = nao deu (sem esquema, tabela cheia, colisao, `dst` pequeno).
+static inline int nv_longa_registrar(const char *bruto, char *dst, size_t n) {
+  size_t lb = strlen(bruto), host;
+  const char *ini, *e;
+  char *norm, apelido[96];
+  uint64_t h = 1469598103934665603ULL;
+  int i, ok = 0;
+  size_t k;
+  norm = (char *)malloc(lb + 16);
+  if (!norm) return 0;
+  nv_addon_base(bruto, norm, lb + 16);
+  ini = strstr(norm, "://");
+  if (!ini) { free(norm); return 0; }
+  e = ini + 3; e += strcspn(e, "/?#"); host = (size_t)(e - norm);
+  for (k = 0; k < lb; k++) { h ^= (unsigned char)bruto[k]; h *= 1099511628211ULL; }
+  if (host > 60 || snprintf(apelido, sizeof apelido, "%.*s/~nv%016llx", (int)host, norm,
+                            (unsigned long long)h) >= (int)sizeof apelido ||
+      strlen(apelido) >= n) { free(norm); return 0; }
+  pthread_mutex_lock(&nv_longa.m);
+  for (i = 0; i < nv_longa.n; i++)
+    if (!strcmp(nv_longa.apelido[i], apelido)) { ok = !strcmp(nv_longa.bruto[i], bruto); break; }
+  if (i == nv_longa.n && i < NV_LONGA_MAX) {
+    nv_longa.bruto[i] = (char *)malloc(lb + 1);
+    if (nv_longa.bruto[i]) {
+      memcpy(nv_longa.bruto[i], bruto, lb + 1);
+      nv_longa.norm[i] = norm; norm = NULL;
+      snprintf(nv_longa.apelido[i], sizeof nv_longa.apelido[i], "%s", apelido);
+      nv_longa.n++; ok = 1;
+    }
+  }
+  pthread_mutex_unlock(&nv_longa.m);
+  free(norm);
+  if (ok) snprintf(dst, n, "%s", apelido);
+  return ok;
+}
+
+// A porta de entrada de toda URL de addon: cabe em NV_ADDON_URL_MAX = fica
+// como esta; senao vira apelido. 0 = nao deu (quem chama PULA e loga).
+static inline int nv_addon_url_guardar(const char *nome, const char *url, char *dst, size_t n) {
+  if (strlen(url) < NV_ADDON_URL_MAX && strlen(url) < n) { memcpy(dst, url, strlen(url) + 1); return 1; }
+  if (nv_longa_registrar(url, dst, n)) {
+    printf("[addons] %s: URL de %lu caracteres guardada fora dos buffers fixos\n",
+           nome && *nome ? nome : "Addon", (unsigned long)strlen(url));
+    fflush(stdout);
+    return 1;
+  }
+  printf("[addons] %s: URL de %lu caracteres nao coube na tabela de URLs grandes: addon ignorado\n",
+         nome && *nome ? nome : "Addon", (unsigned long)strlen(url));
+  fflush(stdout);
+  return 0;
+}
+
+// Apelido -> URL EXATA que chegou. NULL = nao e apelido conhecido. O ponteiro
+// vale ate o fim do processo (a tabela nunca libera).
+static inline const char *nv_longa_bruto(const char *u) {
+  const char *r = NULL;
+  int i;
+  if (!u || !strstr(u, "/~nv")) return NULL;
+  pthread_mutex_lock(&nv_longa.m);
+  for (i = 0; i < nv_longa.n; i++)
+    if (!strcmp(nv_longa.apelido[i], u)) { r = nv_longa.bruto[i]; break; }
+  pthread_mutex_unlock(&nv_longa.m);
+  return r;
+}
+
+// Pedido (<apelido>/stream/...) -> URL inteira, em memoria nova (free). NULL =
+// `u` nao comeca por um apelido conhecido: use `u` como esta.
+static inline char *nv_longa_expandir(const char *u) {
+  const char *e, *p, *resto, *qr, *qn;
+  char *out = NULL, *norm = NULL;
+  size_t la, lp, lq, lr, lrp;
+  int i, k;
+  if (!u || !(e = strstr(u, "://"))) return NULL;
+  e += 3; e += strcspn(e, "/?#");
+  if (strncmp(e, "/~nv", 4)) return NULL;
+  for (k = 0; k < 16; k++) if (!isxdigit((unsigned char)e[4 + k])) return NULL;
+  p = e + 20; la = (size_t)(p - u);
+  pthread_mutex_lock(&nv_longa.m);
+  for (i = 0; i < nv_longa.n; i++)
+    if (strlen(nv_longa.apelido[i]) == la && !strncmp(nv_longa.apelido[i], u, la)) {
+      norm = nv_longa.norm[i]; break;
+    }
+  pthread_mutex_unlock(&nv_longa.m);   // `norm` nunca e liberado: seguro fora da trava
+  if (!norm) return NULL;
+  resto = p;
+  qn = strchr(norm, '?');
+  lp = qn ? (size_t)(qn - norm) : strlen(norm);
+  lq = qn ? strlen(qn + 1) : 0;
+  qr = strchr(resto, '?');
+  lrp = qr ? (size_t)(qr - resto) : strlen(resto);
+  lr = strlen(resto);
+  out = (char *)malloc(lp + lr + lq + 4);
+  if (!out) return NULL;
+  memcpy(out, norm, lp); memcpy(out + lp, resto, lrp); k = (int)(lp + lrp);
+  if (lq) {
+    out[k++] = '?'; memcpy(out + k, qn + 1, lq); k += (int)lq;
+    if (qr && qr[1]) { out[k++] = '&'; memcpy(out + k, qr + 1, strlen(qr + 1)); k += (int)strlen(qr + 1); }
+  } else if (qr) { memcpy(out + k, qr, strlen(qr)); k += (int)strlen(qr); }
+  out[k] = 0;
+  return out;
+}
+
 #endif

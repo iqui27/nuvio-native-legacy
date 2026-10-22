@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nuvio 2.1 · Mockups</title>
+<link rel="stylesheet" href="tv.css">
+<style>
+body{background:var(--bg)}
+main{max-width:1180px;margin:0 auto;padding:72px 32px 120px}
+h1{font-size:44px;font-weight:800;letter-spacing:-.02em;margin:10px 0 12px}
+main>p{font-size:18px;line-height:1.5;color:var(--mut);max-width:760px;margin:0}
+.telas{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:20px;margin-top:44px}
+.tela{display:block;border-radius:20px;overflow:hidden;background:var(--card);transition:background .15s}
+.tela:hover,.tela:focus-visible{background:#2B2D34;outline:0}
+.tela .capa{height:170px;position:relative}
+.tela .capa::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(13,13,13,0) 30%,rgba(13,13,13,.75))}
+.tela .n{position:absolute;left:20px;bottom:14px;z-index:1;font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.8)}
+.tela .tx{padding:18px 20px 22px}
+.tela b{display:block;font-size:22px;font-weight:700}
+.tela span{display:block;font-size:16px;line-height:1.45;color:var(--mut);margin-top:6px}
+.tela small{display:block;font-size:13px;letter-spacing:.06em;color:var(--mut2);margin-top:12px}
+.pe{margin-top:40px;font-size:15px;color:var(--mut2);line-height:1.6}
+</style>
+</head>
+<body data-indice="1">
+<main>
+  <div class="kick">Nuvio Legacy · redesign 2.1</div>
+  <h1>Mockups das próximas telas</h1>
+  <p>Oito telas em quadro de TV 1920×1080. As setas do teclado movem o foco como o D-pad; a barra no canto troca o acento e o material. Títulos e artes são inventados.</p>
+  <div class="telas">
+    <a class="tela" href="home.html"><div class="capa a1"><span class="n">1 · 2 quadros</span></div><div class="tx"><b>Home com Coleções</b><span>Continuar e Próximos episódios no topo; coleções do add-on viram fileiras que dá para fixar.</span><small>#366 · #466 · Coleções + fileiras</small></div></a>
+    <a class="tela" href="biblioteca.html"><div class="capa a10"><span class="n">2 · 2 quadros</span></div><div class="tx"><b>Biblioteca</b><span>Abas por estado, filtros e origens juntas: Trakt, Simkl, Conta Nuvio e add-on, sem repetir título.</span><small>#393 · #352 · #466</small></div></a>
+    <a class="tela" href="comecar.html"><div class="capa a5"><span class="n">3 · 4 quadros</span></div><div class="tx"><b>Começar</b><span>Primeiro uso em 4 passos: perfil, trazer add-ons e biblioteca pelo celular, trackers, pronto.</span><small>#393 · #313 · Começar · perfis + tour</small></div></a>
+    <a class="tela" href="titulo.html"><div class="capa a8"><span class="n">4 · 2 quadros</span></div><div class="tx"><b>Título e Fontes</b><span>O que vai tocar e por quê; o que dá para pular em cada episódio; cópias da mesma fonte agrupadas.</span><small>#349 · #400 · #406 · #430 · #457 · #458</small></div></a>
+    <a class="tela" href="resolver.html"><div class="capa a2"><span class="n">5 · 3 quadros</span></div><div class="tx"><b>Resolver um problema</b><span>Sintoma em palavras da pessoa, testes guiados com conserto e um código de registro para citar.</span><small>#436 · Resolver um problema</small></div></a>
+    <a class="tela" href="listas.html"><div class="capa a2"><span class="n">6 · 4 quadros</span></div><div class="tx"><b>Listas</b><span>Explorar listas públicas, a página da lista com história e notas do curador, comentários e minhas listas com QR.</span><small>Biblioteca › Listas · cinéfilo</small></div></a>
+    <a class="tela" href="trilhas.html"><div class="capa a7"><span class="n">7 · 3 quadros</span></div><div class="tx"><b>Trilhas e diretores</b><span>Jornadas em ordem com o porquê de cada passo, filmografia como trilha e "Em listas" na página do título.</span><small>Biblioteca › Listas · cinéfilo</small></div></a>
+    <a class="tela" href="conquistas.html"><div class="capa a3"><span class="n">8 · 11 quadros</span></div><div class="tx"><b>Conquistas</b><span>Emblemas que premiam descoberta: por trilha, diretor e lista, aviso depois dos créditos, amigos, temporadas e tudo desligável.</span><small>Perfil › Conquistas · cinéfilo</small></div></a>
+  </div>
+  <p class="pe">Princípios, o que muda e perguntas em aberto: <code>NOTAS.md</code>, nesta pasta. Listas e trilhas, com a viabilidade de cada dado: <code>NOTAS-LISTAS.md</code>. Conquistas e emblemas, com catálogo e viabilidade: <code>NOTAS-CONQUISTAS.md</code>.</p>
+</main>
+<script src="tv.js"></script>
+</body>
+</html>

@@ -35,4 +35,11 @@
 #define NV_LIMPA_UMA_LINHA 1
 size_t nv_limpar_texto(const char *in, char *out, size_t tam, int flags);
 
+// Add-on text mode: tidies ONE already-cleaned line. Spaces collapse, words made
+// only of separators (| - / , • ·) are dropped at the start/end and doubled in
+// the middle ("A |  | B" -> "A | B"), and separators glued to the first/last
+// word go too ("31.4 GB | 43.2 Mbps |" -> "31.4 GB | 43.2 Mbps"). A hyphen
+// inside a word (WEB-DL) is left alone. In place; returns the new length.
+size_t nv_aparar_separadores(char *s);
+
 #endif

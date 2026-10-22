@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // Ver atividade.h. A disciplina e a de recomenda.c: o estado atras de um mutex,
 // a rede num fio, e quem chama do laco de desenho nunca espera rede nenhuma.
 #include "atividade.h"
@@ -5,6 +6,7 @@
 #include "recomenda.h"
 #include "dados.h"
 #include "perfis.h"
+#include "plugins.h"
 #include "rede.h"
 #include "sessao.h"
 #include "trakt.h"
@@ -21,10 +23,11 @@
 
 static SDL_mutex *mtx;
 static int  permitido;            // 0 = nada sai (padrao)
-static char fila[ATIV_FILA_MAX][1600];
+static char fila[ATIV_FILA_MAX][NV_ARTE_URL_MAX * 2 + 1600];
 static int  nFila;
 static int  fioVivo;
 static int  perfilLido = -1;      // de que perfil a fila em memoria veio
+static unsigned contaLida, filaGeracao;
 
 // O trecho de reproducao em curso. So o fio principal toca nisto.
 static struct {
@@ -82,7 +85,7 @@ static size_t esc(char *dst, size_t tam, const char *s) {
 static int pct100(int p) { return p < 0 ? 0 : p > 100 ? 100 : p; }
 
 size_t atividade_json(const AtivEvento *e, char *dst, size_t tam) {
-  char ev[32], im[64], md[24], ti[480], po[1100];
+  char ev[32], im[64], md[24], ti[480], po[NV_ARTE_URL_MAX * 2];
   int n;
   if (!e || !dst || tam < 2) return 0;
   // Um campo que nao coube vira vazio, e nao uma string cortada no meio de um
@@ -139,6 +142,8 @@ static void ler(void) {
   char *b, *p;
   nFila = 0;
   perfilLido = perfis_ativo();
+  contaLida = plugins_geracao();
+  filaGeracao++;
   b = dados_ler(arquivo());
   if (!b) return;
   for (p = b; *p && nFila < ATIV_FILA_MAX;) {
@@ -176,13 +181,30 @@ static int fioEnviar(void *u) {
   snprintf(fioUrl, sizeof fioUrl, "%s/v1/atividade", NV_REC_URL);
   for (;;) {
     int st = 0, manter;
+    unsigned geracao;
     char *r;
     travar();
-    if (nFila < 1 || !atividade_envia() || !identidade(cab)) { fioVivo = 0; destravar(); return 0; }
+    if (nFila < 1 || !atividade_envia() || perfilLido != perfis_ativo() ||
+        contaLida != plugins_geracao()) { fioVivo = 0; destravar(); return 0; }
+    geracao = filaGeracao;
     snprintf(corpo, sizeof corpo, "%s", fila[0]);
+    destravar();
+    // Fora da trava: a identidade pode renovar o token (rede), e o laco de
+    // desenho toma esta mesma trava para enfileirar.
+    if (!identidade(cab)) { travar(); fioVivo = 0; destravar(); return 0; }
+    // A renovacao pode esperar rede: consentimento, fila e conta/perfil podem
+    // ter mudado. Nem um corpo identico de uma fila nova valida o envio antigo.
+    travar();
+    if (!atividade_envia() || nFila < 1 || geracao != filaGeracao ||
+        perfilLido != perfis_ativo() || contaLida != plugins_geracao() ||
+        strcmp(fila[0], corpo)) { fioVivo = 0; destravar(); return 0; }
     destravar();
     r = rede_postar_st(fioUrl, ATIV_TEMPO_REDE, cab, corpo, &st);
     free(r);
+    // 401 com a conta Nuvio: o token venceu ou foi recusado. Renova UMA vez; o
+    // evento fica na fila e sai com o token novo, em vez de repetir o mesmo
+    // token a cada minuto.
+    if (st == 401 && !strcmp(fioVia, "X-Nuvio-Auth: nuvio")) sessao_token_recusado(fioAut + 22);
     // FALHA DE TRANSPORTE, 5xx, 429 e 401 (identidade ainda nao reconhecida)
     // ficam na fila para a proxima vez. Qualquer outro status — 2xx, e tambem
     // 400/404 de um servidor que ainda nao conhece o evento — sai da fila:
@@ -194,7 +216,8 @@ static int fioEnviar(void *u) {
     if (manter) { fioVivo = 0; destravar(); return 0; }
     // O primeiro ainda e o que saiu: so este fio remove, e enfileirar acrescenta
     // no fim (ou descarta o mais VELHO quando cheia — ver enfileirar).
-    if (nFila > 0 && !strcmp(fila[0], corpo)) {
+    if (geracao == filaGeracao && perfilLido == perfis_ativo() &&
+        contaLida == plugins_geracao() && nFila > 0 && !strcmp(fila[0], corpo)) {
       memmove(fila, fila + 1, sizeof fila[0] * (size_t)(nFila - 1));
       nFila--;
       gravar();
@@ -220,12 +243,13 @@ static void enfileirar(const AtivEvento *e) {
   if (!atividade_envia()) return;
   if (!atividade_json(e, linha, sizeof linha)) return;
   travar();
-  if (perfilLido != perfis_ativo()) ler();
+  if (perfilLido != perfis_ativo() || contaLida != plugins_geracao()) ler();
   // Cheia: sai o mais VELHO. O evento novo descreve o agora; o velho, se nao
   // saiu ate aqui, provavelmente nao sai mais.
   if (nFila >= ATIV_FILA_MAX) {
     memmove(fila, fila + 1, sizeof fila[0] * (size_t)(ATIV_FILA_MAX - 1));
     nFila = ATIV_FILA_MAX - 1;
+    filaGeracao++;
   }
   snprintf(fila[nFila++], sizeof fila[0], "%s", linha);
   gravar();
@@ -247,7 +271,7 @@ void atividade_definir_permitido(int nivel) {
   travar();
   permitido = nivel > 0 ? nivel : 0;
   // DESLIGAR APAGA O QUE NAO SAIU — a mesma promessa de recomenda.c.
-  if (!permitido) { nFila = 0; gravar(); }
+  if (!permitido) { filaGeracao++; nFila = 0; gravar(); }
   else acordarFio();
   destravar();
 }
@@ -396,6 +420,24 @@ void atividade_salvo(const CatItem *ci, int salvar) {
   if (strncmp(e.imdb, "tt", 2)) return;
   snprintf(e.ev, sizeof e.ev, "salvo");
   e.rec = atividade_origem(e.imdb, NULL, 0);
+  enfileirar(&e);
+}
+
+// "Assistiram juntos" (Watch Together, decisao 8): cada TV manda o PROPRIO
+// evento quando a sessao acaba; o servidor junta no feed quem assistiu o mesmo
+// titulo na mesma hora, e so quem tem o alcance ligado aparece.
+void atividade_junto(const char *imdb, const char *midia, const char *titulo, const char *poster,
+                     int temporada, int episodio, int seg) {
+  AtivEvento e;
+  memset(&e, 0, sizeof e);
+  atividade_id_puro(e.imdb, sizeof e.imdb, imdb);
+  if (strncmp(e.imdb, "tt", 2)) return;
+  snprintf(e.ev, sizeof e.ev, "junto");
+  snprintf(e.midia, sizeof e.midia, "%s", midia && !strcmp(midia, "series") ? "series" : "movie");
+  snprintf(e.titulo, sizeof e.titulo, "%s", titulo ? titulo : "");
+  snprintf(e.poster, sizeof e.poster, "%s", poster ? poster : "");
+  e.temporada = temporada; e.episodio = episodio;
+  e.seg = seg;
   enfileirar(&e);
 }
 

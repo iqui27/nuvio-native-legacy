@@ -1,0 +1,23 @@
+# nuvio-juntos: salas do Watch Together (Durable Objects + WebSocket Hibernation).
+# PUBLICAR SO POR tools/juntos-publicar.sh (confere a pasta, como o
+# vidaa-publicar.sh). Nada de [assets] aqui nem binding de servico: este Worker
+# nao serve site nem fala com outro Worker.
+name = "nuvio-juntos"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[[durable_objects.bindings]]
+name = "SALA"
+class_name = "Sala"
+
+[[migrations]]
+tag = "v1-sala"
+new_sqlite_classes = ["Sala"]
+
+[vars]
+# TVs por sala, anfitriao incluido (decisao 6). Celulares nao contam.
+SALA_MAX = "5"
+
+# Segredos (wrangler secret put, NUNCA aqui):
+#   SALA_SEGREDO          o MESMO valor do nuvio-recomendacoes (assina os bilhetes)
+#   SALA_SEGREDO_ANTIGO   opcional, so durante uma troca de segredo

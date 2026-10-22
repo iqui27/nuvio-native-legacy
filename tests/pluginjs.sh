@@ -4,7 +4,7 @@
 #   bash tests/pluginjs.sh                 # normal
 #   SANITIZE=1 bash tests/pluginjs.sh      # ASan + UBSan
 #   SANITIZE=thread bash tests/pluginjs.sh # TSan
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 out="${NV_TMP:-/Volumes/ExternalSSD/nv-f09-tmp}"; mkdir -p "$out"
 tmp=$(mktemp -d "$out/pluginjs.XXXXXX")

@@ -3,7 +3,7 @@
 # avisos usando ele (tests/avisodisp_avisos.c). Sem janela nem rede.
 #
 #   bash tests/avisodisp.sh
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-avisodisp-XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT

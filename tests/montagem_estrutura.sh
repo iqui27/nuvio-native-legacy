@@ -1,4 +1,6 @@
 #!/bin/bash
+# -DNV_DESC_MIN_MS=0ull: este teste e anterior ao minimo de 10 s entre voltas
+# (descdebounce.h, #319); confere a montagem, nao a regra de espera.
 # Estrutura (colecoes/ordem/limite) mudando no meio da montagem nao descarta o
 # que chegou; identidade (dono/perfil/addons) continua descartando.
 #
@@ -10,7 +12,7 @@ set -eu
 cd "$(dirname "$0")/.."
 flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
-cc ${flags[@]+"${flags[@]}"} src/cwordem.c tests/montagem_estrutura.c src/cotacat.c src/homeestado.c src/catalogo.c \
+cc ${flags[@]+"${flags[@]}"} -DNV_DESC_MIN_MS=0ull src/cwordem.c tests/montagem_estrutura.c src/cotacat.c src/homeestado.c src/catalogo.c \
   src/progresso.c src/js.c src/metaprov.c src/colecoes.c src/redeurl.c src/catordem.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -o /tmp/nuvio-montagem-estrutura-tests -O1 -g -pthread \

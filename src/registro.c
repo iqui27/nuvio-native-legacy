@@ -6,12 +6,16 @@
 #include "idioma.h"
 #include "idiomacod.h"
 #include "layout.h"
+#include "teclavoltar.h"
 #include "ajustes.h"
 #include "avisos.h"
 #include "redesaude.h"
 #include "tex_cache.h"
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
+#include "ponteiro.h"
+#include "rolagemtoque.h"
+#include "telefonecartao.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,6 +67,8 @@
 
 static int aberto;
 static int aviso;
+static int legal; // 1: aviso curto; 2: leitura em Ajustes
+static int legalVisto;
 static int avisoDecidido;
 // A soltura do MESMO toque que abriu/fechou algo aqui. ARMADILHA JA PAGA NESTE
 // REPO: o KEYUP de um toque que fechou uma camada vaza para a tela de tras
@@ -371,7 +377,15 @@ static int focoEtapa;       // Sistema com rastro de etapas: a etapa em foco
 static int vis[REG_MAX * 2];
 static unsigned char visCtx[REG_MAX * 2];
 static int nVis;
+#ifdef NV_TOUCH_UI
+static ToqueRolagem toqueRegistro, toqueEtapas, toqueAreas;
+static float toqueRegistroOffset, toqueEtapasOffset, toqueAreasOffset;
+static ToqueRolagem *toqueRegAtiva;
+#endif
 static void filtrar(void) {
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&toqueRegistro); toquerol_limpar(&toqueEtapas);
+#endif
   int i;
   nVis = 0;
   for (i = 0; i < nLin; i++) {
@@ -403,9 +417,38 @@ static void pausar(int focoEm) {
   detalhe = 1;
 }
 static void seguir(void) {
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&toqueRegistro);
+#endif
   pausado = 0; foco = -1; detalhe = 0; novas = 0;
   recarregar();
 }
+#ifdef NV_TOUCH_UI
+static int toqueRegistroRolar(const PonteiroRolagem *e) {
+  if (e->fase == PONT_ROL_INICIO) {
+    toqueRegAtiva = NULL;
+    if (telefoneui_ativo() && toquerol_evento(&toqueAreas, e)) { toqueRegAtiva = &toqueAreas; return 1; }
+    if (toquerol_evento(&toqueEtapas, e)) toqueRegAtiva = &toqueEtapas;
+    else if (toquerol_evento(&toqueRegistro, e)) toqueRegAtiva = &toqueRegistro;
+    if (toqueRegAtiva) { pausado = 1; marcaPausa = marcaLida; return 1; }
+    return 0;
+  }
+  return toqueRegAtiva ? toquerol_evento(toqueRegAtiva, e) : 0;
+}
+static void toqueRegLinha(int i, int b) {
+  (void)b;
+  if (i < 0 || i >= nVis) return;
+  pausar(i); detalhe = 0; segEd = focoEnviar = 0;
+}
+static void toqueRegArea(int i, int b) {
+  (void)b;
+  if (i < 0 || i >= RG_N) return;
+  area = i; segEd = 1; focoEnviar = 0; seguir();
+}
+static void toqueRegSeguir(int a, int b) { (void)a; (void)b; seguir(); }
+static void toqueRegEnviar(int a, int b) { (void)a; (void)b; segEd = 0; focoEnviar = 1; }
+static void toqueRegEtapa(int a, int b) { (void)b; focoEtapa = a; segEd = focoEnviar = 0; }
+#endif
 
 // Chamado por quadro com o painel aberto: rele ao vivo, ou conta as novas.
 static void passoAoVivo(void) {
@@ -444,6 +487,9 @@ static void passoAoVivo(void) {
 int registro_aberto(void) { return aberto; }
 
 static void abrir(void) {
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&toqueAreas); toqueAreasOffset = 0;
+#endif
   aberto = 1;
   area = RG_TUDO; segEd = 0; pausado = 0; foco = -1; detalhe = 0; focoEnviar = 0;
   novas = 0; focoEtapa = 0;
@@ -479,6 +525,18 @@ void registro_aviso_primeira_vez(void) {
   aviso = 1;
 }
 
+void registro_legal_abrir(void) { legal = 2; }
+int registro_legal_aberto(void) { return legal; }
+void registro_aviso_legal(void) {
+  char *s;
+  if (legalVisto) return;
+  s = dados_ler("aviso-legal.txt");
+  if (s) { free(s); legalVisto = 1; return; }
+  legalVisto = 1;
+  dados_gravar("aviso-legal.txt", "1\n");
+  legal = 1;
+}
+
 static int ehAlternar(const SDL_Event *e) {
   if (e->key.repeat) return 0;
   if (e->key.keysym.sym == REG_TECLA_TECLADO) return 1;
@@ -487,11 +545,6 @@ static int ehAlternar(const SDL_Event *e) {
   return 0;
 }
 
-static int ehVoltar(const SDL_Event *e) {
-  SDL_Keycode k = e->key.keysym.sym;
-  return k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
-         e->key.keysym.scancode == NV_SCANCODE_BACK;
-}
 static int ehOk(SDL_Keycode k) { return k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE; }
 
 static int etapasN(void);   // registro_ilha.inc
@@ -509,6 +562,16 @@ int registro_envio_aberto(void);
 int registro_envio_evento(const SDL_Event *e);
 
 int registro_evento(const SDL_Event *e) {
+#ifdef NV_TOUCH_UI
+  if (toquerol_navegacao(e)) {
+    if (toqueRegistro.livre && nVis > 0) {
+      foco = (int)(toqueRegistroOffset / 32.0f);
+      if (foco >= nVis) foco = nVis - 1;
+      segEd = 0;
+    }
+    toquerol_limpar(&toqueRegistro); toquerol_limpar(&toqueEtapas); toquerol_limpar(&toqueAreas);
+  }
+#endif
   int ehTecla = (e->type == SDL_KEYDOWN || e->type == SDL_KEYUP || e->type == SDL_TEXTINPUT);
 
   if (e->type == SDL_KEYUP &&
@@ -517,6 +580,13 @@ int registro_evento(const SDL_Event *e) {
     soltarSym = 0;
     soltarScan = -1;
     return 1;
+  }
+
+  if (legal) {
+    if (e->type == SDL_KEYDOWN && (ehOk(e->key.keysym.sym) || nv_tecla_voltar(e))) {
+      legal = 0; engolirSoltura(e);
+    }
+    return ehTecla;
   }
 
   if (e->type == SDL_KEYDOWN && ehAlternar(e)) {
@@ -538,7 +608,7 @@ int registro_evento(const SDL_Event *e) {
   // Daqui para baixo o painel e MODAL: nenhuma tecla chega a tela de tras.
   if (e->type == SDL_KEYDOWN) {
     SDL_Keycode k = e->key.keysym.sym;
-    if (ehVoltar(e)) { aberto = 0; engolirSoltura(e); return 1; }
+    if (nv_tecla_voltar(e)) { aberto = 0; engolirSoltura(e); return 1; }
     if (semFonte || !nLin) {
       if (ehOk(k)) { recarregar(); engolirSoltura(e); }
       return 1;
@@ -593,6 +663,24 @@ int registro_evento(const SDL_Event *e) {
 #include "registro_ilha.inc"
 #include "registro_envio.inc"
 
+// Leitura legal com as mesmas pecas de texto longo do painel de registro.
+static void legalPonteiro(int a, int b) { (void)a; (void)b; }
+static void desenhaLegal(void) {
+  const char *texto = legal == 1
+    ? "Nuvio Legacy é um player: addons e listas são de terceiros e você é responsável pelo que adiciona.\nAjustes › Sobre e ajuda › Aviso legal."
+    : "Nuvio Legacy é apenas um player. Não hospeda, armazena, indexa, envia nem distribui conteúdo.\nNão vem com fontes: tudo que toca vem de addons, listas, servidores e contas de terceiros que você escolhe.\nVocê é responsável pelo que adiciona e assiste e por ter direito de acesso onde mora.\nO projeto não controla, recomenda nem verifica addons, listas ou serviços e não fornece links para conteúdo sem licença.\nAvisos de direitos autorais devem ir a quem hospeda o conteúdo.\nNão é afiliado ao Stremio, ao Nuvio oficial, a serviços de streaming ou debrid, nem a fabricantes de TV.";
+  float w = fminf(1500, NV_VTELA_W - 96), x = (NV_VTELA_W - w) * 0.5f;
+  float h = rgBlocoAltura(TXT_AJ_TEXTO, texto, w - 88, 30, 24) + 200;
+  float y = (NV_VTELA_H - h) * 0.5f, by, bw;
+  TxtLinha titulo = rgT(TXT_LOG_T34, "Aviso legal");
+  rgIlha((GfxRect){ x, y, w, h }, 36, 1, 0.055f, 0.059f, 0.071f);
+  txt_desenhar(titulo, x + 44, y + 36);
+  rgBloco(TXT_AJ_TEXTO, texto, x + 44, y + 96, w - 88, 30, 0.85f, 24);
+  by = y + h - 84;
+  bw = rgBotao("OK", NULL, x + 44, by, 1, 1);
+  ponteiro_alvo(x + 44, by, bw, 56, legalPonteiro, NULL, 0, 0);
+}
+
 static void registro_desenharCorpo_(void);
 // Camada ampliada (escala.h): o corpo desenha na tela virtual.
 void registro_desenhar(void) {
@@ -601,10 +689,18 @@ void registro_desenhar(void) {
   ESCALA_FIM();
 }
 static void registro_desenharCorpo_(void) {
-  if (!aberto && !aviso) return;
+#ifdef NV_TOUCH_UI
+  toqueRegistro.offset = toqueEtapas.offset = toqueAreas.offset = NULL;
+#endif
+  if (!aberto && !aviso && !legal) return;
   // RECORTE DESLIGADO ANTES DE DESENHAR: se uma tela esquecer o recorte ligado,
   // o unico sintoma seria o painel de DIAGNOSTICO nao aparecer.
   gfx_sem_recorte();
+  // PONTEIRO (#99): o aviso e um cartao que qualquer tecla dispensa — camada
+  // sem alvos, o clique e o OK (registro_evento o fecha) e nao vaza para a
+  // tela de tras. O painel aberto ja e camada em app.c.
+  if (legal) { ponteiro_camada(); desenhaLegal(); return; }
+  if (!aberto && aviso) ponteiro_camada();
   if (aberto) { passoAoVivo(); desenhaPainel(); }
   else desenhaAviso();
 }

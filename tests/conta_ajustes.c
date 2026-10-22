@@ -168,10 +168,56 @@ int main(void) {
     saida = NULL;
     n = ajustes_mesclar_blob(
       "{\"features\":{\"layout_settings\":{"
-      "\"resolucao_ui\":{\"type\":\"int\",\"value\":0},"
+      "\"resolucaoUi\":{\"type\":\"int\",\"value\":0},"
       "\"texturas_mb\":{\"type\":\"int\",\"value\":0}}}}", &saida);
     confere("ajuste de aparelho fica local", n, 0);
     free(saida); }
+
+  // --- TRAILER DO CARTAZ EM FOCO: TRES MODOS AQUI, UM BOOLEANO NA CONTA -----
+  //
+  // O arquivo guarda o modo em "trailerCartazModo"; a chave velha (V_LIGA:
+  // 0 = Ligado) migra para o que a pessoa via. Na conta continua o
+  // focused_poster_backdrop_trailer_enabled do web: true = algum modo.
+  printf("\ntrailer do cartaz em foco (tres modos):\n");
+  { static const struct { const char *arq; int esperado; const char *o_que; } M[] = {
+      { "focusedPosterBackdropTrailerEnabled 0\nmodernLandscapePostersEnabled 0\n", AJ_TRAILER_CARTAZ_CHEIA,
+        "ligado + cartaz deitado -> Tela cheia" },
+      { "focusedPosterBackdropTrailerEnabled 0\nfocusedPosterBackdropExpandEnabled 0\nmodernLandscapePostersEnabled 1\n",
+        AJ_TRAILER_CARTAZ_CHEIA, "ligado + expandir -> Tela cheia" },
+      { "modernLandscapePostersEnabled 1\nfocusedPosterBackdropExpandEnabled 1\nfocusedPosterBackdropTrailerEnabled 0\n",
+        AJ_TRAILER_CARTAZ_DESLIGADO, "ligado sem dependencia -> Desligado (nao tocava)" },
+      { "focusedPosterBackdropTrailerEnabled 1\n", AJ_TRAILER_CARTAZ_DESLIGADO, "desligado -> Desligado" },
+      { "trailerCartazModo 2\nfocusedPosterBackdropTrailerEnabled 1\n", AJ_TRAILER_CARTAZ_CARD, "chave nova vence a velha" },
+    };
+    static const char *CONTA_LIGADO =
+      "{\"features\":{\"layout_settings\":{"
+      "\"focused_poster_backdrop_trailer_enabled\":{\"type\":\"boolean\",\"value\":true}}}}";
+    static const char *CONTA_DESLIGADO =
+      "{\"features\":{\"layout_settings\":{"
+      "\"focused_poster_backdrop_trailer_enabled\":{\"type\":\"boolean\",\"value\":false}}}}";
+    char dir[] = "/tmp/nuvio-conta-trailer.XXXXXX", cam[200], *saida = NULL;
+    unsigned q;
+    FILE *f;
+    if (!mkdtemp(dir)) { falhas++; goto fim; }
+    snprintf(cam, sizeof cam, "%s/ajustes.txt", dir);
+    for (q = 0; q < sizeof M / sizeof *M; q++) {
+      f = fopen(cam, "w"); fputs(M[q].arq, f); fclose(f);
+      ajustes_dir(dir);
+      confere(M[q].o_que, ajustes_trailer_cartaz(), M[q].esperado);
+    }
+    // O ultimo caso deixou No card: true da conta mantem o modo; sobe true.
+    ajustes_aplicar_blob(CONTA_LIGADO);
+    confere("conta true mantem No card", ajustes_trailer_cartaz(), AJ_TRAILER_CARTAZ_CARD);
+    confere("No card sobe true", ajustes_mesclar_blob(CONTA_DESLIGADO, &saida), 1);
+    confere("  e o valor e true", saida && strstr(saida, "\"value\":true") != NULL, 1);
+    free(saida); saida = NULL;
+    ajustes_aplicar_blob(CONTA_DESLIGADO);
+    confere("conta false -> Desligado", ajustes_trailer_cartaz(), AJ_TRAILER_CARTAZ_DESLIGADO);
+    ajustes_aplicar_blob(CONTA_LIGADO);
+    confere("conta true sobre Desligado -> Tela cheia", ajustes_trailer_cartaz(), AJ_TRAILER_CARTAZ_CHEIA);
+    confere("Tela cheia igual a conta true: nada sobe", ajustes_mesclar_blob(CONTA_LIGADO, &saida), 0);
+    free(saida);
+    unlink(cam); rmdir(dir); }
 
   // --- TEMA DINAMICO (cor viva) ---------------------------------------------
   //

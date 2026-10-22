@@ -120,6 +120,12 @@ static size_t pedidoCorpo(void *b, size_t size, size_t count, void *u) {
     c->primeiro = c->janela = pedidoAgoraMs();
     c->r->primeiro_byte_ms = pedidoMs(c->primeiro - c->inicio);
   }
+  if (c->p->receber_corpo) {
+    c->r->n_corpo += n;
+    if (c->status >= 200 && c->status < 300 &&
+        !c->p->receber_corpo(b, n, c->p->corpo_usuario)) return 0;
+    return n;
+  }
   ok = pedidoGuardar(&c->r->corpo, &c->r->n_corpo, &c->corpoCap, c->tetoCorpo, b, n);
   if (ok != 1) { c->r->erro = ok ? REDE_MEMORIA : REDE_LIMITE_CORPO; return 0; }
   return n;
@@ -232,7 +238,7 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
   const char *metodo;
   const void *corpo;
   size_t nCorpo;
-  char url[4096], origem[300];
+  char url[4096], origem[300], origemPessoal[300];
   int tls, headersPermitidos = 1, hop, ok = 0;
   if (!r) return 0;
   memset(r, 0, sizeof *r); memset(&c, 0, sizeof c);
@@ -251,6 +257,8 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
       !pedidoCabsValidos(p->cabecalhos, c.tetoCab)) {
     r->erro = REDE_ENTRADA; return 0;
   }
+  /* `origem` follows redirects; the personal-server origin is the first one. */
+  memcpy(origemPessoal, origem, sizeof origemPessoal);
   rede_job_reter(p->job);
   c.inicio = pedidoAgoraMs();
   c.prazo = c.inicio + (p->prazo_ms ? p->prazo_ms : 15000);
@@ -269,8 +277,13 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
     unsigned k;
     if (pedidoParar(&c)) break;
     if (lista) { slist_free(lista); lista = NULL; }
-    for (k = 0; headersPermitidos && p->cabecalhos && p->cabecalhos[k]; k++) {
-      void *nova = slist_append(lista, p->cabecalhos[k]);
+    for (k = 0; p->cabecalhos && p->cabecalhos[k]; k++) {
+      void *nova;
+      /* #203: Range is not a credential and must reach the CDN a debrid link
+       * redirects to; without it every speed-test connection read byte 0 (200)
+       * and the extra Android connections were never summed. */
+      if (!headersPermitidos && strncasecmp(p->cabecalhos[k], "Range:", 6)) continue;
+      nova = slist_append(lista, p->cabecalhos[k]);
       if (!nova) { r->erro = REDE_MEMORIA; break; }
       lista = nova;
     }
@@ -285,8 +298,13 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
     PEDIDO_OPT(OPT_TIMEOUT_MS, (long)(c.prazo - agora));
     PEDIDO_OPT(OPT_CONNECTTIMEOUT_MS, (long)(c.prazo - agora));
     PEDIDO_OPT(OPT_NOSIGNAL, 1L);
-    PEDIDO_OPT(OPT_SSL_VERIFYPEER, 1L);
-    PEDIDO_OPT(OPT_SSL_VERIFYHOST, 2L);
+    { /* #290: servidor pessoal so na propria origem (ver tls_pessoal em rede.h). */
+      char aqui[300];
+      int tlsAqui = 0, pessoal = p->tls_pessoal &&
+        pedidoOrigem(url, aqui, sizeof aqui, &tlsAqui) && tlsAqui && !strcmp(aqui, origemPessoal);
+      PEDIDO_OPT(OPT_SSL_VERIFYPEER, pessoal ? 0L : 1L);
+      PEDIDO_OPT(OPT_SSL_VERIFYHOST, pessoal ? 0L : 2L);
+    }
     if (p->ca_arquivo || discordCa[0]) PEDIDO_OPT(OPT_CAINFO, p->ca_arquivo ? p->ca_arquivo : discordCa);
     PEDIDO_OPT(OPT_USERAGENT, "Nuvio/1.8");
     /* Media diagnostics measure the player's wire body, without transparent
@@ -314,7 +332,12 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
 #undef PEDIDO_OPT
     strcpy(r->final, url);
     rede_url_publica(url, r->host, sizeof r->host);
-    r->curl_erro = curl_perform(curl);
+    r->curl_erro = performTmdb(curl, url);
+    { char *final = NULL;
+      if (!curl_getinfo(curl, INFO_URL_FINAL, &final) && final)
+        snprintf(r->final, sizeof r->final, "%s", final);
+      rede_url_publica(r->final, r->host, sizeof r->host);
+    }
     curl_getinfo(curl, INFO_RESPONSE_CODE, &status); r->status = (int)status;
     if (!curl_getinfo(curl, INFO_SIZE_DOWNLOAD, &fio) && fio >= 0 && fio < 9007199254740992.0)
       c.fio = (uint64_t)fio;
@@ -323,14 +346,15 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
     if (c.primeiro) r->corpo_ms = pedidoMs(agora - c.primeiro);
     if (pedidoParar(&c)) break;
     if (r->curl_erro && !(p->janela_corpo_ms && (r->fim_janela || r->fim_teto) &&
-        (r->curl_erro == 23 || r->curl_erro == 42))) {
+        (r->curl_erro == 23 || r->curl_erro == 42 || r->curl_erro == 56))) {
+      /* 56: an h2 stream cut by our own window/cap abort reports recv failure. */
       r->erro = r->curl_erro == 28 ? REDE_PRAZO : REDE_TRANSPORTE; break;
     }
     if (!p->seguir || !pedidoEhRedirect(r->status)) {
       pedidoIntervalo(&c, agora, 1);
       if (pedidoParar(&c)) break;
       /* Empty 204/HEAD still owns a terminated buffer like an ordinary reply. */
-      if (!r->corpo && !p->janela_corpo_ms) {
+      if (!r->corpo && !p->janela_corpo_ms && !p->receber_corpo) {
         r->corpo = calloc(1, 1);
         if (!r->corpo) { r->erro = REDE_MEMORIA; break; }
       }
@@ -341,7 +365,7 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
     }
     {
       char novaOrigem[300]; int novoTls;
-      if (!pedidoOrigem(destino, novaOrigem, sizeof novaOrigem, &novoTls) || (tls && !novoTls)) {
+      if (!pedidoOrigem(destino, novaOrigem, sizeof novaOrigem, &novoTls) || (tls && !novoTls && !p->rebaixar_midia)) {
         r->erro = REDE_REDIRECT; break;
       }
       /* 303 converts to GET (except HEAD); 301/302 only convert POST. */

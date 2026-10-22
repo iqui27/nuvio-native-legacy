@@ -163,11 +163,29 @@ int posterprov_extra_normalizar(const char *entrada, char *out, size_t n) {
 // ---------------------------------------------------------------- modelo
 static int marcador(const char *p, size_t k) {
   return (k == 6 && !strncmp(p, "{imdb}", 6)) || (k == 6 && !strncmp(p, "{tmdb}", 6)) ||
-         (k == 6 && !strncmp(p, "{type}", 6)) || (k == 11 && !strncmp(p, "{tipo_tmdb}", 11));
+         (k == 6 && !strncmp(p, "{type}", 6)) || (k == 11 && !strncmp(p, "{tipo_tmdb}", 11)) ||
+         (k == 9 && !strncmp(p, "{imdb_id}", 9)) || (k == 9 && !strncmp(p, "{tmdb_id}", 9)) ||
+         (k == 4 && !strncmp(p, "{id}", 4));
 }
-int posterprov_modelo_valido(const char *modelo) {
+// Pior caso de cada marcador montado (posterprov_montar_url): {imdb} vira o
+// Ident.tt (ate 23), {tmdb} um long (ate 19 digitos), {type} "series" (6),
+// {tipo_tmdb} "movie" (5). Os aliases *_id seguem o original; {id} usa o
+// maior deles (23). So posterprov_modelo_cabe() usa: ver o .h.
+#define PP_MAX_IMDB 23
+#define PP_MAX_TMDB 19
+static size_t montado_max(const char *p, size_t k) {
+  if ((k == 6 && !strncmp(p, "{imdb}", 6)) || (k == 9 && !strncmp(p, "{imdb_id}", 9)) ||
+      (k == 4 && !strncmp(p, "{id}", 4))) return PP_MAX_IMDB;
+  if ((k == 6 && !strncmp(p, "{tmdb}", 6)) || (k == 9 && !strncmp(p, "{tmdb_id}", 9))) return PP_MAX_TMDB;
+  if (k == 6) return 6;                                   // {type}: "series"
+  return 5;                                               // {tipo_tmdb}: "movie"
+}
+// Regras de sintaxe; com `pior` nao nulo, soma tambem o tamanho montado no
+// pior caso.
+static int modelo_sintaxe(const char *modelo, size_t *pior_out) {
   const char *p;
   int achou = 0;
+  size_t pior = 0;
   if (!modelo || strlen(modelo) >= PP_MODELO_MAX) return 0;
   if (strncmp(modelo, "http://", 7) && strncmp(modelo, "https://", 8)) return 0;
   for (p = modelo; *p; p++) {
@@ -176,11 +194,22 @@ int posterprov_modelo_valido(const char *modelo) {
     if (*p == '{') {
       const char *f = strchr(p, '}');
       if (!f || !marcador(p, (size_t)(f - p + 1))) return 0;
+      pior += montado_max(p, (size_t)(f - p + 1));
       achou = 1;
       p = f;
+    } else {
+      pior++;
     }
   }
+  if (pior_out) *pior_out = pior;
   return achou;
+}
+int posterprov_modelo_valido(const char *modelo) {
+  return modelo_sintaxe(modelo, NULL);
+}
+int posterprov_modelo_cabe(const char *modelo) {
+  size_t pior = 0;
+  return modelo_sintaxe(modelo, &pior) && pior < PP_URL_MAX;
 }
 
 // ---------------------------------------------------------------- montagem
@@ -270,10 +299,18 @@ int posterprov_montar_url(const PosterProvCfg *c, const char *imdb, long tmdb,
         char v[24] = "";
         size_t lv, adv = 1;
         if (*p == '{') {
-          if (!strncmp(p, "{imdb}", 6)) { if (!d.tt[0]) return 0; snprintf(v, sizeof v, "%s", d.tt); adv = 6; }
-          else if (!strncmp(p, "{tmdb}", 6)) { if (d.tm <= 0) return 0; snprintf(v, sizeof v, "%ld", d.tm); adv = 6; }
-          else if (!strncmp(p, "{type}", 6)) { snprintf(v, sizeof v, "%s", d.serie ? "series" : "movie"); adv = 6; }
-          else { snprintf(v, sizeof v, "%s", d.serie ? "tv" : "movie"); adv = 11; }
+          adv = (size_t)(strchr(p, '}') - p + 1);   // sintaxe ja validada
+          if (!strncmp(p, "{imdb}", 6) || !strncmp(p, "{imdb_id}", 9)) {
+            if (!d.tt[0]) return 0;
+            snprintf(v, sizeof v, "%s", d.tt);
+          } else if (!strncmp(p, "{tmdb}", 6) || !strncmp(p, "{tmdb_id}", 9)) {
+            if (d.tm <= 0) return 0;
+            snprintf(v, sizeof v, "%ld", d.tm);
+          } else if (!strncmp(p, "{id}", 4)) {
+            if (d.tt[0]) snprintf(v, sizeof v, "%s", d.tt);
+            else snprintf(v, sizeof v, "%ld", d.tm);
+          } else if (!strncmp(p, "{type}", 6)) { snprintf(v, sizeof v, "%s", d.serie ? "series" : "movie"); }
+          else { snprintf(v, sizeof v, "%s", d.serie ? "tv" : "movie"); }
           lv = strlen(v);
           if (k + lv + 1 > n) return 0;
           memcpy(out + k, v, lv); k += lv;

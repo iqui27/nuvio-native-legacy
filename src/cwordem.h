@@ -12,10 +12,9 @@
 // ao ar (hasAired === false, que resolveNextUpReleaseState tira da data de
 // estreia: `released <= Date.now()`; sem data, conta como exibido).
 //
-//   default          -> mais recente primeiro, e so.
-//   streaming_style  -> os exibidos (em andamento e "a seguir" que ja foram ao
-//                       ar) pelo mais recente; DEPOIS os futuros, pela data de
-//                       estreia, a mais proxima primeiro.
+//   default          -> pausados primeiro, depois sugestoes; recencia por grupo.
+//   streaming_style  -> pausados, sugestoes exibidas e futuros, nessa ordem;
+//                       recencia dentro de cada grupo.
 //   split_upcoming   -> a mesma lista, mas os futuros saem da fileira e viram
 //                       uma fileira propria logo abaixo ("Proximos", a
 //                       `upcoming_section` do web, titulo upcoming_section_title).
@@ -56,10 +55,10 @@ typedef struct {
 int cwo_futuro(const CwoItem *it, long long agoraMs);
 
 // Reordena `perm` (indices em `v`, que chegam na ordem por instante) segundo o
-// modo. Estavel: dentro de cada grupo a ordem de entrada se mantem, e os
-// futuros vao pela estreia (empate: ordem de entrada). Devolve quantos itens
+// modo. Pausados primeiro; dentro de cada grupo a recencia recebida se mantem.
+// Nos modos streaming/separar os futuros ficam no fim. Devolve quantos itens
 // ficaram na parte principal — o resto, de perm[principal] em diante, sao os
-// futuros. No modo padrao nada se move e o retorno e `n`.
+// futuros. No modo padrao o retorno e `n`.
 int cwo_ordenar(const CwoItem *v, int n, int modo, long long agoraMs, int *perm);
 
 // O CORTE DA FILEIRA com futuros. `principal` exibidos e `nFut` futuros, na
@@ -75,6 +74,7 @@ int cwo_ordenar(const CwoItem *v, int n, int modo, long long agoraMs, int *perm)
 // web nao tem esse problema porque o slice dele e de 300 (CW_MAX_VISIBLE_ITEMS);
 // aqui a fileira e de 12, entao os futuros ganham ate um terco dela (minimo 1).
 // Lugar que os futuros nao usam fica com os exibidos, e vice-versa.
+// montarContinuar reserva os pausados ANTES de chamar com os lugares restantes.
 void cwo_corte(int principal, int nFut, int max, int *nPrincipal, int *nFuturos);
 
 // --- Datas de estreia (escritas por trakt.c, lidas por descoberta.c) --------
@@ -119,7 +119,9 @@ int cwo_data_curta(long long estreiaMs, long long agoraMs, int idioma, int maius
 // home (que escreve "A seguir"/"Estreia") os leem, e os dois ja linkam este
 // arquivo. Trocado inteiro de uma vez, sob trava: nada de janela vazia.
 void cwo_conta_definir(const char *const *ids, int n);
+// Tambem diz sim para os ajustados pela desmarcacao (cwo_ajustados_definir).
 int  cwo_conta_a_seguir(const char *id);
+void cwo_ajustados_definir(const char *const *ids, int n);
 // A virada de temporada do enfeite (S3E10 nao existe, vira S4E1) muda o id.
 void cwo_conta_trocar(const char *velho, const char *novo);
 

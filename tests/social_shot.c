@@ -598,10 +598,10 @@ int main(int argc, char **argv) {
     e.type = SDL_KEYUP;
     e.key.keysym.sym = SDLK_RETURN;
     ctx_evento(&e); }
-  // Desce ate "Recomendar a um amigo". Sao QUATRO opcoes neste item (detalhes,
-  // salvar, assistido, recomendar) — o titulo nao tem progresso, entao "Tirar
-  // de Continuar assistindo" nao aparece.
-  teclaCtx(SDLK_DOWN); teclaCtx(SDLK_DOWN); teclaCtx(SDLK_DOWN);
+  // Desce ate "Recomendar a um amigo". Sao TRES opcoes neste item (salvar,
+  // assistido, recomendar; "Ver detalhes" saiu em 06/10/2026) — o titulo nao
+  // tem progresso, entao "Tirar de Continuar assistindo" nao aparece.
+  teclaCtx(SDLK_DOWN); teclaCtx(SDLK_DOWN);
   snprintf(nome, sizeof nome, "%s-ctx-opcoes.bmp", saida);
   captura(nome, w);
 

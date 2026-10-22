@@ -5,6 +5,7 @@
 //       OK liga/desliga o scraper; remover pede o OK duas vezes.
 // Sem motor neste alvo (plugins_disponivel() == 0) so ha a linha que diz isso.
 #include "pluginsui.h"
+#include "registro.h"
 #include "plugins.h"
 #include "ajustes.h"
 #include "teclado.h"
@@ -61,6 +62,21 @@ static void ok(void) {
   plugins_alternar_scraper(repo, foco - 1);
 }
 
+static void abrirRepo(void) {
+  if (plugins_disponivel() && nivel == 0 && foco >= 2 && foco < linhas()) {
+    repo = foco - 2; focoSalvo = foco; nivel = 1; foco = 0; armado = 0; aviso[0] = 0;
+  }
+}
+
+#ifdef NV_TOUCH_UI
+void pluginsui_detalhes(int i, int b) {
+  (void)b;
+  if (sair || teclado_aberto() || nivel != 0 || i < 2 || i >= linhas()) return;
+  foco = i;
+  abrirRepo();
+}
+#endif
+
 void pluginsui_evento(const SDL_Event *e) {
   int n;
   if (teclado_aberto()) { teclado_evento(e); return; }
@@ -71,14 +87,22 @@ void pluginsui_evento(const SDL_Event *e) {
     case SDLK_DOWN: if (foco < n - 1) { foco++; armado = 0; } break;
     case SDLK_RETURN: case SDLK_KP_ENTER: ok(); break;
     case SDLK_RIGHT:
-      if (plugins_disponivel() && nivel == 0 && foco >= 2) {
-        repo = foco - 2; focoSalvo = foco; nivel = 1; foco = 0; armado = 0; aviso[0] = 0;
-      }
+      abrirRepo();
       break;
     case SDLK_AC_BACK: case SDLK_ESCAPE: case SDLK_BACKSPACE: case SDLK_LEFT: voltar(); break;
     default: break;
   }
 }
+
+// PONTEIRO (#99): a linha sob o cursor ganha o foco (a mesma variavel das
+// setas, desarmando o "OK de novo remove" como a seta faz). Com o teclado da
+// URL aberto ele tem a tela.
+void pluginsui_ponteiro(int i, int b) {
+  (void)b;
+  if (sair || teclado_aberto() || i < 0 || i >= linhas() || i == foco) return;
+  foco = i; armado = 0;
+}
+int pluginsui_foco(void) { return foco; }
 
 void pluginsui_atualizar(float dt, Uint32 agora) {
   int n;
@@ -89,7 +113,7 @@ void pluginsui_atualizar(float dt, Uint32 agora) {
                                             r == -1 ? "já está na conta" :
                                             r == -2 ? "Lista cheia (24 repositórios)" :
                                             "o endereço precisa começar com http"));
-    if (r == 1) foco = 1 + plugins_n_repos();
+    if (r == 1) { foco = 1 + plugins_n_repos(); registro_aviso_legal(); }
   }
   // A lista pode encolher por fora (sync da conta, outro perfil): foco valido.
   n = linhas();

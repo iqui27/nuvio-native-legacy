@@ -19,7 +19,11 @@ typedef enum {
   // SO NO LAYOUT DINAMICA (ajustes_home_layout): formas que a Apple TV usa e a
   // home Moderna nao tem. Nascem em dinAtribuirTipos, nunca do catalogo.
   FILEIRA_TOP10_NUM,   // ranking: numeral grande ao lado de cada cartaz
-  FILEIRA_LARGA        // cartao deitado 16:9 maior que o da Moderna
+  FILEIRA_LARGA,       // cartao deitado 16:9 maior que o da Moderna
+  // Escolhiveis em qualquer layout (06/10):
+  FILEIRA_LINHA_TEMPO, // cartazes por ano sobre a linha animada dos anos
+  FILEIRA_FICHA,       // cartaz com a ficha do titulo ao lado
+  FILEIRA_PALCO        // o foco grande no centro, vizinhos diminuindo
 } TipoFileira;
 
 // O item sob o foco, com o retangulo que ele ocupa na tela NESTE quadro. A
@@ -44,6 +48,10 @@ int  home_n_artes(void);                   // acervo de backdrops, usado pelo de
 // Ha fileira montada? Serve para o app saber que o catalogo CHEGOU depois do
 // arranque, e nao so que existia na hora de abrir.
 int  home_tem_fileiras(void);
+const char *home_fileira_focada(void);   // chave sob o foco, "" no destaque
+int  home_fileiras_n(void);                // fileiras na tela, na ordem
+const char *home_fileira_chave(int i);     // chave da i-esima, "" fora da faixa
+int  home_fileira_n(const char *chave);    // cartoes da fileira na tela; -1 se nao existe
 const char *home_arte(int i);
 const char *home_backdrop(int i);   // arte do titulo i do catalogo
 void home_evento(const SDL_Event *e);
@@ -54,6 +62,11 @@ void home_ir_topo(void);
 // Trailer no destaque: `topo` = 1 quando a home e o que esta na frente (sem
 // detalhe, player, painel, menu ou cartao por cima). app.c chama por quadro.
 void home_trailer_passo(int topo, float dt, Uint32 agora);
+#ifdef NV_SHOT_HOOKS
+// Capturas: finge um trailer ja tocando onde o passo real o abriria (destaque,
+// Tela cheia ou No card), sem plano de video. tests/homelayouts_shot.c.
+void home_shot_trailer(int sim);
+#endif
 // Why `topo` is 0 ("profile-choice", "detail"...), or NULL. Only for the
 // "[home-trailer] autoplay gate=top-overlay (...)" line; call before the step.
 void home_trailer_topo_motivo(const char *motivo);
@@ -69,6 +82,9 @@ float home_topo_fracao(void);
 // "Streaming", que sai da home e vai para a barra aberta. 0 sem a fileira ou
 // nos outros layouts.
 int home_streaming_barra(const int **pastas);
+// A home continua se montando mas NAO esta na tela (escolha de perfil): o
+// destaque nao gira nem pre-busca enquanto estiver escondida.
+void home_oculta(int oculta);
 void home_encerrar(void);
 // Registra o titulo interrompido para a faixa contextual "Retomar agora".
 // A faixa so existe enquanto o progresso fizer sentido (nem inicio nem fim).
@@ -84,6 +100,8 @@ void home_retomar_dispensar(void);
 void home_retomar_esquecer(void);
 int  home_quer_sair(void);
 int  home_pediu_abrir(void);   // OK pressionado: consome o pedido
+void home_pedir_abrir(void);   // pede a pagina do titulo focado (menu do cartao)
+int  home_foco_retomada(void); // card focado e de retomada (OK nele toca)
 int  home_pediu_tocar(void);   // OK num card de retomada com "OK no card" = Retomar
 int  home_pediu_menu(void);    // ESQUERDA na primeira coluna: chama o menu
 int home_pediu_social(void);
@@ -100,6 +118,13 @@ int  home_pediu_guia(char *id, int tam);
 // `filTipo` nessa mesma reducao. Igual a `filTipo` = a forma enche sozinha.
 int home_previa_fileira(const char *chave, int filTipo, int refTipo, GfxRect area,
                         float alfa);
+// VITRINE DAS COLECOES (vertudo.c): destaque e cartaz da Home para um CatItem
+// que nao esta no catalogo global. Ver home.c.
+void home_vitrine_medida(float *w, float *h, float *passo, float *rotH);
+int  home_vitrine_arte_pronta(const CatItem *ci);
+int  home_vitrine_arte(const CatItem *ci, float alfa);
+void home_vitrine_texto(const CatItem *ci, float alfa);
+void home_vitrine_cartao(const CatItem *ci, GfxRect base, GfxRect card, float alfa);
 #endif
 const char *home_rastro_foco(void);
 // CARROSSEL DA DINAMICA: titulos (indices do catalogo) da fileira em foco e a

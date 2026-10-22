@@ -43,6 +43,10 @@ typedef struct {
   int baixa;                // 1 = prioridade baixa: cede a qualquer outro pedido do quadro (a guia parental)
   int respira;              // 1 = o ponto que respira antes da frase (atividade: o canal sintonizando)
   int voltaRelogio;         // 1 = ao acabar, o corpo vira a pilula da HORA, segura um instante e so entao sai (guia parental). Relogio desligado: encolhe e some no lugar
+  // PONTEIRO (#99): a pilula SEM corpo e clicavel. Vira o `focar` de um alvo do
+  // tamanho da pilula assentada; o clique entrega OK a quem trata a tecla dela
+  // (a de falha da legenda: faixas_pilula_tecla). NULL = so informativa.
+  void (*ponteiroOk)(int a, int b);
 } PlrIlhaPedido;
 
 void plrilha_pedir(const PlrIlhaPedido *p);
@@ -52,6 +56,9 @@ void plrilha_relogio(float a, double falta);
 // #202: a velocidade da reproducao em centesimos (velocidade.h). Fora de
 // 100 a pilula mostra "1,5x" depois do "termina as". Vale ate a proxima chamada.
 void plrilha_velocidade(int cent);
+// O titulo aberto: com um painel de pe, vai a esquerda da linha do relogio
+// (dono, 11/10). NULL/"" = nada. Vale ate a proxima chamada.
+void plrilha_titulo(const char *t);
 // 1 = ancorada a direita (Posicao do relogio), para o OSD por as marcas de
 // formato no outro canto.
 int  plrilha_direita(void);

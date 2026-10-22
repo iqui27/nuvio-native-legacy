@@ -8,8 +8,24 @@
 #ifndef NV_LAYOUT_H
 #define NV_LAYOUT_H
 
-#define NV_TELA_W        1920.0f
-#define NV_TELA_H        1080.0f
+#define NV_TELA_BASE_W   1920.0f
+#define NV_TELA_BASE_H   1080.0f
+#ifdef NV_TOUCH_UI
+extern float nv_layout_w;
+extern float nv_layout_h;
+#define NV_TELA_W        nv_layout_w
+#define NV_TELA_H        nv_layout_h
+#else
+#define NV_TELA_W        NV_TELA_BASE_W
+#define NV_TELA_H        NV_TELA_BASE_H
+#endif
+
+// TV starts with the original 1920x1080 canvas. Mobile preserves the physical
+// aspect ratio, with a virtual short edge of 1080. Changing mode reuses the
+// last valid drawable size, including when Android does not emit a resize.
+void layout_tela_definir(int width, int height);
+void layout_modo_definir(int mobile);
+int layout_modo_mobile(void);
 
 // O shell legacy usa uma rail de 72dp (144px no canvas 1080p) e inicia o
 // conteúdo 104px depois dela, como no CSS .home-main + --home-content-start.
@@ -148,6 +164,9 @@
 #define NV_HERO_ARTE_INI 300.0f
 #define NV_HERO_ARTE_EXT 520.0f
 #define NV_HERO_BOTAO_H   68.0f
+// Botao do destaque da home em pilula COMPACTA (dono, 06/10, referencia da
+// Apple TV): branco com texto escuro, ~46 px. Vale para os tres layouts.
+#define NV_HERO_BOTAO_COMPACTO_H 72.0f   // = NV_DETW2_BTN_H (primario do detalhe)
 #define NV_HERO_NBOTOES      3
 // MEDIDO no app web: .home-modern-hero-media em x=555, y=0, 1421x670, com a
 // arte em object-fit:cover. Os degrades que dissolvem a borda esquerda e a base
@@ -313,6 +332,13 @@
 // cartaz cobre a ponta direita dele (a Apple faz assim), entao o passo da
 // fileira cresce por ela.
 #define NV_TOP10_NUM_FAIXA 138.0f
+// FILEIRAS DE 06/10 (home.c). Linha do tempo: a faixa dos anos sob os
+// cartazes. Ficha: cartaz 212 + a ficha de texto. Palco: o cartaz do centro
+// sobre a medida do cartaz comum; os vizinhos caem para NV_PALCO_VIZ dele.
+#define NV_TEMPO_FAIXA_H   96.0f
+#define NV_FICHA_W        600.0f
+#define NV_PALCO_ESC       1.3f
+#define NV_PALCO_VIZ       0.66f
 // O numeral: corpo do TXT_RANK_GRANDE (os algarismos da Inter medem ~0,73 do
 // corpo, ~190 px contra o cartaz de 322 — perto de 60%, a proporcao da Apple),
 // quanto da largura dele fica POR BAIXO do cartaz, e a folga minima ate o
@@ -997,3 +1023,4 @@ extern float nv_cor_fundo_viva[3];   // corviva.c
 #define NV_DET_ESTOURO   0.035f
 
 #endif
+

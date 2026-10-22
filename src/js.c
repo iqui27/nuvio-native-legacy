@@ -108,7 +108,7 @@ static int escapeU(const char *p, const char *fim, char *dst, size_t *k, size_t 
   return usados;
 }
 
-static int lerTextoEm(const char *p, const char *fim, char *dst, size_t tam) {
+static int lerTextoEm2(const char *p, const char *fim, char *dst, size_t tam, int linhas) {
   const char *fecha;
   size_t k = 0;
   if (p >= fim || *p != '"' || !(fecha = fimTextoEm(p, fim))) return 0;
@@ -117,6 +117,10 @@ static int lerTextoEm(const char *p, const char *fim, char *dst, size_t tam) {
     if (*p == '\\' && fecha - p >= 2) {
       p++;
       if (*p == 'u') { int u = escapeU(p + 1, fecha, dst, &k, tam); p += 1 + u; continue; }   /* invalido: so o "u" sai, o resto e texto */
+      // linhas: o \n do JSON fica como quebra de linha (o texto de fonte do
+      // addon, que a folha desenha linha a linha); \r some, \t vira espaco.
+      if (linhas && *p == 'n') { p++; dst[k++] = '\n'; continue; }
+      if (linhas && *p == 'r') { p++; continue; }
       if (*p == 'n' || *p == 't' || *p == 'r') { p++; dst[k++] = ' '; continue; }
       if (*p == '/' ) { p++; dst[k++] = '/'; continue; }
     }
@@ -139,6 +143,10 @@ static int lerTextoEm(const char *p, const char *fim, char *dst, size_t tam) {
   return k > 0;
 }
 
+static int lerTextoEm(const char *p, const char *fim, char *dst, size_t tam) {
+  return lerTextoEm2(p, fim, dst, tam, 0);
+}
+
 // Elemento de texto que ja se tem na mao (p na aspa de abertura), sem chave
 // para procurar: "genre":["Not\u00edcias"]. Mesmo decodificador do js_texto.
 int js_cadeia(const char *p, char *dst, size_t tam) {
@@ -154,6 +162,17 @@ int js_texto(const char *ini, const char *fim, const char *chave,
   if (!fim) fim = ini + strlen(ini);
   p = achaChave(ini, fim, chave);
   return p ? lerTextoEm(pulaEm(p, fim), fim, dst, tam) : 0;
+}
+
+// Como js_texto, mas o \n do JSON vira '\n' (nao espaco).
+int js_texto_linhas(const char *ini, const char *fim, const char *chave,
+                    char *dst, size_t tam) {
+  const char *p;
+  if (!dst || !tam) return 0;
+  if (!ini || !chave) return 0;
+  if (!fim) fim = ini + strlen(ini);
+  p = achaChave(ini, fim, chave);
+  return p ? lerTextoEm2(pulaEm(p, fim), fim, dst, tam, 1) : 0;
 }
 
 double js_num(const char *ini, const char *fim, const char *chave, double padrao) {

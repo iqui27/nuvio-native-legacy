@@ -2,17 +2,23 @@
 // rotas (todas conferidas na documentacao oficial), o que ficou de fora e o
 // modelo de fios.
 #include "simkl.h"
+#include "ajustes.h"
 #include "simklauth.h"
 #include "nuvem.h"
 #include "rede.h"
 #include "js.h"
 #include "idioma.h"
 #include "trakt.h"
+#include "traktscrobble.h"
 #include "artemetahub.h"
+#include "dados.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <math.h>
+#include <time.h>
+#include <unistd.h>
 
 #define SMK_API "https://api.simkl.com"
 // Retomada: o mesmo teto da fileira (CONT_MAX de descoberta.c) com folga para
@@ -144,6 +150,7 @@ int simkl_ler_playback(const char *json, CatItem *dst, long long *ids, int max) 
     // `progress` e porcentagem em float (0-100, "45.5"). Os limites de 1% a
     // 90% sao aplicados em montarContinuar, igual para as tres fontes.
     if (valorRaiz(p, f, "progress", &vi, &vf)) d->progresso = (int)atof(vi);
+    if (d->progresso < ajustes_cw_minimo() || d->progresso >= ajustes_cw_concluido()) continue;
     if (js_texto_raiz_em(p, f, "paused_at", quando, sizeof quando))
       d->retomadoMs = js_ms_iso(quando);
     if (ids) {
@@ -204,6 +211,7 @@ int simkl_ler_plantowatch(const char *json, int serie, CatItem *dst, int max) {
     snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
     snprintf(d->tipo, sizeof d->tipo, "%s", serie ? "series" : "movie");
     d->naLista = 1;
+    d->fontes = CAT_FONTE_SIMKL;
     // O mesmo acabamento de trakt_lista: arte deterministica pelo IMDb, sem
     // um GET por item, e o genero de sempre para a legenda do cartaz.
     arte_metahub_preencher(d);
@@ -343,18 +351,18 @@ const char *simkl_rota_historico(int visto) {
 // `metodo`: 'G' GET, 'P' POST, 'D' DELETE. O token entra so no cabecalho, e
 // nada aqui imprime a URL — o client_id nao e segredo, mas o costume do app e
 // logar so o caminho (ver rede_url_publica).
-static char *pedir(char metodo, const char *caminho, const char *consulta,
-                   const char *corpo, int *st) {
+static char *pedirComToken(char metodo, const char *caminho, const char *consulta,
+                           const char *corpo, int *st, const char *tk) {
   char url[640], cid[200], nome[120], aut[400];
   const char *cab[3];
   char *r;
   *st = 0;
-  if (!simkl_ativo() || !nuvem_simkl_cliente()[0]) return NULL;
+  if (!tk[0] || !nuvem_simkl_cliente()[0]) return NULL;
   nuvem_url_escapar(nuvem_simkl_cliente(), cid, sizeof cid);
   nuvem_url_escapar(nuvem_simkl_app()[0] ? nuvem_simkl_app() : "nuvio", nome, sizeof nome);
   snprintf(url, sizeof url, "%s%s?client_id=%s&app-name=%s&app-version=1.0.1%s%s",
            SMK_API, caminho, cid, nome, consulta ? "&" : "", consulta ? consulta : "");
-  snprintf(aut, sizeof aut, "Authorization: Bearer %s", simklauth_token());
+  snprintf(aut, sizeof aut, "Authorization: Bearer %s", tk);
   cab[0] = aut;
   cab[1] = "Accept: application/json";
   cab[2] = NULL;
@@ -363,6 +371,11 @@ static char *pedir(char metodo, const char *caminho, const char *consulta,
   else                    r = rede_baixar_st(url, 25, cab, st);
   memset(aut, 0, sizeof aut);
   return r;
+}
+
+static char *pedir(char metodo, const char *caminho, const char *consulta,
+                   const char *corpo, int *st) {
+  return pedirComToken(metodo, caminho, consulta, corpo, st, simklauth_token());
 }
 
 static char *pegar(const char *caminho, const char *consulta, int *st) {
@@ -374,6 +387,175 @@ static char *pegar(const char *caminho, const char *consulta, int *st) {
     return NULL;
   }
   return r;
+}
+
+// ------------------------------------------------------------ perfil e stats
+
+static int perfilNoMes(const char *iso, const struct tm *mes, int *dia) {
+  long long ms;
+  time_t s;
+  struct tm local;
+  if (!iso || !(ms = js_ms_iso(iso))) return 0;
+  s = (time_t)(ms / 1000);
+  localtime_r(&s, &local);
+  if (local.tm_year != mes->tm_year || local.tm_mon != mes->tm_mon) return 0;
+  if (dia) *dia = local.tm_mday;
+  return 1;
+}
+
+// Cada obra e agregada antes de disputar as quatro vagas, como no Trakt.
+static void perfilDestaque(PerfilDados *d, const PerfilDestaque *r) {
+  int i = 0, n;
+  if (!r->plays || !imdbValido(r->id)) return;
+  while (i < d->nDestaques && d->destaques[i].plays >= r->plays) i++;
+  if (i >= PERFIL_MAX_DESTAQUES) return;
+  n = d->nDestaques;
+  if (n < PERFIL_MAX_DESTAQUES) d->nDestaques++;
+  else n--;
+  for (; n > i; n--) d->destaques[n] = d->destaques[n - 1];
+  d->destaques[i] = *r;
+}
+
+static void perfilSomar(PerfilDados *d, const struct tm *mes, const char *quando,
+                        PerfilDestaque *r, int runtime,
+                        int filme, int temporada, int episodio) {
+  int dia = 0;
+  if (!perfilNoMes(quando, mes, &dia)) return;
+  d->plays++;
+  if (filme) d->filmes++; else d->episodios++;
+  if (runtime > 0) d->minutos += runtime;
+  if (dia >= 1 && dia <= PERFIL_MAX_DIAS) d->atividade[dia - 1]++;
+  r->plays++;
+  if (runtime > 0) r->minutos += runtime;
+  if (filme) snprintf(r->detalhe, sizeof r->detalhe, "Filme");
+  else if (temporada > 0 && episodio > 0)
+    snprintf(r->detalhe, sizeof r->detalhe, i18n("T%dE%d"), temporada, episodio);
+}
+
+static void perfilLerTipo(const char *json, const char *lista, int filme,
+                          PerfilDados *d, const struct tm *mes) {
+  const char *p;
+  for (p = js_array(json, NULL, lista); p && *p == '{'; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p), *obra, *obraFim, *ids, *idsFim;
+    char titulo[128] = "", imdb[24] = "", quando[48] = "";
+    int runtime;
+    PerfilDestaque r = {0};
+    if (!objetoRaiz(p, f, filme ? "movie" : !strcmp(lista, "anime") ? "anime" : "show", &obra, &obraFim)) continue;
+    js_texto_raiz_em(obra, obraFim, "title", titulo, sizeof titulo);
+    runtime = (int)js_num(obra, obraFim, "runtime", 0);
+    if (objetoRaiz(obra, obraFim, "ids", &ids, &idsFim))
+      js_texto(ids, idsFim, "imdb", imdb, sizeof imdb);
+    if (imdbValido(imdb)) {
+      snprintf(r.id, sizeof r.id, "%s", imdb);
+      snprintf(r.titulo, sizeof r.titulo, "%s", titulo[0] ? titulo : imdb);
+      snprintf(r.poster, sizeof r.poster, "https://images.metahub.space/poster/medium/%s/img", imdb);
+      snprintf(r.backdrop, sizeof r.backdrop, "https://images.metahub.space/background/medium/%s/img", imdb);
+    }
+    if (filme) {
+      js_texto_raiz_em(p, f, "last_watched_at", quando, sizeof quando);
+      perfilSomar(d, mes, quando, &r, runtime, 1, 0, 0);
+    } else {
+      const char *s;
+      for (s = js_array(p, f, "seasons"); s && *s == '{'; s = js_prox(js_fim(s))) {
+        const char *sf = js_fim(s), *e;
+        int temporada = (int)js_num(s, sf, "number", 0);
+        for (e = js_array(s, sf, "episodes"); e && *e == '{'; e = js_prox(js_fim(e))) {
+          const char *ef = js_fim(e);
+          int episodio = (int)js_num(e, ef, "number", 0);
+          int duracao = (int)js_num(e, ef, "runtime", runtime);
+          quando[0] = 0;
+          js_texto_raiz_em(e, ef, "watched_at", quando, sizeof quando);
+          perfilSomar(d, mes, quando, &r, duracao, 0, temporada, episodio);
+        }
+      }
+    }
+    perfilDestaque(d, &r);
+  }
+}
+
+// {} e a resposta vazia. Erro HTTP/HTML/JSON cortado nao e ausencia de plays.
+static int perfilHistoricoValido(const char *json) {
+  const char *fim, *p, *v, *vf;
+  int listas = 0;
+  static const char *tipos[] = { "movies", "shows", "anime" };
+  if (!json) return 0;
+  while (*json && (unsigned char)*json <= ' ') json++;
+  if (*json != '{') return 0;
+  fim = js_fim(json);
+  if (fim <= json + 1 || fim[-1] != '}') return 0;
+  for (p = fim; *p && (unsigned char)*p <= ' '; p++) ;
+  if (*p || valorRaiz(json, fim, "error", &v, &vf)) return 0;
+  p = json + 1;
+  while (p < fim && (unsigned char)*p <= ' ') p++;
+  if (*p == '}') return 1;
+  for (int i = 0; i < 3; i++) if (valorRaiz(json, fim, tipos[i], &v, &vf)) {
+    if (*v != '[' || vf > fim || vf <= v + 1 || vf[-1] != ']') return 0;
+    listas++;
+  }
+  return listas != 0;
+}
+
+int simkl_perfil_ler(const char *settings, const char *itens,
+                     PerfilDados *d, time_t agora) {
+  const char *u, *uf;
+  struct tm mes, primeiro;
+  int dias;
+  static const char *meses[] = { "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                                 "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro" };
+  if (!d || !perfilHistoricoValido(itens)) return 0;
+  memset(d, 0, sizeof *d);
+  localtime_r(&agora, &mes);
+  snprintf(d->periodo, sizeof d->periodo, "%s %d", i18n(meses[mes.tm_mon]), mes.tm_year + 1900);
+  if (settings && objetoRaiz(settings, NULL, "user", &u, &uf)) {
+    js_texto_raiz_em(u, uf, "name", d->nome, sizeof d->nome);
+    js_texto_raiz_em(u, uf, "avatar", d->avatar, sizeof d->avatar);
+  }
+  if (itens) {
+    perfilLerTipo(itens, "movies", 1, d, &mes);
+    perfilLerTipo(itens, "shows", 0, d, &mes);
+    perfilLerTipo(itens, "anime", 0, d, &mes);
+  }
+  dias = 31;
+  if (mes.tm_mon == 1) dias = ((mes.tm_year + 1900) % 4 == 0) ? 29 : 28;
+  else if (mes.tm_mon == 3 || mes.tm_mon == 5 || mes.tm_mon == 8 || mes.tm_mon == 10) dias = 30;
+  d->nDias = dias;
+  primeiro = mes; primeiro.tm_mday = 1; primeiro.tm_hour = primeiro.tm_min = primeiro.tm_sec = 0;
+  primeiro.tm_isdst = -1; mktime(&primeiro); d->primeiroDiaSemana = primeiro.tm_wday;
+  for (int i = 0; i < d->nDias; i++) if (d->atividade[i]) d->diasAtivosMes++;
+  for (int i = mes.tm_mday - 1; i >= 0 && i < d->nDias; i--) {
+    if (!d->atividade[i]) break;
+    d->streakAtual++;
+  }
+  d->parcial = 1;
+  snprintf(d->aviso, sizeof d->aviso,
+           "Resumo mensal do histórico disponível no Simkl.");
+  return 1;
+}
+
+int simkl_perfil(PerfilDados *d) {
+  char inicio[48], consulta[256], tk[300];
+  unsigned long long credencial;
+  char *settings = NULL, *itens = NULL;
+  time_t agora = time(NULL), limite;
+  struct tm primeiro, utc;
+  int st = 0, ok;
+  if (!d) return 0;
+  credencial = simklauth_credencial_copiar(tk, sizeof tk);
+  if (!tk[0]) return 0;
+  settings = pedirComToken('G', "/users/settings", NULL, NULL, &st, tk);
+  if (st < 200 || st >= 300) { free(settings); settings = NULL; }
+  localtime_r(&agora, &primeiro);
+  primeiro.tm_mday = 1; primeiro.tm_hour = primeiro.tm_min = primeiro.tm_sec = 0; primeiro.tm_isdst = -1;
+  limite = mktime(&primeiro); gmtime_r(&limite, &utc);
+  strftime(inicio, sizeof inicio, "%Y-%m-%dT%H:%M:%SZ", &utc);
+  snprintf(consulta, sizeof consulta,
+           "date_from=%s&extended=full&include_all_episodes=original&episode_watched_at=yes", inicio);
+  itens = pedirComToken('G', "/sync/all-items/all/all", consulta, NULL, &st, tk);
+  memset(tk, 0, sizeof tk);
+  ok = st >= 200 && st < 300 && credencial == simklauth_credencial_copiar(NULL, 0) &&
+       simkl_perfil_ler(settings, itens, d, agora);
+  free(settings); free(itens);
+  return ok;
 }
 
 // Assinatura barata de um corpo (FNV-1a). 0 = sem corpo.
@@ -413,7 +595,10 @@ static char *corpoPlay, *corpoAssist, *corpoPtwFilmes, *corpoPtwSeries;
 
 static void trocar(char **dst, char *novo) { free(*dst); *dst = novo; }
 
+static void scrobbleZerar(void);
+
 void simkl_esquecer(void) {
+  scrobbleZerar();
   pthread_mutex_lock(&trava);
   nPlay = nProx = nPtw = 0;
   assCw = assPtw = 0;
@@ -495,21 +680,22 @@ int simkl_continuar(CatItem *saida, int max) {
   nProx = 0;
   pthread_mutex_unlock(&trava);
 
-  // "A SEGUIR" disputa lugar como no Trakt: serie ja pausada nao entra de novo;
-  // com a lista cheia, entra no lugar do item mais velho se for mais novo.
+  // Sugestoes so entram com o ajuste ON, nos lugares que os pausados deixaram.
   // No heap e so durante a montagem: 64 CatItem sao ~1 MB, e isto roda uma
   // vez por ciclo de descoberta.
   prox = (CatItem *)malloc(sizeof(CatItem) * SMK_PLAY_MAX);
-  nP = prox ? simkl_ler_assistindo(cAssist, prox, SMK_PLAY_MAX) : 0;
+  nP = prox && ajustes_cw_proximo() ? simkl_ler_assistindo(cAssist, prox, SMK_PLAY_MAX) : 0;
   for (k = 0; k < nP; k++) {
     int ja = 0, alvo;
     for (i = 0; i < n && !ja; i++) ja = mesmaSerie(saida[i].imdb, prox[k].imdb);
     if (ja) continue;
     if (n < max) alvo = n++;
     else {
-      int vel = 0;
-      for (i = 1; i < n; i++) if (saida[i].retomadoMs < saida[vel].retomadoMs) vel = i;
-      if (saida[vel].retomadoMs >= prox[k].retomadoMs) continue;
+      int vel = -1;
+      for (i = 0; i < n; i++)
+        if (saida[i].progresso == 0 &&
+            (vel < 0 || saida[i].retomadoMs < saida[vel].retomadoMs)) vel = i;
+      if (vel < 0 || saida[vel].retomadoMs >= prox[k].retomadoMs) continue;
       alvo = vel;
     }
     saida[alvo] = prox[k];
@@ -526,7 +712,10 @@ int simkl_continuar(CatItem *saida, int max) {
   { int a, b;
     for (a = 1; a < n; a++) {
       CatItem t = saida[a];
-      for (b = a - 1; b >= 0 && saida[b].retomadoMs < t.retomadoMs; b--) saida[b + 1] = saida[b];
+      for (b = a - 1; b >= 0 &&
+           ((saida[b].progresso == 0 && t.progresso > 0) ||
+            ((saida[b].progresso == 0) == (t.progresso == 0) &&
+             saida[b].retomadoMs < t.retomadoMs)); b--) saida[b + 1] = saida[b];
       saida[b + 1] = t;
     } }
   printf("[simkl] retomada: %d pausado(s) + %d a seguir candidato(s) -> %d\n",
@@ -678,11 +867,12 @@ int simkl_lista_estado(void) { return listaEstado; }
 // objetos que o servidor nao resolveu. Um `"ids"` dentro dele e titulo que o
 // Simkl nao achou pelo imdb — conta como falha, e o log diz.
 // `qtd` > 0: lote de episodios; 0: titulo inteiro (`serie` diz qual).
-static int postarHistorico(const char *corpo, int visto, const char *id, int qtd, int serie) {
+static int postarHistoricoComToken(const char *corpo, int visto, const char *id, int qtd,
+                                   int serie, const char *tk) {
   char *r;
   int st = 0, ok;
   const char *nf;
-  r = pedir('P', simkl_rota_historico(visto), NULL, corpo, &st);
+  r = pedirComToken('P', simkl_rota_historico(visto), NULL, corpo, &st, tk);
   ok = st >= 200 && st < 300;
   nf = r ? strstr(r, "\"not_found\"") : NULL;
   if (ok && nf && strstr(nf, "\"ids\"")) ok = 0;
@@ -695,9 +885,14 @@ static int postarHistorico(const char *corpo, int visto, const char *id, int qtd
   return ok;
 }
 
+static int postarHistorico(const char *corpo, int visto, const char *id, int qtd, int serie) {
+  return postarHistoricoComToken(corpo, visto, id, qtd, serie, simklauth_token());
+}
+
+static pthread_mutex_t travaCorpo = PTHREAD_MUTEX_INITIALIZER;
+
 int simkl_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd, int visto) {
   static char corpo[SMK_LOTE_MAX * 20 + 200];
-  static pthread_mutex_t travaCorpo = PTHREAD_MUTEX_INITIALIZER;
   int ok;
   if (!simkl_ativo() || !imdb) return 0;
   pthread_mutex_lock(&travaCorpo);
@@ -761,4 +956,340 @@ int simkl_playback_remover(const char *imdb) {
   if (pthread_create(&t, NULL, fioApagar, id) != 0) { free(id); return 0; }
   pthread_detach(t);
   return 1;
+}
+
+// ------------------------------------------------------------ scrobble (#459)
+//
+// O corpo e compartilhado com Trakt; a decisao e propria: Simkl permite
+// pause entre 80 e 90% sem marcar visto. Um fio unico com uma vaga PENDENTE
+// manda a chamada, entao pausar repetido nao empilha pedido.
+// Rotas e limites: api.simkl.org/api-reference/simkl/scrobble-*. Pontos que
+// mudam o desenho:
+//   - 1 POST/s por usuario: o fio espera SMK_SCR_ESPACO_MS entre dois;
+//   - o lock de 20 s por usuario volta como 400 RATE_LIMIT, nao 429;
+//   - 409 num stop = ja registrado (so vale dentro de 1 h);
+//   - stop >= 80% o Simkl marca como visto; < 80% guarda como pausado.
+#ifndef SMK_SCR_ESPACO_MS
+#define SMK_SCR_ESPACO_MS 1100   // um pouco acima do 1/s da doc
+#endif
+#ifndef SMK_SCR_ESPERA_MS
+#define SMK_SCR_ESPERA_MS 30000  // primeira janela apos 429/5xx/RATE_LIMIT; dobra
+#endif
+#define SMK_SCR_ESPERA_MAX_MS 300000
+
+static pthread_mutex_t travaScr = PTHREAD_MUTEX_INITIALIZER;
+static ScrobbleEstado scrEstado;
+typedef struct {
+  int acao, tem;
+  char id[64], jornal[64], token[400];
+  double pct;
+  unsigned long long cred, ger;
+} ScrPedido;
+static ScrPedido scrPend;
+static int scrFioVivo;
+// Janela de espera e espaco entre POSTs, sob travaScr. scrGer muda a cada zerar.
+static unsigned long long scrLivreMs, scrUltimoMs, scrGer, scrRetentarMs;
+static int scrFalhas;
+
+static unsigned long long agoraMs(void) {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return (unsigned long long)t.tv_sec * 1000ULL + (unsigned long long)t.tv_nsec / 1000000ULL;
+}
+
+// "tt123:T:E" -> temporada e episodio; filme "tt123" -> 0, 0. 0 quando o id
+// tem ':' mas nao e temporada/episodio positivos (iria como FILME do show).
+static int idScrobble(const char *id, int *t, int *e) {
+  const char *dp;
+  *t = *e = 0;
+  if (!imdbValido(id)) return 0;
+  dp = strchr(id, ':');
+  if (!dp) return 1;
+  return sscanf(dp + 1, "%d:%d", t, e) == 2 && *t > 0 && *e > 0;
+}
+
+// Apenas ids no disco, separados por vinculo (assinatura estavel do token).
+// Nao persiste credenciais, e outra conta/perfil nao retoma este jornal.
+static void scrobbleJornalNome(char *dst, size_t tam, const char *tk) {
+  unsigned long long h = 14695981039346656037ULL;
+  for (; *tk; tk++) h = (h ^ (unsigned char)*tk) * 1099511628211ULL;
+  snprintf(dst, tam, "simkl-vistos-%016llx.txt", h);
+}
+
+// Sob travaScr. Preserva todos os stops sem resposta, inclusive de outros ids.
+static int scrobbleJornal(const char *nome, const char *id, int adicionar) {
+  char *b = dados_ler(nome), *p, *fim, *novo;
+  size_t n = b ? strlen(b) : 0, u = 0;
+  int ok;
+  novo = malloc(n + strlen(id) + 2);
+  if (!novo) { free(b); return 0; }
+  for (p = b; p && *p; p = fim ? fim + 1 : NULL) {
+    size_t k;
+    fim = strchr(p, '\n');
+    k = fim ? (size_t)(fim - p) : strlen(p);
+    if (k == strlen(id) && !strncmp(p, id, k)) continue;
+    memcpy(novo + u, p, k); u += k; novo[u++] = '\n';
+  }
+  if (adicionar) { strcpy(novo + u, id); u += strlen(id); novo[u++] = '\n'; }
+  novo[u] = 0;
+  ok = u ? dados_gravar(nome, novo) : dados_apagar(nome);
+  free(novo); free(b);
+  return ok;
+}
+
+// O stop que nao chegou ao Simkl cai no historico com a credencial capturada
+// na saida. Depois de esperar o corpo compartilhado, perfil trocado deixa o id
+// no jornal do perfil original.
+static int scrobbleCairNoHistorico(const char *id, const char *tk,
+                                   unsigned long long cred) {
+  char corpo[SMK_LOTE_MAX * 20 + 200];
+  int t, e, ok = 0;
+  if (!idScrobble(id, &t, &e) || !tk[0]) return 0;
+  pthread_mutex_lock(&travaCorpo);
+  if (cred != simklauth_credencial_copiar(NULL, 0)) {
+    pthread_mutex_unlock(&travaCorpo);
+    return 0;
+  }
+  if (t > 0) {
+    VistoPar par;
+    char base[24];
+    par.temporada = (short)t; par.episodio = (short)e;
+    if (baseImdb(id, base, sizeof base) &&
+        simkl_corpo_historico_eps(corpo, sizeof corpo, base, &par, 1))
+      ok = postarHistoricoComToken(corpo, 1, base, 1, 1, tk);
+  } else if (simkl_corpo_historico_titulo(corpo, sizeof corpo, id, "movie", NULL, 0, 1)) {
+    ok = postarHistoricoComToken(corpo, 1, id, 0, 0, tk);
+  }
+  if (cred != simklauth_credencial_copiar(NULL, 0)) ok = 0;
+  pthread_mutex_unlock(&travaCorpo);
+  return ok;
+}
+
+// Zera a maquina de decisao e a janela de espera: logout e troca de perfil nao
+// herdam o "start em pe", o pendente nem a espera do vinculo anterior. scrGer
+// avisa o envio em voo que o resultado dele ja nao e deste estado.
+static void scrobbleZerar(void) {
+  pthread_mutex_lock(&travaScr);
+  memset(&scrEstado, 0, sizeof scrEstado);
+  memset(&scrPend, 0, sizeof scrPend);
+  scrLivreMs = 0;
+  scrFalhas = 0;
+  scrRetentarMs = 0;
+  scrGer++;
+  pthread_mutex_unlock(&travaScr);
+}
+
+static void scrobbleEnviar(const ScrPedido *p) {
+  int acao = p->acao;
+  const char *id = p->id;
+  double pct = p->pct;
+  char caminho[32], corpo[400], tk[400], *r;
+  int st = 0, ok, espera = 0;
+  unsigned long long agora = agoraMs(), cred, ger, livre, ultimo;
+  // A credencial sai copiada AGORA: o 401 e a janela de espera valem para ela,
+  // nao para o perfil que estiver ligado quando a resposta chegar.
+  cred = simklauth_credencial_copiar(tk, sizeof tk);
+  pthread_mutex_lock(&travaScr);
+  ger = scrGer; livre = scrLivreMs; ultimo = scrUltimoMs;
+  pthread_mutex_unlock(&travaScr);
+  if (ger != p->ger || cred != p->cred) { memset(tk, 0, sizeof tk); return; }
+  if (!tk[0]) return;   // desvinculado no meio do voo: sem chamada nem janela
+  if (agora < livre) {
+    // Janela aberta por 429/5xx: nada sai, nem retry. O stop ainda tenta o
+    // historico (o que o app fazia antes do scrobble existir).
+    printf("[simkl] scrobble %s %s: em espera, descartado\n", scrobble_nome(acao), id);
+    fflush(stdout);
+    if (acao == SCR_STOP && scrobbleCairNoHistorico(id, p->token, p->cred)) {
+      pthread_mutex_lock(&travaScr);
+      scrobbleJornal(p->jornal, id, 0);
+      pthread_mutex_unlock(&travaScr);
+    }
+    memset(tk, 0, sizeof tk);
+    return;
+  }
+  if (ultimo && agora - ultimo < SMK_SCR_ESPACO_MS)
+    usleep((useconds_t)(SMK_SCR_ESPACO_MS - (agora - ultimo)) * 1000u);
+  // Logout/troca de perfil durante o intervalo cancela antes de qualquer POST.
+  pthread_mutex_lock(&travaScr);
+  ok = ger == scrGer;
+  pthread_mutex_unlock(&travaScr);
+  if (!ok || cred != simklauth_credencial_copiar(NULL, 0)) {
+    memset(tk, 0, sizeof tk);
+    return;
+  }
+  scrobble_corpo(corpo, sizeof corpo, id, pct);
+  snprintf(caminho, sizeof caminho, "/scrobble/%s", scrobble_nome(acao));
+  r = pedirComToken('P', caminho, NULL, corpo, &st, tk);
+  memset(tk, 0, sizeof tk);
+  ok = (st >= 200 && st < 300) || st == 409;   // 409: ja registrado
+  // O log NUNCA leva o token: so a rota, o titulo e o status.
+  printf("[simkl] scrobble %s %s %.1f%% -> %s (HTTP %d)\n", scrobble_nome(acao), id, pct,
+         ok ? "ok" : "falhou", st);
+  fflush(stdout);
+  pthread_mutex_lock(&travaScr);
+  scrUltimoMs = agoraMs();
+  pthread_mutex_unlock(&travaScr);
+  if (cred != simklauth_credencial_copiar(NULL, 0)) {
+    // Perfil trocado ou vinculo refeito durante o POST: o resultado e do vinculo
+    // anterior. Nem janela, nem desvincular, nem historico no perfil novo.
+    free(r);
+    return;
+  }
+  if (st == 401) {
+    // Token recusado: o vinculo morreu. Nada mais sai ate vincular de novo.
+    if (simklauth_invalidar_se(cred)) simkl_esquecer();
+    free(r);
+    return;
+  }
+  // Janela: 429, 5xx, st 0 (rede/timeout) e o 400 RATE_LIMIT do lock de 20 s.
+  // Dobra a cada falha seguida ate 5 min; qualquer resposta boa zera.
+  if (st == 429 || st >= 500 || st == 0 || (st == 400 && r && strstr(r, "RATE_LIMIT")))
+    espera = 1;
+  pthread_mutex_lock(&travaScr);
+  if (ger == scrGer) {   // um esquecer no meio do voo zerou a janela: nao reabre
+    if (espera) {
+      unsigned long long w = SMK_SCR_ESPERA_MS;
+      int k;
+      for (k = 0; k < scrFalhas && w < SMK_SCR_ESPERA_MAX_MS; k++) w *= 2;
+      if (w > SMK_SCR_ESPERA_MAX_MS) w = SMK_SCR_ESPERA_MAX_MS;
+      scrFalhas++;
+      scrLivreMs = agoraMs() + w;
+    } else {
+      scrFalhas = 0;
+      scrLivreMs = 0;
+    }
+  }
+  pthread_mutex_unlock(&travaScr);
+  free(r);
+  if (acao == SCR_STOP && (ok || scrobbleCairNoHistorico(id, p->token, p->cred))) {
+    pthread_mutex_lock(&travaScr);
+    scrobbleJornal(p->jornal, id, 0);
+    pthread_mutex_unlock(&travaScr);
+  }
+}
+
+static void *fioScrobble(void *u) {
+  (void)u;
+  for (;;) {
+    ScrPedido pedido;
+    pthread_mutex_lock(&travaScr);
+    if (!scrPend.tem) { scrFioVivo = 0; pthread_mutex_unlock(&travaScr); return NULL; }
+    pedido = scrPend;
+    memset(&scrPend, 0, sizeof scrPend);
+    pthread_mutex_unlock(&travaScr);
+    scrobbleEnviar(&pedido);
+    memset(&pedido, 0, sizeof pedido);
+  }
+}
+
+// Na SAIDA a sessao acabou mesmo sem chamada: com o start "em pe" a proxima
+// abertura do mesmo titulo nao mandaria /scrobble/start.
+static int scrobbleRecusar(int evento) {
+  if (evento == SCR_EV_SAIU) {
+    pthread_mutex_lock(&travaScr); scrEstado.ativo = 0; pthread_mutex_unlock(&travaScr);
+  }
+  return SCR_NADA;
+}
+
+static int scrobbleDecidir(int evento, const char *id, double pct) {
+  int mesmo = !strcmp(scrEstado.id, id);
+  if (evento == SCR_EV_TOCANDO) {
+    if (scrEstado.ativo && mesmo) return SCR_NADA;
+    snprintf(scrEstado.id, sizeof scrEstado.id, "%s", id);
+    scrEstado.ativo = 1;
+    return SCR_START;
+  }
+  if (evento == SCR_EV_PAUSOU) {
+    if (!scrEstado.ativo || !mesmo) return SCR_NADA;
+    scrEstado.ativo = 0;
+    return pct >= 1.0 ? SCR_PAUSE : SCR_NADA;
+  }
+  if (evento == SCR_EV_SAIU) {
+    snprintf(scrEstado.id, sizeof scrEstado.id, "%s", id);
+    scrEstado.ativo = 0;
+    if (pct >= 90.0) return SCR_STOP;
+    return pct >= 1.0 ? SCR_PAUSE : SCR_NADA;
+  }
+  return SCR_NADA;
+}
+
+int simkl_scrobble(int evento, const char *id, double posSeg, double durSeg, double assistidoSeg,
+                   int assistiu) {
+  int acao, t, e;
+  char tk[400];
+  ScrPedido pedido = {0};
+  double pct;
+  pthread_t th;
+  if (!simkl_ativo() || !nuvem_simkl_cliente()[0] || !id || !idScrobble(id, &t, &e) ||
+      !isfinite(posSeg) || !isfinite(durSeg) || !isfinite(assistidoSeg) ||
+      durSeg < 120.0 || assistidoSeg < 5.0)
+    return scrobbleRecusar(evento);
+  pct = 100.0 * posSeg / durSeg;
+  // Valida ANTES da vaga: nem um stop sem reproducao entra na fila.
+  if (evento == SCR_EV_SAIU && pct >= 90.0 && !assistiu) return scrobbleRecusar(evento);
+  pthread_mutex_lock(&travaScr);
+  // Um stop pendente nunca e trocado: perder o stop e perder o visto. Quem
+  // chama recebe NADA e segue pelo historico.
+  if (scrPend.tem && scrPend.acao == SCR_STOP) {
+    pthread_mutex_unlock(&travaScr);
+    return SCR_NADA;
+  }
+  acao = scrobbleDecidir(evento, id, pct);
+  if (acao != SCR_NADA) {
+    pedido.cred = simklauth_credencial_copiar(tk, sizeof tk);
+    pedido.ger = scrGer;
+    scrobbleJornalNome(pedido.jornal, sizeof pedido.jornal, tk);
+    if (acao == SCR_STOP) snprintf(pedido.token, sizeof pedido.token, "%s", tk);
+    memset(tk, 0, sizeof tk);
+    // Antes do fio: a saida pode matar o POST de 20 s depois da drenagem de 3 s.
+    if (acao == SCR_STOP && !scrobbleJornal(pedido.jornal, id, 1)) {
+      pthread_mutex_unlock(&travaScr);
+      return SCR_NADA;
+    }
+    pedido.acao = acao; pedido.pct = pct; pedido.tem = 1;
+    snprintf(pedido.id, sizeof pedido.id, "%s", id);
+    scrPend = pedido;
+    if (!scrFioVivo) {
+      scrFioVivo = 1;
+      if (pthread_create(&th, NULL, fioScrobble, NULL) != 0) {
+        scrFioVivo = 0;
+        memset(&scrPend, 0, sizeof scrPend);
+        acao = SCR_NADA;
+      } else pthread_detach(th);
+    }
+  }
+  pthread_mutex_unlock(&travaScr);
+  return acao;
+}
+
+void simkl_scrobble_retentar(void) {
+  char tk[400], nome[64], id[64], *b;
+  unsigned long long cred = simklauth_credencial_copiar(tk, sizeof tk);
+  unsigned long long agora = agoraMs();
+  if (!tk[0]) return;
+  scrobbleJornalNome(nome, sizeof nome, tk);
+  memset(tk, 0, sizeof tk);
+  pthread_mutex_lock(&travaScr);
+  if (scrFioVivo || agora < scrRetentarMs) { pthread_mutex_unlock(&travaScr); return; }
+  scrRetentarMs = agora + 30000;
+  b = dados_ler(nome);
+  id[0] = 0;
+  if (b) sscanf(b, "%63s", id);
+  free(b);
+  pthread_mutex_unlock(&travaScr);
+  if (id[0] && cred == simklauth_credencial_copiar(NULL, 0))
+    simkl_scrobble(SCR_EV_SAIU, id, 1000, 1000, 1000, 1);
+}
+
+void simkl_scrobble_drenar(unsigned ms) {
+  unsigned i;
+  for (i = 0; i < ms / 20 && !simkl_scrobble_ocioso(); i++) usleep(20 * 1000);
+}
+
+int simkl_scrobble_ocioso(void) {
+  int o;
+  pthread_mutex_lock(&travaScr);
+  o = !scrFioVivo && !scrPend.tem;
+  pthread_mutex_unlock(&travaScr);
+  return o;
 }

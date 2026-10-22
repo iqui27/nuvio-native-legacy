@@ -73,7 +73,11 @@ function emissores(t, { trakt = {}, nuvio = {}, perfis = {}, simkl = {}, perfisF
       if (perfisFalha) return new Response("", { status: 500 });
       return Response.json((perfis[tok] || [1]).map((i) => ({ profile_index: i })));
     }
-    if (u === "https://api.simkl.com/users/settings") {
+    if (u.startsWith("https://api.simkl.com/users/settings")) {
+      // A Simkl exige client_id/app-name/app-version na query; sem eles, 412.
+      const q = new URL(u).searchParams;
+      if (!q.get("client_id") || !q.get("app-name") || !q.get("app-version")) return new Response("", { status: 412 });
+      if (simkl.__http) return new Response("", { status: simkl.__http });
       const id = simkl[tok];
       return id ? Response.json({ user: { name: "Simkl " + id }, account: { id } }) : new Response("", { status: 401 });
     }
@@ -311,4 +315,10 @@ test("comparacao com cobertura: por midia, em comum e o tamanho da amostra", asy
   assert.deepEqual(g.comum, { filmes: 1, series: 1 });
   assert.deepEqual(g.cobertura, { eu: 3, ele: 2 });
   assert.equal(g.generos, null, "generos: sem fonte, nunca um chute");
+});
+
+test("Simkl: 412/5xx do emissor nao e token recusado (502, nao 401)", async (t) => {
+  const { api } = cenario(t, { simkl: { "sk-1": 4242, __http: 412 }, env: { SIMKL_CLIENT_ID: "sc" } });
+  await api("nuvio", "tok-a", "POST", "/v1/eu");
+  assert.equal((await api("nuvio", "tok-a", "POST", "/v1/identidades/vincular", { provedor: "simkl", token: "sk-1" })).status, 502);
 });

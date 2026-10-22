@@ -58,14 +58,18 @@
 #define PS_ILHA_H        68.0f
 #define PS_ILHA_PAD      30.0f
 #define PS_ARTE_H       648.0f   // faixa da arte de fundo do perfil focado
-// CARTAO "CONTINUAR" sob o perfil em foco (2.0, variante B): a peca da ilha
-// (material vidro/solido, mini capa, trilho) com o ultimo item da pessoa.
-#define PS_CONT_W      860.0f
-#define PS_CONT_H      200.0f
-#define PS_CONT_RAIO    36.0f
-#define PS_CONT_CAPA_W 108.0f
-#define PS_CONT_CAPA_H 156.0f
-#define PS_CONT_Y_MAX  800.0f   // topo, com o avatar no teto; abaixo disso sobe com o avatar
+// "CONTINUAR" SOB CADA AVATAR (2.0.3, variante D2 aprovada pelo dono): um bloco
+// pequeno sob o nome — capa 2:3 a esquerda, titulo e "T2 · E5 · 23 min" a
+// direita, um fio de 2 px de progresso — apagado fora do foco. Os avatares
+// continuam sendo o protagonista; nada de cartao/material por baixo.
+#define PS_CONT_CAPA_W  62.0f
+#define PS_CONT_CAPA_H  93.0f
+#define PS_CONT_CAPA_RAIO 6.0f
+#define PS_CONT_GAP     12.0f   // capa -> texto
+#define PS_CONT_NOME_GAP 22.0f  // base do nome -> topo do bloco
+#define PS_CONT_FIO      2.0f
+#define PS_CONT_TEXTO_MAX 300.0f
+#define PS_CONT_APAGADO  0.50f  // opacidade sem foco
 #define PS_HALO_N            3   // poucos aneis suaves, sem efeito de alvo
 #define PS_HALO_ATE      0.66f   // quanto o ultimo anel passa do avatar
 #define PS_HALO_ALFA     0.040f
@@ -112,11 +116,11 @@ static int muralN;
 typedef struct {
   int tem;
   PerfilCont c;
-  char meta[128];      // "T2E4 · nome do episodio", ja traduzido
-  char restante[64];   // "34 min restantes"
+  char meta[96];       // "T2 · E5 · 23 min" / "Filme · 47 min", ja traduzido
   GLuint tex;          // so e consultada no update
 } PSCont;
 static PSCont contCard[CONTA_PERFIL_MAX];
+static int contQuer = 1;   // ultimo valor de ajustes_ps_continuar() visto por contAtualizar
 static int contN = -1;
 static int muralPartN;
 static int muralBurstN;
@@ -140,14 +144,19 @@ static float muralLuzTempo;
 // Teclado 3x4, na ordem do telefone. O que havia aqui era 5 colunas com 12
 // teclas: as duas ultimas (apagar e OK) sobravam sozinhas numa terceira linha
 // encostada a esquerda, e o olho procurava o OK no canto errado toda vez.
+// #289: profile PINs are ALWAYS 4 digits (PROFILE_PIN_LENGTH in the official
+// web app, which also creates them), so the 4th digit verifies by itself and
+// the OK key is gone. Bottom row is the phone's: blank, 0, delete.
 #define PS_PIN_MAX       8
+#define PS_PIN_LEN       4
 #define PS_TECLA        96.0f
 #define PS_TECLA_GAP    18.0f
 #define PS_TECLA_COLS       3
 #define PS_TECLA_LINS       4
-#define PS_PIN_APAGAR       9
+#define PS_PIN_VAZIO        9   // no key: focus never lands here
 #define PS_PIN_ZERO        10
-#define PS_PIN_OK          11
+#define PS_PIN_APAGAR      11
+#define PS_PIN_INICIO       4   // "5", the middle of the pad
 #define PS_PONTO        22.0f    // diametro do ponto que mascara um digito
 #define PS_PONTO_PASSO  40.0f
 
@@ -157,16 +166,34 @@ static int concluido, sair, repetir;
 // a tela fica de pe com o indicador girando no cartao escolhido enquanto app.c
 // monta a home nova por tras. Ver perfilsel_preparar.
 static int preparando;
+static int pinDe = -1;
+#ifdef NV_TOUCH_UI
+static float psToqueX, psToqueMaximo, psToquePasso;
+static int psToqueLivre;
+static GfxRect psToqueRegiao;
+static int psToqueRolar(const PonteiroRolagem *e) {
+  if (e->fase == PONT_ROL_INICIO) {
+    if (e->eixoY || preparando || pinDe >= 0 || psToqueMaximo <= 0.0f || e->x < psToqueRegiao.x || e->x >= psToqueRegiao.x + psToqueRegiao.w || e->y < psToqueRegiao.y || e->y >= psToqueRegiao.y + psToqueRegiao.h) return 0;
+    psToqueLivre = 1; return 1;
+  }
+  if (e->fase == PONT_ROL_MOVER || e->fase == PONT_ROL_INERCIA) {
+    float antes = psToqueX;
+    psToqueX = anim_clamp(psToqueX - e->delta, 0.0f, psToqueMaximo);
+    return fabsf(psToqueX - antes) > 0.001f;
+  }
+  return 1;
+}
+#endif
 static Uint32 preparandoDesde;
 static float animFoco[CONTA_PERFIL_MAX];
 static float animEntrada;        // 0..1: a tela sobe e aparece uma vez so
 static float animPin;            // 0..1: o veu e o teclado do PIN
 
 // Estado do PIN: -1 = nenhum perfil pedindo PIN.
-static int pinDe = -1;
 static char pin[PS_PIN_MAX + 1];
 static int pinFoco;              // indice na grade 3x4; ver PS_PIN_*
 static int pinErrado, pinRede;
+static float pinTremor;          // s left of the wrong-PIN shake (#289)
 static pthread_t fioPin;
 static int verificando;
 static _Atomic int resultadoPin; // 0 pendente, 1 ok, -1 PIN incorreto, -2 rede
@@ -555,86 +582,94 @@ static void montarCena(PSCena *c, int reduzida) {
   c->parado = pinDe >= 0;
 }
 
-// --- CARTAO CONTINUAR (2.0, variante B) --------------------------------------
+// --- CONTINUAR SOB O AVATAR (2.0.3, variante D2) -----------------------------
 static void contMontar(PSCont *k) {
   const PerfilCont *c = &k->c;
-  k->meta[0] = 0;
-  if (c->serie && c->t > 0 && c->e > 0) {
-    snprintf(k->meta, sizeof k->meta, i18n("T%dE%d"), c->t, c->e);
-    if (c->epNome[0]) {
-      size_t n = strlen(k->meta);
-      snprintf(k->meta + n, sizeof k->meta - n, " \xc2\xb7 %s", c->epNome);
-    }
-  }
-  if (c->restanteMin >= 60 && c->restanteMin % 60)
-    snprintf(k->restante, sizeof k->restante, i18n("%dh %dmin Restantes"),
-             c->restanteMin / 60, c->restanteMin % 60);
-  else snprintf(k->restante, sizeof k->restante, i18n("%d min restantes"), c->restanteMin);
+  char tempo[32];
+  int mi = c->restanteMin < 1 ? 1 : c->restanteMin;
+  if (mi >= 60) snprintf(tempo, sizeof tempo, i18n("%d h %02d"), mi / 60, mi % 60);
+  else snprintf(tempo, sizeof tempo, i18n("%d min"), mi);
+  if (c->serie && c->t > 0 && c->e > 0)
+    snprintf(k->meta, sizeof k->meta, i18n("T%d \xc2\xb7 E%d \xc2\xb7 %s"), c->t, c->e, tempo);
+  else snprintf(k->meta, sizeof k->meta, i18n("Filme \xc2\xb7 %s"), tempo);
 }
 
 static void contAtualizar(void) {
-  int i, m = perfis_n();
-  if (contN != m) {
-    perfilcont_registrar();
+  int i, m = perfis_n(), quer = ajustes_ps_continuar();
+  // #303: "Continuar na escolha de perfil" desligado = nenhum cartao montado
+  // (nem a textura do cartaz pedida). Trocar o ajuste refaz o conjunto.
+  if (contN != m || quer != contQuer) {
     memset(contCard, 0, sizeof contCard);
-    for (i = 0; i < m && i < CONTA_PERFIL_MAX; i++) {
-      contCard[i].tem = perfilcont_de(perfis_item(i), &contCard[i].c);
-      if (contCard[i].tem) contMontar(&contCard[i]);
+    if (quer) {
+      perfilcont_registrar();
+      for (i = 0; i < m && i < CONTA_PERFIL_MAX; i++) {
+        contCard[i].tem = perfilcont_de(perfis_item(i), &contCard[i].c);
+        if (contCard[i].tem) contMontar(&contCard[i]);
+      }
     }
     contN = m;
+    contQuer = quer;
   }
-  // O pedido de textura fica aqui (o desenho so le GLuint), e so para quem esta
-  // aparecendo ou sumindo.
+  // O pedido de textura fica aqui (o desenho so le GLuint). Agora todo perfil
+  // com item mostra a capa (apagada), e o cartaz vem do mesmo tex_cache.
   for (i = 0; i < m && i < CONTA_PERFIL_MAX; i++)
-    contCard[i].tex = contCard[i].tem && contCard[i].c.poster[0] && animFoco[i] > 0.02f
-      ? tex_obter_larg(contCard[i].c.poster, PS_CONT_CAPA_W) : 0;
+    contCard[i].tex = contCard[i].tem && contCard[i].c.poster[0]
+      ? tex_obter_larg(contCard[i].c.poster, 108.0f) : 0;
 }
 
-static void contDesenhar(int i, float cx, float yTopo, float f, float a) {
+// Altura do bloco, para o alvo de toque.
+static float contAltura(void) { return PS_CONT_CAPA_H; }
+
+// Desenha o bloco do perfil i centrado em cx, com o topo em yTopo. `f` e o foco
+// (0..1): apagado a PS_CONT_APAGADO sem foco, cheio com foco. `larg` e a largura
+// da coluna do perfil (diametro + vao), o teto do texto.
+static void contDesenhar(int i, float cx, float yTopo, float f, float a, float larg,
+                         int nada) {
   const PSCont *k = &contCard[i];
-  GfxRect r;
-  float af = (f > 1.0f ? 1.0f : f) * a, x, avail, yc, cr, cg, cb;
-  TxtLinha meta, tit, rest;
-  if (!k->tem || af < 0.01f) return;
-  r.w = PS_CONT_W; r.h = PS_CONT_H;
-  r.x = cx - r.w * 0.5f;
-  if (r.x < 40.0f) r.x = 40.0f;
-  if (r.x + r.w > NV_TELA_W - 40.0f) r.x = NV_TELA_W - 40.0f - r.w;
-  r.y = yTopo + (1.0f - (f > 1.0f ? 1.0f : f)) * 14.0f;   // sobe ao entrar no foco
-  plrui_material(r, PS_CONT_RAIO, 0, af);
-  // CARTAO GRANDE (dono, 05/10: "a informacao do que foi visto maior e mais
-  // bonita"): capa de 108x156, "Continuar assistindo" no destaque, o titulo em
-  // letra de titulo, episodio embaixo e a barra na largura toda com o tempo
-  // que falta. Era uma tira de 96 de altura com capa de 44.
-  yc = r.y + r.h * 0.5f;
-  { GfxRect capa = { r.x + 20.0f, yc - PS_CONT_CAPA_H * 0.5f, PS_CONT_CAPA_W, PS_CONT_CAPA_H };
+  float af = a * (PS_CONT_APAGADO + (1.0f - PS_CONT_APAGADO) * (f > 1.0f ? 1.0f : f));
+  float avail, tw, bw, x, y;
+  TxtLinha tit, meta;
+  if (af < 0.01f) return;
+  if (!k->tem) {
+    if (nada) {
+      TxtLinha l = txt_linha(TXT_CAPTION, "Nada a continuar", 160, 163, 174, 255);
+      txt_desenhar_alpha(l, cx - (float)l.w * 0.5f,
+                         yTopo + (PS_CONT_CAPA_H - (float)l.h) * 0.5f, af);
+    }
+    return;
+  }
+  avail = larg - PS_CONT_CAPA_W - PS_CONT_GAP - 12.0f;
+  if (avail > PS_CONT_TEXTO_MAX) avail = PS_CONT_TEXTO_MAX;
+  if (avail < 110.0f) avail = 110.0f;
+  tit = txt_linha_corta(TXT_ILHA_NOME, k->c.titulo, 244, 245, 248, 255, avail);
+  meta = txt_linha_corta(TXT_CAPTION, k->meta, 190, 193, 202, 255, avail);
+  tw = (float)(tit.w > meta.w ? tit.w : meta.w);
+  if (tw < 96.0f) tw = 96.0f;
+  bw = PS_CONT_CAPA_W + PS_CONT_GAP + tw;
+  x = cx - bw * 0.5f;
+  { GfxRect capa = { x, yTopo, PS_CONT_CAPA_W, PS_CONT_CAPA_H };
+    GfxRect sombra = { x - 14.0f, yTopo - 6.0f, PS_CONT_CAPA_W + 28.0f, PS_CONT_CAPA_H + 28.0f };
+    gfx_rect(sombra, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.55f * af);
     if (k->tex) {
       gfx_tex_aspect_atual = tex_aspecto(k->c.poster);
       gfx_card_forcar_cover_atual = 1.0f;
-      gfx_rect(capa, k->tex, GFX_CARD, 0.0f, 0.0f, 0.0f, 14.0f / PS_CONT_CAPA_H, 0, 0, 0, af);
+      gfx_rect(capa, k->tex, GFX_CARD, 0.0f, 0.0f, 0.0f, PS_CONT_CAPA_RAIO / PS_CONT_CAPA_H,
+               0, 0, 0, af);
       gfx_card_forcar_cover_atual = 0.0f;
       gfx_tex_aspect_atual = 0.0f;
-    } else gfx_cor(capa, 14.0f / PS_CONT_CAPA_H, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
-                   NV_COR_ESQUELETO_B, af); }
-  x = r.x + 20.0f + PS_CONT_CAPA_W + 28.0f;
-  avail = r.x + r.w - 34.0f - x;
-  ajustes_acento_marca(&cr, &cg, &cb);
-  { TxtLinha kick = txt_linha_corta(TXT_CAPTION2, "Continuar assistindo",
-                                    (int)(cr * 255.0f), (int)(cg * 255.0f), (int)(cb * 255.0f), 255, avail);
-    float y = r.y + 26.0f;
-    txt_desenhar_alpha(kick, x, y, af);
-    y += (float)kick.h + 6.0f;
-    tit = txt_linha_corta(TXT_TITULO3, k->c.titulo, 244, 245, 248, 255, avail);
-    txt_desenhar_alpha(tit, x, y, af);
-    y += (float)tit.h + 2.0f;
-    meta = k->meta[0] ? txt_linha_corta(TXT_CALLOUT, k->meta, 190, 193, 202, 255, avail) : (TxtLinha){ 0 };
-    if (meta.w) txt_desenhar_alpha(meta, x, y, af); }
-  rest = txt_linha_corta(TXT_CAPTION2, k->restante, 200, 203, 212, 255, avail * 0.5f);
-  ajustes_acento(&cr, &cg, &cb);
-  { float pr = k->c.progresso > 1.0f ? 1.0f : k->c.progresso;
-    float ty = r.y + r.h - 30.0f, tw = avail - (rest.w ? (float)rest.w + 18.0f : 0.0f);
-    plrui_trilho((GfxRect){ x, ty - 3.0f, tw, 6.0f }, pr, cr, cg, cb, af);
-    if (rest.w) txt_desenhar_alpha(rest, x + tw + 18.0f, ty - (float)rest.h * 0.5f, af); }
+    } else gfx_cor(capa, PS_CONT_CAPA_RAIO / PS_CONT_CAPA_H, NV_COR_ESQUELETO_R,
+                   NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, af); }
+  x += PS_CONT_CAPA_W + PS_CONT_GAP;
+  // Texto centrado na vertical da capa, o fio logo abaixo da meta.
+  y = yTopo + (PS_CONT_CAPA_H - ((float)tit.h + 4.0f + (float)meta.h + 12.0f + PS_CONT_FIO)) * 0.5f;
+  txt_desenhar_alpha(tit, x, y, af);
+  y += (float)tit.h + 4.0f;
+  txt_desenhar_alpha(meta, x, y, af);
+  y += (float)meta.h + 12.0f;
+  { float pr = k->c.progresso > 1.0f ? 1.0f : (k->c.progresso < 0.0f ? 0.0f : k->c.progresso);
+    gfx_cor((GfxRect){ x, y, tw, PS_CONT_FIO }, 0.5f, 1, 1, 1, 0.22f * af);
+    if (pr > 0.0f)
+      gfx_cor((GfxRect){ x, y, tw * pr, PS_CONT_FIO }, 0.5f, 1, 1, 1, 0.95f * af); }
 }
 
 // --- AMBIENTE DO PERFIL (2.0, variante A) ------------------------------------
@@ -643,26 +678,63 @@ static void contDesenhar(int i, float cx, float yTopo, float f, float a) {
 // (ContaPerfil.fundoUrl), desfocada e com veu, e a troca de foco e um
 // cross-fade de 0,45 s. O desfoque vem de gfx_desfocado (copia 96x54 guardada
 // por arte), entao o quadro nao aloca nem refaz nada: so desenha duas texturas.
-// Perfil sem arte cai no mural, que entra na proporcao do que a arte nao cobre.
+// #295: a profile WITHOUT background art used to fall back to the poster wall,
+// which is exactly the "Filmes" screen — the setting looked broken. The art
+// now falls back to the profile's own AVATAR, blurred and enlarged through the
+// same gfx_desfocado copy, under a wash of the profile colour; with no avatar
+// either, the uncovered part is the "Luz" style (the profile colour as light),
+// never the movie wall.
 #define PS_AMB_FADE_S  0.45f
 #define PS_AMB_VEU     0.55f   // brilho .6 + veu .34 do mockup, num so preto
+// A blurred avatar is a saturated colour field, much brighter than a backdrop:
+// it gets a darker veil and a wash of the profile colour on top.
+#define PS_AMB_VEU_AV  0.62f
+#define PS_AMB_COR_AV  0.22f
 #define PS_AMB_LARG    480.0f
 static int   ambAtual = -1, ambAnt = -1;
 static float ambT = 1.0f;                       // 0..1: de ambAnt para ambAtual
 static GLuint ambFonte[CONTA_PERFIL_MAX];       // textura nitida (pedida no update)
 static int   ambAtualPronto;                    // o desenho conseguiu a copia desfocada
 
-static int ambTemUrl(int i) {
-  const ContaPerfil *p = i >= 0 ? perfis_item(i) : NULL;
-  return p && p->fundoUrl[0];
+// The image behind profile i: its background art, else its avatar (#295).
+static const char *ambUrl(int i) {
+  const ContaPerfil *p = i >= 0 && i < CONTA_PERFIL_MAX ? perfis_item(i) : NULL;
+  if (!p) return NULL;
+  if (p->fundoUrl[0]) return p->fundoUrl;
+  if (p->avatarUrl[0]) return p->avatarUrl;
+  return NULL;
 }
+static int ambEhAvatar(int i) {
+  const ContaPerfil *p = i >= 0 && i < CONTA_PERFIL_MAX ? perfis_item(i) : NULL;
+  return p && !p->fundoUrl[0] && p->avatarUrl[0];
+}
+
+static int ambTemUrl(int i) { return ambUrl(i) != NULL; }
 
 // Copia desfocada pronta de um perfil, ou 0 (sem arte, ainda baixando, ou o
 // limite de geracoes por quadro do gfx_desfocado).
 static GLuint ambDesfocada(int i) {
-  const ContaPerfil *p = i >= 0 && i < CONTA_PERFIL_MAX ? perfis_item(i) : NULL;
-  if (!p || !p->fundoUrl[0] || !ambFonte[i]) return 0;
-  return gfx_desfocado(ambFonte[i], p->fundoUrl);
+  const char *u = ambUrl(i);
+  if (!u || !ambFonte[i]) return 0;
+  return gfx_desfocado(ambFonte[i], u);
+}
+
+// One profile's layer: the blurred image, plus the colour wash on an avatar.
+static void ambCamada(int i, GLuint t, float alfa) {
+  GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+  float r, g, b;
+  const ContaPerfil *p = perfis_item(i);
+  // A square (or portrait) avatar would be letterboxed by GFX_CARD's contain
+  // rule; the ambient must fill the screen, so it is forced to cover.
+  gfx_tex_aspect_atual = tex_aspecto(ambUrl(i));
+  gfx_card_forcar_cover_atual = ambEhAvatar(i) ? 1.0f : 0.0f;
+  gfx_rect(tela, t, GFX_CARD, 0, 0, 0, 0.0f, 1, 1, 1, alfa);
+  gfx_card_forcar_cover_atual = 0.0f;
+  gfx_tex_aspect_atual = 0;
+  if (ambEhAvatar(i) && p && corDe(p->corHex, &r, &g, &b)) {
+    corLegivel(&r, &g, &b);
+    gfx_cor(tela, 0.0f, r, g, b, PS_AMB_COR_AV * alfa);
+  }
 }
 
 static void ambTrocar(int novo) {
@@ -678,8 +750,8 @@ static void ambAtualizar(float dt, int reduzida) {
   // O pedido fica no update, como o do mural: o desenho so consulta GLuint.
   for (i = 0; i < CONTA_PERFIL_MAX; i++) {
     const ContaPerfil *p = i < m ? perfis_item(i) : NULL;
-    ambFonte[i] = p && p->fundoUrl[0]
-      ? tex_obter_larg_qualquer(p->fundoUrl, PS_AMB_LARG) : 0;
+    const char *u = p ? ambUrl(i) : NULL;
+    ambFonte[i] = u ? tex_obter_larg_qualquer(u, PS_AMB_LARG) : 0;
   }
   if (ambAtual < 0) { ambAtual = ambAnt = foco; ambT = 1.0f; }
   else ambTrocar(foco);
@@ -705,27 +777,30 @@ static float ambDesenhar(float a) {
   float na = tn ? te : 0.0f;
   float cob = 1.0f - (1.0f - pa) * (1.0f - na);
   ambAtualPronto = tn != 0 || !ambTemUrl(ambAtual);
-  if (pa > 0.0f) {
-    gfx_tex_aspect_atual = tex_aspecto(perfis_item(ambAnt)->fundoUrl);
-    gfx_rect(tela, ta, GFX_CARD, 0, 0, 0, 0.0f, 1, 1, 1, a * pa);
-    gfx_tex_aspect_atual = 0;
+  if (pa > 0.0f) ambCamada(ambAnt, ta, a * pa);
+  if (na > 0.0f) ambCamada(ambAtual, tn, a * na);
+  if (cob > 0.0f) {
+    // The veil follows whichever layer dominates, so the cross-fade between a
+    // backdrop and an avatar does not pump in brightness.
+    float vAt = ambEhAvatar(ambAtual) ? PS_AMB_VEU_AV : PS_AMB_VEU;
+    float vAn = ambEhAvatar(ambAnt) ? PS_AMB_VEU_AV : PS_AMB_VEU;
+    float veu = (pa > 0.0f && na > 0.0f) ? vAn + (vAt - vAn) * te
+              : (na > 0.0f ? vAt : vAn);
+    gfx_cor(tela, 0.0f, 0.0f, 0.0f, 0.0f, veu * a * cob);
   }
-  if (na > 0.0f) {
-    gfx_tex_aspect_atual = tex_aspecto(perfis_item(ambAtual)->fundoUrl);
-    gfx_rect(tela, tn, GFX_CARD, 0, 0, 0, 0.0f, 1, 1, 1, a * na);
-    gfx_tex_aspect_atual = 0;
-  }
-  if (cob > 0.0f) gfx_cor(tela, 0.0f, 0.0f, 0.0f, 0.0f, PS_AMB_VEU * a * cob);
   return cob;
 }
 
 void perfilsel_iniciar(void) {
   int i;
+#ifdef NV_TOUCH_UI
+  psToqueX = 0.0f; psToqueLivre = 0;
+#endif
   concluido = sair = repetir = 0;
   preparando = 0;
   pinDe = -1;
   pin[0] = 0;
-  pinFoco = PS_PIN_OK;
+  pinFoco = PS_PIN_INICIO;
   pinErrado = 0;
   pinRede = 0;
   verificando = 0;
@@ -781,7 +856,7 @@ static void escolher(int i) {
   const ContaPerfil *p = perfis_item(i);
   switch (perfis_acao(i)) {
     case PERFIL_ACAO_PIN:
-      pinDe = i; pin[0] = 0; pinFoco = PS_PIN_OK; pinErrado = pinRede = 0;
+      pinDe = i; pin[0] = 0; pinFoco = PS_PIN_INICIO; pinErrado = pinRede = 0;
       return;
     case PERFIL_ACAO_ENTRAR:
       if (p) perfis_definir_ativo(p->indice);
@@ -790,6 +865,32 @@ static void escolher(int i) {
     default:
       return;
   }
+}
+
+// Starts the async check of the typed PIN (one server round trip, in a thread
+// so the screen does not freeze).
+static void pinVerificar(void) {
+  PinTarefa *t;
+  const ContaPerfil *p = perfis_item(pinDe);
+  if (!pin[0]) return;
+  t = malloc(sizeof *t);
+  if (!t || !p) { free(t); pinRede = 1; return; }
+  t->geracao = atomic_load(&pinGeracao); t->slot = pinDe; t->indice = p->indice;
+  snprintf(t->valor, sizeof t->valor, "%s", pin);
+  verificando = 1;
+  pinErrado = pinRede = 0;
+  atomic_store(&resultadoPin, 0);
+  if (pthread_create(&fioPin, NULL, fioVerificar, t) == 0) pthread_detach(fioPin);
+  else { memset(t->valor, 0, sizeof t->valor); free(t); verificando = 0; pinRede = 1; }
+}
+
+// One digit, from the pad or the remote's number keys. The 4th one verifies.
+static void pinDigito(int digito) {
+  size_t z = strlen(pin);
+  if (z >= PS_PIN_LEN) return;
+  pin[z] = (char)('0' + digito); pin[z + 1] = 0;
+  pinErrado = pinRede = 0;
+  if (z + 1 == PS_PIN_LEN) pinVerificar();
 }
 
 static void eventoPin(SDL_Keycode k) {
@@ -805,39 +906,39 @@ static void eventoPin(SDL_Keycode k) {
     else pinDe = -1;
     return;
   }
-  if (k == SDLK_LEFT)  { if (pinFoco % PS_TECLA_COLS > 0) pinFoco--; return; }
+  // The remote's number keys type straight in, wherever the focus is.
+  if (k >= SDLK_0 && k <= SDLK_9) { pinDigito((int)(k - SDLK_0)); return; }
+  if (k >= SDLK_KP_1 && k <= SDLK_KP_9) { pinDigito((int)(k - SDLK_KP_1) + 1); return; }
+  if (k == SDLK_KP_0) { pinDigito(0); return; }
+  if (k == SDLK_BACKSPACE) { if (pin[0]) { pin[strlen(pin) - 1] = 0; pinErrado = pinRede = 0; } return; }
+  if (k == SDLK_LEFT) {
+    if (pinFoco % PS_TECLA_COLS > 0 && pinFoco - 1 != PS_PIN_VAZIO) pinFoco--;
+    return;
+  }
   if (k == SDLK_RIGHT) { if (pinFoco % PS_TECLA_COLS < PS_TECLA_COLS - 1) pinFoco++; return; }
   if (k == SDLK_UP)    { if (pinFoco >= PS_TECLA_COLS) pinFoco -= PS_TECLA_COLS; return; }
-  if (k == SDLK_DOWN)  { if (pinFoco + PS_TECLA_COLS < PS_TECLA_COLS * PS_TECLA_LINS)
-                           pinFoco += PS_TECLA_COLS; return; }
+  if (k == SDLK_DOWN)  {
+    if (pinFoco + PS_TECLA_COLS < PS_TECLA_COLS * PS_TECLA_LINS) {
+      pinFoco += PS_TECLA_COLS;
+      if (pinFoco == PS_PIN_VAZIO) pinFoco = PS_PIN_ZERO;   // "7" goes down to "0"
+    }
+    return;
+  }
   if (k != SDLK_RETURN && k != SDLK_KP_ENTER) return;
 
   if (pinFoco == PS_PIN_APAGAR) { if (pin[0]) pin[strlen(pin) - 1] = 0; return; }
-  if (pinFoco == PS_PIN_OK) {
-    PinTarefa *t;
-    const ContaPerfil *p = perfis_item(pinDe);
-    if (!pin[0]) return;
-    t = malloc(sizeof *t);
-    if (!t || !p) { free(t); pinRede = 1; return; }
-    t->geracao = atomic_load(&pinGeracao); t->slot = pinDe; t->indice = p->indice;
-    snprintf(t->valor, sizeof t->valor, "%s", pin);
-    verificando = 1;
-    pinErrado = pinRede = 0;
-    atomic_store(&resultadoPin, 0);
-    // Verificar BLOQUEIA (uma viagem ao servidor). Num fio, para a tela nao
-    // congelar por um segundo a cada tentativa.
-    if (pthread_create(&fioPin, NULL, fioVerificar, t) == 0) pthread_detach(fioPin);
-    else { memset(t->valor, 0, sizeof t->valor); free(t); verificando = 0; pinRede = 1; }
-    return;
-  }
-  { size_t z = strlen(pin);
-    int digito = (pinFoco == PS_PIN_ZERO) ? 0 : pinFoco + 1;
-    if (z < PS_PIN_MAX) { pin[z] = (char)('0' + digito); pin[z + 1] = 0; } }
+  if (pinFoco == PS_PIN_VAZIO) return;
+  pinDigito(pinFoco == PS_PIN_ZERO ? 0 : pinFoco + 1);
 }
 
 static void perfilFocar(int slot, int indice) {
   const ContaPerfil *p = perfis_item(slot);
-  if (!preparando && pinDe < 0 && p && p->indice == indice) foco = slot;
+  if (!preparando && pinDe < 0 && p && p->indice == indice) {
+#ifdef NV_TOUCH_UI
+    psToqueLivre = 0;
+#endif
+    foco = slot;
+  }
 }
 static void perfilAtivar(int slot, int indice) {
   const ContaPerfil *p = perfis_item(slot);
@@ -849,7 +950,8 @@ static void perfilAtivar(int slot, int indice) {
 static void pinFocar(int tecla, int b) {
   (void)b;
   if (pinDe >= 0 && !verificando && !preparando &&
-      tecla >= 0 && tecla < PS_TECLA_COLS * PS_TECLA_LINS) pinFoco = tecla;
+      tecla >= 0 && tecla < PS_TECLA_COLS * PS_TECLA_LINS && tecla != PS_PIN_VAZIO)
+    pinFoco = tecla;
 }
 static void perfisRetentar(int a, int b) {
   (void)a; (void)b;
@@ -860,6 +962,13 @@ void perfilsel_evento(const SDL_Event *e) {
   SDL_Keycode k;
   int m = perfis_n();
   if (e->type != SDL_KEYDOWN) return;
+#ifdef NV_TOUCH_UI
+  if (psToqueLivre && psToquePasso > 0.0f && m > 0) {
+    foco = (int)((psToqueX + (NV_TELA_W - 2.0f * NV_MARGEM_X) * 0.35f) / psToquePasso);
+    if (foco >= m) foco = m - 1;
+  }
+  psToqueLivre = 0;
+#endif
   // A escolha ja foi feita: tecla nenhuma muda o cartao enquanto a home do
   // perfil e preparada. O teto de tempo em app.c garante que isto acaba.
   if (preparando) return;
@@ -941,6 +1050,10 @@ void perfilsel_atualizar(float dt, Uint32 agora) {
     if (modo == PS_FUNDO_FILMES || modo == PS_FUNDO_LUZ || modo == PS_FUNDO_PROJETOR) {
       montarCena(&cena, reduzida);
       psestilos_atualizar(dt, &cena, modo);
+    } else if (modo == PS_FUNDO_ARTE) {
+      // The light behind a profile with no art and no avatar (#295).
+      montarCena(&cena, reduzida);
+      psestilos_atualizar(dt, &cena, PS_FUNDO_LUZ);
     } }
   { int mudou = 0;
     for (i = 0; i < 6; i++)
@@ -975,6 +1088,7 @@ void perfilsel_atualizar(float dt, Uint32 agora) {
     if (reduzida) animFoco[i] = alvo;
   }
 
+  if (pinTremor > 0.0f) { pinTremor -= dt; if (pinTremor < 0.0f) pinTremor = 0.0f; }
   { int resultado = atomic_load(&resultadoPin);
   if (verificando && resultado) {
     atomic_store(&resultadoPin, 0);
@@ -993,6 +1107,7 @@ void perfilsel_atualizar(float dt, Uint32 agora) {
     } else {
       pinErrado = 1;
       memset(pin, 0, sizeof pin);
+      pinTremor = reduzida ? 0.0f : 0.40f;
     }
   }
   }
@@ -1153,9 +1268,19 @@ static void desenhaFundo(void) {
   gfx_cor(tela, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
 }
 
+static TxtLinha pinTitulo(const char *nome) {
+  char t[128];
+  snprintf(t, sizeof t, i18n("PIN de %s"), nome && nome[0] ? nome : i18n("perfil"));
+#ifdef NV_TOUCH_UI
+  return txt_linha_corta(TXT_TITULO3, t, 255, 255, 255, 255, fmaxf(1.0f, NV_TELA_W - 96.0f));
+#else
+  return txt_linha(TXT_TITULO3, t, 255, 255, 255, 255);
+#endif
+}
+
 static void desenhaPin(void) {
   static const char *ROT[PS_TECLA_COLS * PS_TECLA_LINS] =
-    { "1","2","3", "4","5","6", "7","8","9", "←","0","OK" };
+    { "1","2","3", "4","5","6", "7","8","9", "","0","←" };
   const ContaPerfil *p = perfis_item(pinDe);
   float largura = PS_TECLA_COLS * PS_TECLA + (PS_TECLA_COLS - 1) * PS_TECLA_GAP;
   float x0 = (NV_TELA_W - largura) * 0.5f;
@@ -1177,10 +1302,7 @@ static void desenhaPin(void) {
   { GfxRect av = { (NV_TELA_W - 132.0f) * 0.5f, 176.0f, 132.0f, 132.0f };
     disco(av, p, 1.0f, a, 1); }
 
-  { char t[128];
-    TxtLinha l;
-    snprintf(t, sizeof t, i18n("PIN de %s"), p->nome[0] ? p->nome : i18n("perfil"));
-    l = txt_linha(TXT_TITULO3, t, 255, 255, 255, 255);
+  { TxtLinha l = pinTitulo(p->nome);
     txt_desenhar_alpha(l, (NV_TELA_W - l.w) * 0.5f, 344.0f, a); }
 
   // Pontos, nunca os digitos: alguem passando na sala nao precisa ler o PIN.
@@ -1190,6 +1312,8 @@ static void desenhaPin(void) {
   if (mostrar > PS_PIN_MAX) mostrar = PS_PIN_MAX;
   { float total = (float)mostrar * PS_PONTO_PASSO - (PS_PONTO_PASSO - PS_PONTO);
     float px = (NV_TELA_W - total) * 0.5f;
+    // Wrong PIN: the dots shake sideways and settle (decaying sine, 0.4 s).
+    if (pinTremor > 0.0f) px += sinf(pinTremor * 50.0f) * 18.0f * (pinTremor / 0.40f);
     size_t k;
     for (k = 0; k < mostrar; k++) {
       GfxRect d = { px + (float)k * PS_PONTO_PASSO, 434.0f, PS_PONTO, PS_PONTO };
@@ -1211,6 +1335,7 @@ static void desenhaPin(void) {
     GfxRect r = { x0 + col * (PS_TECLA + PS_TECLA_GAP),
                   y0 + lin * (PS_TECLA + PS_TECLA_GAP), PS_TECLA, PS_TECLA };
     int f = (i == pinFoco && !verificando);
+    if (i == PS_PIN_VAZIO) continue;
     if (pinDe >= 0 && !verificando && !preparando)
       ponteiro_alvo(r.x, r.y, r.w, r.h, pinFocar, NULL, i, pinDe);
     TxtLinha l;
@@ -1256,9 +1381,15 @@ void perfilsel_desenhar(Uint32 agora) {
       psestilos_desenhar(&cena, modo, a * (pinDe >= 0 ? 0.30f : 1.0f));
     } else {
       float cob = modo == PS_FUNDO_ARTE ? ambDesenhar(a) : 0.0f;
-      // Modo "Arte do perfil": o mural so aparece onde a arte nao cobre (perfil
-      // sem arte, ou a arte ainda baixando).
-      if (modo != PS_FUNDO_LISTRAS && cob < 0.999f)
+      // "Profile art": where the art does not cover (no art and no avatar, or
+      // still downloading) the profile's colour light shows — never the movie
+      // wall, which made this option look identical to "Filmes" (#295).
+      if (modo == PS_FUNDO_ARTE && cob < 0.999f) {
+        PSCena cena;
+        montarCena(&cena, reduzida);
+        psestilos_desenhar(&cena, PS_FUNDO_LUZ,
+                           a * (1.0f - cob) * (pinDe >= 0 ? 0.30f : 1.0f));
+      } else if (modo != PS_FUNDO_LISTRAS && modo != PS_FUNDO_ARTE && cob < 0.999f)
         muralDesenhar(a * (1.0f - cob) * (pinDe >= 0 ? 0.30f : 1.0f), reduzida);
     } }
 
@@ -1298,6 +1429,21 @@ void perfilsel_desenhar(Uint32 agora) {
   vao = vaoDe(m, d);
   largura = (float)m * d + (float)(m - 1) * vao;
   x = (NV_TELA_W - largura) * 0.5f;
+#ifdef NV_TOUCH_UI
+  psToqueMaximo = fmaxf(0.0f, largura - (NV_TELA_W - 2.0f * NV_MARGEM_X));
+  psToquePasso = d + vao;
+  psToqueX = anim_clamp(psToqueX, 0.0f, psToqueMaximo);
+  if (psToqueMaximo > 0.0f) {
+    if (!psToqueLivre) {
+      float esq = foco * psToquePasso, dir = esq + d, util = NV_TELA_W - 2.0f * NV_MARGEM_X;
+      if (dir - psToqueX > util) psToqueX = dir - util;
+      if (esq - psToqueX < 0.0f) psToqueX = esq;
+    }
+    x = NV_MARGEM_X - psToqueX;
+    psToqueRegiao = (GfxRect){NV_MARGEM_X, PS_FILA_Y - 40.0f, NV_TELA_W - 2.0f * NV_MARGEM_X, 560.0f};
+    if (!preparando && pinDe < 0) ponteiro_rolagem(psToqueRolar);
+  }
+#endif
 
   for (i = 0; i < m; i++) {
     const ContaPerfil *p = perfis_item(i);
@@ -1332,7 +1478,7 @@ void perfilsel_desenhar(Uint32 agora) {
                            c, c, c + 6 > 255 ? 255 : c + 6, 255, d + vao * 0.9f);
     if (!preparando && pinDe < 0)
       ponteiro_alvo(av.x, av.y, av.w,
-                    av.h + PS_NOME_GAP + (float)nome.h + PS_SELO_GAP + 32.0f,
+                    av.h + PS_NOME_GAP + (float)nome.h + PS_CONT_NOME_GAP + contAltura(),
                     perfilFocar, perfilAtivar, i, p->indice);
     sombra = txt_linha_corta(d >= 230.0f ? TXT_TITULO3 : TXT_HEADLINE, p->nome,
                              0, 0, 0, 220, d + vao * 0.9f);
@@ -1355,11 +1501,13 @@ void perfilsel_desenhar(Uint32 agora) {
       gfx_cor(pilula, NV_RAIO_PILL, 1.0f, 1.0f, 1.0f, (0.10f + 0.10f * f) * a);
       txt_desenhar_alpha(sel, pilula.x + 16.0f, pilula.y + 5.0f, a);
     }
-    // O cartao so existe para perfil sem PIN (perfilcont_de), e some quando o
-    // teclado do PIN ou o "preparando" estao na tela.
-    if (!preparando && pinDe < 0 && f > 0.02f) {
-      float cy = PS_FILA_Y + d + PS_NOME_GAP + 44.0f + 28.0f - NV_FOCO_LIFT * f * 0.5f;
-      contDesenhar(i, px + d * 0.5f, (cy > PS_CONT_Y_MAX ? PS_CONT_Y_MAX : cy) + subida, f, a);
+    // O bloco "continuar" so existe para perfil sem PIN (perfilcont_de: o que
+    // alguem viu e conteudo do perfil). "Nada a continuar" so quando o ajuste
+    // esta ligado e o perfil e aberto.
+    if (!preparando && pinDe < 0 && contQuer) {
+      float cy = y + d + PS_NOME_GAP + (float)nome.h + PS_CONT_NOME_GAP
+                 - NV_FOCO_LIFT * f * 0.5f;
+      contDesenhar(i, px + d * 0.5f, cy, f, a, d + vao, !p->temPin);
     }
   }
 
@@ -1396,6 +1544,7 @@ void perfilsel_teste_estado(PerfilSelTesteEstado *e) {
 #endif
   for (i = 0; i < 8; i++) e->cont_tem[i] = contCard[i].tem;
   e->amb_t = ambT; e->amb_atual = ambAtual; e->amb_ant = ambAnt;
+  e->amb_fonte = !ambTemUrl(ambAtual) ? 0 : ambEhAvatar(ambAtual) ? 2 : 1;
 }
 #endif
 

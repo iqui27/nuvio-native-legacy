@@ -208,7 +208,7 @@
         <!-- Entrega o APK baixado (dados/atualizacao) ao instalador do sistema. -->
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="space.nuvio.nativelegacy.atualizacao"
+            android:authorities="${applicationId}.atualizacao"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

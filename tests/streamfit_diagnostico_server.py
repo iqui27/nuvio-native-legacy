@@ -18,6 +18,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
+        # Debrid shape: addon link -> CDN on another origin. Range must survive.
+        if path == "/xorigem":
+            self.send_response(302)
+            self.send_header("Location", "http://localhost:%d/unknown" % self.server.server_port)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if path == "/fail":
             self.send_response(503)
             self.send_header("Content-Length", "0")

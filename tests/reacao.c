@@ -46,20 +46,21 @@ static int naFila(const char *trecho) {
 }
 
 static void regra(void) {
-  // FILME de 100 min, sem marcador: estimativa de 4,5% (270 s), nunca antes da metade.
+  // FILME de 100 min, sem marcador: 3 min fixos (2.0.3; era 4,5%), nunca antes da metade.
   CHECA(!reacao_regra_perguntar(0, 0, 0, 1000, 6000, 0), "filme no comeco nao pergunta");
   CHECA(!reacao_regra_perguntar(0, 0, 0, 5600, 6000, 0), "filme a 400 s do fim nao pergunta");
-  CHECA(reacao_regra_perguntar(0, 0, 0, 5800, 6000, 0), "filme nos 270 s finais pergunta");
-  // Marcador aceito (ultimo quarto) manda, e so ele.
+  CHECA(reacao_regra_perguntar(0, 0, 0, 5850, 6000, 0), "filme nos 180 s finais pergunta");
+  CHECA(!reacao_regra_perguntar(0, 0, 0, 5800, 6000, 0), "filme a 200 s do fim nao pergunta");
+  // Marcador aceito (parte final do filme: 12%, 5-15 min) manda, e so ele.
   CHECA(!reacao_regra_perguntar(0, 0, 0, 5400, 6000, 5500), "filme antes do marcador nao pergunta");
   CHECA(reacao_regra_perguntar(0, 0, 0, 5500, 6000, 5500), "filme no marcador pergunta");
   // Marcador no comeco do filme (#115) e recusado: nao pergunta aos 90 s.
   CHECA(!reacao_regra_perguntar(0, 0, 0, 95, 6000, 90), "marcador de abertura recusado");
   // SERIE: episodio do meio da temporada NUNCA pergunta.
   CHECA(!reacao_regra_perguntar(1, 1, 0, 2390, 2400, 0), "meio da temporada nao pergunta");
-  // Fim de temporada (proximo e de outra) e ultimo disponivel: nos 2 min finais.
-  CHECA(reacao_regra_perguntar(1, 1, 1, 2300, 2400, 0), "fim de temporada pergunta");
-  CHECA(reacao_regra_perguntar(1, 0, 0, 2300, 2400, 0), "ultimo episodio pergunta");
+  // Fim de temporada (proximo e de outra) e ultimo disponivel: nos 40 s finais (2.0.3).
+  CHECA(reacao_regra_perguntar(1, 1, 1, 2370, 2400, 0), "fim de temporada pergunta");
+  CHECA(reacao_regra_perguntar(1, 0, 0, 2370, 2400, 0), "ultimo episodio pergunta");
   CHECA(!reacao_regra_perguntar(1, 0, 0, 1000, 2400, 0), "ultimo episodio no meio nao pergunta");
   CHECA(reacao_regra_perguntar(1, 0, 0, 2200, 2400, 2200), "ultimo episodio nos creditos pergunta");
   CHECA(!reacao_regra_perguntar(1, 0, 0, 2190, 2400, 2200), "antes do marcador aceito nao pergunta");
@@ -110,12 +111,12 @@ static void cartao(void) {
   reacao_fechar();
   quadros(&s, 1, 2390, 2400, 1, 0, 100, &agora);
   CHECA(!reacao_aberta(), "serie no meio da temporada nao abre");
-  // Fim da temporada: abre. E some sozinho em 8 s, deixando pendente.
-  quadros(&s, 1, 2300, 2400, 1, 1, 1, &agora);
+  // Fim da temporada: abre (40 s finais, 2.0.3). E some sozinho em 8 s, deixando pendente.
+  quadros(&s, 1, 2370, 2400, 1, 1, 1, &agora);
   CHECA(reacao_aberta(), "serie no fim da temporada abre");
-  quadros(&s, 1, 2300, 2400, 1, 1, 78, &agora);
+  quadros(&s, 1, 2370, 2400, 1, 1, 78, &agora);
   CHECA(reacao_aberta(), "ainda no ar antes dos 8 s");
-  quadros(&s, 1, 2300, 2400, 1, 1, 3, &agora);
+  quadros(&s, 1, 2370, 2400, 1, 1, 3, &agora);
   CHECA(!reacao_aberta(), "some sozinho em 8 s");
   CHECA(reacao_estado("tt0903747") == REACAO_PENDENTE, "sem resposta fica pendente");
   // A mesma sessao nao reabre (uma vez por sessao do player).

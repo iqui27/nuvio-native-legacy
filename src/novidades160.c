@@ -416,7 +416,7 @@ static void cenaInterface(float x, float y, float t, float a) {
     char num[8];
     TxtLinha v;
     linhaAjuste(r1, i18n("Limite de fileiras"), 0.0f, a);
-    snprintf(num, sizeof num, "%d", FIL_LIMITE_MAX);
+    snprintf(num, sizeof num, "%d", FIL_LIMITE_MAX_TV);   // o que a 1.6 trouxe
     v = txt_linha(TXT_BODY, num, 244, 246, 250, 255);
     txt_desenhar_alpha(v, r1.x + r1.w - 24.0f - (float)v.w, r1.y + (r1.h - (float)v.h) * 0.5f, a);
     linhaAjuste(r2, i18n("Interface de vidro"), 1.0f, a);

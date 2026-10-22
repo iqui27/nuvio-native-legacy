@@ -5,7 +5,7 @@
 #
 #   bash tests/avisos_dispensar_shot.sh /pasta/de/saida [commit-base]
 # Nao entra na suite (*_shot).
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 saida="${1:-/tmp/nv-dispensar}"
 basec="${2:-}"

@@ -3,7 +3,7 @@
 # Nao entra na suite: precisa de janela GL e de olho humano.
 #
 #   bash tests/sidebaratv_shot.sh /tmp/nv-sidebaratv
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 saida="${1:-/tmp/nv-sidebaratv}"
 mkdir -p "$(dirname "$saida")"

@@ -18,10 +18,46 @@ int p2p_ativo(void) { return 0; }
 int selospacote_ativo(void) { return -1; }
 unsigned selospacote_versao(void) { return 1; }
 int selospacote_casar(const char *const *p,int n,unsigned short *o,int m) { (void)p;(void)n;(void)o;(void)m;return 0; }
+// selosAgendar (chamado por stream_definirir_lista) puxa os tres abaixo; sem
+// os stubs eles resolvem para NULL (dynamic_lookup) e o teste morre antes da
+// primeira linha — ja quebrava no HEAD, sem relacao com #205.
+void selospacote_colorido(int ligado) { (void)ligado; }
+int selospacote_embutidos_ok(void) { return 0; }
+int ajustes_selos_coloridos(void) { return 0; }
 const char *ajustes_qualidade(void) { return "Automatica"; }
 int ajustes_fonte_texto_addon(void) { return 0; }
+// Externos que o caminho de montar/automatico puxa desde o #402/#409: sem
+// stub, dynamic_lookup os deixa NULL e a folha morre antes da primeira
+// assert — o sheet ja quebrava no HEAD, sem relacao com #205.
+int ajustes_dolby_atmos(void) { return 0; }
+int ajustes_dolby_vision(void) { return 0; }
+int ajustes_dv_mkv(void) { return 0; }
+int ajustes_fonte_escopo(void) { return 0; }
+int ajustes_fonte_hdr(void) { return 0; }
+int ajustes_fonte_manual(void) { return 0; }
+int ajustes_fonte_primeira(void) { return 0; }
+int ajustes_fonte_ordem_uso(void) { return 0; }
+int fonteregra_ordem_rank(const char *nome) { (void)nome; return 0; }
+int fonteregra_no_escopo(const FonteRegraCfg *c, int plugin)
+  { (void)c; (void)plugin; return 1; }
+// This sheet fixture has no persisted source preference.
+int fontepref_escolher(const char *id) { (void)id; return -1; }
+int fontepref_escolher_manual(const char *id) { (void)id; return -1; }
+int ajustes_fonte_ordem_addon(void) { return 0; }
+int ajustes_fonte_prioridade(void) { return 0; }
+int ajustes_fonte_regex_modo(void) { return 0; }
+int ajustes_fonte_usar_outros(void) { return 0; }
+int ajustes_tamanho_max_gb(void) { return 0; }
+int ajustes_tamanho_min_gb(void) { return 0; }
+unsigned fonteregra_versao(void) { return 0; }
+int fonteregra_grupo(const FonteRegraCfg *c, const char *nome, int plugin, const char *texto)
+  { (void)c;(void)nome;(void)plugin;(void)texto;return 0; }
+int naovideo_nome(const char *rotulo, const char *descricao, int altura, long tamanhoMB)
+  { (void)rotulo;(void)descricao;(void)altura;(void)tamanhoMB;return 0; }
 int video_pode_forcar_sdr(void) { return 0; }
 void video_forcar_sdr(void) {}
+// No persisted failed sources in this sheet fixture (24185059).
+long fontesmortas_idade(const Stream *s) { (void)s; return -1; }
 int player_aberto(void) { return 0; }
 void plrui_decimal(char *s) { (void)s; }
 static char lastLookup[64]; static int lookups; static double lookupValue;
@@ -58,7 +94,12 @@ int main(void) {
   montar(automaticaDaFolha());expect(original,5); // open sheet freezes unknown
   stream_folha_abrir();const int learned[]={3,1,2,0,4};expect(learned,5);
   assert(stream_fit_folha_estado(0,NULL)==SF_PESADA && stream_fit_folha_estado(3,NULL)==SF_DESCONHECIDA);
-  assert(stream_n()==5 && stream_folha_n()==5 && stream_automatico()==0); // raw autoplay policy unchanged
+  // A 0 foi medida pesada (diagnostico acima) e o automatico a rebaixa: a
+  // escolha crua fica com a 1, mesma qualidade sem a multa do StreamFit. A
+  // sonda de 200 Mbps logo abaixo absolve a 0, e a "Melhor para esta TV"
+  // volta a ser ela — por isso o incremento comeca na 0 (e o foco, preso na
+  // carta 2, nao acompanha o melhor: a folha so pula para o melhor ao ABRIR).
+  assert(stream_n()==5 && stream_folha_n()==5 && stream_automatico()==1); // autoplay respects the measured penalty
   int focused=2;foco=linhaDe(focused);grupo=1;
   fakeNow++;int faster[8]={200000,200000,200000,200000,200000,200000,200000,200000};
   assert(streamfit_diagnostico(1,"https://media.invalid/probe",faster,8,fakeNow)==8);
@@ -67,13 +108,28 @@ int main(void) {
   Stream late=source(5,20000,sizeAt(40000),2160);
   stream_lista_acrescentar(&late,1,0);
   stream_folha_atualizar(.016f,0);
-  const int incremental[]={3,1,2,0,5,4};expect(incremental,6);
+  const int incremental[]={1,3,2,0,5,4};expect(incremental,6);
   assert(filtrado(foco)==focused && stream_fit_folha_estado(5,NULL)==SF_PESADA);
   // A service tab never enters the source partition or source-index space.
   filtro=-1;montar(automaticaDaFolha());const int services[]={-2,-3};expect(services,2);
   filtro=0;montar(automaticaDaFolha());expect(incremental,6);
-  // Complete-list replacement keeps focus identity and uses the same photo.
-  stream_atualizar_lista(sources,5);assert(filtrado(foco)==focused);expect(learned,5);
+  // #205: uma carta "fora do cache" fica no FIM do proprio grupo de qualidade,
+  // nao despejada depois de todos os grupos. E a carta em foco que acaba de
+  // virar fora-do-cache leva o foco junto (foraCacheFoco, como verificarUma faz).
+  lista[2].foraCache=1;
+  { const int regra[]={1,3,0,5,2,4};montar(automaticaDaFolha());expect(regra,6); }
+  // O foco segue a carta: a virada chega como chega de verdade — o fio marca
+  // foraCache e o indice, sem montar no meio — e a atualizacao prende o foco
+  // pelo indice com o Y do layout de ANTES.
+  lista[2].foraCache=0;montar(automaticaDaFolha());expect(incremental,6);
+  lista[2].foraCache=1;
+  atomic_store(&foraCacheFoco,2);
+  stream_folha_atualizar(.016f,0);
+  assert(filtrado(foco)==2); // o foco seguiu a carta para o lugar novo
+  lista[2].foraCache=0;montar(automaticaDaFolha());expect(incremental,6);
+  foco=linhaDe(2); // a secao seguinte parte do foco na carta 2, como antes
+  stream_atualizar_lista(sources,5);assert(filtrado(foco)==focused);
+  { const int reaberta[]={1,3,2,0,4};expect(reaberta,5); } // o melhor (1) volta como primeira linha
   stream_folha_abrir();assert(stream_fit_folha_estado(0,NULL)==SF_ADEQUADA);
   // Real media duration has precedence over delayed metadata.
   stream_fit_duracao("tt1",1,SF_DUR_METADATA);stream_folha_abrir();assert(fitFotoSeg==14400);

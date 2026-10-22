@@ -19,6 +19,13 @@ service = "nuvio-tv"
 # (`...:<n>`) conta tambem. O id nao e segredo e nunca sai nas respostas.
 [vars]
 CRIADORES = "nuvio:88376366-769b-41ec-858e-f62a04a70543"
+# Chave publica confirmada pela Nuvio. Sem esta var, usa SUPABASE_URL +
+# /auth/v1/.well-known/jwks.json. SUPABASE_URL e segredo, nao tem valor aqui.
+NUVIO_JWKS_URL = "https://api.nuvio.tv/auth/v1/.well-known/jwks.json"
+# WATCH TOGETHER: onde moram as salas (Worker nuvio-juntos, servidor/juntos).
+# As rotas /v1/sala* respondem 503 enquanto o segredo SALA_SEGREDO nao existir
+# aqui E la, e a TV esconde o recurso.
+JUNTOS_URL = "https://nuvio-juntos.henriquef29.workers.dev"
 
 # Limpeza da retencao de 90 dias.
 [triggers]
@@ -26,5 +33,11 @@ crons = ["17 4 * * *"]
 
 # Segredos (nao vao aqui; use `wrangler secret put`):
 #   TRAKT_CLIENT_ID     client id do aplicativo no Trakt
-#   SUPABASE_URL        url do projeto Supabase do Nuvio (so para verificar o token)
+#   SUPABASE_URL        url do projeto Supabase do Nuvio (/user e default da JWKS)
 #   SUPABASE_ANON_KEY   anon key do mesmo projeto
+#   SALA_SEGREDO        assina os bilhetes do Watch Together; o MESMO valor no
+#                       nuvio-juntos (tools/juntos-publicar.sh --segredo)
+#   TMDB_KEY            chave da API do TMDB (/v1/filmografia da Caca; sem ela a TV
+#                       pergunta ao TMDB direto). `wrangler secret put TMDB_KEY`
+# Opcional em [vars]: TRILHA_TRAKT_TOP250 = "<id numerico da lista publica do Trakt>"
+#   (o dono escolhe a lista dos "250 mais bem avaliados"; sem ela so o TMDB).

@@ -30,6 +30,7 @@ static const char *payload;
 static const char *object = "{\"collections_json\":{\"collections\":[{\"id\":\"account-group\",\"title\":\"Account\",\"folders\":[{\"id\":\"remote-folder\",\"title\":\"Remote\",\"sources\":[{\"addonBaseUrl\":\"https://fixture.example\",\"type\":\"movie\",\"catalogId\":\"movies\"}]}]}]}}";
 const char *addons_base_por_id(const char *id) { (void)id; return ""; }
 int addons_n(void) { return 0; }
+int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 const char *addons_base(int i) { (void)i; return ""; }
 const char *addons_id_manifesto(int i) { (void)i; return ""; }
 char *dados_caminho(char *dst, unsigned n, const char *nome) {

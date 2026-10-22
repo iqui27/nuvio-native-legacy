@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // SALVOS: a lista de "quero ver" que sobrevive ao proximo arranque.
 //
 // O DEFEITO QUE ISTO CONSERTA, e ele e grande. O "+" do detalhe (app.c,
@@ -48,7 +49,10 @@ typedef struct {
   char id[24];        // IMDb ("tt0111161"). Vazio nunca entra na lista.
   char tipo[8];       // "movie" | "series"
   char titulo[160];
-  char poster[512];
+  // Mesmo teto de CatItem.poster (#433): o cartaz de provedor com nota passa
+  // de 500 caracteres e o corte calado era um 404. O arquivo e texto com TAB,
+  // entao lista gravada antes le igual; so a memoria cresce, e so por item.
+  char poster[NV_ARTE_URL_MAX];
   char meta[96];      // "2002" ou "2022 · 3 temporadas", como vem do catalogo
   int  nota;          // imdb_rating em porcentagem; 0 = desconhecida
   long long quandoS;  // time(NULL) do salvamento, para "Salvo há 2 horas"

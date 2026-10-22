@@ -31,17 +31,19 @@ int perfis_ativo(void) { return perfil; }
 int perfis_n(void) { return nLista; }
 const ContaPerfil *perfis_item(int i) { return i >= 0 && i < nLista ? &lista[i] : NULL; }
 int ajustes_cw_concluido(void) { return 90; }
+int   ajustes_cw_minimo(void)             { return 1; }
 static long long relogio(void) { return agora; }
 
 // O catalogo conhece o que o teste disser.
 static int catConhece;
+static char posterLongo[NV_ARTE_URL_MAX];
 int cat_copiar_por_id(const char *id, const char *tipo, CatItem *s) {
   (void)tipo;
   if (!catConhece || strcmp(id, "tt-b")) return 0;
   memset(s, 0, sizeof *s);
   snprintf(s->imdb, sizeof s->imdb, "%s", id);
   snprintf(s->titulo, sizeof s->titulo, "Os Bichos da Mata");
-  snprintf(s->poster, sizeof s->poster, "http://x/b.jpg");
+  snprintf(s->poster, sizeof s->poster, "%s", posterLongo[0] ? posterLongo : "http://x/b.jpg");
   s->temporada = 2; s->episodio = 4;
   snprintf(s->nomeEpisodio, sizeof s->nomeEpisodio, "A toca");
   return 1;
@@ -49,7 +51,7 @@ int cat_copiar_por_id(const char *id, const char *tipo, CatItem *s) {
 
 static void gravar(int p, const char *id, int t, int e, double pos, double dur, long long quando) {
   perfil = p; agora = quando;
-  assert(prog_gravar_local(id, t, e, pos, dur));
+  assert(prog_gravar_local(id, t, e, pos, dur, -1));
 }
 
 static void zerar(void) {
@@ -147,6 +149,17 @@ int main(void) {
   assert(!snapshot);
   puts("ok  PIN nunca vai para a copia; logout apaga");
 
+  // #433: a copia em disco nao volta ao antigo teto de 400/800 bytes.
+  for (size_t n = 1173; n <= 2000; n += 827) {
+    zerar(); catConhece = 1;
+    memset(posterLongo, 'a', n); memcpy(posterLongo, "https://posters.invalid/", 24); posterLongo[n] = 0;
+    gravar(1, "tt-b", 2, 4, 1500, 3000, agora + 1);
+    perfilcont_registrar();
+    assert(snapshot && strstr(snapshot, posterLongo));
+    catConhece = 0;
+    assert(perfilcont_de(&lista[0], &c) && !strcmp(c.poster, posterLongo));
+  }
+  puts("ok  continuar por perfil conserva cartaz de 1173/2000 bytes");
   puts("perfilcont: tudo ok");
   return 0;
 }

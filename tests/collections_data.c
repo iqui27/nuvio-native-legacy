@@ -1,7 +1,11 @@
 // Exercises the real paged reader with a fake network, including stale responses.
 #include <assert.h>
 #include <unistd.h>
+int ajustes_social(void) { return 1; }
+int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
+int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
+int ajustes_ocultar_nao_lancados(void) { return 0; }   // #369: descoberta.c le o ajuste
 #include "../src/descoberta.c"
 // descoberta.c passou a traduzir os rotulos que monta ("Filme", "Serie", a
 // data por extenso) e este teste nao linka idioma.c: linkar puxaria
@@ -27,6 +31,7 @@ char *rede_baixar_com(const char *u, int t, const char *const *c) {
 int trakt_enfeitar_lote(CatItem *s, int n) { (void)s; (void)n; return 0; }
 // Origem do item (CatItem.origem): sem addons neste teste, a origem fica vazia.
 int addons_n(void) { return 0; }
+int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 const char *addons_base(int i) { (void)i; return ""; }
 const char *addons_id_manifesto(int i) { (void)i; return ""; }
 void cat_trocar_continuar(const CatItem *l, int q) { (void)l; (void)q; }

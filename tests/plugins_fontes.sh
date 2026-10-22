@@ -4,7 +4,7 @@
 #   bash tests/plugins_fontes.sh                 # normal
 #   SANITIZE=1 bash tests/plugins_fontes.sh      # ASan + UBSan
 #   SANITIZE=thread bash tests/plugins_fontes.sh # TSan
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 out="${NV_TMP:-/Volumes/ExternalSSD/nv-f09-tmp}"; mkdir -p "$out"
 tmp=$(mktemp -d "$out/plugfontes.XXXXXX")

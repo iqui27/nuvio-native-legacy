@@ -1,0 +1,34 @@
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.1 ms, DENTRO da trava 0.0 ms, progresso do disco 0.1 ms (fora da trava), total 0.1 ms
+ok  OK arma o proximo episodio
+ok  o cartao nao reabre depois do OK
+ok  Voltar dispensa sem pedir episodio
+ok  Baixo devolve o player sem pedir episodio
+ok  2.0.3: a legenda sobe com o cartao e desce no quadro em que ele some
+ok  a contagem final toca o proximo sozinha
+ok  recuo cancela a contagem e nao a rearma na mesma janela
+ok  recuo cancela Next automatico pendente e preserva o OK manual
+ok  fora da janela nada e armado
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+ok  ultimo episodio nao oferece proximo
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+ok  o proximo sai do episodio que o player toca
+ok  o painel de filme nao sobe no comeco, e ainda sobe no fim
+ok  #115: marcador de creditos no comeco do filme e recusado
+ok  #115: duracao que acabou de mudar nao abre painel nenhum
+ok  o cartao de proximo episodio obedece ao marcador de creditos
+ok  duracao falsa nao abre o cartao nem conclui o episodio
+[selos] perfil 1: 0 pacote(s), ativo: Do Nuvio
+[ajustes] idiomas da conta: legenda="" legenda2="" audio=""; em vigor: legenda="" audio=""
+[idioma] automatico: en (fonte: padrao)
+[ajustes] blob da conta: 1 chave(s) reconhecida(s), 0 mudou(aram)
+[ajustes] idiomas da conta: legenda="" legenda2="" audio=""; em vigor: legenda="" audio=""
+[ajustes] blob da conta: 1 chave(s) reconhecida(s), 1 mudou(aram)
+ok  o still do proximo episodio obedece a desfocar nao assistidos
+[marcador] janela aceita tipo=3 ini=3500s fim=3600s dur=3600s (ok)
+[posplay] creditos aceito: comecam em 3500s de 3600s (sobram 100s, janela 300s)
+ok  prefetch antecipa a janela real em 10 s, com e sem creditos
+ok  contagem do proximo episodio: atraso, 5 s, autoplay desligado
+posplay: tudo ok
+posplay: desfoque do proximo episodio presente (#177)
+posplay: next episode thumbnail uses one guarded blur pass (#232)
+posplay: legenda segue o cartao, nao a janela (2.0.3)

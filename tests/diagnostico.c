@@ -62,11 +62,37 @@ static void tabela(void) {
   ptv_padrao(PTV_TPK, 2048, &p);
   assert(p.heroiLarg == 1280);
   ptv_definir_gpu_fraca(0);
+  // #286: heroi 960 so no .tpk com GPU Utgard marcada; sem a marca, nada muda.
+  assert(!ptv_gpu_utgard_atual());
+  ptv_definir_gpu_utgard(1);
+  ptv_definir_gpu_fraca(1);
+  ptv_padrao(PTV_TPK, 1108, &p);
+  assert(p.heroiLarg == 960 && p.texMb == 64 && p.fiosRede == 2);
+  ptv_padrao(PTV_TPK, 2048, &p);
+  assert(p.heroiLarg == 960);
+  ptv_padrao(PTV_LG, 1024, &p);
+  assert(p.heroiLarg == 1280);   // outras plataformas: intactas
+  ptv_definir_gpu_utgard(0);
+  ptv_definir_gpu_fraca(1);
+  ptv_padrao(PTV_TPK, 1108, &p);
+  assert(p.heroiLarg == 1280);   // GPU fraca que nao e Utgard (Midgard): 1280
+  ptv_definir_gpu_fraca(0);
+  ptv_padrao(PTV_TPK, 2048, &p);
+  assert(p.heroiLarg == 1920);
+  puts("ok  heroi 960 so na Utgard do .tpk");
   assert(ptv_gpu_fraca("Mali-TDVX"));
   assert(ptv_gpu_fraca("Mali-T830"));
   assert(ptv_gpu_fraca("Mali-450 MP"));
   assert(!ptv_gpu_fraca("Mali-G52"));
   assert(!ptv_gpu_fraca("Mali-G71"));
+  // Trailer automatico da home vetado so no Utgard (ajustes_trailer_hero_vetar).
+  assert(ptv_gpu_utgard("Mali-400 MP"));
+  assert(ptv_gpu_utgard("Mali-450 MP"));
+  assert(ptv_gpu_utgard("ARM Mali-470"));
+  assert(!ptv_gpu_utgard("Mali-TDVX"));
+  assert(!ptv_gpu_utgard("Mali-G57"));
+  assert(!ptv_gpu_utgard("Mali-4"));
+  assert(!ptv_gpu_utgard(NULL));
   assert(!ptv_gpu_fraca("Apple M4 Pro"));
   assert(!ptv_gpu_fraca(NULL));
   puts("ok  tabela do .tpk nativo (PTV_TPK) e GPU fraca pelo GL_RENDERER");

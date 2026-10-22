@@ -72,9 +72,9 @@ static void pushNoFormatoDoWeb(void) {
   ProgRegistro r[8];
   zerar();
   agora = 1757000100000LL;
-  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640));      // serie de catalogo
-  assert(prog_gravar_local("tt7654321", 0, 0, 5400, 7200));      // filme
-  assert(prog_gravar_local("tt5550000", 0, 0, 10, 30));          // dur < 60s: nao vai
+  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640, -1));      // serie de catalogo
+  assert(prog_gravar_local("tt7654321", 0, 0, 5400, 7200, -1));      // filme
+  assert(prog_gravar_local("tt5550000", 0, 0, 10, 30, -1));          // dur < 60s: nao vai
   assert(prog_pendentes(r, 8) == 3);
 
   assert(syncprog_empurrar() == 2);
@@ -108,7 +108,7 @@ static void pushNoFormatoDoWeb(void) {
 static void pushFalhoMantemPendente(void) {
   ProgRegistro r[8];
   zerar();
-  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640, -1));
   proximoStatus = 500;
   assert(syncprog_empurrar() == -1);
   assert(prog_pendentes(r, 8) == 1 && r[0].pendente);
@@ -152,7 +152,7 @@ static void rollbackNaoAcontece(void) {
   zerar();
   agora = 1757000300000LL;
   // 1. Assistiu aqui ate 1500s. Pendente.
-  assert(prog_gravar_local("tt1234567", 4, 9, 1500, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 1500, 2640, -1));
   // 2. Ciclo: pull traz o servidor ANTIGO (900s, 5 min atras) ...
   proximaResposta =
     "[{\"content_id\":\"tt1234567\",\"season\":4,\"episode\":9,"
@@ -200,7 +200,7 @@ static void migradoSobeComChaveCerta(void) {
 
 static void avancarDurantePush(void) {
   // Mesmo milissegundo: comparar somente a hora ainda perderia este avanco.
-  assert(prog_gravar_local("tt1234567", 4, 9, 1500, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 1500, 2640, -1));
 }
 
 static void trocarPerfilDurantePush(void) { perfil = 2; }
@@ -208,7 +208,7 @@ static void trocarPerfilDurantePush(void) { perfil = 2; }
 static void confirmacaoPreservaEscritaNovaEPerfil(void) {
   ProgRegistro r;
   zerar(); perfil = 1; agora = 1757000600000LL;
-  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640, -1));
   duranteRpc = avancarDurantePush;
   assert(syncprog_empurrar() == 1 && tem("\"position\":1432000"));
   r = porChave("tt1234567_s4e9");
@@ -218,9 +218,9 @@ static void confirmacaoPreservaEscritaNovaEPerfil(void) {
   assert(!porChave("tt1234567_s4e9").pendente);
 
   zerar(); perfil = 1;
-  assert(prog_gravar_local("tt1234567", 4, 9, 100, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 100, 2640, -1));
   perfil = 2;
-  assert(prog_gravar_local("tt1234567", 4, 9, 200, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 200, 2640, -1));
   perfil = 1; duranteRpc = trocarPerfilDurantePush;
   assert(syncprog_empurrar() == 1 && tem("\"p_profile_id\":1"));
   assert(perfil == 2 && porChave("tt1234567_s4e9").pendente);

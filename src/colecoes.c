@@ -213,6 +213,43 @@ const ColFolder *col_folder(int i) {
   pthread_mutex_unlock(&colTrava);
   return &PASTA(i);
 }
+// FNV-1a de 32 bits, igual ao de homeestado.c: o valor tem de bater com o do
+// hashColecoes que morava la, ou todo snapshot da Home ja gravado seria
+// descartado uma vez sem motivo.
+static unsigned colHashBytes(unsigned h, const void *data, size_t n) {
+  const unsigned char *p = (const unsigned char *)data;
+  while (n--) h = (h ^ *p++) * 16777619u;
+  return h;
+}
+static unsigned colHashTexto(unsigned h, const char *s) {
+  if (s) h = colHashBytes(h, s, strlen(s));
+  return (h ^ 0xffu) * 16777619u;
+}
+unsigned col_hash_estrutura(void) {
+  unsigned h = 2166136261u;
+  pthread_mutex_lock(&colTrava);
+  h = colHashBytes(h, &count, sizeof count);
+  for (int i = 0; i < count; i++) {
+    ColFolder *f = &PASTA(i);
+    // Igual a col_folder(): a base de uma fonte de addon e resolvida antes de
+    // entrar no hash.
+    resolverBases(f);
+    h = colHashTexto(h, f->group);
+    h = colHashTexto(h, f->id);
+    h = colHashBytes(h, &f->nSources, sizeof f->nSources);
+    for (int s = 0; s < f->nSources; s++) {
+      const ColSource *src = &f->sources[s];
+      h = colHashTexto(h, src->prov); h = colHashTexto(h, src->addonId);
+      h = colHashTexto(h, src->base); h = colHashTexto(h, src->type);
+      h = colHashTexto(h, src->catId); h = colHashTexto(h, src->tmdbTipo);
+      h = colHashBytes(h, &src->tmdbId, sizeof src->tmdbId);
+      h = colHashTexto(h, src->midia); h = colHashTexto(h, src->ordenar);
+      h = colHashTexto(h, src->ordem); h = colHashBytes(h, &src->traktLista, sizeof src->traktLista);
+    }
+  }
+  pthread_mutex_unlock(&colTrava);
+  return h;
+}
 // O ADDON DE UM GRUPO DE COLECOES, quando ha um so. Um grupo e um conjunto de
 // pastas, cada pasta com fontes de varios addons (ou TMDB/Trakt), entao o
 // "addon da colecao" nao existe em geral — mas na pratica quase toda colecao
@@ -398,9 +435,9 @@ pronto:
 // A copia entregue a descoberta leva as fontes JUNTO: a pasta so aponta para o
 // bloco do conjunto, e o proximo sync o libera.
 typedef struct { ColFolder f; ColSource s[COL_SOURCE_MAX]; } ColCopia;
-#ifdef NV_TPK40
-// Tizen 4/5's manual ELF loader cannot initialize compiler TLS (tpk.sh rejects
-// PT_TLS). Same per-thread snapshot lifetime with a pthread key, as discord.c.
+// Per-thread snapshot on the heap (pthread key, freed on thread exit). A
+// `static __thread ColCopia` (~52 KB) inflated PT_TLS for every thread, and
+// Tizen 4/5's manual ELF loader cannot initialize compiler TLS at all (#317).
 static pthread_key_t colCopiaKey;
 static pthread_once_t colCopiaOnce = PTHREAD_ONCE_INIT;
 static int colCopiaKeyOk;
@@ -415,7 +452,6 @@ static ColCopia *colCopiaDoFio(void) {
   }
   return p;
 }
-#endif
 const ColFolder *col_por_catalogo(const char *base,const char *type,const char *id) {
   // Base vazia nao pergunta nada: sem esta guarda uma consulta sem URL casava
   // com QUALQUER fonte cuja base ainda estivesse vazia — um falso positivo que
@@ -424,13 +460,9 @@ const ColFolder *col_por_catalogo(const char *base,const char *type,const char *
   // Discovery runs concurrently with main-thread account sync. Never let it
   // observe the cleared/partially parsed builder or keep a pointer that sync
   // can replace after the lock is released.
-#ifdef NV_TPK40
   ColCopia *copiaP = colCopiaDoFio();
   if (!copiaP) return NULL;
 #define copia (*copiaP)
-#else
-  static __thread ColCopia copia;
-#endif
   const ColFolder *resultado = NULL;
   pthread_mutex_lock(&colTrava);
   for(int i=0;i<count;i++) {
@@ -448,9 +480,7 @@ const ColFolder *col_por_catalogo(const char *base,const char *type,const char *
 pronto:
   pthread_mutex_unlock(&colTrava);
   return resultado;
-#ifdef NV_TPK40
 #undef copia
-#endif
 }
 /* Arte editorial: JPEG primeiro, PNG depois.
  *

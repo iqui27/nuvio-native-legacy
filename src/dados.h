@@ -18,6 +18,9 @@
 // hoje, e e melhor que nao gravar nada). Chamar uma vez, no arranque.
 void dados_iniciar(const char *dirArte);
 
+// Diagnostico 1x/sessao apos 5 s e poda de caches em fio nativo, fora do desenho.
+void dados_espaco_iniciar(const char *dirArte);
+
 // Pasta escolhida, sem barra no fim. Nunca NULL depois de dados_iniciar; pode
 // ser "" se nenhum candidato aceitou escrita — nesse caso gravar e no-op e o
 // log ja disse por que.

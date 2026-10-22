@@ -75,6 +75,25 @@ static void gravar(const char *bmp) {
   int y;
   assert(pix && s);
   glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);
+  // NV_TRAILER_CARTAZ: o PLANO DE VIDEO simulado sob a UI, como a TV compoe o
+  // framebuffer pre-multiplicado (final = ui + video * (1 - alfa da UI)). O
+  // "video" e uma grade colorida de tela cheia: onde ela aparece e o furo.
+  if (getenv("NV_TRAILER_CARTAZ")) {
+    int x;
+    for (y = 0; y < 1080; y++) for (x = 0; x < 1920; x++) {
+      unsigned char *q = pix + ((size_t)y * 1920 + x) * 4;
+      int ty = 1079 - y, grade = (x % 96) < 3 || (ty % 96) < 3, k;
+      float a = q[3] / 255.0f, u = x / 1920.0f, v = ty / 1080.0f;
+      float vc[3] = { grade ? 255.0f : 70.0f + 170.0f * u,
+                      grade ? 255.0f : 190.0f - 110.0f * v,
+                      grade ? 255.0f : 230.0f - 150.0f * u };
+      for (k = 0; k < 3; k++) {
+        float c = q[k] + vc[k] * (1.0f - a);
+        q[k] = (unsigned char)(c > 255.0f ? 255.0f : c + 0.5f);
+      }
+      q[3] = 255;
+    }
+  }
   for (y = 0; y < 1080; y++)
     memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
   assert(SDL_SaveBMP(s, bmp) == 0);
@@ -89,6 +108,8 @@ static void quadros(int n, const char *bmp) {
     SDL_PumpEvents();
     tex_bombear(8);
     home_atualizar(1.0f / 60.0f, agora);
+    // O passo do trailer e do app.c (app_atualizar); aqui so na captura dele.
+    if (getenv("NV_TRAILER_CARTAZ")) home_trailer_passo(1, 1.0f / 60.0f, agora);
     corviva_quadro(1.0f / 60.0f, ajustes_cor_viva(), ajustes_cor_logo(), ajustes_animacoes_reduzidas());
     txt_novo_quadro();
     tex_novo_quadro();
@@ -159,6 +180,7 @@ static void ajusta(int layout, int vidro) {
   snprintf(cam, sizeof cam, "%s/ajustes.txt", dirDados);
   a = fopen(cam, "w");
   assert(a);
+  if (getenv("NUVIO_SHOT_FONTE")) fprintf(a, "fonteInterface %d\n", atoi(getenv("NUVIO_SHOT_FONTE")));
   fprintf(a, "idioma 0\ntrailerHero 1\nhomeLayoutLocal %d\nvidroLocal %d\n"
              "modernLandscapePostersEnabled 1\nselected_theme %d\n",
           layout, vidro ? 0 : 1, getenv("NV_TEMA") ? atoi(getenv("NV_TEMA")) : 0);
@@ -191,6 +213,8 @@ int main(int argc, char **argv) {
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+  // O furo do trailer so existe no ALFA do quadro: sem canal alfa ele some.
+  if (getenv("NV_TRAILER_CARTAZ")) SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
   janela = SDL_CreateWindow("Nuvio: layouts da home", SDL_WINDOWPOS_CENTERED,
                             SDL_WINDOWPOS_CENTERED, 1920, 1080,
                             SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
@@ -552,6 +576,47 @@ int main(int argc, char **argv) {
     printf("[shot] visto ctx: menu aberto=%d\n", ctx_aberto());
     snprintf(bmp, sizeof bmp, "%s-visto-3-home.bmp", saida); quadros(1, bmp);
   }
+
+#ifdef NV_SHOT_HOOKS
+  // NV_TRAILER_CARTAZ=1 (com NV_CFLAGS=-DNV_SHOT_HOOKS e NV_SO_CTX=1): o
+  // "Trailer do cartaz em foco" nos tres modos, mais o cartaz em pe com Expandir
+  // ligado, na Moderna. O trailer e fingido (home_shot_trailer) e o video e a
+  // grade composta em gravar(): o que aparece dela e o furo.
+  if (getenv("NV_TRAILER_CARTAZ")) {
+    static const struct { const char *nome, *aj; const char *tipo; int desce, lado; } C[] = {
+      { "tc-1-desligado",        "trailerCartazModo 0", NULL, 3, 2 },
+      { "tc-2-tela-cheia",       "trailerCartazModo 1", NULL, 3, 2 },
+      { "tc-2b-tela-cheia-sem-logo", "trailerCartazModo 1\nlogoTrailerLocal 0", NULL, 3, 2 },
+      { "tc-3-no-card-deitado",  "trailerCartazModo 2", "2", 3, 2 },
+      { "tc-3b-no-card-4x3",     "trailerCartazModo 2", "6", 3, 1 },
+      // V_LIGA: 0 = Ligado. Expandir vem ligado de fabrica.
+      { "tc-3c-no-card-retrato-sem-expandir", "trailerCartazModo 2\nfocusedPosterBackdropExpandEnabled 1", NULL, 3, 2 },
+      { "tc-4-no-card-retrato-expandido",
+        "trailerCartazModo 2\nfocusedPosterBackdropExpandEnabled 0\nfocusedPosterBackdropExpandDelaySeconds 2",
+        NULL, 3, 2 },
+    };
+    int q, r;
+    home_shot_trailer(1);
+    for (q = 0; q < (int)(sizeof C / sizeof *C); q++) {
+      Uint32 t0;
+      setenv("NV_AJ", C[q].aj, 1);
+      ajusta(0, 0);
+      fil_definir_tipo("pop_movie", C[q].tipo ? atoi(C[q].tipo) : 0);
+      for (r = 0; r < 14; r++) tecla(SDLK_UP);
+      quadros(60, NULL);
+      for (r = 0; r < C[q].desce; r++) { tecla(SDLK_DOWN); quadros(30, NULL); }
+      for (r = 0; r < 12; r++) { tecla(SDLK_LEFT); quadros(2, NULL); }
+      for (r = 0; r < C[q].lado; r++) { tecla(SDLK_RIGHT); quadros(8, NULL); }
+      t0 = SDL_GetTicks();
+      while (SDL_GetTicks() - t0 < 4500u) quadros(1, NULL);
+      snprintf(bmp, sizeof bmp, "%s-%s.bmp", saida, C[q].nome);
+      quadros(1, bmp);
+      printf("[shot] %s: trailer cartaz modo %d\n", C[q].nome, ajustes_trailer_cartaz());
+    }
+    home_shot_trailer(0);
+    fil_definir_tipo("pop_movie", 0);
+  }
+#endif
 
   tex_encerrar();
   txt_encerrar();

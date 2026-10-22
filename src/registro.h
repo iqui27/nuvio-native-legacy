@@ -61,6 +61,10 @@ int  registro_aberto(void);
 // Abre o painel sem a tecla vermelha (Ajustes > Sobre e ajuda > "Ver o
 // registro na tela"): nem todo controle LG tem a fileira de cores.
 void registro_abrir(void);
+// Mesma ilha de leitura; aviso informativo apos adicionar fonte, uma vez por TV.
+void registro_legal_abrir(void);
+void registro_aviso_legal(void);
+int registro_legal_aberto(void);
 // 1 depois que o painel foi aberto por Ajustes uma vez (o "NOVO" da linha).
 int  registro_ja_aberto(void);
 
@@ -73,6 +77,8 @@ void registro_envio_abrir(void);
 int  registro_envio_aberto(void);
 int  registro_envio_evento(const SDL_Event *e);   // 1 = consumido
 void registro_envio_desenhar(void);
+// Teste do ponteiro (#99): 0 = "Tentar de novo", 1 = "Fechar" (no erro).
+int  registro_envio_teste_foco(void);
 // O fim do log em mono, numa caixa (o "pacote" do mockup): a previa da linha
 // "Enviar registro" no inspetor de Ajustes e a esquerda do painel de envio.
 // `n` = quantas linhas; `rotDir` e o texto a direita do nome do arquivo.

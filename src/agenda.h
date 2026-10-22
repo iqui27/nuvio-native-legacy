@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // AGENDA: quando sai o proximo episodio das series que o dono acompanha, e o
 // lembrete para o dia em que sair.
 //
@@ -72,7 +73,7 @@ typedef enum {
 typedef struct {
   char imdb[24];
   char titulo[160];
-  char poster[512];
+  char poster[NV_ARTE_URL_MAX];
   int  situacao;          // AgSituacao
   int  temporada, episodio;
   char nomeEp[120];

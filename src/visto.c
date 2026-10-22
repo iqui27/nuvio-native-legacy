@@ -3,6 +3,7 @@
 #include "simkl.h"
 #include "contapend.h"
 #include "sessao.h"
+#include "ajustes.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +17,9 @@
 int visto_destinos(void) {
   return (trakt_ativo() ? VISTO_TRAKT : 0) |
          (simkl_ativo() ? VISTO_SIMKL : 0) |
-         (sessao_logada() ? VISTO_CONTA : 0);
+         // "Enviar histórico para a conta Nuvio" (por perfil): desligado, o visto
+         // deste perfil so vai para o Trakt e o Simkl que ele tiver vinculados.
+         (sessao_logada() && ajustes_hist_conta() ? VISTO_CONTA : 0);
 }
 
 int visto_episodios_ja(const char *imdb, const char *tipo, const VistoPar *pares,
@@ -106,6 +109,9 @@ int visto_titulo(const char *imdb, const char *tipo, const int *temporadas,
   Envio *e;
   destinos &= ~VISTO_TRAKT;
   if (!imdb || !imdb[0]) return 0;
+  // ANTES de qualquer destino, e mesmo sem nenhum: o gesto no titulo inteiro
+  // tambem e da pessoa (vistoep.h, "desmarcar ganha").
+  vistoep_titulo_gesto(imdb, visto);
   if (!destinos) return 1;
   if (destinos & VISTO_CONTA) {
     contapend_titulo(imdb, tipo && tipo[0] ? tipo : "movie", visto);

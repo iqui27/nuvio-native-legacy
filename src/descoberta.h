@@ -18,6 +18,8 @@
 // descoberta. Chamar no logout, junto de addons_esquecer/fil_esquecer: a cache
 // e da conta que saiu e nao deve vazar para a proxima.
 void desc_esquecer(void);
+// Troca de perfil (#294): tira da tela e da memoria o catalogo do perfil que saiu.
+void desc_esquecer_catalogo_perfil(void);
 
 // CACHE UNICA DE MANIFESTO (corpo de manifest.json), por url + versao da lista
 // de addons (addons_versao()). Antes havia DOIS caminhos baixando o mesmo
@@ -60,6 +62,9 @@ void desc_repetir_silencioso(void);
 // pedido e atendido por ela — sem jogar fora o Trakt que ela ja buscou. Se ja
 // leu, e o mesmo que desc_repetir. Chamar do fio principal.
 void desc_repetir_addons(void);
+// #319: tira da tela, sem rede, as fileiras de addon removido ou desligado.
+// Devolve quantas saíram.
+int desc_tirar_fileiras_de_addons_ausentes(void);
 // Refaz so a fileira "Continuar assistindo", fora do ciclo completo (issue
 // #38). Fio proprio: remontar a fileira faz rede. Pedido repetido enquanto um
 // fio ja roda vira UMA rodada a mais no fim, nao uma fila.
@@ -108,6 +113,8 @@ void desc_tmdb(const char *dirArte);
 // campo `api_key`. Enquanto a chave sair do arquivo, ela vai dentro do .ipk e
 // e a chave de quem montou o pacote — cota dele, para todo mundo que instalar.
 void desc_tmdb_definir(const char *chave);
+// Keywords anexadas ao detalhe do TMDB: 179430/179431 sinalizam cena extra.
+int desc_tmdb_pos_creditos(const char *json);
 // "pt-BR" ou "en-US", conforme o idioma da interface: sinopse, biografia e nome
 // de colecao vem do TMDB ja traduzidos, e em ingles vinham em portugues.
 const char *desc_tmdb_idioma(void);
@@ -165,6 +172,8 @@ int  desc_busca_item(int i, CatItem *dst);
 // lento de dez.
 int  desc_busca_n_alvos(void);
 const char *desc_busca_alvo_titulo(int alvo);   // "Filmes", "Séries"
+int desc_busca_alvo_nuvio(int alvo);             // 1 = catalogo do Nuvio (#311)
+int desc_busca_n_fontes(void);                   // fontes distintas consultadas (#311)
 const char *desc_busca_alvo_addon(int alvo);    // "Cinemeta", "Xperience"
 // O NOME que o manifesto da a um catalogo (base sem /manifest.json, tipo, id);
 // "" enquanto o manifesto nao passou pela descoberta. Para a aba da colecao
@@ -175,10 +184,14 @@ int  desc_busca_alvo_item(int alvo, int i, CatItem *dst);
 // Sobe a cada termo novo. Quem guarda posicao de foco entre quadros deve
 // reajustar quando este numero mudar.
 int  desc_busca_geracao(void);
+int  desc_busca_chegou(const char *termo);   // 1 = ja houve resposta de algum alvo para `termo`
 
 // Registro dos alvos, chamado pelo carregamento dos manifestos. `zerar` repoe
 // so o Cinemeta.
 void desc_alvos_busca_zerar(void);
+// 1 quando "Buscar no Cinemeta" esta desligado e `base` e a de um addon
+// Cinemeta: a busca nao pode mostrar nada dela (alvos de rede e fileiras locais).
+int  desc_busca_base_oculta(const char *base);
 // A primeira volta espera os addons da conta em vez de montar a Home com a
 // lista vazia. `f` devolve 0 (nao espere: sem conta), 1 (espere: perfil ainda
 // nao escolhido) ou 2 (espere ate 10 s). Sem gancho, nao ha espera.
@@ -219,12 +232,29 @@ void desc_vertudo_filtro(const char *base, const char *tipo, const char *catId, 
 // "trakt" vindo do site. Os itens sao pedidos direto a esses servicos —
 // nao passa por catalogo de addon.
 void desc_vertudo_fonte(const ColSource *s);
+// Escrita 2xx: descarta a fonte desta lista e busca novamente, inclusive em voo.
+void desc_vertudo_invalidar_lista(long id);
 int desc_vertudo_erro(void);
 // Pede a proxima pagina, se houver. Nada acontece se a ultima veio curta — sinal
 // de fim de lista no protocolo.
 void desc_vertudo_mais(void);
 int  desc_vertudo_n(void);
 int  desc_vertudo_item(int i, CatItem *dst);
+// O QUE A LISTA DO TRAKT DIZ SOBRE O ITEM, alem do titulo: a posicao (rank), o
+// instante em que entrou (listed_at) e a nota de quem montou a lista (notes).
+// Mora numa tabela paralela a vtItens e NAO no CatItem: o CatItem vai inteiro
+// para o cache em disco, e mudar o tamanho dele invalidaria o catalogo de quem
+// nunca abriu uma lista. Vazio/0 = a fonte nao disse (addon, TMDB, Simkl).
+typedef struct {
+  int       rank;        // posicao na lista, 0 = nao informada
+  long long entrouMs;    // listed_at em ms desde a epoca, 0 = nao informado
+  char      nota[320];   // "" = sem nota do curador
+  long      itemId;      // id da ENTRADA na lista (reordenar), 0 = nao informado
+} DescItemLista;
+int  desc_vertudo_extra(int i, DescItemLista *dst);
+// Le rank/listed_at/notes de UMA entrada de /lists/<id>/items ({rank, listed_at,
+// notes, type, movie:{...}}). Exposto para o teste de fixture.
+void desc_trakt_extra_ler(const char *p, const char *f, DescItemLista *d);
 int  desc_vertudo_carregando(void);
 // 1 quando a ultima pagina veio curta: nao ha mais o que pedir.
 int  desc_vertudo_fim(void);
@@ -235,6 +265,8 @@ void desc_episodios(int indiceItem, int temporada);
 // quadro; sem isto uma troca de temporada feita durante um carregamento fica
 // pendurada e a lista nunca chega na temporada escolhida.
 void desc_episodios_pendente(void);
+void desc_episodios_garantir(int indiceItem);
+int desc_episodios_precarregar(int indiceItem);   // -1 ocupado, 0 nada a pedir, 1 pediu
 int desc_episodios_carregando(int indiceItem);
 // Preenche `nota` (x10) e a `sinopse` no idioma pedido (#150) dos eps da
 // temporada dada a partir do JSON de /tv/<id>/season/<n> do TMDB. Pura;
@@ -265,6 +297,10 @@ void desc_mesclar_episodios(CatEp *base, int nb, const CatEp *outro, int no,
 // prefere, ou o TMDB no idioma configurado (#176). Chamada barata e repetivel:
 // o que ja foi resolvido vem do cache.
 void desc_localizar_indices(const int *idx, int n);
+// Sinopse dos candidatos do destaque (indices do catalogo), pedida ao mesmo
+// /meta do detalhe, em fio proprio e um pedido por vez. Quem falha segue sem
+// sinopse, com a falha no log. Ver o bloco em descoberta.c.
+void desc_sinopse_hero(const int *idx, int n);
 // Texto e arte localizados ja conhecidos (memoria + loc-texto.txt) aplicados ao
 // catalogo que veio do cache, sem rede (#213). Devolve quantos mudaram.
 int desc_localizar_catalogo_cache(void);
@@ -295,5 +331,17 @@ void desc_pedir_titulo_semente(const char *imdb, long tmdb, const char *tipo,
 // Indice do titulo que acabou de entrar, ou -1. CONSOME o resultado.
 int  desc_titulo_pronto(void);
 int  desc_titulo_buscando(void);
+
+// O PRIMEIRO EPISODIO DESMARCADO NA TV (vistonao_primeira), ligado por app.c.
+// Sem ele o "a seguir" do Continuar assistindo fica como o remoto o deu.
+void desc_lapides_primeira(int (*primeira)(const char *imdb, int temporada, int episodio,
+                                           long long remotoMs, int *pt, int *pe));
+
+// RITMO DOS PEDIDOS DE CATALOGO (fileiras ilimitadas no Android, 2.0.4).
+// Quantas fileiras uma rodada de montar() pede quando faltam `alvo`, e quantos
+// GET de catalogo ficam em voo ao mesmo tempo (os fios da rodada). Expostos
+// para tests/fileiras_android.sh provar que 100 fileiras nao viram 100 pedidos.
+int desc_catalogos_por_rodada(int alvo);
+int desc_catalogos_em_voo(void);
 
 #endif

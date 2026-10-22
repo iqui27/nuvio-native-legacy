@@ -13,7 +13,7 @@ if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libass; then
   ass_flags+=( -DNV_ASS_LIBASS )
   # shellcheck disable=SC2207
   ass_flags+=( $(pkg-config --cflags libass) )
-  ass_libs=( $(pkg-config --libs libass) )
+  ass_libs=( $(pkg-config --libs libass fribidi) )
 else
   ass_libs=()
 fi

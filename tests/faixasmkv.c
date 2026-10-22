@@ -1,5 +1,6 @@
 // Ver tests/faixasmkv.sh (#206).
 #include "../src/faixasmkv.h"
+#include "../src/linguas.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,8 +51,11 @@ int main(int argc, char **argv) {
      "audio 2: idioma + 2.0", a[1].rotulo);
   ok(!l[0].letreiro && !strchr(l[0].rotulo, 0xc2), "legenda 1: so o idioma", l[0].rotulo);
   ok(l[1].letreiro && strstr(l[1].rotulo, "Forced") != NULL, "legenda 2: nome Forced, letreiro", l[1].rotulo);
-  ok(l[2].letreiro && strstr(l[2].rotulo, "Letreiros") != NULL, "legenda 3: so a flag -> Letreiros", l[2].rotulo);
+  ok(l[2].letreiro && l[2].tipoLeg == LING_LEG_FORCADA && strstr(l[2].rotulo, "For\xc3\xa7" "ada") != NULL, "legenda 3: so a flag -> Forcada (#287)", l[2].rotulo);
   ok(!l[3].letreiro && strstr(l[3].rotulo, "English SDH") != NULL, "legenda 4: nome SDH", l[3].rotulo);
+  ok(nf >= 7 && fx[6].sdh == 1 && fx[5].sdh == 0, "FlagHearingImpaired lida (#287)", NULL);
+  ok(l[0].tipoLeg == LING_LEG_COMUM && l[1].tipoLeg == LING_LEG_FORCADA && l[3].tipoLeg == LING_LEG_SDH,
+     "tipos: comum, forcada (nome), SDH (#287)", NULL);
   ok(l[1].numero == 1 && l[1].ordinalMkv == 1 && a[1].numero == 1, "indices do player intactos", NULL);
 
   // De novo, como na releitura do audio (#165): nada duplica.
@@ -80,7 +84,7 @@ int main(int argc, char **argv) {
     snprintf(g[4].codec, sizeof g[4].codec, "S_HDMV/PGS");   // a legenda 2 (Forced)
     player(a, 2, l, 3);
     faixasmkv_aplicar(a, 2, l, 3, g, nf);
-    ok(!strcmp(l[0].rotulo, "Húngaro") && strstr(l[1].rotulo, "Letreiros") && strstr(l[2].rotulo, "English SDH"),
+    ok(!strcmp(l[0].rotulo, "Húngaro") && strstr(l[1].rotulo, "For\xc3\xa7" "ada") && strstr(l[2].rotulo, "English SDH"),
        "legendas 3x4 com uma PGS: casa sem ela", l[2].rotulo);
     // O overlay do .tpk (#269) le a faixa pelo ordinal do ARQUIVO: a PGS
     // escondida pelo player conta, senao o mkvass colheria a legenda vizinha.
@@ -113,6 +117,22 @@ int main(int argc, char **argv) {
   ok(!strcmp(faixasmkv_codec("A_DTS/LOSSLESS"), "DTS-HD MA") && !strcmp(faixasmkv_codec("A_AAC/MPEG4/LC"), "AAC") &&
      !faixasmkv_codec("V_MPEGH")[0], "nomes de codec", NULL);
 
+  // Dolby Vision in MKV: the video track's BlockAdditionMapping (dvcC) is the
+  // file's own word on profile and layers. Profile 8.1, level 6, BL+RPU, no EL.
+  { static const unsigned char dv[] = {
+      0x1A, 0x45, 0xDF, 0xA3, 0x80,                      // EBML header (empty)
+      0x16, 0x54, 0xAE, 0x6B, 0x80 | 44,                 // Tracks
+      0xAE, 0x80 | 42,                                   // TrackEntry
+      0xD7, 0x81, 0x01, 0x83, 0x81, 0x01,                // TrackNumber 1, video
+      0x86, 0x80 | 16, 'V','_','M','P','E','G','H','/','I','S','O','/','H','E','V','C',
+      0x41, 0xE4, 0x80 | 15,                             // BlockAdditionMapping
+      0x41, 0xE7, 0x84, 'd','v','c','C',                 // BlockAddIDType
+      0x41, 0xED, 0x85, 0x01, 0x00, 0x10, 0x35, 0x10,    // DOVI record
+      0xEC, 0x80 | 11, 0,0,0,0,0,0,0,0,0,0,0 };          // Void: the probe wants 64 bytes
+    MkvFaixa v[2];
+    int k = mkv_faixas_do_trecho(dv, sizeof dv, v, 2, NULL, 0, NULL);
+    ok(k == 1 && v[0].dvPerfil == 8 && v[0].dvNivel == 6 && v[0].dvRpu && !v[0].dvEl && v[0].dvBl && v[0].dvCompat == 1,
+       "dvcC: perfil 8.1 nivel 6, BL+RPU sem EL", NULL); }
   printf(falhas ? "faixasmkv: %d FALHA(S)\n" : "faixasmkv: tudo ok\n", falhas);
   return falhas != 0;
 }

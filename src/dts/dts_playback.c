@@ -22,7 +22,9 @@
 #define DTS_STALL_SEEK_SECONDS 2.0
 #define DTS_STALL_RETRIES 2
 typedef struct { DtsSubtitle cue; unsigned revision; } DtsQueuedSubtitle;
+#define DTS_DV_STARVED_WINDOWS 4
 struct DtsPlayback {
+  int dv, starved; /* Dolby Vision path: passthrough audio, starvation fallback. */
   pthread_t thread;
   pthread_mutex_t lock;
   pthread_cond_t wake;
@@ -150,11 +152,17 @@ static void rest(DtsPlayback *p) {
   if (!p->stop) pthread_cond_timedwait(&p->wake, &p->lock, &t);
   pthread_mutex_unlock(&p->lock);
 }
+/* Codecs this session can feed: DTS is converted; on the Dolby Vision path
+ * AC-3 and E-AC-3 pass through. Anything else belongs to the native player. */
+static int codecFeeds(const DtsPlayback *p, const char *codec) {
+  return !strcmp(codec, "dts") || (p->dv && (!strcmp(codec, "ac3") || !strcmp(codec, "eac3")));
+}
 static int trackMatches(DtsPlayback *p, const DtsTrack *t) {
-  return t->kind == DTS_AUDIO && !strcmp(t->codec, "dts") &&
+  return t->kind == DTS_AUDIO && codecFeeds(p, t->codec) &&
       (!p->selected.language[0] || ling_casa(t->language, p->selected.language)) &&
       (!p->selected.channels || t->channels == p->selected.channels);
 }
+static double clockSeconds(clockid_t clock);
 static int prepare(DtsPlayback *p, int stream, int core, double target) {
   const DtsMediaInfo *info;
   /* A native Load is single-use. Retire its callbacks before reconfiguration. */
@@ -171,6 +179,7 @@ static int prepare(DtsPlayback *p, int stream, int core, double target) {
   p->suppress_events = 0;
   pthread_mutex_unlock(&p->lock);
   /* Reloading selects the exact same source stream and resets encoder delay. */
+  double began = clockSeconds(CLOCK_MONOTONIC), opened;
   nativeEvent(p,"{\"dtsStage\":{\"name\":\"source-open-requested\"}}");
   if (dts_engine_open(p->engine, p->url, p->headers, stream, core, target) < 0) {
     fail(p, dts_engine_error(p->engine)); return 0;
@@ -202,7 +211,7 @@ static int prepare(DtsPlayback *p, int stream, int core, double target) {
     }
     for (i = 0; i < info->n_tracks; i++)
       if (info->tracks[i].stream_index == desired &&
-          strcmp(info->tracks[i].codec, "dts")) desired = -1;
+          !codecFeeds(p, info->tracks[i].codec)) desired = -1;
     if (desired < 0) { fail(p, "Cannot safely identify the selected DTS track"); return 0; }
     if (desired != info->audio_stream) {
       if (dts_engine_open(p->engine, p->url, p->headers, desired, core, target) < 0) {
@@ -211,12 +220,26 @@ static int prepare(DtsPlayback *p, int stream, int core, double target) {
       info = dts_engine_info(p->engine);
     }
   }
-  nativeEvent(p,"{\"dtsStage\":{\"name\":\"source-opened\"}}");
+  /* #203: stage lines print only after prepare, so they carry no time of
+   * their own. Say how long the source open and the native Load took. */
+  opened = clockSeconds(CLOCK_MONOTONIC);
+  {
+    char event[128];
+    snprintf(event, sizeof event, "{\"dtsStage\":{\"name\":\"source-opened\",\"detail\":\"ms=%.0f\"}}",
+             (opened - began) * 1000);
+    nativeEvent(p, event);
+  }
   p->pipeline = dts_pipeline_create(NV_APP_ID, p->window,
                                     p->major, nativeEvent, p);
   if (!p->pipeline) { fail(p, "DTS native pipeline unavailable"); return 0; }
   if (!info || !dts_pipeline_load(p->pipeline, info, target)) {
     fail(p, dts_pipeline_error(p->pipeline)); return 0;
+  }
+  {
+    char event[128];
+    snprintf(event, sizeof event, "{\"dtsStage\":{\"name\":\"native-load-returned\",\"detail\":\"ms=%.0f\"}}",
+             (clockSeconds(CLOCK_MONOTONIC) - opened) * 1000);
+    nativeEvent(p, event);
   }
   pthread_mutex_lock(&p->lock);
   p->status.info = *info;
@@ -272,6 +295,12 @@ static void reportRate(DtsPlayback *p, DtsRate *rate, double presented,
     rate->audio, rate->video, rate->full, rate->paced, clock_seen, presented,
     audio_pts-presented, video_pts-presented);
   nativeEvent(p, event);
+  /* Dolby Vision path: the source cannot keep up when, window after window,
+   * the worker spends its time waiting for the network with under a second of
+   * video ahead. Four windows (20 s) hand playback back to the native player. */
+  if (p->dv && complete && clock_seen && !pause && !preroll &&
+      video_pts - presented < 1.0 && rate->read_wall > 0.5 * (now - rate->start)) p->starved++;
+  else if (!pause) p->starved = 0;
   memset(rate, 0, sizeof *rate); rate->start = now;
 }
 static void *run(void *user) {
@@ -328,6 +357,10 @@ static void *run(void *user) {
     }
     if (audio_error) {
       fail(p, "DTS stereo output is not supported by this pipeline");
+      break;
+    }
+    if (p->starved >= DTS_DV_STARVED_WINDOWS) {
+      fail(p, DTS_PLAYBACK_STARVED);
       break;
     }
     int seek_reload = !audio && seek;
@@ -521,6 +554,8 @@ done:
   return NULL;
 }
 
+static int dvNext;
+void dts_playback_next_dv(int enabled) { dvNext = !!enabled; }
 DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int audio_stream, double position,
                                int paused, const char *window, int major,
@@ -534,6 +569,8 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   pthread_cond_init(&p->wake, NULL);
   p->engine = dts_engine_create();
   if (!p->engine) { dts_playback_close(p); return NULL; }
+  p->dv = dvNext; dvNext = 0;
+  dts_engine_dv(p->engine, p->dv);
   snprintf(p->url, sizeof p->url, "%s", url);
   snprintf(p->headers, sizeof p->headers, "%s", headers ? headers : "");
   snprintf(p->window, sizeof p->window, "%s", window ? window : "");

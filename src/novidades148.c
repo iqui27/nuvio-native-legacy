@@ -543,7 +543,8 @@ static float grupo(int g, float y, float a) {
   return h;
 }
 
-static void ponteiroFoco(int b, int nada) { (void)nada; foco = b; }
+static void ponteiroFoco(int b, int nada) { (void)nada; if (aberto) foco = b; }
+int novidades148_teste_foco(void) { return foco; }
 
 static void novidades148_desenharCorpo_(Uint32 agora);
 // Cartao de tela quase cheia: ampliado so se ainda couber (escala.h).
@@ -608,7 +609,7 @@ static void novidades148_desenharCorpo_(Uint32 agora) {
     botao_pilula(bD, rotD, NULL, foco == B_DEPOIS ? 1.0f : 0.0f, 0, 0, a);
     botao_pilula(bV, rotV, NULL, foco == B_VELOCIDADE ? 1.0f : 0.0f, 0, 0, a);
     botao_pilula(bC, rotC, NULL, foco == B_COR ? 1.0f : 0.0f, 1, 0, a);
-    if (aberto) {
+    if (aberto && entrada > 0.99f) {   // so assentado (sem o deslize da entrada)
       ponteiro_alvo(bD.x, bD.y, bD.w, bD.h, ponteiroFoco, NULL, B_DEPOIS, 0);
       ponteiro_alvo(bV.x, bV.y, bV.w, bV.h, ponteiroFoco, NULL, B_VELOCIDADE, 0);
       ponteiro_alvo(bC.x, bC.y, bC.w, bC.h, ponteiroFoco, NULL, B_COR, 0);

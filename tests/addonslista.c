@@ -22,6 +22,8 @@ void ondever_pedir(const char *id, int series, long tmdb) {
   (void)id; (void)series; (void)tmdb;
 }
 
+int dados_gravar_leve(const char *nome, const char *conteudo) { (void)nome; (void)conteudo; return 1; }
+
 // ---------------------------------------------------------------- duble
 //
 // A BUSCA DE FONTES DE VERDADE (addons_buscar -> fio -> addons_estado), com a
@@ -41,10 +43,33 @@ static const char *respCanalTv, *respCanalChannel;
 static char pedidosCanal[200];
 // lento.test (#182): as primeiras `falhasLento` requisicoes NAO respondem (o
 // timeout do AIOStreams frio); as seguintes respondem com uma fonte.
+static int pedidosDesligado, pedidosLigado;
 static int falhasLento, chamadasLento, prazoLento[2], prazoCanal;
+// legenda.test imita o OpenSubtitles v3 vindo da conta (TCL do dono, 09/10):
+// instalado sem capacidades (nasce "fonte"), o manifesto diz so "subtitles" e
+// /stream/ responde 404.
+static int pedidosLegendaStream, pedidosLegendaManifesto, idxLegenda = -1;
 const char *rede_ultimo_erro(void) { return ""; }
 char *rede_baixar(const char *url, int s) {
   const char *r;
+  if (strstr(url, "legenda.test")) {
+    if (strstr(url, "/manifest.json")) {
+      pedidosLegendaManifesto++;
+      return strdup("{\"id\":\"org.stremio.opensubtitlesv3\",\"name\":\"OpenSubtitles v3\","
+                    "\"resources\":[\"subtitles\"],\"types\":[\"movie\",\"series\"]}");
+    }
+    if (strstr(url, "/stream/")) {
+      // A sonda (sondar, outro fio) termina DURANTE a busca, como na TCL: o
+      // manifesto chega depois de a lista de baldes ser montada.
+      if (!pedidosLegendaStream++ && idxLegenda >= 0)
+        addons_manifesto_lido(idxLegenda,
+          "{\"id\":\"org.stremio.opensubtitlesv3\",\"name\":\"OpenSubtitles v3\","
+          "\"resources\":[\"subtitles\"],\"types\":[\"movie\",\"series\"]}");
+    }
+    return NULL;
+  }
+  if (strstr(url, "desligado.test")) pedidosDesligado++;
+  if (strstr(url, "ligado.test") && !strstr(url, "desligado.test")) pedidosLigado++;
   if (strstr(url, "lento.test")) {
     if (chamadasLento < 2) prazoLento[chamadasLento] = s;
     if (++chamadasLento <= falhasLento) return NULL;
@@ -83,9 +108,14 @@ void stream_lista_acrescentar(const Stream *l, int n, int o) { (void)l; (void)n;
 void stream_invalidar(const char *p) { (void)p; }
 int stream_n(void) { return 0; }
 int stream_lista_do_alvo(const char *id) { (void)id; return 0; }
+// addons.c recarimba o id normalizado ("tt:1:1") do pedido.
+void stream_definir_alvo(const char *id) { (void)id; }
 Uint32 SDL_GetTicks(void) { return 1000; }
 const char *sessao_usuario(void) { return ""; }
 int perfis_ativo(void) { return 1; }
+// A integracao da poda com addons.c e exercitada em watchstate_poda.sh.
+void wsenvio_podar(void) {}
+void wsenvio_podar_addon(const char *base) { (void)base; }
 void debrid_definir_episodio(int t, int e) { (void)t; (void)e; }
 void debrid_nova_busca(void) { nDebridNovaBusca++; }
 const char *i18n(const char *s) { return s; }
@@ -139,6 +169,8 @@ static void conferirTexto(const char *o_que, const char *obtido, const char *esp
   printf("FALHOU %s: obtido \"%s\", esperado \"%s\"\n", o_que, obtido, esperado);
   falhas++;
 }
+
+static int sempreCancelado(void *u) { (void)u; return 1; }
 
 int main(void) {
   char dir[] = "/tmp/nuvio-addonslista-XXXXXX";
@@ -255,6 +287,23 @@ int main(void) {
   // ---- #182: addon lento aparece sozinho, sem recarregar a mao
   conferir("addon lento entrou", addons_adicionar("Lento", "https://lento.test/manifest.json"), 1);
   // 11) nao respondeu na 1a tentativa, respondeu na 2a: a lista ja o traz.
+  // R2: uma busca real falha, seguida de prefetch cancelado antes do HTTP.
+  falhasLento = 1000; chamadasLento = 0;
+  addons_definir_origem("https://lento.test");
+  buscarMotivo("tt-r2-primeira");
+  conferir("R2 primeira busca tem duas tentativas", chamadasLento, 2);
+  { Stream *l = NULL;
+    conferir("R2 prefetch cancelado", addons_consultar("tt-r2:1:2", "series", "https://lento.test", 1,
+             sempreCancelado, NULL, &l), -1);
+    conferir("R2 cancelamento nao faz HTTP", chamadasLento, 2);
+    free(l);
+  }
+  falhasLento = 1; chamadasLento = 0;
+  addons_definir_origem("https://lento.test");
+  buscarMotivo("tt-r2-seguinte");
+  conferir("R2 busca real conserva segunda chance", chamadasLento, 2);
+  conferir("R2 segunda chance recupera fontes", addons_estado(), ADD_PRONTO);
+
   falhasLento = 1; chamadasLento = 0;
   addons_definir_origem("https://lento.test");
   addons_buscar("tt0000011", "movie");
@@ -279,6 +328,32 @@ int main(void) {
       while (addons_estado() == ADD_BUSCANDO) usleep(1000);
       conferir("addon morto: requisicoes da consulta", chamadasLento - antes, esperado[k]);
     } }
+
+  // ---- add-on so de legenda vindo da conta (TCL, 09/10): ele nasce com
+  // fonte=1 ate o manifesto ser lido; a busca de fontes nao pode pedir
+  // /stream/ a ele nem chama-lo de "sem resposta".
+  conferir("so legenda entrou", addons_adicionar("OpenSubtitles v3", "https://legenda.test/manifest.json"), 1);
+  idxLegenda = addons_n() - 1;
+  pedidosLegendaStream = 0;
+  addons_definir_origem("https://legenda.test");
+  addons_buscar("tt0000013", "movie");
+  addons_definir_origem(NULL);
+  while (addons_estado() == ADD_BUSCANDO) usleep(1000);
+  printf("legenda.test: %d pedido(s) de manifesto, %d de stream\n", pedidosLegendaManifesto, pedidosLegendaStream);
+  // O 1o pedido saiu antes de a sonda terminar (inevitavel); depois dela, nada
+  // de segunda chance, e a folha nao culpa o add-on de legenda.
+  conferir("so de legenda: um pedido de stream, sem segunda chance", pedidosLegendaStream, 1);
+  { char m[200];
+    if (!addons_motivo_vazio(m, sizeof m)) m[0] = 0;
+    printf("motivo: %s\n", m);
+    conferir("so de legenda nao vira \"sem resposta\"", strstr(m, "OpenSubtitles") != NULL, 0); }
+  // Busca seguinte, com o manifesto lido: nenhum pedido de stream.
+  pedidosLegendaStream = 0;
+  addons_definir_origem("https://legenda.test");
+  addons_buscar("tt0000014", "movie");
+  addons_definir_origem(NULL);
+  while (addons_estado() == ADD_BUSCANDO) usleep(1000);
+  conferir("so de legenda com manifesto lido: nenhum pedido de stream", pedidosLegendaStream, 0);
 
   // RESOURCE "meta" (#174/#175), num addon proprio no fim para nao mexer nos
   // nomes e capacidades que as verificacoes acima leem. Duas formas do
@@ -340,6 +415,49 @@ int main(void) {
     conferir("nao sondado: desconhecido", addons_aceita_id(f, "series", "kitsu:1"), -1);
     conferir("indice invalido", addons_aceita_id(999, "series", "kitsu:1"), 0);
     conferir("id vazio", addons_aceita_id(a, "series", ""), 0); }
+
+  // Desligado na conta = NUNCA consultado (2.0.3, D1 58666): nem fonte, nem
+  // legenda, nem catalogo/busca/guia (addons_base_desligada guarda esses).
+  { AddonRemoto conta[2];
+    memset(conta, 0, sizeof conta);
+    snprintf(conta[0].nome, sizeof conta[0].nome, "Ligado");
+    snprintf(conta[0].url, sizeof conta[0].url, "https://ligado.test/manifest.json");
+    conta[0].ativo = 1;
+    snprintf(conta[1].nome, sizeof conta[1].nome, "Desligado");
+    snprintf(conta[1].url, sizeof conta[1].url, "https://desligado.test/manifest.json");
+    conta[1].ativo = 0;
+    conferir("lista da conta entra", addons_definir_lista(conta, 2), 1);
+    conferir("base desligada reconhecida", addons_base_desligada("https://desligado.test"), 1);
+    conferir("base desligada com manifest.json", addons_base_desligada("https://desligado.test/manifest.json"), 1);
+    conferir("base ligada nao e desligada", addons_base_desligada("https://ligado.test"), 0);
+    conferir("base desconhecida nao e desligada", addons_base_desligada("https://nenhum.test"), 0);
+    pedidosDesligado = pedidosLigado = 0;
+    addons_buscar("tt0000077", "movie");
+    while (addons_estado() == ADD_BUSCANDO) usleep(1000);
+    conferir("fonte: ligado consultado", pedidosLigado > 0, 1);
+    conferir("fonte: desligado NAO consultado", pedidosDesligado, 0);
+    pedidosLigado = 0;
+    addons_buscar("cs:channel:zap", "tv");
+    while (addons_estado() == ADD_BUSCANDO) usleep(1000);
+    conferir("canal: desligado NAO consultado", pedidosDesligado, 0);
+  }
+
+  // Teto da conta: URLs distintas, incluindo um desligado depois do teto antigo.
+  { static AddonRemoto conta[130];
+    int i;
+    for (i = 0; i < 130; i++) {
+      snprintf(conta[i].nome, sizeof conta[i].nome, "Conta %d", i);
+      snprintf(conta[i].url, sizeof conta[i].url, "https://conta%d.test/manifest.json", i);
+      conta[i].ativo = i != 99;
+    }
+    conferir("100 da conta aplicados", addons_definir_lista(conta, 100), 1);
+    conferir("100 da conta aceitos", addons_n(), 100);
+    conferirTexto("ultimo dos 100 presente", addons_nome(99), "Conta 99");
+    conferir("desligado entre os 100 continua desligado", addons_ativo(99), 0);
+    conferir("130 da conta aplicados", addons_definir_lista(conta, 130), 1);
+    conferir("130 da conta limitados a 128", addons_n(), 128);
+    conferirTexto("ultimo dos 128 presente", addons_nome(127), "Conta 127");
+  }
 
   remove(caminho);
   rmdir(dir);

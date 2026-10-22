@@ -84,6 +84,9 @@ int  perfis_precisa_escolher(void) { return 0; }
 const char *perfis_dono(void)    { return "dono-a"; }
 void perfis_esquecer(void)       { }
 const ContaPerfil *perfis_item(int i) { (void)i; return NULL; }
+const char *i18n(const char *s) { return s; }
+int ajustes_social(void) { return 1; }
+int ajustes_hist_conta(void) { return 1; }
 void ajustes_perfil_guardar(int perfil) { (void)perfil; }
 int  ajustes_perfil_restaurar(int perfil) { (void)perfil; return 0; }
 void ajustes_perfil_esquecer(void) { }
@@ -140,9 +143,11 @@ void nuvem_url_escapar(const char *v, char *d, unsigned t) { snprintf(d, t, "%s"
 static int nAplicados, ativosAplicados;
 static char primeiraUrl[600];
 // #201 (sessao "longa"): a conta manda um addon de URL com 1500 caracteres e
-// outro acima de NV_ADDON_URL_MAX. O primeiro tem de chegar INTEIRO ao app; o
-// segundo nao pode chegar, nem cortado.
-static char urlLonga[1501], urlGrande[2601], contaLonga[5000];
+// outro acima do teto de leitura da conta (SY_URL_LEITURA, 16 KB desde o #203:
+// de 2 a 16 KB a URL vira apelido, addonurl.h). O primeiro tem de chegar
+// INTEIRO ao app; o segundo nao pode chegar, nem cortado.
+#define URL_GRANDE 17000
+static char urlLonga[1501], urlGrande[URL_GRANDE + 1], contaLonga[URL_GRANDE + 3000];
 static int longaIntacta, grandeChegou;
 static void montarLonga(void) {
   size_t k, i;
@@ -150,7 +155,7 @@ static void montarLonga(void) {
   for (i = 0; k < 1500 - 14; i++) urlLonga[k++] = (char)('a' + (int)((i * 7) % 26));
   snprintf(urlLonga + k, 15, "/manifest.json");
   k = (size_t)snprintf(urlGrande, sizeof urlGrande, "https://grande.exemplo/SEGREDO");
-  for (i = 0; k < 2600 - 14; i++) urlGrande[k++] = (char)('a' + (int)((i * 5) % 26));
+  for (i = 0; k < URL_GRANDE - 14; i++) urlGrande[k++] = (char)('a' + (int)((i * 5) % 26));
   snprintf(urlGrande + k, 15, "/manifest.json");
   snprintf(contaLonga, sizeof contaLonga,
            "[{\"url\":\"%s\",\"name\":\"Longo\",\"enabled\":true},"
@@ -203,12 +208,18 @@ void desc_tmdb_definir(const char *c) { (void)c; }
 void addons_marcar_da_conta(int perfil) { (void)perfil; }
 void addons_esquecer(void) {}
 int  addons_exportar(AddonRemoto *s, int m) { (void)s; (void)m; return 0; }
+void addons_diferenca(const AddonRemoto *a, int na, const AddonRemoto *d, int nd,
+                      int *e, int *s, int *m) {
+  (void)a; (void)na; (void)d; (void)nd;
+  if (e) *e = 0; if (s) *s = 0; if (m) *m = 0;
+}
 void agenda_esquecer(void) {}
 void lembrete_esquecer_todos(void) {}
 int  ajustes_aplicar_blob(const char *j) { (void)j; return 0; }
 void ajustes_definir_ocultar_nao_lancados(int l) { (void)l; }
 int  ajustes_mesclar_blob(const char *b, char **s) { (void)b; *s = NULL; return 0; }
 void ajustes_tmdb_idioma_relatar(const char *b) { (void)b; }
+void ajustes_idiomas_da_conta(const char *b) { (void)b; }
 void buscasrec_esquecer(void) {}
 void cachearte_limpar_referencias(void) {}
 int  cat_apagar_cache(void) { return 0; }
@@ -222,6 +233,7 @@ void debrid_definir_chave(const char *s, const char *c) { (void)s; (void)c; }
 void debrid_esquecer(void) {}
 void extras_definir_chave(const char *c) { (void)c; }
 void fontepref_esquecer(void) {}
+void legmem_esquecer(void) {}
 void homeestado_esquecer(void) {}
 void mapa_esquecer(void) {}
 void prog_esquecer_tudo(void) {}
@@ -319,10 +331,10 @@ int main(int argc, char **argv) {
   if (ADDONS == contaLonga) {
     confere("#201: a URL de 1500 caracteres chegou inteira ao app", longaIntacta);
     confere("#201: a URL acima do limite nao chegou, nem cortada", nAplicados == 2 && !grandeChegou);
-    // A lista desta TV ficou menor que a da conta: uma edicao daqui NAO sobe
-    // (o push substituiria a lista da conta e apagaria o addon que nao coube).
+    // A lista desta TV ficou menor que a da conta. Marcar como suja e um no-op
+    // desde a mao unica (#360): pendencia de addons nao existe mais.
     sync_sujar_addons();
-    confere("#201: edicao com a lista incompleta nao vira pendencia em disco",
+    confere("#201: lista incompleta nao gera pendencia em disco",
             !existe("conta-addons-pend-636f6e74612d61-p1.txt"));
   }
   if (!strcmp(extra, "volta")) {
@@ -349,3 +361,5 @@ int main(int argc, char **argv) {
 }
 
 void cat_historico_contexto(const char *u, int p) { (void)u; (void)p; }
+
+__attribute__((weak)) int addons_perfil_da_lista(void) { return 0; }

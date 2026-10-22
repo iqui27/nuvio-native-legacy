@@ -29,6 +29,10 @@
 int faixasmkv_aplicar(VideoFaixa *aud, int nAud, VideoFaixa *leg, int nLeg,
                       const MkvFaixa *fx, int n);
 
+// Fallback de listas diferentes: apenas idiomas unicos, indices em fx ou -1.
+int faixasmkv_legendas_por_idioma(const VideoFaixa *leg, int nLeg,
+                                 const MkvFaixa *fx, int n, int *mapa);
+
 // "2.0", "5.1", "7.1" ou "" (mesma tabela do sourceInfo da LG, video.c).
 const char *faixasmkv_canais(int canais);
 
@@ -39,7 +43,7 @@ const char *faixasmkv_codec(const char *codecId);
 // #269: a faixa de legenda deste CodecID e desenhada pelo overlay do app,
 // lida do MKV pelo mkvass, em vez do player da TV? ASS/SSA sempre (#92).
 // Texto simples (S_TEXT/UTF8 = SRT, S_TEXT/WEBVTT) so quando `textoSimples`
-// — o .tpk, cujo player nao entrega o texto da legenda embutida (#269).
+// — LG e .tpk (#421); Android recebe texto do Media3.
 // Imagem (PGS/VobSub) e desconhecido: nunca.
 int faixasmkv_overlay(const char *codecId, int textoSimples);
 

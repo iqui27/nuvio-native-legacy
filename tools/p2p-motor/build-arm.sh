@@ -11,12 +11,11 @@ set -eu
 cd "$(dirname "$0")/../.."
 . tools/p2p-motor/pasta.sh; nv_p2p_raiz
 W="${1:-${NV_P2P_RAIZ:-/Volumes/ExternalSSD/nuvio-p2p-motor}/arm}"
-COMMIT=02938d7
 mkdir -p "$W"
 if [ ! -d "$W/nuvio-engine/.git" ]; then
   git clone -q https://github.com/NuvioMedia/nuvio-engine "$W/nuvio-engine"
 fi
-git -C "$W/nuvio-engine" checkout -q "$COMMIT"
+nv_p2p_fonte "$W/nuvio-engine"
 cp tools/p2p-motor/poc.c "$W/poc.c"
 # -j baixo: com -j$(nproc) o cc1plus do libtorrent estoura a RAM do docker (Killed).
 docker run --rm --platform linux/arm64 -e NV_JOBS="${NV_JOBS:-2}" -v "$W":/w nuvio-webos-sdk sh -c '

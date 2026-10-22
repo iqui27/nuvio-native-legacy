@@ -72,7 +72,7 @@ static void migraFormatoAntigo(void) {
   assert(prog_pendentes(r, 8) == 3);
   // Primeira gravacao converte o arquivo.
   agora += 1000;
-  assert(prog_gravar_local("tt0000001", 0, 0, 30, 3600));
+  assert(prog_gravar_local("tt0000001", 0, 0, 30, 3600, -1));
   assert(!strncmp(arquivo, "#nvprog2\n", 9));
   assert(contaLinhas(arquivo, "\n") == 5);   // cabecalho + 4
   prog_invalidar();
@@ -85,22 +85,22 @@ static void gravarLocalEhPendenteComHora(void) {
   zerar(NULL);
   agora = 1757000100000LL;
   // serie: id puro + temporada/episodio explicitos (caso do catalogo)
-  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640, -1));
   s = porChave("tt1234567_s4e9");
   assert(s && s->pendente && s->lastWatchedMs == agora && !strcmp(s->tipo, "series"));
   // serie: id composto sem explicitos (caso do Trakt)
-  assert(prog_gravar_local("tt1234567:4:10", 0, 0, 5, 2640));
+  assert(prog_gravar_local("tt1234567:4:10", 0, 0, 5, 2640, -1));
   s = porChave("tt1234567_s4e10");
   assert(s && s->temporada == 4 && s->episodio == 10 && !strcmp(s->contentId, "tt1234567"));
   // regravar a mesma chave substitui, nao duplica
   agora += 60000;
-  assert(prog_gravar_local("tt1234567", 4, 9, 1500, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 1500, 2640, -1));
   s = porChave("tt1234567_s4e9");
   assert(s && s->posSeg == 1500 && s->lastWatchedMs == agora);
   { ProgRegistro r[8]; assert(prog_ler(r, 8) == 2); }
   // ruido do player nao grava
-  assert(!prog_gravar_local("tt1234567", 4, 9, 0, 0));
-  assert(!prog_gravar_local("tt1234567", 4, 9, 1, 1));
+  assert(!prog_gravar_local("tt1234567", 4, 9, 0, 0, -1));
+  assert(!prog_gravar_local("tt1234567", 4, 9, 1, 1, -1));
   puts("ok  escrita local: pendente, com hora, sem duplicata");
 }
 
@@ -110,7 +110,7 @@ static void pendenteVenceServidor(void) {
   ProgRegistro enviado;
   zerar(NULL);
   agora = 1757000200000LL;
-  assert(prog_gravar_local("tt1234567", 4, 9, 1500, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 1500, 2640, -1));
   assert(prog_por_chave("tt1234567_s4e9", &enviado));
 
   // Cenario 1.3 do plano: pull traz o servidor ANTIGO depois de assistir aqui.
@@ -148,11 +148,43 @@ static void pendenteVenceServidor(void) {
   puts("ok  conflito: pendente vence, depois o mais novo vence");
 }
 
+// #205: coluna 11 = como a posicao foi alcancada (1 tocando, 0 seek, -1 nao
+// se sabe). Linha de 10 colunas e registro remoto valem -1; o eco do proprio
+// push (mesma posicao e duracao) mantem o bit local.
+static void bitTocouSobreviveAoSync(void) {
+  ProgRegistro rem, enviado;
+  zerar("#nvprog2\n1\ttt7654321\ttt7654321\tmovie\t0\t0\t2295\t2700\t1757000000000\t0\n");
+  assert(prog_tocou("tt7654321") == -1);
+  agora = 1757000300000LL;
+  assert(prog_gravar_local("tt7654321", 0, 0, 2824, 2843, 0));
+  prog_invalidar();
+  assert(prog_tocou("tt7654321") == 0);
+  assert(prog_por_chave("tt7654321", &enviado));
+  prog_confirmar_empurrados(&enviado, 1);
+
+  memset(&rem, 0, sizeof rem);
+  snprintf(rem.contentId, sizeof rem.contentId, "tt7654321");
+  rem.posSeg = 2826; rem.durSeg = 2843; rem.lastWatchedMs = agora + 1000;
+  assert(prog_aplicar_remoto(&rem) == 1);
+  assert(prog_tocou("tt7654321") == 0);
+  rem.posSeg = 2700; rem.lastWatchedMs = agora + 2000;
+  assert(prog_aplicar_remoto(&rem) == 1);
+  assert(prog_tocou("tt7654321") == -1);
+
+  memset(&rem, 0, sizeof rem);
+  snprintf(rem.contentId, sizeof rem.contentId, "tt4444445");
+  rem.posSeg = 10; rem.durSeg = 5000; rem.lastWatchedMs = agora;
+  assert(prog_aplicar_remoto(&rem) == 1);
+  assert(prog_tocou("tt4444445") == -1);
+  assert(prog_tocou("tt0000404") == -1);
+  puts("ok  bit tocou: legado e remoto -1, eco do sync mantem o local");
+}
+
 static void perfisNaoSeMisturam(void) {
   ProgRegistro r[8], rem;
   zerar(NULL);
   perfil = 1; agora = 1757000300000LL;
-  assert(prog_gravar_local("tt1111111", 0, 0, 100, 6000));
+  assert(prog_gravar_local("tt1111111", 0, 0, 100, 6000, -1));
   perfil = 2; prog_invalidar();
   assert(prog_ler(r, 8) == 0);
   assert(!porChave("tt1111111"));
@@ -172,9 +204,9 @@ static void perfisNaoSeMisturam(void) {
 static void ordemMaisNovoPrimeiro(void) {
   ProgRegistro r[8];
   zerar(NULL);
-  agora = 1757000400000LL; assert(prog_gravar_local("tt0000002", 0, 0, 10, 600));
-  agora += 5000;           assert(prog_gravar_local("tt0000003", 0, 0, 10, 600));
-  agora += 5000;           assert(prog_gravar_local("tt0000001", 0, 0, 10, 600));
+  agora = 1757000400000LL; assert(prog_gravar_local("tt0000002", 0, 0, 10, 600, -1));
+  agora += 5000;           assert(prog_gravar_local("tt0000003", 0, 0, 10, 600, -1));
+  agora += 5000;           assert(prog_gravar_local("tt0000001", 0, 0, 10, 600, -1));
   assert(prog_ler(r, 8) == 3);
   assert(!strcmp(r[0].chave, "tt0000001") && !strcmp(r[1].chave, "tt0000003") && !strcmp(r[2].chave, "tt0000002"));
   prog_remover("tt0000003");
@@ -188,7 +220,7 @@ static void sobreviveAoDisco(void) {
   ProgRegistro r[8];
   zerar(NULL);
   agora = 1757000500000LL;
-  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640, -1));
   prog_invalidar();                                  // forca reler o texto gravado
   assert(prog_ler(r, 8) == 1);
   assert(!strcmp(r[0].chave, "tt1234567_s4e9") && !strcmp(r[0].contentId, "tt1234567"));
@@ -200,11 +232,11 @@ static void sobreviveAoDisco(void) {
 static void temposInvalidosNaoEntram(void) {
   ProgRegistro rem, r[8];
   zerar(NULL);
-  assert(!prog_gravar_local("tt1", 0, 0, NAN, 600));
-  assert(!prog_gravar_local("tt1", 0, 0, 10, NAN));
-  assert(!prog_gravar_local("tt1", 0, 0, INFINITY, 600));
-  assert(!prog_gravar_local("tt1", 0, 0, 10, DBL_MAX));
-  assert(!prog_gravar_local("tt1", 0, 0, 10, (double)LLONG_MAX / 1000.0));
+  assert(!prog_gravar_local("tt1", 0, 0, NAN, 600, -1));
+  assert(!prog_gravar_local("tt1", 0, 0, 10, NAN, -1));
+  assert(!prog_gravar_local("tt1", 0, 0, INFINITY, 600, -1));
+  assert(!prog_gravar_local("tt1", 0, 0, 10, DBL_MAX, -1));
+  assert(!prog_gravar_local("tt1", 0, 0, 10, (double)LLONG_MAX / 1000.0, -1));
   assert(prog_ler(r, 8) == 0 && !arquivo);
   memset(&rem, 0, sizeof rem);
   snprintf(rem.contentId, sizeof rem.contentId, "tt1");
@@ -226,12 +258,12 @@ static void temposInvalidosNaoEntram(void) {
 static void limiteEscolheOsMaisNovos(void) {
   ProgRegistro r[2];
   zerar(NULL);
-  agora = 1000; assert(prog_gravar_local("tt1", 0, 0, 10, 600));
-  agora = 2000; assert(prog_gravar_local("tt2", 0, 0, 10, 600));
-  agora = 3000; assert(prog_gravar_local("tt3", 0, 0, 10, 600));
+  agora = 1000; assert(prog_gravar_local("tt1", 0, 0, 10, 600, -1));
+  agora = 2000; assert(prog_gravar_local("tt2", 0, 0, 10, 600, -1));
+  agora = 3000; assert(prog_gravar_local("tt3", 0, 0, 10, 600, -1));
   assert(prog_ler(r, 2) == 2);
   assert(!strcmp(r[0].contentId, "tt3") && !strcmp(r[1].contentId, "tt2"));
-  agora = 4000; assert(prog_gravar_local("tt1", 0, 0, 10, 600));
+  agora = 4000; assert(prog_gravar_local("tt1", 0, 0, 10, 600, -1));
   assert(prog_ler(r, 1) == 1 && !strcmp(r[0].contentId, "tt1"));
   prog_invalidar();
   assert(prog_ler(r, 2) == 2);
@@ -245,6 +277,7 @@ int main(void) {
   migraFormatoAntigo();
   gravarLocalEhPendenteComHora();
   pendenteVenceServidor();
+  bitTocouSobreviveAoSync();
   perfisNaoSeMisturam();
   ordemMaisNovoPrimeiro();
   sobreviveAoDisco();

@@ -177,7 +177,7 @@ static void veusBordas(float topo, float base, float lados, float alfa) {
 
 static float veuTela(float y);
 static void parDesenhar(const ParSet *s, float alfa) {
-  int col, k;
+  int col, k, leve = gfx_efeitos_leves();   // veus de borda no fragmento so no leve
   float passoY = PAR_CH + PAR_GAP;
   if (s->n <= 0 || alfa <= 0.001f) return;
   gfx_girar(PAR_GIRO, NV_TELA_W * 0.5f, NV_TELA_H * 0.5f);
@@ -202,15 +202,15 @@ static void parDesenhar(const ParSet *s, float alfa) {
       float ry = cx * sinf(PAR_GIRO) + cy * cosf(PAR_GIRO) + NV_TELA_H * 0.5f;
       if (rx < -260.0f || rx > NV_TELA_W + 260.0f || ry < -260.0f || ry > NV_TELA_H + 260.0f) continue;
       if (!t) {
-        // Sem textura o quad nao passa pelo GFX_CARD: o veu de borda entra
-        // aqui pelo centro do cartao (veuTela), que e o que ele mediria.
-        float v = veuTela(ry);
+        // Sem textura o quad nao passa pelo GFX_CARD: com os veus no fragmento
+        // (leve) o veu de borda entra aqui pelo centro do cartao (veuTela).
+        float v = leve ? veuTela(ry) : 1.0f;
         gfx_cor((GfxRect){ x, y, PAR_CW, PAR_CH }, 0.06f, 0.10f * v, 0.10f * v, 0.12f * v, a * 0.6f);
         continue;
       }
       gfx_tex_aspect_atual = tex_aspecto(s->url[idx]);
       gfx_card_forcar_cover_atual = 1.0f;
-      gfx_card_veu_tela_atual = 1.0f;   // os veus de borda, no fragmento (gfx.h)
+      gfx_card_veu_tela_atual = leve ? 1.0f : 0.0f;   // os veus de borda, no fragmento (gfx.h)
       gfx_rect((GfxRect){ x, y, PAR_CW, PAR_CH }, t, GFX_CARD, 0, 0, 0, 0.06f, 1, 1, 1, a);
       gfx_card_veu_tela_atual = 0.0f;
       gfx_card_forcar_cover_atual = 0.0f;
@@ -237,10 +237,14 @@ static void desenharFilmes(const PSCena *c, float alfa) {
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0, 0, 0, 0, 1);
   if (parTemAnt) parDesenhar(&parAnt, (1.0f - k) * PAR_ALFA * alfa);
   parDesenhar(&parAtual, (parTemAnt ? k : 1.0f) * PAR_ALFA * alfa);
-  // Os dois veus de borda (veusBordas 0,92 / 0,95) ja sairam DENTRO de cada
-  // capa (gfx_card_veu_tela_atual): sobre o preto e o mesmo pixel, e sao
-  // duas passadas de largura inteira a menos por quadro (0,59 telas).
-  // MEDIDO na TCL Smart TV Pro (Mali-G52): a tela e presa em preenchimento.
+  // Os dois veus de borda (veusBordas 0,92 / 0,95): com EFEITOS LEVES eles
+  // ja sairam DENTRO de cada capa (gfx_card_veu_tela_atual) — sobre o preto e
+  // o mesmo pixel, e sao duas passadas de largura inteira a menos por quadro
+  // (0,59 telas; MEDIDO na TCL Smart TV Pro, Mali-G52, presa em
+  // preenchimento). No nivel 0 ficam as duas passadas de sempre: na LG C9
+  // (Mali-G71) a parede com os veus no fragmento caiu de 60 para 44 fps
+  // (06/10/2026) — la o fragmento do cartaz e que custa, nao a passada.
+  if (!gfx_efeitos_leves()) veusBordas(0.92f, 0.95f, 0.0f, alfa);
   // A luz do perfil sobe do chao, na cor dele. Uma mancha radial de ~1 tela
   // visivel, com mistura, por quadro: com efeitos leves (nivel 1 de
   // gpunivel.h, GPU presa) ela sai primeiro — e enfeite, a parede e o disco

@@ -1,0 +1,29 @@
+build-mac rc=0 seconds=62.9
+ajustes_padroes rc=0 seconds=62.4
+ajustes_ux_dados rc=0 seconds=79.2
+ajustes_ux_interacao rc=0 seconds=57.3
+ajustes_creditos rc=0 seconds=3.9
+ajustes_perfil rc=0 seconds=75.8
+player_retido rc=0 seconds=67.6
+player_visto_trailer rc=0 seconds=58.7
+player_fonte_duracao rc=0 seconds=46.8
+abrecine rc=0 seconds=0.4
+intro rc=0 seconds=2.5
+posplay rc=0 seconds=45.2
+posplay_recuo rc=0 seconds=45.3
+creditosauto rc=0 seconds=0.3
+creditos_limitados rc=0 seconds=0.5
+player_recuo rc=0 seconds=49.9
+tizen-avplay-contract rc=0 seconds=0.2
+creditosauto-sanitize rc=0 seconds=0.3
+creditos_limitados-sanitize rc=0 seconds=1.0
+proximo rc=0
+credfonte rc=0
+player_android_retomada rc=0 seconds=85.9
+player_prefs rc=0 seconds=58.7
+fontecache_vod rc=0 seconds=1.0
+idiomas-sync rc=0
+idiomas rc=0
+i18n rc=0
+unificacao rc=0
+idiomas-uniao rc=0

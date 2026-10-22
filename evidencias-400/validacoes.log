@@ -1,0 +1,45 @@
+### red.log
+[fonte] +3 de Addon B (lista com 3)
+[fonte] +3 de Addon A (lista com 6)
+FAIL modo=1 linha=0: indice=5 esperado=3
+
+
+### red-final.log
+[fonte] +3 de Addon B (lista com 3)
+[fonte] +3 de Addon A (lista com 6)
+FAIL modo=1 linha=0: indice=0 esperado=3
+
+
+### green.log
+[fonte] +3 de Addon B (lista com 3)
+[fonte] +3 de Addon A (lista com 6)
+fonte_ordem_addon: PASS (qualidade, addon, chegada inversa, filtros, melhor fonte, StreamFit, troca, vazio)
+
+
+### sanitizer.log
+[fonte] +3 de Addon B (lista com 3)
+[fonte] +3 de Addon A (lista com 6)
+fonte_ordem_addon: PASS (qualidade, addon, chegada inversa, filtros, melhor fonte, StreamFit, troca, vazio)
+
+
+### idiomas.log
+idiomas: 5349 entradas x 28 idiomas (ro, uk, ru, fr, de, es, it, nl, pl, tr, ptpt, sv, da, no, cs, sk, sl, hu, lt, bs, sr, bg, el, id, vi, ja, zhcn, zhtw) ok
+
+
+### varredura.log
+=== (1) literal desenhado SEM chave na tabela: 0 ===
+
+=== (2) snprintf em portugues SEM i18n no formato: 0 ===
+
+=== (3) funcao que devolve rotulo em portugues, chamada sem i18n(): 0 ===
+
+
+### after-ajustes_ux_dados-retest.log
+[selos] perfil 1: 0 pacote(s), ativo: Do Nuvio
+[dados] gravando em /tmp/nuvio-aj-ux-dados-ScIKjq
+[ajustes] idiomas da conta: legenda="" legenda2="" audio=""; em vigor: legenda="" audio=""
+[idioma] automatico: en (fonte: padrao)
+[ajustes] blob da conta: 1 chave(s) reconhecida(s), 1 mudou(aram)
+[ajustes] 1 ajuste(s) desta TV entram no blob da conta
+[ajustes] aparencia -> Da arte + Cor da logo + Frost, sem vidro (migracao unica da 2.0)
+ajustes_ux_dados: busca, padroes, escopo, dependencias e segredos ok

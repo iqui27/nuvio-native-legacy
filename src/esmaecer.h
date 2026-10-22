@@ -62,6 +62,8 @@ int   esmaecer_descanso(void);
 // 1 = a tela de descanso do Nuvio esta ligada (tempo e estilo vitrine/relogio):
 // o screensaver da TV deve ser segurado (video.c, webOS).
 int   esmaecer_segura_protetor_tv(void);
+// webOS registra o publicador do ACK; setters avisam mesmo sem desenho.
+void  esmaecer_protetor_publicador(void (*publicar)(void));
 // Chamar para CADA evento de pessoa (tecla, ponteiro). `consumivel` = o evento
 // age se passar (KEYDOWN, clique). Devolve 1 se o evento deve ser engolido (a
 // primeira tecla que acorda a tela, e a repeticao dela logo depois).
@@ -83,6 +85,32 @@ float esmaecer_brilho_base(int escolha);
 #define BRILHO_AUTO_RAMPA  1500u
 #define BRILHO_AUTO_PASSO  0.85f
 float esmaecer_brilho_osd(int escolha, unsigned parado_ms, int tocando);
+
+// 3. UI EM HDR (#205). Com o video em HDR/DV a TV compoe a camada de UI (SDR)
+//    sobre o video HDR: o branco da UI vai ao branco de pico e o preto
+//    translucido dos veus fica cinza leitoso — o "esbranquicado" que o dono viu
+//    na TCL. Enquanto o video esta em HDR, app.c poe em gfx_hdr_ui o fator
+//    abaixo: a cor de TUDO do player (texto e legenda inclusive) cai para 80%
+//    e as superficies escuras ficam mais densas. Sem passada extra: e a cor de
+//    cada retangulo (gfx_rect) e um multiplicador no shader de texto.
+//    0,80: o branco SDR de referencia (~203 nits) num painel que mapeia o
+//    grafico perto do pico; abaixo disso o texto pequeno perde contraste.
+#define HDR_UI_BRILHO 0.80f
+// Densidade extra das superficies escuras: a' = a + D*a*(1-a). Material da
+// ilha .80 -> .88, disco do OSD .52 -> .64; opaco e furo (0) nao mudam.
+#define HDR_UI_DENSO  0.50f
+// HDR_UI_BRILHO quando `hdr` (video_hdr()) diz HDR10/HLG/DolbyVision ou `dv`;
+// 1 em SDR e quando a plataforma nao sabe ("none", "desconhecido", vazio).
+float esmaecer_brilho_hdr(const char *hdr, int dv);
+// A cor de um retangulo com o fator `k` (1 = nada muda). Inline: gfx.c usa sem
+// depender de esmaecer.c.
+static inline void esmaecer_cor_hdr(float k, float *r, float *g, float *b, float *a) {
+  float m = *r > *g ? *r : *g;
+  if (k >= 0.999f) return;
+  if (*b > m) m = *b;
+  if (m < 0.25f) *a += HDR_UI_DENSO * *a * (1.0f - *a);
+  *r *= k; *g *= k; *b *= k;
+}
 
 #ifndef ESMAECER_SEM_GFX
 // O veu (e o relogio andando no estagio 2), no FIM do quadro.

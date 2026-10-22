@@ -1,7 +1,7 @@
 #!/bin/bash
 # Arabe do TMDB/addon em todo caminho de texto (ver tests/arabe_texto.c).
 # So fontes embarcadas, como na Samsung. Requer GL (Mac).
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-arabe-texto.XXXXXX")
 trap 'rm -rf "$work"' EXIT

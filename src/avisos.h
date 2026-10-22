@@ -70,6 +70,8 @@ int  avisos_n_novos(void);
 // Enquanto aberto, avisos_evento come todo o teclado.
 void avisos_mostrar_se_houver(void);
 int  avisos_cartao_aberto(void);
+// TESTE (#99): a linha em foco da central aberta; -1 com ela fechada.
+int  avisos_teste_foco(void);
 
 // ACOES PEDIDAS PELO PAINEL, entregues a app.c uma vez cada (o mesmo contrato
 // de spainel_pediu_abrir): o IMDb de um titulo a abrir, ou um dos codigos.
@@ -132,6 +134,11 @@ float avisos_lista_altura(void);
 float avisos_lista_altura_linha(int linha, int focoLinha);
 float avisos_lista_y(int linha, int focoLinha);
 void  avisos_lista_desenhar(float x, float y, float w, float a, int focoLinha);
+// A mesma lista registrando cada linha no ponteiro (#99): `focar(linha, 0)`
+// e de quem hospeda (indices de focoLinha; n = "Dispensar todos"), recortado
+// a faixa [clipY0, clipY1). focar NULL = nao registra (= avisos_lista_desenhar).
+void  avisos_lista_desenhar_ptr(float x, float y, float w, float a, int focoLinha,
+                                void (*focar)(int, int), float clipY0, float clipY1);
 // 1 = fez algo e o hospedeiro fecha; 2 = so trocou de lugar (pedidos de
 // amizade: o painel vai para a aba Amigos e fica aberto).
 int   avisos_lista_ok(int linha);
@@ -165,4 +172,10 @@ void avisos_marcar_visto(const char *id);
 // marca o item como lido.
 void avisos_ilha_acao(const char *chave, int botao);
 
+#ifdef NV_WEBOS
+// Linha [tv] e modelo (para o relato de falha de arranque; arranque.c).
+void avisos_tv_linha(char *linha, size_t cap, char *modelo, size_t capModelo);
+// POST sincrono, `segundos` de teto, em /v1/registro/arranque. 1 = confirmado.
+int  avisos_enviar_arranque(const char *relato, const char *tv, int segundos);
+#endif
 #endif

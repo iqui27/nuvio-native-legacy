@@ -25,6 +25,8 @@
 // por servico; chamar de novo para outro servico NAO apaga a anterior.
 void debrid_definir_chave(const char *servico, const char *chave);
 int  debrid_ativo(void);          // ha chave de um servico que sabemos resolver
+// "https://host" da API de cada servico com chave que pode resolver (aquecer.c).
+int  debrid_origens(const char **origens, int max);
 void debrid_esquecer(void);       // logout (a chave local, digitada na TV, fica)
 
 // Chave DIGITADA NESTA TV (Ajustes > Integracoes > Debrid). Vale no lugar da
@@ -52,6 +54,8 @@ void debrid_episodio(int *temporada, int *episodio);
 // BLOQUEIA. Devolve 1 e grava em `url` um link direto que toca; 0 se nao deu.
 // So conteudo EM CACHE: e o caminho da escolha AUTOMATICA.
 int  debrid_resolver(const char *infoHash, int fileIdx, char *url, unsigned n);
+// Mesma consulta: *fora recebe a negativa conhecida deste torrent, nunca erro HTTP.
+int  debrid_resolver_cache(const char *infoHash, int fileIdx, char *url, unsigned n, int *fora);
 
 // A PESSOA ESCOLHEU ESTE TORRENT NA FOLHA — e ai a regra "so o que esta em
 // cache" nao vale mais. E o "P2P" do TorBox: o torrent fora de cache que o

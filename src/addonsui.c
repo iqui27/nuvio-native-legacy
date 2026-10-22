@@ -8,6 +8,8 @@
 #include "anim.h"
 #include "sync.h"
 #include "ajustes.h"
+#include "ilha.h"
+#include "sessao.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -24,7 +26,7 @@ static int   foco, sair;
 // addonsui_quer_sair.
 static int   mexeu;
 static float scrollY;
-static float animFoco[64];
+static float animFoco[128];
 
 void addonsui_abrir(void) {
   foco = 0; sair = 0; mexeu = 0; scrollY = 0.0f;
@@ -37,19 +39,33 @@ void addonsui_abrir(void) {
 // "se eu tiver com os addons desativados e ativar, eles nao ativam; tenho que
 // fechar o app e abrir de novo".
 //
-// addons_alternar muda a lista em memoria e sync_sujar_addons so marca que ela
-// precisa SUBIR para a conta — nenhum dos dois refaz a descoberta. Sem um ciclo
-// novo, os manifestos nao sao lidos de novo e a home continua com os catalogos
-// do conjunto antigo. desc_repetir() e quem refaz o ciclo inteiro, que e o que
-// esta troca exige de verdade: ler manifesto de addon que acabou de entrar nao
-// e reordenar fileira.
+// addons_alternar muda a lista em memoria; a mudanca e so DESTA TV (#360 mao
+// unica): o proximo pull traz a lista da conta por cima. Nenhum dos dois refaz
+// a descoberta. Sem um ciclo novo, os manifestos nao sao lidos de novo e a
+// home continua com os catalogos do conjunto antigo. desc_repetir() e quem
+// refaz o ciclo inteiro, que e o que esta troca exige de verdade: ler
+// manifesto de addon que acabou de entrar nao e reordenar fileira.
 //
 // NA SAIDA DA TELA, e nao a cada tecla: quem liga cinco addons de uma vez paga
 // um ciclo e nao cinco. O ciclo leva ~20 s nesta TV, entao a diferenca nao e
 // teorica.
 int addonsui_quer_sair(void) {
-  if (sair && mexeu) { mexeu = 0; desc_repetir(); }
+  if (sair && mexeu) { mexeu = 0; desc_tirar_fileiras_de_addons_ausentes(); desc_repetir(); }
   return sair;
+}
+
+// SINCRONIZAR ADDONS (#360): a ultima linha da lista (foco == n). Pede a volta
+// da conta ja, pelo mesmo ciclo de sempre (sync.c, fora do fio do quadro); o
+// resultado vira aviso da ilha (ilhasinais.c). Sem conta nao ha o que puxar: a
+// linha explica em vez de sumir.
+static void sincronizar(void) {
+  if (!sessao_logada()) {
+    ilha_avisar("sync-addons", ILHA_INFO, "aj_rotate-cw",
+                i18n("Entre na conta Nuvio para sincronizar os addons."), 4000u, 0);
+    return;
+  }
+  if (sync_manual_addons_rodando()) return;   // ja no ar: o botao nao empilha
+  sync_manual_addons();
 }
 
 void addonsui_evento(const SDL_Event *e) {
@@ -57,26 +73,37 @@ void addonsui_evento(const SDL_Event *e) {
   if (e->type != SDL_KEYDOWN) return;
   switch (e->key.keysym.sym) {
     case SDLK_UP:     if (foco > 0) foco--; break;
-    case SDLK_DOWN:   if (foco < n - 1) foco++; break;
-    case SDLK_RETURN:
+    case SDLK_DOWN:   if (foco < n) foco++; break;
+    case SDLK_RETURN: case SDLK_KP_ENTER:
+      if (foco >= n) { sincronizar(); break; }
       if (n > 0) {
         addons_alternar(foco);
+        // #360 mao unica: liga/desliga so nesta TV; o proximo pull da conta
+        // sobrescreve. O aviso da tela (inspetor) diz isso.
         mexeu = 1;
-        // Sobe para a conta: desligar um addon aqui e desliga-lo no celular
-        // tambem, que e o que a pessoa espera de uma conta sincronizada.
-        sync_sujar_addons();
       }
       break;
-    case SDLK_AC_BACK: case SDLK_LEFT: sair = 1; break;
+    // Voltar (qualquer tecla de voltar) e Esquerda: de volta a linha "Addons"
+    // em Ajustes › Fontes e addons (app.c chama ajustes_voltar_de_lista).
+    case SDLK_AC_BACK: case SDLK_ESCAPE: case SDLK_BACKSPACE: case SDLK_LEFT: sair = 1; break;
     default: break;
   }
 }
+
+// PONTEIRO (#99): a linha sob o cursor ganha o foco (a mesma variavel das
+// setas). O desenho mora em ajustes_ux_ilha.inc (ajSubLista).
+void addonsui_ponteiro(int i, int b) {
+  (void)b;
+  if (sair || i < 0 || i > addons_n() || i == foco) return;
+  foco = i;
+}
+int addonsui_foco(void) { return foco; }
 
 void addonsui_atualizar(float dt, Uint32 agora) {
   int i, n = addons_n();
   float alvo;
   (void)agora;
-  for (i = 0; i < n && i < 64; i++)
+  for (i = 0; i < n && i < 128; i++)
     animFoco[i] = anim_mola(animFoco[i], i == foco ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
   // Rolagem que mantem a linha focada dentro da area util, como em Ajustes.
   alvo = (float)foco * (LINHA_H + LINHA_GAP);

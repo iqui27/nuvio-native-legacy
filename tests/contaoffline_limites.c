@@ -55,7 +55,6 @@ static void cicloTeste(void) {
   copiaGeracaoDoCiclo = contacache_geracao();
   foraCiclo = copiaCiclo = 0;
   temAddonsRem = 0;
-  addonsRev = addonsRevCiclo = 0; addonsLocalCiclo = 0;
 }
 static int semCopia(const char *sup, int perfil, const char *dono) {
   char *c = contacache_ler(sup, perfil, dono, NULL);

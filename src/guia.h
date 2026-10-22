@@ -62,6 +62,7 @@ void guia_desenhar(Uint32 agora);
 
 // 1 uma unica vez quando o usuario pediu para sair da tela cheia.
 int  guia_quer_sair(void);
+int  guia_foco_topo(void);   // testes do ponteiro: chip em foco ou -1
 
 // 1 uma unica vez quando o OK escolheu um canal: `saida` recebe o CatItem
 // pronto para cat_acrescentar/player_abrir (id completo, tipo "channel").

@@ -33,6 +33,15 @@ void faixas_atualizar(float dt, Uint32 agora);
 // OK na pilula "Nenhuma legenda em ...": abre a lista de legendas. 1 = tratou a tecla.
 int  faixas_pilula_tecla(const SDL_Event *e);
 void faixas_desenhar(Uint32 agora);
+// PONTEIRO (#99): as abas "Faixas | Estilo" da folha de legenda (o mesmo que
+// ESQUERDA/DIREITA entre a lista e a barra de estilo). 0 = lista, 1 = estilo.
+void faixas_aba_estilo(int estilo);
+// Testes: o foco da folha. Devolve a linha focada da coluna atual (-1 = folha
+// fechada); `col` 0 = audio, 1 = lista de legendas, 2 = barra de estilo;
+// `vol`/`vel` = foco nas linhas de volume/velocidade da folha de audio.
+int  faixas_teste_foco(int *col, int *vol, int *vel);
+// Testes: o item da aba Estilo cujo controle (slider, paleta, fontes) esta aberto; -1 = a grade.
+int  faixas_estilo_controle(void);
 
 // F04: what the subtitle selector (legendasui.c) needs from the primary.
 // Combined index of the active primary (embedded first, then addons; -1 none).

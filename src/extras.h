@@ -163,6 +163,7 @@ int  extras_ep_visto(int temporada, int episodio);
 // 1 apenas depois de receber o historico desta obra. Sem resposta nao inferir
 // que todos os episodios estao por assistir.
 int extras_progresso_pronto(void);
+void extras_teste_progresso(const char *id, int vistos, int exibidos, int pt, int pe);
 int extras_proximo_episodio(int *temporada, int *episodio);
 // QUANTO DA SERIE JA FOI VISTO. Os dois contadores vem do TOPO da mesma
 // resposta de /progress/watched que ja e baixada — zero pedido a mais. Devolve
@@ -250,5 +251,26 @@ const char *extras_relacionado_poster(int i);
 void extras_shot_relacionados(const char *const *titulo, const char *const *ano,
                               const char *const *poster, int n);
 #endif
+
+
+// RESUMO DE UM TITULO QUALQUER, para a extensao de informacoes do menu do
+// cartaz (ctxinfo.c). NAO toca no estado da pagina de titulo (o menu abre
+// tambem por cima dela): fio e cache proprios, por IMDb, o ultimo pedido
+// vence. Ver a nota em extras.c. `semSinopse` = o titulo nao trouxe sinopse e
+// vale a viagem ao TMDB pela do idioma da interface.
+typedef struct {
+  int  cru[EX_NFONTES];   // como extras_nota (cru x 10); 0 = nao ha
+  int  duracao;           // minutos (filme) / do episodio (serie); 0 = nao ha
+  char cert[12];          // classificacao do Trakt ("PG-13", "TV-MA")
+  char status[32];        // situacao da serie no Trakt ("returning series")
+  char sinopse[700];      // TMDB, no idioma da interface
+  char sinopseEn[700];    // Trakt, em ingles (so quando a interface e ingles)
+  int  pronto, carregando;
+} ExResumo;
+void extras_resumo_pedir(const char *imdb, int serie, int semSinopse);
+// 1 quando ha alguma coisa (parcial ou completa) no cache para o titulo.
+int  extras_resumo_obter(const char *imdb, ExResumo *saida);
+// Escreve no cache sem rede (testes e capturas).
+void extras_resumo_definir(const char *imdb, const ExResumo *r);
 
 #endif

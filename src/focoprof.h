@@ -3,8 +3,8 @@
 //  - Anel ligado (Ajustes > Foco no cartaz): o cartao mantem a caixa e leva o
 //    anel de NV_ANEL_FOCO no realce (ou o cartao de vidro). Desligado: nenhum
 //    contorno, e quem marca o foco e o crescimento (FOCO_ZOOM).
-//  - Profundidade (AJ_PROF*, borda/brilho/cobertura): o realce de topo do
-//    cartao em foco, por tipo de cartao (`ligadaAqui`).
+//  - Profundidade (AJ_PROF + AJ_PROF_BRILHO): o reflexo que passa e o clarear
+//    do cartao em foco, no proprio GFX_CARD (gfx.c), em todo tipo de cartao.
 // `f` e a animacao de foco 0..1 que cada tela ja tem; nada aqui guarda estado.
 #ifndef NV_FOCOPROF_H
 #define NV_FOCOPROF_H
@@ -27,7 +27,7 @@ static inline GfxRect foco_zoom(GfxRect r, float f) {
 static inline void foco_anel(GfxRect r, float raio, float f, float a) {
   float menor = r.w < r.h ? r.w : r.h, ar, ag, ab;
   if (f <= 0.01f || !ajustes_borda_foco()) return;
-  if (ajustes_vidro()) { gfx_vidro_cartao(r, raio * menor / r.h, f, a); return; }
+  if (ajustes_vidro()) { gfx_vidro_cartao(r, raio, f, a); return; }
   ajustes_acento(&ar, &ag, &ab);
   gfx_cor((GfxRect){ r.x - NV_ANEL_FOCO, r.y - NV_ANEL_FOCO,
                      r.w + 2 * NV_ANEL_FOCO, r.h + 2 * NV_ANEL_FOCO },
@@ -35,18 +35,4 @@ static inline void foco_anel(GfxRect r, float raio, float f, float a) {
           ar, ag, ab, f * a);
 }
 
-// Realce de profundidade (borda + reflexo) por cima da arte do cartao.
-static inline void foco_profundidade(GfxRect card, float raio, int ligadaAqui, float a) {
-  float borda, brilho, cobertura;
-  if (!ajustes_profundidade() || !ligadaAqui) return;
-  borda = ajustes_profundidade_borda();
-  brilho = ajustes_profundidade_brilho();
-  cobertura = ajustes_profundidade_cobertura();
-  if (borda > 0.001f) {
-    float alcance = (12.0f + 18.0f * cobertura) / (card.h > 1.0f ? card.h : 1.0f);
-    gfx_brilho_topo(card, raio, alcance, 1.0f, 1.0f, 1.0f, borda * 0.55f * a);
-  }
-  if (brilho > 0.001f)
-    gfx_brilho_topo(card, raio, 0.34f, 1.0f, 1.0f, 1.0f, brilho * 0.18f * a);
-}
 #endif

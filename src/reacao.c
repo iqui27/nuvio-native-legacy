@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // Ver reacao.h.
 #include "reacao.h"
 #include "atividade.h"
@@ -19,6 +20,8 @@
 #include "teclado.h"
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
+#include "ponteiro.h"
+#include "telefonecartao.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -188,7 +191,7 @@ static void marcarPendente(const char *imdb, const char *midia, const char *titu
 static struct {
   int    aberto;
   int    modoDetalhe;            // aberto pela pagina: sem contagem
-  char   imdb[24], midia[8], titulo[160], poster[512], nome[64];
+  char   imdb[24], midia[8], titulo[160], poster[NV_ARTE_URL_MAX], nome[64];
   long long rec;
   int    envia;                  // "vai ver sua resposta" so com envio de verdade
   int    foco;
@@ -207,12 +210,19 @@ static char  oferecido[24];      // titulo ja perguntado nesta sessao do player
 // 8 s e a tecla que a reinicia usam o mesmo relogio que a confere.
 static Uint32 ultimoAgora;
 static double durVista, durEstavel;
+#ifdef NV_TOUCH_UI
+static TelefoneCartao reacaoTelefone;
+static int reacaoTelefoneGeracao;
+#endif
 
 int reacao_aberta(void) { return c.aberto; }
 
 static void abrir(const char *imdb, const char *midia, const char *titulo,
                   const char *poster, int detalhe, Uint32 agora) {
   memset(&c, 0, sizeof c);
+#ifdef NV_TOUCH_UI
+  telefonecartao_limpar(&reacaoTelefone); reacaoTelefoneGeracao++;
+#endif
   c.aberto = 1;
   c.modoDetalhe = detalhe;
   atividade_id_puro(c.imdb, sizeof c.imdb, imdb);
@@ -298,6 +308,8 @@ void reacao_player_atualizar(float dt, Uint32 agora, const CatItem *ci, int ehSe
   if (dur - durVista > 2.0 || durVista - dur > 2.0) { durVista = dur; durEstavel = 0.0; }
   else durEstavel += dt;
   if (!ci || !ci->imdb[0] || c.aberto || !ajustes_reacao_creditos()) return;
+  // Cena pos-creditos: esta pergunta tambem cobriria a imagem antes do fim.
+  if (ci->posCreditos && pos < dur) return;
   atividade_id_puro(id, sizeof id, ci->imdb);
   if (strncmp(id, "tt", 2) || !strcmp(oferecido, id)) return;
   if (durEstavel < 8.0) return;
@@ -398,6 +410,73 @@ static void linhaOrigem(char *dst, size_t n) {
 // pergunta 36/700, as tres respostas em pilulas (a focada cheia no acento) e
 // a contagem de 8 s como trilho DENTRO da ilha, ao lado de "Ana vai ver sua
 // resposta" — nao mais um fio colado na borda.
+// PONTEIRO (#99): foco pelas MESMAS variaveis das setas (c.foco, e a contagem
+// recomeca como no ← →); o OK do clique segue por reacao_evento. Idempotente;
+// com o teclado do passo 2 aberto nao mexe (ele e camada propria).
+static void ponteiroResposta(int i, int b) {
+  (void)b;
+  if (!c.aberto || c.escrevendo || i < 0 || i > 2 || c.foco == i) return;
+  c.foco = i; c.desde = ultimoAgora;
+}
+int reacao_teste_foco(void) { return c.foco; }
+
+#ifdef NV_TOUCH_UI
+static int reacaoTelefoneRolar(const PonteiroRolagem *e) {
+  if (!c.aberto || c.escrevendo || !telefoneui_ativo()) return 0;
+  return toquerol_evento(&reacaoTelefone.rolagem, e);
+}
+static void reacaoTelefoneEscolher(int i, int chave) {
+  SDL_Event e;
+  if (!telefoneui_ativo() || !c.aberto || c.escrevendo || chave != reacaoTelefoneGeracao * 2 + c.passo || i < 0 || i > 2) return;
+  c.foco = i; c.desde = ultimoAgora;
+  memset(&e, 0, sizeof e); e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RETURN;
+  reacao_evento(&e, 0);
+}
+static float reacaoTelefoneConteudo(const char *perg, const char *orig, const char *ver,
+                                   float x, float y, float w, float a, Uint32 agora) {
+  float inicio = y;
+  if (orig[0]) y += telefonecartao_texto(TXT_G18M, orig, x, y, w, 28, .68f * a) + 16;
+  y += telefonecartao_texto(TXT_ILHA_PERGUNTA, perg, x, y, w, 48, a) + 24;
+  if (ver[0]) y += telefonecartao_texto(TXT_ILHA_GENERO, ver, x, y, w, 28, .55f * a) + 16;
+  if (!c.modoDetalhe && c.aberto && !c.escrevendo) {
+    float resta = fmaxf(0, 1 - (float)(agora - c.desde) / REACAO_TIMEOUT_MS);
+    if (a > 0) plrui_trilho((GfxRect){x, y, w, 4}, resta, .953f, .949f, .937f, .55f * a);
+    y += 20;
+  }
+  return y - inicio;
+}
+static void reacaoTelefoneDesenhar(const char *perg, const char *orig, const char *ver,
+                                  const char *const *rot, Uint32 agora, float baseY, float a) {
+  float total, h, y, w = NV_TELA_W - 48;
+  int reg = c.aberto && !c.escrevendo && a > .99f && a < 1.01f;
+  total = reacaoTelefoneConteudo(perg, orig, ver, 0, 0, w - 56, 0, agora);
+  h = fminf(NV_TELA_H - 48, total + 48 + 3 * 76 + 2 * 12 + 24);
+  y = c.modoPainel || c.modoDetalhe ? (NV_TELA_H - h) * .5f : baseY - h;
+  y = fmaxf(24, fminf(y, NV_TELA_H - 24 - h));
+  reacaoTelefone.painel = (GfxRect){24, y, w, h};
+  reacaoTelefone.corpo = (GfxRect){52, y + 24, w - 56, h - 48 - 3 * 76 - 2 * 12 - 24};
+  reacaoTelefone.botoes = 3; reacaoTelefone.interativo = reg;
+  if (reacaoTelefone.chave != c.passo || a < .99f) {
+    telefonecartao_limpar(&reacaoTelefone); reacaoTelefone.chave = c.passo;
+  }
+  reacaoTelefone.offset = fminf(reacaoTelefone.offset, fmaxf(0, total - reacaoTelefone.corpo.h));
+  if (c.aberto && (c.modoDetalhe || c.modoPainel)) ponteiro_camada();
+  if (reg) {
+    ponteiro_alvo(24, y, w, h, NULL, NULL, 0, 0);
+    toquerol_vincular(&reacaoTelefone.rolagem, reacaoTelefone.corpo, gfx_escala(), 0,
+                     total - reacaoTelefone.corpo.h, 1, &reacaoTelefone.offset);
+    ponteiro_rolagem(reacaoTelefoneRolar);
+  }
+  plrui_material(reacaoTelefone.painel, 36, 0, a);
+  gfx_recorte(reacaoTelefone.corpo.x, reacaoTelefone.corpo.y, reacaoTelefone.corpo.w, reacaoTelefone.corpo.h);
+  reacaoTelefoneConteudo(perg, orig, ver, reacaoTelefone.corpo.x,
+                        reacaoTelefone.corpo.y - reacaoTelefone.offset, reacaoTelefone.corpo.w, a, agora);
+  gfx_sem_recorte();
+  for (int i = 0; i < 3; i++) telefonecartao_botao(&reacaoTelefone, i, rot[i], c.foco == i,
+                                                 ponteiroResposta, reacaoTelefoneEscolher, reacaoTelefoneGeracao * 2 + c.passo, a);
+}
+#endif
+
 static void reacao_desenharCorpo_(Uint32 agora, float baseY);
 // Camada ampliada (escala.h): o corpo desenha na tela virtual.
 void reacao_desenhar(Uint32 agora, float baseY) {
@@ -422,6 +501,9 @@ static void reacao_desenharCorpo_(Uint32 agora, float baseY) {
   ver[0] = 0;
   if (orig[0] && (c.envia || respondeAmigo()))
     snprintf(ver, sizeof ver, i18n("%s vai ver sua resposta"), c.nome);
+#ifdef NV_TOUCH_UI
+  if (telefoneui_ativo()) { reacaoTelefoneDesenhar(perg, orig, ver, rot, agora, baseY, a); return; }
+#endif
   for (i = 0; i < 3; i++) pw += plrui_botao_largura(rot[i], ico[i]) + (i ? 12.0f : 0.0f);
   if (pw + 72.0f > w) w = pw + 72.0f;
   lead = (float)txt_linha(TXT_ILHA_PERGUNTA, "Ág", 245, 246, 248, 255).h + 6.0f;
@@ -437,6 +519,10 @@ static void reacao_desenharCorpo_(Uint32 agora, float baseY) {
     if (x < 24.0f) x = 24.0f;
     y = (NV_TELA_H - h) * 0.5f + (1.0f - a) * 24.0f;
   }
+  // Na pagina do titulo e no painel de Salvos o cartao e modal (as teclas nao
+  // vazam): camada, os alvos de tras deixam de valer. No player ele nao e
+  // camada — com os controles no ar as teclas sao do player.
+  if (c.aberto && (c.modoDetalhe || c.modoPainel)) ponteiro_camada();
   plrui_material((GfxRect){ x, y, w, h }, 36.0f, 0, a);
   { float ty = y + 34.0f, tx = x + 36.0f;
     if (orig[0]) {
@@ -448,7 +534,13 @@ static void reacao_desenharCorpo_(Uint32 agora, float baseY) {
     txt_bloco_corta(TXT_ILHA_PERGUNTA, perg, 243, 242, 239, tx, ty, w - 72.0f, lead, a, 2);
     ty += hp + 26.0f;
     { float bx = tx;
-      for (i = 0; i < 3; i++) bx += plrui_botao(bx, ty, rot[i], ico[i], c.focoA[i], a) + 12.0f; }
+      // So assentado (a mola da entrada parada) e sem o teclado por cima.
+      int reg = c.aberto && !c.escrevendo && a > 0.99f && a < 1.01f;
+      for (i = 0; i < 3; i++) {
+        float bw = plrui_botao(bx, ty, rot[i], ico[i], c.focoA[i], a);
+        if (reg) ponteiro_alvo(bx, ty, bw, 60.0f, ponteiroResposta, NULL, i, 0);
+        bx += bw + 12.0f;
+      } }
     ty += 60.0f + 24.0f;
     { float yc = ty + 11.0f, tw = 0.0f;
       if (ver[0]) {

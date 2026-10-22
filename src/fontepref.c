@@ -17,6 +17,11 @@ static int nTab;
 static int carregado;
 static int perfil;
 
+// A MEMORIA DO AUTOMATICO (ver fontepref.h): tabela e arquivo proprios.
+typedef struct { char id[24]; char bingeGroup[FONTEPREF_BINGE]; long long quandoS; } AutoPref;
+static AutoPref tabAuto[FONTEPREF_MAX];
+static int nAuto;
+
 // UM ARQUIVO POR PERFIL (fontepref-p<N>.txt), como fileirasui-p<N>.txt em
 // fileiras.c e pelo mesmo motivo: sem a separacao, a escolha de audio de um
 // perfil mandaria na reproducao do outro — que e o defeito que a separacao das
@@ -31,6 +36,12 @@ static int perfil;
 static const char *arquivoDoPerfil(void) {
   static char nome[48];
   snprintf(nome, sizeof nome, "fontepref-p%d.txt", perfil);
+  return nome;
+}
+
+static const char *arquivoAuto(void) {
+  static char nome[48];
+  snprintf(nome, sizeof nome, "fontepref-auto-p%d.txt", perfil);
   return nome;
 }
 
@@ -239,11 +250,59 @@ static void gravar(void) {
   free(buf);
 }
 
+static void autoCarregar(void) {
+  char *b, *linha, *prox;
+  nAuto = 0;
+  b = dados_ler(arquivoAuto());
+  if (!b) return;
+  for (linha = b; linha && *linha && nAuto < FONTEPREF_MAX; linha = prox) {
+    char *p, *id, *quando, *binge;
+    char *fim = strchr(linha, '\n');
+    prox = fim ? fim + 1 : NULL;
+    if (fim) *fim = 0;
+    if (linha[0] == '#' || !linha[0]) continue;
+    p = linha;
+    id = campo(&p); quando = campo(&p); binge = p ? p : (char *)"";
+    if (!id[0] || !binge[0]) continue;
+    snprintf(tabAuto[nAuto].id, sizeof tabAuto[nAuto].id, "%s", id);
+    snprintf(tabAuto[nAuto].bingeGroup, sizeof tabAuto[nAuto].bingeGroup, "%s", binge);
+    tabAuto[nAuto].quandoS = atoll(quando);
+    nAuto++;
+  }
+  free(b);
+}
+
+static void autoGravar(void) {
+  size_t cap = (size_t)FONTEPREF_MAX * 200u + 64u, k = 0;
+  char *buf = (char *)malloc(cap);
+  int i;
+  if (!buf) return;
+  k += (size_t)snprintf(buf + k, cap - k, "# nuvio fontes auto v1\n");
+  for (i = 0; i < nAuto && k + 1 < cap; i++)
+    k += (size_t)snprintf(buf + k, cap - k, "%s\t%lld\t%s\n", tabAuto[i].id,
+                          tabAuto[i].quandoS, tabAuto[i].bingeGroup);
+  dados_gravar(arquivoAuto(), buf);
+  free(buf);
+}
+
+static int autoAchar(const char *base) {
+  int i;
+  for (i = 0; i < nAuto; i++) if (!strcmp(tabAuto[i].id, base)) return i;
+  return -1;
+}
+
+static void autoRemover(int k) {
+  if (k < 0 || k >= nAuto) return;
+  tabAuto[k] = tabAuto[--nAuto];
+  autoGravar();
+}
+
 void fontepref_iniciar(void) {
   char *b, *linha, *prox;
   if (carregado) return;
   carregado = 1;
   nTab = 0;
+  autoCarregar();
   b = dados_ler(arquivoDoPerfil());
   if (!b) return;
   for (linha = b; linha && *linha && nTab < FONTEPREF_MAX; linha = prox) {
@@ -287,6 +346,7 @@ void fontepref_definir_perfil(int p) {
   if (p == perfil && carregado) return;
   perfil = p;
   nTab = 0;
+  nAuto = 0;
   carregado = 0;
 }
 
@@ -300,8 +360,11 @@ void fontepref_esquecer(void) {
     char nome[48];
     snprintf(nome, sizeof nome, "fontepref-p%d.txt", p);
     dados_apagar(nome);
+    snprintf(nome, sizeof nome, "fontepref-auto-p%d.txt", p);
+    dados_apagar(nome);
   }
   nTab = 0;
+  nAuto = 0;
   carregado = 1;   // ja sabemos o que ha no disco: nada
 }
 
@@ -371,6 +434,10 @@ int fontepref_guardar(const char *id, const Stream *s) {
   limpar(novo.rotulo);
   limpar(novo.trilha);
   limpar(novo.bingeGroup);
+
+  // A manual SUBSTITUI a automatica do titulo: com a escolha da pessoa gravada
+  // a automatica nao tem mais papel (e ressurgiria se a manual sumisse).
+  autoRemover(autoAchar(base));
 
   k = achar(base);
   if (k < 0) {
@@ -492,10 +559,79 @@ static int porTrilha(const FontePref *p) {
   return melhor;
 }
 
+static int escolherManual(const FontePref *p);
+
+// A MEMORIA DO AUTOMATICO, lado de escrita. So entra fonte COM bingeGroup e so
+// quando nao ha escolha manual no titulo. Mesmo grupo: so renova o carimbo (e
+// so se tiver mais de um dia, para nao reescrever o arquivo a cada episodio).
+// Grupo diferente que tocou: substitui — e a release que de fato existe hoje.
+int fontepref_auto_guardar(const char *id, const Stream *s) {
+  char base[24];
+  int k;
+  long long agora = (long long)time(NULL);
+  if (!s || !s->bingeGroup[0]) return 0;
+  if (!carregado) fontepref_iniciar();
+  fontepref_id_base(id, base, sizeof base);
+  if (!base[0] || strncmp(base, "tt", 2) || fontepref_do_titulo(base)) return 0;
+  k = autoAchar(base);
+  if (k >= 0 && !strcmp(tabAuto[k].bingeGroup, s->bingeGroup) &&
+      agora - tabAuto[k].quandoS < 24LL * 3600LL) return 0;
+  if (k < 0) {
+    if (nAuto >= FONTEPREF_MAX) {
+      int i, velho = 0;
+      for (i = 1; i < nAuto; i++) if (tabAuto[i].quandoS < tabAuto[velho].quandoS) velho = i;
+      k = velho;
+    } else k = nAuto++;
+  }
+  memset(&tabAuto[k], 0, sizeof tabAuto[k]);
+  snprintf(tabAuto[k].id, sizeof tabAuto[k].id, "%s", base);
+  snprintf(tabAuto[k].bingeGroup, sizeof tabAuto[k].bingeGroup, "%s", s->bingeGroup);
+  limpar(tabAuto[k].bingeGroup);
+  tabAuto[k].quandoS = agora;
+  autoGravar();
+  printf("[fonte] grupo do automatico lembrado para %s: %s\n", base, tabAuto[k].bingeGroup);
+  fflush(stdout);
+  return 1;
+}
+
+// Lado de leitura: o primeiro stream do grupo que passa em stream_grupo_sem_perda
+// (a maior resolucao entre os que passam; empate fica o primeiro da lista).
+static int escolherAuto(const char *id) {
+  char base[24];
+  int k, i, total = stream_n(), melhor = -1;
+  if (!carregado) fontepref_iniciar();
+  fontepref_id_base(id, base, sizeof base);
+  k = autoAchar(base);
+  if (k < 0) return -1;
+  { long long agora = (long long)time(NULL), q = tabAuto[k].quandoS;
+    if (q > 0 && agora > q && agora - q > FONTEPREF_VALIDADE_S) return -1; }
+  for (i = 0; i < total; i++) {
+    const Stream *s = stream_item(i);
+    if (!s || strcmp(s->bingeGroup, tabAuto[k].bingeGroup)) continue;
+    if (melhor >= 0 && s->altura <= stream_item(melhor)->altura) continue;
+    if (!stream_grupo_sem_perda(i)) continue;
+    melhor = i;
+  }
+  if (melhor >= 0) {
+    printf("[fonte] preferida de %s na posicao %d por bingeGroup do automatico (%s)\n",
+           base, melhor, tabAuto[k].bingeGroup);
+    fflush(stdout);
+  }
+  return melhor;
+}
+
+int fontepref_escolher_manual(const char *id) {
+  const FontePref *p = fontepref_do_titulo(id);
+  return p ? escolherManual(p) : -1;
+}
+
 int fontepref_escolher(const char *id) {
   const FontePref *p = fontepref_do_titulo(id);
+  return p ? escolherManual(p) : escolherAuto(id);
+}
+
+static int escolherManual(const FontePref *p) {
   int melhor;
-  if (!p) return -1;
 
   melhor = porBinge(p);
   if (melhor >= 0) {

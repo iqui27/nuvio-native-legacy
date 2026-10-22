@@ -320,6 +320,15 @@ int main(int argc, char **argv) {
   confere("primeira linha: o primeiro com progresso (Pulp Fiction)",
           !strcmp(tituloFocado(), "tt0110912"));
   foto("01-lista-padrao.png");
+  // #203: titulo aberto no cartao (OK longo) com a lista agrupada por
+  // progresso: o rotulo da secao de baixo ("Nao comecados") tem de descer junto.
+  segurarOk();
+  durante(700);
+  foto("27c-cartao-aberto-secao.png");
+  empurrar(SDL_KEYDOWN, SDLK_ESCAPE); quadros(1);
+  empurrar(SDL_KEYUP, SDLK_ESCAPE); quadros(10);
+  toque(SDLK_UP);
+  toque(SDLK_DOWN);
   toque(SDLK_UP);
   foto("02-barra-foco-ordenar.png");
 
@@ -410,9 +419,9 @@ int main(int argc, char **argv) {
     snprintf(id, sizeof id, "%s", alvo);
     snprintf(movido, sizeof movido, "%s", alvo);
     toque(SDLK_DOWN);                    // tituloFocado reabriu o painel no topo
-    segurarOk();
+  segurarOk();
     confere("segurar OK abre o menu do cartaz", ctx_do_painel());
-    toques(SDLK_DOWN, 2);                // Mais informacoes, Remover, Mover
+    toque(SDLK_DOWN);                    // Remover, Mover
     foto("19-menu-mover.png");
     toque(SDLK_RETURN);
     quadros(4);

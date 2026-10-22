@@ -374,7 +374,7 @@ static int escolherNaBusca(const char *corpo, const char *titulo, int ano, int s
                            char *id, unsigned tam, char *arte, unsigned tamArte) {
   char norm[256], achado[80] = "", arteAchada[600] = "";
   const char *fim, *shelves, *sh;
-  int n = 0;
+  int n = 0, anoAchado = 0;
   if (arte && tamArte) arte[0] = 0;
   normalizar(titulo, norm, sizeof norm);
   if (!norm[0] || !corpo) return 0;
@@ -397,12 +397,15 @@ static int escolherNaBusca(const char *corpo, const char *titulo, int ano, int s
       if (!a || abs(a - ano) > 1) continue;
       if (achado[0] && strcmp(achado, iid)) { n = 2; break; }
       if (!achado[0]) {
-        snprintf(achado, sizeof achado, "%s", iid); n = 1;
+        snprintf(achado, sizeof achado, "%s", iid); n = 1; anoAchado = a;
         arteDoItem(it, ie, arteAchada, sizeof arteAchada);
       }
     }
     if (n > 1) break;
   }
+  printf("[arte-apple] busca titulo=%.160s ano=%d tipo=%s candidatos=%d id=%s ano_encontrado=%d arte=%d\n",
+         titulo, ano, serie ? "Show" : "Movie", n,
+         n == 1 ? achado : "-", n == 1 ? anoAchado : 0, n == 1 && arteAchada[0] != 0);
   if (n != 1) return 0;
   snprintf(id, tam, "%s", achado);
   if (arte && tamArte) snprintf(arte, tamArte, "%s", arteAchada);
@@ -425,24 +428,24 @@ static int buscarId(const char *titulo, int ano, int serie, char *id, unsigned t
   return r;
 }
 
-// ARTE POR IMDb, preenchida pela busca do trailer (sem custo) ou por
-// trailerapple_arte (uma busca, sem a pagina do filme nem o master HLS).
+// ARTE POR IMDb + ano + tipo, inclusive a semeada pelo trailer: uma busca
+// com tipo corrigido nao pode contaminar pedidos de arte do tipo original.
 #define TA_ARTE_MAX 64
-typedef struct { char imdb[16]; char modelo[600]; int sabida; } ArteApple;
+typedef struct { char imdb[16]; char modelo[600]; int sabida, ano, serie; } ArteApple;
 static ArteApple tabArte[TA_ARTE_MAX];
 static int proxArte;
 // Trava PROPRIA e estatica: trailerapple_arte roda nos fios de rede do
 // tex_cache, que podem chegar antes de qualquer trailerapple_pedir — e o
 // SDL_mutex de trancar() nasce preguicoso, sem protecao contra dois fios.
 static pthread_mutex_t arteTrava = PTHREAD_MUTEX_INITIALIZER;
-static void guardarArte(const char *imdb, const char *modelo) {
+static void guardarArte(const char *imdb, int ano, int serie, const char *modelo) {
   int i;
   ArteApple *a = NULL;
-  for (i = 0; i < TA_ARTE_MAX; i++) if (tabArte[i].sabida && !strcmp(tabArte[i].imdb, imdb)) { a = &tabArte[i]; break; }
+  for (i = 0; i < TA_ARTE_MAX; i++) if (tabArte[i].sabida && tabArte[i].ano == ano && tabArte[i].serie == serie && !strcmp(tabArte[i].imdb, imdb)) { a = &tabArte[i]; break; }
   if (!a) { a = &tabArte[proxArte]; proxArte = (proxArte + 1) % TA_ARTE_MAX; }
   snprintf(a->imdb, sizeof a->imdb, "%s", imdb);
   snprintf(a->modelo, sizeof a->modelo, "%s", modelo ? modelo : "");
-  a->sabida = 1;
+  a->sabida = 1; a->ano = ano; a->serie = serie;
 }
 
 int trailerapple_arte(const char *imdb, const char *titulo, int ano, int serie,
@@ -452,18 +455,17 @@ int trailerapple_arte(const char *imdb, const char *titulo, int ano, int serie,
   if (!imdb || !imdb[0] || !titulo || !titulo[0] || ano <= 0 || !modelo || !n) return 0;
   pthread_mutex_lock(&arteTrava);
   for (i = 0; i < TA_ARTE_MAX; i++)
-    if (tabArte[i].sabida && !strcmp(tabArte[i].imdb, imdb)) {
+    if (tabArte[i].sabida && tabArte[i].ano == ano && tabArte[i].serie == serie && !strcmp(tabArte[i].imdb, imdb)) {
       snprintf(modelo, n, "%s", tabArte[i].modelo);
       pthread_mutex_unlock(&arteTrava);
       return modelo[0] ? 1 : 0;
     }
   pthread_mutex_unlock(&arteTrava);
   r = buscarId(titulo, ano, serie, id, sizeof id, arte, sizeof arte);
-  // Sem etiqueta de tipo o catalogo erra (ver buscar): tenta o outro.
-  if (r == 0) r = buscarId(titulo, ano, !serie, id, sizeof id, arte, sizeof arte);
+  // Arte exige o tipo pedido; tentar o oposto pode aceitar um homonimo.
   if (r < 0) return -1;
   pthread_mutex_lock(&arteTrava);
-  guardarArte(imdb, r > 0 ? arte : "");
+  guardarArte(imdb, ano, serie, r > 0 ? arte : "");
   pthread_mutex_unlock(&arteTrava);
   snprintf(modelo, n, "%s", r > 0 ? arte : "");
   return modelo[0] ? 1 : 0;
@@ -511,7 +513,7 @@ static void *buscar(void *arg) {
     // filme e uma serie com o mesmo nome e ano e caso raro; nao achar o
     // trailer de uma serie da Apple por falta de etiqueta era o caso comum.
     if (r == 0) { serie = !serie; r = buscarId(p->titulo, ano, serie, id, sizeof id, arte, sizeof arte); }
-    if (r >= 0) { pthread_mutex_lock(&arteTrava); guardarArte(p->imdb, r > 0 ? arte : ""); pthread_mutex_unlock(&arteTrava); }
+    if (r >= 0) { pthread_mutex_lock(&arteTrava); guardarArte(p->imdb, ano, serie, r > 0 ? arte : ""); pthread_mutex_unlock(&arteTrava); }
     if (r < 0) semResposta = 1;
     else if (r == 1) { r = hlsDe(id, serie, url, sizeof url); if (r < 0) semResposta = 1; }
   }

@@ -21,6 +21,7 @@ int ajustes_p2p_ligado(void) { return ligado; }
 const char *ajustes_p2p_url(void) { return base; }
 void debrid_episodio(int *t, int *e) { *t = 1; *e = 2; }
 uint64_t badges_detectar(const char *m) { (void)m; return 0; }
+uint64_t badges_bit(const char *id) { (void)id; return 0; }
 // p2pmotor.c (motor embutido) entra no link; sem -DNV_P2P_MOTOR ele so diz
 // "sem motor" e nunca chama estes.
 const char *dados_dir(void) { return "/tmp"; }
@@ -51,7 +52,7 @@ char *rede_postar_st(const char *url, int s, const char *const *c, const char *c
   if (st) *st = respCreate ? stCreate : 0;
   return respCreate ? strdup(respCreate) : NULL;
 }
-char *rede_baixar_trecho_st(const char *url, int s, long ini, long fim, long *tam,
+char *rede_baixar_trecho_st(const char *url, int s, long long ini, long long fim, long *tam,
                             int *st, int *erro, char *final, unsigned tf) {
   (void)s; (void)ini; (void)fim; (void)erro; (void)final; (void)tf;
   nTrecho++;

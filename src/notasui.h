@@ -40,19 +40,17 @@ typedef struct {
 
 // A secao (Glass UI 1.8): cartao de nota a esquerda (media, critica x publico,
 // menor/maior) e uma grade de DUAS colunas com um bloco por fonte. Cada bloco
-// e uma coluna do foco (detail.c anda na grade com as setas).
+// e so desenho: o foco para no cartao da media (o numero grande).
 int   notasui_fontes_tem(const NotasSecao *s);
-int   notasui_fontes_n(const NotasSecao *s);      // blocos = colunas do foco
+int   notasui_fontes_n(const NotasSecao *s);      // blocos de fonte (desenho)
 // Altura do CONTEUDO (sem o cabecalho que detail.c desenha). Barata: nao
 // rasteriza nada.
 float notasui_fontes_altura(const NotasSecao *s);
 // Desenha com o canto superior esquerdo em (x, y); `y` pode estar fora da tela
-// (nao custa nada). `foco[i]` e a mola de foco 0..1 do bloco i (NULL = nenhum).
+// (nao custa nada). `foco[0]` e a mola de foco 0..1 do cartao da media (NULL = nenhum).
 // Devolve a altura ocupada.
 float notasui_fontes_desenhar(const NotasSecao *s, float x, float y, float a,
                               const float *foco);
-// Grade de DUAS colunas: quem anda no D-pad precisa saber o passo vertical.
-#define NOTASUI_COLUNAS 2
 
 // Cartao "Notas por episodio" do bloco "Numeros da temporada" (serie):
 // temporadas x episodios dentro de `card`; (selT, selI) e o episodio em foco
@@ -68,6 +66,13 @@ void  notasui_cor_rampa(int decimos, float *r, float *g, float *b);
 void  notasui_painel(GfxRect r, float raio, float a);
 // Volta o portao do texto (nova pagina de titulo).
 void  notasui_reiniciar(void);
+
+// O LOGO DA FONTE, sozinho (PNG de art/marcas): a esquerda em `x`, centrado em
+// `yc`, com `h` de altura. Devolve a largura; 0 quando a fonte nao tem PNG.
+// notasui_marca_largura mede sem desenhar — a mesma largura antes e depois de
+// a textura carregar, para o selo nao mudar de tamanho no segundo quadro.
+float notasui_marca_largura(int fonte, float h);
+float notasui_marca(int fonte, float x, float yc, float h, float a);
 
 // Uma marca sozinha (para os cartoes da aba de notas): centralizada em (xc, yc)
 // dentro de uma caixa `h` de altura. Devolve a largura usada.

@@ -16,6 +16,7 @@ static int uxValorPadrao(int op) {
 /* Fileiras tem uma fonte propria. valor[] e apenas seu espelho na tela. */
 static int uxValorAtual(int op) {
   if (op < 0 || op >= AJ_N) return 0;
+  if (op == AJ_SEEKR_LIGADO && !seekrChave[0]) return 1;
   return op == AJ_FIL_LIMITE ? fil_limite_gravado() : valor[op];
 }
 
@@ -90,6 +91,8 @@ static void uxValorTexto(int op, int v, char *buf, size_t tam) {
   else if (op == AJ_HERO_TRAILER_ESPERA) {
     snprintf(buf, tam, i18n("%d,%d s"), v / 10, v % 10);
     return;
+  } else if (op == AJ_FIL_LIMITE && fil_limite_ilimitado(v)) {
+    texto = i18n("Ilimitado");
   } else if (o->tipo == OP_NUMERO) {
     snprintf(buf, tam, "%d%s", v, o->sufixo ? o->sufixo : "");
     return;
@@ -100,6 +103,11 @@ static void uxValorTexto(int op, int v, char *buf, size_t tam) {
     texto = i18n(texto);
   } else if (op == AJ_SELOS_PACOTE) {
     texto = v > 0 && v <= selospacote_n() ? selospacote_nome(v - 1) : i18n("Do Nuvio");
+  } else if (op == AJ_TEX_MB && v > 0 && v < o->n && texAcima(v)) {
+    char t[160];
+    texValorTexto(v, t, sizeof t);
+    uxTextoCopiar(buf, tam, t);
+    return;
   } else if (o->valores && o->n > 0) {
     /* Nao resolve Automatico nem o modo seguro: mostra o que foi salvo. */
     if (v < 0 || v >= o->n) v = 0;
@@ -160,14 +168,48 @@ static const char *uxSinonimos(int op) {
     case AJ_MANTER_VIDEO: return "manter video pronto sair retomar rapido instantaneo pausado reter memoria pipeline ilha trailer avancado";
     case AJ_DESCANSO_ESTILO: return "descanso screensaver protetor vitrine relogio hora filmes escurecer estilo";
     case AJ_DESCANSO_FONTE: return "descanso vitrine titulos lista continuar catalogo filmes series";
+    case AJ_PROPORCAO_PADRAO: return "proporcao padrao aspecto aspect ratio zoom original recortar esticar preencher cinema tarja barras pretas formato tela tamanho imagem player";
+    case AJ_HDR_UI: return "brilho interface hdr dolby vision dv branco esbranquicado leitoso vidro cor player legenda";
     case AJ_BRILHO_PLAYER: return "brilho interface player controles barra escurecer forte claro oled hdr osd luz";
     case AJ_NOVIDADES20: return "novidades novo versao 2.0 tour guia o que mudou mudancas whats new";
+    case AJ_DTS_AC3: return "dts convertido ac3 aac dolby digital 5.1 surround estereo audio som barra de som receiver arc earc conversao lg converted stereo";
+    case AJ_PS_CONTINUAR: return "continuar escolha perfil cartao card tela abertura inicial assistindo retomar remover esconder desligar quem esta assistindo continue watching profile picker";
+    case AJ_DV_MKV: return "dolby vision dv dovi mkv matroska perfil 8 5 hdr hdr10 experimental imagem cores";
+    case AJ_CW_RETIDO_TAMBEM: return "continuar assistindo tambem ilha retomar agora fileira duplicar repetir aparecer dois lugares titulo continue watching also island resume";
+    case AJ_HIST_CONTA: return "historico historico vistos progresso conta nuvio enviar scrobble simkl trakt perfil sincronizar sync history watched";
+    case AJ_SOCIAL: return "social amigos amigo atividade recomendar recomendacoes friends activity recommend presenca desligar remover";
+    case AJ_MENU_TOPO: return "menu barra topo alto cima lateral esquerda rail posicao navegacao top bar toolbar sidebar left position";
+    case AJ_TELA_ABERTURA: return "tela abertura abrindo carregando loading cinema detalhada fonte play transicao opening source screen";
+    case AJ_PLR_CLASSIF: return "classificacao indicativa idade faixa etaria 16 12 18 livre guia parental avisos violencia nudez player content rating age parental guide";
     case AJ_APOIAR: return "apoiar apoio doar doacao patreon kofi ko-fi cafe contribuir ajudar projeto qr support donate";
+    case AJ_BUSCA_NUVIO: return "busca pesquisa nuvio catalogo resultados primeiro ultimo desligar ocultar mover baixo aiometadata addon search results first last disable";
+    case AJ_BUSCA_ORIGEM: return "busca pesquisa fonte origem de from rotulo legenda grupo resultados ocultar esconder mostrar source label caption";
     case AJ_BUSCA_CINEMETA: return "busca pesquisa cinemeta catalogo nuvio addon excluir desligar resultados procurar search";
+    case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS: return "conquistas conquista selos emblemas trilhas progresso perfil aviso creditos secretas dica achievements badges";
     case AJ_ENQUETES: return "enquete enquetes votacao votar pesquisa opiniao notificacao notificacoes aviso convite ilha relogio poll";
     case AJ_LEG_LINGUA2: return "idioma legenda secundaria segunda dupla dual second subtitle subtitles";
     case AJ_TRAILER_ZOOM_TPK: return "trailer zoom barras pretas tarja ampliar recorte tela preta samsung experimental";
+    case AJ_MIC_BUSCA: return "microfone mic voz falar ditar ditado busca buscar teclado samsung controle remoto voice";
+    case AJ_FONTE_ORDEM: case AJ_FONTE_ORDEM_USO:
+      return "ordem ordenar subir descer prioridade add-on addon plugin primeiro desempate estrita auto-play autoplay automatico order priority tie strict";
+    case AJ_CW_PROXIMO: return "proximo episodio continuar assistindo a seguir next up fileira retomada esconder series so em andamento continue watching";
+    case AJ_LAYOUT_AJUSTES: return "layout arranjo lista painel grade linhas uma embaixo da outra antigo anterior visual ajustes configuracoes list rows settings classic";
+    case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: return "pular abertura resumo intro recap anteriormente automatico sozinho creditos skip auto";
+    case AJ_PULAR_CREDITOS: return "pular creditos automatico sozinho final encerramento skip credits auto ending";
+    case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "proximo episodio automatico autoplay creditos contagem netflix sozinho next episode auto play countdown";
+    case AJ_CW_MINIMO: return "minimo continuar assistindo porcentagem percentual entrar fileira retomada progresso quanto assistir comecou piso minimum percent continue watching threshold row";
+    case AJ_FONTE_PREPARAR: return "preparar fonte ao abrir titulo antecipar resolver antecipado play instantaneo inicio rapido debrid painel arquivo prepare source ahead instant start";
+    case AJ_FONTE_CONFERIR_VARIAS: return "conferir varias fontes ao mesmo tempo paralelo paralela simultaneo verificar verificacao automatico rapido inicio debrid painel arquivos parallel check several sources speed";
+    case AJ_FONTE_AQUECER: return "aquecer conexoes conexao rede dns tls antecipar preparar abrir titulo inicio rapido lento demora warm preconnect connection network speed";
+    case AJ_FONTE_TOCAR_CONFERINDO: return "tocar enquanto confere verificar verificacao abrir player mais rapido rapido inicio demora lento comecar play paralelo start fast verify while playing speed";
+    case AJ_FONTE_ESCOPO: case AJ_FONTE_ADDONS_PERM: case AJ_FONTE_PLUGINS_PERM: case AJ_FONTE_OUTROS:
+      return "auto-play autoplay automatico fonte addon add-on plugin permitidos permitido escopo idioma espanhol spanish preferidos allowed addons plugins source scope";
+    case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO:
+      return "regex expressao regular padrao filtro nome idioma espanhol latino castellano multi dual remux auto-play autoplay regex match pattern";
     case AJ_TAM_MAX: case AJ_TAM_MIN: return "tamanho maximo minimo gb gigabyte arquivo franquia dados internet limite cota plano economizar fonte automatica size quota data cap";
+    case AJ_FONTE_ORDEM_ADDON: return "ordem fontes qualidade addon aiostreams resolucao tamanho instalacao source order quality";
+    case AJ_P2P_LIMITE: return "limite espaco p2p torrent armazenamento disco cheio memoria buffer cache tamanho maximo gb space limit storage full";
+    case AJ_BUFFER: return "buffer tamanho memoria pequeno medio grande travando carregando rede instavel stats nerds";
     case AJ_CACHE_SEEK: return "cache seek buffer disco armazenamento voltar avancar travando carregando";
     case AJ_TMDB_IDIOMA: return "idioma metadados titulo sinopse traducao tmdb";
     case AJ_HERO_TRAILER: return "trailer trailers destaque topo hero autoplay automatico";
@@ -177,7 +219,8 @@ static const char *uxSinonimos(int op) {
     case AJ_HERO_TRAILER_SOM: case AJ_DET_TRAILER_SOM:
       return "trailer trailers som audio mudo silencio volume";
     case AJ_HERO_TRAILER_ESPERA: return "trailer trailers espera tempo demora atraso";
-    case AJ_LEG_SYNC_AUDIO: return "sincronia sincronizar legenda audio fala falas atraso automatico sync subtitle speech";
+    case AJ_LEG_FORCADA: return "legenda forcada forcadas forced letreiros placas audio idioma automatica subtitle";
+    case AJ_LEG_SYNC_AUTO: case AJ_LEG_SYNC_AUDIO: return "sincronia sincronizar legenda audio fala falas atraso automatico sync subtitle speech";
     case AJ_AVANCADAS: return "avancado avancada avancados avancadas tecnico tecnica opcoes ocultas mostrar esconder advanced";
     case AJ_LOGO_TRAILER: return "trailer trailers logo marca titulo oled queimar burn-in esconder canto";
     case AJ_TRAILER_FONTE: return "trailer trailers fonte origem provedor apple imdb youtube";
@@ -208,20 +251,42 @@ static const char *uxCaminhoAntigo(int op) {
     case AJ_DEBRID_RD: case AJ_DEBRID_TB: case AJ_DEBRID_PM: case AJ_DEBRID_AD: case AJ_DEBRID_AD_TESTAR:
     case AJ_MDB_CHAVE: case AJ_FANART_CHAVE:
       return "Chaves";
-    case AJ_P2P_LIGADO: case AJ_P2P_URL: case AJ_P2P_TESTAR:
+    case AJ_P2P_LIGADO: case AJ_P2P_URL: case AJ_P2P_TESTAR: case AJ_P2P_LIMITE:
     case AJ_JF_LIGADO: case AJ_JF_SERVIDOR: case AJ_JF_ENTRAR: case AJ_JF_SAIR:
     case AJ_EM_SERVIDOR: case AJ_EM_ENTRAR: case AJ_EM_SAIR:
     case AJ_PX_ENTRAR: case AJ_PX_SERVIDOR: case AJ_PX_SAIR:
     case AJ_PERFIL_ATIVO: case AJ_SYNC: case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_SAIR:
-    case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_SALVOS_DEST: case AJ_CW_FONTE: case AJ_ENQUETES:
+    case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_SALVOS_DEST: case AJ_CW_FONTE: case AJ_CW_PROXIMO: case AJ_ENQUETES:
+    case AJ_HIST_CONTA: case AJ_SOCIAL:
+    case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS:
       return "Contas e serviços";
-    case AJ_FONTE_MANUAL: case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_PRIORIDADE:
-    case AJ_FONTE_HDR: case AJ_FONTE_PRAZO: case AJ_FONTE_TEXTO: case AJ_TAM_MAX: case AJ_TAM_MIN:
+    case AJ_FONTE_MANUAL: case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_PRIORIDADE: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR:
+    case AJ_FONTE_HDR: case AJ_FONTE_PRAZO: case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: case AJ_TAM_MAX: case AJ_TAM_MIN:
+    case AJ_FONTE_ESCOPO: case AJ_FONTE_ADDONS_PERM: case AJ_FONTE_PLUGINS_PERM: case AJ_FONTE_OUTROS:
+    case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO:
+    case AJ_FONTE_ORDEM: case AJ_FONTE_ORDEM_USO:
     case AJ_SELOS_CORES: case AJ_SELOS_PACOTE: case AJ_SELOS_PACOTE_ADD: case AJ_SELOS_PACOTE_REM:
-      return "Reprodução";
-    case AJ_BUSCA_CINEMETA: return "Busca";
+      return "Fontes e addons";   // 2.0.2; desde a 2.0.3 a escolha da fonte mora em Reproducao
+    case AJ_BUSCA_CINEMETA: case AJ_BUSCA_NUVIO: case AJ_BUSCA_ORIGEM: return "Busca";
     case AJ_AVANCADAS: return "Aparência";
     case AJ_IDIOMA: return "Idioma";
+    // 2.0.3: Cartazes e arte + Trailers viraram Cartazes e trailers; Desempenho
+    // desta TV virou Esta TV; Conta e perfis virou Conta e servicos.
+    case AJ_HERO_TRAILER: case AJ_FOCO_TRAILER: case AJ_DET_TRAILER_AUTO: case AJ_DET_TRAILER:
+    case AJ_HERO_TRAILER_SOM: case AJ_DET_TRAILER_SOM: case AJ_TRAILER_FONTE: case AJ_HERO_TRAILER_ESPERA:
+    case AJ_TRAILER_QUAL: case AJ_TRAILER_ASPECTO: case AJ_TRAILER_ZOOM_TPK: case AJ_LOGO_TRAILER:
+      return "Trailers";
+    case AJ_EXPANDIR: case AJ_EXPANDIR_ATRASO: case AJ_BORDA_FOCO: case AJ_GRAD_CLASSICO:
+    case AJ_LARGURA_DP: case AJ_RAIO_DP: case AJ_PROF: case AJ_PROF_BORDA: case AJ_PROF_BRILHO:
+    case AJ_PROF_COBERTURA: case AJ_PROF_POSTERS: case AJ_PROF_CW: case AJ_PROF_EPS: case AJ_PROF_ELENCO:
+    case AJ_PROF_TRAILERS: case AJ_HERO_FUNDO: case AJ_HERO_ARTE_DIF: case AJ_POSTER_PROV:
+    case AJ_ADDON_POSTER: case AJ_ADDON_FUNDO: case AJ_ADDON_LOGO: case AJ_COL_ARTE_CONTA:
+    case AJ_POSTER_INST: case AJ_POSTER_TOKEN: case AJ_POSTER_EXTRA: case AJ_POSTER_CHAVE:
+    case AJ_POSTER_MODELO: case AJ_POSTER_TESTAR:
+      return "Cartazes e arte";
+    case AJ_RESOLUCAO: case AJ_QUALIDADE_IMG: case AJ_GPU_EFEITOS: case AJ_NAV_RAPIDA: case AJ_MEDIDOR:
+    case AJ_DIAGNOSTICO: case AJ_VELOCIDADE: case AJ_ESPACO: case AJ_TEX_MB:
+      return "Desempenho desta TV";
     default: return "";
   }
 }
@@ -280,15 +345,22 @@ int ajustes_buscar(const char *consulta, AjusteBuscaResultado *resultados, int c
     if (item->tipo != IT_OPC) continue;
     op = item->op;
     if (op < 0 || op >= AJ_N || visto[op]) continue;
+    if (!ajOpcaoDisponivel(op)) continue;
     visto[op] = 1;
     if (op == AJ_ICONE_APP && !apoiador_ativo()) continue;
     if ((op == AJ_PERFIL_PESQ || op == AJ_PERFIL_EDITAR) && !recomenda_ativo()) continue;
+    if (op == AJ_BUSCA_CINEMETA && valor[op] == 0 && !cinemetaInstalado()) continue;
     uxNormalizar(i18n(rotuloOpcao(op)), titulo, sizeof titulo);
     uxNormalizar(rotuloOpcao(op), tituloPt, sizeof tituloPt);
     uxNormalizar(uxSinonimos(op), aliases, sizeof aliases);
     uxIndiceAcrescentar(indice, sizeof indice, titulo);
     uxIndiceAcrescentar(indice, sizeof indice, tituloPt);
     uxIndiceAcrescentar(indice, sizeof indice, aliases);
+    // 2.0.3: o nome de antes da linha (ROTULO NOVO), em portugues e traduzido.
+    if (rotuloTecnico(op)) {
+      uxIndiceAcrescentar(indice, sizeof indice, rotuloTecnico(op));
+      uxIndiceAcrescentar(indice, sizeof indice, i18n(rotuloTecnico(op)));
+    }
     uxIndiceAcrescentar(indice, sizeof indice, uxCaminhoAntigo(op));
     uxIndiceAcrescentar(indice, sizeof indice, i18n(uxCaminhoAntigo(op)));
     uxIndiceAcrescentar(indice, sizeof indice, secao);

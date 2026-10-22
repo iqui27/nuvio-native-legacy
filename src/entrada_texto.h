@@ -38,23 +38,35 @@
 // O QUE CADA PLATAFORMA FAZ (detalhes e o que foi medido: entrada_texto.c)
 //   LG webOS  SDL_StartTextInput do SDL DA TV (libsdl2-webos, com text_model).
 //   Android   SDL_StartTextInput (IME do sistema; Gboard tem microfone).
-//   .wgt      <input> escondido no tizen-shell.html, focus() chama o IME.
-//   .tpk      host .NET (CANARIO, ver tizen-tpk/Texto.cs): so com host novo.
+//   .wgt      <input> escondido no tizen-shell.html: focus() chama o teclado
+//             da Samsung para digitar (TS_TECLADO) e para o botao de
+//             microfone das buscas (TS_VOZ, conforme o ajuste).
+//   .tpk      host .NET. Release: o mesmo botao (Voz.cs). Canario: teclado e
+//             ditado (Texto.cs).
 //   Mac       nada (o teclado fisico ja escreve).
 #include <SDL2/SDL.h>
 
 enum { TS_TECLADO = 1, TS_VOZ = 2 };
 enum { TS_EV_TEXTO = 1, TS_EV_FIM = 2 };
 
-// Bits TS_*. 0 = use o teclado do app. TS_VOZ so onde ESTE modulo inicia o
-// ditado (hoje: .tpk canario). No Android o ditado continua com o
-// android_ditado_* do Spotlight.
+// Bits TS_*. 0 = use o teclado do app. TS_VOZ so onde ESTE modulo inicia a
+// voz (hoje: o botao de microfone do .tpk e do .wgt). No Android o ditado
+// continua com o android_ditado_* do Spotlight.
 int  texto_sistema_disponivel(void);
 // `atual` e o texto que o campo ja tem (o IME comeca dele). voz=1 pede o
 // ditado onde houver; sem ditado, abre so o teclado.
 void texto_sistema_abrir(const char *atual, int voz);
 void texto_sistema_fechar(void);
 int  texto_sistema_aberto(void);
+// BOTAO DE MICROFONE DAS BUSCAS (.tpk e .wgt). Ajuste "Botao de microfone na busca"
+// (valores na ordem do ajuste): Automatico esconde o botao so na TV que diz
+// nao ter microfone. main.c repassa a cada quadro.
+enum { TS_MIC_AUTO = 0, TS_MIC_LIGADO = 1, TS_MIC_DESLIGADO = 2 };
+void texto_sistema_mic_modo(int modo);
+// 1 = a voz daqui e o teclado da Samsung aberto pelo botao de microfone: ele
+// ainda nao ouve (a pessoa aperta o microfone do controle), e o teclado modal
+// (teclado.c) nao mostra "Falar".
+int  texto_sistema_voz_pelo_teclado(void);
 // Tipo SDL dos avisos (SDL_RegisterEvents, uma vez). user.code = TS_EV_*;
 // em TS_EV_FIM, user.data1 != NULL quando a pessoa confirmou (OK/Concluido).
 Uint32 texto_sistema_evento(void);

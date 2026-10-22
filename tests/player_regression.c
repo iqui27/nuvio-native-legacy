@@ -9,6 +9,7 @@
 #include "tex_cache.h"
 #include "extras.h"
 #include "trakt.h"
+#include "traktscrobble.h"
 #include "addons.h"
 #include "rede.h"
 #include "detail.h"
@@ -48,7 +49,21 @@ static void teclaMenu(SDL_Keycode k) {
   SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=k;menu_evento(&e);
   e.type=SDL_KEYUP;menu_evento(&e);
 }
+// A decisao de "visto" de fecharSessao: o fim pela regra do cartao E a prova
+// de reproducao real. As sessoes inteiras (pipeline falso, destinos contados)
+// estao em tests/player_visto_trailer.c; este binario liga o video.c de verdade.
+static int saidaVisto(double pos, double dur, double cred, double assistido, double de) {
+  int chegou;
+  return player_regra_visto(de, assistido, pos, player_regra_concluiu(pos, dur, cred), &chegou);
+}
 static void testar(void) {
+  // #205 NAO PODE REGREDIR O #100. Aqui em cima porque nao dependem de estado.
+  assert(saidaVisto(2400, 2700, 2400, 2400, 0));    // aceitou o proximo nos creditos (88,9%)
+  assert(saidaVisto(1260, 1320, 0, 1170, 0));       // pulou 90 s de abertura, saiu a 60 s do fim
+  assert(saidaVisto(2526, 2580, 0, 2526, 0));       // 1,5x: conta a midia tocada, nao o relogio
+  assert(saidaVisto(5950, 6000, 0, 2350, 3600));    // retomou em 60% e foi ate o fim
+  assert(!saidaVisto(2824, 2843, 0, 133, 0));       // tocou 2 min e buscou o fim: nao viu
+  assert(!saidaVisto(69, 129, 0, 69, 0));           // duracao falsa de trailer, sem catalogo
   perfil_iniciar();perfil_abrir();
   assert(perfil_aberto());
   { PerfilDados pd={0};
@@ -160,6 +175,10 @@ static void testar(void) {
   assert(player_controles_visiveis());
   teclaPlayer(SDLK_DOWN);assert(!player_controles_visiveis());
   teclaPlayer(SDLK_DOWN);assert(player_controles_visiveis());
+  // #305: CIMA na barra (topo, sem trecho pulavel) esconde; a tecla seguinte revela.
+  teclaPlayer(SDLK_UP);assert(player_controles_visiveis());   // botoes -> barra
+  teclaPlayer(SDLK_UP);assert(!player_controles_visiveis());  // barra -> esconde
+  teclaPlayer(SDLK_UP);assert(player_controles_visiveis());
   teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RETURN);
   assert(player_pediu_fontes());   /* legendas -> audio -> proporcao -> fontes */
   assert(player_carregando());player_encerrar();
@@ -317,9 +336,10 @@ static void testar(void) {
   //   ultimos 60 s, e sem esse arredondamento trakt.c manda /scrobble/pause,
   //   que nao marca nada. Aceitar o proximo episodio que o proprio app ofereceu
   //   deixava o episodio por marcar — o relato do #100.
-  assert(player_regra_proximo(960,1080,0));   // o app diz: acabou, toma o proximo
-  assert(!(960 >= 1080 - 60));                // a regra VELHA dizia: nao acabou
-  assert(player_regra_concluiu(960,1080,0));  // agora as duas dizem o mesmo
+  //   2.0.3: sem marcador o cartao sobe a 40 s do fim (tempo fixo), aos 1040 s.
+  assert(!player_regra_proximo(960,1080,0));
+  assert(player_regra_proximo(1040,1080,0));  // o app diz: acabou, toma o proximo
+  assert(player_regra_concluiu(1040,1080,0)); // e as duas dizem o mesmo
   //   Marcador de creditos aceito manda sozinho, aqui como no cartao: 50 min
   //   com creditos aos 45 (sobram 300 s = a janela de um episodio de 50 min).
   assert(player_regra_concluiu(2700,3000,2700));
@@ -351,7 +371,7 @@ static void testar(void) {
   assert(cat_historico_estado_item(0)==1);
   cat_historico_definir_id("tt0000001:2:4","series",0);
   assert(cat_historico_estado_item(0)==0);
-  cat_salvar_progresso_ep(0,500,1000,2,4);
+  cat_salvar_progresso_ep(0,500,1000,2,4, -1);
   c.temporada=1;c.episodio=1;strcpy(c.nomeEpisodio,"Nome antigo");
   cat_definir(&c,1);
   assert(cat_item(0)->temporada==2 && cat_item(0)->episodio==4 && cat_item(0)->progresso==50);

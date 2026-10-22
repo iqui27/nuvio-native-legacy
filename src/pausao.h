@@ -70,6 +70,15 @@ void pausao_atualizar(float dt, Uint32 agora, int podeSubir, int idx,
 // 1 do quadro em que o painel aparece ate o quadro em que some por completo.
 int  pausao_visivel(void);
 
+// SOMEONE TOUCHED THE CONTROL. Restarts the 5 s clock that makes the panel come
+// up, and that is what stops it returning over someone who is still using the
+// player. Without it: the panel rises, a key dismisses it, its clock restarts
+// from zero, and the panel is back 5 s later - taking away the controls the
+// person just brought up.
+//
+// Call on EVERY key, not only the ones the panel consumes.
+void pausao_activity(void);
+
 // So chame com o painel de pe. Ver o enum acima.
 int  pausao_evento(const SDL_Event *e);
 

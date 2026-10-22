@@ -67,6 +67,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.response(302, headers={"Location": "/loop"})
         elif path == "/file":
             self.response(302, headers={"Location": "file:///not-read"})
+        elif path == "/tlsother":
+            # Same TLS server under another origin (127.0.0.1): the certificate
+            # only names localhost, so a verified hop must fail.
+            self.response(302, headers={"Location": f"https://127.0.0.1:{self.server.server_port}/ok"})
         elif path == "/downgrade":
             self.response(302, headers={"Location": self.server.other + "/echo"})
         elif path == "/bin":

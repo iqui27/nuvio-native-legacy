@@ -278,11 +278,12 @@ int main(void) {
     perfilsel_teste_estado(&depois);
     assert(depois.pin > antes.pin && depois.pin < 1.0f);
     assert(depois.mural_tempo == antes.mural_tempo); }
-  tecla(SDLK_UP); tecla(SDLK_UP); tecla(SDLK_UP);   // sobe para a linha do "1"
-  tecla(SDLK_RETURN);                               // 1
-  tecla(SDLK_RIGHT); tecla(SDLK_RETURN);            // 2
-  tecla(SDLK_DOWN); tecla(SDLK_RETURN);             // 5
-  tecla(SDLK_DOWN); tecla(SDLK_RETURN);             // 8
+  // #289: three digits only — the 4th would verify against the server. The
+  // pad opens on "5"; the bottom row is blank, 0, delete (no OK key).
+  tecla(SDLK_UP); tecla(SDLK_LEFT); tecla(SDLK_RETURN);  // 1
+  tecla(SDLK_RIGHT); tecla(SDLK_RETURN);                 // 2
+  tecla(SDLK_8);                                         // remote number key
+  tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_DOWN);  // focus on "0"
   captura("/tmp/nuvio-perfilsel-pin.bmp");
 
   // Oito perfis: o pior caso do layout (CONTA_PERFIL_MAX).
@@ -359,9 +360,9 @@ int main(void) {
                   "3\t1\t0\t0\t#43A047\tInfantil\t\tdeploy/app/art/07.jpg\n"
                   "4\t0\t0\t0\t#8E24AA\tVisitas\t\t\n", 1);
     perfis_carregar_ativo();
-    perfis_definir_ativo(3); assert(prog_gravar_local("tt-cont-b", 0, 0, 1000, 6000));
-    perfis_definir_ativo(2); assert(prog_gravar_local("tt-cont-b", 0, 0, 2300, 6000));
-    perfis_definir_ativo(1); assert(prog_gravar_local("tt-cont-a", 2, 4, 1560, 2640));
+    perfis_definir_ativo(3); assert(prog_gravar_local("tt-cont-b", 0, 0, 1000, 6000, -1));
+    perfis_definir_ativo(2); assert(prog_gravar_local("tt-cont-b", 0, 0, 2300, 6000, -1));
+    perfis_definir_ativo(1); assert(prog_gravar_local("tt-cont-a", 2, 4, 1560, 2640, -1));
     ajustesDeTeste(0);
     perfilsel_iniciar();
     captura("/tmp/nuvio-perfilsel-continuar-1.bmp");
@@ -399,7 +400,9 @@ int main(void) {
     perfis_esquecer(); dados_iniciar(NULL);
     escreverCache("1\t0\t1\t0\t#1E88E5\tHenrique\t\tdeploy/app/art/03.jpg\n"
                   "2\t0\t0\t1\t#E53935\tÁlvaro\t\t\n"
-                  "3\t1\t0\t0\t#43A047\tInfantil\t\tdeploy/app/art/07.jpg\n", 1);
+                  "3\t1\t0\t0\t#43A047\tInfantil\t\tdeploy/app/art/07.jpg\n"
+                  // #295: avatar but no background art.
+                  "4\t0\t0\t0\t#8E24AA\tLia\tdeploy/app/art/poster/05.jpg\t\n", 1);
     perfis_carregar_ativo();
     ajustesDeTeste(0);
     perfilsel_iniciar();
@@ -424,9 +427,18 @@ int main(void) {
     }
     perfilsel_teste_estado(&e);
     assert(e.amb_t == 1.0f);
-    // Perfil sem arte: o mural volta.
+    perfilsel_teste_estado(&e);
+    assert(e.amb_fonte == 1);
+    // #295: no art and no avatar -> the profile's colour light, not the wall.
     tecla(SDLK_LEFT);
     captura("/tmp/nuvio-perfilsel-amb-sem-arte.bmp");
+    perfilsel_teste_estado(&e);
+    assert(e.amb_atual == 1 && e.amb_fonte == 0);
+    // #295: avatar only -> the blurred avatar with the profile colour.
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);
+    captura("/tmp/nuvio-perfilsel-amb-avatar.bmp");
+    perfilsel_teste_estado(&e);
+    assert(e.amb_atual == 3 && e.amb_fonte == 2 && e.amb_t == 1.0f);
   }
 
   tex_encerrar(); txt_encerrar(); gfx_encerrar();

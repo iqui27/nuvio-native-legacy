@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+unsigned int SDL_GetTicks(void) { return 0; }
+void marco(const char *m) { (void)m; }
 static const char *idiomaFalso = "pt-BR";
 const char *ajustes_tmdb_idioma(void) { return idiomaFalso; }
 char *rede_baixar(const char *url, int seg) {

@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // "O que essa pessoa estava vendo", sob o perfil em foco na escolha de perfil
 // (2.0, variante B). So escolhe e descreve o item; quem desenha e perfilsel.c.
 //
@@ -22,7 +23,7 @@
 
 typedef struct {
   char  titulo[160];
-  char  poster[400];     // vazio: cartao so de texto
+  char  poster[NV_ARTE_URL_MAX];     // vazio: cartao so de texto
   char  epNome[96];      // so serie, e so quando se sabe o nome deste episodio
   int   serie, t, e;
   float progresso;       // 0..1

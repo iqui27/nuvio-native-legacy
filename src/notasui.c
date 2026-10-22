@@ -233,6 +233,24 @@ float notasui_desenhar_linha(const NotasPlano *p, float x, float yc, float a) {
 }
 
 // ---------------------------------------------------------------------------
+// A MARCA SOZINHA (selo de nota do card de episodio)
+// ---------------------------------------------------------------------------
+// O icone da fonte (o disco do Trakt, o letreiro do TMDB), nao o wordmark da
+// linha do titulo: num selo de 28 de altura o nome por extenso nao cabe.
+float notasui_marca_largura(int f, float h) {
+  Png p = pngDe(f, 0, 0);
+  return p.nome ? larguraPng(p.nome, p.asp, h) : 0.0f;
+}
+float notasui_marca(int f, float x, float yc, float h, float a) {
+  Png p = pngDe(f, 0, 0);
+  float w;
+  if (!p.nome) return 0.0f;
+  w = larguraPng(p.nome, p.asp, h);
+  desenhaPng(p.nome, (GfxRect){ x, yc - h * 0.5f, w, h }, a);
+  return w;
+}
+
+// ---------------------------------------------------------------------------
 // CARTAO DA ABA (uma marca centralizada)
 // ---------------------------------------------------------------------------
 float notasui_marca_cartao(int f, int cru, float xc, float yc, float h, float a) {
@@ -257,13 +275,15 @@ float notasui_marca_cartao(int f, int cru, float xc, float yc, float h, float a)
 // TODAS as fontes viram bloco: com onze a grade tem seis linhas e continua
 // inteira na tela (nada cortado). O foco anda pelos blocos com as setas
 // (detail.c faz o cima/baixo dentro da grade).
-#define SEC_W       1728.0f      // NV_TELA_W - 2 * NV_DETP_X
-#define SCORE_W      520.0f
+#include "telefoneui.h"
+static int notasEmpilhadas(void) { return telefoneui_ativo() && NV_TELA_W < 1500; }
+#define SEC_W       (notasEmpilhadas() ? NV_TELA_W - 192.0f : 1728.0f)
+#define SCORE_W     (notasEmpilhadas() ? SEC_W : 520.0f)
 #define SCORE_MIN_H  448.0f
 #define COL_GAP       28.0f
 #define TILE_GAP      14.0f
 #define TILE_H       104.0f
-#define TILE_W     ((SEC_W - SCORE_W - COL_GAP - TILE_GAP) * 0.5f)
+#define TILE_W     ((SEC_W - (notasEmpilhadas() ? 0 : SCORE_W + COL_GAP) - TILE_GAP) * 0.5f)
 #define TILE_PAD      24.0f
 #define TILE_LOGO_W   64.0f
 #define TILE_VAL_W   128.0f
@@ -311,7 +331,7 @@ typedef struct {
   int nFontes;
   int fontes[EX_NFONTES];
   int norm[EX_NFONTES];
-  float h;                    // altura da secao (cartao x grade)
+  float h, scoreH;             // altura da secao e do resumo
 } Medidas;
 
 static void medir(const NotasSecao *s, Medidas *m) {
@@ -327,7 +347,8 @@ static void medir(const NotasSecao *s, Medidas *m) {
   if (m->nFontes) {
     int linhas = (m->nFontes + 1) / 2;
     float hg = (float)linhas * TILE_H + (float)(linhas - 1) * TILE_GAP;
-    m->h = hg > SCORE_MIN_H ? hg : SCORE_MIN_H;
+    m->scoreH = notasEmpilhadas() ? SCORE_MIN_H : fmaxf(hg, SCORE_MIN_H);
+    m->h = notasEmpilhadas() ? m->scoreH + COL_GAP + hg : m->scoreH;
   }
 }
 
@@ -365,13 +386,18 @@ static TxtLinha texto(TxtEstilo e, const char *s, int c) {
 static const char *nomeCurto(int f) { return f == EX_METAUSER ? "Metacritic" : nf_nome(f); }
 
 // CARTAO DE NOTA, a esquerda.
-static void desenhaCartao(const Medidas *m, float x, float y, float h, float a) {
+static void desenhaCartao(const Medidas *m, float x, float y, float h, float f, float a) {
   NfResumo r;
   GfxRect box = { x, y, SCORE_W, h };
   float px = x + 40.0f, py = y + 34.0f, larg = SCORE_W - 80.0f;
   char buf[160];
   nf_resumo(m->fontes, m->norm, m->nFontes, &r);
+  // O foco da secao mora AQUI, no numero grande: os blocos de fonte nao sao
+  // paradas do D-pad (o detalhe de cada um ja esta na grade ao lado).
+  if (!ajustes_vidro()) foco_anel(box, CARD_RAIO / h, f, a);
   painel(box, CARD_RAIO, a);
+  if (f > 0.01f) gfx_cor(box, CARD_RAIO / h, 1, 1, 1, 0.07f * f * a);
+  if (ajustes_vidro()) foco_anel(box, CARD_RAIO / h, f, a);
   if (r.n == 0) {
     // So a nota agregada do MDBList (ou nenhuma que conte): nada a comparar.
     txt_bloco_corta(TXT_DET_META2, i18n("Só a nota agregada chegou; não há o que comparar."),
@@ -508,18 +534,18 @@ float notasui_fontes_desenhar(const NotasSecao *s, float x, float y, float a,
   Medidas m;
   NfResumo r;
   int pend0 = txt_pendentes, aberto, i;
-  float aa, gx = x + SCORE_W + COL_GAP;
+  float aa, gx = notasEmpilhadas() ? x : x + SCORE_W + COL_GAP;
   medir(s, &m);
   if (!m.nFontes) return 0.0f;
   if (y >= NV_TELA_H || y + m.h <= 0.0f) return m.h;
   aa = portao(&gateFontes, a, &aberto);
   nf_resumo(m.fontes, m.norm, m.nFontes, &r);
-  desenhaCartao(&m, x, y, m.h, aa);
+  desenhaCartao(&m, x, y, m.scoreH, foco ? foco[0] : 0.0f, aa);
   for (i = 0; i < m.nFontes; i++) {
     float tx = gx + (float)(i % 2) * (TILE_W + TILE_GAP);
-    float ty = y + (float)(i / 2) * (TILE_H + TILE_GAP);
+    float ty = y + (notasEmpilhadas() ? m.scoreH + COL_GAP : 0) + (float)(i / 2) * (TILE_H + TILE_GAP);
     if (ty > NV_TELA_H || ty + TILE_H < 0.0f) continue;
-    desenhaBloco(s, m.fontes[i], m.norm[i], &r, tx, ty, foco ? foco[i] : 0.0f, aa);
+    desenhaBloco(s, m.fontes[i], m.norm[i], &r, tx, ty, 0.0f, aa);
   }
   if (!aberto) textogate_passo(&gateFontes, txt_pendentes - pend0, SDL_GetTicks());
   return m.h;

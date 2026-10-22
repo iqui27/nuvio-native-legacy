@@ -21,7 +21,9 @@ __attribute__((weak)) int arte_reserva_registrar(const char *url, const char *im
 #include <stdio.h>
 
 static int mesmoTitulo(const char *a, const char *b);
-static int aplicarProgressoDoDisco(void);
+static ProgRegistro *lerProgresso(int *k);
+static int aplicarProgressoEm(CatItem *v, int m, const ProgRegistro *regs, int k);
+static int removidoVence(const CatItem *c, const void *u);
 
 // --- QUEM PODE TROCAR O VETOR ------------------------------------------------
 // Dois publicadores podem se encontrar: o fio da descoberta (cat_definir_tudo)
@@ -180,19 +182,81 @@ static char dirGravacao[512];
 // Episodios de todos os titulos num vetor unico, com faixa por titulo. Uma
 // matriz [titulo][episodio] gastaria memoria pelo pior caso em 40 titulos dos
 // quais a maioria e filme e nao tem episodio nenhum.
-// 1200 e nao 600: uma serie longa (novela, anime) estourava o vetor e a
-// resposta ao estouro era ZERAR a faixa de episodios de TODOS os titulos —
-// abrir uma serie grande apagava os episodios das outras telas visitadas.
-// Sao ~200 B por CatEp: dobrar custa ~120 KB, metade do problema resolvido.
-#define CAT_EP_MAX 1200
+// 2400: preserva listas longas como S1E1..S1E2001 (#391). Em par com
+// VIDEOS_MAX (descoberta.c), sem mudar a invalidacao das faixas na volta.
+#define CAT_EP_MAX 2400
 static CatEp eps[CAT_EP_MAX];
 // Faixas de episodio por titulo, do mesmo tamanho do vetor de itens — que
 // agora cresce, entao estes tambem.
 static int  *epIni, *epQtd, nEps;
+
+// --- A TRAVA DOS EPISODIOS (#203) --------------------------------------------
+// epIni/epQtd/nFaixas/nEps e o CONTEUDO de eps[] so se tocam com epTrava.
+//
+// A corrida, provada com TSAN no app inteiro: garantirFaixas (realloc de
+// epIni/epQtd) rodava no fio de "Continuar assistindo" (cat_trocar_continuar,
+// DEPOIS de soltar pubTrava) enquanto o desenho, sem trava nenhuma, fazia
+// cat_n_episodios -> epQtd[i]. realloc que muda o bloco = leitura de memoria
+// liberada no fio principal; e cat_definir_episodios (fio buscarEps, um por
+// pagina de serie) escrevia epIni[i]/epQtd[i] no ponteiro que acabara de ser
+// liberado = ESCRITA em heap liberado, que so explode depois, num free()
+// qualquer (aquecer_pedir, os SIGSEGV de #271).
+//
+// Mutex e nao copia-na-escrita porque o que se guarda e pequeno e quente: o
+// leitor pega a trava, le DOIS inteiros e solta (dezenas de ns sem disputa); o
+// escritor mais longo e o memcpy de ate CAT_EP_MAX episodios.
+// Nada de rede, disco, printf nem desenho dentro dela.
+//
+// ORDEM DAS TRAVAS (de fora para dentro; nunca o contrario):
+//   contTrava (descoberta.c)  ->  pubTrava  ->  epTrava
+// epTrava e FOLHA: com ela presa nao se chama nada que trave. histTrava
+// (abaixo) nunca e tomada junto com pubTrava/epTrava. cat_n_episodios e
+// cat_episodio podem ser chamados com pubTrava presa (respeitam a ordem).
+// As travas de fora deste arquivo que andam perto (verTrava em streams.c, a
+// `trava` de vistoep.c) podem estar presas quando se pega epTrava; o contrario
+// nunca acontece, porque com epTrava presa nao se sai de catalogo.c.
+//
+// O que o leitor recebe de cat_episodio e um ponteiro para eps[], que e
+// ESTATICO: nunca e liberado, entao guardar o ponteiro pelo quadro nao e uso
+// de memoria liberada. O conteudo de uma vaga so e reescrito quando o vetor
+// da a volta (nEps + qtd > CAT_EP_MAX), e por isso a troca de catalogo NAO
+// zera mais nEps — so as faixas. Ver cat_definir_episodios.
+// O que RESTA (aceito, nao provado em TV): quem segura o ponteiro enquanto a
+// vaga e reescrita na volta le texto misturado por um quadro. Nao e heap
+// liberado e nao cresce; copiar para fora mudaria as 35 chamadas.
+static pthread_mutex_t epTrava = PTHREAD_MUTEX_INITIALIZER;
 // SOBE A CADA TROCA DO CATALOGO INTEIRO. Quem guarda um indice (a pagina de
 // detalhe guarda) precisa saber que ele deixou de valer — e, no caso dos
 // episodios, que a faixa dele foi ZERADA junto e ninguem vai repedir sozinho.
 static unsigned catRevisao;
+// Atomica (#203): sobe em fios diferentes (descoberta, "Continuar
+// assistindo", o principal ao tirar um card) e e lida pelo desenho a cada
+// quadro. O TSAN pegou cat_trocar_continuar x cat_revisao; o incremento
+// nao-atomico de dois fios ainda podia perder uma subida — e uma subida
+// perdida e a home que nao se reconstroi.
+static void revisaoSobe(void) { __atomic_add_fetch(&catRevisao, 1u, __ATOMIC_RELEASE); }
+// GERACAO DAS FAIXAS DE EPISODIO (2.0.3): sobe TODA vez que uma faixa e
+// apagada — troca de bloco (zerarFaixas) e, principalmente, a VOLTA do vetor
+// comum em cat_definir_episodios, que zera as faixas de TODOS os titulos sem
+// mexer em catRevisao. Quem mostra episodios (detalhe, player) so repedia
+// quando a revisao andava: a volta apagava a lista da serie aberta e ninguem
+// a pedia de novo (TCL do dono, 08/10: pagina da serie aberta pela ilha sem
+// os cartoes de episodio, e "[posplay] sem lista de episodios" no player).
+// Desde 1a5d1670 a troca de catalogo nao zera mais nEps, entao a volta deixou
+// de ser rara: acontece a cada CAT_EP_MAX episodios publicados na sessao.
+static unsigned epGeracao;
+// VERSAO DE CONTEUDO dos episodios (review #205, achado 4): sobe a CADA
+// escrita — inclusive redefinir a mesma lista com a duracao preenchida (o
+// metadado chega depois da fonte abrir) e tirar um item do meio. Para quem
+// mantem CACHE derivado dos episodios (duracao esperada da fonte, player.c)
+// recalcular em O(1). Nao confundir com epGeracao acima: aquela so sobe
+// quando listas sao PERDIDAS (zerarFaixas, wrap do vetor comum) e faz quem
+// mostra episodios REPEDIR pela rede.
+static unsigned epVersao;
+static void epVersaoSobe(void) { __atomic_add_fetch(&epVersao, 1u, __ATOMIC_RELEASE); }
+unsigned cat_versao_episodios(void) { return __atomic_load_n(&epVersao, __ATOMIC_ACQUIRE); }
+static void epGeracaoSobe(void) { epVersaoSobe(); __atomic_add_fetch(&epGeracao, 1u, __ATOMIC_RELEASE); }
+unsigned cat_geracao_episodios(void) { return __atomic_load_n(&epGeracao, __ATOMIC_ACQUIRE); }
 // SOBE A CADA MUDANCA EM ITEM, e nao so na troca do bloco: marca de lista
 // (naLista), progresso, item acrescentado ou substituido. Existe para quem
 // mostra uma LISTA DERIVADA do catalogo (o painel de Salvos) poder perguntar
@@ -213,6 +277,7 @@ typedef struct {
   char tipo[8];
   int conhecido;
   int visto;
+  long long ms;
 } CatHistorico;
 
 // TETO PROPRIO, e nao CAT_MAX (#212). A tabela agora recebe o mapa INTEIRO de
@@ -305,6 +370,7 @@ static int historico_pos(const char *imdb, const char *tipo, int criar) {
   snprintf(historico[nHistorico].tipo, sizeof historico[nHistorico].tipo, "%s", tb);
   historico[nHistorico].conhecido = 0;
   historico[nHistorico].visto = 0;
+  historico[nHistorico].ms = 0;
   histBalde[b] = nHistorico + 1;
   return nHistorico++;
 }
@@ -327,29 +393,48 @@ int cat_historico_estado_item(int indice) {
 // O hash e consultado sob uma trava curta: nenhum ponteiro da tabela escapa,
 // e reset de perfil e insercao de outro fio nunca deixam chave pela metade.
 int cat_historico_estado_id(const char *imdb, const char *tipo) {
+  return cat_historico_estado_tempo(imdb, tipo, NULL);
+}
+
+int cat_historico_estado_tempo(const char *imdb, const char *tipo, long long *ms) {
   int p, estado;
+  if (ms) *ms = 0;
   if (!imdb || !imdb[0]) return -1;
   pthread_mutex_lock(&histTrava);
   p = historico_pos(imdb, tipo ? tipo : "movie", 0);
   estado = p >= 0 && historico[p].conhecido ? historico[p].visto : -1;
+  if (ms && estado >= 0) *ms = historico[p].ms;
   pthread_mutex_unlock(&histTrava);
   return estado;
 }
 
 // Sob histTrava. Ausencia num snapshot Trakt nao apaga uma marca que veio
 // da conta ou de acao local: cada fonte continua acrescentando suas provas.
-static void historico_definir(const char *imdb, const char *tipo, int visto) {
+static void historico_definir(const char *imdb, const char *tipo, int visto, long long ms) {
   int p = historico_pos(imdb, tipo, 1);
   if (p < 0) return;
-  if (historico[p].conhecido && historico[p].visto == (visto ? 1 : 0)) return;
+  if (ms > 0 && historico[p].ms > ms) return;
+  if (!ms) {
+    // Snapshot repetido conserva a data; um jornal fornece a data original.
+    if (historico[p].conhecido && historico[p].visto == (visto ? 1 : 0)) return;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ms = (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+  }
+  if (historico[p].conhecido && historico[p].visto == (visto ? 1 : 0) && historico[p].ms == ms) return;
+  historico[p].ms = ms;
   historico[p].visto = visto ? 1 : 0;
   historico[p].conhecido = 1;
   mudou();
 }
 
 void cat_historico_definir_id(const char *imdb, const char *tipo, int visto) {
+  cat_historico_definir_tempo(imdb, tipo, visto, 0);
+}
+
+void cat_historico_definir_tempo(const char *imdb, const char *tipo, int visto, long long ms) {
   pthread_mutex_lock(&histTrava);
-  historico_definir(imdb, tipo, visto);
+  historico_definir(imdb, tipo, visto, ms);
   pthread_mutex_unlock(&histTrava);
 }
 
@@ -358,7 +443,7 @@ int cat_historico_definir_se_geracao(const char *imdb, const char *tipo,
   int atual;
   pthread_mutex_lock(&histTrava);
   atual = geracao == histGeracao;
-  if (atual) historico_definir(imdb, tipo, visto);
+  if (atual) historico_definir(imdb, tipo, visto, 0);
   pthread_mutex_unlock(&histTrava);
   return atual;
 }
@@ -382,7 +467,8 @@ int cat_visto(const CatItem *c) {
   // episodio, nao da serie; quem decide a serie inteira e o historico, que
   // extras.c escreve com os contadores de /shows/<id>/progress/watched.
   if (!strcmp(tipo_base(c->tipo), "series")) return 0;
-  return c->progresso >= 90;
+  // Posicao alcancada por seek (#205) nao e visto: o registro local diz.
+  return c->progresso >= 90 && prog_tocou(c->imdb) != 0;
 }
 
 // Compatibilidade para chamadores antigos que so conhecem o IMDb. A serie e
@@ -411,14 +497,20 @@ static int nFaixas;
 // serie sem lugar nenhum onde ver os episodios.
 //
 // Quem PRECISA invalidar tudo e cat_definir_tudo, onde os indices realmente
-// mudam — e la a chamada e explicita, logo abaixo de `nEps = 0`.
+// mudam — e la a chamada e explicita, junto da troca do bloco.
+//
+// SOB epTrava (as duas): o realloc troca o bloco, e leitor nenhum pode estar
+// dentro dele. Ver "A TRAVA DOS EPISODIOS" no topo.
 static void garantirFaixas(int quantos) {
   int *a, *b;
   if (quantos < 1) return;
   a = realloc(epIni, sizeof(int) * (size_t)quantos);
-  b = realloc(epQtd, sizeof(int) * (size_t)quantos);
   if (a) epIni = a;
+  b = realloc(epQtd, sizeof(int) * (size_t)quantos);
   if (b) epQtd = b;
+  // Sem memoria: as faixas valem so ate o MENOR dos dois blocos. Antes
+  // nFaixas virava `quantos` de qualquer jeito, e o leitor indexava alem.
+  if (!a || !b) { if (nFaixas > quantos) nFaixas = quantos; return; }
   // realloc NAO inicializa o que cresceu: a cauda nova sai com lixo, e um
   // epQtd de lixo faz cat_episodio ler fora do vetor de episodios.
   if (quantos > nFaixas) {
@@ -432,6 +524,7 @@ static void garantirFaixas(int quantos) {
 // Troca de catalogo: os indices mudaram e nenhuma faixa antiga vale.
 static void zerarFaixas(int quantos) {
   nFaixas = 0;
+  epGeracaoSobe();
   garantirFaixas(quantos);
 }
 
@@ -619,16 +712,22 @@ int cat_carregar(const char *dirArte) {
   // Progresso gravado NESTE app (progresso.c). Vem depois de extra.txt de
   // proposito — o que se assistiu aqui e mais recente que o retrato trazido do
   // app web.
-  { int aplicados = aplicarProgressoDoDisco();
-    if (aplicados) printf("catalogo: %d progressos deste app\n", aplicados); }
+  { int k, aplicados;
+    ProgRegistro *regs = lerProgresso(&k);
+    aplicados = aplicarProgressoEm(itens, n, regs, k);
+    free(regs);
+    if (aplicados) { mudou(); printf("catalogo: %d progressos deste app\n", aplicados); } }
 
   // episodios.txt: "indice|temporada|episodio|nome|duracao|data|sinopse".
   // Indice na frente porque so parte dos titulos tem episodio — uma linha por
   // titulo, como nos outros arquivos, desperdicaria a maioria das linhas.
   snprintf(caminho, sizeof caminho, "%s/episodios.txt", dirArte);
   { FILE *fe2 = fopen(caminho, "r");
+    pthread_mutex_lock(&epTrava);
     nEps = 0;
     zerarFaixas(nAlocado);   // carga do zero: nenhuma faixa antiga vale
+    // Leitura de arquivo com epTrava presa: e o arranque, antes de qualquer
+    // fio da descoberta existir, entao ninguem espera por ela.
     if (fe2) {
       while (nEps < CAT_EP_MAX && fgets(linha, sizeof linha, fe2)) {
         char c1[8], c2[8], c3[8];
@@ -655,8 +754,10 @@ int cat_carregar(const char *dirArte) {
         nEps++;
       }
       fclose(fe2);
-      printf("catalogo: %d episodios\n", nEps);
     }
+    { int lidos = nEps;
+      pthread_mutex_unlock(&epTrava);
+      if (fe2) printf("catalogo: %d episodios\n", lidos); }
   }
 
   int comElenco = 0;
@@ -700,7 +801,14 @@ int ajustes_idioma(void);
 // com perfil 1 continua certo (era o dono daquele Trakt) e e aceito, para o
 // perfil 1 nao pagar um arranque sem cache por nada; o de qualquer outro
 // perfil e recusado e apagado.
-#define CACHE_VERSAO 6
+// VERSAO 7: novo campo CatItem.posCreditos (cena pós-créditos, TMDB
+// 179430/179431). O sizeof recusaria o arquivo sozinho; a versao sobe mesmo
+// assim para o motivo da recusa ser o campo novo.
+// VERSAO 8: CatItem.fontes ocupou o padding antes de `imdb`. sizeof(CatItem)
+// nao mudou (17816), mas `imdb` e `tipo` deslocaram 4 bytes: um arquivo da 7
+// passaria no sizeof e leria "tt1234567" como "34567". So a versao recusa. A 5
+// deixou de ser aceita no perfil 1 pelo mesmo motivo (layout sem `fontes`).
+#define CACHE_VERSAO 8
 // Mesmo cabecalho, itens CODIFICADOS (zeros em corrida). Um CatItem tem ~16 KB
 // e quase tudo e zero (buffers de URL dimensionados para o pior caso): 1600
 // titulos eram 25,6 MB gravados na MEMFS dentro da trava do sistema de arquivos
@@ -752,7 +860,6 @@ static int rleDecodificar(const unsigned char *enc, size_t encN, unsigned char *
   }
   return o <= n;
 }
-#define CACHE_VERSAO_SO_P1 5
 
 typedef struct {
   unsigned magia, versao, tamItem, tamFileira;
@@ -1006,8 +1113,7 @@ int cat_ler_cache(const char *dirArte) {
   if (fread(&c, sizeof c, 1, f) != 1) { fclose(f); return 0; }
   // RECUSA em vez de ler torto. Struct diferente = arquivo de outra build.
   if ((c.magia != CACHE_MAGIA && c.magia != CACHE_MAGIA_RLE) ||
-      !(c.versao == CACHE_VERSAO ||
-        (c.versao == CACHE_VERSAO_SO_P1 && c.perfil == 1)) ||
+      c.versao != CACHE_VERSAO ||
       c.tamItem != sizeof(CatItem) || c.tamFileira != sizeof(CatFileira) ||
       c.nItens < 0 || c.nItens > CAT_MAX ||
       c.nFileiras < 0 || c.nFileiras > CAT_FIL_MAX) {
@@ -1234,10 +1340,10 @@ static int normalizarIndice(int indice) {
   return ((indice % i) + i) % i;
 }
 
-void cat_apontar_episodio(int indice, int temporada, int episodio) {
+// Sob pubTrava; aplicarUm ja a segura. Ordem: pubTrava -> epTrava.
+static void apontarEpisodio(int indice, int temporada, int episodio) {
   int e;
-  indice = normalizarIndice(indice);
-  if (indice < 0 || !(temporada > 0 && episodio > 0)) return;
+  if (!(temporada > 0 && episodio > 0)) return;
   if (itens[indice].temporada != temporada || itens[indice].episodio != episodio)
     itens[indice].nomeEpisodio[0] = 0;
   itens[indice].temporada = temporada;
@@ -1252,10 +1358,19 @@ void cat_apontar_episodio(int indice, int temporada, int episodio) {
   }
 }
 
+// Mutacao por evento, sem acrescentar trava as leituras do desenho.
+void cat_apontar_episodio(int indice, int temporada, int episodio) {
+  CAT_TESTE_ANTES_TRAVA();
+  catTravar();
+  indice = normalizarIndice(indice);
+  if (indice >= 0) apontarEpisodio(indice, temporada, episodio);
+  pthread_mutex_unlock(&pubTrava);
+}
+
 static void aplicarUm(int indice, double posSeg, double durSeg, int temporada, int episodio) {
   itens[indice].progresso = (int)(100.0 * posSeg / durSeg);
   itens[indice].restanteMin = (int)((durSeg - posSeg) / 60.0 + 0.5);
-  cat_apontar_episodio(indice, temporada, episodio);
+  apontarEpisodio(indice, temporada, episodio);
 }
 
 // AS COPIAS DA MESMA OBRA (issue #208). O mesmo filme costuma estar em
@@ -1266,16 +1381,20 @@ static void aplicarUm(int indice, double posSeg, double durSeg, int temporada, i
 // primeira, o disco na primeira que casava) deixava o tile da outra fileira
 // em "Reproduzir", comecando do zero. Medido em tests/retomar_copias.sh: CW a
 // 40%, tile da fileira de catalogo a 0.
-static int mesmaCopia(int a, int b) {
-  if (a == b || !itens[a].imdb[0] || !itens[b].imdb[0]) return 0;
-  if (itens[a].tipo[0] && itens[b].tipo[0] && strcmp(itens[a].tipo, itens[b].tipo)) return 0;
-  return mesmoTitulo(itens[a].imdb, itens[b].imdb);
+static int mesmaCopiaEm(const CatItem *v, int a, int b) {
+  if (a == b || !v[a].imdb[0] || !v[b].imdb[0]) return 0;
+  if (v[a].tipo[0] && v[b].tipo[0] && strcmp(v[a].tipo, v[b].tipo)) return 0;
+  return mesmoTitulo(v[a].imdb, v[b].imdb);
 }
+static int mesmaCopia(int a, int b) { return mesmaCopiaEm(itens, a, b); }
 
 void cat_aplicar_progresso(int indice, double posSeg, double durSeg, int temporada, int episodio) {
   int j;
+  if (durSeg <= 1.0) return;
+  CAT_TESTE_ANTES_TRAVA();
+  catTravar();
   indice = normalizarIndice(indice);
-  if (indice < 0 || durSeg <= 1.0) return;
+  if (indice < 0) { pthread_mutex_unlock(&pubTrava); return; }
   aplicarUm(indice, posSeg, durSeg, temporada, episodio);
   for (j = 0; j < n; j++)
     if (mesmaCopia(indice, j)) {
@@ -1283,59 +1402,103 @@ void cat_aplicar_progresso(int indice, double posSeg, double durSeg, int tempora
       itens[j].retomadoMs = itens[indice].retomadoMs;
     }
   mudou();
+  pthread_mutex_unlock(&pubTrava);
 }
 
-// Depois do disco: a copia que ficou sem progresso herda o da copia que tem
-// (a do CW, montada do Trakt/conta sem registro local, ou a que o disco nao
-// tocou por ser mais nova). Entre varias, a de instante mais novo.
+// O PROGRESSO DO DISCO E APLICADO NO BLOCO NOVO, ANTES DE ELE SER PUBLICADO
+// (#203). Era aplicado depois da troca, sem trava, direto em itens[] — e o TSAN
+// pegou: aplicarUm escrevendo no bloco que o desenho estava lendo
+// (continuar_desenhar). Pior que a corrida de leitura era o que podia vir junto:
+// `m = cat_n()` lido no comeco e itens[j] indexado ate m depois de outro fio
+// trocar o bloco por um MENOR (cat_trocar_continuar encolhendo a fileira,
+// cat_tirar_continuar), e escrita num bloco ja aposentado que cat_quadro libera
+// no quadro seguinte. E o `static ProgRegistro regs[]` era o mesmo para dois
+// publicadores (o fio de montar() e o de "Continuar assistindo", o segundo as
+// vezes sem contTrava: desc_continuar_otimista so tenta).
+//
+// Agora: o disco e lido FORA de qualquer trava, num vetor de quem chama
+// (lerProgresso), e aplicado no vetor `v` que so quem chama enxerga.
+//
+// Sem procurar o nome do episodio (cat_apontar_episodio faria): o bloco novo
+// tem as faixas de episodio zeradas na publicacao, entao a busca nunca achava
+// nada aqui — so limpava o nome quando o episodio muda, e isso continua.
+static void apontarEm(CatItem *v, int i, int temporada, int episodio) {
+  if (!(temporada > 0 && episodio > 0)) return;
+  if (v[i].temporada != temporada || v[i].episodio != episodio) v[i].nomeEpisodio[0] = 0;
+  v[i].temporada = temporada;
+  v[i].episodio  = episodio;
+}
+static void aplicarUmEm(CatItem *v, int i, double posSeg, double durSeg, int temporada, int episodio) {
+  v[i].progresso = (int)(100.0 * posSeg / durSeg);
+  v[i].restanteMin = (int)((durSeg - posSeg) / 60.0 + 0.5);
+  apontarEm(v, i, temporada, episodio);
+}
+
+// Depois do disco: a copia sem progresso OU com progresso mais velho herda
+// o da copia mais nova (inclusive CW remoto sem registro local). Pular toda
+// copia nao zerada deixava episodio e percentual antigos na copia com meta:
+// escolher fonte reabria nela e player_definir_episodio zerava a retomada.
 // As fontes sao poucas (o que tem barra), entao o laco interno e sobre elas e
 // nao sobre o catalogo inteiro — milhares de itens ao quadrado na TV, nao.
-static void espalharProgresso(void) {
+//
+// A COPIA QUE A PESSOA TIROU NAO E FONTE. Isto rodava DEPOIS de
+// podarContinuar(removidoVence) e o card tirado ja nao estava no vetor; agora
+// roda antes da publicacao (e da poda), entao a mesma regra entra aqui.
+static void espalharEm(CatItem *v, int m) {
   int i, j, k, nf = 0, *fontes;
-  for (i = 0; i < n; i++) if (itens[i].progresso > 0 && itens[i].imdb[0]) nf++;
+  for (i = 0; i < m; i++) if (v[i].progresso > 0 && v[i].imdb[0]) nf++;
   if (!nf || !(fontes = malloc(sizeof(int) * (size_t)nf))) return;
-  for (i = 0, k = 0; i < n && k < nf; i++)
-    if (itens[i].progresso > 0 && itens[i].imdb[0]) fontes[k++] = i;
-  for (j = 0; j < n; j++) {
+  for (i = 0, k = 0; i < m && k < nf; i++)
+    if (v[i].progresso > 0 && v[i].imdb[0] && !removidoVence(&v[i], NULL)) fontes[k++] = i;
+  nf = k;
+  for (j = 0; j < m && nf; j++) {
     int melhor = -1;
-    if (itens[j].progresso > 0 || !itens[j].imdb[0]) continue;
+    if (!v[j].imdb[0]) continue;
     for (k = 0; k < nf; k++) {
       i = fontes[k];
-      if (!mesmaCopia(i, j)) continue;
-      if (melhor < 0 || itens[i].retomadoMs > itens[melhor].retomadoMs) melhor = i;
+      if (!mesmaCopiaEm(v, i, j)) continue;
+      if (v[j].progresso > 0 && v[i].retomadoMs <= v[j].retomadoMs) continue;
+      if (melhor < 0 || v[i].retomadoMs > v[melhor].retomadoMs) melhor = i;
     }
     if (melhor < 0) continue;
-    itens[j].progresso   = itens[melhor].progresso;
-    itens[j].restanteMin = itens[melhor].restanteMin;
-    itens[j].retomadoMs  = itens[melhor].retomadoMs;
-    cat_apontar_episodio(j, itens[melhor].temporada, itens[melhor].episodio);
+    v[j].progresso   = v[melhor].progresso;
+    v[j].restanteMin = v[melhor].restanteMin;
+    v[j].retomadoMs  = v[melhor].retomadoMs;
+    apontarEm(v, j, v[melhor].temporada, v[melhor].episodio);
   }
   free(fontes);
 }
 
-// Reaplica o que esta em progresso.c sobre itens[]. Os registros vem do mais
-// novo para o mais antigo, e cada titulo recebe so o primeiro que casar: numa
-// serie com varios episodios gravados, e o episodio mais recente que a fileira
-// e o "Retomar" querem mostrar.
-static int aplicarProgressoDoDisco(void) {
-  static ProgRegistro regs[PROG_MAX];
+// Fora de trava: prog_ler tem a dele. NULL com *k = 0 se nao ha nada (ou sem
+// memoria) — aplicarProgressoEm aceita e so espalha.
+static ProgRegistro *lerProgresso(int *k) {
+  ProgRegistro *regs = malloc(sizeof(ProgRegistro) * PROG_MAX);
+  *k = regs ? prog_ler(regs, PROG_MAX) : 0;
+  if (*k < 1) { free(regs); regs = NULL; *k = 0; }
+  return regs;
+}
+
+// Reaplica o que esta em progresso.c sobre `v` (m itens). Os registros vem do
+// mais novo para o mais antigo, e cada titulo recebe so o primeiro que casar:
+// numa serie com varios episodios gravados, e o episodio mais recente que a
+// fileira e o "Retomar" querem mostrar.
+static int aplicarProgressoEm(CatItem *v, int m, const ProgRegistro *regs, int k) {
   char *tocado;
-  int k, i, m = cat_n(), aplicados = 0;
-  if (m < 1) return 0;
-  k = prog_ler(regs, PROG_MAX);
-  if (k < 1) { espalharProgresso(); return 0; }
+  int i, aplicados = 0;
+  if (!v || m < 1) return 0;
+  if (k < 1 || !regs) { espalharEm(v, m); return 0; }
   tocado = calloc((size_t)m, 1);
   if (!tocado) return 0;
   for (i = 0; i < k; i++) {
     int j, maisNova = 0;
     // O instante decide pela OBRA, nao por copia: se alguma copia (o card do
     // Trakt) e mais nova que este registro, nenhuma copia recebe o registro —
-    // espalharProgresso, no fim, da a todas o estado da mais nova.
+    // espalharEm, no fim, da a todas o estado da mais nova.
     for (j = 0; j < m; j++)
-      if (itens[j].imdb[0] && mesmoTitulo(itens[j].imdb, regs[i].contentId) &&
-          itens[j].retomadoMs > 0 && itens[j].retomadoMs > regs[i].lastWatchedMs) maisNova = 1;
+      if (v[j].imdb[0] && mesmoTitulo(v[j].imdb, regs[i].contentId) &&
+          v[j].retomadoMs > 0 && v[j].retomadoMs > regs[i].lastWatchedMs) maisNova = 1;
     for (j = 0; j < m; j++) {
-      if (tocado[j] || !itens[j].imdb[0] || !mesmoTitulo(itens[j].imdb, regs[i].contentId)) continue;
+      if (tocado[j] || !v[j].imdb[0] || !mesmoTitulo(v[j].imdb, regs[i].contentId)) continue;
       if (maisNova) { tocado[j] = 1; continue; }
       // O ITEM QUE JA E MAIS NOVO QUE O DISCO NAO VOLTA NO TEMPO. O item do
       // Trakt (pausado ou "a seguir", issue #66) traz o instante em
@@ -1346,15 +1509,14 @@ static int aplicarProgressoDoDisco(void) {
       // TODAS as copias, e nao so a primeira (#208): o `break` daqui dava o
       // registro so ao card do CW, que vem antes da fileira de catalogo.
       if (regs[i].durSeg > 1.0) {
-        aplicarUm(j, regs[i].posSeg, regs[i].durSeg, regs[i].temporada, regs[i].episodio);
+        aplicarUmEm(v, j, regs[i].posSeg, regs[i].durSeg, regs[i].temporada, regs[i].episodio);
         aplicados++;
       }
       tocado[j] = 1;
     }
   }
   free(tocado);
-  espalharProgresso();
-  if (aplicados) mudou();
+  espalharEm(v, m);
   return aplicados;
 }
 
@@ -1400,12 +1562,15 @@ static void tirarDaJanela(int r, int indice) {
   orfao = f->ini + f->n;
   if (quantos > 0) {
     memmove(&itens[indice], &itens[indice + 1], sizeof(CatItem) * (size_t)quantos);
-    if (epIni && epQtd && orfao < nFaixas) {
-      memmove(&epIni[indice], &epIni[indice + 1], sizeof(int) * (size_t)quantos);
-      memmove(&epQtd[indice], &epQtd[indice + 1], sizeof(int) * (size_t)quantos);
-    }
+  }
+  pthread_mutex_lock(&epTrava);
+  if (quantos > 0 && epIni && epQtd && orfao < nFaixas) {
+    memmove(&epIni[indice], &epIni[indice + 1], sizeof(int) * (size_t)quantos);
+    memmove(&epQtd[indice], &epQtd[indice + 1], sizeof(int) * (size_t)quantos);
   }
   if (epQtd && orfao < nFaixas) epQtd[orfao] = 0;
+  epVersaoSobe();   // os indices andaram: caches derivados recalculam
+  pthread_mutex_unlock(&epTrava);
   // Fileira que esvaziou sai da lista, senao a home desenha um titulo com
   // nada embaixo. Mesmo protocolo: zera a contagem antes de mexer no vetor.
   if (f->n < 1) {
@@ -1414,7 +1579,7 @@ static void tirarDaJanela(int r, int indice) {
     for (k = r; k + 1 < total; k++) fils[k] = fils[k + 1];
     nFils = total - 1;
   }
-  catRevisao++; mudou();
+  revisaoSobe(); mudou();
 }
 
 // Devolve 1 se achou e tirou.
@@ -1446,6 +1611,7 @@ int cat_tirar_item_da_fileira(int indice) {
 __attribute__((weak)) int prog_removido_vence(const char *imdb, long long instanteMs) {
   (void)imdb; (void)instanteMs; return 0;
 }
+__attribute__((weak)) int prog_tocou(const char *imdb) { (void)imdb; return -1; }
 
 static int fileiraContinuar(void) {
   int r;
@@ -1525,10 +1691,11 @@ static void zerarUm(int indice) {
 }
 
 void cat_salvar_progresso(int indice, double posSeg, double durSeg) {
-  cat_salvar_progresso_ep(indice,posSeg,durSeg,0,0);
+  cat_salvar_progresso_ep(indice,posSeg,durSeg,0,0,-1);
 }
 
-void cat_salvar_progresso_ep(int indice, double posSeg, double durSeg, int temporada, int episodio) {
+void cat_salvar_progresso_ep(int indice, double posSeg, double durSeg, int temporada, int episodio,
+                             int tocou) {
   indice = normalizarIndice(indice);
   if (indice < 0 || !itens[indice].imdb[0]) return;
   // O arquivo e de progresso.c: chave igual a do web, pendente, com hora. O
@@ -1539,29 +1706,40 @@ void cat_salvar_progresso_ep(int indice, double posSeg, double durSeg, int tempo
   // server id would sync to every device of the account. The card still
   // shows the new position in this session.
   if (jfid_e(itens[indice].imdb)) { cat_aplicar_progresso(indice, posSeg, durSeg, temporada, episodio); return; }
-  if (!prog_gravar_local(itens[indice].imdb, temporada, episodio, posSeg, durSeg)) return;
+  if (!prog_gravar_local(itens[indice].imdb, temporada, episodio, posSeg, durSeg, tocou)) return;
   cat_aplicar_progresso(indice, posSeg, durSeg, temporada, episodio);
 }
 
-unsigned cat_revisao(void) { return catRevisao; }
+unsigned cat_revisao(void) { return __atomic_load_n(&catRevisao, __ATOMIC_ACQUIRE); }
 unsigned cat_revisao_itens(void) { return __atomic_load_n(&catMudancas, __ATOMIC_ACQUIRE); }
 
+// Leitores: epTrava so pelo tempo de ler dois inteiros. `indiceItem` alem de
+// nFaixas e "sem episodios", e nao leitura fora do vetor: cat_acrescentar*
+// publicavam `n` maior ANTES de garantirFaixas crescer as faixas.
 int cat_n_episodios(int indiceItem) {
-  int m = cat_n();
+  int m = cat_n(), q = 0;
   // epQtd so nasce em garantirFaixas, que em cat_carregar vem DEPOIS de
   // aplicar o progresso do disco — e aplicar progresso de serie pergunta
   // pelos episodios. Sem esta guarda o arranque caia com progresso gravado.
-  if (m < 1 || !epQtd) return 0;
+  if (m < 1) return 0;
   indiceItem = ((indiceItem % m) + m) % m;
-  return epQtd[indiceItem];
+  pthread_mutex_lock(&epTrava);
+  if (epQtd && indiceItem < nFaixas) q = epQtd[indiceItem];
+  pthread_mutex_unlock(&epTrava);
+  return q;
 }
 
 const CatEp *cat_episodio(int indiceItem, int i) {
   int m = cat_n();
-  if (m < 1 || !epQtd || !epIni) return NULL;
+  const CatEp *e = NULL;
+  if (m < 1 || i < 0) return NULL;
   indiceItem = ((indiceItem % m) + m) % m;
-  if (i < 0 || i >= epQtd[indiceItem]) return NULL;
-  return &eps[epIni[indiceItem] + i];
+  pthread_mutex_lock(&epTrava);
+  if (epQtd && epIni && indiceItem < nFaixas && i < epQtd[indiceItem] &&
+      epIni[indiceItem] + i < CAT_EP_MAX)
+    e = &eps[epIni[indiceItem] + i];
+  pthread_mutex_unlock(&epTrava);
+  return e;
 }
 
 int cat_id_stream(int indiceItem, int t, int e, char *dst, unsigned tam) {
@@ -1667,7 +1845,41 @@ static void definir_na_lista(int i, int naLista) {
   if (!itens || n <= 0 || i < 0 || i >= n) return;
   if (itens[i].naLista == (naLista ? 1 : 0)) return;
   itens[i].naLista = naLista ? 1 : 0;
+  if (!naLista) itens[i].fontes = 0;
   mudou();
+}
+
+void cat_marcar_fonte(int i, int fonte) {
+  CAT_TESTE_ANTES_TRAVA();
+  catTravar();
+  if (itens && n > 0 && i >= 0 && i < n &&
+      (!itens[i].naLista || (itens[i].fontes & fonte) != fonte)) {
+    itens[i].naLista = 1;
+    itens[i].fontes |= fonte;
+    mudou();
+  }
+  pthread_mutex_unlock(&pubTrava);
+}
+
+// Por titulo, como cat_definir_na_lista_imdb: o servico confirmou o salvo e
+// todas as copias passam a aparecer no filtro de Origem dele na hora.
+int cat_marcar_fonte_imdb(const char *imdb, int fonte) {
+  int i, k = 0;
+  char id[64];
+  if (!imdb || !imdb[0]) return 0;
+  snprintf(id, sizeof id, "%s", imdb);
+  CAT_TESTE_ANTES_TRAVA();
+  catTravar();
+  for (i = 0; itens && i < n; i++)
+    if (!strcmp(itens[i].imdb, id) &&
+        (!itens[i].naLista || (itens[i].fontes & fonte) != fonte)) {
+      itens[i].naLista = 1;
+      itens[i].fontes |= fonte;
+      mudou();
+      k++;
+    }
+  pthread_mutex_unlock(&pubTrava);
+  return k;
 }
 
 void cat_definir_na_lista(int i, int naLista) {
@@ -1715,10 +1927,120 @@ void cat_atualizar_item(int i, const CatItem *item) {
   if (itens && i >= 0 && i < n &&
       !strcmp(itens[i].imdb, copia.imdb) &&
       (!tipo_certo(itens[i].tipo) || !strcmp(tipo_base(itens[i].tipo), tipo_base(copia.tipo)))) {
+    if (itens[i].posCreditos) copia.posCreditos = 1;   // marca de outro fio sobrevive
     itens[i] = copia;   // an uncertain stored type may be resolved to movie/series
     mudou();
   }
   pthread_mutex_unlock(&pubTrava);
+}
+
+void cat_atualizar_item_sem_abas(int i, const CatItem *item) {
+  CatItem copia;
+  if (!item) return;
+  copia = *item;
+  CAT_TESTE_ANTES_TRAVA();
+  catTravar();
+  if (itens && i >= 0 && i < n &&
+      !strcmp(itens[i].imdb, copia.imdb) &&
+      (!tipo_certo(itens[i].tipo) || !strcmp(tipo_base(itens[i].tipo), tipo_base(copia.tipo)))) {
+    copia.nTemporadas = itens[i].nTemporadas;
+    memcpy(copia.temporadas, itens[i].temporadas, sizeof copia.temporadas);
+    // A marca da cena chega por cat_marcar_pos_creditos noutro fio; uma copia
+    // tirada antes dela nao pode apaga-la.
+    if (itens[i].posCreditos) copia.posCreditos = 1;
+    itens[i] = copia;
+    mudou();
+  }
+  pthread_mutex_unlock(&pubTrava);
+}
+
+// Copia do item `i` sob pubTrava: o bloco nao pode ser trocado nem liberado
+// no meio. Para fios fora do desenho, que nao tem a garantia de cat_item()
+// (o ponteiro so vale ate o fim do quadro).
+int cat_copiar_item(int i, CatItem *saida) {
+  int ok = 0;
+  if (!saida) return 0;
+  catTravar();
+  if (itens && i >= 0 && i < n) { *saida = itens[i]; ok = 1; }
+  pthread_mutex_unlock(&pubTrava);
+  return ok;
+}
+
+// Escrita PARCIAL: so a sinopse (e o titulo, se o item nao tem). Revalida a
+// identidade e o "ainda sem sinopse" sob a trava; qualquer outro campo que
+// outro fio tenha mudado desde a leitura fica como esta (revisao 2.0.3).
+int cat_completar_sinopse(int i, const char *imdb, const char *sinopse,
+                          const char *titulo) {
+  char id[sizeof itens->imdb];
+  int ok = 0;
+  if (!imdb || !imdb[0] || !sinopse || !sinopse[0]) return 0;
+  snprintf(id, sizeof id, "%s", imdb);
+  CAT_TESTE_ANTES_TRAVA();
+  catTravar();
+  if (itens && i >= 0 && i < n && !strcmp(itens[i].imdb, id) && !itens[i].sinopse[0]) {
+    snprintf(itens[i].sinopse, sizeof itens[i].sinopse, "%s", sinopse);
+    if (!itens[i].titulo[0] && titulo && titulo[0])
+      snprintf(itens[i].titulo, sizeof itens[i].titulo, "%s", titulo);
+    mudou();
+    ok = 1;
+  }
+  pthread_mutex_unlock(&pubTrava);
+  return ok;
+}
+
+// Campos basicos da pre-busca: so lacunas, com identidade sob a mesma trava.
+int cat_completar_basico(int i, const CatItem *c) {
+  if (!c || !c->imdb[0]) return 0;
+  int ok = 0;
+  catTravar();
+  if (itens && i >= 0 && i < n && !strcmp(itens[i].imdb, c->imdb) &&
+      !strcmp(itens[i].tipo, c->tipo)) {
+    if (!itens[i].logo[0] && c->logo[0]) {
+      snprintf(itens[i].logo, sizeof itens[i].logo, "%s", c->logo); ok = 1;
+    }
+    if (!itens[i].meta[0] && c->meta[0]) {
+      snprintf(itens[i].meta, sizeof itens[i].meta, "%s", c->meta); ok = 1;
+    }
+    if (!itens[i].nota && c->nota > 0) { itens[i].nota = c->nota; ok = 1; }
+    if (!itens[i].nElenco && c->nElenco > 0 && c->nElenco <= CAT_ELENCO_MAX) {
+      itens[i].nElenco = c->nElenco;
+      memcpy(itens[i].elenco, c->elenco, sizeof itens[i].elenco); ok = 1;
+    }
+    if (ok) mudou();
+  }
+  pthread_mutex_unlock(&pubTrava);
+  return ok;
+}
+
+// Escrita PARCIAL do texto localizado (fioLocalizar): titulo, sinopse, logo e
+// fundo (backdrop e backdropCatalogo), cada um so se veio e e diferente — campo
+// vazio nao apaga, como aplicarLocItem. Revalida a identidade sob a trava;
+// nenhum outro campo do item e tocado (revisao 2.0.3, como cat_completar_sinopse).
+int cat_aplicar_localizado(int i, const char *imdb, const char *titulo,
+                           const char *sinopse, const char *logo, const char *fundo) {
+  char id[sizeof itens->imdb];
+  int ok = 0;
+  if (!imdb || !imdb[0]) return 0;
+  snprintf(id, sizeof id, "%s", imdb);
+  CAT_TESTE_ANTES_TRAVA();
+  catTravar();
+  if (itens && i >= 0 && i < n && !strcmp(itens[i].imdb, id)) {
+    CatItem *c = &itens[i];
+    if (titulo && titulo[0] && strcmp(titulo, c->titulo)) {
+      snprintf(c->titulo, sizeof c->titulo, "%s", titulo); ok = 1; }
+    if (sinopse && sinopse[0] && strcmp(sinopse, c->sinopse)) {
+      snprintf(c->sinopse, sizeof c->sinopse, "%s", sinopse); ok = 1; }
+    if (logo && logo[0] && strcmp(logo, c->logo)) {
+      snprintf(c->logo, sizeof c->logo, "%s", logo); ok = 1; }
+    if (fundo && fundo[0] && strcmp(fundo, c->backdrop)) {
+      snprintf(c->backdrop, sizeof c->backdrop, "%s", fundo);
+      snprintf(c->backdropCatalogo, sizeof c->backdropCatalogo, "%s", fundo);
+      ok = 1;
+    }
+    if (ok) mudou();
+  }
+  pthread_mutex_unlock(&pubTrava);
+  return ok;
 }
 
 // Acrescenta N de UMA VEZ. cat_acrescentar copia o catalogo inteiro a cada
@@ -1756,8 +2078,11 @@ int cat_acrescentar_lote(const CatItem *v, int qtd, int *saidaIdx) {
   aposentar(itens);
   __atomic_store_n(&itens, novo, __ATOMIC_RELEASE);
   nAlocado = novoN;
-  __atomic_store_n(&n, novoN, __ATOMIC_RELEASE);
+  // Faixas ANTES de `n` subir: um leitor que ve o `n` novo acha a faixa dele.
+  pthread_mutex_lock(&epTrava);
   garantirFaixas(nAlocado);
+  pthread_mutex_unlock(&epTrava);
+  __atomic_store_n(&n, novoN, __ATOMIC_RELEASE);
   mudou();
   pthread_mutex_unlock(&pubTrava);
   return qtd;
@@ -1782,6 +2107,7 @@ int cat_mesclar_listas(const CatItem *v, int qtd) {
       for (i = 0; i < n && !achou; i++)
         if (!strcmp(itens[i].imdb, v[k].imdb) &&
             (!v[k].naLista || itens[i].naLista) &&
+            (v[k].fontes & ~itens[i].fontes) == 0 &&
             (!v[k].naColecao || itens[i].naColecao)) achou = 1;
       if (!achou) falta = 1;
     }
@@ -1796,6 +2122,7 @@ int cat_mesclar_listas(const CatItem *v, int qtd) {
     for (i = 0; i < m; i++) {
       if (strcmp(novo[i].imdb, v[k].imdb)) continue;
       if (v[k].naLista)   novo[i].naLista = 1;
+      novo[i].fontes |= v[k].fontes;
       if (v[k].naColecao) novo[i].naColecao = 1;
       achou = 1;
     }
@@ -1809,8 +2136,10 @@ int cat_mesclar_listas(const CatItem *v, int qtd) {
   aposentar(itens);
   __atomic_store_n(&itens, novo, __ATOMIC_RELEASE);
   nAlocado = m;
-  __atomic_store_n(&n, m, __ATOMIC_RELEASE);
+  pthread_mutex_lock(&epTrava);
   garantirFaixas(nAlocado);
+  pthread_mutex_unlock(&epTrava);
+  __atomic_store_n(&n, m, __ATOMIC_RELEASE);
   mudou();
   pthread_mutex_unlock(&pubTrava);
   printf("[cat] listas do Trakt na tela: %d marcado(s), %d novo(s)\n", marcados, novos);
@@ -1834,8 +2163,10 @@ int cat_acrescentar(const CatItem *item) {
   aposentar(itens);
   __atomic_store_n(&itens, novo, __ATOMIC_RELEASE);
   nAlocado = novoN;
-  __atomic_store_n(&n, novoN, __ATOMIC_RELEASE);
+  pthread_mutex_lock(&epTrava);
   garantirFaixas(nAlocado);
+  pthread_mutex_unlock(&epTrava);
+  __atomic_store_n(&n, novoN, __ATOMIC_RELEASE);
   mudou();
   if (novo[novoN - 1].poster[0]) arte_reserva_registrar(novo[novoN - 1].poster, novo[novoN - 1].imdb, 1);
   if (novo[novoN - 1].backdrop[0]) arte_reserva_registrar(novo[novoN - 1].backdrop, novo[novoN - 1].imdb, 0);
@@ -1849,7 +2180,9 @@ void cat_definir(const CatItem *lista, int qtd) {
 
 void cat_republicar_fileiras(const CatFileira *novasFils, int nNovas) {
   int k, q, v = 0;
-  if (!novasFils || nNovas < 1 || n < 1) return;
+  // nNovas == 0 e valido (#319): tirar a ultima fileira tem de esvaziar a tela;
+  // com o guarda antigo (< 1) a fileira de addon removido ficava publicada.
+  if (!novasFils || nNovas < 0 || n < 1) return;
   q = nNovas > CAT_FIL_MAX ? CAT_FIL_MAX : nNovas;
   catTravar();
   // A JANELA QUE ESTA PUBLICADA VENCE A DA MONTAGEM, para a mesma chave. Quem
@@ -1910,7 +2243,7 @@ void cat_republicar_fileiras(const CatFileira *novasFils, int nNovas) {
   // rede) trocava fils[] sem avisar ninguem — e a home so percebia na proxima
   // publicacao da descoberta. Agora cat_revisao() e um guarda correto do
   // estado das fileiras, usado por sincronizarFileiras em home.c.
-  catRevisao++; mudou();
+  revisaoSobe(); mudou();
   pthread_mutex_unlock(&pubTrava);
 }
 
@@ -1953,6 +2286,16 @@ void cat_definir_tudo(const CatItem *lista, int qtd,
         if (f.n > 0) tend_registrar(&f, novo);
       }
     }
+    // O progresso e por imdb e vive em progresso.c, entao sobrevive a troca —
+    // mas precisa ser reaplicado, porque os itens novos nasceram zerados. E aqui
+    // que uma linha da conta que antes nao casava com nada passa a casar, quando
+    // o titulo dela entra no catalogo. No bloco NOVO, antes de publicar e fora
+    // da trava: ver aplicarProgressoEm.
+    tProg = cat_relogio_ms();
+    { int k; ProgRegistro *regs = lerProgresso(&k);
+      aplicarProgressoEm(novo, novoN, regs, k);
+      free(regs); }
+    tProg = cat_relogio_ms() - tProg;
     // As fileiras caem JUNTO com `n`. Elas sao janelas (ini,n) no vetor de
     // itens; deixar as antigas de pe por um quadro enquanto o vetor troca faz o
     // desenho ler fora da faixa.
@@ -1964,6 +2307,12 @@ void cat_definir_tudo(const CatItem *lista, int qtd,
     aposentar(itens);
     __atomic_store_n(&itens, novo, __ATOMIC_RELEASE);
     nAlocado = novoN;
+    // Episodios do catalogo anterior nao valem para o novo: os indices mudaram.
+    // Zerados com `n` em 0, ANTES de o `n` novo subir — nenhum leitor ve item
+    // novo com faixa velha. Era feito depois de soltar pubTrava (#203).
+    pthread_mutex_lock(&epTrava);
+    zerarFaixas(nAlocado);
+    pthread_mutex_unlock(&epTrava);
     __atomic_store_n(&n, novoN, __ATOMIC_RELEASE);
     if (novasFils && nNovas > 0) {
       int k, q = nNovas > CAT_FIL_MAX ? CAT_FIL_MAX : nNovas;
@@ -1982,25 +2331,15 @@ void cat_definir_tudo(const CatItem *lista, int qtd,
     // O CICLO COMPLETO TAMBEM NAO TRAZ DE VOLTA. montar() chama
     // montarContinuar no comeco e publica aqui dezenas de segundos depois (os
     // manifestos): uma remocao feita nesse meio passaria. Ver a mesma poda em
-    // cat_trocar_continuar. As faixas de episodio que ela desloca sao zeradas
-    // logo abaixo de qualquer jeito.
+    // cat_trocar_continuar. As faixas de episodio que ela desloca ja foram
+    // zeradas acima.
     podarContinuar(removidoVence, NULL);
+    revisaoSobe(); mudou();
     pthread_mutex_unlock(&pubTrava);
     tTrava = cat_relogio_ms() - tTrava;
   }
-  // Episodios do catalogo anterior nao valem para o novo: os indices mudaram.
-  nEps = 0;
-  zerarFaixas(nAlocado);
-  catRevisao++; mudou();
-  (void)0;
-  tProg = cat_relogio_ms();
-  // O progresso e por imdb e vive em progresso.c, entao sobrevive a troca —
-  // mas precisa ser reaplicado, porque os itens novos nasceram zerados. E aqui
-  // que uma linha da conta que antes nao casava com nada passa a casar, quando
-  // o titulo dela entra no catalogo.
-  aplicarProgressoDoDisco();
-  printf("[perf] cat_definir_tudo: %d itens, fora da trava %.1f ms, DENTRO da trava %.1f ms, progresso do disco %.1f ms, total %.1f ms\n",
-         qtd, tFora, tTrava, cat_relogio_ms() - tProg, cat_relogio_ms() - tIni);
+  printf("[perf] cat_definir_tudo: %d itens, fora da trava %.1f ms, DENTRO da trava %.1f ms, progresso do disco %.1f ms (fora da trava), total %.1f ms\n",
+         qtd, tFora, tTrava, tProg, cat_relogio_ms() - tIni);
   fflush(stdout);
 }
 
@@ -2026,9 +2365,15 @@ void cat_trocar_continuar(const CatItem *lista, int qtd) {
   // static (40 KB): so e usado depois de pubTrava, que serializa as chamadas.
   static CatFileira novas[CAT_FIL_MAX];
   CatItem *novo;
-  int r, cw = -1, cwIni = 0, cwN = 0, delta, novoN, nv = 0;
+  int r, cw = -1, cwIni = 0, cwN = 0, delta, novoN, nv = 0, nRegs;
+  double tTrava, tProg;
+  // O disco e lido ANTES da trava (#203); a aplicacao e no bloco novo, antes
+  // de ele ser publicado. Ver aplicarProgressoEm.
+  ProgRegistro *regs;
   if (qtd < 0) qtd = 0;
+  regs = lerProgresso(&nRegs);
   catTravar();
+  tTrava = cat_relogio_ms();
   for (r = 0; r < nFils; r++)
     if (!strcmp(fils[r].chave, "continue_watching")) {
       cw = r; cwIni = fils[r].ini; cwN = fils[r].n; break;
@@ -2036,9 +2381,9 @@ void cat_trocar_continuar(const CatItem *lista, int qtd) {
   delta = qtd - cwN;
   novoN = n + delta;
   if (novoN > CAT_MAX) { qtd -= novoN - CAT_MAX; delta = qtd - cwN; novoN = CAT_MAX; }
-  if (novoN < 0) { pthread_mutex_unlock(&pubTrava); return; }
+  if (novoN < 0) { pthread_mutex_unlock(&pubTrava); free(regs); return; }
   novo = malloc(sizeof(CatItem) * (size_t)(novoN > 0 ? novoN : 1));
-  if (!novo) { pthread_mutex_unlock(&pubTrava); return; }
+  if (!novo) { pthread_mutex_unlock(&pubTrava); free(regs); return; }
   if (cwIni) memcpy(novo, itens, sizeof(CatItem) * (size_t)cwIni);
   if (qtd) memcpy(novo + cwIni, lista, sizeof(CatItem) * (size_t)qtd);
   if (n - cwIni - cwN > 0)
@@ -2060,11 +2405,22 @@ void cat_trocar_continuar(const CatItem *lista, int qtd) {
     novas[0].ini = 0; novas[0].n = qtd;
     nv++;
   }
+  // Ainda privado: ninguem mais enxerga `novo`. O custo fica dentro da trava
+  // (o bloco so pode ser montado com ela), e e medido abaixo.
+  tProg = cat_relogio_ms();
+  aplicarProgressoEm(novo, novoN, regs, nRegs);
+  tProg = cat_relogio_ms() - tProg;
   __atomic_store_n(&n, 0, __ATOMIC_RELEASE);
   nFils = 0;
   aposentar(itens);
   __atomic_store_n(&itens, novo, __ATOMIC_RELEASE);
   nAlocado = novoN;
+  // Os indices andaram: nenhuma faixa de episodio vale para o item novo.
+  // Com `n` em 0 e sob pubTrava (#203) — antes era depois de solta-la, e o
+  // realloc de garantirFaixas corria com o desenho lendo epQtd.
+  pthread_mutex_lock(&epTrava);
+  zerarFaixas(nAlocado);
+  pthread_mutex_unlock(&epTrava);
   __atomic_store_n(&n, novoN, __ATOMIC_RELEASE);
   memcpy(fils, novas, sizeof *novas * (size_t)nv);
   nFils = nv;
@@ -2074,14 +2430,33 @@ void cat_trocar_continuar(const CatItem *lista, int qtd) {
   // marcou (e a poda pega aqui) ou ela vem depois (e tira por imdb).
   { int podados = podarContinuar(removidoVence, NULL);
     qtd -= podados; }
+  revisaoSobe(); mudou();
   pthread_mutex_unlock(&pubTrava);
-  // Os indices andaram: nenhuma faixa de episodio vale para o item novo.
-  nEps = 0;
-  zerarFaixas(nAlocado);
-  catRevisao++; mudou();
-  aplicarProgressoDoDisco();
-  printf("[cat] continuar assistindo refeita: %d item(ns)\n", qtd);
+  tTrava = cat_relogio_ms() - tTrava;
+  free(regs);
+  printf("[cat] continuar assistindo refeita: %d item(ns), trava %.1f ms (progresso %.1f ms)\n",
+         qtd, tTrava, tProg);
   fflush(stdout);
+}
+
+// Roda no fio buscarEps (um por pagina de serie) e no de montar(), com o
+// desenho lendo. Tudo sob epTrava (#203): antes, epIni/epQtd eram escritos no
+// ponteiro que garantirFaixas, noutro fio, podia ter acabado de liberar.
+// CENA POS-CREDITOS (TMDB 179430/179431): o fio do detalhe descobre o sinal
+// depois de o item ja estar publicado; escreve so este bit, sem repubicar o
+// CatItem inteiro (que trocaria faixas de episodios no meio de uma leitura).
+// Roda em fio fora do desenho, como cat_definir_episodios.
+void cat_marcar_pos_creditos(const char *imdb, int pos) {
+  int i;
+  if (!imdb || !imdb[0]) return;
+  pthread_mutex_lock(&pubTrava);
+  if (itens)
+    for (i = 0; i < n; i++)
+      if (!strcmp(itens[i].imdb, imdb) && itens[i].posCreditos != (pos ? 1 : 0)) {
+        itens[i].posCreditos = pos ? 1 : 0;   // toda fileira com a obra, nao so a primeira
+        mudou();
+      }
+  pthread_mutex_unlock(&pubTrava);
 }
 
 void cat_definir_episodios(int indiceItem, const CatEp *lista, int qtd) {
@@ -2089,19 +2464,29 @@ void cat_definir_episodios(int indiceItem, const CatEp *lista, int qtd) {
   if (!lista || qtd < 1 || m < 1) return;
   indiceItem = ((indiceItem % m) + m) % m;
   if (qtd > CAT_EP_MAX) qtd = CAT_EP_MAX;
+  pthread_mutex_lock(&epTrava);
+  // Faixa ainda nao criada para este indice (o `n` subiu antes): nao ha onde
+  // escrever. Quem pediu repede quando a revisao andar.
+  if (!epIni || !epQtd || indiceItem >= nFaixas) {
+    pthread_mutex_unlock(&epTrava);
+    return;
+  }
   // Anexa no fim do vetor comum. Trocar de temporada varias vezes acumula, mas
   // o teto de CAT_EP_MAX segura e o custo de compactar nao se paga.
   if (nEps + qtd > CAT_EP_MAX) {
     nEps = 0;
     // Invalidar os indices antes de reutilizar o armazenamento: senao outra
     // serie passa a exibir os episodios da obra que acabou de ser carregada.
-    memset(epQtd,0,(size_t)nAlocado*sizeof *epQtd);
-    memset(epIni,0,(size_t)nAlocado*sizeof *epIni);
+    memset(epQtd,0,(size_t)nFaixas*sizeof *epQtd);
+    memset(epIni,0,(size_t)nFaixas*sizeof *epIni);
+    epGeracaoSobe();   // as outras series perderam a lista: quem mostra repede
   }
   memcpy(&eps[nEps], lista, sizeof(CatEp) * (size_t)qtd);
   epIni[indiceItem] = nEps;
   epQtd[indiceItem] = qtd;
   nEps += qtd;
+  epVersaoSobe();   // conteudo novo (mesma contagem conta): caches derivados
+  pthread_mutex_unlock(&epTrava);
 }
 
 // Generos de um item, como uma lista de trechos separados por " · ". O primeiro

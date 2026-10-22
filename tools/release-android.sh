@@ -29,11 +29,9 @@ cd "$(dirname "$0")/.."
 # cima; so mude isto junto de um aviso para desinstalar e reinstalar.
 CERT_SHA256=c3c967d4fac138de15126da01ea3ae43b52e6aa23106e336c2acc607ae0f2add
 
-if [ -n "$(git status --porcelain)" ]; then
-  echo "release-android: arvore suja. Compile de uma worktree limpa no commit da release:" >&2
-  echo "  git worktree add --detach ../nuvio-build-X <commit>" >&2
-  git status --short >&2; exit 1
-fi
+python3 tools/release.py --check-tree
+tools/env.sh --require-core >/dev/null
+
 VER=$(sed -n 's/.*"version": *"\([0-9.]*\)".*/\1/p' deploy/app/appinfo.json)
 VT=$(grep -v '<?xml' tools/tizen-config.xml | sed -n 's/.*[[:space:]]version="\([0-9.]*\)".*/\1/p' | head -1)
 [ -n "$VER" ] && [ "$VER" = "$VT" ] || { echo "release-android: appinfo.json ($VER) != tizen-config.xml ($VT)" >&2; exit 1; }
@@ -44,13 +42,13 @@ fi
 [ -n "${NUVIO_KEYSTORE:-}" ] && [ -f "$NUVIO_KEYSTORE" ] || {
   echo "release-android: sem a chave de release. Restaure ~/.nuvio-android/release.jks e release.env do Vaultwarden." >&2; exit 1; }
 
-OUT="build/release-$VER"; mkdir -p "$OUT"
+OUT="${NUVIO_RELEASE_OUT:-build/release-$VER}"; mkdir -p "$OUT"
 rm -f "$OUT"/Nuvio-*-android*.apk "$OUT/SHA256SUMS-android"
 echo "== release-android $VER (commit $(git rev-parse --short HEAD)) -> $OUT"
 
 # Release sem conta/sync instala e so mostra "0 addons" na TV (01/10/2026,
 # worktree em /private/tmp sem o local.properties do caminho padrao).
-NUVIO_REQUIRE_CORE=1 bash tools/android.sh
+NUVIO_REQUIRE_CORE=1 bash tools/android.sh --release-only
 A="build/android/Nuvio-$VER-android.apk"
 [ -f "$A" ] || { echo "release-android: faltou $A (o android.sh nao gerou o release)" >&2; exit 1; }
 
@@ -93,14 +91,8 @@ cp "$A" "$OUT/"
 ( cd "$OUT" &&
   if command -v shasum >/dev/null 2>&1; then shasum -a 256 Nuvio-*-android.apk
   else sha256sum Nuvio-*-android.apk; fi > SHA256SUMS-android )
-git status --porcelain | grep -q . && { echo "release-android: o build sujou a arvore:" >&2; git status --short >&2; }
+python3 tools/release.py --check-tree
 echo
 echo "== pronto, sem publicar:"
 ls -la "$OUT"/Nuvio-*-android.apk "$OUT/SHA256SUMS-android"
-cat <<EOF
-
-Proximo passo (skill android-release):
-  - SHA256SUMS = LG + SHA256SUMS-samsung + SHA256SUMS-android
-  - anexar $OUT/Nuvio-$VER-android.apk no MESMO gh release create v$VER
-    (sem ele no latest, nenhum Android se atualiza sozinho)
-EOF
+echo "Release completa (LG + Android + Samsung + SHA256SUMS + Homebrew): bash tools/release.sh $VER"

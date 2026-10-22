@@ -30,18 +30,29 @@ struct Native {
   bool (*volume)(SF *,const char *) = nullptr;
   ~Native() { if (lib) dlclose(lib); }
   template<typename T> bool symbol(T &out, const char *name) {
-    out = reinterpret_cast<T>(dlsym(lib, name)); return out != nullptr;
+    out = reinterpret_cast<T>(dlsym(lib, name));
+    if (!out) fprintf(stderr, "[dts] firmware symbol missing: %s\n", name);
+    return out != nullptr;
   }
   bool open() {
-    lib = dlopen("libplayerAPIs.so", RTLD_NOW | RTLD_LOCAL);
-    if (!lib) lib = dlopen("libplayerAPIs.so.1", RTLD_NOW | RTLD_LOCAL);
-    if (!lib) return false;
+    /* RTLD_NODELETE: a sonda abria e fechava a lib a cada video. No webOS 3
+     * a 2a sonda da sessao caia (SIGSEGV com pc fora de qualquer modulo,
+     * libgobject/libplayerAPIs na pilha; 65SJ800V/OLED55B7P). Suspeita: o
+     * dlclose descarregava dependencias dela que o processo nao tinha
+     * (GObject, GStreamer e outras; a GLib o video.c ja abre por conta)
+     * com fios delas ainda rodando. Carregada uma vez, fica. */
+    lib = dlopen("libplayerAPIs.so", RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE);
+    if (!lib) lib = dlopen("libplayerAPIs.so.1", RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE);
+    if (!lib) {
+      fprintf(stderr, "[dts] firmware library load failed: %s\n", dlerror());
+      return false;
+    }
 #if _GLIBCXX_USE_CXX11_ABI
     const char *feed_symbol = "_ZN17StarfishMediaAPIs4FeedB5cxx11EPKc";
 #else
     const char *feed_symbol = "_ZN17StarfishMediaAPIs4FeedEPKc";
 #endif
-    symbol(volume,"_ZN17StarfishMediaAPIs9setVolumeEPKc"); /* Optional. */
+    volume = reinterpret_cast<decltype(volume)>(dlsym(lib,"_ZN17StarfishMediaAPIs9setVolumeEPKc")); /* Optional. */
     return symbol(ctor,"_ZN17StarfishMediaAPIsC1EPKc") &&
       symbol(dtor,"_ZN17StarfishMediaAPIsD1Ev") &&
       symbol(load,"_ZN17StarfishMediaAPIs4LoadEPKcPFvixS1_PvES2_") &&
@@ -183,11 +194,18 @@ static const char *video_codec(const char *c) {
 }
 static int load(void *ctx,const DtsMediaInfo *m,double target) {
   auto *p = static_cast<Pipeline *>(ctx); const char *v = video_codec(m->video_codec);
+  const bool ac3 = !strcmp(m->audio_codec,"ac3");
   const bool dv = m->dovi_profile != 0;
   const bool valid_dv = (m->dovi_profile == 5 || m->dovi_profile == 8) &&
     !strcmp(v ? v : "", "H265") && m->dovi_bl_present && m->dovi_rpu_present && !m->dovi_el_present;
-  if (p->loaded || !v || !valid_target(target) || m->width <= 0 || m->height <= 0 ||
-      (strcmp(m->audio_codec,"aac") || m->channels != 2 || m->sample_rate != 48000) ||
+  /* AC-3 (DTS converted to 5.1, or passed through on the Dolby Vision path)
+   * and E-AC-3 (passed through). Names and the ac3PlusInfo block are the ones
+   * libpf-1.0.so parses on webOS 4.10; on the LG C9 E-AC-3 5.1 was heard and
+   * a passed-through AC-3 5.1 track played with codec "AC3" + ac3PlusInfo. */
+  const char *pass = !strcmp(m->audio_codec,"eac3") ? "AC3 PLUS" : ac3 ? "AC3" : nullptr;
+  const bool audio_ok = pass ? (m->channels > 0 && m->channels <= 8 && m->sample_rate > 0)
+    : (!strcmp(m->audio_codec,"aac") && m->channels == 2 && m->sample_rate == 48000);
+  if (p->loaded || !v || !valid_target(target) || m->width <= 0 || m->height <= 0 || !audio_ok ||
       (dv && !valid_dv) || (m->hdr[0] && strcmp(m->hdr,"SDR") && strcmp(m->hdr,"PQ") &&
       strcmp(m->hdr,"HDR10") && strcmp(m->hdr,"HLG") && !(dv && !strcmp(m->hdr,"DolbyVision")))) {
     p->error = "unsupported codec, HDR/Dolby Vision metadata, target or repeated load"; return 0;
@@ -196,7 +214,7 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
   j << "{\"args\":[{\"mediaTransportType\":\"BUFFERSTREAM\",\"option\":{\"appId\":" << quote(p->app.c_str());
   if (!p->window.empty()) j << ",\"windowId\":" << quote(p->window.c_str());
   j << ",\"queryPosition\":false,\"externalStreamingInfo\":{\"contents\":{\"codec\":{\"video\":" << quote(v)
-    << ",\"audio\":" << quote("AAC")
+    << ",\"audio\":" << quote(pass ? pass : "AAC")
     << "}";
   if (dv) j << ",\"DolbyHdrInfo\":{\"encryptionType\":\"clear\",\"profileId\":"
     << m->dovi_profile << ",\"trackType\":\"single\"}";
@@ -204,14 +222,17 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
     << target_ns(target) << ",\"videoWidth\":" << m->width << ",\"videoHeight\":" << m->height;
   if (m->fps_num > 0 && m->fps_den > 0) j << ",\"videoFpsValue\":" << m->fps_num << ",\"videoFpsScale\":" << m->fps_den;
   j << "}";
-  j << ",\"aacInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
+  if (pass) j << ",\"ac3PlusInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
+    << m->sample_rate / 1000.0 << "}";
+  else j << ",\"aacInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
     << m->sample_rate / 1000.0 << ",\"profile\":2,\"format\":\"raw\"}";
   j << "},\"bufferingCtrInfo\":{\"srcBufferLevelVideo\":{\"minimum\":0,\"maximum\":8388608},\"srcBufferLevelAudio\":{\"minimum\":0,\"maximum\":2097152}}},\"transmission\":{\"contentsType\":\"LIVE\",\"trickType\":\"client-side\"}}}]}";
   /* Foreground notification is advisory: both reference players still Load
    * when it returns false. The visible application's state is already managed
    * by webOS; let Load report whether resources can actually be acquired. */
   if (!p->n.foreground(p->sf)) stage(p,"native-foreground-refused","continuing to Load");
-  stage(p,"native-load-requested");
+  { char d[96]; snprintf(d,sizeof d,"dv=%d profile=%d audio=%s ch=%d",int(dv),m->dovi_profile,
+      pass ? pass : "AAC",m->channels); stage(p,"native-load-requested",d); }
   if (!p->n.load(p->sf,j.str().c_str(),callback,p)) {
     p->error = "Starfish Load refused"; return 0;
   }

@@ -7,12 +7,15 @@ export NUVIO_DADOS="$dir/dados"
 mkdir -p "$NUVIO_DADOS"
 flags=(-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2
   -Wno-deprecated-declarations -Wno-macro-redefined)
+if [ "${NV_JUNTOS_TEST:-0}" = 1 ]; then flags+=(-DNV_JUNTOS_TEST); fi
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 sources=()
 for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/video.c) continue;; esac
   sources+=("$source")
 done
-cc "${flags[@]}" "${sources[@]}" tests/video_pausa_lg.c -o "$dir/test" \
+cc -DAJUSTES_TESTE "${flags[@]}" "${sources[@]}" tests/video_pausa_lg.c -o "$dir/test" \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
+# Mesmo ajuste do loader sdl2-compat/ASan usado em descanso_wake.sh.
+[ ! -e /opt/homebrew/lib/libSDL3.dylib ] || ln -s /opt/homebrew/lib/libSDL3.dylib "$dir/libSDL3.dylib"
 "$dir/test"

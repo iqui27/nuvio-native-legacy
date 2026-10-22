@@ -768,6 +768,15 @@ static int pedir(const PxConta *c, const char *url, const char *token, const cha
   p.max_bytes = PX_CORPO_MAX;
   p.seguir = 1;
   p.job = job;
+  // #290: only the configured personal server (c->base) may skip certificate
+  // verification, and only on its own origin (rede.h). plex.tv keeps it.
+  if (c && c->base[0] && !strncmp(url, c->base, strlen(c->base))) {
+    p.tls_pessoal = 1;
+    if (!strncmp(url, "https://", 8)) {
+      static int avisado;
+      if (!avisado) { avisado = 1; printf("[plex] TLS: certificado nao verificado (servidor pessoal)\n"); }
+    }
+  }
   rede_pedir(&p, r);
   apagarSegredo(tok, sizeof tok);
   apagarSegredo(cab, sizeof cab);

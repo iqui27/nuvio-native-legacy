@@ -1,5 +1,6 @@
 // tests/proxyts.sh: o proxy de TS da Live TV contra o servidor falso.
 #include "../src/proxyts.c"
+#include "streams.h"
 #include <assert.h>
 static int falhas;
 #define OK(c, m) do { if (c) printf("ok  %s\n", m); else { printf("FALHOU %s\n", m); falhas++; } } while (0)
@@ -52,6 +53,46 @@ int main(void) {
     assert(proxyts_url("http://127.0.0.1:8765/live/u/p/105.ts", url, sizeof url));
     n = baixar(velha, 3, &b, cab, sizeof cab); free(b);
     OK(strstr(cab, "404"), "sessao trocada: a URL antiga da 404"); }
+  // CANAL DE ADDON COM CABECALHO (#283)
+  OK(proxyts_candidata("https://cdn/x/canal.m3u8", 0), "candidata: m3u8");
+  OK(proxyts_candidata("http://painel:80/live/1", 0), "candidata: sem extensao");
+  OK(!proxyts_candidata("https://cdn/f.mp4?t=1", 0), "candidata: mp4 com query fica fora");
+  OK(!proxyts_candidata("https://cdn/f.mkv", 0), "candidata: mkv fica fora");
+  OK(!proxyts_candidata("https://cdn/hls", 1), "candidata: fonte marcada mp4 fica fora");
+  OK(!proxyts_candidata("magnet:?xt=1", 0), "candidata: nao http fica fora");
+  OK(pxLer("#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"k\"\n#EXTINF:4,\na.ts\n", "http://h/l.m3u8", &l) && l.cifrado,
+     "playlist cifrada marcada");
+  OK(pxLer("#EXTM3U\n#EXT-X-KEY:METHOD=NONE\n#EXTINF:4,\na.ts\n", "http://h/l.m3u8", &l) && !l.cifrado,
+     "METHOD=NONE nao e cifrada");
+  OK(pxLer("#EXTM3U\n#EXT-X-MAP:URI=\"i.mp4\"\n#EXTINF:4,\na.m4s\n", "http://h/l.m3u8", &l) && l.fmp4,
+     "playlist fMP4 marcada");
+  // sem os cabecalhos o CDN recusa: o proxy so redireciona (e diz que redirecionou)
+  proxyts_definir_cabecalhos("");
+  assert(proxyts_url("http://127.0.0.1:8765/addon/r", url, sizeof url));
+  { char cmd[300]; FILE *f; char r[512] = "";
+    snprintf(cmd, sizeof cmd, "curl -s -o /dev/null -w '%%{http_code}' --max-time 5 '%s'", url);
+    f = popen(cmd, "r"); if (f) { fgets(r, sizeof r, f); pclose(f); }
+    OK(!strncmp(r, "302", 3) && proxyts_redirecionou(), "sem cabecalho: 302 e redirecionou=1"); }
+  // com o Referer do addon: playlist (apos o 302) e segmentos relativos viram TS continuo
+  { Stream *s = NULL;
+    assert(stream_extrair("{\"streams\":[{\"url\":\"http://127.0.0.1:8765/addon/r\","
+      "\"behaviorHints\":{\"notWebReady\":true,\"proxyHeaders\":{\"request\":{"
+      "\"Referer\":\"https://addon.example/\",\"Origin\":\"https://addon.example\","
+      "\"User-Agent\":\"Teste/1\"}}}}]}", "Bsweb TV", &s) == 1);
+    proxyts_definir_cabecalhos(s[0].cabecalhos);
+    free(s); }
+  assert(proxyts_url("http://127.0.0.1:8765/addon/r", url, sizeof url));
+  OK(!proxyts_redirecionou(), "sessao nova zera o redirecionou");
+  n = baixar(url, 6, &b, cab, sizeof cab);
+  OK(strstr(cab, "200 OK") && strstr(cab, "video/mp2t"), "com cabecalho: 200 video/mp2t");
+  OK(n > 2000000 && b[0] == 0x47 && pxPid(b) == 0, "com cabecalho: TS pelo PAT, segmentos relativos ao endereco final");
+  OK(!proxyts_redirecionou(), "com cabecalho: nao redirecionou");
+  free(b);
+  // HLS cifrado: o proxy encerra sem entregar video (o app tenta direto)
+  assert(proxyts_url("http://127.0.0.1:8765/addon/v/cifrado.m3u8", url, sizeof url));
+  n = baixar(url, 4, &b, cab, sizeof cab);
+  OK(n < 188 * 10, "cifrado: nenhum segmento entregue");
+  free(b);
   proxyts_parar();
   if (falhas) return 1;
   printf("proxyts: tudo ok\n");

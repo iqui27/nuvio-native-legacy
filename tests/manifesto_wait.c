@@ -1,5 +1,8 @@
 // Exercise the actual manifest consumer and worker, without network access.
+int ajustes_social(void) { return 1; }
+int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
+int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
 #include "../src/descoberta.c"
 #include <assert.h>
 #include <stdatomic.h>
@@ -11,8 +14,16 @@ static int fixtureAddons;
 char *rede_baixar(const char *url, int seconds) {
   (void)url; (void)seconds; requests++; return NULL;
 }
+void addons_lista_travar(void) {}
+void addons_lista_destravar(void) {}
+const char *sessao_usuario(void) { return ""; }
+int perfis_ativo(void) { return 1; }
+void ws_destino(const char *b, const char *u, int p, char out[20]) {
+  (void)b; (void)u; (void)p; strcpy(out, "fixture");
+}
 unsigned addons_versao(void) { return 1; }
 int addons_n(void) { return fixtureAddons; }
+int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 int addons_ativo(int i) { return i != 0; }
 const char *addons_base(int i) {
   static const char *urls[] = {"https://disabled.invalid", "https://active1.invalid", "https://active2.invalid"};

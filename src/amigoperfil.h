@@ -22,4 +22,6 @@ void amigoperfil_desenhar(Uint32 agora);
 int  amigoperfil_quer_sair(void);
 // 1 uma vez com o IMDb do cartaz em que a pessoa deu OK.
 int  amigoperfil_pediu_titulo(char *imdb, size_t tam);
+// TESTE (#99): a fileira em foco (-1 = nenhuma) e, em *coluna, o cartaz.
+int  amigoperfil_teste_foco(int *coluna);
 #endif

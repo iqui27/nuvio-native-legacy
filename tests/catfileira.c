@@ -33,8 +33,8 @@ const char *sessao_usuario(void)        { return ""; }
 int         perfis_ativo(void)          { return 1; }
 const char *desc_genero_pt(const char *g) { return g; }
 int prog_ler(ProgRegistro *saida, int max) { (void)saida; (void)max; return 0; }
-int prog_gravar_local(const char *imdb, int t, int e, double p, double d) {
-  (void)imdb; (void)t; (void)e; (void)p; (void)d; return 0;
+int prog_gravar_local(const char *imdb, int t, int e, double p, double d, int tocou) {
+  (void)imdb; (void)t; (void)e; (void)p; (void)d; (void)tocou; return 0;
 }
 
 // --- APOIO -------------------------------------------------------------------
@@ -128,5 +128,17 @@ int main(void) {
   puts("ok  indice fora de fileira nao mexe em nada");
 
   puts("catfileira: tudo ok");
+  // #319: A ULTIMA FILEIRA QUE SAI ESVAZIA A TELA. cat_republicar_fileiras
+  // ignorava nNovas == 0, e a fileira de um addon removido continuava
+  // publicada quando era a unica que restava.
+  montar();
+  cat_republicar_fileiras(fils, 0);
+  assert(cat_n_fileiras() == 0);
+  montar();
+  { CatFileira so = fils[1];
+    cat_republicar_fileiras(&so, 1);
+    assert(cat_n_fileiras() == 1 && !strcmp(cat_fileira(0)->chave, "populares")); }
+  puts("ok  republicar sem fileiras esvazia a lista publicada");
+
   return 0;
 }

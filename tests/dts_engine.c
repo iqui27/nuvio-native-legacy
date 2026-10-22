@@ -14,6 +14,13 @@ static void *cancel_later(void *opaque) { usleep(200000); dts_engine_cancel(opaq
 static const char *HEADERS="X-Fixture: yes\nAuthorization: Bearer engine-test";
 static unsigned requests;
 #ifndef DTS_ENGINE_HTTP
+char *rede_baixar_trecho64_cab(const char *,const char *,int64_t,int64_t,long *,int64_t *,int *,volatile int *);
+/* The Dolby Vision path asks for the final address; the fixture has none. */
+char *rede_baixar_trecho64_final(const char *url,const char *headers,int64_t start,int64_t end,long *size,int64_t *total,int *status,volatile int *cancelled,char *final,int *cross) {
+  if(final) final[0]=0;
+  if(cross) *cross=0;
+  return rede_baixar_trecho64_cab(url,headers,start,end,size,total,status,cancelled);
+}
 char *rede_baixar_trecho64_cab(const char *url,const char *headers,int64_t start,int64_t end,long *size,int64_t *total,int *status,volatile int *cancelled) {
   assert(!strcmp(headers,HEADERS));
   assert(start>=0 && end>=start && end-start<1024*1024); __atomic_add_fetch(&requests,1,__ATOMIC_RELAXED);
@@ -96,6 +103,21 @@ int main(int argc,char **argv) {
     }
     check(e,r); assert(audio_frames>20);
   }
+  /* AC3 5.1 mode (#313): 6 channels, "ac3", 640 kbps frames of 1536 samples = 2560 bytes / 32 ms, seekable. */
+  dts_engine_set_ac3(1);
+  check(e,dts_engine_open(e,argv[1],HEADERS,-1,0,0));
+  info=dts_engine_info(e);
+  assert(info->channels==6 && info->sample_rate==48000 && !strcmp(info->audio_codec,"ac3"));
+  { int n=0; int64_t prev=INT64_MIN;
+    while((r=dts_engine_next(e,&f))>0) if(f.kind==DTS_AUDIO) {
+      assert(f.size==2560 && f.data[0]==0x0b && f.data[1]==0x77);   /* AC3 sync word */
+      if(prev!=INT64_MIN) assert(f.pts_ns-prev==32000000);
+      prev=f.pts_ns; n++;
+    }
+    check(e,r); assert(n>100); }
+  check(e,dts_engine_seek(e,2.0));
+  { int n=0; while((r=dts_engine_next(e,&f))>0) if(f.kind==DTS_AUDIO) { assert(f.size==2560); n++; } check(e,r); assert(n>30); }
+  dts_engine_set_ac3(0);
   /* Exact selected track, metadata retention, cancel, and invalid-track refusal. */
   check(e,dts_engine_open(e,argv[1],HEADERS,2,1,0));
   assert(dts_engine_info(e)->audio_stream==2); assert(!dts_engine_has_core(e));

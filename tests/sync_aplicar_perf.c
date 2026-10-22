@@ -22,6 +22,7 @@
 
 const char *addons_base_por_id(const char *id) { (void)id; return "https://fixture.example"; }
 int addons_n(void) { return 1; }
+int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 const char *addons_base(int i) { (void)i; return "https://fixture.example"; }
 const char *addons_id_manifesto(int i) { (void)i; return "addon.demo"; }
 const char *sessao_usuario(void) { return "account-A"; }

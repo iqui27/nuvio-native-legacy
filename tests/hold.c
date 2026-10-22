@@ -34,47 +34,57 @@ int main(void) {
   snprintf(c.tipo, sizeof c.tipo, "movie");
   snprintf(c.titulo, sizeof c.titulo, "Sinners");
   snprintf(c.imdb, sizeof c.imdb, "tt31193180");
+  // Com progresso: a ultima opcao e "Tirar de Continuar assistindo", que so
+  // ABRE A CONFIRMACAO (nada e gravado). E por ela que o teste ve se um OK
+  // escolheu: com a confirmacao aberta o Voltar volta ao menu; sem ela, fecha.
+  c.progresso = 42; c.restanteMin = 51;
   cat_definir(&c, 1);
 
   // 1. O OK QUE ABRIU NAO ESCOLHE. Enquanto o dedo nao sobe, o modal fica de
   //    pe e nenhuma opcao e acionada.
   ctx_abrir(0);
   assert(ctx_aberto());
+  tecla(SDL_KEYDOWN, SDLK_DOWN, 0);
+  tecla(SDL_KEYDOWN, SDLK_DOWN, 0);
   tecla(SDL_KEYDOWN, SDLK_RETURN, 0);
-  assert(ctx_aberto() && ctx_pediu_detalhes() < 0);
   tecla(SDL_KEYDOWN, SDLK_RETURN, 1);   // repeticao do controle
-  assert(ctx_aberto() && ctx_pediu_detalhes() < 0);
+  assert(ctx_aberto());
+  tecla(SDL_KEYDOWN, SDLK_ESCAPE, 0);   // sem confirmacao aberta, Voltar fecha
+  assert(!ctx_aberto() && cat_item(0)->progresso == 42);
   puts("ok  o OK que abriu o modal nao escolhe nada");
 
-  // 2. DEPOIS DE SOLTAR, um toque novo escolhe. "Ver detalhes" e a primeira
-  //    opcao, e ela fecha o modal.
+  // 2. DEPOIS DE SOLTAR, um toque novo escolhe: a confirmacao abre, e o
+  //    Voltar dela devolve ao menu (que segue aberto).
+  ctx_abrir(0);
   tecla(SDL_KEYUP, SDLK_RETURN, 0);
+  tecla(SDL_KEYDOWN, SDLK_DOWN, 0);
+  tecla(SDL_KEYDOWN, SDLK_DOWN, 0);
   tecla(SDL_KEYDOWN, SDLK_RETURN, 0);
+  tecla(SDL_KEYDOWN, SDLK_ESCAPE, 0);
+  assert(ctx_aberto() && cat_item(0)->progresso == 42);
+  tecla(SDL_KEYDOWN, SDLK_ESCAPE, 0);
   assert(!ctx_aberto());
-  assert(ctx_pediu_detalhes() == 0);
   puts("ok  um toque novo escolhe");
 
   // 3. REPETICAO NUNCA E ESCOLHA, nem com o modal ja liberado.
   ctx_abrir(0);
   tecla(SDL_KEYUP, SDLK_RETURN, 0);
+  tecla(SDL_KEYDOWN, SDLK_DOWN, 0);
+  tecla(SDL_KEYDOWN, SDLK_DOWN, 0);
   tecla(SDL_KEYDOWN, SDLK_RETURN, 1);
-  assert(ctx_aberto() && ctx_pediu_detalhes() < 0);
-  tecla(SDL_KEYDOWN, SDLK_RETURN, 0);
-  assert(!ctx_aberto() && ctx_pediu_detalhes() == 0);
+  tecla(SDL_KEYDOWN, SDLK_ESCAPE, 0);
+  assert(!ctx_aberto());
   puts("ok  repeticao automatica nao escolhe");
 
   // 4. A ULTIMA OPCAO RESPONDE. "No LG ele nao seleciona, ele pula e nao faz
   //    nada" — "Tirar de Continuar assistindo" e a ultima da lista, e e ela
   //    que some quando montar() encolhe. Aqui o foco desce ate ela e o OK tem
   //    de agir: a posicao de retomada some e o modal fecha.
-  { CatItem c2 = *cat_item(0);
-    c2.progresso = 42; c2.restanteMin = 51;
-    cat_definir(&c2, 1); }
   ctx_abrir(0);
   tecla(SDL_KEYUP, SDLK_RETURN, 0);
   tecla(SDL_KEYDOWN, SDLK_DOWN, 0);
   tecla(SDL_KEYDOWN, SDLK_DOWN, 0);
-  tecla(SDL_KEYDOWN, SDLK_DOWN, 0);   // Ver detalhes -> biblioteca -> assistido -> retomada
+  tecla(SDL_KEYDOWN, SDLK_DOWN, 0);   // salvar -> assistido -> retomada (o foco para na ultima)
   tecla(SDL_KEYDOWN, SDLK_RETURN, 0);
   // 5. TIRAR SO DEPOIS DA CONFIRMACAO (dono, 02/10). O OK na opcao abre a
   //    pergunta e nada e apagado; Voltar e "Cancelar" devolvem ao menu sem

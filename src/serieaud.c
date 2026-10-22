@@ -741,7 +741,9 @@ static int eixoBruto(int i, int eixo) {
 // dado diz que nao ha (ou que ainda vem), nunca desenha numero inventado.
 #define BL_CAB      104.0f    // titulo + linha de apoio
 #define BL_GAP       24.0f
-#define BL_ESQ_W    884.0f
+#include "telefoneui.h"
+static int blocoEmpilhado(void) { return telefoneui_ativo() && NV_TELA_W < 1500; }
+#define BL_ESQ_W    (blocoEmpilhado() ? NV_TELA_W - 192.0f : 884.0f)
 #define BL_RET_H    396.0f
 #define BL_DIG_H    380.0f
 #define BL_PAD       34.0f
@@ -751,7 +753,9 @@ static int eixoBruto(int i, int eixo) {
 
 static TextoGate gateBloco;
 void serieaud_bloco_reiniciar(void) { textogate_reiniciar(&gateBloco); }
-float serieaud_bloco_altura(void) { return BL_CAB + BL_RET_H + BL_GAP + BL_DIG_H; }
+float serieaud_bloco_altura(void) {
+  return BL_CAB + BL_RET_H + BL_GAP + BL_DIG_H + (blocoEmpilhado() ? BL_GAP + 480 : 0);
+}
 
 // Frase de estado de um cartao sem dado: tres situacoes diferentes, e dizer
 // uma pela outra faz a secao parecer quebrada.
@@ -1050,9 +1054,10 @@ float serieaud_bloco(float x, float y, const SaBloco *b, float a) {
   cardRetencao((GfxRect){ x, y0, BL_ESQ_W, BL_RET_H }, b, usar, aa);
   cardDigital((GfxRect){ x, y0 + BL_RET_H + BL_GAP, BL_ESQ_W, BL_DIG_H }, b, usar, aa);
   notasui_mapa_card(b->notas,
-                    (GfxRect){ x + BL_ESQ_W + BL_GAP, y0,
-                               NV_TELA_W - 2.0f * x - BL_ESQ_W - BL_GAP,
-                               BL_RET_H + BL_GAP + BL_DIG_H },
+                    (GfxRect){ blocoEmpilhado() ? x : x + BL_ESQ_W + BL_GAP,
+                               y0 + (blocoEmpilhado() ? BL_RET_H + BL_GAP + BL_DIG_H + BL_GAP : 0),
+                               blocoEmpilhado() ? BL_ESQ_W : NV_TELA_W - 2.0f * x - BL_ESQ_W - BL_GAP,
+                               blocoEmpilhado() ? 480 : BL_RET_H + BL_GAP + BL_DIG_H },
                     b->tempIdx, b->sel, a);
   if (!aberto) textogate_passo(&gateBloco, txt_pendentes - pend0, SDL_GetTicks());
   return alt;

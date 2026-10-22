@@ -26,7 +26,7 @@ const char *rede_url_publica(const char *url, char *dst, unsigned tam) {
 }
 long rede_corte_host(const char *url) { (void)url; return 0; }
 int rede_resto_recusado(void) { return 0; }
-char *rede_baixar_trecho_st(const char *url, int s, long ini, long fim, long *tam,
+char *rede_baixar_trecho_st(const char *url, int s, long long ini, long long fim, long *tam,
                             int *status, int *erro, char *final, unsigned tamFinal) {
   FILE *f; char *p; long n;
   (void)s; *tam = 0;

@@ -23,4 +23,6 @@ void amtui_fechar(void);
 // CIMA/BAIXO andam; VOLTAR e OK fecham. Come toda tecla enquanto aberta.
 void amtui_evento(const SDL_Event *e);
 void amtui_desenhar(Uint32 agora);
+// TESTE (#99): a linha em foco; -1 com a folha fechada.
+int  amtui_teste_foco(void);
 #endif

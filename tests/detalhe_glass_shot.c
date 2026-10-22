@@ -13,7 +13,8 @@
 //   bash tests/detalhe_glass_shot.sh <saida> [id...]
 //   NUVIO_SHOT_VIDRO=1 -> material vidro; sem ele, solido.
 //
-// Ids: filme-topo filme-trailers filme-elenco filme-notas filme-comentarios
+// Ids: filme-topo filme-explorar ("..." em foco) filme-mais serie-mais
+//      filme-trailers filme-elenco filme-notas filme-comentarios
 //      filme-relacionados filme-colecao filme-fim serie-topo serie-ep
 //      serie-temp serie-baixo
 #include <SDL2/SDL.h>
@@ -428,7 +429,7 @@ int main(int argc, char **argv) {
   }
 
   if (quer(argc, argv, "filme-topo")) { abrir(1, 0, 0, 0); gravar("filme-topo"); }
-  // O circular "Explorar" (Explorar 2.0), ultimo da linha aberta, em foco.
+  // O ULTIMO circular da linha aberta em foco: hoje o "..." (Mais opcoes).
   if (quer(argc, argv, "filme-explorar")) {
     abrir(1, 0, 0, 0);
     maisAcoes = 1; botao = nBotoesTodos() - 1;
@@ -436,6 +437,26 @@ int main(int argc, char **argv) {
     for (int k = 0; k < 50; k++) { quadros(1); SDL_Delay(16); }
     quadros(4);
     gravar("filme-explorar");
+  }
+  // "MAIS OPCOES" (06/10/2026): OK no "..." abre a ilha com Trailer, Explorar,
+  // Trocar arte (e Recomendar com o servico), foco na segunda linha.
+  if (quer(argc, argv, "filme-mais") || quer(argc, argv, "serie-mais")) {
+    int k, serie;
+    for (serie = 0; serie < 2; serie++) {
+      int d[DMAIS_N];
+      if (!quer(argc, argv, serie ? "serie-mais" : "filme-mais")) continue;
+      abrir(serie ? 0 : 1, 0, 0, 0);
+      maisAcoes = 1; botao = nBotoesTodos() - 1;
+      for (k = 0; k < 30; k++) { quadros(1); SDL_Delay(16); }
+      maisDisponiveis(d);
+      detmais_abrir(d);
+      { SDL_Event e; memset(&e, 0, sizeof e);
+        e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_DOWN; detail_evento(&e); }
+      for (k = 0; k < 40; k++) { quadros(1); SDL_Delay(16); }
+      quadros(4);
+      gravar(serie ? "serie-mais" : "filme-mais");
+      detmais_zerar();
+    }
   }
   // A ILHA DE AMIGOS em foco e a lista que o OK abre (06/10/2026).
   if (quer(argc, argv, "filme-amigos")) {

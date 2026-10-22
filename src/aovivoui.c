@@ -36,13 +36,15 @@
 #include "idioma.h"
 #include "plrui.h"
 #include "plrilha.h"
+#include "telefoneui.h"
+#include "rolagemtoque.h"
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
 #include <stdio.h>
 #include <string.h>
 
 // --- desenho ---------------------------------------------------------------------
-#define AV_X        96.0f    // PLR_MARGEM: o recuo do conteudo do player de filme
+#define AV_X        NV_ILHA_MARGEM_D    // PLR_MARGEM: o recuo do conteudo do player de filme
 #define AV_LOGO_TOM 0.965f   // G_LOGO_CLARO do guia: marca recortada em branco
 
 // Duracao em relogio, sem palavra (nao precisa de traducao): 3:12, 1:04:09.
@@ -127,6 +129,26 @@ static const char *iconeDe(const AoVivoOsd *o, int b) {
 #define AV_BTN_Y   (NV_TELA_H - 130.0f)   // 950 em 1080; tela virtual (escala.h)
 #define AV_BTN_D    68.0f
 
+#ifdef NV_TOUCH_UI
+static AoVivoToqueFn toqueAcao;
+static int toqueQuadro;
+static float toqueRol;
+static ToqueRolagem toqueLista;
+static int toqueFoco = -2;
+void aovivo_toque_reiniciar(void) {
+  toqueRol = 0; toquerol_limpar(&toqueLista); toqueFoco = -2;
+}
+void aovivo_toque_definir(AoVivoToqueFn fn, int quadro) {
+  toqueAcao = fn; toqueQuadro = quadro;
+}
+static void toqueBotao(int acao, int quadro) { if (toqueAcao) toqueAcao(acao, 0, quadro); }
+static void toqueErro(int acao, int quadro) { if (toqueAcao) toqueAcao(acao, 1, quadro); }
+static int toqueRolar(const PonteiroRolagem *e) {
+  if (!toqueAcao) return 0;
+  return toquerol_evento(&toqueLista, e);
+}
+#endif
+
 // Com nome em repouso: os sem icone (Canal -/+) e o Guia, a porta principal.
 static int comNome(const AoVivoOsd *o, int b) { return !iconeDe(o, b) || b == AV_B_GUIA; }
 static float larguraBotaoAv(const AoVivoOsd *o, int b, int foco) {
@@ -139,12 +161,39 @@ static float larguraBotaoAv(const AoVivoOsd *o, int b, int foco) {
 static void fileiraBotoes(const AoVivoOsd *o, float y, float a) {
   float x = AV_X;
   int i, tinta = plrui_tinta();
+#ifdef NV_TOUCH_UI
+  int phone = telefoneui_ativo(), pont = phone && toqueAcao && a > .99f;
+  GfxRect faixa = {AV_X, y, NV_TELA_W - 2 * AV_X, AV_BTN_D};
+  if (phone) {
+    if (toqueFoco != o->foco) { toquerol_limpar(&toqueLista); toqueFoco = o->foco; }
+    float total = 0, fx = 0, fw = 0;
+    for (i = 0; i < o->nBotoes; i++) {
+      float w = larguraBotaoAv(o, o->botoes[i], o->foco == i);
+      if (i == o->foco) { fx = total; fw = w; }
+      total += w + (i + 1 < o->nBotoes ? 12 : 0);
+    }
+    float max = fmaxf(0, total - faixa.w);
+    if (!toqueLista.livre) {
+      if (fx < toqueRol) toqueRol = fx;
+      if (fx + fw > toqueRol + faixa.w) toqueRol = fx + fw - faixa.w;
+    }
+    toqueRol = toquerol_clamp(toqueRol, 0, max);
+    toquerol_vincular(&toqueLista, faixa, gfx_escala(), 0, max, 0, &toqueRol);
+    if (pont) ponteiro_rolagem(toqueRolar);
+    gfx_recorte(faixa.x, faixa.y, faixa.w, faixa.h); x -= toqueRol;
+  }
+#endif
   for (i = 0; i < o->nBotoes; i++) {
     int b = o->botoes[i], foco = (o->foco == i);
     const char *ic = iconeDe(o, b), *rot = rotuloDe(o, b);
     float w = larguraBotaoAv(o, b, foco), k;
     GfxRect r = { x, y, w, AV_BTN_D };
+#ifdef NV_TOUCH_UI
+    if (!phone && x + w > NV_TELA_W - AV_X) break;
+    if (phone && (x + w <= faixa.x || x >= faixa.x + faixa.w)) { x += w + 12; continue; }
+#else
     if (x + w > NV_TELA_W - AV_X) break;
+#endif
     if (foco) plrui_pilula_foco(r, a); else plrui_disco_osd(r, a);
     k = (foco ? tinta : 230) / 255.0f;
     if (foco || comNome(o, b)) {
@@ -153,8 +202,17 @@ static void fileiraBotoes(const AoVivoOsd *o, float y, float a) {
       if (ic) { gfx_icone((GfxRect){ tx, y + (AV_BTN_D - is) * 0.5f, is, is }, ic, k, k, k, a); tx += is + 12.0f; }
       txt_desenhar_alpha(l, tx, y + (AV_BTN_D - (float)l.h) * 0.5f, a);
     } else gfx_icone((GfxRect){ x + 19.0f, y + 19.0f, 30.0f, 30.0f }, ic, k, k, k, a);
+#ifdef NV_TOUCH_UI
+    if (pont) {
+      float ax = fmaxf(x, faixa.x), ar = fminf(x + w, faixa.x + faixa.w);
+      if (ar > ax) ponteiro_alvo(ax, y, ar - ax, AV_BTN_D, NULL, toqueBotao, b, toqueQuadro);
+    }
+#endif
     x += w + 12.0f;
   }
+#ifdef NV_TOUCH_UI
+  if (phone) gfx_sem_recorte();
+#endif
 }
 
 // A marca do canal numa caixa clara de raio 16 (110 x 64 no OSD).
@@ -219,10 +277,10 @@ static void aovivo_osd_desenharCorpo_(const AoVivoOsd *o, float a) {
   // Fontes, Audio, Legendas e as Informacoes cresciam de OUTRO lugar (a ilha do
   // player, sem relogio no canal). Agora a hora e a ilha do player
   // (plrilha_relogio, chamado por player.c) e tudo nasce dela, como no filme.
-  { float yr = 48.0f + 56.0f + 14.0f;   // Y_TOPO + PIL_H de plrilha.c + vao
+  { float yr = NV_ILHA_Y + 56.0f + 14.0f;   // Y_TOPO + PIL_H de plrilha.c + vao
     GfxRect ir;
     if (plrilha_rect(&ir) && ir.y + ir.h + 14.0f > yr) yr = ir.y + ir.h + 14.0f;
-    if (o->pausado) { pausao_selo(NV_TELA_W - AV_X, yr, 1, a); yr += PAUSAO_SELO_H + 12.0f; }
+    if (o->pausado) { pausao_selo(NV_TELA_W - NV_ILHA_MARGEM_D, yr, 1, a); yr += PAUSAO_SELO_H + 12.0f; }
     if (o->pausado && (o->pausaS > 0 || o->janelaS >= 60)) {
       char l2[160] = "", p1[64] = "", p2[80] = "";
       TxtLinha t;
@@ -230,13 +288,13 @@ static void aovivo_osd_desenharCorpo_(const AoVivoOsd *o, float a) {
       if (o->janelaS >= 60) { char d[24]; relogioDur(d, sizeof d, o->janelaS); snprintf(p2, sizeof p2, i18n("Dá para voltar até %s"), d); }
       snprintf(l2, sizeof l2, "%s%s%s", p1, (p1[0] && p2[0]) ? "  \xc2\xb7  " : "", p2);
       t = txt_linha(TXT_ILHA_SUB, l2, 243, 242, 239, 200);
-      txt_desenhar_alpha(t, NV_TELA_W - AV_X - t.w, yr, a);
+      txt_desenhar_alpha(t, NV_TELA_W - NV_ILHA_MARGEM_D - t.w, yr, a);
       yr += t.h + 6.0f;
     }
     if (o->bufferando) {
       // "Carregando o fluxo" e estado de aviso: ambar.
       TxtLinha lb = txt_linha(TXT_ILHA_SUB, "Carregando o fluxo…", 240, 185, 74, 255);
-      txt_desenhar_alpha(lb, NV_TELA_W - AV_X - lb.w, yr, a);
+      txt_desenhar_alpha(lb, NV_TELA_W - NV_ILHA_MARGEM_D - lb.w, yr, a);
       yr += lb.h + 6.0f;
     } }
 
@@ -401,7 +459,7 @@ void aovivo_erro_desenhar(const char *nome, const char *logo, const char *titulo
 }
 static void aovivo_erro_desenharCorpo_(const char *nome, const char *logo, const char *titulo,
                           const char *dica, float a) {
-  const float w = 960.0f, pad = 44.0f, tw = w - 2.0f * pad;
+  const float w = telefoneui_largura(960.0f, NV_TELA_W, 48.0f), pad = 44.0f, tw = w - 2.0f * pad;
   const char *tit = titulo && titulo[0] ? titulo : "Não foi possível abrir a fonte";
   const char *dc = dica && dica[0] ? dica : "Abra Fontes para escolher outra opção ou recarregar.";
   static const char *rot[3] = { "Recarregar", "Fonte", "Guia" };
@@ -413,6 +471,39 @@ static void aovivo_erro_desenharCorpo_(const char *nome, const char *logo, const
   hTit = txt_bloco_corta(TXT_ILHA_PERGUNTA, tit, 0, 0, 0, -1.0f, 0.0f, tw, lead, 0.0f, 2);
   hDica = txt_bloco_corta(TXT_ILHA_TEXTO, dc, 0, 0, 0, -1.0f, 0.0f, tw, 30.0f, 0.0f, 2);
   h = pad + 38.0f + 8.0f + hTit + 14.0f + hDica + 34.0f + 60.0f + 22.0f + 30.0f + pad;
+#ifdef NV_TOUCH_UI
+  if (telefoneui_ativo()) {
+    const float bh = 88, gap = 12, bw = (tw - 2 * gap) / 3;
+    const int ac[3] = {AV_B_RECARREGAR, AV_B_FONTE, AV_B_GUIA};
+    int pont = toqueAcao && a > .99f;
+    h = pad + 38 + 8 + hTit + 14 + hDica + 28 + bh + pad;
+    y = fmaxf(24, (NV_TELA_H - h) * .5f);
+    gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0, .031f, .035f, .043f, a);
+    plrui_material((GfxRect){x, y, w, h}, 36, 1, a);
+    if (pont) {
+      ponteiro_camada();
+      ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, NULL, 0, 0);
+    }
+    yy = y + pad;
+    caixaLogo(logo, nome, (GfxRect){x + pad, yy, 66, 38}, a);
+    TxtLinha nm = txt_linha_corta(TXT_G18R, nome && nome[0] ? nome : "Canal", 243, 242, 239, 150, tw - 80);
+    txt_desenhar_alpha(nm, x + pad + 80, yy + (38 - nm.h) * .5f, a);
+    yy += 46;
+    txt_bloco_corta(TXT_ILHA_PERGUNTA, tit, 243, 242, 239, x + pad, yy, tw, lead, a, 2);
+    yy += hTit + 14;
+    txt_bloco_corta(TXT_ILHA_TEXTO, dc, 243, 242, 239, x + pad, yy, tw, 30, a * .62f, 2);
+    yy += hDica + 28;
+    for (i = 0; i < 3; i++) {
+      GfxRect r = {x + pad + i * (bw + gap), yy, bw, bh};
+      int cor = erroFoco == i ? plrui_tinta() : 230;
+      if (erroFoco == i) plrui_pilula_foco(r, a); else plrui_disco_osd(r, a);
+      float th = txt_bloco_corta(TXT_G21B, rot[i], cor, cor, cor, -1, 0, bw - 24, 24, 0, 3);
+      txt_bloco_corta(TXT_G21B, rot[i], cor, cor, cor, r.x + 12, yy + (bh - th) * .5f, bw - 24, 24, a, 3);
+      if (pont) ponteiro_alvo(r.x, r.y, r.w, r.h, NULL, toqueErro, ac[i], toqueQuadro);
+    }
+    return;
+  }
+#endif
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0, 0.031f, 0.035f, 0.043f, a);
   plrui_material((GfxRect){ x, y, w, h }, 36.0f, 1, a);
   yy = y + pad;
@@ -429,3 +520,4 @@ static void aovivo_erro_desenharCorpo_(const char *nome, const char *logo, const
   { const char *k[2] = { "CH+", "CH\xe2\x88\x92" }, *r[2] = { "Próximo canal", "Canal anterior" };
     plrui_dicas(k, r, 2, x + pad, yy + 15.0f, 0, a); }
 }
+

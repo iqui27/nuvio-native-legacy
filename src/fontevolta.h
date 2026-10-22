@@ -76,6 +76,7 @@ typedef struct {
   int pronto;        // video_pronto()
   double duracao;    // video_duracao(), 0 = ainda nao sabe
   int carregando;    // player_carregando()
+  int quadro;        // o player ja desenhou quadro: o prazo nao vale mais
   int conferencia;   // fontevolta_conferencia()
   unsigned desdeMs;  // desde o pedido
 } FontevoltaSinais;

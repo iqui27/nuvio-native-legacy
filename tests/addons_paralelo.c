@@ -5,7 +5,7 @@
 static int modo;                 // 0 = tempos, 1 = cancelar no meio
 static _Atomic int vistoParcial;
 // #201: sem extras neste teste; o hash nunca e medido aqui.
-char *rede_baixar_trecho_st(const char *u, int s, long a, long b, long *t, int *st, int *e, char *f, unsigned tf) {
+char *rede_baixar_trecho_st(const char *u, int s, long long a, long long b, long *t, int *st, int *e, char *f, unsigned tf) {
   (void)u; (void)s; (void)a; (void)b; (void)t; (void)st; (void)e; (void)f; (void)tf;
   assert(!"Range inesperado"); return NULL;
 }

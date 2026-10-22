@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nuvio 2.1 · Trilhas</title>
+<link rel="stylesheet" href="tv.css">
+<style>
+.pg{position:absolute;left:200px;right:96px;top:0;bottom:0}
+/* trilha: passos em linha, a linha acende até onde você chegou */
+.passos{position:absolute;left:0;right:0;top:340px;display:grid;grid-template-columns:repeat(8,1fr)}
+.passos::before,.passos .feito{content:"";position:absolute;left:6.25%;right:6.25%;top:21px;height:3px;background:rgba(255,255,255,.16)}
+.passos .feito{right:auto;width:37.5%;background:var(--ac)}
+.ps{display:flex;flex-direction:column;align-items:center;position:relative}
+.ps .bo{width:44px;height:44px;border-radius:50%;background:#16171b;border:2px solid rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;margin-bottom:20px}
+.ps.ok .bo{background:var(--ac);border-color:var(--ac);color:var(--tinta)}
+.ps.ag .bo{border-color:var(--ac);border-width:3px}
+.ps .cz{width:160px;height:240px}
+.ps .t{font-size:18px;font-weight:600;margin-top:16px;text-align:center}
+.ps .s{font-size:15px;color:var(--mut2);margin-top:3px}
+.ps.ok .t{color:var(--mut)}
+.porque{position:absolute;left:0;width:1060px;top:740px;bottom:48px;border-radius:26px;padding:26px 30px}
+.porque p{font-size:20px;line-height:1.5;margin:8px 0 0;color:rgba(243,242,239,.86)}
+.porque .k2{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:17px;line-height:1.45;color:var(--mut)}
+.porque .k2 b{display:block;font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mut2);margin-bottom:4px}
+.sobre{position:absolute;left:1100px;right:0;top:740px;bottom:48px;border-radius:26px;padding:26px 28px;font-size:17px;line-height:1.5;color:var(--mut)}
+.sobre .l{display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,.08)}
+.sobre .l b{color:#fff;font-weight:600}
+/* diretor */
+.esq{position:absolute;left:120px;top:110px;width:1300px}
+.filmo{position:absolute;left:120px;right:120px;top:520px}
+.filmo .trem{display:flex;gap:14px;margin-top:16px}
+.fl{width:124px}
+.fl .cz{width:124px;height:186px;border-radius:12px}
+.fl .y{font-size:16px;color:var(--mut2);margin-top:10px;text-align:center}
+.ordem{position:absolute;left:8px;top:8px;z-index:1;min-width:32px;height:32px;padding:0 7px;border-radius:9px;background:var(--ac);color:var(--tinta);font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.painel{position:absolute;top:812px;bottom:40px;border-radius:26px;padding:22px 26px}
+.temas{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px}
+.ord{display:grid;grid-template-columns:36px 1fr;gap:14px;padding:10px 0;font-size:17px;line-height:1.4;color:var(--mut)}
+.ord b{color:#fff;font-weight:600}
+.ord .n{font-size:22px;font-weight:800;color:var(--ac)}
+/* título › em listas */
+.emlistas{position:absolute;left:120px;right:120px;top:596px}
+.emlistas .trem{display:grid;grid-template-columns:repeat(4,1fr);gap:28px;margin-top:16px}
+.el{border-radius:24px;padding:22px 24px;height:356px;display:flex;flex-direction:column}
+.el .t{font-size:23px;font-weight:700;margin-top:10px}
+.el .s{font-size:16px;color:var(--mut);margin-top:6px}
+.el q{display:block;font-size:18px;line-height:1.45;font-style:italic;color:rgba(243,242,239,.82);margin-top:16px;quotes:none}
+.el .pe{margin-top:auto;font-size:15px;color:var(--mut2)}
+</style>
+</head>
+<body>
+
+<section class="quadro" id="a">
+<p class="leg"><b>7A · Trilha</b> — uma jornada em ordem; cada passo diz por que vem agora, e o app guarda onde você parou.</p>
+<div class="caixa"><div class="tv">
+  <div class="arte a7" style="opacity:.4"></div><div class="fundo"></div>
+  <div class="ilha relogio">21:03<span class="s"></span><span class="av" style="background:#7c5cff">M</span></div>
+  <nav class="ilha rail" aria-label="Menu">
+    <a data-f><span data-i="home"></span></a><a data-f><span data-i="explorar"></span></a><a data-f><span data-i="guia"></span></a><a data-f><span data-i="busca"></span></a><a class="ativo" data-f href="biblioteca.html"><span data-i="biblio"></span></a><a data-f><span data-i="agenda"></span></a><a data-f href="conquistas.html#a"><span data-i="perfil"></span></a><a data-f><span data-i="ajustes"></span></a>
+  </nav>
+  <div class="pg">
+    <div style="position:absolute;left:0;right:0;top:118px;display:flex;align-items:flex-end;justify-content:space-between">
+      <div>
+        <div class="kick"><a href="listas.html">Biblioteca › Listas</a> › Trilha · Curadoria Nuvio</div>
+        <h1 class="h1" style="margin-top:10px">Nova onda japonesa em 8 filmes</h1>
+        <p class="sub" style="margin:10px 0 0;max-width:1100px" data-d="nosso">De 1959 a 1971, do estúdio para a rua. A ordem não é a das datas: cada filme prepara o olho para o seguinte.</p>
+      </div>
+      <div style="display:flex;gap:14px">
+        <span class="btn" data-f><span data-i="play"></span>Continuar · passo 4</span>
+        <a class="btn redondo" data-f data-d="nosso" href="conquistas.html#c"><span data-i="trofeu"></span></a>
+        <span class="btn redondo" data-f data-d="nosso"><span data-i="salvo"></span></span>
+      </div>
+    </div>
+
+    <div class="passos" data-d="nosso">
+      <i class="feito"></i>
+      <div class="ps ok"><span class="bo"><span data-i="ok" class="p"></span></span><div class="cz a11" data-f></div><div class="t">Os Silenciosos</div><div class="s">1959</div></div>
+      <div class="ps ok"><span class="bo"><span data-i="ok" class="p"></span></span><div class="cz a3" data-f></div><div class="t">Fogo Lento</div><div class="s">1960</div></div>
+      <div class="ps ok"><span class="bo"><span data-i="ok" class="p"></span></span><div class="cz a13" data-f></div><div class="t">Neon de Bolso</div><div class="s">1966</div></div>
+      <div class="ps ag"><span class="bo">4</span><div class="cz a6 foco" data-f></div><div class="t">Asfalto</div><div class="s">1963</div></div>
+      <div class="ps"><span class="bo">5</span><div class="cz a9" data-f></div><div class="t">Ponte Quebrada</div><div class="s">1964</div></div>
+      <div class="ps"><span class="bo">6</span><div class="cz a10" data-f></div><div class="t">Lua de Papel</div><div class="s">1968</div></div>
+      <div class="ps"><span class="bo">7</span><div class="cz a2" data-f></div><div class="t">Estação Ômega</div><div class="s">1969</div></div>
+      <div class="ps"><span class="bo">8</span><div class="cz a5" data-f></div><div class="t">Noite Âmbar</div><div class="s">1971</div></div>
+    </div>
+
+    <div class="ilha porque" data-d="nosso">
+      <div class="kick">Passo 4 · Asfalto · 1963 · Kenji Ōmura · 1h31</div>
+      <p>Você saiu do neon do passo 3 com a câmera solta. Aqui ela para: um único cruzamento, um dia inteiro, quase sem corte. Vem agora porque é o filme que ensina a ter paciência para os três últimos.</p>
+      <div class="k2">
+        <div><b>Repare em</b>o som da rua entra antes da imagem em quase toda cena.</div>
+        <div><b>Se já viu</b>marque como visto e o passo conta; a nota fica para quando quiser rever.</div>
+      </div>
+      <div style="display:flex;gap:12px;margin-top:20px">
+        <span class="chip" data-f data-d="hoje"><span data-i="play" class="p"></span>Assistir o passo 4</span>
+        <span class="chip" data-f data-d="hoje"><span data-i="ok" class="p"></span>Já vi</span>
+        <span class="chip" data-f>Ler o passo 5</span>
+      </div>
+    </div>
+    <div class="ilha sobre">
+      <div class="kick" style="margin-bottom:10px">Sobre a trilha</div>
+      <div class="l" data-d="hoje"><span>Você</span><b>3 de 8 · ≈ 6 h restantes</b></div>
+      <a class="l" href="conquistas.html#c" data-d="nosso"><span>Emblema</span><b>Nova onda japonesa · nível 1 de 5</b></a>
+      <div class="l" data-d="nosso"><span>Revisão</span><b>v3 · 14 set · trocou o passo 6</b></div>
+      <div class="l" data-d="nosso"><span>Nesta trilha</span><b>3,1 mil · 412 terminaram</b></div>
+    </div>
+  </div>
+</div></div>
+</section>
+
+<section class="quadro" id="b">
+<p class="leg"><b>7B · Página de diretora</b> — a filmografia vira trilha: em ordem de lançamento, com a ordem sugerida por cima, os temas que voltam e por onde começar.</p>
+<div class="caixa"><div class="tv">
+  <div class="arte a12"></div><div class="veu"></div>
+  <div class="ilha relogio" style="left:auto;right:48px">21:06<span class="s"></span><span class="av" style="background:#7c5cff">M</span></div>
+  <div class="esq">
+    <div class="kick" data-d="hoje">Diretora · Itália · 11 longas · 1988–2024</div>
+    <div style="font-size:96px;font-weight:800;letter-spacing:.04em;line-height:.95;margin:14px 0 18px">ILSE MARCHETTI</div>
+    <p class="sub" style="margin:0;max-width:980px" data-d="hoje">Filha de pescadores de Trieste, filma o litoral, irmãs e o trabalho que ninguém vê. Planos longos, quase nenhuma música.</p>
+    <div style="display:flex;gap:16px;align-items:center;margin-top:24px">
+      <span class="btn foco" data-f data-d="nosso"><span data-i="play"></span>Começar por Terra Baixa</span>
+      <span class="btn" data-f data-d="nosso"><span data-i="lista"></span>Trilha · 6 filmes</span>
+      <span class="btn" data-f data-d="hoje">Em 214 listas</span>
+      <span style="font-size:18px;color:var(--mut);margin-left:10px" data-d="hoje">você viu 4 de 11</span>
+    </div>
+  </div>
+  <div class="filmo">
+    <div class="kick" data-d="hoje">Filmografia · ordem de lançamento <span style="color:var(--ac)" data-d="nosso">· número = ordem sugerida</span></div>
+    <div class="trem">
+      <div class="fl"><div class="cz a11" data-f><span class="visto"><span data-i="ok"></span></span></div><div class="y">1988</div></div>
+      <div class="fl"><div class="cz a4" data-f><span class="ordem">1</span><span class="visto"><span data-i="ok"></span></span></div><div class="y">1993</div></div>
+      <div class="fl"><div class="cz a8" data-f><span class="ordem">2</span><span class="visto"><span data-i="ok"></span></span></div><div class="y">1997</div></div>
+      <div class="fl"><div class="cz a14" data-f></div><div class="y">2000</div></div>
+      <div class="fl"><div class="cz a9" data-f><span class="ordem">3</span></div><div class="y">2003</div></div>
+      <div class="fl"><div class="cz a12" data-f><span class="visto"><span data-i="ok"></span></span></div><div class="y">2007</div></div>
+      <div class="fl"><div class="cz a1" data-f><span class="ordem">5</span></div><div class="y">2011</div></div>
+      <div class="fl"><div class="cz a6" data-f></div><div class="y">2014</div></div>
+      <div class="fl"><div class="cz a10" data-f><span class="ordem">4</span></div><div class="y">2018</div></div>
+      <div class="fl"><div class="cz a3" data-f></div><div class="y">2021</div></div>
+      <div class="fl"><div class="cz a13" data-f><span class="ordem">6</span></div><div class="y">2024</div></div>
+    </div>
+  </div>
+  <div class="vid painel" style="left:120px;width:820px" data-d="nosso">
+    <div class="kick">Temas que voltam</div>
+    <div class="temas">
+      <span class="chip" data-f>Litoral <span class="v">7 filmes</span></span>
+      <span class="chip" data-f>Irmãs <span class="v">4</span></span>
+      <span class="chip" data-f>Luto <span class="v">5</span></span>
+      <span class="chip" data-f>Trabalho no mar <span class="v">3</span></span>
+      <span class="chip" data-f>Verão <span class="v">4</span></span>
+    </div>
+    <div style="font-size:16px;color:var(--mut2);line-height:1.45;margin-top:18px">Cada tema abre uma página igual a esta, com os filmes de todos os diretores e uma ordem para começar.</div>
+  </div>
+  <div class="vid painel" style="left:980px;right:120px" data-d="nosso">
+    <div class="kick">Por onde começar · Curadoria Nuvio</div>
+    <div class="ord"><span class="n">1</span><span><b>Terra Baixa</b> · a porta de entrada, a mais acessível</span></div>
+    <div class="ord"><span class="n">2</span><span><b>Sal e Cinza</b> · a mesma costa, agora pelos olhos das irmãs</span></div>
+    <div class="ord"><span class="n">3</span><span><b>Ponte Quebrada</b> · se gostou do silêncio, vá direto a este</span></div>
+  </div>
+</div></div>
+</section>
+
+<section class="quadro" id="c">
+<p class="leg"><b>7C · Título › Em listas</b> — onde este filme aparece, o que cada curador disse dele e a trilha para seguir se gostou.</p>
+<div class="caixa"><div class="tv">
+  <div class="arte a8"></div><div class="veu"></div>
+  <div class="ilha relogio" style="left:auto;right:48px">21:10<span class="s"></span><span class="av" style="background:#7c5cff">M</span></div>
+  <div style="position:absolute;left:120px;top:120px;width:1100px">
+    <div class="kick">Filme · 2023 · 1h52 · <a href="#b">Ilse Marchetti</a></div>
+    <div style="font-size:96px;font-weight:800;letter-spacing:.04em;line-height:.95;margin:16px 0 20px">SAL E CINZA</div>
+    <div class="meta"><span>7,4 IMDB</span><span class="pt"></span>Drama<span class="pt"></span><span class="tag">14</span><span class="pt"></span><span style="display:inline-flex;gap:8px;align-items:center"><span data-i="ok" class="p" style="color:var(--ac)"></span>visto em 02 out</span></div>
+    <div style="display:flex;gap:16px;margin-top:30px">
+      <span class="btn" data-f><span data-i="play"></span>Assistir de novo</span>
+      <span class="btn" data-f><span data-i="camadas"></span>Fontes</span>
+      <span class="btn foco" data-f><span data-i="lista"></span>Em listas <span class="v">23</span></span>
+      <span class="btn redondo" data-f><span data-i="salvo"></span></span>
+    </div>
+  </div>
+  <div class="emlistas">
+    <div class="kick">Em listas e trilhas</div>
+    <div class="trem">
+      <a class="vid el" href="#a" data-f data-d="nosso">
+        <span class="mk"><i></i>Se gostou disso, siga esta trilha</span>
+        <div class="t">Comece por Ilse Marchetti</div>
+        <div class="s">Curadoria Nuvio · este é o passo 2 de 6</div>
+        <q>“Depois de Terra Baixa, o mesmo litoral visto pelas irmãs. É aqui que ela descobre o silêncio.”</q>
+        <div class="pe">próximo passo: Ponte Quebrada</div>
+      </a>
+      <a class="vid el" href="listas.html#b" data-f data-d="hoje">
+        <span class="org">T · lista</span>
+        <div class="t">Chuva no vidro</div>
+        <div class="s">@lumiere_tardia · nº 22 de 40</div>
+        <q>“A balsa que não sai é a espera mais longa do cinema recente.”</q>
+        <div class="pe">2,4 mil ♥ · você viu 14</div>
+      </a>
+      <div class="vid el" data-f data-d="hoje">
+        <span class="org">T · lista</span>
+        <div class="t">Diretoras do litoral</div>
+        <div class="s">@cinefila.rp · nº 5 de 27</div>
+        <div class="s" style="margin-top:16px;color:var(--mut2)">sem nota do curador</div>
+        <div class="pe">412 ♥ · você viu 3</div>
+      </div>
+      <div class="vid el" data-f data-d="hoje" style="justify-content:center;align-items:flex-start">
+        <div class="t" style="margin:0">+ 20 listas no Trakt</div>
+        <div class="s">das mais curtidas para as menos</div>
+        <div class="s" style="margin-top:16px;color:var(--mut2)">notas só nas 3 primeiras, para não pesar a TV</div>
+      </div>
+    </div>
+  </div>
+</div></div>
+</section>
+
+<script src="tv.js"></script>
+</body>
+</html>

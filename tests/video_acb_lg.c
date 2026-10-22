@@ -2,6 +2,9 @@
 #include <time.h>
 #include <assert.h>
 #include <unistd.h>
+// Antes do #undef __APPLE__: gl_compat.h (via ajustes.h) escolhe o GL do Mac.
+#include "ajustes.h"
+#undef __APPLE__
 static int fake_sleep(const struct timespec *, struct timespec *);
 #define nanosleep fake_sleep
 #include "../src/video.c"
@@ -22,6 +25,7 @@ int dts_overlay_draw(DtsPlayback *p,double t,float x,float y,float w,float h,int
 }
 void legenda_carregar(const char *url) { (void)url;assert(0); }
 int esmaecer_segura_protetor_tv(void) { return 0; }
+void esmaecer_protetor_publicador(void (*publicar)(void)) { publicar(); }
 char *dados_ler(const char *nome) { (void)nome; return NULL; }
 int dados_gravar(const char *nome, const char *conteudo) { (void)nome; (void)conteudo; return 1; }
 void marco(const char *name) { (void)name; }
@@ -70,6 +74,37 @@ static int fake_native_audio(LSHandle *h,const char *uri,const char *payload,
   assert(strstr(payload,"\"type\":\"audio\""));native_audio_calls++;return 1;
 }
 int main(void) {
+  /* OLED A1: LG rejects DTS and returns an empty string, followed by a video
+   * array. That video must never become a fake H264 audio track. */
+  eventoPayload("{\"sourceInfo\":{\"programInfo\":[{\"numAudioTracks\":0,\"audioTrackInfo\":\"\",\"videoTrackInfo\":[{\"codec\":\"H264\"}],\"subtitleTrackInfo\":\"\"}]}}",sessao);
+  assert(nAudio == 0 && nLeg == 0);
+  MkvFaixa tracks[3] = {
+    {.numero=1,.tipo=1,.codec="V_MPEG4/ISO/AVC"},
+    {.numero=2,.tipo=2,.codec="A_DTS",.nome="DTS-HD Master Audio",.canais=6},
+    {.numero=3,.tipo=17,.codec="S_HDMV/PGS"}
+  };
+  eventoPayload("{\"error\":{\"errorCode\":200,\"errorText\":\"Audio Codec Not Supported\"}}",sessao);
+  assert(audioNaoSup && !video_faixa_dts(video_audio(audioAtual)));
+  completarAudioMkv(tracks,3);
+  assert(nAudio == 1 && audioAtual == 0 && video_faixa_dts(video_audio(0)) > 0);
+  assert(audioNaoSup && video_faixa_dts(video_audio(audioAtual))); /* fallback trigger */
+  assert(!strcmp(faixaAudio[0].codec,"dts") && faixaAudio[0].canais == 6);
+  assert(faixaAudio[0].stream_index == -1 && faixaAudio[0].stream_id == -1);
+  /* Empty arrays also stay empty; multiple hidden tracks are ambiguous. */
+  eventoPayload("{\"sourceInfo\":{\"audioTrackInfo\":[],\"videoTrackInfo\":[{\"codec\":\"H264\"}],\"subtitleTrackInfo\":[]}}",sessao);
+  assert(nAudio == 0 && nLeg == 0);
+  tracks[2] = (MkvFaixa){.tipo=2,.codec="A_DTS"};
+  completarAudioMkv(tracks,3);assert(nAudio == 0);
+  /* Error 200 also covers TrueHD; it must not trigger a DTS conversion. */
+  snprintf(tracks[1].codec,sizeof tracks[1].codec,"A_TRUEHD");
+  snprintf(tracks[1].nome,sizeof tracks[1].nome,"TrueHD");
+  completarAudioMkv(tracks,2);assert(nAudio == 1 && !video_faixa_dts(video_audio(0)));
+  /* Real native audio remains authoritative; iteration stops at the array. */
+  eventoPayload("{\"sourceInfo\":{\"audioTrackInfo\":[{\"codec\":\"aac\",\"channels\":2}],\"videoTrackInfo\":[{\"codec\":\"H264\"}],\"subtitleTrackInfo\":[]}}",sessao);
+  assert(nAudio == 1 && !strcmp(faixaAudio[0].codec,"aac"));
+  completarAudioMkv(tracks,2);assert(!strcmp(faixaAudio[0].codec,"aac"));
+  nAudio = nLeg = 0; audioNaoSup = 0;
+
   /* Native DTS is preferred even with fallback enabled. An unsupported error
    * from another track must not follow the user onto a compatible DTS track. */
   ligado=1;snprintf(midia,sizeof midia,"native-media");nAudio=2;audioAtual=0;

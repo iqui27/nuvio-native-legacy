@@ -1,6 +1,8 @@
 #include "metaprov.h"
 #include "ajustes.h"
 #include "rede.h"
+#include "marco.h"
+#include <SDL2/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,8 +40,18 @@ void metaprov_zerar_pausa(void) {
 // (medido), e um "kitsu:"/"mal:" de anime nem sai daqui — um 404 dele
 // pausaria o provedor por um minuto para todo mundo.
 char *metaprov_get_rede(const char *url, int seg, int *st, void *ctx) {
+  Uint32 desde = SDL_GetTicks();
+  char msg[240];
+  const char *host = strstr(url, "://");
+  host = host ? host + 3 : "local";
+  size_t nHost = strcspn(host, "/?#");
+  const char *at = memchr(host, '@', nHost);
+  if (at) { nHost -= (size_t)(at + 1 - host); host = at + 1; }
   char *c = rede_baixar(url, seg);
   (void)ctx;
+  snprintf(msg, sizeof msg, "meta: origem fonte=rede host=%.*s total_ms=%u ok=%d",
+           (int)nHost, host, (unsigned)(SDL_GetTicks() - desde), c != NULL);
+  marco(msg);
   if (st) *st = c ? 200 : 0;
   return c;
 }
@@ -182,6 +194,18 @@ char *metaprov_meta_com(const char *tipo, const char *id, int seg_cine,
     if (prov) *prov = METAPROV_CINEMETA;
     printf("[meta] %s/%s: Cinemeta\n", tipo, id);
   }
+  return c;
+}
+
+char *metaprov_meta_cinemeta_com(const char *tipo, const char *id, int seg,
+                                 MetaprovGet get, void *ctx) {
+  char url[400], *c;
+  int st = 0;
+  if (!get) get = metaprov_get_rede;
+  if (!tipo || !id || !id[0]) return NULL;
+  metaprov_url_meta(url, sizeof url, METAPROV_CINEMETA, tipo, id, NULL);
+  c = get(url, seg, &st, ctx);
+  if (c && !metaprov_meta_valido(c)) { free(c); c = NULL; }
   return c;
 }
 

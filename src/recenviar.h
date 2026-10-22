@@ -34,5 +34,7 @@ int  recenviar_aberto(void);
 void recenviar_evento(const SDL_Event *e);
 void recenviar_atualizar(float dt, Uint32 agora);
 void recenviar_desenhar(Uint32 agora);
+// Teste do ponteiro (#99): a linha em foco; em `pag` o passo (0 contatos, 1 frases, 2 amigos, 3 envio).
+int  recenviar_teste_foco(int *pag);
 
 #endif

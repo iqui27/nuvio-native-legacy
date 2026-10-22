@@ -1,4 +1,6 @@
 #include "trakt.h"
+#include "traktscrobble.h"
+#include <math.h>
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -59,6 +61,18 @@ static void espera(int esperado) {
 int main(void) {
   trakt_definir("token", "client");
 
+  // Nenhum desses pedidos pode ocupar a vaga pendente ou tocar a rede.
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 129, 129, 0, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 129, 129, 69, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 2580, 2580, 120, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 30, 30, 30, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", NAN, 2580, 2580, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 2580, 2580, NAN, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_TOCANDO, "tt1234567", 10, 2580, 0, 0) == SCR_NADA);
+  // Log do C9 (Dexter S1E2): 133 s tocados, seek ate o fim, saida a 97%.
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 2768, 2843, 133, 0) == SCR_NADA);
+  assert(chamadas == 0);
+
   proximoStatus = 400;
   assert(trakt_watchlist_tipo("tt1234567:2:4", "series", 1));
   espera(1);
@@ -95,6 +109,34 @@ int main(void) {
   pthread_mutex_lock(&lock); liberar = 1; pthread_cond_broadcast(&cond); pthread_mutex_unlock(&lock);
   while (trakt_operacao_estado(2) == 1) sched_yield();
   assert(trakt_operacao_estado(2) == 3 && marcas == 1);
-  puts("trakt contracts: PASS (intenção, escopo, falha e retry confirmados)");
+  bloquear = 1; liberar = 0;
+  trakt_definir("token", "client");
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 2580, 2580, 2322, 1) == SCR_STOP);
+  espera(6);
+  assert(strstr(ultimaUrl, "/scrobble/stop"));
+  assert(strstr(ultimoCorpo, "100.00"));
+  // Com um envio real em voo, stops sem prova tambem nao ocupam scrPend.
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt9999999", 180, 180, 0, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt9999999", 2580, 2580, 120, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 200, 2580, 200, 0) == SCR_PAUSE);
+  pthread_mutex_lock(&lock); liberar = 1; pthread_cond_broadcast(&cond); pthread_mutex_unlock(&lock);
+  espera(7);
+  assert(strstr(ultimaUrl, "/scrobble/pause"));
+  assert(!strstr(ultimoCorpo, "tt9999999"));
+  // RECUSA NA SAIDA ENCERRA O START EM PE. Sem isso o estado ficava "ativo"
+  // para o mesmo id e a proxima abertura nao mandava /scrobble/start.
+  assert(trakt_scrobble(SCR_EV_TOCANDO, "tt7777777", 99, 2843, 99, 0) == SCR_START);
+  espera(8);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt7777777", 2824, 2843, 133, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_TOCANDO, "tt7777777", 10, 2843, 10, 0) == SCR_START);
+  espera(9);
+  assert(strstr(ultimaUrl, "/scrobble/start"));
+  // Com a decisao do player (player_regra_visto), o stop sai.
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt7777777", 2700, 2700, 2400, 1) == SCR_STOP);
+  espera(10);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt8888888", 6000, 6000, 2300, 1) == SCR_STOP);
+  espera(11);
+  assert(strstr(ultimaUrl, "/scrobble/stop") && strstr(ultimoCorpo, "tt8888888"));
+  puts("trakt contracts: PASS (intencao, escopo, falha, retry, stop com prova de reproducao e recusa que encerra o start)");
   return 0;
 }

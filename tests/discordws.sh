@@ -3,7 +3,7 @@
 # Ver o cabecalho de tests/discordws.c.
 #
 #   bash tests/discordws.sh
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 flags=(-O1 -g -Isrc -ffunction-sections -fdata-sections -Wl,-dead_strip \
        -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \

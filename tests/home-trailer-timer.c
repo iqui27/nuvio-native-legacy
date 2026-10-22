@@ -18,6 +18,7 @@ static int fixturePrintf(const char *format, ...);
 
 #define static
 #include "../src/home.c"
+void desc_sinopse_hero(const int *idx, int n) { (void)idx; (void)n; }
 #undef static
 #undef printf
 static int fixturePrintf(const char *format, ...) {
@@ -52,6 +53,8 @@ static char lastSource[128];
 int cat_n(void) { return 1; }
 const CatItem *cat_item(int i) { return i == 0 ? &item : NULL; }
 
+int ajustes_social(void) { return 1; }
+int ajustes_hist_conta(void) { return 1; }
 int ajustes_hero_ligado(void) { return 1; }
 int ajustes_trailer_hero(void) { return trailerSetting; }
 static int somSetting;
@@ -79,8 +82,22 @@ int trailer_falhou(void) {
 }
 void trailer_fechar(void) { opened = 0; playing = 0; }
 int trailer_estado(void) { return opened ? (playing ? 1 : -1) : -2; }
+static GfxRect lastRect;
+#ifdef NV_TPK
+// cartaoVideoRect (LetterBox no cartao): quadro ainda sem tamanho = 16:9.
+int video_largura(void) { return 0; }
+int video_altura(void) { return 0; }
+// Scheduling fixture: the video backend accepts the card destination unchanged.
+void video_tpk_cartao_destino(float x,float y,float w,float h,float *ox,float *oy,float *ow,float *oh) {
+  if (ox) *ox=x; if (oy) *oy=y; if (ow) *ow=w; if (oh) *oh=h;
+}
+#endif
+static int lastNoCartao, rectCalls;
+void trailer_no_cartao(int sim) { lastNoCartao = sim; }
+void trailer_rect(GfxRect r) { lastRect = r; rectCalls++; }
+GfxRect trailer_retangulo(void) { return lastRect; }
 void trailer_abrir(const char *source, GfxRect r, int som, int cheia) {
-  (void)r; (void)cheia;
+  (void)cheia; lastRect = r;
   lastSom = som;
   snprintf(lastSource, sizeof lastSource, "%s", source);
   openedCount++;
@@ -424,6 +441,53 @@ int main(void) {
   home_trailer_passo(1,.016f,start+500+NV_TRAILER_HERO_ESPERA_MS);
   rc|=check("focused content poster starts muted independently of hero setting",opened&&lastSom==0);
   home_trailer_passo(0,.016f,start+4000);rc|=check("poster overlay closes Home trailer",!opened);
+
+  // TRES MODOS (08/10/2026). No card: so com o cartaz que o desenho marcou,
+  // no retangulo dele, sem modo cinema; Tela cheia: no destaque, com cinema.
+  { const GfxRect card = { 300.0f, 600.0f, 568.0f, 320.0f };
+    resetState("tt-card");
+    focoHero=0;posterSetting=AJ_TRAILER_CARTAZ_CARD;trailerSetting=0;nFileiras=1;foco.fileira=0;
+    layoutSetting=HOME_LAYOUT_MODERNA;trailercinema_zerar(&heroCinema);
+    fileiras[0].tipo=FILEIRA_NORMAL;heroPendente=heroAtual;heroPendenteEm=start;appleReady=1;
+    cartaoTrailerItem=-1;cartaoTrailerPode=cartaoTrailerServe=0;heroTrailerNoCartao=0;
+    home_trailer_passo(1,.016f,start+500);
+    home_trailer_passo(1,.016f,start+500+NV_TRAILER_HERO_ESPERA_MS);
+    rc|=check("no card: portrait without expand never plays",!opened&&heroTrailerGateAnterior==HERO_GATE_POSTER_WAIT);
+    cartaoTrailerItem=heroAtual;cartaoTrailerRect=card;cartaoTrailerPode=1;cartaoTrailerServe=0;
+    home_trailer_passo(1,.016f,start+600);
+    home_trailer_passo(1,.016f,start+600+NV_TRAILER_HERO_ESPERA_MS);
+    rc|=check("no card: expanding portrait waits until fully open",!opened);
+    cartaoTrailerServe=1;
+    home_trailer_passo(1,.016f,start+700+NV_TRAILER_HERO_ESPERA_MS);
+    rc|=check("no card: opens muted inside the card rect",opened&&lastSom==0&&heroTrailerNoCartao&&lastNoCartao&&
+              lastRect.x==card.x&&lastRect.y==card.y&&lastRect.w==card.w&&lastRect.h==card.h);
+    playing=1;
+    for (int q=0;q<60;q++) home_trailer_passo(1,.016f,start+800+NV_TRAILER_HERO_ESPERA_MS+q*16);
+    rc|=check("no card: fades in, no cinema mode",heroTrailerFade>0.9f&&!heroCinema.oculta);
+    rectCalls=0;cartaoTrailerRect.x+=40.0f;
+    home_trailer_passo(1,.016f,start+2000+NV_TRAILER_HERO_ESPERA_MS);
+    home_trailer_passo(1,.016f,start+2016+NV_TRAILER_HERO_ESPERA_MS);
+    rc|=check("no card: plane follows the card once per move",rectCalls==1&&lastRect.x==card.x+40.0f);
+    focoHero=1;trailerSetting=1;
+    home_trailer_passo(1,.016f,start+2100+NV_TRAILER_HERO_ESPERA_MS);
+    rc|=check("no card: focus to the hero closes the card trailer",!opened&&!heroTrailerNoCartao);
+    focoHero=0;cartaoTrailerItem=-1;
+    home_trailer_passo(1,.016f,start+2200+NV_TRAILER_HERO_ESPERA_MS);
+    rc|=check("no card: card gone (focus left) stays closed",!opened);
+
+    resetState("tt-cheia");
+    focoHero=0;posterSetting=AJ_TRAILER_CARTAZ_CHEIA;trailerSetting=0;nFileiras=1;foco.fileira=0;
+    layoutSetting=HOME_LAYOUT_MODERNA;trailercinema_zerar(&heroCinema);heroTrailerNoCartao=0;
+    fileiras[0].tipo=FILEIRA_NORMAL;heroPendente=heroAtual;heroPendenteEm=start;appleReady=1;
+    cartaoTrailerItem=-1;cartaoTrailerPode=cartaoTrailerServe=0;
+    home_trailer_passo(1,.016f,start+500);
+    home_trailer_passo(1,.016f,start+500+NV_TRAILER_HERO_ESPERA_MS);
+    rc|=check("tela cheia: portrait poster plays in the hero rect",opened&&!heroTrailerNoCartao&&!lastNoCartao);
+    playing=1;
+    for (int q=0;q<60;q++) home_trailer_passo(1,.016f,start+600+NV_TRAILER_HERO_ESPERA_MS+q*16);
+    rc|=check("tela cheia: cinema mode like the hero trailer",heroCinema.oculta&&heroCinema.v>0.5f);
+    trailercinema_zerar(&heroCinema);
+  }
 
 #ifdef NV_TPK
   resetState("tt228imdb-timeout");trailerfonte_definir_imdb_primeiro_destaque(1);

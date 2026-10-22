@@ -54,11 +54,14 @@ cloud megaphone bookmark
 clapperboard languages search chevron-right check plus minus memory-stick delete
 activity gauge zap database
 arrow-up-down heart moon sun-dim
+arrow-up arrow-down pencil
 pause send scroll-text server-crash shield-check cpu log-out
 panel-left list-x bell audio-lines layers type sliders-horizontal book-open user-plus
 alarm-clock badge-check captions chart-column chevrons-down circle-check circle-dot compass droplet feather film funnel globe image image-plus inbox key key-round layout-list life-buoy link list-ordered list-video loader log-in map maximize-2 menu message-square monitor-play mouse-pointer move-horizontal pause picture-in-picture-2 play quote send server settings-2 shield sparkle stethoscope telescope thumbs-up unlink wand sparkles corner-up-left book-open-text
 pipette blend spotlight paint-roller
 lock lock-open
+ellipsis
+hard-drive volume-2 package tag
 "
 # A linha que comeca em "clock" e da ILHA DO RELOGIO (02/10, mockup aprovado em design/ilha):
 # os icones dos avisos (alerta, wifi, debrid baixando, Trakt desconectado...) e
@@ -73,8 +76,12 @@ lock lock-open
 # os discos da lista, as pecas da previa, capitulos e recursos do guia.
 # A linha "lock lock-open" e da TRAVA DE SERIE (travaui.c, detail.c; 06/10):
 # o botao "Travar" e o selo da trava. SVG da tag 1.48.0 transcritos a mao.
-# A ultima linha antes dela e da REGUA de cores (05/10): um desenho por dinamica (Da arte,
+# A linha "pipette blend spotlight paint-roller" e da REGUA de cores (05/10): um desenho por dinamica (Da arte,
 # Gradiente, Imersiva, Textura), que antes mostravam todas a mesma miniatura.
+# A ultima e do "..." da pagina do titulo (06/10): o circular "Mais opcoes" que
+# guarda trailer, Explorar, Trocar arte e Recomendar (src/detmais.h).
+# A de baixo e do TEXTO DO ADDON na folha de fontes (07/10): os emojis do AIOStreams
+# (💾 👤 🎞️ 🔊 🌐 ⚙️ ⚡ 📦 🏷️ ⏱️) viram estes icones — a TV nao tem emoji colorido.
 # Conferencia: todo aj_* citado em src/ tem de estar em NOMES, e todo NOMES
 # tem de ser citado — senao sobra PNG morto no pacote ou falta icone na tela
 # (gfx_icone falha em silencio).
