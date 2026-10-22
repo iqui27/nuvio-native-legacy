@@ -105,7 +105,7 @@ static const char *const COM_TXT[] = {
   "Perfeito para uma tarde de chuva." };
 static const int COM_NOTA[] = { 8, 6, 7 }, COM_CUR[] = { 6, 3, 1 };
 int fx_com_spoiler(int i) { return i == 1; }
-int fx_n_comentarios(void)    { return ehSerieDeEnsaio() ? 0 : 3; }
+int fx_n_comentarios(void)    { return ehSerieDeEnsaio() && !getenv("NUVIO_SHOT_REFERENCE") ? 0 : 3; }
 int fx_n_comentarios_ep(void) { return 0; }
 const char *fx_com_usuario(int i)  { return COM_USU[i]; }
 const char *fx_com_texto(int i)    { return COM_TXT[i]; }
@@ -167,9 +167,9 @@ int fx_nota(int f) {
   }
 }
 
-int fx_n_temporadas(void) { return ehSerieDeEnsaio() ? 2 : 0; }
+int fx_n_temporadas(void) { return ehSerieDeEnsaio() ? (getenv("NUVIO_SHOT_REFERENCE") ? 5 : 2) : 0; }
 int fx_temporada_numero(int t) { return t + 1; }
-int fx_n_eps(int t) { (void)t; return ehSerieDeEnsaio() ? 8 : 0; }
+int fx_n_eps(int t) { (void)t; return ehSerieDeEnsaio() ? (getenv("NUVIO_SHOT_REFERENCE") ? 10 : 8) : 0; }
 int fx_ep_numero(int t, int i) { (void)t; return i + 1; }
 int fx_ep_nota(int t, int i) { return 78 + ((i * 3 + t * 5) % 12); }
 int fx_ep_visto(int t, int e) { (void)t; (void)e; return 0; }
@@ -194,12 +194,17 @@ static void cacheFrases(void) {
                         "com uma volta. É uma correção de rota.\n");
   for (int i = 2; i <= 6; i++)
     k += (size_t)snprintf(buf + k, sizeof buf - k, "Q\tAndy Sachs\tFrase de ensaio %d.\n", i);
-  assert(dados_gravar_leve("frases-" IMDB_FILME ".txt", buf));
+  if (getenv("NUVIO_SHOT_REFERENCE")) {
+    snprintf(buf,sizeof buf,"# nuvio seriefrases v1\n%lld\tProject Hail Mary\t1\nQ\tRocky\tAmaze! Amaze! Amaze!\n",(long long)time(NULL));
+    assert(dados_gravar_leve("frases-" IMDB_FILME ".txt",buf));
+    snprintf(buf,sizeof buf,"# nuvio seriefrases v1\n%lld\tFargo\t1\nQ\tLorne Malvo · T1:E1\tOs mapas diziam: aqui há dragões. Hoje não dizem mais. Isso não quer dizer que os dragões não estejam lá.\n",(long long)time(NULL));
+    assert(dados_gravar_leve("frases-" IMDB_SERIE ".txt",buf));
+  } else assert(dados_gravar_leve("frases-" IMDB_FILME ".txt", buf));
 }
 
 // --- CATALOGO ----------------------------------------------------------------
 static CatItem itens[2];
-static CatEp episodios[16];
+static CatEp episodios[50];
 static const char *const EP_NOME[8] = { "The End", "The Target", "The Head", "The Ghouls",
   "The Past", "The Trap", "The Radio", "The Beginning" };
 
@@ -270,13 +275,26 @@ static void montarCatalogo(void) {
     snprintf(itens[1].sinopse,sizeof itens[1].sinopse,"Ryland Grace acorda sozinho numa nave a anos-luz da Terra, sem lembrar quem é nem por que está ali. Aos poucos a memória volta — e com ela a missão de salvar o Sol.");
     snprintf(itens[1].direcao,sizeof itens[1].direcao,"Phil Lord, Christopher Miller");
     snprintf(itens[0].titulo,sizeof itens[0].titulo,"Fargo");
+    snprintf(itens[0].direcao,sizeof itens[0].direcao,"Noah Hawley");
+    itens[0].nTemporadas=5;
+    for (int t=0;t<5;t++) itens[0].temporadas[t]=t+1;
     snprintf(itens[0].meta,sizeof itens[0].meta,"2014 · 54 min");
     snprintf(itens[0].genero,sizeof itens[0].genero,"Série · Crime · Drama");
     snprintf(itens[0].sinopse,sizeof itens[0].sinopse,"Um vendedor de seguros frustrado cruza o caminho de um assassino de aluguel. A partir daí, uma cidadezinha de Minnesota nunca mais será a mesma.");
     for (int k=0;k<2;k++) {
       snprintf(itens[k].backdrop,sizeof itens[k].backdrop,"%s/%s-arte.jpg",ref,k ? "phm" : "fargo");
       snprintf(itens[k].logo,sizeof itens[k].logo,"%s/%s-logo.png",ref,k ? "phm" : "fargo");
-      for (int j=0;j<6;j++) snprintf(itens[k].elenco[j].foto,sizeof itens[k].elenco[j].foto,"%s/elenco/%c%d.jpg",ref,k ? 'a' : 'b',j);
+      static const char *const names[2][6]={
+        {"Billy Bob Thornton","Martin Freeman","Allison Tolman","Colin Hanks","Bob Odenkirk","Keith Carradine"},
+        {"Ryan Gosling","Sandra Hüller","James Ortiz","Lionel Boyce","Ken Leung","Milana Vayntrub"}};
+      static const char *const roles[2][6]={
+        {"Lorne Malvo","Lester Nygaard","Molly Solverson","Gus Grimly","Bill Oswalt","Lou Solverson"},
+        {"Ryland Grace","Eva Stratt","Rocky (voz)","Carl","Yáo","Olesya"}};
+      for (int j=0;j<6;j++) {
+        snprintf(itens[k].elenco[j].foto,sizeof itens[k].elenco[j].foto,"%s/elenco/%c%d.jpg",ref,k ? 'a' : 'b',j);
+        snprintf(itens[k].elenco[j].nome,sizeof itens[k].elenco[j].nome,"%s",names[k][j]);
+        snprintf(itens[k].elenco[j].papel,sizeof itens[k].elenco[j].papel,"%s",roles[k][j]);
+      }
       itens[k].elenco[5].foto[0]=0;
     }
   }
@@ -285,12 +303,13 @@ static void montarCatalogo(void) {
   snprintf(fil.tipo, sizeof fil.tipo, "series");
   cat_definir_tudo(itens, 2, &fil, 1);
 
-  for (int t = 1; t <= 2; t++)
-    for (i = 0; i < 8; i++) {
+  int reference=getenv("NUVIO_SHOT_REFERENCE")!=NULL;
+  for (int t = 1; t <= (reference ? 5 : 2); t++)
+    for (i = 0; i < (reference ? 10 : 8); i++) {
       CatEp *e = &episodios[n++];
       e->temporada = t; e->episodio = i + 1;
       e->nota=78+(i*3+t)%16;
-      snprintf(e->nome, sizeof e->nome, "%s", EP_NOME[i]);
+      snprintf(e->nome, sizeof e->nome, "%s", EP_NOME[i%8]);
       snprintf(e->duracao, sizeof e->duracao, "56 min");
       snprintf(e->data, sizeof e->data, "11 de abril de 2024");
       snprintf(e->sinopse, sizeof e->sinopse, "%s",
@@ -304,7 +323,11 @@ static void montarCatalogo(void) {
       }
     }
   cat_definir_episodios(0, episodios, n);
-  for (i = 1; i <= 8; i++) vistoep_definir(IMDB_SERIE, 1, i, i <= 2);
+  for (i = 1; i <= (reference ? 10 : 8); i++) vistoep_definir(IMDB_SERIE, 1, i, i <= 2);
+  if (reference) {
+    agenda_definir_hoje("2026-10-22");
+    agenda_registrar(IMDB_SERIE,"Fargo",NULL,"Returning Series",6,1,"Premiere","2027-01-01","");
+  }
 }
 
 // --- CAPTURA -----------------------------------------------------------------
@@ -329,11 +352,13 @@ static void gravar(const char *id) {
   printf("rolagem %s %.0f\n", id, scrollY);
 }
 
+static float shotScroll=-1;
 static void quadros(int n) {
   for (int i = 0; i < n; i++) {
     SDL_PumpEvents();
     tex_bombear(3);
     detail_atualizar(1.0f / 60.0f, SDL_GetTicks());
+    if (shotScroll>=0) scrollY=shotScroll;
     txt_novo_quadro();
     tex_novo_quadro();
     gfx_novo_quadro();
@@ -363,6 +388,12 @@ static void abrir(int i, int nv, int sec, int col) {
   hi.rect.w = NV_TELA_W; hi.rect.h = NV_TELA_H;
   hi.titulo = itens[i].titulo; hi.genero = itens[i].genero; hi.meta = itens[i].meta;
   detail_abrir(&hi);
+  if (getenv("NUVIO_SHOT_REFERENCE")) {
+    char path[1024]; snprintf(path,sizeof path,"%s/ajustes.txt",dados_dir());
+    FILE *f=fopen(path,"a"); assert(f);
+    fprintf(f,"selected_theme %d\n",i ? 5 : 1); fclose(f);
+    ajustes_dir(dados_dir());
+  }
   if (getenv("NUVIO_SHOT_SOURCE")) {
     Stream source={0};
     snprintf(source.rotulo,sizeof source.rotulo,"Fixture 4K Dolby Vision Atmos");
@@ -413,7 +444,7 @@ int main(int argc, char **argv) {
   assert(gfx_iniciar());
   { char ic[1024]; if (realpath("deploy/app/art", ic)) gfx_icones_dir(ic); }
   assert(txt_iniciar("deploy/app", 1));
-  tex_iniciar(16);
+  tex_iniciar(getenv("NUVIO_SHOT_REFERENCE") ? 30 : 16);
   ajustes_iniciar();
   dados_iniciar("deploy/app/art");
   dd = dados_dir();
@@ -428,7 +459,7 @@ int main(int argc, char **argv) {
     fprintf(f, "idioma %d\n", lg && *lg ? atoi(lg) : 0);
     // Acento azul do mockup (#5aa2ff/#42a5f5): o tema Oceano.
     fputs("selected_theme 2\n", f);
-    if (getenv("NUVIO_SHOT_REFERENCE")) fputs("blurUnwatchedEpisodes 1\n",f);
+    if (getenv("NUVIO_SHOT_REFERENCE")) fputs("blurUnwatchedEpisodes 0\n",f);
     if (getenv("NUVIO_SHOT_TOPO")) fprintf(f, "detalheTopoLocal %d\n", atoi(getenv("NUVIO_SHOT_TOPO")));
     if (getenv("NUVIO_SHOT_SPOILERS")) fputs("blurUnwatchedEpisodes 0\n",f);
     if (getenv("NUVIO_SHOT_VIDRO") && atoi(getenv("NUVIO_SHOT_VIDRO")))
@@ -476,6 +507,34 @@ int main(int argc, char **argv) {
       socialvis_definir_perfil_extra("nuvio:mari", &p); }
   }
 
+  if (quer(argc,argv,"full")) {
+    assert(ajustes_idioma()==IDIOMA_PT);
+    for (int movie=1;movie>=0;movie--) {
+      tex_encerrar(); assert(tex_iniciar(30));
+      abrir(movie,0,0,0);
+      frasesAberta=1; seriefrases_abrir(itens[movie].imdb);
+      quadros(20); recalcularLayout();
+      int height=(int)ceilf(docFim);
+      char name[100],path[1024];
+      snprintf(path,sizeof path,"%s/%s-height.txt",saida,movie ? "movie" : "series");
+      FILE *f=fopen(path,"w"); assert(f); fprintf(f,"%d\n",height); fclose(f);
+      snprintf(path,sizeof path,"%s/%s-sections.txt",saida,movie ? "movie" : "series");
+      f=fopen(path,"w"); assert(f);
+      for (int r=0;r<N_SECOES;r++) if (secaoN(r)>0)
+        fprintf(f,"%d %.0f %.0f\n",r,topoSec[r],conteudoSec[r]);
+      fclose(f);
+      for (int sy=0;sy<height;sy+=900) {
+        shotScroll=sy; quadros(40); SDL_Delay(450); quadros(12);
+        snprintf(name,sizeof name,"%s-full-%04d",movie ? "movie" : "series",sy);
+        gravar(name);
+        int live=0,pending=0,hot=0; long bytes=0,hotBytes=0;
+        tex_estatisticas(&live,&pending,&bytes,&hot,&hotBytes);
+        printf("textures %s live=%d hot=%d pending=%d bytes=%ld\n",name,live,hot,pending,bytes);
+        assert(live<=30);
+      }
+      shotScroll=-1;
+    }
+  }
   if (quer(argc, argv, "filme-topo")) { abrir(1, 0, 0, 0); gravar("filme-topo"); }
   // O ULTIMO circular da linha aberta em foco: hoje o "..." (Mais opcoes).
   if (quer(argc, argv, "filme-explorar")) {
@@ -540,7 +599,10 @@ int main(int argc, char **argv) {
   if (quer(argc, argv, "serie-progresso")) { abrir(0, 1, SEC_PROGTEMP, 2); gravar("serie-progresso"); }
   if (quer(argc, argv, "serie-fim")) { abrir(0, 1, SEC_DETALHES, 0); gravar("serie-fim"); }
   if (quer(argc, argv, "serie-comentarios")) { abrir(0, 1, SEC_COMENTARIOS, 2); gravar("serie-comentarios"); }
-  if (quer(argc, argv, "serie-ep")) { abrir(0, 1, SEC_EPISODIOS, 2); gravar("serie-ep"); }
+  if (quer(argc, argv, "serie-ep")) {
+    abrir(0, 1, SEC_EPISODIOS, getenv("NUVIO_SHOT_REFERENCE") ? 3 : 2);
+    gravar("serie-ep");
+  }
   if (quer(argc, argv, "serie-temp")) { abrir(0, 1, SEC_TEMPORADAS, 0); gravar("serie-temp"); }
   if (quer(argc, argv, "serie-baixo")) { abrir(0, 1, SEC_ELENCO, 0); gravar("serie-baixo"); }
 
