@@ -27,6 +27,7 @@
 #include "resolverregra.h"
 #include "horafmt.h"
 #include "player.h"
+#include "juntos.h"
 #include "conquistasdados.h"
 #include "memlog.h"
 #include "dvtela.h"
@@ -1525,6 +1526,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
 
 int player_aberto(void)    { return aberto; }
 int player_quer_sair(void) { return pediuSair; }
+void player_sair(void) { if (aberto) { saindo = 1; pediuSair = 1; } }
 
 // --- PRE-BUSCA DA LEGENDA ASS ANTES DO VIDEO (#92, v1.4.7) -------------------
 //
@@ -2790,6 +2792,9 @@ static void alternarTocando(void) {
   // Canal sem janela de tempo nao pausa (ver avPodePausar): a tecla fisica de
   // Pause tambem cai aqui, e congelar um ao vivo so desincroniza o som.
   if (ehCanal() && !avPodePausar()) return;
+  // WATCH TOGETHER: com a sala aberta, play/pausa e da SALA. Quem pausa o
+  // video e o motor (juntos.c), pelo relogio comum; aqui so sai o pedido.
+  if (!ehCanal() && juntos_ao_alternar(tocando)) { retomandoSalto = 0; return; }
   retomandoSalto = 0;
   tocando = !tocando;
   pausaPessoa = !tocando;
@@ -3027,7 +3032,7 @@ static void recuarAutomatico(double de, double para) {
 // Busca do dono: se substitui uma busca de creditosAuto ainda armada, desarma.
 static void buscarUsuario(double alvo) {
   creditosauto_destino(&creditosAuto, alvo);
-  video_buscar(alvo);
+  if (!juntos_ao_buscar(alvo)) video_buscar(alvo);
 }
 
 static void saltar(int dir, int repeticao) {
@@ -3064,10 +3069,27 @@ static void terminarSalto(void) {
   retomandoSalto = scrubTocava;
   pausao_fechar();
   seekr_ocioso();   // solta a folha decodificada (~22 MB), fica o JPEG
+  // Com a sala aberta o seek e da sala: o motor busca aqui e o play volta pelo
+  // relogio comum (play agendado), nao pelo estado de antes do avanco.
+  if (comVideo && juntos_ao_buscar(posSeg)) { retomandoSalto = 0; return; }
   if (comVideo) {
     buscarUsuario(posSeg);
     if (scrubTocava) { video_pausar(0); tocando = 1; }
   }
+}
+
+// Watch Together: o motor da sala manda no player por aqui, para o estado que
+// o OSD mostra (tocando, posSeg) andar junto com o video.
+void player_juntos_pausar(int pausado) {
+  if (!aberto || !comVideo) return;
+  tocando = !pausado;
+  video_pausar(pausado);
+}
+void player_juntos_buscar(double seg) {
+  if (!aberto || !comVideo) return;
+  if (scrubbing) return;   // a pessoa esta avancando: o fim do avanco manda
+  posSeg = (float)seg;
+  video_buscar(seg);
 }
 
 void player_evento(const SDL_Event *e) {
@@ -3104,6 +3126,8 @@ void player_evento(const SDL_Event *e) {
 
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE) {
+    // Sala aberta: "Sair da sessao?" antes (juntosui). Confirmado, o app fecha.
+    if (!ehCanal() && juntos_ao_voltar()) return;
 #ifdef NV_ANDROID
     if (erroFonte && !ehCanal()) {
       player_voltar_a_esperar(); pedFontes = 1;
@@ -3753,7 +3777,7 @@ void player_atualizar(float dt, Uint32 agora) {
       !saindo && !erroFonte && !esperandoFonte && !pedFontes && !pedFaixas &&
       !stream_folha_aberta() && !faixas_aberta() && !episodios_aberto() &&
       !episodios_menu_aberto_qualquer() && !pausao_visivel() &&
-      !video_bufferando_ms() && !creditosAuto.buscaPendente) {
+      !video_bufferando_ms() && !creditosAuto.buscaPendente && !juntos_ativo()) {
     double fimT = 0.0; int tipoT = 0;
     if (intro_auto_ativo(posSeg, &fimT, &tipoT) &&
         intro_auto_pular(tipoT, fimT, duracaoSeg, ajustes_pular_abertura(), ajustes_pular_resumo(),

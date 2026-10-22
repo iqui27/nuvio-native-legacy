@@ -6,6 +6,8 @@
 #include "ilhacart.h"
 #include "avisodisp.h"
 #include "enquete.h"
+#include "juntos.h"
+#include "juntosui.h"
 #include "ilhaacao.h"
 #include "addons.h"
 #include "avisos.h"
@@ -44,6 +46,7 @@ static void acoes(void) {
   if (!strcmp(chave, ILHA_ACAO_CHAVE)) { ilhaacao_botao(b); return; }
   if (!strncmp(chave, "salvar:", 7)) { ilhasalvar_acao(chave, b); return; }
   if (!strncmp(chave, "enquete:", 8)) { enquete_acao(chave, b); return; }
+  if (!strncmp(chave, "juntos:", 7)) { juntos_acao(chave, b); return; }
   if (!strncmp(chave, "pedido:", 7)) {
     // O fio social pode estar ocupado (uma releitura em voo): a resposta fica
     // guardada e sai na proxima volta, em vez de se perder em silencio.
@@ -380,6 +383,8 @@ void ilhasinais_passo(Uint32 agora) {
   ilhasalvar_passo(agora);
   lstesc_passo();
   enquete_passo(agora);
+  juntos_passo(agora);
+  juntosui_atualizar(agora);
   rede();
   addonFora();
   sincronia(agora);   // a atividade e renovada por quadro

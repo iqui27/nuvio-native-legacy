@@ -304,7 +304,7 @@ static const signed char AJ_ARTE_SEC[AJS_N + 1][AJ_ARTE_BLOCOS] = {
   {  9, 39, 38,  6, 11,  9, -1, -1, -1 },   // Aparencia: Cores e vidro, Logo e abertura, Texto e tamanho, Movimento e relogio, Tela de descanso; Mais
   {  3,  4, 17,  4, 17, -1, -1, -1, -1 },   // Pagina do titulo: O que aparece, Notas, Dados do titulo; Mais: notas, dados
   { 13, 35, 27, 15, 16, 13, 35, 27, 15 },   // Cartazes e trailers: Cartaz em foco, Forma, Arte, Trailers, Som e imagem; Mais
-  { 23, 33,  8, -1, -1, -1, -1, -1, -1 },   // Conta e servicos: Perfil, Trakt e Simkl, Notificacoes
+  { 23, 33,  8, 28, -1, -1, -1, -1, -1 },   // Conta e servicos: Perfil, Trakt e Simkl, Notificacoes, Conquistas
   { 26, -1, -1, -1, -1, -1, -1, -1, -1 },   // Esta TV (Mais: Memoria)
   { 30, 25, -1, -1, -1, -1, -1, -1, -1 },   // Sobre e ajuda: (guia e) App, Registro
   { 15, 16, -1, -1, -1, -1, -1, -1, -1 },   // (cena) Trailers: Onde toca, Som e imagem

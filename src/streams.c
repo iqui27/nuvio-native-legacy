@@ -342,6 +342,7 @@ static int automaticaExcluida(int indice) {
   pthread_mutex_unlock(&autoExclTrava);
   return resultado;
 }
+int stream_automatico_excluida(int indice) { return automaticaExcluida(indice); }
 static int ehInformativa(const Stream *s) {
   // `naoVideo`: a sonda ja viu a URL responder pagina; o nome (naovideo_nome)
   // pega a linha de aviso antes de qualquer pedido.
