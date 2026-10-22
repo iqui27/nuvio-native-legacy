@@ -148,6 +148,22 @@ int main(void) {
   assert(!strcmp(requestedType, "tv") && !glance_tomar_acao(0));
   result = item; snprintf(result.imdb, sizeof result.imdb, "ttseries");
   assert(glance_tomar_acao(0) && actions == previousActions + 1);
+  // A canceled title resolution must not steal a newer episode-only action.
+  busy = 0; catalogIndex = -1;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  CatItem canceled = item;
+  glance_fechar();
+  catalogIndex = 0;
+  snprintf(item.imdb, sizeof item.imdb, "ttotherSeries"); item.tmdb = 99;
+  result = item;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  previousActions = actions;
+  result = canceled; snprintf(result.imdb, sizeof result.imdb, "ttresolved");
+  canceledResult();
+  assert(glance_aberto() && actions == previousActions);
+  result = item; result.nTemporadas = 1; episodeBusy = 0;
+  glance_atualizar(.016f, ++clockNow);
+  assert(actions == previousActions + 1);
   puts("glance-state: ok");
   return 0;
 }

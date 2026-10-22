@@ -28,7 +28,7 @@ static float focoAnim[4];
 static unsigned revisao;
 static int acaoPendente, acaoResolucao;
 static int acaoEpisodios = -1;
-static CatItem acaoTitulo;
+static CatItem acaoTitulo, resolucaoTitulo;
 static Uint32 acaoDesde;
 static GfxRect videoRect(void) { return (GfxRect){ 1110, 180, 700, 394 }; }
 
@@ -102,7 +102,7 @@ void glance_evento(const SDL_Event *e) {
           (botao == GLANCE_BT_VISTO && !strcmp(atual.tipo, "series") && atual.nTemporadas == 0)) {
         if (!desc_titulo_buscando()) {
           acaoPendente = botao; acaoTitulo = atual; acaoDesde = SDL_GetTicks();
-          acaoResolucao = 1;
+          acaoResolucao = 1; resolucaoTitulo = atual;
           desc_pedir_titulo_semente(!strncmp(atual.imdb, "tmdb:", 5) ? "" : atual.imdb,
                                     atual.tmdb, !strcmp(atual.tipo, "series") ? "tv" : atual.tipo,
                                     atual.titulo, atual.meta, atual.poster);
@@ -116,9 +116,11 @@ int glance_tomar_acao(int idx) {
   CatItem ci;
   int b;
   if (!acaoResolucao) return 0;
-  if (!cat_copiar_item(idx, &ci) || strcmp(ci.tipo, acaoTitulo.tipo) ||
-      (strcmp(ci.imdb, acaoTitulo.imdb) && !(ci.tmdb > 0 && ci.tmdb == acaoTitulo.tmdb))) return 0;
+  if (!cat_copiar_item(idx, &ci) || strcmp(ci.tipo, resolucaoTitulo.tipo) ||
+      (strcmp(ci.imdb, resolucaoTitulo.imdb) && !(ci.tmdb > 0 && ci.tmdb == resolucaoTitulo.tmdb))) return 0;
   acaoResolucao = 0;
+  // An episode-only action can outlive an older canceled title request.
+  if (acaoEpisodios >= 0) return 1;
   // Cancellation ends the action, but its late metadata still belongs here.
   if (!acaoPendente || !aberta || SDL_GetTicks() - acaoDesde >= 20000 ||
       strcmp(atual.tipo, acaoTitulo.tipo) || strcmp(atual.imdb, acaoTitulo.imdb)) {
