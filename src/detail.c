@@ -3171,6 +3171,8 @@ static float larguraItem(int r, int c) {
 }
 // x do item `c` DENTRO da fileira (antes da rolagem horizontal).
 static float xItem(int r, int c) {
+  if (r==SEC_TEMPORADAS && c>=nTemporadasReais() && !temporadaLembrete(c))
+    return fmaxf(1624,NV_DETP_X+c*226);
   float x = NV_DETP_X;
   for (int k = 0; k < c; k++) {
     if (r == SEC_EPISODIOS) { x += epCardPasso(); continue; }
@@ -3792,8 +3794,10 @@ void detail_atualizar(float dt, Uint32 agora) {
       float w = larguraItem(r, foco.coluna);
       float vista = NV_TELA_W - NV_DETP_X * 2;
       float alvo = scrollSec[r];
-      if (r == SEC_EPISODIOS) alvo = x;
-      else {
+      if (r == SEC_EPISODIOS) {
+        if (x<alvo) alvo=x;
+        else if (x+w>alvo+vista) alvo=x+w-vista;
+      } else {
         // Pilula focada: a fileira volta ao inicio. As pilulas nao rolam junto
         // com os cartoes (elas ficam numa linha propria, fixa), entao deixar o
         // scroll de um cartao antigo pendurado esconderia o primeiro cartao
@@ -3823,7 +3827,10 @@ void detail_atualizar(float dt, Uint32 agora) {
         !toqueSec[SEC_EPISODIOS].livre &&
 #endif
         epAncora < foco.nColunas[SEC_EPISODIOS]) {
-      float ax = xItem(SEC_EPISODIOS, epAncora) - NV_DETP_X;
+      float x = xItem(SEC_EPISODIOS, epAncora) - NV_DETP_X;
+      float ax=scrollSec[SEC_EPISODIOS], vista=NV_TELA_W-NV_DETP_X*2;
+      if (x<ax) ax=x;
+      else if (x+epCardW()>ax+vista) ax=x+epCardW()-vista;
       if (ax < 0.0f) ax = 0.0f;
       scrollSec[SEC_EPISODIOS] = anim_mola2(&velSec[SEC_EPISODIOS],
                                             scrollSec[SEC_EPISODIOS], ax, dt,
