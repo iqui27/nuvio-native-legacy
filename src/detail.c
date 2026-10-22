@@ -5724,6 +5724,21 @@ static void desenhaDetalhes(float x, float y, float f, float a) {
   }
 }
 
+static void elencoMonograma(const char *nome, char *dst, size_t n) {
+  if (!n) return;
+  dst[0]=0;
+  if (!nome || !nome[0]) return;
+  const char *last=strrchr(nome,' ');
+  const char *partes[2]={nome,last && last[1] ? last+1 : NULL};
+  size_t usados=0;
+  for (int i=0; i<2 && partes[i]; i++) {
+    size_t bytes=1;
+    while (partes[i][bytes] && ((unsigned char)partes[i][bytes]&0xc0)==0x80) bytes++;
+    if (usados+bytes>=n) break;
+    memcpy(dst+usados,partes[i],bytes); usados+=bytes; dst[usados]=0;
+  }
+}
+
 static void desenhaElenco(float x, float y, int c, float f, float a) {
   if (a > 0.05f) titulo_tempo_info(&detalheTempo, "detalhe", cat_item(idx), 1);
   const CatItem *ci = cat_item(idx);
@@ -5768,11 +5783,7 @@ static void desenhaElenco(float x, float y, int c, float f, float a) {
     // com `.movie-cast-avatar-fallback`.
     float lum = 0.133f + 0.055f * f;
     gfx_cor(av, 0.5f, lum, lum, lum, a);
-    char ini[5] = {0};
-    for (int k = 0; k < 4 && nome[k] && (unsigned char)nome[k] >= 0x20; k++) {
-      ini[k] = nome[k];
-      if ((nome[k] & 0xC0) != 0x80) { if (k) { ini[k] = 0; break; } }
-    }
+    char ini[12]; elencoMonograma(nome, ini, sizeof ini);
     TxtLinha li = txt_linha(TXT_TITULO3, ini, 210, 212, 220, 255);
     txt_desenhar_alpha(li, av.x + (av.w - li.w) * 0.5f,
                        av.y + (av.h - li.h) * 0.5f, a * 0.9f);

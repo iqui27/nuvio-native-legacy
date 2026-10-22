@@ -49,7 +49,11 @@ int main(void) {
   assert(progVizinho(2, -1) == 0);
   assert(progVizinho(0, -1) == -1);
   assert(secaoN(SEC_PROGTEMP) == 4);
-  puts("detail21: top modes, spoiler reveal and progress grid OK");
+  char mono[12];
+  elencoMonograma("Ryan Gosling", mono, sizeof mono); assert(!strcmp(mono,"RG"));
+  elencoMonograma("Óscar", mono, sizeof mono); assert(!strcmp(mono,"Ó"));
+  elencoMonograma("", mono, sizeof mono); assert(!strcmp(mono,""));
+  puts("detail21: top modes, spoiler reveal, progress grid and cast fallback OK");
   SDL_Quit();
   return 0;
 }
