@@ -9,6 +9,8 @@ manual = source.split('static void tocarFonteEscolhida(int fonte, int manual) {'
 picker = re.split(r'episodios_escolheu\(&t,&e\)\)? && player_aberto\(\)\) \{', source, maxsplit=1)[1]
 picker = picker.split('diagnostico_cancelar_vazao();', 1)[0]
 next_ep = source.split('player_pediu_proximo(&t,&e) && player_aberto()) {', 1)[1].split('diagnostico_cancelar_vazao();', 1)[0]
+room = source.split('static void juntosAbrirEFonte(Uint32 agora) {', 1)[1]
+room = room.split('if (idx >= 0) {', 1)[1].split('limparFonteVOD();', 1)[0]
 program = r'''
 #include <assert.h>
 static int opened, blocked = 1, playing, aguardandoFonte, folhaParaTocar;
@@ -35,10 +37,17 @@ static void next_episode(void) { int t=2,e=5;
   opened++;
   semProximo:;
 }
+static void room_target(void) { int idx=7, t=2, e=5;
+''' + room + r'''
+  opened++;
+  aguardandoFonte=1;
+}
 int main(void) {
+  room_target(); assert(opened == 0 && aguardandoFonte == 0);
   manual_source(); assert(opened == 0);
-  playing=1; manual_source(); picker(); next_episode(); assert(opened == 0);
-  blocked=0; manual_source(); picker(); next_episode(); assert(opened == 3);
+  playing=1; room_target(); manual_source(); picker(); next_episode(); assert(opened == 0);
+  blocked=0; room_target(); assert(opened == 1 && aguardandoFonte == 1);
+  manual_source(); picker(); next_episode(); assert(opened == 4);
 }
 '''
 with tempfile.TemporaryDirectory() as directory:
