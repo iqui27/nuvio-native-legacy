@@ -206,7 +206,12 @@ long pessoa_id(void) { return idAtual; }
 unsigned pessoa_revisao(void) { return revisao; }
 const char *pessoa_nome(void) { return nome; }
 const char *pessoa_foto(void) { return foto; }
-const char *pessoa_bio(void) { return bio ? bio : ""; }
+char *pessoa_bio(void) {
+  pthread_mutex_lock(&trava);
+  char *snapshot = strdup(bio ? bio : "");
+  pthread_mutex_unlock(&trava);
+  return snapshot;
+}
 const char *pessoa_area(void) { return area; }
 const char *pessoa_nascimento(void) { return nasc; }
 const char *pessoa_morte(void) { return morte; }

@@ -9,7 +9,8 @@ long pessoa_id(void);
 unsigned pessoa_revisao(void);
 const char *pessoa_nome(void);
 const char *pessoa_foto(void);
-const char *pessoa_bio(void);
+// Caller owns the biography snapshot; free after rendering. NULL on allocation failure.
+char *pessoa_bio(void);
 const char *pessoa_area(void);
 const char *pessoa_nascimento(void);
 const char *pessoa_morte(void);
