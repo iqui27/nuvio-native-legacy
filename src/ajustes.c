@@ -7294,6 +7294,9 @@ static const char *ajudaOpcaoBase(int op) {
     return "Aparência só da segunda legenda. \"Igual à principal\" segue o estilo da principal, definido no player.";
   if (op == AJ_ICONE_APP) return "Escolha uma marca alternativa para o Nuvio nesta TV. Um agradecimento a quem apoia o projeto.";
   if (inativa(op)) {
+    if (ajustes_fonte_prioridade() == 3 &&
+        (op == AJ_FONTE_AUTO || op == AJ_FONTE_GRUPO || op == AJ_FONTE_GRUPO_SESSOES || op == AJ_LINK_REUSAR || op == AJ_LINK_PRAZO))
+      return "Só vale quando O que o Nuvio prioriza não está em Do addon.";
     if (op == AJ_VIDRO_CONTORNO) return "Ative a interface de vidro para ajustar o contorno.";
     if (op == AJ_FOCO_ACENTO) return "Ative a interface de vidro para pintar o foco com a cor de destaque.";
     if (op == AJ_VIDRO_OPAC || op == AJ_VIDRO_FOSCO || op == AJ_VIDRO_QUALIDADE) return "Ative a interface de vidro para ajustar o vidro.";
@@ -7361,6 +7364,13 @@ static const char *ajudaOpcaoBase(int op) {
         op == AJ_PROF_POSTERS || op == AJ_PROF_CW || op == AJ_PROF_EPS ||
         op == AJ_PROF_ELENCO || op == AJ_PROF_TRAILERS)
       return "Ative Efeito de profundidade para personalizar este detalhe.";
+    if (op == AJ_FONTE_GRUPO_SESSOES) return "Ative Preferir o mesmo grupo de fonte para usar isto.";
+    if (op == AJ_LINK_PRAZO) return "Ative Reusar o último link para escolher o prazo.";
+    if (op == AJ_EP_TAMANHO) return "Só vale no layout Moderna.";
+    if (op == AJ_MANTER_PRAZO) return "Ative Manter o vídeo pronto ao sair para escolher por quanto tempo.";
+    if (op == AJ_DESCANSO_ESTILO || (op == AJ_DESCANSO_FONTE && valor[AJ_ESMAECER] == 0))
+      return "Ative a Tela de descanso para escolher como ela fica.";
+    if (op == AJ_DESCANSO_FONTE) return "Só vale no estilo Vitrine.";
     return "Indisponível com os ajustes atuais.";
   }
   switch (op) {
@@ -7840,14 +7850,10 @@ static const char *ajudaOpcao(int op) {
   return base;
 }
 
-// O QUE MUDA NA PRATICA quando esta opcao muda. NULL quando nao ha nada
-// honesto a dizer — inventar uma consequencia para cada linha encheria a tela
-// de texto e ensinaria a pessoa a nao ler nenhum.
-//
-// So entram as consequencias que a pessoa NAO adivinha olhando a linha: custo
-// de rede, escopo (esta TV x a conta), e dependencia entre opcoes.
+// Practical consequences when known; otherwise reuse the option's detail.
+// Blocked options explain the condition that prevents their effect.
 static const char *efeitoOpcao(int op) {
-  if (inativa(op)) return NULL;
+  if (inativa(op)) return ajudaOpcaoBase(op);
   // A RESPOSTA DE "Procurar atualização", por extenso (a linha so tem espaco
   // para a versao curta).
   if (op == AJ_ATUALIZAR && !atualizacao_nova()[0]) {
@@ -7926,7 +7932,7 @@ static const char *efeitoOpcao(int op) {
     case AJ_MIC_BUSCA:
       return "Para digitar, continua o teclado do Nuvio: o da Samsung só abre por este botão.";
 #endif
-    default: return NULL;
+    default: return ajudaOpcaoBase(op);
   }
 }
 
