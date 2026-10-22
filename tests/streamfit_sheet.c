@@ -35,6 +35,14 @@ int ajustes_dv_mkv(void) { return 0; }
 int ajustes_fonte_escopo(void) { return 0; }
 int ajustes_fonte_hdr(void) { return 0; }
 int ajustes_fonte_manual(void) { return 0; }
+int ajustes_fonte_primeira(void) { return 0; }
+int ajustes_fonte_ordem_uso(void) { return 0; }
+int fonteregra_ordem_rank(const char *nome) { (void)nome; return 0; }
+int fonteregra_no_escopo(const FonteRegraCfg *c, int plugin)
+  { (void)c; (void)plugin; return 1; }
+// This sheet fixture has no persisted source preference.
+int fontepref_escolher(const char *id) { (void)id; return -1; }
+int fontepref_escolher_manual(const char *id) { (void)id; return -1; }
 int ajustes_fonte_ordem_addon(void) { return 0; }
 int ajustes_fonte_prioridade(void) { return 0; }
 int ajustes_fonte_regex_modo(void) { return 0; }

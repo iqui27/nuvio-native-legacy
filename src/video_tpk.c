@@ -1210,8 +1210,9 @@ void video_bombear(void) {
   escolhasPendentes();
   legendaVigiarSilencio(SDL_GetTicks());
   // O SetPlaybackRate exige Ready/Playing/Paused: so com o prepare feito.
-  if (!velRecusada && pronto && hEscolher && velEnviada != velPedida) {
-    velEnviada = velPedida;
+  int rate = video_taxa_efetiva();
+  if (!velRecusada && pronto && hEscolher && velEnviada != rate) {
+    velEnviada = rate;
     hEscolher(3, velEnviada);
   }
   double pos = video_pos();
@@ -1575,6 +1576,11 @@ double video_duracao(void) {
   // Progressivo: o player ve um fluxo sem fim; a duracao e a da fonte.
   if (cv.ativo && cv.prog) return dts_tpk_duracao();
   return durMs / 1000.0;
+}
+double video_pos_amostra(Uint64 *t) {
+  double p = video_pos();
+  if (t) *t = SDL_GetTicks64();
+  return p;
 }
 // Capitulos do MKV lidos por um fio lateral (capmkv.c, 203-capitulos).
 double video_creditos(void) { return capmkv_creditos(video_duracao()); }

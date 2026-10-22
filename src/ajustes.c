@@ -6,6 +6,7 @@
 #include "ajlog.h"
 #include "horafmt.h"
 #include "ajustes_ux.h"
+#include "resolver.h"
 #include "trailerfonte.h"   // NV_TRAILER_CONTINUA_DETALHE, nas ajudas do trailer
 #include "dados.h"
 #include "resolucao.h"
@@ -36,6 +37,7 @@
 #include "sessao.h"
 #include "sync.h"
 #include "perfis.h"
+#include "perfilinfantil.h"
 #include "traktauth.h"
 #include "simklauth.h"
 #include "discord.h"
@@ -583,6 +585,13 @@ typedef enum {
   // de sempre —, 2 Grande). O piso e o teto da conta andam juntos; ver
   // perfilsel.c (fatorTamanho). LOCAL, append-only.
   AJ_PS_TAMANHO,
+  // 2.1 Conquistas (conquistasregra.h): chave geral, aviso depois dos creditos e
+  // dica das secretas. LOCAIS, padrao Ligado. Append-only.
+  AJ_CONQ_LIGADO, AJ_CONQ_AVISO, AJ_CONQ_DICAS,
+  // PERFIL INFANTIL (perfilinfantil.h): marca do perfil ativo, local a esta TV.
+  // O estado NAO mora em valor[]: e perfil_infantil_ativo(), reescrito a cada
+  // quadro (como Perfil pesquisavel). No fim: valor[]/CHAVE[] posicionais.
+  AJ_PERFIL_INFANTIL,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1483,6 +1492,10 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Mostrar gênero no destaque", V_LIGA, 2),   // local: heroGeneroLocal
   ESC("Mostrar addon na abertura", V_LIGA, 2),   // local: aberturaAddonLocal (#205)
   ESC("Tamanho dos perfis", V_PS_TAMANHO, 3),   // local: psTamanhoLocal (2.1)
+  ESC("Conquistas", V_LIGA, 2),                          // local: conquistasLocal
+  ESC("Avisar depois dos créditos", V_LIGA, 2),          // local: conquistasAvisoLocal
+  ESC("Dicas das conquistas secretas", V_LIGA, 2),       // local: conquistasDicasLocal
+  ESC("Perfil infantil",                 V_LIGA, 2),             // local: perfilinfantil.c (por perfil)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -1738,6 +1751,8 @@ static const char *CHAVE[] = {
   "heroGeneroLocal",
   "aberturaAddonLocal",
   "psTamanhoLocal",
+  "conquistasLocal", "conquistasAvisoLocal", "conquistasDicasLocal",
+  "-perfilInfantil",   // estado em perfilinfantil.c, nunca no ajustes.txt
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2204,6 +2219,9 @@ int ajustes_fonte_manual(void)        { return lig(AJ_FONTE_MANUAL); }
 int ajustes_fonte_primeira(void)      { return valor[AJ_FONTE_AUTO] == 1; }
 int ajustes_fonte_prioridade(void) { int v = valor[AJ_FONTE_PRIORIDADE]; return v < 0 || v > 2 ? 0 : v; }
 int ajustes_enquetes(void)         { return lig(AJ_ENQUETES); }
+int ajustes_conquistas(void)       { return lig(AJ_CONQ_LIGADO); }
+int ajustes_conquistas_aviso(void) { return lig(AJ_CONQ_LIGADO) && lig(AJ_CONQ_AVISO); }
+int ajustes_conquistas_dicas(void) { return lig(AJ_CONQ_DICAS); }
 int ajustes_busca_cinemeta(void)   { return lig(AJ_BUSCA_CINEMETA); }
 int ajustes_esmaecer(void)         { int v = valor[AJ_ESMAECER]; return v < 0 || v > 5 ? 3 : v; }
 int ajustes_descanso_estilo(void)  { int v = valor[AJ_DESCANSO_ESTILO]; return v < 0 || v > 2 ? 0 : v; }
@@ -4504,6 +4522,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_HOME_LAYOUT:    /* a Dinamica nao tem par na conta (selected_layout) */
     case AJ_PERFIL_PESQ:    /* estado em recomenda.c, por conta: nunca no blob */
     case AJ_PERFIL_EDITAR:
+    case AJ_PERFIL_INFANTIL: /* marca por perfil em perfilinfantil.c; a conta nao tem a coluna */
     case AJ_P2P_LIGADO:     /* o servidor P2P e um aparelho da rede desta casa */
     case AJ_P2P_LIMITE:     /* #334: o disco e desta TV */
     case AJ_JF_LIGADO:
@@ -4522,6 +4541,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_RELOGIO: case AJ_RELOGIO_POS: case AJ_SAIDA_PLAYER: /* o web nao tem a ilha */
     case AJ_RELOGIO_12H:    /* formato da hora: desta TV */
     case AJ_PLR_CLASSIF:    /* o web nao tem esta escolha */
+    case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS: /* conquistas: por perfil desta TV */
     case AJ_CW_RETIDO_TAMBEM: /* o web nao tem a ilha */
     case AJ_PS_CONTINUAR:   /* o web nao tem este cartao; escolha desta TV */
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
@@ -5955,6 +5975,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_DEBRID_RD: return "Chave de API do Real-Debrid (real-debrid.com/apitoken). Só precisa se a sua conta Nuvio não a traz. Fica só nesta TV e aparece mascarada.";
     case AJ_DEBRID_TB: return "Chave de API do TorBox. Só precisa se a sua conta Nuvio não a traz. Fica só nesta TV e aparece mascarada.";
     case AJ_DEBRID_PM: return "Chave de API do Premiumize. Só precisa se a sua conta Nuvio não a traz. Fica só nesta TV e aparece mascarada.";
+    case AJ_PERFIL_INFANTIL: return "Marca o perfil em uso como infantil. No Assistir Juntos, o servidor só aceita salas com quem a conta já conhece e o chat livre do celular fica desligado. A marca é só deste perfil, nesta TV. Se o perfil tem PIN, pede o PIN para mudar.";
     case AJ_PERFIL_PESQ: return "Desligado por padrão. Ligado, outras pessoas do Nuvio podem te achar pelo apelido e ver o que você escolher mostrar: bio, gêneros favoritos, foto e o que assistiu recentemente. Nunca aparecem e-mail, conta, addons nem aparelho. Desligar apaga o perfil do servidor na hora.";
     case AJ_PERFIL_EDITAR: return "Apelido, bio, gêneros e o que mostrar no perfil; a atividade compartilhada só com amigos (desligada por padrão); pedidos de amizade recebidos e a lista de bloqueados.";
     case AJ_P2P_LIMITE: return "Quanto do armazenamento da TV o P2P pode usar enquanto toca; Automático usa até metade do espaço livre. Se o vídeo for maior, ele continua tocando e a TV guarda só o trecho perto de onde você está (em pendrive FAT ou exFAT, ele para no limite).";
@@ -5981,6 +6002,9 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_BUSCA_CINEMETA: return "Só a busca. Ligado (padrão): consulta o catálogo do Nuvio e, se ele falhar, o Cinemeta; um add-on Cinemeta instalado também responde. Desligado: o Cinemeta fica de fora da busca. Não mexe nas fileiras da Home (use Fileiras da Home) nem na ficha do título.";
     case AJ_BUSCA_NUVIO: return "Onde ficam os resultados do catálogo do Nuvio (os grupos Filmes e Séries da busca). Primeiro (padrão): antes dos seus add-ons. Por último: depois deles, para os seus resultados virem na frente. Desligado: a busca não consulta o catálogo do Nuvio. O Continuar assistindo não muda.";
     case AJ_BUSCA_ORIGEM: return "Ligado (padrão): cada grupo de resultados diz de qual fonte veio, como de AIOMetadata. Desligado: só o nome do grupo. Com uma única fonte de busca ativa, a fonte nunca aparece.";
+    case AJ_CONQ_LIGADO: return "Ligado (padrão): o Nuvio guarda suas conquistas neste perfil e mostra a tela Perfil › Conquistas. Desligado: nada novo é contado nem avisado, e as trilhas e listas funcionam do mesmo jeito. O que já foi ganho fica guardado.";
+    case AJ_CONQ_AVISO: return "Ligado (padrão): quando uma conquista é ganha, um aviso pequeno aparece depois dos créditos, sem tirar o foco do que você está fazendo. Desligado: ela só aparece na tela de conquistas.";
+    case AJ_CONQ_DICAS: return "Ligado (padrão): conquistas secretas mostram uma dica curta. Desligado: elas só aparecem com nome e dica depois de ganhas.";
     case AJ_ENQUETES: return "Ligado, o Nuvio pode convidar você a votar numa enquete curta na ilha do relógio. Desligado, nenhuma aparece. A escolha fica na sua conta.";
     case AJ_RELOGIO: return "Desligado, a pílula do relógio não fica na tela em repouso. Os avisos continuam saindo dela: ela aparece só para o aviso e some depois.";
     case AJ_SAIDA_PLAYER: return "Ao sair de um filme ou episódio no meio. Home: o vídeo encolhe até a pílula do relógio, que fica com o título para você retomar (CH+). Página do título: volta para onde você estava. Só vale com o relógio na tela; terminar o título segue para o próximo episódio como sempre.";
@@ -6206,6 +6230,9 @@ static const char *beneficioProprio(int op) {
     case AJ_FONTE_PRIORIDADE: return "O critério da escolha automática: equilíbrio, qualidade ou começar rápido.";
     case AJ_FONTE_PRAZO: return "Quanto tempo o Nuvio espera os add-ons antes de escolher.";
     case AJ_PLR_CLASSIF: return "No começo do filme, a ilha mostra a classificação e os avisos.";
+    case AJ_CONQ_LIGADO: return "Guarda e mostra suas conquistas neste perfil.";
+    case AJ_CONQ_AVISO: return "Um aviso calmo depois dos créditos.";
+    case AJ_CONQ_DICAS: return "Mostra uma dica nas conquistas secretas.";
     case AJ_TELA_ABERTURA: return "O que aparece enquanto o vídeo abre: a arte do título ou os detalhes da fonte.";
     case AJ_ESTAT_TAMANHO: return "Completo, Compacto ou Mínimo: o tamanho das estatísticas ao vivo no player.";
     case AJ_SAIDA_PLAYER: return "O filme pode ficar na ilha do relógio para você voltar depois.";
@@ -7279,6 +7306,58 @@ int ajustes_teste_regex_campo(const char *colado, int apagar, char *lido, size_t
 // de efeitos colaterais para manter iguais.
 // Uma escolha final: persiste uma vez antes dos efeitos externos. Navegar no
 // seletor nunca passa por aqui, inclusive para idiomas e limite de fileiras.
+// PERFIL INFANTIL: mudar a marca de um perfil COM PIN pede o PIN (verificado no
+// servidor, perfis_verificar_pin, que BLOQUEIA: roda num fio). Sem PIN, aplica
+// na hora. O PIN digitado vai para o fio, e e apagado la; nao ha log dele.
+static void uxNotificar(const char *s);
+static pthread_t kidFio;
+static atomic_int kidEstado;           // 0 livre, 1 verificando, 2 aceito, 3 recusado, 4 sem rede
+static int kidIdx, kidAlvo;
+static char kidPin[24];
+static int kidFioVivo;
+static void *kidTrabalho(void *u) {
+  int v = perfis_verificar_pin(kidIdx, kidPin);
+  (void)u;
+  memset(kidPin, 0, sizeof kidPin);
+  atomic_store(&kidEstado, v > 0 ? 2 : (v == 0 ? 3 : 4));
+  return NULL;
+}
+static void kidPedirPin(void) {
+  teclado_abrir_com("PIN do perfil", "Digite o PIN para mudar a marca de perfil infantil.", 8, "0123456789", NULL);
+  teclado_tipo(TECLADO_TIPO_SENHA);
+  teclado_mascarar(1);
+  stCampo = AJ_PERFIL_INFANTIL;
+}
+static int kidMudar(int ligado) {
+  const ContaPerfil *p = perfis_item_ativo();
+  if (ligado == perfil_infantil_ativo()) return 1;
+  if (atomic_load(&kidEstado) == 1) return 1;   // ja verificando
+  if (p && p->temPin) { kidIdx = p->indice; kidAlvo = ligado; kidPedirPin(); return 1; }
+  if (!perfil_infantil_definir(perfis_ativo(), ligado)) return 0;
+  uxNotificar(ligado ? "Perfil infantil ligado neste perfil." : "Perfil infantil desligado neste perfil.");
+  return 1;
+}
+static void kidDigitado(const char *pin) {
+  snprintf(kidPin, sizeof kidPin, "%s", pin);
+  if (kidFioVivo) { pthread_join(kidFio, NULL); kidFioVivo = 0; }
+  atomic_store(&kidEstado, 1);
+  if (pthread_create(&kidFio, NULL, kidTrabalho, NULL) != 0) {
+    memset(kidPin, 0, sizeof kidPin);
+    atomic_store(&kidEstado, 4);
+  } else kidFioVivo = 1;
+}
+static void kidRecolher(void) {
+  int e = atomic_load(&kidEstado);
+  if (e < 2) return;
+  if (kidFioVivo) { pthread_join(kidFio, NULL); kidFioVivo = 0; }
+  atomic_store(&kidEstado, 0);
+  if (e == 2) {
+    if (perfil_infantil_definir(kidIdx, kidAlvo))
+      uxNotificar(kidAlvo ? "Perfil infantil ligado neste perfil." : "Perfil infantil desligado neste perfil.");
+  } else if (e == 3) uxNotificar("PIN incorreto");
+  else uxNotificar("Sem conexão para conferir o PIN.");
+}
+
 // NOTAS NO TITULO (decisao do dono, 07/10): os oito "qual nota o MDBList baixa"
 // (AJ_MDB_*) sairam da tela. Ligar uma nota liga o par dela na conta e, se a
 // nota vem do MDBList, o MDBList tambem — senao a linha ligada nao mostraria
@@ -7315,6 +7394,7 @@ static int definirValorDireto(int op, int novo) {
     pessoas_definir_pesquisavel(novo == 0);
     return 1;
   }
+  if (op == AJ_PERFIL_INFANTIL) return kidMudar(novo == 0);
   antes = valor[op];
   if (novo == antes && (op != AJ_TEX_MB || memoriaEscolhida)) return 1;
   if (op == AJ_TEX_MB && texAcima(novo)) return 0;
@@ -7631,6 +7711,8 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   if (uxAviso[0] && SDL_TICKS_PASSED(agora, uxAvisoAte)) uxAviso[0] = 0;
   montarTela();
   valor[AJ_PERFIL_PESQ] = recomenda_pesquisavel() ? 0 : 1;   // V_LIGA: 0 = Ligado
+  valor[AJ_PERFIL_INFANTIL] = perfil_infantil_ativo() ? 0 : 1;
+  kidRecolher();
   valor[AJ_FONTE_REGEX_MODELO] = fonteregra_modelo_atual();   // espelho do padrao (#202)
   p2pTesteRecolher();
   pstTesteRecolher();
@@ -7652,6 +7734,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
       else if (stCampo == AJ_XTREAM_SERVIDOR) { xtream_definir_servidor(teclado_texto()); if (teclado_texto()[0]) registro_aviso_legal(); }
       else if (stCampo == AJ_XTREAM_USUARIO)  xtream_definir_usuario(teclado_texto());
       else if (stCampo == AJ_XTREAM_SENHA)    xtream_definir_senha(teclado_texto());
+      else if (stCampo == AJ_PERFIL_INFANTIL) { kidDigitado(teclado_texto()); teclado_esquecer(); }
       else if (stCampo == AJ_FANART_CHAVE)    fanartDefinir(teclado_texto());
       else if (stCampo == AJ_SEEKR_CHAVE)     { seekrDefinir(teclado_texto()); atomic_store_explicit(&skTeste, 0, memory_order_release); }
       else if (stCampo == AJ_SELOS_PACOTE_ADD) spAdicionar(teclado_texto());
@@ -8298,7 +8381,8 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_DESCANSO_ESTILO: case AJ_DESCANSO_FONTE:
       return AJPV_INTERFACE;
     case AJ_PERFIL_ATIVO: case AJ_SYNC: case AJ_SAIR:
-    case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_ADDONS_PRINCIPAL: case AJ_ENQUETES:
+    case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_ADDONS_PRINCIPAL: case AJ_ENQUETES:
+    case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS:
       return AJPV_CONTA;
     case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL:
       return AJPV_RASTREIO;

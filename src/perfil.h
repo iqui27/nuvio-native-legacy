@@ -55,6 +55,10 @@ void perfil_definir_erro(const char *mensagem);
 void perfil_definir_estado(PerfilEstado estado, const char *mensagem);
 PerfilEstado perfil_estado(void);
 int  perfil_pediu_atualizar(void);
+// Botao Conquistas do cabecalho (resumo): OK nele pede a tela de conquistas;
+// quem a abre e o roteador. O segundo diz se o foco esta nele (testes).
+int  perfil_pediu_conquistas(void);
+int  perfil_foco_conquistas(void);
 
 void perfil_evento(const SDL_Event *e);
 void perfil_atualizar(float dt, Uint32 agora);

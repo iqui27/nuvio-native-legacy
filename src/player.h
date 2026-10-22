@@ -162,10 +162,17 @@ const char *player_id_canal(void);
 // guia, que e quem sabe o que pediu para tocar.
 void player_marcar_canal(const CatItem *item);
 void player_evento(const SDL_Event *e);
+// Watch Together (juntos.c): o relogio da sala pausa/solta e busca por aqui.
+void player_juntos_pausar(int pausado);
+void player_juntos_buscar(double seg);
+// "Sair da sessao" confirmado: fecha o player como o VOLTAR.
+void player_sair(void);
 void player_atualizar(float dt, Uint32 agora);
 void player_desenhar(Uint32 agora);
 int  player_quer_sair(void);  // 1 assim que o Back foi apertado
 void player_encerrar(void);
+// 1 uma vez se a ultima saida marcou o titulo como visto (aviso das Conquistas).
+int player_saiu_visto(void);
 // VOD na ilha: pausa antecipada durante a saida, conserva somente com ack,
 // depois retoma o mesmo IMDb/episodio sem reabrir fonte ou buscar posicao.
 void player_preparar_retencao(void);

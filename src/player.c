@@ -24,8 +24,11 @@
 //   3. Parado alguns segundos, eles somem sozinhos — mas nao enquanto o video
 //      esta pausado. Pausado sem controles o usuario fica olhando um quadro
 //      congelado sem saber o que houve.
+#include "resolverregra.h"
 #include "horafmt.h"
 #include "player.h"
+#include "juntos.h"
+#include "conquistasdados.h"
 #include "memlog.h"
 #include "dvtela.h"
 #include "abrecine.h"
@@ -737,11 +740,15 @@ void player_erro_fonte(void) {
   esperandoFonte = 0; erroFonte = 1; visivel = 0; tocando = 0; soBarra = 0;
   erroBotao = 0;
   erroTitulo[0] = erroDica[0] = 0;   // erro sem motivo nao herda o do anterior
+  resolverregra_falha_registrar(RES_T_FONTE, i18n("Não foi possível abrir a fonte"), "", linhaEp, (long)time(NULL));
 }
 void player_erro_fonte_motivo(const char *titulo, const char *dica) {
   player_erro_fonte();
   snprintf(erroTitulo, sizeof erroTitulo, "%s", titulo ? titulo : "");
   snprintf(erroDica, sizeof erroDica, "%s", dica ? dica : "");
+  // Guarda o ultimo erro para o "Resolver um problema" (resolverregra.h): so
+  // memoria, nada vai a lugar nenhum sem a pessoa pedir.
+  resolverregra_falha_registrar(RES_T_FONTE, erroTitulo, erroDica, linhaEp, (long)time(NULL));
 }
 // O VIDEO NAO ABRIU. Quase sempre e a fonte; mas quando o hub LS2 negou o
 // registro (registros 1720-1774: PERMISSION em toda sessao) nenhuma fonte
@@ -755,7 +762,7 @@ static void erroSemVideo(void) {
 }
 // Desfaz o de cima quando a fonte que parecia morta volta a entregar. Ver a
 // nota no watchdog de canal em app.c.
-void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; } }
+void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; resolverregra_falha_limpar(); } }
 // Leitura do estado para o watchdog de canal do app.c: uma fonte ao vivo que
 // falhou (ou nao abre no prazo) deve trocar para a proxima da lista sozinha.
 int  player_fonte_falhou(void) { return erroFonte; }
@@ -1391,7 +1398,11 @@ void player_aspecto_ciclar(void) {
   toastAte = SDL_GetTicks() + PLR_TOAST_MS;
 }
 
+static int saiuVisto;
+int player_saiu_visto(void) { int v = saiuVisto; saiuVisto = 0; return v; }
+
 void player_abrir(int indiceCatalogo, const char *url) {
+  saiuVisto = 0;
 #ifdef NV_TOUCH_UI
   avToqueCanal[0] = 0;
 #endif
@@ -1524,6 +1535,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
 
 int player_aberto(void)    { return aberto; }
 int player_quer_sair(void) { return pediuSair; }
+void player_sair(void) { if (aberto) { saindo = 1; pediuSair = 1; } }
 
 // --- PRE-BUSCA LATERAL DA LEGENDA ------------------------------------------
 // O pipeline abre imediatamente; mkvass colhe pelo playhead em fio proprio.
@@ -1679,6 +1691,7 @@ void player_definir_fonte(const char *url) {
   if ((!aberto && !mini) || !url || !*url) return;
   // A primeira fonte ainda pode aproveitar a legenda antecipada na espera.
   if (comVideo) legenda_pre_descartar(i18n("troca de fonte"));
+  intro_trocar_fonte();
   durFonteAvisada = pedProximaFonte = 0;
   // Fonte nova: a duracao esperada conhecida nao vale mais (mesmo titulo,
   // episodio outro, catalogo pode ter andado).
@@ -1893,6 +1906,7 @@ static void lembrarFonte(void) {
 }
 
 static void fecharSessao(int manter) {
+  saiuVisto = 0;
   int jaRetido = retido;
   // A tela do DV nao sobrevive a sessao (Voltar ja a tirou; aqui e o resto:
   // troca de titulo, encerramento pelo app).
@@ -1990,6 +2004,7 @@ static void fecharSessao(int manter) {
     const CatItem *ci = item();
     home_registrar_retorno(ia, pos, duracaoSeg);
     ilhacart_player_saiu(ia, pos, duracaoSeg, epT, epE);
+    saiuVisto = assistiu;
     if (assistiu) {
       printf("[visto] marcado por player pos=%.3f dur=%.3f assistido=%.3fs id=%s T%dE%d\n",
              (double)pos, (double)duracaoSeg, assistidoSeg, ci ? ci->imdb : "", epT, epE);
@@ -1997,6 +2012,8 @@ static void fecharSessao(int manter) {
     }
     // A posicao gravada e sempre a REAL (ponto de retomada), com o como ela
     // foi alcancada: cat_visto e a proxima base leem `tocou`.
+    if (assistiu && ci && epE == 0 && strcmp(ci->tipo, "series"))
+      cqd_concluir_local(ci->imdb);
     cat_salvar_progresso_ep(ia, pos, duracaoSeg, epT, epE, chegou);
     // E tambem para o Trakt, que e de onde o "continue assistindo" vem: gravar
     // so aqui deixaria este app discordando dos outros aparelhos do dono.
@@ -2774,6 +2791,9 @@ static void alternarTocando(void) {
   // Canal sem janela de tempo nao pausa (ver avPodePausar): a tecla fisica de
   // Pause tambem cai aqui, e congelar um ao vivo so desincroniza o som.
   if (ehCanal() && !avPodePausar()) return;
+  // WATCH TOGETHER: com a sala aberta, play/pausa e da SALA. Quem pausa o
+  // video e o motor (juntos.c), pelo relogio comum; aqui so sai o pedido.
+  if (!ehCanal() && juntos_ao_alternar(tocando)) { retomandoSalto = 0; return; }
   retomandoSalto = 0;
   tocando = !tocando;
   pausaPessoa = !tocando;
@@ -3016,7 +3036,7 @@ static void recuarAutomatico(double de, double para) {
 // Busca do dono: se substitui uma busca de creditosAuto ainda armada, desarma.
 static void buscarUsuario(double alvo) {
   creditosauto_destino(&creditosAuto, alvo);
-  video_buscar(alvo);
+  if (!juntos_ao_buscar(alvo)) video_buscar(alvo);
 }
 
 static void saltar(int dir, int repeticao) {
@@ -3053,10 +3073,27 @@ static void terminarSalto(void) {
   retomandoSalto = scrubTocava;
   pausao_fechar();
   seekr_ocioso();   // solta a folha decodificada (~22 MB), fica o JPEG
+  // Com a sala aberta o seek e da sala: o motor busca aqui e o play volta pelo
+  // relogio comum (play agendado), nao pelo estado de antes do avanco.
+  if (comVideo && juntos_ao_buscar(posSeg)) { retomandoSalto = 0; return; }
   if (comVideo) {
     buscarUsuario(posSeg);
     if (scrubTocava) { video_pausar(0); tocando = 1; }
   }
+}
+
+// Watch Together: o motor da sala manda no player por aqui, para o estado que
+// o OSD mostra (tocando, posSeg) andar junto com o video.
+void player_juntos_pausar(int pausado) {
+  if (!aberto || !comVideo) return;
+  tocando = !pausado;
+  video_pausar(pausado);
+}
+void player_juntos_buscar(double seg) {
+  if (!aberto || !comVideo) return;
+  if (scrubbing) return;   // a pessoa esta avancando: o fim do avanco manda
+  posSeg = (float)seg;
+  video_buscar(seg);
 }
 
 void player_evento(const SDL_Event *e) {
@@ -3093,6 +3130,8 @@ void player_evento(const SDL_Event *e) {
 
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE) {
+    // Sala aberta: "Sair da sessao?" antes (juntosui). Confirmado, o app fecha.
+    if (!ehCanal() && juntos_ao_voltar()) return;
 #ifdef NV_ANDROID
     if (erroFonte && !ehCanal()) {
       player_voltar_a_esperar(); pedFontes = 1;
@@ -3723,7 +3762,7 @@ void player_atualizar(float dt, Uint32 agora) {
       !saindo && !erroFonte && !esperandoFonte && !pedFontes && !pedFaixas &&
       !stream_folha_aberta() && !faixas_aberta() && !episodios_aberto() &&
       !episodios_menu_aberto_qualquer() && !pausao_visivel() &&
-      !video_bufferando_ms() && !creditosAuto.buscaPendente) {
+      !video_bufferando_ms() && !creditosAuto.buscaPendente && !juntos_ativo()) {
     double fimT = 0.0; int tipoT = 0;
     if (intro_auto_ativo(posSeg, &fimT, &tipoT) &&
         intro_auto_pular(tipoT, fimT, duracaoSeg, ajustes_pular_abertura(), ajustes_pular_resumo(),

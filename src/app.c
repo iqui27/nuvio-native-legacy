@@ -93,6 +93,8 @@
 #include "novidades139.h"
 #include "novidades1312.h"
 #include "novidades142.h"
+#include "comecar.h"
+#include "conquistas.h"
 #include "novidades148.h"
 #include "novidades170.h"
 #include "novidades180.h"
@@ -101,6 +103,7 @@
 #include "novidades202.h"
 #include "novidades_cartao.h"
 #include "dicascontrole.h"
+#include "resolver.h"
 #include "apoio.h"
 #include "telemetria.h"
 #include "avisos.h"
@@ -111,6 +114,8 @@
 #include "cwretido.h"
 #include "ilhasinais.h"
 #include "enquete.h"
+#include "juntos.h"
+#include "juntosui.h"
 #include "recintro.h"
 #include "atualizacao.h"
 #include "pipintro.h"
@@ -730,6 +735,9 @@ static void sidebarToqueRegistrar(int contexto) {
 // requisicoes) num perfil que nao mudou seria pagar o preco da troca em toda
 // abertura do app.
 static int perfilAntes = 1;
+// 1 quando a conta entrou AGORA pelo login (0 = sessao restaurada do disco).
+// O Comecar da 2.1 (comecar.h) decide o que mostrar com isto.
+static int loginNovo;
 // Quando a troca de perfil comecou a preparar a home nova. Ver o teto abaixo.
 static Uint32 trocaPerfilDesde;
 // Teto da espera pela home do perfil novo. A rede lenta nunca prende a pessoa
@@ -831,6 +839,14 @@ static void trocarTela(Tela nova) {
     case TELA_LIVETV_DIAG: livetvdiag_iniciar(); break;
     default: break;
   }
+}
+
+static int episodioNaSala(int titulo, int t, int e) {
+  const CatItem *c = cat_item(titulo);
+  char alvo[64] = "";
+  if (!juntos_ativo()) return 0;
+  if (c) snprintf(alvo, sizeof alvo, "%s:%d:%d", c->imdb, t, e);
+  return juntos_ao_proximo(alvo);
 }
 
 static void alvoPlayer(char *alvo, size_t tam) {
@@ -1895,6 +1911,7 @@ static void vigiarAntecipada(void) {
 // aberta. 0 quando nem deu para pedir (ja mostrou o erro).
 static int pedirProximaFonteVOD(int depoisDe) {
   unsigned geracao = novaGeracaoFonte();
+  juntos_preferir_reserva();
   aguardandoFonte = 2;
   fontePedidoGeracao = geracao;
   fonteEscolhida = -2;
@@ -2341,6 +2358,9 @@ int app_iniciar(const char *dirArte) {
   const char *preview = getenv("NUVIO_UI_PREVIEW");
   uiPreview = preview && !strcmp(preview, "1");
 #endif
+  // Antes de tudo que mexe na conta: o login e o sync criam os arquivos que o
+  // Começar olha para saber se esta instalacao ja vem de uso anterior.
+  comecar_marcar_dados();
   arranque_etapa("app_iniciar/ajustes_recursos");
   ajustes_recursos(dirArte);
   arranque_etapa("app_iniciar/login_recursos");
@@ -2583,7 +2603,7 @@ int app_no_login(void) { return tela == TELA_LOGIN; }
 int app_na_home(void) {
   return tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() &&
          !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() &&
-         !novcartao_aberto() && !dicascontrole_ocupado();
+         !novcartao_aberto() && !dicascontrole_ocupado() && !resolver_aberto() && !comecar_aberto();
 }
 
 // ONDE A AZUL/CH+ ABRE O PAINEL DE SALVOS/AVISOS (dono, 04/10: "tem que dar
@@ -2690,6 +2710,9 @@ void app_evento(const SDL_Event *e) {
   // A CENTRAL DE CONTROLE (central.h, CH+ segurado) e uma camada: aberta, come
   // o teclado todo, por cima do player, das folhas e das ilhas.
   if (central_aberta()) { central_evento(e); return; }
+  // WATCH TOGETHER (juntosui.h): a folha, o cartao da sala, a pergunta de
+  // sair e a regua de reacoes sao camadas; e o OK segurado no player e dela.
+  if (juntosui_evento_sdl(e)) return;
   // AS ESTATISTICAS AO VIVO (estatvivoui.h), abertas pela central: modal ate
   // Voltar fecha; OK ou Esquerda/Direita trocam o tamanho; Baixo fixa no canto
   // e libera as teclas para o player.
@@ -2706,6 +2729,11 @@ void app_evento(const SDL_Event *e) {
   // O CARTAO DO CELULAR (celbotao.h), aberto de qualquer campo de texto: come
   // o teclado todo ate fechar.
   if (celb_evento(e)) return;
+  // O AVISO DAS CONQUISTAS (depois dos creditos) nao toma o foco: so o Voltar e
+  // dele, e so enquanto estiver na tela. Vem antes do Voltar do app.
+  if (conquistas_aviso_evento(e)) return;
+  // A TELA DE CONQUISTAS (2.1), aberta pelo Perfil: tela inteira, come o teclado.
+  if (conquistas_aberto()) { conquistas_evento(e); return; }
   // O GUIA DA 2.0 (novidades20.h) e tela inteira e come o teclado todo,
   // inclusive a AZUL (pula para o resumo). "Abrir o Guia de uso" leva a
   // Ajustes › Sobre e ajuda › Guia de uso.
@@ -2713,12 +2741,32 @@ void app_evento(const SDL_Event *e) {
   // Central" fecha o cartao e abre a Central de controle no lugar.
   // O DA 2.0.2 (novidades202.h) e igual, sem a Central.
   // O CARTAO DA VERSAO ATUAL (novidades_cartao.h, 2.0.3 em diante) tambem.
+  // O COMECAR da 2.1 (comecar.h): primeiro uso guiado, tela inteira, come o
+  // teclado todo. O tour do fim e o guia da 2.0 reaberto pelo pedido.
+  if (comecar_aberto()) {
+    comecar_evento(e);
+    if (comecar_pedido() == COMECAR_PEDIU_TOUR) novidades20_abrir(loginNovo);
+    return;
+  }
   if (novcartao_aberto()) {
     novcartao_evento(e);
     return;
   }
   if (novidades202_aberto()) {
     novidades202_evento(e);
+    return;
+  }
+  // RESOLVER UM PROBLEMA (2.1, resolver.h): tela inteira, come o teclado todo.
+  // "Ver Fontes e addons" fecha a tela e abre Ajustes no lugar.
+  if (resolver_aberto()) {
+    resolver_evento(e);
+    if (resolver_pedido() == RESOLVER_PEDIU_FONTES) {
+      menu_fechar();
+      ajustes_abrir_na_espera_fonte();
+      if (tela == TELA_AJUSTES) ajustes_iniciar();
+      else trocarTela(TELA_AJUSTES);
+      menu_definir_destino(MENU_AJUSTES);
+    }
     return;
   }
   if (novidades201_aberto()) {
@@ -3168,18 +3216,152 @@ static const char *homeTrailerBloqueio(void) {
   if (vertudo_aberta()) return "see-all";
   if (avisos_aberto() || avisos_cartao_aberto()) return "notices";
   if (sintro_aberto() || pipintro_aberto() || recintro_aberto() || telemetria_aberto()) return "intro";
+  if (comecar_aberto()) return "comecar";
+  if (conquistas_aberto()) return "achievements";
   if (novidades_aberto() || novidades11_aberto() || novidades12_aberto() ||
       novidades13_aberto() || novidades131_aberto() || novidades132_aberto() ||
       novidades133_aberto() || novidades134_aberto() || novidades139_aberto() || novidades1312_aberto() ||
       novidades142_aberto() || novidades148_aberto() || novidades170_aberto() || novidades180_aberto() ||
       novidades20_aberto() || novidades201_aberto() || novidades202_aberto() ||
       novcartao_aberto() || dicascontrole_ocupado()) return "whats-new";
+  if (resolver_aberto()) return "resolver";
   if (atualizacao_aberta() || agendaviso_aberto()) return "update-notice";
   if (recomenda_aberta() || recenviar_aberto() || pessoas_aberto()) return "recommend";
   if (faixas_aberta() || episodios_aberto() || stream_folha_aberta()) return "sheet";
   if (guia_overlay_aberta()) return "guide";
   if (registro_aberto()) return "log";
   return NULL;
+}
+
+static void tocarFonteEscolhida(int fonte, int manual) {
+  {
+    const Stream *s = stream_item(fonte);
+    folhaParaTocar = 0;
+    printf("fonte escolhida: %s\n", s ? s->rotulo : "?");
+    // GUARDAR A ESCOLHA, e SO a manual. O que o automatico escolhe nao vira
+    // preferencia: quem nunca abriu esta folha continua com a regra da
+    // pontuacao para sempre, que e a condicao de nao quebrar o app de quem
+    // nunca escolheu nada.
+    int escolhaPreferida = stream_preferida();
+    if (s && manual) {
+      char base[24];
+      idBaseDoTitulo(base, sizeof base);
+      if (base[0]) fontepref_guardar(base, s);
+      // A MARCA DA FOLHA SEGUE A ESCOLHA NOVA. Sem esta linha, reabrir a folha
+      // logo depois de trocar de fonte mostraria "Sua escolha anterior" na
+      // fonte antiga — a tela contradizendo o que a pessoa acabou de fazer.
+      stream_preferir(fonte);
+    }
+    if (s) video_definir_dv(s->dolbyVision);
+    if (s) video_definir_cabecalhos(s->cabecalhos);
+    if (s) {
+      aguardandoFonte=0;
+      limparFonteVOD();
+      int titulo=player_aberto()?player_indice():detail_indice(), t=0,e=0;
+      if (player_aberto()) { player_episodio_atual(&t,&e); player_encerrar(); }
+      else detail_ep_foco(&t,&e);
+      diagnostico_cancelar_vazao();
+      player_abrir(titulo,NULL);
+      player_definir_episodio(t,e);
+      if (!manual && juntos_ativo()) {
+        player_do_inicio(); // The room clock restores position after load.
+        fonteVODAutomatica = 1;
+        fonteVODTentativas = 1;
+        fonteVODDesde = SDL_GetTicks();
+      }
+      stream_definir_atual(fonte);
+      // Qualquer escolha nova invalida a resposta de um torrent anterior; o
+      // motor P2P corta o pedido velho ja (sem isso a escolha nova esperaria
+      // ate 55 s na fila do fio unico).
+      torrentSessao++;
+      p2pmotor_cancelar();
+      if (!juntos_ativo() && fontefalha_ativa() && !player_id_canal()[0] && !s->urlP2P && !s->foraCache &&
+          (s->url[0] || debrid_ativo())) {
+        unsigned geracao = novaGeracaoFonte();
+        fontePedidoGeracao = geracao; limparFontePendente();
+        aguardandoFonte = 2; fonteEscolhida = -2; preparoEspera = 0;
+        p2pmotor_parar_fundo();
+        if (!iniciarPoliticaFonte(fonte, 1) || pedirFonteJob(FJOB_FALHA, geracao, NULL, 0) < 0) {
+          aguardandoFonte = 0; limparFonteVOD(); player_erro_fonte();
+        }
+      } else if (s->infoHash[0] && (!s->url[0] ||
+                  (!juntos_ativo() && fontefalha_ativa() && !s->urlP2P && s->foraCache && debrid_ativo()))) {
+        pedirTorrentEscolhido(fonte);
+      } else {
+        // Fonte direta: o torrent do motor (se havia) para de baixar.
+        p2pmotor_parar_fundo();
+        player_definir_fonte(s->url);
+        if (!juntos_ativo() && armarPoliticaFonteAberta(fonte, FONTEFALHA_DIRETA, s->url)) {
+          // Explicit uncached downloads keep their opening error/deadline policy.
+        } else if (manual && !juntos_ativo() &&
+            fonteescolha_cai_para_proxima(fonte, escolhaPreferida, 1, player_id_canal()[0])) {
+          fonteVODAutomatica = 1;
+          fonteVODTentativas = 1;
+          fonteVODDesde = SDL_GetTicks();
+          player_definir_tentativa(1, VOD_FONTE_MAX_TENTATIVAS);
+        } else if (!player_id_canal()[0]) fonteManualDesde = SDL_GetTicks();
+        // FONTE QUE O ADDON MARCA COMO FORA DE CACHE ("⏳", "[TB download]"):
+        // tocar o link e o que manda o servico baixar, e o que o addon devolve
+        // enquanto baixa e um clipe de aviso de ~8 s (registros 1136, 2191,
+        // 2501). O clipe fecha o player sem nada na tela; o aviso diz o que
+        // esta acontecendo e o que fazer.
+        if (s->foraCache)
+          player_toast_ex(i18n("Fonte fora do cache: o debrid começa a baixar. Se tocar um aviso curto, tente de novo em alguns minutos."), 9000, "aj_download", 0);
+      }
+      // Escolha manual num canal tambem entra no watchdog: fonte viva escolhida
+      // a dedo pode morrer igual.
+      if (player_id_canal()[0]) { canalFonteIdx = fonte; canalFonteDesde = SDL_GetTicks(); canalViaProxy = 0; }
+    }
+  }
+}
+
+// WATCH TOGETHER: o titulo que a sala pediu (convidado entrando, ou a sala
+// trocou de episodio) abre como o Reproduzir do detalhe; a fonte do convidado
+// sai da impressao do release da sala (juntosfonte), nao do automatico.
+static Uint32 juntosListaDesde;
+static void juntosAbrirEFonte(Uint32 agora) {
+  char imdb[24], titulo[160], poster[512], alvo[64];
+  int t, e;
+  if (juntosui_pediu_fechar_player()) player_sair();
+  if (juntosui_pediu_reproduzir()) detail_pedir_reproduzir();
+  if (juntos_pediu_abrir(imdb, sizeof imdb, &t, &e, titulo, sizeof titulo, poster, sizeof poster)) {
+    int idx = cat_indice_por_imdb(imdb);
+    if (idx < 0) {
+      static CatItem novo;
+      memset(&novo, 0, sizeof novo);
+      snprintf(novo.imdb, sizeof novo.imdb, "%s", imdb);
+      snprintf(novo.tipo, sizeof novo.tipo, "%s", t > 0 ? "series" : "movie");
+      snprintf(novo.titulo, sizeof novo.titulo, "%s", titulo);
+      snprintf(novo.poster, sizeof novo.poster, "%s", poster);
+      idx = cat_acrescentar(&novo);
+    }
+    if (idx >= 0) {
+      limparFonteVOD();
+      if (player_aberto() || player_retido()) player_encerrar();
+      diagnostico_cancelar_vazao();
+      player_abrir(idx, NULL);
+      if (t > 0 && e > 0) player_definir_episodio(t, e);
+      player_do_inicio();          // a posicao e a da sala, nao a retomada
+      renovarListaDoPlayer();
+      juntosListaDesde = 0;
+      if (!juntos_escolhendo_fonte() && !tocarFonteGuardada()) aguardandoFonte = 1;
+      printf("[juntos] abrindo o titulo da sala\n");
+    }
+  }
+  if (juntos_escolhendo_fonte() && player_aberto() && aguardandoFonte != 2) {
+    int n, i;
+    alvoPlayer(alvo, sizeof alvo);
+    n = stream_lista_do_alvo(alvo) ? stream_n() : 0;
+    if (n > 0 && !juntosListaDesde) juntosListaDesde = agora ? agora : 1;
+    if (n > 0) {
+      // juntos_escolher_fonte le a lista contigua; stream_item devolve dela.
+      const Stream *base = stream_item(0);
+      if (base && stream_item(n - 1) == base + (n - 1)) {
+        i = juntos_escolher_fonte(base, n, agora, juntosListaDesde);
+        if (i >= 0) tocarFonteEscolhida(i, 0);
+      }
+    }
+  }
 }
 
 void app_atualizar(float dt, Uint32 agora) {
@@ -3252,6 +3434,7 @@ void app_atualizar(float dt, Uint32 agora) {
       // mostrar.
       sync_reaplicar_ajustes();
       sync_iniciar();
+      loginNovo = 1;
       tela = TELA_ESCOLHA_PERFIL;
       perfilAntes = perfis_ativo();
       perfilsel_iniciar();
@@ -3370,6 +3553,7 @@ void app_atualizar(float dt, Uint32 agora) {
         sync_trocar_perfil(perfilAntes);
         ilhasinais_perfil_trocado();   // "Agora no perfil Lia" na ilha (02/10)
         enquete_perfil_trocado();      // a enquete do perfil anterior sai (N3)
+        juntos_perfil_trocado();       // a pessoa e o perfil: sai da sala
         // AS COLECOES DO PERFIL ANTERIOR SAEM JA. col_definir_json so roda
         // quando a conta manda linhas, entao um perfil sem colecoes ficava
         // com as do anterior para sempre.
@@ -3496,12 +3680,19 @@ void app_atualizar(float dt, Uint32 agora) {
   // teste a exercita.
   novcartao_decidir(tela == TELA_HOME && homePronta, player_aberto(), detail_aberto());
   if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto()) {
+    // O COMECAR da 2.1 primeiro: e ele o primeiro uso. Quando abre, o guia da
+    // 2.0 fica so gravado (novidades20_suprimir) — o tour sai do proprio
+    // Comecar — e a fila antiga nao abre nada embaixo dele.
+    comecar_decidir(loginNovo);
+    if (comecar_aberto()) novidades20_suprimir();
+  }
+  if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() && !comecar_aberto()) {
     // A 2.0.2 antes da 2.0.1: ela substitui o cartao da 2.0.1.
     novidades202_primeira_vez();
     novidades201_primeira_vez();
     novidades20_primeira_vez();
   }
-  if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() && !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() && !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto() && !dicascontrole_ocupado()) {
+  if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() && !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() && !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto() && !dicascontrole_ocupado() && !resolver_aberto() && !comecar_aberto()) {
     // Esta e a primeira explicacao da versao: aparece antes dos demais
     // cartoes de onboarding. Depois de OK, o bloco abaixo continua a fila
     // antiga no quadro seguinte.
@@ -3702,6 +3893,7 @@ void app_atualizar(float dt, Uint32 agora) {
     atomic_store_explicit(&perfilCarga, 0, memory_order_release);
   }
   if (tela == TELA_PERFIL && perfil_pediu_atualizar()) pedirPerfil();
+  if (tela == TELA_PERFIL && perfil_pediu_conquistas()) conquistas_abrir();
   // Titulo escolhido no painel de Salvos. Ele entrega o IMDb e nao um indice:
   // a lista dele inclui titulos que NAO estao no catalogo (vieram do arquivo
   // local, ver salvospainel.c), e um indice para esses nao existe. Sem item no
@@ -4237,6 +4429,12 @@ void app_atualizar(float dt, Uint32 agora) {
         else simkl_lista_tipo(c->imdb, c->tipo, entrar);
       }
       if (c) cat_definir_na_lista(i, entrar);
+      // Marca de Origem do servico que recebeu o pedido, para o filtro da
+      // Biblioteca ja mostrar o titulo sem esperar o proximo ciclo.
+      if (c && entrar && c->imdb[0]) {
+        if (ajustes_salvos_no_trakt() && trakt_ativo()) cat_marcar_fonte_imdb(c->imdb, CAT_FONTE_TRAKT);
+        if (ajustes_salvos_no_simkl() && simkl_ativo()) cat_marcar_fonte_imdb(c->imdb, CAT_FONTE_SIMKL);
+      }
       if (c) ilhasalvar_aviso(c, entrar);   // o voo da capa e o "Salvo em ..." na ilha
     }
     if (detail_pediu_fontes()) {
@@ -4765,86 +4963,8 @@ void app_atualizar(float dt, Uint32 agora) {
   processarTorrentJob();
 
   int fonte;
-  if (aguardandoFonte != 2 && stream_folha_escolheu(&fonte)) {
-    const Stream *s = stream_item(fonte);
-    folhaParaTocar = 0;
-    printf("fonte escolhida: %s\n", s ? s->rotulo : "?");
-    // GUARDAR A ESCOLHA, e SO a manual. O que o automatico escolhe nao vira
-    // preferencia: quem nunca abriu esta folha continua com a regra da
-    // pontuacao para sempre, que e a condicao de nao quebrar o app de quem
-    // nunca escolheu nada.
-    // Capturado ANTES de stream_preferir(fonte) abaixo: e a marca que a folha
-    // mostrava (fonteescolha.h).
-    int escolhaPreferida = stream_preferida();
-    if (s) {
-      char base[24];
-      idBaseDoTitulo(base, sizeof base);
-      if (base[0]) fontepref_guardar(base, s);
-      // A MARCA DA FOLHA SEGUE A ESCOLHA NOVA. Sem esta linha, reabrir a folha
-      // logo depois de trocar de fonte mostraria "Sua escolha anterior" na
-      // fonte antiga — a tela contradizendo o que a pessoa acabou de fazer.
-      stream_preferir(fonte);
-    }
-    if (s) video_definir_dv(s->dolbyVision);
-    if (s) video_definir_cabecalhos(s->cabecalhos);
-    if (s) {
-      aguardandoFonte=0;
-      limparFonteVOD();
-      int titulo=player_aberto()?player_indice():detail_indice(), t=0,e=0;
-      if (player_aberto()) { player_episodio_atual(&t,&e); player_encerrar(); }
-      else detail_ep_foco(&t,&e);
-      diagnostico_cancelar_vazao();
-      player_abrir(titulo,NULL);
-      player_definir_episodio(t,e);
-      stream_definir_atual(fonte);
-      // Qualquer escolha nova invalida a resposta de um torrent anterior; o
-      // motor P2P corta o pedido velho ja (sem isso a escolha nova esperaria
-      // ate 55 s na fila do fio unico).
-      torrentSessao++;
-      p2pmotor_cancelar();
-      if (fontefalha_ativa() && !player_id_canal()[0] && !s->urlP2P && !s->foraCache &&
-          (s->url[0] || debrid_ativo())) {
-        unsigned geracao = novaGeracaoFonte();
-        fontePedidoGeracao = geracao; limparFontePendente();
-        aguardandoFonte = 2; fonteEscolhida = -2; preparoEspera = 0;
-        p2pmotor_parar_fundo();
-        if (!iniciarPoliticaFonte(fonte, 1) || pedirFonteJob(FJOB_FALHA, geracao, NULL, 0) < 0) {
-          aguardandoFonte = 0; limparFonteVOD(); player_erro_fonte();
-        }
-      } else if (s->infoHash[0] && (!s->url[0] ||
-                  (fontefalha_ativa() && !s->urlP2P && s->foraCache && debrid_ativo()))) {
-        pedirTorrentEscolhido(fonte);
-      } else {
-        // Fonte direta: o torrent do motor (se havia) para de baixar.
-        p2pmotor_parar_fundo();
-        player_definir_fonte(s->url);
-        // PREFERENCIA NAO E ESCOLHA MANUAL (#364): a linha lembrada, aberta com OK,
-        // cai para a proxima fonte como o automatico. Escolha de verdade: prazo
-        // e mensagem, sem troca por tras da tela.
-        if (armarPoliticaFonteAberta(fonte, FONTEFALHA_DIRETA, s->url)) {
-          // Fonte fora de cache escolhida a mao: o download continua sendo
-          // explicito; apenas erro/prazo real depois da abertura pede troca.
-        } else if (fonteescolha_cai_para_proxima(fonte, escolhaPreferida, 1, player_id_canal()[0])) {
-          fonteVODAutomatica = 1;
-          fonteVODTentativas = 1;
-          fonteVODDesde = SDL_GetTicks();
-          player_definir_tentativa(1, VOD_FONTE_MAX_TENTATIVAS);
-          printf("[fonte] preferencia (nao escolha manual): cai para a proxima se falhar\n");
-          fflush(stdout);
-        } else if (!player_id_canal()[0]) fonteManualDesde = SDL_GetTicks();
-        // FONTE QUE O ADDON MARCA COMO FORA DE CACHE ("⏳", "[TB download]"):
-        // tocar o link e o que manda o servico baixar, e o que o addon devolve
-        // enquanto baixa e um clipe de aviso de ~8 s (registros 1136, 2191,
-        // 2501). O clipe fecha o player sem nada na tela; o aviso diz o que
-        // esta acontecendo e o que fazer.
-        if (s->foraCache)
-          player_toast_ex(i18n("Fonte fora do cache: o debrid começa a baixar. Se tocar um aviso curto, tente de novo em alguns minutos."), 9000, "aj_download", 0);
-      }
-      // Escolha manual num canal tambem entra no watchdog: fonte viva escolhida
-      // a dedo pode morrer igual.
-      if (player_id_canal()[0]) { canalFonteIdx = fonte; canalFonteDesde = SDL_GetTicks(); canalViaProxy = 0; }
-    }
-  }
+  if (aguardandoFonte != 2 && stream_folha_escolheu(&fonte)) tocarFonteEscolhida(fonte, 1);
+  juntosAbrirEFonte(agora);
   if (aguardandoFonte != 2 && player_pediu_fontes()) {
     char base[24];
     stream_folha_contexto(player_linha_episodio());
@@ -4923,19 +5043,25 @@ void app_atualizar(float dt, Uint32 agora) {
   { int t,e;
     if (aguardandoFonte != 2 && episodios_escolheu(&t,&e) && player_aberto()) {
       int titulo=player_indice();
+      if (episodioNaSala(titulo, t, e)) goto semEscolhaEpisodio;
       diagnostico_cancelar_vazao();
       player_encerrar(); player_abrir(titulo,NULL);
       player_definir_episodio(t,e);
       marco("buscando fontes"); buscarParaPlayer(); aguardandoFonte=1;
     }
+    semEscolhaEpisodio:;
   }
   { int t,e;
     if (aguardandoFonte != 2 && player_pediu_proximo(&t,&e) && player_aberto()) {
       int titulo=player_indice();
+      // Na sala, o proximo episodio e de todos: o pedido vai a sala e cada TV
+      // abre o mesmo (juntos_pediu_abrir). Com a trava, so o anfitriao.
+      if (episodioNaSala(titulo, t, e)) goto semProximo;
       diagnostico_cancelar_vazao();
       player_encerrar(); player_abrir(titulo,NULL); player_definir_episodio(t,e);
       marco("proximo episodio: buscando fontes"); buscarParaPlayer(); aguardandoFonte=1;
     }
+    semProximo:;
   }
   episodios_atualizar(dt);
   // O player devolve 1 para a coluna de audio e 2 para a de legenda.
@@ -4994,6 +5120,8 @@ void app_atualizar(float dt, Uint32 agora) {
     snprintf(imdbSaiu, sizeof imdbSaiu, "%s", ci ? ci->imdb : "");
     { unsigned vivoAntes = ilhacart_vivo_seq();
       if (!ajustes_saida_player_home() || !player_suspender()) player_encerrar();
+      // Titulo visto: arma o aviso das Conquistas (so se ligado em Ajustes).
+      if (player_saiu_visto()) conquistas_aviso_armar();
       // UM LUGAR SO (cwretido.h): o cartao da ilha / a faixa "Retomar agora"
       // acabaram de pegar o titulo (player_encerrar -> ilhacart_player_saiu,
       // home_registrar_retorno) e ele NAO entra em "Continuar assistindo"
@@ -5066,6 +5194,7 @@ void app_atualizar(float dt, Uint32 agora) {
       //   - buscarParaPlayer pede LEGENDA tambem, e compoe o id por alvoPlayer
       //     (que ja corta no ':' — era o que o atalho reimplementava a mao).
       int titulo = player_indice();
+      if (episodioNaSala(titulo, t, e)) goto semPosplayEpisodio;
       player_encerrar();
       diagnostico_cancelar_vazao();
       player_abrir(titulo, NULL);
@@ -5082,7 +5211,9 @@ void app_atualizar(float dt, Uint32 agora) {
       marco("posplay: proximo episodio");
       buscarParaPlayer();
       aguardandoFonte = 1;
-    } }
+    }
+    semPosplayEpisodio:;
+  }
   { int i = posplay_pediu_titulo();
     if (i >= 0) {
       const CatItem *ci = cat_item(i);
@@ -5166,8 +5297,14 @@ void app_atualizar(float dt, Uint32 agora) {
   novidades170_atualizar(dt, agora);
   novidades180_atualizar(dt, agora);
   novidades20_atualizar(dt, agora);
+  comecar_atualizar(dt, agora);
+  conquistas_atualizar(dt, agora);
+  // O pedido de tour sai de ok() (tecla ou ponteiro): conferir aqui cobre os
+  // dois caminhos sem duplicar — comecar_pedido consome.
+  if (comecar_pedido() == COMECAR_PEDIU_TOUR) novidades20_abrir(loginNovo);
   novidades201_atualizar(dt, agora);
   novidades202_atualizar(dt, agora);
+  resolver_atualizar(dt, agora);
   novcartao_atualizar(dt, agora);
   dicascontrole_atualizar(dt, agora);
   telemetria_atualizar(dt, agora);
@@ -5427,7 +5564,7 @@ static int relogioCamadaAberta(void) {
       novidades13_aberto() || novidades131_aberto() || novidades132_aberto() ||
       novidades133_aberto() || novidades134_aberto() || novidades139_aberto() ||
       novidades1312_aberto() || novidades142_aberto() || novidades148_aberto() ||
-      novidades170_aberto() || novidades180_aberto() || novidades20_aberto() || novidades201_aberto() || novidades202_aberto() || novcartao_aberto() || telemetria_aberto() || recintro_aberto() ||
+      novidades170_aberto() || novidades180_aberto() || novidades20_aberto() || novidades201_aberto() || novidades202_aberto() || novcartao_aberto() || resolver_aberto() || telemetria_aberto() || recintro_aberto() ||
       atualizacao_aberta() || agendaviso_aberto() || avisos_cartao_aberto() ||
       glem_cartao_aberto() || recenviar_aberto() || pessoas_aberto() ||
       recomenda_aberta() || pipintro_aberto() || diagnostico_intro_aberto();
@@ -5484,6 +5621,15 @@ static int miniToquePermitido(void) {
 #endif
 
 void app_desenhar(Uint32 agora) {
+  // O COMECAR da 2.1 e tela inteira e opaco, como o guia da 2.0.
+  if (comecar_aberto() && !registro_aberto() && !player_aberto()) {
+    gfx_sem_recorte();
+    gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0,
+            NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
+    ponteiro_camada();
+    comecar_desenhar(agora);
+    return;
+  }
   // O GUIA DA 2.0 e tela inteira e opaco: nada do app por baixo (uma camada
   // de tela cheia a menos; o fundo dele e o assado do Borrada).
   if (novidades20_aberto() && !registro_aberto() && !player_aberto()) {
@@ -5511,6 +5657,14 @@ void app_desenhar(Uint32 agora) {
             NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
     ponteiro_camada();
     novidades202_desenhar(agora);
+    return;
+  }
+  if (resolver_aberto() && !registro_aberto() && !player_aberto()) {
+    gfx_sem_recorte();
+    gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0,
+            NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
+    ponteiro_camada();
+    resolver_desenhar(agora);
     return;
   }
   if (novcartao_aberto() && !registro_aberto() && !player_aberto()) {
@@ -5647,8 +5801,10 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novidades180_desenhar(agora);
   // O esmaecer de saida do guia da 2.0, por cima do app que ja voltou.
   if (!registro_aberto() && novidades20_visivel()) novidades20_desenhar(agora);
+  if (!registro_aberto()) comecar_desenhar(agora);        // so o esmaecer de saida
   if (!registro_aberto()) novidades201_desenhar(agora);   // so o esmaecer de saida
   if (!registro_aberto()) novidades202_desenhar(agora);
+  if (!registro_aberto()) resolver_desenhar(agora);        // so o esmaecer de saida
   if (!registro_aberto()) novcartao_desenhar(agora);      // so o esmaecer de saida
   CAMADA_SE(telemetria_aberto());
   if (!registro_aberto()) telemetria_desenhar(agora);
@@ -5727,6 +5883,10 @@ void app_desenhar(Uint32 agora) {
 #endif
     ilha_desenhar(agora);
   }
+  // As Conquistas: tela inteira (ou o esmaecer de saida) e, por baixo de tudo
+  // que e aviso, o aviso depois dos creditos, que nao e camada do ponteiro.
+  CAMADA_SE(conquistas_aberto());
+  if (!registro_aberto()) { conquistas_desenhar(agora); conquistas_aviso_desenhar(); }
   // O cartao do lembrete fica acima do player e da tela: e um aviso com hora.
   CAMADA_SE(glem_cartao_aberto());
   if (!registro_aberto() && sessao_logada() && tela != TELA_LOGIN &&
@@ -5756,6 +5916,8 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) diagnostico_intro_desenhar(agora);
   // O MEDIDOR DE DESEMPENHO (Ajustes > Desempenho desta TV) nao e mais camada
   // propria: e conteudo da ilha do relogio (ilha.c, plrilha.c; desempenho.h).
+  // Watch Together: rostos e reacoes no player, folha e cartao da sala.
+  if (!registro_aberto()) juntosui_desenhar(agora);
   CAMADA_SE(registro_aberto());
   registro_desenhar();
   // A ilha do relogio fica acima do painel de registro, no canto de sempre.
@@ -5788,7 +5950,8 @@ int app_central_pode(void) {
   return tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL && login_concluido() &&
          perfilsel_concluido() && !registro_aberto() && !spot_aberto() &&
          !teclado_aberto() && !diagnostico_intro_aberto() && !novidades20_aberto() &&
-         !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto() && !dicascontrole_ocupado();
+         !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto() && !dicascontrole_ocupado() &&
+         !resolver_aberto() && !comecar_aberto() && !conquistas_aberto();
 }
 
 void app_encerrar(void) {

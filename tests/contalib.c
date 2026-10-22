@@ -79,6 +79,9 @@ int cat_indice_por_imdb(const char *imdb) {
 void cat_definir_na_lista(int i, int naLista) {
   if (i >= 0 && i < catN) cat[i].naLista = naLista ? 1 : 0;
 }
+void cat_marcar_fonte(int i, int fonte) {
+  if (i >= 0 && i < catN) { cat[i].naLista = 1; cat[i].fontes |= fonte; }
+}
 
 int cat_acrescentar_lote(const CatItem *v, int qtd, int *saidaIdx) {
   int k;
@@ -238,6 +241,14 @@ int main(void) {
   printf("\nreconciliacao depois de a descoberta trocar o catalogo:\n");
   confere("nada a refazer com o catalogo intacto", (contalib_reconciliar(), cat_n()), 5);
   confere("a marca continua onde estava", naListaDe("tt1375666"), 1);
+  // Mesmos IDs/indices e naLista: a republicacao trouxe so Trakt.
+  for (int i = 0; i < catN; i++)
+    if (cat[i].naLista) cat[i].fontes = CAT_FONTE_TRAKT;
+  contalib_reconciliar();
+  confere("republicar Trakt repoe Nuvio no titulo da conta",
+          catDe("tt1375666")->fontes, CAT_FONTE_TRAKT | CAT_FONTE_NUVIO);
+  confere("republicar Trakt repoe Nuvio nos demais titulos",
+          catDe("tt0111161")->fontes, CAT_FONTE_TRAKT | CAT_FONTE_NUVIO);
   // cat_definir_tudo: a descoberta publica um catalogo NOVO e tudo que a conta
   // acrescentou desaparece. Sem reconciliar, a Biblioteca esvaziava sozinha uns
   // 20 s depois do arranque.

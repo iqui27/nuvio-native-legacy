@@ -284,6 +284,7 @@ static int svAcaoDe(const RecEvento *r) {
     case REC_ACAO_REACAO:   return SV_REACAO;
     case REC_ACAO_SALVO:    return SV_SALVO;
     case REC_ACAO_NOTA:     return SV_AVALIOU;
+    case REC_ACAO_JUNTO:    return SV_JUNTO;
     default:                return SV_ATIVIDADE;
   }
 }
@@ -309,6 +310,7 @@ static void svDeRecEvento(const RecEvento *r, SvEvento *e) {
   e->restanteMin = -1;
   e->quando = r->quando;
   e->nota = r->acao == REC_ACAO_NOTA ? r->nota : 0;
+  snprintf(e->com, sizeof e->com, "%s", r->acao == REC_ACAO_JUNTO ? r->com : "");
   e->eps = r->eps;
   // "Terminou e gostou": a reacao que o servidor juntou ao "terminou".
   if (r->acao == REC_ACAO_FIM && r->temReacFim) e->reacao = r->reacFim;
@@ -967,6 +969,7 @@ const char *socialvis_verbo(const SvEvento *ev) {
     case SV_ABANDONO: return i18n("parou de ver");
     case SV_AVALIOU:  return i18n("avaliou");
     case SV_MANDOU:   return i18n("te mandou");
+    case SV_JUNTO:    return i18n("assistiu junto");
     default:          return "";
   }
 }
@@ -1003,6 +1006,10 @@ void socialvis_status(const SvEvento *ev, char *dst, size_t tam) {
     case SV_SALVO:   snprintf(dst, tam, "%s", i18n("Salvou para ver")); break;
     case SV_AVALIOU: snprintf(dst, tam, "%s", i18n("Avaliou")); break;
     case SV_MANDOU:  snprintf(dst, tam, "%s", i18n("Te mandou")); break;
+    case SV_JUNTO:
+      if (ev->com[0]) snprintf(dst, tam, i18n("Assistiu junto com %s"), ev->com);
+      else snprintf(dst, tam, "%s", i18n("Assistiu junto"));
+      break;
     default:         snprintf(dst, tam, "%s", i18n("Assistiu")); break;
   }
   if (ep[0] && ev->acao != SV_AGORA) {

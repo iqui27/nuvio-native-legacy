@@ -29,6 +29,11 @@
 // intro_ativo.
 typedef struct { double inicio,fim; int tipo; int ani; } IntroTrecho; // ani 1 = veio do AniSkip
 enum { INTRO_ABERTURA=1, INTRO_RESUMO=2, INTRO_CREDITOS=3, INTRO_PREVIA=4 };
+// Origem das marcas de um episodio (pagina do titulo, 2.1).
+enum { INTRO_O_NENHUMA=0, INTRO_O_THEINTRODB=1, INTRO_O_ANISKIP=2, INTRO_O_CAPITULOS=4 }; // bits das origens presentes
+// Marcas ja conhecidas de um episodio nesta sessao: bit0 abertura, bit1 resumo,
+// bit2 creditos, bit3 previa. 0 = nenhuma em memoria (nao pergunta a rede).
+int  intro_marcas(const char *imdb,int temporada,int episodio,int *origem);
 // `temporada` e `episodio` ZERO = filme: a consulta sai so com o imdb.
 void intro_pedir(const char *imdb,int temporada,int episodio);
 // Igual a intro_pedir, mas diz a duracao (s) dos episodios E-1 e E+1 quando o
@@ -63,6 +68,8 @@ long intro_kitsu_mal(const char *json);
 // tipo, o que o TheIntroDB/AniSkip trouxe, tenha chegado antes ou depois. n=0
 // limpa. Zerados por intro_desligar.
 void intro_definir_capitulos(const IntroTrecho *v,int n);
+// Novo arquivo do mesmo episodio: descarta capitulos e preserva os trechos da rede.
+void intro_trocar_fonte(void);
 void intro_desligar(void);
 int  intro_ativo(double posSeg,double *fim,int *tipo);
 // Segundo em que os creditos comecam, ou 0 quando nao ha marcador. Serve ao
@@ -155,5 +162,7 @@ int  intro_trechos(IntroTrecho *saida,int max);
 int  intro_creditos_limitados(IntroTrecho *saida,int max);
 #ifdef NV_SHOT_HOOKS
 void intro_shot_definir(const IntroTrecho *v,int n);   // capturas: trechos fixos
+// capturas: marcas lembradas de um episodio (o que a pagina do titulo le)
+void intro_shot_marcas(const char *imdb,int t,int e,const IntroTrecho *v,int n,int origem);
 #endif
 #endif

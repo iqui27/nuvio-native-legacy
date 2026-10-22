@@ -16,6 +16,7 @@ premio do Wikidata tambem fica nos produtores que receberam a estatueta.
 import json
 import pathlib
 import re
+import sys
 import urllib.parse
 import urllib.request
 
@@ -76,5 +77,20 @@ def main():
         encoding="utf-8")
 
 
+def exportar_local():
+    """Embarca IDs ja versionados; --local nao consulta a rede."""
+    texto = SAIDA.read_text(encoding="utf-8")
+    trilhas = json.loads(texto[texto.index("{"):texto.rindex("}") + 1])
+    ids = [f['imdb'] for f in trilhas['oscar-melhor-filme']['filmes']]
+    linhas = ['// Gerado por tools/trilhas-wikidata.py --local, do catalogo Wikidata CC0 versionado.',
+              'static const char *const OSCAR_FILMES[] = {']
+    for i in range(0, len(ids), 7):
+        linhas.append('  ' + ', '.join(json.dumps(k) for k in ids[i:i + 7]) + ',')
+    linhas.append('};')
+    (RAIZ / 'src' / 'conquistas_oscar.inc').write_text('\n'.join(linhas) + '\n', encoding='utf-8')
+
+
 if __name__ == "__main__":
-    main()
+    if "--local" not in sys.argv:
+        main()
+    exportar_local()

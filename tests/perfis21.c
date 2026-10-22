@@ -59,6 +59,8 @@ int dados_apagar(const char *nome) {
   char c[512]; caminho(c, sizeof c, nome); return remove(c) == 0;
 }
 void fil_definir_perfil(int p) { (void)p; }
+void cf_definir_perfil(int p) { (void)p; }
+void ov_definir_perfil(int p) { (void)p; }
 void fontepref_definir_perfil(int p) { (void)p; }
 void legmem_definir_perfil(int p) { (void)p; }
 void arteesc_definir_perfil(int p) { (void)p; }

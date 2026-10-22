@@ -44,8 +44,8 @@ char *contacache_ler(const char *s, int p, const char *u, long *q) {
 }
 
 static char histId[64]; static int histVisto = -1;
-void cat_historico_definir_id(const char *i, const char *t, int v) {
-  (void)t; snprintf(histId, sizeof histId, "%s", i); histVisto = v;
+void cat_historico_definir_tempo(const char *i, const char *t, int v, long long ms) {
+  (void)ms; (void)t; snprintf(histId, sizeof histId, "%s", i); histVisto = v;
 }
 
 // ---- servidor

@@ -1,9 +1,11 @@
 void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's token
 #include "sync.h"
+#include "idioma.h"
 #include <time.h>
 #include "sessao.h"
 #include "nuvem.h"
 #include "perfis.h"
+#include "perfilinfantil.h"
 #include "agenda.h"
 #include "lembrete.h"
 #include "dados.h"
@@ -39,6 +41,7 @@ void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's to
 #include "descoberta.h"
 #include "simkl.h"
 #include "homeestado.h"
+#include "homefil.h"
 #include "cachearte.h"
 #include "extras.h"
 #include "arteescolha.h"
@@ -1877,6 +1880,8 @@ void sync_esquecer_usuario(void) {
   copiaQuando = 0;
   pedidoComFioVivo = 0;
   homeestado_esquecer();
+  cf_esquecer();
+  ov_esquecer();
   cachearte_limpar_referencias();
   // O CACHE DO CATALOGO TAMBEM. Ele guarda o catalogo montado da conta que
   // saiu — watchlist, continuar assistindo, feed de amigos com nome e avatar —
@@ -1960,6 +1965,7 @@ void sync_esquecer_usuario(void) {
     for (i = 1; i <= 32; i++) { nomeLocaisPerfil(nome, sizeof nome, i); dados_apagar(nome); } }
   perfilAplicado = 0;
   perfis_esquecer();
+  perfil_infantil_esquecer();
   prog_esquecer_tudo();
   perfilcont_esquecer();
   psparede_esquecer();   // a parede de cada perfil (fundo "Filmes") e da conta que saiu

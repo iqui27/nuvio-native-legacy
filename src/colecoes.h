@@ -29,6 +29,7 @@ typedef struct {
   char ordenar[48];    // sort_by do TMDB / sort_by da lista Trakt
   char ordem[8];       // sort_how do Trakt: "asc" | "desc"
   long traktLista;     // id da lista no Trakt
+  int traktPropria;    // lista vinda de /users/me/lists
   char filtros[384];   // objeto "filters" cru; o montador da URL traduz
 } ColSource;
 typedef struct {

@@ -45,6 +45,7 @@ static TituloTempo detalheTempo;
 #include "agenda.h"
 #include "agendaui.h"
 #include "vistoep.h"
+#include "vaitocarui.h"
 #include "pessoa.h"
 #include "streams.h"
 #include "descoberta.h"
@@ -83,6 +84,8 @@ static TituloTempo detalheTempo;
 #include "avisodisp.h"
 #include "svdesenho.h"
 #include "amigostitulo.h"
+#include "juntos.h"
+#include "juntosui.h"
 #include "amigostitulo_ui.h"
 #include "temporadas_grafico.h"
 #include "detrotulo.h"
@@ -2282,6 +2285,14 @@ static int temExplorar(void) {
   if (!ci || !ci->titulo[0]) return 0;
   return !strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series");
 }
+// "ASSISTIR JUNTOS" (Watch Together): o ULTIMO circular, depois do explorar.
+// So com o servico social no pacote e a conta ligada (juntos_disponivel), e so
+// filme e serie: a sala sincroniza pelo IMDb.
+static int temJuntos(void) {
+  const CatItem *ci = cat_item(idx);
+  if (!juntos_disponivel() || !ci || !ci->imdb[0] || strncmp(ci->imdb, "tt", 2)) return 0;
+  return !strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series");
+}
 // "MAIS OPCOES" (dono, 06/10/2026: "muitos botoes na pagina de titulos"): o
 // trailer, o Explorar, o Trocar arte e o Recomendar sairam da linha e moram
 // na ilha do circular "..." (detmais.h), o ULTIMO da linha. Ele so existe
@@ -2300,7 +2311,7 @@ static int temMais(void) {
 }
 static int nBotoesTodos(void) {
   return (ehSerie() ? 3 : 4) + (temInicio() ? 1 : 0) + (temLembrar() ? 1 : 0)
-         + (temMais() ? 1 : 0);
+         + (temMais() ? 1 : 0) + (temJuntos() ? 1 : 0);
 }
 
 static int acoesAgrupadas(void) {
@@ -2321,7 +2332,7 @@ static int nBotoes(void) {
 // e os circulares escorregam um para a direita.
 enum { ACAO_PRIMARIO = 0, ACAO_LISTA = 1, ACAO_ASSISTIDO = 2, ACAO_FONTES = 3,
        ACAO_INICIO = 4, ACAO_RECOMENDAR = 5, ACAO_LEMBRAR = 6, ACAO_ARTE = 7,
-       ACAO_TRAILER = 8, ACAO_EXPLORAR = 9, ACAO_MAIS = 10 };
+       ACAO_TRAILER = 8, ACAO_EXPLORAR = 9, ACAO_MAIS = 10, ACAO_JUNTOS = 11 };
 static int acaoEm(int n) {
   if (n == 0) return ACAO_PRIMARIO;
   if (temInicio()) {
@@ -2340,6 +2351,7 @@ static int acaoEm(int n) {
     n--;
   }
   if (acoesAgrupadas() && n > 0) n++; // skip the list action already used as group anchor
+  if (temJuntos() && n == (ehSerie() ? 3 : 4) + (temMais() ? 1 : 0)) return ACAO_JUNTOS;
   // O "..." E O ULTIMO DA LINHA e a conferencia vem ANTES do salto da serie:
   // com 3 circulares numa serie, a ultima posicao e n == 3, e a regra de
   // baixo devolveria 4 — que e ACAO_INICIO, o botao de texto.
@@ -2714,6 +2726,12 @@ void detail_evento(const SDL_Event *e) {
         pedMarcar = 1;
       } else if (acao == ACAO_ASSISTIDO) {
         pedAssistido = 1;
+      } else if (acao == ACAO_JUNTOS) {
+        // A folha "Assistir juntos" (juntosui) para o episodio do primario.
+        int t0 = 0, e0 = 0, de = 0;
+        trailer_fechar();
+        if (ehSerie()) episodioAlvo(&t0, &e0, &de);
+        juntosui_abrir_folha(idx, t0, e0);
       } else if (acao == ACAO_MAIS) {
         int d[DMAIS_N];
         maisDisponiveis(d);
@@ -3831,6 +3849,20 @@ static int minutosDe(const char *s) {
   return total;
 }
 
+static void desenhaDicaBotao(GfxRect rc, const char *texto, float a) {
+  float ar, ag, ab;
+  TxtLinha label = txt_linha_corta(TXT_CAPTION2, texto, 232, 235, 240, 255,
+                                   NV_DETW2_TEXTO_W - 28.0f);
+  float w = label.w + 28.0f, h = 34.0f;
+  GfxRect pill = { rc.x + (rc.w - w) * 0.5f, rc.y - h - 14.0f, w, h };
+  if (pill.x < NV_DETW2_X) pill.x = NV_DETW2_X;
+  ajustes_acento(&ar, &ag, &ab);
+  gfx_cor(pill, .5f, ar, ag, ab, .16f * a);
+  gfx_cor((GfxRect){ pill.x + 1, pill.y + 1, pill.w - 2, pill.h - 2 }, .5f,
+          .075f, .08f, .095f, .76f * a);
+  txt_desenhar_alpha(label, pill.x + 14.0f, pill.y + (h - label.h) * .5f, a);
+}
+
 static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, float a) {
   // FOCO E TAMANHO, NAO ANEL.
   //
@@ -3897,6 +3929,8 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
       // so `progresso >= 90`, e filme visto em outro aparelho (ou marcado pelo
       // menu do cartaz, que zera o progresso) ficava com o olho riscado.
       gfx_icone(ig, cat_visto(cat_item(idx)) ? "visto" : "naovisto", ic, ic, ic, a);
+    } else if (icone == ACAO_JUNTOS) {
+      gfx_icone(ig, "aj_users", ic, ic, ic, a);
     } else if (icone == ACAO_MAIS) {
       // RETICENCIAS do Lucide: o "tem mais aqui" de qualquer interface.
       gfx_icone(ig, "aj_ellipsis", ic, ic, ic, a);
@@ -4176,6 +4210,15 @@ static Uint32 sinTrocaDesde;
 static float  hSinVis;            // altura reservada, suavizada
 static int    hSinInit;
 static Uint32 hSinTick;
+// FAIXA "VAI TOCAR" (2.1): a fonte que o automatico escolheria agora. Refeita
+// a cada 250 ms (ou ao mudar o alvo do botao primario) e a altura reservada
+// assenta suave, para a chegada da lista de fontes nao dar salto no hero.
+#define DET_VAI_GAP 18.0f
+static VaiTocar vaiTocar;
+static Uint32 vaiTocarEm;
+static int    vaiTocarIdx = -1, vaiTocarT, vaiTocarE;
+static float  hVaiVis;
+static Uint32 hVaiTick;
 static int    metaEsqVisto;       // o esqueleto da linha de meta foi mostrado
 static Uint32 metaChegouEm;
 
@@ -4186,6 +4229,8 @@ static void heroReiniciar(void) {
   tgraf_reiniciar();
   sinVisto[0] = sinAnt[0] = 0; sinVistoInit = 0; sinTrocaDesde = 0;
   hSinVis = 0.0f; hSinInit = 0; hSinTick = 0;
+  memset(&vaiTocar, 0, sizeof vaiTocar); vaiTocarEm = 0; vaiTocarIdx = -1;
+  hVaiVis = 0.0f; hVaiTick = 0;
   metaEsqVisto = 0; metaChegouEm = 0;
 }
 
@@ -4341,7 +4386,30 @@ static void heroWeb(float a, float desloc) {
   if (!temAmg) focoAmigos = 0;
   float hAmg = temAmg ? NV_DETW_AMIGOS_H + NV_DETW_AMIGOS_GAP : 0.0f;
   float hAcoesExtra = detalheRetrato() ? NV_DETW2_CIRC + NV_DETW2_BTN_GAP : 0;
-  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg;
+  // Faixa "Vai tocar": embaixo dos botoes (e da ilha de amigos), reservada na
+  // pilha de baixo para cima como a ilha. Alvo = o mesmo episodio do botao
+  // primario, para a faixa e o botao nunca falarem de episodios diferentes.
+  float hVai;
+  { const CatItem *ciVt = cat_item(idx);
+    int vt_t = 0, vt_e = 0;
+    if (ehSerie() && !episodioAlvo(&vt_t, &vt_e, NULL)) vt_t = vt_e = 0;
+    if (vaiTocarIdx != idx || vaiTocarT != vt_t || vaiTocarE != vt_e ||
+        (Uint32)(agoraH - vaiTocarEm) > 250u) {
+      if (ciVt && ciVt->imdb[0]) vt_montar(&vaiTocar, ciVt->imdb, vt_t, vt_e);
+      else memset(&vaiTocar, 0, sizeof vaiTocar);
+      vaiTocarIdx = idx; vaiTocarT = vt_t; vaiTocarE = vt_e; vaiTocarEm = agoraH;
+    }
+    { float alvo = vaiTocar.tem ? vtui_altura(&vaiTocar) + DET_VAI_GAP : 0.0f;
+      float dt = hVaiTick ? (float)(Uint32)(agoraH - hVaiTick) : 0.0f;
+      hVaiTick = agoraH;
+      if (dt > 100.0f) dt = 100.0f;
+      if (anim_politica_reduzida) hVaiVis = alvo;
+      else {
+        hVaiVis += (alvo - hVaiVis) * (1.0f - expf(-dt / 90.0f));
+        if (fabsf(alvo - hVaiVis) < 0.5f) hVaiVis = alvo;
+      }
+      hVai = hVaiVis; } }
+  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg - hVai;
   // BLOCO DE LINHAS DE ESTADO, empilhado de baixo para cima logo acima dos
   // botoes. Sao duas, e a ordem tem razao: a retomada explica o BOTAO e fica
   // colada nele; a agenda ("Próximo episódio T2E5 · em 3 dias") explica o
@@ -4580,6 +4648,8 @@ static void heroWeb(float a, float desloc) {
         if (action == ACAO_LEMBRAR)
           desenhaLembrete(rc,ci && agenda_lembrete(ci->imdb),selected,a*stagger);
         else desenhaBotao(rc,NULL,action,selected,a*stagger);
+        if (selected && action == ACAO_JUNTOS && stagger > .85f)
+          desenhaDicaBotao(rc, i18n("Assistir Juntos"), a);
         if (action == ACAO_MAIS) maisAncora = rc;
         if (maisAcoes && a > .3f && stagger > .85f)
           ponteiro_alvo(rc.x,rc.y,rc.w,rc.h,ponteiroDetalhe,NULL,-1,j);
@@ -4591,6 +4661,8 @@ static void heroWeb(float a, float desloc) {
                      NV_DETW2_CIRC, NV_DETW2_CIRC };
       if (detalheRetrato()) rc = heroAcaoRect(&bx, &cyBtn, rc.w, rc.h);
       desenhaBotao(rc, NULL, acaoEm(nb), nivel == 0 && botao == nb, a);
+      if (nivel == 0 && botao == nb && acaoEm(nb) == ACAO_JUNTOS)
+        desenhaDicaBotao(rc, i18n("Assistir Juntos"), a);
       if (acaoEm(nb) == ACAO_MAIS) maisAncora = rc;
       if (a > 0.3f) ponteiro_alvo(rc.x, rc.y, rc.w, rc.h, ponteiroDetalhe, NULL, -1, nb);
       bx += NV_DETW2_CIRC + NV_DETW2_BTN_GAP;
@@ -4625,6 +4697,15 @@ static void heroWeb(float a, float desloc) {
         txt_desenhar_alpha(t1, tx, ty, a);
         txt_desenhar_alpha(t2, tx, ty + t1.h + 2.0f, a * (foc ? 0.9f : 0.8f)); }
       if (a > 0.3f) ponteiro_alvo(ilha.x, ilha.y, ilha.w, ilha.h, ponteiroDetalhe, NULL, -1, DET_PTR_AMIGOS); } }
+
+  // --- FAIXA "VAI TOCAR", logo abaixo dos botoes (e da ilha de amigos) ---------
+  if (vaiTocar.tem && hVai > 1.0f) {
+    float alvoH = vtui_altura(&vaiTocar) + DET_VAI_GAP;
+    float yV = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + hCaption + hAmg + DET_VAI_GAP;
+    float wV = larguraTextoHero() < 1000.0f ? larguraTextoHero() : 1000.0f;
+    float fV = hVai / alvoH;
+    vtui_desenhar(&vaiTocar, NV_DETW2_X - 24.0f, yV, wV, a * (fV > 1.0f ? 1.0f : fV));
+  }
 
   // --- linha da AGENDA ------------------------------------------------------
   // Cor de realce e nao branco: e a unica linha do hero que fala de uma data
@@ -5236,6 +5317,13 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
       }
     } else if (epDur)
       txt_desenhar_alpha(txt_linha(TXT_CAPTION,epDur,235,237,240,255),durationX,metaY,a);
+    if (!(progress > 0 && progress < 100) && ep && serie && serie->imdb[0] &&
+        vt_pular_ligado()) {
+      int mk = vt_marcas_episodio(serie->imdb, ep->temporada, ep->episodio);
+      float cw = mk ? vtui_chips_episodio(mk, -1.0f, 0, a) : 0.0f;
+      if (cw > 0.0f)
+        vtui_chips_episodio(mk, r.x + r.w - 18.0f - cw, metaY + 2.0f, a);
+    }
     char number[32]; snprintf(number,sizeof number,i18n("EPISÓDIO %d"),epNum);
     txt_desenhar_alpha(txt_linha(TXT_CAPTION2,number,164,169,176,255),textX,textY,a);
     char fallback[40]; snprintf(fallback,sizeof fallback,i18n("Episódio %d"),epNum);
@@ -5391,6 +5479,24 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
     // episodio pode ter uma, a outra ou as duas.
     if (ep && ep->nota > 0)
       x += desenhaNotaEpisodio(x, y - 4, EX_TMDB, ep->nota, a);
+    // CHIPS A/R/C (2.1): so com "Pular" ligado e so do episodio cujas marcas o
+    // intro.c ja tem em cache (vt_marcas_episodio). Cabem entre a meta e a data;
+    // sem lugar, saem — a data e a duracao ganham.
+    { int mk = (ep && serie && serie->imdb[0] && vt_pular_ligado())
+               ? vt_marcas_episodio(serie->imdb, ep->temporada, ep->episodio) : 0;
+      if (mk) {
+        float cw = vtui_chips_episodio(mk, -1.0f, 0, a), reserva = 0;
+        if (epData) {
+          const char *d0 = epData;
+          size_t n0 = strlen(epData);
+          if (!ajustes_data_completa() && n0 >= 4) d0 = epData + n0 - 4;
+          reserva = txt_linha_corta(TXT_CAPTION2, d0, 179, 179, 179, 255, 400.0f).w + 16.0f;
+        }
+        if (x + cw + reserva <= r.x + r.w - NV_DETP_EP_PAD) {
+          vtui_chips_episodio(mk, x, y + (NV_DETP_EP_ICONE - VTUI_CHIP_H) * 0.5f, a);
+          x += cw + 16.0f;
+        }
+      } }
     // A DATA vai para a direita do card, como na referencia: a esquerda fica so
     // a duracao, e as duas deixam de disputar a mesma linha corrida.
     if (epData) {

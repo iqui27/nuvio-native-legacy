@@ -157,6 +157,11 @@ static int aberto, sair, carregando, temDados;
 static int temIdentidade;
 static int secao, item, escolhido = -1;
 static int dia, pedirAtualizar;
+// A QUARTA PARADA (secao 3) e o botao Conquistas do cabecalho: fica acima das
+// outras. `secaoAntes` e a parada de onde o foco subiu, para onde Baixo volta.
+enum { PF_SEC_CONQ = 3 };
+static int pedirConquistas, secaoAntes;
+static float focoConq;
 static char erro[160];
 #define PF_CARREGANDO PERFIL_ESTADO_CARREGANDO
 #define PF_ATUALIZANDO PERFIL_ESTADO_ATUALIZANDO
@@ -289,6 +294,7 @@ int perfil_iniciar(void) {
   estado = PF_CARREGANDO;
   secao = item = 0; escolhido = -1;
   dia = pedirAtualizar = 0; erro[0] = 0;
+  pedirConquistas = secaoAntes = 0; focoConq = 0;
   entrada = focoCal = 0;
   memset(focoItem, 0, sizeof(focoItem));
   amigo = modo = 0; focoAmigos = 0; dLinha = dCol = 0; dId[0] = 0;
@@ -304,7 +310,7 @@ void perfil_abrir(void) {
   // nascia na coluna da direita. Quem corrige o estado impossivel e
   // perfil_definir_dados, que e quem sabe o que chegou.
   aberto = 1; sair = 0; escolhido = -1; item = 0; secao = 0;
-  pedirAtualizar = 0;
+  pedirAtualizar = pedirConquistas = secaoAntes = 0;
   amigo = 0; modo = PF_RESUMO; pedirAmigo = dTemPedido = 0;
   tCena = tBarra = 0;
 }
@@ -329,6 +335,8 @@ void perfil_definir_estado(PerfilEstado novo, const char *m) {
 }
 PerfilEstado perfil_estado(void) { return estado; }
 int perfil_pediu_atualizar(void) { int p=pedirAtualizar; pedirAtualizar=0; return p; }
+int perfil_pediu_conquistas(void) { int p = pedirConquistas; pedirConquistas = 0; return p; }
+int perfil_foco_conquistas(void) { return aberto && modo == PF_RESUMO && secao == PF_SEC_CONQ; }
 
 void perfil_definir_dados(const PerfilDados *d) {
   if (!d) {
@@ -476,6 +484,9 @@ int perfil_pediu_amigo(char *id, size_t tam) {
   return dId[0] != 0;
 }
 
+// Sobe para o botao Conquistas, guardando a parada de onde veio.
+static void subirConquistas(void) { secaoAntes = secao; secao = PF_SEC_CONQ; }
+
 // ESQUERDA NA BORDA so PEDE a barra (sair = 1): quem decide e o roteador, que a
 // abre POR CIMA desta pagina (#371). Fechar aqui (aberto = 0) apagava a pagina
 // por baixo da barra e, depois dela, deixava a tela vazia e sem resposta;
@@ -494,12 +505,22 @@ void perfil_evento(const SDL_Event *e) {
     perfil_fechar(); return;
   }
   if (modo == PF_DUELO) { eventoDuelo(k, ok); return; }
+  if (secao == PF_SEC_CONQ) {
+    if (k==SDLK_LEFT || (k==SDLK_UP && ajustes_menu_topo())) { sair = 1; return; }
+    if (k==SDLK_DOWN) { secao = secaoAntes; return; }
+    if (ok) pedirConquistas = 1;
+    return;
+  }
   if(k==SDLK_r || ((!temDados || erro[0]) &&
      (k==SDLK_RETURN || k==SDLK_KP_ENTER))) {
     if(!carregando)pedirAtualizar=1;
     return;
   }
-  if (!temDados) return;
+  if (!temDados) {
+    if (k==SDLK_UP) subirConquistas();
+    if (k==SDLK_LEFT) sair = 1;
+    return;
+  }
   // DUAS paradas de verdade, lado a lado: o calendario a esquerda e a lista de
   // mais vistos a direita. Esquerda/direita troca de coluna quando a coluna
   // atual acaba; dentro do calendario as setas andam dia a dia, com
@@ -509,14 +530,14 @@ void perfil_evento(const SDL_Event *e) {
     if (k==SDLK_RIGHT) { if (dia+1<dados.nDias) { dia++; return; }
                          if (nCards()) secao=1; else if (rostosCabem()>0) secao=2;
                          return; }
-    if (k==SDLK_UP)    { if (dia>=7) dia-=7; else if (ajustes_menu_topo()) sair = 1; return; }
+    if (k==SDLK_UP)    { if (dia>=7) dia-=7; else subirConquistas(); return; }
     if (k==SDLK_DOWN)  { if (dia+7<dados.nDias) dia+=7; return; }
     return;
   }
   if (secao == 1) {
     if (k==SDLK_LEFT)  { if (dados.nDias>0) secao=0; else sair = 1; return; }
     if (k==SDLK_RIGHT) { if (rostosCabem()>0) secao=2; return; }
-    if (k==SDLK_UP)    { if (item>0) item--; else if (ajustes_menu_topo()) sair = 1; return; }
+    if (k==SDLK_UP)    { if (item>0) item--; else subirConquistas(); return; }
     if (k==SDLK_DOWN)  { if (item+1<nCards()) item++; return; }
     if (k==SDLK_RETURN || k==SDLK_KP_ENTER || k==SDLK_SPACE) {
       if (nCards() > 0) escolhido = item;
@@ -535,10 +556,11 @@ void perfil_evento(const SDL_Event *e) {
       return;
     }
     if (k==SDLK_RIGHT) { if (amigo+1<rostosCabem()) amigo++; return; }
-    if (k==SDLK_UP && ajustes_menu_topo()) { sair = 1; return; }
+    if (k==SDLK_UP) { subirConquistas(); return; }
     if (ok) { duelo(amigo, 1); return; }
     return;
   }
+  if (k == SDLK_UP) { subirConquistas(); return; }
   if (k == SDLK_LEFT) sair = 1;
 }
 
@@ -551,6 +573,8 @@ void perfil_atualizar(float dt, Uint32 agora) {
   for (int i = 0; i < PERFIL_MAX_DESTAQUES; i++)
     focoItem[i] = anim_mola(focoItem[i], secao == 1 && i == item ? 1.0f : 0.0f,
                             dt, NV_MOLA_FOCO);
+  focoConq = anim_mola(focoConq, modo == PF_RESUMO && secao == PF_SEC_CONQ ? 1.0f : 0.0f,
+                       dt, NV_MOLA_FOCO);
   focoAmigos = anim_mola(focoAmigos, modo == PF_RESUMO && secao == 2 ? 1.0f : 0.0f,
                          dt, NV_MOLA_FOCO);
   for (int i = 0; i < SV_FILA_MAX; i++)
@@ -561,6 +585,7 @@ void perfil_atualizar(float dt, Uint32 agora) {
     focoCal=(secao==0);
     for(int i=0;i<PERFIL_MAX_DESTAQUES;i++)focoItem[i]=(secao==1&&i==item);
     focoAmigos = modo == PF_RESUMO && secao == 2;
+    focoConq = modo == PF_RESUMO && secao == PF_SEC_CONQ;
     for (int i = 0; i < SV_FILA_MAX; i++) dFoco[i] = modo == PF_DUELO && dLinha == 1 && i == dCol;
   }
   // O cartao de amigos le o MESMO modelo da fileira e do painel Social. Barato
@@ -852,6 +877,34 @@ static float seletorAmigos(float xDir, float cy, float maxW, float a) {
   return w;
 }
 
+// O BOTAO CONQUISTAS: a direita do cabecalho, com a etiqueta do periodo (se
+// houver) logo a sua direita. So existe no resumo.
+#define PF_CONQ_ROT   "Conquistas"
+#define PF_CONQ_ICO   "aj_star"
+#define PF_CONQ_VAO   24.0f
+static float larguraPeriodo(void) {
+  if (!temIdentidade || !dados.periodo[0]) return 0.0f;
+  return txt_tracking(TXT_HERO_SEC, dados.periodo, 104, 104, 104, -1.0f, 0, 0, 2.2f) + 40.0f;
+}
+static GfxRect rConquistas(void) {
+  float w = plrui_botao_largura(PF_CONQ_ROT, PF_CONQ_ICO), wp = larguraPeriodo();
+  float cy = PF_TOPO + PF_AVATAR * 0.5f;
+  return (GfxRect){ PF_X + PF_W - wp - (wp > 0.0f ? PF_CONQ_VAO : 0.0f) - w, cy - 30.0f, w, 60.0f };
+}
+static void ponteiroConquistas(int a, int b) {
+  (void)a; (void)b;
+  if (modo == PF_RESUMO && secao != PF_SEC_CONQ) subirConquistas();
+}
+static void toqueConquistas(int a, int b) {
+  (void)a; (void)b;
+  if (modo == PF_RESUMO) pedirConquistas = 1;
+}
+static void desenharConquistas(float a) {
+  GfxRect r = rConquistas();
+  plrui_botao(r.x, r.y, PF_CONQ_ROT, PF_CONQ_ICO, focoConq, a);
+  ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroConquistas, toqueConquistas, 0, 0);
+}
+
 static void desenharCabecalho(float a) {
   float tx = PF_X + PF_AVATAR + 28.0f, cy = PF_TOPO + PF_AVATAR * 0.5f;
   float wTxt = PF_W - PF_AVATAR - 28.0f - 300.0f;
@@ -861,6 +914,7 @@ static void desenharCabecalho(float a) {
   const char *nm = dados.nome[0] ? dados.nome : dados.usuario[0] ? dados.usuario : NULL;
   desenharAvatar(a);
   sub[0] = 0;
+  if (modo == PF_RESUMO) wTxt = rConquistas().x - 24.0f - tx;
   // NO DUELO o subtitulo e "Voce e Fulano" e a direita e o seletor de amigo.
   if (modo == PF_DUELO) {
     const SvAmigo *am = socialvis_amigo(amigo);
@@ -1315,6 +1369,7 @@ void perfil_desenhar(Uint32 agora) {
     if (surge(7) > 0.002f) desenharAmigos(agora, a * surge(7));
   }
   gfx_sem_recorte();
+  if (modo == PF_RESUMO) desenharConquistas(a);
 
   // NO DUELO o pe e a linha de dicas do mockup, no lugar do aviso.
   if (modo == PF_DUELO && temDados) {
