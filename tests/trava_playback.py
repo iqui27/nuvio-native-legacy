@@ -16,6 +16,7 @@ program = r'''
 static int opened, blocked = 1, playing, aguardandoFonte, folhaParaTocar;
 static int player_aberto(void) { return playing; }
 static int player_indice(void) { return 7; }
+static int player_reassistindo(void) { return 0; }
 static int detail_indice(void) { return 7; }
 static int player_episodio_atual(int *t, int *e) { *t=2; *e=5; return 1; }
 static int detail_ep_foco(int *t, int *e) { *t=2; *e=5; return 1; }

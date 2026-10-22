@@ -2740,9 +2740,11 @@ static void sincronizarFileiras(void) {
     // Um catalogo pode responder vazio validamente. Mantemos o titulo da
     // fileira como estado visivel, mas nao inventamos um card "Ver tudo" sem
     // nenhum item para representar a consulta.
-    fileiras[destino].verTudo = (cf->n > 0 && cf->base[0] && cf->catId[0]) ? 1 : 0;
-    snprintf(fileiras[destino].base,  sizeof fileiras[destino].base,  "%s", cf->base);
-    snprintf(fileiras[destino].catId, sizeof fileiras[destino].catId, "%s", cf->catId);
+    { int srv = fil_origem_de(cf->chave) == FIL_ORIGEM_SERVIDOR;
+      fileiras[destino].verTudo = cf->n > 0 && (srv || (cf->base[0] && cf->catId[0]));
+      snprintf(fileiras[destino].base, sizeof fileiras[destino].base, "%s", srv ? "servidores" : cf->base);
+      snprintf(fileiras[destino].catId, sizeof fileiras[destino].catId, "%s", srv ? cf->chave : cf->catId);
+    }
     snprintf(fileiras[destino].catTipo, sizeof fileiras[destino].catTipo, "%s", cf->tipo);
     fileiras[destino].ini = cf->ini;
     if(!strcmp(cf->chave,"social_activity"))fileiras[destino].tipo=FILEIRA_SOCIAL;
@@ -3155,6 +3157,7 @@ static void sincronizarFileiras(void) {
     }
   }
   nFileiras = destino;
+  heroSetRev = 0; // Row contents can change without changing either count.
   retomarAplicada = retomarRev;
   ultimaRevisao = revisao;
   filsAplicadas = nCat;

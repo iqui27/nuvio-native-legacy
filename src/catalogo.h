@@ -94,6 +94,7 @@ typedef struct {
   // Quanto do titulo o dono ja assistiu, 0..100. Vem do app web (chave
   // watchProgressItems), quarta coluna de extra.txt. 0 = nao comecou.
   int  progresso;
+  int  rewatch; // cartao da sessao, distinto da retomada normal da mesma obra
   // Legenda do card em "Continue Assistindo". Serie mostra "T1, E8 · 16 min";
   // filme mostra so o tempo que falta. Temporada/episodio ficam em 0 no filme,
   // e e isso que separa os dois casos no desenho.

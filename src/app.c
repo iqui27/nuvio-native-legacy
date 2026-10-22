@@ -21,6 +21,13 @@
 #include "travarede.h"
 #include "travaui.h"
 #include "telefoneui.h"
+#include "diario.h"
+#include "travajuntos.h"
+#include "diariofontes.h"
+#include "diarioperfil.h"
+#include "diarionuvem.h"
+#include "diariotrakt.h"
+#include "dormiu.h"
 #include "descanso.h"
 #include "iconeapp.h"
 #include "logoapp.h"
@@ -58,6 +65,8 @@
 #include "epg.h"
 #include "posplay.h"
 #include "ctxmenu.h"
+#include "rewatch.h"
+#include "rewatchui.h"
 #include "ctxlista.h"
 #include "marco.h"
 #include <string.h>
@@ -252,6 +261,7 @@ static int autoParcialPronto(void) {
 // instante ainda nao tem a lista de episodios nem o "proximo" que
 // continuar_desenhar calculou para desenhar o card.
 static int cwTocarT, cwTocarE;
+static int cwRewatch = -1;
 // O MESMO OK num card cujo episodio TERMINOU e cuja lista de episodios ainda
 // nao chegou: a pagina abre e o toque fica esperando a lista para achar o
 // proximo, em vez de recomecar o terminado. `cwEsperaItem` e uma copia: a
@@ -407,6 +417,13 @@ static void *carregarPerfil(void *u) {
   if (!sucesso && simkl_ativo()) {
     skCredencial=simklauth_credencial_copiar(NULL,0);
     sucesso=simkl_perfil(&novo);
+  }
+  // SEM TRAKT, O DIARIO: "Perfil e Stats so funciona com Trakt" acabou. O
+  // snapshot vem do que esta TV e a conta ja sabem (diarioperfil.h).
+  if(!sucesso && diario_perfil_dados(pedido->perfil,&novo,(long long)time(NULL))){
+    const ContaPerfil *cp=perfis_item_ativo();
+    if(cp){snprintf(novo.nome,sizeof novo.nome,"%s",cp->nome);snprintf(novo.avatar,sizeof novo.avatar,"%s",cp->avatarUrl);}
+    sucesso=1;
   }
   pthread_mutex_lock(&perfilTrava);
   // A troca de conta/perfil invalida a resposta. O worker termina, mas nunca
@@ -569,6 +586,7 @@ static int pedirFonteJob(int tipo, unsigned geracao, const char *id, int renovan
 #include "layout.h"
 #include "segurar.h"
 #include "servidores.h"
+#include "srvidx.h"
 #include <stdio.h>
 
 static Tela tela = TELA_HOME;
@@ -784,7 +802,7 @@ static void trocarTela(Tela nova) {
     case TELA_BUSCA:      busca_iniciar();      break;
     case TELA_BIBLIOTECA: biblioteca_iniciar(); break;
     case TELA_AGENDA:     agendaui_iniciar();   break;
-    case TELA_PERFIL:     perfil_abrir(); pedirPerfil(); break;
+    case TELA_PERFIL:     perfil_abrir(); pedirPerfil(); diarionuvem_perguntar_se_preciso(); break;
     case TELA_AJUSTES:    ajustes_iniciar();    break;
     case TELA_DIAGNOSTICO: diagnostico_iniciar(); break;
     case TELA_LIVETV_DIAG: livetvdiag_iniciar(); break;
@@ -903,6 +921,7 @@ static void buscarParaPlayerModo(int renovar) {
   {
     const CatItem *c = cat_item(player_indice());
     if (c && alvo[0]) {
+      servidores_dica(alvo, c->titulo, srvidx_ano_de(c->meta));   // last match rule of the servers
       if (renovar) addons_buscar_renovar(alvo,c->tipo); else addons_buscar(alvo,c->tipo);
       addons_buscar_legendas(alvo,c->tipo);
     }
@@ -930,6 +949,7 @@ static void renovarListaDoPlayer(void) {
            (unsigned)stream_idade_ms(),
            stream_lista_do_alvo(alvoP) ? "" : " e de outro alvo", alvoP);
     stream_definir_alvo(alvoP);
+    servidores_dica(alvoP, ci->titulo, srvidx_ano_de(ci->meta));
     addons_buscar(alvoP, ci->tipo);
   }
 }
@@ -998,6 +1018,9 @@ static int tocarFonteGuardada(void) {
   if (!alvo[0] || !fontevolta_pegar(alvo, sessao_usuario(), perfis_ativo(), SDL_GetTicks(), &s))
     return 0;
   if (fontesmortas_idade(&s) >= 0) { fontevolta_esquecer("fonte falhou antes"); return 0; }
+  // A title on a personal server always searches again: the server copy goes
+  // first (D2) and its play session is registered by that search.
+  if (servidores_tem(alvo, "movie") || servidores_tem(alvo, "series")) return 0;
   marco("abrir: fonte guardada, sem busca");
   stream_definir_atual(-1);
   voltaFonte = s;
@@ -2327,6 +2350,10 @@ int app_iniciar(const char *dirArte) {
   ilhasinais_iniciar();  // a saude da rede passa a ouvir os pedidos (ilha, 02/10)
   arranque_etapa("app_iniciar/atividade_iniciar");
   atividade_iniciar();   // a fila de POST /v1/atividade que nao saiu (atividade.h)
+  diario_dono(sessao_usuario());   // arquivo de outra conta nao e lido
+  diario_iniciar();      // o Diario por perfil (diario.h), carregado sob demanda
+  travajuntos_iniciar(); // Juntos: o episodio do player vira marca nos outros membros
+  dormiu_iniciar();      // a sessao que morreu tocando vira suspeita de sono
   travarede_iniciar();   // trava de serie: arquivo da conta, fila e ouvinte do visto
   // O envio da atividade segue o nivel de privacidade (alcance) do Social: a
   // funcao e chamada agora e a cada mudanca; "nao perguntado" chega como 0.
@@ -2563,10 +2590,13 @@ static void abrirExplorarNoTitulo(void) {
 
 void app_evento(const SDL_Event *e) {
   if (e->type == SDL_QUIT) { sair = 1; return; }
+  if (rewatchui_aberta()) { rewatchui_evento(e); return; }
   ilhacart_validar_identidade();
   // Qualquer gesto da pessoa: a atividade ao vivo da ilha conta 30 min daqui.
-  if (e->type == SDL_KEYDOWN || e->type == SDL_MOUSEBUTTONDOWN || e->type == SDL_MOUSEWHEEL)
+  if (e->type == SDL_KEYDOWN || e->type == SDL_MOUSEBUTTONDOWN || e->type == SDL_MOUSEWHEEL) {
     ilhacart_tecla(SDL_GetTicks());
+    dormiu_tecla();   // "Pegou no sono": qualquer gesto fecha o vao sem tecla
+  }
 
   // A explicacao de primeira abertura bloqueia o restante da interface ate
   // ser reconhecida ou fechada. Ela aparece na Home, mas pertence ao fluxo de
@@ -3116,7 +3146,7 @@ static const char *homeTrailerBloqueio(void) {
       novcartao_aberto()) return "whats-new";
   if (resolver_aberto()) return "resolver";
   if (atualizacao_aberta() || agendaviso_aberto()) return "update-notice";
-  if (recomenda_aberta() || recenviar_aberto() || pessoas_aberto()) return "recommend";
+  if (recomenda_aberta() || recenviar_aberto() || travaui_aberta() || pessoas_aberto()) return "recommend";
   if (faixas_aberta() || episodios_aberto() || stream_folha_aberta()) return "sheet";
   if (guia_overlay_aberta()) return "guide";
   if (registro_aberto()) return "log";
@@ -3350,7 +3380,8 @@ void app_atualizar(float dt, Uint32 agora) {
   // PERSONAL SERVERS (servidores.h: Jellyfin, Emby, Plex): the modules fetches on its own workers; the
   // Home is rebuilt when its row snapshot changes or the option flips. One
   // integer compare per frame, no network here.
-  if (servidores_passo()) desc_repetir_silencioso();
+  if (servidores_passo()) { desc_repetir_silencioso(); desc_refazer_continuar(); }
+  menu_servidores(ajustes_jellyfin_ligado() && servidores_conectado());
   simklauth_passo((unsigned)agora);
   if (!player_aberto()) simkl_scrobble_retentar();
 
@@ -3770,7 +3801,7 @@ void app_atualizar(float dt, Uint32 agora) {
     if (sucesso) perfil_definir_dados(&snapshot);
     else if (!trakt_ativo() && !simkl_ativo())
       perfil_definir_estado(PERFIL_ESTADO_DESCONECTADO,
-                            "Nenhum histórico conectado. Vincule Trakt ou Simkl para ver seu perfil.");
+                            "Seu Diário ainda está vazio.");
     else perfil_definir_estado(PERFIL_ESTADO_INDISPONIVEL,
                                "Perfil indisponível. O último resumo continua seguro, se houver.");
     atomic_store_explicit(&perfilCarga, 0, memory_order_release);
@@ -3794,6 +3825,15 @@ void app_atualizar(float dt, Uint32 agora) {
     int qual = 0, o;
     ilhacart_atualizar(agora, ab && ab->imdb[0] ? ab->imdb : NULL);
     ilhasinais_passo(agora);
+    // DIARIO: ouvintes, gravacao com folga, vistos da conta, nomes do titulo
+    // aberto e a pergunta do "Pegou no sono" na pagina do titulo.
+    diario_dono(sessao_usuario());   // troca de conta solta o que estava carregado
+    diario_passo();
+    diariofontes_passo();
+    diarionuvem_passo();
+    diariotrakt_passo();
+    if (ab && detail_assentado()) diariofontes_nome(ab);
+    dormiu_passo();
     travarede_passo(agora);
     // O "Reconectar" do Trakt (modal da ilha): Ajustes, na linha do Trakt.
     if (ilhasinais_pediu_trakt() && !player_aberto()) {
@@ -4080,6 +4120,7 @@ void app_atualizar(float dt, Uint32 agora) {
       case MENU_EXPLORAR:   trocarTela(TELA_EXPLORAR);   break;
       case MENU_BUSCAR:     trocarTela(TELA_BUSCA);      break;
       case MENU_BIBLIOTECA: trocarTela(TELA_BIBLIOTECA); break;
+      case MENU_SERVIDORES: trocarTela(TELA_HOME); vertudo_servidores(NULL); break;
       case MENU_AGENDA:     trocarTela(TELA_AGENDA);     break;
       // DIRETO PARA A TELA, e nao mais para o painel lateral. O item do menu
       // se chama "Perfil e Stats" e abria um resumo de tres botoes por cima da
@@ -4112,6 +4153,7 @@ void app_atualizar(float dt, Uint32 agora) {
         // porque a lista de episodios ainda nao chegou da rede.
         const CatItem *cw = cat_item(it.indice);
         int tocar = 1;
+        cwRewatch = cw ? cw->rewatch : 0;
         cwTocarT = cwTocarE = 0;
         cwEspera = 0;
         if (cw && !strcmp(cw->tipo, "series")) {
@@ -4191,6 +4233,12 @@ void app_atualizar(float dt, Uint32 agora) {
   }
 
   legendasDaFonte();
+  { char rwId[64]; int rt=0,re=0;
+    if (rewatchui_tocar(rwId,sizeof rwId,&rt,&re)) {
+      int k=cat_indice_titulo(rwId,detail_aberto() ? detail_indice() : -1);
+      if (k>=0) { abrirPorIndice(k); cwTocarT=rt; cwTocarE=re; cwRewatch=1; detail_pedir_reproduzir(); }
+    }
+  }
 
   // Botoes do detalhe: quem sabe que existe player e biblioteca e o roteador,
   // nao a tela de detalhe.
@@ -4232,7 +4280,8 @@ void app_atualizar(float dt, Uint32 agora) {
         // e serie, mesmo quando o catalogo ja trouxe elenco.
         if (!strcmp(ci->tipo, "series") || strcmp(ci->tipo, "movie") ||
             ci->nElenco == 0) desc_episodios(i, 0);
-        { stream_definir_alvo(alvo); addons_buscar(alvo, ci->tipo); }
+        { stream_definir_alvo(alvo); servidores_dica(alvo, ci->titulo, srvidx_ano_de(ci->meta));
+          addons_buscar(alvo, ci->tipo); }
         aquecerAoAbrirTitulo();
         // Legendas do OpenSubtitles junto: sao dezenas por titulo e a busca
         // leva segundos. Pedir so quando o dono abre a folha de faixas faria
@@ -4268,6 +4317,7 @@ void app_atualizar(float dt, Uint32 agora) {
         player_definir_episodio(cwTocarT, cwTocarE);
         cwTocarT = cwTocarE = 0;
       }
+      if (cwRewatch >= 0) { player_rewatch(cwRewatch); cwRewatch=-1; }
       if (doInicio) player_do_inicio();
       // O episodio so fica definitivo DEPOIS de abrir o player. Refaça sempre
       // o pedido de legenda nesse ponto; a busca de prefetch pode ter comecado
@@ -4908,11 +4958,12 @@ void app_atualizar(float dt, Uint32 agora) {
   { int t,e, autorizado = -1;
     int retomar = travaui_pediu_reproduzir(&autorizado, &t, &e);
     if (aguardandoFonte != 2 && (retomar || episodios_escolheu(&t,&e)) && player_aberto()) {
-      int titulo = retomar ? autorizado : player_indice();
+      int titulo = retomar ? autorizado : player_indice(), reassistindo=player_reassistindo();
       if (travaui_abrir_espera(titulo, t, e)) goto semEscolhaEpisodio;
       if (episodioNaSala(titulo, t, e)) goto semEscolhaEpisodio;
       diagnostico_cancelar_vazao();
       player_encerrar(); player_abrir(titulo,NULL);
+      player_rewatch(reassistindo);
       player_definir_episodio(t,e);
       marco("buscando fontes"); buscarParaPlayer(); aguardandoFonte=1;
     }
@@ -4920,13 +4971,14 @@ void app_atualizar(float dt, Uint32 agora) {
   }
   { int t,e;
     if (aguardandoFonte != 2 && player_pediu_proximo(&t,&e) && player_aberto()) {
-      int titulo=player_indice();
+      int titulo=player_indice(), reassistindo=player_reassistindo();
       // Na sala, o proximo episodio e de todos: o pedido vai a sala e cada TV
       // abre o mesmo (juntos_pediu_abrir). Com a trava, so o anfitriao.
       if (travaui_abrir_espera(titulo, t, e)) goto semProximo;
       if (episodioNaSala(titulo, t, e)) goto semProximo;
       diagnostico_cancelar_vazao();
-      player_encerrar(); player_abrir(titulo,NULL); player_definir_episodio(t,e);
+      player_encerrar(); player_abrir(titulo,NULL);
+      player_rewatch(reassistindo); player_definir_episodio(t,e);
       marco("proximo episodio: buscando fontes"); buscarParaPlayer(); aguardandoFonte=1;
     }
     semProximo:;
@@ -5454,6 +5506,15 @@ static int relogioCabe(void) {
   // (ilha_posicionar), e as duas formam a coluna da esquerda.
   if (ctx_aberto() || stream_folha_aberta() || faixas_aberta() || episodios_aberto()) return 0;
   if (relogioCamadaAberta()) return 0;
+  if (sintro_aberto() || novidades_aberto() || novidades11_aberto() || novidades12_aberto() ||
+      novidades13_aberto() || novidades131_aberto() || novidades132_aberto() ||
+      novidades133_aberto() || novidades134_aberto() || novidades139_aberto() ||
+      novidades1312_aberto() || novidades142_aberto() || novidades148_aberto() ||
+      novidades170_aberto() || novidades180_aberto() || novidades20_aberto() || novidades201_aberto() || telemetria_aberto() || recintro_aberto() ||
+      atualizacao_aberta() || agendaviso_aberto() || avisos_cartao_aberto() ||
+      glem_cartao_aberto() || recenviar_aberto() || travaui_aberta() || pessoas_aberto() ||
+      recomenda_aberta() || pipintro_aberto() || diagnostico_intro_aberto())
+    return 0;
   return 1;
 }
 
@@ -5625,6 +5686,7 @@ void app_desenhar(Uint32 agora) {
   player_toque_modal_guarda(playerToquePermitido);
 #endif
   player_mini_desenhar(agora);
+  rewatchui_desenhar();
   CAMADA_SE(sintro_aberto());
   if (!registro_aberto()) sintro_desenhar(agora);
   CAMADA_SE(novidades_aberto());
@@ -5805,6 +5867,7 @@ int app_central_pode(void) {
 
 void app_encerrar(void) {
   avisos_encerrar();   // saida limpa: apaga a marca de sessao viva
+  diario_gravar_agora();
   if (fioFonteVivo) {
     // O encerramento acontece depois do laco de desenho: aqui podemos
     // aguardar o transporte para fechar player/AVPlay e os demais modulos em

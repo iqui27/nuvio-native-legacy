@@ -32,12 +32,14 @@ typedef enum {
   MENU_AGENDA,
   MENU_PERFIL,
   MENU_AJUSTES,
+  MENU_SERVIDORES,
   MENU_N
 } MenuDestino;
 
 // Zera destino e animacao. So e necessario se o app reinicializar a UI; o
 // estado inicial ja e valido sem chamar (destino = MENU_INICIO, barra fora).
 int  menu_iniciar(void);
+void menu_servidores(int conectado);
 
 // Desliza a barra para dentro E entrega o foco a ela. Chamar com o menu ja
 // aberto nao faz nada, entao e seguro ligar direto no ESQUERDA da home.

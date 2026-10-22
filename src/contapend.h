@@ -54,6 +54,9 @@ int  contapend_episodios(const char *imdb, const char *tipo,
 int  contapend_episodios_perfil(int perfil, const char *imdb, const char *tipo,
                                 const VistoPar *pares, int n, int visto);
 int  contapend_titulo(const char *imdb, const char *tipo, int visto);
+// O mesmo, para OUTRO perfil da conta (Trava em modo Juntos).
+int  contapend_episodios_perfil(int perfil, const char *imdb, const char *tipo,
+                                const VistoPar *pares, int n, int visto);
 // "+" / tirar da lista. `nome`/`poster` so servem ao item novo na conta.
 int  contapend_lista(const char *imdb, const char *tipo, const char *nome,
                      const char *poster, int salvo);
