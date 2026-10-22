@@ -4358,6 +4358,7 @@ static HeroCopyLayout heroCopyTelefone(float base, float *hSin, int hasMeta,
                                        float slot, float *friendsH, float minLogo) {
   HeroCopyLayout p;
   *hSin = fminf(*hSin, 2.0f * heroSinEntrelinha());
+  if (ajustes_hero_tamanho()) minLogo = fmaxf(minLogo, logoH);
   for (;;) {
     p = heroCopyLayout(base, *hSin, hasMeta, hasSec, *captionH, logoH,
                        btnH, btnGap, minTop, slot, *friendsH);
