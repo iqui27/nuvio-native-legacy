@@ -4493,7 +4493,7 @@ int ajustes_perfil_restaurar(int perfil) {
   nomePerfil(nome, sizeof nome, perfil);
   t = dados_ler(nome);
   if (!t) return 0;
-  { int focoAntigo = -1, viuFoco = 0, viuTopo = 0;
+  { int focoAntigo = -1, viuFoco = 0, viuTopo = 0, viuDetalheTopo=0;
   for (l = t; l && *l; ) {
     char chave[64], *fim = strchr(l, '\n');
     int v, i;
@@ -4507,6 +4507,7 @@ int ajustes_perfil_restaurar(int perfil) {
         v = limita(i, v);
         if (i == AJ_FOCO_TRAILER) viuFoco = 1;
         if (i == AJ_MENU_TOPO) viuTopo = 1;
+        if (i == AJ_DET_TOPO) viuDetalheTopo=1;
         if (v != valor[i]) { valor[i] = v; mudou++; }
         break;
       }
@@ -4518,7 +4519,8 @@ int ajustes_perfil_restaurar(int perfil) {
   }
   // Copia de antes do #461 nao tem menuTopoLocal, e a conta nao o guarda: sem
   // isto o topo ligado pelo perfil anterior vazaria para este.
-  if (!viuTopo && valor[AJ_MENU_TOPO]) { valor[AJ_MENU_TOPO] = 0; mudou++; } }
+  if (!viuTopo && valor[AJ_MENU_TOPO]) { valor[AJ_MENU_TOPO] = 0; mudou++; }
+  if (!viuDetalheTopo && valor[AJ_DET_TOPO]) { valor[AJ_DET_TOPO]=0; mudou++; } }
   free(t);
   if (mudou) {
     gravar();

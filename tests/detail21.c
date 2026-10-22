@@ -96,7 +96,13 @@ int main(void) {
   aberto=1; saindo=0; nVolta=0;
   detail_volta_notar(1);
   assert(nVolta==1 && voltaEstado[0].coluna==2 && voltaEstado[0].fileira==SEC_RELACIONADOS);
-  puts("detail21: content, empty rows and nested-title state OK");
+  FILE *perfil=fopen(path,"w"); assert(perfil); fputs("detalheTopoLocal 2\n",perfil); fclose(perfil); ajustes_dir(dados_dir());
+  assert(ajustes_detalhe_topo()==2);
+  char perfilPath[1024]; snprintf(perfilPath,sizeof perfilPath,"%s/ajustes-p9.txt",dados_dir());
+  perfil=fopen(perfilPath,"w"); assert(perfil); fputs("menuTopoLocal 0\n",perfil); fclose(perfil);
+  ajustes_perfil_restaurar(9);
+  assert(ajustes_detalhe_topo()==0); // pre-existing profiles must not inherit Both
+  puts("detail21: content, navigation and profile isolation OK");
   SDL_Quit();
   return 0;
 }
