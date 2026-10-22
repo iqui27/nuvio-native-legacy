@@ -2523,6 +2523,7 @@ static void sincronizarFileiras(void) {
     }
   }
   nFileiras = destino;
+  heroSetRev = 0; // Row contents can change without changing either count.
   retomarAplicada = retomarRev;
   ultimaRevisao = revisao;
   filsAplicadas = nCat;
