@@ -70,6 +70,7 @@ static int pinFioVivo;
 // Episodios liberados por "Assistir mesmo assim" nesta sessao.
 static struct { char serie[24]; int t, e; } liberados[16];
 static int nLiberados;
+static int retomarIdx = -1, retomarT, retomarE;
 static int alcancouPerfis[TRAVA_MEMBROS], nAlcancou, alcT, alcE;
 static char alcSerie[24];
 
@@ -321,6 +322,13 @@ int travaui_proximo_segura(const char *imdb, int idxCat, int t, int e) {
   return 1;
 }
 
+int travaui_pediu_reproduzir(int *alvo, int *t, int *e) {
+  if (retomarIdx < 0) return 0;
+  *alvo = retomarIdx; *t = retomarT; *e = retomarE;
+  retomarIdx = -1;
+  return 1;
+}
+
 int travaui_aberta(void) { return tela != TU_NADA; }
 
 static void fechar(void) {
@@ -416,7 +424,8 @@ static void assistirMesmoAssim(void) {
   fechar();
   // A pagina do titulo esta com o foco no mesmo episodio (ou no botao que o
   // aponta): o pedido de reproduzir passa agora pelo gate liberado.
-  if (detail_aberto()) detail_pedir_reproduzir();
+  if (player_aberto()) { retomarIdx = idx; retomarT = espT; retomarE = espE; }
+  else if (detail_aberto()) detail_pedir_reproduzir();
 }
 
 static void acao(int k) {

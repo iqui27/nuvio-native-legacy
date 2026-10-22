@@ -41,6 +41,8 @@ int  travaui_abrir_espera(int idxCat, int t, int e);
 // app.c, ANTES de tocar o que a pagina do titulo pediu: se o episodio alvo
 // esta segurado, abre a folha de espera e devolve 1 (nao toca).
 int  travaui_segurar_detalhe(void);
+// Authorized episode change requested by the player waiting sheet, consumed once.
+int  travaui_pediu_reproduzir(int *idxCat, int *t, int *e);
 // posplay.c: o proximo episodio esta segurado? Se sim, guarda o aviso "Voce
 // alcancou Jerry" para a volta do player e devolve 1 (o cartao nao oferece).
 int  travaui_proximo_segura(const char *imdb, int idxCat, int t, int e);

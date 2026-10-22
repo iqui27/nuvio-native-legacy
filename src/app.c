@@ -3124,6 +3124,10 @@ static const char *homeTrailerBloqueio(void) {
 }
 
 static void tocarFonteEscolhida(int fonte, int manual) {
+  int alvo = player_aberto() ? player_indice() : detail_indice(), t = 0, e = 0;
+  if (player_aberto()) player_episodio_atual(&t, &e);
+  else detail_ep_foco(&t, &e);
+  if (travaui_abrir_espera(alvo, t, e)) { aguardandoFonte = 0; folhaParaTocar = 0; return; }
   {
     const Stream *s = stream_item(fonte);
     folhaParaTocar = 0;
@@ -4900,9 +4904,11 @@ void app_atualizar(float dt, Uint32 agora) {
       if (ci) { stream_definir_alvo(id); addons_buscar_renovar(id,ci->tipo); }
     }
   }
-  { int t,e;
-    if (aguardandoFonte != 2 && episodios_escolheu(&t,&e) && player_aberto()) {
-      int titulo=player_indice();
+  { int t,e, autorizado = -1;
+    int retomar = travaui_pediu_reproduzir(&autorizado, &t, &e);
+    if (aguardandoFonte != 2 && (retomar || episodios_escolheu(&t,&e)) && player_aberto()) {
+      int titulo = retomar ? autorizado : player_indice();
+      if (travaui_abrir_espera(titulo, t, e)) goto semEscolhaEpisodio;
       if (episodioNaSala(titulo, t, e)) goto semEscolhaEpisodio;
       diagnostico_cancelar_vazao();
       player_encerrar(); player_abrir(titulo,NULL);
@@ -4916,6 +4922,7 @@ void app_atualizar(float dt, Uint32 agora) {
       int titulo=player_indice();
       // Na sala, o proximo episodio e de todos: o pedido vai a sala e cada TV
       // abre o mesmo (juntos_pediu_abrir). Com a trava, so o anfitriao.
+      if (travaui_abrir_espera(titulo, t, e)) goto semProximo;
       if (episodioNaSala(titulo, t, e)) goto semProximo;
       diagnostico_cancelar_vazao();
       player_encerrar(); player_abrir(titulo,NULL); player_definir_episodio(t,e);
