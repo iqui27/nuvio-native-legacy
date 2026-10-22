@@ -135,7 +135,10 @@ int main(void) {
   assert(progMelhorNaoVisto(&bestT,&bestE)==81 && bestT==1 && bestE==2);
   vaiTocar.tem=1; stream_invalidar("fixture target changed");
   assert(!topoFonteDisponivel()); // stale rendered source cannot take focus
-  puts("detail21: content, navigation, profiles, season controls and source identity OK");
+  assert(secaoAlpha(SEC_NOTAS)==.42f);
+  nivel=1; foco.fileira=SEC_NOTAS; assert(secaoAlpha(SEC_NOTAS)==1.f);
+  nivel=0; assert(secaoAlpha(SEC_NOTAS)==1.f);
+  puts("detail21: content, navigation, profile isolation and section focus OK");
   SDL_Quit();
   return 0;
 }

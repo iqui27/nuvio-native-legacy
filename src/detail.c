@@ -7087,8 +7087,11 @@ static void desenhaGradeProgresso(float x, float y, float a) {
   }
 }
 
+static float secaoAlpha(int r) { return nivel>=1 && foco.fileira!=r ? .42f : 1.f; }
+
 static void desenhaSecao(int r, float a, Uint32 agora) {
   if (corpoSobArte()) return;
+  a *= secaoAlpha(r);
   int n = secaoN(r);
   // Aba de informacao que nao seja "Criador e elenco": o web TROCA o conteudo
   // da secao (avaliacoes por episodio, fileira de similares, trailer). Nenhum
