@@ -26,7 +26,7 @@ static int aberta, indice, botao, trailerPedido, trailerFim, trailerQual;
 static Uint32 desde, prazo;
 static float focoAnim[4];
 static unsigned revisao;
-static int acaoPendente;
+static int acaoPendente, acaoResolucao;
 static int acaoEpisodios = -1;
 static CatItem acaoTitulo;
 static Uint32 acaoDesde;
@@ -102,6 +102,7 @@ void glance_evento(const SDL_Event *e) {
           (botao == GLANCE_BT_VISTO && !strcmp(atual.tipo, "series") && atual.nTemporadas == 0)) {
         if (!desc_titulo_buscando()) {
           acaoPendente = botao; acaoTitulo = atual; acaoDesde = SDL_GetTicks();
+          acaoResolucao = 1;
           desc_pedir_titulo_semente(!strncmp(atual.imdb, "tmdb:", 5) ? "" : atual.imdb,
                                     atual.tmdb, !strcmp(atual.tipo, "series") ? "tv" : atual.tipo,
                                     atual.titulo, atual.meta, atual.poster);
@@ -114,14 +115,16 @@ void glance_evento(const SDL_Event *e) {
 int glance_tomar_acao(int idx) {
   CatItem ci;
   int b;
-  if (!acaoPendente) return 0;
-  if (!aberta || SDL_GetTicks() - acaoDesde >= 20000 ||
-      strcmp(atual.tipo, acaoTitulo.tipo) || strcmp(atual.imdb, acaoTitulo.imdb)) {
-    acaoPendente = 0;
-    return 0;
-  }
+  if (!acaoResolucao) return 0;
   if (!cat_copiar_item(idx, &ci) || strcmp(ci.tipo, acaoTitulo.tipo) ||
       (strcmp(ci.imdb, acaoTitulo.imdb) && !(ci.tmdb > 0 && ci.tmdb == acaoTitulo.tmdb))) return 0;
+  acaoResolucao = 0;
+  // Cancellation ends the action, but its late metadata still belongs here.
+  if (!acaoPendente || !aberta || SDL_GetTicks() - acaoDesde >= 20000 ||
+      strcmp(atual.tipo, acaoTitulo.tipo) || strcmp(atual.imdb, acaoTitulo.imdb)) {
+    acaoPendente = 0;
+    return 1;
+  }
   if (acaoPendente == GLANCE_BT_VISTO && !strcmp(ci.tipo, "series") && ci.nTemporadas == 0) {
     acaoEpisodios = idx; desc_episodios(idx, 0);
     return 1;

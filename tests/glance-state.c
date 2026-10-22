@@ -40,10 +40,35 @@ const char *trailerimdb_url(const char *id, const char **name) { (void)id; (void
 int trailerimdb_respondeu(const char *id) { (void)id; return 1; }
 void extras_hero_trailer_pedir(const char *id, int series, long tmdb) { (void)id; (void)series; (void)tmdb; }
 int extras_hero_trailer_obter(const char *id, char *dst, unsigned cap) { (void)id; (void)dst; (void)cap; return 0; }
-static int total(void) { return 1; }
-static int getItem(int i, CatItem *out) { if (i) return 0; *out = item; return 1; }
+static int total(void) { return 2; }
+static int getItem(int i, CatItem *out) {
+  if (i < 0 || i > 1) return 0;
+  *out = item;
+  if (i) snprintf(out->imdb, sizeof out->imdb, "ttneighbor");
+  return 1;
+}
 static const GlanceFonte source = { total, getItem, NULL, NULL };
 static void key(int k) { SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = k; glance_evento(&e); }
+// Run the production router so canceled results cannot fall through to Details.
+static int ready = -1, navigations, stopped;
+static struct { long tmdb; char nome[128], arte[512]; } spotPessoaDepois;
+static Uint32 spotPessoaDesde;
+#define SPOT_PESSOA_PRAZO_MS 20000
+int detail_pediu_abrir(void) { return -1; }
+void detail_volta_notar(int i) { (void)i; }
+static void abrirPorIndice(int i) { (void)i; navigations++; }
+int desc_titulo_pronto(void) { int i = ready; ready = -1; return i; }
+int ctxlista_tomar(int i) { (void)i; return 0; }
+int player_aberto(void) { return miniActive; }
+void player_encerrar(void) { stopped++; miniActive = retained = 0; }
+void detail_mostrar_pessoa(long id, const char *name, const char *art) { (void)id; (void)name; (void)art; }
+#include "router.h"
+static void canceledResult(void) {
+  ready = 0; miniActive = retained = 1;
+  trocaDeTituloSeSolicitada();
+  assert(navigations == 0 && stopped == 0 && miniActive && retained);
+  miniActive = retained = 0;
+}
 int main(void) {
   snprintf(item.imdb, sizeof item.imdb, "tt123"); snprintf(item.tipo, sizeof item.tipo, "movie");
   miniActive = 1;
@@ -81,20 +106,24 @@ int main(void) {
   busy = 0;
   glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
   glance_fechar();
-  assert(!glance_tomar_acao(0) && actions == 1);
+  canceledResult(); assert(actions == 1);
   busy = 0;
   glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
   clockNow += 20001;
-  assert(!glance_tomar_acao(0) && actions == 1);
+  canceledResult(); assert(actions == 1);
   busy = 0;
   glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
   busy = 0; // Resolution failed without publishing a title.
   glance_atualizar(.016f, ++clockNow);
-  assert(!glance_tomar_acao(0) && actions == 1);
+  canceledResult(); assert(actions == 1);
+  busy = 0;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  key(SDLK_RIGHT);
+  canceledResult(); assert(actions == 1);
   busy = 0;
   glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
   glance_abrir(&source, 0); // A new session for the same title.
-  assert(!glance_tomar_acao(0) && actions == 1);
+  canceledResult(); assert(actions == 1);
   busy = 0; catalogIndex = 0;
   snprintf(item.imdb, sizeof item.imdb, "ttseries"); item.tmdb = 0; result = item;
   glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
