@@ -22,6 +22,8 @@ void juntosui_shot_player(int sim);
 void juntosui_shot_folha(int idx, const char *const *nomes, int n);
 void juntosui_shot_bolhas(void);
 void juntosui_shot_camada(int c, int f);
+void juntosui_shot_arte(const char *caminho);
+void juntosui_shot_contagem(int n);
 
 static SDL_Window *win;
 static const char *base;
@@ -51,7 +53,7 @@ static void captura(const char *nome, int h) {
   glReadPixels(0, 1080 - h, 1920, h, GL_RGBA, GL_UNSIGNED_BYTE, pix);
   s = SDL_CreateRGBSurfaceWithFormat(0, 1920, h, 32, SDL_PIXELFORMAT_RGBA32);
   for (y = 0; y < h; y++) memcpy((char *)s->pixels + y * s->pitch, pix + (size_t)(h - 1 - y) * 1920 * 4, 1920 * 4);
-  snprintf(cam, sizeof cam, "%s-%s.png", base, nome);
+  snprintf(cam, sizeof cam, base[strlen(base) - 1] == '/' ? "%s%s.png" : "%s-%s.png", base, nome);
   assert(IMG_SavePNG(s, cam) == 0);
   SDL_FreeSurface(s);
   free(pix);
@@ -131,31 +133,48 @@ int main(int argc, char **argv) {
   quadros(20);
   captura("02-folha", 1080);
 
-  // 3. Cartao da sala (lobby) e com o QR do celular.
-  { static JsSala s; JsMsg m; JsPlayer jp = { 0 };
+  // 3. Lobby do cinema (Velvet Cinema v2), vidro desligado como de fabrica.
+  ajustes_definir_vidro(0);
+  juntosui_shot_arte("deploy/app/art/00.jpg");
+  { static JsSala s; JsMsg m; JsPlayer jp = { 0 }; int k;
     jsm_iniciar(&motor, "nuvio:h", "mac", "", 'A', &jp, NULL, NULL);
-    jsp_ler(SALA, &m, &s); motor.sala = s; motor.temSala = 1; temMotor = 1; fase = JF_DENTRO;
+    jsp_ler(SALA, &m, &s);
+    for (k = 3; k < 5; k++) {   // Gustavo e Duda, para encher os cinco lugares
+      s.m[k] = s.m[1]; snprintf(s.m[k].id, sizeof s.m[k].id, "nuvio:%c", 'a' + k);
+      snprintf(s.m[k].nome, sizeof s.m[k].nome, "%s", k == 3 ? "Gustavo" : "Duda");
+    }
+    s.n = 4;
+    motor.sala = s; motor.temSala = 1; temMotor = 1; fase = JF_DENTRO;
     snprintf(codigo, sizeof codigo, "K7M2QX"); }
-  juntosui_shot_camada(3, 0);
+  juntosui_shot_camada(3, -1);
   quadros(20);
-  captura("03-sala", 1080);
+  captura("03-lobby-empty-seat", 1080);
+  motor.sala.n = 5;
+  juntosui_shot_camada(3, 0);
+  quadros(5);
+  captura("03-lobby", 1080);
   { SDL_Event e; memset(&e, 0, sizeof e); e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RIGHT; juntosui_evento_sdl(&e);
     e.key.keysym.sym = SDLK_RETURN; juntosui_evento_sdl(&e); }
   // A URL que a sala devolveria (o QR curto: ~87 bytes, cabe no qr.c).
   snprintf(urlCelular, sizeof urlCelular, "https://nuvio-juntos.henriquef29.workers.dev/j/0123456789abcdef0123456789abcdefK7M2QXA9");
   quadros(20);
-  captura("04-sala-qr", 1080);
+  captura("04-invite", 1080);
 
-  // 4. Codigo, sair e pedido de entrada.
-  juntosui_shot_camada(2, 0); quadros(15); captura("05-codigo", 1080);
-  juntosui_shot_camada(4, 1); quadros(15); captura("06-sair", 1080);
+  // 4. Contagem, codigo, sair e pedido de entrada.
+  juntosui_shot_camada(0, 0);
+  juntosui_shot_contagem(3); quadros(10); captura("06-countdown", 1080); juntosui_shot_contagem(0);
+  juntosui_shot_camada(2, 0); quadros(15); captura("17-code", 1080);
+  juntosui_shot_camada(4, 1); quadros(15); captura("14-leave", 1080);
 
   // 5. No player: rostos, bolhas e a regua de reacoes.
   juntosui_shot_player(1);
+  juntosui_shot_camada(0, 0);
   juntosui_shot_bolhas();
+  quadros(20);
+  captura("07-playback", 1080);
   juntosui_shot_camada(6, 2);
   quadros(20);
-  captura("07-player-reacoes", 1080);
+  captura("08-reactions", 1080);
   printf("juntos_shot: ok\n");
   return 0;
 }
