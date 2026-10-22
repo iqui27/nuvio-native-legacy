@@ -4344,6 +4344,27 @@ static Uint32 hVaiTick;
 static int    metaEsqVisto;       // o esqueleto da linha de meta foi mostrado
 static Uint32 metaChegouEm;
 
+static void topoEstadoTexto(char *dst, size_t n, int durMin, int pessoal) {
+  const CatItem *ci=cat_item(idx); if (!n) return; dst[0]=0; if (!ci) return;
+  if (pessoal) {
+    int st=0,ep=0,de=0;
+    if (ehSerie() && episodioAlvo(&st,&ep,&de) && de==2)
+      snprintf(dst,n,i18n("%s T%dE%d"),i18n("Retomar"),st,ep);
+    else if (ci->progresso>0 && ci->progresso<ajustes_cw_concluido()) snprintf(dst,n,"%s",i18n("Retomar"));
+    else if (cat_visto(ci)) snprintf(dst,n,"%s",i18n("Assistido"));
+    else if (cat_historico_estado_id(ci->imdb,ci->tipo)==0) snprintf(dst,n,"%s",i18n("Não assistido"));
+    if (ci->restanteMin>0) {
+      char falta[64]; snprintf(falta,sizeof falta,i18n("%d min restantes"),ci->restanteMin);
+      size_t k=strlen(dst); snprintf(dst+k,n-k,"%s%s",k ? " · " : "",falta);
+    }
+  }
+  if (ci->restanteMin>0 || (!ehSerie() && durMin>0)) {
+    char fim[160]; int minutos=ci->restanteMin>0 ? ci->restanteMin : durMin;
+    relogio_fim(fim,sizeof fim,time(NULL),minutos*60.0);
+    size_t k=strlen(dst); snprintf(dst+k,n-k,"%s%s",k ? " · " : "",fim);
+  }
+}
+
 static int topoFonteDisponivel(void) {
   const CatItem *ci=cat_item(idx); char alvo[96]; int st=0,ep=0;
   if (!ci || !vaiTocar.tem) return 0;
@@ -4553,22 +4574,8 @@ static void heroWeb(float a, float desloc) {
   { const CatItem *ciAg = cat_item(idx);
     if (ehSerie() && ciAg && ciAg->imdb[0])
       agenda_frase(ciAg->imdb, agLinha, sizeof agLinha); }
-  char pessoal[256] = "";
-  if (topoPessoal() && ci) {
-    int t0 = 0, e0 = 0, de = 0;
-    if (ehSerie() && episodioAlvo(&t0, &e0, &de) && de == 2)
-      snprintf(pessoal, sizeof pessoal, i18n("%s T%dE%d"), i18n("Retomar"), t0, e0);
-    else if (ci->progresso > 0 && ci->progresso < ajustes_cw_concluido())
-      snprintf(pessoal, sizeof pessoal, "%s", i18n("Retomar"));
-    else if (cat_visto(ci)) snprintf(pessoal, sizeof pessoal, "%s", i18n("Assistido"));
-    if (ci->restanteMin > 0 || (!ehSerie() && durMin > 0)) {
-      char fim[160];
-      int minutos = ci->restanteMin > 0 ? ci->restanteMin : durMin;
-      relogio_fim(fim, sizeof fim, time(NULL), minutos * 60.0);
-      size_t len = strlen(pessoal);
-      snprintf(pessoal + len, sizeof pessoal - len, "%s%s", len ? " · " : "", fim);
-    }
-  }
+  char pessoal[256];
+  topoEstadoTexto(pessoal,sizeof pessoal,durMin,topoPessoal());
   if (pessoal[0]) temRetom = 1.0f;
   float yEstado = yAcoes - NV_DETW_GAP_RETOM;
   float yRetom = yEstado, yAgenda = yEstado;

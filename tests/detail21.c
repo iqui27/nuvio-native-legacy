@@ -138,7 +138,17 @@ int main(void) {
   assert(secaoAlpha(SEC_NOTAS)==.42f);
   nivel=1; foco.fileira=SEC_NOTAS; assert(secaoAlpha(SEC_NOTAS)==1.f);
   nivel=0; assert(secaoAlpha(SEC_NOTAS)==1.f);
-  puts("detail21: content, navigation, profile isolation and section focus OK");
+  itemTeste.temporadas[0]=1; itemTeste.nTemporadas=1; snprintf(itemTeste.tipo,sizeof itemTeste.tipo,"series");
+  cat_definir_tudo(&itemTeste,1,NULL,0); idx=0; cat_definir_episodios(0,grid,2);
+  temporada=0; nivel=1; foco.fileira=SEC_EPISODIOS; foco.coluna=1;
+  assert(!detail_ep_borda(1) && temporada==0); // switch/reminder are never adjacent seasons
+  char status[256];
+  itemTeste.restanteMin=18; itemTeste.progresso=40;
+  snprintf(itemTeste.meta,sizeof itemTeste.meta,"2026 · 120 min");
+  cat_definir_tudo(&itemTeste,1,NULL,0); idx=0;
+  topoEstadoTexto(status,sizeof status,120,1);
+  assert(strstr(status,"18"));
+  puts("detail21: content, navigation, profile isolation and personal status OK");
   SDL_Quit();
   return 0;
 }
