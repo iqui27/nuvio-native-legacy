@@ -1354,11 +1354,16 @@ static int travaPergunta, travaPerfil, travaT, travaE, travaId, travaAutorizada;
 static unsigned travaSessao, travaPinSessao;
 static unsigned travaDono, travaGeracao;
 static _Atomic int travaPinResultado;
-typedef struct { int perfil; char pin[65]; } TravaPinJob;
+typedef struct { int perfil, id; char pin[65]; } TravaPinJob;
 
 static void *verificarTravaPin(void *u) {
   TravaPinJob *j = u;
-  int r = perfis_verificar_pin(j->perfil, j->pin);
+  Trava t;
+  int r = 0;
+  if (trava_obter(j->id, &t)) {
+    for (int i = 0; i < t.n && r <= 0; i++)
+      if (t.perfil[i] != j->perfil) r = perfis_verificar_pin(t.perfil[i], j->pin);
+  }
   memset(j->pin, 0, sizeof j->pin); free(j);
   atomic_store(&travaPinResultado, r > 0 ? 1 : -1);
   return NULL;
@@ -2756,7 +2761,7 @@ void player_atualizar(float dt, Uint32 agora) {
       pthread_t fio;
       TravaPinJob *j = calloc(1, sizeof *j);
       if (j) {
-        j->perfil = travaPerfil; snprintf(j->pin, sizeof j->pin, "%s", teclado_texto());
+        j->perfil = travaPerfil; j->id = travaId; snprintf(j->pin, sizeof j->pin, "%s", teclado_texto());
         if (!pthread_create(&fio, NULL, verificarTravaPin, j)) { pthread_detach(fio); travaPergunta = 2; }
         else { free(j); travaPergunta = 0; }
       } else travaPergunta = 0;
