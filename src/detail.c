@@ -518,6 +518,13 @@ static int temporada = 0;            // temporada ESCOLHIDA (nao a focada)
 // episodios usa este indice enquanto o foco esta na fileira de temporadas —
 // antes a troca de temporada arrastava o FOCO para o episodio, e com isso o
 // D-pad saia da fileira de abas: nao dava para passar da segunda temporada.
+static int epRevelaT = -1, epRevelaE = -1;
+static int epOculto(const CatEp *ep) {
+  const CatItem *ci = cat_item(idx);
+  return ep && ci && ajustes_desfocar_nao_assistidos() &&
+         !(ep->temporada == epRevelaT && ep->episodio == epRevelaE) &&
+         vistoep_estado(ci->imdb, ep->temporada, ep->episodio) != 1;
+}
 static int    epAncora = 0;
 // Comentarios: 0 = da SERIE, 1 = do EPISODIO. E o seletor que a referencia poe
 // sob "Avaliações do Trakt". Em filme nao existe e fica cravado em 0.
@@ -1394,7 +1401,7 @@ static void abrirInterno(const HomeItem *it) {
   amtui_fechar();
   detmais_zerar();
   heroReiniciar();
-  focoVersao = 0;
+  focoVersao = 0; epRevelaT = epRevelaE = -1;
   t = 0.0f; pg = 0.0f; scrollY = 0.0f; velY = 0.0f; abaInfo = 0; pessoaAberta = 0;
 #ifdef NV_TOUCH_UI
   memset(&toqueDetalhe, 0, sizeof toqueDetalhe);
@@ -2856,7 +2863,9 @@ void detail_evento(const SDL_Event *e) {
       // que e onde qualquer um iria procurar — segurava o card e via as fontes.
       const CatEp *ep = cat_episodio(idx, epAbsoluto(foco.coluna));
       if (comPicando) comentariosVoltar();
-      else if (dur >= NV_HOLD_MS && ep)
+      else if (dur >= NV_HOLD_MS && epOculto(ep)) {
+        epRevelaT = ep->temporada; epRevelaE = ep->episodio;
+      } else if (dur >= NV_HOLD_MS && ep)
         episodios_menu_visto(idx, ep->temporada, ep->episodio, ep->nome);
       else
         // ISSUE #57, SEGUNDA VOLTA. O toque curto no card do episodio abria a
@@ -3674,7 +3683,10 @@ void detail_atualizar(float dt, Uint32 agora) {
     if (alvoHold && dur >= 150u) {
       float p = (float)(dur - 150u) / (float)(NV_HOLD_MS - 150);
       if (p > 1.0f) p = 1.0f;
-      ilha_atividade(i18n(p >= 1.0f ? "Solte para abrir opções" : "Segure para opções"), p);
+      int revelar = nivel >= 1 && foco.fileira == SEC_EPISODIOS &&
+                    epOculto(cat_episodio(idx, epAbsoluto(foco.coluna)));
+      ilha_atividade(i18n(revelar ? "Segure OK para revelar" :
+                          p >= 1.0f ? "Solte para abrir opções" : "Segure para opções"), p);
     }
   }
 
@@ -5174,6 +5186,14 @@ static void desenhaTemporada(GfxRect r, int c, float f, float a) {
   { float br = sel ? fr * 0.6f : 0.133f, bg = sel ? fg * 0.6f : 0.133f,
           bb = sel ? fb * 0.6f : 0.133f;
     gfx_cor(r, raio, br + (fr - br) * f, bg + (fg - bg) * f, bb + (fb - bb) * f, a); }
+  const TgDados *progresso = tgraf_dados(idx);
+  int pc = tgraf_coluna(progresso, temporadaEm(c));
+  if (pc >= 0 && progresso->sabe && progresso->t[pc].exibidos > 0) {
+    GfxRect barra = {r.x + 22, r.y + r.h - 8, r.w - 44, 3};
+    gfx_cor(barra, .5f, 1, 1, 1, .12f * a);
+    barra.w *= (float)progresso->t[pc].vistos / progresso->t[pc].exibidos;
+    gfx_cor(barra, .5f, fr, fg, fb, a);
+  }
   // Texto: cinza claro na que nao e nada; sobre o realce, a tinta que
   // contrasta com ele (ti), em degrau no meio da mola.
   { int t = (int)(ti * 255.0f + 0.5f);
@@ -5279,9 +5299,7 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
   // sei" (-1) de quem nao tem Trakt ou cujo historico ainda nao chegou. Aqui o
   // erro seguro e o contrario do check: desfocar um episodio que a pessoa ja
   // viu custa nada; mostrar nitido o que ela pediu para esconder e o spoiler.
-  if (t2 && ajustes_desfocar_nao_assistidos() &&
-      !(ep && serie && serie->imdb[0] &&
-        vistoep_estado(serie->imdb, ep->temporada, ep->episodio) == 1)) {
+  if (t2 && epOculto(ep)) {
     GLuint tb = gfx_desfocado(t2, arte);
     // Copia ainda nao gerada (no maximo duas por quadro): o fundo do card, e
     // nunca a arte nitida por um quadro.
@@ -5313,12 +5331,13 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
   // episodio sem dado nao aparecia vazio: aparecia com o TEXTO DE OUTRA SERIE,
   // indistinguivel de informacao real. Campo ausente agora fica ausente, e o
   // desenho abaixo ja omite cada pedaco que vier vazio.
-  const char *epNome = (ep && ep->nome[0])    ? ep->nome    : NULL;
+  const char *epNome = (ep && ep->nome[0] && !epOculto(ep)) ? ep->nome : NULL;
   char epDurTxt[32] = "";
   if (ep && ep->duracao[0]) desc_duracao_txt(ep->duracao, epDurTxt, sizeof epDurTxt);
   const char *epDur  = epDurTxt[0] ? epDurTxt : NULL;
   const char *epData = (ep && ep->data[0])    ? ep->data    : NULL;
-  const char *epSin  = (ep && ep->sinopse[0]) ? ep->sinopse : NULL;
+  const char *epSin = epOculto(ep) ? i18n("Segure OK para revelar") :
+                      (ep && ep->sinopse[0]) ? ep->sinopse : NULL;
   int epNum = ep ? ep->episodio : c + 1;
 
   if (epApple()) {

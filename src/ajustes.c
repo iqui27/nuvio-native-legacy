@@ -1129,7 +1129,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Mostrar episódios não exibidos", V_LIGA, 2),// showUnairedNextUp
   ESC("Ordenação",                  V_CW_ORDEM, 3), // continueWatchingSortMode
 
-  ESC("Desfocar não assistidos",    V_LIGA, 2),   // blurUnwatchedEpisodes
+  ESC("Sem spoilers",               V_LIGA, 2),   // blurUnwatchedEpisodes
   ESC("Botão de trailer",           V_LIGA, 2),   // detailPageTrailerButtonEnabled
   ESC("Priorizar metadados externos", V_LIGA, 2), // preferExternalMetaAddonDetail
   ESC("Data de lançamento completa", V_LIGA, 2),  // showFullReleaseDate

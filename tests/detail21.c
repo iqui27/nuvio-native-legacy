@@ -18,7 +18,28 @@ int main(void) {
     assert(topoVersao() == (mode != 1));
     assert(topoPessoal() == (mode != 0));
   }
-  puts("detail21: top modes OK");
+  CatItem itemTeste = {0};
+  snprintf(itemTeste.tipo, sizeof itemTeste.tipo, "series");
+  snprintf(itemTeste.imdb, sizeof itemTeste.imdb, "tt9000011");
+  itemTeste.temporadas[0] = 1; itemTeste.nTemporadas = 1;
+  cat_definir_tudo(&itemTeste, 1, NULL, 0); idx = 0;
+  CatEp ep = {0}; ep.temporada = 1; ep.episodio = 1;
+  cat_definir_episodios(0, &ep, 1);
+  FILE *f = fopen(path, "w"); assert(f);
+  fputs("blurUnwatchedEpisodes 0\n", f); fclose(f); ajustes_dir(dados_dir());
+  assert(epOculto(&ep)); // unknown history must not leak a spoiler
+  vistoep_definir(itemTeste.imdb, 1, 1, 1);
+  assert(!epOculto(&ep));
+  vistoep_definir(itemTeste.imdb, 1, 1, 0);
+  assert(epOculto(&ep));
+  nivel = 1; foco.fileira = SEC_EPISODIOS; foco.coluna = 0;
+  saindo = 0; pedReproduzir = 0;
+  SDL_Event e = {0}; e.type = SDL_KEYUP; e.key.keysym.sym = SDLK_RETURN;
+  okDesceEm = SDL_GetTicks() - NV_HOLD_MS - 2;
+  detail_evento(&e);
+  assert(!epOculto(&ep) && !pedReproduzir);
+  ep.episodio = 2; assert(epOculto(&ep)); // reveal belongs to one episode
+  puts("detail21: top modes and episode spoiler reveal OK");
   SDL_Quit();
   return 0;
 }
