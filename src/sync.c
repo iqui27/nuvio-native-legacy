@@ -1,5 +1,6 @@
 void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's token
 #include "sync.h"
+#include "idioma.h"
 #include <time.h>
 #include "sessao.h"
 #include "nuvem.h"
@@ -1325,11 +1326,13 @@ static void *rodar(void *u) {
 
   { int pend = contapend_pendentes();
     char sufixo[48] = "";
-    if (pend > 0) snprintf(sufixo, sizeof sufixo, " · %d pendentes", pend);
+    if (pend > 0) snprintf(sufixo, sizeof sufixo, " · %s %d", i18n("Sincronização"), pend);
   snprintf(resumo, sizeof resumo,
-           "%d addons · %d progressos · %d vistos · %d na lista · %d coleções%s%s",
-           nAddonsRem, syncprog_puxadas(), cVistos < 0 ? 0 : cVistos,
-           cBiblio < 0 ? 0 : cBiblio, cColecoes < 0 ? 0 : cColecoes,
+           "%s %d · %s %d · %s %d · %s %d · %s %d%s%s",
+           i18n("Addons"), nAddonsRem, i18n("Progresso"), syncprog_puxadas(),
+           i18n("Histórico"), cVistos < 0 ? 0 : cVistos,
+           i18n("Salvos"), cBiblio < 0 ? 0 : cBiblio,
+           i18n("Coleções"), cColecoes < 0 ? 0 : cColecoes,
            temTraktRem ? " · Trakt" : "", sufixo); }
   estado = SYNC_PRONTO;
   fioPronto = 1;
