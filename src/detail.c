@@ -5299,6 +5299,13 @@ static void desenhaTemporada(GfxRect r, int c, float f, float a) {
     gfx_cor((GfxRect){sw.x+(on ? 30 : 4),sw.y+4,22,22},.5f,1,1,1,a);
     return;
   }
+  if (temporadaLembrete(c)) {
+    const AgItem *ag=agenda_registro(cat_item(idx)->imdb);
+    char label[48]; snprintf(label,sizeof label,"T%d · %.4s",ag->temporada,ag->dataProx);
+    gfx_icone((GfxRect){r.x+18,r.y+17,22,22},"aj_bell",ink/255.f,ink/255.f,ink/255.f,a);
+    txt_desenhar_alpha(txt_linha(TXT_G22M,label,ink,ink,ink,255),r.x+52,r.y+16,a);
+    return;
+  }
   GfxRect ring={r.x+18,r.y+16,24,24}; gfx_anel(ring,.5f,3,1,1,1,.18f*a);
   const TgDados *d=tgraf_dados(idx); int pc=real ? tgraf_coluna(d,temporadaEm(c)) : -1;
   if (pc>=0 && d->sabe && d->t[pc].exibidos>0 && d->t[pc].vistos>0)
