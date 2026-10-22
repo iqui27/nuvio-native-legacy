@@ -979,6 +979,16 @@ static float vaoAntes(int r) {
 }
 
 static void recalcularLayout(void) {
+  static int ready, lastSeries, counts[N_SECOES];
+  static float heights[N_SECOES];
+  int changed=!ready || lastSeries!=ehSerie();
+  for (int r=0;r<N_SECOES;r++) {
+    int n=secaoN(r); float h=n>0 ? alturaSecao(r) : 0;
+    if (counts[r]!=n || heights[r]!=h) changed=1;
+    counts[r]=n; heights[r]=h;
+  }
+  if (!changed) return;
+  ready=1; lastSeries=ehSerie();
   float y=1000;
   const int *order=ordemSecoes();
   for (int r=0;r<N_SECOES;r++) {
@@ -3677,6 +3687,29 @@ void detail_atualizar(float dt, Uint32 agora) {
       foco.fileira == SEC_COMENTARIOS || foco.fileira == SEC_DETALHES || foco.fileira == SEC_ESTUDIOS)) {
     const CatItem *ci = cat_item(idx);
     if (ci && ci->imdb[0]) { seriefrases_abrir(ci->imdb); frasesAberta = 1; }
+  }
+
+  // Release distant image rows after scrolling; text and the fifty-cell grid
+  // stay allocation-free. Never evict images while an overlay uses them.
+  static Uint32 trimAt;
+  if (!detalheRetrato() && !pessoaAberta && !colListaAberta && agora-trimAt>=500) {
+    trimAt=agora;
+    const CatItem *ci=cat_item(idx);
+    const int rows[]={SEC_ELENCO,SEC_EPISODIOS,SEC_TRAILERS,SEC_COLECAO,SEC_RELACIONADOS};
+    for (int k=0;k<5;k++) {
+      int r=rows[k]; float y=conteudoSec[r]-scrollY;
+      if (y<=NV_TELA_H*3 && y+alturaSecao(r)>=-NV_TELA_H*2) continue;
+      for (int c=0;c<secaoN(r);c++) {
+        const CatEp *ep=r==SEC_EPISODIOS ? cat_episodio(idx,epAbsoluto(c)) : NULL;
+        const char *url=r==SEC_ELENCO && ci ? ci->elenco[c].foto :
+          ep ? ep->thumb : r==SEC_TRAILERS ? extras_trailer_miniatura(c) :
+          r==SEC_COLECAO ? extras_colecao_poster(c) : r==SEC_RELACIONADOS ? extras_relacionado_poster(c) : NULL;
+        // The title backdrop may also be a trailer or episode fallback.
+        const char *hero=arteDe(idx), *logo=logoDe(idx);
+        if (url && url[0] && (!hero || strcmp(url,hero)) && (!logo || strcmp(url,logo)))
+          tex_esquecer(url);
+      }
+    }
   }
 
   // DEPOIS de sincronizarColunas, nao antes: o empilhamento pergunta a secaoN
@@ -7674,9 +7707,9 @@ static void detalheFundo(float s) {
   if (carDesenhaFundo()) { carFundo(); return; }
   if (!detalheRetrato()) {
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.043f,.043f,.047f,s);
-    GLuint tex=arte ? tex_obter_hero(arte) : 0;
-    alvo.y-=scrollY*.32f;
     float fade=anim_clamp(1-scrollY/900.0f,0,1);
+    GLuint tex=arte && fade>.005f ? tex_obter_hero(arte) : 0;
+    alvo.y-=scrollY*.32f;
     if (tex && fade>.005f) desenhaArteDetalhe(alvo,tex,arte,arteDetalheEhPoster(idx),aEntrada*fade,0);
     return;
   }
