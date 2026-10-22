@@ -276,7 +276,7 @@ OPC(AJ_RESOLUCAO), OPC(AJ_GPU_EFEITOS), OPC(AJ_AMPLIAR_UI), OPC(AJ_AMPLIACAO_ALG
 
 // Texto exibido no painel ao selecionar uma categoria. Mesma ordem dos SECs.
 static const char *SECAO_AJUDA[] = {
-  "Qualidade máxima, Dolby Vision e Atmos, e o que acontece durante e depois do vídeo.",
+  "Qualidade, Dolby Vision, Atmos e a escolha da fonte.",
   "Idioma da interface, preferências de áudio e legenda e idioma dos metadados.",
   "Addons e plugins, debrid e servidores pessoais.",
   "Conexão dos provedores e diagnóstico de reprodução de canais ao vivo.",

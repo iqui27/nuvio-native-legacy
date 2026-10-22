@@ -8,6 +8,13 @@ static AjusteBuscaResultado res[AJ_N];
 
 // Labels renamed by the ajustes UX work: the old name must still find it.
 static const struct { int op; const char *antigo; } renomes[] = {
+  { AJ_FONTE_REGEX, "Filtrar fontes pelo nome (regex)" },
+  { AJ_LEG_FORCADA, "Só os letreiros quando o áudio já é no seu idioma" },
+  { AJ_PLR_CLASSIF, "Classificação indicativa no player" },
+  { AJ_PULAR_CREDITOS, "Pular os créditos automaticamente" },
+  { AJ_PROXIMO_AUTO, "Tocar o próximo episódio automaticamente" },
+  { AJ_JF_LIGADO, "Servidores pessoais (experimental)" },
+  { AJ_HIST_CONTA, "Enviar histórico para a conta Nuvio" },
   { -1, NULL },
 };
 

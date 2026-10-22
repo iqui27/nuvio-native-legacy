@@ -6576,6 +6576,15 @@ int ajustes_pediu_relogio(void) { int v = pediuRelogio; pediuRelogio = 0; return
 // guia; nada no disco ou na conta depende do rotulo.
 static const char *rotuloNovo(int op) {
   switch (op) {
+    case AJ_PULAR_CREDITOS: return "Pular os créditos sozinho";
+    case AJ_PROXIMO_AUTO: return "Tocar o próximo episódio sozinho";
+    case AJ_REACAO_CREDITOS: return "Perguntar o que achou no fim";
+    case AJ_ADDONS_PRINCIPAL: return "Addons do perfil principal";
+    case AJ_BUSCA_NUVIO: return "Catálogo do Nuvio na busca";
+    case AJ_BUSCA_ORIGEM: return "Fonte nos resultados da busca";
+    case AJ_JF_LIGADO: return "Servidores pessoais (beta)";
+    case AJ_NT_ORDEM: return "Ordem das notas no título";
+    case AJ_HIST_CONTA: return "Histórico na conta Nuvio";
     case AJ_FONTE_HDR: return "Dolby Vision e HDR";
     case AJ_ATMOS: return "Preferir som Dolby Atmos";
     case AJ_FONTE_MANUAL: return "Escolher a fonte você mesmo";
@@ -6583,14 +6592,14 @@ static const char *rotuloNovo(int op) {
     case AJ_FONTE_PRAZO: return "Quanto espera pelos add-ons";
     case AJ_TAM_MAX: return "Tamanho máximo do arquivo";
     case AJ_TAM_MIN: return "Tamanho mínimo do arquivo";
-    case AJ_PLR_CLASSIF: return "Classificação indicativa no player";
+    case AJ_PLR_CLASSIF: return "Classificação no player";
     case AJ_SAIDA_PLAYER: return "Ao sair no meio do filme";
-    case AJ_FONTE_REGEX: return "Filtrar fontes pelo nome (regex)";
+    case AJ_FONTE_REGEX: return "Filtrar fontes pelo nome";
     case AJ_FONTE_REGEX_PADRAO: return "Padrão do filtro";
     case AJ_FONTE_REGEX_MODELO: return "Modelo pronto do filtro";
     case AJ_DTS_AC3: return "Converter DTS para a TV ouvir";
     case AJ_CACHE_SEEK: return "Guardar o trecho baixado no disco";
-    case AJ_LEG_FORCADA: return "Só os letreiros quando o áudio já é no seu idioma";
+    case AJ_LEG_FORCADA: return "Legenda forçada automática";
     case AJ_TMDB_IDIOMA: return "Idioma dos dados do título";
     case AJ_HERO_FUNDO: return "Imagem de fundo do destaque";
     case AJ_GRAD_CLASSICO: return "Realce antigo no cartaz em foco";
@@ -7927,6 +7936,37 @@ static const char *efeitoOpcao(int op) {
 // valores ("Equilibrio: ...") ou e longa demais, a frase e propria.
 static const char *beneficioProprio(int op) {
   switch (op) {
+    case AJ_FONTE_IDIOMA_AUDIO: return "Fontes com o seu idioma de áudio, ou áudio duplo, passam na frente.";
+    case AJ_FONTE_GRUPO: return "No próximo episódio, tenta primeiro a mesma fonte do anterior.";
+    case AJ_LINK_REUSAR: return "Ao abrir de novo o mesmo título, toca direto o link que funcionou.";
+    case AJ_PULAR_RESUMO: return "Pula o resumo do episódio anterior quando ele está marcado.";
+    case AJ_PULAR_CREDITOS: return "Pula os créditos quando o marcador diz onde começam e acabam.";
+    case AJ_REACAO_CREDITOS: return "Nos créditos, um cartão pequeno pergunta o que você achou.";
+    case AJ_PLUGINS: return "Plugins do Nuvio entram como mais uma fonte, ao lado dos add-ons.";
+    case AJ_FALHA_PROVEDORES: return "Se o vídeo não abrir, tenta os outros provedores Debrid, na ordem.";
+    case AJ_FALHA_ADDONS: return "Se o vídeo não abrir, tenta os outros add-ons, na ordem escolhida.";
+    case AJ_XTREAM_SERVIDOR: return "O endereço e a porta que o provedor mandou.";
+    case AJ_LIVETV_SUGERIR: return "Canais sem categoria ganham uma sugestão de grupo pelo nome.";
+    case AJ_LIVETV_ESPERA: return "Quanto tempo o canal tem para mostrar imagem antes de tentar outra fonte.";
+    case AJ_HERO_CATALOGOS: return "De onde vêm os títulos do destaque no alto da Home.";
+    case AJ_CW_LIGADO: return "A fileira com o que você parou no meio e o próximo episódio.";
+    case AJ_CW_RETIDO_TAMBEM: return "O título na ilha também aparece em Continuar assistindo.";
+    case AJ_RELOGIO_12H: return "A hora em 24 horas (18:30) ou em 12 horas (6:30 PM).";
+    case AJ_DESCANSO_ESTILO: return "O que a tela de descanso mostra: títulos, um relógio ou quase nada.";
+    case AJ_DESCANSO_FONTE: return "De onde a vitrine tira os títulos: o catálogo ou a sua lista.";
+    case AJ_MENU_CARTAZ: return "O menu do cartaz mostra a arte grande, as notas e a sinopse.";
+    case AJ_POSTER_PROV: return "Cartazes prontos de um serviço externo, com notas e selos.";
+    case AJ_DET_TRAILER_AUTO: return "Na página do título, o trailer toca no lugar da arte de fundo.";
+    case AJ_HERO_TRAILER_SOM: return "Os trailers que tocam sozinhos saem com som.";
+    case AJ_SYNC: return "Como foi a última troca de dados com a sua conta.";
+    case AJ_MEDIDOR: return "Quadros por segundo e memória na ilha do relógio.";
+    case AJ_DIAGNOSTICO: return "Testa addons, fontes e artes e sugere um perfil seguro.";
+    case AJ_VELOCIDADE: return "Mede a sua internet e diz quantos GB tocam sem travar.";
+    case AJ_APOIAR: return "Códigos para apoiar quem faz o Nuvio, pelo celular.";
+    case AJ_VER_REGISTRO: return "Abre o registro do app ao vivo, por cima desta tela.";
+    case AJ_ENVIAR_LOG: return "Manda o registro desta sessão, sem senhas, para quem faz o app.";
+    case AJ_ENVIO_AUTO: return "O app manda o registro sozinho, sem você pedir.";
+    case AJ_LOG_REDE: return "Mostra o registro numa página da sua rede, no celular ou no PC.";
     case AJ_QUALIDADE: return "O teto de resolução das fontes que o Nuvio escolhe.";
     case AJ_FONTE_HDR: return "Se fontes com HDR ou Dolby Vision passam na frente das outras.";
     case AJ_DV: return "Deixa tocar fontes em Dolby Vision quando a TV aceita.";
@@ -7942,7 +7982,7 @@ static const char *beneficioProprio(int op) {
     case AJ_BUSCA_CINEMETA: return "A busca também consulta o Cinemeta se o catálogo do Nuvio falhar.";
     case AJ_HOME_LAYOUT: return "Como a Home se organiza: Moderna, Padrão ou Dinâmica.";
     case AJ_MENU_TOPO: return "Onde fica o menu: na esquerda ou no alto da tela.";
-    case AJ_ABAS_ESTILO: return "Como as abas de uma coleção de streaming aparecem: chips, menu suspenso, barra central ou páginas.";
+    case AJ_ABAS_ESTILO: return "Como as abas de uma coleção aparecem: chips, menu, barra ou páginas.";
     case AJ_HERO_FUNDO: return "De onde vem a arte grande do destaque e da página do título.";
     case AJ_HERO_GENERO: return "Mostra ou esconde o gênero sob o logo do destaque e dos pôsteres grandes.";
     case AJ_HERO_SINOPSE: return "Mostra ou esconde a sinopse do destaque.";
