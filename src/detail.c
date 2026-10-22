@@ -145,8 +145,8 @@ static GfxRect heroAcaoRect(float *x, float *cy, float w, float h) {
 // fileira de cartazes: o dono viu a lista de nomes e pediu algo que "nao fique
 // igual a fileira de recomendados". Largura entre a miniatura de trailer (520)
 // e o card de episodio (640x414) da mesma pagina, canto do trailer.
-#define COL_CARD_W   760.0f
-#define COL_CARD_H   300.0f
+#define COL_CARD_W   400.0f
+#define COL_CARD_H   282.0f
 #define COL_CARD_RAIO 24.0f
 #define COL_CARD_PAD  36.0f
 // Cartazes em escada no lado direito do card: o da frente e o primeiro da
@@ -2222,7 +2222,7 @@ static int secaoN(int r) {
     // lista da saga (desenhaListaColecao). "> 1" pela mesma razao da aba: a
     // colecao inclui o proprio filme, e uma parte so seria ele mesmo.
     case SEC_COLECAO:
-      return (!ehSerie() && extras_n_colecao() > 1) ? 1 : 0;
+      return (!ehSerie() && extras_n_colecao() > 1) ? extras_n_colecao() : 0;
     // Comentario nao se escolhe um a um: UMA coluna, so para o foco pousar e a
     // pagina rolar ate os cartoes.
     // COMENTARIOS EXISTEM NOS DOIS. Na referencia a secao do Trakt fica
@@ -2900,8 +2900,8 @@ void detail_evento(const SDL_Event *e) {
                                                   extras_relacionado_poster(foco.coluna));
       }
     } else if (foco.fileira == SEC_COLECAO) {
-      // O mini card abre a LISTA da saga; e la que se escolhe a parte.
-      abrirListaColecao();
+      colListaFoco=foco.coluna;
+      abrirParteColecao();
     } else if (foco.fileira == SEC_PROGTEMP) {
       if (progTemNotas()) {
         const CatEp *ep = cat_episodio(idx, foco.coluna);
@@ -3265,6 +3265,7 @@ static float xItem(int r, int c) {
     if (r == SEC_EPISODIOS) { x += epCardPasso(); continue; }
     if (r == SEC_ELENCO)    { x += NV_DETP_EL_PASSO; continue; }
     if (r == SEC_NOTAS) { x+=196; continue; }
+    if (r == SEC_COLECAO) { x+=464; continue; }
     if (r == SEC_TRAILERS)  { x += NV_DETF_TR_PASSO;  continue; }
     if (r == SEC_RELACIONADOS) { x += REL_CARD_W + REL_CARD_GAP; continue; }
     if (r == SEC_ESTUDIOS)     { x += EST_CARD_W + EST_GAP; continue; }
@@ -6440,6 +6441,26 @@ static void cartazColecao(GfxRect r, const char *po, float a) {
 // o nome em 40/800, a meta a 60%, a pilula "Ver coleção" e dois cartazes de
 // 130x195 em leque a direita. Foco: a pilula vira o botao no acento (o OK
 // abre a lista da saga) e o bloco sobe um degrau, sem anel.
+static void desenhaTimeline(float x,float y,int c,float f,float a) {
+  const char *img=extras_colecao_poster(c);
+  GfxRect r={x,y,400,225};
+  GLuint tex=img && img[0] ? tex_obter_larg(img,400) : 0;
+  if (tex) {
+    gfx_tex_aspect_atual=tex_aspecto(img); gfx_card_forcar_cover_atual=1;
+    gfx_rect(r,tex,GFX_CARD,0,0,0,18.0f/225,1,1,1,a);
+    gfx_tex_aspect_atual=0; gfx_card_forcar_cover_atual=0;
+  } else gfx_cor(r,18.0f/225,1,1,1,.06f*a);
+  float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
+  if (c==parteAtualColecao()) gfx_anel(r,18.0f/225,3,ar,ag,ab,a);
+  if (f>.01f) gfx_anel(r,18.0f/225,3,1,1,1,f*a);
+  if (c+1<secaoN(SEC_COLECAO)) gfx_cor((GfxRect){x+200,y+252,464,2},0,1,1,1,.18f*a);
+  gfx_cor((GfxRect){x+194,y+247,12,12},.5f,c==parteAtualColecao() ? ar : .6f,c==parteAtualColecao() ? ag : .6f,c==parteAtualColecao() ? ab : .6f,a);
+  char line[256]; snprintf(line,sizeof line,"%s · %s%s%s",extras_colecao_titulo(c),extras_colecao_ano(c),
+    c==parteAtualColecao() ? " · " : "",c==parteAtualColecao() ? i18n("Você está aqui") : "");
+  TxtLinha l=txt_linha_corta(TXT_G18R,line,243,242,239,200,450);
+  txt_desenhar_alpha(l,x+(400-l.w)*.5f,y+270,a);
+}
+
 static void desenhaColecao(float x, float y, float f, float a) {
   GfxRect r = { x, y, COL_CARD_W, COL_CARD_H };
   float raio = COL_CARD_RAIO / COL_CARD_H;
@@ -7353,7 +7374,7 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
         } else desenhaRelacionados(x, y, a, c, c + 1);
         break;
       case SEC_COLECAO:
-        if (c == 0) desenhaColecao(x, y, f, a);
+        desenhaTimeline(x,y,c,f,a);
         break;
       case SEC_COMENTARIOS: if (c == 0) desenhaComentarios(NV_DETP_X, y, a); break;
       // UMA VEZ SO, e nao uma por coluna: as colunas destas duas sao posicoes
