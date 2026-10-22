@@ -6999,7 +6999,8 @@ static const char *textoLeitura(int op) {
   if (op == AJ_ADDONS) {
     int i, lig = 0, n = addons_n();
     for (i = 0; i < n; i++) if (addons_ativo(i)) lig++;
-    snprintf(buf, sizeof buf, i18n("%d de %d"), lig, n);
+    if (n) snprintf(buf, sizeof buf, i18n("%d de %d"), lig, n);
+    else snprintf(buf, sizeof buf, "%s", i18n("Nenhum addon nesta conta."));
     return buf;
   }
   // Armada pelo primeiro OK, a linha diz o que o segundo faz. Em repouso nao
