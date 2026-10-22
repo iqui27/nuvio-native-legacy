@@ -21,6 +21,8 @@
 //   4. Ao rolar, a arte de fundo NAO desfoca: ela vai a 15% de opacidade em
 //      0.8s. O desfoque gaussiano era do app da Apple TV.
 #include "detail.h"
+#include "servidores.h"
+#include "srvidx.h"
 #include "focoprof.h"
 #include "posterprov.h"
 #include "episodios.h"
@@ -1496,7 +1498,8 @@ static void abrirInterno(const HomeItem *it) {
   comPicando = 0;
   { const CatItem *ci0 = cat_item(idx);
     int t = 0, e = 0, achou = 0;
-    if (ci0 && ci0->progresso > 0 && ci0->progresso < ajustes_cw_concluido() &&
+    if (ci0 && (jfid_e(ci0->imdb) ||
+        (ci0->progresso > 0 && ci0->progresso < ajustes_cw_concluido())) &&
         ci0->temporada > 0 && ci0->episodio > 0) {
       t = ci0->temporada; e = ci0->episodio; achou = 1;
     } else {
@@ -1732,6 +1735,13 @@ static int episodioAlvo(int *temp, int *epis, int *origem) {
     int pct = 0;
     if (!rewatch_alvo(ci->imdb, cat_episodio(idx, 0), cat_n_episodios(idx), temp, epis, &pct)) return 0;
     if (origem) *origem = pct ? 2 : 3;
+    return 1;
+  }
+  // Server playlist entries carry an explicit episode, including unwatched ones.
+  if (ci && jfid_e(ci->imdb) && ci->temporada > 0 && ci->episodio > 0) {
+    if (temp) *temp = ci->temporada;
+    if (epis) *epis = ci->episodio;
+    if (origem) *origem = ci->progresso > 0 && ci->progresso < ajustes_cw_concluido() ? 2 : 1;
     return 1;
   }
   // Em andamento: o item do "Continuar assistindo" traz temporada e episodio.
@@ -4449,16 +4459,30 @@ static void heroWeb(float a, float desloc) {
   { const CatItem *ciAg = cat_item(idx);
     if (ehSerie() && ciAg && ciAg->imdb[0])
       agenda_frase(ciAg->imdb, agLinha, sizeof agLinha); }
+  // NO SEU SERVIDOR (servidores locais F1): o titulo existe num servidor
+  // pessoal deste perfil. A consulta e o indice em memoria, sem rede. O
+  // Reproduzir ja toca a copia de casa (ela e sempre a primeira fonte, D2).
+  char srvLinha[220] = "";
+  { const CatItem *ciS = cat_item(idx);
+    SrvAchado sa;
+    if (ciS && ciS->imdb[0] && servidores_info(ciS->imdb, ciS->tipo, &sa)) {
+      const char *q = sa.altura >= 2160 ? "4K" : sa.altura >= 1080 ? "1080p" : sa.altura >= 720 ? "720p" : "";
+      const char *h = sa.hdr == SRVIDX_HDR_DV ? "Dolby Vision" : sa.hdr == SRVIDX_HDR_HDR10P ? "HDR10+" :
+                      sa.hdr == SRVIDX_HDR_HDR10 ? "HDR10" : sa.hdr == SRVIDX_HDR_HLG ? "HLG" : "";
+      snprintf(srvLinha, sizeof srvLinha, "\xe2\x96\xb6 %s \xc2\xb7 %s%s%s%s%s", i18n("No seu servidor"), sa.servidor,
+               q[0] ? " \xc2\xb7 " : "", q, h[0] ? " " : "", h);
+    } }
   float yEstado = yAcoes - NV_DETW_GAP_RETOM;
-  float yRetom = yEstado, yAgenda = yEstado;
+  float yRetom = yEstado, yAgenda = yEstado, ySrv = yEstado;
   if (temRetom > 0.0f) { yEstado -= NV_DETW_RETOM_H; yRetom = yEstado; }
+  if (srvLinha[0]) { yEstado -= NV_DETW_RETOM_H; ySrv = yEstado; }
   if (agLinha[0]) { yEstado -= carro ? 46.0f : NV_DETW_RETOM_H; yAgenda = yEstado; }
 
   // Sobe alguns pixels enquanto entra: continua o movimento da arte em vez de
   // aparecer pronto no lugar. `desloc` e a rolagem do documento.
   float sobe = (1.0f - a) * 26.0f + desloc;
   yMeta1 += sobe; ySin += sobe;
-  yRetom += sobe; yAgenda += sobe; yAcoes += sobe; yEstado += sobe;
+  yRetom += sobe; yAgenda += sobe; yAcoes += sobe; yEstado += sobe; ySrv += sobe;
 
   // --- logo -----------------------------------------------------------------
   // O logo e desenhado com 261 de largura mas a arte de origem costuma vir bem
@@ -4473,7 +4497,7 @@ static void heroWeb(float a, float desloc) {
   GLuint texLogo = arqLogo ? tex_obter_logo_larg_qualquer(arqLogo, larguraLogoHero()) : 0;
   titulo_tempo_logo(&detalheTempo, "detalhe", arqLogo, texLogo, 0);
   if (a > 0.05f) titulo_tempo_info(&detalheTempo, "detalhe", ci, 0);
-  float baseLogo = ((temRetom > 0.0f || agLinha[0]) ? yEstado : yAcoes)
+  float baseLogo = ((temRetom > 0.0f || agLinha[0] || srvLinha[0]) ? yEstado : yAcoes)
                    - NV_DETW_LOGO_GAP;
   float espacoLogo = baseLogo - 110.0f - (!nomeAbaixo ? hNome : 0);
   if (espacoLogo < 0) espacoLogo = 0;
@@ -4795,6 +4819,12 @@ static void heroWeb(float a, float desloc) {
                                    larguraTextoHero());
       txt_desenhar_alpha(l, NV_DETW2_X, yAgenda + (NV_DETW_RETOM_H - l.h) * 0.5f, a); }
     }
+  }
+
+  // --- linha do servidor pessoal -------------------------------------------
+  if (srvLinha[0]) {
+    TxtLinha l = txt_linha_corta(TXT_V2_24, srvLinha, 255, 255, 255, 255, NV_DETW2_TEXTO_W);
+    txt_desenhar_alpha(l, NV_DETW2_X, ySrv + (NV_DETW_RETOM_H - l.h) * 0.5f, a);
   }
 
   // A confirmed foreign image keeps its localized caption after actions.
