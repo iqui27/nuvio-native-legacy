@@ -1,6 +1,6 @@
 # Servidores locais — STATUS
 
-Branch `feat/servidores-locais` (a partir de `origin/master`). Plano: `servidores-locais-plano.md`; pesquisa: `servidores-locais-pesquisa.md`.
+Branch `feat/servidores-locais`; current integration base: `integracao/2.1`. Plan: `servidores-locais-plano.md`; research: `servidores-locais-pesquisa.md`. No 2.0.5 merge, push, or deployment in this recovery.
 Nada aqui foi provado em TV nem em servidor real. Tudo abaixo foi provado só contra os servidores falsos de `tests/*_server.py`.
 
 ## F0 — consertos e segurança (feito)
@@ -32,7 +32,7 @@ Nada aqui foi provado em TV nem em servidor real. Tudo abaixo foi provado só co
 
 ### Decisões de implementação
 - "Tocar do servidor": o Reproduzir já toca a cópia de casa (ela é a 1ª fonte e ganha o automático). Não há botão separado.
-- Itens sem IMDb/TMDB continuam nas fileiras com id opaco; o filtro D9 (só na Visão do servidor) fica para a F2, junto com a tela.
+- F2 now keeps opaque private items in the server view. Home rows only receive matched catalogue identities (D9, `da609b778`).
 - Progresso/assistido para Trakt/conta de itens casados: tocado pela fonte do servidor, o título já é canônico e segue o caminho normal; o anti-duplo (D3/F4) não foi feito.
 
 ### Precisa do servidor real do dono (não verificado)
@@ -41,3 +41,42 @@ Nada aqui foi provado em TV nem em servidor real. Tudo abaixo foi provado só co
 - Plex: formato do `X-Plex-Client-Profile-Extra` e do `decision`; filtro `updatedAt>>=`; `videoResolution` na listagem.
 - QR do Quick Connect: a rota `<base>/web/#/quickconnect` na versão do dono; URL > 134 bytes fica só com o código.
 - Nada foi visto em TV: selo na página, cartão "Local ·", folha e QR precisam de captura real (LG C9 / TCL).
+
+## F2 — rows and server view (host implementation; real-server gate pending)
+
+Existing commits preserved on recovery:
+
+- `da609b778`: unmatched private items stay out of Home.
+- `952c928ec`: server rows have their own editor origin and do not consume the addon quota.
+- `bb0b05ed3`: server libraries use the existing View all paging worker/grid.
+- `37959acce`: dated server resume progress merges into every Continue Watching mode.
+- `1a8926fc3`: NextUp rows, library tabs, filters and sorting.
+- `5d92db55c`: validated collection and playlist paging for Jellyfin, Emby and Plex.
+
+Recovery completed:
+
+- `84533c818`: preserved unfinished collection/playlist navigation and Back behavior, added 4K filtering, reset library filters on tab changes, kept folders navigable under media filters, increased server text sizes, and repaired i18n byte order and Serbian Latin translations.
+- `e5a2e8aea`: invalidate the existing hero selection when Home rows rebuild; recent-server rows can change while catalogue and row counts remain unchanged.
+- Final UI proof adds hidden-window/FBO captures, corrects simultaneous tab/filter focus, and uses the existing 24 px server heading. No new full-screen UI layer or dependency.
+
+### Verification from the worktree root
+
+- `bash tests/servidores_visao.sh`: rc=0. Observed rc=1 before the filter fix (4K hid collection folders), then rc=0. Also observed rc=1 before the hero invalidation fix, then rc=0. Covers Jellyfin collections, Emby/Plex playlists, Back, malformed ids, canonical title opening, and recent hero refresh.
+- `python3 tools/idiomas.py`: rc=0, 4,957 entries across 28 translated tables; byte order validated.
+- `python3 tools/varredura-i18n.py`: rc=0; all three categories end in `: 0 ===`.
+- `bash tests/servidores_visao_shot.sh`: rc=0. Synthetic data, existing packaged art, hidden GL window and 1920×1080 FBO; no server/account connection.
+- `bash tools/build-local.sh`: rc=0, `build: ok`; one final build.
+- `git diff --check`: rc=0.
+
+PNG directory: `/Volumes/ExternalSSD/tmp/rev/servidores21-png/`:
+
+- `server-grid.png`, `server-grid-glass.png`, `server-4k-filter.png`
+- `server-collections.png`, `server-collection-items.png`
+- `server-playlists.png`, `server-playlist-items.png`
+
+### Remaining gates and limits
+
+- Real Jellyfin/Emby/Plex behavior and LG C9/TCL captures remain unverified, including F0/F1 playback, matching, local-first sources and QR, plus F2 rows/view. No deployment was performed.
+- Recovery did not rerun the full protocol/token-log suites; their earlier evidence remains attached to the existing commits above.
+- The reused grid retains its existing `VT_MAX=1000` loaded-item ceiling and local filtering/sorting of loaded pages. A three-page sliding window for larger libraries remains unfinished.
+- F3–F6 remain outside this task. TLS integration from the separate branch still needs central reconciliation; no unrelated branch was merged.

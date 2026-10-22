@@ -409,7 +409,7 @@ void vertudo_atualizar(float dt, Uint32 agora) {
     if (baseDaFonte(s)[0]) openSource();
   }
   for (int i = 0; i < COL_SOURCE_MAX; i++) {
-    float alvoTab = collection && tabFocus && i == tabCursor ? 1.0f : 0.0f;
+    float alvoTab = collection && tabFocus == 1 && i == tabCursor ? 1.0f : 0.0f;
     tabAnim[i] = anim_mola(tabAnim[i], alvoTab, dt,
                            alvoTab > tabAnim[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
   }
@@ -580,7 +580,7 @@ static void themeBackground(float a) {
 
 static void themeHeader(float a,float x0) {
   float r,g,b;corColecao(&r,&g,&b);
-  TxtLinha eyebrow=txt_linha(TXT_HERO_META,rotuloGrupo(),197,202,211,255);
+  TxtLinha eyebrow=txt_linha(servidorAtivo ? TXT_V2_24 : TXT_HERO_META,servidorAtivo ? "Servidores pessoais" : rotuloGrupo(),197,202,211,255);
   txt_desenhar_alpha(eyebrow,x0,40,a);
   int ehDiretor=collection&&!strcasecmp(collection->group,"Directors");
   // O wordmark de uma coleção de diretores pode conter cabeça ou lettering
@@ -649,7 +649,7 @@ static void themeHeader(float a,float x0) {
     // entao "seis por vez" nao existe mais. A aba com o cursor (ou a aberta,
     // quando o cursor esta na grade) entra inteira; a rolagem so anda o que
     // precisa, e o resto da faixa fica onde estava.
-    static float rol; int alvo=tabFocus?tabCursor:source;
+    static float rol; int alvo=tabFocus == 1 ? tabCursor : source;
     float ini=pos[alvo],fim=pos[alvo]+larg[alvo];
     if(fim-rol>W)rol=fim-W; if(ini-rol<0)rol=ini;
     if(rol<0)rol=0;
@@ -657,7 +657,7 @@ static void themeHeader(float a,float x0) {
     for(int i=0;i<nAbas;i++) {
       float x=x0+pos[i]-rol;
       if(x+larg[i]<x0-6||x>x0+W+6)continue;
-      int f=tabFocus&&tabCursor==i,selecionada=source==i;
+      int f=tabFocus == 1 && tabCursor==i,selecionada=source==i;
       float fa=tabAnim[i];
       GfxRect pill={x,253,larg[i],H};
       if (selecionada && servidorAtivo) {
