@@ -6835,6 +6835,25 @@ static void *fioVerTudo(void *u) {
   snprintf(id,sizeof id,"%s",vtCat);snprintf(genre,sizeof genre,"%s",vtGenre);
   pthread_mutex_unlock(&vtTrava);
 
+  // Personal servers reuse this worker and grid. The sentinel is an internal
+  // route, never an address; private items remain confined to this view.
+  if (!strcmp(base, "servidores")) {
+    CatItem *lote = calloc(60, sizeof *lote);
+    int total = 0, n = lote ? servidores_pagina(id, skip, 60, lote, 60, &total) : -1;
+    pthread_mutex_lock(&vtTrava);
+    if (generation != vtGeracao) { pthread_mutex_unlock(&vtTrava); free(lote); continue; }
+    vtErro = n < 0;
+    if (n >= 0) {
+      for (int i = 0; i < n && vtN < VT_MAX; i++) vtItens[vtN++] = lote[i];
+      vtPagina += n;
+      vtFim = n < 60 || vtPagina >= total || vtN >= VT_MAX;
+    }
+    vtFioVivo = 0;
+    pthread_mutex_unlock(&vtTrava);
+    free(lote);
+    return NULL;
+  }
+
   // FONTE NAO-ADDON (issue #44): pasta de colecao do site cujo conteudo vem
   // do TMDB ou do Trakt, nao de um catalogo de addon. vtPagina aqui e o
   // NUMERO da pagina (comeca em 1), nao o skip de itens.

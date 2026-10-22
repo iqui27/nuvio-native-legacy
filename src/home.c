@@ -3,6 +3,7 @@
 // hero no topo, rail fixa à esquerda e fileiras horizontais de posters. A
 // infraestrutura nativa cuida de cache assíncrono, foco e transições.
 #include "home.h"
+#include "servidores.h"
 #include "cwretido.h"
 #include "focoprof.h"
 #include "posterprov.h"
@@ -2193,9 +2194,11 @@ static void sincronizarFileiras(void) {
     // Um catalogo pode responder vazio validamente. Mantemos o titulo da
     // fileira como estado visivel, mas nao inventamos um card "Ver tudo" sem
     // nenhum item para representar a consulta.
-    fileiras[destino].verTudo = (cf->n > 0 && cf->base[0] && cf->catId[0]) ? 1 : 0;
-    snprintf(fileiras[destino].base,  sizeof fileiras[destino].base,  "%s", cf->base);
-    snprintf(fileiras[destino].catId, sizeof fileiras[destino].catId, "%s", cf->catId);
+    { int srv = servidores_chave_fileira(cf->chave);
+      fileiras[destino].verTudo = cf->n > 0 && (srv || (cf->base[0] && cf->catId[0]));
+      snprintf(fileiras[destino].base, sizeof fileiras[destino].base, "%s", srv ? "servidores" : cf->base);
+      snprintf(fileiras[destino].catId, sizeof fileiras[destino].catId, "%s", srv ? cf->chave : cf->catId);
+    }
     snprintf(fileiras[destino].catTipo, sizeof fileiras[destino].catTipo, "%s", cf->tipo);
     fileiras[destino].ini = cf->ini;
     if(!strcmp(cf->chave,"social_activity"))fileiras[destino].tipo=FILEIRA_SOCIAL;

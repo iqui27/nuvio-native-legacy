@@ -309,6 +309,11 @@ static void integracao(void) {
     assert(!strcmp(x[0].imdb, "tt0002002") && !strcmp(x[1].imdb, "tmdb:4242"));
     assert(!jfid_e(x[0].imdb) && !jfid_e(x[1].imdb));
     assert(servidores_chave_fileira("emby_11") && servidores_chave_fileira("plex_1") && !servidores_chave_fileira("cw"));
+    assert(servidores_pagina("emby_11", 0, 60, x, 60, &tot) == 2 && tot == 2);
+    assert(jfid_e(x[0].imdb) && !strcmp(x[1].imdb, "tt0002002"));
+    assert(servidores_pagina("emby_11", 1, 60, x, 60, &tot) == 1 && tot == 2);
+    assert(!strcmp(x[0].imdb, "tt0002002"));
+    assert(servidores_pagina("other", 0, 60, x, 60, &tot) == -1);
     free(x); }
   // ---- matched catalogue titles: the Emby index (per-user route) and sources
   fim = ms() + 5000;

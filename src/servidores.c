@@ -167,6 +167,15 @@ int servidores_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, i
   return nf;
 }
 
+int servidores_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total) {
+  if (total) *total = 0;
+  if (!ajustes_jellyfin_ligado() || !out || max <= 0) return -1;
+  if (jellyfin_chave_fileira(chave)) return jellyfin_pagina(chave, inicio, limite, out, max, total);
+  if (emby_chave_fileira(chave)) return emby_pagina(chave, inicio, limite, out, max, total);
+  if (plex_chave_fileira(chave)) return plex_pagina(chave, inicio, limite, out, max, total);
+  return -1;
+}
+
 int servidores_ficha(CatItem *item, CatEp *eps, int maxEps) {
   if (!item) return -1;
   if (!strncmp(item->imdb, JFID_PREFIXO_PLEX, 3)) return plex_ficha(item, eps, maxEps);

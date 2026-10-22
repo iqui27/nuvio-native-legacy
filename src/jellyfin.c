@@ -1581,6 +1581,26 @@ static int jfi_fileiras_copiar(JfInst *I, CatItem *itens, int maxItens, CatFilei
   return nf;
 }
 
+static int jfi_pagina(JfInst *I, const char *chave, int inicio, int limite,
+                      CatItem *out, int max, int *total) {
+  JfConta c;
+  unsigned g;
+  int n;
+  if (!jfi_chave_fileira(I, chave)) return -1;
+  pthread_mutex_lock(&I->trava);
+  conferirPerfilLocked(I);
+  if (I->estado != JF_EST_CONECTADO) { pthread_mutex_unlock(&I->trava); return -1; }
+  c = I->conta; g = I->geracao;
+  pthread_mutex_unlock(&I->trava);
+  n = jf_itens(&c, NULL, chave + strlen(I->prefixoFila), inicio, limite, out, max, total);
+  apagarSegredo(&c, sizeof c);
+  pthread_mutex_lock(&I->trava);
+  conferirPerfilLocked(I);
+  if (g != I->geracao) n = -1;
+  pthread_mutex_unlock(&I->trava);
+  return n;
+}
+
 // ------------------------------------------------------ worker: control
 // Snapshot of what a task needs, taken under I->trava; the network runs on the
 // copy. Returns the job to use (NULL if the generation already moved).
@@ -2367,6 +2387,8 @@ static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps) {
   void P##_recarregar_bibliotecas(void) { jfi_recarregar_bibliotecas(I); }                    \
   unsigned P##_fileiras_versao(void) { return jfi_fileiras_versao(I); }                       \
   int P##_chave_fileira(const char *k) { return jfi_chave_fileira(I, k); }                    \
+  int P##_pagina(const char *k, int ini, int lim, CatItem *out, int max, int *total) {        \
+    return jfi_pagina(I, k, ini, lim, out, max, total); }                                    \
   int P##_fileiras_copiar(CatItem *it, int mi, CatFileira *f, int mf, int *n) {               \
     return jfi_fileiras_copiar(I, it, mi, f, mf, n); }                                        \
   int P##_ficha(CatItem *it, CatEp *e, int m) { return jfi_ficha(I, it, e, m); }              \

@@ -223,6 +223,8 @@ unsigned jellyfin_fileiras_versao(void);
 int  jellyfin_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils,
                               int maxFils, int *nItens);
 int  jellyfin_chave_fileira(const char *chave);   // "jellyfin_<lib>"
+// Blocking page for the existing View all worker; profile changes discard it.
+int  jellyfin_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total);
 
 // Title page (BLOCKS; descoberta's episode thread). Fills cast/overview/
 // seasons and the episode list. -1 cancelled/other server/failed.
@@ -282,6 +284,7 @@ int  jellyfin_consultar(const char *id, const char *tipo, const char *titulo, in
   void P##_recarregar_bibliotecas(void);                                                 \
   unsigned P##_fileiras_versao(void);                                                    \
   int P##_chave_fileira(const char *chave);                                              \
+  int P##_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total); \
   int P##_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, int maxFils,   \
                           int *nItens);                                                  \
   int P##_ficha(CatItem *item, CatEp *eps, int maxEps);                                  \

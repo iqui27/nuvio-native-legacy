@@ -1653,6 +1653,25 @@ int plex_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, int max
   return nf;
 }
 
+int plex_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total) {
+  PxConta c;
+  unsigned g;
+  int n;
+  if (!plex_chave_fileira(chave)) return -1;
+  pthread_mutex_lock(&trava);
+  conferirPerfilLocked();
+  if (estado != PX_EST_CONECTADO) { pthread_mutex_unlock(&trava); return -1; }
+  c = conta; g = geracao;
+  pthread_mutex_unlock(&trava);
+  n = px_itens(&c, NULL, chave + 5, inicio, limite, out, max, total);
+  apagarSegredo(&c, sizeof c);
+  pthread_mutex_lock(&trava);
+  conferirPerfilLocked();
+  if (g != geracao) n = -1;
+  pthread_mutex_unlock(&trava);
+  return n;
+}
+
 int plex_casamento_ativo(void) {
   int ok;
   pthread_mutex_lock(&trava);
