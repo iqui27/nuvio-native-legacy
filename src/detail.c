@@ -694,6 +694,12 @@ static float alturaCabComentarios(void);
 static int temporadaEm(int c);
 static int epAbsoluto(int c);
 static int epVisiveis(void);
+static int nTemporadasReais(void) {
+  const CatItem *ci=cat_item(idx);
+  return ehSerie() && ci ? ci->nTemporadas : 0;
+}
+static int temLembreteTemporada(void);
+static int temporadaLembrete(int c) { return c==nTemporadasReais() && temLembreteTemporada(); }
 static float baseDaAbaAtiva(void);
 // A TEMPORADA ESCOLHIDA NA PAGINA, traduzida para o indice de extras.h.
 //
@@ -2088,7 +2094,7 @@ static int secaoN(int r) {
       // existe no layout de serie.
       if (!ehSerie()) return 0;
       if (ci && ci->nTemporadas > 0)
-        return ci->nTemporadas < N_ITENS ? ci->nTemporadas : N_ITENS;
+        return ci->nTemporadas+1+temLembreteTemporada();
       return 0;
     case SEC_EPISODIOS: {
       int q = epVisiveis();
@@ -2835,6 +2841,10 @@ void detail_evento(const SDL_Event *e) {
           }
         }
       } else progAbrirTemporada(foco.coluna);
+    } else if (foco.fileira==SEC_TEMPORADAS && foco.coluna>=nTemporadasReais()) {
+      if (temporadaLembrete(foco.coluna)) {
+        const CatItem *ci=cat_item(idx); if (ci) agenda_alternar_lembrete(ci->imdb);
+      } else { ajustes_detalhe_alternar_spoilers(); epRevelaT=epRevelaE=-1; }
     } else if (foco.fileira == SEC_TEMPORADAS && dur >= NV_HOLD_MS) {
       // PRESSAO LONGA NA ABA: o menu da temporada (issue #108, "Pressing
       // 'Season' brings up option to mark all as watched"). O toque curto
@@ -3558,7 +3568,7 @@ void detail_atualizar(float dt, Uint32 agora) {
   // mostra. Esperar meio segundo para trocar uma VISTA e a propria "demora ao
   // trocar de temporada" que o repouso tentava evitar.
   if (nivel >= 1 && foco.fileira == SEC_TEMPORADAS) {
-    if (foco.coluna != temporada) {
+    if (foco.coluna<nTemporadasReais() && foco.coluna != temporada) {
       temporada = foco.coluna;
       irParaTemporada(temporada, 0);
     }
@@ -5074,7 +5084,19 @@ static int temporadaEm(int c) {
     return (c >= 0 && c < ci->nTemporadas) ? ci->temporadas[c] : ci->temporadas[0];
   return c + 1;
 }
+static int temLembreteTemporada(void) {
+  const CatItem *ci=cat_item(idx);
+  const AgItem *ag=ci ? agenda_registro(ci->imdb) : NULL;
+  return ag && ag->temporada>0 && ag->episodio==1 && agenda_pode_lembrar(ci->imdb);
+}
 static void rotuloTemporada(int c, char *dst, size_t n) {
+  if (c>=nTemporadasReais()) {
+    if (temporadaLembrete(c)) {
+      const AgItem *ag=agenda_registro(cat_item(idx)->imdb);
+      snprintf(dst,n,i18n("Temporada %d"),ag->temporada);
+    } else snprintf(dst,n,"%s",i18n("Sem spoilers"));
+    return;
+  }
   int s = temporadaEm(c);
   if (s == 0) snprintf(dst, n, "Especiais");
   else snprintf(dst, n, i18n("Temporada %d"), s);
@@ -5233,7 +5255,8 @@ static void trilhoTemporadas(float y, float a) {
 // tinta de contraste). A contagem de episodios vai ao lado, em 16 a 35%.
 static void desenhaTemporada(GfxRect r, int c, float f, float a) {
   char rot[32]; rotuloTemporada(c, rot, sizeof rot);
-  int sel = (c == temporada);
+  int sel = c<nTemporadasReais() ? c==temporada :
+    temporadaLembrete(c) ? agenda_lembrete(cat_item(idx)->imdb) : ajustes_desfocar_nao_assistidos();
   float raio = NV_RAIO_PILL;
   // TODA temporada e um CHIP, escolhida ou nao. Antes so a escolhida tinha
   // container e as outras eram texto solto sobre o fundo — nao liam como um
@@ -5272,7 +5295,7 @@ static void desenhaTemporada(GfxRect r, int c, float f, float a) {
           bb = sel ? fb * 0.6f : 0.133f;
     gfx_cor(r, raio, br + (fr - br) * f, bg + (fg - bg) * f, bb + (fb - bb) * f, a); }
   const TgDados *progresso = tgraf_dados(idx);
-  int pc = tgraf_coluna(progresso, temporadaEm(c));
+  int pc = c<nTemporadasReais() ? tgraf_coluna(progresso, temporadaEm(c)) : -1;
   if (pc >= 0 && progresso->sabe && progresso->t[pc].exibidos > 0) {
     GfxRect barra = {r.x + 22, r.y + r.h - 8, r.w - 44, 3};
     gfx_cor(barra, .5f, 1, 1, 1, .12f * a);

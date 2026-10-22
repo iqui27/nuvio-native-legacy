@@ -116,7 +116,18 @@ int main(void) {
   LinhaDet facts[NV_DETF_DET_MAXL];
   int nf=montarDetalhes(facts,NV_DETF_DET_MAXL);
   for(int i=0;i<nf;i++) assert(facts[i].valor[0]);
-  puts("detail21: content, navigation, profile, cast history and facts OK");
+  itemTeste.nTemporadas=1; itemTeste.temporadas[0]=1; snprintf(itemTeste.tipo,sizeof itemTeste.tipo,"series");
+  cat_definir_tudo(&itemTeste,1,NULL,0); idx=0;
+  assert(secaoN(SEC_TEMPORADAS)==2); // one real season plus spoiler switch
+  temporada=0; foco.fileira=SEC_TEMPORADAS; foco.coluna=1; nivel=1;
+  e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_RETURN; detail_evento(&e);
+  e.type=SDL_KEYUP; detail_evento(&e);
+  assert(temporada==0); // switch never becomes a season index
+  agenda_definir_hoje("2026-10-22");
+  agenda_registrar(itemTeste.imdb,"Fixture",NULL,"Returning Series",2,1,"Premiere","2027-01-01","");
+  assert(temLembreteTemporada() && secaoN(SEC_TEMPORADAS)==3);
+  assert(temporadaLembrete(1));
+  puts("detail21: content, navigation, profiles, facts and season controls OK");
   SDL_Quit();
   return 0;
 }

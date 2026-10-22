@@ -2637,6 +2637,7 @@ int ajustes_cw_concluido(void) {
 }
 
 int ajustes_desfocar_nao_assistidos(void) { return lig(AJ_DET_BLUR_NAO_VISTOS); }
+void ajustes_detalhe_alternar_spoilers(void) { valor[AJ_DET_BLUR_NAO_VISTOS]=!valor[AJ_DET_BLUR_NAO_VISTOS]; gravar(); }
 int ajustes_botao_trailer(void)       { return lig(AJ_DET_TRAILER); }
 int ajustes_meta_externo(void)        { return lig(AJ_DET_META_EXT); }
 int ajustes_meta_so_cinemeta(void)    { return lig(AJ_DET_SO_CINEMETA); }
