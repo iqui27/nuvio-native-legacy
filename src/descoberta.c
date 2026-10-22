@@ -3036,15 +3036,15 @@ static int montarContinuar(CatItem *saida, int max) {
   // num fio so — a mesma razao do vetor de Decl mais abaixo.
   static CatItem doTrakt[CONT_MAX], daConta[CONT_MAX];
   // Tres fontes: conta, Trakt e Simkl, cada uma com ate CONT_MAX.
-  static Cand juntos[CONT_MAX * 3];
+  static Cand juntos[CONT_MAX * 4];
   // Os REMOTOS numa lista so (Trakt e Simkl), por ponteiro. E ela que a conta
   // enfrenta abaixo: para a regra "a mesma obra entra uma vez, a mais recente
   // ganha", Trakt e Simkl sao a mesma pergunta feita a dois servicos.
-  static CatItem *remotos[CONT_MAX * 2];
+  static CatItem *remotos[CONT_MAX * 3];
   // O lote do Simkl vai no HEAP e so quando e pedido: 12 CatItem sao ~190 KB,
   // e na Samsung (teto de 128 MiB do WebAssembly) nao se paga isso em BSS para
   // quem nunca vinculou o Simkl.
-  CatItem *doSimkl = NULL;
+  CatItem *doSimkl = NULL, *doServidor = NULL;
   int nT, nS = 0, nR = 0, nL, nJ = 0, i, j, fora = 0, repetidos = 0;
 
   // FONTE ESCOLHIDA EM AJUSTES (AJ_CWF_*). 0 = todas, 1 = so a conta Nuvio,
@@ -3108,6 +3108,23 @@ static int montarContinuar(CatItem *saida, int max) {
     repetidos++;
     if (candidatoVence(&doSimkl[i], remotos[achou]))
       remotos[achou] = &doSimkl[i];
+  }
+  // D6: server progress joins every CW source selection. Keep the same
+  // newest-wins and removal rules, without importing it into account storage.
+  if (ajustes_jellyfin_ligado() && servidores_conectado()) {
+    doServidor = calloc(CONT_MAX, sizeof *doServidor);
+    if (doServidor) {
+      int ns = servidores_continuar(doServidor, CONT_MAX);
+      for (i = 0; i < ns; i++) {
+        int k, achou = -1;
+        if (!emAndamento(doServidor[i].progresso)) continue;
+        for (k = 0; k < nR && achou < 0; k++)
+          if (mesmaObra(remotos[k], &doServidor[i])) achou = k;
+        if (achou < 0) remotos[nR++] = &doServidor[i];
+        else if (instanteDaConta(&doServidor[i]) > instanteDaConta(remotos[achou]))
+          remotos[achou] = &doServidor[i];
+      }
+    }
   }
   nL = querConta ? continuarLocal(daConta, CONT_MAX) : 0;
   // Fonte "Conta" escolhida: a conta da o "a seguir" mesmo com Trakt/Simkl
@@ -3215,10 +3232,10 @@ static int montarContinuar(CatItem *saida, int max) {
   // "Proximos episodios" com eles. `showUnairedNextUp` desligado os tira de vez
   // (shouldShowNextUpEpisodeForContinueWatching do web): antes esta preferencia
   // tambem nao era lida por ninguem.
-  { static CwoItem cwo[CONT_MAX * 3];
-    static Cand ordenados[CONT_MAX * 3];
-    static int perm[CONT_MAX * 3];
-    static const char *futIds[CONT_MAX * 3];
+  { static CwoItem cwo[CONT_MAX * 4];
+    static Cand ordenados[CONT_MAX * 4];
+    static int perm[CONT_MAX * 4];
+    static const char *futIds[CONT_MAX * 4];
     long long agora = (long long)time(NULL) * 1000LL;
     int modo = ajustes_cw_ordem(), naoExibidos = ajustes_cw_mostrar_nao_exibidos();
     int proxFora = 0, escondidos = 0, semData = 0, principal, nFut = 0, mp, mf, w = 0;
@@ -3322,6 +3339,7 @@ static int montarContinuar(CatItem *saida, int max) {
              "mantidos os %d card(s) da tela\n", k);
       fflush(stdout);
       free(doSimkl);
+      free(doServidor);
       return k;
     }
   }
@@ -3365,6 +3383,7 @@ static int montarContinuar(CatItem *saida, int max) {
   fflush(stdout);
   // O lote do Simkl ja foi COPIADO para `saida` acima; nada mais aponta nele.
   free(doSimkl);
+  free(doServidor);
   return nJ;
 }
 
@@ -8028,6 +8047,25 @@ static void *fioVerTudo(void *u) {
   snprintf(id,sizeof id,"%s",vtCat);snprintf(genre,sizeof genre,"%s",vtGenre);
   pthread_mutex_unlock(&vtTrava);
 
+  // Personal servers reuse this worker and grid. The sentinel is an internal
+  // route, never an address; private items remain confined to this view.
+  if (!strcmp(base, "servidores")) {
+    CatItem *lote = calloc(60, sizeof *lote);
+    int total = 0, n = lote ? servidores_pagina(id, skip, 60, lote, 60, &total, &raw) : -1;
+    pthread_mutex_lock(&vtTrava);
+    if (generation != vtGeracao) { pthread_mutex_unlock(&vtTrava); free(lote); continue; }
+    vtErro = n < 0;
+    if (n >= 0) {
+      for (int i = 0; i < n && vtN < VT_MAX; i++) vtItens[vtN++] = lote[i];
+      vtPagina += raw;
+      vtFim = raw < 60 || vtPagina >= total || vtN >= VT_MAX;
+    }
+    vtFioVivo = 0;
+    pthread_mutex_unlock(&vtTrava);
+    free(lote);
+    return NULL;
+  }
+
   // FONTE NAO-ADDON (issue #44): pasta de colecao do site cujo conteudo vem
   // do TMDB ou do Trakt, nao de um catalogo de addon. vtPagina aqui e o
   // NUMERO da pagina (comeca em 1), nao o skip de itens.
@@ -8206,7 +8244,7 @@ void desc_vertudo_filtro(const char *base, const char *tipo, const char *catId,c
   pthread_mutex_lock(&vtTrava);
   // Mesmo catalogo que ja esta aberto: mantem o que ja foi lido em vez de
   // recomecar do zero (o dono pode ter voltado e entrado de novo).
-  if (!vtProvedor && !strcmp(vtBase, base) && !strcmp(vtTipo, tipo) && !strcmp(vtCat, catId)
+  if (strcmp(base, "servidores") && !vtProvedor && !strcmp(vtBase, base) && !strcmp(vtTipo, tipo) && !strcmp(vtCat, catId)
       && !strcmp(vtGenre,genre?genre:"") && vtN > 0) {
     pthread_mutex_unlock(&vtTrava);
     return;

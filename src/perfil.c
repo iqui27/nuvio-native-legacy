@@ -772,8 +772,10 @@ static void desenharVazio(float a) {
     titulo = "Perfil privado ou histórico não compartilhado";
     corpo = "O Trakt não liberou um histórico público para esta conta.";
   } else if (estado == PERFIL_ESTADO_DESCONECTADO) {
-    titulo = "Histórico desconectado";
-    corpo = "Vincule o Trakt ou Simkl para carregar identidade, obras recentes e estatísticas.";
+    // Sem Trakt a tela vive do Diario (diarioperfil.h); este estado so sobra
+    // quando o Diario ainda esta vazio.
+    titulo = "Seu Diário ainda está vazio";
+    corpo = "Assista a um filme ou episódio e ele aparece aqui. Para trazer o histórico de antes, vincule o Trakt.";
   } else if (estado == PERFIL_ESTADO_INDISPONIVEL || estado == PERFIL_ESTADO_ERRO) {
     titulo = "Perfil indisponível";
     corpo = erro[0] ? erro : "Não foi possível confirmar este resumo agora.";
@@ -1037,7 +1039,7 @@ static void desenharAtividade(float a) {
   // A LEGENDA: dias ativos e os dois generos mais vistos, numa linha so (o
   // mockup). Com o foco no ritmo, a linha de cima diz o dia em foco.
   if (secao == 0 && dados.nDias) {
-    snprintf(b, sizeof b, i18n("Dia %d: %u reproduções"), dia + 1, dados.atividade[dia]);
+    snprintf(b, sizeof b, i18n(dados.atividade[dia] == 1 ? "Dia %d: %u reprodução" : "Dia %d: %u reproduções"), dia + 1, dados.atividade[dia]);
     escrever(TXT_CAPTION2, b, PF_MEDIO, x0, yLeg, r.w - PF_PAD_X * 2.0f, PF_ESC_APOIO, a);
     yLeg += 22.0f;
   }
@@ -1085,7 +1087,7 @@ static void desenharDestaques(float a) {
     else gfx_cor(mini, 8.0f / mini.h, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
                  NV_COR_ESQUELETO_B, a);
     // O "#N" do ranking nao volta: a ordem da lista JA e a posicao.
-    snprintf(linha, sizeof linha, i18n("%d reproduções"), dados.destaques[i].plays);
+    snprintf(linha, sizeof linha, i18n(dados.destaques[i].plays == 1 ? "%d reprodução" : "%d reproduções"), dados.destaques[i].plays);
     if (dados.destaques[i].detalhe[0]) {
       char junto[240];
       snprintf(junto, sizeof junto, "%s \xc2\xb7 %s", dados.destaques[i].detalhe, linha);

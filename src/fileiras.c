@@ -158,6 +158,8 @@ int fil_origem_de(const char *chave) {
   if (!strcmp(chave, "continue_watching") ||
       !strcmp(chave, "social_activity") ||
       !strcmp(chave, "last_session")) return FIL_ORIGEM_APP;
+  if (!strncmp(chave, "jellyfin_", 9) || !strncmp(chave, "emby_", 5) ||
+      !strncmp(chave, "plex_", 5) || !strncmp(chave, "srv:", 4)) return FIL_ORIGEM_SERVIDOR;
   if (!strncmp(chave, "collection_", 11) ||
       !strncmp(chave, "colpin_", 7)) return FIL_ORIGEM_COLECAO;
   return FIL_ORIGEM_CATALOGO;
@@ -165,7 +167,7 @@ int fil_origem_de(const char *chave) {
 
 // Rotulos CURTOS: o selo e lido de relance, a 3 m, ao lado do nome da fileira.
 // A frase inteira mora em fil_origem_ajuda e vai para a area de ajuda.
-static const char *ORIGEM_ROT[FIL_ORIGEM_N] = { "Do app", "Coleção", "Catálogo" };
+static const char *ORIGEM_ROT[FIL_ORIGEM_N] = { "Do app", "Coleção", "Catálogo", "Servidores pessoais" };
 // Icones REAIS (SVG rasterizado em art/icones), nunca forma desenhada a mao no
 // shader — ver a nota de gfx_icone em gfx.h. So a folha de fileiras dos Ajustes
 // usa este selo, entao ele e do mesmo Lucide (aj_*, tools/icones-lucide.sh) que
@@ -174,12 +176,14 @@ static const char *ORIGEM_ROT[FIL_ORIGEM_N] = { "Do app", "Coleção", "Catálog
 static const char *ORIGEM_ICONE[FIL_ORIGEM_N] = {
   "aj_house",      // fileira montada pelo proprio app
   "aj_folders",    // grupo de colecoes (uma pasta de atalhos)
-  "aj_puzzle"      // catalogo de addon (o encaixe de quebra-cabeca)
+  "aj_puzzle",     // catalogo de addon (o encaixe de quebra-cabeca)
+  "aj_server"
 };
 static const char *ORIGEM_AJUDA[FIL_ORIGEM_N] = {
   "Fileira montada pelo próprio app com o que você já assistiu ou salvou. Não vem de addon nenhum.",
   "Grupo de coleções: uma pasta de atalhos para catálogos, montada na sua conta.",
-  "Catálogo de um addon. Cada fileira destas é um pedido pela rede quando a Home monta."
+  "Catálogo de um addon. Cada fileira destas é um pedido pela rede quando a Home monta.",
+  "Servidores pessoais"
 };
 
 const char *fil_origem_rotulo(int o) {
@@ -253,7 +257,7 @@ static const char *ESTILOS_COL_ROT[] = { "Automático", "Paisagem", "Quadrado", 
 static int tipoValido(const char *chave, int t) {
   int o = fil_origem_de(chave), k;
   if (t == FIL_TIPO_AUTO) return 1;
-  if (o == FIL_ORIGEM_CATALOGO) return t > 0 && t < FIL_TIPO_N;
+  if (o == FIL_ORIGEM_CATALOGO || o == FIL_ORIGEM_SERVIDOR) return t > 0 && t < FIL_TIPO_N;
   if (o != FIL_ORIGEM_COLECAO) return 0;
   for (k = 0; k < N_ESTILOS_COL; k++) if (ESTILOS_COL[k] == t) return 1;
   return 0;

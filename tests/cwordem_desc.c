@@ -28,7 +28,21 @@ Uint32 SDL_GetTicks(void) { return 0; }
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
+#define ajustes_jellyfin_ligado srv_ligado_stub
+#define servidores_conectado srv_conectado_stub
+#define servidores_continuar srv_continuar_stub
 #include "jellyfin_stub.inc"
+#undef ajustes_jellyfin_ligado
+#undef servidores_conectado
+#undef servidores_continuar
+static int srvTeste;
+static CatItem srvCw;
+int ajustes_jellyfin_ligado(void) { return srvTeste; }
+int servidores_conectado(void) { return srvTeste; }
+int servidores_continuar(CatItem *out, int max) {
+  if (!srvTeste || max < 1) return 0;
+  out[0] = srvCw; return 1;
+}
 
 // --- DUBLES: so fazem descoberta.c linkar (o conjunto de tests/cateps.c) -----
 int         ajustes_idioma_ingles(void) { return 0; }
@@ -578,6 +592,29 @@ int main(void) {
     contaBaseMs = 0;
     contaSementesTeste = 0;
     fonteTeste = 0; }
+  { CatItem lote[CONT_MAX];
+    int nc, count;
+    nTabela = 0; modoTeste = CWO_PADRAO;
+    memset(&srvCw, 0, sizeof srvCw);
+    snprintf(srvCw.imdb, sizeof srvCw.imdb, "tt7000001");
+    snprintf(srvCw.tipo, sizeof srvCw.tipo, "series");
+    snprintf(srvCw.titulo, sizeof srvCw.titulo, "Server episode");
+    srvCw.temporada = 2; srvCw.episodio = 4; srvCw.progresso = 42;
+    srvCw.retomadoMs = 900000000;
+    srvTeste = 1;
+    for (fonteTeste = 0; fonteTeste <= 3; fonteTeste++) {
+      nc = montarContinuar(lote, CONT_MAX); count = 0;
+      for (int k = 0; k < nc; k++) if (!strncmp(lote[k].imdb, "tt7000001", 9)) {
+        count++; assert(lote[k].temporada == 2 && lote[k].episodio == 4 && lote[k].progresso == 42);
+      }
+      assert(count == 1);
+    }
+    srvCw.progresso = 95;
+    nc = montarContinuar(lote, CONT_MAX);
+    for (int k = 0; k < nc; k++) assert(strcmp(lote[k].titulo, "Server episode"));
+    srvTeste = 0;
+    puts("ok  server CW: every source mode, newest episode wins, completed excluded");
+  }
   puts("cwordem_desc: tudo ok");
   return 0;
 }
