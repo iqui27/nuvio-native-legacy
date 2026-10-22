@@ -99,7 +99,6 @@ static void ajcHome(const AjcHome *o) {
       ajc_veu(HX(0), HY(hh * 0.45f), 640 * k, hh * 0.55f * k, 0, 0.8f * o->hero);
       ajc_ret(HX(cx + 18), HY(70), 150 * k, 16 * k, 4 * k, 1, 1, 1, 0.9f * o->hero);
       ajc_barras(HX(cx + 18), HY(98), 200 * k, 2, o->hero);
-      ajc_acento_ret(HX(cx + 18), HY(134), 74 * k, 22 * k, 11 * k, o->hero);
     }
     fy = 214 - 74 * (1 - o->hero);
   } else if (o->layout == 1) {   // Padrao: um banner no alto
@@ -281,10 +280,6 @@ static void ajcCenaTitulo(int op) {
     }
     if (ajcNoBloco(op, "Notas") && marca < 0) ajc_foco(28, 128, 352, 30, 10, 0.4f + 0.6f * ajc_onda(2.4f)); }
   ajc_barras(34, 176, 300, 3, 1);
-  ajc_acento_ret(34, 232, 112, 34, 17, 1);
-  ajc_icone_tinta("aj_play", 54, 249, 14, 1);
-  ajc_ret(70, 245, 60, 7, 3.5f, ajTinta() / 255.0f, ajTinta() / 255.0f, ajTinta() / 255.0f, 0.9f);
-  ajc_vidro(156, 232, 34, 34, 17, 1); ajc_icone("aj_bookmark", 173, 249, 14, 0.9f);
   if (op == AJ_DET_BLUR_NAO_VISTOS) {   // episodios nao vistos borrados
     float k = ajcLig(op);
     for (i = 0; i < 3; i++) {
@@ -407,18 +402,7 @@ static void ajcCenaCor(int op) {
   for (i = 0; i < 5; i++) ajc_cartaz(40 + i * 116, 60, 100, 150, i + 2, 1);
   ajc_foco(40 + f * 116, 60, 100, 150, 9, 1);
   ajc_luz(40 + f * 116 - 30, 40, 160, 190, 20, 80, 95, 110, ar, ag, ab, 0.25f);
-  ajc_acento_ret(40, 244, 120, 34, 17, 1); ajc_icone_tinta("aj_play", 62, 261, 14, 1);
-  ajc_ret(78, 258, 60, 7, 3.5f, ajTinta() / 255.0f, ajTinta() / 255.0f, ajTinta() / 255.0f, 0.9f);
-  ajc_progresso(240, 259, 180, 0.62f, 1);
   if (op == AJ_COR_LOGO) { ajc_ladrilho("aj_sparkles", 560, 261, 44, ajcLig(op) > 0.5f, 1); return; }
-  for (i = 0; i < 9; i++) {
-    float r, g, b;
-    int t = (i + 1) % AJ_N_TEMAS_OPC;
-    r = ((TEMA_ACENTO[t].fill >> 16) & 255) / 255.0f; g = ((TEMA_ACENTO[t].fill >> 8) & 255) / 255.0f; b = (TEMA_ACENTO[t].fill & 255) / 255.0f;
-    ajc_bolinha(52 + i * 30, 320, 20, r, g, b, 0.9f);
-  }
-  ajc_bolinha(52 + 9 * 30 + 20, 320, 26, ar, ag, ab, 1);
-  ajc_foco(52 + 9 * 30 + 7, 307, 26, 26, 13, 1);
 }
 // Uma tela com o fundo `modo` (0 Arte, 1 Borrada, 2 Frost) e uma ilha por cima.
 static void ajcFundoTela(int i, float x, float y, float w, float h) {
@@ -709,8 +693,6 @@ static void ajcCenaPlayer(int op) {
   ajc_video(0, 0, 640, 360, 0, 1);
   if (op == AJ_BRILHO_PLAYER) ajc_ret(0, 0, 640, 360, 0, 0, 0, 0, 0.55f * ajc_onda(3.0f));
   ajc_veu(0, 220, 640, 140, 0, 0.75f);
-  ajc_progresso(40, 318, 560, op == AJ_CW_CONCLUIDO ? 0.6f + 0.35f * ajc_onda(4.0f) : 0.35f + 0.1f * f, 1);
-  ajc_bolinha(40 + 560 * (op == AJ_CW_CONCLUIDO ? 0.6f + 0.35f * ajc_onda(4.0f) : 0.35f + 0.1f * f), 320.5f, 14, 1, 1, 1, 1);
   ajc_barra(40, 296, 120, 0.7f);
   switch (op) {
     case AJ_PAUSA_OVERLAY: {   // pausado: o painel com o resumo sobe
@@ -872,10 +854,9 @@ static void ajcCenaLegenda(int op) {
   }
   if (op == AJ_LEG_LINGUA || op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2 || op == AJ_LEG_SYNC_AUTO || op == AJ_LEG_SYNC_AUDIO) {
     static const char *L[3] = { "PT", "EN", "ES" };
-    int i, a = ajc_passo(1.6f, 3);
-    ajc_vidro(430, 30, 180, 60, 16, 1);
-    ajc_icone(op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2 ? "aj_audio-lines" : "aj_captions", 458, 60, 22, 0.9f);
-    for (i = 0; i < 3; i++) ajcSeloVivo(L[i], 482 + i * 42, 46, 12, i == a ? 1.0f : 0, 1);
+    int a = ajc_passo(1.6f, 3);
+    ajc_icone(op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2 ? "aj_audio-lines" : "aj_captions", 458, 60, 28, 0.9f);
+    ajcTextoVivo(L[a], 28, 1, 482, 46, 1);
   }
 }
 // Idioma do app / metadados: o mesmo menu trocando de lingua (barras que
@@ -892,7 +873,7 @@ static void ajcCenaIdioma(int op) {
     ajc_barra(100, 84 + i * 40, w1 + (w0 - w1) * t, i == 1 ? 0.9f : 0.45f);
     if (i == 1) ajc_foco(88, 72 + i * 40, 134, 30, 10, 1);
   }
-  for (i = 0; i < 4; i++) ajcSeloVivo(L[i], 270 + i * 70, 70, 16, i == a ? t : 0, 1);
+  ajcTextoVivo(L[a], 28, 1, 300, 70, 1);
   ajc_cartaz(270, 130, 140, 170, 2, 1);
   ajc_barras(424, 140, 130, 5, 1);
   (void)op;

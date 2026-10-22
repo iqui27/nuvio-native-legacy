@@ -88,10 +88,6 @@ static void rManual(int op) {   // Play -> lista aberta (ligado) ou video direto
   int i, s = ajc_passo(0.9f, 3);
   if (ajc_reduzido()) ap = 1;
   ajc_cartaz(36, 50, 150, 220, 1, 1);
-  ajc_acento_ret(52, 224, 100, 30, 15, 1);
-  ajc_icone_tinta("aj_play", 76, 239, 14, 1);
-  ajc_ret(92, 236, 44, 6, 3, ajTinta() / 255.0f, ajTinta() / 255.0f, ajTinta() / 255.0f, 0.9f);
-  if (f > 0.18f && f < 0.4f) ajc_foco(52, 224, 100, 30, 15, 1);
   ajc_icone("aj_chevron-right", 214, 160, 22, 0.5f);
   if (k > 0.01f) {
     ajc_vidro(236, 40, 372, 232, 18, ap * k);
@@ -212,29 +208,17 @@ static void rRegexPadrao(void) {   // o campo do padrao sendo digitado
   int n = (int)(ajc_fase(5.0f) * 1.3f * (float)strlen(TX)), i;
   if (n > (int)strlen(TX) || ajc_reduzido()) n = (int)strlen(TX);
   memcpy(b, TX, (size_t)n); b[n] = 0;
-  ajc_painel(40, 60, 440, 54, 14, 1);
-  ajc_foco(40, 60, 440, 54, 14, 1);
-  ajc_icone("aj_pencil", 66, 87, 20, 0.7f);
+  ajc_icone("aj_search", 66, 87, 28, 0.7f);
   ajcTexto(b, 22, 1, 92, 72, 1);
-  if (ajc_onda(0.8f) > 0.5f) ajc_acento_ret(94 + ajcLargura(b, 22, 1), 70, 3, 32, 1.5f, 1);
-  ajc_ladrilho("aj_smartphone", 540, 87, 64, 0, 1);
-  ajc_icone("aj_keyboard", 540, 87, 28, 0.9f);
   for (i = 0; i < 3; i++) { rLinha(40, 150 + i * 56, 560, 46, "4K", NULL, i, i == 1 ? 0.35f : 1.0f);
     if (i != 1) ajc_foco(40, 150 + i * 56, 560, 46, 12, 0.5f); }
 }
 static void rRegexModelo(void) {   // os modelos prontos, o atual no acento
   static const char *L[7] = { NULL, "ESP", "PT", "EN", "MULTI", "DUAL", "4K|Remux" };
   int v = rInt(AJ_FONTE_REGEX_MODELO, 6), i;
-  float x[7] = { 40, 130, 220, 310, 400, 40, 160 }, y[7] = { 130, 130, 130, 130, 130, 200, 200 };
-  float p = 0.55f + 0.45f * ajc_onda(2.2f);
-  ajc_painel(40, 40, 560, 54, 14, 1);
   ajc_icone("aj_wand", 68, 67, 20, 0.8f);
   if (v > 0) ajcTexto(L[v], 22, 1, 100, 52, 1); else ajc_barra(100, 63, 180, 0.5f);
-  for (i = 0; i < 7; i++) {
-    if (!L[i]) { ajc_ladrilho("aj_pencil", x[i] + 24, y[i] + 14, 44, v == 0, 1); if (v == 0) ajc_foco(x[i] + 2, y[i] - 8, 44, 44, 12, p); continue; }
-    ajcSelo(L[i], x[i], y[i], 16, v == i ? 1 : 0, 1);
-    if (v == i) ajc_foco(x[i] - 2, y[i] - 2, ajcLargura(L[i], 16, 1) + 26, 34, 17, p);
-  }
+  for (i = 0; i < 3; i++) rLinha(40, 130 + i * 62, 560, 52, "4K", NULL, i, i == v % 3 ? 1 : 0.3f);
 }
 static void rEscopo(void) {   // de onde o automatico pode tocar
   int v = rInt(AJ_FONTE_ESCOPO, 2), i;
@@ -252,7 +236,7 @@ static void rEscopo(void) {   // de onde o automatico pode tocar
     else { float p = i ? 1 - f : f;
       ajc_bolinha(x + (i ? 0 : 200) + (i ? -1 : 1) * (p * 130 + 6), 160, 12, C.ar, C.ag, C.ab, 1 - p * 0.5f); }
   }
-  ajc_ladrilho("aj_play", 320, 160, 64, 1, 1);
+  ajc_icone("aj_play", 320, 160, 32, 1);
 }
 static void rPermitidos(int op) {   // quais add-ons/plugins o automatico usa primeiro
   int plug = op == AJ_FONTE_PLUGINS_PERM, n = plug ? 3 : 4, i, s = ajc_passo(1.5f, n);
@@ -265,8 +249,7 @@ static void rPermitidos(int op) {   // quais add-ons/plugins o automatico usa pr
     ajc_ret(54, y + 11, 30, 30, plug ? 15 : 8, r, g, b, 1);
     ajc_icone(IC, 69, y + 26, 16, 0.9f);
     ajc_barra(96, y + 20, 100, 0.7f);
-    ajc_bolinha(300, y + 26, 22, marcado ? C.ar : 0.3f, marcado ? C.ag : 0.3f, marcado ? C.ab : 0.34f, 1);
-    if (marcado) ajc_icone_tinta("aj_check", 300, y + 26, 13, 1);
+    if (marcado) ajc_icone("aj_check", 300, y + 26, 22, 1);
     if (i == s) ajc_foco(40, y, 290, 52, 12, 1);
   }
   ajc_icone("aj_chevron-right", 366, 150, 26, 0.55f);
@@ -386,8 +369,6 @@ static void rAquecer(int op) {   // abrir a conexao antes do Play
   int i;
   if (ajc_reduzido()) { w = 1; vid = 1; }
   ajc_cartaz(24, 70, 96, 140, 1, 1);
-  ajc_acento_ret(34, 176, 60, 20, 10, 1);
-  if (f > 0.58f && f < 0.7f) ajc_foco(34, 176, 60, 20, 10, 1);
   for (i = 0; i < 3; i++) {
     float y = 70 + i * 52;
     ajc_ret(122, 140, 70, 3, 1.5f, 1, 1, 1, 0.12f);
@@ -409,10 +390,6 @@ static void rPreparar(int op) {   // o arquivo ja escolhido e posto no debrid an
   float k = ajcLig(op), f = ajc_fase(5.0f), m = rK(((k > 0.5f) ? (f - 0.1f) : (f - 0.6f)) / 0.25f), vid = rK((f - (k > 0.5f ? 0.65f : 0.92f)) / 0.07f);
   if (ajc_reduzido()) { m = 1; vid = 1; }
   ajc_cartaz(24, 60, 140, 200, 3, 1);
-  ajc_acento_ret(40, 218, 90, 28, 14, 1);
-  ajc_icone_tinta("aj_play", 62, 232, 13, 1);
-  ajc_ret(80, 229, 38, 6, 3, ajTinta() / 255.0f, ajTinta() / 255.0f, ajTinta() / 255.0f, 0.9f);
-  if (f > 0.58f && f < 0.7f) ajc_foco(40, 218, 90, 28, 14, 1);
   ajc_ret(176, 158, 150, 4, 2, 1, 1, 1, 0.12f);
   ajc_ladrilho("aj_package", 176 + 150 * m, 160, 40, 1, m > 0 && m < 1 ? 1 : 0);
   ajc_neutro(340, 90, 150, 140, 22, 1);
@@ -623,7 +600,6 @@ static void rSaida(void) {   // sair no meio: o video vai para a ilha da Home ou
     ajc_veu(0, 0, 460, 360, 2, 0.95f * k);
     ajc_ret(34, 64, 210, 30, 8, 1, 1, 1, 0.92f * k);
     ajc_barras(34, 112, 300, 3, k);
-    ajc_acento_ret(34, 232, 112, 34, 17, k);
     ajc_icone("aj_corner-up-left", 170, 250, 28, k);
   }
   // o video comeca na tela inteira (0,0) e encolhe ate o destino
@@ -643,8 +619,6 @@ static void rManter(int op) {   // paused player for the chosen duration
     ajcTexto(b, 26, 1, 330, 126, k);
   }
   ajc_progresso(330, 168, 160, cd, k);
-  ajc_acento_ret(330, 186, 90, 26, 13, k * (0.6f + 0.4f * ajc_onda(1.4f)));
-  ajc_icone_tinta("aj_play", 375, 199, 13, k);
   if (k < 0.5f) ajc_icone("aj_x", 320, 165, 90, 0.5f);
   ajc_icone("aj_memory-stick", 320, 290, 30, 0.45f);
 }
@@ -653,8 +627,6 @@ static void rManter(int op) {   // paused player for the chosen duration
 static void rSeekrBase(float cur) {
   ajc_video(0, 0, 640, 360, 0, 0.55f);
   ajc_veu(0, 260, 640, 100, 0, 0.75f);
-  ajc_progresso(40, 318, 560, cur, 1);
-  ajc_bolinha(40 + 560 * cur, 320.5f, 14, 1, 1, 1, 1);
 }
 static void rSeekr(int op) {
   float cur = 0.15f + 0.7f * ajc_onda(5.0f), k = ajcLig(op), cx = 40 + 560 * cur;
@@ -684,17 +656,9 @@ static void rSeekr(int op) {
         if (k <= 0.5f) ajc_icone("aj_loader", 320, 193, 26, 0.95f); }
       return; }
     case AJ_SEEKR_CHAVE: {
-      static const char *TX = "************";
-      char c[16];
-      int n = (int)(ajc_fase(4.5f) * 1.3f * 12.0f);
-      if (n > 12 || ajc_reduzido()) n = 12;
-      memcpy(c, TX, (size_t)n); c[n] = 0;
-      ajc_ladrilho("aj_key-round", 90, 150, 76, 1, 1);
-      ajc_painel(150, 120, 410, 60, 16, 1);
-      ajc_foco(150, 120, 410, 60, 16, 1);
-      { int i; for (i = 0; i < n; i++) ajc_bolinha(184 + i * 26, 150, 14, 1, 1, 1, 0.9f); }
-      if (ajc_onda(0.8f) > 0.5f) ajc_acento_ret(180 + n * 26, 134, 3, 32, 1.5f, 1);
-      ajc_ret(150, 220, 300, 8, 4, 1, 1, 1, 0.1f);
+      ajc_icone("aj_key-round", 170, 170, 76, 1);
+      ajc_icone("aj_chevron-right", 320, 170, 30, 0.5f);
+      ajc_cartaz(400, 110, 160, 90, 4, 1);
       return; }
     case AJ_SEEKR_TESTAR: {
       float f = ajc_fase(3.6f), p = rK(f / 0.6f), ok = f > 0.65f ? 1.0f : 0.0f;
@@ -708,12 +672,7 @@ static void rSeekr(int op) {
       return; }
     default: {   // AJ_SEEKR_AJUSTE: a miniatura mostra a cena de alguns segundos antes/depois
       int off = valor[AJ_SEEKR_AJUSTE];
-      float d = (off < -60 ? -60 : off > 60 ? 60 : off) * 3.2f, x0 = 60, W = 520;
       snprintf(b, sizeof b, "%+d s", off);
-      ajc_ret(x0, 270, W, 6, 3, 1, 1, 1, 0.16f);
-      ajc_bolinha(x0 + W * 0.5f, 273, 18, 1, 1, 1, 1);
-      ajc_bolinha(x0 + W * 0.5f + d * 0.8f, 273, 12, C.ar, C.ag, C.ab, 1);
-      ajc_ret(x0 + W * 0.5f + (d < 0 ? d * 0.8f : 0), 271, fabsf(d * 0.8f), 4, 2, C.ar, C.ag, C.ab, 0.8f);
       ajc_cartaz(110, 70, 170, 96, 4, 1);
       ajc_cartaz(360, 70, 170, 96, 4 + (off ? 1 : 0), 1);
       ajc_icone("aj_image", 195, 118, 30, 0.8f);

@@ -221,75 +221,16 @@ static void ajcHRailBlur(int op) {
 // cima do canto de baixo: Automatico ganha o selo de "a TV tem microfone";
 // Desligado tira o botao (fica a vaga vazia) e o laco, e o controle apaga.
 static void ajcHMicBusca(int op) {
-  int p = ajc_passo(1.2f, 4), letras, i;
-  float t = ajc_passo_t(1.2f);
-  float tem = ajcHK(2.0f - ajcValor(op));    // 1 com o botao (Automatico, Ligado), 0 Desligado
-  float autoK = ajcHK(1.0f - ajcValor(op));  // 1 so no Automatico
-  float sobe = p == 1 ? t : p == 2 ? 1.0f : p == 3 ? 1.0f - t : 0.0f;
-  float ouve = p == 2 ? tem : 0.0f, ctl = 0.3f + 0.7f * tem;
-  letras = tem > 0.5f && p == 3 ? 1 + (int)(t * 6.0f) : 0;
-
-  // A barra da busca: lupa, o que chegou (ou o texto apagado do vazio) e o
-  // cursor; no fim, microfone e celular, o mesmo par da tela de verdade.
-  ajc_painel(40, 30, 560, 56, 28, 1);
-  ajc_icone("aj_search", 74, 58, 22, 0.9f);
-  if (letras) { for (i = 0; i < letras; i++) ajc_ret(100 + i * 18, 50, 12, 16, 3, 1, 1, 1, 0.8f); }
-  else ajc_barra(100, 54, 170, 0.22f);
-  ajc_ret(100 + letras * 18, 46, 2, 24, 1, 1, 1, 1, ajc_onda(0.8f) > 0.5f ? 0.9f : 0.1f);
-  ajc_bolinha(566, 58, 40, 0.18f, 0.185f, 0.205f, 1);
-  ajc_icone("aj_smartphone", 566, 58, 19, 0.85f);
-  if (tem < 0.99f) {   // Desligado: a vaga do botao, vazia
-    gfx_anel(ajc_r(492, 38, 40, 40), 0.5f, ajc_px(1.5f), 1, 1, 1, 0.22f * (1 - tem) * C.a);
-    ajc_icone("aj_eye-off", 512, 58, 16, 0.45f * (1 - tem));
+  float k = ajcHK(2.0f - ajcValor(op));
+  int i;
+  ajc_icone("aj_mic", 150, 160, 76, 0.3f + 0.7f * k);
+  ajc_icone("aj_chevron-right", 270, 160, 28, k);
+  for (i = 0; i < 9; i++) {
+    float h = 16 + 60 * fabsf(sinf(ajc_t() * 3 + i));
+    ajc_ret(330 + i * 24, 160 - h * 0.5f, 12, h, 6, 1, 1, 1, k * 0.7f);
   }
-  if (tem > 0.01f) {
-    ajc_bolinha(512, 58, 40, C.ar, C.ag, C.ab, tem);
-    ajc_icone_tinta("aj_mic", 512, 58, 19, tem);
-    ajc_foco(492, 38, 40, 40, 20, tem * (0.5f + 0.5f * ajc_onda(2.4f)));
-  }
-
-  // O controle: o botao do microfone no alto (no acento enquanto ouve, com as
-  // ondas), o direcional e dois botoes. No Automatico, o selo de que a TV tem
-  // microfone.
-  ajc_ret(70, 132, 48, 186, 24, 0.10f, 0.105f, 0.12f, ctl);
-  gfx_anel(ajc_r(70, 132, 48, 186), 24.0f / 186.0f, ajc_px(1.5f), 1, 1, 1, 0.14f * ctl * C.a);
-  ajc_bolinha(94, 160, 24, 0.18f, 0.185f, 0.205f, ctl * (1 - ouve));
-  ajc_bolinha(94, 160, 24, C.ar, C.ag, C.ab, ouve);
-  if (ouve > 0.5f) ajc_icone_tinta("aj_mic", 94, 160, 13, ouve);
-  else ajc_icone("aj_mic", 94, 160, 13, 0.85f * ctl);
-  for (i = 0; i < 3 && ouve > 0.01f; i++) {
-    float ph = fmodf(ajc_fase(1.2f) + i / 3.0f, 1.0f);
-    gfx_anel_fora(ajc_r(82, 148, 24, 24), 0.5f, ajc_px(4 + ph * 22), ajc_px(2), C.ar, C.ag, C.ab,
-                  (1 - ph) * 0.5f * ouve * C.a);
-  }
-  gfx_anel(ajc_r(77, 206, 34, 34), 0.5f, ajc_px(2), 1, 1, 1, 0.30f * ctl * C.a);
-  ajc_bolinha(94, 223, 12, 1, 1, 1, 0.30f * ctl);
-  ajc_bolinha(83, 268, 10, 1, 1, 1, 0.22f * ctl);
-  ajc_bolinha(105, 268, 10, 1, 1, 1, 0.22f * ctl);
-  if (autoK * tem > 0.01f) {
-    ajc_bolinha(116, 136, 22, C.ar, C.ag, C.ab, autoK * tem);
-    ajc_icone_tinta("aj_check", 116, 136, 13, autoK * tem);
-  }
-
-  // O teclado da Samsung, so durante o laco: aparece subindo um pouco (sem
-  // chegar ao seletor de valores do canto de baixo), tres fileiras de teclas e
-  // a de baixo com o espaco e o microfone dele (no acento enquanto ouve).
-  if (sobe * tem > 0.01f) {
-    float kx = 168, ky = 156 - 20 * sobe, ka = sobe * tem;
-    ajc_painel(kx, ky, 330, 140, 18, ka);
-    ajc_vidro(kx, ky, 330, 140, 18, 0.5f * ka);
-    ajc_icone("aj_keyboard", kx + 22, ky + 18, 16, 0.6f * ka);
-    for (i = 0; i < 27; i++)
-      ajc_neutro(kx + 16 + (i % 9) * 34, ky + 32 + (i / 9) * 26, 28, 20, 5, ka);
-    ajc_neutro(kx + 50, ky + 110, 196, 22, 6, ka);
-    ajc_ret(kx + 254, ky + 108, 60, 26, 8, 0.17f, 0.18f, 0.21f, ka * (1 - ouve));
-    ajc_acento_ret(kx + 254, ky + 108, 60, 26, 8, ka * ouve);
-    if (ouve > 0.5f) ajc_icone_tinta("aj_mic", kx + 284, ky + 121, 14, ka);
-    else ajc_icone("aj_mic", kx + 284, ky + 121, 14, 0.85f * ka);
-  }
-  if (ouve > 0.01f) ajc_icone("aj_audio-lines", 143, 160, 18, (0.4f + 0.5f * ajc_onda(0.6f)) * ouve);
 }
-// Relogio na tela: o canto de cima, em close.
+
 static void ajcHRelogio(int op) {
   float k = ajcLig(op), b = ajc_fase(2.0f) < 0.5f ? 1.0f : 0.25f;
   int i;
@@ -491,21 +432,15 @@ static void ajcHCwOk(int op) {
   float p = ajc_onda(2.0f);
   ajcHCw(36, 120, 170, 96, 3, 0.4f, 1);
   ajc_foco(36, 120, 170, 96, 10, 1);
-  ajc_ret(78, 232, 86, 28, 14, 0.17f, 0.18f, 0.21f, 1);
-  ajcTexto("OK", 16, 1, 108, 238, 1);
-  ajc_ret(78, 232, 86, 28, 14, C.ar, C.ag, C.ab, 0.3f * p);
   ajcHSeta(244, 168);
   if (!abre) {   // retomar: o video abre de onde parou
     ajc_video(290, 78, 320, 180, 12, 1);
     ajc_play(450, 168, 56, 1);
-    ajc_progresso(310, 238, 280, 0.4f, 1);
-    ajc_bolinha(310 + 280 * 0.4f, 240.5f, 12, 1, 1, 1, 1);
   } else {   // abrir pagina: a pagina do titulo
     ajc_cartaz(290, 78, 320, 180, 2, 1);
     ajc_veu(290, 78, 200, 180, 2, 0.8f);
     ajc_ret(312, 118, 110, 12, 4, 1, 1, 1, 0.9f);
     ajc_barras(312, 142, 150, 2, 1);
-    ajc_acento_ret(312, 188, 64, 22, 11, 1);
     for (i = 0; i < 3; i++) ajcHBloco(420 + i * 56, 200, 48, 48, 4 + i, 0.8f);
   }
 }
@@ -680,7 +615,6 @@ static void ajcHVidroPainel(float x, float y, float w, float h, float opac, int 
   }
   ajc_barra(px + 16, py + 16, pw * 0.55f, 0.85f);
   ajc_barras(px + 16, py + 38, pw * 0.8f, 2, 1);
-  ajc_acento_ret(px + 16, py + ph - 38, 64, 22, 11, 1);
 }
 static void ajcHVidro(int op) {
   int on = ajcLig(AJ_VIDRO) > 0.5f, lado;
@@ -712,39 +646,27 @@ static void ajcHVidroFosco(int op) {
 }
 static void ajcHVidroOpac(void) {
   static const int P[5] = { 60, 70, 78, 86, 92 };
-  int i, at = valor[AJ_VIDRO_OPAC] < 0 || valor[AJ_VIDRO_OPAC] > 4 ? 2 : valor[AJ_VIDRO_OPAC];
+  int at = valor[AJ_VIDRO_OPAC] < 0 || valor[AJ_VIDRO_OPAC] > 4 ? 2 : valor[AJ_VIDRO_OPAC];
   char b[8];
   ajcHArte(24, 36, 592, 250, 1);
-  for (i = 0; i < 5; i++) {
-    float x = 40 + i * 112, a = P[i] / 100.0f;
-    ajc_ret(x, 100, 100, 130, 14, 0.08f, 0.085f, 0.10f, a);
-    ajc_ret(x, 100, 100, 130, 14, 0.80f, 0.85f, 0.95f, 0.10f);
-    gfx_anel(ajc_r(x, 100, 100, 130), 14.0f / 130.0f, ajc_px(1.5f), 1, 1, 1, 0.3f * C.a);
-    snprintf(b, sizeof b, "%d", P[i]);
-    ajcTexto(b, 22, 1, x + 30, 150, i == at ? 1.0f : 0.5f);
-    if (i == at) { ajc_foco(x, 100, 100, 130, 14, 1); ajc_acento_ret(x + 20, 206, 60, 5, 2.5f, 1); }
-  }
-  ajc_progresso(40, 308, 560, (float)at / 4.0f, 1);
+  ajc_ret(200, 80, 240, 180, 14, 0.08f, 0.085f, 0.10f, P[at] / 100.0f);
+  ajc_barra(224, 110, 160, 0.85f);
+  ajc_barras(224, 144, 180, 3, 1);
+  snprintf(b, sizeof b, "%d%%", P[at]);
+  ajcTexto(b, 28, 1, 280, 284, 1);
 }
 // Preview every size, using the same factors as the actual interface.
 static void ajcHTamanhoUi(void) {
-  float v = ajcHK(ajcValor(AJ_TAMANHO_UI) / 8.0f) * 8.0f, e, by;
+  float v = ajcHK(ajcValor(AJ_TAMANHO_UI) / 8.0f) * 8.0f, e;
   int m0 = (int)v, m1 = m0 < 8 ? m0 + 1 : 8;
   e = ajcHMix(ui_size_choice(m0, tamanhoUiAutomatico()), ui_size_choice(m1, tamanhoUiAutomatico()), v - m0);
-  by = 334 - 12 * e - 34 * e;
   ajc_video(0, 0, 640, 360, 0, 1);
   ajc_veu(0, 200, 640, 160, 0, 0.8f);
   ajc_ret(28, 26, 90 * e, 7 * e, 3.5f * e, 1, 1, 1, 0.8f);
   ajc_vidro(628 - 160 * e, 24, 160 * e, 44 * e, 14 * e, 1);
   ajc_bolinha(628 - 160 * e + 22 * e, 24 + 22 * e, 22 * e, C.ar, C.ag, C.ab, 1);
   ajc_barra(628 - 160 * e + 42 * e, 24 + 18 * e, 100 * e, 0.7f);
-  ajc_ret(28, 334 - 6 * e, 584, 5 * e, 2.5f * e, 1, 1, 1, 0.2f);
-  ajc_acento_ret(28, 334 - 6 * e, 240, 5 * e, 2.5f * e, 1);
-  ajc_bolinha(268, 334 - 6 * e + 2.5f * e, 14 * e, 1, 1, 1, 1);
-  ajc_play(320, by, 56 * e, 1);
-  ajc_icone("aj_rotate-ccw-clock", 320 - 80 * e, by, 28 * e, 0.9f);
-  ajc_icone("aj_volume-2", 320 + 80 * e, by, 28 * e, 0.9f);
-  ajc_icone("aj_captions", 320 + 124 * e, by, 28 * e, 0.9f);
+  ajc_legenda(320, 330, e, 0.45f, 1, 1, 1, 0, 1);
   ajcSelo(i18n(V_TAMANHO_UI[(int)(v + 0.5f)]), 28, 62, 16, 1.0f, 1);
 }
 // Tamanho dos ajustes: a lista e o painel dos proprios Ajustes, menores ou maiores.
@@ -780,8 +702,6 @@ static void ajcHDescansoEstilo(void) {
     ajc_veu(70, 34, 300, 260, 2, 0.8f);
     ajc_ret(96, 190, 150, 16, 4, 1, 1, 1, 0.9f);
     ajc_barras(96, 218, 210, 2, 1);
-    ajc_acento_ret(96, 254, 62, 20, 10, 1);
-    ajc_icone_tinta("aj_play", 127, 264, 11, 1);
     for (i = 0; i < 4; i++) ajc_bolinha(490 + i * 16, 270, i == m ? 9 : 6, 1, 1, 1, i == m ? 0.95f : 0.4f);
   } else if (at == 1) {   // relogio grande + a proxima estreia
     ajcTexto("20:30", 74, 1, 190 + 10 * d, 96 + 8 * d, 1);

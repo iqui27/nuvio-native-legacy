@@ -879,12 +879,14 @@ static void aj2GradeCartaoDesenhar(int s, float f) {
   const char *nome = aj2MenuTitulo(j);
   TxtEstilo en = TXT_V3_NOME;
   GfxRect r = aj2GradeSuperficie(aj2GradeCartao(s), 20.0f, k, 7.0f, 0.45f, 0);
+  if (k > 0.01f) gfx_cor(r, 20.0f / r.h, 0.949f, 0.949f, 0.933f, k);
   // O ladrilho do icone (60 x 60 no mockup, raio 14).
   tile = r.h - 50.0f > 75.0f ? 75.0f : r.h - 50.0f;
   { GfxRect tr = { r.x + 25.0f, r.y + (r.h - tile) * 0.5f, tile, tile };
     float ico = tile * 0.50f;
     gfx_cor(tr, 17.0f / tile, 1, 1, 1, 0.07f + 0.12f * k);
-    aj2GradeIcone(aj2MenuIcone(j), tr.x + (tile - ico) * 0.5f, tr.y + (tile - ico) * 0.5f, ico, k); }
+    gfx_icone((GfxRect){ tr.x + (tile - ico) * 0.5f, tr.y + (tile - ico) * 0.5f, ico, ico },
+              aj2MenuIcone(j), 0.953f - 0.86f * k, 0.949f - 0.85f * k, 0.937f - 0.83f * k, 0.9f); }
   tx = r.x + 25.0f + tile + 25.0f;
   tw = r.x + r.w - 25.0f - tx;
   aj2MenuValor(s, vb, sizeof vb);
@@ -896,16 +898,22 @@ static void aj2GradeCartaoDesenhar(int s, float f) {
       *u = 0;
     } }
   // O nome inteiro, sempre: numa linha; em duas (alemao, russo) no mesmo corpo.
-  { int linhas = (float)txt_largura(en, nome) > tw ? 2 : 1, ti = ajTinta();
+  { int linhas = (float)txt_largura(en, nome) > tw ? 2 : 1, ti = 24;
     float lineH = fmaxf(44.0f, (float)ajTxt(en, nome).h + 2.0f);
     float nomeH = linhas == 1 ? 50.0f : lineH * 2.0f, valH = vb[0] && linhas == 1 ? 40.0f : 0.0f;
     y = r.y + (r.h - nomeH - (valH > 0 ? 4.0f + valH : 0)) * 0.5f;
-    if (linhas == 1) aj2GradeTexto(en, nome, tx, y + 25.0f, tw, 1.0f, k);
+    if (linhas == 1) {
+      TxtLinha l = txt_linha_corta(en, nome, (int)(243 - 219 * k), (int)(242 - 218 * k), (int)(239 - 215 * k), 255, tw);
+      txt_desenhar(l, tx, y + 25.0f - l.h * 0.5f);
+    }
     else {
       if (k < 0.99f) txt_bloco(en, nome, 243, 242, 239, tx, y, tw, lineH, 1.0f - k, 2);
       if (k > 0.01f) txt_bloco(en, nome, ti, ti, ti, tx, y, tw, lineH, k, 2);
     }
-    if (valH > 0) aj2GradeTexto(TXT_V3_VALOR, vb, tx, y + nomeH + 4.0f + valH * 0.5f, tw, 0.62f, k); }
+    if (valH > 0) {
+      TxtLinha l = txt_linha_corta(TXT_V3_VALOR, vb, (int)(243 - 219 * k), (int)(242 - 218 * k), (int)(239 - 215 * k), 255, tw);
+      txt_desenhar_alpha(l, tx, y + nomeH + 4.0f + (valH - l.h) * 0.5f, 0.62f);
+    } }
 }
 // --- O INDICE EM LISTA (#339, Ajustes › Aparencia › Layout dos Ajustes) -------------
 // "La pantalla de ajustes anterior, la de las filas uno abajo de la otra, era muy

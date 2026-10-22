@@ -67,8 +67,7 @@ static void czPontos(float x, float y, int n, int total, float a) {
   }
 }
 static void czCampo(float x, float y, float w, const char *icone, float a) {
-  ajc_vidro(x, y, w, 44, 12, a);
-  ajc_icone(icone, x + 24, y + 22, 20, 0.9f * a);
+  ajc_icone(icone, x + 24, y + 22, 28, 0.9f * a);
 }
 // Os selos que um servico de posteres poe no proprio cartaz.
 static void czSelosPoster(float x, float y, float w, float h, float a) {
@@ -102,16 +101,7 @@ static void czDetalhe(float vid, float trailerBtn) {
   ajc_ret(34, 70, 210, 30, 8, 1, 1, 1, 0.92f);
   ajc_barra(34, 118, 150, 0.6f);
   ajc_barras(34, 150, 280, 3, 1);
-  ajc_acento_ret(34, 270, 96, 36, 18, 1);
-  ajc_icone_tinta("aj_play", 82, 288, 18, 1);
-  ajc_neutro(140, 270, 36, 36, 18, 1);
-  ajc_icone("aj_plus", 158, 288, 16, 0.9f);
-  if (trailerBtn > 0.01f) {
-    ajc_neutro(186, 270, 36, 36, 18, trailerBtn);
-    ajc_icone("aj_film", 204, 288, 16, 0.95f * trailerBtn);
-  } else {
-    ajc_ret(186, 270, 36, 36, 18, 1, 1, 1, 0.07f);
-  }
+  if (trailerBtn > 0.01f) ajc_icone("aj_film", 204, 288, 24, 0.95f * trailerBtn);
 }
 static void czSom(int op) {
   float k = ajcLig(op);
@@ -340,7 +330,6 @@ static int ajcNovaCartazes(int sec, int op) {
     }
     case AJ_POSTER_TOKEN: {   // a senha do servico: pontinhos e escudo
       int n = ajc_reduzido() ? 12 : ajc_passo(0.25f, 13);
-      ajc_vidro(60, 90, 380, 52, 12, 1);
       ajc_icone("aj_key-round", 90, 116, 22, 0.9f);
       czPontos(126, 116, n, 12, 1);
       ajc_ladrilho("aj_shield-check", 520, 116, 56, 1, 1);
@@ -350,7 +339,6 @@ static int ajcNovaCartazes(int sec, int op) {
     case AJ_POSTER_EXTRA: {   // parametros extras: pecas que se juntam ao fim da URL
       static const char *P[3] = { "?a=1", "&b=2", "&c=3" };
       int i, n = ajc_reduzido() ? 3 : 1 + ajc_passo(0.9f, 3);
-      ajc_vidro(40, 70, 560, 44, 12, 1);
       ajc_barra(66, 89, 250, 0.5f);
       for (i = 0; i < 3; i++) {
         float x = 324 + i * 86;
@@ -365,7 +353,6 @@ static int ajcNovaCartazes(int sec, int op) {
     case AJ_POSTER_CHAVE: {   // chave do RPDB
       int n = ajc_reduzido() ? 12 : ajc_passo(0.25f, 13);
       ajcSelo("RPDB", 60, 54, 15, 1, 1);
-      ajc_vidro(60, 100, 380, 52, 12, 1);
       ajc_icone("aj_key-round", 90, 126, 22, 0.9f);
       czPontos(126, 126, n, 12, 1);
       ajc_cartaz(480, 70, 100, 150, 5, 1);
@@ -374,7 +361,6 @@ static int ajcNovaCartazes(int sec, int op) {
     }
     case AJ_POSTER_MODELO: {   // o modelo: o espaco {id} e trocado pelo codigo de cada titulo
       float p = czPulso(4.0f);
-      ajc_vidro(40, 70, 560, 50, 12, 1);
       ajcTexto("https://img.app/", 15, 0, 62, 85, 0.9f);
       ajc_acento_ret(236, 80, 56, 30, 8, 1);
       ajcTextoTinta("{id}", 15, 1, 246, 85, 1);

@@ -29,13 +29,10 @@ static void ajcSvDigita(const char *s, float x, float y, float px, float frac, f
   b[k] = 0;
   ajcTextoVivo(b, px, 1, x, y, a);
   w = k ? ajcLarguraViva(b, px, 1) : 0;
-  if (frac < 0.999f || ajc_reduzido() == 0) ajc_acento_ret(x + w + 2, y - 1, 2, px * 1.3f, 1, a * (ajc_fase(0.8f) < 0.6f ? 1.0f : 0.15f));
 }
-// Campo: caixa escura com contorno; foco = anel do acento.
+// Connection data is illustrated without an input field or focus ring.
 static void ajcSvCampo(float x, float y, float w, int foco, float a) {
-  ajc_painel(x, y, w, 34, 10, a);
-  if (foco) ajc_foco(x, y, w, 34, 10, a);
-  else gfx_anel(ajc_r(x, y, w, 34), 10.0f / 34.0f, 1.5f, 1, 1, 1, 0.20f * a * 1.0f);
+  (void)x; (void)y; (void)w; (void)foco; (void)a;
 }
 static void ajcSvPontos(float x, float y, int n, float frac, float a) {
   int i, k = (int)(frac * n + 0.5f);
@@ -151,7 +148,6 @@ static void ajcSvServ(int modo, const char *marca, const char *icone, const char
       ajcSvCampo(46, 112, 278, 0, 0.55f); ajc_icone("aj_link", 66, 129, 16, 0.5f); ajc_barra(88, 125, 150, 0.4f);
       ajcSvCampo(46, 166, 278, 1, 1); ajc_icone("aj_user-round", 66, 183, 16, 0.9f);
       ajc_ret(88, 179, 150 * ajcSvTr(f, 0.05f, 0.55f), 7, 3.5f, 0.95f, 0.95f, 0.94f, 0.9f);
-      ajc_acento_ret(88 + 150 * ajcSvTr(f, 0.05f, 0.55f) + 3, 177, 2, 12, 1, ajc_fase(0.8f) < 0.6f ? 1.0f : 0.15f);
       ajcSvCampo(46, 220, 278, 0, 0.3f); ajc_icone("aj_key-round", 66, 237, 16, 0.3f);
       conn = 0;
       break;
@@ -166,9 +162,7 @@ static void ajcSvServ(int modo, const char *marca, const char *icone, const char
       float press = ajcSvTr(f, 0.35f, 0.5f);
       ajcSvCampo(46, 104, 278, 0, 0.55f); ajc_icone("aj_user-round", 66, 121, 16, 0.5f); ajc_barra(88, 117, 110, 0.5f);
       ajcSvCampo(46, 150, 278, 0, 0.55f); ajc_icone("aj_key-round", 66, 167, 16, 0.5f); ajcSvPontos(92, 167, 8, 1, 0.7f);
-      ajc_acento_ret(46, 214, 278, 40, 20, 0.75f + 0.25f * (1 - press));
-      ajc_icone_tinta("aj_log-in", 160, 234, 20, 1);
-      ajc_foco(46, 214, 278, 40, 20, 1);
+      ajc_icone("aj_log-in", 160, 234, 28, 0.75f + 0.25f * (1 - press));
       conn = ajcSvTr(f, 0.5f, 0.75f);
       if (conn > 0.9f) { ajc_bolinha(298, 234, 22, 1, 1, 1, 0.95f); ajc_icone("aj_check", 298, 234, 14, 1); }
       break; }
@@ -187,9 +181,7 @@ static void ajcSvServ(int modo, const char *marca, const char *icone, const char
           if (i == 2) ajcSvPontos(92, 167 + 92, 8, 1, k); else ajc_barra(88, 117 + i * 46, 110, 0.5f * k);
         }
       }
-      ajc_neutro(46, 262, 278, 40, 20, 1);
-      ajc_icone(modo == SV_SAIR ? "aj_log-out" : "aj_delete", 160, 282, 20, 1);
-      if (f > 0.25f && f < 0.8f) ajc_foco(46, 262, 278, 40, 20, 1);
+      ajc_icone(modo == SV_SAIR ? "aj_log-out" : "aj_delete", 160, 282, 28, 1);
       break; }
     case SV_CONTA:
       conn = 1;
@@ -215,9 +207,7 @@ static void ajcSvServ(int modo, const char *marca, const char *icone, const char
       float n = ajcSvTr(f, 0.05f, 0.55f) * 4.0f;
       for (i = 0; i < 4; i++) {
         float x = 62 + i * 64;
-        ajc_painel(x, 124, 54, 66, 12, 1);
         if (n > i + 0.5f) ajcTexto(C4[i], 36, 1, x + 17, 138, 1);
-        else if ((int)n == i) ajc_foco(x, 124, 54, 66, 12, 1);
       }
       for (i = 0; i < 3; i++) ajc_bolinha(130 + i * 28, 232, 10, 1, 1, 1, ajc_passo(0.5f, 3) == i ? 0.9f : 0.25f);
       conn = ajcSvTr(f, 0.65f, 0.85f);

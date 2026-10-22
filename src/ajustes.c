@@ -7853,7 +7853,7 @@ static const char *ajudaOpcao(int op) {
 // Practical consequences when known; otherwise reuse the option's detail.
 // Blocked options explain the condition that prevents their effect.
 static const char *efeitoOpcao(int op) {
-  if (inativa(op)) return ajudaOpcaoBase(op);
+  if (inativa(op)) return NULL;
   // A RESPOSTA DE "Procurar atualização", por extenso (a linha so tem espaco
   // para a versao curta).
   if (op == AJ_ATUALIZAR && !atualizacao_nova()[0]) {

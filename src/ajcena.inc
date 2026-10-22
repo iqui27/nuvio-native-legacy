@@ -181,8 +181,7 @@ static void ajc_icone_tinta(const char *nome, float cx, float cy, float d, float
   gfx_icone(ajc_r(cx - d * 0.5f, cy - d * 0.5f, d, d), nome, C.tinta, C.tinta, C.tinta, a * C.a);
 }
 static void ajc_play(float cx, float cy, float d, float a) {
-  ajc_ret(cx - d * 0.5f, cy - d * 0.5f, d, d, d * 0.5f, 1, 1, 1, 0.92f * a);
-  gfx_icone(ajc_r(cx - d * 0.22f, cy - d * 0.24f, d * 0.48f, d * 0.48f), "aj_play", 0.08f, 0.09f, 0.11f, a * C.a);
+  ajc_icone("aj_play", cx, cy, d * 0.48f, a);
 }
 static void ajc_ladrilho(const char *nome, float cx, float cy, float d, int acento, float a) {
   if (acento) ajc_acento_ret(cx - d * 0.5f, cy - d * 0.5f, d, d, d * 0.28f, a);
