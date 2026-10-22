@@ -137,9 +137,9 @@ static GfxRect heroAcaoRect(float *x, float *cy, float w, float h) {
 // os desenham, la embaixo; subiram porque larguraItem e xItem, no topo,
 // precisam deles para posicionar as SECOES novas.
 // Glass UI (mockup "Detalhe", "Mais como este"): cartaz 218x327, vao 24.
-#define REL_CARD_W   212.0f
-#define REL_CARD_H   318.0f
-#define REL_CARD_GAP  32.0f
+#define REL_CARD_W   200.0f
+#define REL_CARD_H   300.0f
+#define REL_CARD_GAP  24.0f
 
 // MINI CARD DA COLECAO (#194, 2a volta). Um cartao UNICO deitado, e nao uma
 // fileira de cartazes: o dono viu a lista de nomes e pediu algo que "nao fique
@@ -2119,7 +2119,7 @@ static float alturaSecao(int r) {
     case SEC_ABAS_INFO:  return NV_DETP_ABA_H;
     case SEC_ELENCO:     return NV_DETF_EL_ALT;
     case SEC_TRAILERS:     return NV_DETF_TR_ALT;
-    case SEC_RELACIONADOS: return REL_CARD_H + 56.0f;   // cartaz + titulo/ano
+    case SEC_RELACIONADOS: return REL_CARD_H + 92.0f;   // cartaz + titulo/ano
     // Um mini card so, qualquer que seja o tamanho da saga.
     case SEC_COLECAO:      return COL_CARD_H;
     // + o cabecalho: sem ele a secao seguinte ("Detalhes do Filme") era
@@ -6296,14 +6296,15 @@ static void desenhaRelacionados(float x, float y, float a, int primeiro, int lim
       gfx_cor(disco,.5f,.09f,.12f,.13f,a);
       gfx_icone((GfxRect){disco.x+6,disco.y+6,16,16},"check",.8f,.9f,.85f,a);
     }
-    { int c = aceso ? 255 : 225;
-      TxtLinha lt = txt_linha_corta(TXT_DET_META2, extras_relacionado_titulo(i),
+    if (!aceso) continue;
+    { int c = 243;
+      TxtLinha lt = txt_linha_corta(TXT_G22M, extras_relacionado_titulo(i),
                                     c, c, c, 255, REL_CARD_W);
-      txt_desenhar_alpha(lt, cx, y + REL_CARD_H + 12.0f, a);
+      txt_desenhar_alpha(lt,NV_DETP_X,y+REL_CARD_H+18,a);
       if (ano[0]) {
         int cy = aceso ? 174 : 156;
         TxtLinha la = txt_linha(TXT_MINI, ano, cy, cy + 2, cy + 9, 255);
-        txt_desenhar_alpha(la, cx, y + REL_CARD_H + 12.0f + lt.h + 6.0f,
+        txt_desenhar_alpha(la,NV_DETP_X,y+REL_CARD_H+50,
                            a * 0.95f);
       } }
   }
