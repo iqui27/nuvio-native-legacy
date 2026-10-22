@@ -16,8 +16,17 @@ Branch `feat/watch-together` (worktree `/Volumes/ExternalSSD/nv-watch-together`)
 ## O que precisa do dono
 
 1. **Deploy** (nesta ordem): migração `servidor/recomendacoes/migracao-010-juntos.sql` no D1 → `tools/juntos-publicar.sh --segredo` (grava o mesmo `SALA_SEGREDO` nos dois Workers) → `tools/juntos-publicar.sh` (testa, publica e confere `/saude`) → deploy do `nuvio-recomendacoes` **a partir de master** (depois do merge; `JUNTOS_URL` já está no `[vars]`). Sem o segredo as rotas `/v1/sala*` respondem 503 e a TV esconde o recurso.
-2. **Perfil infantil na TV**: o cliente não tem marca de perfil infantil nem limite de classificação (`perfis.h`/`parental.h` não têm). O servidor já aplica todas as regras quando recebe `infantil:1`; falta decidir de onde a TV tira essa marca. Hoje ela manda sempre 0.
+2. **Kids profile on TV**: `perfilinfantil.h` now stores the per-profile flag and `juntos.c` sends `infantil:1` when active (commit `ddc55394c`). Server rules and TV classification behavior still need device validation.
 3. **Prova em TV**: Android primeiro (par TCL + outra TV/box, ou TCL contra o Mac), depois LG + Android. Conferir no log as linhas `[juntos]`; os limiares de 6.5 são do simulador.
+
+## Client contract validation (2.1)
+
+- `bash tests/video_juntos.sh`: FAIL (missing sync multiplier, rc=134) to PASS (rc=0). Covers native sample age/equal samples, personal speed isolation, actual client adapter and retry exclusions, protocol/clock, four-engine jitter simulation, source fingerprint/duration checks, Android JNI dispatch, .tpk host dispatch, focused LG native samples, AVPlay bridge, and local Worker WebSocket end-to-end. Local peers differed by 3 ms after start and 0 ms after seek/play.
+- `bash tools/build-local.sh`: rc=0. No target deployment or remote service changes.
+- `bash tests/juntos_shot.sh /Volumes/ExternalSSD/tmp/rev/watchtogether21-png/watchtogether`: rc=0. Seven hidden-window PNGs, each 1920×1080, named `watchtogether-01-convite.png` through `watchtogether-07-player-reacoes.png` in that directory. Capture fixture now keeps the invitation at full canvas size. Production screen layout is unchanged.
+- `python3 tools/varredura-i18n.py`: rc=0, all three groups zero. No translation table reordering or new keys; account summary reuses labels already present in every table. Scanner exclusions document protocol values, filenames, genre aliases and diagnostics that never render as labels.
+- The full LG pause fixture has an unrelated existing screensaver assertion failure after the sync assertions. The focused suite uses `NV_JUNTOS_TEST=1` to run only this task's LG assertions.
+- Remaining validation: native target builds and physical TV timing, buffering, passthrough and reconnect behavior. Simulator measurements do not replace device proof.
 
 ## Lacunas conhecidas (MVP)
 
@@ -25,6 +34,7 @@ Branch `feat/watch-together` (worktree `/Volumes/ExternalSSD/nv-watch-together`)
 - Entrar só pela página do título (circular "Assistir Juntos") ou pelo convite; não há atalho na Central nem "Chamar alguém" de dentro do player, nem o cartão "Voltar para a sessão" na ilha depois de sair do player. "Minimizar" não está na pergunta de sair.
 - O cartão do próximo episódio continua local em cada TV; quem pede primeiro leva a sala (o servidor ignora o repetido).
 - O feed agrupa "assistiram juntos" por título + hora, não pelo id da sala.
-- `video_pos_amostra`/`video_taxa_sync` do plano não foram criados: o motor usa `video_pos` (com o instante em que o valor mudou) e `video_velocidade` (a da pessoa fica 1x durante a sala).
+- Native sample timestamps and the separate sync multiplier are now implemented: `video_pos_amostra` on LG/Android/.tpk/.wgt, `video_taxa_sync` in thousandths, and `video_taxa_efetiva` for native dispatch. The room uses the same 64-bit monotonic clock; personal speed stays at 1x during a room and corrections clear on exit.
+- Room-selected sources now arm the existing VOD watchdog. Retries prefer the room fingerprint and exclude failed candidates; a changed source gets a fresh duration verdict. `juntosrede` remains the existing `discordws` transport plus the ticket/backoff logic in `juntos.c`; no duplicate WebSocket implementation was introduced.
 - Check de compilação ARM do LG (`tools/arm.sh --build`) não rodado.
 - `tests/discord_runtime.sh` já falha em master (link de `discord_tls.c` sem `redeurl.c`); não é deste trabalho.

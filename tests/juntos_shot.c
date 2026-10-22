@@ -97,7 +97,7 @@ int main(int argc, char **argv) {
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
-  win = SDL_CreateWindow("Nuvio: juntos", 0, 0, 1920, 1080, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+  win = SDL_CreateWindow("Nuvio: juntos", 0, 0, 1920, 1080, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
   assert(win && SDL_GL_CreateContext(win));
   glViewport(0, 0, 1920, 1080);
   gfx_tamanho_alvo(1920, 1080);
@@ -119,7 +119,7 @@ int main(int argc, char **argv) {
     snprintf(c.imp.rotulo, sizeof c.imp.rotulo, "1080p WEB-DL");
     juntosui_convite(&c); }
   quadros(90);
-  captura("01-convite", 160);
+  captura("01-convite", 1080);
 
   // 2. Folha do anfitriao.
   { CatItem it; const char *nomes[] = { "Rafa", "Fabi", "Gustavo" }; int idx;
