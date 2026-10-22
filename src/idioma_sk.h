@@ -1419,6 +1419,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Určuje, ako zaoblené sú rohy plagátov."),
   T("Controle o que aparece na home e na busca.", "Určte, čo sa zobrazí na domovskej obrazovke a vo vyhľadávaní."),
   T("Controle, busca, conta e atualização", "Ovládač, vyhľadávanie, účet a aktualizácia"),
+  T("Contém spoiler · OK para ler", "Obsahuje spoilery · OK na čítanie"),
   T("Conversa", "Talk"),
   T("Converter DTS para a TV ouvir", "Prevádzať DTS, aby ho televízor prehral"),
   T("Cor", "Farba"),

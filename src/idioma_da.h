@@ -1419,6 +1419,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Styrer, hvor afrundede plakaternes hjørner er."),
   T("Controle o que aparece na home e na busca.", "Styr, hvad der vises på Hjem og i søgningen."),
   T("Controle, busca, conta e atualização", "Fjernbetjening, søgning, konto og opdatering"),
+  T("Contém spoiler · OK para ler", "Indeholder spoilere · OK for at læse"),
   T("Conversa", "Talkshow"),
   T("Converter DTS para a TV ouvir", "Konvertér DTS, så TV’et kan afspille det"),
   T("Cor", "Farve"),

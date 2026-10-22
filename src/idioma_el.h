@@ -1419,6 +1419,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Ελέγχει πόσο στρογγυλεμένες είναι οι γωνίες των αφισών."),
   T("Controle o que aparece na home e na busca.", "Έλεγξε τι εμφανίζεται στην Αρχική και στην Αναζήτηση."),
   T("Controle, busca, conta e atualização", "Τηλεχειριστήριο, αναζήτηση, λογαριασμός και ενημέρωση"),
+  T("Contém spoiler · OK para ler", "Περιέχει αποκαλύψεις · OK για ανάγνωση"),
   T("Conversa", "Συζήτηση"),
   T("Converter DTS para a TV ouvir", "Μετατροπή DTS για να το παίζει η τηλεόραση"),
   T("Cor", "Χρώμα"),

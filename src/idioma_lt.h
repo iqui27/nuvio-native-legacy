@@ -1419,6 +1419,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Nustato plakatų kampų užapvalinimą."),
   T("Controle o que aparece na home e na busca.", "Valdykite, kas rodoma Pradžioje ir Paieškoje."),
   T("Controle, busca, conta e atualização", "Pultas, paieška, paskyra ir atnaujinimas"),
+  T("Contém spoiler · OK para ler", "Yra spoilerių · OK skaityti"),
   T("Conversa", "Pokalbių laida"),
   T("Converter DTS para a TV ouvir", "Konvertuoti DTS, kad televizorius jį grotų"),
   T("Cor", "Spalva"),

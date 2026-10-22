@@ -1418,6 +1418,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Управляет скруглением углов постеров."),
   T("Controle o que aparece na home e na busca.", "Управляйте тем, что появляется на главной и в поиске."),
   T("Controle, busca, conta e atualização", "Пульт, поиск, аккаунт и обновления"),
+  T("Contém spoiler · OK para ler", "Содержит спойлеры · OK для чтения"),
   T("Conversa", "Разговор"),
   T("Converter DTS para a TV ouvir", "Преобразовывать DTS, чтобы телевизор его воспроизвёл"),
   T("Cor", "Цвет"),

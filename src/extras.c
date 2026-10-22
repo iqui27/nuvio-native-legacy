@@ -123,7 +123,7 @@ const char *extras_caminho_marca_nome(const char *nome) {
 // `nota` e o user_rating do Trakt (0..10); 0 quando quem comentou nao avaliou.
 // A referencia mostra "10/10  17 curtidas" no rodape do cartao, e sem a nota o
 // rodape ficava so com o numero de curtidas — metade da informacao.
-static struct { char user[40]; char texto[420]; int curtidas; int nota; char lingua[4]; } coment[EX_COMENT_MAX];
+static struct { char user[40]; char texto[420]; int curtidas; int nota; char lingua[4]; int spoiler; } coment[EX_COMENT_MAX];
 
 // COMENTARIOS DO EPISODIO, o outro lado do seletor "Série | Episódio" que a
 // referencia poe acima dos cartoes. Sao uma consulta DIFERENTE
@@ -133,7 +133,7 @@ static struct { char user[40]; char texto[420]; int curtidas; int nota; char lin
 //
 // Vem sob demanda — so quando o dono escolhe "Episódio" —, porque o custo e uma
 // viagem por episodio e a maioria das visitas nunca troca de aba.
-static struct { char user[40]; char texto[420]; int curtidas; int nota; char lingua[4]; } comentEp[EX_COMENT_MAX];
+static struct { char user[40]; char texto[420]; int curtidas; int nota; char lingua[4]; int spoiler; } comentEp[EX_COMENT_MAX];
 static int  nComentEp;
 static int  epTempAtual, epNumAtual;    // de que episodio a lista acima e
 static int  epFioVivo;
@@ -736,6 +736,7 @@ static void *buscar(void *arg) {
       const char *f = js_fim(p);
       achado[n].u[0] = achado[n].t[0] = 0;
       js_texto(p, f, "comment", achado[n].t, sizeof achado[n].t);
+      { char valor[16]=""; js_bruto(p,f,"spoiler",valor,sizeof valor); achado[n].spoiler=!strcmp(valor,"true"); }
       // "username" esta dentro do objeto `user`; js_texto varre a faixa toda e
       // a unica ocorrencia dessa chave no item e essa.
       js_texto(p, f, "username", achado[n].u, sizeof achado[n].u);
@@ -766,6 +767,7 @@ static void *buscar(void *arg) {
         snprintf(coment[k].texto, sizeof coment[k].texto, "%s", achado[k].t);
         coment[k].curtidas = achado[k].c;
         coment[k].nota = achado[k].nota;
+        coment[k].spoiler = achado[k].spoiler;
         snprintf(coment[k].lingua, sizeof coment[k].lingua, "%s", achado[k].l);
       }
       nComent = n;
@@ -1520,6 +1522,8 @@ void extras_pedir(const char *imdb, int serie, long tmdbId) {
 int extras_nota_trakt(void)  { return notaTrakt; }
 int extras_votos_trakt(void) { return votosTrakt; }
 
+int extras_comentario_spoiler(int i) { return i>=0 && i<nComent && coment[i].spoiler; }
+int extras_comentario_ep_spoiler(int i) { return i>=0 && i<nComentEp && comentEp[i].spoiler; }
 int extras_n_comentarios(void) { return nComent; }
 const char *extras_comentario_usuario(int i) {
   return (i >= 0 && i < nComent) ? coment[i].user : "";
@@ -1564,6 +1568,7 @@ static void *buscarEpComent(void *arg) {
       const char *f = js_fim(p);
       achado[n].u[0] = achado[n].t[0] = 0;
       js_texto(p, f, "comment", achado[n].t, sizeof achado[n].t);
+      { char valor[16]=""; js_bruto(p,f,"spoiler",valor,sizeof valor); achado[n].spoiler=!strcmp(valor,"true"); }
       js_texto(p, f, "username", achado[n].u, sizeof achado[n].u);
       achado[n].c = (int)js_num(p, f, "likes", 0.0);
       achado[n].nota = (int)js_num(p, f, "user_rating", 0.0);
@@ -1594,6 +1599,7 @@ static void *buscarEpComent(void *arg) {
         snprintf(comentEp[k].texto, sizeof comentEp[k].texto, "%s", achado[k].t);
         comentEp[k].curtidas = achado[k].c;
         comentEp[k].nota = achado[k].nota;
+        comentEp[k].spoiler = achado[k].spoiler;
         snprintf(comentEp[k].lingua, sizeof comentEp[k].lingua, "%s", achado[k].l);
       }
       nComentEp = n;

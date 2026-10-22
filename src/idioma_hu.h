@@ -1419,6 +1419,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Azt szabályozza, mennyire lekerekítettek a poszterek sarkai."),
   T("Controle o que aparece na home e na busca.", "Szabályozd, mi jelenjen meg a főoldalon és a keresésben."),
   T("Controle, busca, conta e atualização", "Távirányító, keresés, fiók és frissítés"),
+  T("Contém spoiler · OK para ler", "Spoilereket tartalmaz · OK az olvasáshoz"),
   T("Conversa", "Talk-show"),
   T("Converter DTS para a TV ouvir", "DTS átalakítása, hogy a TV lejátssza"),
   T("Cor", "Szín"),

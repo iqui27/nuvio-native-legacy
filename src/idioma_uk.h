@@ -1418,6 +1418,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Керує заокругленням кутів постерів."),
   T("Controle o que aparece na home e na busca.", "Керуйте тим, що з'являється на головній і в пошуку."),
   T("Controle, busca, conta e atualização", "Пульт, пошук, акаунт і оновлення"),
+  T("Contém spoiler · OK para ler", "Містить спойлери · OK для читання"),
   T("Conversa", "Розмова"),
   T("Converter DTS para a TV ouvir", "Перетворювати DTS, щоб телевізор його відтворив"),
   T("Cor", "Колір"),

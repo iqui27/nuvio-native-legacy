@@ -1419,6 +1419,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Afiş köşelerinin ne kadar yuvarlak olacağını belirler."),
   T("Controle o que aparece na home e na busca.", "Ana ekranda ve Aramada nelerin görüneceğini belirler."),
   T("Controle, busca, conta e atualização", "Kumanda, arama, hesap ve güncelleme"),
+  T("Contém spoiler · OK para ler", "Spoiler içerir · Okumak için OK"),
   T("Conversa", "Diyalog"),
   T("Converter DTS para a TV ouvir", "TV’nin çalabilmesi için DTS’yi dönüştür"),
   T("Cor", "Renk"),

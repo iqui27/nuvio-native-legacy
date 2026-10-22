@@ -1419,6 +1419,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Določa, kako zaobljeni so vogali plakatov."),
   T("Controle o que aparece na home e na busca.", "Nadzorujte, kaj se prikaže na domačem zaslonu in v iskanju."),
   T("Controle, busca, conta e atualização", "Daljinec, iskanje, račun in posodobitev"),
+  T("Contém spoiler · OK para ler", "Vsebuje spojlerje · OK za branje"),
   T("Conversa", "Pogovor"),
   T("Converter DTS para a TV ouvir", "Pretvori DTS, da ga TV predvaja"),
   T("Cor", "Barva"),

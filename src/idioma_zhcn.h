@@ -1419,6 +1419,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "控制海报圆角的圆润程度。"),
   T("Controle o que aparece na home e na busca.", "控制主页和搜索中显示的内容。"),
   T("Controle, busca, conta e atualização", "遥控器、搜索、账号和更新"),
+  T("Contém spoiler · OK para ler", "包含剧透 · 按OK阅读"),
   T("Conversa", "对话"),
   T("Converter DTS para a TV ouvir", "转换 DTS 以便电视播放"),
   T("Cor", "颜色"),

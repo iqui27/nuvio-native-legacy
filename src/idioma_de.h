@@ -1418,6 +1418,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Steuert die Rundung der Poster-Ecken."),
   T("Controle o que aparece na home e na busca.", "Steuere, was auf der Startseite und in der Suche erscheint."),
   T("Controle, busca, conta e atualização", "Fernbedienung, Suche, Konto und Update"),
+  T("Contém spoiler · OK para ler", "Enthält Spoiler · OK zum Lesen"),
   T("Conversa", "Gespräch"),
   T("Converter DTS para a TV ouvir", "DTS umwandeln, damit der Fernseher es abspielt"),
   T("Cor", "Farbe"),

@@ -1419,6 +1419,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Bepaalt hoe afgerond de hoeken van de posters zijn."),
   T("Controle o que aparece na home e na busca.", "Bepaalt wat op Start en in Zoeken verschijnt."),
   T("Controle, busca, conta e atualização", "Afstandsbediening, zoeken, account en updates"),
+  T("Contém spoiler · OK para ler", "Bevat spoilers · OK om te lezen"),
   T("Conversa", "Dialoog"),
   T("Converter DTS para a TV ouvir", "DTS omzetten zodat de tv het afspeelt"),
   T("Cor", "Kleur"),

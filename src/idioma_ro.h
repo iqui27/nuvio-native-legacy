@@ -1418,6 +1418,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Controlează cât de rotunjite sunt colțurile afișelor."),
   T("Controle o que aparece na home e na busca.", "Controlează ce apare pe Acasă și în Căutare."),
   T("Controle, busca, conta e atualização", "Telecomandă, căutare, cont și actualizare"),
+  T("Contém spoiler · OK para ler", "Conține spoilere · OK pentru citire"),
   T("Conversa", "Conversație"),
   T("Converter DTS para a TV ouvir", "Convertește DTS ca televizorul să-l redea"),
   T("Cor", "Culoare"),

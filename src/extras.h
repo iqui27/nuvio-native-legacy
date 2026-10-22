@@ -71,6 +71,8 @@ int  extras_comentario_curtidas(int i);
 // Nota de QUEM COMENTOU (user_rating do Trakt), 0..10; 0 quando nao avaliou.
 // A referencia mostra "10/10  17 curtidas" no rodape do cartao.
 int  extras_comentario_nota(int i);
+int  extras_comentario_spoiler(int i);
+int  extras_comentario_ep_spoiler(int i);
 // Idioma do comentario ("en") quando difere do da interface; "" caso contrario.
 const char *extras_comentario_lingua(int i);
 const char *extras_comentario_ep_lingua(int i);

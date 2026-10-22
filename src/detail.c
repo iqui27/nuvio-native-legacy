@@ -528,7 +528,22 @@ static int epOculto(const CatEp *ep) {
 static int    epAncora = 0;
 // Comentarios: 0 = da SERIE, 1 = do EPISODIO. E o seletor que a referencia poe
 // sob "Avaliações do Trakt". Em filme nao existe e fica cravado em 0.
+static int ehSerie(void);
 static int comentEp = 0;
+static unsigned char comRevelados[2][EX_COMENT_MAX];
+static int comInteiro = -1;
+static int comOculto(int i) {
+  int ep=ehSerie() && comentEp;
+  return i>=0 && i<EX_COMENT_MAX && !comRevelados[ep][i] &&
+    (ep ? extras_comentario_ep_spoiler(i) : extras_comentario_spoiler(i));
+}
+static void comAbrir(int i) {
+  int ep=ehSerie() && comentEp;
+  int n=ep ? extras_n_comentarios_ep() : extras_n_comentarios();
+  if (i<0 || i>=n || i>=EX_COMENT_MAX) return;
+  if (comOculto(i)) comRevelados[ep][i]=1;
+  else comInteiro=i;
+}
 // O EPISODIO DOS COMENTARIOS: o ultimo que o foco pisou na fileira de
 // episodios (temporada/numero), 0 enquanto o foco nao passou por la. O dono
 // (20/09/2026): "nao ta seguindo o episodio selecionado" — episodioAlvo() so
@@ -1402,6 +1417,7 @@ static void abrirInterno(const HomeItem *it) {
   detmais_zerar();
   heroReiniciar();
   focoVersao = 0; epRevelaT = epRevelaE = -1;
+  memset(comRevelados,0,sizeof comRevelados); comInteiro=-1;
   t = 0.0f; pg = 0.0f; scrollY = 0.0f; velY = 0.0f; abaInfo = 0; pessoaAberta = 0;
 #ifdef NV_TOUCH_UI
   memset(&toqueDetalhe, 0, sizeof toqueDetalhe);
@@ -2528,6 +2544,12 @@ void detail_evento(const SDL_Event *e) {
   if (saindo) return;
   // O CARTAO "O QUE ACHOU?" aberto pela pagina e modal: a tecla e dele.
   if (reacao_aberta() && reacao_evento(e, 1)) return;
+  if (comInteiro>=0) {
+    if (e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_ESCAPE ||
+        e->key.keysym.sym==SDLK_AC_BACK || e->key.keysym.sym==SDLK_BACKSPACE ||
+        e->key.keysym.sym==SDLK_RETURN || e->key.keysym.scancode==NV_SCANCODE_BACK)) comInteiro=-1;
+    return;
+  }
   // CARROSSEL ANDANDO: as setas laterais continuam andando pela fileira (a
   // pagina do titulo do meio do caminho nem chegou a ser montada); qualquer
   // outra tecla monta a pagina do titulo em cena antes de agir nela.
@@ -2843,6 +2865,8 @@ void detail_evento(const SDL_Event *e) {
       // Segurar OK em "Episódio": escolher temporada e episodio nas proprias
       // fileiras da pagina; o OK de la devolve o foco para ca.
       if (comentEp && dur >= NV_HOLD_MS) comentariosEscolher();
+    } else if (foco.fileira == SEC_COMENTARIOS) {
+      comAbrir(foco.coluna-nPilulasCom());
     } else if (foco.fileira == SEC_TRAILERS) {
       // OK num trailer. Onde ha pagina (Samsung), o trailer toca AQUI, em
       // tela cheia e com som, atras do canvas (trailer.h) — era o #82: o
@@ -3530,7 +3554,10 @@ void detail_atualizar(float dt, Uint32 agora) {
     // fileira nao pula de volta para o episodio de onde a aba a deixou.
     epAncora = foco.coluna;
     { const CatEp *ep = cat_episodio(idx, epAbsoluto(foco.coluna));
-      if (ep) { comEpT = ep->temporada; comEpE = ep->episodio; } }
+      if (ep) {
+        if (comEpT!=ep->temporada || comEpE!=ep->episodio) memset(comRevelados[1],0,sizeof comRevelados[1]);
+        comEpT = ep->temporada; comEpE = ep->episodio;
+      } }
   }
 
   // "Seu progresso" entra pela coluna da temporada escolhida na pagina.
@@ -6738,7 +6765,10 @@ static void desenhaComentarios(float x, float y, float a) {
 
     // O texto para ANTES do rodape: sem o teto de linhas ele passava por cima
     // das curtidas. 6 linhas de 30 terminam em 246; o rodape comeca em 288.
-    txt_bloco(TXT_DET_META2, daSerie ? extras_comentario_texto(i)
+    if (comOculto(i)) {
+      for (int k=0; k<4; k++) gfx_cor((GfxRect){px,y+COM_PAD+52+k*30,larg-(k%2)*80,10},.5f,.25f,.27f,.29f,a);
+      txt_desenhar_alpha(txt_linha(TXT_CAPTION2,"Contém spoiler · OK para ler",200,203,210,255),px,y+COM_CARD_H-90,a);
+    } else txt_bloco(TXT_DET_META2, daSerie ? extras_comentario_texto(i)
                                      : extras_comentario_ep_texto(i),
               focCor ? (tintaEsc ? 45 : 235) : 190, focCor ? (tintaEsc ? 47 : 236) : 195, focCor ? (tintaEsc ? 52 : 240) : 205,
               px, y + COM_PAD + 42.0f, larg, 30.0f, a * 0.95f, 6);
@@ -7638,6 +7668,16 @@ void detail_desenhar(Uint32 agora) {
   if (colListaAberta) { ponteiro_camada(); desenhaListaColecao(s); }
   // E o menu de visto por cima da ficha tambem: ele e o ultimo a abrir.
   if (episodios_menu_aberto()) ponteiro_camada();
+  if (comInteiro>=0) {
+    int ep=ehSerie() && comentEp;
+    GfxRect folha={240,220,1440,640};
+    gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,.42f*s);
+    plrui_material(folha,30,0,s);
+    const char *nome=ep ? extras_comentario_ep_usuario(comInteiro) : extras_comentario_usuario(comInteiro);
+    const char *texto=ep ? extras_comentario_ep_texto(comInteiro) : extras_comentario_texto(comInteiro);
+    txt_desenhar_alpha(txt_linha(TXT_HEADLINE,nome,240,242,246,255),folha.x+48,folha.y+40,s);
+    txt_bloco(TXT_DET_META2,texto,220,224,232,folha.x+48,folha.y+110,folha.w-96,36,s,12);
+  }
   reacaoPendente(s);
   menuDeVisto(agora);
   maisDesenhar();

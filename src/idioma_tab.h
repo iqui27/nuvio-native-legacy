@@ -1418,6 +1418,7 @@
   { "Controla o arredondamento dos cantos dos pôsteres.", "Controls how rounded the poster corners are." },
   { "Controle o que aparece na home e na busca.", "Control what appears on Home and in Search." },
   { "Controle, busca, conta e atualização", "Remote, search, account and updates" },
+  { "Contém spoiler · OK para ler", "Contains spoilers · OK to read" },
   { "Conversa", "Talk" },
   { "Converter DTS para a TV ouvir", "Convert DTS so the TV can play it" },
   { "Cor", "Color" },

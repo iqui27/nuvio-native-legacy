@@ -1419,6 +1419,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Определя колко са заоблени ъглите на плакатите."),
   T("Controle o que aparece na home e na busca.", "Управлявайте какво се показва в Начало и в Търсене."),
   T("Controle, busca, conta e atualização", "Дистанционно, търсене, профил и обновяване"),
+  T("Contém spoiler · OK para ler", "Съдържа спойлери · OK за четене"),
   T("Conversa", "Токшоу"),
   T("Converter DTS para a TV ouvir", "Преобразувай DTS, за да го пусне телевизорът"),
   T("Cor", "Цвят"),

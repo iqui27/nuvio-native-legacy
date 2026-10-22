@@ -1419,6 +1419,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Điều chỉnh độ bo tròn góc của poster."),
   T("Controle o que aparece na home e na busca.", "Kiểm soát những gì hiện ở Trang chủ và trong Tìm kiếm."),
   T("Controle, busca, conta e atualização", "Điều khiển, tìm kiếm, tài khoản và cập nhật"),
+  T("Contém spoiler · OK para ler", "Có tiết lộ nội dung · OK để đọc"),
   T("Conversa", "Trò chuyện"),
   T("Converter DTS para a TV ouvir", "Chuyển DTS để TV phát được"),
   T("Cor", "Màu"),

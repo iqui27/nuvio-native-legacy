@@ -1419,6 +1419,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Mengatur seberapa melengkung sudut poster."),
   T("Controle o que aparece na home e na busca.", "Atur apa yang tampil di Beranda dan di Pencarian."),
   T("Controle, busca, conta e atualização", "Remote, pencarian, akun, dan pembaruan"),
+  T("Contém spoiler · OK para ler", "Mengandung spoiler · OK untuk membaca"),
   T("Conversa", "Bicara"),
   T("Converter DTS para a TV ouvir", "Ubah DTS agar bisa diputar TV"),
   T("Cor", "Warna"),

@@ -1,6 +1,10 @@
+#define extras_comentario_spoiler comSpoilerFixture
+#define extras_n_comentarios comCountFixture
 #define extras_relacionado_imdb relFixture
 #include "../src/detail.c"
 #undef extras_relacionado_imdb
+int comSpoilerFixture(int i) { return i == 0; }
+int comCountFixture(void) { return 3; }
 const char *relFixture(int i) { (void)i; return "tt9000011"; }
 #include <assert.h>
 #include "dados.h"
@@ -60,7 +64,12 @@ int main(void) {
   cat_historico_definir_id(itemTeste.imdb,itemTeste.tipo,1);
   assert(relacionadoVisto(0));
   assert(!strcmp(cabecalhoDe(SEC_RELACIONADOS),"Mais como este"));
-  puts("detail21: hero, episodes, progress, cast and recommendations OK");
+  comentEp=0; memset(comRevelados,0,sizeof comRevelados); comInteiro=-1;
+  assert(comOculto(0));
+  comAbrir(0); assert(!comOculto(0) && comInteiro==-1);
+  comAbrir(0); assert(comInteiro==0);
+  comInteiro=-1; comAbrir(1); assert(comInteiro==1);
+  puts("detail21: hero, episodes, progress, cast, recommendations and spoilers OK");
   SDL_Quit();
   return 0;
 }

@@ -1419,6 +1419,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "ポスターの角の丸みを調整します。"),
   T("Controle o que aparece na home e na busca.", "ホームと検索に表示する内容を設定します。"),
   T("Controle, busca, conta e atualização", "リモコン、検索、アカウント、アップデート"),
+  T("Contém spoiler · OK para ler", "ネタバレあり · OKで読む"),
   T("Conversa", "トーク"),
   T("Converter DTS para a TV ouvir", "テレビで再生できるよう DTS を変換"),
   T("Cor", "色"),

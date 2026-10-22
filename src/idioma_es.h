@@ -1418,6 +1418,7 @@
   T("Controla o arredondamento dos cantos dos pôsteres.", "Controla el redondeo de las esquinas de los pósters."),
   T("Controle o que aparece na home e na busca.", "Controla qué aparece en la home y en la búsqueda."),
   T("Controle, busca, conta e atualização", "Mando, búsqueda, cuenta y actualización"),
+  T("Contém spoiler · OK para ler", "Contiene spoilers · OK para leer"),
   T("Conversa", "Conversación"),
   T("Converter DTS para a TV ouvir", "Convertir DTS para que la TV lo reproduzca"),
   T("Cor", "Color"),
