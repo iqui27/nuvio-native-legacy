@@ -51,10 +51,12 @@ static float anim, scrollY, velY;
 static char  titulo[96];
 static const ColFolder *collection;
 static ColFolder servidor;
-static ColSource servidorFontes[SRV_FIL_MAX];
+static ColSource servidorFontes[SRV_VISAO_MAX];
+static char servidorRaiz[96];
+static char servidorChaves[SRV_VISAO_MAX][96];
 static int servidorAtivo, servidorFiltro, servidorOrdem, servidorControle;
 static int servidorMapa[VT_MAX], servidorN = -1, servidorLidos = -1;
-static const char *const SRV_FILTROS[] = { "Todos", "Filmes", "Séries", "Não assistido", "Fonte HDR" };
+static const char *const SRV_FILTROS[] = { "Todos", "Filmes", "Séries", "Não assistido", "Fonte HDR", "4K" };
 static const char *const SRV_ORDENS[] = { "Recentes", "Nome (A–Z)", "Ano", "Nota" };
 static int source, tabFocus, tabCursor, timeline, ranked;
 static float tabAnim[COL_SOURCE_MAX];
@@ -148,10 +150,12 @@ static void servidorOrdenar(void) {
     int tem;
     if (!desc_vertudo_item(i, it)) continue;
     tem = servidores_info(it->imdb, it->tipo, &info);
-    if ((servidorFiltro == 1 && strcmp(it->tipo, "movie")) ||
+    if (strcmp(it->tipo, "group") && strcmp(it->tipo, "list") &&
+        ((servidorFiltro == 1 && strcmp(it->tipo, "movie")) ||
         (servidorFiltro == 2 && strcmp(it->tipo, "series")) ||
         (servidorFiltro == 3 && (!tem || info.visto)) ||
-        (servidorFiltro == 4 && (!tem || !info.hdr))) continue;
+        (servidorFiltro == 4 && (!tem || !info.hdr)) ||
+        (servidorFiltro == 5 && (!tem || info.altura < 2160)))) continue;
     servidorMapa[servidorN++] = i;
   }
   if (servidorOrdem) for (int i = 1; i < servidorN; i++) {
@@ -260,8 +264,8 @@ void vertudo_abrir(const char *base, const char *tipo, const char *catId,
 }
 
 void vertudo_servidores(const char *chave) {
-  CatFileira fils[SRV_FIL_MAX];
-  int n = servidores_bibliotecas(fils, SRV_FIL_MAX), escolhido = 0;
+  CatFileira fils[SRV_VISAO_MAX];
+  int n = servidores_bibliotecas(fils, SRV_VISAO_MAX), escolhido = 0;
   if (!n) return;
   memset(&servidor, 0, sizeof servidor);
   memset(servidorFontes, 0, sizeof servidorFontes);
@@ -272,6 +276,7 @@ void vertudo_servidores(const char *chave) {
     ColSource *s = &servidorFontes[i];
     snprintf(s->base, sizeof s->base, "servidores");
     snprintf(s->catId, sizeof s->catId, "%s", fils[i].chave);
+    snprintf(servidorChaves[i], sizeof servidorChaves[i], "%s", fils[i].chave);
     snprintf(s->type, sizeof s->type, "%s", fils[i].tipo);
     snprintf(s->title, sizeof s->title, "%s", fils[i].titulo);
     if (chave && !strcmp(chave, fils[i].chave)) escolhido = i;
@@ -283,6 +288,7 @@ void vertudo_servidores(const char *chave) {
   servidorAtivo = 1;
   servidorFiltro = servidorOrdem = servidorControle = 0;
   source = tabCursor = escolhido;
+  snprintf(servidorRaiz, sizeof servidorRaiz, "%s", servidorFontes[escolhido].catId);
   tabFocus = n > 1;
   openSource();
 }
@@ -303,14 +309,20 @@ void vertudo_evento(const SDL_Event *e) {
   if (!aberta || e->type != SDL_KEYDOWN) return;
   k = e->key.keysym.sym;
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
-      e->key.keysym.scancode == NV_SCANCODE_BACK) { aberta = 0; return; }
+      e->key.keysym.scancode == NV_SCANCODE_BACK) {
+    if (servidorAtivo && strcmp(catalogId, servidorRaiz)) {
+      snprintf(servidorFontes[source].catId, sizeof servidorFontes[source].catId, "%s", servidorRaiz);
+      openSource(); return;
+    }
+    aberta = 0; return;
+  }
   if (servidorAtivo && tabFocus == 2) {
     if (k == SDLK_LEFT && servidorControle > 0) servidorControle--;
     if (k == SDLK_RIGHT && servidorControle < 1) servidorControle++;
     if (k == SDLK_UP) tabFocus = 1;
     if (k == SDLK_DOWN) tabFocus = 0;
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
-      if (!servidorControle) servidorFiltro = (servidorFiltro + 1) % 5;
+      if (!servidorControle) servidorFiltro = (servidorFiltro + 1) % 6;
       else servidorOrdem = (servidorOrdem + 1) % 4;
       servidorLidos = -1; foco = 0; scrollY = 0;
       servidorOrdenar();
@@ -320,7 +332,13 @@ void vertudo_evento(const SDL_Event *e) {
   if(collection&&tabFocus) {
     if(k==SDLK_LEFT){ if(tabCursor>0)tabCursor--; else pedMenu=1; }
     if(k==SDLK_RIGHT&&tabCursor+1<collection->nSources)tabCursor++;
-    if(k==SDLK_RETURN||k==SDLK_KP_ENTER){source=tabCursor;openSource();tabFocus=0;}
+    if(k==SDLK_RETURN||k==SDLK_KP_ENTER){source=tabCursor;
+      if (servidorAtivo) {
+        snprintf(servidorFontes[source].catId, sizeof servidorFontes[source].catId, "%s", servidorChaves[source]);
+        snprintf(servidorRaiz, sizeof servidorRaiz, "%s", servidorChaves[source]);
+        servidorFiltro = 0;
+      }
+      openSource();tabFocus=0;}
     if(k==SDLK_DOWN&&(n>0||servidorAtivo))tabFocus=servidorAtivo?2:0;
     return;
   }
@@ -339,6 +357,17 @@ void vertudo_evento(const SDL_Event *e) {
     // possa abri-lo por indice, que e como todo o app trabalha.
     CatItem it;
     if (viewItem(foco, &it)) {
+      if (servidorAtivo && (!strcmp(it.tipo, "group") || !strcmp(it.tipo, "list"))) {
+        char tag[JFID_TAG + 1], item[JFID_ITEM + 1], chave[96];
+        const char *pre = !strncmp(catalogId, "plex_", 5) ? "plex_" : !strncmp(catalogId, "emby_", 5) ? "emby_" : "jellyfin_";
+        const char *ip = pre[0] == 'p' ? JFID_PREFIXO_PLEX : pre[0] == 'e' ? JFID_PREFIXO_EMBY : JFID_PREFIXO;
+        if (jfid_partes_p(ip, it.imdb, tag, item)) {
+          snprintf(chave, sizeof chave, "%s%s%s", pre, !strcmp(it.tipo, "list") ? "list_" : pre[0] == 'p' ? "group_" : "", item);
+          snprintf(servidorFontes[source].catId, sizeof servidorFontes[source].catId, "%s", chave);
+          openSource();
+        }
+        return;
+      }
       // Item de fonte TMDB (issue #44): o id e "tmdb:<n>", nao imdb. Quem
       // resolve e o caminho sob-demanda ja usado pela filmografia de elenco:
       // external_ids -> imdb -> meta do Cinemeta -> cat_acrescentar, e o
@@ -423,7 +452,7 @@ static void painel(float a) {
       gfx_rect(r, t, GFX_CARD, 0, 0, 0, raio, 0, 0, 0, a);
       gfx_tex_aspect_atual = 0.0f;
     } else {
-      TxtLinha falta = txt_linha_corta(TXT_HERO_META, "Sem pôster", 185, 191, 204, 255, r.w-24);
+      TxtLinha falta = txt_linha_corta(servidorAtivo ? TXT_V2_24 : TXT_HERO_META, "Sem pôster", 185, 191, 204, 255, r.w-24);
       txt_desenhar_alpha(falta, r.x+(r.w-falta.w)*.5f, r.y+(r.h-falta.h)*.5f, a);
     } }
   y += VT_PAN_ART_H + 18.0f;

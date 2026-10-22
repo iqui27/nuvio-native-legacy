@@ -4233,7 +4233,7 @@ static void heroWeb(float a, float desloc) {
 
   // --- linha do servidor pessoal -------------------------------------------
   if (srvLinha[0]) {
-    TxtLinha l = txt_linha_corta(TXT_CAPTION, srvLinha, 255, 255, 255, 255, NV_DETW2_TEXTO_W);
+    TxtLinha l = txt_linha_corta(TXT_V2_24, srvLinha, 255, 255, 255, 255, NV_DETW2_TEXTO_W);
     txt_desenhar_alpha(l, NV_DETW2_X, ySrv + (NV_DETW_RETOM_H - l.h) * 0.5f, a);
   }
 
