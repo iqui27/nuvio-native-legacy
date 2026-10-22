@@ -270,3 +270,4 @@
   0, 0, 0, /* achievements (2.1): master, notice after credits, secret hints: all On */
   1, /* kids profile: Desligado (V_LIGA: 1); the state lives in perfilinfantil.c */
   0, /* title hero: Ready version */
+  0, /* cast history: On */

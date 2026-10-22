@@ -5763,6 +5763,16 @@ static void desenhaDetalhes(float x, float y, float f, float a) {
   }
 }
 
+static int elencoVistoEm(long pessoa) {
+  if (pessoa<=0) return -1;
+  for (int i=0; i<cat_n(); i++) {
+    const CatItem *c=cat_item(i);
+    if (i==idx || !c || !cat_visto(c)) continue;
+    for (int k=0; k<c->nElenco; k++) if (c->elenco[k].tmdb==pessoa) return i;
+  }
+  return -1;
+}
+
 static void elencoMonograma(const char *nome, char *dst, size_t n) {
   if (!n) return;
   dst[0]=0;
@@ -5826,6 +5836,20 @@ static void desenhaElenco(float x, float y, int c, float f, float a) {
     TxtLinha li = txt_linha(TXT_TITULO3, ini, 210, 212, 220, 255);
     txt_desenhar_alpha(li, av.x + (av.w - li.w) * 0.5f,
                        av.y + (av.h - li.h) * 0.5f, a * 0.9f);
+  }
+  if (nivel>=1 && foco.fileira==SEC_ELENCO && foco.coluna==c &&
+      ajustes_detalhe_elenco_visto()) {
+    static int indice=-1, coluna=-1, visto=-1; static Uint32 quando;
+    Uint32 agora=SDL_GetTicks();
+    if (indice!=idx || coluna!=c || agora-quando>1000) {
+      visto=elencoVistoEm(ci->elenco[c].tmdb); indice=idx; coluna=c; quando=agora;
+    }
+    const CatItem *obra=visto>=0 ? cat_item(visto) : NULL;
+    if (obra) {
+      char frase[256]; snprintf(frase,sizeof frase,i18n("Você viu em %s"),obra->titulo);
+      txt_desenhar_alpha(txt_linha_corta(TXT_CAPTION2,frase,180,185,195,255,1700),
+                         NV_DETP_X,y+NV_DETP_EL_AVATAR+NV_DETP_EL_NOME_DY+78,a);
+    }
   }
   float yn = y + NV_DETP_EL_AVATAR + NV_DETP_EL_NOME_DY;
   TxtLinha ln = txt_linha_corta(TXT_CALLOUT, nome, epApple()?238:179, epApple()?240:179, epApple()?244:179, 255, NV_DETP_EL_W);

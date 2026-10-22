@@ -102,7 +102,17 @@ int main(void) {
   perfil=fopen(perfilPath,"w"); assert(perfil); fputs("menuTopoLocal 0\n",perfil); fclose(perfil);
   ajustes_perfil_restaurar(9);
   assert(ajustes_detalhe_topo()==0); // pre-existing profiles must not inherit Both
-  puts("detail21: content, navigation and profile isolation OK");
+  CatItem cast[2]={{0}};
+  snprintf(cast[0].tipo,sizeof cast[0].tipo,"movie"); snprintf(cast[1].tipo,sizeof cast[1].tipo,"movie");
+  snprintf(cast[0].imdb,sizeof cast[0].imdb,"tt9011001"); snprintf(cast[1].imdb,sizeof cast[1].imdb,"tt9011002");
+  cast[0].elenco[0].tmdb=42; cast[0].nElenco=1;
+  cast[1].elenco[0].tmdb=42; cast[1].nElenco=1;
+  cat_definir_tudo(cast,2,NULL,0); idx=0;
+  assert(elencoVistoEm(42)==-1);
+  cat_historico_definir_id(cast[1].imdb,"movie",1);
+  assert(elencoVistoEm(42)==1);
+  assert(elencoVistoEm(0)==-1);
+  puts("detail21: content, navigation, profile and cast history OK");
   SDL_Quit();
   return 0;
 }
