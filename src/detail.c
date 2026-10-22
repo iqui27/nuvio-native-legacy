@@ -694,6 +694,7 @@ static float alturaCabComentarios(void);
 static int temporadaEm(int c);
 static int epAbsoluto(int c);
 static int epVisiveis(void);
+static int topoFonteDisponivel(void);
 static int nTemporadasReais(void) {
   const CatItem *ci=cat_item(idx);
   return ehSerie() && ci ? ci->nTemporadas : 0;
@@ -2762,7 +2763,8 @@ void detail_evento(const SDL_Event *e) {
     dur = ponteiro_ok_longo() ? NV_HOLD_MS : SDL_GetTicks() - okDesceEm;
     okDesceEm = 0;
     if (nivel == 0 && focoVersao) {
-      pedFontes = 1;
+      if (topoFonteDisponivel()) pedFontes = 1;
+      else focoVersao=0;
     } else if (nivel == 0 && focoAmigos) {
       // A lista do que cada amigo achou, AQUI (dono, 06/10/2026), e nao mais a
       // aba Atividade do painel — que repetia so "viu".
@@ -2989,12 +2991,13 @@ void detail_evento(const SDL_Event *e) {
     return;
   }
   if (nivel == 0) {
+    if (focoVersao && !topoFonteDisponivel()) focoVersao=0;
     if (focoVersao) {
       if (k == SDLK_UP) { focoVersao = 0; botao = 0; return; }
       if (k == SDLK_DOWN) { pedFontes = 1; return; }
       return;
     }
-    if (k == SDLK_DOWN && botao==0 && topoVersao() && vaiTocar.tem && !(carro && !carCheia)) {
+    if (k == SDLK_DOWN && botao==0 && topoVersao() && topoFonteDisponivel() && !(carro && !carCheia)) {
       focoVersao = 1; return;
     }
     // CIMA na linha de botoes nao fazia nada; com uma reacao pendente ele abre
@@ -4340,6 +4343,15 @@ static float  hVaiVis;
 static Uint32 hVaiTick;
 static int    metaEsqVisto;       // o esqueleto da linha de meta foi mostrado
 static Uint32 metaChegouEm;
+
+static int topoFonteDisponivel(void) {
+  const CatItem *ci=cat_item(idx); char alvo[96]; int st=0,ep=0;
+  if (!ci || !vaiTocar.tem) return 0;
+  if (ehSerie()) episodioAlvo(&st,&ep,NULL);
+  if (st>0 && ep>0) snprintf(alvo,sizeof alvo,"%s:%d:%d",ci->imdb,st,ep);
+  else snprintf(alvo,sizeof alvo,"%s",ci->imdb);
+  return stream_lista_do_alvo(alvo);
+}
 
 static void heroReiniciar(void) {
   textogate_reiniciar(&gateHero);

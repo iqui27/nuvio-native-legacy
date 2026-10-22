@@ -133,7 +133,9 @@ int main(void) {
   assert(progMelhorNaoVisto(&bestT,&bestE)==90 && bestT==2 && bestE==1);
   vistoep_definir(itemTeste.imdb,2,1,1);
   assert(progMelhorNaoVisto(&bestT,&bestE)==81 && bestT==1 && bestE==2);
-  puts("detail21: content, navigation, profiles, season controls and best episode OK");
+  vaiTocar.tem=1; stream_invalidar("fixture target changed");
+  assert(!topoFonteDisponivel()); // stale rendered source cannot take focus
+  puts("detail21: content, navigation, profiles, season controls and source identity OK");
   SDL_Quit();
   return 0;
 }
