@@ -1643,7 +1643,7 @@ int plex_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, int max
   for (r = 0; r < nSnapFils && nf < maxFils; r++) {
     const CatFileira *f = &snapFils[r];
     if (ni + f->n > maxItens) break;
-    memcpy(itens + ni, snapItens + f->ini, sizeof(CatItem) * (size_t)f->n);
+    if (itens) memcpy(itens + ni, snapItens + f->ini, sizeof(CatItem) * (size_t)f->n);
     fils[nf] = *f;
     fils[nf].ini = ni;
     ni += f->n;
@@ -1659,6 +1659,13 @@ int plex_pagina(const char *chave, int inicio, int limite, CatItem *out, int max
   unsigned g;
   int n;
   if (!plex_chave_fileira(chave)) return -1;
+  if (!strcmp(chave + 5, "nextup")) {
+    if (total) *total = 0;
+    if (inicio) return 0;
+    n = plex_atividade("nextup", out, max);
+    if (total && n > 0) *total = n;
+    return n;
+  }
   pthread_mutex_lock(&trava);
   conferirPerfilLocked();
   if (estado != PX_EST_CONECTADO) { pthread_mutex_unlock(&trava); return -1; }
@@ -2008,6 +2015,18 @@ static void tarefaBibliotecas(const Tarefa *t) {
     fils[nf].ini = ni; fils[nf].n = n;
     ni += n; nf++;
   }
+  if (e == PX_OK) indexar(t, j, &c, libs, nl);
+  if (e == PX_OK && nf < PX_FIL_MAX) {
+    int n = plex_atividade("nextup", itens + ni, PX_POR_FILEIRA);
+    if (n > 0) {
+      memset(&fils[nf], 0, sizeof fils[nf]);
+      copiar(fils[nf].chave, sizeof fils[nf].chave, "plex_nextup");
+      copiar(fils[nf].titulo, sizeof fils[nf].titulo, c.servidorNome);
+      copiar(fils[nf].tipo, sizeof fils[nf].tipo, "series");
+      fils[nf].ini = ni; fils[nf].n = n;
+      ni += n; nf++;
+    }
+  }
   pthread_mutex_lock(&trava);
   if (aindaVale(t, j)) {
     if (e == PX_OK) {
@@ -2033,8 +2052,6 @@ static void tarefaBibliotecas(const Tarefa *t) {
   }
   pthread_mutex_unlock(&trava);
   free(itens);
-  // Second pass, after the rows are on screen: the matching index.
-  if (e == PX_OK) indexar(t, j, &c, libs, nl);
   apagarSegredo(&c, sizeof c);
   fecharTarefa(j);
 }

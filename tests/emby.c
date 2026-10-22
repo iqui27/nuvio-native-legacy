@@ -18,6 +18,7 @@ static char dirDados[512];
 static int perfilAtivo = 1;
 int perfis_ativo(void) { return perfilAtivo; }
 int ajustes_jellyfin_ligado(void) { return 1; }
+const char *i18n(const char *s) { return s; }
 char *dados_caminho(char *dst, unsigned tam, const char *nome) {
   snprintf(dst, tam, "%s/%s", dirDados, nome);
   return dst;

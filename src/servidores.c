@@ -1,5 +1,6 @@
 #include "servidores.h"
 #include "ajustes.h"
+#include "idioma.h"
 #include "jsraiz.h"
 #include <pthread.h>
 #include <stdio.h>
@@ -132,6 +133,15 @@ int servidores_chave_fileira(const char *chave) {
   return jellyfin_chave_fileira(chave) || emby_chave_fileira(chave) || plex_chave_fileira(chave);
 }
 
+int servidores_bibliotecas(CatFileira *fils, int max) {
+  int n = 0, ni;
+  if (!ajustes_jellyfin_ligado()) return 0;
+  n += jellyfin_fileiras_copiar(NULL, SRV_ITENS_MAX, fils, max, &ni);
+  n += emby_fileiras_copiar(NULL, SRV_ITENS_MAX, fils + n, max - n, &ni);
+  n += plex_fileiras_copiar(NULL, SRV_ITENS_MAX, fils + n, max - n, &ni);
+  return n;
+}
+
 // Appends each module's rows after the previous ones; item windows are rebased.
 int servidores_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, int maxFils, int *nItens) {
   int nf = 0, ni = 0, m;
@@ -148,6 +158,8 @@ int servidores_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, i
       for (r = 0; r < f; r++) {
         CatFileira fila = fils[nf + r];
         int ini = w;
+        if (strstr(fila.chave, "_nextup"))
+          snprintf(fila.titulo, sizeof fila.titulo, "%s · %s", i18n("Próximos episódios"), fils[nf + r].titulo);
         for (k = 0; k < fila.n; k++) {
           CatItem *it = &itens[ni + fila.ini + k];
           if (!it->imdb[0] || jfid_e(it->imdb)) continue;

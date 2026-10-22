@@ -45,6 +45,8 @@ void servidores_rotular(Stream *l, int n);
 void servidores_atualizar_periodico(void);   // servidores_passo: rows + index every 30 min
 unsigned servidores_fileiras_versao(void);
 int  servidores_chave_fileira(const char *chave);
+// Row metadata only, including private-only libraries; no CatItem allocation.
+int  servidores_bibliotecas(CatFileira *fils, int max);
 int  servidores_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, int maxFils,
                                 int *nItens);
 int  servidores_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total);

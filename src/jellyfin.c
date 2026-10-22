@@ -1134,6 +1134,7 @@ static void jfi_cancelar_entrada(JfInst *I);
 static void jfi_recarregar_bibliotecas(JfInst *I);
 static unsigned jfi_fileiras_versao(JfInst *I);
 static int jfi_chave_fileira(JfInst *I, const char *chave);
+static int jfi_atividade(JfInst *I, const char *modo, CatItem *out, int max);
 static int jfi_fileiras_copiar(JfInst *I, CatItem *itens, int maxItens, CatFileira *fils, int maxFils, int *nItens);
 static int jfi_relatorios_pendentes(JfInst *I);
 static void jfi_reproducao_tick(JfInst *I, const char *url, double pos, double dur, int tocando);
@@ -1574,7 +1575,7 @@ static int jfi_fileiras_copiar(JfInst *I, CatItem *itens, int maxItens, CatFilei
   for (r = 0; r < I->nSnapFils && nf < maxFils; r++) {
     const CatFileira *f = &I->snapFils[r];
     if (ni + f->n > maxItens) break;
-    memcpy(itens + ni, I->snapItens + f->ini, sizeof(CatItem) * (size_t)f->n);
+    if (itens) memcpy(itens + ni, I->snapItens + f->ini, sizeof(CatItem) * (size_t)f->n);
     fils[nf] = *f;
     fils[nf].ini = ni;
     ni += f->n;
@@ -1591,6 +1592,13 @@ static int jfi_pagina(JfInst *I, const char *chave, int inicio, int limite,
   unsigned g;
   int n;
   if (!jfi_chave_fileira(I, chave)) return -1;
+  if (!strcmp(chave + strlen(I->prefixoFila), "nextup")) {
+    if (total) *total = 0;
+    if (inicio) return 0;
+    n = jfi_atividade(I, "nextup", out, max);
+    if (total && n > 0) *total = n;
+    return n;
+  }
   pthread_mutex_lock(&I->trava);
   conferirPerfilLocked(I);
   if (I->estado != JF_EST_CONECTADO) { pthread_mutex_unlock(&I->trava); return -1; }
@@ -1931,6 +1939,20 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
     fils[nf].ini = ni; fils[nf].n = n;
     ni += n; nf++;
   }
+  // NextUp episodes need the series index to become catalogue identities.
+  if (e == JF_OK) indexar(I, t, j, &c);
+  // Optional NextUp: an unsupported endpoint must not hide libraries.
+  if (e == JF_OK && nf < JF_FIL_MAX) {
+    int n = jfi_atividade(I, "nextup", itens + ni, JF_POR_FILEIRA);
+    if (n > 0) {
+      memset(&fils[nf], 0, sizeof fils[nf]);
+      snprintf(fils[nf].chave, sizeof fils[nf].chave, "%snextup", I->prefixoFila);
+      copiar(fils[nf].titulo, sizeof fils[nf].titulo, c.servidorNome);
+      copiar(fils[nf].tipo, sizeof fils[nf].tipo, "series");
+      fils[nf].ini = ni; fils[nf].n = n;
+      ni += n; nf++;
+    }
+  }
   pthread_mutex_lock(&I->trava);
   if (aindaVale(I, t, j)) {
     if (e == JF_ERR_AUTH) expirouLocked(I);
@@ -1952,8 +1974,6 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   }
   pthread_mutex_unlock(&I->trava);
   free(itens);
-  // Second pass, after the rows are on screen: the matching index.
-  if (e == JF_OK) indexar(I, t, j, &c);
   apagarSegredo(&c, sizeof c);
   fecharTarefa(I, j);
 }

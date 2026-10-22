@@ -47,6 +47,7 @@
 #include "artehero.h"
 #include "jellyfin.h"
 #include "plex.h"
+#include "vertudo.h"
 #include "artereserva.h"
 #include "corviva.h"
 #include "fundo.h"
@@ -4096,7 +4097,7 @@ static void jfAtivar(int op) {
   if (op == AJ_JF_SAIR) { jellyfin_esquecer(); desc_repetir_silencioso(); return; }
   if (op != AJ_JF_ENTRAR) return;
   if (e == JF_EST_QC_CODIGO || e == JF_EST_ENTRANDO) { jellyfin_cancelar_entrada(); return; }
-  if (e == JF_EST_CONECTADO) { jellyfin_recarregar_bibliotecas(); return; }
+  if (e == JF_EST_CONECTADO) { jellyfin_recarregar_bibliotecas(); vertudo_servidores(NULL); return; }
   if (e == JF_EST_SEM_SERVIDOR || e == JF_EST_VERIFICANDO) return;
   // Quick Connect when the server allows it: nothing is typed on the TV.
   if (jellyfin_qc_permitido() == 1 && jellyfin_entrar_quick_connect()) return;
@@ -4154,7 +4155,7 @@ static void emAtivar(int op) {
   if (op == AJ_EM_SAIR) { emby_esquecer(); desc_repetir_silencioso(); return; }
   if (op != AJ_EM_ENTRAR) return;
   if (e == JF_EST_ENTRANDO) { emby_cancelar_entrada(); return; }
-  if (e == JF_EST_CONECTADO) { emby_recarregar_bibliotecas(); return; }
+  if (e == JF_EST_CONECTADO) { emby_recarregar_bibliotecas(); vertudo_servidores(NULL); return; }
   if (e == JF_EST_SEM_SERVIDOR || e == JF_EST_VERIFICANDO) return;
   stCampo = AJ_EM_ENTRAR;
   jfUsuario[0] = 0;
@@ -4229,7 +4230,7 @@ static void pxAtivar(int op) {
   if (op == AJ_PX_SAIR) { plex_esquecer(); desc_repetir_silencioso(); return; }
   if (op != AJ_PX_ENTRAR) return;
   if (e == PX_EST_CODIGO || e == PX_EST_ENTRANDO) { plex_cancelar_entrada(); return; }
-  if (e == PX_EST_CONECTADO) { plex_recarregar_bibliotecas(); return; }
+  if (e == PX_EST_CONECTADO) { plex_recarregar_bibliotecas(); vertudo_servidores(NULL); return; }
   plex_entrar();
 }
 
