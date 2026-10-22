@@ -1344,7 +1344,8 @@ static void abrirInterno(const HomeItem *it) {
   comEpT = comEpE = 0;
   { const CatItem *ci0 = cat_item(idx);
     int t = 0, e = 0, achou = 0;
-    if (ci0 && ci0->progresso > 0 && ci0->progresso < ajustes_cw_concluido() &&
+    if (ci0 && (jfid_e(ci0->imdb) ||
+        (ci0->progresso > 0 && ci0->progresso < ajustes_cw_concluido())) &&
         ci0->temporada > 0 && ci0->episodio > 0) {
       t = ci0->temporada; e = ci0->episodio; achou = 1;
     } else {
@@ -1537,6 +1538,13 @@ static int episodioAlvo(int *temp, int *epis, int *origem) {
     // "Assistir do começo" ao lado), como o mockup "detalhe-retomar".
     if (origem) *origem = (ci && ci->progresso > 0 && ci->progresso < ajustes_cw_concluido() &&
                            ci->temporada == ep->temporada && ci->episodio == ep->episodio) ? 2 : 1;
+    return 1;
+  }
+  // Server playlist entries carry an explicit episode, including unwatched ones.
+  if (ci && jfid_e(ci->imdb) && ci->temporada > 0 && ci->episodio > 0) {
+    if (temp) *temp = ci->temporada;
+    if (epis) *epis = ci->episodio;
+    if (origem) *origem = ci->progresso > 0 && ci->progresso < ajustes_cw_concluido() ? 2 : 1;
     return 1;
   }
   // Em andamento: o item do "Continuar assistindo" traz temporada e episodio.

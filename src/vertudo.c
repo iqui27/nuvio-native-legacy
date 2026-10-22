@@ -378,7 +378,19 @@ void vertudo_evento(const SDL_Event *e) {
       } else {
         int idx = it.imdb[0] ? cat_indice_por_imdb(it.imdb) : -1;
         if (idx < 0) idx = cat_acrescentar(&it);
-        if (idx >= 0) { pedAbrir = idx; } // conserva a lista e a posição ao voltar
+        if (idx >= 0) {
+          if (servidorAtivo && !strcmp(it.tipo, "series") && it.temporada > 0 && it.episodio > 0) {
+            const CatItem *ci = cat_item(idx);
+            if (ci) {
+              CatItem selected = *ci;
+              selected.temporada = it.temporada; selected.episodio = it.episodio;
+              selected.progresso = it.progresso; selected.restanteMin = it.restanteMin;
+              snprintf(selected.nomeEpisodio, sizeof selected.nomeEpisodio, "%s", it.nomeEpisodio);
+              cat_atualizar_item(idx, &selected);
+            }
+          }
+          pedAbrir = idx;
+        } // conserva a lista e a posição ao voltar
       }
     }
   }
