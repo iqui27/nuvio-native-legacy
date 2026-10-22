@@ -1,6 +1,7 @@
 void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's token
 #include "sync.h"
 #include "diario.h"
+#include "trava.h"
 #include <time.h>
 #include "sessao.h"
 #include "nuvem.h"
@@ -1952,6 +1953,8 @@ void sync_esquecer_usuario(void) {
   // com a conta e outra conta nao os le (diario_dono).
   diario_esquecer();
   diario_dono("");
+  trava_esquecer();
+  trava_dono("");
   // O jornal da conta sai da MEMORIA; o arquivo (por usuario, so ids) fica
   // para quando ESTA pessoa voltar — e o que ainda nao subiu nao se perde.
   contapend_esquecer();

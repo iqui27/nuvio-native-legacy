@@ -17,6 +17,8 @@
 #include "ponteiro.h"
 #include "app.h"
 #include "diario.h"
+#include "trava.h"
+#include "travajuntos.h"
 #include "diariofontes.h"
 #include "diarioperfil.h"
 #include "diarionuvem.h"
@@ -1614,6 +1616,9 @@ int app_iniciar(const char *dirArte) {
   atividade_iniciar();   // a fila de POST /v1/atividade que nao saiu (atividade.h)
   diario_dono(sessao_usuario());   // arquivo de outra conta nao e lido
   diario_iniciar();      // o Diario por perfil (diario.h), carregado sob demanda
+  trava_dono(sessao_usuario());   // travas de serie (trava.h): mesmo dono do Diario
+  trava_iniciar();
+  travajuntos_iniciar(); // Juntos: o episodio do player vira marca nos outros membros
   dormiu_iniciar();      // a sessao que morreu tocando vira suspeita de sono
   // O envio da atividade segue o nivel de privacidade (alcance) do Social: a
   // funcao e chamada agora e a cada mudanca; "nao perguntado" chega como 0.
@@ -2838,6 +2843,7 @@ void app_atualizar(float dt, Uint32 agora) {
     // DIARIO: ouvintes, gravacao com folga, vistos da conta, nomes do titulo
     // aberto e a pergunta do "Pegou no sono" na pagina do titulo.
     diario_dono(sessao_usuario());   // troca de conta solta o que estava carregado
+    trava_dono(sessao_usuario());
     diario_passo();
     diariofontes_passo();
     diarionuvem_passo();
