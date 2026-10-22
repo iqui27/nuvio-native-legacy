@@ -5,6 +5,18 @@
 static Stream sources[3];
 static int preferred = -1, rate;
 static unsigned char excluded[3];
+static int sendResult, sends, denied;
+static int sendCommand(void *u, const char *json) {
+  (void)u;
+  assert(strstr(json, "proximo") && strstr(json, "tt123:1:2"));
+  sends++;
+  return sendResult;
+}
+const char *i18n(const char *s) { return s; }
+void player_toast_ex(const char *text, unsigned ms, const char *icon, int amber) {
+  (void)text; (void)ms; (void)icon; (void)amber;
+  denied++;
+}
 int stream_n(void) { return 3; }
 const Stream *stream_item(int i) { return i >= 0 && i < 3 ? &sources[i] : NULL; }
 int stream_automatico_excluida(int i) { return excluded[i]; }
@@ -34,6 +46,29 @@ int main(void) {
   juntos_preferir_reserva(); assert(preferred == 2 && !salaDurConferida);
   excluded[2] = 1;
   juntos_preferir_reserva(); assert(preferred == -1);
-  puts("juntos_cliente: native timestamp, sync units, room retry exclusions OK");
+  // Room navigation must never fall through to a local episode reopen.
+  temMotor = 0;
+  assert(juntos_ao_proximo("tt123:1:2") == 0);
+  temMotor = 1; motor.temSala = 0;
+  assert(juntos_ao_proximo("tt123:1:2") == 0);
+  motor.temSala = 1;
+  motor.enviar = sendCommand;
+  for (int hostOnly = 0; hostOnly <= 1; hostOnly++) {
+    motor.sala.controleAnf = hostOnly;
+    motor.conectado = 0;
+    assert(juntos_ao_proximo("tt123:1:2") == 1);
+    assert(sends == 0 && abrirPedido == 0);
+  }
+  motor.conectado = 1;
+  assert(juntos_ao_proximo("tt123:1:2") == 1);
+  assert(denied == 1 && sends == 0 && abrirPedido == 0);
+  motor.sala.controleAnf = 0;
+  sendResult = -1;
+  assert(juntos_ao_proximo("tt123:1:2") == 1);
+  assert(sends == 1 && abrirPedido == 0);
+  sendResult = 0;
+  assert(juntos_ao_proximo("tt123:1:2") == 1);
+  assert(sends == 2 && abrirPedido == 0);
+  puts("juntos_cliente: native timestamp, sync units, room retry exclusions, episode authority OK");
   return 0;
 }

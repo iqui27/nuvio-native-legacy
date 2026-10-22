@@ -699,8 +699,8 @@ int juntos_ao_buscar(double seg) {
 
 int juntos_ao_proximo(const char *alvo) {
   if (!temMotor || !motor.temSala) return 0;
-  if (jsm_cmd(&motor, "proximo", -1, alvo, agoraLocal()) == 0) { travado(); return 1; }
-  return 0;   // o app abre o proximo como sempre; os outros vem pela sala
+  if (jsm_cmd(&motor, "proximo", -1, alvo, agoraLocal()) == 0) travado();
+  return 1;   // Wait for the authoritative room update, including after send failure.
 }
 
 int juntos_ao_voltar(void) {
