@@ -71,7 +71,7 @@ static int nuvemLida;
 static pthread_t flushThread;
 static int flushStarted;
 static _Atomic int flushBusy;
-static unsigned donoGeracao;
+static _Atomic unsigned donoGeracao;
 
 static void esperarFlush(void) {
   if (flushStarted) { pthread_join(flushThread, NULL); flushStarted = 0; }

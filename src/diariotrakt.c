@@ -134,7 +134,7 @@ int diariotrakt_ler_vistos(const char *json, int series, DiarioEntrada *v, int m
 static _Atomic int vivo;
 static long long proxima[CONTA_PERFIL_MAX + 1];
 
-typedef struct { int perfil; long long cursor; } Volta;
+typedef struct { int perfil; unsigned dono; long long cursor; } Volta;
 
 static long long lerCursor(int p) {
   char n[40], *b;
@@ -159,12 +159,14 @@ static void *fio(void *u) {
   DiarioEntrada *v = calloc(LOTE_TRAKT, sizeof *v);
   long long novo = vt->cursor;
   int pag, n, total = 0;
-  if (!v || !trakt_cabecalhos(cab, aut, sizeof aut, chave, sizeof chave)) goto fim;
+  if (!v || vt->dono != diario_dono_geracao() || !trakt_cabecalhos(cab, aut, sizeof aut, chave, sizeof chave)) goto fim;
   // 1. Completude: so na primeira volta (sem cursor). Depois o historico basta.
   if (!vt->cursor) {
     char *c = rede_baixar_com("https://api.trakt.tv/sync/watched/movies", 30, cab);
+    if (vt->dono != diario_dono_geracao()) { free(c); goto fim; }
     if (c) { n = diariotrakt_ler_vistos(c, 0, v, LOTE_TRAKT); free(c); if (n > 0) total += diario_adicionar_lote(vt->perfil, v, n); }
     c = rede_baixar_com("https://api.trakt.tv/sync/watched/shows", 45, cab);
+    if (vt->dono != diario_dono_geracao()) { free(c); goto fim; }
     if (c) { n = diariotrakt_ler_vistos(c, 1, v, LOTE_TRAKT); free(c); if (n > 0) total += diario_adicionar_lote(vt->perfil, v, n); }
   }
   // 2/3. Historico: do 1 de janeiro (primeira volta) ou do cursor.
@@ -185,6 +187,7 @@ static void *fio(void *u) {
     char *c;
     snprintf(url, sizeof url, "https://api.trakt.tv/sync/history?start_at=%s&page=%d&limit=100", inicio, pag);
     c = rede_baixar_com(url, 30, cab);
+    if (vt->dono != diario_dono_geracao()) { free(c); goto fim; }
     if (!c) break;
     n = diariotrakt_ler_historico(c, v, LOTE_TRAKT, &mais);
     free(c);
@@ -192,6 +195,7 @@ static void *fio(void *u) {
     if (mais > novo) novo = mais;
     if (n < 100) break;
   }
+  if (vt->dono != diario_dono_geracao()) goto fim;
   if (novo > vt->cursor) gravarCursor(vt->perfil, novo);
   else if (!vt->cursor) gravarCursor(vt->perfil, (long long)time(NULL) - 86400);
   printf("[diariotrakt] perfil %d: %d novas\n", vt->perfil, total);
@@ -221,6 +225,7 @@ void diariotrakt_passo(void) {
   vt = calloc(1, sizeof *vt);
   if (!vt) return;
   vt->perfil = p;
+  vt->dono = diario_dono_geracao();
   vt->cursor = lerCursor(p);
   if (!atomic_compare_exchange_strong(&vivo, &z, 1)) { free(vt); return; }
   if (pthread_create(&t, NULL, fio, vt)) { atomic_store(&vivo, 0); free(vt); return; }

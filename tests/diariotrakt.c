@@ -4,13 +4,15 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include "../src/diariotrakt.c"
+static int switchAt, requests, cursorWrites;
 
 int perfis_ativo(void) { return 1; }
 char *dados_ler(const char *n) { (void)n; return NULL; }
-int dados_gravar(const char *n, const char *c) { (void)n; (void)c; return 1; }
+int dados_gravar(const char *n, const char *c) { (void)c; if (strstr(n, "diario-trakt-")) cursorWrites++; return 1; }
 int trakt_ativo(void) { return 0; }
-int trakt_cabecalhos(const char **c, char *a, size_t na, char *k, size_t nk) { (void)c; (void)a; (void)na; (void)k; (void)nk; return 0; }
-char *rede_baixar_com(const char *u, int s, const char *const *c) { (void)u; (void)s; (void)c; return NULL; }
+int trakt_cabecalhos(const char **c, char *a, size_t na, char *k, size_t nk) { (void)c; (void)a; (void)na; (void)k; (void)nk; return 1; }
+char *rede_baixar_com(const char *u, int s, const char *const *c);
 
 static const char *HIST =
 "[{\"id\":1,\"watched_at\":\"2026-10-05T23:10:00.000Z\",\"action\":\"watch\",\"type\":\"episode\","
@@ -29,6 +31,12 @@ static const char *SERIES =
  "{\"number\":1,\"plays\":1,\"last_watched_at\":\"2025-01-01T10:00:00.000Z\"},"
  "{\"number\":2,\"plays\":1,\"last_watched_at\":\"2025-01-02T10:00:00.000Z\"}]},"
  "{\"number\":2,\"episodes\":[{\"number\":5,\"plays\":1,\"last_watched_at\":\"2026-10-05T23:10:00.000Z\"}]}]}]";
+
+char *rede_baixar_com(const char *u, int s, const char *const *c) {
+  (void)s; (void)c;
+  if (++requests == switchAt) diario_dono("account-b");
+  return strdup(strstr(u, "movies") ? FILMES : strstr(u, "shows") ? SERIES : HIST);
+}
 
 int main(void) {
   DiarioEntrada v[8];
@@ -53,6 +61,15 @@ int main(void) {
   n = diariotrakt_ler_vistos(SERIES, 1, v, 8);
   diario_adicionar_lote(1, v, n);
   assert(diario_episodio(1, "tt11280740", 2, 5, NULL) == 1 && diario_n(1) == 4);
+  for (switchAt = 1; switchAt <= 3; switchAt++) {
+    diario_dono("account-a");
+    requests = cursorWrites = 0;
+    Volta *vt = calloc(1, sizeof *vt);
+    vt->perfil = 1; vt->dono = diario_dono_geracao();
+    fio(vt);
+    assert(diario_n(1) == 0);
+    assert(cursorWrites == 0);
+  }
   printf("diariotrakt: ok\n");
   return 0;
 }
