@@ -64,6 +64,7 @@
 #include "trakt.h"
 #include "simkl.h"
 #include "plrui.h"
+#include "travaui.h"
 #include "rolagemtoque.h"
 
 #include <math.h>
@@ -154,6 +155,10 @@ static float pfDy(void) {
 
 static PerfilDados dados;
 static int aberto, sair, carregando, temDados;
+// A SEGUNDA PAGINA (plano social & pessoal, 7.1): "Travas de série". BAIXO no
+// fim da primeira troca de pagina; CIMA no topo da segunda (ou Voltar) volta.
+// O conteudo e de travaui.c; aqui so a troca.
+static int pagina2;
 static int temIdentidade;
 static int secao, item, escolhido = -1;
 static int dia, pedirAtualizar;
@@ -484,6 +489,8 @@ int perfil_pediu_amigo(char *id, size_t tam) {
   return dId[0] != 0;
 }
 
+static void irPagina2(void) { pagina2 = 1; travaui_perfil_entrar(); }
+
 // Sobe para o botao Conquistas, guardando a parada de onde veio.
 static void subirConquistas(void) { secaoAntes = secao; secao = PF_SEC_CONQ; }
 
@@ -499,6 +506,11 @@ void perfil_evento(const SDL_Event *e) {
 #endif
   SDL_Keycode k = e->key.keysym.sym;
   int ok = k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE;
+  if (pagina2) {
+    if (!travaui_perfil_evento(e)) pagina2 = 0;
+    return;
+  }
+  if (k == SDLK_DOWN && modo != PF_DUELO && !temDados) { irPagina2(); return; }
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE || k == SDLK_DELETE) {
     // Voltar no duelo volta ao resumo, com o anel no mesmo amigo.
     if (modo == PF_DUELO) { sairDuelo(); return; }
@@ -531,14 +543,14 @@ void perfil_evento(const SDL_Event *e) {
                          if (nCards()) secao=1; else if (rostosCabem()>0) secao=2;
                          return; }
     if (k==SDLK_UP)    { if (dia>=7) dia-=7; else subirConquistas(); return; }
-    if (k==SDLK_DOWN)  { if (dia+7<dados.nDias) dia+=7; return; }
+    if (k==SDLK_DOWN)  { if (dia+7<dados.nDias) dia+=7; else irPagina2(); return; }
     return;
   }
   if (secao == 1) {
     if (k==SDLK_LEFT)  { if (dados.nDias>0) secao=0; else sair = 1; return; }
     if (k==SDLK_RIGHT) { if (rostosCabem()>0) secao=2; return; }
     if (k==SDLK_UP)    { if (item>0) item--; else subirConquistas(); return; }
-    if (k==SDLK_DOWN)  { if (item+1<nCards()) item++; return; }
+    if (k==SDLK_DOWN)  { if (item+1<nCards()) item++; else irPagina2(); return; }
     if (k==SDLK_RETURN || k==SDLK_KP_ENTER || k==SDLK_SPACE) {
       if (nCards() > 0) escolhido = item;
       return;
@@ -556,6 +568,7 @@ void perfil_evento(const SDL_Event *e) {
       return;
     }
     if (k==SDLK_RIGHT) { if (amigo+1<rostosCabem()) amigo++; return; }
+    if (k==SDLK_DOWN)  { irPagina2(); return; }
     if (k==SDLK_UP) { subirConquistas(); return; }
     if (ok) { duelo(amigo, 1); return; }
     return;
@@ -590,7 +603,8 @@ void perfil_atualizar(float dt, Uint32 agora) {
   }
   // O cartao de amigos le o MESMO modelo da fileira e do painel Social. Barato
   // por quadro: so refaz quando a fonte muda (ver socialvis.h).
-  if (!aberto) return;
+  travaui_perfil_atualizar(dt);
+  if (!aberto) { pagina2 = 0; return; }
   socialvis_atualizar();
   if (modo == PF_DUELO) {
     // O MODELO REORDENA (quem esta ao vivo sobe): o indice segue o id. Amigo
@@ -772,8 +786,10 @@ static void desenharVazio(float a) {
     titulo = "Perfil privado ou histórico não compartilhado";
     corpo = "O Trakt não liberou um histórico público para esta conta.";
   } else if (estado == PERFIL_ESTADO_DESCONECTADO) {
-    titulo = "Histórico desconectado";
-    corpo = "Vincule o Trakt ou Simkl para carregar identidade, obras recentes e estatísticas.";
+    // Sem Trakt a tela vive do Diario (diarioperfil.h); este estado so sobra
+    // quando o Diario ainda esta vazio.
+    titulo = "Seu Diário ainda está vazio";
+    corpo = "Assista a um filme ou episódio e ele aparece aqui. Para trazer o histórico de antes, vincule o Trakt.";
   } else if (estado == PERFIL_ESTADO_INDISPONIVEL || estado == PERFIL_ESTADO_ERRO) {
     titulo = "Perfil indisponível";
     corpo = erro[0] ? erro : "Não foi possível confirmar este resumo agora.";
@@ -1037,7 +1053,7 @@ static void desenharAtividade(float a) {
   // A LEGENDA: dias ativos e os dois generos mais vistos, numa linha so (o
   // mockup). Com o foco no ritmo, a linha de cima diz o dia em foco.
   if (secao == 0 && dados.nDias) {
-    snprintf(b, sizeof b, i18n("Dia %d: %u reproduções"), dia + 1, dados.atividade[dia]);
+    snprintf(b, sizeof b, i18n(dados.atividade[dia] == 1 ? "Dia %d: %u reprodução" : "Dia %d: %u reproduções"), dia + 1, dados.atividade[dia]);
     escrever(TXT_CAPTION2, b, PF_MEDIO, x0, yLeg, r.w - PF_PAD_X * 2.0f, PF_ESC_APOIO, a);
     yLeg += 22.0f;
   }
@@ -1085,7 +1101,7 @@ static void desenharDestaques(float a) {
     else gfx_cor(mini, 8.0f / mini.h, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
                  NV_COR_ESQUELETO_B, a);
     // O "#N" do ranking nao volta: a ordem da lista JA e a posicao.
-    snprintf(linha, sizeof linha, i18n("%d reproduções"), dados.destaques[i].plays);
+    snprintf(linha, sizeof linha, i18n(dados.destaques[i].plays == 1 ? "%d reprodução" : "%d reproduções"), dados.destaques[i].plays);
     if (dados.destaques[i].detalhe[0]) {
       char junto[240];
       snprintf(junto, sizeof junto, "%s \xc2\xb7 %s", dados.destaques[i].detalhe, linha);
@@ -1349,6 +1365,14 @@ void perfil_desenhar(Uint32 agora) {
   // UM recorte, aberto aqui e fechado aqui: gfx_sem_recorte() DESLIGA a
   // tesoura, nao devolve a de fora.
   gfx_recorte(0,0,NV_TELA_W,PF_CONTEUDO_H);
+  if (pagina2) {
+    travaui_perfil_desenhar(PF_X, PF_TOPO, PF_W, PF_CONTEUDO_H - PF_TOPO, a);
+    gfx_sem_recorte();
+    { static const char *const ks[3] = { "\xe2\x86\x91", "OK", "Voltar" };
+      static const char *const ls[3] = { "Página anterior", "Gerenciar", "Perfil" };
+      plrui_dicas(ks, ls, 3, PF_X, PF_AVISO_Y + PF_AVISO_H * 0.5f, 0, a); }
+    return;
+  }
   if(carregando && !temDados) desenharLoading(agora,a);
   else if(!temDados) desenharVazio(a);
   else if (modo == PF_DUELO) {
@@ -1392,6 +1416,11 @@ void perfil_desenhar(Uint32 agora) {
     aviso=avisoBuf;
   } else if(carregando)aviso="Atualizando histórico sem interromper o conteúdo anterior…";
   else aviso=dados.aviso[0]?dados.aviso:dados.parcial?"Histórico parcial: os totais consideram somente os registros carregados.":NULL;
+  if (!aviso && modo != PF_DUELO) {
+    static const char *const ks[1] = { "\xe2\x86\x93" };
+    static const char *const ls[1] = { "Travas de série" };
+    plrui_dicas(ks, ls, 1, PF_X + PF_W, PF_AVISO_Y + PF_AVISO_H * 0.5f, 1, .8f * a);
+  }
   if(aviso){
     GfxRect r = { PF_X, PF_AVISO_Y, PF_W, PF_AVISO_H };
     if (ajustes_vidro()) gfx_cor(r, .5f, .92f, .93f, 1.0f, .04f * a);

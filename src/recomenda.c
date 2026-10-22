@@ -14,6 +14,7 @@
 // O QUE ELE NAO GUARDA: token. A identidade e montada a cada ciclo a partir de
 // trakt.c ou de sessao.c e vai so no cabecalho do pedido.
 #include "recomenda.h"
+#include "travarede.h"
 #include "atividade.h"
 #include "dados.h"
 #include "rede.h"
@@ -1921,6 +1922,9 @@ static int lerRecs(const char **cab) {
     free(r);
     return st != 0;
   }
+  // TRAVA DE SERIE: a revisao das travas pega carona nesta sondagem
+  // (migracao 012). Servidor antigo nao manda; nada acontece.
+  if (js_tem(r, NULL, "travaRev")) travarede_rev((long long)js_num(r, NULL, "travaRev", 0.0));
   p = js_array(r, NULL, "itens");
   while (p && *p == '{') {
     const char *f = js_fim(p);
@@ -2840,6 +2844,7 @@ static int acaoDeEv(const char *ev) {
   if (!strcmp(ev, "abandono")) return REC_ACAO_ABANDONO;
   if (!strcmp(ev, "reacao"))   return REC_ACAO_REACAO;
   if (!strcmp(ev, "salvo"))    return REC_ACAO_SALVO;
+  if (!strcmp(ev, "junto"))    return REC_ACAO_JUNTO;
   return 0;
 }
 
@@ -2864,6 +2869,16 @@ static int lerEvento(const char *p, const char *f, RecEvento *e) {
   e->pct = (int)js_num(p, f, "pct", 0.0);
   e->reacao = (int)js_num(p, f, "reacao", 0.0);
   e->quando = (long long)js_num(p, f, "criado", 0.0);
+  // "com" do Watch Together: [{"de","nome"}...], ja filtrado pelo alcance.
+  { const char *c = js_array(p, f, "com");
+    size_t k = 0;
+    while (c && *c == '{' && k + 2 < sizeof e->com) {
+      const char *cf = js_fim(c);
+      char n[64] = "";
+      js_texto(c, cf, "nome", n, sizeof n);
+      if (n[0]) k += (size_t)snprintf(e->com + k, sizeof e->com - k, "%s%s", k ? ", " : "", n);
+      c = js_prox(cf);
+    } }
   // O servidor agrupado (06/10/2026): episodios contados e a reacao junto do
   // "terminou". Servidor antigo nao manda: 0 e "nenhuma".
   e->eps = (int)js_num(p, f, "eps", 0.0);
@@ -2871,7 +2886,7 @@ static int lerEvento(const char *p, const char *f, RecEvento *e) {
   e->reacFim = (int)js_num(p, f, "reac", -2.0);
   e->temReacFim = e->reacFim >= -1 && e->reacFim <= 1;
   if (!e->temReacFim) e->reacFim = 0;
-  semTab(nome); semTab(e->titulo); semTab(e->via);
+  semTab(nome); semTab(e->titulo); semTab(e->via); semTab(e->com);
   e->acao = acaoDeEv(ev);
   if (!e->acao || strncmp(e->imdb, "tt", 2) || !e->pessoa[0]) return 0;
   if (strcmp(e->midia, "series")) snprintf(e->midia, sizeof e->midia, "movie");
@@ -3139,6 +3154,7 @@ int recomenda_cabecalhos(const char **cab, char *aut, size_t na, char *via, size
 }
 
 const char *recomenda_meu_nome(void) { return meuNome; }
+const char *recomenda_meu_id(void) { return meuId; }
 const char *recomenda_minha_exibicao(void) { return minhaExib; }
 
 static void acordar(void) {

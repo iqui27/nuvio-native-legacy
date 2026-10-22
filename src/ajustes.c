@@ -36,9 +36,11 @@
 #include "sessao.h"
 #include "sync.h"
 #include "perfis.h"
+#include "perfilinfantil.h"
 #include "traktauth.h"
 #include "simklauth.h"
 #include "discord.h"
+#include "diarionuvem.h"
 #include "simkl.h"
 #include "qr.h"
 #include "atualizacao.h"
@@ -55,6 +57,7 @@
 #include "artehero.h"
 #include "jellyfin.h"
 #include "plex.h"
+#include "vertudo.h"
 #include "artereserva.h"
 #include "corviva.h"
 #include "fundo.h"
@@ -555,6 +558,13 @@ typedef enum {
   // 2.1 Conquistas (conquistasregra.h): chave geral, aviso depois dos creditos e
   // dica das secretas. LOCAIS, padrao Ligado. Append-only.
   AJ_CONQ_LIGADO, AJ_CONQ_AVISO, AJ_CONQ_DICAS,
+  // PERFIL INFANTIL (perfilinfantil.h): marca do perfil ativo, local a esta TV.
+  // O estado NAO mora em valor[]: e perfil_infantil_ativo(), reescrito a cada
+  // quadro (como Perfil pesquisavel). No fim: valor[]/CHAVE[] posicionais.
+  AJ_PERFIL_INFANTIL,
+  // DIARIO NA CONTA (diarionuvem.h): espelho do modulo do diario, nada guardado
+  // aqui (chave com "-"). No fim: valor[]/CHAVE[] posicionais.
+  AJ_DIARIO_NUVEM,
   AJ_N
 } OpcaoId;
 
@@ -1423,6 +1433,8 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Conquistas", V_LIGA, 2),                          // local: conquistasLocal
   ESC("Avisar depois dos créditos", V_LIGA, 2),          // local: conquistasAvisoLocal
   ESC("Dicas das conquistas secretas", V_LIGA, 2),       // local: conquistasDicasLocal
+  ESC("Perfil infantil",                 V_LIGA, 2),             // local: perfilinfantil.c (por perfil)
+  ESC("Guardar diário na conta",         V_LIGA, 2),          // espelho de diarionuvem.c
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -1666,6 +1678,8 @@ static const char *CHAVE[] = {
   "micBuscaLocal",
   "menuTopoLocal",
   "conquistasLocal", "conquistasAvisoLocal", "conquistasDicasLocal",
+  "-perfilInfantil",   // estado em perfilinfantil.c, nunca no ajustes.txt
+  "-diarioNuvem",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -4361,6 +4375,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_HOME_LAYOUT:    /* a Dinamica nao tem par na conta (selected_layout) */
     case AJ_PERFIL_PESQ:    /* estado em recomenda.c, por conta: nunca no blob */
     case AJ_PERFIL_EDITAR:
+    case AJ_PERFIL_INFANTIL: /* marca por perfil em perfilinfantil.c; a conta nao tem a coluna */
     case AJ_P2P_LIGADO:     /* o servidor P2P e um aparelho da rede desta casa */
     case AJ_P2P_LIMITE:     /* #334: o disco e desta TV */
     case AJ_JF_LIGADO:
@@ -4969,7 +4984,7 @@ static void jfAtivar(int op) {
   if (op == AJ_JF_SAIR) { jellyfin_esquecer(); desc_repetir_silencioso(); return; }
   if (op != AJ_JF_ENTRAR) return;
   if (e == JF_EST_QC_CODIGO || e == JF_EST_ENTRANDO) { jellyfin_cancelar_entrada(); return; }
-  if (e == JF_EST_CONECTADO) { jellyfin_recarregar_bibliotecas(); return; }
+  if (e == JF_EST_CONECTADO) { jellyfin_recarregar_bibliotecas(); vertudo_servidores(NULL); return; }
   if (e == JF_EST_SEM_SERVIDOR || e == JF_EST_VERIFICANDO) return;
   // Quick Connect when the server allows it: nothing is typed on the TV.
   if (jellyfin_qc_permitido() == 1 && jellyfin_entrar_quick_connect()) return;
@@ -5027,11 +5042,35 @@ static void emAtivar(int op) {
   if (op == AJ_EM_SAIR) { emby_esquecer(); desc_repetir_silencioso(); return; }
   if (op != AJ_EM_ENTRAR) return;
   if (e == JF_EST_ENTRANDO) { emby_cancelar_entrada(); return; }
-  if (e == JF_EST_CONECTADO) { emby_recarregar_bibliotecas(); return; }
+  if (e == JF_EST_CONECTADO) { emby_recarregar_bibliotecas(); vertudo_servidores(NULL); return; }
   if (e == JF_EST_SEM_SERVIDOR || e == JF_EST_VERIFICANDO) return;
   stCampo = AJ_EM_ENTRAR;
   jfUsuario[0] = 0;
   teclado_abrir_com("Usuário do Emby", "", 64, XT_ALFA_CONTA, NULL);
+}
+
+// QR DO LOGIN DOS SERVIDORES (F1): o mesmo cartao do Trakt. Quick Connect do
+// Jellyfin: o codigo de 6 digitos e o QR da pagina do proprio servidor onde
+// um app ja logado aprova. Plex: o PIN de 4 letras e o QR de plex.tv/link.
+// URL longa demais para o qr.c (134 bytes) fica so com o codigo.
+static void desenhaVinculo(const char *servico, const char *codigo,
+                           const char *endereco, const char *falha, int esperando);
+static int srvVinculoAtivo(void) {
+  return jellyfin_disponivel() && (jellyfin_estado(NULL, 0) == JF_EST_QC_CODIGO || plex_estado(NULL, 0) == PX_EST_CODIGO);
+}
+static int srvVinculoDesenhar(void) {
+  char det[160], url[600];
+  if (!jellyfin_disponivel()) return 0;
+  if (jellyfin_estado(det, sizeof det) == JF_EST_QC_CODIGO && det[0]) {
+    if (!jellyfin_qc_url(url, sizeof url) || strlen(url) > 134) url[0] = 0;
+    desenhaVinculo("o Jellyfin", det, url, NULL, 1);
+    return 1;
+  }
+  if (plex_estado(det, sizeof det) == PX_EST_CODIGO && det[0]) {
+    desenhaVinculo("o Plex", det, "https://plex.tv/link", NULL, 1);
+    return 1;
+  }
+  return 0;
 }
 
 // PLEX: sem teclado. A TV mostra o codigo de 4 letras e a pessoa o digita em
@@ -5078,7 +5117,7 @@ static void pxAtivar(int op) {
   if (op == AJ_PX_SAIR) { plex_esquecer(); desc_repetir_silencioso(); return; }
   if (op != AJ_PX_ENTRAR) return;
   if (e == PX_EST_CODIGO || e == PX_EST_ENTRANDO) { plex_cancelar_entrada(); return; }
-  if (e == PX_EST_CONECTADO) { plex_recarregar_bibliotecas(); return; }
+  if (e == PX_EST_CONECTADO) { plex_recarregar_bibliotecas(); vertudo_servidores(NULL); return; }
   plex_entrar();
 }
 
@@ -5446,6 +5485,7 @@ static int visivel(int i) {
     if (!ajOpcaoDisponivel(op)) return 0;
     if ((op == AJ_PERFIL_PESQ || op == AJ_PERFIL_EDITAR) && !recomenda_ativo()) return 0;
     if (op == AJ_BUSCA_CINEMETA && valor[op] == 0 && !cinemetaInstalado()) return 0;
+    if (op == AJ_DIARIO_NUVEM && !diarionuvem_disponivel()) return 0;
     if (uxAvancada(op) && !lig(AJ_AVANCADAS) && !maisAberto[secDoItem[i]]) return 0;
   }
   // A linha "Mais opcoes" some com a pilula Avancadas ligada (ja esta tudo a vista).
@@ -5782,6 +5822,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_DEBRID_RD: return "Chave de API do Real-Debrid (real-debrid.com/apitoken). Só precisa se a sua conta Nuvio não a traz. Fica só nesta TV e aparece mascarada.";
     case AJ_DEBRID_TB: return "Chave de API do TorBox. Só precisa se a sua conta Nuvio não a traz. Fica só nesta TV e aparece mascarada.";
     case AJ_DEBRID_PM: return "Chave de API do Premiumize. Só precisa se a sua conta Nuvio não a traz. Fica só nesta TV e aparece mascarada.";
+    case AJ_PERFIL_INFANTIL: return "Marca o perfil em uso como infantil. No Assistir Juntos, o servidor só aceita salas com quem a conta já conhece e o chat livre do celular fica desligado. A marca é só deste perfil, nesta TV. Se o perfil tem PIN, pede o PIN para mudar.";
     case AJ_PERFIL_PESQ: return "Desligado por padrão. Ligado, outras pessoas do Nuvio podem te achar pelo apelido e ver o que você escolher mostrar: bio, gêneros favoritos, foto e o que assistiu recentemente. Nunca aparecem e-mail, conta, addons nem aparelho. Desligar apaga o perfil do servidor na hora.";
     case AJ_PERFIL_EDITAR: return "Apelido, bio, gêneros e o que mostrar no perfil; a atividade compartilhada só com amigos (desligada por padrão); pedidos de amizade recebidos e a lista de bloqueados.";
     case AJ_P2P_LIMITE: return "Quanto do armazenamento da TV o P2P pode usar enquanto toca; Automático usa até metade do espaço livre. Se o vídeo for maior, ele continua tocando e a TV guarda só o trecho perto de onde você está (em pendrive FAT ou exFAT, ele para no limite).";
@@ -5850,6 +5891,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_PLUGINS: return "Scrapers em JavaScript dos repositórios de plugins do Nuvio, como mais uma fonte na lista, ao lado dos add-ons. Os repositórios vêm da sua conta. Desligado por padrão.";
     case AJ_TRAKT: return "Conecta a sua conta do Trakt para marcar o que assistiu e usar a sua lista.";
     case AJ_SIMKL: return "Conecta a sua conta do Simkl, uma alternativa ao Trakt para acompanhar séries.";
+    case AJ_DIARIO_NUVEM: return "Guarda o seu Diário na sua conta do Nuvio Legacy, para não perder ao trocar de TV. Só você vê. Desligar apaga a cópia da conta.";
     case AJ_DISCORD: return "Mostra no seu perfil do Discord o que você está assistindo, com o cartaz e o tempo. Só sai alguma coisa enquanto um vídeo toca neste perfil.";
     case AJ_SAIR: return "Sai da conta nesta TV e apaga daqui a sessão, os addons e o progresso guardados.";
     case AJ_ESPACO: return "Uso atual de memória pelo cache de imagens, não espaço ocupado no armazenamento da TV.";
@@ -6857,6 +6899,58 @@ static const char *FR_ALFA_REGEX =
 // de efeitos colaterais para manter iguais.
 // Uma escolha final: persiste uma vez antes dos efeitos externos. Navegar no
 // seletor nunca passa por aqui, inclusive para idiomas e limite de fileiras.
+// PERFIL INFANTIL: mudar a marca de um perfil COM PIN pede o PIN (verificado no
+// servidor, perfis_verificar_pin, que BLOQUEIA: roda num fio). Sem PIN, aplica
+// na hora. O PIN digitado vai para o fio, e e apagado la; nao ha log dele.
+static void uxNotificar(const char *s);
+static pthread_t kidFio;
+static atomic_int kidEstado;           // 0 livre, 1 verificando, 2 aceito, 3 recusado, 4 sem rede
+static int kidIdx, kidAlvo;
+static char kidPin[24];
+static int kidFioVivo;
+static void *kidTrabalho(void *u) {
+  int v = perfis_verificar_pin(kidIdx, kidPin);
+  (void)u;
+  memset(kidPin, 0, sizeof kidPin);
+  atomic_store(&kidEstado, v > 0 ? 2 : (v == 0 ? 3 : 4));
+  return NULL;
+}
+static void kidPedirPin(void) {
+  teclado_abrir_com("PIN do perfil", "Digite o PIN para mudar a marca de perfil infantil.", 8, "0123456789", NULL);
+  teclado_tipo(TECLADO_TIPO_SENHA);
+  teclado_mascarar(1);
+  stCampo = AJ_PERFIL_INFANTIL;
+}
+static int kidMudar(int ligado) {
+  const ContaPerfil *p = perfis_item_ativo();
+  if (ligado == perfil_infantil_ativo()) return 1;
+  if (atomic_load(&kidEstado) == 1) return 1;   // ja verificando
+  if (p && p->temPin) { kidIdx = p->indice; kidAlvo = ligado; kidPedirPin(); return 1; }
+  if (!perfil_infantil_definir(perfis_ativo(), ligado)) return 0;
+  uxNotificar(ligado ? "Perfil infantil ligado neste perfil." : "Perfil infantil desligado neste perfil.");
+  return 1;
+}
+static void kidDigitado(const char *pin) {
+  snprintf(kidPin, sizeof kidPin, "%s", pin);
+  if (kidFioVivo) { pthread_join(kidFio, NULL); kidFioVivo = 0; }
+  atomic_store(&kidEstado, 1);
+  if (pthread_create(&kidFio, NULL, kidTrabalho, NULL) != 0) {
+    memset(kidPin, 0, sizeof kidPin);
+    atomic_store(&kidEstado, 4);
+  } else kidFioVivo = 1;
+}
+static void kidRecolher(void) {
+  int e = atomic_load(&kidEstado);
+  if (e < 2) return;
+  if (kidFioVivo) { pthread_join(kidFio, NULL); kidFioVivo = 0; }
+  atomic_store(&kidEstado, 0);
+  if (e == 2) {
+    if (perfil_infantil_definir(kidIdx, kidAlvo))
+      uxNotificar(kidAlvo ? "Perfil infantil ligado neste perfil." : "Perfil infantil desligado neste perfil.");
+  } else if (e == 3) uxNotificar("PIN incorreto");
+  else uxNotificar("Sem conexão para conferir o PIN.");
+}
+
 // NOTAS NO TITULO (decisao do dono, 07/10): os oito "qual nota o MDBList baixa"
 // (AJ_MDB_*) sairam da tela. Ligar uma nota liga o par dela na conta e, se a
 // nota vem do MDBList, o MDBList tambem — senao a linha ligada nao mostraria
@@ -6890,6 +6984,12 @@ static int definirValorDireto(int op, int novo) {
   }
   if (op == AJ_PERFIL_PESQ) {
     pessoas_definir_pesquisavel(novo == 0);
+    return 1;
+  }
+  if (op == AJ_PERFIL_INFANTIL) return kidMudar(novo == 0);
+  if (op == AJ_DIARIO_NUVEM) {
+    diarionuvem_definir(novo == 0);
+    valor[op] = diarionuvem_ligado() ? 0 : 1;
     return 1;
   }
   antes = valor[op];
@@ -7004,6 +7104,14 @@ static void eventoTela(const SDL_Event *e) {
     int smkAtivo = (sa == SMK_PEDINDO || sa == SMK_AGUARDANDO || sa == SMK_ERRO);
     DisEstado da = discord_estado();
     int disAtivo = (da == DIS_PEDINDO || da == DIS_AGUARDANDO || da == DIS_ERRO);
+    if (!traAtivo && !smkAtivo && !disAtivo && srvVinculoAtivo()) {
+      // Voltar cancela o login do servidor; o resto da tela espera.
+      if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE) {
+        jellyfin_cancelar_entrada();
+        plex_cancelar_entrada();
+      }
+      return;
+    }
     if (traAtivo || smkAtivo || disAtivo) {
       if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE) {
         if (traAtivo) traktauth_cancelar();
@@ -7214,7 +7322,10 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   if (uxAviso[0] && SDL_TICKS_PASSED(agora, uxAvisoAte)) uxAviso[0] = 0;
   montarTela();
   valor[AJ_PERFIL_PESQ] = recomenda_pesquisavel() ? 0 : 1;   // V_LIGA: 0 = Ligado
+  valor[AJ_PERFIL_INFANTIL] = perfil_infantil_ativo() ? 0 : 1;
+  kidRecolher();
   valor[AJ_FONTE_REGEX_MODELO] = fonteregra_modelo_atual();   // espelho do padrao (#202)
+  valor[AJ_DIARIO_NUVEM] = diarionuvem_ligado() ? 0 : 1;
   p2pTesteRecolher();
   pstTesteRecolher();
   adTesteRecolher();
@@ -7234,6 +7345,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
       else if (stCampo == AJ_XTREAM_SERVIDOR) { xtream_definir_servidor(teclado_texto()); if (teclado_texto()[0]) registro_aviso_legal(); }
       else if (stCampo == AJ_XTREAM_USUARIO)  xtream_definir_usuario(teclado_texto());
       else if (stCampo == AJ_XTREAM_SENHA)    xtream_definir_senha(teclado_texto());
+      else if (stCampo == AJ_PERFIL_INFANTIL) { kidDigitado(teclado_texto()); teclado_esquecer(); }
       else if (stCampo == AJ_FANART_CHAVE)    fanartDefinir(teclado_texto());
       else if (stCampo == AJ_SEEKR_CHAVE)     { seekrDefinir(teclado_texto()); atomic_store_explicit(&skTeste, 0, memory_order_release); }
       else if (stCampo == AJ_SELOS_PACOTE_ADD) spAdicionar(teclado_texto());
@@ -7872,10 +7984,10 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_DESCANSO_ESTILO: case AJ_DESCANSO_FONTE:
       return AJPV_INTERFACE;
     case AJ_PERFIL_ATIVO: case AJ_SYNC: case AJ_SAIR:
-    case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_ADDONS_PRINCIPAL: case AJ_ENQUETES:
+    case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_ADDONS_PRINCIPAL: case AJ_ENQUETES:
     case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS:
       return AJPV_CONTA;
-    case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL:
+    case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL: case AJ_DIARIO_NUVEM:
       return AJPV_RASTREIO;
     case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_NOVIDADES20: case AJ_APOIAR:
     case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO:
@@ -7980,7 +8092,8 @@ static void ajDesenharTudo(Uint32 agora) {
     else { DisEstado da = discord_estado();
       if (da == DIS_PEDINDO || da == DIS_AGUARDANDO || da == DIS_ERRO)
         desenhaVinculo("Discord", discord_codigo(), discord_url(),
-                       discord_erro(), da == DIS_AGUARDANDO); } }
+                       discord_erro(), da == DIS_AGUARDANDO);
+      else if (srvVinculoDesenhar()) {} } }
 
   // A modal de digitacao e a ultima: ela e sempre a pergunta mais recente da
   // tela, e tem de ficar por cima ate do cartao de vinculo.
@@ -7995,6 +8108,7 @@ int ajustes_relogio_cabe(void) {
   if (teclado_aberto() || (ajModalAberto() && !filAberta)) return 0;
   if (ta == TRA_PEDINDO || ta == TRA_AGUARDANDO || ta == TRA_ERRO) return 0;
   if (sa == SMK_PEDINDO || sa == SMK_AGUARDANDO || sa == SMK_ERRO) return 0;
+  if (srvVinculoAtivo()) return 0;
   return 1;
 }
 

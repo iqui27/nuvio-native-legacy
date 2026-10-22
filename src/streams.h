@@ -210,6 +210,7 @@ void stream_vod_falhou(int indice);
 void stream_vod_tocou(int indice);
 long stream_vod_falhou_ha(int indice);
 int  stream_automatico_excluir(int indice);
+int  stream_automatico_excluida(int indice); // Current-list retry exclusion.
 // Exclui tambem as IRMAS da candidata (mesmo addon e mesmo rotulo), mas so
 // quando sobra outra candidata: quando o player nao conectou numa, as outras
 // costumam falhar igual.

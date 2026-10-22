@@ -1,9 +1,13 @@
 void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's token
 #include "sync.h"
+#include "idioma.h"
+#include "diario.h"
+#include "trava.h"
 #include <time.h>
 #include "sessao.h"
 #include "nuvem.h"
 #include "perfis.h"
+#include "perfilinfantil.h"
 #include "agenda.h"
 #include "lembrete.h"
 #include "dados.h"
@@ -26,6 +30,7 @@ void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's to
 #include "traktauth.h"
 #include "catalogo.h"
 #include "vistoep.h"
+#include "rewatch.h"
 #include "progresso.h"
 #include "perfilcont.h"
 #include "psparede.h"
@@ -105,7 +110,7 @@ static void resumoFixo(const char *frase) {
   resumoPublicar(&r);
 }
 static unsigned ultimoOk;
-static int sujoProgresso, sujoAjustes;
+static int sujoProgresso, sujoAjustes, rewatchPendente;
 static int addonsPerfilCiclo;
 #define SY_ADD_PREFIXO "conta-addons-pend-"
 
@@ -869,6 +874,13 @@ static int puxarAjustesPerfil(const char *corpo) {
             ajustesBlobPerfil = perfilDoCiclo;
             temAjustesBlob = aplicarAjustes;
             ok = 1;
+            // A SESSAO DE REASSISTIR viaja neste blob (rewatch.h). Funde so se o
+            // perfil ainda e o do ciclo, e marca para empurrarAjustes comparar:
+            // o que esta TV tem de mais novo sobe, o resto nao gera viagem.
+            if (perfilDoCiclo == perfis_ativo()) {
+              rewatch_blob_ler(novo);
+              rewatch_sujar();
+            }
             printf("[sync] blob de ajustes: %d bytes\n", (int)n);
           }
         } else {
@@ -907,18 +919,28 @@ static void empurrarAjustes(void) {
   char *mesclado = NULL, *r;
   Jsw w;
   int st = 0;
-  if (!sujoAjustes) return;
+  if (rewatch_sujo()) rewatchPendente = 1;
+  if (!sujoAjustes && !rewatchPendente) return;
   if (jaAusente("sync_push_profile_settings_blob")) return;
   if (!ajustesBlob) {
     printf("[sync] ajustes locais pendentes, mas sem blob da conta para costurar: nada enviado\n");
     return;
   }
-  if (ajustes_mesclar_blob(ajustesBlob, &mesclado) <= 0 || !mesclado) {
+  if (sujoAjustes && (ajustes_mesclar_blob(ajustesBlob, &mesclado) <= 0 || !mesclado)) {
     // Nada diferente do que a conta ja tem: pendencia resolvida sem viagem.
     free(mesclado);
+    mesclado = NULL;
     sujoAjustes = 0;
-    return;
   }
+  if (rewatchPendente) {
+    // As sessoes de reassistir entram como UMA chave nova do blob (rewatch.h),
+    // sobre a base ja costurada. Igual ao que a conta tem: sem viagem.
+    const char *base = mesclado ? mesclado : ajustesBlob;
+    char *com = rewatch_blob_costurar(base);
+    if (com && strcmp(com, base)) { free(mesclado); mesclado = com; }
+    else { free(com); rewatchPendente = 0; }
+  }
+  if (!mesclado) return;
   jsw_iniciar(&w);
   jsw_obj_ini(&w);
   jsw_ci(&w, "p_profile_id", perfis_ativo());
@@ -930,6 +952,7 @@ static void empurrarAjustes(void) {
   jsw_livre(&w);
   if (ok2xx(r, st)) {
     sujoAjustes = 0;
+    rewatchPendente = 0;
     free(ajustesBlob);
     ajustesBlob = mesclado;
     ajustesBlobGeracao++;
@@ -1894,6 +1917,12 @@ void sync_esquecer_usuario(void) {
   desc_loc_apagar();
   // O mapa de episodios vistos e da conta que saiu, como todo o resto.
   vistoep_esquecer();
+  // O Diario: grava o que falta e solta a memoria; os arquivos ficam marcados
+  // com a conta e outra conta nao os le (diario_dono).
+  diario_esquecer();
+  diario_dono("");
+  trava_esquecer();
+  trava_definir_conta("");
   // O jornal da conta sai da MEMORIA; o arquivo (por usuario, so ids) fica
   // para quando ESTA pessoa voltar — e o que ainda nao subiu nao se perde.
   contapend_esquecer();
@@ -1963,6 +1992,7 @@ void sync_esquecer_usuario(void) {
     for (i = 1; i <= 32; i++) { nomeLocaisPerfil(nome, sizeof nome, i); dados_apagar(nome); } }
   perfilAplicado = 0;
   perfis_esquecer();
+  perfil_infantil_esquecer();
   prog_esquecer_tudo();
   perfilcont_esquecer();
   psparede_esquecer();   // a parede de cada perfil (fundo "Filmes") e da conta que saiu
@@ -1979,7 +2009,8 @@ void sync_esquecer_usuario(void) {
   temAjustesPerfil = temCatHome = 0;
   estado = SYNC_PARADO;
   ultimoOk = 0;
-  sujoProgresso = 0; sujoAjustes = 0;
+  sujoProgresso = 0; sujoAjustes = 0; rewatchPendente = 0;
+  rewatch_esquecer();
   // Um pedido do botao de addons (#360) no ar e da conta que saiu.
   manualPedido = manualRodando = manualResultado = 0;
   addonsEsquecer();

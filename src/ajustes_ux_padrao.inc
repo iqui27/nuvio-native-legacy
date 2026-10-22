@@ -268,3 +268,5 @@
   0, /* Mic button in search (.tpk): Automatico, local */
   0, /* menu position (#461): Na lateral, the rail as always */
   0, 0, 0, /* achievements (2.1): master, notice after credits, secret hints: all On */
+  1, /* kids profile: Desligado (V_LIGA: 1); the state lives in perfilinfantil.c */
+  1, /* save diary to account: mirror of diarionuvem.c, Desligado until the person says yes */

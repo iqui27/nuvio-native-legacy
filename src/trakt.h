@@ -92,6 +92,10 @@ int trakt_playback_remover(const char *imdb);
 // SINCRONO: quem chamar do fio de desenho tem de mandar para um fio proprio.
 int trakt_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd,
                            int visto);
+// O mesmo lote com o token de OUTRO perfil (trava de serie, modo Juntos). Nao
+// toca na credencial em uso. SINCRONO.
+int trakt_episodios_marcar_token(const char *tok, const char *imdb,
+                                 const VistoPar *pares, int qtd, int visto);
 int  trakt_continuar(CatItem *saida, int max);
 // 1 quando a ULTIMA trakt_continuar nao teve resposta (rede, HTTP 5xx): o 0
 // que ela devolveu e "nao sei", e nao "nada em andamento" (#151).

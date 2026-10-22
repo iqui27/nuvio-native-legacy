@@ -517,6 +517,9 @@ void rec_nome_exibicao(char *dst, size_t tam, const char *nome, const char *id);
 
 // O meu nome como os amigos o veem (resposta do servidor; "" antes do 1o ciclo).
 const char *recomenda_meu_nome(void);
+// O id social deste perfil ("nuvio:<sub>" ou "nuvio:<sub>:<n>"), "" antes do
+// primeiro /v1/eu. O Watch Together reconhece a propria cadeira na sala por ele.
+const char *recomenda_meu_id(void);
 // O que eu digitei como nome de exibicao ("" = uso o nome do perfil).
 const char *recomenda_minha_exibicao(void);
 // Enfileira POST /v1/eu/nome. "" volta ao nome do perfil. 1 = enfileirou.
@@ -581,7 +584,8 @@ enum { REC_ACAO_INICIO = 1,     // comecou (nosso) / "assistindo agora" (Trakt)
        REC_ACAO_ABANDONO,
        REC_ACAO_REACAO,         // `reacao` 1/0/-1
        REC_ACAO_SALVO,
-       REC_ACAO_NOTA };         // nota de tracker (`nota` 0-100)
+       REC_ACAO_NOTA,           // nota de tracker (`nota` 0-100)
+       REC_ACAO_JUNTO };        // assistiram juntos (Watch Together); `com` = os outros
 typedef struct {
   int  fonte, acao;
   int  agora;           // explicit watching response; a check-in alone is not live
@@ -599,6 +603,7 @@ typedef struct {
   int  reacao;          // so REC_ACAO_REACAO
   int  nota;            // so REC_ACAO_NOTA
   long long id;         // id do evento no nosso servidor (0 nas outras fontes)
+  char com[96];         // so REC_ACAO_JUNTO: "Rafa, Fabi" (quem tambem aparece)
   int  eps;             // REC_ACAO_FIM de serie agrupado no servidor: episodios distintos
   int  temReacFim, reacFim;   // REC_ACAO_FIM: a reacao que veio junto (1/0/-1), se veio
 } RecEvento;
