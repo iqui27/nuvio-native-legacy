@@ -112,7 +112,11 @@ int main(void) {
   cat_historico_definir_id(cast[1].imdb,"movie",1);
   assert(elencoVistoEm(42)==1);
   assert(elencoVistoEm(0)==-1);
-  puts("detail21: content, navigation, profile and cast history OK");
+  assert(!extras_titulo_original()[0]);
+  LinhaDet facts[NV_DETF_DET_MAXL];
+  int nf=montarDetalhes(facts,NV_DETF_DET_MAXL);
+  for(int i=0;i<nf;i++) assert(facts[i].valor[0]);
+  puts("detail21: content, navigation, profile, cast history and facts OK");
   SDL_Quit();
   return 0;
 }

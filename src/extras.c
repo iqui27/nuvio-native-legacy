@@ -181,7 +181,7 @@ static char fichaStatus[32], fichaPaises[160], fichaCert[12], fichaLanc[16];
 // bella): ele devolve `country` = "Italy", que e o pais de PRODUCAO. Deduzir
 // idioma de pais erra em toda co-producao e em todo pais multilingue, entao a
 // deducao nao existe aqui.
-static char fichaIdiomaOrig[8];
+static char fichaIdiomaOrig[8], fichaTituloOrig[160];
 static int  fichaDur;
 // AGENDA DA SERIE — proximo episodio e situacao, do MESMO corpo /tv/<id>.
 // Ver agenda.h para o porque de nao ser o Trakt. Os campos sempre estiveram
@@ -894,6 +894,12 @@ static void *buscar(void *arg) {
         // fichaIdiomaOrig.
         js_texto(corpo, fimC, "original_language",
                  fichaIdiomaOrig, sizeof fichaIdiomaOrig);
+        js_texto(corpo, fimC, serie ? "original_name" : "original_title",
+                 fichaTituloOrig,sizeof fichaTituloOrig);
+        if (serie && ajustes_tmdb_ficha()) {
+          js_texto(corpo,fimC,"status",fichaStatus,sizeof fichaStatus);
+          js_texto(corpo,fimC,"first_air_date",fichaLanc,sizeof fichaLanc);
+        }
         // --- AGENDA DA SERIE (nenhuma viagem a mais) ----------------------
         //
         // `status`, `next_episode_to_air` e `last_episode_to_air` ja vinham
@@ -1439,7 +1445,7 @@ static void zerarPublicado(void) {
   colNome[0] = colCapa[0] = colFundo[0] = colSinopse[0] = 0;
   nTrailer = fichaDur = nEstudio = 0;
   fichaStatus[0] = fichaPaises[0] = fichaCert[0] = fichaLanc[0] = 0;
-  fichaIdiomaOrig[0] = 0;
+  fichaIdiomaOrig[0] = fichaTituloOrig[0] = 0;
   agStatus[0] = agDataProx[0] = agDataUlt[0] = agNomeEp[0] = 0;
   agTemp = agEp = 0;
   memset(vistos, 0, sizeof vistos);
@@ -1932,6 +1938,7 @@ int extras_colecao_nota(int i) { return (i >= 0 && i < nCol) ? col[i].nota : 0; 
 int extras_n_estudios(void) { return nEstudio; }
 // O idioma original do titulo que esta na ficha, ou "" quando nao se sabe.
 const char *extras_idioma_original(void) { return fichaIdiomaOrig; }
+const char *extras_titulo_original(void) { return fichaTituloOrig; }
 
 const char *extras_estudio_nome(int i) {
   return (i >= 0 && i < nEstudio) ? estudio[i].nome : "";

@@ -1938,6 +1938,7 @@ static int montarDetalhes(LinhaDet *o, int max) {
       n++;                                                     \
     } } while (0)
 
+  DET_POE("Original",extras_titulo_original());
   DET_POE("Título", ci ? ci->titulo : NULL);
   if (extras_idioma_original()[0]) DET_POE("Idioma", i18n(ling_nome(extras_idioma_original())));
   // Status cru do TMDB/Trakt ("Released", "returning series") -> rotulo no
