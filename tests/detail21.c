@@ -1,4 +1,7 @@
+#define extras_relacionado_imdb relFixture
 #include "../src/detail.c"
+#undef extras_relacionado_imdb
+const char *relFixture(int i) { (void)i; return "tt9000011"; }
 #include <assert.h>
 #include "dados.h"
 
@@ -53,7 +56,11 @@ int main(void) {
   elencoMonograma("Ryan Gosling", mono, sizeof mono); assert(!strcmp(mono,"RG"));
   elencoMonograma("Óscar", mono, sizeof mono); assert(!strcmp(mono,"Ó"));
   elencoMonograma("", mono, sizeof mono); assert(!strcmp(mono,""));
-  puts("detail21: top modes, spoiler reveal, progress grid and cast fallback OK");
+  assert(!relacionadoVisto(0));
+  cat_historico_definir_id(itemTeste.imdb,itemTeste.tipo,1);
+  assert(relacionadoVisto(0));
+  assert(!strcmp(cabecalhoDe(SEC_RELACIONADOS),"Mais como este"));
+  puts("detail21: hero, episodes, progress, cast and recommendations OK");
   SDL_Quit();
   return 0;
 }

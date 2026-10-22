@@ -767,7 +767,7 @@ static const char *cabecalhoDe(int r) {
   // de outra pagina. Agora e o mesmo TXT_HEADLINE, com o mesmo vao.
   if (r == SEC_NOTAS) return "Notas";
   if (r == SEC_NOTAS_EP) return "Notas por episódio";
-  if (r == SEC_RELACIONADOS) return "Recomendações";
+  if (r == SEC_RELACIONADOS) return "Mais como este";
   if (r == SEC_ELENCO && nAbasInfo() <= 1) return "Elenco";
   if (ehSerie()) {
     if (r == SEC_TRAILERS) return "Trailers";
@@ -6037,6 +6037,12 @@ static int relIndice(void) {
   return foco.coluna;
 }
 
+static int relacionadoVisto(int c) {
+  const char *id=extras_relacionado_imdb(c);
+  int i=id && id[0] ? cat_indice_por_imdb(id) : -1;
+  return i>=0 && cat_visto(cat_item(i));
+}
+
 static void desenhaRelacionados(float x, float y, float a, int primeiro, int limite) {
   int n = extras_n_relacionados(), i;
   int naLista = relNaLista();
@@ -6079,6 +6085,11 @@ static void desenhaRelacionados(float x, float y, float a, int primeiro, int lim
       } else {
         gfx_cor(r, raio, 0.133f, 0.133f, 0.133f, a);
       } }
+    if (relacionadoVisto(i)) {
+      GfxRect disco={r.x+r.w-40,r.y+12,28,28};
+      gfx_cor(disco,.5f,.09f,.12f,.13f,a);
+      gfx_icone((GfxRect){disco.x+6,disco.y+6,16,16},"check",.8f,.9f,.85f,a);
+    }
     { int c = aceso ? 255 : 225;
       TxtLinha lt = txt_linha_corta(TXT_DET_META2, extras_relacionado_titulo(i),
                                     c, c, c, 255, REL_CARD_W);
