@@ -941,8 +941,14 @@ static int relacionadosCarregando(void) {
 }
 
 // O PAR DA LINHA (filme, Glass UI): quem divide a linha com quem.
-static int parEsq(int r) { (void)r; return -1; }
-static int parDir(int r) { (void)r; return -1; }
+static int parEsq(int r) {
+  if (r==SEC_ESTUDIOS) return secaoN(SEC_DETALHES)>0 ? SEC_DETALHES : secaoN(SEC_FRASES)>0 ? SEC_FRASES : -1;
+  return r==SEC_DETALHES && secaoN(SEC_FRASES)>0 ? SEC_FRASES : -1;
+}
+static int parDir(int r) {
+  if (r==SEC_FRASES) return secaoN(SEC_DETALHES)>0 ? SEC_DETALHES : secaoN(SEC_ESTUDIOS)>0 ? SEC_ESTUDIOS : -1;
+  return r==SEC_DETALHES && secaoN(SEC_ESTUDIOS)>0 ? SEC_ESTUDIOS : -1;
+}
 static int secaoPresente(int r) {
   return secaoN(r) > 0 || (r == SEC_ELENCO && elencoCarregando()) ||
          (r == SEC_RELACIONADOS && relacionadosCarregando());
@@ -2985,7 +2991,7 @@ void detail_evento(const SDL_Event *e) {
       focoAmigos = 0;
     } else if (k == SDLK_DOWN && !(carro && !carCheia)) {
       AmigosTitulo at;
-      if (amigosDoTitulo(&at)) { focoAmigos = 1; return; }
+      if (detalheRetrato() && amigosDoTitulo(&at)) { focoAmigos = 1; return; }
     }
     if (k == SDLK_UP && reacao_detalhe_abrir(cat_item(idx))) return;
     // #407: CIMA no alto da pagina NAO abre mais o painel de Salvos/Avisos.
@@ -3007,6 +3013,7 @@ void detail_evento(const SDL_Event *e) {
       // proximo quadro (ver o sincronizador em detail_atualizar).
       for (int o = 0; o < N_ORDEM; o++) {
         int r = ordemSecoes()[o];
+        if (ehSerie() && r==SEC_TEMPORADAS && secaoColunas(SEC_EPISODIOS)>0) r=SEC_EPISODIOS;
         if (secaoColunas(r) > 0) {
           int alvo = foco.colunaLembrada[r];
           if (alvo >= secaoColunas(r)) alvo = secaoColunas(r) - 1;
@@ -3064,7 +3071,7 @@ void detail_evento(const SDL_Event *e) {
   // anda, cima/baixo saem pela regra comum.
 
   if (k == SDLK_RIGHT) {
-    if (!focus_mover(&foco, 1, 0) && !ehSerie() && parDir(foco.fileira) >= 0 &&
+    if (!focus_mover(&foco, 1, 0) && parDir(foco.fileira) >= 0 &&
         foco.nColunas[parDir(foco.fileira)] > 0) {
       foco.colunaLembrada[foco.fileira] = foco.coluna;
       foco.fileira = parDir(foco.fileira); foco.coluna = 0;
@@ -3072,7 +3079,7 @@ void detail_evento(const SDL_Event *e) {
   }
   else if (k == SDLK_LEFT)  {
     if (!focus_mover(&foco, -1, 0)) {
-      int e2 = ehSerie() ? -1 : parEsq(foco.fileira);
+      int e2 = parEsq(foco.fileira);
       if (e2 >= 0 && foco.nColunas[e2] > 0) {
         foco.fileira = e2;
         foco.coluna = foco.nColunas[e2] - 1;
@@ -7023,13 +7030,18 @@ static int moverFileira(int dy) {
   const int *ordem = ordemSecoes();
   for (o = 0; o < N_ORDEM; o++) if (ordem[o] == foco.fileira) pos = o;
   if (pos < 0) return focus_mover(&foco, 0, dy);
+  int footer = foco.fileira==SEC_FRASES || foco.fileira==SEC_DETALHES || foco.fileira==SEC_ESTUDIOS;
   for (o = pos + dy; o >= 0 && o < N_ORDEM; o += dy) {
     int r = ordem[o];
-    // O par da mesma linha (Colecao | Frases, Ficha | Producao) e esquerda/
-    // direita, nao cima/baixo.
-    if (parEsq(r) == foco.fileira || parDir(r) == foco.fileira) continue;
+    // Footer cards share one row; only Left/Right moves between them.
+    if (footer && (r==SEC_FRASES || r==SEC_DETALHES || r==SEC_ESTUDIOS)) continue;
     if (foco.nColunas[r] > 0) {
       int alvo = foco.colunaLembrada[r];
+      if (foco.fileira==SEC_EPISODIOS && r==SEC_TEMPORADAS) alvo=temporada;
+      if (foco.fileira==SEC_EPISODIOS && r==SEC_PROGTEMP && progTemNotas()) alvo=epAbsoluto(foco.coluna);
+      if (foco.fileira==SEC_PROGTEMP && r==SEC_EPISODIOS && progTemNotas()) {
+        for (int c=0;c<epVisiveis();c++) if (epAbsoluto(c)==foco.coluna) { alvo=c; break; }
+      }
       foco.colunaLembrada[foco.fileira] = foco.coluna;
       if (alvo >= foco.nColunas[r]) alvo = foco.nColunas[r] - 1;
       if (alvo < 0) alvo = 0;

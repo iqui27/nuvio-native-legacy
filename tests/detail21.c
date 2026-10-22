@@ -142,6 +142,26 @@ int main(void) {
   cat_definir_tudo(&itemTeste,1,NULL,0); idx=0; cat_definir_episodios(0,grid,2);
   temporada=0; nivel=1; foco.fileira=SEC_EPISODIOS; foco.coluna=1;
   assert(!detail_ep_borda(1) && temporada==0); // switch/reminder are never adjacent seasons
+  // Footer is one horizontal row, including when a card disappears.
+  quoteCount=1; frasesAberta=1; sincronizarColunas(); recalcularLayout();
+  nivel=1; foco.fileira=SEC_FRASES; foco.coluna=0;
+  assert(topoSec[SEC_FRASES]==topoSec[SEC_DETALHES]);
+  assert(parDir(SEC_FRASES)==SEC_DETALHES);
+  assert(!moverFileira(1));
+  assert(moverFileira(-1) && foco.fileira==SEC_COMENTARIOS);
+  foco.fileira=SEC_DETALHES;
+  assert(!moverFileira(1));
+  assert(moverFileira(-1) && foco.fileira==SEC_COMENTARIOS);
+  quoteCount=0; assert(parEsq(SEC_DETALHES)==-1);
+  // Hero enters the current episode; vertical moves keep that episode.
+  sincronizarColunas(); nivel=0; botao=1; focoAmigos=0; carro=0; saindo=0;
+  foco.colunaLembrada[SEC_EPISODIOS]=1;
+  e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_DOWN; detail_evento(&e);
+  assert(nivel==1 && foco.fileira==SEC_EPISODIOS && foco.coluna==1);
+  assert(moverFileira(1) && foco.fileira==SEC_PROGTEMP && foco.coluna==1);
+  assert(moverFileira(-1) && foco.fileira==SEC_EPISODIOS && foco.coluna==1);
+  foco.colunaLembrada[SEC_TEMPORADAS]=2;
+  assert(moverFileira(-1) && foco.fileira==SEC_TEMPORADAS && foco.coluna==temporada);
   char status[256];
   itemTeste.restanteMin=18; itemTeste.progresso=40;
   snprintf(itemTeste.meta,sizeof itemTeste.meta,"2026 · 120 min");
