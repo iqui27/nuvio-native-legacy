@@ -107,6 +107,18 @@ int main(void) {
   glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
   episodeBusy = 0;
   glance_atualizar(.016f, ++clockNow); assert(actions == 2); // No local success on fetch failure.
+  // Movie and TV TMDB IDs can share a number. Save must resolve the TV title.
+  busy = 0; catalogIndex = 0;
+  snprintf(item.imdb, sizeof item.imdb, "tmdb:42"); item.tmdb = 42;
+  snprintf(item.tipo, sizeof item.tipo, "series");
+  result = item; snprintf(result.imdb, sizeof result.imdb, "ttmovie");
+  snprintf(result.tipo, sizeof result.tipo, "movie");
+  int previousRequests = requests, previousActions = actions;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  assert(actions == previousActions && requests == previousRequests + 1);
+  assert(!strcmp(requestedType, "tv") && !glance_tomar_acao(0));
+  result = item; snprintf(result.imdb, sizeof result.imdb, "ttseries");
+  assert(glance_tomar_acao(0) && actions == previousActions + 1);
   puts("glance-state: ok");
   return 0;
 }

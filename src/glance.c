@@ -90,8 +90,10 @@ void glance_evento(const SDL_Event *e) {
     } else {
       int k = ctxlista_indice(atual.imdb, atual.tmdb);
       CatItem ci = atual;
-      if (k >= 0 && cat_copiar_item(k, &ci) && !strcmp(ci.tipo, atual.tipo) &&
-          botao == GLANCE_BT_VISTO && !strcmp(ci.tipo, "series") && ci.nTemporadas == 0) {
+      if (k >= 0 && (!cat_copiar_item(k, &ci) || strcmp(ci.tipo, atual.tipo))) {
+        k = -1; ci = atual;
+      }
+      if (k >= 0 && botao == GLANCE_BT_VISTO && !strcmp(ci.tipo, "series") && ci.nTemporadas == 0) {
         acaoPendente = botao; acaoTitulo = atual; acaoDesde = SDL_GetTicks();
         acaoEpisodios = k; desc_episodios(k, 0);
         return;

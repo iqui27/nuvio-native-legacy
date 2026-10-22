@@ -2449,13 +2449,14 @@ static int glanceDetTotal(void) { return glanceDetColecao ? extras_n_colecao() :
 static int glanceDetItem(int i, CatItem *out) {
   const char *id = glanceDetColecao ? "" : pessoa_credito_imdb(i);
   long t = glanceDetColecao ? extras_colecao_tmdb(i) : pessoa_credito_tmdb(i);
+  const char *tipo = !glanceDetColecao && !strcmp(pessoa_credito_tipo(i), "tv") ? "series" : "movie";
   int k = ctxlista_indice(id, t);
-  if (k >= 0) return cat_copiar_item(k, out);
+  if (k >= 0 && cat_copiar_item(k, out) && !strcmp(out->tipo, tipo)) return 1;
   memset(out, 0, sizeof *out);
   if (id[0]) snprintf(out->imdb, sizeof out->imdb, "%s", id);
   else snprintf(out->imdb, sizeof out->imdb, "tmdb:%ld", t);
   out->tmdb = t;
-  snprintf(out->tipo, sizeof out->tipo, "%s", !glanceDetColecao && !strcmp(pessoa_credito_tipo(i), "tv") ? "series" : "movie");
+  snprintf(out->tipo, sizeof out->tipo, "%s", tipo);
   snprintf(out->titulo, sizeof out->titulo, "%s", glanceDetColecao ? extras_colecao_titulo(i) : pessoa_credito_titulo(i));
   snprintf(out->meta, sizeof out->meta, "%s", glanceDetColecao ? extras_colecao_ano(i) : pessoa_credito_ano(i));
   snprintf(out->poster, sizeof out->poster, "%s", glanceDetColecao ? extras_colecao_poster(i) : pessoa_credito_poster(i));
