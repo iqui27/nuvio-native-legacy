@@ -7,5 +7,5 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 out="${TMPDIR:-/tmp}/nuvio-diarionuvem-tests"
 cc ${flags[@]+"${flags[@]}"} src/diario.c src/diarionomes.c src/js.c src/jsw.c tests/diarionuvem.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -o "$out" -O1 -g -Wall -Wextra \
-  -Wno-unused-parameter -Wno-deprecated-declarations -DNV_REC_URL='""'
+  -Wno-unused-parameter -Wno-deprecated-declarations -DNV_REC_URL='"https://test.invalid"'
 "$out"

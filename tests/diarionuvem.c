@@ -8,15 +8,20 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "../src/diarionuvem.c"
 
-int perfis_ativo(void) { return 1; }
-const ContaPerfil *perfis_item_ativo(void) { return NULL; }
+static int active = 1, logged;
+static ContaPerfil profiles[2] = {{.indice = 1, .primario = 1}, {.indice = 2}};
+int perfis_ativo(void) { return active; }
+int perfis_n(void) { return 2; }
+const ContaPerfil *perfis_item(int i) { return i >= 0 && i < 2 ? &profiles[i] : NULL; }
+const ContaPerfil *perfis_item_ativo(void) { return &profiles[active - 1]; }
 char *dados_ler(const char *n) { (void)n; return NULL; }
 int dados_gravar(const char *n, const char *c) { (void)n; (void)c; return 1; }
 const char *i18n(const char *s) { return s; }
-int sessao_logada(void) { return 0; }
-const char *sessao_token(void) { return ""; }
+int sessao_logada(void) { return logged; }
+const char *sessao_token(void) { return logged ? "test" : ""; }
 char *rede_baixar_st(const char *u, int s, const char *const *c, int *st) { (void)u; (void)s; (void)c; *st = 0; return NULL; }
 char *rede_postar_st(const char *u, int s, const char *const *c, const char *b, int *st) { (void)u; (void)s; (void)c; (void)b; *st = 0; return NULL; }
 void ilha_avisar_ex(const IlhaAvisoEx *a) { (void)a; }
@@ -82,6 +87,24 @@ int main(void) {
     j.status = 200; tratar(&j);
     assert(!diario_nuvem_consent_pendente(1));
     atomic_store(&ocupado, 0);
+  }
+  // A queued deletion must dispatch for its original profile after switching.
+  for (int target = 1; target <= 2; target++) {
+    diario_dono(target == 1 ? "retry-primary" : "retry-secondary");
+    active = target;
+    diario_nuvem_definir(target, DIARIO_NUVEM_SIM);
+    diario_nuvem_consent_confirmar(target, DIARIO_NUVEM_SIM);
+    atomic_store(&ocupado, 1);
+    diarionuvem_definir(0);
+    assert(diario_nuvem_consent_pendente(target));
+    active = 3 - target; logged = 1;
+    atomic_store(&ocupado, 0);
+    diarionuvem_passo();
+    for (int i = 0; i < 1000 && !atomic_load(&pronto); i++) usleep(1000);
+    Job *pending = atomic_exchange(&pronto, NULL);
+    assert(pending && pending->tipo == J_COFRE && !pending->ligado && pending->perfil == target);
+    assert(target == 1 ? !pending->pf[0] : !strcmp(pending->pf, "X-Nuvio-Perfil: 2"));
+    jobLivre(pending); atomic_store(&ocupado, 0);
   }
   printf("diarionuvem: ok\n");
   return 0;

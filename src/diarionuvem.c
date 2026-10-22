@@ -195,10 +195,21 @@ static void jobLivre(Job *j) {
   free(j->corpo); free(j->resp); free(j->env); free(j);
 }
 
-static void pedirCofre(int ligado) {
+static void pedirCofre(int perfil, int ligado) {
   Job *j = calloc(1, sizeof *j);
   if (!j) return;
   if (!cabecalhos(j)) { free(j); return; }
+  if (j->perfil != perfil) {
+    const ContaPerfil *p = NULL;
+    for (int i = 0; i < perfis_n(); i++) {
+      const ContaPerfil *candidate = perfis_item(i);
+      if (candidate && candidate->indice == perfil) { p = candidate; break; }
+    }
+    if (!p) { free(j); return; }
+    j->perfil = perfil;
+    j->pf[0] = 0;
+    if (!p->primario) snprintf(j->pf, sizeof j->pf, "X-Nuvio-Perfil: %d", p->indice);
+  }
   j->tipo = J_COFRE; j->ligado = ligado;
   snprintf(j->url, sizeof j->url, "%s/v1/diario/cofre", NV_REC_URL);
   j->corpo = malloc(24);
@@ -285,9 +296,11 @@ void diarionuvem_passo(void) {
   ultimo = agora;
   if (!diarionuvem_disponivel()) return;
   p = perfis_ativo();
-  if (diario_nuvem_consent_pendente(p)) {
-    pedirCofre(diarionuvem_ligado());
-    return;
+  for (int perfil = 1; perfil <= CONTA_PERFIL_MAX; perfil++) {
+    if (diario_nuvem_consent_pendente(perfil)) {
+      pedirCofre(perfil, diario_nuvem_estado(perfil) == DIARIO_NUVEM_SIM);
+      return;
+    }
   }
   if (diario_nuvem_estado(p) != DIARIO_NUVEM_SIM) return;
   if (p >= 1 && p <= CONTA_PERFIL_MAX && restaurarPend[p]) { pedirRestaurar(p); return; }
@@ -302,7 +315,7 @@ void diarionuvem_definir(int ligado) {
   // Desired consent stays pending on disk until the server acknowledges it.
   esperarAte = 0;
   if (!ligado) { int p = perfis_ativo(); restaurarPend[p] = 0; restaurarDesde[p] = 0; }
-  if (diarionuvem_disponivel()) pedirCofre(ligado);
+  if (diarionuvem_disponivel()) pedirCofre(perfis_ativo(), ligado);
 }
 
 void diarionuvem_perguntar_se_preciso(void) {
