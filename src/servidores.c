@@ -176,6 +176,28 @@ int servidores_pagina(const char *chave, int inicio, int limite, CatItem *out, i
   return -1;
 }
 
+int servidores_continuar(CatItem *out, int max) {
+  CatItem *lote;
+  int n = 0;
+  if (!ajustes_jellyfin_ligado() || max <= 0 || !servidores_conectado()) return 0;
+  lote = calloc((size_t)max, sizeof *lote);
+  if (!lote) return 0;
+  for (int m = 0; m < 3; m++) {
+    int k = m == 0 ? jellyfin_atividade("resume", lote, max)
+          : m == 1 ? emby_atividade("resume", lote, max) : plex_atividade("resume", lote, max);
+    for (int i = 0; i < k; i++) {
+      int j;
+      if (jfid_e(lote[i].imdb) || !lote[i].imdb[0] || lote[i].progresso <= 0) continue;
+      for (j = 0; j < n; j++)
+        if (!strcmp(out[j].imdb, lote[i].imdb) && !strcmp(out[j].tipo, lote[i].tipo)) break;
+      if (j == n && n < max) out[n++] = lote[i];
+      else if (j < n && lote[i].retomadoMs > out[j].retomadoMs) out[j] = lote[i];
+    }
+  }
+  free(lote);
+  return n;
+}
+
 int servidores_ficha(CatItem *item, CatEp *eps, int maxEps) {
   if (!item) return -1;
   if (!strncmp(item->imdb, JFID_PREFIXO_PLEX, 3)) return plex_ficha(item, eps, maxEps);

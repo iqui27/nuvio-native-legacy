@@ -131,6 +131,17 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authed():
             return self.reply(401)
         base = "/Users/%s" % USER_ID
+        if p == base + "/Items/Resume" and method == "GET":
+            m = movie(2)
+            m["ProviderIds"] = {"Imdb": "tt0002002"}
+            m["UserData"]["LastPlayedDate"] = "2026-10-06T10:00:00Z"
+            ep = episodes()[0]
+            ep["SeriesId"] = "2001"
+            ep["UserData"] = {"PlaybackPositionTicks": 9000000000,
+                              "LastPlayedDate": "2026-10-06T11:00:00Z"}
+            return self.reply(200, {"Items": [movie(1), m, ep]})
+        if p == "/Shows/NextUp" and method == "GET":
+            return self.reply(200, {"Items": []})
         if p == base + "/Views" and method == "GET":
             return self.reply(200, {"Items": [
                 {"Name": "Movies", "Id": LIB_MOVIES, "CollectionType": "movies"},

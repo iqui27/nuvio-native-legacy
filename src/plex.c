@@ -475,6 +475,7 @@ static int itemDeEx(const PxConta *c, const char *ini, const char *fim, CatItem 
       p = f;
     }
   }
+  it->retomadoMs = (long long)numRaiz(ini, fim, "lastViewedAt", 0) * 1000LL;
   off = numRaiz(ini, fim, "viewOffset", 0);
   if (off > 0 && dur > off) {
     it->progresso = (int)(off * 100.0 / dur);
@@ -1664,6 +1665,65 @@ int plex_pagina(const char *chave, int inicio, int limite, CatItem *out, int max
   c = conta; g = geracao;
   pthread_mutex_unlock(&trava);
   n = px_itens(&c, NULL, chave + 5, inicio, limite, out, max, total);
+  apagarSegredo(&c, sizeof c);
+  pthread_mutex_lock(&trava);
+  conferirPerfilLocked();
+  if (g != geracao) n = -1;
+  pthread_mutex_unlock(&trava);
+  return n;
+}
+
+int plex_atividade(const char *modo, CatItem *out, int max) {
+  PxConta c;
+  RedeResposta r;
+  char caminho[200];
+  unsigned g;
+  int n, e;
+  if (strcmp(modo, "resume") && strcmp(modo, "nextup")) return -1;
+  pthread_mutex_lock(&trava);
+  conferirPerfilLocked();
+  if (estado != PX_EST_CONECTADO) { pthread_mutex_unlock(&trava); return 0; }
+  c = conta; g = geracao;
+  pthread_mutex_unlock(&trava);
+  snprintf(caminho, sizeof caminho, "%s?includeGuids=1&X-Plex-Container-Start=0&X-Plex-Container-Size=%d",
+           !strcmp(modo, "resume") ? "/hubs/home/continueWatching" : "/library/onDeck", max);
+  e = pedirServidor(&c, caminho, "GET", "activity", PX_PRAZO_LISTA_MS, NULL, &r);
+  n = e;
+  if (!e) {
+    const char *ai, *af, *p;
+    n = 0;
+    if (arrayDe(r.corpo, r.n_corpo, "Metadata", &ai, &af)) {
+      p = ai + 1;
+      while (n < max && (p = elemento(p, af)) != NULL) {
+        const char *f = depoisElemento(p);
+        char tipo[24] = "", serie[40] = "";
+        CatItem *it = &out[n];
+        if (!f) break;
+        txtRaiz(p, f, "type", tipo, sizeof tipo);
+        if (!strcmp(tipo, "episode") && chaveTxt(p, f, "grandparentRatingKey", serie, sizeof serie)) {
+          SrvIdxItem s = {0};
+          pthread_mutex_lock(&trava);
+          for (int k = 0; k < idx.n; k++)
+            if (idx.v[k].tipo == 's' && !strcmp(idx.v[k].item, serie)) { s = idx.v[k]; break; }
+          pthread_mutex_unlock(&trava);
+          if (px_detalhe(&c, NULL, serie, it) == PX_OK) {
+            double dur = numRaiz(p, f, "duration", 0), pos = numRaiz(p, f, "viewOffset", 0);
+            if (s.imdb[0]) copiar(it->imdb, sizeof it->imdb, s.imdb);
+            else if (s.tmdb > 0) snprintf(it->imdb, sizeof it->imdb, "tmdb:%ld", s.tmdb);
+            it->temporada = (int)numRaiz(p, f, "parentIndex", 0);
+            it->episodio = (int)numRaiz(p, f, "index", 0);
+            txtRaiz(p, f, "title", it->nomeEpisodio, sizeof it->nomeEpisodio);
+            it->retomadoMs = (long long)numRaiz(p, f, "lastViewedAt", 0) * 1000LL;
+            it->progresso = dur > pos && pos > 0 ? (int)(pos * 100.0 / dur) : 0;
+            it->restanteMin = dur > pos ? (int)((dur - pos) / 60000.0) : 0;
+            n++;
+          }
+        } else if (itemDeEx(&c, p, f, it, 1)) n++;
+        p = f;
+      }
+    }
+  }
+  rede_resposta_limpar(&r);
   apagarSegredo(&c, sizeof c);
   pthread_mutex_lock(&trava);
   conferirPerfilLocked();

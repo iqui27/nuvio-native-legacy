@@ -449,8 +449,12 @@ static int itemDeEx(const JfConta *c, const char *ini, const char *fim, CatItem 
     }
   }
   if (blocoRaiz(ini, fim, "UserData", &bi, &bf)) {
+    char data[64] = "";
     double pct = numRaiz(bi, bf, "PlayedPercentage", 0);
     double pos = numRaiz(bi, bf, "PlaybackPositionTicks", 0);
+    if (txtRaiz(bi, bf, "LastPlayedDate", data, sizeof data))
+      it->retomadoMs = srvidx_iso(data) * 1000LL;
+    if (pct <= 0 && ticks > pos && pos > 0) pct = pos * 100.0 / ticks;
     if (pct > 0 && pct < 100) it->progresso = (int)pct;
     if (pos > 0 && ticks > pos) it->restanteMin = (int)(jf_seg((long long)(ticks - pos)) / 60.0 + 0.5);
   }
@@ -1601,6 +1605,71 @@ static int jfi_pagina(JfInst *I, const char *chave, int inicio, int limite,
   return n;
 }
 
+static int jfi_atividade(JfInst *I, const char *modo, CatItem *out, int max) {
+  JfConta c;
+  RedeResposta r;
+  char caminho[480];
+  unsigned g;
+  int n, e;
+  if (strcmp(modo, "resume") && strcmp(modo, "nextup")) return -1;
+  pthread_mutex_lock(&I->trava);
+  conferirPerfilLocked(I);
+  if (I->estado != JF_EST_CONECTADO) { pthread_mutex_unlock(&I->trava); return 0; }
+  c = I->conta; g = I->geracao;
+  pthread_mutex_unlock(&I->trava);
+  if (!strcmp(modo, "nextup"))
+    snprintf(caminho, sizeof caminho, "/Shows/NextUp?userId=%s&Limit=%d&Fields=ProviderIds,Overview&EnableUserData=true", c.usuarioId, max);
+  else if (c.tipo == JF_TIPO_EMBY)
+    snprintf(caminho, sizeof caminho, "/Users/%s/Items/Resume?Limit=%d&Fields=ProviderIds,Overview&EnableUserData=true", c.usuarioId, max);
+  else snprintf(caminho, sizeof caminho, "/UserItems/Resume?userId=%s&Limit=%d&Fields=ProviderIds,Overview&EnableUserData=true", c.usuarioId, max);
+  e = pedir(&c, c.base, NULL, "GET", caminho, NULL, "activity", JF_PRAZO_LISTA_MS, &r);
+  n = e;
+  if (!e) {
+    const char *ai, *af, *p;
+    n = 0;
+    if (blocoRaiz(r.corpo, r.corpo + r.n_corpo, "Items", &ai, &af)) {
+      p = ai + 1;
+      while (n < max && (p = elemento(p, af)) != NULL) {
+        const char *f = depoisElemento(p), *ui, *uf;
+        char tipo[24] = "", serie[40] = "", data[64] = "";
+        CatItem *it = &out[n];
+        if (!f) break;
+        txtRaiz(p, f, "Type", tipo, sizeof tipo);
+        if (!strcmp(tipo, "Episode") && txtRaiz(p, f, "SeriesId", serie, sizeof serie)) {
+          SrvIdxItem s = {0};
+          pthread_mutex_lock(&I->trava);
+          for (int k = 0; k < I->idx.n; k++)
+            if (I->idx.v[k].tipo == 's' && !strcmp(I->idx.v[k].item, serie)) { s = I->idx.v[k]; break; }
+          pthread_mutex_unlock(&I->trava);
+          if (jf_detalhe(&c, NULL, serie, it) == JF_OK) {
+            double dur = numRaiz(p, f, "RunTimeTicks", 0), pos = 0;
+            if (s.imdb[0]) copiar(it->imdb, sizeof it->imdb, s.imdb);
+            else if (s.tmdb > 0) snprintf(it->imdb, sizeof it->imdb, "tmdb:%ld", s.tmdb);
+            it->temporada = (int)numRaiz(p, f, "ParentIndexNumber", 0);
+            it->episodio = (int)numRaiz(p, f, "IndexNumber", 0);
+            txtRaiz(p, f, "Name", it->nomeEpisodio, sizeof it->nomeEpisodio);
+            if (blocoRaiz(p, f, "UserData", &ui, &uf)) {
+              pos = numRaiz(ui, uf, "PlaybackPositionTicks", 0);
+              if (txtRaiz(ui, uf, "LastPlayedDate", data, sizeof data)) it->retomadoMs = srvidx_iso(data) * 1000LL;
+            }
+            it->progresso = dur > pos && pos > 0 ? (int)(pos * 100.0 / dur) : 0;
+            it->restanteMin = dur > pos ? (int)(jf_seg((long long)(dur - pos)) / 60.0) : 0;
+            n++;
+          }
+        } else if (itemDeEx(&c, p, f, it, 1)) n++;
+        p = f;
+      }
+    }
+  }
+  rede_resposta_limpar(&r);
+  apagarSegredo(&c, sizeof c);
+  pthread_mutex_lock(&I->trava);
+  conferirPerfilLocked(I);
+  if (g != I->geracao) n = -1;
+  pthread_mutex_unlock(&I->trava);
+  return n;
+}
+
 // ------------------------------------------------------ worker: control
 // Snapshot of what a task needs, taken under I->trava; the network runs on the
 // copy. Returns the job to use (NULL if the generation already moved).
@@ -2387,6 +2456,7 @@ static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps) {
   void P##_recarregar_bibliotecas(void) { jfi_recarregar_bibliotecas(I); }                    \
   unsigned P##_fileiras_versao(void) { return jfi_fileiras_versao(I); }                       \
   int P##_chave_fileira(const char *k) { return jfi_chave_fileira(I, k); }                    \
+  int P##_atividade(const char *m, CatItem *out, int max) { return jfi_atividade(I, m, out, max); } \
   int P##_pagina(const char *k, int ini, int lim, CatItem *out, int max, int *total) {        \
     return jfi_pagina(I, k, ini, lim, out, max, total); }                                    \
   int P##_fileiras_copiar(CatItem *it, int mi, CatFileira *f, int mf, int *n) {               \

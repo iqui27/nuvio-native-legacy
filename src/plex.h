@@ -248,6 +248,7 @@ int  plex_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, int ma
 int  plex_chave_fileira(const char *chave);   // "plex_<section>"
 void plex_recarregar_bibliotecas(void);
 int  plex_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total);
+int  plex_atividade(const char *modo, CatItem *out, int max);
 
 // Title page of a Plex-native item ("px:..."). BLOCKS. -1 failed.
 int  plex_ficha(CatItem *item, CatEp *eps, int maxEps);

@@ -320,6 +320,12 @@ static void integracao(void) {
   while (emby_indice_n() < 3 && ms() < fim) dormir(20);
   assert(emby_indice_n() == 3 && emby_tem("tt0002002", "movie", NULL) && emby_tem("tmdb:4242", "series", NULL));
   assert(!jellyfin_tem("tt0002002", "movie", NULL));                                // the other instance has nothing
+  { CatItem *cw = calloc(12, sizeof *cw);
+    assert(cw && servidores_continuar(cw, 12) == 2);
+    assert(!strcmp(cw[0].imdb, "tt0002002") && cw[0].progresso == 25 && cw[0].retomadoMs > 0);
+    assert(!strcmp(cw[1].imdb, "tmdb:4242") && cw[1].temporada == 1 && cw[1].episodio == 1);
+    assert(cw[1].progresso == 33 && cw[1].retomadoMs > cw[0].retomadoMs);
+    free(cw); }
   { SrvAchado a;
     assert(emby_tem("tt0002002", "movie", &a) && !strcmp(a.tipoSrv, "Emby") && !strcmp(a.servidor, "Emby Home")); }
   r = emby_consultar("tt0002002", "movie", NULL, 0, NULL, NULL, &lista);
