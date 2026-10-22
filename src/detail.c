@@ -972,136 +972,39 @@ static float vaoAntes(int r) {
 }
 
 static void recalcularLayout(void) {
-  int r;
-  for (r = 0; r < N_SECOES; r++) { dxSec[r] = 0; wSec[r] = NV_TELA_W - NV_DETP_X * 2; }
-  if (ehSerie()) {
-    // As quatro primeiras vem de MEDIDA ABSOLUTA na referencia; nao sao um
-    // empilhamento. As de baixo (comentarios) sim: elas ficam depois do elenco,
-    // cuja altura e conhecida.
-    static const float G[N_SECOES] = {
-      NV_DETP_G_TEMP, NV_DETP_G_EP, NV_DETP_G_ABAS, NV_DETP_G_ELENCO, 0, 0
-    };
-    float y;
-    for (r = 0; r < N_SECOES; r++) {
-      topoSec[r] = conteudoSec[r] = G[r] +
-        (r >= SEC_ABAS_INFO && r <= SEC_ELENCO ? epExtraAltura() : 0);
-      // NOTAS na serie: logo abaixo dos episodios, onde antes comecavam as abas
-      // (G_ABAS); o bloco inteiro empurra abas e elenco (epExtraAltura).
-      if (r == SEC_NOTAS) {
-        topoSec[r] = conteudoSec[r] = notasTopoSerie();
-        if (secaoN(r) > 0) conteudoSec[r] += NV_DETF_CAB_H + NV_DETF_CAB_GAP;
-      }
-      // NUMEROS DA TEMPORADA logo depois das Notas; o titulo e do proprio bloco.
-      if (r == SEC_NUMEROS) topoSec[r] = conteudoSec[r] = numerosTopoSerie();
-      if (r == SEC_PROGTEMP) topoSec[r] = conteudoSec[r] = progTopoSerie();
-      alvoSec[r] = (r == SEC_ABAS_INFO) ? NV_DETP_ALVO_ABAS
-                                        : NV_DETP_ALVO_FILEIRA;
-    }
-    alvoSec[SEC_NOTAS] = alvoQueCabe(alturaSecao(SEC_NOTAS));
-    alvoSec[SEC_NUMEROS] = alvoQueCabe(alturaSecao(SEC_NUMEROS));
-    alvoSec[SEC_PROGTEMP] = alvoQueCabe(alturaSecao(SEC_PROGTEMP));
-    docFim = NV_DETP_FIM;
-    // SECAO DO TRAKT NA SERIE: empilhada abaixo do elenco, como na referencia.
-    // Era o "falta a secao do trakt na de series" — ela existia so em filme.
-    //
-    // A base do ELENCO sai das medidas da SERIE, nao de NV_DETF_EL_ALT (193),
-    // que e a altura da fileira de elenco do FILME — foi o que eu usei antes e
-    // por isso a secao do Trakt caiu POR CIMA dos avatares.
-    //
-    // O empilhamento e: topo da fileira (EL_Y) + avatar + o vao ate o nome + o
-    // vao do nome ate o papel + a linha do papel. Mais UMA linha de folga
-    // porque nome comprido quebra em duas ("Geneva Robertson-Dworet" na propria
-    // captura do dono) e empurra o papel para baixo.
-    y = baseDaAbaAtiva() + NV_DETP_EL_GAP_TRAKT;
-    // Round 2: trailers precede related titles; preserve each section's geometry.
-    topoSec[SEC_TRAILERS]=y;
-    conteudoSec[SEC_TRAILERS]=y+NV_DETF_CAB_H+NV_DETF_CAB_GAP;
-    if (secaoN(SEC_TRAILERS)>0) y=conteudoSec[SEC_TRAILERS]+alturaSecao(SEC_TRAILERS)+NV_DETF_SEC_GAP;
-    // Recommendations keep their own row and focus, directly below trailers.
-    topoSec[SEC_RELACIONADOS] = conteudoSec[SEC_RELACIONADOS] = y;
-    if (secaoN(SEC_RELACIONADOS) > 0) {
-      conteudoSec[SEC_RELACIONADOS] += NV_DETF_CAB_H + NV_DETF_CAB_GAP;
-      y = conteudoSec[SEC_RELACIONADOS] + alturaSecao(SEC_RELACIONADOS) + NV_DETF_SEC_GAP;
-      if (y + NV_DETF_PAD_FIM > docFim) docFim = y + NV_DETF_PAD_FIM;
-    }
-
-    // AS TRES BANDAS DE AUDIENCIA vem antes dos comentarios, empilhadas pela
-    // mesma regra: nascem onde a aba ativa termina e empurram o que vem depois.
-    // Altura vinda do ultimo desenho (ver audAlt), porque cada grafico so diz
-    // quanto ocupou depois de desenhado.
-    for (r = SEC_AUD_RADAR; r <= SEC_AUD_DIGITAL; r++) {
-      topoSec[r] = conteudoSec[r] = y;
-      if (secaoN(r) <= 0) continue;
-      y += alturaSecao(r) + NV_DETF_SEC_GAP;
-      { float fim = y + NV_DETF_PAD_FIM - NV_DETF_SEC_GAP;
-        if (fim > docFim) docFim = fim; }
-    }
-    // NOTAS: heatmap por fonte e grade de episodios, com cabecalho proprio como
-    // os trailers logo abaixo (topo do grupo = linha do titulo).
-    for (r = SEC_NOTAS_EP; r <= SEC_NOTAS_EP; r++) {
-      topoSec[r] = conteudoSec[r] = y;
-      if (secaoN(r) <= 0) continue;
-      conteudoSec[r] = y + NV_DETF_CAB_H + NV_DETF_CAB_GAP;
-      y = conteudoSec[r] + alturaSecao(r) + NV_DETF_SEC_GAP;
-      { float fim = y + NV_DETF_PAD_FIM - NV_DETF_SEC_GAP;
-        if (fim > docFim) docFim = fim; }
-    }
-    // TRAILERS NA SERIE (#123), na posicao que o enum ja dava a eles (depois
-    // da audiencia, antes dos comentarios — a ordem do D-pad). Com cabecalho,
-    // como no filme: o topo do grupo e a linha do titulo, o conteudo abaixo.
-    topoSec[SEC_COMENTARIOS] = conteudoSec[SEC_COMENTARIOS] = y;
-    if (secaoN(SEC_COMENTARIOS) > 0) {
-      y += alturaSecao(SEC_COMENTARIOS) + NV_DETF_SEC_GAP;
-      float fim = y + NV_DETF_PAD_FIM - NV_DETF_SEC_GAP;
-      if (fim > docFim) docFim = fim;
-    }
-    topoSec[SEC_FRASES] = conteudoSec[SEC_FRASES] = y;
-    if (secaoN(SEC_FRASES)>0) y += alturaSecao(SEC_FRASES) + NV_DETF_SEC_GAP;
-    topoSec[SEC_DETALHES] = y;
-    conteudoSec[SEC_DETALHES] = y + NV_DETF_CAB_H + NV_DETF_CAB_GAP;
-    if (secaoN(SEC_DETALHES)>0) y = conteudoSec[SEC_DETALHES] + alturaSecao(SEC_DETALHES) + NV_DETF_SEC_GAP;
-    // Estudios/redes empilham DEPOIS dos comentarios, como no web
-    // (renderCompanySections monta a secao ao fim do corpo da pagina).
-    topoSec[SEC_ESTUDIOS] = conteudoSec[SEC_ESTUDIOS] = y;
-    // Com cabecalho proprio, como os trailers acima e o filme: o topo do grupo
-    // e a linha do titulo e o conteudo fica NV_DETF_CAB_H + NV_DETF_CAB_GAP abaixo.
-    if (secaoN(SEC_ESTUDIOS) > 0)
-      conteudoSec[SEC_ESTUDIOS] = y + NV_DETF_CAB_H + NV_DETF_CAB_GAP;
-    // ESTUDIOS DEIXOU DE SER A ULTIMA e por isso passou a ADIANTAR `y`. Antes
-    // ela so media o proprio fim para o docFim; com a secao de frases embaixo,
-    // nao adiantar aqui punha as duas no mesmo topo — o mesmo defeito que a
-    // secao do Trakt ja teve contra os avatares do elenco.
-    if (secaoN(SEC_ESTUDIOS) > 0) {
-      y = conteudoSec[SEC_ESTUDIOS] + alturaSecao(SEC_ESTUDIOS) + NV_DETF_SEC_GAP;
-      float fim = y + NV_DETF_PAD_FIM - NV_DETF_SEC_GAP;
-      if (fim > docFim) docFim = fim;
-    }
-    if (y+NV_DETF_PAD_FIM>docFim) docFim=y+NV_DETF_PAD_FIM;
-    return;
+  float y=1000;
+  const int *order=ordemSecoes();
+  for (int r=0;r<N_SECOES;r++) {
+    topoSec[r]=conteudoSec[r]=y; dxSec[r]=0; wSec[r]=1728;
+    alvoSec[r]=178.0f/NV_TELA_H;
   }
-  { float y = NV_DETF_HERO_FIM;
-    for (int o = 0; o < N_ORDEM; o++) {
-      float h;
-      r = ORDEM_FILME[o];
-      topoSec[r] = conteudoSec[r] = y;
-      alvoSec[r] = 178.0f/NV_TELA_H;
-      // Secao ausente nao ocupa altura — salvo o ELENCO enquanto o meta do
-      // filme carrega: a fileira reserva o lugar e recebe o esqueleto, para a
-      // pagina nao pular quando os atores chegarem.
-      if (secaoN(r) <= 0 && !(r == SEC_ELENCO && elencoCarregando()) &&
-          !(r == SEC_RELACIONADOS && relacionadosCarregando())) continue;
-      if (cabecalhoDe(r)) {
-        conteudoSec[r] = y + NV_DETF_CAB_H + NV_DETF_CAB_GAP;
-        y = conteudoSec[r];
-      }
-      h = alturaSecao(r);
-      y += h + NV_DETF_SEC_GAP;
+  for (int o=0;o<N_ORDEM;o++) {
+    int r=order[o];
+    if (r==SEC_FRASES || r==SEC_DETALHES || r==SEC_ESTUDIOS) continue;
+    if (r==SEC_EPISODIOS) continue;
+    topoSec[r]=conteudoSec[r]=y;
+    if (secaoN(r)<=0) continue;
+    if (r==SEC_TEMPORADAS) {
+      conteudoSec[r]=y+44;
+      topoSec[SEC_EPISODIOS]=y;
+      conteudoSec[SEC_EPISODIOS]=y+130;
+      y+=720;
+      continue;
     }
-    // Fim REAL do documento, nao os 2473 da serie: um filme e bem mais curto e
-    // copiar aquele numero deixaria a pagina rolar para muito depois do fim.
-    docFim = y - NV_DETF_SEC_GAP + NV_DETF_PAD_FIM;
-    if (docFim < NV_TELA_H) docFim = NV_TELA_H;
-    alvoSec[SEC_NOTAS] = alvoQueCabe(alturaSecao(SEC_NOTAS)); }
+    if (cabecalhoDe(r)) conteudoSec[r]+=48;
+    float gap=r==SEC_NOTAS ? (ehSerie() ? 122 : 132) : r==SEC_ELENCO ? 50 :
+      r==SEC_COLECAO ? 40 : r==SEC_COMENTARIOS ? 60 : 80;
+    y=conteudoSec[r]+alturaSecao(r)+gap;
+  }
+  int col=0;
+  const int footer[]={SEC_FRASES,SEC_DETALHES,SEC_ESTUDIOS};
+  for (int i=0;i<3;i++) {
+    int r=footer[i]; topoSec[r]=conteudoSec[r]=y;
+    if (secaoN(r)<=0) continue;
+    dxSec[r]=col++*580; wSec[r]=556;
+  }
+  docFim=y+(col ? 300 : 0)+80;
+  if (docFim<NV_TELA_H) docFim=NV_TELA_H;
 }
 
 // As abas sao DINAMICAS, como no web: renderSeriesInsightSection
@@ -2125,8 +2028,8 @@ static float alturaSecao(int r) {
     // + o cabecalho: sem ele a secao seguinte ("Detalhes do Filme") era
     // empilhada usando so a altura dos cartoes e saia POR CIMA deles.
     case SEC_COMENTARIOS:  return alturaCabComentarios() + COM_CARD_H;
-    case SEC_ESTUDIOS:     return EST_CARD_H;
-    case SEC_DETALHES:     return nLinhasDetalhe() * NV_DETF_DET_LINHA;
+    case SEC_ESTUDIOS:
+    case SEC_DETALHES:     return 300;
     // As duas sob demanda: a CHAMADA enquanto ninguem entrou (titulo +
     // procedencia + custo, tres linhas) e a altura MEDIDA no ultimo desenho
     // depois disso.
@@ -2135,7 +2038,7 @@ static float alturaSecao(int r) {
     case SEC_AUD_ARCO:  return serieaud_bloco_altura();
     case SEC_AUD_RADAR:
     case SEC_AUD_DIGITAL: return 0.0f;
-    case SEC_FRASES:    return frasesAberta ? frasesAlt : CHAMADA_H;
+    case SEC_FRASES:    return 300;
     case SEC_NOTAS:     return 150.0f;
     case SEC_NOTAS_EP:  return 0.0f;
     case SEC_PROGTEMP:  return tgraf_altura_dados(tgraf_dados(idx)) + (progTemNotas() ? 360 : 0);
@@ -2241,10 +2144,7 @@ static int secaoN(int r) {
     // Produtoras (filme) e redes+produtoras (serie) vindos do TMDB. Cada logo
     // e uma coluna focavel que abre o browse da entidade — o mesmo caminho das
     // pastas sinteticas TMDB das colecoes.
-    case SEC_ESTUDIOS: {
-      int n = extras_n_estudios();
-      return n < N_ITENS ? n : N_ITENS;
-    }
+    case SEC_ESTUDIOS: return extras_n_estudios()>0 ? 1 : 0;
     // A tabela e UMA coluna focavel, nao uma por linha: o D-pad desce ate ela,
     // ela rola para a tela e pronto. Zero colunas faria focus_mover PULA-LA
     // (focus.c:25) e a secao viraria inalcancavel — logo, tambem irrolavel.
@@ -7225,8 +7125,34 @@ static void desenhaGradeProgresso(float x, float y, float a) {
 
 static float secaoAlpha(int r) { return nivel>=1 && foco.fileira!=r ? .42f : 1.f; }
 
+static void desenhaRodape(int r,float a) {
+  float x=96+dxSec[r],y=conteudoSec[r]-scrollY;
+  if (y>1080 || y+300<0) return;
+  GfxRect card={x,y,556,300};
+  gfx_cor(card,20.0f/300,1,1,1,.06f*a);
+  const char *title=r==SEC_FRASES ? "Frases" : r==SEC_DETALHES ? "Ficha técnica" : "Produção";
+  char caps[80]; idioma_maiusc_em(ajustes_idioma(),caps,sizeof caps,i18n(title));
+  txt_tracking(TXT_G20M,caps,243,242,239,x+28,y+24,a*.6f,3.6f);
+  if (r==SEC_FRASES) {
+    int sel=seriefrases_selecionado(); if (sel<0 || sel>=seriefrases_n()) sel=0;
+    txt_bloco_corta(TXT_DET_SIN,seriefrases_texto(sel),243,242,239,x+28,y+66,500,38,a,4);
+    txt_desenhar_alpha(txt_linha_corta(TXT_G18R,seriefrases_quem(sel),243,242,239,140,500),x+28,y+252,a);
+  } else if (r==SEC_DETALHES) {
+    LinhaDet rows[NV_DETF_DET_MAXL]; int n=montarDetalhes(rows,NV_DETF_DET_MAXL);
+    for (int i=0;i<n && i<5;i++) {
+      txt_desenhar_alpha(txt_linha_corta(TXT_G20M,rows[i].chave,243,242,239,128,180),x+28,y+62+i*42,a);
+      txt_desenhar_alpha(txt_linha_corta(TXT_G22M,rows[i].valor,243,242,239,255,300),x+218,y+62+i*42,a);
+    }
+  } else for (int i=0;i<extras_n_estudios() && i<4;i++)
+    txt_desenhar_alpha(txt_linha_corta(TXT_DET_SIN,extras_estudio_nome(i),243,242,239,204,500),x+28,y+70+i*48,a);
+}
+
 static void desenhaSecao(int r, float a, Uint32 agora) {
   if (corpoSobArte()) return;
+  if (r==SEC_FRASES || r==SEC_DETALHES || r==SEC_ESTUDIOS) {
+    if (secaoN(r)>0) desenhaRodape(r,a*secaoAlpha(r));
+    return;
+  }
   a *= secaoAlpha(r);
   int n = secaoN(r);
   // Aba de informacao que nao seja "Criador e elenco": o web TROCA o conteudo
