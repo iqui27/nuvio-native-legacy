@@ -209,6 +209,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
           if (S.geracao !== geracao) return;
           S.posMs = +ms || 0;
           S.tEvento = S.tPos = Date.now();
+          S.tPosMono = performance.now();
         },
         onerror:             function (e) {
           if (S.geracao !== geracao) return;
@@ -441,10 +442,9 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
   }
 
   if (op === "estado") {
-    // OITO DOUBLES, nesta ordem, e a mesma no C (ver EST_*). Um tipo so: sem
-    // deslocamento a acertar, sem alinhamento a supor.
+    // Ten doubles, same order as EST_* in C. One type, no padding.
     // dstTam vem em BYTES, como em "faixas": um so contrato para o buffer.
-    if (!dst || dstTam < 64) return 0;
+    if (!dst || dstTam < 80) return 0;
     var p6 = pl();
     var dur = 0;
     if (p6 && S.aberto && S.pronto) {
@@ -470,7 +470,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
       // maximo a cada 250 ms; logo depois de um seek, todo quadro.
       if (agora - S.tSeek < 1500 ||
           (agora - S.tEvento > 1000 && agora - S.tPos >= 250)) {
-        try { var t = +p6.getCurrentTime(); if (t >= 0) { S.posMs = t; S.tPos = agora; } } catch (e) {}
+        try { var t = +p6.getCurrentTime(); if (t >= 0) { S.posMs = t; S.tPos = agora; S.tPosMono = performance.now(); } } catch (e) {}
       }
       gasto = Date.now() - t0;
       if (gasto > 20 && agora - S.tLento > 10000) {
@@ -495,6 +495,8 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     HEAPF64[o + 5] = S.larg;
     HEAPF64[o + 6] = S.alt;
     HEAPF64[o + 7] = S.erro ? 1 : 0;
+    HEAPF64[o + 8] = S.posMs / 1000.0;
+    HEAPF64[o + 9] = S.tPos && S.tPosMono ? Math.max(0, performance.now() - S.tPosMono) : 0;
     return 1;
   }
 
@@ -719,7 +721,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
 // Indices do vetor devolvido por "estado". Precisam casar com a ordem escrita
 // no JS acima, e sao a UNICA coisa combinada entre os dois lados.
 enum { EST_POS, EST_DUR, EST_TOCANDO, EST_PRONTO, EST_ABERTO,
-       EST_LARG, EST_ALT, EST_ERRO, EST_N };
+       EST_LARG, EST_ALT, EST_ERRO, EST_POS_CRUA, EST_POS_IDADE, EST_N };
 
 // O pedido que atravessa para o fio principal. Fica na PILHA do chamador: com
 // -pthread a memoria e compartilhada e avChamar() e sincrona, entao o quadro
@@ -796,7 +798,8 @@ static int    ligado;        // video_iniciar deu certo
 static int    temAvplay;     // o firmware oferece webapis.avplay
 static int    ativo;         // ha sessao aberta — e o que abre o furo
 static int    tocando, pronto;
-static double posSeg, durSeg;
+static double posSeg, durSeg, posAmostra;
+static Uint64 posAmostraEm;
 static int    vidW, vidH;
 static int    houveErro;
 static char   erroTexto[96];   // ver logarErro e video_erro_texto
@@ -891,7 +894,8 @@ int video_tocar(const char *url) {
   reconPermitida = reconProxima; reconProxima = 0; reconIniciou = 0;
   reconAudio = reconLeg = -1; reconFaixasPend = 0; reconBuscar = -1.0;
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; faixasLidas = 0;
-  posSeg = durSeg = 0; vidW = vidH = 0; houveErro = 0; erroTexto[0] = 0;
+  posSeg = durSeg = posAmostra = 0; posAmostraEm = SDL_GetTicks64();
+  vidW = vidH = 0; houveErro = 0; erroTexto[0] = 0;
   seekEm = 0;
   // Sonda de MKV so faz sentido em MKV. Num MP4 e descida garantidamente
   // perdida pela MESMA conexao que esta transmitindo — o log da LG dizia
@@ -1191,6 +1195,11 @@ void video_bombear(void) {
   memset(est, 0, sizeof est);
   if (avChamar("estado", NULL, 0, 0, 0, 0, (char *)est, (int)sizeof est) < 1) return;
   posSeg   = est[EST_POS];
+  posAmostra = est[EST_POS_CRUA];
+  {
+    Uint64 now = SDL_GetTicks64(), age = (Uint64)est[EST_POS_IDADE];
+    posAmostraEm = age <= now ? now - age : 0;
+  }
   durSeg   = est[EST_DUR];
   tocando  = est[EST_TOCANDO] != 0;
   pronto   = est[EST_PRONTO]  != 0;
@@ -1262,7 +1271,7 @@ void video_parar(void) {
   seekEm = 0; mkvPendente = 0;
   if (temAvplay) AV0("parar");
   ativo = tocando = pronto = 0;
-  posSeg = durSeg = 0;
+  posSeg = durSeg = posAmostra = 0; posAmostraEm = SDL_GetTicks64();
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; faixasLidas = 0;
   urlAtual[0] = 0;
 }
@@ -1445,6 +1454,10 @@ void video_janela_fonte(int sx, int sy, int sw, int sh,
 
 const char *video_url_atual(void) { return urlAtual; }
 double video_pos(void)        { return posSeg; }
+double video_pos_amostra(Uint64 *t) {
+  if (t) *t = posAmostraEm;
+  return posAmostra;
+}
 double video_duracao(void)    { return durSeg; }
 // O AVPlay so informa PORCENTAGEM de buffering (onbufferingprogress), nunca um
 // instante. 0 e o que video.h define como "desconhecido"; quem chama ja trata.

@@ -244,6 +244,9 @@ static volatile int conflito, semDecoderAudio;
 // 02/10); um evento 2 (tocando) no meio desfaz a confirmacao.
 static volatile int pausaPedida, pausaVista;
 static volatile int durMs, bufferando, posMs;
+static pthread_mutex_t travaAmostra = PTHREAD_MUTEX_INITIALIZER;
+static int posAmostraMs;
+static Uint64 posAmostraEm;
 // VELOCIDADE (#202, video.h): o ExoPlayer novo de cada abertura nasce em 1x
 // (velEnviada = 100 no abrirSessao) e o video_bombear reaplica o pedido assim
 // que ele esta pronto. setPlaybackSpeed aceita qualquer valor positivo; com o
@@ -366,7 +369,10 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeLegenda(JNIE
 
 JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativePos(JNIEnv *env, jclass cls, jint ms) {
   (void)env; (void)cls;
-  posMs = ms;
+  pthread_mutex_lock(&travaAmostra);
+  posMs = posAmostraMs = ms;
+  posAmostraEm = SDL_GetTicks64();
+  pthread_mutex_unlock(&travaAmostra);
 }
 
 JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeRetomada(JNIEnv *env, jclass cls, jint geracao, jint aceita) {
@@ -474,6 +480,9 @@ static int abrirSessao(int inicioMs) {
   ativo = 1; prontoLoad = primeiroQuadro = falhou = terminou = tocando = 0;
   velEnviada = 100;
   largura = altura = durMs = posMs = 0; bufferando = 1; bufferDesde = SDL_GetTicks();
+  pthread_mutex_lock(&travaAmostra);
+  posAmostraMs = 0; posAmostraEm = SDL_GetTicks64();
+  pthread_mutex_unlock(&travaAmostra);
   tocandoDesde = 0; semDecoderAudio = 0; erroTxt[0] = 0;
   pausaPedida = pausaVista = 0;
   hdrAtual = "none"; dvAtual = atmosAtual = 0;
@@ -552,8 +561,9 @@ int  video_reconectando(void) {
 
 void video_bombear(void) {
   double pos = video_pos();
-  if (mVelocidade && ativo && prontoLoad && velEnviada != velPedida) {
-    velEnviada = velPedida;
+  int rate = video_taxa_efetiva();
+  if (mVelocidade && ativo && prontoLoad && velEnviada != rate) {
+    velEnviada = rate;
     kInt(mVelocidade, velEnviada);
     // So "enviado": o setPlaybackSpeed nao recusa nada, e quem prova que andou
     // e o medidor do player (VelMedidor), pela posicao contra o relogio.
@@ -666,6 +676,14 @@ void video_escala_definir(int sw, int sh) { (void)sw; (void)sh; }
 
 const char *video_url_atual(void) { return urlAtual; }
 double video_pos(void) { return prontoLoad ? posMs / 1000.0 : 0; }
+double video_pos_amostra(Uint64 *t) {
+  double p;
+  pthread_mutex_lock(&travaAmostra);
+  p = prontoLoad ? posAmostraMs / 1000.0 : 0;
+  if (t) *t = posAmostraEm;
+  pthread_mutex_unlock(&travaAmostra);
+  return p;
+}
 double video_duracao(void) { return durMs / 1000.0; }
 double video_creditos(void) { return 0.0; }   // TODO: capitulos do MKV
 double video_buffer_fim(void) { return 0; }

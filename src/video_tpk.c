@@ -483,8 +483,9 @@ void video_bombear(void) {
   escolhasPendentes();
   legendaVigiarSilencio(SDL_GetTicks());
   // O SetPlaybackRate exige Ready/Playing/Paused: so com o prepare feito.
-  if (!velRecusada && pronto && hEscolher && velEnviada != velPedida) {
-    velEnviada = velPedida;
+  int rate = video_taxa_efetiva();
+  if (!velRecusada && pronto && hEscolher && velEnviada != rate) {
+    velEnviada = rate;
     hEscolher(3, velEnviada);
   }
   double pos = video_pos();
@@ -649,6 +650,11 @@ int  video_recorte_fonte_trailer(void) { return NV_TPK_ZOOM_ROI || zoomRoi; }
 void video_recorte_reaplicar(void) { if (temRoi) video_janela(ultRoiX, ultRoiY, ultRoiW, ultRoiH); }
 const char *video_url_atual(void) { return urlAtual; }
 double video_pos(void) { return (hPos && pronto) ? hPos() / 1000.0 : 0; }
+double video_pos_amostra(Uint64 *t) {
+  double p = video_pos();
+  if (t) *t = SDL_GetTicks64();
+  return p;
+}
 double video_duracao(void) { return durMs / 1000.0; }
 double video_creditos(void) { return 0.0; }
 double video_buffer_fim(void) { return 0; }
