@@ -789,7 +789,7 @@ static void desenharFontes(void) {
   const JsMotor *m = juntos_motor();
   GfxRect painelFontes = { 460, 124, 1380, 868 };
   float a = fadeSala(), y = 306;
-  static float expansao[5];
+  static float expansao[5], realce[5];
   static Uint32 ultimo;
   Uint32 agora = SDL_GetTicks();
   float passo = 1 - expf(-(float)(agora - ultimo) / 65.0f);
@@ -812,7 +812,7 @@ static void desenharFontes(void) {
     GLuint t = tex_obter(m->sala.poster);
     if (t) {
       gfx_tex_aspect_atual = tex_aspecto(m->sala.poster);
-      gfx_rect((GfxRect){ 100, 176, 240, 360 }, t, GFX_CARD, 1, 0, 0, 0.04f, 1, 1, 1, a);
+      gfx_rect((GfxRect){ 100, 176, 240, 360 }, t, GFX_CARD, 0, 0, 0, 0.04f, 1, 1, 1, a);
       gfx_tex_aspect_atual = 0;
     }
   }
@@ -830,10 +830,13 @@ static void desenharFontes(void) {
     const char *impacto = mesma ? i18n("Mesmo arquivo. Sincronia automática.") : parecida ? i18n("Arquivo parecido. A sincronia pode variar.") : diferente ? i18n("Duração diferente. Algumas cenas podem desalinhar.") : i18n("Aguardando uma fonte para sincronizar.");
     float r = mesma ? 0.55f : 0.96f, g = mesma ? 0.90f : parecida ? 0.78f : 0.56f, b = mesma ? 0.70f : 0.42f;
     float alvo = foco == i + 1 && eu && s ? 1 : 0;
-    if (ajustes_animacoes_reduzidas()) expansao[i] = alvo;
-    else expansao[i] += (alvo - expansao[i]) * passo;
-    float h = 106 + 62 * expansao[i];
-    if (foco == i + 1) gfx_cor((GfxRect){ 484, y - 10, 1332, h }, 20.0f / h, 1, 1, 1, 0.12f * a);
+    if (ajustes_animacoes_reduzidas()) { expansao[i] = alvo; realce[i] = foco == i + 1; }
+    else {
+      expansao[i] += (alvo - expansao[i]) * passo;
+      realce[i] += ((foco == i + 1) - realce[i]) * passo;
+    }
+    float h = 96 + 62 * expansao[i];
+    gfx_cor((GfxRect){ 484, y - 10, 1332, h }, 20.0f / h, 1, 1, 1, 0.12f * realce[i] * a);
     rec_avatar((GfxRect){ 504, y + 6, 56, 56 }, p->av, p->nome, p->id, p->on ? a : 0.45f * a);
     texto(TXT_ILHA_NOME, p->nome, 580, y, 245, a, 290);
     snprintf(sala, sizeof sala, "%s%s%s", plataformaFonte(p), eu ? " · " : "", eu ? i18n("Sua TV") : "");

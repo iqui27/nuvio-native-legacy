@@ -7,6 +7,8 @@
 #define NV_REC_URL "http://fake.test"
 #include "../src/juntos.c"
 #include "ajustes.h"
+#include "badges.h"
+#include "idioma.h"
 #include "catalogo.h"
 #include "dados.h"
 #include "gfx.h"
@@ -27,6 +29,7 @@ void juntosui_shot_contagem(int n);
 
 static SDL_Window *win;
 static const char *base;
+static int sourcesOnly;
 static GLuint fundoTex;
 
 static void carregarFundo(void) {
@@ -92,7 +95,8 @@ int main(int argc, char **argv) {
   FILE *f;
   base = argc > 1 ? argv[1] : "/tmp/nuvio-juntos";
   snprintf(aj, sizeof aj, "%s/ajustes.txt", dir);
-  f = fopen(aj, "w"); fprintf(f, "idioma 1\nselected_theme 2\n"); fclose(f);
+  sourcesOnly = argc > 2 && !strcmp(argv[2], "--sources");
+  f = fopen(aj, "w"); fprintf(f, "idioma %d\nselected_theme 2\n", sourcesOnly ? 0 : 1); fclose(f);
   ajustes_dir(dir);
   dados_iniciar("deploy/app");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
@@ -106,13 +110,15 @@ int main(int argc, char **argv) {
   assert(gfx_iniciar());
   gfx_snap_iniciar(1920, 1080);
   assert(txt_iniciar("deploy/app", 1));
-  txt_definir_fonte_interface(TXT_FAMILIA_MONTSERRAT);
+  txt_definir_fonte_interface(sourcesOnly ? TXT_FAMILIA_INTER : TXT_FAMILIA_MONTSERRAT);
+  badges_carregar("deploy/app/art");
   tex_iniciar(64);
   gfx_icones_dir("deploy/app/art");
   ajustes_definir_vidro(1);
   carregarFundo();
   quadros(30);
 
+  if (!sourcesOnly) {
   // 1. Convite na ilha.
   { JuntosConvite c; memset(&c, 0, sizeof c);
     snprintf(c.id, sizeof c.id, "%s", "0123456789abcdef0123456789abcdef");
@@ -133,6 +139,7 @@ int main(int argc, char **argv) {
   quadros(20);
   captura("02-folha", 1080);
 
+  }
   // 3. Lobby do cinema (Velvet Cinema v2), vidro desligado como de fabrica.
   ajustes_definir_vidro(0);
   juntosui_shot_arte("deploy/app/art/00.jpg");
@@ -146,6 +153,24 @@ int main(int argc, char **argv) {
     s.n = 4;
     motor.sala = s; motor.temSala = 1; temMotor = 1; fase = JF_DENTRO;
     snprintf(codigo, sizeof codigo, "K7M2QX"); }
+  if (sourcesOnly) {
+    Stream s = { 0 };
+    const char *assetDir = getenv("NUVIO_JUNTOS_ART");
+    char arte[700];
+    assert(assetDir);
+    snprintf(arte, sizeof arte, "%s/duna-backdrop.jpg", assetDir);
+    juntosui_shot_arte(arte);
+    snprintf(motor.sala.poster, sizeof motor.sala.poster, "%s/duna-poster.jpg", assetDir);
+    s.altura = 2160; s.dolbyVision = 1; s.dolbyAtmos = 1; s.tamanhoMB = 23552;
+    snprintf(s.provedor, sizeof s.provedor, "AIOStreams");
+    snprintf(s.rotulo, sizeof s.rotulo, "Duna: Parte 2");
+    snprintf(s.url, sizeof s.url, "https://fixture.invalid/local-stream");
+    stream_definir_alvo(motor.sala.ep);
+    stream_definir_lista(&s, 1); stream_definir_atual(0);
+    motor.sala.n = 5;
+    ajustes_definir_vidro(1);
+    goto fontes;
+  }
   juntosui_shot_camada(3, -1);
   quadros(20);
   captura("03-lobby", 1080);   // 4 de 5 lugares, um vazio
@@ -157,9 +182,36 @@ int main(int argc, char **argv) {
   quadros(5);
   captura("19-solid-reduced-motion", 1080);
   ajustes_shot_valor("animacoes", 0);
-  juntosui_shot_camada(7, 0);
-  quadros(15);
+fontes:
+  juntosui_shot_camada(7, sourcesOnly ? 1 : 0);
+  quadros(30);
   captura("20-sources", 1080);
+  if (sourcesOnly) {
+    SDL_Event e = { 0 };
+    e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_DOWN;
+    assert(!strcmp(i18n("Voltar à sala"), "Voltar à sala"));
+    assert(juntosui_evento_sdl(&e));
+    quadros(20); captura("20-sources-remote", 1080);
+    e.key.keysym.sym = SDLK_RETURN;
+    assert(juntosui_evento_sdl(&e));
+    assert(juntosui_aberta() && !juntosui_pediu_fontes());
+    e.key.keysym.sym = SDLK_UP; assert(juntosui_evento_sdl(&e));
+    quadros(20);
+    e.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&e));
+    assert(!juntosui_aberta() && juntosui_pediu_fontes() && !juntosui_pediu_fontes());
+    juntosui_shot_camada(7, 0);
+    ajustes_definir_vidro(0); ajustes_shot_valor("animacoes", 1);
+    quadros(5); captura("20-sources-solid", 1080);
+    e.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&e));
+    assert(juntosui_aberta() && !juntosui_pediu_fontes());
+    juntosui_shot_camada(7, 1);
+    stream_invalidar("source screen fixture");
+    assert(juntosui_evento_sdl(&e));
+    assert(juntosui_aberta() && !juntosui_pediu_fontes());
+    quadros(5); captura("20-sources-missing", 1080);
+    printf("juntos sources: local picker, remote isolation, back, missing metadata, solid/reduced motion: ok\n");
+    return 0;
+  }
   juntosui_shot_camada(3, 0);
   quadros(5);
   { SDL_Event e; memset(&e, 0, sizeof e); e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RIGHT; juntosui_evento_sdl(&e);
